@@ -51,4 +51,3 @@ def test_child_and_tool_failure_fingerprints_keep_host_identity() -> None:
     )
     assert tool.error_fingerprint != child.error_fingerprint
     assert tool.report_ref != child.report_ref
-

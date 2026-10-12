@@ -49,7 +49,11 @@ def test_i06_concurrent_authority_write_makes_the_collectors_plan_commit_stale(t
     commits, the commit's in-transaction authority reread refuses the old binding."""
 
     async def case() -> None:
-        async with reviewed(tmp_path, key="h1h-i06-interleave-authority") as ((loop, mission, _world, _root, dispatch, product), opener, _provider):
+        async with reviewed(tmp_path, key="h1h-i06-interleave-authority") as (
+            (loop, mission, _world, _root, dispatch, product),
+            opener,
+            _provider,
+        ):
             binding = PlanningAdmissionStore(loop.store).get_request_binding(opener.intent_id)
             assert binding is not None
             mutation_written = threading.Event()
@@ -61,10 +65,14 @@ def test_i06_concurrent_authority_write_makes_the_collectors_plan_commit_stale(t
                 try:
                     with other_store.transaction():
                         results["renewed"] = PlanningAuthorizationApi(
-                            other_store, tenant_id=mission.tenant_id,
+                            other_store,
+                            tenant_id=mission.tenant_id,
                             principal=product.deployment.principal,
-                        ).renew(binding["grant_id"], expected_revision=int(binding["grant_revision"]),
-                                command_id="renew-h1h-i06-interleaved")
+                        ).renew(
+                            binding["grant_id"],
+                            expected_revision=int(binding["grant_revision"]),
+                            command_id="renew-h1h-i06-interleaved",
+                        )
                         mutation_written.set()
                         assert plan_begin_immediate.wait(timeout=5), "plan writer never began"
                 finally:
@@ -89,7 +97,11 @@ def test_i06_concurrent_authority_write_makes_the_collectors_plan_commit_stale(t
             dispatch.preview_plan_proposal = preview_then_contend  # type: ignore[method-assign]
             try:
                 await loop._collect_plan_decision(
-                    opener, object(), mission, plan_reply(opener.config["planning_package"]), dispatch
+                    opener,
+                    object(),
+                    mission,
+                    plan_reply(opener.config["planning_package"]),
+                    dispatch,
                 )
             finally:
                 loop.store.connection.set_trace_callback(None)
@@ -106,7 +118,9 @@ def test_i06_concurrent_authority_write_makes_the_collectors_plan_commit_stale(t
             assert stored["status"] == "COMMIT_REJECTED", stored
             assert stored["rejection_codes"] == ["REQUEST_BINDING_STALE"], stored
             assert HtnStore(loop.store).list_plan_revisions(mission.id) == ()
-            assert not [e for e in loop.store.list_events(mission.id) if e.type == PLAN_REVISION_COMMITTED]
+            assert not [
+                e for e in loop.store.list_events(mission.id) if e.type == PLAN_REVISION_COMMITTED
+            ]
             assert not loop.store.list_actions(mission.id)
 
     asyncio.run(case())
@@ -128,7 +142,9 @@ def test_i06_a_concurrent_publish_approval_makes_the_plan_commit_stale(tmp_path)
                 try:
                     with other_store.transaction():
                         results["approved"] = ApprovalApi(
-                            CommitService(other_store), round_.world.deployment.principal, deployment=POLICY,
+                            CommitService(other_store),
+                            round_.world.deployment.principal,
+                            deployment=POLICY,
                         ).approve(round_.approval_id)
                         written.set()
                         assert begun.wait(timeout=5), "plan writer never began"
@@ -164,8 +180,11 @@ def test_i06_a_concurrent_publish_approval_makes_the_plan_commit_stale(tmp_path)
             assert row["status"] == "COMMIT_REJECTED", row
             assert "TASKGRAPH_PLAN_SOURCE_CHANGED" in json.dumps(row["detail"]), row
             assert round_.plan_revision() == 1
-            assert [event.payload["plan_revision"] for event in loop.store.list_events(round_.mission_id)
-                    if event.type == PLAN_REVISION_COMMITTED] == [1]
+            assert [
+                event.payload["plan_revision"]
+                for event in loop.store.list_events(round_.mission_id)
+                if event.type == PLAN_REVISION_COMMITTED
+            ] == [1]
 
     asyncio.run(case())
 
@@ -252,23 +271,25 @@ def _admission_for_active_revision(world, command):
     operations = build_operation_snapshot(
         world.mission.id, reader=StoreOperationReader(world.store)
     )
-    runtime_work = read_running_work(
-        world.mission.id, (), reader=StoreOperationReader(world.store)
-    )
+    runtime_work = read_running_work(world.mission.id, (), reader=StoreOperationReader(world.store))
     compilation_hash = sha256_hex(
         {"delta": command.delta.to_json(), "network": _source_snapshot_payload(command.network)}
     )
-    return api, grant, PlanningCommitAdmission(
-        request_id=request.request_id,
-        decision_hash="f" * 64,
-        decision_key="REFINE",
-        authority=authority,
-        operations=operations,
-        runtime_work=runtime_work,
-        preview_request_id=request.request_id,
-        preview_decision_hash="f" * 64,
-        preview_compilation_hash=compilation_hash,
-        preview_read_set_hash=content_hash_of(command.read_set.to_json()),
+    return (
+        api,
+        grant,
+        PlanningCommitAdmission(
+            request_id=request.request_id,
+            decision_hash="f" * 64,
+            decision_key="REFINE",
+            authority=authority,
+            operations=operations,
+            runtime_work=runtime_work,
+            preview_request_id=request.request_id,
+            preview_decision_hash="f" * 64,
+            preview_compilation_hash=compilation_hash,
+            preview_read_set_hash=content_hash_of(command.read_set.to_json()),
+        ),
     )
 
 

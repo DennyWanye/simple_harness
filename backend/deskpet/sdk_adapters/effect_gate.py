@@ -109,13 +109,21 @@ def project_tool_execution_context(base, context=None):
 
         return project_read_execution_context(base)
     envelope, root = projection
-    if (base.run_id != envelope.run_id.value or base.effect_id != envelope.effect_id.value
-            or base.call_id != envelope.call_id.value):
+    if (
+        base.run_id != envelope.run_id.value
+        or base.effect_id != envelope.effect_id.value
+        or base.call_id != envelope.call_id.value
+    ):
         raise RuntimeError("primary_effect_context_identity_mismatch")
-    if context is not None and (context.task_execution_envelope != envelope or context.run_id != envelope.run_id or context.effect_id != envelope.effect_id):
+    if context is not None and (
+        context.task_execution_envelope != envelope
+        or context.run_id != envelope.run_id
+        or context.effect_id != envelope.effect_id
+    ):
         raise RuntimeError("primary_effect_context_identity_mismatch")
-    return replace(base, workspace=root, write_scope_root=root, binding_epoch=envelope.binding_set_revision)
-
+    return replace(
+        base, workspace=root, write_scope_root=root, binding_epoch=envelope.binding_set_revision
+    )
 
 
 EFFECT_GATE_PUBLIC_MESSAGE = (
@@ -144,6 +152,8 @@ def effect_gate_public_message(code: str) -> str:
             "a completed TaskScope or repair its lifecycle."
         )
     return EFFECT_GATE_PUBLIC_MESSAGE
+
+
 # Steps that name a route receipt and therefore stick to it (step 1 has no
 # trustworthy receipt id yet; step 0 never rejects).
 _NON_STICKY_CODES: frozenset[str] = frozenset(
@@ -278,9 +288,7 @@ class EffectGate:
                 await db.rollback()
                 raise
 
-    async def _reject_and_memo(
-        self, context: ToolContext, result: ToolResult
-    ) -> ToolResult:
+    async def _reject_and_memo(self, context: ToolContext, result: ToolResult) -> ToolResult:
         await self.memoize_rejection(context, result)
         return result
 
@@ -334,9 +342,7 @@ class EffectGate:
         resolution = dict(getattr(authority, "workspace_resolution", None) or {})
         primary = isinstance(work, PrimaryRunWorkContext)
         if not primary and envelope.task_scope_id != work.task_scope_id:
-            return await self._reject_and_memo(
-                context, reject("effect_gate_frozen_scope_mismatch")
-            )
+            return await self._reject_and_memo(context, reject("effect_gate_frozen_scope_mismatch"))
         frozen_root = work.workspace_root
         kind = str(resolution.get("kind") or "")
         if not primary and (kind in {"projectless", "missing"} or not frozen_root):
@@ -413,11 +419,15 @@ class EffectGate:
     async def execution_scope(self, context, tool_name):
         """Reverify the routed root just before dispatch; never mutate Run admission."""
         authority = self._authority_resolver(context.run_id)
-        if not isinstance(authority.task_work_context, PrimaryRunWorkContext) or not self._is_project_effect(context.run_id, tool_name):
+        if not isinstance(
+            authority.task_work_context, PrimaryRunWorkContext
+        ) or not self._is_project_effect(context.run_id, tool_name):
             yield
             return
         envelope = context.task_execution_envelope
-        receipt = await self._route_ledger.read_route_receipt(context.run_id.value, envelope.route_receipt_id)
+        receipt = await self._route_ledger.read_route_receipt(
+            context.run_id.value, envelope.route_receipt_id
+        )
         if receipt is None:
             raise RuntimeError("workspace_binding_route_authority_missing")
         verified = await self._binding_store.verify_task_execution_envelope(envelope, receipt)
@@ -480,7 +490,6 @@ class EffectGate:
         return check
 
 
-
 # ---------------------------------------------------------------------------
 # Objective event mapping (S5b Task 2, design-freeze §2) — deterministic:
 # tool name + exit code + registered test-runner allowlist; no keywords, no
@@ -520,8 +529,19 @@ TEST_RUNNER_COMMANDS: tuple[tuple[str, ...], ...] = (
     ("jest",),
 )
 _TARGET_ARGUMENT_KEYS: tuple[str, ...] = (
-    "path", "file_path", "source", "source_path", "destination", "destination_path",
-    "target", "target_path", "output_path", "output", "directory", "root", "url",
+    "path",
+    "file_path",
+    "source",
+    "source_path",
+    "destination",
+    "destination_path",
+    "target",
+    "target_path",
+    "output_path",
+    "output",
+    "directory",
+    "root",
+    "url",
 )
 _EXIT_CODE_KEYS: tuple[str, ...] = ("exit_code", "returncode", "return_code", "status_code")
 
@@ -564,7 +584,7 @@ def _test_runner_head(tokens: list[str]) -> str | None:
 
     for head in TEST_RUNNER_COMMANDS:
         if tuple(tokens[: len(head)]) == head:
-            if _has_shell_operator(tokens[len(head):]):
+            if _has_shell_operator(tokens[len(head) :]):
                 return None
             return " ".join(head)
     return None

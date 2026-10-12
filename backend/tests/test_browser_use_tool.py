@@ -17,6 +17,7 @@ Coverage:
   then ``action='result'`` eventually yields the mocked ``done`` result.
 * creds resolution prefers ``llm_runtime.json`` over the config section.
 """
+
 from __future__ import annotations
 
 import importlib.machinery
@@ -89,9 +90,7 @@ def fake_browser_use(monkeypatch: pytest.MonkeyPatch):
     pkg.__spec__ = importlib.machinery.ModuleSpec("browser_use", loader=None)
     pkg.Agent = _FakeAgent  # type: ignore[attr-defined]
     llm_mod = types.ModuleType("browser_use.llm")
-    llm_mod.__spec__ = importlib.machinery.ModuleSpec(
-        "browser_use.llm", loader=None
-    )
+    llm_mod.__spec__ = importlib.machinery.ModuleSpec("browser_use.llm", loader=None)
     llm_mod.ChatOpenAI = _FakeChatOpenAI  # type: ignore[attr-defined]
     pkg.llm = llm_mod  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "browser_use", pkg)
@@ -107,7 +106,11 @@ def _wait_for_terminal(job_id: str, timeout: float = 5.0) -> dict:
     deadline = time.time() + timeout
     while time.time() < deadline:
         res = _dispatch({"action": "result", "job_id": job_id})
-        if res.get("status") in {"done", "error"} or res.get("ok") is False and res.get("status") != "running":
+        if (
+            res.get("status") in {"done", "error"}
+            or res.get("ok") is False
+            and res.get("status") != "running"
+        ):
             return res
         if res.get("status") != "running":
             return res
@@ -130,14 +133,10 @@ def test_tool_hidden_from_catalog_without_independent_runtime_key():
     assert spec.is_visible() is False
 
 
-def test_tool_visible_when_legacy_runtime_is_ready(
-    tmp_path: Path, fake_browser_use
-):
+def test_tool_visible_when_legacy_runtime_is_ready(tmp_path: Path, fake_browser_use):
     _write_cfg(
         tmp_path,
-        "[desktop_automation]\n"
-        "browser_use_enabled = true\n"
-        "api_key = 'k-test'\n",
+        "[desktop_automation]\nbrowser_use_enabled = true\napi_key = 'k-test'\n",
     )
     spec = registry.get("run_browser_task")
     assert spec is not None
@@ -165,9 +164,7 @@ def test_tool_declares_browser_job_resource_scope():
         "network_origin",
         "system_change",
     }
-    assert next(
-        item for item in start if item.kind == "network_origin"
-    ).canonical_value == "*"
+    assert next(item for item in start if item.kind == "network_origin").canonical_value == "*"
 
     result = spec.resource_scope_resolver(
         {"action": "result", "job_id": "job-1"},
@@ -200,9 +197,7 @@ def test_flag_off_via_explicit_false(tmp_path: Path):
 # ---------------------------------------------------------------------
 def test_external_url_rejected(tmp_path: Path, fake_browser_use):
     _enable(tmp_path)
-    res = _dispatch(
-        {"task": "do thing", "start_url": "https://example.com/login"}
-    )
+    res = _dispatch({"task": "do thing", "start_url": "https://example.com/login"})
     assert res["ok"] is False
     assert "non-local" in res["error"]
     assert "allow_external" in res["hint"]
@@ -253,9 +248,7 @@ def test_start_returns_running_then_done(tmp_path: Path, fake_browser_use):
         tmp_path,
         "[code_e2e]\nbrowser_use_enabled = true\napi_key = 'k-test'\n",
     )
-    started = _dispatch(
-        {"task": "open localhost:5173, send a message, verify reply"}
-    )
+    started = _dispatch({"task": "open localhost:5173, send a message, verify reply"})
     assert started["ok"] is True
     assert started["status"] == "running"
     job_id = started["job_id"]

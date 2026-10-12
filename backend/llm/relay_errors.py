@@ -19,6 +19,7 @@ code OR keyword in the body). Once the relay 402/401 contract is
 confirmed, tighten :func:`classify_relay_error` — the call sites and the
 error-code strings stay the same, so nothing downstream changes.
 """
+
 from __future__ import annotations
 
 # Structured error codes surfaced to the frontend chat layer.
@@ -28,12 +29,22 @@ RELAY_KEY_INVALID = "relay_key_invalid"
 # TODO(M6): replace these heuristic keyword sets with the confirmed
 # relay contract once the relay side documents its 402/401 body shape.
 _BALANCE_HINTS = (
-    "insufficient", "balance", "quota", "out of credit",
-    "余额", "额度",
+    "insufficient",
+    "balance",
+    "quota",
+    "out of credit",
+    "余额",
+    "额度",
 )
 _KEY_HINTS = (
-    "invalid_token", "invalid api key", "invalid key", "expired",
-    "unauthorized", "token_invalid", "key_invalid", "device key",
+    "invalid_token",
+    "invalid api key",
+    "invalid key",
+    "expired",
+    "unauthorized",
+    "token_invalid",
+    "key_invalid",
+    "device key",
 )
 
 

@@ -77,9 +77,7 @@ class CurrentRunBindingAuthority:
 
 
 class CurrentRunBindingAuthorityPort(Protocol):
-    async def load_current_run_binding(
-        self, run_id: str
-    ) -> CurrentRunBindingAuthority | None: ...
+    async def load_current_run_binding(self, run_id: str) -> CurrentRunBindingAuthority | None: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -151,8 +149,7 @@ class WorkspaceBindingAuthorityStore:
         home_directory: str | Path | None = None,
         clock_millis: Callable[[], int] | None = None,
         current_run_authority: CurrentRunBindingAuthorityPort | None = None,
-        manual_authorization_authority: ManualWorkspaceAuthorizationAuthorityPort
-        | None = None,
+        manual_authorization_authority: ManualWorkspaceAuthorizationAuthorityPort | None = None,
     ) -> None:
         self._db_path = Path(db_path)
         self._home = Path.home() if home_directory is None else Path(home_directory)
@@ -344,8 +341,7 @@ class WorkspaceBindingAuthorityStore:
             )
             existing = await self._fetchone(
                 db,
-                "SELECT decision_json FROM task_workspace_manual_decisions "
-                "WHERE challenge_id=?",
+                "SELECT decision_json FROM task_workspace_manual_decisions WHERE challenge_id=?",
                 (challenge.challenge_id,),
             )
         if durable_challenge == challenge.to_json() and existing is not None:
@@ -469,9 +465,7 @@ class WorkspaceBindingAuthorityStore:
         decided_by_actor_id: str,
         decision: WorkspaceBindingAuthorizationDecision,
     ) -> ManualWorkspaceBindingAuthorizationReceipt:
-        receipt = ManualWorkspaceBindingAuthorizationReceipt.from_json(
-            json.loads(decision_json)
-        )
+        receipt = ManualWorkspaceBindingAuthorizationReceipt.from_json(json.loads(decision_json))
         if (
             receipt.decided_by_actor_id != decided_by_actor_id
             or receipt.decision is not WorkspaceBindingAuthorizationDecision(decision)
@@ -884,9 +878,7 @@ class WorkspaceBindingAuthorityStore:
                             snapshot=snapshot,
                             proposal=proposal,
                         )
-                        self._verify_configured_root_identity(
-                            snapshot.configured_workspace_root
-                        )
+                        self._verify_configured_root_identity(snapshot.configured_workspace_root)
                         snapshot.verify_request(
                             request,
                             now_millis=self._clock_millis(),
@@ -896,9 +888,7 @@ class WorkspaceBindingAuthorityStore:
                         append_projection_source_tx,
                     )
 
-                    await append_projection_source_tx(
-                        db, proposal.task_scope_id, now=now
-                    )
+                    await append_projection_source_tx(db, proposal.task_scope_id, now=now)
                     await db.commit()
                     if fault_inject:
                         fault_inject("after_binding_commit")
@@ -1021,9 +1011,7 @@ class WorkspaceBindingAuthorityStore:
         if row is None:
             raise WorkspaceBindingError("workspace_binding_auto_snapshot_not_durable")
         request = RunBindingModeSnapshotRequest.from_json(json.loads(str(row["request_json"])))
-        snapshot = HostIssuedRunBindingModeSnapshot.from_json(
-            json.loads(str(row["snapshot_json"]))
-        )
+        snapshot = HostIssuedRunBindingModeSnapshot.from_json(json.loads(str(row["snapshot_json"])))
         if (
             snapshot.authority_receipt_ref != grant.source_authority_ref
             or snapshot.authority_receipt_hash != grant.source_authority_hash
@@ -1082,15 +1070,11 @@ class WorkspaceBindingAuthorityStore:
             with self._open_verified_root(root):
                 current = self.configured_root()
                 if current != root:
-                    raise WorkspaceBindingError(
-                        "workspace_binding_configured_root_identity_drift"
-                    )
+                    raise WorkspaceBindingError("workspace_binding_configured_root_identity_drift")
         except WorkspaceBindingError as exc:
             if exc.code == "workspace_binding_configured_root_identity_drift":
                 raise
-            raise WorkspaceBindingError(
-                "workspace_binding_configured_root_identity_drift"
-            ) from exc
+            raise WorkspaceBindingError("workspace_binding_configured_root_identity_drift") from exc
 
     async def verify_effect_authority(
         self,
@@ -1265,9 +1249,7 @@ class WorkspaceBindingAuthorityStore:
             )
         if row is None:
             raise WorkspaceBindingError("workspace_binding_exact_receipt_missing")
-        receipt = WorkspaceBindingSetReceipt.from_json(
-            json.loads(str(row["receipt_json"]))
-        )
+        receipt = WorkspaceBindingSetReceipt.from_json(json.loads(str(row["receipt_json"])))
         if (
             receipt.receipt_id != binding_set_receipt_id
             or receipt.receipt_hash != binding_set_receipt_hash

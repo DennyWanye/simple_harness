@@ -31,6 +31,7 @@ The sink is intentionally tiny and synchronous — a metrics write must
 never be able to slow down or break the chat path, so every public
 method swallows its own I/O errors (logged at debug).
 """
+
 from __future__ import annotations
 
 import json
@@ -45,77 +46,79 @@ log = logging.getLogger(__name__)
 # Whitelisted event names. Anything not in here is dropped — this keeps
 # the schema closed so a future careless caller can't invent an event
 # that smuggles free text.
-VALID_EVENTS = frozenset({
-    "app_start",
-    "app_start_failed",
-    "llm_call_ok",
-    "llm_call_failed",
-    "skill_invoked",
-    "crash",
-    # WI-T1.7 last-mile artifact button clicks (PRD §5 G1 度量).
-    "artifact_action",
-    # WI-T2.4 verify metrics (PRD §5 健康区间).
-    "verify_extractor.fallback_used",
-    "verify.ephemeral_rescued",
-    "verify.sig_invalid_filtered",
-    "verifier.skipped_due_to_missing_toolchain",
-    # WI-T2.1 v3 build_agent 工厂接电 — chat 启动时 emit；MR-T-1 硬证据
-    # （用户 goal："必须有 boot smoke + metrics.jsonl 真出现 verify_* event"）.
-    "verify_gate_init",
-    # WI-T2.6 agent_loop 触发 nudge（fake-completion 拦截事件）.
-    "verify_gate_nudge_injected",
-    # WI-HM-1 自我纠错闭环观测 — agent_loop 已埋点但此前不在白名单被静默丢弃：
-    #   verify_replan_stagnant: 连续重规划无进展（stagnation 检测命中）.
-    #   verify_exhausted: 所有 nudge + ephemeral 救援层全耗尽 → 终止 turn.
-    #   ephemeral_pass / ephemeral_rescued: 第 3 次失败 ephemeral 子代理救援判定结果.
-    "verify_replan_stagnant",
-    "verify_exhausted",
-    "ephemeral_pass",
-    "ephemeral_rescued",
-    # WI-B3 Companion+Code v1 /goal end_turn rebound checker invocations.
-    "goal_checker_invoked",
-    # WI-C1 Companion+Code v1 Stage C — agent_parallel subagent lifecycle
-    # (starting / completed / failed)；脱敏：task_id 由 caller 自管。
-    "subagent_progress",
-    # 子代理并发驱动 (plans/2026-06-21-subagent-concurrency-driver/ WI-1.5)
-    # — 调度器把子任务调进 lane 运行（kind/run_id/lane cap 背压）.
-    "subagent_scheduled",
-    # WI-OC-2 背压/lane 观测 — 子任务从入队到拿到双闸的队列等待耗时样本
-    # （detail: kind 枚举 + duration_ms 数字，无用户文本）。供 P50/P95 估算。
-    "subagent_lane_wait",
-    # WI-G1 Companion+Code v2 — Multi-Agent Team workflow task lifecycle
-    # (team_task_created / team_task_claimed / team_task_done)；脱敏：
-    # task_id + team_id 都是 caller 自管的 uuid，无敏感内容。
-    "team_task_created",
-    "team_task_claimed",
-    "team_task_done",
-    # R-T3 §15.4 LLM 失败降级矩阵事件（goal completion verify path）.
-    "goal_check_skipped",           # GoalChecker 超时/失败 → 仅客观证据判定信号
-    "reflection_parse_failed",      # 结构化反思 JSON 畸形 → 降级机械 nudge
-    "evaluator_conservative_block", # ExternalEvaluator 超时/失败 + 高后果 → 保守拦
-    # WI-1B-2 压缩可观测 — 上下文压缩命中 (flag features.ctx_observability ON)。
-    # detail: ratio(节省比) / model(摘要模型) / count(省下 token = in-out)。脱敏:
-    # 全是数字/枚举,无用户文本。
-    "context_compacted",
-    # SearchGateway / DeepResearch v2/v3 fixed-schema observability. These
-    # events deliberately carry only operational dimensions; queries, URLs,
-    # snippets and generated report text are never accepted by the sink.
-    "search_gateway_request",
-    "search_gateway_attempt",
-    "search_gateway_cancelled_wait",
-    "search_gateway_cache",
-    "search_gateway_cooldown",
-    "search_gateway_dedupe",
-    "search_gateway_hydrate",
-    "fetch_extract_fallback",
-    "fetch_extract_quality",
-    "deepresearch_v2_branch",
-    "deepresearch_v2_stage",
-    "deepresearch_stage_timing",
-    "deepresearch_fetch_attempt_timing",
-    "deepresearch_claim_support",
-    "memory_product_outbox",
-})
+VALID_EVENTS = frozenset(
+    {
+        "app_start",
+        "app_start_failed",
+        "llm_call_ok",
+        "llm_call_failed",
+        "skill_invoked",
+        "crash",
+        # WI-T1.7 last-mile artifact button clicks (PRD §5 G1 度量).
+        "artifact_action",
+        # WI-T2.4 verify metrics (PRD §5 健康区间).
+        "verify_extractor.fallback_used",
+        "verify.ephemeral_rescued",
+        "verify.sig_invalid_filtered",
+        "verifier.skipped_due_to_missing_toolchain",
+        # WI-T2.1 v3 build_agent 工厂接电 — chat 启动时 emit；MR-T-1 硬证据
+        # （用户 goal："必须有 boot smoke + metrics.jsonl 真出现 verify_* event"）.
+        "verify_gate_init",
+        # WI-T2.6 agent_loop 触发 nudge（fake-completion 拦截事件）.
+        "verify_gate_nudge_injected",
+        # WI-HM-1 自我纠错闭环观测 — agent_loop 已埋点但此前不在白名单被静默丢弃：
+        #   verify_replan_stagnant: 连续重规划无进展（stagnation 检测命中）.
+        #   verify_exhausted: 所有 nudge + ephemeral 救援层全耗尽 → 终止 turn.
+        #   ephemeral_pass / ephemeral_rescued: 第 3 次失败 ephemeral 子代理救援判定结果.
+        "verify_replan_stagnant",
+        "verify_exhausted",
+        "ephemeral_pass",
+        "ephemeral_rescued",
+        # WI-B3 Companion+Code v1 /goal end_turn rebound checker invocations.
+        "goal_checker_invoked",
+        # WI-C1 Companion+Code v1 Stage C — agent_parallel subagent lifecycle
+        # (starting / completed / failed)；脱敏：task_id 由 caller 自管。
+        "subagent_progress",
+        # 子代理并发驱动 (plans/2026-06-21-subagent-concurrency-driver/ WI-1.5)
+        # — 调度器把子任务调进 lane 运行（kind/run_id/lane cap 背压）.
+        "subagent_scheduled",
+        # WI-OC-2 背压/lane 观测 — 子任务从入队到拿到双闸的队列等待耗时样本
+        # （detail: kind 枚举 + duration_ms 数字，无用户文本）。供 P50/P95 估算。
+        "subagent_lane_wait",
+        # WI-G1 Companion+Code v2 — Multi-Agent Team workflow task lifecycle
+        # (team_task_created / team_task_claimed / team_task_done)；脱敏：
+        # task_id + team_id 都是 caller 自管的 uuid，无敏感内容。
+        "team_task_created",
+        "team_task_claimed",
+        "team_task_done",
+        # R-T3 §15.4 LLM 失败降级矩阵事件（goal completion verify path）.
+        "goal_check_skipped",  # GoalChecker 超时/失败 → 仅客观证据判定信号
+        "reflection_parse_failed",  # 结构化反思 JSON 畸形 → 降级机械 nudge
+        "evaluator_conservative_block",  # ExternalEvaluator 超时/失败 + 高后果 → 保守拦
+        # WI-1B-2 压缩可观测 — 上下文压缩命中 (flag features.ctx_observability ON)。
+        # detail: ratio(节省比) / model(摘要模型) / count(省下 token = in-out)。脱敏:
+        # 全是数字/枚举,无用户文本。
+        "context_compacted",
+        # SearchGateway / DeepResearch v2/v3 fixed-schema observability. These
+        # events deliberately carry only operational dimensions; queries, URLs,
+        # snippets and generated report text are never accepted by the sink.
+        "search_gateway_request",
+        "search_gateway_attempt",
+        "search_gateway_cancelled_wait",
+        "search_gateway_cache",
+        "search_gateway_cooldown",
+        "search_gateway_dedupe",
+        "search_gateway_hydrate",
+        "fetch_extract_fallback",
+        "fetch_extract_quality",
+        "deepresearch_v2_branch",
+        "deepresearch_v2_stage",
+        "deepresearch_stage_timing",
+        "deepresearch_fetch_attempt_timing",
+        "deepresearch_claim_support",
+        "memory_product_outbox",
+    }
+)
 
 # Whitelisted ``detail`` keys. A caller can ONLY write these fields —
 # every other key is dropped. This is the primary privacy wall: it is
@@ -123,88 +126,90 @@ VALID_EVENTS = frozenset({
 # ``api_key`` because those key names are not here. Keep this list
 # tiny and operational — every entry must be an enum / id / number,
 # never something that could carry user text.
-_ALLOWED_DETAIL_KEYS = frozenset({
-    "error_class",   # llm_call_failed: timeout / auth / rate_limit / ...
-    "skill_name",    # skill_invoked: which builtin skill
-    "latency_ms",    # llm_call_ok: round-trip time
-    "duration_ms",   # generic timing
-    "count",         # generic counter
-    "file",          # crash: associated crash_reports filename
-    "reason",        # app_start_failed: short reason code
-    "provider",      # llm route: 'local' / 'cloud'
-    "model",         # model id (not sensitive)
-    "code",          # http status / exit code
-    "attempt",       # retry attempt number
-    "ratio",         # generic fraction
-    "ok",            # generic bool
-    # WI-T1.7 last-mile artifact_action detail keys (脱敏:无 path / 无 url).
-    "action_id",     # open / show_in_folder / copy_path / save_as / preview
-    "tool_name",     # ppt_create / excel_create / doc_create / ...
-    # WI-T2.4/T2.5 verify metric details (无敏感内容).
-    "verifier",      # file_exists / git_diff / build / test
-    "missing",       # missing toolchain name (npm / pytest / git)
-    # WI-T2.1 v3 verify_gate_init detail (脱敏: mode 是枚举, count 是数字).
-    "mode",            # verify_gate_init: off / shadow / strict
-    "patterns_loaded", # verify_gate_init: 加载的 ClaimPattern 数
-    "session_id",      # verify_gate_nudge_injected: hash 后 sid（caller 自管脱敏）
-    "nudge_count",     # verify_gate_nudge_injected: 第几次 nudge
-    # WI-HM-1 verify_exhausted detail (脱敏: bool, 无用户文本).
-    "stagnant",        # verify_exhausted: 是否因 stagnation 触发耗尽
-    # WI-C1 Companion+Code v1 Stage C — agent_parallel subagent_progress
-    # detail keys.
-    "task_id",         # subagent_progress: caller-supplied short id
-    "status",          # subagent_progress: starting / completed / failed
-    # 子代理并发驱动 (WI-1.5) — subagent_scheduled / subagent_progress 额外维度
-    # （脱敏：run_id 是 sid 派生短 id、kind 是枚举，均无用户文本）.
-    "run_id",          # subagent_scheduled: <parent_sid>.par-<task_id>
-    "workflow_version", # durable workflow manifest version, e.g. v5
-    "kind",            # subagent_scheduled: research/code/doc/web/fileops/general
-    # WI-G1 Companion+Code v2 Multi-Agent Team — team_task_* detail keys.
-    "team_id",         # team_task_*: caller-supplied short id (uuid hex)
-    "teammate_id",     # team_task_claimed/done: who did the work
-    # R-T3 §15.4 LLM 降级矩阵 detail keys.
-    "degradation_type",  # which LLM dependency point degraded
-    # SearchGateway / DeepResearch v2/v3 dimensions. Values are enums,
-    # counters, durations, ratios or booleans -- never free-form content.
-    "error_code",
-    "cache_hit",
-    "candidates",
-    "kept",
-    "dropped",
-    "domains",
-    "stage",
-    "branch_id",
-    "degraded",
-    "supported",
-    "unsupported",
-    "support_rate",
-    "fetcher",
-    "extractor",
-    "query_count",
-    "question_count",
-    "active_branch_count",
-    "providers",
-    "direct_sources",
-    "attempted",
-    "succeeded",
-    "passages",
-    "iteration",
-    "followup_count",
-    "new_evidence",
-    "sections",
-    "claim_count",
-    "citations",
-    "artifact_count",
-    "report_bytes",
-    "request_id",          # random request correlation id, never query text
-    "permit",              # closed / half_open / half_open_busy / open
-    "circuit_generation",  # monotonically increasing provider generation
-    "probe_outcome",       # hit / empty / failure / cancel / not_probe
-    "failure_class",       # timeout / blocked / captcha / rate_limit / ...
-    "transition",          # closed/open/half_open transition enum
-    "upstream_called",     # true only when a provider transport call happened
-    "is_rescue",           # whether the attempt belongs to empty-aware rescue
-})
+_ALLOWED_DETAIL_KEYS = frozenset(
+    {
+        "error_class",  # llm_call_failed: timeout / auth / rate_limit / ...
+        "skill_name",  # skill_invoked: which builtin skill
+        "latency_ms",  # llm_call_ok: round-trip time
+        "duration_ms",  # generic timing
+        "count",  # generic counter
+        "file",  # crash: associated crash_reports filename
+        "reason",  # app_start_failed: short reason code
+        "provider",  # llm route: 'local' / 'cloud'
+        "model",  # model id (not sensitive)
+        "code",  # http status / exit code
+        "attempt",  # retry attempt number
+        "ratio",  # generic fraction
+        "ok",  # generic bool
+        # WI-T1.7 last-mile artifact_action detail keys (脱敏:无 path / 无 url).
+        "action_id",  # open / show_in_folder / copy_path / save_as / preview
+        "tool_name",  # ppt_create / excel_create / doc_create / ...
+        # WI-T2.4/T2.5 verify metric details (无敏感内容).
+        "verifier",  # file_exists / git_diff / build / test
+        "missing",  # missing toolchain name (npm / pytest / git)
+        # WI-T2.1 v3 verify_gate_init detail (脱敏: mode 是枚举, count 是数字).
+        "mode",  # verify_gate_init: off / shadow / strict
+        "patterns_loaded",  # verify_gate_init: 加载的 ClaimPattern 数
+        "session_id",  # verify_gate_nudge_injected: hash 后 sid（caller 自管脱敏）
+        "nudge_count",  # verify_gate_nudge_injected: 第几次 nudge
+        # WI-HM-1 verify_exhausted detail (脱敏: bool, 无用户文本).
+        "stagnant",  # verify_exhausted: 是否因 stagnation 触发耗尽
+        # WI-C1 Companion+Code v1 Stage C — agent_parallel subagent_progress
+        # detail keys.
+        "task_id",  # subagent_progress: caller-supplied short id
+        "status",  # subagent_progress: starting / completed / failed
+        # 子代理并发驱动 (WI-1.5) — subagent_scheduled / subagent_progress 额外维度
+        # （脱敏：run_id 是 sid 派生短 id、kind 是枚举，均无用户文本）.
+        "run_id",  # subagent_scheduled: <parent_sid>.par-<task_id>
+        "workflow_version",  # durable workflow manifest version, e.g. v5
+        "kind",  # subagent_scheduled: research/code/doc/web/fileops/general
+        # WI-G1 Companion+Code v2 Multi-Agent Team — team_task_* detail keys.
+        "team_id",  # team_task_*: caller-supplied short id (uuid hex)
+        "teammate_id",  # team_task_claimed/done: who did the work
+        # R-T3 §15.4 LLM 降级矩阵 detail keys.
+        "degradation_type",  # which LLM dependency point degraded
+        # SearchGateway / DeepResearch v2/v3 dimensions. Values are enums,
+        # counters, durations, ratios or booleans -- never free-form content.
+        "error_code",
+        "cache_hit",
+        "candidates",
+        "kept",
+        "dropped",
+        "domains",
+        "stage",
+        "branch_id",
+        "degraded",
+        "supported",
+        "unsupported",
+        "support_rate",
+        "fetcher",
+        "extractor",
+        "query_count",
+        "question_count",
+        "active_branch_count",
+        "providers",
+        "direct_sources",
+        "attempted",
+        "succeeded",
+        "passages",
+        "iteration",
+        "followup_count",
+        "new_evidence",
+        "sections",
+        "claim_count",
+        "citations",
+        "artifact_count",
+        "report_bytes",
+        "request_id",  # random request correlation id, never query text
+        "permit",  # closed / half_open / half_open_busy / open
+        "circuit_generation",  # monotonically increasing provider generation
+        "probe_outcome",  # hit / empty / failure / cancel / not_probe
+        "failure_class",  # timeout / blocked / captcha / rate_limit / ...
+        "transition",  # closed/open/half_open transition enum
+        "upstream_called",  # true only when a provider transport call happened
+        "is_rescue",  # whether the attempt belongs to empty-aware rescue
+    }
+)
 
 # Max length of any *surviving* string value — defence-in-depth second
 # layer behind the key whitelist. An ``error_class`` over 120 chars is
@@ -319,7 +324,8 @@ class MetricsSink:
             self._path.write_text("\n".join(tail) + "\n", encoding="utf-8")
             log.debug(
                 "metrics_sink: rotated %s (kept %d lines)",
-                self._path, len(tail),
+                self._path,
+                len(tail),
             )
         except OSError as exc:
             log.debug("metrics_sink: rotation failed: %s", exc)
@@ -333,9 +339,7 @@ class MetricsSink:
             return []
         out: list[dict[str, Any]] = []
         try:
-            for line in self._path.read_text(
-                encoding="utf-8", errors="replace"
-            ).splitlines():
+            for line in self._path.read_text(encoding="utf-8", errors="replace").splitlines():
                 line = line.strip()
                 if not line:
                     continue
@@ -382,9 +386,11 @@ def get_default_sink() -> MetricsSink:
         return _default_sink
     try:
         from paths import user_data_dir  # type: ignore
+
         base = user_data_dir()
     except Exception:  # noqa: BLE001
         import tempfile
+
         base = Path(tempfile.gettempdir()) / "deskpet"
     _default_sink = MetricsSink(Path(base) / "metrics.jsonl")
     return _default_sink

@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 """Async production adapter for the shared in-process SearchGateway."""
+
 from __future__ import annotations
 
 import json

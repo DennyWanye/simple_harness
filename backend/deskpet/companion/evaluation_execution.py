@@ -128,9 +128,7 @@ class EvaluationExecutionFenceV1:
     adapter_fingerprint: str
 
     @classmethod
-    def from_mapping(
-        cls, row: Mapping[str, Any]
-    ) -> EvaluationExecutionFenceV1:
+    def from_mapping(cls, row: Mapping[str, Any]) -> EvaluationExecutionFenceV1:
         try:
             return cls(
                 evaluation_id=str(row["evaluation_id"]),
@@ -153,9 +151,7 @@ class EvaluationExecutionFenceV1:
                 risk_hash=str(row["risk_hash"]),
                 risk_level=str(row["risk_level"]),
                 authorization_id=(
-                    None
-                    if row["authorization_id"] is None
-                    else str(row["authorization_id"])
+                    None if row["authorization_id"] is None else str(row["authorization_id"])
                 ),
                 authorization_consumed=bool(row["authorization_consumed"]),
                 policy_verified=bool(row["policy_verified"]),
@@ -173,9 +169,7 @@ class EvaluationExecutionFenceV1:
                 adapter_fingerprint=str(row["adapter_fingerprint"]),
             )
         except (KeyError, TypeError, ValueError) as exc:
-            raise EvaluationExecutionError(
-                "evaluation_fence_snapshot_incomplete"
-            ) from exc
+            raise EvaluationExecutionError("evaluation_fence_snapshot_incomplete") from exc
 
 
 @dataclass(frozen=True, slots=True)
@@ -203,13 +197,9 @@ class EvaluationCaseCompletionV1:
     survivor_count: int | None = None
 
     @classmethod
-    def from_mapping(
-        cls, row: Mapping[str, Any]
-    ) -> EvaluationCaseCompletionV1:
+    def from_mapping(cls, row: Mapping[str, Any]) -> EvaluationCaseCompletionV1:
         if row.get("status") != "completed":
-            raise EvaluationExecutionError(
-                "evaluation_completion_not_successful"
-            )
+            raise EvaluationExecutionError("evaluation_completion_not_successful")
         try:
             assertions = dict(row["assertions"])
             judge_result = dict(row["judge_result"])
@@ -218,9 +208,7 @@ class EvaluationCaseCompletionV1:
             outcome_hash = str(row["outcome_hash"])
             reason_code = str(row.get("reason_code") or "evaluation_completed")
         except (KeyError, TypeError, ValueError) as exc:
-            raise EvaluationExecutionError(
-                "evaluation_completion_incomplete"
-            ) from exc
+            raise EvaluationExecutionError("evaluation_completion_incomplete") from exc
         payload = {
             "assertions": assertions,
             "judge_result": judge_result,
@@ -231,9 +219,7 @@ class EvaluationCaseCompletionV1:
             raise EvaluationExecutionError("evaluation_completion_incomplete")
         supplied = row.get("result_hash")
         if supplied is not None and str(supplied) != result_hash:
-            raise EvaluationExecutionError(
-                "evaluation_completion_result_hash_mismatch"
-            )
+            raise EvaluationExecutionError("evaluation_completion_result_hash_mismatch")
         return cls(
             outcome_ref=outcome_ref,
             outcome_hash=outcome_hash,
@@ -419,9 +405,7 @@ class FenceAwareEvaluationCaseExecutor:
                 lease=lease,
             )
             launch = self._make_launch(frozen, fence, lease)
-            self._store.create_evaluation_case_launch(
-                owner, launch, claim_owner=claim_owner
-            )
+            self._store.create_evaluation_case_launch(owner, launch, claim_owner=claim_owner)
             runtime_instance_id = f"evaluation:{launch.launch_id}"
             authorization_nonce = canonical_hash(
                 {
@@ -495,13 +479,11 @@ class FenceAwareEvaluationCaseExecutor:
                     status="not_started",
                     cleanup_receipt_hash=cleanup_hash,
                     survivor_count=survivors,
-                    reason_code=receipt.reason_code
-                    or "evaluation_process_not_started",
+                    reason_code=receipt.reason_code or "evaluation_process_not_started",
                 )
                 return EvaluationCaseExecutionOutcomeV1(
                     status="not_started",
-                    reason_code=receipt.reason_code
-                    or "evaluation_process_not_started",
+                    reason_code=receipt.reason_code or "evaluation_process_not_started",
                     launch_id=launch.launch_id,
                 )
             if receipt.outcome == "unknown":
@@ -523,15 +505,11 @@ class FenceAwareEvaluationCaseExecutor:
                     expected_launch_status="claimed",
                     cleanup_receipt_hash=cleanup_hash,
                     survivor_count=survivors,
-                    reason_code=receipt.reason_code
-                    or "evaluation_start_unknown",
+                    reason_code=receipt.reason_code or "evaluation_start_unknown",
                 )
                 return EvaluationCaseExecutionOutcomeV1(
-                    status=(
-                        "inconclusive" if survivors == 0 else "cleanup_required"
-                    ),
-                    reason_code=receipt.reason_code
-                    or "evaluation_start_unknown",
+                    status=("inconclusive" if survivors == 0 else "cleanup_required"),
+                    reason_code=receipt.reason_code or "evaluation_start_unknown",
                     launch_id=launch.launch_id,
                 )
             ack = self._start_ack(launch.launch_id, receipt)
@@ -547,19 +525,13 @@ class FenceAwareEvaluationCaseExecutor:
             )
 
         try:
-            completion_row = await port.await_health(
-                receipt, frozen.completion_envelope
-            )
-            completion = EvaluationCaseCompletionV1.from_mapping(
-                completion_row
-            )
+            completion_row = await port.await_health(receipt, frozen.completion_envelope)
+            completion = EvaluationCaseCompletionV1.from_mapping(completion_row)
             cleanup_hash, survivors = await self._abort_started(
                 port, receipt, runtime_instance_id=runtime_instance_id
             )
             if cleanup_hash is None or survivors != 0:
-                raise EvaluationExecutionError(
-                    "evaluation_completion_cleanup_required"
-                )
+                raise EvaluationExecutionError("evaluation_completion_cleanup_required")
             completion = replace(
                 completion,
                 cleanup_receipt_hash=cleanup_hash,
@@ -613,9 +585,7 @@ class FenceAwareEvaluationCaseExecutor:
                 reason_code=reason_code,
             )
             return EvaluationCaseExecutionOutcomeV1(
-                status=(
-                    "inconclusive" if survivors == 0 else "cleanup_required"
-                ),
+                status=("inconclusive" if survivors == 0 else "cleanup_required"),
                 reason_code=reason_code,
                 launch_id=launch.launch_id,
             )
@@ -630,15 +600,10 @@ class FenceAwareEvaluationCaseExecutor:
             "abort_evaluation_case_execution",
             "settle_evaluation_case_launch",
         )
-        missing = tuple(
-            name
-            for name in required
-            if not callable(getattr(self._store, name, None))
-        )
+        missing = tuple(name for name in required if not callable(getattr(self._store, name, None)))
         if missing:
             raise EvaluationExecutionError(
-                "evaluation_store_execution_api_unavailable:"
-                + ",".join(missing)
+                "evaluation_store_execution_api_unavailable:" + ",".join(missing)
             )
 
     def _read_and_validate_fence(
@@ -653,9 +618,7 @@ class FenceAwareEvaluationCaseExecutor:
     ) -> EvaluationExecutionFenceV1:
         reader = getattr(self._store, "get_evaluation_execution_fence", None)
         if not callable(reader):
-            raise EvaluationExecutionError(
-                "evaluation_fence_snapshot_api_unavailable"
-            )
+            raise EvaluationExecutionError("evaluation_fence_snapshot_api_unavailable")
         fence = EvaluationExecutionFenceV1.from_mapping(
             reader(
                 owner,
@@ -679,9 +642,7 @@ class FenceAwareEvaluationCaseExecutor:
             and fence.permit_mode == permit.mode
             and fence.permit_hash == permit.permit_hash
             and fence.permit_status in {"issued", "claimed"}
-            and fence.issued_revocation_epoch
-            == permit.issued_revocation_epoch
-            == lease.epoch
+            and fence.issued_revocation_epoch == permit.issued_revocation_epoch == lease.epoch
             and fence.preflight_ref == permit.preflight_ref
             and fence.preflight_hash == permit.preflight_hash
             and fence.risk_ref == permit.risk_ref
@@ -702,11 +663,7 @@ class FenceAwareEvaluationCaseExecutor:
             and self._barrier.is_current(lease)
         )
         if permit.mode == "safe_auto":
-            exact = (
-                exact
-                and fence.risk_level == "low"
-                and fence.authorization_id is None
-            )
+            exact = exact and fence.risk_level == "low" and fence.authorization_id is None
         elif permit.mode == "user_authorized":
             exact = (
                 exact
@@ -774,13 +731,9 @@ class FenceAwareEvaluationCaseExecutor:
         runtime_instance_id: str,
     ) -> None:
         if receipt.runtime_instance_id != runtime_instance_id:
-            raise EvaluationExecutionError(
-                "evaluation_start_runtime_identity_mismatch"
-            )
+            raise EvaluationExecutionError("evaluation_start_runtime_identity_mismatch")
         if receipt.outcome not in {"started", "not_started", "unknown"}:
-            raise EvaluationExecutionError(
-                "evaluation_start_outcome_invalid"
-            )
+            raise EvaluationExecutionError("evaluation_start_outcome_invalid")
         if frozen.execution_kind == "managed_process" and receipt.outcome == "started":
             if (
                 not receipt.job_identity
@@ -788,14 +741,10 @@ class FenceAwareEvaluationCaseExecutor:
                 or receipt.process_create_time is None
                 or not receipt.command_line_hash
             ):
-                raise EvaluationExecutionError(
-                    "evaluation_start_ack_incomplete"
-                )
+                raise EvaluationExecutionError("evaluation_start_ack_incomplete")
 
     @staticmethod
-    def _start_ack(
-        launch_id: str, receipt: ManagedProcessStartReceipt
-    ) -> EvaluationCaseStartAckV1:
+    def _start_ack(launch_id: str, receipt: ManagedProcessStartReceipt) -> EvaluationCaseStartAckV1:
         facts = {
             "schema_version": 1,
             "launch_id": launch_id,
@@ -825,9 +774,7 @@ class FenceAwareEvaluationCaseExecutor:
         claim_owner: str,
         claim_epoch: int,
     ) -> EvaluationCaseExecutionOutcomeV1:
-        reader = getattr(
-            self._store, "get_evaluation_case_recovery_state", None
-        )
+        reader = getattr(self._store, "get_evaluation_case_recovery_state", None)
         if not callable(reader):
             return EvaluationCaseExecutionOutcomeV1(
                 status="recovery_only",
@@ -853,9 +800,7 @@ class FenceAwareEvaluationCaseExecutor:
             status="recovery_only",
             reason_code=reason,
             launch_id=(
-                None
-                if state is None or state.get("launch_id") is None
-                else str(state["launch_id"])
+                None if state is None or state.get("launch_id") is None else str(state["launch_id"])
             ),
         )
 
@@ -881,9 +826,7 @@ class FenceAwareEvaluationCaseExecutor:
         cleanup_hash, survivors = await self._verify_absent(
             port, probe, runtime_instance_id=runtime_instance_id
         )
-        aborter = getattr(
-            self._store, "abort_evaluation_case_execution", None
-        )
+        aborter = getattr(self._store, "abort_evaluation_case_execution", None)
         if callable(aborter):
             aborter(
                 owner,
@@ -943,9 +886,7 @@ def _int_field(row: Mapping[str, Any], key: str) -> int:
     try:
         return int(row[key])
     except (KeyError, TypeError, ValueError) as exc:
-        raise EvaluationExecutionError(
-            f"evaluation_claim_{key}_missing"
-        ) from exc
+        raise EvaluationExecutionError(f"evaluation_claim_{key}_missing") from exc
 
 
 __all__ = [

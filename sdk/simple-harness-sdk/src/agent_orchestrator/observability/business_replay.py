@@ -69,7 +69,10 @@ class InventoryError(ValueError):
 @cache
 def inventory() -> Mapping[str, Any]:
     raw = json.loads(Path(__file__).with_name("business_replay_inventory.json").read_text("utf-8"))
-    if raw.get("inventory_version") != INVENTORY_VERSION or raw.get("replay_version") != REPLAY_VERSION:
+    if (
+        raw.get("inventory_version") != INVENTORY_VERSION
+        or raw.get("replay_version") != REPLAY_VERSION
+    ):
         raise InventoryError("business replay inventory has the wrong version")
     tables = raw.get("tables")
     if not isinstance(tables, dict) or not tables:
@@ -88,12 +91,22 @@ def inventory() -> Mapping[str, Any]:
             elif "mission_id" not in entry["fields"] and not isinstance(entry.get("owner"), dict):
                 problems.append(f"{name}: a business table without mission_id names its owner")
             elif "silent_ok" in entry and not str(entry["silent_ok"]).strip():
-                problems.append(f"{name}: silent_ok says why the table changes without a domain event")
+                problems.append(
+                    f"{name}: silent_ok says why the table changes without a domain event"
+                )
         elif kind == "global":
-            if not set(entry) <= {"class", "fields", "note", "rebuild", "silent_ok"} or entry.get("rebuild") != "fold" \
-                    or not str(entry.get("note") or "").strip():
-                problems.append(f"{name}: a global table is folded on the deployment timeline and says what it is")
-        elif not set(entry) <= {"class", "fields", "note", "named"} or not str(entry.get("note") or "").strip():
+            if (
+                not set(entry) <= {"class", "fields", "note", "rebuild", "silent_ok"}
+                or entry.get("rebuild") != "fold"
+                or not str(entry.get("note") or "").strip()
+            ):
+                problems.append(
+                    f"{name}: a global table is folded on the deployment timeline and says what it is"
+                )
+        elif (
+            not set(entry) <= {"class", "fields", "note", "named"}
+            or not str(entry.get("note") or "").strip()
+        ):
             problems.append(f"{name}: a table outside business says why it is not rebuilt")
     if problems:
         raise InventoryError("; ".join(problems))
@@ -105,10 +118,15 @@ def check_inventory(store: Store) -> None:
 
     tables = inventory()["tables"]
     connection = store.connection
-    live = {row[0] for row in connection.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")}
+    live = {
+        row[0]
+        for row in connection.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+        )
+    }
     triggers = connection.execute(
-        "SELECT tbl_name, upper(sql) FROM sqlite_master WHERE type='trigger'").fetchall()
+        "SELECT tbl_name, upper(sql) FROM sqlite_master WHERE type='trigger'"
+    ).fetchall()
     problems: list[str] = []
     for name in sorted(live - set(tables)):
         problems.append(f"table {name} is not classified")
@@ -121,9 +139,15 @@ def check_inventory(store: Store) -> None:
             problems.append(f"table {name} fields differ from the inventory")
         if entry.get("rebuild") == "immutable_source" or entry.get("named") is True:
             for operation in ("UPDATE", "DELETE"):
-                if not any(table == name and f"BEFORE {operation} ON {name.upper()}" in sql
-                           and "RAISE(" in sql for table, sql in triggers):
-                    problems.append(f"table {name} is an immutable source without a {operation} guard")
+                if not any(
+                    table == name
+                    and f"BEFORE {operation} ON {name.upper()}" in sql
+                    and "RAISE(" in sql
+                    for table, sql in triggers
+                ):
+                    problems.append(
+                        f"table {name} is an immutable source without a {operation} guard"
+                    )
         if entry.get("rebuild") == "fold" and not primary_key(connection, name):
             problems.append(f"table {name} changes but has no explicit primary key")
     if problems:
@@ -134,8 +158,10 @@ def _events(store: Store, mission_id: str | None) -> list[tuple[int, dict[str, A
     sql, args = "SELECT seq, payload_json FROM events WHERE type=?", [EVENT_TYPE]
     if mission_id is not None:
         sql, args = sql + " AND mission_id=?", [EVENT_TYPE, mission_id]
-    return [(int(seq), json.loads(payload)) for seq, payload in store.connection.execute(
-        sql + " ORDER BY seq", args)]
+    return [
+        (int(seq), json.loads(payload))
+        for seq, payload in store.connection.execute(sql + " ORDER BY seq", args)
+    ]
 
 
 def _key_text(key: Mapping[str, Any]) -> str:
@@ -149,55 +175,90 @@ def _mission_rows(store: Store, mission_id: str, table: str, named_keys: set[str
     entry = inventory()["tables"][table]
     if "mission_id" in entry["fields"]:
         return store.connection.execute(
-            f"SELECT rowid, * FROM {table} WHERE mission_id=?", (mission_id,)).fetchall()
+            f"SELECT rowid, * FROM {table} WHERE mission_id=?", (mission_id,)
+        ).fetchall()
     owner = entry.get("owner")
     if owner is not None and "table" in owner:
         return store.connection.execute(
             f"SELECT t.rowid, t.* FROM {table} t JOIN {owner['table']} o ON t.{owner['column']}=o.{owner['key']}"
-            " WHERE o.mission_id=?", (mission_id,)).fetchall()
+            " WHERE o.mission_id=?",
+            (mission_id,),
+        ).fetchall()
     if owner is not None:
         return store.connection.execute(
-            f"SELECT rowid, * FROM {table} WHERE {owner['column']}=?", (mission_id,)).fetchall()
-    return [row for row in store.connection.execute(f"SELECT rowid, * FROM {table}")
-            if _key_text(row_identity(store.connection, table, row)[0]) in named_keys]
+            f"SELECT rowid, * FROM {table} WHERE {owner['column']}=?", (mission_id,)
+        ).fetchall()
+    return [
+        row
+        for row in store.connection.execute(f"SELECT rowid, * FROM {table}")
+        if _key_text(row_identity(store.connection, table, row)[0]) in named_keys
+    ]
 
 
 def verify_mission(store: Store, mission_id: str) -> dict[str, Any]:
     """Rebuild one Mission's business tables from its events and compare (read only)."""
 
     created = store.connection.execute(
-        "SELECT payload_json FROM events WHERE mission_id=? AND type='MissionCreated'", (mission_id,)
+        "SELECT payload_json FROM events WHERE mission_id=? AND type='MissionCreated'",
+        (mission_id,),
     ).fetchone()
     scope = None if created is None else json.loads(created[0]).get("replay_scope")
     if scope != replay_scope_digest():
-        return {"version": REPLAY_VERSION, "mission_id": mission_id, "status": OUT_OF_SCOPE,
-                "reason": "created under another inventory or codec manifest" if created else "no MissionCreated",
-                "tables": {}}
-    report, silent = _rebuild(store, mission_id, "business",
-                              lambda table, named_keys: _mission_rows(store, mission_id, table, named_keys))
+        return {
+            "version": REPLAY_VERSION,
+            "mission_id": mission_id,
+            "status": OUT_OF_SCOPE,
+            "reason": "created under another inventory or codec manifest"
+            if created
+            else "no MissionCreated",
+            "tables": {},
+        }
+    report, silent = _rebuild(
+        store,
+        mission_id,
+        "business",
+        lambda table, named_keys: _mission_rows(store, mission_id, table, named_keys),
+    )
     statuses = Counter(item["status"] for item in report.values())
-    return {"version": REPLAY_VERSION, "mission_id": mission_id,
-            "status": INCONSISTENT if statuses[INCONSISTENT] else CONSISTENT,
-            "counts": dict(sorted(statuses.items())), "silent_changes": silent[:20], "tables": report}
+    return {
+        "version": REPLAY_VERSION,
+        "mission_id": mission_id,
+        "status": INCONSISTENT if statuses[INCONSISTENT] else CONSISTENT,
+        "counts": dict(sorted(statuses.items())),
+        "silent_changes": silent[:20],
+        "tables": report,
+    }
 
 
 def verify_global(store: Store) -> dict[str, Any]:
     """The global tables (method library, policies), folded from the deployment timeline's
     whole-row changes and compared with the library (阶段 G 第 6 批)."""
 
-    report, silent = _rebuild(store, DEPLOYMENT_TIMELINE, "global",
-                              lambda table, _named: store.connection.execute(f"SELECT rowid, * FROM {table}").fetchall())
+    report, silent = _rebuild(
+        store,
+        DEPLOYMENT_TIMELINE,
+        "global",
+        lambda table, _named: store.connection.execute(f"SELECT rowid, * FROM {table}").fetchall(),
+    )
     statuses = Counter(item["status"] for item in report.values())
-    return {"status": INCONSISTENT if statuses[INCONSISTENT] else CONSISTENT,
-            "counts": dict(sorted(statuses.items())), "silent_changes": silent[:20], "tables": report}
+    return {
+        "status": INCONSISTENT if statuses[INCONSISTENT] else CONSISTENT,
+        "counts": dict(sorted(statuses.items())),
+        "silent_changes": silent[:20],
+        "tables": report,
+    }
 
 
-def _rebuild(store: Store, owner: str, kind: str, rows_of: Any) -> tuple[dict[str, dict[str, Any]], list[str]]:
+def _rebuild(
+    store: Store, owner: str, kind: str, rows_of: Any
+) -> tuple[dict[str, dict[str, Any]], list[str]]:
     """One generic fold over ``owner``'s ``RowsWritten``: chain every change, compare the result
     column by column with the library, and report changes made without a domain event."""
 
     tables = inventory()["tables"]
-    problems: dict[str, list[str]] = {name: [] for name, entry in tables.items() if entry["class"] == kind}
+    problems: dict[str, list[str]] = {
+        name: [] for name, entry in tables.items() if entry["class"] == kind
+    }
     named: Counter[tuple[str, str, str]] = Counter()
     state: dict[str, dict[str, tuple[str, dict[str, Any]]]] = {}
     silent: list[str] = []
@@ -218,8 +279,13 @@ def _rebuild(store: Store, owner: str, kind: str, rows_of: Any) -> tuple[dict[st
                 problems.setdefault(table, []).append(f"seq {seq}: row {key} differs from its hash")
             state[table][key] = (item["after"], item["row"])
         touched = {item["table"] for item in payload["changed"]} & set(problems) | {
-            item["table"] for item in payload["named"] if tables[item["table"]]["class"] == kind}
-        if touched and not payload["with_events"] and not all("silent_ok" in tables[t] for t in touched):
+            item["table"] for item in payload["named"] if tables[item["table"]]["class"] == kind
+        }
+        if (
+            touched
+            and not payload["with_events"]
+            and not all("silent_ok" in tables[t] for t in touched)
+        ):
             silent.append(f"seq {seq}: {sorted(touched)} changed without a domain event")
             for table in touched:
                 problems.setdefault(table, []).append(f"seq {seq}: changed without a domain event")
@@ -237,25 +303,36 @@ def _rebuild(store: Store, owner: str, kind: str, rows_of: Any) -> tuple[dict[st
                 count = named[(table, _key_text(key), digest)]
                 if count != 1:
                     problems[table].append(f"row {_key_text(key)} is named {count} times")
-            problems[table] += [f"named row {key} is missing or differs"
-                                for (name, key, digest) in named if name == table and (key, digest) not in present]
+            problems[table] += [
+                f"named row {key} is missing or differs"
+                for (name, key, digest) in named
+                if name == table and (key, digest) not in present
+            ]
         else:
             columns = list(entry["fields"])
             rebuilt = {key: digest for key, (digest, _row) in state.get(table, {}).items()}
             actual: dict[str, str] = {}
             for row in rows:
                 content = content_of(row, columns)
-                actual[_key_text({name: content[name] for name in primary_key(connection, table)})] = \
-                    content_hash(content)
+                actual[
+                    _key_text({name: content[name] for name in primary_key(connection, table)})
+                ] = content_hash(content)
             problems[table] += [f"row {key} is not rebuilt" for key in actual if key not in rebuilt]
-            problems[table] += [f"rebuilt row {key} is not in the library" for key in rebuilt if key not in actual]
-            problems[table] += [f"row {key} differs from its rebuilt version"
-                                for key in actual if key in rebuilt and actual[key] != rebuilt[key]]
-        report[table] = {"status": INCONSISTENT if problems[table] else CONSISTENT, "rows": len(rows),
-                         "rebuild": entry["rebuild"], "problems": problems[table][:20]}
+            problems[table] += [
+                f"rebuilt row {key} is not in the library" for key in rebuilt if key not in actual
+            ]
+            problems[table] += [
+                f"row {key} differs from its rebuilt version"
+                for key in actual
+                if key in rebuilt and actual[key] != rebuilt[key]
+            ]
+        report[table] = {
+            "status": INCONSISTENT if problems[table] else CONSISTENT,
+            "rows": len(rows),
+            "rebuild": entry["rebuild"],
+            "problems": problems[table][:20],
+        }
     return report, silent
-
-
 
 
 def verify_library(store: Store) -> dict[str, Any]:
@@ -276,14 +353,23 @@ def verify_library(store: Store) -> dict[str, Any]:
                 unnamed.append(f"{table} {_key_text(key)}")
             elif count > 1:
                 twice.append(f"{table} {_key_text(key)}")
-    deployment = int(store.connection.execute(
-        "SELECT count(*) FROM events WHERE type=? AND mission_id=?", (EVENT_TYPE, DEPLOYMENT_TIMELINE)
-    ).fetchone()[0])
+    deployment = int(
+        store.connection.execute(
+            "SELECT count(*) FROM events WHERE type=? AND mission_id=?",
+            (EVENT_TYPE, DEPLOYMENT_TIMELINE),
+        ).fetchone()[0]
+    )
     global_report = verify_global(store)
     bad = unnamed or twice or global_report["status"] != CONSISTENT
-    return {"version": REPLAY_VERSION, "status": INCONSISTENT if bad else CONSISTENT,
-            "unnamed_rows": unnamed[:50], "unnamed_count": len(unnamed), "named_twice": twice[:50],
-            "deployment_events": deployment, "global": global_report}
+    return {
+        "version": REPLAY_VERSION,
+        "status": INCONSISTENT if bad else CONSISTENT,
+        "unnamed_rows": unnamed[:50],
+        "unnamed_count": len(unnamed),
+        "named_twice": twice[:50],
+        "deployment_events": deployment,
+        "global": global_report,
+    }
 
 
 USAGE_PREFIX = "provider-invocation:"
@@ -303,23 +389,32 @@ def verify_execution_ledgers(store: Store, execution_paths: list[Path]) -> dict[
 
     calls: dict[str, list[Any]] = {}
     for path in execution_paths:
-        with closing(sqlite3.connect(Path(path).resolve().as_uri() + "?mode=ro", uri=True,
-                                     isolation_level=None)) as connection:
+        with closing(
+            sqlite3.connect(
+                Path(path).resolve().as_uri() + "?mode=ro", uri=True, isolation_level=None
+            )
+        ) as connection:
             connection.row_factory = sqlite3.Row
             if not connection.execute(
-                    "SELECT 1 FROM sqlite_master WHERE name='provider_invocations'").fetchone():
+                "SELECT 1 FROM sqlite_master WHERE name='provider_invocations'"
+            ).fetchone():
                 continue
             uow = SqliteExecutionUnitOfWork(Database(Path(path), connection))
-            for (invocation_id,) in connection.execute("SELECT invocation_id FROM provider_invocations"):
-                calls.setdefault(invocation_id, []).append(uow.read_effective_provider_invocation(invocation_id))
+            for (invocation_id,) in connection.execute(
+                "SELECT invocation_id FROM provider_invocations"
+            ):
+                calls.setdefault(invocation_id, []).append(
+                    uow.read_effective_provider_invocation(invocation_id)
+                )
     missing, mismatched, foreign, ambiguous, late = [], [], [], [], []
     for row in store.connection.execute(
-            "SELECT usage_ref,input_tokens,output_tokens,unknown FROM imported_usage ORDER BY usage_ref"):
+        "SELECT usage_ref,input_tokens,output_tokens,unknown FROM imported_usage ORDER BY usage_ref"
+    ):
         usage_ref = row["usage_ref"]
         if not usage_ref.startswith(USAGE_PREFIX):
             foreign.append(usage_ref)
             continue
-        records = calls.get(usage_ref[len(USAGE_PREFIX):], [])
+        records = calls.get(usage_ref[len(USAGE_PREFIX) :], [])
         if not records:
             missing.append(usage_ref)
             continue
@@ -328,20 +423,40 @@ def verify_execution_ledgers(store: Store, execution_paths: list[Path]) -> dict[
             continue
         usage = records[0].usage_json if isinstance(records[0].usage_json, Mapping) else {}
         tokens = usage.get("usage") if isinstance(usage.get("usage"), Mapping) else {}
-        known = (str(records[0].state) in {"succeeded", "failed"}
-                 and all(type(tokens.get(k)) is int for k in ("input_tokens", "output_tokens")))
+        known = str(records[0].state) in {"succeeded", "failed"} and all(
+            type(tokens.get(k)) is int for k in ("input_tokens", "output_tokens")
+        )
         if row["unknown"]:
             if known and tokens["input_tokens"] > 0 and tokens["output_tokens"] > 0:
                 late.append(usage_ref)
         elif not known or (row["input_tokens"], row["output_tokens"]) != (
-                tokens["input_tokens"], tokens["output_tokens"]):
+            tokens["input_tokens"],
+            tokens["output_tokens"],
+        ):
             mismatched.append(usage_ref)
     bad = missing or mismatched or foreign or ambiguous
-    return {"status": INCONSISTENT if bad else CONSISTENT, "calls": len(calls),
-            "missing": missing[:50], "mismatched": mismatched[:50], "foreign": foreign[:50],
-            "ambiguous": ambiguous[:50], "late_known": len(late)}
+    return {
+        "status": INCONSISTENT if bad else CONSISTENT,
+        "calls": len(calls),
+        "missing": missing[:50],
+        "mismatched": mismatched[:50],
+        "foreign": foreign[:50],
+        "ambiguous": ambiguous[:50],
+        "late_known": len(late),
+    }
 
 
-__all__ = ("CLASSES", "CONSISTENT", "INCONSISTENT", "OUT_OF_SCOPE", "REPLAY_VERSION",
-           "InventoryError", "check_inventory", "inventory", "verify_execution_ledgers",
-           "verify_global", "verify_library", "verify_mission")
+__all__ = (
+    "CLASSES",
+    "CONSISTENT",
+    "INCONSISTENT",
+    "OUT_OF_SCOPE",
+    "REPLAY_VERSION",
+    "InventoryError",
+    "check_inventory",
+    "inventory",
+    "verify_execution_ledgers",
+    "verify_global",
+    "verify_library",
+    "verify_mission",
+)

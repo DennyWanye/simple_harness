@@ -209,9 +209,7 @@ async def test_cleanup_order_boundary_and_dry_run_are_clock_driven(tmp_path: Pat
     finally:
         await db.close()
 
-    manager = WorkflowRetentionManager(
-        db_path, blob_root, policy=_policy(), clock=FixedClock(now)
-    )
+    manager = WorkflowRetentionManager(db_path, blob_root, policy=_policy(), clock=FixedClock(now))
     preview = await manager.cleanup(dry_run=True)
     assert preview.stage_names == CLEANUP_STAGE_ORDER
     assert preview.stage(CLEANUP_STAGE_ORDER[0]).candidates == (
@@ -359,7 +357,9 @@ async def test_reachability_keeps_checkpoint_owned_by_live_run(tmp_path: Path):
     db = await _db(db_path)
     try:
         checkpoints = await (
-            await db.execute("SELECT checkpoint_id FROM workflow_checkpoints ORDER BY checkpoint_id")
+            await db.execute(
+                "SELECT checkpoint_id FROM workflow_checkpoints ORDER BY checkpoint_id"
+            )
         ).fetchall()
         assert [row["checkpoint_id"] for row in checkpoints] == ["shared"]
         owners = await (
@@ -463,9 +463,7 @@ async def test_startup_reconciles_expired_reservations_and_blob_files(tmp_path: 
     fresh_temp.write_bytes(b"fresh")
     os.utime(fresh_temp, (now, now))
 
-    manager = WorkflowRetentionManager(
-        db_path, blob_root, policy=_policy(), clock=FixedClock(now)
-    )
+    manager = WorkflowRetentionManager(db_path, blob_root, policy=_policy(), clock=FixedClock(now))
     preview = await manager.reconcile_startup(dry_run=True)
     assert preview.stage_names == (RESERVATION_STAGE, *CLEANUP_STAGE_ORDER)
     assert preview.stage(RESERVATION_STAGE).candidates == ("reservation:expired",)
@@ -531,16 +529,17 @@ async def test_startup_collects_dangling_known_refs_but_preserves_unknown_owners
 
     db = await _db(db_path)
     try:
-        assert await (
-            await db.execute("SELECT 1 FROM workflow_blobs WHERE sha256=?", (dangling_digest,))
-        ).fetchone() is None
+        assert (
+            await (
+                await db.execute("SELECT 1 FROM workflow_blobs WHERE sha256=?", (dangling_digest,))
+            ).fetchone()
+            is None
+        )
         assert await (
             await db.execute("SELECT 1 FROM workflow_blobs WHERE sha256=?", (unknown_digest,))
         ).fetchone()
         assert await (
-            await db.execute(
-                "SELECT 1 FROM workflow_blob_refs WHERE sha256=?", (unknown_digest,)
-            )
+            await db.execute("SELECT 1 FROM workflow_blob_refs WHERE sha256=?", (unknown_digest,))
         ).fetchone()
     finally:
         await db.close()
@@ -577,18 +576,17 @@ async def test_bootstrap_runs_optional_startup_reconciliation(tmp_path: Path):
             lambda *_args, **_kwargs: WorkflowContext(ports={}),
         )
     )
-    await service.activate_runtime(
-        required_runtime_identities=(("deep_research", "v1"),)
-    )
+    await service.activate_runtime(required_runtime_identities=(("deep_research", "v1"),))
     assert service.retention_diagnostics.stage_names == (
         RESERVATION_STAGE,
         *CLEANUP_STAGE_ORDER,
     )
     db = await _db(db_path)
     try:
-        assert await (
-            await db.execute("SELECT 1 FROM workflow_target_reservations")
-        ).fetchone() is None
+        assert (
+            await (await db.execute("SELECT 1 FROM workflow_target_reservations")).fetchone()
+            is None
+        )
     finally:
         await db.close()
 

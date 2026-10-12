@@ -8,6 +8,7 @@ a request body can never name a tenant or principal. Deployment assembly
 (``agent_orchestrator.deployment.assembly``) binds the four consumers, factory and native root on
 each Orchestrator lifetime; nothing here is reachable from model or IPC input.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -49,7 +50,9 @@ def host_fingerprint() -> str:
         "sdk_version": SDK_VERSION,
         "sdk_wheel_sha256": SDK_WHEEL_SHA256,
     }
-    return hashlib.sha256(json.dumps(body, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    return hashlib.sha256(
+        json.dumps(body, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
 
 
 def _invalid(message: str = "Assurance 请求的字段或版本无效") -> None:
@@ -62,8 +65,13 @@ def quarantined_read(request: Mapping[str, Any]) -> AssuranceRequestError:
     from agent_orchestrator.api.assurance import AssuranceReadError
 
     request_id = request.get("request_id") if isinstance(request, Mapping) else None
-    error = AssuranceReadError("ROOT_QUARANTINED", "assurance root is quarantined; only the non-disclosing diagnostic is open")
-    return AssuranceRequestError(error.to_json(request_id if isinstance(request_id, str) and request_id else "unknown"))
+    error = AssuranceReadError(
+        "ROOT_QUARANTINED",
+        "assurance root is quarantined; only the non-disclosing diagnostic is open",
+    )
+    return AssuranceRequestError(
+        error.to_json(request_id if isinstance(request_id, str) and request_id else "unknown")
+    )
 
 
 def read_assurance(service: Any, verb: str, request: Mapping[str, Any]) -> dict[str, Any]:
@@ -80,7 +88,9 @@ def read_assurance(service: Any, verb: str, request: Mapping[str, Any]) -> dict[
     control._mission(mission_id)
     reader = getattr(control, f"assurance_{verb}", None)
     if not callable(reader):
-        raise OrchestrationRequestError("assurance_unavailable", "当前 SDK 尚未安装 Assurance 读取接口")
+        raise OrchestrationRequestError(
+            "assurance_unavailable", "当前 SDK 尚未安装 Assurance 读取接口"
+        )
     from agent_orchestrator.api.facade import FacadeError
 
     try:

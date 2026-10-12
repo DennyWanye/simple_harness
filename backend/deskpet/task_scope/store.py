@@ -153,10 +153,18 @@ class CanonicalTaskScopeStore:
                         "WHERE task_scope_id=? AND revision=1",
                         (task_scope_id,),
                     )
-                    if current is None or json.loads(str(current["state_json"])).get("goal") != goal:
+                    if (
+                        current is None
+                        or json.loads(str(current["state_json"])).get("goal") != goal
+                    ):
                         raise TaskScopeConflict("task_scope_identity_conflict")
                     await db.commit()
-                    return TaskScopeReceipt(task_scope_id, subject, int(head["current_revision"]), str(head["state_hash"]))
+                    return TaskScopeReceipt(
+                        task_scope_id,
+                        subject,
+                        int(head["current_revision"]),
+                        str(head["state_hash"]),
+                    )
                 await db.execute(
                     "INSERT INTO task_scopes(task_scope_id,subject,title,created_at) VALUES (?,?,?,?)",
                     (task_scope_id, subject, title, created_at),
@@ -211,7 +219,10 @@ class CanonicalTaskScopeStore:
             try:
                 existing = await self._event_by_source_tx(db, source_event_id)
                 if existing is not None:
-                    if existing["payload_hash"] != payload_hash or existing["task_scope_id"] != task_scope_id:
+                    if (
+                        existing["payload_hash"] != payload_hash
+                        or existing["task_scope_id"] != task_scope_id
+                    ):
                         raise TaskScopeConflict("source_event_payload_conflict")
                     await db.commit()
                     return self._event_receipt(existing)
@@ -244,7 +255,8 @@ class CanonicalTaskScopeStore:
         self,
         plan: object,
         *,
-        commit_hook: Callable[[aiosqlite.Connection, MutationApplyReceipt, bool], Awaitable[None]] | None = None,
+        commit_hook: Callable[[aiosqlite.Connection, MutationApplyReceipt, bool], Awaitable[None]]
+        | None = None,
     ) -> MutationApplyReceipt:
         """Apply one plan (CAS + idempotent) and run ``commit_hook`` in the same transaction.
 
@@ -290,7 +302,16 @@ class CanonicalTaskScopeStore:
                 if int(raw["base_revision"]) != observed:
                     await db.execute(
                         "INSERT INTO task_scope_mutation_attempts(attempt_id,task_scope_id,plan_id,plan_hash,requested_base_revision,observed_revision,result,plan_json,created_at) VALUES (?,?,?,?,?,?,'cas_conflict',?,?)",
-                        (attempt_id, task_scope_id, raw["plan_id"], plan_hash, raw["base_revision"], observed, canonical_json(raw), created_at),
+                        (
+                            attempt_id,
+                            task_scope_id,
+                            raw["plan_id"],
+                            plan_hash,
+                            raw["base_revision"],
+                            observed,
+                            canonical_json(raw),
+                            created_at,
+                        ),
                     )
                     await db.commit()
                     raise TaskScopeConflict("mutation_base_revision_conflict")
@@ -306,7 +327,9 @@ class CanonicalTaskScopeStore:
                     payload=raw,
                     payload_hash=plan_hash,
                     occurred_at=created_at,
-                    reason_code=str(raw["closure_reason"]) if raw["closure_reason"] is not None else None,
+                    reason_code=str(raw["closure_reason"])
+                    if raw["closure_reason"] is not None
+                    else None,
                 )
                 await self._link_refs_tx(db, task_scope_id, event.event_id, refs, created_at)
                 current_row = await self._fetchone(
@@ -322,26 +345,72 @@ class CanonicalTaskScopeStore:
                 decision_id = _uuid(f"task-scope-decision:{raw['plan_id']}")
                 await db.execute(
                     "INSERT INTO task_scope_mutation_attempts(attempt_id,task_scope_id,plan_id,plan_hash,requested_base_revision,observed_revision,result,plan_json,created_at) VALUES (?,?,?,?,?,?,'applied',?,?)",
-                    (attempt_id, task_scope_id, raw["plan_id"], plan_hash, observed, observed, canonical_json(raw), created_at),
+                    (
+                        attempt_id,
+                        task_scope_id,
+                        raw["plan_id"],
+                        plan_hash,
+                        observed,
+                        observed,
+                        canonical_json(raw),
+                        created_at,
+                    ),
                 )
                 await db.execute(
                     "INSERT INTO task_scope_mutation_decisions(decision_id,task_scope_id,plan_id,plan_hash,base_revision,committed_revision,outcome,plan_json,created_at) VALUES (?,?,?,?,?,?,?,?,?)",
-                    (decision_id, task_scope_id, raw["plan_id"], plan_hash, observed, committed, raw["outcome"], canonical_json(raw), created_at),
+                    (
+                        decision_id,
+                        task_scope_id,
+                        raw["plan_id"],
+                        plan_hash,
+                        observed,
+                        committed,
+                        raw["outcome"],
+                        canonical_json(raw),
+                        created_at,
+                    ),
                 )
                 await db.execute(
                     "INSERT INTO task_scope_canonical_revisions(task_scope_id,revision,prior_revision,decision_id,state_hash,state_json,event_watermark,created_at) VALUES (?,?,?,?,?,?,?,?)",
-                    (task_scope_id, committed, observed, decision_id, state_hash, canonical_json(state), event.event_sequence, created_at),
+                    (
+                        task_scope_id,
+                        committed,
+                        observed,
+                        decision_id,
+                        state_hash,
+                        canonical_json(state),
+                        event.event_sequence,
+                        created_at,
+                    ),
                 )
                 for operation in raw["operations"]:
                     assert isinstance(operation, Mapping)
                     if str(operation["kind"]).startswith("plan."):
                         await db.execute(
                             "INSERT INTO task_scope_steps(step_record_id,task_scope_id,event_id,operation_id,operation_kind,value,reason_code,created_at) VALUES (?,?,?,?,?,?,?,?)",
-                            (_uuid(f"task-scope-step:{raw['plan_id']}:{operation['operation_id']}"), task_scope_id, event.event_id, operation["operation_id"], operation["kind"], operation["value"], operation["reason_code"], created_at),
+                            (
+                                _uuid(
+                                    f"task-scope-step:{raw['plan_id']}:{operation['operation_id']}"
+                                ),
+                                task_scope_id,
+                                event.event_id,
+                                operation["operation_id"],
+                                operation["kind"],
+                                operation["value"],
+                                operation["reason_code"],
+                                created_at,
+                            ),
                         )
                 updated = await db.execute(
                     "UPDATE task_scope_heads SET current_revision=?,event_watermark=?,state_hash=?,updated_at=? WHERE task_scope_id=? AND current_revision=?",
-                    (committed, event.event_sequence, state_hash, created_at, task_scope_id, observed),
+                    (
+                        committed,
+                        event.event_sequence,
+                        state_hash,
+                        created_at,
+                        task_scope_id,
+                        observed,
+                    ),
                 )
                 if updated.rowcount != 1:
                     raise TaskScopeConflict("mutation_base_revision_conflict")
@@ -352,7 +421,16 @@ class CanonicalTaskScopeStore:
                 if commit_hook is not None:
                     await commit_hook(
                         db,
-                        MutationApplyReceipt(decision_id, str(raw["plan_id"]), plan_hash, task_scope_id, observed, committed, state_hash, event.event_id),
+                        MutationApplyReceipt(
+                            decision_id,
+                            str(raw["plan_id"]),
+                            plan_hash,
+                            task_scope_id,
+                            observed,
+                            committed,
+                            state_hash,
+                            event.event_id,
+                        ),
                         False,
                     )
                 await db.commit()
@@ -365,7 +443,16 @@ class CanonicalTaskScopeStore:
             except Exception:
                 await db.rollback()
                 raise
-        return MutationApplyReceipt(decision_id, str(raw["plan_id"]), plan_hash, task_scope_id, observed, committed, state_hash, event.event_id)
+        return MutationApplyReceipt(
+            decision_id,
+            str(raw["plan_id"]),
+            plan_hash,
+            task_scope_id,
+            observed,
+            committed,
+            state_hash,
+            event.event_id,
+        )
 
     async def create_checkpoint(
         self,
@@ -383,7 +470,11 @@ class CanonicalTaskScopeStore:
             await db.execute("BEGIN IMMEDIATE")
             await assert_human_memory_ingress_open_tx(db)
             try:
-                existing = await self._fetchone(db, "SELECT * FROM task_scope_checkpoints WHERE checkpoint_id=?", (checkpoint_id,))
+                existing = await self._fetchone(
+                    db,
+                    "SELECT * FROM task_scope_checkpoints WHERE checkpoint_id=?",
+                    (checkpoint_id,),
+                )
                 head = await self._head_tx(db, task_scope_id)
                 if revision is not None and (
                     isinstance(revision, bool) or not isinstance(revision, int) or revision < 1
@@ -407,14 +498,25 @@ class CanonicalTaskScopeStore:
                 }
                 checkpoint_hash = canonical_hash(payload)
                 if existing is not None:
-                    if existing["checkpoint_hash"] != checkpoint_hash or existing["task_scope_id"] != task_scope_id:
+                    if (
+                        existing["checkpoint_hash"] != checkpoint_hash
+                        or existing["task_scope_id"] != task_scope_id
+                    ):
                         raise TaskScopeConflict("checkpoint_id_hash_conflict")
                     await db.commit()
                     return self._checkpoint_receipt(existing)
                 created_at = time.time()
                 await db.execute(
                     "INSERT INTO task_scope_checkpoints(checkpoint_id,task_scope_id,revision,checkpoint_hash,checkpoint_json,event_watermark,created_at) VALUES (?,?,?,?,?,?,?)",
-                    (checkpoint_id, task_scope_id, target_revision, checkpoint_hash, canonical_json(payload), head["event_watermark"], created_at),
+                    (
+                        checkpoint_id,
+                        task_scope_id,
+                        target_revision,
+                        checkpoint_hash,
+                        canonical_json(payload),
+                        head["event_watermark"],
+                        created_at,
+                    ),
                 )
                 from deskpet.task_scope.projection_sources import append_projection_source_tx
 
@@ -425,7 +527,13 @@ class CanonicalTaskScopeStore:
                 await db.rollback()
                 raise
         self._fault("checkpoint.after_commit")
-        return CheckpointReceipt(checkpoint_id, task_scope_id, target_revision, checkpoint_hash, int(head["event_watermark"]))
+        return CheckpointReceipt(
+            checkpoint_id,
+            task_scope_id,
+            target_revision,
+            checkpoint_hash,
+            int(head["event_watermark"]),
+        )
 
     async def append_deterministic_events(
         self,
@@ -448,7 +556,11 @@ class CanonicalTaskScopeStore:
         identifier(canary, "canary", 4096)
         if isinstance(count, bool) or not isinstance(count, int) or not 1 <= count <= 100_000:
             raise ValueError("deterministic_event_count_invalid")
-        if isinstance(batch_size, bool) or not isinstance(batch_size, int) or not 1 <= batch_size <= 5000:
+        if (
+            isinstance(batch_size, bool)
+            or not isinstance(batch_size, int)
+            or not 1 <= batch_size <= 5000
+        ):
             raise ValueError("deterministic_event_batch_size_invalid")
         canary_hash = canonical_hash({"canary": canary})
         first_event_id = ""
@@ -531,7 +643,11 @@ class CanonicalTaskScopeStore:
             await db.execute("BEGIN IMMEDIATE")
             await assert_human_memory_ingress_open_tx(db)
             try:
-                row = await self._fetchone(db, "SELECT state_json FROM task_scope_canonical_revisions WHERE task_scope_id=? AND revision=?", (task_scope_id, revision))
+                row = await self._fetchone(
+                    db,
+                    "SELECT state_json FROM task_scope_canonical_revisions WHERE task_scope_id=? AND revision=?",
+                    (task_scope_id, revision),
+                )
                 if row is None:
                     raise TaskScopeNotFound("canonical_revision_not_found")
                 state = json.loads(str(row["state_json"]))
@@ -546,7 +662,14 @@ class CanonicalTaskScopeStore:
                 raise
         return projection_hash
 
-    async def _write_projection_tx(self, db: aiosqlite.Connection, task_scope_id: str, revision: int, state: Mapping[str, object], now: float) -> None:
+    async def _write_projection_tx(
+        self,
+        db: aiosqlite.Connection,
+        task_scope_id: str,
+        revision: int,
+        state: Mapping[str, object],
+        now: float,
+    ) -> None:
         projection_hash = canonical_hash(state)
         projection_id = _uuid(f"task-scope-projection:{task_scope_id}:{revision}")
         await db.execute(
@@ -559,38 +682,101 @@ class CanonicalTaskScopeStore:
         )
         await db.execute(
             "INSERT INTO task_scope_projection_outbox(outbox_id,task_scope_id,canonical_revision,projection_hash,created_at) VALUES (?,?,?,?,?)",
-            (_uuid(f"task-scope-projection-outbox:{task_scope_id}:{revision}"), task_scope_id, revision, projection_hash, now),
+            (
+                _uuid(f"task-scope-projection-outbox:{task_scope_id}:{revision}"),
+                task_scope_id,
+                revision,
+                projection_hash,
+                now,
+            ),
         )
         await db.execute(
             "INSERT INTO task_scope_search_outbox(outbox_id,task_scope_id,canonical_revision,state_hash,created_at) VALUES (?,?,?,?,?)",
-            (_uuid(f"task-scope-search-outbox:{task_scope_id}:{revision}"), task_scope_id, revision, projection_hash, now),
+            (
+                _uuid(f"task-scope-search-outbox:{task_scope_id}:{revision}"),
+                task_scope_id,
+                revision,
+                projection_hash,
+                now,
+            ),
         )
 
-    async def _append_event_tx(self, db: aiosqlite.Connection, *, task_scope_id: str, event_kind: str, source_kind: str, source_event_id: str, payload: Mapping[str, object], payload_hash: str, occurred_at: float, reason_code: str | None) -> TaskEventReceipt:
-        scope = await self._fetchone(db, "SELECT 1 FROM task_scopes WHERE task_scope_id=?", (task_scope_id,))
+    async def _append_event_tx(
+        self,
+        db: aiosqlite.Connection,
+        *,
+        task_scope_id: str,
+        event_kind: str,
+        source_kind: str,
+        source_event_id: str,
+        payload: Mapping[str, object],
+        payload_hash: str,
+        occurred_at: float,
+        reason_code: str | None,
+    ) -> TaskEventReceipt:
+        scope = await self._fetchone(
+            db, "SELECT 1 FROM task_scopes WHERE task_scope_id=?", (task_scope_id,)
+        )
         if scope is None:
             raise TaskScopeNotFound(TaskScopeNotFound.code)
-        row = await self._fetchone(db, "SELECT COALESCE(MAX(event_sequence),0)+1 AS next_sequence FROM task_scope_events WHERE task_scope_id=?", (task_scope_id,))
+        row = await self._fetchone(
+            db,
+            "SELECT COALESCE(MAX(event_sequence),0)+1 AS next_sequence FROM task_scope_events WHERE task_scope_id=?",
+            (task_scope_id,),
+        )
         sequence = int(row["next_sequence"])
         event_id = _uuid(f"task-scope-event:{source_event_id}")
         committed_at = time.time()
         await db.execute(
             "INSERT INTO task_scope_events(event_id,task_scope_id,event_sequence,event_kind,source_kind,source_event_id,payload_hash,payload_json,reason_code,occurred_at,committed_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-            (event_id, task_scope_id, sequence, event_kind, source_kind, source_event_id, payload_hash, canonical_json(payload), reason_code, occurred_at, committed_at),
+            (
+                event_id,
+                task_scope_id,
+                sequence,
+                event_kind,
+                source_kind,
+                source_event_id,
+                payload_hash,
+                canonical_json(payload),
+                reason_code,
+                occurred_at,
+                committed_at,
+            ),
         )
         return TaskEventReceipt(event_id, task_scope_id, sequence, source_event_id, payload_hash)
 
-    async def _verify_refs_tx(self, db: aiosqlite.Connection, refs: Sequence[Mapping[str, object]]) -> None:
+    async def _verify_refs_tx(
+        self, db: aiosqlite.Connection, refs: Sequence[Mapping[str, object]]
+    ) -> None:
         for ref in refs:
-            row = await self._fetchone(db, "SELECT envelope_sha256 FROM human_memory_evidence WHERE evidence_id=?", (ref["evidence_id"],))
+            row = await self._fetchone(
+                db,
+                "SELECT envelope_sha256 FROM human_memory_evidence WHERE evidence_id=?",
+                (ref["evidence_id"],),
+            )
             if row is None or row["envelope_sha256"] != ref["content_hash"]:
                 raise TaskScopeProtocolError("evidence_ref_authority_mismatch")
 
-    async def _link_refs_tx(self, db: aiosqlite.Connection, task_scope_id: str, event_id: str, refs: Sequence[Mapping[str, object]], now: float) -> None:
+    async def _link_refs_tx(
+        self,
+        db: aiosqlite.Connection,
+        task_scope_id: str,
+        event_id: str,
+        refs: Sequence[Mapping[str, object]],
+        now: float,
+    ) -> None:
         for ordinal, ref in enumerate(refs, 1):
             await db.execute(
                 "INSERT INTO task_scope_evidence_links(link_id,task_scope_id,event_id,evidence_id,content_hash,ordinal,created_at) VALUES (?,?,?,?,?,?,?)",
-                (_uuid(f"task-scope-evidence-link:{event_id}:{ref['evidence_id']}"), task_scope_id, event_id, ref["evidence_id"], ref["content_hash"], ordinal, now),
+                (
+                    _uuid(f"task-scope-evidence-link:{event_id}:{ref['evidence_id']}"),
+                    task_scope_id,
+                    event_id,
+                    ref["evidence_id"],
+                    ref["content_hash"],
+                    ordinal,
+                    now,
+                ),
             )
 
     @staticmethod
@@ -637,14 +823,25 @@ class CanonicalTaskScopeStore:
         result["closure_reason"] = plan["closure_reason"]
         return result
 
-    async def _mutation_receipt_tx(self, db: aiosqlite.Connection, plan_id: str) -> MutationApplyReceipt:
+    async def _mutation_receipt_tx(
+        self, db: aiosqlite.Connection, plan_id: str
+    ) -> MutationApplyReceipt:
         row = await self._fetchone(
             db,
             "SELECT d.*,r.prior_revision,r.state_hash,e.event_id FROM task_scope_mutation_decisions d JOIN task_scope_canonical_revisions r ON r.decision_id=d.decision_id JOIN task_scope_events e ON e.source_event_id='mutation-plan:' || d.plan_id WHERE d.plan_id=?",
             (plan_id,),
         )
         assert row is not None
-        return MutationApplyReceipt(str(row["decision_id"]), plan_id, str(row["plan_hash"]), str(row["task_scope_id"]), int(row["prior_revision"]), int(row["committed_revision"]), str(row["state_hash"]), str(row["event_id"]))
+        return MutationApplyReceipt(
+            str(row["decision_id"]),
+            plan_id,
+            str(row["plan_hash"]),
+            str(row["task_scope_id"]),
+            int(row["prior_revision"]),
+            int(row["committed_revision"]),
+            str(row["state_hash"]),
+            str(row["event_id"]),
+        )
 
     async def read_head_status(
         self, task_scope_id: str, *, db: aiosqlite.Connection | None = None
@@ -675,16 +872,24 @@ class CanonicalTaskScopeStore:
         return None if status is None else str(status)
 
     async def _head_tx(self, db: aiosqlite.Connection, task_scope_id: str) -> aiosqlite.Row:
-        row = await self._fetchone(db, "SELECT * FROM task_scope_heads WHERE task_scope_id=?", (task_scope_id,))
+        row = await self._fetchone(
+            db, "SELECT * FROM task_scope_heads WHERE task_scope_id=?", (task_scope_id,)
+        )
         if row is None:
             raise TaskScopeNotFound(TaskScopeNotFound.code)
         return row
 
-    async def _event_by_source_tx(self, db: aiosqlite.Connection, source_event_id: str) -> aiosqlite.Row | None:
-        return await self._fetchone(db, "SELECT * FROM task_scope_events WHERE source_event_id=?", (source_event_id,))
+    async def _event_by_source_tx(
+        self, db: aiosqlite.Connection, source_event_id: str
+    ) -> aiosqlite.Row | None:
+        return await self._fetchone(
+            db, "SELECT * FROM task_scope_events WHERE source_event_id=?", (source_event_id,)
+        )
 
     @staticmethod
-    async def _fetchone(db: aiosqlite.Connection, sql: str, parameters: tuple[object, ...]) -> aiosqlite.Row | None:
+    async def _fetchone(
+        db: aiosqlite.Connection, sql: str, parameters: tuple[object, ...]
+    ) -> aiosqlite.Row | None:
         cursor = await db.execute(sql, parameters)
         row = await cursor.fetchone()
         await cursor.close()
@@ -692,11 +897,23 @@ class CanonicalTaskScopeStore:
 
     @staticmethod
     def _event_receipt(row: aiosqlite.Row) -> TaskEventReceipt:
-        return TaskEventReceipt(str(row["event_id"]), str(row["task_scope_id"]), int(row["event_sequence"]), str(row["source_event_id"]), str(row["payload_hash"]))
+        return TaskEventReceipt(
+            str(row["event_id"]),
+            str(row["task_scope_id"]),
+            int(row["event_sequence"]),
+            str(row["source_event_id"]),
+            str(row["payload_hash"]),
+        )
 
     @staticmethod
     def _checkpoint_receipt(row: aiosqlite.Row) -> CheckpointReceipt:
-        return CheckpointReceipt(str(row["checkpoint_id"]), str(row["task_scope_id"]), int(row["revision"]), str(row["checkpoint_hash"]), int(row["event_watermark"]))
+        return CheckpointReceipt(
+            str(row["checkpoint_id"]),
+            str(row["task_scope_id"]),
+            int(row["revision"]),
+            str(row["checkpoint_hash"]),
+            int(row["event_watermark"]),
+        )
 
     @asynccontextmanager
     async def _connection(self):

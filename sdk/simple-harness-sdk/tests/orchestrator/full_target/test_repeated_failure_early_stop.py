@@ -29,7 +29,6 @@ Two repairs, no new config, no 20th ``_new_mode`` site:
 用例，随旧构造器删掉；这里只留指纹与 diff 应用的七条纯函数用例。
 """
 
-
 from __future__ import annotations
 
 import sys
@@ -104,7 +103,7 @@ def _code_test_stdout(exc: str, *, attempt: str, seconds: str) -> dict[str, Any]
     stdout = (
         "==================================== ERRORS ====================================\n"
         "___________________ ERROR collecting tests/test_dispatch.py ____________________\n"
-        f"E     File \"/tmp/workspaces/task-d6d9:{attempt}-verify/service/beta/broken.py\""
+        f'E     File "/tmp/workspaces/task-d6d9:{attempt}-verify/service/beta/broken.py"'
         ", line 5\n"
         "E       def dispatch(queue, sink)\n"
         "E                                ^\n"
@@ -161,9 +160,7 @@ TWO_FILE_DIFF = PATCH_TEXT.rstrip() + (
 def test_a_two_file_unified_diff_patches_both_seed_files() -> None:
     """P1-1: switching to the next ``--- `` must flush the current hunk."""
 
-    patched = files_patched_by_unified_diff(
-        TWO_FILE_DIFF, {WINDOW: SEED_WINDOW, OTHER: OTHER_SEED}
-    )
+    patched = files_patched_by_unified_diff(TWO_FILE_DIFF, {WINDOW: SEED_WINDOW, OTHER: OTHER_SEED})
     assert patched[WINDOW] == PATCHED_WINDOW
     assert patched[OTHER] == OTHER_PATCHED
 
@@ -181,13 +178,7 @@ def test_a_hunk_mismatch_on_one_file_rejects_the_whole_diff() -> None:
 def test_a_parent_directory_path_in_the_diff_is_rejected() -> None:
     """P1-1: ``../`` is fail-closed, not skipped."""
 
-    text = (
-        "--- a/../secret.py\n"
-        "+++ b/../secret.py\n"
-        "@@ -1,1 +1,1 @@\n"
-        "-x\n"
-        "+y\n"
-    )
+    text = "--- a/../secret.py\n+++ b/../secret.py\n@@ -1,1 +1,1 @@\n-x\n+y\n"
     with pytest.raises(UnifiedDiffApplyError) as caught:
         files_patched_by_unified_diff(text, {"secret.py": "x\n", WINDOW: SEED_WINDOW})
     assert ".." in caught.value.path or caught.value.reason == "unsafe_path"

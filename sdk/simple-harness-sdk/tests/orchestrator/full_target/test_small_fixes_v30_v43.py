@@ -3,6 +3,7 @@
 
 每条一个用例，名字说明修的是什么；改坏检验见各用例说明。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -44,10 +45,14 @@ def test_v32_provider_call_facts_read_only_the_liveness_columns():
     from agent_orchestrator.orchestrator.event_handler import Orchestrator
 
     rows = [("settled", 10.0, 20.0), ("handed_off", 100.0, None), ("settled", 30.0, 50.0)]
-    uow = SimpleNamespace(read_agent_binding=lambda agent_id: SimpleNamespace(run_id="run-1"),
-                          list_provider_invocation_liveness=lambda run_id: tuple(rows))
-    fake = SimpleNamespace(bridge_for=lambda intent: SimpleNamespace(runtime=SimpleNamespace(uow=uow)),
-                           _config=SimpleNamespace(provider_call_seconds=900.0))
+    uow = SimpleNamespace(
+        read_agent_binding=lambda agent_id: SimpleNamespace(run_id="run-1"),
+        list_provider_invocation_liveness=lambda run_id: tuple(rows),
+    )
+    fake = SimpleNamespace(
+        bridge_for=lambda intent: SimpleNamespace(runtime=SimpleNamespace(uow=uow)),
+        _config=SimpleNamespace(provider_call_seconds=900.0),
+    )
     intent = SimpleNamespace(agent_id="agent-1")
     assert Orchestrator._provider_call_facts(fake, intent, now=400.0) == (True, 50.0)
     assert Orchestrator._provider_call_facts(fake, intent, now=1_100.0) == (False, 50.0)
@@ -64,13 +69,23 @@ def test_v34_the_usage_ledger_reports_overrun_calls_and_tokens():
 
     connection = sqlite3.connect(":memory:")
     connection.row_factory = sqlite3.Row
-    connection.execute("CREATE TABLE budget_accounts(mission_id TEXT, scope TEXT, reserved_tokens INT, "
-                       "settled_tokens INT, attempts_created INT, version INT)")
+    connection.execute(
+        "CREATE TABLE budget_accounts(mission_id TEXT, scope TEXT, reserved_tokens INT, "
+        "settled_tokens INT, attempts_created INT, version INT)"
+    )
     connection.execute("INSERT INTO budget_accounts VALUES ('m-1','mission',0,500,2,3)")
-    connection.execute("CREATE TABLE provider_token_grants(mission_id TEXT, state TEXT, actual_tokens INT, total_upper INT)")
-    connection.executemany("INSERT INTO provider_token_grants VALUES (?,?,?,?)", [
-        ("m-1", "OVERRUN", 1_200, 1_000), ("m-1", "OVERRUN", 900, 1_000), ("m-1", "SETTLED", 100, 1_000),
-        ("m-2", "OVERRUN", 5_000, 1_000)])
+    connection.execute(
+        "CREATE TABLE provider_token_grants(mission_id TEXT, state TEXT, actual_tokens INT, total_upper INT)"
+    )
+    connection.executemany(
+        "INSERT INTO provider_token_grants VALUES (?,?,?,?)",
+        [
+            ("m-1", "OVERRUN", 1_200, 1_000),
+            ("m-1", "OVERRUN", 900, 1_000),
+            ("m-1", "SETTLED", 100, 1_000),
+            ("m-2", "OVERRUN", 5_000, 1_000),
+        ],
+    )
     fake = SimpleNamespace(connection=connection, has_table=lambda name: True)
     usage = Store.mission_budget_usage(fake, "m-1")
     assert usage["settled_tokens"] == 500
@@ -87,19 +102,34 @@ def test_v35_the_finalizer_is_read_off_the_adopted_children_not_respelled():
     **Mutation**: 改回 ``derive_id("task", instance, slot)`` → red。"""
     from agent_orchestrator.graph.terminal import finalizer_task_id
 
-    children = (SimpleNamespace(slot_key="prepare", occurrence_id="occ-p"),
-                SimpleNamespace(slot_key="finish", occurrence_id="occ-shared"))
-    draft = SimpleNamespace(method_ref=SimpleNamespace(method_id="m", version=1), instance_id="inst-1",
-                            child_bindings=children)
-    network = SimpleNamespace(root_occurrence_ids=("root",), adopted_instance_for=lambda occ: draft,
-                              adopted_children=lambda occ: children,
-                              occurrence=lambda occ: SimpleNamespace(task_id={"occ-shared": "task-from-other-instance",
-                                                                               "occ-p": "task-p"}[occ]))
-    semantics = SimpleNamespace(get_method=lambda m, v: SimpleNamespace(
-        contract=SimpleNamespace(composition=SimpleNamespace(finalizer_step="finish"))))
+    children = (
+        SimpleNamespace(slot_key="prepare", occurrence_id="occ-p"),
+        SimpleNamespace(slot_key="finish", occurrence_id="occ-shared"),
+    )
+    draft = SimpleNamespace(
+        method_ref=SimpleNamespace(method_id="m", version=1),
+        instance_id="inst-1",
+        child_bindings=children,
+    )
+    network = SimpleNamespace(
+        root_occurrence_ids=("root",),
+        adopted_instance_for=lambda occ: draft,
+        adopted_children=lambda occ: children,
+        occurrence=lambda occ: SimpleNamespace(
+            task_id={"occ-shared": "task-from-other-instance", "occ-p": "task-p"}[occ]
+        ),
+    )
+    semantics = SimpleNamespace(
+        get_method=lambda m, v: SimpleNamespace(
+            contract=SimpleNamespace(composition=SimpleNamespace(finalizer_step="finish"))
+        )
+    )
     assert finalizer_task_id(network, semantics, "m-1") == "task-from-other-instance"
-    none = SimpleNamespace(get_method=lambda m, v: SimpleNamespace(
-        contract=SimpleNamespace(composition=SimpleNamespace(finalizer_step=None))))
+    none = SimpleNamespace(
+        get_method=lambda m, v: SimpleNamespace(
+            contract=SimpleNamespace(composition=SimpleNamespace(finalizer_step=None))
+        )
+    )
     assert finalizer_task_id(network, none, "m-1") is None
 
 
@@ -113,12 +143,25 @@ def test_v36_lineage_reports_the_finalizer_the_report_names_or_none():
     from agent_orchestrator.contracts import TaskStatus
     from agent_orchestrator.observability.lineage import lineage
 
-    tasks = [SimpleNamespace(id="t-a", status=TaskStatus.COMPLETED, accepted_result_id="r-a", dependency_ids=()),
-             SimpleNamespace(id="t-b", status=TaskStatus.COMPLETED, accepted_result_id="r-b", dependency_ids=("t-a",))]
-    store = SimpleNamespace(list_tasks=lambda mission_id: tasks, get_result=lambda rid: None,
-                            get_knowledge=lambda kid: None, list_claims=lambda rid: [])
+    tasks = [
+        SimpleNamespace(
+            id="t-a", status=TaskStatus.COMPLETED, accepted_result_id="r-a", dependency_ids=()
+        ),
+        SimpleNamespace(
+            id="t-b", status=TaskStatus.COMPLETED, accepted_result_id="r-b", dependency_ids=("t-a",)
+        ),
+    ]
+    store = SimpleNamespace(
+        list_tasks=lambda mission_id: tasks,
+        get_result=lambda rid: None,
+        get_knowledge=lambda kid: None,
+        list_claims=lambda rid: [],
+    )
     with_finalizer = lineage(store, "m", terminal_task_id="t-a")
-    assert (with_finalizer["terminal_task_id"], with_finalizer["terminal_result_id"]) == ("t-a", "r-a")
+    assert (with_finalizer["terminal_task_id"], with_finalizer["terminal_result_id"]) == (
+        "t-a",
+        "r-a",
+    )
     without = lineage(store, "m", terminal_task_id=None)
     assert without["terminal_task_id"] is None and without["terminal_result_id"] is None
 
@@ -138,25 +181,47 @@ def test_v38_a_paused_ready_step_does_not_postpone_the_stop_condition_question()
     def fake(tasks):
         return SimpleNamespace(
             _config=SimpleNamespace(deployment_policy=None, max_planning_attempts=3),
-            store=SimpleNamespace(iter_events=lambda mission_id: iter(()), list_tasks=lambda mission_id: tasks),
-            _note=notes.append)
+            store=SimpleNamespace(
+                iter_events=lambda mission_id: iter(()), list_tasks=lambda mission_id: tasks
+            ),
+            _note=notes.append,
+        )
 
     mission = SimpleNamespace(id="m", stop_conditions={"x": 1})
-    new_mode = SimpleNamespace(network=lambda mission_id: (_ for _ in ()).throw(ContractError("unreadable")))
-    rules = SimpleNamespace(parse_stop_conditions=lambda conditions, policy: True,
-                            reached_stop_conditions=lambda *a, **k: [{"condition": "x"}],
-                            knowledge_streak=lambda events: 0, result_hashes=lambda store, mission_id, events: {})
+    new_mode = SimpleNamespace(
+        network=lambda mission_id: (_ for _ in ()).throw(ContractError("unreadable"))
+    )
+    rules = SimpleNamespace(
+        parse_stop_conditions=lambda conditions, policy: True,
+        reached_stop_conditions=lambda *a, **k: [{"condition": "x"}],
+        knowledge_streak=lambda events: 0,
+        result_hashes=lambda store, mission_id, events: {},
+    )
     import agent_orchestrator.orchestrator.stop_conditions as stop_mod
-    original = {name: getattr(stop_mod, name) for name in ("parse_stop_conditions", "reached_stop_conditions",
-                                                            "knowledge_streak", "result_hashes")}
+
+    original = {
+        name: getattr(stop_mod, name)
+        for name in (
+            "parse_stop_conditions",
+            "reached_stop_conditions",
+            "knowledge_streak",
+            "result_hashes",
+        )
+    }
     for name in original:
         setattr(stop_mod, name, getattr(rules, name))
     try:
         ready = [SimpleNamespace(status=TaskStatus.READY, paused=False)]
-        assert asyncio.run(eh.Orchestrator._stop_conditions_reached(fake(ready), mission, new_mode)) is False
+        assert (
+            asyncio.run(eh.Orchestrator._stop_conditions_reached(fake(ready), mission, new_mode))
+            is False
+        )
         assert notes == []  # 有步骤正要开工：没往下问
         paused = [SimpleNamespace(status=TaskStatus.READY, paused=True)]
-        assert asyncio.run(eh.Orchestrator._stop_conditions_reached(fake(paused), mission, new_mode)) is False
+        assert (
+            asyncio.run(eh.Orchestrator._stop_conditions_reached(fake(paused), mission, new_mode))
+            is False
+        )
         assert notes and "unreadable" in notes[0]  # 走到了读计划那一步：暂停的步骤没挡住
     finally:
         for name, value in original.items():
@@ -171,16 +236,32 @@ def test_v39_a_knowledge_read_continuation_without_the_digest_is_told_what_to_se
     from agent_orchestrator.context import knowledge_tools as kt
 
     text = "x" * 5_000
-    row = {"id": "k-1", "layer": kt.VERIFIED_LAYER, "_text": text, "version": 1, "summary_sha256": "0" * 64,
-           "_record": None, "ref": "k-1@1", "basis": {}}
+    row = {
+        "id": "k-1",
+        "layer": kt.VERIFIED_LAYER,
+        "_text": text,
+        "version": 1,
+        "summary_sha256": "0" * 64,
+        "_record": None,
+        "ref": "k-1@1",
+        "basis": {},
+    }
     monkeypatch.setattr(kt, "_catalogue", lambda store, mission_id: [row])
     digest = kt._digest(text)
     with pytest.raises(ValueError) as refused:
-        kt.read_knowledge_tool(SimpleNamespace(), "m", "knowledge_read", {"id": "k-1", "offset": 2048})
-    assert "knowledge_read paging needs expected_sha256" in str(refused.value) and digest in str(refused.value)
+        kt.read_knowledge_tool(
+            SimpleNamespace(), "m", "knowledge_read", {"id": "k-1", "offset": 2048}
+        )
+    assert "knowledge_read paging needs expected_sha256" in str(refused.value) and digest in str(
+        refused.value
+    )
     with pytest.raises(ValueError) as changed:
-        kt.read_knowledge_tool(SimpleNamespace(), "m", "knowledge_read",
-                               {"id": "k-1", "offset": 2048, "expected_sha256": "1" * 64})
+        kt.read_knowledge_tool(
+            SimpleNamespace(),
+            "m",
+            "knowledge_read",
+            {"id": "k-1", "offset": 2048, "expected_sha256": "1" * 64},
+        )
     assert "restart reading from offset 0" in str(changed.value) and digest in str(changed.value)
 
 
@@ -195,15 +276,27 @@ def test_v40_the_account_scope_is_read_from_the_accounts_table_not_the_id_prefix
 
     connection = sqlite3.connect(":memory:")
     connection.execute("CREATE TABLE budget_accounts(account_id TEXT, scope TEXT)")
-    connection.executemany("INSERT INTO budget_accounts VALUES (?,?)",
-                           [("budget:task-9", "mission"), ("acct-step", "task")])
-    connection.execute("CREATE TABLE budget_reservations(subject_id TEXT, account_id TEXT, state TEXT, mission_id TEXT)")
-    connection.executemany("INSERT INTO budget_reservations VALUES (?,?,?,?)", [
-        ("task-1:attempt-1", "acct-other", "RESERVED", "m-1"),   # 任务下别的步骤还在跑
-        ("task-9:attempt-1", "budget:task-9", "SETTLED", "m-1")])
-    store = SimpleNamespace(connection=connection,
-                            get_intent_for_subject=lambda s: SimpleNamespace(state="SUBMITTED") if s == "task-1:attempt-1" else None,
-                            get_attempt=lambda s: None)
+    connection.executemany(
+        "INSERT INTO budget_accounts VALUES (?,?)",
+        [("budget:task-9", "mission"), ("acct-step", "task")],
+    )
+    connection.execute(
+        "CREATE TABLE budget_reservations(subject_id TEXT, account_id TEXT, state TEXT, mission_id TEXT)"
+    )
+    connection.executemany(
+        "INSERT INTO budget_reservations VALUES (?,?,?,?)",
+        [
+            ("task-1:attempt-1", "acct-other", "RESERVED", "m-1"),  # 任务下别的步骤还在跑
+            ("task-9:attempt-1", "budget:task-9", "SETTLED", "m-1"),
+        ],
+    )
+    store = SimpleNamespace(
+        connection=connection,
+        get_intent_for_subject=lambda s: (
+            SimpleNamespace(state="SUBMITTED") if s == "task-1:attempt-1" else None
+        ),
+        get_attempt=lambda s: None,
+    )
     tick = SimpleNamespace(store=store)
     tick._account_scope = lambda account_id: AssuranceTick._account_scope(tick, account_id)
     assert AssuranceTick._account_scope(tick, "budget:task-9") == "mission"

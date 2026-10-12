@@ -21,6 +21,7 @@
     python -m scripts.e2e_workspace_memory --flag off
     python -m scripts.e2e_workspace_memory --compare    # 跑两次并对比
 """
+
 from __future__ import annotations
 
 import argparse
@@ -67,8 +68,7 @@ def _dump_workspace_state(db_path: Path, session_id: str) -> list[dict]:
     try:
         conn.row_factory = sqlite3.Row
         cur = conn.execute(
-            "SELECT * FROM workspace_state WHERE session_id = ? "
-            "ORDER BY last_action_ts ASC",
+            "SELECT * FROM workspace_state WHERE session_id = ? ORDER BY last_action_ts ASC",
             (session_id,),
         )
         for r in cur.fetchall():
@@ -96,20 +96,24 @@ async def _run_session(*, flag_on: bool, session_id: str) -> dict:
     workspace_recall_count = 0
     last_assistant: list[str] = []
 
-    prompt_round1 = (
-        "在 D:\\tmp\\stage2-mr4 下读 README.md，"
-        "基于内容生成 summary.md（写到同目录）"
-    )
+    prompt_round1 = "在 D:\\tmp\\stage2-mr4 下读 README.md，基于内容生成 summary.md（写到同目录）"
     prompt_round2 = "再看一下刚才那个 summary.md，告诉我它说了什么"
 
     try:
         async with websockets.connect(ws_url, max_size=10**7) as ws:
             for prompt in (prompt_round1, prompt_round2):
-                await ws.send(json.dumps({
-                    "type": "chat",
-                    "payload": {"content": prompt, "use_code_mode": True,
-                                "project_root": str(_TASK_DIR)},
-                }))
+                await ws.send(
+                    json.dumps(
+                        {
+                            "type": "chat",
+                            "payload": {
+                                "content": prompt,
+                                "use_code_mode": True,
+                                "project_root": str(_TASK_DIR),
+                            },
+                        }
+                    )
+                )
                 deadline = time.time() + 120
                 while time.time() < deadline:
                     msg_raw = await asyncio.wait_for(ws.recv(), timeout=120)
@@ -127,16 +131,16 @@ async def _run_session(*, flag_on: bool, session_id: str) -> dict:
                         elif tn == "workspace_recall":
                             workspace_recall_count += 1
                     elif mt == "assistant_message":
-                        last_assistant.append(
-                            msg.get("payload", {}).get("content", "")
-                        )
+                        last_assistant.append(msg.get("payload", {}).get("content", ""))
                     elif mt in ("assistant_done", "chat_done"):
                         break
     except Exception as exc:  # noqa: BLE001
         print(f"[e2e] session error: {exc}", file=sys.stderr)
         return {
-            "flag_on": flag_on, "session_id": session_id,
-            "file_read_count": -1, "error": str(exc),
+            "flag_on": flag_on,
+            "session_id": session_id,
+            "file_read_count": -1,
+            "error": str(exc),
         }
 
     return {
@@ -152,16 +156,20 @@ async def _run_session(*, flag_on: bool, session_id: str) -> dict:
 async def _amain() -> int:
     parser = argparse.ArgumentParser(prog="python -m scripts.e2e_workspace_memory")
     parser.add_argument(
-        "--flag", choices=["on", "off"], default="on",
+        "--flag",
+        choices=["on", "off"],
+        default="on",
         help="workspace_memory flag state (informational only — "
-             "you must also set [memory.v2] workspace_memory in config.toml)",
+        "you must also set [memory.v2] workspace_memory in config.toml)",
     )
     parser.add_argument(
-        "--db-path", default="",
+        "--db-path",
+        default="",
         help="state.db path (留空 = paths.user_data_dir()/data/state.db)",
     )
     parser.add_argument(
-        "--compare", action="store_true",
+        "--compare",
+        action="store_true",
         help="跑两次（先 off 后 on）并打印对比表",
     )
     args = parser.parse_args()
@@ -194,12 +202,10 @@ async def _amain() -> int:
             "workspace_state_off": off_state,
             "workspace_state_on": on_state,
             "delta": {
-                "file_read_count":
-                    off_metric.get("file_read_count", 0)
-                    - on_metric.get("file_read_count", 0),
-                "workspace_recall_count":
-                    on_metric.get("workspace_recall_count", 0)
-                    - off_metric.get("workspace_recall_count", 0),
+                "file_read_count": off_metric.get("file_read_count", 0)
+                - on_metric.get("file_read_count", 0),
+                "workspace_recall_count": on_metric.get("workspace_recall_count", 0)
+                - off_metric.get("workspace_recall_count", 0),
             },
         }
         report_path = _EVIDENCE_DIR / "compare-report.json"
@@ -230,6 +236,7 @@ async def _amain() -> int:
 def _default_db_path() -> Path:
     try:
         import paths as _paths
+
         return _paths.user_data_dir() / "data" / "state.db"
     except Exception:  # noqa: BLE001
         return Path("./data/state.db")

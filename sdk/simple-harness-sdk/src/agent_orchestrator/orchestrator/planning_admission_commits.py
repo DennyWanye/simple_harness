@@ -74,6 +74,7 @@ class PlanningCommitAdmission:
 @dataclass(frozen=True, slots=True)
 class CheckedPlanningCommit:
     """Actual successful precommit reads, carried only inside the original transaction."""
+
     command_id: str
     intent_hash: str
     authority_hash: str
@@ -81,51 +82,98 @@ class CheckedPlanningCommit:
     runtime_work_hash: str
 
 
-def _write_taskgraph_applied(store: Any, command: CommitPlanCommand, receipt: PlanCommitReceipt,
-                             preview: PreviewBindingV1, admission: PlanningCommitAdmission,
-                             checked: CheckedPlanningCommit) -> str:
+def _write_taskgraph_applied(
+    store: Any,
+    command: CommitPlanCommand,
+    receipt: PlanCommitReceipt,
+    preview: PreviewBindingV1,
+    admission: PlanningCommitAdmission,
+    checked: CheckedPlanningCommit,
+) -> str:
     if not store.connection.in_transaction:
         _raise("TASKGRAPH_APPLIED_TRANSACTION_REQUIRED", "APPLIED joins the original plan write")
-    if (checked.command_id != command.command_id or checked.intent_hash != command.intent_hash()
-            or receipt.command_id != command.command_id or receipt.intent_hash != checked.intent_hash
-            or receipt.mission_id != command.mission_id or receipt.new_plan_revision != preview.base_revision + 1
-            or receipt.base_plan_revision != preview.base_revision
-            or HtnStore(store).get_commit_receipt(command.command_id) != receipt):
-        _raise("TASKGRAPH_APPLIED_RECEIPT_MISMATCH", "the actual original PlanCommit receipt is required")
+    if (
+        checked.command_id != command.command_id
+        or checked.intent_hash != command.intent_hash()
+        or receipt.command_id != command.command_id
+        or receipt.intent_hash != checked.intent_hash
+        or receipt.mission_id != command.mission_id
+        or receipt.new_plan_revision != preview.base_revision + 1
+        or receipt.base_plan_revision != preview.base_revision
+        or HtnStore(store).get_commit_receipt(command.command_id) != receipt
+    ):
+        _raise(
+            "TASKGRAPH_APPLIED_RECEIPT_MISMATCH",
+            "the actual original PlanCommit receipt is required",
+        )
     decisions = PlanningDecisionStore(store)
     request = decisions.get_planning_request(preview.request_id)
     decision = decisions.get_planning_decision(preview.decision_id)
-    if (request is None or request.mission_id != command.mission_id
-            or request.base_plan_revision != preview.base_revision
-            or decision is None or decision["request_id"] != preview.request_id
-            or decision["canonical_hash"] != preview.decision_hash or str(decision["status"]) != "COMPILED"
-            or admission.request_id != preview.request_id or admission.decision_hash != preview.decision_hash
-            or sha256_hex(command.delta.to_json()) != preview.delta_hash
-            or sha256_hex(command.read_set.to_json()) != preview.read_set_hash):
-        _raise("TASKGRAPH_APPLIED_DECISION_MISMATCH", "APPLIED must bind the compiled original decision")
+    if (
+        request is None
+        or request.mission_id != command.mission_id
+        or request.base_plan_revision != preview.base_revision
+        or decision is None
+        or decision["request_id"] != preview.request_id
+        or decision["canonical_hash"] != preview.decision_hash
+        or str(decision["status"]) != "COMPILED"
+        or admission.request_id != preview.request_id
+        or admission.decision_hash != preview.decision_hash
+        or sha256_hex(command.delta.to_json()) != preview.delta_hash
+        or sha256_hex(command.read_set.to_json()) != preview.read_set_hash
+    ):
+        _raise(
+            "TASKGRAPH_APPLIED_DECISION_MISMATCH",
+            "APPLIED must bind the compiled original decision",
+        )
     decision_bytes = decision["canonical_json"]
-    if (not isinstance(decision_bytes, str)
-            or canonical_json(json.loads(decision_bytes)) != decision_bytes
-            or hashlib.sha256(decision_bytes.encode()).hexdigest() != preview.decision_hash):
-        _raise("TASKGRAPH_APPLIED_DECISION_CORRUPT", "stored decision bytes differ from the admitted identity")
+    if (
+        not isinstance(decision_bytes, str)
+        or canonical_json(json.loads(decision_bytes)) != decision_bytes
+        or hashlib.sha256(decision_bytes.encode()).hexdigest() != preview.decision_hash
+    ):
+        _raise(
+            "TASKGRAPH_APPLIED_DECISION_CORRUPT",
+            "stored decision bytes differ from the admitted identity",
+        )
     active = store.connection.execute(
         "SELECT revision,snapshot_hash FROM plan_revisions WHERE mission_id=? AND state='ACTIVE'",
-        (command.mission_id,)).fetchall()
-    if len(active) != 1 or tuple(active[0]) != (receipt.new_plan_revision, receipt.output_identity["snapshot_hash"]):
-        _raise("TASKGRAPH_APPLIED_PLAN_MISMATCH", "actual ACTIVE revision differs from commit result")
+        (command.mission_id,),
+    ).fetchall()
+    if len(active) != 1 or tuple(active[0]) != (
+        receipt.new_plan_revision,
+        receipt.output_identity["snapshot_hash"],
+    ):
+        _raise(
+            "TASKGRAPH_APPLIED_PLAN_MISMATCH", "actual ACTIVE revision differs from commit result"
+        )
     identity = derive_id("tg-h1-applied", command.command_id)
-    detail: dict[str, Any] = {"version": 1, "command_id": command.command_id,
-        "commit_receipt_hash": sha256_hex(receipt.to_json()), "preview_hash": preview.canonical_hash(),
+    detail: dict[str, Any] = {
+        "version": 1,
+        "command_id": command.command_id,
+        "commit_receipt_hash": sha256_hex(receipt.to_json()),
+        "preview_hash": preview.canonical_hash(),
         "source_reads": [item.to_json() for item in preview.source_reads],
-        "runtime_work_hash": checked.runtime_work_hash, "read_set_hash": preview.read_set_hash,
-        "compilation_hash": admission.preview_compilation_hash}
-    PlanningAdmissionStore(store).put_admission_check({
-        "check_id": identity, "request_id": preview.request_id, "decision_id": preview.decision_id,
-        "phase": "APPLIED", "snapshot_hash": preview.candidate_hash, "decision_hash": preview.decision_hash,
-        "authority_hash": checked.authority_hash, "operations_hash": checked.operations_hash,
-        "delta_hash": preview.delta_hash, "check_schema": "taskgraph-h1-applied/v1",
-        "detail_json": canonical_json(detail),
-        "checked_at_ms": int(store.now * 1000)})
+        "runtime_work_hash": checked.runtime_work_hash,
+        "read_set_hash": preview.read_set_hash,
+        "compilation_hash": admission.preview_compilation_hash,
+    }
+    PlanningAdmissionStore(store).put_admission_check(
+        {
+            "check_id": identity,
+            "request_id": preview.request_id,
+            "decision_id": preview.decision_id,
+            "phase": "APPLIED",
+            "snapshot_hash": preview.candidate_hash,
+            "decision_hash": preview.decision_hash,
+            "authority_hash": checked.authority_hash,
+            "operations_hash": checked.operations_hash,
+            "delta_hash": preview.delta_hash,
+            "check_schema": "taskgraph-h1-applied/v1",
+            "detail_json": canonical_json(detail),
+            "checked_at_ms": int(store.now * 1000),
+        }
+    )
     return identity
 
 
@@ -212,18 +260,27 @@ def _check_planning_commit(
     from ..graph.planning_scope import planning_convergence_scope
     from ..runtime.taskgraph_operation_sources import read_operation_producers
     from .taskgraph_plan_commit import TaskGraphPlanCommitParticipant
-    if (not isinstance(taskgraph, TaskGraphPlanCommitParticipant) or taskgraph.store is not store
-            or admission.taskgraph_candidate is None
-            or taskgraph.document != admission.taskgraph_candidate.document
-            or taskgraph.preview != admission.taskgraph_candidate.preview):
+
+    if (
+        not isinstance(taskgraph, TaskGraphPlanCommitParticipant)
+        or taskgraph.store is not store
+        or admission.taskgraph_candidate is None
+        or taskgraph.document != admission.taskgraph_candidate.document
+        or taskgraph.preview != admission.taskgraph_candidate.preview
+    ):
         _raise("SOURCE_UNAVAILABLE", "TaskGraph original commit participant mismatch")
     if taskgraph.preview.base_revision == 0:
         if not operations.complete_empty:
-            _raise("OPERATION_UNRESOLVED", "initial TaskGraph seed has no Operation producer network")
+            _raise(
+                "OPERATION_UNRESOLVED", "initial TaskGraph seed has no Operation producer network"
+            )
     else:
-        before = taskgraph.history.read_revision(command.mission_id, taskgraph.preview.base_revision).record.document
-        scope = planning_convergence_scope(before, taskgraph.document, operations,
-                                           read_operation_producers(store, operations))
+        before = taskgraph.history.read_revision(
+            command.mission_id, taskgraph.preview.base_revision
+        ).record.document
+        scope = planning_convergence_scope(
+            before, taskgraph.document, operations, read_operation_producers(store, operations)
+        )
         if scope.unresolved_operations:
             _raise("OPERATION_UNRESOLVED", "affected Operations require original reconciliation")
     try:
@@ -248,9 +305,13 @@ def _check_planning_commit(
         _raise("SOURCE_UNAVAILABLE", str(error))
     if runtime.snapshot_digest != admission.runtime_work.snapshot_digest:
         _raise("RUNTIME_WORK_STALE", "running work changed since preview")
-    return CheckedPlanningCommit(command_id=command.command_id, intent_hash=command.intent_hash(),
-        authority_hash=sha256_hex(_authority_identity(authority)), operations_hash=operations.read_digest,
-        runtime_work_hash=runtime.snapshot_digest)
+    return CheckedPlanningCommit(
+        command_id=command.command_id,
+        intent_hash=command.intent_hash(),
+        authority_hash=sha256_hex(_authority_identity(authority)),
+        operations_hash=operations.read_digest,
+        runtime_work_hash=runtime.snapshot_digest,
+    )
 
 
 class PlanningAdmissionCommitsMixin:
@@ -279,26 +340,42 @@ class PlanningAdmissionCommitsMixin:
                 taskgraph=taskgraph,
             )
 
-        def write_applied(store: Any, written_command: CommitPlanCommand,
-                          receipt: PlanCommitReceipt, preview: PreviewBindingV1) -> str:
+        def write_applied(
+            store: Any,
+            written_command: CommitPlanCommand,
+            receipt: PlanCommitReceipt,
+            preview: PreviewBindingV1,
+        ) -> str:
             if store is not self._store or written_command != command or checked is None:  # type: ignore[attr-defined]
-                _raise("TASKGRAPH_H1_COMMIT_CHECK_REQUIRED", "no successful original precommit check exists")
+                _raise(
+                    "TASKGRAPH_H1_COMMIT_CHECK_REQUIRED",
+                    "no successful original precommit check exists",
+                )
             return _write_taskgraph_applied(store, command, receipt, preview, admission, checked)
 
         with self._store.transaction():  # type: ignore[attr-defined]
             from ..storage.taskgraph_store import require_bound
+
             replay = self._store.connection.execute(  # type: ignore[attr-defined]
-                "SELECT 1 FROM plan_commit_receipts WHERE command_id=?", (command.command_id,)).fetchone()
+                "SELECT 1 FROM plan_commit_receipts WHERE command_id=?", (command.command_id,)
+            ).fetchone()
             if taskgraph is None and replay is None:
                 require_bound(self._store, command.mission_id)  # type: ignore[attr-defined]
                 factory = getattr(self, "_taskgraph_participant_factory", None)
                 if not callable(factory):
-                    _raise("TASKGRAPH_COMMIT_PARTICIPANT_REQUIRED", "fixed TaskGraph admission assembly is missing")
+                    _raise(
+                        "TASKGRAPH_COMMIT_PARTICIPANT_REQUIRED",
+                        "fixed TaskGraph admission assembly is missing",
+                    )
                 taskgraph = factory(command, principal, admission)
             if taskgraph is not None and replay is None:
                 from .taskgraph_plan_commit import TaskGraphPlanCommitParticipant
+
                 if not isinstance(taskgraph, TaskGraphPlanCommitParticipant):
-                    _raise("TASKGRAPH_COMMIT_PARTICIPANT_REQUIRED", "fixed participant has the wrong type")
+                    _raise(
+                        "TASKGRAPH_COMMIT_PARTICIPANT_REQUIRED",
+                        "fixed participant has the wrong type",
+                    )
                 taskgraph.bind_h1_commit(write_applied)
             return self.commit_plan_revision(  # type: ignore[attr-defined]
                 command, principal, precommit_guard=guard, taskgraph=taskgraph

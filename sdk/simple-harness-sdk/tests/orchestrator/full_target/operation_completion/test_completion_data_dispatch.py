@@ -50,10 +50,15 @@ def _upstream_worker(extra: str | None):  # type: ignore[no-untyped-def]
     """The upstream Worker: its declared output, plus (per case) one more accepted file."""
 
     def write_extra(request):  # type: ignore[no-untyped-def]
-        return ("workspace_write_file", {"path": extra, "content": "# accepted upstream workspace file\n"})
+        return (
+            "workspace_write_file",
+            {"path": extra, "content": "# accepted upstream workspace file\n"},
+        )
 
     def submit(request):  # type: ignore[no-untyped-def]
-        body = json.loads(result_envelope(request)[len("<result_envelope>"):-len("</result_envelope>")])
+        body = json.loads(
+            result_envelope(request)[len("<result_envelope>") : -len("</result_envelope>")]
+        )
         body["artifacts"] = [*body["artifacts"], extra]
         return "<result_envelope>" + json.dumps(body, ensure_ascii=False) + "</result_envelope>"
 
@@ -62,29 +67,46 @@ def _upstream_worker(extra: str | None):  # type: ignore[no-untyped-def]
 
     def declared(request):  # type: ignore[no-untyped-def]
         [output] = package_of(request)["task_contract"]["outputs"]
-        return ("workspace_write_file", {"path": output, "content": '{"failing_test":"tests/test_kv.py"}\n'})
+        return (
+            "workspace_write_file",
+            {"path": output, "content": '{"failing_test":"tests/test_kv.py"}\n'},
+        )
 
     return scripted_worker(write_extra, declared, submit)
 
 
 def _forged_attempt(loop, task_id, inputs):  # type: ignore[no-untyped-def]
     return loop.commit.create_attempt(
-        task_id, role="worker", model="fixture-worker", prompt_version="fixture-worker-v1",
-        context_version="oc2-data-consumer-v1", reservation=Reservation(tokens=1_000),
-        intent_config={"message": "consume the delivery"}, input_hash=sha256_hex("oc2-data-consumer"),
-        inputs=inputs)
+        task_id,
+        role="worker",
+        model="fixture-worker",
+        prompt_version="fixture-worker-v1",
+        context_version="oc2-data-consumer-v1",
+        reservation=Reservation(tokens=1_000),
+        intent_config={"message": "consume the delivery"},
+        input_hash=sha256_hex("oc2-data-consumer"),
+        inputs=inputs,
+    )
 
 
 @pytest.mark.parametrize("overlay", ["none", "seed", "new-test"])
 def test_oc2_data_dispatch_freezes_nonempty_accepted_input_and_never_uses_order_only(
-    tmp_path: Path, overlay: str, monkeypatch,
+    tmp_path: Path,
+    overlay: str,
+    monkeypatch,
 ) -> None:
     """OC2: DATA becomes readable from a real accepted source; an unbound edge stays open."""
 
     async def case() -> None:
         request = {"workspace_seed": {"target.py": "# seed"}} if overlay == "seed" else None
-        async with enabled_world(tmp_path, key="oc2-data-dispatch", planner=chain_planner, criteria=CHAIN_CRITERIA,
-                                 worker=_upstream_worker(EXTRA[overlay]), request=request) as world:
+        async with enabled_world(
+            tmp_path,
+            key="oc2-data-dispatch",
+            planner=chain_planner,
+            criteria=CHAIN_CRITERIA,
+            worker=_upstream_worker(EXTRA[overlay]),
+            request=request,
+        ) as world:
             loop, mission = world.loop, world.mission
             await world.commit_seed()
             dispatch = world.dispatch
@@ -106,10 +128,15 @@ def test_oc2_data_dispatch_freezes_nonempty_accepted_input_and_never_uses_order_
             producer_task = str(producer_occurrence.task_id)
             consumer_task = str(consumer_occurrence.task_id)
             # The upstream leaf runs for real: Worker, independent review, acceptance.
-            await world.until(lambda: loop.store.get_task(producer_task).status is TaskStatus.COMPLETED)
+            await world.until(
+                lambda: loop.store.get_task(producer_task).status is TaskStatus.COMPLETED
+            )
             producer = loop.store.get_task(producer_task)
-            [acceptance] = [e.payload for e in loop.store.list_events(mission.id)
-                            if e.type == "AcceptanceCommitted" and e.task_id == producer_task]
+            [acceptance] = [
+                e.payload
+                for e in loop.store.list_events(mission.id)
+                if e.type == "AcceptanceCommitted" and e.task_id == producer_task
+            ]
             assert loop.store.list_attempts(consumer_task) == []  # not dispatched yet
 
             dispatch.issue_input_witnesses(mission.id, network, now_ms=int(loop.store.now * 1000))
@@ -118,7 +145,9 @@ def test_oc2_data_dispatch_freezes_nonempty_accepted_input_and_never_uses_order_
             assert len(resolved.manifest.bindings) == 1
             bound = resolved.manifest.bindings[0]
             assert bound.artifact_id in producer.accepted_artifacts
-            assert bound.acceptance_id == acceptance["acceptance_id"]  # pinned to the real acceptance
+            assert (
+                bound.acceptance_id == acceptance["acceptance_id"]
+            )  # pinned to the real acceptance
             artifact = loop.store.get_artifact(bound.artifact_id)
 
             rules = dispatch.target_rules or TargetRules(namespace=f"workspace:{consumer_task}")
@@ -126,7 +155,10 @@ def test_oc2_data_dispatch_freezes_nonempty_accepted_input_and_never_uses_order_
             # 其余文件是交付绑定，带这个下游对上游那次验收的见证
             upstream = manifest_upstream_inputs(resolved.manifest, rules, network=network)
             port = next(item for item in upstream if item.artifact_id == artifact.id)
-            assert port.content_hash == artifact.content_hash and port.acceptance_id == bound.acceptance_id
+            assert (
+                port.content_hash == artifact.content_hash
+                and port.acceptance_id == bound.acceptance_id
+            )
             assert len(upstream) == (1 if overlay == "none" else 2)
             assert len(resolved.manifest.deliveries) == (0 if overlay == "none" else 1)
             if overlay != "none":
@@ -150,13 +182,19 @@ def test_oc2_data_dispatch_freezes_nonempty_accepted_input_and_never_uses_order_
 
                 def wrong_owner(artifact_id):  # type: ignore[no-untyped-def]
                     found = original_get(artifact_id)
-                    return replace(found, mission_id="foreign-mission") if artifact_id == overlay_id else found
+                    return (
+                        replace(found, mission_id="foreign-mission")
+                        if artifact_id == overlay_id
+                        else found
+                    )
 
                 with monkeypatch.context() as patch:
                     patch.setattr(loop.store, "get_artifact", wrong_owner)
                     # 来源读不到（产物归属变了）：解析点名报"来源不可用"，派发不冻结、不新建尝试
                     refused = dispatch.resolved_inputs(mission.id, network, consumer_occurrence)
-                    assert [str(p.kind) for p in refused.problems] == ["delivery_source_unavailable"]
+                    assert [str(p.kind) for p in refused.problems] == [
+                        "delivery_source_unavailable"
+                    ]
                     assert overlay_id in refused.problems[0].detail
                     with pytest.raises(Exception, match="TASKGRAPH_INPUT_NOT_FROZEN"):
                         _forged_attempt(loop, consumer_task, [item.to_json() for item in upstream])
@@ -169,13 +207,23 @@ def test_oc2_data_dispatch_freezes_nonempty_accepted_input_and_never_uses_order_
             frozen = consumer_intent.config["completion_inputs"]
             assert frozen["manifest_hash"]
             assert frozen["manifest"]["bindings"]
-            assert frozen["manifest"]["bindings"][0]["bound_input"]["acceptance_id"] == bound.acceptance_id
-            assert HtnStore(loop.store).get_input_manifest(frozen["manifest_hash"]) == frozen["manifest"]
+            assert (
+                frozen["manifest"]["bindings"][0]["bound_input"]["acceptance_id"]
+                == bound.acceptance_id
+            )
+            assert (
+                HtnStore(loop.store).get_input_manifest(frozen["manifest_hash"])
+                == frozen["manifest"]
+            )
             assert [item["artifact_id"] for item in consumer_intent.config["inputs"]] == [
-                item.artifact_id for item in upstream]
+                item.artifact_id for item in upstream
+            ]
 
-            seen.update(mission=mission.id, consumer=consumer_occurrence.occurrence_id,
-                        manifest=resolved.manifest.to_json())
+            seen.update(
+                mission=mission.id,
+                consumer=consumer_occurrence.occurrence_id,
+                manifest=resolved.manifest.to_json(),
+            )
 
     async def cold() -> None:
         # A restarted process (the product's own startup assembly) sees precisely the same

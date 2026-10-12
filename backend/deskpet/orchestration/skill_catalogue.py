@@ -45,7 +45,9 @@ def _shared(service: Any) -> Any:
     native = getattr(service, "_native", None)
     shared = getattr(native, "shared_catalogue", None)
     if shared is None or shared.owner_id is None:
-        raise SkillCatalogueRefused("native_plane_unavailable", "技能目录需要原生运行平面（当前没有装配）")
+        raise SkillCatalogueRefused(
+            "native_plane_unavailable", "技能目录需要原生运行平面（当前没有装配）"
+        )
     return shared
 
 
@@ -66,8 +68,12 @@ def _revision(runtime: Any, pin: Any) -> tuple[Any, Any]:
     try:
         revision = cat.resolve_pin(service.connection, service.namespace_id, pin)
     except ArpError as error:
-        raise SkillCatalogueRefused("not_found", f"目录里没有这个技能版本（{error.code}）") from error
-    activation = cat.read_activation(service.connection, service.namespace_id, "SKILL", revision.entry_id, revision.revision)
+        raise SkillCatalogueRefused(
+            "not_found", f"目录里没有这个技能版本（{error.code}）"
+        ) from error
+    activation = cat.read_activation(
+        service.connection, service.namespace_id, "SKILL", revision.entry_id, revision.revision
+    )
     if revision.entry_kind != "SKILL" or activation is None:
         raise SkillCatalogueRefused("not_found", "目录里没有这个技能版本")
     return revision, activation
@@ -83,19 +89,22 @@ def _certificate(service: Any, mission_id: str, task_id: str) -> Any:
     from simple_harness.agents.arp.pins import Pin
 
     with service._orchestrator.store.read_view() as connection:
-        rows = connection.execute(
-            "SELECT c.certificate_id, c.certificate_hash, c.certificate_json FROM assurance_use_certificates c "
-            "JOIN goal_resolutions r ON r.resolution_id = c.consumer_id AND r.mission_id = c.mission_id "
-            "WHERE c.mission_id=? AND r.goal_task_id=? AND r.validity='CURRENT' AND r.adopted AND r.verdict='ACCEPT' "
-            "AND c.purpose='ACCEPT' AND c.consumer_kind='ROOT_RESOLUTION' ORDER BY c.issued_at_ms DESC",
-            (mission_id, task_id),
-        ).fetchall() + connection.execute(
-            "SELECT c.certificate_id, c.certificate_hash, c.certificate_json FROM assurance_use_certificates c "
-            "JOIN acceptances a ON a.acceptance_id = c.consumer_id AND a.mission_id = c.mission_id "
-            "WHERE c.mission_id=? AND a.task_id=? AND a.validity='CURRENT' AND c.purpose='ACCEPT' "
-            "AND c.consumer_kind='ACCEPTANCE' ORDER BY c.issued_at_ms DESC",
-            (mission_id, task_id),
-        ).fetchall()
+        rows = (
+            connection.execute(
+                "SELECT c.certificate_id, c.certificate_hash, c.certificate_json FROM assurance_use_certificates c "
+                "JOIN goal_resolutions r ON r.resolution_id = c.consumer_id AND r.mission_id = c.mission_id "
+                "WHERE c.mission_id=? AND r.goal_task_id=? AND r.validity='CURRENT' AND r.adopted AND r.verdict='ACCEPT' "
+                "AND c.purpose='ACCEPT' AND c.consumer_kind='ROOT_RESOLUTION' ORDER BY c.issued_at_ms DESC",
+                (mission_id, task_id),
+            ).fetchall()
+            + connection.execute(
+                "SELECT c.certificate_id, c.certificate_hash, c.certificate_json FROM assurance_use_certificates c "
+                "JOIN acceptances a ON a.acceptance_id = c.consumer_id AND a.mission_id = c.mission_id "
+                "WHERE c.mission_id=? AND a.task_id=? AND a.validity='CURRENT' AND c.purpose='ACCEPT' "
+                "AND c.consumer_kind='ACCEPTANCE' ORDER BY c.issued_at_ms DESC",
+                (mission_id, task_id),
+            ).fetchall()
+        )
     for certificate_id, certificate_hash, body in rows:
         if json.loads(str(body)).get("decision") == "USABLE":
             return Pin("acceptance", str(certificate_id), 0, str(certificate_hash))
@@ -113,10 +122,15 @@ def _evaluation(service: Any, runtime: Any, revision: Any) -> dict[str, Any] | N
     dispatch = lifecycle.dispatch_for(Pin.from_json(binding["evaluation_ref"]))
     mission_id = None if dispatch is None else str(dispatch["mission_id"])
     mission = None if mission_id is None else service._orchestrator.store.get_mission(mission_id)
-    passed = mission is not None and _certificate(service, mission_id, str(dispatch["task_id"])) is not None
+    passed = (
+        mission is not None
+        and _certificate(service, mission_id, str(dispatch["task_id"])) is not None
+    )
     return {
         "mission_id": mission_id,
-        "mission_status": None if mission is None else str(getattr(mission.status, "value", mission.status)),
+        "mission_status": None
+        if mission is None
+        else str(getattr(mission.status, "value", mission.status)),
         "passed": passed,
         "expired": int(binding["expires_at_ms"]) < runtime.arp.catalogue.clock_ms(),
         "expires_at_ms": int(binding["expires_at_ms"]),
@@ -169,32 +183,61 @@ async def evaluate(service: Any, request: Mapping[str, Any]) -> dict[str, Any]:
     pin = _pin(request.get("skill_ref"))
     revision, activation = _revision(runtime, pin)
     lifecycle = runtime.arp.lifecycle
-    caller = service._native.control_caller({"command_id": command_id, "action": "EVALUATE", "skill_ref": pin.to_json()})
+    caller = service._native.control_caller(
+        {"command_id": command_id, "action": "EVALUATE", "skill_ref": pin.to_json()}
+    )
     try:
         if activation.state == "TRIAL":
             current = _evaluation(service, runtime, revision)
-            if current is not None and current["mission_id"] and not current["expired"] and current["mission_status"] in ("CREATED", "PLANNING", "ACTIVE", "COMPLETED"):
-                return {"evaluation": current, "catalogue": overview(service)}  # already running (or passed)
+            if (
+                current is not None
+                and current["mission_id"]
+                and not current["expired"]
+                and current["mission_status"] in ("CREATED", "PLANNING", "ACTIVE", "COMPLETED")
+            ):
+                return {
+                    "evaluation": current,
+                    "catalogue": overview(service),
+                }  # already running (or passed)
             # a stale trial (expired, failed or never dispatched): pause it, then start a fresh one
-            command = {"schema_version": 1, "action": "SUSPEND", "skill_ref": pin.to_json(),
-                       "expected_activation_revision": activation.row_version, "evaluation_ref": None,
-                       "dependency_lock_ref": runtime.arp.skills.lock_pin(runtime.arp.skills.latest_lock(revision)).to_json(),
-                       "reason": "重新评估"}
+            command = {
+                "schema_version": 1,
+                "action": "SUSPEND",
+                "skill_ref": pin.to_json(),
+                "expected_activation_revision": activation.row_version,
+                "evaluation_ref": None,
+                "dependency_lock_ref": runtime.arp.skills.lock_pin(
+                    runtime.arp.skills.latest_lock(revision)
+                ).to_json(),
+                "reason": "重新评估",
+            }
             lifecycle.transition(command, caller=caller, command_id=f"{command_id}:suspend")
             revision, activation = _revision(runtime, pin)
         if activation.state not in ("QUARANTINED", "SUSPENDED"):
-            raise SkillCatalogueRefused("invalid_request", "只有待评估、已暂停或评估未通过的技能可以开始评估")
+            raise SkillCatalogueRefused(
+                "invalid_request", "只有待评估、已暂停或评估未通过的技能可以开始评估"
+            )
         lock = runtime.arp.skills.latest_lock(revision)
         if lock is None or not lock.get("complete"):
-            raise SkillCatalogueRefused("invalid_request", "这个技能的依赖还没有全部就绪，暂时不能评估")
-        binding = lifecycle.begin_trial({
-            "schema_version": 1, "skill_ref": pin.to_json(), "expected_activation_revision": activation.row_version,
-            "dependency_lock_ref": runtime.arp.skills.lock_pin(lock).to_json(),
-            "evaluation_policy_ref": revision.body["verification_policy_ref"],
-        }, caller=caller, command_id=command_id)
+            raise SkillCatalogueRefused(
+                "invalid_request", "这个技能的依赖还没有全部就绪，暂时不能评估"
+            )
+        binding = lifecycle.begin_trial(
+            {
+                "schema_version": 1,
+                "skill_ref": pin.to_json(),
+                "expected_activation_revision": activation.row_version,
+                "dependency_lock_ref": runtime.arp.skills.lock_pin(lock).to_json(),
+                "evaluation_policy_ref": revision.body["verification_policy_ref"],
+            },
+            caller=caller,
+            command_id=command_id,
+        )
         evaluation = Pin.from_json(binding["evaluation_ref"])
         goal, criteria = _goal(revision)
-        receipt = service.skill_evaluation_mission({"evaluation_ref": evaluation.to_json(), "goal": goal, "success_criteria": criteria})
+        receipt = service.skill_evaluation_mission(
+            {"evaluation_ref": evaluation.to_json(), "goal": goal, "success_criteria": criteria}
+        )
         mission_id = str(receipt["mission_id"])
         # The root task's semantic binding is written with the Mission; its acceptance is the
         # evaluation's official acceptance.  Linking now, before anything runs, lets the
@@ -202,7 +245,13 @@ async def evaluate(service: Any, request: Mapping[str, Any]) -> dict[str, Any]:
         root = ROOT_TASK_PREFIX + mission_id
         if HtnStore(service._orchestrator.store).latest_task_semantics(root) is None:
             raise SkillCatalogueRefused("internal", "评估任务没有根步骤（不是分层任务）")
-        lifecycle.record_evaluation_dispatch(evaluation, mission_id=mission_id, task_id=root, caller=caller, command_id=f"{command_id}:dispatch")
+        lifecycle.record_evaluation_dispatch(
+            evaluation,
+            mission_id=mission_id,
+            task_id=root,
+            caller=caller,
+            command_id=f"{command_id}:dispatch",
+        )
     except ArpError as error:
         raise SkillCatalogueRefused("invalid_request", f"评估未能开始：{error.code}") from error
     shared.sync()
@@ -222,18 +271,31 @@ async def admit(service: Any, request: Mapping[str, Any]) -> dict[str, Any]:
     revision, activation = _revision(runtime, pin)
     lifecycle = runtime.arp.lifecycle
     binding = lifecycle.binding_for(revision)
-    dispatch = None if binding is None else lifecycle.dispatch_for(Pin.from_json(binding["evaluation_ref"]))
+    dispatch = (
+        None
+        if binding is None
+        else lifecycle.dispatch_for(Pin.from_json(binding["evaluation_ref"]))
+    )
     if activation.state != "TRIAL" or dispatch is None:
         raise SkillCatalogueRefused("invalid_request", "这个技能没有正在进行的评估")
     certificate = _certificate(service, str(dispatch["mission_id"]), str(dispatch["task_id"]))
     if certificate is None:
         raise SkillCatalogueRefused("invalid_request", "评估任务还没有通过最终审阅，不能准入")
-    caller = service._native.control_caller({"command_id": command_id, "action": "ADMIT", "skill_ref": pin.to_json()})
+    caller = service._native.control_caller(
+        {"command_id": command_id, "action": "ADMIT", "skill_ref": pin.to_json()}
+    )
     try:
-        lifecycle.admit({
-            "schema_version": 1, "skill_ref": pin.to_json(), "evaluation_acceptance_ref": certificate.to_json(),
-            "evaluation_policy_ref": binding["policy_ref"], "scope_ref": binding["scope_ref"],
-        }, caller=caller, command_id=command_id)
+        lifecycle.admit(
+            {
+                "schema_version": 1,
+                "skill_ref": pin.to_json(),
+                "evaluation_acceptance_ref": certificate.to_json(),
+                "evaluation_policy_ref": binding["policy_ref"],
+                "scope_ref": binding["scope_ref"],
+            },
+            caller=caller,
+            command_id=command_id,
+        )
     except ArpError as error:
         raise SkillCatalogueRefused("invalid_request", f"准入被拒：{error.code}") from error
     shared.sync()
@@ -279,7 +341,9 @@ async def install_file(service: Any, request: Mapping[str, Any]) -> dict[str, An
         raise SkillCatalogueRefused("internal", "技能包写入产物库后哈希不一致")
     ref = Pin("artifact", "bundle:" + expected[:12], 0, expected)
     caller = service._native.control_caller({"command": "skill_install_file", "bundle": expected})
-    response = await shared.install(ref, data_format=fmt, caller=caller, command_id=f"skill-install:{expected[:32]}")
+    response = await shared.install(
+        ref, data_format=fmt, caller=caller, command_id=f"skill-install:{expected[:32]}"
+    )
     service.wake()
     return {"response": response, "catalogue": overview(service)}
 
@@ -291,11 +355,19 @@ async def lifecycle(service: Any, request: Mapping[str, Any]) -> dict[str, Any]:
     command_id = request.get("command_id")
     if not isinstance(command_id, str) or not command_id.strip():
         raise SkillCatalogueRefused("invalid_request", "command_id 不能为空")
-    reason = request.get("reason") if isinstance(request.get("reason"), str) and request.get("reason") else "用户在任务编排页操作"
+    reason = (
+        request.get("reason")
+        if isinstance(request.get("reason"), str) and request.get("reason")
+        else "用户在任务编排页操作"
+    )
     shared = _shared(service)
     pin = _pin(request.get("skill_ref"))
-    caller = service._native.control_caller({"command_id": command_id, "action": action, "skill_ref": pin.to_json()})
-    response = await shared.lifecycle(pin, str(action), caller=caller, command_id=command_id, reason=str(reason)[:500])
+    caller = service._native.control_caller(
+        {"command_id": command_id, "action": action, "skill_ref": pin.to_json()}
+    )
+    response = await shared.lifecycle(
+        pin, str(action), caller=caller, command_id=command_id, reason=str(reason)[:500]
+    )
     service.wake()
     return {"response": response, "catalogue": overview(service)}
 
@@ -312,4 +384,15 @@ async def request(service: Any, body: Mapping[str, Any]) -> dict[str, Any]:
     return response
 
 
-__all__ = ("ACTIONS", "EVALUATION_REPORT", "MAX_BUNDLE_BYTES", "SkillCatalogueRefused", "admit", "evaluate", "install_file", "lifecycle", "overview", "request")
+__all__ = (
+    "ACTIONS",
+    "EVALUATION_REPORT",
+    "MAX_BUNDLE_BYTES",
+    "SkillCatalogueRefused",
+    "admit",
+    "evaluate",
+    "install_file",
+    "lifecycle",
+    "overview",
+    "request",
+)

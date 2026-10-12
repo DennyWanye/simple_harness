@@ -38,6 +38,7 @@ F-Z1 遗留 3：根内指向根外的目录符号链接会被 ``rglob`` 跟随�
 可能落在搜索根外。每条结果在这里按 ``within_root`` 复判一次，越根的结果
 被丢弃并计入 ``escaped_results``。
 """
+
 from __future__ import annotations
 
 import json
@@ -159,7 +160,11 @@ def grep_tool(
         root = target
         from deskpet.permissions.protected_paths import is_credential
 
-        files = [target] if glob_name_matches(target.name, file_glob) and not is_credential(target) else []
+        files = (
+            [target]
+            if glob_name_matches(target.name, file_glob) and not is_credential(target)
+            else []
+        )
         escaped = 0
         truncated_files = False
     else:

@@ -170,9 +170,7 @@ async def test_start_reconcile_recover_query_close_and_schema_independence(
         return _inputs()
 
     paths = ProductRuntimePathsAdapter(tmp_path / "user-data")
-    stack = ProductSdkRuntimeStack(
-        paths=paths, candidate_identity=IDENTITY, dependency_loader=load
-    )
+    stack = ProductSdkRuntimeStack(paths=paths, candidate_identity=IDENTITY, dependency_loader=load)
     with pytest.raises(SdkRuntimeNotReady):
         stack.require_ready()
     with pytest.raises(SdkRuntimeNotReady):
@@ -202,19 +200,16 @@ async def test_start_reconcile_recover_query_close_and_schema_independence(
         # A fresh library carries the pinned SDK's fresh descriptor (v10 since 0.8.0).
         from simple_harness.execution.sqlite import schema as sdk_schema
 
-        assert connection.execute(
-            "SELECT max(version) FROM sdk_schema_migrations"
-        ).fetchone()[0] == sdk_schema.fresh_descriptor().version
+        assert (
+            connection.execute("SELECT max(version) FROM sdk_schema_migrations").fetchone()[0]
+            == sdk_schema.fresh_descriptor().version
+        )
         tables = {
             row[0]
-            for row in connection.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            )
+            for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")
         }
     assert "runs" in tables
-    assert tables.isdisjoint(
-        {"sessions", "capabilities", "task_grants", "permission_policies"}
-    )
+    assert tables.isdisjoint({"sessions", "capabilities", "task_grants", "permission_policies"})
 
 
 @pytest.mark.asyncio
@@ -271,8 +266,7 @@ async def test_preflight_block_creates_idempotent_failed_root_without_driver(
         "evidence_refs": ["workspace-binding:project_root_missing"],
     }
     event = stack._uow.database.connection.execute(
-        "SELECT payload_json FROM run_events "
-        "WHERE run_id=? AND kind='run.failed'",
+        "SELECT payload_json FROM run_events WHERE run_id=? AND kind='run.failed'",
         ("run-missing-root",),
     ).fetchone()
     assert event is not None
@@ -282,8 +276,7 @@ async def test_preflight_block_creates_idempotent_failed_root_without_driver(
 
 def test_composition_does_not_import_legacy_generic_authority() -> None:
     source = (
-        Path(__file__).resolve().parents[2]
-        / "deskpet/sdk_adapters/composition.py"
+        Path(__file__).resolve().parents[2] / "deskpet/sdk_adapters/composition.py"
     ).read_text(encoding="utf-8")
     assert "deskpet.harness" not in source
     assert "ProductHarnessUnitOfWork" not in source
@@ -332,10 +325,7 @@ async def test_sdk_07_required_authorities_are_constructor_bound_and_fail_closed
 def test_desktop_composition_shares_physical_capability_scope_store() -> None:
     source = (PROJECT_ROOT / "backend/main.py").read_text(encoding="utf-8")
 
-    assert (
-        'capability_scope_store = service_context.get("tool_capability_scope_store")'
-        in source
-    )
+    assert 'capability_scope_store = service_context.get("tool_capability_scope_store")' in source
     assert "scope_store=capability_scope_store" in source
     assert source.index(
         'capability_scope_store = service_context.get("tool_capability_scope_store")'
@@ -343,10 +333,7 @@ def test_desktop_composition_shares_physical_capability_scope_store() -> None:
     assert 'frozen_catalog["policy_fingerprint"] = (' in source
     assert "visibility_registry=live_tool_registry" in source
     assert "reason=global_visibility_not_ready" in source
-    assert (
-        "deskpet_tool_registry_v2.read_policy_snapshot(strict=True).fingerprint"
-        in source
-    )
+    assert "deskpet_tool_registry_v2.read_policy_snapshot(strict=True).fingerprint" in source
 
 
 @pytest.mark.asyncio
@@ -397,9 +384,7 @@ async def test_startup_failure_cleans_up_and_retry_rereads_dependencies(
         return _inputs(reconciliation)
 
     paths = ProductRuntimePathsAdapter(tmp_path / "user-data")
-    stack = ProductSdkRuntimeStack(
-        paths=paths, candidate_identity=IDENTITY, dependency_loader=load
-    )
+    stack = ProductSdkRuntimeStack(paths=paths, candidate_identity=IDENTITY, dependency_loader=load)
     with pytest.raises(RuntimeError, match="startup reconciliation failed"):
         await stack.start()
     with pytest.raises(SdkRuntimeNotReady):
@@ -515,9 +500,7 @@ async def test_host_control_ingress_yields_bounded_zero_side_state_evidence(
     assert evidence.terminal_event_id
     assert evidence.terminal_event_hash
     assert evidence.evidence_hash
-    ordinary_terminal = stack.read_run_terminal_evidence(
-        attempt.expected_run_id
-    )
+    ordinary_terminal = stack.read_run_terminal_evidence(attempt.expected_run_id)
     assert ordinary_terminal is not None
     assert ordinary_terminal.event_id == evidence.terminal_event_id
     assert ordinary_terminal.event_hash == evidence.terminal_event_hash
@@ -571,9 +554,7 @@ async def test_close_during_start_prevents_ready_publication(tmp_path: Path) -> 
         return WorkflowRuntimeBuild(
             transaction_owner=uow,
             runner=None,
-            owned_resources=(
-                OwnedResourceCloser("workflow", workflow.close),
-            ),
+            owned_resources=(OwnedResourceCloser("workflow", workflow.close),),
         )
 
     def load():
@@ -584,9 +565,7 @@ async def test_close_during_start_prevents_ready_publication(tmp_path: Path) -> 
             ports_factory=base.ports_factory,
             workflow_catalog_digest=base.workflow_catalog_digest,
             workflow_factory=workflow_factory,
-            owned_resources=(
-                OwnedResourceCloser("product-state", product_state.close),
-            ),
+            owned_resources=(OwnedResourceCloser("product-state", product_state.close),),
         )
 
     stack = ProductSdkRuntimeStack(
@@ -663,18 +642,14 @@ async def test_post_database_workflow_factory_binds_same_transaction_owner(
 ) -> None:
     seen: dict[str, object] = {}
     closed: list[str] = []
-    workflow_resource = _OwnedResource(
-        "workflow-registry", closed, asynchronous=True
-    )
+    workflow_resource = _OwnedResource("workflow-registry", closed, asynchronous=True)
     base = _inputs()
 
     async def workflow_factory(database, uow):  # type: ignore[no-untyped-def]
         seen["workflow_database"] = database
         seen["workflow_uow"] = uow
         async with WorkflowFactoryResourceScope() as scope:
-            scope.own(
-                OwnedResourceCloser("workflow-registry", workflow_resource.close)
-            )
+            scope.own(OwnedResourceCloser("workflow-registry", workflow_resource.close))
             return WorkflowRuntimeBuild(
                 transaction_owner=uow,
                 runner=None,
@@ -716,9 +691,7 @@ async def test_foreign_workflow_owner_fails_closed_and_cleans_binding(
     tmp_path: Path,
 ) -> None:
     closed: list[str] = []
-    workflow_resource = _OwnedResource(
-        "workflow-registry", closed, asynchronous=False
-    )
+    workflow_resource = _OwnedResource("workflow-registry", closed, asynchronous=False)
     foreign_database = None
     base = _inputs()
 
@@ -780,13 +753,9 @@ async def test_post_database_workflow_resources_close_before_dependencies_on_fai
                 transaction_owner=uow,
                 runner=None,
                 registrations=("host",),
-                owned_resources=(
-                    OwnedResourceCloser("workflow-registry", workflow.close),
-                ),
+                owned_resources=(OwnedResourceCloser("workflow-registry", workflow.close),),
             ),
-            owned_resources=(
-                OwnedResourceCloser("product-state", dependency.close),
-            ),
+            owned_resources=(OwnedResourceCloser("product-state", dependency.close),),
         )
 
     stack = ProductSdkRuntimeStack(
@@ -869,7 +838,9 @@ def test_s5b_effect_gate_and_root_resolver_are_constructor_wired_in_main() -> No
 
 
 @pytest.mark.asyncio
-async def test_production_context_authority_injects_closure_instruction_when_admission_scope_dirty(tmp_path: Path) -> None:
+async def test_production_context_authority_injects_closure_instruction_when_admission_scope_dirty(
+    tmp_path: Path,
+) -> None:
     """Task 3 审查 F-2（P1）：生产装配（``main._build_run_context_authority``）的 ``ProductRunContextAuthority``
     必须带真实 ``closure_reader``；fresh state.db 上上一 Run pending → 本 Run ``prepare_snapshot`` 的 protected
     分区含 ``source=semantic_closure`` 收口指令；缺 reader → 组合缺件（startup fail）。"""
@@ -912,9 +883,17 @@ async def test_production_context_authority_injects_closure_instruction_when_adm
 
     ports = SimpleNamespace(
         context=_Context(),
-        react_checkpoint=SimpleNamespace(read_start_snapshot=lambda run_id: {"input": {"context_metadata": {"budget": {"context_window": 32768}}}}),
+        react_checkpoint=SimpleNamespace(
+            read_start_snapshot=lambda run_id: {
+                "input": {"context_metadata": {"budget": {"context_window": 32768}}}
+            }
+        ),
     )
-    exposure = SimpleNamespace(provider_specs=lambda run_id: (ProviderToolSpec("task_scope_update", "close", {"type": "object"}),))
+    exposure = SimpleNamespace(
+        provider_specs=lambda run_id: (
+            ProviderToolSpec("task_scope_update", "close", {"type": "object"}),
+        )
+    )
     authority = main._build_run_context_authority(
         state_db_path=env2.db_path,
         ports_resolver=lambda: ports,
@@ -925,11 +904,15 @@ async def test_production_context_authority_injects_closure_instruction_when_adm
     assert isinstance(authority, ProductRunContextAuthority)
     assert authority._closure_reader is not None
     snapshot = await authority.prepare_snapshot(
-        RunContextAuthorityRequest(RunId("sdk-run-next"), 1, 1, ContextRouteState.UNROUTED, None, "c" * 64)
+        RunContextAuthorityRequest(
+            RunId("sdk-run-next"), 1, 1, ContextRouteState.UNROUTED, None, "c" * 64
+        )
     )
     protected = [
-        m for m in snapshot.messages
-        if m.role is MessageRole.SYSTEM and dict(getattr(m, "metadata", {}) or {}).get("source") == "semantic_closure"
+        m
+        for m in snapshot.messages
+        if m.role is MessageRole.SYSTEM
+        and dict(getattr(m, "metadata", {}) or {}).get("source") == "semantic_closure"
     ]
     assert len(protected) == 1
     body = _json.loads(str(protected[0].content))

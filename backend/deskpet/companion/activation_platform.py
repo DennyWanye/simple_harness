@@ -123,9 +123,7 @@ class TrustedActivationDecisionProofV1:
 
     def validate(self) -> None:
         if self._authority is not _CONFIRMATION_AUTHORITY:
-            raise ActivationDispatchError(
-                "activation_confirmation_not_host_issued"
-            )
+            raise ActivationDispatchError("activation_confirmation_not_host_issued")
         facts = {
             "schema_version": 1,
             "authorization_hash": self.authorization_hash,
@@ -206,8 +204,7 @@ class CompanionStoreActivationDecisionProofResolver:
         if (
             facts["decision"] != "activate"
             or facts["verdict"] != "passed"
-            or facts["candidate_status"]
-            not in {"eligible", "activation_pending", "active"}
+            or facts["candidate_status"] not in {"eligible", "activation_pending", "active"}
             or facts["target_owner_key"] != authorization.target_owner_key
             or facts["target_scope"] != authorization.target_scope
             or facts["target_scope_key"] != authorization.target_scope_key
@@ -215,14 +212,10 @@ class CompanionStoreActivationDecisionProofResolver:
             != authorization.target_expected_binding_generation
             or facts["candidate_mode"]
             != (
-                None
-                if authorization.candidate_mode is None
-                else authorization.candidate_mode.value
+                None if authorization.candidate_mode is None else authorization.candidate_mode.value
             )
-            or facts["activation_package_hash"]
-            != authorization.target_package_hash
-            or facts["candidate_package_hash"]
-            != authorization.target_package_hash
+            or facts["activation_package_hash"] != authorization.target_package_hash
+            or facts["candidate_package_hash"] != authorization.target_package_hash
         ):
             return None
         preflight = json.loads(str(facts["static_preflight_json"]))
@@ -412,13 +405,10 @@ class CompanionStoreLifecycleCandidateSourceResolver:
                 "candidate manifest is not an object",
             )
         preflight = json.loads(str(row["static_preflight_json"]))
-        candidate_kind = str(
-            preflight.get("candidate_kind") or "unknown"
-        )
+        candidate_kind = str(preflight.get("candidate_kind") or "unknown")
         executable = candidate_kind in {"code", "hook", "local_runtime"}
-        if (
-            manifest_hash != str(row["candidate_manifest_hash"])
-            or archive_hash != str(row["archive_hash"])
+        if manifest_hash != str(row["candidate_manifest_hash"]) or archive_hash != str(
+            row["archive_hash"]
         ):
             raise CapabilityManagerError(
                 "candidate_lifecycle_archive_hash_mismatch",
@@ -487,21 +477,14 @@ class CapabilityManagerStaticLifecyclePort(CapabilityLifecycleStaticPort):
         self._manager = manager
         self._candidate_sources = candidate_sources
         self._management_policy = management_policy
-        self._prepared: dict[
-            tuple[str, str], TrustedLifecycleCandidateSourceV1
-        ] = {}
-        self._prepared_remove_overrides: dict[
-            tuple[str, str], _PreparedRemoveOverride
-        ] = {}
+        self._prepared: dict[tuple[str, str], TrustedLifecycleCandidateSourceV1] = {}
+        self._prepared_remove_overrides: dict[tuple[str, str], _PreparedRemoveOverride] = {}
 
     async def prepare_static(
         self,
         request: CapabilityLifecycleStaticRequest,
     ) -> PreparedCapabilityLifecycleMutation:
-        if (
-            request.action == "rollback"
-            and request.rollback_kind == "remove_override"
-        ):
+        if request.action == "rollback" and request.rollback_kind == "remove_override":
             return await self._prepare_remove_override(request)
         if request.action not in {"install", "update"}:
             raise CapabilityManagerError(
@@ -515,9 +498,7 @@ class CapabilityManagerStaticLifecyclePort(CapabilityLifecycleStaticPort):
                 "static_lifecycle_runtime_prepare_required",
                 "executable candidate requires the runtime-set lifecycle seam",
             )
-        operation_id = capability_operation_id(
-            request.manager_idempotency_key
-        )
+        operation_id = capability_operation_id(request.manager_idempotency_key)
         prepared = PreparedCapabilityLifecycleMutation(
             manager_operation_id=operation_id,
             request=request,
@@ -537,15 +518,10 @@ class CapabilityManagerStaticLifecyclePort(CapabilityLifecycleStaticPort):
                 "runtime_set_activation_required",
                 "non-empty lifecycle mutation cannot use empty activation",
             )
-        if (
-            request.action == "rollback"
-            and request.rollback_kind == "remove_override"
-        ):
+        if request.action == "rollback" and request.rollback_kind == "remove_override":
             return await self._activate_remove_override(prepared)
         try:
-            source = self._prepared[
-                (request.authorization_hash, prepared.manager_operation_id)
-            ]
+            source = self._prepared[(request.authorization_hash, prepared.manager_operation_id)]
         except KeyError as exc:
             raise CapabilityManagerError(
                 "static_lifecycle_prepared_state_missing",
@@ -558,9 +534,7 @@ class CapabilityManagerStaticLifecyclePort(CapabilityLifecycleStaticPort):
             "generated": True,
             "expected_pack_id": request.pack_id,
             "owner_key": request.owner_key,
-            "expected_binding_generation": (
-                request.expected_binding_generation
-            ),
+            "expected_binding_generation": (request.expected_binding_generation),
             "management_policy": self._management_policy,
         }
         if request.action == "update":
@@ -575,12 +549,8 @@ class CapabilityManagerStaticLifecyclePort(CapabilityLifecycleStaticPort):
             "version": result.binding.version,
             "manifest_hash": result.binding.manifest_hash,
             "binding_generation": result.binding.generation,
-            "committed_owner_binding_set_stamp": (
-                result.committed_owner_binding_set_stamp
-            ),
-            "process_projection_fingerprint": (
-                result.process_projection_fingerprint
-            ),
+            "committed_owner_binding_set_stamp": (result.committed_owner_binding_set_stamp),
+            "process_projection_fingerprint": (result.process_projection_fingerprint),
             "result_hash": result.manager_receipt_hash,
             "reason_code": "capability_manager_receipt_reconciled",
         }
@@ -612,9 +582,7 @@ class CapabilityManagerStaticLifecyclePort(CapabilityLifecycleStaticPort):
         self,
         request: CapabilityLifecycleStaticRequest,
     ) -> PreparedCapabilityLifecycleMutation:
-        operation_id = capability_operation_id(
-            request.manager_idempotency_key
-        )
+        operation_id = capability_operation_id(request.manager_idempotency_key)
         user_binding = await self._manager.store.get_binding(
             request.scope,
             request.scope_key,
@@ -624,8 +592,7 @@ class CapabilityManagerStaticLifecyclePort(CapabilityLifecycleStaticPort):
         if (
             user_binding is None
             or not user_binding.active
-            or user_binding.generation
-            != request.expected_binding_generation
+            or user_binding.generation != request.expected_binding_generation
         ):
             raise CapabilityManagerError(
                 "remove_override_user_binding_stale",
@@ -695,27 +662,19 @@ class CapabilityManagerStaticLifecyclePort(CapabilityLifecycleStaticPort):
                 "schema_version": 1,
                 "kind": "instruction_only_builtin_fallback",
                 "binding": fallback.to_dict(),
-                "owner_binding_set_stamp": (
-                    fallback_token.committed_owner_binding_set_stamp
-                ),
+                "owner_binding_set_stamp": (fallback_token.committed_owner_binding_set_stamp),
                 "runtime_set_hash": runtime_set_hash,
             }
         )
         state = _PreparedRemoveOverride(
             user_binding=user_binding,
             fallback_binding=fallback,
-            fallback_owner_binding_set_stamp=(
-                fallback_token.committed_owner_binding_set_stamp
-            ),
-            fallback_process_projection_fingerprint=(
-                process_projection_fingerprint
-            ),
+            fallback_owner_binding_set_stamp=(fallback_token.committed_owner_binding_set_stamp),
+            fallback_process_projection_fingerprint=(process_projection_fingerprint),
             fallback_runtime_set_ref=f"runtime-set:{runtime_set_hash}",
             fallback_runtime_set_hash=runtime_set_hash,
         )
-        self._prepared_remove_overrides[
-            (request.authorization_hash, operation_id)
-        ] = state
+        self._prepared_remove_overrides[(request.authorization_hash, operation_id)] = state
         return PreparedCapabilityLifecycleMutation(
             manager_operation_id=operation_id,
             request=request,
@@ -748,10 +707,7 @@ class CapabilityManagerStaticLifecyclePort(CapabilityLifecycleStaticPort):
             state.fallback_binding.capability_id,
             owner_key=state.fallback_binding.owner_key,
         )
-        if (
-            current_user != state.user_binding
-            or current_fallback != state.fallback_binding
-        ):
+        if current_user != state.user_binding or current_fallback != state.fallback_binding:
             raise CapabilityManagerError(
                 "remove_override_binding_fence_changed",
                 "the override or builtin fallback changed before activation",
@@ -762,19 +718,15 @@ class CapabilityManagerStaticLifecyclePort(CapabilityLifecycleStaticPort):
             scope_key=request.scope_key,
             idempotency_key=request.manager_idempotency_key,
             owner_key=request.owner_key,
-            expected_binding_generation=(
-                request.expected_binding_generation
-            ),
+            expected_binding_generation=(request.expected_binding_generation),
         )
         if (
-            result.operation.operation_id
-            != prepared.manager_operation_id
+            result.operation.operation_id != prepared.manager_operation_id
             or result.operation.status != "succeeded"
             or result.operation.phase != "published"
             or result.binding.owner_key != request.owner_key
             or result.binding.active
-            or result.binding.generation
-            <= request.expected_binding_generation
+            or result.binding.generation <= request.expected_binding_generation
             or not result.manager_receipt_hash
             or not result.committed_owner_binding_set_stamp
             or not result.process_projection_fingerprint
@@ -814,28 +766,18 @@ class CapabilityManagerStaticLifecyclePort(CapabilityLifecycleStaticPort):
             "action": "rollback",
             "pack_id": request.pack_id,
             "result_hash": result.manager_receipt_hash,
-            "committed_owner_binding_set_stamp": (
-                result.committed_owner_binding_set_stamp
-            ),
-            "process_projection_fingerprint": (
-                result.process_projection_fingerprint
-            ),
-            "target_user_owner_binding_set_stamp": (
-                result.committed_owner_binding_set_stamp
-            ),
+            "committed_owner_binding_set_stamp": (result.committed_owner_binding_set_stamp),
+            "process_projection_fingerprint": (result.process_projection_fingerprint),
+            "target_user_owner_binding_set_stamp": (result.committed_owner_binding_set_stamp),
             "fallback_owner_key": state.fallback_binding.owner_key,
             "fallback_scope": state.fallback_binding.scope,
             "fallback_scope_key": state.fallback_binding.scope_key,
             "fallback_binding_id": state.fallback_binding.binding_id,
-            "fallback_binding_generation": (
-                state.fallback_binding.generation
-            ),
+            "fallback_binding_generation": (state.fallback_binding.generation),
             "fallback_pack_id": state.fallback_binding.capability_id,
             "fallback_version": state.fallback_binding.version,
             "fallback_manifest_hash": state.fallback_binding.manifest_hash,
-            "fallback_owner_binding_set_stamp": (
-                state.fallback_owner_binding_set_stamp
-            ),
+            "fallback_owner_binding_set_stamp": (state.fallback_owner_binding_set_stamp),
             "fallback_process_projection_fingerprint": (
                 state.fallback_process_projection_fingerprint
             ),
@@ -861,8 +803,7 @@ class CapabilityManagerStaticLifecyclePort(CapabilityLifecycleStaticPort):
             or result.binding.capability_id != source.pack_id
             or result.binding.version != source.version
             or result.binding.manifest_hash != source.manifest_hash
-            or result.binding.generation
-            <= request.expected_binding_generation
+            or result.binding.generation <= request.expected_binding_generation
             or not result.manager_receipt_hash
             or not result.committed_owner_binding_set_stamp
             or not result.process_projection_fingerprint
@@ -884,9 +825,7 @@ class CompanionCapabilityMutationPlatform:
     ) -> None:
         self._platform = platform
         self._decision_proofs = decision_proofs
-        self._prepared: dict[
-            tuple[str, str], PreparedCapabilityLifecycleMutation
-        ] = {}
+        self._prepared: dict[tuple[str, str], PreparedCapabilityLifecycleMutation] = {}
 
     async def prepare_mutation(
         self,
@@ -908,15 +847,11 @@ class CompanionCapabilityMutationPlatform:
             scope_key=authorization.target_scope_key,
             pack_id=authorization.pack_id,
             manager_idempotency_key=authorization.manager_idempotency_key,
-            expected_binding_generation=(
-                authorization.target_expected_binding_generation
-            ),
+            expected_binding_generation=(authorization.target_expected_binding_generation),
             launch_revocation_epoch=authorization.revocation_epoch,
             candidate_id=authorization.candidate_id,
             candidate_mode=(
-                None
-                if authorization.candidate_mode is None
-                else authorization.candidate_mode.value
+                None if authorization.candidate_mode is None else authorization.candidate_mode.value
             ),
             target_version=authorization.target_version,
             target_manifest_hash=authorization.target_manifest_hash,
@@ -927,16 +862,12 @@ class CompanionCapabilityMutationPlatform:
             cause_ref=authorization.cause_ref,
         )
         try:
-            static = await self._platform.prepare_lifecycle_mutation_static(
-                request
-            )
+            static = await self._platform.prepare_lifecycle_mutation_static(request)
         except CapabilityManagerError as exc:
             raise ActivationDispatchError(exc.code) from exc
 
         runtime_set = static.runtime_set
-        runtime_set_hash = (
-            None if runtime_set is None else runtime_set.runtime_set_hash
-        )
+        runtime_set_hash = None if runtime_set is None else runtime_set.runtime_set_hash
         actual_identity = (
             static.manager_operation_id,
             static.runtime_set_ref,
@@ -949,9 +880,7 @@ class CompanionCapabilityMutationPlatform:
         )
         if any(value is not None for value in persisted_identity):
             if persisted_identity != actual_identity:
-                raise ActivationDispatchError(
-                    "capability_mutation_prepared_identity_conflict"
-                )
+                raise ActivationDispatchError("capability_mutation_prepared_identity_conflict")
 
         instances = tuple(
             self._public_instance(runtime_set, item)
@@ -980,9 +909,7 @@ class CompanionCapabilityMutationPlatform:
                 }
             ),
         )
-        self._prepared[
-            (authorization.authorization_hash, prepared.prepared_hash)
-        ] = static
+        self._prepared[(authorization.authorization_hash, prepared.prepared_hash)] = static
         return prepared
 
     async def start_runtime_instance(
@@ -991,9 +918,7 @@ class CompanionCapabilityMutationPlatform:
         prepared: PreparedCapabilityMutation,
         instance: PreparedMutationInstance,
     ) -> RuntimeInstanceStartOutcome:
-        static, runtime_set, spec = self._resolve_instance(
-            authorization, prepared, instance
-        )
+        static, runtime_set, spec = self._resolve_instance(authorization, prepared, instance)
         del static
         launch = RuntimeLaunchAuthorization.issue(runtime_set, spec)
         result = await self._platform.start_prepared_runtime_instance(
@@ -1054,9 +979,7 @@ class CompanionCapabilityMutationPlatform:
     ) -> bool:
         if start.outcome != "started" or not start.start_receipt_hash:
             raise ActivationDispatchError("runtime_started_ack_required")
-        _static, runtime_set, spec = self._resolve_instance(
-            authorization, prepared, instance
-        )
+        _static, runtime_set, spec = self._resolve_instance(authorization, prepared, instance)
         outcome = await self._platform.await_prepared_runtime_instance_health(
             runtime_set,
             spec,
@@ -1071,15 +994,11 @@ class CompanionCapabilityMutationPlatform:
         static = self._resolve_prepared(authorization, prepared)
         if static.runtime_set is None:
             try:
-                raw = await self._platform.activate_empty_lifecycle_mutation(
-                    static
-                )
+                raw = await self._platform.activate_empty_lifecycle_mutation(static)
             except CapabilityManagerError as exc:
                 raise ActivationDispatchError(exc.code) from exc
         else:
-            raw = await self._platform.activate_prepared_set(
-                static.runtime_set
-            )
+            raw = await self._platform.activate_prepared_set(static.runtime_set)
         return self._receipt(authorization, prepared, raw)
 
     async def abort_mutation(
@@ -1107,9 +1026,7 @@ class CompanionCapabilityMutationPlatform:
         self,
         authorization: CapabilityMutationAuthorization,
     ) -> None:
-        proof = await self._decision_proofs.resolve_activation_decision(
-            authorization
-        )
+        proof = await self._decision_proofs.resolve_activation_decision(authorization)
         if proof is None:
             raise ActivationDispatchError("activation_confirmation_required")
         proof.validate()
@@ -1135,16 +1052,11 @@ class CompanionCapabilityMutationPlatform:
             if (
                 proof.decision_mode != "user_confirmed"
                 or not proof.code_digest
-                or proof.activation_risk_ack
-                != "persistent_local_code_no_os_sandbox"
+                or proof.activation_risk_ack != "persistent_local_code_no_os_sandbox"
             ):
-                raise ActivationDispatchError(
-                    "executable_activation_confirmation_incomplete"
-                )
+                raise ActivationDispatchError("executable_activation_confirmation_incomplete")
         elif proof.activation_risk_ack != "none":
-            raise ActivationDispatchError(
-                "activation_risk_ack_not_applicable"
-            )
+            raise ActivationDispatchError("activation_risk_ack_not_applicable")
 
     @staticmethod
     def _validate_action_shape(
@@ -1163,16 +1075,13 @@ class CompanionCapabilityMutationPlatform:
                 authorization.decision_id,
             )
             if any(value is None for value in required):
-                raise ActivationDispatchError(
-                    "candidate_activation_authority_incomplete"
-                )
+                raise ActivationDispatchError("candidate_activation_authority_incomplete")
             return
         if authorization.action is MutationAction.ROLLBACK:
             if not authorization.rollback_kind:
                 raise ActivationDispatchError("rollback_kind_required")
             if authorization.rollback_kind != "remove_override" and (
-                not authorization.target_version
-                or not authorization.target_manifest_hash
+                not authorization.target_version or not authorization.target_manifest_hash
             ):
                 raise ActivationDispatchError("rollback_target_incomplete")
             return
@@ -1185,9 +1094,7 @@ class CompanionCapabilityMutationPlatform:
                 or authorization.candidate_mode is not None
                 or authorization.rollback_kind is not None
             ):
-                raise ActivationDispatchError(
-                    "removal_authority_shape_invalid"
-                )
+                raise ActivationDispatchError("removal_authority_shape_invalid")
             return
         raise ActivationDispatchError("mutation_action_unsupported")
 
@@ -1209,26 +1116,16 @@ class CompanionCapabilityMutationPlatform:
         prepared: PreparedCapabilityMutation,
     ) -> PreparedCapabilityLifecycleMutation:
         try:
-            static = self._prepared[
-                (authorization.authorization_hash, prepared.prepared_hash)
-            ]
+            static = self._prepared[(authorization.authorization_hash, prepared.prepared_hash)]
         except KeyError as exc:
-            raise ActivationDispatchError(
-                "capability_mutation_static_state_missing"
-            ) from exc
-        runtime_hash = (
-            None
-            if static.runtime_set is None
-            else static.runtime_set.runtime_set_hash
-        )
+            raise ActivationDispatchError("capability_mutation_static_state_missing") from exc
+        runtime_hash = None if static.runtime_set is None else static.runtime_set.runtime_set_hash
         if (
             static.manager_operation_id != prepared.manager_operation_id
             or static.runtime_set_ref != prepared.runtime_set_ref
             or runtime_hash != prepared.runtime_set_hash
         ):
-            raise ActivationDispatchError(
-                "capability_mutation_prepared_identity_conflict"
-            )
+            raise ActivationDispatchError("capability_mutation_prepared_identity_conflict")
         return static
 
     def _resolve_instance(
@@ -1259,48 +1156,34 @@ class CompanionCapabilityMutationPlatform:
         prepared: PreparedCapabilityMutation,
         raw: Mapping[str, Any],
     ) -> CapabilityMutationReceipt:
-        operation_id = str(
-            raw.get("manager_operation_id") or prepared.manager_operation_id
-        )
+        operation_id = str(raw.get("manager_operation_id") or prepared.manager_operation_id)
         action = str(raw.get("action") or authorization.action.value)
         pack_id = str(raw.get("pack_id") or authorization.pack_id)
-        result_hash = str(
-            raw.get("result_hash")
-            or raw.get("manager_receipt_set_hash")
-            or ""
-        )
+        result_hash = str(raw.get("result_hash") or raw.get("manager_receipt_set_hash") or "")
         if (
             operation_id != prepared.manager_operation_id
             or action != authorization.action.value
             or pack_id != authorization.pack_id
             or not result_hash
         ):
-            raise ActivationDispatchError(
-                "capability_manager_receipt_identity_mismatch"
-            )
+            raise ActivationDispatchError("capability_manager_receipt_identity_mismatch")
         return CapabilityMutationReceipt(
             activation_request_id=authorization.request_id,
             manager_operation_id=operation_id,
             action=authorization.action,
             pack_id=pack_id,
             result_hash=result_hash,
-            reason_code=str(
-                raw.get("reason_code") or "capability_mutation_activated"
-            ),
+            reason_code=str(raw.get("reason_code") or "capability_mutation_activated"),
             candidate_mode=authorization.candidate_mode,
             version=_optional_str(raw, "version", authorization.target_version),
-            manifest_hash=_optional_str(
-                raw, "manifest_hash", authorization.target_manifest_hash
-            ),
+            manifest_hash=_optional_str(raw, "manifest_hash", authorization.target_manifest_hash),
             source_fence_hash=authorization.source_fence_hash,
             runtime_set_ref=prepared.runtime_set_ref,
             runtime_set_hash=prepared.runtime_set_hash,
             target_owner_key=authorization.target_owner_key,
             target_scope=authorization.target_scope,
             binding_generation=_optional_int(raw, "binding_generation"),
-            owner_binding_set_stamp=_optional_str(
-                raw, "committed_owner_binding_set_stamp", None
-            ),
+            owner_binding_set_stamp=_optional_str(raw, "committed_owner_binding_set_stamp", None),
             process_projection_fingerprint=_optional_str(
                 raw, "process_projection_fingerprint", None
             ),
@@ -1309,42 +1192,26 @@ class CompanionCapabilityMutationPlatform:
             ),
             fallback_owner_key=_optional_str(raw, "fallback_owner_key", None),
             fallback_scope=_optional_str(raw, "fallback_scope", None),
-            fallback_scope_key=_optional_str(
-                raw, "fallback_scope_key", None
-            ),
-            fallback_binding_id=_optional_str(
-                raw, "fallback_binding_id", None
-            ),
-            fallback_binding_generation=_optional_int(
-                raw, "fallback_binding_generation"
-            ),
+            fallback_scope_key=_optional_str(raw, "fallback_scope_key", None),
+            fallback_binding_id=_optional_str(raw, "fallback_binding_id", None),
+            fallback_binding_generation=_optional_int(raw, "fallback_binding_generation"),
             fallback_pack_id=_optional_str(raw, "fallback_pack_id", None),
             fallback_version=_optional_str(raw, "fallback_version", None),
-            fallback_manifest_hash=_optional_str(
-                raw, "fallback_manifest_hash", None
-            ),
+            fallback_manifest_hash=_optional_str(raw, "fallback_manifest_hash", None),
             fallback_owner_binding_set_stamp=_optional_str(
                 raw, "fallback_owner_binding_set_stamp", None
             ),
             fallback_process_projection_fingerprint=_optional_str(
                 raw, "fallback_process_projection_fingerprint", None
             ),
-            fallback_runtime_set_ref=_optional_str(
-                raw, "fallback_runtime_set_ref", None
-            ),
-            fallback_runtime_set_hash=_optional_str(
-                raw, "fallback_runtime_set_hash", None
-            ),
+            fallback_runtime_set_ref=_optional_str(raw, "fallback_runtime_set_ref", None),
+            fallback_runtime_set_hash=_optional_str(raw, "fallback_runtime_set_hash", None),
             absence_proof_hash=_optional_str(raw, "absence_proof_hash", None),
             open_guard=bool(raw.get("open_guard", False)),
             guard_id=_optional_str(raw, "guard_id", None),
-            guard_policy_hash=_optional_str(
-                raw, "guard_policy_hash", None
-            ),
+            guard_policy_hash=_optional_str(raw, "guard_policy_hash", None),
             rollback_plan=(
-                None
-                if raw.get("rollback_plan") is None
-                else dict(raw["rollback_plan"])
+                None if raw.get("rollback_plan") is None else dict(raw["rollback_plan"])
             ),
         )
 
@@ -1389,10 +1256,7 @@ def _materialize_exact_archive(
             "candidate archive payload differs from its frozen hash",
         )
     if target.exists():
-        if (
-            target.is_file()
-            and hashlib.sha256(target.read_bytes()).hexdigest() == expected_hash
-        ):
+        if target.is_file() and hashlib.sha256(target.read_bytes()).hexdigest() == expected_hash:
             return
         raise CapabilityManagerError(
             "candidate_lifecycle_cache_conflict",

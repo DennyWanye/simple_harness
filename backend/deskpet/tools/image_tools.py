@@ -18,6 +18,7 @@ Name MUST stay ``generate_image`` — it equals capability_gate.py image
 REFUSE→PASS (consistent with companion-context-isolation §D2:
 "新增图像工具自动放行"). Plan: plans/2026-05-16-generate-image-tool.md
 """
+
 from __future__ import annotations
 
 import base64
@@ -70,8 +71,8 @@ _TIMEOUT = httpx.Timeout(connect=10.0, read=300.0, write=30.0, pool=30.0)
 # 重试只接「快速瞬时失败」：连接超时/断连/SSL/502/503（都没打到生成、
 # 无扣费风险）。读超时（等满 300s）与 504（上游耗尽 300s 预算）不重试 ——
 # 客户端断开后服务端仍会继续生成并扣费，盲目重试 = 双倍烧钱。
-_MAX_ATTEMPTS = 2           # 总尝试次数（仅瞬时错误重试 1 次）
-_RETRY_BACKOFF = (5.0,)     # attempt 2 前退避
+_MAX_ATTEMPTS = 2  # 总尝试次数（仅瞬时错误重试 1 次）
+_RETRY_BACKOFF = (5.0,)  # attempt 2 前退避
 # 注册到 ToolRegistry 的总超时：必须 > 最坏重试预算
 # （attempt1 瞬时失败 ≤~40s + 5s 退避 + attempt2 读满 300s + 收尾），
 # 否则 registry 会在请求跑完前杀掉 handler。
@@ -160,9 +161,7 @@ def _resolve_endpoint() -> tuple[str, str | None]:
         try:
             from config import standalone_config_section  # type: ignore[import-not-found]
 
-            base_url = str(
-                (standalone_config_section("llm") or {}).get("base_url", "")
-            )
+            base_url = str((standalone_config_section("llm") or {}).get("base_url", ""))
         except Exception:  # noqa: BLE001
             base_url = ""
     if not api_key:
@@ -214,10 +213,7 @@ def _image_model() -> str:
     try:
         from config import standalone_config_section  # type: ignore[import-not-found]
 
-        return str(
-            (standalone_config_section("image") or {}).get("model")
-            or _DEFAULT_MODEL
-        )
+        return str((standalone_config_section("image") or {}).get("model") or _DEFAULT_MODEL)
     except Exception:  # noqa: BLE001
         return _DEFAULT_MODEL
 
@@ -233,9 +229,7 @@ def _trust_env_proxy() -> bool:
     try:
         from config import standalone_config_section  # type: ignore[import-not-found]
 
-        return bool(
-            (standalone_config_section("image") or {}).get("trust_env_proxy", False)
-        )
+        return bool((standalone_config_section("image") or {}).get("trust_env_proxy", False))
     except Exception:  # noqa: BLE001
         return False
 
@@ -250,10 +244,7 @@ def _image_quality() -> str:
     try:
         from config import standalone_config_section  # type: ignore[import-not-found]
 
-        return str(
-            (standalone_config_section("image") or {}).get("quality")
-            or _DEFAULT_QUALITY
-        )
+        return str((standalone_config_section("image") or {}).get("quality") or _DEFAULT_QUALITY)
     except Exception:  # noqa: BLE001
         return _DEFAULT_QUALITY
 
@@ -342,8 +333,7 @@ def _classify_image_error(
     # relay 有时只返回自然语言 message；这层依赖文案，可能漏判。
     # 上层还会用「全图失败也回退」兜底，避免整套 PPT 变成占位图。
     if "model" in joined and any(
-        marker in joined
-        for marker in ("not found", "unsupport", "不支持", "不存在", "无可用")
+        marker in joined for marker in ("not found", "unsupport", "不支持", "不存在", "无可用")
     ):
         return "model_unavailable"
 
@@ -375,9 +365,7 @@ def _open_file(path: Path) -> bool:
         return False
 
 
-def _generate_png(
-    prompt: str, size: str, model: str
-) -> tuple[bytes | None, str | None]:
+def _generate_png(prompt: str, size: str, model: str) -> tuple[bytes | None, str | None]:
     """Blocking: the relay POST + transient-retry → (png_bytes, None) on
     success, or (None, error_hint) on failure. No file IO. Reused by
     BOTH the legacy sync handler and the async ImageGenerationWorker —
@@ -427,9 +415,7 @@ def _generate_png(
     last_transient = ""
     for _attempt in range(1, _MAX_ATTEMPTS + 1):
         try:
-            with httpx.Client(
-                timeout=_TIMEOUT, trust_env=_trust_env_proxy()
-            ) as cli:
+            with httpx.Client(timeout=_TIMEOUT, trust_env=_trust_env_proxy()) as cli:
                 resp = cli.post(
                     f"{base_url}/images/generations",
                     json=payload,
@@ -467,9 +453,7 @@ def _generate_png(
                 if item.get("b64_json"):
                     return base64.b64decode(item["b64_json"]), None
                 if item.get("url"):
-                    with httpx.Client(
-                        timeout=_TIMEOUT, trust_env=_trust_env_proxy()
-                    ) as cli:
+                    with httpx.Client(timeout=_TIMEOUT, trust_env=_trust_env_proxy()) as cli:
                         dl = cli.get(item["url"])
                     if dl.status_code != 200:
                         _set_image_error_context(dl.status_code, None, None)
@@ -532,6 +516,7 @@ def generate_images(prompts, *, size=_DEFAULT_SIZE, model=None):
     {"prompt": str, "path": str|None, "error": str|None}。
     任一 prompt 失败不影响其它（该项 path=None,error=原因）。从不抛异常。
     """
+
     def _safe_prompt_text(value) -> str:
         if isinstance(value, str):
             return value
@@ -650,12 +635,14 @@ def _handle_generate_image_sync(args: dict[str, Any], task_id: str = "") -> str:
             "opened": opened,
             "prompt": prompt,
             "model": model,
-            "artifacts": [{
-                "kind": "image",
-                "path": out_path,
-                "mime": mime,
-                "title": Path(out_path).name,
-            }],
+            "artifacts": [
+                {
+                    "kind": "image",
+                    "path": out_path,
+                    "mime": mime,
+                    "title": Path(out_path).name,
+                }
+            ],
         },
         ensure_ascii=False,
     )
@@ -665,9 +652,7 @@ def _async_enabled() -> bool:
     try:
         from config import standalone_config_section  # type: ignore[import-not-found]
 
-        return bool(
-            (standalone_config_section("image") or {}).get("async_enabled", True)
-        )
+        return bool((standalone_config_section("image") or {}).get("async_enabled", True))
     except Exception:  # noqa: BLE001
         return True
 
@@ -703,19 +688,13 @@ def _handle_generate_image(
     # Live services do not belong in the immutable trusted context.  New
     # harness calls use the supported synchronous fallback until a typed image
     # service port exists; only the historical merge can supply the worker.
-    worker = (
-        legacy_host_service(args, "_image_worker")
-        if execution_context is None
-        else None
-    )
+    worker = legacy_host_service(args, "_image_worker") if execution_context is None else None
     if worker is None:
         # worker 不可用（未注册/构造失败）→ 不静默失败，回退同步，
         # 用户至少能拿到图（慢但可用）。
         return _handle_generate_image_sync(args, task_id)
 
-    status, job_id = worker.submit(
-        session_id=session_id, prompt=prompt, size=size, model=model
-    )
+    status, job_id = worker.submit(session_id=session_id, prompt=prompt, size=size, model=model)
     if status == "already_generating":
         return json.dumps(
             {
@@ -744,10 +723,7 @@ def _handle_generate_image(
             "ok": True,
             "status": "generating",
             "job_id": job_id,
-            "message": (
-                "🎨 在画了，稍等~ 画好我会自动打开给你看，"
-                "这会儿你想聊点别的也行。"
-            ),
+            "message": ("🎨 在画了，稍等~ 画好我会自动打开给你看，这会儿你想聊点别的也行。"),
         },
         ensure_ascii=False,
     )
@@ -755,7 +731,11 @@ def _handle_generate_image(
 
 def register_static_tools(registry) -> None:
     registry.register(
-        "generate_image", "image", _SCHEMA, _handle_generate_image,
+        "generate_image",
+        "image",
+        _SCHEMA,
+        _handle_generate_image,
         context_handler=bind_context_handler(_handle_generate_image),
-        permission_category="network", timeout_seconds=_TOOL_TIMEOUT_S,
+        permission_category="network",
+        timeout_seconds=_TOOL_TIMEOUT_S,
     )

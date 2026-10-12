@@ -90,9 +90,7 @@ def _provider_workload_context(turn: Any):
         request_id=request_id,
         session_id=session_id,
         root_run_id=root_run_id,
-        task_scope_id=(
-            str(getattr(turn, "task_scope_id", "") or "") or None
-        ),
+        task_scope_id=(str(getattr(turn, "task_scope_id", "") or "") or None),
     )
 
 
@@ -312,16 +310,10 @@ class HubStorePersonalWorkflowCandidateSource:
         scope = await _await(self._scope_resolver(request, identity))
         if not isinstance(scope, CapabilityScope):
             raise TypeError("personal workflow scope resolver returned an invalid scope")
-        entries = await self._store.visible_entries(
-            scope, owner_key=identity.owner_key
-        )
+        entries = await self._store.visible_entries(scope, owner_key=identity.owner_key)
         candidates: list[FrozenPersonalWorkflowCandidateV1] = []
         for entry in entries:
-            bindings = tuple(
-                item
-                for item in entry.bindings
-                if item.active and item.generation > 0
-            )
+            bindings = tuple(item for item in entry.bindings if item.active and item.generation > 0)
             if not bindings:
                 continue
             selected_binding = max(
@@ -340,9 +332,7 @@ class HubStorePersonalWorkflowCandidateSource:
             )
             if record is None:
                 raise RuntimeError("personal_workflow_version_missing")
-            validated = await asyncio.to_thread(
-                load_and_validate_pack, record.install_path
-            )
+            validated = await asyncio.to_thread(load_and_validate_pack, record.install_path)
             manifest = validated.manifest
             if (
                 manifest.id != entry.version.capability_id
@@ -352,10 +342,8 @@ class HubStorePersonalWorkflowCandidateSource:
                 raise RuntimeError("personal_workflow_manifest_identity_stale")
             for workflow in manifest.workflows:
                 if (
-                    workflow.interpreter_id
-                    != PERSONAL_WORKFLOW_INTERPRETER_ID
-                    or workflow.interpreter_version
-                    != PERSONAL_WORKFLOW_INTERPRETER_VERSION
+                    workflow.interpreter_id != PERSONAL_WORKFLOW_INTERPRETER_ID
+                    or workflow.interpreter_version != PERSONAL_WORKFLOW_INTERPRETER_VERSION
                 ):
                     continue
                 graph_path = Path(validated.root, workflow.path)
@@ -367,9 +355,7 @@ class HubStorePersonalWorkflowCandidateSource:
                     raise RuntimeError("personal_workflow_graph_invalid")
                 graph_hash = str(validated.file_hashes.get(workflow.path) or "")
                 if not graph_hash:
-                    raise RuntimeError(
-                        "personal_workflow_graph_content_hash_missing"
-                    )
+                    raise RuntimeError("personal_workflow_graph_content_hash_missing")
                 identity_payload = {
                     "owner_key": identity.owner_key,
                     "pack_id": manifest.id,
@@ -382,8 +368,7 @@ class HubStorePersonalWorkflowCandidateSource:
                 candidates.append(
                     FrozenPersonalWorkflowCandidateV1(
                         candidate_id=(
-                            "personal-workflow-candidate:"
-                            + fingerprint_json(identity_payload)
+                            "personal-workflow-candidate:" + fingerprint_json(identity_payload)
                         ),
                         owner_key=identity.owner_key,
                         pack_id=manifest.id,
@@ -433,9 +418,7 @@ def _entry_identity(raw: Mapping[str, Any]) -> tuple[str, str, str, int]:
     if isinstance(binding, Mapping):
         item.setdefault("binding_generation", binding.get("generation"))
     if isinstance(selected_binding, Mapping):
-        item.setdefault(
-            "binding_generation", selected_binding.get("generation")
-        )
+        item.setdefault("binding_generation", selected_binding.get("generation"))
     return (
         str(item.get("pack_id") or item.get("capability_id") or ""),
         str(item.get("version") or ""),
@@ -478,23 +461,14 @@ class CompanionTurnAuthority:
         preference_interpreter: ModelPreferenceTurnInterpreter | None = None,
         personal_workflow_source: PersonalWorkflowCandidateSourcePort | None = None,
         personal_workflow_matcher: PersonalWorkflowMatcherPort | None = None,
-        preference_overrides: Callable[[Any, Mapping[str, Any]], Sequence[Any]]
+        preference_overrides: Callable[[Any, Mapping[str, Any]], Sequence[Any]] | None = None,
+        relevant_preference_keys: Callable[[Any, Mapping[str, Any]], Sequence[str] | None]
         | None = None,
-        relevant_preference_keys: Callable[
-            [Any, Mapping[str, Any]], Sequence[str] | None
-        ]
-        | None = None,
-        owner_memory_read_scope: Callable[
-            [Any, Mapping[str, Any], FrozenOwnerIdentity], Any
-        ]
+        owner_memory_read_scope: Callable[[Any, Mapping[str, Any], FrozenOwnerIdentity], Any]
         | None = None,
     ) -> None:
-        if (personal_workflow_source is None) != (
-            personal_workflow_matcher is None
-        ):
-            raise ValueError(
-                "personal workflow source and matcher must be configured together"
-            )
+        if (personal_workflow_source is None) != (personal_workflow_matcher is None):
+            raise ValueError("personal workflow source and matcher must be configured together")
         if preference_interpreter is not None and preference_overrides is not None:
             raise ValueError(
                 "model preference interpreter and legacy preference overrides "
@@ -513,10 +487,7 @@ class CompanionTurnAuthority:
         self, request: CompanionTurnPreparationRequestV1
     ) -> PreparedCompanionTurnV1:
         identity = self._identity_gate.freeze()
-        if (
-            request.ingress_owner is not None
-            and request.ingress_owner != identity
-        ):
+        if request.ingress_owner is not None and request.ingress_owner != identity:
             raise RuntimeError("companion_ingress_owner_fence_changed")
         turn = request.turn
         request_id = str(getattr(turn, "request_id", "") or "")
@@ -537,9 +508,10 @@ class CompanionTurnAuthority:
             if self._preference_overrides is not None
             else ()
         )
-        if self._preference_interpreter is not None and getattr(
-            turn, "venue", "text"
-        ) != "background":
+        if (
+            self._preference_interpreter is not None
+            and getattr(turn, "venue", "text") != "background"
+        ):
             message_id = request.current_message_id
             session_id = str(getattr(turn, "session_id", "") or "")
             if (
@@ -548,9 +520,7 @@ class CompanionTurnAuthority:
                 or int(message_id) < 1
                 or not session_id
             ):
-                raise RuntimeError(
-                    "companion_preference_source_message_missing"
-                )
+                raise RuntimeError("companion_preference_source_message_missing")
             user_text = str(getattr(turn, "text", "") or "")
             message_ref = f"message:{session_id}:{int(message_id)}"
             source_message_hash = canonical_hash(
@@ -566,11 +536,9 @@ class CompanionTurnAuthority:
                 source_message_hash=source_message_hash,
             )
             if interpreted is None:
-                assessment = (
-                    self._preference_interpreter.assessment_payload(
-                        user_text=user_text,
-                        current_preferences=current.items,
-                    )
+                assessment = self._preference_interpreter.assessment_payload(
+                    user_text=user_text,
+                    current_preferences=current.items,
                 )
                 interpreted = await self._preference_interpreter.interpret(
                     user_text=user_text,
@@ -591,26 +559,17 @@ class CompanionTurnAuthority:
             overrides = interpreted.overrides()
             if interpreted.has_observation:
                 task_scope_id = str(
-                    getattr(turn, "task_scope_id", "")
-                    or getattr(turn, "root_run_id", "")
-                    or ""
+                    getattr(turn, "task_scope_id", "") or getattr(turn, "root_run_id", "") or ""
                 )
                 if not task_scope_id:
-                    raise RuntimeError(
-                        "companion_preference_source_message_missing"
-                    )
-                source_ref = (
-                    f"preference-observation:{message_ref}:"
-                    f"{interpreted.preference_key}"
-                )
+                    raise RuntimeError("companion_preference_source_message_missing")
+                source_ref = f"preference-observation:{message_ref}:{interpreted.preference_key}"
                 event_id = "preference:" + canonical_hash(
                     {
                         "schema_version": 1,
                         "owner": {
                             "profile_id": identity.owner.profile_id,
-                            "profile_generation": (
-                                identity.owner.profile_generation
-                            ),
+                            "profile_generation": (identity.owner.profile_generation),
                         },
                         "source_ref": source_ref,
                         "preference_key": interpreted.preference_key,
@@ -625,17 +584,12 @@ class CompanionTurnAuthority:
                         source_kind="preference_observation",
                         source_ref=source_ref,
                         context_key=f"task:{task_scope_id}",
-                        root_run_id=str(
-                            getattr(turn, "root_run_id", "")
-                            or request_id
-                        ),
+                        root_run_id=str(getattr(turn, "root_run_id", "") or request_id),
                         reason_code="model_preference_observed",
                         payload={
                             "interpreter": "model_preference_turn_v1",
                             "decision_receipt_ref": message_ref,
-                            "decision_receipt_hash": canonical_hash(
-                                interpreted.to_dict()
-                            ),
+                            "decision_receipt_hash": canonical_hash(interpreted.to_dict()),
                             "decision_reason": interpreted.reason_code,
                         },
                     ),
@@ -670,8 +624,7 @@ class CompanionTurnAuthority:
             if scope is not None:
                 if (
                     scope.profile_id != identity.owner.profile_id
-                    or scope.profile_generation
-                    != identity.owner.profile_generation
+                    or scope.profile_generation != identity.owner.profile_generation
                 ):
                     raise RuntimeError("owner_memory_read_scope_owner_mismatch")
                 payload = {**scope.to_dict(), "scope_ref": scope.scope_ref}
@@ -689,9 +642,7 @@ class CompanionTurnAuthority:
         selected: FrozenPersonalWorkflowCandidateV1 | None = None
         query_hash: str | None = None
         if self._workflow_source is not None:
-            candidates = await self._workflow_source.frozen_candidates(
-                request, identity
-            )
+            candidates = await self._workflow_source.frozen_candidates(request, identity)
             assert self._workflow_matcher is not None
             selected_id = await _call_with_workload_context(
                 self._workflow_matcher.select_candidate,
@@ -701,18 +652,12 @@ class CompanionTurnAuthority:
             )
             if selected_id is not None:
                 selected = next(
-                    (
-                        item
-                        for item in candidates
-                        if item.candidate_id == str(selected_id)
-                    ),
+                    (item for item in candidates if item.candidate_id == str(selected_id)),
                     None,
                 )
                 if selected is None:
                     raise RuntimeError("personal_workflow_matcher_selected_unknown")
-                query_hash = personal_workflow_query_hash(
-                    str(getattr(turn, "text", "") or "")
-                )
+                query_hash = personal_workflow_query_hash(str(getattr(turn, "text", "") or ""))
         # 2026-09-09: the model-facing spawn tool was removed, so a matched
         # Personal Workflow no longer produces route text. Selection and the
         # query-hash alignment invariant below are kept unchanged (Slice 2b).
@@ -724,14 +669,10 @@ class CompanionTurnAuthority:
             "request_id": request_id,
             "preference_snapshot_hash": resolution.snapshot_hash,
             "skill_scope_ids": list(request.active_skill_scope_ids),
-            "personal_candidate_id": (
-                None if selected is None else selected.candidate_id
-            ),
+            "personal_candidate_id": (None if selected is None else selected.candidate_id),
         }
         return PreparedCompanionTurnV1(
-            preparation_id=(
-                "prepared-companion-turn:" + fingerprint_json(preparation_payload)
-            ),
+            preparation_id=("prepared-companion-turn:" + fingerprint_json(preparation_payload)),
             owner=identity.owner,
             owner_key=identity.owner_key,
             binding_epoch=identity.binding_epoch,
@@ -793,9 +734,7 @@ class CompanionTurnAuthority:
             lease_entry = entries.get(candidate_identity)
             if lease_entry is None:
                 raise RuntimeError("personal_workflow_catalog_binding_mismatch")
-            exact_by_name = {
-                str(item.get("name") or ""): item for item in capture.exact_tools
-            }
+            exact_by_name = {str(item.get("name") or ""): item for item in capture.exact_tools}
             raw_nodes = candidate.graph.get("nodes")
             if not isinstance(raw_nodes, list):
                 raise RuntimeError("personal_workflow_graph_invalid")
@@ -804,8 +743,7 @@ class CompanionTurnAuthority:
                     {
                         str((node.get("config") or {}).get("tool_name") or "")
                         for node in raw_nodes
-                        if isinstance(node, Mapping)
-                        and node.get("type") == "tool_call"
+                        if isinstance(node, Mapping) and node.get("type") == "tool_call"
                     }
                     - {""}
                 )
@@ -822,16 +760,13 @@ class CompanionTurnAuthority:
                 "nodes": [
                     {
                         "node_id": str(node.get("id") or ""),
-                        "tool_name": str(
-                            (node.get("config") or {}).get("tool_name") or ""
-                        ),
+                        "tool_name": str((node.get("config") or {}).get("tool_name") or ""),
                         "effect_policy_hash": tool_bindings[
                             str((node.get("config") or {}).get("tool_name") or "")
                         ]["effect_policy_hash"],
                     }
                     for node in raw_nodes
-                    if isinstance(node, Mapping)
-                    and node.get("type") == "tool_call"
+                    if isinstance(node, Mapping) and node.get("type") == "tool_call"
                 ],
             }
             selection = PersonalWorkflowSelectionV1.issue(
@@ -872,12 +807,10 @@ class CompanionTurnAuthority:
             "companion_snapshot_ref": snapshot.snapshot_id,
             "owner_key": prepared.owner_key,
             "selected_instruction_refs": [
-                copy.deepcopy(dict(item))
-                for item in prepared.selected_instruction_refs
+                copy.deepcopy(dict(item)) for item in prepared.selected_instruction_refs
             ],
             "skill_invocation_scopes": [
-                copy.deepcopy(dict(item))
-                for item in prepared.skill_invocation_scopes
+                copy.deepcopy(dict(item)) for item in prepared.skill_invocation_scopes
             ],
             "active_skill_scope_ids": list(prepared.active_skill_scope_ids),
             "personal_workflow_selection": personal_payload,

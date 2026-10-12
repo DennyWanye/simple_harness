@@ -269,24 +269,28 @@ def test_uncertainty_affects_given_as_text_counts_as_one_entry() -> None:
     raw = _envelope(
         "REFINE",
         REFINE_PAYLOAD,
-        uncertainties=[{"statement": "u", "severity": "LOW", "affects": "sales_report.md 的数据来源"}],
+        uncertainties=[
+            {"statement": "u", "severity": "LOW", "affects": "sales_report.md 的数据来源"}
+        ],
     )
     decoded = PlanningDecisionEnvelopeV1.from_json(raw)
     assert [u.affects for u in decoded.uncertainties] == [("sales_report.md 的数据来源",)]
     for bad in ("", 3, {"a": 1}):
         with pytest.raises(ContractError):
-            PlanningDecisionEnvelopeV1.from_json(_envelope(
-                "REFINE", REFINE_PAYLOAD,
-                uncertainties=[{"statement": "u", "severity": "LOW", "affects": bad}]))
+            PlanningDecisionEnvelopeV1.from_json(
+                _envelope(
+                    "REFINE",
+                    REFINE_PAYLOAD,
+                    uncertainties=[{"statement": "u", "severity": "LOW", "affects": bad}],
+                )
+            )
 
 
 def test_alternative_disposition_decode_path_is_closed() -> None:
     raw = _envelope(
         "REFINE",
         REFINE_PAYLOAD,
-        alternatives=[
-            {"method_ref": None, "label": "l", "disposition": "BOGUS", "reason": "r"}
-        ],
+        alternatives=[{"method_ref": None, "label": "l", "disposition": "BOGUS", "reason": "r"}],
     )
     with pytest.raises(ContractError):
         PlanningDecisionEnvelopeV1.from_json(raw)
@@ -875,7 +879,9 @@ def test_a_refining_decision_may_name_existing_steps_to_reuse() -> None:
     plain = RefineDecision.from_json(base)
     assert plain.reuse == {} and "reuse" not in plain.to_json()
     named = RefineDecision.from_json({**base, "reuse": {"write": "occ-1"}})
-    assert dict(named.reuse) == {"write": "occ-1"} and named.to_json()["reuse"] == {"write": "occ-1"}
+    assert dict(named.reuse) == {"write": "occ-1"} and named.to_json()["reuse"] == {
+        "write": "occ-1"
+    }
     for bad in ({"write": ""}, {"": "occ-1"}, {"a": "occ-1", "b": "occ-1"}, ["write"]):
         with pytest.raises(ContractError):
             RefineDecision.from_json({**base, "reuse": bad})

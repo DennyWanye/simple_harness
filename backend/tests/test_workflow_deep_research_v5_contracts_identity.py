@@ -20,12 +20,22 @@ def test_v5_manifest_is_frozen_and_legacy_manifests_remain_unchanged() -> None:
     assert fixture["fixture_schema_version"] == 1
     assert DEEP_RESEARCH_V5.manifest.to_dict() == fixture["v5_manifest"]
     for compiled in (DEEP_RESEARCH_V1, DEEP_RESEARCH_V2, DEEP_RESEARCH_V3, DEEP_RESEARCH_V4):
-        assert compiled.manifest.implementation_bundle_hash == fixture["legacy_manifest_bundle_hashes"][compiled.manifest.workflow_version]
+        assert (
+            compiled.manifest.implementation_bundle_hash
+            == fixture["legacy_manifest_bundle_hashes"][compiled.manifest.workflow_version]
+        )
 
 
 def test_v5_graph_identity_has_explicit_checkpointable_quality_loops() -> None:
     nodes = set(NODE_IDS)
-    assert {"gap_evaluate", "gap_work", "gap_join", "quality_audit", "repair_work", "repair_join"} <= nodes
+    assert {
+        "gap_evaluate",
+        "gap_work",
+        "gap_join",
+        "quality_audit",
+        "repair_work",
+        "repair_join",
+    } <= nodes
     conditional_sources = {edge.source for edge in DEEP_RESEARCH_V5.definition.conditional_edges}
     assert {"gap_evaluate", "gap_join", "quality_audit", "repair_join"} <= conditional_sources
     assert DEEP_RESEARCH_V5.definition.loop_budgets == {
@@ -38,13 +48,34 @@ def test_v5_graph_identity_has_explicit_checkpointable_quality_loops() -> None:
     }
     assert DEEP_RESEARCH_V5.definition.max_supersteps == 384
     assert DEEP_RESEARCH_V5.definition.recursion_limit == 512
-    assert DEEP_RESEARCH_V5.definition.policy_manifest["evidence_admission_policy_hash"] == POLICY_HASH
-    assert DEEP_RESEARCH_V5.definition.policy_manifest["report_quality_rubric_hash"] == REPORT_QUALITY_RUBRIC_V1_HASH
-    assert PUBLIC_STAGE_IDS == ("normalize", "plan", "research", "gap", "rerank", "synth", "quality", "persist", "finalize")
+    assert (
+        DEEP_RESEARCH_V5.definition.policy_manifest["evidence_admission_policy_hash"] == POLICY_HASH
+    )
+    assert (
+        DEEP_RESEARCH_V5.definition.policy_manifest["report_quality_rubric_hash"]
+        == REPORT_QUALITY_RUBRIC_V1_HASH
+    )
+    assert PUBLIC_STAGE_IDS == (
+        "normalize",
+        "plan",
+        "research",
+        "gap",
+        "rerank",
+        "synth",
+        "quality",
+        "persist",
+        "finalize",
+    )
 
 
 def test_v5_initial_state_is_versioned_without_claiming_a_terminal_result() -> None:
-    state = deep_research_initial_state(topic="education", run_id="run-v5", thread_id="thread-v5", session_id="session-v5", research_config={"enabled": True})
+    state = deep_research_initial_state(
+        topic="education",
+        run_id="run-v5",
+        thread_id="thread-v5",
+        session_id="session-v5",
+        research_config={"enabled": True},
+    )
     assert state["schema_version"] == 5
     assert state["workflow_version"] == "v5"
     values = state["values"]

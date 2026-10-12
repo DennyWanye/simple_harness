@@ -42,11 +42,23 @@ def _acquire(store: Store, pin_id: str, ref: AssuranceRef) -> bool:
     }
     if store.get_receipt(receipt_id) is None:  # a replay keeps the original receipt
         with atomic(store):
-            store.insert_receipt(commit_id=receipt_id, kind="AssurancePinPrepared", subject_id=pin_id,
-                                 base_version=0, proposal_hash=fingerprint(body), receipt=body)
+            store.insert_receipt(
+                commit_id=receipt_id,
+                kind="AssurancePinPrepared",
+                subject_id=pin_id,
+                base_version=0,
+                proposal_hash=fingerprint(body),
+                receipt=body,
+            )
     return AssuranceStore(store).acquire_pin(
-        pin_id, mission_id=MISSION, review_key=REVIEW, blob_hash=ref.pin.content_hash, object_ref=ref,
-        receipt=AssuranceRef("commit_receipt", Pin(receipt_id, 0, fingerprint(body))), now_ms=NOW)
+        pin_id,
+        mission_id=MISSION,
+        review_key=REVIEW,
+        blob_hash=ref.pin.content_hash,
+        object_ref=ref,
+        receipt=AssuranceRef("commit_receipt", Pin(receipt_id, 0, fingerprint(body))),
+        now_ms=NOW,
+    )
 
 
 def _open(tmp_path) -> Store:
@@ -58,7 +70,8 @@ def _open(tmp_path) -> Store:
 
 def _live(store: Store) -> int:
     return store.connection.execute(
-        "SELECT COUNT(*) FROM assurance_blob_pins WHERE review_key=? AND state<>'RELEASED'", (REVIEW,)
+        "SELECT COUNT(*) FROM assurance_blob_pins WHERE review_key=? AND state<>'RELEASED'",
+        (REVIEW,),
     ).fetchone()[0]
 
 
@@ -92,8 +105,12 @@ def test_one_object_still_has_at_most_one_live_pin(tmp_path):
 def test_the_live_guard_is_keyed_on_the_object_in_the_schema(tmp_path):
     store = Store.open(tmp_path / "orchestrator.db")
     try:
-        indexes = {row[0]: row[1] for row in store.connection.execute(
-            "SELECT name, sql FROM sqlite_master WHERE type='index' AND tbl_name='assurance_blob_pins'")}
+        indexes = {
+            row[0]: row[1]
+            for row in store.connection.execute(
+                "SELECT name, sql FROM sqlite_master WHERE type='index' AND tbl_name='assurance_blob_pins'"
+            )
+        }
         assert "assurance_blob_pin_live_uq" not in indexes
         assert "object_ref_json" in indexes["assurance_blob_pin_object_live_uq"]
         assert schema.SCHEMA_VERSION >= 27  # 28 adds the commit_receipts kind index (2026-09-26)

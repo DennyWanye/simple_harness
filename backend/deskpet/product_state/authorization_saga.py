@@ -35,12 +35,17 @@ def _receipt_hash(value: str, name: str) -> str:
 
 
 def auto_skill_approval_payload(
-    identity: AuthorizationSagaIdentity, *, intent_id: str,
-    content_digest: str, member_set_stamp: str, expires_at: float,
+    identity: AuthorizationSagaIdentity,
+    *,
+    intent_id: str,
+    content_digest: str,
+    member_set_stamp: str,
+    expires_at: float,
 ) -> dict[str, Any]:
     return {
         "schema": "auto-approved-skill-install-v1",
-        "approval_kind": "auto", "provenance_version": 1,
+        "approval_kind": "auto",
+        "provenance_version": 1,
         "intent_id": _required(intent_id, "intent_id"),
         "content_digest": _receipt_hash(content_digest, "content_digest"),
         "member_set_stamp": _receipt_hash(member_set_stamp, "member_set_stamp"),
@@ -49,8 +54,10 @@ def auto_skill_approval_payload(
         "grant_id": identity.grant_id,
         "grant_version": identity.grant_version,
         "grant_fingerprint": identity.grant_fingerprint,
-        "run_id": identity.run_id, "root_run_id": identity.root_run_id,
-        "call_id": identity.call_id, "effect_id": identity.effect_id,
+        "run_id": identity.run_id,
+        "root_run_id": identity.root_run_id,
+        "call_id": identity.call_id,
+        "effect_id": identity.effect_id,
         "decision_version": identity.decision_version,
         "expires_at": float(expires_at),
     }
@@ -61,10 +68,13 @@ def auto_skill_approval_receipt(
 ) -> tuple[str, str]:
     payload = auto_skill_approval_payload(identity, **kwargs)
     nonce = _hash({"domain": "auto-skill-decision-nonce-v1", **payload})
-    host_hash = _hash({
-        "domain": "auto-skill-host-decision-receipt-v1",
-        "decision_nonce": nonce, **payload,
-    })
+    host_hash = _hash(
+        {
+            "domain": "auto-skill-host-decision-receipt-v1",
+            "decision_nonce": nonce,
+            **payload,
+        }
+    )
     return nonce, host_hash
 
 
@@ -168,9 +178,7 @@ class AuthorizationSagaRecord:
 
 
 class AuthorizationSagaRepository:
-    def __init__(
-        self, database: ProductStateDatabase, *, owner_id: str = "runtime-1"
-    ) -> None:
+    def __init__(self, database: ProductStateDatabase, *, owner_id: str = "runtime-1") -> None:
         self.database = database
         self.owner_id = _required(owner_id, "owner_id")
 
@@ -197,8 +205,7 @@ class AuthorizationSagaRepository:
                     conflict = "authorization saga belongs to another owner"
                 elif (
                     result_id == identity.authorization_id
-                    and str(existing["request_fingerprint"])
-                    == identity.request_fingerprint
+                    and str(existing["request_fingerprint"]) == identity.request_fingerprint
                 ):
                     pass
                 else:
@@ -260,9 +267,14 @@ class AuthorizationSagaRepository:
         )
 
     def bind_auto_decision(
-        self, authorization_id: str, *, expected_version: int,
-        decision_nonce: str, decision_version: int,
-        host_receipt_hash: str, now: float,
+        self,
+        authorization_id: str,
+        *,
+        expected_version: int,
+        decision_nonce: str,
+        decision_version: int,
+        host_receipt_hash: str,
+        now: float,
     ) -> AuthorizationSagaRecord:
         """Bind a Host-owned Auto decision without inventing an SDK receipt."""
         decision_nonce = _required(decision_nonce, "decision_nonce")
@@ -278,7 +290,10 @@ class AuthorizationSagaRepository:
                 return current
             self._quarantine(authorization_id, now=self._time(now))
             raise SagaConflict("auto decision conflicts with durable binding")
-        if current.state is not AuthorizationSagaState.PREPARED or current.version != expected_version:
+        if (
+            current.state is not AuthorizationSagaState.PREPARED
+            or current.version != expected_version
+        ):
             self._quarantine(authorization_id, now=self._time(now))
             raise SagaConflict("auto decision CAS conflict")
         with self.database.connection:
@@ -287,8 +302,15 @@ class AuthorizationSagaRepository:
                 "decision_sdk_receipt_hash=NULL,decision_host_receipt_hash=?,"
                 "bound_decision_nonce=?,bound_decision_version=?,updated_at=? "
                 "WHERE authorization_id=? AND owner_id=? AND version=? AND state='prepared'",
-                (host_receipt_hash, decision_nonce, decision_version, self._time(now),
-                 authorization_id, self.owner_id, expected_version),
+                (
+                    host_receipt_hash,
+                    decision_nonce,
+                    decision_version,
+                    self._time(now),
+                    authorization_id,
+                    self.owner_id,
+                    expected_version,
+                ),
             ).rowcount
             if changed != 1:
                 raise SagaConflict("auto decision CAS conflict")
@@ -354,13 +376,9 @@ class AuthorizationSagaRepository:
         try:
             self.database.connection.execute("BEGIN IMMEDIATE")
             decision_set = (
-                ",bound_decision_nonce=?,bound_decision_version=?"
-                if prefix == "decision"
-                else ""
+                ",bound_decision_nonce=?,bound_decision_version=?" if prefix == "decision" else ""
             )
-            decision_values = (
-                (decision_nonce, decision_version) if prefix == "decision" else ()
-            )
+            decision_values = (decision_nonce, decision_version) if prefix == "decision" else ()
             changed = self.database.connection.execute(
                 f"UPDATE authorization_sagas SET state=?,version=version+1,"
                 f"{prefix}_sdk_receipt_hash=?,{prefix}_host_receipt_hash=?"
@@ -407,11 +425,10 @@ class AuthorizationSagaRepository:
                 return current
             self._quarantine(authorization_id, now=now)
             raise SagaConflict("outcome receipt conflicts with durable settlement")
-        if (
-            current.version != expected_version
-            or current.state
-            not in {AuthorizationSagaState.HANDOFF_COMMITTED, AuthorizationSagaState.DISPATCH_UNKNOWN}
-        ):
+        if current.version != expected_version or current.state not in {
+            AuthorizationSagaState.HANDOFF_COMMITTED,
+            AuthorizationSagaState.DISPATCH_UNKNOWN,
+        }:
             self._quarantine(authorization_id, now=now)
             raise SagaConflict("settlement CAS conflict")
         with self.database.connection:
@@ -638,8 +655,7 @@ class AuthorizationSagaRepository:
             ).fetchone()
         else:
             row = self.database.connection.execute(
-                "SELECT authorization_id FROM authorization_sagas "
-                "WHERE effect_id=? AND call_id=?",
+                "SELECT authorization_id FROM authorization_sagas WHERE effect_id=? AND call_id=?",
                 (_required(effect_id, "effect_id"), _required(call_id, "call_id")),
             ).fetchone()
         return None if row is None else self.read(str(row[0]))

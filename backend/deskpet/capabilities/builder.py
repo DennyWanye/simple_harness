@@ -284,9 +284,7 @@ class CapabilityBuildSearchEvidence:
         }
 
     @classmethod
-    def from_dict(
-        cls, value: Mapping[str, object]
-    ) -> CapabilityBuildSearchEvidence:
+    def from_dict(cls, value: Mapping[str, object]) -> CapabilityBuildSearchEvidence:
         stamp = value.get("catalog_stamp")
         if not isinstance(stamp, Mapping):
             raise CapabilityBuildError(
@@ -301,9 +299,7 @@ class CapabilityBuildSearchEvidence:
             query_hash=str(value.get("query_hash") or ""),
             hit_count=int(value.get("hit_count") or 0),
             best_executable_score=(None if score is None else float(score)),
-            evidence_kind=str(
-                value.get("evidence_kind") or "search"
-            ),  # type: ignore[arg-type]
+            evidence_kind=str(value.get("evidence_kind") or "search"),  # type: ignore[arg-type]
         )
 
 
@@ -415,9 +411,7 @@ class CapabilityBuildLineage:
             "original_objective": self.original_objective,
             "original_args": dict(self.original_args),
             "original_args_fingerprint": self.original_args_fingerprint,
-            "original_objective_fingerprint": (
-                self.original_objective_fingerprint
-            ),
+            "original_objective_fingerprint": (self.original_objective_fingerprint),
             "search_receipt_ref": self.search_receipt_ref,
             "catalog_stamp_fingerprint": self.catalog_stamp_fingerprint,
             "operation_kind": self.operation_kind,
@@ -442,16 +436,10 @@ class CapabilityBuildLineage:
             original_objective=str(value.get("original_objective") or ""),
             original_args=dict(args),
             search_receipt_ref=str(value.get("search_receipt_ref") or ""),
-            catalog_stamp_fingerprint=str(
-                value.get("catalog_stamp_fingerprint") or ""
-            ),
-            operation_kind=str(
-                value.get("operation_kind") or "install"
-            ),  # type: ignore[arg-type]
+            catalog_stamp_fingerprint=str(value.get("catalog_stamp_fingerprint") or ""),
+            operation_kind=str(value.get("operation_kind") or "install"),  # type: ignore[arg-type]
             parent_version=(
-                str(value["parent_version"])
-                if value.get("parent_version") is not None
-                else None
+                str(value["parent_version"]) if value.get("parent_version") is not None else None
             ),
             parent_manifest_hash=(
                 str(value["parent_manifest_hash"])
@@ -466,10 +454,7 @@ class CapabilityBuildLineage:
             lineage_id=str(value.get("lineage_id") or ""),
         )
         expected_args = value.get("original_args_fingerprint")
-        if (
-            expected_args is not None
-            and str(expected_args) != lineage.original_args_fingerprint
-        ):
+        if expected_args is not None and str(expected_args) != lineage.original_args_fingerprint:
             raise CapabilityBuildError(
                 "builder_lineage_mismatch",
                 "original args changed after builder admission",
@@ -477,8 +462,7 @@ class CapabilityBuildLineage:
         expected_objective = value.get("original_objective_fingerprint")
         if (
             expected_objective is not None
-            and str(expected_objective)
-            != lineage.original_objective_fingerprint
+            and str(expected_objective) != lineage.original_objective_fingerprint
         ):
             raise CapabilityBuildError(
                 "builder_lineage_mismatch",
@@ -495,9 +479,7 @@ class CapabilityBuildLaunch:
     managed_staging_base: str
     staging_root: str
     install_scope: Literal["run", "project", "user"] = "run"
-    publish_policy: CapabilityBuildPublishPolicy = (
-        CapabilityBuildPublishPolicy.GENERAL_INSTALL
-    )
+    publish_policy: CapabilityBuildPublishPolicy = CapabilityBuildPublishPolicy.GENERAL_INSTALL
     candidate_admission: CapabilityBuildCandidateAdmissionV1 | None = None
     max_repair_drafts: int = MAX_REPAIR_DRAFTS
     schema_version: int = CAPABILITY_BUILD_PROTOCOL_VERSION
@@ -514,23 +496,17 @@ class CapabilityBuildLaunch:
                 f"builder repair budget must be {MAX_REPAIR_DRAFTS}",
             )
         if (
-            self.lineage.search_receipt_ref
-            != self.search_evidence.receipt_ref
-            or self.lineage.catalog_stamp_fingerprint
-            != self.search_evidence.stamp_fingerprint
+            self.lineage.search_receipt_ref != self.search_evidence.receipt_ref
+            or self.lineage.catalog_stamp_fingerprint != self.search_evidence.stamp_fingerprint
         ):
             raise CapabilityBuildError(
                 "builder_search_lineage_mismatch",
                 "search evidence changed after builder admission",
             )
         workspace = Path(self.task_workspace).expanduser().resolve(strict=False)
-        managed_base = Path(self.managed_staging_base).expanduser().resolve(
-            strict=False
-        )
+        managed_base = Path(self.managed_staging_base).expanduser().resolve(strict=False)
         staging = Path(self.staging_root).expanduser().resolve(strict=False)
-        expected = (managed_base / self.lineage.lineage_id).resolve(
-            strict=False
-        )
+        expected = (managed_base / self.lineage.lineage_id).resolve(strict=False)
         if staging != expected:
             raise CapabilityBuildError(
                 "builder_staging_mismatch",
@@ -544,9 +520,7 @@ class CapabilityBuildLaunch:
         policy = CapabilityBuildPublishPolicy(self.publish_policy)
         object.__setattr__(self, "publish_policy", policy)
         if policy is CapabilityBuildPublishPolicy.CANDIDATE_ONLY:
-            if not isinstance(
-                self.candidate_admission, CapabilityBuildCandidateAdmissionV1
-            ):
+            if not isinstance(self.candidate_admission, CapabilityBuildCandidateAdmissionV1):
                 raise CapabilityBuildError(
                     "candidate_build_admission_required",
                     "candidate-only launch requires host-issued admission",
@@ -565,9 +539,7 @@ class CapabilityBuildLaunch:
         return str(self.draft_path(0))
 
     def draft_path(self, draft_index: int) -> Path:
-        if not isinstance(draft_index, int) or not 0 <= draft_index <= (
-            self.max_repair_drafts
-        ):
+        if not isinstance(draft_index, int) or not 0 <= draft_index <= (self.max_repair_drafts):
             raise CapabilityBuildError(
                 "repair_budget_exhausted",
                 f"draft index must be between 0 and {self.max_repair_drafts}",
@@ -576,9 +548,7 @@ class CapabilityBuildLaunch:
 
     def source_revision(self, draft_index: int) -> str:
         self.draft_path(draft_index)
-        return (
-            f"generated-{self.lineage.lineage_id[:20]}-draft-{draft_index}"
-        )
+        return f"generated-{self.lineage.lineage_id[:20]}-draft-{draft_index}"
 
     def to_dict(self) -> dict[str, JsonValue]:
         return {
@@ -597,16 +567,10 @@ class CapabilityBuildLaunch:
                 else {
                     "permit_id": self.candidate_admission.permit.permit_id,
                     "permit_hash": self.candidate_admission.permit.permit_hash,
-                    "builder_launch_id": (
-                        self.candidate_admission.builder_launch_id
-                    ),
+                    "builder_launch_id": (self.candidate_admission.builder_launch_id),
                     "child_run_id": self.candidate_admission.child_run_id,
-                    "child_start_hash": (
-                        self.candidate_admission.child_start_hash
-                    ),
-                    "expected_entry_kinds": list(
-                        self.candidate_admission.expected_entry_kinds
-                    ),
+                    "child_start_hash": (self.candidate_admission.child_start_hash),
+                    "expected_entry_kinds": list(self.candidate_admission.expected_entry_kinds),
                 }
             ),
             "max_repair_drafts": self.max_repair_drafts,
@@ -621,8 +585,7 @@ class CapabilityBuildLaunch:
             "generated_execution_profile": "brokered-effect-v1",
             "output_contract": (
                 "candidate-draft-receipt-v1"
-                if self.publish_policy
-                is CapabilityBuildPublishPolicy.CANDIDATE_ONLY
+                if self.publish_policy is CapabilityBuildPublishPolicy.CANDIDATE_ONLY
                 else "capability-manager-install-request-v1"
             ),
         }
@@ -636,9 +599,7 @@ class CapabilityBuildLaunch:
                 "invalid_builder_payload",
                 "builder lineage and search evidence are required",
             )
-        policy = CapabilityBuildPublishPolicy(
-            str(value.get("publish_policy") or "general_install")
-        )
+        policy = CapabilityBuildPublishPolicy(str(value.get("publish_policy") or "general_install"))
         if policy is CapabilityBuildPublishPolicy.CANDIDATE_ONLY:
             raise CapabilityBuildError(
                 "candidate_launch_requires_host_admission",
@@ -649,13 +610,9 @@ class CapabilityBuildLaunch:
             lineage=CapabilityBuildLineage.from_dict(lineage),
             search_evidence=CapabilityBuildSearchEvidence.from_dict(search),
             task_workspace=str(value.get("task_workspace") or ""),
-            managed_staging_base=str(
-                value.get("managed_staging_base") or ""
-            ),
+            managed_staging_base=str(value.get("managed_staging_base") or ""),
             staging_root=str(value.get("staging_root") or ""),
-            install_scope=str(
-                value.get("install_scope") or "run"
-            ),  # type: ignore[arg-type]
+            install_scope=str(value.get("install_scope") or "run"),  # type: ignore[arg-type]
             publish_policy=policy,
             max_repair_drafts=int(value.get("max_repair_drafts") or -1),
         )
@@ -831,9 +788,7 @@ class CapabilityBuildEvidence:
             "install_request": self.install_request.to_dict(),
             "search_receipt_ref": self.search_receipt_ref,
             "catalog_stamp_fingerprint": self.catalog_stamp_fingerprint,
-            "original_objective_fingerprint": (
-                self.original_objective_fingerprint
-            ),
+            "original_objective_fingerprint": (self.original_objective_fingerprint),
             "original_args_fingerprint": self.original_args_fingerprint,
         }
 
@@ -987,12 +942,7 @@ def _trusted_workspace(value: object) -> Path:
     if isinstance(value, str):
         selected = value
     elif isinstance(value, Mapping):
-        selected = str(
-            value.get("workspace_root")
-            or value.get("root")
-            or value.get("path")
-            or ""
-        )
+        selected = str(value.get("workspace_root") or value.get("root") or value.get("path") or "")
     else:
         selected = ""
     if not selected:
@@ -1049,17 +999,19 @@ class CapabilityBuilderHost:
         # old ingress is intentionally still live until Slice C's atomic
         # switch, so its old UoW/path constructor remains a compatibility seam
         # and must not be used by the SDK composition.
-        self.store = (
-            store if isinstance(store, CapabilityStore) else CapabilityStore(store)
-        )  # type: ignore[arg-type]
+        self.store = store if isinstance(store, CapabilityStore) else CapabilityStore(store)  # type: ignore[arg-type]
         self.tool_registry = tool_registry
         self.environment = environment or PackEnvironment.current()
         self.runtime = runtime or LocalToolRuntime(default_timeout_seconds=10.0)
         self.staging_base = (
-            Path(staging_base)
-            if staging_base is not None
-            else self.store.path.parent / CAPABILITY_STAGING_DIRECTORY
-        ).expanduser().resolve(strict=False)
+            (
+                Path(staging_base)
+                if staging_base is not None
+                else self.store.path.parent / CAPABILITY_STAGING_DIRECTORY
+            )
+            .expanduser()
+            .resolve(strict=False)
+        )
         self.tool_service = tool_service
         # Task 13 removed the dormant/production output switch. Every host has
         # the governed candidate receipt sink; the frozen launch policy still
@@ -1069,10 +1021,8 @@ class CapabilityBuilderHost:
             CandidateDraftReceiptBuildOutput,
         )
 
-        self.candidate_output_port: CapabilityBuildOutputPort = (
-            CandidateDraftReceiptBuildOutput(
-                created_at=lambda: datetime.now(UTC).isoformat()
-            )
+        self.candidate_output_port: CapabilityBuildOutputPort = CandidateDraftReceiptBuildOutput(
+            created_at=lambda: datetime.now(UTC).isoformat()
         )
 
     def admit_candidate_only_output(
@@ -1088,8 +1038,7 @@ class CapabilityBuilderHost:
         """Freeze candidate-only authority before the child authors any bytes."""
 
         if (
-            launch.publish_policy
-            is not CapabilityBuildPublishPolicy.GENERAL_INSTALL
+            launch.publish_policy is not CapabilityBuildPublishPolicy.GENERAL_INSTALL
             or launch.candidate_admission is not None
         ):
             raise CapabilityBuildError(
@@ -1124,8 +1073,7 @@ class CapabilityBuilderHost:
         context: Any = None,
     ) -> CandidateBuilderTerminalCommitExtension:
         if (
-            launch.publish_policy
-            is not CapabilityBuildPublishPolicy.CANDIDATE_ONLY
+            launch.publish_policy is not CapabilityBuildPublishPolicy.CANDIDATE_ONLY
             or launch.candidate_admission is None
         ):
             raise CapabilityBuildError(
@@ -1250,9 +1198,7 @@ class CapabilityBuilderHost:
                 "tool registry cannot prove the current catalog revision",
             )
         registry_snapshot = snapshot_method()
-        current_registry_revision = int(
-            getattr(registry_snapshot, "revision", -1)
-        )
+        current_registry_revision = int(getattr(registry_snapshot, "revision", -1))
         stamp = attestation.stamp
         if (
             stamp.catalog_generation != state.catalog_generation
@@ -1289,9 +1235,7 @@ class CapabilityBuilderHost:
     ) -> CapabilityBuildLaunch:
         workspace = _trusted_workspace(task_workspace)
         if requested_workspace:
-            requested = Path(str(requested_workspace)).expanduser().resolve(
-                strict=False
-            )
+            requested = Path(str(requested_workspace)).expanduser().resolve(strict=False)
             if requested != workspace:
                 raise CapabilityBuildError(
                     "builder_workspace_override_forbidden",
@@ -1300,9 +1244,7 @@ class CapabilityBuilderHost:
         repair_receipt = None
         parent_record = None
         if repair_receipt_ref is not None:
-            repair_receipt = await self.store.get_failure_receipt(
-                repair_receipt_ref
-            )
+            repair_receipt = await self.store.get_failure_receipt(repair_receipt_ref)
             if repair_receipt is None:
                 raise CapabilityBuildError(
                     "failure_receipt_missing",
@@ -1385,20 +1327,12 @@ class CapabilityBuilderHost:
             search_receipt_ref=evidence.receipt_ref,
             catalog_stamp_fingerprint=evidence.stamp_fingerprint,
             operation_kind=operation_kind,
-            parent_version=(
-                repair_receipt.pack_version
-                if repair_receipt is not None
-                else None
-            ),
+            parent_version=(repair_receipt.pack_version if repair_receipt is not None else None),
             parent_manifest_hash=(
-                repair_receipt.manifest_hash
-                if repair_receipt is not None
-                else None
+                repair_receipt.manifest_hash if repair_receipt is not None else None
             ),
             failure_receipt_ref=(
-                repair_receipt.receipt_ref
-                if repair_receipt is not None
-                else None
+                repair_receipt.receipt_ref if repair_receipt is not None else None
             ),
         )
         self.staging_base.parent.mkdir(parents=True, exist_ok=True)
@@ -1528,8 +1462,7 @@ class CapabilityBuilderHost:
                         f"generated worker imports unsafe module: {root or '<relative>'}",
                     )
             elif isinstance(node, ast.Name) and (
-                node.id in _FORBIDDEN_WORKER_NAMES
-                or node.id in _FORBIDDEN_WORKER_ROOTS
+                node.id in _FORBIDDEN_WORKER_NAMES or node.id in _FORBIDDEN_WORKER_ROOTS
             ):
                 raise CapabilityBuildError(
                     "generated_worker_unsafe",
@@ -1539,9 +1472,7 @@ class CapabilityBuilderHost:
                 root = node
                 while isinstance(root, ast.Attribute):
                     root = root.value
-                if isinstance(root, ast.Name) and root.id in (
-                    _FORBIDDEN_WORKER_ROOTS
-                ):
+                if isinstance(root, ast.Name) and root.id in (_FORBIDDEN_WORKER_ROOTS):
                     raise CapabilityBuildError(
                         "generated_worker_unsafe",
                         f"generated worker uses unsafe module: {root.id}",
@@ -1564,9 +1495,7 @@ class CapabilityBuilderHost:
                 "generated_test_invalid",
                 f"{path.name} must contain exactly {sorted(required)}",
             )
-        if value.get("schema_version") != 1 or not isinstance(
-            value.get("args"), dict
-        ):
+        if value.get("schema_version") != 1 or not isinstance(value.get("args"), dict):
             raise CapabilityBuildError(
                 "generated_test_invalid",
                 f"{path.name} has an invalid schema version or args",
@@ -1608,9 +1537,7 @@ class CapabilityBuilderHost:
                 item.path,
                 (validation.root / item.path).read_bytes(),
             )
-            for item in sorted(
-                validation.manifest.files, key=lambda value: value.path
-            )
+            for item in sorted(validation.manifest.files, key=lambda value: value.path)
         )
         members = (
             (PACK_MANIFEST_NAME, manifest_path.read_bytes()),
@@ -1736,11 +1663,7 @@ class CapabilityBuilderHost:
             ),
             cwd=str(validation.root),
         )
-        health_value = (
-            None
-            if health.response is None
-            else health.response.get("value")
-        )
+        health_value = None if health.response is None else health.response.get("value")
         if (
             health.status != "success"
             or not isinstance(health_value, Mapping)
@@ -1749,9 +1672,7 @@ class CapabilityBuilderHost:
         ):
             raise CapabilityBuildError(
                 "generated_healthcheck_failed",
-                health.error_code
-                or health.error_message
-                or "generated worker healthcheck failed",
+                health.error_code or health.error_message or "generated worker healthcheck failed",
             )
         happy_result = await self.runtime.execute(
             argv,
@@ -1815,10 +1736,8 @@ class CapabilityBuilderHost:
             if (
                 evidence.lineage_id != launch.lineage.lineage_id
                 or evidence.draft_index >= draft_index
-                or evidence.search_receipt_ref
-                != launch.lineage.search_receipt_ref
-                or evidence.original_args_fingerprint
-                != launch.lineage.original_args_fingerprint
+                or evidence.search_receipt_ref != launch.lineage.search_receipt_ref
+                or evidence.original_args_fingerprint != launch.lineage.original_args_fingerprint
                 or evidence.original_objective_fingerprint
                 != launch.lineage.original_objective_fingerprint
             ):
@@ -1847,8 +1766,7 @@ class CapabilityBuilderHost:
         manifest = validation.manifest
         if (
             manifest.source.type != "local"
-            or Path(manifest.source.uri).expanduser().resolve(strict=False)
-            != resolved
+            or Path(manifest.source.uri).expanduser().resolve(strict=False) != resolved
             or manifest.source.revision != launch.source_revision(draft_index)
         ):
             raise CapabilityBuildError(
@@ -1859,19 +1777,12 @@ class CapabilityBuilderHost:
             *(("skill",) if manifest.skills else ()),
             *(("workflow",) if manifest.workflows else ()),
         }
-        if (
-            governed_kinds
-            and launch.publish_policy
-            is CapabilityBuildPublishPolicy.GENERAL_INSTALL
-        ):
+        if governed_kinds and launch.publish_policy is CapabilityBuildPublishPolicy.GENERAL_INSTALL:
             raise CapabilityBuildError(
                 "governance_admission_required",
                 "Skill/Workflow output requires governed candidate admission",
             )
-        if (
-            launch.publish_policy
-            is CapabilityBuildPublishPolicy.CANDIDATE_ONLY
-        ):
+        if launch.publish_policy is CapabilityBuildPublishPolicy.CANDIDATE_ONLY:
             admission = launch.candidate_admission
             assert admission is not None
             if not governed_kinds or not governed_kinds.issubset(
@@ -1881,9 +1792,7 @@ class CapabilityBuilderHost:
                     "candidate_entry_kind_mismatch",
                     "validated governed entries differ from frozen admission",
                 )
-        if manifest.mcp_servers or (
-            not manifest.tools and not governed_kinds
-        ):
+        if manifest.mcp_servers or (not manifest.tools and not governed_kinds):
             raise CapabilityBuildError(
                 "generated_entries_invalid",
                 "generated pack must contain governed entries or local JSON tools",
@@ -1925,9 +1834,7 @@ class CapabilityBuilderHost:
         happy: Mapping[str, Any] | None = None
         invalid: Mapping[str, Any] | None = None
         if manifest.tools:
-            self._validate_compute_only_worker(
-                validation.root / GENERATED_WORKER_PATH
-            )
+            self._validate_compute_only_worker(validation.root / GENERATED_WORKER_PATH)
             happy = self._load_test(
                 validation.root / HAPPY_PATH_TEST,
                 invalid=False,
@@ -1937,12 +1844,8 @@ class CapabilityBuilderHost:
                 invalid=True,
             )
         material = self._material_fingerprint(validation)
-        prior_material = {
-            evidence.material_fingerprint for evidence in prior_evidence
-        }
-        prior_material.update(
-            self._prior_draft_fingerprints(launch, draft_index)
-        )
+        prior_material = {evidence.material_fingerprint for evidence in prior_evidence}
+        prior_material.update(self._prior_draft_fingerprints(launch, draft_index))
         if material in prior_material:
             raise CapabilityBuildError(
                 "repair_draft_not_materially_different",
@@ -2015,15 +1918,9 @@ class CapabilityBuilderHost:
             ),
             install_request=install_request,
             search_receipt_ref=launch.lineage.search_receipt_ref,
-            catalog_stamp_fingerprint=(
-                launch.lineage.catalog_stamp_fingerprint
-            ),
-            original_objective_fingerprint=(
-                launch.lineage.original_objective_fingerprint
-            ),
-            original_args_fingerprint=(
-                launch.lineage.original_args_fingerprint
-            ),
+            catalog_stamp_fingerprint=(launch.lineage.catalog_stamp_fingerprint),
+            original_objective_fingerprint=(launch.lineage.original_objective_fingerprint),
+            original_args_fingerprint=(launch.lineage.original_args_fingerprint),
         )
 
     async def finalize_child_completion(
@@ -2051,21 +1948,14 @@ class CapabilityBuilderHost:
             launch,
             draft_index=completion.draft_index,
         )
-        if (
-            launch.publish_policy
-            is CapabilityBuildPublishPolicy.CANDIDATE_ONLY
-        ):
+        if launch.publish_policy is CapabilityBuildPublishPolicy.CANDIDATE_ONLY:
             output = self.candidate_output_port
             if output is None:
                 raise CapabilityBuildError(
                     "candidate_output_unavailable",
                     "Companion candidate output authority is unavailable",
                 )
-            if (
-                transaction is None
-                or record is None
-                or terminal_event is None
-            ):
+            if transaction is None or record is None or terminal_event is None:
                 raise CapabilityBuildError(
                     "candidate_terminal_uow_required",
                     "candidate receipt must share the child terminal transaction",
@@ -2095,11 +1985,7 @@ class CapabilityBuilderHost:
                 "capability_manager_unavailable",
                 "builder validation passed but the capability manager is unavailable",
             )
-        kind = (
-            "repair"
-            if evidence.install_request.operation_kind == "repair"
-            else "install"
-        )
+        kind = "repair" if evidence.install_request.operation_kind == "repair" else "install"
         result = await service.install(
             evidence.install_request.to_tool_args(),
             context,
@@ -2111,8 +1997,7 @@ class CapabilityBuilderHost:
                 "capability manager returned a non-object result",
             )
         if (
-            str(result.get("pack_id") or "")
-            != evidence.install_request.expected_pack_id
+            str(result.get("pack_id") or "") != evidence.install_request.expected_pack_id
             or str(result.get("manifest_hash") or "") != evidence.manifest_hash
             or not isinstance(result.get("operation_receipt"), Mapping)
         ):
@@ -2127,9 +2012,7 @@ class CapabilityBuilderHost:
                 "schema_version": completion.schema_version,
                 "lineage_id": completion.lineage_id,
                 "draft_index": completion.draft_index,
-                "draft_path": str(
-                    launch.draft_path(completion.draft_index)
-                ),
+                "draft_path": str(launch.draft_path(completion.draft_index)),
             },
         }
 
@@ -2161,9 +2044,7 @@ class CandidateBuilderTerminalCommitExtension:
                     "builder_launch_id": admission.builder_launch_id,
                     "child_run_id": admission.child_run_id,
                     "child_start_hash": admission.child_start_hash,
-                    "expected_entry_kinds": list(
-                        admission.expected_entry_kinds
-                    ),
+                    "expected_entry_kinds": list(admission.expected_entry_kinds),
                 }
             ),
         )

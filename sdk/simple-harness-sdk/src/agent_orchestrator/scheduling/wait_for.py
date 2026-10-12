@@ -32,7 +32,9 @@ FENCING_STATES: frozenset[str] = frozenset({"FENCED", "WAITING"})
 #: 对外操作里"交出去了、结果未明"的状态（``actions.state``）
 HANDED_OFF_STATES: frozenset[str] = frozenset({"HANDED_OFF", "UNKNOWN"})
 #: 尝试还在跑的状态（``attempts.status``）
-LIVE_ATTEMPT_STATES: frozenset[str] = frozenset({"PENDING", "CLAIMED", "RUNNING", "SUBMITTED", "VERIFYING"})
+LIVE_ATTEMPT_STATES: frozenset[str] = frozenset(
+    {"PENDING", "CLAIMED", "RUNNING", "SUBMITTED", "VERIFYING"}
+)
 TERMINAL_TASK_STATES: frozenset[str] = frozenset({"COMPLETED", "FAILED", "CANCELLED"})
 
 
@@ -50,7 +52,12 @@ class WaitEdge:
             raise ValueError("a wait edge names both ends")
 
     def to_json(self) -> dict[str, Any]:
-        return {"waiter": self.waiter, "holder": self.holder, "kind": self.kind, "detail": self.detail}
+        return {
+            "waiter": self.waiter,
+            "holder": self.holder,
+            "kind": self.kind,
+            "detail": self.detail,
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,16 +70,24 @@ class WaitCycle:
     @property
     def digest(self) -> str:
         body = {"members": list(self.members), "edges": [e.to_json() for e in self.edges]}
-        return hashlib.sha256(json.dumps(body, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
+        return hashlib.sha256(
+            json.dumps(body, sort_keys=True, ensure_ascii=False).encode("utf-8")
+        ).hexdigest()
 
     def to_json(self) -> dict[str, Any]:
-        return {"members": list(self.members), "edges": [e.to_json() for e in self.edges], "digest": self.digest}
+        return {
+            "members": list(self.members),
+            "edges": [e.to_json() for e in self.edges],
+            "digest": self.digest,
+        }
 
 
 @dataclass(frozen=True, slots=True)
 class WaitForGraph:
     edges: tuple[WaitEdge, ...] = ()
-    _adjacency: Mapping[str, tuple[str, ...]] = field(default_factory=dict, repr=False, compare=False)
+    _adjacency: Mapping[str, tuple[str, ...]] = field(
+        default_factory=dict, repr=False, compare=False
+    )
 
     def __post_init__(self) -> None:
         adjacency: dict[str, list[str]] = {}
@@ -136,8 +151,12 @@ class WaitForGraph:
                 visit(node)
         found: list[WaitCycle] = []
         for component in components:
-            inside = tuple(sorted((e for e in self.edges if e.waiter in component and e.holder in component),
-                                  key=lambda e: (e.waiter, e.holder, e.kind, e.detail)))
+            inside = tuple(
+                sorted(
+                    (e for e in self.edges if e.waiter in component and e.holder in component),
+                    key=lambda e: (e.waiter, e.holder, e.kind, e.detail),
+                )
+            )
             if len(component) >= 2 or any(e.waiter == e.holder for e in inside):
                 found.append(WaitCycle(tuple(sorted(component)), inside))
         return tuple(sorted(found, key=lambda c: c.members))
@@ -203,14 +222,25 @@ def collect_wait_facts(store: Any, network: Any) -> WaitForGraph:
 
     mission_id = str(network.mission_id)
     task_of = {str(spec.occurrence_id): str(spec.task_id) for spec in network.occurrences}
-    task_status = {task.id: str(getattr(task.status, "value", task.status)) for task in store.list_tasks(mission_id)}
-    live_tasks = {attempt.task_id for attempt in store.list_attempts_by_status(*sorted(LIVE_ATTEMPT_STATES))
-                  if attempt.mission_id == mission_id}
+    task_status = {
+        task.id: str(getattr(task.status, "value", task.status))
+        for task in store.list_tasks(mission_id)
+    }
+    live_tasks = {
+        attempt.task_id
+        for attempt in store.list_attempts_by_status(*sorted(LIVE_ATTEMPT_STATES))
+        if attempt.mission_id == mission_id
+    }
     connection = store.connection
-    fences = [(str(r[0]), str(r[1]), str(r[2])) for r in connection.execute(
-        "SELECT j.job_id, j.state, t.occurrence_id FROM taskgraph_convergence_jobs j"
-        " JOIN taskgraph_convergence_targets t ON t.job_id=j.job_id WHERE j.mission_id=?"
-        " ORDER BY j.job_id, t.occurrence_id", (mission_id,))]
+    fences = [
+        (str(r[0]), str(r[1]), str(r[2]))
+        for r in connection.execute(
+            "SELECT j.job_id, j.state, t.occurrence_id FROM taskgraph_convergence_jobs j"
+            " JOIN taskgraph_convergence_targets t ON t.job_id=j.job_id WHERE j.mission_id=?"
+            " ORDER BY j.job_id, t.occurrence_id",
+            (mission_id,),
+        )
+    ]
     by_task: dict[str, list[str]] = {}
     for occurrence, task_id in task_of.items():
         by_task.setdefault(task_id, []).append(occurrence)
@@ -220,9 +250,14 @@ def collect_wait_facts(store: Any, network: Any) -> WaitForGraph:
             handoffs.append((occurrence, str(action["action_key"]), str(action["state"])))
     return wait_for_graph(
         order=[(str(c.before), str(c.after)) for c in network.order_constraints],
-        data=[(str(r.producer_occurrence), str(r.consumer_occurrence), str(r.requirement_id))
-              for r in network.data_requirements],
-        task_of=task_of, task_status=task_status, fences=fences, live_attempt_tasks=live_tasks,
+        data=[
+            (str(r.producer_occurrence), str(r.consumer_occurrence), str(r.requirement_id))
+            for r in network.data_requirements
+        ],
+        task_of=task_of,
+        task_status=task_status,
+        fences=fences,
+        live_attempt_tasks=live_tasks,
         handoffs=handoffs,
     )
 
@@ -231,8 +266,11 @@ def deadlock_facts(graph: WaitForGraph) -> dict[str, Any]:
     """交给规划器 / 写进停机报告的事实：边数、成环的分量、码。没有环时 ``cycles`` 为空。"""
 
     cycles = graph.cycles()
-    return {"code": str(SchedulingStopCode.RESOURCE_WAIT_CYCLE) if cycles else None,
-            "edges": len(graph.edges), "cycles": [cycle.to_json() for cycle in cycles]}
+    return {
+        "code": str(SchedulingStopCode.RESOURCE_WAIT_CYCLE) if cycles else None,
+        "edges": len(graph.edges),
+        "cycles": [cycle.to_json() for cycle in cycles],
+    }
 
 
 def has_deadlock(facts: Mapping[str, Any]) -> bool:

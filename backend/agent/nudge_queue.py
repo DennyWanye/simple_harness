@@ -14,6 +14,7 @@ Design properties (per spec D5):
   * ``pop_all`` is take-and-clear (semantics: "consume on use")
   * ``clear(sid)`` for explicit cleanup on Code-mode exit
 """
+
 from __future__ import annotations
 
 import asyncio

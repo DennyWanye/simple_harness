@@ -57,12 +57,8 @@ INFERENCE_POLICY: dict[str, JsonValue] = {
 }
 
 _PAGE_SLOT_KEYS = {"page_result_ref", "route_decision_ref", "route_policy_ref"}
-_STAGE_STATUSES = {
-    "validated", "malformed", "opaque_uncertain", "deadline", "budget_denied"
-}
-_STAGE_ENVELOPE_KEYS = {
-    "status", "effect_id", "result_ref", "prompt_ref", "profile_ref", "result"
-}
+_STAGE_STATUSES = {"validated", "malformed", "opaque_uncertain", "deadline", "budget_denied"}
+_STAGE_ENVELOPE_KEYS = {"status", "effect_id", "result_ref", "prompt_ref", "profile_ref", "result"}
 
 
 class V6SemanticStagePort(Protocol):
@@ -195,9 +191,7 @@ class DeepResearchV6SemanticRuntime:
             raise ValueError("registered blob digest mismatch")
         return data
 
-    async def _read_json(
-        self, wire_ref: str, identity: NodeExecutionIdentity
-    ) -> dict[str, Any]:
+    async def _read_json(self, wire_ref: str, identity: NodeExecutionIdentity) -> dict[str, Any]:
         data = await self._read(wire_ref, identity)
         try:
             value = json.loads(data.decode("utf-8"))
@@ -214,16 +208,18 @@ class DeepResearchV6SemanticRuntime:
         db = await aiosqlite.connect(self.blobs.database)
         db.row_factory = aiosqlite.Row
         try:
-            row = await (await db.execute(
-                """SELECT effect.outcome_json FROM workflow_blob_refs ref
+            row = await (
+                await db.execute(
+                    """SELECT effect.outcome_json FROM workflow_blob_refs ref
                 JOIN workflow_effects effect
                   ON ref.owner_kind='effect' AND ref.owner_id=effect.effect_id
                 JOIN workflow_effect_attempt_heads head
                   ON head.canonical_effect_id=effect.effect_id
                 WHERE ref.sha256=? AND effect.run_id=? AND effect.status='committed'
                 LIMIT 1""",
-                (digest, identity.run_id),
-            )).fetchone()
+                    (digest, identity.run_id),
+                )
+            ).fetchone()
         finally:
             await db.close()
         if row is None:
@@ -247,9 +243,7 @@ class DeepResearchV6SemanticRuntime:
         )
         return format_blob_ref(ref.sha256)
 
-    async def _policy_refs(
-        self, identity: NodeExecutionIdentity
-    ) -> dict[str, str]:
+    async def _policy_refs(self, identity: NodeExecutionIdentity) -> dict[str, str]:
         extraction = await self._put_json(
             EXTRACTION_POLICY,
             identity,
@@ -265,9 +259,7 @@ class DeepResearchV6SemanticRuntime:
             "inference": inference,
             "llm_extract": await self._profile_ref(self.llm_extract, identity, "llm_extract"),
             "llm_repair": await self._profile_ref(self.llm_repair, identity, "llm_repair"),
-            "llm_inference": await self._profile_ref(
-                self.llm_inference, identity, "llm_inference"
-            ),
+            "llm_inference": await self._profile_ref(self.llm_inference, identity, "llm_inference"),
         }
 
     async def _profile_ref(
@@ -344,7 +336,8 @@ class DeepResearchV6SemanticRuntime:
         prompt_ref = result["prompt_ref"]
         profile_ref = result["profile_ref"]
         if (
-            not isinstance(effect_id, str) or not effect_id.strip()
+            not isinstance(effect_id, str)
+            or not effect_id.strip()
             or not isinstance(prompt_ref, str)
             or not isinstance(profile_ref, str)
         ):
@@ -373,9 +366,13 @@ class DeepResearchV6SemanticRuntime:
         if model_id is not None and (not isinstance(model_id, str) or not model_id.strip()):
             raise ValueError(f"{stage} model_id is invalid")
         return _StageEnvelope(
-            status=str(status), effect_id=effect_id, result_ref=result_ref,
-            prompt_ref=prompt_ref, profile_ref=profile_ref,
-            content=content, model_id=model_id,
+            status=str(status),
+            effect_id=effect_id,
+            result_ref=result_ref,
+            prompt_ref=prompt_ref,
+            profile_ref=profile_ref,
+            content=content,
+            model_id=model_id,
         )
 
     @staticmethod
@@ -445,9 +442,7 @@ class DeepResearchV6SemanticRuntime:
             result_kind=result_kind,
             profile_ref=envelope.profile_ref,
             prompt_ref=envelope.prompt_ref,
-            raw_result_ref=(
-                envelope.result_ref if status in {"validated", "malformed"} else None
-            ),
+            raw_result_ref=(envelope.result_ref if status in {"validated", "malformed"} else None),
             result_ref=canonical_result_ref if status == "validated" else None,
             repair_request_ref=repair_request_ref,
             prior_outcome_ref=prior_outcome_ref,
@@ -530,14 +525,17 @@ class DeepResearchV6SemanticRuntime:
                     continue
                 page_value = typed.page_record
                 page = V6FetchedPageRefPayloadV1(
-                    page_id=str(page_value["page_id"]), ordinal=ordinal,
+                    page_id=str(page_value["page_id"]),
+                    ordinal=ordinal,
                     source_locator_ref=str(page_value["source_locator_ref"]),
-                    body_ref=str(page_value["body_ref"]), body_hash=str(page_value["body_hash"]),
+                    body_ref=str(page_value["body_ref"]),
+                    body_hash=str(page_value["body_hash"]),
                     canonical_url_hash=str(page_value["canonical_url_hash"]),
                     final_url_hash=str(page_value["final_url_hash"]),
                     authority_id=str(page_value["authority_id"]),
                     title_hash=hashlib.sha256(b"").hexdigest(),
-                    media_type=str(page_value["media_type"]), admission_status="admitted",
+                    media_type=str(page_value["media_type"]),
+                    admission_status="admitted",
                     reason_codes=tuple(str(item) for item in page_value["reason_codes"]),
                 )
             elif not self._require_effect_owner:
@@ -556,9 +554,11 @@ class DeepResearchV6SemanticRuntime:
                 raise ValueError("page body is not UTF-8") from exc
             pages.append(
                 _PageInput(
-                    page=page, page_result_ref=page_result_ref,
+                    page=page,
+                    page_result_ref=page_result_ref,
                     route_decision_ref=route_decision_ref,
-                    route_policy_ref=route_policy_ref, ordinal=ordinal,
+                    route_policy_ref=route_policy_ref,
+                    ordinal=ordinal,
                     body_bytes=body,
                 )
             )
@@ -567,9 +567,7 @@ class DeepResearchV6SemanticRuntime:
         return tuple(pages)
 
     @staticmethod
-    def _groups(
-        route: RouteDecisionV1, spec: ResearchSpecV1
-    ) -> tuple[dict[str, Any], ...]:
+    def _groups(route: RouteDecisionV1, spec: ResearchSpecV1) -> tuple[dict[str, Any], ...]:
         raw = route.to_json()["work_groups"]
         assert isinstance(raw, list)
         groups = tuple(copy.deepcopy(dict(group)) for group in raw)
@@ -593,9 +591,7 @@ class DeepResearchV6SemanticRuntime:
                 ScalarEvidenceRequest(
                     requirement_id=str(requirement["requirement_id"]),
                     definition=str(requirement["value_schema"]["definition"]),
-                    canonical_unit=str(
-                        requirement["value_schema"]["canonical_unit"]["unit_id"]
-                    ),
+                    canonical_unit=str(requirement["value_schema"]["canonical_unit"]["unit_id"]),
                     time_label=str(requirement["time_scope"]["label"]),
                 )
             )
@@ -673,7 +669,10 @@ class DeepResearchV6SemanticRuntime:
         native_identity = self._identity(identity)
         research_spec = ResearchSpecV1.from_json(spec)
         route = RouteDecisionV1.from_json(route_decision)
-        if route.to_json()["run_id"] != native_identity.run_id or route.to_json()["spec_hash"] != research_spec.spec_hash:
+        if (
+            route.to_json()["run_id"] != native_identity.run_id
+            or route.to_json()["spec_hash"] != research_spec.spec_hash
+        ):
             raise ValueError("route/spec/run identity differs")
         policies = await self._policy_refs(native_identity)
         pages = await self._pages(page_slots, route, native_identity)
@@ -691,9 +690,7 @@ class DeepResearchV6SemanticRuntime:
                 "candidate_slots": [],
                 "policy_refs": {
                     key: policies[key]
-                    for key in (
-                        "extraction", "llm_extract", "llm_repair", "llm_inference"
-                    )
+                    for key in ("extraction", "llm_extract", "llm_repair", "llm_inference")
                 },
                 "blob_refs": _blob_items(tuple(new_refs)),
             }
@@ -792,23 +789,32 @@ class DeepResearchV6SemanticRuntime:
                                 self._decode_content(first.content), body_bytes=page.body_bytes
                             )
                             self._validate_candidate_bundle(
-                                candidate_bundle, spec=research_spec, route=route,
-                                group=group, page=page,
+                                candidate_bundle,
+                                spec=research_spec,
+                                route=route,
+                                group=group,
+                                page=page,
                                 extraction_policy_ref=policies["extraction"],
-                                repair_round=0, identity=native_identity,
+                                repair_round=0,
+                                identity=native_identity,
                             )
                             bundle = candidate_bundle
                         except (TypeError, ValueError, json.JSONDecodeError):
                             bundle = None
-                    if first.status == "malformed" or (first.status == "validated" and bundle is None):
+                    if first.status == "malformed" or (
+                        first.status == "validated" and bundle is None
+                    ):
                         status = "malformed"
                         outcome_reason_codes = ("candidate_bundle_invalid",)
                         prior_outcome_ref = await self._register_outcome(
                             first,
                             native_identity,
                             logical_effect_id=self._logical_effect_id(
-                                native_identity, kind="extract", work_group_id=group_id,
-                                logical_page_or_head=page.page.page_id, repair_round=0,
+                                native_identity,
+                                kind="extract",
+                                work_group_id=group_id,
+                                logical_page_or_head=page.page.page_id,
+                                repair_round=0,
                             ),
                             result_kind="candidate_bundle",
                             status="malformed",
@@ -834,7 +840,8 @@ class DeepResearchV6SemanticRuntime:
                                 "raw_result_ref": first.result_ref,
                                 "invalid_content": (
                                     copy.deepcopy(dict(first.content))
-                                    if isinstance(first.content, Mapping) else first.content
+                                    if isinstance(first.content, Mapping)
+                                    else first.content
                                 ),
                             }
                             repair_payload["logical_effect_id"] = self._logical_effect_id(
@@ -866,10 +873,14 @@ class DeepResearchV6SemanticRuntime:
                                             body_bytes=page.body_bytes,
                                         )
                                         self._validate_candidate_bundle(
-                                            candidate_bundle, spec=research_spec, route=route,
-                                            group=group, page=page,
+                                            candidate_bundle,
+                                            spec=research_spec,
+                                            route=route,
+                                            group=group,
+                                            page=page,
                                             extraction_policy_ref=policies["extraction"],
-                                            repair_round=1, identity=native_identity,
+                                            repair_round=1,
+                                            identity=native_identity,
                                         )
                                         bundle = candidate_bundle
                                     except (TypeError, ValueError, json.JSONDecodeError):
@@ -885,16 +896,22 @@ class DeepResearchV6SemanticRuntime:
                     selected_envelope = selected
                     selected_profile_ref = selected.profile_ref
                     new_refs.update(
-                        ref for ref in (
-                            first.result_ref, first.prompt_ref,
-                            selected.result_ref, selected.prompt_ref,
-                            prior_outcome_ref, repair_request_ref,
-                        ) if ref is not None
+                        ref
+                        for ref in (
+                            first.result_ref,
+                            first.prompt_ref,
+                            selected.result_ref,
+                            selected.prompt_ref,
+                            prior_outcome_ref,
+                            repair_request_ref,
+                        )
+                        if ref is not None
                     )
                 bundle_ref: str | None = None
                 if bundle is not None:
                     bundle_ref = await self._put_json(
-                        bundle.to_json(), native_identity,
+                        bundle.to_json(),
+                        native_identity,
                         media_type="application/vnd.deskpet.evidence-candidate-bundle.v1+json",
                     )
                     new_refs.add(bundle_ref)
@@ -935,16 +952,19 @@ class DeepResearchV6SemanticRuntime:
                     dependency_refs=tuple(dependencies),
                 )
                 producer_ref = await self._put_json(
-                    producer.to_json(), native_identity,
+                    producer.to_json(),
+                    native_identity,
                     media_type="application/vnd.deskpet.candidate-producer-outcome.v1+json",
                 )
                 new_refs.update({page.page_result_ref, producer_ref, *dependencies})
-                slots.append({
-                    "logical_page_id": page.page.page_id,
-                    "work_group_id": group_id,
-                    "producer_outcome_ref": producer_ref,
-                    "bundle_ref": bundle_ref,
-                })
+                slots.append(
+                    {
+                        "logical_page_id": page.page.page_id,
+                        "work_group_id": group_id,
+                        "producer_outcome_ref": producer_ref,
+                        "bundle_ref": bundle_ref,
+                    }
+                )
             if semantic_fenced:
                 break
         return {
@@ -1000,7 +1020,10 @@ class DeepResearchV6SemanticRuntime:
         native_identity = self._identity(identity)
         research_spec = ResearchSpecV1.from_json(spec)
         route = RouteDecisionV1.from_json(route_decision)
-        if route.to_json()["run_id"] != native_identity.run_id or route.to_json()["spec_hash"] != research_spec.spec_hash:
+        if (
+            route.to_json()["run_id"] != native_identity.run_id
+            or route.to_json()["spec_hash"] != research_spec.spec_hash
+        ):
             raise ValueError("route/spec/run identity differs")
         if not isinstance(evidence_head_hash, str) or len(evidence_head_hash) != 64:
             raise ValueError("evidence_head_hash must be sha256 hex")
@@ -1009,7 +1032,8 @@ class DeepResearchV6SemanticRuntime:
         groups = self._groups(route, research_spec)
         requirement_to_group = {
             requirement_id: str(group["work_group_id"])
-            for group in groups for requirement_id in group["requirement_ids"]
+            for group in groups
+            for requirement_id in group["requirement_ids"]
         }
         fact_values: dict[str, dict[str, Any]] = {}
         for ref in admitted_fact_refs:
@@ -1052,8 +1076,7 @@ class DeepResearchV6SemanticRuntime:
                 "ordinal": ordinal,
                 "input_evidence_head_hash": evidence_head_hash,
                 "admitted_facts": [
-                    {"fact_ref": ref, "fact": copy.deepcopy(fact_values[ref])}
-                    for ref, _ in ordered
+                    {"fact_ref": ref, "fact": copy.deepcopy(fact_values[ref])} for ref, _ in ordered
                 ],
             }
             prompt["logical_effect_id"] = self._logical_effect_id(
@@ -1086,8 +1109,11 @@ class DeepResearchV6SemanticRuntime:
                         self._decode_content(first.content)
                     )
                     self._validate_inference_bundle(
-                        proposal_bundle, spec=research_spec, group=group,
-                        ordinal=ordinal, evidence_head_hash=evidence_head_hash,
+                        proposal_bundle,
+                        spec=research_spec,
+                        group=group,
+                        ordinal=ordinal,
+                        evidence_head_hash=evidence_head_hash,
                         allowed_fact_refs=allowed_refs,
                         selected_profile_ref=first.profile_ref,
                         selected_model_id=first.model_id,
@@ -1103,8 +1129,11 @@ class DeepResearchV6SemanticRuntime:
                     first,
                     native_identity,
                     logical_effect_id=self._logical_effect_id(
-                        native_identity, kind="infer", work_group_id=group_id,
-                        logical_page_or_head=evidence_head_hash, repair_round=0,
+                        native_identity,
+                        kind="infer",
+                        work_group_id=group_id,
+                        logical_page_or_head=evidence_head_hash,
+                        repair_round=0,
                     ),
                     result_kind="inference_bundle",
                     status="malformed",
@@ -1130,7 +1159,8 @@ class DeepResearchV6SemanticRuntime:
                         "raw_result_ref": first.result_ref,
                         "invalid_content": (
                             copy.deepcopy(dict(first.content))
-                            if isinstance(first.content, Mapping) else first.content
+                            if isinstance(first.content, Mapping)
+                            else first.content
                         ),
                     }
                     repair_payload["logical_effect_id"] = self._logical_effect_id(
@@ -1162,8 +1192,11 @@ class DeepResearchV6SemanticRuntime:
                                     )
                                 )
                                 self._validate_inference_bundle(
-                                    proposal_bundle, spec=research_spec, group=group,
-                                    ordinal=ordinal, evidence_head_hash=evidence_head_hash,
+                                    proposal_bundle,
+                                    spec=research_spec,
+                                    group=group,
+                                    ordinal=ordinal,
+                                    evidence_head_hash=evidence_head_hash,
                                     allowed_fact_refs=allowed_refs,
                                     selected_profile_ref=repaired.profile_ref,
                                     selected_model_id=repaired.model_id,
@@ -1179,7 +1212,8 @@ class DeepResearchV6SemanticRuntime:
             bundle_ref: str | None = None
             if bundle is not None:
                 bundle_ref = await self._put_json(
-                    bundle.to_json(), native_identity,
+                    bundle.to_json(),
+                    native_identity,
                     media_type="application/vnd.deskpet.inference-proposal-bundle.v1+json",
                 )
                 new_refs.add(bundle_ref)
@@ -1204,17 +1238,25 @@ class DeepResearchV6SemanticRuntime:
                     reason_codes=outcome_reason_codes,
                 )
             new_refs.update(
-                ref for ref in (
-                    first.result_ref, first.prompt_ref,
-                    selected.result_ref, selected.prompt_ref,
-                    prior_outcome_ref, repair_request_ref, selected_outcome_ref,
-                ) if ref is not None
+                ref
+                for ref in (
+                    first.result_ref,
+                    first.prompt_ref,
+                    selected.result_ref,
+                    selected.prompt_ref,
+                    prior_outcome_ref,
+                    repair_request_ref,
+                    selected_outcome_ref,
+                )
+                if ref is not None
             )
-            slots.append({
-                "work_group_id": group_id,
-                "effect_outcome_ref": selected_outcome_ref,
-                "proposal_bundle_ref": bundle_ref,
-            })
+            slots.append(
+                {
+                    "work_group_id": group_id,
+                    "effect_outcome_ref": selected_outcome_ref,
+                    "proposal_bundle_ref": bundle_ref,
+                }
+            )
         return {
             "inference_slots": slots,
             "policy_refs": {

@@ -59,12 +59,25 @@ _ELEMENT_LISTS = {
 }
 
 #: Contract names of decision payloads (``<name>.<field>`` in their errors).
-_PAYLOAD_NAMES = frozenset({
-    "refine", "repair_retry", "repair_cancel", "repair_rebind", "repair_refine",
-    "repair_replace", "repair_successor", "bind_goal", "repair_blocked",
-    "wait", "no_change", "request_evidence", "request_human", "propose_method",
-    "payload",
-})
+_PAYLOAD_NAMES = frozenset(
+    {
+        "refine",
+        "repair_retry",
+        "repair_cancel",
+        "repair_rebind",
+        "repair_refine",
+        "repair_replace",
+        "repair_successor",
+        "bind_goal",
+        "repair_blocked",
+        "wait",
+        "no_change",
+        "request_evidence",
+        "request_human",
+        "propose_method",
+        "payload",
+    }
+)
 
 _LEADING_NAME = re.compile(r"^([A-Za-z_]+)((?:\.[A-Za-z_]+|\[\d+\])*)")
 
@@ -106,19 +119,32 @@ def _problems(codes: list[PlanningDecisionRejectionCode], detail: Mapping[str, A
         # A stored row that is not a typed problem is still shown, as words under the
         # decision's own code: building the next request must not fail on how an
         # earlier refusal happened to be written down.
-        return [PlanningProblemDetailV1.from_json(row, "feedback.problem") if isinstance(row, Mapping)
-                else PlanningProblemDetailV1(code=code, subject_ref=None, field_path=None,
-                                             detail=refusal_text(row))
-                for row in rows]
+        return [
+            PlanningProblemDetailV1.from_json(row, "feedback.problem")
+            if isinstance(row, Mapping)
+            else PlanningProblemDetailV1(
+                code=code, subject_ref=None, field_path=None, detail=refusal_text(row)
+            )
+            for row in rows
+        ]
     if isinstance(detail.get("error"), str) and detail["error"].strip():
         text = detail["error"]
-        return [PlanningProblemDetailV1(code=code, subject_ref=None,
-                                        field_path=codec_field_path(text), detail=refusal_text(text))]
+        return [
+            PlanningProblemDetailV1(
+                code=code,
+                subject_ref=None,
+                field_path=codec_field_path(text),
+                detail=refusal_text(text),
+            )
+        ]
     words = [str(detail[key]) for key in ("reason", "detail") if str(detail.get(key) or "").strip()]
     if not words:
         return []
-    return [PlanningProblemDetailV1(code=code, subject_ref=None, field_path=None,
-                                    detail=refusal_text("; ".join(words)))]
+    return [
+        PlanningProblemDetailV1(
+            code=code, subject_ref=None, field_path=None, detail=refusal_text("; ".join(words))
+        )
+    ]
 
 
 def feedback_from_decision(
@@ -136,7 +162,8 @@ def feedback_from_decision(
         rejection_codes=ordered(codes),
         problems=tuple(_problems(codes, detail)),
         changed_refs=(),
-        budgets=budgets if isinstance(budgets, PlanningRetryBudgetView)
+        budgets=budgets
+        if isinstance(budgets, PlanningRetryBudgetView)
         else PlanningRetryBudgetView.from_json(budgets, "feedback.budgets"),
     )
 
@@ -160,8 +187,10 @@ def fill_missing_type_ref_fields(
     if len(missing) != 1 or set(given) - set(_TYPE_REF_FIELDS):
         return raw, []
     candidates = [
-        row["task_type_ref"] for row in package.get("successor_types") or ()
-        if isinstance(row, Mapping) and isinstance(row.get("task_type_ref"), Mapping)
+        row["task_type_ref"]
+        for row in package.get("successor_types") or ()
+        if isinstance(row, Mapping)
+        and isinstance(row.get("task_type_ref"), Mapping)
         and all(row["task_type_ref"].get(name) == given[name] for name in given)
     ]
     if len(candidates) != 1 or missing[0] not in candidates[0]:

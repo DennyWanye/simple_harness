@@ -3,6 +3,7 @@
 Tool context and empty recall are fixtures. No model, foreground Runtime,
 installed-successor or quality claim; binding/source checks use real public ports.
 """
+
 import json
 import socket
 import sqlite3
@@ -31,10 +32,13 @@ from tests.execution.test_completed_scope_workspace_continuation import archive,
 
 
 def context(n):
-    return SimpleNamespace(run_id=RunId(f"nullable-run-{n}"),
+    return SimpleNamespace(
+        run_id=RunId(f"nullable-run-{n}"),
         effect_id=SimpleNamespace(value=f"nullable-effect-{n}"),
-        task_execution_envelope=SimpleNamespace(raw_call_id=f"nullable-call-{n}",
-                                                turn_ordinal=1, task_scope_id=None))
+        task_execution_envelope=SimpleNamespace(
+            raw_call_id=f"nullable-call-{n}", turn_ordinal=1, task_scope_id=None
+        ),
+    )
 
 
 # 2026-09-10 removed with the Memory SDK: test_nullable_wire_to_memory_route_preserves_raw_and_rejects_placeholders
@@ -48,25 +52,47 @@ async def test_nullable_create_new_public_source_binding_and_missing_pin(tmp_pat
     candidate = next(c for c in candidates["candidates"] if c["scope_ref"] == old)
     store = WorkspaceBindingAuthorityStore(state, configured_workspace_root=configured)
     ledger_calls = []
+
     class TrackingLedger(ContextRouteLedgerStore):
         async def record_route_decision(self, **kwargs):
             ledger_calls.append(kwargs)
             return await super().record_route_decision(**kwargs)
+
     async def disclosure(run_id, package, effect_id):
         # These scopes come from authenticated public control, no SDK effect
         # producer. The actual renderer retains structural source/binding only.
-        return await render_scope_disclosure(db_path=state, package=package,
-            subject=local_owner_auth().subject, stack=None)
+        return await render_scope_disclosure(
+            db_path=state, package=package, subject=local_owner_auth().subject, stack=None
+        )
+
     current = None
-    service = ContextRouteToolService(service_factory_getter=lambda: factory,
-        binding_store_factory=lambda: store, binding_append_getter=lambda: authority,
+    service = ContextRouteToolService(
+        service_factory_getter=lambda: factory,
+        binding_store_factory=lambda: store,
+        binding_append_getter=lambda: authority,
         ledger=TrackingLedger(state, evidence_ingress=ExecutionEvidenceIngress(state)),
         tool_context_getter=lambda: current,
-        scope_disclosure_reader=disclosure)
+        scope_disclosure_reader=disclosure,
+    )
     proposals = [
-        dict(route="create_new", title="Separate task", reuse_workspace_of=None, expected_source_hash=None),
-        dict(route="create_new", title="Missing pin", reuse_workspace_of=old, expected_source_hash=None),
-        dict(route="create_new", title="Exact reuse", reuse_workspace_of=old, expected_source_hash=candidate["source_hash"]),
+        dict(
+            route="create_new",
+            title="Separate task",
+            reuse_workspace_of=None,
+            expected_source_hash=None,
+        ),
+        dict(
+            route="create_new",
+            title="Missing pin",
+            reuse_workspace_of=old,
+            expected_source_hash=None,
+        ),
+        dict(
+            route="create_new",
+            title="Exact reuse",
+            reuse_workspace_of=old,
+            expected_source_hash=candidate["source_hash"],
+        ),
     ]
     created = []
     for n, args in enumerate(proposals):
@@ -82,26 +108,43 @@ async def test_nullable_create_new_public_source_binding_and_missing_pin(tmp_pat
             assert ledger_calls[-1].get("require_unbound_run", False) is (n == 2)
             receipt = await store.current_receipt(created[-1])
             original = await store.current_receipt(old)
-            verified = await store.verify_effect_authority(task_scope_id=created[-1],
+            verified = await store.verify_effect_authority(
+                task_scope_id=created[-1],
                 binding_set_revision=receipt.binding_set_revision,
-                binding_set_receipt_id=receipt.receipt_id, binding_set_receipt_hash=receipt.receipt_hash,
-                root_identity_hash=receipt.root_identity_hashes[0])
+                binding_set_receipt_id=receipt.receipt_id,
+                binding_set_receipt_hash=receipt.receipt_hash,
+                root_identity_hash=receipt.root_identity_hashes[0],
+            )
             if n == 2:
                 assert result["workspace_source"]["source_hash"] == candidate["source_hash"]
                 assert verified.root.canonical_path == str(root.resolve())
-                assert result["workspace_source"]["filesystem_identity_hash"] == (
-                    await store.verify_effect_authority(task_scope_id=old,
-                        binding_set_revision=original.binding_set_revision,
-                        binding_set_receipt_id=original.receipt_id, binding_set_receipt_hash=original.receipt_hash,
-                        root_identity_hash=original.root_identity_hashes[0])).root.filesystem_identity.identity_hash
+                assert (
+                    result["workspace_source"]["filesystem_identity_hash"]
+                    == (
+                        await store.verify_effect_authority(
+                            task_scope_id=old,
+                            binding_set_revision=original.binding_set_revision,
+                            binding_set_receipt_id=original.receipt_id,
+                            binding_set_receipt_hash=original.receipt_hash,
+                            root_identity_hash=original.root_identity_hashes[0],
+                        )
+                    ).root.filesystem_identity.identity_hash
+                )
             else:
                 assert "workspace_source" not in result
-                assert verified.root.canonical_path == str((configured / f"task-{created[-1]}").resolve())
+                assert verified.root.canonical_path == str(
+                    (configured / f"task-{created[-1]}").resolve()
+                )
     assert len(created) == 2 and len(ledger_calls) == 2
     with sqlite3.connect(state) as db:
         assert db.execute("SELECT count(*) FROM task_scopes").fetchone()[0] == 3
-        rows = db.execute("SELECT proposal_hash,verdict FROM context_route_tool_invocations ORDER BY rowid").fetchall()
-        assert rows == [(canonical_sha256(p), "rejected" if n == 1 else "accepted") for n, p in enumerate(proposals)]
+        rows = db.execute(
+            "SELECT proposal_hash,verdict FROM context_route_tool_invocations ORDER BY rowid"
+        ).fetchall()
+        assert rows == [
+            (canonical_sha256(p), "rejected" if n == 1 else "accepted")
+            for n, p in enumerate(proposals)
+        ]
     after = archive_facts(state, old)
     assert after[0] == old_facts[0] and after[2] == old_facts[2]
     assert (root / "document.txt").read_text() == "original accepted bytes"

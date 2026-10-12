@@ -90,9 +90,7 @@ def test_checkpoint_charges_monotonic_time_without_double_charging_wall() -> Non
 
 
 def test_submillisecond_active_intervals_are_carried_in_local_lease() -> None:
-    resumed = resume_deadline(
-        _deadline(), now_wall=NOW, now_monotonic_ns=1_000_000
-    )
+    resumed = resume_deadline(_deadline(), now_wall=NOW, now_monotonic_ns=1_000_000)
     assert resumed.lease is not None
     first = checkpoint_deadline(
         resumed.state,
@@ -165,9 +163,7 @@ def test_wall_guard_expires_after_long_offline_window() -> None:
 
 
 def test_checkpoint_rejects_stale_or_backwards_monotonic_lease() -> None:
-    resumed = resume_deadline(
-        _deadline(), now_wall=NOW, now_monotonic_ns=10_000_000
-    )
+    resumed = resume_deadline(_deadline(), now_wall=NOW, now_monotonic_ns=10_000_000)
     assert resumed.lease is not None
     checkpointed = checkpoint_deadline(
         resumed.state,
@@ -215,20 +211,24 @@ def test_child_deadline_is_bounded_by_parent_budget_and_wall_guard() -> None:
 
 
 def test_remaining_timeout_uses_shared_monotonic_deadline_and_stage_cap() -> None:
-    resumed = resume_deadline(
-        _deadline(), now_wall=NOW, now_monotonic_ns=1_000_000_000
-    )
+    resumed = resume_deadline(_deadline(), now_wall=NOW, now_monotonic_ns=1_000_000_000)
     assert resumed.lease is not None
 
-    assert remaining_timeout_seconds(
-        resumed.lease,
-        now_monotonic_ns=2_000_000_000,
-    ) == 119.0
-    assert remaining_timeout_seconds(
-        resumed.lease,
-        now_monotonic_ns=2_000_000_000,
-        stage_cap_ms=3_000,
-    ) == 3.0
+    assert (
+        remaining_timeout_seconds(
+            resumed.lease,
+            now_monotonic_ns=2_000_000_000,
+        )
+        == 119.0
+    )
+    assert (
+        remaining_timeout_seconds(
+            resumed.lease,
+            now_monotonic_ns=2_000_000_000,
+            stage_cap_ms=3_000,
+        )
+        == 3.0
+    )
 
 
 def test_v1_rejects_pause_policy_and_naive_wall_clock() -> None:

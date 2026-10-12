@@ -15,28 +15,43 @@ BACKEND = Path(__file__).resolve().parents[2]
 def source_collection_modes():
     tree = ast.parse((BACKEND / "deskpet-backend.spec").read_text())
     analysis = next(
-        node for node in ast.walk(tree)
+        node
+        for node in ast.walk(tree)
         if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Name) and node.func.id == "Analysis"
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "Analysis"
     )
-    return ast.literal_eval(next(
-        item.value for item in analysis.keywords
-        if item.arg == "module_collection_mode"
-    ))
+    return ast.literal_eval(
+        next(item.value for item in analysis.keywords if item.arg == "module_collection_mode")
+    )
 
 
-@pytest.mark.parametrize("omit", [
-    None,
-    "deskpet.sdk_adapters.product_workflows",
-    "simple_harness.workflows",
-])
+@pytest.mark.parametrize(
+    "omit",
+    [
+        None,
+        "deskpet.sdk_adapters.product_workflows",
+        "simple_harness.workflows",
+    ],
+)
 def test_all_registration_manifests_require_collected_source(tmp_path, omit):
     environment = dict(os.environ)
     environment["PYTHONPATH"] = str(BACKEND)
     result = subprocess.run(
-        [sys.executable, "-B", str(Path(__file__).resolve()), str(tmp_path),
-         json.dumps(source_collection_modes()), json.dumps(omit)],
-        cwd=tmp_path, env=environment, capture_output=True, text=True, timeout=45, check=False,
+        [
+            sys.executable,
+            "-B",
+            str(Path(__file__).resolve()),
+            str(tmp_path),
+            json.dumps(source_collection_modes()),
+            json.dumps(omit),
+        ],
+        cwd=tmp_path,
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=45,
+        check=False,
     )
     assert result.returncode == 0, result.stdout + result.stderr
 
@@ -71,6 +86,7 @@ def registration_source_probe(stage, modes, omit):
     class UnusedPorts:
         def forbidden(self, *args, **kwargs):
             raise AssertionError("registration invoked a physical port")
+
         propose = execute_tools = execute = search = authorize_source = forbidden
         build = store = activate = authorize_build = forbidden
 
@@ -79,7 +95,14 @@ def registration_source_probe(stage, modes, omit):
         durable_task=DurableTaskHostServices(port, port),
         personal_v1=PersonalWorkflowHostServices(port),
         capability_build=CapabilityBuildHostServices(
-            port, port, port, port, port, port, port, port,
+            port,
+            port,
+            port,
+            port,
+            port,
+            port,
+            port,
+            port,
         ),
     )
     owner = object()
@@ -88,13 +111,17 @@ def registration_source_probe(stage, modes, omit):
         return (
             *build_product_workflow_registrations(generation=1, transaction_owner=owner),
             *build_official_workflow_registrations(
-                generation=1, transaction_owner=owner, host_services=services,
+                generation=1,
+                transaction_owner=owner,
+                host_services=services,
             ),
         )
 
     baseline = registrations()
     expected_keys = set(ACTIVE_PRODUCT_WORKFLOWS) | {
-        "workflow.durable_task", "workflow.personal_v1", "workflow.capability_build",
+        "workflow.durable_task",
+        "workflow.personal_v1",
+        "workflow.capability_build",
     }
     assert {r.profile.descriptor.key for r in baseline} == expected_keys
 
@@ -113,15 +140,15 @@ def registration_source_probe(stage, modes, omit):
     def relocate(code, filename):
         return code.replace(
             co_filename=str(filename),
-            co_consts=tuple(relocate(v, filename) if isinstance(v, CodeType) else v
-                            for v in code.co_consts),
+            co_consts=tuple(
+                relocate(v, filename) if isinstance(v, CodeType) else v for v in code.co_consts
+            ),
         )
 
     for name, module in modules.items():
         source = Path(module.__file__).read_bytes()
         destination = stage.joinpath(*name.split(".")).with_suffix(".py")
-        matching = [prefix for prefix in modes
-                    if name == prefix or name.startswith(prefix + ".")]
+        matching = [prefix for prefix in modes if name == prefix or name.startswith(prefix + ".")]
         mode = modes[max(matching, key=len)] if matching else "pyz"
         ship_source = "py" in mode.split("+")
         if omit and (name == omit or name.startswith(omit + ".")):
@@ -169,7 +196,9 @@ def registration_source_probe(stage, modes, omit):
     for before, after in zip(baseline, rebuilt, strict=True):
         assert after.profile.descriptor.key == before.profile.descriptor.key
         assert after.expected_manifest_hash == before.expected_manifest_hash
-        assert after.expected_implementation_fingerprint == before.expected_implementation_fingerprint
+        assert (
+            after.expected_implementation_fingerprint == before.expected_implementation_fingerprint
+        )
         compiled = compile_workflow_registration(after, transaction_owner=owner)
         assert workflow_manifest_hash(compiled.manifest) == before.expected_manifest_hash
 

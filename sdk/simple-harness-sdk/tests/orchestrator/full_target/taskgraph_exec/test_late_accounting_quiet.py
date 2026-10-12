@@ -10,13 +10,16 @@ from production_fixture import enabled_world
 
 def test_open_holds_are_reread_only_after_a_write(tmp_path, monkeypatch):
     async def case():
-        async with enabled_world(tmp_path, key='tg-late-accounting-quiet', hold_worker=True) as world:
+        async with enabled_world(
+            tmp_path, key="tg-late-accounting-quiet", hold_worker=True
+        ) as world:
             await world.commit_seed()
             orch = world.loop
             reads = []
             original = accounting_recovery._open_holds
-            monkeypatch.setattr(accounting_recovery, "_open_holds",
-                                lambda store: reads.append(1) or original(store))
+            monkeypatch.setattr(
+                accounting_recovery, "_open_holds", lambda store: reads.append(1) or original(store)
+            )
             accounting_recovery.import_late_accounting(orch)
             accounting_recovery.import_late_accounting(orch)
             assert len(reads) == 1
@@ -35,6 +38,7 @@ def test_open_holds_are_reread_only_after_a_write(tmp_path, monkeypatch):
                 connection.execute("INSERT INTO probe_pool VALUES (1)")
             accounting_recovery.import_late_accounting(orch)
             assert len(reads) == 3
+
     asyncio.run(case())
 
 
@@ -49,21 +53,37 @@ def test_ended_mission_holds_are_rechecked_every_five_minutes(monkeypatch):
     checked = []
     recovered = []
     guard = accounting_recovery.ProviderBudgetGuard.__new__(accounting_recovery.ProviderBudgetGuard)
-    monkeypatch.setattr(accounting_recovery.ProviderBudgetGuard, "recover",
-                        lambda self, uow, missions=None: recovered.append(missions))
-    pool = SimpleNamespace(bridge=SimpleNamespace(runtime=SimpleNamespace(
-        ports=SimpleNamespace(provider_admission=guard), uow=None)))
-    orch = SimpleNamespace(store=SimpleNamespace(has_table=lambda name: True), recovery_isolated=lambda mission_id: False,
-                           assembled=SimpleNamespace(pools={"p": pool}), _note=lambda text: None,
-                           _round_boundary=lambda mission_id, where: contextlib.nullcontext(),
-                           _round_due=lambda mission_id, where: True)
+    monkeypatch.setattr(
+        accounting_recovery.ProviderBudgetGuard,
+        "recover",
+        lambda self, uow, missions=None: recovered.append(missions),
+    )
+    pool = SimpleNamespace(
+        bridge=SimpleNamespace(
+            runtime=SimpleNamespace(ports=SimpleNamespace(provider_admission=guard), uow=None)
+        )
+    )
+    orch = SimpleNamespace(
+        store=SimpleNamespace(has_table=lambda name: True),
+        recovery_isolated=lambda mission_id: False,
+        assembled=SimpleNamespace(pools={"p": pool}),
+        _note=lambda text: None,
+        _round_boundary=lambda mission_id, where: contextlib.nullcontext(),
+        _round_due=lambda mission_id, where: True,
+    )
     monkeypatch.setattr(accounting_recovery.time, "monotonic", lambda: clock[0])
     monkeypatch.setattr(accounting_recovery, "_holds_generation", lambda orch: (generation[0],))
-    monkeypatch.setattr(accounting_recovery, "_open_holds",
-                        lambda store: [("i-ended", "m-ended"), ("i-live", "m-live")])
+    monkeypatch.setattr(
+        accounting_recovery,
+        "_open_holds",
+        lambda store: [("i-ended", "m-ended"), ("i-live", "m-live")],
+    )
     monkeypatch.setattr(accounting_recovery, "_live_missions", lambda store: frozenset({"m-live"}))
-    monkeypatch.setattr(accounting_recovery, "_import_hold",
-                        lambda orch, intent_id: checked.append(intent_id) or False)
+    monkeypatch.setattr(
+        accounting_recovery,
+        "_import_hold",
+        lambda orch, intent_id: checked.append(intent_id) or False,
+    )
     monkeypatch.setattr(taskgraph_action_settlement, "settle_resolved_actions", lambda orch: False)
     # 到期按上限结清另有产品同形用例（p35 test_provider_accounting_loop），这里只看重核节奏
     monkeypatch.setattr(accounting_recovery, "_settle_expired_ended_holds", lambda orch: False)
@@ -77,7 +97,10 @@ def test_ended_mission_holds_are_rechecked_every_five_minutes(monkeypatch):
         return list(checked), list(recovered)
 
     assert run(write=False) == (["i-ended", "i-live"], [None])  # 启动后第一轮：全部
-    assert run(write=True, after=10) == (["i-live"], [frozenset({"m-live"})])  # 运行中：只核未结束的
+    assert run(write=True, after=10) == (
+        ["i-live"],
+        [frozenset({"m-live"})],
+    )  # 运行中：只核未结束的
     assert run(write=False, after=10) == ([], [frozenset({"m-live"})])  # 没有写入：跳过
     assert run(write=True, after=300) == (["i-ended", "i-live"], [None])  # 满 5 分钟：全部
     # 满 5 分钟但自上次全量以来没有任何写入：全量结果不变，跳过

@@ -88,12 +88,16 @@ def current_child_supports(
                 pinned = htn.get_goal_resolution(pinned_resolution.id)
             except StoreError:
                 continue
-            if (pinned.mission_id != mission_id or pinned.goal_task_id != scope.task_ref.id
-                    or pinned.obligation_id != scope.obligation_id
-                    or pinned.contract_revision != scope.task_ref.revision
-                    or pinned.requirements_version != scope.requirements_ref.revision
-                    or content_hash_of(pinned.to_json()) != pinned_resolution.content_hash
-                    or pinned.validity is not Validity.CURRENT or pinned.verdict is not ReviewVerdict.ACCEPT):
+            if (
+                pinned.mission_id != mission_id
+                or pinned.goal_task_id != scope.task_ref.id
+                or pinned.obligation_id != scope.obligation_id
+                or pinned.contract_revision != scope.task_ref.revision
+                or pinned.requirements_version != scope.requirements_ref.revision
+                or content_hash_of(pinned.to_json()) != pinned_resolution.content_hash
+                or pinned.validity is not Validity.CURRENT
+                or pinned.verdict is not ReviewVerdict.ACCEPT
+            ):
                 continue
         if semantics.form is TaskForm.PRIMITIVE:
             accepted: list[str] = []

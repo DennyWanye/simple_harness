@@ -92,14 +92,22 @@ class PreviewInputs:
     criterion_files: tuple[tuple[str, str], ...] = ()
 
     def scope_epoch_reads(self) -> tuple[ScopeEpochRead, ...]:
-        return tuple(ScopeEpochRead(scope_id=scope, validity_epoch=int(epoch))
-                     for scope, epoch in sorted(self.scope_epochs))
+        return tuple(
+            ScopeEpochRead(scope_id=scope, validity_epoch=int(epoch))
+            for scope, epoch in sorted(self.scope_epochs)
+        )
 
     def obligation_reads(self, obligation_ids: Sequence[object]) -> tuple[ReadItem, ...]:
         known = dict(self.obligation_items)
-        return tuple(known[key] for key in dict.fromkeys(str(item) for item in obligation_ids) if key in known)
+        return tuple(
+            known[key]
+            for key in dict.fromkeys(str(item) for item in obligation_ids)
+            if key in known
+        )
 
-    def precondition_reads(self, conditions: Sequence[Any], parameters: Mapping[str, Any]) -> tuple[ReadItem, ...]:
+    def precondition_reads(
+        self, conditions: Sequence[Any], parameters: Mapping[str, Any]
+    ) -> tuple[ReadItem, ...]:
         """The recorded observations these preconditions were judged on, atom by atom."""
         known = dict(self.observation_items)
         reads: list[ReadItem] = []
@@ -108,8 +116,10 @@ class PreviewInputs:
             if signature is None:
                 continue
             errors: list[str] = []
-            arguments = {name: ground_value(item, parameters, path=f"precondition.{name}", errors=errors)
-                         for name, item in atom.arguments.items()}
+            arguments = {
+                name: ground_value(item, parameters, path=f"precondition.{name}", errors=errors)
+                for name, item in atom.arguments.items()
+            }
             if errors:
                 continue
             item = known.get(proposition_key(signature, arguments))
@@ -121,8 +131,9 @@ class PreviewInputs:
         if type(self.taskgraph_contract) is not bool:
             raise ContractError("preview.taskgraph_contract must be a boolean")
         if self.taskgraph_contract:
-            if (not isinstance(self.sharing_entries, tuple)
-                    or not all(isinstance(item, SharedGoalEntry) for item in self.sharing_entries)):
+            if not isinstance(self.sharing_entries, tuple) or not all(
+                isinstance(item, SharedGoalEntry) for item in self.sharing_entries
+            ):
                 raise ContractError("TaskGraph preview requires the captured sharing index")
         elif self.sharing_entries is not None:
             raise ContractError("legacy preview does not accept TaskGraph sharing sources")
@@ -301,14 +312,19 @@ def compile_candidate_from_snapshot(inputs: PreviewInputs) -> RefinementCompilat
     """Compile one candidate using only the explicitly frozen preview inputs."""
 
     proposal = inputs.proposal
-    if len(proposal.operations) == 1 and isinstance(proposal.operations[0], ProposeSuccessorOperation):
+    if len(proposal.operations) == 1 and isinstance(
+        proposal.operations[0], ProposeSuccessorOperation
+    ):
         from .htn.graph_repair import compile_successor
+
         return compile_successor(inputs, proposal.operations[0])
     if len(proposal.operations) == 1 and isinstance(proposal.operations[0], CancelBranchOperation):
         from .htn.graph_repair import compile_cancel
+
         return compile_cancel(inputs, proposal.operations[0])
     if len(proposal.operations) == 1 and isinstance(proposal.operations[0], RebindInputOperation):
         from .htn.graph_repair import compile_rebind
+
         return compile_rebind(inputs, proposal.operations[0])
     refinements = [item for item in proposal.operations if isinstance(item, RefineOperation)]
     retirements = [item for item in proposal.operations if isinstance(item, RetireMethodOperation)]
@@ -366,12 +382,15 @@ def compile_candidate_from_snapshot(inputs: PreviewInputs) -> RefinementCompilat
         scope_epochs=dict(inputs.scope_epochs),
         obligation_items=dict(inputs.obligation_items),
         observation_items=inputs.precondition_reads(
-            method.applicable_when, {item.name: item.value for item in draft.grounded_parameters}),
+            method.applicable_when, {item.name: item.value for item in draft.grounded_parameters}
+        ),
         criterion_files=dict(inputs.criterion_files),
     )
 
 
-def _named_reuse(inputs: PreviewInputs, operation: RefineOperation, method: Any) -> dict[str, SharedGoalEntry]:
+def _named_reuse(
+    inputs: PreviewInputs, operation: RefineOperation, method: Any
+) -> dict[str, SharedGoalEntry]:
     """The steps the Planner named on this refinement, resolved against the eligible
     sharing sources the fixed reader captured in the same view as the network (a step
     that is running, or accepted under the current requirements).  Order only: the
@@ -390,7 +409,8 @@ def _named_reuse(inputs: PreviewInputs, operation: RefineOperation, method: Any)
             raise ReuseRefused(
                 f"step {step!r} names {occurrence}, which is not a step this mission can share now "
                 "(only an ordinary step that is running, or accepted under the current "
-                "requirements, can be named)")
+                "requirements, can be named)"
+            )
         handed = slot_criteria(method, step)
         owned = occurrence_criteria(inputs.network, inputs.registry.definition, entry.occurrence_id)
         # 按旧版通过、待重审的步骤不查这一条：它在新计划里负责哪些要求由新做法定，
@@ -399,7 +419,8 @@ def _named_reuse(inputs: PreviewInputs, operation: RefineOperation, method: Any)
         if extra:
             raise ReuseRefused(
                 f"step {step!r} would hand {extra} to {occurrence}, which answers only for "
-                f"{sorted(owned)}; sharing a step does not add to what it answers for")
+                f"{sorted(owned)}; sharing a step does not add to what it answers for"
+            )
         named[step] = entry
     return named
 

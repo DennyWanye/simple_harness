@@ -12,6 +12,7 @@ Mirrors local_first coverage:
 - both providers dead → LLMUnavailableError (generic)
 - cloud missing → fallback to local
 """
+
 from __future__ import annotations
 
 import pytest
@@ -62,9 +63,7 @@ async def _collect(stream) -> str:
 async def test_cloud_first_cloud_healthy_serves_cloud():
     local = _FakeProvider(health=True, chat_chunks=["should not be called"])
     cloud = _FakeProvider(health=True, chat_chunks=["cloud", " served"])
-    router = HybridRouter(
-        local=local, cloud=cloud, strategy=RoutingStrategy.CLOUD_FIRST
-    )
+    router = HybridRouter(local=local, cloud=cloud, strategy=RoutingStrategy.CLOUD_FIRST)
     text = await _collect(router.chat_stream([{"role": "user", "content": "hi"}]))
     assert text == "cloud served"
     assert cloud.chat_calls == 1
@@ -76,11 +75,10 @@ async def test_cloud_first_cloud_chat_raises_retries_then_falls_back():
     """Cloud fails twice (retry exhausted) → fallback to local."""
     local = _FakeProvider(health=True, chat_chunks=["from", " local"])
     cloud = _FakeProvider(health=True, chat_raises=RuntimeError("cloud died mid-stream"))
-    router = HybridRouter(
-        local=local, cloud=cloud, strategy=RoutingStrategy.CLOUD_FIRST
-    )
+    router = HybridRouter(local=local, cloud=cloud, strategy=RoutingStrategy.CLOUD_FIRST)
     # Patch retry delay to 0 for fast tests
     import router.hybrid_router as _mod
+
     orig = _mod._CLOUD_FIRST_RETRY_DELAY_SECONDS
     _mod._CLOUD_FIRST_RETRY_DELAY_SECONDS = 0.0
     try:
@@ -97,10 +95,9 @@ async def test_cloud_first_cloud_unhealthy_retries_then_falls_back():
     """Cloud health fails twice → fallback to local."""
     local = _FakeProvider(health=True, chat_chunks=["local"])
     cloud = _FakeProvider(health=False, chat_chunks=["never"])
-    router = HybridRouter(
-        local=local, cloud=cloud, strategy=RoutingStrategy.CLOUD_FIRST
-    )
+    router = HybridRouter(local=local, cloud=cloud, strategy=RoutingStrategy.CLOUD_FIRST)
     import router.hybrid_router as _mod
+
     orig = _mod._CLOUD_FIRST_RETRY_DELAY_SECONDS
     _mod._CLOUD_FIRST_RETRY_DELAY_SECONDS = 0.0
     try:
@@ -162,6 +159,7 @@ async def test_cloud_first_retry_succeeds_on_second_attempt():
 
     class _FlakeyCloud:
         """Fails the first chat_stream call, succeeds on the second."""
+
         def __init__(self):
             self.model = "test-cloud"
             self.health_calls = 0
@@ -180,10 +178,9 @@ async def test_cloud_first_retry_succeeds_on_second_attempt():
 
     local = _FakeProvider(health=True, chat_chunks=["local"])
     cloud = _FlakeyCloud()
-    router = HybridRouter(
-        local=local, cloud=cloud, strategy=RoutingStrategy.CLOUD_FIRST
-    )
+    router = HybridRouter(local=local, cloud=cloud, strategy=RoutingStrategy.CLOUD_FIRST)
     import router.hybrid_router as _mod
+
     orig = _mod._CLOUD_FIRST_RETRY_DELAY_SECONDS
     _mod._CLOUD_FIRST_RETRY_DELAY_SECONDS = 0.0
     try:
@@ -199,9 +196,7 @@ async def test_cloud_first_retry_succeeds_on_second_attempt():
 async def test_cloud_first_both_dead_raises():
     local = _FakeProvider(health=False)
     cloud = _FakeProvider(health=False)
-    router = HybridRouter(
-        local=local, cloud=cloud, strategy=RoutingStrategy.CLOUD_FIRST
-    )
+    router = HybridRouter(local=local, cloud=cloud, strategy=RoutingStrategy.CLOUD_FIRST)
     with pytest.raises(LLMUnavailableError):
         await _collect(router.chat_stream([{"role": "user", "content": "hi"}]))
 
@@ -209,9 +204,7 @@ async def test_cloud_first_both_dead_raises():
 @pytest.mark.asyncio
 async def test_cloud_first_no_cloud_configured_uses_local():
     local = _FakeProvider(health=True, chat_chunks=["local-only"])
-    router = HybridRouter(
-        local=local, cloud=None, strategy=RoutingStrategy.CLOUD_FIRST
-    )
+    router = HybridRouter(local=local, cloud=None, strategy=RoutingStrategy.CLOUD_FIRST)
     text = await _collect(router.chat_stream([{"role": "user", "content": "hi"}]))
     assert text == "local-only"
     assert local.chat_calls == 1

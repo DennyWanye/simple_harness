@@ -6,6 +6,7 @@
 用 tmp_path 造小型假库(env DESKPET_PPT_TEMPLATE_ROOT 指向它),不依赖真
 2.8GB 库;vision 用 monkeypatch 强制不可用 → 走随机回退,断言从不抛异常。
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -109,9 +110,7 @@ def test_pick_falls_back_to_random_when_no_vision(
     assert picked.stem in {"a", "b"}
 
 
-def test_pick_uses_vision_choice(
-    fake_lib: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_pick_uses_vision_choice(fake_lib: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """vision 返回 {"id": N} → 映射回对应 .pptx。"""
     import deskpet.tools.ppt_visual_review as vr
 

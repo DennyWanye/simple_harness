@@ -163,9 +163,7 @@ class ToolRegistry:
                 # not cross the model-facing ToolResult boundary.
                 raw_code = str(exc).strip()
                 stable_code = (
-                    raw_code
-                    if _SAFE_HANDLER_ERROR.fullmatch(raw_code)
-                    else "unclassified"
+                    raw_code if _SAFE_HANDLER_ERROR.fullmatch(raw_code) else "unclassified"
                 )
                 logger.error(
                     "sdk_tool_handler_failed tool=%s error_type=%s stable_code=%s",

@@ -57,18 +57,24 @@ def test_first_critic_floor_uses_frozen_effective_input_cap_and_actual_output_ce
 
 
 def test_actual_output_ceiling_matches_runtime_assembly_and_never_drops_below_default():
-    assert actual_output_ceiling(
-        profile_default_max_output_tokens=None,
-        profile_max_output_tokens_ceiling=None,
-        config_default_max_output_tokens=4096,
-        config_max_output_tokens_ceiling=8192,
-    ) == 8192
-    assert actual_output_ceiling(
-        profile_default_max_output_tokens=12_000,
-        profile_max_output_tokens_ceiling=8192,
-        config_default_max_output_tokens=4096,
-        config_max_output_tokens_ceiling=8192,
-    ) == 12_000
+    assert (
+        actual_output_ceiling(
+            profile_default_max_output_tokens=None,
+            profile_max_output_tokens_ceiling=None,
+            config_default_max_output_tokens=4096,
+            config_max_output_tokens_ceiling=8192,
+        )
+        == 8192
+    )
+    assert (
+        actual_output_ceiling(
+            profile_default_max_output_tokens=12_000,
+            profile_max_output_tokens_ceiling=8192,
+            config_default_max_output_tokens=4096,
+            config_max_output_tokens_ceiling=8192,
+        )
+        == 12_000
+    )
 
 
 def test_first_floor_uses_shared_window_budget_not_raw_context_maximum():
@@ -101,7 +107,9 @@ def test_unknown_inputs_remain_explicit_and_do_not_fall_back_to_legacy_tail(
     runtime_context, estimator, protocol, reason
 ):
     cap = frozen_provider_input_cap(
-        profile_id="critic", model="astra", runtime_context=runtime_context,
+        profile_id="critic",
+        model="astra",
+        runtime_context=runtime_context,
         estimator_fingerprint=estimator,
     )
     result = first_request_budget(
@@ -114,7 +122,9 @@ def test_unknown_inputs_remain_explicit_and_do_not_fall_back_to_legacy_tail(
 
 def test_final_wire_cap_refuses_before_admission_instead_of_trusting_an_estimate():
     cap = frozen_provider_input_cap(
-        profile_id="critic", model="astra", runtime_context=frozen_context(),
+        profile_id="critic",
+        model="astra",
+        runtime_context=frozen_context(),
         estimator_fingerprint="estimator-v1",
     )
     assert not isinstance(cap, FirstRequestBudgetUnknown)

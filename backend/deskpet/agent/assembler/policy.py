@@ -17,6 +17,7 @@ The loader returns a dict mapping ``task_type -> AssemblyPolicy`` and
 logs (not raises) on any structural issues. A missing file is not an
 error — the packaged default suffices on a clean install.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -122,43 +123,27 @@ def _load_yaml(path: Path) -> dict[str, Any]:
     try:
         raw = path.read_text(encoding="utf-8")
     except OSError as exc:
-        logger.warning(
-            "assembler.policy_io_error", path=str(path), error=str(exc)
-        )
+        logger.warning("assembler.policy_io_error", path=str(path), error=str(exc))
         return {}
     try:
         data = yaml.safe_load(raw)
     except yaml.YAMLError as exc:
-        logger.warning(
-            "assembler.policy_yaml_error", path=str(path), error=str(exc)
-        )
+        logger.warning("assembler.policy_yaml_error", path=str(path), error=str(exc))
         return {}
     if not isinstance(data, dict):
         return {}
     # Support nesting under a top-level "policies:" key for clarity.
-    if (
-        "policies" in data
-        and isinstance(data["policies"], dict)
-        and len(data) == 1
-    ):
+    if "policies" in data and isinstance(data["policies"], dict) and len(data) == 1:
         data = data["policies"]
     return data
 
 
-def _merge(
-    default: dict[str, Any], overrides: dict[str, Any]
-) -> dict[str, Any]:
+def _merge(default: dict[str, Any], overrides: dict[str, Any]) -> dict[str, Any]:
     """Shallow merge at the task_type level with ``must`` safety check."""
-    if (
-        "policies" in overrides
-        and isinstance(overrides["policies"], dict)
-        and len(overrides) == 1
-    ):
+    if "policies" in overrides and isinstance(overrides["policies"], dict) and len(overrides) == 1:
         overrides = overrides["policies"]
 
-    out: dict[str, Any] = {
-        k: _clone(v) for k, v in default.items() if isinstance(v, dict)
-    }
+    out: dict[str, Any] = {k: _clone(v) for k, v in default.items() if isinstance(v, dict)}
     for tt, body in overrides.items():
         if not isinstance(body, dict):
             logger.warning(
@@ -171,9 +156,7 @@ def _merge(
         merged = dict(base)
         for field, value in body.items():
             if field == "must":
-                merged["must"] = _safe_merge_must(
-                    tt, base.get("must", []), value
-                )
+                merged["must"] = _safe_merge_must(tt, base.get("must", []), value)
             elif field == "memory" and isinstance(value, dict):
                 # Deep-merge memory params so users can override only l3_top_k
                 # without having to restate l1/l2_top_k.
@@ -187,9 +170,7 @@ def _merge(
     return out
 
 
-def _safe_merge_must(
-    task_type: str, default_must: Any, user_must: Any
-) -> list[str]:
+def _safe_merge_must(task_type: str, default_must: Any, user_must: Any) -> list[str]:
     """Ensure ``memory`` stays in ``must`` regardless of what the user did.
 
     User MAY add new components; user MAY reorder; user MUST NOT delete
@@ -227,24 +208,18 @@ def _to_policy(task_type: str, body: dict[str, Any]) -> AssemblyPolicy:
         topic_shift_min_len=int(memory_raw.get("topic_shift_min_len", 16)),
     )
     raw_tools = body.get("tools", ["*"])
-    tools = [
-        str(c) for c in (raw_tools or []) if isinstance(c, str) and c
-    ]
+    tools = [str(c) for c in (raw_tools or []) if isinstance(c, str) and c]
     if "tools" not in body and not tools:
         tools = ["*"]
     exposure = _to_tool_exposure(body.get("tool_exposure"), tools)
     return AssemblyPolicy(
         task_type=task_type,
         must=[str(c) for c in (body.get("must") or []) if isinstance(c, str) and c] or [_CORE_MUST],
-        prefer=[
-            str(c) for c in (body.get("prefer") or []) if isinstance(c, str) and c
-        ],
+        prefer=[str(c) for c in (body.get("prefer") or []) if isinstance(c, str) and c],
         tools=tools,
         tool_exposure=exposure,
         memory=mem,
-        budget_ratio=(
-            float(body["budget_ratio"]) if "budget_ratio" in body else None
-        ),
+        budget_ratio=(float(body["budget_ratio"]) if "budget_ratio" in body else None),
     )
 
 

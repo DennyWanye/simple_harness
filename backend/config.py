@@ -40,9 +40,7 @@ def resolve_deep_research_workflow_version(
     configured = str(configured_version or "").strip().lower()
     configured_valid = configured in {"v5", "v6", "v7"}
     selected = configured if configured_valid else "v7"
-    configured_reason = (
-        "configured" if configured_valid else "configured_invalid_factory_default"
-    )
+    configured_reason = "configured" if configured_valid else "configured_invalid_factory_default"
     requested = str(env.get("DESKPET_DEV_DEEPRESEARCH_VERSION") or "").strip().lower()
     if not requested:
         return selected, configured_reason
@@ -127,15 +125,18 @@ def resolve_cloud_api_key() -> str | None:
         return None
     return val
 
+
 @dataclass
 class BackendConfig:
     host: str = "127.0.0.1"
     port: int = 8100
     log_level: str = "INFO"
 
+
 @dataclass
 class LLMEndpointConfig:
     """Per-endpoint config (local or cloud). Mirrors OpenAICompatibleProvider ctor."""
+
     model: str = "gemma4:e4b"
     base_url: str = "http://localhost:11434/v1"
     api_key: str = "ollama"
@@ -149,6 +150,7 @@ class LLMRoutingConfig:
     daily_budget_cny: float = 10.0
     local: LLMEndpointConfig = field(default_factory=LLMEndpointConfig)
     cloud: LLMEndpointConfig | None = None
+
 
 @dataclass
 class ASRConfig:
@@ -170,6 +172,7 @@ class ASRConfig:
     # cache / model name resolution.
     model_dir: str = "faster-whisper-large-v3-turbo"
 
+
 @dataclass
 class TTSConfig:
     provider: str = "edge-tts"
@@ -180,11 +183,13 @@ class TTSConfig:
     # auto-strips it with a WARNING.
     model_dir: str = "cosyvoice2"
 
+
 @dataclass
 class VADConfig:
     threshold: float = 0.5
     min_speech_ms: int = 250
     min_silence_ms: int = 500
+
 
 @dataclass
 class VoiceConfig:
@@ -205,22 +210,25 @@ class VoiceConfig:
     The "normal" threshold / min_speech_ms live in [vad] — this section only
     holds the TTS-phase overrides so pipeline can swap them dynamically.
     """
+
     enabled: bool = False
     vad_threshold_during_tts: float = 0.65
     min_speech_ms_during_tts: int = 400
     tts_cooldown_ms: int = 300
 
+
 @dataclass
 class MemoryV2FactsConfig:
     """``[memory.v2.facts]`` — facts 抽取调参（记忆系统升级）。"""
-    min_user_chars: int = 8       # 字数采样门，取代 facts.py 硬编码 <8
-    facts_weight: float = 0.2     # facts 路进 RRF 的权重
-    model_override: str = ""      # 留空 = 用主 LLM
+
+    min_user_chars: int = 8  # 字数采样门，取代 facts.py 硬编码 <8
+    facts_weight: float = 0.2  # facts 路进 RRF 的权重
+    model_override: str = ""  # 留空 = 用主 LLM
     # Stage 2 D8 v2：entity 路 RRF 权重；v1 是 0.15，保守降为 0.10。
     entity_weight: float = 0.10
     # 2026-06-27 内容哈希幂等去重（FactExtractor Layer 1）：TTL 与缓存上限。
-    content_dedup_ttl_s: int = 3600        # 相同内容近期(秒)抽过则跳过重抽
-    content_dedup_cache_max: int = 256     # in-process 内容哈希 LRU 上限
+    content_dedup_ttl_s: int = 3600  # 相同内容近期(秒)抽过则跳过重抽
+    content_dedup_cache_max: int = 256  # in-process 内容哈希 LRU 上限
 
 
 @dataclass
@@ -233,6 +241,7 @@ class MemoryV2ForgetConfig:
     子段名用 ``forget`` 而非 ``memory_forget`` —— 后者与父表的同名 flag
     冲突（同一个 key 不能既是 bool 又是 dict）。
     """
+
     enable_natural_language: bool = False
 
 
@@ -243,26 +252,27 @@ class MemoryV2Config:
     全部默认 False → 行为与第一代"三层 + RRF"逐字节一致。每个 flag 单独
     控制一个 v2 模块的接入（Strangler-Fig：关 flag 即回退第一代）。
     """
-    feedback_loop: bool = True        # WI-M1.1 用户 thumbs-up 回路（测试阶段出厂点亮）
-    facts_extract: bool = True        # WI-M1.2 写入端事实抽取（测试阶段出厂点亮）
-    rerank: bool = True               # WI-M1.3 cross-encoder 重排（测试阶段出厂点亮；无 GPU 时 CPU 跑慢但不崩）
-    enhanced_retriever: bool = True   # WI-M1.4 facts 进 RRF（测试阶段出厂点亮）
-    chunking: bool = True             # WI-M1.5 长消息切块（测试阶段出厂点亮）
-    query_rewrite: bool = True        # WI-M1.5 短查询改写（测试阶段出厂点亮）
-    workspace_memory: bool = False    # WI-M1.6 code 工作记忆（B 表：code 模式专属，主线不开）
-    reflection: bool = True           # WI-M1.7 反思 / skill memory（测试阶段出厂点亮）
+
+    feedback_loop: bool = True  # WI-M1.1 用户 thumbs-up 回路（测试阶段出厂点亮）
+    facts_extract: bool = True  # WI-M1.2 写入端事实抽取（测试阶段出厂点亮）
+    rerank: bool = True  # WI-M1.3 cross-encoder 重排（测试阶段出厂点亮；无 GPU 时 CPU 跑慢但不崩）
+    enhanced_retriever: bool = True  # WI-M1.4 facts 进 RRF（测试阶段出厂点亮）
+    chunking: bool = True  # WI-M1.5 长消息切块（测试阶段出厂点亮）
+    query_rewrite: bool = True  # WI-M1.5 短查询改写（测试阶段出厂点亮）
+    workspace_memory: bool = False  # WI-M1.6 code 工作记忆（B 表：code 模式专属，主线不开）
+    reflection: bool = True  # WI-M1.7 反思 / skill memory（测试阶段出厂点亮）
     # Stage 2 新增 4 flag（PRD §2.1 G1-G5 / §3 D16）：
-    cross_key_merge: bool = True          # WI-S2.1a 跨 key 矛盾治理（测试阶段出厂点亮）
-    memory_forget: bool = True            # WI-S2.1a 显式遗忘工具（fact_id 模式；NL 模式仍由 forget.enable_natural_language 独立守门）
-    entity_path: bool = True              # WI-S2.2 entity 索引检索路（测试阶段出厂点亮）
-    episodic_to_semantic: bool = True     # WI-S2.4 summary 抽 facts（测试阶段出厂点亮）
+    cross_key_merge: bool = True  # WI-S2.1a 跨 key 矛盾治理（测试阶段出厂点亮）
+    memory_forget: bool = True  # WI-S2.1a 显式遗忘工具（fact_id 模式；NL 模式仍由 forget.enable_natural_language 独立守门）
+    entity_path: bool = True  # WI-S2.2 entity 索引检索路（测试阶段出厂点亮）
+    episodic_to_semantic: bool = True  # WI-S2.4 summary 抽 facts（测试阶段出厂点亮）
     # FP-4 WI-3.1：goal / decision / constraint 类别抽取
-    goal_facts: bool = True               # WI-3.1 goal/decision/constraint 记忆抽取（测试阶段出厂点亮）
+    goal_facts: bool = True  # WI-3.1 goal/decision/constraint 记忆抽取（测试阶段出厂点亮）
     # FP-4 WI-3.3 / WI-OH-2 决策①：PreferenceMemory 半衰期衰减默认开。
     # 桌宠自动淡忘老偏好（老条目 effective 分沉底）；pinned 偏好跳衰减。
     # 硬前置：用户保留偏好的 pin 入口（memory_write pinned=True / memory_pin
     # WS verb）与本默认值同批可用，确保用户有逃生口。
-    pref_decay: bool = True               # WI-OH-2 决策① 默认开（原 WI-3.3 默认 False）
+    pref_decay: bool = True  # WI-OH-2 决策① 默认开（原 WI-3.3 默认 False）
     # FP-4 WI-3.4：写入分级 light 快路（默认 False）
     # False → skip_embed 强制 False，所有消息都进 L3 向量（当前行为不变）。
     # True  → 调用方可传 skip_embed=True 跳过 L3 embedding，仅走 L2（消息
@@ -270,17 +280,19 @@ class MemoryV2Config:
     #         仍可召回）。适用于语音 VAD tick / 截屏低信息判定等高频低信息流。
     # 实际生效取决于调用方是否传 skip_embed=True；flag 关闭时任何 skip_embed=True
     # 应被调用方屏蔽（有效 skip_embed = flag AND caller_intent）。
-    light_write: bool = True              # WI-3.4 light 快路开关（测试阶段出厂点亮；实际生效仍需调用方传 skip_embed）
+    light_write: bool = (
+        True  # WI-3.4 light 快路开关（测试阶段出厂点亮；实际生效仍需调用方传 skip_embed）
+    )
     # FP-4 WI-3.2：人格画像主动注入 Component（默认 False，dev 先开）。
     # False → PreferenceProfileComponent 返回空 Slice → bundle 字节级等同当前（BC）。
-    persona_inject: bool = True           # WI-3.2 preference profile injection（测试阶段出厂点亮）
+    persona_inject: bool = True  # WI-3.2 preference profile injection（测试阶段出厂点亮）
     # FP-4 B-10：goal→facts 双写钩（默认 False）。
     # False → bind_on_goal_set 不接电 → goal_store.set() BC。
-    goal_facts_hook: bool = True          # B-10 goal→facts double-write hook（测试阶段出厂点亮）
+    goal_facts_hook: bool = True  # B-10 goal→facts double-write hook（测试阶段出厂点亮）
     # WI-OH-4：记忆 self-curation nudge（agent 主动判断该不该记，对标 hermes
     # 周期性自省 + openhuman self-curation）。默认 False = 字节级 BC：
     # flag OFF → MemoryCurator 不构造、agent_loop 不调 nudge、不写 facts。
-    curation_nudge: bool = True           # WI-OH-4 记忆自策展 nudge 开关（测试阶段出厂点亮）
+    curation_nudge: bool = True  # WI-OH-4 记忆自策展 nudge 开关（测试阶段出厂点亮）
     # WI-OH-4 频率门控：每 N 个回合触发一次 nudge（对齐 hermes「周期性」）。
     # 仅在 curation_nudge=True 时生效。
     curation_nudge_every_n_turns: int = 8
@@ -289,7 +301,7 @@ class MemoryV2Config:
     # 周报的步骤」），写 facts 表（慢衰减）+ 由 preference_profile 注入。
     # 默认 False = 字节级 BC：flag OFF → curator 不产 learning、注入不含 learning。
     # 仅在 curation_nudge=True 且 auto_learnings=True 时产 learning。
-    auto_learnings: bool = True           # WI-CC-5 auto-memory learnings 开关（测试阶段出厂点亮；仅 curation_nudge=True 时产 learning）
+    auto_learnings: bool = True  # WI-CC-5 auto-memory learnings 开关（测试阶段出厂点亮；仅 curation_nudge=True 时产 learning）
     # 2026-06-27 内容哈希幂等去重（FactExtractor Layer 1）：相同内容跳过重抽，防重复事实累积。
     # 测试阶段出厂点亮（与 facts_extract 同档）。OFF 时 FactExtractor 不启用内容去重 = 字节级 BC。
     extract_content_dedup: bool = True
@@ -329,11 +341,12 @@ class ToolsLastMileConfig:
       - ``artifact_envelope=False`` 时 tool_result 不得 emit ``artifacts`` 键。
       - ``frontend_artifact_card=False`` 时 MessageBubble DOM 树未变化。
     """
+
     # 测试阶段已完成能力出厂即开；显式 false 仍保留兼容/诊断路径。
-    artifact_envelope: bool = True          # D1 信封包装
-    frontend_artifact_card: bool = True     # D2 前端新卡片
-    tauri_artifact_ops: bool = True         # D3 Tauri shell 桥
-    default_artifact_dir: str = ""          # D4 空 = 走旧 tempdir
+    artifact_envelope: bool = True  # D1 信封包装
+    frontend_artifact_card: bool = True  # D2 前端新卡片
+    tauri_artifact_ops: bool = True  # D3 Tauri shell 桥
+    default_artifact_dir: str = ""  # D4 空 = 走旧 tempdir
     artifact_dir_retention_days: int = 30
 
 
@@ -346,6 +359,7 @@ class ToolsVerifierConfig:
         永远空，所有 claim 都 unmatched，会无脑阻塞所有 end_turn。
       - ``ephemeral_subagent_model`` 缺省时默认 ``"haiku"``（N5）。
     """
+
     # WI-HM-1 决策①：自我纠错闭环出厂默认点亮（非字节级 BC，强回归+真机兜底）。
     # 三个默认值是一个原子改动（VG-INVARIANT-1 硬连锁见 _validate_flag_invariants）：
     #   verify_gate_mode != "off" 必须 emit_receipts=True，否则 ledger 永远空 →
@@ -355,10 +369,10 @@ class ToolsVerifierConfig:
     # end_turn 正常收尾 + goal/task 回合也放行，见 exec/B1 真测）。前置满足故由 shadow
     # 升 strict——verify 真守门拦截虚报完成→reflection 重试。若后续某档误阻塞可退 shadow。
     emit_receipts: bool = True
-    verify_gate_mode: str = "strict"               # off | shadow | strict
-    ephemeral_subagent_model: str = "haiku"        # D6 第 3 次失败救援模型
-    run_build: bool = False                        # D7 build verifier
-    run_tests: bool = False                        # D7 test verifier
+    verify_gate_mode: str = "strict"  # off | shadow | strict
+    ephemeral_subagent_model: str = "haiku"  # D6 第 3 次失败救援模型
+    run_build: bool = False  # D7 build verifier
+    run_tests: bool = False  # D7 test verifier
     claim_patterns_file: str = "verify/claim_patterns.yaml"
     # v3 WI-T2.1 接电 + M5 ToolsConfig 扩展：build_agent 工厂从这里读 nudge 上限
     # （PRD §3 D6：failure_count == 3 时调度 ephemeral；默认 2 表示连续 2 次
@@ -396,6 +410,7 @@ class ToolsConfig:
     * ``default_timeout_seconds`` — ToolSpec.timeout_seconds 未指定时的兜底
       （ToolSpec 默认 60，但 execute_tool 读 cfg 兜底防忘配）。
     """
+
     last_mile: ToolsLastMileConfig = field(default_factory=ToolsLastMileConfig)
     verifier: ToolsVerifierConfig = field(default_factory=ToolsVerifierConfig)
     # ─── WI-T5.1 v3 ─────────────────────────────────────────────
@@ -416,6 +431,7 @@ class BillingConfig:
     Asia/Shanghai (product targets Chinese users); deployments overseas
     can override via [billing] tz = "America/Los_Angeles" etc.
     """
+
     daily_budget_cny: float = 10.0
     unknown_model_price_cny_per_m_tokens: float = 20.0
     pricing: dict[str, float] = field(default_factory=dict)
@@ -444,13 +460,14 @@ class SkillsAutoDisclosureConfig:
     Set ``enabled=True`` in config.toml (or ``[features] …``) to activate
     automatic skill body inlining. 测试阶段出厂点亮。
     """
+
     enabled: bool = True
     # BGE-M3 short-query similarities overlap around 0.45-0.55 for related
     # and unrelated Skills. Explicit trigger hits are lifted to 0.95, while
     # the higher semantic threshold prevents an unrelated preload from
     # narrowing the whole turn's frozen ToolSet.
-    strong_threshold: float = 0.70   # cos-sim threshold for "strong match"
-    budget_tokens: int = 8000        # total token budget for inlined bodies
+    strong_threshold: float = 0.70  # cos-sim threshold for "strong match"
+    budget_tokens: int = 8000  # total token budget for inlined bodies
     per_skill_max_tokens: int = 2000  # single-skill body truncation cap
 
 
@@ -462,6 +479,7 @@ class SkillsCodifyConfig:
     ``enabled`` 仅保留兼容读取，不能重新开启已经退休的生产路径。新能力成长
     统一由 Companion candidate/governance authority 管理并默认启用。
     """
+
     enabled: bool = True
     max_candidates_per_day: int = 3
 
@@ -469,11 +487,10 @@ class SkillsCodifyConfig:
 @dataclass
 class SkillsConfig:
     """``[skills]`` top-level config table (WI-4.1+)."""
+
     # WI-5: triggered background knowledge snippets. 测试阶段出厂点亮。
     knowledge_enabled: bool = True
-    auto_disclosure: SkillsAutoDisclosureConfig = field(
-        default_factory=SkillsAutoDisclosureConfig
-    )
+    auto_disclosure: SkillsAutoDisclosureConfig = field(default_factory=SkillsAutoDisclosureConfig)
     # Task 13：仅保留旧 [skills.codify] 的兼容读取，不能恢复旧 writer。
     codify: SkillsCodifyConfig = field(default_factory=SkillsCodifyConfig)
 
@@ -489,20 +506,23 @@ class ProblemPipelineConfig:
     决策3（模型可配）：analysis_model / self_check_model 留空 = 复用主 LLM gpt-5.5（中转站只保证主模型），
       不硬依赖 haiku；非空才解析独立 model（失败回退主 LLM）。
     """
-    enabled: bool = True                       # 总开关（kill-switch）：false → 整条短路回退现有链路
-    intent_triage: bool = True                 # Step1+3 合并预分析（意图 + 主要矛盾）
-    intent_clarify_threshold: float = 0.7      # 歧义澄清阈值
-    analysis_timeout_s: float = 45.0           # 预分析 LLM 超时（远程模型调用保留充足响应窗口）
-    evidence_gate: bool = True                 # Step2 取证门控
-    evidence_max_nudges: int = 2               # 取证 nudge 上限
+
+    enabled: bool = True  # 总开关（kill-switch）：false → 整条短路回退现有链路
+    intent_triage: bool = True  # Step1+3 合并预分析（意图 + 主要矛盾）
+    intent_clarify_threshold: float = 0.7  # 歧义澄清阈值
+    analysis_timeout_s: float = 45.0  # 预分析 LLM 超时（远程模型调用保留充足响应窗口）
+    evidence_gate: bool = True  # Step2 取证门控
+    evidence_max_nudges: int = 2  # 取证 nudge 上限
     evidence_investigative_tools: list[str] = field(default_factory=list)  # 空=用模块默认白名单
-    plan_companion_enabled: bool = True        # Step4 通用规划开关（保留旧配置键名）
-    analysis_model: str = "sf-glm-5.2"         # 意图+矛盾分析复用当前 Relay GLM-5.2 别名，避免旧 DeepSeek 402 降级
-    self_check: bool = True                    # Step6 自检总开关（bool；严格度内部按 problem_type 选）
-    self_check_model: str = ""                 # 决策3：异体自检评分模型（留空=主 LLM gpt-5.5）
-    self_check_heterogeneous: bool = True      # 失败 N 次后启异体（fresh-context 子代理）评分
-    convergence_report_on_stop: bool = True    # Step7 止损报告
-    observability_events: bool = True          # 是否发 <标签> WS 事件
+    plan_companion_enabled: bool = True  # Step4 通用规划开关（保留旧配置键名）
+    analysis_model: str = (
+        "sf-glm-5.2"  # 意图+矛盾分析复用当前 Relay GLM-5.2 别名，避免旧 DeepSeek 402 降级
+    )
+    self_check: bool = True  # Step6 自检总开关（bool；严格度内部按 problem_type 选）
+    self_check_model: str = ""  # 决策3：异体自检评分模型（留空=主 LLM gpt-5.5）
+    self_check_heterogeneous: bool = True  # 失败 N 次后启异体（fresh-context 子代理）评分
+    convergence_report_on_stop: bool = True  # Step7 止损报告
+    observability_events: bool = True  # 是否发 <标签> WS 事件
 
 
 @dataclass
@@ -527,11 +547,14 @@ class FeaturesConfig:
       返回「规划期只读」deny，**不执行**；只读工具（read_file/network 等）照常放行。
       用户点[执行]→解禁。OFF（默认）= 规划期不切只读、写类工具照常（字节级 BC）。
     """
-    slash_commands: bool = True            # 测试阶段出厂点亮
-    goal_mode: bool = True                 # 测试阶段出厂点亮
-    agent_parallel: bool = True            # 测试阶段出厂点亮
-    preference_memory: bool = True         # 测试阶段出厂点亮
-    plan_read_only: bool = False           # B 表：归 WI-1.2 自治档统一处理（开了 plan 期禁写，与效率优先冲突）
+
+    slash_commands: bool = True  # 测试阶段出厂点亮
+    goal_mode: bool = True  # 测试阶段出厂点亮
+    agent_parallel: bool = True  # 测试阶段出厂点亮
+    preference_memory: bool = True  # 测试阶段出厂点亮
+    plan_read_only: bool = (
+        False  # B 表：归 WI-1.2 自治档统一处理（开了 plan 期禁写，与效率优先冲突）
+    )
     # Context OS V1 master rollback. Kept OFF until every wave and E2E gate
     # passes; Task 5.1 flips the shipped default ON in one isolated change.
     context_os_v1: bool = True
@@ -539,8 +562,8 @@ class FeaturesConfig:
     # 全默认 OFF；OFF 时新代码 short-circuit，agent_parallel 退回扁平 gather（字节级 BC）。
     #   agent_team            — 暴露 spawn_team LLM 工具 + 构造 TeamStore/TaskGraphStore
     #   subagent_nonblocking  — 非阻塞 spawn_subagents/await_subagents + completion queue 回灌
-    agent_team: bool = True                # 测试阶段出厂点亮
-    subagent_nonblocking: bool = True      # 测试阶段出厂点亮
+    agent_team: bool = True  # 测试阶段出厂点亮
+    subagent_nonblocking: bool = True  # 测试阶段出厂点亮
     # WI-4.0 compaction: wire ContextCompressor into AgentLoop.
     # WI-6 (compaction-bestpractice-upgrade, 2026-06-16): 默认翻 True。
     # gate 已满足: P-B 修复(窗口按有效出站模型解析) + 第1/2期单测全绿 + 小窗口长
@@ -555,23 +578,23 @@ class FeaturesConfig:
     # ("context_compacted", ...) 全部不变。ON 时压缩命中额外:① metrics_sink
     # record 一条 "context_compacted" 事件(ratio/model);② agent_loop yield
     # ContextCompactedEvent;③ main.py 转一条 ws → 前端浮 toast「已压缩,省 N token」。
-    ctx_observability: bool = True         # 测试阶段出厂点亮
+    ctx_observability: bool = True  # 测试阶段出厂点亮
     # WI-1B-3 自适应 compact_at_pct (plans/.../ compaction 三件套):
     # 默认 OFF = 字节级 BC。OFF 时 ContextConfig.compact_at_tokens_for() 直接
     # 返回 compact_at_tokens 属性,agent_loop 走原触发线。ON 时按本 run 是否
     # agentic(工具调用计数≥阈值)微调触发线: agentic 提前压(留 buffer)、纯对话
     # 延后压(少打断闲聊),结果 clamp 在 [0.6,0.95]×window。
-    adaptive_compact_pct: bool = True      # 测试阶段出厂点亮
+    adaptive_compact_pct: bool = True  # 测试阶段出厂点亮
     # WI-1B-4 摘要质量回路 (同上):
     # 默认 OFF = 字节级 BC。OFF 时 _run_chat 用户消息预处理不加任何分支。ON 时
     # 对用户消息跑词法匹配(刚才|之前说的|你忘了|我们在弄|上一个) + 本 session
     # 发生过压缩(L1 有任务态快照) → 命中则从 L1 重新注入一条任务态 system 提示
     # (不立刻重摘,只补回被摘掉的任务连续性)。
-    summary_quality_loop: bool = True      # 测试阶段出厂点亮
+    summary_quality_loop: bool = True  # 测试阶段出厂点亮
     # WI-1B-5 microcompact size-aware (同上):
     # 默认 OFF = 字节级 BC(microcompact 仍按"保护最近 N 条")。ON 时保护策略改
     # "最近 N 条 + 累计字节 ≤ M",避免最近 N 条里混入巨型 tool_result 仍撑爆窗口。
-    microcompact_size_aware: bool = True   # 测试阶段出厂点亮
+    microcompact_size_aware: bool = True  # 测试阶段出厂点亮
     # 七步问题处理流水线（plans/2026-06-24-problem-handling-pipeline-maoxuan/）。
     # 嵌套子表，由 load_config 手动 pop 构建（同 [tools.verifier] 模式）。
     problem_pipeline: ProblemPipelineConfig = field(default_factory=ProblemPipelineConfig)
@@ -622,9 +645,14 @@ class SearchGatewayConfig:
     enabled: bool = True
     playwright_renderer_enabled: bool = True
     route: str = "auto"
-    providers: list[str] = field(default_factory=lambda: [
-        "baidu", "duckduckgo", "google-cdp", "bing-cdp",
-    ])
+    providers: list[str] = field(
+        default_factory=lambda: [
+            "baidu",
+            "duckduckgo",
+            "google-cdp",
+            "bing-cdp",
+        ]
+    )
     quick_total_timeout_s: float = 5.0
     per_provider_timeout_s: float = 2.0
     quick_min_results: int = 5
@@ -750,6 +778,7 @@ class AppConfig:
     # Always a dict — empty when no config.toml exists. Treat as read-only.
     raw: dict = field(default_factory=dict)
 
+
 # P4-S15: 这些 key 是 P4 通过 ``AppConfig.raw`` 读取的（[memory.l1] / [memory.l3]
 # 等），不属于旧 dataclass 的 schema，但**有意保留在 config.toml 里**。
 # 把它们登记下来 → _load_section 不再为它们打 warning，启动日志保持安静。
@@ -761,14 +790,21 @@ _KNOWN_EXTRAS_BY_DATACLASS: dict[str, frozenset[str]] = {
     # LLMRoutingConfig — P4-S6 引入的多 provider 段也走 raw 读。
     # P4-S20-LLM-Unified: 顶层 [llm] 直配 endpoint 字段，dataclass 没跟进
     # 但这些键由 config.raw["llm"][...] 兜底使用，不该每次启动都 warn。
-    "LLMRoutingConfig": frozenset({
-        "providers", "fallback_chain",
-        "model", "base_url", "api_key", "temperature", "max_tokens",
-        "endpoints",
-        # 2026-05-17 deepseek-inline-cot-dsml-sanitize Strangler-Fig flag,
-        # read via config.raw["llm"]["sanitize_inline_cot_dsml"].
-        "sanitize_inline_cot_dsml",
-    }),
+    "LLMRoutingConfig": frozenset(
+        {
+            "providers",
+            "fallback_chain",
+            "model",
+            "base_url",
+            "api_key",
+            "temperature",
+            "max_tokens",
+            "endpoints",
+            # 2026-05-17 deepseek-inline-cot-dsml-sanitize Strangler-Fig flag,
+            # read via config.raw["llm"]["sanitize_inline_cot_dsml"].
+            "sanitize_inline_cot_dsml",
+        }
+    ),
 }
 
 
@@ -790,7 +826,8 @@ def _load_section(cls, raw_dict: dict):
     if unknown:
         logger.warning(
             "config section %s ignoring unknown keys: %s",
-            cls.__name__, sorted(unknown),
+            cls.__name__,
+            sorted(unknown),
         )
     return cls(**{k: v for k, v in raw_dict.items() if k in known})
 
@@ -805,10 +842,16 @@ _VALID_VERIFY_GATE_MODES: frozenset[str] = frozenset({"off", "shadow", "strict"}
 # 已注册 ephemeral subagent 模型白名单。运行时 llm_registry 才能 full lookup，
 # 启动期用保守白名单挡明显错的 (TG-1 T1-11)。后续 WI-T2.4b 可在 registry
 # 构造后调 register_ephemeral_model() 动态扩。
-_KNOWN_EPHEMERAL_MODELS: frozenset[str] = frozenset({
-    "haiku", "sonnet", "opus",
-    "claude-haiku", "claude-sonnet", "claude-opus",
-})
+_KNOWN_EPHEMERAL_MODELS: frozenset[str] = frozenset(
+    {
+        "haiku",
+        "sonnet",
+        "opus",
+        "claude-haiku",
+        "claude-sonnet",
+        "claude-opus",
+    }
+)
 
 
 def _load_tools(raw_tools: dict) -> ToolsConfig:
@@ -866,8 +909,7 @@ def _validate_flag_invariants(cfg: AppConfig) -> None:
     days = lm.artifact_dir_retention_days
     if days < 1 or days > 365:
         raise ConfigError(
-            f"VG-INVARIANT-6: artifact_dir_retention_days={days} "
-            f"out of range [1, 365]"
+            f"VG-INVARIANT-6: artifact_dir_retention_days={days} out of range [1, 365]"
         )
 
     # 软冲突：run_build=true 且 verify_gate_mode=off → 自动转 shadow
@@ -1040,8 +1082,8 @@ def _is_toml_table(obj: object) -> bool:
     Duck-typed (``keys`` + ``__getitem__``) so we don't import tomlkit's
     internal item types — scalars (int/str/bool) and arrays lack ``keys``.
     """
-    return hasattr(obj, "keys") and hasattr(obj, "__getitem__") and not isinstance(
-        obj, (str, bytes)
+    return (
+        hasattr(obj, "keys") and hasattr(obj, "__getitem__") and not isinstance(obj, (str, bytes))
     )
 
 
@@ -1113,9 +1155,7 @@ def _merge_missing_feature_flags(user_target: Path, bundle_source: Path) -> bool
             (6, "v6", 5, "v5"),
             (7, "v7", 6, "v6"),
         }
-        if (
-            inherited_previous_factory_default
-        ):
+        if inherited_previous_factory_default:
             user_workflows[version_key] = f"v{bundle_revision}"  # type: ignore[index]
             user_workflows[revision_key] = bundle_revision  # type: ignore[index]
             added.extend(
@@ -1150,9 +1190,7 @@ def _merge_missing_feature_flags(user_target: Path, bundle_source: Path) -> bool
             try:
                 user_tbl[key] = copy.deepcopy(bval)  # type: ignore[index]
             except Exception as e:
-                logger.warning(
-                    "feature_flag_merge_key_copy_failed %s.%s: %s", path, key, e
-                )
+                logger.warning("feature_flag_merge_key_copy_failed %s.%s: %s", path, key, e)
                 continue
             added.append(".".join(path) + "." + str(key))
 
@@ -1165,7 +1203,9 @@ def _merge_missing_feature_flags(user_target: Path, bundle_source: Path) -> bool
         user_target.write_text(tomlkit.dumps(user_doc), encoding="utf-8")
         logger.info(
             "feature_flag_merge_applied count=%d keys=%s backup=%s",
-            len(added), added, bak,
+            len(added),
+            added,
+            bak,
         )
         return True
     except OSError as e:
@@ -1208,11 +1248,14 @@ def seed_user_config_if_missing() -> Path | None:
                 shutil.copyfile(source, user_target)
                 logger.info(
                     "legacy_llm_schema_migrated source=%s target=%s backup=%s",
-                    source, user_target, bak,
+                    source,
+                    user_target,
+                    bak,
                 )
             except OSError as e:
                 logger.warning(
-                    "legacy_llm_schema_migrate_failed: %s", e,
+                    "legacy_llm_schema_migrate_failed: %s",
+                    e,
                 )
             return user_target
 
@@ -1235,7 +1278,9 @@ def seed_user_config_if_missing() -> Path | None:
         user_target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(source, user_target)
         logger.info(
-            "seeded user config.toml from bundle: %s -> %s", source, user_target,
+            "seeded user config.toml from bundle: %s -> %s",
+            source,
+            user_target,
         )
         return user_target
     except OSError as e:
@@ -1306,11 +1351,7 @@ def _recover_orphaned_endpoints(canonical_path: Path) -> bool:
 
         if getattr(sys, "frozen", False):
             exe_parent = Path(sys.executable).parent
-            install_root = (
-                exe_parent.parent
-                if exe_parent.name.lower() == "backend"
-                else exe_parent
-            )
+            install_root = exe_parent.parent if exe_parent.name.lower() == "backend" else exe_parent
             candidates.extend(
                 [
                     install_root / "userdata" / "config.toml",
@@ -1318,9 +1359,7 @@ def _recover_orphaned_endpoints(canonical_path: Path) -> bool:
                 ]
             )
             if install_root.anchor:
-                candidates.append(
-                    Path(install_root.anchor) / "userdata" / "config.toml"
-                )
+                candidates.append(Path(install_root.anchor) / "userdata" / "config.toml")
 
         seen: set[Path] = set()
         sources: list[Path] = []
@@ -1339,9 +1378,7 @@ def _recover_orphaned_endpoints(canonical_path: Path) -> bool:
                 with open(candidate, "rb") as f:
                     source_raw = tomli.load(f)
             except Exception as e:  # noqa: BLE001 — 坏 TOML/读失败不阻断后续候选
-                logger.warning(
-                    "endpoints_recover_skip_bad_source src=%s err=%s", candidate, e
-                )
+                logger.warning("endpoints_recover_skip_bad_source src=%s err=%s", candidate, e)
                 continue
             enabled = _enabled_endpoints(source_raw)
             if enabled:
@@ -1385,7 +1422,7 @@ def get_subagent_concurrency(cfg: AppConfig) -> tuple[int, dict[str, int]]:
     不复刻 2026-06-21 `b05823b` 的 ``config.config`` 单例不存在导致配置静默
     失效的坑（R2）。缺省 → 内置默认 ``(4, {...})``。
     """
-    raw = (getattr(cfg, "raw", None) or {})
+    raw = getattr(cfg, "raw", None) or {}
     agent_raw = raw.get("agent", {}) if isinstance(raw, dict) else {}
     conc = agent_raw.get("concurrency", {}) if isinstance(agent_raw, dict) else {}
     if not isinstance(conc, dict):
@@ -1634,9 +1671,7 @@ def _load_config_impl(path: str | Path = "config.toml") -> AppConfig:
         # below rewrite memory.db_path / billing.db_path.
         config = AppConfig()
         config.memory.db_path = str(_resolve_memory_db_path(""))
-        config.billing = BillingConfig.from_toml(
-            {}, db_dir=Path(config.memory.db_path).parent
-        )
+        config.billing = BillingConfig.from_toml({}, db_dir=Path(config.memory.db_path).parent)
         return config
     with open(path, "rb") as f:
         raw = tomli.load(f)
@@ -1687,9 +1722,7 @@ def _load_config_impl(path: str | Path = "config.toml") -> AppConfig:
         # 也没有 [llm.cloud]。此处是关键迁移点：如果用户的 [llm] 段直接
         # 含 endpoint 字段（且 [llm.local] 缺失），把这些字段抽出来填到
         # routing.local。这样下游所有读 routing.local 的代码无感升级。
-        _ENDPOINT_KEYS = {
-            "model", "base_url", "api_key", "temperature", "max_tokens"
-        }
+        _ENDPOINT_KEYS = {"model", "base_url", "api_key", "temperature", "max_tokens"}
         new_format_keys = _ENDPOINT_KEYS & set(raw_llm)
         if new_format_keys and raw_local is None:
             # User is on the new unified schema → promote to local slot.
@@ -1706,7 +1739,8 @@ def _load_config_impl(path: str | Path = "config.toml") -> AppConfig:
                 )
             except TypeError as exc:
                 logger.warning(
-                    "llm_unified_schema_invalid: %s", exc,
+                    "llm_unified_schema_invalid: %s",
+                    exc,
                 )
         config.llm = routing
     if "asr" in raw:
@@ -1723,7 +1757,7 @@ def _load_config_impl(path: str | Path = "config.toml") -> AppConfig:
             stripped = original
             for prefix in legacy_prefixes:
                 if stripped.startswith(prefix):
-                    stripped = stripped[len(prefix):]
+                    stripped = stripped[len(prefix) :]
                     break
             # Collapse any accidental nested './' remainders.
             stripped = stripped.lstrip("./")
@@ -1731,7 +1765,8 @@ def _load_config_impl(path: str | Path = "config.toml") -> AppConfig:
                 "config [tts].model_dir uses legacy relative path %r; "
                 "normalizing to bare subfolder %r (P3-S1). Please update "
                 "config.toml to avoid this warning.",
-                original, stripped,
+                original,
+                stripped,
             )
             config.tts.model_dir = stripped
     if "vad" in raw:
@@ -1759,12 +1794,8 @@ def _load_config_impl(path: str | Path = "config.toml") -> AppConfig:
         raw_companion = dict(raw.get("companion") or {})
         raw_growth = dict(raw_companion.pop("growth", {}) or {})
         config.companion = _load_section(CompanionConfig, raw_companion)
-        config.companion.growth = _load_section(
-            CompanionGrowthConfig, raw_growth
-        )
-        threshold = int(
-            config.companion.growth.preference_promotion_independent_context_threshold
-        )
+        config.companion.growth = _load_section(CompanionGrowthConfig, raw_growth)
+        threshold = int(config.companion.growth.preference_promotion_independent_context_threshold)
         if not 2 <= threshold <= 10:
             raise ConfigError(
                 "COMPANION-GROWTH-CONFIG-1: "
@@ -1860,7 +1891,11 @@ def _load_config_impl(path: str | Path = "config.toml") -> AppConfig:
         raise ConfigError(f"SG-CONFIG-1: unknown providers: {unknown_providers}")
     if sg.route != "auto":
         raise ConfigError("SG-CONFIG-2: route must be 'auto'")
-    if sg.quick_total_timeout_s <= 0 or sg.research_total_timeout_s <= 0 or sg.per_provider_timeout_s <= 0:
+    if (
+        sg.quick_total_timeout_s <= 0
+        or sg.research_total_timeout_s <= 0
+        or sg.per_provider_timeout_s <= 0
+    ):
         raise ConfigError("SG-CONFIG-3: timeouts must be positive")
     if not 1 <= sg.max_concurrency <= 6:
         raise ConfigError("SG-CONFIG-4: max_concurrency must be in [1, 6]")
@@ -1872,12 +1907,21 @@ def _load_config_impl(path: str | Path = "config.toml") -> AppConfig:
         raise ConfigError("SG-CONFIG-10: empty_rescue_max_per_request must be 1")
     if sg.searxng_url:
         parsed = urlsplit(sg.searxng_url)
-        if parsed.scheme not in {"http", "https"} or not parsed.netloc or parsed.path.rstrip("/") != "/search":
+        if (
+            parsed.scheme not in {"http", "https"}
+            or not parsed.netloc
+            or parsed.path.rstrip("/") != "/search"
+        ):
             raise ConfigError("SG-CONFIG-5: searxng_url must be an http(s) /search endpoint")
         if "searxng" not in sg.providers:
             sg.providers = ["searxng", *sg.providers]
     for failure_class in (
-        "timeout", "http", "invalid_response", "blocked", "captcha", "rate_limit"
+        "timeout",
+        "http",
+        "invalid_response",
+        "blocked",
+        "captcha",
+        "rate_limit",
     ):
         threshold = int(getattr(sg, f"circuit_{failure_class}_threshold"))
         open_s = float(getattr(sg, f"circuit_{failure_class}_open_s"))

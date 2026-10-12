@@ -15,6 +15,7 @@ deskpet 是单进程单事件循环。``asyncio.Semaphore`` 的 acquire 即排�
 天然背压；不需要线程池 / Redis / celery（feedback_no_sandbox_constraints：
 单机桌宠不过度工程）。
 """
+
 from __future__ import annotations
 
 import asyncio

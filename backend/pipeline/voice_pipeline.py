@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 """Voice pipeline: VAD → ASR → LLM → TTS, fully streaming."""
+
 from __future__ import annotations
 
 import asyncio
@@ -283,10 +284,13 @@ class VoicePipeline:
         if not self._broadcast:
             return
         try:
-            await self._broadcast(self.control_ws, {
-                "type": msg_type,
-                "payload": {"session_id": effective_sid, "text": text},
-            })
+            await self._broadcast(
+                self.control_ws,
+                {
+                    "type": msg_type,
+                    "payload": {"session_id": effective_sid, "text": text},
+                },
+            )
         except Exception as exc:  # noqa: BLE001
             logger.warning("voice_broadcast_failed", msg_type=msg_type, error=str(exc))
 
@@ -319,10 +323,12 @@ class VoicePipeline:
 
         for event in events:
             if event["event"] == "speech_start":
-                await audio_ws.send_json({
-                    "type": "vad_event",
-                    "payload": {"status": "speech_start"},
-                })
+                await audio_ws.send_json(
+                    {
+                        "type": "vad_event",
+                        "payload": {"status": "speech_start"},
+                    }
+                )
                 # New speech segment — rearm the barge-in-once guard.
                 self._barge_in_fired_for_current_speech = False
                 # NOTE: we deliberately do NOT try to barge-in here.
@@ -334,10 +340,12 @@ class VoicePipeline:
 
             elif event["event"] == "speech_end":
                 speech_audio = event["audio"]
-                await audio_ws.send_json({
-                    "type": "vad_event",
-                    "payload": {"status": "speech_end"},
-                })
+                await audio_ws.send_json(
+                    {
+                        "type": "vad_event",
+                        "payload": {"status": "speech_end"},
+                    }
+                )
                 # Speech segment finished — rearm the barge-in guard for the
                 # next speech_start. (Also rearmed on speech_start, but cover
                 # the edge case where speech_end arrives without a matching
@@ -363,10 +371,12 @@ class VoicePipeline:
             # speech_ms > 0 means the VAD is currently inside a speech segment
             # (it returns 0 outside speech).
             if speech_ms > 0 and self._barge_in_filter.should_allow(speech_ms):
-                await audio_ws.send_json({
-                    "type": "tts_barge_in",
-                    "payload": {"reason": "vad_speech_detected"},
-                })
+                await audio_ws.send_json(
+                    {
+                        "type": "tts_barge_in",
+                        "payload": {"reason": "vad_speech_detected"},
+                    }
+                )
                 self._barge_in_fired_for_current_speech = True
                 self._barge_in_filter.on_interrupted()
                 self.interrupt()
@@ -418,15 +428,19 @@ class VoicePipeline:
                             },
                         )
                     except Exception as exc:  # noqa: BLE001
-                        logger.warning("voice_session_ensure_failed sid=%s err=%s", effective_sid, exc)
+                        logger.warning(
+                            "voice_session_ensure_failed sid=%s err=%s", effective_sid, exc
+                        )
                 task_session_manager.remap_peer_group(self.session_id, effective_sid)
             text = decision.stripped_text
 
             logger.info("user_said", text=text)
-            await audio_ws.send_json({
-                "type": "transcript",
-                "payload": {"text": text, "role": "user"},
-            })
+            await audio_ws.send_json(
+                {
+                    "type": "transcript",
+                    "payload": {"text": text, "role": "user"},
+                }
+            )
             # VOICE-MSGPANEL-SYNC: user 这句同步给其它窗口（消息框），与文字
             # chat_v2_user_echo 同构。
             await self._broadcast_chat_v2(
@@ -462,10 +476,12 @@ class VoicePipeline:
             transcript_payload: dict = {"text": response_text, "role": "assistant"}
             if served_by:
                 transcript_payload["provider"] = served_by
-            await audio_ws.send_json({
-                "type": "transcript",
-                "payload": transcript_payload,
-            })
+            await audio_ws.send_json(
+                {
+                    "type": "transcript",
+                    "payload": transcript_payload,
+                }
+            )
             # VOICE-MSGPANEL-SYNC: assistant 回复同步给其它窗口（chat_v2_final）。
             await self._broadcast_chat_v2(
                 "chat_v2_final",
@@ -497,27 +513,29 @@ class VoicePipeline:
                     if self.control_ws:
                         try:
                             pcm_arr = np.frombuffer(pcm_chunk, dtype=np.int16)
-                            rms = float(
-                                np.sqrt(np.mean(pcm_arr.astype(np.float32) ** 2))
-                            )
+                            rms = float(np.sqrt(np.mean(pcm_arr.astype(np.float32) ** 2)))
                             amplitude = min(1.0, rms / 8000.0)
-                            await self.control_ws.send_json({
-                                "type": "lip_sync",
-                                "payload": {
-                                    "chunk_index": chunk_index,
-                                    "amplitude": amplitude,
-                                },
-                            })
+                            await self.control_ws.send_json(
+                                {
+                                    "type": "lip_sync",
+                                    "payload": {
+                                        "chunk_index": chunk_index,
+                                        "amplitude": amplitude,
+                                    },
+                                }
+                            )
                         except Exception:
                             pass  # control channel may have disconnected
                     chunk_index += 1
             self._barge_in_filter.on_tts_end()
 
             # TTS end marker
-            await audio_ws.send_json({
-                "type": "tts_end",
-                "payload": {},
-            })
+            await audio_ws.send_json(
+                {
+                    "type": "tts_end",
+                    "payload": {},
+                }
+            )
             return response_text
 
         except asyncio.CancelledError:
@@ -526,10 +544,12 @@ class VoicePipeline:
         except Exception as e:
             logger.error("pipeline_error", error=str(e))
             try:
-                await audio_ws.send_json({
-                    "type": "error",
-                    "payload": {"message": str(e)},
-                })
+                await audio_ws.send_json(
+                    {
+                        "type": "error",
+                        "payload": {"message": str(e)},
+                    }
+                )
             except Exception:
                 pass
         finally:
@@ -542,7 +562,6 @@ class VoicePipeline:
             self._processing = False
             if self._current_task is asyncio.current_task():
                 self._current_task = None
-
 
     async def _run_with_client(
         self,
@@ -565,13 +584,15 @@ class VoicePipeline:
             client = self._run_client
             if client is None:
                 raise RuntimeError("RunClient is not configured")
-            request = MappingProxyType({
-                "text": text,
-                "mode": "companion",
-                "canonical_messages": [{"role": "user", "content": text}],
-                "proposed_tools": [],
-                "payload": {"loop": {"user_request": text, "is_sentinel_run": False}},
-            })
+            request = MappingProxyType(
+                {
+                    "text": text,
+                    "mode": "companion",
+                    "canonical_messages": [{"role": "user", "content": text}],
+                    "proposed_tools": [],
+                    "payload": {"loop": {"user_request": text, "is_sentinel_run": False}},
+                }
+            )
             host_factory = getattr(self, "_run_host_factory", None)
             host = (
                 await host_factory(session_id)
@@ -676,9 +697,7 @@ class VoicePipeline:
                     {
                         "run_id": run_id,
                         "session_id": session_id,
-                        "error": {
-                            "message": "Run event stream ended without a terminal event"
-                        },
+                        "error": {"message": "Run event stream ended without a terminal event"},
                     },
                     audio_ws,
                 )
@@ -713,9 +732,7 @@ class VoicePipeline:
         try:
             await handle.cancel(reason)
         except Exception as exc:  # noqa: BLE001 - preserve root transport error
-            logger.warning(
-                "voice_run_cancel_failed", run_id=run_id, reason=reason, error=str(exc)
-            )
+            logger.warning("voice_run_cancel_failed", run_id=run_id, reason=reason, error=str(exc))
 
     async def _emit_run_event(
         self,
@@ -748,11 +765,13 @@ class VoicePipeline:
             candidate = error.get("message") or error.get("code")
             if candidate:
                 message = str(candidate)
-        await audio_ws.send_json({
-            "type": "error",
-            "payload": {
-                "message": message,
-                "run_id": str(event.get("run_id") or ""),
-                "status": str(event.get("status") or "failed"),
-            },
-        })
+        await audio_ws.send_json(
+            {
+                "type": "error",
+                "payload": {
+                    "message": message,
+                    "run_id": str(event.get("run_id") or ""),
+                    "status": str(event.get("status") or "failed"),
+                },
+            }
+        )

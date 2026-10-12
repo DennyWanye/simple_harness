@@ -31,9 +31,7 @@ class _Route:
 
 
 _CANONICAL_ROUTES = {
-    "workflow_runs_list": _Route(
-        "workflow_runs_list", "workflow_runs_list_response", "_runs_list"
-    ),
+    "workflow_runs_list": _Route("workflow_runs_list", "workflow_runs_list_response", "_runs_list"),
     "workflow_run_detail": _Route(
         "workflow_run_detail", "workflow_run_detail_response", "_run_detail"
     ),
@@ -314,9 +312,7 @@ class WorkflowIPCDispatcher:
             expected_version=_integer(payload, "expected_version"),
             state_patch=_mapping(payload, "state_patch", required=False),
             fork_key=_string(payload, "fork_key", required=False),
-            confirm_dangerous_effects=_boolean(
-                payload, "confirm_dangerous_effects", default=False
-            ),
+            confirm_dangerous_effects=_boolean(payload, "confirm_dangerous_effects", default=False),
         )
 
     async def _decision_resolve(self, payload: Mapping[str, Any]) -> dict[str, Any]:
@@ -353,9 +349,7 @@ class WorkflowIPCDispatcher:
         )
 
     async def _run_action(self, payload: Mapping[str, Any]) -> dict[str, Any]:
-        allowed = {
-            "run_id", "action_id", "idempotency_key", "expected_version", "action_payload"
-        }
+        allowed = {"run_id", "action_id", "idempotency_key", "expected_version", "action_payload"}
         required = {"run_id", "action_id", "idempotency_key", "expected_version"}
         if not required.issubset(payload) or set(payload) - allowed:
             raise IPCValidationError(

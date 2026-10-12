@@ -7,6 +7,7 @@ Backend-only config for TTS-phase barge-in behavior. The [vad] section
 still owns the "normal" threshold/min_speech values — [voice] only holds
 TTS-phase overrides so pipeline can dynamically swap them.
 """
+
 from __future__ import annotations
 
 from pathlib import Path

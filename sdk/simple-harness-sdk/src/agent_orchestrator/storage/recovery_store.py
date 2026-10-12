@@ -46,19 +46,28 @@ class RecoveryRunRow:
 
     def to_json(self) -> dict[str, Any]:
         return {
-            "recovery_id": self.recovery_id, "owner": self.owner, "owner_pid": self.owner_pid,
-            "owner_process_started_at": self.owner_process_started_at, "state": self.state,
-            "failed_step": self.failed_step, "detail": dict(self.detail),
-            "started_at": self.started_at, "finished_at": self.finished_at,
+            "recovery_id": self.recovery_id,
+            "owner": self.owner,
+            "owner_pid": self.owner_pid,
+            "owner_process_started_at": self.owner_process_started_at,
+            "state": self.state,
+            "failed_step": self.failed_step,
+            "detail": dict(self.detail),
+            "started_at": self.started_at,
+            "finished_at": self.finished_at,
         }
 
 
 def _row(row: Any) -> RecoveryRunRow:
     return RecoveryRunRow(
-        recovery_id=str(row["recovery_id"]), owner=str(row["owner"]), owner_pid=int(row["owner_pid"]),
-        owner_process_started_at=str(row["owner_process_started_at"]), state=str(row["state"]),
+        recovery_id=str(row["recovery_id"]),
+        owner=str(row["owner"]),
+        owner_pid=int(row["owner_pid"]),
+        owner_process_started_at=str(row["owner_process_started_at"]),
+        state=str(row["state"]),
         failed_step=None if row["failed_step"] is None else str(row["failed_step"]),
-        detail=json.loads(row["detail_json"]), started_at=float(row["started_at"]),
+        detail=json.loads(row["detail_json"]),
+        started_at=float(row["started_at"]),
         finished_at=None if row["finished_at"] is None else float(row["finished_at"]),
     )
 
@@ -97,9 +106,13 @@ class RecoveryStore:
                         f"RECOVERY_LOCK_HELD: recovery {held.recovery_id} is held by live process "
                         f"{held.owner_pid} ({held.owner})"
                     )
-                detail = {**held.detail, "superseded_by": recovery_id,
-                          "superseded_reason": "owner process gone" if held.owner_pid != pid
-                          else "same process, previous instance"}
+                detail = {
+                    **held.detail,
+                    "superseded_by": recovery_id,
+                    "superseded_reason": "owner process gone"
+                    if held.owner_pid != pid
+                    else "same process, previous instance",
+                }
                 connection.execute(
                     "UPDATE recovery_runs SET state='SUPERSEDED', finished_at=?, detail_json=?"
                     " WHERE recovery_id=?",
@@ -109,39 +122,65 @@ class RecoveryStore:
             connection.execute(
                 "INSERT INTO recovery_runs(recovery_id,owner,owner_pid,owner_process_started_at,state,"
                 "failed_step,detail_json,started_at,finished_at) VALUES (?,?,?,?,'RECOVERY_LOCKED',NULL,?,?,NULL)",
-                (recovery_id, owner, int(pid), process_started_at,
-                 json.dumps({"superseded": [item["recovery_id"] for item in superseded]}, sort_keys=True),
-                 now),
+                (
+                    recovery_id,
+                    owner,
+                    int(pid),
+                    process_started_at,
+                    json.dumps(
+                        {"superseded": [item["recovery_id"] for item in superseded]}, sort_keys=True
+                    ),
+                    now,
+                ),
             )
         return recovery_id, superseded
 
-    def record_step(self, recovery_id: str, step_no: int, step: str, status: str,
-                    detail: Mapping[str, Any]) -> None:
+    def record_step(
+        self, recovery_id: str, step_no: int, step: str, status: str, detail: Mapping[str, Any]
+    ) -> None:
         if status not in {"DONE", "FAILED", "SKIPPED"}:
             raise ValueError(f"unknown recovery step status {status!r}")
         with self._store.transaction() as connection:
             connection.execute(
                 "INSERT INTO recovery_obligations(recovery_id,step_no,step,status,detail_json,created_at)"
                 " VALUES (?,?,?,?,?,?)",
-                (recovery_id, int(step_no), step, status,
-                 json.dumps(dict(detail), ensure_ascii=False, sort_keys=True, default=str), self._store.now),
+                (
+                    recovery_id,
+                    int(step_no),
+                    step,
+                    status,
+                    json.dumps(dict(detail), ensure_ascii=False, sort_keys=True, default=str),
+                    self._store.now,
+                ),
             )
 
-    def finish(self, recovery_id: str, state: str, *, failed_step: str | None = None,
-               detail: Mapping[str, Any] | None = None) -> None:
+    def finish(
+        self,
+        recovery_id: str,
+        state: str,
+        *,
+        failed_step: str | None = None,
+        detail: Mapping[str, Any] | None = None,
+    ) -> None:
         if state not in {"READY", "DEGRADED_RECOVERY"}:
             raise ValueError(f"a recovery ends READY or DEGRADED_RECOVERY, not {state!r}")
         with self._store.transaction() as connection:
             current = connection.execute(
-                "SELECT detail_json FROM recovery_runs WHERE recovery_id=?", (recovery_id,)).fetchone()
+                "SELECT detail_json FROM recovery_runs WHERE recovery_id=?", (recovery_id,)
+            ).fetchone()
             if current is None:
                 raise ValueError(f"unknown recovery {recovery_id}")
             merged = {**json.loads(current[0]), **dict(detail or {})}
             connection.execute(
                 "UPDATE recovery_runs SET state=?, failed_step=?, detail_json=?, finished_at=?"
                 " WHERE recovery_id=?",
-                (state, failed_step, json.dumps(merged, ensure_ascii=False, sort_keys=True, default=str),
-                 self._store.now, recovery_id),
+                (
+                    state,
+                    failed_step,
+                    json.dumps(merged, ensure_ascii=False, sort_keys=True, default=str),
+                    self._store.now,
+                    recovery_id,
+                ),
             )
 
     def latest(self) -> dict[str, Any] | None:
@@ -149,21 +188,30 @@ class RecoveryStore:
 
         connection = self._store.connection
         raw = connection.execute(
-            "SELECT * FROM recovery_runs ORDER BY started_at DESC, recovery_id DESC LIMIT 1").fetchone()
+            "SELECT * FROM recovery_runs ORDER BY started_at DESC, recovery_id DESC LIMIT 1"
+        ).fetchone()
         if raw is None:
             return None
         run = _row(raw)
         steps = [
-            {"step_no": int(r["step_no"]), "step": str(r["step"]), "status": str(r["status"]),
-             "detail": json.loads(r["detail_json"]), "created_at": float(r["created_at"])}
+            {
+                "step_no": int(r["step_no"]),
+                "step": str(r["step"]),
+                "status": str(r["status"]),
+                "detail": json.loads(r["detail_json"]),
+                "created_at": float(r["created_at"]),
+            }
             for r in connection.execute(
-                "SELECT * FROM recovery_obligations WHERE recovery_id=? ORDER BY step_no", (run.recovery_id,))
+                "SELECT * FROM recovery_obligations WHERE recovery_id=? ORDER BY step_no",
+                (run.recovery_id,),
+            )
         ]
         return {**run.to_json(), "obligations": steps}
 
     def get(self, recovery_id: str) -> RecoveryRunRow | None:
         raw = self._store.connection.execute(
-            "SELECT * FROM recovery_runs WHERE recovery_id=?", (recovery_id,)).fetchone()
+            "SELECT * FROM recovery_runs WHERE recovery_id=?", (recovery_id,)
+        ).fetchone()
         return None if raw is None else _row(raw)
 
     # ------------------------------------------------------------------ 沙箱子进程身份
@@ -173,11 +221,21 @@ class RecoveryStore:
                 "INSERT INTO sandbox_executions(execution_id,kind,root_pid,process_group,session_id,"
                 "process_started_at,command_json,cwd,scratch,mission_id,task_id,attempt_id,started_at,"
                 "finished_at,outcome) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,NULL,NULL)",
-                (str(record["execution_id"]), str(record["kind"]), int(record["root_pid"]),
-                 record.get("process_group"), record.get("session_id"), record.get("process_started_at"),
-                 json.dumps(list(record["command"]), ensure_ascii=False), str(record["cwd"]),
-                 str(record["scratch"]), record.get("mission_id"), record.get("task_id"),
-                 record.get("attempt_id"), self._store.now),
+                (
+                    str(record["execution_id"]),
+                    str(record["kind"]),
+                    int(record["root_pid"]),
+                    record.get("process_group"),
+                    record.get("session_id"),
+                    record.get("process_started_at"),
+                    json.dumps(list(record["command"]), ensure_ascii=False),
+                    str(record["cwd"]),
+                    str(record["scratch"]),
+                    record.get("mission_id"),
+                    record.get("task_id"),
+                    record.get("attempt_id"),
+                    self._store.now,
+                ),
             )
 
     def record_sandbox_finish(self, execution_id: str, outcome: str) -> None:
@@ -193,8 +251,10 @@ class RecoveryStore:
         rows = self._store.connection.execute(
             "SELECT * FROM sandbox_executions WHERE finished_at IS NULL ORDER BY started_at, execution_id"
         ).fetchall()
-        return [{**{key: row[key] for key in row.keys()}, "command": json.loads(row["command_json"])}
-                for row in rows]
+        return [
+            {**{key: row[key] for key in row.keys()}, "command": json.loads(row["command_json"])}
+            for row in rows
+        ]
 
 
 class StoreSandboxLedger:
@@ -215,7 +275,11 @@ class StoreSandboxLedger:
         attempt = self._store.get_attempt(attempt_id)
         if attempt is None:
             return {"attempt_id": None, "task_id": None, "mission_id": None}
-        return {"attempt_id": attempt.id, "task_id": attempt.task_id, "mission_id": attempt.mission_id}
+        return {
+            "attempt_id": attempt.id,
+            "task_id": attempt.task_id,
+            "mission_id": attempt.mission_id,
+        }
 
     def record_start(self, record: Mapping[str, Any]) -> None:
         self._recovery.record_sandbox_start({**record, **self._owner_of(str(record["cwd"]))})

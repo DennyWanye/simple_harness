@@ -605,9 +605,7 @@ class AssuranceStore:
             ).fetchone()
             if live is not None:
                 raise AssuranceError("IMMUTABLE_IDENTITY_CONFLICT", pin_id)
-            return self._insert(
-                connection, "assurance_blob_pins", row, identities=(("pin_id",),)
-            )
+            return self._insert(connection, "assurance_blob_pins", row, identities=(("pin_id",),))
 
     def transition_pin(
         self,
@@ -657,8 +655,9 @@ class AssuranceStore:
             )
             return True
 
-
-    def observe_clock(self, now_ms: int, *, receipt: AssuranceRef, seen_high_ms: int = 0) -> ClockState:
+    def observe_clock(
+        self, now_ms: int, *, receipt: AssuranceRef, seen_high_ms: int = 0
+    ) -> ClockState:
         """Original tick owns the receipt and TimeDiscontinuity event in the same UoW.
 
         ``seen_high_ms`` is the high-water mark the process has seen since the row was last
@@ -673,7 +672,9 @@ class AssuranceStore:
             if row is None:
                 raise AssuranceError("ASSURANCE_ENVIRONMENT_UNINITIALIZED")
             stored = ClockState(row["clock_generation"], row["wall_high_ms"], row["clock_state"])
-            old = ClockState(stored.generation, max(stored.wall_high_ms, int(seen_high_ms)), stored.state)
+            old = ClockState(
+                stored.generation, max(stored.wall_high_ms, int(seen_high_ms)), stored.state
+            )
             new = old.observe(now_ms)
             original = connection.execute(
                 "SELECT kind,subject_id,base_version FROM commit_receipts WHERE commit_id=?",

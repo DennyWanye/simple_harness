@@ -84,9 +84,7 @@ def _workspace_prepare_resources(
     return (ResourceSelector.filesystem(workspace, "write"),)
 
 
-def _capability_mutation_schema(
-    profiles: ProfileRegistry, *, repair: bool
-) -> dict[str, Any]:
+def _capability_mutation_schema(profiles: ProfileRegistry, *, repair: bool) -> dict[str, Any]:
     if repair:
         return {
             "name": CAPABILITY_REPAIR,
@@ -123,8 +121,7 @@ def _capability_mutation_schema(
             "type": "string",
             "minLength": 1,
             "description": (
-                "The unchanged parent objective that requires a reusable "
-                "deterministic adapter."
+                "The unchanged parent objective that requires a reusable deterministic adapter."
             ),
         },
         "original_args": {
@@ -265,8 +262,7 @@ def register_orchestration_controls(registry: Any, profiles: ProfileRegistry) ->
                             "items": {"type": "string", "minLength": 1},
                             "default": [],
                             "description": (
-                                "Optional references proving why the external "
-                                "step is required."
+                                "Optional references proving why the external step is required."
                             ),
                         },
                     },
@@ -333,9 +329,7 @@ def register_orchestration_controls(registry: Any, profiles: ProfileRegistry) ->
                             "type": "string",
                             "minLength": 1,
                             "maxLength": 40,
-                            "description": (
-                                "Short project type such as Godot game or web app."
-                            ),
+                            "description": ("Short project type such as Godot game or web app."),
                         },
                         "directory_mode": {
                             "type": "string",
@@ -378,9 +372,7 @@ def register_orchestration_controls(registry: Any, profiles: ProfileRegistry) ->
     ):
         if registry.has(name):
             if registry.dispatch_kind(name) != "delegate_control":
-                raise RuntimeError(
-                    f"{name} is registered by a non-control provider"
-                )
+                raise RuntimeError(f"{name} is registered by a non-control provider")
             continue
         registry.register(
             name,

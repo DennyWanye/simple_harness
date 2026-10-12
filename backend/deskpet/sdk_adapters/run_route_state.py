@@ -38,9 +38,7 @@ ROUTED_TASK_STATE = "routed_task"
 class RunRouteStateMemo:
     """Latest ContextRouteState per SDK Run id (last writer wins, bounded)."""
 
-    def __init__(
-        self, *, capacity: int = DEFAULT_RUN_ROUTE_STATE_MEMO_CAPACITY
-    ) -> None:
+    def __init__(self, *, capacity: int = DEFAULT_RUN_ROUTE_STATE_MEMO_CAPACITY) -> None:
         if isinstance(capacity, bool) or not isinstance(capacity, int) or capacity < 1:
             raise ValueError("run route state memo capacity must be a positive integer")
         self._states: OrderedDict[str, str] = OrderedDict()

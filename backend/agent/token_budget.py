@@ -32,6 +32,7 @@ Design
 * Model lookup is best-effort; unknown models get a conservative
   8192 default (errs on the side of compacting earlier).
 """
+
 from __future__ import annotations
 
 import enum
@@ -129,9 +130,7 @@ class BudgetCheckResult:
 # ~4 倍。FP-2 真机实测:中文会话 real prompt_tokens=28k 被估 ~7k,导致
 # compaction(24k 阈值)永不触发、直到撑爆 32k 窗口。CJK 字符按等效 4 个
 # ASCII 字符计入,使最终 //4 后 ≈1 token/字。
-_CJK_RE = re.compile(
-    r"[　-ヿ㐀-䶿一-鿿豈-﫿＀-￯]"
-)
+_CJK_RE = re.compile(r"[　-ヿ㐀-䶿一-鿿豈-﫿＀-￯]")
 
 
 def _weighted_chars(s: str) -> int:
@@ -158,6 +157,7 @@ def estimate_tokens(messages: list[dict[str, Any]]) -> int:
     if not messages:
         return 0
     from deskpet.agent.tokens import count_messages_tokens
+
     return count_messages_tokens(messages)
 
 
@@ -250,14 +250,14 @@ def check_budget(
     if ratio >= block_pct:
         verdict = BudgetCheck.BLOCK
         advice = (
-            f"上下文已达 {int(ratio*100)}% (估算 {tokens} / {window} tokens)，"
+            f"上下文已达 {int(ratio * 100)}% (估算 {tokens} / {window} tokens)，"
             "建议立即触发 history compaction 或拆分任务。继续调用风险高 "
             "（context_length_exceeded 或模型截断 prompt 导致质量下降）。"
         )
     elif ratio >= warn_pct:
         verdict = BudgetCheck.WARN
         advice = (
-            f"上下文接近上限 {int(ratio*100)}% (估算 {tokens} / {window} tokens)，"
+            f"上下文接近上限 {int(ratio * 100)}% (估算 {tokens} / {window} tokens)，"
             "建议在下一轮 LLM 调用前 compact 早期 history。"
         )
     else:

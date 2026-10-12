@@ -13,6 +13,7 @@ async_enabled`` 全部恒落默认值,用户配了等于没配。
 load_config 进程级缓存)。本测试**证伪** "[image] 配被读到":所有 fixture
 值都故意 != 默认值,若代码回落默认(旧死代码行为),断言必失败。
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -56,8 +57,8 @@ def test_image_section_values_are_read(tmp_path, monkeypatch):
 
     assert it._image_model() == "custom-image-model-xyz"
     assert it._image_quality() == "high"
-    assert it._trust_env_proxy() is True   # 默认 False — 读不到就会是 False
-    assert it._async_enabled() is False    # 默认 True  — 读不到就会是 True
+    assert it._trust_env_proxy() is True  # 默认 False — 读不到就会是 False
+    assert it._async_enabled() is False  # 默认 True  — 读不到就会是 True
 
 
 def test_llm_base_url_fallback_is_read(tmp_path, monkeypatch):
@@ -73,8 +74,7 @@ def test_llm_base_url_fallback_is_read(tmp_path, monkeypatch):
     _point_config(
         tmp_path,
         monkeypatch,
-        "[llm]\n"
-        'base_url = "https://relay.example.test/v1"\n',
+        '[llm]\nbase_url = "https://relay.example.test/v1"\n',
     )
 
     base_url, _api_key = it._resolve_endpoint()
@@ -90,8 +90,7 @@ def test_runtime_endpoint_resolver_takes_priority(tmp_path, monkeypatch):
     _point_config(
         tmp_path,
         monkeypatch,
-        "[llm]\n"
-        'base_url = "https://stale.example.test/v1"\n',
+        '[llm]\nbase_url = "https://stale.example.test/v1"\n',
     )
     it.set_endpoint_resolver(lambda: ("https://relay.example.test/v1", "tsk_live"))
     try:
@@ -118,7 +117,7 @@ def test_standalone_config_section_robustness(tmp_path, monkeypatch):
     _point_config(
         tmp_path,
         monkeypatch,
-        "[image]\nmodel = \"m\"\n\n[scalar]\nnot_a_table = 1\n",
+        '[image]\nmodel = "m"\n\n[scalar]\nnot_a_table = 1\n',
     )
 
     assert config.standalone_config_section("image") == {"model": "m"}

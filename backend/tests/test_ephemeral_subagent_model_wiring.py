@@ -15,6 +15,7 @@ Bug（2026-06-22 R2 对抗审查发现）：自我纠错闭环在 verify-gate �
   1. 直接单测解析器 ``_resolve_ephemeral_provider`` 的 4 个分支（核心修复逻辑）。
   2. 集成测 build_agent 真把配的模型接到 ephemeral verifier 的 LLM 调用上。
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -44,9 +45,9 @@ def test_resolve_overrides_model_reusing_connection():
     out = _resolve_ephemeral_provider(base, "sonnet")
 
     assert out is not base
-    assert out.model == "sonnet"               # 真用配的模型
-    assert out.base_url == base.base_url        # 复用同一中转站
-    assert out.api_key == base.api_key          # 复用同一 key
+    assert out.model == "sonnet"  # 真用配的模型
+    assert out.base_url == base.base_url  # 复用同一中转站
+    assert out.api_key == base.api_key  # 复用同一 key
     assert out.temperature == base.temperature
 
 
@@ -90,9 +91,7 @@ def test_resolve_clone_failure_falls_back_to_base():
     broken = MagicMock(name="broken_provider")
     broken.model = "gpt-5.5"
     # base_url 取属性时抛 → 触发 except 分支
-    type(broken).base_url = property(
-        lambda self: (_ for _ in ()).throw(RuntimeError("boom"))
-    )
+    type(broken).base_url = property(lambda self: (_ for _ in ()).throw(RuntimeError("boom")))
     out = _resolve_ephemeral_provider(broken, "sonnet")
     assert out is broken  # 回退
 

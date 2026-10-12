@@ -30,22 +30,25 @@ def _clean(monkeypatch, tmp_path):
 HOME = Path.home()
 
 
-@pytest.mark.parametrize(("path", "op", "verdict"), [
-    (HOME / "Desktop" / "report.xlsx", "write", "allow"),
-    (HOME / "Documents" / "notes.md", "read", "allow"),
-    ("/tmp/x.txt", "write", "allow"),
-    (HOME / ".ssh" / "config", "read", "ask"),
-    (HOME / ".ssh" / "id_rsa", "write", "ask"),
-    (HOME / ".aws" / "credentials", "read", "ask"),
-    (HOME / "project" / ".env", "read", "ask"),
-    (HOME / "project" / ".env.local", "write", "ask"),
-    (HOME / "anything" / "llm_runtime.json", "read", "ask"),
-    ("/etc/hosts", "read", "allow"),
-    ("/etc/hosts", "write", "ask"),
-    ("/usr/bin/python3", "write", "ask"),
-    ("/usr/local/bin/tool", "write", "allow"),
-    ("/System/Library/x", "write", "ask"),
-])
+@pytest.mark.parametrize(
+    ("path", "op", "verdict"),
+    [
+        (HOME / "Desktop" / "report.xlsx", "write", "allow"),
+        (HOME / "Documents" / "notes.md", "read", "allow"),
+        ("/tmp/x.txt", "write", "allow"),
+        (HOME / ".ssh" / "config", "read", "ask"),
+        (HOME / ".ssh" / "id_rsa", "write", "ask"),
+        (HOME / ".aws" / "credentials", "read", "ask"),
+        (HOME / "project" / ".env", "read", "ask"),
+        (HOME / "project" / ".env.local", "write", "ask"),
+        (HOME / "anything" / "llm_runtime.json", "read", "ask"),
+        ("/etc/hosts", "read", "allow"),
+        ("/etc/hosts", "write", "ask"),
+        ("/usr/bin/python3", "write", "ask"),
+        ("/usr/local/bin/tool", "write", "allow"),
+        ("/System/Library/x", "write", "ask"),
+    ],
+)
 def test_classify_table(path, op, verdict) -> None:
     assert pp.classify(path, op) == verdict
 
@@ -126,5 +129,7 @@ def test_guard_honours_the_dispatch_clearance() -> None:
 
 def test_ordinary_paths_never_push_a_card(_clean) -> None:
     pushed = _clean
-    refusal, _ = asyncio.run(pp.check_call("s1", "write_file", {"path": str(HOME / "Desktop" / "x.md")}, base=None))
+    refusal, _ = asyncio.run(
+        pp.check_call("s1", "write_file", {"path": str(HOME / "Desktop" / "x.md")}, base=None)
+    )
     assert refusal is None and pushed == []

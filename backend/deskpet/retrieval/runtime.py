@@ -32,6 +32,7 @@ def build_search_gateway(config: AppConfig) -> SearchGateway:
     fetch_service = None
     try:
         from .fetch_extract import FetchExtractService
+
         fetch_service = FetchExtractService.from_config(config)
     except ImportError:
         pass
@@ -47,6 +48,7 @@ def get_default_gateway() -> SearchGateway:
     global _default_gateway
     if _default_gateway is None:
         from config import AppConfig
+
         _default_gateway = build_search_gateway(AppConfig())
     return _default_gateway
 
@@ -58,4 +60,9 @@ async def shutdown_default_gateway() -> None:
         await gateway.shutdown()
 
 
-__all__ = ["build_search_gateway", "get_default_gateway", "set_default_gateway", "shutdown_default_gateway"]
+__all__ = [
+    "build_search_gateway",
+    "get_default_gateway",
+    "set_default_gateway",
+    "shutdown_default_gateway",
+]

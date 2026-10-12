@@ -22,7 +22,9 @@ _KINDS = {
 
 
 class TracedPort:
-    def __init__(self, target: object, *, name: str, store: TraceStore, row: Mapping[str, Any]) -> None:
+    def __init__(
+        self, target: object, *, name: str, store: TraceStore, row: Mapping[str, Any]
+    ) -> None:
         self._target = target
         self._name = name
         self._store = store

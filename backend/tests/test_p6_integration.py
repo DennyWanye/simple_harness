@@ -23,6 +23,7 @@ with the AgentLoop. Each test sets ``P6_ENABLE_GATE=1`` via
 ``monkeypatch.setenv`` so the flag-driven init path is exercised
 even when the test runner default has the flag off.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -61,7 +62,9 @@ class _LoopingLLM:
         self.call_count = 0
 
     async def chat_with_fallback(
-        self, messages: list[dict[str, Any]], **_: Any,
+        self,
+        messages: list[dict[str, Any]],
+        **_: Any,
     ) -> ChatResponse:
         self.call_count += 1
         return self._factory(self.call_count)
@@ -76,7 +79,9 @@ class _ScriptedLLM:
         self.call_count = 0
 
     async def chat_with_fallback(
-        self, messages: list[dict[str, Any]], **_: Any,
+        self,
+        messages: list[dict[str, Any]],
+        **_: Any,
     ) -> ChatResponse:
         self.call_count += 1
         if not self._responses:
@@ -152,11 +157,13 @@ class TestLongTaskForceBreaks:
 
         # REAL gate — no mocks. Tight tool budget so the loop must
         # stop fast even though max_iterations is 50.
-        gate = TerminationGate(GateConfig(
-            max_turns=50,
-            tool_budget_hard=3,
-            wall_clock_seconds=600.0,
-        ))
+        gate = TerminationGate(
+            GateConfig(
+                max_turns=50,
+                tool_budget_hard=3,
+                wall_clock_seconds=600.0,
+            )
+        )
 
         def factory(n: int) -> ChatResponse:
             return ChatResponse(
@@ -198,11 +205,13 @@ class TestLongTaskForceBreaks:
         """
         monkeypatch.setenv("P6_ENABLE_GATE", "1")
 
-        gate = TerminationGate(GateConfig(
-            max_turns=50,
-            tool_budget_hard=3,
-            wall_clock_seconds=600.0,
-        ))
+        gate = TerminationGate(
+            GateConfig(
+                max_turns=50,
+                tool_budget_hard=3,
+                wall_clock_seconds=600.0,
+            )
+        )
 
         def factory(n: int) -> ChatResponse:
             return ChatResponse(
@@ -253,10 +262,12 @@ class TestHistoryCompactionBudget:
         # Artificially tiny budget threshold so any non-empty history
         # trips BLOCK. block_pct=0.001 → even 25 short messages
         # exceeds the threshold.
-        ctx = ContextManager(ContextConfig(
-            budget_warn_pct=0.0005,
-            budget_block_pct=0.001,
-        ))
+        ctx = ContextManager(
+            ContextConfig(
+                budget_warn_pct=0.0005,
+                budget_block_pct=0.001,
+            )
+        )
 
         # 25 short messages — enough for compaction trigger but
         # tiny in token terms. The point is the budget *ratio* is
@@ -329,11 +340,12 @@ class TestG1FetchToolResultRoundTrip:
         big_body = "FULL_BODY_" + ("A" * 12000)
         envelope = {"ok": True, "result": big_body, "error": None}
 
-        llm = _ScriptedLLM([
-            _make_tool_use(name="fetch_tool_result", tool_id="ftr1",
-                           args={"ref_id": "abc123"}),
-            _make_end_turn(),
-        ])
+        llm = _ScriptedLLM(
+            [
+                _make_tool_use(name="fetch_tool_result", tool_id="ftr1", args={"ref_id": "abc123"}),
+                _make_end_turn(),
+            ]
+        )
         tools = _ScriptedTools(envelope_factory=lambda n, p: envelope)
         loop = AgentLoop(
             llm_registry=llm,
@@ -352,20 +364,20 @@ class TestG1FetchToolResultRoundTrip:
         # Channel 2 — direct ContextManager contract: fetch body
         # round-trips verbatim with no ref.
         out, ref = ctx.record_tool_result(
-            tool_name="fetch_tool_result", result=big_body,
+            tool_name="fetch_tool_result",
+            result=big_body,
         )
         assert ref is None, (
-            "fetch_tool_result body was given a ref — the "
-            "skip_truncation_for_tools fix regressed"
+            "fetch_tool_result body was given a ref — the skip_truncation_for_tools fix regressed"
         )
         assert out == big_body, (
-            "fetch_tool_result body was modified by ContextManager — "
-            "G1 root-cause"
+            "fetch_tool_result body was modified by ContextManager — G1 root-cause"
         )
 
         # Sanity — a regular tool would have been truncated.
         regular_out, regular_ref = ctx.record_tool_result(
-            tool_name="read_file", result=big_body,
+            tool_name="read_file",
+            result=big_body,
         )
         # 12_000 chars > v2 _default tool_result_threshold (8_000) → ref expected
         assert regular_ref is not None

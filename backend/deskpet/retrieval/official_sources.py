@@ -132,9 +132,7 @@ def _target_id(
         "matched_authority_roles": list(matched_authority_roles),
         "source_types": list(source_types),
     }
-    return "ost_" + hashlib.sha256(
-        _canonical_json(identity).encode("utf-8")
-    ).hexdigest()[:24]
+    return "ost_" + hashlib.sha256(_canonical_json(identity).encode("utf-8")).hexdigest()[:24]
 
 
 @dataclass(frozen=True, slots=True)
@@ -173,9 +171,7 @@ class OfficialSourceEntryV1:
                 sort_values=False,
             ),
         )
-        domains = tuple(
-            sorted(_normalize_domain(domain) for domain in self.registrable_domains)
-        )
+        domains = tuple(sorted(_normalize_domain(domain) for domain in self.registrable_domains))
         if not domains or len(set(domains)) != len(domains):
             raise OfficialSourcePolicyError(
                 "registrable_domains must contain unique qualified domains"
@@ -254,9 +250,7 @@ class OfficialSourceEntryV1:
                 "organization_names",
                 sort_values=False,
             ),
-            registrable_domains=_strings(
-                raw["registrable_domains"], "registrable_domains"
-            ),
+            registrable_domains=_strings(raw["registrable_domains"], "registrable_domains"),
             source_types=_strings(raw["source_types"], "source_types"),
             search_directives=_strings(
                 raw["search_directives"], "search_directives", allow_empty=True
@@ -286,9 +280,7 @@ class OfficialSourceRegistryV1:
         if not self.entries or any(
             not isinstance(entry, OfficialSourceEntryV1) for entry in self.entries
         ):
-            raise OfficialSourcePolicyError(
-                "entries must contain OfficialSourceEntryV1 values"
-            )
+            raise OfficialSourcePolicyError("entries must contain OfficialSourceEntryV1 values")
         ordered = tuple(sorted(self.entries, key=lambda entry: entry.authority_id))
         if len({entry.authority_id for entry in ordered}) != len(ordered):
             raise OfficialSourcePolicyError("authority_id must be unique in a registry")
@@ -416,9 +408,7 @@ class OfficialSourceRequestV1:
             requirement_ids=_strings(raw["requirement_ids"], "requirement_ids"),
             jurisdiction=str(_text(raw["jurisdiction"], "jurisdiction")),
             authority_roles=_strings(raw["authority_roles"], "authority_roles"),
-            source_types=_strings(
-                raw["source_types"], "source_types", allow_empty=True
-            ),
+            source_types=_strings(raw["source_types"], "source_types", allow_empty=True),
             preferred_authority_ids=_strings(
                 raw["preferred_authority_ids"],
                 "preferred_authority_ids",
@@ -491,9 +481,7 @@ class OfficialSourceTargetV1:
             source_types=self.source_types,
         )
         if self.target_id != expected_target_id:
-            raise OfficialSourcePolicyError(
-                "target_id does not match canonical target identity"
-            )
+            raise OfficialSourcePolicyError("target_id does not match canonical target identity")
 
     def to_json(self) -> dict[str, JsonValue]:
         return {
@@ -525,9 +513,7 @@ class OfficialSourceTargetV1:
                 raw["matched_authority_roles"], "matched_authority_roles"
             ),
             organization_name=str(_text(raw["organization_name"], "organization_name")),
-            registrable_domains=_strings(
-                raw["registrable_domains"], "registrable_domains"
-            ),
+            registrable_domains=_strings(raw["registrable_domains"], "registrable_domains"),
             source_types=_strings(raw["source_types"], "source_types"),
             search_directives=_strings(
                 raw["search_directives"], "search_directives", allow_empty=True
@@ -579,12 +565,9 @@ class SourceAuthorityMatchV1:
         if not isinstance(self.matched, bool):
             raise OfficialSourcePolicyError("matched must be a boolean")
         if self.matched != all(
-            value is not None
-            for value in (self.final_host, self.matched_domain, self.authority_id)
+            value is not None for value in (self.final_host, self.matched_domain, self.authority_id)
         ):
-            raise OfficialSourcePolicyError(
-                "matched authority fields must be present together"
-            )
+            raise OfficialSourcePolicyError("matched authority fields must be present together")
         if not self.matched and self.source_types:
             raise OfficialSourcePolicyError(
                 "unmatched source must not inherit official source types"
@@ -686,9 +669,7 @@ class OfficialSourceResolver:
         final_url: str,
     ) -> SourceAuthorityMatchV1:
         if target.policy_hash != self.registry.policy_hash:
-            raise OfficialSourcePolicyError(
-                "target policy_hash does not belong to this resolver"
-            )
+            raise OfficialSourcePolicyError("target policy_hash does not belong to this resolver")
         host = _host_for_url(final_url)
         if host is None:
             return SourceAuthorityMatchV1(
@@ -702,9 +683,7 @@ class OfficialSourceResolver:
                 ("invalid_final_url",),
             )
         matches = tuple(
-            domain
-            for domain in target.registrable_domains
-            if _host_matches(host, domain)
+            domain for domain in target.registrable_domains if _host_matches(host, domain)
         )
         if not matches:
             return SourceAuthorityMatchV1(
@@ -748,17 +727,13 @@ DEFAULT_OFFICIAL_SOURCE_REGISTRY = OfficialSourceRegistryV1(
             # Generic first-party annual-bulletin index.  The retrieval
             # runtime selects a year from the frozen semantic time scope; the
             # registry deliberately contains no answer year or answer page.
-            seed_urls=(
-                "https://www.stats.gov.cn/sj/tjgb/ndtjgb/qgndtjgb/",
-            ),
+            seed_urls=("https://www.stats.gov.cn/sj/tjgb/ndtjgb/qgndtjgb/",),
             priority=100,
         ),
     ),
 )
 
-DEFAULT_OFFICIAL_SOURCE_RESOLVER = OfficialSourceResolver(
-    DEFAULT_OFFICIAL_SOURCE_REGISTRY
-)
+DEFAULT_OFFICIAL_SOURCE_RESOLVER = OfficialSourceResolver(DEFAULT_OFFICIAL_SOURCE_REGISTRY)
 
 
 def resolve_official_sources(

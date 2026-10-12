@@ -403,9 +403,7 @@ class DesktopSdkRuntimeBridge:
 
     @staticmethod
     def run_id_for(session_id: str, request_id: str, turn_id: str) -> str:
-        identity = hashlib.sha256(
-            f"{session_id}\0{request_id}\0{turn_id}".encode()
-        ).hexdigest()
+        identity = hashlib.sha256(f"{session_id}\0{request_id}\0{turn_id}".encode()).hexdigest()
         return f"desktop-sdk-{identity}"
 
     async def close(self) -> None:

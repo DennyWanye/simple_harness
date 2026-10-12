@@ -35,7 +35,9 @@ class TestComplexErrorScenarios:
         state = MagicMock(spec=PresentationState)
 
         # 模拟 send_final 也失败
-        with patch('deskpet.agent.run_presenter._send_both', side_effect=Exception("Send both failed")):
+        with patch(
+            "deskpet.agent.run_presenter._send_both", side_effect=Exception("Send both failed")
+        ):
             event = FinalEvent(content="test output")
 
             # 不应该抛出异常，应该静默失败
@@ -64,13 +66,14 @@ class TestComplexErrorScenarios:
 
         # 第一次调用 _send_both 失败，但后备的 websocket.send_json 成功
         call_count = 0
+
         async def mock_send_both(ctx, payload):
             nonlocal call_count
             call_count += 1
             if call_count == 1:
                 raise Exception("First send failed")
 
-        with patch('deskpet.agent.run_presenter._send_both', side_effect=mock_send_both):
+        with patch("deskpet.agent.run_presenter._send_both", side_effect=mock_send_both):
             event = ErrorEvent(reason="test_error", detail="Test error detail")
             await _present_error(event, context, state)
 
@@ -96,10 +99,7 @@ class TestComplexErrorScenarios:
         state = MagicMock(spec=PresentationState)
 
         # 模拟同时发送多个事件
-        events = [
-            ErrorEvent(reason=f"error_{i}", detail=f"Error {i}")
-            for i in range(5)
-        ]
+        events = [ErrorEvent(reason=f"error_{i}", detail=f"Error {i}") for i in range(5)]
 
         tasks = [_present_error(event, context, state) for event in events]
         await asyncio.gather(*tasks)
@@ -125,6 +125,7 @@ class TestToolExecutionEdgeCases:
 
         # 验证可以解析
         import json
+
         parsed = json.loads(result)
         assert isinstance(parsed, dict)
         assert "ok" in parsed
@@ -139,10 +140,10 @@ class TestToolExecutionEdgeCases:
         # 使用包含特殊字符的查询
         special_queries = [
             "python",  # 正常
-            "测试",     # 中文
+            "测试",  # 中文
             "test\nname",  # 换行符
-            "test\ttab",   # 制表符
-            "test\"quote", # 引号
+            "test\ttab",  # 制表符
+            'test"quote',  # 引号
         ]
 
         for query in special_queries:
@@ -151,6 +152,7 @@ class TestToolExecutionEdgeCases:
 
             # 验证返回的是有效 JSON
             import json
+
             parsed = json.loads(result)
             assert isinstance(parsed, dict)
             assert "ok" in parsed
@@ -165,7 +167,7 @@ class TestToolExecutionEdgeCases:
         try:
             result = await asyncio.wait_for(
                 process_list(args={"max_entries": 100}),
-                timeout=5.0  # 5 秒超时
+                timeout=5.0,  # 5 秒超时
             )
             assert isinstance(result, str)
         except TimeoutError:
@@ -247,6 +249,7 @@ class TestMemoryAndPerformance:
             assert isinstance(result, str)
 
             import json
+
             parsed = json.loads(result)
             assert isinstance(parsed, dict)
             assert "ok" in parsed
@@ -258,10 +261,7 @@ class TestMemoryAndPerformance:
         from deskpet.tools.os_tools.process_tools import process_list
 
         # 并发调用 10 个工具
-        tasks = [
-            process_list(args={"query": f"test{i}", "max_entries": 5})
-            for i in range(10)
-        ]
+        tasks = [process_list(args={"query": f"test{i}", "max_entries": 5}) for i in range(10)]
 
         results = await asyncio.gather(*tasks, return_exceptions=True)
 

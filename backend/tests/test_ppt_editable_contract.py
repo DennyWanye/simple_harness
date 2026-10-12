@@ -14,10 +14,7 @@ from pptx.util import Inches, Pt
 
 def test_new_ppt_run_defaults_to_editable_native_objects() -> None:
     state = ppt_pro_initial_state(
-        topic=(
-            "生成可编辑PPT；第3页用表格对比缺陷；"
-            "第6页用可编辑柱状图展示覆盖率"
-        ),
+        topic=("生成可编辑PPT；第3页用表格对比缺陷；第6页用可编辑柱状图展示覆盖率"),
         run_id="run-editable",
         pages=8,
     )
@@ -211,8 +208,7 @@ def test_image_guards_and_preserved_copy_do_not_hide_later_object_creation(
 def test_editable_chart_does_not_accidentally_mean_editable_table() -> None:
     state = ppt_pro_initial_state(
         topic=(
-            "第3页必须是 editable table，不能是图片。\n"
-            "第6页必须是 editable chart，不能是图片。"
+            "第3页必须是 editable table，不能是图片。\n第6页必须是 editable chart，不能是图片。"
         ),
         run_id="run-editable-word-boundary",
         pages=8,
@@ -228,9 +224,7 @@ def test_editable_chart_does_not_accidentally_mean_editable_table() -> None:
 def test_template_text_replacement_preserves_complete_long_copy(length: int) -> None:
     deck = Presentation()
     slide = deck.slides.add_slide(deck.slide_layouts[6])
-    shape = slide.shapes.add_textbox(
-        Inches(1), Inches(1), Inches(5), Inches(1.5)
-    )
+    shape = slide.shapes.add_textbox(Inches(1), Inches(1), Inches(5), Inches(1.5))
     paragraph = shape.text_frame.paragraphs[0]
     run = paragraph.add_run()
     run.text = "template"
@@ -440,8 +434,7 @@ def test_topic_image_mode_false_overrides_spawn_default() -> None:
             {},
         ),
         (
-            "第3页必须完整保留以下内容：使用表格能提升可读性；"
-            "正文之后创建柱状图",
+            "第3页必须完整保留以下内容：使用表格能提升可读性；正文之后创建柱状图",
             {"3": ["chart:bar"]},
         ),
         (
@@ -454,7 +447,8 @@ def test_topic_image_mode_false_overrides_spawn_default() -> None:
     ],
 )
 def test_requirement_parser_handles_negation_copy_and_diagnostic_words(
-    topic, expected,
+    topic,
+    expected,
 ) -> None:
     state = ppt_pro_initial_state(
         topic=topic,
@@ -477,7 +471,8 @@ def test_requirement_parser_handles_negation_copy_and_diagnostic_words(
     ],
 )
 def test_image_mode_false_understands_copula_and_ignores_negated_setting(
-    topic, expected,
+    topic,
+    expected,
 ) -> None:
     state = ppt_pro_initial_state(
         topic=topic,
@@ -631,7 +626,8 @@ def test_image_mode_false_understands_copula_and_ignores_negated_setting(
     ],
 )
 def test_page_requirement_parser_honors_delimiters_words_and_repeated_pages(
-    topic, expected,
+    topic,
+    expected,
 ) -> None:
     state = ppt_pro_initial_state(
         topic=topic,
@@ -687,9 +683,7 @@ def test_editable_gate_rejects_picture_only_deck_even_with_valid_package(
             "chart_types": [],
         }
     ]
-    assert result["hard_failures"] == [
-        {"code": "ppt_flattened_slide_forbidden", "page": 1}
-    ]
+    assert result["hard_failures"] == [{"code": "ppt_flattened_slide_forbidden", "page": 1}]
 
 
 def test_editable_gate_rejects_off_canvas_decoy_text(tmp_path) -> None:
@@ -701,9 +695,7 @@ def test_editable_gate_rejects_off_canvas_decoy_text(tmp_path) -> None:
     slide.shapes.add_picture(
         str(image_path), 0, 0, width=deck.slide_width, height=deck.slide_height
     )
-    slide.shapes.add_textbox(
-        -Inches(2), -Inches(2), Inches(0.1), Inches(0.1)
-    ).text = "."
+    slide.shapes.add_textbox(-Inches(2), -Inches(2), Inches(0.1), Inches(0.1)).text = "."
     deck.save(deck_path)
 
     result = ppt_pro_nodes.inspect_rendered_deck(
@@ -715,9 +707,7 @@ def test_editable_gate_rejects_off_canvas_decoy_text(tmp_path) -> None:
     assert result["passed"] is False
     assert result["shape_inventory"][0]["text_shapes"] == 1
     assert result["shape_inventory"][0]["visible_text_shapes"] == 0
-    assert result["hard_failures"] == [
-        {"code": "ppt_flattened_slide_forbidden", "page": 1}
-    ]
+    assert result["hard_failures"] == [{"code": "ppt_flattened_slide_forbidden", "page": 1}]
 
 
 def test_editable_gate_rejects_picture_with_title_but_baked_in_body(
@@ -731,9 +721,7 @@ def test_editable_gate_rejects_picture_with_title_but_baked_in_body(
     slide.shapes.add_picture(
         str(image_path), 0, 0, width=deck.slide_width, height=deck.slide_height
     )
-    slide.shapes.add_textbox(
-        Inches(1), Inches(0.5), Inches(7), Inches(0.6)
-    ).text = "Editable title"
+    slide.shapes.add_textbox(Inches(1), Inches(0.5), Inches(7), Inches(0.6)).text = "Editable title"
     deck.save(deck_path)
 
     result = ppt_pro_nodes.inspect_rendered_deck(
@@ -764,15 +752,11 @@ def test_editable_gate_accepts_metric_split_into_native_callout(tmp_path) -> Non
     deck_path = tmp_path / "native-metric-callout.pptx"
     deck = Presentation()
     slide = deck.slides.add_slide(deck.slide_layouts[6])
-    slide.shapes.add_textbox(
-        Inches(1), Inches(0.5), Inches(7), Inches(0.6)
-    ).text = "测试证据"
+    slide.shapes.add_textbox(Inches(1), Inches(0.5), Inches(7), Inches(0.6)).text = "测试证据"
     slide.shapes.add_textbox(
         Inches(1), Inches(1.5), Inches(7), Inches(0.8)
     ).text = "基于轨迹的方法带来约 的性能提升"
-    slide.shapes.add_textbox(
-        Inches(6.5), Inches(1.3), Inches(1), Inches(0.6)
-    ).text = "6.3%"
+    slide.shapes.add_textbox(Inches(6.5), Inches(1.3), Inches(1), Inches(0.6)).text = "6.3%"
     deck.save(deck_path)
 
     result = ppt_pro_nodes.inspect_rendered_deck(
@@ -797,15 +781,9 @@ def test_editable_gate_accepts_single_digit_native_callout(tmp_path) -> None:
     deck_path = tmp_path / "native-single-digit-callout.pptx"
     deck = Presentation()
     slide = deck.slides.add_slide(deck.slide_layouts[6])
-    slide.shapes.add_textbox(
-        Inches(1), Inches(0.5), Inches(7), Inches(0.6)
-    ).text = "测试证据"
-    slide.shapes.add_textbox(
-        Inches(1), Inches(1.5), Inches(7), Inches(0.8)
-    ).text = "共有项关键风险"
-    slide.shapes.add_textbox(
-        Inches(6.5), Inches(1.3), Inches(1), Inches(0.6)
-    ).text = "1"
+    slide.shapes.add_textbox(Inches(1), Inches(0.5), Inches(7), Inches(0.6)).text = "测试证据"
+    slide.shapes.add_textbox(Inches(1), Inches(1.5), Inches(7), Inches(0.8)).text = "共有项关键风险"
+    slide.shapes.add_textbox(Inches(6.5), Inches(1.3), Inches(1), Inches(0.6)).text = "1"
     deck.save(deck_path)
 
     result = ppt_pro_nodes.inspect_rendered_deck(
@@ -832,15 +810,11 @@ def test_editable_gate_still_rejects_truncated_prose_around_callout(
     deck_path = tmp_path / "truncated-native-metric-callout.pptx"
     deck = Presentation()
     slide = deck.slides.add_slide(deck.slide_layouts[6])
-    slide.shapes.add_textbox(
-        Inches(1), Inches(0.5), Inches(7), Inches(0.6)
-    ).text = "测试证据"
+    slide.shapes.add_textbox(Inches(1), Inches(0.5), Inches(7), Inches(0.6)).text = "测试证据"
     slide.shapes.add_textbox(
         Inches(1), Inches(1.5), Inches(7), Inches(0.8)
     ).text = "得分从 跃升至 66.5%，验证了基础设施层的..."
-    slide.shapes.add_textbox(
-        Inches(6.5), Inches(1.3), Inches(1), Inches(0.6)
-    ).text = "52.8%"
+    slide.shapes.add_textbox(Inches(6.5), Inches(1.3), Inches(1), Inches(0.6)).text = "52.8%"
     deck.save(deck_path)
 
     result = ppt_pro_nodes.inspect_rendered_deck(
@@ -852,10 +826,7 @@ def test_editable_gate_still_rejects_truncated_prose_around_callout(
                 "slide": {
                     "layout": "bullet",
                     "title": "测试证据",
-                    "bullets": [
-                        "得分从 52.8% 跃升至 66.5%，"
-                        "验证了基础设施层的价值"
-                    ],
+                    "bullets": ["得分从 52.8% 跃升至 66.5%，验证了基础设施层的价值"],
                 }
             }
         ],
@@ -958,9 +929,7 @@ def test_editable_callout_metric_attack_matrix(
     present: bool,
 ) -> None:
     normalized_expected = ppt_pro_nodes._normalized_ppt_text(expected)
-    normalized_actual = [
-        ppt_pro_nodes._normalized_ppt_text(item) for item in actual_shapes
-    ]
+    normalized_actual = [ppt_pro_nodes._normalized_ppt_text(item) for item in actual_shapes]
 
     assert (
         ppt_pro_nodes._editable_copy_present(
@@ -998,16 +967,10 @@ def test_editable_metric_callouts_follow_visual_order_not_z_order(
     deck_path = tmp_path / f"metric-order-{passed}.pptx"
     deck = Presentation()
     slide = deck.slides.add_slide(deck.slide_layouts[6])
-    slide.shapes.add_textbox(
-        Inches(1), Inches(0.5), Inches(7), Inches(0.6)
-    ).text = "指标变化"
-    slide.shapes.add_textbox(
-        Inches(1), Inches(2.2), Inches(7), Inches(0.8)
-    ).text = "从提升到"
+    slide.shapes.add_textbox(Inches(1), Inches(0.5), Inches(7), Inches(0.6)).text = "指标变化"
+    slide.shapes.add_textbox(Inches(1), Inches(2.2), Inches(7), Inches(0.8)).text = "从提升到"
     for text, left in callouts:
-        slide.shapes.add_textbox(
-            left, Inches(1.4), Inches(1), Inches(0.6)
-        ).text = text
+        slide.shapes.add_textbox(left, Inches(1.4), Inches(1), Inches(0.6)).text = text
     deck.save(deck_path)
 
     result = ppt_pro_nodes.inspect_rendered_deck(
@@ -1039,9 +1002,7 @@ def test_editable_gate_rejects_image_full_layout_even_with_native_title(
     slide.shapes.add_picture(
         str(image_path), 0, 0, width=deck.slide_width, height=deck.slide_height
     )
-    slide.shapes.add_textbox(
-        Inches(1), Inches(0.5), Inches(7), Inches(0.6)
-    ).text = "Editable title"
+    slide.shapes.add_textbox(Inches(1), Inches(0.5), Inches(7), Inches(0.6)).text = "Editable title"
     deck.save(deck_path)
 
     result = ppt_pro_nodes.inspect_rendered_deck(
@@ -1099,16 +1060,15 @@ def test_conclusion_slide_keeps_every_editable_bullet(tmp_path, monkeypatch) -> 
     assert quality["passed"] is True
     rendered = Presentation(str(output))
     actual_text = "\n".join(
-        shape.text
-        for shape in rendered.slides[0].shapes
-        if getattr(shape, "has_text_frame", False)
+        shape.text for shape in rendered.slides[0].shapes if getattr(shape, "has_text_frame", False)
     )
     for bullet in conclusion["bullets"]:
         assert bullet in actual_text
 
 
 def test_native_table_and_bar_chart_are_rendered_and_enforced(
-    tmp_path, monkeypatch,
+    tmp_path,
+    monkeypatch,
 ) -> None:
     monkeypatch.setattr(ppt_tools, "_default_template", lambda: None)
     output = tmp_path / "editable.pptx"
@@ -1213,9 +1173,7 @@ def test_editable_visual_revision_changes_real_slide_output(tmp_path) -> None:
 
     revised = Presentation(revised_path)
     visible_text = "\n".join(
-        shape.text
-        for shape in revised.slides[0].shapes
-        if getattr(shape, "has_text_frame", False)
+        shape.text for shape in revised.slides[0].shapes if getattr(shape, "has_text_frame", False)
     )
     assert "First long editable point" in visible_text
     assert "Second long editable point" in visible_text
@@ -1320,15 +1278,12 @@ def test_dense_bullet_layout_preserves_every_long_editable_paragraph(tmp_path) -
         ("Conclusion", 7),
     ],
 )
-def test_six_dense_bullets_are_never_shortened(
-    tmp_path, title: str, repeat: int
-) -> None:
+def test_six_dense_bullets_are_never_shortened(tmp_path, title: str, repeat: int) -> None:
     deck_path = tmp_path / f"{title.lower().replace(' ', '-')}.pptx"
     bullets = [
         (
             f"Editable paragraph {index}: "
-            + "complete architecture evidence remains native and reviewable; "
-            * repeat
+            + "complete architecture evidence remains native and reviewable; " * repeat
         ).strip()
         for index in range(1, 7)
     ]
@@ -1402,8 +1357,7 @@ def test_dense_chart_notes_get_room_and_visual_revision_never_enlarges_text(
         notes_shape = next(
             shape
             for shape in presentation.slides[0].shapes
-            if getattr(shape, "has_text_frame", False)
-            and bullets[0] in shape.text
+            if getattr(shape, "has_text_frame", False) and bullets[0] in shape.text
         )
         sizes = [
             run.font.size.pt
@@ -1488,17 +1442,13 @@ def test_editable_table_visual_revision_scales_cell_text(tmp_path) -> None:
     assert min(plain_sizes) == 12
     assert max(revised_sizes) == 10
     assert min(revised_sizes) == 9
-    assert [
-        cell.text for row in revised_table.rows for cell in row.cells
-    ] == [
+    assert [cell.text for row in revised_table.rows for cell in row.cells] == [
         cell.text for row in plain_table.rows for cell in row.cells
     ]
 
 
 @pytest.mark.parametrize("layout", ["chart", "toc"])
-def test_change_variant_changes_chart_and_toc_slide_output(
-    tmp_path, monkeypatch, layout
-) -> None:
+def test_change_variant_changes_chart_and_toc_slide_output(tmp_path, monkeypatch, layout) -> None:
     monkeypatch.setattr(ppt_tools, "_default_template", lambda: None)
     common = {
         "layout": layout,
@@ -1569,9 +1519,7 @@ def test_native_object_requirement_cannot_target_missing_page(tmp_path) -> None:
     path = tmp_path / "one-page.pptx"
     deck = Presentation()
     slide = deck.slides.add_slide(deck.slide_layouts[6])
-    slide.shapes.add_textbox(Inches(1), Inches(1), Inches(4), Inches(1)).text = (
-        "Editable page"
-    )
+    slide.shapes.add_textbox(Inches(1), Inches(1), Inches(4), Inches(1)).text = "Editable page"
     deck.save(path)
 
     result = ppt_pro_nodes.inspect_rendered_deck(
@@ -1582,6 +1530,4 @@ def test_native_object_requirement_cannot_target_missing_page(tmp_path) -> None:
     )
 
     assert result["passed"] is False
-    assert {"code": "ppt_required_page_out_of_range", "page": "2"} in result[
-        "hard_failures"
-    ]
+    assert {"code": "ppt_required_page_out_of_range", "page": "2"} in result["hard_failures"]

@@ -85,9 +85,7 @@ def _text(value: object, name: str) -> str:
 def _hash(value: object, name: str) -> str:
     text = _text(value, name)
     if not _SHA256_RE.fullmatch(text):
-        raise TaskGrantError(
-            "invalid_fingerprint", f"{name} must be a lowercase SHA-256 digest"
-        )
+        raise TaskGrantError("invalid_fingerprint", f"{name} must be a lowercase SHA-256 digest")
     return text
 
 
@@ -147,9 +145,7 @@ class ResourceSelector:
 
     def __post_init__(self) -> None:
         if self.kind not in _RESOURCE_KINDS:
-            raise TaskGrantError(
-                "invalid_resource_kind", f"unknown resource kind: {self.kind}"
-            )
+            raise TaskGrantError("invalid_resource_kind", f"unknown resource kind: {self.kind}")
         canonical = canonical_resource_value(self.kind, self.canonical_value)
         object.__setattr__(self, "canonical_value", canonical)
         access = tuple(_text(item, "access").casefold() for item in self.access)
@@ -160,9 +156,7 @@ class ResourceSelector:
         object.__setattr__(self, "access", tuple(sorted(access)))
 
     @classmethod
-    def filesystem(
-        cls, root: str | Path, *access: str
-    ) -> ResourceSelector:
+    def filesystem(cls, root: str | Path, *access: str) -> ResourceSelector:
         return cls("filesystem", canonical_filesystem_path(root), tuple(access))
 
     @classmethod
@@ -187,9 +181,7 @@ class ResourceSelector:
             "canonical_value",
             "access",
         }:
-            raise TaskGrantError(
-                "invalid_selector", "resource selector shape is invalid"
-            )
+            raise TaskGrantError("invalid_selector", "resource selector shape is invalid")
         access = value["access"]
         if not isinstance(access, list):
             raise TaskGrantError("invalid_selector", "selector access must be an array")
@@ -233,34 +225,23 @@ class TaskGrant:
 
     def __post_init__(self) -> None:
         for field_name in ("task_grant_id", "root_run_id", "principal_id"):
-            object.__setattr__(
-                self, field_name, _text(getattr(self, field_name), field_name)
-            )
+            object.__setattr__(self, field_name, _text(getattr(self, field_name), field_name))
         selectors = tuple(self.resource_selectors)
         selector_keys = {
-            (selector.kind, selector.canonical_value, selector.access)
-            for selector in selectors
+            (selector.kind, selector.canonical_value, selector.access) for selector in selectors
         }
         if len(selectors) != len(selector_keys):
-            raise TaskGrantError(
-                "duplicate_selector", "resource selectors cannot repeat"
-            )
+            raise TaskGrantError("duplicate_selector", "resource selectors cannot repeat")
         object.__setattr__(self, "resource_selectors", selectors)
         for field_name in ("permission_categories", "effect_kinds"):
-            values = tuple(
-                _text(item, field_name) for item in getattr(self, field_name)
-            )
+            values = tuple(_text(item, field_name) for item in getattr(self, field_name))
             if len(values) != len(set(values)):
-                raise TaskGrantError(
-                    "duplicate_category", f"{field_name} cannot repeat"
-                )
+                raise TaskGrantError("duplicate_category", f"{field_name} cannot repeat")
             object.__setattr__(self, field_name, tuple(sorted(values)))
         if self.source not in {"user", "policy:auto"}:
             raise TaskGrantError("invalid_source", f"unknown grant source: {self.source}")
         if not isinstance(self.policy_generation, int) or self.policy_generation < 0:
-            raise TaskGrantError(
-                "invalid_generation", "policy_generation must be non-negative"
-            )
+            raise TaskGrantError("invalid_generation", "policy_generation must be non-negative")
         if self.expires_at is not None and not math.isfinite(float(self.expires_at)):
             raise TaskGrantError("invalid_expiry", "expires_at must be finite")
         if not isinstance(self.version, int) or self.version < 1:
@@ -275,9 +256,7 @@ class TaskGrant:
             "task_grant_id": self.task_grant_id,
             "root_run_id": self.root_run_id,
             "principal_id": self.principal_id,
-            "resource_selectors": [
-                selector.to_dict() for selector in self.resource_selectors
-            ],
+            "resource_selectors": [selector.to_dict() for selector in self.resource_selectors],
             "permission_categories": list(self.permission_categories),
             "effect_kinds": list(self.effect_kinds),
             "source": self.source,
@@ -310,23 +289,17 @@ class TaskGrant:
             or not isinstance(permissions, list)
             or not isinstance(effects, list)
         ):
-            raise TaskGrantError(
-                "invalid_task_grant", "TaskGrant collections must be arrays"
-            )
+            raise TaskGrantError("invalid_task_grant", "TaskGrant collections must be arrays")
         return cls(
             task_grant_id=str(value["task_grant_id"]),
             root_run_id=str(value["root_run_id"]),
             principal_id=str(value["principal_id"]),
-            resource_selectors=tuple(
-                ResourceSelector.from_dict(item) for item in selectors
-            ),
+            resource_selectors=tuple(ResourceSelector.from_dict(item) for item in selectors),
             permission_categories=tuple(str(item) for item in permissions),
             effect_kinds=tuple(str(item) for item in effects),
             source=str(value["source"]),  # type: ignore[arg-type]
             policy_generation=int(value["policy_generation"]),
-            expires_at=(
-                None if value["expires_at"] is None else float(value["expires_at"])
-            ),
+            expires_at=(None if value["expires_at"] is None else float(value["expires_at"])),
             version=int(value["version"]),
         )
 
@@ -340,10 +313,7 @@ class TaskGrant:
         if self.expires_at is not None and now >= self.expires_at:
             return False
         if self.source == "policy:auto":
-            return (
-                policy_mode == "auto"
-                and self.policy_generation == policy_generation
-            )
+            return policy_mode == "auto" and self.policy_generation == policy_generation
         return True
 
     def covers(
@@ -383,18 +353,14 @@ class TaskGrant:
             task_grant_id=task_grant_id,
             root_run_id=self.root_run_id,
             principal_id=self.principal_id,
-            resource_selectors=tuple(
-                selectors[key] for key in sorted(selectors, key=str)
-            ),
+            resource_selectors=tuple(selectors[key] for key in sorted(selectors, key=str)),
             permission_categories=tuple(
                 sorted(set(self.permission_categories) | set(permission_categories))
             ),
             effect_kinds=tuple(sorted(set(self.effect_kinds) | set(effect_kinds))),
             source=self.source,
             policy_generation=(
-                self.policy_generation
-                if policy_generation is None
-                else policy_generation
+                self.policy_generation if policy_generation is None else policy_generation
             ),
             expires_at=self.expires_at if expires_at is None else expires_at,
             version=self.version + 1,
@@ -425,27 +391,21 @@ class ExactGrantRequest:
             "effect_id",
             "tool_name",
         ):
-            object.__setattr__(
-                self, field_name, _text(getattr(self, field_name), field_name)
-            )
+            object.__setattr__(self, field_name, _text(getattr(self, field_name), field_name))
         for field_name in (
             "args_hash",
             "capability_hash",
             "schema_hash",
             "scope_hash",
         ):
-            object.__setattr__(
-                self, field_name, _hash(getattr(self, field_name), field_name)
-            )
+            object.__setattr__(self, field_name, _hash(getattr(self, field_name), field_name))
         object.__setattr__(self, "resource_selectors", tuple(self.resource_selectors))
         object.__setattr__(
             self,
             "permission_categories",
             tuple(sorted(set(self.permission_categories))),
         )
-        object.__setattr__(
-            self, "effect_kinds", tuple(sorted(set(self.effect_kinds)))
-        )
+        object.__setattr__(self, "effect_kinds", tuple(sorted(set(self.effect_kinds))))
         if not math.isfinite(float(self.expires_at)):
             raise TaskGrantError("invalid_expiry", "exact grant expiry must be finite")
 
@@ -462,9 +422,7 @@ class ExactGrantRequest:
                 "capability_hash": self.capability_hash,
                 "schema_hash": self.schema_hash,
                 "scope_hash": self.scope_hash,
-                "resource_selectors": [
-                    item.to_dict() for item in self.resource_selectors
-                ],
+                "resource_selectors": [item.to_dict() for item in self.resource_selectors],
                 "permission_categories": list(self.permission_categories),
                 "effect_kinds": list(self.effect_kinds),
                 "expires_at": self.expires_at,
@@ -508,9 +466,7 @@ class PreparedAuthorizationCommit:
 
     def __post_init__(self) -> None:
         if self.expected_policy_mode not in {"manual", "auto"}:
-            raise TaskGrantError(
-                "invalid_policy_mode", "expected policy mode is invalid"
-            )
+            raise TaskGrantError("invalid_policy_mode", "expected policy mode is invalid")
         if (
             not isinstance(self.expected_policy_generation, int)
             or self.expected_policy_generation < 0

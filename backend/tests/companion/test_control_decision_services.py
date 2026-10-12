@@ -24,10 +24,7 @@ class _Rows:
         self.sql = sql
 
     def fetchall(self):
-        if (
-            "FROM evaluation_runs e" in self.sql
-            or "FROM candidate_artifacts a" in self.sql
-        ):
+        if "FROM evaluation_runs e" in self.sql or "FROM candidate_artifacts a" in self.sql:
             return list(self.store.rows)
         if "FROM capability_activation_requests q" in self.sql:
             return list(self.store.rollback_rows)
@@ -253,19 +250,14 @@ async def test_activation_service_enqueues_task9_saga_without_auto_bypass() -> N
         }
     ]
     coordinator = _Coordinator()
-    result = await CompanionActivationDecisionService(
-        store, coordinator
-    ).decide(
+    result = await CompanionActivationDecisionService(store, coordinator).decide(
         frozen_identity=FROZEN,
         **_activation_body(),
     )
     assert result["status"] == "pending"
     call = coordinator.calls[0][1]
     assert call["actor"] == "user"
-    assert (
-        call["activation_risk_ack"]
-        == "persistent_local_code_no_os_sandbox"
-    )
+    assert call["activation_risk_ack"] == "persistent_local_code_no_os_sandbox"
     assert call["mutation"].target_package_hash == "package-hash"
 
 
@@ -277,9 +269,7 @@ async def test_activation_requires_exact_server_issued_challenge() -> None:
         CompanionGrowthControlError,
         match="companion_activation_challenge_mismatch",
     ):
-        await CompanionActivationDecisionService(
-            store, _Coordinator()
-        ).decide(
+        await CompanionActivationDecisionService(store, _Coordinator()).decide(
             frozen_identity=FROZEN,
             **_activation_body(candidate_package_hash="forged-package"),
         )
@@ -316,9 +306,7 @@ async def test_activation_confirmation_dispatches_same_durable_request() -> None
         **_activation_body(),
     )
     assert result["status"] == "succeeded"
-    assert dispatcher.calls[0][1]["request_id"] == (
-        result["activation_request_id"]
-    )
+    assert dispatcher.calls[0][1]["request_id"] == (result["activation_request_id"])
 
 
 @pytest.mark.asyncio
@@ -348,9 +336,7 @@ async def test_activation_rejects_missing_exact_code_ack_even_if_auto_is_true() 
         CompanionGrowthControlError,
         match="companion_activation_code_confirmation_incomplete",
     ):
-        await CompanionActivationDecisionService(
-            store, coordinator
-        ).decide(
+        await CompanionActivationDecisionService(store, coordinator).decide(
             frozen_identity=FROZEN,
             **_activation_body(activation_risk_ack="none"),
         )
@@ -382,12 +368,12 @@ async def test_rollback_and_forget_use_current_notification_fence() -> None:
         "notification_id": "notification-1",
         "expected_detail_version": "detail-1",
     }
-    rolled = await CompanionRollbackDecisionService(
-        store, _Detail()
-    ).decide(frozen_identity=FROZEN, **body)
-    forgotten = await CompanionForgetDecisionService(
-        store, _Detail()
-    ).decide(frozen_identity=FROZEN, **body)
+    rolled = await CompanionRollbackDecisionService(store, _Detail()).decide(
+        frozen_identity=FROZEN, **body
+    )
+    forgotten = await CompanionForgetDecisionService(store, _Detail()).decide(
+        frozen_identity=FROZEN, **body
+    )
     assert rolled["status"] == "pending"
     assert forgotten["forgotten_count"] == 2
     mutation = next(call[2] for call in store.calls if call[0] == "mutation")
@@ -433,9 +419,7 @@ async def test_rollback_dispatches_the_pending_mutation_immediately() -> None:
             OWNER,
             {
                 "request_id": result["activation_request_id"],
-                "claim_owner": (
-                    "trusted-rollback:" + result["activation_request_id"]
-                ),
+                "claim_owner": ("trusted-rollback:" + result["activation_request_id"]),
             },
         )
     ]

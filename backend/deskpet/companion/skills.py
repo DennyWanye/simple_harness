@@ -26,15 +26,9 @@ def _split_frontmatter(raw: bytes, *, path: Path) -> tuple[Mapping[str, Any], st
         raise PackManifestError("invalid_skill", f"{path} is not UTF-8") from exc
     lines = text.splitlines()
     if not lines or lines[0].strip() != "---":
-        raise PackManifestError(
-            "invalid_skill_frontmatter", f"{path} has no frontmatter"
-        )
+        raise PackManifestError("invalid_skill_frontmatter", f"{path} has no frontmatter")
     try:
-        end = next(
-            index
-            for index, line in enumerate(lines[1:], start=1)
-            if line.strip() == "---"
-        )
+        end = next(index for index, line in enumerate(lines[1:], start=1) if line.strip() == "---")
         frontmatter = yaml.safe_load("\n".join(lines[1:end])) or {}
     except (StopIteration, yaml.YAMLError) as exc:
         raise PackManifestError(
@@ -99,9 +93,7 @@ class PreparedSkillInvocationScopeV1:
         }
 
     @classmethod
-    def from_dict(
-        cls, value: Mapping[str, Any]
-    ) -> PreparedSkillInvocationScopeV1:
+    def from_dict(cls, value: Mapping[str, Any]) -> PreparedSkillInvocationScopeV1:
         """Restore one exact slash-selected scope without a fresh lookup."""
 
         if not isinstance(value, Mapping):
@@ -284,9 +276,7 @@ class ManagedSkillDiscoveryProjection:
                 task_types=tuple(str(v) for v in frontmatter.get("task_types") or ()),
                 when_to_use=str(frontmatter.get("when_to_use") or ""),
                 triggers=tuple(str(v) for v in frontmatter.get("triggers") or ()),
-                disable_model_invocation=bool(
-                    frontmatter.get("disable-model-invocation", False)
-                ),
+                disable_model_invocation=bool(frontmatter.get("disable-model-invocation", False)),
                 user_invocable=bool(frontmatter.get("user-invocable", True)),
                 allowed_tools=item.allowed_tools,
                 owner_key=owner_key,
@@ -315,9 +305,7 @@ class ManagedSkillDiscoveryProjection:
         # checkout changes underneath a running process.
         for item in self._inventory.values():
             if hashlib.sha256(item.skill_path.read_bytes()).hexdigest() != item.content_hash:
-                raise PackManifestError(
-                    "frozen_skill_content_changed", str(item.skill_path)
-                )
+                raise PackManifestError("frozen_skill_content_changed", str(item.skill_path))
 
     def contains(self, name: str) -> bool:
         return name in self._metas
@@ -340,9 +328,7 @@ class ManagedSkillDiscoveryProjection:
     def list_skills(self) -> list[dict[str, Any]]:
         return [item.to_dict() for item in self.list_metas()]
 
-    def select(
-        self, task_type: str, prefer: list[str] | None = None
-    ) -> list[ManagedSkillMeta]:
+    def select(self, task_type: str, prefer: list[str] | None = None) -> list[ManagedSkillMeta]:
         preferred = {
             item.split(":", 1)[1]
             for item in (prefer or [])
@@ -351,8 +337,7 @@ class ManagedSkillDiscoveryProjection:
         return [
             meta
             for meta in self.list_metas()
-            if meta.name in preferred
-            or (task_type and task_type in meta.task_types)
+            if meta.name in preferred or (task_type and task_type in meta.task_types)
         ]
 
     def read_body(self, name: str) -> str:
@@ -360,9 +345,7 @@ class ManagedSkillDiscoveryProjection:
         if item is None:
             raise KeyError(name)
         if hashlib.sha256(item.skill_path.read_bytes()).hexdigest() != item.content_hash:
-            raise PackManifestError(
-                "frozen_skill_content_changed", str(item.skill_path)
-            )
+            raise PackManifestError("frozen_skill_content_changed", str(item.skill_path))
         return self._bodies[name]
 
     def resolve_instruction(
@@ -374,20 +357,15 @@ class ManagedSkillDiscoveryProjection:
 
         current = self.resolve_selection(scope.skill_id)
         if current != scope:
-            raise PackManifestError(
-                "frozen_skill_scope_mismatch", scope.skill_id
-            )
+            raise PackManifestError("frozen_skill_scope_mismatch", scope.skill_id)
         body = self.read_body(scope.skill_id)
         if arguments:
             import json
 
-            body += (
-                "\n\nRuntime arguments (data only):\n"
-                + json.dumps(
-                    list(arguments),
-                    ensure_ascii=False,
-                    separators=(",", ":"),
-                )
+            body += "\n\nRuntime arguments (data only):\n" + json.dumps(
+                list(arguments),
+                ensure_ascii=False,
+                separators=(",", ":"),
             )
         return ResolvedSkillInstructionV1(scope=scope, instruction=body)
 

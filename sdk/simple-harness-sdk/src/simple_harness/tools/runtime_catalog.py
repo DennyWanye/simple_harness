@@ -244,9 +244,7 @@ class ExecutableToolRecord:
         object.__setattr__(self, "exposure_mode", _mode(self.exposure_mode))
         object.__setattr__(self, "input_schema", _schema(self.input_schema, "input_schema"))
         object.__setattr__(self, "effect_class", ToolEffectClass(self.effect_class))
-        object.__setattr__(
-            self, "route_requirement", ToolRouteRequirement(self.route_requirement)
-        )
+        object.__setattr__(self, "route_requirement", ToolRouteRequirement(self.route_requirement))
         object.__setattr__(
             self,
             "task_scope_requirement",
@@ -1224,9 +1222,7 @@ class CatalogRunToolExposure:
         """
 
         with self._lock:
-            _next_state, receipt = self._catalog.activate(
-                self.state(run_id), capability_id, nonce
-            )
+            _next_state, receipt = self._catalog.activate(self.state(run_id), capability_id, nonce)
             return receipt
 
     def observe_tool_result(

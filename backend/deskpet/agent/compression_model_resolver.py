@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 """Resolve the Context OS compaction model without silent model fallback."""
+
 from __future__ import annotations
 
 from collections.abc import Iterable
@@ -61,6 +62,4 @@ class CompressionModelResolver:
                 # Explicit selection is a single candidate: transport retry is
                 # allowed inside the provider, cross-model fallback is not.
                 return CompressionModelResolution(requested, (candidate,), "explicit")
-        raise CompressionModelUnavailable(
-            f"compression_model_unavailable:{requested}"
-        )
+        raise CompressionModelUnavailable(f"compression_model_unavailable:{requested}")

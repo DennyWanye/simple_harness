@@ -19,10 +19,23 @@ USAGE = {"prompt_tokens": 40000, "completion_tokens": 120000, "total_tokens": 16
 
 def _chunk(delta: dict, finish: str | None = None) -> str:
     # the relay's real shape: ~230 bytes per token, most of it framing
-    return "data: " + json.dumps({"id": "cmb-5293d76ec49211f194fc460d9cacbd34", "model": "deepseek-v4.1-flash",
-                                  "object": "chat.completion.chunk", "created": 1791626815,
-                                  "choices": [{"index": 0, "delta": {"content": "", "function_call": None, **delta},
-                                               "logprobs": None, "finish_reason": finish or ""}], "usage": None})
+    return "data: " + json.dumps(
+        {
+            "id": "cmb-5293d76ec49211f194fc460d9cacbd34",
+            "model": "deepseek-v4.1-flash",
+            "object": "chat.completion.chunk",
+            "created": 1791626815,
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {"content": "", "function_call": None, **delta},
+                    "logprobs": None,
+                    "finish_reason": finish or "",
+                }
+            ],
+            "usage": None,
+        }
+    )
 
 
 def test_a_long_thinking_stream_is_bounded_by_what_is_kept_not_by_transport_bytes() -> None:
@@ -39,10 +52,22 @@ def test_a_long_thinking_stream_is_bounded_by_what_is_kept_not_by_transport_byte
         except ProviderProtocolError as refused:
             raise AssertionError(f"token {n} ({wire} wire bytes) refused: {refused}") from None
     assert wire > RETAINED_LIMIT  # the old rule would have rejected this stream long ago
-    stream.line(_chunk({"content": "done"}, finish="stop")); stream.line("")
-    stream.line("data: " + json.dumps({"id": "cmb-5293d76ec49211f194fc460d9cacbd34", "model": "deepseek-v4.1-flash",
-                                       "choices": [], "usage": USAGE})); stream.line("")
-    stream.line("data: [DONE]"); stream.line("")
+    stream.line(_chunk({"content": "done"}, finish="stop"))
+    stream.line("")
+    stream.line(
+        "data: "
+        + json.dumps(
+            {
+                "id": "cmb-5293d76ec49211f194fc460d9cacbd34",
+                "model": "deepseek-v4.1-flash",
+                "choices": [],
+                "usage": USAGE,
+            }
+        )
+    )
+    stream.line("")
+    stream.line("data: [DONE]")
+    stream.line("")
     payload = stream.payload()
     assert payload["choices"][0]["message"]["content"] == "done"
     assert len(payload["choices"][0]["message"]["reasoning_content"]) == 240_000
@@ -54,7 +79,8 @@ def test_retained_text_past_the_memory_bound_is_still_refused_with_a_reason() ->
     piece = "x" * 65536
     with pytest.raises(ProviderProtocolError) as refused:
         for _ in range(RETAINED_LIMIT // 65536 + 2):
-            stream.line(_chunk({"reasoning_content": piece})); stream.line("")
+            stream.line(_chunk({"reasoning_content": piece}))
+            stream.line("")
     assert "retained text larger than the memory bound" in str(refused.value)
 
 
@@ -71,8 +97,20 @@ def test_tool_call_ids_count_toward_the_memory_bound() -> None:
     stream = ChatStream()
     with pytest.raises(ProviderProtocolError) as refused:
         for index in range(128):
-            stream.line(_chunk({"tool_calls": [{"index": index, "id": "i" * (1024 * 1024), "type": "function",
-                                                "function": {"name": "f", "arguments": ""}}]}))
+            stream.line(
+                _chunk(
+                    {
+                        "tool_calls": [
+                            {
+                                "index": index,
+                                "id": "i" * (1024 * 1024),
+                                "type": "function",
+                                "function": {"name": "f", "arguments": ""},
+                            }
+                        ]
+                    }
+                )
+            )
             stream.line("")
     assert "retained text larger than the memory bound" in str(refused.value)
     assert index < 20, index  # 16 MiB of ids: refused well before all 128
@@ -81,13 +119,17 @@ def test_tool_call_ids_count_toward_the_memory_bound() -> None:
 def test_empty_pieces_leave_nothing_behind() -> None:
     """独立核验 opt.180 M2：每个片段一个列表槽位是上限看不见的内存；现在用缓冲区，空片段不占。"""
     stream = ChatStream()
-    billed = json.loads(_chunk({"reasoning_content": ""})[6:]); billed["usage"] = USAGE  # 核验 S5：带计费才不算占位块
+    billed = json.loads(_chunk({"reasoning_content": ""})[6:])
+    billed["usage"] = USAGE  # 核验 S5：带计费才不算占位块
     for _ in range(50_000):
-        stream.line("data: " + json.dumps(billed)); stream.line("")
+        stream.line("data: " + json.dumps(billed))
+        stream.line("")
     assert stream.usage == USAGE  # the pieces were really processed, not skipped as placeholders
     assert stream.reasoning.tell() == 0 and stream.content.tell() == 0
-    stream.line(_chunk({"content": "ok"}, finish="stop")); stream.line("")
-    stream.line("data: [DONE]"); stream.line("")
+    stream.line(_chunk({"content": "ok"}, finish="stop"))
+    stream.line("")
+    stream.line("data: [DONE]")
+    stream.line("")
     message = stream.payload()["choices"][0]["message"]
     assert message["content"] == "ok" and "reasoning_content" not in message
 
@@ -103,7 +145,8 @@ def test_every_refusal_names_the_rule_it_applies() -> None:
     for line, reason in cases.items():
         stream = ChatStream()
         with pytest.raises(ProviderProtocolError) as refused:
-            stream.line(line); stream.line("")
+            stream.line(line)
+            stream.line("")
         assert reason in str(refused.value), (line, str(refused.value))
     stream = ChatStream()
     with pytest.raises(ProviderProtocolError) as refused:

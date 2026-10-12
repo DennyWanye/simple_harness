@@ -1,4 +1,5 @@
 """2026-09-25 UI 全量点击：自动模式下 Host 代签"授权本轮规划"，并如实记成自动。"""
+
 import pytest
 from agent_orchestrator.testing.word_counter import FixtureWordCounter
 from deskpet.orchestration.service import OrchestrationService, OrchestrationSettings
@@ -23,20 +24,33 @@ def _service(tmp_path, mode, control):
             raise mode
         return mode
 
-    service = OrchestrationService(tmp_path, OrchestrationSettings(), principal=object(),
-                                   drive=False, permission_mode_reader=read, native_test_counter=FixtureWordCounter())
+    service = OrchestrationService(
+        tmp_path,
+        OrchestrationSettings(),
+        principal=object(),
+        drive=False,
+        permission_mode_reader=read,
+        native_test_counter=FixtureWordCounter(),
+    )
     service._state, service._control = "available", control
     import sqlite3
     from types import SimpleNamespace
+
     db = sqlite3.connect(":memory:")
     db.execute("CREATE TABLE missions(mission_id, status, created_at)")
     # opt.169 起部署职责逐任务先问"是否被重启恢复隔离"（SDK 3466f6e38）；桩照真编排器给出这个判断
-    service._duties.bind(SimpleNamespace(store=SimpleNamespace(connection=db),
-                                         recovery_isolated=lambda _mission_id: False), control)
+    service._duties.bind(
+        SimpleNamespace(
+            store=SimpleNamespace(connection=db), recovery_isolated=lambda _mission_id: False
+        ),
+        control,
+    )
     return service
 
 
-PENDING = [{"mission_id": "m1", "request_id": "r1", "intent_id": "i1", "state": "AUTHORIZATION_REQUIRED"}]
+PENDING = [
+    {"mission_id": "m1", "request_id": "r1", "intent_id": "i1", "state": "AUTHORIZATION_REQUIRED"}
+]
 
 
 @pytest.mark.asyncio
@@ -44,9 +58,15 @@ async def test_auto_mode_issues_once_as_host_auto_permission(tmp_path):
     control = _Control(PENDING)
     service = _service(tmp_path, "auto", control)
     assert await service._auto_authorize_planning() == 1
-    assert control.issued == [{"operation": "issue", "mission_id": "m1", "request_id": "r1",
-                               "command_id": "host-auto-planning:r1",
-                               "approval_source": "HOST_AUTO_PERMISSION"}]
+    assert control.issued == [
+        {
+            "operation": "issue",
+            "mission_id": "m1",
+            "request_id": "r1",
+            "command_id": "host-auto-planning:r1",
+            "approval_source": "HOST_AUTO_PERMISSION",
+        }
+    ]
     assert await service._auto_authorize_planning() == 0  # same request is not re-issued
     assert len(control.issued) == 1
 
@@ -90,6 +110,7 @@ def test_a_round_that_changed_nothing_waits_the_long_tick(tmp_path):
     class _Store:
         def list_missions(self):
             from types import SimpleNamespace
+
             return [SimpleNamespace(id="m1", status="ACTIVE")]
 
         def waiting_on(self, mission_id):

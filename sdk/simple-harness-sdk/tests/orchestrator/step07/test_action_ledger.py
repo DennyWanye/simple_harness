@@ -144,12 +144,20 @@ def test_an_l2_candidate_waits_for_one_approval_bound_to_its_hashes(tmp_path):
     async def case():
         async with ledger_world(tmp_path) as w:
             action = w.propose(candidate())
-            assert (action["state"], action["level"], action["version"]) == ("AWAITING_APPROVAL", "L2", 1)
+            assert (action["state"], action["level"], action["version"]) == (
+                "AWAITING_APPROVAL",
+                "L2",
+                1,
+            )
             assert action["idempotency_key"] == f"{action['action_id']}:v1"
             assert action["params_hash"] == params_hash(candidate()["params"])
             assert action["artifact_hash"] == HASH_A and action["task_id"] == w.leaf.id
             request = w.store.get_approval(action["approval_request_id"])
-            assert (request["state"], request["required_count"], request["kind"]) == ("PENDING", 1, "action")
+            assert (request["state"], request["required_count"], request["kind"]) == (
+                "PENDING",
+                1,
+                "action",
+            )
             assert request["binding"] == {
                 "mission_id": w.mission_id,
                 "task_id": w.leaf.id,
@@ -159,7 +167,9 @@ def test_an_l2_candidate_waits_for_one_approval_bound_to_its_hashes(tmp_path):
                 "artifact_hash": HASH_A,
             }
             assert w.events("ActionProposed") and w.events("ApprovalRequested")
-            assert w.publish_ledger() == [] and w.published_files() == []  # nothing touched the service
+            assert (
+                w.publish_ledger() == [] and w.published_files() == []
+            )  # nothing touched the service
 
     asyncio.run(case())
 
@@ -169,10 +179,14 @@ def test_the_same_candidate_twice_is_one_version_and_a_changed_one_supersedes_it
         async with ledger_world(tmp_path) as w:
             first = w.propose(candidate())
             again = w.propose(candidate())
-            assert again["action_key"] == first["action_key"]  # idempotent: same params, same artifact
+            assert (
+                again["action_key"] == first["action_key"]
+            )  # idempotent: same params, same artifact
             assert len(w.store.list_approvals(w.mission_id)) == 1
             changed = w.propose(candidate(value="beta"), artifact_hash=HASH_B, result="result-2")
-            assert changed["action_id"] == first["action_id"] and changed["version"] == 2  # same business action
+            assert (
+                changed["action_id"] == first["action_id"] and changed["version"] == 2
+            )  # same business action
             old = w.store.get_action(first["action_key"])
             assert old["state"] == "SUPERSEDED" and old["superseded_by"] == changed["action_key"]
             assert w.store.get_approval(first["approval_request_id"])["state"] == "SUPERSEDED"
@@ -187,18 +201,35 @@ def test_policy_scope_and_schema_refusals_are_checked_before_anything_is_written
         async with ledger_world(tmp_path) as w:
             before = w.store.connection.total_changes
             refusals = {
-                "payment": {"connector": "payment", "operation": "pay", "target": "acct-1",
-                            "params": {"amount": 5}, "reason": "x"},
-                "nowhere": {"connector": "nowhere", "operation": "set", "target": "x", "params": {}, "reason": "x"},
+                "payment": {
+                    "connector": "payment",
+                    "operation": "pay",
+                    "target": "acct-1",
+                    "params": {"amount": 5},
+                    "reason": "x",
+                },
+                "nowhere": {
+                    "connector": "nowhere",
+                    "operation": "set",
+                    "target": "x",
+                    "params": {},
+                    "reason": "x",
+                },
             }
             for cand in refusals.values():
                 with pytest.raises(CandidateRejected) as refused:
                     w.propose(cand)
                 assert refused.value.reason == "connector_not_enabled"
-            with pytest.raises(CandidateRejected) as scope:  # D7-3': outside the Mission's action criteria
+            with pytest.raises(
+                CandidateRejected
+            ) as scope:  # D7-3': outside the Mission's action criteria
                 w.propose(candidate(target="reports/other.md"))
             assert scope.value.reason == "action_out_of_scope"
-            for smuggled in ({"approved": True}, {"level": "L0"}, {"idempotency_key": "k"}):  # S7-08
+            for smuggled in (
+                {"approved": True},
+                {"level": "L0"},
+                {"idempotency_key": "k"},
+            ):  # S7-08
                 with pytest.raises(CandidateRejected) as schema:
                     w.propose({**candidate(), **smuggled})
                 assert schema.value.reason == "invalid_candidate"
@@ -218,20 +249,38 @@ def test_a_decision_needs_an_active_mission_and_an_ending_mission_cancels_open_w
         async with ledger_world(tmp_path) as w:
             open_action = w.propose(candidate(target="a.md"))
             granted = w.propose(candidate(target="b.md"))
-            w.service.decide_approval(granted["approval_request_id"], principal=ALICE, decision="grant",
-                                      nonce="n-b", deployment=ENABLED)
+            w.service.decide_approval(
+                granted["approval_request_id"],
+                principal=ALICE,
+                decision="grant",
+                nonce="n-b",
+                deployment=ENABLED,
+            )
             cancelled = w.service.cancel_open_actions(w.mission_id, reason="mission_cancelled")
             assert sorted(a["action_key"] for a in cancelled) == sorted(
-                [open_action["action_key"], granted["action_key"]])
+                [open_action["action_key"], granted["action_key"]]
+            )
             assert w.store.get_approval(open_action["approval_request_id"])["state"] == "CANCELLED"
             with pytest.raises(ActionCommitError):  # a closed request takes no decision
-                w.service.decide_approval(open_action["approval_request_id"], principal=ALICE,
-                                          decision="grant", nonce="n-a", deployment=ENABLED)
+                w.service.decide_approval(
+                    open_action["approval_request_id"],
+                    principal=ALICE,
+                    decision="grant",
+                    nonce="n-a",
+                    deployment=ENABLED,
+                )
             late = w.propose(candidate(target="c.md"))
-            assert w.control.cancel(w.mission_id)["changed"] is True  # the person cancels the Mission
+            assert (
+                w.control.cancel(w.mission_id)["changed"] is True
+            )  # the person cancels the Mission
             with pytest.raises(ActionCommitError):  # D7-4': no grant on a Mission that ended
-                w.service.decide_approval(late["approval_request_id"], principal=ALICE, decision="grant",
-                                          nonce="n-c", deployment=ENABLED)
+                w.service.decide_approval(
+                    late["approval_request_id"],
+                    principal=ALICE,
+                    decision="grant",
+                    nonce="n-c",
+                    deployment=ENABLED,
+                )
             with pytest.raises(CandidateRejected) as ended:
                 w.propose(candidate(target="a.md", value="x"), artifact_hash=HASH_B)
             assert ended.value.reason == "mission_not_active"
@@ -247,14 +296,20 @@ def test_a_grant_counts_once_per_nonce_and_only_a_human_principal_decides(tmp_pa
             request_id = action["approval_request_id"]
             with pytest.raises(ValueError):
                 Principal("model", kind="agent")
-            with pytest.raises(ActionCommitError):  # review P2-2: a PENDING request is rejected, not revoked
+            with pytest.raises(
+                ActionCommitError
+            ):  # review P2-2: a PENDING request is rejected, not revoked
                 w.service.revoke_approval(request_id, principal=BOB, reason="还没批就撤")
             granted, receipt = w.service.decide_approval(
-                request_id, principal=ALICE, decision="grant", nonce="n-1", deployment=ENABLED)
+                request_id, principal=ALICE, decision="grant", nonce="n-1", deployment=ENABLED
+            )
             replay, receipt_again = w.service.decide_approval(
-                request_id, principal=ALICE, decision="grant", nonce="n-1", deployment=ENABLED)
+                request_id, principal=ALICE, decision="grant", nonce="n-1", deployment=ENABLED
+            )
             assert granted["state"] == "GRANTED" and receipt == receipt_again and len(receipt) == 64
-            assert len(w.store.list_decisions(request_id)) == 1  # the replayed receipt is not counted twice
+            assert (
+                len(w.store.list_decisions(request_id)) == 1
+            )  # the replayed receipt is not counted twice
             assert w.store.get_action(action["action_key"])["state"] == "APPROVED"
             [grant] = w.events("ApprovalGranted")
             assert grant["counted"] is True
@@ -268,34 +323,60 @@ def test_reject_revoke_and_expiry_each_close_the_request_without_success(tmp_pat
 
     async def case():
         async with ledger_world(tmp_path) as w:
-            short = DeploymentPolicy(enabled_connectors=("file_publish",), max_action_level="L2",
-                                     approval_ttl_seconds=0.6)
+            short = DeploymentPolicy(
+                enabled_connectors=("file_publish",),
+                max_action_level="L2",
+                approval_ttl_seconds=0.6,
+            )
             a = w.propose(candidate(target="a.md"), deployment=short)
             b = w.propose(candidate(target="b.md"), deployment=short)
             c = w.propose(candidate(target="c.md"), deployment=short)
             d = w.propose(candidate(), deployment=short)
-            rejected, _ = w.service.decide_approval(a["approval_request_id"], principal=ALICE, decision="reject",
-                                                    nonce="n-a", deployment=short, reason="不同意")
+            rejected, _ = w.service.decide_approval(
+                a["approval_request_id"],
+                principal=ALICE,
+                decision="reject",
+                nonce="n-a",
+                deployment=short,
+                reason="不同意",
+            )
             assert rejected["state"] == "REJECTED"
             assert w.store.get_action(a["action_key"])["state"] == "REJECTED"
-            w.service.decide_approval(b["approval_request_id"], principal=ALICE, decision="grant",
-                                      nonce="n-b", deployment=short)
-            revoked = w.service.revoke_approval(b["approval_request_id"], principal=BOB, reason="撤回")
+            w.service.decide_approval(
+                b["approval_request_id"],
+                principal=ALICE,
+                decision="grant",
+                nonce="n-b",
+                deployment=short,
+            )
+            revoked = w.service.revoke_approval(
+                b["approval_request_id"], principal=BOB, reason="撤回"
+            )
             assert revoked["state"] == "REVOKED"
             assert w.store.get_action(b["action_key"])["state"] == "REVOKED"
             await asyncio.sleep(0.7)
             # review P2-3: an expiry found by a decision is committed, not rolled back with the
             # refusal; the decision sweeps every request that is due (c as well as d)
             with pytest.raises(ActionCommitError):
-                w.service.decide_approval(d["approval_request_id"], principal=ALICE, decision="grant",
-                                          nonce="n-d", deployment=short)
+                w.service.decide_approval(
+                    d["approval_request_id"],
+                    principal=ALICE,
+                    decision="grant",
+                    nonce="n-d",
+                    deployment=short,
+                )
             for due in (c, d):
                 assert w.store.get_approval(due["approval_request_id"])["state"] == "EXPIRED"
                 assert w.store.get_action(due["action_key"])["state"] == "EXPIRED"
             assert w.service.expire_approvals(w.mission_id) == []  # nothing left to expire
             with pytest.raises(ActionCommitError):  # a closed request takes no more decisions
-                w.service.decide_approval(a["approval_request_id"], principal=BOB, decision="grant",
-                                          nonce="n-late", deployment=short)
+                w.service.decide_approval(
+                    a["approval_request_id"],
+                    principal=BOB,
+                    decision="grant",
+                    nonce="n-late",
+                    deployment=short,
+                )
             kinds = {event.type for event in w.store.list_events(w.mission_id)}
             assert {"ApprovalRejected", "ApprovalRevoked", "ApprovalExpired"} <= kinds
             assert len(w.events("ApprovalExpired")) == 2
@@ -338,11 +419,15 @@ def test_the_ledger_never_rewrites_what_reality_did(tmp_path, outcome):
         async with operation_world(tmp_path, key=f"reality-{outcome}", publish_setup=setup) as w:
             action = await until_pending(w)
             key = action["action_key"]
-            if outcome == "rejected":  # someone else's file already sits at the exact published name
+            if (
+                outcome == "rejected"
+            ):  # someone else's file already sits at the exact published name
                 name = _name_for(action["idempotency_key"], PurePosixPath(TARGET))
                 (w.published / "reports").mkdir(parents=True, exist_ok=True)
                 (w.published / "reports" / name).write_text("别人放的", encoding="utf-8")
-            request = [a for a in w.control.approvals(w.mission_id) if a.get("state") == "PENDING"][0]
+            request = [a for a in w.control.approvals(w.mission_id) if a.get("state") == "PENDING"][
+                0
+            ]
             assert w.control.decide(request["request_id"], "approve")["request_state"] == "GRANTED"
             same = {**candidate(), "params": dict(action["params"])}
             changed = candidate(value="改过的内容")
@@ -352,11 +437,16 @@ def test_the_ledger_never_rewrites_what_reality_did(tmp_path, outcome):
                 return str(w.store.get_action(key)["state"])
 
             if outcome == "in_flight_then_succeeded":
+
                 def probe() -> bool:
                     if state() == "HANDED_OFF" and "in_flight" not in seen:
-                        seen["in_flight"] = w.propose(changed, artifact_hash=HASH_B, result="result-2")
+                        seen["in_flight"] = w.propose(
+                            changed, artifact_hash=HASH_B, result="result-2"
+                        )
                         with pytest.raises(ActionCommitError):  # no revocation once handed off
-                            w.service.revoke_approval(action["approval_request_id"], principal=BOB, reason="太晚了")
+                            w.service.revoke_approval(
+                                action["approval_request_id"], principal=BOB, reason="太晚了"
+                            )
                         seen["still"] = state()
                         gate.set()
                     return state() == "SUCCEEDED"
@@ -365,37 +455,67 @@ def test_the_ledger_never_rewrites_what_reality_did(tmp_path, outcome):
                 busy = seen["in_flight"]
                 assert busy["state"] == "REFUSED" and busy["refused"] == "action_in_flight", busy
                 assert seen["still"] == "HANDED_OFF"
-                again = w.propose(same, artifact_hash=action["artifact_hash"], result=action["result_id"])
+                again = w.propose(
+                    same, artifact_hash=action["artifact_hash"], result=action["result_id"]
+                )
                 assert again["action_key"] == key  # the same content: nothing new
-                done = w.propose(candidate(value="又改了"), artifact_hash="c" * 64, result="result-3")
+                done = w.propose(
+                    candidate(value="又改了"), artifact_hash="c" * 64, result="result-3"
+                )
                 assert done["state"] == "REFUSED" and done["refused"] == "action_already_executed"
                 assert state() == "SUCCEEDED" and len(w.events("ActionRefused")) == 2
-                assert not w.store.list_actions(w.mission_id, "AWAITING_APPROVAL", "APPROVED", "PROPOSED")
+                assert not w.store.list_actions(
+                    w.mission_id, "AWAITING_APPROVAL", "APPROVED", "PROPOSED"
+                )
                 assert w.publish_ledger().count("PREPARED") == 1  # published exactly once
                 return
             terminal = "FAILED" if outcome == "rejected" else "UNKNOWN"
             await run_until(w.product, lambda: state() == terminal)
             ran = w.store.get_action(key)
-            assert ran["handoffs"] == 1 and w.published_files() == ([] if outcome == "lost" else
-                                                                    [f"reports/{_name_for(action['idempotency_key'], PurePosixPath(TARGET))}"])
+            assert ran["handoffs"] == 1 and w.published_files() == (
+                []
+                if outcome == "lost"
+                else [f"reports/{_name_for(action['idempotency_key'], PurePosixPath(TARGET))}"]
+            )
             snapshot = build_operation_snapshot(w.mission_id, reader=StoreOperationReader(w.store))
-            assert [effect for _operation, effect in snapshot.effects] == [OperationEffect.UNRESOLVED]
+            assert [effect for _operation, effect in snapshot.effects] == [
+                OperationEffect.UNRESOLVED
+            ]
             with pytest.raises(SourceUnavailable, match="operation_unresolved"):
                 operation_gate(snapshot)
             if outcome == "rejected":
                 early = w.propose(changed, artifact_hash=HASH_B, result="result-2")
-                assert early["state"] == "REFUSED" and early["refused"] == "action_outcome_unproven", early
-                await run_until(w.product, lambda: any(
-                    a["state"] == "AWAITING_APPROVAL" for a in w.store.list_actions(w.mission_id)))
-                [proof] = [e.payload for e in w.store.list_events(w.mission_id)
-                           if e.type == "ActionScopedReconciled" and e.payload["action_key"] == key]
+                assert (
+                    early["state"] == "REFUSED" and early["refused"] == "action_outcome_unproven"
+                ), early
+                await run_until(
+                    w.product,
+                    lambda: any(
+                        a["state"] == "AWAITING_APPROVAL"
+                        for a in w.store.list_actions(w.mission_id)
+                    ),
+                )
+                [proof] = [
+                    e.payload
+                    for e in w.store.list_events(w.mission_id)
+                    if e.type == "ActionScopedReconciled" and e.payload["action_key"] == key
+                ]
                 assert proof["outcome"] == "NOT_APPLIED_FINAL"
-                operation_gate(build_operation_snapshot(w.mission_id, reader=StoreOperationReader(w.store)))
-                [v2] = [a for a in w.store.list_actions(w.mission_id) if a["state"] == "AWAITING_APPROVAL"]
+                operation_gate(
+                    build_operation_snapshot(w.mission_id, reader=StoreOperationReader(w.store))
+                )
+                [v2] = [
+                    a
+                    for a in w.store.list_actions(w.mission_id)
+                    if a["state"] == "AWAITING_APPROVAL"
+                ]
                 assert v2["params_hash"] == ran["params_hash"] and v2["after"] == "FAILED"
                 assert v2["previous_attempt"]["outcome"] == "service_refused"
                 assert "already exists" in v2["previous_attempt"]["reason"]
-                assert w.store.get_approval(v2["approval_request_id"])["summary"]["previous_attempt"] == v2["previous_attempt"]
+                assert (
+                    w.store.get_approval(v2["approval_request_id"])["summary"]["previous_attempt"]
+                    == v2["previous_attempt"]
+                )
                 name = _name_for(action["idempotency_key"], PurePosixPath(TARGET))
                 assert (w.published / "reports" / name).read_text(encoding="utf-8") == "别人放的"
                 return

@@ -28,7 +28,9 @@ def test_every_pool_identity_byte_is_unchanged(tmp_path, models, snapshot):
     ``agent_orchestrator/deployment/native_pools.py`` → red."""
     actual = P.build(tmp_path, models=models, snapshot=snapshot, counter_factory=FixtureWordCounter)
     expected = BASELINE[f"models={models},snapshot={snapshot}"]
-    assert json.dumps(actual, ensure_ascii=False, sort_keys=True) == json.dumps(expected, ensure_ascii=False, sort_keys=True)
+    assert json.dumps(actual, ensure_ascii=False, sort_keys=True) == json.dumps(
+        expected, ensure_ascii=False, sort_keys=True
+    )
 
 
 #: 要求书对同样输入的哈希（1、2、3 条成功条件）。原值是搬迁前 Host 算的；2026-10-07 试用前全量回归按
@@ -47,6 +49,12 @@ def test_the_one_requirements_document_is_byte_for_byte_the_hosts(count):
 
     from agent_orchestrator.deployment.root import user_requirements
 
-    mission = SimpleNamespace(id=f"mission-pin-{count}", goal="写一份报告",
-                              success_criteria=tuple(f"条件{i}" for i in range(count)))
-    assert user_requirements(mission, SimpleNamespace(principal_id="principal-pin")).content_hash() == ROOT_REQUIREMENTS[count]
+    mission = SimpleNamespace(
+        id=f"mission-pin-{count}",
+        goal="写一份报告",
+        success_criteria=tuple(f"条件{i}" for i in range(count)),
+    )
+    assert (
+        user_requirements(mission, SimpleNamespace(principal_id="principal-pin")).content_hash()
+        == ROOT_REQUIREMENTS[count]
+    )

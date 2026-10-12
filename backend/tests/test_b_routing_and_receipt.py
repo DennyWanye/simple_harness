@@ -73,8 +73,7 @@ async def test_receipt_args_strip_injected_keys(caplog, monkeypatch):
     assert store.receipt_args == {"url": "https://example.com"}
     assert not any(str(k).startswith("_") for k in store.receipt_args)
     assert not any(
-        "receipt_store_provider raised in execute_tool" in r.message
-        for r in caplog.records
+        "receipt_store_provider raised in execute_tool" in r.message for r in caplog.records
     )
 
 
@@ -102,15 +101,11 @@ async def test_receipt_marks_handler_domain_error_as_failed(monkeypatch):
             "description": "domain failure",
             "parameters": {"type": "object", "properties": {}},
         },
-        lambda _args, _task: json.dumps(
-            {"error": "tool_catalog_stale", "retriable": False}
-        ),
+        lambda _args, _task: json.dumps({"error": "tool_catalog_stale", "retriable": False}),
     )
     registry.set_receipt_store_provider(lambda: _Store())
 
-    envelope = await registry.execute_tool(
-        "domain_failure", {}, session_id="s1", task_id="t1"
-    )
+    envelope = await registry.execute_tool("domain_failure", {}, session_id="s1", task_id="t1")
 
     assert envelope["ok"] is True
     assert captured["ok"] is False

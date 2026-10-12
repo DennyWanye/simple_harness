@@ -219,8 +219,9 @@ class FilePublishConnector:
         # One publish at a time holds the ledger lock from the duplicate check to its last
         # line, so a reconciler that gets the lock sees a finished history (阶段 B 裁决第 1 类).
         with self._exclusive():
-            return self._execute_locked(target, relative, params, data, content_hash,
-                                        idempotency_key=idempotency_key)
+            return self._execute_locked(
+                target, relative, params, data, content_hash, idempotency_key=idempotency_key
+            )
 
     def _exclusive(self) -> Any:
         import contextlib
@@ -237,8 +238,16 @@ class FilePublishConnector:
 
         return held()
 
-    def _execute_locked(self, target: str, relative: PurePosixPath, params: Mapping[str, Any],
-                        data: bytes, content_hash: str, *, idempotency_key: str) -> Receipt:
+    def _execute_locked(
+        self,
+        target: str,
+        relative: PurePosixPath,
+        params: Mapping[str, Any],
+        data: bytes,
+        content_hash: str,
+        *,
+        idempotency_key: str,
+    ) -> Receipt:
         done = self._entries(idempotency_key)
         if done and done[-1].get("state") != "ABORTED":  # this key already reached the link
             return self._published(done[-1])
@@ -332,8 +341,11 @@ class FilePublishConnector:
             try:
                 lines = 0
                 if self.ledger_path.is_file():
-                    lines = sum(1 for line in self.ledger_path.read_text(encoding="utf-8").splitlines()
-                                if line.strip())
+                    lines = sum(
+                        1
+                        for line in self.ledger_path.read_text(encoding="utf-8").splitlines()
+                        if line.strip()
+                    )
                 entries = self._entries(idempotency_key)
                 return {
                     "protocol": LEDGER_PROTOCOL,

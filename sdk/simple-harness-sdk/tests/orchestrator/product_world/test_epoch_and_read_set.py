@@ -7,6 +7,7 @@
 
 **改坏检验**：过期拒绝照样计入答错 → 第一条里答错次数不为 0 → 变红。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -33,24 +34,39 @@ def test_stale_reply_after_epoch_moved_is_not_charged(tmp_path):
         if not state["bumped"] and state["mission"] is not None:
             # 规划器作答期间世界变了（真实会发生：一个文件变了、一条观察的真值翻了）
             state["bumped"] = True
-            HtnStore(state["world"].store).bump_epoch(state["mission"], "mission", bumped_by="test-world-moved")
+            HtnStore(state["world"].store).bump_epoch(
+                state["mission"], "mission", bumped_by="test-world-moved"
+            )
         elif "charged_when_stale" not in state:
             # 过期那次被退回之后、任何一次提交之前：系统数到的"答错次数"
             state["charged_when_stale"] = state["world"].loop._planning_attempts(state["mission"])
         return planner_reply(request)
 
     async def case():
-        async with product_world(tmp_path / "root", LayeredScriptedProvider(planner=planner)) as world:
+        async with product_world(
+            tmp_path / "root", LayeredScriptedProvider(planner=planner)
+        ) as world:
             state["world"] = world
-            mission_id = world.create({"goal": "写一份 NOTES.md", "success_criteria": ["file:NOTES.md"],
-                                       "idempotency_key": "epoch-stale"})["mission_id"]
+            mission_id = world.create(
+                {
+                    "goal": "写一份 NOTES.md",
+                    "success_criteria": ["file:NOTES.md"],
+                    "idempotency_key": "epoch-stale",
+                }
+            )["mission_id"]
             state["mission"] = mission_id
             mission = await world.run_until_settled(mission_id, rounds=20)
             assert mission.status.value == "COMPLETED", mission.final_report
             events = list(world.store.list_events(mission_id))
-            stale = [e for e in events if e.type == "PlanningRejected"
-                     and any(p.get("code") == "REQUEST_BINDING_STALE"
-                             for p in (e.payload.get("detail") or {}).get("problems", ()))]
+            stale = [
+                e
+                for e in events
+                if e.type == "PlanningRejected"
+                and any(
+                    p.get("code") == "REQUEST_BINDING_STALE"
+                    for p in (e.payload.get("detail") or {}).get("problems", ())
+                )
+            ]
             assert len(stale) == 1, [e.payload for e in events if e.type == "PlanningRejected"]
             # 那次拒收不算规划器答错：把它从事件流里单独数一遍
             from agent_orchestrator.contracts.error_table import refusal_charges_planner
@@ -65,9 +81,14 @@ def test_stale_reply_after_epoch_moved_is_not_charged(tmp_path):
             assert [e for e in rejected if refusal_charges_planner(_refusal_codes(e))] == []
             assert state["charged_when_stale"] == 0
             # 提交的读集：有作用域纪元和被细化目标的义务，没有已删的三项
-            rows = [json.loads(row[0]) for row in world.store.connection.execute(
-                "SELECT item_json FROM plan_read_sets WHERE mission_id=? AND subject_type='read_set'"
-                " ORDER BY created_at, rowid", (mission_id,))]
+            rows = [
+                json.loads(row[0])
+                for row in world.store.connection.execute(
+                    "SELECT item_json FROM plan_read_sets WHERE mission_id=? AND subject_type='read_set'"
+                    " ORDER BY created_at, rowid",
+                    (mission_id,),
+                )
+            ]
             read_set = rows[-1]
             assert {"scope_id": "mission", "validity_epoch": 1} in read_set["scope_epochs"]
             assert read_set.get("obligation_revisions"), read_set
@@ -92,14 +113,25 @@ def test_pending_question_survives_epoch_change(tmp_path):
         if not state["asked"]:
             state["asked"] = True
             goal = next(item for item in package["views"]["goals"] if item["open"])
-            return decision(goal["subject_key"], "REQUEST_HUMAN", {
-                "question": "NOTES.md 用中文还是英文？", "options": [], "blocking": True}, "先问清楚语言。")
+            return decision(
+                goal["subject_key"],
+                "REQUEST_HUMAN",
+                {"question": "NOTES.md 用中文还是英文？", "options": [], "blocking": True},
+                "先问清楚语言。",
+            )
         return planner_reply(request)
 
     async def case():
-        async with product_world(tmp_path / "root", LayeredScriptedProvider(planner=planner)) as world:
-            mission_id = world.create({"goal": "写一份 NOTES.md", "success_criteria": ["file:NOTES.md"],
-                                       "idempotency_key": "question-epoch"})["mission_id"]
+        async with product_world(
+            tmp_path / "root", LayeredScriptedProvider(planner=planner)
+        ) as world:
+            mission_id = world.create(
+                {
+                    "goal": "写一份 NOTES.md",
+                    "success_criteria": ["file:NOTES.md"],
+                    "idempotency_key": "question-epoch",
+                }
+            )["mission_id"]
             humans = PlanningHumanStore(world.store)
             for _ in range(6):
                 await world.drain(timeout=20)
@@ -111,9 +143,14 @@ def test_pending_question_survives_epoch_change(tmp_path):
             await world.drain(timeout=20)
             [question] = humans.list(mission_id)
             assert question["state"] == "PENDING"  # 没被收回
-            world.control.answer_planning_question({
-                "decision_id": question["decision_id"], "answer": "中文",
-                "expected_version": int(question["version"]), "nonce": "answer-1"})
+            world.control.answer_planning_question(
+                {
+                    "decision_id": question["decision_id"],
+                    "answer": "中文",
+                    "expected_version": int(question["version"]),
+                    "nonce": "answer-1",
+                }
+            )
             mission = await world.run_until_settled(mission_id, rounds=20)
             assert mission.status.value == "COMPLETED", mission.final_report
 

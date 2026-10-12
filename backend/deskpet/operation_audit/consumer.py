@@ -51,9 +51,7 @@ class PublicAuditReader:
         run_id = RunId(claim.job["sdk_run_id"])
         if claim.job["snapshot_hash"] is None:
             return await client.open_run_operation_audit(run_id, page_size=page_size)
-        return await client.read_run_operation_audit_page(
-            run_id, cursor=claim.job["next_cursor"]
-        )
+        return await client.read_run_operation_audit_page(run_id, cursor=claim.job["next_cursor"])
 
 
 def validated_page(result: object, claim: ReadClaim, page_size: int) -> dict[str, Any]:
@@ -65,10 +63,7 @@ def validated_page(result: object, claim: ReadClaim, page_size: int) -> dict[str
     value = cast(Any, result).to_json()
     if len(canonical(value).encode()) > 2 * 1024 * 1024:
         raise AuditPageInvalid()
-    if (
-        value["run_id"] != claim.job["sdk_run_id"]
-        or value["page_index"] != claim.job["next_page"]
-    ):
+    if value["run_id"] != claim.job["sdk_run_id"] or value["page_index"] != claim.job["next_page"]:
         raise AuditPageInvalid()
     for key in ("page_index", "page_size", "total_operations", "total_pages"):
         if type(value[key]) is not int or value[key] < 0:
@@ -84,10 +79,7 @@ def validated_page(result: object, claim: ReadClaim, page_size: int) -> dict[str
     ):
         raise AuditPageInvalid()
     for key in ("snapshot_hash", "page_hash"):
-        if (
-            not isinstance(value[key], str)
-            or re.fullmatch(r"[0-9a-f]{64}", value[key]) is None
-        ):
+        if not isinstance(value[key], str) or re.fullmatch(r"[0-9a-f]{64}", value[key]) is None:
             raise AuditPageInvalid()
     cursor = value["next_cursor"]
     last = value["page_index"] + 1 == value["total_pages"]
@@ -169,8 +161,7 @@ def findings_for(page: dict[str, Any]) -> list[dict[str, Any]]:
             and (
                 usage is None
                 or any(
-                    usage.get(k) is None
-                    for k in ("input_tokens", "output_tokens", "total_tokens")
+                    usage.get(k) is None for k in ("input_tokens", "output_tokens", "total_tokens")
                 )
             )
         ):
@@ -235,9 +226,7 @@ class TerminalAuditConsumer:
             await self.store.admit(source)
         processed = 0
         for _ in range(max_pages):
-            claim = await self.store.claim(
-                self.worker, lease_seconds=self.lease_seconds
-            )
+            claim = await self.store.claim(self.worker, lease_seconds=self.lease_seconds)
             if claim is None:
                 break
             try:
@@ -265,9 +254,7 @@ class TerminalAuditConsumer:
                 # No live fallback even for missing/corrupted SDK snapshots.
                 await self.store.unavailable(
                     claim,
-                    "snapshot_unavailable"
-                    if claim.job["snapshot_hash"]
-                    else "reader_failed",
+                    "snapshot_unavailable" if claim.job["snapshot_hash"] else "reader_failed",
                 )
                 continue
             await self.store.commit_page(claim, page, findings_for(page))

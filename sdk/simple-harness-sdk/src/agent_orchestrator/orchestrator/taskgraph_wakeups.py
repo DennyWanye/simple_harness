@@ -4,6 +4,7 @@
 These are scheduling events, never evidence of quiescence or authorization. The
 normal CONVERGE consumer must reread the original authorities on every delivery.
 """
+
 from __future__ import annotations
 
 from ..contracts.models import Event, sha256_hex
@@ -25,7 +26,10 @@ class TaskGraphConvergenceWakeups:
         self.interval_ms = _integer(interval_ms, "interval_ms", minimum=1_000)
 
     def _interval_ms(self, ordinal: int) -> int:
-        return min(self.interval_ms * 2 ** max(0, int(ordinal) - 1), max(self.interval_ms, self.MAX_INTERVAL_MS))
+        return min(
+            self.interval_ms * 2 ** max(0, int(ordinal) - 1),
+            max(self.interval_ms, self.MAX_INTERVAL_MS),
+        )
 
     def schedule(self, mission_id: str, *, now_ms: int, limit: int = 16) -> int:
         """Commit source event, notification and next due time in one transaction.
@@ -50,40 +54,81 @@ class TaskGraphConvergenceWakeups:
                 "AND m.status NOT IN ('COMPLETED','FAILED','CANCELLED')) "
                 "AND NOT EXISTS (SELECT 1 FROM taskgraph_followups f WHERE f.mission_id=j.mission_id "
                 "AND f.kind='CONVERGE' AND f.subject_key=j.job_id AND f.delivery_state<>'ACKED') "
-                "ORDER BY j.updated_at,j.job_id", (mission_id,)).fetchall()
+                "ORDER BY j.updated_at,j.job_id",
+                (mission_id,),
+            ).fetchall()
             for job in jobs:
                 key = derive_id("tg-convergence-wake", mission_id, job["job_id"])
                 saved = self.store.get_scheduler_state(key)
                 ordinal = 1
                 if saved is not None:
-                    if (set(saved) != {"mission_id", "job_id", "ordinal", "next_due_ms", "job_version"}
-                            or saved["mission_id"] != mission_id or saved["job_id"] != job["job_id"]):
+                    if (
+                        set(saved)
+                        != {"mission_id", "job_id", "ordinal", "next_due_ms", "job_version"}
+                        or saved["mission_id"] != mission_id
+                        or saved["job_id"] != job["job_id"]
+                    ):
                         raise StoreError("TASKGRAPH_CONVERGENCE_WAKE_CORRUPT")
                     if now_ms < _integer(saved["next_due_ms"], "next_due_ms"):
                         continue
                     # 2026-10-11（opt.177 核验建议 d）：作业推进过（行版本变了）就从头数——退避是对"一直
                     # 等着"的，不是对作业本身的；没推进才继续翻倍。
-                    if _integer(saved["job_version"], "job_version", minimum=0) == int(job["row_version"]):
+                    if _integer(saved["job_version"], "job_version", minimum=0) == int(
+                        job["row_version"]
+                    ):
                         ordinal = _integer(saved["ordinal"], "ordinal", minimum=1) + 1
                 # 独立核验 opt.184 M1：序号重数后编号不能撞上旧事件（撞上就按幂等键原样返回、什么都
                 # 没写，唤醒被悄悄吞掉）——编号带上作业的行版本
-                identity = derive_id("tg-convergence-wake-event", key, str(int(job["row_version"])), str(ordinal))
-                event = self.store.append_event(Event(
-                    id=identity, type="TaskGraphConvergenceWakeRequested", trace_id=identity,
-                    mission_id=mission_id, task_id=None, attempt_id=None,
-                    actor_type="system", actor_id="taskgraph-exec-v2",
-                    payload={"job_id": job["job_id"], "job_version": job["row_version"],
-                             "ordinal": ordinal}, idempotency_key=identity, created_at=self.store.now))
+                identity = derive_id(
+                    "tg-convergence-wake-event", key, str(int(job["row_version"])), str(ordinal)
+                )
+                event = self.store.append_event(
+                    Event(
+                        id=identity,
+                        type="TaskGraphConvergenceWakeRequested",
+                        trace_id=identity,
+                        mission_id=mission_id,
+                        task_id=None,
+                        attempt_id=None,
+                        actor_type="system",
+                        actor_id="taskgraph-exec-v2",
+                        payload={
+                            "job_id": job["job_id"],
+                            "job_version": job["row_version"],
+                            "ordinal": ordinal,
+                        },
+                        idempotency_key=identity,
+                        created_at=self.store.now,
+                    )
+                )
                 if event.seq is None:
                     raise StoreError("TASKGRAPH_CONVERGENCE_WAKE_NOT_PERSISTED")
-                self.notifications.append_followup(FollowupV1(
-                    mission_id=mission_id, source_event_id=event.id, kind=FollowupKind.CONVERGE,
-                    subject_key=job["job_id"], source_revision=job["source_revision"],
-                    cause_ref=FollowupCauseRef(kind="event", id=event.id, revision=event.seq,
-                                              content_hash=sha256_hex(event.to_json()))), now_ms=now_ms)
-                self.store.put_scheduler_state(key, {"mission_id": mission_id, "job_id": job["job_id"],
-                    "ordinal": ordinal, "job_version": int(job["row_version"]),
-                    "next_due_ms": _integer(now_ms + self._interval_ms(ordinal), "next_due_ms")})
+                self.notifications.append_followup(
+                    FollowupV1(
+                        mission_id=mission_id,
+                        source_event_id=event.id,
+                        kind=FollowupKind.CONVERGE,
+                        subject_key=job["job_id"],
+                        source_revision=job["source_revision"],
+                        cause_ref=FollowupCauseRef(
+                            kind="event",
+                            id=event.id,
+                            revision=event.seq,
+                            content_hash=sha256_hex(event.to_json()),
+                        ),
+                    ),
+                    now_ms=now_ms,
+                )
+                self.store.put_scheduler_state(
+                    key,
+                    {
+                        "mission_id": mission_id,
+                        "job_id": job["job_id"],
+                        "ordinal": ordinal,
+                        "job_version": int(job["row_version"]),
+                        "next_due_ms": _integer(now_ms + self._interval_ms(ordinal), "next_due_ms"),
+                    },
+                )
                 scheduled += 1
                 if scheduled == limit:
                     break

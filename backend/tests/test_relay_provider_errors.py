@@ -27,9 +27,7 @@ from providers.openai_compatible import OpenAICompatibleProvider
         (401, {"code": "EXPIRED_TOKEN"}, RELAY_KEY_INVALID),
     ],
 )
-def test_classify_relay_error_structured_contract(
-    status: int, body: dict, expected: str
-) -> None:
+def test_classify_relay_error_structured_contract(status: int, body: dict, expected: str) -> None:
     assert classify_relay_error(status, body=body) == expected
 
 
@@ -42,9 +40,7 @@ def test_classify_relay_error_structured_contract(
         (404, {"code": "DEVICE_KEY_MISSING"}),
     ],
 )
-def test_classify_relay_error_ignores_non_key_balance_codes(
-    status: int, body: dict
-) -> None:
+def test_classify_relay_error_ignores_non_key_balance_codes(status: int, body: dict) -> None:
     assert classify_relay_error(status, body=body) is None
 
 
@@ -72,9 +68,7 @@ def _api_status_error(status: int, body: dict) -> Exception:
 def test_openai_adapter_maps_relay_auth_errors_with_error_class() -> None:
     provider = OpenAIAdapter(api_key="sk-test", base_url="https://relay.example/v1", is_relay=True)
 
-    mapped = provider._map_error(
-        _api_status_error(403, {"code": "INSUFFICIENT_BALANCE"})
-    )
+    mapped = provider._map_error(_api_status_error(403, {"code": "INSUFFICIENT_BALANCE"}))
 
     assert isinstance(mapped, LLMAuthError)
     assert mapped.status_code == 403

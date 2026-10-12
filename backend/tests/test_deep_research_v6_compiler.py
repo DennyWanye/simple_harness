@@ -13,7 +13,10 @@ from deskpet.workflows.definitions.deep_research_v6_contracts import ResearchSpe
     [
         ("深入调研：2024年中国总人口和出生人口分别是多少？优先国家统计局。", "zh-CN"),
         ("请以国家统计局为优先来源，查清中国2024年人口总数以及出生人数。", "zh-CN"),
-        ("What were China's total population and number of births in 2024? Prefer the National Bureau of Statistics.", "en-US"),
+        (
+            "What were China's total population and number of births in 2024? Prefer the National Bureau of Statistics.",
+            "en-US",
+        ),
     ],
 )
 def test_stats2_paraphrases_compile_to_same_semantics(question: str, locale: str) -> None:
@@ -24,16 +27,21 @@ def test_stats2_paraphrases_compile_to_same_semantics(question: str, locale: str
         "population.births.period",
     ]
     total, births = spec.requirements
-    assert total["time_scope"] == {"schema_version": 1, "kind": "instant", "start": None, "end": None, "as_of": "2024-12-31", "label": "2024 year end"}
+    assert total["time_scope"] == {
+        "schema_version": 1,
+        "kind": "instant",
+        "start": None,
+        "end": None,
+        "as_of": "2024-12-31",
+        "label": "2024 year end",
+    }
     assert births["time_scope"]["start"] == "2024-01-01"
     assert births["time_scope"]["end"] == "2024-12-31"
-    assert all(item["value_schema"]["canonical_unit"]["unit_id"] == "person" for item in spec.requirements)
+    assert all(
+        item["value_schema"]["canonical_unit"]["unit_id"] == "person" for item in spec.requirements
+    )
     assert all("answer" not in item and "numeric_value" not in item for item in spec.requirements)
-    concepts = {
-        term
-        for dimension in spec.work_dimensions
-        for term in dimension["search_concepts"]
-    }
+    concepts = {term for dimension in spec.work_dimensions for term in dimension["search_concepts"]}
     assert {"全国人口", "年末人口", "出生人口"} <= concepts
 
 
@@ -42,13 +50,22 @@ def test_missing_or_illegal_llm_bundle_does_not_remove_deterministic_base() -> N
     baseline = compile_official_exact_fact(question)
     for candidates in (None, "illegal json", [{"not_key": True}]):
         result = compile_official_exact_fact(question, llm_candidates=candidates)
-        assert [item["key"] for item in result.requirements] == [item["key"] for item in baseline.requirements]
+        assert [item["key"] for item in result.requirements] == [
+            item["key"] for item in baseline.requirements
+        ]
 
 
 def test_conflicting_llm_candidate_fails_closed() -> None:
     baseline = compile_official_exact_fact("2024年中国总人口，优先国家统计局")
     candidate = baseline.requirements[0] | {
-        "time_scope": {"schema_version": 1, "kind": "instant", "start": None, "end": None, "as_of": "2023-12-31", "label": "2023"}
+        "time_scope": {
+            "schema_version": 1,
+            "kind": "instant",
+            "start": None,
+            "end": None,
+            "as_of": "2023-12-31",
+            "label": "2023",
+        }
     }
     with pytest.raises(ResearchSpecValidationError) as error:
         compile_official_exact_fact("2024年中国总人口，优先国家统计局", llm_candidates=[candidate])
@@ -142,9 +159,7 @@ def test_policy_golden_spec_separates_document_facts_from_impact_inference() -> 
     kinds = {item["claim_kind"]: item for item in requirement["claim_kinds"]}
     assert kinds["policy_fact"]["minimum_claims"] == 4
     assert kinds["policy_fact"]["support_rule"] == "admitted_binding"
-    assert kinds["impact_inference"]["support_rule"] == (
-        "admitted_binding_or_registered_inference"
-    )
+    assert kinds["impact_inference"]["support_rule"] == ("admitted_binding_or_registered_inference")
     assert [item["facet_id"] for item in requirement["topic_facets"]] == [
         "issuer",
         "document",
@@ -158,9 +173,9 @@ def test_policy_golden_spec_separates_document_facts_from_impact_inference() -> 
 
 def test_compile_research_spec_preserves_exact_fact_behavior() -> None:
     question = "深入调研：2024年中国总人口和出生人口分别是多少？优先国家统计局。"
-    assert compile_research_spec(question).to_json() == compile_official_exact_fact(
-        question
-    ).to_json()
+    assert (
+        compile_research_spec(question).to_json() == compile_official_exact_fact(question).to_json()
+    )
 
 
 def test_typed_intent_llm_candidates_cannot_delete_or_downgrade_base() -> None:

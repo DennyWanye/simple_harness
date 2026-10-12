@@ -100,7 +100,8 @@ def test_ranking_combines_relevance_trust_distance_recency_reuse_and_drops_dupli
     }
     # 推后第 2 批 K06：结构从分层计划读——四步挂在根下，task-1 → task-3、task-2 → task-4 是数据边
     tree = GoalTree.build(
-        roots=("m:root",), children={"m:root": tuple(tasks)},
+        roots=("m:root",),
+        children={"m:root": tuple(tasks)},
         task_of={"m:root": "m:root", **{name: name for name in tasks}},
         precedence=(("m:task-1", "m:task-3"), ("m:task-2", "m:task-4")),
     )
@@ -156,9 +157,7 @@ def test_ranking_combines_relevance_trust_distance_recency_reuse_and_drops_dupli
     parts = {item.id: item.parts for item in result.items}
     assert parts["K-anc"]["proximity"] > parts["K-other"]["proximity"]  # 数据边上的上游更近
     assert parts["K-other"]["reuse"] == pytest.approx(2 / 3)
-    assert rank_knowledge(tasks["m:task-3"], records, goal_tree=tree, limit=1).dropped[
-        "over_limit"
-    ]
+    assert rank_knowledge(tasks["m:task-3"], records, goal_tree=tree, limit=1).dropped["over_limit"]
     assert rank_knowledge(tasks["m:task-3"], [], goal_tree=tree).items == ()
 
 

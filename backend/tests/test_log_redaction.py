@@ -47,10 +47,7 @@ def test_log_redaction_keeps_host_raised_error_types_diagnosable() -> None:
     诊断信息，必须保留。
     """
 
-    raw = (
-        "sdk_tool_handler_failed tool=memory_forget "
-        "error_type=KeyError stable_code=unclassified"
-    )
+    raw = "sdk_tool_handler_failed tool=memory_forget error_type=KeyError stable_code=unclassified"
 
     event = redact_log_event(None, "error", {"event": raw})
 
@@ -63,8 +60,7 @@ def test_log_redaction_still_removes_key_shaped_tokens_and_bearer_headers() -> N
         "error",
         {
             "event": (
-                "upstream rejected key_ABCDEFGHIJKLMNOP with "
-                "Bearer abcdefghijklmnopqrstuvwxyz"
+                "upstream rejected key_ABCDEFGHIJKLMNOP with Bearer abcdefghijklmnopqrstuvwxyz"
             )
         },
     )

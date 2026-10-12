@@ -51,12 +51,36 @@ STATE_SCHEMA_VERSION = 5
 CONTRACT_SCHEMA_VERSION = 1
 
 NODE_IDS = (
-    "normalize", "model", "plan", "expand", "search", "direct", "fetch", "score",
-    "gap_evaluate", "gap_work", "gap_join", "rerank", "synth", "quality_audit",
-    "repair_work", "repair_join", "persist", "finalize", "insufficient_finalize",
+    "normalize",
+    "model",
+    "plan",
+    "expand",
+    "search",
+    "direct",
+    "fetch",
+    "score",
+    "gap_evaluate",
+    "gap_work",
+    "gap_join",
+    "rerank",
+    "synth",
+    "quality_audit",
+    "repair_work",
+    "repair_join",
+    "persist",
+    "finalize",
+    "insufficient_finalize",
 )
 PUBLIC_STAGE_IDS = (
-    "normalize", "plan", "research", "gap", "rerank", "synth", "quality", "persist", "finalize",
+    "normalize",
+    "plan",
+    "research",
+    "gap",
+    "rerank",
+    "synth",
+    "quality",
+    "persist",
+    "finalize",
 )
 
 
@@ -294,14 +318,10 @@ def initial_state(
     if snapshot is not None:
         values = state["values"]
         assert isinstance(values, dict)
-        values["dimension_coverages"] = [
-            item.to_json() for item in snapshot.dimension_coverages
-        ]
+        values["dimension_coverages"] = [item.to_json() for item in snapshot.dimension_coverages]
         values["passage_blob_refs"] = list(snapshot.passage_blob_refs)
         values["source_families"] = [item.to_json() for item in snapshot.source_families]
-        values["executed_source_family_ids"] = [
-            item.family_id for item in snapshot.source_families
-        ]
+        values["executed_source_family_ids"] = [item.family_id for item in snapshot.source_families]
         values["executed_query_fingerprints"] = list(snapshot.query_fingerprints)
         values["budget_summary"] = copy.deepcopy(snapshot.budget_summary)
     return state

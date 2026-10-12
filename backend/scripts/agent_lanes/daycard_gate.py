@@ -37,10 +37,26 @@ TOTAL_SLOTS = int(os.environ.get("DAYCARD_TOTAL_SLOTS", "1"))
 BATCH_SLOTS = int(os.environ.get("DAYCARD_BATCH_SLOTS", "1"))
 UPSTREAM_RETRIES = 120
 BATCH_MAX_WAIT = float(os.environ.get("DAYCARD_BATCH_MAX_WAIT", "40"))
-PORTS = {"dev": int(os.environ.get("DAYCARD_DEV_PORT", "28182")), "batch": int(os.environ.get("DAYCARD_BATCH_PORT", "28181"))}
-HOP = {"connection", "keep-alive", "transfer-encoding", "te", "trailer", "upgrade", "host",
-       "proxy-authorization", "proxy-authenticate", "content-length", "accept-encoding"}
-HOST_ENV = Path(os.environ.get("DAYCARD_HOST_ENV") or (Path(__file__).resolve().parents[3] / ".env"))
+PORTS = {
+    "dev": int(os.environ.get("DAYCARD_DEV_PORT", "28182")),
+    "batch": int(os.environ.get("DAYCARD_BATCH_PORT", "28181")),
+}
+HOP = {
+    "connection",
+    "keep-alive",
+    "transfer-encoding",
+    "te",
+    "trailer",
+    "upgrade",
+    "host",
+    "proxy-authorization",
+    "proxy-authenticate",
+    "content-length",
+    "accept-encoding",
+}
+HOST_ENV = Path(
+    os.environ.get("DAYCARD_HOST_ENV") or (Path(__file__).resolve().parents[3] / ".env")
+)
 # 2026-09-24: the upstream sometimes answers a chat completion with an *empty* stream —
 # two chunks (role, finish_reason=stop), no content, no tool call, no usage — in streaks.
 # The SDK rightly treats that as a definite failure, which then blocks the Agent's whole
@@ -55,7 +71,11 @@ def upstream_origin() -> tuple[str, str, int]:
         if key.strip().removeprefix("export ").strip() == "DEEPSEEKER_BASEURL":
             parsed = urlsplit(value.strip().strip("'\""))
             if parsed.scheme in ("http", "https") and parsed.hostname:
-                return parsed.scheme, parsed.hostname, parsed.port or (443 if parsed.scheme == "https" else 80)
+                return (
+                    parsed.scheme,
+                    parsed.hostname,
+                    parsed.port or (443 if parsed.scheme == "https" else 80),
+                )
     raise SystemExit("DEEPSEEKER_BASEURL missing or not an absolute HTTP(S) URL")
 
 
@@ -83,7 +103,10 @@ class Slots:
                     if not aged and time.time() - arrived >= BATCH_MAX_WAIT:
                         aged = True
                         self.aged_batch += 1
-                    free = sum(self.in_flight.values()) < TOTAL_SLOTS and self.in_flight["batch"] < BATCH_SLOTS
+                    free = (
+                        sum(self.in_flight.values()) < TOTAL_SLOTS
+                        and self.in_flight["batch"] < BATCH_SLOTS
+                    )
                     if free and (aged or self.dev_waiting == 0):
                         break
                     self.cond.wait(timeout=5)
@@ -140,12 +163,20 @@ def _json_empty(body: bytes) -> bool:
     if not choices or not isinstance(choices[0], dict):
         return False
     message = choices[0].get("message") or {}
-    return not (message.get("content") or message.get("tool_calls") or message.get("reasoning_content"))
+    return not (
+        message.get("content") or message.get("tool_calls") or message.get("reasoning_content")
+    )
 
 
 # Wording of a 429 that means "no credits left" rather than "busy": the relay says
 # 积分不足 / 余额不足, OpenAI-style gateways say insufficient_quota.
-_QUOTA_MARKERS = ("积分不足", "余额不足", "insufficient_quota", "insufficient balance", "insufficient credit")
+_QUOTA_MARKERS = (
+    "积分不足",
+    "余额不足",
+    "insufficient_quota",
+    "insufficient balance",
+    "insufficient credit",
+)
 
 
 def _exhausted_quota(body: bytes) -> bool:
@@ -213,7 +244,9 @@ def make_handler(klass: str, slots: Slots, origin: tuple[str, str, int]):
                         if empty and empty_retries < EMPTY_RETRIES:
                             empty_retries += 1
                             conn.close()
-                            log(f"{klass} empty completion from upstream; retry {empty_retries}/{EMPTY_RETRIES}")
+                            log(
+                                f"{klass} empty completion from upstream; retry {empty_retries}/{EMPTY_RETRIES}"
+                            )
                             time.sleep(2 + random.random() * 3)
                             continue
                     break
@@ -237,7 +270,9 @@ def make_handler(klass: str, slots: Slots, origin: tuple[str, str, int]):
                 self.wfile.flush()
             except Exception as exc:  # name the class only; never echo request data
                 if status == 0:
-                    data = ('{"error":{"message":"daycard gate: %s"}}' % type(exc).__name__).encode()
+                    data = (
+                        '{"error":{"message":"daycard gate: %s"}}' % type(exc).__name__
+                    ).encode()
                     try:
                         self.send_response(502)
                         self.send_header("Content-Type", "application/json")
@@ -252,7 +287,9 @@ def make_handler(klass: str, slots: Slots, origin: tuple[str, str, int]):
                 if conn is not None:
                     conn.close()
                 slots.release(klass)
-            log(f"{klass} {self.command} {self.path} {status} queued={started - arrived:.0f}s took={time.time() - started:.0f}s empty_retries={empty_retries}")
+            log(
+                f"{klass} {self.command} {self.path} {status} queued={started - arrived:.0f}s took={time.time() - started:.0f}s empty_retries={empty_retries}"
+            )
 
         do_POST = _relay
         do_GET = _relay
@@ -272,7 +309,9 @@ def main() -> int:
         server.daemon_threads = True
         threading.Thread(target=server.serve_forever, daemon=True).start()
         servers.append(server)
-    log(f"daycard gate up: dev=127.0.0.1:{PORTS['dev']} batch=127.0.0.1:{PORTS['batch']} total_slots={TOTAL_SLOTS} batch_slots={BATCH_SLOTS}")
+    log(
+        f"daycard gate up: dev=127.0.0.1:{PORTS['dev']} batch=127.0.0.1:{PORTS['batch']} total_slots={TOTAL_SLOTS} batch_slots={BATCH_SLOTS}"
+    )
     try:
         while True:
             time.sleep(3600)

@@ -3,6 +3,7 @@
 The round is the adoption round the main loop opened on the product's deployment after
 the planner's proposed method passed its independent review (``h1i_seed.reviewed``).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -15,30 +16,45 @@ from h1i_seed import plan_reply, reviewed
 
 
 @pytest.mark.parametrize("revoke_before_commit", (False, True))
-def test_actual_solver_cannot_bypass_the_original_commit_guard(tmp_path, monkeypatch, revoke_before_commit):
+def test_actual_solver_cannot_bypass_the_original_commit_guard(
+    tmp_path, monkeypatch, revoke_before_commit
+):
     pytest.importorskip("up_aries")
     from agent_orchestrator.orchestrator import planning_backend_runtime
 
     async def case():
-        backend = {"planning_backend": UpAriesPlanningBackend(),
-                   "planning_backend_limits": PlanningLimits(timeout_seconds=30, max_expansions=None,
-                                                             max_tokens=131072)}
-        async with reviewed(tmp_path, key="actual-solver", **backend) as ((loop, mission, _world, _root, dispatch, product), intent, _provider):
+        backend = {
+            "planning_backend": UpAriesPlanningBackend(),
+            "planning_backend_limits": PlanningLimits(
+                timeout_seconds=30, max_expansions=None, max_tokens=131072
+            ),
+        }
+        async with reviewed(tmp_path, key="actual-solver", **backend) as (
+            (loop, mission, _world, _root, dispatch, product),
+            intent,
+            _provider,
+        ):
             binding = PlanningAdmissionStore(loop.store).get_request_binding(intent.intent_id)
             original = planning_backend_runtime.solve_decision
 
             async def solve_then_revoke(*args, **kwargs):
                 result = await original(*args, **kwargs)
-                product.control.planning_authorization({
-                    "operation": "revoke", "grant_id": binding["grant_id"],
-                    "expected_revision": int(binding["grant_revision"]),
-                    "command_id": "revoke-after-solving", "reason": "operator withdrew authority"})
+                product.control.planning_authorization(
+                    {
+                        "operation": "revoke",
+                        "grant_id": binding["grant_id"],
+                        "expected_revision": int(binding["grant_revision"]),
+                        "command_id": "revoke-after-solving",
+                        "reason": "operator withdrew authority",
+                    }
+                )
                 return result
 
             if revoke_before_commit:
                 monkeypatch.setattr(planning_backend_runtime, "solve_decision", solve_then_revoke)
-            await loop._collect_plan_decision(intent, object(), mission,
-                plan_reply(intent.config["planning_package"]), dispatch)
+            await loop._collect_plan_decision(
+                intent, object(), mission, plan_reply(intent.config["planning_package"]), dispatch
+            )
             events = tuple(loop.store.iter_events(mission.id))
             solved = [e for e in events if e.type == "PlanningBackendReturned"]
             assert len(solved) == 1 and solved[0].payload["status"] == "SOLVED"

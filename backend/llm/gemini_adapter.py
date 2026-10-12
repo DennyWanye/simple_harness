@@ -28,6 +28,7 @@ explicit CachedContent resource create/delete flow — out of scope for
 P4 v0.6.0 MVP. We plumb the field through (as 0) so the ChatUsage
 contract remains uniform.
 """
+
 from __future__ import annotations
 
 import json

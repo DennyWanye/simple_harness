@@ -54,10 +54,7 @@ def _trace_jsonable(
             for field in dataclasses.fields(value)
         }
     if isinstance(value, Mapping):
-        return {
-            str(key): _trace_jsonable(item, **child)
-            for key, item in value.items()
-        }
+        return {str(key): _trace_jsonable(item, **child) for key, item in value.items()}
     if isinstance(value, (list, tuple, set, frozenset)):
         return [_trace_jsonable(item, **child) for item in value]
     if value is None or isinstance(value, (str, int, float, bool)):
@@ -142,18 +139,13 @@ class ProductTurnIdentityResolver:
                     turn.workspace_ref or host.workspace or host.write_scope_root
                 ),
                 create_default=bool(
-                    host.write_scope_root
-                    and not turn.workspace_ref
-                    and not host.workspace
+                    host.write_scope_root and not turn.workspace_ref and not host.workspace
                 ),
             )
         except (OSError, RuntimeError) as exc:
             raise PreflightBlocked(
                 RootBlockReasonV1.WORKSPACE_UNAVAILABLE,
-                (
-                    "workspace-resolution:"
-                    + str(getattr(exc, "code", type(exc).__name__)),
-                ),
+                ("workspace-resolution:" + str(getattr(exc, "code", type(exc).__name__)),),
             ) from exc
         seed_message_ref = (
             f"message:{current_message_id}"
@@ -237,10 +229,7 @@ class ProductTurnPreparationService:
                 raise
             raise PreflightBlocked(
                 RootBlockReasonV1.CAPABILITY_UNAVAILABLE,
-                (
-                    "capability-preparation:"
-                    + str(getattr(exc, "code", type(exc).__name__)),
-                ),
+                ("capability-preparation:" + str(getattr(exc, "code", type(exc).__name__)),),
             ) from exc
         prepare_ended_at = time.time()
 
@@ -272,9 +261,7 @@ class ProductTurnPreparationService:
                     "prepared_context": prepared.prepared_context,
                     "eligibility": prepared.eligibility,
                     "preference_resolution": prepared.preference_resolution,
-                    "companion_authority_state": (
-                        prepared.companion_authority_state
-                    ),
+                    "companion_authority_state": (prepared.companion_authority_state),
                 },
             ),
             _stage_trace(

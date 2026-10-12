@@ -92,9 +92,7 @@ def _expected_editable_copy(record: Mapping[str, Any]) -> list[tuple[str, str]]:
             ]
         )
     elif layout == "quote":
-        fields.extend(
-            [("quote", slide.get("quote")), ("cite", slide.get("cite"))]
-        )
+        fields.extend([("quote", slide.get("quote")), ("cite", slide.get("cite"))])
     elif layout == "table":
         table = slide.get("table")
         if isinstance(table, Mapping):
@@ -108,9 +106,7 @@ def _expected_editable_copy(record: Mapping[str, Any]) -> list[tuple[str, str]]:
         fields.extend(("bullet", item) for item in slide.get("bullets") or ())
         chart = slide.get("chart")
         if isinstance(chart, Mapping):
-            fields.extend(
-                ("chart_category", item) for item in chart.get("categories") or ()
-            )
+            fields.extend(("chart_category", item) for item in chart.get("categories") or ())
             fields.extend(
                 ("chart_series", series.get("name"))
                 for series in chart.get("series") or ()
@@ -142,9 +138,7 @@ def _editable_copy_present(
     # a standalone native shape and the remaining prose is intact elsewhere.
     metric_matches = tuple(_EDITABLE_CALLOUT_METRIC_RE.finditer(expected_text))
     standalone_metrics = tuple(
-        item
-        for item in actual_native_text
-        if _EDITABLE_CALLOUT_METRIC_RE.fullmatch(item)
+        item for item in actual_native_text if _EDITABLE_CALLOUT_METRIC_RE.fullmatch(item)
     )
     if (
         not metric_matches
@@ -156,10 +150,7 @@ def _editable_copy_present(
     def ordered_subsequence(metrics: Sequence[str]) -> bool:
         cursor = 0
         for metric in metrics:
-            while (
-                cursor < len(standalone_metrics)
-                and standalone_metrics[cursor] != metric
-            ):
+            while cursor < len(standalone_metrics) and standalone_metrics[cursor] != metric:
                 cursor += 1
             if cursor >= len(standalone_metrics):
                 return False
@@ -174,9 +165,7 @@ def _editable_copy_present(
     for split_count in range(1, max_split + 1):
         for split_indexes in combinations(range(len(metric_matches)), split_count):
             split_set = set(split_indexes)
-            split_values = tuple(
-                metric_matches[index].group(0) for index in split_indexes
-            )
+            split_values = tuple(metric_matches[index].group(0) for index in split_indexes)
             if not ordered_subsequence(split_values):
                 continue
             parts: list[str] = []
@@ -188,9 +177,7 @@ def _editable_copy_present(
                 cursor = match.end()
             parts.append(expected_text[cursor:])
             remaining = "".join(parts)
-            if len(remaining) >= 2 and any(
-                remaining in item for item in actual_native_text
-            ):
+            if len(remaining) >= 2 and any(remaining in item for item in actual_native_text):
                 return True
     return False
 
@@ -231,12 +218,8 @@ def inspect_rendered_deck(
                             "member": str(corrupt_member),
                         }
                     )
-                presentation = ElementTree.fromstring(
-                    archive.read("ppt/presentation.xml")
-                )
-                namespace = {
-                    "p": "http://schemas.openxmlformats.org/presentationml/2006/main"
-                }
+                presentation = ElementTree.fromstring(archive.read("ppt/presentation.xml"))
+                namespace = {"p": "http://schemas.openxmlformats.org/presentationml/2006/main"}
                 slide_ids = presentation.findall(".//p:sldIdLst/p:sldId", namespace)
                 actual_slide_count = len(slide_ids)
                 required_members = {
@@ -262,15 +245,9 @@ def inspect_rendered_deck(
                     and "/_rels/" not in name
                 )
                 missing_slide_rels = [
-                    (
-                        f"{posixpath.dirname(name)}/_rels/"
-                        f"{posixpath.basename(name)}.rels"
-                    )
+                    (f"{posixpath.dirname(name)}/_rels/{posixpath.basename(name)}.rels")
                     for name in slide_parts
-                    if (
-                        f"{posixpath.dirname(name)}/_rels/"
-                        f"{posixpath.basename(name)}.rels"
-                    )
+                    if (f"{posixpath.dirname(name)}/_rels/{posixpath.basename(name)}.rels")
                     not in member_names
                 ]
                 if missing_slide_rels:
@@ -281,15 +258,10 @@ def inspect_rendered_deck(
                         }
                     )
                 relationship_namespace = {
-                    "r": (
-                        "http://schemas.openxmlformats.org/package/2006/"
-                        "relationships"
-                    )
+                    "r": ("http://schemas.openxmlformats.org/package/2006/relationships")
                 }
                 missing_targets: list[str] = []
-                for rels_name in sorted(
-                    name for name in member_names if name.endswith(".rels")
-                ):
+                for rels_name in sorted(name for name in member_names if name.endswith(".rels")):
                     rels = ElementTree.fromstring(archive.read(rels_name))
                     if "/_rels/" in rels_name:
                         source_dir = rels_name.rsplit("/_rels/", 1)[0]
@@ -395,9 +367,7 @@ def inspect_rendered_deck(
                                     (
                                         len(normalized_text) >= 2
                                         or bool(
-                                            _EDITABLE_CALLOUT_METRIC_RE.fullmatch(
-                                                normalized_text
-                                            )
+                                            _EDITABLE_CALLOUT_METRIC_RE.fullmatch(normalized_text)
                                         )
                                     )
                                     and visible_width >= loaded.slide_width * 0.01
@@ -405,9 +375,7 @@ def inspect_rendered_deck(
                                     and visible_area >= slide_area * 0.0005
                                 ):
                                     visible_text_shapes += 1
-                                    visible_text_entries.append(
-                                        (top, left, normalized_text)
-                                    )
+                                    visible_text_entries.append((top, left, normalized_text))
                         if bool(getattr(shape, "has_table", False)):
                             tables += 1
                             for row in shape.table.rows:
@@ -429,9 +397,7 @@ def inspect_rendered_deck(
                                         getattr(category, "label", category)
                                     )
                                     if normalized_category:
-                                        native_object_text.append(
-                                            normalized_category
-                                        )
+                                        native_object_text.append(normalized_category)
                     visible_text = [
                         item[2]
                         for item in sorted(
@@ -481,9 +447,7 @@ def inspect_rendered_deck(
                                 }
                             )
                         actual_native_text = [*visible_text, *native_object_text]
-                        for field, expected_text in _expected_editable_copy(
-                            expected_record
-                        ):
+                        for field, expected_text in _expected_editable_copy(expected_record):
                             if not _editable_copy_present(
                                 expected_text,
                                 actual_native_text,
@@ -507,16 +471,12 @@ def inspect_rendered_deck(
                         else ()
                     )
                     if "table" in required and tables < 1:
-                        failures.append(
-                            {"code": "ppt_required_table_missing", "page": page}
-                        )
+                        failures.append({"code": "ppt_required_table_missing", "page": page})
                     chart_requirements = [
                         item for item in required if item == "chart" or item.startswith("chart:")
                     ]
                     if chart_requirements and charts < 1:
-                        failures.append(
-                            {"code": "ppt_required_chart_missing", "page": page}
-                        )
+                        failures.append({"code": "ppt_required_chart_missing", "page": page})
                     for requirement in chart_requirements:
                         if ":" not in requirement or not chart_types:
                             continue
@@ -527,9 +487,7 @@ def inspect_rendered_deck(
                             "pie": ("pie",),
                         }.get(expected_type, (expected_type,))
                         if not any(
-                            token in chart_type
-                            for chart_type in chart_types
-                            for token in matches
+                            token in chart_type for chart_type in chart_types for token in matches
                         ):
                             failures.append(
                                 {
@@ -546,10 +504,7 @@ def inspect_rendered_deck(
                         "detail": exc.__class__.__name__,
                     }
                 )
-    if (
-        actual_slide_count is not None
-        and actual_slide_count != expected_slide_count
-    ):
+    if actual_slide_count is not None and actual_slide_count != expected_slide_count:
         failures.append(
             {
                 "code": "ppt_slide_count_mismatch",
@@ -584,25 +539,17 @@ def _preview_quality_gate(
         path = str(preview.get("path") or "")
         candidate = Path(path).expanduser() if path else None
         try:
-            valid_file = bool(
-                candidate
-                and candidate.is_file()
-                and candidate.stat().st_size > 0
-            )
+            valid_file = bool(candidate and candidate.is_file() and candidate.stat().st_size > 0)
         except OSError:
             valid_file = False
-        if (
-            page < 1
-            or not valid_file
-        ):
+        if page < 1 or not valid_file:
             invalid_pages.append(page)
         if valid_file and candidate is not None:
             actual_sha256 = file_or_value_hash(str(candidate), {})
             declared_sha256 = str(preview.get("sha256") or "")
             if (
                 declared_sha256 != actual_sha256
-                or str(preview.get("artifact_ref") or "")
-                != f"preview:{actual_sha256}"
+                or str(preview.get("artifact_ref") or "") != f"preview:{actual_sha256}"
             ):
                 integrity_failures.append(
                     {
@@ -726,13 +673,9 @@ def _review_quality_gate(
     raw_hard_failures = review.get("hard_failures")
     if "hard_failures" in review:
         if isinstance(raw_hard_failures, list):
-            failures.extend(
-                dict(item) for item in raw_hard_failures if isinstance(item, Mapping)
-            )
+            failures.extend(dict(item) for item in raw_hard_failures if isinstance(item, Mapping))
             if any(not isinstance(item, Mapping) for item in raw_hard_failures):
-                failures.append(
-                    {"code": "ppt_visual_review_hard_failures_invalid"}
-                )
+                failures.append({"code": "ppt_visual_review_hard_failures_invalid"})
         else:
             failures.append({"code": "ppt_visual_review_hard_failures_invalid"})
 
@@ -769,9 +712,7 @@ def validate_delivery_quality(
         expected_slide_count=expected_slide_count,
         expected_render_hash=str(render_ref.get("output_hash") or ""),
     )
-    visual = _review_quality_gate(
-        review, expected_slide_count=expected_slide_count
-    )
+    visual = _review_quality_gate(review, expected_slide_count=expected_slide_count)
     failures = [
         *structural["hard_failures"],
         *preview["hard_failures"],
@@ -788,9 +729,7 @@ def validate_delivery_quality(
                 "actual": actual_hash,
             }
         )
-    actual_preview_hash = content_hash(
-        [dict(item) for item in previews]
-    )
+    actual_preview_hash = content_hash([dict(item) for item in previews])
     if not expected_preview_hash or actual_preview_hash != expected_preview_hash:
         failures.append(
             {
@@ -889,9 +828,7 @@ def stable_slide_records(
                 "status": "pending" if prompt else "not_requested",
                 "prompt": prompt,
                 "size": size,
-                "pre_hash": content_hash(
-                    {"slide_id": stable_id, "prompt": prompt, "size": size}
-                ),
+                "pre_hash": content_hash({"slide_id": stable_id, "prompt": prompt, "size": size}),
                 "post_hash": None,
                 "path": payload.get("image_path"),
                 "error": None,
@@ -960,12 +897,14 @@ def normalize_full_page_records(
     """Upgrade legacy durable records without repeating committed image effects."""
     copied = copy.deepcopy(list(records))
     full_page = [
-        record for record in copied
+        record
+        for record in copied
         if isinstance(record.get("image"), Mapping)
         and record["image"].get("mode") == FULL_PAGE_RENDER_MODE
     ]
     needs_upgrade = any(
-        str(record.get("slide", {}).get("full_page_layout") or "") not in ppt_tools.FULL_PAGE_LAYOUTS
+        str(record.get("slide", {}).get("full_page_layout") or "")
+        not in ppt_tools.FULL_PAGE_LAYOUTS
         or (
             record.get("image", {}).get("status") == "ready"
             and not Path(
@@ -991,9 +930,7 @@ def normalize_full_page_records(
         if image.get("status") == "ready" and path and Path(path).is_file():
             ready_ids.add(str(record.get("slide_id") or ""))
             locked[position] = str(record["slide"].get("full_page_layout") or "text_left")
-    planned = ppt_tools.plan_full_page_layouts(
-        slides, locked_layouts=locked, strict_coverage=False
-    )
+    planned = ppt_tools.plan_full_page_layouts(slides, locked_layouts=locked, strict_coverage=False)
     for position, (record, slide) in enumerate(zip(ordered, planned)):
         slide_id = str(record.get("slide_id") or "")
         payload = slide_payload(slide)
@@ -1025,7 +962,9 @@ def prepare_slide_records(
     render_mode = (
         FULL_PAGE_RENDER_MODE
         if image_mode and reachable and is_full_page
-        else "images" if image_mode and reachable else "template"
+        else "images"
+        if image_mode and reachable
+        else "template"
     )
     if render_mode == "template":
         degraded = ppt_tools._degrade_to_template(records_to_slides(copied))
@@ -1090,7 +1029,12 @@ async def generate_slide_image(
         result = await _await(method(**call_kwargs))
     result = dict(result or {}) if isinstance(result, Mapping) else {"error": str(result)}
     path = str(result.get("path") or "") or None
-    if full_page and path and Path(path).is_file() and not ppt_tools._is_normalized_full_page_image(path):
+    if (
+        full_page
+        and path
+        and Path(path).is_file()
+        and not ppt_tools._is_normalized_full_page_image(path)
+    ):
         try:
             path = ppt_tools._compose_full_page_image(path, updated["slide"])
             result["path"] = path
@@ -1115,8 +1059,7 @@ async def generate_slide_image(
         updated["slide"] = slide
     else:
         error_kind = str(
-            result.get("error_kind")
-            or ("missing_page_image" if path else "generation_failed")
+            result.get("error_kind") or ("missing_page_image" if path else "generation_failed")
         )
         image.update(
             {
@@ -1197,7 +1140,9 @@ async def render_deck(
                 editable_required=editable_required,
             )
         )
-    payload = dict(result or {}) if isinstance(result, Mapping) else {"ok": False, "error": str(result)}
+    payload = (
+        dict(result or {}) if isinstance(result, Mapping) else {"ok": False, "error": str(result)}
+    )
     payload["input_hash"] = input_hash
     if bool(payload.get("ok")):
         structural_gate = inspect_rendered_deck(
@@ -1222,7 +1167,9 @@ async def render_deck(
     return payload  # type: ignore[return-value]
 
 
-async def render_preview(render_ref: Mapping[str, Any], port: object | None) -> list[dict[str, JsonValue]]:
+async def render_preview(
+    render_ref: Mapping[str, Any], port: object | None
+) -> list[dict[str, JsonValue]]:
     page_images = render_ref.get("page_images", [])
     if (
         render_ref.get("render_mode") == FULL_PAGE_RENDER_MODE
@@ -1258,7 +1205,11 @@ async def render_preview(render_ref: Mapping[str, Any], port: object | None) -> 
     method = _port_method(port, "render_preview", "preview_ppt", "preview")
     if method is None:
         artifacts = render_ref.get("artifacts", [])
-        return [dict(item) for item in artifacts if isinstance(item, Mapping) and item.get("kind") == "image"]
+        return [
+            dict(item)
+            for item in artifacts
+            if isinstance(item, Mapping) and item.get("kind") == "image"
+        ]
     raw = await _await(
         method(
             path=str(render_ref.get("path") or ""),
@@ -1277,9 +1228,7 @@ async def evaluate_visuals(
     evaluator: object | None,
 ) -> dict[str, JsonValue]:
     expected_slide_count = len(records)
-    preview_gate = _preview_quality_gate(
-        previews, expected_slide_count=expected_slide_count
-    )
+    preview_gate = _preview_quality_gate(previews, expected_slide_count=expected_slide_count)
     if not preview_gate["passed"]:
         result: dict[str, JsonValue] = {
             "issues": [],
@@ -1316,13 +1265,9 @@ async def evaluate_visuals(
     else:
         result = {"issues": list(raw or [])}
     issues = result.get("issues")
-    if not isinstance(issues, list) or not all(
-        isinstance(item, Mapping) for item in issues
-    ):
+    if not isinstance(issues, list) or not all(isinstance(item, Mapping) for item in issues):
         result["issues"] = []
-        result["hard_failures"] = [
-            {"code": "ppt_visual_review_issues_invalid"}
-        ]
+        result["hard_failures"] = [{"code": "ppt_visual_review_issues_invalid"}]
     else:
         result["issues"] = issues
     reviews = result.get("reviews", [])
@@ -1338,13 +1283,9 @@ async def evaluate_visuals(
     raw_hard_failures = result.get("hard_failures")
     hard_failures: list[dict[str, Any]] = []
     if isinstance(raw_hard_failures, list):
-        hard_failures.extend(
-            dict(item) for item in raw_hard_failures if isinstance(item, Mapping)
-        )
+        hard_failures.extend(dict(item) for item in raw_hard_failures if isinstance(item, Mapping))
         if any(not isinstance(item, Mapping) for item in raw_hard_failures):
-            hard_failures.append(
-                {"code": "ppt_visual_review_hard_failures_invalid"}
-            )
+            hard_failures.append({"code": "ppt_visual_review_hard_failures_invalid"})
     elif "hard_failures" in result:
         hard_failures.append({"code": "ppt_visual_review_hard_failures_invalid"})
     result["reviews"] = list(reviews) if isinstance(reviews, list) else []
@@ -1459,9 +1400,7 @@ def _full_page_prompt_payload(
     ).strip()
     safe_codes = sorted({str(code) for code in revision_codes if code in _FULL_PAGE_REVISION_CODES})
     revision_text = " ".join(
-        _REVISION_INSTRUCTIONS[code]
-        for code in safe_codes
-        if code == "layout_misfit"
+        _REVISION_INSTRUCTIONS[code] for code in safe_codes if code == "layout_misfit"
     )
     layout = parsed.full_page_layout or "text_left"
     spec = ppt_tools.FULL_PAGE_LAYOUT_SPECS[layout]
@@ -1513,11 +1452,7 @@ def _normalized_revision_codes(issue: Mapping[str, Any]) -> set[str]:
     raw_codes = issue.get("reason_codes", [])
     if not isinstance(raw_codes, Sequence) or isinstance(raw_codes, (str, bytes)):
         raw_codes = []
-    codes = {
-        str(code)
-        for code in raw_codes
-        if str(code) in _FULL_PAGE_REVISION_CODES
-    }
+    codes = {str(code) for code in raw_codes if str(code) in _FULL_PAGE_REVISION_CODES}
     action = str(issue.get("action") or "")
     action_map = {
         "change_layout": "layout_misfit",

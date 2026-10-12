@@ -46,16 +46,21 @@ async def test_default_and_selected_capacity_persist_and_retry_across_default_ch
     try:
         assert first.status()["available"], first.status()["reason"]
         profiles = first.status()["context_profiles"]
-        assert [p["profile_id"] for p in profiles] == ["deepseek-native-256k-v1", "deepseek-native-512k-v1",
-                                                        "deepseek-native-600k-v1"]  # 2026-10-10 加 600K 档
+        assert [p["profile_id"] for p in profiles] == [
+            "deepseek-native-256k-v1",
+            "deepseek-native-512k-v1",
+            "deepseek-native-600k-v1",
+        ]  # 2026-10-10 加 600K 档
         assert [p["max_input_tokens"] for p in profiles] == [262144, 524288, 614400]
         a = first.create_mission(request("long-default"))
         # 用户 2026-10-04：默认 512K，256K 可选；2026-10-10 起默认 600K
         b = first.create_mission(
             request("long-selected", runtime_profile_id="deepseek-native-256k-v1")
         )
-        for receipt, identifier, tokens in [(a, "deepseek-native-600k-v1", 614400),
-                                            (b, "deepseek-native-256k-v1", 262144)]:
+        for receipt, identifier, tokens in [
+            (a, "deepseek-native-600k-v1", 614400),
+            (b, "deepseek-native-256k-v1", 262144),
+        ]:
             detail = first.mission_detail(receipt["mission_id"])
             assert detail["runtime_context"]["profile_id"] == identifier
             assert detail["runtime_context"]["max_input_tokens"] == tokens
@@ -81,8 +86,7 @@ async def test_default_and_selected_capacity_persist_and_retry_across_default_ch
         assert cold.mission_detail(a["mission_id"])["runtime_context"] == before
         new = cold.create_mission(request("new-default"))
         assert (
-            cold.mission_detail(new["mission_id"])["runtime_context"]["max_input_tokens"]
-            == 262144
+            cold.mission_detail(new["mission_id"])["runtime_context"]["max_input_tokens"] == 262144
         )
         with pytest.raises(OrchestrationRequestError) as err:
             cold.create_mission(

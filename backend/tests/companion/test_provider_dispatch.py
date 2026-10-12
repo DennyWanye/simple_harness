@@ -86,9 +86,7 @@ async def test_harness_snapshot_includes_durable_child_workflow_effects(
     await uow.create(
         RunCreate(
             run_id="root-1",
-            idempotency_key=root_idempotency_key(
-                "session-1", "request-1", "turn-1"
-            ),
+            idempotency_key=root_idempotency_key("session-1", "request-1", "turn-1"),
             context=RunContext(
                 session_id="session-1",
                 root_run_id="root-1",
@@ -145,10 +143,21 @@ async def test_harness_snapshot_includes_durable_child_workflow_effects(
             capability_hash,state_schema_version,status,created_at,updated_at
             ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
-                "child-1", "trace-child-1", "thread-child-1", "session-1",
-                "request-1:child", "turn-1", "durable_task", "v1",
-                "manifest", "implementation", capability_hash, 1, "running",
-                10.0, 10.0,
+                "child-1",
+                "trace-child-1",
+                "thread-child-1",
+                "session-1",
+                "request-1:child",
+                "turn-1",
+                "durable_task",
+                "v1",
+                "manifest",
+                "implementation",
+                capability_hash,
+                1,
+                "running",
+                10.0,
+                10.0,
             ),
         )
         await db.execute(
@@ -158,18 +167,32 @@ async def test_harness_snapshot_includes_durable_child_workflow_effects(
             artifact_refs_json,lease_epoch,started_at,updated_at,ended_at
             ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
-                "effect-1", "child-1", "node-1", "effect-fingerprint",
-                "staged_file", "{}", "args-hash", "committed",
-                json.dumps({
-                    "stable_call_id": "stable-call-1",
-                    "tool_name": "file_write",
-                    "final_params": {"path": "project.godot"},
-                }),
-                json.dumps({
-                    "state": "success",
-                    "value": {"path": "project.godot", "bytes_written": 10},
-                }),
-                "[]", 1, 11.0, 12.0, 12.0,
+                "effect-1",
+                "child-1",
+                "node-1",
+                "effect-fingerprint",
+                "staged_file",
+                "{}",
+                "args-hash",
+                "committed",
+                json.dumps(
+                    {
+                        "stable_call_id": "stable-call-1",
+                        "tool_name": "file_write",
+                        "final_params": {"path": "project.godot"},
+                    }
+                ),
+                json.dumps(
+                    {
+                        "state": "success",
+                        "value": {"path": "project.godot", "bytes_written": 10},
+                    }
+                ),
+                "[]",
+                1,
+                11.0,
+                12.0,
+                12.0,
             ),
         )
         checkpoint = {
@@ -195,10 +218,7 @@ async def test_harness_snapshot_includes_durable_child_workflow_effects(
                         "messages": [
                             {
                                 "role": "assistant",
-                                "content": (
-                                    "<think>private</think>"
-                                    "现在创建 Godot 项目配置。"
-                                ),
+                                "content": ("<think>private</think>现在创建 Godot 项目配置。"),
                                 "tool_calls": [
                                     {
                                         "id": "stable-call-1",
@@ -225,10 +245,17 @@ async def test_harness_snapshot_includes_durable_child_workflow_effects(
             engine_kind,snapshot_version
             ) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
             (
-                "thread-child-1", "", "checkpoint-1", None, "child-1",
+                "thread-child-1",
+                "",
+                "checkpoint-1",
+                None,
+                "child-1",
                 "deskpet-native-json-v1",
                 json.dumps(checkpoint).encode("utf-8"),
-                b"{}", 12.0, "native", 1,
+                b"{}",
+                12.0,
+                "native",
+                1,
             ),
         )
         await db.execute(
@@ -244,56 +271,62 @@ async def test_harness_snapshot_includes_durable_child_workflow_effects(
     )
 
     assert snapshot is not None
-    assert snapshot["workflow_effects"] == [{
-        "effect_id": "effect-1",
-        "run_id": "child-1",
-        "status": "committed",
-        "workflow_step_id": "step-1",
-        "receipt_ref": None,
-        "details": {
-            "prepared": {
-                "stable_call_id": "stable-call-1",
-                "tool_name": "file_write",
-                "final_params": {"path": "project.godot"},
-            },
-            "outcome": {
-                "state": "success",
-                "value": {
-                    "path": "project.godot",
-                    "bytes_written": 10,
-                },
-            },
-            "artifact_refs": [],
-        },
-        "created_at": 11.0,
-        "updated_at": 12.0,
-        "ended_at": 12.0,
-    }]
-    assert snapshot["workflow_plans"] == [{
-        "run_id": "child-1",
-        "plan_id": "plan-1",
-        "active_step_id": "step-2",
-        "steps": [
-            {
-                "workflow_step_id": "step-1",
-                "index": 0,
-                "title": "创建 Godot 项目配置",
-                "status": "completed",
-            },
-            {
-                "workflow_step_id": "step-2",
-                "index": 1,
-                "title": "验证项目结构",
-                "status": "pending",
-            },
-        ],
-        "public_messages": [{
-            "message_id": "assistant-0",
-            "text": "现在创建 Godot 项目配置。",
-            "tool_call_ids": ["stable-call-1"],
+    assert snapshot["workflow_effects"] == [
+        {
+            "effect_id": "effect-1",
+            "run_id": "child-1",
+            "status": "committed",
             "workflow_step_id": "step-1",
-        }],
-    }]
+            "receipt_ref": None,
+            "details": {
+                "prepared": {
+                    "stable_call_id": "stable-call-1",
+                    "tool_name": "file_write",
+                    "final_params": {"path": "project.godot"},
+                },
+                "outcome": {
+                    "state": "success",
+                    "value": {
+                        "path": "project.godot",
+                        "bytes_written": 10,
+                    },
+                },
+                "artifact_refs": [],
+            },
+            "created_at": 11.0,
+            "updated_at": 12.0,
+            "ended_at": 12.0,
+        }
+    ]
+    assert snapshot["workflow_plans"] == [
+        {
+            "run_id": "child-1",
+            "plan_id": "plan-1",
+            "active_step_id": "step-2",
+            "steps": [
+                {
+                    "workflow_step_id": "step-1",
+                    "index": 0,
+                    "title": "创建 Godot 项目配置",
+                    "status": "completed",
+                },
+                {
+                    "workflow_step_id": "step-2",
+                    "index": 1,
+                    "title": "验证项目结构",
+                    "status": "pending",
+                },
+            ],
+            "public_messages": [
+                {
+                    "message_id": "assistant-0",
+                    "text": "现在创建 Godot 项目配置。",
+                    "tool_call_ids": ["stable-call-1"],
+                    "workflow_step_id": "step-1",
+                }
+            ],
+        }
+    ]
     assert "private" not in json.dumps(snapshot["workflow_plans"])
     await uow.close()
 
@@ -321,18 +354,13 @@ class _FakeUow:
         self.failed_error_message: str | None = None
         self.claim_calls = 0
 
-    async def claim_provider_invocation(
-        self, record: Any, **_kwargs: Any
-    ) -> Any:
+    async def claim_provider_invocation(self, record: Any, **_kwargs: Any) -> Any:
         self.claim_calls += 1
         if self.record is None:
             self.record = record
         return self.record
 
-
-    async def read_provider_invocation(
-        self, run_id: str, invocation_id: str
-    ) -> Any | None:
+    async def read_provider_invocation(self, run_id: str, invocation_id: str) -> Any | None:
         if (
             self.record is not None
             and self.record.run_id == run_id
@@ -356,9 +384,7 @@ class _FakeUow:
         )
         return self.record
 
-    async def fail_provider_invocation(
-        self, run_id: str, invocation_id: str, **kwargs: Any
-    ) -> Any:
+    async def fail_provider_invocation(self, run_id: str, invocation_id: str, **kwargs: Any) -> Any:
         self.failed_reason = str(kwargs["outcome_ref"]).rsplit(":", 1)[-1]
         self.failed_audit_reason = kwargs.get("audit_reason")
         self.failed_error_type = kwargs.get("audit_error_type")
@@ -381,9 +407,7 @@ class _WriteOutcomeUnknown(RuntimeError):
 
 
 class _UnknownClaimUow(_FakeUow):
-    async def claim_provider_invocation(
-        self, record: Any, **kwargs: Any
-    ) -> Any:
+    async def claim_provider_invocation(self, record: Any, **kwargs: Any) -> Any:
         self.claim_calls += 1
         if self.claim_calls == 1:
             self.record = record
@@ -526,9 +550,7 @@ async def test_child_main_fault_settles_claim_before_transport(tmp_path) -> None
         ),
         encoding="utf-8",
     )
-    script = ProviderFaultScriptV1.from_file(
-        script_path, environ={"DESKPET_DEV_MODE": "1"}
-    )
+    script = ProviderFaultScriptV1.from_file(script_path, environ={"DESKPET_DEV_MODE": "1"})
     physical_calls = 0
 
     async def invoke() -> dict[str, Any]:
@@ -539,9 +561,7 @@ async def test_child_main_fault_settles_claim_before_transport(tmp_path) -> None
     uow = _FakeUow()
     coordinator = ProviderInvocationCoordinator(
         uow,
-        fence_reacquirer=lambda run_id: asyncio.sleep(
-            0, result=_Lease(run_id, 3)
-        ),
+        fence_reacquirer=lambda run_id: asyncio.sleep(0, result=_Lease(run_id, 3)),
         fault_script=script,
     )
     snapshot = _snapshot(invoke)
@@ -573,16 +593,14 @@ def test_provider_input_projection_redacts_credentials_and_bounds_large_context(
                     {
                         "role": "user",
                         "content": (
-                            f"message-{index} token=super-secret-value-{index} "
-                            + ("x" * 8_000)
+                            f"message-{index} token=super-secret-value-{index} " + ("x" * 8_000)
                         ),
                     }
                     for index in range(20)
                 ],
             ],
             "tools": [
-                {"type": "function", "function": {"name": f"tool_{index}"}}
-                for index in range(30)
+                {"type": "function", "function": {"name": f"tool_{index}"}} for index in range(30)
             ],
             "model": "sf-glm-5.2",
             "purpose": "agent.react",
@@ -616,9 +634,7 @@ async def test_claim_commits_before_any_transport_and_ack_precedes_completion() 
     uow = _FakeUow()
     coordinator = ProviderInvocationCoordinator(
         uow,
-        fence_reacquirer=lambda run_id: asyncio.sleep(
-            0, result=_Lease(run_id, 3)
-        ),
+        fence_reacquirer=lambda run_id: asyncio.sleep(0, result=_Lease(run_id, 3)),
     )
     prepared = coordinator.prepare_attempt(_snapshot(invoke))
     lease = _Lease("run-1")
@@ -656,9 +672,7 @@ async def test_post_handoff_cancellation_is_unknown_and_never_retried() -> None:
     uow = _FakeUow()
     coordinator = ProviderInvocationCoordinator(
         uow,
-        fence_reacquirer=lambda run_id: asyncio.sleep(
-            0, result=_Lease(run_id, 3)
-        ),
+        fence_reacquirer=lambda run_id: asyncio.sleep(0, result=_Lease(run_id, 3)),
     )
     claimed = await coordinator.claim_prepared(
         coordinator.prepare_attempt(_snapshot(invoke)),
@@ -687,9 +701,7 @@ async def test_missing_transport_ack_fails_closed_as_unknown() -> None:
     uow = _FakeUow()
     coordinator = ProviderInvocationCoordinator(
         uow,
-        fence_reacquirer=lambda run_id: asyncio.sleep(
-            0, result=_Lease(run_id, 3)
-        ),
+        fence_reacquirer=lambda run_id: asyncio.sleep(0, result=_Lease(run_id, 3)),
     )
     claimed = await coordinator.claim_prepared(
         coordinator.prepare_attempt(_snapshot(invoke_without_approved_transport)),
@@ -712,16 +724,12 @@ async def test_claim_commit_unknown_reconciles_exact_row_before_transport() -> N
 
     async def invoke() -> dict[str, Any]:
         async with httpx.AsyncClient(transport=transport) as client:
-            return (
-                await client.get("https://example.invalid/provider")
-            ).json()
+            return (await client.get("https://example.invalid/provider")).json()
 
     uow = _UnknownClaimUow()
     coordinator = ProviderInvocationCoordinator(
         uow,
-        fence_reacquirer=lambda run_id: asyncio.sleep(
-            0, result=_Lease(run_id, 3)
-        ),
+        fence_reacquirer=lambda run_id: asyncio.sleep(0, result=_Lease(run_id, 3)),
     )
     claimed = await coordinator.claim_prepared(
         coordinator.prepare_attempt(_snapshot(invoke)),
@@ -749,9 +757,7 @@ async def test_openai_compatible_client_uses_dispatch_aware_transport_once() -> 
     uow = _FakeUow()
     coordinator = ProviderInvocationCoordinator(
         uow,
-        fence_reacquirer=lambda run_id: asyncio.sleep(
-            0, result=_Lease(run_id, 3)
-        ),
+        fence_reacquirer=lambda run_id: asyncio.sleep(0, result=_Lease(run_id, 3)),
     )
 
     async def invoke() -> dict[str, Any]:
@@ -789,9 +795,7 @@ async def test_post_handoff_transport_error_is_typed_unknown_not_retryable() -> 
     uow = _FakeUow()
     coordinator = ProviderInvocationCoordinator(
         uow,
-        fence_reacquirer=lambda run_id: asyncio.sleep(
-            0, result=_Lease(run_id, 3)
-        ),
+        fence_reacquirer=lambda run_id: asyncio.sleep(0, result=_Lease(run_id, 3)),
     )
     claimed = await coordinator.claim_prepared(
         coordinator.prepare_attempt(_snapshot(invoke)),
@@ -821,9 +825,7 @@ async def test_connect_timeout_is_classified_as_not_sent() -> None:
     uow = _FakeUow()
     coordinator = ProviderInvocationCoordinator(
         uow,
-        fence_reacquirer=lambda run_id: asyncio.sleep(
-            0, result=_Lease(run_id, 3)
-        ),
+        fence_reacquirer=lambda run_id: asyncio.sleep(0, result=_Lease(run_id, 3)),
     )
 
     async def invoke() -> dict[str, Any]:
@@ -858,9 +860,7 @@ async def test_coordinated_provider_retries_connect_timeout_once() -> None:
             super().__init__()
             self.records: dict[str, Any] = {}
 
-        async def claim_provider_invocation(
-            self, record: Any, **_kwargs: Any
-        ) -> Any:
+        async def claim_provider_invocation(self, record: Any, **_kwargs: Any) -> Any:
             self.claim_calls += 1
             self.records[record.invocation_id] = record
             self.record = record
@@ -870,9 +870,7 @@ async def test_coordinated_provider_retries_connect_timeout_once() -> None:
         def __init__(self) -> None:
             self.count = 0
 
-        async def handle_async_request(
-            self, request: httpx.Request
-        ) -> httpx.Response:
+        async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
             self.count += 1
             if self.count == 1:
                 raise httpx.ConnectTimeout(
@@ -895,9 +893,7 @@ async def test_coordinated_provider_retries_connect_timeout_once() -> None:
     uow = _RetryFakeUow()
     coordinator = ProviderInvocationCoordinator(
         uow,
-        fence_reacquirer=lambda run_id: asyncio.sleep(
-            0, result=_Lease(run_id, 3)
-        ),
+        fence_reacquirer=lambda run_id: asyncio.sleep(0, result=_Lease(run_id, 3)),
     )
 
     async def invoke() -> dict[str, Any]:
@@ -908,9 +904,7 @@ async def test_coordinated_provider_retries_connect_timeout_once() -> None:
 
     result = await coordinate_provider_call(
         coordinator=coordinator,
-        acquire_fence=lambda run_id: asyncio.sleep(
-            0, result=_Lease(run_id, 3)
-        ),
+        acquire_fence=lambda run_id: asyncio.sleep(0, result=_Lease(run_id, 3)),
         run_id="run-1",
         provider=provider,
         attempt_id="attempt-1",
@@ -934,9 +928,7 @@ async def test_coordinated_provider_retries_definite_429_with_new_identity() -> 
             self.records: dict[str, Any] = {}
             self.claimed_ids: list[str] = []
 
-        async def claim_provider_invocation(
-            self, record: Any, **_kwargs: Any
-        ) -> Any:
+        async def claim_provider_invocation(self, record: Any, **_kwargs: Any) -> Any:
             self.claim_calls += 1
             self.claimed_ids.append(record.invocation_id)
             self.records[record.invocation_id] = record
@@ -947,9 +939,7 @@ async def test_coordinated_provider_retries_definite_429_with_new_identity() -> 
         def __init__(self) -> None:
             self.count = 0
 
-        async def handle_async_request(
-            self, request: httpx.Request
-        ) -> httpx.Response:
+        async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
             self.count += 1
             return httpx.Response(
                 429 if self.count == 1 else 200,
@@ -971,9 +961,7 @@ async def test_coordinated_provider_retries_definite_429_with_new_identity() -> 
     uow = _RetryFakeUow()
     coordinator = ProviderInvocationCoordinator(
         uow,
-        fence_reacquirer=lambda run_id: asyncio.sleep(
-            0, result=_Lease(run_id, 3)
-        ),
+        fence_reacquirer=lambda run_id: asyncio.sleep(0, result=_Lease(run_id, 3)),
     )
 
     async def invoke() -> dict[str, Any]:
@@ -984,9 +972,7 @@ async def test_coordinated_provider_retries_definite_429_with_new_identity() -> 
 
     result = await coordinate_provider_call(
         coordinator=coordinator,
-        acquire_fence=lambda run_id: asyncio.sleep(
-            0, result=_Lease(run_id, 3)
-        ),
+        acquire_fence=lambda run_id: asyncio.sleep(0, result=_Lease(run_id, 3)),
         run_id="run-1",
         provider=provider,
         attempt_id="attempt-429",
@@ -1020,16 +1006,12 @@ async def test_coordinated_provider_call_cancellation_settles_claimed_record() -
     uow = _FakeUow()
     coordinator = ProviderInvocationCoordinator(
         uow,
-        fence_reacquirer=lambda run_id: asyncio.sleep(
-            0, result=_Lease(run_id, 3)
-        ),
+        fence_reacquirer=lambda run_id: asyncio.sleep(0, result=_Lease(run_id, 3)),
     )
     task = asyncio.create_task(
         coordinate_provider_call(
             coordinator=coordinator,
-            acquire_fence=lambda run_id: asyncio.sleep(
-                0, result=_Lease(run_id, 3)
-            ),
+            acquire_fence=lambda run_id: asyncio.sleep(0, result=_Lease(run_id, 3)),
             run_id="run-1",
             provider=SimpleNamespace(model="model-1"),
             attempt_id="attempt-cancelled",
@@ -1060,9 +1042,7 @@ async def test_coordinated_provider_stream_close_settles_claimed_record() -> Non
     uow = _FakeUow()
     coordinator = ProviderInvocationCoordinator(
         uow,
-        fence_reacquirer=lambda run_id: asyncio.sleep(
-            0, result=_Lease(run_id, 3)
-        ),
+        fence_reacquirer=lambda run_id: asyncio.sleep(0, result=_Lease(run_id, 3)),
     )
 
     async def iterator():
@@ -1074,9 +1054,7 @@ async def test_coordinated_provider_stream_close_settles_claimed_record() -> Non
 
     stream = coordinate_provider_stream(
         coordinator=coordinator,
-        acquire_fence=lambda run_id: asyncio.sleep(
-            0, result=_Lease(run_id, 3)
-        ),
+        acquire_fence=lambda run_id: asyncio.sleep(0, result=_Lease(run_id, 3)),
         run_id="run-1",
         provider=provider,
         attempt_id="attempt-stream-close",
@@ -1105,9 +1083,7 @@ async def test_coordinated_provider_stream_coalesces_many_tiny_deltas() -> None:
     uow = _FakeUow()
     coordinator = ProviderInvocationCoordinator(
         uow,
-        fence_reacquirer=lambda run_id: asyncio.sleep(
-            0, result=_Lease(run_id, 3)
-        ),
+        fence_reacquirer=lambda run_id: asyncio.sleep(0, result=_Lease(run_id, 3)),
     )
 
     async def iterator():
@@ -1121,9 +1097,7 @@ async def test_coordinated_provider_stream_coalesces_many_tiny_deltas() -> None:
         event
         async for event in coordinate_provider_stream(
             coordinator=coordinator,
-            acquire_fence=lambda run_id: asyncio.sleep(
-                0, result=_Lease(run_id, 3)
-            ),
+            acquire_fence=lambda run_id: asyncio.sleep(0, result=_Lease(run_id, 3)),
             run_id="run-1",
             provider=provider,
             attempt_id="attempt-many-deltas",
@@ -1140,9 +1114,7 @@ async def test_coordinated_provider_stream_coalesces_many_tiny_deltas() -> None:
         for event in events
         if event.get("type") == "delta" and event.get("provisional") is True
     ]
-    assert "".join(str(event.get("content") or "") for event in provisional) == (
-        "x" * 100
-    )
+    assert "".join(str(event.get("content") or "") for event in provisional) == ("x" * 100)
     assert len(provisional) <= 4
     assert events[-1]["type"] == "final"
     assert events[-1]["provisional"] is False
@@ -1164,9 +1136,7 @@ async def test_revocation_epoch_change_suppresses_provider_result() -> None:
     uow = _FakeUow()
     coordinator = ProviderInvocationCoordinator(
         uow,
-        fence_reacquirer=lambda run_id: asyncio.sleep(
-            0, result=_Lease(run_id, 4)
-        ),
+        fence_reacquirer=lambda run_id: asyncio.sleep(0, result=_Lease(run_id, 4)),
     )
     claimed = await coordinator.claim_prepared(
         coordinator.prepare_attempt(_snapshot(invoke)),
@@ -1193,9 +1163,7 @@ async def test_real_workflow_uow_claims_and_completes_exact_transport_dispatch(
     await uow.create(
         RunCreate(
             run_id="run-1",
-            idempotency_key=root_idempotency_key(
-                "session-1", "request-1", "turn-1"
-            ),
+            idempotency_key=root_idempotency_key("session-1", "request-1", "turn-1"),
             context=RunContext(
                 session_id="session-1",
                 root_run_id="run-1",
@@ -1226,15 +1194,11 @@ async def test_real_workflow_uow_claims_and_completes_exact_transport_dispatch(
 
     async def invoke() -> dict[str, Any]:
         async with httpx.AsyncClient(transport=transport) as client:
-            return (
-                await client.get("https://example.invalid/provider")
-            ).json()
+            return (await client.get("https://example.invalid/provider")).json()
 
     coordinator = ProviderInvocationCoordinator(
         uow,
-        fence_reacquirer=lambda run_id: asyncio.sleep(
-            0, result=_Lease(run_id, 3)
-        ),
+        fence_reacquirer=lambda run_id: asyncio.sleep(0, result=_Lease(run_id, 3)),
     )
     claimed = await coordinator.claim_prepared(
         coordinator.prepare_attempt(_snapshot(invoke)),
@@ -1254,12 +1218,8 @@ async def test_real_workflow_uow_claims_and_completes_exact_transport_dispatch(
     result = await coordinator.complete_or_unknown(claimed)
     assert result == {"ok": True}
     assert physical.count == 1
-    stored = await uow.read_provider_invocation(
-        "run-1", claimed.identity.invocation_id
-    )
-    outcome = await uow.read_provider_invocation_outcome(
-        "run-1", claimed.identity.invocation_id
-    )
+    stored = await uow.read_provider_invocation("run-1", claimed.identity.invocation_id)
+    outcome = await uow.read_provider_invocation_outcome("run-1", claimed.identity.invocation_id)
     assert stored is not None and stored.status.value == "completed"
     assert outcome is not None and outcome.payload_hash == stored.outcome_hash
     await uow.close()
@@ -1276,9 +1236,7 @@ async def test_real_uow_inspector_exposes_unknown_transport_audit_without_payloa
     await uow.create(
         RunCreate(
             run_id="run-1",
-            idempotency_key=root_idempotency_key(
-                "session-1", "request-1", "turn-1"
-            ),
+            idempotency_key=root_idempotency_key("session-1", "request-1", "turn-1"),
             context=RunContext(
                 session_id="session-1",
                 root_run_id="run-1",
@@ -1387,7 +1345,7 @@ async def test_real_uow_inspector_exposes_unknown_transport_audit_without_payloa
             "current_attempt": {
                 "attempt_id": "attempt-1",
                 "status": "succeeded",
-            }
+            },
         },
     }
     async with aiosqlite.connect(db_path) as db:
@@ -1414,9 +1372,7 @@ async def test_real_uow_inspector_exposes_unknown_transport_audit_without_payloa
 
     coordinator = ProviderInvocationCoordinator(
         uow,
-        fence_reacquirer=lambda run_id: asyncio.sleep(
-            0, result=_Lease(run_id, 3)
-        ),
+        fence_reacquirer=lambda run_id: asyncio.sleep(0, result=_Lease(run_id, 3)),
     )
     claimed = await coordinator.claim_prepared(
         coordinator.prepare_attempt(_snapshot(invoke)),
@@ -1473,15 +1429,16 @@ async def test_real_uow_inspector_exposes_unknown_transport_audit_without_payloa
         ),
         "payload": {"messages": [{"content": "hi", "role": "user"}]},
     }
-    assert await uow.inspect_harness_run(
-        "run-1",
-        expected_session_id="different-session",
-    ) is None
+    assert (
+        await uow.inspect_harness_run(
+            "run-1",
+            expected_session_id="different-session",
+        )
+        is None
+    )
     serialized = repr(snapshot)
     assert "must-not-project" not in serialized
     assert "private prompt" not in serialized
     assert "private tool result" not in serialized
-    assert snapshot["tool_calls"][0]["details"]["raw_arguments_ref"] == (
-        "blob:private-arguments"
-    )
+    assert snapshot["tool_calls"][0]["details"]["raw_arguments_ref"] == ("blob:private-arguments")
     await uow.close()

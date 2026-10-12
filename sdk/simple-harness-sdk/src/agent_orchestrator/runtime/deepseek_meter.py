@@ -52,15 +52,28 @@ class CertifiedDeepSeekCounter(DeepSeekV41TokenEstimator):
     count_mode = "EXACT"
 
     def __init__(
-        self, tokenizer_path: Path, *, model: str = "deepseek-flash", tool_schema_mode: str = "legacy",
-        thinking: str | None = None, reasoning_effort: str | None = None,
+        self,
+        tokenizer_path: Path,
+        *,
+        model: str = "deepseek-flash",
+        tool_schema_mode: str = "legacy",
+        thinking: str | None = None,
+        reasoning_effort: str | None = None,
     ) -> None:
         # DeepSeek thinks by default; an unstated mode would be rendered as thinking while
         # nothing replays the reasoning.  The certified counter is bound to an explicit mode,
         # the same one the adapter sends (review 2026-09-24).
         if thinking not in ("enabled", "disabled"):
-            raise ValueError("the certified DeepSeek counter needs an explicit thinking mode: 'enabled' or 'disabled'")
-        super().__init__(tokenizer_path, model=model, tool_schema_mode=tool_schema_mode, thinking=thinking, reasoning_effort=reasoning_effort)
+            raise ValueError(
+                "the certified DeepSeek counter needs an explicit thinking mode: 'enabled' or 'disabled'"
+            )
+        super().__init__(
+            tokenizer_path,
+            model=model,
+            tool_schema_mode=tool_schema_mode,
+            thinking=thinking,
+            reasoning_effort=reasoning_effort,
+        )
         self.model = model
         self.thinking = thinking
 
@@ -90,7 +103,13 @@ class RelayToolMargin:
     of any fingerprint: raising it only charges later requests more.
     """
 
-    def __init__(self, *, floor: int = RELAY_TOOL_MARGIN_FLOOR, headroom: int = 50, state_path: Path | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        floor: int = RELAY_TOOL_MARGIN_FLOOR,
+        headroom: int = 50,
+        state_path: Path | None = None,
+    ) -> None:
         if type(floor) is not int or floor < 0 or type(headroom) is not int or headroom < 0:
             raise ValueError("relay margin floor and headroom must be nonnegative integers")
         self.floor = floor
@@ -126,7 +145,9 @@ class RelayToolMargin:
         covered = self.value if has_tools else 0
         if excess <= covered:
             return False
-        self.alarms.append({"reported": reported, "counted": counted, "margin": covered, "excess": excess})
+        self.alarms.append(
+            {"reported": reported, "counted": counted, "margin": covered, "excess": excess}
+        )
         self.value = max(self.value, excess + self.headroom)
         self._save()
         return True
@@ -138,7 +159,9 @@ class RelayToolMargin:
 
         self.state_path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self.state_path.with_suffix(".tmp")
-        tmp.write_text(json.dumps({"value": self.value, "max_excess": self.max_excess, "floor": self.floor}))
+        tmp.write_text(
+            json.dumps({"value": self.value, "max_excess": self.max_excess, "floor": self.floor})
+        )
         tmp.replace(self.state_path)
 
 
@@ -211,7 +234,9 @@ class CalibratingProvider:
                 counted = self._counter.exact_input_tokens(request)
             except ValueError:
                 return response  # uncountable request (e.g. media): nothing learned
-            self._counter.margin.observe(reported=reported, counted=counted, has_tools=bool(request.tools))
+            self._counter.margin.observe(
+                reported=reported, counted=counted, has_tools=bool(request.tools)
+            )
         return response
 
 
@@ -251,19 +276,24 @@ def deepseek_meter_binding(
     if not isinstance(counter, CertifiedDeepSeekCounter):
         raise TypeError("deepseek_meter_binding needs the certified DeepSeek counter")
     if prior_reserve is not None:
-        raise TypeError("the DeepSeek endpoint keeps no output beyond the wire; a prior reserve reader would double-charge it")
+        raise TypeError(
+            "the DeepSeek endpoint keeps no output beyond the wire; a prior reserve reader would double-charge it"
+        )
     limits = model_limits(
         model=counter.model,
         tokenizer=counter,
         input_limit_tokens=input_limit_tokens,
         max_output_tokens=max_output_tokens,
         combined_limit_tokens=combined_limit_tokens,
-        provider_id="deepseek-relay" if isinstance(counter, RelayDeepSeekCounter) else "deepseek-official",
+        provider_id="deepseek-relay"
+        if isinstance(counter, RelayDeepSeekCounter)
+        else "deepseek-official",
         counter_id=RELAY_COUNTER_ID if isinstance(counter, RelayDeepSeekCounter) else COUNTER_ID,
         counter_revision=COUNTER_REVISION,
         input_limit_scope="WIRE_ONLY",
         requires_prior_output_reserve=False,
-        capability_receipt=capability_receipt or {
+        capability_receipt=capability_receipt
+        or {
             "kind": "model-capability",
             "model": counter.model,
             "input_limit_tokens": input_limit_tokens,
@@ -271,7 +301,9 @@ def deepseek_meter_binding(
             "combined_limit_tokens": combined_limit_tokens,
         },
     )
-    return MeterBinding(tokenizer=counter, model_limits=limits, certification_ref=certification_ref(counter))
+    return MeterBinding(
+        tokenizer=counter, model_limits=limits, certification_ref=certification_ref(counter)
+    )
 
 
 __all__ = (

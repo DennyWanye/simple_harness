@@ -8,6 +8,7 @@ module deliberately contains no SQLite knowledge: :class:`GrowthAuthorityRouter`
 depends on the small store port below so the composition root cannot grow a
 second flag-based authority decision.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -223,21 +224,13 @@ class RevocationBarrier:
         loop = asyncio.get_running_loop()
         if self._bound_loop is loop:
             return
-        if (
-            self._readers
-            or self._writer
-            or self._waiting_writers
-        ):
-            raise RuntimeError(
-                "active revocation barrier cannot move between event loops"
-            )
+        if self._readers or self._writer or self._waiting_writers:
+            raise RuntimeError("active revocation barrier cannot move between event loops")
         self._condition = asyncio.Condition()
         self._bound_loop = loop
 
     @asynccontextmanager
-    async def shared(
-        self, *, timeout: float | None = 5.0
-    ) -> AsyncIterator[SharedRevocationLease]:
+    async def shared(self, *, timeout: float | None = 5.0) -> AsyncIterator[SharedRevocationLease]:
         self._bind_current_loop()
         async with self._condition:
             await self._wait(
@@ -403,18 +396,13 @@ class GrowthAuthorityRouter:
                         marker_committed=False,
                         reason="startup_pre_marker_rollback",
                     )
-                elif (
-                    state.phase is GrowthAuthorityPhase.COMPANION
-                    and self._companion is None
-                ):
+                elif state.phase is GrowthAuthorityPhase.COMPANION and self._companion is None:
                     state = await self._transition_locked(
                         GrowthAuthorityPhase.PAUSED,
                         expected_generation=state.generation,
                         marker_committed=state.roll_forward_required,
                         reason="startup_companion_adapter_missing",
-                        journal_payload={
-                            "error_code": "companion_authority_adapter_missing"
-                        },
+                        journal_payload={"error_code": "companion_authority_adapter_missing"},
                     )
                 return state
 
@@ -424,13 +412,8 @@ class GrowthAuthorityRouter:
                 state = _coerce_state(
                     await _await_if_needed(self._store.get_growth_authority_state())
                 )
-                if (
-                    self._state is not None
-                    and state.generation < self._state.generation
-                ):
-                    raise GrowthAuthorityError(
-                        "durable authority generation moved backwards"
-                    )
+                if self._state is not None and state.generation < self._state.generation:
+                    raise GrowthAuthorityError("durable authority generation moved backwards")
                 self._state = state
                 return state
 
@@ -444,22 +427,14 @@ class GrowthAuthorityRouter:
                 return await authority.write(request)
             return await authority.read(request)
 
-    async def delete_profile_generation(
-        self, owner: object, *, reason_code: str
-    ) -> object:
+    async def delete_profile_generation(self, owner: object, *, reason_code: str) -> object:
         """Serialize profile deletion with every ingress/execution lease."""
 
         delete = getattr(self._store, "delete_profile_generation", None)
         if delete is None:
-            raise GrowthIngressUnavailable(
-                "growth authority store has no profile lifecycle port"
-            )
-        async with self._ingress_gate.exclusive(
-            timeout=self._ingress_timeout
-        ):
-            return await _await_if_needed(
-                delete(owner, reason_code=reason_code)
-            )
+            raise GrowthIngressUnavailable("growth authority store has no profile lifecycle port")
+        async with self._ingress_gate.exclusive(timeout=self._ingress_timeout):
+            return await _await_if_needed(delete(owner, reason_code=reason_code))
 
     async def transition(
         self,
@@ -492,14 +467,10 @@ class GrowthAuthorityRouter:
         by :meth:`transition`; it cannot create another Router or pointer.
         """
 
-        async with self._ingress_gate.exclusive(
-            timeout=self._ingress_timeout
-        ):
+        async with self._ingress_gate.exclusive(timeout=self._ingress_timeout):
             async with self._state_lock:
                 if self._state is None:
-                    raise GrowthAuthorityNotStarted(
-                        "growth authority has not been recovered"
-                    )
+                    raise GrowthAuthorityNotStarted("growth authority has not been recovered")
                 yield GrowthAuthorityCutoverSession(self)
 
     async def _transition_locked(
@@ -514,11 +485,7 @@ class GrowthAuthorityRouter:
     ) -> GrowthAuthorityState:
         state = self.current
         self._assert_generation(expected_generation, state)
-        marker = (
-            state.roll_forward_required
-            if marker_committed is None
-            else marker_committed
-        )
+        marker = state.roll_forward_required if marker_committed is None else marker_committed
         self._validate_transition(
             state,
             next_phase,
@@ -552,9 +519,7 @@ class GrowthAuthorityRouter:
             row = await _await_if_needed(self._store.get_growth_authority_state())
         next_state = _coerce_state(row)
         if next_state.generation <= state.generation:
-            raise GrowthAuthorityError(
-                "authority transition did not advance durable generation"
-            )
+            raise GrowthAuthorityError("authority transition did not advance durable generation")
         if next_state.phase is not next_phase:
             raise GrowthAuthorityError("authority store returned the wrong phase")
         if state.roll_forward_required and not next_state.roll_forward_required:
@@ -589,9 +554,7 @@ class GrowthAuthorityRouter:
             raise GrowthIngressUnavailable(
                 "growth ingress is closed while authority cutover is preparing"
             )
-        raise GrowthIngressUnavailable(
-            f"growth ingress is unavailable in {state.phase.value}"
-        )
+        raise GrowthIngressUnavailable(f"growth ingress is unavailable in {state.phase.value}")
 
     @staticmethod
     def _validate_transition(
@@ -607,10 +570,7 @@ class GrowthAuthorityRouter:
                 "a committed roll-forward marker cannot be cleared"
             )
         if current is GrowthAuthorityPhase.LEGACY:
-            legal = (
-                next_phase is GrowthAuthorityPhase.PREPARING
-                and not marker_committed
-            )
+            legal = next_phase is GrowthAuthorityPhase.PREPARING and not marker_committed
         elif current is GrowthAuthorityPhase.PREPARING:
             if state.roll_forward_required:
                 legal = next_phase in {

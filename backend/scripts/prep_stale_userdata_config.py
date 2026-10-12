@@ -9,6 +9,7 @@ the Chinese comments — see memory feedback_powershell_chinese_files).
 
 Usage:  python prep_stale_userdata_config.py <dest_user_data_dir>
 """
+
 from __future__ import annotations
 
 import sys
@@ -42,6 +43,7 @@ def main() -> int:
 
     # Sanity: stale fixture must NOT contain the flag.
     import tomli
+
     raw = tomli.loads(stale)
     v2 = raw.get("memory", {}).get("v2", {})
     assert "curation_nudge" not in v2, "stale fixture still has curation_nudge!"

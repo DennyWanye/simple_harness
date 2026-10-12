@@ -200,9 +200,8 @@ class SearchResponse:
             "lost_race",
         }:
             raise ValueError("invalid rescue_status")
-        if (
-            self.rescue_error_code is not None
-            and not isinstance(self.rescue_error_code, PublicErrorCode)
+        if self.rescue_error_code is not None and not isinstance(
+            self.rescue_error_code, PublicErrorCode
         ):
             raise TypeError("rescue_error_code must be PublicErrorCode or None")
 
@@ -216,7 +215,11 @@ class SearchResponse:
 
     @property
     def engines_hit(self) -> list[str]:
-        return [a.provider for a in self.attempts if a.status in {AttemptStatus.HIT, AttemptStatus.CACHE_HIT}]
+        return [
+            a.provider
+            for a in self.attempts
+            if a.status in {AttemptStatus.HIT, AttemptStatus.CACHE_HIT}
+        ]
 
     @property
     def errors(self) -> list[dict[str, str]]:
@@ -240,28 +243,20 @@ class SearchResponse:
         timeouts = sum(attempt.status is AttemptStatus.TIMEOUT for attempt in upstream)
         blocked = sum(attempt.status is AttemptStatus.BLOCKED for attempt in upstream)
         captcha = sum(attempt.status is AttemptStatus.CAPTCHA for attempt in upstream)
-        rate_limits = sum(
-            attempt.status is AttemptStatus.RATE_LIMIT for attempt in upstream
-        )
+        rate_limits = sum(attempt.status is AttemptStatus.RATE_LIMIT for attempt in upstream)
         errors = sum(attempt.status is AttemptStatus.ERROR for attempt in upstream)
-        actual_requests = (
-            hits + empty + timeouts + blocked + captcha + rate_limits + errors
-        )
+        actual_requests = hits + empty + timeouts + blocked + captcha + rate_limits + errors
 
-        error_attempts = [
-            attempt for attempt in upstream if attempt.status is AttemptStatus.ERROR
-        ]
+        error_attempts = [attempt for attempt in upstream if attempt.status is AttemptStatus.ERROR]
         http_errors = sum(
-            attempt.public_error_code is PublicErrorCode.HTTP_ERROR
-            for attempt in error_attempts
+            attempt.public_error_code is PublicErrorCode.HTTP_ERROR for attempt in error_attempts
         )
         invalid_response_errors = sum(
             attempt.public_error_code is PublicErrorCode.INVALID_RESPONSE
             for attempt in error_attempts
         )
         parse_errors = sum(
-            attempt.public_error_code is PublicErrorCode.PARSE_ERROR
-            for attempt in error_attempts
+            attempt.public_error_code is PublicErrorCode.PARSE_ERROR for attempt in error_attempts
         )
         other_errors = errors - http_errors - invalid_response_errors - parse_errors
 
@@ -270,28 +265,23 @@ class SearchResponse:
             for attempt in self.attempts
         )
         busy_skips = sum(
-            attempt.status is AttemptStatus.HALF_OPEN_BUSY
-            and not attempt.upstream_called
+            attempt.status is AttemptStatus.HALF_OPEN_BUSY and not attempt.upstream_called
             for attempt in self.attempts
         )
         queue_timeouts = sum(
-            attempt.status is AttemptStatus.QUEUE_TIMEOUT
-            and not attempt.upstream_called
+            attempt.status is AttemptStatus.QUEUE_TIMEOUT and not attempt.upstream_called
             for attempt in self.attempts
         )
         unavailable_skips = sum(
-            attempt.status is AttemptStatus.UNAVAILABLE
-            and not attempt.upstream_called
+            attempt.status is AttemptStatus.UNAVAILABLE and not attempt.upstream_called
             for attempt in self.attempts
         )
         budget_skips = sum(
-            attempt.status is AttemptStatus.BUDGET_EXHAUSTED
-            and not attempt.upstream_called
+            attempt.status is AttemptStatus.BUDGET_EXHAUSTED and not attempt.upstream_called
             for attempt in self.attempts
         )
         cache_hits = sum(
-            attempt.status is AttemptStatus.CACHE_HIT
-            and not attempt.upstream_called
+            attempt.status is AttemptStatus.CACHE_HIT and not attempt.upstream_called
             for attempt in self.attempts
         )
         routing_decisions = (
@@ -304,8 +294,7 @@ class SearchResponse:
             + cache_hits
         )
         probes = sum(
-            attempt.permit == "half_open" and attempt.upstream_called
-            for attempt in self.attempts
+            attempt.permit == "half_open" and attempt.upstream_called for attempt in self.attempts
         )
         return {
             "actual_requests": actual_requests,
@@ -330,9 +319,7 @@ class SearchResponse:
             "cache_hits": cache_hits,
             "probes": probes,
             "rescue_status": self.rescue_status,
-            "rescue_error_code": (
-                self.rescue_error_code.value if self.rescue_error_code else None
-            ),
+            "rescue_error_code": (self.rescue_error_code.value if self.rescue_error_code else None),
             "rescue_considered": self.rescue_status != "not_needed",
             "rescue_executed": self.rescue_upstream_called,
             "candidates": self.count,
@@ -353,9 +340,7 @@ class SearchResponse:
             "request_id": self.request_id,
             "run_id": self.run_id,
             "rescue_status": self.rescue_status,
-            "rescue_error_code": (
-                self.rescue_error_code.value if self.rescue_error_code else None
-            ),
+            "rescue_error_code": (self.rescue_error_code.value if self.rescue_error_code else None),
             "rescue_upstream_called": self.rescue_upstream_called,
             "coverage": self.coverage(),
         }
@@ -486,8 +471,16 @@ def _json_value(value: Any) -> Any:
 
 
 __all__ = [
-    "AttemptStatus", "DimensionBatchResponse", "DimensionSearchRequest",
-    "DimensionSearchResult", "EvidenceDocument", "FetchRequest", "ProviderAttempt",
-    "PublicErrorCode", "RetrievalCandidate", "SearchBudget", "SearchRequest",
+    "AttemptStatus",
+    "DimensionBatchResponse",
+    "DimensionSearchRequest",
+    "DimensionSearchResult",
+    "EvidenceDocument",
+    "FetchRequest",
+    "ProviderAttempt",
+    "PublicErrorCode",
+    "RetrievalCandidate",
+    "SearchBudget",
+    "SearchRequest",
     "SearchResponse",
 ]

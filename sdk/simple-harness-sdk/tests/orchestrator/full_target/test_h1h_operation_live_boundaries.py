@@ -57,15 +57,21 @@ def test_o07_real_t0_t1_success_receipt_is_applied_and_wrong_receipt_is_refused(
             key = action["action_key"]
             link = PlanningAdmissionStore(world.store).get_operation_action_link_for_action(key)
             assert link is not None  # the system's own T0 link
-            request = [a for a in world.control.approvals(world.mission_id) if a.get("state") == "PENDING"][0]
+            request = [
+                a for a in world.control.approvals(world.mission_id) if a.get("state") == "PENDING"
+            ][0]
             world.control.decide(request["request_id"], "approve")
-            await run_until(world.product, lambda: str(world.mission.status.value) in {"COMPLETED", "FAILED"})
+            await run_until(
+                world.product, lambda: str(world.mission.status.value) in {"COMPLETED", "FAILED"}
+            )
             assert str(world.mission.status.value) == "COMPLETED", world.mission.final_report
             executed = world.store.get_action(key)
             assert executed["state"] == "SUCCEEDED" and executed["handoffs"] == 1
             assert executed["receipt"]["params_hash"] == executed["params_hash"]
 
-            snapshot = build_operation_snapshot(world.mission_id, reader=StoreOperationReader(world.store))
+            snapshot = build_operation_snapshot(
+                world.mission_id, reader=StoreOperationReader(world.store)
+            )
             assert snapshot.effects == ((link["operation_id"], OperationEffect.APPLIED),)
 
             # The receipt identity is altered on disk while the state stays successful.  A
@@ -74,7 +80,8 @@ def test_o07_real_t0_t1_success_receipt_is_applied_and_wrong_receipt_is_refused(
             with world.store.transaction() as connection:
                 connection.execute(
                     "UPDATE actions SET json = json_set(json, '$.receipt.params_hash', ?) WHERE action_key = ?",
-                    ("0" * 64, key))
+                    ("0" * 64, key),
+                )
             with pytest.raises(SourceUnavailable, match="success_without_matching_receipt"):
                 build_operation_snapshot(world.mission_id, reader=StoreOperationReader(world.store))
 

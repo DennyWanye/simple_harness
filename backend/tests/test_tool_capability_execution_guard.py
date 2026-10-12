@@ -29,10 +29,14 @@ def _guarded_runtime():
         source="builtin",
     )
     scopes = ToolCapabilityScopeStore()
-    prepared = ToolCapabilityResolver(registry).resolve_draft(
-        ToolExposureIntent(direct_selectors=("guarded_tool",)),
-        eligibility=ToolEligibilityContext("session-a", "request-a", "chat"),
-    ).finalize(scope_id="scope-a")
+    prepared = (
+        ToolCapabilityResolver(registry)
+        .resolve_draft(
+            ToolExposureIntent(direct_selectors=("guarded_tool",)),
+            eligibility=ToolEligibilityContext("session-a", "request-a", "chat"),
+        )
+        .finalize(scope_id="scope-a")
+    )
     scopes.open(
         prepared,
         ToolEligibilityContext("session-a", "request-a", "chat"),
@@ -58,9 +62,7 @@ async def test_capability_scope_is_strictly_session_and_request_bound() -> None:
         "guarded_tool",
         {},
         "session-b",
-        execution_context=ToolExecutionContext(
-            "scope-a", "session-b", "request-a"
-        ),
+        execution_context=ToolExecutionContext("scope-a", "session-b", "request-a"),
     )
     assert result == {"ok": False, "result": None, "error": "capability_denied"}
     assert calls == []
@@ -69,10 +71,14 @@ async def test_capability_scope_is_strictly_session_and_request_bound() -> None:
 @pytest.mark.asyncio
 async def test_dynamic_admission_allows_only_exact_run_local_tool() -> None:
     registry, prepared, calls = _guarded_runtime()
-    deferred = ToolCapabilityResolver(registry).resolve_draft(
-        ToolExposureIntent(discoverable_selectors=("guarded_tool",)),
-        eligibility=ToolEligibilityContext("session-b", "request-b", "chat"),
-    ).finalize(scope_id="scope-b")
+    deferred = (
+        ToolCapabilityResolver(registry)
+        .resolve_draft(
+            ToolExposureIntent(discoverable_selectors=("guarded_tool",)),
+            eligibility=ToolEligibilityContext("session-b", "request-b", "chat"),
+        )
+        .finalize(scope_id="scope-b")
+    )
     assert deferred.capability("guarded_tool") is None
     assert registry.capability_scope_store is not None
     registry.capability_scope_store.open(
@@ -93,9 +99,7 @@ async def test_dynamic_admission_allows_only_exact_run_local_tool() -> None:
         "guarded_tool",
         {},
         "session-b",
-        execution_context=ToolExecutionContext(
-            "scope-b", "session-b", "request-b", run_id="run-b"
-        ),
+        execution_context=ToolExecutionContext("scope-b", "session-b", "request-b", run_id="run-b"),
     )
 
     assert result["ok"] is True
@@ -125,9 +129,7 @@ async def test_hot_replaced_tool_is_stale_and_handler_is_not_called() -> None:
         "guarded_tool",
         {},
         "session-a",
-        execution_context=ToolExecutionContext(
-            "scope-a", "session-a", "request-a"
-        ),
+        execution_context=ToolExecutionContext("scope-a", "session-a", "request-a"),
     )
     assert result == {"ok": False, "result": None, "error": "capability_stale"}
     assert calls == []

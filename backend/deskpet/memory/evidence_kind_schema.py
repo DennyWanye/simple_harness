@@ -22,6 +22,7 @@ vocabulary, and the recovery fences the ``DROP`` removed must be back.  The
 column list is unchanged, so the v42 recovery registry row still describes the
 table and is deliberately **not** re-registered.  v56 is otherwise unchanged.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -79,25 +80,39 @@ def validate_evidence_kind_state_db(path, *, _expected_user_version=SCHEMA_VERSI
     try:
         with sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True) as db:
             db.execute("BEGIN")
-            if db.execute("SELECT schema_version,migration_sha256 FROM human_memory_migration_chain "
-                    "WHERE migration_id=?", (MIGRATION,)).fetchone() != (
-                        SCHEMA_VERSION, hashlib.sha256(sql.encode()).hexdigest()):
+            if db.execute(
+                "SELECT schema_version,migration_sha256 FROM human_memory_migration_chain "
+                "WHERE migration_id=?",
+                (MIGRATION,),
+            ).fetchone() != (SCHEMA_VERSION, hashlib.sha256(sql.encode()).hexdigest()):
                 raise ValueError("migration identity")
-            if db.execute("SELECT 1 FROM schema_migrations WHERE version=?", (MIGRATION,)).fetchone() is None:
+            if (
+                db.execute(
+                    "SELECT 1 FROM schema_migrations WHERE version=?", (MIGRATION,)
+                ).fetchone()
+                is None
+            ):
                 raise ValueError("migration marker")
             for name in REBUILT_OBJECTS:
-                if db.execute("SELECT sql FROM sqlite_master WHERE name=?", (name,)).fetchone() is None:
+                if (
+                    db.execute("SELECT sql FROM sqlite_master WHERE name=?", (name,)).fetchone()
+                    is None
+                ):
                     raise ValueError(f"schema object:{name}")
             ddl = db.execute("SELECT sql FROM sqlite_master WHERE name=?", (TABLE,)).fetchone()[0]
             for kind in EVIDENCE_KINDS:
                 if f"'{kind}'" not in ddl:
                     raise ValueError(f"evidence kind missing:{kind}")
             # The scratch table must be gone and the registry row untouched.
-            if db.execute("SELECT 1 FROM sqlite_master WHERE name=?",
-                          (f"{TABLE}_v57",)).fetchone() is not None:
+            if (
+                db.execute("SELECT 1 FROM sqlite_master WHERE name=?", (f"{TABLE}_v57",)).fetchone()
+                is not None
+            ):
                 raise ValueError("rebuild scratch table")
-            if db.execute("SELECT count(*) FROM human_memory_recovery_table_registry "
-                          "WHERE table_name=?", (TABLE,)).fetchone() != (1,):
+            if db.execute(
+                "SELECT count(*) FROM human_memory_recovery_table_registry WHERE table_name=?",
+                (TABLE,),
+            ).fetchone() != (1,):
                 raise ValueError("recovery registration")
             if db.execute(f'PRAGMA foreign_key_check("{TABLE}")').fetchone() is not None:
                 raise ValueError("foreign key")
@@ -111,7 +126,9 @@ async def initialize_evidence_kind_state_db(path, *, fault_inject=None) -> None:
     if version >= SCHEMA_VERSION:
         validator = schema_chain.domain_validator(version)
         if validator is None:
-            raise schema.HumanMemoryProgramEpochError("human_memory_program_future_database_unsupported")
+            raise schema.HumanMemoryProgramEpochError(
+                "human_memory_program_future_database_unsupported"
+            )
         validator(path)
         return
     await initialize_context_use_recollect_state_db(path)
@@ -130,9 +147,13 @@ async def initialize_evidence_kind_state_db(path, *, fault_inject=None) -> None:
                     raise schema.HumanMemoryProgramEpochError("evidence_kind_schema_base_differs")
                 validate_context_use_recollect_state_db(path)
                 await migrator._assert_effect_closure_cutover_preconditions(db)
-                async with db.execute("SELECT state FROM human_memory_recovery_fence WHERE singleton=1") as cursor:
+                async with db.execute(
+                    "SELECT state FROM human_memory_recovery_fence WHERE singleton=1"
+                ) as cursor:
                     if await cursor.fetchone() != ("OPEN",):
-                        raise schema.HumanMemoryProgramEpochError("evidence_kind_migration_recovery_fenced")
+                        raise schema.HumanMemoryProgramEpochError(
+                            "evidence_kind_migration_recovery_fenced"
+                        )
                 async with db.execute(f'SELECT count(*) FROM "{TABLE}"') as cursor:
                     reserved = (await cursor.fetchone())[0]
                 sql = _sql()
@@ -141,10 +162,14 @@ async def initialize_evidence_kind_state_db(path, *, fault_inject=None) -> None:
                 # source_sequence and block every later run_terminal.
                 async with db.execute(f'SELECT count(*) FROM "{TABLE}"') as cursor:
                     if (await cursor.fetchone())[0] != reserved:
-                        raise schema.HumanMemoryProgramEpochError("evidence_kind_migration_row_loss")
+                        raise schema.HumanMemoryProgramEpochError(
+                            "evidence_kind_migration_row_loss"
+                        )
                 now = time.time()
-                await db.execute("INSERT INTO human_memory_migration_chain VALUES (?,?,?,?)",
-                    (MIGRATION, SCHEMA_VERSION, hashlib.sha256(sql.encode()).hexdigest(), now))
+                await db.execute(
+                    "INSERT INTO human_memory_migration_chain VALUES (?,?,?,?)",
+                    (MIGRATION, SCHEMA_VERSION, hashlib.sha256(sql.encode()).hexdigest(), now),
+                )
                 await db.execute("INSERT INTO schema_migrations VALUES (?,?)", (MIGRATION, now))
                 await db.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
                 if fault_inject:

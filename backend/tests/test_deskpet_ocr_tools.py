@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 """TDD T5 — ocr_tools.py (image_ocr)."""
+
 from __future__ import annotations
 
 from pathlib import Path

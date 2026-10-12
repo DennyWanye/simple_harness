@@ -40,7 +40,11 @@ def test_p05_same_frozen_production_preview_is_deterministic_and_side_effect_fre
     tmp_path: Path,
 ) -> None:
     async def case() -> None:
-        async with reviewed(tmp_path, key="p05-preview-purity") as ((loop, mission, _world, _root, dispatch, _product), opener, provider):
+        async with reviewed(tmp_path, key="p05-preview-purity") as (
+            (loop, mission, _world, _root, dispatch, _product),
+            opener,
+            provider,
+        ):
             captured: dict[str, Any] = {}
             original_preview = dispatch.preview_plan_proposal
 

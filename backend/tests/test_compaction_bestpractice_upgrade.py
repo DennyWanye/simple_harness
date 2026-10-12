@@ -4,6 +4,7 @@
 
 对照 plans/2026-06-16-compaction-bestpractice-upgrade/00-PLAN.md §4 的可证伪断言。
 """
+
 from __future__ import annotations
 
 import pytest
@@ -43,9 +44,7 @@ class TestWI1BufferTrigger:
 
     def test_trigger_boundary(self):
         # _default 32K → trigger 20800
-        c = ContextCompressor(
-            context_window=32_000, threshold_percent=0.80, effective_pct=0.90
-        )
+        c = ContextCompressor(context_window=32_000, threshold_percent=0.80, effective_pct=0.90)
         assert c.should_compress(20_799) is False
         assert c.should_compress(20_800) is True
 
@@ -58,9 +57,7 @@ class TestWI1BufferTrigger:
 
     def test_tiny_window_falls_back_to_ratio(self):
         """极小窗口 eff_win-buffer<0 → 忽略 buffer 项,退回比例阈值(不会全触发)。"""
-        c = ContextCompressor(
-            context_window=1000, threshold_percent=0.75, effective_pct=0.95
-        )
+        c = ContextCompressor(context_window=1000, threshold_percent=0.75, effective_pct=0.95)
         # eff_win=950, reserve=8000 → buffer_line 负 → 退回 750
         assert c.trigger_tokens() == 750
         assert c.should_compress(749) is False
@@ -75,14 +72,10 @@ class TestWI2Microcompact:
                 {
                     "role": "assistant",
                     "content": "",
-                    "tool_calls": [
-                        {"id": f"tc{i}", "function": {"name": "web_fetch"}}
-                    ],
+                    "tool_calls": [{"id": f"tc{i}", "function": {"name": "web_fetch"}}],
                 }
             )
-            out.append(
-                {"role": "tool", "tool_call_id": f"tc{i}", "content": "RESULT" * 2000}
-            )
+            out.append({"role": "tool", "tool_call_id": f"tc{i}", "content": "RESULT" * 2000})
         out.append({"role": "user", "content": "继续"})
         return out
 
@@ -133,7 +126,9 @@ class TestWI2Microcompact:
         llm = _CountingLLM()
         # window 大到 microcompact 后总量 < trigger
         c = ContextCompressor(
-            llm_registry=llm, context_window=200_000, threshold_percent=0.75,
+            llm_registry=llm,
+            context_window=200_000,
+            threshold_percent=0.75,
             microcompact_keep_tools=1,
         )
         msgs = self._msgs_with_tools(5)
@@ -162,8 +157,10 @@ class TestWI2Microcompact:
 
         # 小窗口逼到必须走 haiku(microcompact 不够) → 失败 → 应返回 work
         c = ContextCompressor(
-            llm_registry=_RaisingLLM(), context_window=8_000,
-            threshold_percent=0.75, microcompact_keep_tools=1,
+            llm_registry=_RaisingLLM(),
+            context_window=8_000,
+            threshold_percent=0.75,
+            microcompact_keep_tools=1,
         )
         msgs = self._msgs_with_tools(5)
         r = await c.compress(msgs)
@@ -180,9 +177,7 @@ class TestWI2Microcompact:
         assert c.microcompact_size_aware is False
         # _microcompact_tool_results 默认 keep_bytes=None → 纯"最近 N 条"。
         msgs = self._msgs_with_tools(5)
-        out_default, n_default = _microcompact_tool_results(
-            msgs, keep_recent_tools=3
-        )
+        out_default, n_default = _microcompact_tool_results(msgs, keep_recent_tools=3)
         out_explicit, n_explicit = _microcompact_tool_results(
             msgs, keep_recent_tools=3, keep_bytes=None
         )
@@ -201,9 +196,7 @@ class TestWI2Microcompact:
         one_body = len(("RESULT" * 2000).encode("utf-8"))
         # 预算只够 1 条多一点、不够 2 条。
         budget = one_body + 100
-        out, n = _microcompact_tool_results(
-            msgs, keep_recent_tools=3, keep_bytes=budget
-        )
+        out, n = _microcompact_tool_results(msgs, keep_recent_tools=3, keep_bytes=budget)
         # 纯"最近 3 条"会清 2；size-aware 预算只够最近 1 条 → 清 4。
         assert n == 4
         tools = [m for m in out if m.get("role") == "tool"]
@@ -217,12 +210,8 @@ class TestWI2Microcompact:
     def test_microcompact_size_aware_budget_fits_all_recent(self):
         """预算充足时 size-aware 退化为纯'最近 N 条'（与 BC 同结果）。"""
         msgs = self._msgs_with_tools(5)
-        out_sa, n_sa = _microcompact_tool_results(
-            msgs, keep_recent_tools=3, keep_bytes=10_000_000
-        )
-        out_bc, n_bc = _microcompact_tool_results(
-            msgs, keep_recent_tools=3, keep_bytes=None
-        )
+        out_sa, n_sa = _microcompact_tool_results(msgs, keep_recent_tools=3, keep_bytes=10_000_000)
+        out_bc, n_bc = _microcompact_tool_results(msgs, keep_recent_tools=3, keep_bytes=None)
         assert n_sa == n_bc == 2
         assert out_sa == out_bc
 
@@ -296,12 +285,15 @@ class TestWI3StructuredSummaryAndAnchoring:
         msgs += [{"role": "user", "content": "u-last"}]
         r1 = await c.compress(msgs)
         # 第二次压缩(把第一次产物再压)
-        more = list(r1.messages) + [
-            {"role": "assistant", "content": f"x{i}" * 40} for i in range(6)
-        ] + [{"role": "user", "content": "u-last2"}]
+        more = (
+            list(r1.messages)
+            + [{"role": "assistant", "content": f"x{i}" * 40} for i in range(6)]
+            + [{"role": "user", "content": "u-last2"}]
+        )
         r2 = await c.compress(more)
         n_summary = sum(
-            1 for m in r2.messages
+            1
+            for m in r2.messages
             if str(m.get("content") or "").lstrip().startswith(_SUMMARY_MARKER)
         )
         assert n_summary <= 1, f"摘要套娃: {n_summary} 条 [压缩摘要]"
@@ -324,11 +316,14 @@ class TestWI4aGoalAnchor:
         msgs = [
             {"role": "system", "content": "[目标锚定] 当前目标：已存在"},
         ]
-        msgs += [{"role": "user" if i % 2 == 0 else "assistant", "content": f"m{i}" * 50}
-                 for i in range(30)]
+        msgs += [
+            {"role": "user" if i % 2 == 0 else "assistant", "content": f"m{i}" * 50}
+            for i in range(30)
+        ]
         r = await c.compress(msgs, goal_text="新目标会想注入但应被去重")
         anchors = [
-            m for m in r.messages
+            m
+            for m in r.messages
             if m.get("role") == "system" and str(m.get("content")).startswith("[目标锚定]")
         ]
         assert len(anchors) == 1
@@ -347,11 +342,14 @@ class TestWI4aGoalAnchor:
 
         c = ContextCompressor(llm_registry=_LLM())
         msgs = [{"role": "system", "content": "sys"}]
-        msgs += [{"role": "user" if i % 2 == 0 else "assistant", "content": f"m{i}" * 50}
-                 for i in range(30)]
+        msgs += [
+            {"role": "user" if i % 2 == 0 else "assistant", "content": f"m{i}" * 50}
+            for i in range(30)
+        ]
         r = await c.compress(msgs, goal_text="独立目标")
         anchors = [
-            m for m in r.messages
+            m
+            for m in r.messages
             if m.get("role") == "system" and str(m.get("content")).startswith("[目标锚定]")
         ]
         assert len(anchors) == 1
@@ -409,8 +407,10 @@ class TestReflectionGuard:
         class _ReflectiveLLM:
             async def chat_with_fallback(self, *a, **k):
                 class R:
-                    content = ("用户要把对话历史压缩成摘要，按分段输出，"
-                               "第三人称，省 token，不要杜撰。")
+                    content = (
+                        "用户要把对话历史压缩成摘要，按分段输出，第三人称，省 token，不要杜撰。"
+                    )
+
                 return R()
 
         c = ContextCompressor(llm_registry=_ReflectiveLLM(), first_n=1, last_n=1)
@@ -425,7 +425,8 @@ class TestReflectionGuard:
         r = await c.compress(msgs)
         # 注入的摘要应是干净 prior,不是反射新摘要
         summary_msgs = [
-            m for m in r.messages
+            m
+            for m in r.messages
             if str(m.get("content") or "").lstrip().startswith(_SUMMARY_MARKER)
         ]
         assert len(summary_msgs) == 1
@@ -452,8 +453,11 @@ class TestWI4bPreflush:
         class _FakeLLM:
             async def chat_with_fallback(self, messages, *, tools=None, model=None, **kw):
                 from llm.types import ChatResponse
+
                 return ChatResponse(
-                    content="done", stop_reason="end_turn", tool_calls=[],
+                    content="done",
+                    stop_reason="end_turn",
+                    tool_calls=[],
                     usage={"input_tokens": 5, "output_tokens": 3},
                 )
 
@@ -484,8 +488,9 @@ class TestWI4bPreflush:
             file_memory=fm,
         )
         msgs = [{"role": "user", "content": "请帮我整理文档"}]
-        msgs += [{"role": "user" if i % 2 == 0 else "assistant", "content": f"m{i}"}
-                 for i in range(4)]
+        msgs += [
+            {"role": "user" if i % 2 == 0 else "assistant", "content": f"m{i}"} for i in range(4)
+        ]
         async for _ in loop.run(msgs, session_id="s-pf"):
             pass
 
@@ -502,6 +507,7 @@ class TestWI4bPreflush:
 
         sig_params = AgentLoop.__init__.__doc__  # smoke
         import inspect
+
         assert "file_memory" in inspect.signature(AgentLoop.__init__).parameters
         assert inspect.signature(AgentLoop.__init__).parameters["file_memory"].default is None
 
@@ -516,16 +522,12 @@ class TestWI4bPreflush:
 class TestWI1EdgeGaps:
     def test_should_compress_shortcircuits_zero_window(self):
         """context_window<=0 → should_compress 永 False(短路,即便 prompt 巨大)。"""
-        c = ContextCompressor(
-            context_window=0, threshold_percent=0.75, effective_pct=0.95
-        )
+        c = ContextCompressor(context_window=0, threshold_percent=0.75, effective_pct=0.95)
         assert c.should_compress(10**9) is False
 
     def test_should_compress_shortcircuits_zero_threshold(self):
         """threshold_percent<=0 → should_compress 永 False(短路)。"""
-        c = ContextCompressor(
-            context_window=1000, threshold_percent=0.0, effective_pct=0.95
-        )
+        c = ContextCompressor(context_window=1000, threshold_percent=0.0, effective_pct=0.95)
         assert c.should_compress(10**9) is False
 
     def test_effective_window_none_is_full_window(self):
@@ -544,9 +546,7 @@ class TestWI1EdgeGaps:
         eff_pct=0.90 → eff_win=360000, reserve=12500 → buffer_line=347500 < threshold
         ⇒ min 取 buffer_line。(原测只覆盖 threshold 先到的三个 case)
         """
-        c = ContextCompressor(
-            context_window=400_000, threshold_percent=0.99, effective_pct=0.90
-        )
+        c = ContextCompressor(context_window=400_000, threshold_percent=0.99, effective_pct=0.90)
         assert c.threshold_tokens() == 396_000
         assert c.effective_window() - c.output_reserve() == 347_500
         assert c.trigger_tokens() == 347_500
@@ -565,8 +565,13 @@ class TestWI2MicrocompactEdgeGaps:
         """keep_recent_tools=0 → 全部 tool 被清(无保护,不留最后一个)。"""
         msgs = []
         for i in range(3):
-            msgs.append({"role": "assistant", "content": "",
-                         "tool_calls": [{"id": f"tc{i}", "function": {"name": "f"}}]})
+            msgs.append(
+                {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [{"id": f"tc{i}", "function": {"name": "f"}}],
+                }
+            )
             msgs.append({"role": "tool", "tool_call_id": f"tc{i}", "content": "DATA" * 100})
         out, n = _microcompact_tool_results(msgs, keep_recent_tools=0)
         assert n == 3
@@ -578,26 +583,38 @@ class TestWI2MicrocompactEdgeGaps:
         keep_recent=1 → 只护最后一条 tool(id=b),同 assistant 的前一条(id=a)仍清。
         """
         msgs = [
-            {"role": "assistant", "content": "", "tool_calls": [
-                {"id": "a", "function": {"name": "f"}},
-                {"id": "b", "function": {"name": "g"}},
-            ]},
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {"id": "a", "function": {"name": "f"}},
+                    {"id": "b", "function": {"name": "g"}},
+                ],
+            },
             {"role": "tool", "tool_call_id": "a", "content": "RA" * 100},
             {"role": "tool", "tool_call_id": "b", "content": "RB" * 100},
         ]
         out, n = _microcompact_tool_results(msgs, keep_recent_tools=1)
         assert n == 1
         by_id = {m["tool_call_id"]: m for m in out if m["role"] == "tool"}
-        assert "已清理" in by_id["a"]["content"]      # 早的清
+        assert "已清理" in by_id["a"]["content"]  # 早的清
         assert "已清理" not in by_id["b"]["content"]  # 最近的护
 
     def test_recent_k_counted_by_tool_index_not_message_index(self):
         """tool 消息夹杂非 tool 消息时,"最近 K 个" 按 tool 出现次序取,不受中间普通消息干扰。"""
         msgs = [
-            {"role": "assistant", "content": "", "tool_calls": [{"id": "t0", "function": {"name": "f"}}]},
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [{"id": "t0", "function": {"name": "f"}}],
+            },
             {"role": "tool", "tool_call_id": "t0", "content": "R0" * 50},
             {"role": "user", "content": "夹在中间的普通消息"},
-            {"role": "assistant", "content": "", "tool_calls": [{"id": "t1", "function": {"name": "f"}}]},
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [{"id": "t1", "function": {"name": "f"}}],
+            },
             {"role": "tool", "tool_call_id": "t1", "content": "R1" * 50},
         ]
         out, n = _microcompact_tool_results(msgs, keep_recent_tools=1)
@@ -609,9 +626,17 @@ class TestWI2MicrocompactEdgeGaps:
     def test_empty_content_tool_not_counted(self):
         """空 content 的 tool 不被计入清理(无正文可清),不产生假阳性 n。"""
         msgs = [
-            {"role": "assistant", "content": "", "tool_calls": [{"id": "t0", "function": {"name": "f"}}]},
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [{"id": "t0", "function": {"name": "f"}}],
+            },
             {"role": "tool", "tool_call_id": "t0", "content": ""},
-            {"role": "assistant", "content": "", "tool_calls": [{"id": "t1", "function": {"name": "f"}}]},
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [{"id": "t1", "function": {"name": "f"}}],
+            },
             {"role": "tool", "tool_call_id": "t1", "content": "REAL" * 100},
         ]
         out, n = _microcompact_tool_results(msgs, keep_recent_tools=0)
@@ -625,21 +650,33 @@ class TestWI2MicrocompactEdgeGaps:
 
         msgs = [{"role": "system", "content": "s"}]
         for i in range(5):
-            msgs.append({"role": "assistant", "content": "",
-                         "tool_calls": [{"id": f"tc{i}", "function": {"name": "f"}}]})
+            msgs.append(
+                {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [{"id": f"tc{i}", "function": {"name": "f"}}],
+                }
+            )
             msgs.append({"role": "tool", "tool_call_id": f"tc{i}", "content": "R" * 2000})
         msgs.append({"role": "user", "content": "go"})
 
         class _CountingLLM:
-            def __init__(self): self.calls = 0
+            def __init__(self):
+                self.calls = 0
+
             async def chat_with_fallback(self, *a, **k):
                 self.calls += 1
-                class R: content = "S"
+
+                class R:
+                    content = "S"
+
                 return R()
 
         llm = _CountingLLM()
         c = ContextCompressor(
-            llm_registry=llm, context_window=200_000, threshold_percent=0.75,
+            llm_registry=llm,
+            context_window=200_000,
+            threshold_percent=0.75,
             microcompact_keep_tools=0,
         )
         r = await c.compress(msgs)
@@ -664,7 +701,9 @@ class TestWI3PriorExtractionEdgeGaps:
         ]
         prior, kept = _extract_prior_summary(msgs)
         assert prior == "OLD-SECOND"
-        assert all(not str(m.get("content") or "").lstrip().startswith(_SUMMARY_MARKER) for m in kept)
+        assert all(
+            not str(m.get("content") or "").lstrip().startswith(_SUMMARY_MARKER) for m in kept
+        )
         assert len(kept) == 1  # 仅中间普通消息留下
 
     def test_extract_prior_tolerates_leading_whitespace(self):
@@ -679,10 +718,15 @@ class TestWI3PriorExtractionEdgeGaps:
         """中段去掉旧摘要后为空 → 透传 prior: 恰 1 条摘要 + 不调 haiku(省 token)。"""
 
         class _CountingLLM:
-            def __init__(self): self.calls = 0
+            def __init__(self):
+                self.calls = 0
+
             async def chat_with_fallback(self, *a, **k):
                 self.calls += 1
-                class R: content = "SHOULD-NOT-BE-CALLED"
+
+                class R:
+                    content = "SHOULD-NOT-BE-CALLED"
+
                 return R()
 
         llm = _CountingLLM()
@@ -696,7 +740,8 @@ class TestWI3PriorExtractionEdgeGaps:
         assert r.meta.get("reason") == "prior_summary_passthrough"
         assert llm.calls == 0  # 不再走 haiku
         summaries = [
-            m for m in r.messages
+            m
+            for m in r.messages
             if str(m.get("content") or "").lstrip().startswith(_SUMMARY_MARKER)
         ]
         assert len(summaries) == 1
@@ -711,7 +756,10 @@ class TestWI3PriorExtractionEdgeGaps:
             async def chat_with_fallback(self, messages, **k):
                 captured["system"] = messages[0]["content"]
                 captured["user"] = messages[1]["content"]
-                class R: content = "NEW-SUMMARY"
+
+                class R:
+                    content = "NEW-SUMMARY"
+
                 return R()
 
         c = ContextCompressor(llm_registry=_LLM(), first_n=1, last_n=1)
@@ -756,8 +804,8 @@ class TestReflectionGuardEdgeGaps:
         class _ReflectiveLLM:
             async def chat_with_fallback(self, *a, **k):
                 class R:
-                    content = ("用户要把对话历史压缩成摘要，分段输出，"
-                               "第三人称，省 token，不要杜撰。")
+                    content = "用户要把对话历史压缩成摘要，分段输出，第三人称，省 token，不要杜撰。"
+
                 return R()
 
         c = ContextCompressor(llm_registry=_ReflectiveLLM(), first_n=1, last_n=1)
@@ -771,7 +819,8 @@ class TestReflectionGuardEdgeGaps:
         r = await c.compress(msgs)  # 不抛
         assert r.compressed is True
         summaries = [
-            m for m in r.messages
+            m
+            for m in r.messages
             if str(m.get("content") or "").lstrip().startswith(_SUMMARY_MARKER)
         ]
         assert len(summaries) == 1
@@ -795,8 +844,11 @@ class TestWI4aAlwaysOnInjection:
         async def chat_with_fallback(self, messages, *, tools=None, model=None, **kw):
             self.seen.append(list(messages))
             from llm.types import ChatResponse
+
             return ChatResponse(
-                content="done", stop_reason="end_turn", tool_calls=[],
+                content="done",
+                stop_reason="end_turn",
+                tool_calls=[],
                 usage={"input_tokens": 5, "output_tokens": 3},
             )
 
@@ -812,7 +864,8 @@ class TestWI4aAlwaysOnInjection:
 
         llm = self._EndTurnLLM()
         loop = AgentLoop(
-            llm_registry=llm, tool_registry=self._NullTools(),
+            llm_registry=llm,
+            tool_registry=self._NullTools(),
             session_goal_store=store,
         )
         async for _ in loop.run([{"role": "user", "content": "开始"}], session_id="s-anchor"):
@@ -820,7 +873,8 @@ class TestWI4aAlwaysOnInjection:
 
         assert llm.seen, "LLM 未被调用"
         anchors = [
-            m for m in llm.seen[0]
+            m
+            for m in llm.seen[0]
             if m.get("role") == "system" and str(m.get("content")).startswith("[目标锚定]")
         ]
         assert len(anchors) == 1
@@ -839,14 +893,16 @@ class TestWI4aAlwaysOnInjection:
 
         llm = self._EndTurnLLM()
         loop = AgentLoop(
-            llm_registry=llm, tool_registry=self._NullTools(),
+            llm_registry=llm,
+            tool_registry=self._NullTools(),
             session_goal_store=store,
         )
         async for _ in loop.run([{"role": "user", "content": "x"}], session_id="s-nosub"):
             pass
 
         anchors = [
-            m for m in llm.seen[0]
+            m
+            for m in llm.seen[0]
             if m.get("role") == "system" and str(m.get("content")).startswith("[目标锚定]")
         ]
         assert len(anchors) == 1
@@ -861,16 +917,15 @@ class TestWI4aAlwaysOnInjection:
         store = SessionGoalStore()  # 空
         llm = self._EndTurnLLM()
         loop = AgentLoop(
-            llm_registry=llm, tool_registry=self._NullTools(),
+            llm_registry=llm,
+            tool_registry=self._NullTools(),
             session_goal_store=store,
         )
         async for _ in loop.run([{"role": "user", "content": "x"}], session_id="s-empty"):
             pass
 
         for call in llm.seen:
-            assert not any(
-                str(m.get("content") or "").startswith("[目标锚定]") for m in call
-            )
+            assert not any(str(m.get("content") or "").startswith("[目标锚定]") for m in call)
 
 
 # ───────────────────── WI-4b pre-flush 缺口 (safe-fail / 无 goal / 都无) ─────────────────────
@@ -885,8 +940,11 @@ class TestWI4bPreflushEdgeGaps:
     class _LLM:
         async def chat_with_fallback(self, messages, *, tools=None, model=None, **kw):
             from llm.types import ChatResponse
+
             return ChatResponse(
-                content="done", stop_reason="end_turn", tool_calls=[],
+                content="done",
+                stop_reason="end_turn",
+                tool_calls=[],
                 usage={"input_tokens": 5, "output_tokens": 3},
             )
 
@@ -896,6 +954,7 @@ class TestWI4bPreflushEdgeGaps:
 
         async def compress(self, messages, *, goal_text=None, pending_tasks=None):
             from deskpet.agent.context_compressor import CompressionResult
+
             return CompressionResult(messages=list(messages), compressed=False)
 
     @pytest.mark.asyncio
@@ -904,7 +963,9 @@ class TestWI4bPreflushEdgeGaps:
         from agent.agent_loop import AgentLoop
 
         class _RaisingFM:
-            def __init__(self): self.calls = 0
+            def __init__(self):
+                self.calls = 0
+
             async def append(self, target, content, salience=0.5):
                 self.calls += 1
                 raise RuntimeError("disk full")
@@ -916,8 +977,11 @@ class TestWI4bPreflushEdgeGaps:
         compressor = self._AlwaysCompress()
         fm = _RaisingFM()
         loop = AgentLoop(
-            llm_registry=self._LLM(), tool_registry=self._Tools(),
-            compressor=compressor, session_goal_store=_GoalStore(), file_memory=fm,
+            llm_registry=self._LLM(),
+            tool_registry=self._Tools(),
+            compressor=compressor,
+            session_goal_store=_GoalStore(),
+            file_memory=fm,
         )
         events = []
         async for ev in loop.run([{"role": "user", "content": "请整理"}], session_id="s-raise"):
@@ -933,7 +997,9 @@ class TestWI4bPreflushEdgeGaps:
         from agent.agent_loop import AgentLoop
 
         class _RecFM:
-            def __init__(self): self.calls = []
+            def __init__(self):
+                self.calls = []
+
             async def append(self, target, content, salience=0.5):
                 self.calls.append(content)
 
@@ -943,8 +1009,10 @@ class TestWI4bPreflushEdgeGaps:
 
         fm = _RecFM()
         loop = AgentLoop(
-            llm_registry=self._LLM(), tool_registry=self._Tools(),
-            compressor=self._AlwaysCompress(), session_goal_store=_NoGoalStore(),
+            llm_registry=self._LLM(),
+            tool_registry=self._Tools(),
+            compressor=self._AlwaysCompress(),
+            session_goal_store=_NoGoalStore(),
             file_memory=fm,
         )
         async for _ in loop.run([{"role": "user", "content": "帮我查天气"}], session_id="s-nogoal"):
@@ -960,7 +1028,9 @@ class TestWI4bPreflushEdgeGaps:
         from agent.agent_loop import AgentLoop
 
         class _RecFM:
-            def __init__(self): self.calls = []
+            def __init__(self):
+                self.calls = []
+
             async def append(self, target, content, salience=0.5):
                 self.calls.append(content)
 
@@ -970,8 +1040,10 @@ class TestWI4bPreflushEdgeGaps:
 
         fm = _RecFM()
         loop = AgentLoop(
-            llm_registry=self._LLM(), tool_registry=self._Tools(),
-            compressor=self._AlwaysCompress(), session_goal_store=_NoGoalStore(),
+            llm_registry=self._LLM(),
+            tool_registry=self._Tools(),
+            compressor=self._AlwaysCompress(),
+            session_goal_store=_NoGoalStore(),
             file_memory=fm,
         )
         # 只有 system 消息,无 user
@@ -996,13 +1068,17 @@ class TestWI1B2CtxObservability:
     class _LLM:
         async def chat_with_fallback(self, messages, *, tools=None, model=None, **kw):
             from llm.types import ChatResponse
+
             return ChatResponse(
-                content="done", stop_reason="end_turn", tool_calls=[],
+                content="done",
+                stop_reason="end_turn",
+                tool_calls=[],
                 usage={"input_tokens": 5, "output_tokens": 3},
             )
 
     class _CompressHit:
         """压缩命中 — 返回 compressed=True + 真 token 字段，触发可观测分支。"""
+
         model = "claude-haiku-4-5"
 
         def should_compress(self, n):
@@ -1010,6 +1086,7 @@ class TestWI1B2CtxObservability:
 
         async def compress(self, messages, *, goal_text=None, pending_tasks=None):
             from deskpet.agent.context_compressor import CompressionResult
+
             return CompressionResult(
                 messages=list(messages),
                 compressed=True,
@@ -1026,7 +1103,8 @@ class TestWI1B2CtxObservability:
 
         recorded: list[tuple] = []
         monkeypatch.setattr(
-            _ms, "record",
+            _ms,
+            "record",
             lambda event, detail=None: recorded.append((event, detail)) or True,
         )
 
@@ -1037,19 +1115,17 @@ class TestWI1B2CtxObservability:
             # ctx_observability 不传 → 默认 False (BC)
         )
         events = []
-        async for ev in loop.run(
-            [{"role": "user", "content": "请整理"}], session_id="s-off"
-        ):
+        async for ev in loop.run([{"role": "user", "content": "请整理"}], session_id="s-off"):
             events.append(ev)
 
         # OFF=BC: 无 ContextCompactedEvent
-        assert not any(
-            getattr(e, "type", "") == "context_compacted" for e in events
-        ), "flag OFF 不应 yield ContextCompactedEvent"
+        assert not any(getattr(e, "type", "") == "context_compacted" for e in events), (
+            "flag OFF 不应 yield ContextCompactedEvent"
+        )
         # OFF=BC: 无 context_compacted metrics 调用
-        assert not any(
-            ev == "context_compacted" for ev, _ in recorded
-        ), "flag OFF 不应 record context_compacted metrics"
+        assert not any(ev == "context_compacted" for ev, _ in recorded), (
+            "flag OFF 不应 record context_compacted metrics"
+        )
         # 压缩本身仍发生 → loop 正常结束
         assert any(getattr(e, "type", "") == "final" for e in events)
 
@@ -1062,7 +1138,8 @@ class TestWI1B2CtxObservability:
 
         recorded: list[tuple] = []
         monkeypatch.setattr(
-            _ms, "record",
+            _ms,
+            "record",
             lambda event, detail=None: recorded.append((event, detail)) or True,
         )
 
@@ -1074,9 +1151,7 @@ class TestWI1B2CtxObservability:
         )
         loop._context_usage_basis_sample_id = "sample-before"
         events = []
-        async for ev in loop.run(
-            [{"role": "user", "content": "请整理"}], session_id="s-on"
-        ):
+        async for ev in loop.run([{"role": "user", "content": "请整理"}], session_id="s-on"):
             events.append(ev)
 
         cc_events = [e for e in events if isinstance(e, ContextCompactedEvent)]
@@ -1089,6 +1164,7 @@ class TestWI1B2CtxObservability:
         assert cc.based_on_sample_id == "sample-before"
         assert cc.type == "context_compacted"
         from deskpet.agent.context_usage import context_usage_sample_id
+
         assert loop._context_usage_basis_sample_id == context_usage_sample_id(
             "s-on", cc.source_event_id
         )

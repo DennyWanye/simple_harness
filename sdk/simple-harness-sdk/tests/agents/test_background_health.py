@@ -19,7 +19,10 @@ def test_book_counts_failures_and_logs_once_per_interval(caplog) -> None:
         book.fail("draining", RuntimeError("boom"), item="session-2")
     rows = {row.loop: row for row in book.snapshot()}
     assert rows["draining"].consecutive_failures == 3
-    assert rows["draining"].last_error_code == "RuntimeError" and rows["draining"].stuck_item == "session-2"
+    assert (
+        rows["draining"].last_error_code == "RuntimeError"
+        and rows["draining"].stuck_item == "session-2"
+    )
     assert rows["index"].consecutive_failures == 0
     # the second identical failure inside the interval is counted but not logged again
     assert [r.getMessage() for r in caplog.records if "draining" in r.getMessage()].__len__() == 2
@@ -44,9 +47,17 @@ def test_drive_draining_isolates_a_failing_session(monkeypatch) -> None:
             raise ArpError("FILE_BUSY", "busy")
 
     service = SimpleNamespace(connection=object(), advance=advance)
-    monkeypatch.setattr(store, "list_sessions_in_state", lambda *_a, **_k: [
-        SimpleNamespace(session_id="bad"), SimpleNamespace(session_id="busy"), SimpleNamespace(session_id="good")])
+    monkeypatch.setattr(
+        store,
+        "list_sessions_in_state",
+        lambda *_a, **_k: [
+            SimpleNamespace(session_id="bad"),
+            SimpleNamespace(session_id="busy"),
+            SimpleNamespace(session_id="good"),
+        ],
+    )
     driven = session_lifecycle.SessionLifecycleService.drive_draining(
-        service, on_error=lambda sid, error: seen.append((sid, error.code)))  # type: ignore[arg-type]
+        service, on_error=lambda sid, error: seen.append((sid, error.code))
+    )  # type: ignore[arg-type]
     assert calls == ["bad", "busy", "good"] and driven == 1
     assert seen == [("bad", "MARKER_MISMATCH")]

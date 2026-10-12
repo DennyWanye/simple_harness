@@ -12,6 +12,7 @@
 用产品同形世界走一个内容审阅必检的任务，留下真实的审阅、检查绑定与工作箱；需要"还在等"的那一刻时，
 把工作箱里的行按允许的转移摆成在等（外界时机）。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -57,23 +58,36 @@ def _imports(store, mission_id):  # type: ignore[no-untyped-def]
     rows = store.connection.execute(
         "SELECT w.work_key, json_extract(b.binding_json,'$.subject.purpose') FROM assurance_pending_work w "
         "JOIN assurance_review_bindings b ON w.work_key LIKE 'review-import:'||b.review_key||':%' "
-        "WHERE w.mission_id=? AND w.consumer='REVIEW'", (mission_id,)).fetchall()
+        "WHERE w.mission_id=? AND w.consumer='REVIEW'",
+        (mission_id,),
+    ).fetchall()
     return {purpose: key for key, purpose in rows}
 
 
 def _hold(store, mission_id, key, reason):  # type: ignore[no-untyped-def]
     """按工作箱允许的转移把一项做完的导入摆回"在等"：重开（目标升到最新事件）→ 领取 → 等待。"""
     head = store.connection.execute(
-        "SELECT event_id, seq FROM events WHERE mission_id=? ORDER BY seq DESC LIMIT 1", (mission_id,)).fetchone()
+        "SELECT event_id, seq FROM events WHERE mission_id=? ORDER BY seq DESC LIMIT 1",
+        (mission_id,),
+    ).fetchone()
     where = " WHERE mission_id=? AND consumer='REVIEW' AND work_key=?"
     with store.transaction():
         for sql, args in (
-            ("UPDATE assurance_pending_work SET state='PENDING', trigger_event_id=?, target_epoch=?, "
-             "row_version=row_version+1", (head[0], head[1])),
-            ("UPDATE assurance_pending_work SET state='RUNNING', owner='p1a', lease_until_ms=?, "
-             "row_version=row_version+1", (FAR,)),
-            ("UPDATE assurance_pending_work SET state='WAITING', owner=NULL, lease_until_ms=NULL, "
-             "wait_reason=?, not_before_ms=?, row_version=row_version+1", (reason, FAR)),
+            (
+                "UPDATE assurance_pending_work SET state='PENDING', trigger_event_id=?, target_epoch=?, "
+                "row_version=row_version+1",
+                (head[0], head[1]),
+            ),
+            (
+                "UPDATE assurance_pending_work SET state='RUNNING', owner='p1a', lease_until_ms=?, "
+                "row_version=row_version+1",
+                (FAR,),
+            ),
+            (
+                "UPDATE assurance_pending_work SET state='WAITING', owner=NULL, lease_until_ms=NULL, "
+                "wait_reason=?, not_before_ms=?, row_version=row_version+1",
+                (reason, FAR),
+            ),
         ):
             store.connection.execute(sql + where, (*args, mission_id, key))
 
@@ -82,16 +96,27 @@ def _emit_again(case, event):  # type: ignore[no-untyped-def]
     """同一个写方再写一条同类型、同内容的事件（新序号）：唤醒只看事件类型与它指向的事实。"""
     commit = case.world.loop.commit
     with case.store.transaction():
-        return commit._emit(event.type, case.mission_id, key="p1a-again:" + event.id,
-                            task_id=event.task_id, attempt_id=event.attempt_id, payload=event.payload)
+        return commit._emit(
+            event.type,
+            case.mission_id,
+            key="p1a-again:" + event.id,
+            task_id=event.task_id,
+            attempt_id=event.attempt_id,
+            payload=event.payload,
+        )
 
 
-def test_a_check_binding_wakes_only_the_import_waiting_for_it_through_one_barrier_event(tmp_path, monkeypatch):
+def test_a_check_binding_wakes_only_the_import_waiting_for_it_through_one_barrier_event(
+    tmp_path, monkeypatch
+):
     """检查绑定晚到：同一事务里只有一条有效性 / 审阅会读的事件（屏障的资料变更事件），它叫醒在等检查的
     内容审阅导入；已做完的方法审阅导入不被叫醒。"""
     state: dict = {"defer": True, "held": [], "woken": [], "relevant": []}
-    bind, prepare, tick = (CommitService.import_assurance_check_locked,
-                           AssuranceReviewConsumer.prepare, AssuranceTick.tick)
+    bind, prepare, tick = (
+        CommitService.import_assurance_check_locked,
+        AssuranceReviewConsumer.prepare,
+        AssuranceTick.tick,
+    )
 
     def held_bind(self, **command):  # type: ignore[no-untyped-def]
         if state["defer"]:
@@ -118,7 +143,9 @@ def test_a_check_binding_wakes_only_the_import_waiting_for_it_through_one_barrie
                 written = [e for e in store.list_events(command["mission_id"]) if e.seq > head]
                 # 这一次绑定的事务里，有效性 / 审阅会读的事件恰好一条，就是屏障的资料变更事件
                 relevant = [e for e in written if e.type in VALIDITY_SOURCE_EVENTS | WAKE_EVENTS]
-                state["relevant"].append([(e.type, e.payload.get("source_table")) for e in relevant])
+                state["relevant"].append(
+                    [(e.type, e.payload.get("source_table")) for e in relevant]
+                )
                 for event in relevant:
                     state["woken"].append({t.work_key for t in consumer.classify(event)})
         return progressed
@@ -133,7 +160,9 @@ def test_a_check_binding_wakes_only_the_import_waiting_for_it_through_one_barrie
             assert str(mission.status.value) == "COMPLETED", mission.final_report
             imports = _imports(case.store, case.mission_id)
             assert state["held"] and state["waiting"] == imports["TASK_CONTENT"]
-            assert state["relevant"] == [[("AssuranceEvidenceChanged", "assurance_check_bindings")]] * len(state["held"])
+            assert state["relevant"] == [
+                [("AssuranceEvidenceChanged", "assurance_check_bindings")]
+            ] * len(state["held"])
             for woken in state["woken"]:
                 assert imports["TASK_CONTENT"] in woken
                 assert imports["METHOD_PLAN"] not in woken  # 已做完的导入不因晚到的检查重解
@@ -157,9 +186,15 @@ def test_every_registered_wake_name_has_a_writer_and_no_receipt_kind_is_register
                 name = getattr(node.func, "attr", None) or getattr(node.func, "id", None) or ""
                 if "emit" in name.lower() and node.args and isinstance(node.args[0], ast.Constant):
                     written.add(str(node.args[0].value))
-    sql = "\n".join(path.read_text(encoding="utf-8") for path in [*root.rglob("*.sql"), *root.rglob("*.py")])
-    written.update(m.group(1) for m in re.finditer(r"INSERT INTO events.{0,600}?'([A-Z][A-Za-z]+)'", sql, re.S))
-    assert VALIDITY_SOURCE_EVENTS | WAKE_EVENTS <= written, sorted((VALIDITY_SOURCE_EVENTS | WAKE_EVENTS) - written)
+    sql = "\n".join(
+        path.read_text(encoding="utf-8") for path in [*root.rglob("*.sql"), *root.rglob("*.py")]
+    )
+    written.update(
+        m.group(1) for m in re.finditer(r"INSERT INTO events.{0,600}?'([A-Z][A-Za-z]+)'", sql, re.S)
+    )
+    assert VALIDITY_SOURCE_EVENTS | WAKE_EVENTS <= written, sorted(
+        (VALIDITY_SOURCE_EVENTS | WAKE_EVENTS) - written
+    )
     receipt_kinds = {"AssuranceLocalCheckImported", "AssuranceExecutorCheckImported"}
     assert not receipt_kinds & (VALIDITY_SOURCE_EVENTS | CLOSEOUT_SOURCE_EVENTS | WAKE_EVENTS)
     assert "AssuranceCheckBound" not in written  # 检查到了只有屏障这一条信号
@@ -178,11 +213,16 @@ def test_a_settlement_wakes_an_import_waiting_on_budget_before_its_due_time(tmp_
             _hold(store, case.mission_id, imports["METHOD_PLAN"], "SOURCE_UNAVAILABLE")
             again = _emit_again(case, released)
             # 只唤醒卡在预算上的那一项；别的原因的等待不归结清事件管
-            assert [target.work_key for target in consumer.classify(again)] == [imports["TASK_CONTENT"]]
+            assert [target.work_key for target in consumer.classify(again)] == [
+                imports["TASK_CONTENT"]
+            ]
             await tick.tick()
-            rows = dict(store.connection.execute(
-                "SELECT work_key, state FROM assurance_pending_work WHERE mission_id=? AND consumer='REVIEW'",
-                (case.mission_id,)).fetchall())
+            rows = dict(
+                store.connection.execute(
+                    "SELECT work_key, state FROM assurance_pending_work WHERE mission_id=? AND consumer='REVIEW'",
+                    (case.mission_id,),
+                ).fetchall()
+            )
             # 到点还远，被结清事件唤醒后当轮就领走做完（导入早已正式入库：按原回执确认，不重算）
             assert rows[imports["TASK_CONTENT"]] == "DONE"
             assert rows[imports["METHOD_PLAN"]] == "WAITING"

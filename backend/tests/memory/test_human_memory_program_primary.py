@@ -78,9 +78,7 @@ class FakeS1Envelope:
         self.envelope_hash = (
             _hash(self.to_json())
             if self.schema_version == 1
-            else _domain_hash(
-                "simple-harness/sanitized-evidence-envelope/v2", self.to_json()
-            )
+            else _domain_hash("simple-harness/sanitized-evidence-envelope/v2", self.to_json())
         )
 
     def to_json(self) -> dict[str, Any]:
@@ -128,9 +126,7 @@ class FakeS1Receipt:
         self.receipt_hash = (
             _hash(self.to_json())
             if self.envelope.schema_version == 1
-            else _domain_hash(
-                "simple-harness/sanitized-evidence-receipt/v2", self.to_json()
-            )
+            else _domain_hash("simple-harness/sanitized-evidence-receipt/v2", self.to_json())
         )
 
     def verify(self, envelope: FakeS1Envelope) -> None:
@@ -190,22 +186,24 @@ async def test_concurrent_cold_init_creates_one_writable_primary_and_receipt(
     assert len({item.receipt_id for item in receipts}) == 1
 
     with sqlite3.connect(db_path) as db:
+        assert db.execute("PRAGMA user_version").fetchone()[0] == HUMAN_MEMORY_TARGET_SCHEMA_VERSION
         assert (
-            db.execute("PRAGMA user_version").fetchone()[0]
-            == HUMAN_MEMORY_TARGET_SCHEMA_VERSION
+            db.execute(
+                "SELECT COUNT(*) FROM human_memory_primary_conversations "
+                "WHERE subject='actor-1' AND writable=1"
+            ).fetchone()[0]
+            == 1
         )
-        assert db.execute(
-            "SELECT COUNT(*) FROM human_memory_primary_conversations "
-            "WHERE subject='actor-1' AND writable=1"
-        ).fetchone()[0] == 1
-        assert db.execute(
-            "SELECT COUNT(*) FROM human_memory_init_receipts WHERE subject='actor-1'"
-        ).fetchone()[0] == 1
+        assert (
+            db.execute(
+                "SELECT COUNT(*) FROM human_memory_init_receipts WHERE subject='actor-1'"
+            ).fetchone()[0]
+            == 1
+        )
         ddl = "\n".join(
             row[0]
             for row in db.execute(
-                "SELECT sql FROM sqlite_master WHERE sql IS NOT NULL "
-                "AND name LIKE 'human_memory_%'"
+                "SELECT sql FROM sqlite_master WHERE sql IS NOT NULL AND name LIKE 'human_memory_%'"
             )
         )
     assert "reasoning_content" not in ddl
@@ -242,14 +240,11 @@ async def test_existing_v34_is_refused_without_migration_or_deletion(
     await initialize_state_db(db_path)
     with sqlite3.connect(db_path) as db:
         db.execute(
-            "INSERT INTO sessions(id,created_at,metadata) "
-            "VALUES ('legacy',1,'{\"legacy\":true}')"
+            "INSERT INTO sessions(id,created_at,metadata) VALUES ('legacy',1,'{\"legacy\":true}')"
         )
         db.commit()
         before = db.execute("SELECT COUNT(*) FROM sessions").fetchone()[0]
-        before_markers = db.execute(
-            "SELECT COUNT(*) FROM schema_migrations"
-        ).fetchone()[0]
+        before_markers = db.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0]
     before_bytes = db_path.read_bytes()
 
     with pytest.raises(
@@ -261,13 +256,13 @@ async def test_existing_v34_is_refused_without_migration_or_deletion(
     with sqlite3.connect(db_path) as db:
         assert db.execute("PRAGMA user_version").fetchone()[0] == 34
         assert db.execute("SELECT COUNT(*) FROM sessions").fetchone()[0] == before
+        assert db.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0] == before_markers
         assert (
-            db.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0]
-            == before_markers
+            db.execute(
+                "SELECT COUNT(*) FROM sqlite_master WHERE name LIKE 'human_memory_%'"
+            ).fetchone()[0]
+            == 0
         )
-        assert db.execute(
-            "SELECT COUNT(*) FROM sqlite_master WHERE name LIKE 'human_memory_%'"
-        ).fetchone()[0] == 0
     assert db_path.read_bytes() == before_bytes
 
 
@@ -358,9 +353,7 @@ async def test_protocol_and_provider_allowlist_fail_closed_before_insert(
     with pytest.raises(HumanMemoryProgramProtocolError, match="credential_value_rejected"):
         await store.append_evidence(credential_envelope, credential_receipt)
 
-    bool_schema_envelope, _ = _evidence(
-        4, "user_message", {"public_text": "schema canary"}
-    )
+    bool_schema_envelope, _ = _evidence(4, "user_message", {"public_text": "schema canary"})
     original_to_json = bool_schema_envelope.to_json
 
     def bool_schema_json() -> dict[str, Any]:
@@ -385,9 +378,9 @@ async def test_protocol_and_provider_allowlist_fail_closed_before_insert(
     initialized = await store.initialize_subject("actor-1")
     with sqlite3.connect(tmp_path / "state.db") as db:
         assert db.execute("SELECT COUNT(*) FROM human_memory_evidence").fetchone()[0] == 0
-        assert db.execute(
-            "SELECT COUNT(*) FROM human_memory_sanitization_receipts"
-        ).fetchone()[0] == 0
+        assert (
+            db.execute("SELECT COUNT(*) FROM human_memory_sanitization_receipts").fetchone()[0] == 0
+        )
     assert initialized.primary_conversation_id
 
 
@@ -409,14 +402,10 @@ async def test_raw_evidence_cannot_be_updated_deleted_or_opened_as_legacy(
             "human_memory_evidence",
         )
         for table in protected_tables:
-            with pytest.raises(
-                sqlite3.IntegrityError, match="human_memory_append_only"
-            ):
+            with pytest.raises(sqlite3.IntegrityError, match="human_memory_append_only"):
                 db.execute(f"UPDATE {table} SET rowid=rowid WHERE 1=1")
             db.rollback()
-            with pytest.raises(
-                sqlite3.IntegrityError, match="human_memory_append_only"
-            ):
+            with pytest.raises(sqlite3.IntegrityError, match="human_memory_append_only"):
                 db.execute(f"DELETE FROM {table} WHERE 1=1")
             db.rollback()
 
@@ -441,9 +430,7 @@ async def test_same_evidence_id_with_different_payload_conflicts(tmp_path: Path)
     store = HumanMemoryProgramStore(tmp_path / "state.db")
     envelope, receipt = _evidence(1, "user_message", {"public_text": "one"})
     await store.append_evidence(envelope, receipt)
-    changed, changed_receipt = _evidence(
-        1, "user_message", {"public_text": "different"}
-    )
+    changed, changed_receipt = _evidence(1, "user_message", {"public_text": "different"})
     with pytest.raises(HumanMemoryProgramConflict):
         await store.append_evidence(changed, changed_receipt)
 

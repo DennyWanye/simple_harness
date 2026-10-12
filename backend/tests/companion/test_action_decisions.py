@@ -89,9 +89,7 @@ def _recovered(**changes) -> RecoveredCompanionDecision:
 _DEFAULT_BINDING = object()
 
 
-def _service(
-    *, binding=_DEFAULT_BINDING, recovered=None, wall_time=lambda: 100.0
-):
+def _service(*, binding=_DEFAULT_BINDING, recovered=None, wall_time=lambda: 100.0):
     owner = OwnerRef("profile-a", 2)
     frozen = FrozenOwnerIdentity(owner, "owner-key", 8)
     gate = IdentityReadyGate()
@@ -120,9 +118,7 @@ def _service(
 async def test_decision_service_recovers_all_fences_from_durable_state() -> None:
     service, _, kernel, control = _service()
 
-    result = await service.decide(
-        decision_id="decision-1", allow=True, control_identity=control
-    )
+    result = await service.decide(decision_id="decision-1", allow=True, control_identity=control)
 
     assert result == {"accepted": True}
     ref, actor, signal = kernel.calls[0]
@@ -160,22 +156,16 @@ async def test_decision_service_rejects_identity_a_b_generation_logout_and_stale
 ) -> None:
     service, gate, kernel, control = _service()
     if mutation == "owner":
-        control = TrustedCompanionControlIdentity(
-            OwnerRef("profile-b", 2), "owner-key", 8
-        )
+        control = TrustedCompanionControlIdentity(OwnerRef("profile-b", 2), "owner-key", 8)
     elif mutation == "generation":
-        control = TrustedCompanionControlIdentity(
-            OwnerRef("profile-a", 3), "owner-key", 8
-        )
+        control = TrustedCompanionControlIdentity(OwnerRef("profile-a", 3), "owner-key", 8)
     elif mutation == "binding_epoch":
         control = TrustedCompanionControlIdentity(control.owner, "owner-key", 7)
     else:
         gate.unbind(expected_binding_epoch=8)
 
     with pytest.raises(CompanionActionDecisionRejected) as caught:
-        await service.decide(
-            decision_id="decision-1", allow=True, control_identity=control
-        )
+        await service.decide(decision_id="decision-1", allow=True, control_identity=control)
     assert caught.value.code == code
     assert kernel.calls == []
 
@@ -184,18 +174,12 @@ async def test_decision_service_rejects_identity_a_b_generation_logout_and_stale
 async def test_decision_service_rejects_stale_run_binding_and_expiry() -> None:
     service, _, kernel, control = _service(binding=None)
     with pytest.raises(CompanionActionDecisionRejected) as caught:
-        await service.decide(
-            decision_id="decision-1", allow=False, control_identity=control
-        )
+        await service.decide(decision_id="decision-1", allow=False, control_identity=control)
     assert caught.value.code == "companion_run_binding_stale"
 
-    service, _, kernel, control = _service(
-        recovered=_recovered(expires_at=99.0)
-    )
+    service, _, kernel, control = _service(recovered=_recovered(expires_at=99.0))
     with pytest.raises(CompanionActionDecisionRejected) as caught:
-        await service.decide(
-            decision_id="decision-1", allow=False, control_identity=control
-        )
+        await service.decide(decision_id="decision-1", allow=False, control_identity=control)
     assert caught.value.code == "decision_expired"
     assert kernel.calls == []
 
@@ -244,9 +228,7 @@ async def test_sqlite_recovery_reads_decision_and_original_actor(tmp_path) -> No
     db.commit()
     db.close()
 
-    recovered = await SqliteExecutionDecisionRecovery(
-        path
-    ).recover_companion_decision("decision-1")
+    recovered = await SqliteExecutionDecisionRecovery(path).recover_companion_decision("decision-1")
 
     assert recovered.session_id == "session-1"
     assert recovered.principal_id == "principal-1"

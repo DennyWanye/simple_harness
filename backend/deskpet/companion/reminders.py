@@ -170,8 +170,7 @@ class ReminderRunAuthority:
     def __post_init__(self) -> None:
         _zone(self.timezone)
         refs = tuple(
-            _required_text(item, "source_message_ref", 512)
-            for item in self.source_message_refs
+            _required_text(item, "source_message_ref", 512) for item in self.source_message_refs
         )
         if len(set(refs)) != len(refs):
             raise ValueError("reminder_source_message_ref_duplicate")
@@ -304,9 +303,7 @@ def _defer_for_quiet_hours(
         target_date = local.date()
     else:
         inside = current >= start or current < end
-        target_date = local.date() + (
-            timedelta(days=1) if current >= start else timedelta()
-        )
+        target_date = local.date() + (timedelta(days=1) if current >= start else timedelta())
     if not inside:
         return due_utc.astimezone(UTC)
     return _normalize_local(target_date, end, zone).astimezone(UTC)
@@ -331,9 +328,7 @@ def _policy_quiet_end(
         target_date = local.date()
     else:
         inside = current >= start or current < end
-        target_date = local.date() + (
-            timedelta(days=1) if current >= start else timedelta()
-        )
+        target_date = local.date() + (timedelta(days=1) if current >= start else timedelta())
     if not inside:
         return None
     return _normalize_local(target_date, end, zone).astimezone(UTC)
@@ -359,11 +354,7 @@ def _first_due(
     if set(schedule) != {"kind", "weekday", "local_time", "timezone"}:
         raise ValueError("reminder_weekly_schedule_invalid")
     weekday = schedule.get("weekday")
-    if (
-        isinstance(weekday, bool)
-        or not isinstance(weekday, int)
-        or not 1 <= weekday <= 7
-    ):
+    if isinstance(weekday, bool) or not isinstance(weekday, int) or not 1 <= weekday <= 7:
         raise ValueError("reminder_weekday_invalid")
     local_time = _parse_hhmm(schedule.get("local_time"), "local_time")
     timezone = _required_text(schedule.get("timezone"), "timezone", 128)
@@ -383,12 +374,16 @@ def _first_due(
             zone,
         )
         due = due_local.astimezone(UTC)
-    return {
-        "kind": "weekly",
-        "weekday": weekday,
-        "local_time": local_time.strftime("%H:%M"),
-        "timezone": timezone,
-    }, timezone, due
+    return (
+        {
+            "kind": "weekly",
+            "weekday": weekday,
+            "local_time": local_time.strftime("%H:%M"),
+            "timezone": timezone,
+        },
+        timezone,
+        due,
+    )
 
 
 def _inline_result(result: Mapping[str, Any]) -> str:
@@ -631,9 +626,7 @@ class ReminderScheduler:
             claim_owner=claim_owner,
             lease_seconds=self._lease_seconds,
             due_at_or_before=_utc_text(now),
-            expire_before=_utc_text(
-                now - timedelta(seconds=schedule_policy.max_lateness_seconds)
-            ),
+            expire_before=_utc_text(now - timedelta(seconds=schedule_policy.max_lateness_seconds)),
             frequency_window_start=window_start,
             frequency_window_end=window_end,
             frequency_limit=schedule_policy.daily_frequency_limit,
@@ -678,13 +671,11 @@ class ReminderScheduler:
                     for value in (
                         quiet_end,
                         reminder_quiet_end,
-                        now
-                        + timedelta(seconds=delivery_policy.policy_retry_seconds),
+                        now + timedelta(seconds=delivery_policy.policy_retry_seconds),
                     )
                     if value is not None
                 ),
-                default=now
-                + timedelta(seconds=delivery_policy.policy_retry_seconds),
+                default=now + timedelta(seconds=delivery_policy.policy_retry_seconds),
             )
             self._store.defer_reminder_occurrence(
                 owner,
@@ -704,8 +695,7 @@ class ReminderScheduler:
         # expiry from the durable occurrence, not the scheduler attempt time,
         # so a lease-expiry replay produces the identical payload hash.
         grant_expires_at = _utc_text(
-            _parse_datetime(claim.payload["due_at"], "due_at")
-            + timedelta(days=1)
+            _parse_datetime(claim.payload["due_at"], "due_at") + timedelta(days=1)
         )
         if prepare_draft:
             source_message_refs = tuple(
@@ -715,9 +705,7 @@ class ReminderScheduler:
             grant_target = f"reminder:{claim.item_id}"
             delegated_grants = [
                 {
-                    "grant_id": canonical_hash(
-                        ["reminder_draft_grant", claim.item_id, scope]
-                    ),
+                    "grant_id": canonical_hash(["reminder_draft_grant", claim.item_id, scope]),
                     "scope": scope,
                     "target": grant_target,
                     "expires_at": grant_expires_at,
@@ -728,9 +716,7 @@ class ReminderScheduler:
             draft_payload = {
                 "schema_version": 1,
                 "purpose": "delegated_task",
-                "owner_key": (
-                    f"companion:{owner.profile_id}:{owner.profile_generation}"
-                ),
+                "owner_key": (f"companion:{owner.profile_id}:{owner.profile_generation}"),
                 "evidence_ids": list(source_message_refs),
                 "delegated_grants": delegated_grants,
                 "text": (
@@ -780,9 +766,7 @@ class ReminderScheduler:
             occurrence_claim=claim,
             outbox_id=str(prepared["outbox_id"]),
             draft_job_id=(
-                None
-                if prepared["draft_job_id"] is None
-                else str(prepared["draft_job_id"])
+                None if prepared["draft_job_id"] is None else str(prepared["draft_job_id"])
             ),
         )
 
@@ -819,8 +803,7 @@ class ReminderScheduler:
                 occurrence_id=claim.item_id,
                 reminder_id=str(claim.payload["reminder_id"]),
                 source_message_refs=tuple(
-                    str(item)
-                    for item in schedule.get("source_message_refs", ())
+                    str(item) for item in schedule.get("source_message_refs", ())
                 ),
             )
             settlement_hash = canonical_hash(
@@ -860,8 +843,7 @@ class ReminderScheduler:
             result_hash=settlement_hash,
             draft_payload=draft,
             source_message_refs=tuple(
-                str(item)
-                for item in schedule.get("source_message_refs", ())
+                str(item) for item in schedule.get("source_message_refs", ())
             ),
             next_occurrence_id=next_occurrence_id,
             next_due_at=next_due_at,

@@ -89,7 +89,8 @@ class OperationCompletionApi:
         approval_source = value.get("approval_source", "HUMAN")
         if approval_source not in COMPLETION_APPROVAL_SOURCES:
             raise OperationCompletionError(
-                "invalid_request", "approval_source must be HUMAN or HOST_AUTO_PERMISSION")
+                "invalid_request", "approval_source must be HUMAN or HOST_AUTO_PERMISSION"
+            )
         mission_id = identifier(value["mission_id"], "mission_id")
         command_id = identifier(value["command_id"], "command_id")
         mission = self._commit.store.get_mission(mission_id)

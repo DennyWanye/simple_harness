@@ -12,8 +12,14 @@ from agent_orchestrator.runtime.agent_worker import Liveness
 
 
 def _live(kind, **extra):
-    return Liveness(exists=True, state="running", blocked=True,
-                    blocker=None if kind is None else {"kind": kind, **extra}, progress=3, settled=False)
+    return Liveness(
+        exists=True,
+        state="running",
+        blocked=True,
+        blocker=None if kind is None else {"kind": kind, **extra},
+        progress=3,
+        settled=False,
+    )
 
 
 def test_an_unknown_tool_effect_is_ended_like_an_unknown_provider_call():
@@ -31,8 +37,14 @@ def test_a_call_in_progress_or_a_slot_wait_is_not():
     assert not Orchestrator._provider_blocked(_live("provider_slot_wait"))
     assert not Orchestrator._provider_blocked(_live("provider_response_wait"))
     assert not Orchestrator._provider_blocked(_live(None))
-    settled = Liveness(exists=True, state="failed", blocked=True, blocker={"kind": "tool"},
-                       progress=3, settled=True)
+    settled = Liveness(
+        exists=True,
+        state="failed",
+        blocked=True,
+        blocker={"kind": "tool"},
+        progress=3,
+        settled=True,
+    )
     assert not Orchestrator._provider_blocked(settled)
 
 
@@ -53,4 +65,7 @@ def test_the_worker_bridge_reports_the_tool_effects_own_state():
     assert enrich({"kind": "tool", "ledger_identity": "effect-a"})["effect_state"] == "unknown"
     assert enrich({"kind": "tool", "ledger_identity": "effect-b"})["effect_state"] == "handed_off"
     assert "effect_state" not in enrich({"kind": "tool", "ledger_identity": "effect-missing"})
-    assert enrich({"kind": "provider", "ledger_identity": "x"}) == {"kind": "provider", "ledger_identity": "x"}
+    assert enrich({"kind": "provider", "ledger_identity": "x"}) == {
+        "kind": "provider",
+        "ledger_identity": "x",
+    }

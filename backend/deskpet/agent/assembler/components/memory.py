@@ -6,6 +6,7 @@
 原记忆组件已移除，等待 simple-harness-memory-sdk 集成。
 返回空 Slice，不向 context bundle 注入任何记忆内容。
 """
+
 from __future__ import annotations
 
 from deskpet.agent.assembler.bundle import Slice

@@ -7,6 +7,7 @@
 检测、状态机、manifest 驱动下载（含嵌套路径）、错误降级，以及目标目录走注入
 的 models_dir（不被 user_models_dir override 影响）。
 """
+
 from __future__ import annotations
 
 import json
@@ -59,7 +60,10 @@ def test_sentinel_required_for_whisper(tmp_path: Path) -> None:
 def test_run_downloads_via_manifest_and_reaches_ready(tmp_path: Path) -> None:
     manifests = {
         "wemm-embedding-2b": {
-            "files": [{"path": "config.json", "size": 8}, {"path": "1_Pooling/config.json", "size": 8}],
+            "files": [
+                {"path": "config.json", "size": 8},
+                {"path": "1_Pooling/config.json", "size": 8},
+            ],
             "total_bytes": 16,
         },
         "faster-whisper-large-v3-turbo": {
@@ -72,7 +76,9 @@ def test_run_downloads_via_manifest_and_reaches_ready(tmp_path: Path) -> None:
 
     assert prov.status()["state"] == "ready"
     # 嵌套路径正确落盘。
-    assert (tmp_path / "wemm-embedding-2b" / "1_Pooling" / "config.json").read_bytes() == b"data1234"
+    assert (
+        tmp_path / "wemm-embedding-2b" / "1_Pooling" / "config.json"
+    ).read_bytes() == b"data1234"
     assert (tmp_path / "faster-whisper-large-v3-turbo" / "model.bin").is_file()
     assert prov.missing() == []
 
@@ -108,7 +114,10 @@ def test_run_error_degrades_to_error_state(tmp_path: Path) -> None:
 def test_total_bytes_from_manifest(tmp_path: Path) -> None:
     manifests = {
         "wemm-embedding-2b": {"files": [{"path": "a.bin", "size": 100}], "total_bytes": 100},
-        "faster-whisper-large-v3-turbo": {"files": [{"path": "model.bin", "size": 50}], "total_bytes": 50},
+        "faster-whisper-large-v3-turbo": {
+            "files": [{"path": "model.bin", "size": 50}],
+            "total_bytes": 50,
+        },
     }
     seen_total: list[int] = []
     orig = ModelProvisioner._update
@@ -137,7 +146,9 @@ def test_cdn_base_env_override(tmp_path: Path, monkeypatch) -> None:
     prov = ModelProvisioner(models_dir=tmp_path, fetch_url=fetch)
     prov._run()
     # 末尾斜杠被剥离；manifest URL 用了 override 的 base。
-    assert any(u.startswith("https://example.com/m/wemm-embedding-2b/manifest.json") for u in captured)
+    assert any(
+        u.startswith("https://example.com/m/wemm-embedding-2b/manifest.json") for u in captured
+    )
 
 
 def test_status_reports_downloaded_bytes_from_disk(tmp_path: Path) -> None:

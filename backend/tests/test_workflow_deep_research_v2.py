@@ -36,10 +36,20 @@ def _context(*, delay_reverse: bool = False, llm=_llm) -> WorkflowContext:
         digest = hashlib.sha256(query.encode()).hexdigest()[:12]
         if delay_reverse:
             await asyncio.sleep((int(digest[0], 16) % 3) * 0.001)
-        return [{"url": f"https://example.com/{digest}", "title": query, "snippet": f"Evidence for {query}"}]
+        return [
+            {
+                "url": f"https://example.com/{digest}",
+                "title": query,
+                "snippet": f"Evidence for {query}",
+            }
+        ]
 
     async def fetch(url: str):
-        return {"url": url, "title": "Primary source", "text": f"Primary evidence at {url} confirms the documented result in 2026."}
+        return {
+            "url": url,
+            "title": "Primary source",
+            "text": f"Primary evidence at {url} confirms the documented result in 2026.",
+        }
 
     return WorkflowContext(
         ports={
@@ -59,18 +69,27 @@ def test_v2_definition_is_fixed_six_slot_five_phase_and_v1_is_untouched():
     assert DEEP_RESEARCH_V2.manifest.workflow_version == "v2"
     assert DEEP_RESEARCH_V2.manifest.prompt_hash
     assert DEEP_RESEARCH_V2_DEFINITION.prompt_manifest["public_stages"] == [
-        "normalize", "plan", "expand", "search", "direct", "fetch", "score",
-        "gap", "rerank", "synth", "cite", "persist", "finalize",
+        "normalize",
+        "plan",
+        "expand",
+        "search",
+        "direct",
+        "fetch",
+        "score",
+        "gap",
+        "rerank",
+        "synth",
+        "cite",
+        "persist",
+        "finalize",
     ]
     # ``uv.lock`` is checked out as CRLF in the primary Windows tree and LF
     # in some git worktrees. The manifest intentionally hashes raw lockfile
     # bytes, so pin both byte-equivalent checkout variants while keeping all
     # other v1 inputs immutable.
     v1_golden_by_lock_hash = {
-        "1013a7b449853880a44dd4219d1fe8090dff38055fd4a42d6902887693e4c8ef":
-            "9290fc347e425fa16c7a1eea61b8c4772d3118a5ed2caf4e857cd33c61518497",
-        "ff691f62e113477ba230f0897488fb6ec9f1d1009b003947497cbecc6ea895e5":
-            "8b75b88824dda7e8d2312e0e865836275fcbddfbbf2ebe9263c50059900ac804",
+        "1013a7b449853880a44dd4219d1fe8090dff38055fd4a42d6902887693e4c8ef": "9290fc347e425fa16c7a1eea61b8c4772d3118a5ed2caf4e857cd33c61518497",
+        "ff691f62e113477ba230f0897488fb6ec9f1d1009b003947497cbecc6ea895e5": "8b75b88824dda7e8d2312e0e865836275fcbddfbbf2ebe9263c50059900ac804",
     }
     lock_hash = DEEP_RESEARCH_V1.manifest.dependency_lock_hash
     assert lock_hash in v1_golden_by_lock_hash
@@ -89,11 +108,17 @@ def test_registry_keeps_v1_for_recovery_and_exposes_v2_as_new_default():
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("questions", "fanout", "active_count"),
-    [(["only"], True, 1), (["one", "two"], True, 2), ([f"q{i}" for i in range(6)], True, 6), (["one", "two"], False, 1)],
+    [
+        (["only"], True, 1),
+        (["one", "two"], True, 2),
+        ([f"q{i}" for i in range(6)], True, 6),
+        (["one", "two"], False, 1),
+    ],
 )
 async def test_v2_fanout_slots_and_noop_schema(questions, fanout, active_count):
     state = initial_state(
-        topic="topic", run_id="run-v2",
+        topic="topic",
+        run_id="run-v2",
         research_config={"sub_questions": questions, "subagent_fanout": fanout},
     )
     result = await DEEP_RESEARCH_V2.bind().ainvoke(
@@ -126,7 +151,9 @@ async def test_default_new_run_uses_llm_plan_to_activate_native_fanout():
 
     result = await DEEP_RESEARCH_V2.bind().ainvoke(
         initial_state(topic="research a new product", run_id="run-default"),
-        _context(llm=planning_llm), thread_id="run-default", run_id="run-default",
+        _context(llm=planning_llm),
+        thread_id="run-default",
+        run_id="run-default",
     )
     assert plan_calls == 1
     assert result["values"]["active_branch_count"] == 3
@@ -140,7 +167,9 @@ async def test_llm_plan_parse_failure_falls_back_to_topic_without_fanout():
 
     result = await DEEP_RESEARCH_V2.bind().ainvoke(
         initial_state(topic="fallback topic", run_id="run-fallback"),
-        _context(llm=invalid_llm), thread_id="run-fallback", run_id="run-fallback",
+        _context(llm=invalid_llm),
+        thread_id="run-fallback",
+        run_id="run-fallback",
     )
     assert result["values"]["sub_questions"] == ["fallback topic"]
     assert result["values"]["active_branch_count"] == 1
@@ -154,10 +183,13 @@ async def test_llm_plan_timeout_falls_back_to_topic():
 
     result = await DEEP_RESEARCH_V2.bind().ainvoke(
         initial_state(
-            topic="timeout topic", run_id="run-timeout",
+            topic="timeout topic",
+            run_id="run-timeout",
             research_config={"plan_timeout_seconds": 0.1},
         ),
-        _context(llm=slow_llm), thread_id="run-timeout", run_id="run-timeout",
+        _context(llm=slow_llm),
+        thread_id="run-timeout",
+        run_id="run-timeout",
     )
     assert result["values"]["sub_questions"] == ["timeout topic"]
     assert result["values"]["active_branch_count"] == 1
@@ -168,11 +200,15 @@ async def test_v2_completion_order_does_not_change_report_hash_or_citations():
     config = {"sub_questions": ["alpha", "beta", "gamma"]}
     first = await DEEP_RESEARCH_V2.bind().ainvoke(
         initial_state(topic="topic", run_id="run-a", research_config=config),
-        _context(delay_reverse=False), thread_id="run-a", run_id="run-a",
+        _context(delay_reverse=False),
+        thread_id="run-a",
+        run_id="run-a",
     )
     second = await DEEP_RESEARCH_V2.bind().ainvoke(
         initial_state(topic="topic", run_id="run-b", research_config=config),
-        _context(delay_reverse=True), thread_id="run-b", run_id="run-b",
+        _context(delay_reverse=True),
+        thread_id="run-b",
+        run_id="run-b",
     )
     left, right = first["values"]["report_payload"], second["values"]["report_payload"]
     assert left["report_hash"] == right["report_hash"]
@@ -182,23 +218,41 @@ async def test_v2_completion_order_does_not_change_report_hash_or_citations():
 @pytest.mark.asyncio
 async def test_v2_materializes_exactly_one_completed_intent_per_public_stage():
     base = _context()
-    context = WorkflowContext(ports={
-        **base.ports,
-        "progress": WorkflowProgressReporter(object(), (("session_message", "session"),)),
-    })
+    context = WorkflowContext(
+        ports={
+            **base.ports,
+            "progress": WorkflowProgressReporter(object(), (("session_message", "session"),)),
+        }
+    )
     store = InMemoryNativeCheckpointStore()
     await DEEP_RESEARCH_V2.bind(checkpointer=store).ainvoke(
-        initial_state(topic="topic", run_id="run", research_config={"sub_questions": ["one", "two"]}),
-        context, thread_id="run", run_id="run",
+        initial_state(
+            topic="topic", run_id="run", research_config={"sub_questions": ["one", "two"]}
+        ),
+        context,
+        thread_id="run",
+        run_id="run",
     )
     completed = {
-        key: intent for key, intent in store.materialized_intents.items()
+        key: intent
+        for key, intent in store.materialized_intents.items()
         if key.startswith("progress:v2:")
     }
     assert len(completed) == 13
     assert {intent["payload"]["stage_id"] for intent in completed.values()} == {
-        "normalize", "plan", "expand", "search", "direct", "fetch", "score",
-        "gap", "rerank", "synth", "cite", "persist", "finalize",
+        "normalize",
+        "plan",
+        "expand",
+        "search",
+        "direct",
+        "fetch",
+        "score",
+        "gap",
+        "rerank",
+        "synth",
+        "cite",
+        "persist",
+        "finalize",
     }
 
 
@@ -214,20 +268,31 @@ async def test_blob_backed_evidence_is_scored_synthesized_and_cited(tmp_path):
         return {"url": url, "title": "Large source", "text": large_text}
 
     blob_store = RegisteredBlobStore(tmp_path / "blobs", tmp_path / "workflow.db")
-    context = WorkflowContext(ports={
-        "llm": ResearchLLMPort(_llm), "search": ResearchSearchPort(search),
-        "fetch": FetchPort(fetch), "blob": blob_store,
-        "native_execution_policy": NativeExecutionPolicy(3),
-    })
+    context = WorkflowContext(
+        ports={
+            "llm": ResearchLLMPort(_llm),
+            "search": ResearchSearchPort(search),
+            "fetch": FetchPort(fetch),
+            "blob": blob_store,
+            "native_execution_policy": NativeExecutionPolicy(3),
+        }
+    )
     result = await DEEP_RESEARCH_V2.bind().ainvoke(
-        initial_state(topic="large", run_id="run-large", research_config={"sub_questions": ["large evidence"]}),
-        context, thread_id="run-large", run_id="run-large",
+        initial_state(
+            topic="large", run_id="run-large", research_config={"sub_questions": ["large evidence"]}
+        ),
+        context,
+        thread_id="run-large",
+        run_id="run-large",
     )
     fetched = result["branch_fetch"]["b0"]["result"][0]
     assert "blob_ref" in fetched and "text" not in fetched
     assert result["branch_score"]["b0"]["result"][0]["score"] > 0
     assert set(result["branch_score"]["b0"]["result"][0]["score_dims"]) == {
-        "authority", "recency", "relevance", "depth",
+        "authority",
+        "recency",
+        "relevance",
+        "depth",
     }
     report = result["values"]["report_payload"]
     assert report["status"] == "completed"
@@ -244,22 +309,39 @@ async def test_gap_performs_one_bounded_followup_and_rerank_includes_it():
         search_calls += 1
         if search_calls <= 2:
             return []
-        return [{"url": "https://example.com/gap", "title": "Gap source", "snippet": "gap evidence"}]
+        return [
+            {"url": "https://example.com/gap", "title": "Gap source", "snippet": "gap evidence"}
+        ]
 
     async def fetch(url: str):
-        return {"url": url, "title": "Gap source", "text": "Gap follow-up evidence confirms the missing question in 2026."}
+        return {
+            "url": url,
+            "title": "Gap source",
+            "text": "Gap follow-up evidence confirms the missing question in 2026.",
+        }
 
-    context = WorkflowContext(ports={
-        "llm": ResearchLLMPort(_llm), "search": ResearchSearchPort(search),
-        "fetch": FetchPort(fetch), "native_execution_policy": NativeExecutionPolicy(2),
-    })
+    context = WorkflowContext(
+        ports={
+            "llm": ResearchLLMPort(_llm),
+            "search": ResearchSearchPort(search),
+            "fetch": FetchPort(fetch),
+            "native_execution_policy": NativeExecutionPolicy(2),
+        }
+    )
     result = await DEEP_RESEARCH_V2.bind().ainvoke(
-        initial_state(topic="gap", run_id="run-gap", research_config={"sub_questions": ["missing question"]}),
-        context, thread_id="run-gap", run_id="run-gap",
+        initial_state(
+            topic="gap", run_id="run-gap", research_config={"sub_questions": ["missing question"]}
+        ),
+        context,
+        thread_id="run-gap",
+        run_id="run-gap",
     )
     assert search_calls == 3
     assert result["values"]["gap_evidence"][0]["question"] == "missing question"
-    assert any(value["canonical_url"] == "https://example.com/gap" for value in result["values"]["ranked_evidence"])
+    assert any(
+        value["canonical_url"] == "https://example.com/gap"
+        for value in result["values"]["ranked_evidence"]
+    )
     assert result["values"]["report_payload"]["status"] == "completed"
 
 
@@ -268,7 +350,9 @@ async def test_v2_observer_emits_only_safe_branch_stage_and_claim_metrics():
     attributes = []
 
     class Observer:
-        async def node_started(self, identity): return None
+        async def node_started(self, identity):
+            return None
+
         async def node_finished(self, identity, status, *, error=None, attributes=None):
             if attributes:
                 globals_ = attributes
@@ -280,11 +364,20 @@ async def test_v2_observer_emits_only_safe_branch_stage_and_claim_metrics():
     base = _context()
     context = WorkflowContext(ports={**base.ports, "observer": Observer()})
     await DEEP_RESEARCH_V2.bind().ainvoke(
-        initial_state(topic="metrics", run_id="run-metrics", research_config={"sub_questions": ["metric evidence"]}),
-        context, thread_id="run-metrics", run_id="run-metrics",
+        initial_state(
+            topic="metrics",
+            run_id="run-metrics",
+            research_config={"sub_questions": ["metric evidence"]},
+        ),
+        context,
+        thread_id="run-metrics",
+        run_id="run-metrics",
     )
     assert any("deepresearch_v2_branch" in value for value in attributes)
-    assert any("deepresearch_v2_stage" in value and value["deepresearch_v2_stage"]["duration_ms"] >= 0 for value in attributes)
+    assert any(
+        "deepresearch_v2_stage" in value and value["deepresearch_v2_stage"]["duration_ms"] >= 0
+        for value in attributes
+    )
     assert any("deepresearch_v2_claim_support" in value for value in attributes)
 
 
@@ -304,9 +397,7 @@ async def test_v2_persists_one_real_markdown_artifact_and_delivers_file_card(tmp
         }
 
     base = _context()
-    context = WorkflowContext(
-        ports={**base.ports, "artifact": ResearchArtifactPort(save_artifact)}
-    )
+    context = WorkflowContext(ports={**base.ports, "artifact": ResearchArtifactPort(save_artifact)})
     result = await DEEP_RESEARCH_V2.bind().ainvoke(
         initial_state(topic="artifact", run_id="run-artifact"),
         context,
@@ -316,15 +407,17 @@ async def test_v2_persists_one_real_markdown_artifact_and_delivers_file_card(tmp
     artifact = result["values"]["report_artifact"]
     assert artifact["kind"] == "file"
     assert artifact["mime"] == "text/markdown"
-    assert (tmp_path / "run-artifact.md").read_text(encoding="utf-8") == result["values"]["report_payload"]["report_md"]
+    assert (tmp_path / "run-artifact.md").read_text(encoding="utf-8") == result["values"][
+        "report_payload"
+    ]["report_md"]
     intent = next(
-        value for value in result["values"]["delivery_intents"]
-        if value["channel"] == "artifact"
+        value for value in result["values"]["delivery_intents"] if value["channel"] == "artifact"
     )
     assert intent["payload"]["artifacts"] == [artifact]
     assert "report" not in intent["payload"]
     final = next(
-        value for value in result["values"]["delivery_intents"]
+        value
+        for value in result["values"]["delivery_intents"]
         if value["kind"] == "final_assistant"
     )
     assert final["channel"] == "final_assistant"
@@ -395,11 +488,13 @@ async def test_deep_mode_uses_two_gap_rounds_and_scores_followup_with_recency():
         calls.append(query)
         if query.endswith("official primary source"):
             return ResearchSearchResults(
-                [{
-                    "url": "https://who.int/deep-gap",
-                    "title": "Primary evidence",
-                    "published_at": "2026-01-15",
-                }],
+                [
+                    {
+                        "url": "https://who.int/deep-gap",
+                        "title": "Primary evidence",
+                        "published_at": "2026-01-15",
+                    }
+                ],
                 observation={"degraded": False, "engines_hit": ["test"]},
             )
         return ResearchSearchResults([], observation={"degraded": False})
@@ -412,12 +507,14 @@ async def test_deep_mode_uses_two_gap_rounds_and_scores_followup_with_recency():
             "text": "missing question verified primary evidence " * 20,
         }
 
-    context = WorkflowContext(ports={
-        "llm": ResearchLLMPort(_llm),
-        "search": ResearchSearchPort(search),
-        "fetch": FetchPort(fetch),
-        "native_execution_policy": NativeExecutionPolicy(2),
-    })
+    context = WorkflowContext(
+        ports={
+            "llm": ResearchLLMPort(_llm),
+            "search": ResearchSearchPort(search),
+            "fetch": FetchPort(fetch),
+            "native_execution_policy": NativeExecutionPolicy(2),
+        }
+    )
     result = await DEEP_RESEARCH_V2.bind().ainvoke(
         initial_state(
             topic="gap",
@@ -444,14 +541,34 @@ async def test_global_rerank_blends_semantics_and_prioritizes_domain_diversity()
         return [0.1, 0.9, 0.8]
 
     state = initial_state(topic="topic", run_id="run-rerank")
-    state["values"].update({
-        "joined_score": [
-            {"url": "https://a.test/1", "canonical_url": "https://a.test/1", "content_hash": "1", "text": "one", "score": 0.95},
-            {"url": "https://a.test/2", "canonical_url": "https://a.test/2", "content_hash": "2", "text": "two", "score": 0.90},
-            {"url": "https://b.test/1", "canonical_url": "https://b.test/1", "content_hash": "3", "text": "three", "score": 0.80},
-        ],
-        "gap_evidence": [],
-    })
+    state["values"].update(
+        {
+            "joined_score": [
+                {
+                    "url": "https://a.test/1",
+                    "canonical_url": "https://a.test/1",
+                    "content_hash": "1",
+                    "text": "one",
+                    "score": 0.95,
+                },
+                {
+                    "url": "https://a.test/2",
+                    "canonical_url": "https://a.test/2",
+                    "content_hash": "2",
+                    "text": "two",
+                    "score": 0.90,
+                },
+                {
+                    "url": "https://b.test/1",
+                    "canonical_url": "https://b.test/1",
+                    "content_hash": "3",
+                    "text": "three",
+                    "score": 0.80,
+                },
+            ],
+            "gap_evidence": [],
+        }
+    )
     patch = await rerank_handler(
         state,
         WorkflowContext(ports={"llm": ResearchLLMPort(_llm, semantic_score=semantic_score)}),
@@ -493,10 +610,12 @@ async def test_no_results_report_keeps_error_summary_visible():
     base = _context()
     result = await DEEP_RESEARCH_V2.bind().ainvoke(
         initial_state(topic="empty", run_id="run-empty"),
-        WorkflowContext(ports={
-            **base.ports,
-            "search": ResearchSearchPort(empty_search),
-        }),
+        WorkflowContext(
+            ports={
+                **base.ports,
+                "search": ResearchSearchPort(empty_search),
+            }
+        ),
         thread_id="run-empty",
         run_id="run-empty",
     )

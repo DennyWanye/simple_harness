@@ -7,6 +7,7 @@ Covers spec `os-tools` for all 7 tools. Tests instantiate handlers
 directly (sync calls) — permission gating is tested separately in
 test_p4s20_tool_registry_v2.py via execute_tool().
 """
+
 from __future__ import annotations
 
 import json
@@ -59,9 +60,7 @@ def test_read_file_missing(tmp_dir: Path) -> None:
 def test_read_file_offset_limit(tmp_dir: Path) -> None:
     p = tmp_dir / "big.txt"
     p.write_text("\n".join(f"line{i}" for i in range(1000)), encoding="utf-8")
-    out = json.loads(
-        read_file({"path": str(p), "offset": 100, "limit": 50}, "")
-    )
+    out = json.loads(read_file({"path": str(p), "offset": 100, "limit": 50}, ""))
     assert out["truncated"] is True
     assert out["content"].startswith("line100")
     assert out["lines"] == 50
@@ -74,9 +73,7 @@ def test_read_file_offset_limit(tmp_dir: Path) -> None:
 
 def test_write_file_create(tmp_dir: Path) -> None:
     target = tmp_dir / "sub" / "note.txt"
-    out = json.loads(
-        write_file({"path": str(target), "content": "hello"}, "")
-    )
+    out = json.loads(write_file({"path": str(target), "content": "hello"}, ""))
     assert out["bytes_written"] == 5
     assert target.read_text(encoding="utf-8") == "hello"
 
@@ -84,9 +81,7 @@ def test_write_file_create(tmp_dir: Path) -> None:
 def test_write_file_refuses_overwrite(tmp_dir: Path) -> None:
     p = tmp_dir / "exists.txt"
     p.write_text("old", encoding="utf-8")
-    out = json.loads(
-        write_file({"path": str(p), "content": "new"}, "")
-    )
+    out = json.loads(write_file({"path": str(p), "content": "new"}, ""))
     assert out["error"] == "FileExistsError"
     assert p.read_text(encoding="utf-8") == "old"  # unchanged
 
@@ -94,11 +89,7 @@ def test_write_file_refuses_overwrite(tmp_dir: Path) -> None:
 def test_write_file_overwrite_flag(tmp_dir: Path) -> None:
     p = tmp_dir / "exists.txt"
     p.write_text("old", encoding="utf-8")
-    out = json.loads(
-        write_file(
-            {"path": str(p), "content": "new", "overwrite": True}, ""
-        )
-    )
+    out = json.loads(write_file({"path": str(p), "content": "new", "overwrite": True}, ""))
     assert "bytes_written" in out
     assert p.read_text(encoding="utf-8") == "new"
 
@@ -159,11 +150,7 @@ def test_edit_file_single(tmp_dir: Path) -> None:
 def test_edit_file_not_unique_fails(tmp_dir: Path) -> None:
     p = tmp_dir / "doc.txt"
     p.write_text("x x x", encoding="utf-8")
-    out = json.loads(
-        edit_file(
-            {"path": str(p), "old_string": "x", "new_string": "y"}, ""
-        )
-    )
+    out = json.loads(edit_file({"path": str(p), "old_string": "x", "new_string": "y"}, ""))
     assert "not unique" in out["error"]
     assert p.read_text(encoding="utf-8") == "x x x"  # unchanged
 
@@ -205,9 +192,7 @@ def test_list_directory_basic(tmp_dir: Path) -> None:
 def test_list_directory_truncates(tmp_dir: Path) -> None:
     for i in range(150):
         (tmp_dir / f"f{i}.txt").write_text(".", encoding="utf-8")
-    out = json.loads(
-        list_directory({"path": str(tmp_dir), "max_entries": 100}, "")
-    )
+    out = json.loads(list_directory({"path": str(tmp_dir), "max_entries": 100}, ""))
     assert out["truncated"] is True
     assert len(out["entries"]) == 100
 
@@ -270,9 +255,7 @@ def test_run_shell_routes_long_lived_gui_launch_to_process_start(
 ) -> None:
     import importlib
 
-    run_shell_module = importlib.import_module(
-        "deskpet.tools.os_tools.run_shell"
-    )
+    run_shell_module = importlib.import_module("deskpet.tools.os_tools.run_shell")
     monkeypatch.setattr(
         run_shell_module,
         "_run_process_tree",
@@ -294,31 +277,19 @@ def test_run_shell_keeps_bounded_godot_headless_command_available(
 ) -> None:
     import importlib
 
-    run_shell_module = importlib.import_module(
-        "deskpet.tools.os_tools.run_shell"
-    )
+    run_shell_module = importlib.import_module("deskpet.tools.os_tools.run_shell")
     captured: dict[str, object] = {}
 
     def fake_run_process_tree(argv, **kwargs):
         captured["argv"] = argv
-        return subprocess.CompletedProcess(
-            argv, 0, stdout="headless ok", stderr=""
-        )
+        return subprocess.CompletedProcess(argv, 0, stdout="headless ok", stderr="")
 
-    monkeypatch.setattr(
-        run_shell_module, "_pick_shell", lambda: ("/bin/sh", ("-c",))
-    )
-    monkeypatch.setattr(
-        run_shell_module, "_run_process_tree", fake_run_process_tree
-    )
+    monkeypatch.setattr(run_shell_module, "_pick_shell", lambda: ("/bin/sh", ("-c",)))
+    monkeypatch.setattr(run_shell_module, "_run_process_tree", fake_run_process_tree)
 
     out = json.loads(
         run_shell_module.run_shell(
-            {
-                "command": (
-                    '"C:/apps/Godot.exe" --headless --path C:/game --quit'
-                )
-            },
+            {"command": ('"C:/apps/Godot.exe" --headless --path C:/game --quit')},
             "",
         )
     )
@@ -334,7 +305,7 @@ def test_run_shell_keeps_bounded_godot_headless_command_available(
         'rg "Godot.exe" backend/tests',
         "echo Godot.exe",
         'echo "Start-Process is a command"',
-        'python -c "print(\'Start-Process Godot.exe\')"',
+        "python -c \"print('Start-Process Godot.exe')\"",
         "powershell.exe -Command \"echo 'Start-Process Godot.exe'\"",
         'env FOO=1 echo "Godot.exe"',
         'bash -lc "echo Godot.exe"',
@@ -347,18 +318,12 @@ def test_run_shell_does_not_confuse_gui_text_with_executed_program(
 ) -> None:
     import importlib
 
-    run_shell_module = importlib.import_module(
-        "deskpet.tools.os_tools.run_shell"
-    )
-    monkeypatch.setattr(
-        run_shell_module, "_pick_shell", lambda: ("/bin/sh", ("-c",))
-    )
+    run_shell_module = importlib.import_module("deskpet.tools.os_tools.run_shell")
+    monkeypatch.setattr(run_shell_module, "_pick_shell", lambda: ("/bin/sh", ("-c",)))
     monkeypatch.setattr(
         run_shell_module,
         "_run_process_tree",
-        lambda argv, **_kwargs: subprocess.CompletedProcess(
-            argv, 0, stdout="bounded", stderr=""
-        ),
+        lambda argv, **_kwargs: subprocess.CompletedProcess(argv, 0, stdout="bounded", stderr=""),
     )
 
     out = json.loads(run_shell_module.run_shell({"command": command}, ""))
@@ -372,9 +337,7 @@ def test_run_shell_executes_in_trusted_workspace(
 ) -> None:
     import importlib
 
-    run_shell_module = importlib.import_module(
-        "deskpet.tools.os_tools.run_shell"
-    )
+    run_shell_module = importlib.import_module("deskpet.tools.os_tools.run_shell")
     captured: dict[str, object] = {}
 
     def fake_run_process_tree(argv, **kwargs):
@@ -410,9 +373,7 @@ def test_run_shell_executes_in_trusted_workspace(
     assert out["exit_code"] == 0
     assert captured["cwd"] == str(tmp_path.resolve())
     assert captured["env"]["HOME"] == str(tmp_path.resolve())
-    assert captured["env"]["PATH"].split(os.pathsep)[0] == str(
-        runtime_python.parent.resolve()
-    )
+    assert captured["env"]["PATH"].split(os.pathsep)[0] == str(runtime_python.parent.resolve())
 
 
 def test_run_shell_normalizes_formatting_whitespace_around_trusted_cwd(
@@ -421,9 +382,7 @@ def test_run_shell_normalizes_formatting_whitespace_around_trusted_cwd(
 ) -> None:
     import importlib
 
-    run_shell_module = importlib.import_module(
-        "deskpet.tools.os_tools.run_shell"
-    )
+    run_shell_module = importlib.import_module("deskpet.tools.os_tools.run_shell")
     captured: dict[str, object] = {}
 
     def fake_run_process_tree(argv, **kwargs):
@@ -453,8 +412,6 @@ def test_run_shell_normalizes_formatting_whitespace_around_trusted_cwd(
 
     assert out["exit_code"] == 0
     assert captured["cwd"] == str(tmp_path.resolve())
-
-
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows process-tree regression")
@@ -493,9 +450,7 @@ def test_run_process_tree_timeout_never_finishes_with_unbounded_communicate(
 ) -> None:
     import importlib
 
-    run_shell_module = importlib.import_module(
-        "deskpet.tools.os_tools.run_shell"
-    )
+    run_shell_module = importlib.import_module("deskpet.tools.os_tools.run_shell")
 
     class _Stream:
         def __init__(self) -> None:
@@ -562,9 +517,7 @@ def test_run_shell_detaches_trailing_posix_background_stdio(
 ) -> None:
     import importlib
 
-    run_shell_module = importlib.import_module(
-        "deskpet.tools.os_tools.run_shell"
-    )
+    run_shell_module = importlib.import_module("deskpet.tools.os_tools.run_shell")
     captured: dict[str, object] = {}
 
     def fake_run_process_tree(argv, **kwargs):
@@ -592,10 +545,7 @@ def test_run_shell_detaches_trailing_posix_background_stdio(
     assert out["exit_code"] == 0
     argv = captured["argv"]
     assert isinstance(argv, list)
-    assert argv[-1] == (
-        '(game.exe --path "F:/existing game") '
-        "</dev/null >/dev/null 2>&1 &"
-    )
+    assert argv[-1] == ('(game.exe --path "F:/existing game") </dev/null >/dev/null 2>&1 &')
 
 
 # ---------------------------------------------------------------------
@@ -628,11 +578,7 @@ def test_desktop_create_file_resolves_to_desktop(tmp_dir: Path, monkeypatch) -> 
     else:
         monkeypatch.setenv("HOME", str(fake_home))
 
-    out = json.loads(
-        desktop_create_file(
-            {"name": "todo.txt", "content": "milk"}, ""
-        )
-    )
+    out = json.loads(desktop_create_file({"name": "todo.txt", "content": "milk"}, ""))
     p = Path(out["path"])
     assert p.name == "todo.txt"
     assert p.parent == desktop or str(p.parent).endswith("Desktop")
@@ -647,11 +593,7 @@ def test_desktop_create_file_utf8(tmp_dir: Path, monkeypatch) -> None:
     else:
         monkeypatch.setenv("HOME", str(fake_home))
 
-    out = json.loads(
-        desktop_create_file(
-            {"name": "购物.txt", "content": "吃饭买菜"}, ""
-        )
-    )
+    out = json.loads(desktop_create_file({"name": "购物.txt", "content": "吃饭买菜"}, ""))
     p = Path(out["path"])
     assert p.read_text(encoding="utf-8") == "吃饭买菜"
     assert p.name == "购物.txt"

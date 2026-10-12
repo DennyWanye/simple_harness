@@ -163,11 +163,7 @@ class KernelTerminalLifecycle:
             execution_fence = await self._acquire_run_execution_fence(record.run_id)
             try:
                 terminal_fence = getattr(execution_fence, "terminal_commit_fence", None)
-                if (
-                    command is None
-                    and kwargs.get("deliveries")
-                    and terminal_fence is not None
-                ):
+                if command is None and kwargs.get("deliveries") and terminal_fence is not None:
                     kwargs["delivery_fence"] = terminal_fence.to_uow_fence()
                     kwargs["release_receipt_kind"] = terminal_fence.release_receipt_kind
                 result = await finalize(
@@ -186,16 +182,10 @@ class KernelTerminalLifecycle:
             active = self._live.get(record.run_id)
             current = active.record if active is not None else None
             if current is None:
-                raise RunNotFound(
-                    "run_not_found", f"live run does not exist: {record.run_id}"
-                )
+                raise RunNotFound("run_not_found", f"live run does not exist: {record.run_id}")
             if current.status in TERMINAL_RUN_STATUSES:
                 existing = next(
-                    (
-                        item
-                        for item in active.events
-                        if item.event_id == current.terminal_event_id
-                    ),
+                    (item for item in active.events if item.event_id == current.terminal_event_id),
                     None,
                 )
                 if (
@@ -204,9 +194,7 @@ class KernelTerminalLifecycle:
                     and existing.candidate == event
                 ):
                     return existing
-                raise TerminalConflict(
-                    "terminal_conflict", "another terminal intent already won"
-                )
+                raise TerminalConflict("terminal_conflict", "another terminal intent already won")
             if current.version != expected_version:
                 raise VersionConflict(
                     "stale_run_version",
@@ -219,9 +207,7 @@ class KernelTerminalLifecycle:
                 root_run_id=record.context.root_run_id,
                 session_id=record.context.session_id,
                 durable_seq=None,
-                live_cursor=LiveCursor(
-                    f"kernel:{record.run_id}", len(active.events) + 1
-                ),
+                live_cursor=LiveCursor(f"kernel:{record.run_id}", len(active.events) + 1),
                 candidate=event,
                 created_at=now,
             )
@@ -238,9 +224,7 @@ class KernelTerminalLifecycle:
         await self._cleanup_after_terminal_commit(finalized_record, terminal)
         return terminal
 
-    async def _cleanup_after_terminal_commit(
-        self, record: RunRecord, event: RunEvent
-    ) -> None:
+    async def _cleanup_after_terminal_commit(self, record: RunRecord, event: RunEvent) -> None:
         active = self._live.get(record.run_id)
         prepared = None if active is None else active.prepared_context
         if prepared is None or not prepared.after_terminal_commit_cleanup:
@@ -256,18 +240,14 @@ class KernelTerminalLifecycle:
                     kind=str(item["kind"] if isinstance(item, Mapping) else item.kind),
                     ref=str(item["ref"] if isinstance(item, Mapping) else item.ref),
                     content_hash=str(
-                        item["content_hash"]
-                        if isinstance(item, Mapping)
-                        else item.content_hash
+                        item["content_hash"] if isinstance(item, Mapping) else item.content_hash
                     ),
                 )
                 for item in raw
             )
         for cleanup in prepared.after_terminal_commit_cleanup:
             try:
-                await cleanup.cleanup_after_terminal(
-                    record, event, extension_receipts=receipts
-                )
+                await cleanup.cleanup_after_terminal(record, event, extension_receipts=receipts)
             except Exception:
                 logger.exception(
                     "terminal cleanup failed after authoritative commit",

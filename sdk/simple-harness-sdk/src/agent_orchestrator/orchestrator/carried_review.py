@@ -11,6 +11,7 @@
 
 这里只做"找出该重审的步骤"这一件事（秩序）；审得过不过由审阅员定。
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -72,14 +73,23 @@ def carried_reviews(store: Store, dispatch: Any, mission_id: str) -> list[Carrie
         return []
     producers: dict[str, set[str]] = {}
     for item in network.data_requirements:
-        producers.setdefault(str(item.consumer_occurrence), set()).add(str(item.producer_occurrence))
+        producers.setdefault(str(item.consumer_occurrence), set()).add(
+            str(item.producer_occurrence)
+        )
     due: list[CarriedReview] = []
     for member in htn.list_plan_memberships(mission_id, active.revision):
         occurrence = str(member.occurrence_id)
-        if str(member.form) != str(TaskForm.PRIMITIVE) or outcomes.get(member.occurrence_id) is OccurrenceOutcome.ACCEPTED:
+        if (
+            str(member.form) != str(TaskForm.PRIMITIVE)
+            or outcomes.get(member.occurrence_id) is OccurrenceOutcome.ACCEPTED
+        ):
             continue
         task = store.get_task(str(member.task_id))
-        stored = None if task is None or not task.accepted_result_id else store.get_result(task.accepted_result_id)
+        stored = (
+            None
+            if task is None or not task.accepted_result_id
+            else store.get_result(task.accepted_result_id)
+        )
         if stored is None or stored.verification_state != "DONE" or stored.verdict != "PASS":
             continue
         try:
@@ -88,9 +98,13 @@ def carried_reviews(store: Store, dispatch: Any, mission_id: str) -> list[Carrie
         except OperationCompletionError:
             continue
         result_id = str(stored.envelope.id)
-        if store.connection.execute(
+        if (
+            store.connection.execute(
                 "SELECT 1 FROM acceptances WHERE acceptance_id=?",
-                (acceptance_id_for(task.id, result_id, revision),)).fetchone() is not None:
+                (acceptance_id_for(task.id, result_id, revision),),
+            ).fetchone()
+            is not None
+        ):
             continue
         if rejected(store, result_id, revision):
             continue  # 已经审过没过：原样等规划器处理
@@ -110,10 +124,14 @@ def rejected(store: Store, result_id: str, requirements_revision: int) -> bool:
     stored = store.get_result(result_id)
     if stored is None:
         return False
-    return store.connection.execute(
-        "SELECT 1 FROM events WHERE mission_id=? AND type='PlanningRepairRequested'"
-        " AND json_extract(payload_json,'$.source_key')=? LIMIT 1",
-        (stored.envelope.mission_id, source_key(result_id, requirements_revision))).fetchone() is not None
+    return (
+        store.connection.execute(
+            "SELECT 1 FROM events WHERE mission_id=? AND type='PlanningRepairRequested'"
+            " AND json_extract(payload_json,'$.source_key')=? LIMIT 1",
+            (stored.envelope.mission_id, source_key(result_id, requirements_revision)),
+        ).fetchone()
+        is not None
+    )
 
 
 def kept(store: Store, result_id: str, requirements_revision: int) -> bool:
@@ -132,5 +150,14 @@ def kept(store: Store, result_id: str, requirements_revision: int) -> bool:
     return True
 
 
-__all__ = ("CARRIED_RESULT_NOT_KEPT", "CARRIED_RESULT_REJECTED", "CARRIED_REVIEW_PENDING",
-           "MAX_CARRIED_REVIEW_ERRORS", "CarriedReview", "carried_reviews", "kept", "rejected", "source_key")
+__all__ = (
+    "CARRIED_RESULT_NOT_KEPT",
+    "CARRIED_RESULT_REJECTED",
+    "CARRIED_REVIEW_PENDING",
+    "MAX_CARRIED_REVIEW_ERRORS",
+    "CarriedReview",
+    "carried_reviews",
+    "kept",
+    "rejected",
+    "source_key",
+)

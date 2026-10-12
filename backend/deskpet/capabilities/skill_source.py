@@ -222,9 +222,7 @@ class BoundedGitHubSkillSource:
             max_single_file_bytes=self._limits.max_single_file_bytes,
             total_uncompressed_bytes=self._limits.total_uncompressed_bytes,
             archive_bytes=self._limits.archive_bytes,
-            max_archive_entry_compression_ratio=(
-                self._limits.max_archive_entry_compression_ratio
-            ),
+            max_archive_entry_compression_ratio=(self._limits.max_archive_entry_compression_ratio),
         )
         self._source_validator = CapabilityPackageValidator(source_limits)
 
@@ -284,10 +282,7 @@ class BoundedGitHubSkillSource:
             # fetch the exact codeload object directly. Branches, tags and HEAD
             # still resolve through commit metadata before any bytes are trusted.
             exact_commit = requested_ref.lower()
-            archive_url = (
-                f"https://{_ARCHIVE_HOST}/{quote(owner)}/{quote(repo)}"
-                f"/zip/{exact_commit}"
-            )
+            archive_url = f"https://{_ARCHIVE_HOST}/{quote(owner)}/{quote(repo)}/zip/{exact_commit}"
         else:
             metadata = await self._get_bounded(
                 client,
@@ -328,9 +323,7 @@ class BoundedGitHubSkillSource:
         files = self._read_repository_files(archive, index.entries)
         skill_paths = tuple(sorted(path for path in files if path.name == "SKILL.md"))
         if not skill_paths:
-            raise CapabilitySourceError(
-                "skill_source_empty", "repository contains no SKILL.md"
-            )
+            raise CapabilitySourceError("skill_source_empty", "repository contains no SKILL.md")
 
         visible = {self._name_key(name) for name in visible_skill_names}
         names: dict[str, str] = {}
@@ -482,9 +475,7 @@ class BoundedGitHubSkillSource:
             or "\x00" in value
             or value.startswith("-")
         ):
-            raise CapabilitySourceError(
-                "github_ref_invalid", "GitHub revision is invalid"
-            )
+            raise CapabilitySourceError("github_ref_invalid", "GitHub revision is invalid")
         return value.strip()
 
     @staticmethod
@@ -531,16 +522,20 @@ class BoundedGitHubSkillSource:
                         "capability_package_limit_exceeded",
                         "capability_package_limit_exceeded:file_count",
                     )
-                roots = {PurePosixPath(item.filename).parts[0] for item in infos
-                         if PurePosixPath(item.filename).parts}
+                roots = {
+                    PurePosixPath(item.filename).parts[0]
+                    for item in infos
+                    if PurePosixPath(item.filename).parts
+                }
                 if len(roots) != 1:
                     raise CapabilitySourceError(
                         "github_archive_root_invalid",
                         "GitHub archive must have exactly one repository root",
                     )
                 prefix = f"{next(iter(roots))}/{subpath}/"
-                selected = [item for item in infos
-                            if item.filename.startswith(prefix) and not item.is_dir()]
+                selected = [
+                    item for item in infos if item.filename.startswith(prefix) and not item.is_dir()
+                ]
                 if not selected:
                     raise CapabilitySourceError(
                         "skill_source_subpath_empty",
@@ -553,12 +548,17 @@ class BoundedGitHubSkillSource:
                     )
                 total = 0
                 for item in selected:
-                    ratio = (float("inf") if item.compress_size == 0 and item.file_size > 0
-                             else item.file_size / max(1, item.compress_size))
+                    ratio = (
+                        float("inf")
+                        if item.compress_size == 0 and item.file_size > 0
+                        else item.file_size / max(1, item.compress_size)
+                    )
                     total += item.file_size
-                    if (item.file_size > limits.max_single_file_bytes
-                            or total > limits.total_uncompressed_bytes
-                            or ratio > limits.max_archive_entry_compression_ratio):
+                    if (
+                        item.file_size > limits.max_single_file_bytes
+                        or total > limits.total_uncompressed_bytes
+                        or ratio > limits.max_archive_entry_compression_ratio
+                    ):
                         raise CapabilitySourceError(
                             "capability_package_limit_exceeded",
                             "capability_package_limit_exceeded:sub_directory_size",
@@ -688,11 +688,7 @@ class BoundedGitHubSkillSource:
         collection_root = PurePosixPath(*common_parts)
 
         def packaged_path(path: PurePosixPath) -> str:
-            relative = (
-                path.relative_to(collection_root)
-                if collection_root.parts
-                else path
-            )
+            relative = path.relative_to(collection_root) if collection_root.parts else path
             return f"skills/{relative.as_posix()}"
 
         skill_entry_path = packaged_path(skill_path)
@@ -709,9 +705,7 @@ class BoundedGitHubSkillSource:
             separator = "." if "+" in version_value else "+"
             version = f"{version_value}{separator}{_CANONICAL_PACKAGER_BUILD}"
         else:
-            version = (
-                f"0.0.0+git.{exact_commit[:12]}.{_CANONICAL_PACKAGER_BUILD}"
-            )
+            version = f"0.0.0+git.{exact_commit[:12]}.{_CANONICAL_PACKAGER_BUILD}"
         file_rows = [
             {"path": path, "sha256": hashlib.sha256(payload).hexdigest()}
             for path, payload in sorted(pack_files.items())
@@ -794,9 +788,7 @@ class BoundedGitHubSkillSource:
         )
 
     @staticmethod
-    def _parse_skill(
-        raw: bytes, path: PurePosixPath
-    ) -> tuple[Mapping[str, object], str]:
+    def _parse_skill(raw: bytes, path: PurePosixPath) -> tuple[Mapping[str, object], str]:
         try:
             text = raw.decode("utf-8").lstrip("\ufeff")
         except UnicodeDecodeError as exc:
@@ -809,11 +801,7 @@ class BoundedGitHubSkillSource:
                 "skill_frontmatter_invalid", f"{path.as_posix()} has no frontmatter"
             )
         end = next(
-            (
-                index
-                for index, line in enumerate(lines[1:], 1)
-                if line.strip() == "---"
-            ),
+            (index for index, line in enumerate(lines[1:], 1) if line.strip() == "---"),
             None,
         )
         if end is None:

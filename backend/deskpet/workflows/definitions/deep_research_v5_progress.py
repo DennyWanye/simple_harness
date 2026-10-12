@@ -20,9 +20,24 @@ CAPABILITY = "deep_research_progress_v5"
 SCHEMA_VERSION = 5
 
 NODE_IDS = (
-    "normalize", "model", "plan", "expand", "search", "direct", "fetch",
-    "score", "gap_evaluate", "gap_work", "gap_join", "rerank", "synth",
-    "quality_audit", "repair_work", "repair_join", "persist", "finalize",
+    "normalize",
+    "model",
+    "plan",
+    "expand",
+    "search",
+    "direct",
+    "fetch",
+    "score",
+    "gap_evaluate",
+    "gap_work",
+    "gap_join",
+    "rerank",
+    "synth",
+    "quality_audit",
+    "repair_work",
+    "repair_join",
+    "persist",
+    "finalize",
     "insufficient_finalize",
 )
 
@@ -48,8 +63,15 @@ _PUBLIC_STAGE = {
     "insufficient_finalize": "finalize",
 }
 PUBLIC_STAGE_IDS = (
-    "normalize", "plan", "research", "gap", "rerank", "synth", "quality",
-    "persist", "finalize",
+    "normalize",
+    "plan",
+    "research",
+    "gap",
+    "rerank",
+    "synth",
+    "quality",
+    "persist",
+    "finalize",
 )
 
 _ACTION = {
@@ -96,9 +118,7 @@ _DEFAULT_NEXT = {
     "insufficient_finalize": "none",
 }
 
-_COVERAGE_STATUSES = frozenset(
-    {"covered", "partially_covered", "uncovered", "not_applicable"}
-)
+_COVERAGE_STATUSES = frozenset({"covered", "partially_covered", "uncovered", "not_applicable"})
 _HARD_FAILURES = frozenset(
     {
         "completed_core_uncovered",
@@ -179,7 +199,11 @@ def _coverages(values: Mapping[str, Any]) -> list[Mapping[str, Any]]:
             raise V5ProgressProjectionError("invalid_dimension_coverage")
         status = item.get("status")
         dimension_id = item.get("dimension_id")
-        if status not in _COVERAGE_STATUSES or not isinstance(dimension_id, str) or not dimension_id:
+        if (
+            status not in _COVERAGE_STATUSES
+            or not isinstance(dimension_id, str)
+            or not dimension_id
+        ):
             raise V5ProgressProjectionError("invalid_dimension_coverage")
         result.append(item)
     return result
@@ -199,7 +223,11 @@ def _dimension_model(values: Mapping[str, Any]) -> tuple[list[str], set[str]]:
             raise V5ProgressProjectionError("invalid_research_brief")
         dimension_id = item.get("dimension_id")
         importance = item.get("importance")
-        if not isinstance(dimension_id, str) or not dimension_id or importance not in {"core", "supporting"}:
+        if (
+            not isinstance(dimension_id, str)
+            or not dimension_id
+            or importance not in {"core", "supporting"}
+        ):
             raise V5ProgressProjectionError("invalid_research_brief")
         ordered.append(dimension_id)
         if importance == "core":
@@ -259,9 +287,7 @@ def _status_changes(
     return {"improved": improved, "regressed": regressed, "unchanged": unchanged}
 
 
-def _source_counts(
-    values: Mapping[str, Any], coverages: list[Mapping[str, Any]]
-) -> dict[str, int]:
+def _source_counts(values: Mapping[str, Any], coverages: list[Mapping[str, Any]]) -> dict[str, int]:
     admitted_family_ids: set[str] = set()
     for item in coverages:
         raw_families = item.get("source_family_ids", [])
@@ -299,9 +325,7 @@ def _source_counts(
     return {"valid": len(valid), "first_party": len(first_party)}
 
 
-def _active_gap(
-    values: Mapping[str, Any], ordered_dimensions: list[str]
-) -> JsonValue:
+def _active_gap(values: Mapping[str, Any], ordered_dimensions: list[str]) -> JsonValue:
     raw = values.get("active_gap_work")
     if not isinstance(raw, Mapping):
         return "none"
@@ -309,7 +333,11 @@ def _active_gap(
     status = raw.get("status")
     dimension_id = raw.get("dimension_id")
     if work_kind not in {"query", "source_target", "fetch"} or status not in {
-        "pending", "running", "completed", "failed", "cancelled"
+        "pending",
+        "running",
+        "completed",
+        "failed",
+        "cancelled",
     }:
         return "none"
     ordinal = (
@@ -421,7 +449,9 @@ def _predicted_delivery(
     values: Mapping[str, Any], counts: Mapping[str, int], quality: int | str, hard: list[str]
 ) -> str:
     decision = values.get("delivery_decision")
-    declared = decision.get("status") if isinstance(decision, Mapping) else values.get("delivery_status")
+    declared = (
+        decision.get("status") if isinstance(decision, Mapping) else values.get("delivery_status")
+    )
     if declared in _DELIVERY:
         return str(declared)
     core_total = counts["core_total"]
@@ -442,7 +472,11 @@ def _next_step(stage_id: str, values: Mapping[str, Any]) -> str:
     if stage_id == "gap_join" and values.get("gap_join_route") == "synth":
         return "rerank_evidence"
     if stage_id in {"quality_audit", "repair_join"}:
-        route = values.get("quality_route") if stage_id == "quality_audit" else values.get("repair_route")
+        route = (
+            values.get("quality_route")
+            if stage_id == "quality_audit"
+            else values.get("repair_route")
+        )
         return {
             "repair_work": "repair_report",
             "persist": "persist_report",
@@ -543,9 +577,7 @@ def build_v5_stage_projection(
     )
     remaining_gap: int | str = core_gaps if coverages else "none"
     result = "insufficient_evidence" if stage_id == "insufficient_finalize" else "completed"
-    failed_dimensions, rejection_reasons = _failure_projection(
-        values, ordered, coverages
-    )
+    failed_dimensions, rejection_reasons = _failure_projection(values, ordered, coverages)
     return {
         "stage_id": stage_id,
         "public_stage_id": _PUBLIC_STAGE[stage_id],
@@ -577,7 +609,11 @@ def build_v5_transition_projection(stage_id: str, transition: str) -> dict[str, 
     """Return a state-free projection for lifecycle events without regressible totals."""
 
     if stage_id not in NODE_IDS or transition not in {
-        "started", "waiting", "failed", "cancelled", "completed"
+        "started",
+        "waiting",
+        "failed",
+        "cancelled",
+        "completed",
     }:
         raise V5ProgressProjectionError("invalid_transition")
     return {
@@ -589,12 +625,20 @@ def build_v5_transition_projection(stage_id: str, transition: str) -> dict[str, 
         "remaining_gap": "none",
         "next_step": _DEFAULT_NEXT[stage_id],
         "dimension_counts": {
-            "total": 0, "core_total": 0, "covered": 0,
-            "partially_covered": 0, "uncovered": 0, "not_applicable": 0,
-            "core_covered": 0, "core_partially_covered": 0, "core_uncovered": 0,
+            "total": 0,
+            "core_total": 0,
+            "covered": 0,
+            "partially_covered": 0,
+            "uncovered": 0,
+            "not_applicable": 0,
+            "core_covered": 0,
+            "core_partially_covered": 0,
+            "core_uncovered": 0,
         },
         "dimension_status_changes": {
-            "improved": "none", "regressed": "none", "unchanged": "none",
+            "improved": "none",
+            "regressed": "none",
+            "unchanged": "none",
         },
         "source_counts": {"valid": 0, "first_party": 0},
         "active_gap": "none",

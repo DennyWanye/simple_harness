@@ -267,9 +267,7 @@ async def test_read_file_is_activatable_in_the_unrouted_run() -> None:
 @pytest.mark.asyncio
 async def test_activate_unscoped_read_rejection_names_the_gated_reads_not_itself() -> None:
     run = _ProjectlessRun(routed=False)
-    described = _value(
-        await run.invoke("tool_describe", {"capability_id": UNSCOPED_READ})
-    )
+    described = _value(await run.invoke("tool_describe", {"capability_id": UNSCOPED_READ}))
     result = await run.invoke(
         "tool_activate",
         {
@@ -320,9 +318,7 @@ async def test_routed_run_without_prepared_workspace_points_at_workspace_prepare
     run = _ProjectlessRun(routed=True)
     # 绑定了任务的 projectless Run 连 PROJECT_EFFECT 也拿不到（生产口径）。
     assert "workspace_prepare" not in run.visible
-    facts = RunAvailabilityFacts(
-        routed=True, workspace_bound=False, exposed_tool_names=run.visible
-    )
+    facts = RunAvailabilityFacts(routed=True, workspace_bound=False, exposed_tool_names=run.visible)
     action = unavailable_capability_next_action(
         "workspace_unscoped", capability_id=READ_FILE, facts=facts
     )

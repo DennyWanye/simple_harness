@@ -17,6 +17,7 @@ Whitelist semantics (spec Requirement "Declarative YAML Assembly Policy"):
 Unknown tools in the whitelist are silently skipped — helps hot-reload
 when the registry hasn't caught up to a new policy yet.
 """
+
 from __future__ import annotations
 
 import time
@@ -126,9 +127,7 @@ class ToolComponent:
             filtered = list(all_schemas or [])
         else:
             wanted = set(whitelist)
-            filtered = [
-                s for s in (all_schemas or []) if _schema_name(s) in wanted
-            ]
+            filtered = [s for s in (all_schemas or []) if _schema_name(s) in wanted]
 
         available_names = [_schema_name(schema) for schema in filtered]
         available_names = [name for name in available_names if name]

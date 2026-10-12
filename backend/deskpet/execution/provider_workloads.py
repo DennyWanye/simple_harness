@@ -99,26 +99,166 @@ class ProviderWorkloadCallsite:
 PROVIDER_WORKLOAD_CALLSITES: Mapping[str, ProviderWorkloadCallsite] = {
     item.callsite_id: item
     for item in (
-        ProviderWorkloadCallsite("agent.root_turn", WorkloadClass.MAIN, "main", OwnerPolicy.IN_TURN, ResultSink.EXECUTION, WorkloadFailurePolicy.REQUIRED),
-        ProviderWorkloadCallsite("memory.fact_extract", WorkloadClass.SESSION_AUXILIARY, "memory_summarizer", OwnerPolicy.POST_TURN_MEMORY, ResultSink.MEMORY, WorkloadFailurePolicy.DEGRADE),
-        ProviderWorkloadCallsite("memory.fact_merge", WorkloadClass.SESSION_AUXILIARY, "memory_summarizer", OwnerPolicy.POST_TURN_MEMORY, ResultSink.MEMORY, WorkloadFailurePolicy.DEGRADE),
-        ProviderWorkloadCallsite("memory.cross_key_merge", WorkloadClass.SESSION_AUXILIARY, "memory_summarizer", OwnerPolicy.POST_TURN_MEMORY, ResultSink.MEMORY, WorkloadFailurePolicy.DEGRADE),
-        ProviderWorkloadCallsite("memory.query_rewrite", WorkloadClass.SESSION_AUXILIARY, "classifier", OwnerPolicy.IN_TURN, ResultSink.EXECUTION, WorkloadFailurePolicy.DEGRADE),
-        ProviderWorkloadCallsite("memory.entity_extract", WorkloadClass.SESSION_AUXILIARY, "classifier", OwnerPolicy.IN_TURN, ResultSink.EXECUTION, WorkloadFailurePolicy.DEGRADE),
-        ProviderWorkloadCallsite("agent.goal_check", WorkloadClass.SESSION_AUXILIARY, "supervisor", OwnerPolicy.IN_TURN, ResultSink.EXECUTION, WorkloadFailurePolicy.DEGRADE),
-        ProviderWorkloadCallsite("agent.problem_preanalysis", WorkloadClass.SESSION_AUXILIARY, "classifier", OwnerPolicy.IN_TURN, ResultSink.EXECUTION, WorkloadFailurePolicy.DEGRADE),
-        ProviderWorkloadCallsite("agent.context_compaction", WorkloadClass.SESSION_AUXILIARY, "compressor", OwnerPolicy.IN_TURN, ResultSink.EXECUTION, WorkloadFailurePolicy.REQUIRED),
-        ProviderWorkloadCallsite("agent.verify_ephemeral", WorkloadClass.SESSION_AUXILIARY, "supervisor", OwnerPolicy.IN_TURN, ResultSink.EXECUTION, WorkloadFailurePolicy.DEGRADE),
-        ProviderWorkloadCallsite("agent.external_evaluator", WorkloadClass.SESSION_AUXILIARY, "supervisor", OwnerPolicy.IN_TURN, ResultSink.EXECUTION, WorkloadFailurePolicy.DEGRADE),
-        ProviderWorkloadCallsite("memory.curation", WorkloadClass.SESSION_AUXILIARY, "memory_summarizer", OwnerPolicy.IN_TURN, ResultSink.MEMORY, WorkloadFailurePolicy.DEGRADE),
-        ProviderWorkloadCallsite("memory.forget_confirm", WorkloadClass.SESSION_AUXILIARY, "memory_summarizer", OwnerPolicy.IN_TURN, ResultSink.MEMORY, WorkloadFailurePolicy.REQUIRED),
-        ProviderWorkloadCallsite("companion.preference_interpret", WorkloadClass.SESSION_AUXILIARY, "classifier", OwnerPolicy.IN_TURN, ResultSink.EXECUTION, WorkloadFailurePolicy.DEGRADE),
-        ProviderWorkloadCallsite("companion.personal_workflow_match", WorkloadClass.SESSION_AUXILIARY, "classifier", OwnerPolicy.IN_TURN, ResultSink.EXECUTION, WorkloadFailurePolicy.DEGRADE),
-        ProviderWorkloadCallsite("memory.reflection", WorkloadClass.SYSTEM_MAINTENANCE, "memory_summarizer", OwnerPolicy.DETACHED_MAINTENANCE, ResultSink.MAINTENANCE, WorkloadFailurePolicy.MAINTENANCE_ONLY),
-        ProviderWorkloadCallsite("memory.cross_session_summary", WorkloadClass.SYSTEM_MAINTENANCE, "memory_summarizer", OwnerPolicy.DETACHED_MAINTENANCE, ResultSink.MAINTENANCE, WorkloadFailurePolicy.MAINTENANCE_ONLY),
-        ProviderWorkloadCallsite("provider.audit_retention", WorkloadClass.SYSTEM_MAINTENANCE, "auxiliary_unknown", OwnerPolicy.DETACHED_MAINTENANCE, ResultSink.MAINTENANCE, WorkloadFailurePolicy.MAINTENANCE_ONLY),
-        ProviderWorkloadCallsite("provider.maintenance_probe", WorkloadClass.SYSTEM_MAINTENANCE, "auxiliary_unknown", OwnerPolicy.DETACHED_MAINTENANCE, ResultSink.MAINTENANCE, WorkloadFailurePolicy.MAINTENANCE_ONLY),
-        ProviderWorkloadCallsite("provider.connection_test", WorkloadClass.EXPLICIT_INDEPENDENT, "provider_test", OwnerPolicy.IN_TURN, ResultSink.EXECUTION, WorkloadFailurePolicy.REQUIRED),
+        ProviderWorkloadCallsite(
+            "agent.root_turn",
+            WorkloadClass.MAIN,
+            "main",
+            OwnerPolicy.IN_TURN,
+            ResultSink.EXECUTION,
+            WorkloadFailurePolicy.REQUIRED,
+        ),
+        ProviderWorkloadCallsite(
+            "memory.fact_extract",
+            WorkloadClass.SESSION_AUXILIARY,
+            "memory_summarizer",
+            OwnerPolicy.POST_TURN_MEMORY,
+            ResultSink.MEMORY,
+            WorkloadFailurePolicy.DEGRADE,
+        ),
+        ProviderWorkloadCallsite(
+            "memory.fact_merge",
+            WorkloadClass.SESSION_AUXILIARY,
+            "memory_summarizer",
+            OwnerPolicy.POST_TURN_MEMORY,
+            ResultSink.MEMORY,
+            WorkloadFailurePolicy.DEGRADE,
+        ),
+        ProviderWorkloadCallsite(
+            "memory.cross_key_merge",
+            WorkloadClass.SESSION_AUXILIARY,
+            "memory_summarizer",
+            OwnerPolicy.POST_TURN_MEMORY,
+            ResultSink.MEMORY,
+            WorkloadFailurePolicy.DEGRADE,
+        ),
+        ProviderWorkloadCallsite(
+            "memory.query_rewrite",
+            WorkloadClass.SESSION_AUXILIARY,
+            "classifier",
+            OwnerPolicy.IN_TURN,
+            ResultSink.EXECUTION,
+            WorkloadFailurePolicy.DEGRADE,
+        ),
+        ProviderWorkloadCallsite(
+            "memory.entity_extract",
+            WorkloadClass.SESSION_AUXILIARY,
+            "classifier",
+            OwnerPolicy.IN_TURN,
+            ResultSink.EXECUTION,
+            WorkloadFailurePolicy.DEGRADE,
+        ),
+        ProviderWorkloadCallsite(
+            "agent.goal_check",
+            WorkloadClass.SESSION_AUXILIARY,
+            "supervisor",
+            OwnerPolicy.IN_TURN,
+            ResultSink.EXECUTION,
+            WorkloadFailurePolicy.DEGRADE,
+        ),
+        ProviderWorkloadCallsite(
+            "agent.problem_preanalysis",
+            WorkloadClass.SESSION_AUXILIARY,
+            "classifier",
+            OwnerPolicy.IN_TURN,
+            ResultSink.EXECUTION,
+            WorkloadFailurePolicy.DEGRADE,
+        ),
+        ProviderWorkloadCallsite(
+            "agent.context_compaction",
+            WorkloadClass.SESSION_AUXILIARY,
+            "compressor",
+            OwnerPolicy.IN_TURN,
+            ResultSink.EXECUTION,
+            WorkloadFailurePolicy.REQUIRED,
+        ),
+        ProviderWorkloadCallsite(
+            "agent.verify_ephemeral",
+            WorkloadClass.SESSION_AUXILIARY,
+            "supervisor",
+            OwnerPolicy.IN_TURN,
+            ResultSink.EXECUTION,
+            WorkloadFailurePolicy.DEGRADE,
+        ),
+        ProviderWorkloadCallsite(
+            "agent.external_evaluator",
+            WorkloadClass.SESSION_AUXILIARY,
+            "supervisor",
+            OwnerPolicy.IN_TURN,
+            ResultSink.EXECUTION,
+            WorkloadFailurePolicy.DEGRADE,
+        ),
+        ProviderWorkloadCallsite(
+            "memory.curation",
+            WorkloadClass.SESSION_AUXILIARY,
+            "memory_summarizer",
+            OwnerPolicy.IN_TURN,
+            ResultSink.MEMORY,
+            WorkloadFailurePolicy.DEGRADE,
+        ),
+        ProviderWorkloadCallsite(
+            "memory.forget_confirm",
+            WorkloadClass.SESSION_AUXILIARY,
+            "memory_summarizer",
+            OwnerPolicy.IN_TURN,
+            ResultSink.MEMORY,
+            WorkloadFailurePolicy.REQUIRED,
+        ),
+        ProviderWorkloadCallsite(
+            "companion.preference_interpret",
+            WorkloadClass.SESSION_AUXILIARY,
+            "classifier",
+            OwnerPolicy.IN_TURN,
+            ResultSink.EXECUTION,
+            WorkloadFailurePolicy.DEGRADE,
+        ),
+        ProviderWorkloadCallsite(
+            "companion.personal_workflow_match",
+            WorkloadClass.SESSION_AUXILIARY,
+            "classifier",
+            OwnerPolicy.IN_TURN,
+            ResultSink.EXECUTION,
+            WorkloadFailurePolicy.DEGRADE,
+        ),
+        ProviderWorkloadCallsite(
+            "memory.reflection",
+            WorkloadClass.SYSTEM_MAINTENANCE,
+            "memory_summarizer",
+            OwnerPolicy.DETACHED_MAINTENANCE,
+            ResultSink.MAINTENANCE,
+            WorkloadFailurePolicy.MAINTENANCE_ONLY,
+        ),
+        ProviderWorkloadCallsite(
+            "memory.cross_session_summary",
+            WorkloadClass.SYSTEM_MAINTENANCE,
+            "memory_summarizer",
+            OwnerPolicy.DETACHED_MAINTENANCE,
+            ResultSink.MAINTENANCE,
+            WorkloadFailurePolicy.MAINTENANCE_ONLY,
+        ),
+        ProviderWorkloadCallsite(
+            "provider.audit_retention",
+            WorkloadClass.SYSTEM_MAINTENANCE,
+            "auxiliary_unknown",
+            OwnerPolicy.DETACHED_MAINTENANCE,
+            ResultSink.MAINTENANCE,
+            WorkloadFailurePolicy.MAINTENANCE_ONLY,
+        ),
+        ProviderWorkloadCallsite(
+            "provider.maintenance_probe",
+            WorkloadClass.SYSTEM_MAINTENANCE,
+            "auxiliary_unknown",
+            OwnerPolicy.DETACHED_MAINTENANCE,
+            ResultSink.MAINTENANCE,
+            WorkloadFailurePolicy.MAINTENANCE_ONLY,
+        ),
+        ProviderWorkloadCallsite(
+            "provider.connection_test",
+            WorkloadClass.EXPLICIT_INDEPENDENT,
+            "provider_test",
+            OwnerPolicy.IN_TURN,
+            ResultSink.EXECUTION,
+            WorkloadFailurePolicy.REQUIRED,
+        ),
     )
 }
 
@@ -236,9 +376,7 @@ class SessionProviderWorkloadTargetResolver:
         self._provider_factory = provider_factory
         self._start_snapshot_reader = start_snapshot_reader
 
-    async def __call__(
-        self, context: ProviderWorkloadContext
-    ) -> ResolvedProviderWorkloadTarget:
+    async def __call__(self, context: ProviderWorkloadContext) -> ResolvedProviderWorkloadTarget:
         if context.workload_class is WorkloadClass.SYSTEM_MAINTENANCE:
             raise RuntimeError(
                 "system-maintenance requires an explicit BackgroundModelPolicy target"
@@ -268,12 +406,10 @@ class SessionProviderWorkloadTargetResolver:
             provider_id=str(getattr(route, "provider_id", "") or getattr(entry, "id", "")),
             model=model,
             incarnation_id=str(
-                getattr(route, "incarnation_id", "")
-                or getattr(entry, "incarnation_id", "")
+                getattr(route, "incarnation_id", "") or getattr(entry, "incarnation_id", "")
             ),
             config_revision=int(
-                getattr(route, "config_revision", 0)
-                or getattr(entry, "config_revision", 0)
+                getattr(route, "config_revision", 0) or getattr(entry, "config_revision", 0)
             ),
             endpoint=str(getattr(entry, "base_url", "") or ""),
             account_ref=str(getattr(entry, "account_ref", "") or ""),
@@ -372,9 +508,11 @@ class ProviderFailurePolicyV1:
                 retry_after_s=retry_after_s,
                 opens_breaker=True,
             )
-        if (
-            isinstance(status, int) and 500 <= status <= 599
-        ) or error_class in {"timeout", "transport", "connect_error"}:
+        if (isinstance(status, int) and 500 <= status <= 599) or error_class in {
+            "timeout",
+            "transport",
+            "connect_error",
+        }:
             return ProviderFailureDecision(
                 FailureKind.ENDPOINT_TRANSIENT,
                 ("endpoint", target.endpoint),
@@ -462,9 +600,7 @@ class ProviderWorkloadBreaker:
             str(target.config_revision),
         )
 
-    def _cooldown(
-        self, decision: ProviderFailureDecision, failure_count: int
-    ) -> float | None:
+    def _cooldown(self, decision: ProviderFailureDecision, failure_count: int) -> float | None:
         if decision.kind is FailureKind.CREDENTIAL:
             return None
         base = (
@@ -621,18 +757,14 @@ class ProviderWorkloadBreaker:
             scope_key, leader, future = scope_probe
             if not leader:
                 await asyncio.shield(future)
-                return await self.execute(
-                    target=target, context=context, operation=operation
-                )
+                return await self.execute(target=target, context=context, operation=operation)
             try:
                 result = await operation()
             except asyncio.CancelledError:
                 await self._cancel_probe(scope_key, future)
                 raise
             except BaseException as exc:
-                decision = self._policy.classify(
-                    exc, target=target, context=context
-                )
+                decision = self._policy.classify(exc, target=target, context=context)
                 if decision.opens_breaker:
                     if decision.scope_key == scope_key:
                         await self._open_scope(
@@ -665,9 +797,7 @@ class ProviderWorkloadBreaker:
             await asyncio.shield(future)
             # The leader proved the revision healthy. Followers execute their
             # own semantic request; only admission/probe outcome is shared.
-            return await self.execute(
-                target=target, context=context, operation=operation
-            )
+            return await self.execute(target=target, context=context, operation=operation)
         if not leader:
             return await self._execute_closed(
                 provisional_key, target=target, context=context, operation=operation
@@ -700,17 +830,13 @@ class ProviderWorkloadBreaker:
         await self._close(provisional_key, future)
         return result, "probe_closed"
 
-    async def _cancel_probe(
-        self, key: tuple[str, ...], future: asyncio.Future[None]
-    ) -> None:
+    async def _cancel_probe(self, key: tuple[str, ...], future: asyncio.Future[None]) -> None:
         async with self._lock:
             state = self._states.setdefault(key, _BreakerState())
             state.state = BreakerStateName.UNPROVEN
             state.leader_future = None
             if not future.done():
-                future.set_exception(
-                    ProviderProbeCancelled("provider probe leader cancelled")
-                )
+                future.set_exception(ProviderProbeCancelled("provider probe leader cancelled"))
                 future.exception()
 
     async def _finish_provisional_failure(
@@ -780,9 +906,7 @@ class ProviderWorkloadBreaker:
             state.leader_future = None
             return state.reset_generation
 
-    async def reconcile_provider_revision(
-        self, target: ResolvedProviderWorkloadTarget
-    ) -> int:
+    async def reconcile_provider_revision(self, target: ResolvedProviderWorkloadTarget) -> int:
         """Discard stale incarnation/revision state before admission.
 
         Endpoint scopes intentionally survive because they represent the
@@ -807,9 +931,7 @@ class ProviderWorkloadBreaker:
                     state = self._states.pop(key)
                     if state.leader_future is not None and not state.leader_future.done():
                         state.leader_future.set_exception(
-                            ProviderProbeCancelled(
-                                "provider revision replaced during probe"
-                            )
+                            ProviderProbeCancelled("provider revision replaced during probe")
                         )
                         state.leader_future.exception()
                     removed += 1
@@ -842,9 +964,7 @@ class RootOwnedWorkloadTasks:
         self._tasks: dict[str, set[asyncio.Task[Any]]] = {}
         self._lock = asyncio.Lock()
 
-    def track(
-        self, context: ProviderWorkloadContext, task: asyncio.Task[T]
-    ) -> asyncio.Task[T]:
+    def track(self, context: ProviderWorkloadContext, task: asyncio.Task[T]) -> asyncio.Task[T]:
         if context.owner_policy is not OwnerPolicy.IN_TURN or not context.root_run_id:
             return task
         # Registration is synchronous and happens before schedule() returns;
@@ -880,9 +1000,7 @@ def _extract_provider_text(result: Any) -> str:
     if isinstance(content, str):
         return content
     if content is None:
-        raise TypeError(
-            f"provider response has no content field:{type(result).__name__}"
-        )
+        raise TypeError(f"provider response has no content field:{type(result).__name__}")
     return str(content)
 
 
@@ -928,6 +1046,7 @@ class ProviderWorkloadRouter:
         injection_bound_root_id = None
         injection_bound_correlation_id = None
         try:
+
             async def _physical_call() -> str:
                 nonlocal injection_ref, injection_bound_root_id
                 nonlocal injection_bound_correlation_id
@@ -1054,16 +1173,10 @@ class ProviderWorkloadRouter:
     ) -> asyncio.Task[T]:
         return self._tasks.track(workload_context, task)
 
-    async def reset_scope(
-        self, scope_key: tuple[str, ...], *, expected_provider_id: str
-    ) -> int:
-        return await self._breaker.reset(
-            scope_key, expected_provider_id=expected_provider_id
-        )
+    async def reset_scope(self, scope_key: tuple[str, ...], *, expected_provider_id: str) -> int:
+        return await self._breaker.reset(scope_key, expected_provider_id=expected_provider_id)
 
-    async def reconcile_provider_revision(
-        self, target: ResolvedProviderWorkloadTarget
-    ) -> int:
+    async def reconcile_provider_revision(self, target: ResolvedProviderWorkloadTarget) -> int:
         """Registry lifecycle hook for revision/delete-and-readd cutovers."""
 
         return await self._breaker.reconcile_provider_revision(target)
@@ -1092,9 +1205,7 @@ class SessionAwareLLMCall:
             raise RuntimeError("provider_workload_router is unavailable")
         return resolved
 
-    async def __call__(
-        self, prompt: str, *, workload_context: ProviderWorkloadContext
-    ) -> str:
+    async def __call__(self, prompt: str, *, workload_context: ProviderWorkloadContext) -> str:
         return await self._resolve_router().invoke(
             prompt,
             workload_context=workload_context,
@@ -1128,9 +1239,7 @@ class BackgroundModelPolicy:
             request_id=request_id or f"maintenance:{uuid.uuid4().hex}",
         )
 
-    async def resolve(
-        self, context: ProviderWorkloadContext
-    ) -> ResolvedProviderWorkloadTarget:
+    async def resolve(self, context: ProviderWorkloadContext) -> ResolvedProviderWorkloadTarget:
         if context.workload_class is not WorkloadClass.SYSTEM_MAINTENANCE:
             raise RuntimeError("background model policy only owns system-maintenance")
         if self._registry is None or self._provider_factory is None:
@@ -1140,9 +1249,7 @@ class BackgroundModelPolicy:
             if inspect.isawaitable(ready):
                 await ready
         entry = (
-            self._registry.get_entry(self._provider_id)
-            if self._provider_id is not None
-            else None
+            self._registry.get_entry(self._provider_id) if self._provider_id is not None else None
         )
         if entry is None and self._provider_id is None:
             chain = self._registry.get_chain()
@@ -1150,14 +1257,8 @@ class BackgroundModelPolicy:
             if isinstance(chain_head, Mapping):
                 chain_provider_id = str(chain_head.get("id") or "").strip()
             else:
-                chain_provider_id = str(
-                    getattr(chain_head, "id", "") or ""
-                ).strip()
-            entry = (
-                self._registry.get_entry(chain_provider_id)
-                if chain_provider_id
-                else None
-            )
+                chain_provider_id = str(getattr(chain_head, "id", "") or "").strip()
+            entry = self._registry.get_entry(chain_provider_id) if chain_provider_id else None
         if entry is None:
             raise RuntimeError("background provider policy target is unavailable")
         model = self._model or str(getattr(entry, "model", "") or "")
@@ -1184,9 +1285,7 @@ class ProviderWorkloadRoutePolicy:
         self._session = session
         self._background = background
 
-    async def __call__(
-        self, context: ProviderWorkloadContext
-    ) -> ResolvedProviderWorkloadTarget:
+    async def __call__(self, context: ProviderWorkloadContext) -> ResolvedProviderWorkloadTarget:
         if context.workload_class is WorkloadClass.SESSION_AUXILIARY:
             return await self._session(context)
         if context.workload_class is WorkloadClass.SYSTEM_MAINTENANCE:

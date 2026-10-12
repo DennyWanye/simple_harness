@@ -64,9 +64,7 @@ class ForegroundActivityGate:
             venue = str(getattr(context, "venue", "") or "")
             root_run_id = str(getattr(context, "root_run_id", "") or "")
             if not venue or not root_run_id:
-                return ForegroundActivity(
-                    True, 0, 0.0, "execution_projection_incomplete"
-                )
+                return ForegroundActivity(True, 0, 0.0, "execution_projection_incomplete")
             if venue != "background":
                 foreground_roots.add(root_run_id)
         foreground = len(foreground_roots)
@@ -99,17 +97,13 @@ class CompanionJobResult:
             raise ValueError("companion_job_result_budget_invalid")
         if self.failure_context is not None:
             if self.status != "failed":
-                raise ValueError(
-                    "companion_job_failure_context_requires_failed_status"
-                )
+                raise ValueError("companion_job_failure_context_requires_failed_status")
             if not isinstance(self.failure_context, Mapping):
                 raise ValueError("companion_job_failure_context_invalid")
 
 
 class CompanionJobHandler(Protocol):
-    def __call__(
-        self, owner: OwnerRef, claim: LeaseClaim
-    ) -> Awaitable[CompanionJobResult]: ...
+    def __call__(self, owner: OwnerRef, claim: LeaseClaim) -> Awaitable[CompanionJobResult]: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -181,10 +175,7 @@ class CompanionRuntime:
         policy: CompanionRuntimePolicy | None = None,
         authority_active: Callable[[], bool] | None = None,
         claim_owner: str | None = None,
-        scheduled_work_hook: Callable[
-            [OwnerRef], Awaitable[None] | None
-        ]
-        | None = None,
+        scheduled_work_hook: Callable[[OwnerRef], Awaitable[None] | None] | None = None,
     ) -> None:
         self.store = store
         self.identity_gate = identity_gate
@@ -260,24 +251,17 @@ class CompanionRuntime:
             if binding_epoch is None:
                 current = self.identity_gate.freeze()
                 if current.owner != owner:
-                    raise CompanionIdentityNotReady(
-                        "companion_identity_not_ready"
-                    )
+                    raise CompanionIdentityNotReady("companion_identity_not_ready")
             else:
-                binding = self.store.get_profile_binding(
-                    device_scope="desktop"
-                )
+                binding = self.store.get_profile_binding(device_scope="desktop")
                 if (
                     binding is None
                     or str(binding["profile_id"]) != owner.profile_id
-                    or int(binding["profile_generation"])
-                    != owner.profile_generation
+                    or int(binding["profile_generation"]) != owner.profile_generation
                     or int(binding["binding_epoch"]) != binding_epoch
                     or str(binding["status"]) not in {"unready", "ready"}
                 ):
-                    raise CompanionIdentityNotReady(
-                        "companion_identity_not_ready"
-                    )
+                    raise CompanionIdentityNotReady("companion_identity_not_ready")
             if owner not in self._recovered:
                 result = self.store.recover_expired_job_leases(
                     owner,
@@ -338,9 +322,7 @@ class CompanionRuntime:
         self._wake.set()
 
     def diagnostics(self) -> Mapping[str, Any]:
-        scheduler_count = int(
-            self._scheduler is not None and not self._scheduler.done()
-        )
+        scheduler_count = int(self._scheduler is not None and not self._scheduler.done())
         return {
             "closed": self._closed,
             "accepting": self._accepting,
@@ -376,11 +358,7 @@ class CompanionRuntime:
                         return_when=asyncio.FIRST_COMPLETED,
                     )
                 finally:
-                    pending = {
-                        task
-                        for task in (sleep_task, wake_task)
-                        if not task.done()
-                    }
+                    pending = {task for task in (sleep_task, wake_task) if not task.done()}
                     for task in pending:
                         task.cancel()
                     if pending:
@@ -395,11 +373,7 @@ class CompanionRuntime:
             current = self.identity_gate.freeze()
         except CompanionIdentityNotReady:
             return
-        if (
-            current.owner != owner
-            or not self.authority_active()
-            or self.policy.paused
-        ):
+        if current.owner != owner or not self.authority_active() or self.policy.paused:
             return
         if self.scheduled_work_hook is not None:
             try:
@@ -432,9 +406,7 @@ class CompanionRuntime:
         if claim is None:
             return
         payload = dict(claim.payload)
-        if self._in_quiet_hours() and not bool(
-            payload.get("allow_during_quiet_hours", False)
-        ):
+        if self._in_quiet_hours() and not bool(payload.get("allow_during_quiet_hours", False)):
             self.store.defer_job(
                 owner,
                 job_id=claim.item_id,
@@ -446,10 +418,7 @@ class CompanionRuntime:
             return
         if bool(payload.get("requires_idle", True)):
             activity = await self.foreground_gate.snapshot()
-            if (
-                activity.busy
-                or activity.idle_for_seconds < self.policy.idle_window_seconds
-            ):
+            if activity.busy or activity.idle_for_seconds < self.policy.idle_window_seconds:
                 self.store.defer_job(
                     owner,
                     job_id=claim.item_id,
@@ -493,14 +462,9 @@ class CompanionRuntime:
                     or row["claim_owner"] is not None
                     or row["lease_expires_at"] is not None
                 ):
-                    raise RuntimeError(
-                        "companion_waiting_decision_not_durable"
-                    )
+                    raise RuntimeError("companion_waiting_decision_not_durable")
                 return
-            if (
-                result.status == "failed"
-                and claim.attempt < self.policy.max_retries
-            ):
+            if result.status == "failed" and claim.attempt < self.policy.max_retries:
                 self.store.defer_job_for_replan(
                     owner,
                     job_id=claim.item_id,
@@ -568,13 +532,9 @@ class CompanionRuntime:
                     failure_context={
                         "error_type": type(exc).__name__,
                         "error_message": (
-                            error_message[:2000]
-                            if error_message
-                            else type(exc).__name__
+                            error_message[:2000] if error_message else type(exc).__name__
                         ),
-                        "job_kind": str(
-                            claim.payload.get("purpose") or ""
-                        ),
+                        "job_kind": str(claim.payload.get("purpose") or ""),
                         "reason_code": "background_run_exception",
                     },
                     reason_code="job_replan_after_runtime_failure",
@@ -589,22 +549,17 @@ class CompanionRuntime:
                     result_ref=None,
                     result_hash=None,
                     reason_code=f"job_failed:{type(exc).__name__}",
-                    budget_actual_ms=max(
-                        0, int((self.clock.monotonic() - started) * 1000)
-                    ),
+                    budget_actual_ms=max(0, int((self.clock.monotonic() - started) * 1000)),
                 )
 
-    def _defer_or_cancel(
-        self, owner: OwnerRef, claim: LeaseClaim, *, reason_code: str
-    ) -> None:
+    def _defer_or_cancel(self, owner: OwnerRef, claim: LeaseClaim, *, reason_code: str) -> None:
         if claim.attempt < self.policy.max_retries:
             self.store.defer_job(
                 owner,
                 job_id=claim.item_id,
                 claim_owner=claim.claim_owner,
                 claim_epoch=claim.claim_epoch,
-                retry_at=self.clock.now_utc()
-                + timedelta(seconds=self.policy.retry_delay_seconds),
+                retry_at=self.clock.now_utc() + timedelta(seconds=self.policy.retry_delay_seconds),
                 reason_code=reason_code,
             )
         else:
@@ -640,9 +595,7 @@ class CompanionRuntime:
     def _local_day_start_utc(self) -> str:
         local_now = self._local_now()
         start = datetime.combine(local_now.date(), time.min, local_now.tzinfo)
-        return start.astimezone(UTC).isoformat(
-            timespec="milliseconds"
-        ).replace("+00:00", "Z")
+        return start.astimezone(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
 __all__ = [

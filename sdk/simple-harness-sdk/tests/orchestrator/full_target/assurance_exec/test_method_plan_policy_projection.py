@@ -7,6 +7,7 @@
 （子目标的做法策略已投影、子目标做法过了独立审阅；分诊表：删）。这里只留读侧：只有复合目标才是
 规划主体，映射就是它覆盖的那几条要求；不认识的任务、原子步骤都没有映射。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -31,7 +32,8 @@ def test_a_task_that_is_not_a_planning_subject_has_no_mapping(tmp_path):
             htn = HtnStore(world.store)
             [root] = htn.list_task_semantics(mission_id, form="compound")
             requirements_ref, subject_ref, mapping = lossless_planning_subject_mapping(
-                commit, mission_id=mission_id, task_id=str(root.task_id))
+                commit, mission_id=mission_id, task_id=str(root.task_id)
+            )
             assert subject_ref.kind == "task" and subject_ref.pin.id == str(root.task_id)
             assert requirements_ref.kind == "requirements"
             # 根覆盖 c-user-1（file:）与 c-user-2（action:）；发布效果由系统按确认的效果去办，做法审阅
@@ -39,11 +41,15 @@ def test_a_task_that_is_not_a_planning_subject_has_no_mapping(tmp_path):
             assert root.requirement_refs == ("c-user-1", "c-user-2")
             assert mapping == (CriterionPolicy("c-user-1", "SEMANTIC", ()),)
             with pytest.raises(AssuranceError) as unknown:
-                lossless_planning_subject_mapping(commit, mission_id=mission_id, task_id="task-nobody")
+                lossless_planning_subject_mapping(
+                    commit, mission_id=mission_id, task_id="task-nobody"
+                )
             assert unknown.value.code == "CHECK_POLICY_UNRESOLVED"
             [leaf] = htn.list_task_semantics(mission_id, form="primitive")
             with pytest.raises(AssuranceError) as primitive:
-                lossless_planning_subject_mapping(commit, mission_id=mission_id, task_id=str(leaf.task_id))
+                lossless_planning_subject_mapping(
+                    commit, mission_id=mission_id, task_id=str(leaf.task_id)
+                )
             assert primitive.value.code == "CHECK_POLICY_UNRESOLVED"
 
     asyncio.run(case())

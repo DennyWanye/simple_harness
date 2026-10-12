@@ -293,8 +293,11 @@ class OperationMaterializationCommitsMixin:
                     "origin_receipt_id": command.intent_source.origin_receipt_id or receipt_id,
                     # 同一授权槽可替代重交（审阅没做成、内容换了新版本）：行上的槽键带上本次
                     # 申请号，唯一约束（任务+来源回执+槽键）仍成立；授权核对用命令里的槽键。
-                    "slot_key": (f"{command.intent_source.slot_key}@{intent_id}"
-                                 if command.intent_source.slot_key else "operation"),
+                    "slot_key": (
+                        f"{command.intent_source.slot_key}@{intent_id}"
+                        if command.intent_source.slot_key
+                        else "operation"
+                    ),
                     "submission_receipt_id": receipt_id,
                     "submission_hash": submission_hash,
                     "supersedes_intent_id": command.supersedes_intent_id,
@@ -357,7 +360,10 @@ class OperationMaterializationCommitsMixin:
 
             slot = row["binding"]["command"]["completion_slot"]
             completion = read_current_effect(
-                self._store, row["mission_id"], slot["spec_hash"], slot["effect_key"],
+                self._store,
+                row["mission_id"],
+                slot["spec_hash"],
+                slot["effect_key"],
             )
             return {
                 "intent_id": intent_id,
@@ -512,8 +518,11 @@ class OperationMaterializationCommitsMixin:
                 planning_origin=origin,
                 operation_parameters=payloads.parameters,
                 # 系统按已批准效果准备的申请单（AUTHORIZED_SLOT）：理由是系统写的
-                reason_source=("system" if str(row["source_kind"]) == "AUTHORIZED_SLOT"
-                               else "model (untrusted)"),
+                reason_source=(
+                    "system"
+                    if str(row["source_kind"]) == "AUTHORIZED_SLOT"
+                    else "model (untrusted)"
+                ),
             )
             if action["state"] == "REFUSED":
                 raise OperationCompletionError("OP_INTENT_CONFLICT", str(action.get("refused")))

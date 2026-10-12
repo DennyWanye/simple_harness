@@ -32,9 +32,15 @@ class OperationReceiptAdapter(Protocol):
     connector: Any
     profile: ConnectorOperationProfileV1
 
-    def interpret(self, receipt: Receipt, *, action: Mapping[str, Any],
-                  parameters: OperationParametersV1, handoff_events: Sequence[Any],
-                  required_milestone: str) -> ObservedOperationMilestone: ...
+    def interpret(
+        self,
+        receipt: Receipt,
+        *,
+        action: Mapping[str, Any],
+        parameters: OperationParametersV1,
+        handoff_events: Sequence[Any],
+        required_milestone: str,
+    ) -> ObservedOperationMilestone: ...
 
 
 class FilePublishReceiptAdapterV1:
@@ -157,19 +163,33 @@ def resolve_receipt_adapter(
     from typing import cast
 
     from .operation_payloads import require_connector_profile
+
     if profiles is not None:
-        require_connector_profile(profiles, connector_id=profile.connector_id,
-            operation_name=profile.operation_name, expected_hash=profile.content_hash())
-        registered = profiles.resolve_connector_operation(profile.connector_id, profile.operation_name)
+        require_connector_profile(
+            profiles,
+            connector_id=profile.connector_id,
+            operation_name=profile.operation_name,
+            expected_hash=profile.content_hash(),
+        )
+        registered = profiles.resolve_connector_operation(
+            profile.connector_id, profile.operation_name
+        )
         adapter = None if registered is None else registered.outcome_adapter
         if adapter is not None:
-            if (getattr(adapter, "connector", None) is not connector
-                    or not isinstance(getattr(adapter, "profile", None), ConnectorOperationProfileV1)
-                    or adapter.profile.content_hash() != profile.content_hash()
-                    or dict(profile.receipt_adapter) != {"id": getattr(adapter, "adapter_id", None),
-                                                         "version": getattr(adapter, "adapter_version", None)}
-                    or not callable(getattr(adapter, "interpret", None))):
-                raise OutcomeReceiptError("OP_OUTCOME_MILESTONE_UNVERIFIABLE", "registered adapter identity")
+            if (
+                getattr(adapter, "connector", None) is not connector
+                or not isinstance(getattr(adapter, "profile", None), ConnectorOperationProfileV1)
+                or adapter.profile.content_hash() != profile.content_hash()
+                or dict(profile.receipt_adapter)
+                != {
+                    "id": getattr(adapter, "adapter_id", None),
+                    "version": getattr(adapter, "adapter_version", None),
+                }
+                or not callable(getattr(adapter, "interpret", None))
+            ):
+                raise OutcomeReceiptError(
+                    "OP_OUTCOME_MILESTONE_UNVERIFIABLE", "registered adapter identity"
+                )
             return cast(OperationReceiptAdapter, adapter)
     # Preserve the built-in profile's historical binding; all other connectors
     # need their explicitly registered parser and state-reading implementation.

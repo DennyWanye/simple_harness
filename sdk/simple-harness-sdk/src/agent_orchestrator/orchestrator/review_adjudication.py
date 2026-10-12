@@ -6,6 +6,7 @@
 ``AssuranceReviewAdjudicated``（主体 = 记录 id）。凡是拿"记录结论是不是通过"当门槛的地方，
 都从这里问一句"人是否已裁决通过"——证书、验收公式、内容审阅、完成度读取各处口径一致。
 """
+
 from __future__ import annotations
 
 from typing import Any

@@ -204,13 +204,19 @@ def backlog_response(
 
     raised = state.raised.get(BACKLOG_DIMENSION)
     if raised is None:
-        return BacklogResponse(verifier_workers, verifier_workers, verifier_ceiling, False, "normal", None)
+        return BacklogResponse(
+            verifier_workers, verifier_workers, verifier_ceiling, False, "normal", None
+        )
     since = raised.get("since")
     since = None if since is None else float(since)
     paused = since is None or now - since < pause_seconds
     return BacklogResponse(
-        verifier_workers, verifier_ceiling, verifier_ceiling, paused,
-        "raised" if paused else "pause_lapsed", since,
+        verifier_workers,
+        verifier_ceiling,
+        verifier_ceiling,
+        paused,
+        "raised" if paused else "pause_lapsed",
+        since,
     )
 
 

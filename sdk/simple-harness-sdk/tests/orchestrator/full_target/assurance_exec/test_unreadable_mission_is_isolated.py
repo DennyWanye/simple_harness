@@ -10,6 +10,7 @@ opt.122 改了一个登记在执行图文档身份里的源文件，库里旧任
 秩序：读不了的任务如实记成"根网络不可用、未就绪"；轮询里任何一项工作读自己任务的数据
 出错，只影响这一项，按同一个持久重试上限再看，别的任务照常。
 """
+
 from __future__ import annotations
 
 import inspect
@@ -32,15 +33,19 @@ def _consumer(error: Exception) -> SimpleNamespace:
     return SimpleNamespace(commit=SimpleNamespace(_judgment_network=unreadable), store=None)
 
 
-@pytest.mark.parametrize("error", [
-    ContractError("NETWORK_DOCUMENT_INVALID: codec manifest is not explicitly supported"),
-    GraphIntegrityError(("occ-a", "occ-b"), ("occ-a", "occ-b", "occ-a")),
-    StoreError("TASKGRAPH_REVISION_UNREADABLE"),
-    CommitRejected("no root binding yet"),
-])
+@pytest.mark.parametrize(
+    "error",
+    [
+        ContractError("NETWORK_DOCUMENT_INVALID: codec manifest is not explicitly supported"),
+        GraphIntegrityError(("occ-a", "occ-b"), ("occ-a", "occ-b", "occ-a")),
+        StoreError("TASKGRAPH_REVISION_UNREADABLE"),
+        CommitRejected("no root binding yet"),
+    ],
+)
 def test_a_mission_whose_plan_does_not_read_back_is_not_ready_and_nothing_is_raised(error) -> None:
     resolution, missing, roots, unavailable = AssuranceCloseoutConsumer._root_resolution(
-        _consumer(error), SimpleNamespace(id="mission-old"))
+        _consumer(error), SimpleNamespace(id="mission-old")
+    )
     assert (resolution, missing, roots) == (None, [], [])
     assert unavailable.startswith("ROOT_NETWORK_UNAVAILABLE: ") and str(error)[:40] in unavailable
 
@@ -48,7 +53,8 @@ def test_a_mission_whose_plan_does_not_read_back_is_not_ready_and_nothing_is_rai
 def test_an_unexpected_error_still_surfaces() -> None:
     with pytest.raises(ZeroDivisionError):
         AssuranceCloseoutConsumer._root_resolution(
-            _consumer(ZeroDivisionError()), SimpleNamespace(id="mission-old"))
+            _consumer(ZeroDivisionError()), SimpleNamespace(id="mission-old")
+        )
 
 
 def test_the_tick_contains_one_work_items_data_errors() -> None:

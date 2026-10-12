@@ -22,6 +22,7 @@ Production wiring:
     shim = OpenAICompatibleAgentLLM(provider=cloud_or_local_provider)
     loop = AgentLoop(llm_registry=shim, tool_registry=registry_v2)
 """
+
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Sequence
@@ -40,10 +41,14 @@ def _launch_kwargs(
 ) -> dict[str, Any]:
     if (operation_id is None) != (snapshot is None):
         raise ValueError("launch operation id and snapshot must be provided together")
-    return {} if operation_id is None else {
-        "launch_operation_id": operation_id,
-        "provider_launch_snapshot": snapshot,
-    }
+    return (
+        {}
+        if operation_id is None
+        else {
+            "launch_operation_id": operation_id,
+            "provider_launch_snapshot": snapshot,
+        }
+    )
 
 
 class OpenAICompatibleAgentLLM:
@@ -76,7 +81,10 @@ class OpenAICompatibleAgentLLM:
             else self._provider.chat_with_tools
         )
         raw = await method(
-            messages, tools=tools, max_tokens=max_tokens, temperature=temperature,
+            messages,
+            tools=tools,
+            max_tokens=max_tokens,
+            temperature=temperature,
             response_format=response_format,
             **_launch_kwargs(launch_operation_id, provider_launch_snapshot),
         )
@@ -101,8 +109,7 @@ class OpenAICompatibleAgentLLM:
         max_retries = (
             1
             if current_dispatch_handoff() is not None
-            else
-            3
+            else 3
             if provider_launch_snapshot is None
             or provider_launch_snapshot.supports_idempotent_launch
             else 1
@@ -111,8 +118,11 @@ class OpenAICompatibleAgentLLM:
             yielded_any = False
             try:
                 iterator = self._provider.chat_stream_with_tools(
-                    messages, tools=tools, max_tokens=max_tokens,
-                    temperature=temperature, response_format=response_format,
+                    messages,
+                    tools=tools,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    response_format=response_format,
                     **launch,
                 )
                 async for event in iterator:
@@ -178,14 +188,15 @@ class OpenAICompatibleAgentLLMChain:
     ) -> ChatResponse:
         errors: list[str] = []
         providers = (
-            self._providers[:1]
-            if current_dispatch_handoff() is not None
-            else self._providers
+            self._providers[:1] if current_dispatch_handoff() is not None else self._providers
         )
         for provider in providers:
             try:
                 response = await OpenAICompatibleAgentLLM(provider).chat_with_fallback(
-                    messages, tools=tools, model=model, **kwargs,
+                    messages,
+                    tools=tools,
+                    model=model,
+                    **kwargs,
                 )
             except LLMProviderError as exc:
                 if kwargs.get("launch_operation_id") is not None:
@@ -209,9 +220,9 @@ class OpenAICompatibleAgentLLMChain:
         model: str | None = None,
         **kwargs: Any,
     ) -> AsyncIterator[dict]:
-        async for event in OpenAICompatibleAgentLLM(
-            self._provider
-        ).chat_with_fallback_stream(messages, tools=tools, model=model, **kwargs):
+        async for event in OpenAICompatibleAgentLLM(self._provider).chat_with_fallback_stream(
+            messages, tools=tools, model=model, **kwargs
+        ):
             yield event
 
 
@@ -240,10 +251,7 @@ def _raw_to_response(raw: dict) -> ChatResponse:
             input_tokens=int(usage.get("prompt_tokens") or 0),
             output_tokens=int(usage.get("completion_tokens") or 0),
             cache_read_tokens=int(
-                (usage.get("prompt_tokens_details") or {}).get(
-                    "cached_tokens"
-                )
-                or 0
+                (usage.get("prompt_tokens_details") or {}).get("cached_tokens") or 0
             ),
             cache_write_tokens=0,
         ),

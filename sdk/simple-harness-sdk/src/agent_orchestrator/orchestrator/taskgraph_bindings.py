@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 """Current original semantic inventory, including nonmaterialized compound goals."""
+
 from __future__ import annotations
 
 from ..contracts.htn import TaskSemanticBindingV1

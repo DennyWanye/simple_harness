@@ -14,6 +14,7 @@ dev/test agents, not end users. Tests assert:
   3. With ``knowledge_enabled=True`` they DO appear (knowledge gating works).
   4. The skill bodies carry the engineering recipe content (smoke check).
 """
+
 from __future__ import annotations
 
 from pathlib import Path

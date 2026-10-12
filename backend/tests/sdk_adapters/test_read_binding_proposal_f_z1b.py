@@ -126,7 +126,9 @@ async def _build(
     db_path = tmp_path / "state.db"
     configured = tmp_path / "SimpleHarnessWorkSpace"
     configured.mkdir()
-    task_home = configured / task_home_parent / "task-a6" if task_home_parent else configured / "task-a6"
+    task_home = (
+        configured / task_home_parent / "task-a6" if task_home_parent else configured / "task-a6"
+    )
     task_home.mkdir(parents=True)
     (task_home / "notes.md").write_text("# 家目录\n", encoding="utf-8")
     fixture = configured / "a6-fixture"
@@ -147,9 +149,7 @@ async def _build(
         clock_millis=lambda: 1_000_000,
     )
     ledger = ContextRouteLedgerStore(db_path)
-    binding_store = WorkspaceBindingAuthorityStore(
-        db_path, configured_workspace_root=configured
-    )
+    binding_store = WorkspaceBindingAuthorityStore(db_path, configured_workspace_root=configured)
     run_authority = _primary_authority()
     extras = (
         {}
@@ -244,9 +244,7 @@ def _root_paths(db_path: Path, scope_id: str) -> set[str]:
 
 
 async def _audit(db_path: Path) -> list[tuple[str, str, str | None]]:
-    return [
-        parse_read_audit_reason(row[1]) for row in await workspace_read_audit_rows(db_path)
-    ]
+    return [parse_read_audit_reason(row[1]) for row in await workspace_read_audit_rows(db_path)]
 
 
 # --------------------------------------------------------------------------
@@ -254,30 +252,14 @@ async def _audit(db_path: Path) -> list[tuple[str, str, str | None]]:
 # --------------------------------------------------------------------------
 
 
-
-
-
-
 # --------------------------------------------------------------------------
 # 2. Manual：发出 durable 挑战 + 与路由工具同形的拒绝行（卡片查询原样命中）。
 # --------------------------------------------------------------------------
 
 
-
-
 # --------------------------------------------------------------------------
 # 3. 拒绝面：workspace 根本身 / 公共父目录 / 符号链接越界。
 # --------------------------------------------------------------------------
-
-
-
-
-
-
-
-
-
-
 
 
 # --------------------------------------------------------------------------
@@ -291,9 +273,7 @@ async def test_multi_root_reads_run_in_the_root_that_contains_the_path(
 ) -> None:
     env = await _build(tmp_path, mode="auto")
     scope_id = await _bound_scope(env)
-    await bind_scope_root(
-        env.db_path, scope_id, env.fixture, base_revision=1, tag="second"
-    )
+    await bind_scope_root(env.db_path, scope_id, env.fixture, base_revision=1, tag="second")
     await _record_route(env, suffix="multi")
     bound, code = await env.gate.bound_context(RUN.value)
     assert code is None and bound is not None
@@ -339,8 +319,6 @@ async def test_multi_root_reads_run_in_the_root_that_contains_the_path(
         assert Path(projection[2]).resolve() == env.task_home.resolve()
 
 
-
-
 # --------------------------------------------------------------------------
 # 5. 候选根规则本身（纯函数，确定性）。
 # --------------------------------------------------------------------------
@@ -377,9 +355,7 @@ def test_candidate_root_is_the_nearest_existing_directory_ancestor(
     assert candidate(str(project / "x.md"), (str(project / "inner"),))[1] == (
         READ_ROOT_TOO_BROAD_REASON
     )
-    assert candidate(str(project / "x.md"), (str(project),))[1] == (
-        READ_ROOT_TOO_BROAD_REASON
-    )
+    assert candidate(str(project / "x.md"), (str(project),))[1] == (READ_ROOT_TOO_BROAD_REASON)
     # 既定 workspace 之外。
     outside = tmp_path / "elsewhere"
     outside.mkdir()
@@ -387,9 +363,7 @@ def test_candidate_root_is_the_nearest_existing_directory_ancestor(
     assert candidate(str(configured.parent))[1] == READ_OUTSIDE_REASON
     # 符号链接先解析：指向 workspace 之外 → 越界，不是候选根。
     (configured / "link-out").symlink_to(outside)
-    assert candidate(str(configured / "link-out" / "secret.txt"))[1] == (
-        READ_OUTSIDE_REASON
-    )
+    assert candidate(str(configured / "link-out" / "secret.txt"))[1] == (READ_OUTSIDE_REASON)
     # 指回 workspace 之内 → 候选根是解析后的真实目录。
     (configured / "link-in").symlink_to(project)
     assert candidate(str(configured / "link-in" / "x.md")) == (str(project), None)

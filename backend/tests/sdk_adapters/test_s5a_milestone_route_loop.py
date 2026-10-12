@@ -127,8 +127,15 @@ class HarnessCheckpoint:
         return self.value
 
     def cas_react_checkpoint(
-        self, *, run_id, lease, expected_version, checkpoint, checkpoint_hash,
-        now, fault=None,
+        self,
+        *,
+        run_id,
+        lease,
+        expected_version,
+        checkpoint,
+        checkpoint_hash,
+        now,
+        fault=None,
     ):
         del fault, now
         current = None if self.value is None else self.value.version
@@ -180,9 +187,7 @@ class RouteExposure:
         del run_id
         return (
             ProviderToolSpec("context_route", "Route Context", CONTEXT_ROUTE_SCHEMA),
-            ProviderToolSpec(
-                "task_scope_search", "Search task scopes", TASK_SCOPE_SEARCH_SCHEMA
-            ),
+            ProviderToolSpec("task_scope_search", "Search task scopes", TASK_SCOPE_SEARCH_SCHEMA),
         )
 
     def execution_policy(self, run_id, provider_name) -> ToolExecutionPolicy:
@@ -252,9 +257,7 @@ class _NoopReconciliation:
 
 def _loop() -> ReActLoop:
     return ReActLoop(
-        collaborator=AgentLoopCollaborator(
-            limits=TerminationLimits(6, 12, 60, 10000, 3)
-        ),
+        collaborator=AgentLoopCollaborator(limits=TerminationLimits(6, 12, 60, 10000, 3)),
         effects=EffectBatchExecutor(),
         clock=lambda: 1.0,
     )
@@ -297,7 +300,10 @@ def harness_scope_disclosure(db_path: Path):
     async def read(run_id, package, effect_id):
         del run_id, effect_id
         return await render_scope_disclosure(
-            db_path=db_path, package=package, subject=AUTH.subject, stack=None,
+            db_path=db_path,
+            package=package,
+            subject=AUTH.subject,
+            stack=None,
         )
 
     return read
@@ -316,15 +322,11 @@ class _ManualAuthority:
 
     async def verify_manual_challenge(self, check) -> None:
         if self.evidence.get(check.authorization_evidence_id) != check:
-            raise WorkspaceBindingError(
-                "workspace_binding_manual_evidence_not_durable"
-            )
+            raise WorkspaceBindingError("workspace_binding_manual_evidence_not_durable")
 
     async def verify_manual_decision(self, check) -> None:
         if self.interactions.get(check.challenge.interaction_event_id) != check:
-            raise WorkspaceBindingError(
-                "workspace_binding_manual_interaction_not_durable"
-            )
+            raise WorkspaceBindingError("workspace_binding_manual_interaction_not_durable")
 
 
 async def _bind_scope_root(db_path: Path, scope_id: str, root: Path) -> None:
@@ -401,9 +403,7 @@ async def milestone(tmp_path: Path):
         context=context,
         react_checkpoint=SimpleNamespace(
             read_start_snapshot=lambda run_id: {
-                "input": {
-                    "context_metadata": {"budget": {"context_window": 32768}}
-                }
+                "input": {"context_metadata": {"budget": {"context_window": 32768}}}
             }
         ),
     )
@@ -509,9 +509,7 @@ async def test_milestone_direct_standalone_route_and_per_turn_snapshots(
 @pytest.mark.asyncio
 async def test_milestone_resume_existing_same_run_continuation(milestone, tmp_path) -> None:
     created = await milestone.service.create_task_scope(
-        CreateTaskScopeRequest(
-            "task-a", "任务 A", "写完 A 的季度报告，下一步补图表", "create-a"
-        )
+        CreateTaskScopeRequest("task-a", "任务 A", "写完 A 的季度报告，下一步补图表", "create-a")
     )
     scope_id = str(created["scope_ref"])
     await milestone.service.rebuild_derived(scope_id)
@@ -535,9 +533,7 @@ async def test_milestone_resume_existing_same_run_continuation(milestone, tmp_pa
     assert result.termination.route_state == "routed_task"
     assert milestone.effects.calls == ["task_scope_search", "context_route"]
 
-    head = await WorkspaceBindingAuthorityStore(
-        milestone.db_path
-    ).current_receipt(scope_id)
+    head = await WorkspaceBindingAuthorityStore(milestone.db_path).current_receipt(scope_id)
     checkpoint = dict(thaw_json(milestone.checkpoint.value.checkpoint))
     route_receipt = dict(checkpoint["route_receipt"])
     assert route_receipt["route"] == "resume_existing"
@@ -548,8 +544,7 @@ async def test_milestone_resume_existing_same_run_continuation(milestone, tmp_pa
 
     decisions = _rows(
         milestone.db_path,
-        "SELECT route,origin,task_scope_id FROM context_route_decisions "
-        "WHERE sdk_run_id=?",
+        "SELECT route,origin,task_scope_id FROM context_route_decisions WHERE sdk_run_id=?",
         RUN.value,
     )
     assert decisions == [("resume_existing", "context_tool", scope_id)]
@@ -563,7 +558,8 @@ async def test_milestone_resume_existing_same_run_continuation(milestone, tmp_pa
     final_request = provider.calls[-1]
     joined = "".join(str(message.content) for message in final_request.messages)
     [route_message] = [
-        str(message.content) for message in final_request.messages
+        str(message.content)
+        for message in final_request.messages
         if message.role is MessageRole.TOOL and message.name == "context_route"
     ]
     package = json.loads(route_message)["value"]["resume_package"]

@@ -14,6 +14,7 @@ Path safety: callers **must** pass any LLM-tool-supplied paths through
 ``assert_within_project_root`` to prevent ``../../etc/passwd``-style
 escapes.
 """
+
 from __future__ import annotations
 
 import logging
@@ -76,8 +77,7 @@ def resolve_project_root(
     if not readme.exists():
         try:
             readme.write_text(
-                f"# {safe_name}\n\n"
-                "Created by DeskPet Code mode. Edit / delete this file freely.\n",
+                f"# {safe_name}\n\nCreated by DeskPet Code mode. Edit / delete this file freely.\n",
                 encoding="utf-8",
             )
         except OSError as e:
@@ -101,7 +101,5 @@ def assert_within_project_root(candidate: Path, project_root: Path) -> Path:
     try:
         candidate_abs.relative_to(root_abs)
     except ValueError as e:
-        raise ValueError(
-            f"path escapes project root: {candidate_abs} not under {root_abs}"
-        ) from e
+        raise ValueError(f"path escapes project root: {candidate_abs} not under {root_abs}") from e
     return candidate_abs

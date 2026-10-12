@@ -207,9 +207,10 @@ async def test_project_records_come_only_from_exact_frozen_project_lease(
     )
 
     assert [item.skill_locator for item in records] == ["installed-skill"]
-    assert records[0].content_hash == hashlib.sha256(
-        (record.install_path / "skills" / "SKILL.md").read_bytes()
-    ).hexdigest()
+    assert (
+        records[0].content_hash
+        == hashlib.sha256((record.install_path / "skills" / "SKILL.md").read_bytes()).hexdigest()
+    )
     assert records[0].metadata["manifest_hash"] == manifest_hash
     assert len(str(records[0].metadata["scope_hash"])) == 64
     assert other_project == ()
@@ -245,8 +246,7 @@ async def test_global_records_come_from_exact_frozen_user_snapshot(
     )
 
     records = await (
-        ProductCapabilityCatalogSourceAdapter()
-        .sdk_global_resource_records_from_snapshot(
+        ProductCapabilityCatalogSourceAdapter().sdk_global_resource_records_from_snapshot(
             store=_VersionStore(record),
             snapshot=snapshot,
             owner_key=owner_key,

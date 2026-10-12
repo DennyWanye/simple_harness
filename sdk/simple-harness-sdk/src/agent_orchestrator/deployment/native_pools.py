@@ -82,7 +82,9 @@ class DeploymentToolAuthorization:
     """
 
     def __init__(self, allowed_tools: Sequence[str]) -> None:
-        self._allowed = frozenset(str(name) for name in allowed_tools) | frozenset(ASSURANCE_REVIEWER_TOOLS)
+        self._allowed = frozenset(str(name) for name in allowed_tools) | frozenset(
+            ASSURANCE_REVIEWER_TOOLS
+        )
         self.policy_id = "host-deployment-policy:" + digest(sorted(self._allowed))[:16]
 
     async def request_authorization(self, request: Any) -> AuthorizationResult:
@@ -92,7 +94,9 @@ class DeploymentToolAuthorization:
         return AuthorizationResult.deny(f"tool {name!r} is outside {self.policy_id}")
 
 
-def _scaled_policy(policy_id: str, *, tokens: int, output_tokens: int, embedding: bool) -> dict[str, Any]:
+def _scaled_policy(
+    policy_id: str, *, tokens: int, output_tokens: int, embedding: bool
+) -> dict[str, Any]:
     policy = default_policy(policy_id)
     policy["max_context_tokens"] = tokens
     policy["output_reserve_tokens"] = output_tokens
@@ -101,7 +105,9 @@ def _scaled_policy(policy_id: str, *, tokens: int, output_tokens: int, embedding
         scale = tokens / 524_288
         for name in ("recent_min_tokens", "recall_max_tokens", "fixed_soft_max_tokens"):
             policy[name] = max(4096, int(policy[name] * scale))
-        policy["section_soft_caps"] = {k: max(2048, int(v * scale)) for k, v in policy["section_soft_caps"].items()}
+        policy["section_soft_caps"] = {
+            k: max(2048, int(v * scale)) for k, v in policy["section_soft_caps"].items()
+        }
     return policy
 
 
@@ -133,7 +139,9 @@ class NativePools:
         self.script_runner_label = script_runner_label
         self.authorization = DeploymentToolAuthorization(allowed_tools)
         self.owner_contract = Pin(
-            "policy", f"host-owner:{tenant_id}", 1,
+            "policy",
+            f"host-owner:{tenant_id}",
+            1,
             digest({"tenant_id": tenant_id, "authorization": self.authorization.policy_id}),
         )
         # One acceptance reader per pool: the SDK binds a reader to the pool's own Skill
@@ -141,7 +149,9 @@ class NativePools:
         self.acceptances: dict[str, AssuranceSkillAcceptance] = {}
         self.embedding, self.embedding_reason = embedding, embedding_reason
         self.embedding_ref = Pin(
-            "deployment", "bge-m3-int8-local", 1,
+            "deployment",
+            "bge-m3-int8-local",
+            1,
             digest({"fingerprint": None if self.embedding is None else self.embedding.fingerprint}),
         )
         self._meter_factory = meter_factory
@@ -173,16 +183,30 @@ class NativePools:
         except Exception:  # noqa: BLE001 - never block the orchestrator on a mirror pass
             logger.warning("shared skill catalogue sync failed (%s)", reason, exc_info=True)
             return None
-        failed = [(pool, row) for pool, body in report["members"].items() for row in body.get("skills", []) if not row.get("mirrored")]
+        failed = [
+            (pool, row)
+            for pool, body in report["members"].items()
+            for row in body.get("skills", [])
+            if not row.get("mirrored")
+        ]
         if failed:
-            logger.info("shared skill catalogue (%s): %d skill(s) not usable in some pools: %s", reason, len(failed),
-                        [(pool, row.get("skill_ref", {}).get("id"), row.get("error")) for pool, row in failed][:8])
+            logger.info(
+                "shared skill catalogue (%s): %d skill(s) not usable in some pools: %s",
+                reason,
+                len(failed),
+                [
+                    (pool, row.get("skill_ref", {}).get("id"), row.get("error"))
+                    for pool, row in failed
+                ][:8],
+            )
         return report
 
     def _root_incarnation(self) -> Any:
         gate = getattr(self._orchestrator, "_assurance_root_gate", None)
         if gate is None:
-            raise ArpError("SOURCE_UNAVAILABLE", "the Assurance root gate is not installed on this deployment")
+            raise ArpError(
+                "SOURCE_UNAVAILABLE", "the Assurance root gate is not installed on this deployment"
+            )
         return gate.require_execution()
 
     def artifacts(self, ref: Pin) -> bytes:
@@ -194,7 +218,9 @@ class NativePools:
         try:
             return assembled.workspaces.artifact_store.read(ref.content_hash)
         except ArtifactStoreError as error:
-            raise ArpError("SOURCE_UNAVAILABLE", f"artifact bytes unavailable: {error.reason}") from error
+            raise ArpError(
+                "SOURCE_UNAVAILABLE", f"artifact bytes unavailable: {error.reason}"
+            ) from error
 
     # ---- callers -----------------------------------------------------------------------------
 
@@ -202,7 +228,9 @@ class NativePools:
         return Pin("principal", self.principal_id, 0, digest({"principal_id": self.principal_id}))
 
     def intent_caller(self, intent: Any) -> TrustedCaller:
-        return intent_caller(intent, principal_id=self.principal_id, owner_contract_ref=self.owner_contract)
+        return intent_caller(
+            intent, principal_id=self.principal_id, owner_contract_ref=self.owner_contract
+        )
 
     def control_caller(self, body: Mapping[str, Any]) -> TrustedCaller:
         """The caller of one control-channel request: deterministic in the request body so a
@@ -210,7 +238,11 @@ class NativePools:
         about its principal."""
 
         command_id = body.get("command_id") if isinstance(body.get("command_id"), str) else None
-        receipt = {"principal_id": self.principal_id, "tenant_id": self.tenant_id, "body": dict(body)}
+        receipt = {
+            "principal_id": self.principal_id,
+            "tenant_id": self.tenant_id,
+            "body": dict(body),
+        }
         key = command_id or f"read:{digest(receipt)[:16]}"
         return TrustedCaller(
             principal_ref=self._principal_ref(),
@@ -220,27 +252,53 @@ class NativePools:
 
     # ---- per-pool assembly ----------------------------------------------------------------
 
-    def assembly(self, profile_id: str, *, tokens: int, counter: Any, output_tokens: int = NATIVE_OUTPUT_TOKENS) -> NativePlaneAssembly:
-        acceptance = AssuranceSkillAcceptance(store=None, clock_ms=self.clock_ms, root_incarnation=self._root_incarnation)
+    def assembly(
+        self,
+        profile_id: str,
+        *,
+        tokens: int,
+        counter: Any,
+        output_tokens: int = NATIVE_OUTPUT_TOKENS,
+    ) -> NativePlaneAssembly:
+        acceptance = AssuranceSkillAcceptance(
+            store=None, clock_ms=self.clock_ms, root_incarnation=self._root_incarnation
+        )
         if self._orchestrator is not None:
             acceptance.store = self._orchestrator.store
         self.acceptances[profile_id] = acceptance
         # Wire-only scope (2026-09-24): the DeepSeek endpoint keeps no output beyond the wire,
         # so no prior-output reserve reader is bound — one would double-charge every earlier
         # output of the run and shrink the window over a long session.
-        meter = self._meter_factory(counter, input_limit_tokens=tokens, max_output_tokens=output_tokens)
+        meter = self._meter_factory(
+            counter, input_limit_tokens=tokens, max_output_tokens=output_tokens
+        )
         root_id = f"host:{self.tenant_id}:{profile_id}"
         owner = profile_id == self.catalogue_owner_id
         # The SDK derives the catalogue namespace from the session root and the pool's
         # owner scope; the deployment records the same value so control requests can name it.
         namespace = f"{root_id}/{OWNER_SCOPE}/-"
-        policy = _scaled_policy(f"host-native-{profile_id}", tokens=tokens, output_tokens=output_tokens, embedding=False)
-        activation = {"kind": "deployment_activation", "profile_id": profile_id, "revision": 1, "tenant_id": self.tenant_id}
+        policy = _scaled_policy(
+            f"host-native-{profile_id}", tokens=tokens, output_tokens=output_tokens, embedding=False
+        )
+        activation = {
+            "kind": "deployment_activation",
+            "profile_id": profile_id,
+            "revision": 1,
+            "tenant_id": self.tenant_id,
+        }
         refs = ProfileRefs(
-            retention_policy_ref=Pin("policy", "host-retention-default", 1, digest({"retention": "default"})),
-            capability_registry_ref=Pin("catalogue", namespace, 1, digest({"namespace": namespace})),
-            activation_receipt_ref=Pin("receipt", f"host:native-plane:{profile_id}:activate", 0, digest(activation)),
-            default_skill_policy_ref=Pin("policy", "host-skill-default", 1, digest({"skills": "default"})),
+            retention_policy_ref=Pin(
+                "policy", "host-retention-default", 1, digest({"retention": "default"})
+            ),
+            capability_registry_ref=Pin(
+                "catalogue", namespace, 1, digest({"namespace": namespace})
+            ),
+            activation_receipt_ref=Pin(
+                "receipt", f"host:native-plane:{profile_id}:activate", 0, digest(activation)
+            ),
+            default_skill_policy_ref=Pin(
+                "policy", "host-skill-default", 1, digest({"skills": "default"})
+            ),
             embedding_deployment_ref=self.embedding_ref,
             catalogue_namespace_id=namespace,
         )
@@ -250,16 +308,26 @@ class NativePools:
         # revision-1 STANDALONE_CHAT profile row stays in existing libraries and its old
         # Sessions keep running under it; a profile row is never rewritten in place.
         profile = ArpRuntimeProfile(
-            profile_id=profile_id, profile_revision=2, owner_mode="MISSION",
-            allow_lexical_degradation=True, context_policy=policy, refs=refs,
+            profile_id=profile_id,
+            profile_revision=2,
+            owner_mode="MISSION",
+            allow_lexical_degradation=True,
+            context_policy=policy,
+            refs=refs,
         )
         self.profiles[profile_id] = {
-            "profile_id": profile_id, "max_context_tokens": tokens, "output_tokens": output_tokens,
-            "counter": getattr(counter, "fingerprint", None), "count_mode": meter.count_mode,
+            "profile_id": profile_id,
+            "max_context_tokens": tokens,
+            "output_tokens": output_tokens,
+            "counter": getattr(counter, "fingerprint", None),
+            "count_mode": meter.count_mode,
             "embedding": "bge-m3-int8" if self.embedding is not None else "lexical-only",
             "embedding_reason": self.embedding_reason,
-            "script_runner": "unavailable" if self.script_runner is None else self.script_runner_label,
-            "catalogue_namespace_id": namespace, "owner_mode": "MISSION",
+            "script_runner": "unavailable"
+            if self.script_runner is None
+            else self.script_runner_label,
+            "catalogue_namespace_id": namespace,
+            "owner_mode": "MISSION",
             "catalogue_role": "owner" if owner else "member",
         }
 
@@ -276,22 +344,34 @@ class NativePools:
                 self.shared_catalogue.bind_member(profile_id, runtime)
 
         def arp_ports(execution_db: Path) -> ArpPorts:
-            root = bootstrap_root(execution_db.with_name(execution_db.name + ".arp-root"), root_id=root_id)
+            root = bootstrap_root(
+                execution_db.with_name(execution_db.name + ".arp-root"), root_id=root_id
+            )
             return ArpPorts(
-                root_dir=root.directory, profile=profile, activation_receipt=activation, clock_ms=self.clock_ms,
-                meter=meter, embedding=self.embedding,
+                root_dir=root.directory,
+                profile=profile,
+                activation_receipt=activation,
+                clock_ms=self.clock_ms,
+                meter=meter,
+                embedding=self.embedding,
                 embedding_resource_ref=None if self.embedding is None else self.embedding_ref,
-                acceptance=acceptance, artifacts=self.artifacts,
+                acceptance=acceptance,
+                artifacts=self.artifacts,
                 mission_sources=self.mission_sources,
                 catalogue_authority=None if owner else self.shared_catalogue,
                 # SCRIPT skills run in the sandbox model-written code uses; without a
                 # proven sandbox they are refused by name (RUNNER_UNAVAILABLE).
-                script_runner=None if self.script_runner is None else self.script_runner(
-                    execution_db.with_name(execution_db.name + ".skill-runs")
-                ),
+                script_runner=None
+                if self.script_runner is None
+                else self.script_runner(execution_db.with_name(execution_db.name + ".skill-runs")),
             )
 
-        return NativePlaneAssembly(arp_ports=arp_ports, authorization=self.authorization, caller_for=self.intent_caller, after_build=after_build)
+        return NativePlaneAssembly(
+            arp_ports=arp_ports,
+            authorization=self.authorization,
+            caller_for=self.intent_caller,
+            after_build=after_build,
+        )
 
     def background_health(self, profile_id: str) -> list[dict[str, Any]]:
         """The pool's background-loop health rows (empty until the runtime is built)."""
@@ -303,14 +383,18 @@ class NativePools:
         try:
             return [row.to_json() for row in reader()]
         except Exception:  # noqa: BLE001 - status must never fail because health did
-            logger.warning("native pool %s: background health unreadable", profile_id, exc_info=True)
+            logger.warning(
+                "native pool %s: background health unreadable", profile_id, exc_info=True
+            )
             return []
 
     def status(self) -> dict[str, Any]:
         return {
             "enabled": True,
             "available": bool(self.profiles),
-            "profiles": [{**v, "background": self.background_health(k)} for k, v in self.profiles.items()],
+            "profiles": [
+                {**v, "background": self.background_health(k)} for k, v in self.profiles.items()
+            ],
             "embedding": "bge-m3-int8" if self.embedding is not None else "lexical-only",
             "embedding_reason": self.embedding_reason,
             "authorization_policy": self.authorization.policy_id,
@@ -350,22 +434,39 @@ def pool_options(
         return options
     counters: dict[str, Any] = {}
 
-    def register(identifier: str, tokens: int, pool_counter: Any, base: Any, *, kind: str,
-                 default_output: int = 8192) -> None:
+    def register(
+        identifier: str,
+        tokens: int,
+        pool_counter: Any,
+        base: Any,
+        *,
+        kind: str,
+        default_output: int = 8192,
+    ) -> None:
         wanted = ContextPolicy(
-            max_input_tokens=tokens, output_reserve=NATIVE_OUTPUT_TOKENS,
-            max_tool_result_tokens=16384, render_slack_tokens=0,
+            max_input_tokens=tokens,
+            output_reserve=NATIVE_OUTPUT_TOKENS,
+            max_tool_result_tokens=16384,
+            render_slack_tokens=0,
         )
         policy = resolve_profile_context_policy(
-            config, profile_id=identifier, tokenizer=pool_counter, fresh_policy=wanted,
+            config,
+            profile_id=identifier,
+            tokenizer=pool_counter,
+            fresh_policy=wanted,
         )
         if policy != wanted:
             raise RuntimeError(f"上下文执行库配置不一致：{identifier}")
         counters[identifier] = pool_counter
         options["profiles"][identifier] = RuntimeProfile(
-            identifier, calibrated(base, pool_counter), config.model,
-            provider_kind=kind, context_policy=policy, tokenizer=pool_counter,
-            default_max_output_tokens=default_output, max_output_tokens_ceiling=NATIVE_OUTPUT_TOKENS,
+            identifier,
+            calibrated(base, pool_counter),
+            config.model,
+            provider_kind=kind,
+            context_policy=policy,
+            tokenizer=pool_counter,
+            default_max_output_tokens=default_output,
+            max_output_tokens_ceiling=NATIVE_OUTPUT_TOKENS,
             native_plane=native.assembly(identifier, tokens=tokens, counter=pool_counter),
         )
 
@@ -377,8 +478,14 @@ def pool_options(
         for tokens in CONTEXT_INPUT_LIMITS:
             # Reasoning shares the output limit: at 8192 a thinking reviewer spent the budget
             # thinking and its verdict JSON was cut mid-string (2026-09-25 desktop run).
-            register(native_profile_id(tokens, thinking=True), tokens, thinking_counter,
-                     thinking_provider, kind="env", default_output=32768)
+            register(
+                native_profile_id(tokens, thinking=True),
+                tokens,
+                thinking_counter,
+                thinking_provider,
+                kind="env",
+                default_output=32768,
+            )
     options["provider_token_estimators"] = dict(counters)
     return options
 

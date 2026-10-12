@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 """Deep-research V8 — unified search_provider (region-aware DDG)."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -10,6 +11,7 @@ import pytest
 from deskpet.tools import search_provider as sp
 
 # --- region inference (the core Chinese-coverage fix) ---
+
 
 def test_region_chinese_query_uses_cn_zh():
     assert sp.region_for_query("中国新能源汽车现状") == "cn-zh"
@@ -72,6 +74,7 @@ def test_parse_empty_html_returns_empty():
 
 
 # --- sync search guards (no network) ---
+
 
 def test_search_empty_query_no_network():
     r = sp.search("   ")
@@ -150,11 +153,17 @@ def test_engine_queue_default():
 
 def test_engine_queue_config(monkeypatch):
     import types
-    fake = types.SimpleNamespace(config=types.SimpleNamespace(
-        raw={"research": {
-            "search_engines": ["baidu", "BING", "bing-cdp", "searxng", "garbage"],
-            "searxng_url": "https://sx.example/search",
-        }}))
+
+    fake = types.SimpleNamespace(
+        config=types.SimpleNamespace(
+            raw={
+                "research": {
+                    "search_engines": ["baidu", "BING", "bing-cdp", "searxng", "garbage"],
+                    "searxng_url": "https://sx.example/search",
+                }
+            }
+        )
+    )
     monkeypatch.setitem(__import__("sys").modules, "config", fake)
     assert sp._engine_queue() == ["baidu", "bing", "bing-cdp", "searxng"]  # 清洗+小写+去非法,保序
 
@@ -164,6 +173,7 @@ def test_engine_queue_reads_config_via_load_config_fallback(monkeypatch):
     main.py 不注入 config.config),_research_raw/_engine_queue 必须经 load_config(
     resolve_config_path()) 兜底读到 [research].search_engines —— 否则配置开关全失效。"""
     import types
+
     # fake config 模块: 没有 .config 单例,只有 load_config + resolve_config_path
     fake_cfg_obj = types.SimpleNamespace(raw={"research": {"search_engines": ["baidu", "bing"]}})
     fake = types.SimpleNamespace(
@@ -172,7 +182,7 @@ def test_engine_queue_reads_config_via_load_config_fallback(monkeypatch):
     )
     assert not hasattr(fake, "config")  # 复现真实:无单例
     monkeypatch.setitem(__import__("sys").modules, "config", fake)
-    assert sp._engine_queue() == ["baidu", "bing"]   # 经 load_config 兜底读到,非默认
+    assert sp._engine_queue() == ["baidu", "bing"]  # 经 load_config 兜底读到,非默认
 
 
 def test_known_engines_includes_browser_and_searxng():
@@ -211,7 +221,7 @@ def test_search_fallback_queue(monkeypatch):
     monkeypatch.setattr(sp.httpx, "Client", _FakeClient)
     # §6.0: 默认队列已改 google-cdp,本测显式传 bing/ddg 验降级机制本身
     r = sp.search("测试", max_results=5, engines=["bing", "duckduckgo"])
-    assert r["engine"] == "duckduckgo"   # 降级成功
+    assert r["engine"] == "duckduckgo"  # 降级成功
     assert r["count"] == 2
     assert any("bing.com" in u for u in calls)  # 确实先试了 bing
 
@@ -259,7 +269,10 @@ class _AsyncClientFail:
 
 @pytest.mark.asyncio
 async def test_search_async_bing_cdp_uses_rendered_fixture_without_httpx(monkeypatch):
-    fixture = (sp.__file__ and __import__("pathlib").Path(__file__).parent / "fixtures" / "bing_serp_sample.html")
+    fixture = (
+        sp.__file__
+        and __import__("pathlib").Path(__file__).parent / "fixtures" / "bing_serp_sample.html"
+    )
     html = fixture.read_text(encoding="utf-8")
     calls = []
 
@@ -305,7 +318,9 @@ async def test_search_async_bing_cdp_none_degrades_to_next_engine(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_search_async_bing_cdp_captcha_sentinel(monkeypatch):
-    captcha_html = "<html><body>verify captcha unusual traffic 机器人</body></html>" + ("x" * 11_000)
+    captcha_html = "<html><body>verify captcha unusual traffic 机器人</body></html>" + (
+        "x" * 11_000
+    )
 
     async def _fake_render(url: str, *, timeout: float):
         return captcha_html
@@ -320,7 +335,9 @@ async def test_search_async_bing_cdp_captcha_sentinel(monkeypatch):
 
 
 def test_parse_google_html_extracts_organic_results():
-    html = (Path(__file__).parent / "fixtures" / "google_serp_sample.html").read_text(encoding="utf-8")
+    html = (Path(__file__).parent / "fixtures" / "google_serp_sample.html").read_text(
+        encoding="utf-8"
+    )
 
     out = sp._parse_google_html(html, max_results=5)
 
@@ -340,7 +357,9 @@ def test_parse_google_html_extracts_organic_results():
 
 @pytest.mark.asyncio
 async def test_search_async_google_cdp_uses_rendered_fixture_without_httpx(monkeypatch):
-    html = (Path(__file__).parent / "fixtures" / "google_serp_sample.html").read_text(encoding="utf-8")
+    html = (Path(__file__).parent / "fixtures" / "google_serp_sample.html").read_text(
+        encoding="utf-8"
+    )
     calls = []
 
     async def _fake_render(url: str, *, timeout: float):
@@ -351,7 +370,9 @@ async def test_search_async_google_cdp_uses_rendered_fixture_without_httpx(monke
     monkeypatch.setattr(sp, "cdp_edge_render", _fake_render)
     client = _AsyncClientFail()
 
-    results = await sp.search_async("中文测试", engines=["google-cdp"], client=client, max_results=5)
+    results = await sp.search_async(
+        "中文测试", engines=["google-cdp"], client=client, max_results=5
+    )
 
     assert len(results) >= 2
     assert calls and "google.com/search" in calls[0][0]
@@ -396,8 +417,7 @@ async def test_search_async_google_cdp_captcha_sentinel(monkeypatch):
     captcha_html = (
         '<html><body><form action="/sorry/index"><div class="g-recaptcha"></div>'
         "Our systems have detected unusual traffic from your computer network."
-        "</body></html>"
-        + ("x" * 11_000)
+        "</body></html>" + ("x" * 11_000)
     )
 
     async def _fake_render(url: str, *, timeout: float):
@@ -450,13 +470,22 @@ def test_google_reachable_cache_uses_injected_clock(monkeypatch):
 def test_engine_queue_searxng_requires_url(monkeypatch):
     import types
 
-    no_url = types.SimpleNamespace(config=types.SimpleNamespace(
-        raw={"research": {"search_engines": ["searxng", "bing"]}}))
+    no_url = types.SimpleNamespace(
+        config=types.SimpleNamespace(raw={"research": {"search_engines": ["searxng", "bing"]}})
+    )
     monkeypatch.setitem(__import__("sys").modules, "config", no_url)
     assert sp._engine_queue() == ["bing"]
 
-    with_url = types.SimpleNamespace(config=types.SimpleNamespace(
-        raw={"research": {"search_engines": ["searxng", "bing"], "searxng_url": "https://sx.example/search"}}))
+    with_url = types.SimpleNamespace(
+        config=types.SimpleNamespace(
+            raw={
+                "research": {
+                    "search_engines": ["searxng", "bing"],
+                    "searxng_url": "https://sx.example/search",
+                }
+            }
+        )
+    )
     monkeypatch.setitem(__import__("sys").modules, "config", with_url)
     assert sp._engine_queue() == ["searxng", "bing"]
 
@@ -465,8 +494,16 @@ def test_engine_queue_searxng_requires_url(monkeypatch):
 async def test_search_async_searxng_parses_json_when_configured(monkeypatch):
     import types
 
-    fake = types.SimpleNamespace(config=types.SimpleNamespace(
-        raw={"research": {"search_engines": ["searxng"], "searxng_url": "https://sx.example/search"}}))
+    fake = types.SimpleNamespace(
+        config=types.SimpleNamespace(
+            raw={
+                "research": {
+                    "search_engines": ["searxng"],
+                    "searxng_url": "https://sx.example/search",
+                }
+            }
+        )
+    )
     monkeypatch.setitem(__import__("sys").modules, "config", fake)
 
     class _Resp:
@@ -476,10 +513,12 @@ async def test_search_async_searxng_parses_json_when_configured(monkeypatch):
             return None
 
         def json(self):
-            return {"results": [
-                {"url": "https://example.com/a", "title": "A", "content": "Alpha"},
-                {"url": "https://example.org/b", "title": "B", "content": "Beta"},
-            ]}
+            return {
+                "results": [
+                    {"url": "https://example.com/a", "title": "A", "content": "Alpha"},
+                    {"url": "https://example.org/b", "title": "B", "content": "Beta"},
+                ]
+            }
 
     class _Client:
         def __init__(self):
@@ -503,11 +542,13 @@ async def test_search_async_searxng_parses_json_when_configured(monkeypatch):
 
 
 def test_parse_searxng_json_is_pure():
-    body = {"results": [
-        {"url": "https://example.com/a", "title": "A", "content": "Alpha"},
-        {"url": "", "title": "bad", "content": "skip"},
-        {"url": "https://example.org/b", "title": "B", "content": "Beta"},
-    ]}
+    body = {
+        "results": [
+            {"url": "https://example.com/a", "title": "A", "content": "Alpha"},
+            {"url": "", "title": "bad", "content": "skip"},
+            {"url": "https://example.org/b", "title": "B", "content": "Beta"},
+        ]
+    }
     assert sp._parse_searxng_json(body, max_results=1) == [
         {"url": "https://example.com/a", "title": "A", "snippet": "Alpha"}
     ]
@@ -517,8 +558,9 @@ def test_hardening_cooldown_uses_injected_clock(monkeypatch):
     import types
 
     state = {"now": 100.0}
-    fake = types.SimpleNamespace(config=types.SimpleNamespace(
-        raw={"research": {"serp_hardening": True}}))
+    fake = types.SimpleNamespace(
+        config=types.SimpleNamespace(raw={"research": {"serp_hardening": True}})
+    )
     monkeypatch.setitem(__import__("sys").modules, "config", fake)
     monkeypatch.setattr(sp, "_now", lambda: state["now"])
 
@@ -534,12 +576,15 @@ def test_hardening_cache_ttl_uses_injected_clock(monkeypatch):
     import types
 
     state = {"now": 10.0}
-    fake = types.SimpleNamespace(config=types.SimpleNamespace(
-        raw={"research": {"serp_hardening": True}}))
+    fake = types.SimpleNamespace(
+        config=types.SimpleNamespace(raw={"research": {"serp_hardening": True}})
+    )
     monkeypatch.setitem(__import__("sys").modules, "config", fake)
     monkeypatch.setattr(sp, "_now", lambda: state["now"])
 
-    sp._cache_results("bing", "topic", "us-en", [{"url": "https://e.test", "title": "E", "snippet": ""}])
+    sp._cache_results(
+        "bing", "topic", "us-en", [{"url": "https://e.test", "title": "E", "snippet": ""}]
+    )
     assert sp._cached_results("bing", "topic", "us-en") == [
         {"url": "https://e.test", "title": "E", "snippet": ""}
     ]

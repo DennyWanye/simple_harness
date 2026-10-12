@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 """Unit tests for llm.budget (spend tracking, UTC rollover, warning thresholds)."""
+
 from __future__ import annotations
 
 import datetime as _dt
@@ -13,7 +14,9 @@ from llm.budget import DailyBudget
 from llm.types import ChatUsage
 
 
-def _usage_for_cost(target_usd: float, *, provider: str = "openai", model: str = "gpt-4o") -> ChatUsage:
+def _usage_for_cost(
+    target_usd: float, *, provider: str = "openai", model: str = "gpt-4o"
+) -> ChatUsage:
     """Build a ChatUsage that pricing evaluates to ~target_usd.
 
     gpt-4o priced at $10 / 1M output ⇒ 100k output_tokens ≈ $1.00.

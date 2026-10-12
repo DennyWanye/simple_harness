@@ -2,6 +2,7 @@
 """要求的轻重交审阅员按原话判（HTN 一致性补改 H-3，用户 2026-10-04）：系统不给准则分"必须 / 偏好"
 （每条都是默认的"必须达到"），终审拿到的准则原文就是用户原话；提示词写明分类字段只是系统默认值、
 轻重以原话为准。审阅员是否真的按原话判轻重，留真实模型联测看。"""
+
 from __future__ import annotations
 
 import asyncio
@@ -35,9 +36,12 @@ def test_the_final_review_gets_the_users_own_words(tmp_path):
         return reviewer_reply(request)
 
     async def case():
-        async with product_world(tmp_path / "root", LayeredScriptedProvider(reviewer=reviewer)) as world:
-            mission_id = world.create({"goal": "写笔记", "idempotency_key": "weight-words",
-                                       "success_criteria": criteria})["mission_id"]
+        async with product_world(
+            tmp_path / "root", LayeredScriptedProvider(reviewer=reviewer)
+        ) as world:
+            mission_id = world.create(
+                {"goal": "写笔记", "idempotency_key": "weight-words", "success_criteria": criteria}
+            )["mission_id"]
             mission = await world.run_until_settled(mission_id, rounds=30)
             assert str(mission.status.value) == "COMPLETED"
 

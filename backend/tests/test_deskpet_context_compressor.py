@@ -14,6 +14,7 @@ Spec — openspec/changes/p4-poseidon-agent-harness/tasks.md §13:
 These tests exercise the module via its public surface only
 (:class:`ContextCompressor` + :class:`CompressionResult`).
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -282,15 +283,16 @@ class TestPartitionLayout:
         # Layout: [system, u1, a1, SUMMARY, u3, a3] — summary at index 3.
         assert summary_idxs[0] == 3
 
-        second = await cc.compress(
-            [*result.messages, *_messages(6, include_system=False)]
-        )
+        second = await cc.compress([*result.messages, *_messages(6, include_system=False)])
         assert second.compressed is True
-        assert sum(
-            1
-            for message in second.messages
-            if str(message.get("content") or "").startswith("[压缩摘要")
-        ) == 1
+        assert (
+            sum(
+                1
+                for message in second.messages
+                if str(message.get("content") or "").startswith("[压缩摘要")
+            )
+            == 1
+        )
 
     @pytest.mark.asyncio
     async def test_kimi_shape_preserves_complete_tail_and_latest_user(self) -> None:
@@ -386,11 +388,7 @@ class TestTokenReduction:
             {
                 "role": ("user" if i % 2 == 0 else "assistant"),
                 # ~200 chars per line → ~50 tokens under the 4-char heuristic.
-                "content": (
-                    f"round {i}: "
-                    + "filler content " * 15
-                    + "end."
-                ),
+                "content": (f"round {i}: " + "filler content " * 15 + "end."),
             }
             for i in range(middle_count + 2)  # ensure enough for first_n=1,last_n=1
         ]
@@ -488,10 +486,7 @@ class TestKeyInfoPreservation:
         ] + _messages(10, include_system=False)
         result = await cc.compress(msgs)
         assert result.compressed is True
-        assert (
-            result.messages[0]["content"]
-            == "INITIAL TASK: build a Gmail agent for Alice"
-        )
+        assert result.messages[0]["content"] == "INITIAL TASK: build a Gmail agent for Alice"
         assert result.messages[1]["content"] == "Sure, starting work"
 
 
@@ -509,8 +504,8 @@ class TestSummariserPrompt:
         sys_prompt = llm.calls[0]["messages"][0]["content"]
         # 结构化摘要契约(优化 #2): prompt 必须要求保活【当前任务 + 最近用户请求】,
         # 同时保留关键事实/决策/日期。这是我们出厂的契约(LLM 可能不照做,但必须要求)。
-        assert "当前任务" in sys_prompt          # 头等: 任务连续性不丢
-        assert "用户请求" in sys_prompt          # 保最近一条用户请求
+        assert "当前任务" in sys_prompt  # 头等: 任务连续性不丢
+        assert "用户请求" in sys_prompt  # 保最近一条用户请求
         assert "决定" in sys_prompt or "决策" in sys_prompt
         assert "日期" in sys_prompt and ("数字" in sys_prompt or "数据" in sys_prompt)
         assert "不要杜撰" in sys_prompt or "杜撰" in sys_prompt
@@ -674,9 +669,7 @@ class TestSummaryTaskScoping:
         llm = _FakeLLM(content="增量后的新摘要")
         cc = ContextCompressor(llm_registry=llm, first_n=1, last_n=1)
         # 构造中段:塞一条上一轮的压缩摘要(prior),让 _extract_prior_summary 命中。
-        prior = _format_summary(
-            "【进行中/当前任务】用户让我做宁德时代 2024 年报分析 PPT。"
-        )
+        prior = _format_summary("【进行中/当前任务】用户让我做宁德时代 2024 年报分析 PPT。")
         msgs = [
             {"role": "user", "content": "msg-00: 开场"},
             {"role": "assistant", "content": prior},

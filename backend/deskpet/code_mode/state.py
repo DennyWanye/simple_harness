@@ -20,6 +20,7 @@ This way:
   doesn't filter by session by default — so the pet remembers what
   you talked about in project A while you're working on project B.
 """
+
 from __future__ import annotations
 
 import hashlib

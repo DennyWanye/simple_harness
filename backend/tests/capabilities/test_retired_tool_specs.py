@@ -152,9 +152,7 @@ async def test_retired_spec_is_used_by_every_prepared_execution_path() -> None:
             catalog_snapshot_ref=snapshot_ref,
             execution_context=rogue_context,
         )
-    new_call = registry.prepare_call(
-        "godot__check", {"value": 3}, "session", "call-3"
-    )
+    new_call = registry.prepare_call("godot__check", {"value": 3}, "session", "call-3")
 
     assert old_fingerprint in registry.retired_spec_fingerprints()
     assert frozen_after_activation.tool_spec_fingerprint == old_fingerprint
@@ -166,16 +164,13 @@ async def test_retired_spec_is_used_by_every_prepared_execution_path() -> None:
     assert registry.is_concurrency_safe(old_calls[0]) is False
     assert registry.is_concurrency_safe(new_call) is True
     assert (
-        registry.prepared_outcome_status(
-            old_calls[0], NormalizedToolOutcome.success({"ok": True})
-        )
+        registry.prepared_outcome_status(old_calls[0], NormalizedToolOutcome.success({"ok": True}))
         is OutcomeStatus.ACCEPTED
     )
 
     executor = EffectBatchExecutor(None, registry)  # type: ignore[arg-type]
     contexts = tuple(
-        _context(call, f"effect-{index}")
-        for index, call in enumerate(old_calls, start=1)
+        _context(call, f"effect-{index}") for index, call in enumerate(old_calls, start=1)
     )
     outcomes = await executor._execute_segmented(
         old_calls,
@@ -187,27 +182,19 @@ async def test_retired_spec_is_used_by_every_prepared_execution_path() -> None:
     assert invoked == ["old", "old"]
     assert max_running == 1
 
-    new_outcome = await registry.execute_prepared(
-        new_call, effect_id="effect-new"
-    )
+    new_outcome = await registry.execute_prepared(new_call, effect_id="effect-new")
     assert new_outcome.state is ToolOutcomeState.SUCCESS
     assert new_outcome.value["runtime"] == "new"
 
-    assert registry.release_catalog_snapshot(
-        snapshot_ref=snapshot_ref, run_id="run"
-    )
+    assert registry.release_catalog_snapshot(snapshot_ref=snapshot_ref, run_id="run")
     assert registry.retired_spec_fingerprints() == frozenset()
     with pytest.raises(PreparedToolCallStale):
         registry.prepared_execution_policy(old_calls[0])
     with pytest.raises(PreparedToolCallStale):
-        registry.prepared_outcome_status(
-            old_calls[0], NormalizedToolOutcome.success({"ok": True})
-        )
+        registry.prepared_outcome_status(old_calls[0], NormalizedToolOutcome.success({"ok": True}))
     with pytest.raises(PreparedToolCallStale):
         registry.is_concurrency_safe(old_calls[0])
-    stale = await registry.execute_prepared(
-        old_calls[0], effect_id="effect-stale"
-    )
+    stale = await registry.execute_prepared(old_calls[0], effect_id="effect-stale")
     assert stale.state is ToolOutcomeState.FAILURE
     assert stale.error["code"] == "prepared_call_stale"
 

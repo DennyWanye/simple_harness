@@ -157,14 +157,10 @@ async def test_exact_model_proposal_is_admitted_with_host_live_facts() -> None:
     assert admitted["decision"] == "candidate"
     assert admitted["reason_code"] == "reflection_candidate_host_validated"
     assert admitted["evidence_event_ids"] == (EVENT_ID,)
-    assert admitted["source_ref"] == (
-        "companion-background:reflection-job-1:run-bg-1"
-    )
+    assert admitted["source_ref"] == ("companion-background:reflection-job-1:run-bg-1")
     assert isinstance(admitted["proposal"], StructuredGrowthProposalV1)
     assert admitted["proposal"].to_dict() == _proposal().to_dict()
-    assert admitted["proposal_ref"].endswith(
-        admitted["proposal"].proposal_hash
-    )
+    assert admitted["proposal_ref"].endswith(admitted["proposal"].proposal_hash)
 
 
 @pytest.mark.asyncio
@@ -231,13 +227,11 @@ async def test_live_fence_mismatch_admits_stale_without_candidate() -> None:
             evidence=(_evidence(),),
             explicit_user_signal=True,
         ),
-        target_facts_resolver=lambda owner, target, mode: (
-            LiveGrowthTargetFactsV1(
-                target=proposal.target,
-                candidate_mode=mode,
-                source_fence=stale_source,
-                target_fence=proposal.target_fence,
-            )
+        target_facts_resolver=lambda owner, target, mode: LiveGrowthTargetFactsV1(
+            target=proposal.target,
+            candidate_mode=mode,
+            source_fence=stale_source,
+            target_fence=proposal.target_fence,
         ),
     )
 
@@ -268,13 +262,9 @@ async def test_insufficient_independent_evidence_abstains_before_fence_load() ->
     assert target_calls == []
     _, admitted = store.calls[0]
     assert admitted["decision"] == "abstain"
-    assert admitted["reason_code"] == (
-        "reflection_insufficient_independent_evidence"
-    )
+    assert admitted["reason_code"] == ("reflection_insufficient_independent_evidence")
     assert admitted["proposal"].decision.value == "abstain"
-    assert admitted["proposal"].abstain_reason == (
-        "insufficient_independent_evidence"
-    )
+    assert admitted["proposal"].abstain_reason == ("insufficient_independent_evidence")
 
 
 @pytest.mark.asyncio
@@ -318,15 +308,11 @@ async def test_host_neutral_semantic_result_gets_host_target_and_fences() -> Non
     assert proposal.target_fence == _proposal().target_fence
     assert proposal.evidence_event_ids == (EVENT_ID,)
     assert proposal.evidence_set_hash == evidence_set_hash((EVENT_ID,))
-    assert proposal.structured_diff == {
-        "requested_change": semantic["requested_change"]
-    }
+    assert proposal.structured_diff == {"requested_change": semantic["requested_change"]}
     assert proposal.expected_improvement == semantic["hypothesis"]
     assert proposal.risk_hints == ("instruction_only",)
     assert len(proposal.evaluation_plan) == 1
-    assert proposal.evaluation_plan[0]["assertion"] == (
-        "requested_change_observed"
-    )
+    assert proposal.evaluation_plan[0]["assertion"] == ("requested_change_observed")
 
 
 @pytest.mark.asyncio
@@ -360,9 +346,7 @@ async def test_semantic_result_optional_quality_fields_are_preserved() -> None:
 
     proposal = store.calls[0][1]["proposal"]
     assert proposal.expected_improvement == semantic["expected_improvement"]
-    assert proposal.evaluation_plan == (
-        {"case_id": "two-items", "assertion": "exactly_two_items"},
-    )
+    assert proposal.evaluation_plan == ({"case_id": "two-items", "assertion": "exactly_two_items"},)
 
 
 @pytest.mark.asyncio

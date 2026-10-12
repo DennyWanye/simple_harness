@@ -45,9 +45,7 @@ class _Tools:
 def _deepresearch_response() -> ChatResponse:
     return ChatResponse(
         content="",
-        tool_calls=[
-            ToolCall(id="call_1", name="deepresearch", arguments={"topic": "old topic"})
-        ],
+        tool_calls=[ToolCall(id="call_1", name="deepresearch", arguments={"topic": "old topic"})],
         stop_reason="tool_use",
         usage=ChatUsage(),
         model="stub",
@@ -108,4 +106,3 @@ async def test_normal_run_exposes_deepresearch_batch_without_dispatch():
     assert [(call.name, call.arguments) for call in batch.tool_calls] == [
         ("deepresearch", {"topic": "old topic"})
     ]
-

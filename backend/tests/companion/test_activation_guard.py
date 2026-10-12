@@ -118,9 +118,7 @@ async def test_trusted_critical_incident_closes_gate_after_store_commit() -> Non
         ),
     ],
 )
-async def test_ineligible_incident_never_takes_platform_fence(
-    override, reason
-) -> None:
+async def test_ineligible_incident_never_takes_platform_fence(override, reason) -> None:
     store = _Store()
     platform = _Platform()
     outcome = await ActivationGuardMonitor(

@@ -14,6 +14,7 @@ admitted only the product way — an evaluation Mission created under the evalua
 key, its dispatch recorded, run to its accepted root conclusion, and that certificate named
 in the admission.  Only the model replies are scripted.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -76,9 +77,17 @@ def test_a_deployment_declares_the_skill_tools_its_pools_serve():
 
 def test_the_hierarchical_worker_lists_the_skill_tools():
     current = roles.WORKER_HIERARCHICAL
-    assert current.prompt_version == roles.WORKER_HIERARCHICAL_VERSION  # 只钉"当前这一版"，版本号随模板走
-    base = ("workspace_read_file", "workspace_write_file", "workspace_list", "run_tests",
-            "knowledge_list", "knowledge_read")
+    assert (
+        current.prompt_version == roles.WORKER_HIERARCHICAL_VERSION
+    )  # 只钉"当前这一版"，版本号随模板走
+    base = (
+        "workspace_read_file",
+        "workspace_write_file",
+        "workspace_list",
+        "run_tests",
+        "knowledge_list",
+        "knowledge_read",
+    )
     assert current.tool_names == (*base, *SKILLS)
     assert SKILL_DISCOVER_TOOL_NAME in current.instructions
     assert current.prompt_version in roles.HIERARCHICAL_WORKER_VERSIONS
@@ -90,17 +99,29 @@ def test_the_hierarchical_worker_lists_the_skill_tools():
     # the original intersection: offered by the deployment → the Worker gets them
     offered = DeploymentPolicy(allowed_tools=(*TOOL_NAMES, *SKILLS), skill_tools=SKILLS)
     tools = (*TOOL_NAMES, *SKILLS)
-    assert set(SKILLS) <= set(effective_tools(mission_tools=tools, task_tools=tools, role_tools=current.tool_names, deployment=offered))
-    assert not set(SKILLS) & set(effective_tools(mission_tools=TOOL_NAMES, task_tools=TOOL_NAMES,
-                                                  role_tools=current.tool_names, deployment=DeploymentPolicy()))
+    assert set(SKILLS) <= set(
+        effective_tools(
+            mission_tools=tools, task_tools=tools, role_tools=current.tool_names, deployment=offered
+        )
+    )
+    assert not set(SKILLS) & set(
+        effective_tools(
+            mission_tools=TOOL_NAMES,
+            task_tools=TOOL_NAMES,
+            role_tools=current.tool_names,
+            deployment=DeploymentPolicy(),
+        )
+    )
 
 
 # ---- the real dispatch path ------------------------------------------------------------------
 
 
 #: The deployment offers the Skill tools; its pools serve them.
-SKILL_DEPLOYMENT = {"deployment_policy": DeploymentPolicy(allowed_tools=(*TOOL_NAMES, *SKILLS), skill_tools=SKILLS),
-                    "allowed_tools": (*DEFAULT_TOOLS, *SKILLS)}
+SKILL_DEPLOYMENT = {
+    "deployment_policy": DeploymentPolicy(allowed_tools=(*TOOL_NAMES, *SKILLS), skill_tools=SKILLS),
+    "allowed_tools": (*DEFAULT_TOOLS, *SKILLS),
+}
 
 
 def _owner_runtime(world: ProductionWorld):  # type: ignore[no-untyped-def]
@@ -120,14 +141,24 @@ async def _skill_world(tmp_path: Path, *, key: str, worker):  # type: ignore[no-
 
 
 def _worker_intent(world, mission_id=None):  # type: ignore[no-untyped-def]
-    [intent_id] = [r[0] for r in world.store.connection.execute(
-        "SELECT intent_id FROM dispatch_intents WHERE kind='attempt' AND mission_id=?", (mission_id or world.mission.id,))]
+    [intent_id] = [
+        r[0]
+        for r in world.store.connection.execute(
+            "SELECT intent_id FROM dispatch_intents WHERE kind='attempt' AND mission_id=?",
+            (mission_id or world.mission.id,),
+        )
+    ]
     return world.store.get_intent(intent_id)
 
 
 def _session_of(runtime, intent):  # type: ignore[no-untyped-def]
     connection = runtime.uow.database.connection
-    [session_id] = [r[0] for r in connection.execute("SELECT session_id FROM arp_agent_sessions WHERE agent_id=?", (intent.agent_id,))]
+    [session_id] = [
+        r[0]
+        for r in connection.execute(
+            "SELECT session_id FROM arp_agent_sessions WHERE agent_id=?", (intent.agent_id,)
+        )
+    ]
     return connection, session_id
 
 
@@ -142,17 +173,23 @@ def _pool_runtime(world, intent):  # type: ignore[no-untyped-def]
 
 
 async def _complete(world, mission_id):  # type: ignore[no-untyped-def]
-    await world.until(lambda: str(world.store.get_mission(mission_id).status.value) == "COMPLETED", timeout=60)
+    await world.until(
+        lambda: str(world.store.get_mission(mission_id).status.value) == "COMPLETED", timeout=60
+    )
 
 
 def _root_certificate(world, mission_id) -> Pin:  # type: ignore[no-untyped-def]
     [row] = world.store.connection.execute(
         "SELECT certificate_id, certificate_hash FROM assurance_use_certificates "
-        "WHERE mission_id=? AND purpose='ACCEPT' AND consumer_kind='ROOT_RESOLUTION'", (mission_id,)).fetchall()
+        "WHERE mission_id=? AND purpose='ACCEPT' AND consumer_kind='ROOT_RESOLUTION'",
+        (mission_id,),
+    ).fetchall()
     return Pin("acceptance", str(row[0]), 0, str(row[1]))
 
 
-def test_a_mission_worker_discovers_and_executes_an_admitted_skill_and_a_suspension_refuses_the_next_use(tmp_path):
+def test_a_mission_worker_discovers_and_executes_an_admitted_skill_and_a_suspension_refuses_the_next_use(
+    tmp_path,
+):
     seen: dict = {}
 
     def discover(request):  # type: ignore[no-untyped-def]
@@ -164,8 +201,11 @@ def test_a_mission_worker_discovers_and_executes_an_admitted_skill_and_a_suspens
 
     def suspend_then_execute(request):  # type: ignore[no-untyped-def]
         world, runtime = seen["world"], seen["runtime"]
-        runtime.arp.lifecycle.transition(lifecycle_command(runtime, seen["revision"], "SUSPEND", acceptance=None),
-                                         caller=_caller(world, "suspend-1"), command_id="suspend-1")
+        runtime.arp.lifecycle.transition(
+            lifecycle_command(runtime, seen["revision"], "SUSPEND", acceptance=None),
+            caller=_caller(world, "suspend-1"),
+            command_id="suspend-1",
+        )
         return (SKILL_EXECUTE_TOOL_NAME, {"skill_ref": seen["pin"], "arguments": {}})
 
     # The first Mission is the Skill's evaluation (its Worker does the ordinary work); the
@@ -180,30 +220,63 @@ def test_a_mission_worker_discovers_and_executes_an_admitted_skill_and_a_suspens
         async with _skill_world(tmp_path, key="tg-worker-skills-unused", worker=route) as world:
             seen["world"] = world
             runtime = _owner_runtime(world)
-            revision = import_skill(runtime, md_bundle("repo-notes", "记录仓库事实时先列出文件。"), command="install-1").revision
-            binding = runtime.arp.lifecycle.begin_trial(trial_command(runtime, revision), caller=_caller(world, "trial-1"),
-                                                        command_id="trial-1")
+            revision = import_skill(
+                runtime, md_bundle("repo-notes", "记录仓库事实时先列出文件。"), command="install-1"
+            ).revision
+            binding = runtime.arp.lifecycle.begin_trial(
+                trial_command(runtime, revision),
+                caller=_caller(world, "trial-1"),
+                command_id="trial-1",
+            )
             evaluation = Pin.from_json(binding["evaluation_ref"])
             # The Host creates the evaluation Mission under the evaluation's key and records its dispatch.
-            created = world.product.create({"goal": world.mission.goal, "success_criteria": list(world.mission.success_criteria),
-                                             "idempotency_key": evaluation_mission_key(evaluation)})
+            created = world.product.create(
+                {
+                    "goal": world.mission.goal,
+                    "success_criteria": list(world.mission.success_criteria),
+                    "idempotency_key": evaluation_mission_key(evaluation),
+                }
+            )
             trial_mission = created["mission_id"]
             runtime.arp.lifecycle.record_evaluation_dispatch(
-                evaluation, mission_id=trial_mission, task_id=root_task(trial_mission),
-                caller=_caller(world, "dispatch-1"), command_id="dispatch-1")
+                evaluation,
+                mission_id=trial_mission,
+                task_id=root_task(trial_mission),
+                caller=_caller(world, "dispatch-1"),
+                command_id="dispatch-1",
+            )
             await _complete(world, trial_mission)
-            await _complete(world, world.mission.id)  # no Worker of an earlier Mission is still running
-            runtime.arp.lifecycle.admit({
-                "schema_version": 1, "skill_ref": revision.pin.to_json(),
-                "evaluation_acceptance_ref": _root_certificate(world, trial_mission).to_json(),
-                "evaluation_policy_ref": binding["policy_ref"], "scope_ref": binding["scope_ref"],
-            }, caller=_caller(world, "admit-1"), command_id="admit-1")
-            seen.update(runtime=runtime, revision=revision, pin=revision.pin.to_json(), admitted=True)
+            await _complete(
+                world, world.mission.id
+            )  # no Worker of an earlier Mission is still running
+            runtime.arp.lifecycle.admit(
+                {
+                    "schema_version": 1,
+                    "skill_ref": revision.pin.to_json(),
+                    "evaluation_acceptance_ref": _root_certificate(world, trial_mission).to_json(),
+                    "evaluation_policy_ref": binding["policy_ref"],
+                    "scope_ref": binding["scope_ref"],
+                },
+                caller=_caller(world, "admit-1"),
+                command_id="admit-1",
+            )
+            seen.update(
+                runtime=runtime, revision=revision, pin=revision.pin.to_json(), admitted=True
+            )
 
-            user = world.product.create({"goal": world.mission.goal, "success_criteria": list(world.mission.success_criteria),
-                                         "idempotency_key": "tg-worker-skills"})["mission_id"]
-            await world.until(lambda: world.store.connection.execute(
-                "SELECT COUNT(*) FROM results WHERE mission_id=? AND verification_state='DONE'", (user,)).fetchone()[0])
+            user = world.product.create(
+                {
+                    "goal": world.mission.goal,
+                    "success_criteria": list(world.mission.success_criteria),
+                    "idempotency_key": "tg-worker-skills",
+                }
+            )["mission_id"]
+            await world.until(
+                lambda: world.store.connection.execute(
+                    "SELECT COUNT(*) FROM results WHERE mission_id=? AND verification_state='DONE'",
+                    (user,),
+                ).fetchone()[0]
+            )
 
             intent = _worker_intent(world, user)
             assert set(SKILLS) <= set(intent.config["allowed_tools"])
@@ -213,7 +286,9 @@ def test_a_mission_worker_discovers_and_executes_an_admitted_skill_and_a_suspens
             uses = arp_store.read_skill_uses(connection, session_id)
             assert [u["mode"] for u in uses] == ["INSTRUCTIONS"]  # the suspended call bound no use
             texts = _last_worker_texts(world)
-            assert any("SKILL_NOT_ADMITTED" in t for t in texts), texts[-3:]  # re-checked at the next use
+            assert any("SKILL_NOT_ADMITTED" in t for t in texts), texts[
+                -3:
+            ]  # re-checked at the next use
 
     asyncio.run(case())
 
@@ -230,8 +305,12 @@ def test_a_skill_in_trial_is_used_by_the_worker_of_its_own_evaluation_mission(tm
     def dispatch_then_discover(request):  # type: ignore[no-untyped-def]
         world, runtime = seen["world"], seen["runtime"]
         runtime.arp.lifecycle.record_evaluation_dispatch(
-            seen["evaluation"], mission_id=world.mission.id, task_id=root_task(world.mission.id),
-            caller=_caller(world, "dispatch-1"), command_id="dispatch-1")
+            seen["evaluation"],
+            mission_id=world.mission.id,
+            task_id=root_task(world.mission.id),
+            caller=_caller(world, "dispatch-1"),
+            command_id="dispatch-1",
+        )
         return (SKILL_DISCOVER_TOOL_NAME, {"limit": 8})
 
     def execute(request):  # type: ignore[no-untyped-def]
@@ -241,22 +320,41 @@ def test_a_skill_in_trial_is_used_by_the_worker_of_its_own_evaluation_mission(tm
         worker = scripted_worker(refused_first, dispatch_then_discover, execute)
         async with _skill_world(tmp_path, key="tg-worker-skills-trial", worker=worker) as world:
             runtime = _owner_runtime(world)
-            revision = import_skill(runtime, md_bundle("trial-notes", "试用：先列出文件再记录。"), command="install-1").revision
-            binding = runtime.arp.lifecycle.begin_trial(trial_command(runtime, revision), caller=_caller(world, "trial-1"),
-                                                        command_id="trial-1")
-            seen.update(world=world, runtime=runtime, pin=revision.pin.to_json(), evaluation=Pin.from_json(binding["evaluation_ref"]))
+            revision = import_skill(
+                runtime, md_bundle("trial-notes", "试用：先列出文件再记录。"), command="install-1"
+            ).revision
+            binding = runtime.arp.lifecycle.begin_trial(
+                trial_command(runtime, revision),
+                caller=_caller(world, "trial-1"),
+                command_id="trial-1",
+            )
+            seen.update(
+                world=world,
+                runtime=runtime,
+                pin=revision.pin.to_json(),
+                evaluation=Pin.from_json(binding["evaluation_ref"]),
+            )
             await world.commit_seed()
             await world.run_worker()
 
             intent = _worker_intent(world)
             connection, session_id = _session_of(_pool_runtime(world, intent), intent)
             from simple_harness.agents.arp import mission_sources
-            assert mission_sources.read_record(connection, session_id)["sources"]["mission_id"] == world.mission.id
+
+            assert (
+                mission_sources.read_record(connection, session_id)["sources"]["mission_id"]
+                == world.mission.id
+            )
             uses = arp_store.read_skill_uses(connection, session_id)
             assert [u["mode"] for u in uses] == ["INSTRUCTIONS"]  # only the call after the dispatch
             texts = _last_worker_texts(world)
             assert any("SKILL_NOT_ADMITTED" in t for t in texts)  # the call before the dispatch
-            assert any('"name":"trial-notes"' in t and '"current_usable":true' in t and '"state":"TRIAL"' in t for t in texts), texts[-4:]
+            assert any(
+                '"name":"trial-notes"' in t
+                and '"current_usable":true' in t
+                and '"state":"TRIAL"' in t
+                for t in texts
+            ), texts[-4:]
             assert any("试用：先列出文件再记录" in t for t in texts)
 
     asyncio.run(case())

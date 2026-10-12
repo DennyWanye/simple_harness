@@ -18,6 +18,7 @@ the skill tells the user the OCR component is unavailable.
 Path policy: ``image_path`` must be authorized via ``office_pick_file``
 (filter_key='image').
 """
+
 from __future__ import annotations
 
 import json
@@ -147,13 +148,14 @@ def _handle(args: dict[str, Any], task_id: str = "") -> str:
 
 
 def register_static_tools(registry) -> None:
-        registry.register(
-            "image_ocr",
-            "office",
-            _SCHEMA,
-            _handle,
-            permission_category="read_file",
-            timeout_seconds=60.0,
-        )
+    registry.register(
+        "image_ocr",
+        "office",
+        _SCHEMA,
+        _handle,
+        permission_category="read_file",
+        timeout_seconds=60.0,
+    )
+
 
 __all__ = ["image_ocr", "ocr_engine_available", "register_static_tools"]

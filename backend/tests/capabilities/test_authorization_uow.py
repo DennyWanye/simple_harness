@@ -311,9 +311,7 @@ async def test_fault_after_exact_grant_rolls_back_task_grant_and_decision(
                 (decision.decision_id,),
             )
         ).fetchone()
-        task_grant_count = await (
-            await db.execute("SELECT COUNT(*) FROM task_grants")
-        ).fetchone()
+        task_grant_count = await (await db.execute("SELECT COUNT(*) FROM task_grants")).fetchone()
         exact_grant_count = await (
             await db.execute("SELECT COUNT(*) FROM execution_grants")
         ).fetchone()

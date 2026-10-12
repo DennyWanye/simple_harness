@@ -73,12 +73,13 @@ class AuthorizationPolicyState:
                 "invalid_policy_generation", "policy generation must be non-negative"
             )
         if not math.isfinite(float(self.updated_at)):
-            raise AuthorizationPolicyError(
-                "invalid_policy_timestamp", "updated_at must be finite"
-            )
+            raise AuthorizationPolicyError("invalid_policy_timestamp", "updated_at must be finite")
         if self.provenance not in {
-            "factory_default", "factory_default_migrated", "legacy_import",
-            "user_explicit", "needs_user_choice",
+            "factory_default",
+            "factory_default_migrated",
+            "legacy_import",
+            "user_explicit",
+            "needs_user_choice",
         }:
             raise AuthorizationPolicyError(
                 "invalid_policy_provenance", "unknown authorization provenance"
@@ -122,7 +123,8 @@ class AuthorizationPolicyState:
             receipt = f"policy-user-set:{expected_generation + 1}"
         return AuthorizationPolicyState(
             mode=mode,
-            generation=self.generation + (
+            generation=self.generation
+            + (
                 provenance == "user_explicit"
                 and (mode != self.mode or self.provenance != "user_explicit")
             ),
@@ -149,9 +151,7 @@ class DecisionAutomationRule:
                 "unsupported_rule_schema", "decision rule schema must be 1"
             )
         if not self.domain_subkind.strip():
-            raise AuthorizationPolicyError(
-                "invalid_domain_subkind", "domain_subkind is required"
-            )
+            raise AuthorizationPolicyError("invalid_domain_subkind", "domain_subkind is required")
         if self.auto_action not in {
             "allow",
             "deny",

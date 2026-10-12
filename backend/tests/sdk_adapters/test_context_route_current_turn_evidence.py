@@ -94,8 +94,12 @@ class _FakeService:
 
 class _FakeDisclosureReader:
     async def __call__(self, run_id, package, effect_id):
-        return {**package, "source_id": "authorized-source", "source_hash": "f" * 64,
-                "read_views": {"RESUME": {"content": "Authorized projection"}}}
+        return {
+            **package,
+            "source_id": "authorized-source",
+            "source_hash": "f" * 64,
+            "read_views": {"RESUME": {"content": "Authorized projection"}},
+        }
 
 
 @pytest_asyncio.fixture()
@@ -115,9 +119,7 @@ def _service(
     disclosure_reader=None,
 ) -> ContextRouteToolService:
     return ContextRouteToolService(
-        service_factory_getter=lambda: SimpleNamespace(
-            bind=lambda auth, **kw: _FakeService()
-        ),
+        service_factory_getter=lambda: SimpleNamespace(bind=lambda auth, **kw: _FakeService()),
         binding_store_factory=lambda: binding_store or _FakeBindingStore(),
         binding_append_getter=lambda: None,
         ledger=ContextRouteLedgerStore(state_db),
@@ -131,7 +133,10 @@ async def _seed_active_route(state_db: Path, store: _FakeBindingStore) -> None:
     """先真的路由进这条 scope，``continue_active`` 才有 active task 可续。"""
 
     seeded = await _service(
-        state_db, binding_store=store, effect="effect-al-0", raw="raw-al-0",
+        state_db,
+        binding_store=store,
+        effect="effect-al-0",
+        raw="raw-al-0",
         disclosure_reader=_FakeDisclosureReader(),
     ).handle_context_route({"route": "resume_existing", "task_scope_id": SCOPE})
     assert "context_route_receipt" in seeded
@@ -194,7 +199,10 @@ async def test_an_unavailable_reader_only_costs_the_hint(state_db: Path) -> None
     assert CURRENT_TURN_EVIDENCE_REF_KEY not in result
 
     plain = await _service(
-        state_db, binding_store=store, effect="effect-al-2", raw="raw-al-2",
+        state_db,
+        binding_store=store,
+        effect="effect-al-2",
+        raw="raw-al-2",
     ).handle_context_route({"route": "continue_active"})
     assert CURRENT_TURN_EVIDENCE_REF_KEY not in plain
 
@@ -262,6 +270,4 @@ async def test_the_reader_fails_closed_on_an_unknown_run(tmp_path: Path) -> None
     assert await read_current_turn_evidence_ref(env.db_path, env.run_id, "") == ""
     assert await read_current_turn_evidence_ref(env.db_path, "", ch.SCOPE) == ""
     # 跨 scope 也不行：本轮证据必须绑在这条 Run 的准入 scope 上。
-    assert await read_current_turn_evidence_ref(
-        env.db_path, env.run_id, "scope-someone-else"
-    ) == ""
+    assert await read_current_turn_evidence_ref(env.db_path, env.run_id, "scope-someone-else") == ""

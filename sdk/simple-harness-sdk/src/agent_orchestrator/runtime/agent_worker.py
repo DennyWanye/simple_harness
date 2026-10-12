@@ -52,7 +52,9 @@ class Liveness:
 
 
 class AgentBridge:
-    def __init__(self, runtime: AgentRuntime, *, caller_for: Callable[[Any], Any] | None = None) -> None:
+    def __init__(
+        self, runtime: AgentRuntime, *, caller_for: Callable[[Any], Any] | None = None
+    ) -> None:
         self._runtime = runtime
         # ARP-EXEC-1.1.1: a native-plane pool derives the authenticated creation caller
         # from the claimed dispatch intent; the legacy pool passes no caller.
@@ -84,7 +86,9 @@ class AgentBridge:
         caller = None
         if self._caller_for is not None:
             if intent is None:
-                raise ValueError("a native-plane pool creates Agents only from a claimed dispatch intent")
+                raise ValueError(
+                    "a native-plane pool creates Agents only from a claimed dispatch intent"
+                )
             caller = self._caller_for(intent)
         agent = await self._runtime.create(config, creation_key=creation_key, caller=caller)
         return agent.agent_id, agent.run_id, ""
@@ -98,7 +102,8 @@ class AgentBridge:
         if binding is None or binding.lifecycle == "closed":
             return False
         receipt = await self._runtime.close_agent(
-            agent_id, command_id=f"orchestrator-close:{agent_id}", drain_timeout=0)
+            agent_id, command_id=f"orchestrator-close:{agent_id}", drain_timeout=0
+        )
         return receipt.state == "closed"
 
     async def submit(
@@ -159,9 +164,15 @@ class AgentBridge:
             blocker=(
                 {"kind": "provider_slot_wait", "billable": False}
                 if waiting
-                else ({"kind": "provider_response_wait", "billable": True, "bounded": True}
-                      if response_waiting
-                      else (None if snapshot.blocker is None else self._with_effect_state(snapshot.blocker)))
+                else (
+                    {"kind": "provider_response_wait", "billable": True, "bounded": True}
+                    if response_waiting
+                    else (
+                        None
+                        if snapshot.blocker is None
+                        else self._with_effect_state(snapshot.blocker)
+                    )
+                )
             ),
             progress=progress,
             settled=state in {AgentTurnState.COMMITTED, AgentTurnState.FAILED},
@@ -186,9 +197,7 @@ class AgentBridge:
             out["effect_state"] = str(getattr(record.state, "value", record.state))
         return out
 
-    def usage_facts(
-        self, *, agent_id: str, include_unknown: bool = False
-    ) -> list[UsageFact]:
+    def usage_facts(self, *, agent_id: str, include_unknown: bool = False) -> list[UsageFact]:
         """Cost facts from the SDK invocation ledger (D10'): one fact per invocation.
 
         ``include_unknown`` is off by default: a CLAIMED/UNKNOWN call is not a
@@ -230,7 +239,10 @@ class AgentBridge:
                 # hierarchical terminal import keeps it on the books as unknown
                 # so the released grant is never settled as a zero.  An admission
                 # denial never entered transport: it is a known zero, not unknown.
-                denied = str(record.state) == "failed" and record.error_code == "provider_admission_denied"
+                denied = (
+                    str(record.state) == "failed"
+                    and record.error_code == "provider_admission_denied"
+                )
                 if include_unknown and not denied:
                     facts.append(
                         UsageFact(

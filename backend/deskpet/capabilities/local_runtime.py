@@ -303,11 +303,7 @@ class LocalToolRuntime:
                 error_code="local_tool_request_malformed",
                 error_message=f"request is not JSON-serializable: {exc}",
             )
-        timeout = (
-            self.default_timeout_seconds
-            if timeout_seconds is None
-            else timeout_seconds
-        )
+        timeout = self.default_timeout_seconds if timeout_seconds is None else timeout_seconds
         if timeout <= 0:
             raise ValueError("timeout must be positive")
 
@@ -334,9 +330,7 @@ class LocalToolRuntime:
             process_kwargs["start_new_session"] = True
 
         try:
-            process = await asyncio.create_subprocess_exec(
-                *tuple(argv), **process_kwargs
-            )
+            process = await asyncio.create_subprocess_exec(*tuple(argv), **process_kwargs)
         except OSError as exc:
             stdout_capture.close()
             stderr_capture.close()
@@ -448,9 +442,7 @@ class LocalToolRuntime:
             stdout = stdout_capture.read(self.stdout_limit_bytes + 1)
             stderr = stderr_capture.read(self.stderr_limit_bytes + 1)
             lease.observe_tree()
-            stderr_text, stderr_truncated = _decode_bounded(
-                stderr, self.stderr_limit_bytes
-            )
+            stderr_text, stderr_truncated = _decode_bounded(stderr, self.stderr_limit_bytes)
             # A well-behaved one-shot worker leaves no descendants.  Clean up
             # any survivor using only identities observed on this lease.
             cleanup = await self._cleanup_lease(lease, include_root=False)
@@ -458,9 +450,7 @@ class LocalToolRuntime:
             if process.returncode != 0:
                 response: Mapping[str, Any] | None = None
                 with contextlib.suppress(ValueError):
-                    parsed = _parse_single_json(
-                        stdout, limit=self.stdout_limit_bytes
-                    )
+                    parsed = _parse_single_json(stdout, limit=self.stdout_limit_bytes)
                     self._validate_response(parsed, request)
                     response = parsed
                 return LocalRuntimeResult(
@@ -549,9 +539,7 @@ class LocalToolRuntime:
             reports.append(await self._cleanup_lease(lease))
         return tuple(reports)
 
-    async def cancel_root_run(
-        self, root_run_id: str
-    ) -> tuple[ProcessCleanupReport, ...]:
+    async def cancel_root_run(self, root_run_id: str) -> tuple[ProcessCleanupReport, ...]:
         async with self._lease_lock:
             leases = tuple(
                 lease for lease in self._leases.values() if lease.root_run_id == root_run_id
@@ -562,15 +550,11 @@ class LocalToolRuntime:
             reports.append(await self._cleanup_lease(lease))
         return tuple(reports)
 
-    async def _monitor_lease(
-        self, lease: _RuntimeLease, stop: asyncio.Event
-    ) -> None:
+    async def _monitor_lease(self, lease: _RuntimeLease, stop: asyncio.Event) -> None:
         while not stop.is_set():
             lease.observe_tree()
             try:
-                await asyncio.wait_for(
-                    stop.wait(), timeout=self.monitor_interval_seconds
-                )
+                await asyncio.wait_for(stop.wait(), timeout=self.monitor_interval_seconds)
             except TimeoutError:
                 continue
 
@@ -618,9 +602,7 @@ class LocalToolRuntime:
                 continue
             with contextlib.suppress(psutil.NoSuchProcess, psutil.AccessDenied):
                 process.kill()
-        _, alive_after_kill = psutil.wait_procs(
-            alive, timeout=self.cleanup_grace_seconds
-        )
+        _, alive_after_kill = psutil.wait_procs(alive, timeout=self.cleanup_grace_seconds)
         remaining = tuple(
             process.pid
             for process in alive_after_kill
@@ -644,9 +626,7 @@ class LocalToolRuntime:
         )
 
     @staticmethod
-    def _validate_response(
-        response: Mapping[str, Any], request: LocalRuntimeRequest
-    ) -> None:
+    def _validate_response(response: Mapping[str, Any], request: LocalRuntimeRequest) -> None:
         unknown = set(response) - _ALLOWED_RESPONSE_KEYS
         if unknown:
             raise ValueError(f"response contains unsupported keys: {sorted(unknown)}")

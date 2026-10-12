@@ -1,4 +1,5 @@
 """Installed SDK proof against actual Host terminal authorities; no SDK SQL."""
+
 from __future__ import annotations
 
 import asyncio
@@ -37,8 +38,11 @@ async def identity_for(state, source):
         )
         row = await cursor.fetchone()
         return await read_primary_terminal_identity_tx(
-            db, subject=local_owner_auth().subject, primary_ref=row[0],
-            host_run_id=source.host_run_id, sdk_run_id=source.sdk_run_id,
+            db,
+            subject=local_owner_auth().subject,
+            primary_ref=row[0],
+            host_run_id=source.host_run_id,
+            sdk_run_id=source.sdk_run_id,
         )
 
 
@@ -64,7 +68,9 @@ async def legacy_setup(tmp_path):
 @pytest.mark.parametrize("legacy", [False, True])
 @pytest.mark.parametrize("fault", ["payload", "record", "envelope", "ref", "state", "missing"])
 async def test_wrong_public_terminal_proof_cannot_persist_first_page(tmp_path, legacy, fault):
-    state, _, provider, runtime, stack, _ = await (legacy_setup(tmp_path) if legacy else setup(tmp_path))
+    state, _, provider, runtime, stack, _ = await (
+        legacy_setup(tmp_path) if legacy else setup(tmp_path)
+    )
     consumer = await consumer_at(state, stack, [100.0])
     try:
         source = (await consumer.sources.read())[0]
@@ -85,7 +91,8 @@ async def test_wrong_public_terminal_proof_cannot_persist_first_page(tmp_path, l
                 assert proof["event_payload_hash"] == identity.raw_sdk_event_hash
                 if fault in {"payload", "record", "envelope"}:
                     proof["event_payload_hash"] = {
-                        "payload": "0" * 64, "record": proof["event_record_hash"],
+                        "payload": "0" * 64,
+                        "record": proof["event_record_hash"],
                         "envelope": envelope,
                     }[fault]
                     assert proof["event_payload_hash"] != identity.raw_sdk_event_hash
@@ -111,24 +118,38 @@ async def test_wrong_public_terminal_proof_cannot_persist_first_page(tmp_path, l
 
 @pytest.mark.parametrize("legacy", [False, True])
 async def test_real_exact_terminal_authority_enumerates_without_evidence_rewrite(tmp_path, legacy):
-    state, _, provider, runtime, stack, _ = await (legacy_setup(tmp_path) if legacy else setup(tmp_path))
+    state, _, provider, runtime, stack, _ = await (
+        legacy_setup(tmp_path) if legacy else setup(tmp_path)
+    )
     consumer = await consumer_at(state, stack, [100.0])
     try:
         source = (await consumer.sources.read())[0]
         identity = await identity_for(state, source)
         assert identity.legacy_scoped is legacy
         with sqlite3.connect(state) as db:
-            before = db.execute("SELECT evidence_id,envelope_sha256 FROM human_memory_evidence ORDER BY evidence_id").fetchall()
+            before = db.execute(
+                "SELECT evidence_id,envelope_sha256 FROM human_memory_evidence ORDER BY evidence_id"
+            ).fetchall()
         await drain(consumer)
         record = await consumer.store.inspect(source.job_id)
         assert record["job"]["status"] == "enumerated"
         assert record["job"]["rule_version"] == "terminal-run-v2"
         for row in record["pages"]:
-            proof = sdk.RunTerminalAuditEvidenceV1.from_json(json.loads(row["payload_json"])["metadata"]["terminal_evidence"])
-            assert proof.matches(event_id=identity.raw_sdk_event_id,
-                                 payload_hash=identity.raw_sdk_event_hash, state="completed")
+            proof = sdk.RunTerminalAuditEvidenceV1.from_json(
+                json.loads(row["payload_json"])["metadata"]["terminal_evidence"]
+            )
+            assert proof.matches(
+                event_id=identity.raw_sdk_event_id,
+                payload_hash=identity.raw_sdk_event_hash,
+                state="completed",
+            )
         with sqlite3.connect(state) as db:
-            assert db.execute("SELECT evidence_id,envelope_sha256 FROM human_memory_evidence ORDER BY evidence_id").fetchall() == before
+            assert (
+                db.execute(
+                    "SELECT evidence_id,envelope_sha256 FROM human_memory_evidence ORDER BY evidence_id"
+                ).fetchall()
+                == before
+            )
         assert len(provider.requests) == 1
     finally:
         await consumer.close()
@@ -146,7 +167,9 @@ async def test_foreign_real_run_proof_cannot_be_relabelled_as_selected_run(tmp_p
         source = (await consumer.sources.read())[0]
         await service.enqueue_turn(QueueTurnRequest(None, "second", "Another actual turn"))
         assert await runtime._drive_once()
-        other = next(row for row in await consumer.sources.read() if row.sdk_run_id != source.sdk_run_id)
+        other = next(
+            row for row in await consumer.sources.read() if row.sdk_run_id != source.sdk_run_id
+        )
         client = stack.require_ready().client
         foreign = await client.open_run_operation_audit(sdk.RunId(other.sdk_run_id), page_size=2)
         foreign_proof = foreign.to_json()["metadata"]["terminal_evidence"]

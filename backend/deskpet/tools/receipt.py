@@ -9,6 +9,7 @@ smoke 通过（防接口腐烂）；HMAC 计算 + DPAPI/Keychain 包装的真正
 
 字段与 PRD §3 D5 / TDD §C.2 同源（12 项 required + sig HMAC）。
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -41,10 +42,11 @@ class ToolReceipt:
     也能正常反序列化（需调方用 ``ToolReceipt(**{k: v for k, v in d.items() if k in ...}}``
     或直接 ``ToolReceipt(**d)`` — dataclass default 兜底）。
     """
+
     receipt_id: str
     tool_name: str
-    args_hash: str             # sha256(canonical_json(args))
-    started_at: str            # ISO 8601 UTC
+    args_hash: str  # sha256(canonical_json(args))
+    started_at: str  # ISO 8601 UTC
     ended_at: str
     duration_ms: int
     ok: bool
@@ -52,17 +54,17 @@ class ToolReceipt:
     artifacts: list[str] = field(default_factory=list)  # sha256 列表
     session_id: str = ""
     iteration: int = 0
-    sig: str = ""              # HMAC-SHA256 base64
+    sig: str = ""  # HMAC-SHA256 base64
     # ── R-T6 Shadow 可观测字段（全部可选，BC-safe） ──────────────────────────
-    shadow_verdict: str | None = None          # "would_block" | "would_pass" | None
-    actual_outcome: str | None = None          # 用户行为弱信号占位
-    verify_latency_ms: int | None = None       # verify 耗时（ms），用于 p95 聚合
+    shadow_verdict: str | None = None  # "would_block" | "would_pass" | None
+    actual_outcome: str | None = None  # 用户行为弱信号占位
+    verify_latency_ms: int | None = None  # verify 耗时（ms），用于 p95 聚合
     degradation_flags: list[str] = field(default_factory=list)  # 降级事实列表
     # Durable workflow receipt v2. ``None`` means the field was absent on a
     # legacy v1 record; this distinction is required for v1 HMAC verification.
     sig_version: int | None = None
-    phase: str | None = None                   # accepted | delivered | executed
-    outcome: str | None = None                 # pending | success | failed
+    phase: str | None = None  # accepted | delivered | executed
+    outcome: str | None = None  # pending | success | failed
     run_id: str | None = None
     node_execution_id: str | None = None
     effect_id: str | None = None
@@ -100,6 +102,7 @@ class ToolReceipt:
 
 # ─── HMAC helpers ────────────────────────────────────────────
 
+
 def canonical_json(obj: Any) -> str:
     """跨语言可重现的 canonical JSON（用于 HMAC + args_hash）。"""
     return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
@@ -113,13 +116,15 @@ def args_hash(args: dict[str, Any]) -> str:
 # R-T6 BC: shadow 可观测字段不计入 HMAC 载荷，使旧收据（无这些 key）仍能通过验签。
 # 这些字段是事后补注的元数据（shadow 预测 / 用户弱信号 / 运维观测），
 # 不属于工具调用的原始不可篡改事实。
-_HMAC_EXCLUDED_FIELDS: frozenset[str] = frozenset({
-    "sig",
-    "shadow_verdict",
-    "actual_outcome",
-    "verify_latency_ms",
-    "degradation_flags",
-})
+_HMAC_EXCLUDED_FIELDS: frozenset[str] = frozenset(
+    {
+        "sig",
+        "shadow_verdict",
+        "actual_outcome",
+        "verify_latency_ms",
+        "degradation_flags",
+    }
+)
 
 _V2_FIELDS: frozenset[str] = frozenset(
     {"sig_version", "phase", "outcome", "run_id", "node_execution_id", "effect_id"}

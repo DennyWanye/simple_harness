@@ -14,6 +14,7 @@ stub 时期已建好接口；本次升级把 stub 替换为真正逻辑：
 
 测试组对照 plans/.../01-TDD.md §B TG-9。
 """
+
 from __future__ import annotations
 
 import json
@@ -40,6 +41,7 @@ UnmatchedReason = Literal["no_receipt", "path_mismatch", "sha256_mismatch", "fil
 @dataclass
 class UnmatchedClaim:
     """与 ToolReceipt.error_class 不同 enum — 详见 PRD D5 末段。"""
+
     pattern_id: str
     raw_text: str
     expected_kind: str
@@ -62,10 +64,11 @@ class GoalAlignment:
 
     仅当 check() 传入 goal_text 时生成；goal_text=None 时 VerifyOutcome.goal_alignment=None（BC）。
     """
-    goal_text: str                 # 重述的【原始目标】（防 verifier 漂移的锚）
+
+    goal_text: str  # 重述的【原始目标】（防 verifier 漂移的锚）
     objective_evidence: list[str]  # receipt + outcome_verifier 的客观信号
-    aligned: bool                  # 客观证据是否真满足原目标
-    gap: str                       # aligned=False 时差什么；aligned=True 时为空串
+    aligned: bool  # 客观证据是否真满足原目标
+    gap: str  # aligned=False 时差什么；aligned=True 时为空串
 
 
 @dataclass
@@ -106,7 +109,7 @@ class Claim:
 #   - (a|a)+ 等价分支
 # 这不是完美方案（re 库没真 ReDoS 防护），但能挡 TDD T9-13 给的样例。
 _REDOS_PATTERNS = [
-    _re.compile(r"\([^)]*[+*]\)[+*]"),   # (X+)+ / (X*)* / (X+)* / (X*)+
+    _re.compile(r"\([^)]*[+*]\)[+*]"),  # (X+)+ / (X*)* / (X+)* / (X*)+
     _re.compile(r"\((?:[^()]+\|)+[^()]+\)[+*]"),  # (a|b|...)+
 ]
 
@@ -148,34 +151,36 @@ def load_claim_patterns(yaml_path: Path) -> list[ClaimPattern]:
         pid = raw.get("id")
         regex = raw.get("regex")
         kind = raw.get("artifact_kind", "file")
-        if not (isinstance(pid, str) and isinstance(regex, str)
-                and len(regex) <= 500):
+        if not (isinstance(pid, str) and isinstance(regex, str) and len(regex) <= 500):
             logger.warning("claim_pattern invalid schema: %s", raw)
             continue
         # T9-13: ReDoS pattern reject
         if _looks_like_redos(regex):
             logger.error(
                 "claim_pattern rejected: ReDoS-prone nested quantifier in %r (id=%s)",
-                regex, pid,
+                regex,
+                pid,
             )
             continue
         # 尝试编译
         try:
             _re.compile(regex)
         except _re.error as exc:
-            logger.error("claim_pattern regex compile failed (id=%s): %s",
-                         pid, exc)
+            logger.error("claim_pattern regex compile failed (id=%s): %s", pid, exc)
             continue
-        out.append(ClaimPattern(
-            id=pid,
-            regex=regex,
-            artifact_kind=kind,
-            tool_hint=list(raw.get("tool_hint") or []),
-        ))
+        out.append(
+            ClaimPattern(
+                id=pid,
+                regex=regex,
+                artifact_kind=kind,
+                tool_hint=list(raw.get("tool_hint") or []),
+            )
+        )
     return out
 
 
 # ─── ClaimExtractor strategy ─────────────────────────────────
+
 
 class ClaimExtractor(Protocol):
     def extract(self, assistant_text: str, hints: dict[str, Any]) -> list[Claim]: ...
@@ -199,13 +204,15 @@ class RegexExtractor:
         for pat, rx in self._compiled:
             for m in rx.finditer(assistant_text):
                 gd = m.groupdict()
-                out.append(Claim(
-                    pattern_id=pat.id,
-                    raw_text=m.group(0),
-                    title=gd.get("title"),
-                    path=gd.get("path"),
-                    kind=pat.artifact_kind,
-                ))
+                out.append(
+                    Claim(
+                        pattern_id=pat.id,
+                        raw_text=m.group(0),
+                        title=gd.get("title"),
+                        path=gd.get("path"),
+                        kind=pat.artifact_kind,
+                    )
+                )
         return out
 
 
@@ -275,6 +282,7 @@ def _dedup(claims: list[Claim]) -> list[Claim]:
 
 # ─── VerifyGate (PRD §3 D6 真正实现) ─────────────────────────
 
+
 class VerifyGate:
     """Check assistant claims against ReceiptLedger.
 
@@ -312,15 +320,19 @@ class VerifyGate:
         if self.mode == "off":
             return VerifyOutcome(
                 passed=True,
-                evidence_status="unknown" if evidence_context is not None or scoped_evidence is not None else "legacy",
+                evidence_status="unknown"
+                if evidence_context is not None or scoped_evidence is not None
+                else "legacy",
             )
 
         evidence_status: Literal["legacy", "matched", "unknown"] = "legacy"
         effective_ledger: list[Any] = list(ledger)
         if evidence_context is not None or scoped_evidence is not None:
             selection = scoped_evidence
-            if selection is None or evidence_context is not None and any(
-                record.context != evidence_context for record in selection.records
+            if (
+                selection is None
+                or evidence_context is not None
+                and any(record.context != evidence_context for record in selection.records)
             ):
                 effective_ledger = []
                 evidence_status = "unknown"
@@ -338,8 +350,9 @@ class VerifyGate:
             passed=(not unmatched),
             claims_extracted=len(claims),
             unmatched_claims=unmatched,
-            extractor_used="regex" if isinstance(self.extractor, RegexExtractor)
-                          else "regex+llm_fallback",
+            extractor_used="regex"
+            if isinstance(self.extractor, RegexExtractor)
+            else "regex+llm_fallback",
             evidence_status=evidence_status,
         )
 
@@ -402,12 +415,13 @@ class VerifyGate:
         if unmatched:
             # 有 claim 但未被 receipt 佐证 → 伪完成
             gap_parts = [
-                f"unmatched claim: {c.raw_text!r} (reason={c.reason})"
-                for c in unmatched[:3]
+                f"unmatched claim: {c.raw_text!r} (reason={c.reason})" for c in unmatched[:3]
             ]
             return GoalAlignment(
                 goal_text=goal_text,
-                objective_evidence=objective_evidence if objective_evidence else ["evidence_unavailable"],
+                objective_evidence=objective_evidence
+                if objective_evidence
+                else ["evidence_unavailable"],
                 aligned=False,
                 gap="; ".join(gap_parts),
             )
@@ -430,13 +444,15 @@ class VerifyGate:
         for claim in claims:
             if not self._claim_has_matching_receipt(claim, ledger):
                 # 至少要有一个 ok=True 的 receipt（tool 调用过且成功）
-                unmatched.append(UnmatchedClaim(
-                    pattern_id=claim.pattern_id,
-                    raw_text=claim.raw_text,
-                    expected_kind=claim.kind,
-                    expected_path_or_title=claim.path or claim.title,
-                    reason="no_receipt",
-                ))
+                unmatched.append(
+                    UnmatchedClaim(
+                        pattern_id=claim.pattern_id,
+                        raw_text=claim.raw_text,
+                        expected_kind=claim.kind,
+                        expected_path_or_title=claim.path or claim.title,
+                        reason="no_receipt",
+                    )
+                )
         return unmatched
 
     def _claim_has_matching_receipt(
@@ -480,15 +496,18 @@ class VerifyGate:
                     return True
             else:
                 # 无 hint → 任一 ok file-生成工具放行（保守扩展）
-                if r.tool_name in {"ppt_create", "excel_create", "doc_create",
-                                   "pdf_export", "generate_image",
-                                   "file_write"}:
+                if r.tool_name in {
+                    "ppt_create",
+                    "excel_create",
+                    "doc_create",
+                    "pdf_export",
+                    "generate_image",
+                    "file_write",
+                }:
                     return True
         return False
 
-    def _tool_hints_for_pattern(
-        self, pattern_id: str
-    ) -> list[str] | None:
+    def _tool_hints_for_pattern(self, pattern_id: str) -> list[str] | None:
         """从 extractor 反查 pattern_id 对应的 tool_hint list。"""
         if isinstance(self.extractor, RegexExtractor):
             for p in self.extractor.patterns:
@@ -528,12 +547,16 @@ class VerifyGate:
             # stub: 无 ephemeral 接入时直接 fail（保守）
             return False
         try:
-            return bool(await self.ephemeral_subagent({
-                "ledger_size": len(ledger),
-                "failed_claims": [c.__dict__ for c in failed_claims],
-                "assistant_text": assistant_text[:2000],  # truncate
-                "workload_context": workload_context,
-            }))
+            return bool(
+                await self.ephemeral_subagent(
+                    {
+                        "ledger_size": len(ledger),
+                        "failed_claims": [c.__dict__ for c in failed_claims],
+                        "assistant_text": assistant_text[:2000],  # truncate
+                        "workload_context": workload_context,
+                    }
+                )
+            )
         except Exception as exc:  # noqa: BLE001
             logger.warning("ephemeral_subagent raised: %s", exc)
             return False
@@ -611,6 +634,7 @@ def make_ephemeral_verifier(
     Returns:
         async callable matching VerifyGate.ephemeral_subagent signature
     """
+
     async def _verifier(payload: dict[str, Any]) -> bool:
         try:
             prompt = _EPHEMERAL_VERIFIER_PROMPT_TEMPLATE.format(
@@ -625,7 +649,9 @@ def make_ephemeral_verifier(
                 raw = await llm_call(prompt, workload_context=workload_context)
             obj = _extract_json_str(raw or "")
             if obj is None:
-                logger.warning("make_ephemeral_verifier: could not parse LLM JSON: %r", (raw or "")[:200])
+                logger.warning(
+                    "make_ephemeral_verifier: could not parse LLM JSON: %r", (raw or "")[:200]
+                )
                 return False
             verdict = str(obj.get("verdict", "fail")).strip().lower()
             return verdict == "pass"

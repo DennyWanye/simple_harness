@@ -8,6 +8,7 @@ Pass criteria:
 - chat_v2_final / chat_v2_error does NOT arrive after interrupt (or
   arrives quickly with cancelled state)
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -25,20 +26,28 @@ async def smoke(secret: str) -> int:
     async with websockets.connect(url, ping_interval=None) as ws:
         # Send a request that takes a while (long text → thinking model
         # will spend time).
-        await ws.send(json.dumps({
-            "type": "chat_v2",
-            "payload": {
-                "text": "请用 200 字解释一下量子纠缠是什么，举几个例子。",
-                "session_id": sid,
-            },
-        }))
+        await ws.send(
+            json.dumps(
+                {
+                    "type": "chat_v2",
+                    "payload": {
+                        "text": "请用 200 字解释一下量子纠缠是什么，举几个例子。",
+                        "session_id": sid,
+                    },
+                }
+            )
+        )
         # Wait briefly so the LLM call is in flight, then interrupt.
         await asyncio.sleep(1.5)
         print("-> sending chat_v2_interrupt")
-        await ws.send(json.dumps({
-            "type": "chat_v2_interrupt",
-            "payload": {"session_id": sid},
-        }))
+        await ws.send(
+            json.dumps(
+                {
+                    "type": "chat_v2_interrupt",
+                    "payload": {"session_id": sid},
+                }
+            )
+        )
         # Drain events for up to 10s.
         saw_interrupted = False
         saw_final = False

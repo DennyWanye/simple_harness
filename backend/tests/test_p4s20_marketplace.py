@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 """P4-S20 Wave 4a: Skill marketplace TDD tests."""
+
 from __future__ import annotations
 
 import json
@@ -115,9 +116,7 @@ def test_parse_github_subpath_tree() -> None:
 
 
 def test_parse_github_https_subpath() -> None:
-    spec = parse_github_url(
-        "https://github.com/anthropics/skills/tree/main/web-search"
-    )
+    spec = parse_github_url("https://github.com/anthropics/skills/tree/main/web-search")
     assert spec.subpath == "web-search"
     assert spec.branch == "main"
 
@@ -248,9 +247,7 @@ async def test_installer_finalize_moves_to_skills_dir(tmp_path: Path) -> None:
 
     async def fake_clone(spec, dest):
         dest.mkdir(parents=True, exist_ok=True)
-        (dest / "SKILL.md").write_text(
-            "---\ndescription: ok\n---\nbody", encoding="utf-8"
-        )
+        (dest / "SKILL.md").write_text("---\ndescription: ok\n---\nbody", encoding="utf-8")
         (dest / "manifest.json").write_text(
             json.dumps(
                 {
@@ -439,9 +436,7 @@ async def test_stage_recursive_skips_dot_and_excluded_dirs(
         # Noise that must be skipped
         _write_skill_md(dest / ".git" / "hooks", "noise-git", ["read_file"])
         _write_skill_md(dest / ".claude-plugin", "noise-cc", ["read_file"])
-        _write_skill_md(
-            dest / "node_modules" / "lib", "noise-node", ["read_file"]
-        )
+        _write_skill_md(dest / "node_modules" / "lib", "noise-node", ["read_file"])
 
     inst = SkillInstaller(
         skills_dir=target,

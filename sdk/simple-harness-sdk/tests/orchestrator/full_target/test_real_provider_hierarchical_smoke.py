@@ -61,7 +61,12 @@ FAILING_TEST = "tests/test_kv.py::test_parse_kv_strips_whitespace"
 EVIDENCE_ROOT = Path(
     os.environ.get(
         "HTN_SMOKE_EVIDENCE",
-        str(Path(__file__).resolve().parents[3] / ".local-test-evidence" / "2026-09-16" / "htn-smoke"),
+        str(
+            Path(__file__).resolve().parents[3]
+            / ".local-test-evidence"
+            / "2026-09-16"
+            / "htn-smoke"
+        ),
     )
 )
 
@@ -99,32 +104,47 @@ def _root_parameters(_mission: Any) -> dict[str, Any]:
     return {"repository": "kvlib", "failing_test": FAILING_TEST}
 
 
-async def smoke(tmp_path: Path, provider: Any, *, model: str = "agent-model",
-                timeout: float = 1800.0) -> tuple[dict[str, Any], Any]:
+async def smoke(
+    tmp_path: Path, provider: Any, *, model: str = "agent-model", timeout: float = 1800.0
+) -> tuple[dict[str, Any], Any]:
     """Run one code Mission on the product deployment with ``provider`` and report."""
 
-    async with code_world(tmp_path, provider, root_parameters=_root_parameters, model=model,
-                          default_max_output_tokens=4096,
-                          test_timeout_seconds=120, turn_deadline_seconds=600) as world:
+    async with code_world(
+        tmp_path,
+        provider,
+        root_parameters=_root_parameters,
+        model=model,
+        default_max_output_tokens=4096,
+        test_timeout_seconds=120,
+        turn_deadline_seconds=600,
+    ) as world:
         store = world.store
-        mission_id = world.create({
-            "goal": "修复仓库里失败的测试 tests/test_kv.py::test_parse_kv_strips_whitespace，并说明改动；不要改测试本身。",
-            "success_criteria": ["pytest:tests/test_kv.py", "改动有说明"],
-            "idempotency_key": f"htn-smoke-{os.getpid()}",
-            # A minimal hierarchical plan is a handful of leaves plus room for one repair each.
-            "budget": {"max_tokens": 600_000, "max_attempts": 12},
-            "workspace_seed": {"kvlib.py": PACKAGE, "tests/test_kv.py": FAILING},
-        })["mission_id"]
+        mission_id = world.create(
+            {
+                "goal": "修复仓库里失败的测试 tests/test_kv.py::test_parse_kv_strips_whitespace，并说明改动；不要改测试本身。",
+                "success_criteria": ["pytest:tests/test_kv.py", "改动有说明"],
+                "idempotency_key": f"htn-smoke-{os.getpid()}",
+                # A minimal hierarchical plan is a handful of leaves plus room for one repair each.
+                "budget": {"max_tokens": 600_000, "max_attempts": 12},
+                "workspace_seed": {"kvlib.py": PACKAGE, "tests/test_kv.py": FAILING},
+            }
+        )["mission_id"]
         try:
-            await run_until(world, lambda: str(store.get_mission(mission_id).status.value) in TERMINAL,
-                            timeout=timeout)
+            await run_until(
+                world,
+                lambda: str(store.get_mission(mission_id).status.value) in TERMINAL,
+                timeout=timeout,
+            )
         except TimeoutError:
             pass  # an honest ending is judged below; a loop still running is reported as it is
         final = store.get_mission(mission_id)
         semantics = HtnStore(store)
         events = list(store.list_events(mission_id))
-        rejections = [{"reason": item.payload.get("reason"), "detail": item.payload.get("detail")}
-                      for item in events if item.type in {"PlanningRejected", "TaskGraphRejected", "PlanCommitRefused"}]
+        rejections = [
+            {"reason": item.payload.get("reason"), "detail": item.payload.get("detail")}
+            for item in events
+            if item.type in {"PlanningRejected", "TaskGraphRejected", "PlanCommitRefused"}
+        ]
         ports: dict[str, list[str]] = {}
         for row in semantics.list_acceptance_outputs(mission_id):
             ports.setdefault(str(row["acceptance_id"]), []).append(str(row["output_port"]))
@@ -132,18 +152,37 @@ async def smoke(tmp_path: Path, provider: Any, *, model: str = "agent-model",
             "mission_id": mission_id,
             "status": str(final.status),
             "stop_reason": final.stop_reason,
-            "planner_rounds": len([i for i in store.list_intents("PENDING", "CLAIMED", "AGENT_CREATED", "SUBMITTED",
-                                                                 "SETTLED", "FAILED")
-                                   if i.mission_id == mission_id and i.kind == "plan"]),
+            "planner_rounds": len(
+                [
+                    i
+                    for i in store.list_intents(
+                        "PENDING", "CLAIMED", "AGENT_CREATED", "SUBMITTED", "SETTLED", "FAILED"
+                    )
+                    if i.mission_id == mission_id and i.kind == "plan"
+                ]
+            ),
             "event_types": sorted({item.type for item in events}),
             "rejections": rejections,
-            "proposal_unreadable": any(item["reason"] == "proposal_unreadable" for item in rejections),
+            "proposal_unreadable": any(
+                item["reason"] == "proposal_unreadable" for item in rejections
+            ),
             "plan_revisions": len(semantics.list_plan_revisions(mission_id)),
-            "package_facts": [item["observation_ref"] for item in fact_rows(semantics.list_observations(mission_id))[0]],
-            "stalled": [item.payload for item in events if item.type == "HierarchicalMissionStalled"],
+            "package_facts": [
+                item["observation_ref"]
+                for item in fact_rows(semantics.list_observations(mission_id))[0]
+            ],
+            "stalled": [
+                item.payload for item in events if item.type == "HierarchicalMissionStalled"
+            ],
             "reviews": [
-                {"package_id": str(package.package_id), "purpose": str(package.purpose),
-                 "verdicts": [str(stored.record.verdict) for stored in semantics.list_review_records(str(package.package_id))]}
+                {
+                    "package_id": str(package.package_id),
+                    "purpose": str(package.purpose),
+                    "verdicts": [
+                        str(stored.record.verdict)
+                        for stored in semantics.list_review_records(str(package.package_id))
+                    ],
+                }
                 for package in semantics.list_review_packages(mission_id)
             ],
             "accepted_outputs": [
@@ -164,7 +203,8 @@ def test_real_hierarchical_planner_round(tmp_path):
     report["model"] = config.model
     EVIDENCE_ROOT.mkdir(parents=True, exist_ok=True)
     (EVIDENCE_ROOT / "report.json").write_text(
-        json.dumps(report, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+        json.dumps(report, ensure_ascii=False, indent=2, default=str), encoding="utf-8"
+    )
     print("HTN_SMOKE_REPORT " + json.dumps(report, ensure_ascii=False, default=str))
 
     # The property this slice owns: the hierarchical Planner round is readable.
@@ -185,6 +225,8 @@ def test_real_hierarchical_planner_round(tmp_path):
         if final.status is MissionStatus.FAILED:
             assert final.stop_reason is not None, "a stop without a reason is not an honest failure"
         else:
-            assert report["stalled"], "the Mission neither finished nor stopped and nothing said why"
+            assert report["stalled"], (
+                "the Mission neither finished nor stopped and nothing said why"
+            )
             for record in report["stalled"]:
                 assert record["withheld"], "a stall record with no refusal explains nothing"

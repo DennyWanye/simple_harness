@@ -104,8 +104,10 @@ def test_lc6_rotation_replay_and_protected_input(tmp_path, counter, capacity):
         ) as runtime:
             agent = await runtime.create(
                 AgentConfig(
-                    name="lc6", instructions=INSTRUCTIONS,
-                    model_profile_ref=MODEL, tool_names=("echo",),
+                    name="lc6",
+                    instructions=INSTRUCTIONS,
+                    model_profile_ref=MODEL,
+                    tool_names=("echo",),
                 ),
                 creation_key="lc6-agent",
             )
@@ -127,8 +129,7 @@ def test_lc6_rotation_replay_and_protected_input(tmp_path, counter, capacity):
             selection = runtime.uow.latest_agent_context_selection(agent.agent_id)
             assert selection is not None and selection.dropped_ranges
             assert 2 in {
-                seq for start, end in selection.dropped_ranges
-                for seq in range(start, end + 1)
+                seq for start, end in selection.dropped_ranges for seq in range(start, end + 1)
             }
             assert runtime.uow.list_agent_summaries(agent.agent_id)
             journal_after = agent.journal()
@@ -161,8 +162,12 @@ def test_lc6_rotation_replay_and_protected_input(tmp_path, counter, capacity):
 
             oversized = first_input + second_input
             guard_agent = await restarted.create(
-                AgentConfig(name="lc6-over-cap", instructions=INSTRUCTIONS,
-                            model_profile_ref=MODEL, tool_names=("echo",)),
+                AgentConfig(
+                    name="lc6-over-cap",
+                    instructions=INSTRUCTIONS,
+                    model_profile_ref=MODEL,
+                    tool_names=("echo",),
+                ),
                 creation_key="lc6-over-cap",
             )
             failed = await guard_agent.ask(oversized, input_id="too-large", timeout=120)

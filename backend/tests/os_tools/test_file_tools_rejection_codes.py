@@ -28,9 +28,7 @@ def ws(tmp_path: Path, monkeypatch) -> Path:
 
 
 def _read(path: str) -> dict:
-    return json.loads(
-        asyncio.run(_handle_file_read({"path": path, "_session_id": "s"}, "t"))
-    )
+    return json.loads(asyncio.run(_handle_file_read({"path": path, "_session_id": "s"}, "t")))
 
 
 def test_missing_file_gets_file_not_found_code(ws: Path) -> None:
@@ -43,13 +41,9 @@ def test_directory_gets_not_a_regular_file_code(ws: Path) -> None:
     assert out["error_code"] == "not_a_regular_file"
 
 
-
-
 def test_negative_offset_gets_invalid_range_code(ws: Path) -> None:
     out = json.loads(
-        asyncio.run(
-            _handle_file_read({"path": "ok.md", "offset": -1, "_session_id": "s"}, "t")
-        )
+        asyncio.run(_handle_file_read({"path": "ok.md", "offset": -1, "_session_id": "s"}, "t"))
     )
     assert out["error_code"] == "invalid_range"
 

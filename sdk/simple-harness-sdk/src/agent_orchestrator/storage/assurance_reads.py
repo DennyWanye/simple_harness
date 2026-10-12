@@ -233,7 +233,12 @@ class AssuranceReader:
             raise AssuranceError("REF_SCOPE_MISMATCH")
 
     def _resolved(
-        self, ref: AssuranceRef, body_json: str, issuer: str, witness: dict[str, Any], now_ms: int | None
+        self,
+        ref: AssuranceRef,
+        body_json: str,
+        issuer: str,
+        witness: dict[str, Any],
+        now_ms: int | None,
     ) -> ResolvedRef:
         permission = None
         if self.authority is not None and self.identity is not None:
@@ -284,9 +289,12 @@ class AssuranceReader:
             rows = connection.execute(query + " LIMIT 2", params).fetchall()
             if not rows:
                 # A08：身份还在、钉住的版本不是来源现在持有的 → 当前性错误，按资产用自己的名字报。
-                if revision is not None and connection.execute(
-                    f"SELECT 1 FROM {table} WHERE {where}", params[: len(params) - 1]
-                ).fetchone():
+                if (
+                    revision is not None
+                    and connection.execute(
+                        f"SELECT 1 FROM {table} WHERE {where}", params[: len(params) - 1]
+                    ).fetchone()
+                ):
                     raise AssuranceError("SOURCE_NOT_CURRENT", ref.pin.id)
                 raise AssuranceError("SOURCE_UNAVAILABLE", ref.pin.id)
             if len(rows) != 1:
@@ -340,7 +348,9 @@ class AssuranceReader:
         with self.store.read_view():
             self._mission_locked(self.store.connection)
             try:
-                row = getattr(OperationCompletionStore(self.store), method)(self.mission_id, ref.pin.id)
+                row = getattr(OperationCompletionStore(self.store), method)(
+                    self.mission_id, ref.pin.id
+                )
             except StoreConflict as error:
                 raise AssuranceError("REF_BODY_CONFLICT", ref.pin.id) from error
             if row is None:

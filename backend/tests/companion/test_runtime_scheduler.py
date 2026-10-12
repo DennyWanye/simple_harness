@@ -267,9 +267,7 @@ async def test_failed_model_run_persists_reason_and_replans_fresh_attempt(
             )
         assert claim.payload["replan_failure"]["attempt"] == 1
         assert (
-            claim.payload["replan_failure"]["failure"]["terminal_error"][
-                "code"
-            ]
+            claim.payload["replan_failure"]["failure"]["terminal_error"]["code"]
             == "provider_failed"
         )
         return CompanionJobResult(
@@ -293,8 +291,7 @@ async def test_failed_model_run_persists_reason_and_replans_fresh_attempt(
     )
     await runtime.start(owner)
     await wait_until(
-        lambda: store.get_job(owner, job_id="reflection-replan")["status"]
-        == "succeeded"
+        lambda: store.get_job(owner, job_id="reflection-replan")["status"] == "succeeded"
     )
     await runtime.close()
     row = store.get_job(owner, job_id="reflection-replan")
@@ -365,11 +362,13 @@ async def test_runtime_exception_persists_reason_and_replans_without_clock_advan
     )
     await runtime.start(owner)
     await wait_until(
-        lambda: store.get_job(
-            owner,
-            job_id="evaluation-timeout-replan",
-        )["status"]
-        == "succeeded",
+        lambda: (
+            store.get_job(
+                owner,
+                job_id="evaluation-timeout-replan",
+            )["status"]
+            == "succeeded"
+        ),
         turns=1000,
     )
     await runtime.close()
@@ -428,8 +427,7 @@ async def test_dormant_authority_quiet_hours_and_budget_gate(runtime_env) -> Non
     )
     await runtime.start(owner)
     await wait_until(
-        lambda: store.get_job(owner, job_id="quiet")["reason_code"]
-        == "job_deferred_quiet_hours"
+        lambda: store.get_job(owner, job_id="quiet")["reason_code"] == "job_deferred_quiet_hours"
     )
     assert calls == 0
     await runtime.close()
@@ -525,9 +523,7 @@ def test_recover_expired_leases_retries_safe_job_and_expires_reminder(
             dedupe_key=job_id,
             payload={},
         )
-        assert store.claim_job(
-            owner, claim_owner="crashed", lease_seconds=5
-        ) is not None
+        assert store.claim_job(owner, claim_owner="crashed", lease_seconds=5) is not None
     clock.advance(seconds=6)
     recovered = store.recover_expired_job_leases(
         owner,
@@ -552,9 +548,7 @@ def test_recovery_does_not_blindly_retry_delegated_or_external_jobs(
             dedupe_key=job_id,
             payload={},
         )
-        assert store.claim_job(
-            owner, claim_owner="crashed", lease_seconds=5
-        ) is not None
+        assert store.claim_job(owner, claim_owner="crashed", lease_seconds=5) is not None
     clock.advance(seconds=6)
     recovered = store.recover_expired_job_leases(
         owner,

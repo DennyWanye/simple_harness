@@ -12,6 +12,7 @@ These tests reproduce that shape against the real estimator, the real frozen
 budget and the real projector, and assert that the control bound closes the gap
 while every attestation-safety rule holds.
 """
+
 import json
 import sqlite3
 from types import SimpleNamespace
@@ -49,9 +50,11 @@ WINDOW = 32000
 
 def public_body(value):
     """The exact public tool body the Host projects for a settled result."""
-    return redact_credential_shapes(canonical_json(dict(
-        outcome="succeeded", value=thaw_json(value),
-        error_code=None, public_message=None)))[0]
+    return redact_credential_shapes(
+        canonical_json(
+            dict(outcome="succeeded", value=thaw_json(value), error_code=None, public_message=None)
+        )
+    )[0]
 
 
 def sized_body(tag, target_bytes):
@@ -74,8 +77,9 @@ class FakeEffect:
         self.terminal = True
         self.tool_name = tool_name
         self.raw_call_id = raw_call_id
-        self.result = SimpleNamespace(outcome=SimpleNamespace(value=state),
-                                      value=value, error_code=None, public_message=None)
+        self.result = SimpleNamespace(
+            outcome=SimpleNamespace(value=state), value=value, error_code=None, public_message=None
+        )
         self.evidence_ref = "evidence-" + effect_id[-8:]
 
 
@@ -83,8 +87,8 @@ class FakeStack:
     """Public effect/audit facts, exactly the surface the projector reads."""
 
     def __init__(self, effects):
-        self.effects = effects          # effect_id -> FakeEffect
-        self.sources = []               # causal sources, in transcript order
+        self.effects = effects  # effect_id -> FakeEffect
+        self.sources = []  # causal sources, in transcript order
         self.page_facts_calls = []
 
     def read_primary_dependency_facts(self, run_id, *args):
@@ -95,8 +99,12 @@ class FakeStack:
         effect = self.effects.get(effect_id)
         if effect is None or run_id != RUN_ID:
             raise PrimaryContextPageUnavailable("primary_effect_page_effect_missing")
-        head = SimpleNamespace(result_hash="a1" * 32, provider_invocation_id="inv-" + effect_id[-8:])
-        parent = SimpleNamespace(invocation_id="inv-" + effect_id[-8:], response_json={"id": effect_id})
+        head = SimpleNamespace(
+            result_hash="a1" * 32, provider_invocation_id="inv-" + effect_id[-8:]
+        )
+        parent = SimpleNamespace(
+            invocation_id="inv-" + effect_id[-8:], response_json={"id": effect_id}
+        )
         return effect, head, parent, SimpleNamespace(messages=())
 
     async def read_primary_tool_causal_sources(self, **kwargs):
@@ -135,8 +143,10 @@ INCIDENT_TAIL = [
 
 def build_incident(system_chars):
     """The turn-10 request shape plus the fake public facts behind it."""
-    messages = [Message(MessageRole.SYSTEM, "S" * system_chars),
-                Message(MessageRole.USER, CURRENT_TEXT)]
+    messages = [
+        Message(MessageRole.SYSTEM, "S" * system_chars),
+        Message(MessageRole.USER, CURRENT_TEXT),
+    ]
     effects, sources, turn = {}, [], 0
     for position, (role, name, size) in enumerate(INCIDENT_TAIL):
         if role == "assistant":
@@ -152,12 +162,13 @@ def build_incident(system_chars):
         pad = max(0, size - len(public_body(value).encode()))
         value = {"tag": effect_id, "filler": "x" * pad}
         assert public_body(value) == content
-        effects[effect_id] = FakeEffect(effect_id=effect_id, tool_name=name,
-                                        raw_call_id=raw_call_id, value=value)
-        messages.append(Message(MessageRole.TOOL, content, name=name,
-                                call_id=CallId(raw_call_id)))
-        sources.append(dict(effect_id=effect_id, provider_turn_ordinal=turn,
-                            state="succeeded", tool_name=name))
+        effects[effect_id] = FakeEffect(
+            effect_id=effect_id, tool_name=name, raw_call_id=raw_call_id, value=value
+        )
+        messages.append(Message(MessageRole.TOOL, content, name=name, call_id=CallId(raw_call_id)))
+        sources.append(
+            dict(effect_id=effect_id, provider_turn_ordinal=turn, state="succeeded", tool_name=name)
+        )
     # ``item_ordinal`` is the 1-based position in the non-system suffix that
     # starts at the admitted current user message.
     ordinal_of = {}
@@ -182,17 +193,25 @@ def make_projector(tmp_path, stack):
 
 
 def admission_facts():
-    metadata = {"context_window": WINDOW, "model_id": "deepseek-v4-flash",
-                "root_run_id": HOST_RUN_ID, "visibility_dependencies": {}}
-    return {"input": {"text": CURRENT_TEXT}, "context_metadata": metadata,
-            "messages": [{"role": "user", "content": CURRENT_TEXT}],
-            "turn": {"text": CURRENT_TEXT}}, metadata
+    metadata = {
+        "context_window": WINDOW,
+        "model_id": "deepseek-v4-flash",
+        "root_run_id": HOST_RUN_ID,
+        "visibility_dependencies": {},
+    }
+    return {
+        "input": {"text": CURRENT_TEXT},
+        "context_metadata": metadata,
+        "messages": [{"role": "user", "content": CURRENT_TEXT}],
+        "turn": {"text": CURRENT_TEXT},
+    }, metadata
 
 
 @pytest.fixture
 def flash_calibration(monkeypatch):
     """Pin the ``deepseek-v4-flash`` estimator ratio the incident ran at."""
     from deskpet.sdk_adapters import context_partitions
+
     calibration = ProviderTokenCalibration(base_ratio=FLASH_RATIO, max_ratio=FLASH_RATIO)
     monkeypatch.setattr(context_partitions, "calibration_for_model", lambda _id: calibration)
     return calibration
@@ -203,10 +222,15 @@ def flash_calibration(monkeypatch):
 #    be refused.
 # --------------------------------------------------------------------------
 
+
 def test_control_stub_is_deterministic_small_and_refuses_route_carriers():
     value = {"tag": "t", "filler": "x" * 12000}
-    effect = FakeEffect(effect_id="effect-" + "c" * 60, tool_name="task_scope_search",
-                        raw_call_id="call_00_" + "d" * 20, value=value)
+    effect = FakeEffect(
+        effect_id="effect-" + "c" * 60,
+        tool_name="task_scope_search",
+        raw_call_id="call_00_" + "d" * 20,
+        value=value,
+    )
     head = SimpleNamespace(result_hash="a1" * 32)
     facts = (effect, head, SimpleNamespace(), SimpleNamespace())
 
@@ -226,16 +250,22 @@ def test_control_stub_is_deterministic_small_and_refuses_route_carriers():
 
     # A route carrier is refused outright: its body is re-read out of the
     # outgoing request by the typed context-use authority.
-    route = FakeEffect(effect_id="effect-route", tool_name="context_route",
-                       raw_call_id="call_route", value=value)
+    route = FakeEffect(
+        effect_id="effect-route", tool_name="context_route", raw_call_id="call_route", value=value
+    )
     with pytest.raises(PrimaryContextPageUnavailable) as excinfo:
         control_stub_content((route, head, SimpleNamespace(), SimpleNamespace()))
     assert "control_not_stubbable" in str(excinfo.value)
     assert "context_route" in CONTROL_TOOLS and "context_route" not in STUBBABLE_CONTROL_TOOLS
 
     # So is a non-succeeded settled effect: it has no public body to stand for.
-    failed = FakeEffect(effect_id="effect-failed", tool_name="task_scope_update",
-                        raw_call_id="call_failed", value=value, state="failed")
+    failed = FakeEffect(
+        effect_id="effect-failed",
+        tool_name="task_scope_update",
+        raw_call_id="call_failed",
+        value=value,
+        state="failed",
+    )
     with pytest.raises(PrimaryContextPageUnavailable):
         control_stub_content((failed, head, SimpleNamespace(), SimpleNamespace()))
 
@@ -243,33 +273,58 @@ def test_control_stub_is_deterministic_small_and_refuses_route_carriers():
 def test_verify_control_stubs_refuses_a_forged_or_foreign_notice():
     effect_id = "effect-" + "c" * 60
     raw_call_id = "call_00_" + "d" * 20
-    effect = FakeEffect(effect_id=effect_id, tool_name="task_scope_search",
-                        raw_call_id=raw_call_id, value={"tag": "t", "filler": "x" * 4000})
+    effect = FakeEffect(
+        effect_id=effect_id,
+        tool_name="task_scope_search",
+        raw_call_id=raw_call_id,
+        value={"tag": "t", "filler": "x" * 4000},
+    )
     stack = FakeStack({effect_id: effect})
     descriptor, _ = control_stub_content(stack.read_primary_effect_page_facts(RUN_ID, effect_id))
-    good = Message(MessageRole.TOOL, control_stub(descriptor), name="task_scope_search",
-                   call_id=CallId(raw_call_id), metadata={"source": CONTROL_MARKER})
+    good = Message(
+        MessageRole.TOOL,
+        control_stub(descriptor),
+        name="task_scope_search",
+        call_id=CallId(raw_call_id),
+        metadata={"source": CONTROL_MARKER},
+    )
     assert verify_control_stubs(stack, RUN_ID, (good,)) == 1
 
     tampered = json.loads(good.content)
     tampered["source"]["content_bytes"] = 1
-    forged = Message(MessageRole.TOOL, canonical_json(tampered), name="task_scope_search",
-                     call_id=CallId(raw_call_id), metadata={"source": CONTROL_MARKER})
+    forged = Message(
+        MessageRole.TOOL,
+        canonical_json(tampered),
+        name="task_scope_search",
+        call_id=CallId(raw_call_id),
+        metadata={"source": CONTROL_MARKER},
+    )
     with pytest.raises(PrimaryContextPageUnavailable):
         verify_control_stubs(stack, RUN_ID, (forged,))
 
     foreign = json.loads(good.content)
     foreign["source"]["run_id"] = "product-sdk-" + "ff" * 32
     with pytest.raises(PrimaryContextPageUnavailable):
-        verify_control_stubs(stack, RUN_ID, (Message(MessageRole.TOOL,
-            canonical_json(foreign), name="task_scope_search",
-            call_id=CallId(raw_call_id), metadata={"source": CONTROL_MARKER}),))
+        verify_control_stubs(
+            stack,
+            RUN_ID,
+            (
+                Message(
+                    MessageRole.TOOL,
+                    canonical_json(foreign),
+                    name="task_scope_search",
+                    call_id=CallId(raw_call_id),
+                    metadata={"source": CONTROL_MARKER},
+                ),
+            ),
+        )
 
 
 # --------------------------------------------------------------------------
 # 2. End-to-end style: the incident's own request shape, the real estimator,
 #    the real frozen budget.
 # --------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_incident_shape_fits_once_control_results_are_bounded(tmp_path, flash_calibration):
@@ -284,9 +339,17 @@ async def test_incident_shape_fits_once_control_results_are_bounded(tmp_path, fl
     assert effective == 26752
 
     def plan(messages, **kwargs):
-        return _plan_turn_messages(messages, WINDOW, tools=(), exact_tool_sources=True,
-                                   model_id="deepseek-v4-flash", provider_turn_ordinal=10,
-                                   raise_on_overflow=False, allow_full_group_trim=True, **kwargs)
+        return _plan_turn_messages(
+            messages,
+            WINDOW,
+            tools=(),
+            exact_tool_sources=True,
+            model_id="deepseek-v4-flash",
+            provider_turn_ordinal=10,
+            raise_on_overflow=False,
+            allow_full_group_trim=True,
+            **kwargs,
+        )
 
     # Size the protected prefix so the unbounded plan is over by exactly 263.
     probe, _, _ = build_incident(4)
@@ -305,8 +368,11 @@ async def test_incident_shape_fits_once_control_results_are_bounded(tmp_path, fl
     admission, metadata = admission_facts()
     projector = make_projector(tmp_path, stack)
 
-    control_bytes = sum(len(m.content.encode()) for m in messages
-                        if m.role.value == "tool" and m.name in CONTROL_TOOLS)
+    control_bytes = sum(
+        len(m.content.encode())
+        for m in messages
+        if m.role.value == "tool" and m.name in CONTROL_TOOLS
+    )
     # 33 022 B measured on turn 9 + turn 10's own 2 280 B context_page_in.
     assert control_bytes == 35_302, control_bytes
     allowance = control_result_allowance(metadata, provider_turn_ordinal=10)
@@ -326,8 +392,7 @@ async def test_incident_shape_fits_once_control_results_are_bounded(tmp_path, fl
     receipt = _current_tool_page_facts(after)
     assert receipt["control_results_stubbed"] >= 1
     assert receipt["control_result_tokens"] < _control_tool_tokens(messages)
-    stubbed = [m for m in projected
-               if m.metadata and m.metadata.get("source") == CONTROL_MARKER]
+    stubbed = [m for m in projected if m.metadata and m.metadata.get("source") == CONTROL_MARKER]
     assert {m.name for m in stubbed} <= STUBBABLE_CONTROL_TOOLS
     assert all(m.name in CONTROL_TOOLS for m in stubbed)
 
@@ -340,8 +405,9 @@ async def test_incident_shape_fits_once_control_results_are_bounded(tmp_path, fl
     # 4) The causal chain is intact: same roles, names and call ids, no message
     #    added, dropped or reordered.
     assert len(projected) == len(messages)
-    assert [(m.role.value, m.name, m.call_id) for m in projected] \
-        == [(m.role.value, m.name, m.call_id) for m in messages]
+    assert [(m.role.value, m.name, m.call_id) for m in projected] == [
+        (m.role.value, m.name, m.call_id) for m in messages
+    ]
 
     # 5) Every stub re-derives against public authority before the request may
     #    leave (the gate ``check_runtime_dependencies`` runs).
@@ -351,13 +417,14 @@ async def test_incident_shape_fits_once_control_results_are_bounded(tmp_path, fl
     #    admission map ``verify_request`` returns, or eliding an executable
     #    attestation would make its body context_page_in-readable.
     from deskpet.execution.current_tool_pages import verify_request
+
     admitted = verify_request(stack, RUN_ID, projected)
     stubbed_effect_ids = {json.loads(m.content)["source"]["effect_id"] for m in stubbed}
     assert stubbed_effect_ids
-    assert not any(descriptor["effect_id"] in stubbed_effect_ids
-                   for descriptor, _ in admitted.values())
-    assert all(descriptor["tool_name"] not in CONTROL_TOOLS
-               for descriptor, _ in admitted.values())
+    assert not any(
+        descriptor["effect_id"] in stubbed_effect_ids for descriptor, _ in admitted.values()
+    )
+    assert all(descriptor["tool_name"] not in CONTROL_TOOLS for descriptor, _ in admitted.values())
 
     # 7) Deterministic: the same Run state projects to the same bytes.
     again = await projector(request, messages)
@@ -375,14 +442,21 @@ async def test_newest_provider_turn_control_results_stay_verbatim(tmp_path, flas
     request = SimpleNamespace(run_id=SimpleNamespace(value=RUN_ID), provider_turn_ordinal=10)
 
     newest = max(source["provider_turn_ordinal"] for source in sources)
-    newest_ids = {s["effect_id"] for s in sources
-                  if s["provider_turn_ordinal"] == newest and s["tool_name"] in CONTROL_TOOLS}
+    newest_ids = {
+        s["effect_id"]
+        for s in sources
+        if s["provider_turn_ordinal"] == newest and s["tool_name"] in CONTROL_TOOLS
+    }
     assert newest_ids, "the incident's last batch really does contain a control result"
 
     projected = await projector(request, messages, force_all=True)
-    kept = {m.call_id.value for m in projected
-            if m.role.value == "tool" and m.name in CONTROL_TOOLS
-            and not (m.metadata and m.metadata.get("source") == CONTROL_MARKER)}
+    kept = {
+        m.call_id.value
+        for m in projected
+        if m.role.value == "tool"
+        and m.name in CONTROL_TOOLS
+        and not (m.metadata and m.metadata.get("source") == CONTROL_MARKER)
+    }
     for effect_id in newest_ids:
         assert effects[effect_id].raw_call_id in kept, effect_id
 
@@ -392,7 +466,8 @@ async def test_newest_provider_turn_control_results_stay_verbatim(tmp_path, flas
 
 @pytest.mark.asyncio
 async def test_the_protected_turn_comes_from_all_sources_not_the_elidable_ones(
-        tmp_path, flash_calibration):
+    tmp_path, flash_calibration
+):
     """Independent-review MUST-FIX (2026-09-09).
 
     The common HM shape is one big ``task_scope_search`` at turn 1 plus routes
@@ -406,20 +481,27 @@ async def test_the_protected_turn_comes_from_all_sources_not_the_elidable_ones(
     big = {"tag": "search", "filler": "x" * 12000}
     route = {"tag": "route", "filler": "x" * 6000}
     recent = {"tag": "recent", "filler": "x" * 2500}
-    rows = [("task_scope_search", big, 1), ("context_route", route, 1),
-            ("tool_search", recent, 2)]
+    rows = [("task_scope_search", big, 1), ("context_route", route, 1), ("tool_search", recent, 2)]
     messages = [Message(MessageRole.SYSTEM, "S" * 40), Message(MessageRole.USER, CURRENT_TEXT)]
     effects, sources = {}, []
     for position, (name, value, turn) in enumerate(rows):
         effect_id = "effect-%d" % position
         raw_call_id = "call_%d" % position
-        effects[effect_id] = FakeEffect(effect_id=effect_id, tool_name=name,
-                                        raw_call_id=raw_call_id, value=value)
-        messages.append(Message(MessageRole.TOOL, public_body(value), name=name,
-                                call_id=CallId(raw_call_id)))
-        sources.append(dict(effect_id=effect_id, provider_turn_ordinal=turn,
-                            state="succeeded", tool_name=name,
-                            item_ordinal=len(messages) - 1))
+        effects[effect_id] = FakeEffect(
+            effect_id=effect_id, tool_name=name, raw_call_id=raw_call_id, value=value
+        )
+        messages.append(
+            Message(MessageRole.TOOL, public_body(value), name=name, call_id=CallId(raw_call_id))
+        )
+        sources.append(
+            dict(
+                effect_id=effect_id,
+                provider_turn_ordinal=turn,
+                state="succeeded",
+                tool_name=name,
+                item_ordinal=len(messages) - 1,
+            )
+        )
     messages = tuple(messages)
     stack = FakeStack(effects)
     stack.sources = sources
@@ -429,15 +511,17 @@ async def test_the_protected_turn_comes_from_all_sources_not_the_elidable_ones(
     # Only ONE elidable control result exists, and it is the oldest thing here.
     elidable = [s for s in sources if s["tool_name"] in STUBBABLE_CONTROL_TOOLS]
     assert len(elidable) == 1 and elidable[0]["provider_turn_ordinal"] == 1
-    assert _control_tool_tokens(messages) > control_result_allowance(metadata, provider_turn_ordinal=3)
+    assert _control_tool_tokens(messages) > control_result_allowance(
+        metadata, provider_turn_ordinal=3
+    )
 
     projected = await projector(request, messages)
-    stubbed = [m for m in projected
-               if m.metadata and m.metadata.get("source") == CONTROL_MARKER]
+    stubbed = [m for m in projected if m.metadata and m.metadata.get("source") == CONTROL_MARKER]
     assert len(stubbed) == 1 and stubbed[0].name == "task_scope_search"
     # …and the route carrier, which shares that stale turn ordinal, is untouched.
-    assert [m.content for m in projected if m.name == "context_route"] \
-        == [m.content for m in messages if m.name == "context_route"]
+    assert [m.content for m in projected if m.name == "context_route"] == [
+        m.content for m in messages if m.name == "context_route"
+    ]
 
 
 @pytest.mark.asyncio
@@ -446,20 +530,36 @@ async def test_a_run_below_the_control_allowance_keeps_every_byte(tmp_path, flas
     admission, metadata = admission_facts()
     small = public_body({"tag": "small", "filler": "x" * 40})
     effect_id = "effect-small"
-    effects = {effect_id: FakeEffect(effect_id=effect_id, tool_name="task_scope_search",
-                                     raw_call_id="call_small", value={"tag": "small", "filler": "x" * 40})}
-    messages = (Message(MessageRole.SYSTEM, "S" * 40),
-                Message(MessageRole.USER, CURRENT_TEXT),
-                Message(MessageRole.ASSISTANT, ""),
-                Message(MessageRole.TOOL, small, name="task_scope_search",
-                        call_id=CallId("call_small")))
+    effects = {
+        effect_id: FakeEffect(
+            effect_id=effect_id,
+            tool_name="task_scope_search",
+            raw_call_id="call_small",
+            value={"tag": "small", "filler": "x" * 40},
+        )
+    }
+    messages = (
+        Message(MessageRole.SYSTEM, "S" * 40),
+        Message(MessageRole.USER, CURRENT_TEXT),
+        Message(MessageRole.ASSISTANT, ""),
+        Message(MessageRole.TOOL, small, name="task_scope_search", call_id=CallId("call_small")),
+    )
     stack = FakeStack(effects)
-    stack.sources = [dict(effect_id=effect_id, provider_turn_ordinal=1, state="succeeded",
-                          tool_name="task_scope_search", item_ordinal=3)]
+    stack.sources = [
+        dict(
+            effect_id=effect_id,
+            provider_turn_ordinal=1,
+            state="succeeded",
+            tool_name="task_scope_search",
+            item_ordinal=3,
+        )
+    ]
     projector = make_projector(tmp_path, stack)
     request = SimpleNamespace(run_id=SimpleNamespace(value=RUN_ID), provider_turn_ordinal=1)
 
-    assert _control_tool_tokens(messages) <= control_result_allowance(metadata, provider_turn_ordinal=1)
+    assert _control_tool_tokens(messages) <= control_result_allowance(
+        metadata, provider_turn_ordinal=1
+    )
     projected = await projector(request, messages)
     # Nothing to page and nothing over any bound: the projector declines, which
     # is what keeps this turn's request bytes exactly what they were before.

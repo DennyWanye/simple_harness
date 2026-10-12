@@ -43,6 +43,7 @@ class LiveRun:
     next_live_seq: int = 1
     recovery_deferred_until: float = 0.0
 
+
 class BoundedLiveIndex:
     """Bounds runs, retained events and every subscriber queue."""
 
@@ -88,10 +89,7 @@ class BoundedLiveIndex:
         if len(self._runs) < self.max_runs:
             return
         for run_id, active in tuple(self._runs.items()):
-            if (
-                active.subscribers
-                or (active.task is not None and not active.task.done())
-            ):
+            if active.subscribers or (active.task is not None and not active.task.done()):
                 continue
             if active.record is None or active.record.status not in TERMINAL_RUN_STATUSES:
                 continue
@@ -110,14 +108,11 @@ class BoundedLiveIndex:
         return tuple(
             event
             for event in active.events
-            if event.live_cursor is not None
-            and event.live_cursor.live_seq > after_live_seq
+            if event.live_cursor is not None and event.live_cursor.live_seq > after_live_seq
         )
 
     def subscribe(self, active: LiveRun) -> asyncio.Queue[LiveQueueItem]:
-        queue: asyncio.Queue[LiveQueueItem] = asyncio.Queue(
-            self.subscriber_queue_size
-        )
+        queue: asyncio.Queue[LiveQueueItem] = asyncio.Queue(self.subscriber_queue_size)
         active.subscribers.add(queue)
         return queue
 
@@ -149,5 +144,6 @@ class BoundedLiveIndex:
     def finish_all(self) -> None:
         for run_id, active in tuple(self._runs.items()):
             self.finish(run_id, active, release=True)
+
 
 __all__ = ["BoundedLiveIndex", "LiveRun", "LiveStreamOverflow"]

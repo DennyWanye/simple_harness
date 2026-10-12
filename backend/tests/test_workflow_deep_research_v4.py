@@ -119,13 +119,18 @@ def test_github_release_api_document_preserves_concrete_recent_changes() -> None
     assert _github_releases_api_url(url) == (
         "https://api.github.com/repos/vllm-project/vllm/releases?per_page=3"
     )
-    document = _github_release_document(url, [{
-        "name": "vLLM v0.25.0",
-        "tag_name": "v0.25.0",
-        "published_at": "2026-07-12T08:00:00Z",
-        "body": "Model Runner V2 is now the default and improves serving throughput.",
-        "draft": False,
-    }])
+    document = _github_release_document(
+        url,
+        [
+            {
+                "name": "vLLM v0.25.0",
+                "tag_name": "v0.25.0",
+                "published_at": "2026-07-12T08:00:00Z",
+                "body": "Model Runner V2 is now the default and improves serving throughput.",
+                "draft": False,
+            }
+        ],
+    )
     assert document is not None
     assert document["published_at"] == "2026-07-12"
     assert document["source_kind"] == "repository"
@@ -139,7 +144,13 @@ def _handler_gate_findings(
     zero_recency: bool = False,
     unknown_maturity: bool = False,
 ) -> tuple[TechnologyFinding, ...]:
-    kinds = ("model_inference", "agent", "multimodal", "training_inference_system", "open_infrastructure")
+    kinds = (
+        "model_inference",
+        "agent",
+        "multimodal",
+        "training_inference_system",
+        "open_infrastructure",
+    )
     statements = (
         "Model Runner V2 is now the default for all dense models.",
         "SLEUTH uses a structured epistemic working memory.",
@@ -149,13 +160,17 @@ def _handler_gate_findings(
     )
     return tuple(
         TechnologyFinding(
-            finding_id=f"handler-{index}", entity=f"HandlerEntity{index}",
-            topic_kind=kinds[index - 1], topic_label=f"Theme {index}", claim_ids=(f"c{index}",),
+            finding_id=f"handler-{index}",
+            entity=f"HandlerEntity{index}",
+            topic_kind=kinds[index - 1],
+            topic_label=f"Theme {index}",
+            claim_ids=(f"c{index}",),
             published_at=None if zero_recency else f"2026-07-{index:02d}",
             recency_score=0.0 if zero_recency else 1.0,
             impact_score=1 + index % 3,
             maturity="unknown" if unknown_maturity else ("adopted" if index == 1 else "emerging"),
-            evidence_quality=2 + index % 2, winning_citation_ids=(index,),
+            evidence_quality=2 + index % 2,
+            winning_citation_ids=(index,),
             total_score=0.5 if same_score else 0.45 + index * 0.05,
             statement=statements[index - 1],
         )
@@ -167,7 +182,9 @@ def test_v4_is_new_graph_and_does_not_mutate_v3_definition() -> None:
     assert DEEP_RESEARCH_V4_DEFINITION.version == "v4"
     assert DEEP_RESEARCH_V4_DEFINITION.state_schema_version == 4
     assert DEEP_RESEARCH_V3_DEFINITION.version == "v3"
-    routes = {edge.source: dict(edge.routes) for edge in DEEP_RESEARCH_V4_DEFINITION.conditional_edges}
+    routes = {
+        edge.source: dict(edge.routes) for edge in DEEP_RESEARCH_V4_DEFINITION.conditional_edges
+    }
     assert routes == {
         "direct_join": {"research": "research", "no_results": "no_results_finalize"},
         "cite": {"success": "persist", "insufficient_evidence": "insufficient_evidence_finalize"},
@@ -177,7 +194,9 @@ def test_v4_is_new_graph_and_does_not_mutate_v3_definition() -> None:
 @pytest.mark.asyncio
 async def test_normalize_freezes_as_of_and_technology_profile() -> None:
     state = initial_state(topic=ORIGINAL_TOPIC, run_id="run-v4")
-    patch = await normalize_handler(state, WorkflowContext(ports={"clock": lambda: date(2026, 7, 15)}))
+    patch = await normalize_handler(
+        state, WorkflowContext(ports={"clock": lambda: date(2026, 7, 15)})
+    )
     values = patch.to_dict()["values"]
     assert values["intent_profile"] == {
         "kind": "technology_intelligence",
@@ -189,22 +208,30 @@ async def test_normalize_freezes_as_of_and_technology_profile() -> None:
     assert values["research_config"]["prefer_structured_synthesis"] is True
     assert values["research_config"]["prefer_best_structured_synthesis"] is True
     resumed = {**state, "values": values}
-    second = await normalize_handler(resumed, WorkflowContext(ports={"clock": lambda: date(2030, 1, 1)}))
+    second = await normalize_handler(
+        resumed, WorkflowContext(ports={"clock": lambda: date(2030, 1, 1)})
+    )
     assert second.to_dict()["values"]["intent_profile"]["as_of_date"] == "2026-07-15"
 
 
 @pytest.mark.asyncio
 async def test_technology_plan_uses_fixed_slots_and_short_queries() -> None:
     state = initial_state(topic=ORIGINAL_TOPIC, run_id="run-v4")
-    normalized = await normalize_handler(state, WorkflowContext(ports={"clock": lambda: date(2026, 7, 15)}))
+    normalized = await normalize_handler(
+        state, WorkflowContext(ports={"clock": lambda: date(2026, 7, 15)})
+    )
     state["values"] = normalized.to_dict()["values"]
     started = time.time()
     planned = await plan_handler(state, WorkflowContext())
     values = planned.to_dict()["values"]
     assert 3 <= len(values["technology_topics"]) <= 5
     assert values["active_branch_count"] == len(values["technology_topics"])
-    assert all(ORIGINAL_TOPIC not in item["discovery_query"] for item in values["technology_topics"])
-    assert set(values["technology_topic_by_branch"]) == {f"b{i}" for i in range(len(values["technology_topics"]))}
+    assert all(
+        ORIGINAL_TOPIC not in item["discovery_query"] for item in values["technology_topics"]
+    )
+    assert set(values["technology_topic_by_branch"]) == {
+        f"b{i}" for i in range(len(values["technology_topics"]))
+    }
     for branch_id, topic in values["technology_topic_by_branch"].items():
         assert values["branch_work_items"][branch_id]["questions"] == [topic["discovery_query"]]
     assert values["sub_questions"] == [
@@ -241,7 +268,9 @@ async def test_source_pack_switch_keeps_only_the_discovery_query() -> None:
 
 
 @pytest.mark.asyncio
-async def test_technology_rerank_prioritizes_primary_sources_over_higher_scored_blog_posts() -> None:
+async def test_technology_rerank_prioritizes_primary_sources_over_higher_scored_blog_posts() -> (
+    None
+):
     state = initial_state(
         topic=ORIGINAL_TOPIC,
         run_id="authority-rerank",
@@ -315,7 +344,13 @@ async def test_zero_candidate_route_short_circuits_with_utf8_failure_and_no_deli
     assert values["delivery_intents"] == []
     assert "report_payload" not in values
     assert values["terminal_public"]["skipped_stage_ids"] == [
-        "fetch", "score", "gap", "rerank", "synth", "cite", "persist"
+        "fetch",
+        "score",
+        "gap",
+        "rerank",
+        "synth",
+        "cite",
+        "persist",
     ]
 
 
@@ -345,7 +380,9 @@ async def test_insufficient_evidence_never_delivers_report_or_artifact() -> None
     )
     patch = await insufficient_evidence_finalize(state, WorkflowContext())
     values = patch.to_dict()["values"]
-    assert values["terminal_error"]["user_message"] == "已有候选未通过引用支持与发布门，未生成报告。"
+    assert (
+        values["terminal_error"]["user_message"] == "已有候选未通过引用支持与发布门，未生成报告。"
+    )
     assert values["delivery_intents"] == []
     assert "report_payload" not in values
     assert "report_artifact" not in values
@@ -410,12 +447,15 @@ async def test_compiled_v4_zero_results_never_invokes_fetch_or_later_handlers() 
     assert result["values"]["terminal_public"]["metrics"]["actual_requests"] == 15
     assert result["values"]["terminal_public"]["metrics"]["empty"] == 15
     assert result["values"]["public_progress"]["completed_stage_ids"] == [
-        "normalize", "plan", "expand", "search", "direct"
+        "normalize",
+        "plan",
+        "expand",
+        "search",
+        "direct",
     ]
     assert "report_payload" not in result["values"]
     skipped = [
-        event for event in result["branch_events"]
-        if event.get("kind") == "source_seed_observation"
+        event for event in result["branch_events"] if event.get("kind") == "source_seed_observation"
     ]
     assert len(skipped) == 5
     assert {event["reason_code"] for event in skipped} == {"direct_sources_disabled"}
@@ -464,14 +504,22 @@ async def _planned_technology_state(config: dict[str, object] | None = None):
 
 
 @pytest.mark.asyncio
-async def test_technology_direct_normalizes_arxiv_https_and_filters_out_of_window_metadata() -> None:
+async def test_technology_direct_normalizes_arxiv_https_and_filters_out_of_window_metadata() -> (
+    None
+):
     state = await _planned_technology_state({"direct_sources": True})
     budget = state["values"]["branch_work_items"]["b0"]["budget"]
     state["branch_search"] = {
         "b0": {
-            "branch_id": "b0", "stage": "search", "active": True, "mode": "fanout",
-            "questions": ["model inference"], "result": [], "errors": [],
-            "budget_before": budget, "budget_after": budget,
+            "branch_id": "b0",
+            "stage": "search",
+            "active": True,
+            "mode": "fanout",
+            "questions": ["model inference"],
+            "result": [],
+            "errors": [],
+            "budget_before": budget,
+            "budget_after": budget,
         }
     }
 
@@ -487,18 +535,22 @@ async def test_technology_direct_normalizes_arxiv_https_and_filters_out_of_windo
             status="hit",
             items=[
                 {
-                    "url": "http://arxiv.org/abs/2501.00001", "title": "Old inference paper",
+                    "url": "http://arxiv.org/abs/2501.00001",
+                    "title": "Old inference paper",
                     "text": "Old model inference paper. Published: 2025-01-10T00:00:00Z",
                 },
                 {
-                    "url": "http://arxiv.org/abs/2607.00002", "title": "Current inference paper",
+                    "url": "http://arxiv.org/abs/2607.00002",
+                    "title": "Current inference paper",
                     "text": "Current model inference paper. Published: 2026-07-10T00:00:00Z",
                 },
             ],
         )
 
     patch = await branch_handler(
-        "direct", "b0", state,
+        "direct",
+        "b0",
+        state,
         WorkflowContext(ports={"search": ResearchSearchPort(search, direct_call=direct)}),
     )
     rows = patch.to_dict()["branch_direct"]["b0"]["result"]
@@ -513,31 +565,47 @@ async def test_gateway_seed_enforces_its_allowed_domains() -> None:
     budget = state["values"]["branch_work_items"]["b0"]["budget"]
     state["branch_expand"] = {
         "b0": {
-            "branch_id": "b0", "stage": "expand", "active": True, "mode": "fanout",
+            "branch_id": "b0",
+            "stage": "expand",
+            "active": True,
+            "mode": "fanout",
             "questions": ["model inference"],
-            "result": [{
-                "query": "model inference site:github.com", "question": "model inference",
-                "kind": "repository", "allowed_domains": ["github.com"],
-            }],
-            "errors": [], "budget_before": budget, "budget_after": budget,
+            "result": [
+                {
+                    "query": "model inference site:github.com",
+                    "question": "model inference",
+                    "kind": "repository",
+                    "allowed_domains": ["github.com"],
+                }
+            ],
+            "errors": [],
+            "budget_before": budget,
+            "budget_after": budget,
         }
     }
 
     async def search(query: str, *, max_results: int):
         del query, max_results
-        return ResearchSearchResults([
-            {
-                "url": "https://github.com/vllm-project/vllm", "title": "vLLM inference runtime",
-                "snippet": "Open source model inference and serving runtime.",
-            },
-            {
-                "url": "https://spam.example/github-roundup", "title": "GitHub model roundup",
-                "snippet": "A secondary model inference roundup.",
-            },
-        ], observation={"provider_attempt_count": 1})
+        return ResearchSearchResults(
+            [
+                {
+                    "url": "https://github.com/vllm-project/vllm",
+                    "title": "vLLM inference runtime",
+                    "snippet": "Open source model inference and serving runtime.",
+                },
+                {
+                    "url": "https://spam.example/github-roundup",
+                    "title": "GitHub model roundup",
+                    "snippet": "A secondary model inference roundup.",
+                },
+            ],
+            observation={"provider_attempt_count": 1},
+        )
 
     patch = await branch_handler(
-        "search", "b0", state,
+        "search",
+        "b0",
+        state,
         WorkflowContext(ports={"search": ResearchSearchPort(search)}),
     )
     rows = patch.to_dict()["branch_search"]["b0"]["result"]
@@ -577,7 +645,9 @@ async def test_technology_fetch_has_total_budget_metadata_and_navigation_filter(
         }
 
     search_context = WorkflowContext(ports={"search": ResearchSearchPort(search)})
-    state["branch_expand"] = (await branch_handler("expand", "b0", state, search_context)).to_dict()["branch_expand"]
+    state["branch_expand"] = (
+        await branch_handler("expand", "b0", state, search_context)
+    ).to_dict()["branch_expand"]
     search_patch = await branch_handler("search", "b0", state, search_context)
     state["branch_search"] = search_patch.to_dict()["branch_search"]
     state["branch_direct"] = (
@@ -592,7 +662,11 @@ async def test_technology_fetch_has_total_budget_metadata_and_navigation_filter(
     assert all("navigation" not in url for url in fetched)
     assert len(documents) == 3
     assert {document["published_at"] for document in documents} <= {
-        "2026-07-01", "2026-07-02", "2026-07-03", "2026-07-04", "2026-07-05"
+        "2026-07-01",
+        "2026-07-02",
+        "2026-07-03",
+        "2026-07-04",
+        "2026-07-05",
     }
 
 
@@ -602,22 +676,31 @@ async def test_technology_fetch_rechecks_date_metadata_discovered_from_page() ->
     budget = state["values"]["branch_work_items"]["b0"]["budget"]
     state["branch_search"] = {
         "b0": {
-            "branch_id": "b0", "stage": "search", "active": True, "mode": "fanout",
-            "questions": ["model inference"], "errors": [],
-            "budget_before": budget, "budget_after": budget,
-            "result": [{
-                "url": "https://openai.com/research/old-runtime",
-                "canonical_url": "https://openai.com/research/old-runtime",
-                "title": "Model inference runtime release",
-                "snippet": "A model inference serving capability release.",
-            }],
+            "branch_id": "b0",
+            "stage": "search",
+            "active": True,
+            "mode": "fanout",
+            "questions": ["model inference"],
+            "errors": [],
+            "budget_before": budget,
+            "budget_after": budget,
+            "result": [
+                {
+                    "url": "https://openai.com/research/old-runtime",
+                    "canonical_url": "https://openai.com/research/old-runtime",
+                    "title": "Model inference runtime release",
+                    "snippet": "A model inference serving capability release.",
+                }
+            ],
         }
     }
     state["branch_direct"] = {}
 
     async def fetch(url: str):
         return {
-            "url": url, "title": "Old runtime", "published_at": "2025-01-01",
+            "url": url,
+            "title": "Old runtime",
+            "published_at": "2025-01-01",
             "text": "The model inference serving runtime released a supported capability. " * 8,
         }
 
@@ -677,31 +760,45 @@ async def test_technology_fetch_diversifies_real_serp_and_arxiv_shape() -> None:
         }
         for index in range(13)
     ]
-    direct_rows.append({
-        "url": "https://arxiv.org/abs/2607.99999",
-        "canonical_url": "https://arxiv.org/abs/2607.99999",
-        "title": "EHR foundation model for electronic health records",
-        "snippet": "A clinical foundation model for hospital patient records.",
-        "question": topic["label"],
-        "provider": "arxiv",
-        "direct": True,
-        "source_kind": "scholarly",
-        "published_at": "2026-07-15",
-    })
+    direct_rows.append(
+        {
+            "url": "https://arxiv.org/abs/2607.99999",
+            "canonical_url": "https://arxiv.org/abs/2607.99999",
+            "title": "EHR foundation model for electronic health records",
+            "snippet": "A clinical foundation model for hospital patient records.",
+            "question": topic["label"],
+            "provider": "arxiv",
+            "direct": True,
+            "source_kind": "scholarly",
+            "published_at": "2026-07-15",
+        }
+    )
     assert len(search_rows) == 41
     assert len(direct_rows) == 14
     state["branch_search"] = {
         "b0": {
-            "branch_id": "b0", "stage": "search", "active": True, "mode": "fanout",
-            "questions": [topic["label"]], "result": search_rows, "errors": [],
-            "budget_before": budget, "budget_after": budget,
+            "branch_id": "b0",
+            "stage": "search",
+            "active": True,
+            "mode": "fanout",
+            "questions": [topic["label"]],
+            "result": search_rows,
+            "errors": [],
+            "budget_before": budget,
+            "budget_after": budget,
         }
     }
     state["branch_direct"] = {
         "b0": {
-            "branch_id": "b0", "stage": "direct", "active": True, "mode": "fanout",
-            "questions": [topic["label"]], "result": direct_rows, "errors": [],
-            "budget_before": budget, "budget_after": budget,
+            "branch_id": "b0",
+            "stage": "direct",
+            "active": True,
+            "mode": "fanout",
+            "questions": [topic["label"]],
+            "result": direct_rows,
+            "errors": [],
+            "budget_before": budget,
+            "budget_after": budget,
         }
     }
     fetched: list[str] = []
@@ -741,7 +838,9 @@ async def test_pdf_fetch_timeout_is_bounded_and_fail_closed() -> None:
         {"technology_total_fetch_budget": 5, "technology_pdf_timeout_s": 0.05}
     )
     context = WorkflowContext(ports={})
-    state["branch_expand"] = (await branch_handler("expand", "b0", state, context)).to_dict()["branch_expand"]
+    state["branch_expand"] = (await branch_handler("expand", "b0", state, context)).to_dict()[
+        "branch_expand"
+    ]
     state["branch_search"] = {
         "b0": {
             "branch_id": "b0",
@@ -822,10 +921,18 @@ async def test_presentation_localization_cannot_add_numbers_or_change_citations(
 @pytest.mark.asyncio
 async def test_supervised_fine_tuning_fallback_remains_specific() -> None:
     finding = TechnologyFinding(
-        finding_id="f-unibrowse", entity="UNIBROWSE", topic_kind="multimodal",
-        topic_label="原生多模态", claim_ids=("c1",), published_at="2026-07-12",
-        recency_score=1.0, impact_score=2, maturity="experimental", evidence_quality=2,
-        winning_citation_ids=(1,), total_score=0.7,
+        finding_id="f-unibrowse",
+        entity="UNIBROWSE",
+        topic_kind="multimodal",
+        topic_label="原生多模态",
+        claim_ids=("c1",),
+        published_at="2026-07-12",
+        recency_score=1.0,
+        impact_score=2,
+        maturity="experimental",
+        evidence_quality=2,
+        winning_citation_ids=(1,),
+        total_score=0.7,
         statement="UNIBROWSE trains a 35B-scale agent via supervised fine-tuning.",
     )
     localized = await _localize_findings((finding,), WorkflowContext())
@@ -837,69 +944,93 @@ async def test_supervised_fine_tuning_fallback_remains_specific() -> None:
     ("entity", "topic_kind", "statement", "expected"),
     (
         (
-                "Gemini API", "multimodal",
-                "The Gemini API added developer logs support for the Interactions API on July 6, 2026.",
-                "Gemini API 为 Interactions API 新增开发者日志支持，使相关调用过程能够被记录和检查。",
-            ),
-            (
-                "Gemini Omni Flash", "multimodal",
-                "Gemini Omni Flash was released in public preview on June 30, 2026.",
-                "Gemini Omni Flash 已进入公开预览阶段，可用于受限范围的技术验证。",
-            ),
-            (
-                "Google gemini-omni-flash-preview", "multimodal",
-                "Google released gemini-omni-flash-preview in public preview on June 30, 2026.",
-                "Google gemini-omni-flash-preview 已进入公开预览阶段，可用于受限范围的技术验证。",
-            ),
-            (
-                "Gemini 3.5 Flash", "multimodal",
-                "Gemini 3.5 Flash was released for Gemini API and Vertex AI.",
-                "Gemini 3.5 Flash 已面向 Gemini API 和 Vertex AI 发布，可通过这两个平台进行受限范围验证。",
-            ),
-            (
-                "SLEUTH", "agent", "SLEUTH uses a structured epistemic working memory.",
-                "SLEUTH 采用结构化认识论工作记忆来组织来源事实与推理状态。",
+            "Gemini API",
+            "multimodal",
+            "The Gemini API added developer logs support for the Interactions API on July 6, 2026.",
+            "Gemini API 为 Interactions API 新增开发者日志支持，使相关调用过程能够被记录和检查。",
         ),
-            (
-                "Torchtitan", "training_inference_system",
-                "Torchtitan’s graph_trainer added a graph-based CPU activation-offloading pass.",
-                "Torchtitan 的 graph_trainer 新增基于图执行的 CPU 激活卸载处理流程。",
-            ),
-            (
-                "PyTorch 2.11", "training_inference_system",
-                "PyTorch 2.11 added differentiable collectives for distributed training.",
-                "PyTorch 2.11 加入用于分布式训练的 Differentiable Collectives，以支持可微分的集合通信操作。",
-            ),
-            (
-                "PyTorch Monarch", "training_inference_system",
-                "PyTorch Monarch was brought to AMD GPUs on ROCm.",
-                "PyTorch Monarch 已扩展到 AMD GPU 的 ROCm 平台，可用于异构训练系统验证。",
-            ),
-            (
-                "torchcomms", "training_inference_system",
-                "torchcomms is a new communications backend for PyTorch Distributed.",
-                "torchcomms 成为 PyTorch Distributed 的新通信后端，面向大规模集群训练通信。",
-            ),
-            (
-                "Gemma 4 in vLLM", "model_inference",
-                "Gemma 4 in vLLM uses Unified FlashAttention across all layers.",
-                "Gemma 4 in vLLM 的所有模型层均统一采用 Unified FlashAttention 机制。",
-            ),
         (
-            "Kimi K2.5", "open_infrastructure",
+            "Gemini Omni Flash",
+            "multimodal",
+            "Gemini Omni Flash was released in public preview on June 30, 2026.",
+            "Gemini Omni Flash 已进入公开预览阶段，可用于受限范围的技术验证。",
+        ),
+        (
+            "Google gemini-omni-flash-preview",
+            "multimodal",
+            "Google released gemini-omni-flash-preview in public preview on June 30, 2026.",
+            "Google gemini-omni-flash-preview 已进入公开预览阶段，可用于受限范围的技术验证。",
+        ),
+        (
+            "Gemini 3.5 Flash",
+            "multimodal",
+            "Gemini 3.5 Flash was released for Gemini API and Vertex AI.",
+            "Gemini 3.5 Flash 已面向 Gemini API 和 Vertex AI 发布，可通过这两个平台进行受限范围验证。",
+        ),
+        (
+            "SLEUTH",
+            "agent",
+            "SLEUTH uses a structured epistemic working memory.",
+            "SLEUTH 采用结构化认识论工作记忆来组织来源事实与推理状态。",
+        ),
+        (
+            "Torchtitan",
+            "training_inference_system",
+            "Torchtitan’s graph_trainer added a graph-based CPU activation-offloading pass.",
+            "Torchtitan 的 graph_trainer 新增基于图执行的 CPU 激活卸载处理流程。",
+        ),
+        (
+            "PyTorch 2.11",
+            "training_inference_system",
+            "PyTorch 2.11 added differentiable collectives for distributed training.",
+            "PyTorch 2.11 加入用于分布式训练的 Differentiable Collectives，以支持可微分的集合通信操作。",
+        ),
+        (
+            "PyTorch Monarch",
+            "training_inference_system",
+            "PyTorch Monarch was brought to AMD GPUs on ROCm.",
+            "PyTorch Monarch 已扩展到 AMD GPU 的 ROCm 平台，可用于异构训练系统验证。",
+        ),
+        (
+            "torchcomms",
+            "training_inference_system",
+            "torchcomms is a new communications backend for PyTorch Distributed.",
+            "torchcomms 成为 PyTorch Distributed 的新通信后端，面向大规模集群训练通信。",
+        ),
+        (
+            "Gemma 4 in vLLM",
+            "model_inference",
+            "Gemma 4 in vLLM uses Unified FlashAttention across all layers.",
+            "Gemma 4 in vLLM 的所有模型层均统一采用 Unified FlashAttention 机制。",
+        ),
+        (
+            "Kimi K2.5",
+            "open_infrastructure",
             "Kimi K2.5 is an open-source, native multimodal agentic model.",
             "Kimi K2.5 同时具备开源、原生多模态与智能体模型属性。",
         ),
     ),
 )
 async def test_common_live_technology_changes_have_specific_safe_fallbacks(
-    entity: str, topic_kind: str, statement: str, expected: str,
+    entity: str,
+    topic_kind: str,
+    statement: str,
+    expected: str,
 ) -> None:
     finding = TechnologyFinding(
-        finding_id=f"f-{entity}", entity=entity, topic_kind=topic_kind,
-        topic_label="AI 技术", claim_ids=("c1",), published_at="2026-07-10",
-        recency_score=1.0, impact_score=1, maturity="emerging", evidence_quality=2,
-        winning_citation_ids=(1,), total_score=0.6, statement=statement,
+        finding_id=f"f-{entity}",
+        entity=entity,
+        topic_kind=topic_kind,
+        topic_label="AI 技术",
+        claim_ids=("c1",),
+        published_at="2026-07-10",
+        recency_score=1.0,
+        impact_score=1,
+        maturity="emerging",
+        evidence_quality=2,
+        winning_citation_ids=(1,),
+        total_score=0.6,
+        statement=statement,
     )
 
     localized = await _localize_findings((finding,), WorkflowContext())
@@ -909,9 +1040,18 @@ async def test_common_live_technology_changes_have_specific_safe_fallbacks(
 
 def test_localization_cannot_add_bare_dates_or_chinese_units() -> None:
     finding = TechnologyFinding(
-        finding_id="f-no-number", entity="RuntimeX", topic_kind="agent", topic_label="Agent",
-        claim_ids=("c1",), published_at=None, recency_score=0.0, impact_score=1,
-        maturity="emerging", evidence_quality=2, winning_citation_ids=(1,), total_score=0.4,
+        finding_id="f-no-number",
+        entity="RuntimeX",
+        topic_kind="agent",
+        topic_label="Agent",
+        claim_ids=("c1",),
+        published_at=None,
+        recency_score=0.0,
+        impact_score=1,
+        maturity="emerging",
+        evidence_quality=2,
+        winning_citation_ids=(1,),
+        total_score=0.4,
         statement="RuntimeX released a supported agent capability.",
     )
     with pytest.raises(ValueError, match="introduced a number"):
@@ -924,17 +1064,33 @@ def test_localization_cannot_add_bare_dates_or_chinese_units() -> None:
 @pytest.mark.asyncio
 async def test_partial_or_english_heavy_localization_is_rejected_with_distinct_fallbacks() -> None:
     first = TechnologyFinding(
-        finding_id="f1", entity="RuntimeX", topic_kind="training_inference_system",
-        topic_label="训练与推理系统", claim_ids=("c1",), published_at="2026-07-01",
-        recency_score=1.0, impact_score=2, maturity="emerging", evidence_quality=3,
-        winning_citation_ids=(1,), total_score=0.8,
+        finding_id="f1",
+        entity="RuntimeX",
+        topic_kind="training_inference_system",
+        topic_label="训练与推理系统",
+        claim_ids=("c1",),
+        published_at="2026-07-01",
+        recency_score=1.0,
+        impact_score=2,
+        maturity="emerging",
+        evidence_quality=3,
+        winning_citation_ids=(1,),
+        total_score=0.8,
         statement="RuntimeX reduced benchmark latency by 2x",
     )
     second = TechnologyFinding(
-        finding_id="f2", entity="AgentKit", topic_kind="agent", topic_label="Agent 与工具调用",
-        claim_ids=("c2",), published_at="2026-07-02", recency_score=1.0,
-        impact_score=1, maturity="emerging", evidence_quality=2,
-        winning_citation_ids=(2,), total_score=0.65,
+        finding_id="f2",
+        entity="AgentKit",
+        topic_kind="agent",
+        topic_label="Agent 与工具调用",
+        claim_ids=("c2",),
+        published_at="2026-07-02",
+        recency_score=1.0,
+        impact_score=1,
+        maturity="emerging",
+        evidence_quality=2,
+        winning_citation_ids=(2,),
+        total_score=0.65,
         statement="AgentKit released supported agent tool calling.",
     )
     with pytest.raises(ValueError, match="incomplete"):
@@ -963,17 +1119,33 @@ async def test_partial_or_english_heavy_localization_is_rejected_with_distinct_f
 @pytest.mark.asyncio
 async def test_localization_retries_only_items_rejected_from_the_first_batch() -> None:
     first = TechnologyFinding(
-        finding_id="f1", entity="RuntimeX", topic_kind="training_inference_system",
-        topic_label="训练与推理系统", claim_ids=("c1",), published_at="2026-07-01",
-        recency_score=1.0, impact_score=2, maturity="emerging", evidence_quality=3,
-        winning_citation_ids=(1,), total_score=0.8,
+        finding_id="f1",
+        entity="RuntimeX",
+        topic_kind="training_inference_system",
+        topic_label="训练与推理系统",
+        claim_ids=("c1",),
+        published_at="2026-07-01",
+        recency_score=1.0,
+        impact_score=2,
+        maturity="emerging",
+        evidence_quality=3,
+        winning_citation_ids=(1,),
+        total_score=0.8,
         statement="RuntimeX reduced benchmark latency by 2x",
     )
     second = TechnologyFinding(
-        finding_id="f2", entity="AgentKit", topic_kind="agent", topic_label="智能体工具调用",
-        claim_ids=("c2",), published_at="2026-07-02", recency_score=1.0,
-        impact_score=1, maturity="emerging", evidence_quality=2,
-        winning_citation_ids=(2,), total_score=0.65,
+        finding_id="f2",
+        entity="AgentKit",
+        topic_kind="agent",
+        topic_label="智能体工具调用",
+        claim_ids=("c2",),
+        published_at="2026-07-02",
+        recency_score=1.0,
+        impact_score=1,
+        maturity="emerging",
+        evidence_quality=2,
+        winning_citation_ids=(2,),
+        total_score=0.65,
         statement="AgentKit released supported agent tool calling.",
     )
     calls = 0
@@ -999,10 +1171,18 @@ async def test_localization_retries_only_items_rejected_from_the_first_batch() -
 
 def test_localization_may_preserve_entity_from_source_title() -> None:
     finding = TechnologyFinding(
-        finding_id="f-title", entity="A2A", topic_kind="agent", topic_label="Agent",
-        claim_ids=("c1",), published_at="2026-07-01", recency_score=1.0,
-        impact_score=1, maturity="experimental", evidence_quality=2,
-        winning_citation_ids=(1,), total_score=0.6,
+        finding_id="f-title",
+        entity="A2A",
+        topic_kind="agent",
+        topic_label="Agent",
+        claim_ids=("c1",),
+        published_at="2026-07-01",
+        recency_score=1.0,
+        impact_score=1,
+        maturity="experimental",
+        evidence_quality=2,
+        winning_citation_ids=(1,),
+        total_score=0.6,
         statement="Preserving multimodal signals across agent boundaries improves cross-modal reasoning.",
     )
     parsed = _parse_localized_changes(
@@ -1050,7 +1230,11 @@ async def test_cite_keeps_bounded_reserve_until_after_generic_pruning(monkeypatc
     state["values"]["report_payload"] = {
         "status": "completed",
         "citations": [
-            {"citation_id": index, "title": f"Source {index}", "url": f"https://source{index}.example"}
+            {
+                "citation_id": index,
+                "title": f"Source {index}",
+                "url": f"https://source{index}.example",
+            }
             for index in range(1, 13)
         ],
     }
@@ -1113,52 +1297,93 @@ async def test_cite_keeps_bounded_reserve_until_after_generic_pruning(monkeypatc
 
 
 @pytest.mark.asyncio
-async def test_cite_restores_source_date_and_builds_professional_chinese_finding(monkeypatch) -> None:
+async def test_cite_restores_source_date_and_builds_professional_chinese_finding(
+    monkeypatch,
+) -> None:
     state = await _planned_technology_state()
     topics = state["values"]["technology_topics"]
     specs = (
-        ("RuntimeX", "RuntimeX released a model inference runtime with supported interoperability.", "https://openai.com/runtime-x", "2026-07-01"),
-        ("AgentKit", "AgentKit launched a beta agent tool calling capability.", "https://agentkit.example/release", "2026-07-02"),
-        ("VisionCore", "VisionCore preprint prototype supports multimodal vision and audio.", "https://arxiv.org/abs/2607.10003", "2026-07-03"),
-        ("ServeFast", "ServeFast stable production inference system reduced latency by 2x.", "https://nvidia.com/serve-fast", "2026-07-04"),
-            ("MeshStack", "MeshStack released an open source AI framework repository.", "https://github.com/example/mesh-stack", "2026-01-20"),
+        (
+            "RuntimeX",
+            "RuntimeX released a model inference runtime with supported interoperability.",
+            "https://openai.com/runtime-x",
+            "2026-07-01",
+        ),
+        (
+            "AgentKit",
+            "AgentKit launched a beta agent tool calling capability.",
+            "https://agentkit.example/release",
+            "2026-07-02",
+        ),
+        (
+            "VisionCore",
+            "VisionCore preprint prototype supports multimodal vision and audio.",
+            "https://arxiv.org/abs/2607.10003",
+            "2026-07-03",
+        ),
+        (
+            "ServeFast",
+            "ServeFast stable production inference system reduced latency by 2x.",
+            "https://nvidia.com/serve-fast",
+            "2026-07-04",
+        ),
+        (
+            "MeshStack",
+            "MeshStack released an open source AI framework repository.",
+            "https://github.com/example/mesh-stack",
+            "2026-01-20",
+        ),
     )
     state["values"].update(
         {
             "ranked_evidence": [
                 {
-                    "canonical_url": url, "url": url, "content_hash": f"hash-{index}",
-                    "published_at": published_at, "text": statement,
+                    "canonical_url": url,
+                    "url": url,
+                    "content_hash": f"hash-{index}",
+                    "published_at": published_at,
+                    "text": statement,
                 }
                 for index, (_, statement, url, published_at) in enumerate(specs, 1)
             ],
             "citation_sources": [
                 {
-                    "citation_id": index, "canonical_url": url, "url": url,
-                    "title": f"{entity} release", "content_hash": f"hash-{index}",
+                    "citation_id": index,
+                    "canonical_url": url,
+                    "url": url,
+                    "title": f"{entity} release",
+                    "content_hash": f"hash-{index}",
                 }
                 for index, (entity, _, url, _) in enumerate(specs, 1)
             ],
             "evidence_passages": [
                 {
-                    "passage_id": f"p{index}", "source_citation_id": index,
-                    "source_content_hash": f"hash-{index}", "canonical_url": url,
-                    "question_id": topics[index - 1]["label"], "text": statement,
-                    "start": 0, "end": len(statement), "relevance": 1.0,
+                    "passage_id": f"p{index}",
+                    "source_citation_id": index,
+                    "source_content_hash": f"hash-{index}",
+                    "canonical_url": url,
+                    "question_id": topics[index - 1]["label"],
+                    "text": statement,
+                    "start": 0,
+                    "end": len(statement),
+                    "relevance": 1.0,
                 }
                 for index, (_, statement, url, _) in enumerate(specs, 1)
             ],
             "claim_quality": {
                 "published_claims": [
                     {
-                        "claim_id": f"c{index}", "text": statement,
-                        "kind": "factual", "citation_ids": [index],
+                        "claim_id": f"c{index}",
+                        "text": statement,
+                        "kind": "factual",
+                        "citation_ids": [index],
                     }
                     for index, (_, statement, _, _) in enumerate(specs, 1)
                 ],
                 "decisions": [
                     {
-                        "claim_id": f"c{index}", "supported": True,
+                        "claim_id": f"c{index}",
+                        "supported": True,
                         "winning_passage_ids": [f"p{index}"],
                         "winning_source_citation_ids": [index],
                     }
@@ -1188,13 +1413,33 @@ async def test_cite_restores_source_date_and_builds_professional_chinese_finding
 
     async def professional_localizer(prompt: str) -> str:
         del prompt
-        return json.dumps({"items": [
-            {"finding_id": "finding:bfd7d1f474cb", "core_change_zh": "RuntimeX 发布了支持互操作性的模型推理运行时。"},
-            {"finding_id": "finding:c6fed9ddbd7a", "core_change_zh": "AgentKit 启动了支持智能体工具调用的测试版本。"},
-            {"finding_id": "finding:9f709acf797d", "core_change_zh": "VisionCore 预印本原型支持多模态视觉与音频处理。"},
-            {"finding_id": "finding:e537e8436f84", "core_change_zh": "ServeFast 稳定生产推理系统降低了延迟并进入生产使用阶段。"},
-            {"finding_id": "finding:a141983e19a7", "core_change_zh": "MeshStack 发布了用于 AI 基础设施的开源框架仓库。"},
-        ]}, ensure_ascii=False)
+        return json.dumps(
+            {
+                "items": [
+                    {
+                        "finding_id": "finding:bfd7d1f474cb",
+                        "core_change_zh": "RuntimeX 发布了支持互操作性的模型推理运行时。",
+                    },
+                    {
+                        "finding_id": "finding:c6fed9ddbd7a",
+                        "core_change_zh": "AgentKit 启动了支持智能体工具调用的测试版本。",
+                    },
+                    {
+                        "finding_id": "finding:9f709acf797d",
+                        "core_change_zh": "VisionCore 预印本原型支持多模态视觉与音频处理。",
+                    },
+                    {
+                        "finding_id": "finding:e537e8436f84",
+                        "core_change_zh": "ServeFast 稳定生产推理系统降低了延迟并进入生产使用阶段。",
+                    },
+                    {
+                        "finding_id": "finding:a141983e19a7",
+                        "core_change_zh": "MeshStack 发布了用于 AI 基础设施的开源框架仓库。",
+                    },
+                ]
+            },
+            ensure_ascii=False,
+        )
 
     patch = await cite_handler(
         state,
@@ -1242,17 +1487,36 @@ async def test_cite_restores_source_date_and_builds_professional_chinese_finding
     assert "provider_attempts" not in markdown
     assert values["technology_audit_payload"]["finding_gate_codes"] == []
     assert set(values["report_payload"]) == {
-        "schema_version", "status", "reason_code", "topic", "report_md", "body_md",
-        "intent_profile", "public_findings", "citation_count", "report_hash",
+        "schema_version",
+        "status",
+        "reason_code",
+        "topic",
+        "report_md",
+        "body_md",
+        "intent_profile",
+        "public_findings",
+        "citation_count",
+        "report_hash",
     }
 
     state["values"] = values
     state["values"] = (await persist_handler(state, WorkflowContext())).to_dict()["values"]
-    delivered = (await finalize_handler(state, WorkflowContext())).to_dict()["values"]["delivery_intents"]
+    delivered = (await finalize_handler(state, WorkflowContext())).to_dict()["values"][
+        "delivery_intents"
+    ]
 
     forbidden = {
-        "provider_attempts", "published_claims", "coverage", "errors", "claims", "raw_claims",
-        "query", "url", "passages", "citation_sources", "technology_audit_payload",
+        "provider_attempts",
+        "published_claims",
+        "coverage",
+        "errors",
+        "claims",
+        "raw_claims",
+        "query",
+        "url",
+        "passages",
+        "citation_sources",
+        "technology_audit_payload",
     }
 
     def keys(value):

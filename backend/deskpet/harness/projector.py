@@ -59,26 +59,40 @@ class GoalTerminalProjection:
 
     def association_event(self, spec: RunCreate, target_id: str) -> RunEventCandidate:
         return RunEventCandidate(
-            event_key=f"goal:{target_id}", kind="goal_associated",
-            status=OutcomeStatus.ACCEPTED, driver_kind=spec.driver_kind,
+            event_key=f"goal:{target_id}",
+            kind="goal_associated",
+            status=OutcomeStatus.ACCEPTED,
+            driver_kind=spec.driver_kind,
             payload={"target_id": target_id},
         )
 
     def deliveries(self, record: RunRecord, events: Sequence[RunEvent]) -> Sequence[DeliverySpec]:
-        target = next((str(event.candidate.payload["target_id"]) for event in events
-                       if event.kind == "goal_associated"), None)
-        return () if target is None else (DeliverySpec(
-            "goal_projection", "session-goals", target,
-            DeliveryPolicy.DURABLE_REQUIRED,
-        ),)
+        target = next(
+            (
+                str(event.candidate.payload["target_id"])
+                for event in events
+                if event.kind == "goal_associated"
+            ),
+            None,
+        )
+        return (
+            ()
+            if target is None
+            else (
+                DeliverySpec(
+                    "goal_projection",
+                    "session-goals",
+                    target,
+                    DeliveryPolicy.DURABLE_REQUIRED,
+                ),
+            )
+        )
 
     def requires_durable(self, _request: object, host: object) -> bool:
         session_id = str(getattr(host, "session_id", "") or "")
         return bool(session_id and self.resolve(session_id) is not None)
 
-    def freeze_deliveries(
-        self, _request: object, host: object
-    ) -> Sequence[DeliverySpec]:
+    def freeze_deliveries(self, _request: object, host: object) -> Sequence[DeliverySpec]:
         session_id = str(getattr(host, "session_id", "") or "")
         target = self.resolve(session_id) if session_id else None
         if target is None:
@@ -97,12 +111,13 @@ class GoalTerminalProjection:
 
     async def deliver(self, event: RunEvent, target_id: str) -> None:
         if event.run_id != event.root_run_id or event.kind not in {"final", "run.final"}:
-            raise ExecutionError("invalid_goal_projection", "only root terminal events project Goals")
+            raise ExecutionError(
+                "invalid_goal_projection", "only root terminal events project Goals"
+            )
         status = "done" if event.status is OutcomeStatus.SUCCEEDED else "abandoned"
         if not await self._goals.project_terminal(target_id, status):
-            raise ExecutionError(
-                "goal_projection_conflict", "Goal target is absent or changed"
-            )
+            raise ExecutionError("goal_projection_conflict", "Goal target is absent or changed")
+
 
 class ExecutionDeliveryDispatcher:
     """The sole execution-row delivery owner, fenced by activation generation."""
@@ -131,9 +146,7 @@ class ExecutionDeliveryDispatcher:
         if len(self._sinks) != len(items):
             raise ValueError("delivery sink registrations must be unique")
         self._owner_generation = owner_generation
-        self._terminal_delivery_fence = (
-            terminal_delivery_fence or UnboundTerminalDeliveryFence()
-        )
+        self._terminal_delivery_fence = terminal_delivery_fence or UnboundTerminalDeliveryFence()
         self._clock = clock
         self._claim_ttl_seconds = float(claim_ttl_seconds)
         self._retry_base_seconds = float(retry_base_seconds)
@@ -141,8 +154,9 @@ class ExecutionDeliveryDispatcher:
         self._retry_wakeup = retry_wakeup
 
     def _retry_at(self, attempts: int) -> float:
-        delay = min(self._retry_max_seconds,
-                    self._retry_base_seconds * (2 ** min(30, max(0, attempts - 1))))
+        delay = min(
+            self._retry_max_seconds, self._retry_base_seconds * (2 ** min(30, max(0, attempts - 1)))
+        )
         return float(self._clock()) + delay
 
     async def run_once(self) -> bool:
@@ -158,11 +172,11 @@ class ExecutionDeliveryDispatcher:
             key = claim.sink_kind, claim.sink_instance
             sink = self._sinks.get(key)
             if sink is None:
-                raise ExecutionError("sink_not_registered",
-                                     f"delivery sink is not registered: {key!r}")
+                raise ExecutionError(
+                    "sink_not_registered", f"delivery sink is not registered: {key!r}"
+                )
             release_receipt_ref = (
-                claim.release_receipt_ref
-                or f"unbound-terminal:{claim.run_id}:{claim.delivery_id}"
+                claim.release_receipt_ref or f"unbound-terminal:{claim.run_id}:{claim.delivery_id}"
             )
             if not await self._terminal_delivery_fence.authorize(
                 run_id=claim.run_id,
@@ -171,8 +185,7 @@ class ExecutionDeliveryDispatcher:
             ):
                 raise DeliveryDiscarded("terminal_delivery_fenced")
             delivered = not (
-                claim.policy in _BOUND_POLICIES
-                and not await sink.is_bound(claim.target_id)
+                claim.policy in _BOUND_POLICIES and not await sink.is_bound(claim.target_id)
             )
             if delivered:
                 await sink.deliver(await self._store.get_event(claim.event_id), claim.target_id)

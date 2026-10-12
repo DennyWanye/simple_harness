@@ -29,6 +29,7 @@ Source disclosures (so reviewers can sanity-check):
 Unknown models fall back to UNKNOWN_MODEL_PRICE (pessimistic, so nobody
 silently burns budget on an undeclared model).
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -105,7 +106,15 @@ def get_price(provider: str, model: str) -> ModelPrice:
     return PRICING.get((provider.lower(), model), UNKNOWN_MODEL_PRICE)
 
 
-def estimate_cost_usd(provider: str, model: str, *, input_tokens: int, output_tokens: int, cache_read_tokens: int = 0, cache_write_tokens: int = 0) -> float:
+def estimate_cost_usd(
+    provider: str,
+    model: str,
+    *,
+    input_tokens: int,
+    output_tokens: int,
+    cache_read_tokens: int = 0,
+    cache_write_tokens: int = 0,
+) -> float:
     """Compute USD cost for a single call.
 
     Provider bills the four token axes independently. cache_read_tokens

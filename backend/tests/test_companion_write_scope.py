@@ -18,6 +18,7 @@ chat handler 给当前任务注入 `_write_scope_root`，写盘工具读到
 
 acceptance scenarios 来自 specs/capability-gate/spec.md 第 2 个 Requirement。
 """
+
 from __future__ import annotations
 
 import json
@@ -59,8 +60,6 @@ def test_companion_relative_path_resolves_under_workspace(tmp_path: Path) -> Non
     assert write_scope_check("notes/today.md", scope_root=ws) is None
 
 
-
-
 # ---------------------------------------------------------------------------
 # Scenario: write_scope_enforced=false restores legacy behavior
 # ---------------------------------------------------------------------------
@@ -100,9 +99,7 @@ def test_resolve_workspace_root_configured_override(tmp_path: Path, monkeypatch)
 # ---------------------------------------------------------------------------
 def test_scope_violation_message_text() -> None:
     msg = scope_violation_message()
-    assert msg == (
-        "当前任务写盘限定在 workspace；需要写其他项目时请先选择对应工作区"
-    )
+    assert msg == ("当前任务写盘限定在 workspace；需要写其他项目时请先选择对应工作区")
 
 
 # ---------------------------------------------------------------------------
@@ -140,19 +137,13 @@ def test_write_file_no_scope_root_legacy_free_write(tmp_path: Path) -> None:
     assert target.exists()
 
 
-
-
-
-
 def test_run_shell_no_mkdir_unaffected(tmp_path: Path) -> None:
     """run_shell 非写盘命令（echo）即使有 scope_root 也照常执行。"""
     from deskpet.tools.os_tools.run_shell import run_shell
 
     ws = tmp_path / "workspace"
     ws.mkdir()
-    result = run_shell(
-        {"command": "echo scoped_ok", "_write_scope_root": str(ws)}
-    )
+    result = run_shell({"command": "echo scoped_ok", "_write_scope_root": str(ws)})
     payload = json.loads(result)
     assert payload.get("ok") is not False
     assert "scoped_ok" in payload.get("stdout", "")

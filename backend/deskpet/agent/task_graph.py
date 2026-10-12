@@ -14,6 +14,7 @@ Key invariants:
 - ``claim_ready`` is atomic: uses SessionDB's ``_write_lock`` internally.
 - ``update`` to ``done`` triggers progress backfill on ``session_goals``.
 """
+
 from __future__ import annotations
 
 import time
@@ -28,6 +29,7 @@ if TYPE_CHECKING:
 @dataclass
 class TaskNode:
     """In-memory representation of one goal_tasks row."""
+
     task_id: str
     goal_id: str
     session_id: str

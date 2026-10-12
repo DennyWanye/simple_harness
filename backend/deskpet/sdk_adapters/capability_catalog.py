@@ -432,9 +432,7 @@ class ProductCapabilityCatalogSourceAdapter:
         for entry in entries:
             pack_id = _required(entry.get("pack_id"), "run_pack.pack_id")
             version = _required(entry.get("version"), "run_pack.version")
-            manifest_hash = _digest(
-                entry.get("manifest_hash"), "run_pack.manifest_hash"
-            )
+            manifest_hash = _digest(entry.get("manifest_hash"), "run_pack.manifest_hash")
             record = await store.get_version(pack_id, version, manifest_hash)
             if record is None:
                 raise RuntimeError("run_project_skill_version_missing")
@@ -535,13 +533,10 @@ class ProductCapabilityCatalogSourceAdapter:
             selected = next(
                 (
                     binding
-                    for binding in tuple(
-                        getattr(descriptor, "visible_bindings", ()) or ()
-                    )
+                    for binding in tuple(getattr(descriptor, "visible_bindings", ()) or ())
                     if str(getattr(binding, "owner_key", "") or "") == owner_key
                     and str(getattr(binding, "scope", "") or "") == "user"
-                    and str(getattr(binding, "scope_key", "") or "")
-                    == user_scope_key
+                    and str(getattr(binding, "scope_key", "") or "") == user_scope_key
                     and bool(getattr(binding, "active", False))
                 ),
                 None,
@@ -639,8 +634,7 @@ class ProductCapabilityCatalogSourceAdapter:
             if any(str(resolved.get(key) or "") != value for key, value in expected.items()):
                 raise RuntimeError("skill_run_verification_identity_mismatch")
             if (
-                str(resolved.get("capability_snapshot_ref") or "")
-                != lease.snapshot_ref
+                str(resolved.get("capability_snapshot_ref") or "") != lease.snapshot_ref
                 or str(resolved.get("run_catalog_content_stamp") or "")
                 != lease.run_catalog_content_stamp
             ):
@@ -703,9 +697,7 @@ class ProductCapabilityCatalogSourceAdapter:
         if len(ids) != len(set(ids)):
             raise ValueError("canonical capability IDs must be unique")
         provider_names = [
-            item.provider_name
-            for item in records
-            if isinstance(item, ProductExecutableSourceFact)
+            item.provider_name for item in records if isinstance(item, ProductExecutableSourceFact)
         ]
         if len(provider_names) != len(set(provider_names)):
             raise ValueError("Provider Tool names must be unique")
@@ -729,8 +721,7 @@ class ProductCapabilityCatalogSourceAdapter:
         direct: frozenset[str],
     ) -> tuple[ProductExecutableSourceFact, ...]:
         inventory_by_name = {
-            _required(_field(item, "name"), "builtin.inventory.name"): item
-            for item in inventory
+            _required(_field(item, "name"), "builtin.inventory.name"): item for item in inventory
         }
         out: list[ProductExecutableSourceFact] = []
         for spec in specs:
@@ -788,16 +779,12 @@ class ProductCapabilityCatalogSourceAdapter:
             server = _required(source.split(":", 1)[1], "mcp.server")
             name = _required(_field(spec, "name"), "mcp.spec.name")
             if server_states.get(server) != "running":
-                excluded.append(
-                    ProductCapabilitySourceExclusion("mcp", name, "mcp_not_running")
-                )
+                excluded.append(ProductCapabilitySourceExclusion("mcp", name, "mcp_not_running"))
                 continue
             incarnation = str(incarnations.get(server) or "").strip()
             if not incarnation:
                 excluded.append(
-                    ProductCapabilitySourceExclusion(
-                        "mcp", name, "mcp_incarnation_unavailable"
-                    )
+                    ProductCapabilitySourceExclusion("mcp", name, "mcp_incarnation_unavailable")
                 )
                 continue
             raw_schema = _field(spec, "schema")
@@ -823,9 +810,7 @@ class ProductCapabilityCatalogSourceAdapter:
                     "stable_handler_id": stable_handler_id,
                     "build_fingerprint": build_fingerprint,
                     "dispatch_adapter_id": str(_field(spec, "dispatch_adapter_id", "")),
-                    "dispatch_adapter_version": str(
-                        _field(spec, "dispatch_adapter_version", "")
-                    ),
+                    "dispatch_adapter_version": str(_field(spec, "dispatch_adapter_version", "")),
                     "dispatch_adapter_fingerprint": str(
                         _field(spec, "dispatch_adapter_fingerprint", "")
                     ),
@@ -884,20 +869,14 @@ class ProductCapabilityCatalogSourceAdapter:
                     owner_key=_required(_field(skill, "owner_key"), f"{name}.owner_key"),
                     pack_id=_required(_field(skill, "pack_id"), f"{name}.pack_id"),
                     version=_required(_field(skill, "version"), f"{name}.version"),
-                    manifest_hash=_digest(
-                        _field(skill, "manifest_hash"), f"{name}.manifest_hash"
-                    ),
-                    content_hash=_digest(
-                        _field(skill, "content_hash"), f"{name}.content_hash"
-                    ),
+                    manifest_hash=_digest(_field(skill, "manifest_hash"), f"{name}.manifest_hash"),
+                    content_hash=_digest(_field(skill, "content_hash"), f"{name}.content_hash"),
                     scope_hash=_digest(_field(skill, "scope_hash"), f"{name}.scope_hash"),
                     allowed_tools=tuple(
                         sorted(str(item) for item in (_field(skill, "allowed_tools", ()) or ()))
                     ),
                     search_terms=tuple(
-                        value
-                        for value in (when_to_use, *triggers, *task_types)
-                        if value
+                        value for value in (when_to_use, *triggers, *task_types) if value
                     ),
                 )
             )
@@ -915,9 +894,7 @@ class ProductCapabilityCatalogSourceAdapter:
             schema = _frozen_object(
                 _field(start_schema, "canonical_schema"), f"{profile_key}.input_schema"
             )
-            schema_hash = _digest(
-                _field(start_schema, "schema_hash"), f"{profile_key}.schema_hash"
-            )
+            schema_hash = _digest(_field(start_schema, "schema_hash"), f"{profile_key}.schema_hash")
             if schema_hash != _canonical_hash(schema):
                 raise ValueError(f"{profile_key} schema hash differs")
             out.append(
@@ -927,9 +904,7 @@ class ProductCapabilityCatalogSourceAdapter:
                     description=_required(
                         _field(descriptor, "description"), f"{profile_key}.description"
                     ),
-                    use_when=_required(
-                        _field(descriptor, "use_when"), f"{profile_key}.use_when"
-                    ),
+                    use_when=_required(_field(descriptor, "use_when"), f"{profile_key}.use_when"),
                     avoid_when=_required(
                         _field(descriptor, "avoid_when"), f"{profile_key}.avoid_when"
                     ),

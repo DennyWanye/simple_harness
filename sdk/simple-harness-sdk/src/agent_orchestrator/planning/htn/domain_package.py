@@ -115,16 +115,26 @@ class PlanningDomainPackageV1:
                 raise ContractError("unknown task type in operator registration")
             if any(cap not in caps for cap in operator.capabilities):
                 raise ContractError("operator capability is not declared by package")
-        expected = {f"{kind}:{ref}" for kind in ("schemas", "predicates", "task_types", "methods")
-                    for ref in getattr(self, kind)}
+        expected = {
+            f"{kind}:{ref}"
+            for kind in ("schemas", "predicates", "task_types", "methods")
+            for ref in getattr(self, kind)
+        }
         if self.definitions and set(self.definitions) != expected:
             raise ContractError("domain definitions do not match the declared inventory")
         import json
         from types import MappingProxyType
 
         from simple_harness.contracts import canonical_json
+
         # Detach caller-owned dictionaries; installation checks the digest again.
-        object.__setattr__(self, "definitions", MappingProxyType(json.loads(canonical_json({str(k): dict(v) for k, v in self.definitions.items()}))))
+        object.__setattr__(
+            self,
+            "definitions",
+            MappingProxyType(
+                json.loads(canonical_json({str(k): dict(v) for k, v in self.definitions.items()}))
+            ),
+        )
         calculated = content_hash_of(self._body())
         if self.content_hash and self.content_hash != calculated:
             raise ContractError("domain package content_hash does not match canonical content")
@@ -186,7 +196,9 @@ class DomainPackageInstaller:
         if not isinstance(package, PlanningDomainPackageV1):
             raise ContractError("install expects PlanningDomainPackageV1")
         if not package.definitions:
-            raise ContractError("install requires actual domain definitions, not an ID-only manifest")
+            raise ContractError(
+                "install requires actual domain definitions, not an ID-only manifest"
+            )
         if content_hash_of(package._body()) != package.content_hash:
             raise ContractError("domain definitions changed after the package was frozen")
         key = (package.domain_id, package.package_version)

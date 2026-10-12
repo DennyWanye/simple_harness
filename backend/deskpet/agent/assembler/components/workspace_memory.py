@@ -5,6 +5,7 @@
 
 原工作区记忆组件已移除，等待 simple-harness-memory-sdk 集成。
 """
+
 from __future__ import annotations
 
 from typing import Any

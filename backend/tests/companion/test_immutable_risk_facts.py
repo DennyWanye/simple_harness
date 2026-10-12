@@ -79,9 +79,7 @@ def _product(*, workflow: dict | None = None):
         kind = "skill"
     else:
         path = "workflows/daily.json"
-        content = json.dumps(
-            workflow, sort_keys=True, separators=(",", ":")
-        ).encode()
+        content = json.dumps(workflow, sort_keys=True, separators=(",", ":")).encode()
         entries = {
             "workflows": [
                 {
@@ -180,17 +178,13 @@ def test_any_immutable_package_tamper_is_rejected(tamper: str) -> None:
     package = product.package
     if tamper == "file_bytes":
         blobs = tuple(
-            replace(item, payload=b"tampered")
-            if item.blob_kind == "file"
-            else item
+            replace(item, payload=b"tampered") if item.blob_kind == "file" else item
             for item in package.blobs
         )
         package = replace(package, blobs=blobs)
     elif tamper == "archive_bytes":
         blobs = tuple(
-            replace(item, payload=item.payload + b"x")
-            if item.blob_kind == "archive"
-            else item
+            replace(item, payload=item.payload + b"x") if item.blob_kind == "archive" else item
             for item in package.blobs
         )
         package = replace(package, blobs=blobs)
@@ -242,9 +236,7 @@ def test_receipt_or_effect_topology_mismatch_is_rejected() -> None:
 
 
 def test_fixed_workflow_validator_computes_dag_and_effect_safety() -> None:
-    safe = FixedWorkflowDataflowValidator().validate(
-        _workflow(), tool_manifest=_tool_manifest()
-    )
+    safe = FixedWorkflowDataflowValidator().validate(_workflow(), tool_manifest=_tool_manifest())
     assert safe.nodes_known
     assert safe.dataflow_safe
     assert safe.tool_refs == ("tool:memory_recall:v1",)

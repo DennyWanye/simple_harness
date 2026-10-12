@@ -130,13 +130,10 @@ class CapabilityStoreRuntimeSetLedger:
             )
         return activation
 
-    async def create_runtime_set(
-        self, prepared_set: PreparedRuntimeSet
-    ) -> PreparedRuntimeSet:
+    async def create_runtime_set(self, prepared_set: PreparedRuntimeSet) -> PreparedRuntimeSet:
         owner_activation_id = await self._owner_activation_id(prepared_set)
         instances = tuple(
-            self._store_instance(prepared_set, item)
-            for item in prepared_set.instances
+            self._store_instance(prepared_set, item) for item in prepared_set.instances
         )
         record = await self._store.prepare_runtime_set(
             operation_id=prepared_set.operation_id,
@@ -164,13 +161,9 @@ class CapabilityStoreRuntimeSetLedger:
         authorization: RuntimeLaunchAuthorization,
     ) -> str:
         authorization.validate(prepared_set, instance)
-        runtime_instance_id = runtime_instance_id_for(
-            prepared_set, instance
-        )
+        runtime_instance_id = runtime_instance_id_for(prepared_set, instance)
         async with self._store.write_transaction() as db:
-            record = await self._store._get_runtime_set_tx(
-                db, prepared_set.operation_id
-            )
+            record = await self._store._get_runtime_set_tx(db, prepared_set.operation_id)
             self._validate_record(prepared_set, record)
             row = await (
                 await db.execute(
@@ -188,9 +181,7 @@ class CapabilityStoreRuntimeSetLedger:
             if row is None:
                 raise RuntimeError("runtime_instance_missing")
             current_hash = (
-                None
-                if row["authorization_hash"] is None
-                else str(row["authorization_hash"])
+                None if row["authorization_hash"] is None else str(row["authorization_hash"])
             )
             if str(row["status"]) == "launch_claimed":
                 if current_hash != authorization.authorization_hash:
@@ -228,9 +219,7 @@ class CapabilityStoreRuntimeSetLedger:
         result: RuntimeStartResult,
     ) -> None:
         self._validate_result_binding(prepared_set, instance, result)
-        runtime_instance_id = runtime_instance_id_for(
-            prepared_set, instance
-        )
+        runtime_instance_id = runtime_instance_id_for(prepared_set, instance)
         if isinstance(result, RuntimeStartedAck):
             status = "started"
             reason = "started"
@@ -267,15 +256,9 @@ class CapabilityStoreRuntimeSetLedger:
             expected = (status, reason, payload, acknowledged_at)
             actual = (
                 str(row["status"]),
-                None
-                if row["start_outcome"] is None
-                else str(row["start_outcome"]),
-                None
-                if row["session_identity"] is None
-                else str(row["session_identity"]),
-                None
-                if row["start_ack_at"] is None
-                else float(row["start_ack_at"]),
+                None if row["start_outcome"] is None else str(row["start_outcome"]),
+                None if row["session_identity"] is None else str(row["session_identity"]),
+                None if row["start_ack_at"] is None else float(row["start_ack_at"]),
             )
             if str(row["status"]) in {
                 "started",
@@ -286,7 +269,8 @@ class CapabilityStoreRuntimeSetLedger:
             }:
                 normalized_actual = (
                     "started"
-                    if str(row["status"]) in {
+                    if str(row["status"])
+                    in {
                         "health_passed",
                         "activated",
                     }
@@ -340,15 +324,9 @@ class CapabilityStoreRuntimeSetLedger:
     ) -> RuntimeStartResult | None:
         record = await self._store.get_runtime_set(prepared_set.operation_id)
         self._validate_record(prepared_set, record)
-        runtime_instance_id = runtime_instance_id_for(
-            prepared_set, instance
-        )
+        runtime_instance_id = runtime_instance_id_for(prepared_set, instance)
         row = next(
-            (
-                item
-                for item in record.instances
-                if item.runtime_instance_id == runtime_instance_id
-            ),
+            (item for item in record.instances if item.runtime_instance_id == runtime_instance_id),
             None,
         )
         if row is None:
@@ -395,12 +373,8 @@ class CapabilityStoreRuntimeSetLedger:
             or outcome.entry_id != instance.entry_id
         ):
             raise ValueError("runtime health outcome binding mismatch")
-        runtime_instance_id = runtime_instance_id_for(
-            prepared_set, instance
-        )
-        target_status = (
-            "health_passed" if outcome.healthy else "cleanup_required"
-        )
+        runtime_instance_id = runtime_instance_id_for(prepared_set, instance)
+        target_status = "health_passed" if outcome.healthy else "cleanup_required"
         last_error = None if outcome.healthy else "runtime_health_failed"
         async with self._store.write_transaction() as db:
             row = await (
@@ -420,10 +394,7 @@ class CapabilityStoreRuntimeSetLedger:
             }:
                 if str(row["health_outcome_hash"]) != outcome.outcome_hash:
                     raise RuntimeError("runtime_health_outcome_conflict")
-                if (
-                    outcome.healthy
-                    != (str(row["status"]) in {"health_passed", "activated"})
-                ):
+                if outcome.healthy != (str(row["status"]) in {"health_passed", "activated"}):
                     raise RuntimeError("runtime_health_outcome_conflict")
                 return
             if str(row["status"]) != "started":
@@ -455,9 +426,7 @@ class CapabilityStoreRuntimeSetLedger:
                 ),
             )
 
-    async def assert_set_health_passed(
-        self, operation_id: str, runtime_set_hash: str
-    ) -> None:
+    async def assert_set_health_passed(self, operation_id: str, runtime_set_hash: str) -> None:
         record = await self._store.get_runtime_set(operation_id)
         if record is None:
             raise RuntimeError("runtime_set_missing")
@@ -466,21 +435,14 @@ class CapabilityStoreRuntimeSetLedger:
         if any(item.status != "health_passed" for item in record.instances):
             raise RuntimeError("runtime_set_not_healthy")
 
-    async def mark_set_activated(
-        self, operation_id: str, runtime_set_hash: str
-    ) -> None:
+    async def mark_set_activated(self, operation_id: str, runtime_set_hash: str) -> None:
         if not runtime_set_hash:
             raise ValueError("runtime_set_hash is required")
         async with self._store.write_transaction() as db:
             current = await self._store._get_runtime_set_tx(db, operation_id)
-            if (
-                current is None
-                or current.authorization_hash != runtime_set_hash
-            ):
+            if current is None or current.authorization_hash != runtime_set_hash:
                 raise RuntimeError("runtime_set_hash_mismatch")
-            record = await self._store._mark_runtime_set_ready_tx(
-                db, operation_id
-            )
+            record = await self._store._mark_runtime_set_ready_tx(db, operation_id)
             if record.owner_activation_id is not None:
                 await db.execute(
                     """UPDATE capability_owner_runtime_activations
@@ -505,10 +467,7 @@ class CapabilityStoreRuntimeSetLedger:
             raise ValueError("runtime set hash and reason are required")
         async with self._store.write_transaction() as db:
             current = await self._store._get_runtime_set_tx(db, operation_id)
-            if (
-                current is None
-                or current.authorization_hash != runtime_set_hash
-            ):
+            if current is None or current.authorization_hash != runtime_set_hash:
                 raise RuntimeError("runtime_set_hash_mismatch")
             if current.status == "cleanup_required":
                 now = self._store.now()
@@ -524,14 +483,10 @@ class CapabilityStoreRuntimeSetLedger:
                        WHERE operation_id=?""",
                     (now, reason_code, operation_id),
                 )
-                record = await self._store._get_runtime_set_tx(
-                    db, operation_id
-                )
+                record = await self._store._get_runtime_set_tx(db, operation_id)
                 assert record is not None
             else:
-                record = await self._store._retire_runtime_set_tx(
-                    db, operation_id
-                )
+                record = await self._store._retire_runtime_set_tx(db, operation_id)
             await db.execute(
                 """UPDATE capability_runtime_sets
                    SET last_error=? WHERE operation_id=?""",
@@ -550,9 +505,7 @@ class CapabilityStoreRuntimeSetLedger:
                     ),
                 )
 
-    async def _owner_activation_id(
-        self, prepared_set: PreparedRuntimeSet
-    ) -> str:
+    async def _owner_activation_id(self, prepared_set: PreparedRuntimeSet) -> str:
         async with self._store.read_connection() as db:
             row = await (
                 await db.execute(
@@ -581,24 +534,18 @@ class CapabilityStoreRuntimeSetLedger:
     ) -> CapabilityRuntimeInstanceSpec:
         start = dict(instance.start_envelope)
         return CapabilityRuntimeInstanceSpec(
-            runtime_instance_id=runtime_instance_id_for(
-                prepared_set, instance
-            ),
+            runtime_instance_id=runtime_instance_id_for(prepared_set, instance),
             entry_id=instance.entry_id,
             ordinal=instance.ordinal,
             runtime_kind=instance.runtime_kind,
             adapter_fingerprint=instance.adapter_fingerprint,
             argv_hash=fingerprint_json(start.get("argv", [])),
-            env_scope_hash=fingerprint_json(
-                start.get("env_scope", start.get("env", {}))
-            ),
+            env_scope_hash=fingerprint_json(start.get("env_scope", start.get("env", {}))),
             workdir=str(start.get("workdir") or start.get("cwd") or "."),
         )
 
     @classmethod
-    def _validate_record(
-        cls, prepared_set: PreparedRuntimeSet, record: Any
-    ) -> None:
+    def _validate_record(cls, prepared_set: PreparedRuntimeSet, record: Any) -> None:
         if record is None:
             raise RuntimeError("runtime_set_missing")
         expected = (
@@ -607,10 +554,7 @@ class CapabilityStoreRuntimeSetLedger:
             prepared_set.owner_binding_set_stamp,
             prepared_set.runtime_set_hash,
             prepared_set.launch_revocation_epoch,
-            tuple(
-                cls._store_instance(prepared_set, item)
-                for item in prepared_set.instances
-            ),
+            tuple(cls._store_instance(prepared_set, item) for item in prepared_set.instances),
         )
         actual_specs = tuple(
             CapabilityRuntimeInstanceSpec(
@@ -645,8 +589,7 @@ class CapabilityStoreRuntimeSetLedger:
         if (
             result.operation_id != prepared_set.operation_id
             or result.entry_id != instance.entry_id
-            or result.runtime_instance_id
-            != runtime_instance_id_for(prepared_set, instance)
+            or result.runtime_instance_id != runtime_instance_id_for(prepared_set, instance)
         ):
             raise ValueError("runtime start result binding mismatch")
         if (

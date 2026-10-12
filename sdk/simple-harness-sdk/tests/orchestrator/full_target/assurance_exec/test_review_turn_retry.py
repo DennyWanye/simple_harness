@@ -12,20 +12,36 @@ from agent_orchestrator.orchestrator.assurance_review_consumer import AssuranceR
 
 def _event(kind: str, classification: str, ordinal: int = 1):
     ref = AssuranceRef("commit_receipt", Pin("receipt-1", 0, "a" * 64)).to_json()
-    return SimpleNamespace(type=kind, payload={
-        "classification": classification, "classification_receipt_ref": ref,
-        "review_key": "rk", "invocation_ordinal": ordinal,
-    })
+    return SimpleNamespace(
+        type=kind,
+        payload={
+            "classification": classification,
+            "classification_receipt_ref": ref,
+            "review_key": "rk",
+            "invocation_ordinal": ordinal,
+        },
+    )
 
 
 def test_a_failed_review_turn_schedules_the_one_second_invocation():
     consumer = SimpleNamespace()
-    targets = AssuranceReviewConsumer.classify(consumer, _event("AssuranceReviewClassified", "TURN_FAILED"))
+    targets = AssuranceReviewConsumer.classify(
+        consumer, _event("AssuranceReviewClassified", "TURN_FAILED")
+    )
     assert [t.work_key for t in targets] == ["review-import:rk:1"]
     # formats and ready reviews still route as before; other classifications do not
-    assert AssuranceReviewConsumer.classify(consumer, _event("AssuranceReviewFormatRejected", "FORMAT_INVALID"))
-    assert AssuranceReviewConsumer.classify(consumer, _event("AssuranceReviewClassified", "READY_FOR_CURRENT_REVIEW"))
-    assert AssuranceReviewConsumer.classify(consumer, _event("AssuranceReviewClassified", "MODEL_IDENTITY_MISMATCH")) == ()
+    assert AssuranceReviewConsumer.classify(
+        consumer, _event("AssuranceReviewFormatRejected", "FORMAT_INVALID")
+    )
+    assert AssuranceReviewConsumer.classify(
+        consumer, _event("AssuranceReviewClassified", "READY_FOR_CURRENT_REVIEW")
+    )
+    assert (
+        AssuranceReviewConsumer.classify(
+            consumer, _event("AssuranceReviewClassified", "MODEL_IDENTITY_MISMATCH")
+        )
+        == ()
+    )
 
 
 def test_second_invocation_reasons():

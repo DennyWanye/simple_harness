@@ -64,7 +64,9 @@ class RunPriorReserve:
 
     def __call__(self, run_id: str) -> PriorBasis:
         if self._uow is None:
-            raise ArpError("PRIOR_RESERVE_UNAVAILABLE", "prior reserve reader is not bound to a runtime")
+            raise ArpError(
+                "PRIOR_RESERVE_UNAVAILABLE", "prior reserve reader is not bound to a runtime"
+            )
         rows: list[tuple[str, int]] = []
         for previous in self._uow.list_provider_invocations(RunId(run_id)):
             record = self._uow.read_effective_provider_invocation(previous.invocation_id)
@@ -81,7 +83,11 @@ class RunPriorReserve:
                 request = getattr(record, "request_json", None)
                 output = request.get("max_output_tokens") if isinstance(request, Mapping) else None
                 source = "failed_request_cap"
-            if str(record.state) not in ("succeeded", "failed") or type(output) is not int or output < 0:
+            if (
+                str(record.state) not in ("succeeded", "failed")
+                or type(output) is not int
+                or output < 0
+            ):
                 raise ArpError(
                     "PRIOR_RESERVE_UNAVAILABLE",
                     "prior provider usage is unresolved",
@@ -91,10 +97,15 @@ class RunPriorReserve:
         tokens = sum(output for _, output, _ in rows)
         if tokens == 0:
             return NO_PRIOR
-        basis = {"run_id": run_id, "invocations": [
-            {"invocation_id": i, "output_tokens": o} if src == "reported" else {"invocation_id": i, "output_tokens": o, "source": src}
-            for i, o, src in rows
-        ]}
+        basis = {
+            "run_id": run_id,
+            "invocations": [
+                {"invocation_id": i, "output_tokens": o}
+                if src == "reported"
+                else {"invocation_id": i, "output_tokens": o, "source": src}
+                for i, o, src in rows
+            ],
+        }
         return PriorBasis(tokens, Pin("receipt", f"prior-output:{run_id}", 0, digest(basis)))
 
 
@@ -113,7 +124,9 @@ def intent_caller(intent: Any, *, principal_id: str, owner_contract_ref: Pin) ->
     return TrustedCaller(
         principal_ref=Pin("principal", principal_id, 0, digest({"principal_id": principal_id})),
         owner_contract_ref=owner_contract_ref,
-        command_receipt_ref=Pin("receipt", f"dispatch-intent:{intent.intent_id}", 0, digest(receipt)),
+        command_receipt_ref=Pin(
+            "receipt", f"dispatch-intent:{intent.intent_id}", 0, digest(receipt)
+        ),
     )
 
 

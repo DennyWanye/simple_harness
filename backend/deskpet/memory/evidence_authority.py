@@ -87,9 +87,14 @@ class HostEvidenceAuthority:
             receipt = SanitizedEvidenceReceipt.from_json(json.loads(str(row["receipt_json"])))
         except (TypeError, ValueError, KeyError) as exc:
             raise HostEvidenceUnavailable("host_evidence_envelope_invalid") from exc
-        if envelope.envelope_hash != str(row["envelope_sha256"]) or receipt.receipt_hash != str(row["receipt_sha256"]):
+        if envelope.envelope_hash != str(row["envelope_sha256"]) or receipt.receipt_hash != str(
+            row["receipt_sha256"]
+        ):
             raise HostEvidenceUnavailable("host_evidence_hash_mismatch")
-        if receipt.evidence_id != envelope.evidence_id or receipt.envelope_hash != envelope.envelope_hash:
+        if (
+            receipt.evidence_id != envelope.evidence_id
+            or receipt.envelope_hash != envelope.envelope_hash
+        ):
             raise HostEvidenceUnavailable("host_evidence_receipt_mismatch")
         return envelope, receipt, float(row["committed_at"])
 

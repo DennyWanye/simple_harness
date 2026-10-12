@@ -49,8 +49,7 @@ def _delivery_payload(deliveries: Sequence[DeliverySpec]) -> list[dict[str, Json
 def _prepared_refs(prepared: PreparedRunContextV1) -> dict[str, JsonValue]:
     return {
         "host_extensions": {
-            key: value.to_dict()
-            for key, value in sorted(prepared.host_extensions.items())
+            key: value.to_dict() for key, value in sorted(prepared.host_extensions.items())
         },
         "prepared_fingerprint": prepared.prepared_fingerprint,
         "prepared_tool_hash": prepared.prepared_tool_hash,
@@ -61,9 +60,7 @@ def _prepared_refs(prepared: PreparedRunContextV1) -> dict[str, JsonValue]:
     }
 
 
-def _provider_policy(
-    request: RunRequest, host: HostContext
-) -> Mapping[str, JsonValue]:
+def _provider_policy(request: RunRequest, host: HostContext) -> Mapping[str, JsonValue]:
     if request.provider_launch_snapshot is not None:
         return {
             "admission_provider": request.provider_launch_snapshot.to_dict(),
@@ -81,23 +78,15 @@ def _trusted_context_os(
     raw = request_payload.get("context_os")
     if not isinstance(raw, Mapping):
         return None
-    if (
-        not prepared.prepared_tool_ref
-        or prepared.prepared_tool_hash != prepared.prepared_tool_ref
-    ):
+    if not prepared.prepared_tool_ref or prepared.prepared_tool_hash != prepared.prepared_tool_ref:
         return None
 
     from deskpet.capabilities.refresh import context_os_snapshot_ref
     from deskpet.tools.prepared_snapshot import load_context_os_snapshot
 
     tool_set, eligibility = load_context_os_snapshot(raw)
-    if (
-        context_os_snapshot_ref(tool_set, eligibility)
-        != prepared.prepared_tool_ref
-    ):
-        raise ValueError(
-            "request Context OS snapshot differs from prepared ToolSet"
-        )
+    if context_os_snapshot_ref(tool_set, eligibility) != prepared.prepared_tool_ref:
+        raise ValueError("request Context OS snapshot differs from prepared ToolSet")
     return copy.deepcopy(dict(raw))
 
 
@@ -114,19 +103,14 @@ def build_run_start_snapshot(
 
     scrubber = redactor or TraceRedactor()
     canonical_messages = list(
-        request.canonical_messages
-        or ({"role": "user", "content": request.text},)
+        request.canonical_messages or ({"role": "user", "content": request.text},)
     )
     session_cursor = {
-        "session_projection_cursor": int(
-            request.payload.get("session_projection_cursor", 0)
-        )
+        "session_projection_cursor": int(request.payload.get("session_projection_cursor", 0))
     }
     request_payload = dict(request.payload)
     trusted_context_os = _trusted_context_os(request_payload, prepared)
-    sanitized_request = scrubber.redact(
-        {"payload": request_payload, "text": request.text}
-    )
+    sanitized_request = scrubber.redact({"payload": request_payload, "text": request.text})
     if trusted_context_os is not None:
         sanitized_payload = sanitized_request.get("payload")
         if not isinstance(sanitized_payload, dict):
@@ -146,9 +130,7 @@ def build_run_start_snapshot(
         }
     )
     if capability_snapshot.get("capability_hash") != host.capability_hash:
-        raise ValueError(
-            "prepared capability snapshot differs from HostContext"
-        )
+        raise ValueError("prepared capability snapshot differs from HostContext")
     snapshot_payload: dict[str, Any] = {
         "snapshot_schema_version": 1,
         "canonical_messages": canonical_messages,
@@ -226,6 +208,4 @@ async def activate_after_start_commit(
             extension_receipts=receipts,
         )
         if accepted is not True:
-            raise RuntimeError(
-                f"after_start_commit_handshake_rejected:{handshake.descriptor.kind}"
-            )
+            raise RuntimeError(f"after_start_commit_handshake_rejected:{handshake.descriptor.kind}")

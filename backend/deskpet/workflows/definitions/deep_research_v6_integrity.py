@@ -323,9 +323,7 @@ class ClaimBatchV1:
     ) -> ClaimBatchV1:
         records = sorted(
             (
-                item
-                if isinstance(item, ClaimRecordV1)
-                else ClaimRecordV1.from_json(item)
+                item if isinstance(item, ClaimRecordV1) else ClaimRecordV1.from_json(item)
                 for item in claims
             ),
             key=lambda item: item.claim_id,
@@ -507,7 +505,10 @@ def _assessment(value: Mapping[str, Any]) -> _Assessment:
     identity_payload.pop("assessment_id")
     identity_payload.pop("assessment_hash")
     expected_hash = sha256_json(identity_payload)
-    if raw["assessment_hash"] != expected_hash or raw["assessment_id"] != "asa_" + expected_hash[:24]:
+    if (
+        raw["assessment_hash"] != expected_hash
+        or raw["assessment_id"] != "asa_" + expected_hash[:24]
+    ):
         _fail("assessment_hash_mismatch", "$.assessment_hash", f"expected {expected_hash}")
     return _Assessment(
         assessment_hash=str(raw["assessment_hash"]),
@@ -567,18 +568,28 @@ def _admitted_bindings(
         if _integer(raw["ordinal"], f"{path}.ordinal") != expected_ordinal:
             _fail("integrity_order_invalid", f"{path}.ordinal", "must be contiguous from zero")
         if raw["previous_head_hash"] != previous:
-            _fail("fact_batch_head_mismatch", f"{path}.previous_head_hash", "chain predecessor differs")
+            _fail(
+                "fact_batch_head_mismatch",
+                f"{path}.previous_head_hash",
+                "chain predecessor differs",
+            )
         try:
             parse_blob_ref(raw["page_result_ref"])
         except Exception as exc:
             _fail("integrity_reference_invalid", f"{path}.page_result_ref", str(exc))
-        admitted_ids = _canonical_strings(raw["admitted_binding_ids"], f"{path}.admitted_binding_ids")
-        rejected_ids = _canonical_strings(raw["rejected_binding_ids"], f"{path}.rejected_binding_ids")
+        admitted_ids = _canonical_strings(
+            raw["admitted_binding_ids"], f"{path}.admitted_binding_ids"
+        )
+        rejected_ids = _canonical_strings(
+            raw["rejected_binding_ids"], f"{path}.rejected_binding_ids"
+        )
         _canonical_strings(raw["conflict_ids"], f"{path}.conflict_ids")
         _canonical_strings(raw["provenance_refs"], f"{path}.provenance_refs", refs=True)
         _digest(raw["policy_hash"], f"{path}.policy_hash")
         if admitted.intersection(admitted_ids) or set(admitted_ids).intersection(rejected_ids):
-            _fail("fact_batch_binding_conflict", path, "binding admission is not append-only/disjoint")
+            _fail(
+                "fact_batch_binding_conflict", path, "binding admission is not append-only/disjoint"
+            )
         expected_head = derive_fact_batch_head(raw)
         if raw["head_hash"] != expected_head:
             _fail("fact_batch_head_mismatch", f"{path}.head_hash", f"expected {expected_head}")
@@ -587,7 +598,11 @@ def _admitted_bindings(
         saw_batch = True
     actual_head = previous if saw_batch else "0" * 64
     if actual_head != expected_head_hash:
-        _fail("assessment_head_mismatch", "$.evidence_head_hash", "assessment does not reference final batch head")
+        _fail(
+            "assessment_head_mismatch",
+            "$.evidence_head_hash",
+            "assessment does not reference final batch head",
+        )
     return admitted
 
 
@@ -766,9 +781,7 @@ def build_q1_exact_scalar_integrity(
     elif failures and answer_status == "partial" and not valid_visible_requirements:
         answer_status = "insufficient_evidence"
     effective_scores = (
-        normalized_scores
-        if not failures
-        else {key: 0 for key in sorted(_SOFT_SCORE_KEYS)}
+        normalized_scores if not failures else {key: 0 for key in sorted(_SOFT_SCORE_KEYS)}
     )
     claim_batch_ref = format_blob_ref(sha256_json(claim_batch.to_json()))
     audit = QualityAuditV1._create_derived(

@@ -206,9 +206,7 @@ async def test_proxy_computes_plan_without_changing_file(tmp_path: Path) -> None
             generated=True,
         ),
         {"path": str(source), "target": str(tmp_path / "should-not-pass.txt")},
-        input_requests=[
-            InputViewRequest("opaque:0", source, "file", "metadata")
-        ],
+        input_requests=[InputViewRequest("opaque:0", source, "file", "metadata")],
         workspace_roots=[str(tmp_path)],
         temp_dir=str(tmp_path),
         root_run_id="root-plan-test",
@@ -261,9 +259,7 @@ def test_brokered_plan_durable_envelope_roundtrips_host_bindings(
         plan_record=record,
     )
 
-    restored = BrokeredPlanEnvelope.from_durable_value(
-        envelope.to_durable_envelope()
-    )
+    restored = BrokeredPlanEnvelope.from_durable_value(envelope.to_durable_envelope())
 
     assert restored == envelope
     assert restored is not None

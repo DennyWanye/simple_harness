@@ -11,6 +11,7 @@ utterance would be harder to detect than it should be.
 Also verifies that [voice] config values flow through VoicePipeline
 into BargeInFilter (cooldown_ms, min_speech_during_tts_ms).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -101,9 +102,7 @@ async def test_vad_threshold_raised_during_tts_and_restored_after():
     assert 0.65 in vad.threshold_history, (
         f"threshold was never raised during TTS: {vad.threshold_history}"
     )
-    assert vad.threshold == 0.5, (
-        f"threshold not restored after TTS: {vad.threshold_history}"
-    )
+    assert vad.threshold == 0.5, f"threshold not restored after TTS: {vad.threshold_history}"
 
 
 @pytest.mark.asyncio
@@ -136,9 +135,7 @@ async def test_vad_threshold_restored_even_on_interrupt():
         _interrupter(),
     )
 
-    assert vad.threshold == 0.5, (
-        f"threshold not restored after interrupt: {vad.threshold_history}"
-    )
+    assert vad.threshold == 0.5, f"threshold not restored after interrupt: {vad.threshold_history}"
 
 
 @pytest.mark.asyncio
@@ -165,9 +162,7 @@ async def test_vad_threshold_restored_on_exception():
     # message — we only care that the threshold was restored.
     await pipe._process_utterance(b"fake", _FakeWS())
 
-    assert vad.threshold == 0.5, (
-        f"threshold not restored after TTS error: {vad.threshold_history}"
-    )
+    assert vad.threshold == 0.5, f"threshold not restored after TTS error: {vad.threshold_history}"
 
 
 def test_pipeline_accepts_voice_config_kwargs():
@@ -254,10 +249,10 @@ async def test_sustained_speech_during_tts_triggers_barge_in():
     # Frames 2-14: still in speech, duration grows
     # Frame 15: duration=420ms (> 400ms threshold) → barge-in must fire
     script = [
-        ([{"event": "speech_start"}], 0),    # frame 1
+        ([{"event": "speech_start"}], 0),  # frame 1
         *[([], d) for d in range(32, 420, 32)],  # frames 2..13
-        ([], 420),                             # frame 14
-        ([], 450),                             # frame 15 — after barge-in
+        ([], 420),  # frame 14
+        ([], 450),  # frame 15 — after barge-in
     ]
     vad = _ScriptedVAD(script)
     pipe = VoicePipeline(
@@ -314,9 +309,7 @@ async def test_short_burst_during_tts_does_not_trigger_barge_in():
         await pipe.process_audio_chunk(b"\x00" * 1024, ws)
 
     barge_events = [m for m in ws.json_frames if m.get("type") == "tts_barge_in"]
-    assert barge_events == [], (
-        f"short burst should not barge in, got: {barge_events}"
-    )
+    assert barge_events == [], f"short burst should not barge in, got: {barge_events}"
 
 
 @pytest.mark.asyncio
@@ -344,6 +337,4 @@ async def test_barge_in_fires_only_once_per_speech_segment():
         await pipe.process_audio_chunk(b"\x00" * 1024, ws)
 
     barge_events = [m for m in ws.json_frames if m.get("type") == "tts_barge_in"]
-    assert len(barge_events) == 1, (
-        f"expected exactly one barge-in, got {len(barge_events)}"
-    )
+    assert len(barge_events) == 1, f"expected exactly one barge-in, got {len(barge_events)}"

@@ -297,8 +297,18 @@ class SummaryCheck:
 
 #: The reply's shape, level by level: the keys each object may carry.  One table, read
 #: by the strict parser below and by :func:`decode_review_reply`'s tolerance.
-_REPLY_KEYS = frozenset({"schema_version", "verdict", "assessments", "findings", "global_findings", "claims",
-                         "methods", "summary"})
+_REPLY_KEYS = frozenset(
+    {
+        "schema_version",
+        "verdict",
+        "assessments",
+        "findings",
+        "global_findings",
+        "claims",
+        "methods",
+        "summary",
+    }
+)
 _ASSESSMENT_KEYS = frozenset({"criterion_id", "verdict", "evidence_ids", "reason", "limitations"})
 _FINDING_KEYS = frozenset({"criterion_id", "severity", "reason"})
 _GLOBAL_FINDING_KEYS = frozenset({"severity", "reason"})
@@ -329,8 +339,11 @@ class ReviewReply:
     @classmethod
     def from_json(cls, value: object) -> ReviewReply:
         canonical(value)
-        row = fields(value, {"schema_version", "verdict", "assessments", "findings"},
-                     {"global_findings", "claims", "methods", "summary"})
+        row = fields(
+            value,
+            {"schema_version", "verdict", "assessments", "findings"},
+            {"global_findings", "claims", "methods", "summary"},
+        )
         if integer(row["schema_version"]) != REVIEW_REPLY_SCHEMA_VERSION:
             raise AssuranceError("REVIEW_SCHEMA_VERSION")
         verdict = one_of(row["verdict"], {"ACCEPT", "REWORK", "INCONCLUSIVE", "REJECTED"})
@@ -367,7 +380,9 @@ class ReviewReply:
         global_findings = []
         for item in array(row.get("global_findings", []), maximum=MAX_GLOBAL_FINDINGS):
             g = fields(item, set(_GLOBAL_FINDING_KEYS))
-            global_findings.append(GlobalFinding(one_of(g["severity"], SEVERITIES), text(g["reason"], limit=2000)))
+            global_findings.append(
+                GlobalFinding(one_of(g["severity"], SEVERITIES), text(g["reason"], limit=2000))
+            )
         claims = []
         claim_ids = set()
         for item in array(row.get("claims", []), maximum=256):
@@ -378,8 +393,14 @@ class ReviewReply:
             claim_ids.add(name)
             if type(c["confirmed"]) is not bool:
                 raise AssuranceError("ENUM_INVALID")
-            claims.append(ClaimConfirmation(
-                name, c["confirmed"], unique_texts(c["evidence_ids"], maximum=64), text(c["reason"], limit=1000)))
+            claims.append(
+                ClaimConfirmation(
+                    name,
+                    c["confirmed"],
+                    unique_texts(c["evidence_ids"], maximum=64),
+                    text(c["reason"], limit=1000),
+                )
+            )
         methods = []
         method_refs = set()
         for item in array(row.get("methods", []), maximum=64):
@@ -392,16 +413,26 @@ class ReviewReply:
                 raise AssuranceError("ENUM_INVALID")
             # a purpose is what a reusable method is listed under; without one it cannot be listed
             purpose = text(m["purpose"], limit=120) if m["reusable"] or m["purpose"] != "" else ""
-            methods.append(MethodJudgement(name, m["reusable"], purpose, m["at_fault"],
-                                           text(m["reason"], limit=1000)))
+            methods.append(
+                MethodJudgement(
+                    name, m["reusable"], purpose, m["at_fault"], text(m["reason"], limit=1000)
+                )
+            )
         summary = None
         if row.get("summary") is not None:
             s = fields(row["summary"], set(_SUMMARY_KEYS))
             if type(s["faithful"]) is not bool:
                 raise AssuranceError("ENUM_INVALID")
             summary = SummaryCheck(s["faithful"], text(s["reason"], limit=1000))
-        return cls(verdict, tuple(assessments), tuple(findings), tuple(claims), tuple(methods), summary,
-                   tuple(global_findings))
+        return cls(
+            verdict,
+            tuple(assessments),
+            tuple(findings),
+            tuple(claims),
+            tuple(methods),
+            summary,
+            tuple(global_findings),
+        )
 
 
 _FENCE = re.compile(r"\A```(?:json)?[ \t]*\r?\n(.*)\r?\n```\Z", re.DOTALL)
@@ -411,8 +442,12 @@ _EMPTY = (None, "", [], {})
 def _drop_empty_extras(value: object, allowed: frozenset[str]) -> object:
     if not isinstance(value, dict):
         return value
-    return {key: item for key, item in value.items()
-            if key in allowed or not any(item == empty and type(item) is type(empty) for empty in _EMPTY)}
+    return {
+        key: item
+        for key, item in value.items()
+        if key in allowed
+        or not any(item == empty and type(item) is type(empty) for empty in _EMPTY)
+    }
 
 
 def decode_review_reply(raw: str | bytes) -> ReviewReply:
@@ -432,9 +467,13 @@ def decode_review_reply(raw: str | bytes) -> ReviewReply:
     value = decode(fenced.group(1)) if fenced else decode(raw)
     if isinstance(value, dict):
         value = _drop_empty_extras(value, _REPLY_KEYS)
-        for key, allowed in (("assessments", _ASSESSMENT_KEYS), ("findings", _FINDING_KEYS),
-                             ("global_findings", _GLOBAL_FINDING_KEYS), ("claims", _CLAIM_KEYS),
-                             ("methods", _METHOD_KEYS)):
+        for key, allowed in (
+            ("assessments", _ASSESSMENT_KEYS),
+            ("findings", _FINDING_KEYS),
+            ("global_findings", _GLOBAL_FINDING_KEYS),
+            ("claims", _CLAIM_KEYS),
+            ("methods", _METHOD_KEYS),
+        ):
             if isinstance(value.get(key), list):
                 value[key] = [_drop_empty_extras(item, allowed) for item in value[key]]
         if isinstance(value.get("summary"), dict):

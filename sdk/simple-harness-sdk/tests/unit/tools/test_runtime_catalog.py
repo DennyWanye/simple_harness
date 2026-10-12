@@ -132,9 +132,7 @@ def test_search_matches_conservative_english_morphology_prefix() -> None:
 
     page = catalog.search(state, "translation Markdown preserve headings")
 
-    assert [item.capability_id for item in page.items] == [
-        "skill:translate-doc"
-    ]
+    assert [item.capability_id for item in page.items] == ["skill:translate-doc"]
 
 
 def test_describe_activate_then_provider_projection_is_executable_only() -> None:
@@ -297,9 +295,7 @@ def test_prepare_activation_does_not_mutate_before_terminal_effect_observation()
     port.restore(run_id, None)
     described = port.describe(run_id, "mcp:filesystem:read_file")
 
-    receipt = port.prepare_activation(
-        run_id, "mcp:filesystem:read_file", described.nonce
-    )
+    receipt = port.prepare_activation(run_id, "mcp:filesystem:read_file", described.nonce)
     assert [item.name for item in port.provider_specs(run_id)] == ["finish"]
 
     port.observe_tool_result(run_id, "tool_activate", receipt.to_json())

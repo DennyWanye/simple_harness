@@ -24,6 +24,7 @@ similarity — see ``research_tools``).
 Everything here is pure + deterministic (no network, no LLM) so it is
 trivially unit-testable, mirroring V8's "deterministic helpers" stance.
 """
+
 from __future__ import annotations
 
 import re
@@ -34,42 +35,94 @@ from urllib.parse import urlparse
 # === Domain authority tiers (ported + de-duped from V8) ===
 
 TIER_1 = {  # 9-10: peer-reviewed / official bodies / primary
-    "nature.com", "science.org", "thelancet.com", "nejm.org",
-    "cell.com", "pnas.org", "ieee.org", "acm.org",
-    "who.int", "nih.gov", "cdc.gov", "europa.eu",
-    "arxiv.org", "semanticscholar.org",
+    "nature.com",
+    "science.org",
+    "thelancet.com",
+    "nejm.org",
+    "cell.com",
+    "pnas.org",
+    "ieee.org",
+    "acm.org",
+    "who.int",
+    "nih.gov",
+    "cdc.gov",
+    "europa.eu",
+    "arxiv.org",
+    "semanticscholar.org",
     # First-party AI system and framework documentation.
-    "openai.com", "anthropic.com", "deepmind.google", "langchain.com",
-    "microsoft.com", "learn.microsoft.com",
+    "openai.com",
+    "anthropic.com",
+    "deepmind.google",
+    "langchain.com",
+    "microsoft.com",
+    "learn.microsoft.com",
     # Chinese academic / official
-    "cnki.net", "wanfangdata.com.cn", "cqvip.com",
-    "cas.cn", "nsfc.gov.cn", "xueshu.baidu.com", "gov.cn",
+    "cnki.net",
+    "wanfangdata.com.cn",
+    "cqvip.com",
+    "cas.cn",
+    "nsfc.gov.cn",
+    "xueshu.baidu.com",
+    "gov.cn",
     # Chinese first-party disclosure (Phase-2 direct sources)
-    "cninfo.com.cn", "sse.com.cn", "szse.cn",
+    "cninfo.com.cn",
+    "sse.com.cn",
+    "szse.cn",
 }
 
 TIER_2 = {  # 7-8: reputable news / established industry
-    "reuters.com", "apnews.com", "bbc.com", "nytimes.com",
-    "theguardian.com", "washingtonpost.com", "economist.com",
-    "techcrunch.com", "arstechnica.com", "wired.com",
-    "github.com", "stackoverflow.com", "hbr.org",
-    "mckinsey.com", "bcg.com", "gartner.com",
+    "reuters.com",
+    "apnews.com",
+    "bbc.com",
+    "nytimes.com",
+    "theguardian.com",
+    "washingtonpost.com",
+    "economist.com",
+    "techcrunch.com",
+    "arstechnica.com",
+    "wired.com",
+    "github.com",
+    "stackoverflow.com",
+    "hbr.org",
+    "mckinsey.com",
+    "bcg.com",
+    "gartner.com",
     # Reference sources are useful context, but not primary evidence.
-    "wikipedia.org", "britannica.com",
+    "wikipedia.org",
+    "britannica.com",
     # Chinese reputable news / tech media
-    "xinhuanet.com", "people.com.cn", "thepaper.cn",
-    "36kr.com", "infoq.cn", "juejin.cn", "jiqizhixin.com",
-    "leiphone.com", "geekpark.net", "caixin.com",
+    "xinhuanet.com",
+    "people.com.cn",
+    "thepaper.cn",
+    "36kr.com",
+    "infoq.cn",
+    "juejin.cn",
+    "jiqizhixin.com",
+    "leiphone.com",
+    "geekpark.net",
+    "caixin.com",
 }
 
 TIER_3 = {  # 5-6: industry blogs / vendor / community
-    "medium.com", "substack.com", "dev.to",
-    "engineering.fb.com", "blog.google", "aws.amazon.com",
-    "huggingface.co", "pytorch.org", "tensorflow.org",
+    "medium.com",
+    "substack.com",
+    "dev.to",
+    "engineering.fb.com",
+    "blog.google",
+    "aws.amazon.com",
+    "huggingface.co",
+    "pytorch.org",
+    "tensorflow.org",
     # Chinese industry / community
-    "zhihu.com", "csdn.net", "segmentfault.com",
-    "oschina.net", "toutiao.com", "sspai.com",
-    "volcengine.com", "cloud.tencent.com", "aliyun.com",
+    "zhihu.com",
+    "csdn.net",
+    "segmentfault.com",
+    "oschina.net",
+    "toutiao.com",
+    "sspai.com",
+    "volcengine.com",
+    "cloud.tencent.com",
+    "aliyun.com",
 }
 
 # 自媒体/转帖农场 —— 明确**低于** unknown 基线(3.0)再降权。codex 评审实测:
@@ -78,10 +131,20 @@ TIER_3 = {  # 5-6: industry blogs / vendor / community
 # 也有海量洗稿转帖,域名层无法区分 → 统一降到 2.0(低于 unknown),让真权威源(官方/
 # 学术/一线媒体)在打分里稳压它们;一手核查仍由 synth 阶段的口径提示兜。
 SELF_MEDIA = {
-    "sohu.com", "baijiahao.baidu.com", "163.com", "dy.163.com",
-    "baidu.com", "sina.com.cn", "ifeng.com", "qq.com",
-    "bilibili.com", "xiaohongshu.com", "weixin.qq.com",
-    "uc.cn", "kuaishou.com", "douyin.com",
+    "sohu.com",
+    "baijiahao.baidu.com",
+    "163.com",
+    "dy.163.com",
+    "baidu.com",
+    "sina.com.cn",
+    "ifeng.com",
+    "qq.com",
+    "bilibili.com",
+    "xiaohongshu.com",
+    "weixin.qq.com",
+    "uc.cn",
+    "kuaishou.com",
+    "douyin.com",
 }
 
 GOV_EDU_SUFFIXES = (".gov", ".edu", ".gov.cn", ".edu.cn", ".ac.uk", ".ac.jp", ".ac.cn")
@@ -90,12 +153,26 @@ GOV_EDU_SUFFIXES = (".gov", ".edu", ".gov.cn", ".edu.cn", ".ac.uk", ".ac.jp", ".
 # 单字(如"特斯拉"被搜成"特")命中"X字的意思"页污染结果池(真机查特斯拉报告暴露:9 源里
 # 4 个是字典页)。命中即在 _passage_from 阶段直接剔除(与 ai_generated/mojibake 同级)。
 LOW_QUALITY = {
-    "hanyuguoxue.com", "hgcha.com", "qianp.com", "cidian.qianp.com",
-    "zidian.qianp.com", "zdic.net", "cidian.911cha.com", "tool.httpcn.com",
-    "chazidian.com", "zd9999.com", "guoxuedashi.net", "kxue.com",
-    "obsky.com", "5156edu.com",
+    "hanyuguoxue.com",
+    "hgcha.com",
+    "qianp.com",
+    "cidian.qianp.com",
+    "zidian.qianp.com",
+    "zdic.net",
+    "cidian.911cha.com",
+    "tool.httpcn.com",
+    "chazidian.com",
+    "zd9999.com",
+    "guoxuedashi.net",
+    "kxue.com",
+    "obsky.com",
+    "5156edu.com",
     # 真机豆瓣调研暴露的漏网字典/词义站(精确域名列表追不完 → 下面补模式匹配)
-    "chienwen.net", "gushici.net", "kmcha.com", "hwxnet.com", "cha88.cn",
+    "chienwen.net",
+    "gushici.net",
+    "kmcha.com",
+    "hwxnet.com",
+    "cha88.cn",
 }
 
 # 字典/词义站**模式匹配**(精确列表追不完): 子域 dictionary./zidian./cidian./hanyu./
@@ -121,6 +198,7 @@ def is_low_quality(url: str) -> bool:
         return True
     return False
 
+
 # AI 生成内容声明 —— 命中即视为不可作正式引据(codex 评审抓到 [^3] 明示"包含人工
 # 智能生成内容"却撑核心事实)。研究管线据此直接剔除该来源。
 _AI_DISCLAIMER_RE = re.compile(
@@ -129,8 +207,16 @@ _AI_DISCLAIMER_RE = re.compile(
 )
 
 _MULTI_TLDS = (
-    ".com.cn", ".gov.cn", ".edu.cn", ".ac.cn", ".org.cn",
-    ".co.uk", ".ac.uk", ".org.uk", ".co.jp", ".ac.jp",
+    ".com.cn",
+    ".gov.cn",
+    ".edu.cn",
+    ".ac.cn",
+    ".org.cn",
+    ".co.uk",
+    ".ac.uk",
+    ".org.uk",
+    ".co.jp",
+    ".ac.jp",
 )
 
 _BLOG_PLATFORMS = ("medium.com", "substack.com", "zhihu.com", "csdn.net", "dev.to")
@@ -143,7 +229,7 @@ def get_domain(url: str) -> str:
     for tld in _MULTI_TLDS:
         if hostname.endswith(tld):
             n = tld.count(".")
-            return ".".join(parts[-(n + 1):]) if len(parts) > n else hostname
+            return ".".join(parts[-(n + 1) :]) if len(parts) > n else hostname
     return ".".join(parts[-2:]) if len(parts) >= 2 else hostname
 
 
@@ -227,7 +313,9 @@ _VELOCITY_THRESHOLDS = {
 }
 
 
-def score_recency(date_str: str, *, topic_velocity: str = "medium", now: float | None = None) -> float:
+def score_recency(
+    date_str: str, *, topic_velocity: str = "medium", now: float | None = None
+) -> float:
     """0-10 recency vs a velocity curve. Unknown/garbage date → 3.0."""
     if not date_str:
         return 3.0
@@ -249,7 +337,11 @@ def score_recency(date_str: str, *, topic_velocity: str = "medium", now: float |
 
 
 def composite_score(
-    *, authority: float, recency: float, relevance: float, depth: float,
+    *,
+    authority: float,
+    recency: float,
+    relevance: float,
+    depth: float,
     topic_velocity: str = "medium",
 ) -> float:
     """Weighted blend. Slow topics down-weight recency heavily."""
@@ -290,7 +382,20 @@ def diversity_report(urls: list[str]) -> dict[str, Any]:
 def infer_topic_velocity(topic: str) -> str:
     """Cheap heuristic: tech/news topics move fast; law/history slow."""
     t = (topic or "").lower()
-    fast = ("ai", "llm", "gpt", "模型", "新能源", "股", "crypto", "芯片", "最新", "2026", "趋势", "发布")
+    fast = (
+        "ai",
+        "llm",
+        "gpt",
+        "模型",
+        "新能源",
+        "股",
+        "crypto",
+        "芯片",
+        "最新",
+        "2026",
+        "趋势",
+        "发布",
+    )
     slow = ("history", "历史", "哲学", "理论", "数学", "physics", "law", "宪法", "古")
     if any(k in t for k in slow):
         return "slow"
@@ -300,8 +405,17 @@ def infer_topic_velocity(topic: str) -> str:
 
 
 __all__ = [
-    "TIER_1", "TIER_2", "TIER_3", "SELF_MEDIA",
-    "get_domain", "is_platform_blog", "score_authority", "score_recency",
-    "composite_score", "diversity_report", "infer_topic_velocity",
-    "is_ai_generated", "is_mojibake",
+    "TIER_1",
+    "TIER_2",
+    "TIER_3",
+    "SELF_MEDIA",
+    "get_domain",
+    "is_platform_blog",
+    "score_authority",
+    "score_recency",
+    "composite_score",
+    "diversity_report",
+    "infer_topic_velocity",
+    "is_ai_generated",
+    "is_mojibake",
 ]

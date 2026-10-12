@@ -131,9 +131,7 @@ class EffectTopologyDiffV1:
 
     def __post_init__(self) -> None:
         for name in ("permissions_added", "effects_added", "unknown_effects"):
-            object.__setattr__(
-                self, name, tuple(sorted(set(getattr(self, name))))
-            )
+            object.__setattr__(self, name, tuple(sorted(set(getattr(self, name)))))
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -175,9 +173,7 @@ class RiskAssessmentV1:
 class StaticRiskPreflight:
     """Classify frozen manifest facts without touching candidate bytes."""
 
-    def inspect(
-        self, candidate: CandidateRiskInputV1
-    ) -> StaticRiskPreflightResultV1:
+    def inspect(self, candidate: CandidateRiskInputV1) -> StaticRiskPreflightResultV1:
         high: set[str] = set()
         unknown: set[str] = set()
         if candidate.candidate_kind in _EXECUTABLE_KINDS:
@@ -207,13 +203,10 @@ class StaticRiskPreflight:
             high.add("permission_expansion")
         if candidate.topology_expanded:
             high.add("tool_topology_expansion")
-        if candidate.enforce_source_nonexpansion and (
-            declared - set(candidate.source_tool_refs)
-        ):
+        if candidate.enforce_source_nonexpansion and (declared - set(candidate.source_tool_refs)):
             high.add("tool_topology_expansion")
         if candidate.candidate_kind == "personal_workflow" and (
-            not candidate.workflow_nodes_known
-            or not candidate.workflow_dataflow_safe
+            not candidate.workflow_nodes_known or not candidate.workflow_dataflow_safe
         ):
             unknown.add("unknown_workflow_node_or_dataflow")
 
@@ -229,9 +222,7 @@ class StaticRiskPreflight:
             "package_hash": candidate.package_hash,
             "candidate_kind": candidate.candidate_kind,
             "safe_auto_eligible": safe_auto,
-            "direct_os_effects_unverifiable": (
-                candidate.candidate_kind in _EXECUTABLE_KINDS
-            ),
+            "direct_os_effects_unverifiable": (candidate.candidate_kind in _EXECUTABLE_KINDS),
             "high_risk_signals": sorted(high),
             "unknown_signals": sorted(unknown),
             "facts_hash": facts_hash,
@@ -241,9 +232,7 @@ class StaticRiskPreflight:
             package_hash=candidate.package_hash,
             candidate_kind=candidate.candidate_kind,
             safe_auto_eligible=safe_auto,
-            direct_os_effects_unverifiable=(
-                candidate.candidate_kind in _EXECUTABLE_KINDS
-            ),
+            direct_os_effects_unverifiable=(candidate.candidate_kind in _EXECUTABLE_KINDS),
             high_risk_signals=tuple(sorted(high)),
             unknown_signals=tuple(sorted(unknown)),
             facts_hash=facts_hash,
@@ -296,10 +285,7 @@ class CapabilityRiskPolicy:
         permit_mode: PermitMode
         if risk == "low":
             permit_mode = "safe_auto"
-        elif (
-            preflight.candidate_kind == "instruction"
-            and risk in {"medium", "high"}
-        ):
+        elif preflight.candidate_kind == "instruction" and risk in {"medium", "high"}:
             # Instruction bytes are inspected by a frozen zero-tool runner.
             # Their activation risk remains non-low; this mode authorizes only
             # static evaluation and can never authorize activation.

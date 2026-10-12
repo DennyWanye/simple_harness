@@ -16,6 +16,7 @@ stub 在 receipt.py（已完整 dataclass + HMAC sign/verify）；本模块负�
 PRD §5 健康区间 metric：
   - verify.sig_invalid_filtered = 0（任一非 0 即 P1 alert）
 """
+
 from __future__ import annotations
 
 import json
@@ -123,11 +124,13 @@ def sanity_echo(key: bytes) -> bool:
     """启动期 sanity HMAC echo — 验证 key 可用（PRD D11）。"""
     import hashlib
     import hmac as _hmac
+
     expected = _hmac.new(key, b"ping", hashlib.sha256).hexdigest()
     return len(expected) == 64
 
 
 # ─── Receipt persistence ─────────────────────────────────────
+
 
 class ReceiptStore:
     """JSON-Lines per-session receipt store + Ledger 入口。
@@ -252,7 +255,8 @@ class ReceiptStore:
             logger.warning(
                 "verify.sig_invalid_filtered += %d (session=%s) — "
                 "possible HMAC key rotation or tampering",
-                filtered, session_id,
+                filtered,
+                session_id,
             )
         return out
 
@@ -310,6 +314,7 @@ class ReceiptStore:
 
 
 # ─── Convenience: create + sign + append in one shot ─────────
+
 
 def emit_receipt(
     store: ReceiptStore,

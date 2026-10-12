@@ -92,9 +92,7 @@ class KernelUnitOfWork(Protocol):
         start_commit_extensions: Sequence[Any] = (),
     ) -> CreateRunResult: ...
 
-    async def read_run_start_snapshot(
-        self, run_id: str
-    ) -> RunStartSnapshotRecord | None: ...
+    async def read_run_start_snapshot(self, run_id: str) -> RunStartSnapshotRecord | None: ...
 
     async def start_admission(
         self,
@@ -190,9 +188,7 @@ class KernelUnitOfWork(Protocol):
 
     async def load_continuation(self, run_id: str) -> Any | None: ...
 
-    async def get_child_command_for_run(
-        self, child_run_id: str
-    ) -> ChildCommandRecord | None: ...
+    async def get_child_command_for_run(self, child_run_id: str) -> ChildCommandRecord | None: ...
 
     async def finalize_child_and_enqueue_parent_signal(
         self,
@@ -303,15 +299,11 @@ class ToolExecutionUnitOfWork(Protocol):
         completed_suppressed: bool,
     ) -> Any: ...
 
-    async def read_run_start_snapshot(
-        self, run_id: str
-    ) -> RunStartSnapshotRecord | None: ...
+    async def read_run_start_snapshot(self, run_id: str) -> RunStartSnapshotRecord | None: ...
 
     async def load_continuation(self, run_id: str) -> Any | None: ...
 
-    async def get_skill_scope_activation(
-        self, activation_id: str
-    ) -> Mapping[str, Any] | None: ...
+    async def get_skill_scope_activation(self, activation_id: str) -> Mapping[str, Any] | None: ...
 
 
 @runtime_checkable
@@ -337,17 +329,11 @@ class ReActUnitOfWork(Protocol):
         expected_binding_version: int,
     ) -> TaskWorkContext: ...
 
-    async def get_task_goal(
-        self, root_run_id: str
-    ) -> TaskGoalRecord | None: ...
+    async def get_task_goal(self, root_run_id: str) -> TaskGoalRecord | None: ...
 
-    async def append_plan_version(
-        self, plan: PlanVersionRecord
-    ) -> PlanVersionRecord: ...
+    async def append_plan_version(self, plan: PlanVersionRecord) -> PlanVersionRecord: ...
 
-    async def open_provider_turn_fence(
-        self, fence: ProviderTurnFence
-    ) -> ProviderTurnFence: ...
+    async def open_provider_turn_fence(self, fence: ProviderTurnFence) -> ProviderTurnFence: ...
 
     async def accept_provider_batch_and_create_attempt(
         self,
@@ -378,9 +364,7 @@ class ReActUnitOfWork(Protocol):
         reports: Sequence[TaskFailureReport],
     ) -> AttemptFailureSet: ...
 
-    async def stage_external_wait(
-        self, wait: TaskExternalWait
-    ) -> TaskExternalWait: ...
+    async def stage_external_wait(self, wait: TaskExternalWait) -> TaskExternalWait: ...
 
     async def resume_external_wait(
         self,
@@ -447,13 +431,9 @@ class ReActUnitOfWork(Protocol):
 
     async def load_continuation(self, run_id: str) -> Any | None: ...
 
-    async def lookup_completion_evidence(
-        self, context: EvidenceContext
-    ) -> EvidenceSelection: ...
+    async def lookup_completion_evidence(self, context: EvidenceContext) -> EvidenceSelection: ...
 
-    async def read_run_start_snapshot(
-        self, run_id: str
-    ) -> RunStartSnapshotRecord | None: ...
+    async def read_run_start_snapshot(self, run_id: str) -> RunStartSnapshotRecord | None: ...
 
     async def read_effect_outcome(
         self,
@@ -500,9 +480,7 @@ class ReActUnitOfWork(Protocol):
         activation_values: Mapping[str, Any],
     ) -> tuple[Mapping[str, Any], Any]: ...
 
-    async def get_skill_scope_activation(
-        self, activation_id: str
-    ) -> Mapping[str, Any] | None: ...
+    async def get_skill_scope_activation(self, activation_id: str) -> Mapping[str, Any] | None: ...
 
     async def ack_child_signal(
         self,
@@ -521,9 +499,7 @@ class ReActUnitOfWork(Protocol):
 class WorkflowDriverUnitOfWork(Protocol):
     async def query(self, ref: RunRef, actor: ActorContext) -> RunView: ...
 
-    async def read_run_start_snapshot(
-        self, run_id: str
-    ) -> RunStartSnapshotRecord | None: ...
+    async def read_run_start_snapshot(self, run_id: str) -> RunStartSnapshotRecord | None: ...
 
     async def prepare_workflow_child_resume(
         self,
@@ -582,13 +558,9 @@ class HarnessDeliveryUnitOfWork(Protocol):
 class DelegateFactoryUnitOfWork(Protocol):
     """Durable facts needed while translating a prepared delegation call."""
 
-    async def get_task_goal(
-        self, root_run_id: str
-    ) -> TaskGoalRecord | None: ...
+    async def get_task_goal(self, root_run_id: str) -> TaskGoalRecord | None: ...
 
-    async def get_task_work_context(
-        self, root_run_id: str
-    ) -> Any | None: ...
+    async def get_task_work_context(self, root_run_id: str) -> Any | None: ...
 
     async def issue_profile_launch_ticket(
         self, ticket: ProfileLaunchTicket
@@ -609,26 +581,18 @@ class TeamMigrationUnitOfWork(Protocol):
         transaction_hook: Any | None = None,
     ) -> ChildCommandRecord: ...
 
-    async def get_child_command(
-        self, operation_id: str
-    ) -> ChildCommandRecord | None: ...
+    async def get_child_command(self, operation_id: str) -> ChildCommandRecord | None: ...
 
-    async def query(
-        self, ref: RunRef, actor: ActorContext
-    ) -> RunView: ...
+    async def query(self, ref: RunRef, actor: ActorContext) -> RunView: ...
 
     async def get_event(self, event_id: str) -> RunEvent: ...
 
 
 @runtime_checkable
 class ChildRunUnitOfWork(Protocol):
-    async def read_run_start_snapshot(
-        self, run_id: str
-    ) -> RunStartSnapshotRecord | None: ...
+    async def read_run_start_snapshot(self, run_id: str) -> RunStartSnapshotRecord | None: ...
 
-    async def get_profile_launch_ticket(
-        self, ticket_ref: str
-    ) -> ProfileLaunchTicket | None: ...
+    async def get_profile_launch_ticket(self, ticket_ref: str) -> ProfileLaunchTicket | None: ...
 
     async def claim_profile_launch_and_commit_child(
         self,
@@ -792,9 +756,7 @@ class AdmissionUnitOfWork(Protocol):
         expected_boundary_version: int,
     ) -> AdmissionLaunchClaim: ...
 
-    async def read_run_start_snapshot(
-        self, run_id: str
-    ) -> RunStartSnapshotRecord | None: ...
+    async def read_run_start_snapshot(self, run_id: str) -> RunStartSnapshotRecord | None: ...
 
     async def commit_run_outcome(
         self,

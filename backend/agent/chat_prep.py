@@ -21,6 +21,7 @@ The shim is intentionally tiny:
 Keeping this in its own module + as a pure async function means the
 P6 behaviour change is testable without spinning up a FastAPI client.
 """
+
 from __future__ import annotations
 
 from typing import Any, Optional
@@ -65,11 +66,11 @@ async def prepare_chat_messages_for_chain(
     else:
         summarizer = fallback_summarizer
         model = (
-            getattr(fallback_summarizer, "model", None)
-            if fallback_summarizer is not None
-            else None
+            getattr(fallback_summarizer, "model", None) if fallback_summarizer is not None else None
         ) or "unknown"
 
     return await ctx_mgr.prepare_chat_messages(
-        messages, model=model, llm_for_summarize=summarizer,
+        messages,
+        model=model,
+        llm_for_summarize=summarizer,
     )

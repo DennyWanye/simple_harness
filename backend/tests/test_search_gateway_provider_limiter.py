@@ -85,14 +85,11 @@ def _config(*providers: str, **changes) -> SearchGatewayConfig:
 async def test_same_provider_ten_concurrent_requests_never_exceed_slot_cap() -> None:
     provider = _ObservedProvider("duckduckgo")
     client = httpx.AsyncClient()
-    gateway = SearchGateway(
-        config=_config(provider.name), providers=[provider], client=client
-    )
+    gateway = SearchGateway(config=_config(provider.name), providers=[provider], client=client)
     try:
-        responses = await asyncio.gather(*(
-            gateway.search(SearchRequest(f"fingerprint-{index}"))
-            for index in range(10)
-        ))
+        responses = await asyncio.gather(
+            *(gateway.search(SearchRequest(f"fingerprint-{index}")) for index in range(10))
+        )
     finally:
         await gateway.shutdown()
         await client.aclose()
@@ -146,17 +143,13 @@ async def test_different_provider_slots_overlap() -> None:
 
 @pytest.mark.asyncio
 async def test_queued_call_rechecks_circuit_after_first_opens_it() -> None:
-    provider = _ObservedProvider(
-        "duckduckgo", delay_s=0.02, failure=PublicErrorCode.BLOCKED
-    )
+    provider = _ObservedProvider("duckduckgo", delay_s=0.02, failure=PublicErrorCode.BLOCKED)
     client = httpx.AsyncClient()
-    gateway = SearchGateway(
-        config=_config(provider.name), providers=[provider], client=client
-    )
+    gateway = SearchGateway(config=_config(provider.name), providers=[provider], client=client)
     try:
-        responses = await asyncio.gather(*(
-            gateway.search(SearchRequest(f"queued-{index}")) for index in range(6)
-        ))
+        responses = await asyncio.gather(
+            *(gateway.search(SearchRequest(f"queued-{index}")) for index in range(6))
+        )
     finally:
         await gateway.shutdown()
         await client.aclose()
@@ -180,9 +173,7 @@ async def test_queue_timeout_does_not_mutate_provider_health() -> None:
     holder = asyncio.create_task(gateway.search(SearchRequest("holder")))
     await provider.entered.wait()
     try:
-        queued = await gateway.search(
-            SearchRequest("queued-timeout", total_timeout_s=0.03)
-        )
+        queued = await gateway.search(SearchRequest("queued-timeout", total_timeout_s=0.03))
         snapshot = await gateway.health.snapshot(provider.name)
     finally:
         provider.release.set()
@@ -208,9 +199,7 @@ async def test_wait_and_transport_cancellation_release_slots_and_re_raise(
     provider = _ObservedProvider("duckduckgo", delay_s=0)
     provider.release = asyncio.Event()
     client = httpx.AsyncClient()
-    gateway = SearchGateway(
-        config=_config(provider.name), providers=[provider], client=client
-    )
+    gateway = SearchGateway(config=_config(provider.name), providers=[provider], client=client)
     holder = asyncio.create_task(gateway.search(SearchRequest("holder")))
     await provider.entered.wait()
     waiter = asyncio.create_task(gateway.search(SearchRequest("waiter")))
@@ -255,9 +244,7 @@ async def test_half_open_transport_cancel_releases_lease_and_slot() -> None:
     snapshot = await gateway.health.snapshot(provider.name)
     provider.release.set()
     try:
-        followup = await gateway.search(
-            SearchRequest("half-open-followup", total_timeout_s=0.005)
-        )
+        followup = await gateway.search(SearchRequest("half-open-followup", total_timeout_s=0.005))
     finally:
         await gateway.shutdown()
         await client.aclose()

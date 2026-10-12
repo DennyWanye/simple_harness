@@ -15,6 +15,7 @@ shape with structured remediation fields:
 Backward compatibility: legacy ``out["error"]`` still works (additive
 fields, no rename of existing error codes).
 """
+
 from __future__ import annotations
 
 import json
@@ -143,9 +144,7 @@ def test_edit_file_missing_path_returns_hint() -> None:
 def test_edit_file_not_unique_returns_hint(tmp_path: Path) -> None:
     p = tmp_path / "doc.txt"
     p.write_text("x x x", encoding="utf-8")
-    out = _decode(
-        edit_file({"path": str(p), "old_string": "x", "new_string": "y"}, "")
-    )
+    out = _decode(edit_file({"path": str(p), "old_string": "x", "new_string": "y"}, ""))
     _assert_hint_envelope(out)
     # Spec hints should suggest replace_all
     assert "replace_all" in out["hint"] or "唯一" in out["hint"]
@@ -165,9 +164,7 @@ def test_edit_file_oserror_returns_hint(tmp_path: Path) -> None:
     # path is a dir — read_text will OSError
     d = tmp_path / "d"
     d.mkdir()
-    out = _decode(
-        edit_file({"path": str(d), "old_string": "a", "new_string": "b"}, "")
-    )
+    out = _decode(edit_file({"path": str(d), "old_string": "a", "new_string": "b"}, ""))
     _assert_hint_envelope(out)
 
 

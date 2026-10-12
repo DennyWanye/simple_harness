@@ -70,7 +70,6 @@ def test_deepresearch_dir_relative_override_resolves_to_absolute(monkeypatch, tm
     assert target.is_absolute()
 
 
-
 def test_deepresearch_dir_frozen_uses_install_root(monkeypatch, tmp_path):
     exe = tmp_path / "DeskPet" / "backend" / "deskpet-backend.exe"
     exe.parent.mkdir(parents=True)
@@ -106,7 +105,10 @@ def test_deepresearch_dir_frozen_unwritable_falls_back_home_not_user_data(monkey
     original_write_bytes = Path.write_bytes
 
     def fail_install_probe(self: Path, data: bytes) -> int:
-        if self.name.startswith(".deskpet-dr-write-probe-") and tmp_path / "install" in self.parents:
+        if (
+            self.name.startswith(".deskpet-dr-write-probe-")
+            and tmp_path / "install" in self.parents
+        ):
             raise OSError("read-only install root")
         return original_write_bytes(self, data)
 
@@ -198,7 +200,9 @@ async def test_index_mode_column_is_flat_not_depth(tmp_path):
 async def test_index_mode_column_is_fanout_when_subagent_fanout_present(tmp_path):
     report_path = tmp_path / "fanrun.md"
     report_path.write_text("# r", encoding="utf-8")
-    rep = _report(topic="fan topic", coverage={"subagent_fanout": {"enabled": True, "n_subagents": 3}})
+    rep = _report(
+        topic="fan topic", coverage={"subagent_fanout": {"enabled": True, "n_subagents": 3}}
+    )
     await r._update_deepresearch_index(report_path, "fan topic", rep)
     text = (tmp_path / "index.md").read_text(encoding="utf-8")
     row = [l for l in text.splitlines() if "fanrun.md" in l][0]

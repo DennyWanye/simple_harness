@@ -41,8 +41,14 @@ def test_taskgraph_reads_are_routed_and_agent_verbs_are_not():
     registered = {name for name in handlers._ACTIONS}
     taskgraph = sorted(name for name in registered if name.startswith("taskgraph."))
     assert taskgraph == [
-        "taskgraph.abandon_convergence", "taskgraph.convergence", "taskgraph.diff", "taskgraph.execution_detail",
-        "taskgraph.execution_snapshot", "taskgraph.retry_notification", "taskgraph.snapshot", "taskgraph.why_not_ready",
+        "taskgraph.abandon_convergence",
+        "taskgraph.convergence",
+        "taskgraph.diff",
+        "taskgraph.execution_detail",
+        "taskgraph.execution_snapshot",
+        "taskgraph.retry_notification",
+        "taskgraph.snapshot",
+        "taskgraph.why_not_ready",
     ]
     for name in taskgraph:
         assert name.startswith(prefixes), (name, prefixes)

@@ -23,13 +23,30 @@ XF = pytest.mark.xfail(strict=True, reason="S5b 实装前占位（NOT_IMPLEMENTE
 # + S4 binding store + 确定性 provider + 生产 ProductEffectExecutor 前置门）。
 
 PROJECT_EFFECT_FROZEN_LIST = (
-    "write_file", "file_write", "edit_file", "move_file", "file_organize",
-    "run_shell", "process_start", "doc_create", "doc_edit", "excel_create",
-    "ppt_create", "pdf_export", "download_file", "workspace_prepare",
+    "write_file",
+    "file_write",
+    "edit_file",
+    "move_file",
+    "file_organize",
+    "run_shell",
+    "process_start",
+    "doc_create",
+    "doc_edit",
+    "excel_create",
+    "ppt_create",
+    "pdf_export",
+    "download_file",
+    "workspace_prepare",
 )
 READ_TOOLS_KEEP_DEFAULT = (
-    "read_file", "file_read", "glob", "file_glob", "grep", "file_grep",
-    "list_directory", "doc_read",
+    "read_file",
+    "file_read",
+    "glob",
+    "file_glob",
+    "grep",
+    "file_grep",
+    "list_directory",
+    "doc_read",
 )
 
 
@@ -66,14 +83,18 @@ def test_project_effect_list_frozen_and_route_required() -> None:
     assert tuple(PROJECT_EFFECT_TOOL_NAMES) == PROJECT_EFFECT_FROZEN_LIST
     for name in PROJECT_EFFECT_FROZEN_LIST:
         assert SDK_TOOL_EXECUTION_POLICY_OVERRIDES[name] == (
-            "project_effect", "required", "required"
+            "project_effect",
+            "required",
+            "required",
         )
     for name in READ_TOOLS_KEEP_DEFAULT:
         assert name not in SDK_TOOL_EXECUTION_POLICY_OVERRIDES
     # task_scope_update（design-freeze §1 第二段，Task 3 实装）：direct kernel、non_project_effect、
     # route/TaskScope REQUIRED；它不在 PROJECT_EFFECT 清单内。
     assert SDK_TOOL_EXECUTION_POLICY_OVERRIDES["task_scope_update"] == (
-        "non_project_effect", "required", "required"
+        "non_project_effect",
+        "required",
+        "required",
     )
     assert "task_scope_update" not in PROJECT_EFFECT_FROZEN_LIST
 
@@ -112,8 +133,12 @@ def test_project_effect_list_frozen_and_route_required() -> None:
     ]
     registry = SdkRunToolAuthorityRegistry()
     registry.prepare_run(
-        run_id="run-policy", session_id="session-policy", request_id="request-policy",
-        root_run_id="root-policy", task_scope_id="task-policy", workspace_root=None,
+        run_id="run-policy",
+        session_id="session-policy",
+        request_id="request-policy",
+        root_run_id="root-policy",
+        task_scope_id="task-policy",
+        workspace_root=None,
         catalog={
             "generation": 1,
             "content_fingerprint": canonical_sha256(specs),
@@ -243,7 +268,8 @@ async def test_write_file_effect_commits_execution_effect_row_and_host_file_even
         env.db_path,
         "SELECT event_id,event_kind,payload_json FROM task_scope_events "
         "WHERE task_scope_id=? AND source_kind='host' AND source_event_id=?",
-        scope_a, source_event_id,
+        scope_a,
+        source_event_id,
     )
     assert kind == "host.file"
     payload = json.loads(payload_json)
@@ -276,7 +302,8 @@ async def test_write_file_effect_commits_execution_effect_row_and_host_file_even
         env.db_path,
         "SELECT status,source_sequence,resolved_at FROM harness_evidence_reservations "
         "WHERE run_id=? AND source_event_id=?",
-        h.RUN.value, source_event_id,
+        h.RUN.value,
+        source_event_id,
     )
     assert reservation_status == "ingested"
     [(receipt_seq, harness_kind, harness_payload, committed_at)] = h.rows(
@@ -285,7 +312,8 @@ async def test_write_file_effect_commits_execution_effect_row_and_host_file_even
         "FROM task_scope_execution_ingest_receipts r "
         "JOIN task_scope_events e ON e.event_id=r.event_id "
         "WHERE r.run_id=? AND r.source_event_id=?",
-        h.RUN.value, source_event_id,
+        h.RUN.value,
+        source_event_id,
     )
     assert harness_kind == "harness.tool_invocation"
     assert receipt_seq == reservation_seq
@@ -300,7 +328,8 @@ async def test_write_file_effect_commits_execution_effect_row_and_host_file_even
     dirty = await dirty_state(CanonicalTaskScopeStore(env.db_path), scope_a)
     assert dirty.is_dirty
     assert sorted(item.event_kind for item in dirty.material_events) == [
-        "harness.tool_invocation", "host.file",
+        "harness.tool_invocation",
+        "host.file",
     ]
 
 
@@ -346,9 +375,9 @@ async def test_reroute_to_other_scope_then_write_rejected_frozen_scope_mismatch(
     assert '"outcome":"rejected"' in second
     assert '"error_code":"effect_gate_frozen_scope_mismatch"' in second
     # 被拒的 envelope 确实携带了 scope B（SDK 认为合法），是 Host 冻结 authority 拒绝的。
-    assert [e.task_scope_id for e in env.task_authority.envelopes if e.tool_name == "write_file"] == [
-        scope_a, scope_b
-    ]
+    assert [
+        e.task_scope_id for e in env.task_authority.envelopes if e.tool_name == "write_file"
+    ] == [scope_a, scope_b]
     assert env.memo.read(h.RUN.value) is None
 
 
@@ -429,7 +458,10 @@ async def test_standalone_route_project_effect_is_run_fault_with_stable_code(
             )
 
     observed = await SqliteSdkTerminalObserver(
-        str(queue_db), _Ingress(), _Stack(), run_fault_memo=env.memo  # type: ignore[arg-type]
+        str(queue_db),
+        _Ingress(),
+        _Stack(),
+        run_fault_memo=env.memo,  # type: ignore[arg-type]
     ).observe(
         host_run_id=admission.host_run_id,
         sdk_run_id=h.RUN.value,
@@ -450,7 +482,8 @@ async def test_standalone_route_project_effect_is_run_fault_with_stable_code(
     )
     assert terminal.terminal_state is RunState.FAILED
     heads = h.rows(
-        queue_db, "SELECT current_state FROM foreground_run_heads WHERE host_run_id=?",
+        queue_db,
+        "SELECT current_state FROM foreground_run_heads WHERE host_run_id=?",
         admission.host_run_id,
     )
     assert heads == [("FAILED",)]
@@ -485,7 +518,9 @@ async def test_material_event_sets_dirty_state_from_last_closure_receipt(tmp_pat
     store = CanonicalTaskScopeStore(env.db_path)
     recorder = TaskEventRecorder(store)
     # 无 receipt、无 material 事件：不脏（host.turn 是 trivial）。
-    await recorder.record_turn(task_scope_id=scope_a, source_event_id="turn-1", payload={"turn_id": "t1"})
+    await recorder.record_turn(
+        task_scope_id=scope_a, source_event_id="turn-1", payload={"turn_id": "t1"}
+    )
     clean = await dirty_state(store, scope_a)
     assert clean.closure_watermark == 0 and not clean.is_dirty and clean.material_events == ()
 
@@ -508,7 +543,8 @@ async def test_material_event_sets_dirty_state_from_last_closure_receipt(tmp_pat
     # write_file → host.file(material) + harness.tool_invocation(PROJECT_EFFECT, material)；
     # read_file / context_route → harness.tool_invocation(trivial)。
     assert sorted(item.event_kind for item in dirty.material_events) == [
-        "harness.tool_invocation", "host.file",
+        "harness.tool_invocation",
+        "host.file",
     ]
     watermark = max(item.event_sequence for item in dirty.material_events)
 
@@ -544,9 +580,16 @@ async def test_material_event_sets_dirty_state_from_last_closure_receipt(tmp_pat
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "sdk_state,terminal",
-    [("completed", "COMPLETED"), ("failed", "FAILED"), ("cancelled", "CANCELLED"), ("cancelled", "STOPPED")],
+    [
+        ("completed", "COMPLETED"),
+        ("failed", "FAILED"),
+        ("cancelled", "CANCELLED"),
+        ("cancelled", "STOPPED"),
+    ],
 )
-async def test_terminal_gate_requires_closure_receipt(tmp_path: Path, sdk_state: str, terminal: str) -> None:
+async def test_terminal_gate_requires_closure_receipt(
+    tmp_path: Path, sdk_state: str, terminal: str
+) -> None:
     """Task 3（S5B-AC-1③ 三水位）：Harness 证据水位放行后，语义收敛水位仍要求 closure receipt。
 
     scope 有 material 脏事件而无 receipt → ``record_sdk_terminal`` 稳定拒绝
@@ -565,12 +608,19 @@ async def test_terminal_gate_requires_closure_receipt(tmp_path: Path, sdk_state:
         from deskpet.execution.foreground_queue import EffectBoundary
 
         await env.store.request_control(
-            host_run_id=env.admission.host_run_id, subject=ch.SUBJECT, generation=env.admission.generation,
-            control_kind="stop", reason="user_stop", idempotency_key="stop-gate",
+            host_run_id=env.admission.host_run_id,
+            subject=ch.SUBJECT,
+            generation=env.admission.generation,
+            control_kind="stop",
+            reason="user_stop",
+            idempotency_key="stop-gate",
         )
         await env.store.authorize_effect(
-            host_run_id=env.admission.host_run_id, sdk_run_id=env.run_id, owner_id=env.admission.owner_id,
-            generation=env.admission.generation, boundary=EffectBoundary.TOOL,
+            host_run_id=env.admission.host_run_id,
+            sdk_run_id=env.run_id,
+            owner_id=env.admission.owner_id,
+            generation=env.admission.generation,
+            boundary=EffectBoundary.TOOL,
         )
     facts = ch.FakeRunFacts(env.run_id, state=sdk_state)
     observed = await ch.observe_terminal(env, facts)
@@ -583,15 +633,23 @@ async def test_terminal_gate_requires_closure_receipt(tmp_path: Path, sdk_state:
         await ch.record_terminal(env, observed)
     assert blocked.value.code == "foreground_terminal_closure_pending"
     assert ch.rows(env.db_path, "SELECT COUNT(*) FROM foreground_terminal_receipts") == before
-    assert ch.rows(env.db_path, "SELECT current_state FROM foreground_run_heads WHERE host_run_id=?", env.admission.host_run_id) == [
-        ("STOP_REQUESTED" if terminal == "STOPPED" else "RUNNING",)
-    ]
+    assert ch.rows(
+        env.db_path,
+        "SELECT current_state FROM foreground_run_heads WHERE host_run_id=?",
+        env.admission.host_run_id,
+    ) == [("STOP_REQUESTED" if terminal == "STOPPED" else "RUNNING",)]
 
     # 本 Run 的 pending receipt（兜底失败/非 COMPLETED 终态）→ 终态照常提交，脏标记仍在。
     await write_closure_receipt(
-        env.db_path, task_scope_id=ch.SCOPE, sdk_run_id=env.run_id, host_run_id=env.admission.host_run_id,
-        closure_watermark=dirty.event_watermark, outcome="pending", plan_id=None,
-        reason_code="closure_run_not_completed", attempt_id=None,
+        env.db_path,
+        task_scope_id=ch.SCOPE,
+        sdk_run_id=env.run_id,
+        host_run_id=env.admission.host_run_id,
+        closure_watermark=dirty.event_watermark,
+        outcome="pending",
+        plan_id=None,
+        reason_code="closure_run_not_completed",
+        attempt_id=None,
     )
     receipt = await ch.record_terminal(env, observed)
     assert receipt.terminal_state.value == terminal
@@ -627,20 +685,27 @@ async def test_harness_evidence_reservations_drained_before_run_terminal_no_row_
     await fq._enqueue(store, primary_id, 1)
     admission = await fq._claim_and_bind(store, sdk_run_id=run_id)
     await store.record_sdk_started(
-        host_run_id=admission.host_run_id, sdk_run_id=run_id, owner_id=admission.owner_id,
-        generation=admission.generation, sdk_event_id="sdk-start-a9",
+        host_run_id=admission.host_run_id,
+        sdk_run_id=run_id,
+        owner_id=admission.owner_id,
+        generation=admission.generation,
+        sdk_event_id="sdk-start-a9",
         idempotency_key="sdk-start-a9",
     )
     ingress = ExecutionEvidenceIngress(queue_db)
     first = await ingress.reserve(
-        run_id=run_id, task_scope_id=fq.SCOPE, kind="provider_invocation",
+        run_id=run_id,
+        task_scope_id=fq.SCOPE,
+        kind="provider_invocation",
         source_event_id="prov-1",
     )
     assert first.source_sequence == 1
     await ingress.ingest(
         task_scope_id=fq.SCOPE,
         evidence=fq._execution_evidence(
-            sdk_run_id=run_id, source_event_id="prov-1", kind="provider_invocation",
+            sdk_run_id=run_id,
+            source_event_id="prov-1",
+            kind="provider_invocation",
             source_sequence=1,
         ),
     )
@@ -679,18 +744,27 @@ async def test_harness_evidence_reservations_drained_before_run_terminal_no_row_
     class _Stack:
         def read_run_terminal_evidence(self, r: str):  # type: ignore[no-untyped-def]
             return SimpleNamespace(
-                run_id=r, state="completed", event_id="sdk-terminal-a9",
-                event_hash="7" * 64, occurred_at=9.0, error_code=None,
+                run_id=r,
+                state="completed",
+                event_id="sdk-terminal-a9",
+                event_hash="7" * 64,
+                occurred_at=9.0,
+                error_code=None,
             )
 
         async def read_reserved_fact(self, reservation):  # type: ignore[no-untyped-def]
             return None  # SDK/coordinator 读不到事实 → tombstone
 
     observed = await SqliteSdkTerminalObserver(
-        str(queue_db), _Ingress(), _Stack()  # type: ignore[arg-type]
+        str(queue_db),
+        _Ingress(),
+        _Stack(),  # type: ignore[arg-type]
     ).observe(
-        host_run_id=admission.host_run_id, sdk_run_id=run_id, subject=fq.SUBJECT,
-        owner_id=admission.owner_id, generation=admission.generation,
+        host_run_id=admission.host_run_id,
+        sdk_run_id=run_id,
+        subject=fq.SUBJECT,
+        owner_id=admission.owner_id,
+        generation=admission.generation,
     )
     assert observed is not None and observed.terminal_state is RunState.COMPLETED
     rows = h.rows(
@@ -702,8 +776,10 @@ async def test_harness_evidence_reservations_drained_before_run_terminal_no_row_
         run_id,
     )
     assert [(seq, kind) for seq, kind, _ in rows] == [
-        (1, "provider_invocation"), (2, "tool_invocation"),
-        (3, "context_snapshot"), (4, "run_terminal"),
+        (1, "provider_invocation"),
+        (2, "tool_invocation"),
+        (3, "context_snapshot"),
+        (4, "run_terminal"),
     ]
     tombstone = json.loads(rows[2][2])["public_payload"]
     assert tombstone == {"status": "abandoned", "reservation_id": snap.reservation_id}
@@ -715,7 +791,9 @@ async def test_harness_evidence_reservations_drained_before_run_terminal_no_row_
     )
     # Task 6（Task 2 审查 F-6）：run_terminal 同样走预留协议（seq4 预留 + 同事务导入）。
     assert statuses == [
-        ("prov-1", "ingested"), ("tool-2", "ingested"), ("snap-3", "abandoned"),
+        ("prov-1", "ingested"),
+        ("tool-2", "ingested"),
+        ("snap-3", "abandoned"),
         ("sdk-terminal-a9", "ingested"),
     ]
     gate = await ingress.authorize_terminal(run_id)
@@ -726,7 +804,9 @@ async def test_harness_evidence_reservations_drained_before_run_terminal_no_row_
 
 
 @pytest.mark.asyncio
-async def test_task_scope_update_mutate_closes_and_no_mutation_requires_reason(tmp_path: Path) -> None:
+async def test_task_scope_update_mutate_closes_and_no_mutation_requires_reason(
+    tmp_path: Path,
+) -> None:
     """Task 3（S5B-AC-1②）：``task_scope_update`` 是常暴露的 direct kernel 工具（strict schema，
     NON_PROJECT_EFFECT / route REQUIRED / TaskScope REQUIRED）。
 
@@ -756,7 +836,11 @@ async def test_task_scope_update_mutate_closes_and_no_mutation_requires_reason(t
     assert "task_scope_update" in SDK_DIRECT_TOOL_KERNEL
     assert "task_scope_update" in PROJECTLESS_SAFE_TOOL_NAMES
     assert "task_scope_update" in PRODUCT_TOOL_NAMES
-    assert SDK_TOOL_EXECUTION_POLICY_OVERRIDES["task_scope_update"] == ("non_project_effect", "required", "required")
+    assert SDK_TOOL_EXECUTION_POLICY_OVERRIDES["task_scope_update"] == (
+        "non_project_effect",
+        "required",
+        "required",
+    )
 
     env = await h.build_env(tmp_path)
     scope_a, root_a = await h.make_bound_scope(env, "a", "root-a")
@@ -774,16 +858,28 @@ async def test_task_scope_update_mutate_closes_and_no_mutation_requires_reason(t
         ]
 
     def closure_arguments(outcome: str, key: str, **extra: object) -> dict:
-        [(revision,)] = h.rows(env.db_path, "SELECT current_revision FROM task_scope_heads WHERE task_scope_id=?", scope_a)
+        [(revision,)] = h.rows(
+            env.db_path,
+            "SELECT current_revision FROM task_scope_heads WHERE task_scope_id=?",
+            scope_a,
+        )
         refs = evidence_ids()
         arguments: dict = {
-            "outcome": outcome, "base_revision": int(revision), "evidence_refs": refs,
-            "idempotency_key": key, **extra,
+            "outcome": outcome,
+            "base_revision": int(revision),
+            "evidence_refs": refs,
+            "idempotency_key": key,
+            **extra,
         }
         if outcome == "mutate":
             arguments["operations"] = [
-                {"operation_id": "op-1", "kind": "plan.step.add", "value": "a.txt 已写入",
-                 "reason_code": "objective_file_change", "evidence_refs": refs},
+                {
+                    "operation_id": "op-1",
+                    "kind": "plan.step.add",
+                    "value": "a.txt 已写入",
+                    "reason_code": "objective_file_change",
+                    "evidence_refs": refs,
+                },
             ]
         return arguments
 
@@ -793,14 +889,22 @@ async def test_task_scope_update_mutate_closes_and_no_mutation_requires_reason(t
         async def invoke(self, run_id, request, *, cancel, execution_lease):  # type: ignore[no-untyped-def]
             if self.responses and callable(self.responses[0]):
                 self.responses[0] = self.responses[0]()
-            return await super().invoke(run_id, request, cancel=cancel, execution_lease=execution_lease)
+            return await super().invoke(
+                run_id, request, cancel=cancel, execution_lease=execution_lease
+            )
 
     def deferred(outcome: str, key: str, **extra: object):  # type: ignore[no-untyped-def]
-        return lambda: h.tool_call("task_scope_update", closure_arguments(outcome, key, **extra), raw_id=f"raw-{key}")
+        return lambda: h.tool_call(
+            "task_scope_update", closure_arguments(outcome, key, **extra), raw_id=f"raw-{key}"
+        )
 
     provider = LazyProvider(
         [
-            h.tool_call("context_route", {"route": "resume_existing", "task_scope_id": scope_a}, raw_id="raw-route"),
+            h.tool_call(
+                "context_route",
+                {"route": "resume_existing", "task_scope_id": scope_a},
+                raw_id="raw-route",
+            ),
             h.tool_call("write_file", {"path": "a.txt", "content": "alpha"}, raw_id="raw-write"),
             deferred("mutate", "closure-1"),
             h.answer("done"),
@@ -810,7 +914,11 @@ async def test_task_scope_update_mutate_closes_and_no_mutation_requires_reason(t
     assert out["exception"] is None
     # task_scope_update 每一轮都暴露（不按脏标记控制可见性）。
     assert all("task_scope_update" in names for names in h.provider_tool_names(provider))
-    [(revision, watermark)] = h.rows(env.db_path, "SELECT current_revision,event_watermark FROM task_scope_heads WHERE task_scope_id=?", scope_a)
+    [(revision, watermark)] = h.rows(
+        env.db_path,
+        "SELECT current_revision,event_watermark FROM task_scope_heads WHERE task_scope_id=?",
+        scope_a,
+    )
     assert revision == 2
     receipts = h.rows(
         env.db_path,
@@ -822,14 +930,24 @@ async def test_task_scope_update_mutate_closes_and_no_mutation_requires_reason(t
     assert receipts == [(h.RUN.value, watermark, "mutate", plan_id, "model_closure")]
     # receipt 与 apply 同事务：decision 与 receipt 的 plan_id 一致，created_at 同一 now。
     [(decision_plan_id, decision_outcome, decision_created)] = h.rows(
-        env.db_path, "SELECT plan_id,outcome,created_at FROM task_scope_mutation_decisions WHERE task_scope_id=?", scope_a,
+        env.db_path,
+        "SELECT plan_id,outcome,created_at FROM task_scope_mutation_decisions WHERE task_scope_id=?",
+        scope_a,
     )
-    [(receipt_created,)] = h.rows(env.db_path, "SELECT created_at FROM task_scope_closure_receipts WHERE plan_id=?", plan_id)
-    assert (decision_plan_id, decision_outcome) == (plan_id, "mutate") and decision_created == receipt_created
+    [(receipt_created,)] = h.rows(
+        env.db_path, "SELECT created_at FROM task_scope_closure_receipts WHERE plan_id=?", plan_id
+    )
+    assert (decision_plan_id, decision_outcome) == (
+        plan_id,
+        "mutate",
+    ) and decision_created == receipt_created
     assert not (await dirty_state(store, scope_a)).is_dirty
     result_json = json.loads(h.tool_messages(env, "task_scope_update")[0])
     assert result_json["outcome"] == "succeeded"
-    assert result_json["value"]["ok"] is True and result_json["value"]["closure_receipt"]["outcome"] == "mutate"
+    assert (
+        result_json["value"]["ok"] is True
+        and result_json["value"]["closure_receipt"]["outcome"] == "mutate"
+    )
 
     # 第二个 Run（同 scope）：先制造新的 material 事件，再提交缺 closure_reason 的 no_mutation → 拒绝；
     # 补上 closure_reason → 收口。
@@ -837,7 +955,11 @@ async def test_task_scope_update_mutate_closes_and_no_mutation_requires_reason(t
     env.checkpoint.value = None
     provider2 = LazyProvider(
         [
-            h.tool_call("context_route", {"route": "resume_existing", "task_scope_id": scope_a}, raw_id="raw-route-2"),
+            h.tool_call(
+                "context_route",
+                {"route": "resume_existing", "task_scope_id": scope_a},
+                raw_id="raw-route-2",
+            ),
             h.tool_call("write_file", {"path": "b.txt", "content": "beta"}, raw_id="raw-write-2"),
             deferred("no_mutation", "closure-2"),
             deferred("no_mutation", "closure-3", closure_reason="model_no_change"),
@@ -849,13 +971,27 @@ async def test_task_scope_update_mutate_closes_and_no_mutation_requires_reason(t
     messages = h.tool_messages(env, "task_scope_update")
     assert len(messages) == 3
     rejected = json.loads(messages[1])
-    assert rejected["outcome"] == "rejected" and rejected["error_code"] == "task_scope_update_payload_invalid"
+    assert (
+        rejected["outcome"] == "rejected"
+        and rejected["error_code"] == "task_scope_update_payload_invalid"
+    )
     accepted = json.loads(messages[2])
     assert accepted["outcome"] == "succeeded"
-    assert accepted["value"]["ok"] is True and accepted["value"]["closure_receipt"]["outcome"] == "no_mutation"
-    [(revision2, watermark2)] = h.rows(env.db_path, "SELECT current_revision,event_watermark FROM task_scope_heads WHERE task_scope_id=?", scope_a)
+    assert (
+        accepted["value"]["ok"] is True
+        and accepted["value"]["closure_receipt"]["outcome"] == "no_mutation"
+    )
+    [(revision2, watermark2)] = h.rows(
+        env.db_path,
+        "SELECT current_revision,event_watermark FROM task_scope_heads WHERE task_scope_id=?",
+        scope_a,
+    )
     assert revision2 == 3  # no_mutation 也是一次 apply（S4 语义），被拒的那次未递增
-    outcomes = h.rows(env.db_path, "SELECT outcome,closure_watermark FROM task_scope_closure_receipts WHERE task_scope_id=? ORDER BY created_at", scope_a)
+    outcomes = h.rows(
+        env.db_path,
+        "SELECT outcome,closure_watermark FROM task_scope_closure_receipts WHERE task_scope_id=? ORDER BY created_at",
+        scope_a,
+    )
     assert [o for o, _ in outcomes] == ["mutate", "no_mutation"] and outcomes[1][1] == watermark2
     assert not (await dirty_state(store, scope_a)).is_dirty
     audits = h.rows(
@@ -902,7 +1038,9 @@ async def test_missed_call_fallback_invokes_once_and_unknown_never_resends(tmp_p
     assert observation["staged_final_answer"] == ch.LAST_ANSWER
     assert observation["allowed_evidence_refs"] == refs
     assert observation["task_scope"]["current_revision"] == revision
-    request_hash = closure_request_hash(env.run_id, ch.SCOPE, dirty.event_watermark, ch.sha256_text(ch.LAST_ANSWER))
+    request_hash = closure_request_hash(
+        env.run_id, ch.SCOPE, dirty.event_watermark, ch.sha256_text(ch.LAST_ANSWER)
+    )
     plan_id = closure_plan_id(request_hash)
     assert ch.receipts(env.db_path)[-1][2:5] == ("mutate", plan_id, "fallback_closure")
     assert ch.attempts(env.db_path) == [(1, "succeeded", None, None, plan_id, 1)]
@@ -926,26 +1064,48 @@ async def test_missed_call_fallback_invokes_once_and_unknown_never_resends(tmp_p
     settlement2 = await ch.settle(env2, fallback2)
     assert settlement2.status == "pending" and settlement2.reason_code == "closure_attempt_unknown"
     assert len(adapter2.calls) == 1
-    [(ordinal, status, unknown_class, reason, attempt_plan_id, generation)] = ch.attempts(env2.db_path)
-    assert (ordinal, status, unknown_class, reason, generation) == (1, "unknown", "sent_unknown", "closure_attempt_unknown", 1)
-    assert isinstance(attempt_plan_id, str) and len(attempt_plan_id) == 64  # 预留时即记录派生 plan_id（reconcile 依据）
+    [(ordinal, status, unknown_class, reason, attempt_plan_id, generation)] = ch.attempts(
+        env2.db_path
+    )
+    assert (ordinal, status, unknown_class, reason, generation) == (
+        1,
+        "unknown",
+        "sent_unknown",
+        "closure_attempt_unknown",
+        1,
+    )
+    assert (
+        isinstance(attempt_plan_id, str) and len(attempt_plan_id) == 64
+    )  # 预留时即记录派生 plan_id（reconcile 依据）
     assert ch.receipts(env2.db_path)[-1][2:5] == ("pending", None, "closure_attempt_unknown")
     await ch.record_terminal(env2, observed2)
-    restarted, _ = ch.build_fallback(env2, facts2, ch.FakeAdapter([ch.closure_call(ch.mutate_arguments(refs, base_revision=1))]))
+    restarted, _ = ch.build_fallback(
+        env2, facts2, ch.FakeAdapter([ch.closure_call(ch.mutate_arguments(refs, base_revision=1))])
+    )
     replay = await ch.settle(env2, restarted)
     # 本 Run 已有 durable pending(closure_attempt_unknown) → 重放照实报 pending（c6af1ac4，
     # 2026-09-06 起不再报 already_closed：债务仍在），零调用。
     assert replay.status == "pending" and replay.reason_code == "closure_attempt_unknown"
-    assert replay.provider_calls == 0 and replay.receipt is not None and replay.receipt.outcome == "pending"
+    assert (
+        replay.provider_calls == 0
+        and replay.receipt is not None
+        and replay.receipt.outcome == "pending"
+    )
     assert len(ch.attempts(env2.db_path)) == 1  # 无新 attempt
-    assert (await dirty_state(CanonicalTaskScopeStore(env2.db_path), ch.SCOPE)).is_dirty  # pending 不清脏
+    assert (
+        await dirty_state(CanonicalTaskScopeStore(env2.db_path), ch.SCOPE)
+    ).is_dirty  # pending 不清脏
 
     # ③ timeout（读超时：已发出）→ pending(closure_timeout)；模型拒绝调用（无 tool call）→ pending；
     #    handler 拒绝（refs 不属本 scope）→ pending(reason=拒绝码)；三者 Host 终态都照常提交。
     for suffix, script, reason in (
         ("three", [ProviderTimeoutError(public_message="timeout")], "closure_timeout"),
         ("four", [ch.plain_answer()], "closure_model_declined"),
-        ("five", [ch.closure_call(ch.mutate_arguments(["ev-outside"], base_revision=1))], "task_scope_update_refs_outside_scope"),
+        (
+            "five",
+            [ch.closure_call(ch.mutate_arguments(["ev-outside"], base_revision=1))],
+            "task_scope_update_refs_outside_scope",
+        ),
     ):
         env_n = await ch.bound_run(tmp_path / suffix, f"sdk-run-fb-{suffix}")
         await ch.material_write(env_n, f"e-{suffix}")
@@ -962,7 +1122,9 @@ async def test_missed_call_fallback_invokes_once_and_unknown_never_resends(tmp_p
 
 
 @pytest.mark.asyncio
-async def test_pending_closure_belongs_to_admission_scope_and_next_run_merges(tmp_path: Path) -> None:
+async def test_pending_closure_belongs_to_admission_scope_and_next_run_merges(
+    tmp_path: Path,
+) -> None:
     """Task 3（S5B-AC-1③ ⑥）：pending 是 admission scope 的债务。
 
     Run 1 留下 pending → STATUS 投影显式 ``semantic_closure_pending``；同 scope 的 Run 2 的 snapshot
@@ -990,7 +1152,9 @@ async def test_pending_closure_belongs_to_admission_scope_and_next_run_merges(tm
     assert (await ch.settle(env, fallback)).status == "pending"
     await ch.record_terminal(env, observed)
     store = CanonicalTaskScopeStore(env.db_path)
-    assert [r.reason_code for r in await pending_receipts(store, ch.SCOPE)] == ["closure_model_declined"]
+    assert [r.reason_code for r in await pending_receipts(store, ch.SCOPE)] == [
+        "closure_model_declined"
+    ]
 
     async def status_view() -> dict:
         views = await TaskScopeProjectionStore(env.db_path).materialize(task_scope_id=ch.SCOPE)
@@ -1041,9 +1205,15 @@ async def test_pending_closure_belongs_to_admission_scope_and_next_run_merges(tm
     await ch.record_terminal(env3, observed3)
     assert (await status_view())["semantic_closure_pending"] is True
     forced = await force_close_pending(env3.db_path, task_scope_id=ch.SCOPE, subject=ch.SUBJECT)
-    assert forced is not None and forced.outcome == "no_mutation" and forced.reason_code == "host_forced"
+    assert (
+        forced is not None
+        and forced.outcome == "no_mutation"
+        and forced.reason_code == "host_forced"
+    )
     [(closure_reason,)] = ch.rows(
-        env3.db_path, "SELECT json_extract(plan_json,'$.closure_reason') FROM task_scope_mutation_decisions WHERE plan_id=?", forced.plan_id,
+        env3.db_path,
+        "SELECT json_extract(plan_json,'$.closure_reason') FROM task_scope_mutation_decisions WHERE plan_id=?",
+        forced.plan_id,
     )
     assert closure_reason == "closure_abandoned"
     assert len(adapter3.calls) == 1  # 强制收口零 Provider 调用
@@ -1051,7 +1221,9 @@ async def test_pending_closure_belongs_to_admission_scope_and_next_run_merges(tm
     assert (await status_view())["semantic_closure_pending"] is False
     # 幂等：无 pending 时再强制 → None，无新 receipt。
     count = len(ch.receipts(env3.db_path))
-    assert await force_close_pending(env3.db_path, task_scope_id=ch.SCOPE, subject=ch.SUBJECT) is None
+    assert (
+        await force_close_pending(env3.db_path, task_scope_id=ch.SCOPE, subject=ch.SUBJECT) is None
+    )
     assert len(ch.receipts(env3.db_path)) == count
 
 
@@ -1086,19 +1258,27 @@ def test_composition_missing_piece_startup_fail_each(tmp_path: Path) -> None:
     # 2026-09-10：``sdk_evidence_authority`` / ``sdk_memory_analysis_executor`` /
     # ``sdk_memory_ingestion_outbox`` 三个 Host↔Memory 异步面槽位随认知记忆 SDK
     # 一并移除，不再是必备装配件。
-    assert {"sdk_effect_gate", "sdk_task_execution_authority", "sdk_closure_instruction_reader",
-            "sdk_provider_binding_resolver"} <= set(main.SDK_COMPOSITION_SLOTS)
+    assert {
+        "sdk_effect_gate",
+        "sdk_task_execution_authority",
+        "sdk_closure_instruction_reader",
+        "sdk_provider_binding_resolver",
+    } <= set(main.SDK_COMPOSITION_SLOTS)
     for slot in main.SDK_COMPOSITION_SLOTS:
         probe = ServiceContext()
         for other in main.SDK_COMPOSITION_SLOTS:
             probe.register(other, None if other == slot else object())
-        with pytest.raises(RuntimeError, match=f"sdk_context_authority_composition_missing:{slot}$"):
+        with pytest.raises(
+            RuntimeError, match=f"sdk_context_authority_composition_missing:{slot}$"
+        ):
             main._assert_sdk_composition_slots(probe)
     # ② EffectGate 真构造：任一件缺失 → TypeError（stack 构建期即失败）。
     pieces = {
-        "binding_store": object(), "route_ledger": object(),
+        "binding_store": object(),
+        "route_ledger": object(),
         "scope_store": CanonicalTaskScopeStore(tmp_path / "s.db"),
-        "authority_resolver": lambda run_id: None, "exposure_resolver": lambda run_id: None,
+        "authority_resolver": lambda run_id: None,
+        "exposure_resolver": lambda run_id: None,
     }
     EffectGate(**pieces)
     for name in pieces:
@@ -1106,7 +1286,9 @@ def test_composition_missing_piece_startup_fail_each(tmp_path: Path) -> None:
             EffectGate(**{**pieces, name: None})
     # ③ 生产 builder 的 closure_reader 非 None（Task 3 审查 F-2 的真对象断言在 test_composition）。
     source = Path(main.__file__).read_text(encoding="utf-8")
-    assert "_assert_sdk_composition_slots()" in source.split("def _build_product_sdk_runtime_stack")[1]
+    assert (
+        "_assert_sdk_composition_slots()" in source.split("def _build_product_sdk_runtime_stack")[1]
+    )
 
 
 @pytest.mark.asyncio
@@ -1117,7 +1299,6 @@ async def test_v46_forward_migration_and_old_runtime_rejects(tmp_path: Path, mon
     from tests.memory import test_s5b_v46_cutover as cutover
 
     await cutover.test_v46_forward_migration_and_rollback_drill_keep_evidence(tmp_path, monkeypatch)
-
 
 
 # ---- S5b Task 6：Task 3 审查 F-7 / F-9.5 ---------------------------------------
@@ -1153,18 +1334,26 @@ async def test_force_close_does_not_swallow_in_flight_run_dirty(tmp_path: Path) 
     await ch.material_write(env_b, "e-b1", path="b1.txt")
     await ch.material_write(env_b, "e-b2", path="b2.txt")
     before = await dirty_state(store, ch.SCOPE)
-    assert {e.source_event_id for e in before.material_events} >= {"execution:effect:e-b1", "execution:effect:e-b2"}
+    assert {e.source_event_id for e in before.material_events} >= {
+        "execution:effect:e-b1",
+        "execution:effect:e-b2",
+    }
 
     receipt = await force_close_pending(env.db_path, task_scope_id=ch.SCOPE, subject=ch.SUBJECT)
     assert receipt is not None and receipt.outcome == "no_mutation"
     assert receipt.closure_watermark == pending_watermark
     after = await dirty_state(store, ch.SCOPE)
     assert after.is_dirty
-    assert {e.source_event_id for e in after.material_events} >= {"execution:effect:e-b1", "execution:effect:e-b2"}
+    assert {e.source_event_id for e in after.material_events} >= {
+        "execution:effect:e-b1",
+        "execution:effect:e-b2",
+    }
     assert "execution:effect:e-a1" not in {e.source_event_id for e in after.material_events}
     # pending 已被清（不再重复强制收口）；幂等重放不再写第二条 receipt。
     assert not await pending_receipts(store, ch.SCOPE)
-    assert await force_close_pending(env.db_path, task_scope_id=ch.SCOPE, subject=ch.SUBJECT) is None
+    assert (
+        await force_close_pending(env.db_path, task_scope_id=ch.SCOPE, subject=ch.SUBJECT) is None
+    )
     receipts = ch.receipts(env.db_path)
     assert [r[2] for r in receipts].count("no_mutation") == 1
     # B 自己的收口覆盖 B 的事件。
@@ -1172,7 +1361,17 @@ async def test_force_close_does_not_swallow_in_flight_run_dirty(tmp_path: Path) 
     observed_b = await ch.observe_terminal(env_b, facts_b)
     refs = ch.scope_evidence_ids(env.db_path)
     revision, _ = ch.head(env.db_path)
-    fallback_b, _ = ch.build_fallback(env_b, facts_b, ch.FakeAdapter([ch.closure_call(ch.mutate_arguments(refs, base_revision=revision, idempotency_key="closure-b"))]))
+    fallback_b, _ = ch.build_fallback(
+        env_b,
+        facts_b,
+        ch.FakeAdapter(
+            [
+                ch.closure_call(
+                    ch.mutate_arguments(refs, base_revision=revision, idempotency_key="closure-b")
+                )
+            ]
+        ),
+    )
     settled_b = await ch.settle(env_b, fallback_b)
     assert settled_b.status == "mutate"
     assert not (await dirty_state(store, ch.SCOPE)).is_dirty
@@ -1180,7 +1379,9 @@ async def test_force_close_does_not_swallow_in_flight_run_dirty(tmp_path: Path) 
 
 
 @pytest.mark.asyncio
-async def test_concurrent_reserve_from_two_connections_never_double_allocates(tmp_path: Path) -> None:
+async def test_concurrent_reserve_from_two_connections_never_double_allocates(
+    tmp_path: Path,
+) -> None:
     """F-9.5：两个 ``ExecutionEvidenceIngress``（两条连接）真正并发 ``reserve`` → 序号互不重复、无冲突；
     幂等重放同 source 得同序号；UNIQUE(run_id, source_sequence) 兜底。"""
 
@@ -1192,26 +1393,37 @@ async def test_concurrent_reserve_from_two_connections_never_double_allocates(tm
     env = await ch.bound_run(tmp_path, "sdk-run-concurrent")
     a = ExecutionEvidenceIngress(env.db_path)
     b = ExecutionEvidenceIngress(env.db_path)
-    reservations = await asyncio.gather(*[
-        (a if index % 2 == 0 else b).reserve(
-            run_id=env.run_id, task_scope_id=ch.SCOPE, kind="tool_invocation", source_event_id=f"effect:c-{index}",
-            tool_name="write_file",
-        )
-        for index in range(12)
-    ])
+    reservations = await asyncio.gather(
+        *[
+            (a if index % 2 == 0 else b).reserve(
+                run_id=env.run_id,
+                task_scope_id=ch.SCOPE,
+                kind="tool_invocation",
+                source_event_id=f"effect:c-{index}",
+                tool_name="write_file",
+            )
+            for index in range(12)
+        ]
+    )
     sequences = sorted(r.source_sequence for r in reservations)
     assert sequences == list(range(1, 13))
     assert len({r.reservation_id for r in reservations}) == 12
     # 幂等重放（并发再来一轮同 source）→ 同序号，无新行。
-    replay = await asyncio.gather(*[
-        (b if index % 2 == 0 else a).reserve(
-            run_id=env.run_id, task_scope_id=ch.SCOPE, kind="tool_invocation", source_event_id=f"effect:c-{index}",
-        )
-        for index in range(12)
-    ])
+    replay = await asyncio.gather(
+        *[
+            (b if index % 2 == 0 else a).reserve(
+                run_id=env.run_id,
+                task_scope_id=ch.SCOPE,
+                kind="tool_invocation",
+                source_event_id=f"effect:c-{index}",
+            )
+            for index in range(12)
+        ]
+    )
     assert sorted(r.source_sequence for r in replay) == sequences
-    assert ch.rows(env.db_path, "SELECT COUNT(*) FROM harness_evidence_reservations WHERE run_id=?", env.run_id) == [(12,)]
-
+    assert ch.rows(
+        env.db_path, "SELECT COUNT(*) FROM harness_evidence_reservations WHERE run_id=?", env.run_id
+    ) == [(12,)]
 
 
 # ---- S5B-S4 / AC-3⑥（A6）：单根 per-canary 口径 + ≥2 root scope 写工具不可见 ----
@@ -1250,8 +1462,16 @@ async def test_s5b_s4_single_root_per_canary_and_multi_root_hidden(tmp_path: Pat
         h.freeze_run(env, task_scope_id=scope, workspace_root=root)
         provider = h.ScriptedProvider(
             [
-                h.tool_call("context_route", {"route": "resume_existing", "task_scope_id": scope}, raw_id=f"raw-route-{tag}"),
-                h.tool_call("write_file", {"path": f"canary-{tag}.txt", "content": f"canary {tag}"}, raw_id=f"raw-write-{tag}"),
+                h.tool_call(
+                    "context_route",
+                    {"route": "resume_existing", "task_scope_id": scope},
+                    raw_id=f"raw-route-{tag}",
+                ),
+                h.tool_call(
+                    "write_file",
+                    {"path": f"canary-{tag}.txt", "content": f"canary {tag}"},
+                    raw_id=f"raw-write-{tag}",
+                ),
                 h.answer("done"),
             ]
         )
@@ -1261,11 +1481,23 @@ async def test_s5b_s4_single_root_per_canary_and_multi_root_hidden(tmp_path: Pat
         envelope = record["envelope"]
         head = await env.binding_store.current_receipt(scope)
         # envelope 绑定 exact scope / root ref / 当时 revision（单根 scope：恰一 root）。
-        assert envelope.task_scope_id == scope and envelope.binding_set_revision == 1 == head.binding_set_revision
+        assert (
+            envelope.task_scope_id == scope
+            and envelope.binding_set_revision == 1 == head.binding_set_revision
+        )
         assert envelope.root_id == head.appended_root.root_id
-        assert envelope.root_identity_hash == head.root_identity_hashes[0] and len(head.root_identity_hashes) == 1
+        assert (
+            envelope.root_identity_hash == head.root_identity_hashes[0]
+            and len(head.root_identity_hashes) == 1
+        )
         assert (root / f"canary-{tag}.txt").read_text(encoding="utf-8") == f"canary {tag}"
-        canaries[tag] = {"env": env, "scope": scope, "root": root, "hash": _root_hash(root), "envelope": envelope}
+        canaries[tag] = {
+            "env": env,
+            "scope": scope,
+            "root": root,
+            "hash": _root_hash(root),
+            "envelope": envelope,
+        }
     assert canaries["a"]["hash"] != canaries["b"]["hash"]
 
     # ≥2 root scope：写工具不在任何一轮 snapshot tools 里；强制调用 → 整 Run 故障（零写入）。
@@ -1278,8 +1510,16 @@ async def test_s5b_s4_single_root_per_canary_and_multi_root_hidden(tmp_path: Pat
     h.freeze_run(env_c, task_scope_id=scope_c, workspace_root=None)  # 多 root 冻结 = projectless
     provider_c = h.ScriptedProvider(
         [
-            h.tool_call("context_route", {"route": "resume_existing", "task_scope_id": scope_c}, raw_id="raw-route-c"),
-            h.tool_call("write_file", {"path": "forced.txt", "content": "must not land"}, raw_id="raw-write-c"),
+            h.tool_call(
+                "context_route",
+                {"route": "resume_existing", "task_scope_id": scope_c},
+                raw_id="raw-route-c",
+            ),
+            h.tool_call(
+                "write_file",
+                {"path": "forced.txt", "content": "must not land"},
+                raw_id="raw-write-c",
+            ),
             h.answer("never reached"),
         ]
     )
@@ -1287,7 +1527,11 @@ async def test_s5b_s4_single_root_per_canary_and_multi_root_hidden(tmp_path: Pat
     exposed = h.provider_tool_names(provider_c)
     assert len(exposed) == 2  # UNROUTED 轮 + ROUTED_TASK（多 root）轮
     for names in exposed:
-        assert "write_file" not in names and {"context_route", "task_scope_search", "read_file"} <= set(names)
+        assert "write_file" not in names and {
+            "context_route",
+            "task_scope_search",
+            "read_file",
+        } <= set(names)
     exc = out_c["exception"]
     assert isinstance(exc, TaskExecutionAuthorityError)
     assert exc.code == "sdk_task_execution_root_authority_ambiguous"
@@ -1304,8 +1548,12 @@ async def test_s5b_s4_single_root_per_canary_and_multi_root_hidden(tmp_path: Pat
     await fq._enqueue(store, primary_id, 1)
     admission = await fq._claim_and_bind(store, sdk_run_id=h.RUN.value)
     await store.record_sdk_started(
-        host_run_id=admission.host_run_id, sdk_run_id=h.RUN.value, owner_id=admission.owner_id,
-        generation=admission.generation, sdk_event_id="sdk-start-s4", idempotency_key="sdk-start-s4",
+        host_run_id=admission.host_run_id,
+        sdk_run_id=h.RUN.value,
+        owner_id=admission.owner_id,
+        generation=admission.generation,
+        sdk_event_id="sdk-start-s4",
+        idempotency_key="sdk-start-s4",
     )
 
     class _Ingress:
@@ -1318,19 +1566,33 @@ async def test_s5b_s4_single_root_per_canary_and_multi_root_hidden(tmp_path: Pat
     class _Stack:
         def read_run_terminal_evidence(self, run_id: str):  # type: ignore[no-untyped-def]
             return SimpleNamespace(
-                run_id=run_id, state="failed", event_id="sdk-terminal-s4", event_hash="6" * 64,
-                occurred_at=101.0, error_code="driver_failed",
+                run_id=run_id,
+                state="failed",
+                event_id="sdk-terminal-s4",
+                event_hash="6" * 64,
+                occurred_at=101.0,
+                error_code="driver_failed",
             )
 
-    observed = await SqliteSdkTerminalObserver(str(queue_db), _Ingress(), _Stack(), run_fault_memo=env_c.memo).observe(  # type: ignore[arg-type]
-        host_run_id=admission.host_run_id, sdk_run_id=h.RUN.value, subject=fq.SUBJECT,
-        owner_id=admission.owner_id, generation=admission.generation,
+    observed = await SqliteSdkTerminalObserver(
+        str(queue_db), _Ingress(), _Stack(), run_fault_memo=env_c.memo
+    ).observe(  # type: ignore[arg-type]
+        host_run_id=admission.host_run_id,
+        sdk_run_id=h.RUN.value,
+        subject=fq.SUBJECT,
+        owner_id=admission.owner_id,
+        generation=admission.generation,
     )
     assert observed is not None and observed.terminal_state is RunState.FAILED
     terminal = await store.record_sdk_terminal(
-        host_run_id=admission.host_run_id, sdk_run_id=h.RUN.value, owner_id=admission.owner_id,
-        generation=admission.generation, terminal_state=observed.terminal_state, sdk_event_id=observed.sdk_event_id,
-        sdk_event_hash=observed.sdk_event_hash, idempotency_key="terminal-s4",
+        host_run_id=admission.host_run_id,
+        sdk_run_id=h.RUN.value,
+        owner_id=admission.owner_id,
+        generation=admission.generation,
+        terminal_state=observed.terminal_state,
+        sdk_event_id=observed.sdk_event_id,
+        sdk_event_hash=observed.sdk_event_hash,
+        idempotency_key="terminal-s4",
     )
     assert terminal.terminal_state is RunState.FAILED
     [(payload_json,)] = h.rows(
@@ -1339,13 +1601,24 @@ async def test_s5b_s4_single_root_per_canary_and_multi_root_hidden(tmp_path: Pat
         "WHERE r.run_id=? AND r.evidence_kind='run_terminal'",
         h.RUN.value,
     )
-    assert json.loads(payload_json)["public_payload"]["error_code"] == "sdk_task_execution_root_authority_ambiguous"
+    assert (
+        json.loads(payload_json)["public_payload"]["error_code"]
+        == "sdk_task_execution_root_authority_ambiguous"
+    )
 
     # Run 内 Manual append（同 scope）→ 后续项目 effect superseded（strict），sticky 至下一 route。
-    env_a, scope_a, root_a, envelope_a = (canaries["a"][k] for k in ("env", "scope", "root", "envelope"))
+    env_a, scope_a, root_a, envelope_a = (
+        canaries["a"][k] for k in ("env", "scope", "root", "envelope")
+    )
     root_a2 = env_a.workspace_base / "root-a2"
     root_a2.mkdir(parents=True)
     await h.bind_scope_root(env_a.db_path, scope_a, root_a2, base_revision=1, tag="a2")
-    assert _code(await env_a.gate.verify(_context(envelope_a), "write_file")) == "workspace_binding_receipt_superseded"
-    assert _code(await env_a.gate.verify(_context(envelope_a), "write_file")) == EFFECT_GATE_STICKY_REASON
+    assert (
+        _code(await env_a.gate.verify(_context(envelope_a), "write_file"))
+        == "workspace_binding_receipt_superseded"
+    )
+    assert (
+        _code(await env_a.gate.verify(_context(envelope_a), "write_file"))
+        == EFFECT_GATE_STICKY_REASON
+    )
     assert _root_hash(root_a) == canaries["a"]["hash"]

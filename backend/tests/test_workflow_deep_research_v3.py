@@ -37,8 +37,19 @@ def test_v3_definition_preserves_fixed_public_contract_and_registers_separately(
         assert f"{stage}_join" in node_ids
     assert DEEP_RESEARCH_V3.manifest.workflow_version == "v3"
     assert DEEP_RESEARCH_V3_DEFINITION.prompt_manifest["public_stages"] == [
-        "normalize", "plan", "expand", "search", "direct", "fetch", "score",
-        "gap", "rerank", "synth", "cite", "persist", "finalize",
+        "normalize",
+        "plan",
+        "expand",
+        "search",
+        "direct",
+        "fetch",
+        "score",
+        "gap",
+        "rerank",
+        "synth",
+        "cite",
+        "persist",
+        "finalize",
     ]
     registry = WorkflowRegistry()
     register_v3_workflows(registry)
@@ -52,7 +63,9 @@ def test_v4_meaningful_claim_filter_rejects_bibliographic_metadata():
         AtomicClaim("claim-2", "The NVIDIA article was authored by Kari Briski.", "factual", (2,)),
         AtomicClaim("claim-nav", "Direct agents from issue to merge", "factual", (4,)),
         AtomicClaim("claim-vague", "A technical report presents HunyuanImage 3.", "factual", (5,)),
-        AtomicClaim("claim-ethics", "A case study of OpenAI analysed ethical AI discourse.", "factual", (6,)),
+        AtomicClaim(
+            "claim-ethics", "A case study of OpenAI analysed ethical AI discourse.", "factual", (6,)
+        ),
         AtomicClaim(
             "claim-3",
             "The runtime persists tool state across agent turns and resumes interrupted tasks from checkpoints.",
@@ -96,39 +109,70 @@ async def test_v3_run_emits_provider_coverage_and_fails_gate_honestly():
     async def search(query: str, *, max_results: int):
         digest = hashlib.sha256(query.encode()).hexdigest()[:8]
         return ResearchSearchResults(
-            [{"url": f"https://example.com/{digest}", "title": query, "snippet": "verified evidence"}],
+            [
+                {
+                    "url": f"https://example.com/{digest}",
+                    "title": query,
+                    "snippet": "verified evidence",
+                }
+            ],
             observation={
-                "request_id": f"request-{digest}", "run_id": "run-v3",
-                "provider_attempt_count": 1, "provider_probe_count": 1,
-                "provider_attempts": [{"provider": "test", "status": "hit", "permit": "closed", "probe_outcome": "not_probe"}],
+                "request_id": f"request-{digest}",
+                "run_id": "run-v3",
+                "provider_attempt_count": 1,
+                "provider_probe_count": 1,
+                "provider_attempts": [
+                    {
+                        "provider": "test",
+                        "status": "hit",
+                        "permit": "closed",
+                        "probe_outcome": "not_probe",
+                    }
+                ],
                 "degraded": False,
             },
         )
 
     async def fetch(url: str):
-        return {"url": url, "title": "Primary", "text": "Verified primary evidence for version 3.14 in 2026. " * 8}
+        return {
+            "url": url,
+            "title": "Primary",
+            "text": "Verified primary evidence for version 3.14 in 2026. " * 8,
+        }
 
     result = await DEEP_RESEARCH_V3.bind().ainvoke(
         initial_state(topic="v3 quality", run_id="run-v3"),
-        WorkflowContext(ports={
-            "llm": ResearchLLMPort(llm), "search": ResearchSearchPort(search),
-            "fetch": FetchPort(fetch), "native_execution_policy": NativeExecutionPolicy(3),
-        }),
-        thread_id="run-v3", run_id="run-v3",
+        WorkflowContext(
+            ports={
+                "llm": ResearchLLMPort(llm),
+                "search": ResearchSearchPort(search),
+                "fetch": FetchPort(fetch),
+                "native_execution_policy": NativeExecutionPolicy(3),
+            }
+        ),
+        thread_id="run-v3",
+        run_id="run-v3",
     )
     coverage = result["values"]["report_payload"]["coverage"]
     assert coverage["provider_attempt_count"] >= 1
     assert coverage["provider_probe_count"] >= 1
     assert coverage["provider_attempts"][0] == {
-        "provider": "test", "status": "hit", "permit": "closed", "probe_outcome": "not_probe",
+        "provider": "test",
+        "status": "hit",
+        "permit": "closed",
+        "probe_outcome": "not_probe",
     }
     assert result["values"]["report_payload"]["status"] == "no_results"
     assert result["values"]["terminal_status"] == "error"
     assert len(result["values"]["public_progress"]["completed_stage_ids"]) == 13
     expanded = result["branch_expand"]["b0"]
     searched = result["branch_search"]["b0"]
-    assert expanded["budget_after"]["query_remaining"] == expanded["budget_before"]["query_remaining"]
-    assert searched["budget_before"]["query_remaining"] == expanded["budget_after"]["query_remaining"]
+    assert (
+        expanded["budget_after"]["query_remaining"] == expanded["budget_before"]["query_remaining"]
+    )
+    assert (
+        searched["budget_before"]["query_remaining"] == expanded["budget_after"]["query_remaining"]
+    )
     assert searched["budget_after"]["query_remaining"] == (
         searched["budget_before"]["query_remaining"] - len(expanded["result"])
     )
@@ -189,12 +233,17 @@ async def test_synthesis_prefers_supported_extractive_candidate_over_legal_low_q
     documents = []
     for index in range(1, 9):
         text = f"Verified source {index} establishes documented behavior in 2026 and {padding * 2}."
-        documents.append({
-            "url": f"https://d{(index - 1) % 4}.example/source-{index}",
-            "canonical_url": f"https://d{(index - 1) % 4}.example/source-{index}",
-            "title": f"Source {index}", "content_hash": f"hash-{index}",
-            "question": "documented behavior", "text": text, "score": 1.0,
-        })
+        documents.append(
+            {
+                "url": f"https://d{(index - 1) % 4}.example/source-{index}",
+                "canonical_url": f"https://d{(index - 1) % 4}.example/source-{index}",
+                "title": f"Source {index}",
+                "content_hash": f"hash-{index}",
+                "question": "documented behavior",
+                "text": text,
+                "score": 1.0,
+            }
+        )
 
     async def low_quality_llm(prompt: str) -> str:
         return (
@@ -225,22 +274,31 @@ async def test_synthesis_v4_preference_prunes_unsupported_claim_before_selection
             f"Verified source {index} establishes documented AI behavior in 2026 "
             f"with production evidence and independently checkable implementation details."
         )
-        documents.append({
-            "url": f"https://d{index}.example/source-{index}",
-            "canonical_url": f"https://d{index}.example/source-{index}",
-            "title": f"Source {index}", "content_hash": f"hash-{index}",
-            "question": "documented AI behavior", "text": sentence, "score": 1.0,
-        })
-        claims.append({
-            "text": sentence,
+        documents.append(
+            {
+                "url": f"https://d{index}.example/source-{index}",
+                "canonical_url": f"https://d{index}.example/source-{index}",
+                "title": f"Source {index}",
+                "content_hash": f"hash-{index}",
+                "question": "documented AI behavior",
+                "text": sentence,
+                "score": 1.0,
+            }
+        )
+        claims.append(
+            {
+                "text": sentence,
+                "kind": "factual",
+                "citation_ids": [index],
+            }
+        )
+    claims.append(
+        {
+            "text": "Unsupported version 99.99 was released in 2099.",
             "kind": "factual",
-            "citation_ids": [index],
-        })
-    claims.append({
-        "text": "Unsupported version 99.99 was released in 2099.",
-        "kind": "factual",
-        "citation_ids": [1],
-    })
+            "citation_ids": [1],
+        }
+    )
 
     async def mostly_supported_llm(prompt: str) -> str:
         return json.dumps({"claims": claims})
@@ -271,12 +329,17 @@ async def test_synthesis_v4_supplements_unused_sources_before_extractive_fallbac
             f"Verified source {index} documents a distinct AI capability in 2026 with production "
             f"evidence and measurable implementation detail plus independently checkable constraints."
         )
-        documents.append({
-            "url": f"https://d{index}.example/source-{index}",
-            "canonical_url": f"https://d{index}.example/source-{index}",
-            "title": f"Source {index}", "content_hash": f"hash-{index}",
-            "question": "documented AI capability", "text": sentence, "score": 1.0,
-        })
+        documents.append(
+            {
+                "url": f"https://d{index}.example/source-{index}",
+                "canonical_url": f"https://d{index}.example/source-{index}",
+                "title": f"Source {index}",
+                "content_hash": f"hash-{index}",
+                "question": "documented AI capability",
+                "text": sentence,
+                "score": 1.0,
+            }
+        )
         if index <= 5:
             first_claims.append({"text": sentence, "kind": "factual", "citation_ids": [index]})
 
@@ -286,24 +349,28 @@ async def test_synthesis_v4_supplements_unused_sources_before_extractive_fallbac
         nonlocal calls
         calls += 1
         if "Supplement an undersized research synthesis" in prompt:
-            return json.dumps({
-                "claims": [
-                    {
-                        "text": documents[index - 1]["text"],
-                        "kind": "factual",
-                        "citation_ids": [index],
-                    }
-                    for index in range(6, 9)
-                ]
-            })
+            return json.dumps(
+                {
+                    "claims": [
+                        {
+                            "text": documents[index - 1]["text"],
+                            "kind": "factual",
+                            "citation_ids": [index],
+                        }
+                        for index in range(6, 9)
+                    ]
+                }
+            )
         return json.dumps({"claims": first_claims})
 
     state = initial_state(topic="documented AI capability", run_id="structured-supplement")
     state["values"]["ranked_evidence"] = documents
-    state["values"]["research_config"].update({
-        "prefer_structured_synthesis": True,
-        "minimum_publish_citations": 6,
-    })
+    state["values"]["research_config"].update(
+        {
+            "prefer_structured_synthesis": True,
+            "minimum_publish_citations": 6,
+        }
+    )
     patch = await synth_handler(
         state,
         WorkflowContext(ports={"llm": ResearchLLMPort(undersized_then_supplemented_llm)}),
@@ -325,12 +392,17 @@ async def test_synthesis_v4_hybrid_fills_source_gaps_without_lowering_publish_ga
             f"Primary source {index} documents AI system capability {index} in 2026 with measurable "
             f"implementation evidence and independently verifiable technical constraints."
         )
-        documents.append({
-            "url": f"https://d{index}.example/source-{index}",
-            "canonical_url": f"https://d{index}.example/source-{index}",
-            "title": f"Source {index}", "content_hash": f"hybrid-{index}",
-            "question": "AI system capability", "text": sentence, "score": 1.0,
-        })
+        documents.append(
+            {
+                "url": f"https://d{index}.example/source-{index}",
+                "canonical_url": f"https://d{index}.example/source-{index}",
+                "title": f"Source {index}",
+                "content_hash": f"hybrid-{index}",
+                "question": "AI system capability",
+                "text": sentence,
+                "score": 1.0,
+            }
+        )
         if index <= 5:
             structured.append({"text": sentence, "kind": "factual", "citation_ids": [index]})
 
@@ -340,10 +412,12 @@ async def test_synthesis_v4_hybrid_fills_source_gaps_without_lowering_publish_ga
 
     state = initial_state(topic="AI system capability", run_id="structured-hybrid")
     state["values"]["ranked_evidence"] = documents
-    state["values"]["research_config"].update({
-        "prefer_structured_synthesis": True,
-        "minimum_publish_citations": 6,
-    })
+    state["values"]["research_config"].update(
+        {
+            "prefer_structured_synthesis": True,
+            "minimum_publish_citations": 6,
+        }
+    )
     patch = await synth_handler(
         state,
         WorkflowContext(ports={"llm": ResearchLLMPort(undersized_llm)}),
@@ -366,12 +440,17 @@ async def test_synthesis_can_choose_best_eligible_structured_candidate():
             f"Primary source {index} documents inference runtime capability {index} in 2026 "
             f"with measurable implementation evidence and independently verifiable constraints."
         )
-        documents.append({
-            "url": f"https://d{index}.example/source-{index}",
-            "canonical_url": f"https://d{index}.example/source-{index}",
-            "title": f"Runtime source {index}", "content_hash": f"best-{index}",
-            "question": "AI inference runtime", "text": sentence, "score": 1.0,
-        })
+        documents.append(
+            {
+                "url": f"https://d{index}.example/source-{index}",
+                "canonical_url": f"https://d{index}.example/source-{index}",
+                "title": f"Runtime source {index}",
+                "content_hash": f"best-{index}",
+                "question": "AI inference runtime",
+                "text": sentence,
+                "score": 1.0,
+            }
+        )
         if index <= 8:
             structured.append({"text": sentence, "kind": "factual", "citation_ids": [index]})
 
@@ -381,11 +460,13 @@ async def test_synthesis_can_choose_best_eligible_structured_candidate():
 
     state = initial_state(topic="AI inference runtime", run_id="best-structured")
     state["values"]["ranked_evidence"] = documents
-    state["values"]["research_config"].update({
-        "prefer_structured_synthesis": True,
-        "prefer_best_structured_synthesis": True,
-        "minimum_publish_citations": 6,
-    })
+    state["values"]["research_config"].update(
+        {
+            "prefer_structured_synthesis": True,
+            "prefer_best_structured_synthesis": True,
+            "minimum_publish_citations": 6,
+        }
+    )
     values = (
         await synth_handler(
             state,
@@ -401,20 +482,24 @@ async def test_synthesis_can_choose_best_eligible_structured_candidate():
 async def test_rerank_prefers_unique_canonical_urls_before_duplicate_passages():
     evidence = []
     for index in range(8):
-        evidence.append({
-            "url": f"https://d{index % 4}.example/source-{index}",
-            "canonical_url": f"https://d{index % 4}.example/source-{index}",
-            "content_hash": f"unique-{index}",
-            "text": f"Unique source {index} contains independently verifiable evidence.",
-            "score": 1.0 - index * 0.01,
-        })
-        evidence.append({
-            "url": f"https://d{index % 4}.example/source-{index}",
-            "canonical_url": f"https://d{index % 4}.example/source-{index}",
-            "content_hash": f"duplicate-{index}",
-            "text": f"Second passage from source {index}.",
-            "score": 0.99 - index * 0.01,
-        })
+        evidence.append(
+            {
+                "url": f"https://d{index % 4}.example/source-{index}",
+                "canonical_url": f"https://d{index % 4}.example/source-{index}",
+                "content_hash": f"unique-{index}",
+                "text": f"Unique source {index} contains independently verifiable evidence.",
+                "score": 1.0 - index * 0.01,
+            }
+        )
+        evidence.append(
+            {
+                "url": f"https://d{index % 4}.example/source-{index}",
+                "canonical_url": f"https://d{index % 4}.example/source-{index}",
+                "content_hash": f"duplicate-{index}",
+                "text": f"Second passage from source {index}.",
+                "score": 0.99 - index * 0.01,
+            }
+        )
 
     state = initial_state(topic="canonical diversity", run_id="rerank-diversity")
     state["values"]["joined_score"] = evidence

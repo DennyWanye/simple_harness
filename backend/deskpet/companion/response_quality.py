@@ -8,6 +8,7 @@ expressions.  It asks a model to compare the current user request with the
 candidate response semantically and, when necessary, return one concise
 replacement that covers every explicit information item.
 """
+
 from __future__ import annotations
 
 import json
@@ -142,9 +143,7 @@ class ModelResponseCompletenessGate:
                 revised=False,
                 reason="invalid_review_types",
             )
-        normalized_missing = tuple(
-            item.strip() for item in missing if item.strip()
-        )
+        normalized_missing = tuple(item.strip() for item in missing if item.strip())
         if complete:
             if normalized_missing:
                 return ResponseQualityDecision(

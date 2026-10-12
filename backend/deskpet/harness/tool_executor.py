@@ -1,4 +1,5 @@
 """One durable owner for prepared tool batches and effect reconciliation."""
+
 from __future__ import annotations
 
 import asyncio
@@ -48,9 +49,7 @@ class EffectBatch:
 
 
 class _SharedExecutionScopeState:
-    def __init__(
-        self, lease: CurrentExecutionScopeLease, remaining: int
-    ) -> None:
+    def __init__(self, lease: CurrentExecutionScopeLease, remaining: int) -> None:
         self.lease = lease
         self.remaining = remaining
         self.released = False
@@ -166,9 +165,7 @@ class EffectBatchExecutor:
         self._dispatch_start_timeout = max(0.05, float(dispatch_start_timeout))
         self._resource_execution = _ResourceExecutionCoordinator()
 
-    async def _release_execution_scope(
-        self, lease: CurrentExecutionScopeLease | None
-    ) -> None:
+    async def _release_execution_scope(self, lease: CurrentExecutionScopeLease | None) -> None:
         if lease is not None:
             await lease.release()
 
@@ -184,9 +181,7 @@ class EffectBatchExecutor:
         """Persist may-complete from the latest durable handoff version."""
 
         metadata["late_pending"] = True
-        mark_unknown = getattr(
-            self._uow, "mark_effect_inflight_may_complete", None
-        )
+        mark_unknown = getattr(self._uow, "mark_effect_inflight_may_complete", None)
         if not callable(mark_unknown):
             return
         read_handoff = getattr(self._uow, "read_effect_handoff", None)
@@ -212,10 +207,7 @@ class EffectBatchExecutor:
                 claim["effect_version"] = int(current.effect_version)
                 attempt_no = int(current.attempt_no)
                 effect_version = int(current.effect_version)
-                if (
-                    current.status == "unknown"
-                    and current.handoff_state == "started_may_complete"
-                ):
+                if current.status == "unknown" and current.handoff_state == "started_may_complete":
                     return
                 if current.status != "running" or current.handoff_state not in {
                     "unresolved",
@@ -260,27 +252,20 @@ class EffectBatchExecutor:
             return
         start = await self._uow.read_run_start_snapshot(record.run_id)
         if start is None:
-            raise ValueError(
-                "prepared tool batch has no trusted RunStart snapshot"
-            )
+            raise ValueError("prepared tool batch has no trusted RunStart snapshot")
         capability_snapshot = json.loads(start.capability_snapshot_json)
         if (
             not isinstance(capability_snapshot, Mapping)
-            or fingerprint_json(capability_snapshot)
-            != start.capability_snapshot_hash
+            or fingerprint_json(capability_snapshot) != start.capability_snapshot_hash
         ):
             raise ValueError("RunStart capability snapshot is corrupt")
-        snapshot_ref = str(
-            capability_snapshot.get("catalog_snapshot_ref") or ""
-        )
+        snapshot_ref = str(capability_snapshot.get("catalog_snapshot_ref") or "")
         if any(
             context.capability_snapshot_ref != snapshot_ref
             or call.catalog_snapshot_ref != snapshot_ref
             for call, context in zip(calls, contexts)
         ):
-            raise ValueError(
-                "prepared call capability snapshot binding drifted"
-            )
+            raise ValueError("prepared call capability snapshot binding drifted")
         first = contexts[0]
         skill_identity = (
             first.active_skill_scope_ids,
@@ -298,36 +283,21 @@ class EffectBatchExecutor:
         ):
             raise ValueError("prepared tool batch mixes Skill ToolRef scopes")
         if not first.active_skill_scope_ids:
-            if (
-                first.effective_skill_tool_ref_hashes
-                or first.effective_skill_tool_refs_hash
-            ):
-                raise ValueError(
-                    "inactive Skill scope carries effective ToolRefs"
-                )
+            if first.effective_skill_tool_ref_hashes or first.effective_skill_tool_refs_hash:
+                raise ValueError("inactive Skill scope carries effective ToolRefs")
             return
         sanitized = json.loads(start.sanitized_request_json)
-        request_payload = (
-            sanitized.get("payload")
-            if isinstance(sanitized, Mapping)
-            else None
-        )
+        request_payload = sanitized.get("payload") if isinstance(sanitized, Mapping) else None
         if not isinstance(request_payload, Mapping):
-            raise ValueError(
-                "RunStart request payload cannot rebuild Skill ToolRefs"
-            )
+            raise ValueError("RunStart request payload cannot rebuild Skill ToolRefs")
         from deskpet.harness.skill_scope import (
             skill_tool_intersection_from_snapshot,
         )
 
         activated_scopes: tuple[Mapping[str, Any], ...] = ()
         selection = (
-            capability_snapshot.get("host_extensions", {}).get(
-                "deskpet.companion.selection.v1"
-            )
-            if isinstance(
-                capability_snapshot.get("host_extensions"), Mapping
-            )
+            capability_snapshot.get("host_extensions", {}).get("deskpet.companion.selection.v1")
+            if isinstance(capability_snapshot.get("host_extensions"), Mapping)
             else None
         )
         selected_scope_ids = {
@@ -339,76 +309,46 @@ class EffectBatchExecutor:
             )
             if isinstance(item, Mapping)
         }
-        dynamic_scope_ids = (
-            set(first.active_skill_scope_ids) - selected_scope_ids
-        )
+        dynamic_scope_ids = set(first.active_skill_scope_ids) - selected_scope_ids
         if dynamic_scope_ids:
             continuation = await self._uow.load_continuation(record.run_id)
-            payload = (
-                continuation.payload
-                if continuation is not None
-                else None
-            )
+            payload = continuation.payload if continuation is not None else None
             raw_activated = (
-                payload.get("activated_skill_scopes", ())
-                if isinstance(payload, Mapping)
-                else ()
+                payload.get("activated_skill_scopes", ()) if isinstance(payload, Mapping) else ()
             )
             if isinstance(raw_activated, (str, bytes)) or not isinstance(
                 raw_activated, (list, tuple)
             ):
-                raise ValueError(
-                    "dynamic Skill scopes have no trusted continuation"
-                )
+                raise ValueError("dynamic Skill scopes have no trusted continuation")
             by_scope = {
                 str(item.get("scope_id") or ""): dict(item)
                 for item in raw_activated
                 if isinstance(item, Mapping)
             }
             if not dynamic_scope_ids.issubset(by_scope):
-                raise ValueError(
-                    "dynamic Skill scope is absent from the continuation"
-                )
+                raise ValueError("dynamic Skill scope is absent from the continuation")
             verified: list[Mapping[str, Any]] = []
             for scope_id in sorted(dynamic_scope_ids):
                 scope = by_scope[scope_id]
-                activation_id = str(
-                    scope.get("activation_id") or ""
-                )
-                receipt = await self._uow.get_skill_scope_activation(
-                    activation_id
-                )
+                activation_id = str(scope.get("activation_id") or "")
+                receipt = await self._uow.get_skill_scope_activation(activation_id)
                 if receipt is None:
-                    raise ValueError(
-                        "dynamic Skill scope has no committed receipt"
-                    )
-                allowed_refs = json.loads(
-                    str(receipt["allowed_tool_refs_json"])
-                )
+                    raise ValueError("dynamic Skill scope has no committed receipt")
+                allowed_refs = json.loads(str(receipt["allowed_tool_refs_json"]))
                 if (
                     str(receipt["run_id"]) != record.run_id
                     or str(receipt["scope_id"]) != scope_id
-                    or str(receipt["scope_hash"])
-                    != str(scope.get("scope_hash") or "")
-                    or str(receipt["capability_snapshot_ref"])
-                    != snapshot_ref
+                    or str(receipt["scope_hash"]) != str(scope.get("scope_hash") or "")
+                    or str(receipt["capability_snapshot_ref"]) != snapshot_ref
                     or str(receipt["status"]) != "committed"
-                    or int(receipt["continuation_version"])
-                    > int(continuation.version)
-                    or allowed_refs
-                    != list(scope.get("allowed_tool_refs", ()))
-                    or json.loads(
-                        str(receipt["allowed_tool_names_json"])
-                    )
+                    or int(receipt["continuation_version"]) > int(continuation.version)
+                    or allowed_refs != list(scope.get("allowed_tool_refs", ()))
+                    or json.loads(str(receipt["allowed_tool_names_json"]))
                     != list(scope.get("allowed_tools", ()))
                     or str(receipt["instruction_content_hash"])
-                    != str(
-                        scope.get("instruction_content_hash") or ""
-                    )
+                    != str(scope.get("instruction_content_hash") or "")
                 ):
-                    raise ValueError(
-                        "dynamic Skill scope receipt identity drifted"
-                    )
+                    raise ValueError("dynamic Skill scope receipt identity drifted")
                 verified.append(scope)
             activated_scopes = tuple(verified)
         intersection = skill_tool_intersection_from_snapshot(
@@ -420,10 +360,8 @@ class EffectBatchExecutor:
         if intersection is None:
             raise ValueError("active Skill scope has no ToolRef intersection")
         if (
-            first.effective_skill_tool_ref_hashes
-            != intersection.effective_tool_ref_hashes
-            or first.effective_skill_tool_refs_hash
-            != intersection.effective_tool_refs_hash
+            first.effective_skill_tool_ref_hashes != intersection.effective_tool_ref_hashes
+            or first.effective_skill_tool_refs_hash != intersection.effective_tool_refs_hash
         ):
             raise ValueError("effective Skill ToolRef membership drifted")
         exact_refs = {
@@ -438,8 +376,7 @@ class EffectBatchExecutor:
             item = exact_refs.get(call.tool_name)
             if item is None or item[2] not in membership:
                 raise ValueError(
-                    f"prepared call is outside active Skill ToolRefs: "
-                    f"{call.tool_name}"
+                    f"prepared call is outside active Skill ToolRefs: {call.tool_name}"
                 )
             ref = item[0]
             fact = item[1]
@@ -447,29 +384,18 @@ class EffectBatchExecutor:
             if effect is not None and not isinstance(effect, Mapping):
                 raise ValueError("captured exact Tool effect policy is invalid")
             expected_effect_type = (
-                "opaque_manual"
-                if effect is None
-                else str(effect.get("kind") or "")
+                "opaque_manual" if effect is None else str(effect.get("kind") or "")
             )
-            expected_effect_version = (
-                ""
-                if effect is None
-                else str(effect.get("version") or "")
-            )
+            expected_effect_version = "" if effect is None else str(effect.get("version") or "")
             if (
-                call.tool_spec_fingerprint
-                != str(fact.get("tool_spec_fingerprint") or "")
+                call.tool_spec_fingerprint != str(fact.get("tool_spec_fingerprint") or "")
                 or call.tool_spec_version != ref.spec_version
                 or call.schema_hash != ref.schema_hash
-                or call.permission_policy_version
-                != ref.permission_policy_version
+                or call.permission_policy_version != ref.permission_policy_version
                 or call.effect_type != expected_effect_type
-                or call.effect_policy_version
-                != expected_effect_version
+                or call.effect_policy_version != expected_effect_version
             ):
-                raise ValueError(
-                    "prepared call differs from its exact Skill ToolRef"
-                )
+                raise ValueError("prepared call differs from its exact Skill ToolRef")
 
     async def _acquire_execution_scopes(
         self, contexts: Sequence[ToolExecutionContext]
@@ -502,35 +428,24 @@ class EffectBatchExecutor:
             raise RuntimeError("prepared tool batch mixes execution scopes")
         lease: CurrentExecutionScopeLease | None = None
         try:
-            if (
-                not first.owner_key
-                or first.profile_generation < 1
-                or first.binding_epoch < 1
-            ):
+            if not first.owner_key or first.profile_generation < 1 or first.binding_epoch < 1:
                 raise RuntimeError("trusted execution owner identity is missing")
-            lease = (
-                await self._current_execution_scope_port.acquire_current_execution_scope(
-                    run_id=first.run_id,
-                    owner_key=first.owner_key,
-                    profile_generation=first.profile_generation,
-                    binding_epoch=first.binding_epoch,
-                    capability_hash=first.capability_hash,
-                    scope_hash=first.scope_hash,
-                )
+            lease = await self._current_execution_scope_port.acquire_current_execution_scope(
+                run_id=first.run_id,
+                owner_key=first.owner_key,
+                profile_generation=first.profile_generation,
+                binding_epoch=first.binding_epoch,
+                capability_hash=first.capability_hash,
+                scope_hash=first.scope_hash,
             )
             shared = _SharedExecutionScopeState(lease, len(contexts))
-            return [
-                _SharedExecutionScopeRef(shared)
-                for _ in contexts
-            ]
+            return [_SharedExecutionScopeRef(shared) for _ in contexts]
         except BaseException:
             if lease is not None:
                 await self._release_execution_scope(lease)
             raise
 
-    async def _revalidate_execution_scope(
-        self, context: ToolExecutionContext
-    ) -> None:
+    async def _revalidate_execution_scope(self, context: ToolExecutionContext) -> None:
         if self._current_execution_scope_port is None:
             return
         lease = await self._current_execution_scope_port.acquire_current_execution_scope(
@@ -559,28 +474,16 @@ class EffectBatchExecutor:
         command: ExecuteTools,
     ) -> tuple[bool, ...]:
         markers = tuple(
-            bool(item)
-            for item in getattr(
-                command, "confirm_only", (False,) * len(command.calls)
-            )
+            bool(item) for item in getattr(command, "confirm_only", (False,) * len(command.calls))
         )
         if len(markers) != len(command.calls):
             raise ValueError("confirm-only markers do not align with calls")
         if not any(markers):
             return markers
-        snapshot_ref = str(
-            getattr(command, "confirm_only_snapshot_ref", "") or ""
-        )
-        expected_hash = str(
-            getattr(command, "confirm_only_snapshot_hash", "") or ""
-        )
+        snapshot_ref = str(getattr(command, "confirm_only_snapshot_ref", "") or "")
+        expected_hash = str(getattr(command, "confirm_only_snapshot_hash", "") or "")
         scope_store = getattr(self._registry, "capability_scope_store", None)
-        if (
-            not snapshot_ref
-            or not expected_hash
-            or scope_store is None
-            or not command.contexts
-        ):
+        if not snapshot_ref or not expected_hash or scope_store is None or not command.contexts:
             raise ValueError("confirm-only scope snapshot is unavailable")
         first = command.contexts[0]
         if any(context.scope_id != first.scope_id for context in command.contexts):
@@ -642,32 +545,24 @@ class EffectBatchExecutor:
         precomputed: Sequence[NormalizedToolOutcome | None],
         *,
         dispatches: Sequence[PreparedToolDispatch | None] | None = None,
-        execution_scope_leases: Sequence[
-            CurrentExecutionScopeLease | None
-        ] | None = None,
+        execution_scope_leases: Sequence[CurrentExecutionScopeLease | None] | None = None,
         metadata: Sequence[dict[str, object]] | None = None,
     ) -> list[NormalizedToolOutcome]:
         results = list(precomputed)
         prepared_dispatches = list(dispatches or (None,) * len(calls))
-        scope_leases = list(
-            execution_scope_leases or (None,) * len(calls)
-        )
+        scope_leases = list(execution_scope_leases or (None,) * len(calls))
         effect_metadata = list(metadata or ({},) * len(calls))
 
         async def execute_at(index: int) -> None:
             if results[index] is not None:
                 return
             pinned_scope = None
-            resource_locks: tuple[
-                tuple[tuple[str, str], _ResourceExecutionLock], ...
-            ] = ()
+            resource_locks: tuple[tuple[tuple[str, str], _ResourceExecutionLock], ...] = ()
             start_result: object | None = None
             try:
                 call, context = calls[index], contexts[index]
                 resource_locks = await self._resource_execution.acquire(call)
-                scope_store = getattr(
-                    self._registry, "capability_scope_store", None
-                )
+                scope_store = getattr(self._registry, "capability_scope_store", None)
                 if scope_store is not None and context.scope_id:
                     pinned_scope = scope_store.pin(
                         context.scope_id,
@@ -682,7 +577,8 @@ class EffectBatchExecutor:
                         operation_kind="tool.execute_prepared",
                         operation_id=context.effect_id,
                         invoke=lambda: self._registry.execute_prepared(
-                            call, effect_id=context.effect_id,
+                            call,
+                            effect_id=context.effect_id,
                             authorization=self._authorization(authorizations[index], call, context),
                             execution_context=context,
                         ),
@@ -704,9 +600,7 @@ class EffectBatchExecutor:
                 claim = effect_metadata[index].get("effect_claim")
                 if isinstance(start_result, PreparedToolDispatchStartedAck):
                     if isinstance(claim, dict):
-                        mark_started = getattr(
-                            self._uow, "mark_effect_dispatch_started", None
-                        )
+                        mark_started = getattr(self._uow, "mark_effect_dispatch_started", None)
                         if callable(mark_started):
                             handoff = await mark_started(
                                 context.effect_id,
@@ -716,9 +610,7 @@ class EffectBatchExecutor:
                                 start_result.ack_hash,
                                 ack_at=start_result.started_at,
                             )
-                            claim["effect_version"] = int(
-                                handoff.effect_version
-                            )
+                            claim["effect_version"] = int(handoff.effect_version)
                     await self._release_execution_scope(scope_leases[index])
                     scope_leases[index] = None
                     completed = await dispatch.completion()
@@ -761,12 +653,8 @@ class EffectBatchExecutor:
                                 receipt_ref,
                                 receipt_hash,
                             )
-                            claim["effect_version"] = int(
-                                handoff.effect_version
-                            )
-                            effect_metadata[index][
-                                "handoff_not_started"
-                            ] = True
+                            claim["effect_version"] = int(handoff.effect_version)
+                            effect_metadata[index]["handoff_not_started"] = True
                     await dispatch.abort_unstarted()
                     await self._release_execution_scope(scope_leases[index])
                     scope_leases[index] = None
@@ -799,9 +687,7 @@ class EffectBatchExecutor:
                                 receipt_ref,
                                 receipt_hash,
                             )
-                            claim["effect_version"] = int(
-                                handoff.effect_version
-                            )
+                            claim["effect_version"] = int(handoff.effect_version)
                     effect_metadata[index]["late_pending"] = True
                     await self._release_execution_scope(scope_leases[index])
                     scope_leases[index] = None
@@ -812,9 +698,8 @@ class EffectBatchExecutor:
                     raise RuntimeError("prepared dispatch returned an invalid start result")
             except asyncio.CancelledError:
                 claim = effect_metadata[index].get("effect_claim")
-                if (
-                    isinstance(start_result, PreparedToolDispatchStartedAck)
-                    and isinstance(claim, dict)
+                if isinstance(start_result, PreparedToolDispatchStartedAck) and isinstance(
+                    claim, dict
                 ):
                     try:
                         await self._converge_cancelled_started_dispatch(
@@ -896,33 +781,21 @@ class EffectBatchExecutor:
             command.calls, refs, command.effectful, confirm_only
         ):
             if explicit_only and grant_ref is None:
-                raise ValueError(
-                    "confirm-only tool is missing an exact one-shot decision grant"
-                )
+                raise ValueError("confirm-only tool is missing an exact one-shot decision grant")
             if not declared_effectful:
-                requires_authorization, effectful = (
-                    self._registry.prepared_execution_policy(call)
-                )
+                requires_authorization, effectful = self._registry.prepared_execution_policy(call)
                 if effectful:
-                    raise ValueError(
-                        "driver tool policy does not match registry authority"
-                    )
+                    raise ValueError("driver tool policy does not match registry authority")
                 if requires_authorization and grant_ref is None:
                     raise ValueError("authorized tool is missing a grant")
 
         authorizations: list[object | None] = [None] * len(command.calls)
-        execution_scope_leases = await self._acquire_execution_scopes(
-            command.contexts
-        )
-        dispatches: list[PreparedToolDispatch | None] = [
-            None
-        ] * len(command.calls)
+        execution_scope_leases = await self._acquire_execution_scopes(command.contexts)
+        dispatches: list[PreparedToolDispatch | None] = [None] * len(command.calls)
         begin_prepared = getattr(self._registry, "begin_prepared", None)
         if callable(begin_prepared):
             try:
-                for index, (call, context) in enumerate(
-                    zip(command.calls, command.contexts)
-                ):
+                for index, (call, context) in enumerate(zip(command.calls, command.contexts)):
                     dispatches[index] = await begin_prepared(
                         call,
                         effect_id=context.effect_id,
@@ -936,17 +809,13 @@ class EffectBatchExecutor:
                         ),
                     )
             except BaseException:
-                await self._abort_dispatches(
-                    dispatches, execution_scope_leases
-                )
+                await self._abort_dispatches(dispatches, execution_scope_leases)
                 raise
 
         metadata: list[dict[str, object]] = []
         precomputed: list[NormalizedToolOutcome | None] = []
         authoritative: list[OutcomeStatus | None] = []
-        durable_tracking = (
-            record.persistence_level is PersistenceLevel.DURABLE
-        )
+        durable_tracking = record.persistence_level is PersistenceLevel.DURABLE
 
         try:
             for index, (
@@ -962,41 +831,35 @@ class EffectBatchExecutor:
                     command.effectful,
                 )
             ):
-                consume = None if grant_ref is None else GrantConsume(
-                    grant_id=grant_ref.grant_id,
-                    decision_id=grant_ref.decision_id,
-                    decision_nonce=grant_ref.decision_nonce,
-                    run_id=record.run_id,
-                    expected_session_id=record.context.session_id,
-                    call_id=call.stable_call_id,
-                    effect_id=context.effect_id,
-                    tool_name=call.tool_name,
-                    args_hash=call.args_hash,
-                    capability_hash=context.capability_hash,
-                    scope_hash=context.scope_hash,
-                    expected_version=grant_ref.version,
+                consume = (
+                    None
+                    if grant_ref is None
+                    else GrantConsume(
+                        grant_id=grant_ref.grant_id,
+                        decision_id=grant_ref.decision_id,
+                        decision_nonce=grant_ref.decision_nonce,
+                        run_id=record.run_id,
+                        expected_session_id=record.context.session_id,
+                        call_id=call.stable_call_id,
+                        effect_id=context.effect_id,
+                        tool_name=call.tool_name,
+                        args_hash=call.args_hash,
+                        capability_hash=context.capability_hash,
+                        scope_hash=context.scope_hash,
+                        expected_version=grant_ref.version,
+                    )
                 )
                 if not declared_effectful and not durable_tracking:
                     authorizations[index] = (
-                        None
-                        if consume is None
-                        else await self._uow.claim_tool_call(consume, actor)
+                        None if consume is None else await self._uow.claim_tool_call(consume, actor)
                     )
                     metadata.append({})
                     precomputed.append(None)
                     authoritative.append(None)
                     continue
 
-                owner = (
-                    recovery_lease.owner
-                    if recovery_lease is not None
-                    else "kernel"
-                )
-                epoch = (
-                    recovery_lease.epoch
-                    if recovery_lease is not None
-                    else 1
-                )
+                owner = recovery_lease.owner if recovery_lease is not None else "kernel"
+                epoch = recovery_lease.epoch if recovery_lease is not None else 1
                 claim = await self._uow.claim_tool_call(
                     consume,
                     actor,
@@ -1043,9 +906,7 @@ class EffectBatchExecutor:
                     )
                 if known is not None:
                     known_status, payload, receipt_ref, artifact_refs = known
-                    precomputed.append(
-                        NormalizedToolOutcome.from_dict(payload)
-                    )
+                    precomputed.append(NormalizedToolOutcome.from_dict(payload))
                     authoritative.append(OutcomeStatus(known_status))
                     item.update(
                         {
@@ -1054,10 +915,8 @@ class EffectBatchExecutor:
                         }
                     )
                 elif claim.action == "reconcile":
-                    late_state, late_outcome = (
-                        await self._registry.observe_late_prepared(
-                            context.effect_id
-                        )
+                    late_state, late_outcome = await self._registry.observe_late_prepared(
+                        context.effect_id
                     )
                     if late_state == "pending":
                         item["late_pending"] = True
@@ -1074,15 +933,11 @@ class EffectBatchExecutor:
                             )
                         )
                         item.update(
-                            self._registry.take_prepared_execution_metadata(
-                                context.effect_id
-                            )
+                            self._registry.take_prepared_execution_metadata(context.effect_id)
                         )
                         item["reconciliation"] = True
                     authoritative.append(
-                        OutcomeStatus(
-                            str(item.get("outcome_status") or "unknown")
-                        )
+                        OutcomeStatus(str(item.get("outcome_status") or "unknown"))
                     )
                 elif claim.action == "in_flight":
                     item["late_pending"] = True
@@ -1104,36 +959,22 @@ class EffectBatchExecutor:
                     authoritative.append(None)
                 metadata.append(item)
         except BaseException:
-            await self._abort_dispatches(
-                dispatches, execution_scope_leases
-            )
+            await self._abort_dispatches(dispatches, execution_scope_leases)
             raise
 
         try:
             for index, (call, declared_effectful) in enumerate(
                 zip(command.calls, command.effectful)
             ):
-                if (
-                    not declared_effectful
-                    or metadata[index].get("effect_action") != "execute"
-                ):
+                if not declared_effectful or metadata[index].get("effect_action") != "execute":
                     continue
-                requires_authorization, effectful = (
-                    self._registry.prepared_execution_policy(call)
-                )
+                requires_authorization, effectful = self._registry.prepared_execution_policy(call)
                 if not effectful:
-                    raise ValueError(
-                        "driver tool policy does not match registry authority"
-                    )
-                if (
-                    requires_authorization
-                    and authorizations[index] is None
-                ):
+                    raise ValueError("driver tool policy does not match registry authority")
+                if requires_authorization and authorizations[index] is None:
                     raise ValueError("authorized tool is missing a grant")
         except BaseException:
-            await self._abort_dispatches(
-                dispatches, execution_scope_leases
-            )
+            await self._abort_dispatches(dispatches, execution_scope_leases)
             raise
 
         for index, outcome in enumerate(precomputed):
@@ -1142,9 +983,7 @@ class EffectBatchExecutor:
             if dispatches[index] is not None:
                 await dispatches[index].abort_unstarted()
             dispatches[index] = None
-            await self._release_execution_scope(
-                execution_scope_leases[index]
-            )
+            await self._release_execution_scope(execution_scope_leases[index])
             execution_scope_leases[index] = None
 
         outcomes = await self._execute_segmented(
@@ -1182,7 +1021,8 @@ class EffectBatchExecutor:
         if not ready:
             return None
         signal = ToolOutcomesSignal(
-            command.run_id, command.command_id,
+            command.run_id,
+            command.command_id,
             tuple(outcomes[index] for index in ready),
             tuple(statuses[index] for index in ready),
             tuple(command.original_indexes[index] for index in ready),
@@ -1201,9 +1041,12 @@ class EffectBatchExecutor:
         """Drop live evidence only after the durable Driver settlement is observable."""
         for call, context in refs:
             settled = await self._uow.read_effect_outcome(
-                run_id=context.run_id, call_id=call.stable_call_id,
-                effect_id=context.effect_id, args_hash=call.args_hash,
-                capability_hash=context.capability_hash, scope_hash=context.scope_hash,
+                run_id=context.run_id,
+                call_id=call.stable_call_id,
+                effect_id=context.effect_id,
+                args_hash=call.args_hash,
+                capability_hash=context.capability_hash,
+                scope_hash=context.scope_hash,
             )
             if settled is not None:
                 self._registry.acknowledge_prepared_effect(context.effect_id)
@@ -1234,10 +1077,7 @@ class EffectBatchExecutor:
                     # process-local observation is duplicate evidence.
                     self._registry.acknowledge_prepared_effect(effect_id)
                     break
-                if (
-                    handoff.status != "unknown"
-                    or handoff.handoff_state != "started_may_complete"
-                ):
+                if handoff.status != "unknown" or handoff.handoff_state != "started_may_complete":
                     # Observation remains ready; a later trigger can retry once
                     # the cancellation handoff reaches may-complete.
                     break

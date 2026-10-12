@@ -7,6 +7,7 @@ Two interlocking layers:
   * SessionDB.replace_session_todos / get_session_todos round-trip
   * todo_write tool handler validates + bridges sync → async write
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -194,9 +195,7 @@ def test_todo_write_handles_missing_active_form(tmp_path):
         session_id_resolver=lambda: "task-test",
         broadcaster=None,
     )
-    out = json.loads(
-        handler({"items": [{"content": "no active", "status": "pending"}]})
-    )
+    out = json.loads(handler({"items": [{"content": "no active", "status": "pending"}]}))
     assert out["ok"] is True
     items = asyncio.run(db.get_session_todos("task-test"))
     assert items[0]["activeForm"] == "no active"

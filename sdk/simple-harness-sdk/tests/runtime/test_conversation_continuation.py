@@ -35,12 +35,7 @@ def test_two_user_continuations_keep_fifo_without_tentative_memory(tmp_path: Pat
             now=3.0,
         )
         assert (first.fifo_seq, second.fifo_seq) == (1, 2)
-        assert (
-            database.connection.execute(
-                "SELECT COUNT(*) FROM memory_outbox"
-            ).fetchone()[0]
-            == 0
-        )
+        assert database.connection.execute("SELECT COUNT(*) FROM memory_outbox").fetchone()[0] == 0
         assert (
             uow.enqueue_continuation(
                 continuation_id="continuation-1",

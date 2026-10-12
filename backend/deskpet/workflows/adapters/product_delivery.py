@@ -32,9 +32,7 @@ from ...tools.receipt_store import ReceiptStore
 from ..contracts import canonical_json
 from ..store.run_store import WorkflowRunStore
 
-DeliveryHandler = Callable[
-    [Mapping[str, Any], Mapping[str, Any]], Awaitable[dict[str, Any]]
-]
+DeliveryHandler = Callable[[Mapping[str, Any], Mapping[str, Any]], Awaitable[dict[str, Any]]]
 ArtifactPublisher = Callable[[dict[str, Any]], Awaitable[None]]
 ContentResolver = Callable[[str], Awaitable[bytes | str]]
 
@@ -160,14 +158,9 @@ def _intent(event: Mapping[str, Any]) -> tuple[str, dict[str, Any]]:
     return kind, payload
 
 
-def _tool_name(
-    event: Mapping[str, Any], payload: Mapping[str, Any], fallback: str
-) -> str:
+def _tool_name(event: Mapping[str, Any], payload: Mapping[str, Any], fallback: str) -> str:
     return str(
-        payload.get("tool")
-        or payload.get("tool_name")
-        or event.get("workflow_name")
-        or fallback
+        payload.get("tool") or payload.get("tool_name") or event.get("workflow_name") or fallback
     ).strip()
 
 
@@ -189,9 +182,7 @@ def _report_preview(value: object) -> str:
     return str(value or "")
 
 
-def _artifact_list(
-    event: Mapping[str, Any], payload: Mapping[str, Any]
-) -> list[ToolArtifact]:
+def _artifact_list(event: Mapping[str, Any], payload: Mapping[str, Any]) -> list[ToolArtifact]:
     tool_name = _tool_name(event, payload, "artifact_create")
     explicit = payload.get("artifacts")
     if isinstance(explicit, list) and explicit:
@@ -202,12 +193,8 @@ def _artifact_list(
 
     nested = payload.get("artifact")
     if isinstance(nested, Mapping):
-        encoded = json.dumps(
-            {"ok": True, "artifacts": [dict(nested)]}, ensure_ascii=False
-        )
-        artifacts = extract_artifacts_from_result(
-            tool_name=tool_name, result_json=encoded
-        )
+        encoded = json.dumps({"ok": True, "artifacts": [dict(nested)]}, ensure_ascii=False)
+        artifacts = extract_artifacts_from_result(tool_name=tool_name, result_json=encoded)
         if artifacts:
             return artifacts
 
@@ -242,18 +229,14 @@ def _artifact_list(
             ToolArtifact(
                 kind="text",
                 title=str(
-                    payload.get("title")
-                    or payload.get("artifact_type")
-                    or "Research report"
+                    payload.get("title") or payload.get("artifact_type") or "Research report"
                 ),
                 preview=preview,
                 sha256=(
                     str(payload.get("sha256"))
                     if isinstance(payload.get("sha256"), str)
                     and len(str(payload.get("sha256"))) == 64
-                    else hashlib.sha256(
-                        canonical_json(report).encode("utf-8")
-                    ).hexdigest()
+                    else hashlib.sha256(canonical_json(report).encode("utf-8")).hexdigest()
                 ),
             )
         ]
@@ -440,7 +423,11 @@ class ProductDeliveryAdapter:
             run_id = str(event.get("run_id") or payload.get("run_id") or "")
             ref = await self.workflow_store.get_session_ref(run_id, "delivery")
             if ref is None or str(ref["session_id"]) != target_id:
-                return {"channel": str(delivery.get("channel")), "event_id": event_id, "discarded": True}
+                return {
+                    "channel": str(delivery.get("channel")),
+                    "event_id": event_id,
+                    "discarded": True,
+                }
             message_id = await self.session_db.append_message_if_epoch(
                 target_id,
                 projection.role,
@@ -451,12 +438,14 @@ class ProductDeliveryAdapter:
                 projection_kind=projection.projection_kind,
                 context_visibility=projection.context_visibility,
                 skip_embed=projection.skip_embed,
-                root_run_id=(
-                    str(event.get("root_run_id") or "").strip() or None
-                ),
+                root_run_id=(str(event.get("root_run_id") or "").strip() or None),
             )
             if message_id is None:
-                return {"channel": str(delivery.get("channel")), "event_id": event_id, "discarded": True}
+                return {
+                    "channel": str(delivery.get("channel")),
+                    "event_id": event_id,
+                    "discarded": True,
+                }
         else:
             message_id = await self.session_db.append_message(
                 session_id=target_id,
@@ -467,9 +456,7 @@ class ProductDeliveryAdapter:
                 projection_kind=projection.projection_kind,
                 context_visibility=projection.context_visibility,
                 skip_embed=projection.skip_embed,
-                root_run_id=(
-                    str(event.get("root_run_id") or "").strip() or None
-                ),
+                root_run_id=(str(event.get("root_run_id") or "").strip() or None),
             )
         if self.artifact_publisher is not None:
             await self.artifact_publisher(
@@ -509,11 +496,7 @@ class ProductDeliveryAdapter:
         outcome = _outcome(payload)
         phase = str(payload.get("phase") or "").strip().lower()
         event_type = str(event.get("event_type") or "").strip().lower()
-        accepted = (
-            phase == "accepted"
-            or kind == "accepted"
-            or event_type.endswith(".accepted")
-        )
+        accepted = phase == "accepted" or kind == "accepted" or event_type.endswith(".accepted")
         if accepted:
             if outcome and outcome not in _PENDING_OUTCOMES:
                 raise ProductDeliveryError("accepted receipt must have a pending outcome")

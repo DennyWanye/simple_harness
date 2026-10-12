@@ -80,15 +80,10 @@ def _freeze_capture(value: Any) -> Any:
 
     if isinstance(value, Mapping):
         return _FrozenCaptureDict(
-            {
-                str(key): _freeze_capture(item)
-                for key, item in copy.deepcopy(dict(value)).items()
-            }
+            {str(key): _freeze_capture(item) for key, item in copy.deepcopy(dict(value)).items()}
         )
     if isinstance(value, (list, tuple)):
-        return _FrozenCaptureList(
-            _freeze_capture(item) for item in copy.deepcopy(value)
-        )
+        return _FrozenCaptureList(_freeze_capture(item) for item in copy.deepcopy(value))
     return copy.deepcopy(value)
 
 
@@ -98,9 +93,7 @@ def _selected_binding(
 ) -> CapabilityBinding:
     by_key = {key: index for index, key in enumerate(snapshot.scope.binding_keys())}
     candidates = [
-        item
-        for item in bindings
-        if (item.scope, item.scope_key) in by_key and item.active
+        item for item in bindings if (item.scope, item.scope_key) in by_key and item.active
     ]
     if not candidates:
         raise RuntimeError("run_catalog_selected_binding_missing")
@@ -138,16 +131,14 @@ def _capture_prepared_tool_set(
     """Revalidate every prepared tool against one exact Registry generation."""
 
     catalog = registry.catalog_snapshot()
-    if (
-        int(catalog.revision) != int(expected_registry_revision)
-        or int(prepared.registry_revision) != int(expected_registry_revision)
-    ):
+    if int(catalog.revision) != int(expected_registry_revision) or int(
+        prepared.registry_revision
+    ) != int(expected_registry_revision):
         raise RuntimeError("prepared_tool_set_registry_revision_stale")
     specs_by_name = {str(spec.name): spec for spec in catalog.specs}
-    refs = tuple(
-        item.ref
-        for item in (*prepared.direct, *prepared.activated)
-    ) + tuple(prepared.deferred)
+    refs = tuple(item.ref for item in (*prepared.direct, *prepared.activated)) + tuple(
+        prepared.deferred
+    )
     # Report the complete frozen-selection gap in one failure.  Production
     # composition can otherwise expose several dynamically rebound builtin
     # tools and force operators to discover missing build identities one turn
@@ -181,15 +172,11 @@ def _capture_prepared_tool_set(
             ref.permission_category,
             ref.dangerous,
         )
-        if (
-            actual == expected
-            and getattr(spec, "execution_build_identity", None) is None
-        ):
+        if actual == expected and getattr(spec, "execution_build_identity", None) is None:
             missing_build_identities.append(ref.name)
     if missing_build_identities:
         raise RuntimeError(
-            "prepared_tool_build_identity_missing:"
-            + ",".join(sorted(missing_build_identities))
+            "prepared_tool_build_identity_missing:" + ",".join(sorted(missing_build_identities))
         )
     exact: list[dict[str, Any]] = []
     fingerprints: list[str] = []
@@ -241,9 +228,7 @@ def _capture_prepared_tool_set(
                 "execution_build_identity": build.fingerprint_payload(),
                 "dispatch_adapter_id": str(spec.dispatch_adapter_id),
                 "dispatch_adapter_version": str(spec.dispatch_adapter_version),
-                "dispatch_adapter_fingerprint": str(
-                    spec.dispatch_adapter_fingerprint
-                ),
+                "dispatch_adapter_fingerprint": str(spec.dispatch_adapter_fingerprint),
                 "effect_policy": (
                     None
                     if spec.effect_policy is None
@@ -346,10 +331,7 @@ class SnapshotLeaseReadyGate:
                 raise RuntimeError("snapshot_lease_not_ready")
             if intent_hash is not None and ready[0] != intent_hash:
                 raise RuntimeError("snapshot_lease_ready_identity_stale")
-            if (
-                process_catalog_stamp is not None
-                and ready[1] != process_catalog_stamp
-            ):
+            if process_catalog_stamp is not None and ready[1] != process_catalog_stamp:
                 raise RuntimeError("snapshot_lease_process_stamp_stale")
 
     async def require_run_ready(self, run_id: str) -> None:
@@ -456,16 +438,12 @@ class PreparedRunCatalogLease:
                     "process_catalog_stamp": self.process_catalog_stamp,
                     "lease_intent_id": self.lease_intent_id,
                     "lease_intent_hash": self.lease_intent_hash,
-                    "prepared_tool_set_fingerprint": (
-                        self.prepared_tool_set_fingerprint
-                    ),
+                    "prepared_tool_set_fingerprint": (self.prepared_tool_set_fingerprint),
                     "run_id": self.run_id,
                     "root_run_id": self.root_run_id,
                     "entry_set_hash": self.entry_set_hash,
                     "expected_entry_count": self.expected_entry_count,
-                    "prepared_tool_set_capture_hash": (
-                        self.prepared_tool_set_capture_hash
-                    ),
+                    "prepared_tool_set_capture_hash": (self.prepared_tool_set_capture_hash),
                     "projection_receipt_id": self.projection_receipt_id,
                     "projection_receipt_hash": self.projection_receipt_hash,
                     "process_instance_id": self.process_instance_id,
@@ -646,17 +624,13 @@ class _BindRunCatalogLease:
         if (
             spec.run_id != self.lease.run_id
             or start_snapshot.run_id != self.lease.run_id
-            or start_snapshot.capability_lease_intent_ref
-            != self.lease.lease_intent_id
-            or start_snapshot.capability_lease_intent_hash
-            != self.lease.lease_intent_hash
+            or start_snapshot.capability_lease_intent_ref != self.lease.lease_intent_id
+            or start_snapshot.capability_lease_intent_hash != self.lease.lease_intent_hash
         ):
             raise RuntimeError("run_catalog_start_fence_mismatch")
         owner_ref = f"execution-run-start:{self.lease.run_id}"
         db = _tx_db(transaction)
-        receipt = await self.lease._store.bind(
-            db
-        ).adopt_snapshot_lease_intent_in_tx(
+        receipt = await self.lease._store.bind(db).adopt_snapshot_lease_intent_in_tx(
             self.lease.lease_intent_id,
             intent_hash=self.lease.lease_intent_hash,
             owner_record_ref=owner_ref,
@@ -702,13 +676,16 @@ class _ReadyRunCatalogLease:
         start_snapshot: Any,
         extension_receipts: Sequence[HostExtensionRefV1],
     ) -> bool:
-        if str(
-            getattr(
-                record,
-                "run_id",
-                getattr(getattr(record, "ref", None), "run_id", ""),
+        if (
+            str(
+                getattr(
+                    record,
+                    "run_id",
+                    getattr(getattr(record, "ref", None), "run_id", ""),
+                )
             )
-        ) != self.lease.run_id:
+            != self.lease.run_id
+        ):
             return False
         if not any(
             item.kind == "deskpet.capabilities.snapshot_lease_bind.v1"
@@ -760,13 +737,16 @@ class _ReleaseRunCatalogLease:
         record: Any,
         terminal_event: Any,
     ) -> HostExtensionRefV1:
-        if str(
-            getattr(
-                record,
-                "run_id",
-                getattr(getattr(record, "ref", None), "run_id", ""),
+        if (
+            str(
+                getattr(
+                    record,
+                    "run_id",
+                    getattr(getattr(record, "ref", None), "run_id", ""),
+                )
             )
-        ) != self.lease.run_id:
+            != self.lease.run_id
+        ):
             raise RuntimeError("run_catalog_terminal_fence_mismatch")
         db = _tx_db(transaction)
         owner_ref = f"execution-run-terminal:{self.lease.run_id}"
@@ -781,9 +761,7 @@ class _ReleaseRunCatalogLease:
                 ),
             }
         )
-        receipt = await self.lease._store.bind(
-            db
-        ).release_snapshot_lease_intent_in_tx(
+        receipt = await self.lease._store.bind(db).release_snapshot_lease_intent_in_tx(
             self.lease.lease_intent_id,
             intent_hash=self.lease.lease_intent_hash,
             release_reason="terminal",
@@ -829,13 +807,16 @@ class _UnpinRunCatalogLease:
         extension_receipts: Sequence[HostExtensionRefV1],
     ) -> None:
         del event
-        if str(
-            getattr(
-                record,
-                "run_id",
-                getattr(getattr(record, "ref", None), "run_id", ""),
+        if (
+            str(
+                getattr(
+                    record,
+                    "run_id",
+                    getattr(getattr(record, "ref", None), "run_id", ""),
+                )
             )
-        ) != self.lease.run_id:
+            != self.lease.run_id
+        ):
             raise RuntimeError("run_catalog_terminal_fence_mismatch")
         if not any(
             item.kind == "deskpet.capabilities.snapshot_lease_release.v1"
@@ -914,9 +895,7 @@ class SqliteRunCatalogLeasePreparer:
                 "selected_binding": selected.to_dict(),
                 "visible_bindings": visible,
                 "descriptor": version.to_dict(),
-                "tool_spec_fingerprints": list(
-                    descriptor.tool_spec_fingerprints
-                ),
+                "tool_spec_fingerprints": list(descriptor.tool_spec_fingerprints),
                 "instruction_refs_hash": fingerprint_json([]),
                 "workflow_refs_hash": fingerprint_json([]),
                 "runtime_descriptor_hash": fingerprint_json([]),
@@ -937,25 +916,19 @@ class SqliteRunCatalogLeasePreparer:
                 )
             elif version.provider_tool_names:
                 kind = "host_tool"
-                build_identity = self._host_build_identity(
-                    version.provider_tool_names
-                )
+                build_identity = self._host_build_identity(version.provider_tool_names)
                 base.update(
                     {
                         "selected_binding": None,
                         "stable_host_binding_id": fingerprint_json(
                             {
                                 "source": version.source,
-                                "provider_names": list(
-                                    version.provider_tool_names
-                                ),
+                                "provider_names": list(version.provider_tool_names),
                                 "schema_hash": version.schema_hash,
                                 "build_identity": build_identity,
                             }
                         ),
-                        "host_provider_name": ",".join(
-                            version.provider_tool_names
-                        ),
+                        "host_provider_name": ",".join(version.provider_tool_names),
                         "host_source": version.source,
                         "host_spec_version": version.version,
                         "host_schema_hash": version.schema_hash,
@@ -985,9 +958,7 @@ class SqliteRunCatalogLeasePreparer:
                         },
                     }
                 )
-            descriptor_fingerprint = fingerprint_json(
-                {"entry_kind": kind, "envelope": base}
-            )
+            descriptor_fingerprint = fingerprint_json({"entry_kind": kind, "envelope": base})
             identities.append(
                 RunCatalogEntryIdentity(
                     entry_kind=kind,
@@ -1074,20 +1045,14 @@ class SqliteRunCatalogLeasePreparer:
                     or _result_field(intent, "intent_hash")
                     or ""
                 )
-                projection_receipt = _result_field(
-                    projection, "projection_receipt", projection
-                )
+                projection_receipt = _result_field(projection, "projection_receipt", projection)
                 projection_receipt_id = str(
-                    _result_field(
-                        projection_receipt, "projection_receipt_id"
-                    )
+                    _result_field(projection_receipt, "projection_receipt_id")
                     or _result_field(projection_receipt, "receipt_id")
                     or ""
                 )
                 projection_receipt_hash = str(
-                    _result_field(
-                        projection_receipt, "projection_receipt_hash"
-                    )
+                    _result_field(projection_receipt, "projection_receipt_hash")
                     or _result_field(projection_receipt, "receipt_hash")
                     or ""
                 )
@@ -1139,9 +1104,7 @@ class SqliteRunCatalogLeasePreparer:
                 {
                     **dict(entry.canonical_envelope),
                     "entry_kind": entry.entry_kind,
-                    "descriptor_fingerprint": (
-                        entry.descriptor_fingerprint
-                    ),
+                    "descriptor_fingerprint": (entry.descriptor_fingerprint),
                 }
                 for entry in content.entries
             ),
@@ -1170,9 +1133,7 @@ class FirstPartyFrozenSkillResolver:
         # Kept for constructor compatibility; selection authority is the Run
         # catalog, not the process's current first-party inventory.
         self._inventory = tuple(inventory)
-        self._snapshot_resolver = SkillPackSnapshotResolver(
-            version_store=store
-        )
+        self._snapshot_resolver = SkillPackSnapshotResolver(version_store=store)
 
     async def resolve_frozen_instruction(
         self,
@@ -1208,9 +1169,7 @@ class FirstPartyFrozenSkillResolver:
         for candidate in rows:
             try:
                 candidate_scope = await self._snapshot_resolver.resolve_scope(
-                    owner_key=str(
-                        candidate["selected_owner_key"] or "builtin"
-                    ),
+                    owner_key=str(candidate["selected_owner_key"] or "builtin"),
                     pack_id=str(candidate["pack_id"]),
                     skill_id=str(skill_name),
                     version=str(candidate["version"]),
@@ -1229,9 +1188,7 @@ class FirstPartyFrozenSkillResolver:
             scope,
             arguments,
         )
-        envelope = json.loads(
-            str(row["prepared_tool_set_envelope_json"])
-        )
+        envelope = json.loads(str(row["prepared_tool_set_envelope_json"]))
         prepared_raw = envelope.get("prepared")
         if not isinstance(prepared_raw, Mapping):
             raise RuntimeError("frozen_skill_prepared_tool_set_missing")
@@ -1251,19 +1208,10 @@ class FirstPartyFrozenSkillResolver:
         return {
             **resolved.to_dict(),
             "capability_snapshot_ref": str(row["snapshot_ref"]),
-            "run_catalog_content_stamp": str(
-                row["run_catalog_content_stamp"]
-            ),
-            "allowed_tool_refs": [
-                dict(item)
-                for item in intersection.effective_tool_fact_payloads
-            ],
-            "effective_tool_ref_hashes": list(
-                intersection.effective_tool_ref_hashes
-            ),
-            "effective_tool_refs_hash": (
-                intersection.effective_tool_refs_hash
-            ),
+            "run_catalog_content_stamp": str(row["run_catalog_content_stamp"]),
+            "allowed_tool_refs": [dict(item) for item in intersection.effective_tool_fact_payloads],
+            "effective_tool_ref_hashes": list(intersection.effective_tool_ref_hashes),
+            "effective_tool_refs_hash": (intersection.effective_tool_refs_hash),
         }
 
     async def resolve_frozen_resource(

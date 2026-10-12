@@ -37,12 +37,16 @@ async def record_terminal(env, observed, *, binding=None, endpoint=ENDPOINT):  #
 
     record = {**(binding or BINDING), "run_id": env.run_id}
     return await env.store.record_sdk_terminal(
-        host_run_id=env.admission.host_run_id, sdk_run_id=env.run_id,
-        owner_id=env.admission.owner_id, generation=env.admission.generation,
-        terminal_state=observed.terminal_state, sdk_event_id=observed.sdk_event_id,
+        host_run_id=env.admission.host_run_id,
+        sdk_run_id=env.run_id,
+        owner_id=env.admission.owner_id,
+        generation=env.admission.generation,
+        terminal_state=observed.terminal_state,
+        sdk_event_id=observed.sdk_event_id,
         sdk_event_hash=observed.sdk_event_hash,
         idempotency_key=f"runtime-terminal:{env.admission.host_run_id}",
-        run_binding=record, endpoint_identity=endpoint,
+        run_binding=record,
+        endpoint_identity=endpoint,
     )
 
 
@@ -53,6 +57,7 @@ def post_turn_attempts(db_path: Path) -> list[tuple]:
         "result_envelope_json IS NOT NULL FROM post_turn_invocation_attempts WHERE purpose='analysis' "
         "ORDER BY reserved_at,attempt_ordinal",
     )
+
 
 SUBJECT = h.AUTH.subject
 MESSAGE = "把 README 里的版本号改成 1.2.0"
@@ -69,38 +74,71 @@ def rows(db_path: Path, sql: str, *params):
         return db.execute(sql, params).fetchall()
 
 
-async def claim_and_bind(store: ForegroundQueueStore, *, subject: str, sdk_run_id: str, owner: str = "owner-1"):  # type: ignore[no-untyped-def]
+async def claim_and_bind(
+    store: ForegroundQueueStore, *, subject: str, sdk_run_id: str, owner: str = "owner-1"
+):  # type: ignore[no-untyped-def]
     candidate = await store.read_next_preparation_candidate(subject)
     assert candidate is not None
     draft = await store.prepare_candidate(
-        subject=subject, expected_candidate_hash=candidate.candidate_hash,
-        context=ContextLineage("context-1", 1, "c" * 64), idempotency_key="prepare-1",
+        subject=subject,
+        expected_candidate_hash=candidate.candidate_hash,
+        context=ContextLineage("context-1", 1, "c" * 64),
+        idempotency_key="prepare-1",
     )
     admission = await store.claim_next(
-        subject=subject, owner_id=owner, claim_idempotency_key="claim-1",
-        preparation_draft_id=draft.draft_id, preparation_draft_hash=draft.draft_hash, lease_seconds=300,
+        subject=subject,
+        owner_id=owner,
+        claim_idempotency_key="claim-1",
+        preparation_draft_id=draft.draft_id,
+        preparation_draft_hash=draft.draft_hash,
+        lease_seconds=300,
     )
     assert admission is not None
     await store.record_execution_preparation(
-        host_run_id=admission.host_run_id, owner_id=owner, generation=admission.generation,
-        context_ref="context:milestone", context_hash="c" * 64, provider_ref="provider:milestone", provider_hash="d" * 64,
-        tool_ref="tools:milestone", tool_hash="e" * 64, execution_request_hash="f" * 64, idempotency_key="final-prepare-1",
+        host_run_id=admission.host_run_id,
+        owner_id=owner,
+        generation=admission.generation,
+        context_ref="context:milestone",
+        context_hash="c" * 64,
+        provider_ref="provider:milestone",
+        provider_hash="d" * 64,
+        tool_ref="tools:milestone",
+        tool_hash="e" * 64,
+        execution_request_hash="f" * 64,
+        idempotency_key="final-prepare-1",
     )
     await store.record_start_intent(
-        host_run_id=admission.host_run_id, sdk_run_id=sdk_run_id, owner_id=owner, generation=admission.generation,
-        start_request_hash="a" * 64, idempotency_key="start-intent-1",
+        host_run_id=admission.host_run_id,
+        sdk_run_id=sdk_run_id,
+        owner_id=owner,
+        generation=admission.generation,
+        start_request_hash="a" * 64,
+        idempotency_key="start-intent-1",
     )
     await store.record_start_observation(
-        host_run_id=admission.host_run_id, sdk_run_id=sdk_run_id, owner_id=owner, generation=admission.generation,
-        outcome="RETURNED", result_ref=f"sdk-start:{sdk_run_id}", result_hash="b" * 64, idempotency_key="start-observation-1",
+        host_run_id=admission.host_run_id,
+        sdk_run_id=sdk_run_id,
+        owner_id=owner,
+        generation=admission.generation,
+        outcome="RETURNED",
+        result_ref=f"sdk-start:{sdk_run_id}",
+        result_hash="b" * 64,
+        idempotency_key="start-observation-1",
     )
     await store.bind_sdk_run(
-        host_run_id=admission.host_run_id, sdk_run_id=sdk_run_id, owner_id=owner, generation=admission.generation,
+        host_run_id=admission.host_run_id,
+        sdk_run_id=sdk_run_id,
+        owner_id=owner,
+        generation=admission.generation,
         idempotency_key="bind-1",
     )
     await store.record_sdk_started(
-        host_run_id=admission.host_run_id, sdk_run_id=sdk_run_id, owner_id=owner, generation=admission.generation,
-        sdk_event_id=f"sdk-start:{sdk_run_id}", idempotency_key=f"sdk-start:{sdk_run_id}",
+        host_run_id=admission.host_run_id,
+        sdk_run_id=sdk_run_id,
+        owner_id=owner,
+        generation=admission.generation,
+        sdk_event_id=f"sdk-start:{sdk_run_id}",
+        idempotency_key=f"sdk-start:{sdk_run_id}",
     )
     return admission
 
@@ -113,11 +151,24 @@ async def build(tmp_path: Path, *, message: str = MESSAGE) -> MilestoneEnv:
     queued = await gate.service.enqueue_turn(QueueTurnRequest(scope_id, DELIVERY_KEY, message))
     store = ForegroundQueueStore(gate.db_path, clock=time.time)
     admission = await claim_and_bind(store, subject=SUBJECT, sdk_run_id=h.RUN.value)
-    [(evidence_id,)] = rows(gate.db_path, "SELECT evidence_id FROM foreground_turns WHERE turn_id=?", str(queued["turn_ref"]))
+    [(evidence_id,)] = rows(
+        gate.db_path,
+        "SELECT evidence_id FROM foreground_turns WHERE turn_id=?",
+        str(queued["turn_ref"]),
+    )
     return MilestoneEnv(
-        gate=gate, db_path=gate.db_path, store=store, clock=time.time, admission=admission, run_id=h.RUN.value,
-        scope_id=scope_id, workspace=workspace, turn_id=str(queued["turn_ref"]), evidence_id=str(evidence_id),
-        primary_id=None, ingress=gate.evidence_ingress,
+        gate=gate,
+        db_path=gate.db_path,
+        store=store,
+        clock=time.time,
+        admission=admission,
+        run_id=h.RUN.value,
+        scope_id=scope_id,
+        workspace=workspace,
+        turn_id=str(queued["turn_ref"]),
+        evidence_id=str(evidence_id),
+        primary_id=None,
+        ingress=gate.evidence_ingress,
     )
 
 
@@ -126,21 +177,38 @@ def readme(m: MilestoneEnv) -> str:
 
 
 def evidence_ids(m: MilestoneEnv) -> list[str]:
-    return [str(r[0]) for r in rows(m.db_path, "SELECT DISTINCT evidence_id FROM task_scope_evidence_links WHERE task_scope_id=? ORDER BY created_at,evidence_id", m.scope_id)]
+    return [
+        str(r[0])
+        for r in rows(
+            m.db_path,
+            "SELECT DISTINCT evidence_id FROM task_scope_evidence_links WHERE task_scope_id=? ORDER BY created_at,evidence_id",
+            m.scope_id,
+        )
+    ]
 
 
 def revision(m: MilestoneEnv) -> int:
-    [(value,)] = rows(m.db_path, "SELECT current_revision FROM task_scope_heads WHERE task_scope_id=?", m.scope_id)
+    [(value,)] = rows(
+        m.db_path, "SELECT current_revision FROM task_scope_heads WHERE task_scope_id=?", m.scope_id
+    )
     return int(value)
 
 
 def closure_arguments(m: MilestoneEnv, key: str = "closure-readme") -> dict[str, Any]:
     refs = evidence_ids(m)
     return {
-        "outcome": "mutate", "base_revision": revision(m), "evidence_refs": refs, "idempotency_key": key,
+        "outcome": "mutate",
+        "base_revision": revision(m),
+        "evidence_refs": refs,
+        "idempotency_key": key,
         "operations": [
-            {"operation_id": "op-readme", "kind": "plan.step.add", "value": "README 版本号已改为 1.2.0",
-             "reason_code": "objective_file_change", "evidence_refs": refs},
+            {
+                "operation_id": "op-readme",
+                "kind": "plan.step.add",
+                "value": "README 版本号已改为 1.2.0",
+                "reason_code": "objective_file_change",
+                "evidence_refs": refs,
+            },
         ],
     }
 
@@ -154,13 +222,25 @@ class LazyProvider(h.ScriptedProvider):
         return await super().invoke(run_id, request, cancel=cancel, execution_lease=execution_lease)
 
 
-def scripted_main_run(m: MilestoneEnv, *, call_closure: bool = True, answer: str = "已把 README 的版本号改成 1.2.0。") -> LazyProvider:
+def scripted_main_run(
+    m: MilestoneEnv, *, call_closure: bool = True, answer: str = "已把 README 的版本号改成 1.2.0。"
+) -> LazyProvider:
     script: list[Any] = [
-        h.tool_call("context_route", {"route": "resume_existing", "task_scope_id": m.scope_id}, raw_id="raw-route"),
-        h.tool_call("write_file", {"path": "README.md", "content": README_BEFORE.replace("1.1.3", "1.2.0")}, raw_id="raw-write"),
+        h.tool_call(
+            "context_route",
+            {"route": "resume_existing", "task_scope_id": m.scope_id},
+            raw_id="raw-route",
+        ),
+        h.tool_call(
+            "write_file",
+            {"path": "README.md", "content": README_BEFORE.replace("1.1.3", "1.2.0")},
+            raw_id="raw-write",
+        ),
     ]
     if call_closure:
-        script.append(lambda: h.tool_call("task_scope_update", closure_arguments(m), raw_id="raw-closure"))
+        script.append(
+            lambda: h.tool_call("task_scope_update", closure_arguments(m), raw_id="raw-closure")
+        )
     script.append(h.answer(answer))
     return LazyProvider(script)
 
@@ -178,16 +258,27 @@ def last_answer(m: MilestoneEnv) -> str:
     return ""
 
 
-async def settle_terminal(m: MilestoneEnv, *, closure_adapter, binding: dict[str, Any] | None = None, endpoint: str | None = ENDPOINT):  # type: ignore[no-untyped-def]
+async def settle_terminal(
+    m: MilestoneEnv,
+    *,
+    closure_adapter,
+    binding: dict[str, Any] | None = None,
+    endpoint: str | None = ENDPOINT,
+):  # type: ignore[no-untyped-def]
     """SDK terminal observed → drain → closure fallback (only if still dirty) → Host terminal (+ outbox)."""
 
     from deskpet.execution.foreground_runtime import SqliteSdkTerminalObserver
 
     record = {**(binding or BINDING), "run_id": m.run_id}
     facts = ch.FakeRunFacts(m.run_id, last_answer=last_answer(m) or None, binding=record)
-    observed = await SqliteSdkTerminalObserver(str(m.db_path), ch._SdkIngress(facts.state), facts).observe(
-        host_run_id=m.admission.host_run_id, sdk_run_id=m.run_id, subject=SUBJECT,
-        owner_id=m.admission.owner_id, generation=m.admission.generation,
+    observed = await SqliteSdkTerminalObserver(
+        str(m.db_path), ch._SdkIngress(facts.state), facts
+    ).observe(
+        host_run_id=m.admission.host_run_id,
+        sdk_run_id=m.run_id,
+        subject=SUBJECT,
+        owner_id=m.admission.owner_id,
+        generation=m.admission.generation,
     )
     assert observed is not None, "SDK terminal must be observable"
     fallback, _ = ch.build_fallback(m, facts, closure_adapter, clock=time.time)
@@ -197,7 +288,11 @@ async def settle_terminal(m: MilestoneEnv, *, closure_adapter, binding: dict[str
 
 
 def closure_receipts(m: MilestoneEnv) -> list[tuple]:
-    return rows(m.db_path, "SELECT sdk_run_id,outcome,plan_id,reason_code FROM task_scope_closure_receipts WHERE task_scope_id=? ORDER BY rowid", m.scope_id)
+    return rows(
+        m.db_path,
+        "SELECT sdk_run_id,outcome,plan_id,reason_code FROM task_scope_closure_receipts WHERE task_scope_id=? ORDER BY rowid",
+        m.scope_id,
+    )
 
 
 def analysis_attempts(m: MilestoneEnv) -> list[tuple]:
@@ -212,5 +307,7 @@ def transcript_path(lane: str, started: float) -> Path:
 
 def dump_transcript(path: Path, payload: dict[str, Any]) -> None:
     text = json.dumps(payload, ensure_ascii=False, indent=2, default=str)
-    assert "api_key" not in text.lower() or '"api_key"' not in text, "api_key must never reach the transcript"
+    assert "api_key" not in text.lower() or '"api_key"' not in text, (
+        "api_key must never reach the transcript"
+    )
     path.write_text(text, encoding="utf-8")

@@ -1,4 +1,5 @@
 """Compatibility coverage for async web-tool adapters and pure parsers."""
+
 from __future__ import annotations
 
 import json
@@ -15,18 +16,28 @@ class _Service:
     def __init__(self, pages=None):
         self.pages = pages or {}
         self.calls = []
+
     async def fetch_raw(self, request):
         self.calls.append(request.url)
         value = self.pages.get(request.url)
-        if isinstance(value, Exception): raise value
+        if isinstance(value, Exception):
+            raise value
         if value is None:
             value = "<html><title>A</title><body>article text</body></html>"
         content_type = "application/xml" if "sitemap" in request.url else "text/html"
-        return {"status": 200, "url_final": request.url, "fetcher": "fake", "content_type": content_type, "content": value}
+        return {
+            "status": 200,
+            "url_final": request.url,
+            "fetcher": "fake",
+            "content_type": content_type,
+            "content": value,
+        }
 
 
 def _install(monkeypatch, service):
-    monkeypatch.setattr(runtime, "get_default_gateway", lambda: SimpleNamespace(fetch_service=service))
+    monkeypatch.setattr(
+        runtime, "get_default_gateway", lambda: SimpleNamespace(fetch_service=service)
+    )
 
 
 def test_web_fetch_registry_dispatch_awaits_async_handler(monkeypatch):
@@ -46,7 +57,9 @@ def test_web_fetch_structures_service_error(monkeypatch):
 
 
 def test_web_fetch_schema_explains_scrapling_first_compatibility_name():
-    schema = next(item["function"] for item in registry.schemas() if item["function"]["name"] == "web_fetch")
+    schema = next(
+        item["function"] for item in registry.schemas() if item["function"]["name"] == "web_fetch"
+    )
     description = schema["description"]
     assert "Scrapling" in description
     assert "回退 httpx" in description
@@ -60,14 +73,18 @@ def test_web_extract_article_from_raw_html_gets_title_and_text():
 
 
 def test_web_extract_article_missing_fields_return_null():
-    out = json.loads(registry.dispatch("web_extract_article", {"url_or_html": "<html><body></body></html>"}))
+    out = json.loads(
+        registry.dispatch("web_extract_article", {"url_or_html": "<html><body></body></html>"})
+    )
     assert set(("title", "author", "date", "text", "language")) <= set(out)
 
 
 def test_web_extract_article_url_uses_shared_service(monkeypatch):
     service = _Service()
     _install(monkeypatch, service)
-    out = json.loads(registry.dispatch("web_extract_article", {"url_or_html": "https://example.test/a"}))
+    out = json.loads(
+        registry.dispatch("web_extract_article", {"url_or_html": "https://example.test/a"})
+    )
     assert out["title"] == "A"
     assert out["fetcher"] == "fake"
     assert service.calls == ["https://example.test/a"]
@@ -80,7 +97,9 @@ def test_web_read_sitemap_parses_and_dedupes(monkeypatch):
     </urlset>"""
     service = _Service({"https://site.test/sitemap.xml": xml})
     _install(monkeypatch, service)
-    out = json.loads(registry.dispatch("web_read_sitemap", {"sitemap_url": "https://site.test/sitemap.xml"}))
+    out = json.loads(
+        registry.dispatch("web_read_sitemap", {"sitemap_url": "https://site.test/sitemap.xml"})
+    )
     assert out["count"] == 2
     assert [row["url"] for row in out["urls"]] == ["https://site.test/a", "https://site.test/b"]
 
@@ -93,10 +112,17 @@ def test_web_crawl_same_origin_and_keyword_scoring(monkeypatch):
     }
     service = _Service(pages)
     _install(monkeypatch, service)
-    out = json.loads(registry.dispatch("web_crawl", {
-        "start_url": "https://site.test/", "keywords": ["python"],
-        "max_depth": 1, "max_pages": 10,
-    }))
+    out = json.loads(
+        registry.dispatch(
+            "web_crawl",
+            {
+                "start_url": "https://site.test/",
+                "keywords": ["python"],
+                "max_depth": 1,
+                "max_pages": 10,
+            },
+        )
+    )
     assert out["count"] == 3
     assert out["pages"][0]["url"].endswith("/hot")
     assert "https://off.test/x" not in service.calls

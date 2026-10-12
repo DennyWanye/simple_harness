@@ -5,6 +5,7 @@
 它选"原样重试"就是批准，下一次尝试的工具上限 = 基础额度 + 批准数，并有可审计的记录；不选就不给。
 Harness 不判该不该给。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -25,23 +26,33 @@ def _quick(monkeypatch: pytest.MonkeyPatch) -> None:
 
 # ---------------------------------------------------------------- 提案的合同
 
+
 def test_a_request_is_popped_from_the_block_and_checked_for_shape() -> None:
-    raw = {"outcome": "blocked", rr.FIELD: {"dimension": "tool_calls", "amount": 5, "reason": "要读的文件太多"}}
+    raw = {
+        "outcome": "blocked",
+        rr.FIELD: {"dimension": "tool_calls", "amount": 5, "reason": "要读的文件太多"},
+    }
     request = rr.pop_request(raw)
     assert rr.FIELD not in raw
-    assert request is not None and request.to_json() == {"dimension": "tool_calls", "amount": 5,
-                                                          "reason": "要读的文件太多"}
+    assert request is not None and request.to_json() == {
+        "dimension": "tool_calls",
+        "amount": 5,
+        "reason": "要读的文件太多",
+    }
     assert rr.pop_request({"outcome": "blocked"}) is None
 
 
-@pytest.mark.parametrize("bad", (
-    {"dimension": "tokens", "amount": 5, "reason": "x"},        # token 预留本来按需增长，不申请
-    {"dimension": "tool_calls", "amount": 0, "reason": "x"},
-    {"dimension": "tool_calls", "amount": True, "reason": "x"},
-    {"dimension": "tool_calls", "amount": 5, "reason": "  "},
-    {"dimension": "tool_calls", "amount": 5, "reason": "x", "grant": True},
-    "more please",
-))
+@pytest.mark.parametrize(
+    "bad",
+    (
+        {"dimension": "tokens", "amount": 5, "reason": "x"},  # token 预留本来按需增长，不申请
+        {"dimension": "tool_calls", "amount": 0, "reason": "x"},
+        {"dimension": "tool_calls", "amount": True, "reason": "x"},
+        {"dimension": "tool_calls", "amount": 5, "reason": "  "},
+        {"dimension": "tool_calls", "amount": 5, "reason": "x", "grant": True},
+        "more please",
+    ),
+)
 def test_a_malformed_request_is_a_contract_error(bad: Any) -> None:
     with pytest.raises(ContractError):
         rr.pop_request({rr.FIELD: bad})
@@ -49,17 +60,23 @@ def test_a_malformed_request_is_a_contract_error(bad: Any) -> None:
 
 # ---------------------------------------------------------------- 核额度：只核数
 
+
 def test_the_check_is_only_numbers_against_the_ceiling_and_what_is_left() -> None:
     request = rr.ResourceRequest(dimension="tool_calls", amount=48, reason="x")
     assert rr.quota_check(request, base_cap=48, room=None) == {
-        "base_cap": 48, "ceiling": 48, "available": None, "fits": True}
+        "base_cap": 48,
+        "ceiling": 48,
+        "available": None,
+        "fits": True,
+    }
     over_ceiling = rr.ResourceRequest(dimension="tool_calls", amount=49, reason="x")
     assert rr.quota_check(over_ceiling, base_cap=48, room=None)["fits"] is False
-    assert rr.quota_check(request, base_cap=48, room=95)["fits"] is False   # 48 + 48 > 95
+    assert rr.quota_check(request, base_cap=48, room=95)["fits"] is False  # 48 + 48 > 95
     assert rr.quota_check(request, base_cap=48, room=96)["fits"] is True
 
 
 # ---------------------------------------------------------------- 产品同形：申请 → 规划器重试 → 发放
+
 
 def _blocked(request: Any, amount: int) -> str:
     from agent_orchestrator.testing.fixtures import package_of
@@ -68,9 +85,15 @@ def _blocked(request: Any, amount: int) -> str:
     envelope = {
         "task_id": package.get("task_contract", {}).get("task_id", ""),
         "attempt_id": package.get("attempt", {}).get("attempt_id", ""),
-        "outcome": "blocked", "summary": "工具次数不够，读不完所有文件",
-        "claims": [], "evidence": [], "artifacts": [], "proposed_tasks": [], "used_knowledge": [],
-        "risks": [], "cost": {"tool_calls": 0},
+        "outcome": "blocked",
+        "summary": "工具次数不够，读不完所有文件",
+        "claims": [],
+        "evidence": [],
+        "artifacts": [],
+        "proposed_tasks": [],
+        "used_knowledge": [],
+        "risks": [],
+        "cost": {"tool_calls": 0},
         rr.FIELD: {"dimension": "tool_calls", "amount": amount, "reason": "要读的文件比额度多"},
     }
     return "<result_envelope>" + json.dumps(envelope, ensure_ascii=False) + "</result_envelope>"
@@ -110,7 +133,9 @@ def _world(tmp_path: Any, *, retry: bool, amount: int = 5):
     return product_world(tmp_path / "root", provider), packages
 
 
-def test_an_approved_request_raises_the_next_attempts_tool_cap_with_an_audit_trail(tmp_path: Any) -> None:
+def test_an_approved_request_raises_the_next_attempts_tool_cap_with_an_audit_trail(
+    tmp_path: Any,
+) -> None:
     async def case() -> dict[str, Any]:
         world_cm, packages = _world(tmp_path, retry=True)
         async with world_cm as world:
@@ -124,31 +149,55 @@ def test_an_approved_request_raises_the_next_attempts_tool_cap_with_an_audit_tra
                 return original_bind(agent_id, binding)
 
             gateway.bind = recording_bind  # type: ignore[method-assign]
-            mission_id = world.create({"goal": "写一份 NOTES.md", "success_criteria": ["file:NOTES.md"],
-                                       "idempotency_key": "r3-grant"})["mission_id"]
+            mission_id = world.create(
+                {
+                    "goal": "写一份 NOTES.md",
+                    "success_criteria": ["file:NOTES.md"],
+                    "idempotency_key": "r3-grant",
+                }
+            )["mission_id"]
             mission = await world.run_until_settled(mission_id, rounds=30)
             store = world.loop.store
             events = list(store.iter_events(mission_id))
-            attempts = sorted((a for t in store.list_tasks(mission_id) for a in store.list_attempts(t.id)),
-                              key=lambda a: a.created_at)
+            attempts = sorted(
+                (a for t in store.list_tasks(mission_id) for a in store.list_attempts(t.id)),
+                key=lambda a: a.created_at,
+            )
             configs = [store.get_intent_for_subject(a.id).config for a in attempts]
-            return {"mission": mission, "events": events, "configs": configs, "packages": packages,
-                    "base": world.loop._config.max_tool_calls_per_turn, "bound": bound}
+            return {
+                "mission": mission,
+                "events": events,
+                "configs": configs,
+                "packages": packages,
+                "base": world.loop._config.max_tool_calls_per_turn,
+                "bound": bound,
+            }
 
     seen = asyncio.run(case())
     assert str(seen["mission"].status) == "COMPLETED", seen["mission"].final_report
     requested = [e for e in seen["events"] if e.type == rr.REQUESTED]
     outcome = [e for e in seen["events"] if e.type == "OutcomeRecorded"]
     assert len(requested) == 1 and len(outcome) == 1
-    assert requested[0].payload["request"] == {"dimension": "tool_calls", "amount": 5, "reason": "要读的文件比额度多"}
+    assert requested[0].payload["request"] == {
+        "dimension": "tool_calls",
+        "amount": 5,
+        "reason": "要读的文件比额度多",
+    }
     assert requested[0].payload["check"]["fits"] is True
-    assert requested[0].payload["result_id"] == outcome[0].payload.get("result_id", requested[0].payload["result_id"])
+    assert requested[0].payload["result_id"] == outcome[0].payload.get(
+        "result_id", requested[0].payload["result_id"]
+    )
     # 同一个事务：两条事件挨着落库
     assert abs(int(requested[0].seq) - int(outcome[0].seq)) == 1
     # 修复请求的明细里带着申请与核的结果，规划器看得到
-    contexts = [entry["request"]["context"] for package in seen["packages"]
-                for entry in package["repair_requests"]]
-    assert any(ctx.get("resource_request", {}).get("request", {}).get("amount") == 5 for ctx in contexts), contexts
+    contexts = [
+        entry["request"]["context"]
+        for package in seen["packages"]
+        for entry in package["repair_requests"]
+    ]
+    assert any(
+        ctx.get("resource_request", {}).get("request", {}).get("amount") == 5 for ctx in contexts
+    ), contexts
     granted = [e for e in seen["events"] if e.type == rr.GRANTED]
     assert len(granted) == 1 and granted[0].payload["amount"] == 5
     first, second = seen["configs"][0], seen["configs"][1]
@@ -165,8 +214,13 @@ def test_without_the_planners_retry_nothing_is_granted(tmp_path: Any) -> None:
     async def case() -> list[Any]:
         world_cm, packages = _world(tmp_path, retry=False)
         async with world_cm as world:
-            mission_id = world.create({"goal": "写一份 NOTES.md", "success_criteria": ["file:NOTES.md"],
-                                       "idempotency_key": "r3-no-grant"})["mission_id"]
+            mission_id = world.create(
+                {
+                    "goal": "写一份 NOTES.md",
+                    "success_criteria": ["file:NOTES.md"],
+                    "idempotency_key": "r3-no-grant",
+                }
+            )["mission_id"]
             for _ in range(12):
                 await world.drain(timeout=20)
                 if packages:
@@ -189,28 +243,42 @@ def test_a_request_with_a_candidate_result_is_refused_as_an_invalid_envelope(tmp
         reply = worker_reply(request)
         if isinstance(reply, str) and calls["n"] == 0:
             calls["n"] += 1
-            body = json.loads(reply.removeprefix("<result_envelope>").removesuffix("</result_envelope>"))
+            body = json.loads(
+                reply.removeprefix("<result_envelope>").removesuffix("</result_envelope>")
+            )
             body[rr.FIELD] = {"dimension": "tool_calls", "amount": 5, "reason": "x"}
             return "<result_envelope>" + json.dumps(body, ensure_ascii=False) + "</result_envelope>"
         return reply
 
     async def case() -> list[Any]:
-        async with product_world(tmp_path / "root", LayeredScriptedProvider(worker=worker)) as world:
-            mission_id = world.create({"goal": "写一份 NOTES.md", "success_criteria": ["file:NOTES.md"],
-                                       "idempotency_key": "r3-candidate"})["mission_id"]
+        async with product_world(
+            tmp_path / "root", LayeredScriptedProvider(worker=worker)
+        ) as world:
+            mission_id = world.create(
+                {
+                    "goal": "写一份 NOTES.md",
+                    "success_criteria": ["file:NOTES.md"],
+                    "idempotency_key": "r3-candidate",
+                }
+            )["mission_id"]
             for _ in range(12):
                 await world.drain(timeout=20)
-                if any(e.type == "ResultRejected" for e in world.loop.store.iter_events(mission_id)):
+                if any(
+                    e.type == "ResultRejected" for e in world.loop.store.iter_events(mission_id)
+                ):
                     break
             return list(world.loop.store.iter_events(mission_id))
 
     events = asyncio.run(case())
     rejected = [e for e in events if e.type == "ResultRejected"]
-    assert rejected and rejected[0].payload["reason"] == "envelope_invalid", [e.payload for e in rejected]
+    assert rejected and rejected[0].payload["reason"] == "envelope_invalid", [
+        e.payload for e in rejected
+    ]
     assert rr.REQUESTED not in {e.type for e in events}
 
 
 # ---------------------------------------------------------------- 派发核对：冻结的发放必须有对应申请
+
 
 def test_a_grant_without_a_matching_checked_request_is_refused() -> None:
     from types import SimpleNamespace
@@ -218,8 +286,10 @@ def test_a_grant_without_a_matching_checked_request_is_refused() -> None:
     def event(**payload: Any) -> Any:
         return SimpleNamespace(type=rr.REQUESTED, task_id="t1", attempt_id="a1", payload=payload)
 
-    ok = event(request={"dimension": "tool_calls", "amount": 5, "reason": "x"},
-               check={"fits": True, "base_cap": 48, "ceiling": 48, "available": None})
+    ok = event(
+        request={"dimension": "tool_calls", "amount": 5, "reason": "x"},
+        check={"fits": True, "base_cap": 48, "ceiling": 48, "available": None},
+    )
     grant = {"failed_attempt_id": "a1", "dimension": "tool_calls", "amount": 5}
     assert rr.verified_grant_amount([ok], task_id="t1", grant=grant, base_cap=48) == 5
     with pytest.raises(rr.GrantUnverified):
@@ -235,8 +305,8 @@ def test_a_grant_without_a_matching_checked_request_is_refused() -> None:
         rr.verified_grant_amount([ok], task_id="t2", grant=grant, base_cap=48)
 
 
-
 # ---------------------------------------------------------------- 裁决第 4 件：用完工具次数时从拒绝话得知可申请
+
 
 def test_the_tool_cap_refusal_tells_an_executor_how_to_ask_for_more(tmp_path: Any) -> None:
     """裁决 2026-10-07 第 4 件（偏离 #52）：不改模板、工具说明、上下文包；网关"工具次数用完"的拒绝话
@@ -252,14 +322,18 @@ def test_the_tool_cap_refusal_tells_an_executor_how_to_ask_for_more(tmp_path: An
     workspaces = WorkspaceManager(tmp_path / "ws")
     workspaces.create("m:task-1:attempt-1", seed={"a.md": "x"})
     gateway = WorkspaceToolGateway(workspaces)
-    gateway.bind("run-1", WorkspaceBinding("m:task-1:attempt-1", "work", True, ("workspace_list",),
-                                           max_tool_calls=2))
+    gateway.bind(
+        "run-1",
+        WorkspaceBinding("m:task-1:attempt-1", "work", True, ("workspace_list",), max_tool_calls=2),
+    )
 
     async def case() -> Any:
         result = None
         for n in range(3):
-            result = await gateway.execute(ToolCall(call_id=CallId(f"c{n}"), name="workspace_list",
-                                                    arguments={}), {"run_id": "run-1"})
+            result = await gateway.execute(
+                ToolCall(call_id=CallId(f"c{n}"), name="workspace_list", arguments={}),
+                {"run_id": "run-1"},
+            )
         return result
 
     third = asyncio.run(case())
@@ -280,22 +354,37 @@ def test_after_a_grant_the_refusal_names_the_amount_the_check_will_accept(tmp_pa
     workspaces = WorkspaceManager(tmp_path / "ws")
     workspaces.create("m:task-1:attempt-2", seed={"a.md": "x"})
     gateway = WorkspaceToolGateway(workspaces)
-    gateway.bind("run-2", WorkspaceBinding("m:task-1:attempt-2", "work", True, ("workspace_list",),
-                                           max_tool_calls=3, max_request_amount=2))
+    gateway.bind(
+        "run-2",
+        WorkspaceBinding(
+            "m:task-1:attempt-2",
+            "work",
+            True,
+            ("workspace_list",),
+            max_tool_calls=3,
+            max_request_amount=2,
+        ),
+    )
 
     async def case() -> Any:
         result = None
         for n in range(4):
-            result = await gateway.execute(ToolCall(call_id=CallId(f"c{n}"), name="workspace_list",
-                                                    arguments={}), {"run_id": "run-2"})
+            result = await gateway.execute(
+                ToolCall(call_id=CallId(f"c{n}"), name="workspace_list", arguments={}),
+                {"run_id": "run-2"},
+            )
         return result
 
     text = str(asyncio.run(case()).public_message)
     assert "at most 3 tool calls" in text and "不超过 2）" in text, text
-    assert rr.quota_check(rr.ResourceRequest("tool_calls", 2, "x"), base_cap=2, room=None)["fits"] is True
+    assert (
+        rr.quota_check(rr.ResourceRequest("tool_calls", 2, "x"), base_cap=2, room=None)["fits"]
+        is True
+    )
 
 
 # ---------------------------------------------------------------- R3-3 补裁：执行者单回合上限多留一轮余量
+
 
 def _refused_then_ask(batch: bool):
     """执行者把工具次数用完（上限 2）：``batch`` 时第二轮一次并发发 3 个调用跨过上限。
@@ -320,8 +409,11 @@ def _refused_then_ask(batch: bool):
             return _blocked(request, 2)
         if batch and len(results) == 1:
             # 不连续同一个工具（SDK 另有"连续同一工具"的上限，不是这里要看的）
-            return [("workspace_write_file", {"path": "b1.md", "content": "x"}), ("workspace_list", {}),
-                    ("workspace_write_file", {"path": "b2.md", "content": "x"})]
+            return [
+                ("workspace_write_file", {"path": "b1.md", "content": "x"}),
+                ("workspace_list", {}),
+                ("workspace_write_file", {"path": "b2.md", "content": "x"}),
+            ]
         if not results:
             return ("workspace_list", {})
         return ("workspace_write_file", {"path": f"f{len(results)}.md", "content": "x"})
@@ -332,12 +424,21 @@ def _refused_then_ask(batch: bool):
                 reply = worker(request)
                 if isinstance(reply, list):
                     package_of(request)
-                    calls = tuple(ProviderToolCall(CallId(f"batch-{len(self.requests)}-{n}"), name, dict(args))
-                                  for n, (name, args) in enumerate(reply))
+                    calls = tuple(
+                        ProviderToolCall(
+                            CallId(f"batch-{len(self.requests)}-{n}"), name, dict(args)
+                        )
+                        for n, (name, args) in enumerate(reply)
+                    )
                     self.requests.append(request)
-                    return ProviderResponse(request.request_id, Message(MessageRole.ASSISTANT, ""),
-                                            tool_calls=calls, model=self.model, finish_reason="tool_calls",
-                                            usage=ProviderUsage(input_tokens=10, output_tokens=5, total_tokens=15))
+                    return ProviderResponse(
+                        request.request_id,
+                        Message(MessageRole.ASSISTANT, ""),
+                        tool_calls=calls,
+                        model=self.model,
+                        finish_reason="tool_calls",
+                        usage=ProviderUsage(input_tokens=10, output_tokens=5, total_tokens=15),
+                    )
             return await super().invoke(request, cancel=cancel)
 
     provider = Provider(planner=lambda r: retry_same_method(r) or planner_reply(r), worker=worker)
@@ -345,21 +446,30 @@ def _refused_then_ask(batch: bool):
 
 
 @pytest.mark.parametrize("batch", (False, True), ids=("one-by-one", "batch-across-the-cap"))
-def test_an_executor_that_used_up_its_tool_calls_sees_the_refusal_and_can_ask(tmp_path: Any, batch: bool) -> None:
+def test_an_executor_that_used_up_its_tool_calls_sees_the_refusal_and_can_ask(
+    tmp_path: Any, batch: bool
+) -> None:
     from agent_orchestrator.testing.product_world import product_world
 
     provider, seen = _refused_then_ask(batch)
 
     async def case() -> list[Any]:
         async with product_world(tmp_path / "root", provider, max_tool_calls_per_turn=2) as world:
-            mission_id = world.create({"goal": "写一份 NOTES.md", "success_criteria": ["file:NOTES.md"],
-                                       "idempotency_key": f"r3-margin-{batch}"})["mission_id"]
+            mission_id = world.create(
+                {
+                    "goal": "写一份 NOTES.md",
+                    "success_criteria": ["file:NOTES.md"],
+                    "idempotency_key": f"r3-margin-{batch}",
+                }
+            )["mission_id"]
             for _ in range(10):
                 await world.drain(timeout=20)
                 if any(e.type == rr.REQUESTED for e in world.loop.store.iter_events(mission_id)):
                     break
             store = world.loop.store
-            attempt = next(a for t in store.list_tasks(mission_id) for a in store.list_attempts(t.id))
+            attempt = next(
+                a for t in store.list_tasks(mission_id) for a in store.list_attempts(t.id)
+            )
             config = store.get_intent_for_subject(attempt.id).config
             return [list(store.iter_events(mission_id)), config]
 

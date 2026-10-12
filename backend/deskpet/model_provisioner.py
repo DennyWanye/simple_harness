@@ -20,6 +20,7 @@
 与运行时 `paths.resolve_model_dir` 实际读取路径严格一致——避免跨层目录漂移。
 未就绪期间 ASR / 记忆走各自的优雅降级，不阻塞 backend 启动。
 """
+
 from __future__ import annotations
 
 import json
@@ -38,9 +39,7 @@ logger = structlog.get_logger(__name__)
 
 #: COS 上模型根 URL（公有读）。可经 ``DESKPET_MODEL_CDN_BASE`` env 覆盖。
 #: 布局：``<base>/<subdir>/manifest.json`` + ``<base>/<subdir>/<相对路径>``。
-DEFAULT_CDN_BASE = (
-    "https://defaultbucket-1300194691.cos.ap-guangzhou.myqcloud.com/deskpet/models"
-)
+DEFAULT_CDN_BASE = "https://defaultbucket-1300194691.cos.ap-guangzhou.myqcloud.com/deskpet/models"
 
 #: (子目录, 就绪哨兵文件)。哨兵存在即视为就绪；None 表示"目录非空即就绪"。
 #: 子目录名与 `paths.resolve_model_dir` 期望的一致。
@@ -68,10 +67,10 @@ class ProvisionStatus:
 
     state: str = "idle"
     current: str | None = None  # 正在下载的模型子目录名
-    index: int = 0                 # 1-based：当前是第几个
-    total: int = 0                 # 本次需下载的模型总数
-    downloaded_bytes: int = 0      # 当前模型已下载（按磁盘实时大小估）
-    total_bytes: int = 0           # 当前模型总字节（来自 manifest，0=未知）
+    index: int = 0  # 1-based：当前是第几个
+    total: int = 0  # 本次需下载的模型总数
+    downloaded_bytes: int = 0  # 当前模型已下载（按磁盘实时大小估）
+    total_bytes: int = 0  # 当前模型总字节（来自 manifest，0=未知）
     error: str | None = None
 
     def as_dict(self) -> dict:
@@ -112,7 +111,9 @@ class ModelProvisioner:
     ) -> None:
         # models_dir=None → 运行时解析（尊重 env override）。测试可注入临时目录。
         self._models_dir_override = Path(models_dir) if models_dir else None
-        self._cdn_base = (cdn_base or os.environ.get("DESKPET_MODEL_CDN_BASE") or DEFAULT_CDN_BASE).rstrip("/")
+        self._cdn_base = (
+            cdn_base or os.environ.get("DESKPET_MODEL_CDN_BASE") or DEFAULT_CDN_BASE
+        ).rstrip("/")
         # fetch_url 可注入以便单测不真的联网；默认走 stdlib urllib。
         self._fetch: FetchUrl = fetch_url or _http_get
         self._status = ProvisionStatus()
@@ -127,7 +128,11 @@ class ModelProvisioner:
 
     # ---- 路径 ----------------------------------------------------------
     def _models_dir(self) -> Path:
-        return self._models_dir_override if self._models_dir_override is not None else user_models_dir()
+        return (
+            self._models_dir_override
+            if self._models_dir_override is not None
+            else user_models_dir()
+        )
 
     def _target(self, subdir: str) -> Path:
         return self._models_dir() / subdir
@@ -192,7 +197,9 @@ class ModelProvisioner:
 
             for i, (subdir, _sentinel) in enumerate(missing, start=1):
                 self._update(current=subdir, index=i, downloaded_bytes=0, total_bytes=0)
-                logger.info("model_provision_downloading", model=subdir, index=i, total=len(missing))
+                logger.info(
+                    "model_provision_downloading", model=subdir, index=i, total=len(missing)
+                )
                 self._provision_one(subdir, self._target(subdir))
                 logger.info("model_provision_model_done", model=subdir)
 

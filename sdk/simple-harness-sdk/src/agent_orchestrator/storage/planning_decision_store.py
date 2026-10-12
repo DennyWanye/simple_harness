@@ -259,9 +259,7 @@ class PlanningDecisionStore:
         ).fetchone()
         return None if row is None else PlanningRequestBinding.from_json(dict(row))
 
-    def get_planning_request_for_intent(
-        self, intent_id: str
-    ) -> PlanningRequestBinding | None:
+    def get_planning_request_for_intent(self, intent_id: str) -> PlanningRequestBinding | None:
         """Return the request currently answered by ``intent_id``.
 
         A format retry keeps the opener's request id while the binding's

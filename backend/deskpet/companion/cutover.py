@@ -106,13 +106,9 @@ class GrowthCutoverPlan:
                     "source_owner_policy": self.source_owner_policy,
                     "old_binding_generation": self.old_binding_generation,
                     "new_binding_generation": self.new_binding_generation,
-                    "old_owner_binding_set_stamp":
-                        self.old_owner_binding_set_stamp,
-                    "new_owner_binding_set_stamp":
-                        self.new_owner_binding_set_stamp,
-                    "steps": [
-                        [name, hashes[name]] for name in pre + post
-                    ],
+                    "old_owner_binding_set_stamp": self.old_owner_binding_set_stamp,
+                    "new_owner_binding_set_stamp": self.new_owner_binding_set_stamp,
+                    "steps": [[name, hashes[name]] for name in pre + post],
                 }
             ),
         )
@@ -201,9 +197,7 @@ class CompanionGrowthAuthorityAdapter:
     ) -> object:
         handler = handlers.get(request.kind)
         if handler is None:
-            raise GrowthIngressUnavailable(
-                f"Companion handler unavailable: {request.kind.value}"
-            )
+            raise GrowthIngressUnavailable(f"Companion handler unavailable: {request.kind.value}")
         result = handler(request)
         if inspect.isawaitable(result):
             return await cast(Awaitable[object], result)
@@ -246,9 +240,7 @@ class GrowthAuthorityCutoverCoordinator:
                         journal_payload={
                             **self._journal_facts(plan),
                             "substep_phase": "ingress_drain",
-                            "substep_hash": canonical_hash(
-                                [plan.plan_hash, "ingress_drain"]
-                            ),
+                            "substep_hash": canonical_hash([plan.plan_hash, "ingress_drain"]),
                             "drain_state": "completed",
                         },
                     )
@@ -257,9 +249,7 @@ class GrowthAuthorityCutoverCoordinator:
                 completed = await self._completed_steps(plan)
                 if not state.roll_forward_required:
                     if state.phase is not GrowthAuthorityPhase.PREPARING:
-                        raise GrowthCutoverPlanConflict(
-                            "pre-marker recovery is not preparing"
-                        )
+                        raise GrowthCutoverPlanConflict("pre-marker recovery is not preparing")
                     for step in plan.pre_marker_steps:
                         await self._run_step(
                             session=session,
@@ -279,9 +269,7 @@ class GrowthAuthorityCutoverCoordinator:
                                 [plan.plan_hash, "roll_forward_required"]
                             ),
                             "substep_phase": "roll_forward_marker",
-                            "substep_hash": canonical_hash(
-                                [plan.plan_hash, "roll_forward_marker"]
-                            ),
+                            "substep_hash": canonical_hash([plan.plan_hash, "roll_forward_marker"]),
                             "drain_state": "completed",
                         },
                     )
@@ -302,9 +290,7 @@ class GrowthAuthorityCutoverCoordinator:
                     journal_payload={
                         **self._journal_facts(plan),
                         "substep_phase": "companion_pointer",
-                        "substep_hash": canonical_hash(
-                            [plan.plan_hash, "companion_pointer"]
-                        ),
+                        "substep_hash": canonical_hash([plan.plan_hash, "companion_pointer"]),
                         "drain_state": "completed",
                         "preflight_passed": True,
                     },
@@ -332,9 +318,7 @@ class GrowthAuthorityCutoverCoordinator:
                 or str(existing[0]) != expected_hash
                 or not str(existing[1])
             ):
-                raise GrowthCutoverPlanConflict(
-                    f"cutover step proof drift: {step}"
-                )
+                raise GrowthCutoverPlanConflict(f"cutover step proof drift: {step}")
             return
         authorization = GrowthCutoverStepAuthorization(
             cutover_operation_id=plan.cutover_operation_id,
@@ -352,19 +336,13 @@ class GrowthAuthorityCutoverCoordinator:
         )
         raw = await _await_if_needed(self._executor.execute(authorization))
         if not isinstance(raw, Mapping):
-            raise GrowthCutoverStepFailed(
-                f"cutover step returned no structured proof: {step}"
-            )
+            raise GrowthCutoverStepFailed(f"cutover step returned no structured proof: {step}")
         actual_hash = str(raw.get("receipt_hash") or "")
         result_hash = str(raw.get("result_hash") or "")
         if actual_hash != expected_hash:
-            raise GrowthCutoverStepFailed(
-                f"cutover step receipt mismatch: {step}"
-            )
+            raise GrowthCutoverStepFailed(f"cutover step receipt mismatch: {step}")
         if not result_hash:
-            raise GrowthCutoverStepFailed(
-                f"cutover step result proof missing: {step}"
-            )
+            raise GrowthCutoverStepFailed(f"cutover step result proof missing: {step}")
         await _await_if_needed(
             self._store.record_growth_authority_cutover_step(
                 expected_phase=session.current.phase.value,
@@ -384,9 +362,7 @@ class GrowthAuthorityCutoverCoordinator:
             )
         )
 
-    async def _completed_steps(
-        self, plan: GrowthCutoverPlan
-    ) -> Mapping[str, tuple[str, str]]:
+    async def _completed_steps(self, plan: GrowthCutoverPlan) -> Mapping[str, tuple[str, str]]:
         rows = await _await_if_needed(
             self._store.list_growth_authority_cutover_journal(
                 cutover_operation_id=plan.cutover_operation_id
@@ -401,9 +377,7 @@ class GrowthAuthorityCutoverCoordinator:
             value = str(row.get("substep_hash") or "")
             payload = row.get("journal_payload")
             result_hash = (
-                str(payload.get("result_hash") or "")
-                if isinstance(payload, Mapping)
-                else ""
+                str(payload.get("result_hash") or "") if isinstance(payload, Mapping) else ""
             )
             if value and not result_hash and isinstance(payload, Mapping):
                 result_hash = self._legacy_committed_result_hash(
@@ -415,9 +389,7 @@ class GrowthAuthorityCutoverCoordinator:
                 )
             proof = (value, result_hash)
             if not value or not result_hash:
-                raise GrowthCutoverPlanConflict(
-                    f"cutover step proof incomplete: {step}"
-                )
+                raise GrowthCutoverPlanConflict(f"cutover step proof incomplete: {step}")
             prior = completed.setdefault(step, proof)
             if prior != proof:
                 raise GrowthCutoverPlanConflict(
@@ -450,18 +422,13 @@ class GrowthAuthorityCutoverCoordinator:
             "legacy_owner_profile_id": plan.legacy_owner_profile_id,
             "legacy_owner_generation": plan.legacy_owner_generation,
         }
-        facts_match = all(
-            payload.get(key) == value
-            for key, value in immutable_facts.items()
-        )
+        facts_match = all(payload.get(key) == value for key, value in immutable_facts.items())
         recorded_plan_hash = str(payload.get("plan_hash") or "")
         if not (
             step_hash == plan.step_hashes[step]
             and bool(recorded_plan_hash)
-            and str(row.get("cutover_operation_id") or "")
-            == plan.cutover_operation_id
-            and str(row.get("reason_code") or "")
-            == f"growth_cutover_{step}_committed"
+            and str(row.get("cutover_operation_id") or "") == plan.cutover_operation_id
+            and str(row.get("reason_code") or "") == f"growth_cutover_{step}_committed"
             and bool(row.get("marker_committed")) is expected_marker
             and str(payload.get("substep_phase") or "") == step
             and str(payload.get("substep_hash") or "") == step_hash
@@ -491,15 +458,10 @@ class GrowthAuthorityCutoverCoordinator:
         payload = {
             **self._journal_facts(plan),
             "last_error": type(exc).__name__,
-            "error_hash": canonical_hash(
-                [type(exc).__name__, str(exc), plan.plan_hash]
-            ),
+            "error_hash": canonical_hash([type(exc).__name__, str(exc), plan.plan_hash]),
             "drain_state": "completed",
         }
-        if (
-            state.phase is GrowthAuthorityPhase.PREPARING
-            and not state.roll_forward_required
-        ):
+        if state.phase is GrowthAuthorityPhase.PREPARING and not state.roll_forward_required:
             await session.transition(
                 GrowthAuthorityPhase.LEGACY,
                 expected_generation=state.generation,
@@ -519,24 +481,12 @@ class GrowthAuthorityCutoverCoordinator:
 
     @staticmethod
     def _require_same_operation(state: Any, plan: GrowthCutoverPlan) -> None:
-        if (
-            str(state.cutover_operation_id or "")
-            != plan.cutover_operation_id
-            or (
-                state.migration_hash is not None
-                and str(state.migration_hash) != plan.migration_hash
-            )
+        if str(state.cutover_operation_id or "") != plan.cutover_operation_id or (
+            state.migration_hash is not None and str(state.migration_hash) != plan.migration_hash
         ):
-            raise GrowthCutoverPlanConflict(
-                "durable cutover belongs to another operation"
-            )
-        if (
-            state.phase is GrowthAuthorityPhase.PAUSED
-            and not state.roll_forward_required
-        ):
-            raise GrowthCutoverPlanConflict(
-                "paused pre-marker authority cannot guess a direction"
-            )
+            raise GrowthCutoverPlanConflict("durable cutover belongs to another operation")
+        if state.phase is GrowthAuthorityPhase.PAUSED and not state.roll_forward_required:
+            raise GrowthCutoverPlanConflict("paused pre-marker authority cannot guess a direction")
 
     @staticmethod
     def _journal_facts(plan: GrowthCutoverPlan) -> dict[str, object]:

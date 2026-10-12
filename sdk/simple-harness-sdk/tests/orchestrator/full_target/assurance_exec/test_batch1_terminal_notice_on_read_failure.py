@@ -6,6 +6,7 @@
 （原计划 §7.3：终态同事务写通知意图）。现在：没有建任务合同 = 不是保证通道任务，不发；合同说是
 保证通道、读绑定却失败 = 读取失败，照发，通知请求里写"保证状态读取失败：<码>"。
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -28,19 +29,26 @@ def seeded(monkeypatch):
     """第 2 批 A20 起终态写入同事务建 NOTIFY 待办；这里的替身库没有待办表，记下建了什么。"""
     calls: list = []
     monkeypatch.setattr(
-        AssuranceWorkStore, "seed",
+        AssuranceWorkStore,
+        "seed",
         lambda self, mission_id, consumer, event, targets, *, now_ms: calls.append(
-            (mission_id, consumer, event.id, tuple(t.work_key for t in targets))))
+            (mission_id, consumer, event.id, tuple(t.work_key for t in targets))
+        ),
+    )
     return calls
 
 
 def _store(*, contract: str | None, bound: bool):
     connection = sqlite3.connect(":memory:")
     connection.row_factory = sqlite3.Row
-    connection.execute("CREATE TABLE assurance_creation_contracts(mission_id TEXT PRIMARY KEY, lane TEXT NOT NULL)")
+    connection.execute(
+        "CREATE TABLE assurance_creation_contracts(mission_id TEXT PRIMARY KEY, lane TEXT NOT NULL)"
+    )
     connection.execute("CREATE TABLE assurance_mission_bindings(mission_id TEXT PRIMARY KEY)")
     if contract is not None:
-        connection.execute("INSERT INTO assurance_creation_contracts VALUES(?,?)", ("m-1", contract))
+        connection.execute(
+            "INSERT INTO assurance_creation_contracts VALUES(?,?)", ("m-1", contract)
+        )
     if bound:
         connection.execute("INSERT INTO assurance_mission_bindings VALUES(?)", ("m-1",))
     return SimpleNamespace(connection=connection, now=1.0)
@@ -50,8 +58,14 @@ def _commit(store):
     emitted = []
 
     def emit(event_type, mission_id, *, key, payload=None, **_):
-        event = SimpleNamespace(type=event_type, mission_id=mission_id, key=key, payload=dict(payload or {}),
-                                id="event-notify-1", to_json=lambda: {"type": event_type, "payload": payload})
+        event = SimpleNamespace(
+            type=event_type,
+            mission_id=mission_id,
+            key=key,
+            payload=dict(payload or {}),
+            id="event-notify-1",
+            to_json=lambda: {"type": event_type, "payload": payload},
+        )
         emitted.append(event)
         return event
 
@@ -69,7 +83,11 @@ def test_a06_an_assured_mission_requests_the_plain_notification(seeded):
     commit = _commit(_store(contract="ASSURANCE_1_1", bound=True))
     event = request_assured_notification(commit, "m-1", FINAL, state_version=3)
     assert event is not None and event.type == NOTIFICATION_EVENT
-    assert event.payload == {"final_event_id": FINAL.id, "state_version": 3, "final_event_type": "MissionFailed"}
+    assert event.payload == {
+        "final_event_id": FINAL.id,
+        "state_version": 3,
+        "final_event_type": "MissionFailed",
+    }
     assert is_assured(commit._store, "m-1") is True
     # 第 2 批 A20：NOTIFY 待办与这条事件同事务建
     assert seeded == [("m-1", "NOTIFY", event.id, ("notify:m-1:" + FINAL.id,))]
@@ -81,7 +99,10 @@ def test_a06_a_failed_assurance_read_still_requests_the_notification_and_says_so
     event = request_assured_notification(commit, "m-1", FINAL, state_version=5)
     assert event is not None and event.type == NOTIFICATION_EVENT, commit.emitted
     assert event.payload["final_event_id"] == FINAL.id and event.payload["state_version"] == 5
-    assert "保证状态读取失败" in event.payload["note"] and "ASSURANCE_PROFILE_UNBOUND" in event.payload["note"]
+    assert (
+        "保证状态读取失败" in event.payload["note"]
+        and "ASSURANCE_PROFILE_UNBOUND" in event.payload["note"]
+    )
     assert seeded == []  # 没有绑定行可挂待办：只发事件，待办由游标摄取建
     # NOTIFY 消费者认得这条请求（字段表允许 note），送出的仍只是 {mission_id, event_id, state_version}
     consumer = AssuranceNotifyConsumer(SimpleNamespace(store=None), tenant_id="t", transport=None)

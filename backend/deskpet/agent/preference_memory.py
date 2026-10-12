@@ -19,6 +19,7 @@
 * 记忆**可查看/可清除**(``list_entries`` / ``clear``，前端 /prefs 入口)。
 * 每个 (kind, text) 去重(同文本只留最新)，避免同一请求灌爆。
 """
+
 from __future__ import annotations
 
 import json
@@ -115,7 +116,12 @@ class PreferenceMemory:
 
     # ---- public API -----------------------------------------------------
     async def record(
-        self, text: str, label: str, kind: str, *, pin: bool = False,
+        self,
+        text: str,
+        label: str,
+        kind: str,
+        *,
+        pin: bool = False,
     ) -> bool:
         """记一条偏好。同 (kind, 归一化 text) 去重，只留最新。返回是否写入。
 
@@ -128,7 +134,8 @@ class PreferenceMemory:
         norm = (text or "").strip()
         # 去重：删掉同 kind 且文本完全相同的旧条目
         self._entries = [
-            e for e in self._entries
+            e
+            for e in self._entries
             if not (e.get("kind") == kind and (e.get("text") or "").strip() == norm)
         ]
         entry: dict[str, Any] = {
@@ -142,10 +149,9 @@ class PreferenceMemory:
             entry["pinned"] = True
         self._entries.append(entry)
         if len(self._entries) > self._max:
-            self._entries = self._entries[-self._max:]
+            self._entries = self._entries[-self._max :]
         self._save()
-        log.info("preference_memory recorded kind=%s label=%s text=%r",
-                 kind, label, norm[:60])
+        log.info("preference_memory recorded kind=%s label=%s text=%r", kind, label, norm[:60])
         return True
 
     async def match(self, text: str, kind: str) -> dict[str, Any] | None:
@@ -161,8 +167,8 @@ class PreferenceMemory:
         if vec is None:
             return None
         best: dict[str, Any] | None = None
-        best_score = -1.0       # raw cosine — for threshold check
-        best_effective = -1.0   # effective (decay-adjusted) — for ranking
+        best_score = -1.0  # raw cosine — for threshold check
+        best_effective = -1.0  # effective (decay-adjusted) — for ranking
         now = self._now()
         for e in self._entries:
             if e.get("kind") != kind:
@@ -184,15 +190,18 @@ class PreferenceMemory:
                 best_score = cosine
                 best = e
         if best is not None and best_score >= self._threshold:
-            return {"label": best.get("label"), "score": best_score,
-                    "text": best.get("text")}
+            return {"label": best.get("label"), "score": best_score, "text": best.get("text")}
         return None
 
     def list_entries(self, kind: str | None = None) -> list[dict[str, Any]]:
         """查看（不含 embedding，给 /prefs UI）。"""
         return [
-            {"text": e.get("text"), "label": e.get("label"),
-             "kind": e.get("kind"), "ts": e.get("ts")}
+            {
+                "text": e.get("text"),
+                "label": e.get("label"),
+                "kind": e.get("kind"),
+                "ts": e.get("ts"),
+            }
             for e in self._entries
             if kind is None or e.get("kind") == kind
         ]

@@ -25,6 +25,7 @@ list the parent tools that a teammate's tool set must NEVER contain.
 :func:`spawn_team` enforces this when assembling the subset registry —
 defence-in-depth on top of the per-tool registration filter.
 """
+
 from __future__ import annotations
 
 import json
@@ -41,9 +42,7 @@ log = logging.getLogger(__name__)
 # Names of tools that must NEVER appear in a teammate's tool set —
 # would let a teammate fan out further (mid-loop infinite recursion)
 # or escape the team sandbox.
-FORBIDDEN_TEAMMATE_TOOLS = (
-    frozenset({"agent", "agent_parallel", "spawn_team"}) | _FORBIDDEN_IN_KIND
-)
+FORBIDDEN_TEAMMATE_TOOLS = frozenset({"agent", "agent_parallel", "spawn_team"}) | _FORBIDDEN_IN_KIND
 
 
 # Module-level schemas — pure data, safe to share across teams. Handlers
@@ -236,9 +235,7 @@ def build_teammate_tools(
         if not isinstance(tid, str) or not tid:
             return _envelope_err("task_id (string) required")
         if status not in ("in_progress", "done", "failed"):
-            return _envelope_err(
-                "status must be one of: in_progress, done, failed"
-            )
+            return _envelope_err("status must be one of: in_progress, done, failed")
         if status == "done" and result is None:
             # Be lenient — accept empty-string result but warn the LLM
             result = ""
@@ -249,9 +246,7 @@ def build_teammate_tools(
             log.warning("team_task_update failed: %s", exc)
             return _envelope_err(f"update_task failed: {type(exc).__name__}")
         if not ok:
-            return _envelope_err(
-                f"task_id {tid!r} not found (or invalid status transition)"
-            )
+            return _envelope_err(f"task_id {tid!r} not found (or invalid status transition)")
         if status in ("done", "failed"):
             _emit_metric(
                 "team_task_done",
@@ -301,6 +296,7 @@ def build_teammate_tools(
 
     if task_graph_store is not None and goal_id is not None:
         from deskpet.tools.task_graph_tools import build_goal_task_tools
+
         extra = build_goal_task_tools(
             task_graph_store=task_graph_store,
             goal_id=goal_id,

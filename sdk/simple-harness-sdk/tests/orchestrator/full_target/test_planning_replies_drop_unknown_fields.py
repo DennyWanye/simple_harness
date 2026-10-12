@@ -32,17 +32,26 @@ def _strict(value):
 
 
 def test_unknown_keys_are_dropped_where_the_refusal_names_them() -> None:
-    raw = {"method": {"steps": [{"id": "a"}, {"id": "b", "note": "x"}], "rationale": "why"},
-           "rationale": "kept: the top level names it", "review_feedback_note": "fixed"}
+    raw = {
+        "method": {"steps": [{"id": "a"}, {"id": "b", "note": "x"}], "rationale": "why"},
+        "rationale": "kept: the top level names it",
+        "review_feedback_note": "fixed",
+    }
     decoded = decode_dropping_unknown(_strict, raw, root_names=("method_proposal",))
-    assert decoded == {"method": {"steps": [{"id": "a"}, {"id": "b"}]}, "rationale": "kept: the top level names it"}
+    assert decoded == {
+        "method": {"steps": [{"id": "a"}, {"id": "b"}]},
+        "rationale": "kept: the top level names it",
+    }
     assert raw["review_feedback_note"] == "fixed"  # the caller's raw reply is not mutated
 
 
 def test_other_refusals_stay_refusals() -> None:
     with pytest.raises(ContractError, match="must be"):
-        decode_dropping_unknown(lambda value: (_ for _ in ()).throw(ContractError("x must be a string")),
-                                {}, root_names=("method_proposal",))
+        decode_dropping_unknown(
+            lambda value: (_ for _ in ()).throw(ContractError("x must be a string")),
+            {},
+            root_names=("method_proposal",),
+        )
 
 
 def test_an_ambiguous_unnamed_holder_is_not_guessed() -> None:
@@ -52,5 +61,9 @@ def test_an_ambiguous_unnamed_holder_is_not_guessed() -> None:
         return value
 
     with pytest.raises(ContractError, match="unknown fields"):
-        decode_dropping_unknown(refuse, {"items": [{"rationale": 1}, {"rationale": 2}]}, root_names=("list",))
-    assert decode_dropping_unknown(refuse, {"items": [{"rationale": 1}, {}]}, root_names=("list",)) == {"items": [{}, {}]}
+        decode_dropping_unknown(
+            refuse, {"items": [{"rationale": 1}, {"rationale": 2}]}, root_names=("list",)
+        )
+    assert decode_dropping_unknown(
+        refuse, {"items": [{"rationale": 1}, {}]}, root_names=("list",)
+    ) == {"items": [{}, {}]}

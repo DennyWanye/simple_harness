@@ -222,7 +222,10 @@ class ReviewerEvidenceTools:
             rows[label]["path"] = row["path"]
             latest = newest[row["path"]]
             if latest["artifact_id"] != row["artifact_id"] or latest["version"] != row["version"]:
-                rows[label]["superseded_by"] = {"id": latest["artifact_id"], "version": latest["version"]}
+                rows[label]["superseded_by"] = {
+                    "id": latest["artifact_id"],
+                    "version": latest["version"],
+                }
         return [rows[label] for label in sorted(rows)]
 
     def _context(self, run_id: str, mission_id: str):  # type: ignore[no-untyped-def]
@@ -256,15 +259,21 @@ class ReviewerEvidenceTools:
 
         return reader, binding, identity, authorize
 
-    def invoke(self, run_id: str, mission_id: str, tool: str, arguments: Any, *, call_id: str) -> dict:
+    def invoke(
+        self, run_id: str, mission_id: str, tool: str, arguments: Any, *, call_id: str
+    ) -> dict:
         """Gateway callback: pinned exact read → DISCLOSE use certificate → labelled content."""
         try:
             reader, binding, identity, authorize = self._context(run_id, mission_id)
             if tool == "assurance_find_evidence":
-                return self._budget_notice(run_id, self._find(reader, binding, identity, dict(arguments)))
+                return self._budget_notice(
+                    run_id, self._find(reader, binding, identity, dict(arguments))
+                )
             if tool == "assurance_read_evidence":
                 return self._budget_notice(
-                    run_id, self._read(reader, binding, identity, authorize, dict(arguments), call_id))
+                    run_id,
+                    self._read(reader, binding, identity, authorize, dict(arguments), call_id),
+                )
         except EvidenceToolRefusal:
             raise
         except AssuranceError as error:
@@ -283,12 +292,19 @@ class ReviewerEvidenceTools:
         body = binding.to_json()
         with self.store.transaction():
             use = certify_point_use_locked(
-                self.orchestrator.commit, mission_id=body["mission_id"], purpose="DISCLOSE",
-                consumer_kind=TOOL_CALL_CONSUMER, consumer_id=text(call_id),
-                claims=(EvidenceClaim.exact(ref),), subject=("task", body["subject"]["owner_task_ref"]["id"]))
+                self.orchestrator.commit,
+                mission_id=body["mission_id"],
+                purpose="DISCLOSE",
+                consumer_kind=TOOL_CALL_CONSUMER,
+                consumer_id=text(call_id),
+                claims=(EvidenceClaim.exact(ref),),
+                subject=("task", body["subject"]["owner_task_ref"]["id"]),
+            )
         if not use.usable:
-            raise _refuse("USE_EVIDENCE_NOT_CURRENT",
-                          "this evidence cannot be disclosed now: " + "; ".join(use.refusals))
+            raise _refuse(
+                "USE_EVIDENCE_NOT_CURRENT",
+                "this evidence cannot be disclosed now: " + "; ".join(use.refusals),
+            )
 
     def _budget_notice(self, run_id: str, result: dict) -> dict:
         """快用完时在结果里提醒还剩几次（2026-09-29 第六局：查满被截断、没给结论）。"""
@@ -300,7 +316,8 @@ class ReviewerEvidenceTools:
         if left <= EVIDENCE_CALLS_WARNING:
             result["budget_notice"] = (
                 f"查看次数只剩 {max(left, 0)} 次：请优先根据已看到的证据给出结论，"
-                "只在确实缺关键证据时再查。")
+                "只在确实缺关键证据时再查。"
+            )
         return result
 
     def _find(self, reader, binding, identity, arguments) -> dict:  # type: ignore[no-untyped-def]
@@ -314,7 +331,8 @@ class ReviewerEvidenceTools:
             universe = [
                 row
                 for row in universe
-                if needle in row["ref"].kind.casefold() or needle in row["ref"].pin.id.casefold()
+                if needle in row["ref"].kind.casefold()
+                or needle in row["ref"].pin.id.casefold()
                 or needle in str(row.get("path") or "").casefold()
             ]
         page = universe[offset : offset + limit]
@@ -354,7 +372,7 @@ class ReviewerEvidenceTools:
             "denied_hidden": hidden,
             "disclosure": "LISTING_NOT_EXPOSURE",
             "cite_rule": "an entry with citable_now=false must be read in full "
-                         "(assurance_read_evidence, complete=true) before its label is cited",
+            "(assurance_read_evidence, complete=true) before its label is cited",
         }
 
     def _read(self, reader, binding, identity, authorize, arguments, call_id) -> dict:  # type: ignore[no-untyped-def]

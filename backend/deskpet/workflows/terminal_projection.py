@@ -66,9 +66,7 @@ class VersionedActionMatrix:
         ("deep_research", "v5"): frozenset(
             {"generate_now", "continue_research", "retry_from_start", "cancel_settle"}
         ),
-        ("deep_research", "v6"): frozenset(
-            {"generate_now", "continue_research", "cancel_settle"}
-        ),
+        ("deep_research", "v6"): frozenset({"generate_now", "continue_research", "cancel_settle"}),
     }
 
     def allows(
@@ -94,10 +92,10 @@ class VersionedActionMatrix:
         if action_id == "retry_from_start":
             return context.engine_status == "failed"
         if action_id == "cancel_settle":
-            return (
-                context.engine_status == "running"
-                and context.active_control_status in {"accepted", "observed"}
-            )
+            return context.engine_status == "running" and context.active_control_status in {
+                "accepted",
+                "observed",
+            }
         return False
 
 
@@ -231,7 +229,9 @@ def project_deep_research_v4(raw: object, _engine_status: str) -> dict[str, Json
     metrics: dict[str, JsonValue] = {}
     for key, value in raw_metrics.items():
         if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 1_000_000:
-            raise InvalidStatePatch("invalid_terminal_public", "terminal_public metric value is invalid")
+            raise InvalidStatePatch(
+                "invalid_terminal_public", "terminal_public metric value is invalid"
+            )
         metrics[str(key)] = value
 
     raw_diagnostics = raw.get("diagnostic_codes")
@@ -289,7 +289,9 @@ def project_deep_research_v5(raw: object, engine_status: str) -> dict[str, JsonV
         raise InvalidStatePatch("invalid_terminal_public", "v5 terminal_public must be an object")
     allowed = {"delivery_status", "quality_summary", "coverage_summary", "action_matrix"}
     if "delivery_status" not in raw or any(str(key) not in allowed for key in raw):
-        raise InvalidStatePatch("invalid_terminal_public", "v5 terminal_public has an invalid schema")
+        raise InvalidStatePatch(
+            "invalid_terminal_public", "v5 terminal_public has an invalid schema"
+        )
     delivery_status = raw.get("delivery_status")
     if delivery_status not in {"completed", "partial", "insufficient_evidence"}:
         raise InvalidStatePatch("invalid_terminal_public", "v5 delivery_status is invalid")
@@ -298,7 +300,9 @@ def project_deep_research_v5(raw: object, engine_status: str) -> dict[str, JsonV
     if "quality_summary" in raw:
         quality = raw.get("quality_summary")
         if not isinstance(quality, Mapping) or set(quality) != {
-            "score", "passed", "hard_failure_count"
+            "score",
+            "passed",
+            "hard_failure_count",
         }:
             raise InvalidStatePatch("invalid_terminal_public", "v5 quality_summary is invalid")
         score = quality.get("score")
@@ -319,14 +323,20 @@ def project_deep_research_v5(raw: object, engine_status: str) -> dict[str, JsonV
         keys = {"covered", "partial", "insufficient", "not_applicable", "total"}
         if not isinstance(coverage, Mapping) or set(coverage) != keys:
             raise InvalidStatePatch("invalid_terminal_public", "v5 coverage_summary is invalid")
-        normalized = {key: _bounded_count(coverage.get(key), f"coverage_summary.{key}") for key in keys}
+        normalized = {
+            key: _bounded_count(coverage.get(key), f"coverage_summary.{key}") for key in keys
+        }
         if sum(normalized[key] for key in keys - {"total"}) != normalized["total"]:
             raise InvalidStatePatch("invalid_terminal_public", "v5 coverage total is inconsistent")
         result["coverage_summary"] = normalized
 
     if "action_matrix" in raw:
         actions = raw.get("action_matrix")
-        if not isinstance(actions, Sequence) or isinstance(actions, (str, bytes)) or len(actions) > 4:
+        if (
+            not isinstance(actions, Sequence)
+            or isinstance(actions, (str, bytes))
+            or len(actions) > 4
+        ):
             raise InvalidStatePatch("invalid_terminal_public", "v5 action_matrix is invalid")
         normalized_actions: list[JsonValue] = []
         seen: set[str] = set()
@@ -335,7 +345,12 @@ def project_deep_research_v5(raw: object, engine_status: str) -> dict[str, JsonV
             if not isinstance(item, Mapping) or set(item) != {"action_id", "enabled"}:
                 raise InvalidStatePatch("invalid_terminal_public", "v5 action entry is invalid")
             action_id = str(item.get("action_id") or "")
-            if action_id not in {"generate_now", "continue_research", "retry_from_start", "cancel_settle"}:
+            if action_id not in {
+                "generate_now",
+                "continue_research",
+                "retry_from_start",
+                "cancel_settle",
+            }:
                 raise InvalidStatePatch("invalid_terminal_public", "v5 action id is invalid")
             if action_id in seen or not isinstance(item.get("enabled"), bool):
                 raise InvalidStatePatch("invalid_terminal_public", "v5 action entry is invalid")
@@ -375,7 +390,10 @@ def build_default_async_terminal_commit_registry() -> AsyncTerminalCommitProject
         return build_terminal_commit_request(**values).to_json()  # type: ignore[arg-type]
 
     registry.register(
-        "deep_research", "v6", TERMINAL_COMMIT_CAPABILITY, _project_v6,
+        "deep_research",
+        "v6",
+        TERMINAL_COMMIT_CAPABILITY,
+        _project_v6,
         request_factory=_request_v6,
     )
     return registry

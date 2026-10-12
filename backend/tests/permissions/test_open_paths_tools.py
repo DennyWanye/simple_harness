@@ -35,15 +35,21 @@ def test_read_and_list_outside_the_workspace(home) -> None:
     root, ws = home
     out = json.loads(read_file({"path": "~/Documents/notes.md", "_write_scope_root": str(ws)}))
     assert out.get("ok") is not False and out["content"] == "outside the workspace"
-    listed = json.loads(list_directory({"path": str(root / "Documents"), "_write_scope_root": str(ws)}))
-    assert listed.get("ok") is not False and any("notes.md" in str(e) for e in listed.get("entries", []))
+    listed = json.loads(
+        list_directory({"path": str(root / "Documents"), "_write_scope_root": str(ws)})
+    )
+    assert listed.get("ok") is not False and any(
+        "notes.md" in str(e) for e in listed.get("entries", [])
+    )
 
 
 def test_write_to_the_desktop(home) -> None:
     from deskpet.tools.os_tools.write_file import write_file
 
     root, ws = home
-    out = json.loads(write_file({"path": "~/Desktop/plan.md", "content": "hi", "_write_scope_root": str(ws)}))
+    out = json.loads(
+        write_file({"path": "~/Desktop/plan.md", "content": "hi", "_write_scope_root": str(ws)})
+    )
     assert out.get("ok") is not False, out
     assert (root / "Desktop" / "plan.md").read_text(encoding="utf-8") == "hi"
 
@@ -54,8 +60,14 @@ def test_credentials_are_neither_read_nor_written(home) -> None:
 
     root, ws = home
     out = json.loads(read_file({"path": "~/.ssh/id_rsa", "_write_scope_root": str(ws)}))
-    assert out.get("ok") is False and "SUPER-SECRET" not in json.dumps(out) and "受保护" in json.dumps(out, ensure_ascii=False)
-    out = json.loads(write_file({"path": "~/.ssh/authorized_keys", "content": "x", "_write_scope_root": str(ws)}))
+    assert (
+        out.get("ok") is False
+        and "SUPER-SECRET" not in json.dumps(out)
+        and "受保护" in json.dumps(out, ensure_ascii=False)
+    )
+    out = json.loads(
+        write_file({"path": "~/.ssh/authorized_keys", "content": "x", "_write_scope_root": str(ws)})
+    )
     assert out.get("ok") is False and not (root / ".ssh" / "authorized_keys").exists()
 
 
@@ -72,10 +84,16 @@ def test_shell_writes_outside_ok_but_not_into_credentials(home) -> None:
     from deskpet.tools.os_tools.run_shell import run_shell
 
     root, ws = home
-    ok = json.loads(run_shell({"command": f"echo hi > {root / 'Desktop' / 'x.txt'}", "_write_scope_root": str(ws)}))
+    ok = json.loads(
+        run_shell(
+            {"command": f"echo hi > {root / 'Desktop' / 'x.txt'}", "_write_scope_root": str(ws)}
+        )
+    )
     assert ok.get("ok") is not False, ok
     assert (root / "Desktop" / "x.txt").exists()
-    refused = json.loads(run_shell({"command": "echo key >> ~/.ssh/authorized_keys", "_write_scope_root": str(ws)}))
+    refused = json.loads(
+        run_shell({"command": "echo key >> ~/.ssh/authorized_keys", "_write_scope_root": str(ws)})
+    )
     assert refused.get("ok") is False and not (root / ".ssh" / "authorized_keys").exists()
 
 
@@ -83,9 +101,16 @@ def test_office_output_anywhere_relative_lands_in_the_workspace(home) -> None:
     from deskpet.tools import office_paths as op
 
     root, ws = home
-    assert op.resolve_for_write(str(root / "Desktop" / "a.xlsx"), default_prefix="a", default_suffix=".xlsx") \
+    assert (
+        op.resolve_for_write(
+            str(root / "Desktop" / "a.xlsx"), default_prefix="a", default_suffix=".xlsx"
+        )
         == (root / "Desktop" / "a.xlsx").resolve()
-    assert op.resolve_for_write("b.xlsx", default_prefix="b", default_suffix=".xlsx") == (ws / "b.xlsx").resolve()
+    )
+    assert (
+        op.resolve_for_write("b.xlsx", default_prefix="b", default_suffix=".xlsx")
+        == (ws / "b.xlsx").resolve()
+    )
     with pytest.raises(op.PathError):
         op.resolve_for_write("~/.ssh/c.xlsx", default_prefix="c", default_suffix=".xlsx")
     assert op.resolve_for_read(root / "Documents" / "notes.md") is not None
@@ -102,6 +127,7 @@ def test_the_file_tools_follow_the_same_rule(home) -> None:
 
 
 # --- 2026-09-26 独立核验发现的四处绕过 ---------------------------------------
+
 
 def test_upper_case_credential_paths_are_the_same_files(home) -> None:
     import sys
@@ -120,8 +146,13 @@ def test_shell_reads_of_credentials_ask(home) -> None:
 
     root, ws = home
     (root / ".ssh" / "work_key").write_text("SUPER-SECRET-KEY", encoding="utf-8")
-    for command in ("cat ~/.ssh/id_rsa", f"cp {root}/.ssh/id_rsa /tmp/k", "base64 < ~/.ssh/id_rsa",
-                    "cat $HOME/.ssh/work_key", 'cat "${HOME}/.ssh/work_key"'):
+    for command in (
+        "cat ~/.ssh/id_rsa",
+        f"cp {root}/.ssh/id_rsa /tmp/k",
+        "base64 < ~/.ssh/id_rsa",
+        "cat $HOME/.ssh/work_key",
+        'cat "${HOME}/.ssh/work_key"',
+    ):
         out = json.loads(run_shell({"command": command, "_write_scope_root": str(ws)}))
         assert out.get("ok") is False and "SUPER-SECRET" not in json.dumps(out), command
         refusal, _ = asyncio.run(pp.check_call("s", "run_shell", {"command": command}, base=ws))
@@ -136,7 +167,9 @@ def test_grep_from_home_never_returns_key_contents(home) -> None:
     root, ws = home
     raw = grep_tool({"pattern": "SUPER-SECRET", "path": str(root), "_write_scope_root": str(ws)})
     assert "SUPER-SECRET-KEY" not in (raw if isinstance(raw, str) else json.dumps(raw))
-    single = grep_tool({"pattern": "SUPER", "path": str(root / ".ssh" / "id_rsa"), "_write_scope_root": str(ws)})
+    single = grep_tool(
+        {"pattern": "SUPER", "path": str(root / ".ssh" / "id_rsa"), "_write_scope_root": str(ws)}
+    )
     assert "SUPER-SECRET-KEY" not in (single if isinstance(single, str) else json.dumps(single))
 
 
@@ -152,7 +185,9 @@ def test_the_card_is_pushed_again_on_every_refusal(home) -> None:
     pp.set_notifier(notify)
     try:
         for _ in range(3):
-            asyncio.run(pp.check_call("s", "read_file", {"path": str(root / ".ssh" / "id_rsa")}, base=None))
+            asyncio.run(
+                pp.check_call("s", "read_file", {"path": str(root / ".ssh" / "id_rsa")}, base=None)
+            )
     finally:
         pp.set_notifier(None)
     assert len(pushed) == 3 and len({m["payload"]["request_id"] for m in pushed}) == 1

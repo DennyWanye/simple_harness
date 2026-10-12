@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 """WI-B2 — GoalChecker unit tests (PRD Stage B)."""
+
 from __future__ import annotations
 
 import pytest
@@ -11,12 +12,14 @@ from deskpet.agent.goal_checker import GoalChecker
 def _make_llm(response: str):
     async def _call(prompt: str) -> str:
         return response
+
     return _call
 
 
 def _make_failing_llm(exc: Exception):
     async def _call(prompt: str) -> str:
         raise exc
+
     return _call
 
 
@@ -30,9 +33,7 @@ async def test_clean_json_done_true():
 
 @pytest.mark.asyncio
 async def test_clean_json_done_false_with_hint():
-    checker = GoalChecker(
-        _make_llm('{"done": false, "hint": "需要先创建文件"}')
-    )
+    checker = GoalChecker(_make_llm('{"done": false, "hint": "需要先创建文件"}'))
     done, hint = await checker.check("create x.txt", [])
     assert done is False
     assert hint == "需要先创建文件"
@@ -172,13 +173,15 @@ async def test_content_blocks_list_format_handled():
         return '{"done": true, "hint": ""}'
 
     checker = GoalChecker(_capture)
-    working_msgs = [{
-        "role": "assistant",
-        "content": [
-            {"type": "text", "text": "block-1-text"},
-            {"type": "text", "text": "block-2-text"},
-        ],
-    }]
+    working_msgs = [
+        {
+            "role": "assistant",
+            "content": [
+                {"type": "text", "text": "block-1-text"},
+                {"type": "text", "text": "block-2-text"},
+            ],
+        }
+    ]
     await checker.check("g", working_msgs)
     assert "block-1-text" in captured["prompt"]
     assert "block-2-text" in captured["prompt"]

@@ -12,9 +12,7 @@ from simple_harness.workflows.personal_v1 import PersonalWorkflowSelectionV1
 class ProductPersonalCatalogAdapter:
     """Binds an already-selected trusted candidate; it has no semantic matcher."""
 
-    def bind_selection(
-        self, descriptor: Mapping[str, Any]
-    ) -> PersonalWorkflowSelectionV1:
+    def bind_selection(self, descriptor: Mapping[str, Any]) -> PersonalWorkflowSelectionV1:
         required = {
             "selection_id",
             "selection_fingerprint",

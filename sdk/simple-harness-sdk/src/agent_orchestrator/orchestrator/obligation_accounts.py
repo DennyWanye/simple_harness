@@ -9,6 +9,7 @@ executor does not reset the count — the new steps hang under the same duty.
 
 Bookkeeping only: nothing here is a limit, and nothing here enters a plan binding.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -27,10 +28,20 @@ def step_accounts(store: Store, mission_id: str) -> dict[str, dict[str, int]]:
     each step's own spend, the one reading the duty totals are summed from (TaskGraph 补全
     第六批).  A step shared by several branches is one task, counted once."""
 
-    settled = {str(subject): int(tokens or 0) for subject, tokens in store.connection.execute(
-        "SELECT subject_id, settled_tokens FROM budget_reservations WHERE mission_id=?", (mission_id,))}
-    unknown = {str(row[0]) for row in store.connection.execute(
-        "SELECT DISTINCT subject_id FROM imported_usage WHERE mission_id=? AND unknown=1", (mission_id,))}
+    settled = {
+        str(subject): int(tokens or 0)
+        for subject, tokens in store.connection.execute(
+            "SELECT subject_id, settled_tokens FROM budget_reservations WHERE mission_id=?",
+            (mission_id,),
+        )
+    }
+    unknown = {
+        str(row[0])
+        for row in store.connection.execute(
+            "SELECT DISTINCT subject_id FROM imported_usage WHERE mission_id=? AND unknown=1",
+            (mission_id,),
+        )
+    }
     accounts: dict[str, dict[str, int]] = {}
     for task in store.list_tasks(mission_id):
         account = accounts.setdefault(task.id, _blank())
@@ -45,8 +56,12 @@ def step_accounts(store: Store, mission_id: str) -> dict[str, dict[str, int]]:
 
 
 def _owners(store: Store, mission_id: str) -> dict[str, str]:
-    return {str(task): str(duty) for task, duty in store.connection.execute(
-        "SELECT task_id, obligation_id FROM task_semantics WHERE mission_id=?", (mission_id,))}
+    return {
+        str(task): str(duty)
+        for task, duty in store.connection.execute(
+            "SELECT task_id, obligation_id FROM task_semantics WHERE mission_id=?", (mission_id,)
+        )
+    }
 
 
 def obligation_accounts(store: Store, mission_id: str) -> dict[str, dict[str, int]]:
@@ -58,7 +73,10 @@ def obligation_accounts(store: Store, mission_id: str) -> dict[str, dict[str, in
     failure that is the model's (infrastructure failures and interruptions are not
     charged — the same judgement the retry accounting uses)."""
 
-    duties = {str(duty.obligation_id): duty for duty in ObligationStore(store).list_obligations(mission_id)}
+    duties = {
+        str(duty.obligation_id): duty
+        for duty in ObligationStore(store).list_obligations(mission_id)
+    }
     own = {key: _blank() for key in duties}
     owner = _owners(store, mission_id)
     for task_id, step in step_accounts(store, mission_id).items():
@@ -87,24 +105,39 @@ def _steps_by_duty(store: Store, mission_id: str) -> dict[str, list[dict[str, An
     """duty id → its own ordinary steps, each with :func:`step_accounts` and how many
     adopted methods hold it (``branches`` > 1: a shared step, listed once)."""
 
-    primitive = {str(task) for (task,) in store.connection.execute(
-        "SELECT DISTINCT task_id FROM plan_memberships WHERE mission_id=? AND form='primitive'", (mission_id,))}
-    branches = {str(task): int(count) for task, count in store.connection.execute(
-        "SELECT m.task_id, COUNT(DISTINCT c.instance_id) FROM method_child_occurrences c"
-        " JOIN method_instances i ON i.mission_id=c.mission_id AND i.instance_id=c.instance_id"
-        " AND i.state='ADOPTED'"
-        " JOIN (SELECT DISTINCT occurrence_id, task_id FROM plan_memberships WHERE mission_id=?) m"
-        " ON m.occurrence_id=c.occurrence_id"
-        " WHERE c.mission_id=? GROUP BY m.task_id", (mission_id, mission_id))}
+    primitive = {
+        str(task)
+        for (task,) in store.connection.execute(
+            "SELECT DISTINCT task_id FROM plan_memberships WHERE mission_id=? AND form='primitive'",
+            (mission_id,),
+        )
+    }
+    branches = {
+        str(task): int(count)
+        for task, count in store.connection.execute(
+            "SELECT m.task_id, COUNT(DISTINCT c.instance_id) FROM method_child_occurrences c"
+            " JOIN method_instances i ON i.mission_id=c.mission_id AND i.instance_id=c.instance_id"
+            " AND i.state='ADOPTED'"
+            " JOIN (SELECT DISTINCT occurrence_id, task_id FROM plan_memberships WHERE mission_id=?) m"
+            " ON m.occurrence_id=c.occurrence_id"
+            " WHERE c.mission_id=? GROUP BY m.task_id",
+            (mission_id, mission_id),
+        )
+    }
     owner = _owners(store, mission_id)
     steps: dict[str, list[dict[str, Any]]] = {}
     for task_id, account in sorted(step_accounts(store, mission_id).items()):
         if task_id not in primitive or task_id not in owner:
             continue
         task = store.get_task(task_id)
-        steps.setdefault(owner[task_id], []).append({
-            "task_id": task_id, "label": (task.goal if task is not None else task_id)[:60],
-            "branches": branches.get(task_id, 0), **account})
+        steps.setdefault(owner[task_id], []).append(
+            {
+                "task_id": task_id,
+                "label": (task.goal if task is not None else task_id)[:60],
+                "branches": branches.get(task_id, 0),
+                **account,
+            }
+        )
     return steps
 
 
@@ -114,8 +147,10 @@ def _labels(store: Store, mission_id: str) -> dict[str, str]:
 
     labels: dict[str, str] = {}
     for duty, raw in store.connection.execute(
-            "SELECT obligation_id, binding_json FROM task_semantics WHERE mission_id=?"
-            " ORDER BY task_id, binding_revision", (mission_id,)):
+        "SELECT obligation_id, binding_json FROM task_semantics WHERE mission_id=?"
+        " ORDER BY task_id, binding_revision",
+        (mission_id,),
+    ):
         goal = (json.loads(raw).get("typed_parameters") or {}).get("goal")
         if isinstance(goal, str) and goal.strip():
             labels.setdefault(str(duty), goal.strip()[:60])
@@ -129,7 +164,10 @@ def obligation_rows(store: Store, mission_id: str) -> list[dict[str, Any]]:
     spent is part of where the budget went.  Each row carries ``steps``: the duty's own
     ordinary steps with their spend (TaskGraph 补全第六批)."""
 
-    duties = {str(duty.obligation_id): duty for duty in ObligationStore(store).list_obligations(mission_id)}
+    duties = {
+        str(duty.obligation_id): duty
+        for duty in ObligationStore(store).list_obligations(mission_id)
+    }
     accounts = obligation_accounts(store, mission_id)
     steps = _steps_by_duty(store, mission_id)
     labels = _labels(store, mission_id)
@@ -141,11 +179,19 @@ def obligation_rows(store: Store, mission_id: str) -> list[dict[str, Any]]:
 
     def walk(key: str, depth: int) -> None:
         duty = duties[key]
-        rows.append({
-            "obligation_id": key,
-            "parent_obligation_id": None if duty.parent_obligation_id is None else str(duty.parent_obligation_id),
-            "depth": depth, "label": "整个任务" if depth == 0 else labels.get(key, key),
-            "lifecycle": str(duty.lifecycle), **account_of(accounts, key), "steps": steps.get(key, [])})
+        rows.append(
+            {
+                "obligation_id": key,
+                "parent_obligation_id": None
+                if duty.parent_obligation_id is None
+                else str(duty.parent_obligation_id),
+                "depth": depth,
+                "label": "整个任务" if depth == 0 else labels.get(key, key),
+                "lifecycle": str(duty.lifecycle),
+                **account_of(accounts, key),
+                "steps": steps.get(key, []),
+            }
+        )
         for child in sorted(children.get(key, ())):
             walk(child, depth + 1)
 

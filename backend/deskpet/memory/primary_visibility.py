@@ -133,8 +133,7 @@ async def read_evidence_pair(*, db, subject, primary_ref, evidence_id):
                 envelope.envelope_hash != row["envelope_sha256"],
                 receipt.receipt_id != row["receipt_id"],
                 receipt.receipt_hash != row["receipt_sha256"],
-                canonical_hash(envelope.to_json()["sanitized_payload"])
-                != envelope.sanitized_hash,
+                canonical_hash(envelope.to_json()["sanitized_payload"]) != envelope.sanitized_hash,
                 canonical_json(envelope.to_json()["sanitized_payload"])
                 != canonical_json(json.loads(row["payload_json"])),
             )
@@ -165,7 +164,8 @@ def _dependencies(proof):
     if type(version) is not int or version not in (1, 2, 3):
         raise PrimaryVisibilityError("primary_visibility_dependencies_invalid")
     lanes = ("evidence", "recall") if version == 1 else ("evidence", "recall", "short_horizon")
-    if version == 3: lanes += ("procedure_drafts",)
+    if version == 3:
+        lanes += ("procedure_drafts",)
     _fields(proof, ("schema_version", *lanes))
     if not all(isinstance(proof[k], (list, tuple)) for k in lanes):
         raise PrimaryVisibilityError("primary_visibility_dependencies_invalid")
@@ -191,7 +191,7 @@ def _dependencies(proof):
             recalls.append(_lane_key("short_horizon", item))
     if version == 3:
         for item in proof["procedure_drafts"]:
-            _fields(item, ("memory_id","revision","candidate_hash"))
+            _fields(item, ("memory_id", "revision", "candidate_hash"))
             recalls.append(_lane_key("procedure_drafts", item))
     return evidence, tuple(recalls)
 
@@ -291,7 +291,9 @@ class PrimaryHistoryPolicy:
         except (PrimaryVisibilityError, ValueError, TypeError, KeyError):
             return False
 
-    async def current_user_denial(self, *, db, primary_ref, evidence_id, evidence_hash, disclosure_context):
+    async def current_user_denial(
+        self, *, db, primary_ref, evidence_id, evidence_hash, disclosure_context
+    ):
         """Always ``None``: no Memory system ⇒ no authority that can deny a source.
 
         原来这条路径唯一的判据是那次公开 Memory 可见性批的逐条 ``visible``
@@ -329,10 +331,7 @@ class PrimaryHistoryPolicy:
             or disclosure_context.subject != self.subject
         ):
             raise PrimaryVisibilityError("primary_visibility_context_invalid")
-        if (
-            not isinstance(evidence_ids, (list, tuple))
-            or len(evidence_ids) > MAX_BINDINGS
-        ):
+        if not isinstance(evidence_ids, (list, tuple)) or len(evidence_ids) > MAX_BINDINGS:
             raise PrimaryVisibilityError("primary_visibility_limit")
         for evidence_id in evidence_ids:
             identifier(evidence_id, "evidence_id", 512)
@@ -371,8 +370,7 @@ class PrimaryHistoryPolicy:
             try:
                 required = {add(_evidence_key(evidence_id, envelope.envelope_hash))}
                 evidence_dependencies = [
-                    (ref.evidence_id, ref.content_hash)
-                    for ref in envelope.evidence_refs
+                    (ref.evidence_id, ref.content_hash) for ref in envelope.evidence_refs
                 ]
                 payload = envelope.sanitized_payload
                 terminal = envelope.source_kind.value == "runtime_event" and (
@@ -398,13 +396,8 @@ class PrimaryHistoryPolicy:
                         host_run_id=payload.get("host_run_id"),
                         sdk_run_id=envelope.run_id,
                     )
-                    if (
-                        identity is None
-                        or identity.observation_evidence_id != evidence_id
-                    ):
-                        raise PrimaryVisibilityError(
-                            "primary_visibility_terminal_unverified"
-                        )
+                    if identity is None or identity.observation_evidence_id != evidence_id:
+                        raise PrimaryVisibilityError("primary_visibility_terminal_unverified")
                     cursor = await db.execute(
                         "SELECT t.evidence_id,t.evidence_hash FROM foreground_turns t "
                         "JOIN foreground_runs r ON r.turn_id=t.turn_id AND r.subject=t.subject "
@@ -421,17 +414,13 @@ class PrimaryHistoryPolicy:
                     input_row = await cursor.fetchone()
                     await cursor.close()
                     if input_row is None:
-                        raise PrimaryVisibilityError(
-                            "primary_visibility_terminal_unverified"
-                        )
+                        raise PrimaryVisibilityError("primary_visibility_terminal_unverified")
                     input_id = input_row[0]
                     evidence_dependencies.extend(evidence_proof.items())
                     for lane_key in recall_proof:
                         required.add(add(lane_key))
                 for dependency_id, dependency_hash in evidence_dependencies:
-                    required.update(
-                        await visit(dependency_id, dependency_hash, depth + 1)
-                    )
+                    required.update(await visit(dependency_id, dependency_hash, depth + 1))
                 if input_id is not None:
                     input_binding = memo.get(input_id)
                     if (
@@ -439,9 +428,7 @@ class PrimaryHistoryPolicy:
                         or input_binding[0] != input_row[1]
                         or not input_binding[1] <= required
                     ):
-                        raise PrimaryVisibilityError(
-                            "primary_visibility_input_unproved"
-                        )
+                        raise PrimaryVisibilityError("primary_visibility_input_unproved")
                 memo[evidence_id] = (envelope.envelope_hash, required)
                 return required
             finally:

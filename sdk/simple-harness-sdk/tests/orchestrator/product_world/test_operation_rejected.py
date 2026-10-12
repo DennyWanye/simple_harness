@@ -11,6 +11,7 @@
 
 **改坏检验**：修复请求来源表去掉"对外操作未生效"→ 第一条变红。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -52,29 +53,69 @@ class _Provider(LayeredScriptedProvider):
 
     def _planner(self, request: Any) -> Any:
         package = package_of(request)
-        repairs = [entry["request"] for entry in package.get("repair_requests") or ()
-                   if (entry.get("request") or {}).get("trigger_source") == "OPERATION_NOT_APPLIED"]
+        repairs = [
+            entry["request"]
+            for entry in package.get("repair_requests") or ()
+            if (entry.get("request") or {}).get("trigger_source") == "OPERATION_NOT_APPLIED"
+        ]
         if not repairs:
             return planner_reply(request)
         self.not_applied.append(repairs[0]["context"])
-        [goal] = [item for item in package["views"]["goals"] if item.get("under_repair") and item.get("adopted_method")]
-        subject = next(item["subject_key"] for item in package["planning_subjects"]
-                       if item["occurrence_id"] == goal["occurrence_id"])
+        [goal] = [
+            item
+            for item in package["views"]["goals"]
+            if item.get("under_repair") and item.get("adopted_method")
+        ]
+        subject = next(
+            item["subject_key"]
+            for item in package["planning_subjects"]
+            if item["occurrence_id"] == goal["occurrence_id"]
+        )
         current = goal["adopted_method"]["method_ref"]
-        alternatives = [item["method_ref"] for item in package["views"]["methods"]
-                        if item["method_ref"] != current
-                        and any(report["verdict"] == "APPLICABLE" and report["goal_occurrence_id"] == goal["occurrence_id"]
-                                for report in item.get("applicability", ()))]
+        alternatives = [
+            item["method_ref"]
+            for item in package["views"]["methods"]
+            if item["method_ref"] != current
+            and any(
+                report["verdict"] == "APPLICABLE"
+                and report["goal_occurrence_id"] == goal["occurrence_id"]
+                for report in item.get("applicability", ())
+            )
+        ]
         if not alternatives:
-            [context] = [item for item in package["method_proposal_contexts"] if item["subject_key"] == subject]
-            return decision(subject, "PROPOSE_METHOD",
-                            {"method_proposal": {"method": one_step_method(context), "rationale": "按理由重写。"}},
-                            "用户拒绝了发布，按理由重写内容。")
-        instance = next(item for item in package["visible_refs"]
-                        if item["kind"] == "method_instance" and item["id"] == goal["adopted_method"]["method_instance_id"])
-        return decision(subject, "REPAIR", {"repair_kind": "REPLACE_METHOD", "rejected_method_instance": instance,
-                                            "replacement_method_ref": dict(alternatives[0]), "bindings": goal["params"]},
-                        "换成按理由重写的做法。")
+            [context] = [
+                item
+                for item in package["method_proposal_contexts"]
+                if item["subject_key"] == subject
+            ]
+            return decision(
+                subject,
+                "PROPOSE_METHOD",
+                {
+                    "method_proposal": {
+                        "method": one_step_method(context),
+                        "rationale": "按理由重写。",
+                    }
+                },
+                "用户拒绝了发布，按理由重写内容。",
+            )
+        instance = next(
+            item
+            for item in package["visible_refs"]
+            if item["kind"] == "method_instance"
+            and item["id"] == goal["adopted_method"]["method_instance_id"]
+        )
+        return decision(
+            subject,
+            "REPAIR",
+            {
+                "repair_kind": "REPLACE_METHOD",
+                "rejected_method_instance": instance,
+                "replacement_method_ref": dict(alternatives[0]),
+                "bindings": goal["params"],
+            },
+            "换成按理由重写的做法。",
+        )
 
     def _worker(self, request: Any) -> Any:
         reply = worker_reply(request)
@@ -101,12 +142,20 @@ async def _rejected_once(tmp_path: Any, provider: _Provider) -> Any:
     published.mkdir()
     connector = FilePublishConnector(published, tmp_path / "root" / "connectors" / "file_publish")
     policy = DeploymentPolicy(enabled_connectors=("file_publish",), max_action_level="L2")
-    world_cm = product_world(tmp_path / "root", provider, connectors={"file_publish": connector},
-                             deployment_policy=policy)
+    world_cm = product_world(
+        tmp_path / "root",
+        provider,
+        connectors={"file_publish": connector},
+        deployment_policy=policy,
+    )
     world = await world_cm.__aenter__()
-    mission_id = world.create({"goal": "写一份周报 reports/weekly.md 并发布",
-                               "success_criteria": ["file:" + TARGET, PUBLISH],
-                               "idempotency_key": "rejected-" + str(provider.rewrite)})["mission_id"]
+    mission_id = world.create(
+        {
+            "goal": "写一份周报 reports/weekly.md 并发布",
+            "success_criteria": ["file:" + TARGET, PUBLISH],
+            "idempotency_key": "rejected-" + str(provider.rewrite),
+        }
+    )["mission_id"]
     await world.drain()
     _confirm_completion(world, mission_id)
     card = await _until_card(world, mission_id, 0)
@@ -123,7 +172,10 @@ def test_a_rejected_publish_goes_to_the_planner_with_the_reason(tmp_path):
         provider = _Provider(rewrite=True)
         world_cm, world, mission_id, published = await _rejected_once(tmp_path, provider)
         try:
-            await _drive_until(world, lambda: _new_card(world, mission_id) or _status(world, mission_id) in TERMINAL)
+            await _drive_until(
+                world,
+                lambda: _new_card(world, mission_id) or _status(world, mission_id) in TERMINAL,
+            )
             assert provider.not_applied, "the planner was never told"
             context = provider.not_applied[0]
             assert context["rejection_reason"] == REASON and context["target"] == TARGET
@@ -145,7 +197,10 @@ def test_a_publish_rejected_twice_stops_as_approval_rejected(tmp_path):
         provider = _Provider(rewrite=True)
         world_cm, world, mission_id, published = await _rejected_once(tmp_path, provider)
         try:
-            await _drive_until(world, lambda: _new_card(world, mission_id) or _status(world, mission_id) in TERMINAL)
+            await _drive_until(
+                world,
+                lambda: _new_card(world, mission_id) or _status(world, mission_id) in TERMINAL,
+            )
             [card] = _pending_cards(world, mission_id)
             world.control.decide(card["request_id"], "reject", reason="还是先别发")
             await _drive_until(world, lambda: _status(world, mission_id) in TERMINAL)
@@ -175,7 +230,9 @@ def test_a_planner_answer_that_leaves_the_content_unchanged_stops(tmp_path):
             mission = world.store.get_mission(mission_id)
             assert str(mission.stop_reason) == "approval_rejected"
             assert "内容未变" in mission.final_report["detail"]["explanation"]
-            assert len(world.store.list_actions(mission_id)) == 1  # no second card for the same bytes
+            assert (
+                len(world.store.list_actions(mission_id)) == 1
+            )  # no second card for the same bytes
             assert not list(published.rglob("*.md"))
         finally:
             await world_cm.__aexit__(None, None, None)
@@ -192,8 +249,10 @@ class _NoChange(_Provider):
 
     def _no_change(self, request: Any) -> Any:
         package = package_of(request)
-        if not any((entry.get("request") or {}).get("trigger_source") == "OPERATION_NOT_APPLIED"
-                   for entry in package.get("repair_requests") or ()):
+        if not any(
+            (entry.get("request") or {}).get("trigger_source") == "OPERATION_NOT_APPLIED"
+            for entry in package.get("repair_requests") or ()
+        ):
             return planner_reply(request)
         self.not_applied.append({})
         subject = package["planning_subjects"][0]["subject_key"]
@@ -228,23 +287,41 @@ class _Successor(_Provider):
 
     def _successor(self, request: Any) -> Any:
         package = package_of(request)
-        if not any((entry.get("request") or {}).get("trigger_source") == "OPERATION_NOT_APPLIED"
-                   for entry in package.get("repair_requests") or ()):
+        if not any(
+            (entry.get("request") or {}).get("trigger_source") == "OPERATION_NOT_APPLIED"
+            for entry in package.get("repair_requests") or ()
+        ):
             return planner_reply(request)
         self.not_applied.append({})
         [step] = [item for item in package["views"]["goals"] if item.get("form") == "primitive"]
-        subject = next(row for row in package["planning_subjects"] if row["task_id"] == step["task_id"])
+        subject = next(
+            row for row in package["planning_subjects"] if row["task_id"] == step["task_id"]
+        )
 
         def visible(kind: str, identity: str) -> Any:
-            return next(row for row in package["visible_refs"] if row["kind"] == kind and row["id"] == identity)
+            return next(
+                row
+                for row in package["visible_refs"]
+                if row["kind"] == kind and row["id"] == identity
+            )
 
-        [task_type] = [row for row in package["successor_types"]
-                       if row["statement"] == step["statement"] and row["form"] == "primitive"]
-        return decision(subject["subject_key"], "REPAIR", {
-            "repair_kind": "PROPOSE_SUCCESSOR", "old_task_ref": visible("task", step["task_id"]),
-            "obligation_ref": visible("obligation", step["obligation_id"]),
-            "goal_type_ref": task_type["task_type_ref"], "bindings": {"goal": "按用户的理由重写周报。"}},
-            "用户拒绝了发布，给写周报那一步提后继重写。")
+        [task_type] = [
+            row
+            for row in package["successor_types"]
+            if row["statement"] == step["statement"] and row["form"] == "primitive"
+        ]
+        return decision(
+            subject["subject_key"],
+            "REPAIR",
+            {
+                "repair_kind": "PROPOSE_SUCCESSOR",
+                "old_task_ref": visible("task", step["task_id"]),
+                "obligation_ref": visible("obligation", step["obligation_id"]),
+                "goal_type_ref": task_type["task_type_ref"],
+                "bindings": {"goal": "按用户的理由重写周报。"},
+            },
+            "用户拒绝了发布，给写周报那一步提后继重写。",
+        )
 
 
 def test_a_rejected_publish_rewritten_by_a_successor_step_completes(tmp_path):
@@ -256,7 +333,10 @@ def test_a_rejected_publish_rewritten_by_a_successor_step_completes(tmp_path):
         provider = _Successor()
         world_cm, world, mission_id, published = await _rejected_once(tmp_path, provider)
         try:
-            await _drive_until(world, lambda: _new_card(world, mission_id) or _status(world, mission_id) in TERMINAL)
+            await _drive_until(
+                world,
+                lambda: _new_card(world, mission_id) or _status(world, mission_id) in TERMINAL,
+            )
             m = world.store.get_mission(mission_id)
             [card] = _pending_cards(world, mission_id)
             world.control.decide(card["request_id"], "approve")
@@ -264,10 +344,16 @@ def test_a_rejected_publish_rewritten_by_a_successor_step_completes(tmp_path):
                 if _status(world, mission_id) in TERMINAL:
                     break
                 await world.drain(timeout=5)
-            deferred = [e.payload["reason"] for e in world.store.list_events(mission_id)
-                        if e.type == "OperationOutcomeDeferred"]
-            tail = [e.type for e in world.store.list_events(mission_id)
-                    if not e.type.startswith(("Assurance", "Heartbeat", "TaskGraphFollowup"))][-25:]
+            deferred = [
+                e.payload["reason"]
+                for e in world.store.list_events(mission_id)
+                if e.type == "OperationOutcomeDeferred"
+            ]
+            tail = [
+                e.type
+                for e in world.store.list_events(mission_id)
+                if not e.type.startswith(("Assurance", "Heartbeat", "TaskGraphFollowup"))
+            ][-25:]
             assert _status(world, mission_id) == "COMPLETED", (deferred, tail)
         finally:
             await world_cm.__aexit__(None, None, None)

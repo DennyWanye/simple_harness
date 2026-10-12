@@ -182,8 +182,10 @@ def observe_predicate(
             observation=observation, reason=ReadinessReason.OBSERVER_UNAVAILABLE
         )
     return ObservationOutcomeRecord(
-        observation=observation, record=observation.record,
-        question={"predicate_ref": reference.to_json(), "arguments": dict(arguments)})
+        observation=observation,
+        record=observation.record,
+        question={"predicate_ref": reference.to_json(), "arguments": dict(arguments)},
+    )
 
 
 def record_observation(
@@ -202,7 +204,9 @@ def record_observation(
 
     if outcome.record is None:
         return outcome
-    store.insert_observation(mission_id, outcome.record, scope_id=scope_id, question=outcome.question)
+    store.insert_observation(
+        mission_id, outcome.record, scope_id=scope_id, question=outcome.question
+    )
     return ObservationOutcomeRecord(
         observation=outcome.observation,
         recorded=True,

@@ -111,9 +111,7 @@ class TaskFailureReport:
             "completed_step_refs": list(self.completed_step_refs),
             "artifact_refs": list(self.artifact_refs),
             "checkpoint_ref": self.checkpoint_ref,
-            "prior_strategy_fingerprints": list(
-                self.prior_strategy_fingerprints
-            ),
+            "prior_strategy_fingerprints": list(self.prior_strategy_fingerprints),
         }
 
     @classmethod
@@ -207,9 +205,7 @@ class FailureReportIssuer:
             "completed_step_refs": list(completed_step_refs),
             "artifact_refs": list(artifact_refs),
             "checkpoint_ref": checkpoint_ref,
-            "prior_strategy_fingerprints": list(
-                prior_strategy_fingerprints
-            ),
+            "prior_strategy_fingerprints": list(prior_strategy_fingerprints),
         }
         return TaskFailureReport(
             report_ref=_ref("failure", unsigned),
@@ -233,14 +229,12 @@ class FailureReportIssuer:
             action_fingerprint=action_fingerprint,
             exit_code=exit_code,
             evidence_refs=tuple(str(item) for item in evidence_refs),
-            completed_step_refs=tuple(
-                str(item) for item in completed_step_refs
-            ),
+            completed_step_refs=tuple(str(item) for item in completed_step_refs),
             artifact_refs=tuple(str(item) for item in artifact_refs),
             checkpoint_ref=checkpoint_ref,
-            prior_strategy_fingerprints=tuple(
-                str(item) for item in prior_strategy_fingerprints
-            )[-3:],
+            prior_strategy_fingerprints=tuple(str(item) for item in prior_strategy_fingerprints)[
+                -3:
+            ],
         )
 
 

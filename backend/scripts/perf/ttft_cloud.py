@@ -12,6 +12,7 @@ Requires cloud provider configured (``config.toml [llm.cloud]`` uncommented +
 (cloud unreachable or misconfigured) — the caller can treat that as
 "skip" rather than "fail" in CI.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -36,10 +37,14 @@ async def one_round(url: str, prompt: str) -> float:
     """
     async with websockets.connect(url) as ws:
         t0 = time.perf_counter()
-        await ws.send(json.dumps({
-            "type": "chat",
-            "payload": {"text": prompt, "force_cloud": True},
-        }))
+        await ws.send(
+            json.dumps(
+                {
+                    "type": "chat",
+                    "payload": {"text": prompt, "force_cloud": True},
+                }
+            )
+        )
         while True:
             raw = await asyncio.wait_for(ws.recv(), timeout=30.0)
             msg = json.loads(raw)
@@ -51,8 +56,7 @@ async def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--rounds", type=int, default=5)
     parser.add_argument("--port", type=int, default=8100)
-    parser.add_argument("--secret", default="",
-                        help="shared secret; empty if backend in DEV_MODE")
+    parser.add_argument("--secret", default="", help="shared secret; empty if backend in DEV_MODE")
     args = parser.parse_args()
 
     qs = f"?secret={args.secret}&session_id=ttft-smoke"

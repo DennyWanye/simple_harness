@@ -46,8 +46,7 @@ class SdkThenLegacyFrozenSkillResolver:
         matches = tuple(
             record
             for record in exposure.catalog.snapshot.records
-            if isinstance(record, SkillResourceRecord)
-            and record.skill_locator == skill_name
+            if isinstance(record, SkillResourceRecord) and record.skill_locator == skill_name
         )
         if len(matches) != 1:
             raise RuntimeError("sdk_frozen_skill_not_in_run_catalog")
@@ -73,10 +72,7 @@ class SdkThenLegacyFrozenSkillResolver:
             arguments,
         )
 
-        visible = {
-            item.name
-            for item in exposure.provider_specs(RunId(run_id))
-        }
+        visible = {item.name for item in exposure.provider_specs(RunId(run_id))}
         effective = sorted(set(scope.allowed_tools) & visible)
         facts = [self._exact_sdk_tool_fact(authority.specs[name]) for name in effective]
         ref_hashes = sorted(canonical_hash(item) for item in facts)
@@ -118,8 +114,7 @@ class SdkThenLegacyFrozenSkillResolver:
         matches = tuple(
             record
             for record in exposure.catalog.snapshot.records
-            if isinstance(record, SkillResourceRecord)
-            and record.skill_locator == skill_name
+            if isinstance(record, SkillResourceRecord) and record.skill_locator == skill_name
         )
         if len(matches) != 1:
             raise RuntimeError("sdk_frozen_skill_not_in_run_catalog")
@@ -166,9 +161,7 @@ class SdkThenLegacyFrozenSkillResolver:
         dispatch_version = "v1"
         return {
             "name": str(spec.name),
-            "stable_handler_id": (
-                f"sdk:{spec.source}:{spec.name}:{spec.spec_version}"
-            ),
+            "stable_handler_id": (f"sdk:{spec.source}:{spec.name}:{spec.spec_version}"),
             "tool_spec_fingerprint": canonical_hash(
                 {
                     "name": spec.name,

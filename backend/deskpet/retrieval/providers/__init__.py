@@ -5,4 +5,11 @@ from .duckduckgo import DuckDuckGoProvider
 from .google_cdp import GoogleCDPProvider
 from .searxng import SearXNGProvider
 
-__all__ = ["BaiduProvider", "BingCDPProvider", "BingHTTPProvider", "DuckDuckGoProvider", "GoogleCDPProvider", "SearXNGProvider"]
+__all__ = [
+    "BaiduProvider",
+    "BingCDPProvider",
+    "BingHTTPProvider",
+    "DuckDuckGoProvider",
+    "GoogleCDPProvider",
+    "SearXNGProvider",
+]

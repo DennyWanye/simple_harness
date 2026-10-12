@@ -189,9 +189,11 @@ def local_content_criterion(
         criterion_id=LEAF_LOCAL_CRITERION,
         revision=1,
         origin=CriterionOrigin.DERIVED,
-        statement=(f"the result of {binding.task_id!s} passed the verification layers that ran; "
-                   "this acceptance vouches only for its own declared outputs, "
-                   "not for the root goal or any external effect"),
+        statement=(
+            f"the result of {binding.task_id!s} passed the verification layers that ran; "
+            "this acceptance vouches only for its own declared outputs, "
+            "not for the root goal or any external effect"
+        ),
         requirement_class=RequirementClass.REQUIRED_OUTCOME,
         evaluation_kind=EvaluationKind.DETERMINISTIC,
         required_evidence_policy=RequiredEvidencePolicy(required_check_ids=check_ids(layers)),
@@ -394,6 +396,7 @@ class LeafAcceptanceAssembly:
 
         outcomes = layer_outcomes(layers)
         from .taskgraph_review import read_review_origin
+
         origin = read_review_origin(self.commit, mission_id, task_id, result_id)
         binding = origin.semantic
         if binding is None:
@@ -413,8 +416,9 @@ class LeafAcceptanceAssembly:
         # result under the frozen completion scope, never taken from the caller.
         projection = read_task_content_projection(self.store, mission_id, task_id, result_id)
         revision = projection.requirements
-        outcomes = layer_outcomes(self.store.list_verifications(
-            result_id, requirements_revision=int(revision.revision)))
+        outcomes = layer_outcomes(
+            self.store.list_verifications(result_id, requirements_revision=int(revision.revision))
+        )
         producer_agent_ids = (projection.producer_agent_id,)
         manifest = origin.context.inputs.binding.manifest_hash
         if input_manifest_hash and input_manifest_hash != manifest:
@@ -447,9 +451,7 @@ class LeafAcceptanceAssembly:
 
         validity = getattr(self.commit, "_assurance_validity", None)
         candidate = (
-            None
-            if validity is None
-            else validity.candidate_for(mission_id, str(record.record_id))
+            None if validity is None else validity.candidate_for(mission_id, str(record.record_id))
         )
         committed = self.store.connection.execute(
             "SELECT certificate_id FROM assurance_use_certificates WHERE mission_id=? "
@@ -553,7 +555,8 @@ class LeafAcceptanceAssembly:
     ) -> ReviewPackage:
         package_id = f"pkg-{content_hash_of({'r': result_id, 'rev': revision.revision})[:32]}"
         claims_to_confirm, related_entries = self._claim_sections(
-            mission_id, str(binding.task_id), result_id, package_id)
+            mission_id, str(binding.task_id), result_id, package_id
+        )
         package = ReviewPackage(
             package_id=ReviewPackageId(package_id),
             purpose=ReviewPurpose.TASK_CONTENT,
@@ -623,17 +626,28 @@ class LeafAcceptanceAssembly:
         from ..verification.evidence_resolver import in_source_roots
 
         try:
-            return tuple(dict(row) for row in self.semantics.get_review_package(package_id).source_versions)
+            return tuple(
+                dict(row) for row in self.semantics.get_review_package(package_id).source_versions
+            )
         except StoreError:
             pass
         stored = self.store.get_result(result_id)
-        intent = None if stored is None else self.store.get_intent_for_subject(stored.envelope.attempt_id)
+        intent = (
+            None
+            if stored is None
+            else self.store.get_intent_for_subject(stored.envelope.attempt_id)
+        )
         used = {} if intent is None else dict(intent.config.get("source_versions") or {})
         roots = tuple(self.commit.domain_for(mission_id).source_roots)
-        current = {str(row["path"]): str(row["version_hash"])
-                   for row in self.store.list_sources(mission_id, active_only=True)}
-        return tuple({"path": path, "used_version": str(used[path]), "current_version": current.get(path)}
-                     for path in sorted(used) if in_source_roots(path, roots))
+        current = {
+            str(row["path"]): str(row["version_hash"])
+            for row in self.store.list_sources(mission_id, active_only=True)
+        }
+        return tuple(
+            {"path": path, "used_version": str(used[path]), "current_version": current.get(path)}
+            for path in sorted(used)
+            if in_source_roots(path, roots)
+        )
 
     def _summary_section(self, result_id: str, package_id: str) -> dict[str, Any] | None:
         """The package's summary section (阶段 C3): the Worker's ``summary`` of the reviewed
@@ -649,8 +663,11 @@ class LeafAcceptanceAssembly:
         summary = "" if stored is None else str(stored.envelope.summary or "").strip()
         if not summary:
             return None
-        return {"result_ref": self._result_fingerprint(result_id), "summary": summary,
-                "summary_sha256": hashlib.sha256(summary.encode("utf-8")).hexdigest()}
+        return {
+            "result_ref": self._result_fingerprint(result_id),
+            "summary": summary,
+            "summary_sha256": hashlib.sha256(summary.encode("utf-8")).hexdigest(),
+        }
 
     def _claim_sections(
         self, mission_id: str, task_id: str, result_id: str, package_id: str
@@ -684,29 +701,47 @@ class LeafAcceptanceAssembly:
 
         claims = self.store.list_claims(result_id)
         to_confirm = tuple(
-            {"claim_id": claim.id, "content": claim.content, "content_sha256": digest(claim.content),
-             "evidence": list(claim.evidence)}
+            {
+                "claim_id": claim.id,
+                "content": claim.content,
+                "content_sha256": digest(claim.content),
+                "evidence": list(claim.evidence),
+            }
             for claim in claims
         )
         related: dict[tuple[str, str], dict[str, Any]] = {}
-        others = [item for item in self.store.list_mission_claims(mission_id) if item.source_task != task_id]
+        others = [
+            item
+            for item in self.store.list_mission_claims(mission_id)
+            if item.source_task != task_id
+        ]
         for claim in claims:
             for found in contradictions(claim, others):
                 other = found.other
                 related[("dispute", other.id)] = {
-                    "kind": "dispute", "id": other.id, "version": int(other.version),
-                    "content_sha256": digest(other.content), "content": other.content,
-                    "status": str(other.status), "source_task": other.source_task}
+                    "kind": "dispute",
+                    "id": other.id,
+                    "version": int(other.version),
+                    "content_sha256": digest(other.content),
+                    "content": other.content,
+                    "status": str(other.status),
+                    "source_task": other.source_task,
+                }
         result = self.store.get_result(result_id)
-        for reference in (() if result is None else result.envelope.used_knowledge):
+        for reference in () if result is None else result.envelope.used_knowledge:
             knowledge_id, _ = parse_knowledge_ref(reference)
             record = self.store.get_knowledge(knowledge_id)
             if record is None or record.mission_id != mission_id or record.source_task == task_id:
                 continue  # an unknown or foreign id is the acceptance check's to refuse
             related[("used_knowledge", record.id)] = {
-                "kind": "used_knowledge", "id": record.id, "version": int(record.version),
-                "content_sha256": digest(record.content), "content": record.content,
-                "status": str(record.status), "source_task": record.source_task}
+                "kind": "used_knowledge",
+                "id": record.id,
+                "version": int(record.version),
+                "content_sha256": digest(record.content),
+                "content": record.content,
+                "status": str(record.status),
+                "source_task": record.source_task,
+            }
         return to_confirm, tuple(related[key] for key in sorted(related))
 
     def _stored_package(self, package: ReviewPackage) -> ReviewPackage:
@@ -745,11 +780,9 @@ class LeafAcceptanceAssembly:
 
             raise ResolutionCommitRejected(
                 "REVIEW_NOT_OFFICIAL",
-                f"no official Assurance review record is stored for package "
-                f"{package.package_id!s}",
+                f"no official Assurance review record is stored for package {package.package_id!s}",
             )
         return official
-
 
     def _read_set(
         self, mission_id: str, binding: TaskSemanticBindingV1, revision: RequirementsRevision

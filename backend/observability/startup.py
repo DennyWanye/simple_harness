@@ -20,6 +20,7 @@ Design choices:
 - `snapshot()` returns plain dicts — JSON-safe for both the HTTP
   and WS paths. No datetime, no Exception instances.
 """
+
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
@@ -37,7 +38,7 @@ class StartupError:
     engine: str
     error_code: str
     error_message: str  # user-facing, Chinese OK
-    raw: str            # repr(exc) — for log correlation, not UI
+    raw: str  # repr(exc) — for log correlation, not UI
 
 
 def _classify(exc: BaseException) -> tuple[str, str]:

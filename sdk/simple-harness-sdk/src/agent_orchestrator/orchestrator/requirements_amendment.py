@@ -12,6 +12,7 @@
 按新版要求重新规划时判（``REQUIREMENTS_UPDATE`` 修复请求，阶段 D 已有的路径），这里不替它判。
 根目标已有结论、收尾已开始的任务不再接受改要求。
 """
+
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
@@ -39,8 +40,11 @@ class RequirementsAmendmentError(StoreError):
 def requirements_ref(revision: Any) -> dict[str, Any]:
     """``{id, revision, content_hash}`` of one requirements revision — what a caller quotes
     back as ``expected_requirements_ref``."""
-    return {"id": str(revision.revision_id), "revision": int(revision.revision),
-            "content_hash": revision.content_hash()}
+    return {
+        "id": str(revision.revision_id),
+        "revision": int(revision.revision),
+        "content_hash": revision.content_hash(),
+    }
 
 
 def compare_revisions(previous: Any, current: Any) -> dict[str, list[str]]:
@@ -48,21 +52,35 @@ def compare_revisions(previous: Any, current: Any) -> dict[str, list[str]]:
     comparison by id and entry revision, nothing more."""
     before = {str(item.criterion_id): int(item.revision) for item in previous.criteria}
     after = {str(item.criterion_id): int(item.revision) for item in current.criteria}
-    return {"added": [name for name in after if name not in before],
-            "rewritten": [name for name in after if name in before and after[name] != before[name]],
-            "removed": [name for name in before if name not in after]}
+    return {
+        "added": [name for name in after if name not in before],
+        "rewritten": [name for name in after if name in before and after[name] != before[name]],
+        "removed": [name for name in before if name not in after],
+    }
 
 
 def _highest_number(revisions: Sequence[Any]) -> int:
-    numbers = [int(tail) for revision in revisions for item in revision.criteria
-               if (name := str(item.criterion_id)).startswith("c-user-") and (tail := name[len("c-user-"):]).isdigit()]
+    numbers = [
+        int(tail)
+        for revision in revisions
+        for item in revision.criteria
+        if (name := str(item.criterion_id)).startswith("c-user-")
+        and (tail := name[len("c-user-") :]).isdigit()
+    ]
     return max(numbers, default=0)
 
 
 def amend_requirements(
-    orchestrator: Any, *, mission_id: str, tenant_id: str, command_id: str,
-    expected_requirements_ref: Mapping[str, Any], changes: Sequence[Mapping[str, Any]],
-    reason: str, source: Mapping[str, Any], principal: Any,
+    orchestrator: Any,
+    *,
+    mission_id: str,
+    tenant_id: str,
+    command_id: str,
+    expected_requirements_ref: Mapping[str, Any],
+    changes: Sequence[Mapping[str, Any]],
+    reason: str,
+    source: Mapping[str, Any],
+    principal: Any,
 ) -> dict[str, Any]:
     from ..deployment.root import (
         AmendmentRefused,
@@ -77,43 +95,66 @@ def amend_requirements(
     from .state_machine import next_mission
 
     store = orchestrator.store
-    proposal = {"mission_id": mission_id, "expected": dict(expected_requirements_ref),
-                "changes": [dict(item) for item in changes], "reason": str(reason), "source": dict(source)}
+    proposal = {
+        "mission_id": mission_id,
+        "expected": dict(expected_requirements_ref),
+        "changes": [dict(item) for item in changes],
+        "reason": str(reason),
+        "source": dict(source),
+    }
     proposal_hash = content_hash_of(proposal)
     with store.transaction():
         replayed = store.get_receipt(command_id)
         if replayed is not None:
-            if replayed.get("kind") != RECEIPT_KIND or replayed.get("proposal_hash") != proposal_hash:
+            if (
+                replayed.get("kind") != RECEIPT_KIND
+                or replayed.get("proposal_hash") != proposal_hash
+            ):
                 raise RequirementsAmendmentError(
-                    "AMEND_COMMAND_REUSED", "this command id already names a different request")
+                    "AMEND_COMMAND_REUSED", "this command id already names a different request"
+                )
             return dict(replayed)
         mission = store.get_mission(mission_id)
         if mission is None or mission.tenant_id != tenant_id:
             raise RequirementsAmendmentError("AMEND_MISSION_UNKNOWN", "no such Mission")
         if mission.status in TERMINAL_MISSION:
-            raise RequirementsAmendmentError("AMEND_MISSION_TERMINAL", "the Mission has ended; start a new one")
+            raise RequirementsAmendmentError(
+                "AMEND_MISSION_TERMINAL", "the Mission has ended; start a new one"
+            )
         htn = HtnStore(store)
         dispatch = orchestrator._dispatch_for(mission_id)
         if dispatch is None:
-            raise RequirementsAmendmentError("AMEND_MISSION_UNKNOWN", "the Mission has no planning deployment")
+            raise RequirementsAmendmentError(
+                "AMEND_MISSION_UNKNOWN", "the Mission has no planning deployment"
+            )
         revisions = htn.list_requirements_revisions(mission_id)
         if not revisions:
-            raise RequirementsAmendmentError("AMEND_MISSION_UNKNOWN", "the Mission has no requirements yet")
+            raise RequirementsAmendmentError(
+                "AMEND_MISSION_UNKNOWN", "the Mission has no requirements yet"
+            )
         previous = max(revisions, key=lambda item: int(item.revision))
         if dict(expected_requirements_ref) != requirements_ref(previous):
             raise RequirementsAmendmentError(
-                "AMEND_REQUIREMENTS_STALE", "the requirements were amended since they were read; read them again")
+                "AMEND_REQUIREMENTS_STALE",
+                "the requirements were amended since they were read; read them again",
+            )
         network = dispatch.network(mission_id)
         [root_occurrence] = network.root_occurrence_ids
         root = network.binding_for_occurrence(root_occurrence)
-        if (htn.adopted_goal_resolution(mission_id, str(root.obligation_id)) is not None
-                or assured_closeout_pending(store, mission)):
+        if htn.adopted_goal_resolution(
+            mission_id, str(root.obligation_id)
+        ) is not None or assured_closeout_pending(store, mission):
             raise RequirementsAmendmentError(
-                "AMEND_AFTER_CLOSEOUT", "the Mission is already closing out; start a new one for new requirements")
+                "AMEND_AFTER_CLOSEOUT",
+                "the Mission is already closing out; start a new one for new requirements",
+            )
         try:
             new_goal, entry_changes = split_goal_change(changes, current_goal=mission.goal)
-            entries = (apply_changes(previous, entry_changes, highest_used=_highest_number(revisions))
-                       if entry_changes else unchanged_entries(previous))
+            entries = (
+                apply_changes(previous, entry_changes, highest_used=_highest_number(revisions))
+                if entry_changes
+                else unchanged_entries(previous)
+            )
         except AmendmentRefused as error:  # 按属性取码，不切异常文字（第 1 批 T02）
             raise RequirementsAmendmentError(error.code, error.detail) from error
 
@@ -129,41 +170,92 @@ def amend_requirements(
         if new_goal is not None:
             updated = next_mission(mission, goal=new_goal)
             store.update_mission(updated, expected_version=mission.version)
-            parameters = {key: (new_goal if value == mission.goal else value) for key, value in parameters.items()}
+            parameters = {
+                key: (new_goal if value == mission.goal else value)
+                for key, value in parameters.items()
+            }
             mission = updated
         # 1 the next revision of the requirements, carrying its credential
-        revision = build_requirements(mission_id, int(previous.revision) + 1, entries,
-                                      str(principal.principal_id), credential=command_id)
+        revision = build_requirements(
+            mission_id,
+            int(previous.revision) + 1,
+            entries,
+            str(principal.principal_id),
+            credential=command_id,
+        )
         htn.insert_requirements_revision(revision)
         # 2 the root contract: the same rule root initialisation uses, reading the new revision
-        definition = next(item for item in dispatch.require_planning_world().catalog.task_types()
-                          if item.goal_signature.signature_id == root.goal_signature.signature_id)
-        htn.put_task_semantics(mission_id, root_binding(
-            store, mission, definition, task_id=str(root.task_id), duty_id=str(root.obligation_id),
-            contract_revision=int(root.contract_revision) + 1, parameters=parameters))
+        definition = next(
+            item
+            for item in dispatch.require_planning_world().catalog.task_types()
+            if item.goal_signature.signature_id == root.goal_signature.signature_id
+        )
+        htn.put_task_semantics(
+            mission_id,
+            root_binding(
+                store,
+                mission,
+                definition,
+                task_id=str(root.task_id),
+                duty_id=str(root.obligation_id),
+                contract_revision=int(root.contract_revision) + 1,
+                parameters=parameters,
+            ),
+        )
         # 3 the root duty answers for the new set
         ObligationStore(store).revise_requirement_refs(
-            mission_id, root.obligation_id, [name for name, _, _ in entries])
+            mission_id, root.obligation_id, [name for name, _, _ in entries]
+        )
         # 4 every licence issued under the old requirements is stale
-        epoch = htn.bump_epoch(mission_id, "mission", bumped_by=f"requirements:{revision.revision_id}")
+        epoch = htn.bump_epoch(
+            mission_id, "mission", bumped_by=f"requirements:{revision.revision_id}"
+        )
         changed = compare_revisions(previous, revision)
         goal = None if new_goal is None else {"previous": previous_goal, "current": new_goal}
         receipt = {
-            "kind": RECEIPT_KIND, "command_id": command_id, "mission_id": mission_id,
-            "proposal_hash": proposal_hash, "source": dict(source), "reason": str(reason),
+            "kind": RECEIPT_KIND,
+            "command_id": command_id,
+            "mission_id": mission_id,
+            "proposal_hash": proposal_hash,
+            "source": dict(source),
+            "reason": str(reason),
             "previous_requirements_ref": requirements_ref(previous),
             "requirements_ref": requirements_ref(revision),
-            "requirements_revision": int(revision.revision), "changes": changed, "goal": goal,
+            "requirements_revision": int(revision.revision),
+            "changes": changed,
+            "goal": goal,
             "scope_epoch": int(epoch),
         }
-        append_hierarchical_event(store, EVENT, mission_id, key=command_id, payload={
-            "command_id": command_id, "previous_revision": int(previous.revision),
-            "requirements_revision": int(revision.revision),
-            "requirements_content_hash": revision.content_hash(), "goal": goal, **changed})
-        store.insert_receipt(commit_id=command_id, kind=RECEIPT_KIND, subject_id=mission_id,
-                             base_version=int(previous.revision), proposal_hash=proposal_hash, receipt=receipt)
+        append_hierarchical_event(
+            store,
+            EVENT,
+            mission_id,
+            key=command_id,
+            payload={
+                "command_id": command_id,
+                "previous_revision": int(previous.revision),
+                "requirements_revision": int(revision.revision),
+                "requirements_content_hash": revision.content_hash(),
+                "goal": goal,
+                **changed,
+            },
+        )
+        store.insert_receipt(
+            commit_id=command_id,
+            kind=RECEIPT_KIND,
+            subject_id=mission_id,
+            base_version=int(previous.revision),
+            proposal_hash=proposal_hash,
+            receipt=receipt,
+        )
     return receipt
 
 
-__all__ = ("EVENT", "RECEIPT_KIND", "RequirementsAmendmentError", "amend_requirements",
-           "compare_revisions", "requirements_ref")
+__all__ = (
+    "EVENT",
+    "RECEIPT_KIND",
+    "RequirementsAmendmentError",
+    "amend_requirements",
+    "compare_revisions",
+    "requirements_ref",
+)

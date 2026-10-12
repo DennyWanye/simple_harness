@@ -35,9 +35,7 @@ class ToolContextPersistenceMixin:
         )
         if record is None:
             raise RuntimeError("tool_context_persist_failed:scope_missing")
-        handle = record.snapshot_handle or getattr(
-            prepared_context, "active_snapshot_handle", None
-        )
+        handle = record.snapshot_handle or getattr(prepared_context, "active_snapshot_handle", None)
         if handle is None:
             return
         schema_hashes = {
@@ -98,26 +96,24 @@ class ToolContextPersistenceMixin:
             try:
                 receipt = await _write(int(handle.row_revision))
             except SnapshotConflictError:
-                latest = await self.context_snapshot_store.get(
-                    session_id, handle.task_scope_id
-                )
+                latest = await self.context_snapshot_store.get(session_id, handle.task_scope_id)
                 if latest is None:
                     raise RuntimeError("tool_context_persist_failed:snapshot_missing")
                 persisted = latest.prepared_toolset_summary
-                if (
-                    persisted.get("schema_fingerprint")
-                    not in (None, "", current_tool_set.schema_fingerprint)
-                    or persisted.get("persisted_tool_scope_revision")
-                    not in (None, current_tool_set.revision)
+                if persisted.get("schema_fingerprint") not in (
+                    None,
+                    "",
+                    current_tool_set.schema_fingerprint,
+                ) or persisted.get("persisted_tool_scope_revision") not in (
+                    None,
+                    current_tool_set.revision,
                 ):
                     raise RuntimeError("tool_context_persist_failed:cas_conflict")
                 try:
                     handle = latest.handle
                     receipt = await _write(int(handle.row_revision))
                 except SnapshotConflictError as exc:
-                    raise RuntimeError(
-                        "tool_context_persist_failed:cas_conflict"
-                    ) from exc
+                    raise RuntimeError("tool_context_persist_failed:cas_conflict") from exc
             except SnapshotCommitCancelled as exc:
                 if exc.receipt is not None:
                     scope_store.advance_snapshot_handle_prevalidated(

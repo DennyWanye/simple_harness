@@ -86,21 +86,38 @@ async def test_deadline_observation_effect_head_and_budget_share_one_transaction
         )
 
     async with aiosqlite.connect(database) as db:
-        effect_count = (await (await db.execute(
-            "SELECT COUNT(*) FROM workflow_effects WHERE logical_effect_id=?", (logical,)
-        )).fetchone())[0]
-        head_count = (await (await db.execute(
-            "SELECT COUNT(*) FROM workflow_effect_attempt_heads WHERE logical_effect_id=?",
-            (logical,),
-        )).fetchone())[0]
-        reserved = (await (await db.execute(
-            "SELECT reserved FROM workflow_research_resource_budgets "
-            "WHERE run_id=? AND resource_kind='query'", (identity.run_id,)
-        )).fetchone())[0]
-        stored_revision = (await (await db.execute(
-            "SELECT revision FROM workflow_research_deadlines WHERE deadline_id=?",
-            (deadline.deadline_id,),
-        )).fetchone())[0]
+        effect_count = (
+            await (
+                await db.execute(
+                    "SELECT COUNT(*) FROM workflow_effects WHERE logical_effect_id=?", (logical,)
+                )
+            ).fetchone()
+        )[0]
+        head_count = (
+            await (
+                await db.execute(
+                    "SELECT COUNT(*) FROM workflow_effect_attempt_heads WHERE logical_effect_id=?",
+                    (logical,),
+                )
+            ).fetchone()
+        )[0]
+        reserved = (
+            await (
+                await db.execute(
+                    "SELECT reserved FROM workflow_research_resource_budgets "
+                    "WHERE run_id=? AND resource_kind='query'",
+                    (identity.run_id,),
+                )
+            ).fetchone()
+        )[0]
+        stored_revision = (
+            await (
+                await db.execute(
+                    "SELECT revision FROM workflow_research_deadlines WHERE deadline_id=?",
+                    (deadline.deadline_id,),
+                )
+            ).fetchone()
+        )[0]
     assert (effect_count, head_count, reserved) == ((1, 1, 1) if committed else (0, 0, 0))
     assert stored_revision == deadline.revision + (1 if committed else 0)
 
@@ -151,10 +168,12 @@ async def test_stale_attempt_reconcile_concurrency_attempt_two_and_late_result(t
             (identity.run_id,),
         )
         await db.commit()
-        row = await (await db.execute(
-            "SELECT lease_epoch,run_version FROM workflow_runs WHERE run_id=?",
-            (identity.run_id,),
-        )).fetchone()
+        row = await (
+            await db.execute(
+                "SELECT lease_epoch,run_version FROM workflow_runs WHERE run_id=?",
+                (identity.run_id,),
+            )
+        ).fetchone()
     takeover = RunFence(identity.run_id, "takeover", int(row[0]), int(row[1]))
 
     reconciled = await asyncio.gather(
@@ -212,26 +231,39 @@ async def test_stale_attempt_reconcile_concurrency_attempt_two_and_late_result(t
         )
 
     async with aiosqlite.connect(database) as db:
-        head = await (await db.execute(
-            """SELECT latest_attempt_no,canonical_effect_id
+        head = await (
+            await db.execute(
+                """SELECT latest_attempt_no,canonical_effect_id
             FROM workflow_effect_attempt_heads WHERE logical_effect_id=?""",
-            (logical,),
-        )).fetchone()
-        effects = await (await db.execute(
-            "SELECT attempt_no,status FROM workflow_effects WHERE logical_effect_id=? "
-            "ORDER BY attempt_no", (logical,)
-        )).fetchall()
-        budget = await (await db.execute(
-            "SELECT reserved,consumed FROM workflow_research_resource_budgets "
-            "WHERE run_id=? AND resource_kind='query'", (identity.run_id,)
-        )).fetchone()
-        committed_deadline_revision = (await (await db.execute(
-            "SELECT revision FROM workflow_research_deadlines WHERE deadline_id=?",
-            (deadline.deadline_id,),
-        )).fetchone())[0]
+                (logical,),
+            )
+        ).fetchone()
+        effects = await (
+            await db.execute(
+                "SELECT attempt_no,status FROM workflow_effects WHERE logical_effect_id=? "
+                "ORDER BY attempt_no",
+                (logical,),
+            )
+        ).fetchall()
+        budget = await (
+            await db.execute(
+                "SELECT reserved,consumed FROM workflow_research_resource_budgets "
+                "WHERE run_id=? AND resource_kind='query'",
+                (identity.run_id,),
+            )
+        ).fetchone()
+        committed_deadline_revision = (
+            await (
+                await db.execute(
+                    "SELECT revision FROM workflow_research_deadlines WHERE deadline_id=?",
+                    (deadline.deadline_id,),
+                )
+            ).fetchone()
+        )[0]
         await db.execute(
             "UPDATE workflow_research_deadlines SET status='expired',terminal_reason='wall_guard' "
-            "WHERE deadline_id=?", (deadline.deadline_id,)
+            "WHERE deadline_id=?",
+            (deadline.deadline_id,),
         )
         await db.commit()
     assert tuple(head) == (2, second.effect_id)

@@ -102,15 +102,18 @@ def test_valid_pack_with_unicode_and_spaces(tmp_path: Path) -> None:
     assert result.manifest.id == "godot"
     assert result.descriptor.provider_tool_names == ("godot__project_check",)
     assert result.descriptor.health == "healthy"
-    assert result.manifest.manifest_hash == hashlib.sha256(
-        json.dumps(
-            manifest,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-            allow_nan=False,
-        ).encode("utf-8")
-    ).hexdigest()
+    assert (
+        result.manifest.manifest_hash
+        == hashlib.sha256(
+            json.dumps(
+                manifest,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+                allow_nan=False,
+            ).encode("utf-8")
+        ).hexdigest()
+    )
 
 
 def test_pack_validation_supports_windows_paths_longer_than_max_path(
@@ -172,9 +175,7 @@ def test_provider_name_must_be_exact_and_not_reserved(tmp_path: Path) -> None:
 
     tools[0]["provider_name"] = "godot__project_check"
     with pytest.raises(PackManifestError) as caught:
-        parse_pack_manifest(
-            manifest, reserved_tool_names={"godot__project_check"}
-        )
+        parse_pack_manifest(manifest, reserved_tool_names={"godot__project_check"})
     assert caught.value.code == "reserved_tool_name"
 
 

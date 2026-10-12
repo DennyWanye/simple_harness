@@ -7,7 +7,7 @@ requirement approval, plan compiler, T0, or T3 writers.
 2026-10-03（HTN 补齐阶段 A′）：原来文件后半段 OCC-01…OCC-12 的运行时用例建在手工伪造的
 ``_operation_world`` 上，已迁到产品同形世界（``test_publish_variants.py`` 与代表用例 3）：
 OCC-01/08/12 → 第一条（内容验收只是准备）；OCC-03 → 代表用例 3；OCC-04 → 改坏结果审阅绑定；
-OCC-06 → 两个发布各走各的证明链；OCC-09/11 → 效果验收写失败回滚、重启后只写一次；OCC-10 → 
+OCC-06 → 两个发布各走各的证明链；OCC-09/11 → 效果验收写失败回滚、重启后只写一次；OCC-10 →
 ``test_completion_plan_commit.py`` 的范围断言；OCC-02 运行时一侧 → ``test_completion_plan_commit.py``
 （没确认映射不开工）。OCC-07（旧通道兼容）随旧通道删。
 

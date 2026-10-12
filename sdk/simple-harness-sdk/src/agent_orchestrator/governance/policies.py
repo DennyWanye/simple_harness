@@ -39,7 +39,9 @@ class DeploymentPolicy:
     # NEXT-TG-1.0 §11: Skill tools served by this deployment's native-plane pools; a pool
     # that does not serve them never has them frozen into a request (dispatch narrows).
     skill_tools: tuple[str, ...] = field(default=(), kw_only=True)
-    operator_tool_allowlists: tuple[tuple[str, tuple[str, ...]], ...] = field(default=(), kw_only=True)
+    operator_tool_allowlists: tuple[tuple[str, tuple[str, ...]], ...] = field(
+        default=(), kw_only=True
+    )
     require_operator_tool_policy: bool = field(default=False, kw_only=True)
     denied_path_prefixes: tuple[str, ...] = ()  # workspace paths no Agent may read or write
     # step 7 (D7-3): real actions — which connectors this deployment enables, the highest
@@ -75,30 +77,45 @@ class DeploymentPolicy:
     def __post_init__(self) -> None:
         if type(self.no_new_knowledge_rounds) is not int or self.no_new_knowledge_rounds < 1:
             raise ValueError("no_new_knowledge_rounds must be an integer >= 1")
-        if not isinstance(self.result_duplication_rate, (int, float)) or not 0 < self.result_duplication_rate <= 1:
+        if (
+            not isinstance(self.result_duplication_rate, (int, float))
+            or not 0 < self.result_duplication_rate <= 1
+        ):
             raise ValueError("result_duplication_rate must be within (0, 1]")
-        if type(self.result_duplication_min_results) is not int or self.result_duplication_min_results < 2:
+        if (
+            type(self.result_duplication_min_results) is not int
+            or self.result_duplication_min_results < 2
+        ):
             raise ValueError("result_duplication_min_results must be an integer >= 2")
         if type(self.require_operator_tool_policy) is not bool:
             raise ValueError("operator tool policy requirement must be boolean")
         operator_ids = [name for name, _ in self.operator_tool_allowlists]
-        if (len(operator_ids) != len(set(operator_ids))
-                or any(not name or not set(names) <= set(self.allowed_tools)
-                       for name, names in self.operator_tool_allowlists)):
+        if len(operator_ids) != len(set(operator_ids)) or any(
+            not name or not set(names) <= set(self.allowed_tools)
+            for name, names in self.operator_tool_allowlists
+        ):
             raise ValueError("operator tool policy must uniquely narrow deployment tools")
-        if (len(set(self.enabled_event_operations)) != len(self.enabled_event_operations)
-                or any(not isinstance(name, str) or len(name.split(".")) != 2
-                       or not all(name.split(".")) or name.split(".")[0] not in self.enabled_connectors
-                       for name in self.enabled_event_operations)):
-            raise ValueError("event operations must explicitly name enabled connector.operation pairs")
+        if len(set(self.enabled_event_operations)) != len(self.enabled_event_operations) or any(
+            not isinstance(name, str)
+            or len(name.split(".")) != 2
+            or not all(name.split("."))
+            or name.split(".")[0] not in self.enabled_connectors
+            for name in self.enabled_event_operations
+        ):
+            raise ValueError(
+                "event operations must explicitly name enabled connector.operation pairs"
+            )
         if set(self.domain_tools) & set(TOOL_NAMES):
             raise ValueError("domain tools cannot replace existing tools")
         if not set(self.domain_read_only_tools) <= set(self.domain_tools):
             raise ValueError("read-only domain tools must be deployed")
-        if not set(self.skill_tools) <= set(SKILL_TOOL_NAMES) or len(set(self.skill_tools)) != len(self.skill_tools):
+        if not set(self.skill_tools) <= set(SKILL_TOOL_NAMES) or len(set(self.skill_tools)) != len(
+            self.skill_tools
+        ):
             raise ValueError(f"skill tools must be distinct names from {list(SKILL_TOOL_NAMES)}")
         unknown = (
-            set(self.allowed_tools) - set(TOOL_NAMES)
+            set(self.allowed_tools)
+            - set(TOOL_NAMES)
             - set(self.domain_tools)
             - set(self.skill_tools)
         )
@@ -123,14 +140,32 @@ class DeploymentPolicy:
     def to_json(self) -> dict[str, Any]:
         return {
             "allowed_tools": list(self.allowed_tools),
-            **({"operator_tool_allowlists": {name: list(names) for name, names in self.operator_tool_allowlists}}
-               if self.operator_tool_allowlists else {}),
+            **(
+                {
+                    "operator_tool_allowlists": {
+                        name: list(names) for name, names in self.operator_tool_allowlists
+                    }
+                }
+                if self.operator_tool_allowlists
+                else {}
+            ),
             **({"require_operator_tool_policy": True} if self.require_operator_tool_policy else {}),
-            **({"domain_tools": list(self.domain_tools), "domain_read_only_tools": list(self.domain_read_only_tools)} if self.domain_tools else {}),
+            **(
+                {
+                    "domain_tools": list(self.domain_tools),
+                    "domain_read_only_tools": list(self.domain_read_only_tools),
+                }
+                if self.domain_tools
+                else {}
+            ),
             **({"skill_tools": list(self.skill_tools)} if self.skill_tools else {}),
             "denied_path_prefixes": list(self.denied_path_prefixes),
             "enabled_connectors": list(self.enabled_connectors),
-            **({"enabled_event_operations": list(self.enabled_event_operations)} if self.enabled_event_operations else {}),
+            **(
+                {"enabled_event_operations": list(self.enabled_event_operations)}
+                if self.enabled_event_operations
+                else {}
+            ),
             "max_action_level": self.max_action_level,
             "level_overrides": [list(item) for item in self.level_overrides],
             "l3_distinct_principals": self.l3_distinct_principals,
@@ -140,12 +175,21 @@ class DeploymentPolicy:
             "local_code_execution": self.local_code_execution,
             "code_execution": self.code_execution,
             # 停止条件默认阈值只在改过默认值时写出：政策字节（准入身份）对未改的部署保持不变
-            **({"no_new_knowledge_rounds": self.no_new_knowledge_rounds}
-               if self.no_new_knowledge_rounds != 5 else {}),
-            **({"result_duplication_rate": self.result_duplication_rate}
-               if self.result_duplication_rate != 0.5 else {}),
-            **({"result_duplication_min_results": self.result_duplication_min_results}
-               if self.result_duplication_min_results != 4 else {}),
+            **(
+                {"no_new_knowledge_rounds": self.no_new_knowledge_rounds}
+                if self.no_new_knowledge_rounds != 5
+                else {}
+            ),
+            **(
+                {"result_duplication_rate": self.result_duplication_rate}
+                if self.result_duplication_rate != 0.5
+                else {}
+            ),
+            **(
+                {"result_duplication_min_results": self.result_duplication_min_results}
+                if self.result_duplication_min_results != 4
+                else {}
+            ),
             "version": POLICY_VERSION,
         }
 
@@ -199,12 +243,16 @@ def action_decision(deployment: DeploymentPolicy, connector: Any, operation: str
         # P3.2 D7: without an authoritative lookup, a lost receipt can never be resolved
         # except by a person — such a connector may not carry an L2 action at all
         refused = "connector_lookup_not_authoritative"
-    elif spec.mutates and spec.kind != "state" and not (
-        spec.kind == "event"
-        and f"{connector.name}.{operation}" in deployment.enabled_event_operations
-        and getattr(connector, "supports_idempotency", False)
-        and getattr(connector, "supports_reconciliation", False)
-        and getattr(connector, "lookup_authority", "best_effort") == "authoritative"
+    elif (
+        spec.mutates
+        and spec.kind != "state"
+        and not (
+            spec.kind == "event"
+            and f"{connector.name}.{operation}" in deployment.enabled_event_operations
+            and getattr(connector, "supports_idempotency", False)
+            and getattr(connector, "supports_reconciliation", False)
+            and getattr(connector, "lookup_authority", "best_effort") == "authoritative"
+        )
     ):
         refused = "event_operation_not_supported"
     elif level_rank(level) > level_rank(deployment.max_action_level):
@@ -238,8 +286,12 @@ def effective_tools(
     allowed = set(mission_tools) & set(task_tools) & set(deployment.allowed_tools)
     names = tuple(name for name in role_tools if name in allowed)
     if read_only_leaf:
-        names = tuple(name for name in names if name not in READ_ONLY_LEAF_HIDDEN_TOOLS
-                      and (name not in deployment.domain_tools or name in deployment.domain_read_only_tools))
+        names = tuple(
+            name
+            for name in names
+            if name not in READ_ONLY_LEAF_HIDDEN_TOOLS
+            and (name not in deployment.domain_tools or name in deployment.domain_read_only_tools)
+        )
     return names
 
 
@@ -449,9 +501,7 @@ def policy_snapshot(
     body: dict[str, Any] = {
         "version": SNAPSHOT_VERSION,
         "config": configuration,
-        "excluded": {
-            n: r for n, r in sorted(SNAPSHOT_FIELDS.items()) if r != "include"
-        },
+        "excluded": {n: r for n, r in sorted(SNAPSHOT_FIELDS.items()) if r != "include"},
         "versions": versions,
         "role_templates": roles,
         "profiles": {k: _plain(v) for k, v in sorted((profiles or {}).items())},

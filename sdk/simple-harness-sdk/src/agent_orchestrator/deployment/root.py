@@ -39,20 +39,32 @@ def criterion_ids(mission: Any) -> tuple[str, ...]:
     return tuple(f"c-user-{i + 1}" for i in range(len(mission.success_criteria)))
 
 
-def build_requirements(mission_id: str, revision: int, entries: Any, principal_id: str,
-                       credential: str | None = None) -> RequirementsRevision:
+def build_requirements(
+    mission_id: str, revision: int, entries: Any, principal_id: str, credential: str | None = None
+) -> RequirementsRevision:
     """The one rule for a user's requirements: ``req-<mission>-<n>``, each entry
     ``(criterion id, entry revision, statement)`` a required outcome, combined with "all of"
     (also for a single one).  Revision 1 and every amendment are built here."""
 
-    criteria = tuple(Criterion(identifier, int(entry_revision), CriterionOrigin.USER_EXPLICIT, statement,
-        RequirementClass.REQUIRED_OUTCOME, EvaluationKind.SEMANTIC)
-        for identifier, entry_revision, statement in entries)
+    criteria = tuple(
+        Criterion(
+            identifier,
+            int(entry_revision),
+            CriterionOrigin.USER_EXPLICIT,
+            statement,
+            RequirementClass.REQUIRED_OUTCOME,
+            EvaluationKind.SEMANTIC,
+        )
+        for identifier, entry_revision, statement in entries
+    )
     return RequirementsRevision(
-        revision_id=f"req-{mission_id}-{int(revision)}", mission_id=mission_id, revision=int(revision),
+        revision_id=f"req-{mission_id}-{int(revision)}",
+        mission_id=mission_id,
+        revision=int(revision),
         criteria=criteria,
         success_expression=AllExpr(tuple(CriterionExpr(c.criterion_id) for c in criteria)),
-        authority_subject=principal_id, amendment_credential_ref=credential,
+        authority_subject=principal_id,
+        amendment_credential_ref=credential,
     )
 
 
@@ -60,10 +72,16 @@ def user_requirements(mission: Any, principal: Any) -> RequirementsRevision:
     """Revision 1 of the user's explicit criteria, from the charter: ``c-user-<n>`` by position."""
 
     return build_requirements(
-        mission.id, 1,
-        tuple((identifier, 1, statement)
-              for identifier, statement in zip(criterion_ids(mission), mission.success_criteria, strict=True)),
-        principal.principal_id)
+        mission.id,
+        1,
+        tuple(
+            (identifier, 1, statement)
+            for identifier, statement in zip(
+                criterion_ids(mission), mission.success_criteria, strict=True
+            )
+        ),
+        principal.principal_id,
+    )
 
 
 def current_criteria(store: Any, mission: Any) -> tuple[tuple[str, str], ...]:
@@ -93,7 +111,9 @@ class AmendmentRefused(ValueError):
         super().__init__(f"{code}: {detail}")
 
 
-def split_goal_change(changes: Any, *, current_goal: str) -> tuple[str | None, tuple[Mapping[str, Any], ...]]:
+def split_goal_change(
+    changes: Any, *, current_goal: str
+) -> tuple[str | None, tuple[Mapping[str, Any], ...]]:
     """Take the one ``{op: "goal", statement}`` change out of an amendment (第 2 批 H19).
 
     Returns ``(new goal or None, the entry changes)``.  A goal change is at most one per
@@ -102,8 +122,14 @@ def split_goal_change(changes: Any, *, current_goal: str) -> tuple[str | None, t
     ``AMEND_DUPLICATE``).  Entry changes are left for :func:`apply_changes`; an amendment that
     only changes the goal has none."""
 
-    goals = [item for item in (changes or ()) if isinstance(item, Mapping) and item.get("op") == "goal"]
-    entries = tuple(item for item in (changes or ()) if not (isinstance(item, Mapping) and item.get("op") == "goal"))
+    goals = [
+        item for item in (changes or ()) if isinstance(item, Mapping) and item.get("op") == "goal"
+    ]
+    entries = tuple(
+        item
+        for item in (changes or ())
+        if not (isinstance(item, Mapping) and item.get("op") == "goal")
+    )
     if not goals:
         return None, entries
     if len(goals) > 1:
@@ -120,11 +146,15 @@ def split_goal_change(changes: Any, *, current_goal: str) -> tuple[str | None, t
 def unchanged_entries(previous: RequirementsRevision) -> tuple[tuple[str, int, str], ...]:
     """The previous revision's entries carried as they are (an amendment that only changes
     the goal still writes the next requirements revision, with the same entries)."""
-    return tuple((str(item.criterion_id), int(item.revision), str(item.statement)) for item in previous.criteria)
+    return tuple(
+        (str(item.criterion_id), int(item.revision), str(item.statement))
+        for item in previous.criteria
+    )
 
 
-def apply_changes(previous: RequirementsRevision, changes: Any, *,
-                  highest_used: int) -> tuple[tuple[str, int, str], ...]:
+def apply_changes(
+    previous: RequirementsRevision, changes: Any, *, highest_used: int
+) -> tuple[tuple[str, int, str], ...]:
     """The entries of the next revision: untouched entries carried as they are, a rewrite
     keeps its id and raises the entry revision, a removal drops the entry, an addition gets
     ``c-user-<highest_used + 1>`` — ``highest_used`` is the highest number any revision of this
@@ -133,7 +163,10 @@ def apply_changes(previous: RequirementsRevision, changes: Any, *,
 
     if not changes:
         raise AmendmentRefused("AMEND_EMPTY", "no change was given")
-    entries = {str(item.criterion_id): (int(item.revision), str(item.statement)) for item in previous.criteria}
+    entries = {
+        str(item.criterion_id): (int(item.revision), str(item.statement))
+        for item in previous.criteria
+    }
     order = [str(item.criterion_id) for item in previous.criteria]
     touched: set[str] = set()
     highest = int(highest_used)
@@ -152,8 +185,10 @@ def apply_changes(previous: RequirementsRevision, changes: Any, *,
             continue
         name = str(change.get("criterion_id") or "")
         if name not in entries or name in touched:
-            raise AmendmentRefused("AMEND_UNKNOWN_CRITERION",
-                                   f"{name!r} is not a current requirement (or is changed twice)")
+            raise AmendmentRefused(
+                "AMEND_UNKNOWN_CRITERION",
+                f"{name!r} is not a current requirement (or is changed twice)",
+            )
         touched.add(name)
         if operation == "remove":
             if set(change) != {"op", "criterion_id"}:
@@ -174,8 +209,16 @@ def apply_changes(previous: RequirementsRevision, changes: Any, *,
     return tuple((name, entries[name][0], entries[name][1]) for name in order)
 
 
-def root_binding(store: Any, mission: Any, definition: Any, *, task_id: str, duty_id: str,
-                 contract_revision: int, parameters: Mapping[str, Any]) -> TaskSemanticBindingV1:
+def root_binding(
+    store: Any,
+    mission: Any,
+    definition: Any,
+    *,
+    task_id: str,
+    duty_id: str,
+    contract_revision: int,
+    parameters: Mapping[str, Any],
+) -> TaskSemanticBindingV1:
     """The root's binding as the requirements stand.  Task types are the same for every Mission;
     what is this Mission's own — the user's words and the requirements — is only here: the
     signature keeps the root type's id, version and schemas, states the user's goal verbatim and
@@ -188,15 +231,31 @@ def root_binding(store: Any, mission: Any, definition: Any, *, task_id: str, dut
     names = tuple(name for name, _ in requirements)
     content = tuple(name for name, statement in requirements if not statement.startswith("action:"))
     kind = definition.goal_signature
-    signature = GoalSignature(kind.signature_id, kind.version, kind.parameter_schema_ref,
-                              kind.output_schema_ref, mission.goal, content or names)
+    signature = GoalSignature(
+        kind.signature_id,
+        kind.version,
+        kind.parameter_schema_ref,
+        kind.output_schema_ref,
+        mission.goal,
+        content or names,
+    )
     return TaskSemanticBindingV1(
-        task_id=TaskRef(task_id), obligation_id=ObligationId(duty_id),
+        task_id=TaskRef(task_id),
+        obligation_id=ObligationId(duty_id),
         contract_revision=ContractRevision(int(contract_revision)),
-        contract_hash=content_hash_of({"task_type": definition.to_json(), "parameters": dict(parameters),
-                                       "goal_signature": signature.to_json()}),
-        form=definition.form, goal_signature=signature, typed_parameters=dict(parameters),
-        output_ports=definition.output_ports, requirement_refs=names, semantic_scope="mission",
+        contract_hash=content_hash_of(
+            {
+                "task_type": definition.to_json(),
+                "parameters": dict(parameters),
+                "goal_signature": signature.to_json(),
+            }
+        ),
+        form=definition.form,
+        goal_signature=signature,
+        typed_parameters=dict(parameters),
+        output_ports=definition.output_ports,
+        requirement_refs=names,
+        semantic_scope="mission",
     )
 
 
@@ -206,8 +265,14 @@ def goal_parameters(mission: Any) -> dict[str, Any]:
 
 
 def initialize_root(
-    loop: Any, mission: Any, principal: Any, *,
-    world_factory: Callable[[Any, Any], Any], root_type: str, task_prefix: str, duty_prefix: str,
+    loop: Any,
+    mission: Any,
+    principal: Any,
+    *,
+    world_factory: Callable[[Any, Any], Any],
+    root_type: str,
+    task_prefix: str,
+    duty_prefix: str,
     root_parameters: Callable[[Any], dict[str, Any]] = goal_parameters,
 ) -> None:
     """Join the caller's create transaction; replay never inserts another root.
@@ -226,23 +291,41 @@ def initialize_root(
     world = world_factory(loop, mission)
     definition = next(t for t in world.catalog.task_types() if t.task_type_ref.id == root_type)
     parameters = root_parameters(mission)
-    binding = root_binding(loop.store, mission, definition, task_id=task_id, duty_id=duty_id,
-                           contract_revision=1, parameters=parameters)
+    binding = root_binding(
+        loop.store,
+        mission,
+        definition,
+        task_id=task_id,
+        duty_id=duty_id,
+        contract_revision=1,
+        parameters=parameters,
+    )
     # Root requirements are reviewed over accepted contributions. Concrete file/pytest
     # statements are projected to leaf checks by the materializer; naming those checks as
     # root executions would require invented receipts.
     requirements = user_requirements(mission, principal)
     existing = htn.latest_requirements_revision(mission.id)
-    if existing is not None and (existing.revision != 1 or existing.content_hash() != requirements.content_hash()):
+    if existing is not None and (
+        existing.revision != 1 or existing.content_hash() != requirements.content_hash()
+    ):
         raise RuntimeError("root requirements already exist with a different body")
     with loop.store.transaction():
-        ObligationStore(loop.store).register(Obligation(
-            obligation_id=ObligationId(duty_id), mission_id=mission.id,
-            requirement_refs=binding.requirement_refs, goal_signature_id=definition.goal_signature.signature_id,
-        ), recursion_fuel=ROOT_RECURSION_FUEL)
-        loop.commit.admit_obligation_demand(mission.id, ObligationId(duty_id),
-            principal=principal.principal_id, requester={"kind": "mission_root"},
-            evidence={"mission_id": mission.id, "requirement_refs": list(binding.requirement_refs)})
+        ObligationStore(loop.store).register(
+            Obligation(
+                obligation_id=ObligationId(duty_id),
+                mission_id=mission.id,
+                requirement_refs=binding.requirement_refs,
+                goal_signature_id=definition.goal_signature.signature_id,
+            ),
+            recursion_fuel=ROOT_RECURSION_FUEL,
+        )
+        loop.commit.admit_obligation_demand(
+            mission.id,
+            ObligationId(duty_id),
+            principal=principal.principal_id,
+            requester={"kind": "mission_root"},
+            evidence={"mission_id": mission.id, "requirement_refs": list(binding.requirement_refs)},
+        )
         htn.put_task_semantics(mission.id, binding)
         if existing is None:
             htn.insert_requirements_revision(requirements)
@@ -261,16 +344,38 @@ def install_planning(loop: Any, world_factory: Callable[[Any, Any], Any]) -> Non
         if requirements is None:
             return False
         try:
-            OperationCompletionReader(loop.store).read_requirements(mission.id, TypedRef(
-                kind=TypedRefKind.REQUIREMENTS, id=str(requirements.revision_id),
-                revision=requirements.revision, content_hash=requirements.content_hash()))
+            OperationCompletionReader(loop.store).read_requirements(
+                mission.id,
+                TypedRef(
+                    kind=TypedRefKind.REQUIREMENTS,
+                    id=str(requirements.revision_id),
+                    revision=requirements.revision,
+                    content_hash=requirements.content_hash(),
+                ),
+            )
         except OperationCompletionError as error:
             if error.code == "OP_REQUIREMENT_MAPPING_MISSING":
                 return False
             raise
         return True
 
-    loop.install_hierarchical_deployment(lambda mission: world_factory(loop, mission), start_gate=ready)
+    loop.install_hierarchical_deployment(
+        lambda mission: world_factory(loop, mission), start_gate=ready
+    )
 
 
-__all__ = ("ROOT_RECURSION_FUEL", "apply_changes", "build_requirements", "criterion_ids", "current_criteria", "current_statements", "goal_parameters", "initialize_root", "install_planning", "root_binding", "split_goal_change", "unchanged_entries", "user_requirements")
+__all__ = (
+    "ROOT_RECURSION_FUEL",
+    "apply_changes",
+    "build_requirements",
+    "criterion_ids",
+    "current_criteria",
+    "current_statements",
+    "goal_parameters",
+    "initialize_root",
+    "install_planning",
+    "root_binding",
+    "split_goal_change",
+    "unchanged_entries",
+    "user_requirements",
+)

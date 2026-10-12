@@ -148,9 +148,7 @@ class SeedDomain:
         observers = []
         for spec in self.observer_types:
             capability = (
-                spec.required_capabilities[0]
-                if spec.required_capabilities
-                else "observer.read"
+                spec.required_capabilities[0] if spec.required_capabilities else "observer.read"
             )
             capabilities.add(capability)
             observers.append(
@@ -165,10 +163,10 @@ class SeedDomain:
             if spec.operator_ref is None:
                 continue
             registration = OperatorRegistrationV1(
-                    operator_id=ref_name(spec.operator_ref),
-                    task_type_ref=ref_name(spec.task_type_ref),
-                    capabilities=tuple(spec.required_capabilities),
-                )
+                operator_id=ref_name(spec.operator_ref),
+                task_type_ref=ref_name(spec.task_type_ref),
+                capabilities=tuple(spec.required_capabilities),
+            )
             previous = operators.get(registration.operator_id)
             if previous is not None and previous.capabilities != registration.capabilities:
                 raise ContractError(
@@ -188,9 +186,18 @@ class SeedDomain:
             capabilities=tuple(sorted(capabilities)),
             definitions={
                 **{f"schemas:{ref_name(item.schema_ref)}": item.to_json() for item in self.schemas},
-                **{f"predicates:{ref_name(item.predicate_ref)}": item.to_json() for item in self.predicates},
-                **{f"task_types:{ref_name(item.task_type_ref)}": item.to_json() for item in self.task_types},
-                **{f"methods:{item.method_id}@{item.method_version}": item.to_json() for item in self.methods},
+                **{
+                    f"predicates:{ref_name(item.predicate_ref)}": item.to_json()
+                    for item in self.predicates
+                },
+                **{
+                    f"task_types:{ref_name(item.task_type_ref)}": item.to_json()
+                    for item in self.task_types
+                },
+                **{
+                    f"methods:{item.method_id}@{item.method_version}": item.to_json()
+                    for item in self.methods
+                },
             },
         )
 

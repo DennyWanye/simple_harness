@@ -41,8 +41,12 @@ async def main(root: Path, marker: Path) -> None:
     event_handler.WAIT_BACKOFF_MAX = 0.05
     native_plane.embedding_port = lambda _models_dir: (None, "测试里不装向量模型")
     service = layered_service(
-        root, Principal("local-user:test", "本机用户"), _StopsInsideTheWorkerCall(marker),
-        lease_seconds=4.0, tick_active_seconds=0.05, tick_idle_seconds=0.2,
+        root,
+        Principal("local-user:test", "本机用户"),
+        _StopsInsideTheWorkerCall(marker),
+        lease_seconds=4.0,
+        tick_active_seconds=0.05,
+        tick_idle_seconds=0.2,
     )
     service._drive_enabled = True  # 子进程里由服务自己的循环驱动
     await service.start()

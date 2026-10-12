@@ -186,21 +186,26 @@ class ObligationStore:
                 ) from error
             return self.account(mission, target)
 
-    def revise_requirement_refs(self, mission_id: str, target: ObligationId, refs: Sequence[str]) -> None:
+    def revise_requirement_refs(
+        self, mission_id: str, target: ObligationId, refs: Sequence[str]
+    ) -> None:
         """The duty answers for these requirements from now on (the user amended them, 阶段 E).
         Only the references change; lifecycle, demand and fuel stay as they are."""
         mission = identifier(mission_id, "mission_id")
         duty = str(_obligation_id(target, "obligation_id"))
         names = [identifier(item, "requirement_ref") for item in refs]
         if not names or len(set(names)) != len(names):
-            raise StoreConflict("an obligation answers for a non-empty set of distinct requirements")
+            raise StoreConflict(
+                "an obligation answers for a non-empty set of distinct requirements"
+            )
         with self._store.transaction() as connection:
             row = self._require_row(connection, mission, duty)
             document = json.loads(row["obligation_json"])
             document["requirement_refs"] = names
             connection.execute(
                 "UPDATE obligations SET obligation_json = ?, updated_at = ? WHERE mission_id = ? AND obligation_id = ?",
-                (canonical_json(document), self._store.now, mission, duty))
+                (canonical_json(document), self._store.now, mission, duty),
+            )
 
     # ------------------------------------------------------------------ shared demand
     def admit_demand(self, mission_id: str, target: ObligationId) -> ObligationAccountView:

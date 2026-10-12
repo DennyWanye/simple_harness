@@ -7,6 +7,7 @@
   python cdp_a_class_run.py --panel code-panel --text "帮我生成关于猫咪护理的3页PPT" \
       --expect ppt_create --ext pptx --prefix tc-a1 --wait 180
 """
+
 import argparse
 import asyncio
 import base64
@@ -54,8 +55,9 @@ async def cdp(ws, method, params=None):
 
 
 async def ev(ws, expr):
-    r = await cdp(ws, "Runtime.evaluate",
-                  {"expression": expr, "returnByValue": True, "awaitPromise": True})
+    r = await cdp(
+        ws, "Runtime.evaluate", {"expression": expr, "returnByValue": True, "awaitPromise": True}
+    )
     return r.get("result", {}).get("value")
 
 
@@ -113,7 +115,10 @@ async def main():
         await shot(ws, f"{args.prefix}-1-before")
 
         # 找目标 textarea/input
-        has = await ev(ws, "document.querySelectorAll('textarea, input.bp-chat-input, input[data-testid=\"chat-input\"]').length")
+        has = await ev(
+            ws,
+            "document.querySelectorAll('textarea, input.bp-chat-input, input[data-testid=\"chat-input\"]').length",
+        )
         print(f"[1] 输入框数量={has}")
         if not has:
             print("[FAIL] 无输入框")
@@ -122,7 +127,9 @@ async def main():
         # 注入文本（React controlled — native setter + input event）
         text_js = json.dumps(args.text)
         idx = args.ta_index
-        set_ok = await ev(ws, f"""
+        set_ok = await ev(
+            ws,
+            f"""
 (() => {{
   const els = document.querySelectorAll('textarea, input.bp-chat-input, input[data-testid="chat-input"]');
   const el = els[{idx}]; if(!el) return 'no-el';
@@ -133,35 +140,49 @@ async def main():
   el.dispatchEvent(new Event('input', {{ bubbles: true }}));
   return el.value;
 }})()
-""")
+""",
+        )
         print(f"[2] 注入文本 → textarea.value={set_ok!r}")
         await asyncio.sleep(0.4)
         await shot(ws, f"{args.prefix}-2-typed")
 
         # 发送：先试 Enter（keyDown+keyUp，非 shift）
         for typ in ("keyDown", "keyUp"):
-            await cdp(ws, "Input.dispatchKeyEvent", {
-                "type": typ, "key": "Enter", "code": "Enter",
-                "windowsVirtualKeyCode": 13, "nativeVirtualKeyCode": 13,
-            })
+            await cdp(
+                ws,
+                "Input.dispatchKeyEvent",
+                {
+                    "type": typ,
+                    "key": "Enter",
+                    "code": "Enter",
+                    "windowsVirtualKeyCode": 13,
+                    "nativeVirtualKeyCode": 13,
+                },
+            )
             await asyncio.sleep(0.05)
         await asyncio.sleep(1.2)
-        after_val = await ev(ws, f"""
+        after_val = await ev(
+            ws,
+            f"""
 (() => {{ const els=document.querySelectorAll('textarea, input.bp-chat-input, input[data-testid="chat-input"]');
   return els[{idx}] ? els[{idx}].value : 'gone'; }})()
-""")
-        sent = (after_val == "" or after_val == "gone")
+""",
+        )
+        sent = after_val == "" or after_val == "gone"
         print(f"[3] 按 Enter 发送 → textarea 现值={after_val!r} (清空={sent})")
         if not sent:
             # Enter 没发出，可能需要点发送按钮；尝试找按钮
-            clicked = await ev(ws, r"""
+            clicked = await ev(
+                ws,
+                r"""
 (() => {
   const btns = Array.from(document.querySelectorAll('button'));
   const send = btns.find(b => /发送|send|↑|➤/i.test((b.textContent||'')+(b.getAttribute('aria-label')||'')));
   if(send){ send.click(); return 'clicked:'+(send.textContent||send.getAttribute('aria-label')); }
   return 'no-send-btn';
 })()
-""")
+""",
+            )
             print(f"[3b] Enter 未清空，尝试点发送按钮 → {clicked!r}")
             await asyncio.sleep(1.2)
 
@@ -177,12 +198,15 @@ async def main():
             if new:
                 result["new_files"] = new
                 break
-            card = await ev(ws, r"""
+            card = await ev(
+                ws,
+                r"""
 (() => {
   const c = document.querySelector('[class*="artifact" i], [data-testid*="artifact" i], [class*="ArtifactCard"]');
   return !!c;
 })()
-""")
+""",
+            )
             if card:
                 result["artifact_card"] = True
             await asyncio.sleep(3)
@@ -191,7 +215,9 @@ async def main():
         await shot(ws, f"{args.prefix}-3-result")
 
         # 最终 DOM 状态
-        dom = await ev(ws, r"""
+        dom = await ev(
+            ws,
+            r"""
 (() => {
   const card = document.querySelector('[class*="artifact" i], [data-testid*="artifact" i]');
   return {
@@ -200,7 +226,8 @@ async def main():
     bodyTail: (document.body.innerText||'').slice(-300),
   };
 })()
-""")
+""",
+        )
         print(f"\n[RESULT] new_files={result['new_files']}")
         print(f"[RESULT] DOM hasArtifactCard={dom['hasCard']}")
         if dom["hasCard"]:
@@ -208,10 +235,12 @@ async def main():
         print(f"[RESULT] bodyTail={dom['bodyTail']!r}")
 
         ok = bool(result["new_files"]) or dom["hasCard"]
-        print("\n" + "="*60)
-        print(f"[{'PASS' if ok else 'FAIL'}] {args.prefix}: "
-              f"产物={len(result['new_files'])}个 / ArtifactCard={dom['hasCard']}")
-        print("="*60)
+        print("\n" + "=" * 60)
+        print(
+            f"[{'PASS' if ok else 'FAIL'}] {args.prefix}: "
+            f"产物={len(result['new_files'])}个 / ArtifactCard={dom['hasCard']}"
+        )
+        print("=" * 60)
         return 0 if ok else 2
 
 

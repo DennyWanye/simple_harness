@@ -45,7 +45,7 @@ _BG_RUN = "product-sdk-background"
 _WINDOW = 32000
 _EXCEEDED_LINE = (
     '{"event": "sdk_context_budget_exceeded planned=27015 effective=26752 protected=7771'
-    ' tool_schemas=5898 groups=1 ratio=1.65 protected_messages=1873 open_group=19244'
+    " tool_schemas=5898 groups=1 ratio=1.65 protected_messages=1873 open_group=19244"
     ' full_trim=True", "level": "warning",'
     ' "logger": "deskpet.sdk_adapters.context_authority"}'
 )
@@ -225,9 +225,7 @@ def _healthy_receipts(run: str, *, control: bool) -> list[tuple[str, int, dict]]
 
 def test_receipt_bound_stats_aggregates_per_run_and_tolerates_absent_fields(tmp_path):
     """两个 Run: 一个带 F-E2 字段, 一个不带 —— 聚合正确且缺字段不算 0 样本。"""
-    receipts = _healthy_receipts(_FG_RUN, control=True) + _healthy_receipts(
-        _BG_RUN, control=False
-    )
+    receipts = _healthy_receipts(_FG_RUN, control=True) + _healthy_receipts(_BG_RUN, control=False)
     ev = _evidence(tmp_path, receipts=receipts)
     try:
         stats = ev.receipt_bound_stats()
@@ -427,9 +425,15 @@ def test_a6_3_fails_before_the_inconclusive_branches(tmp_path):
         (
             _FG_RUN,
             ordinal,
-            {"budget_tier": 8192, "causal_groups": 1, "trimmed_groups": 0,
-             "groups_trimmed_for_budget": 0, "budget_headroom": 100,
-             "current_tool_pages": 0, "pages_forced": 0},
+            {
+                "budget_tier": 8192,
+                "causal_groups": 1,
+                "trimmed_groups": 0,
+                "groups_trimmed_for_budget": 0,
+                "budget_headroom": 100,
+                "current_tool_pages": 0,
+                "pages_forced": 0,
+            },
         )
         for ordinal in range(1, 4)
     ]

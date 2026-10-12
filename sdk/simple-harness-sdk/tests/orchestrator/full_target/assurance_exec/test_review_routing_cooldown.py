@@ -9,6 +9,7 @@
 
 **改坏检验**：去掉打开审阅时对冷却期的处理 → 主循环抛出 → 变红。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -33,8 +34,9 @@ def test_a_final_review_that_cannot_open_during_a_cooldown_opens_after_it(tmp_pa
     provider = ReviewScript(failures={"MISSION_FINAL": [ProviderServerError(status_code=503)]})
 
     async def run() -> None:
-        async with reviewed_mission(tmp_path, provider, profile_cooldown_seconds=5.0,
-                                    profile_failure_threshold=1) as case:
+        async with reviewed_mission(
+            tmp_path, provider, profile_cooldown_seconds=5.0, profile_failure_threshold=1
+        ) as case:
             mission = await case.settle(timeout=90)
             assert str(mission.status.value) == "COMPLETED", mission.final_report
             assert provider.review_calls["MISSION_FINAL"] >= 2

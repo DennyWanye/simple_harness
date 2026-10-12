@@ -107,19 +107,13 @@ def _floor_milliseconds(delta: timedelta) -> int:
 
 
 def _ceil_milliseconds(delta: timedelta) -> int:
-    microseconds = (
-        delta.days * 86_400_000_000
-        + delta.seconds * 1_000_000
-        + delta.microseconds
-    )
+    microseconds = delta.days * 86_400_000_000 + delta.seconds * 1_000_000 + delta.microseconds
     return max(0, math.ceil(microseconds / 1_000))
 
 
 def _exact_object(value: Mapping[str, Any], keys: set[str], name: str) -> dict[str, Any]:
     if not isinstance(value, Mapping):
-        raise DeadlineValidationError(
-            "deadline_object_invalid", f"{name} must be an object"
-        )
+        raise DeadlineValidationError("deadline_object_invalid", f"{name} must be an object")
     raw = dict(value)
     missing = sorted(keys - set(raw))
     unknown = sorted(set(raw) - keys)
@@ -209,9 +203,7 @@ class DurableDeadlineV1:
         object.__setattr__(self, "budget_ms", budget)
         object.__setattr__(self, "remaining_ms", remaining)
         created_at = _wall_text(self.created_at, "$.created_at")
-        last_observed_at = _wall_text(
-            self.last_observed_at, "$.last_observed_at"
-        )
+        last_observed_at = _wall_text(self.last_observed_at, "$.last_observed_at")
         wall_not_after = _wall_text(self.wall_not_after, "$.wall_not_after")
         created = _wall(created_at, "$.created_at")
         observed = _wall(last_observed_at, "$.last_observed_at")
@@ -386,19 +378,13 @@ class DurableDeadlineV1:
             budget_ms=_integer(raw["budget_ms"], "$.budget_ms", minimum=1),
             remaining_ms=_integer(raw["remaining_ms"], "$.remaining_ms"),
             created_at=_wall_text(raw["created_at"], "$.created_at"),
-            last_observed_at=_wall_text(
-                raw["last_observed_at"], "$.last_observed_at"
-            ),
+            last_observed_at=_wall_text(raw["last_observed_at"], "$.last_observed_at"),
             wall_not_after=_wall_text(raw["wall_not_after"], "$.wall_not_after"),
             offline_policy=str(_text(raw["offline_policy"], "$.offline_policy")),
-            rollback_tolerance_ms=_integer(
-                raw["rollback_tolerance_ms"], "$.rollback_tolerance_ms"
-            ),
+            rollback_tolerance_ms=_integer(raw["rollback_tolerance_ms"], "$.rollback_tolerance_ms"),
             revision=_integer(raw["revision"], "$.revision"),
             status=str(_text(raw["status"], "$.status")),  # type: ignore[arg-type]
-            terminal_reason=_text(
-                raw["terminal_reason"], "$.terminal_reason", optional=True
-            ),  # type: ignore[arg-type]
+            terminal_reason=_text(raw["terminal_reason"], "$.terminal_reason", optional=True),  # type: ignore[arg-type]
             terminal_at=_text(raw["terminal_at"], "$.terminal_at", optional=True),
         )
 
@@ -424,11 +410,7 @@ class DeadlineLeaseV1:
             "unaccounted_ns",
         ):
             object.__setattr__(self, name, _integer(getattr(self, name), f"$.{name}"))
-        if not (
-            self.started_monotonic_ns
-            <= self.last_monotonic_ns
-            <= self.deadline_monotonic_ns
-        ):
+        if not (self.started_monotonic_ns <= self.last_monotonic_ns <= self.deadline_monotonic_ns):
             raise DeadlineValidationError(
                 "deadline_monotonic_order_invalid",
                 "monotonic lease values are not ordered",
@@ -472,9 +454,7 @@ def _terminal(
         state,
         remaining_ms=(state.remaining_ms if remaining_ms is None else remaining_ms),
         last_observed_at=(
-            state.last_observed_at
-            if last_observed_at is None
-            else last_observed_at.isoformat()
+            state.last_observed_at if last_observed_at is None else last_observed_at.isoformat()
         ),
         revision=state.revision + 1,
         status=status,
@@ -540,9 +520,7 @@ def resume_deadline(
         return DeadlineTransitionV1(state, None, 0, "already_terminal")
     effective_wall, offline_ms, rollback_terminal = _wall_transition(state, now_wall)
     if rollback_terminal is not None:
-        return DeadlineTransitionV1(
-            rollback_terminal, None, 0, "clock_rollback"
-        )
+        return DeadlineTransitionV1(rollback_terminal, None, 0, "clock_rollback")
     remaining = max(0, state.remaining_ms - offline_ms)
     wall_end = _wall(state.wall_not_after, "$.wall_not_after")
     if effective_wall >= wall_end:
@@ -562,9 +540,7 @@ def resume_deadline(
             remaining_ms=0,
             last_observed_at=effective_wall,
         )
-        return DeadlineTransitionV1(
-            terminal, None, offline_ms, "budget_exhausted"
-        )
+        return DeadlineTransitionV1(terminal, None, offline_ms, "budget_exhausted")
     resumed = replace(
         state,
         remaining_ms=remaining,
@@ -608,12 +584,8 @@ def checkpoint_deadline(
         )
     effective_wall, _, rollback_terminal = _wall_transition(state, now_wall)
     if rollback_terminal is not None:
-        return DeadlineTransitionV1(
-            rollback_terminal, None, 0, "clock_rollback"
-        )
-    elapsed_ns = (
-        monotonic_now - lease.last_monotonic_ns + lease.unaccounted_ns
-    )
+        return DeadlineTransitionV1(rollback_terminal, None, 0, "clock_rollback")
+    elapsed_ns = monotonic_now - lease.last_monotonic_ns + lease.unaccounted_ns
     active_ms, remainder_ns = divmod(elapsed_ns, 1_000_000)
     charged_ms = min(state.remaining_ms, active_ms)
     remaining = max(0, state.remaining_ms - charged_ms)
@@ -635,9 +607,7 @@ def checkpoint_deadline(
             remaining_ms=0,
             last_observed_at=effective_wall,
         )
-        return DeadlineTransitionV1(
-            terminal, None, charged_ms, "budget_exhausted"
-        )
+        return DeadlineTransitionV1(terminal, None, charged_ms, "budget_exhausted")
     checkpointed = replace(
         state,
         remaining_ms=remaining,
@@ -652,9 +622,7 @@ def checkpoint_deadline(
         deadline_monotonic_ns=lease.deadline_monotonic_ns,
         unaccounted_ns=remainder_ns,
     )
-    return DeadlineTransitionV1(
-        checkpointed, next_lease, charged_ms, "checkpointed"
-    )
+    return DeadlineTransitionV1(checkpointed, next_lease, charged_ms, "checkpointed")
 
 
 def create_child_deadline(

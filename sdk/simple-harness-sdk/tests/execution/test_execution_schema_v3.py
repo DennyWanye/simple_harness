@@ -32,9 +32,7 @@ def test_fresh_v7_is_one_identity_with_conversation_tables(tmp_path: Path) -> No
         history = database.connection.execute(
             "SELECT version,name FROM sdk_schema_migrations"
         ).fetchall()
-        assert [tuple(row) for row in history] == [
-            (SCHEMA_VERSION, f"{SCHEMA_VERSION:04d}_fresh")
-        ]
+        assert [tuple(row) for row in history] == [(SCHEMA_VERSION, f"{SCHEMA_VERSION:04d}_fresh")]
 
 
 def test_v2_history_fails_closed_without_mutation(tmp_path: Path) -> None:

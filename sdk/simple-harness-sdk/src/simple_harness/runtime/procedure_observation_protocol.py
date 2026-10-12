@@ -72,9 +72,7 @@ _SAFE_SUCCESS_TRANSITIONS: Final[
     ProcedureLifecycleState.ACTIVE: frozenset(
         {ProcedureLifecycleState.ACTIVE, ProcedureLifecycleState.REINFORCED}
     ),
-    ProcedureLifecycleState.REINFORCED: frozenset(
-        {ProcedureLifecycleState.REINFORCED}
-    ),
+    ProcedureLifecycleState.REINFORCED: frozenset({ProcedureLifecycleState.REINFORCED}),
 }
 
 
@@ -209,17 +207,23 @@ class ProcedureObservationIntent:
         if kind is ProcedureObservationKind.TERMINAL_OUTCOME:
             if receipt_id is None or receipt_hash is None or outcome is None:
                 raise ValueError("terminal outcome requires an exact terminal receipt and outcome")
-            if outcome is ProcedureObservationOutcome.FAILURE and self.attributable and (
-                transition_to is not ProcedureLifecycleState.REVISED
+            if (
+                outcome is ProcedureObservationOutcome.FAILURE
+                and self.attributable
+                and (transition_to is not ProcedureLifecycleState.REVISED)
             ):
                 raise ValueError("attributable terminal failure must transition to revised")
-            if outcome is ProcedureObservationOutcome.FAILURE and not self.attributable and (
-                transition_to is not transition_from
+            if (
+                outcome is ProcedureObservationOutcome.FAILURE
+                and not self.attributable
+                and (transition_to is not transition_from)
             ):
                 raise ValueError("non-attributable terminal failure cannot change lifecycle state")
-            if outcome is ProcedureObservationOutcome.SUCCESS and (
-                risk is not ProcedureRiskLevel.LOW or hazard is not ProcedureHazard.NONE
-            ) and transition_to is not transition_from:
+            if (
+                outcome is ProcedureObservationOutcome.SUCCESS
+                and (risk is not ProcedureRiskLevel.LOW or hazard is not ProcedureHazard.NONE)
+                and transition_to is not transition_from
+            ):
                 raise ValueError("non-low-risk observation cannot change Procedure lifecycle")
             safe_targets = _SAFE_SUCCESS_TRANSITIONS.get(transition_from)
             if outcome is ProcedureObservationOutcome.SUCCESS and (
@@ -282,12 +286,29 @@ class ProcedureObservationIntent:
         _exact_keys(
             value,
             {
-                "schema_version", "observation_id", "subject", "scope",
-                "target_memory_id", "target_revision", "kind", "applicability",
-                "applicability_fingerprint", "risk_level", "hazard", "task_scope_id",
-                "evidence_span", "evidence_span_hash", "terminal_receipt_id",
-                "terminal_receipt_hash", "outcome", "attributable", "observed_at",
-                "transition_from", "transition_to", "run_id", "operation_id",
+                "schema_version",
+                "observation_id",
+                "subject",
+                "scope",
+                "target_memory_id",
+                "target_revision",
+                "kind",
+                "applicability",
+                "applicability_fingerprint",
+                "risk_level",
+                "hazard",
+                "task_scope_id",
+                "evidence_span",
+                "evidence_span_hash",
+                "terminal_receipt_id",
+                "terminal_receipt_hash",
+                "outcome",
+                "attributable",
+                "observed_at",
+                "transition_from",
+                "transition_to",
+                "run_id",
+                "operation_id",
             },
             "ProcedureObservationIntent",
         )
@@ -303,9 +324,7 @@ class ProcedureObservationIntent:
             raise ValueError("Procedure evidence span hash differs")
         outcome_value = value["outcome"]
         outcome = (
-            None
-            if outcome_value is None
-            else ProcedureObservationOutcome(outcome_value)  # type: ignore[arg-type]
+            None if outcome_value is None else ProcedureObservationOutcome(outcome_value)  # type: ignore[arg-type]
         )
         attributable = value["attributable"]
         if not isinstance(attributable, bool):
@@ -403,8 +422,17 @@ class ProcedureObservationAuthority:
     def from_json(cls, value: Mapping[str, object]) -> ProcedureObservationAuthority:
         _exact_keys(
             value,
-            {"schema_version", "authority_id", "intent", "intent_hash", "issued_at",
-             "expires_at", "nonce", "issuer_ref", "replay_identity"},
+            {
+                "schema_version",
+                "authority_id",
+                "intent",
+                "intent_hash",
+                "issued_at",
+                "expires_at",
+                "nonce",
+                "issuer_ref",
+                "replay_identity",
+            },
             "ProcedureObservationAuthority",
         )
         intent = ProcedureObservationIntent.from_json(_object(value["intent"], "intent"))

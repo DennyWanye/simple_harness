@@ -17,9 +17,7 @@ def _candidate(provider: str, model: str):
 
 def test_follow_session_preserves_ordered_chain() -> None:
     chain = (_candidate("a", "m1"), _candidate("b", "m2"))
-    resolution = CompressionModelResolver().resolve(
-        "follow_session", session_chain=chain
-    )
+    resolution = CompressionModelResolver().resolve("follow_session", session_chain=chain)
     assert resolution.candidates == chain
     assert resolution.source == "follow_session"
 
@@ -30,16 +28,12 @@ def test_explicit_model_has_no_cross_model_fallback() -> None:
         session_chain=(_candidate("a", "m1"),),
         provider_catalog=(_candidate("b", "m2"), _candidate("c", "m3")),
     )
-    assert [(c.provider_id, c.model_id) for c in resolution.candidates] == [
-        ("b", "m2")
-    ]
+    assert [(c.provider_id, c.model_id) for c in resolution.candidates] == [("b", "m2")]
 
 
 def test_unknown_explicit_model_fails_closed() -> None:
     with pytest.raises(CompressionModelUnavailable, match="unknown"):
-        CompressionModelResolver().resolve(
-            "unknown", session_chain=(_candidate("a", "m1"),)
-        )
+        CompressionModelResolver().resolve("unknown", session_chain=(_candidate("a", "m1"),))
 
 
 def test_agent_loop_reads_live_model_each_compaction_without_cross_model_fallback() -> None:
@@ -58,9 +52,7 @@ def test_agent_loop_reads_live_model_each_compaction_without_cross_model_fallbac
 
     first = loop._resolve_compression_model(providers)
     assert first.source == "explicit"
-    assert [(item.provider_id, item.model_id) for item in first.candidates] == [
-        ("b", "m2")
-    ]
+    assert [(item.provider_id, item.model_id) for item in first.candidates] == [("b", "m2")]
 
     selected["model"] = "missing"
     with pytest.raises(CompressionModelUnavailable, match="missing"):

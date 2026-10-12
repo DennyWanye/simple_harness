@@ -8,6 +8,7 @@ Uses monkeypatched SDK clients so:
     - openai:    verify tool_call JSON parsing + malformed arg rejection
     - gemini:    verify OpenAI-schema → FunctionDeclaration conversion
 """
+
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -110,9 +111,7 @@ def test_anthropic_tool_conversion_marks_last_tool_cacheable():
 def test_anthropic_build_response_maps_tool_use_block():
     adapter = AnthropicAdapter(api_key="sk-testkey-abcd")
     block_text = SimpleNamespace(type="text", text="Let me check.")
-    block_tool = SimpleNamespace(
-        type="tool_use", id="tu_1", name="get_time", input={"tz": "UTC"}
-    )
+    block_tool = SimpleNamespace(type="tool_use", id="tu_1", name="get_time", input={"tz": "UTC"})
     mock_resp = SimpleNamespace(
         content=[block_text, block_tool],
         stop_reason="tool_use",
@@ -150,9 +149,17 @@ def test_anthropic_tool_message_becomes_user_tool_result():
     """OpenAI-style tool message should convert to anthropic tool_result block."""
     messages = [
         {"role": "user", "content": "question"},
-        {"role": "assistant", "content": "", "tool_calls": [
-            {"id": "tu_1", "type": "function", "function": {"name": "get_time", "arguments": {}}}
-        ]},
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {
+                    "id": "tu_1",
+                    "type": "function",
+                    "function": {"name": "get_time", "arguments": {}},
+                }
+            ],
+        },
         {"role": "tool", "tool_call_id": "tu_1", "name": "get_time", "content": '{"time":"10:00"}'},
     ]
     system, chat = AnthropicAdapter._split_system_messages(messages)
@@ -227,7 +234,10 @@ def test_gemini_split_system_joins_multiple():
 
 def test_gemini_split_system_handles_list_content():
     messages = [
-        {"role": "system", "content": [{"type": "text", "text": "block1"}, {"type": "text", "text": "block2"}]},
+        {
+            "role": "system",
+            "content": [{"type": "text", "text": "block1"}, {"type": "text", "text": "block2"}],
+        },
     ]
     sys_text, chat = GeminiAdapter._split_system(messages)
     assert sys_text == "block1\n\nblock2"
@@ -290,7 +300,9 @@ def test_gemini_build_response_mints_tool_call_ids():
     cand = SimpleNamespace(content=content, finish_reason=SimpleNamespace(name="STOP"))
     response = SimpleNamespace(
         candidates=[cand],
-        usage_metadata=SimpleNamespace(prompt_token_count=10, candidates_token_count=5, cached_content_token_count=0),
+        usage_metadata=SimpleNamespace(
+            prompt_token_count=10, candidates_token_count=5, cached_content_token_count=0
+        ),
         model_version="gemini-1.5-pro-latest",
     )
     resp = adapter._build_response(response, "gemini-1.5-pro")
@@ -310,7 +322,9 @@ def test_gemini_build_response_text_only():
     cand = SimpleNamespace(content=content, finish_reason=SimpleNamespace(name="STOP"))
     response = SimpleNamespace(
         candidates=[cand],
-        usage_metadata=SimpleNamespace(prompt_token_count=5, candidates_token_count=2, cached_content_token_count=0),
+        usage_metadata=SimpleNamespace(
+            prompt_token_count=5, candidates_token_count=2, cached_content_token_count=0
+        ),
         model_version="gemini-1.5-pro",
     )
     resp = adapter._build_response(response, "gemini-1.5-pro")

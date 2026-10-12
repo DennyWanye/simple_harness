@@ -9,6 +9,7 @@
 
 只有模型回复是脚本（:mod:`_review_world`），人的裁决走门面命令。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -28,11 +29,16 @@ def _quick(monkeypatch):
     quick_waits(monkeypatch)
 
 
-@pytest.mark.parametrize("verdicts,calls,second_opinions", (
-    ([], 1, 0),
-    (["INCONCLUSIVE"], 2, 1),
-))
-def test_one_inconclusive_review_gets_one_independent_second_opinion(tmp_path, verdicts, calls, second_opinions):
+@pytest.mark.parametrize(
+    "verdicts,calls,second_opinions",
+    (
+        ([], 1, 0),
+        (["INCONCLUSIVE"], 2, 1),
+    ),
+)
+def test_one_inconclusive_review_gets_one_independent_second_opinion(
+    tmp_path, verdicts, calls, second_opinions
+):
     provider = ReviewScript(verdicts={"TASK_CONTENT": verdicts})
 
     async def run() -> None:
@@ -56,7 +62,9 @@ def test_two_inconclusive_reviews_go_to_the_person_and_a_pass_licenses_acceptanc
             [card] = case.pending_approvals()
             assert card["kind"] == "review" and card["reason"] == "needs_human"
             assert case.events("VerificationSuspended") and not case.events("AcceptanceCommitted")
-            decided = case.world.control.decide(card["request_id"], "review_pass", note="人看过了，合格")
+            decided = case.world.control.decide(
+                card["request_id"], "review_pass", note="人看过了，合格"
+            )
             assert decided["request_state"] == "GRANTED"
             mission = await case.settle()
             assert str(mission.status.value) == "COMPLETED", mission.final_report
@@ -79,8 +87,11 @@ def test_a_human_fail_after_two_inconclusive_reviews_does_not_license_acceptance
             await case.run_until(provider.repair_asked.is_set)
             assert HtnStore(case.store).list_acceptances(case.mission_id) == ()
             assert case.events("VerificationFailed") and not case.events("AcceptanceCommitted")
-            [entry] = [e for e in provider.repair_packages[0]["repair_requests"]
-                       if e["request"]["context"].get("event_type") == "VerificationFailed"]
+            [entry] = [
+                e
+                for e in provider.repair_packages[0]["repair_requests"]
+                if e["request"]["context"].get("event_type") == "VerificationFailed"
+            ]
             [failure] = entry["request"]["context"]["detail"]["failures"]
             assert failure["layer"] == "human_review" and failure["status"] == "FAIL"
             assert failure["detail"]["note"] == "要点不全"

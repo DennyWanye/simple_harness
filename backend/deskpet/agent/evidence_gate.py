@@ -11,6 +11,7 @@ IN-LOOP 硬门：当 needs_investigation=True，且模型在「尚未发生任�
   - max_nudges 上限：超限放行避免死循环，记 evidence_gate_exhausted。
   - 工具白名单可配（investigative_tools）。
 """
+
 from __future__ import annotations
 
 from collections.abc import Iterable
@@ -21,18 +22,30 @@ import structlog
 logger = structlog.get_logger(__name__)
 
 # 算「取证」的工具白名单（可被 config.evidence.investigative_tools 覆盖）
-_DEFAULT_INVESTIGATIVE_TOOLS: frozenset[str] = frozenset({
-    "search", "web_search", "read", "read_file", "grep", "glob",
-    "inspect", "retrieve", "fetch_url", "list_files", "deepresearch",
-    "recall", "memory_search",
-})
+_DEFAULT_INVESTIGATIVE_TOOLS: frozenset[str] = frozenset(
+    {
+        "search",
+        "web_search",
+        "read",
+        "read_file",
+        "grep",
+        "glob",
+        "inspect",
+        "retrieve",
+        "fetch_url",
+        "list_files",
+        "deepresearch",
+        "recall",
+        "memory_search",
+    }
+)
 
 
 @dataclass
 class EvidenceDecision:
     blocked: bool
     reason: str = ""
-    nudge: str = ""          # blocked=True 时要注入的 system nudge
+    nudge: str = ""  # blocked=True 时要注入的 system nudge
     nudge_count: int = 0
     exhausted: bool = False
 
@@ -46,7 +59,9 @@ class EvidenceGate:
         investigative_tools: Iterable[str] | None = None,
         max_nudges: int = 2,
     ) -> None:
-        self._tools = frozenset(investigative_tools) if investigative_tools else _DEFAULT_INVESTIGATIVE_TOOLS
+        self._tools = (
+            frozenset(investigative_tools) if investigative_tools else _DEFAULT_INVESTIGATIVE_TOOLS
+        )
         self._max_nudges = max_nudges
 
     def is_investigative(self, tool_name: str) -> bool:
@@ -76,8 +91,10 @@ class EvidenceGate:
         if nudges_used >= self._max_nudges:
             logger.warning("evidence_gate_exhausted", nudges_used=nudges_used)
             return EvidenceDecision(
-                blocked=False, reason="exhausted",
-                nudge_count=nudges_used, exhausted=True,
+                blocked=False,
+                reason="exhausted",
+                nudge_count=nudges_used,
+                exhausted=True,
             )
 
         nudge = (
@@ -87,8 +104,10 @@ class EvidenceGate:
         )
         logger.info("evidence_gate.blocked", nudges_used=nudges_used + 1)
         return EvidenceDecision(
-            blocked=True, reason="no_evidence",
-            nudge=nudge, nudge_count=nudges_used + 1,
+            blocked=True,
+            reason="no_evidence",
+            nudge=nudge,
+            nudge_count=nudges_used + 1,
         )
 
 

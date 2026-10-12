@@ -41,14 +41,34 @@ from ..contracts.state_machines import TERMINAL_ATTEMPT, TERMINAL_MISSION
 
 LIVE_INTENT_STATES = frozenset({"CLAIMED", "AGENT_CREATED", "SUBMITTED"})
 #: Planning inputs frozen into a service intent when it is created.
-_FROZEN_CONFIG = ("role", "runtime_profile_id", "context_version", "prompt_version", "base_version",
-                  "ordinal", "plan_revision", "planning_retry_decision_id", "goal_task_id", "synthesis_round",
-                  "task_id", "attempt_id", "operation_intent_id", "outcome_binding_id", "assurance_protocol",
-                  "task_version", "policy_version_id", "allowed_tools", "read_only_leaf", "model")
+_FROZEN_CONFIG = (
+    "role",
+    "runtime_profile_id",
+    "context_version",
+    "prompt_version",
+    "base_version",
+    "ordinal",
+    "plan_revision",
+    "planning_retry_decision_id",
+    "goal_task_id",
+    "synthesis_round",
+    "task_id",
+    "attempt_id",
+    "operation_intent_id",
+    "outcome_binding_id",
+    "assurance_protocol",
+    "task_version",
+    "policy_version_id",
+    "allowed_tools",
+    "read_only_leaf",
+    "model",
+)
 
 
 def _hash(value: Any) -> str:
-    return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":"), default=str).encode()).hexdigest()
+    return hashlib.sha256(
+        json.dumps(value, sort_keys=True, separators=(",", ":"), default=str).encode()
+    ).hexdigest()
 
 
 def _receipt(intent: Any) -> dict[str, str]:
@@ -80,17 +100,22 @@ class MissionSourceReader:
     def bind(self, *, caller: TrustedCaller, role: str) -> Mapping[str, Any]:
         receipt_id = caller.command_receipt_ref.id
         if not receipt_id.startswith("dispatch-intent:"):
-            raise ArpError("AUTHORITY_SOURCE_MISSING", "a Mission Agent is created only from a dispatch intent")
+            raise ArpError(
+                "AUTHORITY_SOURCE_MISSING", "a Mission Agent is created only from a dispatch intent"
+            )
         store, commit = self._parts()
         with store.read_view():
-            intent = store.get_intent(receipt_id[len("dispatch-intent:"):])
+            intent = store.get_intent(receipt_id[len("dispatch-intent:") :])
             if intent is None:
                 raise ArpError("SOURCE_UNAVAILABLE", "the caller's dispatch intent is not recorded")
             from simple_harness.agents.arp.strict import digest
 
             if digest(_receipt(intent)) != caller.command_receipt_ref.content_hash:
                 # another Mission / kind / creation key / input than the intent recorded
-                raise ArpError("REF_IDENTITY_MISMATCH", "the caller's receipt differs from the recorded dispatch intent")
+                raise ArpError(
+                    "REF_IDENTITY_MISMATCH",
+                    "the caller's receipt differs from the recorded dispatch intent",
+                )
             return self._derive(store, commit, intent)
 
     def require_current(self, sources: Mapping[str, Any]) -> None:
@@ -98,18 +123,28 @@ class MissionSourceReader:
         with store.read_view():
             intent = store.get_intent(str(sources.get("intent_id", "")))
             if intent is None:
-                raise ArpError("SOURCE_UNAVAILABLE", "the bound dispatch intent is no longer recorded")
+                raise ArpError(
+                    "SOURCE_UNAVAILABLE", "the bound dispatch intent is no longer recorded"
+                )
             if intent.state not in LIVE_INTENT_STATES:
-                raise ArpError("REQUEST_SOURCE_STALE", "the bound dispatch intent is stopped",
-                               detail={"state": str(intent.state)})
+                raise ArpError(
+                    "REQUEST_SOURCE_STALE",
+                    "the bound dispatch intent is stopped",
+                    detail={"state": str(intent.state)},
+                )
             mission = store.get_mission(intent.mission_id)
             if mission is None or mission.status in TERMINAL_MISSION:
                 raise ArpError("REQUEST_SOURCE_STALE", "the bound Mission is terminal")
             current = self._derive(store, commit, intent)
             if _hash(current) != _hash(dict(sources)):
-                changed = sorted(k for k in set(current) | set(sources) if current.get(k) != sources.get(k))
-                raise ArpError("REQUEST_SOURCE_STALE", "the Mission sources moved since the Agent was created",
-                               detail={"changed": changed[:16]})
+                changed = sorted(
+                    k for k in set(current) | set(sources) if current.get(k) != sources.get(k)
+                )
+                raise ArpError(
+                    "REQUEST_SOURCE_STALE",
+                    "the Mission sources moved since the Agent was created",
+                    detail={"changed": changed[:16]},
+                )
         from ..assurance.codec import AssuranceError
         from ..orchestrator.assurance_review_transport import require_review_handoff
         from ..storage.store import StoreError
@@ -118,14 +153,20 @@ class MissionSourceReader:
             with store.read_view():
                 commit.require_taskgraph_handoff(intent)
         except StoreError as error:
-            raise ArpError("GENERATION_STALE", "the TaskGraph authority no longer admits this intent",
-                           detail={"reason": str(error)[:200]}) from error
+            raise ArpError(
+                "GENERATION_STALE",
+                "the TaskGraph authority no longer admits this intent",
+                detail={"reason": str(error)[:200]},
+            ) from error
         try:
             # 每次模型请求前：这一刻把审阅材料交给模型，DISCLOSE 证书落库（推后第 2 批 A03）
             require_review_handoff(commit, intent, record=True)
         except AssuranceError as error:
-            raise ArpError("AUTHORIZATION_REQUIRED", "the Assurance review authority no longer admits this intent",
-                           detail={"reason": str(getattr(error, "code", error))[:200]}) from error
+            raise ArpError(
+                "AUTHORIZATION_REQUIRED",
+                "the Assurance review authority no longer admits this intent",
+                detail={"reason": str(getattr(error, "code", error))[:200]},
+            ) from error
 
     # ---- derivation ------------------------------------------------------------------
 
@@ -142,12 +183,17 @@ class MissionSourceReader:
             "subject_id": str(intent.subject_id),
             "input_id": str(intent.input_id),
             "tenant_id": str(getattr(mission, "tenant_id", "") or ""),
-            "occurrence": None if not isinstance(context, Mapping) else {
-                "occurrence_id": context.get("occurrence_id"), "plan_revision": context.get("plan_revision"),
+            "occurrence": None
+            if not isinstance(context, Mapping)
+            else {
+                "occurrence_id": context.get("occurrence_id"),
+                "plan_revision": context.get("plan_revision"),
             },
             "frozen_config": {k: config[k] for k in _FROZEN_CONFIG if k in config},
             # the Agent must be created with exactly the configuration the intent froze
-            "agent_config_hash": None if not isinstance(config.get("agent_config"), Mapping) else strict_digest(dict(config["agent_config"])),
+            "agent_config_hash": None
+            if not isinstance(config.get("agent_config"), Mapping)
+            else strict_digest(dict(config["agent_config"])),
         }
         if config.get("review_package_id"):
             return {**base, **self._reviewer(store, intent)}
@@ -157,24 +203,41 @@ class MissionSourceReader:
             judge = self._mission_judge(store, intent)
             if judge is not None:
                 # the Mission's final judgment: its "attempt" is the judgment view, not an Attempt
-                return {**base, "source_kind": "critic", "mission_judge": judge,
-                        "input_manifest": {"not_applicable": "mission_judge_reads_its_judgment_view"}}
-            return {**base, "source_kind": "critic", "reviewed_attempt": self._attempt_identity(store, intent, config.get("attempt_id")),
-                    "input_manifest": {"not_applicable": "critic_reviews_an_attempt_result"}}
+                return {
+                    **base,
+                    "source_kind": "critic",
+                    "mission_judge": judge,
+                    "input_manifest": {"not_applicable": "mission_judge_reads_its_judgment_view"},
+                }
+            return {
+                **base,
+                "source_kind": "critic",
+                "reviewed_attempt": self._attempt_identity(store, intent, config.get("attempt_id")),
+                "input_manifest": {"not_applicable": "critic_reviews_an_attempt_result"},
+            }
         if intent.kind == "plan":
-            return {**base, "source_kind": "planner",
-                    "input_manifest": {"not_applicable": "planner_has_no_worker_attempt"}}
-        return {**base, "source_kind": "service",
-                "input_manifest": {"not_applicable": f"{intent.kind}_service_turn"}}
+            return {
+                **base,
+                "source_kind": "planner",
+                "input_manifest": {"not_applicable": "planner_has_no_worker_attempt"},
+            }
+        return {
+            **base,
+            "source_kind": "service",
+            "input_manifest": {"not_applicable": f"{intent.kind}_service_turn"},
+        }
 
     @staticmethod
     def _mission_judge(store: Any, intent: Any) -> dict[str, Any] | None:
         """The final-judgment Critic, validated by the orchestrator's own judge check
         (registered judgment view + its Mission-account reservation), or None."""
         view_id = intent.config.get("attempt_id")
-        if (not isinstance(view_id, str) or not view_id.startswith(f"{intent.mission_id}-judge-")
-                or not str(intent.subject_id).startswith(f"{intent.mission_id}:judge:")
-                or store.get_attempt(view_id) is not None):
+        if (
+            not isinstance(view_id, str)
+            or not view_id.startswith(f"{intent.mission_id}-judge-")
+            or not str(intent.subject_id).startswith(f"{intent.mission_id}:judge:")
+            or store.get_attempt(view_id) is not None
+        ):
             return None
         from ..orchestrator.taskgraph_dispatch import _mission_judge_tasks
         from ..storage.store import StoreError
@@ -182,30 +245,55 @@ class MissionSourceReader:
         try:
             task_ids = _mission_judge_tasks(store, intent, view_id)
         except StoreError as error:
-            raise ArpError("REF_IDENTITY_MISMATCH", "the judgment view is not this Mission's registered judgment",
-                           detail={"reason": str(error)[:200]}) from error
+            raise ArpError(
+                "REF_IDENTITY_MISMATCH",
+                "the judgment view is not this Mission's registered judgment",
+                detail={"reason": str(error)[:200]},
+            ) from error
         workspace = store.get_workspace(f"{view_id}-verify")
-        return {"view_id": view_id, "task_ids": sorted(task_ids),
-                "artifacts": sorted(str(a) for a in workspace["detail"].get("artifacts", []))}
+        return {
+            "view_id": view_id,
+            "task_ids": sorted(task_ids),
+            "artifacts": sorted(str(a) for a in workspace["detail"].get("artifacts", [])),
+        }
 
     @staticmethod
     def _attempt_identity(store: Any, intent: Any, attempt_id: Any) -> dict[str, Any]:
-        attempt = store.get_attempt(str(attempt_id)) if isinstance(attempt_id, str) and attempt_id else None
+        attempt = (
+            store.get_attempt(str(attempt_id))
+            if isinstance(attempt_id, str) and attempt_id
+            else None
+        )
         if attempt is None or attempt.mission_id != intent.mission_id:
-            raise ArpError("REF_IDENTITY_MISMATCH", "the intent's Attempt is not an Attempt of its Mission")
-        return {"attempt_id": attempt.id, "task_id": attempt.task_id, "task_version": attempt.task_version,
-                "role": str(attempt.role), "input_hash": attempt.input_hash}
+            raise ArpError(
+                "REF_IDENTITY_MISMATCH", "the intent's Attempt is not an Attempt of its Mission"
+            )
+        return {
+            "attempt_id": attempt.id,
+            "task_id": attempt.task_id,
+            "task_version": attempt.task_version,
+            "role": str(attempt.role),
+            "input_hash": attempt.input_hash,
+        }
 
     def _worker(self, store: Any, commit: Any, intent: Any) -> dict[str, Any]:
         configured = intent.config.get("attempt_id")
         if configured is not None and configured != intent.subject_id:
-            raise ArpError("REF_IDENTITY_MISMATCH", "the intent names another Attempt than its subject")
+            raise ArpError(
+                "REF_IDENTITY_MISMATCH", "the intent names another Attempt than its subject"
+            )
         attempt = self._attempt_identity(store, intent, intent.subject_id)
         if attempt["input_hash"] != intent.input_hash:
-            raise ArpError("REF_IDENTITY_MISMATCH", "the Attempt's frozen input differs from the intent")
+            raise ArpError(
+                "REF_IDENTITY_MISMATCH", "the Attempt's frozen input differs from the intent"
+            )
         live = store.get_attempt(intent.subject_id)
         if live.status in TERMINAL_ATTEMPT:
-            raise ArpError("REQUEST_SOURCE_STALE", "the Worker Attempt is terminal", detail={"status": str(live.status)})
+            raise ArpError(
+                "REQUEST_SOURCE_STALE",
+                "the Worker Attempt is terminal",
+                detail={"status": str(live.status)},
+            )
         from ..contracts import ContractError
         from ..storage.store import StoreError
 
@@ -213,12 +301,20 @@ class MissionSourceReader:
             # the installed, validating history reader (the same one recovery/review use)
             frozen = commit.taskgraph_attempt_context(intent.mission_id, intent.subject_id).inputs
         except (ContractError, StoreError, ValueError) as error:
-            raise ArpError("REQUEST_SOURCE_STALE", "the Attempt's frozen InputManifest is unavailable or moved",
-                           detail={"reason": str(error)[:200]}) from error
+            raise ArpError(
+                "REQUEST_SOURCE_STALE",
+                "the Attempt's frozen InputManifest is unavailable or moved",
+                detail={"reason": str(error)[:200]},
+            ) from error
         identity = dict(frozen.binding.identity_json())
         if identity.get("intent_id") != intent.intent_id:
-            raise ArpError("REF_IDENTITY_MISMATCH", "the frozen InputManifest belongs to another intent")
-        manifest: dict[str, Any] = {"manifest_hash": frozen.binding.manifest_hash, "binding": identity}
+            raise ArpError(
+                "REF_IDENTITY_MISMATCH", "the frozen InputManifest belongs to another intent"
+            )
+        manifest: dict[str, Any] = {
+            "manifest_hash": frozen.binding.manifest_hash,
+            "binding": identity,
+        }
         return {"source_kind": "worker", "attempt": attempt, "input_manifest": manifest}
 
     def _reviewer(self, store: Any, intent: Any) -> dict[str, Any]:
@@ -237,15 +333,20 @@ class MissionSourceReader:
         # a legacy critic intent carries no role; its package must still be a TASK_CONTENT one
         actual = role if role is not None else ("critic" if intent.kind == "critic" else None)
         if expected is None or actual != expected:
-            raise ArpError("REF_IDENTITY_MISMATCH", "the review package serves another purpose than this reviewer",
-                           detail={"purpose": purpose, "role": role})
+            raise ArpError(
+                "REF_IDENTITY_MISMATCH",
+                "the review package serves another purpose than this reviewer",
+                detail={"purpose": purpose, "role": role},
+            )
         body = package.to_json()
         if str(body.get("binding", {}).get("mission_id", intent.mission_id)) != intent.mission_id:
             raise ArpError("REF_IDENTITY_MISMATCH", "the review package belongs to another Mission")
         return {
             "source_kind": "reviewer",
             "review": {
-                "package_id": package_id, "purpose": purpose, "package_hash": _hash(body),
+                "package_id": package_id,
+                "purpose": purpose,
+                "package_hash": _hash(body),
                 "requirements_content_hash": package.requirements_content_hash,
                 "criteria": list(intent.config.get("review_criteria") or ()),
             },

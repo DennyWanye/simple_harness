@@ -130,9 +130,7 @@ async def test_artifact_handler_persists_toolartifact_once_by_event_id(
             "root_run_id "
             "FROM messages WHERE workflow_event_id IS NOT NULL"
         ).fetchall()
-    assert rows == [
-        ("artifact-event-1", "assistant", "artifact_card", "exclude", "root-1")
-    ]
+    assert rows == [("artifact-event-1", "assistant", "artifact_card", "exclude", "root-1")]
     assert await session_db.get_recent_messages("session-1") == []
     assert await session_db.search_fts("Durable", session_id="session-1") == []
 
@@ -218,7 +216,9 @@ async def test_artifact_handler_publishes_persisted_tool_result_live(
 
 
 @pytest.mark.asyncio
-async def test_artifact_handler_discards_after_delivery_session_tombstone(stores, tmp_path: Path) -> None:
+async def test_artifact_handler_discards_after_delivery_session_tombstone(
+    stores, tmp_path: Path
+) -> None:
     session_db, receipt_store = stores
     workflow_store = WorkflowRunStore(tmp_path / "workflow.db")
     run_id, _ = await workflow_store.create_run(
@@ -235,7 +235,9 @@ async def test_artifact_handler_discards_after_delivery_session_tombstone(stores
         state_schema_version=1,
         run_id="run-tombstone",
     )
-    await workflow_store.bind_session_refs(run_id, (("base", "session-1", 0), ("delivery", "session-1", 0)))
+    await workflow_store.bind_session_refs(
+        run_id, (("base", "session-1", 0), ("delivery", "session-1", 0))
+    )
     adapter = ProductDeliveryAdapter(
         session_db=session_db,
         receipt_store=receipt_store,
@@ -333,9 +335,7 @@ async def test_content_ref_resolution_is_strict_utf8() -> None:
         return b"\xff"
 
     with pytest.raises(ProductDeliveryError, match="strict UTF-8"):
-        await resolve_workflow_content_text(
-            {"content_ref": "sha256:" + "b" * 64}, invalid
-        )
+        await resolve_workflow_content_text({"content_ref": "sha256:" + "b" * 64}, invalid)
 
 
 @pytest.mark.asyncio
@@ -410,9 +410,7 @@ async def test_artifact_handler_rejects_a_stale_declared_hash(stores, tmp_path: 
     )
 
     with pytest.raises(ProductDeliveryError, match="sha256 mismatch"):
-        await adapter.deliver_artifact(
-            event, _delivery(event["event_id"], "artifact")
-        )
+        await adapter.deliver_artifact(event, _delivery(event["event_id"], "artifact"))
 
     assert await session_db.get_messages("session-1") == []
 

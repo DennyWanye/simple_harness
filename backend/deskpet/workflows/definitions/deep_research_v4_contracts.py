@@ -191,6 +191,13 @@ class TechnologyFinding:
 
 
 __all__ = [
-    "DirectSource", "IntentKind", "IntentProfile", "Maturity", "SeedChannel",
-    "SeedQueryKind", "SourceSeed", "TechnologyFinding", "TechnologyTopic",
+    "DirectSource",
+    "IntentKind",
+    "IntentProfile",
+    "Maturity",
+    "SeedChannel",
+    "SeedQueryKind",
+    "SourceSeed",
+    "TechnologyFinding",
+    "TechnologyTopic",
 ]

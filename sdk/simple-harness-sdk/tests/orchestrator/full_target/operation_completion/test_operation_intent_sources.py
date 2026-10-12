@@ -109,15 +109,31 @@ def test_sources_resolve_real_preparation_and_reject_invalid_authority(tmp_path,
             store = case.store
             htn = HtnStore(store)
             [acceptance] = htn.list_acceptances(case.mission_id)
-            [artifact] = [a for a in store.list_mission_artifacts(case.mission_id) if a.path == TARGET]
+            [artifact] = [
+                a for a in store.list_mission_artifacts(case.mission_id) if a.path == TARGET
+            ]
             spec_hash = store.connection.execute(
-                "SELECT spec_hash FROM operation_completion_specs WHERE mission_id=?", (case.mission_id,)).fetchone()[0]
+                "SELECT spec_hash FROM operation_completion_specs WHERE mission_id=?",
+                (case.mission_id,),
+            ).fetchone()[0]
             wire = _wire() | {
                 "mission_id": case.mission_id,
-                "candidate_artifact_ref": TypedRef(TypedRefKind.ARTIFACT, artifact.id, artifact.version,
-                                                   artifact.content_hash, Provenance.TOOL).to_json(),
-                "prepared_acceptance_refs": [TypedRef(TypedRefKind.ACCEPTANCE, str(acceptance.acceptance_id), 1,
-                                                      content_hash_of(acceptance.to_json()), Provenance.TOOL).to_json()],
+                "candidate_artifact_ref": TypedRef(
+                    TypedRefKind.ARTIFACT,
+                    artifact.id,
+                    artifact.version,
+                    artifact.content_hash,
+                    Provenance.TOOL,
+                ).to_json(),
+                "prepared_acceptance_refs": [
+                    TypedRef(
+                        TypedRefKind.ACCEPTANCE,
+                        str(acceptance.acceptance_id),
+                        1,
+                        content_hash_of(acceptance.to_json()),
+                        Provenance.TOOL,
+                    ).to_json()
+                ],
                 "completion_slot": {"spec_hash": spec_hash, "effect_key": "publish-weekly"},
             }
             command = SubmitOperationIntentV2.from_json(wire)
@@ -125,22 +141,42 @@ def test_sources_resolve_real_preparation_and_reject_invalid_authority(tmp_path,
             if mutation == "tenant":
                 tenant = "other-tenant"
             elif mutation == "acceptance-hash":
-                command = dataclasses.replace(command, prepared_acceptance_refs=(dataclasses.replace(
-                    command.prepared_acceptance_refs[0], content_hash=HASH_A),))
+                command = dataclasses.replace(
+                    command,
+                    prepared_acceptance_refs=(
+                        dataclasses.replace(
+                            command.prepared_acceptance_refs[0], content_hash=HASH_A
+                        ),
+                    ),
+                )
             elif mutation == "dirty":
-                htn.mark_dirty(case.mission_id, subject_kind="acceptance", subject_id=str(acceptance.acceptance_id),
-                               scope_id="mission", epoch=1, reason="actual support changed")
+                htn.mark_dirty(
+                    case.mission_id,
+                    subject_kind="acceptance",
+                    subject_id=str(acceptance.acceptance_id),
+                    scope_id="mission",
+                    epoch=1,
+                    reason="actual support changed",
+                )
             elif mutation == "slot":
-                command = dataclasses.replace(command, completion_slot=dataclasses.replace(
-                    command.completion_slot, effect_key="unapproved-effect"))
+                command = dataclasses.replace(
+                    command,
+                    completion_slot=dataclasses.replace(
+                        command.completion_slot, effect_key="unapproved-effect"
+                    ),
+                )
             cas = case.world.loop.assembled.workspaces.artifact_store
             principal = case.world.deployment.principal
             before = store.connection.total_changes
             if mutation is not None:
                 with pytest.raises(OperationIntentSourceError):
-                    prepare_operation_intent_sources(store, cas, command, tenant_id=tenant, principal=principal)
+                    prepare_operation_intent_sources(
+                        store, cas, command, tenant_id=tenant, principal=principal
+                    )
             else:
-                sources = prepare_operation_intent_sources(store, cas, command, tenant_id=tenant, principal=principal)
+                sources = prepare_operation_intent_sources(
+                    store, cas, command, tenant_id=tenant, principal=principal
+                )
                 [leaf] = [t for t in store.list_tasks(case.mission_id) if t.accepted_result_id]
                 assert sources.producer_result.envelope.id == leaf.accepted_result_id
                 assert sources.producer_scope.task_ref.id == leaf.id

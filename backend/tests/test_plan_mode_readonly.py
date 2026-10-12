@@ -14,6 +14,7 @@
 注：不接 PermissionGate —— 只读拦截发生在 gate 之前，且测试用 handler
 计数器证明 deny 路径下 handler 从未被调用（物理只读，非流程提示）。
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -48,9 +49,9 @@ def _make_reg_with_counter() -> tuple[ToolRegistry, dict[str, int]]:
         ("write_file", "write_file"),
         ("edit_file", "write_file"),
         ("run_shell", "shell"),
-        ("ppt_create", "write_file"),      # 产物写工具
-        ("excel_write", "write_file"),     # 产物写工具
-        ("doc_write", "write_file"),       # 产物写工具
+        ("ppt_create", "write_file"),  # 产物写工具
+        ("excel_write", "write_file"),  # 产物写工具
+        ("doc_write", "write_file"),  # 产物写工具
         ("desktop_create_file", "desktop_write"),
         ("skill_install_tool", "skill_install"),
         # ---- 只读/无副作用类（应放行） ----

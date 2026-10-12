@@ -34,9 +34,7 @@ def _repo_archive(files: dict[str, bytes], *, special: tuple[str, int] | None = 
 
 
 def _skill(name: str, *, description: str = "test", extra: str = "") -> bytes:
-    return (
-        f"---\nname: {name}\ndescription: {description}\n{extra}---\n# {name}\n"
-    ).encode()
+    return (f"---\nname: {name}\ndescription: {description}\n{extra}---\n# {name}\n").encode()
 
 
 def _transport(archive: bytes, *, metadata: bytes | None = None) -> httpx.MockTransport:
@@ -59,9 +57,7 @@ def _transport(archive: bytes, *, metadata: bytes | None = None) -> httpx.MockTr
 
 
 async def _resolve(archive: bytes, **kwargs):
-    async with httpx.AsyncClient(
-        transport=_transport(archive), follow_redirects=False
-    ) as client:
+    async with httpx.AsyncClient(transport=_transport(archive), follow_redirects=False) as client:
         return await BoundedGitHubSkillSource(client=client, **kwargs).resolve(
             "https://github.com/owner/repo"
         )
@@ -110,17 +106,13 @@ async def test_single_skill_is_exact_deterministic_and_validator_accepted() -> N
         manifest = json.loads(package.read("deskpet-pack.json"))
         assert manifest["source"]["revision"] == SHA
         assert manifest["entries"]["skills"][0]["id"] == "solo"
-        assert manifest["version"] == (
-            f"0.0.0+git.{SHA[:12]}.simpleharness.pkg2"
-        )
+        assert manifest["version"] == (f"0.0.0+git.{SHA[:12]}.simpleharness.pkg2")
 
 
 @pytest.mark.asyncio
 async def test_declared_version_is_namespaced_by_packager_revision() -> None:
     result = await _resolve(
-        _repo_archive(
-            {"SKILL.md": _skill("solo", extra="version: 1.2.3+upstream.4\n")}
-        )
+        _repo_archive({"SKILL.md": _skill("solo", extra="version: 1.2.3+upstream.4\n")})
     )
     with zipfile.ZipFile(io.BytesIO(result.packs[0].archive_bytes)) as package:
         manifest = json.loads(package.read("deskpet-pack.json"))
@@ -184,9 +176,7 @@ async def test_multi_skill_relative_support_reference_survives_packaging() -> No
     result = await _resolve(
         _repo_archive(
             {
-                "skills/plan-bs/SKILL.md": _skill(
-                    "plan-bs", description="brainstorm"
-                )
+                "skills/plan-bs/SKILL.md": _skill("plan-bs", description="brainstorm")
                 + b"Read ../plan-test/config.md\n",
                 "skills/plan-test/SKILL.md": _skill("plan-test"),
                 "skills/plan-test/config.md": b"shared config",
@@ -258,14 +248,10 @@ async def test_redirect_host_and_actual_stream_byte_caps_are_enforced() -> None:
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(bad_redirect)) as client:
         with pytest.raises(CapabilitySourceError) as caught:
-            await BoundedGitHubSkillSource(client=client).resolve(
-                "https://github.com/owner/repo"
-            )
+            await BoundedGitHubSkillSource(client=client).resolve("https://github.com/owner/repo")
     assert caught.value.code == "github_redirect_rejected"
 
-    archive = _repo_archive(
-        {"SKILL.md": _skill("solo"), "large.bin": os.urandom(2048)}
-    )
+    archive = _repo_archive({"SKILL.md": _skill("solo"), "large.bin": os.urandom(2048)})
     limits = GitHubSkillSourceLimits(archive_bytes=512)
     with pytest.raises(CapabilitySourceError) as caught:
         await _resolve(archive, limits=limits)
@@ -282,9 +268,7 @@ async def test_declared_metadata_cap_and_zip_bomb_ratio_are_enforced() -> None:
             request=request,
         )
 
-    async with httpx.AsyncClient(
-        transport=httpx.MockTransport(oversized_metadata)
-    ) as client:
+    async with httpx.AsyncClient(transport=httpx.MockTransport(oversized_metadata)) as client:
         with pytest.raises(CapabilitySourceError) as caught:
             await BoundedGitHubSkillSource(
                 client=client,
@@ -292,15 +276,11 @@ async def test_declared_metadata_cap_and_zip_bomb_ratio_are_enforced() -> None:
             ).resolve("https://github.com/owner/repo")
     assert caught.value.code == "github_metadata_too_large"
 
-    compressed = _repo_archive(
-        {"SKILL.md": _skill("solo"), "payload.txt": b"a" * 32_000}
-    )
+    compressed = _repo_archive({"SKILL.md": _skill("solo"), "payload.txt": b"a" * 32_000})
     with pytest.raises(CapabilitySourceError) as caught:
         await _resolve(
             compressed,
-            limits=GitHubSkillSourceLimits(
-                max_archive_entry_compression_ratio=2.0
-            ),
+            limits=GitHubSkillSourceLimits(max_archive_entry_compression_ratio=2.0),
         )
     assert caught.value.code == "capability_package_limit_exceeded"
 
@@ -320,9 +300,7 @@ def test_resolved_evidence_cannot_be_forged() -> None:
 
 
 async def _resolve_subpath(archive: bytes, subpath: str, **kwargs):
-    async with httpx.AsyncClient(
-        transport=_transport(archive), follow_redirects=False
-    ) as client:
+    async with httpx.AsyncClient(transport=_transport(archive), follow_redirects=False) as client:
         return await BoundedGitHubSkillSource(client=client, **kwargs).resolve(
             "https://github.com/owner/repo", subpath=subpath
         )
@@ -333,17 +311,21 @@ async def test_subpath_installs_only_that_skill_and_limits_count_only_it() -> No
     # 2026-09-25 UI 全量点击：市场条目指向 anthropics/skills 的一个子目录，以前整个
     # 仓库一起打包、文件数超限。只取子目录；目录外的文件再多也不计入限额、不被读取。
     files = {f"other/f{i}.md": b"x" for i in range(600)}
-    files.update({
-        "skills/pdf/SKILL.md": _skill("pdf"),
-        "skills/pdf/reference.md": b"pdf ref",
-        "skills/docx/SKILL.md": _skill("docx"),
-    })
+    files.update(
+        {
+            "skills/pdf/SKILL.md": _skill("pdf"),
+            "skills/pdf/reference.md": b"pdf ref",
+            "skills/docx/SKILL.md": _skill("docx"),
+        }
+    )
     result = await _resolve_subpath(_repo_archive(files), "skills/pdf")
     assert [item.skill_name for item in result.packs] == ["pdf"]
     with zipfile.ZipFile(io.BytesIO(result.packs[0].archive_bytes)) as package:
         names = package.namelist()
     assert any(name.endswith("reference.md") for name in names)
-    assert not any(name.startswith("other/") or "docx" in name or name.endswith("f0.md") for name in names)
+    assert not any(
+        name.startswith("other/") or "docx" in name or name.endswith("f0.md") for name in names
+    )
 
 
 @pytest.mark.asyncio

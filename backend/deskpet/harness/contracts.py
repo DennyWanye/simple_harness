@@ -43,7 +43,9 @@ class RunRequest:
 class TerminalProjection(Protocol):
     def resolve(self, session_id: str) -> str | None: ...
     def association_event(self, spec: RunCreate, target_id: str) -> RunEventCandidate: ...
-    def deliveries(self, record: RunRecord, events: Sequence[RunEvent]) -> Sequence[DeliverySpec]: ...
+    def deliveries(
+        self, record: RunRecord, events: Sequence[RunEvent]
+    ) -> Sequence[DeliverySpec]: ...
 
 
 class TerminalDeliveryContributor(Protocol):
@@ -51,9 +53,7 @@ class TerminalDeliveryContributor(Protocol):
 
     def requires_durable(self, request: object, host: object) -> bool: ...
 
-    def freeze_deliveries(
-        self, request: object, host: object
-    ) -> Sequence[DeliverySpec]: ...
+    def freeze_deliveries(self, request: object, host: object) -> Sequence[DeliverySpec]: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,9 +70,8 @@ class HostExtensionRefV1:
                 raise ValueError(f"{name} is required")
         if "." not in self.kind:
             raise ValueError("host extension kind must be namespaced")
-        if (
-            len(self.content_hash) != 64
-            or any(char not in "0123456789abcdef" for char in self.content_hash)
+        if len(self.content_hash) != 64 or any(
+            char not in "0123456789abcdef" for char in self.content_hash
         ):
             raise ValueError("host extension hash must be lowercase SHA-256")
 
@@ -174,9 +173,7 @@ class PreparedRunContextV1:
     capability_snapshot: Mapping[str, JsonValue] = field(default_factory=dict)
     frozen_terminal_deliveries: tuple[DeliverySpec, ...] = ()
     host_extensions: Mapping[str, HostExtensionRefV1] = field(default_factory=dict)
-    host_extension_payloads: Mapping[str, Mapping[str, JsonValue]] = field(
-        default_factory=dict
-    )
+    host_extension_payloads: Mapping[str, Mapping[str, JsonValue]] = field(default_factory=dict)
     start_commit_extensions: tuple[StartCommitExtensionV1, ...] = ()
     after_start_commit_handshakes: tuple[AfterStartCommitHandshakeV1, ...] = ()
     terminal_commit_extensions: tuple[TerminalCommitExtensionV1, ...] = ()
@@ -200,16 +197,12 @@ class PreparedRunContextV1:
             _checked_hash(digest, hash_name)
         if self.owner_key is None:
             if self.profile_generation != 0 or self.binding_epoch != 0:
-                raise ValueError(
-                    "owner generation and binding epoch require owner_key"
-                )
+                raise ValueError("owner generation and binding epoch require owner_key")
         else:
             if not str(self.owner_key).strip():
                 raise ValueError("owner_key must not be blank")
             if self.profile_generation < 1 or self.binding_epoch < 1:
-                raise ValueError(
-                    "prepared owner identity requires positive generations"
-                )
+                raise ValueError("prepared owner identity requires positive generations")
         deliveries = tuple(self.frozen_terminal_deliveries)
         delivery_keys = {
             (
@@ -224,13 +217,7 @@ class PreparedRunContextV1:
             raise ValueError("frozen terminal deliveries must be unique")
         object.__setattr__(self, "frozen_terminal_deliveries", deliveries)
         tool_names = tuple(
-            sorted(
-                {
-                    str(item).strip()
-                    for item in self.prepared_tool_names
-                    if str(item).strip()
-                }
-            )
+            sorted({str(item).strip() for item in self.prepared_tool_names if str(item).strip()})
         )
         object.__setattr__(self, "prepared_tool_names", tool_names)
         extensions = dict(self.host_extensions)
@@ -244,14 +231,10 @@ class PreparedRunContextV1:
         for key, payload in payloads.items():
             descriptor = extensions.get(key)
             if descriptor is None:
-                raise ValueError(
-                    "host extension payload requires a matching descriptor"
-                )
+                raise ValueError("host extension payload requires a matching descriptor")
             if fingerprint_json(dict(payload)) != descriptor.content_hash:
                 raise ValueError("host extension payload hash mismatch")
-        object.__setattr__(
-            self, "host_extension_payloads", MappingProxyType(payloads)
-        )
+        object.__setattr__(self, "host_extension_payloads", MappingProxyType(payloads))
         capability_snapshot = dict(self.capability_snapshot)
         if capability_snapshot:
             required = {
@@ -265,35 +248,21 @@ class PreparedRunContextV1:
                 "host_extensions",
             }
             if set(capability_snapshot) != required:
-                raise ValueError(
-                    "trusted capability snapshot has an invalid shape"
-                )
+                raise ValueError("trusted capability snapshot has an invalid shape")
             if (
                 capability_snapshot["capability_lease_intent_ref"]
                 != self.capability_lease_intent_ref
-                or capability_snapshot["prepared_tool_set_ref"]
-                != self.prepared_tool_ref
-                or capability_snapshot["product_snapshot_ref"]
-                != self.product_snapshot_ref
+                or capability_snapshot["prepared_tool_set_ref"] != self.prepared_tool_ref
+                or capability_snapshot["product_snapshot_ref"] != self.product_snapshot_ref
             ):
-                raise ValueError(
-                    "trusted capability snapshot differs from prepared refs"
-                )
+                raise ValueError("trusted capability snapshot differs from prepared refs")
             snapshot_extensions = capability_snapshot["host_extensions"]
             if not isinstance(snapshot_extensions, Mapping):
-                raise ValueError(
-                    "trusted capability snapshot host_extensions must be an object"
-                )
-            expected_selection = payloads.get(
-                "deskpet.companion.selection.v1"
-            )
-            actual_selection = snapshot_extensions.get(
-                "deskpet.companion.selection.v1"
-            )
+                raise ValueError("trusted capability snapshot host_extensions must be an object")
+            expected_selection = payloads.get("deskpet.companion.selection.v1")
+            actual_selection = snapshot_extensions.get("deskpet.companion.selection.v1")
             if actual_selection != expected_selection:
-                raise ValueError(
-                    "trusted companion selection differs from its host extension"
-                )
+                raise ValueError("trusted companion selection differs from its host extension")
         object.__setattr__(
             self,
             "capability_snapshot",
@@ -357,14 +326,10 @@ class PreparedRunContextV1:
                     )
                 ],
                 "host_extensions": {
-                    key: value.to_dict()
-                    for key, value in sorted(self.host_extensions.items())
+                    key: value.to_dict() for key, value in sorted(self.host_extensions.items())
                 },
                 "host_extension_payloads": {
-                    key: dict(value)
-                    for key, value in sorted(
-                        self.host_extension_payloads.items()
-                    )
+                    key: dict(value) for key, value in sorted(self.host_extension_payloads.items())
                 },
                 "callback_descriptors": [
                     [

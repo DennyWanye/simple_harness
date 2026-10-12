@@ -53,9 +53,7 @@ async def _admitted(
         mcp_revision=0,
     )
     durable_hits = list(hits or [])
-    receipt_ref = fingerprint_json(
-        {"root_run_id": "root-builder", "hits": durable_hits}
-    )
+    receipt_ref = fingerprint_json({"root_run_id": "root-builder", "hits": durable_hits})
     snapshot_ref = "catalog:builder-fixture"
     await store.record_search_receipt(
         receipt_id=receipt_ref,
@@ -132,9 +130,7 @@ def _write_pack(
         json.dumps(
             {
                 "type": "object",
-                "properties": {
-                    "target_name": {"type": "string", "minLength": 1}
-                },
+                "properties": {"target_name": {"type": "string", "minLength": 1}},
                 "required": ["target_name"],
                 "additionalProperties": False,
             }
@@ -248,8 +244,7 @@ def _write_skill_pack(launch, *, draft_index: int = 0) -> Path:
     skill = root / "skills" / "daily-three" / "SKILL.md"
     skill.parent.mkdir(parents=True, exist_ok=True)
     skill.write_text(
-        "---\nname: daily-three\nallowed-tools: []\n---\n"
-        "# Daily Three\n\nPick three priorities.\n",
+        "---\nname: daily-three\nallowed-tools: []\n---\n# Daily Three\n\nPick three priorities.\n",
         encoding="utf-8",
     )
     manifest = {
@@ -308,12 +303,8 @@ async def test_builder_admission_uses_current_search_and_managed_staging(
     _host, launch, _uow, _registry, _messages = await _admitted(tmp_path)
 
     assert Path(launch.task_workspace) == (tmp_path / "project").resolve()
-    assert Path(launch.staging_root).is_relative_to(
-        (tmp_path / "deskpet-user-data").resolve()
-    )
-    assert not Path(launch.staging_root).is_relative_to(
-        Path(launch.task_workspace)
-    )
+    assert Path(launch.staging_root).is_relative_to((tmp_path / "deskpet-user-data").resolve())
+    assert not Path(launch.staging_root).is_relative_to(Path(launch.task_workspace))
     assert launch.draft_path(0).is_dir()
 
 
@@ -415,9 +406,7 @@ async def test_builder_completion_is_closed_and_manager_owned(
             workspace={
                 "root": str(tmp_path / "project"),
                 "write_scope_root": str(tmp_path / "project"),
-                "scope_hash": fingerprint_json(
-                    {"root": str(tmp_path / "project")}
-                ),
+                "scope_hash": fingerprint_json({"root": str(tmp_path / "project")}),
             },
             capability_hash="a" * 64,
             provider_plan={"providers": ["fixture"]},
@@ -599,13 +588,9 @@ async def test_candidate_only_finalize_issues_receipt_without_manager(
         hashlib.sha256(transaction.material["archive_bytes"]).hexdigest()
         == transaction.values[0]["archive_hash"]
     )
-    with zipfile.ZipFile(
-        io.BytesIO(transaction.material["archive_bytes"])
-    ) as archive:
+    with zipfile.ZipFile(io.BytesIO(transaction.material["archive_bytes"])) as archive:
         file_members = [
-            (path, archive.read(path))
-            for path in archive.namelist()
-            if path != "deskpet-pack.json"
+            (path, archive.read(path)) for path in archive.namelist() if path != "deskpet-pack.json"
         ]
     expected_file_set_hash = fingerprint_json(
         {
@@ -627,15 +612,10 @@ async def test_candidate_only_finalize_issues_receipt_without_manager(
             "schema": "capability-candidate-content-v1",
             "manifest_hash": transaction.values[0]["manifest_hash"],
             "file_set_hash": expected_file_set_hash,
-            "effect_topology_hash": transaction.values[0][
-                "effect_topology_hash"
-            ],
+            "effect_topology_hash": transaction.values[0]["effect_topology_hash"],
         }
     )
-    assert (
-        transaction.values[0]["validated_draft_hash"]
-        == candidate_content_hash
-    )
+    assert transaction.values[0]["validated_draft_hash"] == candidate_content_hash
     assert transaction.verified == 1
     assert service.calls == 0
     assert prepared.prepared_fingerprint

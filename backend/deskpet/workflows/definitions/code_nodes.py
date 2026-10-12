@@ -121,9 +121,7 @@ _DISCOVERY_ONLY_TOOL_NAMES = frozenset(
         "workspace_prepare",
     }
 )
-_REPEATABLE_DISCOVERY_SEARCH_TOOL_NAMES = frozenset(
-    {"capability_search", "tool_search"}
-)
+_REPEATABLE_DISCOVERY_SEARCH_TOOL_NAMES = frozenset({"capability_search", "tool_search"})
 _MAX_CONSECUTIVE_DISCOVERY_SEARCHES = 3
 _MAX_CONSECUTIVE_FAILED_DESCRIBES = 2
 _PROVIDER_BALANCE_FAILURE = re.compile(
@@ -173,8 +171,14 @@ class CapabilitySnapshotV1:
             schema_hash=str(value["schema_hash"]),
             spec_version=str(value["spec_version"]),
             effect_policy=dict(raw_policy) if isinstance(raw_policy, Mapping) else None,
-            lifecycle_hash=(str(value["lifecycle_hash"]) if value.get("lifecycle_hash") is not None else None),
-            outcome_parser_hash=(str(value["outcome_parser_hash"]) if value.get("outcome_parser_hash") is not None else None),
+            lifecycle_hash=(
+                str(value["lifecycle_hash"]) if value.get("lifecycle_hash") is not None else None
+            ),
+            outcome_parser_hash=(
+                str(value["outcome_parser_hash"])
+                if value.get("outcome_parser_hash") is not None
+                else None
+            ),
         )
 
 
@@ -188,7 +192,14 @@ class WorkflowSessionRefV1:
     code_epoch: int
 
     def __post_init__(self) -> None:
-        if not all((self.base_session_id, self.code_session_id, self.delivery_session_id, self.project_root_hash)):
+        if not all(
+            (
+                self.base_session_id,
+                self.code_session_id,
+                self.delivery_session_id,
+                self.project_root_hash,
+            )
+        ):
             raise ValueError("Complex Code session references are required")
         if self.base_epoch < 0 or self.code_epoch < 0:
             raise ValueError("session epochs must not be negative")
@@ -276,7 +287,9 @@ def _effective(state: Mapping[str, object]) -> dict[str, object]:
     return effective
 
 
-def _merged_values(state: Mapping[str, object], updates: Mapping[str, JsonValue]) -> dict[str, JsonValue]:
+def _merged_values(
+    state: Mapping[str, object], updates: Mapping[str, JsonValue]
+) -> dict[str, JsonValue]:
     current = state.get("values")
     merged = copy.deepcopy(dict(current)) if isinstance(current, Mapping) else {}
     merged.update(copy.deepcopy(dict(updates)))
@@ -290,7 +303,9 @@ def _stable_id(*parts: object, prefix: str) -> str:
     return f"{prefix}-{digest[:24]}"
 
 
-async def _call(value: object, *args: object, method: str | None = None, **kwargs: object) -> object:
+async def _call(
+    value: object, *args: object, method: str | None = None, **kwargs: object
+) -> object:
     target = getattr(value, method) if method and hasattr(value, method) else value
     if not callable(target):
         raise TypeError(f"workflow port does not provide callable {method or 'entrypoint'}")
@@ -403,7 +418,9 @@ def _todo_items(effective: Mapping[str, object]) -> list[dict[str, JsonValue]]:
     return [copy.deepcopy(dict(item)) for item in raw]
 
 
-def _todo_intents(run_id: str, todos: Sequence[Mapping[str, JsonValue]]) -> list[dict[str, JsonValue]]:
+def _todo_intents(
+    run_id: str, todos: Sequence[Mapping[str, JsonValue]]
+) -> list[dict[str, JsonValue]]:
     return [
         {
             "intent_id": f"{run_id}:todo:{item['workflow_step_id']}",
@@ -447,11 +464,17 @@ async def intake_handler(state: WorkflowState, context: WorkflowContext) -> Stat
         original_request=request,
         request_id=str(context.request_id or effective.get("request_id", "")),
         turn_id=str(context.turn_id or effective.get("turn_id", "")),
-        system_prompt_ref=(str(effective["system_prompt_ref"]) if effective.get("system_prompt_ref") else None),
+        system_prompt_ref=(
+            str(effective["system_prompt_ref"]) if effective.get("system_prompt_ref") else None
+        ),
         prompt_ref=(str(effective["prompt_ref"]) if effective.get("prompt_ref") else None),
         skill_refs=list(effective.get("skill_refs", [])),
-        compaction_summary=(str(effective["compaction_summary"]) if effective.get("compaction_summary") else None),
-        compaction_ref=(str(effective["compaction_ref"]) if effective.get("compaction_ref") else None),
+        compaction_summary=(
+            str(effective["compaction_summary"]) if effective.get("compaction_summary") else None
+        ),
+        compaction_ref=(
+            str(effective["compaction_ref"]) if effective.get("compaction_ref") else None
+        ),
         token_estimate=int(effective.get("token_estimate", 0)),
         iteration=0,
         proposal_turns_used=0,
@@ -499,19 +522,31 @@ async def clarify_handler(state: WorkflowState, context: WorkflowContext) -> Sta
     del context
     effective = _effective(state)
     if not bool(effective.get("clarification_required", False)):
-        return StatePatch({"values": _merged_values(state, {"clarification_status": "not_required"})})
+        return StatePatch(
+            {"values": _merged_values(state, {"clarification_status": "not_required"})}
+        )
     response = effective.get("clarification_response")
     if response is None:
         response = _interrupt(
             {
                 "kind": "clarification",
-                "question": str(effective.get("clarification_question", "Please clarify the requested code change.")),
+                "question": str(
+                    effective.get(
+                        "clarification_question", "Please clarify the requested code change."
+                    )
+                ),
                 "options": ["continue", "cancel"],
             }
         )
     if isinstance(response, Mapping):
         if str(response.get("action", "continue")) == "cancel":
-            return StatePatch({"values": _merged_values(state, {"workflow_status": "cancelled", "clarification_status": "cancelled"})})
+            return StatePatch(
+                {
+                    "values": _merged_values(
+                        state, {"workflow_status": "cancelled", "clarification_status": "cancelled"}
+                    )
+                }
+            )
         answer = str(response.get("answer", ""))
     else:
         answer = str(response)
@@ -519,14 +554,27 @@ async def clarify_handler(state: WorkflowState, context: WorkflowContext) -> Sta
     messages = list(proposal["messages"])
     messages.append({"role": "user", "content": answer, "message_id": "clarification-response"})
     proposal["messages"] = messages
-    return StatePatch({"values": _merged_values(state, {"clarification_response": answer, "clarification_status": "resolved", "proposal_state": proposal})})
+    return StatePatch(
+        {
+            "values": _merged_values(
+                state,
+                {
+                    "clarification_response": answer,
+                    "clarification_status": "resolved",
+                    "proposal_state": proposal,
+                },
+            )
+        }
+    )
 
 
 async def plan_handler(state: WorkflowState, context: WorkflowContext) -> StatePatch:
     del context
     effective = _effective(state)
     if effective.get("workflow_status") == "cancelled":
-        return StatePatch({"values": _merged_values(state, {"plan": {}, "todos": [], "todo_intents": []})})
+        return StatePatch(
+            {"values": _merged_values(state, {"plan": {}, "todos": [], "todo_intents": []})}
+        )
     run_id = str(state.get("run_id", ""))
     request = str(effective.get("request", ""))
     raw_steps = effective.get("plan_steps", [])
@@ -536,7 +584,9 @@ async def plan_handler(state: WorkflowState, context: WorkflowContext) -> StateP
     for index, raw in enumerate(raw_steps):
         title = str(raw.get("title", "")) if isinstance(raw, Mapping) else str(raw)
         step_id = _stable_id(run_id, index, title, prefix="step")
-        steps.append({"workflow_step_id": step_id, "index": index, "title": title, "status": "pending"})
+        steps.append(
+            {"workflow_step_id": step_id, "index": index, "title": title, "status": "pending"}
+        )
     plan_id = _stable_id(run_id, request, prefix="plan")
     proposal = _proposal_state(effective).to_dict()
     proposal["active_plan_id"] = plan_id
@@ -574,8 +624,14 @@ async def wait_approval_handler(state: WorkflowState, context: WorkflowContext) 
                     "options": ["approve", "revise", "cancel"],
                 }
             )
-    approved = bool(decision.get("approved", False)) if isinstance(decision, Mapping) else bool(decision)
-    action = str(decision.get("action", "approve" if approved else "cancel")) if isinstance(decision, Mapping) else ("approve" if approved else "cancel")
+    approved = (
+        bool(decision.get("approved", False)) if isinstance(decision, Mapping) else bool(decision)
+    )
+    action = (
+        str(decision.get("action", "approve" if approved else "cancel"))
+        if isinstance(decision, Mapping)
+        else ("approve" if approved else "cancel")
+    )
     if approved or action == "approve":
         status = "approved"
         workflow_status = "running"
@@ -669,8 +725,19 @@ def _dynamic_review(
         policy_kind = ""
         if capability is not None and capability.effect_policy is not None:
             policy_kind = str(capability.effect_policy.get("kind", ""))
-        safe_read = access == "read" and policy_kind == "idempotent_read" and capability is not None and capability.outcome_parser_hash is not None
-        safe_write = access == "write" and capability is not None and capability.lifecycle_hash is not None and capability.outcome_parser_hash is not None and bool(policy_kind)
+        safe_read = (
+            access == "read"
+            and policy_kind == "idempotent_read"
+            and capability is not None
+            and capability.outcome_parser_hash is not None
+        )
+        safe_write = (
+            access == "write"
+            and capability is not None
+            and capability.lifecycle_hash is not None
+            and capability.outcome_parser_hash is not None
+            and bool(policy_kind)
+        )
         if not (safe_read or safe_write):
             reviews.append(
                 {
@@ -688,14 +755,23 @@ async def llm_proposal_handler(state: WorkflowState, context: WorkflowContext) -
     effective = _effective(state)
     proposal_state = _proposal_state(effective)
     budgets = state.get("budgets", {})
-    proposal_budget = int(budgets.get("proposal_turns", MAX_PROPOSAL_TURNS)) if isinstance(budgets, Mapping) else MAX_PROPOSAL_TURNS
+    proposal_budget = (
+        int(budgets.get("proposal_turns", MAX_PROPOSAL_TURNS))
+        if isinstance(budgets, Mapping)
+        else MAX_PROPOSAL_TURNS
+    )
     if proposal_state.proposal_turns_used >= proposal_budget:
-        return StatePatch({"values": _merged_values(state, {"workflow_status": "blocked", "blocked_reason": "proposal_budget_exhausted"})})
+        return StatePatch(
+            {
+                "values": _merged_values(
+                    state,
+                    {"workflow_status": "blocked", "blocked_reason": "proposal_budget_exhausted"},
+                )
+            }
+        )
     try:
         proposal_port = context.port("llm")
-        if context.identity is not None and hasattr(
-            proposal_port, "propose_for_execution"
-        ):
+        if context.identity is not None and hasattr(proposal_port, "propose_for_execution"):
             outcome_raw = await _call(
                 proposal_port,
                 proposal_state,
@@ -703,9 +779,7 @@ async def llm_proposal_handler(state: WorkflowState, context: WorkflowContext) -
                 execution_identity=context.identity,
             )
         else:
-            outcome_raw = await _call(
-                proposal_port, proposal_state, method="propose"
-            )
+            outcome_raw = await _call(proposal_port, proposal_state, method="propose")
     except Exception as exc:
         if not _provider_failure_is_retryable(exc):
             raise WorkflowNodeError(
@@ -726,9 +800,7 @@ async def llm_proposal_handler(state: WorkflowState, context: WorkflowContext) -
         outcome = outcome_raw
     proposal = proposal_state.to_dict()
     if outcome.compacted_messages is not None:
-        proposal["messages"] = [
-            dict(message) for message in outcome.compacted_messages
-        ]
+        proposal["messages"] = [dict(message) for message in outcome.compacted_messages]
         proposal["compaction_summary"] = outcome.compaction_summary
         proposal["compaction_ref"] = outcome.compaction_ref
     proposal["token_estimate"] = outcome.token_estimate
@@ -743,17 +815,17 @@ async def llm_proposal_handler(state: WorkflowState, context: WorkflowContext) -
     proposal["last_error"] = outcome.error.to_dict() if outcome.error else None
     capabilities = _capabilities(effective)
     raw_by_call = _proposal_raw_by_call(outcome)
-    forbidden_ids = [call.stable_call_id for call in outcome.prepared_calls if call.tool_name in FORBIDDEN_DURABLE_TOOLS]
+    forbidden_ids = [
+        call.stable_call_id
+        for call in outcome.prepared_calls
+        if call.tool_name in FORBIDDEN_DURABLE_TOOLS
+    ]
     unsupported_ids = [
         call.stable_call_id
         for call in outcome.prepared_calls
         if (
             call.tool_name not in capabilities
-            and str(
-                raw_by_call.get(call.stable_call_id, {}).get(
-                    "capability_admission", ""
-                )
-            )
+            and str(raw_by_call.get(call.stable_call_id, {}).get("capability_admission", ""))
             != "context_os_activated"
             and not call.tool_name.startswith(("plugin:", "mcp:"))
         )
@@ -821,9 +893,7 @@ def _execution_obligations(request: str) -> tuple[bool, bool]:
     positive_request = _NEGATED_WRITE_EXECUTION_REQUEST.sub(" ", request)
     requires_write = bool(_WRITE_EXECUTION_REQUEST.search(positive_request))
     requires_test = bool(_TEST_EXECUTION_REQUEST.search(positive_request))
-    if not requires_write and not _EXPLICIT_TEST_EXECUTION_REQUEST.search(
-        positive_request
-    ):
+    if not requires_write and not _EXPLICIT_TEST_EXECUTION_REQUEST.search(positive_request):
         requires_test = False
     return requires_write, requires_test
 
@@ -853,10 +923,7 @@ def _tool_free_read_only_completed(
 
     request = proposal_state.original_request.strip()
     routed = route_task(request, workspace_context=True)
-    return (
-        routed.route is WorkflowRoute.REACT
-        or bool(_EXPLICIT_TOOL_FREE_REQUEST.search(request))
-    )
+    return routed.route is WorkflowRoute.REACT or bool(_EXPLICIT_TOOL_FREE_REQUEST.search(request))
 
 
 def _tool_free_evidence_backed_completed(
@@ -883,16 +950,10 @@ def _tool_free_evidence_backed_completed(
         for result in proposal_state.committed_tool_results.values()
         if _result_success(result)
     }
-    requires_write, requires_test = _execution_obligations(
-        proposal_state.original_request
-    )
-    if requires_write and not (
-        successful_tools & _WRITE_TOOL_NAMES
-    ):
+    requires_write, requires_test = _execution_obligations(proposal_state.original_request)
+    if requires_write and not (successful_tools & _WRITE_TOOL_NAMES):
         return False
-    if requires_test and not (
-        successful_tools & _TEST_TOOL_NAMES
-    ):
+    if requires_test and not (successful_tools & _TEST_TOOL_NAMES):
         return False
     return bool(successful_tools)
 
@@ -914,9 +975,7 @@ def _consecutive_discovery_searches(
     for result in reversed(list(proposal_state.committed_tool_results.values())):
         if not isinstance(result, Mapping):
             break
-        if str(result.get("tool_name", "")) not in (
-            _REPEATABLE_DISCOVERY_SEARCH_TOOL_NAMES
-        ):
+        if str(result.get("tool_name", "")) not in (_REPEATABLE_DISCOVERY_SEARCH_TOOL_NAMES):
             break
         count += 1
     return count
@@ -964,14 +1023,10 @@ def _drop_superseded_discovery_search_messages(
                         continue
                     function = raw_call.get("function")
                     names.add(
-                        str(function.get("name") or "")
-                        if isinstance(function, Mapping)
-                        else ""
+                        str(function.get("name") or "") if isinstance(function, Mapping) else ""
                     )
                     call_ids.add(str(raw_call.get("id") or ""))
-                if names and names.issubset(
-                    _REPEATABLE_DISCOVERY_SEARCH_TOOL_NAMES
-                ):
+                if names and names.issubset(_REPEATABLE_DISCOVERY_SEARCH_TOOL_NAMES):
                     removed_call_ids.update(call_ids)
                     continue
         if (
@@ -996,9 +1051,7 @@ def _durable_task_evidence_satisfied(
     """
 
     request = proposal_state.original_request.strip()
-    requires_write, requires_test = _execution_obligations(
-        request
-    )
+    requires_write, requires_test = _execution_obligations(request)
     successful = _successful_receipts(proposal_state)
     if not successful:
         return (
@@ -1020,9 +1073,7 @@ def _durable_task_evidence_satisfied(
         if str(result.get("tool_name", "")) in _WRITE_TOOL_NAMES
     ]
     test_receipts = [
-        result
-        for result in action_receipts
-        if str(result.get("tool_name", "")) in _TEST_TOOL_NAMES
+        result for result in action_receipts if str(result.get("tool_name", "")) in _TEST_TOOL_NAMES
     ]
     if requires_write and not write_receipts:
         return False
@@ -1082,9 +1133,7 @@ async def tool_execution_handler(state: WorkflowState, context: WorkflowContext)
                 # OS tools activated after the workflow started.  The dispatch
                 # adapter binds this grant to the exact effect, args and
                 # trusted scope.
-                authorizations[call.stable_call_id] = {
-                    "action": "allow_once_opaque"
-                }
+                authorizations[call.stable_call_id] = {"action": "allow_once_opaque"}
     review = effective.get("dynamic_tool_review", [])
     if isinstance(review, list) and review:
         decision = _interrupt(
@@ -1094,15 +1143,24 @@ async def tool_execution_handler(state: WorkflowState, context: WorkflowContext)
                 "options": ["allow_once_opaque", "continue_without", "cancel"],
             }
         )
-        action = str(decision.get("action", "cancel")) if isinstance(decision, Mapping) else str(decision)
+        action = (
+            str(decision.get("action", "cancel"))
+            if isinstance(decision, Mapping)
+            else str(decision)
+        )
         review_ids = {str(item["stable_call_id"]) for item in review}
         if action == "cancel":
-            return StatePatch({"values": _merged_values(state, {"workflow_status": "cancelled", "cancel_reason": "dynamic_tool_rejected"})})
+            return StatePatch(
+                {
+                    "values": _merged_values(
+                        state,
+                        {"workflow_status": "cancelled", "cancel_reason": "dynamic_tool_rejected"},
+                    )
+                }
+            )
         if action == "continue_without":
             calls = [call for call in calls if call.stable_call_id not in review_ids]
-            reviewed_by_id = {
-                str(item["stable_call_id"]): item for item in review
-            }
+            reviewed_by_id = {str(item["stable_call_id"]): item for item in review}
             skipped = {
                 call_id: {
                     "stable_call_id": call_id,
@@ -1114,7 +1172,10 @@ async def tool_execution_handler(state: WorkflowState, context: WorkflowContext)
                 for call_id in review_ids
             }
             proposal_payload = proposal_state.to_dict()
-            proposal_payload["committed_tool_results"] = {**dict(proposal_payload["committed_tool_results"]), **skipped}
+            proposal_payload["committed_tool_results"] = {
+                **dict(proposal_payload["committed_tool_results"]),
+                **skipped,
+            }
             proposal_state = ProposalStateV1.from_dict(proposal_payload)
         elif action == "allow_once_opaque":
             authorizations.update(
@@ -1132,12 +1193,8 @@ async def tool_execution_handler(state: WorkflowState, context: WorkflowContext)
     if (
         str(effective.get("workflow_name") or "") == "durable_task"
         and calls
-        and all(
-            call.tool_name in _REPEATABLE_DISCOVERY_SEARCH_TOOL_NAMES
-            for call in calls
-        )
-        and _consecutive_discovery_searches(proposal_state)
-        >= _MAX_CONSECUTIVE_DISCOVERY_SEARCHES
+        and all(call.tool_name in _REPEATABLE_DISCOVERY_SEARCH_TOOL_NAMES for call in calls)
+        and _consecutive_discovery_searches(proposal_state) >= _MAX_CONSECUTIVE_DISCOVERY_SEARCHES
     ):
         blocked_search_ids = {call.stable_call_id for call in calls}
     blocked_describe_ids: set[str] = set()
@@ -1145,8 +1202,7 @@ async def tool_execution_handler(state: WorkflowState, context: WorkflowContext)
         str(effective.get("workflow_name") or "") == "durable_task"
         and calls
         and all(call.tool_name == "tool_describe" for call in calls)
-        and _consecutive_failed_describes(proposal_state)
-        >= _MAX_CONSECUTIVE_FAILED_DESCRIBES
+        and _consecutive_failed_describes(proposal_state) >= _MAX_CONSECUTIVE_FAILED_DESCRIBES
     ):
         blocked_describe_ids = {call.stable_call_id for call in calls}
     dispatchable_calls = [
@@ -1204,7 +1260,9 @@ async def tool_execution_handler(state: WorkflowState, context: WorkflowContext)
         call = call_by_id.get(str(call_id))
         if call is None:
             raise ValueError(f"dispatch returned unknown call id: {call_id}")
-        payload = copy.deepcopy(dict(raw)) if isinstance(raw, Mapping) else {"result": copy.deepcopy(raw)}
+        payload = (
+            copy.deepcopy(dict(raw)) if isinstance(raw, Mapping) else {"result": copy.deepcopy(raw)}
+        )
         payload.update(
             {
                 "stable_call_id": call.stable_call_id,
@@ -1233,16 +1291,12 @@ async def tool_execution_handler(state: WorkflowState, context: WorkflowContext)
         str(effective.get("workflow_name") or "") == "durable_task"
         and calls
         and not blocked_search_ids
-        and all(
-            call.tool_name in _REPEATABLE_DISCOVERY_SEARCH_TOOL_NAMES
-            for call in calls
-        )
+        and all(call.tool_name in _REPEATABLE_DISCOVERY_SEARCH_TOOL_NAMES for call in calls)
     ):
         messages = _drop_superseded_discovery_search_messages(messages)
     if calls:
         raw_by_id = {
-            str(item.get("stable_call_id", "")): item
-            for item in outcome.raw_tool_proposals
+            str(item.get("stable_call_id", "")): item for item in outcome.raw_tool_proposals
         }
         messages.append(
             {
@@ -1304,23 +1358,20 @@ async def tool_execution_handler(state: WorkflowState, context: WorkflowContext)
         )
     proposal["messages"] = messages
     todos = _todo_items(effective)
-    all_success = bool(calls) and all(_result_success(normalized[call.stable_call_id]) for call in calls)
+    all_success = bool(calls) and all(
+        _result_success(normalized[call.stable_call_id]) for call in calls
+    )
     if str(effective.get("workflow_name") or "") == "durable_task":
         tool_free_complete = False
-        evidence_backed_complete = _tool_free_receipt_backed_completed(
-            outcome, proposal_state
-        )
+        evidence_backed_complete = _tool_free_receipt_backed_completed(outcome, proposal_state)
         step_receipt_backed = all_success and any(
-            call.tool_name not in _DISCOVERY_ONLY_TOOL_NAMES
-            for call in calls
+            call.tool_name not in _DISCOVERY_ONLY_TOOL_NAMES for call in calls
         )
     else:
         # Frozen code_complex@v1 checkpoints retain their historical
         # completion behavior.  New durable_task runs never enter this branch.
         tool_free_complete = _tool_free_read_only_completed(outcome, proposal_state)
-        evidence_backed_complete = _tool_free_evidence_backed_completed(
-            outcome, proposal_state
-        )
+        evidence_backed_complete = _tool_free_evidence_backed_completed(outcome, proposal_state)
         step_receipt_backed = all_success
     active_step = proposal_state.active_step_id
     if evidence_backed_complete:
@@ -1356,22 +1407,46 @@ async def completion_decision_handler(state: WorkflowState, context: WorkflowCon
     proposal_state = _proposal_state(effective)
     outcome = _outcome(effective)
     todos = _todo_items(effective)
-    incomplete = [str(item["workflow_step_id"]) for item in todos if item.get("status") != "completed"]
+    incomplete = [
+        str(item["workflow_step_id"]) for item in todos if item.get("status") != "completed"
+    ]
     budgets = state.get("budgets", {})
-    budget = int(budgets.get("proposal_turns", MAX_PROPOSAL_TURNS)) if isinstance(budgets, Mapping) else MAX_PROPOSAL_TURNS
+    budget = (
+        int(budgets.get("proposal_turns", MAX_PROPOSAL_TURNS))
+        if isinstance(budgets, Mapping)
+        else MAX_PROPOSAL_TURNS
+    )
     if effective.get("workflow_status") in {"cancelled", "blocked"}:
-        decision: dict[str, JsonValue] = {"route": "finalize", "reason": str(effective.get("blocked_reason", "cancelled")), "incomplete_todo_ids": incomplete}
+        decision: dict[str, JsonValue] = {
+            "route": "finalize",
+            "reason": str(effective.get("blocked_reason", "cancelled")),
+            "incomplete_todo_ids": incomplete,
+        }
     elif proposal_state.proposal_turns_used >= budget:
-        decision = {"route": "audit", "reason": "proposal_budget_exhausted", "incomplete_todo_ids": incomplete}
+        decision = {
+            "route": "audit",
+            "reason": "proposal_budget_exhausted",
+            "incomplete_todo_ids": incomplete,
+        }
     elif outcome.prepared_calls:
-        decision = {"route": "loop", "reason": "tool_results_available", "incomplete_todo_ids": incomplete}
+        decision = {
+            "route": "loop",
+            "reason": "tool_results_available",
+            "incomplete_todo_ids": incomplete,
+        }
     elif incomplete:
-        decision = {"route": "loop", "reason": "incomplete_todos", "incomplete_todo_ids": incomplete}
+        decision = {
+            "route": "loop",
+            "reason": "incomplete_todos",
+            "incomplete_todo_ids": incomplete,
+        }
     else:
         decision = {"route": "test", "reason": "proposal_complete", "incomplete_todo_ids": []}
     evaluator = context.ports.get("evaluator")
     if evaluator is not None and hasattr(evaluator, "completion_decision"):
-        override = await _call(evaluator, copy.deepcopy(decision), proposal_state, method="completion_decision")
+        override = await _call(
+            evaluator, copy.deepcopy(decision), proposal_state, method="completion_decision"
+        )
         if isinstance(override, Mapping):
             decision.update(copy.deepcopy(dict(override)))
     route = str(decision.get("route", "loop"))
@@ -1382,7 +1457,14 @@ async def completion_decision_handler(state: WorkflowState, context: WorkflowCon
     proposal = proposal_state.to_dict()
     proposal["completion_attempts"] = proposal_state.completion_attempts + 1
     proposal["completion_outcomes"] = [*proposal_state.completion_outcomes, decision]
-    return StatePatch({"values": _merged_values(state, {"proposal_state": proposal, "completion_decision": decision, "next_route": route})})
+    return StatePatch(
+        {
+            "values": _merged_values(
+                state,
+                {"proposal_state": proposal, "completion_decision": decision, "next_route": route},
+            )
+        }
+    )
 
 
 async def completion_route(state: WorkflowState, context: WorkflowContext) -> str:
@@ -1437,27 +1519,31 @@ async def test_handler(state: WorkflowState, context: WorkflowContext) -> StateP
     proposal["verify_attempts"] = proposal_state.verify_attempts + 1
     proposal["verify_outcomes"] = [*proposal_state.verify_outcomes, result]
     proposal["evidence_refs"] = list(dict.fromkeys([*proposal_state.evidence_refs, *evidence]))
-    return StatePatch({"values": _merged_values(state, {"proposal_state": proposal, "test_result": result})})
+    return StatePatch(
+        {"values": _merged_values(state, {"proposal_state": proposal, "test_result": result})}
+    )
 
 
 async def audit_handler(state: WorkflowState, context: WorkflowContext) -> StatePatch:
     effective = _effective(state)
     proposal_state = _proposal_state(effective)
     todos = _todo_items(effective)
-    incomplete = [str(item["workflow_step_id"]) for item in todos if item.get("status") != "completed"]
+    incomplete = [
+        str(item["workflow_step_id"]) for item in todos if item.get("status") != "completed"
+    ]
     test_result = effective.get("test_result", {})
     test_passed = isinstance(test_result, Mapping) and bool(test_result.get("passed", False))
     audit: dict[str, JsonValue] = {
         "passed": test_passed and not incomplete,
         "test_passed": test_passed,
         "incomplete_todo_ids": incomplete,
-        "reason": "complete" if test_passed and not incomplete else ("incomplete_todos" if incomplete else "tests_failed"),
+        "reason": "complete"
+        if test_passed and not incomplete
+        else ("incomplete_todos" if incomplete else "tests_failed"),
     }
     if isinstance(test_result, Mapping):
         if isinstance(test_result.get("output_contract"), Mapping):
-            audit["output_contract"] = copy.deepcopy(
-                dict(test_result["output_contract"])
-            )
+            audit["output_contract"] = copy.deepcopy(dict(test_result["output_contract"]))
         if test_result.get("failure_code"):
             audit["failure_code"] = str(test_result["failure_code"])
     evaluator = context.ports.get("evaluator")
@@ -1469,9 +1555,20 @@ async def audit_handler(state: WorkflowState, context: WorkflowContext) -> State
         audit["passed"] = False
         audit["reason"] = "incomplete_todos"
     budgets = state.get("budgets", {})
-    proposal_budget = int(budgets.get("proposal_turns", MAX_PROPOSAL_TURNS)) if isinstance(budgets, Mapping) else MAX_PROPOSAL_TURNS
-    fix_budget = int(budgets.get("fix_rounds", MAX_FIX_ROUNDS)) if isinstance(budgets, Mapping) else MAX_FIX_ROUNDS
-    can_fix = proposal_state.proposal_turns_used < proposal_budget and proposal_state.fix_rounds_used < fix_budget
+    proposal_budget = (
+        int(budgets.get("proposal_turns", MAX_PROPOSAL_TURNS))
+        if isinstance(budgets, Mapping)
+        else MAX_PROPOSAL_TURNS
+    )
+    fix_budget = (
+        int(budgets.get("fix_rounds", MAX_FIX_ROUNDS))
+        if isinstance(budgets, Mapping)
+        else MAX_FIX_ROUNDS
+    )
+    can_fix = (
+        proposal_state.proposal_turns_used < proposal_budget
+        and proposal_state.fix_rounds_used < fix_budget
+    )
     if bool(audit.get("passed", False)):
         route = "finalize"
         workflow_status = "completed"
@@ -1523,7 +1620,9 @@ async def audit_route(state: WorkflowState, context: WorkflowContext) -> str:
 
 async def finalize_handler(state: WorkflowState, context: WorkflowContext) -> StatePatch:
     effective = _effective(state)
-    run_id = context.identity.run_id if context.identity is not None else str(state.get("run_id", ""))
+    run_id = (
+        context.identity.run_id if context.identity is not None else str(state.get("run_id", ""))
+    )
     if not run_id:
         raise ValueError("workflow run id is missing")
     workflow_status = str(effective.get("workflow_status", "blocked"))

@@ -52,9 +52,7 @@ def test_first_open_creates_only_clean_sdk_schema_v7(tmp_path: Path) -> None:
         rows = database.connection.execute(
             "SELECT version, name, checksum FROM sdk_schema_migrations ORDER BY version"
         ).fetchall()
-        assert [tuple(row[:2]) for row in rows] == [
-            (SCHEMA_VERSION, f"{SCHEMA_VERSION:04d}_fresh")
-        ]
+        assert [tuple(row[:2]) for row in rows] == [(SCHEMA_VERSION, f"{SCHEMA_VERSION:04d}_fresh")]
         assert all(len(row[2]) == 64 for row in rows)
     finally:
         database.close()

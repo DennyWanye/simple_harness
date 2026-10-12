@@ -17,6 +17,7 @@ WI-T2.1 完成" 的最硬可控证据 — 不用启 Tauri UI / 不用 LLM creden
 跑法：
     G:\\projects\\deskpet\\backend\\.venv\\Scripts\\python.exe scripts/manual_verify_smoke.py
 """
+
 from __future__ import annotations
 
 import json
@@ -51,10 +52,11 @@ from paths import user_data_dir
 
 metrics_path = Path(user_data_dir()) / "metrics.jsonl"
 print(f"\n[3] metrics.jsonl 路径: {metrics_path}")
-print(f"    本次 smoke 前 size: {metrics_path.stat().st_size if metrics_path.exists() else 0} bytes")
+print(
+    f"    本次 smoke 前 size: {metrics_path.stat().st_size if metrics_path.exists() else 0} bytes"
+)
 before_lines = (
-    metrics_path.read_text(encoding="utf-8").splitlines()
-    if metrics_path.exists() else []
+    metrics_path.read_text(encoding="utf-8").splitlines() if metrics_path.exists() else []
 )
 print(f"    本次 smoke 前 总行数: {len(before_lines)}")
 verify_before = sum(1 for ln in before_lines if "verify_" in ln)
@@ -84,10 +86,7 @@ print(f"    agent.max_verify_nudges: {agent.max_verify_nudges}")
 
 # 5. flush metrics + diff
 time.sleep(0.2)  # MetricsSink 是 immediate write，但给一点 OS flush 余量
-after_lines = (
-    metrics_path.read_text(encoding="utf-8").splitlines()
-    if metrics_path.exists() else []
-)
+after_lines = metrics_path.read_text(encoding="utf-8").splitlines() if metrics_path.exists() else []
 print("\n[5] metrics.jsonl 写入验证")
 print(f"    smoke 后 总行数: {len(after_lines)}")
 verify_after = sum(1 for ln in after_lines if "verify_" in ln)
@@ -95,7 +94,7 @@ print(f"    smoke 后 verify_* 行数: {verify_after}")
 print(f"    本次 smoke 新增 verify_* 行数: {verify_after - verify_before}")
 
 # 6. 打印新增行
-new_lines = after_lines[len(before_lines):]
+new_lines = after_lines[len(before_lines) :]
 if new_lines:
     print(f"\n[6] 新增 metrics 行（{len(new_lines)} 条）:")
     for i, ln in enumerate(new_lines, 1):

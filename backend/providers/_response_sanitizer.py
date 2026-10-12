@@ -14,6 +14,7 @@ so they unit-test red→green and live at the single provider chokepoint.
 
 `｜` = U+FF5C (fullwidth vertical line), `▁` = U+2581.
 """
+
 from __future__ import annotations
 
 import json
@@ -22,9 +23,7 @@ import re
 
 logger = logging.getLogger(__name__)
 
-_THINK_PAIR_RE = re.compile(
-    r"<｜begin▁of▁thinking｜>.*?<｜end▁of▁thinking｜>", re.DOTALL
-)
+_THINK_PAIR_RE = re.compile(r"<｜begin▁of▁thinking｜>.*?<｜end▁of▁thinking｜>", re.DOTALL)
 _THINK_TAG_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
 _ORPHAN_THINK_RE = re.compile(r"<｜(?:begin|end)▁of▁thinking｜>")
 _DSML_OPEN = "<｜｜DSML｜｜tool_calls>"

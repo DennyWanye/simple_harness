@@ -22,13 +22,15 @@ from .provider_projection import (
 
 logger = logging.getLogger(__name__)
 
-_USAGE_MEASUREMENT_KEYS = frozenset({
-    "input_tokens",
-    "output_tokens",
-    "total_tokens",
-    "cache_tokens",
-    "reasoning_tokens",
-})
+_USAGE_MEASUREMENT_KEYS = frozenset(
+    {
+        "input_tokens",
+        "output_tokens",
+        "total_tokens",
+        "cache_tokens",
+        "reasoning_tokens",
+    }
+)
 
 
 class ProviderProjectionReceiptSource(Protocol):
@@ -71,9 +73,7 @@ class ProviderProjectionContextV1:
 ProjectionContextResolver = Callable[
     [object], ProviderProjectionContextV1 | object | Awaitable[object]
 ]
-ProjectionCommitted = Callable[
-    [ProviderProjectionContextV1], object | Awaitable[object]
-]
+ProjectionCommitted = Callable[[ProviderProjectionContextV1], object | Awaitable[object]]
 FaultHook = Callable[[str, object], None]
 
 
@@ -128,9 +128,7 @@ class SdkProviderProjectionPump:
             value = await value
         return ProviderProjectionContextV1.from_value(value)
 
-    async def _envelope(
-        self, receipt: object
-    ) -> ProviderProjectionEnvelopeV1:
+    async def _envelope(self, receipt: object) -> ProviderProjectionEnvelopeV1:
         sequence = int(_read(receipt, "sequence", 0))
         if sequence < 1:
             raise ValueError("provider projection receipt sequence is invalid")
@@ -159,27 +157,29 @@ class SdkProviderProjectionPump:
                 # cursor.
                 measurement = usage_envelope
         state = str(payload.get("state") or "").strip().lower()
-        return ProviderProjectionEnvelopeV1.from_value({
-            "invocation_id": _read(receipt, "invocation_id"),
-            "settlement_version": _read(
-                receipt, "invocation_version", payload.get("invocation_version")
-            ),
-            "settled_at": payload.get("settled_at", _read(receipt, "created_at")),
-            "session_id": context.session_id,
-            "root_run_id": context.root_run_id,
-            "request_id": context.request_id,
-            "snapshot_id": context.snapshot_id,
-            "state": state,
-            "provider_id": target.get("provider_id"),
-            "model_id": target.get("model"),
-            "binding_epoch": context.binding_epoch,
-            "context_window": context.context_window,
-            "effective_ceiling": context.effective_ceiling,
-            "usage": measurement,
-            "provider_request_id": payload.get("request_id"),
-            "error_code": payload.get("error_code"),
-            "handoff_attempt": payload.get("handoff_attempt"),
-        })
+        return ProviderProjectionEnvelopeV1.from_value(
+            {
+                "invocation_id": _read(receipt, "invocation_id"),
+                "settlement_version": _read(
+                    receipt, "invocation_version", payload.get("invocation_version")
+                ),
+                "settled_at": payload.get("settled_at", _read(receipt, "created_at")),
+                "session_id": context.session_id,
+                "root_run_id": context.root_run_id,
+                "request_id": context.request_id,
+                "snapshot_id": context.snapshot_id,
+                "state": state,
+                "provider_id": target.get("provider_id"),
+                "model_id": target.get("model"),
+                "binding_epoch": context.binding_epoch,
+                "context_window": context.context_window,
+                "effective_ceiling": context.effective_ceiling,
+                "usage": measurement,
+                "provider_request_id": payload.get("request_id"),
+                "error_code": payload.get("error_code"),
+                "handoff_attempt": payload.get("handoff_attempt"),
+            }
+        )
 
     async def run_once(self) -> int:
         cursor = await self._db.get_sdk_provider_projection_cursor(self._consumer_id)
@@ -205,9 +205,7 @@ class SdkProviderProjectionPump:
                 notified = self._on_committed(await self._context(receipt))
                 if inspect.isawaitable(notified):
                     await notified
-            await self._reconciler.advance_cursor(
-                envelope, source_sequence=sequence
-            )
+            await self._reconciler.advance_cursor(envelope, source_sequence=sequence)
             after = sequence
             projected += 1
         return projected

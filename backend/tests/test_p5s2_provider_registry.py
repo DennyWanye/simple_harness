@@ -13,6 +13,7 @@ Covers:
 Mocks `keyring` at module-import time via fixture so no host credential
 store is touched. Uses tmp_path for the toml file.
 """
+
 from __future__ import annotations
 
 import textwrap
@@ -160,14 +161,13 @@ async def test_add_provider_persists(empty_toml: Path, fake_keyring):
     assert providers[0]["id"] == "relay-deepseek"
     # api_key plaintext NOT written to toml
     assert "api_key" not in providers[0]
-    assert providers[0]["api_key_ref"] == (
-        "com.dennywanye.simpleharness.provider.relay-deepseek"
-    )
+    assert providers[0]["api_key_ref"] == ("com.dennywanye.simpleharness.provider.relay-deepseek")
 
     # keychain has it
-    assert fake_keyring.get_password(
-        "com.dennywanye.simpleharness", "provider.relay-deepseek"
-    ) == "sk-real-secret"
+    assert (
+        fake_keyring.get_password("com.dennywanye.simpleharness", "provider.relay-deepseek")
+        == "sk-real-secret"
+    )
 
 
 @pytest.mark.asyncio
@@ -186,12 +186,8 @@ async def test_remove_provider(empty_toml: Path, fake_keyring):
     assert items[0]["id"] == "b"
 
     # keychain entry for 'a' was deleted
-    assert (
-        "com.dennywanye.simpleharness", "provider.a"
-    ) in fake_keyring.delete_log
-    assert fake_keyring.get_password(
-        "com.dennywanye.simpleharness", "provider.a"
-    ) is None
+    assert ("com.dennywanye.simpleharness", "provider.a") in fake_keyring.delete_log
+    assert fake_keyring.get_password("com.dennywanye.simpleharness", "provider.a") is None
 
 
 @pytest.mark.asyncio
@@ -301,16 +297,12 @@ async def test_list_providers_redacts_api_key(empty_toml: Path, fake_keyring):
     items = reg.list_providers()
     assert items[0]["api_key"] == "********"
     # Internal ref preserved
-    assert items[0]["api_key_ref"] == (
-        "com.dennywanye.simpleharness.provider.a"
-    )
+    assert items[0]["api_key_ref"] == ("com.dennywanye.simpleharness.provider.a")
     # Real key is in fake keyring, never returned
     assert "sk-real-secret" not in str(items)
 
 
-def test_resolve_api_key_migrates_only_matching_legacy_provider(
-    empty_toml: Path, fake_keyring
-):
+def test_resolve_api_key_migrates_only_matching_legacy_provider(empty_toml: Path, fake_keyring):
     """A config-owned provider may copy its old secret into the app namespace."""
     from llm.provider_registry import LLMProviderRegistry
 
@@ -329,33 +321,31 @@ config_revision = 1
 """.lstrip(),
         encoding="utf-8",
     )
-    fake_keyring.set_password(
-        "deskpet", "provider.deepseeker-myself", "sk-legacy"
-    )
-    fake_keyring.set_password(
-        "deskpet", "provider.some-other-app", "sk-foreign"
-    )
+    fake_keyring.set_password("deskpet", "provider.deepseeker-myself", "sk-legacy")
+    fake_keyring.set_password("deskpet", "provider.some-other-app", "sk-foreign")
 
     reg = LLMProviderRegistry(empty_toml)
 
     assert reg.resolve_api_key("deepseeker-myself") == "sk-legacy"
     assert (
-        "api_key_ref = \"com.dennywanye.simpleharness.provider.deepseeker-myself\""
+        'api_key_ref = "com.dennywanye.simpleharness.provider.deepseeker-myself"'
         in empty_toml.read_text(encoding="utf-8")
     )
-    assert fake_keyring.get_password(
-        "com.dennywanye.simpleharness",
-        "provider.deepseeker-myself.incarnation-a.1",
-    ) == "sk-legacy"
-    assert fake_keyring.get_password(
-        "com.dennywanye.simpleharness", "provider.deepseeker-myself"
-    ) == "sk-legacy"
-    assert fake_keyring.get_password(
-        "com.dennywanye.simpleharness", "provider.some-other-app"
-    ) is None
-    assert fake_keyring.get_password(
-        "deskpet", "provider.some-other-app"
-    ) == "sk-foreign"
+    assert (
+        fake_keyring.get_password(
+            "com.dennywanye.simpleharness",
+            "provider.deepseeker-myself.incarnation-a.1",
+        )
+        == "sk-legacy"
+    )
+    assert (
+        fake_keyring.get_password("com.dennywanye.simpleharness", "provider.deepseeker-myself")
+        == "sk-legacy"
+    )
+    assert (
+        fake_keyring.get_password("com.dennywanye.simpleharness", "provider.some-other-app") is None
+    )
+    assert fake_keyring.get_password("deskpet", "provider.some-other-app") == "sk-foreign"
 
 
 @pytest.mark.asyncio
@@ -680,9 +670,7 @@ async def test_ensure_raises_key_missing_when_keychain_empty(empty_toml: Path, f
         "com.dennywanye.simpleharness",
         f"provider.relay-cloud.{entry.incarnation_id}.{entry.config_revision}",
     )
-    fake_keyring.delete_password(
-        "com.dennywanye.simpleharness", "provider.relay-cloud"
-    )
+    fake_keyring.delete_password("com.dennywanye.simpleharness", "provider.relay-cloud")
 
     with pytest.raises(KeyMissingError) as excinfo:
         await reg.ensure_provider(

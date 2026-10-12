@@ -164,15 +164,9 @@ class GrowthEvidenceV1:
             source_ref=event.source_ref,
             retry_of_event_id=event.retry_of,
             previous_run_id=(
-                str(links["previous_run_id"])
-                if links.get("previous_run_id")
-                else None
+                str(links["previous_run_id"]) if links.get("previous_run_id") else None
             ),
-            current_run_id=(
-                str(links["current_run_id"])
-                if links.get("current_run_id")
-                else None
-            ),
+            current_run_id=(str(links["current_run_id"]) if links.get("current_run_id") else None),
         )
 
 
@@ -243,9 +237,7 @@ class EvidenceClusterer:
                 by_base[base] = index
             for run_id in (item.root_run_id, item.current_run_id):
                 if run_id:
-                    by_run_id.setdefault(
-                        (item.owner, item.capability_id, run_id), []
-                    ).append(index)
+                    by_run_id.setdefault((item.owner, item.capability_id, run_id), []).append(index)
 
         # Only explicit host-issued retry references may cross a root or time
         # window.  Text similarity is never used as retry evidence.
@@ -303,14 +295,14 @@ class EvidenceClusterer:
             )
         return tuple(sorted(result, key=lambda item: item.context_id))
 
-    def independent_context_count(
-        self, evidence: Sequence[GrowthEvidenceV1]
-    ) -> int:
+    def independent_context_count(self, evidence: Sequence[GrowthEvidenceV1]) -> int:
         return len(self.cluster(evidence))
 
 
 def evidence_set_hash(evidence_event_ids: Sequence[str]) -> str:
-    event_ids = tuple(sorted({_required_text(item, "evidence_event_id") for item in evidence_event_ids}))
+    event_ids = tuple(
+        sorted({_required_text(item, "evidence_event_id") for item in evidence_event_ids})
+    )
     return _hash({"schema": "growth-evidence-set-v1", "event_ids": list(event_ids)})
 
 
@@ -525,16 +517,10 @@ class StructuredGrowthProposalV1:
             "evidence_set_hash": self.evidence_set_hash,
             "target": None if self.target is None else self.target.to_dict(),
             "candidate_mode": (
-                None
-                if self.candidate_mode is None
-                else CandidateMode(self.candidate_mode).value
+                None if self.candidate_mode is None else CandidateMode(self.candidate_mode).value
             ),
-            "source_fence": (
-                None if self.source_fence is None else self.source_fence.to_dict()
-            ),
-            "target_fence": (
-                None if self.target_fence is None else self.target_fence.to_dict()
-            ),
+            "source_fence": (None if self.source_fence is None else self.source_fence.to_dict()),
+            "target_fence": (None if self.target_fence is None else self.target_fence.to_dict()),
             "hypothesis": self.hypothesis,
             "structured_diff": dict(self.structured_diff),
             "expected_improvement": self.expected_improvement,
@@ -616,23 +602,17 @@ class StructuredGrowthProposalV1:
             evidence_event_ids=tuple(str(item) for item in evidence_ids),
             evidence_set_hash=str(raw["evidence_set_hash"]),
             target=target(raw["target"]),
-            candidate_mode=(
-                None if raw["candidate_mode"] is None else str(raw["candidate_mode"])
-            ),
+            candidate_mode=(None if raw["candidate_mode"] is None else str(raw["candidate_mode"])),
             source_fence=fence(raw["source_fence"]),
             target_fence=fence(raw["target_fence"]),
             hypothesis=None if raw["hypothesis"] is None else str(raw["hypothesis"]),
             structured_diff=dict(diff),
             expected_improvement=(
-                None
-                if raw["expected_improvement"] is None
-                else str(raw["expected_improvement"])
+                None if raw["expected_improvement"] is None else str(raw["expected_improvement"])
             ),
             risk_hints=tuple(str(item) for item in risk_hints),
             evaluation_plan=tuple(dict(item) for item in evaluation_plan),
-            abstain_reason=(
-                None if raw["abstain_reason"] is None else str(raw["abstain_reason"])
-            ),
+            abstain_reason=(None if raw["abstain_reason"] is None else str(raw["abstain_reason"])),
         )
 
     @classmethod

@@ -54,8 +54,17 @@ def perform_call(
     else:
         with uow.database.transaction() as txn:
             store.append_original_receipt_locked(
-                txn, run_id=run_id, kind=INTENT_KIND, receipt_key=call_key,
-                body={"call_key": call_key, "purpose": purpose, "input_hash": input_hash, "input_count": len(texts)}, now=clock(),
+                txn,
+                run_id=run_id,
+                kind=INTENT_KIND,
+                receipt_key=call_key,
+                body={
+                    "call_key": call_key,
+                    "purpose": purpose,
+                    "input_hash": input_hash,
+                    "input_count": len(texts),
+                },
+                now=clock(),
             )
         if fault is not None and fault_name is not None:
             fault(fault_name)
@@ -77,21 +86,38 @@ def perform_call(
         "input_hash": input_hash,
         "input_count": len(texts),
         "status": status,
-        "output_ref": None if output is None else Pin("artifact", f"embedding:{call_key}", 0, digest(output)).to_json(),
+        "output_ref": None
+        if output is None
+        else Pin("artifact", f"embedding:{call_key}", 0, digest(output)).to_json(),
         "input_tokens": usage.get("input_tokens"),
         "elapsed_ms": elapsed,
         "pricing_mode": usage.get("pricing_mode", "NO_PROVIDER_CHARGE"),
         "cost_micros": usage.get("cost_micros"),
-        "usage_ref": Pin("receipt", f"usage:{call_key}", 0, digest({"call": call_key, "status": status, "usage": usage})).to_json(),
+        "usage_ref": Pin(
+            "receipt",
+            f"usage:{call_key}",
+            0,
+            digest({"call": call_key, "status": status, "usage": usage}),
+        ).to_json(),
     }
     check("EmbeddingCallReceipt", receipt)
     body = {**receipt, "output": output, "detail": detail}
     with uow.database.transaction() as txn:
-        store.append_original_receipt_locked(txn, run_id=run_id, kind=CALL_KIND, receipt_key=call_key, body=body, now=clock())
+        store.append_original_receipt_locked(
+            txn, run_id=run_id, kind=CALL_KIND, receipt_key=call_key, body=body, now=clock()
+        )
     return body
 
 
-def record_lost_call_locked(connection: Any, *, run_id: str, call_key: str, intent: Mapping[str, Any], deployment_ref: Pin, now: float) -> Mapping[str, Any]:
+def record_lost_call_locked(
+    connection: Any,
+    *,
+    run_id: str,
+    call_key: str,
+    intent: Mapping[str, Any],
+    deployment_ref: Pin,
+    now: float,
+) -> Mapping[str, Any]:
     """An intent whose result never came back (and whose job will not run again) is
     settled as an UNKNOWN receipt in the same ledger a re-run would have written."""
 
@@ -108,11 +134,18 @@ def record_lost_call_locked(connection: Any, *, run_id: str, call_key: str, inte
         "elapsed_ms": 0,
         "pricing_mode": "NO_PROVIDER_CHARGE",
         "cost_micros": 0,
-        "usage_ref": Pin("receipt", f"usage:{call_key}", 0, digest({"call": call_key, "status": "UNKNOWN", "usage": {}})).to_json(),
+        "usage_ref": Pin(
+            "receipt",
+            f"usage:{call_key}",
+            0,
+            digest({"call": call_key, "status": "UNKNOWN", "usage": {}}),
+        ).to_json(),
     }
     check("EmbeddingCallReceipt", receipt)
     body = {**receipt, "output": None, "detail": "result_lost_before_receipt"}
-    store.append_original_receipt_locked(connection, run_id=run_id, kind=CALL_KIND, receipt_key=call_key, body=body, now=now)
+    store.append_original_receipt_locked(
+        connection, run_id=run_id, kind=CALL_KIND, receipt_key=call_key, body=body, now=now
+    )
     return body
 
 
@@ -120,7 +153,8 @@ def list_open_intents(connection: Any, run_id: str) -> tuple[tuple[str, Mapping[
     """Intents of one Run that have no call receipt yet: ``(call_key, intent body)``."""
 
     rows = connection.execute(
-        "SELECT payload_json FROM run_events WHERE run_id=? AND kind=? ORDER BY durable_seq", (run_id, f"arp.{INTENT_KIND}.v1")
+        "SELECT payload_json FROM run_events WHERE run_id=? AND kind=? ORDER BY durable_seq",
+        (run_id, f"arp.{INTENT_KIND}.v1"),
     ).fetchall()
     result = []
     for (raw,) in rows:
@@ -155,7 +189,20 @@ def _usage_of(port: Any) -> dict[str, Any]:
 
 
 def receipt_pin(call_key: str, receipt: Mapping[str, Any]) -> Pin:
-    return Pin("receipt", f"{CALL_KIND}:{call_key}", 0, digest({k: v for k, v in receipt.items() if k != "output"}))
+    return Pin(
+        "receipt",
+        f"{CALL_KIND}:{call_key}",
+        0,
+        digest({k: v for k, v in receipt.items() if k != "output"}),
+    )
 
 
-__all__ = ("CALL_KIND", "INTENT_KIND", "list_open_intents", "perform_call", "read_call", "receipt_pin", "record_lost_call_locked")
+__all__ = (
+    "CALL_KIND",
+    "INTENT_KIND",
+    "list_open_intents",
+    "perform_call",
+    "read_call",
+    "receipt_pin",
+    "record_lost_call_locked",
+)

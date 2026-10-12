@@ -222,10 +222,7 @@ def _acceptable_scoped(
         reasons.append(AcceptReason.COMPOUND_METHOD_ILLEGAL)
     if record.package_id != package.package_id or record.binding != package.binding:
         reasons.append(AcceptReason.IDENTITY_MISMATCH)
-    if (
-        package.purpose is not purpose
-        or record.purpose is not purpose
-    ):
+    if package.purpose is not purpose or record.purpose is not purpose:
         reasons.append(AcceptReason.PURPOSE_MISMATCH)
     if package.binding.subject_ref.kind not in subject_kinds:
         reasons.append(AcceptReason.IDENTITY_MISMATCH)
@@ -428,26 +425,46 @@ def acceptable_assured_root(
 
 
 def acceptable_scoped_task_content(
-    subject: AcceptanceSubject, *, projected_criteria: tuple[Criterion, ...],
-    projected_expression: SuccessExpression, now_ms: int, witness: ValidityWitness | None,
-    current_scope_epoch: int, assured: AssuredAcceptance | None = None,
+    subject: AcceptanceSubject,
+    *,
+    projected_criteria: tuple[Criterion, ...],
+    projected_expression: SuccessExpression,
+    now_ms: int,
+    witness: ValidityWitness | None,
+    current_scope_epoch: int,
+    assured: AssuredAcceptance | None = None,
 ) -> AcceptDecision:
     return _acceptable_scoped(
-        subject, projected_criteria=projected_criteria, projected_expression=projected_expression,
-        now_ms=now_ms, witness=witness, current_scope_epoch=current_scope_epoch,
-        purpose=ReviewPurpose.TASK_CONTENT, subject_kinds=frozenset({TypedRefKind.TASK}),
+        subject,
+        projected_criteria=projected_criteria,
+        projected_expression=projected_expression,
+        now_ms=now_ms,
+        witness=witness,
+        current_scope_epoch=current_scope_epoch,
+        purpose=ReviewPurpose.TASK_CONTENT,
+        subject_kinds=frozenset({TypedRefKind.TASK}),
         assured=assured,
     )
 
 
 def acceptable_scoped_operation_outcome(
-    subject: AcceptanceSubject, *, projected_criteria: tuple[Criterion, ...],
-    projected_expression: SuccessExpression, now_ms: int, witness: ValidityWitness | None,
-    current_scope_epoch: int, assured: AssuredAcceptance | None = None,
+    subject: AcceptanceSubject,
+    *,
+    projected_criteria: tuple[Criterion, ...],
+    projected_expression: SuccessExpression,
+    now_ms: int,
+    witness: ValidityWitness | None,
+    current_scope_epoch: int,
+    assured: AssuredAcceptance | None = None,
 ) -> AcceptDecision:
     return _acceptable_scoped(
-        subject, projected_criteria=projected_criteria, projected_expression=projected_expression,
-        now_ms=now_ms, witness=witness, current_scope_epoch=current_scope_epoch, assured=assured,
+        subject,
+        projected_criteria=projected_criteria,
+        projected_expression=projected_expression,
+        now_ms=now_ms,
+        witness=witness,
+        current_scope_epoch=current_scope_epoch,
+        assured=assured,
         purpose=ReviewPurpose.OPERATION_OUTCOME,
         subject_kinds=frozenset({TypedRefKind.OPERATION, TypedRefKind.TOOL_RECEIPT}),
     )

@@ -50,9 +50,15 @@ def seed_product_missions(root: Path, *keys: str) -> dict[str, str]:
             principal=ISSUER,
         ) as product:
             return {
-                key: str(product.create({
-                    "goal": GOAL, "idempotency_key": key, "success_criteria": ["file:NOTES.md"],
-                })["mission_id"])
+                key: str(
+                    product.create(
+                        {
+                            "goal": GOAL,
+                            "idempotency_key": key,
+                            "success_criteria": ["file:NOTES.md"],
+                        }
+                    )["mission_id"]
+                )
                 for key in keys
             }
 

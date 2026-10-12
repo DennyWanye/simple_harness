@@ -7,6 +7,7 @@ zh_tests_passed / en_modified_file) (1) load, (2) extract claims, and
 (3) under strict mode: a claim with a matching tool receipt PASSES, a
 bare claim with no receipt is BLOCKED (the fake-completion we want to catch).
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta, timezone
@@ -63,24 +64,30 @@ def test_generated_image_claim_rejects_pending_accepted_receipt():
 
 def _receipt(tool_name: str, ok: bool = True):
     t0 = datetime.now(UTC)
-    return make_receipt(tool_name=tool_name, args={}, started_at=t0,
-                        ended_at=t0 + timedelta(milliseconds=5), ok=ok,
-                        session_id="s1", iteration=1)
+    return make_receipt(
+        tool_name=tool_name,
+        args={},
+        started_at=t0,
+        ended_at=t0 + timedelta(milliseconds=5),
+        ok=ok,
+        session_id="s1",
+        iteration=1,
+    )
 
 
 def test_code_patterns_load():
     pats = _patterns()
     ids = {p.id for p in pats}
-    assert {"zh_created_file", "zh_modified_file", "zh_tests_passed",
-            "en_modified_file"}.issubset(ids)
+    assert {"zh_created_file", "zh_modified_file", "zh_tests_passed", "en_modified_file"}.issubset(
+        ids
+    )
 
 
 def test_created_file_claim_extracted():
     gate = VerifyGate(extractor=RegexExtractor(_patterns()), mode="strict")
     ext = gate.extractor
     claims = ext.extract("好了，我已创建 hello.py，内容已写好。", hints={})
-    assert any(c.pattern_id == "zh_created_file" and c.path == "hello.py"
-               for c in claims)
+    assert any(c.pattern_id == "zh_created_file" and c.path == "hello.py" for c in claims)
 
 
 def test_strict_passes_when_receipt_present():
@@ -126,8 +133,9 @@ def test_strict_passes_tests_with_run_shell_receipt():
 def test_modified_file_claim():
     gate = VerifyGate(extractor=RegexExtractor(_patterns()), mode="strict")
     # with edit_file receipt → pass
-    ok = gate.check(assistant_text="我已修改 config.toml。",
-                    ledger=[_receipt("edit_file", ok=True)])
+    ok = gate.check(
+        assistant_text="我已修改 config.toml。", ledger=[_receipt("edit_file", ok=True)]
+    )
     assert ok.passed is True
     # without → block
     bad = gate.check(assistant_text="我已修改 config.toml。", ledger=[])
@@ -144,8 +152,7 @@ def test_shadow_never_blocks_even_fake():
 def test_no_false_positive_on_future_tense():
     """'我将创建 X.py' (未来时，非完成断言) 不应被 created 模式命中。"""
     gate = VerifyGate(extractor=RegexExtractor(_patterns()), mode="strict")
-    out = gate.check(assistant_text="接下来我将创建 hello.py 并写入内容。",
-                     ledger=[])
+    out = gate.check(assistant_text="接下来我将创建 hello.py 并写入内容。", ledger=[])
     # '将创建' 不匹配 '已创建/创建了' → no claim → pass
     assert out.passed is True
     assert out.claims_extracted == 0

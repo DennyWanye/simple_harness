@@ -34,6 +34,7 @@ deskpet 的智能上下文系统设计于 32K–200K context 时代，所有阈�
 是矩阵，混在一起会逼用户在 app 配置里写一堆模型。独立文件 + 独立 UI 卡片
 更清晰。
 """
+
 from __future__ import annotations
 
 import logging
@@ -533,7 +534,8 @@ def save_global_window_override(model: str, context_window: int) -> bool:
         if window not in user_selectable_windows_for(model):
             logger.warning(
                 "model_window_override_rejected model=%s window=%d not in supported",
-                model, window,
+                model,
+                window,
             )
             return False
         path = _paths.user_data_dir() / "model_overrides.toml"
@@ -569,7 +571,9 @@ def save_global_window_override(model: str, context_window: int) -> bool:
         path.write_text("\n".join(lines), encoding="utf-8")
         logger.info(
             "model_window_override_saved model=%s window=%d path=%s",
-            model, window, path,
+            model,
+            window,
+            path,
         )
         return True
     except Exception as exc:  # noqa: BLE001

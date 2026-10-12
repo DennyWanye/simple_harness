@@ -450,9 +450,7 @@ class AssuranceCloseoutConsumer(_ConsumerBase):
         )
 
     # -------------------------------------------------------------- readers
-    def _root_resolution(
-        self, mission: Any
-    ) -> tuple[Any | None, list[str], list[str], str | None]:
+    def _root_resolution(self, mission: Any) -> tuple[Any | None, list[str], list[str], str | None]:
         """Adopted root GoalResolution for every required root duty, or what is missing.
 
         A Mission whose plan does not read back (no root binding yet, or a damaged
@@ -523,12 +521,15 @@ class AssuranceCloseoutConsumer(_ConsumerBase):
             body.update(state="NOT_READY", reasons=reasons)
             return body
         root_ref = AssuranceRef(
-            "resolution", Pin(str(resolution.resolution_id), 0, content_hash_of(resolution.to_json()))
+            "resolution",
+            Pin(str(resolution.resolution_id), 0, content_hash_of(resolution.to_json())),
         )
         body["root_resolution_ref"] = root_ref.pin.to_json()  # closeout-v1：pin，种类由字段名定
         # 钉住根结论是按哪一版要求形成的（与改要求同一种引用：revision + content_hash）。
         body["requirements_ref"] = requirements_ref(
-            HtnStore(self.store).get_requirements_revision(mission.id, int(resolution.requirements_version))
+            HtnStore(self.store).get_requirements_revision(
+                mission.id, int(resolution.requirements_version)
+            )
         )
         # A17 读集 / A01 权限：真的按引用重读根结论与要求版本（读不到或正文不符就在这里拒绝，不猜），
         # 再让当前权威对每张所依赖证书的身份就根结论重新签 ACCESS / POLICY 见证。
@@ -536,10 +537,12 @@ class AssuranceCloseoutConsumer(_ConsumerBase):
         reads: list[ReadItem] = [
             reader.read_exact_metadata(root_ref).read_item,
             reader.read_exact_metadata(
-                AssuranceRef("requirements", Pin.from_json(body["requirements_ref"]))).read_item,
+                AssuranceRef("requirements", Pin.from_json(body["requirements_ref"]))
+            ).read_item,
         ]
         authorization = closeout_authorization(
-            self.authority, self.store, mission_id=mission.id, root_ref=root_ref, now_ms=now_ms)
+            self.authority, self.store, mission_id=mission.id, root_ref=root_ref, now_ms=now_ms
+        )
         body["authorization"] = [item.to_json() for item in authorization]
         # The Mission judge's own verdict on ``Mission.success_criteria`` is part of
         # the root business requirement; the unique final writer completes from it.
@@ -554,7 +557,9 @@ class AssuranceCloseoutConsumer(_ConsumerBase):
         # 2026-10-01（第 4 项）：收尾前复查"当初通过的依据现在还成立吗"——根结论、中间目标
         # 结论、每条贡献验收的证书逐项重读；真变了（或到期了，A01）就不收尾，由规划器按修复请求
         # 决定重做。这里只拦收尾，不写 goal_resolutions.validity（用户红线）。
-        stale = stale_certificates(self.store, tenant_id=self.tenant_id, mission_id=mission.id, now_ms=now_ms)
+        stale = stale_certificates(
+            self.store, tenant_id=self.tenant_id, mission_id=mission.id, now_ms=now_ms
+        )
         body["stale_certificates"] = stale
         if stale:
             reasons.append(EVIDENCE_STALE)
@@ -572,21 +577,34 @@ class AssuranceCloseoutConsumer(_ConsumerBase):
         for root in roots:
             status = read_occurrence_completion(self.store, mission.id, root)
             spec_hashes.append(str(status.scope.spec_hash))
-            reads.append(reader.read_exact_metadata(AssuranceRef(
-                "completion_scope", Pin(str(status.scope.scope_id), 0, status.scope.content_hash()))).read_item)
+            reads.append(
+                reader.read_exact_metadata(
+                    AssuranceRef(
+                        "completion_scope",
+                        Pin(str(status.scope.scope_id), 0, status.scope.content_hash()),
+                    )
+                ).read_item
+            )
             states = {
-                str(effect_key): str(read_current_effect(
-                    self.store, mission.id, status.scope.spec_hash, str(effect_key))["state"])
+                str(effect_key): str(
+                    read_current_effect(
+                        self.store, mission.id, status.scope.spec_hash, str(effect_key)
+                    )["state"]
+                )
                 for effect_key in status.scope.required_effect_keys
             }
-            pending_effects.extend(k for k, state in states.items() if state == "RECONCILIATION_REQUIRED")
+            pending_effects.extend(
+                k for k, state in states.items() if state == "RECONCILIATION_REQUIRED"
+            )
             if status.complete:
                 continue
             # 第 1 批偏差 2（B 口径）：根范围只差结果不明的效果时不是"范围未满足"，是"效果不明"——
             # 走下面的 BLOCKED_UNKNOWN（原计划 §7.2），不落 ROOT_SCOPE_UNMET。
             (blocked if unmet_only_by_unknown_effects(status, states) else unmet).append(root)
         body["completion_spec_hash"] = spec_hashes[0] if spec_hashes else None
-        body["read_set"] = [item.to_json() for item in canonical_read_set(_unique_reads([*reads, *authorization]))]
+        body["read_set"] = [
+            item.to_json() for item in canonical_read_set(_unique_reads([*reads, *authorization]))
+        ]
         body["unmet_root_occurrences"] = unmet
         body["blocked_root_occurrences"] = blocked
         body["pending_effect_keys"] = pending_effects
@@ -623,13 +641,20 @@ class AssuranceCloseoutConsumer(_ConsumerBase):
             usage_fully_known=bool(usage["usage_fully_known"]),
             budget_conserved=bool(usage["budget_conserved"]),
         )
-        body.update(self._drain_decision(
-            mission.id, reasons=reasons,
-            unknown=[*pending_effects, *(ref["pin"]["id"] for ref in body["dangerous_work_refs"])],
-            open_operations=open_operations,
-            open_intents=open_intents, open_reservations=open_reservations,
-            usage_fully_known=bool(usage["usage_fully_known"]),
-        ))
+        body.update(
+            self._drain_decision(
+                mission.id,
+                reasons=reasons,
+                unknown=[
+                    *pending_effects,
+                    *(ref["pin"]["id"] for ref in body["dangerous_work_refs"]),
+                ],
+                open_operations=open_operations,
+                open_intents=open_intents,
+                open_reservations=open_reservations,
+                usage_fully_known=bool(usage["usage_fully_known"]),
+            )
+        )
         return body
 
     @staticmethod
@@ -637,7 +662,11 @@ class AssuranceCloseoutConsumer(_ConsumerBase):
         """一条动作记录的引用：按动作键与版本钉住，正文指纹是整条记录。"""
         return AssuranceRef(
             "operation",
-            Pin(str(action["action_key"]), int(action.get("version") or 0), fingerprint(dict(action))),
+            Pin(
+                str(action["action_key"]),
+                int(action.get("version") or 0),
+                fingerprint(dict(action)),
+            ),
         ).to_json()
 
     def _open_accounting(self, mission_id: str) -> tuple[list[str], list[dict[str, Any]]]:
@@ -652,8 +681,11 @@ class AssuranceCloseoutConsumer(_ConsumerBase):
             (mission_id,),
         ).fetchall()
         facts: dict[str, dict[str, Any]] = {
-            str(row["subject_id"]): {"source": "budget_reservations", "state": str(row["state"]),
-                                     "reserved_tokens": int(row["reserved_tokens"])}
+            str(row["subject_id"]): {
+                "source": "budget_reservations",
+                "state": str(row["state"]),
+                "reserved_tokens": int(row["reserved_tokens"]),
+            }
             for row in rows
         }
         if self.store.has_table("budget_tail_holds"):
@@ -662,9 +694,16 @@ class AssuranceCloseoutConsumer(_ConsumerBase):
                 "WHERE mission_id=? AND state='HELD' ORDER BY subject_id LIMIT 257",
                 (mission_id,),
             ).fetchall():
-                facts.setdefault(str(row["subject_id"]), {
-                    "source": "budget_tail_holds", "hold_id": str(row["hold_id"]), "purpose": str(row["purpose"]),
-                    "state": "HELD", "remaining_attempts": int(row["remaining_attempts"])})
+                facts.setdefault(
+                    str(row["subject_id"]),
+                    {
+                        "source": "budget_tail_holds",
+                        "hold_id": str(row["hold_id"]),
+                        "purpose": str(row["purpose"]),
+                        "state": "HELD",
+                        "remaining_attempts": int(row["remaining_attempts"]),
+                    },
+                )
         subjects = sorted(facts)[:256]
         refs = [
             AssuranceRef("reservation_fact", Pin(subject, 0, fingerprint(facts[subject]))).to_json()
@@ -673,8 +712,15 @@ class AssuranceCloseoutConsumer(_ConsumerBase):
         return subjects, refs
 
     def _drain_decision(
-        self, mission_id: str, *, reasons: list[str], unknown: list[str], open_operations: list[str],
-        open_intents: list[str], open_reservations: list[str], usage_fully_known: bool,
+        self,
+        mission_id: str,
+        *,
+        reasons: list[str],
+        unknown: list[str],
+        open_operations: list[str],
+        open_intents: list[str],
+        open_reservations: list[str],
+        usage_fully_known: bool,
     ) -> dict[str, Any]:
         """The closeout state once the root facts are read (NOT_READY / BLOCKED_UNKNOWN /
         DRAINING / READY) and, when READY by the upper-bound rule, what it counts.
@@ -698,10 +744,17 @@ class AssuranceCloseoutConsumer(_ConsumerBase):
         awaiting = self._awaiting_original_reconciliation(open_intents)
         draining_intents = [i for i in open_intents if i not in awaiting]
         out: dict[str, Any] = {}
-        upper = self._upper_bound_plan(mission_id, open_reservations) if (
-            not reasons and not unknown and not open_operations and not draining_intents
-            and (open_reservations or not usage_fully_known)
-        ) else None
+        upper = (
+            self._upper_bound_plan(mission_id, open_reservations)
+            if (
+                not reasons
+                and not unknown
+                and not open_operations
+                and not draining_intents
+                and (open_reservations or not usage_fully_known)
+            )
+            else None
+        )
         if upper is not None:
             out["usage_counted_at_upper_bound"] = upper
         if reasons:
@@ -726,7 +779,9 @@ class AssuranceCloseoutConsumer(_ConsumerBase):
         return out
 
     @staticmethod
-    def require_final_consistency(preview: Mapping[str, Any], evaluation: Mapping[str, Any]) -> None:
+    def require_final_consistency(
+        preview: Mapping[str, Any], evaluation: Mapping[str, Any]
+    ) -> None:
         """A01（原计划 §7.2"最终事务重读当前 epoch/权限/effect/运行集合才 READY→FINALIZED"）：要定稿（READY）
         的那次评估，任务 / 环境纪元与时钟代次必须等于收尾依据读取时的，现在不能早于读取时刻，时钟要
         STABLE；当前权威重新签的权限见证（``authorization``）与整个读集（``read_set``）也必须与依据读取时
@@ -752,11 +807,17 @@ class AssuranceCloseoutConsumer(_ConsumerBase):
             intent = self.store.get_intent(intent_id)
             # only Assurance review turns (content reviews run as critic intents, the
             # purpose reviews as plan intents) ever record this wait
-            if intent is None or intent.state != "SUBMITTED" or intent.kind not in ("critic", "plan"):
+            if (
+                intent is None
+                or intent.state != "SUBMITTED"
+                or intent.kind not in ("critic", "plan")
+            ):
                 continue
             recorded = self.store.connection.execute(
                 "SELECT 1 FROM commit_receipts WHERE kind='AssuranceProviderReconciliationRequired' "
-                "AND subject_id=? LIMIT 1", (intent_id,)).fetchone()
+                "AND subject_id=? LIMIT 1",
+                (intent_id,),
+            ).fetchone()
             if recorded is not None and self.commit._ledger.has_unknown_usage(intent.subject_id):
                 awaiting.add(intent_id)
         return awaiting
@@ -772,21 +833,29 @@ class AssuranceCloseoutConsumer(_ConsumerBase):
         if any(not ledger.has_unknown_usage(subject) for subject in open_reservations):
             return None
         counted = {
-            str(row[0]) for row in self.store.connection.execute(
+            str(row[0])
+            for row in self.store.connection.execute(
                 "SELECT json_extract(payload_json,'$.subject_id') FROM events "
-                "WHERE mission_id=? AND type=?", (mission_id, UPPER_BOUND_EVENT)).fetchall()
+                "WHERE mission_id=? AND type=?",
+                (mission_id, UPPER_BOUND_EVENT),
+            ).fetchall()
         }
         pending = set(open_reservations)
         unknown = {
-            str(row[0]) for row in self.store.connection.execute(
+            str(row[0])
+            for row in self.store.connection.execute(
                 "SELECT subject_id FROM imported_usage WHERE mission_id=? AND unknown=1",
-                (mission_id,)).fetchall()
+                (mission_id,),
+            ).fetchall()
         }
         if self.store.has_table("provider_token_grants"):
             unknown |= {
-                str(row[0]) for row in self.store.connection.execute(
+                str(row[0])
+                for row in self.store.connection.execute(
                     "SELECT subject_id FROM provider_token_grants WHERE mission_id=? "
-                    "AND state IN ('RESERVED','HANDED_OFF','UNKNOWN')", (mission_id,)).fetchall()
+                    "AND state IN ('RESERVED','HANDED_OFF','UNKNOWN')",
+                    (mission_id,),
+                ).fetchall()
             }
         if not unknown <= pending | counted:
             return None
@@ -890,10 +959,17 @@ class AssuranceCloseoutConsumer(_ConsumerBase):
         if state == "READY" and upper and not finalized:
             for subject in upper["subjects"]:
                 settled = self.commit._ledger.settle_at_upper_bound(subject_id=subject)
-                self.commit._emit(UPPER_BOUND_EVENT, mission_id, key="upper-bound:" + subject, payload={
-                    "subject_id": subject, "reason": "unknown_usage",
-                    "counted_tokens": settled["settled_tokens"],
-                    "closeout_receipt_ref": ref.to_json()})
+                self.commit._emit(
+                    UPPER_BOUND_EVENT,
+                    mission_id,
+                    key="upper-bound:" + subject,
+                    payload={
+                        "subject_id": subject,
+                        "reason": "unknown_usage",
+                        "counted_tokens": settled["settled_tokens"],
+                        "closeout_receipt_ref": ref.to_json(),
+                    },
+                )
         if state == "READY" and self.finalizer is not None:
             final = self.finalizer(mission_id, evaluation)  # 完整评估：定稿写入器要核内部字段
             if final is not None and not isinstance(final, AssuranceRef):

@@ -18,8 +18,12 @@ def _workspace(tmp_path, candidate):
 
 
 def _candidate(path):
-    return {"connector": "file_publish", "operation": "publish", "target": "NOTES.md",
-            "params": {"artifact_path": path}}
+    return {
+        "connector": "file_publish",
+        "operation": "publish",
+        "target": "NOTES.md",
+        "params": {"artifact_path": path},
+    }
 
 
 def test_an_unchanged_received_file_is_listed_for_the_worker(tmp_path):
@@ -42,7 +46,8 @@ def test_nothing_is_invented(tmp_path):
     assert with_candidate_targets(listed, _fresh(tmp_path, {"params": "x"})) == listed
     # a candidate that is not listed is not read at all
     assert with_candidate_targets(["delivery.json"], _fresh(tmp_path, _candidate("NOTES.md"))) == [
-        "delivery.json"]
+        "delivery.json"
+    ]
 
 
 _n = [0]

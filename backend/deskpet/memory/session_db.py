@@ -21,6 +21,7 @@ Not here（留给后续 slice）：
     * embedding 计算 → P4-S2 embedder.py
     * 文件记忆 / MemoryManager → P4-S4
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -91,12 +92,21 @@ class ProviderBindingConflict(RuntimeError):
 def _escape_like(value: str) -> str:
     return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
+
 MESSAGE_PROJECTION_KINDS = frozenset(
     {
-        "legacy_message", "user_message", "assistant_message", "tool_message",
-        "system_message", "final_assistant", "workflow_progress",
-        "workflow_accepted", "workflow_decision", "workflow_final_status",
-        "artifact_card", "companion_event",
+        "legacy_message",
+        "user_message",
+        "assistant_message",
+        "tool_message",
+        "system_message",
+        "final_assistant",
+        "workflow_progress",
+        "workflow_accepted",
+        "workflow_decision",
+        "workflow_final_status",
+        "artifact_card",
+        "companion_event",
     }
 )
 CONTEXT_VISIBILITIES = frozenset({"conversation", "exclude"})
@@ -108,8 +118,12 @@ _ROLE_DEFAULT_PROJECTION = {
 }
 _EXCLUDED_PROJECTIONS = frozenset(
     {
-        "workflow_progress", "workflow_accepted", "workflow_decision",
-        "workflow_final_status", "artifact_card", "companion_event",
+        "workflow_progress",
+        "workflow_accepted",
+        "workflow_decision",
+        "workflow_final_status",
+        "artifact_card",
+        "companion_event",
     }
 )
 
@@ -134,9 +148,7 @@ def _coerce_trusted_owner(value: Any) -> TrustedCompanionOwner:
     if isinstance(value, dict):
         return TrustedCompanionOwner(
             profile_id=str(value["profile_id"]),
-            profile_generation=int(
-                value.get("profile_generation", value.get("generation"))
-            ),
+            profile_generation=int(value.get("profile_generation", value.get("generation"))),
             binding_epoch=int(value["binding_epoch"]),
             owner_kind=str(value.get("owner_kind", "companion_profile")),
         )
@@ -157,15 +169,14 @@ def normalize_message_projection(
 ) -> tuple[str, str]:
     """Return a validated, explicit message projection classification."""
     normalized_role = str(role or "").strip().lower()
-    projection = str(
-        projection_kind
-        or _ROLE_DEFAULT_PROJECTION.get(normalized_role, "legacy_message")
-    ).strip().lower()
+    projection = (
+        str(projection_kind or _ROLE_DEFAULT_PROJECTION.get(normalized_role, "legacy_message"))
+        .strip()
+        .lower()
+    )
     if projection not in MESSAGE_PROJECTION_KINDS:
         raise ValueError(f"invalid message projection_kind: {projection!r}")
-    expected_visibility = (
-        "exclude" if projection in _EXCLUDED_PROJECTIONS else "conversation"
-    )
+    expected_visibility = "exclude" if projection in _EXCLUDED_PROJECTIONS else "conversation"
     visibility = str(context_visibility or expected_visibility).strip().lower()
     if visibility not in CONTEXT_VISIBILITIES:
         raise ValueError(f"invalid message context_visibility: {visibility!r}")
@@ -282,9 +293,7 @@ class SessionDB:
 
         async with aiosqlite.connect(self._db_path) as db:
             await db.execute("PRAGMA foreign_keys=ON")
-            cursor = await db.execute(
-                "SELECT instance_id FROM state_db_identity WHERE singleton=1"
-            )
+            cursor = await db.execute("SELECT instance_id FROM state_db_identity WHERE singleton=1")
             row = await cursor.fetchone()
             await cursor.close()
             if row is None:
@@ -393,16 +402,10 @@ class SessionDB:
     async def append_primary_evidence(self, envelope: Any, receipt: Any):
         """Append evidence only after an accepted, hash-bound S1 receipt."""
 
-        return await self._human_memory_program_store().append_evidence(
-            envelope, receipt
-        )
+        return await self._human_memory_program_store().append_evidence(envelope, receipt)
 
-    async def list_primary_evidence(
-        self, subject: str, *, limit: int = 1000
-    ):
-        return await self._human_memory_program_store().list_evidence(
-            subject, limit=limit
-        )
+    async def list_primary_evidence(self, subject: str, *, limit: int = 1000):
+        return await self._human_memory_program_store().list_evidence(subject, limit=limit)
 
     # ------------------------------------------------------------------
     # 记忆 SDK 委托（认知记忆；未接入时降级为空）
@@ -441,15 +444,16 @@ class SessionDB:
         # unreachable：循环要么 return 要么 raise
         raise RuntimeError("retry loop exited unexpectedly") from last_exc
 
-    async def put_sdk_context_public_snapshot(
-        self, snapshot: dict[str, Any]
-    ) -> str:
+    async def put_sdk_context_public_snapshot(self, snapshot: dict[str, Any]) -> str:
         """Persist one bounded public snapshot with immutable source identity."""
 
         if not self._initialized:
             await self.initialize()
         required = (
-            "snapshot_id", "session_id", "request_id", "root_run_id",
+            "snapshot_id",
+            "session_id",
+            "request_id",
+            "root_run_id",
             "snapshot_fingerprint",
         )
         normalized = dict(snapshot)
@@ -479,11 +483,15 @@ class SessionDB:
                             ) VALUES (?,?,?,?,?,?,?,?,?)
                             ON CONFLICT DO NOTHING""",
                             (
-                                normalized["snapshot_id"], normalized["session_id"],
-                                normalized["request_id"], normalized["root_run_id"],
+                                normalized["snapshot_id"],
+                                normalized["session_id"],
+                                normalized["request_id"],
+                                normalized["root_run_id"],
                                 normalized["snapshot_version"],
-                                normalized["snapshot_fingerprint"], payload_hash,
-                                payload_json, created_at,
+                                normalized["snapshot_fingerprint"],
+                                payload_hash,
+                                payload_json,
+                                created_at,
                             ),
                         )
                         inserted = int(cursor.rowcount or 0) == 1
@@ -493,7 +501,8 @@ class SessionDB:
                                sdk_context_public_snapshots
                                WHERE snapshot_id=? OR (session_id=? AND request_id=?)""",
                             (
-                                normalized["snapshot_id"], normalized["session_id"],
+                                normalized["snapshot_id"],
+                                normalized["session_id"],
                                 normalized["request_id"],
                             ),
                         )
@@ -511,9 +520,7 @@ class SessionDB:
 
         return await self._with_retry(_do)
 
-    async def get_sdk_context_public_snapshot(
-        self, snapshot_id: str
-    ) -> dict[str, Any] | None:
+    async def get_sdk_context_public_snapshot(self, snapshot_id: str) -> dict[str, Any] | None:
         if not self._initialized:
             await self.initialize()
         async with aiosqlite.connect(self._db_path) as db:
@@ -552,8 +559,14 @@ class SessionDB:
             await self.initialize()
         normalized = dict(attempt)
         for key in (
-            "invocation_id", "session_id", "root_run_id", "request_id",
-            "snapshot_id", "state", "provider_id", "model_id",
+            "invocation_id",
+            "session_id",
+            "root_run_id",
+            "request_id",
+            "snapshot_id",
+            "state",
+            "provider_id",
+            "model_id",
         ):
             normalized[key] = str(normalized.get(key) or "").strip()
             if not normalized[key]:
@@ -585,25 +598,26 @@ class SessionDB:
                             ):
                                 await db.rollback()
                                 return "duplicate"
-                            if (
-                                normalized["settlement_version"] <= current_version
-                                or (
-                                    expected_settlement_version is not None
-                                    and expected_settlement_version != current_version
-                                )
+                            if normalized["settlement_version"] <= current_version or (
+                                expected_settlement_version is not None
+                                and expected_settlement_version != current_version
                             ):
-                                raise SnapshotContractConflict(
-                                    "provider settlement CAS conflict"
-                                )
+                                raise SnapshotContractConflict("provider settlement CAS conflict")
                             prior = json.loads(str(current["payload_json"]))
                             immutable_fields = (
-                                "invocation_id", "session_id", "root_run_id",
-                                "request_id", "snapshot_id", "provider_id", "model_id",
-                                "binding_epoch", "context_window", "effective_ceiling",
+                                "invocation_id",
+                                "session_id",
+                                "root_run_id",
+                                "request_id",
+                                "snapshot_id",
+                                "provider_id",
+                                "model_id",
+                                "binding_epoch",
+                                "context_window",
+                                "effective_ceiling",
                             )
                             if any(
-                                prior.get(key) != normalized.get(key)
-                                for key in immutable_fields
+                                prior.get(key) != normalized.get(key) for key in immutable_fields
                             ):
                                 raise SnapshotContractConflict(
                                     "provider settlement identity mutation"
@@ -614,10 +628,16 @@ class SessionDB:
                             )
 
                         values = (
-                            normalized["invocation_id"], normalized["settlement_version"],
-                            payload_hash, normalized["session_id"], normalized["root_run_id"],
-                            normalized["request_id"], normalized["snapshot_id"],
-                            normalized["state"], normalized["provider_id"], normalized["model_id"],
+                            normalized["invocation_id"],
+                            normalized["settlement_version"],
+                            payload_hash,
+                            normalized["session_id"],
+                            normalized["root_run_id"],
+                            normalized["request_id"],
+                            normalized["snapshot_id"],
+                            normalized["state"],
+                            normalized["provider_id"],
+                            normalized["model_id"],
                             int(normalized.get("binding_epoch", 0)),
                             int(normalized.get("context_window", 0)),
                             int(normalized.get("effective_ceiling", 0)),
@@ -627,7 +647,9 @@ class SessionDB:
                             None if usage is None else usage.get("total_tokens"),
                             None if usage is None else usage.get("cache_tokens"),
                             None if usage is None else usage.get("reasoning_tokens"),
-                            float(normalized.get("settled_at", 0.0)), payload_json, updated_at,
+                            float(normalized.get("settled_at", 0.0)),
+                            payload_json,
+                            updated_at,
                         )
                         await db.execute(
                             """INSERT INTO sdk_provider_attempt_audit(
@@ -681,14 +703,13 @@ class SessionDB:
                     "cache_tokens": row["cache_tokens"],
                     "reasoning_tokens": row["reasoning_tokens"],
                 }
-                if int(row["usage_available"]) else None
+                if int(row["usage_available"])
+                else None
             )
             result.append(item)
         return result
 
-    async def get_sdk_provider_projection_cursor(
-        self, consumer_id: str
-    ) -> dict[str, Any] | None:
+    async def get_sdk_provider_projection_cursor(self, consumer_id: str) -> dict[str, Any] | None:
         if not self._initialized:
             await self.initialize()
         async with aiosqlite.connect(self._db_path) as db:
@@ -739,13 +760,15 @@ class SessionDB:
                         current_version = int(row["version"]) if row else 0
                         current_position = (
                             (float(row["settled_at"]), str(row["invocation_id"]))
-                            if row else (-1.0, "")
+                            if row
+                            else (-1.0, "")
                         )
                         next_position = (float(settled_at), invocation)
                         current_sequence = int(row["source_sequence"]) if row else 0
                         next_sequence = (
                             int(source_sequence)
-                            if source_sequence is not None else current_sequence
+                            if source_sequence is not None
+                            else current_sequence
                         )
                         same_position = (
                             next_sequence == current_sequence
@@ -777,14 +800,20 @@ class SessionDB:
                             version=excluded.version,updated_at=excluded.updated_at,
                             source_sequence=excluded.source_sequence""",
                             (
-                                consumer, float(settled_at), invocation, next_version,
-                                updated_at, next_sequence,
+                                consumer,
+                                float(settled_at),
+                                invocation,
+                                next_version,
+                                updated_at,
+                                next_sequence,
                             ),
                         )
                         await db.commit()
                         return {
-                            "consumer_id": consumer, "settled_at": float(settled_at),
-                            "invocation_id": invocation, "version": next_version,
+                            "consumer_id": consumer,
+                            "settled_at": float(settled_at),
+                            "invocation_id": invocation,
+                            "version": next_version,
                             "source_sequence": next_sequence,
                             "updated_at": updated_at,
                         }
@@ -874,18 +903,27 @@ class SessionDB:
                         if existing is None:
                             raise RuntimeError("context usage history insert disappeared")
                         if str(existing["payload_hash"]) != normalized["payload_hash"]:
-                            raise ContextUsageSampleConflict(
-                                ContextUsageSampleConflict.code
-                            )
+                            raise ContextUsageSampleConflict(ContextUsageSampleConflict.code)
                         normalized["sample_id"] = str(existing["sample_id"])
                         durable_fact = dict(normalized)
                         for key in (
-                            "sample_id", "source_event_id", "event_type",
-                            "tokens_before", "tokens_after", "prompt_tokens",
-                            "completion_tokens", "cached_tokens", "context_window",
-                            "effective_ceiling", "estimate_method", "provider_id",
-                            "model_id", "binding_epoch", "based_on_sample_id",
-                            "completed_at", "created_at",
+                            "sample_id",
+                            "source_event_id",
+                            "event_type",
+                            "tokens_before",
+                            "tokens_after",
+                            "prompt_tokens",
+                            "completion_tokens",
+                            "cached_tokens",
+                            "context_window",
+                            "effective_ceiling",
+                            "estimate_method",
+                            "provider_id",
+                            "model_id",
+                            "binding_epoch",
+                            "based_on_sample_id",
+                            "completed_at",
+                            "created_at",
                         ):
                             durable_fact[key] = existing[key]
 
@@ -908,9 +946,7 @@ class SessionDB:
                             )
                         reduced = reduce_context_usage_state(state, durable_fact)
                         if not had_state and reduced == state:
-                            reduced = ContextUsageStateV2(
-                                **{**state.__dict__, "state_version": 1}
-                            )
+                            reduced = ContextUsageStateV2(**{**state.__dict__, "state_version": 1})
                         if inserted or reduced != state:
                             await self._write_context_usage_state_tx(
                                 db, state if had_state else None, reduced
@@ -967,9 +1003,7 @@ class SessionDB:
             "request_id": row["request_id"],
             "attempt_id": row["attempt_id"],
             "event_type": event_type,
-            "source": (
-                "compacted" if event_type == "compaction" else "measured"
-            ),
+            "source": ("compacted" if event_type == "compaction" else "measured"),
             "tokens_before": row["tokens_before"],
             "tokens_after": int(row["tokens_after"]),
             "prompt_tokens": int(row["prompt_tokens"]),
@@ -1007,11 +1041,7 @@ class SessionDB:
             )
             row = await cursor.fetchone()
             await cursor.close()
-        return (
-            self._context_usage_sample_from_row(row)
-            if row is not None
-            else None
-        )
+        return self._context_usage_sample_from_row(row) if row is not None else None
 
     @staticmethod
     def _context_usage_state_from_row(row: aiosqlite.Row) -> ContextUsageStateV2:
@@ -1247,23 +1277,32 @@ class SessionDB:
                                 break
                             for row in rows:
                                 try:
-                                    metadata = json.loads(
-                                        row["metadata_json"] or "{}"
-                                    )
+                                    metadata = json.loads(row["metadata_json"] or "{}")
                                 except (TypeError, ValueError, json.JSONDecodeError):
                                     metadata = {}
                                 fact = {
                                     key: row[key]
                                     for key in (
-                                        "sample_id", "source_event_id", "event_type",
-                                        "tokens_after", "completion_tokens", "cached_tokens",
-                                        "context_window", "effective_ceiling", "provider_id",
-                                        "model_id", "binding_epoch", "based_on_sample_id",
+                                        "sample_id",
+                                        "source_event_id",
+                                        "event_type",
+                                        "tokens_after",
+                                        "completion_tokens",
+                                        "cached_tokens",
+                                        "context_window",
+                                        "effective_ceiling",
+                                        "provider_id",
+                                        "model_id",
+                                        "binding_epoch",
+                                        "based_on_sample_id",
                                         "completed_at",
                                     )
                                 }
                                 fact["model_id"] = fact["model_id"] or metadata.get("model")
-                                if fact["event_type"] == "compaction" and not fact["based_on_sample_id"]:
+                                if (
+                                    fact["event_type"] == "compaction"
+                                    and not fact["based_on_sample_id"]
+                                ):
                                     legacy_incomplete = True
                                     continue
                                 current = reduce_context_usage_state(current, fact)
@@ -1296,9 +1335,7 @@ class SessionDB:
             if isinstance(metadata, dict) and isinstance(
                 metadata.get("cache_tokens_available"), bool
             ):
-                payload["cache_tokens_available"] = metadata[
-                    "cache_tokens_available"
-                ]
+                payload["cache_tokens_available"] = metadata["cache_tokens_available"]
         return payload
 
     # ------------------------------------------------------------------
@@ -1485,9 +1522,7 @@ class SessionDB:
                             or int(row[3]) != owner.binding_epoch
                         ):
                             await db.rollback()
-                            raise RuntimeError(
-                                "companion_session_owner_rebind_forbidden"
-                            )
+                            raise RuntimeError("companion_session_owner_rebind_forbidden")
                         if str(row[4]) != "active":
                             await db.rollback()
                             raise RuntimeError("companion_session_owner_tombstoned")
@@ -1504,9 +1539,7 @@ class SessionDB:
                             "created_at": float(row[6]),
                             "updated_at": float(row[7]),
                         }
-                    cursor = await db.execute(
-                        "SELECT 1 FROM sessions WHERE id=?", (sid,)
-                    )
+                    cursor = await db.execute("SELECT 1 FROM sessions WHERE id=?", (sid,))
                     session_exists = await cursor.fetchone()
                     await cursor.close()
                     if session_exists is None:
@@ -1996,9 +2029,7 @@ class SessionDB:
         request = str(request_id or "").strip()
         turn = str(turn_id or "").strip()
         if not sid or not request or not turn or int(message_id) < 1:
-            raise ValueError(
-                "session_id, message_id, request_id and turn_id are required"
-            )
+            raise ValueError("session_id, message_id, request_id and turn_id are required")
         now = time.time()
 
         async def _do() -> dict[str, Any]:
@@ -2027,35 +2058,17 @@ class SessionDB:
                     await cursor.close()
                     if row is None:
                         await db.rollback()
-                        raise RuntimeError(
-                            "companion_ingress_semantic_fence_mismatch"
-                        )
+                        raise RuntimeError("companion_ingress_semantic_fence_mismatch")
                     envelope = json.loads(str(row["event_envelope_json"]))
-                    existing_kind = str(
-                        envelope.get("semantic_growth_intent") or "none"
-                    )
+                    existing_kind = str(envelope.get("semantic_growth_intent") or "none")
                     if existing_kind not in allowed:
                         await db.rollback()
-                        raise RuntimeError(
-                            "companion_ingress_semantic_state_invalid"
-                        )
-                    effective_kind = (
-                        existing_kind if existing_kind != "none" else kind
-                    )
-                    if (
-                        existing_kind != "none"
-                        and kind != "none"
-                        and existing_kind != kind
-                    ):
+                        raise RuntimeError("companion_ingress_semantic_state_invalid")
+                    effective_kind = existing_kind if existing_kind != "none" else kind
+                    if existing_kind != "none" and kind != "none" and existing_kind != kind:
                         await db.rollback()
-                        raise RuntimeError(
-                            "companion_ingress_semantic_replay_conflict"
-                        )
-                    priority = (
-                        "blocking"
-                        if effective_kind != "none"
-                        else str(row["priority"])
-                    )
+                        raise RuntimeError("companion_ingress_semantic_replay_conflict")
+                    priority = "blocking" if effective_kind != "none" else str(row["priority"])
                     if row["status"] == "pending":
                         envelope["semantic_growth_intent"] = effective_kind
                         envelope_json = companion_canonical_json(envelope)
@@ -2073,14 +2086,9 @@ class SessionDB:
                                 row["outbox_id"],
                             ),
                         )
-                    elif (
-                        effective_kind != existing_kind
-                        or priority != str(row["priority"])
-                    ):
+                    elif effective_kind != existing_kind or priority != str(row["priority"]):
                         await db.rollback()
-                        raise RuntimeError(
-                            "companion_ingress_semantic_settle_too_late"
-                        )
+                        raise RuntimeError("companion_ingress_semantic_settle_too_late")
                     cursor = await db.execute(
                         "SELECT * FROM companion_ingress_outbox WHERE outbox_id=?",
                         (row["outbox_id"],),
@@ -2090,9 +2098,7 @@ class SessionDB:
                     await db.commit()
                     assert settled is not None
                     result = dict(settled)
-                    result["event_envelope"] = json.loads(
-                        str(result["event_envelope_json"])
-                    )
+                    result["event_envelope"] = json.loads(str(result["event_envelope_json"]))
                     return result
 
         return await self._with_retry(_do)
@@ -2361,8 +2367,7 @@ class SessionDB:
                     if (
                         str(row["session_id"]) != old_session
                         or int(row["projection_epoch"]) != int(expected_epoch)
-                        or int(row["projection_route_version"])
-                        != int(expected_route_version)
+                        or int(row["projection_route_version"]) != int(expected_route_version)
                     ):
                         await db.rollback()
                         raise RuntimeError("companion_projection_route_conflict")
@@ -2565,15 +2570,12 @@ class SessionDB:
                         elif (
                             str(receipt["expected_old_payload_hash"])
                             != current_projection.redacted_from_payload_hash
-                            or str(receipt["new_payload_hash"])
-                            != current_projection.payload_hash
+                            or str(receipt["new_payload_hash"]) != current_projection.payload_hash
                             or str(receipt["redaction_outbox_id"])
                             != current_projection.redaction_id
                         ):
                             await db.rollback()
-                            raise RuntimeError(
-                                "companion_projection_redaction_replay_conflict"
-                            )
+                            raise RuntimeError("companion_projection_redaction_replay_conflict")
                     await db.commit()
                     return {"status": "inserted", "id": message_id}
 
@@ -2682,9 +2684,7 @@ class SessionDB:
                         )
                         if actual != expected:
                             await db.rollback()
-                            raise RuntimeError(
-                                "companion_projection_redaction_replay_conflict"
-                            )
+                            raise RuntimeError("companion_projection_redaction_replay_conflict")
                         await db.commit()
                         return dict(receipt)
                     cursor = await db.execute(
@@ -2780,7 +2780,7 @@ class SessionDB:
                         params.append(int(profile_generation))
                     cursor = await db.execute(
                         f"""SELECT * FROM companion_ingress_outbox
-                            WHERE {' AND '.join(where)}
+                            WHERE {" AND ".join(where)}
                             ORDER BY CASE priority WHEN 'blocking' THEN 0 ELSE 1 END,
                                      created_at,outbox_id LIMIT 1""",
                         params,
@@ -2816,9 +2816,7 @@ class SessionDB:
                     await db.commit()
                     assert claimed is not None
                     result = dict(claimed)
-                    result["event_envelope"] = json.loads(
-                        str(result["event_envelope_json"])
-                    )
+                    result["event_envelope"] = json.loads(str(result["event_envelope_json"]))
                     return result
 
         return await self._with_retry(_do)
@@ -2866,10 +2864,7 @@ class SessionDB:
                             raise RuntimeError("companion_ingress_settle_conflict")
                         await db.commit()
                         return dict(row)
-                    if (
-                        row["status"] != "claimed"
-                        or int(row["attempt"]) != int(expected_attempt)
-                    ):
+                    if row["status"] != "claimed" or int(row["attempt"]) != int(expected_attempt):
                         await db.rollback()
                         raise RuntimeError("companion_ingress_attempt_stale")
                     if delivered_hash is not None:
@@ -3098,7 +3093,13 @@ class SessionDB:
         payload_json = companion_canonical_json(payload)
         payload_hash = companion_canonical_hash(payload)
         outbox_id = companion_canonical_hash(
-            ["companion_projection_route", profile_id, profile_generation, route_version, event_kind]
+            [
+                "companion_projection_route",
+                profile_id,
+                profile_generation,
+                route_version,
+                event_kind,
+            ]
         )
         await db.execute(
             """INSERT INTO companion_projection_route_outbox(
@@ -3158,7 +3159,7 @@ class SessionDB:
                         params.append(int(profile_generation))
                     cursor = await db.execute(
                         f"""SELECT * FROM companion_projection_route_outbox
-                            WHERE {' AND '.join(where)}
+                            WHERE {" AND ".join(where)}
                             ORDER BY created_at,outbox_id LIMIT 1""",
                         params,
                     )
@@ -3237,10 +3238,7 @@ class SessionDB:
                             raise RuntimeError("companion_route_outbox_attempt_stale")
                         await db.commit()
                         return dict(row)
-                    if (
-                        row["status"] != "claimed"
-                        or int(row["attempt"]) != int(expected_attempt)
-                    ):
+                    if row["status"] != "claimed" or int(row["attempt"]) != int(expected_attempt):
                         await db.rollback()
                         raise RuntimeError("companion_route_outbox_attempt_stale")
                     status = "delivered" if delivered else "pending"
@@ -3360,7 +3358,6 @@ class SessionDB:
                     exc,
                 )
 
-
         return msg_id
 
     async def _insert_message_row(
@@ -3476,22 +3473,18 @@ class SessionDB:
             row = await cursor.fetchone()
             await cursor.close()
             if row is None:
-                raise RuntimeError(
-                    f"message event conflict has no row: {generic_event_id}"
-                )
+                raise RuntimeError(f"message event conflict has no row: {generic_event_id}")
             if str(row[1]) != projection_kind or str(row[2]) != context_visibility:
                 raise RuntimeError(
                     "workflow_message_projection_conflict: "
                     f"event_id={workflow_event_id!r} existing=({row[1]!r},{row[2]!r}) "
                     f"requested=({projection_kind!r},{context_visibility!r})"
                 )
-            if (
-                (None if row[3] is None else str(row[3])) != root_run_id
-                or (None if row[4] is None else str(row[4])) != task_scope_id
-            ):
+            if (None if row[3] is None else str(row[3])) != root_run_id or (
+                None if row[4] is None else str(row[4])
+            ) != task_scope_id:
                 raise RuntimeError(
-                    "workflow_message_task_scope_conflict: "
-                    f"event_id={workflow_event_id!r}"
+                    f"workflow_message_task_scope_conflict: event_id={workflow_event_id!r}"
                 )
             if projection_kind == "companion_event":
                 expected_projection = (
@@ -3531,8 +3524,7 @@ class SessionDB:
                 actual_projection = tuple(row[5:12])
             if actual_projection != expected_projection:
                 raise RuntimeError(
-                    "message_event_projection_conflict: "
-                    f"event_id={generic_event_id!r}"
+                    f"message_event_projection_conflict: event_id={generic_event_id!r}"
                 )
             msg_id = int(row[0])
         return msg_id, inserted
@@ -3581,8 +3573,7 @@ class SessionDB:
                     await db.execute("PRAGMA busy_timeout=5000")
                     await db.execute("BEGIN IMMEDIATE")
                     cursor = await db.execute(
-                        "SELECT epoch, deleted_at FROM session_delivery_state "
-                        "WHERE session_id = ?",
+                        "SELECT epoch, deleted_at FROM session_delivery_state WHERE session_id = ?",
                         (session_id,),
                     )
                     row = await cursor.fetchone()
@@ -3641,8 +3632,7 @@ class SessionDB:
             await self.initialize()
         async with aiosqlite.connect(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT epoch, deleted_at, reason FROM session_delivery_state "
-                "WHERE session_id = ?",
+                "SELECT epoch, deleted_at, reason FROM session_delivery_state WHERE session_id = ?",
                 (session_id,),
             )
             row = await cursor.fetchone()
@@ -3781,16 +3771,12 @@ class SessionDB:
         if not self._initialized:
             await self.initialize()
         async with aiosqlite.connect(self._db_path) as db:
-            cursor = await db.execute(
-                "SELECT role FROM messages WHERE id = ?", (int(msg_id),)
-            )
+            cursor = await db.execute("SELECT role FROM messages WHERE id = ?", (int(msg_id),))
             row = await cursor.fetchone()
             await cursor.close()
         return str(row[0]) if row else None
 
-    async def get_message_routing_context(
-        self, msg_id: int
-    ) -> dict[str, Any] | None:
+    async def get_message_routing_context(self, msg_id: int) -> dict[str, Any] | None:
         """Read the immutable workload identity for one persisted message.
 
         The fanout hook intentionally receives only ``(message_id, content)``.
@@ -3817,17 +3803,11 @@ class SessionDB:
             return None
         return {
             "session_id": str(row["session_id"]),
-            "root_run_id": (
-                None if row["root_run_id"] is None else str(row["root_run_id"])
-            ),
-            "task_scope_id": (
-                None if row["task_scope_id"] is None else str(row["task_scope_id"])
-            ),
+            "root_run_id": (None if row["root_run_id"] is None else str(row["root_run_id"])),
+            "task_scope_id": (None if row["task_scope_id"] is None else str(row["task_scope_id"])),
             "role": str(row["role"]),
             "projection_kind": (
-                None
-                if row["projection_kind"] is None
-                else str(row["projection_kind"])
+                None if row["projection_kind"] is None else str(row["projection_kind"])
             ),
         }
 
@@ -3858,11 +3838,11 @@ class SessionDB:
                 "SELECT id, session_id, role, content, created_at, "
                 "salience, decay_last_touch, user_emotion, audio_file_path, "
                 "tool_call_id, tool_calls, reasoning_content, workflow_event_id, "
-                 "projection_kind, context_visibility, is_summary, summary_of, "
-                 "root_run_id, task_scope_id, projection_event_id, "
-                 "projection_owner_kind, projection_owner_id, "
-                 "projection_owner_generation, projection_epoch, "
-                 "projection_route_version, projection_payload_hash "
+                "projection_kind, context_visibility, is_summary, summary_of, "
+                "root_run_id, task_scope_id, projection_event_id, "
+                "projection_owner_kind, projection_owner_id, "
+                "projection_owner_generation, projection_epoch, "
+                "projection_route_version, projection_payload_hash "
                 f"FROM messages WHERE {' AND '.join(where)} "
                 "ORDER BY created_at ASC, id ASC "
                 "LIMIT ? OFFSET ?",
@@ -4086,8 +4066,7 @@ class SessionDB:
                     await db.execute("PRAGMA busy_timeout=5000")
                     if touch:
                         await db.execute(
-                            "UPDATE messages SET salience=?, decay_last_touch=? "
-                            "WHERE id=?",
+                            "UPDATE messages SET salience=?, decay_last_touch=? WHERE id=?",
                             (new_salience, now, message_id),
                         )
                     else:
@@ -4101,9 +4080,7 @@ class SessionDB:
 
     # ---- P4-S17 MemoryStore Protocol compatibility --------------------
 
-    async def get_recent(
-        self, session_id: str, limit: int = 10
-    ) -> list[ConversationTurn]:
+    async def get_recent(self, session_id: str, limit: int = 10) -> list[ConversationTurn]:
         """Implement ``MemoryStore.get_recent`` via ``get_messages``."""
         from memory.base import ConversationTurn
 
@@ -4297,17 +4274,19 @@ class SessionDB:
             await cursor.close()
         out: list[dict[str, Any]] = []
         for row in rows:
-            preview = (row[3] or "")
+            preview = row[3] or ""
             if len(preview) > 60:
                 preview = preview[:60]
-            out.append({
-                "session_id": str(row[0]),
-                "turn_count": int(row[1] or 0),
-                "last_message_at": float(row[2] or 0.0),
-                "preview": preview,
-                # 用户自定义标题（空串=未命名，前端回退到 preview）。
-                "title": (row[4] or ""),
-            })
+            out.append(
+                {
+                    "session_id": str(row[0]),
+                    "turn_count": int(row[1] or 0),
+                    "last_message_at": float(row[2] or 0.0),
+                    "preview": preview,
+                    # 用户自定义标题（空串=未命名，前端回退到 preview）。
+                    "title": (row[4] or ""),
+                }
+            )
         return out
 
     #: Hard cap on a user-set session title (UI also enforces; this is the
@@ -4351,9 +4330,7 @@ class SessionDB:
                             (sid, clean, time.time()),
                         )
                     else:
-                        await db.execute(
-                            "DELETE FROM session_titles WHERE session_id = ?", (sid,)
-                        )
+                        await db.execute("DELETE FROM session_titles WHERE session_id = ?", (sid,))
                     await db.execute(
                         "UPDATE project_session_catalog_state SET "
                         "catalog_revision=catalog_revision+1 WHERE singleton=1"
@@ -4365,9 +4342,7 @@ class SessionDB:
 
     # ---- P5-S2 code_session_provider binding -------------------------
 
-    async def get_session_provider_binding(
-        self, session_id: str
-    ) -> dict[str, Any]:
+    async def get_session_provider_binding(self, session_id: str) -> dict[str, Any]:
         """Return the provider/model override for an ordinary session.
 
         The underlying table keeps its historical name for an idempotent
@@ -4377,9 +4352,7 @@ class SessionDB:
 
         return await self.get_code_session_provider_binding(session_id)
 
-    async def get_session_provider_binding_authority(
-        self, session_id: str
-    ) -> dict[str, Any]:
+    async def get_session_provider_binding_authority(self, session_id: str) -> dict[str, Any]:
         """Return incarnation/revision/epoch for trusted production callers."""
         return await self._get_provider_binding_authority(session_id)
 
@@ -4448,8 +4421,7 @@ class SessionDB:
                     await source_cursor.close()
                     copied = tuple(source_row) if source_row is not None else (None,) * 5
                     target_cursor = await db.execute(
-                        "SELECT binding_epoch FROM code_session_provider "
-                        "WHERE base_session_id = ?",
+                        "SELECT binding_epoch FROM code_session_provider WHERE base_session_id = ?",
                         (target,),
                     )
                     target_row = await target_cursor.fetchone()
@@ -4495,15 +4467,11 @@ class SessionDB:
             else self._legacy_provider_binding_dict(result)
         )
 
-    async def get_code_session_provider_binding(
-        self, base_session_id: str
-    ) -> dict[str, Any]:
+    async def get_code_session_provider_binding(self, base_session_id: str) -> dict[str, Any]:
         authority = await self._get_provider_binding_authority(base_session_id)
         return self._legacy_provider_binding_dict(authority)
 
-    async def _get_provider_binding_authority(
-        self, base_session_id: str
-    ) -> dict[str, Any]:
+    async def _get_provider_binding_authority(self, base_session_id: str) -> dict[str, Any]:
         """读取 code 会话的 provider/model override 绑定.
 
         返回 ``{"provider_id": str|None, "preferred_model": str|None,
@@ -4595,9 +4563,7 @@ class SessionDB:
             provider_incarnation_id = None
             provider_config_revision = None
         params_json = (
-            json.dumps(model_params, ensure_ascii=False)
-            if model_params is not None
-            else None
+            json.dumps(model_params, ensure_ascii=False) if model_params is not None else None
         )
 
         result: dict[str, Any] | None = None
@@ -4609,8 +4575,7 @@ class SessionDB:
                     await db.execute("PRAGMA busy_timeout=5000")
                     await db.execute("BEGIN IMMEDIATE")
                     cursor = await db.execute(
-                        "SELECT binding_epoch FROM code_session_provider "
-                        "WHERE base_session_id = ?",
+                        "SELECT binding_epoch FROM code_session_provider WHERE base_session_id = ?",
                         (base_session_id,),
                     )
                     row = await cursor.fetchone()
@@ -4786,8 +4751,7 @@ class SessionDB:
                 async with aiosqlite.connect(self._db_path) as db:
                     await db.execute("PRAGMA busy_timeout=5000")
                     await db.execute(
-                        "DELETE FROM code_todos "
-                        "WHERE session_id = ? AND workflow_run_id IS NULL",
+                        "DELETE FROM code_todos WHERE session_id = ? AND workflow_run_id IS NULL",
                         (session_id,),
                     )
                     for idx, item in enumerate(items):
@@ -4922,8 +4886,7 @@ class SessionDB:
                         )
                     else:
                         await db.execute(
-                            "DELETE FROM code_todos "
-                            "WHERE session_id = ? AND workflow_run_id = ?",
+                            "DELETE FROM code_todos WHERE session_id = ? AND workflow_run_id = ?",
                             (session_id, run_id),
                         )
                     await db.commit()
@@ -4970,6 +4933,7 @@ class SessionDB:
             await self.initialize()
         # 自带建表（幂等）— 全新 DB 上保证 session_plans 存在。
         from deskpet.memory.memory_v2_schema import ensure_memory_v2_tables
+
         await ensure_memory_v2_tables(self._db_path)
 
         steps_json = json.dumps(
@@ -5015,6 +4979,7 @@ class SessionDB:
         if not self._initialized:
             await self.initialize()
         from deskpet.memory.memory_v2_schema import ensure_memory_v2_tables
+
         await ensure_memory_v2_tables(self._db_path)
 
         async def _do() -> dict[str, Any] | None:
@@ -5042,9 +5007,7 @@ class SessionDB:
                     action_categories = decoded.get("action_categories")
                     if not isinstance(action_categories, list):
                         action_categories = []
-                    auto_confirmed = bool(
-                        decoded.get("auto_confirmed", False)
-                    )
+                    auto_confirmed = bool(decoded.get("auto_confirmed", False))
                 else:
                     # Legacy rows stored a bare steps array.
                     steps = decoded if isinstance(decoded, list) else []
@@ -5069,6 +5032,7 @@ class SessionDB:
         if not self._initialized:
             await self.initialize()
         from deskpet.memory.memory_v2_schema import ensure_memory_v2_tables
+
         await ensure_memory_v2_tables(self._db_path)
 
         async def _do() -> None:
@@ -5106,6 +5070,7 @@ class SessionDB:
         if not self._initialized:
             await self.initialize()
         from deskpet.memory.memory_v2_schema import ensure_session_goals_table
+
         await ensure_session_goals_table(self._db_path)
 
         async def _do() -> None:
@@ -5129,9 +5094,16 @@ class SessionDB:
                             updated_at      = excluded.updated_at
                         """,
                         (
-                            goal_id, session_id, text, status, progress,
-                            criteria, max_iterations, iterations_used,
-                            set_at, updated_at,
+                            goal_id,
+                            session_id,
+                            text,
+                            status,
+                            progress,
+                            criteria,
+                            max_iterations,
+                            iterations_used,
+                            set_at,
+                            updated_at,
                         ),
                     )
                     await db.commit()
@@ -5145,6 +5117,7 @@ class SessionDB:
         if not self._initialized:
             await self.initialize()
         from deskpet.memory.memory_v2_schema import ensure_session_goals_table
+
         await ensure_session_goals_table(self._db_path)
 
         async def _do() -> bool:
@@ -5156,10 +5129,12 @@ class SessionDB:
                         "WHERE goal_id=? AND status='active'",
                         (status, time.time(), goal_id),
                     )
-                    row = await (await db.execute(
-                        "SELECT status FROM session_goals WHERE goal_id=?",
-                        (goal_id,),
-                    )).fetchone()
+                    row = await (
+                        await db.execute(
+                            "SELECT status FROM session_goals WHERE goal_id=?",
+                            (goal_id,),
+                        )
+                    ).fetchone()
                     await db.commit()
                     return row is not None and str(row[0]) == status
 
@@ -5170,6 +5145,7 @@ class SessionDB:
         if not self._initialized:
             await self.initialize()
         from deskpet.memory.memory_v2_schema import ensure_session_goals_table
+
         await ensure_session_goals_table(self._db_path)
 
         async def _do() -> list[dict[str, Any]]:
@@ -5196,6 +5172,7 @@ class SessionDB:
         if not self._initialized:
             await self.initialize()
         from deskpet.memory.memory_v2_schema import ensure_session_goals_table
+
         await ensure_session_goals_table(self._db_path)
 
         async def _do() -> list[dict[str, Any]]:
@@ -5250,6 +5227,7 @@ class SessionDB:
         if not self._initialized:
             await self.initialize()
         from deskpet.memory.memory_v2_schema import ensure_goal_tasks_table
+
         await ensure_goal_tasks_table(self._db_path)
 
         depends_json = json.dumps(depends_on, ensure_ascii=False)
@@ -5267,8 +5245,13 @@ class SessionDB:
                         ) VALUES (?, ?, ?, ?, 'pending', ?, NULL, NULL, ?, ?)
                         """,
                         (
-                            task_id, goal_id, session_id, title,
-                            depends_json, created_at, updated_at,
+                            task_id,
+                            goal_id,
+                            session_id,
+                            title,
+                            depends_json,
+                            created_at,
+                            updated_at,
                         ),
                     )
                     await db.commit()
@@ -5280,6 +5263,7 @@ class SessionDB:
         if not self._initialized:
             await self.initialize()
         from deskpet.memory.memory_v2_schema import ensure_goal_tasks_table
+
         await ensure_goal_tasks_table(self._db_path)
 
         async def _do() -> dict[str, Any] | None:
@@ -5305,6 +5289,7 @@ class SessionDB:
         if not self._initialized:
             await self.initialize()
         from deskpet.memory.memory_v2_schema import ensure_goal_tasks_table
+
         await ensure_goal_tasks_table(self._db_path)
 
         async def _do() -> list[dict[str, Any]]:
@@ -5338,6 +5323,7 @@ class SessionDB:
         if not self._initialized:
             await self.initialize()
         from deskpet.memory.memory_v2_schema import ensure_goal_tasks_table
+
         await ensure_goal_tasks_table(self._db_path)
 
         # Build SET clause dynamically
@@ -5372,9 +5358,7 @@ class SessionDB:
         if status == "done":
             await self._backfill_goal_progress(task_id, updated_at)
 
-    async def _backfill_goal_progress(
-        self, task_id: str, now: float
-    ) -> None:
+    async def _backfill_goal_progress(self, task_id: str, now: float) -> None:
         """After a task is marked done, recompute and persist progress
         = done_count / total for the owning goal.
         """
@@ -5435,6 +5419,7 @@ class SessionDB:
         if not self._initialized:
             await self.initialize()
         from deskpet.memory.memory_v2_schema import ensure_goal_tasks_table
+
         await ensure_goal_tasks_table(self._db_path)
 
         async def _do() -> dict[str, Any] | None:

@@ -49,6 +49,8 @@ class ReviewCallInterrupted(ContractError):
     审阅层按出错收口，带结构化码；步骤按"被打断"原地重做、不扣次数。"""
 
     code = REVIEW_INTERRUPTED_CODE
+
+
 #: The reviewing model is in its provider-failure cooldown: a review cannot be opened now.
 REVIEW_ROUTE_UNAVAILABLE = "REVIEW_ROUTE_UNAVAILABLE"
 #: 2026-09-29 第六局：最终审阅员每轮并发查 5 次左右，查满 32 次时循环直接截断，两次都没给
@@ -104,7 +106,9 @@ class AssuranceReviewRuntime:
             self.evidence_tools.install(gateway)
         return self.consumer
 
-    def task_record(self, mission_id: str, attempt_id: str, requirements_revision: int | None = None):
+    def task_record(
+        self, mission_id: str, attempt_id: str, requirements_revision: int | None = None
+    ):
         """Exact official source for this Result under one requirements revision (``None``:
         the one it was produced under); no latest-Review fallback (TaskGraph 补全第四批)."""
         from .completion_inputs import frozen_requirements_revision
@@ -112,8 +116,11 @@ class AssuranceReviewRuntime:
         result = self.store.find_result_for_attempt(attempt_id)
         if result is None or result.envelope.mission_id != mission_id:
             raise AssuranceError("REVIEW_RESULT_SOURCE_MISSING")
-        revision = (frozen_requirements_revision(self.store, result) if requirements_revision is None
-                    else int(requirements_revision))
+        revision = (
+            frozen_requirements_revision(self.store, result)
+            if requirements_revision is None
+            else int(requirements_revision)
+        )
         rows = self.store.connection.execute(
             "SELECT package_id FROM assurance_review_bindings WHERE mission_id=? "
             "AND subject_hash=? AND requirements_revision=? "
@@ -131,8 +138,9 @@ class AssuranceReviewRuntime:
             )
         return record
 
-    def provenance(self, mission_id: str, attempt_id: str,
-                   requirements_revision: int | None = None) -> dict[str, str]:
+    def provenance(
+        self, mission_id: str, attempt_id: str, requirements_revision: int | None = None
+    ) -> dict[str, str]:
         with self.store.read_view():
             record = self.task_record(mission_id, attempt_id, requirements_revision)
             if record is None:
@@ -227,6 +235,7 @@ class AssuranceReviewRuntime:
         if mission.tenant_id != self.consumer.tenant_id:
             raise AssuranceError("ASSURANCE_TENANT_MISMATCH")
         from ..runtime.model_router import RoutingUnavailable
+
         try:
             decision = orch._route_service("critic", mission.id)
         except RoutingUnavailable as unavailable:
@@ -278,7 +287,9 @@ class AssuranceReviewRuntime:
             authority=self.consumer.authority,
             cas=self.consumer.cas,
             config=config,
-            policy_refs=register_review_policies(self.orchestrator, mission.id, decision.profile_id),
+            policy_refs=register_review_policies(
+                self.orchestrator, mission.id, decision.profile_id
+            ),
             reservation=reservation,
             request_command_id=request_command_id,
             allow_in_transaction=allow_in_transaction,
@@ -329,12 +340,18 @@ class AssuranceReviewRuntime:
             request_command_id="composition-review:" + str(package.package_id),
         )
 
-    def ensure_action_proposal(self, mission: Any, *, draft: Any, sources: Any, payloads: Any) -> Any:
+    def ensure_action_proposal(
+        self, mission: Any, *, draft: Any, sources: Any, payloads: Any
+    ) -> Any:
         """ACTION_PROPOSAL from T0's frozen draft, inside T0's own UoW."""
         from .assurance_purpose_reviews import action_proposal_subject
 
         subject, requirements = action_proposal_subject(
-            self.store, mission_id=mission.id, package=draft.package, sources=sources, payloads=payloads
+            self.store,
+            mission_id=mission.id,
+            package=draft.package,
+            sources=sources,
+            payloads=payloads,
         )
         return self._ensure_purpose(
             mission,
@@ -383,8 +400,9 @@ class AssuranceReviewRuntime:
             request_command_id="mission-final-review:" + str(package.package_id),
         )
 
-    async def run_task(self, mission: Any, task: Any, *, attempt_id: str,
-                       requirements_revision: int | None = None) -> CriticVerdict:
+    async def run_task(
+        self, mission: Any, task: Any, *, attempt_id: str, requirements_revision: int | None = None
+    ) -> CriticVerdict:
         """The TASK_CONTENT review of one result.  ``requirements_revision`` set: the result
         was accepted under older requirements and is kept by the current plan; the reviewer
         judges the same result under this newer revision (TaskGraph 补全第四批).  Driven by
@@ -413,9 +431,13 @@ class AssuranceReviewRuntime:
                 "JOIN assurance_review_bindings b USING(mission_id,review_key) "
                 "WHERE b.mission_id=? AND b.subject_hash=? AND b.requirements_revision=? AND i.ordinal=1 "
                 "AND json_extract(b.binding_json,'$.subject.purpose')='TASK_CONTENT'",
-                (mission.id, fingerprint(result.envelope.to_json()),
-                 frozen_requirements_revision(self.store, result) if not carried
-                 else int(requirements_revision)),
+                (
+                    mission.id,
+                    fingerprint(result.envelope.to_json()),
+                    frozen_requirements_revision(self.store, result)
+                    if not carried
+                    else int(requirements_revision),
+                ),
             ).fetchone()
             invocation = None
             if prior is not None:
@@ -431,7 +453,9 @@ class AssuranceReviewRuntime:
             decision = orch._route_service("critic", mission.id)
             if carried:
                 # 重审不动原尝试的保护预算：在任务上另记一次审阅预留，不计尝试次数
-                fields: dict[str, Any] = {"carried_requirements_revision": int(requirements_revision)}
+                fields: dict[str, Any] = {
+                    "carried_requirements_revision": int(requirements_revision)
+                }
                 reservation = orch._reservation(orch._config.critic_reserve_tokens)
             else:
                 fields, reservation = protected_critic_budget(orch, decision, task.id, attempt_id)
@@ -454,7 +478,10 @@ class AssuranceReviewRuntime:
                     ),
                 ).to_json(),
             }
-            if self._check_policy_projector is not None and not self.store.connection.in_transaction:
+            if (
+                self._check_policy_projector is not None
+                and not self.store.connection.in_transaction
+            ):
                 # The projector approves through the ordinary verb (receipted,
                 # replay-safe); a projection failure surfaces below as the same
                 # CHECK_POLICY_UNRESOLVED the review would raise without it.
@@ -556,11 +583,13 @@ class AssuranceReviewRuntime:
                 # 说出真正的原因（2026-10-05 真机：规划器只看到"审阅准备需要人工处理"）
                 raise ContractError(
                     "这次审阅作废：审阅进行期间，任务的资料换了版本或被撤销，审阅员看的不是现行资料"
-                    "（这一步是拿旧版资料做的）")
+                    "（这一步是拿旧版资料做的）"
+                )
             if row[0] == "AssuranceReviewFormatExhausted":
                 # 只有两次调用都被打断才会写这条回执：不是审阅员的错，步骤按被打断重做
                 raise ReviewCallInterrupted(
-                    "Assurance review stopped: both review calls were interrupted (" + row[0] + ")")
+                    "Assurance review stopped: both review calls were interrupted (" + row[0] + ")"
+                )
             raise ContractError("Assurance review stopped: " + row[0])
         row = self.store.connection.execute(
             "SELECT wait_reason FROM assurance_pending_work WHERE consumer='REVIEW' "

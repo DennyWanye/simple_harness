@@ -5,6 +5,7 @@ Read all original rows before classifying them. In particular, a terminal Attemp
 does not hide a submitted intent, an unimported charge, or a held reservation.
 The H1 runtime/Operation reader must additionally prove physical completion.
 """
+
 from __future__ import annotations
 
 import json
@@ -34,17 +35,23 @@ class LocalWorkFacts:
     def related_subjects(self, task_ids: frozenset[str]) -> frozenset[str]:
         body = self.to_json()
         subjects = {row["attempt_id"] for row in body["attempts"] if row["task_id"] in task_ids}
-        subjects.update(row["reservation_subject"] for row in body["actions"]
-                        if row.get("reservation_subject") and (row.get("task_id") in task_ids
-                        or row.get("attempt_id") in subjects))
+        subjects.update(
+            row["reservation_subject"]
+            for row in body["actions"]
+            if row.get("reservation_subject")
+            and (row.get("task_id") in task_ids or row.get("attempt_id") in subjects)
+        )
         # A Critic or Manager can still execute on behalf of
         # the same Task. The latter's original producer stores goal_task_id.
         # Explicit config/Attempt links are the only identity join; no id parsing.
         while True:
-            expanded = subjects | {row["subject_id"] for row in body["intents"]
+            expanded = subjects | {
+                row["subject_id"]
+                for row in body["intents"]
                 if row["config"].get("task_id") in task_ids
                 or row["config"].get("goal_task_id") in task_ids
-                or row["config"].get("attempt_id") in subjects}
+                or row["config"].get("attempt_id") in subjects
+            }
             if expanded == subjects:
                 break
             subjects = expanded
@@ -54,24 +61,45 @@ class LocalWorkFacts:
         body = self.to_json()
         subjects = self.related_subjects(task_ids)
         blocked = {
-            row["attempt_id"] for row in body["attempts"]
-            if row["attempt_id"] in subjects and AttemptStatus(row["status"]) not in TERMINAL_ATTEMPT
+            row["attempt_id"]
+            for row in body["attempts"]
+            if row["attempt_id"] in subjects
+            and AttemptStatus(row["status"]) not in TERMINAL_ATTEMPT
         }
-        blocked.update(row["subject_id"] for row in body["intents"]
-                       if row["subject_id"] in subjects and row["state"] not in {"SETTLED", "FAILED"})
-        blocked.update(row["subject_id"] for row in body["reservations"]
-                       if row["subject_id"] in subjects and row["state"] != "SETTLED")
+        blocked.update(
+            row["subject_id"]
+            for row in body["intents"]
+            if row["subject_id"] in subjects and row["state"] not in {"SETTLED", "FAILED"}
+        )
+        blocked.update(
+            row["subject_id"]
+            for row in body["reservations"]
+            if row["subject_id"] in subjects and row["state"] != "SETTLED"
+        )
         # 2026-10-10（docopt 局）：一笔"用量未知"的名额或用量事实，在它的预留已经按上限结清
         # （账已关）之后不再拦截——否则收敛作业永远等一笔永远不会来的对账。仍占着的名额
         # （RESERVED / HANDED_OFF）与预留未结清的未知用量照旧拦截。
         settled = {row["subject_id"] for row in body["reservations"] if row["state"] == "SETTLED"}
-        blocked.update(row["subject_id"] for row in body["provider_grants"]
-                       if row["subject_id"] in subjects and (row["state"] in {"RESERVED", "HANDED_OFF"}
-                       or (row["state"] == "UNKNOWN" and row["subject_id"] not in settled)))
-        blocked.update(row["subject_id"] for row in body["usage"]
-                       if row["subject_id"] in subjects and row["unknown"] and row["subject_id"] not in settled)
-        blocked.update(row["subject_id"] for row in body["tool_calls"]
-                       if row["subject_id"] in subjects and row["outcome"] not in {"succeeded", "failed", "rejected"})
+        blocked.update(
+            row["subject_id"]
+            for row in body["provider_grants"]
+            if row["subject_id"] in subjects
+            and (
+                row["state"] in {"RESERVED", "HANDED_OFF"}
+                or (row["state"] == "UNKNOWN" and row["subject_id"] not in settled)
+            )
+        )
+        blocked.update(
+            row["subject_id"]
+            for row in body["usage"]
+            if row["subject_id"] in subjects and row["unknown"] and row["subject_id"] not in settled
+        )
+        blocked.update(
+            row["subject_id"]
+            for row in body["tool_calls"]
+            if row["subject_id"] in subjects
+            and row["outcome"] not in {"succeeded", "failed", "rejected"}
+        )
         return frozenset(blocked)
 
 
@@ -94,21 +122,36 @@ def read_local_work(store: Store, mission_id: str) -> LocalWorkFacts:
             ("usage", "imported_usage", "usage_ref"),
             ("tool_calls", "tool_calls", "call_key"),
         ):
-            rows = [dict(row) for row in db.execute(
-                f"SELECT * FROM {table} WHERE mission_id=? ORDER BY {order}", (mission_id,))]
+            rows = [
+                dict(row)
+                for row in db.execute(
+                    f"SELECT * FROM {table} WHERE mission_id=? ORDER BY {order}", (mission_id,)
+                )
+            ]
             body[key] = rows
         for row in body["attempts"]:
             try:
                 AttemptStatus(row["status"])
                 attempt = store.get_attempt(row["attempt_id"])
-                if (attempt is None or attempt.mission_id != mission_id
-                        or attempt.task_id != row["task_id"] or str(attempt.status) != row["status"]
-                        or attempt.version != row["version"]):
+                if (
+                    attempt is None
+                    or attempt.mission_id != mission_id
+                    or attempt.task_id != row["task_id"]
+                    or str(attempt.status) != row["status"]
+                    or attempt.version != row["version"]
+                ):
                     raise ValueError("Attempt columns differ from original body")
             except (ValueError, TypeError) as error:
                 raise SourceUnavailable("taskgraph_attempt_source_invalid") from error
         for row in body["intents"]:
-            if row["state"] not in {"PENDING", "CLAIMED", "AGENT_CREATED", "SUBMITTED", "SETTLED", "FAILED"}:
+            if row["state"] not in {
+                "PENDING",
+                "CLAIMED",
+                "AGENT_CREATED",
+                "SUBMITTED",
+                "SETTLED",
+                "FAILED",
+            }:
                 raise SourceUnavailable("taskgraph_intent_state_unknown")
             config = json.loads(row.pop("config_json"))
             if not isinstance(config, dict):
@@ -118,6 +161,13 @@ def read_local_work(store: Store, mission_id: str) -> LocalWorkFacts:
             if row["state"] not in {"RESERVED", "SETTLED"}:
                 raise SourceUnavailable("taskgraph_reservation_state_unknown")
         for row in body["provider_grants"]:
-            if row["state"] not in {"RESERVED", "HANDED_OFF", "UNKNOWN", "SETTLED", "RELEASED", "OVERRUN"}:
+            if row["state"] not in {
+                "RESERVED",
+                "HANDED_OFF",
+                "UNKNOWN",
+                "SETTLED",
+                "RELEASED",
+                "OVERRUN",
+            }:
                 raise SourceUnavailable("taskgraph_provider_grant_state_unknown")
         return LocalWorkFacts(mission_id=mission_id, canonical_document=canonical_json(body))

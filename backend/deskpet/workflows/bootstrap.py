@@ -48,9 +48,7 @@ async def build_workflow_service(
         unit_of_work=execution_uow,
         checkpoint=checkpoint_execution,
     )
-    saver = NativeCheckpointStore(
-        db_path, execution_adapter=checkpoint_execution
-    )
+    saver = NativeCheckpointStore(db_path, execution_adapter=checkpoint_execution)
     registry = WorkflowRegistry()
     register_v1_workflows(registry)
     register_v2_workflows(registry)
@@ -59,9 +57,7 @@ async def build_workflow_service(
     register_v5_workflows(registry)
     register_v6_workflows(registry)
     register_v7_workflows(registry)
-    runner = WorkflowRunner(
-        store, saver, registry, execution_ports=execution_ports
-    )
+    runner = WorkflowRunner(store, saver, registry, execution_ports=execution_ports)
     selected_blob_root = Path(workflow_blob_root or root / "workflows" / "blobs")
     research_blobs = RegisteredBlobStore(
         selected_blob_root,
@@ -91,9 +87,7 @@ async def build_workflow_service(
         runner=runner,
         delivery_handlers=delivery_handlers,
         session_delivery_state_reader=session_delivery_state_reader,
-        research_repository=ResearchWorkflowRepository(
-            db_path, blob_root=selected_blob_root
-        ),
+        research_repository=ResearchWorkflowRepository(db_path, blob_root=selected_blob_root),
         research_snapshot_loader=research_blobs.get,
         runtime_adapters=runtime_adapters,
         execution_ports=execution_ports,
@@ -102,9 +96,7 @@ async def build_workflow_service(
         runtime_activation_hooks=(_activate_foundations,),
     )
     if activate:
-        await service.activate_runtime(
-            required_runtime_identities=required_runtime_identities
-        )
+        await service.activate_runtime(required_runtime_identities=required_runtime_identities)
     return service
 
 

@@ -505,7 +505,9 @@ class AssuranceLocalChecks:
                 },
             )
 
-    def prepare(self, inputs: dict[str, Any], *, requirements_revision: int | None = None) -> LocalVerificationRecorder:
+    def prepare(
+        self, inputs: dict[str, Any], *, requirements_revision: int | None = None
+    ) -> LocalVerificationRecorder:
         """Receives actual VerifierRouter arguments, never a Host API document.
 
         ``requirements_revision``: the revision the checks are bound under — ``None`` is the
@@ -532,7 +534,8 @@ class AssuranceLocalChecks:
                 raise AssuranceError("ASSURANCE_PROFILE_REQUIRED")
             metadata = reader.read_exact_metadata(ref)
             frozen = load_completion_result_inputs(
-                self.commit.store, self.commit.store.get_result(ref.pin.id),
+                self.commit.store,
+                self.commit.store.get_result(ref.pin.id),
                 requirements_revision=requirements_revision,
             )
             if frozen is None:

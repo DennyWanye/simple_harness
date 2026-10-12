@@ -73,8 +73,17 @@ from ...graph.task_network import TaskNetworkSnapshot
 #: library precedents (id and one line of purpose, never the method); ``library_reads`` the
 #: entries this Mission's Planner read, with the method as written for its source Mission.
 VIEW_NAMES = (
-    "goals", "obligations", "plans", "methods", "facts", "accepted_results",
-    "failures", "capabilities", "planning_budgets", "method_library", "library_reads",
+    "goals",
+    "obligations",
+    "plans",
+    "methods",
+    "facts",
+    "accepted_results",
+    "failures",
+    "capabilities",
+    "planning_budgets",
+    "method_library",
+    "library_reads",
     "knowledge",
 )
 
@@ -92,6 +101,7 @@ _SHRINKABLE = ("accepted_results", "failures", "facts", "knowledge", "methods", 
 
 class PlannerPackageError(ContractError):
     """The package cannot be assembled within its bounds."""
+
 
 #: V2 §48 / §18: how many reference quadruples one package exposes.  A bound, for the
 #: same reason every other cap here exists — the package is a prompt — and a
@@ -138,8 +148,11 @@ def candidate_content(content: str) -> str:
 
     if len(content) <= CANDIDATE_CONTENT_LIMIT:
         return content
-    return (content[:CANDIDATE_CONTENT_LIMIT]
-            + f"（候选结论共 {len(content)} 字，这里只列前 {CANDIDATE_CONTENT_LIMIT} 字）")
+    return (
+        content[:CANDIDATE_CONTENT_LIMIT]
+        + f"（候选结论共 {len(content)} 字，这里只列前 {CANDIDATE_CONTENT_LIMIT} 字）"
+    )
+
 
 def _ref_key(reference: Any) -> tuple[str, int, str]:
     to_json = getattr(reference, "to_json", None)
@@ -255,9 +268,13 @@ def goal_rows(
             "requirement_refs": list(binding.requirement_refs),
             "contract_revision": int(binding.contract_revision),
             "requiredness": str(spec.requiredness),
-            "capability_requirements": sorted(str(item) for item in binding.capability_requirements),
+            "capability_requirements": sorted(
+                str(item) for item in binding.capability_requirements
+            ),
             "open": compound and adopted is None,
-            "adopted_method": None if adopted is None else {
+            "adopted_method": None
+            if adopted is None
+            else {
                 "method_instance_id": str(adopted.instance_id),
                 "method_ref": _method_ref(adopted.method_ref),
             },
@@ -265,8 +282,11 @@ def goal_rows(
         }
         state = (task_states or {}).get(occurrence)
         if state is not None:
-            row.update(task_status=state["task_status"], task_version=state["task_version"],
-                       occurrence_outcome=state["occurrence_outcome"])
+            row.update(
+                task_status=state["task_status"],
+                task_version=state["task_version"],
+                occurrence_outcome=state["occurrence_outcome"],
+            )
         rows.append(row)
     return tuple(rows)
 
@@ -281,8 +301,11 @@ def plan_row(
     REBIND_INPUT must repeat.
     """
 
-    refs = {str(ref["id"]): dict(ref) for ref in method_instance_refs
-            if ref.get("kind") == PlanningRefKind.METHOD_INSTANCE.value}
+    refs = {
+        str(ref["id"]): dict(ref)
+        for ref in method_instance_refs
+        if ref.get("kind") == PlanningRefKind.METHOD_INSTANCE.value
+    }
     adopted = set(network.adopted_instance_ids)
     return {
         "plan_revision": int(network.plan_revision),
@@ -290,17 +313,23 @@ def plan_row(
         "required_obligations": sorted(str(item) for item in network.required_obligations),
         "adopted_methods": [
             {"method_instance_ref": refs.get(str(instance.instance_id)), **instance.to_json()}
-            for instance in network.method_instances if instance.instance_id in adopted
+            for instance in network.method_instances
+            if instance.instance_id in adopted
         ],
         "order_constraints": [item.to_json() for item in network.order_constraints],
         "data_requirements": [
-            {"requirement": edge.to_json(), "expected_requirement_hash": content_hash_of(edge.to_json())}
+            {
+                "requirement": edge.to_json(),
+                "expected_requirement_hash": content_hash_of(edge.to_json()),
+            }
             for edge in network.data_requirements
         ],
     }
 
 
-def method_signatures(network: TaskNetworkSnapshot, under_repair: Sequence[str] = ()) -> tuple[str, ...]:
+def method_signatures(
+    network: TaskNetworkSnapshot, under_repair: Sequence[str] = ()
+) -> tuple[str, ...]:
     """The goal types the library is read for: goals with no method, and goals a
     pending repair is about (their method may be replaced)."""
 
@@ -309,8 +338,13 @@ def method_signatures(network: TaskNetworkSnapshot, under_repair: Sequence[str] 
     for spec in network.occurrences:
         if spec.form is not TaskForm.COMPOUND:
             continue
-        if network.adopted_instance_for(spec.occurrence_id) is None or str(spec.occurrence_id) in repairing:
-            found.add(str(network.binding_for_occurrence(spec.occurrence_id).goal_signature.signature_id))
+        if (
+            network.adopted_instance_for(spec.occurrence_id) is None
+            or str(spec.occurrence_id) in repairing
+        ):
+            found.add(
+                str(network.binding_for_occurrence(spec.occurrence_id).goal_signature.signature_id)
+            )
     return tuple(sorted(found))
 
 
@@ -344,7 +378,8 @@ def method_rows(
     reasons: dict[tuple[str, int, str], list[dict[str, Any]]] = {}
     for item in retired:
         reasons.setdefault(_ref_key(item.get("method_ref")), []).append(
-            {key: value for key, value in dict(item).items() if key != "method_ref"})
+            {key: value for key, value in dict(item).items() if key != "method_ref"}
+        )
     by_method: dict[tuple[str, int, str], list[dict[str, Any]]] = {}
     for report in applicability_reports(reports, limit=len(reports)):
         row = dict(report)
@@ -356,10 +391,20 @@ def method_rows(
         found = _methods_for(registry, signature)
         if mission_id is not None:
             from ...contracts.htn import MissionRef
-            found = tuple(contract for contract in found
-                          if registry.retrievable(contract.method_ref(), mission_id=MissionRef(mission_id)))
-        ordered = sorted(found, key=lambda contract: (
-            str(contract.method_id) not in priority, str(contract.method_id), int(contract.method_version)))
+
+            found = tuple(
+                contract
+                for contract in found
+                if registry.retrievable(contract.method_ref(), mission_id=MissionRef(mission_id))
+            )
+        ordered = sorted(
+            found,
+            key=lambda contract: (
+                str(contract.method_id) not in priority,
+                str(contract.method_id),
+                int(contract.method_version),
+            ),
+        )
         omitted += max(0, len(ordered) - max(0, limit))
         for contract in ordered[: max(0, limit)]:
             reference = contract.method_ref()
@@ -368,33 +413,44 @@ def method_rows(
             schema = None if schemas is None else schemas.resolve(contract.parameter_schema_ref)
             if schemas is not None and schema is None:
                 raise PlannerPackageError("method parameter schema is unavailable")
-            rows.append({
-                "method_ref": _method_ref(reference),
-                "goal_signature_id": signature,
-                "registry_status": str(_status(registry, contract)),
-                **({} if review is None else {"review": dict(review)}),
-                "rejected_reasons": [dict(item) for item in reasons.get(key, ())],
-                "steps": [
-                    {
-                        "step": str(getattr(item, "local_id", "")),
-                        "form": str(getattr(item, "form", "")),
-                        "task_type_ref": _ref_id(getattr(item, "task_type_ref", None)),
-                        "required_capabilities": sorted(
-                            str(one) for one in getattr(item, "required_capabilities", ())),
-                    }
-                    for item in getattr(contract, "steps", ())
-                ],
-                "required_capabilities": sorted(
-                    str(item) for item in getattr(contract, "required_capabilities", ())),
-                "parameters": [] if schema is None else [field.to_json() for field in schema.fields],
-                "applicable_when": [item.to_json() for item in getattr(contract, "applicable_when", ())],
-                "applicability": by_method.get(key, []),
-            })
+            rows.append(
+                {
+                    "method_ref": _method_ref(reference),
+                    "goal_signature_id": signature,
+                    "registry_status": str(_status(registry, contract)),
+                    **({} if review is None else {"review": dict(review)}),
+                    "rejected_reasons": [dict(item) for item in reasons.get(key, ())],
+                    "steps": [
+                        {
+                            "step": str(getattr(item, "local_id", "")),
+                            "form": str(getattr(item, "form", "")),
+                            "task_type_ref": _ref_id(getattr(item, "task_type_ref", None)),
+                            "required_capabilities": sorted(
+                                str(one) for one in getattr(item, "required_capabilities", ())
+                            ),
+                        }
+                        for item in getattr(contract, "steps", ())
+                    ],
+                    "required_capabilities": sorted(
+                        str(item) for item in getattr(contract, "required_capabilities", ())
+                    ),
+                    "parameters": []
+                    if schema is None
+                    else [field.to_json() for field in schema.fields],
+                    "applicable_when": [
+                        item.to_json() for item in getattr(contract, "applicable_when", ())
+                    ],
+                    "applicability": by_method.get(key, []),
+                }
+            )
     return tuple(rows), omitted
 
 
 def fact_rows(
-    observations: Sequence[Any], *, read_item: Any = None, state_of: Any = None,
+    observations: Sequence[Any],
+    *,
+    read_item: Any = None,
+    state_of: Any = None,
     limit: int = MAX_FACTS,
 ) -> tuple[tuple[dict[str, Any], ...], int]:
     """``views.facts``: the newest observation per proposition, and how many were left out.
@@ -424,28 +480,44 @@ def fact_rows(
             quoted = read_item(ReadItemKind.FACT, identity).to_json()
         else:
             to_json = getattr(record, "to_json", None)
-            quoted = {"kind": "fact", "id": identity, "semantic_revision": 1,
-                      "content_hash": content_hash_of(to_json()) if callable(to_json) else ""}
+            quoted = {
+                "kind": "fact",
+                "id": identity,
+                "semantic_revision": 1,
+                "content_hash": content_hash_of(to_json()) if callable(to_json) else "",
+            }
         availability, truth = ("recorded", "UNKNOWN") if state_of is None else state_of(key)
-        rows.append({
-            "observation_ref": quoted,
-            "proposition_key": key,
-            "polarity": bool(getattr(record, "polarity", False)),
-            "availability": str(availability),
-            "truth": str(truth),
-            "coverage": str(getattr(record, "coverage", "")),
-            "observer": getattr(record, "observer_id", None),
-            "times": {name: getattr(record, name, None) for name in (
-                "observed_at_ms", "recorded_at_ms", "valid_from_ms", "valid_until_ms",
-                "query_watermark_ms")},
-        })
+        rows.append(
+            {
+                "observation_ref": quoted,
+                "proposition_key": key,
+                "polarity": bool(getattr(record, "polarity", False)),
+                "availability": str(availability),
+                "truth": str(truth),
+                "coverage": str(getattr(record, "coverage", "")),
+                "observer": getattr(record, "observer_id", None),
+                "times": {
+                    name: getattr(record, name, None)
+                    for name in (
+                        "observed_at_ms",
+                        "recorded_at_ms",
+                        "valid_from_ms",
+                        "valid_until_ms",
+                        "query_watermark_ms",
+                    )
+                },
+            }
+        )
     kept = tuple(rows[: max(0, limit)])
     return kept, len(rows) - len(kept)
 
 
 def knowledge_rows(
-    records: Sequence[Any], summaries: Sequence[Mapping[str, Any]],
-    candidates: Sequence[Mapping[str, Any]] = (), *, limit: int = MAX_KNOWLEDGE,
+    records: Sequence[Any],
+    summaries: Sequence[Mapping[str, Any]],
+    candidates: Sequence[Mapping[str, Any]] = (),
+    *,
+    limit: int = MAX_KNOWLEDGE,
 ) -> tuple[tuple[dict[str, Any], ...], int]:
     """``views.knowledge`` (第 2 批 K03): the blackboard's three layers a Planner judges
     direction from, and how many rows were left out.
@@ -465,30 +537,51 @@ def knowledge_rows(
 
     rows: list[dict[str, Any]] = []
     for record in sorted(records, key=lambda item: (-float(item.created_at), str(item.id))):
-        rows.append({
-            "layer": "verified",
-            "ref": f"{record.id}@{int(record.version)}",
-            "id": str(record.id), "version": int(record.version), "key": record.key,
-            "stance": record.stance,
-            "basis": str(record.verifier.get("basis") or "test_observation"),
-            "content": record.content, "source_task": record.source_task,
-            "assurance_level": record.assurance_level,
-            "validity_interval": None if record.validity_interval is None else dict(record.validity_interval),
-            "permitted_uses": None if record.permitted_uses is None else list(record.permitted_uses),
-        })
+        rows.append(
+            {
+                "layer": "verified",
+                "ref": f"{record.id}@{int(record.version)}",
+                "id": str(record.id),
+                "version": int(record.version),
+                "key": record.key,
+                "stance": record.stance,
+                "basis": str(record.verifier.get("basis") or "test_observation"),
+                "content": record.content,
+                "source_task": record.source_task,
+                "assurance_level": record.assurance_level,
+                "validity_interval": None
+                if record.validity_interval is None
+                else dict(record.validity_interval),
+                "permitted_uses": None
+                if record.permitted_uses is None
+                else list(record.permitted_uses),
+            }
+        )
     for row in summaries:
-        rows.append({
-            "layer": "summary", "id": str(row["id"]), "source_task": row["source_task"],
-            "summary": row["summary"],
-            "artifacts": [{"path": a["path"], "version": a["version"]} for a in row.get("artifacts", ())],
-            "checked_by": row["checked_by"],
-        })
+        rows.append(
+            {
+                "layer": "summary",
+                "id": str(row["id"]),
+                "source_task": row["source_task"],
+                "summary": row["summary"],
+                "artifacts": [
+                    {"path": a["path"], "version": a["version"]} for a in row.get("artifacts", ())
+                ],
+                "checked_by": row["checked_by"],
+            }
+        )
     for row in candidates:
-        rows.append({
-            "layer": "candidate", "id": str(row["id"]), "status": str(row["status"]),
-            "marker": str(row["marker"]), "key": row["key"], "content": candidate_content(str(row["content"])),
-            "source_task": row["source_task"],
-        })
+        rows.append(
+            {
+                "layer": "candidate",
+                "id": str(row["id"]),
+                "status": str(row["status"]),
+                "marker": str(row["marker"]),
+                "key": row["key"],
+                "content": candidate_content(str(row["content"])),
+                "source_task": row["source_task"],
+            }
+        )
     kept = tuple(rows[: max(0, limit)])
     return kept, len(rows) - len(kept)
 
@@ -500,8 +593,11 @@ def failure_outline(failure: Mapping[str, Any] | None) -> dict[str, Any]:
     about this failure, which is where the Planner is asked to act on it."""
 
     def scalars(value: Mapping[str, Any]) -> dict[str, Any]:
-        return {str(key): item for key, item in value.items()
-                if item is None or isinstance(item, (str, int, float, bool))}
+        return {
+            str(key): item
+            for key, item in value.items()
+            if item is None or isinstance(item, (str, int, float, bool))
+        }
 
     if not isinstance(failure, Mapping):
         return {}
@@ -513,7 +609,8 @@ def failure_outline(failure: Mapping[str, Any] | None) -> dict[str, Any]:
 
 
 def failure_index(
-    *, attempts: Sequence[tuple[float, Mapping[str, Any]]],
+    *,
+    attempts: Sequence[tuple[float, Mapping[str, Any]]],
     planning: Sequence[tuple[float, Mapping[str, Any]]],
 ) -> list[dict[str, Any]]:
     """``views.failures`` in the order it is shown: the steps' failed attempts first,
@@ -536,25 +633,31 @@ def attempt_is_indexed(package: Mapping[str, Any], attempt_id: str) -> bool:
     simply not that attempt."""
 
     rows = (package.get("views") or {}).get("failures", ())
-    return any(isinstance(row, Mapping)
-               and (row.get("attempt_review_ref") or {}).get("id") == attempt_id
-               for row in rows)
+    return any(
+        isinstance(row, Mapping) and (row.get("attempt_review_ref") or {}).get("id") == attempt_id
+        for row in rows
+    )
 
 
 def task_type_row(spec: Any, schemas: Any) -> dict[str, Any]:
     """One task type as a decision may quote it: its reference, what it does, the
     parameters to bind and its ports."""
 
-    schema = None if spec.parameter_schema_ref is None else schemas.resolve(spec.parameter_schema_ref)
+    schema = (
+        None if spec.parameter_schema_ref is None else schemas.resolve(spec.parameter_schema_ref)
+    )
     return {
         "task_type_ref": spec.task_type_ref.to_json(),
         "form": str(spec.form),
         "statement": spec.goal_signature.statement,
-        "parameter_schema_ref": (None if spec.parameter_schema_ref is None
-                                 else spec.parameter_schema_ref.to_json()),
+        "parameter_schema_ref": (
+            None if spec.parameter_schema_ref is None else spec.parameter_schema_ref.to_json()
+        ),
         "parameters": [field.to_json() for field in getattr(schema, "fields", ())],
         "input_ports": [port.port_key for port in spec.input_ports],
-        "input_port_cardinality": {port.port_key: str(port.cardinality.value) for port in spec.input_ports},
+        "input_port_cardinality": {
+            port.port_key: str(port.cardinality.value) for port in spec.input_ports
+        },
         "output_ports": [port.port_key for port in spec.output_ports],
     }
 
@@ -707,15 +810,19 @@ def _task_refs(
     """
 
     out: list[dict[str, Any]] = []
-    for kind, key in ((PlanningRefKind.TASK.value, "task_id"),
-                      (PlanningRefKind.OBLIGATION.value, "obligation_id")):
+    for kind, key in (
+        (PlanningRefKind.TASK.value, "task_id"),
+        (PlanningRefKind.OBLIGATION.value, "obligation_id"),
+    ):
         identity = row.get(key)
         if not identity:
             continue
         authority = authorities.get((kind, str(identity)))
         if authority is None:
             continue
-        ref = _one_ref(kind, identity, authority.get("semantic_revision"), authority.get("content_hash"))
+        ref = _one_ref(
+            kind, identity, authority.get("semantic_revision"), authority.get("content_hash")
+        )
         if ref is not None:
             out.append(ref)
     return out
@@ -727,21 +834,31 @@ def _observation_ref(row: Mapping[str, Any]) -> dict[str, Any] | None:
     quoted = row.get("observation_ref")
     if not isinstance(quoted, Mapping):
         return None
-    return _one_ref(PlanningRefKind.OBSERVATION.value, quoted.get("id"),
-                    quoted.get("semantic_revision"), quoted.get("content_hash"))
+    return _one_ref(
+        PlanningRefKind.OBSERVATION.value,
+        quoted.get("id"),
+        quoted.get("semantic_revision"),
+        quoted.get("content_hash"),
+    )
 
 
 def _accepted_ref(row: Mapping[str, Any]) -> dict[str, Any] | None:
     """An accepted result's acceptance ref, else its resolution ref — two kinds with
     two sources (§5.1); neither is renamed into the other."""
 
-    for key, kind in (("acceptance_ref", PlanningRefKind.ACCEPTANCE.value),
-                      ("resolution_ref", PlanningRefKind.RESOLUTION.value)):
+    for key, kind in (
+        ("acceptance_ref", PlanningRefKind.ACCEPTANCE.value),
+        ("resolution_ref", PlanningRefKind.RESOLUTION.value),
+    ):
         goal = row.get(key)
         if not isinstance(goal, Mapping):
             continue
-        ref = _one_ref(kind, goal.get("id"), goal.get("semantic_revision", goal.get("revision")),
-                       goal.get("content_hash"))
+        ref = _one_ref(
+            kind,
+            goal.get("id"),
+            goal.get("semantic_revision", goal.get("revision")),
+            goal.get("content_hash"),
+        )
         if ref is not None:
             return ref
     return None
@@ -786,7 +903,9 @@ def collect_refs(
     for row in extra:
         if not isinstance(row, Mapping):
             continue
-        ref = _one_ref(row.get("kind"), row.get("id"), row.get("semantic_revision"), row.get("content_hash"))
+        ref = _one_ref(
+            row.get("kind"), row.get("id"), row.get("semantic_revision"), row.get("content_hash")
+        )
         if ref is not None:
             collected.append(ref)
     unique = {_ref_sort_key(ref): ref for ref in collected}
@@ -893,9 +1012,7 @@ def _network_authorities(network: TaskNetworkSnapshot) -> list[dict[str, Any]]:
     return authorities
 
 
-def _merge_authorities(
-    builder_rows: Sequence[Any], caller_rows: object
-) -> list[dict[str, Any]]:
+def _merge_authorities(builder_rows: Sequence[Any], caller_rows: object) -> list[dict[str, Any]]:
     """Builder-attested rows first, caller rows only filling kinds the builder cannot.
 
     Both sides are ``{kind, id, semantic_revision, content_hash}`` quadruples and both
@@ -966,8 +1083,11 @@ def assemble_planner_package(
 
     if set(views) != set(VIEW_NAMES):
         raise PlannerPackageError(
-            f"the package needs exactly the twelve views; got {sorted(views)}")
-    omitted_counts = {str(key): int(value) for key, value in dict(omitted or {}).items() if int(value) > 0}
+            f"the package needs exactly the twelve views; got {sorted(views)}"
+        )
+    omitted_counts = {
+        str(key): int(value) for key, value in dict(omitted or {}).items() if int(value) > 0
+    }
     shown: dict[str, list[Any]] = {name: [dict(row) for row in views[name]] for name in VIEW_NAMES}
     for name, limit in (("accepted_results", MAX_ACCEPTED_RESULTS), ("failures", MAX_FAILURES)):
         if len(shown[name]) > limit:
@@ -1013,7 +1133,8 @@ def assemble_planner_package(
             drop_last(name)
     if len(refs()) > MAX_VISIBLE_REFS:
         raise PlannerPackageError(
-            "required visible references exceed 128; narrow the planning subject")
+            "required visible references exceed 128; narrow the planning subject"
+        )
 
     def seal() -> None:
         package["visible_refs"] = refs()

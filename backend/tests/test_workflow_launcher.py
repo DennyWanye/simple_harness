@@ -221,17 +221,24 @@ async def test_launcher_reports_execution_owned_legacy_workflow_as_permanent() -
 @pytest.mark.asyncio
 async def test_launcher_recovery_waits_for_context_rebuild_and_fails_closed():
     service = _Service()
-    service.recovery_rows = [{
-        "run_id": "run-1", "workflow_name": "test", "workflow_version": "v1",
-        "status": "retryable", "session_id": "session",
-    }]
+    service.recovery_rows = [
+        {
+            "run_id": "run-1",
+            "workflow_name": "test",
+            "workflow_version": "v1",
+            "status": "retryable",
+            "session_id": "session",
+        }
+    ]
     launcher = WorkflowLauncher(service)  # type: ignore[arg-type]
 
     def broken_context(*_args, **_kwargs):
         raise RuntimeError("frozen provider unavailable")
 
     launcher.register_adapter(
-        "test", "v1", state_factory=lambda **kwargs: kwargs,
+        "test",
+        "v1",
+        state_factory=lambda **kwargs: kwargs,
         context_factory=broken_context,
     )
 
@@ -273,13 +280,15 @@ async def test_deep_research_v6_new_root_is_disabled_but_recovery_is_allowed():
     assert exc.value.code == "deep_research_new_runs_disabled"
     assert service.delivered == []
 
-    service.recovery_rows = [{
-        "run_id": "run-v6-persisted",
-        "workflow_name": "deep_research",
-        "workflow_version": "v6",
-        "status": "retryable",
-        "session_id": "session",
-    }]
+    service.recovery_rows = [
+        {
+            "run_id": "run-v6-persisted",
+            "workflow_name": "deep_research",
+            "workflow_version": "v6",
+            "status": "retryable",
+            "session_id": "session",
+        }
+    ]
     assert await launcher.recover_pending() == ["run-v6-persisted"]
     await asyncio.gather(*tuple(launcher._tasks))
     assert recovered[0]["topic"] == "recovered"
@@ -291,8 +300,10 @@ async def test_server_authorized_v6_new_root_and_default_v5_remain_available():
     launcher = WorkflowLauncher(service)  # type: ignore[arg-type]
     v6_state_factory = lambda **kwargs: kwargs
     launcher.register_adapter(
-        "deep_research", "v6",
-        state_factory=v6_state_factory, context_factory=WorkflowContext,
+        "deep_research",
+        "v6",
+        state_factory=v6_state_factory,
+        context_factory=WorkflowContext,
     )
     accepted = await launcher.launch(
         workflow_name="deep_research",
@@ -312,8 +323,10 @@ async def test_server_authorized_v6_new_root_and_default_v5_remain_available():
     service = _Service()
     launcher = WorkflowLauncher(service)  # type: ignore[arg-type]
     launcher.register_adapter(
-        "deep_research", "v5",
-        state_factory=lambda **kwargs: kwargs, context_factory=WorkflowContext,
+        "deep_research",
+        "v5",
+        state_factory=lambda **kwargs: kwargs,
+        context_factory=WorkflowContext,
     )
     accepted = await launcher.launch(
         workflow_name="deep_research",
@@ -393,9 +406,7 @@ async def test_launcher_schedule_resume_acknowledges_before_graph_completion():
         launcher.schedule_resume("run-1", {"interrupt-1": "approve"}),
         timeout=0.1,
     )
-    duplicate = await launcher.schedule_resume(
-        "run-1", {"interrupt-1": "approve"}
-    )
+    duplicate = await launcher.schedule_resume("run-1", {"interrupt-1": "approve"})
 
     assert accepted == {
         "accepted": True,

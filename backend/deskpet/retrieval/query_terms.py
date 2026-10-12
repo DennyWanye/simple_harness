@@ -10,20 +10,66 @@ from collections.abc import Iterable
 
 _ENGLISH_STOPWORDS = frozenset(
     {
-        "a", "an", "and", "are", "as", "at", "be", "by", "for", "from",
-        "how", "in", "is", "it", "of", "on", "or", "that", "the", "their",
-        "this", "to", "was", "what", "when", "where", "which", "who", "with",
+        "a",
+        "an",
+        "and",
+        "are",
+        "as",
+        "at",
+        "be",
+        "by",
+        "for",
+        "from",
+        "how",
+        "in",
+        "is",
+        "it",
+        "of",
+        "on",
+        "or",
+        "that",
+        "the",
+        "their",
+        "this",
+        "to",
+        "was",
+        "what",
+        "when",
+        "where",
+        "which",
+        "who",
+        "with",
     }
 )
 
 _DOMAIN_TERMS = tuple(
     sorted(
         {
-            "人工智能", "大模型", "生成式人工智能", "基准测试", "模型能力",
-            "教育现状", "小学教育", "义务教育", "教育质量", "教育公平",
-            "城乡均衡", "区域均衡", "教师队伍", "师资配置", "教育财政",
-            "双减", "课后服务", "学生负担", "家庭负担", "国家计划",
-            "下一步计划", "招生规模", "在校生", "学校规模", "发展趋势",
+            "人工智能",
+            "大模型",
+            "生成式人工智能",
+            "基准测试",
+            "模型能力",
+            "教育现状",
+            "小学教育",
+            "义务教育",
+            "教育质量",
+            "教育公平",
+            "城乡均衡",
+            "区域均衡",
+            "教师队伍",
+            "师资配置",
+            "教育财政",
+            "双减",
+            "课后服务",
+            "学生负担",
+            "家庭负担",
+            "国家计划",
+            "下一步计划",
+            "招生规模",
+            "在校生",
+            "学校规模",
+            "发展趋势",
         },
         key=lambda value: (-len(value), value),
     )
@@ -85,9 +131,7 @@ def extract_query_terms(value: str) -> tuple[str, ...]:
     domain = (term for term in _DOMAIN_TERMS if term in normalized)
     numbers = (match.group(0) for match in _NUMBER_ENTITY.finditer(normalized))
     english = (
-        token
-        for token in _ENGLISH_TOKEN.findall(normalized)
-        if token not in _ENGLISH_STOPWORDS
+        token for token in _ENGLISH_TOKEN.findall(normalized) if token not in _ENGLISH_STOPWORDS
     )
     return _ordered_unique((*domain, *numbers, *_han_ngrams(normalized), *english))
 
@@ -99,9 +143,7 @@ def query_term_relevance(query: str, candidate: str) -> float:
     candidate_terms = set(extract_query_terms(candidate))
     normalized_candidate = normalize_query_text(candidate)
     matched = sum(
-        1
-        for term in query_terms
-        if term in candidate_terms or term in normalized_candidate
+        1 for term in query_terms if term in candidate_terms or term in normalized_candidate
     )
     return matched / len(query_terms)
 

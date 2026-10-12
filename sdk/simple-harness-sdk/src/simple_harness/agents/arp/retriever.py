@@ -32,7 +32,9 @@ class SessionRetriever:
 
     # ---- access ---------------------------------------------------------------------------
 
-    def access_for(self, session: store.SessionRow, *, purpose: str, caller_ref: Pin, turn_id: str | None) -> SessionAccess:
+    def access_for(
+        self, session: store.SessionRow, *, purpose: str, caller_ref: Pin, turn_id: str | None
+    ) -> SessionAccess:
         if purpose not in SEARCH_PURPOSES | READ_PURPOSES:
             raise ArpError("ENUM", field_path="purpose")
         arp = self.arp
@@ -46,7 +48,13 @@ class SessionRetriever:
             purpose=purpose,
             caller_ref=caller_ref,
             authority_refs=(authority,),
-            authority_readset_hash=digest({"authority": authority.to_json(), "profile": session.profile_ref.to_json(), "session": session.pin.to_json()}),
+            authority_readset_hash=digest(
+                {
+                    "authority": authority.to_json(),
+                    "profile": session.profile_ref.to_json(),
+                    "session": session.pin.to_json(),
+                }
+            ),
             control_generation=session.generation,
             expires_at_ms=arp.ports.clock_ms() + int(policy.body["query_cursor_ttl_ms"]),
         )
@@ -56,7 +64,10 @@ class SessionRetriever:
         if session is None:
             raise ArpError("SESSION_NOT_ACTIVE", "no live session for this agent")
         if session.state != "ACTIVE":
-            raise ArpError("SESSION_DRAINING" if session.state == "DRAINING" else "SESSION_NOT_ACTIVE", f"session is {session.state}")
+            raise ArpError(
+                "SESSION_DRAINING" if session.state == "DRAINING" else "SESSION_NOT_ACTIVE",
+                f"session is {session.state}",
+            )
         return session
 
     # ---- search (C3) ----------------------------------------------------------------------
@@ -68,11 +79,18 @@ class SessionRetriever:
             raise ArpError("ENUM", field_path="purpose")
         value = check("SearchRequest", dict(request))
         session = self._session(access.agent_id)
-        if session.session_id != access.session_id or session.generation != access.control_generation:
+        if (
+            session.session_id != access.session_id
+            or session.generation != access.control_generation
+        ):
             raise ArpError("CURSOR_SCOPE_MISMATCH", "access does not match the live session")
         service, guard, generation = self.arp.search_for(session)
         query_hash = digest(value["query"])
-        expect = {"query_hash": query_hash, "page_items": int(value["limit"]), "max_bytes": int(value["max_bytes"])}
+        expect = {
+            "query_hash": query_hash,
+            "page_items": int(value["limit"]),
+            "max_bytes": int(value["max_bytes"]),
+        }
         if value["cursor"] is not None:
             with guard.held():
                 page, cursor = service.resume_frozen(access, str(value["cursor"]), expect=expect)
@@ -82,7 +100,13 @@ class SessionRetriever:
         snapshot_groups = self.capture(session, highwater)
         _, policy_row = self.arp.policy_for(session)
         policy = policy_row.body
-        identity = {"purpose": access.purpose, "owner": access.owner_scope_hash, "query": query_hash, "issued_at_ms": self.arp.ports.clock_ms(), "nonce": digest(value)}
+        identity = {
+            "purpose": access.purpose,
+            "owner": access.owner_scope_hash,
+            "query": query_hash,
+            "issued_at_ms": self.arp.ports.clock_ms(),
+            "nonce": digest(value),
+        }
         query_id = f"{access.purpose.lower()}-{digest(identity)[:32]}"
         with guard.held():
             snapshot = service.freeze_snapshot(
@@ -105,16 +129,33 @@ class SessionRetriever:
             # C3 step 3: one embedding call per query identity, persisted, reused on resume.
             call_key = f"{session.session_id}/{query_id}/{generation.embedding_fingerprint}"
             receipt = embedding_call.perform_call(
-                self.arp.index.uow, run_id=session.agent_id, call_key=call_key, purpose="SESSION_QUERY", texts=[value["query"]],
-                port=embedding, deployment_ref=self.arp.index.embedding_resource_ref or Pin("deployment", "embedding:local", 1, generation.embedding_fingerprint),
-                clock=self.arp.index.clock, clock_ms=self.arp.ports.clock_ms, fault=self.arp.ports.fault, fault_name="search.before_embed",
+                self.arp.index.uow,
+                run_id=session.agent_id,
+                call_key=call_key,
+                purpose="SESSION_QUERY",
+                texts=[value["query"]],
+                port=embedding,
+                deployment_ref=self.arp.index.embedding_resource_ref
+                or Pin("deployment", "embedding:local", 1, generation.embedding_fingerprint),
+                clock=self.arp.index.clock,
+                clock_ms=self.arp.ports.clock_ms,
+                fault=self.arp.ports.fault,
+                fault_name="search.before_embed",
             )
             if receipt["status"] == "SUCCEEDED":
                 vector = receipt["output"][0]
-                vector_ref = Pin("provider", f"embedding:{generation.embedding_fingerprint[:16]}", 1, digest(receipt["invocation_ref"]))
+                vector_ref = Pin(
+                    "provider",
+                    f"embedding:{generation.embedding_fingerprint[:16]}",
+                    1,
+                    digest(receipt["invocation_ref"]),
+                )
                 mode = "HYBRID"
             elif not self.arp.ports.profile.allow_lexical_degradation:
-                raise ArpError("EMBEDDING_UNAVAILABLE", "query embedding failed and lexical degradation is not allowed")
+                raise ArpError(
+                    "EMBEDDING_UNAVAILABLE",
+                    "query embedding failed and lexical degradation is not allowed",
+                )
         internal = {
             "query_text": value["query"],
             "query_hash": query_hash,
@@ -133,7 +174,14 @@ class SessionRetriever:
         }
         with guard.held():
             page, cursor = service.start_frozen(
-                access, internal, snapshot, query_vector=vector, query_vector_ref=vector_ref, mode=mode, query_id=query_id, purpose=access.purpose
+                access,
+                internal,
+                snapshot,
+                query_vector=vector,
+                query_vector_ref=vector_ref,
+                mode=mode,
+                query_id=query_id,
+                purpose=access.purpose,
             )
         return page
 
@@ -146,7 +194,10 @@ class SessionRetriever:
             raise ArpError("ENUM", field_path="purpose")
         value = check("HistoryReadRequest", dict(request))
         session = self._session(access.agent_id)
-        if session.session_id != access.session_id or session.generation != access.control_generation:
+        if (
+            session.session_id != access.session_id
+            or session.generation != access.control_generation
+        ):
             raise ArpError("CURSOR_SCOPE_MISMATCH", "access does not match the live session")
         service, guard, _generation = self.arp.search_for(session)
         uow = self.arp.index.uow
@@ -154,7 +205,12 @@ class SessionRetriever:
         source_hash = self.capture(session, highwater).snapshot_hash
         with guard.held():
             return service.read_history(
-                access, uow.database.connection, value, purpose=access.purpose, journal_highwater=highwater, source_snapshot_hash=source_hash
+                access,
+                uow.database.connection,
+                value,
+                purpose=access.purpose,
+                journal_highwater=highwater,
+                source_snapshot_hash=source_hash,
             )
 
 

@@ -72,12 +72,12 @@ def _authority(drive_results: list[bool]) -> ForegroundRuntimeExecutionAuthority
     async def drive_once() -> bool:
         rt.drive_calls += 1
         rt.in_drive.set()
-        await rt.release.wait()          # 用例精确控制唤醒时机
+        await rt.release.wait()  # 用例精确控制唤醒时机
         rt.release.clear()
         return rt.results.pop(0) if rt.results else False
 
-    rt._run_driver = counting_driver     # type: ignore[method-assign]
-    rt._drive_once = drive_once          # type: ignore[method-assign]
+    rt._run_driver = counting_driver  # type: ignore[method-assign]
+    rt._drive_once = drive_once  # type: ignore[method-assign]
     return rt
 
 
@@ -89,8 +89,8 @@ async def test_wake_arriving_during_a_drive_pass_is_not_lost() -> None:
     await _expect(rt.in_drive, "驱动首次进入")
     rt.in_drive.clear()
 
-    await rt.after_control(subject="s")           # ← 唤醒到达：驱动仍在跑
-    rt.release.set()                              # 本轮判「无进展」
+    await rt.after_control(subject="s")  # ← 唤醒到达：驱动仍在跑
+    rt.release.set()  # 本轮判「无进展」
 
     await _expect(rt.in_drive, "驱动应因留痕的唤醒重新跑一轮")
     assert rt.drive_calls == 2, "唤醒被丢弃了：驱动没有重新进入"
@@ -151,7 +151,7 @@ async def test_close_still_reaches_lease_cleanup_after_the_driver_exited() -> No
         seen.append("snapshot")
         return None
 
-    rt._store.current_snapshot = snapshot          # type: ignore[method-assign]
+    rt._store.current_snapshot = snapshot  # type: ignore[method-assign]
     await rt.close(timeout=1.0)
     assert seen == ["snapshot"], "驱动跑完后 close() 必须继续走租约清理，而不是提前返回"
 
@@ -166,6 +166,6 @@ async def test_close_without_any_driver_skips_cleanup() -> None:
         seen.append("snapshot")
         return None
 
-    rt._store.current_snapshot = snapshot          # type: ignore[method-assign]
+    rt._store.current_snapshot = snapshot  # type: ignore[method-assign]
     await rt.close(timeout=1.0)
     assert seen == [], "从未起过驱动时不该去读快照"

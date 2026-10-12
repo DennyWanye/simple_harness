@@ -62,24 +62,38 @@ def root_duty(mission_id: str) -> str:
     return USER_GOAL_NAMES.duty_prefix + mission_id
 
 
-def start(product: ProductWorld, *, key: str, goal: str = GOAL,
-          criteria: tuple[str, ...] = CRITERIA) -> Seed:
+def start(
+    product: ProductWorld, *, key: str, goal: str = GOAL, criteria: tuple[str, ...] = CRITERIA
+) -> Seed:
     loop = product.loop
-    created = product.create({"goal": goal, "idempotency_key": key, "success_criteria": list(criteria)})
+    created = product.create(
+        {"goal": goal, "idempotency_key": key, "success_criteria": list(criteria)}
+    )
     mission = loop.store.get_mission(created["mission_id"])
     # The user's confirmation of the content-only completion mapping (the product's auto mode).
     product.deployment.duties.auto_confirm_content_completion(auto=True)
     loop.commit.begin_planning(mission.id)
     dispatch = loop._dispatch_for(mission.id)
     binding = HtnStore(loop.store).latest_task_semantics(root_task(mission.id))
-    return Seed(loop, loop.store.get_mission(mission.id), dispatch.planning, binding, dispatch, product)
+    return Seed(
+        loop, loop.store.get_mission(mission.id), dispatch.planning, binding, dispatch, product
+    )
 
 
 @asynccontextmanager
-async def seeded(tmp_path: Path, *, key: str, provider: Any = None, goal: str = GOAL,
-                 criteria: tuple[str, ...] = CRITERIA, **config: Any) -> AsyncIterator[Seed]:
+async def seeded(
+    tmp_path: Path,
+    *,
+    key: str,
+    provider: Any = None,
+    goal: str = GOAL,
+    criteria: tuple[str, ...] = CRITERIA,
+    **config: Any,
+) -> AsyncIterator[Seed]:
     provider = provider if provider is not None else RoleScriptedProvider({"planner": []})
-    async with product_world(tmp_path / "root", provider, auto=False, **{**CONFIG, **config}) as product:
+    async with product_world(
+        tmp_path / "root", provider, auto=False, **{**CONFIG, **config}
+    ) as product:
         yield start(product, key=key, goal=goal, criteria=criteria)
 
 
@@ -90,16 +104,32 @@ def plan_reply(package: dict[str, Any]) -> str:
     if selection.get("applicable"):
         chosen = selection["applicable"][0]
         goal = next(item for item in package["views"]["goals"] if item["open"])
-        return decision(goal["subject_key"], "REFINE", {
-            "method_ref": {"kind": "method", "id": chosen["method_id"],
-                           "semantic_revision": chosen["method_version"],
-                           "content_hash": chosen["method_content_hash"]},
-            "bindings": dict(selection.get("bindings") or goal["params"]),
-        }, "采用已通过独立审阅的做法。")
+        return decision(
+            goal["subject_key"],
+            "REFINE",
+            {
+                "method_ref": {
+                    "kind": "method",
+                    "id": chosen["method_id"],
+                    "semantic_revision": chosen["method_version"],
+                    "content_hash": chosen["method_content_hash"],
+                },
+                "bindings": dict(selection.get("bindings") or goal["params"]),
+            },
+            "采用已通过独立审阅的做法。",
+        )
     context = package["method_proposal_contexts"][0]
-    return decision(context["subject_key"], "PROPOSE_METHOD",
-                    {"method_proposal": {"method": one_step_method(context), "rationale": "一步写出要求的文件。"}},
-                    "库里没有适用的做法，提出一个一步完成的做法。")
+    return decision(
+        context["subject_key"],
+        "PROPOSE_METHOD",
+        {
+            "method_proposal": {
+                "method": one_step_method(context),
+                "rationale": "一步写出要求的文件。",
+            }
+        },
+        "库里没有适用的做法，提出一个一步完成的做法。",
+    )
 
 
 def planner(request: Any) -> str:
@@ -112,7 +142,9 @@ def events(loop: Any, mission_id: str, event_type: str) -> list[Any]:
     return [event for event in loop.store.list_events(mission_id) if event.type == event_type]
 
 
-async def run_until(product: ProductWorld, done: Callable[[], bool], *, timeout: float = 30.0) -> None:
+async def run_until(
+    product: ProductWorld, done: Callable[[], bool], *, timeout: float = 30.0
+) -> None:
     """Run the main loop (with the deployment's per-round duties) until ``done()``; then stop it
     the way the product's ``drain`` deadline does (the run is cancelled at its next await)."""
 
@@ -136,10 +168,17 @@ async def run_until(product: ProductWorld, done: Callable[[], bool], *, timeout:
 
 
 @asynccontextmanager
-async def committed(tmp_path: Path, *, key: str, planner: Callable[[Any], Any] = planner,
-                    provider: LayeredScriptedProvider | None = None, goal: str = GOAL,
-                    criteria: tuple[str, ...] = CRITERIA, auto: bool = True,
-                    **config: Any) -> AsyncIterator[Seed]:
+async def committed(
+    tmp_path: Path,
+    *,
+    key: str,
+    planner: Callable[[Any], Any] = planner,
+    provider: LayeredScriptedProvider | None = None,
+    goal: str = GOAL,
+    criteria: tuple[str, ...] = CRITERIA,
+    auto: bool = True,
+    **config: Any,
+) -> AsyncIterator[Seed]:
     """A Mission whose first plan revision the main loop committed for real (proposal, its
     independent review, adoption), stopped once its first leaf is dispatched: the executor's
     model call is held and never answers while the case runs (see :func:`resume`).
@@ -150,7 +189,9 @@ async def committed(tmp_path: Path, *, key: str, planner: Callable[[Any], Any] =
     provider.held.add("worker")
     try:
         async with product_world(tmp_path / "root", provider, **{**CONFIG, **config}) as product:
-            created = product.create({"goal": goal, "idempotency_key": key, "success_criteria": list(criteria)})
+            created = product.create(
+                {"goal": goal, "idempotency_key": key, "success_criteria": list(criteria)}
+            )
             await run_until(product, provider.entered.is_set)
             product.auto = auto
             loop = product.loop
@@ -169,8 +210,15 @@ class Reviewed(NamedTuple):
 
 
 @asynccontextmanager
-async def reviewed(tmp_path: Path, *, key: str, planner: Callable[[Any], Any] = planner, goal: str = GOAL,
-                   criteria: tuple[str, ...] = CRITERIA, **config: Any) -> AsyncIterator[Reviewed]:
+async def reviewed(
+    tmp_path: Path,
+    *,
+    key: str,
+    planner: Callable[[Any], Any] = planner,
+    goal: str = GOAL,
+    criteria: tuple[str, ...] = CRITERIA,
+    **config: Any,
+) -> AsyncIterator[Reviewed]:
     """A Mission whose planner proposed a method that passed its independent review, all on
     the real main loop; the loop then opened the next planning round (the adoption round)
     and dispatched it, and that planner call is held.  The case answers the round itself
@@ -187,23 +235,38 @@ async def reviewed(tmp_path: Path, *, key: str, planner: Callable[[Any], Any] = 
     holder["provider"] = provider
     try:
         async with product_world(tmp_path / "root", provider, **{**CONFIG, **config}) as product:
-            created = product.create({"goal": goal, "idempotency_key": key, "success_criteria": list(criteria)})
+            created = product.create(
+                {"goal": goal, "idempotency_key": key, "success_criteria": list(criteria)}
+            )
             await run_until(product, provider.entered.is_set)
             loop = product.loop
             mission = loop.store.get_mission(created["mission_id"])
-            assert events(loop, mission.id, "PlanningMethodReviewed"), "the proposal was not reviewed"
-            [intent] = [item for item in loop.store.list_intents("PENDING", "CLAIMED", "AGENT_CREATED", "SUBMITTED")
-                        if item.mission_id == mission.id and item.kind == "plan"
-                        and ":planner:" in item.intent_id]
+            assert events(loop, mission.id, "PlanningMethodReviewed"), (
+                "the proposal was not reviewed"
+            )
+            [intent] = [
+                item
+                for item in loop.store.list_intents(
+                    "PENDING", "CLAIMED", "AGENT_CREATED", "SUBMITTED"
+                )
+                if item.mission_id == mission.id
+                and item.kind == "plan"
+                and ":planner:" in item.intent_id
+            ]
             dispatch = loop._dispatch_for(mission.id)
             binding = HtnStore(loop.store).latest_task_semantics(root_task(mission.id))
-            yield Reviewed(Seed(loop, mission, dispatch.planning, binding, dispatch, product), intent, provider)
+            yield Reviewed(
+                Seed(loop, mission, dispatch.planning, binding, dispatch, product), intent, provider
+            )
     finally:
         provider.release.set()
 
 
-def refuse_tampered_first(monkeypatch: Any, tamper: Callable[[Any, Any, dict[str, Any]], tuple[Any, Any, dict[str, Any]]],
-                          expect: str) -> list[str]:
+def refuse_tampered_first(
+    monkeypatch: Any,
+    tamper: Callable[[Any, Any, dict[str, Any]], tuple[Any, Any, dict[str, Any]]],
+    expect: str,
+) -> list[str]:
     """Wrap the plan-commit entry (adjudication ①a): every delivery is first sent as the
     variant ``tamper(command, principal, kwargs)`` returns, which must be refused by the
     named code without writing anything; then the real delivery goes through unchanged.
@@ -264,8 +327,12 @@ def committing_round(loop: Any, mission_id: str) -> tuple[Any, str]:
     (read back from the artifact the collector journalled)."""
 
     decisions = PlanningDecisionStore(loop.store)
-    for intent in sorted(loop.store.list_intents("PENDING", "CLAIMED", "AGENT_CREATED", "SUBMITTED",
-                                                 "SETTLED", "FAILED"), key=lambda item: item.created_at):
+    for intent in sorted(
+        loop.store.list_intents(
+            "PENDING", "CLAIMED", "AGENT_CREATED", "SUBMITTED", "SETTLED", "FAILED"
+        ),
+        key=lambda item: item.created_at,
+    ):
         if intent.mission_id != mission_id or intent.kind != "plan":
             continue
         row = decisions.get_planning_decision_by_attempt(intent.intent_id, 0)
@@ -275,5 +342,24 @@ def committing_round(loop: Any, mission_id: str) -> tuple[Any, str]:
     raise AssertionError("no planning round committed a plan revision")
 
 
-__all__ = ("CONFIG", "CRITERIA", "GOAL", "Seed", "committed", "committing_round", "events", "grant_for", "plan_reply",
-           "planner", "refuse_tampered_first", "resume", "reviewed", "Reviewed", "root_duty", "root_task", "run_until", "seeded", "start")
+__all__ = (
+    "CONFIG",
+    "CRITERIA",
+    "GOAL",
+    "Seed",
+    "committed",
+    "committing_round",
+    "events",
+    "grant_for",
+    "plan_reply",
+    "planner",
+    "refuse_tampered_first",
+    "resume",
+    "reviewed",
+    "Reviewed",
+    "root_duty",
+    "root_task",
+    "run_until",
+    "seeded",
+    "start",
+)

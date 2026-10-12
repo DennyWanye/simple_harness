@@ -17,11 +17,17 @@ def test_windows_pin_is_unchanged():
     contract = bundle.get_platform_contract("win32", "AMD64")
     assert contract == bundle.PlaywrightBundleContract()
     assert contract.archive_length == 119_099_822
-    assert contract.archive_sha256 == "5CFDA0C763AA6A867CE2EFAD0C467E3220E9C5C01C4CBA02FD57AFE49EDE5457"
+    assert (
+        contract.archive_sha256
+        == "5CFDA0C763AA6A867CE2EFAD0C467E3220E9C5C01C4CBA02FD57AFE49EDE5457"
+    )
     assert contract.archive_md5 == "1BC51B5A9F308F4B7F47AC15A1BE049D"
     assert contract.archive_entries == 290
     assert contract.executable_length == 203_034_112
-    assert contract.executable_sha256 == "28016DF6864D302434C9231E1F9F1A8A7ECC512CB2FE3FAABB2A36130B96BCF1"
+    assert (
+        contract.executable_sha256
+        == "28016DF6864D302434C9231E1F9F1A8A7ECC512CB2FE3FAABB2A36130B96BCF1"
+    )
     assert contract.executable_relative == "chrome-headless-shell-win64/chrome-headless-shell.exe"
     assert "executable_architecture" not in bundle._manifest_payload(contract)
 
@@ -30,13 +36,22 @@ def test_arm64_contract_binds_measured_official_archive():
     contract = bundle.get_platform_contract("darwin", "arm64")
     assert contract is bundle.MAC_ARM64_CONTRACT
     assert contract.revision == "1228"
-    assert contract.archive_url == "https://cdn.playwright.dev/builds/cft/149.0.7827.55/mac-arm64/chrome-headless-shell-mac-arm64.zip"
+    assert (
+        contract.archive_url
+        == "https://cdn.playwright.dev/builds/cft/149.0.7827.55/mac-arm64/chrome-headless-shell-mac-arm64.zip"
+    )
     assert contract.archive_length == 98_043_456
-    assert contract.archive_sha256 == "302F82603BE06683947594ECD60F849E362A8FE3DD82A89BD4408477C97E75A6"
+    assert (
+        contract.archive_sha256
+        == "302F82603BE06683947594ECD60F849E362A8FE3DD82A89BD4408477C97E75A6"
+    )
     assert contract.executable_architecture == "macho-arm64"
 
 
-@pytest.mark.parametrize("system,machine", [("darwin", "x86_64"), ("linux", "aarch64"), ("linux", "x86_64"), ("win32", "ARM64")])
+@pytest.mark.parametrize(
+    "system,machine",
+    [("darwin", "x86_64"), ("linux", "aarch64"), ("linux", "x86_64"), ("win32", "ARM64")],
+)
 def test_unsupported_platform_has_no_windows_fallback(system, machine):
     with pytest.raises(bundle.PlaywrightBundleError, match="unsupported browser bundle platform"):
         bundle.get_platform_contract(system, machine)
@@ -55,12 +70,16 @@ def _archive(tmp_path: Path, *, architecture=0x0100000C, license_present=True):
         if license_present:
             output.writestr(str(Path(relative).parent / "LICENSE.headless_shell"), license_bytes)
     raw = archive.read_bytes()
-    contract = replace(bundle.MAC_ARM64_CONTRACT,
-        archive_length=len(raw), archive_md5=hashlib.md5(raw).hexdigest().upper(),
+    contract = replace(
+        bundle.MAC_ARM64_CONTRACT,
+        archive_length=len(raw),
+        archive_md5=hashlib.md5(raw).hexdigest().upper(),
         archive_sha256=hashlib.sha256(raw).hexdigest().upper(),
         archive_entries=2 if license_present else 1,
-        executable_length=len(executable), executable_sha256=hashlib.sha256(executable).hexdigest().upper(),
-        license_sha256=hashlib.sha256(license_bytes).hexdigest().upper())
+        executable_length=len(executable),
+        executable_sha256=hashlib.sha256(executable).hexdigest().upper(),
+        license_sha256=hashlib.sha256(license_bytes).hexdigest().upper(),
+    )
     return archive, contract
 
 
@@ -90,7 +109,9 @@ def test_mac_owner_rejects_changed_license(tmp_path):
     archive, contract = _archive(tmp_path)
     owner = tmp_path / "owned"
     root = bundle.publish_archive(archive, owner, contract)
-    (root / Path(contract.executable_relative).parent / "LICENSE.headless_shell").write_text("changed")
+    (root / Path(contract.executable_relative).parent / "LICENSE.headless_shell").write_text(
+        "changed"
+    )
     with pytest.raises(bundle.PlaywrightBundleError, match="license"):
         bundle.validate_browser_owner(owner, contract)
 
@@ -163,7 +184,9 @@ def test_mac_packaging_asserts_actual_candidate_resource_mapping(tmp_path, monke
     script = _script("assert_playwright_packaging")
     archive, contract = _archive(tmp_path)
     browser_metadata = b'{"fixture": true}'
-    contract = replace(contract, browsers_json_sha256=hashlib.sha256(browser_metadata).hexdigest().upper())
+    contract = replace(
+        contract, browsers_json_sha256=hashlib.sha256(browser_metadata).hexdigest().upper()
+    )
     monkeypatch.setattr(script, "get_platform_contract", lambda: contract)
     monkeypatch.setattr(script.sys, "platform", "darwin")
     dist = tmp_path / "frozen-dist" / "deskpet-backend"
@@ -172,7 +195,10 @@ def test_mac_packaging_asserts_actual_candidate_resource_mapping(tmp_path, monke
     metadata = internal / "playwright/driver/package/browsers.json"
     metadata.parent.mkdir(parents=True)
     metadata.write_bytes(browser_metadata)
-    for path in [internal / "licenses/THIRD_PARTY_NOTICES.playwright-chromium.txt", internal / f"playwright-{contract.playwright_version}.dist-info/licenses/LICENSE"]:
+    for path in [
+        internal / "licenses/THIRD_PARTY_NOTICES.playwright-chromium.txt",
+        internal / f"playwright-{contract.playwright_version}.dist-info/licenses/LICENSE",
+    ]:
         path.parent.mkdir(parents=True)
         path.write_text("fixture license")
     config = tmp_path / "tauri-app/src-tauri/tauri.conf.json"
@@ -181,6 +207,8 @@ def test_mac_packaging_asserts_actual_candidate_resource_mapping(tmp_path, monke
     overlay = tmp_path / "candidate.json"
     overlay.write_text(json.dumps({"bundle": {"resources": {str(dist): "backend"}}}))
     assert script.assert_packaging(dist, tmp_path, tauri_config=overlay)["status"] == "ok"
-    overlay.write_text(json.dumps({"bundle": {"resources": {str(tmp_path / "wrong-dist"): "backend"}}}))
+    overlay.write_text(
+        json.dumps({"bundle": {"resources": {str(tmp_path / "wrong-dist"): "backend"}}})
+    )
     with pytest.raises(RuntimeError, match="does not map the verified dist root"):
         script.assert_packaging(dist, tmp_path, tauri_config=overlay)

@@ -1,4 +1,5 @@
 """I08: original admission producers and Commit work without NanoJev imports."""
+
 from __future__ import annotations
 
 import json
@@ -7,7 +8,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-_CHILD = r'''
+_CHILD = r"""
 import asyncio, importlib.abc, json, sys
 from pathlib import Path
 
@@ -64,7 +65,7 @@ async def main():
         assert not [name for name in sys.modules if "nanojev" in name.lower()]
         print(json.dumps({"counts": counts, "revision": 1, "asked": product.provider.asked}))
 asyncio.run(main())
-'''
+"""
 
 
 def test_i08_no_nanojev_process_executes_three_producers_and_original_commit(tmp_path):
@@ -74,7 +75,11 @@ def test_i08_no_nanojev_process_executes_three_producers_and_original_commit(tmp
     env["PYTHONDONTWRITEBYTECODE"] = "1"
     child = subprocess.run(
         [sys.executable, "-I", "-c", _CHILD, str(tmp_path), str(checkout)],
-        env=env, cwd=tmp_path, capture_output=True, text=True, timeout=60,
+        env=env,
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=60,
     )
     assert child.returncode == 0, (child.stdout, child.stderr)
     result = json.loads(child.stdout.splitlines()[-1])

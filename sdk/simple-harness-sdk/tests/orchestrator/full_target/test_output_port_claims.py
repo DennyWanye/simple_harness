@@ -329,13 +329,19 @@ def _leaf_intent(tmp_path, *, check=None):
             loop, mission = seed.loop, seed.mission
             intents = [
                 item
-                for item in loop.store.list_intents("PENDING", "CLAIMED", "AGENT_CREATED", "SUBMITTED")
+                for item in loop.store.list_intents(
+                    "PENDING", "CLAIMED", "AGENT_CREATED", "SUBMITTED"
+                )
                 if item.mission_id == mission.id and item.kind == "attempt"
             ]
             assert intents
             # the plan's own answer to "which ports exist" (the accept side checks the same set)
-            ports = {item["port"] for item in seed.dispatch.declared_output_ports_for(
-                mission.id, str(loop.store.get_attempt(intents[0].subject_id).task_id))}
+            ports = {
+                item["port"]
+                for item in seed.dispatch.declared_output_ports_for(
+                    mission.id, str(loop.store.get_attempt(intents[0].subject_id).task_id)
+                )
+            }
             if check is not None:
                 check(loop, mission)
             return intents, ports
@@ -405,7 +411,9 @@ def test_a_dag_mode_pin_does_not_reach_a_hierarchical_leaf(tmp_path) -> None:
     chosen: dict[str, str] = {}
 
     def check(loop, mission) -> None:
-        chosen["pinned"] = loop._hierarchical_worker_template(role_templates.WORKER, mission.id).prompt_version
+        chosen["pinned"] = loop._hierarchical_worker_template(
+            role_templates.WORKER, mission.id
+        ).prompt_version
 
     intents, _ = _leaf_intent(tmp_path, check=check)
     assert intents
@@ -442,9 +450,7 @@ def test_no_hierarchical_worker_prompt_makes_the_claim_conditional_on_a_consumer
     for profile in DOMAINS.values():
         chosen = hierarchical_worker_for_domain(profile)
         selected[chosen.prompt_version] = chosen.instructions
-    offenders = [
-        version for version, text in selected.items() if "下游确有消费者" in text
-    ]
+    offenders = [version for version, text in selected.items() if "下游确有消费者" in text]
     assert not offenders, (
         f"{offenders} still condition the claim on a downstream consumer, which D3 "
         "removed from the rule Acceptance applies"

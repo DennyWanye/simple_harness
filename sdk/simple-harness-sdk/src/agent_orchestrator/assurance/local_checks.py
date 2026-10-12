@@ -202,4 +202,3 @@ def validate_local_check(
         values.get(text(assertion_key), Grade.UNKNOWN) if state == "SUCCEEDED" else Grade.UNKNOWN
     )
     return state, result
-

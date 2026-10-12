@@ -42,47 +42,67 @@ def _scoped(tmp_path, body) -> None:
 def test_completion_store_reads_untampered_real_spec_and_scope_rows(tmp_path) -> None:
     def body(case, completion, scope_row) -> None:
         document = scope_row["document"]
-        spec_row = completion.get_spec_exact(case.mission_id, int(document.requirements_ref.revision),
-                                             document.requirements_ref.content_hash)
+        spec_row = completion.get_spec_exact(
+            case.mission_id,
+            int(document.requirements_ref.revision),
+            document.requirements_ref.content_hash,
+        )
         assert spec_row is not None
         assert spec_row["spec_hash"] == document.spec_hash == spec_row["document"].content_hash()
-        reread = completion.get_scope_exact(case.mission_id, document.plan_ref.revision, document.occurrence_id)
+        reread = completion.get_scope_exact(
+            case.mission_id, document.plan_ref.revision, document.occurrence_id
+        )
         assert reread is not None and reread["scope_hash"] == reread["document"].content_hash()
 
     _scoped(tmp_path, body)
 
 
-def test_completion_store_rejects_scope_document_with_wrong_stored_hash_without_writes(tmp_path) -> None:
+def test_completion_store_rejects_scope_document_with_wrong_stored_hash_without_writes(
+    tmp_path,
+) -> None:
     def body(case, completion, scope_row) -> None:
         document = scope_row["document"]
         raw = document.to_json()
         raw["content_criterion_ids"] = []
-        _remove_immutable_trigger(case.store.connection, "operation_completion_scopes_immutable_update")
-        case.store.connection.execute("UPDATE operation_completion_scopes SET document_json=? WHERE scope_id=?",
-                                      (canonical_json(raw), scope_row["scope_id"]))
+        _remove_immutable_trigger(
+            case.store.connection, "operation_completion_scopes_immutable_update"
+        )
+        case.store.connection.execute(
+            "UPDATE operation_completion_scopes SET document_json=? WHERE scope_id=?",
+            (canonical_json(raw), scope_row["scope_id"]),
+        )
         before = case.store.connection.total_changes
         events_before = tuple(case.store.list_events(case.mission_id))
         with pytest.raises(StoreConflict, match="scope"):
-            completion.get_scope_exact(case.mission_id, document.plan_ref.revision, document.occurrence_id)
+            completion.get_scope_exact(
+                case.mission_id, document.plan_ref.revision, document.occurrence_id
+            )
         assert case.store.connection.total_changes == before
         assert tuple(case.store.list_events(case.mission_id)) == events_before
 
     _scoped(tmp_path, body)
 
 
-def test_completion_store_rejects_scope_identity_even_when_attacker_rehashes_document(tmp_path) -> None:
+def test_completion_store_rejects_scope_identity_even_when_attacker_rehashes_document(
+    tmp_path,
+) -> None:
     def body(case, completion, scope_row) -> None:
         document = scope_row["document"]
         raw = document.to_json()
         raw["occurrence_id"] = "corrupt-occurrence"
         corrupt = OccurrenceCompletionScopeV1.from_json(raw)
-        _remove_immutable_trigger(case.store.connection, "operation_completion_scopes_immutable_update")
+        _remove_immutable_trigger(
+            case.store.connection, "operation_completion_scopes_immutable_update"
+        )
         case.store.connection.execute(
             "UPDATE operation_completion_scopes SET document_json=?,scope_hash=? WHERE scope_id=?",
-            (canonical_json(corrupt.to_json()), corrupt.content_hash(), scope_row["scope_id"]))
+            (canonical_json(corrupt.to_json()), corrupt.content_hash(), scope_row["scope_id"]),
+        )
         before = case.store.connection.total_changes
         with pytest.raises(StoreConflict, match="scope"):
-            completion.get_scope_exact(case.mission_id, document.plan_ref.revision, document.occurrence_id)
+            completion.get_scope_exact(
+                case.mission_id, document.plan_ref.revision, document.occurrence_id
+            )
         assert case.store.connection.total_changes == before
 
     _scoped(tmp_path, body)
@@ -93,17 +113,25 @@ def test_completion_store_rejects_tampered_real_approved_spec_payload(tmp_path) 
         spec_hash = scope_row["document"].spec_hash
         row = case.store.connection.execute(
             "SELECT spec_id, document_json FROM operation_completion_specs WHERE mission_id=? AND spec_hash=?",
-            (case.mission_id, spec_hash)).fetchone()
+            (case.mission_id, spec_hash),
+        ).fetchone()
         assert row is not None
         raw = json.loads(str(row["document_json"]))
         raw["effects"][0]["required_milestone"] = "FILE_PUBLISHED"
-        _remove_immutable_trigger(case.store.connection, "operation_completion_specs_immutable_update")
-        case.store.connection.execute("UPDATE operation_completion_specs SET document_json=? WHERE spec_id=?",
-                                      (canonical_json(raw), row["spec_id"]))
+        _remove_immutable_trigger(
+            case.store.connection, "operation_completion_specs_immutable_update"
+        )
+        case.store.connection.execute(
+            "UPDATE operation_completion_specs SET document_json=? WHERE spec_id=?",
+            (canonical_json(raw), row["spec_id"]),
+        )
         before = case.store.connection.total_changes
         with pytest.raises(StoreConflict, match="Spec"):
-            completion.get_spec_exact(case.mission_id, int(raw["requirements_ref"]["revision"]),
-                                      str(raw["requirements_ref"]["content_hash"]))
+            completion.get_spec_exact(
+                case.mission_id,
+                int(raw["requirements_ref"]["revision"]),
+                str(raw["requirements_ref"]["content_hash"]),
+            )
         assert case.store.connection.total_changes == before
 
     _scoped(tmp_path, body)

@@ -7,6 +7,7 @@ open with OS viewer.
 httpx is mocked (no real API / no cost / no external dependency).
 Plan: plans/2026-05-16-generate-image-tool.md
 """
+
 from __future__ import annotations
 
 import base64
@@ -146,9 +147,7 @@ def test_transient_disconnect_retries_then_succeeds(img_mod, monkeypatch):
     def _flaky_post(self, url, **k):
         calls["n"] += 1
         if calls["n"] == 1:
-            raise httpx.RemoteProtocolError(
-                "Server disconnected without sending a response."
-            )
+            raise httpx.RemoteProtocolError("Server disconnected without sending a response.")
         return _Resp(200, {"data": [{"b64_json": _B64}]})
 
     monkeypatch.setattr(_FakeClient, "post", _flaky_post)
@@ -199,9 +198,7 @@ def test_async_dispatch_returns_immediately_no_http(img_mod, monkeypatch):
 
     class _FakeWorker:
         def submit(self, *, session_id, prompt, size, model):
-            submitted.update(
-                session_id=session_id, prompt=prompt, size=size, model=model
-            )
+            submitted.update(session_id=session_id, prompt=prompt, size=size, model=model)
             return "queued", "job_abc"
 
     # worker injected into args via set_session_context (same as
@@ -234,11 +231,7 @@ def test_async_dispatch_dedup_message(img_mod, monkeypatch):
         def submit(self, **k):
             return "already_generating", ""
 
-    out = json.loads(
-        m._handle_generate_image(
-            {"prompt": "P", "_image_worker": _DupWorker()}, ""
-        )
-    )
+    out = json.loads(m._handle_generate_image({"prompt": "P", "_image_worker": _DupWorker()}, ""))
     assert out["ok"] is True
     assert out["status"] == "already_generating"
     assert "已经在画" in out["message"]

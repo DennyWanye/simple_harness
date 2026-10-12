@@ -138,9 +138,7 @@ class PreparedSdkContextSnapshotV1:
         )
 
     @classmethod
-    def from_private_record(
-        cls, value: Mapping[str, Any]
-    ) -> PreparedSdkContextSnapshotV1:
+    def from_private_record(cls, value: Mapping[str, Any]) -> PreparedSdkContextSnapshotV1:
         snapshot = cls.build(
             session_id=str(value["session_id"]),
             request_id=str(value["request_id"]),
@@ -156,14 +154,11 @@ class PreparedSdkContextSnapshotV1:
             lineage=value.get("lineage") or {},
             memory=value.get("memory"),
             current_message=value.get("current_message"),
-            memory_projection_version=int(
-                value.get("memory_projection_version") or 2
-            ),
+            memory_projection_version=int(value.get("memory_projection_version") or 2),
         )
         if (
             str(value.get("snapshot_id") or "") != snapshot.snapshot_id
-            or str(value.get("snapshot_fingerprint") or "")
-            != snapshot.snapshot_fingerprint
+            or str(value.get("snapshot_fingerprint") or "") != snapshot.snapshot_fingerprint
         ):
             raise SnapshotContractConflict()
         return snapshot
@@ -289,14 +284,15 @@ class DefaultDenySnapshotRedactor:
             names = catalog.get("tool_names")
             if isinstance(names, (list, tuple)):
                 public_catalog["tool_names"] = [
-                    bounded for raw in names
-                    if (bounded := self._bounded_text(raw, 80)) is not None
+                    bounded for raw in names if (bounded := self._bounded_text(raw, 80)) is not None
                 ][:512]
 
         public_budget: dict[str, Any] = {}
         if isinstance(budget, Mapping):
             for key in (
-                "estimated_prompt_tokens", "context_window", "effective_ceiling",
+                "estimated_prompt_tokens",
+                "context_window",
+                "effective_ceiling",
                 "compact_at",
             ):
                 value = budget.get(key)
@@ -355,9 +351,7 @@ class ContextRouteWorkspaceAlreadyBound(ContextRouteLedgerError):
 class ContextRouteLedgerStore:
     """Append-only v45 context/route ledger on the Host human-memory state.db."""
 
-    def __init__(
-        self, db_path: Any, *, clock: Any = None, evidence_ingress: Any = None
-    ) -> None:
+    def __init__(self, db_path: Any, *, clock: Any = None, evidence_ingress: Any = None) -> None:
         import time as _time
         from pathlib import Path
 
@@ -395,18 +389,14 @@ class ContextRouteLedgerStore:
 
         if not self._db_path.exists():
             return 0
-        with sqlite3.connect(
-            f"file:{self._db_path.resolve()}?mode=ro", uri=True
-        ) as db:
+        with sqlite3.connect(f"file:{self._db_path.resolve()}?mode=ro", uri=True) as db:
             return int(db.execute("PRAGMA user_version").fetchone()[0])
 
     def verify_schema(self) -> None:
         """Fail closed when the database exists without the v45 ledger."""
 
         if self._db_path.exists() and self.user_version() < 45:
-            raise ContextRouteLedgerError(
-                "sdk_context_route_ledger_schema_missing"
-            )
+            raise ContextRouteLedgerError("sdk_context_route_ledger_schema_missing")
 
     async def _connect(self):
         import aiosqlite
@@ -423,6 +413,7 @@ class ContextRouteLedgerStore:
             await db.execute("PRAGMA busy_timeout=5000")
             return db
         except BaseException:
+
             async def close_owned():
                 try:
                     await connecting
@@ -472,7 +463,7 @@ class ContextRouteLedgerStore:
             await cursor.close()
             if existing is not None:
                 await db.commit()
-                return str(existing['snapshot_id']), int(existing['snapshot_revision'])
+                return str(existing["snapshot_id"]), int(existing["snapshot_revision"])
             cursor = await db.execute(
                 "SELECT COALESCE(MAX(snapshot_revision),0) FROM "
                 "run_context_snapshot_receipts WHERE sdk_run_id=?",
@@ -483,11 +474,14 @@ class ContextRouteLedgerStore:
             revision = head + 1
             snapshot_id = f"ctx-snap:{run}:{revision}:{payload_hash[:16]}"
             receipt_body = {
-                "expected_request_fingerprint":expected_request_fingerprint,
-                "payload_hash":payload_hash,"prior_context_revision":prior_context_revision,
-                "provider_turn_ordinal":provider_turn_ordinal,"sdk_run_id":run,
-                "snapshot_id":snapshot_id,"snapshot_revision":revision,
-                "source_revisions":dict(source_revisions),
+                "expected_request_fingerprint": expected_request_fingerprint,
+                "payload_hash": payload_hash,
+                "prior_context_revision": prior_context_revision,
+                "provider_turn_ordinal": provider_turn_ordinal,
+                "sdk_run_id": run,
+                "snapshot_id": snapshot_id,
+                "snapshot_revision": revision,
+                "source_revisions": dict(source_revisions),
             }
             stored_revisions = dict(source_revisions)
             receipt_hash = canonical_sha256(receipt_body)
@@ -570,9 +564,7 @@ class ContextRouteLedgerStore:
             if existing is not None:
                 await db.commit()
                 if str(existing[0]) != decision_hash:
-                    raise ContextRouteLedgerError(
-                        "sdk_context_route_decision_immutable"
-                    )
+                    raise ContextRouteLedgerError("sdk_context_route_decision_immutable")
                 return
             if require_unbound_run:
                 if self._evidence_ingress is None:
@@ -580,7 +572,8 @@ class ContextRouteLedgerStore:
                 bound = await self._evidence_ingress.resolve_run_scope_tx(db, receipt.run_id)
                 cursor = await db.execute(
                     "SELECT 1 FROM context_route_decisions WHERE sdk_run_id=? AND task_scope_id IS NOT NULL LIMIT 1",
-                    (receipt.run_id,))
+                    (receipt.run_id,),
+                )
                 prior_task = await cursor.fetchone()
                 await cursor.close()
                 if bound is not None or prior_task is not None:
@@ -639,7 +632,6 @@ class ContextRouteLedgerStore:
         finally:
             await db.close()
 
-
     async def read_route_receipt(
         self, sdk_run_id: str, receipt_id: str, *, db: Any | None = None
     ) -> Any | None:
@@ -677,8 +669,7 @@ class ContextRouteLedgerStore:
         db = await self._connect()
         try:
             cursor = await db.execute(
-                "SELECT occurrence_key FROM occurrence_presented "
-                "WHERE presented_at IS NOT NULL"
+                "SELECT occurrence_key FROM occurrence_presented WHERE presented_at IS NOT NULL"
             )
             rows = await cursor.fetchall()
             await cursor.close()
@@ -716,7 +707,9 @@ class ContextRouteLedgerStore:
         finally:
             await db.close()
 
-    async def latest_route_decision_for_run(self, sdk_run_id: str, *, task_only: bool = False) -> Mapping[str, Any] | None:
+    async def latest_route_decision_for_run(
+        self, sdk_run_id: str, *, task_only: bool = False
+    ) -> Mapping[str, Any] | None:
         """Most recent durable route decision of one Run (S5b Task 3 handler gate).
 
         ``task_scope_id`` is ``None`` for standalone routes → ``task_scope_update``
@@ -913,9 +906,7 @@ class ContextRouteLedgerStore:
             await cursor.close()
             if existing is not None:
                 await db.commit()
-                return dict(existing) | {
-                    "bindings": json.loads(str(existing["bindings_json"]))
-                }
+                return dict(existing) | {"bindings": json.loads(str(existing["bindings_json"]))}
             await db.execute(
                 "INSERT INTO context_use_recollections("
                 "recollection_id,sdk_run_id,effect_id,generation,reason_code,"
@@ -978,7 +969,9 @@ def _message_text(message: Any) -> str:
     content = getattr(message, "content", "")
     if isinstance(content, str):
         return content
-    return canonical_json([getattr(block, "to_dict", lambda b=block: str(b))() for block in content])
+    return canonical_json(
+        [getattr(block, "to_dict", lambda b=block: str(b))() for block in content]
+    )
 
 
 def _resolve_window_tokens(metadata: Mapping[str, Any]) -> int | None:
@@ -1166,9 +1159,7 @@ def _plan_turn_messages(
     )
 
     calibration = calibration_for_model(model_id)
-    estimator = turn_token_estimator(
-        calibration, provider_turn_ordinal=provider_turn_ordinal
-    )
+    estimator = turn_token_estimator(calibration, provider_turn_ordinal=provider_turn_ordinal)
     ratio = calibration.ratio(provider_turn_ordinal)
 
     split = 0
@@ -1182,7 +1173,9 @@ def _plan_turn_messages(
         break
     protected = messages[:split]
     if extra_protected is not None:
-        extras = extra_protected if isinstance(extra_protected, (list, tuple)) else (extra_protected,)
+        extras = (
+            extra_protected if isinstance(extra_protected, (list, tuple)) else (extra_protected,)
+        )
         protected = (*protected, *[item for item in extras if item is not None])
     if wrap_up_message is not None:
         protected = (*protected, wrap_up_message)
@@ -1195,11 +1188,14 @@ def _plan_turn_messages(
         tool_schema_tokens(tools), provider_turn_ordinal=provider_turn_ordinal
     )
     if not tail:
-        return tuple(protected), {"causal_groups": 0, "trimmed_groups": 0,
-                                  "groups_trimmed_for_budget": 0,
-                                  "tool_schema_tokens": schema_tokens,
-                                  "wrap_up_injected": 1 if wrap_up_message is not None else 0,
-                                  "open_group_items_dropped": 0}
+        return tuple(protected), {
+            "causal_groups": 0,
+            "trimmed_groups": 0,
+            "groups_trimmed_for_budget": 0,
+            "tool_schema_tokens": schema_tokens,
+            "wrap_up_injected": 1 if wrap_up_message is not None else 0,
+            "open_group_items_dropped": 0,
+        }
 
     window = window_tokens_for(window_tokens, model_id)
     tier = budget_window(window)
@@ -1214,23 +1210,28 @@ def _plan_turn_messages(
     # With an actual source projector, generic synthetic page:causal locators
     # must not replace unpageable control/typed carriers. Keep their true bytes
     # for the original budget checks, or fail the budget without losing proof.
-    plan = plan_recent_causal_groups(history, **({"large_result_bytes":
-        max((len(row["content"].encode("utf-8")) for row in history), default=0) + 1}
-        if exact_tool_sources else {}))
-    protected_caps = PARTITION_CAPS[tier]["protected"]
-    protected_bytes = sum(
-        len(_message_text(m).encode("utf-8")) for m in protected
+    plan = plan_recent_causal_groups(
+        history,
+        **(
+            {
+                "large_result_bytes": max(
+                    (len(row["content"].encode("utf-8")) for row in history), default=0
+                )
+                + 1
+            }
+            if exact_tool_sources
+            else {}
+        ),
     )
-    if (
-        len(protected) > int(protected_caps["items_max"])
-        or protected_bytes > int(protected_caps["bytes_max"])
+    protected_caps = PARTITION_CAPS[tier]["protected"]
+    protected_bytes = sum(len(_message_text(m).encode("utf-8")) for m in protected)
+    if len(protected) > int(protected_caps["items_max"]) or protected_bytes > int(
+        protected_caps["bytes_max"]
     ):
         raise ContextBudgetExceeded("sdk_context_protected_partition_over_cap")
     # The tool schemas ship in the same request and cannot be trimmed, so they
     # are protected mass exactly like the system prefix (Incident N F-E4).
-    protected_tokens = schema_tokens + sum(
-        estimator(_message_text(m)) for m in protected
-    )
+    protected_tokens = schema_tokens + sum(estimator(_message_text(m)) for m in protected)
     kept_groups, budget_trimmed = trim_causal_groups(
         plan.groups,
         window_tokens=window,
@@ -1252,11 +1253,7 @@ def _plan_turn_messages(
         return group.items[: keep_counts.get(id(group), len(group.items))]
 
     def _group_total() -> int:
-        return sum(
-            estimator(item.content)
-            for group in groups
-            for item in _kept_items(group)
-        )
+        return sum(estimator(item.content) for group in groups for item in _kept_items(group))
 
     total = protected_tokens + _group_total()
     if total > effective and allow_full_group_trim:
@@ -1300,8 +1297,15 @@ def _plan_turn_messages(
             "sdk_context_budget_exceeded planned=%d effective=%d protected=%d "
             "tool_schemas=%d groups=%d ratio=%.2f protected_messages=%d "
             "open_group=%d full_trim=%s",
-            total, effective, protected_tokens, schema_tokens, len(groups), ratio,
-            message_tokens, open_tokens, allow_full_group_trim,
+            total,
+            effective,
+            protected_tokens,
+            schema_tokens,
+            len(groups),
+            ratio,
+            message_tokens,
+            open_tokens,
+            allow_full_group_trim,
         )
         raise ContextBudgetExceeded(
             planned=total,
@@ -1450,11 +1454,16 @@ def _current_tool_page_facts(messages: tuple[Any, ...]) -> dict[str, int]:
                 kept_small += 1
         else:
             control_carried += _context_text_tokens(content)
-    return {"current_tool_pages": paged, "current_tool_tokens": carried,
-            "control_results_stubbed": stubbed, "control_result_tokens": control_carried,
-            # F-E3: the two numbers that say the descriptor is now a saving
-            # rather than a fixed ~500-token tax.
-            "descriptor_bytes_saved": saved, "results_kept_verbatim_small": kept_small}
+    return {
+        "current_tool_pages": paged,
+        "current_tool_tokens": carried,
+        "control_results_stubbed": stubbed,
+        "control_result_tokens": control_carried,
+        # F-E3: the two numbers that say the descriptor is now a saving
+        # rather than a fixed ~500-token tax.
+        "descriptor_bytes_saved": saved,
+        "results_kept_verbatim_small": kept_small,
+    }
 
 
 def _visible_provider_specs(
@@ -1488,8 +1497,7 @@ def _visible_provider_specs(
     return tuple(
         spec
         for spec in specs
-        if policy_reader(run_id, spec.name).effect_class
-        is not ToolEffectClass.PROJECT_EFFECT
+        if policy_reader(run_id, spec.name).effect_class is not ToolEffectClass.PROJECT_EFFECT
     )
 
 
@@ -1653,6 +1661,7 @@ class ProductRunContextAuthority:
         feedback_message = None
         if feedback is not None:
             from simple_harness import MandatoryContextFeedbackV1
+
             if type(feedback) is not MandatoryContextFeedbackV1:
                 raise SnapshotContractConflict("sdk_mandatory_context_feedback_invalid")
             feedback_message = feedback.message()
@@ -1675,10 +1684,12 @@ class ProductRunContextAuthority:
                 selected = tuple(m for m in selected if m != feedback_message)
             return selected, exact
 
-        def _plan(selected, exact, *, full_trim: bool, probe_only: bool = False,
-                  wrap_up: Any = None):
+        def _plan(
+            selected, exact, *, full_trim: bool, probe_only: bool = False, wrap_up: Any = None
+        ):
             return _plan_turn_messages(
-                selected, window_tokens,
+                selected,
+                window_tokens,
                 extra_protected=(inbox_message, closure_message, feedback_message),
                 exact_tool_sources=exact,
                 tools=tools,
@@ -1721,12 +1732,15 @@ class ProductRunContextAuthority:
             # elided control notices).  Accept the forced pass only when it
             # moved backwards on neither axis — a pass that un-paged or
             # un-elided anything the bounded pass achieved is not a degradation.
-            if (after["current_tool_pages"] >= before["current_tool_pages"]
-                    and after["control_results_stubbed"] >= before["control_results_stubbed"]):
+            if (
+                after["current_tool_pages"] >= before["current_tool_pages"]
+                and after["control_results_stubbed"] >= before["control_results_stubbed"]
+            ):
                 source_messages, exact_sources = forced, forced_exact
                 pages_forced = after["current_tool_pages"] - before["current_tool_pages"]
-                control_stubs_forced = (after["control_results_stubbed"]
-                                        - before["control_results_stubbed"])
+                control_stubs_forced = (
+                    after["control_results_stubbed"] - before["control_results_stubbed"]
+                )
             # …otherwise the forced pass declined to project at all (it is also
             # composed for non-primary callers) and would have *un*-paged what
             # the bounded pass achieved.  Degrading must never move backwards,
@@ -1754,14 +1768,20 @@ class ProductRunContextAuthority:
         headroom = int(assembly_facts.get("budget_headroom", 0))
         if self._should_wrap_up(run_key, headroom):
             wrap_up = context_budget_wrap_up_message()
-            planned, facts = _plan(source_messages, exact_sources,
-                                   full_trim=full_trim, wrap_up=wrap_up, probe_only=True)
+            planned, facts = _plan(
+                source_messages,
+                exact_sources,
+                full_trim=full_trim,
+                wrap_up=wrap_up,
+                probe_only=True,
+            )
             if int(facts.get("budget_headroom", 0)) < 0 and not full_trim:
                 # 收尾指令自身也要 ~120 token。它把一个本来刚好装下的计划顶出去时，
                 # 这里才补上「历史清零」这一步——而不是反过来先把历史交出去。
                 full_trim = True
-                planned, facts = _plan(source_messages, exact_sources,
-                                       full_trim=True, wrap_up=wrap_up, probe_only=True)
+                planned, facts = _plan(
+                    source_messages, exact_sources, full_trim=True, wrap_up=wrap_up, probe_only=True
+                )
             if int(facts.get("budget_headroom", 0)) >= 0:
                 messages, assembly_facts = planned, facts
                 _LOG.warning(
@@ -1809,9 +1829,14 @@ class ProductRunContextAuthority:
         )
         typed_fields = {}
         if self._typed_use_authority is not None:
-            intents = await self._typed_use_authority.snapshot_intents(request=request, messages=messages)
-            typed_fields = dict(schema_version=2, recall_subject=self._typed_use_authority.subject,
-                                recall_intents=intents)
+            intents = await self._typed_use_authority.snapshot_intents(
+                request=request, messages=messages
+            )
+            typed_fields = dict(
+                schema_version=2,
+                recall_subject=self._typed_use_authority.subject,
+                recall_intents=intents,
+            )
         snapshot = RunContextSnapshot(
             snapshot_id,
             request.run_id.value,
@@ -1828,9 +1853,7 @@ class ProductRunContextAuthority:
             **typed_fields,
         )
         if snapshot.payload_hash != expected:
-            raise SnapshotContractConflict(
-                "sdk_context_authority_payload_fingerprint_drift"
-            )
+            raise SnapshotContractConflict("sdk_context_authority_payload_fingerprint_drift")
         return snapshot
 
 
@@ -1867,8 +1890,11 @@ class ProductRuntimeDecisionSink:
         provider_turn_ordinal: int,
         request_fingerprint: str,
     ) -> Any:
-        await self.check_mandatory_context_actions(run_id=run_id,
-            provider_turn_ordinal=provider_turn_ordinal, request_fingerprint=request_fingerprint)
+        await self.check_mandatory_context_actions(
+            run_id=run_id,
+            provider_turn_ordinal=provider_turn_ordinal,
+            request_fingerprint=request_fingerprint,
+        )
         import uuid
 
         from simple_harness.execution.context_authority import ContextRouteReceipt
@@ -1876,9 +1902,7 @@ class ProductRuntimeDecisionSink:
 
         marker = f"no-recall:{run_id.value}:{provider_turn_ordinal}"
         receipt = ContextRouteReceipt(
-            receipt_id=str(
-                uuid.uuid5(uuid.NAMESPACE_URL, f"simple-harness:{marker}")
-            ),
+            receipt_id=str(uuid.uuid5(uuid.NAMESPACE_URL, f"simple-harness:{marker}")),
             run_id=run_id.value,
             raw_call_id=marker,
             effect_id=marker,
@@ -1895,7 +1919,9 @@ class ProductRuntimeDecisionSink:
         )
         return receipt
 
-    async def check_mandatory_context_actions(self, *, run_id, provider_turn_ordinal, request_fingerprint):
+    async def check_mandatory_context_actions(
+        self, *, run_id, provider_turn_ordinal, request_fingerprint
+    ):
         """Read current ACK/mandatory-exit authority; never create a route here."""
         if self._reconcile is not None:
             presented = await self._ledger.presented_occurrence_keys()
@@ -1905,5 +1931,9 @@ class ProductRuntimeDecisionSink:
                     MandatoryContextActionRequired,
                     MandatoryContextRejectionV1,
                 )
-                raise MandatoryContextActionRequired(MandatoryContextRejectionV1(
-                    run_id.value, provider_turn_ordinal, request_fingerprint))
+
+                raise MandatoryContextActionRequired(
+                    MandatoryContextRejectionV1(
+                        run_id.value, provider_turn_ordinal, request_fingerprint
+                    )
+                )

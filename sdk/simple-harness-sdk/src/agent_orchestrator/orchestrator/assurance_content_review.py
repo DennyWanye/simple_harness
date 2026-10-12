@@ -76,9 +76,12 @@ def ensure_task_content_review(
         task = semantics.task_semantics_of(mission_id, task_id)
         # 第四批：已验收的结果按现行（更新的）要求重审时，冻结输入照旧、范围取现行的
         frozen = load_completion_result_inputs(
-            store, result,
+            store,
+            result,
             requirements_revision=int(projection.scope.requirements_ref.revision)
-            if result.verification_state == "DONE" and result.verdict == "PASS" else None)
+            if result.verification_state == "DONE" and result.verdict == "PASS"
+            else None,
+        )
         package = LeafAcceptanceAssembly(store, commit)._package(
             mission_id,
             task,
@@ -103,7 +106,11 @@ def ensure_task_content_review(
         )
         # 解析时就核用途与访问（第 2 批 A10）：授权与身份进读取器，许可随解析结果回来。
         reader = AssuranceReader(
-            store, tenant_id=tenant_id, mission_id=mission_id, authority=authority, identity=identity
+            store,
+            tenant_id=tenant_id,
+            mission_id=mission_id,
+            authority=authority,
+            identity=identity,
         )
         existing = store.connection.execute(
             "SELECT dispatch_intent_id FROM assurance_review_invocations WHERE mission_id=? AND review_key=? AND ordinal=1",
@@ -168,12 +175,19 @@ def ensure_task_content_review(
         )
         # 执行者用的那版资料已不是现行版时，现行版正文进初始证据（2026-10-05 真机：资料换版后审阅员
         # 手里没有资料正文，旧版内容照样判通过）。没换过版本的资料照旧由审阅员按需用取证工具读。
-        in_force = {str(row["path"]): row for row in store.list_sources(mission_id, active_only=True)}
+        in_force = {
+            str(row["path"]): row for row in store.list_sources(mission_id, active_only=True)
+        }
         refs.update(
-            AssuranceRef("source", Pin(row["path"], int(in_force[row["path"]]["revision"]),
-                                       str(row["current_version"])))
+            AssuranceRef(
+                "source",
+                Pin(
+                    row["path"], int(in_force[row["path"]]["revision"]), str(row["current_version"])
+                ),
+            )
             for row in package.source_versions
-            if row["current_version"] not in (None, row["used_version"]) and row["path"] in in_force
+            if row["current_version"] not in (None, row["used_version"])
+            and row["path"] in in_force
             and str(in_force[row["path"]]["version_hash"]) == row["current_version"]
         )
         for document in policies:
@@ -188,8 +202,12 @@ def ensure_task_content_review(
         complete = read_complete_evidence_snapshot(reader, scope_id=projection.scope.scope_id)
         permissions = tuple((item.ref, item.permission) for item in metadata)
         round_no = next_review_round(
-            store.connection, mission_id=mission_id, review_key=review_key, purpose="TASK_CONTENT",
-            owner_task_id=task_id, occurrence_id=projection.scope.occurrence_id,
+            store.connection,
+            mission_id=mission_id,
+            review_key=review_key,
+            purpose="TASK_CONTENT",
+            owner_task_id=task_id,
+            occurrence_id=projection.scope.occurrence_id,
         )
         reads = [item.read_item for item in metadata] + [item.read_item for item in complete]
         for _, permission in permissions:
@@ -221,8 +239,11 @@ def ensure_task_content_review(
                                 for claim in frozen.port_claims
                             ],
                             "artifacts": [
-                                {"id": item.id, "revision": item.revision,
-                                 "content_hash": item.content_hash}
+                                {
+                                    "id": item.id,
+                                    "revision": item.revision,
+                                    "content_hash": item.content_hash,
+                                }
                                 for item in projection.artifacts
                             ],
                         },

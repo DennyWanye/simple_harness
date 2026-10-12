@@ -34,6 +34,7 @@ class HumanMemoryControlBinding:
     @contextmanager
     def request_scope(self, ingress, challenge):
         from deskpet.memory.writer_fence import authenticated_memory_request
+
         self._verify(ingress, challenge)
         with authenticated_memory_request(_ConnectionRequestFence(self, ingress, challenge)):
             yield
@@ -56,8 +57,7 @@ class HumanMemoryControlBinding:
         # revoke this lease. Check the existing durable lease, not query labels.
         with ingress.store.read() as db:
             lease = db.execute(
-                "SELECT * FROM profile_control_leases "
-                "WHERE device_scope=? AND connection_id=?",
+                "SELECT * FROM profile_control_leases WHERE device_scope=? AND connection_id=?",
                 (ingress.device_scope, challenge.connection_id),
             ).fetchone()
         if lease is None or any(
@@ -75,7 +75,6 @@ class HumanMemoryControlBinding:
         # Keep the existing single-local-owner namespace and stable evidence
         # authority across reconnects. Connection epochs are admission checks,
         # not a new identity or a changing delivery-idempotency payload.
-
 
 
 class _ConnectionRequestFence:
@@ -99,11 +98,13 @@ class _ConnectionRequestFence:
 
         self.verify()
         identity = self._ingress.identity_gate.freeze()
-        return canonical_hash({
-            "domain": "host.human.audit.lease.v1",
-            "owner_key": identity.owner_key,
-            "binding_epoch": identity.binding_epoch,
-            "connection_id": self._challenge.connection_id,
-            "challenge_hash": self._challenge.challenge_hash,
-            "process": self._ingress.verifier.backend_process_instance_id,
-        })
+        return canonical_hash(
+            {
+                "domain": "host.human.audit.lease.v1",
+                "owner_key": identity.owner_key,
+                "binding_epoch": identity.binding_epoch,
+                "connection_id": self._challenge.connection_id,
+                "challenge_hash": self._challenge.challenge_hash,
+                "process": self._ingress.verifier.backend_process_instance_id,
+            }
+        )

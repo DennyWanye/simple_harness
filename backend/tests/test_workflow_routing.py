@@ -36,7 +36,9 @@ def test_write_tool_preflight_routes_to_graph():
 
 def test_unknown_workspace_task_prefers_graph_but_chat_override_does_not():
     assert route_task("帮我处理一下", workspace_context=True).route is WorkflowRoute.CODE_COMPLEX
-    assert route_task("帮我处理一下", workspace_context=True, mode="chat").route is WorkflowRoute.REACT
+    assert (
+        route_task("帮我处理一下", workspace_context=True, mode="chat").route is WorkflowRoute.REACT
+    )
 
 
 def test_negated_research_stays_in_react():

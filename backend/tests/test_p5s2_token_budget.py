@@ -13,6 +13,7 @@ Contract:
 - ``check_budget(messages, model, *, warn_pct, block_pct)`` returns
   ``BudgetCheckResult`` with the verdict + estimated tokens + ratio.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -115,9 +116,7 @@ def test_above_warn_below_block_returns_warn():
     # warn at 80% = ~51k tokens → ~190k chars lands between warn & block.
     # (FP-2 真机校准后 ASCII ≈3.5 char/token,样本同步从 220k 调 190k)
     msgs = [{"role": "user", "content": "x" * 190_000}]
-    result = check_budget(
-        msgs, model="deepseek-v4-pro", context_window=_FIXED_WINDOW
-    )
+    result = check_budget(msgs, model="deepseek-v4-pro", context_window=_FIXED_WINDOW)
     assert result.verdict == BudgetCheck.WARN
     assert DEFAULT_WARN_PCT <= result.ratio < DEFAULT_BLOCK_PCT
 
@@ -125,9 +124,7 @@ def test_above_warn_below_block_returns_warn():
 def test_above_block_returns_block():
     # 64k × 0.95 × 4 = ~243k chars; 300k guarantees past block.
     msgs = [{"role": "user", "content": "x" * 300_000}]
-    result = check_budget(
-        msgs, model="deepseek-v4-pro", context_window=_FIXED_WINDOW
-    )
+    result = check_budget(msgs, model="deepseek-v4-pro", context_window=_FIXED_WINDOW)
     assert result.verdict == BudgetCheck.BLOCK
     assert result.ratio >= DEFAULT_BLOCK_PCT
 
@@ -147,9 +144,7 @@ def test_custom_thresholds():
 
 def test_result_includes_actionable_advice_in_block():
     msgs = [{"role": "user", "content": "x" * 300_000}]
-    result = check_budget(
-        msgs, model="deepseek-v4-pro", context_window=_FIXED_WINDOW
-    )
+    result = check_budget(msgs, model="deepseek-v4-pro", context_window=_FIXED_WINDOW)
     assert result.verdict == BudgetCheck.BLOCK
     # The result should carry a hint string for the UI/log
     assert result.advice
@@ -177,7 +172,9 @@ def test_floor_default_zero_is_backward_compatible():
     msgs = [{"role": "user", "content": "x" * 100}]
     base = check_budget(msgs, model="deepseek-v4-pro", context_window=_FIXED_WINDOW)
     with_floor0 = check_budget(
-        msgs, model="deepseek-v4-pro", context_window=_FIXED_WINDOW,
+        msgs,
+        model="deepseek-v4-pro",
+        context_window=_FIXED_WINDOW,
         real_prompt_tokens_floor=0,
     )
     assert with_floor0.estimated_tokens == base.estimated_tokens
@@ -194,12 +191,16 @@ def test_floor_raises_estimate_and_triggers_block():
     msgs = [{"role": "user", "content": "x" * 100}]  # ~25 tokens
     # Without floor: nowhere near block.
     no_floor = check_budget(
-        msgs, model="deepseek-v4-pro", context_window=_FIXED_WINDOW,
+        msgs,
+        model="deepseek-v4-pro",
+        context_window=_FIXED_WINDOW,
     )
     assert no_floor.verdict == BudgetCheck.OK
     # With a real-prompt floor of 62k (97% of 64k window) → BLOCK.
     floored = check_budget(
-        msgs, model="deepseek-v4-pro", context_window=_FIXED_WINDOW,
+        msgs,
+        model="deepseek-v4-pro",
+        context_window=_FIXED_WINDOW,
         real_prompt_tokens_floor=62_000,
     )
     assert floored.verdict == BudgetCheck.BLOCK
@@ -212,7 +213,9 @@ def test_floor_never_lowers_estimate():
     genuinely large working_messages estimate."""
     big = [{"role": "user", "content": "x" * 300_000}]  # well past block
     result = check_budget(
-        big, model="deepseek-v4-pro", context_window=_FIXED_WINDOW,
+        big,
+        model="deepseek-v4-pro",
+        context_window=_FIXED_WINDOW,
         real_prompt_tokens_floor=10,  # tiny floor must be ignored
     )
     assert result.verdict == BudgetCheck.BLOCK

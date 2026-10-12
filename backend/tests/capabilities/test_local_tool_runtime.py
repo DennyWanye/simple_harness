@@ -41,9 +41,7 @@ async def test_success_uses_argv_and_single_json_protocol() -> None:
         ("host-spoof", "unsupported keys"),
     ],
 )
-async def test_protocol_rejects_malformed_and_spoofed_results(
-    mode: str, message: str
-) -> None:
+async def test_protocol_rejects_malformed_and_spoofed_results(mode: str, message: str) -> None:
     runtime = LocalToolRuntime()
     result = await runtime.execute([sys.executable, str(WORKER), mode], _request())
     assert result.status == "malformed"
@@ -86,9 +84,7 @@ async def test_timeout_cleans_only_observed_lease_tree() -> None:
             monitor_interval_seconds=0.01,
             cleanup_grace_seconds=0.5,
         )
-        result = await runtime.execute(
-            [sys.executable, str(WORKER), "hang-child"], _request()
-        )
+        result = await runtime.execute([sys.executable, str(WORKER), "hang-child"], _request())
         assert result.status == "timeout"
         assert result.cleanup is not None
         assert len(result.cleanup.matched_pids) >= 2

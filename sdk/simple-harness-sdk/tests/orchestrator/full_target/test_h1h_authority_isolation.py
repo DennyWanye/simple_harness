@@ -110,9 +110,7 @@ def test_a03_foreign_principal_cannot_bind_another_issuers_grant(seeded) -> None
 def test_a03_original_issuer_can_delegate_bind_and_replay_without_extending_ttl(seeded):
     authority_store, mission = seeded
     issuer = _api(authority_store)
-    grant = issuer.issue(
-        mission, command_id="delegate-a03", planner_principal_id="planner-service"
-    )
+    grant = issuer.issue(mission, command_id="delegate-a03", planner_principal_id="planner-service")
     issuer.bind_request("req-auth", grant_id=grant.grant_id)
     before = authority_store.connection.total_changes
     assert (
@@ -134,9 +132,7 @@ def test_a03_original_issuer_can_delegate_bind_and_replay_without_extending_ttl(
     assert authority_store.connection.total_changes == before
 
 
-def test_a03_transaction_replay_rechecks_issuer_after_stale_api_lookup(
-    seeded, monkeypatch
-):
+def test_a03_transaction_replay_rechecks_issuer_after_stale_api_lookup(seeded, monkeypatch):
     authority_store, mission = seeded
     from agent_orchestrator.storage.planning_admission_store import PlanningAdmissionStore
 

@@ -17,7 +17,13 @@ from .errors import ArpError
 Json = Mapping[str, object]
 
 PHASES = ("DRAINING", "RENAME_PENDING", "RENAMED", "DELETE_CONFIRMED")
-BLOCK_CODES = ("DUAL_DIRECTORY", "MARKER_MISMATCH", "DELETE_STATE_AMBIGUOUS", "FILE_BUSY", "IO_ERROR")
+BLOCK_CODES = (
+    "DUAL_DIRECTORY",
+    "MARKER_MISMATCH",
+    "DELETE_STATE_AMBIGUOUS",
+    "FILE_BUSY",
+    "IO_ERROR",
+)
 
 
 def need(value: object, code: str = "PURGE_STATE_INVALID") -> None:

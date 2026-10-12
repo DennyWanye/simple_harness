@@ -85,11 +85,7 @@ class InputBinding:
             kind=str(value["kind"]),  # type: ignore[arg-type]
             view_kind=str(value["view_kind"]),  # type: ignore[arg-type]
             canonical_resource=str(value["canonical_resource"]),
-            content_hash=(
-                None
-                if value["content_hash"] is None
-                else str(value["content_hash"])
-            ),
+            content_hash=(None if value["content_hash"] is None else str(value["content_hash"])),
             metadata=dict(value["metadata"]),
         )
 
@@ -152,25 +148,19 @@ class InputBindingSnapshot:
             fingerprint=str(value["fingerprint"]),
         )
         payload = [binding.to_mapping() for binding in restored.bindings]
-        expected_fingerprint = hashlib.sha256(
-            _canonical_json(payload).encode("utf-8")
-        ).hexdigest()
+        expected_fingerprint = hashlib.sha256(_canonical_json(payload).encode("utf-8")).hexdigest()
         if restored.fingerprint != expected_fingerprint:
             raise InputViewError("durable input snapshot fingerprint changed")
         return restored
 
 
 def _canonical_json(value: Any) -> str:
-    return json.dumps(
-        value, ensure_ascii=False, sort_keys=True, separators=(",", ":")
-    )
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
 def _freeze_json(value: Any) -> Any:
     if isinstance(value, dict):
-        return MappingProxyType(
-            {str(key): _freeze_json(item) for key, item in value.items()}
-        )
+        return MappingProxyType({str(key): _freeze_json(item) for key, item in value.items()})
     if isinstance(value, list):
         return tuple(_freeze_json(item) for item in value)
     return value
@@ -302,9 +292,7 @@ class InputViewResolver:
     ) -> tuple[InputBinding, int]:
         if request.kind == "value":
             if _contains_absolute_path(request.resource):
-                raise InputViewError(
-                    "value views must not expose absolute host paths to workers"
-                )
+                raise InputViewError("value views must not expose absolute host paths to workers")
             encoded = _canonical_json(request.resource).encode("utf-8")
             self._check_item_size(encoded)
             metadata = (
@@ -379,6 +367,4 @@ class InputViewResolver:
 
     def _check_item_size(self, value: bytes) -> None:
         if len(value) > self.max_item_bytes:
-            raise InputViewError(
-                f"input view exceeded item limit of {self.max_item_bytes} bytes"
-            )
+            raise InputViewError(f"input view exceeded item limit of {self.max_item_bytes} bytes")

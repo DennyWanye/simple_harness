@@ -58,7 +58,11 @@ def test_workflow_sources_do_not_import_removed_frameworks() -> None:
 def test_project_and_lock_exclude_removed_distributions() -> None:
     project = tomllib.loads((BACKEND_DIR / "pyproject.toml").read_text(encoding="utf-8"))
     dependencies = {
-        str(value).split(";", 1)[0].split("[", 1)[0].split("=", 1)[0].split("<", 1)[0]
+        str(value)
+        .split(";", 1)[0]
+        .split("[", 1)[0]
+        .split("=", 1)[0]
+        .split("<", 1)[0]
         .split(">", 1)[0]
         .strip()
         .lower()
@@ -90,7 +94,7 @@ def test_eval_adapter_uses_native_json_interrupt_contract() -> None:
     adapter = (REPO_ROOT / "scripts" / "workflow_eval_adapter.py").read_text(encoding="utf-8")
     assert "InMemorySaver" not in adapter
     assert "__interrupt__" not in adapter
-    assert 'selected.bind(checkpointer=None)' in adapter
+    assert "selected.bind(checkpointer=None)" in adapter
     assert 'output.get("interrupt")' in adapter
 
 
@@ -137,9 +141,7 @@ def test_workflow_imports_when_removed_frameworks_are_blocked() -> None:
 
 
 def test_frozen_verifier_checks_native_engine_and_removed_packages() -> None:
-    verifier = (REPO_ROOT / "scripts" / "verify-frozen-backend.ps1").read_text(
-        encoding="utf-8"
-    )
+    verifier = (REPO_ROOT / "scripts" / "verify-frozen-backend.ps1").read_text(encoding="utf-8")
     assert "ForbiddenPackages" in verifier
     assert "engine_kind=deskpet-native" in verifier
     assert "exit 1" in verifier

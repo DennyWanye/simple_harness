@@ -5,6 +5,7 @@ The Store snapshot owns all local account reads. Each SDK inventory is read in
 one read-only transaction, synchronously in the original Store -> SDK order.
 Unknown physical outcomes remain explicit facts and keep settlement false.
 """
+
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -63,15 +64,22 @@ class TaskGraphRuntimeImports:
                 continue
             usage = record.usage_json
             tokens = usage.get("usage") if isinstance(usage, Mapping) else None
-            if (str(record.state) not in {"succeeded", "failed"}
-                    or not isinstance(tokens, Mapping)
-                    or any(type(tokens.get(key)) is not int or tokens[key] < 0
-                           for key in ("input_tokens", "output_tokens"))):
+            if (
+                str(record.state) not in {"succeeded", "failed"}
+                or not isinstance(tokens, Mapping)
+                or any(
+                    type(tokens.get(key)) is not int or tokens[key] < 0
+                    for key in ("input_tokens", "output_tokens")
+                )
+            ):
                 complete = False
                 continue
             input_tokens, output_tokens = tokens["input_tokens"], tokens["output_tokens"]
-            facts.append(UsageFact("provider-invocation:" + record.invocation_id,
-                                   input_tokens, output_tokens))
+            facts.append(
+                UsageFact(
+                    "provider-invocation:" + record.invocation_id, input_tokens, output_tokens
+                )
+            )
         return facts, complete
 
     def _read(self, intent: DispatchIntent, bridge: Any) -> RuntimeSubjectFacts:
@@ -96,30 +104,51 @@ class TaskGraphRuntimeImports:
             expected_agent = agent_id_for(runtime.owner_scope, executor.creation_key)
             agent = runtime.uow.read_agent_binding(expected_agent)
             own_grants = [row for row in grants if row["agent_id"] == expected_agent]
-            if any(row["intent_id"] != intent.intent_id or row["mission_id"] != intent.mission_id
-                   for row in own_grants):
+            if any(
+                row["intent_id"] != intent.intent_id or row["mission_id"] != intent.mission_id
+                for row in own_grants
+            ):
                 raise SourceUnavailable("taskgraph_runtime_grant_owner_mismatch")
             grant_ids.update((row["invocation_id"], row["handoff_ordinal"]) for row in own_grants)
-            entry: dict[str, Any] = {"creation_key": executor.creation_key,
-                "agent_id": expected_agent, "historical": index < len(executors) - 1}
+            entry: dict[str, Any] = {
+                "creation_key": executor.creation_key,
+                "agent_id": expected_agent,
+                "historical": index < len(executors) - 1,
+            }
             inventories.append(entry)
             if agent is None:
-                if (executor.agent_id is not None or executor.expected_turn_id is not None
-                        or executor.receipt is not None or own_grants or entry["historical"]):
+                if (
+                    executor.agent_id is not None
+                    or executor.expected_turn_id is not None
+                    or executor.receipt is not None
+                    or own_grants
+                    or entry["historical"]
+                ):
                     raise SourceUnavailable("taskgraph_runtime_agent_absent_with_handoff")
                 entry["materialization"] = "AGENT_ABSENT"
                 continue
-            if (agent.owner_scope != runtime.owner_scope or agent.creation_key != executor.creation_key
-                    or canonical_json(jsonable(agent.config_json)) != canonical_json(
-                        AgentConfig.from_json(dict(executor.config["agent_config"])).to_json())):
+            if (
+                agent.owner_scope != runtime.owner_scope
+                or agent.creation_key != executor.creation_key
+                or canonical_json(jsonable(agent.config_json))
+                != canonical_json(
+                    AgentConfig.from_json(dict(executor.config["agent_config"])).to_json()
+                )
+            ):
                 raise SourceUnavailable("taskgraph_runtime_config_mismatch")
             turns = runtime.uow.list_agent_turns(expected_agent)
             effects = runtime.uow.list_effects_for_run(agent.run_id)
             originals = runtime.uow.list_provider_invocations(RunId(agent.run_id))
             entry.update(run_id=agent.run_id, binding_hash=sha256_hex(_document(agent)))
             if not turns:
-                if (executor.state == "SUBMITTED" or executor.receipt is not None
-                        or effects or originals or own_grants or entry["historical"]):
+                if (
+                    executor.state == "SUBMITTED"
+                    or executor.receipt is not None
+                    or effects
+                    or originals
+                    or own_grants
+                    or entry["historical"]
+                ):
                     raise SourceUnavailable("taskgraph_runtime_unsubmitted_inventory_nonempty")
                 entry["materialization"] = "TURN_ABSENT"
                 continue
@@ -128,16 +157,26 @@ class TaskGraphRuntimeImports:
                 raise SourceUnavailable("taskgraph_runtime_turn_inventory_invalid")
             turn = turns[0]
             message = _message_from_json(dict(executor.config["message"]))
-            if (turn.agent_id != expected_agent or turn.input_id != executor.input_id
-                    or sha256_hex(executor.config["message"]) != executor.input_hash
-                    or turn.input_hash != input_hash_for(message)
-                    or canonical_json(jsonable(turn.input_json)) != canonical_json({"message": message.to_dict()})):
+            if (
+                turn.agent_id != expected_agent
+                or turn.input_id != executor.input_id
+                or sha256_hex(executor.config["message"]) != executor.input_hash
+                or turn.input_hash != input_hash_for(message)
+                or canonical_json(jsonable(turn.input_json))
+                != canonical_json({"message": message.to_dict()})
+            ):
                 raise SourceUnavailable("taskgraph_runtime_turn_input_changed")
-            entry.update(materialization="TURN_PRESENT", turn_id=turn.turn_id,
-                         turn_hash=sha256_hex(_document(turn)), phase=str(turn.phase))
+            entry.update(
+                materialization="TURN_PRESENT",
+                turn_id=turn.turn_id,
+                turn_hash=sha256_hex(_document(turn)),
+                phase=str(turn.phase),
+            )
             if str(turn.phase) in {"queued", "running", "result_pending"}:
                 physical = False  # the turn itself has not ended
-            bound = executor.agent_id == expected_agent and executor.expected_turn_id == expected_turn
+            bound = (
+                executor.agent_id == expected_agent and executor.expected_turn_id == expected_turn
+            )
             if not bound:
                 # A crash may occur after SDK submit and before saving its receipt.
                 # The inventory is visible, but original recovery must bind it
@@ -145,14 +184,24 @@ class TaskGraphRuntimeImports:
                 complete = physical = False
             else:
                 duplicates = store.connection.execute(
-                    "SELECT COUNT(*) FROM dispatch_intents WHERE agent_id=?", (expected_agent,),
+                    "SELECT COUNT(*) FROM dispatch_intents WHERE agent_id=?",
+                    (expected_agent,),
                 ).fetchone()[0]
                 if duplicates != (0 if entry["historical"] else 1):
                     raise SourceUnavailable("taskgraph_runtime_agent_reused")
-                if (executor.config.get("provider_admission_fingerprint") or own_grants
-                        or runtime.ports.provider_admission is not None):
-                    actual, settled, scope = _facts(self.orchestrator.commit, bridge,
-                        executor, reservation, grants=own_grants, historical=entry["historical"])
+                if (
+                    executor.config.get("provider_admission_fingerprint")
+                    or own_grants
+                    or runtime.ports.provider_admission is not None
+                ):
+                    actual, settled, scope = _facts(
+                        self.orchestrator.commit,
+                        bridge,
+                        executor,
+                        reservation,
+                        grants=own_grants,
+                        historical=entry["historical"],
+                    )
                     if task_id is not None and scope != task_id:
                         raise SourceUnavailable("taskgraph_runtime_account_scope_changed")
                     task_id = scope
@@ -165,19 +214,42 @@ class TaskGraphRuntimeImports:
                 effective = runtime.uow.read_effective_provider_invocation(original.invocation_id)
                 if effective is None or original.run_id.value != agent.run_id:
                     raise SourceUnavailable("taskgraph_runtime_provider_inventory_invalid")
-                provider_facts.append({"invocation_id": original.invocation_id,
-                    "original_hash": sha256_hex(_document(original)),
-                    "effective_hash": sha256_hex(_document(effective)), "state": str(effective.state)})
-                if original.handoff_attempt and str(effective.state) not in {"succeeded", "failed", "unknown"}:
+                provider_facts.append(
+                    {
+                        "invocation_id": original.invocation_id,
+                        "original_hash": sha256_hex(_document(original)),
+                        "effective_hash": sha256_hex(_document(effective)),
+                        "state": str(effective.state),
+                    }
+                )
+                if original.handoff_attempt and str(effective.state) not in {
+                    "succeeded",
+                    "failed",
+                    "unknown",
+                }:
                     physical = False  # handed off and still on the wire; a never-handed-off claim runs nothing
             effect_facts = []
             for effect in effects:
-                if (effect.run_id.value != agent.run_id or effect.request_hash != effect_request_hash(
-                        tool_name=effect.tool_name, arguments=jsonable(effect.arguments))):
+                if (
+                    effect.run_id.value != agent.run_id
+                    or effect.request_hash
+                    != effect_request_hash(
+                        tool_name=effect.tool_name, arguments=jsonable(effect.arguments)
+                    )
+                ):
                     raise SourceUnavailable("taskgraph_runtime_effect_identity_mismatch")
-                effect_facts.append({"effect_id": effect.effect_id.value,
-                    "record_hash": sha256_hex(_document(effect)), "state": str(effect.state)})
-                if effect.state not in {EffectState.SUCCEEDED, EffectState.FAILED, EffectState.REJECTED}:
+                effect_facts.append(
+                    {
+                        "effect_id": effect.effect_id.value,
+                        "record_hash": sha256_hex(_document(effect)),
+                        "state": str(effect.state),
+                    }
+                )
+                if effect.state not in {
+                    EffectState.SUCCEEDED,
+                    EffectState.FAILED,
+                    EffectState.REJECTED,
+                }:
                     physical = False
             entry.update(provider_invocations=provider_facts, effects=effect_facts)
         if grant_ids != {(row["invocation_id"], row["handoff_ordinal"]) for row in grants}:
@@ -190,32 +262,62 @@ class TaskGraphRuntimeImports:
         # （那局等了两个多小时）。用户硬规则：可以多算不可以少算，但不冻结。
         if self.orchestrator.commit.ledger.has_unknown_usage(intent.subject_id):
             complete = False
-        if store.connection.execute(
+        if (
+            store.connection.execute(
                 "SELECT 1 FROM provider_token_grants WHERE subject_id=? AND state IN ('RESERVED','HANDED_OFF') LIMIT 1",
-                (intent.subject_id,)).fetchone() is not None:
+                (intent.subject_id,),
+            ).fetchone()
+            is not None
+        ):
             physical = False
         imports = []
         for fact in facts:
             imported = store.connection.execute(
                 "SELECT subject_id,mission_id,input_tokens,output_tokens,unknown "
-                "FROM imported_usage WHERE usage_ref=?", (fact.usage_ref,),
+                "FROM imported_usage WHERE usage_ref=?",
+                (fact.usage_ref,),
             ).fetchone()
             if imported is None:
                 complete = False  # 还没导入：账不完整，不是执行没安静
-            elif tuple(imported) != (intent.subject_id, intent.mission_id, fact.input_tokens,
-                                     fact.output_tokens, int(fact.unknown)):
+            elif tuple(imported) != (
+                intent.subject_id,
+                intent.mission_id,
+                fact.input_tokens,
+                fact.output_tokens,
+                int(fact.unknown),
+            ):
                 # A still-unknown old import awaits the real accounting importer;
                 # differing final amounts or identities are corruption.
-                if (imported[0] != intent.subject_id or imported[1] != intent.mission_id or not imported[4]):
+                if (
+                    imported[0] != intent.subject_id
+                    or imported[1] != intent.mission_id
+                    or not imported[4]
+                ):
                     raise SourceUnavailable("taskgraph_runtime_imported_usage_mismatch")
                 complete = False
-            imports.append({"usage_ref": fact.usage_ref, "actual": _document(fact),
-                            "imported": None if imported is None else list(imported)})
-        return RuntimeSubjectFacts({"intent_id": intent.intent_id, "subject_id": intent.subject_id,
-            "intent_hash": sha256_hex(intent.to_json()), "executors": inventories,
-            "provider_grants": [dict(row) for row in grants], "usage": imports,
-            "accounting_complete": complete, "physical_settled": physical},
-            tuple(facts), complete, physical, task_id)
+            imports.append(
+                {
+                    "usage_ref": fact.usage_ref,
+                    "actual": _document(fact),
+                    "imported": None if imported is None else list(imported),
+                }
+            )
+        return RuntimeSubjectFacts(
+            {
+                "intent_id": intent.intent_id,
+                "subject_id": intent.subject_id,
+                "intent_hash": sha256_hex(intent.to_json()),
+                "executors": inventories,
+                "provider_grants": [dict(row) for row in grants],
+                "usage": imports,
+                "accounting_complete": complete,
+                "physical_settled": physical,
+            },
+            tuple(facts),
+            complete,
+            physical,
+            task_id,
+        )
 
     def read_subject(self, intent: DispatchIntent) -> RuntimeSubjectFacts:
         with self.store.read_view():
@@ -240,10 +342,20 @@ class TaskGraphRuntimeImports:
                     databases.add(id(db))
                 intents.append(intent)
                 bridges[intent.intent_id] = bridge
-            subjects = [self._read(intent, bridges[intent.intent_id]).document for intent in intents]
-            body: dict[str, Any] = {"mission_id": mission_id,
-                                   "local_work_digest": local.digest, "subjects": subjects}
-            value = ImportedExecutionSource(mission_id=mission_id, kind="runtime",
-                canonical_document=canonical_json(body))
-            return CompleteRead(value=value, source_id=mission_id+":original-runtime-history",
-                source_digest=sha256_hex(value.to_json()), through_seq=store.last_event_seq(mission_id))
+            subjects = [
+                self._read(intent, bridges[intent.intent_id]).document for intent in intents
+            ]
+            body: dict[str, Any] = {
+                "mission_id": mission_id,
+                "local_work_digest": local.digest,
+                "subjects": subjects,
+            }
+            value = ImportedExecutionSource(
+                mission_id=mission_id, kind="runtime", canonical_document=canonical_json(body)
+            )
+            return CompleteRead(
+                value=value,
+                source_id=mission_id + ":original-runtime-history",
+                source_digest=sha256_hex(value.to_json()),
+                through_seq=store.last_event_seq(mission_id),
+            )

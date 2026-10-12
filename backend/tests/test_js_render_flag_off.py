@@ -9,6 +9,7 @@
   ③ 没有 import crawl4ai(dev 档懒 import,flag-off 下绝不触发);
   ④ 默认未开 jina,空壳站照旧 ok=False。
 """
+
 from __future__ import annotations
 
 import sys
@@ -27,10 +28,15 @@ def _clean(monkeypatch):
     r._reset_js_render_budget()
 
 
-_BIG_SHELL = ("<html><head><title>站</title></head><body><div id='app'></div>"
-              "<script>/*" + ("x" * 21000) + "*/render()</script></body></html>")
-_ARTICLE = ("<html><head><title>好文</title></head><body><article><p>"
-            + ("这是充实的静态正文。" * 60) + "</p></article></body></html>")
+_BIG_SHELL = (
+    "<html><head><title>站</title></head><body><div id='app'></div>"
+    "<script>/*" + ("x" * 21000) + "*/render()</script></body></html>"
+)
+_ARTICLE = (
+    "<html><head><title>好文</title></head><body><article><p>"
+    + ("这是充实的静态正文。" * 60)
+    + "</p></article></body></html>"
+)
 
 
 class _Resp:
@@ -49,6 +55,7 @@ def _client(html):
 
         async def aclose(self):
             return None
+
     return _C()
 
 
@@ -56,6 +63,7 @@ def _client(html):
 async def test_flag_off_static_site_identical(monkeypatch):
     """静态站: flag-off 下 extractor 仍 trafilatura,渲染适配器零触达。"""
     import deskpet.tools.research_cdp_edge as ce_mod
+
     called = {"n": 0}
 
     async def _spy(url, *, timeout=20.0):
@@ -65,14 +73,15 @@ async def test_flag_off_static_site_identical(monkeypatch):
     monkeypatch.setattr(ce_mod, "cdp_edge_render", _spy)
     out = await r.default_extract("https://static.com/a", client=_client(_ARTICLE))
     assert out["ok"] is True
-    assert out["extractor"] == "trafilatura"   # ① 没走渲染
-    assert called["n"] == 0                      # ② 渲染适配器零触达
+    assert out["extractor"] == "trafilatura"  # ① 没走渲染
+    assert called["n"] == 0  # ② 渲染适配器零触达
 
 
 @pytest.mark.asyncio
 async def test_flag_off_js_shell_no_render(monkeypatch):
     """大 JS 空壳: flag-off 下也绝不触发渲染,行为与引入渲染前一致(ok=False)。"""
     import deskpet.tools.research_cdp_edge as ce_mod
+
     called = {"n": 0}
 
     async def _spy(url, *, timeout=20.0):
@@ -81,8 +90,8 @@ async def test_flag_off_js_shell_no_render(monkeypatch):
 
     monkeypatch.setattr(ce_mod, "cdp_edge_render", _spy)
     out = await r.default_extract("https://spa.com/x", client=_client(_BIG_SHELL))
-    assert called["n"] == 0                      # ② 渲染零触达
-    assert out["ok"] is False                     # ④ 空壳 + 渲染/jina 全关 → 失败(原行为)
+    assert called["n"] == 0  # ② 渲染零触达
+    assert out["ok"] is False  # ④ 空壳 + 渲染/jina 全关 → 失败(原行为)
 
 
 @pytest.mark.asyncio
@@ -90,5 +99,5 @@ async def test_flag_off_no_crawl4ai_import(monkeypatch):
     """flag-off 下绝不 import crawl4ai(dev 档懒 import,不该被触发)。"""
     sys.modules.pop("crawl4ai", None)
     out = await r.default_extract("https://spa.com/x", client=_client(_BIG_SHELL))
-    assert "crawl4ai" not in sys.modules          # ③ 没 import crawl4ai
+    assert "crawl4ai" not in sys.modules  # ③ 没 import crawl4ai
     assert out["ok"] is False

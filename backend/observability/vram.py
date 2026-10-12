@@ -11,6 +11,7 @@ Design: never import torch at module level — it's heavy and may not
 even be installed on CPU-only deployments. Defer to call site inside
 try/except so every failure mode maps to vram_gb = 0.0 (→ CPU).
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -31,6 +32,7 @@ class HardwareTier:
     whether the recommended models are available locally. If not, they fall
     back along the tier chain (flagship → standard → economy → minimal).
     """
+
     tier: Tier
     min_vram_gb: float
     llm_model: str

@@ -97,9 +97,7 @@ def test_generate_images_failure_result_includes_error_kind(monkeypatch):
     import deskpet.tools.image_tools as m
 
     monkeypatch.setattr(m.httpx, "Client", _FakeClient)
-    monkeypatch.setattr(
-        m, "_resolve_endpoint", lambda: ("https://relay.example/v1", "key")
-    )
+    monkeypatch.setattr(m, "_resolve_endpoint", lambda: ("https://relay.example/v1", "key"))
     monkeypatch.setattr(m.time, "sleep", lambda *_args: None)
 
     _FakeClient.post_resp = _Resp(400, {"error": {"message": "model 不支持"}})
@@ -128,9 +126,7 @@ def test_seedream_generation_explicitly_disables_provider_watermark(monkeypatch)
         {"data": [{"b64_json": base64.b64encode(b"png").decode("ascii")}]},
     )
 
-    content, error = m._generate_png(
-        "clean PPT background", "1792x1024", "doubao-seedream-4.0"
-    )
+    content, error = m._generate_png("clean PPT background", "1792x1024", "doubao-seedream-4.0")
 
     assert content == b"png" and error is None
     assert _FakeClient.post_kwargs["json"]["watermark"] is False

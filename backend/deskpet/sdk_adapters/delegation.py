@@ -43,12 +43,28 @@ DELEGATION_TOOL_NAMES = DELEGATE_TOOL_NAMES | {JOIN_TOOL_NAME}
 #: 第一版子运行只开放纯查询类工具（明确白名单，不按效果类别推断）：清单里标为只读的
 #: 还有会改主对话待办（todo_*）、会写文件（download_file / generate_image）、会登记产物、
 #: 会弹选择器或长时间等待的工具，它们都不能交给子运行。
-CHILD_TOOL_ALLOWLIST = frozenset({
-    "web_search", "web_fetch", "web_crawl", "web_extract_article", "web_read_sitemap",
-    "scrapling_fetch", "agent_reach_read", "gold_price_lookup",
-    "file_read", "read_file", "file_grep", "grep", "file_glob", "glob", "list_directory",
-    "doc_read", "image_ocr", "workspace_recall",
-})
+CHILD_TOOL_ALLOWLIST = frozenset(
+    {
+        "web_search",
+        "web_fetch",
+        "web_crawl",
+        "web_extract_article",
+        "web_read_sitemap",
+        "scrapling_fetch",
+        "agent_reach_read",
+        "gold_price_lookup",
+        "file_read",
+        "read_file",
+        "file_grep",
+        "grep",
+        "file_glob",
+        "glob",
+        "list_directory",
+        "doc_read",
+        "image_ocr",
+        "workspace_recall",
+    }
+)
 MAX_CHILDREN_PER_PARENT = 8
 DEFAULT_WAIT_SECONDS = 900.0
 _TERMINAL = frozenset({"completed", "failed", "cancelled"})
@@ -82,12 +98,19 @@ def delegated_tasks(name: str, arguments: Mapping[str, Any]) -> tuple[DelegatedT
     """Split one delegate call into its tasks (one child Run each)."""
 
     if name == "agent":
-        raw = [{"prompt": arguments.get("prompt"), "tools": arguments.get("tools"),
-                "task_id": arguments.get("description")}]
+        raw = [
+            {
+                "prompt": arguments.get("prompt"),
+                "tools": arguments.get("tools"),
+                "task_id": arguments.get("description"),
+            }
+        ]
     elif name == "spawn_team":
         descriptions = arguments.get("task_descriptions")
         if not isinstance(descriptions, list):
-            raise DelegationRefused("delegation_invalid_arguments", "task_descriptions must be a list")
+            raise DelegationRefused(
+                "delegation_invalid_arguments", "task_descriptions must be a list"
+            )
         raw = [{"prompt": item} for item in descriptions]
     elif name in {"agent_parallel", "spawn_subagents"}:
         raw = arguments.get("subagents")
@@ -96,7 +119,9 @@ def delegated_tasks(name: str, arguments: Mapping[str, Any]) -> tuple[DelegatedT
     else:
         raise DelegationRefused("delegation_invalid_arguments", f"{name} is not a delegate Tool")
     if not raw:
-        raise DelegationRefused("delegation_invalid_arguments", "at least one delegated task is required")
+        raise DelegationRefused(
+            "delegation_invalid_arguments", "at least one delegated task is required"
+        )
     if len(raw) > MAX_CHILDREN_PER_PARENT:
         raise DelegationRefused(
             "delegation_too_many_tasks",
@@ -106,22 +131,27 @@ def delegated_tasks(name: str, arguments: Mapping[str, Any]) -> tuple[DelegatedT
     for index, item in enumerate(raw):
         prompt = str(item.get("prompt") or "").strip()
         if not prompt:
-            raise DelegationRefused("delegation_invalid_arguments", "each delegated task needs a prompt")
+            raise DelegationRefused(
+                "delegation_invalid_arguments", "each delegated task needs a prompt"
+            )
         if len(prompt) > _MAX_PROMPT:
             raise DelegationRefused(
-                "delegation_prompt_too_large", f"a delegated prompt exceeds {_MAX_PROMPT} characters"
+                "delegation_prompt_too_large",
+                f"a delegated prompt exceeds {_MAX_PROMPT} characters",
             )
         requested = item.get("tools")
         if requested is not None and not (
             isinstance(requested, list) and all(isinstance(tool, str) for tool in requested)
         ):
             raise DelegationRefused("delegation_invalid_arguments", "tools must be a list of names")
-        tasks.append(DelegatedTask(
-            index=index,
-            task_id=str(item.get("task_id") or f"task_{index}"),
-            prompt=prompt,
-            tools=None if not requested else tuple(dict.fromkeys(requested)),
-        ))
+        tasks.append(
+            DelegatedTask(
+                index=index,
+                task_id=str(item.get("task_id") or f"task_{index}"),
+                prompt=prompt,
+                tools=None if not requested else tuple(dict.fromkeys(requested)),
+            )
+        )
     return tuple(tasks)
 
 
@@ -172,7 +202,9 @@ def _waiting_delegate_parent_ids(uow: Any) -> tuple[str, ...]:
     return tuple(str(row[0]) for row in rows)
 
 
-def waiting_runs_blocked_on_delegation(uow: Any, *, exclude: frozenset[str] | set[str] = frozenset()) -> tuple[Any, ...]:
+def waiting_runs_blocked_on_delegation(
+    uow: Any, *, exclude: frozenset[str] | set[str] = frozenset()
+) -> tuple[Any, ...]:
     """WAITING Runs held by an UNKNOWN delegate call (same idea as the Provider F06 list).
 
     The SDK's recoverable lists omit WAITING Runs; this one is woken once its delegate
@@ -257,7 +289,9 @@ class ProductDelegationService:
 
     # ---- public Tool entry points -------------------------------------------------
 
-    async def delegate(self, name: str, arguments: Mapping[str, Any], *, execution_context: Any) -> dict[str, Any]:
+    async def delegate(
+        self, name: str, arguments: Mapping[str, Any], *, execution_context: Any
+    ) -> dict[str, Any]:
         parent_run_id = str(getattr(execution_context, "run_id", "") or "")
         call_id = str(getattr(execution_context, "call_id", "") or "")
         if not parent_run_id or not call_id:
@@ -268,7 +302,8 @@ class ProductDelegationService:
             async with self._launch_lock:
                 known = set(self._children.get(parent_run_id, {}))
                 fresh = [
-                    task for task in tasks
+                    task
+                    for task in tasks
                     if delegated_child_run_id(parent_run_id, call_id, task.index) not in known
                 ]
                 if len(known) + len(fresh) > MAX_CHILDREN_PER_PARENT:
@@ -285,8 +320,13 @@ class ProductDelegationService:
                 for task in tasks:
                     launched.append(await self._launch(parent_run_id, call_id, task))
         except DelegationRefused as refused:
-            return {"ok": False, "error": refused.code, "error_code": refused.code,
-                    "public_message": refused.message, "retriable": False}
+            return {
+                "ok": False,
+                "error": refused.code,
+                "error_code": refused.code,
+                "public_message": refused.message,
+                "retriable": False,
+            }
         if name == "spawn_subagents":
             return {
                 "ok": True,
@@ -294,10 +334,14 @@ class ProductDelegationService:
                 "tasks": [{"task_id": child.task_id, "run_id": child.run_id} for child in launched],
                 "next_action": "Call await_subagents to collect their results.",
             }
-        results = await self._join(launched, deadline=self._clock() + self._wait_seconds, cancel_on_exit=True)
+        results = await self._join(
+            launched, deadline=self._clock() + self._wait_seconds, cancel_on_exit=True
+        )
         return {"ok": True, "results": results}
 
-    async def await_subagents(self, *, arguments: Mapping[str, Any], context: Any, operation_key: str = "") -> dict[str, Any]:
+    async def await_subagents(
+        self, *, arguments: Mapping[str, Any], context: Any, operation_key: str = ""
+    ) -> dict[str, Any]:
         parent_run_id = str(getattr(context, "run_id", "") or "")
         owned = self._children.get(parent_run_id, {})
         requested = [str(item) for item in (arguments.get("run_ids") or ()) if str(item)]
@@ -307,18 +351,24 @@ class ProductDelegationService:
                 continue
             record = uow.read_run(run_id) if uow is not None else None
             if record is None or record.parent_run_id != parent_run_id:
-                return {"ok": False, "error": "delegation_child_not_owned",
-                        "error_code": "delegation_child_not_owned",
-                        "public_message": f"{run_id} is not a delegated child of this conversation turn",
-                        "retriable": False}
+                return {
+                    "ok": False,
+                    "error": "delegation_child_not_owned",
+                    "error_code": "delegation_child_not_owned",
+                    "public_message": f"{run_id} is not a delegated child of this conversation turn",
+                    "retriable": False,
+                }
             self._adopt(run_id, parent_run_id, task_id=run_id)
             owned = self._children.get(parent_run_id, {})
         children = [owned[run_id] for run_id in requested] if requested else list(owned.values())
         if not children:
             return {"ok": True, "results": [], "public_message": "no delegated children to collect"}
-        return {"ok": True, "results": await self._join(
-            children, deadline=self._clock() + self._wait_seconds, cancel_on_exit=False
-        )}
+        return {
+            "ok": True,
+            "results": await self._join(
+                children, deadline=self._clock() + self._wait_seconds, cancel_on_exit=False
+            ),
+        }
 
     # ---- restart / reconciliation -------------------------------------------------
 
@@ -351,8 +401,12 @@ class ProductDelegationService:
         name = str(getattr(effect, "tool_name", "") or "")
         if name not in DELEGATION_TOOL_NAMES:
             return None
-        parent_run_id = str(getattr(getattr(effect, "run_id", ""), "value", getattr(effect, "run_id", "")))
-        call_id = str(getattr(getattr(effect, "call_id", ""), "value", getattr(effect, "call_id", "")))
+        parent_run_id = str(
+            getattr(getattr(effect, "run_id", ""), "value", getattr(effect, "run_id", ""))
+        )
+        call_id = str(
+            getattr(getattr(effect, "call_id", ""), "value", getattr(effect, "call_id", ""))
+        )
         arguments = thaw_json(effect.arguments)
         arguments = arguments if isinstance(arguments, Mapping) else {}
         uow = self._uow_getter()
@@ -360,8 +414,11 @@ class ProductDelegationService:
             requested = [str(item) for item in (arguments.get("run_ids") or ()) if str(item)]
             ids = requested or list(self._durable_children(parent_run_id))
             pairs = [(run_id, run_id, uow.read_run(run_id)) for run_id in ids]
-            pairs = [(task_id, run_id, record) for task_id, run_id, record in pairs
-                     if record is not None and record.parent_run_id == parent_run_id]
+            pairs = [
+                (task_id, run_id, record)
+                for task_id, run_id, record in pairs
+                if record is not None and record.parent_run_id == parent_run_id
+            ]
         else:
             try:
                 tasks = delegated_tasks(name, arguments)
@@ -374,31 +431,49 @@ class ProductDelegationService:
             if not pairs or any(record is None for _, _, record in pairs):
                 started = [run_id for _, run_id, record in pairs if record is not None]
                 return ReconciliationObservation(
-                    ReconciliationState.COMPLETED, f"delegation:{call_id}:interrupted",
+                    ReconciliationState.COMPLETED,
+                    f"delegation:{call_id}:interrupted",
                     ToolResult.failed(
-                        effect.call_id, "delegation_interrupted",
+                        effect.call_id,
+                        "delegation_interrupted",
                         "The delegation was interrupted before its children started (the app "
                         "restarted). Call the delegate tool again if the work is still needed."
-                        + (f" Already started: {', '.join(started)} (collect with await_subagents)."
-                           if started else ""),
+                        + (
+                            f" Already started: {', '.join(started)} (collect with await_subagents)."
+                            if started
+                            else ""
+                        ),
                     ),
                 )
             if name == "spawn_subagents":
-                value = {"ok": True, "run_ids": [run_id for _, run_id, _ in pairs],
-                         "tasks": [{"task_id": task_id, "run_id": run_id} for task_id, run_id, _ in pairs],
-                         "next_action": "Call await_subagents to collect their results."}
+                value = {
+                    "ok": True,
+                    "run_ids": [run_id for _, run_id, _ in pairs],
+                    "tasks": [
+                        {"task_id": task_id, "run_id": run_id} for task_id, run_id, _ in pairs
+                    ],
+                    "next_action": "Call await_subagents to collect their results.",
+                }
                 return ReconciliationObservation(
-                    ReconciliationState.COMPLETED, f"delegation:{call_id}:launched",
+                    ReconciliationState.COMPLETED,
+                    f"delegation:{call_id}:launched",
                     ToolResult.succeeded(effect.call_id, value),
                 )
-        running = [(task_id, run_id) for task_id, run_id, record in pairs if _state(record) not in _TERMINAL]
+        running = [
+            (task_id, run_id)
+            for task_id, run_id, record in pairs
+            if _state(record) not in _TERMINAL
+        ]
         if running:
             for task_id, run_id in running:
                 self._adopt(run_id, parent_run_id, task_id=task_id)
-            return ReconciliationObservation(ReconciliationState.STILL_UNKNOWN, f"delegation:{call_id}:running")
+            return ReconciliationObservation(
+                ReconciliationState.STILL_UNKNOWN, f"delegation:{call_id}:running"
+            )
         results = [self._result(run_id, task_id) for task_id, run_id, _ in pairs]
         return ReconciliationObservation(
-            ReconciliationState.COMPLETED, f"delegation:{call_id}:settled",
+            ReconciliationState.COMPLETED,
+            f"delegation:{call_id}:settled",
             ToolResult.succeeded(effect.call_id, {"ok": True, "results": results}),
         )
 
@@ -454,17 +529,21 @@ class ProductDelegationService:
                 logger.info("delegation_parent_settled parent=%s", parent_run_id)
             return settled
         except Exception:  # noqa: BLE001 - retried on the next child end / startup
-            logger.warning("delegation_parent_settle_failed parent=%s", parent_run_id, exc_info=True)
+            logger.warning(
+                "delegation_parent_settle_failed parent=%s", parent_run_id, exc_info=True
+            )
             return False
 
     def _schedule_settle(self, parent_run_id: str) -> None:
         task = asyncio.get_running_loop().create_task(
-            self._settle_when_parked(parent_run_id), name=f"delegation-settle:{parent_run_id}")
+            self._settle_when_parked(parent_run_id), name=f"delegation-settle:{parent_run_id}"
+        )
         self._background.add(task)
         task.add_done_callback(self._background.discard)
 
-    async def _settle_when_parked(self, parent_run_id: str, *, attempts: int = 60,
-                                  interval: float = 1.0) -> None:
+    async def _settle_when_parked(
+        self, parent_run_id: str, *, attempts: int = 60, interval: float = 1.0
+    ) -> None:
         """After a child ends: settle its parent once the parent is parked on the call.
 
         A parent re-driven after a restart observes its call as still running and only
@@ -479,8 +558,11 @@ class ProductDelegationService:
                 parent = uow.read_run(parent_run_id) if uow is not None else None
                 if parent is None or _state(parent) in _TERMINAL:
                     return
-                held = [effect for effect in uow.list_unknown_effects_for_run(parent_run_id)
-                        if effect.tool_name in DELEGATION_TOOL_NAMES]
+                held = [
+                    effect
+                    for effect in uow.list_unknown_effects_for_run(parent_run_id)
+                    if effect.tool_name in DELEGATION_TOOL_NAMES
+                ]
                 if not held and _state(parent) != "waiting":
                     return
                 if _state(parent) == "waiting" and await self.settle_waiting_parent(parent_run_id):
@@ -510,7 +592,8 @@ class ProductDelegationService:
 
     def start_recovery(self) -> None:
         task = asyncio.get_running_loop().create_task(
-            self.settle_after_startup(), name="delegation-startup-settle")
+            self.settle_after_startup(), name="delegation-startup-settle"
+        )
         self._background.add(task)
         task.add_done_callback(self._background.discard)
 
@@ -583,8 +666,11 @@ class ProductDelegationService:
                 catalog=_child_catalog(parent_authority, tools),
                 inventory=_child_inventory(parent_authority, tools),
                 principal_id=parent_authority.principal_id,
-                binding_version=int(parent_authority.workspace_resolution.get(
-                    "binding_version", parent_authority.task_work_context.binding_version)),
+                binding_version=int(
+                    parent_authority.workspace_resolution.get(
+                        "binding_version", parent_authority.task_work_context.binding_version
+                    )
+                ),
                 workspace_resolution=parent_authority.workspace_resolution,
             )
         except BaseException:
@@ -647,30 +733,44 @@ class ProductDelegationService:
         try:
             uow.issue_profile_launch_ticket(
                 ProfileLaunchTicket(
-                    ticket_id, parent_run_id, parent_snapshot.profile_key,
-                    parent_snapshot.tool_catalog_generation, child_launch_fingerprint(launch),
+                    ticket_id,
+                    parent_run_id,
+                    parent_snapshot.profile_key,
+                    parent_snapshot.tool_catalog_generation,
+                    child_launch_fingerprint(launch),
                 ),
                 now=self._clock(),
             )
-            await runtime.children.launch(ChildLaunchRequest(
-                ProfileLaunchTicketRef(ticket_id, parent_snapshot.tool_catalog_generation),
-                f"{child_run_id}:launch",
-                child_run_id,
-                request_id,
-                AttachmentPolicy.DETACHED,
-                launch,
-                snapshot,
-            ))
+            await runtime.children.launch(
+                ChildLaunchRequest(
+                    ProfileLaunchTicketRef(ticket_id, parent_snapshot.tool_catalog_generation),
+                    f"{child_run_id}:launch",
+                    child_run_id,
+                    request_id,
+                    AttachmentPolicy.DETACHED,
+                    launch,
+                    snapshot,
+                )
+            )
         except BaseException:
             if uow.read_run(child_run_id) is None:
                 self._forget(child)
                 self._release(child_run_id, "failed")
             raise
-        child.watcher = asyncio.create_task(self._watch(child), name=f"delegation-watch:{child_run_id}")
-        logger.info("delegation_child_launched child=%s parent=%s tools=%d", child_run_id, parent_run_id, len(tools))
+        child.watcher = asyncio.create_task(
+            self._watch(child), name=f"delegation-watch:{child_run_id}"
+        )
+        logger.info(
+            "delegation_child_launched child=%s parent=%s tools=%d",
+            child_run_id,
+            parent_run_id,
+            len(tools),
+        )
         return child
 
-    def _adopt(self, run_id: str, parent_run_id: str, *, task_id: str, watch: bool = True) -> _Child:
+    def _adopt(
+        self, run_id: str, parent_run_id: str, *, task_id: str, watch: bool = True
+    ) -> _Child:
         owned = self._children.setdefault(parent_run_id, {})
         child = owned.get(run_id)
         if child is None:
@@ -725,8 +825,11 @@ class ProductDelegationService:
                             if runtime is not None:
                                 await runtime.reconcile()
                         except Exception:  # noqa: BLE001
-                            logger.warning("delegation_child_reconcile_failed child=%s", child.run_id,
-                                           exc_info=True)
+                            logger.warning(
+                                "delegation_child_reconcile_failed child=%s",
+                                child.run_id,
+                                exc_info=True,
+                            )
                     elif now - waiting_since >= self._stall_seconds and nudged:
                         logger.warning("delegation_child_stalled_cancel child=%s", child.run_id)
                         await self._cancel(child.run_id)
@@ -743,8 +846,13 @@ class ProductDelegationService:
             except Exception:  # noqa: BLE001 - cleanup must reach both registries
                 logger.warning("delegation_child_release_failed child=%s", run_id, exc_info=True)
 
-    async def _join(self, children: Sequence[_Child] | Mapping[str, _Child], *, deadline: float,
-                    cancel_on_exit: bool) -> list[dict[str, Any]]:
+    async def _join(
+        self,
+        children: Sequence[_Child] | Mapping[str, _Child],
+        *,
+        deadline: float,
+        cancel_on_exit: bool,
+    ) -> list[dict[str, Any]]:
         items = list(children.values()) if isinstance(children, Mapping) else list(children)
         finished = False
         interrupted = False
@@ -764,8 +872,11 @@ class ProductDelegationService:
         finally:
             # 超时：取消没结束的子运行。调用被中断：只有父运行确实被取消/结束才取消；
             # 关闭应用造成的中断不取消，子运行重启后接着跑，由重放接上。
-            if cancel_on_exit and not finished and items and (
-                not interrupted or self._parent_stopping(items[0].parent_run_id)
+            if (
+                cancel_on_exit
+                and not finished
+                and items
+                and (not interrupted or self._parent_stopping(items[0].parent_run_id))
             ):
                 for child in items:
                     if not child.done.is_set():
@@ -775,15 +886,27 @@ class ProductDelegationService:
         uow = self._uow_getter()
         record = uow.read_run(run_id) if uow is not None else None
         state = _state(record) if record is not None else "missing"
-        value = last_assistant_text(self._context_port_getter(), run_id) if state == "completed" else None
+        value = (
+            last_assistant_text(self._context_port_getter(), run_id)
+            if state == "completed"
+            else None
+        )
         error = None
         if state not in _TERMINAL:
-            error = "the delegated child has not finished yet; it was stopped or can be collected later"
+            error = (
+                "the delegated child has not finished yet; it was stopped or can be collected later"
+            )
         elif state != "completed":
             error = f"the delegated child ended {state}"
         elif value is None:
             error = "the delegated child finished without an answer"
-        return {"task_id": task_id, "run_id": run_id, "status": state, "value": value, "error": error}
+        return {
+            "task_id": task_id,
+            "run_id": run_id,
+            "status": state,
+            "value": value,
+            "error": error,
+        }
 
     async def _cancel(self, run_id: str) -> None:
         try:
@@ -833,11 +956,13 @@ def _child_catalog(parent: Any, tools: Sequence[str]) -> dict[str, Any]:
     specs = []
     for name in tools:
         schema = parent.specs[name].schema
-        specs.append({
-            "name": name,
-            "description": schema["description"],
-            "input_schema": json.loads(json.dumps(schema["parameters"])),
-        })
+        specs.append(
+            {
+                "name": name,
+                "description": schema["description"],
+                "input_schema": json.loads(json.dumps(schema["parameters"])),
+            }
+        )
     return {
         "generation": parent.catalog_generation,
         "content_fingerprint": parent.catalog_fingerprint,

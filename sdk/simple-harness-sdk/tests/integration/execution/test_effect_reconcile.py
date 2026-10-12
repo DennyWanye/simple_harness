@@ -173,11 +173,7 @@ class RequireNestedMetadata:
             request=AuthorizationRequest(
                 "Allow nested request?",
                 "host-nonce",
-                metadata={
-                    "members": [
-                        {"name": "plan-test", "permissions": ["read_file"]}
-                    ]
-                },
+                metadata={"members": [{"name": "plan-test", "permissions": ["read_file"]}]},
             ),
         )
 
@@ -439,9 +435,7 @@ def test_durable_authorization_reopen_rechecks_sidecar_and_resource_hashes() -> 
         "effect_id": "effect-resource",
         "expires_at": None,
         "metadata": {
-            "skill_install_member_summary": [
-                {"name": "plan-test", "permissions": ["read_file"]}
-            ]
+            "skill_install_member_summary": [{"name": "plan-test", "permissions": ["read_file"]}]
         },
         "nonce": "nonce-resource",
         "prompt": "Allow read?",
@@ -810,9 +804,7 @@ def test_terminal_activation_effect_replay_reapplies_visibility_without_handler(
     run_id = RunId("run-1")
     issue_port.restore(run_id, None)
     described = issue_port.describe(run_id, "mcp:fixture:read")
-    receipt = issue_port.prepare_activation(
-        run_id, "mcp:fixture:read", described.nonce
-    )
+    receipt = issue_port.prepare_activation(run_id, "mcp:fixture:read", described.nonce)
     arguments = {"capability_id": "mcp:fixture:read", "nonce": described.nonce}
     call = ToolCall(CallId("call-activate"), "tool_activate", arguments)
     terminal = ToolResult.succeeded(call.call_id, receipt.to_json())

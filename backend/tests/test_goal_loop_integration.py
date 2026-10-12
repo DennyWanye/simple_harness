@@ -7,6 +7,7 @@ Mirrors the shape of ``test_agent_loop_verify_wiring.py`` — checks the
 __init__ signature, BC default (None / None → skip), the rebound
 behaviour when ``goal.done is False``, and the ``mark_done`` path.
 """
+
 from __future__ import annotations
 
 import inspect
@@ -18,6 +19,7 @@ from deskpet.agent.goal_store import SessionGoalStore
 from llm.types import ChatResponse, ChatUsage
 
 # ───────────────────── fake LLM / tools (copied from existing loop tests) ─
+
 
 class FakeLLMRegistry:
     def __init__(self, responses: list[Any]) -> None:
@@ -79,14 +81,16 @@ def test_agent_loop_signature_accepts_goal_kwargs():
 @pytest.mark.asyncio
 async def test_no_goal_store_skips_block_bc():
     """store=None → goal-check block 完全跳过 (BC, 现有 callers 不影响)."""
-    llm = FakeLLMRegistry([
-        ChatResponse(
-            content="all done.",
-            stop_reason="end_turn",
-            usage=ChatUsage(input_tokens=1, output_tokens=1),
-            model="x",
-        )
-    ])
+    llm = FakeLLMRegistry(
+        [
+            ChatResponse(
+                content="all done.",
+                stop_reason="end_turn",
+                usage=ChatUsage(input_tokens=1, output_tokens=1),
+                model="x",
+            )
+        ]
+    )
     checker = FakeGoalChecker([])  # 不会被调
     loop = AgentLoop(
         llm_registry=llm,
@@ -95,7 +99,8 @@ async def test_no_goal_store_skips_block_bc():
         goal_checker=checker,
     )
     events = [
-        e async for e in loop.run(
+        e
+        async for e in loop.run(
             messages=[{"role": "user", "content": "hi"}],
             session_id="sid-1",
         )
@@ -107,14 +112,16 @@ async def test_no_goal_store_skips_block_bc():
 @pytest.mark.asyncio
 async def test_no_checker_skips_block_bc():
     """checker=None → 整块跳过."""
-    llm = FakeLLMRegistry([
-        ChatResponse(
-            content="done.",
-            stop_reason="end_turn",
-            usage=ChatUsage(input_tokens=1, output_tokens=1),
-            model="x",
-        )
-    ])
+    llm = FakeLLMRegistry(
+        [
+            ChatResponse(
+                content="done.",
+                stop_reason="end_turn",
+                usage=ChatUsage(input_tokens=1, output_tokens=1),
+                model="x",
+            )
+        ]
+    )
     store = SessionGoalStore()
     store.set("sid-1", "some goal")
     loop = AgentLoop(
@@ -124,7 +131,8 @@ async def test_no_checker_skips_block_bc():
         goal_checker=None,
     )
     events = [
-        e async for e in loop.run(
+        e
+        async for e in loop.run(
             messages=[{"role": "user", "content": "hi"}],
             session_id="sid-1",
         )
@@ -138,14 +146,16 @@ async def test_no_checker_skips_block_bc():
 @pytest.mark.asyncio
 async def test_no_active_goal_skips_block():
     """store 存在但当前 session 无 goal → 不调 checker."""
-    llm = FakeLLMRegistry([
-        ChatResponse(
-            content="done.",
-            stop_reason="end_turn",
-            usage=ChatUsage(input_tokens=1, output_tokens=1),
-            model="x",
-        )
-    ])
+    llm = FakeLLMRegistry(
+        [
+            ChatResponse(
+                content="done.",
+                stop_reason="end_turn",
+                usage=ChatUsage(input_tokens=1, output_tokens=1),
+                model="x",
+            )
+        ]
+    )
     store = SessionGoalStore()
     checker = FakeGoalChecker([])
     loop = AgentLoop(
@@ -155,7 +165,8 @@ async def test_no_active_goal_skips_block():
         goal_checker=checker,
     )
     events = [
-        e async for e in loop.run(
+        e
+        async for e in loop.run(
             messages=[{"role": "user", "content": "hi"}],
             session_id="sid-no-goal",
         )
@@ -167,14 +178,16 @@ async def test_no_active_goal_skips_block():
 @pytest.mark.asyncio
 async def test_goal_done_marks_and_finalizes():
     """checker 返 done=True → store.mark_done + 正常 emit FinalEvent."""
-    llm = FakeLLMRegistry([
-        ChatResponse(
-            content="finished the task.",
-            stop_reason="end_turn",
-            usage=ChatUsage(input_tokens=1, output_tokens=1),
-            model="x",
-        )
-    ])
+    llm = FakeLLMRegistry(
+        [
+            ChatResponse(
+                content="finished the task.",
+                stop_reason="end_turn",
+                usage=ChatUsage(input_tokens=1, output_tokens=1),
+                model="x",
+            )
+        ]
+    )
     store = SessionGoalStore()
     store.set("sid-1", "write hello")
     checker = FakeGoalChecker([(True, "")])
@@ -185,7 +198,8 @@ async def test_goal_done_marks_and_finalizes():
         goal_checker=checker,
     )
     events = [
-        e async for e in loop.run(
+        e
+        async for e in loop.run(
             messages=[{"role": "user", "content": "write hello"}],
             session_id="sid-1",
         )
@@ -203,28 +217,32 @@ async def test_goal_done_marks_and_finalizes():
 async def test_goal_not_done_rebounds_loop():
     """checker 返 done=False → AgentLoop 注入 system msg + continue;
     下一轮 LLM 返 end_turn 后第二次 checker 返 done=True 收尾."""
-    llm = FakeLLMRegistry([
-        # turn 1: assistant 说"我做好了"，但 goal 没真达成
-        ChatResponse(
-            content="我先 stub 了一下。",
-            stop_reason="end_turn",
-            usage=ChatUsage(input_tokens=1, output_tokens=1),
-            model="x",
-        ),
-        # turn 2: 被 rebound 后 assistant 重新做
-        ChatResponse(
-            content="好的，现在真做完了。",
-            stop_reason="end_turn",
-            usage=ChatUsage(input_tokens=1, output_tokens=1),
-            model="x",
-        ),
-    ])
+    llm = FakeLLMRegistry(
+        [
+            # turn 1: assistant 说"我做好了"，但 goal 没真达成
+            ChatResponse(
+                content="我先 stub 了一下。",
+                stop_reason="end_turn",
+                usage=ChatUsage(input_tokens=1, output_tokens=1),
+                model="x",
+            ),
+            # turn 2: 被 rebound 后 assistant 重新做
+            ChatResponse(
+                content="好的，现在真做完了。",
+                stop_reason="end_turn",
+                usage=ChatUsage(input_tokens=1, output_tokens=1),
+                model="x",
+            ),
+        ]
+    )
     store = SessionGoalStore()
     store.set("sid-1", "ship the feature")
-    checker = FakeGoalChecker([
-        (False, "你只写了 stub, 没真做"),
-        (True, ""),
-    ])
+    checker = FakeGoalChecker(
+        [
+            (False, "你只写了 stub, 没真做"),
+            (True, ""),
+        ]
+    )
     loop = AgentLoop(
         llm_registry=llm,
         tool_registry=FakeToolRegistry(),
@@ -232,7 +250,8 @@ async def test_goal_not_done_rebounds_loop():
         goal_checker=checker,
     )
     events = [
-        e async for e in loop.run(
+        e
+        async for e in loop.run(
             messages=[{"role": "user", "content": "ship it"}],
             session_id="sid-1",
         )
@@ -259,14 +278,16 @@ async def test_goal_not_done_rebounds_loop():
 @pytest.mark.asyncio
 async def test_goal_max_iterations_caps_rebounds():
     """iterations_used >= max → 不再 rebound, 直接 emit final."""
-    llm = FakeLLMRegistry([
-        ChatResponse(
-            content="i give up",
-            stop_reason="end_turn",
-            usage=ChatUsage(input_tokens=1, output_tokens=1),
-            model="x",
-        )
-    ])
+    llm = FakeLLMRegistry(
+        [
+            ChatResponse(
+                content="i give up",
+                stop_reason="end_turn",
+                usage=ChatUsage(input_tokens=1, output_tokens=1),
+                model="x",
+            )
+        ]
+    )
     store = SessionGoalStore()
     goal = store.set("sid-1", "ship", max_iterations=2)
     # 提前把 iterations_used 推到 max → 模拟"已经 rebound 过 2 次"
@@ -279,7 +300,8 @@ async def test_goal_max_iterations_caps_rebounds():
         goal_checker=checker,
     )
     events = [
-        e async for e in loop.run(
+        e
+        async for e in loop.run(
             messages=[{"role": "user", "content": "ship"}],
             session_id="sid-1",
         )
@@ -291,14 +313,16 @@ async def test_goal_max_iterations_caps_rebounds():
 @pytest.mark.asyncio
 async def test_goal_already_done_skips_checker():
     """goal.done=True → 不再调 checker."""
-    llm = FakeLLMRegistry([
-        ChatResponse(
-            content="done done",
-            stop_reason="end_turn",
-            usage=ChatUsage(input_tokens=1, output_tokens=1),
-            model="x",
-        )
-    ])
+    llm = FakeLLMRegistry(
+        [
+            ChatResponse(
+                content="done done",
+                stop_reason="end_turn",
+                usage=ChatUsage(input_tokens=1, output_tokens=1),
+                model="x",
+            )
+        ]
+    )
     store = SessionGoalStore()
     store.set("sid-1", "x")
     store.mark_done("sid-1")
@@ -310,7 +334,8 @@ async def test_goal_already_done_skips_checker():
         goal_checker=checker,
     )
     events = [
-        e async for e in loop.run(
+        e
+        async for e in loop.run(
             messages=[{"role": "user", "content": "x"}],
             session_id="sid-1",
         )
@@ -334,14 +359,16 @@ async def test_checker_exception_safe_fails_through():
         async def check(self, goal_text, working_msgs):
             raise RuntimeError("boom")
 
-    llm = FakeLLMRegistry([
-        ChatResponse(
-            content="hmm",
-            stop_reason="end_turn",
-            usage=ChatUsage(input_tokens=1, output_tokens=1),
-            model="x",
-        )
-    ])
+    llm = FakeLLMRegistry(
+        [
+            ChatResponse(
+                content="hmm",
+                stop_reason="end_turn",
+                usage=ChatUsage(input_tokens=1, output_tokens=1),
+                model="x",
+            )
+        ]
+    )
     store = SessionGoalStore()
     store.set("sid-1", "g")
     loop = AgentLoop(
@@ -351,7 +378,8 @@ async def test_checker_exception_safe_fails_through():
         goal_checker=_BrokenChecker(),
     )
     events = [
-        e async for e in loop.run(
+        e
+        async for e in loop.run(
             messages=[{"role": "user", "content": "g"}],
             session_id="sid-1",
         )

@@ -7,6 +7,7 @@ reproduces the max_tokens-truncation bug + verifies the 8192 fix.
 Pre-fix (max_tokens=2048): LLM cuts off mid-string → JSON parse fail.
 Post-fix (max_tokens=8192): LLM has headroom to finish 5-6KB output.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -57,10 +58,14 @@ async def main() -> int:
         print(f"WS connect failed: {exc}")
         return 1
     print("Connected. Sending large-write prompt...")
-    await ws.send(json.dumps({
-        "type": "chat_v2",
-        "payload": {"text": PROMPT, "session_id": "p6-largewrite-test"},
-    }))
+    await ws.send(
+        json.dumps(
+            {
+                "type": "chat_v2",
+                "payload": {"text": PROMPT, "session_id": "p6-largewrite-test"},
+            }
+        )
+    )
     started = time.time()
     tool_calls = 0
     saw_repaired = False

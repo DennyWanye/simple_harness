@@ -28,17 +28,11 @@ def test_packaged_manifest_attests_skill_and_workflow_suites() -> None:
         "skill_v1",
         "workflow_v1",
     ]
-    assert {
-        case.case_id for case in manifest.suite("skill_v1").cases if case.required
-    } == {
+    assert {case.case_id for case in manifest.suite("skill_v1").cases if case.required} == {
         "skill.memory_recall.summary",
         "skill.no_live_memory_fallback",
     }
-    assert {
-        case.case_id
-        for case in manifest.suite("workflow_v1").cases
-        if case.required
-    } == {
+    assert {case.case_id for case in manifest.suite("workflow_v1").cases if case.required} == {
         "workflow.build_drift_fail_closed",
         "workflow.readonly_memory_step",
     }
@@ -80,9 +74,7 @@ def test_packaged_loader_rejects_stale_assertions_hash(tmp_path: Path) -> None:
     )
     manifest_path = tmp_path / "manifest.json"
     manifest = json.loads(manifest_path.read_text("utf-8"))
-    manifest["suites"][0]["resource_hash"] = hashlib.sha256(
-        suite_path.read_bytes()
-    ).hexdigest()
+    manifest["suites"][0]["resource_hash"] = hashlib.sha256(suite_path.read_bytes()).hexdigest()
     manifest_path.write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
@@ -98,14 +90,11 @@ def test_evaluation_suite_resources_are_declared_for_both_packagers() -> None:
     backend_root = Path(__file__).resolve().parents[2]
     pyproject = tomllib.loads((backend_root / "pyproject.toml").read_text("utf-8"))
 
-    assert pyproject["tool"]["setuptools"]["package-data"][
-        "deskpet.companion.eval_suites"
-    ] == ["*.json"]
+    assert pyproject["tool"]["setuptools"]["package-data"]["deskpet.companion.eval_suites"] == [
+        "*.json"
+    ]
     spec = (backend_root / "deskpet-backend.spec").read_text("utf-8")
     # Since 304a57a73 the spec collects startup resources relative to the
     # repository root (``backend/...`` source, package-relative destination).
-    assert (
-        '("backend/deskpet/companion/eval_suites", '
-        '"deskpet/companion/eval_suites")'
-    ) in spec
+    assert ('("backend/deskpet/companion/eval_suites", "deskpet/companion/eval_suites")') in spec
     assert '"deskpet.companion.eval_suites"' in spec

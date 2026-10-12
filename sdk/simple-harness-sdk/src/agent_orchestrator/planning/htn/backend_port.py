@@ -59,10 +59,21 @@ class PlanningLimits:
 
     def __post_init__(self) -> None:
         import math
-        if (type(self.timeout_seconds) not in (int, float) or not math.isfinite(self.timeout_seconds)
-            or self.timeout_seconds <= 0 or type(self.max_tokens) is not int or self.max_tokens < 1
-            or (self.max_expansions is not None and (type(self.max_expansions) is not int or self.max_expansions < 1))):
-            raise ContractError("planning limits must be finite positive numbers, expansions may be null")
+
+        if (
+            type(self.timeout_seconds) not in (int, float)
+            or not math.isfinite(self.timeout_seconds)
+            or self.timeout_seconds <= 0
+            or type(self.max_tokens) is not int
+            or self.max_tokens < 1
+            or (
+                self.max_expansions is not None
+                and (type(self.max_expansions) is not int or self.max_expansions < 1)
+            )
+        ):
+            raise ContractError(
+                "planning limits must be finite positive numbers, expansions may be null"
+            )
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -143,8 +154,11 @@ class PandaPlanningBackend:
         self, snapshot: PlanningProblemSnapshot, limits: PlanningLimits
     ) -> PlanningBackendResult:
         if limits.max_expansions is not None:
-            return PlanningBackendResult(BackendStatus.UNSUPPORTED_FEATURE, snapshot.digest,
-                detail="PANDA wrapper exposes a time bound, not a hard expansion bound")
+            return PlanningBackendResult(
+                BackendStatus.UNSUPPORTED_FEATURE,
+                snapshot.digest,
+                detail="PANDA wrapper exposes a time bound, not a hard expansion bound",
+            )
         domain_text = snapshot.problem.get("domain_text")
         problem_text = snapshot.problem.get("problem_text")
         if not isinstance(domain_text, str) or not isinstance(problem_text, str):
@@ -185,12 +199,26 @@ class PandaPlanningBackend:
             witness = CandidatePlanWitness.build(
                 snapshot, steps, "panda", hierarchy=json.loads(json.dumps(asdict(result.witness)))
             )
-        if witness is not None and len(canonical_json({"steps": list(witness.steps), "hierarchy": witness.hierarchy_json}).encode("utf-8")) > limits.max_tokens:
-            return PlanningBackendResult(BackendStatus.SEARCH_LIMIT_REACHED, snapshot.digest,
-                detail="PANDA witness exceeds the conservative byte budget")
+        if (
+            witness is not None
+            and len(
+                canonical_json(
+                    {"steps": list(witness.steps), "hierarchy": witness.hierarchy_json}
+                ).encode("utf-8")
+            )
+            > limits.max_tokens
+        ):
+            return PlanningBackendResult(
+                BackendStatus.SEARCH_LIMIT_REACHED,
+                snapshot.digest,
+                detail="PANDA witness exceeds the conservative byte budget",
+            )
         if status is BackendStatus.SOLVED and witness is None:
-            return PlanningBackendResult(BackendStatus.TOOL_ERROR, snapshot.digest,
-                detail="solver claimed SOLVED without a witness")
+            return PlanningBackendResult(
+                BackendStatus.TOOL_ERROR,
+                snapshot.digest,
+                detail="solver claimed SOLVED without a witness",
+            )
         return PlanningBackendResult(status, snapshot.digest, witness=witness, detail=result.detail)
 
 

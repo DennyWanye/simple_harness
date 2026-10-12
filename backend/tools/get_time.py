@@ -6,6 +6,7 @@
 Deliberately trivial — exists to verify the whole tool routing pipeline
 before investing in stateful or external-API tools.
 """
+
 from __future__ import annotations
 
 from datetime import datetime

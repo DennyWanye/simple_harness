@@ -1,7 +1,8 @@
-﻿# SPDX-FileCopyrightText: 2026 DennyWanye
+# SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: BUSL-1.1
 
 """B-2 PPT 整页生图布局测试。"""
+
 from __future__ import annotations
 
 import base64
@@ -13,9 +14,7 @@ from deskpet.tools.ppt_tools import _HAS_PPTX, ppt_create
 pytestmark = pytest.mark.skipif(not _HAS_PPTX, reason="python-pptx not installed")
 
 
-PNG_1X1_TRANSPARENT = (
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
-)
+PNG_1X1_TRANSPARENT = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
 
 
 @pytest.fixture

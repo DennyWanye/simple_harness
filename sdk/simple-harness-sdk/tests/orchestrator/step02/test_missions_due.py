@@ -5,6 +5,7 @@
 真机：运行中后台 CPU 86%～178%，每轮把每个未结束任务（含昨天停住的旧任务）都完整处理一遍。
 没有新事件（心跳不算）的任务跳过；每 10 秒无论如何全量处理一次，卡死检测等照常发生。
 """
+
 from types import SimpleNamespace
 
 from agent_orchestrator.contracts import MissionStatus
@@ -53,7 +54,10 @@ def test_missions_are_skipped_until_something_happens_or_the_recheck():
     assert orch._missions_due([a, b], orch._event_cursor()) == {"a", "b"}
     orch._mark_quiet({"a", "b"}, orch._event_cursor())
     clock.now += MISSION_RECHECK_SECONDS
-    assert orch._missions_due([a, b], orch._event_cursor()) == {"a", "b"}  # 到点全量一次（卡死检测、租约到期）
+    assert orch._missions_due([a, b], orch._event_cursor()) == {
+        "a",
+        "b",
+    }  # 到点全量一次（卡死检测、租约到期）
 
 
 def test_a_new_mission_is_always_processed():

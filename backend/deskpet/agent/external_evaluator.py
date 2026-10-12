@@ -13,6 +13,7 @@
   - **防漂移**：evaluator 用不同 system persona，抵消单 agent 自我强化偏置。
   - **每 goal 最多 1 次**：由 agent_loop 调用方保证（FinalEvent 前仅调一次）。
 """
+
 from __future__ import annotations
 
 import json
@@ -29,49 +30,81 @@ logger = logging.getLogger("deskpet.agent.external_evaluator")
 # ──────────────────────────────────────────────────────────────────────────────
 
 #: 目标文字中出现任一词 → high consequence
-_HIGH_CONSEQUENCE_KEYWORDS: frozenset[str] = frozenset({
-    # 财务 / 支付
-    "支付", "付款", "购买", "买", "转账", "充值",
-    # 不可逆删改
-    "删除", "清空", "格式化", "销毁", "清除", "覆盖",
-    # 发送 / 外发
-    "发送", "发邮件", "发微信", "发短信", "推送",
-    # 系统设置
-    "系统设置", "设置密码", "修改密码", "重置", "卸载",
-    # 英文变体
-    "pay", "payment", "delete", "send", "purchase", "buy",
-    "format", "destroy", "wipe", "reset",
-})
+_HIGH_CONSEQUENCE_KEYWORDS: frozenset[str] = frozenset(
+    {
+        # 财务 / 支付
+        "支付",
+        "付款",
+        "购买",
+        "买",
+        "转账",
+        "充值",
+        # 不可逆删改
+        "删除",
+        "清空",
+        "格式化",
+        "销毁",
+        "清除",
+        "覆盖",
+        # 发送 / 外发
+        "发送",
+        "发邮件",
+        "发微信",
+        "发短信",
+        "推送",
+        # 系统设置
+        "系统设置",
+        "设置密码",
+        "修改密码",
+        "重置",
+        "卸载",
+        # 英文变体
+        "pay",
+        "payment",
+        "delete",
+        "send",
+        "purchase",
+        "buy",
+        "format",
+        "destroy",
+        "wipe",
+        "reset",
+    }
+)
 
 #: 工具名中出现任一 → high consequence（写盘 / 产物 / 外发类）
-_HIGH_CONSEQUENCE_TOOLS: frozenset[str] = frozenset({
-    "file_write",
-    "patch",
-    "ppt_create",
-    "excel_create",
-    "doc_create",
-    "pdf_export",
-    "send_email",
-    "send_message",
-    "execute_shell",
-    "run_code",
-    "delete_file",
-    "write_file",
-    "save_file",
-    "create_file",
-})
+_HIGH_CONSEQUENCE_TOOLS: frozenset[str] = frozenset(
+    {
+        "file_write",
+        "patch",
+        "ppt_create",
+        "excel_create",
+        "doc_create",
+        "pdf_export",
+        "send_email",
+        "send_message",
+        "execute_shell",
+        "run_code",
+        "delete_file",
+        "write_file",
+        "save_file",
+        "create_file",
+    }
+)
 
 #: 「纯只读」工具名集合 — 这些不构成高后果触发（即使 ≥5 条需另判）
-_READ_ONLY_TOOLS: frozenset[str] = frozenset({
-    "web_search",
-    "search",
-    "read",
-    "retrieve",
-    "read_file",
-    "fetch_url",
-    "list_files",
-    "get",
-})
+_READ_ONLY_TOOLS: frozenset[str] = frozenset(
+    {
+        "web_search",
+        "search",
+        "read",
+        "retrieve",
+        "read_file",
+        "fetch_url",
+        "list_files",
+        "get",
+    }
+)
 
 #: ≥5 工具调用视为「高投入」，对齐 hermes 阈值
 _HIGH_TOOL_CALL_THRESHOLD: int = 5
@@ -83,6 +116,7 @@ _LOW_CONFIDENCE_THRESHOLD: float = 0.3
 # ──────────────────────────────────────────────────────────────────────────────
 # is_high_consequence_goal
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def is_high_consequence_goal(
     goal_text: str,
@@ -124,8 +158,7 @@ def is_high_consequence_goal(
     # ③ ≥5 工具调用（高投入）— 只计 non-read-only 也算，保守取总数
     if len(ledger) >= _HIGH_TOOL_CALL_THRESHOLD:
         # BUT: if ALL tools are pure read-only → not high consequence (cost guard)
-        non_read = [r for r in ledger
-                    if getattr(r, "tool_name", "") not in _READ_ONLY_TOOLS]
+        non_read = [r for r in ledger if getattr(r, "tool_name", "") not in _READ_ONLY_TOOLS]
         if non_read:
             logger.debug("hc: ≥5 tool calls with non-read tools (%d non-read)", len(non_read))
             return True
@@ -189,6 +222,7 @@ _EVALUATOR_USER_TEMPLATE = """\
 # ──────────────────────────────────────────────────────────────────────────────
 # ExternalEvaluator
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 class ExternalEvaluator:
     """外部 / 多 persona 交叉验证器（仅高后果目标触发）。
@@ -278,7 +312,9 @@ class ExternalEvaluator:
             logger.warning("external_evaluator LLM call failed: %s", exc)
             if self._conservative_on_error:
                 # R-T3 §15.4: 高后果目标超时/失败 → 保守拦 + 提示手动确认
-                logger.warning("external_evaluator conservative block — manual confirmation required")
+                logger.warning(
+                    "external_evaluator conservative block — manual confirmation required"
+                )
                 self._record_metric("evaluator_skipped", {"reason": "llm_error_conservative"})
                 self._record_metric("evaluator_conservative_block", {"reason": "llm_error"})
                 return {
@@ -302,19 +338,25 @@ class ExternalEvaluator:
             logger.info(
                 "evaluator: verdict=revise but quality_score=%d >= threshold=%d "
                 "→ upgrading to pass",
-                result["quality_score"], self._pass_threshold,
+                result["quality_score"],
+                self._pass_threshold,
             )
             result = dict(result)
             result["verdict"] = "pass"
 
         logger.info(
             "external_evaluator verdict=%s quality_score=%d issues=%d",
-            result["verdict"], result["quality_score"], len(result.get("issues", [])),
+            result["verdict"],
+            result["quality_score"],
+            len(result.get("issues", [])),
         )
-        self._record_metric("evaluator_completed", {
-            "verdict": result["verdict"],
-            "quality_score": result["quality_score"],
-        })
+        self._record_metric(
+            "evaluator_completed",
+            {
+                "verdict": result["verdict"],
+                "quality_score": result["quality_score"],
+            },
+        )
         return result
 
     def _build_prompt(
@@ -368,12 +410,8 @@ class ExternalEvaluator:
                 pass
 
         if self._conservative_on_error:
-            logger.warning(
-                "external_evaluator: failed to parse LLM output -> conservative revise"
-            )
-            self._record_metric(
-                "evaluator_conservative_block", {"reason": "malformed_json"}
-            )
+            logger.warning("external_evaluator: failed to parse LLM output -> conservative revise")
+            self._record_metric("evaluator_conservative_block", {"reason": "malformed_json"})
             return {
                 "quality_score": 0,
                 "issues": ["evaluator returned malformed output - manual confirmation required"],
@@ -403,6 +441,7 @@ class ExternalEvaluator:
         """Best-effort metric recording (same pattern as other WI modules)."""
         try:
             from observability.metrics_sink import record as _metric  # noqa: PLC0415
+
             _metric(event_type, payload)
         except Exception:  # noqa: BLE001 — metric 失败不阻
             pass

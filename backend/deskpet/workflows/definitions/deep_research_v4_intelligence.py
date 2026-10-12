@@ -19,13 +19,37 @@ from .deep_research_v4_contracts import (
 
 _AI_TERMS = ("ai", "人工智能", "大模型", "llm", "基础模型", "agent", "智能体", "多模态")
 _RECENT_TERMS = (
-    "最新", "近期", "前沿", "趋势", "突破", "价值", "值得关注",
-    "latest", "recent", "frontier", "trend", "breakthrough", "valuable",
+    "最新",
+    "近期",
+    "前沿",
+    "趋势",
+    "突破",
+    "价值",
+    "值得关注",
+    "latest",
+    "recent",
+    "frontier",
+    "trend",
+    "breakthrough",
+    "valuable",
 )
 _TECH_TERMS = (
-    "技术", "模型", "推理", "训练", "框架", "系统", "开源", "基础设施",
-    "technology", "model", "inference", "training", "framework", "system",
-    "open source", "infrastructure",
+    "技术",
+    "模型",
+    "推理",
+    "训练",
+    "框架",
+    "系统",
+    "开源",
+    "基础设施",
+    "technology",
+    "model",
+    "inference",
+    "training",
+    "framework",
+    "system",
+    "open source",
+    "infrastructure",
 )
 _OPTIONAL_DIMENSIONS = {
     "regulation": ("监管", "政策", "法律", "治理", "regulation", "policy", "law", "governance"),
@@ -99,12 +123,28 @@ def _is_unrequested_version_anchor(entity: str, user_topic: str) -> bool:
         or re.search(r"\b(?:version|release|specification|alpha|beta|rc)\b", entity, re.I)
     )
 
+
 _PRIMARY_DOMAINS = frozenset(
     {
-        "arxiv.org", "openreview.net", "github.com", "openai.com", "anthropic.com",
-        "deepmind.google", "ai.google.dev", "microsoft.com", "nvidia.com", "meta.com",
-        "huggingface.co", "caict.ac.cn", "baidu.com", "deepseek.com", "x.ai",
-        "mistral.ai", "cohere.com", "pytorch.org", "tensorflow.org",
+        "arxiv.org",
+        "openreview.net",
+        "github.com",
+        "openai.com",
+        "anthropic.com",
+        "deepmind.google",
+        "ai.google.dev",
+        "microsoft.com",
+        "nvidia.com",
+        "meta.com",
+        "huggingface.co",
+        "caict.ac.cn",
+        "baidu.com",
+        "deepseek.com",
+        "x.ai",
+        "mistral.ai",
+        "cohere.com",
+        "pytorch.org",
+        "tensorflow.org",
     }
 )
 _QUANT_RE = re.compile(r"\d+(?:\.\d+)?\s*(?:%|x|ms|s|tokens?|k|m|b|gb|tb)\b", re.I)
@@ -112,7 +152,9 @@ _QUANT_CONTEXT_RE = re.compile(
     r"benchmark|accuracy|score|cost|latency|throughput|context|参数|准确率|得分|成本|延迟|吞吐|上下文",
     re.I,
 )
-_ADOPTED_RE = re.compile(r"\bga\b|generally available|stable|production|正式发布|稳定版|生产可用", re.I)
+_ADOPTED_RE = re.compile(
+    r"\bga\b|generally available|stable|production|正式发布|稳定版|生产可用", re.I
+)
 _EMERGING_RE = re.compile(r"\bbeta\b|preview|released|release|公测|预览|发布", re.I)
 _EXPERIMENTAL_RE = re.compile(r"preprint|prototype|research preview|实验|原型|预印本", re.I)
 _CAPABILITY_RE = re.compile(r"support(?:s|ed)?|enable(?:s|d)?|interop|新增|支持|互操作", re.I)
@@ -142,20 +184,51 @@ _EVENT_ONLY_RE = re.compile(
     re.I,
 )
 _TOPIC_KEYWORDS = {
-    "model_inference": re.compile(r"\bllm\b|\binference\b|foundation model|transformer|model inference|大模型|基础模型|模型推理", re.I),
+    "model_inference": re.compile(
+        r"\bllm\b|\binference\b|foundation model|transformer|model inference|大模型|基础模型|模型推理",
+        re.I,
+    ),
     "agent": re.compile(r"\bagents?\b|tool use|tool calling|\bmcp\b|智能体|工具调用", re.I),
-    "multimodal": re.compile(r"multimodal|vision|image|video|audio|speech|多模态|视觉|图像|视频|音频|语音", re.I),
-    "training_inference_system": re.compile(r"training|inference system|serving|runtime|gpu|cpu|cuda|latency|throughput|activation[- ]offload|训练|推理系统|服务框架|运行时|延迟|吞吐|激活卸载", re.I),
-    "open_infrastructure": re.compile(r"open[ -]?source|framework|runtime|library|repository|github|hugging ?face|开源|框架|运行时|代码库", re.I),
+    "multimodal": re.compile(
+        r"multimodal|vision|image|video|audio|speech|多模态|视觉|图像|视频|音频|语音", re.I
+    ),
+    "training_inference_system": re.compile(
+        r"training|inference system|serving|runtime|gpu|cpu|cuda|latency|throughput|activation[- ]offload|训练|推理系统|服务框架|运行时|延迟|吞吐|激活卸载",
+        re.I,
+    ),
+    "open_infrastructure": re.compile(
+        r"open[ -]?source|framework|runtime|library|repository|github|hugging ?face|开源|框架|运行时|代码库",
+        re.I,
+    ),
 }
 _ENTITY_PHRASE_RE = re.compile(
     r"\b(?:[A-Z][A-Za-z0-9]*(?:[-_.][A-Za-z0-9]+)*)(?:\s+[A-Z][A-Za-z0-9]*(?:[-_.][A-Za-z0-9]+)*){0,2}\b"
 )
 _ACRONYM_RE = re.compile(r"\b[A-Z][A-Z0-9-]{1,9}\b")
-_GENERIC_ENTITY_WORDS = frozenset({
-    "a", "an", "the", "this", "that", "ai", "llm", "agent", "agents", "model", "models",
-    "system", "framework", "governance", "api", "gpu", "top", "new", "official", "research",
-})
+_GENERIC_ENTITY_WORDS = frozenset(
+    {
+        "a",
+        "an",
+        "the",
+        "this",
+        "that",
+        "ai",
+        "llm",
+        "agent",
+        "agents",
+        "model",
+        "models",
+        "system",
+        "framework",
+        "governance",
+        "api",
+        "gpu",
+        "top",
+        "new",
+        "official",
+        "research",
+    }
+)
 _VENDOR_PREFIX_RE = re.compile(
     r"^(?:openai|google|google deepmind|deepmind|microsoft|meta|anthropic|nvidia|"
     r"alibaba|aliyun|tencent|baidu|amazon|aws|hugging face|huggingface)\s+",
@@ -202,12 +275,32 @@ _VENDOR_PRODUCT_RE = re.compile(
     re.I,
 )
 _ENTITY_ACTION_RE = re.compile(r"发布|新增|降低|提升|支持|能力|延迟|吞吐|正式", re.I)
-_GENERIC_FINDING_ENTITY_KEYS = frozenset({
-    "aitraining", "aiinference", "bestaiagents", "theopensourceengine", "ces",
-    "apple", "google", "microsoft", "meta", "nvidia", "openai", "anthropic", "pdf",
-    "uu", "generalpurposeassistants", "multimodalfoundation", "towards", "ondevice", "patch",
-    "contextwindow", "plus", "vla",
-})
+_GENERIC_FINDING_ENTITY_KEYS = frozenset(
+    {
+        "aitraining",
+        "aiinference",
+        "bestaiagents",
+        "theopensourceengine",
+        "ces",
+        "apple",
+        "google",
+        "microsoft",
+        "meta",
+        "nvidia",
+        "openai",
+        "anthropic",
+        "pdf",
+        "uu",
+        "generalpurposeassistants",
+        "multimodalfoundation",
+        "towards",
+        "ondevice",
+        "patch",
+        "contextwindow",
+        "plus",
+        "vla",
+    }
+)
 _NON_CHANGE_STATEMENT_RE = re.compile(
     r"\b(?:are central to|often require|builds a model by|big money has flowed|"
     r"emphasis is shifting|cost difference|best ai agents|ranks?\s+#?\d+|leaderboard|"
@@ -316,8 +409,18 @@ _MONTH_NUMBER = {
     name.casefold(): index
     for index, name in enumerate(
         (
-            "January", "February", "March", "April", "May", "June",
-            "July", "August", "September", "October", "November", "December",
+            "January",
+            "February",
+            "March",
+            "April",
+            "May",
+            "June",
+            "July",
+            "August",
+            "September",
+            "October",
+            "November",
+            "December",
         ),
         1,
     )
@@ -386,8 +489,7 @@ def _leading_subject_entity(statement: str) -> str | None:
         candidate = " ".join(mixed_subject.group(1).split()).strip(" .,:;()[]")
         if (
             re.search(r"[\u3400-\u9fff]", candidate)
-            and
-            normalize_entity_key(candidate)
+            and normalize_entity_key(candidate)
             and not _is_generic_technology_entity(candidate)
             and not _ENTITY_ACTION_RE.search(candidate)
         ):
@@ -496,7 +598,15 @@ def _time_window(topic: str, as_of: date) -> tuple[date, date]:
     if duration_match:
         amount = int(duration_match.group(1) or duration_match.group(3))
         unit = (duration_match.group(2) or duration_match.group(4)).casefold()
-        factor = 1 if unit in {"天", "day", "days"} else 7 if unit in {"周", "week", "weeks"} else 30 if unit in {"个月", "month", "months"} else 365
+        factor = (
+            1
+            if unit in {"天", "day", "days"}
+            else 7
+            if unit in {"周", "week", "weeks"}
+            else 30
+            if unit in {"个月", "month", "months"}
+            else 365
+        )
         days = amount * factor
         return (as_of - timedelta(days=days), as_of) if 1 <= days <= 3650 else fallback
     return fallback
@@ -505,7 +615,11 @@ def _time_window(topic: str, as_of: date) -> tuple[date, date]:
 def classify_intent(topic: str, *, as_of_date: date | None = None) -> IntentProfile:
     as_of = as_of_date or datetime.now(UTC).date()
     technology = all(
-        (_contains(topic, _AI_TERMS), _contains(topic, _RECENT_TERMS), _contains(topic, _TECH_TERMS))
+        (
+            _contains(topic, _AI_TERMS),
+            _contains(topic, _RECENT_TERMS),
+            _contains(topic, _TECH_TERMS),
+        )
     )
     start, end = _time_window(topic, as_of)
     dimensions = tuple(
@@ -523,16 +637,31 @@ def classify_intent(topic: str, *, as_of_date: date | None = None) -> IntentProf
 def source_seeds(topic_kind: str) -> tuple[SourceSeed, ...]:
     seeds = (
         SourceSeed(
-            f"{topic_kind}:official", topic_kind, "gateway", "official",
-            "{entity} official release docs blog", (), None,
+            f"{topic_kind}:official",
+            topic_kind,
+            "gateway",
+            "official",
+            "{entity} official release docs blog",
+            (),
+            None,
         ),
         SourceSeed(
-            f"{topic_kind}:repository", topic_kind, "gateway", "repository",
-            "{entity} site:github.com", ("github.com",), None,
+            f"{topic_kind}:repository",
+            topic_kind,
+            "gateway",
+            "repository",
+            "{entity} site:github.com",
+            ("github.com",),
+            None,
         ),
         SourceSeed(
-            f"{topic_kind}:scholarly", topic_kind, "direct", "scholarly",
-            "{entity}", ("arxiv.org",), "arxiv",
+            f"{topic_kind}:scholarly",
+            topic_kind,
+            "direct",
+            "scholarly",
+            "{entity}",
+            ("arxiv.org",),
+            "arxiv",
         ),
     )
     return tuple(sorted(seeds, key=lambda value: value.seed_id))
@@ -592,12 +721,8 @@ def plan_technology_topics(
                 label=label,
                 entity=entity,
                 topic_kind=kind,
-                discovery_query=(
-                    f"{entity} latest release benchmark {profile.window_end[:4]}"
-                ),
-                official_query=(
-                    f"{entity} official release changelog {profile.window_end[:4]}"
-                ),
+                discovery_query=(f"{entity} latest release benchmark {profile.window_end[:4]}"),
+                official_query=(f"{entity} official release changelog {profile.window_end[:4]}"),
                 scholarly_query=entity,
                 source_seeds=source_seeds(kind),
             )
@@ -628,7 +753,17 @@ def recency_score(published_at: str, *, as_of_date: date) -> float:
     if published is None or published > as_of_date:
         return 0.0
     age = (as_of_date - published).days
-    return 1.0 if age <= 30 else 0.8 if age <= 90 else 0.6 if age <= 180 else 0.3 if age <= 365 else 0.0
+    return (
+        1.0
+        if age <= 30
+        else 0.8
+        if age <= 90
+        else 0.6
+        if age <= 180
+        else 0.3
+        if age <= 365
+        else 0.0
+    )
 
 
 def _has_quantified_change(text: str) -> bool:
@@ -657,41 +792,56 @@ def score_supported_finding(
     }
     text = "\n".join(str(item.get("text") or "") for item in winning_passages)
     passage_dates = [
-        recency_score(str(item.get("published_at") or item.get("date") or ""), as_of_date=as_of_date)
+        recency_score(
+            str(item.get("published_at") or item.get("date") or ""), as_of_date=as_of_date
+        )
         for item in winning_passages
     ]
     statement_dates = _supported_statement_dates(statement, as_of_date=as_of_date)
-    dates = [*passage_dates, *(recency_score(value.isoformat(), as_of_date=as_of_date) for value in statement_dates)]
+    dates = [
+        *passage_dates,
+        *(recency_score(value.isoformat(), as_of_date=as_of_date) for value in statement_dates),
+    ]
     recency = max(dates, default=0.0)
     quantified = _has_quantified_change(text)
     impact = (
-        3 if quantified and len(hosts) >= 2
-        else 2 if quantified
-        else 1 if (_CAPABILITY_RE.search(text) or _CHANGE_RE.search(text))
+        3
+        if quantified and len(hosts) >= 2
+        else 2
+        if quantified
+        else 1
+        if (_CAPABILITY_RE.search(text) or _CHANGE_RE.search(text))
         else 0
     )
     has_primary = any(
         is_primary_source(str(item.get("canonical_url") or item.get("url") or ""))
         for item in winning_passages
     )
-    evidence_quality = 3 if has_primary and len(hosts) >= 2 else 2 if has_primary else 1 if hosts else 0
+    evidence_quality = (
+        3 if has_primary and len(hosts) >= 2 else 2 if has_primary else 1 if hosts else 0
+    )
     primary_texts = "\n".join(
         str(item.get("text") or "")
         for item in winning_passages
         if is_primary_source(str(item.get("canonical_url") or item.get("url") or ""))
     )
     research_hosts = {
-        host for host in hosts
-        if host == "arxiv.org" or host.endswith(".arxiv.org")
-        or host == "openreview.net" or host == "papers.cool"
+        host
+        for host in hosts
+        if host == "arxiv.org"
+        or host.endswith(".arxiv.org")
+        or host == "openreview.net"
+        or host == "papers.cool"
     }
-    repository_hosts = {
-        host for host in hosts
-        if host == "github.com" or host == "huggingface.co"
-    }
+    repository_hosts = {host for host in hosts if host == "github.com" or host == "huggingface.co"}
     if _ADOPTED_RE.search(primary_texts):
         maturity, maturity_value = "adopted", 3
-    elif _EMERGING_RE.search(primary_texts) or repository_hosts or (has_primary and not research_hosts) or len(hosts) >= 2:
+    elif (
+        _EMERGING_RE.search(primary_texts)
+        or repository_hosts
+        or (has_primary and not research_hosts)
+        or len(hosts) >= 2
+    ):
         maturity, maturity_value = "emerging", 2
     elif _EXPERIMENTAL_RE.search(text) or research_hosts:
         maturity, maturity_value = "experimental", 1
@@ -708,7 +858,8 @@ def score_supported_finding(
         {
             parsed.isoformat()
             for item in winning_passages
-            if (parsed := _parse_iso(str(item.get("published_at") or item.get("date") or ""))) is not None
+            if (parsed := _parse_iso(str(item.get("published_at") or item.get("date") or "")))
+            is not None
             and parsed <= as_of_date
         }
         | {value.isoformat() for value in statement_dates},
@@ -725,7 +876,9 @@ def score_supported_finding(
         impact_score=impact,
         maturity=maturity,  # type: ignore[arg-type]
         evidence_quality=evidence_quality,
-        winning_citation_ids=tuple(sorted({int(value) for value in winning_citation_ids if int(value) > 0})),
+        winning_citation_ids=tuple(
+            sorted({int(value) for value in winning_citation_ids if int(value) > 0})
+        ),
         total_score=total,
         statement=statement,
         localized_statement=None,
@@ -763,8 +916,7 @@ def _entity_name(
         if behavior_tree:
             return behavior_tree.group(1)
     source_urls = "\n".join(
-        str(item.get("canonical_url") or item.get("url") or "")
-        for item in passages
+        str(item.get("canonical_url") or item.get("url") or "") for item in passages
     ).casefold()
     if "torchcomms" in searchable.casefold() and "communications backend" in searchable.casefold():
         return "torchcomms"
@@ -867,13 +1019,7 @@ def _is_taxonomy_relevant(
                 or (matcher and matcher.search(text) and _CHANGE_RE.search(text))
             )
         matcher = _TOPIC_KEYWORDS.get(topic.topic_kind)
-        return bool(
-            matcher
-            and (
-                matcher.search(text)
-                or _TECHNICAL_DETAIL_RE.search(text)
-            )
-        )
+        return bool(matcher and (matcher.search(text) or _TECHNICAL_DETAIL_RE.search(text)))
     return any(matcher.search(text) for matcher in _TOPIC_KEYWORDS.values())
 
 
@@ -930,10 +1076,7 @@ def build_ranked_findings(
             or (_RELEASE_DATE_ONLY_RE.search(statement) and not official_release_context)
             or (
                 _PRICING_ONLY_RE.search(statement)
-                and not (
-                    _CHANGE_RE.search(statement)
-                    and _QUANT_CONTEXT_RE.search(statement)
-                )
+                and not (_CHANGE_RE.search(statement) and _QUANT_CONTEXT_RE.search(statement))
             )
             or _OPEN_SOURCE_NEWS_BOILERPLATE_RE.search(statement)
             or _CHALLENGE_ONLY_RE.search(statement)
@@ -964,7 +1107,11 @@ def build_ranked_findings(
             group["statements"].append(statement)
         group["citations"].update(winning_ids)
         for passage in winning:
-            passage_key = str(passage.get("passage_id") or passage.get("canonical_url") or repr(sorted(passage.items())))
+            passage_key = str(
+                passage.get("passage_id")
+                or passage.get("canonical_url")
+                or repr(sorted(passage.items()))
+            )
             group["passages"].setdefault(passage_key, passage)
 
     findings: list[TechnologyFinding] = []
@@ -1037,7 +1184,10 @@ def finding_set_failure_codes(
         codes.append("technology_scores_indistinguishable")
     if selected and all(finding.recency_score == 0.0 for finding in selected):
         codes.append("technology_recency_unresolved")
-    if selected and sum(finding.recency_score > 0.0 for finding in selected) * 5 < len(selected) * 3:
+    if (
+        selected
+        and sum(finding.recency_score > 0.0 for finding in selected) * 5 < len(selected) * 3
+    ):
         codes.append("technology_recent_coverage_insufficient")
     if selected and all(finding.maturity == "unknown" for finding in selected):
         codes.append("technology_maturity_unresolved")
@@ -1051,10 +1201,7 @@ def finding_set_failure_codes(
         "可核验变化",
     )
     generic_localized = sum(
-        any(
-            marker in str(finding.localized_statement or "")
-            for marker in generic_markers
-        )
+        any(marker in str(finding.localized_statement or "") for marker in generic_markers)
         for finding in selected
     )
     if selected and generic_localized:
@@ -1063,9 +1210,16 @@ def finding_set_failure_codes(
 
 
 __all__ = [
-    "build_ranked_findings", "canonical_host", "classify_intent", "finding_set_failure_codes",
+    "build_ranked_findings",
+    "canonical_host",
+    "classify_intent",
+    "finding_set_failure_codes",
     "is_primary_source",
-    "is_navigation_or_product_boilerplate", "plan_technology_topics", "recency_score",
-    "normalize_entity_key", "score_supported_finding", "source_seeds",
+    "is_navigation_or_product_boilerplate",
+    "plan_technology_topics",
+    "recency_score",
+    "normalize_entity_key",
+    "score_supported_finding",
+    "source_seeds",
     "supported_statement_dates",
 ]

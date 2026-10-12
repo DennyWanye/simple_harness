@@ -41,9 +41,7 @@ def configure_project_group_transport(
         _transport = transport
 
 
-def _resource_scope(
-    args: Mapping[str, Any], _context: Any
-) -> tuple[ResourceSelector, ...]:
+def _resource_scope(args: Mapping[str, Any], _context: Any) -> tuple[ResourceSelector, ...]:
     if args.get("target_scope") != "all_project_groups":
         return ()
     return (
@@ -156,9 +154,14 @@ _SCHEMA = {
 
 def register_static_tools(registry) -> None:
     registry.register(
-        "project_group_send", "external_action", _SCHEMA,
-        _handle_project_group_send, permission_category="external_action",
-        source="builtin", dangerous=True, concurrency_safe=False,
+        "project_group_send",
+        "external_action",
+        _SCHEMA,
+        _handle_project_group_send,
+        permission_category="external_action",
+        source="builtin",
+        dangerous=True,
+        concurrency_safe=False,
         resource_scope_resolver=_resource_scope,
         resource_scope_resolver_id="builtin:project_group_send:all_project_groups",
         resource_scope_resolver_version="v1",

@@ -15,6 +15,7 @@
   - 降级信号 goal_check=skipped 用于区分"真完成"和"checker 失败放行"
   - goal_check=skipped → 调用方 treat as "非正向确认"，不触发 mark_done
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -26,6 +27,7 @@ import pytest
 
 class _RecordingMetricsSink:
     """本地记录 metrics 调用的 stub（替代全局 observability.metrics_sink）。"""
+
     def __init__(self):
         self.events: list[tuple[str, dict]] = []
 
@@ -37,19 +39,23 @@ class _RecordingMetricsSink:
 def _make_llm(response: str):
     async def _call(prompt: str) -> str:
         return response
+
     return _call
 
 
 def _make_failing_llm(exc: Exception):
     async def _call(prompt: str) -> str:
         raise exc
+
     return _call
 
 
 def _make_timeout_llm():
     """LLM that raises asyncio.TimeoutError to simulate timeout."""
+
     async def _call(prompt: str) -> str:
         raise TimeoutError("LLM timeout")
+
     return _call
 
 
@@ -57,10 +63,12 @@ def _make_timeout_llm():
 # T-D1: GoalChecker timeout → (False, "goal_check=skipped") — NOT (True, ...)
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_goal_checker_timeout_returns_skipped_not_done():
     """R-T3 key assertion: timeout MUST return done=False (not default-PASS)."""
     from deskpet.agent.goal_checker import GoalChecker
+
     checker = GoalChecker(_make_timeout_llm())
     done, hint = await checker.check("write a report", [])
     # CRITICAL: must NOT be done=True (that would be dangerous default-pass)
@@ -75,6 +83,7 @@ async def test_goal_checker_timeout_returns_skipped_not_done():
 async def test_goal_checker_llm_exception_returns_skipped():
     """R-T3: any LLM exception → skipped signal, not default done."""
     from deskpet.agent.goal_checker import GoalChecker
+
     checker = GoalChecker(_make_failing_llm(RuntimeError("connection refused")))
     done, hint = await checker.check("任意目标", [])
     assert done is False
@@ -85,6 +94,7 @@ async def test_goal_checker_llm_exception_returns_skipped():
 async def test_goal_checker_malformed_json_returns_skipped():
     """R-T3: LLM returns garbage JSON → skipped, not done=True."""
     from deskpet.agent.goal_checker import GoalChecker
+
     checker = GoalChecker(_make_llm("this is not json at all!!!"))
     done, hint = await checker.check("send email", [])
     assert done is False
@@ -95,8 +105,10 @@ async def test_goal_checker_malformed_json_returns_skipped():
 async def test_goal_checker_non_string_response_returns_skipped():
     """R-T3: non-str LLM response → skipped."""
     from deskpet.agent.goal_checker import GoalChecker
+
     async def _bad_llm(p: str):
         return 999  # type: ignore[return-value]
+
     checker = GoalChecker(_bad_llm)
     done, hint = await checker.check("目标", [])
     assert done is False
@@ -107,6 +119,7 @@ async def test_goal_checker_non_string_response_returns_skipped():
 async def test_goal_checker_missing_done_field_returns_skipped():
     """R-T3: JSON with no 'done' field → skipped."""
     from deskpet.agent.goal_checker import GoalChecker
+
     checker = GoalChecker(_make_llm('{"hint": "missing done field"}'))
     done, hint = await checker.check("目标", [])
     assert done is False
@@ -117,6 +130,7 @@ async def test_goal_checker_missing_done_field_returns_skipped():
 async def test_goal_checker_normal_done_true_unaffected():
     """BC: normal success path (done=true) still returns (True, '')."""
     from deskpet.agent.goal_checker import GoalChecker
+
     checker = GoalChecker(_make_llm('{"done": true, "hint": ""}'))
     done, hint = await checker.check("write hello", [])
     assert done is True
@@ -127,6 +141,7 @@ async def test_goal_checker_normal_done_true_unaffected():
 async def test_goal_checker_normal_done_false_unaffected():
     """BC: normal not-done path still returns (False, hint text)."""
     from deskpet.agent.goal_checker import GoalChecker
+
     checker = GoalChecker(_make_llm('{"done": false, "hint": "缺少测试"}'))
     done, hint = await checker.check("make tests pass", [])
     assert done is False
@@ -137,13 +152,16 @@ async def test_goal_checker_normal_done_false_unaffected():
 async def test_goal_checker_skipped_emits_metric(monkeypatch):
     """R-T3: degradation fact emitted to metrics on skipped."""
     from deskpet.agent import goal_checker as _gc_module
+
     sink = _RecordingMetricsSink()
 
     # Patch metrics_sink.record inside goal_checker module
     import observability.metrics_sink as _ms
+
     monkeypatch.setattr(_ms, "record", sink.record)
 
     from deskpet.agent.goal_checker import GoalChecker
+
     checker = GoalChecker(_make_timeout_llm())
     done, hint = await checker.check("目标", [])
 
@@ -158,9 +176,11 @@ async def test_goal_checker_skipped_emits_metric(monkeypatch):
 # T-D2: Reflection parse failure → None + metric reflection_parse_failed
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def test_reflection_parse_failure_returns_none():
     """R-T3 2.1: malformed JSON → parse_reflection returns None (mechanical nudge)."""
     from deskpet.agent.reflection import parse_reflection
+
     result = parse_reflection("absolutely no json here")
     assert result is None
 
@@ -168,6 +188,7 @@ def test_reflection_parse_failure_returns_none():
 def test_reflection_parse_empty_string_returns_none():
     """R-T3: empty string → None."""
     from deskpet.agent.reflection import parse_reflection
+
     result = parse_reflection("")
     assert result is None
 
@@ -177,13 +198,16 @@ def test_reflection_parse_valid_json_still_works():
     import json
 
     from deskpet.agent.reflection import parse_reflection
-    raw = json.dumps({
-        "error_analysis": "missed tool call",
-        "execution_critique": "took shortcut",
-        "task_replanning": "call ppt_create properly",
-        "next_action": "ppt_create({...})",
-        "confidence": 0.7,
-    })
+
+    raw = json.dumps(
+        {
+            "error_analysis": "missed tool call",
+            "execution_critique": "took shortcut",
+            "task_replanning": "call ppt_create properly",
+            "next_action": "ppt_create({...})",
+            "confidence": 0.7,
+        }
+    )
     result = parse_reflection(raw)
     assert result is not None
     assert result.confidence == pytest.approx(0.7)
@@ -193,10 +217,12 @@ def test_reflection_parse_valid_json_still_works():
 def test_reflection_parse_failure_emits_metric(monkeypatch):
     """R-T3: parse failure emits reflection_parse_failed metric."""
     import observability.metrics_sink as _ms
+
     sink = _RecordingMetricsSink()
     monkeypatch.setattr(_ms, "record", sink.record)
 
     from deskpet.agent.reflection import parse_reflection
+
     result = parse_reflection("not json not json not json")
     assert result is None
 
@@ -207,10 +233,12 @@ def test_reflection_parse_failure_emits_metric(monkeypatch):
 def test_reflection_parse_truncated_json_emits_metric(monkeypatch):
     """R-T3: truncated JSON (valid object key but not extractable) → metric."""
     import observability.metrics_sink as _ms
+
     sink = _RecordingMetricsSink()
     monkeypatch.setattr(_ms, "record", sink.record)
 
     from deskpet.agent.reflection import parse_reflection
+
     # Provide something that has curly brace but is truncated / invalid
     result = parse_reflection("{broken json here <<<")
     assert result is None
@@ -222,6 +250,7 @@ def test_reflection_parse_truncated_json_emits_metric(monkeypatch):
 # ─────────────────────────────────────────────────────────────────────────────
 # T-D3: ExternalEvaluator timeout → conservative block + metric
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_evaluator_timeout_conservative_mode_returns_revise():
@@ -241,10 +270,10 @@ async def test_evaluator_timeout_conservative_mode_returns_revise():
     assert result["verdict"] == "revise", (
         "High-consequence evaluator timeout must block (revise), not pass-through"
     )
-    assert "evaluator_skipped" in result.get("reason", "").lower() or \
-           result.get("quality_score", 10) <= 5, (
-        "Should indicate skipped + conservative block"
-    )
+    assert (
+        "evaluator_skipped" in result.get("reason", "").lower()
+        or result.get("quality_score", 10) <= 5
+    ), "Should indicate skipped + conservative block"
 
 
 @pytest.mark.asyncio
@@ -317,6 +346,7 @@ async def test_evaluator_no_provider_non_conservative_passes():
 async def test_evaluator_conservative_emits_metric(monkeypatch):
     """R-T3: conservative block emits evaluator_skipped metric with conservative tag."""
     import observability.metrics_sink as _ms
+
     sink = _RecordingMetricsSink()
     monkeypatch.setattr(_ms, "record", sink.record)
 
@@ -336,8 +366,10 @@ async def test_evaluator_conservative_emits_metric(monkeypatch):
     assert len(events) >= 1
     # Check that reason contains conservative info
     last_detail = next((d for e, d in sink.events if e == "evaluator_skipped"), {})
-    assert "conservative" in last_detail.get("reason", "").lower() or \
-           last_detail.get("reason", "") != ""
+    assert (
+        "conservative" in last_detail.get("reason", "").lower()
+        or last_detail.get("reason", "") != ""
+    )
 
 
 @pytest.mark.asyncio
@@ -360,10 +392,12 @@ async def test_evaluator_no_crash_on_any_error():
 # T-D4: No crash guarantee for all paths
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_goal_checker_never_crashes_on_exception():
     """R-T3: GoalChecker never raises — always returns (bool, str)."""
     from deskpet.agent.goal_checker import GoalChecker
+
     for exc in [RuntimeError("boom"), TimeoutError(), ValueError("bad"), OSError("io")]:
         checker = GoalChecker(_make_failing_llm(exc))
         done, hint = await checker.check("目标", [])
@@ -374,6 +408,7 @@ async def test_goal_checker_never_crashes_on_exception():
 def test_reflection_never_crashes():
     """R-T3: parse_reflection never raises — returns None or StructuredReflection."""
     from deskpet.agent.reflection import parse_reflection
+
     for text in ["", "   ", "{{{", "null", "[]", "x" * 10000, '{"done": true}']:
         result = parse_reflection(text)
         assert result is None or hasattr(result, "confidence")
@@ -388,6 +423,7 @@ from datetime import UTC, datetime, timezone
 
 def _make_basic_receipt(**overrides):
     from deskpet.tools.receipt import make_receipt
+
     defaults = dict(
         tool_name="ppt_create",
         args={"title": "test"},
@@ -411,6 +447,7 @@ def test_receipt_shadow_fields_have_safe_defaults():
 def test_receipt_shadow_verdict_can_be_set():
     """R-T6: shadow_verdict can record 'would_block' or 'would_pass'."""
     from deskpet.tools.receipt import ToolReceipt
+
     r = _make_basic_receipt()
     r.shadow_verdict = "would_block"
     assert r.shadow_verdict == "would_block"
@@ -455,6 +492,7 @@ def test_receipt_to_dict_includes_shadow_fields():
 def test_receipt_from_dict_old_shape_still_valid():
     """BC: receipt dict WITHOUT shadow fields can still be loaded (ToolReceipt(**d))."""
     from deskpet.tools.receipt import ToolReceipt, make_receipt
+
     r = make_receipt(
         tool_name="test",
         args={},
@@ -478,6 +516,7 @@ def test_receipt_from_dict_old_shape_still_valid():
 def test_receipt_hmac_still_valid_with_shadow_fields():
     """R-T6 BC: HMAC sign/verify round-trip works even with shadow fields populated."""
     from deskpet.tools.receipt import hmac_sign, hmac_verify
+
     r = _make_basic_receipt()
     r.shadow_verdict = "would_block"
     r.verify_latency_ms = 200
@@ -491,6 +530,7 @@ def test_receipt_store_round_trip_with_shadow_fields(tmp_path):
     """R-T6: ReceiptStore append + load_session round-trips shadow fields."""
     from deskpet.tools.receipt import hmac_sign, make_receipt
     from deskpet.tools.receipt_store import ReceiptStore
+
     key = b"\x42" * 32
     store = ReceiptStore(tmp_path, key=key)
 
@@ -521,9 +561,11 @@ def test_receipt_store_round_trip_with_shadow_fields(tmp_path):
 # T-D6: metrics_sink has the new event names whitelisted
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def test_metrics_sink_accepts_goal_check_skipped():
     """R-T3/R-T6: goal_check_skipped event is whitelisted in metrics_sink."""
     from observability.metrics_sink import VALID_EVENTS
+
     assert "goal_check_skipped" in VALID_EVENTS, (
         "goal_check_skipped must be in VALID_EVENTS for degradation tracking"
     )
@@ -532,29 +574,34 @@ def test_metrics_sink_accepts_goal_check_skipped():
 def test_metrics_sink_accepts_reflection_parse_failed():
     """R-T3/R-T6: reflection_parse_failed event is whitelisted."""
     from observability.metrics_sink import VALID_EVENTS
+
     assert "reflection_parse_failed" in VALID_EVENTS
 
 
 def test_metrics_sink_accepts_evaluator_conservative_block():
     """R-T3/R-T6: evaluator_conservative_block event is whitelisted."""
     from observability.metrics_sink import VALID_EVENTS
+
     assert "evaluator_conservative_block" in VALID_EVENTS
 
 
 def test_metrics_sink_records_goal_check_skipped(tmp_path):
     """R-T3: MetricsSink.record() writes goal_check_skipped to disk."""
     from observability.metrics_sink import MetricsSink
+
     sink = MetricsSink(tmp_path / "metrics.jsonl")
     result = sink.record("goal_check_skipped", {"reason": "timeout"})
     assert result is True
     lines = (tmp_path / "metrics.jsonl").read_text().splitlines()
     import json
+
     assert any(json.loads(l)["event"] == "goal_check_skipped" for l in lines)
 
 
 def test_metrics_sink_records_reflection_parse_failed(tmp_path):
     """R-T3: MetricsSink.record() writes reflection_parse_failed to disk."""
     from observability.metrics_sink import MetricsSink
+
     sink = MetricsSink(tmp_path / "metrics.jsonl")
     result = sink.record("reflection_parse_failed", {"count": 1})
     assert result is True

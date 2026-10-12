@@ -167,30 +167,38 @@ async def test_retry_from_start_requires_exact_safe_payload_and_forwards_once():
 async def test_versioned_run_action_ipc_is_strict_and_forwards_once():
     service = FakeService()
     dispatcher = WorkflowIPCDispatcher(service)
-    response = await dispatcher.dispatch({
-        "type": "workflow.run.action",
-        "request_id": "action-1",
-        "payload": {
-            "run_id": "run-v5", "action_id": "generate_now",
-            "idempotency_key": "click-1", "expected_version": 7,
-            "action_payload": {"brief_checkpoint_ns": "", "brief_checkpoint_id": "brief-1"},
-        },
-    })
+    response = await dispatcher.dispatch(
+        {
+            "type": "workflow.run.action",
+            "request_id": "action-1",
+            "payload": {
+                "run_id": "run-v5",
+                "action_id": "generate_now",
+                "idempotency_key": "click-1",
+                "expected_version": 7,
+                "action_payload": {"brief_checkpoint_ns": "", "brief_checkpoint_id": "brief-1"},
+            },
+        }
+    )
     assert response["type"] == "workflow_run_action_response"
     assert response["payload"] == {
-        "run_id": "run-v5", "accepted": True, "action_id": "generate_now"
+        "run_id": "run-v5",
+        "accepted": True,
+        "action_id": "generate_now",
     }
     assert service.calls[-1][0] == "execute_run_action"
-    continued = await dispatcher.dispatch({
-        "type": "workflow_run_action",
-        "request_id": "action-continue",
-        "payload": {
-            "run_id": "run-v5",
-            "action_id": "continue_research",
-            "idempotency_key": "click-continue",
-            "expected_version": 7,
-        },
-    })
+    continued = await dispatcher.dispatch(
+        {
+            "type": "workflow_run_action",
+            "request_id": "action-continue",
+            "payload": {
+                "run_id": "run-v5",
+                "action_id": "continue_research",
+                "idempotency_key": "click-continue",
+                "expected_version": 7,
+            },
+        }
+    )
     assert continued["ok"] is True
     assert service.calls[-1] == (
         "execute_run_action",
@@ -202,13 +210,19 @@ async def test_versioned_run_action_ipc_is_strict_and_forwards_once():
             "payload": {},
         },
     )
-    rejected = await dispatcher.dispatch({
-        "type": "workflow_run_action", "request_id": "action-2",
-        "payload": {
-            "run_id": "run-v5", "action_id": "generate_now",
-            "idempotency_key": "click-2", "expected_version": 7, "secret": "no",
-        },
-    })
+    rejected = await dispatcher.dispatch(
+        {
+            "type": "workflow_run_action",
+            "request_id": "action-2",
+            "payload": {
+                "run_id": "run-v5",
+                "action_id": "generate_now",
+                "idempotency_key": "click-2",
+                "expected_version": 7,
+                "secret": "no",
+            },
+        }
+    )
     assert rejected["ok"] is False
     assert rejected["error"]["code"] == "invalid_payload"
 
@@ -387,9 +401,7 @@ async def test_request_id_payload_and_limit_validation_happen_before_service_cal
     service = FakeService()
     dispatcher = WorkflowIPCDispatcher(service)
 
-    missing_id = await dispatcher.dispatch(
-        {"type": "workflow_runs_list", "payload": {}}
-    )
+    missing_id = await dispatcher.dispatch({"type": "workflow_runs_list", "payload": {}})
     invalid_limit = await dispatcher.dispatch(
         {
             "type": "workflow_runs_list",

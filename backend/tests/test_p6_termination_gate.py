@@ -7,6 +7,7 @@ TDD-ordered per openspec/changes/p6-agent-loop-refactor/tasks.md Phase 1.
 Tests are grouped by sub-phase (1.1 skeleton, 1.2 hard caps, 1.3 per-tool
 counter, 1.4 state progression).
 """
+
 from __future__ import annotations
 
 import pytest
@@ -168,7 +169,7 @@ def test_per_tool_blocks_at_threshold() -> None:
     # Calls 1..4 — allows_tool must return True before each record
     for i in range(4):
         ok, _ = gate.allows_tool("write_file")
-        assert ok, f"call {i+1} should be allowed"
+        assert ok, f"call {i + 1} should be allowed"
         gate.record_tool_call("write_file")
     # 5th: allowed (consec=4 < 5), then we record, taking consec to 5.
     ok, _ = gate.allows_tool("write_file")
@@ -197,7 +198,7 @@ def test_per_tool_consecutive_args_aware_different_args_resets() -> None:
     gate = TerminationGate(GateConfig(per_tool_max_consecutive=3))
     for i in range(5):
         ok, _ = gate.allows_tool("read_file")
-        assert ok, f"different-path read {i+1} should be allowed"
+        assert ok, f"different-path read {i + 1} should be allowed"
         gate.record_tool_call("read_file", args={"path": f"/tmp/file{i}.txt"})
     # Counter must NEVER cross 1 — each call has unique args
     assert gate.state.per_tool_consecutive["read_file"] == 1

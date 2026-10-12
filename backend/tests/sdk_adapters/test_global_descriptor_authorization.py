@@ -30,9 +30,7 @@ def test_descriptor_catalog_preserves_unavailable_tools_without_executing_them()
         workspace_resolution_kind="projectless",
     )
     assert {item.name for item in projected} == {"tool_search", "write_file"}
-    assert {item["name"] for item in selected["descriptor_specs"]} == {
-        "tool_search", "write_file"
-    }
+    assert {item["name"] for item in selected["descriptor_specs"]} == {"tool_search", "write_file"}
     assert selected["tool_names"] == ["tool_search"]
     unavailable = next(item for item in projected if item.name == "write_file")
     assert unavailable.availability_reason == "workspace_unscoped"

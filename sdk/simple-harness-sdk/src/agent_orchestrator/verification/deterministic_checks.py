@@ -149,16 +149,25 @@ async def code_test(
 ) -> LayerResult:
     """Run every ``pytest:`` criterion (Task and Mission) in the verification copy."""
 
-    manifest = {path: sha256_file(verification_copy.resolve(path))
-                for path in verification_copy.list_files()}
+    manifest = {
+        path: sha256_file(verification_copy.resolve(path))
+        for path in verification_copy.list_files()
+    }
     artifact_hashes = {artifact.path: artifact.content_hash for artifact in artifacts}
-    bound = bool(result_id) and all(manifest.get(path) == value
-                                   for path, value in artifact_hashes.items())
-    scope = {"schema": "pytest-observation-v2", "mission_id": task.mission_id,
-             "task_id": task.id, "attempt_id": verification_copy.attempt_id,
-             "result_id": result_id, "artifact_hashes": artifact_hashes,
-             "workspace_hash": sha256_hex(manifest), "checker": "pytest",
-             "criteria": list(task.success_criteria)}
+    bound = bool(result_id) and all(
+        manifest.get(path) == value for path, value in artifact_hashes.items()
+    )
+    scope = {
+        "schema": "pytest-observation-v2",
+        "mission_id": task.mission_id,
+        "task_id": task.id,
+        "attempt_id": verification_copy.attempt_id,
+        "result_id": result_id,
+        "artifact_hashes": artifact_hashes,
+        "workspace_hash": sha256_hex(manifest),
+        "checker": "pytest",
+        "criteria": list(task.success_criteria),
+    }
     targets: list[str | None] = []
     # 2026-09-25 主流程优化条目 3: a bare ``pytest:`` criterion (no path) is still a
     # criterion *asking* for tests, so it is a requested whole-tree run and must
@@ -202,7 +211,11 @@ async def code_test(
             and not run.timed_out
             and (run.receipt is None or run.receipt.status == "ok")
         )
-        row: dict[str, Any] = {"target": target, **run.to_json(), "passed": run.passed or no_tests_collected}
+        row: dict[str, Any] = {
+            "target": target,
+            **run.to_json(),
+            "passed": run.passed or no_tests_collected,
+        }
         if no_tests_collected:
             row["no_tests_collected"] = True
         runs.append(row)
@@ -227,9 +240,11 @@ async def code_test(
     # Tests can modify their own workspace. Such a run never attests the original
     # source snapshot, even if pytest returned zero. Newly-created cache files do
     # not invalidate it; every original input must still have the same bytes.
-    unchanged = all(verification_copy.resolve(path).is_file()
-                    and sha256_file(verification_copy.resolve(path)) == digest
-                    for path, digest in manifest.items())
+    unchanged = all(
+        verification_copy.resolve(path).is_file()
+        and sha256_file(verification_copy.resolve(path)) == digest
+        for path, digest in manifest.items()
+    )
     detail: dict[str, Any] = {"runs": runs}
     if failed:
         detail["failure_nodes"] = _code_test_failure_nodes(runs)

@@ -48,41 +48,117 @@ def _quick(monkeypatch):
 
 def test_the_table_says_whose_fault_each_real_failure_is():
     turn = lambda **error: {"reason": "turn_failed", **error}  # noqa: E731
-    assert classify_failure(turn(error={"error_code": "provider_protocol_error",
-                                        "source_kind": "tool_parse"}, error_kind="provider_error")) == INFRA
-    assert classify_failure(turn(error={"error_code": "x"}, error_kind="provider_unavailable")) == INFRA
-    assert classify_failure(turn(error={"error_code": "react_max_turns_exceeded",
-                                        "source_kind": "termination"}, error_kind="other")) == MODEL
+    assert (
+        classify_failure(
+            turn(
+                error={"error_code": "provider_protocol_error", "source_kind": "tool_parse"},
+                error_kind="provider_error",
+            )
+        )
+        == INFRA
+    )
+    assert (
+        classify_failure(turn(error={"error_code": "x"}, error_kind="provider_unavailable"))
+        == INFRA
+    )
+    assert (
+        classify_failure(
+            turn(
+                error={"error_code": "react_max_turns_exceeded", "source_kind": "termination"},
+                error_kind="other",
+            )
+        )
+        == MODEL
+    )
     assert classify_failure(turn(error={"error_code": "react_max_tool_calls_exceeded"})) == MODEL
     # 2026-09-29 真机第八局：停机/重启期间单轮时限走完，重启后报墙钟超时——被打断，不是模型做错
-    assert classify_failure(turn(error={"error_code": "react_wall_clock_exceeded",
-                                        "source_kind": "termination"}, error_kind="other")) == INTERRUPTED
+    assert (
+        classify_failure(
+            turn(
+                error={"error_code": "react_wall_clock_exceeded", "source_kind": "termination"},
+                error_kind="other",
+            )
+        )
+        == INTERRUPTED
+    )
     # 第九局：重启后调用已交出、结果未知，执行层以内部异常结束这一轮
-    assert classify_failure(turn(error={"error_code": "base_agent_driver_exception",
-                                        "source_kind": "runtime"}, error_kind="other")) == INTERRUPTED
+    assert (
+        classify_failure(
+            turn(
+                error={"error_code": "base_agent_driver_exception", "source_kind": "runtime"},
+                error_kind="other",
+            )
+        )
+        == INTERRUPTED
+    )
     # 调了不存在的工具、参数不合规定：同样标着 tool_parse，但属于模型的错
-    assert classify_failure(turn(error={"error_code": "tool_not_exposed", "source_kind": "tool_parse"})) == MODEL
-    assert classify_failure(turn(error={"error_code": "invalid_tool_arguments",
-                                        "source_kind": "tool_parse"}, error_kind="other")) == MODEL
+    assert (
+        classify_failure(
+            turn(error={"error_code": "tool_not_exposed", "source_kind": "tool_parse"})
+        )
+        == MODEL
+    )
+    assert (
+        classify_failure(
+            turn(
+                error={"error_code": "invalid_tool_arguments", "source_kind": "tool_parse"},
+                error_kind="other",
+            )
+        )
+        == MODEL
+    )
     assert classify_failure({"reason": "envelope_invalid", "error": "block_missing"}) == FORMAT
     assert classify_failure({"reason": "executor_stalled", "stalled_seconds": 600}) == INTERRUPTED
     assert classify_failure({"reason": "provider_outcome_unknown"}) == INTERRUPTED
     assert classify_failure({"reason": "runtime_unavailable"}) == INFRA
     # 2026-10-09：被打断按审阅层出错项的结构化码判，不再读摘要文字
-    interrupted = {"layer": "critic_review", "status": "ERROR",
-                   "summary": "critic verdict unusable: " + INTERRUPTED_REVIEW,
-                   "detail": {"code": "REVIEW_INTERRUPTED"}}
-    assert classify_failure({"reason": "verification_failed", "failures": [
-        {**interrupted, "detail": {}}]}) == MODEL  # 只有文字、没有码：不算被打断
-    assert classify_failure({"reason": "verification_failed", "failures": [interrupted]}) == INTERRUPTED
-    assert classify_failure({"reason": "verification_failed", "failures": [
-        interrupted, {"layer": "code_test", "status": "FAIL", "summary": "1 failed"}]}) == MODEL
-    assert classify_failure({"reason": "verification_failed", "failures": [
-        {"layer": "rule_check", "status": "FAIL", "summary": "x"}]}) == MODEL
+    interrupted = {
+        "layer": "critic_review",
+        "status": "ERROR",
+        "summary": "critic verdict unusable: " + INTERRUPTED_REVIEW,
+        "detail": {"code": "REVIEW_INTERRUPTED"},
+    }
+    assert (
+        classify_failure(
+            {"reason": "verification_failed", "failures": [{**interrupted, "detail": {}}]}
+        )
+        == MODEL
+    )  # 只有文字、没有码：不算被打断
+    assert (
+        classify_failure({"reason": "verification_failed", "failures": [interrupted]})
+        == INTERRUPTED
+    )
+    assert (
+        classify_failure(
+            {
+                "reason": "verification_failed",
+                "failures": [
+                    interrupted,
+                    {"layer": "code_test", "status": "FAIL", "summary": "1 failed"},
+                ],
+            }
+        )
+        == MODEL
+    )
+    assert (
+        classify_failure(
+            {
+                "reason": "verification_failed",
+                "failures": [{"layer": "rule_check", "status": "FAIL", "summary": "x"}],
+            }
+        )
+        == MODEL
+    )
     # 2026-10-02 真机：重启后接着跑的那一轮在准入处被拒，因为执行权还记在旧进程名下——被打断
-    denied = lambda code: {"reason": "provider_admission_denied", "error": {  # noqa: E731
-        "error_code": "provider_admission_denied", "source_kind": "provider_admission",
-        "detail": {"schema_version": 1, "reason_code": code}}, "error_kind": "admission_denied"}
+    denied = lambda code: {
+        "reason": "provider_admission_denied",
+        "error": {  # noqa: E731
+            "error_code": "provider_admission_denied",
+            "source_kind": "provider_admission",
+            "detail": {"schema_version": 1, "reason_code": code},
+        },
+        "error_kind": "admission_denied",
+    }
     assert classify_failure(denied("lease_lost")) == INTERRUPTED
     assert classify_failure(denied("authority_rejected")) == MODEL  # 别的准入拒绝不变
     # 不在表里的一律按模型做错：宁可多扣，不能漏扣
@@ -105,11 +181,15 @@ class _Faults(LayeredScriptedProvider):
             if str((data.get("package") or {}).get("purpose")) == "TASK_CONTENT":
                 self.reviews += 1
                 if self.reviews in reject:
-                    return review_reply(data, verdict="REJECTED", grade="FAIL", reason="脚本化审阅：不满足要求。")
+                    return review_reply(
+                        data, verdict="REJECTED", grade="FAIL", reason="脚本化审阅：不满足要求。"
+                    )
             return review_reply(data)
 
-        super().__init__(planner=lambda request: retry_same_method(request) or planner_reply(request),
-                         reviewer=reviewer)
+        super().__init__(
+            planner=lambda request: retry_same_method(request) or planner_reply(request),
+            reviewer=reviewer,
+        )
 
     async def invoke(self, request, *, cancel):  # type: ignore[no-untyped-def]
         if role_of(request) == "worker":
@@ -128,16 +208,23 @@ class _Faults(LayeredScriptedProvider):
 def _run(tmp_path, provider: _Faults, *, max_attempts: int = 12):
     async def case():
         async with product_world(tmp_path / "root", provider, max_concurrency=1) as world:
-            created = world.create({"goal": "写一份 NOTES.md", "success_criteria": ["file:NOTES.md"],
-                                    "idempotency_key": "mission-charge",
-                                    "budget": {"max_tokens": 8_000_000, "max_attempts": max_attempts}})
+            created = world.create(
+                {
+                    "goal": "写一份 NOTES.md",
+                    "success_criteria": ["file:NOTES.md"],
+                    "idempotency_key": "mission-charge",
+                    "budget": {"max_tokens": 8_000_000, "max_attempts": max_attempts},
+                }
+            )
             mission = await world.run_until_settled(created["mission_id"], rounds=40)
             store = world.store
             [task] = [task for task in store.list_tasks(mission.id) if store.list_attempts(task.id)]
             with store.transaction():
-                counts = (world.loop.commit.ledger.account(task_account(task.id)).attempts_created,
-                          world.loop.commit.ledger.account(mission_account(mission.id)).attempts_created,
-                          store.get_task(task.id).attempt_count)
+                counts = (
+                    world.loop.commit.ledger.account(task_account(task.id)).attempts_created,
+                    world.loop.commit.ledger.account(mission_account(mission.id)).attempts_created,
+                    store.get_task(task.id).attempt_count,
+                )
             events = list(store.list_events(mission.id))
             return mission, store.get_task(task.id), store.list_attempts(task.id), counts, events
 
@@ -151,9 +238,14 @@ def test_a_service_error_gives_the_attempt_back_and_a_model_mistake_does_not(tmp
     assert mission.status is MissionStatus.COMPLETED, mission.stop_reason
     assert [attempt.ordinal for attempt in attempts] == [1, 2, 3]  # 次数退了，编号照常递增、不撞号
     assert [(attempt.failure or {}).get("reason") for attempt in attempts] == [
-        "turn_failed", "verification_failed", None]
+        "turn_failed",
+        "verification_failed",
+        None,
+    ]
     released = [event.payload for event in events if event.type == "AttemptChargeReleased"]
-    assert [(item["failure_class"], item["reason"]) for item in released] == [("INFRA", "turn_failed")]
+    assert [(item["failure_class"], item["reason"]) for item in released] == [
+        ("INFRA", "turn_failed")
+    ]
     # 账本与任务次数一起退：只有模型做错那次和成功那次算次数
     assert counts == (2, 2, 2) and task.attempt_count == 2
     # 服务出错由系统原地批准重做，不问规划器；模型做错那次才问规划器（"原样重试"）
@@ -168,7 +260,9 @@ def test_a_step_stops_after_six_failures_that_were_not_the_models_fault(tmp_path
     assert task.status is TaskStatus.FAILED
     assert len(attempts) == NON_MODEL_FAILURE_CAP  # 第七次没有建出来
     assert counts == (0, 0, 0)  # 六次都退了次数
-    assert sum(1 for event in events if event.type == "AttemptChargeReleased") == NON_MODEL_FAILURE_CAP
+    assert (
+        sum(1 for event in events if event.type == "AttemptChargeReleased") == NON_MODEL_FAILURE_CAP
+    )
     [failed] = [event.payload for event in events if event.type == "TaskFailed"]
     assert "non_model_failures_exhausted" in str(failed)
     assert provider.asked.count("planner") == 2  # 重做全由系统批准，没有问规划器
@@ -185,20 +279,49 @@ def test_output_exhausted_is_the_models_unfinished_turn_not_a_service_error():
         output_exhausted_fact,
     )
 
-    exhausted = {"reason": "turn_failed", "error_kind": "other", "error": {
-        "error_code": "provider_empty_response", "source_kind": "tool_parse",
-        "detail": {"finish_reason": "length",
-                   "usage": {"output_tokens": 32768, "reasoning_tokens": 32768, "input_tokens": 14853}}}}
+    exhausted = {
+        "reason": "turn_failed",
+        "error_kind": "other",
+        "error": {
+            "error_code": "provider_empty_response",
+            "source_kind": "tool_parse",
+            "detail": {
+                "finish_reason": "length",
+                "usage": {"output_tokens": 32768, "reasoning_tokens": 32768, "input_tokens": 14853},
+            },
+        },
+    }
     assert classify_failure(exhausted) == MODEL
     # 工具调用参数被截断：同样是 length
-    assert classify_failure({"reason": "turn_failed", "error": {
-        "error_code": "provider_protocol_error", "source_kind": "tool_parse",
-        "detail": {"finish_reason": "length", "parse_stage": "tool_parse"}}}) == MODEL
+    assert (
+        classify_failure(
+            {
+                "reason": "turn_failed",
+                "error": {
+                    "error_code": "provider_protocol_error",
+                    "source_kind": "tool_parse",
+                    "detail": {"finish_reason": "length", "parse_stage": "tool_parse"},
+                },
+            }
+        )
+        == MODEL
+    )
     # 没写满、只是空回复或解析不了：仍是服务出错
-    assert classify_failure({"reason": "turn_failed", "error": {
-        "error_code": "provider_empty_response", "source_kind": "tool_parse",
-        "detail": {"finish_reason": "stop"}}}) == INFRA
+    assert (
+        classify_failure(
+            {
+                "reason": "turn_failed",
+                "error": {
+                    "error_code": "provider_empty_response",
+                    "source_kind": "tool_parse",
+                    "detail": {"finish_reason": "stop"},
+                },
+            }
+        )
+        == INFRA
+    )
     assert not output_exhausted({"error_code": "provider_empty_response"})
     assert output_exhausted_fact(exhausted["error"]) == (
-        "上一轮有一次模型调用因输出上限（32768 个 token，其中思考 32768 个）停止，没有给出最终结果。")
+        "上一轮有一次模型调用因输出上限（32768 个 token，其中思考 32768 个）停止，没有给出最终结果。"
+    )
     assert "已达上限" in output_exhausted_fact({"detail": {"finish_reason": "length"}})

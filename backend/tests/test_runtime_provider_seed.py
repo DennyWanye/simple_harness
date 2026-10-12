@@ -21,16 +21,12 @@ class _RegistryProbe:
 
 
 @pytest.mark.asyncio
-async def test_runtime_seed_uses_process_only_provider_for_injected_key(
-    tmp_path, monkeypatch
-):
+async def test_runtime_seed_uses_process_only_provider_for_injected_key(tmp_path, monkeypatch):
     import main
 
     runtime_path = tmp_path / "llm_runtime.json"
     runtime_path.write_text(
-        json.dumps(
-            {"base_url": "https://relay.example/v1", "model": "runtime-model"}
-        ),
+        json.dumps({"base_url": "https://relay.example/v1", "model": "runtime-model"}),
         encoding="utf-8",
     )
     monkeypatch.setattr(main, "LLM_RUNTIME_PATH", runtime_path)

@@ -199,9 +199,7 @@ def _bounded_public_mapping(value: Mapping[str, Any]) -> dict[str, Any]:
             return "…"
         if isinstance(item, Mapping):
             keys = sorted(
-                str(key)
-                for key in item
-                if str(key).casefold() not in _PUBLIC_HIDDEN_KEYS
+                str(key) for key in item if str(key).casefold() not in _PUBLIC_HIDDEN_KEYS
             )
             if len(keys) > 64:
                 hashes[path] = hashlib.sha256(_canonical(item).encode("utf-8")).hexdigest()
@@ -240,7 +238,9 @@ def _public_views(
     phases: tuple[Mapping[str, Any], ...],
     aggregate: Mapping[str, Any],
     root_run_id: str,
-) -> tuple[tuple[PublicActivityItem, ...], tuple[Mapping[str, Any], ...], tuple[Mapping[str, Any], ...]]:
+) -> tuple[
+    tuple[PublicActivityItem, ...], tuple[Mapping[str, Any], ...], tuple[Mapping[str, Any], ...]
+]:
     """Build bounded eager views from the same immutable public read cut.
 
     This function only sees ``PublicFactEnvelope.public_payload``.  It never
@@ -282,7 +282,9 @@ def _public_views(
         phase_id = phase_by_fact.get(fact.stable_id)
         status = str(payload.get("status") or "unknown")
         text = payload.get("content") or payload.get("safe_text")
-        safe_text, text_digest = _public_content(text) if isinstance(text, str) and text.strip() else (None, None)
+        safe_text, text_digest = (
+            _public_content(text) if isinstance(text, str) and text.strip() else (None, None)
+        )
         tool_view: dict[str, Any] | None = None
         if kind == "tool":
             safe_input, input_truncated = _bounded_public_value(
@@ -291,13 +293,19 @@ def _public_views(
             safe_result, result_truncated = _bounded_public_value(
                 payload.get("bounded_result", payload.get("public_result"))
             )
-            truncation_hashes = payload.get("truncation_hashes", payload.get("_truncation_hashes", {}))
+            truncation_hashes = payload.get(
+                "truncation_hashes", payload.get("_truncation_hashes", {})
+            )
             tool_view = {
                 "tool_ref": fact.stable_id,
                 "stable_id": fact.stable_id,
                 "phase_id": phase_id,
-                "public_name": str(payload.get("tool_name") or payload.get("public_name") or "工具"),
-                "action_label": str(payload.get("action_code") or payload.get("action_label") or "执行操作"),
+                "public_name": str(
+                    payload.get("tool_name") or payload.get("public_name") or "工具"
+                ),
+                "action_label": str(
+                    payload.get("action_code") or payload.get("action_label") or "执行操作"
+                ),
                 "safe_target_label": payload.get("safe_target_label"),
                 "status": status,
                 "public_input": safe_input,
@@ -311,28 +319,38 @@ def _public_views(
             }
             tools.append(tool_view)
         if kind in {"content", "narration", "user_request"} and safe_text:
-            messages.append({
-                "message_id": fact.stable_id,
-                "stable_id": fact.stable_id,
-                "phase_id": phase_id,
-                "text": safe_text,
-                "created_at": fact.created_at,
-                "context_visibility": CONTEXT_VISIBILITY_EXCLUDE,
-            })
+            messages.append(
+                {
+                    "message_id": fact.stable_id,
+                    "stable_id": fact.stable_id,
+                    "phase_id": phase_id,
+                    "text": safe_text,
+                    "created_at": fact.created_at,
+                    "context_visibility": CONTEXT_VISIBILITY_EXCLUDE,
+                }
+            )
         activity = PublicActivityItem(
             stable_id=fact.stable_id,
             kind=kind,
-            title=(tool_view or {}).get("public_name") if tool_view else title_by_kind.get(kind, "执行记录"),
+            title=(tool_view or {}).get("public_name")
+            if tool_view
+            else title_by_kind.get(kind, "执行记录"),
             status=status,
             phase_id=phase_id,
-            action_code=str(payload.get("action_code")) if payload.get("action_code") is not None else None,
-            tool_name=str(payload.get("tool_name")) if payload.get("tool_name") is not None else None,
+            action_code=str(payload.get("action_code"))
+            if payload.get("action_code") is not None
+            else None,
+            tool_name=str(payload.get("tool_name"))
+            if payload.get("tool_name") is not None
+            else None,
             safe_text=safe_text,
             safe_target_label=(tool_view or {}).get("safe_target_label") if tool_view else None,
             detail_ref=fact.stable_id if kind == "tool" else None,
             public_input=(tool_view or {}).get("public_input") if tool_view else None,
             public_result=(tool_view or {}).get("public_result") if tool_view else None,
-            duration_ms=payload.get("duration_ms") if isinstance(payload.get("duration_ms"), (int, float)) else None,
+            duration_ms=payload.get("duration_ms")
+            if isinstance(payload.get("duration_ms"), (int, float))
+            else None,
             created_at=fact.created_at,
             truncated=bool((tool_view or {}).get("truncated")) or text_digest is not None,
         )
@@ -340,17 +358,35 @@ def _public_views(
     terminal_status = str(aggregate.get("status") or "unknown")
     terminal_id = f"run-terminal:{root_run_id}"
     if terminal_id not in {item.stable_id for item in activities}:
-        activities.append(PublicActivityItem(
-            stable_id=terminal_id,
-            kind="run_terminal",
-            title="任务结束",
-            status=terminal_status,
-            safe_text=None,
-            created_at=aggregate.get("ended_at") if isinstance(aggregate.get("ended_at"), (int, float)) else None,
-        ))
-    activities.sort(key=lambda item: (item.created_at is None, item.created_at or 0.0, item.stable_id))
-    tools.sort(key=lambda item: (item.get("created_at") is None, item.get("created_at") or 0.0, str(item.get("stable_id"))))
-    messages.sort(key=lambda item: (item.get("created_at") is None, item.get("created_at") or 0.0, str(item.get("stable_id"))))
+        activities.append(
+            PublicActivityItem(
+                stable_id=terminal_id,
+                kind="run_terminal",
+                title="任务结束",
+                status=terminal_status,
+                safe_text=None,
+                created_at=aggregate.get("ended_at")
+                if isinstance(aggregate.get("ended_at"), (int, float))
+                else None,
+            )
+        )
+    activities.sort(
+        key=lambda item: (item.created_at is None, item.created_at or 0.0, item.stable_id)
+    )
+    tools.sort(
+        key=lambda item: (
+            item.get("created_at") is None,
+            item.get("created_at") or 0.0,
+            str(item.get("stable_id")),
+        )
+    )
+    messages.sort(
+        key=lambda item: (
+            item.get("created_at") is None,
+            item.get("created_at") or 0.0,
+            str(item.get("stable_id")),
+        )
+    )
     return tuple(activities), tuple(tools), tuple(messages)
 
 
@@ -454,16 +490,18 @@ class HarnessPublicReadService:
         source_complete = workflow_cut.complete and state_cut.complete
         diagnostics = tuple(
             dict.fromkeys(
-                (*workflow_meta.get("diagnostics", ()), *state_meta.get("diagnostics", ()), *reducer_diagnostics)
+                (
+                    *workflow_meta.get("diagnostics", ()),
+                    *state_meta.get("diagnostics", ()),
+                    *reducer_diagnostics,
+                )
             )
         )
         detail_rows = self._detail_rows(facts)
         activity_items, tool_public_views, public_messages = _public_views(
             facts, phases, aggregate, root_run_id
         )
-        totals = ProjectionTotalsV1(
-            **{kind: len(detail_rows[kind]) for kind in DETAIL_QUERY_KINDS}
-        )
+        totals = ProjectionTotalsV1(**{kind: len(detail_rows[kind]) for kind in DETAIL_QUERY_KINDS})
         created_at = float(self._clock())
         projection_seed = {
             "session_id": session_id,
@@ -561,7 +599,9 @@ class HarnessPublicReadService:
             if items and page_bytes + size > self._max_page_bytes:
                 break
             if size > self._max_page_bytes:
-                raise PublicReadError("projection_too_large", "one public detail exceeds page limit")
+                raise PublicReadError(
+                    "projection_too_large", "one public detail exceeds page limit"
+                )
             items.append(item)
             page_bytes += size
             index += 1
@@ -596,9 +636,11 @@ class HarnessPublicReadService:
         unmatched: list[str] = []
         captured_at = float(self._clock())
         if not self.workflow_db_path.exists():
-            return facts, ReadSourceCutV1(captured_at, None, False), {
-                "diagnostics": ("workflow_source_missing",), "unmatched_refs": ()
-            }
+            return (
+                facts,
+                ReadSourceCutV1(captured_at, None, False),
+                {"diagnostics": ("workflow_source_missing",), "unmatched_refs": ()},
+            )
         async with aiosqlite.connect(self.workflow_db_path) as db:
             db.row_factory = aiosqlite.Row
             await db.execute("PRAGMA query_only=ON")
@@ -613,9 +655,11 @@ class HarnessPublicReadService:
                     )
                 ).fetchone()
                 if root is None or str(root["session_id"]) != session_id:
-                    return facts, ReadSourceCutV1(captured_at, data_version, False), {
-                        "diagnostics": ("root_not_found",), "unmatched_refs": ()
-                    }
+                    return (
+                        facts,
+                        ReadSourceCutV1(captured_at, data_version, False),
+                        {"diagnostics": ("root_not_found",), "unmatched_refs": ()},
+                    )
                 runs = await (
                     await db.execute(
                         "SELECT * FROM execution_runs WHERE root_run_id=? ORDER BY created_at,run_id",
@@ -629,9 +673,7 @@ class HarnessPublicReadService:
                         "role": "root" if row["run_id"] == root_run_id else "child",
                         "status": str(row["status"]),
                         "started_at": (
-                            row["created_at"]
-                            if row["started_at"] is None
-                            else row["started_at"]
+                            row["created_at"] if row["started_at"] is None else row["started_at"]
                         ),
                         "ended_at": row["ended_at"],
                         "parent_run_id": row["parent_run_id"],
@@ -639,14 +681,20 @@ class HarnessPublicReadService:
                         "child_run_id": None if row["run_id"] == root_run_id else row["run_id"],
                         "profile_key": str(row["profile_key"]),
                     }
-                    facts.append(self._fact("run", row["run_id"], root_run_id, row["created_at"], payload))
+                    facts.append(
+                        self._fact("run", row["run_id"], root_run_id, row["created_at"], payload)
+                    )
                 placeholders = ",".join("?" for _ in run_ids)
-                facts.extend(await self._workflow_table_facts(db, root_run_id, run_ids, placeholders))
+                facts.extend(
+                    await self._workflow_table_facts(db, root_run_id, run_ids, placeholders)
+                )
             finally:
                 await db.rollback()
-        return facts, ReadSourceCutV1(captured_at, data_version, True), {
-            "diagnostics": tuple(diagnostics), "unmatched_refs": tuple(unmatched)
-        }
+        return (
+            facts,
+            ReadSourceCutV1(captured_at, data_version, True),
+            {"diagnostics": tuple(diagnostics), "unmatched_refs": tuple(unmatched)},
+        )
 
     async def _workflow_table_facts(
         self,
@@ -656,10 +704,12 @@ class HarnessPublicReadService:
         placeholders: str,
     ) -> list[PublicFactEnvelope]:
         facts: list[PublicFactEnvelope] = []
-        rows = await (await db.execute(
-            f"SELECT * FROM execution_events WHERE run_id IN ({placeholders}) ORDER BY created_at,event_id",
-            run_ids,
-        )).fetchall()
+        rows = await (
+            await db.execute(
+                f"SELECT * FROM execution_events WHERE run_id IN ({placeholders}) ORDER BY created_at,event_id",
+                run_ids,
+            )
+        ).fetchall()
         for row in rows:
             payload = _public_event_payload(row["payload_json"])
             payload.update(
@@ -687,21 +737,108 @@ class HarnessPublicReadService:
             if canonical_kind == "child" and payload.get("child_run_id"):
                 payload["run_id"] = str(payload["child_run_id"])
                 payload["role"] = "child"
-            facts.append(self._fact(canonical_kind, row["event_id"], root_run_id, row["created_at"], payload, workflow_event_id=str(row["event_id"]), source_seq=int(row["durable_seq"])))
+            facts.append(
+                self._fact(
+                    canonical_kind,
+                    row["event_id"],
+                    root_run_id,
+                    row["created_at"],
+                    payload,
+                    workflow_event_id=str(row["event_id"]),
+                    source_seq=int(row["durable_seq"]),
+                )
+            )
 
         table_specs = (
-            ("execution_attempt_records", "attempt_id", "created_at", "attempt", ("run_id", "status", "plan_version", "provider_turn_id", "provider_batch_id", "trigger_failure_set_id", "supersedes_attempt_id")),
-            ("execution_provider_action_batches", "provider_batch_id", "created_at", "provider", ("status", "failure_set_id", "provider_turn_id")),
-            ("execution_provider_action_calls", "call_record_id", "created_at", "tool", ("provider_batch_id", "provider_call_id", "raw_tool_name", "admission_state", "terminal_outcome_ref")),
-            ("execution_task_failure_reports", "report_ref", "created_at", "failure_report", ("run_id", "attempt_id", "plan_version", "failure_set_id", "child_run_id", "reason_code", "evidence_refs_json")),
-            ("execution_attempt_failure_sets", "failure_set_id", "created_at", "failure_set", ("failed_attempt_id", "primary_report_ref", "provider_resume_state")),
-            ("execution_task_external_waits", "wait_ref", "created_at", "boundary", ("attempt_id", "wait_kind", "state", "evidence_refs_json")),
-            ("execution_run_block_signals", "signal_id", "created_at", "block_signal", ("root_run_id", "reason_code", "evidence_refs_json", "producer", "created_event_id")),
+            (
+                "execution_attempt_records",
+                "attempt_id",
+                "created_at",
+                "attempt",
+                (
+                    "run_id",
+                    "status",
+                    "plan_version",
+                    "provider_turn_id",
+                    "provider_batch_id",
+                    "trigger_failure_set_id",
+                    "supersedes_attempt_id",
+                ),
+            ),
+            (
+                "execution_provider_action_batches",
+                "provider_batch_id",
+                "created_at",
+                "provider",
+                ("status", "failure_set_id", "provider_turn_id"),
+            ),
+            (
+                "execution_provider_action_calls",
+                "call_record_id",
+                "created_at",
+                "tool",
+                (
+                    "provider_batch_id",
+                    "provider_call_id",
+                    "raw_tool_name",
+                    "admission_state",
+                    "terminal_outcome_ref",
+                ),
+            ),
+            (
+                "execution_task_failure_reports",
+                "report_ref",
+                "created_at",
+                "failure_report",
+                (
+                    "run_id",
+                    "attempt_id",
+                    "plan_version",
+                    "failure_set_id",
+                    "child_run_id",
+                    "reason_code",
+                    "evidence_refs_json",
+                ),
+            ),
+            (
+                "execution_attempt_failure_sets",
+                "failure_set_id",
+                "created_at",
+                "failure_set",
+                ("failed_attempt_id", "primary_report_ref", "provider_resume_state"),
+            ),
+            (
+                "execution_task_external_waits",
+                "wait_ref",
+                "created_at",
+                "boundary",
+                ("attempt_id", "wait_kind", "state", "evidence_refs_json"),
+            ),
+            (
+                "execution_run_block_signals",
+                "signal_id",
+                "created_at",
+                "block_signal",
+                (
+                    "root_run_id",
+                    "reason_code",
+                    "evidence_refs_json",
+                    "producer",
+                    "created_event_id",
+                ),
+            ),
         )
         for table, identity, created, kind, fields in table_specs:
             if not await self._table_exists(db, table):
                 continue
-            if table in {"execution_provider_action_batches", "execution_provider_action_calls", "execution_task_failure_reports", "execution_attempt_failure_sets", "execution_task_external_waits", "execution_run_block_signals"}:
+            if table in {
+                "execution_provider_action_batches",
+                "execution_provider_action_calls",
+                "execution_task_failure_reports",
+                "execution_attempt_failure_sets",
+                "execution_task_external_waits",
+                "execution_run_block_signals",
+            }:
                 query = f"SELECT * FROM {table} WHERE root_run_id=? ORDER BY {created},{identity}"
                 params: Sequence[Any] = (root_run_id,)
             else:
@@ -712,7 +849,9 @@ class HarnessPublicReadService:
                 for field in fields:
                     if field in row.keys() and row[field] is not None:
                         if field.endswith("_json"):
-                            payload[field.removesuffix("_json")] = _REDACTOR.redact(_json_object(row[field]) or self._json_list(row[field]))
+                            payload[field.removesuffix("_json")] = _REDACTOR.redact(
+                                _json_object(row[field]) or self._json_list(row[field])
+                            )
                         else:
                             payload[field] = row[field]
                 payload[identity] = row[identity]
@@ -726,14 +865,14 @@ class HarnessPublicReadService:
                 )
                 if table == "execution_attempt_failure_sets":
                     member_rows = (
-                        await (await db.execute(
-                            "SELECT report_ref FROM execution_attempt_failure_set_members "
-                            "WHERE failure_set_id=? ORDER BY provider_call_order,report_ref",
-                            (row["failure_set_id"],),
-                        )).fetchall()
-                        if await self._table_exists(
-                            db, "execution_attempt_failure_set_members"
-                        )
+                        await (
+                            await db.execute(
+                                "SELECT report_ref FROM execution_attempt_failure_set_members "
+                                "WHERE failure_set_id=? ORDER BY provider_call_order,report_ref",
+                                (row["failure_set_id"],),
+                            )
+                        ).fetchall()
+                        if await self._table_exists(db, "execution_attempt_failure_set_members")
                         else ()
                     )
                     report_refs = [str(member["report_ref"]) for member in member_rows]
@@ -764,11 +903,13 @@ class HarnessPublicReadService:
                 facts.append(self._fact(kind, row[identity], root_run_id, row[created], payload))
 
         if await self._table_exists(db, "execution_decisions"):
-            rows = await (await db.execute(
-                f"SELECT * FROM execution_decisions WHERE run_id IN ({placeholders}) "
-                "ORDER BY created_at,decision_id",
-                run_ids,
-            )).fetchall()
+            rows = await (
+                await db.execute(
+                    f"SELECT * FROM execution_decisions WHERE run_id IN ({placeholders}) "
+                    "ORDER BY created_at,decision_id",
+                    run_ids,
+                )
+            ).fetchall()
             for row in rows:
                 decision_status = str(row["status"])
                 public_status = {
@@ -776,35 +917,41 @@ class HarnessPublicReadService:
                     "denied": "rejected",
                     "expired": "expired",
                 }.get(decision_status, "open")
-                facts.append(self._fact(
-                    "boundary",
-                    row["decision_id"],
-                    root_run_id,
-                    row["created_at"],
-                    {
-                        "decision_id": str(row["decision_id"]),
-                        "run_id": str(row["run_id"]),
-                        "role": "root" if row["run_id"] == root_run_id else "child",
-                        "boundary_kind": "human",
-                        "decision_kind": str(row["kind"]),
-                        "status": public_status,
-                        "resolved": decision_status != "open",
-                    },
-                ))
+                facts.append(
+                    self._fact(
+                        "boundary",
+                        row["decision_id"],
+                        root_run_id,
+                        row["created_at"],
+                        {
+                            "decision_id": str(row["decision_id"]),
+                            "run_id": str(row["run_id"]),
+                            "role": "root" if row["run_id"] == root_run_id else "child",
+                            "boundary_kind": "human",
+                            "decision_kind": str(row["kind"]),
+                            "status": public_status,
+                            "resolved": decision_status != "open",
+                        },
+                    )
+                )
 
         projection_by_effect: dict[str, Mapping[str, Any]] = {}
         if await self._table_exists(db, "execution_tool_public_projections"):
-            rows = await (await db.execute(
-                "SELECT * FROM execution_tool_public_projections WHERE root_run_id=? ORDER BY created_at,effect_id",
-                (root_run_id,),
-            )).fetchall()
+            rows = await (
+                await db.execute(
+                    "SELECT * FROM execution_tool_public_projections WHERE root_run_id=? ORDER BY created_at,effect_id",
+                    (root_run_id,),
+                )
+            ).fetchall()
             for row in rows:
                 projection_by_effect[str(row["effect_id"])] = _json_object(row["projection_json"])
         policies = await self._read_frozen_policies(db, root_run_id)
-        rows = await (await db.execute(
-            f"SELECT e.*,r.root_run_id FROM execution_effects e JOIN execution_runs r ON r.run_id=e.run_id WHERE e.run_id IN ({placeholders}) ORDER BY e.created_at,e.effect_id",
-            run_ids,
-        )).fetchall()
+        rows = await (
+            await db.execute(
+                f"SELECT e.*,r.root_run_id FROM execution_effects e JOIN execution_runs r ON r.run_id=e.run_id WHERE e.run_id IN ({placeholders}) ORDER BY e.created_at,e.effect_id",
+                run_ids,
+            )
+        ).fetchall()
         for row in rows:
             effect_id = str(row["effect_id"])
             projection = projection_by_effect.get(effect_id)
@@ -821,7 +968,9 @@ class HarnessPublicReadService:
                 else:
                     projection = self._tool_projector.project(
                         legacy_unknown_tool_policy(tool_name),
-                        arguments={}, result={}, status=str(row["status"]),
+                        arguments={},
+                        result={},
+                        status=str(row["status"]),
                     ).to_dict()
                     projection["mapping_reason"] = "legacy_unknown_tool"
             projection = dict(projection)
@@ -833,11 +982,13 @@ class HarnessPublicReadService:
                     "call_id": str(row["call_id"]),
                 }
             )
-            link_rows = await (await db.execute(
-                "SELECT node_execution_id FROM execution_effect_links "
-                "WHERE run_id=? AND effect_id=? ORDER BY node_execution_id",
-                (row["run_id"], effect_id),
-            )).fetchall()
+            link_rows = await (
+                await db.execute(
+                    "SELECT node_execution_id FROM execution_effect_links "
+                    "WHERE run_id=? AND effect_id=? ORDER BY node_execution_id",
+                    (row["run_id"], effect_id),
+                )
+            ).fetchall()
             node_refs = [
                 str(link["node_execution_id"])
                 for link in link_rows
@@ -848,44 +999,63 @@ class HarnessPublicReadService:
                 projection["parent_refs"] = node_refs
             facts.append(self._fact("tool", effect_id, root_run_id, row["created_at"], projection))
 
-        rows = await (await db.execute(
-            f"SELECT * FROM execution_provider_invocations WHERE run_id IN ({placeholders}) ORDER BY updated_at,invocation_id",
-            run_ids,
-        )).fetchall()
+        rows = await (
+            await db.execute(
+                f"SELECT * FROM execution_provider_invocations WHERE run_id IN ({placeholders}) ORDER BY updated_at,invocation_id",
+                run_ids,
+            )
+        ).fetchall()
         for row in rows:
-            outcome_row = await (await db.execute(
-                "SELECT payload_json FROM execution_provider_invocation_outcomes WHERE run_id=? AND invocation_id=?",
-                (row["run_id"], row["invocation_id"]),
-            )).fetchone()
+            outcome_row = await (
+                await db.execute(
+                    "SELECT payload_json FROM execution_provider_invocation_outcomes WHERE run_id=? AND invocation_id=?",
+                    (row["run_id"], row["invocation_id"]),
+                )
+            ).fetchone()
             outcome = _json_object(outcome_row["payload_json"]) if outcome_row else None
             projection = self._provider_projector.project(dict(row), outcome=outcome)
             projection["role"] = "root" if row["run_id"] == root_run_id else "child"
-            facts.append(self._fact("provider", f"{row['run_id']}:{row['invocation_id']}", root_run_id, row["updated_at"], projection, invocation_id=str(row["invocation_id"])))
+            facts.append(
+                self._fact(
+                    "provider",
+                    f"{row['run_id']}:{row['invocation_id']}",
+                    root_run_id,
+                    row["updated_at"],
+                    projection,
+                    invocation_id=str(row["invocation_id"]),
+                )
+            )
 
         if await self._table_exists(db, "workflow_runs"):
-            rows = await (await db.execute(
-                f"SELECT * FROM workflow_runs WHERE run_id IN ({placeholders}) ORDER BY created_at,run_id",
-                run_ids,
-            )).fetchall()
+            rows = await (
+                await db.execute(
+                    f"SELECT * FROM workflow_runs WHERE run_id IN ({placeholders}) ORDER BY created_at,run_id",
+                    run_ids,
+                )
+            ).fetchall()
             for row in rows:
-                facts.append(self._fact(
-                    "workflow_step",
-                    f"workflow_run:{row['run_id']}",
-                    root_run_id,
-                    row["created_at"],
-                    {
-                        "run_id": str(row["run_id"]),
-                        "role": "root" if row["run_id"] == root_run_id else "child",
-                        "status": row["status"],
-                        "parent_run_id": row["parent_run_id"],
-                        "workflow_name": row["workflow_name"],
-                        "event_kind": "workflow.run",
-                    },
-                ))
-            event_rows = await (await db.execute(
-                f"SELECT * FROM workflow_events WHERE run_id IN ({placeholders}) ORDER BY created_at,event_id",
-                run_ids,
-            )).fetchall()
+                facts.append(
+                    self._fact(
+                        "workflow_step",
+                        f"workflow_run:{row['run_id']}",
+                        root_run_id,
+                        row["created_at"],
+                        {
+                            "run_id": str(row["run_id"]),
+                            "role": "root" if row["run_id"] == root_run_id else "child",
+                            "status": row["status"],
+                            "parent_run_id": row["parent_run_id"],
+                            "workflow_name": row["workflow_name"],
+                            "event_kind": "workflow.run",
+                        },
+                    )
+                )
+            event_rows = await (
+                await db.execute(
+                    f"SELECT * FROM workflow_events WHERE run_id IN ({placeholders}) ORDER BY created_at,event_id",
+                    run_ids,
+                )
+            ).fetchall()
             for row in event_rows:
                 payload = _public_event_payload(row["payload_json"])
                 payload.update(
@@ -896,32 +1066,38 @@ class HarnessPublicReadService:
                         "source_stream": f"workflow_events:{row['run_id']}",
                     }
                 )
-                facts.append(self._fact(
-                    "workflow_step",
-                    row["event_id"],
-                    root_run_id,
-                    row["created_at"],
-                    payload,
-                    workflow_event_id=str(row["event_id"]),
-                    source_seq=int(row["seq"]),
-                ))
-            node_rows = await (await db.execute(
-                f"SELECT * FROM workflow_nodes WHERE run_id IN ({placeholders}) ORDER BY updated_at,node_execution_id",
-                run_ids,
-            )).fetchall()
+                facts.append(
+                    self._fact(
+                        "workflow_step",
+                        row["event_id"],
+                        root_run_id,
+                        row["created_at"],
+                        payload,
+                        workflow_event_id=str(row["event_id"]),
+                        source_seq=int(row["seq"]),
+                    )
+                )
+            node_rows = await (
+                await db.execute(
+                    f"SELECT * FROM workflow_nodes WHERE run_id IN ({placeholders}) ORDER BY updated_at,node_execution_id",
+                    run_ids,
+                )
+            ).fetchall()
             for row in node_rows:
-                facts.append(self._fact(
-                    "workflow_step",
-                    row["node_execution_id"],
-                    root_run_id,
-                    row["updated_at"],
-                    {
-                        "run_id": str(row["run_id"]),
-                        "role": "root" if row["run_id"] == root_run_id else "child",
-                        "status": row["latest_status"],
-                        "workflow_step_id": row["node_id"],
-                    },
-                ))
+                facts.append(
+                    self._fact(
+                        "workflow_step",
+                        row["node_execution_id"],
+                        root_run_id,
+                        row["updated_at"],
+                        {
+                            "run_id": str(row["run_id"]),
+                            "role": "root" if row["run_id"] == root_run_id else "child",
+                            "status": row["latest_status"],
+                            "workflow_step_id": row["node_id"],
+                        },
+                    )
+                )
         return facts
 
     async def _read_state_cut(
@@ -932,9 +1108,11 @@ class HarnessPublicReadService:
         unmatched: list[str] = []
         captured_at = float(self._clock())
         if not self.state_db_path.exists():
-            return facts, ReadSourceCutV1(captured_at, None, False), {
-                "diagnostics": ("state_source_missing",), "unmatched_refs": ()
-            }
+            return (
+                facts,
+                ReadSourceCutV1(captured_at, None, False),
+                {"diagnostics": ("state_source_missing",), "unmatched_refs": ()},
+            )
         async with aiosqlite.connect(self.state_db_path) as db:
             db.row_factory = aiosqlite.Row
             await db.execute("PRAGMA query_only=ON")
@@ -943,11 +1121,15 @@ class HarnessPublicReadService:
                 version_row = await (await db.execute("PRAGMA data_version")).fetchone()
                 data_version = int(version_row[0]) if version_row else None
                 active_rows = await self._keyset_messages(db, "messages", session_id, root_run_id)
-                archive_rows = await self._keyset_messages(db, "messages_archive", session_id, root_run_id)
-                legacy_row = await (await db.execute(
-                    "SELECT COUNT(*) FROM messages_archive WHERE session_id=? AND root_run_id IS NULL",
-                    (session_id,),
-                )).fetchone()
+                archive_rows = await self._keyset_messages(
+                    db, "messages_archive", session_id, root_run_id
+                )
+                legacy_row = await (
+                    await db.execute(
+                        "SELECT COUNT(*) FROM messages_archive WHERE session_id=? AND root_run_id IS NULL",
+                        (session_id,),
+                    )
+                ).fetchone()
                 if legacy_row and int(legacy_row[0]):
                     legacy_ref = f"legacy_unscoped:{int(legacy_row[0])}"
                     diagnostics.append(legacy_ref)
@@ -965,23 +1147,44 @@ class HarnessPublicReadService:
                         }
                         if digest:
                             payload["truncation_hash"] = digest
-                        content_kind = (
-                            "user_request" if str(row["role"]) == "user" else "content"
+                        content_kind = "user_request" if str(row["role"]) == "user" else "content"
+                        facts.append(
+                            self._fact(
+                                content_kind,
+                                f"{source}:{row['id']}",
+                                root_run_id,
+                                row["created_at"],
+                                payload,
+                                workflow_event_id=row["workflow_event_id"],
+                                source="state",
+                            )
                         )
-                        facts.append(self._fact(content_kind, f"{source}:{row['id']}", root_run_id, row["created_at"], payload, workflow_event_id=row["workflow_event_id"], source="state"))
                 if await self._table_exists(db, "provider_workload_audit"):
-                    rows = await (await db.execute(
-                        "SELECT * FROM provider_workload_audit WHERE session_id=? AND root_run_id=? ORDER BY created_at,stable_call_id",
-                        (session_id, root_run_id),
-                    )).fetchall()
+                    rows = await (
+                        await db.execute(
+                            "SELECT * FROM provider_workload_audit WHERE session_id=? AND root_run_id=? ORDER BY created_at,stable_call_id",
+                            (session_id, root_run_id),
+                        )
+                    ).fetchall()
                     for row in rows:
                         projection = self._provider_projector.project(dict(row))
-                        facts.append(self._fact("provider", f"audit:{row['stable_call_id']}", root_run_id, row["created_at"], projection, source="state"))
+                        facts.append(
+                            self._fact(
+                                "provider",
+                                f"audit:{row['stable_call_id']}",
+                                root_run_id,
+                                row["created_at"],
+                                projection,
+                                source="state",
+                            )
+                        )
             finally:
                 await db.rollback()
-        return facts, ReadSourceCutV1(captured_at, data_version, True), {
-            "diagnostics": tuple(diagnostics), "unmatched_refs": tuple(unmatched)
-        }
+        return (
+            facts,
+            ReadSourceCutV1(captured_at, data_version, True),
+            {"diagnostics": tuple(diagnostics), "unmatched_refs": tuple(unmatched)},
+        )
 
     async def _keyset_messages(
         self, db: aiosqlite.Connection, table: str, session_id: str, root_run_id: str
@@ -1010,10 +1213,12 @@ class HarnessPublicReadService:
     ) -> dict[str, ToolPresentationPolicyV1]:
         if not await self._table_exists(db, "execution_run_tool_presentation_specs"):
             return {}
-        rows = await (await db.execute(
-            "SELECT tool_name,policy_json FROM execution_run_tool_presentation_specs WHERE root_run_id=?",
-            (root_run_id,),
-        )).fetchall()
+        rows = await (
+            await db.execute(
+                "SELECT tool_name,policy_json FROM execution_run_tool_presentation_specs WHERE root_run_id=?",
+                (root_run_id,),
+            )
+        ).fetchall()
         policies: dict[str, ToolPresentationPolicyV1] = {}
         for row in rows:
             raw = _json_object(row["policy_json"])
@@ -1027,9 +1232,9 @@ class HarnessPublicReadService:
 
     @staticmethod
     async def _table_exists(db: aiosqlite.Connection, table: str) -> bool:
-        row = await (await db.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)
-        )).fetchone()
+        row = await (
+            await db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,))
+        ).fetchone()
         return row is not None
 
     @staticmethod
@@ -1067,7 +1272,9 @@ class HarnessPublicReadService:
         )
 
     @staticmethod
-    def _detail_rows(facts: tuple[PublicFactEnvelope, ...]) -> dict[str, tuple[Mapping[str, Any], ...]]:
+    def _detail_rows(
+        facts: tuple[PublicFactEnvelope, ...],
+    ) -> dict[str, tuple[Mapping[str, Any], ...]]:
         grouped: dict[str, list[Mapping[str, Any]]] = {kind: [] for kind in DETAIL_QUERY_KINDS}
         for fact in facts:
             if fact.kind == "tool":
@@ -1115,7 +1322,9 @@ class HarnessPublicReadService:
             self._evict_expired_locked()
             manifest = self._cache.get(projection_id)
             if manifest is None:
-                raise PublicReadError("manifest_expired", "Inspector manifest is unavailable; create a new snapshot")
+                raise PublicReadError(
+                    "manifest_expired", "Inspector manifest is unavailable; create a new snapshot"
+                )
             self._cache.move_to_end(projection_id)
             return manifest
 

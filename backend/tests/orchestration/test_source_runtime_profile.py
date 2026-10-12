@@ -18,13 +18,9 @@ def source_config(tmp_path, monkeypatch):
     from agent_orchestrator.runtime import assembly
 
     if not hasattr(assembly, "resolve_profile_context_policy"):
-        pytest.skip(
-            "requires the new editable SDK; installed candidate remains separate"
-        )
+        pytest.skip("requires the new editable SDK; installed candidate remains separate")
     monkeypatch.setenv("DESKPET_SDK_RUNTIME_MODE", "editable-source")
-    return assembly.OrchestratorConfig(
-        evidence_root=tmp_path / "evidence", model="deepseek-flash"
-    )
+    return assembly.OrchestratorConfig(evidence_root=tmp_path / "evidence", model="deepseek-flash")
 
 
 def test_source_official_profile_requires_pinned_tokenizer(source_config, monkeypatch, tmp_path):
@@ -46,9 +42,7 @@ def test_source_official_profile_requires_pinned_tokenizer(source_config, monkey
     assert not source_config.evidence_root.exists()
 
 
-def test_another_endpoint_cannot_acquire_official_deepseek_counter(
-    source_config, monkeypatch
-):
+def test_another_endpoint_cannot_acquire_official_deepseek_counter(source_config, monkeypatch):
     monkeypatch.delenv("DESKPET_ORCH_TOKENIZER_PATH", raising=False)
     snapshot = ProviderSnapshot(
         "another",

@@ -22,6 +22,7 @@ Test matrix:
 * ``test_default_config_no_brave_search``       — audit guardrail (§14.9)
 * ``test_default_config_filesystem_scoped``     — §14.8 scope check
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -43,9 +44,7 @@ from deskpet.mcp.manager import (
 )
 from deskpet.tools.registry import ToolRegistry
 
-_ORIGINAL_MCP_BUILD_MATERIAL_RESOLVER = (
-    mcp_manager_mod._resolve_mcp_execution_build_material
-)
+_ORIGINAL_MCP_BUILD_MATERIAL_RESOLVER = mcp_manager_mod._resolve_mcp_execution_build_material
 
 
 def _write_fake_npx_package(cache_root: Path) -> None:
@@ -83,9 +82,7 @@ def test_npx_build_identity_uses_posix_default_cache(
         ["@modelcontextprotocol/server-filesystem", "/tmp/workspace"]
     )
     assert artifacts
-    assert artifacts[0][0] == (
-        "server-package:@modelcontextprotocol/server-filesystem@1.2.3"
-    )
+    assert artifacts[0][0] == ("server-package:@modelcontextprotocol/server-filesystem@1.2.3")
 
 
 @pytest.mark.parametrize("cache_env", ["npm_config_cache", "NPM_CONFIG_CACHE"])
@@ -106,9 +103,7 @@ def test_npx_build_identity_honors_explicit_cache_override(
     )
 
     assert artifacts
-    assert artifacts[0][0] == (
-        "server-package:@modelcontextprotocol/server-filesystem@1.2.3"
-    )
+    assert artifacts[0][0] == ("server-package:@modelcontextprotocol/server-filesystem@1.2.3")
 
 
 def test_npx_build_identity_uses_windows_local_app_data_cache(
@@ -126,9 +121,7 @@ def test_npx_build_identity_uses_windows_local_app_data_cache(
     )
 
     assert artifacts
-    assert artifacts[0][0] == (
-        "server-package:@modelcontextprotocol/server-filesystem@1.2.3"
-    )
+    assert artifacts[0][0] == ("server-package:@modelcontextprotocol/server-filesystem@1.2.3")
 
 
 # --------------------------------------------------------------------
@@ -272,8 +265,8 @@ def _build_fake_env(
         # opened stdio call stores it below via _last_command.
         cmd = getattr(_fake_stdio_client, "_last_command", None)
         script: dict[str, Any] = (
-            (scripts_by_command or {}).get(cmd) if cmd else None
-        ) or default_script or {}
+            ((scripts_by_command or {}).get(cmd) if cmd else None) or default_script or {}
+        )
         return _FakeSession(script)
 
     # Capture the command each time for the ClientSession factory to
@@ -299,9 +292,7 @@ def _build_fake_env(
             self.env = env
 
     monkeypatch.setattr(mcp_manager_mod, "stdio_client", _stdio_tracked)
-    monkeypatch.setattr(
-        mcp_manager_mod, "StdioServerParameters", _FakeStdioParams
-    )
+    monkeypatch.setattr(mcp_manager_mod, "StdioServerParameters", _FakeStdioParams)
     monkeypatch.setattr(mcp_manager_mod, "ClientSession", _fake_client_session)
     fake_material = mcp_manager_mod._McpExecutionBuildMaterial(
         provider="mcp-stdio",
@@ -387,8 +378,20 @@ async def test_namespace_no_conflict(monkeypatch: pytest.MonkeyPatch) -> None:
         {
             "enabled": True,
             "servers": [
-                {"name": "srv1", "enabled": True, "transport": "stdio", "command": "srv1", "args": []},
-                {"name": "srv2", "enabled": True, "transport": "stdio", "command": "srv2", "args": []},
+                {
+                    "name": "srv1",
+                    "enabled": True,
+                    "transport": "stdio",
+                    "command": "srv1",
+                    "args": [],
+                },
+                {
+                    "name": "srv2",
+                    "enabled": True,
+                    "transport": "stdio",
+                    "command": "srv2",
+                    "args": [],
+                },
             ],
         },
         registry,
@@ -487,9 +490,7 @@ async def test_catalog_stale_callback_from_worker_thread_reconnects(
     registry.set_mcp_catalog_stale_callback(mgr.handle_catalog_stale)
     try:
         assert "mcp_srv_ping" in registry.list_tools()
-        await asyncio.to_thread(
-            registry.invalidate_mcp_catalog_sources, ("mcp:srv",)
-        )
+        await asyncio.to_thread(registry.invalidate_mcp_catalog_sources, ("mcp:srv",))
         for _ in range(20):
             runtime = mgr._servers["srv"]  # noqa: SLF001
             if runtime.reconnect_task is not None:
@@ -686,7 +687,13 @@ async def test_disabled_server_skipped(
         {
             "enabled": True,
             "servers": [
-                {"name": "weather", "enabled": False, "transport": "stdio", "command": "weather", "args": []},
+                {
+                    "name": "weather",
+                    "enabled": False,
+                    "transport": "stdio",
+                    "command": "weather",
+                    "args": [],
+                },
             ],
         },
         registry,
@@ -711,7 +718,13 @@ async def test_unknown_transport_skipped(
         {
             "enabled": True,
             "servers": [
-                {"name": "wat", "enabled": True, "transport": "smokesignal", "command": "x", "args": []},
+                {
+                    "name": "wat",
+                    "enabled": True,
+                    "transport": "smokesignal",
+                    "command": "x",
+                    "args": [],
+                },
             ],
         },
         registry,
@@ -768,17 +781,17 @@ def test_playwright_config_adds_exact_trusted_local_page_origin(monkeypatch):
         "DESKPET_LOCAL_PAGE_URL",
         "http://localhost:15193/capability-catalog-fixture.html",
     )
-    prepared = _prepare_server_config({
-        "name": "playwright",
-        "args": [
-            "@playwright/mcp@latest",
-            "--allowed-origins",
-            "http://localhost;http://127.0.0.1",
-        ],
-    })
-    assert prepared["args"][-1] == (
-        "http://localhost;http://127.0.0.1;http://localhost:15193"
+    prepared = _prepare_server_config(
+        {
+            "name": "playwright",
+            "args": [
+                "@playwright/mcp@latest",
+                "--allowed-origins",
+                "http://localhost;http://127.0.0.1",
+            ],
+        }
     )
+    assert prepared["args"][-1] == ("http://localhost;http://127.0.0.1;http://localhost:15193")
 
 
 def test_playwright_config_rejects_external_local_page_origin(monkeypatch):
@@ -1028,9 +1041,9 @@ async def test_reconnect_publication_is_atomic_and_fences_old_incarnation(
         assert incarnation_c not in {incarnation_a, incarnation_b}
         snapshot_c = registry.catalog_snapshot()
         assert snapshot_c.revision == revision_a + 2
-        assert [
-            spec.name for spec in snapshot_c.specs if spec.source == "mcp:srv"
-        ] == ["mcp_srv_echo"]
+        assert [spec.name for spec in snapshot_c.specs if spec.source == "mcp:srv"] == [
+            "mcp_srv_echo"
+        ]
         newest = registry.get("mcp_srv_echo")
         assert newest is not None
         assert newest.schema["parameters"]["properties"]["x"]["type"] == "integer"
@@ -1086,8 +1099,6 @@ async def test_failed_reconnect_publication_preserves_previous_catalog(
 
         after = registry.catalog_snapshot()
         assert after.revision == before.revision
-        assert [spec.name for spec in after.specs] == [
-            spec.name for spec in before.specs
-        ]
+        assert [spec.name for spec in after.specs] == [spec.name for spec in before.specs]
     finally:
         await mgr.stop()

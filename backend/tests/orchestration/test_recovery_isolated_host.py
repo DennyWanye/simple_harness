@@ -27,8 +27,13 @@ from ._support import notes_provider, notes_request
 def _pin(monkeypatch, isolated):
     from agent_orchestrator.orchestrator.event_handler import Orchestrator
 
-    status = {"state": "READY", "side_effects_disabled": False, "recovery_id": "rec-1", "latest": None,
-              "isolated_missions": isolated}
+    status = {
+        "state": "READY",
+        "side_effects_disabled": False,
+        "recovery_id": "rec-1",
+        "latest": None,
+        "isolated_missions": isolated,
+    }
     monkeypatch.setattr(Orchestrator, "recovery_status", lambda self: dict(status), raising=False)
 
 
@@ -36,13 +41,22 @@ def _pin(monkeypatch, isolated):
 async def test_an_isolated_mission_is_marked_in_the_list_the_detail_and_the_chat(
     orchestration_root, principal, monkeypatch
 ):
-    service = OrchestrationService(orchestration_root, OrchestrationSettings(), provider=notes_provider(missions=2),
-                                   principal=principal, drive=False, native_test_counter=FixtureWordCounter())
+    service = OrchestrationService(
+        orchestration_root,
+        OrchestrationSettings(),
+        provider=notes_provider(missions=2),
+        principal=principal,
+        drive=False,
+        native_test_counter=FixtureWordCounter(),
+    )
     await service.start()
     try:
         bad = service.create_mission(notes_request("iso-bad"))["mission_id"]
         good = service.create_mission(notes_request("iso-good"))["mission_id"]
-        _pin(monkeypatch, {bad: {"tables": ["attempts", "tasks"], "silent_changes": [{"table": "tasks"}]}})
+        _pin(
+            monkeypatch,
+            {bad: {"tables": ["attempts", "tasks"], "silent_changes": [{"table": "tasks"}]}},
+        )
         assert service.status()["state"] == "available"  # 只隔离这一个，不让整个部署降级
 
         rows = {row["id"]: row for row in service.list_missions()}
@@ -56,11 +70,16 @@ async def test_an_isolated_mission_is_marked_in_the_list_the_detail_and_the_chat
         assert service.mission_detail(good)["recovery_isolated"] is None
 
         shown = mission_status(lambda: service, {"mission_id": bad})
-        assert shown["recovery_isolated"] == {"tables": ["attempts", "tasks"], "note": RECOVERY_ISOLATED_NOTE}
+        assert shown["recovery_isolated"] == {
+            "tables": ["attempts", "tasks"],
+            "note": RECOVERY_ISOLATED_NOTE,
+        }
         assert shown["note"] == RECOVERY_ISOLATED_NOTE
         plain = mission_status(lambda: service, {"mission_id": good})
         assert plain["recovery_isolated"] is None and plain["note"] != RECOVERY_ISOLATED_NOTE
-        chat_rows = {row["mission_id"]: row for row in mission_list(lambda: service, {})["missions"]}
+        chat_rows = {
+            row["mission_id"]: row for row in mission_list(lambda: service, {})["missions"]
+        }
         assert chat_rows[bad]["recovery_isolated"]["note"] == RECOVERY_ISOLATED_NOTE
         assert chat_rows[good]["recovery_isolated"] is None
 
@@ -73,11 +92,19 @@ async def test_an_isolated_mission_is_marked_in_the_list_the_detail_and_the_chat
 
 
 @pytest.mark.asyncio
-async def test_an_unreadable_recovery_status_means_nothing_is_isolated(orchestration_root, principal, monkeypatch):
+async def test_an_unreadable_recovery_status_means_nothing_is_isolated(
+    orchestration_root, principal, monkeypatch
+):
     from agent_orchestrator.orchestrator.event_handler import Orchestrator
 
-    service = OrchestrationService(orchestration_root, OrchestrationSettings(), provider=notes_provider(),
-                                   principal=principal, drive=False, native_test_counter=FixtureWordCounter())
+    service = OrchestrationService(
+        orchestration_root,
+        OrchestrationSettings(),
+        provider=notes_provider(),
+        principal=principal,
+        drive=False,
+        native_test_counter=FixtureWordCounter(),
+    )
     await service.start()
     try:
         mission_id = service.create_mission(notes_request("iso-x"))["mission_id"]
@@ -103,33 +130,68 @@ async def test_a_write_to_an_isolated_mission_is_refused_with_the_sdks_code_and_
     这里直接把任务放进 SDK 第 3 步写的那张隔离名单（``Orchestrator.recovery_isolated`` 只读它）。"""
     from deskpet.orchestration.chat_tool import MissionStartRefused, amend_mission
 
-    service = OrchestrationService(orchestration_root, OrchestrationSettings(), provider=notes_provider(missions=2),
-                                   principal=principal, drive=False, native_test_counter=FixtureWordCounter())
+    service = OrchestrationService(
+        orchestration_root,
+        OrchestrationSettings(),
+        provider=notes_provider(missions=2),
+        principal=principal,
+        drive=False,
+        native_test_counter=FixtureWordCounter(),
+    )
     await service.start()
     try:
         bad = service.create_mission(notes_request("iso-write-bad"))["mission_id"]
         good = service.create_mission(notes_request("iso-write-good"))["mission_id"]
-        service._orchestrator._recovery_isolated[bad] = {"tables": ["missions"], "silent_changes": []}
+        service._orchestrator._recovery_isolated[bad] = {
+            "tables": ["missions"],
+            "silent_changes": [],
+        }
 
-        approve = {"command_id": "c-iso", "proposal": {}, "approval_source": "HUMAN",
-                   "expected_requirements_ref": {"id": "r", "revision": 1, "content_hash": "0" * 64}}
-        refused = await handle(service, "mission_operation_completion_approve",
-                               {"request_id": "a1", "mission_id": bad, **approve})
+        approve = {
+            "command_id": "c-iso",
+            "proposal": {},
+            "approval_source": "HUMAN",
+            "expected_requirements_ref": {"id": "r", "revision": 1, "content_hash": "0" * 64},
+        }
+        refused = await handle(
+            service,
+            "mission_operation_completion_approve",
+            {"request_id": "a1", "mission_id": bad, **approve},
+        )
         assert refused["payload"]["ok"] is False
         assert refused["payload"]["error_code"] == "MISSION_RECOVERY_ISOLATED"
         assert refused["payload"]["error"] == RECOVERY_ISOLATED_NOTE
-        other = await handle(service, "mission_operation_completion_approve",
-                             {"request_id": "a2", "mission_id": good, **approve})
+        other = await handle(
+            service,
+            "mission_operation_completion_approve",
+            {"request_id": "a2", "mission_id": good, **approve},
+        )
         assert other["payload"]["error_code"] != "MISSION_RECOVERY_ISOLATED"
 
-        revision = int(service.mission_detail(bad)["operation_workspace"]["requirements_ref"]["revision"])
+        revision = int(
+            service.mission_detail(bad)["operation_workspace"]["requirements_ref"]["revision"]
+        )
         with pytest.raises(MissionStartRefused) as caught:
-            amend_mission(lambda: service, {"mission_id": bad, "expected_revision": revision, "reason": "加一条",
-                                            "changes": [{"op": "add", "statement": "file:MORE.md"}]},
-                          run_id="run-iso", call_id="call-iso")
-        assert caught.value.code == "MISSION_RECOVERY_ISOLATED" and str(caught.value) == RECOVERY_ISOLATED_NOTE
+            amend_mission(
+                lambda: service,
+                {
+                    "mission_id": bad,
+                    "expected_revision": revision,
+                    "reason": "加一条",
+                    "changes": [{"op": "add", "statement": "file:MORE.md"}],
+                },
+                run_id="run-iso",
+                call_id="call-iso",
+            )
+        assert (
+            caught.value.code == "MISSION_RECOVERY_ISOLATED"
+            and str(caught.value) == RECOVERY_ISOLATED_NOTE
+        )
 
         cancelled = await handle(service, "mission_cancel", {"request_id": "c1", "mission_id": bad})
-        assert cancelled["payload"]["ok"] is True and cancelled["payload"]["data"]["status"] == "CANCELLED"
+        assert (
+            cancelled["payload"]["ok"] is True
+            and cancelled["payload"]["data"]["status"] == "CANCELLED"
+        )
     finally:
         await service.close()

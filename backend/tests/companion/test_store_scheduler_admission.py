@@ -57,9 +57,7 @@ def _proposal(owner, event_id: str) -> StructuredGrowthProposalV1:
             manifest_hash="a" * 64,
         ),
         target_fence=CandidateBindingFenceV1(
-            owner_key=(
-                f"companion:{owner.profile_id}:{owner.profile_generation}"
-            ),
+            owner_key=(f"companion:{owner.profile_id}:{owner.profile_generation}"),
             scope="user",
             scope_key=owner.profile_id,
             pack_id="core.summarize-day",
@@ -98,12 +96,15 @@ def test_reflection_decision_admits_and_claims_one_owner_fenced_build(
         dedupe_key="reflection:message:1",
         payload={"event_id": event_id},
     )
-    assert store.claim_job(
-        owner,
-        claim_owner="reflector-1",
-        lease_seconds=60,
-        kinds=("reflection",),
-    ) is not None
+    assert (
+        store.claim_job(
+            owner,
+            claim_owner="reflector-1",
+            lease_seconds=60,
+            kinds=("reflection",),
+        )
+        is not None
+    )
     proposal = _proposal(owner, event_id)
 
     admitted = store.admit_reflection_decision(
@@ -143,10 +144,7 @@ def test_reflection_decision_admits_and_claims_one_owner_fenced_build(
         "candidate_ref": None,
     }
     assert replay["candidate_build"]["build_id"] == build["build_id"]
-    assert (
-        store.get_next_candidate_build(owner)["build_id"]
-        == build["build_id"]
-    )
+    assert store.get_next_candidate_build(owner)["build_id"] == build["build_id"]
     permit = store.claim_next_candidate_build(
         owner,
         claim_owner="candidate-scheduler-1",
@@ -154,11 +152,14 @@ def test_reflection_decision_admits_and_claims_one_owner_fenced_build(
     )
     assert permit is not None
     assert permit.build_id == build["build_id"]
-    assert store.claim_next_candidate_build(
-        owner,
-        claim_owner="candidate-scheduler-1",
-        lease_seconds=60,
-    ) == permit
+    assert (
+        store.claim_next_candidate_build(
+            owner,
+            claim_owner="candidate-scheduler-1",
+            lease_seconds=60,
+        )
+        == permit
+    )
 
     other = store.create_profile(
         profile_id="bob",
@@ -166,9 +167,7 @@ def test_reflection_decision_admits_and_claims_one_owner_fenced_build(
         identity_namespace_hash="relay:bob",
     )
     assert store.get_next_candidate_build(other) is None
-    with pytest.raises(
-        CompanionStateError, match="candidate_build_missing"
-    ):
+    with pytest.raises(CompanionStateError, match="candidate_build_missing"):
         store.issue_for_claim(
             build_id=build["build_id"],
             claim_owner="candidate-scheduler-2",
@@ -213,12 +212,15 @@ def test_exact_build_claim_does_not_steal_an_older_expired_build(
             dedupe_key=f"reflection:message:{index}",
             payload={"event_id": event_id},
         )
-        assert store.claim_job(
-            owner,
-            claim_owner=f"reflector-{index}",
-            lease_seconds=60,
-            kinds=("reflection",),
-        ) is not None
+        assert (
+            store.claim_job(
+                owner,
+                claim_owner=f"reflector-{index}",
+                lease_seconds=60,
+                kinds=("reflection",),
+            )
+            is not None
+        )
         return store.admit_reflection_decision(
             owner,
             job_id=job_id,
@@ -304,14 +306,8 @@ def _create_candidate(store, owner) -> None:
             effect_topology_hash="readonly-effects",
             source_facts={},
             target_facts={"expected_absent": True},
-            files=(
-                CandidatePackageFile(
-                    "SKILL.md", "instruction", digest, len(payload), "skill"
-                ),
-            ),
-            blobs=(
-                CandidatePackageBlob("file", "skill", digest, payload),
-            ),
+            files=(CandidatePackageFile("SKILL.md", "instruction", digest, len(payload), "skill"),),
+            blobs=(CandidatePackageBlob("file", "skill", digest, payload),),
         ),
         CandidateAttempt(
             candidate_id="candidate-1",
@@ -321,9 +317,7 @@ def _create_candidate(store, owner) -> None:
             source_hash="reflection-hash-1",
             candidate_mode=CandidateMode.GENESIS,
             target_id="target-1",
-            target_owner_key=(
-                f"companion:{owner.profile_id}:{owner.profile_generation}"
-            ),
+            target_owner_key=(f"companion:{owner.profile_id}:{owner.profile_generation}"),
             target_scope="user",
             target_scope_key=owner.profile_id,
             target_expected_absent=True,
@@ -414,24 +408,18 @@ def test_evaluation_admission_freezes_run_inputs_and_variants_atomically(
                  AND candidate_id='candidate-1'""",
             (owner.profile_id, owner.profile_generation),
         ).fetchone()
-        inputs = db.execute(
-            "SELECT input_hash FROM evaluation_case_inputs"
-        ).fetchall()
+        inputs = db.execute("SELECT input_hash FROM evaluation_case_inputs").fetchall()
         variants = db.execute(
             """SELECT variant,input_hash FROM evaluation_cases
                ORDER BY variant"""
         ).fetchall()
     assert candidate["status"] == "evaluating"
     assert len(inputs) == 1
-    assert {row["input_hash"] for row in variants} == {
-        inputs[0]["input_hash"]
-    }
+    assert {row["input_hash"] for row in variants} == {inputs[0]["input_hash"]}
 
     drift = dict(evaluation)
     drift["candidate_snapshot_hash"] = "drift"
-    with pytest.raises(
-        CompanionConflictError, match="evaluation_experiment_conflict"
-    ):
+    with pytest.raises(CompanionConflictError, match="evaluation_experiment_conflict"):
         store.admit_evaluation_experiment(
             owner,
             evaluation=drift,

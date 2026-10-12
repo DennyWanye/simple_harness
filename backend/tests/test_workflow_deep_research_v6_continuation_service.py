@@ -89,23 +89,33 @@ async def test_v6_double_click_and_different_caller_keys_launch_same_canonical_c
     service = _service(repository, launcher)
 
     first = await service.execute_run_action(
-        PARENT_ID, action_id="continue_research", idempotency_key="caller-one",
-        expected_version=9, payload={},
+        PARENT_ID,
+        action_id="continue_research",
+        idempotency_key="caller-one",
+        expected_version=9,
+        payload={},
     )
     replay = await service.execute_run_action(
-        PARENT_ID, action_id="continue_research", idempotency_key="caller-two",
-        expected_version=9, payload={},
+        PARENT_ID,
+        action_id="continue_research",
+        idempotency_key="caller-two",
+        expected_version=9,
+        payload={},
     )
 
     assert first["run_id"] == replay["run_id"] == CHILD_ID
     assert first["created"] is True
     assert replay["created"] is False
     assert [call[0] for call in launcher.calls] == [CHILD_ID, CHILD_ID]
-    assert launcher.calls[0][1] == launcher.calls[1][1] == {
-        "schema_version": 1,
-        "parent_run_id": PARENT_ID,
-        "source_snapshot_hash": SNAPSHOT_HASH,
-    }
+    assert (
+        launcher.calls[0][1]
+        == launcher.calls[1][1]
+        == {
+            "schema_version": 1,
+            "parent_run_id": PARENT_ID,
+            "source_snapshot_hash": SNAPSHOT_HASH,
+        }
+    )
 
 
 @pytest.mark.asyncio
@@ -114,8 +124,11 @@ async def test_v6_continuation_rejects_client_scope_or_identity_payload() -> Non
     service = _service(repository, _Launcher())
     with pytest.raises(WorkflowServiceError) as error:
         await service.execute_run_action(
-            PARENT_ID, action_id="continue_research", idempotency_key="caller-one",
-            expected_version=9, payload={"topic": "expand scope"},
+            PARENT_ID,
+            action_id="continue_research",
+            idempotency_key="caller-one",
+            expected_version=9,
+            payload={"topic": "expand scope"},
         )
     assert error.value.code == "invalid_action_payload"
     assert repository.calls == []
@@ -132,21 +145,32 @@ async def test_v6_commit_before_notify_is_replayed_from_repository_payload() -> 
     service = _service(repository, _CrashingLauncher())
     with pytest.raises(RuntimeError, match="after_commit_before_notify"):
         await service.execute_run_action(
-            PARENT_ID, action_id="continue_research", idempotency_key="caller-one",
-            expected_version=9, payload={},
+            PARENT_ID,
+            action_id="continue_research",
+            idempotency_key="caller-one",
+            expected_version=9,
+            payload={},
         )
     launcher = _Launcher()
     service.launcher = launcher
     replay = await service.execute_run_action(
-        PARENT_ID, action_id="continue_research", idempotency_key="caller-two",
-        expected_version=9, payload={},
+        PARENT_ID,
+        action_id="continue_research",
+        idempotency_key="caller-two",
+        expected_version=9,
+        payload={},
     )
     assert replay["created"] is False
-    assert launcher.calls == [(CHILD_ID, {
-        "schema_version": 1,
-        "parent_run_id": PARENT_ID,
-        "source_snapshot_hash": SNAPSHOT_HASH,
-    })]
+    assert launcher.calls == [
+        (
+            CHILD_ID,
+            {
+                "schema_version": 1,
+                "parent_run_id": PARENT_ID,
+                "source_snapshot_hash": SNAPSHOT_HASH,
+            },
+        )
+    ]
 
 
 @pytest.mark.asyncio
@@ -156,16 +180,21 @@ async def test_v6_terminal_snapshot_pin_replay_uses_persisted_terminal_time() ->
     class _TerminalStore:
         async def get_run(self, run_id: str):
             return {
-                "run_id": run_id, "workflow_name": "deep_research",
-                "workflow_version": "v6", "status": "completed",
-                "ended_at": 2_000.0, "updated_at": 2_001.0,
+                "run_id": run_id,
+                "workflow_name": "deep_research",
+                "workflow_version": "v6",
+                "status": "completed",
+                "ended_at": 2_000.0,
+                "updated_at": 2_001.0,
             }
 
         async def events_after(self, run_id: str, seq: int):
-            return [{
-                "event_type": "workflow.final",
-                "payload": {"manifest_ref": manifest_ref, "answer_status": "partial"},
-            }]
+            return [
+                {
+                    "event_type": "workflow.final",
+                    "payload": {"manifest_ref": manifest_ref, "answer_status": "partial"},
+                }
+            ]
 
     class _SnapshotRepository:
         def __init__(self) -> None:
@@ -190,10 +219,12 @@ async def test_v6_terminal_snapshot_pin_replay_uses_persisted_terminal_time() ->
     }
 
     async def completed_events(run_id: str, seq: int):
-        return [{
-            "event_type": "workflow.final",
-            "payload": {"manifest_ref": manifest_ref, "answer_status": "completed"},
-        }]
+        return [
+            {
+                "event_type": "workflow.final",
+                "payload": {"manifest_ref": manifest_ref, "answer_status": "completed"},
+            }
+        ]
 
     service.run_store.events_after = completed_events
     assert await service.persist_v6_continuation_snapshot("run-v6") is False

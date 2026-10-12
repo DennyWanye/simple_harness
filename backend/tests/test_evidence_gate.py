@@ -10,6 +10,7 @@
   - max_nudges 耗尽 → 放行 + exhausted
   - is_investigative 白名单判定
 """
+
 from __future__ import annotations
 
 from deskpet.agent.evidence_gate import EvidenceDecision, EvidenceGate

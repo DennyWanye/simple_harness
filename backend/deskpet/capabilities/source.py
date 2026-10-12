@@ -50,9 +50,7 @@ class PackSourceRequest:
                 "unsupported_source", f"unsupported source: {self.source_type}"
             )
         if not self.uri.strip() or not self.revision.strip():
-            raise CapabilitySourceError(
-                "invalid_source", "source URI and revision are required"
-            )
+            raise CapabilitySourceError("invalid_source", "source URI and revision are required")
         if "\x00" in self.uri or "\x00" in self.revision:
             raise CapabilitySourceError(
                 "invalid_source", "source URI and revision cannot contain NUL"
@@ -79,10 +77,7 @@ class StagedPack:
 
 
 class PackSourceAdapter(Protocol):
-    async def stage(
-        self, request: PackSourceRequest, destination: Path
-    ) -> StagedPack:
-        ...
+    async def stage(self, request: PackSourceRequest, destination: Path) -> StagedPack: ...
 
 
 def _prepare_destination(destination: Path) -> Path:
@@ -97,9 +92,7 @@ def _prepare_destination(destination: Path) -> Path:
 
 def _assert_tree_has_no_symlinks(root: Path) -> None:
     if root.is_symlink():
-        raise CapabilitySourceError(
-            "source_symlink_rejected", f"source root is a symlink: {root}"
-        )
+        raise CapabilitySourceError("source_symlink_rejected", f"source root is a symlink: {root}")
     for path in root.rglob("*"):
         if path.is_symlink():
             raise CapabilitySourceError(
@@ -109,22 +102,14 @@ def _assert_tree_has_no_symlinks(root: Path) -> None:
 
 
 def _ignore_python_cache(_path: str, names: list[str]) -> set[str]:
-    return {
-        name
-        for name in names
-        if name == "__pycache__" or name.endswith((".pyc", ".pyo"))
-    }
+    return {name for name in names if name == "__pycache__" or name.endswith((".pyc", ".pyo"))}
 
 
 class LocalPathPackSource:
-    def __init__(
-        self, *, package_validator: CapabilityPackageValidator | None = None
-    ) -> None:
+    def __init__(self, *, package_validator: CapabilityPackageValidator | None = None) -> None:
         self._package_validator = package_validator or CapabilityPackageValidator()
 
-    async def stage(
-        self, request: PackSourceRequest, destination: Path
-    ) -> StagedPack:
+    async def stage(self, request: PackSourceRequest, destination: Path) -> StagedPack:
         try:
             source = Path(request.uri).expanduser().resolve(strict=True)
         except OSError as exc:
@@ -187,14 +172,10 @@ class LocalPathPackSource:
 class ArchivePackSource:
     """Materialize a bounded local archive through the shared package policy."""
 
-    def __init__(
-        self, *, package_validator: CapabilityPackageValidator | None = None
-    ) -> None:
+    def __init__(self, *, package_validator: CapabilityPackageValidator | None = None) -> None:
         self._package_validator = package_validator or CapabilityPackageValidator()
 
-    async def stage(
-        self, request: PackSourceRequest, destination: Path
-    ) -> StagedPack:
+    async def stage(self, request: PackSourceRequest, destination: Path) -> StagedPack:
         if request.subdirectory is not None:
             raise CapabilitySourceError(
                 "archive_subdirectory_unsupported",
@@ -276,9 +257,7 @@ class GitPackSource:
                 stderr=asyncio.subprocess.PIPE,
             )
         except OSError as exc:
-            raise CapabilitySourceError(
-                "git_unavailable", f"cannot start git: {exc}"
-            ) from exc
+            raise CapabilitySourceError("git_unavailable", f"cannot start git: {exc}") from exc
         try:
             stdout, stderr = await asyncio.wait_for(
                 process.communicate(),
@@ -302,9 +281,7 @@ class GitPackSource:
                 f"git {' '.join(args[:2])} failed: {detail[:1000]}",
             )
 
-    async def stage(
-        self, request: PackSourceRequest, destination: Path
-    ) -> StagedPack:
+    async def stage(self, request: PackSourceRequest, destination: Path) -> StagedPack:
         target = _prepare_destination(destination)
         clone_root = target.with_name(f"{target.name}.git-fetch")
         if clone_root.exists():
@@ -338,6 +315,7 @@ class GitPackSource:
                         "git source subdirectory escapes repository",
                     ) from exc
             _assert_tree_has_no_symlinks(source_root)
+
             # The repository metadata is transport state, not pack content.
             # A subdirectory never contains the root .git directory; for a
             # root pack, ignore it during the controlled copy.
@@ -390,9 +368,7 @@ class ConfiguredPackSource:
         self._git = git or GitPackSource()
         self._archive = archive or ArchivePackSource()
 
-    async def stage(
-        self, request: PackSourceRequest, destination: Path
-    ) -> StagedPack:
+    async def stage(self, request: PackSourceRequest, destination: Path) -> StagedPack:
         resolved = self._sources.get(request.uri)
         if resolved is None:
             raise CapabilitySourceError(
@@ -439,9 +415,7 @@ class CapabilitySourceResolver:
         self._configured_sources = dict(configured_sources or {})
         validator = package_validator or CapabilityPackageValidator()
         local = LocalPathPackSource(package_validator=validator)
-        git = GitPackSource(
-            git_executable=git_executable, package_validator=validator
-        )
+        git = GitPackSource(git_executable=git_executable, package_validator=validator)
         archive = ArchivePackSource(package_validator=validator)
         self._adapters: dict[str, PackSourceAdapter] = {
             "builtin": local,
@@ -484,12 +458,8 @@ class CapabilitySourceResolver:
             subdirectory=request.subdirectory or resolved.subdirectory,
         )
 
-    async def stage(
-        self, request: PackSourceRequest, destination: str | Path
-    ) -> StagedPack:
-        return await self._adapters[request.source_type].stage(
-            request, Path(destination)
-        )
+    async def stage(self, request: PackSourceRequest, destination: str | Path) -> StagedPack:
+        return await self._adapters[request.source_type].stage(request, Path(destination))
 
 
 __all__ = [

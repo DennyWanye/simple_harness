@@ -19,6 +19,7 @@
     （R2 决策：否决用问号 `[?？]` 而非裸疑问助词 `吗么`，否则误杀整句寒暄"在吗/在不"。）
   - 整句锚定 re.fullmatch( (招呼词 + 尾缀)+ ) → True；否则 False
 """
+
 from __future__ import annotations
 
 import re

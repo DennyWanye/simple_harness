@@ -19,10 +19,12 @@ def test_the_assurance_evidence_epoch_is_not_counted():
 def test_every_other_scope_still_moves_the_digest():
     assert planning_scope_digest({"mission": 0}) != planning_scope_digest({"mission": 1})
     assert planning_scope_digest({"mission": 0}) != planning_scope_digest(
-        {"mission": 0, "branch:a": 1})
+        {"mission": 0, "branch:a": 1}
+    )
     # the old formula, unchanged, wherever Assurance has no epoch
     assert planning_scope_digest({"mission": 2, "branch:a": 1}) == sha256_hex(
-        {"branch:a": 1, "mission": 2})
+        {"branch:a": 1, "mission": 2}
+    )
 
 
 def test_request_binding_and_admission_hash_through_the_same_function():

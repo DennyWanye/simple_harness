@@ -24,6 +24,7 @@ This module is deliberately pure/stateless: no imports beyond stdlib,
 no config. Keep it that way so every tool handler can rely on
 ``classify(exc)`` without triggering circular imports.
 """
+
 from __future__ import annotations
 
 _NON_RETRIABLE: tuple[type[BaseException], ...] = (

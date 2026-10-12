@@ -84,7 +84,12 @@ class RecoveryObligation:
     detail: dict[str, Any] = field(default_factory=dict)
 
     def to_json(self) -> dict[str, Any]:
-        return {"step_no": self.step_no, "step": self.step, "status": self.status, "detail": dict(self.detail)}
+        return {
+            "step_no": self.step_no,
+            "step": self.step,
+            "status": self.status,
+            "detail": dict(self.detail),
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,8 +100,12 @@ class RecoveryReport:
     obligations: tuple[RecoveryObligation, ...]
 
     def to_json(self) -> dict[str, Any]:
-        return {"recovery_id": self.recovery_id, "state": str(self.state), "failed_step": self.failed_step,
-                "obligations": [item.to_json() for item in self.obligations]}
+        return {
+            "recovery_id": self.recovery_id,
+            "state": str(self.state),
+            "failed_step": self.failed_step,
+            "obligations": [item.to_json() for item in self.obligations],
+        }
 
 
 def _process_started_at(pid: int) -> str:
@@ -129,10 +138,19 @@ def _assurance_waiting(store: Any, mission_id: str) -> dict[str, Any]:
     （本进程不替被隔离任务写任何东西）。超过上限只记省略了几项。"""
     rows = store.connection.execute(
         "SELECT consumer, work_key, state, wait_reason FROM assurance_pending_work WHERE mission_id=? "
-        "AND state IN ('PENDING','RUNNING','WAITING') ORDER BY consumer, work_key", (mission_id,)).fetchall()
-    waiting = [{"consumer": str(row[0]), "work_key": str(row[1]), "state": str(row[2]),
-                "wait_reason": None if row[3] is None else str(row[3]), "reason": "RECOVERY_ISOLATED"}
-               for row in rows[:ISOLATED_WAITING_LIMIT]]
+        "AND state IN ('PENDING','RUNNING','WAITING') ORDER BY consumer, work_key",
+        (mission_id,),
+    ).fetchall()
+    waiting = [
+        {
+            "consumer": str(row[0]),
+            "work_key": str(row[1]),
+            "state": str(row[2]),
+            "wait_reason": None if row[3] is None else str(row[3]),
+            "reason": "RECOVERY_ISOLATED",
+        }
+        for row in rows[:ISOLATED_WAITING_LIMIT]
+    ]
     detail: dict[str, Any] = {"assurance_waiting": waiting}
     if len(rows) > ISOLATED_WAITING_LIMIT:
         detail["assurance_waiting_omitted"] = len(rows) - ISOLATED_WAITING_LIMIT
@@ -165,9 +183,13 @@ class RecoveryCoordinator:
         """只读诊断：本实例的状态加库里最近一次恢复（含八步结果）。"""
 
         latest = self._recovery.latest()
-        return {"state": str(self.state), "side_effects_disabled": self.side_effects_disabled,
-                "recovery_id": self.recovery_id, "latest": latest,
-                "isolated_missions": dict(self._orch._recovery_isolated)}
+        return {
+            "state": str(self.state),
+            "side_effects_disabled": self.side_effects_disabled,
+            "recovery_id": self.recovery_id,
+            "latest": latest,
+            "isolated_missions": dict(self._orch._recovery_isolated),
+        }
 
     # ------------------------------------------------------------------ 协议
     async def run(self) -> RecoveryReport:
@@ -203,8 +225,12 @@ class RecoveryCoordinator:
                 self._record(obligation)
                 return self._degrade(step, obligations)
             except Exception as error:  # noqa: BLE001 - 这一步冲出的异常：记类型与摘要，降级，不猜原因
-                obligation = RecoveryObligation(step_no, step, "FAILED", {
-                    "error_type": type(error).__name__, "summary": str(error)[:300]})
+                obligation = RecoveryObligation(
+                    step_no,
+                    step,
+                    "FAILED",
+                    {"error_type": type(error).__name__, "summary": str(error)[:300]},
+                )
                 obligations.append(obligation)
                 self._record(obligation)
                 return self._degrade(step, obligations)
@@ -219,23 +245,41 @@ class RecoveryCoordinator:
         self._recovery.finish(self.recovery_id, "READY")
         self.state = RecoveryState.READY
         self._protocol_done = True
-        self.report = RecoveryReport(self.recovery_id, RecoveryState.READY, None, tuple(obligations))
+        self.report = RecoveryReport(
+            self.recovery_id, RecoveryState.READY, None, tuple(obligations)
+        )
         orch.store.fault(AFTER_RECOVERY_STEP, "ready")
         return self.report
 
     def _record(self, obligation: RecoveryObligation) -> None:
         if self.recovery_id is not None:
-            self._recovery.record_step(self.recovery_id, obligation.step_no, obligation.step,
-                                       obligation.status, obligation.detail)
+            self._recovery.record_step(
+                self.recovery_id,
+                obligation.step_no,
+                obligation.step,
+                obligation.status,
+                obligation.detail,
+            )
 
     def _degrade(self, step: str, obligations: list[RecoveryObligation]) -> RecoveryReport:
         self.state = RecoveryState.DEGRADED_RECOVERY
         self._protocol_done = True
         if self.recovery_id is not None:
-            self._recovery.finish(self.recovery_id, "DEGRADED_RECOVERY", failed_step=step,
-                                  detail={"stopped_at": step, "steps_done": [o.step for o in obligations if o.status == "DONE"]})
-        self.report = RecoveryReport(self.recovery_id, RecoveryState.DEGRADED_RECOVERY, step, tuple(obligations))
-        self._orch._note(f"recovery degraded at {step}: the loop opens read-only and diagnostics only")
+            self._recovery.finish(
+                self.recovery_id,
+                "DEGRADED_RECOVERY",
+                failed_step=step,
+                detail={
+                    "stopped_at": step,
+                    "steps_done": [o.step for o in obligations if o.status == "DONE"],
+                },
+            )
+        self.report = RecoveryReport(
+            self.recovery_id, RecoveryState.DEGRADED_RECOVERY, step, tuple(obligations)
+        )
+        self._orch._note(
+            f"recovery degraded at {step}: the loop opens read-only and diagnostics only"
+        )
         return self.report
 
     async def _reenter(self) -> RecoveryReport:
@@ -253,13 +297,21 @@ class RecoveryCoordinator:
         orch._require_assurance_execution_root()
         pid = os.getpid()
         recovery_id, superseded = self._recovery.acquire(
-            owner=orch.owner, pid=pid, process_started_at=_process_started_at(pid), alive=_owner_alive)
+            owner=orch.owner,
+            pid=pid,
+            process_started_at=_process_started_at(pid),
+            alive=_owner_alive,
+        )
         self.recovery_id = recovery_id
         from .event_handler import DeferredPlanning
 
         if isinstance(orch._deferred_planning, DeferredPlanning):
             orch._deferred_planning.bind(orch.store)
-        return {"owner": orch.owner, "owner_pid": pid, "superseded": [item["recovery_id"] for item in superseded]}
+        return {
+            "owner": orch.owner,
+            "owner_pid": pid,
+            "superseded": [item["recovery_id"] for item in superseded],
+        }
 
     async def _step_manifest(self) -> dict[str, Any]:
         from ..observability.business_replay import InventoryError, inventory
@@ -270,8 +322,12 @@ class RecoveryCoordinator:
         orch = self._orch
         store = orch.store
         problems: list[str] = []
-        rows = [tuple(r) for r in store.connection.execute(
-            "SELECT version,name,checksum FROM orch_schema_migrations ORDER BY version")]
+        rows = [
+            tuple(r)
+            for r in store.connection.execute(
+                "SELECT version,name,checksum FROM orch_schema_migrations ORDER BY version"
+            )
+        ]
         expected = [(m.version, m.name, m.checksum) for m in schema.MIGRATIONS]
         if rows != expected:
             problems.append("schema_migrations_differ")
@@ -280,14 +336,21 @@ class RecoveryCoordinator:
         unclassified: list[str] = []
         try:
             classified = set(inventory()["tables"])
-            live = {row[0] for row in store.connection.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")}
+            live = {
+                row[0]
+                for row in store.connection.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+                )
+            }
             if classified - live:
-                problems.append(f"replay_inventory: classified tables missing {sorted(classified - live)}")
+                problems.append(
+                    f"replay_inventory: classified tables missing {sorted(classified - live)}"
+                )
             unclassified = sorted(live - classified)
         except InventoryError as error:
             problems.append(f"replay_inventory: {error}")
         from ..storage.taskgraph_store import TaskGraphStore
+
         bound = len(TaskGraphStore(store).bound_mission_ids(open_only=True))
         deployment: str | None = None
         if bound:
@@ -300,15 +363,23 @@ class RecoveryCoordinator:
         execution_dbs = {key: pool.execution_db.is_file() for key, pool in assembled.pools.items()}
         if not all(execution_dbs.values()):
             problems.append("execution_db_missing")
-        roots = {"artifact_store": assembled.workspaces.artifact_store.root.is_dir(),
-                 "workspaces": assembled.workspaces.root.is_dir()}
+        roots = {
+            "artifact_store": assembled.workspaces.artifact_store.root.is_dir(),
+            "workspaces": assembled.workspaces.root.is_dir(),
+        }
         # 产物根在第一次写时才建；库里记了产物、根却不在，才是清单对不上
         artifacts = int(store.connection.execute("SELECT count(*) FROM artifacts").fetchone()[0])
         if artifacts and not roots["artifact_store"]:
             problems.append("artifact_store_root_missing")
-        detail = {"schema_version": schema.SCHEMA_VERSION, "bound_active_missions": bound,
-                  "deployment_acceptance": deployment, "execution_dbs": execution_dbs, "roots": roots,
-                  "artifacts_recorded": artifacts, "unclassified_runtime_tables": unclassified}
+        detail = {
+            "schema_version": schema.SCHEMA_VERSION,
+            "bound_active_missions": bound,
+            "deployment_acceptance": deployment,
+            "execution_dbs": execution_dbs,
+            "roots": roots,
+            "artifacts_recorded": artifacts,
+            "unclassified_runtime_tables": unclassified,
+        }
         if problems:
             raise RecoveryStepFailed("manifest_check", {**detail, "problems": problems})
         return detail
@@ -324,13 +395,21 @@ class RecoveryCoordinator:
             statuses[mission.id] = str(report["status"])
             if report["status"] == INCONSISTENT:
                 inconsistent[mission.id] = {
-                    "tables": sorted(name for name, item in report["tables"].items()
-                                     if item["status"] == INCONSISTENT),
+                    "tables": sorted(
+                        name
+                        for name, item in report["tables"].items()
+                        if item["status"] == INCONSISTENT
+                    ),
                     "silent_changes": list(report.get("silent_changes") or ())[:5],
-                    **_assurance_waiting(orch.store, mission.id)}
-        detail = {"missions": statuses,
-                  "consistent": sum(1 for s in statuses.values() if s == CONSISTENT),
-                  "out_of_scope": sum(1 for s in statuses.values() if s not in (CONSISTENT, INCONSISTENT))}
+                    **_assurance_waiting(orch.store, mission.id),
+                }
+        detail = {
+            "missions": statuses,
+            "consistent": sum(1 for s in statuses.values() if s == CONSISTENT),
+            "out_of_scope": sum(
+                1 for s in statuses.values() if s not in (CONSISTENT, INCONSISTENT)
+            ),
+        }
         # 一个任务对不上只隔离它（AER 恢复第 3、8 条），不让整个部署降级
         orch._recovery_isolated.update(inconsistent)
         if inconsistent:
@@ -344,15 +423,20 @@ class RecoveryCoordinator:
         for mission_id, where, error in orch._startup_faults:
             if orch.recovery_isolated(mission_id):
                 # 第 3 步已隔离：本进程不替它写故障、不停它（N3-27），只在这一步的结果里记一笔
-                isolated.append({"mission_id": mission_id, "where": where, "error": type(error).__name__})
+                isolated.append(
+                    {"mission_id": mission_id, "where": where, "error": type(error).__name__}
+                )
                 continue
             await orch._round_fault(mission_id, where, error)
             faults += 1
         orch._startup_faults.clear()
         intents = orch.store.list_intents("AGENT_CREATED", "SUBMITTED")
         for intent in intents:
-            await orch._mission_round(intent.mission_id, f"recover_intent:{intent.intent_id}",
-                                      lambda intent=intent: orch._recover_intent(intent))
+            await orch._mission_round(
+                intent.mission_id,
+                f"recover_intent:{intent.intent_id}",
+                lambda intent=intent: orch._recover_intent(intent),
+            )
         detail: dict[str, Any] = {"startup_faults_settled": faults, "frozen_intents": len(intents)}
         if isolated:
             detail["startup_faults_isolated"] = isolated
@@ -371,7 +455,11 @@ class RecoveryCoordinator:
             except ContractError:
                 pass  # 这里没有登记受信发布者：操作类动作原样留着
         live = list(orch.store.list_actions(None, "UNKNOWN", "HANDED_OFF"))
-        live += [action for action in orch.store.list_actions(None, "FAILED") if orch.actions._failed_unproven(action)]
+        live += [
+            action
+            for action in orch.store.list_actions(None, "FAILED")
+            if orch.actions._failed_unproven(action)
+        ]
         settled: list[str] = []
         for action in live:
             key = str(action["action_key"])
@@ -402,13 +490,25 @@ class RecoveryCoordinator:
         rows = self._recovery.open_sandbox_executions()
         reports = await asyncio.to_thread(reclaim_recorded_executions, rows) if rows else []
         for report in reports:
-            self._recovery.record_sandbox_finish(str(report["execution_id"]), str(report["outcome"]))
+            self._recovery.record_sandbox_finish(
+                str(report["execution_id"]), str(report["outcome"])
+            )
         residual = [r for r in reports if r["outcome"] in ("residual", "unverifiable")]
-        cold = [dict(item) for item in (getattr(orch.assembled.workspaces, "last_sandbox_cleanup", ()) or ())]
-        detail = {"recorded_children": len(rows),
-                  "outcomes": sorted(f"{r['execution_id']}:{r['outcome']}" for r in reports),
-                  "cold_cleanup": [{"status": c.get("status"), "execution_id": (c.get("identity") or {}).get("execution_id")}
-                                   for c in cold]}
+        cold = [
+            dict(item)
+            for item in (getattr(orch.assembled.workspaces, "last_sandbox_cleanup", ()) or ())
+        ]
+        detail = {
+            "recorded_children": len(rows),
+            "outcomes": sorted(f"{r['execution_id']}:{r['outcome']}" for r in reports),
+            "cold_cleanup": [
+                {
+                    "status": c.get("status"),
+                    "execution_id": (c.get("identity") or {}).get("execution_id"),
+                }
+                for c in cold
+            ],
+        }
         if residual:
             raise RecoveryStepFailed("orphan_reclaim", {**detail, "residual": residual})
         return detail
@@ -418,7 +518,10 @@ class RecoveryCoordinator:
 
         orch = self._orch
         woken: list[str] = []
-        for key, pool in orch.assembled.pools.items():  # D6-5': each pool recovers only its own library
+        for (
+            key,
+            pool,
+        ) in orch.assembled.pools.items():  # D6-5': each pool recovers only its own library
             await pool.bridge.recover()
             woken.append(key)
         import_late_accounting(orch)

@@ -89,9 +89,7 @@ def test_policy_manifest_hash_is_fixture_locked_and_ordered() -> None:
     ("relevance", "accepted"),
     [(0.54, False), (0.55, True)],
 )
-def test_passage_relevance_boundary_is_inclusive(
-    relevance: float, accepted: bool
-) -> None:
+def test_passage_relevance_boundary_is_inclusive(relevance: float, accepted: bool) -> None:
     body = "证" * 300
     decision = admit_passage(
         _candidate(
@@ -125,9 +123,7 @@ def test_invalid_page_gate_precedes_body_span_and_relevance(flag: str) -> None:
 
 
 def test_passage_rejects_short_body_and_missing_or_untraceable_span() -> None:
-    short = admit_passage(
-        _candidate("short", body_text="证" * 299, span_text="证" * 20)
-    )
+    short = admit_passage(_candidate("short", body_text="证" * 299, span_text="证" * 20))
     missing = admit_passage(_candidate("missing-span", span_text="not in body"))
     assert short.reason == "body_too_short"
     assert missing.reason == "body_span_missing"
@@ -161,23 +157,24 @@ def test_passage_rejects_short_body_and_missing_or_untraceable_span() -> None:
         ({"first_party_satisfied": False}, "partially_covered"),
     ],
 )
-def test_core_coverage_threshold_boundaries(
-    changes: dict[str, object], expected: str
-) -> None:
+def test_core_coverage_threshold_boundaries(changes: dict[str, object], expected: str) -> None:
     assert classify_coverage(_metrics(**changes)) == expected
 
 
 def test_supporting_dimension_is_covered_with_one_distinct_family() -> None:
-    assert classify_coverage(
-        _metrics(
-            importance="supporting",
-            admitted_passages=1,
-            strong_distinct_families=1,
-            winning_relevance=0.55,
-            first_party_required=False,
-            first_party_satisfied=True,
+    assert (
+        classify_coverage(
+            _metrics(
+                importance="supporting",
+                admitted_passages=1,
+                strong_distinct_families=1,
+                winning_relevance=0.55,
+                first_party_required=False,
+                first_party_satisfied=True,
+            )
         )
-    ) == "covered"
+        == "covered"
+    )
 
 
 def _fixture_candidates() -> tuple[EvidenceCandidate, ...]:
@@ -219,9 +216,7 @@ def test_source_family_exact_strong_weak_none_and_weak_does_not_fold() -> None:
 def test_official_original_beats_baidu_and_reprint_as_family_canonical() -> None:
     candidates = _fixture_candidates()
     _, families, matches = fold_source_families(candidates)
-    official_family = next(
-        family for family in families if candidates[0].url in family.member_urls
-    )
+    official_family = next(family for family in families if candidates[0].url in family.member_urls)
     assert official_family.canonical_source_id == "moe-original"
     assert official_family.canonical_url == candidates[0].url
     assert official_family.source_tier == "first_party"
@@ -257,9 +252,7 @@ def test_all_education_core_require_first_party_and_equity_requires_statistics()
             )
         )
     first = evaluate_evidence(dimensions, candidates)
-    statuses = {
-        item.dimension_id: item.status for item in first.dimension_coverages
-    }
+    statuses = {item.dimension_id: item.status for item in first.dimension_coverages}
     assert statuses["edu_equity_urban_rural_region"] == "partially_covered"
     assert all(
         status == "covered"

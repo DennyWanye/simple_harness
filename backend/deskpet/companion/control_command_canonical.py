@@ -91,9 +91,7 @@ def encode_control_body(value: object) -> bytes:
             payload.extend(encode_control_body(key))
             payload.extend(encode_control_body(item))
         return bytes(payload)
-    if isinstance(value, Sequence) and not isinstance(
-        value, (str, bytes, bytearray, memoryview)
-    ):
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray, memoryview)):
         payload = bytearray(b"\x05")
         payload.extend(_u32(len(value)))
         for item in value:
@@ -147,9 +145,8 @@ def credential_signed_payload(
 ) -> bytes:
     """Build the fixed-order Ed25519 signed payload."""
 
-    if (
-        len(canonical_request_hash_hex) != 64
-        or any(ch not in "0123456789abcdef" for ch in canonical_request_hash_hex)
+    if len(canonical_request_hash_hex) != 64 or any(
+        ch not in "0123456789abcdef" for ch in canonical_request_hash_hex
     ):
         raise CanonicalCommandError("canonical_request_hash:not_lower_hex_sha256")
     return b"".join(

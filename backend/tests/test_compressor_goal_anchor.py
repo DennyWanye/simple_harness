@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: BUSL-1.1
 """TDD tests for WI-1.3 re-anchor: ContextCompressor goal_text injection."""
+
 import pytest
 from deskpet.agent.context_compressor import ContextCompressor
 
@@ -26,16 +27,19 @@ async def test_compress_bc_when_goal_none(monkeypatch):
 async def test_compress_injects_goal_anchor_as_system():
     """With a working LLM, compress(msgs, goal_text=...) injects exactly one
     system message containing '[目标锚定]' and the goal text."""
+
     class _LLM:
         async def chat_with_fallback(self, *a, **k):
             class R:
                 content = "SUMMARY"
+
             return R()
 
     c = ContextCompressor(llm_registry=_LLM())
     r = await c.compress(_msgs(), goal_text="整理三个会议纪要")
     anchor = [
-        m for m in r.messages
+        m
+        for m in r.messages
         if m.get("role") == "system" and "[目标锚定]" in (m.get("content") or "")
     ]
     assert len(anchor) == 1
@@ -45,10 +49,12 @@ async def test_compress_injects_goal_anchor_as_system():
 @pytest.mark.asyncio
 async def test_goal_anchor_respects_soft_cap():
     """A huge goal_text is truncated; injected anchor block << raw input size."""
+
     class _LLM:
         async def chat_with_fallback(self, *a, **k):
             class R:
                 content = "S"
+
             return R()
 
     c = ContextCompressor(llm_registry=_LLM())
@@ -77,17 +83,27 @@ async def test_compress_bc_no_middle_goal_none():
 @pytest.mark.asyncio
 async def test_compress_bc_empty_goal_string():
     """Empty string for goal_text → treated as None, nothing injected (BC)."""
+
     class _LLM:
         async def chat_with_fallback(self, *a, **k):
             class R:
                 content = "SUMMARY"
+
             return R()
 
     c = ContextCompressor(llm_registry=_LLM())
     r_none = await c.compress(_msgs(), goal_text=None)
     r_empty = await c.compress(_msgs(), goal_text="")
-    anchor_none = [m for m in r_none.messages if m.get("role") == "system" and "[目标锚定]" in (m.get("content") or "")]
-    anchor_empty = [m for m in r_empty.messages if m.get("role") == "system" and "[目标锚定]" in (m.get("content") or "")]
+    anchor_none = [
+        m
+        for m in r_none.messages
+        if m.get("role") == "system" and "[目标锚定]" in (m.get("content") or "")
+    ]
+    anchor_empty = [
+        m
+        for m in r_empty.messages
+        if m.get("role") == "system" and "[目标锚定]" in (m.get("content") or "")
+    ]
     assert len(anchor_none) == 0
     assert len(anchor_empty) == 0
 
@@ -95,16 +111,19 @@ async def test_compress_bc_empty_goal_string():
 @pytest.mark.asyncio
 async def test_compress_includes_pending_task_in_anchor():
     """When pending_tasks is non-empty, anchor includes '[当前子目标]'."""
+
     class _LLM:
         async def chat_with_fallback(self, *a, **k):
             class R:
                 content = "SUMMARY"
+
             return R()
 
     c = ContextCompressor(llm_registry=_LLM())
     r = await c.compress(_msgs(), goal_text="写周报", pending_tasks=["先收集数据", "再汇总"])
     anchor = [
-        m for m in r.messages
+        m
+        for m in r.messages
         if m.get("role") == "system" and "[目标锚定]" in (m.get("content") or "")
     ]
     assert len(anchor) == 1

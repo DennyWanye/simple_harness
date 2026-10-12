@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 """Body-free accounting for provider-normalized message attachments."""
+
 from __future__ import annotations
 
 import base64
@@ -108,7 +109,11 @@ def _content_block_size(block: Mapping[str, Any]) -> int:
             return len(candidate)
         if not isinstance(candidate, str) or not candidate:
             continue
-        encoded = candidate.split(",", 1)[1] if candidate.startswith("data:") and "," in candidate else candidate
+        encoded = (
+            candidate.split(",", 1)[1]
+            if candidate.startswith("data:") and "," in candidate
+            else candidate
+        )
         try:
             return len(base64.b64decode(encoded, validate=True))
         except Exception:

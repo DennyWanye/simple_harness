@@ -11,6 +11,7 @@
   - parallelizable 解析
   - 3 级 JSON 容错（fenced 围栏）
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -130,10 +131,15 @@ def test_manual_authorization_skips_model_classified_chitchat() -> None:
 
 def test_planning_enabled_complex_generates_plan() -> None:
     prov = _provider(_plan_payload(with_parallel=True))
-    plan = asyncio.run(maybe_extract_general_plan(
-        prov, _LONG_MSG, None,
-        planning_enabled=True, problem_type="debug",
-    ))
+    plan = asyncio.run(
+        maybe_extract_general_plan(
+            prov,
+            _LONG_MSG,
+            None,
+            planning_enabled=True,
+            problem_type="debug",
+        )
+    )
     assert isinstance(plan, Plan)
     _, kwargs = prov.chat_with_tools.call_args
     assert kwargs["response_format"] is PLAN_SCHEMA
@@ -145,22 +151,32 @@ def test_planning_enabled_complex_generates_plan() -> None:
 
 def test_simple_problem_type_skips() -> None:
     prov = _provider(_plan_payload())
-    plan = asyncio.run(maybe_extract_general_plan(
-        prov, _LONG_MSG, None,
-        planning_enabled=True, problem_type="factual_qa",
-    ))
+    plan = asyncio.run(
+        maybe_extract_general_plan(
+            prov,
+            _LONG_MSG,
+            None,
+            planning_enabled=True,
+            problem_type="factual_qa",
+        )
+    )
     assert plan is None
     prov.chat_with_tools.assert_not_called()
 
 
 def test_attack_order_injected_into_prompt() -> None:
     prov = _provider(_plan_payload())
-    asyncio.run(maybe_extract_general_plan(
-        prov, _LONG_MSG, None,
-        planning_enabled=True, problem_type="multi_task",
-        attack_order=[2, 1],
-        contradiction_descs={1: "token 过期", 2: "数据库连接超时"},
-    ))
+    asyncio.run(
+        maybe_extract_general_plan(
+            prov,
+            _LONG_MSG,
+            None,
+            planning_enabled=True,
+            problem_type="multi_task",
+            attack_order=[2, 1],
+            contradiction_descs={1: "token 过期", 2: "数据库连接超时"},
+        )
+    )
     args, _ = prov.chat_with_tools.call_args
     user_content = args[0][1]["content"]
     assert "主要矛盾攻击顺序" in user_content
@@ -171,10 +187,15 @@ def test_attack_order_injected_into_prompt() -> None:
 
 def test_parallelizable_defaults_false() -> None:
     prov = _provider(_plan_payload(with_parallel=False))
-    plan = asyncio.run(maybe_extract_general_plan(
-        prov, _LONG_MSG, None,
-        planning_enabled=True, problem_type="creation",
-    ))
+    plan = asyncio.run(
+        maybe_extract_general_plan(
+            prov,
+            _LONG_MSG,
+            None,
+            planning_enabled=True,
+            problem_type="creation",
+        )
+    )
     assert plan.steps[0].parallelizable is False
 
 
@@ -182,10 +203,15 @@ def test_fenced_json_fallback() -> None:
     """Provider 吐 ```json 围栏也能解析（3 级容错）。"""
     fenced = "思考中...\n```json\n" + _plan_payload() + "\n```"
     prov = _provider(fenced)
-    plan = asyncio.run(maybe_extract_general_plan(
-        prov, _LONG_MSG, None,
-        planning_enabled=True, problem_type="debug",
-    ))
+    plan = asyncio.run(
+        maybe_extract_general_plan(
+            prov,
+            _LONG_MSG,
+            None,
+            planning_enabled=True,
+            problem_type="debug",
+        )
+    )
     assert isinstance(plan, Plan)
     assert plan.steps[0].title == "查 token"
 

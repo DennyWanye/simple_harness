@@ -23,9 +23,15 @@ from ._support import notes_provider
 
 
 @pytest.mark.asyncio
-async def test_manifest_records_the_imported_sdk_and_the_fixed_policy(orchestration_root, principal):
+async def test_manifest_records_the_imported_sdk_and_the_fixed_policy(
+    orchestration_root, principal
+):
     service = OrchestrationService(
-        orchestration_root, OrchestrationSettings(), provider=notes_provider(), principal=principal, drive=False,
+        orchestration_root,
+        OrchestrationSettings(),
+        provider=notes_provider(),
+        principal=principal,
+        drive=False,
         native_test_counter=FixtureWordCounter(),
     )
     await service.start()
@@ -66,7 +72,11 @@ async def test_a_version_that_differs_from_the_pin_never_opens_the_library(
 
     monkeypatch.setattr(service_module, "distributions", mismatched)
     service = OrchestrationService(
-        orchestration_root, OrchestrationSettings(), provider=notes_provider(), principal=principal, drive=False,
+        orchestration_root,
+        OrchestrationSettings(),
+        provider=notes_provider(),
+        principal=principal,
+        drive=False,
         native_test_counter=FixtureWordCounter(),
     )
     await service.start()
@@ -90,9 +100,15 @@ async def test_a_deployment_whose_taskgraph_gate_is_not_validated_is_refused_bef
 
     **改坏检验**：启动时不看 ``acceptance_status`` → NOT_RUN 的部署照样可用 → 变红。"""
 
-    monkeypatch.setattr(OrchestrationService, "_taskgraph_acceptance_status", staticmethod(lambda: "NOT_RUN"))
+    monkeypatch.setattr(
+        OrchestrationService, "_taskgraph_acceptance_status", staticmethod(lambda: "NOT_RUN")
+    )
     service = OrchestrationService(
-        orchestration_root, OrchestrationSettings(), provider=notes_provider(), principal=principal, drive=False,
+        orchestration_root,
+        OrchestrationSettings(),
+        provider=notes_provider(),
+        principal=principal,
+        drive=False,
         native_test_counter=FixtureWordCounter(),
     )
     await service.start()
@@ -109,10 +125,18 @@ async def test_a_deployment_whose_taskgraph_gate_is_not_validated_is_refused_bef
 
 
 @pytest.mark.asyncio
-async def test_a_validated_taskgraph_gate_lets_the_deployment_start(orchestration_root, principal, monkeypatch):
-    monkeypatch.setattr(OrchestrationService, "_taskgraph_acceptance_status", staticmethod(lambda: "VALIDATED"))
+async def test_a_validated_taskgraph_gate_lets_the_deployment_start(
+    orchestration_root, principal, monkeypatch
+):
+    monkeypatch.setattr(
+        OrchestrationService, "_taskgraph_acceptance_status", staticmethod(lambda: "VALIDATED")
+    )
     service = OrchestrationService(
-        orchestration_root, OrchestrationSettings(), provider=notes_provider(), principal=principal, drive=False,
+        orchestration_root,
+        OrchestrationSettings(),
+        provider=notes_provider(),
+        principal=principal,
+        drive=False,
         native_test_counter=FixtureWordCounter(),
     )
     await service.start()

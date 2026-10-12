@@ -13,6 +13,7 @@ review_slides() 让 gpt-5.5 看图评审(文字溢出/截断/压主体/对比度
 - 从不抛异常: vision 不可用/解析失败 → 返回 [](调用方跳过闭环,主流程零影响)。
 - 成本可控: 图缩到宽 768 再 base64;一次评审 = 1 个 vision 调用。
 """
+
 from __future__ import annotations
 
 import base64
@@ -32,7 +33,9 @@ _REVIEW_CHECKS = """你是严格的 PPT 视觉质检员。逐页检查幻灯片�
 3. misfit: 版式与内容不匹配(如要点太多挤爆容器、内容放错位置)
 4. blank: 大面积异常空白/元素缺失"""
 
-_REVIEW_SYSTEM = _REVIEW_CHECKS + """
+_REVIEW_SYSTEM = (
+    _REVIEW_CHECKS
+    + """
 
 每页给出判定与【修复动作】(只能从下面选):
 - "ok": 本页合格
@@ -42,8 +45,11 @@ _REVIEW_SYSTEM = _REVIEW_CHECKS + """
 输出严格 JSON 数组,不要任何其它文字:
 [{"page":1,"ok":true,"issues":[],"action":"ok"},
  {"page":2,"ok":false,"issues":["标题压在人脸上"],"action":"change_variant","variant":"split_left"}]"""
+)
 
-_REVIEW_SYSTEM_TEMPLATE = _REVIEW_CHECKS + """
+_REVIEW_SYSTEM_TEMPLATE = (
+    _REVIEW_CHECKS
+    + """
 
 这是【模板填充】的 PPT(设计页来自现成模板,内容是填进去的)。每页给出判定与【修复动作】(只能从下面选):
 - "ok": 本页合格
@@ -53,6 +59,7 @@ _REVIEW_SYSTEM_TEMPLATE = _REVIEW_CHECKS + """
 输出严格 JSON 数组,不要任何其它文字:
 [{"page":1,"ok":true,"issues":[],"action":"ok"},
  {"page":2,"ok":false,"issues":["目录数字与文字重叠"],"action":"change_page"}]"""
+)
 
 
 _REVIEW_SYSTEM_FULL_PAGE = """You are a strict presentation-page reviewer. Each image is a
@@ -154,11 +161,7 @@ def vision_chat(
         if resp.status_code != 200:
             log.warning("vision_chat HTTP %d: %s", resp.status_code, resp.text[:200])
             return ""
-        return (
-            (resp.json().get("choices") or [{}])[0]
-            .get("message", {})
-            .get("content", "")
-        ) or ""
+        return ((resp.json().get("choices") or [{}])[0].get("message", {}).get("content", "")) or ""
     except Exception as exc:  # noqa: BLE001
         log.warning("vision_chat failed: %s", str(exc)[:200])
         return ""
@@ -177,16 +180,16 @@ def _parse_review_json(text: str) -> list[dict[str, Any]]:
         for item in data:
             if not isinstance(item, dict):
                 continue
-            out.append({
-                "page": int(item.get("page") or 0),
-                "ok": bool(item.get("ok", True)),
-                "issues": [str(x) for x in (item.get("issues") or [])][:5],
-                "action": str(item.get("action") or "ok"),
-                "variant": str(item.get("variant") or ""),
-                "reason_codes": [
-                    str(x) for x in (item.get("reason_codes") or [])
-                ][:8],
-            })
+            out.append(
+                {
+                    "page": int(item.get("page") or 0),
+                    "ok": bool(item.get("ok", True)),
+                    "issues": [str(x) for x in (item.get("issues") or [])][:5],
+                    "action": str(item.get("action") or "ok"),
+                    "variant": str(item.get("variant") or ""),
+                    "reason_codes": [str(x) for x in (item.get("reason_codes") or [])][:8],
+                }
+            )
         return out
     except Exception as exc:  # noqa: BLE001
         log.debug("parse review json failed: %s", exc)
@@ -211,50 +214,54 @@ def review_slides(
     """
     try:
         content: list[dict[str, Any]] = []
-        n = (
-            len(png_paths)
-            if mode == "full_page_images"
-            else min(len(png_paths), max_pages)
-        )
+        n = len(png_paths) if mode == "full_page_images" else min(len(png_paths), max_pages)
         for i in range(n):
             b64 = _b64_image(png_paths[i])
             if not b64:
                 continue
             meta = pages_meta[i] if i < len(pages_meta) else {}
             if mode == "full_page_images":
-                content.append({
+                content.append(
+                    {
+                        "type": "text",
+                        "text": (
+                            f"Page {i + 1} | EXACT_COPY="
+                            f"{json.dumps(meta.get('expected_text', {}), ensure_ascii=False, sort_keys=True)}"
+                        ),
+                    }
+                )
+            content.append(
+                {
                     "type": "text",
                     "text": (
-                        f"Page {i + 1} | EXACT_COPY="
-                        f"{json.dumps(meta.get('expected_text', {}), ensure_ascii=False, sort_keys=True)}"
+                        f"第 {i + 1} 页 | 版式={meta.get('variant', '?')} | "
+                        f"标题={meta.get('title', '')!r} | 要点数={meta.get('n_bullets', 0)}"
                     ),
-                })
-            content.append({
-                "type": "text",
-                "text": (
-                    f"第 {i + 1} 页 | 版式={meta.get('variant', '?')} | "
-                    f"标题={meta.get('title', '')!r} | 要点数={meta.get('n_bullets', 0)}"
-                ),
-            })
-            content.append({
-                "type": "image_url",
-                "image_url": {"url": f"data:image/jpeg;base64,{b64}"},
-            })
+                }
+            )
+            content.append(
+                {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/jpeg;base64,{b64}"},
+                }
+            )
         if not content:
             return []
-        content.append({
-            "type": "text",
-            "text": f"共 {n} 页。请逐页质检并按规定格式输出 JSON 数组。",
-        })
+        content.append(
+            {
+                "type": "text",
+                "text": f"共 {n} 页。请逐页质检并按规定格式输出 JSON 数组。",
+            }
+        )
 
         system_prompt = (
             _REVIEW_SYSTEM_FULL_PAGE
             if mode == "full_page_images"
-            else _REVIEW_SYSTEM_TEMPLATE if mode == "template" else _REVIEW_SYSTEM
+            else _REVIEW_SYSTEM_TEMPLATE
+            if mode == "template"
+            else _REVIEW_SYSTEM
         )
-        text = vision_chat(
-            content, system=system_prompt, timeout=timeout, max_tokens=1500
-        )
+        text = vision_chat(content, system=system_prompt, timeout=timeout, max_tokens=1500)
         if not text:
             return []
         reviews = _parse_review_json(text)

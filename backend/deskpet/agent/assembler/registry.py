@@ -12,6 +12,7 @@ Each component's ``provide()`` is wrapped with a soft timeout (from
 ``ComponentContext.deadline_wall_time``) — slow components still return
 a partial slice rather than starving the rest.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -130,9 +131,7 @@ class ComponentRegistry:
         if timeout_ms is not None:
             per_component_timeout_s = max(0.05, timeout_ms / 1000.0)
 
-        async def _safe_provide(
-            name: str, comp: Component
-        ) -> Slice:
+        async def _safe_provide(name: str, comp: Component) -> Slice:
             start = time.monotonic()
 
             def _stamp(slice_obj: Slice, *, status: str) -> Slice:
@@ -227,10 +226,7 @@ class ComponentRegistry:
                     outer_timeout_ms=outer_timeout_s * 1000.0,
                     pending=[n for n, _ in to_run],
                 )
-                results = [
-                    Slice(component_name=n, meta={"error": "timeout"})
-                    for n, _ in to_run
-                ]
+                results = [Slice(component_name=n, meta={"error": "timeout"}) for n, _ in to_run]
 
         # Preserve registration order for stable output.
         return list(results)

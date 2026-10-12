@@ -154,8 +154,12 @@ class CompositionAcceptanceAssembly:
                 # One stuck compound does not block its siblings — but it is said, not hidden.
                 if self.on_deferred is not None:
                     binding = view.network.binding_for_occurrence(spec.occurrence_id)
-                    self.on_deferred(str(spec.occurrence_id), str(spec.task_id),
-                                     str(binding.goal_signature.signature_id), error)
+                    self.on_deferred(
+                        str(spec.occurrence_id),
+                        str(spec.task_id),
+                        str(binding.goal_signature.signature_id),
+                        error,
+                    )
                 continue
             if receipt is not None:
                 formed.append(receipt)
@@ -179,9 +183,7 @@ class CompositionAcceptanceAssembly:
             for binding in view.network.adopted_children(occurrence_id)
             if binding.requiredness in GATING_REQUIREDNESS
         ]
-        accepted = self._accepted_children(
-            mission_id, view.network.adopted_children(occurrence_id)
-        )
+        accepted = self._accepted_children(mission_id, view.network.adopted_children(occurrence_id))
         if any(str(binding.occurrence_id) not in accepted for binding in gating):
             return None
         binding = view.network.binding_for_occurrence(occurrence_id)
@@ -229,8 +231,11 @@ class CompositionAcceptanceAssembly:
         record = self.semantics.official_review_record(str(package.package_id))
         if record is None:
             return None
-        ruling = (adjudication_of(self.store, str(record.record_id))
-                  if record.verdict is ReviewVerdict.INCONCLUSIVE else None)
+        ruling = (
+            adjudication_of(self.store, str(record.record_id))
+            if record.verdict is ReviewVerdict.INCONCLUSIVE
+            else None
+        )
         action = assured_composition_action(record, ruling)
         if action == "ask":
             if self.ask_person is not None:
@@ -241,14 +246,33 @@ class CompositionAcceptanceAssembly:
                 self.on_rejected(record, package, str(spec.task_id), str(occurrence_id))
             return None
         return self._commit_assured_composition(
-            mission_id, spec, binding, revision, package, record, accepted, producers,
-            instance_id=instance_id, manifest=manifest, now_ms=now_ms,
+            mission_id,
+            spec,
+            binding,
+            revision,
+            package,
+            record,
+            accepted,
+            producers,
+            instance_id=instance_id,
+            manifest=manifest,
+            now_ms=now_ms,
         )
 
-
     def _commit_assured_composition(
-        self, mission_id, spec, binding, revision, package, record, accepted, producers, *,
-        instance_id, manifest, now_ms,
+        self,
+        mission_id,
+        spec,
+        binding,
+        revision,
+        package,
+        record,
+        accepted,
+        producers,
+        *,
+        instance_id,
+        manifest,
+        now_ms,
     ):  # type: ignore[no-untyped-def]
         """Form the compound's GoalResolution from its official COMPOSITION record.
 
@@ -273,8 +297,9 @@ class CompositionAcceptanceAssembly:
             method_instance_id=instance_id,
             input_manifest_hash=manifest,
             artifact_refs=(),
-            child_resolution_ids=tuple(ref.id for ref in package.candidate_refs
-                if ref.kind is TypedRefKind.RESOLUTION),
+            child_resolution_ids=tuple(
+                ref.id for ref in package.candidate_refs if ref.kind is TypedRefKind.RESOLUTION
+            ),
             criteria=tuple(
                 ResolutionCriterion(
                     criterion_id=item.criterion_id,
@@ -359,13 +384,22 @@ class CompositionAcceptanceAssembly:
         # ``accepted`` 装的是子步骤的支撑（验收或复用的目标结论），引用由支撑读取给出。
         from .completion_support import read_completion_support
 
-        supports = tuple(read_completion_support(self.store, mission_id, source_id)
-            for source_ids in accepted.values() for source_id in source_ids)
-        child_refs = tuple(item.ref for item in supports if item.ref.kind is TypedRefKind.ACCEPTANCE)
-        resolution_refs = tuple(item.ref for item in supports if item.ref.kind is TypedRefKind.RESOLUTION)
+        supports = tuple(
+            read_completion_support(self.store, mission_id, source_id)
+            for source_ids in accepted.values()
+            for source_id in source_ids
+        )
+        child_refs = tuple(
+            item.ref for item in supports if item.ref.kind is TypedRefKind.ACCEPTANCE
+        )
+        resolution_refs = tuple(
+            item.ref for item in supports if item.ref.kind is TypedRefKind.RESOLUTION
+        )
         identity: dict[str, Any] = {
-            "occ": str(spec.occurrence_id), "rev": revision.revision,
-            "method_instance_id": method_instance_id, "manifest_hash": manifest_hash,
+            "occ": str(spec.occurrence_id),
+            "rev": revision.revision,
+            "method_instance_id": method_instance_id,
+            "manifest_hash": manifest_hash,
             "supports": [ref.to_json() for ref in (*child_refs, *resolution_refs)],
         }
         digest = content_hash_of(identity)[:32]
@@ -400,7 +434,6 @@ class CompositionAcceptanceAssembly:
             method_instance_id=MethodInstanceId(method_instance_id),
         )
         return package
-
 
     def _read_set(
         self, mission_id: str, binding: Any, revision: RequirementsRevision

@@ -72,43 +72,23 @@ class HumanDecision:
             decision_id=str(row["decision_id"]),
             run_id=str(row["run_id"]),
             node_execution_id=(
-                str(row["node_execution_id"])
-                if row["node_execution_id"] is not None
-                else None
+                str(row["node_execution_id"]) if row["node_execution_id"] is not None else None
             ),
-            interrupt_id=(
-                str(row["interrupt_id"])
-                if row["interrupt_id"] is not None
-                else None
-            ),
+            interrupt_id=(str(row["interrupt_id"]) if row["interrupt_id"] is not None else None),
             checkpoint_ns=str(row["checkpoint_ns"]),
             checkpoint_id=str(row["checkpoint_id"]),
             kind=str(row["kind"]),
             status=DecisionStatus(str(row["status"])),
             prompt=json.loads(str(row["prompt_json"])),
             response=(
-                json.loads(str(row["response_json"]))
-                if row["response_json"] is not None
-                else None
+                json.loads(str(row["response_json"])) if row["response_json"] is not None else None
             ),
             nonce=str(row["nonce"]),
             version=int(row["decision_version"]),
-            expires_at=(
-                float(row["expires_at"])
-                if row["expires_at"] is not None
-                else None
-            ),
+            expires_at=(float(row["expires_at"]) if row["expires_at"] is not None else None),
             created_at=float(row["created_at"]),
-            resolved_at=(
-                float(row["resolved_at"])
-                if row["resolved_at"] is not None
-                else None
-            ),
-            consumed_at=(
-                float(row["consumed_at"])
-                if row["consumed_at"] is not None
-                else None
-            ),
+            resolved_at=(float(row["resolved_at"]) if row["resolved_at"] is not None else None),
+            consumed_at=(float(row["consumed_at"]) if row["consumed_at"] is not None else None),
             consumed_checkpoint_id=(
                 str(row["consumed_checkpoint_id"])
                 if row["consumed_checkpoint_id"] is not None
@@ -136,11 +116,7 @@ class HumanGrant:
             scope=json.loads(str(row["scope_json"])),
             status=GrantStatus(str(row["status"])),
             created_at=float(row["created_at"]),
-            consumed_at=(
-                float(row["consumed_at"])
-                if row["consumed_at"] is not None
-                else None
-            ),
+            consumed_at=(float(row["consumed_at"]) if row["consumed_at"] is not None else None),
         )
 
 
@@ -244,9 +220,7 @@ class HumanDecisionStore:
         if not interrupt_id:
             raise HumanDecisionError("invalid_interrupt_id", "Interrupt id is required")
         if not checkpoint_id:
-            raise HumanDecisionError(
-                "invalid_checkpoint", "A decision requires a checkpoint id"
-            )
+            raise HumanDecisionError("invalid_checkpoint", "A decision requires a checkpoint id")
         normalized_kind = str(kind).strip() or "human_decision"
         resolved_now = time.time() if now is None else float(now)
         if expires_at is not None and expires_at <= resolved_now:
@@ -399,9 +373,7 @@ class HumanDecisionStore:
         if not kind:
             raise HumanDecisionError("invalid_decision_kind", "Decision kind is required")
         if not checkpoint_id:
-            raise HumanDecisionError(
-                "invalid_checkpoint", "A decision requires a checkpoint id"
-            )
+            raise HumanDecisionError("invalid_checkpoint", "A decision requires a checkpoint id")
         now = self._clock()
         if expires_at is not None and expires_at <= now:
             raise HumanDecisionError(
@@ -513,16 +485,12 @@ class HumanDecisionStore:
 
             resolved_checkpoint_id = checkpoint_id or str(row["checkpoint_id"])
             resolved_checkpoint_ns = (
-                str(row["checkpoint_ns"])
-                if checkpoint_ns is None
-                else checkpoint_ns
+                str(row["checkpoint_ns"]) if checkpoint_ns is None else checkpoint_ns
             )
             if row["expires_at"] is not None and float(row["expires_at"]) <= now:
                 await self._expire_rows(db, [row], now)
                 await db.commit()
-                raise self._decision_error(
-                    "decision_expired", "Decision has expired", decision_id
-                )
+                raise self._decision_error("decision_expired", "Decision has expired", decision_id)
             if row["status"] == DecisionStatus.OPEN.value:
                 if (
                     row["interrupt_id"] == interrupt_id
@@ -683,7 +651,7 @@ class HumanDecisionStore:
             rows = await (
                 await db.execute(
                     f"""SELECT * FROM workflow_decisions
-                    WHERE {' AND '.join(clauses)}
+                    WHERE {" AND ".join(clauses)}
                     ORDER BY created_at,decision_id LIMIT ?""",
                     params,
                 )
@@ -740,9 +708,7 @@ class HumanDecisionStore:
 
         current = await self.get_decision(decision_id)
         if current is None:
-            raise self._decision_error(
-                "decision_not_found", "Decision does not exist", decision_id
-            )
+            raise self._decision_error("decision_not_found", "Decision does not exist", decision_id)
         normalized = self._validate_response(current.kind, response, validator)
         response_json = canonical_json(normalized)
         now = self._clock()
@@ -762,9 +728,7 @@ class HumanDecisionStore:
             if row["expires_at"] is not None and float(row["expires_at"]) <= now:
                 await self._expire_rows(db, [row], now)
                 await db.commit()
-                raise self._decision_error(
-                    "decision_expired", "Decision has expired", decision_id
-                )
+                raise self._decision_error("decision_expired", "Decision has expired", decision_id)
 
             status = str(row["status"])
             if status != DecisionStatus.OPEN.value:
@@ -777,9 +741,8 @@ class HumanDecisionStore:
                 raise self._decision_error(
                     code, f"Decision cannot be resolved from status {status}", decision_id
                 )
-            if (
-                int(row["decision_version"]) != expected_version
-                or not hmac.compare_digest(str(row["nonce"]), nonce)
+            if int(row["decision_version"]) != expected_version or not hmac.compare_digest(
+                str(row["nonce"]), nonce
             ):
                 raise self._decision_error(
                     "stale_decision", "Decision nonce or version is stale", decision_id
@@ -829,9 +792,7 @@ class HumanDecisionStore:
 
         decision = await self.get_decision(decision_id)
         if decision is None:
-            raise self._decision_error(
-                "decision_not_found", "Decision does not exist", decision_id
-            )
+            raise self._decision_error("decision_not_found", "Decision does not exist", decision_id)
         if decision.status is not DecisionStatus.RESOLVED or decision.consumed_at is not None:
             raise self._decision_error(
                 "decision_not_resolved", "Decision has no resumable response", decision_id
@@ -892,24 +853,28 @@ class HumanDecisionStore:
         ).fetchone()
         if row is None:
             raise HumanDecisionError(
-                "decision_not_found", "Decision does not exist",
+                "decision_not_found",
+                "Decision does not exist",
                 details={"decision_id": decision_id},
             )
         if str(row["status"]) == DecisionStatus.CONSUMED.value:
             if str(row["consumed_checkpoint_id"]) == checkpoint_id:
                 return HumanDecision.from_row(row)
             raise HumanDecisionError(
-                "decision_already_consumed", "Decision was consumed by another checkpoint",
+                "decision_already_consumed",
+                "Decision was consumed by another checkpoint",
                 details={"decision_id": decision_id},
             )
         if str(row["status"]) != DecisionStatus.RESOLVED.value or row["consumed_at"] is not None:
             raise HumanDecisionError(
-                "decision_not_resolved", "Decision has no resumable response",
+                "decision_not_resolved",
+                "Decision has no resumable response",
                 details={"decision_id": decision_id},
             )
         if expected_version is not None and int(row["decision_version"]) != expected_version:
             raise HumanDecisionError(
-                "stale_decision", "Decision version changed",
+                "stale_decision",
+                "Decision version changed",
                 details={"decision_id": decision_id},
             )
         cursor = await db.execute(
@@ -918,22 +883,26 @@ class HumanDecisionStore:
             WHERE decision_id=? AND run_id=? AND status='resolved' AND consumed_at IS NULL
             AND (? IS NULL OR decision_version=?)""",
             (
-                consumed_at, checkpoint_id, decision_id, run_id,
-                expected_version, expected_version,
+                consumed_at,
+                checkpoint_id,
+                decision_id,
+                run_id,
+                expected_version,
+                expected_version,
             ),
         )
         if cursor.rowcount != 1:
             raise HumanDecisionError(
-                "stale_decision", "Decision changed while it was consumed",
+                "stale_decision",
+                "Decision changed while it was consumed",
                 details={"decision_id": decision_id},
             )
         consumed = await (
-            await db.execute(
-                "SELECT * FROM workflow_decisions WHERE decision_id=?", (decision_id,)
-            )
+            await db.execute("SELECT * FROM workflow_decisions WHERE decision_id=?", (decision_id,))
         ).fetchone()
         assert consumed is not None
         return HumanDecision.from_row(consumed)
+
     open_interrupt = open_decision
 
     async def prepare_grant(
@@ -949,9 +918,7 @@ class HumanDecisionStore:
         try:
             scope_json = canonical_json(scope)
         except InvalidStatePatch as exc:
-            raise HumanDecisionError(
-                "invalid_grant_scope", str(exc), details=exc.details
-            ) from exc
+            raise HumanDecisionError("invalid_grant_scope", str(exc), details=exc.details) from exc
         stable_id = grant_id or uuid.uuid4().hex
         now = self._clock()
         db = await self._connect()
@@ -970,9 +937,7 @@ class HumanDecisionStore:
             if decision["expires_at"] is not None and float(decision["expires_at"]) <= now:
                 await self._expire_rows(db, [decision], now)
                 await db.commit()
-                raise self._decision_error(
-                    "decision_expired", "Decision has expired", decision_id
-                )
+                raise self._decision_error("decision_expired", "Decision has expired", decision_id)
             if decision["status"] not in {
                 DecisionStatus.PREPARED.value,
                 DecisionStatus.OPEN.value,
@@ -983,9 +948,7 @@ class HumanDecisionStore:
                 )
 
             existing = await (
-                await db.execute(
-                    "SELECT * FROM workflow_grants WHERE grant_id=?", (stable_id,)
-                )
+                await db.execute("SELECT * FROM workflow_grants WHERE grant_id=?", (stable_id,))
             ).fetchone()
             if existing is not None:
                 if (
@@ -1007,9 +970,7 @@ class HumanDecisionStore:
                 (stable_id, decision_id, effect_id, scope_json, now),
             )
             row = await (
-                await db.execute(
-                    "SELECT * FROM workflow_grants WHERE grant_id=?", (stable_id,)
-                )
+                await db.execute("SELECT * FROM workflow_grants WHERE grant_id=?", (stable_id,))
             ).fetchone()
             await db.commit()
             assert row is not None
@@ -1025,9 +986,7 @@ class HumanDecisionStore:
         db = await self._connect()
         try:
             row = await (
-                await db.execute(
-                    "SELECT * FROM workflow_grants WHERE grant_id=?", (grant_id,)
-                )
+                await db.execute("SELECT * FROM workflow_grants WHERE grant_id=?", (grant_id,))
             ).fetchone()
             return HumanGrant.from_row(row) if row is not None else None
         finally:
@@ -1104,9 +1063,7 @@ class HumanDecisionStore:
         try:
             await db.execute("BEGIN IMMEDIATE")
             run = await (
-                await db.execute(
-                    "SELECT status FROM workflow_runs WHERE run_id=?", (run_id,)
-                )
+                await db.execute("SELECT status FROM workflow_runs WHERE run_id=?", (run_id,))
             ).fetchone()
             if run is None:
                 raise HumanDecisionError(

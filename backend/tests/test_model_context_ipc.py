@@ -13,6 +13,7 @@
 测试直接打 ``p4_ipc.handle``，用 FakeWebSocket + FakeServiceContext，
 ``DESKPET_USER_DATA_DIR`` 钉到 tmp 隔离全局层文件。
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -61,7 +62,11 @@ async def test_model_context_get_returns_builtin_resolution(isolated_user_data):
     ws = FakeWebSocket()
     sc = FakeServiceContext()
     await p4_ipc.handle(
-        ws, "s1", "model_context_get", {"model": "deepseek-v4-pro"}, sc,
+        ws,
+        "s1",
+        "model_context_get",
+        {"model": "deepseek-v4-pro"},
+        sc,
     )
     assert len(ws.sent) == 1
     m = ws.sent[0]
@@ -84,7 +89,10 @@ async def test_model_context_get_reflects_global_override(isolated_user_data):
     )
     ws = FakeWebSocket()
     await p4_ipc.handle(
-        ws, "s1", "model_context_get", {"model": "deepseek-v4-pro"},
+        ws,
+        "s1",
+        "model_context_get",
+        {"model": "deepseek-v4-pro"},
         FakeServiceContext(),
     )
     p = ws.sent[0]["payload"]
@@ -96,7 +104,11 @@ async def test_model_context_get_reflects_global_override(isolated_user_data):
 async def test_model_context_get_defaults_model_when_missing(isolated_user_data):
     ws = FakeWebSocket()
     await p4_ipc.handle(
-        ws, "s1", "model_context_get", {}, FakeServiceContext(),
+        ws,
+        "s1",
+        "model_context_get",
+        {},
+        FakeServiceContext(),
     )
     # 缺 model → 用 _default 兜底，不崩
     p = ws.sent[0]["payload"]
@@ -126,9 +138,7 @@ async def test_model_context_set_writes_global_toml(isolated_user_data):
     # 文件真的写了，且 resolve 后能读回
     import tomllib
 
-    data = tomllib.loads(
-        (isolated_user_data / "model_overrides.toml").read_text("utf-8")
-    )
+    data = tomllib.loads((isolated_user_data / "model_overrides.toml").read_text("utf-8"))
     assert data["models"]["deepseek-v4-pro"]["context_window"] == 750000
 
     from llm.model_info import resolve
@@ -159,9 +169,7 @@ async def test_model_context_set_global_deep_merges_other_models(isolated_user_d
     )
     import tomllib
 
-    data = tomllib.loads(
-        (isolated_user_data / "model_overrides.toml").read_text("utf-8")
-    )
+    data = tomllib.loads((isolated_user_data / "model_overrides.toml").read_text("utf-8"))
     # 旧 model 覆盖保留
     assert data["models"]["gpt-5-pro"]["compact_at_pct"] == 0.6
     # 新 model 覆盖写入
@@ -190,9 +198,7 @@ async def test_model_context_set_writes_project_toml(isolated_user_data, tmp_pat
     assert ws.sent[0]["payload"]["ok"] is True
     import tomllib
 
-    data = tomllib.loads(
-        (project_root / ".deskpet" / "context.toml").read_text("utf-8")
-    )
+    data = tomllib.loads((project_root / ".deskpet" / "context.toml").read_text("utf-8"))
     assert data["models"]["deepseek-v4-pro"]["context_window"] == 900000
 
     from llm.model_info import resolve
@@ -235,9 +241,7 @@ async def test_model_context_set_rejects_unknown_field(isolated_user_data):
     )
     import tomllib
 
-    data = tomllib.loads(
-        (isolated_user_data / "model_overrides.toml").read_text("utf-8")
-    )
+    data = tomllib.loads((isolated_user_data / "model_overrides.toml").read_text("utf-8"))
     # 白名单外字段被丢弃，合法字段仍写入
     assert "evil_field" not in data["models"]["deepseek-v4-pro"]
     assert data["models"]["deepseek-v4-pro"]["context_window"] == 900000
@@ -260,33 +264,31 @@ async def test_context_compaction_defaults_to_follow_session(isolated_user_data)
         {},
         FakeServiceContext(provider_registry=FakeProviderRegistry()),
     )
-    assert ws.sent == [{
-        "type": "context_compaction_get_response",
-        "payload": {
-            "model": "follow_session",
-            "default_model": "follow_session",
-            "available_models": [
-                "claude-sonnet-4-5", "gpt-5-mini", "gpt-5.5"
-            ],
-        },
-    }]
+    assert ws.sent == [
+        {
+            "type": "context_compaction_get_response",
+            "payload": {
+                "model": "follow_session",
+                "default_model": "follow_session",
+                "available_models": ["claude-sonnet-4-5", "gpt-5-mini", "gpt-5.5"],
+            },
+        }
+    ]
 
 
 @pytest.mark.asyncio
-async def test_context_compaction_merges_trusted_e2e_live_catalog(
-    isolated_user_data, monkeypatch
-):
+async def test_context_compaction_merges_trusted_e2e_live_catalog(isolated_user_data, monkeypatch):
     monkeypatch.setenv("DESKPET_DEV_MODE", "1")
-    monkeypatch.setenv(
-        "DESKPET_CONTEXT_OS_E2E_DAEMON_URL", "http://127.0.0.1:18991"
-    )
-    monkeypatch.setenv(
-        "DESKPET_CONTEXT_OS_E2E_PROVIDER_URL", "http://127.0.0.1:18992/v1"
-    )
+    monkeypatch.setenv("DESKPET_CONTEXT_OS_E2E_DAEMON_URL", "http://127.0.0.1:18991")
+    monkeypatch.setenv("DESKPET_CONTEXT_OS_E2E_PROVIDER_URL", "http://127.0.0.1:18992/v1")
 
     class _Reply:
-        def __enter__(self): return self
-        def __exit__(self, *_args): return None
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
         def read(self):
             return b'{"data":[{"id":"ctx-primary"},{"id":"ctx-compact-fixture"}]}'
 
@@ -308,9 +310,7 @@ async def test_context_compaction_merges_trusted_e2e_live_catalog(
 async def test_context_compaction_set_persists_explicit_model(isolated_user_data):
     ws = FakeWebSocket()
     sc = FakeServiceContext(provider_registry=FakeProviderRegistry())
-    await p4_ipc.handle(
-        ws, "s1", "context_compaction_set", {"model": "gpt-5-mini"}, sc
-    )
+    await p4_ipc.handle(ws, "s1", "context_compaction_set", {"model": "gpt-5-mini"}, sc)
     assert ws.sent[0]["payload"] == {"ok": True, "model": "gpt-5-mini"}
     import tomllib
 

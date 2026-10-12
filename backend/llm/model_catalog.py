@@ -27,6 +27,7 @@ The Cursor-style picker must not hardcode a model list. This module:
 ``caps`` shape (all booleans — the picker shows a control iff True):
     {"thinking": bool, "fast": bool, "context": bool, "effort": bool}
 """
+
 from __future__ import annotations
 
 import logging
@@ -54,21 +55,15 @@ async def fetch_models(
         async with httpx.AsyncClient(timeout=timeout) as client:
             resp = await client.get(url, headers=headers)
         if resp.status_code != 200:
-            logger.info("model_catalog_fetch_non200 status=%s url=%s",
-                        resp.status_code, url)
+            logger.info("model_catalog_fetch_non200 status=%s url=%s", resp.status_code, url)
             return []
         data = resp.json()
     except Exception as exc:  # noqa: BLE001 — total: any failure → fallback
-        logger.info("model_catalog_fetch_failed url=%s err=%s",
-                    url, str(exc)[:160])
+        logger.info("model_catalog_fetch_failed url=%s err=%s", url, str(exc)[:160])
         return []
     # OpenAI standard: {"data": [{"id": "..."}, ...]}. Tolerate a bare
     # list or {"models": [...]} that some relays emit.
-    rows: Any = (
-        data.get("data")
-        if isinstance(data, dict)
-        else data
-    )
+    rows: Any = data.get("data") if isinstance(data, dict) else data
     if rows is None and isinstance(data, dict):
         rows = data.get("models")
     out: list[str] = []
@@ -93,41 +88,57 @@ def model_param_caps(model_id: str) -> dict[str, bool]:
 
     # Non-chat / tiny — only the context hint is meaningful (and even
     # that is cosmetic). Hide reasoning knobs.
-    if _is(m, "embedding", "text-embedding", "-image", "image-", "gpt-image",
-            "whisper", "tts", "rerank"):
-        return {"thinking": False, "fast": False,
-                "context": False, "effort": False}
+    if _is(
+        m,
+        "embedding",
+        "text-embedding",
+        "-image",
+        "image-",
+        "gpt-image",
+        "whisper",
+        "tts",
+        "rerank",
+    ):
+        return {"thinking": False, "fast": False, "context": False, "effort": False}
     if _is(m, "-mini", "-nano", "-lite", "-flash-lite", "4.1-mini"):
-        return {"thinking": False, "fast": True,
-                "context": True, "effort": False}
+        return {"thinking": False, "fast": True, "context": True, "effort": False}
 
     # Anthropic — extended thinking (budget), no reasoning_effort.
     if _is(m, "claude-", "opus-", "sonnet-", "haiku-"):
-        return {"thinking": True, "fast": False,
-                "context": True, "effort": False}
+        return {"thinking": True, "fast": False, "context": True, "effort": False}
 
     # OpenAI / xAI — reasoning_effort family.
-    if _is(m, "gpt-5", "gpt-4", "o1-", "o1", "o3", "o4-",
-            "grok-", "codex"):
-        return {"thinking": True, "fast": True,
-                "context": True, "effort": True}
+    if _is(m, "gpt-5", "gpt-4", "o1-", "o1", "o3", "o4-", "grok-", "codex"):
+        return {"thinking": True, "fast": True, "context": True, "effort": True}
 
     # Gemini — thinking config, no reasoning_effort.
     if _is(m, "gemini-"):
-        return {"thinking": True, "fast": True,
-                "context": True, "effort": False}
+        return {"thinking": True, "fast": True, "context": True, "effort": False}
 
     # Other reasoning-capable open models.
-    if _is(m, "deepseek-reasoner", "deepseek-v3.2", "deepseek-v4",
-            "glm-4", "kimi", "qwen3", "ernie-x1", "ernie-5",
-            "minimax-m2", "ring-", "ling-", "kat-", "step-3",
-            "mimo", "llada", "doubao-seed-code"):
-        return {"thinking": True, "fast": True,
-                "context": True, "effort": False}
+    if _is(
+        m,
+        "deepseek-reasoner",
+        "deepseek-v3.2",
+        "deepseek-v4",
+        "glm-4",
+        "kimi",
+        "qwen3",
+        "ernie-x1",
+        "ernie-5",
+        "minimax-m2",
+        "ring-",
+        "ling-",
+        "kat-",
+        "step-3",
+        "mimo",
+        "llada",
+        "doubao-seed-code",
+    ):
+        return {"thinking": True, "fast": True, "context": True, "effort": False}
 
     # Unknown — conservative: allow thinking + context, hide effort.
-    return {"thinking": True, "fast": True,
-            "context": True, "effort": False}
+    return {"thinking": True, "fast": True, "context": True, "effort": False}
 
 
 # Real published context windows by family (tokens). NOT the picker's
@@ -139,8 +150,18 @@ _FAMILY_CTX: tuple[tuple[tuple[str, ...], int], ...] = (
     (("gpt-4.1",), 1_000_000),
     (("gpt-5", "gpt-4", "o1", "o3", "o4-", "codex"), 400_000),
     (("grok-4", "grok-code"), 256_000),
-    (("claude-opus-4", "claude-sonnet-4", "claude-haiku-4",
-      "claude-3", "opus-", "sonnet-", "haiku-"), 200_000),
+    (
+        (
+            "claude-opus-4",
+            "claude-sonnet-4",
+            "claude-haiku-4",
+            "claude-3",
+            "opus-",
+            "sonnet-",
+            "haiku-",
+        ),
+        200_000,
+    ),
     (("gemini-3", "gemini-2.5", "gemini-"), 1_000_000),
     (("deepseek-v4", "deepseek-reasoner", "deepseek-v3.2"), 1_000_000),
     (("deepseek-v3", "deepseek-chat"), 128_000),
@@ -164,6 +185,7 @@ def model_context_window(model_id: str) -> int | None:
     # most relay models).
     try:
         from llm import model_info as _mi
+
         if mid in _mi.BUILTIN:
             return _mi.resolve(mid).context_window
         ov = _mi._model_section(_mi.load_global_overrides(), mid)
@@ -220,20 +242,21 @@ def build_catalog(model_ids: list[str]) -> list[dict[str, Any]]:
         # excluded.  This is not presented as Provider capability metadata.
         try:
             from llm import model_info as _mi
+
             _supported = (
-                _mi.user_selectable_windows_for(mid)
-                if model_param_caps(mid)["context"]
-                else []
+                _mi.user_selectable_windows_for(mid) if model_param_caps(mid)["context"] else []
             )
         except Exception:  # noqa: BLE001
             _supported = []
-        out.append({
-            "id": mid,
-            "label": _label_for(mid),
-            "caps": model_param_caps(mid),
-            "context_window": model_context_window(mid),
-            "supported_windows": _supported,
-        })
+        out.append(
+            {
+                "id": mid,
+                "label": _label_for(mid),
+                "caps": model_param_caps(mid),
+                "context_window": model_context_window(mid),
+                "supported_windows": _supported,
+            }
+        )
     return out
 
 

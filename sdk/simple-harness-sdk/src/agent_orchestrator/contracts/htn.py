@@ -2431,7 +2431,11 @@ class CancelBranchOperation:
     step: str
 
     def to_json(self) -> dict[str, Any]:
-        return {"op": "cancel_branch", "method_instance_id": self.method_instance_id, "step": self.step}
+        return {
+            "op": "cancel_branch",
+            "method_instance_id": self.method_instance_id,
+            "step": self.step,
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -2443,10 +2447,14 @@ class RebindInputOperation:
     output_port: str
 
     def to_json(self) -> dict[str, Any]:
-        return {"op": "rebind_input", "consumer_task_id": self.consumer_task_id,
-                "requirement_id": self.requirement_id,
-                "expected_requirement_hash": self.expected_requirement_hash,
-                "producer_task_id": self.producer_task_id, "output_port": self.output_port}
+        return {
+            "op": "rebind_input",
+            "consumer_task_id": self.consumer_task_id,
+            "requirement_id": self.requirement_id,
+            "expected_requirement_hash": self.expected_requirement_hash,
+            "producer_task_id": self.producer_task_id,
+            "output_port": self.output_port,
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -2466,9 +2474,7 @@ class ProposeSuccessorOperation:
         }
 
 
-PlanOperation: TypeAlias = (
-    "RefineOperation | RetireMethodOperation | ProposeSuccessorOperation | RebindInputOperation | CancelBranchOperation"
-)
+PlanOperation: TypeAlias = "RefineOperation | RetireMethodOperation | ProposeSuccessorOperation | RebindInputOperation | CancelBranchOperation"
 
 
 def parse_plan_operation(value: object, name: str) -> PlanOperation:
@@ -2478,7 +2484,9 @@ def parse_plan_operation(value: object, name: str) -> PlanOperation:
     op = value.get("op")
     if op == "refine":
         data = fields_of(
-            value, name, required=("op", "goal_id", "obligation_id", "method_ref", "bindings"),
+            value,
+            name,
+            required=("op", "goal_id", "obligation_id", "method_ref", "bindings"),
             optional=("reuse",),
         )
         reuse = json_object(data.get("reuse") or {}, f"{name}.reuse")
@@ -2487,8 +2495,10 @@ def parse_plan_operation(value: object, name: str) -> PlanOperation:
             obligation_id=identifier(data["obligation_id"], f"{name}.obligation_id"),
             method_ref=VersionedRef.from_json(data["method_ref"], f"{name}.method_ref"),
             bindings=json_object(data["bindings"], f"{name}.bindings"),
-            reuse={identifier(step, f"{name}.reuse"): identifier(occurrence, f"{name}.reuse")
-                   for step, occurrence in reuse.items()},
+            reuse={
+                identifier(step, f"{name}.reuse"): identifier(occurrence, f"{name}.reuse")
+                for step, occurrence in reuse.items()
+            },
         )
     if op == "retire_method":
         data = fields_of(value, name, required=("op", "method_instance_id", "reason"))
@@ -2500,16 +2510,30 @@ def parse_plan_operation(value: object, name: str) -> PlanOperation:
         data = fields_of(value, name, required=("op", "method_instance_id", "step"))
         return CancelBranchOperation(
             identifier(data["method_instance_id"], f"{name}.method_instance_id"),
-            identifier(data["step"], f"{name}.step"))
+            identifier(data["step"], f"{name}.step"),
+        )
     if op == "rebind_input":
-        data = fields_of(value, name, required=("op", "consumer_task_id", "requirement_id",
-            "expected_requirement_hash", "producer_task_id", "output_port"))
+        data = fields_of(
+            value,
+            name,
+            required=(
+                "op",
+                "consumer_task_id",
+                "requirement_id",
+                "expected_requirement_hash",
+                "producer_task_id",
+                "output_port",
+            ),
+        )
         return RebindInputOperation(
             consumer_task_id=identifier(data["consumer_task_id"], f"{name}.consumer_task_id"),
             requirement_id=identifier(data["requirement_id"], f"{name}.requirement_id"),
-            expected_requirement_hash=hash_hex(data["expected_requirement_hash"], f"{name}.expected_requirement_hash"),
+            expected_requirement_hash=hash_hex(
+                data["expected_requirement_hash"], f"{name}.expected_requirement_hash"
+            ),
             producer_task_id=identifier(data["producer_task_id"], f"{name}.producer_task_id"),
-            output_port=identifier(data["output_port"], f"{name}.output_port"))
+            output_port=identifier(data["output_port"], f"{name}.output_port"),
+        )
     if op == "propose_successor":
         data = fields_of(
             value,
@@ -2906,7 +2930,9 @@ class TaskBindingRewrite:
     binding: TaskSemanticBindingV1
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "expected_hash", hash_hex(self.expected_hash, "binding_rewrite.expected_hash"))
+        object.__setattr__(
+            self, "expected_hash", hash_hex(self.expected_hash, "binding_rewrite.expected_hash")
+        )
         if not isinstance(self.binding, TaskSemanticBindingV1):
             raise ContractError("binding_rewrite.binding must be a semantic binding")
 
@@ -2916,8 +2942,10 @@ class TaskBindingRewrite:
     @classmethod
     def from_json(cls, value: object, name: str = "binding_rewrite") -> TaskBindingRewrite:
         data = fields_of(value, name, required=("expected_hash", "binding"))
-        return cls(expected_hash=data["expected_hash"],
-                   binding=TaskSemanticBindingV1.from_json(data["binding"], f"{name}.binding"))
+        return cls(
+            expected_hash=data["expected_hash"],
+            binding=TaskSemanticBindingV1.from_json(data["binding"], f"{name}.binding"),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -3090,8 +3118,11 @@ class ProposedPlanDelta:
                 OccurrenceId(item) for item in data.get("referenced_occurrences", ())
             ),
             compiled_from_proposal_id=data.get("compiled_from_proposal_id"),
-            binding_rewrites=sequence_of(data.get("binding_rewrites", ()), f"{name}.binding_rewrites",
-                                        lambda item, where: TaskBindingRewrite.from_json(item, where)),
+            binding_rewrites=sequence_of(
+                data.get("binding_rewrites", ()),
+                f"{name}.binding_rewrites",
+                lambda item, where: TaskBindingRewrite.from_json(item, where),
+            ),
         )
 
 

@@ -191,7 +191,9 @@ class BudgetLedger:
             reserved_tool_calls=int(row["reserved_tool_calls"] or 0),
             settled_tool_calls=int(row["settled_tool_calls"] or 0),
             # Pre-system-tail libraries cannot contain reserved attempt pools.
-            reserved_attempts=int(row["reserved_attempts"]) if "reserved_attempts" in row.keys() else 0,
+            reserved_attempts=int(row["reserved_attempts"])
+            if "reserved_attempts" in row.keys()
+            else 0,
             agents_started=int(row["agents_started"]),
             reserved_search_calls=int(row["reserved_search_calls"]),
             settled_search_calls=int(row["settled_search_calls"]),

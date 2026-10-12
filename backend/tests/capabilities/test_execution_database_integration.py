@@ -90,9 +90,7 @@ async def test_uow_activation_installs_capability_schema_and_persists_dml(
         task_grant_id="grant-1",
         root_run_id="root-1",
         principal_id="user-1",
-        resource_selectors=(
-            ResourceSelector.filesystem(tmp_path / "workspace", "write"),
-        ),
+        resource_selectors=(ResourceSelector.filesystem(tmp_path / "workspace", "write"),),
         permission_categories=("filesystem_write",),
         effect_kinds=("staged_file",),
         source="policy:auto",
@@ -267,9 +265,10 @@ async def test_legacy_auto_mode_imports_once_then_sqlite_is_authoritative(
     assert not ignored.consumed_now
     assert ignored.record == imported.record
     assert ignored.policy_state == sqlite_policy
-    assert await restarted.get_legacy_authorization_import(
-        LEGACY_AUTO_MODE_SOURCE_KEY
-    ) == imported.record
+    assert (
+        await restarted.get_legacy_authorization_import(LEGACY_AUTO_MODE_SOURCE_KEY)
+        == imported.record
+    )
 
 
 @pytest.mark.asyncio
@@ -356,7 +355,5 @@ async def test_existing_generation_is_classified_user_explicit(tmp_path) -> None
         )
         await db.commit()
     state = await CapabilityStore(path, clock=lambda: 400.0).get_policy_state()
-    assert (state.mode, state.generation, state.provenance) == (
-        "manual", 3, "user_explicit"
-    )
+    assert (state.mode, state.generation, state.provenance) == ("manual", 3, "user_explicit")
     assert state.user_set_receipt_ref == "policy-user-set:migrated:3"

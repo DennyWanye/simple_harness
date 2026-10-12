@@ -32,6 +32,7 @@ def _args(path: str, scope_root: Path, **extra):
 
 # --- 归一化本身 -------------------------------------------------------------
 
+
 def test_relative_path_resolves_against_scope_root(scope: Path) -> None:
     assert normalize_model_path("README.md", scope) == str(scope / "README.md")
 
@@ -57,6 +58,7 @@ def test_empty_path_passes_through() -> None:
 
 # --- 读工具 -----------------------------------------------------------------
 
+
 def test_read_file_accepts_relative_path(scope: Path) -> None:
     out = json.loads(read_file(_args("README.md", scope)))
     assert out.get("ok") is not False
@@ -81,10 +83,9 @@ def test_list_directory_accepts_relative_path(scope: Path) -> None:
 
 # --- 写工具：功能 -----------------------------------------------------------
 
+
 def test_edit_file_accepts_relative_path(scope: Path) -> None:
-    out = json.loads(
-        edit_file(_args("README.md", scope, old_string="1.1.3", new_string="1.2.0"))
-    )
+    out = json.loads(edit_file(_args("README.md", scope, old_string="1.1.3", new_string="1.2.0")))
     assert out.get("ok") is not False, out
     assert "version: 1.2.0" in (scope / "README.md").read_text(encoding="utf-8")
 
@@ -102,10 +103,8 @@ def _write(scope: Path, path: str, content: str) -> str:
 # --- 写工具：安全（展开顺序） ------------------------------------------------
 
 
-
-
-
 # --- 读工具：边界（独立审计 P1 补测） ---------------------------------------
+
 
 def _sec(tmp_path, monkeypatch):
     home = tmp_path / "home"
@@ -118,18 +117,12 @@ def _sec(tmp_path, monkeypatch):
     return home, ws
 
 
-
-
-
-
 def test_read_file_still_reads_inside_workspace(tmp_path, monkeypatch) -> None:
     """边界不得误伤正常读取。"""
     _, ws = _sec(tmp_path, monkeypatch)
     out = json.loads(read_file(_args("ok.md", ws)))
     assert out.get("ok") is not False, out
     assert out["content"] == "inside"
-
-
 
 
 def test_credentials_stay_protected_even_without_a_scope_root(tmp_path, monkeypatch) -> None:
@@ -140,6 +133,7 @@ def test_credentials_stay_protected_even_without_a_scope_root(tmp_path, monkeypa
 
 
 # --- expanduser 异常兜底（独立审计 P1 补测） --------------------------------
+
 
 def test_unresolvable_tilde_user_is_rejected_not_raised(tmp_path) -> None:
     """``~nosuchuser/x`` 曾从 expanduser 抛未捕获 RuntimeError，把稳定拒绝

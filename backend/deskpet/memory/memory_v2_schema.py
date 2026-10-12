@@ -8,6 +8,7 @@ claimed v17) and tables that were created only when a feature first ran.
 The formal migration uses :func:`migrate_memory_v2_v17`; the lazy ensure
 functions remain for isolated stores/tests and older call sites.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -395,13 +396,9 @@ async def _rebuild_table(
     expected_names = {str(column[1]) for column in expected_columns}
     extra_names = actual_names - expected_names
     if extra_names:
-        raise RuntimeError(
-            f"cannot safely rebuild {table}; unknown columns: {sorted(extra_names)}"
-        )
+        raise RuntimeError(f"cannot safely rebuild {table}; unknown columns: {sorted(extra_names)}")
 
-    cursor = await conn.execute(
-        f"SELECT COUNT(*) FROM {_quote_identifier(table)}"
-    )
+    cursor = await conn.execute(f"SELECT COUNT(*) FROM {_quote_identifier(table)}")
     row = await cursor.fetchone()
     await cursor.close()
     before_count = int(row[0]) if row else 0
@@ -416,16 +413,11 @@ async def _rebuild_table(
     ]
     if before_count and missing_required:
         raise RuntimeError(
-            f"cannot rebuild non-empty {table}; missing required columns: "
-            f"{missing_required}"
+            f"cannot rebuild non-empty {table}; missing required columns: {missing_required}"
         )
 
     await conn.execute(_rewrite_create_table(create_sql, table, temp_table))
-    copy_names = [
-        str(column[1])
-        for column in expected_columns
-        if str(column[1]) in actual_names
-    ]
+    copy_names = [str(column[1]) for column in expected_columns if str(column[1]) in actual_names]
     if copy_names:
         quoted = ", ".join(_quote_identifier(name) for name in copy_names)
         await conn.execute(
@@ -433,22 +425,18 @@ async def _rebuild_table(
             f"SELECT {quoted} FROM {_quote_identifier(table)}"
         )
 
-    cursor = await conn.execute(
-        f"SELECT COUNT(*) FROM {_quote_identifier(temp_table)}"
-    )
+    cursor = await conn.execute(f"SELECT COUNT(*) FROM {_quote_identifier(temp_table)}")
     row = await cursor.fetchone()
     await cursor.close()
     after_count = int(row[0]) if row else 0
     if after_count != before_count:
         raise RuntimeError(
-            f"row-count validation failed rebuilding {table}: "
-            f"{before_count} != {after_count}"
+            f"row-count validation failed rebuilding {table}: {before_count} != {after_count}"
         )
 
     await conn.execute(f"DROP TABLE {_quote_identifier(table)}")
     await conn.execute(
-        f"ALTER TABLE {_quote_identifier(temp_table)} "
-        f"RENAME TO {_quote_identifier(table)}"
+        f"ALTER TABLE {_quote_identifier(temp_table)} RENAME TO {_quote_identifier(table)}"
     )
 
 
@@ -456,12 +444,12 @@ def _sync_index_signature(
     conn: sqlite3.Connection, table: str, index: str
 ) -> tuple[int, int, tuple[str, ...], str]:
     row = next(
-        item for item in conn.execute(f"PRAGMA index_list({_quote_identifier(table)})")
+        item
+        for item in conn.execute(f"PRAGMA index_list({_quote_identifier(table)})")
         if item[1] == index
     )
     columns = tuple(
-        str(item[2])
-        for item in conn.execute(f"PRAGMA index_info({_quote_identifier(index)})")
+        str(item[2]) for item in conn.execute(f"PRAGMA index_info({_quote_identifier(index)})")
     )
     sql_row = conn.execute(
         "SELECT sql FROM sqlite_master WHERE type='index' AND name=?", (index,)
@@ -511,9 +499,7 @@ async def migrate_memory_v2_v17(conn: aiosqlite.Connection) -> None:
             create_sql = str(create_row[0])
             expected_columns = [
                 tuple(row)
-                for row in canonical.execute(
-                    f"PRAGMA table_info({_quote_identifier(table)})"
-                )
+                for row in canonical.execute(f"PRAGMA table_info({_quote_identifier(table)})")
             ]
 
             if not await _table_exists(conn, table):
@@ -562,12 +548,11 @@ async def migrate_memory_v2_v17(conn: aiosqlite.Connection) -> None:
                 if actual == expected:
                     continue
                 if actual is not None:
-                    await conn.execute(
-                        f"DROP INDEX {_quote_identifier(str(index_name))}"
-                    )
+                    await conn.execute(f"DROP INDEX {_quote_identifier(str(index_name))}")
                 await conn.execute(str(index_sql))
     finally:
         canonical.close()
+
 
 # Cache so we don't re-run executescript every call. Keyed by absolute db path.
 _ensured: set[str] = set()
@@ -622,7 +607,8 @@ async def ensure_memory_v2_tables(db_path: str | Path) -> None:
             await ensure_memory_v2_columns(db_path)
         except Exception as exc:  # noqa: BLE001
             log.warning(
-                "memory_v2 stage2 column migration failed: %s", exc,
+                "memory_v2 stage2 column migration failed: %s",
+                exc,
             )
         _ensured.add(key)
         log.debug("memory_v2 tables ensured for %s", key)

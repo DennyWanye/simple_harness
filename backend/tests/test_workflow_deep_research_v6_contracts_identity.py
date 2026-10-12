@@ -20,10 +20,7 @@ V5_FIXTURE = Path(__file__).parent / "fixtures" / "deep_research_v5_identity.jso
 def _release_identity() -> dict[str, object]:
     roles = tuple(V6_RESEARCH_RESPONSE_FORMATS)
     profiles = build_v6_research_llm_profiles(
-        {
-            role: research_response_format_hash(V6_RESEARCH_RESPONSE_FORMATS[role])
-            for role in roles
-        }
+        {role: research_response_format_hash(V6_RESEARCH_RESPONSE_FORMATS[role]) for role in roles}
     )
     prepared_calls = {}
     for index, role in enumerate(roles, 1):
@@ -48,9 +45,7 @@ def _release_identity() -> dict[str, object]:
             "prompt": manifest.prompt_hash,
             "policy": manifest.policy_hash,
         },
-        "effect_profiles": {
-            role: profiles[role].to_json() for role in roles
-        },
+        "effect_profiles": {role: profiles[role].to_json() for role in roles},
         "prepared_calls": prepared_calls,
     }
 

@@ -91,11 +91,19 @@ def parse_evidence(
 
 
 def _parse_scoped_evidence(
-    raw: str, *, artifact_paths: Sequence[str], untrusted_prefixes: Sequence[str],
-    ran_targets: Mapping[str, bool], resolved_refs: frozenset[str],
+    raw: str,
+    *,
+    artifact_paths: Sequence[str],
+    untrusted_prefixes: Sequence[str],
+    ran_targets: Mapping[str, bool],
+    resolved_refs: frozenset[str],
 ) -> EvidenceRef:
-    ref = parse_evidence(raw, artifact_paths=artifact_paths,
-                         untrusted_prefixes=untrusted_prefixes, ran_targets=ran_targets)
+    ref = parse_evidence(
+        raw,
+        artifact_paths=artifact_paths,
+        untrusted_prefixes=untrusted_prefixes,
+        ran_targets=ran_targets,
+    )
     if ref.trust == TRUST_TRUSTED and (
         (ref.kind == "pytest" and covering_target(ref.target, ran_targets) is None)
         or (ref.kind in {"tool-run", "knowledge"} and raw.strip() not in resolved_refs)

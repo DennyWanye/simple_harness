@@ -3,6 +3,7 @@
 
 """2026-06-13 上下文外置: ref store 磁盘 spill —— LRU 淘汰/重启后
 ref 仍可取回(压缩摘要里的 ref_id 不失效)。"""
+
 from __future__ import annotations
 
 from pathlib import Path

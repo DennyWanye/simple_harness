@@ -5,6 +5,7 @@
 
 Spec "Param→request mapping is total".
 """
+
 from __future__ import annotations
 
 import pytest

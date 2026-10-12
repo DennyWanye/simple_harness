@@ -26,11 +26,25 @@ check = ProtectedTailCommitsMixin._protected_critic_subject
 def _store(purpose="TASK_CONTENT", result_attempt=ATTEMPT, with_table=True, with_row=True):
     connection = sqlite3.connect(":memory:")
     if with_table:
-        connection.execute("CREATE TABLE assurance_review_bindings (review_key TEXT, mission_id TEXT, binding_json TEXT)")
+        connection.execute(
+            "CREATE TABLE assurance_review_bindings (review_key TEXT, mission_id TEXT, binding_json TEXT)"
+        )
         if with_row:
-            body = {"subject": {"purpose": purpose, "target": {"kind": "result", "pin": {"id": "result-1"}}}}
-            connection.execute("INSERT INTO assurance_review_bindings VALUES (?,?,?)", (KEY, MISSION, json.dumps(body)))
-    results = {"result-1": SimpleNamespace(envelope=SimpleNamespace(mission_id=MISSION, attempt_id=result_attempt))}
+            body = {
+                "subject": {
+                    "purpose": purpose,
+                    "target": {"kind": "result", "pin": {"id": "result-1"}},
+                }
+            }
+            connection.execute(
+                "INSERT INTO assurance_review_bindings VALUES (?,?,?)",
+                (KEY, MISSION, json.dumps(body)),
+            )
+    results = {
+        "result-1": SimpleNamespace(
+            envelope=SimpleNamespace(mission_id=MISSION, attempt_id=result_attempt)
+        )
+    }
     return SimpleNamespace(connection=connection, get_result=results.get)
 
 
@@ -48,13 +62,16 @@ def test_assurance_subject_proven_by_binding_is_accepted():
     check(ATTEMPT, f"{MISSION}:assurance:{KEY}:2", _store())
 
 
-@pytest.mark.parametrize("store", [
-    None,
-    _store(result_attempt=OTHER),
-    _store(purpose="METHOD_PLAN"),
-    _store(with_row=False),
-    _store(with_table=False),
-])
+@pytest.mark.parametrize(
+    "store",
+    [
+        None,
+        _store(result_attempt=OTHER),
+        _store(purpose="METHOD_PLAN"),
+        _store(with_row=False),
+        _store(with_table=False),
+    ],
+)
 def test_assurance_subject_without_proof_is_refused(store):
     with pytest.raises(BudgetError):
         check(ATTEMPT, SUBJECT, store)

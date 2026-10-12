@@ -22,6 +22,7 @@ Run
     cd backend
     python scripts/e2e_ppt_deepresearch.py
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -48,12 +49,14 @@ class FakeLLM:
     async def __call__(self, prompt: str) -> str:
         self._step += 1
         if self._step == 1:
-            return json.dumps([
-                "What is structured logging?",
-                "Why does structured logging matter for production?",
-                "Which Python libraries support it best?",
-                "What are the common pitfalls?",
-            ])
+            return json.dumps(
+                [
+                    "What is structured logging?",
+                    "Why does structured logging matter for production?",
+                    "Which Python libraries support it best?",
+                    "What are the common pitfalls?",
+                ]
+            )
         # Synth — keep [^n] count <= n_citations
         return (
             "# Structured logging — a 2026 primer\n\n"
@@ -82,20 +85,32 @@ class FakeLLM:
 async def fake_search(query: str, *, max_results: int = 5):
     canned = {
         "What is structured logging?": [
-            {"url": "https://en.wikipedia.org/wiki/Structured_logging",
-             "title": "Structured logging — Wikipedia", "snippet": ""},
+            {
+                "url": "https://en.wikipedia.org/wiki/Structured_logging",
+                "title": "Structured logging — Wikipedia",
+                "snippet": "",
+            },
         ],
         "Why does structured logging matter for production?": [
-            {"url": "https://www.structlog.org/en/stable/why.html",
-             "title": "Why structlog?", "snippet": ""},
+            {
+                "url": "https://www.structlog.org/en/stable/why.html",
+                "title": "Why structlog?",
+                "snippet": "",
+            },
         ],
         "Which Python libraries support it best?": [
-            {"url": "https://docs.python.org/3/library/logging.html",
-             "title": "logging — Python docs", "snippet": ""},
+            {
+                "url": "https://docs.python.org/3/library/logging.html",
+                "title": "logging — Python docs",
+                "snippet": "",
+            },
         ],
         "What are the common pitfalls?": [
-            {"url": "https://blog.example.com/log-cost",
-             "title": "The cost of verbose logs", "snippet": ""},
+            {
+                "url": "https://blog.example.com/log-cost",
+                "title": "The cost of verbose logs",
+                "snippet": "",
+            },
         ],
     }
     return canned.get(query, [])[:max_results]
@@ -128,7 +143,8 @@ async def fake_extract(url: str):
     if url not in bodies:
         return {"ok": False, "error": "no fixture", "url": url}
     return {
-        "ok": True, "url": url,
+        "ok": True,
+        "url": url,
         "title": url.rsplit("/", 1)[-1].replace("_", " ").title() or url,
         "text": bodies[url],
         "fetched_at": now,
@@ -164,20 +180,26 @@ async def main() -> int:
 
     print("\n===== Step 2: turn report into PPT outline =====\n")
     # Naive section-to-slide conversion (a real skill would let LLM do this)
-    outline = [{
-        "layout": "title",
-        "title": topic,
-        "subtitle": f"自动生成 / {len(report.citations)} 个引用",
-    }, {
-        "layout": "toc", "title": "目录",
-        "bullets": ["TL;DR", "Background", "Current state",
-                    "Open questions", "What's next"],
-    }, {
-        "layout": "bullet", "title": "TL;DR",
-        "bullets": [report.summary[:60] + "…" if len(report.summary) > 60 else report.summary],
-    }]
+    outline = [
+        {
+            "layout": "title",
+            "title": topic,
+            "subtitle": f"自动生成 / {len(report.citations)} 个引用",
+        },
+        {
+            "layout": "toc",
+            "title": "目录",
+            "bullets": ["TL;DR", "Background", "Current state", "Open questions", "What's next"],
+        },
+        {
+            "layout": "bullet",
+            "title": "TL;DR",
+            "bullets": [report.summary[:60] + "…" if len(report.summary) > 60 else report.summary],
+        },
+    ]
     # One bullet slide per section heading from report_md
     import re
+
     for section in re.findall(r"##\s+([^\n]+)\n+([^\n]+(?:\n[^\n#]+)*)", report.report_md):
         heading, body = section
         if heading.strip().lower() == "tl;dr":
@@ -188,22 +210,29 @@ async def main() -> int:
         plain = re.sub(r"\[\^\d+\]", "", body).strip()
         sents = re.split(r"(?<=[。.!?])\s+", plain)
         bullets = [s.strip()[:80] for s in sents[:3] if s.strip()]
-        outline.append({
-            "layout": "bullet",
-            "title": heading.strip(),
-            "bullets": bullets,
-            "notes": body[:500],
-        })
-    outline.append({
-        "layout": "section",
-        "title": "引用",
-        "subtitle": f"{len(report.citations)} 个来源",
-    })
+        outline.append(
+            {
+                "layout": "bullet",
+                "title": heading.strip(),
+                "bullets": bullets,
+                "notes": body[:500],
+            }
+        )
+    outline.append(
+        {
+            "layout": "section",
+            "title": "引用",
+            "subtitle": f"{len(report.citations)} 个来源",
+        }
+    )
     # Sources slide
-    outline.append({
-        "layout": "bullet", "title": "Sources",
-        "bullets": [f"[{c.n}] {c.title} — {c.url}" for c in report.citations],
-    })
+    outline.append(
+        {
+            "layout": "bullet",
+            "title": "Sources",
+            "bullets": [f"[{c.n}] {c.title} — {c.url}" for c in report.citations],
+        }
+    )
 
     print(f"outline slides: {len(outline)}")
     out_dir = Path(tempfile.gettempdir()) / "deskpet-e2e"
@@ -229,14 +258,13 @@ async def main() -> int:
     # Round-trip read with python-pptx to prove it's valid
     try:
         from pptx import Presentation
+
         prs = Presentation(str(pptx_path))
         assert len(prs.slides) == result["slide_count"]
         first_slide_text = " ".join(
-            sh.text_frame.text for sh in prs.slides[0].shapes
-            if sh.has_text_frame
+            sh.text_frame.text for sh in prs.slides[0].shapes if sh.has_text_frame
         )
-        print(f"   round-trip OK — first slide text includes topic? "
-              f"{topic in first_slide_text}")
+        print(f"   round-trip OK — first slide text includes topic? {topic in first_slide_text}")
     except Exception as exc:  # noqa: BLE001
         print(f"   ⚠️  round-trip read failed: {exc}")
         return 1

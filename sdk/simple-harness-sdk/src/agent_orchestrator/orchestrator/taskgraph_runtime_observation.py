@@ -4,6 +4,7 @@
 No provider/connector request is made here. Missing runtime profiles, orphaned
 turn bindings and ambiguous Operation joins refuse a complete observation.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -35,6 +36,7 @@ class TaskGraphRuntimeObservationReader:
     def _physical_settled(self, intent: Any) -> bool:
         # All historical rehandoffs, tools and actual imported charges participate.
         from .taskgraph_runtime_imports import TaskGraphRuntimeImports
+
         return TaskGraphRuntimeImports(self.orchestrator).read_subject(intent).physical_settled
 
     def __call__(self, store: Store, job: ConvergenceJob) -> ConvergenceObservation:
@@ -79,28 +81,49 @@ class TaskGraphRuntimeObservationReader:
                 intent = intents.get(attempt.id)
                 if intent is None:
                     raise SourceUnavailable("taskgraph_runtime_attempt_intent_missing")
-                foreign = any(item.lease_owner not in (None, self.orchestrator._owner)
-                    and item.lease_expires_at is not None and item.lease_expires_at > store.now
-                    for item in (attempt, intent))
+                foreign = any(
+                    item.lease_owner not in (None, self.orchestrator._owner)
+                    and item.lease_expires_at is not None
+                    and item.lease_expires_at > store.now
+                    for item in (attempt, intent)
+                )
                 if not foreign:
-                    actions.append(ConvergenceAction(occurrence_id=target.occurrence_id,
-                        original_identity=attempt.id, kind=ConvergenceActionKind.CANCEL_ATTEMPT))
+                    actions.append(
+                        ConvergenceAction(
+                            occurrence_id=target.occurrence_id,
+                            original_identity=attempt.id,
+                            kind=ConvergenceActionKind.CANCEL_ATTEMPT,
+                        )
+                    )
             for subject, intent in sorted(intents.items()):
                 if intent.kind == "attempt" or (subject not in unsettled and physical[subject]):
                     continue
-                if (intent.lease_owner not in (None, self.orchestrator._owner)
-                        and intent.lease_expires_at is not None and intent.lease_expires_at > store.now):
+                if (
+                    intent.lease_owner not in (None, self.orchestrator._owner)
+                    and intent.lease_expires_at is not None
+                    and intent.lease_expires_at > store.now
+                ):
                     continue
-                related_targets = [target for target in job.targets if subject in
-                    local.related_subjects(frozenset({target.task_id}))]
+                related_targets = [
+                    target
+                    for target in job.targets
+                    if subject in local.related_subjects(frozenset({target.task_id}))
+                ]
                 if not related_targets:
                     raise SourceUnavailable("taskgraph_runtime_service_target_missing")
                 # One stable cancellation command even if a Critic/Manager names
                 # several affected subjects. No unrelated service is inferred.
                 target = min(related_targets, key=lambda item: item.occurrence_id)
-                actions.append(ConvergenceAction(occurrence_id=target.occurrence_id,
-                    original_identity=intent.intent_id, kind=ConvergenceActionKind.CANCEL_SERVICE_INTENT))
-            operations = build_operation_snapshot(job.mission_id, reader=StoreOperationReader(store))
+                actions.append(
+                    ConvergenceAction(
+                        occurrence_id=target.occurrence_id,
+                        original_identity=intent.intent_id,
+                        kind=ConvergenceActionKind.CANCEL_SERVICE_INTENT,
+                    )
+                )
+            operations = build_operation_snapshot(
+                job.mission_id, reader=StoreOperationReader(store)
+            )
             producers = read_operation_producers(store, operations)
             for producer in producers:
                 if producer.task_id not in task_ids:
@@ -114,10 +137,21 @@ class TaskGraphRuntimeObservationReader:
                 if effect not in {OperationEffect.IN_FLIGHT, OperationEffect.UNRESOLVED}:
                     continue
                 unsettled.add(producer.operation_id)
-                binding = HtnStore(store).get_task_semantics(target.task_id, producer.contract_revision)
+                binding = HtnStore(store).get_task_semantics(
+                    target.task_id, producer.contract_revision
+                )
                 if int(binding.dispatch_generation) == target.expected_generation:
-                    actions.append(ConvergenceAction(occurrence_id=target.occurrence_id,
-                        original_identity=producer.operation_id, kind=ConvergenceActionKind.RECONCILE_OPERATION))
-            return ConvergenceObservation(job_id=job.job_id, job_version=job.row_version,
-                target_occurrences=tuple(sorted(targets)), actions=tuple(actions),
-                quiescent=not unsettled and not actions)
+                    actions.append(
+                        ConvergenceAction(
+                            occurrence_id=target.occurrence_id,
+                            original_identity=producer.operation_id,
+                            kind=ConvergenceActionKind.RECONCILE_OPERATION,
+                        )
+                    )
+            return ConvergenceObservation(
+                job_id=job.job_id,
+                job_version=job.row_version,
+                target_occurrences=tuple(sorted(targets)),
+                actions=tuple(actions),
+                quiescent=not unsettled and not actions,
+            )

@@ -57,7 +57,11 @@ def test_a02_malformed_authority_json_is_typed_source_unavailable_without_writes
     tmp_path, table: str, column: str, where_column: str
 ) -> None:
     async def case() -> None:
-        async with reviewed(tmp_path, key=f"h1h-a02-malformed-{column}") as ((loop, mission, *_rest), intent, _provider):
+        async with reviewed(tmp_path, key=f"h1h-a02-malformed-{column}") as (
+            (loop, mission, *_rest),
+            intent,
+            _provider,
+        ):
             binding = _binding(loop, intent)
             identity = intent.intent_id if where_column == "request_id" else binding["grant_id"]
             # The table/column names come only from the closed parametrization above.
@@ -106,7 +110,11 @@ def test_a02_real_collector_records_authority_failures_as_closed_rejections(
     """
 
     async def case() -> None:
-        async with reviewed(tmp_path, key=f"h1h-a02-collector-{fault}") as ((loop, mission, _world, _root, dispatch, _product), opener, _provider):
+        async with reviewed(tmp_path, key=f"h1h-a02-collector-{fault}") as (
+            (loop, mission, _world, _root, dispatch, _product),
+            opener,
+            _provider,
+        ):
             binding = _binding(loop, opener)
             renamed = False
             if fault == "missing_binding":
@@ -174,20 +182,29 @@ def test_a02_real_collector_records_authority_failures_as_closed_rejections(
             assert evaluated.payload["canonical_hash"] is not None
             if fault != "missing_binding":
                 assert "SOURCE_UNAVAILABLE" in str(evaluated.payload["detail"])
-            assert len(HtnStore(loop.store).list_plan_revisions(mission.id)) == before_revisions == 0
+            assert (
+                len(HtnStore(loop.store).list_plan_revisions(mission.id)) == before_revisions == 0
+            )
             assert len(loop.store.list_actions(mission.id)) == before_actions
             assert not _events(loop, mission.id, "PlanRevisionCommitted")
-            assert loop.store.connection.execute(
-                "SELECT count(*) FROM planning_requests WHERE request_id = ?",
-                (opener.intent_id,),
-            ).fetchone()[0] == 1
+            assert (
+                loop.store.connection.execute(
+                    "SELECT count(*) FROM planning_requests WHERE request_id = ?",
+                    (opener.intent_id,),
+                ).fetchone()[0]
+                == 1
+            )
 
     asyncio.run(case())
 
 
 def test_real_collector_success_event_uses_the_stored_canonical_hash(tmp_path) -> None:
     async def case() -> None:
-        async with reviewed(tmp_path, key="h1h-canonical-success") as ((loop, mission, _world, _root, dispatch, _product), opener, _provider):
+        async with reviewed(tmp_path, key="h1h-canonical-success") as (
+            (loop, mission, _world, _root, dispatch, _product),
+            opener,
+            _provider,
+        ):
             await loop._collect_plan_decision(
                 opener,
                 object(),
@@ -210,7 +227,11 @@ def test_real_collector_success_event_uses_the_stored_canonical_hash(tmp_path) -
 
 def test_real_collector_codec_failure_has_no_canonical_hash(tmp_path) -> None:
     async def case() -> None:
-        async with reviewed(tmp_path, key="h1h-canonical-unreadable") as ((loop, mission, _world, _root, dispatch, _product), opener, _provider):
+        async with reviewed(tmp_path, key="h1h-canonical-unreadable") as (
+            (loop, mission, _world, _root, dispatch, _product),
+            opener,
+            _provider,
+        ):
             await loop._collect_plan_decision(
                 opener,
                 object(),
@@ -248,13 +269,19 @@ def test_a03_wrong_bound_principal_or_scope_is_refused_without_leak_or_writes(
     refusals = refuse_tampered_first(
         monkeypatch,
         lambda command, principal, kwargs: (
-            command, dataclasses.replace(principal, **principal_changes), kwargs
+            command,
+            dataclasses.replace(principal, **principal_changes),
+            kwargs,
         ),
         reason,
     )
 
     async def case() -> None:
-        async with reviewed(tmp_path, key=f"h1h-a03-{reason.lower()}") as ((loop, mission, _world, _root, dispatch, _product), opener, _provider):
+        async with reviewed(tmp_path, key=f"h1h-a03-{reason.lower()}") as (
+            (loop, mission, _world, _root, dispatch, _product),
+            opener,
+            _provider,
+        ):
             grant_id = _binding(loop, opener)["grant_id"]
             await loop._collect_plan_decision(
                 opener,
@@ -282,7 +309,11 @@ def test_a04_reply_bound_before_grant_change_is_stale_and_never_rebound(
     and the reply is never rebound to the new grant (was also commit_guard A05 / I06)."""
 
     async def case() -> None:
-        async with reviewed(tmp_path, key=f"h1h-a04-{change}") as ((loop, mission, _world, _root, dispatch, product), opener, _provider):
+        async with reviewed(tmp_path, key=f"h1h-a04-{change}") as (
+            (loop, mission, _world, _root, dispatch, product),
+            opener,
+            _provider,
+        ):
             binding = _binding(loop, opener)
             grant = PlanningAdmissionStore(loop.store).get_grant(
                 binding["grant_id"], binding["grant_revision"]
@@ -295,9 +326,12 @@ def test_a04_reply_bound_before_grant_change_is_stale_and_never_rebound(
                 if change == "expire":
                     loop.store._clock = lambda: (int(grant["expires_at_ms"]) + 1) / 1000
                 else:
-                    command = {"operation": change, "grant_id": binding["grant_id"],
-                               "expected_revision": int(binding["grant_revision"]),
-                               "command_id": f"person-{change}-{opener.intent_id}"}
+                    command = {
+                        "operation": change,
+                        "grant_id": binding["grant_id"],
+                        "expected_revision": int(binding["grant_revision"]),
+                        "command_id": f"person-{change}-{opener.intent_id}",
+                    }
                     if change == "revoke":
                         command["reason"] = "the person withdrew planning authority"
                     product.control.planning_authorization(command)
@@ -333,7 +367,8 @@ def test_a04_reply_bound_before_grant_change_is_stale_and_never_rebound(
             # Never rebound: the request still names the grant it was bound to.
             after = _binding(loop, opener)
             assert (after["grant_id"], after["grant_revision"]) == (
-                binding["grant_id"], binding["grant_revision"]
+                binding["grant_id"],
+                binding["grant_revision"],
             )
 
     asyncio.run(case())

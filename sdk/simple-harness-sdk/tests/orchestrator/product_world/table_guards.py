@@ -4,6 +4,7 @@
 不经任何接口，直接对库下 SQL：把甲任务的一行原样改挂到乙任务名下插入、改一行、删一行——库自己
 （触发器、外键、主键）必须拒绝。接口层的拒绝另有用例；这里守的是"绕过接口也写不进去"。
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -12,9 +13,15 @@ from typing import Any
 import pytest
 
 #: 只增不改的表
-IMMUTABLE = ("taskgraph_policy_bindings", "taskgraph_revision_records", "taskgraph_member_pins",
-             "taskgraph_method_pins", "taskgraph_demand_refs", "taskgraph_attempt_inputs",
-             "taskgraph_convergence_targets")
+IMMUTABLE = (
+    "taskgraph_policy_bindings",
+    "taskgraph_revision_records",
+    "taskgraph_member_pins",
+    "taskgraph_method_pins",
+    "taskgraph_demand_refs",
+    "taskgraph_attempt_inputs",
+    "taskgraph_convergence_targets",
+)
 #: 跨任务插入由哪条守护拒绝（``taskgraph_policy_bindings`` 没有插入守护，一个任务一行，靠唯一约束）
 INSERT_GUARD = {
     "taskgraph_policy_bindings": "",
@@ -37,7 +44,9 @@ def _one(connection: sqlite3.Connection, table: str, mission_id: str) -> dict[st
     return None if row is None else dict(zip([c[0] for c in cursor.description], tuple(row)))
 
 
-def check_table_guards(connection: sqlite3.Connection, mine: str, other: str, tables: tuple[str, ...]) -> list[str]:
+def check_table_guards(
+    connection: sqlite3.Connection, mine: str, other: str, tables: tuple[str, ...]
+) -> list[str]:
     """Every listed table must hold a row of ``mine``; returns the tables exercised."""
     done = []
     for table in tables:
@@ -46,22 +55,34 @@ def check_table_guards(connection: sqlite3.Connection, mine: str, other: str, ta
         # 1. 原样改挂到另一个任务名下：身份对不上（触发器）或撞主键 / 外键
         moved = dict(row, mission_id=other)
         columns = ", ".join(moved)
-        with pytest.raises(sqlite3.IntegrityError, match=INSERT_GUARD[table]):  # 是那条守护拒的，不是碰巧撞键
-            connection.execute(f"INSERT INTO {table} ({columns}) VALUES ({', '.join('?' for _ in moved)})",
-                               tuple(moved.values()))
+        with pytest.raises(
+            sqlite3.IntegrityError, match=INSERT_GUARD[table]
+        ):  # 是那条守护拒的，不是碰巧撞键
+            connection.execute(
+                f"INSERT INTO {table} ({columns}) VALUES ({', '.join('?' for _ in moved)})",
+                tuple(moved.values()),
+            )
         # 2. 改、删
         if table in IMMUTABLE:
             with pytest.raises(sqlite3.IntegrityError, match="TG_IMMUTABLE"):
-                connection.execute(f"UPDATE {table} SET mission_id=? WHERE mission_id=?", (other, mine))
+                connection.execute(
+                    f"UPDATE {table} SET mission_id=? WHERE mission_id=?", (other, mine)
+                )
             with pytest.raises(sqlite3.IntegrityError, match="TG_IMMUTABLE"):
                 connection.execute(f"DELETE FROM {table} WHERE mission_id=?", (mine,))
         else:
             identity = VERSIONED[table]
             with pytest.raises(sqlite3.IntegrityError, match="IDENTITY_OR_VERSION"):
-                connection.execute(f"UPDATE {table} SET {identity}=?, row_version=row_version+1 WHERE mission_id=?",
-                                   ("0" * 64, mine))
-            with pytest.raises(sqlite3.IntegrityError, match="IDENTITY_OR_VERSION"):  # 版本号不许跳、不许不动
-                connection.execute(f"UPDATE {table} SET row_version=row_version+2 WHERE mission_id=?", (mine,))
+                connection.execute(
+                    f"UPDATE {table} SET {identity}=?, row_version=row_version+1 WHERE mission_id=?",
+                    ("0" * 64, mine),
+                )
+            with pytest.raises(
+                sqlite3.IntegrityError, match="IDENTITY_OR_VERSION"
+            ):  # 版本号不许跳、不许不动
+                connection.execute(
+                    f"UPDATE {table} SET row_version=row_version+2 WHERE mission_id=?", (mine,)
+                )
             if table == "taskgraph_convergence_jobs":
                 with pytest.raises(sqlite3.IntegrityError, match="TG_IMMUTABLE"):
                     connection.execute(f"DELETE FROM {table} WHERE mission_id=?", (mine,))

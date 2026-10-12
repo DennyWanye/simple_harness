@@ -82,9 +82,7 @@ def _text(cjk: int, other: int) -> str:
     return "务" * cjk + "a" * other
 
 
-def _envelope(
-    *, outcome: str, error_code: str | None, message_chars: int
-) -> str:
+def _envelope(*, outcome: str, error_code: str | None, message_chars: int) -> str:
     """Host 工具结果信封，与真机上线的那一份同形。"""
 
     body = {
@@ -98,9 +96,15 @@ def _envelope(
 
 def _succeeded_envelope(cjk: int, other: int) -> str:
     return json.dumps(
-        {"error_code": None, "outcome": "succeeded", "public_message": None,
-         "value": {"disclosure": _text(cjk, other)}},
-        ensure_ascii=False, separators=(",", ":"), sort_keys=True,
+        {
+            "error_code": None,
+            "outcome": "succeeded",
+            "public_message": None,
+            "value": {"disclosure": _text(cjk, other)},
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
     )
 
 
@@ -145,21 +149,36 @@ def _messages() -> tuple[Message, ...]:
         # 用户这一轮的 7 KB 消息：107 条「目标条款」。
         Message(MessageRole.USER, _text(5_597, 1_602)),
         Message(MessageRole.ASSISTANT, _text(477, 162)),
-        Message(MessageRole.TOOL, _succeeded_envelope(42, 7_800),
-                name="task_scope_search", call_id=CallId(CALL_SEARCH)),
-        Message(MessageRole.TOOL,
-                _envelope(outcome="failed", error_code="invalid_tool_arguments",
-                          message_chars=246),
-                name="context_route", call_id=CallId(CALL_ROUTE_BAD)),
+        Message(
+            MessageRole.TOOL,
+            _succeeded_envelope(42, 7_800),
+            name="task_scope_search",
+            call_id=CallId(CALL_SEARCH),
+        ),
+        Message(
+            MessageRole.TOOL,
+            _envelope(outcome="failed", error_code="invalid_tool_arguments", message_chars=246),
+            name="context_route",
+            call_id=CallId(CALL_ROUTE_BAD),
+        ),
         Message(MessageRole.ASSISTANT, _text(791, 614)),
-        Message(MessageRole.TOOL, _succeeded_envelope(0, 600),
-                name="context_route", call_id=CallId(CALL_ROUTE_OK)),
+        Message(
+            MessageRole.TOOL,
+            _succeeded_envelope(0, 600),
+            name="context_route",
+            call_id=CallId(CALL_ROUTE_OK),
+        ),
         Message(MessageRole.ASSISTANT, _text(324, 6_000)),
-        Message(MessageRole.TOOL,
-                _envelope(outcome="rejected",
-                          error_code="task_scope_update_refs_outside_scope",
-                          message_chars=1_330),
-                name="task_scope_update", call_id=CallId(CALL_UPDATE)),
+        Message(
+            MessageRole.TOOL,
+            _envelope(
+                outcome="rejected",
+                error_code="task_scope_update_refs_outside_scope",
+                message_chars=1_330,
+            ),
+            name="task_scope_update",
+            call_id=CallId(CALL_UPDATE),
+        ),
     )
 
 
@@ -176,19 +195,24 @@ def _tool_specs() -> list[dict]:
     """渲染后与真机同量的 schema（``tool_schema_tokens`` 只看渲染出的字符）。"""
 
     per_spec = TOOL_SCHEMA_CHARS // TOOL_SPEC_COUNT - 5
-    return [{"name": f"t{index}", "description": "d" * per_spec, "input_schema": {}}
-            for index in range(TOOL_SPEC_COUNT)]
+    return [
+        {"name": f"t{index}", "description": "d" * per_spec, "input_schema": {}}
+        for index in range(TOOL_SPEC_COUNT)
+    ]
 
 
 def _ledger() -> ObservedInputCarryLedger:
     """上一轮的真实观测：thinking 关 → ``no_reasoning`` 档，carry 只剩 hidden。"""
 
     book = ObservedInputCarryLedger()
-    book.record_wire(PREVIOUS_REQUEST, PREVIOUS_WIRE_TOKENS, model=MODEL,
-                     reasoning_disabled=True)
-    book.observe_usage(PREVIOUS_REQUEST, input_tokens=PREVIOUS_INPUT_TOKENS,
-                       output_tokens=PREVIOUS_OUTPUT_TOKENS, reasoning_tokens=None,
-                       reasoning_content_seen=False)
+    book.record_wire(PREVIOUS_REQUEST, PREVIOUS_WIRE_TOKENS, model=MODEL, reasoning_disabled=True)
+    book.observe_usage(
+        PREVIOUS_REQUEST,
+        input_tokens=PREVIOUS_INPUT_TOKENS,
+        output_tokens=PREVIOUS_OUTPUT_TOKENS,
+        reasoning_tokens=None,
+        reasoning_content_seen=False,
+    )
     return book
 
 
@@ -224,13 +248,10 @@ def _arguments(payload: dict, call_id: str) -> str:
 def test_t17_without_the_stub_the_resend_still_dies_over_budget(monkeypatch) -> None:
     """对照组：入参照旧原样补回，第二次请求仍然越界（真机 floor=27176）。"""
 
-    monkeypatch.setattr(provider_module, "rejected_tool_result_reason",
-                        lambda _content: None)
+    monkeypatch.setattr(provider_module, "rejected_tool_result_reason", lambda _content: None)
     payload = _payload(_memo())
     # 两份死掉的入参都完整地回到了 payload 上。
-    assert _arguments(payload, CALL_UPDATE) == canonical_tool_arguments_json(
-        UPDATE_ARGUMENTS
-    )
+    assert _arguments(payload, CALL_UPDATE) == canonical_tool_arguments_json(UPDATE_ARGUMENTS)
     with pytest.raises(WireInputBudgetExceeded) as raised:
         _enforce(payload)
     facts = raised.value.diagnostics
@@ -276,12 +297,8 @@ def test_succeeded_and_small_calls_are_never_touched() -> None:
     """成功的调用、以及没到阈值的被拒调用，入参一个字节都不动。"""
 
     payload = _payload(_memo())
-    assert _arguments(payload, CALL_SEARCH) == canonical_tool_arguments_json(
-        SEARCH_ARGUMENTS
-    )
-    assert _arguments(payload, CALL_ROUTE_OK) == canonical_tool_arguments_json(
-        OK_ROUTE_ARGUMENTS
-    )
+    assert _arguments(payload, CALL_SEARCH) == canonical_tool_arguments_json(SEARCH_ARGUMENTS)
+    assert _arguments(payload, CALL_ROUTE_OK) == canonical_tool_arguments_json(OK_ROUTE_ARGUMENTS)
     small = canonical_tool_arguments_json({"outcome": "mutate"})
     assert len(small.encode("utf-8")) <= REJECTED_TOOL_CALL_ARGUMENTS_MAX_BYTES
     assert stub_rejected_tool_call_arguments(small) is None
@@ -290,13 +307,20 @@ def test_succeeded_and_small_calls_are_never_touched() -> None:
 def test_only_a_rejected_or_failed_envelope_counts_as_a_rejection() -> None:
     """判据是 Host 自己的结果信封，读不懂就当没拒（退回事件 AL 之前的行为）。"""
 
-    assert rejected_tool_result_reason(
-        _envelope(outcome="rejected", error_code="task_scope_update_refs_outside_scope",
-                  message_chars=8)
-    ) == "task_scope_update_refs_outside_scope"
-    assert rejected_tool_result_reason(
-        _envelope(outcome="failed", error_code=None, message_chars=8)
-    ) == "failed"
+    assert (
+        rejected_tool_result_reason(
+            _envelope(
+                outcome="rejected",
+                error_code="task_scope_update_refs_outside_scope",
+                message_chars=8,
+            )
+        )
+        == "task_scope_update_refs_outside_scope"
+    )
+    assert (
+        rejected_tool_result_reason(_envelope(outcome="failed", error_code=None, message_chars=8))
+        == "failed"
+    )
     assert rejected_tool_result_reason(_succeeded_envelope(4, 4)) is None
     assert rejected_tool_result_reason("not json at all") is None
     assert rejected_tool_result_reason(None) is None

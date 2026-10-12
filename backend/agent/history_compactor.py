@@ -40,6 +40,7 @@ we **return the original messages unchanged**. Better to keep a long
 context than to silently lose history. The caller should retry on
 the next iteration.
 """
+
 from __future__ import annotations
 
 import logging
@@ -177,8 +178,8 @@ async def compact_messages(
         summary = await summarize_fn(to_summarize)
     except Exception as exc:  # noqa: BLE001
         logger.warning(
-            "history_compactor: summarize_fn failed — keeping original "
-            "history. err=%s", str(exc)[:200],
+            "history_compactor: summarize_fn failed — keeping original history. err=%s",
+            str(exc)[:200],
         )
         return list(messages)
 
@@ -194,7 +195,8 @@ async def compact_messages(
         anchor_msg: dict[str, Any] = {
             "role": "system",
             "content": (
-                "[目标锚定] 当前目标：" + goal_text.strip()
+                "[目标锚定] 当前目标："
+                + goal_text.strip()
                 + "\n请确保接下来的动作仍服务于上述目标，不要被中间步骤带偏。"
             ),
         }

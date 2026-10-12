@@ -48,13 +48,7 @@ def test_prepare_call_thaws_nested_provider_mapping_proxies() -> None:
         },
         lambda args, task_id: json.dumps({"ok": True}),
     )
-    raw = MappingProxyType(
-        {
-            "schedule": MappingProxyType(
-                {"kind": "weekly"}
-            )
-        }
-    )
+    raw = MappingProxyType({"schedule": MappingProxyType({"kind": "weekly"})})
 
     prepared = registry.prepare_call(
         "probe",
@@ -100,14 +94,10 @@ async def test_graph_staged_file_legacy_path_result_is_explicit_success() -> Non
         "write_file",
         "os",
         _schema("write_file"),
-        lambda args, task_id: json.dumps(
-            {"path": "C:/workspace/result.txt", "bytes_written": 7}
-        ),
+        lambda args, task_id: json.dumps({"path": "C:/workspace/result.txt", "bytes_written": 7}),
         permission_category="write_file",
     )
-    prepared = registry.prepare_call(
-        "write_file", {"value": "content"}, "session", "stable-write"
-    )
+    prepared = registry.prepare_call("write_file", {"value": "content"}, "session", "stable-write")
 
     outcome = await registry.execute_prepared(prepared, effect_id="effect-write")
 
@@ -123,19 +113,13 @@ async def test_graph_staged_file_prepared_path_gets_enabled_artifact_envelope() 
         "write_file",
         "os",
         _schema("write_file"),
-        lambda args, task_id: json.dumps(
-            {"path": "C:/workspace/result.txt", "bytes_written": 7}
-        ),
+        lambda args, task_id: json.dumps({"path": "C:/workspace/result.txt", "bytes_written": 7}),
         permission_category="write_file",
     )
     registry.set_tools_config_provider(
-        lambda: SimpleNamespace(
-            last_mile=SimpleNamespace(artifact_envelope=True)
-        )
+        lambda: SimpleNamespace(last_mile=SimpleNamespace(artifact_envelope=True))
     )
-    prepared = registry.prepare_call(
-        "write_file", {"value": "content"}, "session", "stable-write"
-    )
+    prepared = registry.prepare_call("write_file", {"value": "content"}, "session", "stable-write")
 
     outcome = await registry.execute_prepared(prepared, effect_id="effect-write")
 
@@ -249,9 +233,7 @@ async def test_schema_drift_and_mismatched_grant_never_reach_handler() -> None:
         calls += 1
         return json.dumps({"ok": True})
 
-    registry.register(
-        "probe", "test", _schema("probe"), handler, replace_allowed=True
-    )
+    registry.register("probe", "test", _schema("probe"), handler, replace_allowed=True)
     prepared = registry.prepare_call("probe", {}, "session", "stable-1")
     bad_grant = {
         "effect_id": "effect-1",
@@ -269,9 +251,7 @@ async def test_schema_drift_and_mismatched_grant_never_reach_handler() -> None:
 
     changed_schema = _schema("probe")
     changed_schema["description"] = "changed"
-    registry.register(
-        "probe", "test", changed_schema, handler, replace_allowed=True
-    )
+    registry.register("probe", "test", changed_schema, handler, replace_allowed=True)
     stale = await registry.execute_prepared(prepared, effect_id="effect-1")
 
     assert stale.error["code"] == "prepared_call_stale"
@@ -313,9 +293,7 @@ async def test_builtin_opaque_effect_parses_concrete_json_result() -> None:
     assert spec.outcome_parser_id == "json_error_envelope_v1"
     assert spec.effect_policy.kind is EffectKind.OPAQUE_MANUAL
 
-    prepared = registry.prepare_call(
-        "desktop_action", {}, "session", "task"
-    )
+    prepared = registry.prepare_call("desktop_action", {}, "session", "task")
     grant = {
         "effect_id": "effect-desktop",
         "tool_name": prepared.tool_name,
@@ -346,9 +324,7 @@ async def test_builtin_opaque_effect_parses_explicit_json_failure() -> None:
         permission_category="shell",
     )
 
-    prepared = registry.prepare_call(
-        "desktop_action", {}, "session", "task"
-    )
+    prepared = registry.prepare_call("desktop_action", {}, "session", "task")
     grant = {
         "effect_id": "effect-desktop-failure",
         "tool_name": prepared.tool_name,
@@ -393,9 +369,7 @@ async def test_builtin_json_parser_never_treats_empty_or_interrupted_as_success(
         lambda args, task_id: json.dumps(payload),
         permission_category="shell",
     )
-    prepared = registry.prepare_call(
-        "desktop_action", {}, "session", "task"
-    )
+    prepared = registry.prepare_call("desktop_action", {}, "session", "task")
     grant = {
         "effect_id": "effect-interrupted",
         "tool_name": prepared.tool_name,

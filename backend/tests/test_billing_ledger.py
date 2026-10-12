@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 """P2-1-S8 BillingLedger unit tests."""
+
 from __future__ import annotations
 
 import tempfile
@@ -141,8 +142,10 @@ async def test_day_boundary_uses_configured_tz(monkeypatch):
         )
         await l.init()
         await l.record(
-            provider="cloud", model="qwen3.6-plus",
-            prompt_tokens=1000, completion_tokens=500,
+            provider="cloud",
+            model="qwen3.6-plus",
+            prompt_tokens=1000,
+            completion_tokens=500,
         )
         # spent_today reads the Shanghai-local date, so the row we just
         # wrote counts toward "today" rather than being stranded on

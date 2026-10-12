@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 """Bind the candidate document to the exact semantic rows the original Commit writes."""
+
 from __future__ import annotations
 
 from dataclasses import replace
@@ -20,9 +21,13 @@ if TYPE_CHECKING:
     from .plan_commits import CommitPlanCommand
 
 
-def document_for_commit(store: Store, command: CommitPlanCommand,
-                        requirements_ref: TypedRef, *,
-                        before: NetworkDocumentV1 | None = None) -> NetworkDocumentV1:
+def document_for_commit(
+    store: Store,
+    command: CommitPlanCommand,
+    requirements_ref: TypedRef,
+    *,
+    before: NetworkDocumentV1 | None = None,
+) -> NetworkDocumentV1:
     """Run before preview binding, and again before any original Commit write.
 
     H1's network can decorate a compound binding with its newly adopted method.
@@ -36,19 +41,30 @@ def document_for_commit(store: Store, command: CommitPlanCommand,
         semantics = HtnStore(store)
         tasks = store.list_tasks(command.mission_id)
         bindings = read_current_bindings(semantics, command.mission_id)
-        return document_from_bindings(command, requirements_ref, before=before, current_bindings=bindings,
-                                      existing_task_ids=frozenset(task.id for task in tasks))
+        return document_from_bindings(
+            command,
+            requirements_ref,
+            before=before,
+            current_bindings=bindings,
+            existing_task_ids=frozenset(task.id for task in tasks),
+        )
 
 
-def document_from_bindings(command: CommitPlanCommand, requirements_ref: TypedRef, *,
-                           before: NetworkDocumentV1 | None,
-                           current_bindings: tuple[TaskSemanticBindingV1, ...],
-                           existing_task_ids: frozenset[str]) -> NetworkDocumentV1:
+def document_from_bindings(
+    command: CommitPlanCommand,
+    requirements_ref: TypedRef,
+    *,
+    before: NetworkDocumentV1 | None,
+    current_bindings: tuple[TaskSemanticBindingV1, ...],
+    existing_task_ids: frozenset[str],
+) -> NetworkDocumentV1:
     """Pure candidate construction from the complete frozen original binding set."""
     current = {str(item.task_id): item for item in current_bindings}
     if len(current) != len(current_bindings):
         raise StoreError("TASKGRAPH_CANDIDATE_CURRENT_BINDINGS_DUPLICATE")
-    planned = {(str(item.task_id), int(item.contract_revision)): item for item in command.task_bindings}
+    planned = {
+        (str(item.task_id), int(item.contract_revision)): item for item in command.task_bindings
+    }
     if len(planned) != len(command.task_bindings):
         raise StoreError("TASKGRAPH_CANDIDATE_BINDING_DUPLICATE")
     rewrites = {str(item.binding.task_id): item for item in command.delta.binding_rewrites}
@@ -77,11 +93,15 @@ def document_from_bindings(command: CommitPlanCommand, requirements_ref: TypedRe
             offered_adoption = offered.pop("adopted_method_instance_id", None)
             persisted.pop("adopted_method_instance_id", None)
             adoptions = {
-                str(draft.instance_id) for draft in command.network.method_instances
+                str(draft.instance_id)
+                for draft in command.network.method_instances
                 if str(draft.goal_id) == str(candidate.task_id)
                 and draft.instance_id in command.network.adopted_instance_ids
             }
-            if canonical_json(offered) != canonical_json(persisted) or offered_adoption not in adoptions:
+            if (
+                canonical_json(offered) != canonical_json(persisted)
+                or offered_adoption not in adoptions
+            ):
                 raise StoreError("TASKGRAPH_CANDIDATE_BINDING_BYTES_MISMATCH")
         bindings.append(actual)
     frozen_network = replace(command.network, task_bindings=tuple(bindings))
@@ -98,18 +118,32 @@ def document_from_bindings(command: CommitPlanCommand, requirements_ref: TypedRe
         raise StoreError("TASKGRAPH_CANDIDATE_REWRITE_MEMBER_MISSING")
     replacements = {}
     from .plan_commits import _superseded
+
     for target in impact.targets:
         current_binding = current.get(target.task_id)
-        if current_binding is None or int(current_binding.dispatch_generation) != target.expected_generation:
+        if (
+            current_binding is None
+            or int(current_binding.dispatch_generation) != target.expected_generation
+        ):
             raise StoreError("TASKGRAPH_CANDIDATE_CONTROL_STALE")
         if target.task_id in surviving:
             # H4 supplies the exact control rewrite the original Commit writes.
             # Do not apply a second increment or discard its input/owner update.
             rewrite = rewrites.get(target.task_id)
-            replacements[target.task_id] = rewrite.binding if rewrite is not None else _superseded(current_binding)
-    final = encode(replace(frozen_network, task_bindings=tuple(
-        replacements.get(str(item.task_id), item) for item in bindings)), requirements_ref)
+            replacements[target.task_id] = (
+                rewrite.binding if rewrite is not None else _superseded(current_binding)
+            )
+    final = encode(
+        replace(
+            frozen_network,
+            task_bindings=tuple(replacements.get(str(item.task_id), item) for item in bindings),
+        ),
+        requirements_ref,
+    )
     final_impact = compute_convergence_impact(before, final)
-    if final_impact.targets != impact.targets or final_impact.preserved_occurrences != impact.preserved_occurrences:
+    if (
+        final_impact.targets != impact.targets
+        or final_impact.preserved_occurrences != impact.preserved_occurrences
+    ):
         raise StoreError("TASKGRAPH_CANDIDATE_REVOCATION_IMPACT_CHANGED")
     return final

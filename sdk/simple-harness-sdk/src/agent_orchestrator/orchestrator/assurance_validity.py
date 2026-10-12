@@ -90,11 +90,21 @@ def acceptance_id_for(task_id: str, result_id: str, requirements_revision: int) 
     """The leaf acceptance identity of one result under one requirements revision; kept in
     one place for every writer and reader.  A result kept across an amendment and reviewed
     again under the new revision gets its own acceptance (TaskGraph 补全第四批)."""
-    return "acc-" + content_hash_of({"task": str(task_id), "result": str(result_id),
-                                     "requirements_revision": int(requirements_revision)})[:32]
+    return (
+        "acc-"
+        + content_hash_of(
+            {
+                "task": str(task_id),
+                "result": str(result_id),
+                "requirements_revision": int(requirements_revision),
+            }
+        )[:32]
+    )
 
 
-def result_acceptance_ids(store: Any, mission_id: str, task_id: str, result_id: str) -> tuple[str, ...]:
+def result_acceptance_ids(
+    store: Any, mission_id: str, task_id: str, result_id: str
+) -> tuple[str, ...]:
     """Every leaf acceptance of one result, oldest requirements revision first."""
     from ..storage.htn_store import HtnStore
 
@@ -102,7 +112,9 @@ def result_acceptance_ids(store: Any, mission_id: str, task_id: str, result_id: 
         (int(item.requirements_revision), str(item.acceptance_id))
         for item in HtnStore(store).list_acceptances(mission_id)
         if str(item.task_id) == str(task_id)
-        and str(item.acceptance_id) == acceptance_id_for(task_id, result_id, int(item.requirements_revision)))
+        and str(item.acceptance_id)
+        == acceptance_id_for(task_id, result_id, int(item.requirements_revision))
+    )
     return tuple(acceptance for _, acceptance in found)
 
 
@@ -224,8 +236,11 @@ class AssuranceValidity:
             result = store.get_result(result_id)
             if result is None or result.envelope.mission_id != mission_id:
                 raise AssuranceError("REVIEW_RESULT_SOURCE_MISSING")
-            revision = (frozen_requirements_revision(store, result) if requirements_revision is None
-                        else int(requirements_revision))
+            revision = (
+                frozen_requirements_revision(store, result)
+                if requirements_revision is None
+                else int(requirements_revision)
+            )
             rows = store.connection.execute(
                 "SELECT package_id FROM assurance_review_bindings WHERE mission_id=? "
                 "AND subject_hash=? AND requirements_revision=? "
@@ -247,20 +262,28 @@ class AssuranceValidity:
     ) -> CandidateUseCertificate:
         """Fresh preparation at the head of the acceptance path (outside its UoW)."""
         return self.prepare_accept_use(
-            self.official_record_for_result(mission_id, result_id, requirements_revision))
+            self.official_record_for_result(mission_id, result_id, requirements_revision)
+        )
 
     # ------------------------------------------------------------ diagnostics
-    def diagnose_accept_use_for_result(self, mission_id: str, result_id: str) -> CandidateUseCertificate:
+    def diagnose_accept_use_for_result(
+        self, mission_id: str, result_id: str
+    ) -> CandidateUseCertificate:
         """纯算（第 1 批 A04）：Host 诊断 ``use_check`` 用——同一套计算，但不记入共用候选缓存、不动
         锁表，所以一次诊断顶不掉、也清不掉正在进行的真实验收候选。"""
         return self.prepare_accept_use(
-            self.official_record_for_result(mission_id, result_id), remember=False)
+            self.official_record_for_result(mission_id, result_id), remember=False
+        )
 
-    def diagnose_root_use(self, record: ReviewRecord, *, resolution_id: str) -> CandidateUseCertificate:
+    def diagnose_root_use(
+        self, record: ReviewRecord, *, resolution_id: str
+    ) -> CandidateUseCertificate:
         """纯算（第 1 批 A04）：根结论诊断用，同上。"""
         return self.prepare_root_use(record, resolution_id=resolution_id, remember=False)
 
-    def prepare_accept_use(self, record: ReviewRecord, *, remember: bool = True) -> CandidateUseCertificate:
+    def prepare_accept_use(
+        self, record: ReviewRecord, *, remember: bool = True
+    ) -> CandidateUseCertificate:
         """Bounded read/compute outside the write lock; nothing is written.
 
         The leaf ACCEPT use of an official ``TASK_CONTENT`` record: consumer is the
@@ -271,7 +294,8 @@ class AssuranceValidity:
             if purpose != "TASK_CONTENT":
                 raise AssuranceError("USE_PURPOSE_UNSUPPORTED", purpose)
             return ACCEPTANCE_CONSUMER, acceptance_id_for(
-                owner_task, target.pin.id, int(record.binding.requirements_revision))
+                owner_task, target.pin.id, int(record.binding.requirements_revision)
+            )
 
         return self._prepare_use(record, consumer, remember=remember)
 
@@ -369,8 +393,12 @@ class AssuranceValidity:
                 (str(record.record_id),),
             ).fetchone()
             adjudication = None if adjudication_row is None else decode(adjudication_row[1])
-            adjudication_ref = None if adjudication is None else AssuranceRef(
-                "commit_receipt", Pin(adjudication_row[0], 0, fingerprint(adjudication))
+            adjudication_ref = (
+                None
+                if adjudication is None
+                else AssuranceRef(
+                    "commit_receipt", Pin(adjudication_row[0], 0, fingerprint(adjudication))
+                )
             )
             side = decode(side_row["binding_json"])
             classification_ref = AssuranceRef.from_json(
@@ -486,8 +514,11 @@ class AssuranceValidity:
                 required.add(adjudication_ref)
             # 解析时就核用途与访问（第 2 批 A10）
             authorized = AssuranceReader(
-                store, tenant_id=self.tenant_id, mission_id=mission_id,
-                authority=self.authority, identity=identity,
+                store,
+                tenant_id=self.tenant_id,
+                mission_id=mission_id,
+                authority=self.authority,
+                identity=identity,
             )
             metadata = tuple(
                 authorized.read_exact_metadata(ref, now_ms=now_ms)
@@ -675,7 +706,8 @@ class AssuranceValidity:
                 for item in manifest["findings"]
             ),
             global_findings=tuple(
-                GlobalFinding(item["severity"], item["reason"]) for item in manifest["global_findings"]
+                GlobalFinding(item["severity"], item["reason"])
+                for item in manifest["global_findings"]
             ),
         )
         decision = decide_review(

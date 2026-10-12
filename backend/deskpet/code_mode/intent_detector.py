@@ -14,6 +14,7 @@ cheap (one banner the user dismisses), false negatives are also cheap
 (user can manually click the 🔧 toolbar button). Keep this list short
 and obvious.
 """
+
 from __future__ import annotations
 
 import re

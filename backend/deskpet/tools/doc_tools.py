@@ -26,6 +26,7 @@ what keeps "把甲方名字改一下" from mangling the rest of a contract.
 Failure philosophy: bad input → ``{"ok": false, "error": ...}``; a
 single failing op is marked ``skipped`` and the rest still apply.
 """
+
 from __future__ import annotations
 
 import json
@@ -132,11 +133,7 @@ def _add_list(document, el: dict[str, Any]) -> None:
         name = base if _has_style(document, base) else ""
     for it in items:
         text = it.get("text", "") if isinstance(it, dict) else it
-        para = (
-            document.add_paragraph(style=name)
-            if name
-            else document.add_paragraph()
-        )
+        para = document.add_paragraph(style=name) if name else document.add_paragraph()
         run = para.add_run(str(text))
         if isinstance(it, dict):
             _apply_run_style(run, it)
@@ -322,7 +319,11 @@ def doc_create(spec: Any, *, output_path: str | None = None) -> dict[str, Any]:
 
     spec_obj = _coerce(spec)
     if not isinstance(spec_obj, dict):
-        return {"ok": False, "error": "spec must be a dict or JSON object string", "retriable": False}
+        return {
+            "ok": False,
+            "error": "spec must be a dict or JSON object string",
+            "retriable": False,
+        }
 
     elements = spec_obj.get("elements")
     if not isinstance(elements, list):
@@ -330,7 +331,9 @@ def doc_create(spec: Any, *, output_path: str | None = None) -> dict[str, Any]:
 
     try:
         out_path = office_paths.resolve_for_write(
-            output_path, default_prefix="deskpet-doc", default_suffix=".docx",
+            output_path,
+            default_prefix="deskpet-doc",
+            default_suffix=".docx",
             default_kind="Doc",
         )
     except office_paths.PathError as exc:
@@ -358,12 +361,14 @@ def doc_create(spec: Any, *, output_path: str | None = None) -> dict[str, Any]:
         "ok": True,
         "path": str(out_path),
         "element_count": len(elements),
-        "artifacts": [{
-            "kind": "file",
-            "path": str(out_path),
-            "mime": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            "title": Path(str(out_path)).name,
-        }],
+        "artifacts": [
+            {
+                "kind": "file",
+                "path": str(out_path),
+                "mime": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                "title": Path(str(out_path)).name,
+            }
+        ],
     }
 
 
@@ -406,11 +411,13 @@ def doc_read(file_path: str) -> dict[str, Any]:
 
     tables = []
     for i, table in enumerate(document.tables):
-        tables.append({
-            "index": i,
-            "rows": len(table.rows),
-            "cols": len(table.columns),
-        })
+        tables.append(
+            {
+                "index": i,
+                "rows": len(table.rows),
+                "cols": len(table.columns),
+            }
+        )
 
     return {
         "ok": True,
@@ -658,13 +665,32 @@ def _handle_edit(args: dict[str, Any], task_id: str = "") -> str:
 
 
 def register_static_tools(registry) -> None:
-        registry.register("doc_create", "office", _CREATE_SCHEMA, _handle_create,
-                           permission_category="write_file", timeout_seconds=30.0,
-                           concurrency_safe=False)  # G3: writes .docx to disk
-        registry.register("doc_read", "office", _READ_SCHEMA, _handle_read,
-                           permission_category="read_file", timeout_seconds=20.0)
-        registry.register("doc_edit", "office", _EDIT_SCHEMA, _handle_edit,
-                           permission_category="write_file", timeout_seconds=30.0,
-                           concurrency_safe=False)  # G3: mutates .docx on disk
+    registry.register(
+        "doc_create",
+        "office",
+        _CREATE_SCHEMA,
+        _handle_create,
+        permission_category="write_file",
+        timeout_seconds=30.0,
+        concurrency_safe=False,
+    )  # G3: writes .docx to disk
+    registry.register(
+        "doc_read",
+        "office",
+        _READ_SCHEMA,
+        _handle_read,
+        permission_category="read_file",
+        timeout_seconds=20.0,
+    )
+    registry.register(
+        "doc_edit",
+        "office",
+        _EDIT_SCHEMA,
+        _handle_edit,
+        permission_category="write_file",
+        timeout_seconds=30.0,
+        concurrency_safe=False,
+    )  # G3: mutates .docx on disk
+
 
 __all__ = ["doc_create", "doc_read", "doc_edit", "register_static_tools"]

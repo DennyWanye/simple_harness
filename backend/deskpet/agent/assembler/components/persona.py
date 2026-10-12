@@ -12,6 +12,7 @@ P4-S20 update: 把当前 LLM 的 model 名注入到 persona 文本里。这样�
 "你用的是什么模型" 时，LLM 不会再含糊其辞 — 它知道自己跑在哪个模型上，
 能直接回答 "我现在跑在 gemma4:e4b 上面"。
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -25,7 +26,7 @@ _DEFAULT_PERSONA_TEMPLATE = (
     "- 熟悉用户偏好（见 USER.md / MEMORY.md）；\n"
     "- 工具调用失败时坦率说明，不编造结果；\n"
     "- 当前你跑在底层模型 **{model}** 上（endpoint: {base_url}）；\n"
-    "- 用户问你用的是什么模型时，直接告诉他这个名字，不要回避或说\"看不到\"。"
+    '- 用户问你用的是什么模型时，直接告诉他这个名字，不要回避或说"看不到"。'
 )
 
 _HARNESS_SELF_DESCRIPTION = (
@@ -41,6 +42,7 @@ _RUNTIME_MODEL_TEMPLATE = (
     "本次 Session 已解析并冻结的模型是 **{model}**（endpoint: {base_url}）。"
     "用户询问当前模型时，必须直接使用这里的精确值，不要使用 persona 中的占位名。"
 )
+
 
 class PersonaComponent:
     """Emits the pet's persona block (frozen, cache-friendly)."""
@@ -68,9 +70,7 @@ class PersonaComponent:
             project_root = ""
             if isinstance(workspace_cfg, dict):
                 project_root = str(
-                    workspace_cfg.get("root")
-                    or workspace_cfg.get("workspace_root")
-                    or ""
+                    workspace_cfg.get("root") or workspace_cfg.get("workspace_root") or ""
                 )
                 stable_config["workspace_context"] = {
                     **workspace_cfg,
@@ -167,8 +167,7 @@ def _resolve_persona(config: dict[str, Any]) -> str:
                 return text.strip() + _HARNESS_SELF_DESCRIPTION
 
     return (
-        _DEFAULT_PERSONA_TEMPLATE.format(model=model, base_url=base_url)
-        + _HARNESS_SELF_DESCRIPTION
+        _DEFAULT_PERSONA_TEMPLATE.format(model=model, base_url=base_url) + _HARNESS_SELF_DESCRIPTION
     )
 
 
@@ -176,6 +175,7 @@ def _approx_tokens(text: str) -> int:
     if not text:
         return 0
     from deskpet.agent.tokens import count_text_tokens
+
     return count_text_tokens(text)
 
 

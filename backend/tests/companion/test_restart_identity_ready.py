@@ -111,7 +111,11 @@ def test_bind_handler_sends_readiness_after_the_bounded_settle():
     from pathlib import Path
 
     source = Path(main.__file__).read_text(encoding="utf-8")
-    handler = source[source.index('if msg_type == "companion_profile_bind":\n                        # 事件 AK'):]
+    handler = source[
+        source.index(
+            'if msg_type == "companion_profile_bind":\n                        # 事件 AK'
+        ) :
+    ]
     settle = handler.index("_settle_companion_bind_projection(")
     ready = handler.index("await ws.send_json(response)")
     assert settle < ready, "就绪帧必须在有界收尾之后无条件下发"

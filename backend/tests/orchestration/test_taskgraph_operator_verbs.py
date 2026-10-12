@@ -40,12 +40,21 @@ def _service(operator: _Operator, owned: frozenset[str] = frozenset({M})) -> Any
     def mission(mission_id: str) -> None:
         if mission_id not in owned:
             raise OrchestrationRequestError("not_found", "任务不存在")
+
     woke = []
     return SimpleNamespace(
-        _require=lambda: SimpleNamespace(_mission=mission), tenant_id="t", _principal="local-user",
-        _orchestrator=SimpleNamespace(taskgraph_operator_api=lambda **kw: operator if kw == {
-            "tenant_id": "t", "principal": "local-user"} else None),
-        _refuse_secrets=lambda *values: None, wake=lambda: woke.append(True), woke=woke)
+        _require=lambda: SimpleNamespace(_mission=mission),
+        tenant_id="t",
+        _principal="local-user",
+        _orchestrator=SimpleNamespace(
+            taskgraph_operator_api=lambda **kw: (
+                operator if kw == {"tenant_id": "t", "principal": "local-user"} else None
+            )
+        ),
+        _refuse_secrets=lambda *values: None,
+        wake=lambda: woke.append(True),
+        woke=woke,
+    )
 
 
 def test_each_click_reaches_the_operator_with_its_own_command_and_wakes_the_loop():
@@ -53,18 +62,29 @@ def test_each_click_reaches_the_operator_with_its_own_command_and_wakes_the_loop
     service = _service(operator)
     body = {"mission_id": M, "job_id": "job-1", "expected_version": 3, "reason": "先按原计划做完"}
     first = operate_taskgraph(service, "abandon_convergence", body)
-    second = operate_taskgraph(service, "retry_notification",
-                               {"mission_id": M, "message_id": "msg-1", "expected_version": 6, "reason": "故障已排除"})
-    assert [call[:4] for call in operator.calls] == [("abandon", M, "job-1", 3), ("retry", M, "msg-1", 6)]
-    assert first["command_id"] != second["command_id"] and first["command_id"].startswith("ui-click-")
+    second = operate_taskgraph(
+        service,
+        "retry_notification",
+        {"mission_id": M, "message_id": "msg-1", "expected_version": 6, "reason": "故障已排除"},
+    )
+    assert [call[:4] for call in operator.calls] == [
+        ("abandon", M, "job-1", 3),
+        ("retry", M, "msg-1", 6),
+    ]
+    assert first["command_id"] != second["command_id"] and first["command_id"].startswith(
+        "ui-click-"
+    )
     assert service.woke == [True, True]
 
 
 def test_a_refused_click_says_why_and_is_not_retried():
     operator = _Operator(refuse="TASKGRAPH_CONVERGENCE_CAS_CONFLICT")
     with pytest.raises(OrchestrationRequestError) as caught:
-        operate_taskgraph(_service(operator), "abandon_convergence",
-                          {"mission_id": M, "job_id": "job-1", "expected_version": 3, "reason": "放弃"})
+        operate_taskgraph(
+            _service(operator),
+            "abandon_convergence",
+            {"mission_id": M, "job_id": "job-1", "expected_version": 3, "reason": "放弃"},
+        )
     assert caught.value.code == "taskgraph_refused" and "刷新" in str(caught.value)
     assert len(operator.calls) == 1
 
@@ -73,6 +93,7 @@ def test_a_refusal_without_a_typed_code_is_not_read_from_its_text():
     """第 1 批 T02：Host 只读 ``error.code``。没带码的 ``StoreConflict``，哪怕文字就是那个码，也不翻成"刷新"。
 
     **改坏检验**：Host 改回 ``str(error).split(":")`` 切码 → 变红。"""
+
     class _Plain(_Operator):
         def abandon_convergence(self, mission_id, job_id, *, expected_version, command_id, reason):  # type: ignore[no-untyped-def]
             self.calls.append(("abandon",))
@@ -80,22 +101,45 @@ def test_a_refusal_without_a_typed_code_is_not_read_from_its_text():
 
     operator = _Plain()
     with pytest.raises(OrchestrationRequestError) as caught:
-        operate_taskgraph(_service(operator), "abandon_convergence",
-                          {"mission_id": M, "job_id": "job-1", "expected_version": 3, "reason": "放弃"})
+        operate_taskgraph(
+            _service(operator),
+            "abandon_convergence",
+            {"mission_id": M, "job_id": "job-1", "expected_version": 3, "reason": "放弃"},
+        )
     assert caught.value.code == "taskgraph_refused"
     assert "刷新" not in str(caught.value) and "原因未具名" in str(caught.value)
     assert len(operator.calls) == 1
 
 
-@pytest.mark.parametrize("verb,body", [
-    ("abandon_convergence", {"mission_id": M, "job_id": "j", "expected_version": 3}),
-    ("abandon_convergence", {"mission_id": M, "job_id": "j", "expected_version": 0, "reason": "x"}),
-    ("abandon_convergence", {"mission_id": M, "job_id": "j", "expected_version": 3, "reason": " "}),
-    ("retry_notification", {"mission_id": M, "message_id": "m", "expected_version": "6", "reason": "x"}),
-    ("retry_notification", {"mission_id": M, "message_id": "m", "expected_version": 6, "reason": "x",
-                            "principal": "someone-else"}),
-    ("cancel_attempt", {"mission_id": M}),
-])
+@pytest.mark.parametrize(
+    "verb,body",
+    [
+        ("abandon_convergence", {"mission_id": M, "job_id": "j", "expected_version": 3}),
+        (
+            "abandon_convergence",
+            {"mission_id": M, "job_id": "j", "expected_version": 0, "reason": "x"},
+        ),
+        (
+            "abandon_convergence",
+            {"mission_id": M, "job_id": "j", "expected_version": 3, "reason": " "},
+        ),
+        (
+            "retry_notification",
+            {"mission_id": M, "message_id": "m", "expected_version": "6", "reason": "x"},
+        ),
+        (
+            "retry_notification",
+            {
+                "mission_id": M,
+                "message_id": "m",
+                "expected_version": 6,
+                "reason": "x",
+                "principal": "someone-else",
+            },
+        ),
+        ("cancel_attempt", {"mission_id": M}),
+    ],
+)
 def test_bad_requests_never_reach_the_operator(verb, body):
     operator = _Operator()
     with pytest.raises(OrchestrationRequestError) as caught:
@@ -106,6 +150,9 @@ def test_bad_requests_never_reach_the_operator(verb, body):
 def test_ownership_is_checked_first():
     operator = _Operator()
     with pytest.raises(OrchestrationRequestError) as caught:
-        operate_taskgraph(_service(operator, owned=frozenset()), "retry_notification",
-                          {"mission_id": M, "message_id": "m", "expected_version": 6, "reason": "x"})
+        operate_taskgraph(
+            _service(operator, owned=frozenset()),
+            "retry_notification",
+            {"mission_id": M, "message_id": "m", "expected_version": 6, "reason": "x"},
+        )
     assert caught.value.code == "not_found" and operator.calls == []

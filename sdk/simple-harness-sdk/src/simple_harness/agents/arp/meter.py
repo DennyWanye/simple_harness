@@ -50,7 +50,9 @@ RENDERER_ID = {
     "tool_overhead": TOOL_OVERHEAD_TOKENS,
     "request_overhead": REQUEST_OVERHEAD_TOKENS,
 }
-SERIALIZER_ID = {"serializer": "simple_harness.execution.provider_invocations.provider_request_json:v1"}
+SERIALIZER_ID = {
+    "serializer": "simple_harness.execution.provider_invocations.provider_request_json:v1"
+}
 RENDERER_HASH = digest(RENDERER_ID)
 SERIALIZER_HASH = digest(SERIALIZER_ID)
 
@@ -74,9 +76,13 @@ class PriorBasis:
 
     def __post_init__(self) -> None:
         if type(self.tokens) is not int or self.tokens < 0:
-            raise ArpError("PRIOR_RESERVE_UNAVAILABLE", "prior reserve must be a nonnegative integer")
+            raise ArpError(
+                "PRIOR_RESERVE_UNAVAILABLE", "prior reserve must be a nonnegative integer"
+            )
         if self.tokens > 0 and self.basis_ref is None:
-            raise ArpError("PRIOR_RESERVE_UNAVAILABLE", "positive prior reserve needs its basis receipt")
+            raise ArpError(
+                "PRIOR_RESERVE_UNAVAILABLE", "positive prior reserve needs its basis receipt"
+            )
 
 
 NO_PRIOR = PriorBasis(0, None)
@@ -106,7 +112,9 @@ class MeterBinding:
         if limits["count_mode"] != mode:
             raise ArpError("BAD_TOKEN_RECEIPT", "counter mode differs from the model limits")
         if limits["renderer_hash"] != RENDERER_HASH or limits["serializer_hash"] != SERIALIZER_HASH:
-            raise ArpError("TOKEN_SERIALIZER_CHANGED", "model limits certified another renderer/serializer")
+            raise ArpError(
+                "TOKEN_SERIALIZER_CHANGED", "model limits certified another renderer/serializer"
+            )
         if limits["tokenizer_ref"]["content_hash"] != digest(self.tokenizer.fingerprint):
             raise ArpError("TOKEN_SERIALIZER_CHANGED", "model limits certified another tokenizer")
         if not limits["supports_tools"]:
@@ -143,7 +151,9 @@ class MeterBinding:
     def prior_for(self, run_id: str) -> PriorBasis:
         if self.prior_reserve is None:
             if self.model_limits["requires_prior_output_reserve"]:
-                raise ArpError("PRIOR_RESERVE_UNAVAILABLE", "deployment requires a prior reserve reader")
+                raise ArpError(
+                    "PRIOR_RESERVE_UNAVAILABLE", "deployment requires a prior reserve reader"
+                )
             return NO_PRIOR
         basis = self.prior_reserve(run_id)
         if not isinstance(basis, PriorBasis):
@@ -169,11 +179,15 @@ def model_limits(
 
     mode = getattr(tokenizer, "count_mode", None)
     if mode not in COUNT_MODES:
-        raise ArpError("GENERIC_TOKEN_BOUND_UNCERTIFIED", "tokenizer declares no certified count mode")
+        raise ArpError(
+            "GENERIC_TOKEN_BOUND_UNCERTIFIED", "tokenizer declares no certified count mode"
+        )
     receipt = dict(capability_receipt or {"kind": "model-capability", "model": model})
     body = {
         "schema_version": 1,
-        "provider_ref": Pin("provider", provider_id, 1, digest({"provider": provider_id})).to_json(),
+        "provider_ref": Pin(
+            "provider", provider_id, 1, digest({"provider": provider_id})
+        ).to_json(),
         "model_ref": model,
         "input_limit_tokens": input_limit_tokens,
         "combined_limit_tokens": combined_limit_tokens,
@@ -184,12 +198,18 @@ def model_limits(
         "counter_revision": counter_revision,
         "count_mode": mode,
         "renderer_hash": RENDERER_HASH,
-        "capability_receipt_ref": Pin("receipt", f"capability:{model}", 0, digest(receipt)).to_json(),
+        "capability_receipt_ref": Pin(
+            "receipt", f"capability:{model}", 0, digest(receipt)
+        ).to_json(),
         "input_limit_scope": input_limit_scope,
         "requires_prior_output_reserve": requires_prior_output_reserve,
-        "tokenizer_ref": Pin("artifact", f"tokenizer:{tokenizer.fingerprint}", 1, digest(tokenizer.fingerprint)).to_json(),
+        "tokenizer_ref": Pin(
+            "artifact", f"tokenizer:{tokenizer.fingerprint}", 1, digest(tokenizer.fingerprint)
+        ).to_json(),
         "serializer_hash": SERIALIZER_HASH,
-        "endpoint_protocol_ref": Pin("policy", f"protocol:{provider_id}", 1, digest({"protocol": provider_id})).to_json(),
+        "endpoint_protocol_ref": Pin(
+            "policy", f"protocol:{provider_id}", 1, digest({"protocol": provider_id})
+        ).to_json(),
         "supported_response_formats": ["text"],
         "supported_tool_schema_modes": ["json_schema"],
     }
@@ -236,7 +256,9 @@ class NativeMeterAdapter:
         if type(requested_output_tokens) is not int or requested_output_tokens < 1:
             raise ArpError("INVALID_OUTPUT_RESERVE")
         if requested_output_tokens > int(limits["max_output_tokens"]):
-            raise ArpError("INVALID_OUTPUT_RESERVE", "requested output exceeds the deployment limit")
+            raise ArpError(
+                "INVALID_OUTPUT_RESERVE", "requested output exceeds the deployment limit"
+            )
         prior = self.binding.prior_for(run_id)
         wire = self.count_wire(request)
         request_hash = provider_request_fingerprint(request)

@@ -62,7 +62,9 @@ class FileGuard:
                     break
                 except BlockingIOError:
                     if time.monotonic() >= deadline:
-                        raise ArpError("FILE_BUSY", "session file guard is held elsewhere") from None
+                        raise ArpError(
+                            "FILE_BUSY", "session file guard is held elsewhere"
+                        ) from None
                     time.sleep(0.01)
             self._fd = fd
             self.depth = 1
@@ -149,9 +151,23 @@ class Partition:
             "next_commit_seq,generation_manifest_hash FROM index_generations WHERE index_generation=?",
             (index_generation,),
         ).fetchone()
-        return None if row is None else GenerationRow(int(row[0]), str(row[1]), str(row[2]), str(row[3]), str(row[4]), int(row[5]), None if row[6] is None else str(row[6]))
+        return (
+            None
+            if row is None
+            else GenerationRow(
+                int(row[0]),
+                str(row[1]),
+                str(row[2]),
+                str(row[3]),
+                str(row[4]),
+                int(row[5]),
+                None if row[6] is None else str(row[6]),
+            )
+        )
 
-    def find_generation(self, *, view_policy_hash: str, chunker_fingerprint: str, embedding_fingerprint: str) -> GenerationRow | None:
+    def find_generation(
+        self, *, view_policy_hash: str, chunker_fingerprint: str, embedding_fingerprint: str
+    ) -> GenerationRow | None:
         row = self.connection.execute(
             "SELECT index_generation FROM index_generations WHERE view_policy_hash=? AND chunker_fingerprint=?"
             " AND embedding_fingerprint=? AND state IN ('BUILDING','READY') ORDER BY index_generation DESC LIMIT 1",
@@ -160,16 +176,27 @@ class Partition:
         return None if row is None else self.read_generation(int(row[0]))
 
     def ensure_generation_locked(
-        self, connection: sqlite3.Connection, *, view_policy_hash: str, chunker_fingerprint: str, embedding_fingerprint: str
+        self,
+        connection: sqlite3.Connection,
+        *,
+        view_policy_hash: str,
+        chunker_fingerprint: str,
+        embedding_fingerprint: str,
     ) -> GenerationRow:
         """Same fingerprints → same generation; any change starts a new READY generation."""
 
         existing = self.find_generation(
-            view_policy_hash=view_policy_hash, chunker_fingerprint=chunker_fingerprint, embedding_fingerprint=embedding_fingerprint
+            view_policy_hash=view_policy_hash,
+            chunker_fingerprint=chunker_fingerprint,
+            embedding_fingerprint=embedding_fingerprint,
         )
         if existing is not None:
             return existing
-        number = int(connection.execute("SELECT COALESCE(MAX(index_generation),0)+1 FROM index_generations").fetchone()[0])
+        number = int(
+            connection.execute(
+                "SELECT COALESCE(MAX(index_generation),0)+1 FROM index_generations"
+            ).fetchone()[0]
+        )
         manifest = {
             "index_generation": number,
             "view_policy_hash": view_policy_hash,
@@ -179,16 +206,25 @@ class Partition:
         connection.execute(
             "INSERT INTO index_generations(index_generation,view_policy_hash,chunker_fingerprint,embedding_fingerprint,"
             "state,next_commit_seq,generation_manifest_hash) VALUES (?,?,?,?,'BUILDING',1,?)",
-            (number, view_policy_hash, chunker_fingerprint, embedding_fingerprint, digest(manifest)),
+            (
+                number,
+                view_policy_hash,
+                chunker_fingerprint,
+                embedding_fingerprint,
+                digest(manifest),
+            ),
         )
-        connection.execute("UPDATE index_generations SET state='READY' WHERE index_generation=?", (number,))
+        connection.execute(
+            "UPDATE index_generations SET state='READY' WHERE index_generation=?", (number,)
+        )
         row = self.read_generation(number)
         assert row is not None
         return row
 
     def upper_commit(self, index_generation: int) -> int:
         row = self.connection.execute(
-            "SELECT next_commit_seq FROM index_generations WHERE index_generation=?", (index_generation,)
+            "SELECT next_commit_seq FROM index_generations WHERE index_generation=?",
+            (index_generation,),
         ).fetchone()
         if row is None:
             raise ArpError("GENERATION_STALE", "unknown index generation")
@@ -205,7 +241,8 @@ class Partition:
     def is_materialized(self, index_generation: int, group_id: str) -> bool:
         return (
             self.connection.execute(
-                "SELECT 1 FROM indexed_groups WHERE index_generation=? AND group_id=?", (index_generation, group_id)
+                "SELECT 1 FROM indexed_groups WHERE index_generation=? AND group_id=?",
+                (index_generation, group_id),
             ).fetchone()
             is not None
         )
@@ -238,12 +275,15 @@ class Partition:
                 (group_id, source_hash, seq_from, seq_to, _json(closed_receipt_ref.to_json())),
             )
         elif existing[0] != source_hash:
-            raise ArpError("GROUP_HASH_CONFLICT", "closed group source differs from the recorded source")
+            raise ArpError(
+                "GROUP_HASH_CONFLICT", "closed group source differs from the recorded source"
+            )
         if self.is_materialized(generation.index_generation, group_id):
             raise ArpError("DUPLICATE_GROUP", "group already materialised in this generation")
         commit_seq = int(
             connection.execute(
-                "SELECT next_commit_seq FROM index_generations WHERE index_generation=?", (generation.index_generation,)
+                "SELECT next_commit_seq FROM index_generations WHERE index_generation=?",
+                (generation.index_generation,),
             ).fetchone()[0]
         )
         ids = [str(c["chunk_id"]) for c in chunks]
@@ -261,12 +301,23 @@ class Partition:
             "commit_seq": commit_seq,
             "chunk_ids": ids,
             "vector_chunk_ids": vector_ids,
-            "embedding_receipt_ref": None if embedding_receipt_ref is None else embedding_receipt_ref.to_json(),
+            "embedding_receipt_ref": None
+            if embedding_receipt_ref is None
+            else embedding_receipt_ref.to_json(),
         }
         connection.execute(
             "INSERT INTO indexed_groups(index_generation,group_id,source_hash,view_hash,chunk_count,vector_ready_count,"
             "commit_seq,materialization_receipt_json) VALUES (?,?,?,?,?,?,?,?)",
-            (generation.index_generation, group_id, source_hash, view_hash, len(chunks), len(vector_ids), commit_seq, _json(receipt)),
+            (
+                generation.index_generation,
+                group_id,
+                source_hash,
+                view_hash,
+                len(chunks),
+                len(vector_ids),
+                commit_seq,
+                _json(receipt),
+            ),
         )
         for chunk in chunks:
             text = str(chunk["text_view"])
@@ -277,9 +328,19 @@ class Partition:
                 "INSERT INTO session_chunks(chunk_id,index_generation,group_id,record_id,utf8_start,utf8_end,source_hash,"
                 "view_hash,chunker_fingerprint,text_view,provenance,validity_epoch,commit_seq) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
-                    chunk_id, generation.index_generation, group_id, str(chunk["record_id"]),
-                    int(chunk["utf8_start"]), int(chunk["utf8_end"]), source_hash, view_hash,
-                    generation.chunker_fingerprint, text, str(chunk["provenance"]), int(chunk.get("validity_epoch", 0)), commit_seq,
+                    chunk_id,
+                    generation.index_generation,
+                    group_id,
+                    str(chunk["record_id"]),
+                    int(chunk["utf8_start"]),
+                    int(chunk["utf8_end"]),
+                    source_hash,
+                    view_hash,
+                    generation.chunker_fingerprint,
+                    text,
+                    str(chunk["provenance"]),
+                    int(chunk.get("validity_epoch", 0)),
+                    commit_seq,
                 ),
             )
             if chunk_id in vector_ids:
@@ -289,8 +350,14 @@ class Partition:
                     "INSERT INTO session_vectors(chunk_id,index_generation,embedding_fingerprint,dim,vector_le_f32,source_hash,"
                     "commit_seq,embedding_receipt_ref_json) VALUES (?,?,?,?,?,?,?,?)",
                     (
-                        chunk_id, generation.index_generation, generation.embedding_fingerprint, len(values),
-                        pack_vector(values), source_hash, commit_seq, _json(embedding_receipt_ref.to_json()),  # type: ignore[union-attr]
+                        chunk_id,
+                        generation.index_generation,
+                        generation.embedding_fingerprint,
+                        len(values),
+                        pack_vector(values),
+                        source_hash,
+                        commit_seq,
+                        _json(embedding_receipt_ref.to_json()),  # type: ignore[union-attr]
                     ),
                 )
         connection.execute(
@@ -301,7 +368,9 @@ class Partition:
 
     # ---- coverage counters (all bounded by upper_commit) ---------------------
 
-    def coverage(self, index_generation: int, upper_commit: int, journal_highwater: int) -> dict[str, int]:
+    def coverage(
+        self, index_generation: int, upper_commit: int, journal_highwater: int
+    ) -> dict[str, int]:
         indexed = int(
             self.connection.execute(
                 "SELECT COUNT(*) FROM indexed_groups g JOIN group_sources s ON s.group_id=g.group_id AND s.source_hash=g.source_hash"
@@ -325,9 +394,15 @@ class Partition:
                 (index_generation, upper_commit, journal_highwater),
             ).fetchone()[0]
         )
-        return {"indexed_groups": indexed, "vector_ready_groups": vector_ready, "snapshot_chunks": chunks}
+        return {
+            "indexed_groups": indexed,
+            "vector_ready_groups": vector_ready,
+            "snapshot_chunks": chunks,
+        }
 
-    def indexed_group_set_hash(self, index_generation: int, upper_commit: int, journal_highwater: int) -> str:
+    def indexed_group_set_hash(
+        self, index_generation: int, upper_commit: int, journal_highwater: int
+    ) -> str:
         rows = self.connection.execute(
             "SELECT g.group_id,g.source_hash FROM indexed_groups g JOIN group_sources s ON s.group_id=g.group_id AND s.source_hash=g.source_hash"
             " WHERE g.index_generation=? AND g.commit_seq<=? AND s.seq_to<=? ORDER BY g.group_id",
@@ -382,7 +457,17 @@ def open_partition(
                 connection.execute(
                     "INSERT INTO session_partition(singleton,session_id,agent_id,root_id,root_incarnation,partition_id,"
                     "control_generation,source_from,schema_version,marker_hash) VALUES (1,?,?,?,?,?,?,?,?,?)",
-                    (session_id, agent_id, root.root_id, root.root_incarnation, partition_id, control_generation, source_from, PARTITION_SCHEMA_VERSION, marker_hash),
+                    (
+                        session_id,
+                        agent_id,
+                        root.root_id,
+                        root.root_incarnation,
+                        partition_id,
+                        control_generation,
+                        source_from,
+                        PARTITION_SCHEMA_VERSION,
+                        marker_hash,
+                    ),
                 )
             except BaseException:
                 connection.rollback()
@@ -391,12 +476,21 @@ def open_partition(
         row = connection.execute(
             "SELECT session_id,agent_id,root_id,root_incarnation,partition_id,schema_version,marker_hash FROM session_partition WHERE singleton=1"
         ).fetchone()
-        if row is None or (str(row[0]), str(row[1]), str(row[2]), str(row[3])) != (session_id, agent_id, root.root_id, root.root_incarnation):
-            raise ArpError("SESSION_IDENTITY_MISMATCH", "partition identity differs from the session")
+        if row is None or (str(row[0]), str(row[1]), str(row[2]), str(row[3])) != (
+            session_id,
+            agent_id,
+            root.root_id,
+            root.root_incarnation,
+        ):
+            raise ArpError(
+                "SESSION_IDENTITY_MISMATCH", "partition identity differs from the session"
+            )
         if int(row[5]) != PARTITION_SCHEMA_VERSION:
             raise ArpError("GENERATION_STALE", "partition schema version unsupported")
         if str(row[6]) != marker_hash:
-            raise ArpError("SESSION_IDENTITY_MISMATCH", "partition marker differs from the session marker")
+            raise ArpError(
+                "SESSION_IDENTITY_MISMATCH", "partition marker differs from the session marker"
+            )
         return Partition(path, connection, session_id, str(row[4]))
     except BaseException:
         connection.close()

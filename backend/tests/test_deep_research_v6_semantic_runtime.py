@@ -100,7 +100,9 @@ async def _envelope(
             "request-test",
         )
         result_ref = await _put(
-            blobs, identity, result.to_json(),
+            blobs,
+            identity,
+            result.to_json(),
             media_type="application/vnd.deskpet.research-llm-result+json",
         )
     prompt_ref = await _put(
@@ -143,9 +145,12 @@ async def _fixture(tmp_path, question: str, body_text: str):
         blobs, identity, {"schema_version": 1, "url": "https://example.test/source"}
     )
     final_hash = hashlib.sha256(b"https://example.test/source").hexdigest()
-    page_id = "page_" + hashlib.sha256(
-        (final_hash + hashlib.sha256(body).hexdigest()).encode("ascii")
-    ).hexdigest()[:24]
+    page_id = (
+        "page_"
+        + hashlib.sha256(
+            (final_hash + hashlib.sha256(body).hexdigest()).encode("ascii")
+        ).hexdigest()[:24]
+    )
     page = V6FetchedPageRefPayloadV1(
         page_id=page_id,
         ordinal=0,
@@ -169,11 +174,13 @@ async def _fixture(tmp_path, question: str, body_text: str):
         name: await _put(blobs, identity, {"profile": name, "schema_version": 1})
         for name in ("extract", "inference", "repair")
     }
-    page_slots = [{
-        "page_result_ref": page_result_ref,
-        "route_decision_ref": route_ref,
-        "route_policy_ref": route_policy_ref,
-    }]
+    page_slots = [
+        {
+            "page_result_ref": page_result_ref,
+            "route_decision_ref": route_ref,
+            "route_policy_ref": route_policy_ref,
+        }
+    ]
     return identity, blobs, spec, route, page, page_slots, profile_refs
 
 
@@ -208,7 +215,10 @@ async def test_exact_candidate_producer_is_deterministic_and_never_calls_llm(tmp
     assert body_ref["payload"]["value"] == 1_408_280_000
     assert body_ref["span_start_byte"] < body_ref["span_end_byte"]
     assert set(result["policy_refs"]) == {
-        "extraction", "llm_extract", "llm_repair", "llm_inference"
+        "extraction",
+        "llm_extract",
+        "llm_repair",
+        "llm_inference",
     }
 
     inference = await runtime.synthesize_inference_slots(
@@ -344,9 +354,7 @@ async def test_generic_extract_persists_canonical_no_result_terminal_outcome(
     )
     assert outcome.status == terminal_status
     assert outcome.raw_result_ref is None and outcome.result_ref is None
-    assert outcome.dependency_refs == tuple(
-        sorted((outcome.profile_ref, outcome.prompt_ref))
-    )
+    assert outcome.dependency_refs == tuple(sorted((outcome.profile_ref, outcome.prompt_ref)))
 
 
 @pytest.mark.asyncio
@@ -365,7 +373,9 @@ async def test_generic_extract_uses_one_repair_and_second_malformed_is_terminal(
         repair_calls += 1
         bundle = _candidate_bundle_from_prompt(payload, profile_ref, repair_round=1)
         return await _envelope(
-            blobs, native, profile_ref,
+            blobs,
+            native,
+            profile_ref,
             content={
                 "result_kind": "candidate_bundle",
                 "candidate_bundle": bundle.to_json(),
@@ -471,7 +481,9 @@ async def test_inference_runs_only_from_registered_fact_refs_and_repairs_once(tm
             proposals=(proposal,),
         )
         return await _envelope(
-            blobs, native, profile_ref,
+            blobs,
+            native,
+            profile_ref,
             content={
                 "result_kind": "inference_bundle",
                 "candidate_bundle": None,
@@ -518,6 +530,4 @@ async def test_stage_without_registered_outcome_metadata_fails_closed(tmp_path) 
         llm_repair=_FailPort(refs["repair"], None),
     )
     with pytest.raises(SemanticRuntimeConfigurationError, match="effect_id/result_ref"):
-        await runtime.produce_candidate_slots(
-            spec.to_json(), route.to_json(), page_slots, identity
-        )
+        await runtime.produce_candidate_slots(spec.to_json(), route.to_json(), page_slots, identity)

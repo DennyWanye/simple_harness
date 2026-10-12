@@ -35,8 +35,7 @@ NO_SEED_SOURCE_RESOLVER = OfficialSourceResolver(
         policy_id="test-v6-lanes-no-seed",
         policy_version=1,
         entries=tuple(
-            replace(entry, seed_urls=())
-            for entry in DEFAULT_OFFICIAL_SOURCE_REGISTRY.entries
+            replace(entry, seed_urls=()) for entry in DEFAULT_OFFICIAL_SOURCE_REGISTRY.entries
         ),
     )
 )
@@ -174,11 +173,9 @@ async def test_open_and_policy_enable_conditional_lane_search(
     assert all(page.authority_id.startswith("web_") for page in result.pages)
     assert all(page.authority_id != "cn.nbs" for page in result.pages)
     locator = json.loads(
-        (
-            await runtime.blobs.get(
-                parse_blob_ref(result.pages[0].source_locator_ref)
-            )
-        ).decode("utf-8")
+        (await runtime.blobs.get(parse_blob_ref(result.pages[0].source_locator_ref))).decode(
+            "utf-8"
+        )
     )
     assert locator["verification_status"] == "verified"
     assert locator["authority_id"].startswith("web_")
@@ -196,9 +193,7 @@ async def test_top_n_is_serial_and_exact_fact_forbids_fanout(tmp_path: Path) -> 
     assert gateway.max_active == 1
 
     exact_runtime, exact_gateway, _ = _runtime(tmp_path / "exact")
-    exact = compile_official_exact_fact(
-        "2024年中国总人口和出生人口分别是多少？优先国家统计局。"
-    )
+    exact = compile_official_exact_fact("2024年中国总人口和出生人口分别是多少？优先国家统计局。")
     exact_result = await exact_runtime.retrieve(exact, identity=_identity("run-exact"))
     assert exact_result.route_decision.to_json()["initial_route"] == "official_source_search"
     assert exact_gateway.max_active == 1
@@ -207,9 +202,7 @@ async def test_top_n_is_serial_and_exact_fact_forbids_fanout(tmp_path: Path) -> 
 @pytest.mark.asyncio
 async def test_lane_budget_insufficient_falls_back_to_serial(tmp_path: Path) -> None:
     runtime, gateway, _ = _runtime(tmp_path, max_lanes=2)
-    spec = compile_research_spec(
-        "人工智能会怎样影响设计行业？", as_of_date="2026-07-18"
-    )
+    spec = compile_research_spec("人工智能会怎样影响设计行业？", as_of_date="2026-07-18")
 
     result = await runtime.retrieve(spec, identity=_identity("run-lane-budget"))
 
@@ -219,17 +212,11 @@ async def test_lane_budget_insufficient_falls_back_to_serial(tmp_path: Path) -> 
 
 def test_plan_route_freezes_llm_budget_by_intent(tmp_path: Path) -> None:
     runtime, _, _ = _runtime(tmp_path)
-    exact = compile_official_exact_fact(
-        "2024年中国总人口和出生人口分别是多少？优先国家统计局。"
-    )
-    generic = compile_research_spec(
-        "人工智能会怎样影响设计行业？", as_of_date="2026-07-18"
-    )
+    exact = compile_official_exact_fact("2024年中国总人口和出生人口分别是多少？优先国家统计局。")
+    generic = compile_research_spec("人工智能会怎样影响设计行业？", as_of_date="2026-07-18")
 
     exact_route = runtime.plan_route(exact, identity=_identity("run-route-exact"))
-    generic_route = runtime.plan_route(
-        generic, identity=_identity("run-route-generic")
-    )
+    generic_route = runtime.plan_route(generic, identity=_identity("run-route-generic"))
 
     assert exact_route.to_json()["budget"]["llm"] == 0
     assert generic_route.to_json()["budget"]["llm"] == (
@@ -242,9 +229,7 @@ async def test_retrieve_consumes_persisted_route_without_replanning(
     tmp_path: Path,
 ) -> None:
     runtime, gateway, _ = _runtime(tmp_path, max_lanes=6)
-    spec = compile_research_spec(
-        "人工智能会怎样影响设计行业？", as_of_date="2026-07-18"
-    )
+    spec = compile_research_spec("人工智能会怎样影响设计行业？", as_of_date="2026-07-18")
     identity = _identity("run-persisted-route")
     frozen = runtime.plan_route(spec, identity=identity)
     assert frozen.to_json()["initial_route"] == "conditional_fanout"
@@ -263,9 +248,7 @@ async def test_retrieve_consumes_persisted_route_without_replanning(
 @pytest.mark.asyncio
 async def test_retrieve_rejects_route_from_another_run(tmp_path: Path) -> None:
     runtime, _, _ = _runtime(tmp_path)
-    spec = compile_research_spec(
-        "人工智能会怎样影响设计行业？", as_of_date="2026-07-18"
-    )
+    spec = compile_research_spec("人工智能会怎样影响设计行业？", as_of_date="2026-07-18")
     frozen = runtime.plan_route(spec, identity=_identity("run-route-a"))
 
     with pytest.raises(ValueError, match="route decision identity mismatch"):
@@ -297,6 +280,4 @@ async def test_lane_merge_is_replay_stable_and_budgets_are_shared(tmp_path: Path
     assert len(gateway.requests) == 8
     assert len(fetch.requests) == 6
     assert fetch.max_active <= 2
-    assert [page.to_json() for page in first.pages] == [
-        page.to_json() for page in second.pages
-    ]
+    assert [page.to_json() for page in first.pages] == [page.to_json() for page in second.pages]

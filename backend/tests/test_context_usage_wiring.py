@@ -48,9 +48,7 @@ async def test_binding_commit_pushes_binding_only_context_authority() -> None:
 
     ws = _WS()
     main._session_context_state.pop("session-binding-only", None)
-    payload = await main._send_context_usage_authority(
-        ws, _SessionDB(), "session-binding-only"
-    )
+    payload = await main._send_context_usage_authority(ws, _SessionDB(), "session-binding-only")
 
     assert payload["model"] == "kimi-k3"
     assert payload["source"] == "binding_only"
@@ -161,19 +159,21 @@ async def test_provider_producer_persists_frozen_identity_and_sends_authority():
 
     class _AttemptStore:
         def public_for_session(self, session_id: str):  # noqa: ANN001
-            return [{
-                "session_id": session_id,
-                "request_id": "request-7",
-                "attempt_id": "attempt-2",
-                "purpose": "agent_response",
-                "state": "succeeded",
-                "provider_id": "kimi",
-                "model_id": "kimi-k3",
-                "context_window": 131_072,
-                "actual_input_tokens": 700,
-                "actual_output_tokens": 20,
-                "actual_cache_read_tokens": 4,
-            }]
+            return [
+                {
+                    "session_id": session_id,
+                    "request_id": "request-7",
+                    "attempt_id": "attempt-2",
+                    "purpose": "agent_response",
+                    "state": "succeeded",
+                    "provider_id": "kimi",
+                    "model_id": "kimi-k3",
+                    "context_window": 131_072,
+                    "actual_input_tokens": 700,
+                    "actual_output_tokens": 20,
+                    "actual_cache_read_tokens": 4,
+                }
+            ]
 
     class _SessionDB:
         def __init__(self) -> None:
@@ -233,9 +233,7 @@ async def test_provider_producer_persists_frozen_identity_and_sends_authority():
 
     assert db.sample is not None
     assert db.binding_read is False
-    assert db.sample["source_event_id"] == (
-        "context-attempt:root-7:request-7:attempt-2"
-    )
+    assert db.sample["source_event_id"] == ("context-attempt:root-7:request-7:attempt-2")
     assert db.sample["binding_epoch"] == 9
     assert db.sample["provider_id"] == "kimi"
     assert db.sample["model_id"] == "kimi-k3"
@@ -277,9 +275,7 @@ def test_run_context_usage_identity_rejects_untyped_or_legacy_bindings():
     import main
 
     class _LegacyPlanMapping:
-        provider_plan = {
-            "bindings": [{"provider_id": "wrong", "model_id": "wrong"}]
-        }
+        provider_plan = {"bindings": [{"provider_id": "wrong", "model_id": "wrong"}]}
 
     class _LegacyPair:
         provider_plan = ("kimi",)
@@ -301,9 +297,10 @@ async def test_run_context_usage_basis_freezes_exact_measured_sample():
                 "has_measurement": True,
             }
 
-    assert await main._snapshot_context_usage_basis_for_run(
-        _SessionDB(), "session-exact"
-    ) == "sample-before"
+    assert (
+        await main._snapshot_context_usage_basis_for_run(_SessionDB(), "session-exact")
+        == "sample-before"
+    )
 
 
 @pytest.mark.asyncio

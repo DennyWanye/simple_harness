@@ -49,8 +49,13 @@ def check_policy(policy: Mapping[str, Any]) -> dict[str, Any]:
     value = codec.check("Policy", dict(policy))
     for field, ceiling in POLICY_HARD_LIMITS.items():
         if value[field] > ceiling:
-            raise ArpError("POLICY_CONFLICT", f"{field} exceeds hard limit {ceiling}", field_path=field)
-    if value["output_reserve_tokens"] + value["safety_reserve_tokens"] >= value["max_context_tokens"]:
+            raise ArpError(
+                "POLICY_CONFLICT", f"{field} exceeds hard limit {ceiling}", field_path=field
+            )
+    if (
+        value["output_reserve_tokens"] + value["safety_reserve_tokens"]
+        >= value["max_context_tokens"]
+    ):
         raise ArpError("NO_INPUT_BUDGET", field_path="max_context_tokens")
     return value
 
@@ -148,7 +153,9 @@ class RuntimeProfile:
             available=embedding_available,
         )
         if mode == "REJECT_CREATION":
-            raise ArpError("EMBEDDING_RESOURCE_MISSING", "profile requires embedding for activation")
+            raise ArpError(
+                "EMBEDDING_RESOURCE_MISSING", "profile requires embedding for activation"
+            )
         return mode
 
 

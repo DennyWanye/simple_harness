@@ -64,9 +64,7 @@ RESERVED_MODEL_FIELDS: frozenset[str] = frozenset(
 class ReservedModelFieldError(ValueError):
     def __init__(self, fields: list[str]) -> None:
         self.fields = tuple(sorted(set(fields)))
-        super().__init__(
-            f"model arguments contain reserved host fields: {', '.join(self.fields)}"
-        )
+        super().__init__(f"model arguments contain reserved host fields: {', '.join(self.fields)}")
 
 
 def reject_reserved_model_fields(args: Mapping[str, Any]) -> None:
@@ -101,9 +99,7 @@ def legacy_execution_context(
                 active.workspace
                 or (str(project_root or write_root) if project_root or write_root else None)
             ),
-            write_scope_root=(
-                active.write_scope_root or (str(write_root) if write_root else None)
-            ),
+            write_scope_root=(active.write_scope_root or (str(write_root) if write_root else None)),
         )
     # This is the sole compatibility reader for P4-S22's historical merge.
     # Values created here are never accepted by registry.execute_call.
@@ -135,6 +131,7 @@ def bind_context_handler(handler: Callable[..., Any]) -> Callable[..., Any]:
     """Adapt a migrated ``execution_context=`` handler for ToolSpec."""
 
     if inspect.iscoroutinefunction(handler):
+
         @wraps(handler)
         async def async_adapter(args: dict[str, Any], context: ToolExecutionContext) -> Any:
             return await handler(args, context.call_id, execution_context=context)

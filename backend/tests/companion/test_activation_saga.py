@@ -98,9 +98,7 @@ class _Platform:
         assert persisted_runtime_set_hash is None
         return self.prepared
 
-    async def start_runtime_instance(
-        self, authorization, prepared, instance
-    ):
+    async def start_runtime_instance(self, authorization, prepared, instance):
         self.trace.append("start")
         assert authorization.authorization_hash
         assert prepared is self.prepared
@@ -111,9 +109,7 @@ class _Platform:
             reason_code=f"runtime_{self.start_outcome}",
         )
 
-    async def await_runtime_instance_health(
-        self, authorization, prepared, instance, start
-    ):
+    async def await_runtime_instance_health(self, authorization, prepared, instance, start):
         self.trace.append("health")
         assert start.outcome == "started"
         return self.healthy
@@ -132,9 +128,7 @@ class _Platform:
             reason_code="manager_committed",
         )
 
-    async def abort_mutation(
-        self, authorization, prepared, *, reason_code
-    ):
+    async def abort_mutation(self, authorization, prepared, *, reason_code):
         self.trace.append(f"abort:{reason_code}")
         return self.cleanup_ok
 
@@ -189,10 +183,13 @@ async def test_dispatcher_settles_empty_runtime_mutation_once(
                WHERE activation_request_id='disable-1'"""
         ).fetchone()
         assert tuple(request) == ("succeeded", "manager-op-1", None)
-        assert db.execute(
-            """SELECT count(*) FROM capability_activation_receipts
+        assert (
+            db.execute(
+                """SELECT count(*) FROM capability_activation_receipts
                WHERE activation_request_id='disable-1'"""
-        ).fetchone()[0] == 1
+            ).fetchone()[0]
+            == 1
+        )
 
 
 @pytest.mark.asyncio
@@ -222,13 +219,14 @@ async def test_runtime_health_failure_aborts_without_binding_receipt(
         "abort:capability_runtime_health_failed",
     ]
     with store.read() as db:
-        assert db.execute(
-            """SELECT status FROM capability_activation_requests
+        assert (
+            db.execute(
+                """SELECT status FROM capability_activation_requests
                WHERE activation_request_id='disable-1'"""
-        ).fetchone()[0] == "failed"
-        assert db.execute(
-            "SELECT count(*) FROM capability_activation_receipts"
-        ).fetchone()[0] == 0
+            ).fetchone()[0]
+            == "failed"
+        )
+        assert db.execute("SELECT count(*) FROM capability_activation_receipts").fetchone()[0] == 0
 
 
 @pytest.mark.asyncio

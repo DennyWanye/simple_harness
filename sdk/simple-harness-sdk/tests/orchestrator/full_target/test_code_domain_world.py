@@ -91,7 +91,9 @@ def _rebound() -> dict[str, Any]:
     bound = copy.deepcopy(c1_method())
     steps = {item["local_id"]: item for item in bound["steps"]}
     steps["inspect"]["task_type_ref"] = ref(STEPS["inspect"])
-    steps["inspect"]["arguments"] = {"patch": {"op": "output", "step": "apply-patch", "port": "patch"}}
+    steps["inspect"]["arguments"] = {
+        "patch": {"op": "output", "step": "apply-patch", "port": "patch"}
+    }
     steps["summarize"]["task_type_ref"] = ref(STEPS["summarize"])
     steps["summarize"]["arguments"] = {
         "findings": {"op": "output", "step": "inspect", "port": "findings"},
@@ -109,12 +111,16 @@ class _Provider(LayeredScriptedProvider):
         self.facts_turns = 0
         shape = _rebound if variant == "rebound" else c1_method
         propose = proposing_planner(shape)
-        super().__init__(planner=lambda request: retry_same_method(request) or propose(request),
-                         worker=self._worker)
+        super().__init__(
+            planner=lambda request: retry_same_method(request) or propose(request),
+            worker=self._worker,
+        )
 
     def _worker(self, request: Any) -> Any:
         package = package_of(request)
-        declared = [item["port"] for item in (package.get("declared_output_ports") or {}).get("ports", ())]
+        declared = [
+            item["port"] for item in (package.get("declared_output_ports") or {}).get("ports", ())
+        ]
         if declared != ["facts"]:
             return code_worker(request)
         tools = [message for message in request.messages if "tool" in str(message.role).lower()]
@@ -129,7 +135,10 @@ class _Provider(LayeredScriptedProvider):
             return envelope(package, {"facts": "out/facts.json"})
         written = len(tools) - (1 if self.variant == "rebound" else 0)
         if written < 1:
-            return ("workspace_write_file", {"path": "out/facts.json", "content": '{"facts": "scripted"}\n'})
+            return (
+                "workspace_write_file",
+                {"path": "out/facts.json", "content": '{"facts": "scripted"}\n'},
+            )
         return envelope(package, {"facts": "out/facts.json"})
 
 
@@ -156,8 +165,12 @@ def _inputs(store: Any, task_id: str) -> list[list[str]]:
     return rows
 
 
-@pytest.mark.parametrize("variant", ["rebound", "as_synthesised", "direct_rewrite", "snapshot_unavailable"])
-def test_the_code_domain_world_runs_the_c1_method_on_the_product_deployment(tmp_path, monkeypatch, variant) -> None:
+@pytest.mark.parametrize(
+    "variant", ["rebound", "as_synthesised", "direct_rewrite", "snapshot_unavailable"]
+)
+def test_the_code_domain_world_runs_the_c1_method_on_the_product_deployment(
+    tmp_path, monkeypatch, variant
+) -> None:
     if variant == "snapshot_unavailable":
         from agent_orchestrator.artifacts.workspace import WorkspaceError
         from agent_orchestrator.orchestrator.event_handler import Orchestrator
@@ -179,10 +192,14 @@ def test_the_code_domain_world_runs_the_c1_method_on_the_product_deployment(tmp_
         async with code_world(tmp_path, provider) as world:
             provider.world = world
             store = world.store
-            mission_id = world.create({
-                "goal": "修好 stats/window.py 里失败的测试并解释改动", "idempotency_key": f"code-{variant}",
-                "success_criteria": list(CRITERIA), "workspace_seed": {WINDOW: SEED_WINDOW},
-            })["mission_id"]
+            mission_id = world.create(
+                {
+                    "goal": "修好 stats/window.py 里失败的测试并解释改动",
+                    "idempotency_key": f"code-{variant}",
+                    "success_criteria": list(CRITERIA),
+                    "workspace_seed": {WINDOW: SEED_WINDOW},
+                }
+            )["mission_id"]
 
             def status() -> str:
                 return str(store.get_mission(mission_id).status.value)
@@ -200,20 +217,35 @@ def test_the_code_domain_world_runs_the_c1_method_on_the_product_deployment(tmp_
                 await run_until(world, lambda: status() in TERMINAL, timeout=120)
                 assert status() == "COMPLETED", store.get_mission(mission_id).stop_reason
             elif variant == "as_synthesised":
-                await run_until(world, lambda: inspect_dispatched() or status() in TERMINAL, timeout=90)
+                await run_until(
+                    world, lambda: inspect_dispatched() or status() in TERMINAL, timeout=90
+                )
             elif variant == "direct_rewrite":
                 await run_until(world, lambda: facts_rejected() or status() in TERMINAL, timeout=60)
             else:
-                await run_until(world, lambda: any(
-                    "read_only_snapshot_unavailable" in str(call.get("outcome") or "") for call in gateway)
-                    or status() in TERMINAL, timeout=60)
+                await run_until(
+                    world,
+                    lambda: (
+                        any(
+                            "read_only_snapshot_unavailable" in str(call.get("outcome") or "")
+                            for call in gateway
+                        )
+                        or status() in TERMINAL
+                    ),
+                    timeout=60,
+                )
             tasks = _task_ids(store, mission_id)
             events = list(store.list_events(mission_id))
 
             # 只读叶子的检查层：只读且不挂判据的不带 code_test；写的、挂判据的带。
-            policies = {step: store.get_task(task_id).verification_policy for step, task_id in tasks.items()}
-            committed = {e.task_id: tuple(e.payload["proposal"]["verification_policy"])
-                         for e in events if e.type == "TaskCommitted"}
+            policies = {
+                step: store.get_task(task_id).verification_policy for step, task_id in tasks.items()
+            }
+            committed = {
+                e.task_id: tuple(e.payload["proposal"]["verification_policy"])
+                for e in events
+                if e.type == "TaskCommitted"
+            }
             for step in ("facts", "reproduce"):
                 assert tuple(policies[step]) == WITHOUT_CODE_TEST, (step, policies[step])
                 assert committed[tasks[step]] == WITHOUT_CODE_TEST
@@ -222,21 +254,35 @@ def test_the_code_domain_world_runs_the_c1_method_on_the_product_deployment(tmp_
                 assert committed[tasks[step]] == WITH_CODE_TEST
             assert "code_test" not in policies["inspect"]
 
-            rejected = [e.payload for e in events if e.type == "ResultRejected" and e.task_id == tasks["facts"]]
+            rejected = [
+                e.payload
+                for e in events
+                if e.type == "ResultRejected" and e.task_id == tasks["facts"]
+            ]
             if variant == "rebound":
                 # 检查步骤等补丁、收到补丁端口（覆盖层不另放种子文件：打补丁那步只登记了端口文件）；
                 # 总结步骤收到发现与验证报告。
                 assert _inputs(store, tasks["inspect"]) == [["out/patch.json"]]
-                assert _inputs(store, tasks["summarize"]) == [["out/findings.json", "out/report.json"]]
+                assert _inputs(store, tasks["summarize"]) == [
+                    ["out/findings.json", "out/report.json"]
+                ]
                 # 只读叶子用写工具改种子文件：当场拒掉，结果照收，不变成 ResultRejected。
-                refused = [call for call in gateway if call.get("tool") == "workspace_write_file"
-                           and call.get("error_code") == "read_only_existing_file"]
+                refused = [
+                    call
+                    for call in gateway
+                    if call.get("tool") == "workspace_write_file"
+                    and call.get("error_code") == "read_only_existing_file"
+                ]
                 assert len(refused) == 1, gateway
                 assert rejected == []
                 facts_attempt = store.list_attempts(tasks["facts"])[0]
                 workspace = world.loop.assembled.workspaces.get(facts_attempt.id, writable=False)
                 assert workspace.read_text(WINDOW) == SEED_WINDOW
-                recorded = {a.path for a in store.list_mission_artifacts(mission_id) if a.task_id == tasks["facts"]}
+                recorded = {
+                    a.path
+                    for a in store.list_mission_artifacts(mission_id)
+                    if a.task_id == tasks["facts"]
+                }
                 assert WINDOW not in recorded and "out/facts.json" in recorded
             elif variant == "as_synthesised":
                 # 检查步骤 @1 不接任何输入：它从未改动的快照开始，什么也没收到。
@@ -244,15 +290,25 @@ def test_the_code_domain_world_runs_the_c1_method_on_the_product_deployment(tmp_
                 assert rejected == []
             elif variant == "direct_rewrite":
                 # 工具之外改了种子文件：收集时拒收、写明原因，那次尝试什么也不登记。
-                assert [row["reason"] for row in rejected] == ["read_only_leaf_rewrote_workspace"], rejected
+                assert [row["reason"] for row in rejected] == [
+                    "read_only_leaf_rewrote_workspace"
+                ], rejected
                 assert rejected[0]["detail"]["paths"] == [WINDOW]
                 assert rejected[0]["detail"]["side_effect_kind"] == "external_read"
                 [first, *_rest] = store.list_attempts(tasks["facts"])
-                assert not [a for a in store.list_mission_artifacts(mission_id) if a.attempt_id == first.id]
-                assert not [e for e in events if e.type == "ResultSubmitted" and e.task_id == tasks["facts"]]
+                assert not [
+                    a for a in store.list_mission_artifacts(mission_id) if a.attempt_id == first.id
+                ]
+                assert not [
+                    e for e in events if e.type == "ResultSubmitted" and e.task_id == tasks["facts"]
+                ]
             else:
-                blocked = [call for call in gateway if call.get("tool") == "workspace_write_file"
-                           and "read_only_snapshot_unavailable" in str(call.get("outcome") or "")]
+                blocked = [
+                    call
+                    for call in gateway
+                    if call.get("tool") == "workspace_write_file"
+                    and "read_only_snapshot_unavailable" in str(call.get("outcome") or "")
+                ]
                 assert blocked, gateway
 
     asyncio.run(case())

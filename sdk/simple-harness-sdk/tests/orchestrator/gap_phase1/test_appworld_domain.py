@@ -32,9 +32,7 @@ def _gateway(tmp_path, callback):
     gateway.bind_appworld("mission")
     gateway.bind(
         "run",
-        WorkspaceBinding(
-            "attempt", "work", True, ("appworld_execute",), mission_id="mission"
-        ),
+        WorkspaceBinding("attempt", "work", True, ("appworld_execute",), mission_id="mission"),
     )
     call = ToolCall(CallId("call"), "appworld_execute", {"code": "invoke"})
     return gateway, call
@@ -42,9 +40,7 @@ def _gateway(tmp_path, callback):
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("error_type", [ValueError, RuntimeError, TypeError])
-async def test_appworld_callback_exception_is_failed_without_leaking_message(
-    tmp_path, error_type
-):
+async def test_appworld_callback_exception_is_failed_without_leaking_message(tmp_path, error_type):
     secret = "key_live_private_value"
     failure = error_type(secret)
     invocations = []
@@ -81,21 +77,23 @@ async def test_appworld_gateway_failure_settles_as_failed_at_sdk_boundary(tmp_pa
             {"run_id": context.run_id.value},
         )
 
-    registry = ToolRegistry([
-        FunctionTool(
-            ToolSpec(
-                "appworld_execute",
-                "Execute in AppWorld.",
-                {
-                    "type": "object",
-                    "properties": {"code": {"type": "string"}},
-                    "required": ["code"],
-                    "additionalProperties": False,
-                },
-            ),
-            handler,
-        )
-    ])
+    registry = ToolRegistry(
+        [
+            FunctionTool(
+                ToolSpec(
+                    "appworld_execute",
+                    "Execute in AppWorld.",
+                    {
+                        "type": "object",
+                        "properties": {"code": {"type": "string"}},
+                        "required": ["code"],
+                        "additionalProperties": False,
+                    },
+                ),
+                handler,
+            )
+        ]
+    )
     result = await registry.invoke(
         call, ToolContext(RunId("run"), RequestId("request"), CancellationToken())
     )

@@ -83,7 +83,9 @@ def cmd_attempt(args: argparse.Namespace) -> int:
                 if stored is None
                 else {
                     **stored.to_json(),
-                    "verifications": store.list_verifications(stored.envelope.id, requirements_revision=None),
+                    "verifications": store.list_verifications(
+                        stored.envelope.id, requirements_revision=None
+                    ),
                 },
             }
         )
@@ -152,7 +154,10 @@ def cmd_replay(args: argparse.Namespace) -> int:
             if store.get_mission(args.mission_id) is None:
                 _print({"error": f"no Mission {args.mission_id} in {library}"})
                 return EXIT_USAGE
-            report = {"mission": verify_mission(store, args.mission_id), "library": verify_library(store)}
+            report = {
+                "mission": verify_mission(store, args.mission_id),
+                "library": verify_library(store),
+            }
             if args.failures:
                 report["failure_timeline"] = failure_timeline(store, args.mission_id)
             if args.attribution:
@@ -165,7 +170,9 @@ def cmd_replay(args: argparse.Namespace) -> int:
     if args.out:
         Path(args.out).write_text(text, encoding="utf-8")
     sys.stdout.write(text)
-    complete = report["mission"]["status"] == CONSISTENT and report["library"]["status"] == CONSISTENT
+    complete = (
+        report["mission"]["status"] == CONSISTENT and report["library"]["status"] == CONSISTENT
+    )
     return EXIT_OK if complete else EXIT_FAILED
 
 
@@ -294,7 +301,6 @@ def cmd_policy(args: argparse.Namespace) -> int:
         store.close()
         scratch.cleanup()
     return EXIT_OK
-
 
 
 def build_parser() -> argparse.ArgumentParser:

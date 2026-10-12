@@ -5,6 +5,7 @@
 还是"原地重试、上限兜住"，不读异常文字。没带码的、带了却没登记的一律原地重试（用户
 2026-09-28：基础设施故障原地重试）；"未知码拒绝"落在登记上——本文件的源码扫描守住。
 """
+
 from __future__ import annotations
 
 import ast
@@ -37,16 +38,26 @@ def coded_fault_violations(source: str, path: str = "<src>") -> list[str]:
             continue
         if not any(isinstance(base, ast.Name) and base.id == "CodedFault" for base in node.bases):
             continue
-        names = [stmt.value for stmt in node.body if isinstance(stmt, ast.Assign)
-                 and any(isinstance(t, ast.Name) and t.id == "code" for t in stmt.targets)]
+        names = [
+            stmt.value
+            for stmt in node.body
+            if isinstance(stmt, ast.Assign)
+            and any(isinstance(t, ast.Name) and t.id == "code" for t in stmt.targets)
+        ]
         if len(names) != 1:
             out.append(f"{path}:{node.name}: no single class-level code")
             continue
         value = names[0]
-        if not (isinstance(value, ast.Attribute) and isinstance(value.value, ast.Name)
-                and value.value.id == "RoundFaultCode"):
+        if not (
+            isinstance(value, ast.Attribute)
+            and isinstance(value.value, ast.Name)
+            and value.value.id == "RoundFaultCode"
+        ):
             out.append(f"{path}:{node.name}: code is not a RoundFaultCode member")
-        elif value.attr not in RoundFaultCode.__members__ or RoundFaultCode[value.attr] not in ROUND_FAULTS:
+        elif (
+            value.attr not in RoundFaultCode.__members__
+            or RoundFaultCode[value.attr] not in ROUND_FAULTS
+        ):
             out.append(f"{path}:{node.name}: code {value.attr} is not registered")
     return out
 
@@ -85,8 +96,14 @@ def test_the_classifier_reads_the_type_code_not_the_message():
     class Unregistered(RuntimeError, CodedFault):
         code = "SOMETHING_NEW"  # type: ignore[assignment]
 
-    assert classify_round_fault(Damaged("anything")) == (ROUND_CORRUPT, "TASKGRAPH_HISTORY_INTEGRITY")
+    assert classify_round_fault(Damaged("anything")) == (
+        ROUND_CORRUPT,
+        "TASKGRAPH_HISTORY_INTEGRITY",
+    )
     # 文字里写着损坏的码、对象上没有码：不读文字，原地重试
-    assert classify_round_fault(RuntimeError("TASKGRAPH_HISTORY_INTEGRITY: x")) == (ROUND_RETRY, None)
+    assert classify_round_fault(RuntimeError("TASKGRAPH_HISTORY_INTEGRITY: x")) == (
+        ROUND_RETRY,
+        None,
+    )
     # 带了没登记的码：原地重试，码照实带出（事件里写明）
     assert classify_round_fault(Unregistered("x")) == (ROUND_RETRY, "SOMETHING_NEW")

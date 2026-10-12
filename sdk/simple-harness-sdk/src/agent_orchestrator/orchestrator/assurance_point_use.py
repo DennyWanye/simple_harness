@@ -169,16 +169,24 @@ def planning_claims(package: Mapping[str, Any]) -> tuple[EvidenceClaim, ...]:
     return _unique(claims)
 
 
-def context_claims(knowledge: Any, upstream: Sequence[Mapping[str, Any]]) -> tuple[EvidenceClaim, ...]:
+def context_claims(
+    knowledge: Any, upstream: Sequence[Mapping[str, Any]]
+) -> tuple[EvidenceClaim, ...]:
     """推给执行者的：冻结的已验证知识、步骤摘要层、直接上游里核对过的摘要。"""
     from ..context.knowledge_tools import _digest
 
     claims = [EvidenceClaim.knowledge(item["id"], item["version"]) for item in knowledge.frozen_ids]
-    claims.extend(EvidenceClaim.summary(row["id"], row["summary_sha256"]) for row in knowledge.step_summaries)
+    claims.extend(
+        EvidenceClaim.summary(row["id"], row["summary_sha256"]) for row in knowledge.step_summaries
+    )
     for row in upstream:
         if row.get("summary_checked_by") and row.get("accepted_result_id"):
-            claims.append(EvidenceClaim.summary("sum:" + str(row["accepted_result_id"]),
-                                                _digest(str(row.get("accepted_summary") or ""))))
+            claims.append(
+                EvidenceClaim.summary(
+                    "sum:" + str(row["accepted_result_id"]),
+                    _digest(str(row.get("accepted_summary") or "")),
+                )
+            )
     return _unique(claims)
 
 
@@ -199,25 +207,44 @@ def _pin(store: Any, kind: str, sql: str, args: tuple[Any, ...]) -> AssuranceRef
 
 
 def _acceptance_ref(store: Any, mission_id: str, acceptance_id: str) -> AssuranceRef | None:
-    return _pin(store, "acceptance", "SELECT acceptance_id, 0, acceptance_json FROM acceptances "
-                "WHERE mission_id=? AND acceptance_id=?", (mission_id, acceptance_id))
+    return _pin(
+        store,
+        "acceptance",
+        "SELECT acceptance_id, 0, acceptance_json FROM acceptances "
+        "WHERE mission_id=? AND acceptance_id=?",
+        (mission_id, acceptance_id),
+    )
 
 
 def _observation_ref(store: Any, mission_id: str, observation_id: str) -> AssuranceRef | None:
-    return _pin(store, "observation", "SELECT observation_id, 0, observation_json FROM observations "
-                "WHERE mission_id=? AND observation_id=?", (mission_id, observation_id))
+    return _pin(
+        store,
+        "observation",
+        "SELECT observation_id, 0, observation_json FROM observations "
+        "WHERE mission_id=? AND observation_id=?",
+        (mission_id, observation_id),
+    )
 
 
 def _subject_ref(store: Any, mission_id: str, subject: tuple[str, str]) -> AssuranceRef | None:
     """消费方自己的对象：一步的现行任务契约，或任务的现行要求（规划）。"""
     kind, identity = subject
     if kind == "task":
-        return _pin(store, "task", "SELECT task_id, binding_revision, binding_json FROM task_semantics "
-                    "WHERE mission_id=? AND task_id=? ORDER BY binding_revision DESC LIMIT 1",
-                    (mission_id, identity))
+        return _pin(
+            store,
+            "task",
+            "SELECT task_id, binding_revision, binding_json FROM task_semantics "
+            "WHERE mission_id=? AND task_id=? ORDER BY binding_revision DESC LIMIT 1",
+            (mission_id, identity),
+        )
     if kind == "requirements" and identity == mission_id:
-        return _pin(store, "requirements", "SELECT revision_id, revision, revision_json FROM "
-                    "requirements_revisions WHERE mission_id=? ORDER BY revision DESC LIMIT 1", (mission_id,))
+        return _pin(
+            store,
+            "requirements",
+            "SELECT revision_id, revision, revision_json FROM "
+            "requirements_revisions WHERE mission_id=? ORDER BY revision DESC LIMIT 1",
+            (mission_id,),
+        )
     raise AssuranceError("USE_SUBJECT_INVALID", kind)
 
 
@@ -236,7 +263,9 @@ def _judge_knowledge(store: Any, mission_id: str, claim: EvidenceClaim) -> _Judg
     return _Judged(None, [] if ref is None else [ref])
 
 
-def _judge_summary(store: Any, mission_id: str, claim: EvidenceClaim, rows: list[Mapping[str, Any]]) -> _Judged:
+def _judge_summary(
+    store: Any, mission_id: str, claim: EvidenceClaim, rows: list[Mapping[str, Any]]
+) -> _Judged:
     from ..memory.knowledge_standing import acceptance_is_current
     from .assurance_validity import result_acceptance_ids
 
@@ -273,9 +302,10 @@ def _judge_step_ground(store: Any, mission_id: str, task_id: str, now_ms: int) -
     htn = HtnStore(store)
     latest: dict[tuple[str, str], ValidityWitness] = {}
     for digest, raw in store.connection.execute(
-            "SELECT subject_digest, witness_json FROM validity_witnesses WHERE mission_id=?"
-            " AND consumer_kind='task' AND consumer_id=? ORDER BY as_of_ms, witness_id",
-            (mission_id, task_id)):
+        "SELECT subject_digest, witness_json FROM validity_witnesses WHERE mission_id=?"
+        " AND consumer_kind='task' AND consumer_id=? ORDER BY as_of_ms, witness_id",
+        (mission_id, task_id),
+    ):
         witness = ValidityWitness.from_json(json.loads(raw))
         latest[(str(digest), str(witness.purpose))] = witness
 
@@ -290,9 +320,15 @@ def _judge_step_ground(store: Any, mission_id: str, task_id: str, now_ms: int) -
     refs: list[AssuranceRef] = []
     deadlines: list[int] = []
     for witness in latest.values():
-        supports = [str(ref.id) for ref in witness.support_refs if ref.kind is TypedRefKind.ACCEPTANCE]
-        stale = [(item, why) for item in supports
-                 for ok, why in [acceptance_is_current(store, mission_id, item)] if not ok]
+        supports = [
+            str(ref.id) for ref in witness.support_refs if ref.kind is TypedRefKind.ACCEPTANCE
+        ]
+        stale = [
+            (item, why)
+            for item in supports
+            for ok, why in [acceptance_is_current(store, mission_id, item)]
+            if not ok
+        ]
         if stale:
             history.extend(stale)
             continue
@@ -319,8 +355,9 @@ def _judge_step_ground(store: Any, mission_id: str, task_id: str, now_ms: int) -
     return _Judged(None, refs, min(deadlines) if deadlines else None)
 
 
-def _judge_all(store: Any, mission_id: str, claims: Sequence[EvidenceClaim],
-               now_ms: int) -> tuple[list[str], list[AssuranceRef], list[int]]:
+def _judge_all(
+    store: Any, mission_id: str, claims: Sequence[EvidenceClaim], now_ms: int
+) -> tuple[list[str], list[AssuranceRef], list[int]]:
     refusals: list[str] = []
     refs: list[AssuranceRef] = []
     deadlines: list[int] = []
@@ -403,10 +440,22 @@ def certify_point_use_locked(
     own = _subject_ref(store, mission_id, subject)
     if own is None:
         return _refused(use, f"subject:{subject[0]}:{subject[1]}:missing")
-    identity = UseIdentity(mission_id, consumer_kind, consumer_id, mission_id,
-                           validity.principal_id, purpose, root.root_incarnation_id)
-    reader = AssuranceReader(store, tenant_id=validity.tenant_id, mission_id=mission_id,
-                             authority=validity.authority, identity=identity)
+    identity = UseIdentity(
+        mission_id,
+        consumer_kind,
+        consumer_id,
+        mission_id,
+        validity.principal_id,
+        purpose,
+        root.root_incarnation_id,
+    )
+    reader = AssuranceReader(
+        store,
+        tenant_id=validity.tenant_id,
+        mission_id=mission_id,
+        authority=validity.authority,
+        identity=identity,
+    )
     reads: list[ReadItem] = []
     pinned = sorted(set([own, *refs]), key=lambda ref: ref.key)
     own_permission = None
@@ -420,17 +469,31 @@ def certify_point_use_locked(
                 own_permission = permission
     except AssuranceError as error:
         return _refused(use, f"{error.code}:{ref.kind}:{ref.pin.id}")
-    reads.append(ReadItem(
-        "QUERY_SET",
-        canonical({"reader_version": READER_VERSION, "mission": mission_id, "scope": mission_id,
-                   "query_kind": "point_use:" + purpose,
-                   "proposition_keys": [fingerprint([claim.to_json() for claim in claims])],
-                   "polarity": "BOTH"}),
-        fingerprint({"claims": [claim.to_json() for claim in claims], "standing": "CURRENT",
-                     "pins": [ref.to_json() for ref in pinned]}),
-    ))
+    reads.append(
+        ReadItem(
+            "QUERY_SET",
+            canonical(
+                {
+                    "reader_version": READER_VERSION,
+                    "mission": mission_id,
+                    "scope": mission_id,
+                    "query_kind": "point_use:" + purpose,
+                    "proposition_keys": [fingerprint([claim.to_json() for claim in claims])],
+                    "polarity": "BOTH",
+                }
+            ),
+            fingerprint(
+                {
+                    "claims": [claim.to_json() for claim in claims],
+                    "standing": "CURRENT",
+                    "pins": [ref.to_json() for ref in pinned],
+                }
+            ),
+        )
+    )
     policy_row = store.connection.execute(
-        "SELECT policy_hash FROM assurance_mission_bindings WHERE mission_id=?", (mission_id,)).fetchone()
+        "SELECT policy_hash FROM assurance_mission_bindings WHERE mission_id=?", (mission_id,)
+    ).fetchone()
     if policy_row is None:
         return _refused(use, "ASSURANCE_PROFILE_UNBOUND")
     not_after_ms = min(deadlines)
@@ -440,38 +503,69 @@ def certify_point_use_locked(
     # 3. 组证书，过与 ACCEPT 同一个最终核对
     try:
         certificate = UseCertificate(
-            mission_id=mission_id, consumer_kind=consumer_kind, consumer_id=consumer_id,
-            scope_id=mission_id, principal_id=validity.principal_id, purpose=purpose,
-            truth="TRUE", freshness="CURRENT", availability="READABLE", decision="USABLE",
-            coverage="COMPLETE", policy_ref=Pin("assurance-exec-v1.1", 1, policy_row["policy_hash"]),
-            read_set=_merge_reads(reads), clean_support_refs=tuple(pinned), issued_at_ms=now_ms,
-            not_after_ms=not_after_ms, reasons=(f"point_use:{purpose}", f"evidence_count:{len(claims)}"),
-            mission_epoch=epochs.mission, environment_epoch=epochs.environment,
-            clock_generation=epochs.clock_generation, root_incarnation_id=root.root_incarnation_id,
+            mission_id=mission_id,
+            consumer_kind=consumer_kind,
+            consumer_id=consumer_id,
+            scope_id=mission_id,
+            principal_id=validity.principal_id,
+            purpose=purpose,
+            truth="TRUE",
+            freshness="CURRENT",
+            availability="READABLE",
+            decision="USABLE",
+            coverage="COMPLETE",
+            policy_ref=Pin("assurance-exec-v1.1", 1, policy_row["policy_hash"]),
+            read_set=_merge_reads(reads),
+            clean_support_refs=tuple(pinned),
+            issued_at_ms=now_ms,
+            not_after_ms=not_after_ms,
+            reasons=(f"point_use:{purpose}", f"evidence_count:{len(claims)}"),
+            mission_epoch=epochs.mission,
+            environment_epoch=epochs.environment,
+            clock_generation=epochs.clock_generation,
+            root_incarnation_id=root.root_incarnation_id,
         )
         final = read_epochs_locked(store.connection, mission_id)
         check_certificate_binding(
-            certificate, identity=identity, mission_epoch=final.mission,
-            environment_epoch=final.environment, clock_generation=final.clock_generation,
-            clock_state=final.clock_state, now_ms=now_ms,
-            current_access=own_permission.access, current_policy=own_permission.policy,
+            certificate,
+            identity=identity,
+            mission_epoch=final.mission,
+            environment_epoch=final.environment,
+            clock_generation=final.clock_generation,
+            clock_state=final.clock_state,
+            now_ms=now_ms,
+            current_access=own_permission.access,
+            current_policy=own_permission.policy,
         )
     except AssuranceError as error:
         return _refused(use, error.code)
-    certificate_id = "assurance-point-use:" + fingerprint({
-        "consumer_kind": consumer_kind, "consumer_id": consumer_id, "purpose": purpose,
-        "mission_id": mission_id, "issued_at_ms": now_ms,
-        "read_set_hash": fingerprint(certificate.to_json()["read_set"]),
-    })
-    issued = PointUse(purpose, mission_id, consumer_kind, consumer_id, claims, (), certificate_id, certificate)
+    certificate_id = "assurance-point-use:" + fingerprint(
+        {
+            "consumer_kind": consumer_kind,
+            "consumer_id": consumer_id,
+            "purpose": purpose,
+            "mission_id": mission_id,
+            "issued_at_ms": now_ms,
+            "read_set_hash": fingerprint(certificate.to_json()["read_set"]),
+        }
+    )
+    issued = PointUse(
+        purpose, mission_id, consumer_kind, consumer_id, claims, (), certificate_id, certificate
+    )
     if record:
         record_point_use_locked(store, issued)
     return issued
 
 
 def _refused(use: PointUse, *reasons: str) -> PointUse:
-    return PointUse(use.purpose, use.mission_id, use.consumer_kind, use.consumer_id, use.claims,
-                    tuple(dict.fromkeys(reasons)))
+    return PointUse(
+        use.purpose,
+        use.mission_id,
+        use.consumer_kind,
+        use.consumer_id,
+        use.claims,
+        tuple(dict.fromkeys(reasons)),
+    )
 
 
 def record_point_use_locked(store: Any, use: PointUse) -> None:
@@ -496,8 +590,14 @@ def record_point_use_locked(store: Any, use: PointUse) -> None:
             if existing is None or dict(existing) != receipt:
                 raise AssuranceError("IMMUTABLE_IDENTITY_CONFLICT", "assurance_use_certificates")
             return
-        store.insert_receipt(commit_id=receipt_id, kind=USE_CERTIFIED_KIND, subject_id=use.certificate_id,
-                             base_version=0, proposal_hash=fingerprint(receipt), receipt=receipt)
+        store.insert_receipt(
+            commit_id=receipt_id,
+            kind=USE_CERTIFIED_KIND,
+            subject_id=use.certificate_id,
+            base_version=0,
+            proposal_hash=fingerprint(receipt),
+            receipt=receipt,
+        )
 
 
 def require_point_use_locked(commit: Any, **kwargs: Any) -> PointUse:
@@ -509,14 +609,16 @@ def require_point_use_locked(commit: Any, **kwargs: Any) -> PointUse:
 
 
 # ---------------------------------------------------------- 复核与恢复读
-def issued_claims(store: Any, mission_id: str, *, consumer_kind: str, consumer_id: str,
-                  purpose: str) -> tuple[EvidenceClaim, ...] | None:
+def issued_claims(
+    store: Any, mission_id: str, *, consumer_kind: str, consumer_id: str, purpose: str
+) -> tuple[EvidenceClaim, ...] | None:
     """这个消费方最近一张某用途时点证书的证据声明；没签过返回 None。"""
     row = store.connection.execute(
         "SELECT r.receipt_json FROM assurance_use_certificates c JOIN commit_receipts r "
         "ON r.kind=? AND r.subject_id=c.certificate_id WHERE c.mission_id=? AND c.consumer_kind=? "
         "AND c.consumer_id=? AND c.purpose=? ORDER BY c.rowid DESC LIMIT 1",
-        (USE_CERTIFIED_KIND, mission_id, consumer_kind, consumer_id, purpose)).fetchone()
+        (USE_CERTIFIED_KIND, mission_id, consumer_kind, consumer_id, purpose),
+    ).fetchone()
     if row is None:
         return None
     return tuple(EvidenceClaim.from_json(item) for item in decode(row[0])["evidence"])
@@ -528,18 +630,31 @@ def planning_evidence_stale(commit: Any, mission_id: str, request_id: str) -> st
     仍当前（或这个请求没用证据）返回 None；否则返回写明哪一项、为什么的原因。"""
     store = commit.store
     with store.read_view():
-        claims = issued_claims(store, mission_id, consumer_kind=PLANNING_REQUEST_CONSUMER,
-                               consumer_id=request_id, purpose="PLAN")
+        claims = issued_claims(
+            store,
+            mission_id,
+            consumer_kind=PLANNING_REQUEST_CONSUMER,
+            consumer_id=request_id,
+            purpose="PLAN",
+        )
         if not claims:
             return None
         use = certify_point_use_locked(
-            commit, mission_id=mission_id, purpose="PLAN", consumer_kind=PLANNING_REQUEST_CONSUMER,
-            consumer_id=request_id, claims=claims, subject=("requirements", mission_id), record=False)
+            commit,
+            mission_id=mission_id,
+            purpose="PLAN",
+            consumer_kind=PLANNING_REQUEST_CONSUMER,
+            consumer_id=request_id,
+            claims=claims,
+            subject=("requirements", mission_id),
+            record=False,
+        )
     return None if use.usable else "; ".join(use.refusals)
 
 
-def knowledge_handover(commit: Any, *, mission_id: str, consumer_id: str, task_id: str,
-                       purpose: str = "CONTEXT") -> Any:
+def knowledge_handover(
+    commit: Any, *, mission_id: str, consumer_id: str, task_id: str, purpose: str = "CONTEXT"
+) -> Any:
     """运行中读一条已验证知识 / 核对过的摘要：交出正文前与装上下文同一道门——签一张证书（消费方是这次
     工具调用），核时钟、授权、根实例并留证书（裁决 2026-10-07 第 5 件）。执行者读是 CONTEXT；审阅员
     读黑板是披露 DISCLOSE（推后第 2 批 A03），``task_id`` 是审阅所属的那一步。返回的函数对一项证据
@@ -548,8 +663,14 @@ def knowledge_handover(commit: Any, *, mission_id: str, consumer_id: str, task_i
     def handover(claim: EvidenceClaim) -> tuple[str, ...]:
         with commit.store.transaction():
             use = certify_point_use_locked(
-                commit, mission_id=mission_id, purpose=purpose, consumer_kind=TOOL_CALL_CONSUMER,
-                consumer_id=consumer_id, claims=(claim,), subject=("task", task_id))
+                commit,
+                mission_id=mission_id,
+                purpose=purpose,
+                consumer_kind=TOOL_CALL_CONSUMER,
+                consumer_id=consumer_id,
+                claims=(claim,),
+                subject=("task", task_id),
+            )
         return use.refusals
 
     return handover
@@ -558,11 +679,25 @@ def knowledge_handover(commit: Any, *, mission_id: str, consumer_id: str, task_i
 def certify_recovery_locked(commit: Any, attempt: Any) -> PointUse:
     """重启后恢复一次在途尝试之前，按它开工时装进上下文的证据重签 RECOVERY（§12.2：冻结的请求
     不静默替换上下文）。开工时没用证据：没什么可核。"""
-    claims = issued_claims(commit.store, attempt.mission_id, consumer_kind=ATTEMPT_CONSUMER,
-                           consumer_id=attempt.id, purpose="CONTEXT") or ()
+    claims = (
+        issued_claims(
+            commit.store,
+            attempt.mission_id,
+            consumer_kind=ATTEMPT_CONSUMER,
+            consumer_id=attempt.id,
+            purpose="CONTEXT",
+        )
+        or ()
+    )
     return certify_point_use_locked(
-        commit, mission_id=attempt.mission_id, purpose="RECOVERY", consumer_kind=ATTEMPT_CONSUMER,
-        consumer_id=attempt.id, claims=claims, subject=("task", attempt.task_id))
+        commit,
+        mission_id=attempt.mission_id,
+        purpose="RECOVERY",
+        consumer_kind=ATTEMPT_CONSUMER,
+        consumer_id=attempt.id,
+        claims=claims,
+        subject=("task", attempt.task_id),
+    )
 
 
 __all__ = (

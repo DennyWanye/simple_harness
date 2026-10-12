@@ -27,9 +27,12 @@ def _v2(path: Path) -> Path:
     for part in SCHEMA_V2_PARTS:
         connection.executescript(part)
     connection.execute("INSERT INTO product_schema_meta VALUES(1,2)")
-    tables = tuple(row[0] for row in connection.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
-    ))
+    tables = tuple(
+        row[0]
+        for row in connection.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
+        )
+    )
     connection.execute(
         "INSERT INTO product_schema_manifest VALUES(1,?,?)",
         (expected_semantic_fingerprint(SCHEMA_V2_PARTS), json.dumps(tables, separators=(",", ":"))),
@@ -37,7 +40,9 @@ def _v2(path: Path) -> Path:
     connection.execute("PRAGMA user_version=2")
     connection.commit()
     backup, _ = create_verified_migration_backup(
-        connection, database_path=path, source_version=2,
+        connection,
+        database_path=path,
+        source_version=2,
         validate=ProductStateDatabase._validate_v2_connection,
     )
     connection.close()
@@ -83,9 +88,13 @@ def _execution(path: Path) -> None:
 
 def _disposition(*, terminal: bool = True, recoverable: bool = False):
     return VerifierRunDisposition(
-        run_id="expected-run", session_id="session", request_id="request",
-        turn_id="turn", state="completed" if terminal else "running",
-        terminal=terminal, recoverable=recoverable,
+        run_id="expected-run",
+        session_id="session",
+        request_id="request",
+        turn_id="turn",
+        state="completed" if terminal else "running",
+        terminal=terminal,
+        recoverable=recoverable,
     )
 
 
@@ -95,8 +104,11 @@ def test_dual_database_gate_restores_only_after_exact_terminal_proof(tmp_path: P
     _attempt(product)
     _execution(execution)
     receipt = execute_host_control_downgrade(
-        product_database=product, execution_database=execution,
-        product_pre_v3_backup=backup, ingress_closed=True, app_stopped=True,
+        product_database=product,
+        execution_database=execution,
+        product_pre_v3_backup=backup,
+        ingress_closed=True,
+        app_stopped=True,
         run_probe=lambda _attempt: _disposition(),
         sdk_062_probe=lambda _path: (True, "0.6.2 reopened twice"),
     )
@@ -106,7 +118,9 @@ def test_dual_database_gate_restores_only_after_exact_terminal_proof(tmp_path: P
     restored = sqlite3.connect(product)
     ProductStateDatabase._validate_v2_connection(restored)
     restored.close()
-    assert sqlite3.connect(execution).execute("SELECT value FROM marker").fetchone()[0] == "preserved"
+    assert (
+        sqlite3.connect(execution).execute("SELECT value FROM marker").fetchone()[0] == "preserved"
+    )
 
 
 @pytest.mark.parametrize(
@@ -128,22 +142,31 @@ def test_nonterminal_recoverable_or_mismatched_run_aborts_before_backup(
     _execution(execution)
     with pytest.raises(HostControlDowngradeError):
         execute_host_control_downgrade(
-            product_database=product, execution_database=execution,
-            product_pre_v3_backup=backup, ingress_closed=True, app_stopped=True,
-            run_probe=probe, sdk_062_probe=lambda _path: (True, "ok"),
+            product_database=product,
+            execution_database=execution,
+            product_pre_v3_backup=backup,
+            ingress_closed=True,
+            app_stopped=True,
+            run_probe=probe,
+            sdk_062_probe=lambda _path: (True, "ok"),
         )
     assert not tuple(tmp_path.glob("execution.db.pre-sdk-062-downgrade.*"))
     assert ProductStateDatabase(product).schema_version == 4
 
 
-def test_incompatible_sdk_aborts_or_requires_explicit_whole_database_quarantine(tmp_path: Path) -> None:
+def test_incompatible_sdk_aborts_or_requires_explicit_whole_database_quarantine(
+    tmp_path: Path,
+) -> None:
     product, execution = tmp_path / "product.db", tmp_path / "execution.db"
     backup = _v2(product)
     _attempt(product)
     _execution(execution)
     arguments = dict(
-        product_database=product, execution_database=execution,
-        product_pre_v3_backup=backup, ingress_closed=True, app_stopped=True,
+        product_database=product,
+        execution_database=execution,
+        product_pre_v3_backup=backup,
+        ingress_closed=True,
+        app_stopped=True,
         run_probe=lambda _attempt: _disposition(),
         sdk_062_probe=lambda _path: (False, "schema too new"),
     )
@@ -152,9 +175,7 @@ def test_incompatible_sdk_aborts_or_requires_explicit_whole_database_quarantine(
     assert execution.exists()
     assert ProductStateDatabase(product).schema_version == 4
 
-    receipt = execute_host_control_downgrade(
-        **arguments, allow_execution_quarantine=True
-    )
+    receipt = execute_host_control_downgrade(**arguments, allow_execution_quarantine=True)
     assert receipt.outcome == "restored_execution_quarantined"
     assert receipt.execution_quarantine is not None
     assert receipt.execution_quarantine.exists() and not execution.exists()
@@ -169,9 +190,13 @@ def test_gate_requires_explicit_shutdown_claims(tmp_path: Path) -> None:
     _execution(execution)
     with pytest.raises(HostControlDowngradeError, match="must be stopped"):
         execute_host_control_downgrade(
-            product_database=product, execution_database=execution,
-            product_pre_v3_backup=backup, ingress_closed=False, app_stopped=True,
-            run_probe=lambda _attempt: None, sdk_062_probe=lambda _path: (True, "ok"),
+            product_database=product,
+            execution_database=execution,
+            product_pre_v3_backup=backup,
+            ingress_closed=False,
+            app_stopped=True,
+            run_probe=lambda _attempt: None,
+            sdk_062_probe=lambda _path: (True, "ok"),
         )
 
 
@@ -203,8 +228,15 @@ def sdk_062_python(tmp_path: Path) -> Path:
     # make resolving the legacy 0.6.2 wheel unsatisfiable offline.
     subprocess.run(
         [
-            uv, "pip", "install", "--no-config", "--offline",
-            "--python", str(python), "--no-deps", str(wheel),
+            uv,
+            "pip",
+            "install",
+            "--no-config",
+            "--offline",
+            "--python",
+            str(python),
+            "--no-deps",
+            str(wheel),
         ],
         check=True,
         capture_output=True,
@@ -247,8 +279,7 @@ finally:
     database.close()
 """
     subprocess.run(
-        [str(python), "-I", "-c", program, str(path),
-         "recoverable" if recoverable else "empty"],
+        [str(python), "-I", "-c", program, str(path), "recoverable" if recoverable else "empty"],
         check=True,
         capture_output=True,
         text=True,
@@ -257,7 +288,8 @@ finally:
 
 
 def test_exact_pinned_sdk_062_reopens_its_fresh_v6_twice(
-    tmp_path: Path, sdk_062_python: Path,
+    tmp_path: Path,
+    sdk_062_python: Path,
 ) -> None:
     path = tmp_path / "sdk-v6.sqlite3"
     _create_sdk_062_database(sdk_062_python, path)
@@ -271,7 +303,8 @@ def test_exact_pinned_sdk_062_reopens_its_fresh_v6_twice(
 
 
 def test_exact_pinned_sdk_062_rejects_recoverable_v6_run_without_mutation(
-    tmp_path: Path, sdk_062_python: Path,
+    tmp_path: Path,
+    sdk_062_python: Path,
 ) -> None:
     path = tmp_path / "sdk-v6-recoverable.sqlite3"
     _create_sdk_062_database(sdk_062_python, path, recoverable=True)
@@ -285,7 +318,8 @@ def test_exact_pinned_sdk_062_rejects_recoverable_v6_run_without_mutation(
 
 
 def test_exact_pinned_sdk_062_rejects_current_fresh_schema_without_mutation(
-    tmp_path: Path, sdk_062_python: Path,
+    tmp_path: Path,
+    sdk_062_python: Path,
 ) -> None:
     from simple_harness.execution.sqlite import Database, SqliteExecutionUnitOfWork
 
@@ -294,9 +328,10 @@ def test_exact_pinned_sdk_062_rejects_current_fresh_schema_without_mutation(
     try:
         # The current SDK writes one fresh-schema row newer than 0.6.2's v6
         # (v7 when written; later SDK schema bumps keep the same shape).
-        rows = [tuple(row) for row in database.connection.execute(
-            "SELECT version,name FROM sdk_schema_migrations"
-        )]
+        rows = [
+            tuple(row)
+            for row in database.connection.execute("SELECT version,name FROM sdk_schema_migrations")
+        ]
         assert len(rows) == 1
         version, name = rows[0]
         assert version > 6 and name == f"{version:04d}_fresh"

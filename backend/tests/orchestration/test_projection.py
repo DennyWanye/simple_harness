@@ -53,7 +53,8 @@ async def test_detail_is_whitelisted_and_marks_model_text(orchestration_root, pr
         # check was not applicable (original §14.1)
         assert all(
             layer["status"] != "PASS" or "not applicable" in layer["summary"]["text"]
-            for layer in layers if layer["layer"] == "code_test"
+            for layer in layers
+            if layer["layer"] == "code_test"
         )
         assert "amount_micros" not in detail["usage"]  # tokens only, no money
         assert detail["usage"]["reserved_tokens"] == 0
@@ -71,11 +72,18 @@ async def test_detail_is_whitelisted_and_marks_model_text(orchestration_root, pr
 
 @pytest.mark.parametrize("status", ["ACTIVE", "FAILED", "CANCELLED"])
 def test_budget_projection_keeps_actual_held_reservation_even_after_terminal(status):
-    view = {"snapshot": {
-        "mission": {"status": status},
-        "budget_usage": {"reserved_tokens": 700, "settled_tokens": 123, "version": 8,
-                         "overrun_calls": 2, "overrun_tokens": 4_321},
-    }}
+    view = {
+        "snapshot": {
+            "mission": {"status": status},
+            "budget_usage": {
+                "reserved_tokens": 700,
+                "settled_tokens": 123,
+                "version": 8,
+                "overrun_calls": 2,
+                "overrun_tokens": 4_321,
+            },
+        }
+    }
     usage = project_detail(view)["usage"]
     assert usage["reserved_tokens"] == 700  # UNKNOWN can outlive a cancelled Mission
     assert usage["settled_tokens"] == 123
@@ -89,24 +97,53 @@ def test_old_snapshot_does_not_invent_zero_budget_usage():
 
 
 def _final_rejection_view():
-    return {"snapshot": {
-        "mission": {"id": "m", "status": "FAILED", "stop_reason": "max_attempts_reached"},
-        "attempts": [{"id": "a1", "task_id": "t", "mission_id": "m", "failure": {
-            "reason": "verification_failed", "failures": [{
-                "layer": "rule_check", "status": "FAIL", "summary": "private summary",
-                "detail": {"reason": "stale_source", "internal": "hidden", "source_current_issues": [{
-                    "code": "stale_source", "reason": "revoked", "path": "sources/A.md",
-                    "version": "a" * 64, "storage_uri": "private-path",
-                }]},
-            }],
-        }}],
-        "results": [{"envelope": {"id": "r1", "attempt_id": "a1", "task_id": "t", "mission_id": "m"},
-                     "verification_state": "DONE", "verdict": "FAIL", "verifications": [
-                         {"layer": "rule_check", "status": "PASS"},
-                         {"layer": "human_review", "status": "PASS"},
-                     ]}],
-        "approvals": [{"request_id": "review-r1", "kind": "review", "state": "GRANTED"}],
-    }}
+    return {
+        "snapshot": {
+            "mission": {"id": "m", "status": "FAILED", "stop_reason": "max_attempts_reached"},
+            "attempts": [
+                {
+                    "id": "a1",
+                    "task_id": "t",
+                    "mission_id": "m",
+                    "failure": {
+                        "reason": "verification_failed",
+                        "failures": [
+                            {
+                                "layer": "rule_check",
+                                "status": "FAIL",
+                                "summary": "private summary",
+                                "detail": {
+                                    "reason": "stale_source",
+                                    "internal": "hidden",
+                                    "source_current_issues": [
+                                        {
+                                            "code": "stale_source",
+                                            "reason": "revoked",
+                                            "path": "sources/A.md",
+                                            "version": "a" * 64,
+                                            "storage_uri": "private-path",
+                                        }
+                                    ],
+                                },
+                            }
+                        ],
+                    },
+                }
+            ],
+            "results": [
+                {
+                    "envelope": {"id": "r1", "attempt_id": "a1", "task_id": "t", "mission_id": "m"},
+                    "verification_state": "DONE",
+                    "verdict": "FAIL",
+                    "verifications": [
+                        {"layer": "rule_check", "status": "PASS"},
+                        {"layer": "human_review", "status": "PASS"},
+                    ],
+                }
+            ],
+            "approvals": [{"request_id": "review-r1", "kind": "review", "state": "GRANTED"}],
+        }
+    }
 
 
 def test_final_rejection_uses_same_attempt_without_rewriting_frozen_layers():
@@ -114,9 +151,15 @@ def test_final_rejection_uses_same_attempt_without_rewriting_frozen_layers():
     result = detail["results"][0]
     assert result["verdict"] == "FAIL" and result["verification_state"] == "DONE"
     assert result["final_rejection"] == {
-        "reason": "stale_source", "source_issues": [{
-            "code": "stale_source", "reason": "revoked", "path": "sources/A.md", "version": "a" * 64,
-        }],
+        "reason": "stale_source",
+        "source_issues": [
+            {
+                "code": "stale_source",
+                "reason": "revoked",
+                "path": "sources/A.md",
+                "version": "a" * 64,
+            }
+        ],
     }
     assert [row["status"] for row in result["verification_layers"]] == ["PASS", "PASS"]
     assert detail["mission"]["stop_reason"] == "max_attempts_reached"
@@ -127,17 +170,31 @@ def test_final_rejection_does_not_borrow_another_attempt_failure_on_same_task():
     view = _final_rejection_view()
     snapshot = view["snapshot"]
     snapshot["attempts"].append({"id": "a2", "task_id": "t", "mission_id": "m"})
-    snapshot["results"].append({
-        "envelope": {"id": "r2", "attempt_id": "a2", "task_id": "t", "mission_id": "m"},
-        "verification_state": "DONE", "verdict": "FAIL",
-    })
+    snapshot["results"].append(
+        {
+            "envelope": {"id": "r2", "attempt_id": "a2", "task_id": "t", "mission_id": "m"},
+            "verification_state": "DONE",
+            "verdict": "FAIL",
+        }
+    )
     first, other = project_detail(view)["results"]
     assert first["final_rejection"]["reason"] == "stale_source"
     assert other["verdict"] == "FAIL" and other["final_rejection"] is None
 
 
-@pytest.mark.parametrize("case", ["pending", "pass", "missing_attempt", "foreign_task", "foreign_mission",
-                                 "unknown_reason", "not_verification_failure", "passed_layer"])
+@pytest.mark.parametrize(
+    "case",
+    [
+        "pending",
+        "pass",
+        "missing_attempt",
+        "foreign_task",
+        "foreign_mission",
+        "unknown_reason",
+        "not_verification_failure",
+        "passed_layer",
+    ],
+)
 def test_final_rejection_requires_final_failure_and_whitelisted_attempt_reason(case):
     view = _final_rejection_view()
     result = view["snapshot"]["results"][0]
@@ -264,7 +321,9 @@ def test_approval_text_is_marked_and_action_params_are_bounded():
     raw = {
         "request_id": "req-1",
         "kind": "action",
-        "summary": {"layers": [{"layer": "critic_review", "status": "PASS", "summary": "模型说好"}]},
+        "summary": {
+            "layers": [{"layer": "critic_review", "status": "PASS", "summary": "模型说好"}]
+        },
         "action": {"params": {"blob": "x" * 5000}, "reason": {"text": "因为要改配置"}},
     }
     item = project_approval(raw)
@@ -281,15 +340,34 @@ def test_an_action_approval_keeps_its_fields_and_the_reason_source():
     """2026-09-29 真机：动作审批摘要整个转成文字后卡片只能显示原始字典；系统写的理由被标成模型写的。"""
     from deskpet.orchestration.projection import project_approval
 
-    summary = {"connector": "file_publish", "operation": "publish", "target": "README.md",
-               "params": {"artifact_path": "README.md", "content_hash": "c9" * 32, "storage_uri": "/secret/path"},
-               "reason": "用户在确认页批准的操作：发布 README.md 到 README.md", "reason_source": "system"}
+    summary = {
+        "connector": "file_publish",
+        "operation": "publish",
+        "target": "README.md",
+        "params": {
+            "artifact_path": "README.md",
+            "content_hash": "c9" * 32,
+            "storage_uri": "/secret/path",
+        },
+        "reason": "用户在确认页批准的操作：发布 README.md 到 README.md",
+        "reason_source": "system",
+    }
     shown = project_approval({"request_id": "a-1", "kind": "action", "summary": summary})["summary"]
-    assert shown == {"connector": "file_publish", "operation": "publish", "target": "README.md",
-                     "params": {"artifact_path": "README.md"},
-                     "reason": "用户在确认页批准的操作：发布 README.md 到 README.md", "reason_source": "system"}
-    forged = project_approval({"request_id": "a-2", "kind": "action",
-                               "summary": {**summary, "reason_source": "model (untrusted)"}})["summary"]
+    assert shown == {
+        "connector": "file_publish",
+        "operation": "publish",
+        "target": "README.md",
+        "params": {"artifact_path": "README.md"},
+        "reason": "用户在确认页批准的操作：发布 README.md 到 README.md",
+        "reason_source": "system",
+    }
+    forged = project_approval(
+        {
+            "request_id": "a-2",
+            "kind": "action",
+            "summary": {**summary, "reason_source": "model (untrusted)"},
+        }
+    )["summary"]
     assert forged["reason_source"] == "model"
 
 
@@ -298,14 +376,32 @@ def test_a_resubmitted_action_card_says_why_the_last_one_did_not_take_effect():
     白名单字段把它丢了，卡片上看不到。"""
     from deskpet.orchestration.projection import project_approval
 
-    previous = {"action_key": "action-1:v1", "attempt": 1, "outcome": "human_ruled_not_applied",
-                "reason": "human_ruled_failed"}
-    summary = {"connector": "file_publish", "operation": "publish", "target": "minutes.md",
-               "params": {"artifact_path": "minutes.md"}, "reason": "发布", "reason_source": "system",
-               "previous_attempt": previous}
+    previous = {
+        "action_key": "action-1:v1",
+        "attempt": 1,
+        "outcome": "human_ruled_not_applied",
+        "reason": "human_ruled_failed",
+    }
+    summary = {
+        "connector": "file_publish",
+        "operation": "publish",
+        "target": "minutes.md",
+        "params": {"artifact_path": "minutes.md"},
+        "reason": "发布",
+        "reason_source": "system",
+        "previous_attempt": previous,
+    }
     shown = project_approval({"request_id": "a-1", "kind": "action", "summary": summary})["summary"]
-    assert shown["previous_attempt"] == {"attempt": 1, "outcome": "human_ruled_not_applied",
-                                         "reason": "human_ruled_failed"}
-    first = project_approval({"request_id": "a-2", "kind": "action",
-                              "summary": {k: v for k, v in summary.items() if k != "previous_attempt"}})["summary"]
+    assert shown["previous_attempt"] == {
+        "attempt": 1,
+        "outcome": "human_ruled_not_applied",
+        "reason": "human_ruled_failed",
+    }
+    first = project_approval(
+        {
+            "request_id": "a-2",
+            "kind": "action",
+            "summary": {k: v for k, v in summary.items() if k != "previous_attempt"},
+        }
+    )["summary"]
     assert "previous_attempt" not in first

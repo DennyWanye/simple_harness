@@ -88,9 +88,7 @@ class Catalog:
     def current_generation(self) -> int:
         return 1
 
-    def resolve(
-        self, generation: int, content_fingerprint: str
-    ) -> ToolCatalogSnapshot | None:
+    def resolve(self, generation: int, content_fingerprint: str) -> ToolCatalogSnapshot | None:
         if generation != 1 or content_fingerprint != self.fingerprint:
             return None
         return ToolCatalogSnapshot(

@@ -327,15 +327,11 @@ async def test_auto_mode_external_effect_parks_original_run_and_releases_job_lea
     )
     assert client.calls[0][0]["payload"]["auto_mode"] is True
     prepared = client.calls[0][2]
-    descriptor = prepared.host_extensions[
-        "deskpet.companion.background_run.v1"
-    ]
+    descriptor = prepared.host_extensions["deskpet.companion.background_run.v1"]
     assert descriptor.content_hash
 
     restarted_store = CompanionStore(companion_path)
-    restarted_wait = restarted_store.get_job_execution_wait(
-        owner, job_id=claim.item_id
-    )
+    restarted_wait = restarted_store.get_job_execution_wait(owner, job_id=claim.item_id)
     assert restarted_wait == wait
     assert (
         restarted_store.claim_job(
@@ -355,9 +351,7 @@ async def test_auto_mode_external_effect_parks_original_run_and_releases_job_lea
             "execution_grants",
             "execution_effects",
         ):
-            row = await (
-                await db.execute(f"SELECT COUNT(*) FROM {table}")
-            ).fetchone()
+            row = await (await db.execute(f"SELECT COUNT(*) FROM {table}")).fetchone()
             counts_list.append(int(row[0]))
         counts = tuple(counts_list)
     assert counts == (1, 0, 0)
@@ -494,9 +488,7 @@ async def test_allowed_decision_consumes_one_grant_and_unknown_effect_never_reex
             "execution_effects",
             "execution_effect_attempts",
         ):
-            row = await (
-                await db.execute(f"SELECT COUNT(*) FROM {table}")
-            ).fetchone()
+            row = await (await db.execute(f"SELECT COUNT(*) FROM {table}")).fetchone()
             counts_list.append(int(row[0]))
         counts = tuple(counts_list)
     assert counts == (1, 1, 1, 1)
@@ -603,9 +595,7 @@ async def test_delegated_grant_cannot_authorize_external_scope(tmp_path) -> None
         store=store,
         host_factory=lambda _owner, _claim: _host("run-forged"),
     )
-    with pytest.raises(
-        ValueError, match="delegated_preparation_grant_scope_forbidden"
-    ):
+    with pytest.raises(ValueError, match="delegated_preparation_grant_scope_forbidden"):
         await adapter(owner, claim)
     assert client.calls == []
 
@@ -669,9 +659,7 @@ def test_v3_upgrade_preserves_jobs_and_installs_execution_wait_state(
     with sqlite3.connect(path) as db:
         configure_connection(db)
         for version in (1, 2, 3):
-            db.executescript(
-                MIGRATION_RESOURCES[version].read_text(encoding="utf-8")
-            )
+            db.executescript(MIGRATION_RESOURCES[version].read_text(encoding="utf-8"))
         db.execute("PRAGMA user_version=3")
         db.execute(
             """INSERT INTO profiles(
@@ -697,9 +685,7 @@ def test_v3_upgrade_preserves_jobs_and_installs_execution_wait_state(
     owner = OwnerRef("profile-a", 1)
     assert store.get_job(owner, job_id="job-old")["status"] == "queued"
     with store.read() as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == (
-            COMPANION_SCHEMA_VERSION
-        )
+        assert db.execute("PRAGMA user_version").fetchone()[0] == (COMPANION_SCHEMA_VERSION)
         ddl = db.execute(
             """SELECT sql FROM sqlite_master
                WHERE type='table' AND name='jobs'"""

@@ -28,9 +28,7 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
-_VERIFY = (
-    Path(__file__).resolve().parents[3] / "scripts" / "native" / "a6_verify.py"
-)
+_VERIFY = Path(__file__).resolve().parents[3] / "scripts" / "native" / "a6_verify.py"
 
 
 def _load():
@@ -48,10 +46,10 @@ PLAN = ("plan-t15", "hash-t15")
 OLD_PLAN = ("plan-t1", "hash-t1")
 
 # 形态 A 的三个节点: T1 的旧事实(source)、本轮新建的流程节点(target)、relation memory 自己。
-FACT = "mem-fact"          # semantic, T1 建, revision 1
-FLOW = "mem-flow"          # procedure, 本轮建, revision 1
-RELMEM = "mem-relation"    # relation memory, 本轮建, revision 1
-DUP = "mem-dup-claim"      # 本轮再造的同值 semantic(形态 B 的 source)
+FACT = "mem-fact"  # semantic, T1 建, revision 1
+FLOW = "mem-flow"  # procedure, 本轮建, revision 1
+RELMEM = "mem-relation"  # relation memory, 本轮建, revision 1
+DUP = "mem-dup-claim"  # 本轮再造的同值 semantic(形态 B 的 source)
 OLD_FLOW = "mem-old-flow"  # T1 就存在的流程节点
 
 _HEADS = [
@@ -82,13 +80,23 @@ def _relation(
     created_at=100.0,
 ):
     return (
-        relation_id, plan[0], plan[1], kind, relation_memory_id, relation_memory_revision,
-        source[0], source[1], target[0], target[1], created_at,
+        relation_id,
+        plan[0],
+        plan[1],
+        kind,
+        relation_memory_id,
+        relation_memory_revision,
+        source[0],
+        source[1],
+        target[0],
+        target[1],
+        created_at,
     )
 
 
-def _hm_db(tmp_path: Path, relations, *, with_relation_revision=True,
-           heads=None, revisions=None) -> a6.RoDb:
+def _hm_db(
+    tmp_path: Path, relations, *, with_relation_revision=True, heads=None, revisions=None
+) -> a6.RoDb:
     path = tmp_path / "human_memory_v7.db"
     conn = sqlite3.connect(path)
     conn.execute(
@@ -106,13 +114,17 @@ def _hm_db(tmp_path: Path, relations, *, with_relation_revision=True,
         "create table cognitive_memory_revisions(memory_id text, revision integer,"
         " plan_id text, plan_hash text)"
     )
-    conn.executemany("insert into cognitive_memory_heads values (?,?,?)",
-                     _HEADS if heads is None else heads)
-    conn.executemany("insert into cognitive_memory_revisions values (?,?,?,?)",
-                     _REVISIONS if revisions is None else revisions)
+    conn.executemany(
+        "insert into cognitive_memory_heads values (?,?,?)", _HEADS if heads is None else heads
+    )
+    conn.executemany(
+        "insert into cognitive_memory_revisions values (?,?,?,?)",
+        _REVISIONS if revisions is None else revisions,
+    )
     if with_relation_revision:
-        conn.executemany("insert into cognitive_relations values (?,?,?,?,?,?,?,?,?,?,?)",
-                         relations)
+        conn.executemany(
+            "insert into cognitive_relations values (?,?,?,?,?,?,?,?,?,?,?)", relations
+        )
     else:
         conn.executemany(
             "insert into cognitive_relations values (?,?,?,?,?,?,?,?,?,?)",
@@ -161,9 +173,18 @@ def test_both_endpoints_pre_existing_fails(tmp_path: Path) -> None:
 # ------------------------------------------------------------------ (iii) evolution 行
 def test_an_evolution_row_without_a_relation_memory_fails(tmp_path: Path) -> None:
     # 血缘边(supersedes/amends/contests)没有 relation memory, relation_kind 也不是 applies_to。
-    item = _run(tmp_path, [_relation(
-        kind="supersedes", relation_memory_id=None, relation_memory_revision=None,
-        source=(FLOW, 1), target=(FACT, 1))])
+    item = _run(
+        tmp_path,
+        [
+            _relation(
+                kind="supersedes",
+                relation_memory_id=None,
+                relation_memory_revision=None,
+                source=(FLOW, 1),
+                target=(FACT, 1),
+            )
+        ],
+    )
     assert item.verdict == a6.FAIL
     assert item.numbers["applies_to_rows"] == 0
     assert item.numbers["relation_kinds"] == ["supersedes"]

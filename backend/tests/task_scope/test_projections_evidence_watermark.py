@@ -32,9 +32,7 @@ async def _v40_db(tmp_path: Path) -> tuple[Path, CanonicalTaskScopeStore]:
     with sqlite3.connect(db_path) as db:
         tables = {
             row[0]
-            for row in db.execute(
-                "SELECT name FROM sqlite_master WHERE type IN ('table','view')"
-            )
+            for row in db.execute("SELECT name FROM sqlite_master WHERE type IN ('table','view')")
         }
         migrations = Path(__file__).parents[2] / "deskpet" / "memory" / "migrations"
         if "task_scope_projection_sources" not in tables:
@@ -74,18 +72,26 @@ async def test_evidence_count_is_pinned_to_the_view_watermark(tmp_path: Path) ->
         task_scope_id="scope-watermark", subject="actor-1", title="Watermark"
     )
     await store.append_deterministic_events(
-        task_scope_id="scope-watermark", subject="actor-1", count=20,
-        canary="scope-watermark-canary", batch_size=20,
+        task_scope_id="scope-watermark",
+        subject="actor-1",
+        count=20,
+        canary="scope-watermark-canary",
+        batch_size=20,
     )
     projections = TaskScopeProjectionStore(db_path)
-    first = json.loads((await projections.materialize(task_scope_id="scope-watermark"))["EVIDENCE"].content)
+    first = json.loads(
+        (await projections.materialize(task_scope_id="scope-watermark"))["EVIDENCE"].content
+    )
     assert first["event_watermark"] == 20
     assert first["event_count"] == 20
 
     # 物化之后再追加 5 条(现实里就是「触发这次读取的那几条事件」), 不重新物化。
     await store.append_deterministic_events(
-        task_scope_id="scope-watermark", subject="actor-1", count=5,
-        canary="scope-watermark-canary-2", batch_size=5,
+        task_scope_id="scope-watermark",
+        subject="actor-1",
+        count=5,
+        canary="scope-watermark-canary-2",
+        batch_size=5,
     )
     with sqlite3.connect(db_path) as db:
         total = int(
@@ -98,11 +104,15 @@ async def test_evidence_count_is_pinned_to_the_view_watermark(tmp_path: Path) ->
     stored = _stored_evidence_manifests(db_path, "scope-watermark")
     assert [m["event_count"] for m in stored] == [20]
     # 已落库的那条修订仍然只说 20 —— 它在自己的水位上一条不丢, 但不等于事件表当前行数。
-    assert stored[-1]["event_count"] == _events_at(db_path, "scope-watermark", stored[-1]["event_watermark"])
+    assert stored[-1]["event_count"] == _events_at(
+        db_path, "scope-watermark", stored[-1]["event_watermark"]
+    )
     assert stored[-1]["event_count"] != total
 
     # 再物化一次: 水位推进到 25, 计数跟着推进, 从不倒退。
-    second = json.loads((await projections.materialize(task_scope_id="scope-watermark"))["EVIDENCE"].content)
+    second = json.loads(
+        (await projections.materialize(task_scope_id="scope-watermark"))["EVIDENCE"].content
+    )
     assert (second["event_watermark"], second["event_count"]) == (25, 25)
     assert second["event_count"] == _events_at(db_path, "scope-watermark", 25) == total
     stored = _stored_evidence_manifests(db_path, "scope-watermark")
@@ -120,12 +130,19 @@ async def test_two_scopes_do_not_share_one_event_count(tmp_path: Path) -> None:
             task_scope_id=scope, subject="actor-1", title=f"Scope {scope}"
         )
         await store.append_deterministic_events(
-            task_scope_id=scope, subject="actor-1", count=count,
-            canary=f"{scope}-canary", batch_size=64,
+            task_scope_id=scope,
+            subject="actor-1",
+            count=count,
+            canary=f"{scope}-canary",
+            batch_size=64,
         )
     projections = TaskScopeProjectionStore(db_path)
-    long_view = json.loads((await projections.materialize(task_scope_id="scope-long"))["EVIDENCE"].content)
-    short_view = json.loads((await projections.materialize(task_scope_id="scope-short"))["EVIDENCE"].content)
+    long_view = json.loads(
+        (await projections.materialize(task_scope_id="scope-long"))["EVIDENCE"].content
+    )
+    short_view = json.loads(
+        (await projections.materialize(task_scope_id="scope-short"))["EVIDENCE"].content
+    )
     with sqlite3.connect(db_path) as db:
         whole_table = int(db.execute("SELECT COUNT(*) FROM task_scope_events").fetchone()[0])
     assert whole_table == 176
@@ -135,15 +152,16 @@ async def test_two_scopes_do_not_share_one_event_count(tmp_path: Path) -> None:
     assert short_view["event_count"] == _events_at(db_path, "scope-short", 25)
 
 
-async def _scope_with_goal(
-    store: CanonicalTaskScopeStore, scope_id: str, goal: str
-) -> None:
+async def _scope_with_goal(store: CanonicalTaskScopeStore, scope_id: str, goal: str) -> None:
     await store.create_task_scope(
         task_scope_id=scope_id, subject="actor-1", title="Boundary", goal=goal
     )
     await store.append_deterministic_events(
-        task_scope_id=scope_id, subject="actor-1", count=7,
-        canary=f"{scope_id}-canary", batch_size=7,
+        task_scope_id=scope_id,
+        subject="actor-1",
+        count=7,
+        canary=f"{scope_id}-canary",
+        batch_size=7,
     )
 
 

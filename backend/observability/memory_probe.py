@@ -39,6 +39,7 @@ gc 普查（tracemalloc 开）      6.57 s      默认关
 
 **永远不记录载荷内容**：日志与快照里只有 `file:line`、字节数、对象计数与类型名。
 """
+
 from __future__ import annotations
 
 import gc
@@ -263,9 +264,7 @@ class MemoryProbe:
         self._process = _psutil_process()
         self._stopping = False
         self._wake.clear()
-        thread = threading.Thread(
-            target=self._run, name="memory-probe-sampler", daemon=True
-        )
+        thread = threading.Thread(target=self._run, name="memory-probe-sampler", daemon=True)
         self._thread = thread
         self._started = True
         thread.start()
@@ -337,9 +336,7 @@ class MemoryProbe:
                 self._wake.set()
 
         rss_kb = self._rss_kb()
-        current, peak = (
-            tracemalloc.get_traced_memory() if tracemalloc.is_tracing() else (0, 0)
-        )
+        current, peak = tracemalloc.get_traced_memory() if tracemalloc.is_tracing() else (0, 0)
         fields: dict[str, Any] = {
             "probe_event": PROBE_RSS_EVENT,
             "terminal_seq": terminal_seq,
@@ -403,9 +400,7 @@ class MemoryProbe:
                 if self._stopping:
                     return
 
-    def _sample(
-        self, terminal_seq: int, run_id: str | None, queued_at: float
-    ) -> Mapping[str, Any]:
+    def _sample(self, terminal_seq: int, run_id: str | None, queued_at: float) -> Mapping[str, Any]:
         began = time.monotonic()
         queued_ms = round((began - queued_at) * 1000, 1)
         self._probes += 1
@@ -453,13 +448,10 @@ class MemoryProbe:
             census = self._census()
             gc_objects = sum(census.values())
             rows = [
-                (count - self._prev_census.get(name, 0), name)
-                for name, count in census.items()
+                (count - self._prev_census.get(name, 0), name) for name, count in census.items()
             ]
             rows.sort(key=lambda row: row[0], reverse=True)
-            census_delta = [
-                f"{name} {delta}" for delta, name in rows[: self._top] if delta > 0
-            ]
+            census_delta = [f"{name} {delta}" for delta, name in rows[: self._top] if delta > 0]
             self._prev_census = census
             census_ms = round((time.monotonic() - mark) * 1000, 1)
 
@@ -474,9 +466,7 @@ class MemoryProbe:
             "run_id": run_id,
             "rss_kb": rss_kb,
             "rss_delta_kb": (
-                None
-                if rss_kb is None or self._prev_rss_kb is None
-                else rss_kb - self._prev_rss_kb
+                None if rss_kb is None or self._prev_rss_kb is None else rss_kb - self._prev_rss_kb
             ),
             "rss_max_kb": _max_rss_kb(),
             "tracemalloc_current_kb": traced_kb,

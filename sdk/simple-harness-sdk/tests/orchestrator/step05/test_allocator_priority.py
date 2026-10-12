@@ -113,9 +113,7 @@ def test_weights_are_the_original_formula_and_scores_are_deterministic():
         "estimated_cost": 0.1,
         "duplication_score": 1 / 3,
     }
-    assert one.score == pytest.approx(
-        0.30 + 0.15 * 0.25 + 0.10 - 0.05 * 0.1 - 0.05 / 3
-    )
+    assert one.score == pytest.approx(0.30 + 0.15 * 0.25 + 0.10 - 0.05 * 0.1 - 0.05 / 3)
     assert (
         score_tasks(
             tasks, attempts, now=400.0, aging_window_seconds=300.0, mission_max_tokens=100_000

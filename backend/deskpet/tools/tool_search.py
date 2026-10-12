@@ -19,6 +19,7 @@ tokens): if every query token appears in ``name + " " + description``,
 the tool is a hit. We sort hits by number of tokens matched
 (descending), then by name (ascending) for stable output.
 """
+
 from __future__ import annotations
 
 import json
@@ -68,8 +69,7 @@ _ACTIVATION_NEXT_ACTIONS: dict[str, str] = {
         "query, then copy one returned full capability_id exactly."
     ),
     "catalog_capability_already_direct": (
-        "This tool is already available directly; call it now without "
-        "tool_activate."
+        "This tool is already available directly; call it now without tool_activate."
     ),
     "activation_scope_stale": (
         "The activation scope moved. Call tool_describe again and retry "
@@ -170,6 +170,7 @@ def _activation_rejection(
         payload["availability_reason"] = reason
     return payload
 
+
 MISSING_ARGUMENT_ERROR_CODE = "missing_required_argument"
 
 
@@ -181,17 +182,13 @@ def _missing_argument_rejection(tool: str, missing: list[str], hint: str) -> dic
     """
 
     names = ", ".join(missing)
-    next_action = (
-        f"Call {tool} again with {names}. {hint}"
-    )
+    next_action = f"Call {tool} again with {names}. {hint}"
     # 字段拼进 message（structlog foreign_pre_chain 无 ExtraAdder，extra= 会被丢弃）。
     logger.warning("tool_arguments.missing tool=%s missing=%s", tool, names)
     return {
         "error": MISSING_ARGUMENT_ERROR_CODE,
         "error_code": MISSING_ARGUMENT_ERROR_CODE,
-        "public_message": (
-            f"{tool} rejected: missing required argument(s) {names}. {next_action}"
-        ),
+        "public_message": (f"{tool} rejected: missing required argument(s) {names}. {next_action}"),
         "retriable": True,
         "replan_required": False,
         "missing_arguments": missing,
@@ -243,9 +240,7 @@ _SCHEMA: dict[str, Any] = {
 def _handle_tool_search(args: dict[str, Any], task_id: str) -> str:
     query = str(args.get("query", "") or "").strip().lower()
     if not query:
-        return json.dumps(
-            {"error": "query must be non-empty", "retriable": False}
-        )
+        return json.dumps({"error": "query must be non-empty", "retriable": False})
     toolset_filter = args.get("toolset")
     tokens = [t for t in query.split() if t]
 
@@ -259,9 +254,7 @@ def _handle_tool_search(args: dict[str, Any], task_id: str) -> str:
             # Don't surface the search tool itself — the agent is
             # already calling it, no point advertising it again.
             continue
-        haystack = (
-            spec.name + " " + str(spec.schema.get("description", ""))
-        ).lower()
+        haystack = (spec.name + " " + str(spec.schema.get("description", ""))).lower()
         matched = sum(1 for tok in tokens if tok in haystack)
         if matched == len(tokens):
             hits.append(
@@ -289,7 +282,9 @@ def register_static_tools(registry) -> None:
     global _legacy_registry
     _legacy_registry = registry
     registry.register(
-        name="tool_search", toolset="control", schema=_SCHEMA,
+        name="tool_search",
+        toolset="control",
+        schema=_SCHEMA,
         handler=_handle_tool_search,
     )
 
@@ -387,7 +382,7 @@ def register_capability_bridge_tools(
                     "tool_search",
                     ["query"],
                     "query is a short space-separated keyword string, for "
-                    "example \"read edit file\".",
+                    'example "read edit file".',
                 ),
                 ensure_ascii=False,
             )
@@ -444,9 +439,7 @@ def register_capability_bridge_tools(
                         "suggestions": suggestions,
                         "replan_required": True,
                         "next_action": next_action,
-                        "public_message": (
-                            f"tool_describe rejected: {code}. {next_action}"
-                        ),
+                        "public_message": (f"tool_describe rejected: {code}. {next_action}"),
                     }
                 )
             return json.dumps(payload, ensure_ascii=False)
@@ -499,9 +492,7 @@ def register_capability_bridge_tools(
             # Host log, so the model retried the identical call until the
             # repeated-tool limit failed the whole Run.  Return a stable code
             # plus one actionable next step and log the rejection.
-            return json.dumps(
-                _activation_rejection(exc, requested, service), ensure_ascii=False
-            )
+            return json.dumps(_activation_rejection(exc, requested, service), ensure_ascii=False)
 
     search_schema = {
         **_SCHEMA,
@@ -528,9 +519,5 @@ def register_capability_bridge_tools(
             source="builtin",
             replace_allowed=True,
             concurrency_safe=False if name == "tool_activate" else True,
-            outcome_parser_id=(
-                "activation_proposed_v1"
-                if name == "tool_activate"
-                else None
-            ),
+            outcome_parser_id=("activation_proposed_v1" if name == "tool_activate" else None),
         )

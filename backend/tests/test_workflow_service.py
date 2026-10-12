@@ -129,9 +129,7 @@ async def test_start_identity_snapshot_and_outbox_are_idempotent(tmp_path):
     assert first["run_id"] == second["run_id"]
     assert first["created"] is True
     assert second["created"] is False
-    assert first["accepted_event_id"] == stable_event_id(
-        first["run_id"], "run:create:accepted"
-    )
+    assert first["accepted_event_id"] == stable_event_id(first["run_id"], "run:create:accepted")
     assert second["accepted_event_id"] == first["accepted_event_id"]
     accepted = first["accepted_event"]
     assert accepted["payload"]["card"]["status"] == "running"
@@ -230,9 +228,7 @@ async def test_retry_from_start_is_same_key_idempotent_and_strips_reserved_snaps
         "workflow_name": "deep_research",
         "logical_slot": f"retry:{source['run_id']}:{retry_key}",
     }
-    assert retried["original_capabilities"] == {
-        "tools": ["web_search"], "profile": "technology"
-    }
+    assert retried["original_capabilities"] == {"tools": ["web_search"], "profile": "technology"}
     assert START_SNAPSHOT_KEY not in retried["original_capabilities"]
     third = await service.retry_run_from_start(
         source["run_id"],
@@ -250,14 +246,22 @@ async def test_retry_from_start_is_same_key_idempotent_and_strips_reserved_snaps
 async def test_retry_from_start_rejects_invalid_source_session_and_key(tmp_path):
     service, store, launcher = await _v4_service(tmp_path)
     source = await service.start_workflow(
-        venue="chat", base_session_id="base", delivery_session_id="delivery",
-        base_epoch=4, request_id="request", turn_id="turn",
-        workflow_name="deep_research", workflow_version="v4",
-        capability_snapshot={}, start_payload={"topic_fingerprint": "safe"},
+        venue="chat",
+        base_session_id="base",
+        delivery_session_id="delivery",
+        base_epoch=4,
+        request_id="request",
+        turn_id="turn",
+        workflow_name="deep_research",
+        workflow_version="v4",
+        capability_snapshot={},
+        start_payload={"topic_fingerprint": "safe"},
     )
     db = await store._connect()
     try:
-        await db.execute("UPDATE workflow_runs SET status='failed' WHERE run_id=?", (source["run_id"],))
+        await db.execute(
+            "UPDATE workflow_runs SET status='failed' WHERE run_id=?", (source["run_id"],)
+        )
         await db.commit()
     finally:
         await db.close()
@@ -286,10 +290,16 @@ async def test_retry_from_start_rejects_invalid_source_session_and_key(tmp_path)
 async def test_retry_from_start_rejects_wrong_action_nonterminal_v3_and_epoch(tmp_path):
     service, store, launcher = await _v4_service(tmp_path)
     source = await service.start_workflow(
-        venue="chat", base_session_id="base", delivery_session_id="delivery",
-        base_epoch=4, request_id="request", turn_id="turn",
-        workflow_name="deep_research", workflow_version="v4",
-        capability_snapshot={}, start_payload={"topic_fingerprint": "safe"},
+        venue="chat",
+        base_session_id="base",
+        delivery_session_id="delivery",
+        base_epoch=4,
+        request_id="request",
+        turn_id="turn",
+        workflow_name="deep_research",
+        workflow_version="v4",
+        capability_snapshot={},
+        start_payload={"topic_fingerprint": "safe"},
     )
     retry_key = "123e4567-e89b-42d3-a456-426614174003"
 
@@ -455,9 +465,7 @@ async def test_run_detail_matches_frontend_aggregate_and_history_degrades_missin
     assert evaluation["score"] == 0.9
 
     accepted_id = started["accepted_event_id"]
-    hydration = await service.hydrate_history_event_ids(
-        run_id, [accepted_id, "missing-event"]
-    )
+    hydration = await service.hydrate_history_event_ids(run_id, [accepted_id, "missing-event"])
     assert hydration["degraded"] is True
     assert hydration["missing_event_ids"] == ["missing-event"]
     assert hydration["mark_seen_after_reduce"] is True
@@ -465,9 +473,7 @@ async def test_run_detail_matches_frontend_aggregate_and_history_degrades_missin
 
 
 @pytest.mark.asyncio
-async def test_run_detail_projects_open_execution_decision_for_context_trace(
-    tmp_path, monkeypatch
-):
+async def test_run_detail_projects_open_execution_decision_for_context_trace(tmp_path, monkeypatch):
     service, _store = await _service(tmp_path)
     started = await _start(service, base_epoch=7)
     run_id = started["run_id"]

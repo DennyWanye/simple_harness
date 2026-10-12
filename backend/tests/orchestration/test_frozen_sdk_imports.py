@@ -24,12 +24,13 @@ def collected():
 
     tree = ast.parse(SPEC.read_text())
     helper = next(
-        node for node in tree.body
-        if isinstance(node, ast.FunctionDef)
-        and node.name == "_collect_sdk_production_modules"
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "_collect_sdk_production_modules"
     )
     wiring = [
-        node for node in tree.body
+        node
+        for node in tree.body
         if isinstance(node, ast.AugAssign)
         and isinstance(node.target, ast.Name)
         and node.target.id == "hiddenimports"
@@ -66,11 +67,13 @@ def test_every_installed_production_module_is_collected(collected, package, dist
 
 
 @pytest.mark.parametrize("remove_workspace_leaf", [False, True])
-def test_public_lazy_exports_resolve_using_only_collected_sdk_modules(collected, remove_workspace_leaf):
+def test_public_lazy_exports_resolve_using_only_collected_sdk_modules(
+    collected, remove_workspace_leaf
+):
     # A fresh interpreter prevents the test runner's cached imports from hiding
     # a missing target. Deny any SDK module absent from the actual spec output.
     # This checks public getattr -> runtime mapping -> leaf, not direct imports.
-    script = r'''
+    script = r"""
 import importlib
 import importlib.abc
 import json
@@ -100,7 +103,7 @@ for name in service.__all__:
     getattr(service, name)
 assert harness.WorkspaceBindingAuthorityGrant is runtime.WorkspaceBindingAuthorityGrant
 assert "simple_harness.runtime.workspace_binding_protocol" in sys.modules
-'''
+"""
     allowed = set(collected)
     missing = "simple_harness.runtime.workspace_binding_protocol"
     assert missing in allowed
@@ -108,10 +111,16 @@ assert "simple_harness.runtime.workspace_binding_protocol" in sys.modules
         allowed.remove(missing)
     result = subprocess.run(
         [sys.executable, "-B", "-c", script, json.dumps(sorted(allowed))],
-        capture_output=True, text=True, timeout=45, check=False,
+        capture_output=True,
+        text=True,
+        timeout=45,
+        check=False,
     )
     if remove_workspace_leaf:
         assert result.returncode != 0
-        assert "ModuleNotFoundError: SDK module missing from hiddenimports: " + missing in result.stderr
+        assert (
+            "ModuleNotFoundError: SDK module missing from hiddenimports: " + missing
+            in result.stderr
+        )
     else:
         assert result.returncode == 0, result.stdout + result.stderr

@@ -27,6 +27,7 @@ system block + 最后一个 tool 打 `cache_control={"type":"ephemeral"}`，
 并已读 cache_read/creation tokens）—— 无新增工作，详见 evidence。
 本文件只覆盖 OpenAI-compat 这条线（the relay 是本项目唯一在跑的真 provider）。
 """
+
 from __future__ import annotations
 
 import json
@@ -120,11 +121,11 @@ def test_breakpoint_order_canonical_assembly():
     ]
     order = _cache_breakpoint_order(messages, has_tools=True)
     assert order == [
-        "system",          # [0] persona+静态  ← breakpoint 1
-        "tools",           # [1] tools schema  ← breakpoint 2
-        "memory",          # [2] memory/repo-map block ← breakpoint 3
-        "history",         # [3..] 历史 + tool_results
-        "last-user-pre",   # [last] 最近 user turn 之前 ← breakpoint 4
+        "system",  # [0] persona+静态  ← breakpoint 1
+        "tools",  # [1] tools schema  ← breakpoint 2
+        "memory",  # [2] memory/repo-map block ← breakpoint 3
+        "history",  # [3..] 历史 + tool_results
+        "last-user-pre",  # [last] 最近 user turn 之前 ← breakpoint 4
     ]
 
 
@@ -183,25 +184,32 @@ def test_stabilize_prefix_tool_call_only_assistant_gets_placeholder():
         {  # content 完全缺失
             "role": "assistant",
             "tool_calls": [
-                {"id": "c1", "type": "function",
-                 "function": {"name": "read_file", "arguments": "{}"}}
+                {
+                    "id": "c1",
+                    "type": "function",
+                    "function": {"name": "read_file", "arguments": "{}"},
+                }
             ],
         },
         {"role": "tool", "tool_call_id": "c1", "content": "file body"},
     ]
     out = _stabilize_prefix(msgs)
     asst = out[2]
-    assert asst["content"] == ""          # 注入稳定 placeholder
-    assert "tool_calls" in asst           # 不破坏 tool_calls
+    assert asst["content"] == ""  # 注入稳定 placeholder
+    assert "tool_calls" in asst  # 不破坏 tool_calls
     # 原 list 不被原地改（返回 copy）
     assert "content" not in msgs[2]
 
 
 def test_stabilize_prefix_none_content_normalized_to_empty_string():
     msgs = [
-        {"role": "assistant", "content": None,
-         "tool_calls": [{"id": "x", "type": "function",
-                         "function": {"name": "f", "arguments": "{}"}}]},
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {"id": "x", "type": "function", "function": {"name": "f", "arguments": "{}"}}
+            ],
+        },
     ]
     out = _stabilize_prefix(msgs)
     assert out[0]["content"] == ""
@@ -218,7 +226,7 @@ def test_stabilize_prefix_drops_empty_reasoning_content_consistently():
     out = _stabilize_prefix(msgs)
     assert "reasoning_content" not in out[0]
     assert "reasoning_content" not in out[1]
-    assert out[2]["reasoning_content"] == "真有推理"   # 非空保留
+    assert out[2]["reasoning_content"] == "真有推理"  # 非空保留
 
 
 def test_stabilize_prefix_idempotent_byte_stable():
@@ -226,9 +234,12 @@ def test_stabilize_prefix_idempotent_byte_stable():
     msgs = [
         {"role": "system", "content": "S"},
         {"role": "user", "content": "q1"},
-        {"role": "assistant",
-         "tool_calls": [{"id": "c", "type": "function",
-                         "function": {"name": "ls", "arguments": "{}"}}]},
+        {
+            "role": "assistant",
+            "tool_calls": [
+                {"id": "c", "type": "function", "function": {"name": "ls", "arguments": "{}"}}
+            ],
+        },
         {"role": "tool", "tool_call_id": "c", "content": "out"},
     ]
     a = json.dumps(_stabilize_prefix(msgs), ensure_ascii=False, sort_keys=True)
@@ -237,9 +248,14 @@ def test_stabilize_prefix_idempotent_byte_stable():
 
 
 def test_stabilize_prefix_does_not_mutate_input():
-    msgs = [{"role": "assistant",
-             "tool_calls": [{"id": "1", "type": "function",
-                             "function": {"name": "n", "arguments": "{}"}}]}]
+    msgs = [
+        {
+            "role": "assistant",
+            "tool_calls": [
+                {"id": "1", "type": "function", "function": {"name": "n", "arguments": "{}"}}
+            ],
+        }
+    ]
     snapshot = json.dumps(msgs, sort_keys=True)
     _stabilize_prefix(msgs)
     assert json.dumps(msgs, sort_keys=True) == snapshot
@@ -296,9 +312,7 @@ def test_extract_cached_tokens_malformed_does_not_crash():
 
 
 @pytest.mark.asyncio
-async def test_stream_logs_cache_hit_rate_when_cached_tokens_present(
-    caplog, structlog_to_stdlib
-):
+async def test_stream_logs_cache_hit_rate_when_cached_tokens_present(caplog, structlog_to_stdlib):
     def handler(request: httpx.Request) -> httpx.Response:
         frames = [
             _delta("hi"),
@@ -314,64 +328,72 @@ async def test_stream_logs_cache_hit_rate_when_cached_tokens_present(
             "[DONE]",
         ]
         return httpx.Response(
-            200, content=_sse(frames),
+            200,
+            content=_sse(frames),
             headers={"content-type": "text/event-stream"},
         )
 
     provider = OpenAICompatibleProvider(
-        base_url="http://example.invalid/v1", api_key="k", model="deepseek-v4-pro",
+        base_url="http://example.invalid/v1",
+        api_key="k",
+        model="deepseek-v4-pro",
     )
     provider._test_transport = httpx.MockTransport(handler)
 
     with caplog.at_level(logging.INFO):
         evs = [
-            ev async for ev in provider.chat_stream_with_tools(
-                [{"role": "user", "content": "q"}]
-            )
+            ev async for ev in provider.chat_stream_with_tools([{"role": "user", "content": "q"}])
         ]
     assert any(ev.get("type") == "final" for ev in evs)
     rec = next(
-        (r for r in caplog.records
-         if "prompt_cache_hit" in r.getMessage()
-         or getattr(r, "event", "") == "p4s25_prompt_cache_hit"),
+        (
+            r
+            for r in caplog.records
+            if "prompt_cache_hit" in r.getMessage()
+            or getattr(r, "event", "") == "p4s25_prompt_cache_hit"
+        ),
         None,
     )
     assert rec is not None, "回包带 cached_tokens 时必须落 prompt_cache_hit 日志"
 
 
 @pytest.mark.asyncio
-async def test_stream_logs_cache_unknown_when_field_absent(
-    caplog, structlog_to_stdlib
-):
+async def test_stream_logs_cache_unknown_when_field_absent(caplog, structlog_to_stdlib):
     """provider 不回 cached_tokens（the relay 现状常见）→ 日志记 unknown，不崩。"""
+
     def handler(request: httpx.Request) -> httpx.Response:
         frames = [
             _delta("hi"),
-            {"choices": [],
-             "usage": {"prompt_tokens": 100, "completion_tokens": 2,
-                       "total_tokens": 102}},
+            {
+                "choices": [],
+                "usage": {"prompt_tokens": 100, "completion_tokens": 2, "total_tokens": 102},
+            },
             "[DONE]",
         ]
         return httpx.Response(
-            200, content=_sse(frames),
+            200,
+            content=_sse(frames),
             headers={"content-type": "text/event-stream"},
         )
 
     provider = OpenAICompatibleProvider(
-        base_url="http://example.invalid/v1", api_key="k", model="m",
+        base_url="http://example.invalid/v1",
+        api_key="k",
+        model="m",
     )
     provider._test_transport = httpx.MockTransport(handler)
     with caplog.at_level(logging.INFO):
         evs = [
-            ev async for ev in provider.chat_stream_with_tools(
-                [{"role": "user", "content": "q"}]
-            )
+            ev async for ev in provider.chat_stream_with_tools([{"role": "user", "content": "q"}])
         ]
     assert any(ev.get("type") == "final" for ev in evs)
     rec = next(
-        (r for r in caplog.records
-         if "prompt_cache_hit" in r.getMessage()
-         or getattr(r, "event", "") == "p4s25_prompt_cache_hit"),
+        (
+            r
+            for r in caplog.records
+            if "prompt_cache_hit" in r.getMessage()
+            or getattr(r, "event", "") == "p4s25_prompt_cache_hit"
+        ),
         None,
     )
     assert rec is not None
@@ -389,12 +411,15 @@ async def test_stream_outgoing_messages_are_prefix_stabilized():
     def handler(request: httpx.Request) -> httpx.Response:
         captured["body"] = json.loads(request.content)
         return httpx.Response(
-            200, content=_sse([_delta("ok"), "[DONE]"]),
+            200,
+            content=_sse([_delta("ok"), "[DONE]"]),
             headers={"content-type": "text/event-stream"},
         )
 
     provider = OpenAICompatibleProvider(
-        base_url="http://example.invalid/v1", api_key="k", model="m",
+        base_url="http://example.invalid/v1",
+        api_key="k",
+        model="m",
     )
     provider._test_transport = httpx.MockTransport(handler)
     msgs = [
@@ -402,8 +427,13 @@ async def test_stream_outgoing_messages_are_prefix_stabilized():
         {"role": "user", "content": "u"},
         {  # tool-call-only：故意不带 content
             "role": "assistant",
-            "tool_calls": [{"id": "c1", "type": "function",
-                            "function": {"name": "read_file", "arguments": "{}"}}],
+            "tool_calls": [
+                {
+                    "id": "c1",
+                    "type": "function",
+                    "function": {"name": "read_file", "arguments": "{}"},
+                }
+            ],
         },
         {"role": "tool", "tool_call_id": "c1", "content": "body"},
         {"role": "user", "content": "再问"},

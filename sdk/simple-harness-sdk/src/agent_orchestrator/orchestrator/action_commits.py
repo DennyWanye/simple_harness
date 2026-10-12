@@ -216,7 +216,6 @@ class ActionCommitsMixin:
         _store: Store
         _ledger: BudgetLedger
 
-
         def _validate_source_binding(self, request: Mapping[str, Any]) -> None: ...
 
         def _validate_source_approval(self, request: Mapping[str, Any]) -> None: ...
@@ -359,8 +358,11 @@ class ActionCommitsMixin:
             # 阶段 B 裁决第 1 类: a failed version that left our hands is offered again only
             # once it is proven not to have happened; same content is then a new version,
             # never "the same candidate delivered again".
-            handed_failure = (latest is not None and latest["state"] == "FAILED"
-                              and int(latest.get("handoffs") or 0) >= 1)
+            handed_failure = (
+                latest is not None
+                and latest["state"] == "FAILED"
+                and int(latest.get("handoffs") or 0) >= 1
+            )
             proven_failure = handed_failure and stored_negative_proof(self._store, latest)
             unproven_failure = handed_failure and not proven_failure
             if (
@@ -410,7 +412,9 @@ class ActionCommitsMixin:
                 "params": dict(cand["params"]),
                 "params_hash": phash,
                 "reason": cand["reason"],
-                **({"reason_source": reason_source} if reason_source != "model (untrusted)" else {}),
+                **(
+                    {"reason_source": reason_source} if reason_source != "model (untrusted)" else {}
+                ),
                 "level": decision.level,
                 "required_approvals": decision.required_approvals,
                 "idempotency_key": None if refused else f"{action_id}:v{version}",
@@ -577,8 +581,11 @@ class ActionCommitsMixin:
                         "reason": record["reason"],
                         # 2026-09-29：系统按已批准效果写的申请单理由不是模型写的，卡片不该标"未核实"
                         "reason_source": record.get("reason_source", "model (untrusted)"),
-                        **({"previous_attempt": record["previous_attempt"]}
-                           if record.get("previous_attempt") else {}),
+                        **(
+                            {"previous_attempt": record["previous_attempt"]}
+                            if record.get("previous_attempt")
+                            else {}
+                        ),
                     },
                     "comments": [],
                     "created_at": self._store.now,
@@ -918,8 +925,11 @@ class ActionCommitsMixin:
             if reason is None and action.get("task_id"):
                 from ..storage.store import StoreConflict
                 from .taskgraph_dispatch import require_taskgraph_unfenced
+
                 try:
-                    require_taskgraph_unfenced(self._store, str(action["mission_id"]), str(action["task_id"]))
+                    require_taskgraph_unfenced(
+                        self._store, str(action["mission_id"]), str(action["task_id"])
+                    )
                 except StoreConflict:
                     reason = "taskgraph_target_fenced"
             start_use = None
@@ -974,9 +984,12 @@ class ActionCommitsMixin:
                         try:
                             resolver = OperationReferenceResolver(
                                 self._store,
-                                (self._operation_materialization_runtime.profiles
-                                 if getattr(self, "_operation_materialization_runtime", None) is not None
-                                 else BuiltinOperationProfiles(connectors)),
+                                (
+                                    self._operation_materialization_runtime.profiles
+                                    if getattr(self, "_operation_materialization_runtime", None)
+                                    is not None
+                                    else BuiltinOperationProfiles(connectors)
+                                ),
                             )
                             resolver.resolve_for_handoff(action, bridge)
                         except (OperationReferenceUnavailable, OperationMaterializationInputError):
@@ -1132,15 +1145,24 @@ class ActionCommitsMixin:
 
         task_id = str(action["task_id"])
         use = certify_point_use_locked(
-            self, mission_id=str(action["mission_id"]), purpose="START", consumer_kind=ACTION_CONSUMER,
-            consumer_id=str(action["action_key"]), claims=(EvidenceClaim.step_ground(task_id),),
-            subject=("task", task_id), record=False)
+            self,
+            mission_id=str(action["mission_id"]),
+            purpose="START",
+            consumer_kind=ACTION_CONSUMER,
+            consumer_id=str(action["action_key"]),
+            claims=(EvidenceClaim.step_ground(task_id),),
+            subject=("task", task_id),
+            record=False,
+        )
         if not use.usable:
             return None, HANDOFF_VALIDITY_STALE + use.refusals[0]
         return use, None
 
-    def _planning_rehandoff_proven(self, action: Mapping[str, Any], bridge: Mapping[str, Any]) -> bool:
+    def _planning_rehandoff_proven(
+        self, action: Mapping[str, Any], bridge: Mapping[str, Any]
+    ) -> bool:
         from ..runtime.operation_reconciliation import stored_negative_proof
+
         return stored_negative_proof(self._store, action, bridge)
 
     def _update_action(self, action_key: str, **fields: Any) -> dict[str, Any]:
@@ -1176,13 +1198,20 @@ class ActionCommitsMixin:
             if self._ledger.reservation(subject) is not None:
                 try:
                     self._settle_subject(
-                        subject, mission_id, task_id=None, tool_calls=int(action.get("handoffs") or 0)
+                        subject,
+                        mission_id,
+                        task_id=None,
+                        tool_calls=int(action.get("handoffs") or 0),
                     )
                 except BudgetError:
                     # Persist the real outcome even while an earlier handoff or
                     # incomplete negative proof prevents releasing its account.
-                    self.record_reservation_held(subject, mission_id, task_id=None,
-                        reason="taskgraph_action_physical_work_unresolved")
+                    self.record_reservation_held(
+                        subject,
+                        mission_id,
+                        task_id=None,
+                        reason="taskgraph_action_physical_work_unresolved",
+                    )
         else:
             self.record_reservation_held(
                 subject, mission_id, task_id=None, reason="action_outcome_unknown"
@@ -1305,13 +1334,22 @@ class ActionCommitsMixin:
 
         with self._store.transaction():
             action = self._store.get_action(action_key)
-            linked = action is not None and PlanningAdmissionStore(
-                self._store).get_operation_action_link_for_action(action_key) is not None
+            linked = (
+                action is not None
+                and PlanningAdmissionStore(self._store).get_operation_action_link_for_action(
+                    action_key
+                )
+                is not None
+            )
             # 阶段 B 裁决第 3 类: a failed action that left our hands without a proof that it
             # did not happen keeps the operation gate shut; a person may rule it not applied.
-            unproven_failure = (action is not None and action["state"] == "FAILED" and linked
-                                and int(action.get("handoffs") or 0) >= 1
-                                and not stored_negative_proof(self._store, action))
+            unproven_failure = (
+                action is not None
+                and action["state"] == "FAILED"
+                and linked
+                and int(action.get("handoffs") or 0) >= 1
+                and not stored_negative_proof(self._store, action)
+            )
             if action is None or not (action["state"] == "UNKNOWN" or unproven_failure):
                 raise ActionCommitError(f"only an UNKNOWN action takes a ruling ({action_key})")
             if unproven_failure and outcome != "failed":
@@ -1342,7 +1380,7 @@ class ActionCommitsMixin:
             if action["state"] == "UNKNOWN":
                 # 裁"已生效"：同事务给动作一份人裁定回执（谁、何时、凭什么），结果审阅读到的就是它，
                 # 不再是空；人已经出面了，动作不再标"等人"。裁"没生效"没有回执可言。
-                ruling = (human_ruling_receipt(action, record) if outcome == "succeeded" else None)
+                ruling = human_ruling_receipt(action, record) if outcome == "succeeded" else None
                 action = self._resolve_action(
                     action,
                     "SUCCEEDED" if outcome == "succeeded" else "FAILED",
@@ -1357,7 +1395,8 @@ class ActionCommitsMixin:
                 # The ruling is the proof, in this same transaction: the operation gate
                 # opens and the effect can be offered again (阶段 B 裁决第 3 类).
                 action = self.record_human_nonapplication(
-                    action_key, override=record, principal_id=principal.principal_id)
+                    action_key, override=record, principal_id=principal.principal_id
+                )
             return action
 
     # ------------------------------------------------------------ closure (D7-2'' / D7-7')

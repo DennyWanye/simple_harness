@@ -108,9 +108,7 @@ async def test_router_preserves_react_and_routes_exact_durable_attempt() -> None
     )
 
     ordinary = await router.start(_invocation(mode="ordinary"), context=None, cancel=None)
-    verified = await router.start(
-        _invocation(authority=authority), context=None, cancel=None
-    )
+    verified = await router.start(_invocation(authority=authority), context=None, cancel=None)
 
     assert ordinary.payload == {"route": "react"}
     assert verified.payload == {"route": "verifier"}

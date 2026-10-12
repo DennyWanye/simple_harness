@@ -10,6 +10,7 @@
   - mode=strict + ledger 空 + assistant_text 含 claim → 拒 + 回灌
   - max_verify_nudges 计数 + ephemeral 救援
 """
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock
@@ -54,8 +55,10 @@ def test_verify_gate_strict_blocks_fake_claim():
     """**核心修复证据 P0-3 + P0-2 联合**: strict + 空 ledger + claim → 拒。
     AgentLoop 看到 outcome.passed=False 时会回灌 D8 system message。"""
     pat = ClaimPattern(
-        id="zh_gen", regex=r"已生成 (?P<title>\S+)",
-        artifact_kind="file", tool_hint=["ppt_create"],
+        id="zh_gen",
+        regex=r"已生成 (?P<title>\S+)",
+        artifact_kind="file",
+        tool_hint=["ppt_create"],
     )
     gate = VerifyGate(extractor=RegexExtractor([pat]), mode="strict")
     o = gate.check(
@@ -76,18 +79,23 @@ async def test_ephemeral_rescue_pass_path():
         return True
 
     pat = ClaimPattern(
-        id="zh_gen", regex=r"已生成 (?P<title>\S+)",
-        artifact_kind="file", tool_hint=["ppt_create"],
+        id="zh_gen",
+        regex=r"已生成 (?P<title>\S+)",
+        artifact_kind="file",
+        tool_hint=["ppt_create"],
     )
-    gate = VerifyGate(extractor=RegexExtractor([pat]), mode="strict",
-                      ephemeral_subagent=_eph)
+    gate = VerifyGate(extractor=RegexExtractor([pat]), mode="strict", ephemeral_subagent=_eph)
     verdict = await gate.consult_ephemeral_subagent(
         ledger=[],
-        failed_claims=[UnmatchedClaim(
-            pattern_id="zh_gen", raw_text="已生成 x.pptx",
-            expected_kind="file", expected_path_or_title="x.pptx",
-            reason="no_receipt",
-        )],
+        failed_claims=[
+            UnmatchedClaim(
+                pattern_id="zh_gen",
+                raw_text="已生成 x.pptx",
+                expected_kind="file",
+                expected_path_or_title="x.pptx",
+                reason="no_receipt",
+            )
+        ],
         assistant_text="已生成 x.pptx",
     )
     assert verdict is True
@@ -100,6 +108,7 @@ def test_d8_rebound_format_includes_required_fields():
     import inspect
 
     from agent import agent_loop
+
     src = inspect.getsource(agent_loop)
     # 关键字段
     assert "[verify-gate]" in src
@@ -126,9 +135,9 @@ def test_receipt_store_load_session_provides_ledger():
 
 def test_main_py_wiring_present():
     """**最终接电证据**: main.py 应有 set_receipt_store_provider 调用。"""
-    main_py = (
-        __import__("pathlib").Path(__file__).parent.parent / "main.py"
-    ).read_text(encoding="utf-8")
+    main_py = (__import__("pathlib").Path(__file__).parent.parent / "main.py").read_text(
+        encoding="utf-8"
+    )
     # WI-T2.2 wiring
     assert "set_receipt_store_provider" in main_py
     # WI-T1.1 wiring

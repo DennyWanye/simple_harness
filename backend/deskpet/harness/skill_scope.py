@@ -38,29 +38,20 @@ def skill_tool_intersection_from_snapshot(
             dict.fromkeys(
                 active_scope_ids
                 if active_scope_ids is not None
-                else tuple(
-                    str(item)
-                    for item in selection.get("active_skill_scope_ids", ())
-                )
+                else tuple(str(item) for item in selection.get("active_skill_scope_ids", ()))
             )
         )
     )
     if not active:
         return None
     raw_context = request_payload.get("context_os")
-    prepared_ref = str(
-        capability_snapshot.get("prepared_tool_set_ref") or ""
-    )
+    prepared_ref = str(capability_snapshot.get("prepared_tool_set_ref") or "")
     if not isinstance(raw_context, Mapping) or not prepared_ref:
-        raise ValueError(
-            "active skill scopes require the frozen Context OS ToolSet"
-        )
+        raise ValueError("active skill scopes require the frozen Context OS ToolSet")
 
     prepared, eligibility = load_context_os_snapshot(raw_context)
     if context_os_snapshot_ref(prepared, eligibility) != prepared_ref:
-        raise ValueError(
-            "Context OS snapshot differs from trusted catalog lease"
-        )
+        raise ValueError("Context OS snapshot differs from trusted catalog lease")
     scopes_by_id: dict[str, PreparedSkillInvocationScopeV1] = {}
     exact_facts_by_name: dict[str, Mapping[str, Any]] = {}
     selected_scopes = selection.get("skill_invocation_scopes", ())
@@ -69,17 +60,13 @@ def skill_tool_intersection_from_snapshot(
         if isinstance(selected_scopes, (list, tuple))
         else selected_scopes
     )
-    if isinstance(raw_scopes, (str, bytes)) or not isinstance(
-        raw_scopes, (list, tuple)
-    ):
+    if isinstance(raw_scopes, (str, bytes)) or not isinstance(raw_scopes, (list, tuple)):
         raise ValueError("trusted skill scopes must be a sequence")
     for raw_scope in raw_scopes:
         if not isinstance(raw_scope, Mapping):
             raise ValueError("trusted skill scope must be an object")
         allowed_tools = raw_scope.get("allowed_tools", ())
-        if isinstance(allowed_tools, (str, bytes)) or not isinstance(
-            allowed_tools, (list, tuple)
-        ):
+        if isinstance(allowed_tools, (str, bytes)) or not isinstance(allowed_tools, (list, tuple)):
             raise ValueError("trusted skill allowed_tools must be a sequence")
         scope = PreparedSkillInvocationScopeV1(
             owner_key=str(raw_scope.get("owner_key") or ""),
@@ -101,12 +88,8 @@ def skill_tool_intersection_from_snapshot(
             continue
         scopes_by_id[scope.scope_id] = scope
         raw_refs = raw_scope.get("allowed_tool_refs")
-        if isinstance(raw_refs, (str, bytes)) or not isinstance(
-            raw_refs, (list, tuple)
-        ):
-            raise ValueError(
-                "trusted skill scope is missing captured exact ToolRefs"
-            )
+        if isinstance(raw_refs, (str, bytes)) or not isinstance(raw_refs, (list, tuple)):
+            raise ValueError("trusted skill scope is missing captured exact ToolRefs")
         ref_names: set[str] = set()
         for raw_ref in raw_refs:
             if not isinstance(raw_ref, Mapping):
@@ -121,18 +104,13 @@ def skill_tool_intersection_from_snapshot(
                 raise ValueError("captured exact ToolRef identity conflicts")
             exact_facts_by_name[name] = ref
         if ref_names != set(scope.allowed_tools):
-            raise ValueError(
-                "captured exact ToolRefs differ from Skill allowed_tools"
-            )
+            raise ValueError("captured exact ToolRefs differ from Skill allowed_tools")
     if any(scope_id not in scopes_by_id for scope_id in active):
         raise ValueError("active skill scope is absent from trusted selection")
     return intersect_prepared_skill_tools(
         prepared,
         tuple(scopes_by_id[scope_id] for scope_id in active),
-        exact_tool_facts=tuple(
-            exact_facts_by_name[name]
-            for name in sorted(exact_facts_by_name)
-        ),
+        exact_tool_facts=tuple(exact_facts_by_name[name] for name in sorted(exact_facts_by_name)),
     )
 
 

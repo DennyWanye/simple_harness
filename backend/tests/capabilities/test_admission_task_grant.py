@@ -51,11 +51,7 @@ async def test_manual_plan_builds_uncommitted_scoped_task_grant(tmp_path):
         "package_source",
         "system_change",
     }
-    filesystem = next(
-        item
-        for item in grant.resource_selectors
-        if item.kind == "filesystem"
-    )
+    filesystem = next(item for item in grant.resource_selectors if item.kind == "filesystem")
     assert filesystem.access == ("read", "working_directory", "write")
 
 

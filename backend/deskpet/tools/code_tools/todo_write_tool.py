@@ -11,6 +11,7 @@ The tool persists to SessionDB's ``code_todos`` table (migration v11)
 **and** broadcasts the new state to the control WebSocket so the
 frontend's TodoListPanel updates live without polling.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -109,9 +110,7 @@ def build_todo_write_tool(
                 active_form = content
             if status not in {"pending", "in_progress", "completed"}:
                 status = "pending"
-            cleaned.append(
-                {"content": content, "activeForm": active_form, "status": status}
-            )
+            cleaned.append({"content": content, "activeForm": active_form, "status": status})
 
         resolver = session_id_resolver or code_session_id_resolver
         sid = (
@@ -122,9 +121,7 @@ def build_todo_write_tool(
             else None
         )
         if not sid:
-            return json.dumps(
-                {"error": "session identity is unavailable"}
-            )
+            return json.dumps({"error": "session identity is unavailable"})
 
         # SessionDB API is async; tool handlers are sync. Bridge with
         # ``asyncio.run`` if no loop is running, otherwise schedule on

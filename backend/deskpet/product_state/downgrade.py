@@ -46,9 +46,7 @@ class VerifierRunDisposition:
 
 
 class VerifierRunProbe(Protocol):
-    def __call__(
-        self, attempt: VerificationAttemptIdentity
-    ) -> VerifierRunDisposition | None: ...
+    def __call__(self, attempt: VerificationAttemptIdentity) -> VerifierRunDisposition | None: ...
 
 
 class Sdk062ReopenProbe(Protocol):
@@ -152,9 +150,11 @@ def _attempts(product_database: Path) -> tuple[VerificationAttemptIdentity, ...]
     connection = sqlite3.connect(product_database)
     connection.row_factory = sqlite3.Row
     try:
-        version = int(connection.execute(
-            "SELECT schema_version FROM product_schema_meta WHERE singleton=1"
-        ).fetchone()[0])
+        version = int(
+            connection.execute(
+                "SELECT schema_version FROM product_schema_meta WHERE singleton=1"
+            ).fetchone()[0]
+        )
         if version == 4:
             ProductStateDatabase._validate_v4_connection(connection)
         else:
@@ -165,8 +165,7 @@ def _attempts(product_database: Path) -> tuple[VerificationAttemptIdentity, ...]
             "ORDER BY intent_id,attempt_generation"
         ).fetchall()
         return tuple(
-            VerificationAttemptIdentity(*(str(row[key]) for key in row.keys()))
-            for row in rows
+            VerificationAttemptIdentity(*(str(row[key]) for key in row.keys())) for row in rows
         )
     finally:
         connection.close()
@@ -179,8 +178,12 @@ def _verify_run_dispositions(
         disposition = probe(attempt)
         if disposition is None:
             if attempt.status not in {
-                "prepared", "allocated", "terminal_failed", "superseded",
-                "attested", "quarantined",
+                "prepared",
+                "allocated",
+                "terminal_failed",
+                "superseded",
+                "attested",
+                "quarantined",
             }:
                 raise HostControlDowngradeError(
                     f"verifier Run is missing for launched attempt {attempt.attempt_id}"
@@ -280,12 +283,8 @@ def execute_host_control_downgrade(
     _require_offline(execution)
     attempts = _attempts(product)
     _verify_run_dispositions(attempts, run_probe)
-    execution_backup = _immutable_sqlite_backup(
-        execution, kind="pre-sdk-062-downgrade"
-    )
-    product_recovery = _immutable_sqlite_backup(
-        product, kind="pre-product-v2-restore"
-    )
+    execution_backup = _immutable_sqlite_backup(execution, kind="pre-sdk-062-downgrade")
+    product_recovery = _immutable_sqlite_backup(product, kind="pre-product-v2-restore")
 
     # Product backup validation happens before any live replacement.
     sidecar = pre_v3.with_suffix(f"{pre_v3.suffix}.json")
@@ -304,13 +303,9 @@ def execute_host_control_downgrade(
     quarantine: Path | None = None
     if not compatible:
         if not allow_execution_quarantine:
-            raise HostControlDowngradeError(
-                f"SDK 0.6.2 reopen proof failed: {detail}"
-            )
+            raise HostControlDowngradeError(f"SDK 0.6.2 reopen proof failed: {detail}")
         quarantine_digest = _sha256(execution)
-        quarantine = execution.with_name(
-            f"{execution.name}.quarantine.{quarantine_digest}.sqlite3"
-        )
+        quarantine = execution.with_name(f"{execution.name}.quarantine.{quarantine_digest}.sqlite3")
         if quarantine.exists():
             raise HostControlDowngradeError("execution quarantine target already exists")
         os.replace(execution, quarantine)
@@ -339,9 +334,7 @@ def execute_host_control_downgrade(
     except ProductStateBackupError as exc:
         raise HostControlDowngradeError("ProductState restore failed") from exc
     return DowngradeReceipt(
-        outcome=(
-            "restored_execution_quarantined" if quarantine is not None else "restored"
-        ),
+        outcome=("restored_execution_quarantined" if quarantine is not None else "restored"),
         product_recovery_artifact=product_recovery,
         execution_backup=execution_backup,
         execution_quarantine=quarantine,
@@ -371,12 +364,8 @@ def execute_product_v4_to_v3_downgrade(
     _require_offline(execution)
     attempts = _attempts(product)
     _verify_run_dispositions(attempts, run_probe)
-    execution_backup = _immutable_sqlite_backup(
-        execution, kind="pre-product-v3-downgrade"
-    )
-    product_recovery = _immutable_sqlite_backup(
-        product, kind="pre-product-v3-restore"
-    )
+    execution_backup = _immutable_sqlite_backup(execution, kind="pre-product-v3-downgrade")
+    product_recovery = _immutable_sqlite_backup(product, kind="pre-product-v3-restore")
     compatible, detail = sdk_reopen_probe(execution_backup)
     if not compatible:
         raise HostControlDowngradeError(f"SDK reopen proof failed: {detail}")

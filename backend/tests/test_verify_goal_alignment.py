@@ -15,6 +15,7 @@
   - agent_loop 完成判定公式三合一（verify_gate.passed AND no outcome_verifier fail
     AND goal_checker.done）才 mark_done。
 """
+
 from __future__ import annotations
 
 import inspect
@@ -32,6 +33,7 @@ from deskpet.agent.verify_gate import (
 from deskpet.tools.receipt import make_receipt
 
 # ─── helpers ────────────────────────────────────────────────────────────────
+
 
 def _gate_strict(patterns=None):
     if patterns is None:
@@ -57,6 +59,7 @@ def _make_ok_receipt(tool_name="ppt_create"):
 
 
 # ─── GoalAlignment dataclass ────────────────────────────────────────────────
+
 
 def test_goal_alignment_dataclass_fields():
     """GoalAlignment 必须有 goal_text / objective_evidence / aligned / gap."""
@@ -89,6 +92,7 @@ def test_goal_alignment_unaligned_has_gap():
 
 # ─── VerifyOutcome.goal_alignment field ─────────────────────────────────────
 
+
 def test_verify_outcome_has_goal_alignment_field():
     """VerifyOutcome 必须有 goal_alignment Optional 字段，默认 None。"""
     outcome = VerifyOutcome(passed=True)
@@ -105,6 +109,7 @@ def test_verify_outcome_goal_alignment_can_be_set():
 
 
 # ─── VerifyGate.check BC: goal_text=None → byte-identical ───────────────────
+
 
 def test_bc_goal_text_none_strict_pass():
     """goal_text=None strict pass → same as current (no regression)."""
@@ -141,9 +146,11 @@ def test_bc_check_signature_goal_text_kwarg():
 
 # ─── build_alignment_prompt ─────────────────────────────────────────────────
 
+
 def test_build_alignment_prompt_is_exported():
     """build_alignment_prompt must be importable from goal_checker."""
     from deskpet.agent.goal_checker import build_alignment_prompt
+
     assert callable(build_alignment_prompt)
 
 
@@ -201,6 +208,7 @@ def test_goal_judgment_no_persona_leak():
 
 # ─── 伪完成拦截 (aligned=False) ──────────────────────────────────────────────
 
+
 def test_fake_completion_no_receipt_aligned_false():
     """伪完成：claim 存在但 receipt 无 → VerifyOutcome.passed=False
     且 goal_alignment.aligned=False（当 goal_text 提供时）。
@@ -212,7 +220,7 @@ def test_fake_completion_no_receipt_aligned_false():
     gate = _gate_strict()
     o = gate.check(
         assistant_text="已生成 x.pptx",
-        ledger=[],                          # 无 receipt
+        ledger=[],  # 无 receipt
         goal_text="生成本周 PPT 周报",
     )
     assert o.passed is False
@@ -242,6 +250,7 @@ def test_fake_completion_with_receipt_passes_aligned_true():
 
 # ─── 未来时不误判 ─────────────────────────────────────────────────────────────
 
+
 def test_future_tense_claim_not_matched():
     """assistant 说"我将要生成 PPT" → 不触发 claim 提取，不被判 done。
 
@@ -267,7 +276,8 @@ def test_future_tense_claim_not_matched():
         # 以下断言：未来时文本不产生真实的 receipt 客观证据
         # （evidence_unavailable 是 VG-INVARIANT 内部标记，不算真实 receipt）
         real_evidence = [
-            e for e in o.goal_alignment.objective_evidence
+            e
+            for e in o.goal_alignment.objective_evidence
             if not e.startswith("evidence_unavailable")
         ]
         assert len(real_evidence) == 0
@@ -296,12 +306,14 @@ def test_future_tense_vs_completion_tense_distinction():
 
 # ─── agent_loop end_turn 完成判定公式 ────────────────────────────────────────
 
+
 class FakeLLMRegistry:
     def __init__(self, responses: list[Any]) -> None:
         self._responses = list(responses)
 
     async def chat_with_fallback(self, messages, tools=None, model=None, **kw):
         from llm.types import ChatResponse, ChatUsage
+
         return self._responses.pop(0)
 
 
@@ -336,6 +348,7 @@ class FakeGoalStore:
         import time
 
         from deskpet.agent.goal_store import SessionGoal
+
         return SessionGoal(
             session_id=session_id,
             text=self._goal_text,
@@ -363,18 +376,21 @@ async def test_agent_loop_goal_text_none_bc():
     """goal_text=None (no active goal) → mark_done never called, BC."""
     from llm.types import ChatResponse, ChatUsage
 
-    llm = FakeLLMRegistry([
-        ChatResponse(
-            content="任务完成了。",
-            tool_calls=[],
-            stop_reason="end_turn",
-            usage=ChatUsage(input_tokens=10, output_tokens=5),
-        )
-    ])
+    llm = FakeLLMRegistry(
+        [
+            ChatResponse(
+                content="任务完成了。",
+                tool_calls=[],
+                stop_reason="end_turn",
+                usage=ChatUsage(input_tokens=10, output_tokens=5),
+            )
+        ]
+    )
     store = FakeGoalStore(goal_text=None)
     checker = FakeGoalChecker([])
 
     from agent.agent_loop import AgentLoop
+
     loop = AgentLoop(
         llm_registry=llm,
         tool_registry=FakeToolRegistry(),
@@ -400,18 +416,21 @@ async def test_agent_loop_goal_text_three_green_mark_done():
     """
     from llm.types import ChatResponse, ChatUsage
 
-    llm = FakeLLMRegistry([
-        ChatResponse(
-            content="已生成 report.pptx",
-            tool_calls=[],
-            stop_reason="end_turn",
-            usage=ChatUsage(input_tokens=10, output_tokens=5),
-        )
-    ])
+    llm = FakeLLMRegistry(
+        [
+            ChatResponse(
+                content="已生成 report.pptx",
+                tool_calls=[],
+                stop_reason="end_turn",
+                usage=ChatUsage(input_tokens=10, output_tokens=5),
+            )
+        ]
+    )
     store = FakeGoalStore(goal_text="生成本周 PPT 周报")
     checker = FakeGoalChecker([(True, "")])  # goal_checker says done
 
     from agent.agent_loop import AgentLoop
+
     loop = AgentLoop(
         llm_registry=llm,
         tool_registry=FakeToolRegistry(),
@@ -432,18 +451,21 @@ async def test_agent_loop_goal_checker_fed_with_get_goal_text():
     """goal_checker.check 接 session_goal_store.get_goal_text(sid) 的返回值。"""
     from llm.types import ChatResponse, ChatUsage
 
-    llm = FakeLLMRegistry([
-        ChatResponse(
-            content="已生成 report.pptx",
-            tool_calls=[],
-            stop_reason="end_turn",
-            usage=ChatUsage(input_tokens=10, output_tokens=5),
-        )
-    ])
+    llm = FakeLLMRegistry(
+        [
+            ChatResponse(
+                content="已生成 report.pptx",
+                tool_calls=[],
+                stop_reason="end_turn",
+                usage=ChatUsage(input_tokens=10, output_tokens=5),
+            )
+        ]
+    )
     store = FakeGoalStore(goal_text="生成周报 PPT")
     checker = FakeGoalChecker([(True, "")])
 
     from agent.agent_loop import AgentLoop
+
     loop = AgentLoop(
         llm_registry=llm,
         tool_registry=FakeToolRegistry(),
@@ -460,6 +482,7 @@ async def test_agent_loop_goal_checker_fed_with_get_goal_text():
 
 
 # ─── verify_gate.check + goal_text wiring: rebound contains goal context ─────
+
 
 def test_verify_gate_check_with_goal_text_populates_goal_alignment():
     """VerifyGate.check(goal_text=...) populates VerifyOutcome.goal_alignment."""

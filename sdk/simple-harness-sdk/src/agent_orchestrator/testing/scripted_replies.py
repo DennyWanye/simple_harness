@@ -48,7 +48,8 @@ def one_step_method(context: dict[str, Any]) -> dict[str, Any]:
 
     request = context["request"]
     operator = next(
-        item for item in request["operators"]
+        item
+        for item in request["operators"]
         if str(item["task_type_ref"]["id"]).endswith("prepare-delivery")
     )
     identity = request["new_method_identity"]
@@ -98,8 +99,11 @@ def planner_reply(request: Any) -> Reply | None:
 
     package = package_of(request)
     # 子目标还没有做法时，系统以"目标未细化"的修复请求来问；这与普通规划一样，提做法或采用做法。
-    repairs = [entry for entry in package.get("repair_requests") or ()
-               if ((entry.get("request") or {}).get("context") or {}).get("event_type") != "GoalUnrefined"]
+    repairs = [
+        entry
+        for entry in package.get("repair_requests") or ()
+        if ((entry.get("request") or {}).get("context") or {}).get("event_type") != "GoalUnrefined"
+    ]
     if repairs:
         return None
     selection = (package.get("method_selection") or [{}])[0]
@@ -126,7 +130,12 @@ def planner_reply(request: Any) -> Reply | None:
     return decision(
         contexts[0]["subject_key"],
         "PROPOSE_METHOD",
-        {"method_proposal": {"method": one_step_method(contexts[0]), "rationale": "一步写出要求的文件。"}},
+        {
+            "method_proposal": {
+                "method": one_step_method(contexts[0]),
+                "rationale": "一步写出要求的文件。",
+            }
+        },
         "库里没有适用的做法，提出一个一步完成的做法。",
     )
 
@@ -136,11 +145,22 @@ def retry_same_method(request: Any) -> Reply | None:
 
     package = package_of(request)
     for entry in package.get("repair_requests") or ():
-        refs = [str(ref) for ref in (entry.get("request") or {}).get("trigger_refs", ()) if ":attempt-" in str(ref)]
+        refs = [
+            str(ref)
+            for ref in (entry.get("request") or {}).get("trigger_refs", ())
+            if ":attempt-" in str(ref)
+        ]
         if len(refs) != 1:
             continue
         task_id = refs[0].rpartition(":attempt-")[0]
-        subject = next((item for item in package.get("planning_subjects", ()) if item.get("task_id") == task_id), None)
+        subject = next(
+            (
+                item
+                for item in package.get("planning_subjects", ())
+                if item.get("task_id") == task_id
+            ),
+            None,
+        )
         if subject is None:
             continue
         instances = {
@@ -148,16 +168,25 @@ def retry_same_method(request: Any) -> Reply | None:
             for plan in package["views"].get("plans", ())
             for instance in plan.get("adopted_methods", ())
             for child in instance.get("child_bindings", ())
-            if subject["occurrence_id"] in (child.get("occurrence_id"), child.get("goal_occurrence_id"))
+            if subject["occurrence_id"]
+            in (child.get("occurrence_id"), child.get("goal_occurrence_id"))
         }
-        refs_visible = [ref for ref in package.get("visible_refs", ())
-                        if ref.get("kind") == "method_instance" and (not instances or ref.get("id") in instances)]
+        refs_visible = [
+            ref
+            for ref in package.get("visible_refs", ())
+            if ref.get("kind") == "method_instance"
+            and (not instances or ref.get("id") in instances)
+        ]
         if len(refs_visible) != 1:
             continue
         return decision(
             subject["subject_key"],
             "REPAIR",
-            {"repair_kind": "RETRY_SAME_METHOD", "failed_attempt_id": refs[0], "method_instance_ref": refs_visible[0]},
+            {
+                "repair_kind": "RETRY_SAME_METHOD",
+                "failed_attempt_id": refs[0],
+                "method_instance_ref": refs_visible[0],
+            },
             "审查意见可以在同一做法下改好，原样再做一次。",
         )
     return None
@@ -178,8 +207,14 @@ def review_input(request: Any) -> dict[str, Any] | None:
 
 
 def review_reply(
-    package: dict[str, Any], *, verdict: str = "ACCEPT", grade: str = "PASS", reason: str = "脚本化审阅：材料满足这条要求。",
-    methods: Any = None, summary: Any = None, global_findings: Any = None,
+    package: dict[str, Any],
+    *,
+    verdict: str = "ACCEPT",
+    grade: str = "PASS",
+    reason: str = "脚本化审阅：材料满足这条要求。",
+    methods: Any = None,
+    summary: Any = None,
+    global_findings: Any = None,
 ) -> str:
     """``methods`` / ``summary`` (回复第 4 版)、``global_findings``（第 5 版）：给了就写进回复；``methods`` 可以是一个函数，拿审查包里
     ``methods_to_judge`` 的每一行、回一项（或 None 不写）。"""
@@ -192,7 +227,9 @@ def review_reply(
     elif methods is not None:
         extra["methods"] = list(methods)
     if callable(summary):
-        summary = summary(inner.get("summary_to_confirm")) if inner.get("summary_to_confirm") else None
+        summary = (
+            summary(inner.get("summary_to_confirm")) if inner.get("summary_to_confirm") else None
+        )
     if summary is not None:
         extra["summary"] = dict(summary)
     if global_findings is not None:
@@ -231,7 +268,10 @@ def worker_reply(request: Any) -> Reply | None:
     outputs = list(contract.get("outputs") or [])
     written = sum(1 for message in request.messages if "tool" in str(message.role).lower())
     if written < len(outputs):
-        return ("workspace_write_file", {"path": outputs[written], "content": "# 要点\n\n- 一\n- 二\n- 三\n"})
+        return (
+            "workspace_write_file",
+            {"path": outputs[written], "content": "# 要点\n\n- 一\n- 二\n- 三\n"},
+        )
     declared = package.get("declared_output_ports") or {}
     ports = [item["port"] for item in declared.get("ports", ()) if item.get("required", True)]
     envelope = {
@@ -239,7 +279,9 @@ def worker_reply(request: Any) -> Reply | None:
         "attempt_id": package.get("attempt", {}).get("attempt_id", ""),
         "outcome": "candidate",
         "summary": "写好了要求的文件",
-        "claims": [{"content": f"{path} 已写出", "confidence": 0.8, "evidence": [path]} for path in outputs],
+        "claims": [
+            {"content": f"{path} 已写出", "confidence": 0.8, "evidence": [path]} for path in outputs
+        ],
         "evidence": outputs,
         "artifacts": outputs,
         "outputs": {port: outputs[0] for port in ports[:1]} if outputs else {},
@@ -257,7 +299,7 @@ def broken_result(request: Any) -> Reply | None:
     reply = worker_reply(request)
     if isinstance(reply, tuple):
         return reply
-    body = json.loads(reply[len("<result_envelope>"):-len("</result_envelope>")])
+    body = json.loads(reply[len("<result_envelope>") : -len("</result_envelope>")])
     body["outputs"] = {"no-such-port": (body["artifacts"] or ["x"])[0]}
     return "<result_envelope>" + json.dumps(body, ensure_ascii=False) + "</result_envelope>"
 

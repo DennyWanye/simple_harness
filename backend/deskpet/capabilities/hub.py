@@ -40,26 +40,21 @@ logger = logging.getLogger(__name__)
 
 
 class RegistryCatalogSource(Protocol):
-    async def snapshot(self) -> RegistryCatalogSnapshot:
-        ...
+    async def snapshot(self) -> RegistryCatalogSnapshot: ...
 
 
 class CapabilityEntrySource(Protocol):
-    async def snapshot(self) -> RevisionedCatalogEntries:
-        ...
+    async def snapshot(self) -> RevisionedCatalogEntries: ...
 
 
 class CatalogRevisionSource(Protocol):
-    async def revision(self) -> int:
-        ...
+    async def revision(self) -> int: ...
 
 
 class _AsyncLock(Protocol):
-    async def __aenter__(self) -> Any:
-        ...
+    async def __aenter__(self) -> Any: ...
 
-    async def __aexit__(self, *args: Any) -> None:
-        ...
+    async def __aexit__(self, *args: Any) -> None: ...
 
 
 class StaticCapabilityEntrySource:
@@ -99,10 +94,7 @@ class ToolRegistryCatalogSource:
         for spec in raw.specs:
             if not spec.env_satisfied():
                 continue
-            if (
-                getattr(spec, "visibility_scope", "global") == "global"
-                and not spec.is_visible()
-            ):
+            if getattr(spec, "visibility_scope", "global") == "global" and not spec.is_visible():
                 continue
             # CapabilityHub feeds durable Run-catalog leases.  Advertising a
             # callable that has no execution build identity only defers the
@@ -126,13 +118,9 @@ class ToolRegistryCatalogSource:
                 RegistryToolDescriptor(
                     provider_name=str(spec.name),
                     source=str(getattr(spec, "source", "builtin") or "builtin"),
-                    description=str(
-                        getattr(spec, "description_for_llm", "") or spec.name
-                    ),
+                    description=str(getattr(spec, "description_for_llm", "") or spec.name),
                     schema_hash=schema_hash,
-                    permission_category=str(
-                        getattr(spec, "permission_category", "read_file")
-                    ),
+                    permission_category=str(getattr(spec, "permission_category", "read_file")),
                     effect_kind=effect_kind,
                     spec_version=str(getattr(spec, "spec_version", "v1") or "v1"),
                     permission_policy_version=str(
@@ -140,38 +128,27 @@ class ToolRegistryCatalogSource:
                     ),
                     dangerous=bool(getattr(spec, "dangerous", False)),
                     effect_policy_version=str(
-                        getattr(getattr(spec, "effect_policy", None), "version", "")
-                        or ""
+                        getattr(getattr(spec, "effect_policy", None), "version", "") or ""
                     ),
                     dispatch_kind=(
                         "trusted_context_handler"
                         if getattr(spec, "context_handler", None) is not None
                         else "legacy_handler"
                     ),
-                    concurrency_safe=bool(
-                        getattr(spec, "concurrency_safe", True)
-                    ),
+                    concurrency_safe=bool(getattr(spec, "concurrency_safe", True)),
                     completion_semantics=str(
                         getattr(spec, "completion_semantics", "sync") or "sync"
                     ),
-                    outcome_parser_id=str(
-                        getattr(spec, "outcome_parser_id", "") or ""
-                    ),
-                    outcome_parser_version=str(
-                        getattr(spec, "outcome_parser_version", "") or ""
-                    ),
-                    outcome_parser_hash=str(
-                        getattr(spec, "outcome_parser_hash", "") or ""
-                    ),
+                    outcome_parser_id=str(getattr(spec, "outcome_parser_id", "") or ""),
+                    outcome_parser_version=str(getattr(spec, "outcome_parser_version", "") or ""),
+                    outcome_parser_hash=str(getattr(spec, "outcome_parser_hash", "") or ""),
                     resource_scope_resolver_id=str(
                         getattr(spec, "resource_scope_resolver_id", "") or ""
                     ),
                     resource_scope_resolver_version=str(
                         getattr(spec, "resource_scope_resolver_version", "") or ""
                     ),
-                    runtime_provenance_ref=str(
-                        getattr(spec, "runtime_provenance_ref", "") or ""
-                    ),
+                    runtime_provenance_ref=str(getattr(spec, "runtime_provenance_ref", "") or ""),
                 )
             )
         self._exact_fingerprints = exact_fingerprints
@@ -194,9 +171,7 @@ class ToolRegistryCatalogSource:
             snapshot_ref=snapshot_ref,
             run_id=run_id,
             tool_spec_fingerprints=(
-                fingerprint
-                for entry in entries
-                for fingerprint in entry.expected_tool_fingerprints
+                fingerprint for entry in entries for fingerprint in entry.expected_tool_fingerprints
             ),
         )
 
@@ -250,18 +225,12 @@ class SkillLoaderCatalogSource:
         payload = []
         entries: list[CapabilityCatalogEntry] = []
         for meta in metas:
-            raw = (
-                meta.to_dict()
-                if callable(getattr(meta, "to_dict", None))
-                else dict(vars(meta))
-            )
+            raw = meta.to_dict() if callable(getattr(meta, "to_dict", None)) else dict(vars(meta))
             payload.append(raw)
             name = str(getattr(meta, "name", raw.get("name", "")))
             scope_name = str(getattr(meta, "scope", raw.get("scope", "user")))
             scope = "builtin" if scope_name in {"builtin", "built-in", "bundled"} else "user"
-            scope_key = (
-                self._builtin_scope_key if scope == "builtin" else self._user_scope_key
-            )
+            scope_key = self._builtin_scope_key if scope == "builtin" else self._user_scope_key
             manifest_hash = fingerprint_json(raw)
             descriptor = CapabilityVersionDescriptor(
                 capability_id=self._capability_id(name),
@@ -326,9 +295,7 @@ def _builtin_entries(
         raw_id = tool.provider_name
         capability_id = (
             raw_id
-            if re.fullmatch(
-                r"[A-Za-z0-9](?:[A-Za-z0-9_-]{0,62}[A-Za-z0-9])?", raw_id
-            )
+            if re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9_-]{0,62}[A-Za-z0-9])?", raw_id)
             else "tool_" + hashlib.sha256(raw_id.encode("utf-8")).hexdigest()[:24]
         )
         manifest_hash = fingerprint_json(
@@ -432,10 +399,7 @@ def _select_descriptor(
     expected_keys = dict(scope.binding_keys())
     for entry in entries:
         for binding in entry.bindings:
-            if (
-                binding.active
-                and expected_keys.get(binding.scope) == binding.scope_key
-            ):
+            if binding.active and expected_keys.get(binding.scope) == binding.scope_key:
                 visible.append((entry, binding))
     if not visible:
         discoverable = tuple(entry for entry in entries if not entry.bindings)
@@ -473,9 +437,7 @@ def _select_descriptor(
 
     selected_pair: tuple[CapabilityCatalogEntry, CapabilityBinding] | None = None
     for scope_kind in SCOPE_PRECEDENCE:
-        at_level = [
-            pair for pair in visible if pair[1].scope == scope_kind
-        ]
+        at_level = [pair for pair in visible if pair[1].scope == scope_kind]
         if not at_level:
             continue
         identities = {
@@ -579,9 +541,7 @@ class CapabilityHub:
         self.store = store
         self.registry_source = registry_source
         self.skill_source = skill_source or StaticCapabilityEntrySource()
-        self.mcp_revision_source = (
-            mcp_revision_source or StaticCatalogRevisionSource()
-        )
+        self.mcp_revision_source = mcp_revision_source or StaticCatalogRevisionSource()
         self.legacy_source = legacy_source or StaticCapabilityEntrySource()
         self.publish_lock = publish_lock or asyncio.Lock()
         self.catalog_gate = catalog_gate or CapabilityCatalogGate()
@@ -639,9 +599,7 @@ class CapabilityHub:
             effective_owner_key = owner_key
             if effective_owner_key is None and scope.user_key.startswith("user:v2:"):
                 effective_owner_key = scope.user_key
-            store_entries = await self.store.visible_entries(
-                scope, owner_key=effective_owner_key
-            )
+            store_entries = await self.store.visible_entries(scope, owner_key=effective_owner_key)
             after = await self._read_vector()
             if self._vector_identity(before) != self._vector_identity(after):
                 continue
@@ -669,9 +627,7 @@ class CapabilityHub:
             cached = self._cache.get(cache_key)
             if cached is not None:
                 return cached
-            exact_fingerprints_reader = getattr(
-                self.registry_source, "exact_fingerprints", None
-            )
+            exact_fingerprints_reader = getattr(self.registry_source, "exact_fingerprints", None)
             exact_registry_fingerprints = (
                 exact_fingerprints_reader(registry.revision)
                 if callable(exact_fingerprints_reader)
@@ -687,9 +643,7 @@ class CapabilityHub:
             )
             by_capability: dict[str, list[CapabilityCatalogEntry]] = {}
             for entry in entries:
-                by_capability.setdefault(
-                    entry.version.capability_id, []
-                ).append(entry)
+                by_capability.setdefault(entry.version.capability_id, []).append(entry)
             descriptors: list[CapabilityDescriptor] = []
             store_version_keys = {
                 (
@@ -742,9 +696,7 @@ class CapabilityHub:
         )
 
     @staticmethod
-    def _gate_keys(
-        scope: CapabilityScope, owner_key: str | None
-    ) -> tuple[CatalogGateKey, ...]:
+    def _gate_keys(scope: CapabilityScope, owner_key: str | None) -> tuple[CatalogGateKey, ...]:
         owner = str(owner_key or scope.user_key).strip()
         if not owner:
             raise ValueError("catalog owner_key is required")
@@ -757,12 +709,8 @@ class CapabilityHub:
         self, scope: CapabilityScope, *, owner_key: str | None = None
     ) -> CapabilityCatalogSnapshot:
         async with self.publish_lock:
-            async with self.catalog_gate.read(
-                self._gate_keys(scope, owner_key)
-            ):
-                snapshot, _entries = await self._snapshot_locked(
-                    scope, owner_key=owner_key
-                )
+            async with self.catalog_gate.read(self._gate_keys(scope, owner_key)):
+                snapshot, _entries = await self._snapshot_locked(scope, owner_key=owner_key)
                 return snapshot
 
     async def snapshot_for_atomic_lease(
@@ -792,9 +740,7 @@ class CapabilityHub:
                 entries=entries,
             )
 
-    async def mirror_snapshot_release(
-        self, *, snapshot_ref: str, run_id: str
-    ) -> None:
+    async def mirror_snapshot_release(self, *, snapshot_ref: str, run_id: str) -> None:
         release_snapshot = getattr(self.registry_source, "release_snapshot", None)
         if callable(release_snapshot):
             await release_snapshot(snapshot_ref=snapshot_ref, run_id=run_id)
@@ -806,9 +752,7 @@ class CapabilityHub:
         run_id: str,
         tool_spec_fingerprints: tuple[str, ...],
     ) -> None:
-        lease_fingerprints = getattr(
-            self.registry_source, "lease_snapshot_fingerprints", None
-        )
+        lease_fingerprints = getattr(self.registry_source, "lease_snapshot_fingerprints", None)
         if callable(lease_fingerprints):
             await lease_fingerprints(
                 snapshot_ref=snapshot_ref,
@@ -825,12 +769,8 @@ class CapabilityHub:
         owner_key: str | None = None,
     ) -> CapabilityCatalogSnapshot:
         async with self.publish_lock:
-            async with self.catalog_gate.read(
-                self._gate_keys(scope, owner_key)
-            ):
-                snapshot, entries = await self._snapshot_locked(
-                    scope, owner_key=owner_key
-                )
+            async with self.catalog_gate.read(self._gate_keys(scope, owner_key)):
+                snapshot, entries = await self._snapshot_locked(scope, owner_key=owner_key)
                 await self.store.acquire_snapshot_lease(
                     snapshot_ref=snapshot.snapshot_ref,
                     run_id=run_id,
@@ -844,18 +784,14 @@ class CapabilityHub:
                         entries=entries,
                     )
                 except BaseException:
-                    await self.store.release_snapshot_lease(
-                        snapshot.snapshot_ref, run_id
-                    )
+                    await self.store.release_snapshot_lease(snapshot.snapshot_ref, run_id)
                     raise
                 return snapshot
 
     async def release_lease(self, snapshot_ref: str, run_id: str) -> int:
         async with self.publish_lock:
             released = await self.store.release_snapshot_lease(snapshot_ref, run_id)
-            await self.mirror_snapshot_release(
-                snapshot_ref=snapshot_ref, run_id=run_id
-            )
+            await self.mirror_snapshot_release(snapshot_ref=snapshot_ref, run_id=run_id)
             return released
 
     async def clone_snapshot_lease_and_commit(
@@ -888,9 +824,7 @@ class CapabilityHub:
                     root_run_id=root_run_id,
                 )
                 if cloned != fingerprints:
-                    raise RuntimeError(
-                        "child snapshot lease differs from its mirrored parent"
-                    )
+                    raise RuntimeError("child snapshot lease differs from its mirrored parent")
 
             try:
                 return await commit(clone_in_transaction)
@@ -920,9 +854,7 @@ class CapabilityHub:
             )
             released = 0
             for snapshot_ref in snapshot_refs:
-                released += await self.store.release_snapshot_lease(
-                    snapshot_ref, run_id
-                )
+                released += await self.store.release_snapshot_lease(snapshot_ref, run_id)
                 await self.mirror_snapshot_release(
                     snapshot_ref=snapshot_ref,
                     run_id=run_id,
@@ -936,9 +868,7 @@ class CapabilityHub:
             owners = await self.store.terminal_snapshot_lease_owners()
             released = 0
             for snapshot_ref, run_id in owners:
-                released += await self.store.release_snapshot_lease(
-                    snapshot_ref, run_id
-                )
+                released += await self.store.release_snapshot_lease(snapshot_ref, run_id)
                 await self.mirror_snapshot_release(
                     snapshot_ref=snapshot_ref,
                     run_id=run_id,
@@ -949,9 +879,7 @@ class CapabilityHub:
         self, *, pack_id: str, version: str, manifest_hash: str
     ) -> bool:
         async with self.publish_lock:
-            return not await self.store.version_has_active_lease(
-                pack_id, version, manifest_hash
-            )
+            return not await self.store.version_has_active_lease(pack_id, version, manifest_hash)
 
 
 __all__ = [

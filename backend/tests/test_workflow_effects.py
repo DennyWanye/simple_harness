@@ -154,9 +154,7 @@ async def test_concurrent_begin_has_one_executor_and_args_change_is_new_effect(t
     assert first.effect.effect_id == second.effect.effect_id
     assert first.effect.run_id == run_id
 
-    changed = await _begin(
-        journal, fence, _prepared("call-1", {"query": "beta"}), "node-exec-c"
-    )
+    changed = await _begin(journal, fence, _prepared("call-1", {"query": "beta"}), "node-exec-c")
     assert changed.action is EffectAction.EXECUTE
     assert changed.effect.effect_id != first.effect.effect_id
 
@@ -299,9 +297,7 @@ def test_staged_file_rollback_and_commit_are_copy_on_write(tmp_path):
 def test_staged_existing_file_modes_commit_atomically(tmp_path, mode, payload, expected):
     final = tmp_path / f"{mode.value}.txt"
     final.write_bytes(b"original")
-    target = PreparedTarget.prepare(
-        final, run_id="run", stable_call_id=mode.value, mode=mode
-    )
+    target = PreparedTarget.prepare(final, run_id="run", stable_call_id=mode.value, mode=mode)
     lifecycle = StagedFileLifecycle()
     evidence = lifecycle.stage(target, payload)
     assert final.read_bytes() == b"original"
@@ -582,9 +578,7 @@ async def test_connection_aware_effect_primitives_share_caller_transaction(tmp_p
 
 
 @pytest.mark.asyncio
-async def test_legacy_effect_facades_delegate_to_connection_aware_primitives(
-    tmp_path, monkeypatch
-):
+async def test_legacy_effect_facades_delegate_to_connection_aware_primitives(tmp_path, monkeypatch):
     path = tmp_path / "workflow.db"
     store = WorkflowRunStore(path)
     _, fence = await _new_run(store, "legacy-parity")

@@ -225,7 +225,9 @@ def allocate(
         sorted(
             t.id
             for t in turns
-            if t.completed and t.id != current_turn_id and t.required_groups
+            if t.completed
+            and t.id != current_turn_id
+            and t.required_groups
             and t.required_groups <= ids
         )
     )
@@ -242,7 +244,9 @@ def allocate(
     )
 
 
-def verify_final_count(selection: Selection, count: int, request_bytes: int, max_bytes: int) -> None:
+def verify_final_count(
+    selection: Selection, count: int, request_bytes: int, max_bytes: int
+) -> None:
     nonnegative_int(count, "BAD_TOKEN_RECEIPT")
     if request_bytes > max_bytes:
         raise ArpError("REQUEST_BYTES_LIMIT")
@@ -396,9 +400,11 @@ def embedding_mode(required: bool, degrade: bool, *, creating: bool, available: 
 
 # ---- §9 skills ------------------------------------------------------------------
 
-_WINDOWS_RESERVED = {"CON", "PRN", "AUX", "NUL"} | {f"COM{i}" for i in range(1, 10)} | {
-    f"LPT{i}" for i in range(1, 10)
-}
+_WINDOWS_RESERVED = (
+    {"CON", "PRN", "AUX", "NUL"}
+    | {f"COM{i}" for i in range(1, 10)}
+    | {f"LPT{i}" for i in range(1, 10)}
+)
 
 
 def safe_skill_path(path: str) -> str:
@@ -407,9 +413,10 @@ def safe_skill_path(path: str) -> str:
     if path != unicodedata.normalize("NFC", path):
         raise ArpError("SKILL_PATH_NONCANONICAL")
     parts = path.split("/")
-    if any(p in ("", ".", "..") or p.endswith((" ", ".")) for p in parts) or PurePosixPath(
-        path
-    ).is_absolute():
+    if (
+        any(p in ("", ".", "..") or p.endswith((" ", ".")) for p in parts)
+        or PurePosixPath(path).is_absolute()
+    ):
         raise ArpError("SKILL_PATH_INVALID")
     if len(path.encode()) > 1024 or any(len(p.encode()) > 255 for p in parts):
         raise ArpError("SKILL_PATH_INVALID")
@@ -443,8 +450,7 @@ def choose_provider(candidates: Sequence[Mapping[str, object]], required: frozen
     eligible = [
         c
         for c in candidates
-        if all(c.get(k) is True for k in necessary)
-        and required <= frozenset(c.get("features", ()))  # type: ignore[arg-type]
+        if all(c.get(k) is True for k in necessary) and required <= frozenset(c.get("features", ()))  # type: ignore[arg-type]
     ]
     if not eligible:
         raise ArpError("CAPABILITY_UNAVAILABLE")

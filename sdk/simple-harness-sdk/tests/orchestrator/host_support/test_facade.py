@@ -55,8 +55,13 @@ def _with(tmp_path, body, provider=None):  # type: ignore[no-untyped-def]
     # （``world.control``），租户/主体照旧是 local/我。
     async def run():
         async with product_world(
-            Path(tmp_path) / "evidence", provider or _provider(), auto=False,
-            tenant_id="local", principal=ME, max_concurrency=1, deployment_policy=OFF,
+            Path(tmp_path) / "evidence",
+            provider or _provider(),
+            auto=False,
+            tenant_id="local",
+            principal=ME,
+            max_concurrency=1,
+            deployment_policy=OFF,
         ) as world:
             orchestrator = world.loop
             result = body(orchestrator, world.control)
@@ -232,14 +237,18 @@ def test_the_snapshot_cursor_comes_from_the_same_read(tmp_path, monkeypatch):
                     inserted.append(int(cursor.lastrowid))
                     other.execute(
                         "UPDATE budget_accounts SET reserved_tokens = reserved_tokens + 77 "
-                        "WHERE mission_id = ? AND scope = 'mission'", (mid,),
+                        "WHERE mission_id = ? AND scope = 'mission'",
+                        (mid,),
                     )
             return rows
 
         monkeypatch.setattr(store, "list_tasks", list_tasks_then_write)
         view = control.snapshot(mission_id)
         assert view["snapshot"]["budget_usage"] == before
-        assert store.mission_budget_usage(mission_id)["reserved_tokens"] == before["reserved_tokens"] + 77
+        assert (
+            store.mission_budget_usage(mission_id)["reserved_tokens"]
+            == before["reserved_tokens"] + 77
+        )
         return view["through_seq"], inserted[0]
 
     through, inserted = _with(tmp_path, body)

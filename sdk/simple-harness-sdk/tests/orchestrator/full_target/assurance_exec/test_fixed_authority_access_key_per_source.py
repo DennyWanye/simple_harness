@@ -12,7 +12,6 @@ seam caught it.
 那份当前读授权，身份是部署的认证身份；不再自拼 ``install_assurance``。
 """
 
-
 from __future__ import annotations
 
 import asyncio
@@ -27,20 +26,34 @@ from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider
 def test_two_sources_get_two_access_keys_and_merge_without_conflict(tmp_path):
     async def scenario():
         async with product_world(tmp_path / "root", LayeredScriptedProvider()) as world:
-            created = world.create({"goal": "access key per source", "success_criteria": ["one"],
-                                    "idempotency_key": "assured-access-key"})
+            created = world.create(
+                {
+                    "goal": "access key per source",
+                    "success_criteria": ["one"],
+                    "idempotency_key": "assured-access-key",
+                }
+            )
             mission = world.store.get_mission(created["mission_id"])
             principal = world.deployment.principal
             authority = world.loop._assurance_reviews.consumer.authority
-            identity = UseIdentity(mission.id, "REVIEW", "review-key", "scope-x",
-                                   principal.principal_id, "DISCLOSE", "root-x")
+            identity = UseIdentity(
+                mission.id,
+                "REVIEW",
+                "review-key",
+                "scope-x",
+                principal.principal_id,
+                "DISCLOSE",
+                "root-x",
+            )
             first = authority(identity, AssuranceRef("result", Pin("result-1", 0, "1" * 64)))
             second = authority(identity, AssuranceRef("task", Pin("task-1", 1, "2" * 64)))
             assert first.access.channel == second.access.channel == "ACCESS"
             assert first.access.key != second.access.key
             assert first.access.fingerprint != second.access.fingerprint
             # The same source read twice is one observation; two sources are two.
-            merged = _merge_reads([first.access, first.policy, second.access, second.policy, first.access])
+            merged = _merge_reads(
+                [first.access, first.policy, second.access, second.policy, first.access]
+            )
             assert len([item for item in merged if item.channel == "ACCESS"]) == 2
             assert len([item for item in merged if item.channel == "POLICY"]) == 1
 

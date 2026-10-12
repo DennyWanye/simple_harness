@@ -10,6 +10,7 @@
   - /api/commands/<name>/schema 404 未知命令
   - /api/commands/<name>/schema 大小写不敏感
 """
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -23,8 +24,12 @@ def client_flag_on(monkeypatch):
     """启 slash_commands flag 后构造 FastAPI client + mock skill_loader."""
     # 必须在 import main 前 monkeypatch 环境
     import main as main_module
+
     monkeypatch.setattr(
-        main_module.config.features, "slash_commands", True, raising=True,
+        main_module.config.features,
+        "slash_commands",
+        True,
+        raising=True,
     )
     # mock skill_loader 注入 service_context
     mock_loader = MagicMock()
@@ -38,7 +43,12 @@ def client_flag_on(monkeypatch):
             "name": "deep-research",
             "description": "Multi-step research with citations.",
             "arguments": [
-                {"name": "query", "type": "string", "description": "search query", "required": True},
+                {
+                    "name": "query",
+                    "type": "string",
+                    "description": "search query",
+                    "required": True,
+                },
                 {"name": "depth", "type": "int", "description": "iter depth", "required": False},
             ],
         },
@@ -48,7 +58,8 @@ def client_flag_on(monkeypatch):
         },
     ]
     monkeypatch.setattr(
-        main_module.service_context, "get",
+        main_module.service_context,
+        "get",
         lambda key: mock_loader if key == "skill_loader" else None,
     )
     return TestClient(main_module.app)
@@ -57,8 +68,12 @@ def client_flag_on(monkeypatch):
 @pytest.fixture
 def client_flag_off(monkeypatch):
     import main as main_module
+
     monkeypatch.setattr(
-        main_module.config.features, "slash_commands", False, raising=True,
+        main_module.config.features,
+        "slash_commands",
+        False,
+        raising=True,
     )
     return TestClient(main_module.app)
 
@@ -125,7 +140,10 @@ def test_help_uses_current_global_skill_command_catalog(monkeypatch):
     import main as main_module
 
     monkeypatch.setattr(
-        main_module.config.features, "slash_commands", True, raising=True,
+        main_module.config.features,
+        "slash_commands",
+        True,
+        raising=True,
     )
     catalog = MagicMock()
     catalog.list_skills.return_value = [
@@ -137,15 +155,15 @@ def test_help_uses_current_global_skill_command_catalog(monkeypatch):
     ]
     current_catalog = AsyncMock(return_value=catalog)
     monkeypatch.setattr(
-        main_module, "_current_slash_skill_catalog", current_catalog,
+        main_module,
+        "_current_slash_skill_catalog",
+        current_catalog,
     )
 
     response = TestClient(main_module.app).get("/api/commands/help")
 
     assert response.status_code == 200
-    assert "plan-test" in [
-        item["name"] for item in response.json()["commands"]
-    ]
+    assert "plan-test" in [item["name"] for item in response.json()["commands"]]
     current_catalog.assert_awaited_once_with()
 
 

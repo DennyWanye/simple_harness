@@ -18,11 +18,24 @@ _MAX_OUTPUT_NODES = 2048
 _MAX_OUTPUT_BYTES = 131072
 # These are the source Tool-schema semantics supported by the compiler. Unknown
 # keywords, including existing patterns and combinators, are never discarded.
-_KEYWORDS = frozenset({
-    "type", "properties", "required", "additionalProperties", "items",
-    "enum", "const", "minLength", "maxLength", "minimum", "maximum",
-    "title", "description", "default",
-})
+_KEYWORDS = frozenset(
+    {
+        "type",
+        "properties",
+        "required",
+        "additionalProperties",
+        "items",
+        "enum",
+        "const",
+        "minLength",
+        "maxLength",
+        "minimum",
+        "maximum",
+        "title",
+        "description",
+        "default",
+    }
+)
 
 
 def _output_nodes(value: Any) -> int:
@@ -46,7 +59,12 @@ def _compile(schema: Mapping[str, Any], path: str) -> dict[str, Any]:
     result = dict(schema)
     declared = schema["type"]
     if not isinstance(declared, str) or declared not in {
-        "object", "array", "string", "integer", "number", "boolean",
+        "object",
+        "array",
+        "string",
+        "integer",
+        "number",
+        "boolean",
     }:
         raise SchemaDefinitionError(f"{path}: unsupported strict type")
     if declared == "object":
@@ -59,8 +77,7 @@ def _compile(schema: Mapping[str, Any], path: str) -> dict[str, Any]:
         if len(optional) > _MAX_OPTIONAL_PER_OBJECT:
             raise SchemaDefinitionError(f"{path}: more than three optional properties")
         compiled = {
-            name: _compile(properties[name], f"{path}.properties.{name}")
-            for name in property_names
+            name: _compile(properties[name], f"{path}.properties.{name}") for name in property_names
         }
         if optional:
             variants = []
@@ -68,12 +85,14 @@ def _compile(schema: Mapping[str, Any], path: str) -> dict[str, Any]:
                 for subset in combinations(optional, count):
                     included = set(required) | set(subset)
                     names = [name for name in property_names if name in included]
-                    variants.append({
-                        "type": "object",
-                        "properties": {name: compiled[name] for name in names},
-                        "required": names,
-                        "additionalProperties": False,
-                    })
+                    variants.append(
+                        {
+                            "type": "object",
+                            "properties": {name: compiled[name] for name in names},
+                            "required": names,
+                            "additionalProperties": False,
+                        }
+                    )
             result.pop("properties", None)
             result.pop("required", None)
             result.pop("additionalProperties", None)

@@ -60,8 +60,13 @@ def _count(store, sql, *params):
 
 
 def _seam(name):
-    completed = subprocess.run([sys.executable, str(SEAMS / name)], capture_output=True, text=True, timeout=900,
-                               cwd=str(SDK_ROOT))
+    completed = subprocess.run(
+        [sys.executable, str(SEAMS / name)],
+        capture_output=True,
+        text=True,
+        timeout=900,
+        cwd=str(SDK_ROOT),
+    )
     assert completed.returncode == 0, (name, completed.stderr[-4000:])
     summary = json.loads(completed.stdout.strip().splitlines()[-1])
     assert summary["status"] == "PASS", summary
@@ -83,22 +88,38 @@ def test_acceptance_atomic_faults(tmp_path, fault):
             connection = store.connection
 
             def counts():
-                return (_count(store, "SELECT COUNT(*) FROM acceptances WHERE mission_id=?", mission_id),
-                        _count(store, "SELECT COUNT(*) FROM assurance_use_certificates WHERE mission_id=? "
-                                      "AND consumer_kind='ACCEPTANCE'", mission_id),
-                        _count(store, "SELECT COUNT(*) FROM operation_acceptance_scopes WHERE mission_id=?", mission_id),
-                        len(case.events("AcceptanceCommitted")))
+                return (
+                    _count(
+                        store, "SELECT COUNT(*) FROM acceptances WHERE mission_id=?", mission_id
+                    ),
+                    _count(
+                        store,
+                        "SELECT COUNT(*) FROM assurance_use_certificates WHERE mission_id=? "
+                        "AND consumer_kind='ACCEPTANCE'",
+                        mission_id,
+                    ),
+                    _count(
+                        store,
+                        "SELECT COUNT(*) FROM operation_acceptance_scopes WHERE mission_id=?",
+                        mission_id,
+                    ),
+                    len(case.events("AcceptanceCommitted")),
+                )
 
             if fault == "certificate":
                 # 只断验收那一张（ACCEPT）许可证的写入：推后第 2 批 A03 起，审阅请求发出前先写 DISCLOSE
                 # 时点证书；不限用途的话，故障落在披露上、到不了验收这一笔（披露写失败按一轮故障原地重试）
-                connection.execute("CREATE TRIGGER cut_c01 BEFORE INSERT ON assurance_use_certificates "
-                                   "WHEN NEW.purpose='ACCEPT' "
-                                   "BEGIN SELECT RAISE(ABORT,'disk write failed'); END;")
+                connection.execute(
+                    "CREATE TRIGGER cut_c01 BEFORE INSERT ON assurance_use_certificates "
+                    "WHEN NEW.purpose='ACCEPT' "
+                    "BEGIN SELECT RAISE(ABORT,'disk write failed'); END;"
+                )
                 expected = sqlite3.IntegrityError
             elif fault == "event":
-                connection.execute("CREATE TRIGGER cut_c01 BEFORE INSERT ON events WHEN NEW.type='AcceptanceCommitted' "
-                                   "BEGIN SELECT RAISE(ABORT,'disk write failed'); END;")
+                connection.execute(
+                    "CREATE TRIGGER cut_c01 BEFORE INSERT ON events WHEN NEW.type='AcceptanceCommitted' "
+                    "BEGIN SELECT RAISE(ABORT,'disk write failed'); END;"
+                )
                 expected = sqlite3.IntegrityError
             else:
                 store.arm("after_accept_before_supersede")
@@ -127,14 +148,33 @@ def test_two_connection_concurrency(tmp_path):
             with second.read_view() as connection:
                 epochs = read_epochs_locked(connection, assured.id)
             cert = UseCertificate(
-                mission_id=assured.id, consumer_kind="result", consumer_id="result-c02", scope_id="scope-c02",
-                principal_id=PRINCIPAL.principal_id, purpose="ACCEPT", truth="TRUE", freshness="CURRENT",
-                availability="READABLE", decision="USABLE", coverage="COMPLETE", policy_ref=Pin("policy-1", 1, HASH),
-                read_set=(ReadItem("OBJECT", "o", HASH), ReadItem("QUERY_SET", "q", HASH), ReadItem("ACCESS", "a", HASH),
-                          ReadItem("POLICY", "p", HASH)),
-                clean_support_refs=(AssuranceRef("review", Pin("rec", 1, HASH)),), issued_at_ms=NOW, not_after_ms=None,
-                reasons=("fixture",), mission_epoch=epochs.mission, environment_epoch=epochs.environment,
-                clock_generation=epochs.clock_generation, root_incarnation_id="root-c02")
+                mission_id=assured.id,
+                consumer_kind="result",
+                consumer_id="result-c02",
+                scope_id="scope-c02",
+                principal_id=PRINCIPAL.principal_id,
+                purpose="ACCEPT",
+                truth="TRUE",
+                freshness="CURRENT",
+                availability="READABLE",
+                decision="USABLE",
+                coverage="COMPLETE",
+                policy_ref=Pin("policy-1", 1, HASH),
+                read_set=(
+                    ReadItem("OBJECT", "o", HASH),
+                    ReadItem("QUERY_SET", "q", HASH),
+                    ReadItem("ACCESS", "a", HASH),
+                    ReadItem("POLICY", "p", HASH),
+                ),
+                clean_support_refs=(AssuranceRef("review", Pin("rec", 1, HASH)),),
+                issued_at_ms=NOW,
+                not_after_ms=None,
+                reasons=("fixture",),
+                mission_epoch=epochs.mission,
+                environment_epoch=epochs.environment,
+                clock_generation=epochs.clock_generation,
+                root_incarnation_id="root-c02",
+            )
             other_body = UseCertificate.from_json({**cert.to_json(), "consumer_id": "result-other"})
             # Same command id from two writers: one adoption, an identical replay is a
             # read, a different body under the same id is a conflict (never REPLACE).
@@ -143,38 +183,71 @@ def test_two_connection_concurrency(tmp_path):
             with pytest.raises(AssuranceError) as raised:
                 AssuranceStore(first).record_certificate("cert-c02", other_body)
             assert raised.value.code == "IMMUTABLE_IDENTITY_CONFLICT"
-            assert _count(first, "SELECT COUNT(*) FROM assurance_use_certificates WHERE mission_id=?", assured.id) == 1
+            assert (
+                _count(
+                    first,
+                    "SELECT COUNT(*) FROM assurance_use_certificates WHERE mission_id=?",
+                    assured.id,
+                )
+                == 1
+            )
             # Two consumers ingesting the same page: the cursor CAS admits one.
             product.control.comment(assured.id, "看一下进度")
             version = first.connection.execute(
                 "SELECT row_version FROM assurance_event_cursors WHERE mission_id=? AND consumer='REVIEW'",
-                (assured.id,)).fetchone()["row_version"]
+                (assured.id,),
+            ).fetchone()["row_version"]
             target = WorkTarget("review-c02", HASH)
             now = int(first.now * 1000)
-            AssuranceWorkStore(first).ingest(assured.id, "REVIEW", expected_version=version,
-                                             classify=lambda e, c: (target,), now_ms=now)
+            AssuranceWorkStore(first).ingest(
+                assured.id,
+                "REVIEW",
+                expected_version=version,
+                classify=lambda e, c: (target,),
+                now_ms=now,
+            )
             with pytest.raises(StoreConflict):
-                AssuranceWorkStore(second).ingest(assured.id, "REVIEW", expected_version=version,
-                                                  classify=lambda e, c: (target,), now_ms=now)
-            assert _count(second, "SELECT COUNT(*) FROM assurance_pending_work WHERE mission_id=? AND consumer='REVIEW'",
-                          assured.id) == 1
+                AssuranceWorkStore(second).ingest(
+                    assured.id,
+                    "REVIEW",
+                    expected_version=version,
+                    classify=lambda e, c: (target,),
+                    now_ms=now,
+                )
+            assert (
+                _count(
+                    second,
+                    "SELECT COUNT(*) FROM assurance_pending_work WHERE mission_id=? AND consumer='REVIEW'",
+                    assured.id,
+                )
+                == 1
+            )
             # A held write lock on one connection makes the other wait, then both writes land (no lost update).
             second.connection.execute("BEGIN IMMEDIATE")
-            second.connection.execute("INSERT INTO assurance_pending_work(mission_id,consumer,work_key,trigger_event_id,"
-                                      "target_epoch,target_fingerprint,state,row_version,tries,not_before_ms) "
-                                      "SELECT mission_id,'CLOSEOUT','lock-c02',trigger_event_id,target_epoch,"
-                                      "target_fingerprint,'PENDING',1,0,not_before_ms FROM assurance_pending_work "
-                                      "WHERE mission_id=? AND consumer='REVIEW'", (assured.id,))
+            second.connection.execute(
+                "INSERT INTO assurance_pending_work(mission_id,consumer,work_key,trigger_event_id,"
+                "target_epoch,target_fingerprint,state,row_version,tries,not_before_ms) "
+                "SELECT mission_id,'CLOSEOUT','lock-c02',trigger_event_id,target_epoch,"
+                "target_fingerprint,'PENDING',1,0,not_before_ms FROM assurance_pending_work "
+                "WHERE mission_id=? AND consumer='REVIEW'",
+                (assured.id,),
+            )
             outcome = {}
             validity_version = first.connection.execute(
                 "SELECT row_version FROM assurance_event_cursors WHERE mission_id=? AND consumer='VALIDITY'",
-                (assured.id,)).fetchone()["row_version"]
+                (assured.id,),
+            ).fetchone()["row_version"]
 
             def contended():
                 started = time.monotonic()
                 try:
-                    AssuranceWorkStore(first).ingest(assured.id, "VALIDITY", expected_version=validity_version,
-                                                     classify=lambda e, c: (target,), now_ms=now)
+                    AssuranceWorkStore(first).ingest(
+                        assured.id,
+                        "VALIDITY",
+                        expected_version=validity_version,
+                        classify=lambda e, c: (target,),
+                        now_ms=now,
+                    )
                     outcome["result"] = "ok"
                 except (StoreError, sqlite3.OperationalError) as error:
                     outcome["result"] = type(error).__name__
@@ -189,17 +262,29 @@ def test_two_connection_concurrency(tmp_path):
             assert outcome["result"] == "ok" and outcome["waited"] >= 0.25
             rows = second.connection.execute(
                 "SELECT consumer,work_key FROM assurance_pending_work WHERE mission_id=? AND work_key IN "
-                "('lock-c02','review-c02') ORDER BY consumer", (assured.id,)).fetchall()
-            assert [tuple(r) for r in rows] == [("CLOSEOUT", "lock-c02"), ("REVIEW", "review-c02"),
-                                               ("VALIDITY", "review-c02")]
+                "('lock-c02','review-c02') ORDER BY consumer",
+                (assured.id,),
+            ).fetchall()
+            assert [tuple(r) for r in rows] == [
+                ("CLOSEOUT", "lock-c02"),
+                ("REVIEW", "review-c02"),
+                ("VALIDITY", "review-c02"),
+            ]
             assert product.notices == []  # no side effect left the process
         finally:
             second.close()
 
     async def body():
-        async with product_world(tmp_path / "root", RoleScriptedProvider({}), auto=False) as product:
-            created = product.create({"goal": "assured c02", "success_criteria": ["file:NOTES.md"],
-                                      "idempotency_key": "assured-c02"})
+        async with product_world(
+            tmp_path / "root", RoleScriptedProvider({}), auto=False
+        ) as product:
+            created = product.create(
+                {
+                    "goal": "assured c02",
+                    "success_criteria": ["file:NOTES.md"],
+                    "idempotency_key": "assured-c02",
+                }
+            )
             await checks(product, product.store.get_mission(created["mission_id"]))
 
     asyncio.run(body())
@@ -218,20 +303,36 @@ def test_review_cold_resume():
     assert cold["ordinals_after"] == [1] and cold["official_records"]["TASK_CONTENT"] == 1
     rollback = report["restart_rollback"]
     assert rollback["startup"]["clock_state"] == "ROLLBACK"
-    assert rollback["startup"]["clock_generation"] == rollback["first_environment"]["clock_generation"] + 1
+    assert (
+        rollback["startup"]["clock_generation"]
+        == rollback["first_environment"]["clock_generation"] + 1
+    )
     assert rollback["discontinuity"]["clock_state"] == "ROLLBACK"
-    assert rollback["work_during_rollback"] and all(w["state"] != "RUNNING" for w in rollback["work_during_rollback"])
+    assert rollback["work_during_rollback"] and all(
+        w["state"] != "RUNNING" for w in rollback["work_during_rollback"]
+    )
     assert rollback["environment_after"]["clock_state"] == "STABLE" and rollback["sent"] == 1
     expiry = report["eventless_expiry"]
-    assert expiry["startup_emitted"] >= 1 and expiry["expired_observations"] >= 1 and expiry["second_restart_emitted"] == 0
+    assert (
+        expiry["startup_emitted"] >= 1
+        and expiry["expired_observations"] >= 1
+        and expiry["second_restart_emitted"] == 0
+    )
 
 
 # --------------------------------------------------------------------------- C04
 def test_event_cursor_atomicity(tmp_path):
     async def body():
-        async with product_world(tmp_path / "root", RoleScriptedProvider({}), auto=False) as product:
-            created = product.create({"goal": "assured c04", "success_criteria": ["file:NOTES.md"],
-                                      "idempotency_key": "assured-c04"})
+        async with product_world(
+            tmp_path / "root", RoleScriptedProvider({}), auto=False
+        ) as product:
+            created = product.create(
+                {
+                    "goal": "assured c04",
+                    "success_criteria": ["file:NOTES.md"],
+                    "idempotency_key": "assured-c04",
+                }
+            )
             assured = product.store.get_mission(created["mission_id"])
             store = product.store
             work = AssuranceWorkStore(store)
@@ -239,7 +340,8 @@ def test_event_cursor_atomicity(tmp_path):
             product.control.comment(assured.id, "第二条留言")
             cursor = store.connection.execute(
                 "SELECT last_event_seq,row_version FROM assurance_event_cursors WHERE mission_id=? AND consumer='CLOSEOUT'",
-                (assured.id,)).fetchone()
+                (assured.id,),
+            ).fetchone()
             seen = []
 
             def classify(event, consumer):
@@ -249,19 +351,37 @@ def test_event_cursor_atomicity(tmp_path):
                 return (WorkTarget("closeout-c04", HASH),)
 
             with pytest.raises(OSError):
-                work.ingest(assured.id, "CLOSEOUT", expected_version=cursor["row_version"], classify=classify,
-                            now_ms=int(store.now * 1000))
+                work.ingest(
+                    assured.id,
+                    "CLOSEOUT",
+                    expected_version=cursor["row_version"],
+                    classify=classify,
+                    now_ms=int(store.now * 1000),
+                )
             after = store.connection.execute(
                 "SELECT last_event_seq,row_version FROM assurance_event_cursors WHERE mission_id=? AND consumer='CLOSEOUT'",
-                (assured.id,)).fetchone()
+                (assured.id,),
+            ).fetchone()
             assert tuple(after) == tuple(cursor)  # nothing ACKed before the work was durable
-            assert _count(store, "SELECT COUNT(*) FROM assurance_pending_work WHERE mission_id=? AND consumer='CLOSEOUT'",
-                          assured.id) == 0
+            assert (
+                _count(
+                    store,
+                    "SELECT COUNT(*) FROM assurance_pending_work WHERE mission_id=? AND consumer='CLOSEOUT'",
+                    assured.id,
+                )
+                == 0
+            )
             # A lost cursor is rebuilt explicitly at startup, never guessed at ingest.
             with pytest.raises(AssuranceError) as raised:
-                AssuranceWorkStore(store).ingest("mission-none", "CLOSEOUT", expected_version=1,
-                                                 classify=lambda e, c: (), now_ms=int(store.now * 1000))
+                AssuranceWorkStore(store).ingest(
+                    "mission-none",
+                    "CLOSEOUT",
+                    expected_version=1,
+                    classify=lambda e, c: (),
+                    now_ms=int(store.now * 1000),
+                )
             assert raised.value.code == "CURSOR_UNINITIALIZED"
+
     asyncio.run(body())
     # 产品部署上的四个消费者：启动安装、一个任务跑完、证书到期、通知游标丢了重启后重建且不重发。
     report = _seam("four-consumer-seam.py")
@@ -271,8 +391,14 @@ def test_event_cursor_atomicity(tmp_path):
     assert set(install["cursor_seq"]) == {"REVIEW", "VALIDITY", "CLOSEOUT", "NOTIFY"}
     assert report["run"]["closeout_row"] == "FINALIZED" and report["run"]["notices"] == 1
     assert report["run"]["method_plan_official"] >= 1 and report["run"]["method_plan_scope"] is None
-    assert report["expiry"]["due_events"] >= 1 and report["expiry"]["expired_observations"] >= report["expiry"]["due_events"]
-    assert report["restart"]["cursor_rebuild"]["missions"] == 1 and len(report["restart"]["cursor_rebuild"]["cursors_rebuilt"]) == 1
+    assert (
+        report["expiry"]["due_events"] >= 1
+        and report["expiry"]["expired_observations"] >= report["expiry"]["due_events"]
+    )
+    assert (
+        report["restart"]["cursor_rebuild"]["missions"] == 1
+        and len(report["restart"]["cursor_rebuild"]["cursors_rebuilt"]) == 1
+    )
     assert report["restart"]["notices_after_restart"] == 0
 
 
@@ -339,38 +465,71 @@ def test_a_budget_blocked_review_does_not_hold_back_later_events(tmp_path, monke
     settle, tick = AssuranceTick._settle_failure, AssuranceTick.tick
     # 2026-10-11：账户链上没有活着的预留时，等不到的额度不再等（这一步按额度用完结束）。本用例
     # 考的是"卡在预算上的审阅不挡后续事件入箱"，与为什么还可能等到无关——这里让它仍可能等到。
-    monkeypatch.setattr(AssuranceTick, "_budget_can_still_change", lambda self, account_id, mission_id: True, raising=False)
+    monkeypatch.setattr(
+        AssuranceTick,
+        "_budget_can_still_change",
+        lambda self, account_id, mission_id: True,
+        raising=False,
+    )
 
     def snapshot(store, mission_id):
-        cursors = {row[0]: row[1] for row in store.connection.execute(
-            "SELECT consumer,last_event_seq FROM assurance_event_cursors WHERE mission_id=?", (mission_id,))}
-        rows = {(row[0], row[1]): tuple(row[2:]) for row in store.connection.execute(
-            "SELECT consumer,work_key,state,wait_reason,target_epoch FROM assurance_pending_work WHERE mission_id=?",
-            (mission_id,))}
+        cursors = {
+            row[0]: row[1]
+            for row in store.connection.execute(
+                "SELECT consumer,last_event_seq FROM assurance_event_cursors WHERE mission_id=?",
+                (mission_id,),
+            )
+        }
+        rows = {
+            (row[0], row[1]): tuple(row[2:])
+            for row in store.connection.execute(
+                "SELECT consumer,work_key,state,wait_reason,target_epoch FROM assurance_pending_work WHERE mission_id=?",
+                (mission_id,),
+            )
+        }
         return cursors, rows
 
     def watched_settle(self, claim, error):  # type: ignore[no-untyped-def]
         # 只看不改：卡在预算上的那次审阅被放回去的那一刻，箱子里已经有什么
         if claim.consumer == "REVIEW" and isinstance(error, BudgetError):
             state["kinds"].add(type(error).__name__)
-        if claim.consumer == "REVIEW" and isinstance(error, BudgetError) and state["fired"] is not None:
+        if (
+            claim.consumer == "REVIEW"
+            and isinstance(error, BudgetError)
+            and state["fired"] is not None
+        ):
             state["settled"].append(snapshot(self.store, claim.mission_id))
         return settle(self, claim, error)
 
     async def timed_tick(self):  # type: ignore[no-untyped-def]
         # 外界的时机：卡住的审阅又到点了，这一轮开始之前用户换了资料版本（走产品的换资料入口）
         armed = state["armed"]
-        if armed is not None and state["fired"] is None and int(self.store.now * 1000) > armed["not_before_ms"]:
+        if (
+            armed is not None
+            and state["fired"] is None
+            and int(self.store.now * 1000) > armed["not_before_ms"]
+        ):
             store, mission_id = self.store, armed["mission_id"]
             before = max(e.seq for e in store.list_events(mission_id))
-            proposal = armed["control"].supersede_source({
-                "mission_id": mission_id, "path": path, "content": "# 规格\n二\n", "kind": "markdown",
-                "idempotency_key": "sup-f09", "expected_version_hash": armed["version_hash"]})
+            proposal = armed["control"].supersede_source(
+                {
+                    "mission_id": mission_id,
+                    "path": path,
+                    "content": "# 规格\n二\n",
+                    "kind": "markdown",
+                    "idempotency_key": "sup-f09",
+                    "expected_version_hash": armed["version_hash"],
+                }
+            )
             armed["control"].decide(proposal["request_id"], "approve", nonce="approve-f09")
             events = store.list_events(mission_id)
-            state["fired"] = {"before": before, "head": max(e.seq for e in events),
-                              "changes": [e.seq for e in events
-                                          if e.type == "AssuranceEvidenceChanged" and e.seq > before]}
+            state["fired"] = {
+                "before": before,
+                "head": max(e.seq for e in events),
+                "changes": [
+                    e.seq for e in events if e.type == "AssuranceEvidenceChanged" and e.seq > before
+                ],
+            }
         if state["fired"] is not None:
             state["ticks"] += 1
         return await tick(self)
@@ -384,22 +543,40 @@ def test_a_budget_blocked_review_does_not_hold_back_later_events(tmp_path, monke
         monkeypatch.setattr(event_handler, "WAIT_BACKOFF_MAX", 0.05)
         async with product_world(tmp_path / "root", script.provider) as product:
             store = product.store
-            mission_id = product.create({"goal": "按规格写一份 NOTES.md", "success_criteria": ["file:NOTES.md"],
-                                         "idempotency_key": "assured-f09",
-                                         "budget": _UnknownChargeReviewer.TIGHT_BUDGET})["mission_id"]
-            first = product.control.register_source({"mission_id": mission_id, "path": path, "content": "# 规格\n一\n",
-                                                     "kind": "markdown", "idempotency_key": "reg-f09"})
+            mission_id = product.create(
+                {
+                    "goal": "按规格写一份 NOTES.md",
+                    "success_criteria": ["file:NOTES.md"],
+                    "idempotency_key": "assured-f09",
+                    "budget": _UnknownChargeReviewer.TIGHT_BUDGET,
+                }
+            )["mission_id"]
+            first = product.control.register_source(
+                {
+                    "mission_id": mission_id,
+                    "path": path,
+                    "content": "# 规格\n一\n",
+                    "kind": "markdown",
+                    "idempotency_key": "reg-f09",
+                }
+            )
             blocked = None
             for _ in range(40):
                 await product.drain(timeout=3)
                 blocked = store.connection.execute(
                     "SELECT work_key,not_before_ms FROM assurance_pending_work WHERE mission_id=? AND consumer='REVIEW'"
-                    " AND state='WAITING' AND wait_reason='BUDGET_WAIT'", (mission_id,)).fetchone()
+                    " AND state='WAITING' AND wait_reason='BUDGET_WAIT'",
+                    (mission_id,),
+                ).fetchone()
                 if blocked is not None:
                     break
             assert blocked is not None, snapshot(store, mission_id)
-            state["armed"] = {"mission_id": mission_id, "control": product.control,
-                              "version_hash": first["version_hash"], "not_before_ms": blocked["not_before_ms"]}
+            state["armed"] = {
+                "mission_id": mission_id,
+                "control": product.control,
+                "version_hash": first["version_hash"],
+                "not_before_ms": blocked["not_before_ms"],
+            }
             # 产品照常转（审阅那边的等待也在一轮轮轮询），直到换资料之后又过了三轮
             async with asyncio.timeout(60):
                 while state["ticks"] < 3 or not state["settled"]:
@@ -417,17 +594,31 @@ def test_a_budget_blocked_review_does_not_hold_back_later_events(tmp_path, monke
             # 之后几轮：仍卡在预算上；同样这几项工作，没有为自己的状态事件生出新工作，目标不再变
             cursors_now, rows_now = snapshot(store, mission_id)
             assert set(rows_now) == set(rows), (rows, rows_now)
-            assert rows_now[("REVIEW", blocked["work_key"])] == ("WAITING", "BUDGET_WAIT", review[2]), rows_now
+            assert rows_now[("REVIEW", blocked["work_key"])] == (
+                "WAITING",
+                "BUDGET_WAIT",
+                review[2],
+            ), rows_now
             assert all(value[2] <= head for value in rows_now.values()), rows_now
             assert all(seq >= head for seq in cursors_now.values())
             # 造局本身：卡住是因为预算真的装不下第二次调用，第一次调用的预留仍按上限挂着
             assert state["kinds"] == {"BudgetExhausted"}, state["kinds"]
-            [first] = [row[0] for row in store.connection.execute(
-                "SELECT subject_id FROM budget_reservations WHERE mission_id=? AND state='RESERVED'"
-                " AND subject_id LIKE '%:assurance:assurance-content:%:1'", (mission_id,))]
-            assert store.connection.execute(
-                "SELECT count(*) FROM assurance_review_invocations WHERE mission_id=?"
-                " AND review_key LIKE 'assurance-content:%'", (mission_id,)).fetchone()[0] == 1, first
+            [first] = [
+                row[0]
+                for row in store.connection.execute(
+                    "SELECT subject_id FROM budget_reservations WHERE mission_id=? AND state='RESERVED'"
+                    " AND subject_id LIKE '%:assurance:assurance-content:%:1'",
+                    (mission_id,),
+                )
+            ]
+            assert (
+                store.connection.execute(
+                    "SELECT count(*) FROM assurance_review_invocations WHERE mission_id=?"
+                    " AND review_key LIKE 'assurance-content:%'",
+                    (mission_id,),
+                ).fetchone()[0]
+                == 1
+            ), first
 
     asyncio.run(body())
 
@@ -440,7 +631,9 @@ def test_closeout_and_notification():
     assert report["root_resolution"]["witness_is_mission_final_use"] is True
     states = report["closeout"]["states"]
     assert "ROOT_RESOLUTION_MISSING" in report["closeout"]["not_ready_reasons"]
-    assert states[-2:] == ["READY", "FINALIZED"] and report["closeout"]["row"]["state"] == "FINALIZED"
+    assert (
+        states[-2:] == ["READY", "FINALIZED"] and report["closeout"]["row"]["state"] == "FINALIZED"
+    )
     final = report["final_writer"]
     assert final["mission_status"] == "COMPLETED" and final["sent"] == 1
     assert [r["final_event_type"] for r in final["notification_requests"]] == ["MissionCompleted"]
@@ -460,24 +653,54 @@ def _legacy_library(path, versions):
     with store.transaction() as tx:
         for migration in schema.MIGRATIONS[:versions]:
             store._apply_migration(tx, migration)
-    mission = Mission("mission-legacy", "legacy goal", ("c",), (), (), "low", Budget(), "tenant-legacy",
-                      MissionStatus.CREATED, 1.0, 1, "legacy-key")
+    mission = Mission(
+        "mission-legacy",
+        "legacy goal",
+        ("c",),
+        (),
+        (),
+        "low",
+        Budget(),
+        "tenant-legacy",
+        MissionStatus.CREATED,
+        1.0,
+        1,
+        "legacy-key",
+    )
     store.insert_mission(mission, spec_hash="b" * 64)
     for index in range(3):
-        store.append_event(Event(f"event-legacy-{index}", "MissionCreated" if index == 0 else "MissionNote",
-                                 "trace-legacy", mission.id, None, None, "system", "legacy",
-                                 {"index": index}, f"legacy-{index}", 1.0 + index))
+        store.append_event(
+            Event(
+                f"event-legacy-{index}",
+                "MissionCreated" if index == 0 else "MissionNote",
+                "trace-legacy",
+                mission.id,
+                None,
+                None,
+                "system",
+                "legacy",
+                {"index": index},
+                f"legacy-{index}",
+                1.0 + index,
+            )
+        )
     return store
 
 
 def _dump(connection, tables):
-    return {table: [tuple(row) for row in connection.execute(f"SELECT * FROM {table} ORDER BY 1")]
-            for table in tables}
+    return {
+        table: [tuple(row) for row in connection.execute(f"SELECT * FROM {table} ORDER BY 1")]
+        for table in tables
+    }
 
 
 def _ddl_hash(connection):
-    rows = connection.execute("SELECT type,name,sql FROM sqlite_master WHERE sql IS NOT NULL ORDER BY type,name").fetchall()
-    return hashlib.sha256(json.dumps([list(row) for row in rows], sort_keys=True).encode()).hexdigest()
+    rows = connection.execute(
+        "SELECT type,name,sql FROM sqlite_master WHERE sql IS NOT NULL ORDER BY type,name"
+    ).fetchall()
+    return hashlib.sha256(
+        json.dumps([list(row) for row in rows], sort_keys=True).encode()
+    ).hexdigest()
 
 
 def test_real_migration_and_legacy(tmp_path):
@@ -489,17 +712,27 @@ def test_real_migration_and_legacy(tmp_path):
     legacy = _legacy_library(str(legacy_path), assurance.version - 1)
     legacy_tables = ("missions", "events", "orch_schema_migrations")
     before = _dump(legacy.connection, legacy_tables)
-    ddl_before = {row["name"]: row["sql"] for row in legacy.connection.execute(
-        "SELECT name,sql FROM sqlite_master WHERE type='table' AND sql IS NOT NULL")}
+    ddl_before = {
+        row["name"]: row["sql"]
+        for row in legacy.connection.execute(
+            "SELECT name,sql FROM sqlite_master WHERE type='table' AND sql IS NOT NULL"
+        )
+    }
     assert not legacy.has_table("assurance_use_certificates")
     legacy.close()
     # Upgrade: the real migration chain applies the Assurance migration on top, with a backup.
     upgraded = Store.open(legacy_path)
-    assert upgraded.has_table("assurance_use_certificates") and upgraded.has_table("assurance_environment_state")
+    assert upgraded.has_table("assurance_use_certificates") and upgraded.has_table(
+        "assurance_environment_state"
+    )
     after = _dump(upgraded.connection, ("missions", "events"))
     assert after["missions"] == before["missions"] and after["events"] == before["events"]
-    migrations = [tuple(row) for row in upgraded.connection.execute(
-        "SELECT version,name,checksum FROM orch_schema_migrations ORDER BY version")]
+    migrations = [
+        tuple(row)
+        for row in upgraded.connection.execute(
+            "SELECT version,name,checksum FROM orch_schema_migrations ORDER BY version"
+        )
+    ]
     applied = len(before["orch_schema_migrations"])
     assert migrations[:applied] == [row[:3] for row in before["orch_schema_migrations"]]
     assert migrations[applied:] == [(m.version, m.name, m.checksum) for m in (assurance, *later)]
@@ -508,9 +741,19 @@ def test_real_migration_and_legacy(tmp_path):
     # every other legacy table keeps its DDL.
     # Migrations 35 / 36 (2026-10-03) drop the TaskGraph waiting table and the deferred-repair
     # continuation table with the mechanisms they served.
-    dropped = {"selection_candidates", "selection_rounds", "search_bindings", "fragment_validations",
-               "conflicts", "graph_changes", "mission_system_tail_pools", "mission_system_tail_tasks",
-               "criterion_assessments", "taskgraph_requirements", "planning_repair_continuations"}
+    dropped = {
+        "selection_candidates",
+        "selection_rounds",
+        "search_bindings",
+        "fragment_validations",
+        "conflicts",
+        "graph_changes",
+        "mission_system_tail_pools",
+        "mission_system_tail_tasks",
+        "criterion_assessments",
+        "taskgraph_requirements",
+        "planning_repair_continuations",
+    }
     # Later migrations deliberately reshape or drop more legacy tables: 38/39 (2026-10-03)
     # drop the money and duty-spend columns and add one, 39～41 drop further mechanism tables,
     # 42～45 (2026-10-04/06) rebuild four tables with a new column / unique key (开发期不做旧数据
@@ -518,12 +761,20 @@ def test_real_migration_and_legacy(tmp_path):
     # migration names in ``DROP TABLE x``, ``ALTER TABLE x ADD/DROP/RENAME COLUMN`` or
     # ``RENAME TO x`` — and each such table must end up exactly as in a fresh library
     # (gone, or the fresh DDL).  夜间 N1 2026-10-07：此前逐字比对把 38 起的有意改表当成意外。
-    touched = {name for m in later for pair in re.findall(
-        r"ALTER TABLE (\w+) (?:(?:ADD|DROP|RENAME) COLUMN|RENAME TO (\w+))|DROP TABLE (?:IF EXISTS )?(\w+)",
-        m.ddl) for name in (pair[1] or pair[0] or pair[2],)}
+    touched = {
+        name
+        for m in later
+        for pair in re.findall(
+            r"ALTER TABLE (\w+) (?:(?:ADD|DROP|RENAME) COLUMN|RENAME TO (\w+))|DROP TABLE (?:IF EXISTS )?(\w+)",
+            m.ddl,
+        )
+        for name in (pair[1] or pair[0] or pair[2],)
+    }
     touched_state = {}
     for name, ddl in ddl_before.items():
-        current = upgraded.connection.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone()
+        current = upgraded.connection.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (name,)
+        ).fetchone()
         if name in dropped:
             assert current is None, name
             continue
@@ -547,25 +798,33 @@ def test_real_migration_and_legacy(tmp_path):
     fresh = Store.open(tmp_path / "fresh.db")
     assert _ddl_hash(fresh.connection) == ddl_after
     for name, ddl in touched_state.items():  # a reshaped legacy table is exactly the fresh one
-        row = fresh.connection.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name=?",
-                                       (name,)).fetchone()
+        row = fresh.connection.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (name,)
+        ).fetchone()
         assert (None if row is None else row[0]) == ddl, name
     # Triggers: an inventoried source table refuses REPLACE-style rewrites of Assurance events.
     from agent_orchestrator.assurance.event_kinds import EVENT_REF_KINDS
+
     source_kind = sorted(EVENT_REF_KINDS.values())[0]
     with pytest.raises(sqlite3.IntegrityError):
-        reopened.connection.execute("UPDATE events SET type=? WHERE event_id='event-legacy-1'", (source_kind,))
+        reopened.connection.execute(
+            "UPDATE events SET type=? WHERE event_id='event-legacy-1'", (source_kind,)
+        )
     # FK: Assurance rows cannot reference a Mission that does not exist.
     with pytest.raises(sqlite3.IntegrityError):
         reopened.connection.execute(
             "INSERT INTO assurance_use_certificates(certificate_id,mission_id,consumer_kind,consumer_id,purpose,scope_id,"
             "read_set_hash,certificate_hash,certificate_json,issued_at_ms,not_after_ms) VALUES('c','mission-none','r','r',"
-            "'ACCEPT','s',?,?,'{}',1,NULL)", (HASH, HASH))
+            "'ACCEPT','s',?,?,'{}',1,NULL)",
+            (HASH, HASH),
+        )
     reopened.close()
     fresh.close()
     # Wrong checksum: the library is refused, not silently re-migrated.
     tampered = sqlite3.connect(legacy_path)
-    tampered.execute("UPDATE orch_schema_migrations SET checksum='0' WHERE version=?", (assurance.version,))
+    tampered.execute(
+        "UPDATE orch_schema_migrations SET checksum='0' WHERE version=?", (assurance.version,)
+    )
     tampered.commit()
     tampered.close()
     with pytest.raises(SchemaIncompatible):
@@ -573,14 +832,29 @@ def test_real_migration_and_legacy(tmp_path):
     # A failing migration rolls the whole upgrade back: the legacy library stays at its version.
     second = tmp_path / "legacy-2.db"
     _legacy_library(str(second), assurance.version - 1).close()
-    broken = schema.Migration(assurance.version, assurance.name,
-                              assurance.ddl + "\nCREATE TABLE broken(x INTEGER REFERENCES nope(y));\nINSERT INTO broken VALUES(1);")
-    with patch.object(schema, "MIGRATIONS", (*schema.MIGRATIONS[:assurance.version - 1], broken, *later)):
+    broken = schema.Migration(
+        assurance.version,
+        assurance.name,
+        assurance.ddl
+        + "\nCREATE TABLE broken(x INTEGER REFERENCES nope(y));\nINSERT INTO broken VALUES(1);",
+    )
+    with patch.object(
+        schema, "MIGRATIONS", (*schema.MIGRATIONS[: assurance.version - 1], broken, *later)
+    ):
         with pytest.raises(sqlite3.Error):
             Store.open(second)
-    rows = sqlite3.connect(second).execute("SELECT MAX(version) FROM orch_schema_migrations").fetchone()[0]
+    rows = (
+        sqlite3.connect(second)
+        .execute("SELECT MAX(version) FROM orch_schema_migrations")
+        .fetchone()[0]
+    )
     assert rows == assurance.version - 1
-    tables = {row[0] for row in sqlite3.connect(second).execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    tables = {
+        row[0]
+        for row in sqlite3.connect(second).execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        )
+    }
     assert "assurance_use_certificates" not in tables and "broken" not in tables
     again = Store.open(second)
     assert again.has_table("assurance_use_certificates")
@@ -593,7 +867,8 @@ def test_real_migration_and_legacy(tmp_path):
         f"c=sqlite3.connect({str(third)!r},isolation_level=None)\n"
         "c.execute('BEGIN IMMEDIATE')\n"
         "for i in range(2000): c.execute(\"INSERT INTO events(event_id,idempotency_key,type,trace_id,mission_id,task_id,attempt_id,actor_type,actor_id,payload_json,created_at,schema_version) VALUES(?,?,'MissionNote','t','mission-legacy',NULL,NULL,'system','kill','{}',1.0,1)\",(f'kill-{i}',f'kill-{i}'))\n"
-        "sys.stdout.write('ready\\n'); sys.stdout.flush(); time.sleep(30)\n")
+        "sys.stdout.write('ready\\n'); sys.stdout.flush(); time.sleep(30)\n"
+    )
     child = subprocess.Popen([sys.executable, "-c", script], stdout=subprocess.PIPE, text=True)
     assert child.stdout.readline().strip() == "ready"
     os.kill(child.pid, signal.SIGKILL)

@@ -38,10 +38,7 @@ async def main() -> int:
                 dt = time.perf_counter() - t0
                 text = msg.get("payload", {}).get("text", "")
                 out.write_text(
-                    f"Prompt: {prompt}\n"
-                    f"RTT:    {dt:.2f}s\n"
-                    f"Chars:  {len(text)}\n"
-                    f"Text:\n{text}\n",
+                    f"Prompt: {prompt}\nRTT:    {dt:.2f}s\nChars:  {len(text)}\nText:\n{text}\n",
                     encoding="utf-8",
                 )
                 print(f"[rt] chat_response received in {dt:.2f}s, {len(text)} chars")

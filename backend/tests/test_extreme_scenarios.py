@@ -192,10 +192,7 @@ class TestResourceManagement:
         from deskpet.tools.os_tools.process_tools import process_list
 
         # 并发调用 100 个工具
-        tasks = [
-            process_list(args={"query": f"test{i}", "max_entries": 5})
-            for i in range(100)
-        ]
+        tasks = [process_list(args={"query": f"test{i}", "max_entries": 5}) for i in range(100)]
 
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -253,9 +250,9 @@ class TestResourceManagement:
 
         # 测试各种特殊值
         special_values = [
-            float('inf'),
-            float('-inf'),
-            float('nan'),
+            float("inf"),
+            float("-inf"),
+            float("nan"),
             None,
             "",
             [],
@@ -293,16 +290,19 @@ class TestExceptionTypes:
     """异常类型全覆盖"""
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("exception_type,exception_msg", [
-        (ConnectionError, "Connection lost"),
-        (TimeoutError, "Operation timed out"),
-        (OSError, "OS error occurred"),
-        (TypeError, "Type mismatch"),
-        (AttributeError, "Attribute not found"),
-        (KeyError, "Key not found"),
-        (ValueError, "Invalid value"),
-        (RuntimeError, "Runtime error"),
-    ])
+    @pytest.mark.parametrize(
+        "exception_type,exception_msg",
+        [
+            (ConnectionError, "Connection lost"),
+            (TimeoutError, "Operation timed out"),
+            (OSError, "OS error occurred"),
+            (TypeError, "Type mismatch"),
+            (AttributeError, "Attribute not found"),
+            (KeyError, "Key not found"),
+            (ValueError, "Invalid value"),
+            (RuntimeError, "Runtime error"),
+        ],
+    )
     async def test_exception_type_handling(self, exception_type, exception_msg):
         """测试各种异常类型的处理"""
         from deskpet.agent.run_presenter import (
@@ -325,7 +325,9 @@ class TestExceptionTypes:
 
         # 应该捕获异常，不向外传播
         event = ErrorEvent(reason="test", detail="Test error")
-        with patch('deskpet.agent.run_presenter._send_both', side_effect=exception_type(exception_msg)):
+        with patch(
+            "deskpet.agent.run_presenter._send_both", side_effect=exception_type(exception_msg)
+        ):
             await _present_error(event, context, state)
 
         # 验证尝试了后备发送
@@ -381,12 +383,15 @@ class TestEdgeCases:
     """边缘案例探索"""
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("timeout_value", [
-        0,      # 零超时
-        0.001,  # 极短超时
-        999999, # 超大超时
-        -1,     # 负数（应该被拒绝或转换）
-    ])
+    @pytest.mark.parametrize(
+        "timeout_value",
+        [
+            0,  # 零超时
+            0.001,  # 极短超时
+            999999,  # 超大超时
+            -1,  # 负数（应该被拒绝或转换）
+        ],
+    )
     async def test_extreme_timeout_values(self, timeout_value):
         """测试极端超时值"""
         from deskpet.tools.os_tools.process_tools import process_list
@@ -397,21 +402,19 @@ class TestEdgeCases:
                 # 负数超时应该被拒绝或转换为正数
                 with pytest.raises((ValueError, asyncio.TimeoutError)):
                     await asyncio.wait_for(
-                        process_list(args={"max_entries": 5}),
-                        timeout=timeout_value
+                        process_list(args={"max_entries": 5}), timeout=timeout_value
                     )
             elif timeout_value == 0:
                 # 零超时可能立即超时
                 with pytest.raises(asyncio.TimeoutError):
                     await asyncio.wait_for(
-                        process_list(args={"max_entries": 5}),
-                        timeout=timeout_value
+                        process_list(args={"max_entries": 5}), timeout=timeout_value
                     )
             else:
                 # 正常超时
                 result = await asyncio.wait_for(
                     process_list(args={"max_entries": 5}),
-                    timeout=min(timeout_value, 5)  # 限制最大为5秒
+                    timeout=min(timeout_value, 5),  # 限制最大为5秒
                 )
                 assert isinstance(result, str)
         except TimeoutError:
@@ -549,7 +552,9 @@ class TestRealWorldBugSimulation:
         state = MagicMock(spec=PresentationState)
 
         # 模拟 _send_both 也失败
-        with patch('deskpet.agent.run_presenter._send_both', side_effect=Exception("Send both failed")):
+        with patch(
+            "deskpet.agent.run_presenter._send_both", side_effect=Exception("Send both failed")
+        ):
             event = FinalEvent(content="Tool completed successfully")
 
             # 不应该抛出异常，应该静默失败（健康检查会恢复）
@@ -631,7 +636,7 @@ class TestRealWorldBugSimulation:
         context.websocket = ws1
 
         event1 = FinalEvent(content="Before reconnect")
-        with patch('deskpet.agent.run_presenter._send_both', side_effect=Exception("Disconnected")):
+        with patch("deskpet.agent.run_presenter._send_both", side_effect=Exception("Disconnected")):
             await _present_final(event1, context, state)
 
         # 模拟重连：新的 websocket
@@ -655,6 +660,7 @@ class TestRealWorldBugSimulation:
             RunPresentationContext,
             _present_final,
         )
+
         gc.collect()
 
         contexts = []

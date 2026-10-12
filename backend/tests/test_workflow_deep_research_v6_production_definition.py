@@ -84,7 +84,10 @@ class _Retrieval:
             "route_policy_hash": policy_ref[7:],
             "route_decision_ref": decision_ref,
             "route_id": decision.to_json()["route_id"],
-            "blob_refs": [policy_item, {"id": decision_blob.sha256, "sha256": decision_blob.sha256}],
+            "blob_refs": [
+                policy_item,
+                {"id": decision_blob.sha256, "sha256": decision_blob.sha256},
+            ],
         }
 
     async def load_pages(self, *, spec, identity, route_decision):
@@ -115,6 +118,7 @@ class _Semantic:
         for key, policy in policies.items():
             if key == "inference":
                 import hashlib
+
                 digest = hashlib.sha256(canonical_json(policy).encode("utf-8")).hexdigest()
                 self.refs[key] = f"sha256:{digest}"
                 continue
@@ -122,9 +126,7 @@ class _Semantic:
             self.refs[key] = ref
             self.items.append(item)
 
-    async def produce_candidate_slots(
-        self, *, spec, route_decision, page_slots, identity
-    ):
+    async def produce_candidate_slots(self, *, spec, route_decision, page_slots, identity):
         self.extract_calls += 1
         await self._ensure(identity)
         assert page_slots == []
@@ -155,9 +157,17 @@ class _Semantic:
 
 def test_v6_definition_is_exact_eleven_node_graph() -> None:
     expected = (
-        "compile_spec", "plan_route", "load_pages", "extract_candidate_bundles",
-        "admit_facts", "synthesize_inferences", "register_inferences",
-        "assess_answer", "render_claims", "integrity", "persist_manifest",
+        "compile_spec",
+        "plan_route",
+        "load_pages",
+        "extract_candidate_bundles",
+        "admit_facts",
+        "synthesize_inferences",
+        "register_inferences",
+        "assess_answer",
+        "render_claims",
+        "integrity",
+        "persist_manifest",
     )
     assert NODE_IDS == expected
     assert tuple(node.node_id for node in DEEP_RESEARCH_V6_DEFINITION.nodes) == expected
@@ -166,10 +176,15 @@ def test_v6_definition_is_exact_eleven_node_graph() -> None:
         ("persist_manifest", "__end__"),
     ]
     assert DEEP_RESEARCH_V6_DEFINITION.prompt_manifest["intent_types"] == [
-        "official_exact_fact", "comparison", "top_n", "policy", "open_research",
+        "official_exact_fact",
+        "comparison",
+        "top_n",
+        "policy",
+        "open_research",
     ]
     assert DEEP_RESEARCH_V6_DEFINITION.prompt_manifest["llm_roles"] == [
-        "evidence_candidate_extract", "evidence_inference_synthesize",
+        "evidence_candidate_extract",
+        "evidence_inference_synthesize",
         "evidence_structured_repair",
     ]
 
@@ -190,9 +205,7 @@ def test_admission_validator_preserves_frozen_first_failure_order() -> None:
     import hashlib
 
     body = "2024年末全国人口140828万人。".encode()
-    spec = compile_research_spec(
-        "What was China's year-end total population in 2024?"
-    )
+    spec = compile_research_spec("What was China's year-end total population in 2024?")
     requirement = spec.requirements[0]
     group_id = "wg-test"
     page_id = "page-test"
@@ -248,7 +261,10 @@ def test_admission_validator_preserves_frozen_first_failure_order() -> None:
     object.__setattr__(item, "candidate_id", "ecd_wrong")
     assert validate(item, requirement=None) == "candidate_id_mismatch"
     assert validate(candidate(), requirement=None) == "requirement_missing"
-    assert validate(candidate(), requirement={**requirement, "kind": "matrix"}) == "requirement_kind_mismatch"
+    assert (
+        validate(candidate(), requirement={**requirement, "kind": "matrix"})
+        == "requirement_kind_mismatch"
+    )
 
     item = candidate()
     object.__setattr__(item, "span_end_byte", len(body) + 1)
@@ -261,9 +277,10 @@ def test_admission_validator_preserves_frozen_first_failure_order() -> None:
     assert validate(item, source_tier="general") == "excerpt_hash_mismatch"
     required_source = copy.deepcopy(requirement)
     required_source["source_constraint"]["first_party"] = "required"
-    assert validate(
-        candidate(), requirement=required_source, source_tier="general"
-    ) == "source_policy_rejected"
+    assert (
+        validate(candidate(), requirement=required_source, source_tier="general")
+        == "source_policy_rejected"
+    )
 
     item = candidate()
     item.payload["item_or_cell_id"] = "not-null"
@@ -288,8 +305,12 @@ def test_admission_validator_preserves_frozen_first_failure_order() -> None:
     item.payload["definition"] = "wrong"
     rehash(item)
     assert validate(item) == "definition_mismatch"
-    assert validate(candidate(), prior_semantic_payload=candidate().payload) == "duplicate_candidate"
-    assert validate(candidate(), prior_semantic_payload={"different": True}) == "conflicting_candidate"
+    assert (
+        validate(candidate(), prior_semantic_payload=candidate().payload) == "duplicate_candidate"
+    )
+    assert (
+        validate(candidate(), prior_semantic_payload={"different": True}) == "conflicting_candidate"
+    )
 
 
 @pytest.mark.asyncio
@@ -298,8 +319,12 @@ async def test_compile_rejects_injected_upstream_outputs_before_any_port_call(
 ) -> None:
     blobs = RegisteredBlobStore(tmp_path / "blobs", tmp_path / "workflow.db")
     for key in (
-        "fetched_page_refs", "page_result_refs", "compiler_candidates",
-        "candidate_slot_results", "fact_batch_refs", "inference_slot_results",
+        "fetched_page_refs",
+        "page_result_refs",
+        "compiler_candidates",
+        "candidate_slot_results",
+        "fact_batch_refs",
+        "inference_slot_results",
     ):
         state = initial_state(topic="研究测试主题", run_id=f"run-{key}")
         state["values"][key] = ["injected"]
@@ -354,8 +379,17 @@ async def test_nodes_one_to_eight_use_refs_and_two_distinct_evidence_heads(
     assert state["values"]["assessment_input_hash"]
     assert state["values"]["stage"] == "answer_assessed"
     assert set(state["values"]["policy_refs"]) == {
-        "compiler", "route", "extraction", "llm_extract", "llm_repair",
-        "llm_inference", "admission", "inference", "assessment", "claim", "quality",
+        "compiler",
+        "route",
+        "extraction",
+        "llm_extract",
+        "llm_repair",
+        "llm_inference",
+        "admission",
+        "inference",
+        "assessment",
+        "claim",
+        "quality",
     }
     assert ADMISSION_POLICY_V1["policy_id"] == "deep-research-v6-admission-v1"
     assert ASSESSMENT_POLICY_V1["policy_id"] == "deep-research-v6-assessment-v1"

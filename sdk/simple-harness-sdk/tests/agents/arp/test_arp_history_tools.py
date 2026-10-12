@@ -39,10 +39,17 @@ def _tools(runtime):  # type: ignore[no-untyped-def]
 
 
 def _context(agent, n: int) -> ToolContext:  # type: ignore[no-untyped-def]
-    return ToolContext(RunId(agent.run_id), RequestId(f"{agent.run_id}:tool:{n}"), CancellationToken(), call_id=CallId(f"call-{n}"))
+    return ToolContext(
+        RunId(agent.run_id),
+        RequestId(f"{agent.run_id}:tool:{n}"),
+        CancellationToken(),
+        call_id=CallId(f"call-{n}"),
+    )
 
 
-@pytest.mark.parametrize("embedding", [None, HashEmbedder(dim=32)], ids=["lexical", "hybrid-mock-embedding"])
+@pytest.mark.parametrize(
+    "embedding", [None, HashEmbedder(dim=32)], ids=["lexical", "hybrid-mock-embedding"]
+)
 def test_model_search_pages_a_frozen_query_to_the_secret(tmp_path, embedding) -> None:
     async def case() -> None:
         provider = ScriptedProvider(["好的。"] * (len(FILLERS) + 1))
@@ -56,7 +63,17 @@ def test_model_search_pages_a_frozen_query_to_the_secret(tmp_path, embedding) ->
             arguments = {"query": "工程暗号", "limit": 4, "max_bytes": 8192}
             # Search layer (the spec's SearchPage contract): a SCANNING step is a PROGRESS page.
             retriever = runtime._session_tools.history._retriever
-            access = retriever.access_for(session, purpose="MODEL_SEARCH", caller_ref=Pin("principal", f"agent:{session.agent_id}", 0, digest({"agent": session.agent_id, "session": session.session_id})), turn_id=None)
+            access = retriever.access_for(
+                session,
+                purpose="MODEL_SEARCH",
+                caller_ref=Pin(
+                    "principal",
+                    f"agent:{session.agent_id}",
+                    0,
+                    digest({"agent": session.agent_id, "session": session.session_id}),
+                ),
+                turn_id=None,
+            )
             first = retriever.search(access, {"schema_version": 1, "cursor": None, **arguments})
             assert first["page_semantics"] == "PROGRESS", "scanning progress is not an empty hit"
             assert first["items"] == [] and first["has_more"] and first["next_cursor"]
@@ -64,35 +81,58 @@ def test_model_search_pages_a_frozen_query_to_the_secret(tmp_path, embedding) ->
             pages = []
             cursor = None
             for n in range(64):
-                result = await search.invoke({**arguments, **({"cursor": cursor} if cursor else {})}, _context(agent, n))
+                result = await search.invoke(
+                    {**arguments, **({"cursor": cursor} if cursor else {})}, _context(agent, n)
+                )
                 assert result.outcome.value == "succeeded", result
                 page = plain(result.value)
                 pages.append(page)
                 assert page["cursor_purpose"] == "MODEL_SEARCH"
                 assert page["body_bytes"] <= arguments["max_bytes"]
-                assert page["page_semantics"] != "PROGRESS", "the tool advances a scanning query within the call"
+                assert page["page_semantics"] != "PROGRESS", (
+                    "the tool advances a scanning query within the call"
+                )
                 cursor = page["next_cursor"]
                 if cursor is None:
                     break
             final = [p for p in pages if p["page_semantics"] == "APPEND_FINAL"]
             assert final and final[-1]["has_more"] is False and final[-1]["next_cursor"] is None
-            assert final[0]["receipt"]["coverage"]["phase"] == "RESULTS" and final[0]["receipt"]["coverage"]["ranking_final"]
-            assert final[0]["receipt"]["coverage"]["mode"] == ("HYBRID" if embedding is not None else "LEXICAL_ONLY")
+            assert (
+                final[0]["receipt"]["coverage"]["phase"] == "RESULTS"
+                and final[0]["receipt"]["coverage"]["ranking_final"]
+            )
+            assert final[0]["receipt"]["coverage"]["mode"] == (
+                "HYBRID" if embedding is not None else "LEXICAL_ONLY"
+            )
             items = [i for p in final for i in p["items"]]
             assert items and all(len(p["items"]) <= 4 for p in final)
             assert [i["rank_ordinal"] for i in items] == list(range(1, len(items) + 1))
             service = runtime.arp.search_for(session)[0]
-            texts = [service.chunk_text(final[0]["receipt"]["index_generation"], i["chunk_id"]) for i in items]
+            texts = [
+                service.chunk_text(final[0]["receipt"]["index_generation"], i["chunk_id"])
+                for i in items
+            ]
             assert any("蓝鲸七号" in t for t in texts)
             # The model tool never wrote an internal recall row or a CONTEXT_RECALL cursor.
             assert store.list_pending_recalls(connection) == ()
             assert runtime._session_tools.searches == len(pages)
             # A cursor re-sent with another limit is refused; the same request replays the same page.
-            bad = await search.invoke({**arguments, "limit": 3, "cursor": first["next_cursor"]}, _context(agent, 99))
-            assert bad.outcome.value != "succeeded" and bad.error_code == "session_history_cursor_request_mismatch"
-            resumed = await search.invoke({**arguments, "cursor": first["next_cursor"]}, _context(agent, 100))
-            again = await search.invoke({**arguments, "cursor": first["next_cursor"]}, _context(agent, 101))
-            assert plain(resumed.value)["page_semantics"] != "PROGRESS" and plain(again.value) == plain(resumed.value)
+            bad = await search.invoke(
+                {**arguments, "limit": 3, "cursor": first["next_cursor"]}, _context(agent, 99)
+            )
+            assert (
+                bad.outcome.value != "succeeded"
+                and bad.error_code == "session_history_cursor_request_mismatch"
+            )
+            resumed = await search.invoke(
+                {**arguments, "cursor": first["next_cursor"]}, _context(agent, 100)
+            )
+            again = await search.invoke(
+                {**arguments, "cursor": first["next_cursor"]}, _context(agent, 101)
+            )
+            assert plain(resumed.value)["page_semantics"] != "PROGRESS" and plain(
+                again.value
+            ) == plain(resumed.value)
 
     asyncio.run(case())
 
@@ -123,12 +163,26 @@ def test_model_read_pages_the_exact_journal_and_caps_bytes(tmp_path) -> None:
                     assert page["has_more"] is False
                     break
             assert pages >= 3 and seen == sorted(seen)
-            assert set(seen) == set(range(1, highwater + 1)) - {s for r in page["hidden_seq_ranges"] for s in range(r["start"], r["end"] + 1)}
-            texts = "".join(i["text"] for i in (await read.invoke({"seq_from": 1, "seq_to": 2, "max_bytes": 65536}, _context(agent, 200))).value["items"])
+            assert set(seen) == set(range(1, highwater + 1)) - {
+                s for r in page["hidden_seq_ranges"] for s in range(r["start"], r["end"] + 1)
+            }
+            texts = "".join(
+                i["text"]
+                for i in (
+                    await read.invoke(
+                        {"seq_from": 1, "seq_to": 2, "max_bytes": 65536}, _context(agent, 200)
+                    )
+                ).value["items"]
+            )
             assert "蓝鲸七号" in texts
             # Out of the frozen range: a named refusal, never an empty page.
-            beyond = await read.invoke({"seq_from": highwater + 5, "seq_to": highwater + 9}, _context(agent, 201))
-            assert beyond.outcome.value != "succeeded" and beyond.error_code == "session_history_history_byte_range_invalid"
+            beyond = await read.invoke(
+                {"seq_from": highwater + 5, "seq_to": highwater + 9}, _context(agent, 201)
+            )
+            assert (
+                beyond.outcome.value != "succeeded"
+                and beyond.error_code == "session_history_history_byte_range_invalid"
+            )
             assert runtime._session_tools.reads == pages + 2
 
     asyncio.run(case())
@@ -145,20 +199,40 @@ def test_a_cursor_never_crosses_purposes(tmp_path) -> None:
             retriever = runtime.arp.retriever
             session = store.read_live_session(runtime.uow.database.connection, agent.agent_id)
             caller = Pin("principal", "host:admin", 0, digest("host:admin"))
-            request = {"schema_version": 1, "query": "工程暗号", "cursor": None, "limit": 1, "max_bytes": 4096}
+            request = {
+                "schema_version": 1,
+                "query": "工程暗号",
+                "cursor": None,
+                "limit": 1,
+                "max_bytes": 4096,
+            }
             pages = {}
             for purpose in ("MANAGEMENT_SEARCH", "MODEL_SEARCH"):
-                access = retriever.access_for(session, purpose=purpose, caller_ref=caller, turn_id=None)
+                access = retriever.access_for(
+                    session, purpose=purpose, caller_ref=caller, turn_id=None
+                )
                 pages[purpose] = (access, retriever.search(access, request))
                 assert pages[purpose][1]["cursor_purpose"] == purpose
-            for mine, other in (("MODEL_SEARCH", "MANAGEMENT_SEARCH"), ("MANAGEMENT_SEARCH", "MODEL_SEARCH")):
+            for mine, other in (
+                ("MODEL_SEARCH", "MANAGEMENT_SEARCH"),
+                ("MANAGEMENT_SEARCH", "MODEL_SEARCH"),
+            ):
                 with pytest.raises(ArpError) as refused:
-                    retriever.search(pages[mine][0], {**request, "cursor": pages[other][1]["next_cursor"]})
+                    retriever.search(
+                        pages[mine][0], {**request, "cursor": pages[other][1]["next_cursor"]}
+                    )
                 assert refused.value.code == "CURSOR_SCOPE_MISMATCH"
             # Same purpose, another caller: also refused (owner scope is part of the cursor).
-            stranger = retriever.access_for(session, purpose="MODEL_SEARCH", caller_ref=Pin("principal", "agent:other", 0, digest("x")), turn_id=None)
+            stranger = retriever.access_for(
+                session,
+                purpose="MODEL_SEARCH",
+                caller_ref=Pin("principal", "agent:other", 0, digest("x")),
+                turn_id=None,
+            )
             with pytest.raises(ArpError) as refused:
-                retriever.search(stranger, {**request, "cursor": pages["MODEL_SEARCH"][1]["next_cursor"]})
+                retriever.search(
+                    stranger, {**request, "cursor": pages["MODEL_SEARCH"][1]["next_cursor"]}
+                )
             assert refused.value.code == "CURSOR_SCOPE_MISMATCH"
 
     asyncio.run(case())

@@ -20,6 +20,7 @@ hash 巧合，不是真语义召回质量**。拿它当语义指标是虚的。
 这条测试的价值是**戳破虚假信心**：让"eval_gate hit@5 通过 = 语义召回 OK"
 这个隐含假设暴露为错误。
 """
+
 from __future__ import annotations
 
 import pytest

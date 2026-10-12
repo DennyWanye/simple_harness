@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 """Unit tests for llm.types dataclasses (Pydantic v2 round-trip)."""
+
 from __future__ import annotations
 
 from llm.types import ChatChunk, ChatResponse, ChatUsage, ToolCall

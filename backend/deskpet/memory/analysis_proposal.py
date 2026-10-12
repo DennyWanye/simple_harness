@@ -68,11 +68,21 @@ PROPOSAL_TOOL_SCHEMA: dict[str, Any] = {
             "items": {
                 "type": "object",
                 "additionalProperties": False,
-                "required": ["operation_id", "memory_type", "evidence_item_id", "exact_quote", "reason_code"],
+                "required": [
+                    "operation_id",
+                    "memory_type",
+                    "evidence_item_id",
+                    "exact_quote",
+                    "reason_code",
+                ],
                 "properties": {
                     "operation_id": _STRING,
                     "action": {"type": "string", "enum": ["create", "revise_semantic"]},
-                    "candidate_key": {"type": "string", "maxLength": 1024, "description": "CREATE: empty string (no target). REVISE: copy one exact issued semantic_candidates candidate_key; never invent a key."},
+                    "candidate_key": {
+                        "type": "string",
+                        "maxLength": 1024,
+                        "description": "CREATE: empty string (no target). REVISE: copy one exact issued semantic_candidates candidate_key; never invent a key.",
+                    },
                     "memory_type": {"type": "string", "enum": list(MEMORY_TYPES)},
                     "semantic": {
                         "type": "object",
@@ -106,7 +116,10 @@ PROPOSAL_TOOL_SCHEMA: dict[str, Any] = {
                             "name": _STRING,
                             "applicability": _STRING_LIST,
                             "steps": _STRING_LIST,
-                            "risk_level": {"type": "string", "enum": ["low", "medium", "high", "irreversible"]},
+                            "risk_level": {
+                                "type": "string",
+                                "enum": ["low", "medium", "high", "irreversible"],
+                            },
                         },
                     },
                     "prospective": {
@@ -119,7 +132,10 @@ PROPOSAL_TOOL_SCHEMA: dict[str, Any] = {
                                 "type": "string",
                                 "description": "ISO-8601 with offset: the FIRST due time",
                             },
-                            "timezone": {"type": "string", "description": "IANA tz, e.g. Asia/Shanghai"},
+                            "timezone": {
+                                "type": "string",
+                                "description": "IANA tz, e.g. Asia/Shanghai",
+                            },
                         },
                     },
                     "evidence_item_id": _STRING,
@@ -255,7 +271,9 @@ def prompt_items(items: Sequence[AdmittedItem]) -> list[dict[str, Any]]:
 # ---------------------------------------------------------------- derivation
 
 
-_MAX_QUOTE_BYTES = 16_384  # simple_harness.runtime.evidence_protocol EvidenceSpanRef exact_quote bound
+_MAX_QUOTE_BYTES = (
+    16_384  # simple_harness.runtime.evidence_protocol EvidenceSpanRef exact_quote bound
+)
 
 
 def derive_span(item: AdmittedItem, exact_quote: str, *, span_id: str) -> Any:
@@ -270,21 +288,29 @@ def derive_span(item: AdmittedItem, exact_quote: str, *, span_id: str) -> Any:
     )
 
     if item.text is None:
-        raise AnalysisProposalRejected(QUOTE_NOT_FOUND, reason="item_not_quotable", item_id=item.item_id)
+        raise AnalysisProposalRejected(
+            QUOTE_NOT_FOUND, reason="item_not_quotable", item_id=item.item_id
+        )
     if not isinstance(exact_quote, str) or not exact_quote:
         raise AnalysisProposalRejected(QUOTE_NOT_FOUND, reason="quote_empty", item_id=item.item_id)
     first = item.text.find(exact_quote)
     if first < 0:
-        raise AnalysisProposalRejected(QUOTE_NOT_FOUND, reason="quote_not_verbatim", item_id=item.item_id)
+        raise AnalysisProposalRejected(
+            QUOTE_NOT_FOUND, reason="quote_not_verbatim", item_id=item.item_id
+        )
     if item.text.find(exact_quote, first + 1) >= 0:
-        raise AnalysisProposalRejected(QUOTE_NOT_FOUND, reason="quote_ambiguous", item_id=item.item_id)
+        raise AnalysisProposalRejected(
+            QUOTE_NOT_FOUND, reason="quote_ambiguous", item_id=item.item_id
+        )
     start = len(item.text[:first].encode("utf-8"))
     end = start + len(exact_quote.encode("utf-8"))
     if end - start > _MAX_QUOTE_BYTES:
         # Task 4 review F-1: the Harness bounds ``exact_quote`` at 16 KiB; a
         # longer verbatim quote is a deterministic rejection of this operation,
         # never a ``ValueError`` escaping after the Provider already answered.
-        raise AnalysisProposalRejected(QUOTE_NOT_FOUND, reason="quote_too_long", item_id=item.item_id)
+        raise AnalysisProposalRejected(
+            QUOTE_NOT_FOUND, reason="quote_too_long", item_id=item.item_id
+        )
     envelope = item.envelope
     receipt = item.receipt
     return EvidenceSpanRef(
@@ -320,7 +346,9 @@ def _strings(value: object, *, default: tuple[str, ...] = ()) -> tuple[str, ...]
     return out or default
 
 
-def compile_operation(proposal: Mapping[str, Any], span: Any, *, item: AdmittedItem, now: float, candidates=()) -> Any:
+def compile_operation(
+    proposal: Mapping[str, Any], span: Any, *, item: AdmittedItem, now: float, candidates=()
+) -> Any:
     """Compile CREATE or an exact source-bound semantic REVISE."""
 
     from simple_harness.runtime import (
@@ -347,10 +375,14 @@ def compile_operation(proposal: Mapping[str, Any], span: Any, *, item: AdmittedI
 
     memory_type = str(proposal.get("memory_type") or "")
     if memory_type not in MEMORY_TYPES:
-        raise AnalysisProposalRejected(PAYLOAD_INVALID, reason="memory_type_unknown", memory_type=memory_type)
+        raise AnalysisProposalRejected(
+            PAYLOAD_INVALID, reason="memory_type_unknown", memory_type=memory_type
+        )
     body = proposal.get(memory_type)
     if not isinstance(body, Mapping):
-        raise AnalysisProposalRejected(PAYLOAD_INVALID, reason="payload_missing", memory_type=memory_type)
+        raise AnalysisProposalRejected(
+            PAYLOAD_INVALID, reason="payload_missing", memory_type=memory_type
+        )
     try:
         if memory_type == "semantic":
             payload: Any = SemanticMemoryPayload(
@@ -410,29 +442,50 @@ def compile_operation(proposal: Mapping[str, Any], span: Any, *, item: AdmittedI
             from dataclasses import replace
 
             from simple_harness import EvidenceSupportKind, ExistingMemoryTarget
+
             if memory_type != "semantic" or item.envelope.source_kind.value != "user_message":
                 raise AnalysisProposalRejected("analysis_correction_requires_user_semantic")
-            selected = [c for c in candidates if c["candidate_key"] == proposal.get("candidate_key")]
+            selected = [
+                c for c in candidates if c["candidate_key"] == proposal.get("candidate_key")
+            ]
             if len(selected) != 1:
                 raise AnalysisProposalRejected("analysis_correction_candidate_unknown")
             candidate = selected[0]
             old = candidate["payload"]
-            approval = candidate.get('correction_intent')
-            if approval is None or approval['evidence_id'] != item.evidence_id or approval['envelope_hash'] != item.envelope.envelope_hash:
-                raise AnalysisProposalRejected('analysis_explicit_correction_intent_missing')
-            if approval['new_value'] is None:
+            approval = candidate.get("correction_intent")
+            if (
+                approval is None
+                or approval["evidence_id"] != item.evidence_id
+                or approval["envelope_hash"] != item.envelope.envelope_hash
+            ):
+                raise AnalysisProposalRejected("analysis_explicit_correction_intent_missing")
+            if approval["new_value"] is None:
                 # cue+anchor grammar (Host owns the slot, model owns the replacement):
                 # the quote must lie inside the recognized correction sentence, and the
                 # replacement must be a genuinely different value — neither a substring
                 # nor a superstring of the one the user just disowned.
-                if (not span.exact_quote or span.exact_quote not in approval['exact_quote']
-                        or payload.object_value in approval['old_value']
-                        or approval['old_value'] in payload.object_value):
-                    raise AnalysisProposalRejected('analysis_explicit_correction_intent_missing')
-            elif approval['exact_quote'] != span.exact_quote or approval['new_value'] != payload.object_value:
-                raise AnalysisProposalRejected('analysis_explicit_correction_intent_missing')
-            if sum(c.get('correction_intent') is not None and c['correction_intent']['evidence_id'] == approval['evidence_id'] and c['correction_intent']['exact_quote'] == approval['exact_quote'] for c in candidates) != 1:
-                raise AnalysisProposalRejected('analysis_correction_candidate_ambiguous')
+                if (
+                    not span.exact_quote
+                    or span.exact_quote not in approval["exact_quote"]
+                    or payload.object_value in approval["old_value"]
+                    or approval["old_value"] in payload.object_value
+                ):
+                    raise AnalysisProposalRejected("analysis_explicit_correction_intent_missing")
+            elif (
+                approval["exact_quote"] != span.exact_quote
+                or approval["new_value"] != payload.object_value
+            ):
+                raise AnalysisProposalRejected("analysis_explicit_correction_intent_missing")
+            if (
+                sum(
+                    c.get("correction_intent") is not None
+                    and c["correction_intent"]["evidence_id"] == approval["evidence_id"]
+                    and c["correction_intent"]["exact_quote"] == approval["exact_quote"]
+                    for c in candidates
+                )
+                != 1
+            ):
+                raise AnalysisProposalRejected("analysis_correction_candidate_ambiguous")
             # Event AJ: the target is identified by the Host's own grammar, never by the
             # predicate.  Both grammars bind the *old value* — the template embeds it
             # verbatim, and ``_discriminating_anchor`` only yields an anchor no other
@@ -444,30 +497,36 @@ def compile_operation(proposal: Mapping[str, Any], span: Any, *, item: AdmittedI
             # the Python version and the archive directory).  Counting that collision as
             # ambiguity refused a correction the Host had uniquely grounded and left the
             # memory at revision 1.
-            if (payload.subject_entity, payload.predicate) != (old["subject_entity"], old["predicate"]):
+            if (payload.subject_entity, payload.predicate) != (
+                old["subject_entity"],
+                old["predicate"],
+            ):
                 raise AnalysisProposalRejected("analysis_correction_slot_mismatch")
-            if payload.object_value not in span.exact_quote or payload.object_value == old["object_value"]:
+            if (
+                payload.object_value not in span.exact_quote
+                or payload.object_value == old["object_value"]
+            ):
                 raise AnalysisProposalRejected("analysis_correction_new_value_not_supported")
             # Host owns the slot, model owns the replacement: qualifiers are the incumbent's
             # decoration, so an omitted list is not an assertion and inherits them.  A
             # non-empty list that differs *is* an assertion about the slot, and is refused.
             if not tuple(payload.qualifiers):
-                payload = replace(payload, qualifiers=tuple(old.get('qualifiers', ())))
-            elif tuple(payload.qualifiers) != tuple(old.get('qualifiers', ())):
-                raise AnalysisProposalRejected('analysis_correction_qualifiers_mismatch')
-            privacy = PrivacyClass(candidate['privacy_class'])
-            attributes = tuple(InformationAttribute(a) for a in candidate['information_attributes'])
+                payload = replace(payload, qualifiers=tuple(old.get("qualifiers", ())))
+            elif tuple(payload.qualifiers) != tuple(old.get("qualifiers", ())):
+                raise AnalysisProposalRejected("analysis_correction_qualifiers_mismatch")
+            privacy = PrivacyClass(candidate["privacy_class"])
+            attributes = tuple(InformationAttribute(a) for a in candidate["information_attributes"])
             kind = MemoryMutationKind.REVISE
             target = ExistingMemoryTarget(candidate["memory_id"], candidate["revision"])
             span = replace(span, support_kind=EvidenceSupportKind.EXPLICIT_USER_CORRECTION)
         elif proposal.get("candidate_key") not in (None, ""):
             raise AnalysisProposalRejected("analysis_create_cannot_select_target")
-        elif memory_type == 'semantic' and any(
-            c.get('correction_intent') is not None
-            and c['correction_intent']['evidence_id'] == item.evidence_id
+        elif memory_type == "semantic" and any(
+            c.get("correction_intent") is not None
+            and c["correction_intent"]["evidence_id"] == item.evidence_id
             for c in candidates
         ):
-            raise AnalysisProposalRejected('analysis_correction_cannot_fallback_create')
+            raise AnalysisProposalRejected("analysis_correction_cannot_fallback_create")
         return MemoryMutationOperation(
             operation_id=str(proposal["operation_id"]),
             kind=kind,
@@ -488,7 +547,9 @@ def compile_operation(proposal: Mapping[str, Any], span: Any, *, item: AdmittedI
     except AnalysisProposalRejected:
         raise
     except (KeyError, TypeError, ValueError) as exc:
-        raise AnalysisProposalRejected(PAYLOAD_INVALID, reason=type(exc).__name__, message=str(exc)[:200]) from exc
+        raise AnalysisProposalRejected(
+            PAYLOAD_INVALID, reason=type(exc).__name__, message=str(exc)[:200]
+        ) from exc
 
 
 # -------------------------------------------------------------------- compile
@@ -559,30 +620,47 @@ def compile_proposal(
     if outcome == "no_mutation" or not isinstance(raw_operations, list) or not raw_operations:
         reason = proposal.get("closure_reason")
         return CompiledProposal(
-            None, no_mutation_result(str(reason) if isinstance(reason, str) and reason else "model_no_change"), (), "no_mutation"
+            None,
+            no_mutation_result(
+                str(reason) if isinstance(reason, str) and reason else "model_no_change"
+            ),
+            (),
+            "no_mutation",
         )
     if outcome != "mutate":
-        return CompiledProposal(None, no_mutation_result("analysis_outcome_invalid"), (), "no_mutation")
+        return CompiledProposal(
+            None, no_mutation_result("analysis_outcome_invalid"), (), "no_mutation"
+        )
     operations: list[Any] = []
     rejected: list[RejectedOperation] = []
     seen: set[str] = set()
     for ordinal, raw in enumerate(raw_operations, start=1):
         if not isinstance(raw, Mapping):
-            rejected.append(RejectedOperation(f"op-{ordinal}", PAYLOAD_INVALID, {"reason": "object_expected"}))
+            rejected.append(
+                RejectedOperation(f"op-{ordinal}", PAYLOAD_INVALID, {"reason": "object_expected"})
+            )
             continue
         operation_id = str(raw.get("operation_id") or f"op-{ordinal}")
         if operation_id in seen:
-            rejected.append(RejectedOperation(operation_id, PAYLOAD_INVALID, {"reason": "operation_id_duplicate"}))
+            rejected.append(
+                RejectedOperation(
+                    operation_id, PAYLOAD_INVALID, {"reason": "operation_id_duplicate"}
+                )
+            )
             continue
         seen.add(operation_id)
         item = by_item.get(str(raw.get("evidence_item_id") or ""))
         if item is None:
             rejected.append(
-                RejectedOperation(operation_id, QUOTE_NOT_FOUND, {"reason": "evidence_item_unknown"})
+                RejectedOperation(
+                    operation_id, QUOTE_NOT_FOUND, {"reason": "evidence_item_unknown"}
+                )
             )
             continue
         try:
-            span = derive_span(item, str(raw.get("exact_quote") or ""), span_id=f"span-{plan_id[-12:]}-{ordinal}")
+            span = derive_span(
+                item, str(raw.get("exact_quote") or ""), span_id=f"span-{plan_id[-12:]}-{ordinal}"
+            )
             compiler = compile_operation if _operation_compiler is None else _operation_compiler
             operations.append(compiler(raw, span, item=item, now=now, candidates=candidates))
         except AnalysisProposalRejected as exc:
@@ -590,9 +668,13 @@ def compile_proposal(
         except (TypeError, ValueError) as exc:
             if _operation_compiler is None:
                 raise  # Preserve v3 error/recovery behavior exactly.
-            rejected.append(RejectedOperation(operation_id, PAYLOAD_INVALID, {"reason": type(exc).__name__}))
+            rejected.append(
+                RejectedOperation(operation_id, PAYLOAD_INVALID, {"reason": type(exc).__name__})
+            )
     if not operations:
-        return CompiledProposal(None, no_mutation_result(ALL_OPERATIONS_REJECTED), tuple(rejected), "no_mutation")
+        return CompiledProposal(
+            None, no_mutation_result(ALL_OPERATIONS_REJECTED), tuple(rejected), "no_mutation"
+        )
     plan = MemoryMutationPlan(
         plan_id=plan_id,
         run_id=request.run_id,
@@ -605,7 +687,9 @@ def compile_proposal(
         evidence_refs=request.ordered_evidence_refs,
         idempotency_key=request.idempotency_key,
     )
-    return CompiledProposal(plan, json.loads(canonical_json(plan.to_json())), tuple(rejected), "mutate")
+    return CompiledProposal(
+        plan, json.loads(canonical_json(plan.to_json())), tuple(rejected), "mutate"
+    )
 
 
 def proposal_from_response(response: Any) -> Mapping[str, Any] | None:

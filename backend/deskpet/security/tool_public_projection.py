@@ -12,9 +12,7 @@ from typing import Any
 from deskpet.security.redaction import TraceRedactor
 from deskpet.security.sensitive_text import redact_sensitive_text
 
-_ACTIVITY_KINDS = frozenset(
-    {"inspect", "plan", "mutate", "verify", "communicate", "wait"}
-)
+_ACTIVITY_KINDS = frozenset({"inspect", "plan", "mutate", "verify", "communicate", "wait"})
 _POINTER = re.compile(r"(?:/(?:[^~/]|~[01])*)*")
 _DATA_URI = re.compile(r"(?i)^data:[^,]{0,256},")
 _REDACTOR = TraceRedactor()
@@ -97,7 +95,9 @@ class ToolPresentationPolicyV1:
             raise ValueError("tool presentation identity is required")
         if self.activity_kind not in _ACTIVITY_KINDS:
             raise ValueError("unsupported tool activity_kind")
-        if any(not _POINTER.fullmatch(path) for path in (*self.safe_arg_paths, *self.safe_result_paths)):
+        if any(
+            not _POINTER.fullmatch(path) for path in (*self.safe_arg_paths, *self.safe_result_paths)
+        ):
             raise ValueError("invalid tool presentation JSON pointer")
         if not 64 <= self.field_byte_cap <= 16_384:
             raise ValueError("invalid field byte cap")
@@ -123,9 +123,7 @@ def compile_tool_presentation_policy(spec: Any) -> ToolPresentationPolicyV1:
         action_code=str(getattr(spec, "public_action_code", "execute")),
         safe_arg_paths=tuple(getattr(spec, "public_safe_arg_paths", ())),
         safe_result_paths=tuple(getattr(spec, "public_safe_result_paths", ())),
-        target_label_template=str(
-            getattr(spec, "public_target_label_template", "{tool_name}")
-        ),
+        target_label_template=str(getattr(spec, "public_target_label_template", "{tool_name}")),
         field_byte_cap=int(getattr(spec, "public_field_byte_cap", 2048)),
         total_byte_cap=int(getattr(spec, "public_total_byte_cap", 8192)),
     )
@@ -243,7 +241,9 @@ class ToolPresentationSnapshotExtension:
             content_hash=digest,
         )
 
-    async def apply_start_commit(self, transaction: Any, *, spec: Any, start_snapshot: Any) -> dict[str, Any]:
+    async def apply_start_commit(
+        self, transaction: Any, *, spec: Any, start_snapshot: Any
+    ) -> dict[str, Any]:
         root_run_id = str(spec.context.root_run_id)
         if str(spec.run_id) != root_run_id:
             raise ValueError("tool presentation snapshot must be frozen by the Root")

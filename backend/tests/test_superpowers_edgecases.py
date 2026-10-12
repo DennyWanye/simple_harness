@@ -15,6 +15,7 @@
 并行约束（spec §3）：仅 import 已存在的稳定符号；**不** import A1 新抽的
 ``_build_intent_hint`` / ``_intent_label_from_turn`` 或 A4 新 sidecar schema。
 """
+
 from __future__ import annotations
 
 import math
@@ -140,9 +141,7 @@ async def test_match_blank_text_returns_none(tmp_path):
 @pytest.mark.asyncio
 async def test_max_entries_truncates_to_latest_n(tmp_path):
     """超过 max_entries → 只保留最新 N 条（_entries[-max:]）。"""
-    pm = PreferenceMemory(
-        tmp_path / "p.json", _CountingUnitEmbedder().embed, max_entries=3
-    )
+    pm = PreferenceMemory(tmp_path / "p.json", _CountingUnitEmbedder().embed, max_entries=3)
     for i in range(6):
         assert await pm.record(f"任务 {i}", "task", "intent") is True
     entries = pm.list_entries("intent")
@@ -366,9 +365,7 @@ class _ExplodingProvider:
     """若 general planner 在该走早返时还调了 provider，立刻炸出来。"""
 
     async def chat_with_tools(self, *args, **kwargs):
-        raise AssertionError(
-            "provider.chat_with_tools must NOT be called on early-return path"
-        )
+        raise AssertionError("provider.chat_with_tools must NOT be called on early-return path")
 
 
 @pytest.mark.asyncio

@@ -45,7 +45,11 @@ def test_native_bundle_resolver_selects_only_platform_executable(tmp_path, syste
     executable.parent.mkdir(parents=True)
     executable.write_bytes(b"fixture")
     (revision / "INSTALLATION_COMPLETE").touch()
-    other = get_platform_contract("darwin", "arm64") if system == "win32" else get_platform_contract("win32", "AMD64")
+    other = (
+        get_platform_contract("darwin", "arm64")
+        if system == "win32"
+        else get_platform_contract("win32", "AMD64")
+    )
     foreign = revision / other.executable_relative
     foreign.parent.mkdir(parents=True)
     foreign.write_bytes(b"wrong platform")
@@ -257,9 +261,7 @@ async def test_real_browser_crash_restarts_once_and_preserves_cleanup(
 
     contract = get_platform_contract()
     executable = str(
-        task0_browser_root
-        / contract.revision_dir
-        / contract.executable_relative
+        task0_browser_root / contract.revision_dir / contract.executable_relative
     ).casefold()
 
     def root_processes() -> dict[int, object]:
@@ -352,20 +354,49 @@ async def test_idle_shutdown_reaps_browser_and_driver_children(
     assert alive_owned() == set()
 
 
-@pytest.mark.parametrize("driver_script", [
-    r"C:\venv\Lib\site-packages\playwright\driver\package\cli.js",
-    "/venv/lib/site-packages/playwright/driver/package/cli.js",
-])
-def test_process_snapshot_tracks_native_driver_and_owns_only_browser_ancestor(monkeypatch, driver_script):
+@pytest.mark.parametrize(
+    "driver_script",
+    [
+        r"C:\venv\Lib\site-packages\playwright\driver\package\cli.js",
+        "/venv/lib/site-packages/playwright/driver/package/cli.js",
+    ],
+)
+def test_process_snapshot_tracks_native_driver_and_owns_only_browser_ancestor(
+    monkeypatch, driver_script
+):
     from types import SimpleNamespace
 
     import psutil
 
     executable = Path("/owned/chrome-headless-shell")
     rows = [
-        SimpleNamespace(pid=10, info={"exe": str(executable), "cmdline": [str(executable)], "create_time": 10.0, "ppid": 20}),
-        SimpleNamespace(pid=20, info={"exe": "/venv/node", "cmdline": ["node", driver_script, "run-driver"], "create_time": 9.0, "ppid": 1}),
-        SimpleNamespace(pid=30, info={"exe": "/venv/node", "cmdline": ["node", driver_script, "run-driver"], "create_time": 9.5, "ppid": 1}),
+        SimpleNamespace(
+            pid=10,
+            info={
+                "exe": str(executable),
+                "cmdline": [str(executable)],
+                "create_time": 10.0,
+                "ppid": 20,
+            },
+        ),
+        SimpleNamespace(
+            pid=20,
+            info={
+                "exe": "/venv/node",
+                "cmdline": ["node", driver_script, "run-driver"],
+                "create_time": 9.0,
+                "ppid": 1,
+            },
+        ),
+        SimpleNamespace(
+            pid=30,
+            info={
+                "exe": "/venv/node",
+                "cmdline": ["node", driver_script, "run-driver"],
+                "create_time": 9.5,
+                "ppid": 1,
+            },
+        ),
     ]
     monkeypatch.setattr(psutil, "process_iter", lambda _attrs: rows)
     snapshot = PlaywrightRendererPool._process_snapshot(executable)
@@ -685,9 +716,7 @@ async def test_real_gateway_fetch_playwright_chain_feeds_v5_graph(
             del identity
             assert stage == "fetch"
             rows = payload["search_result"]["results"]
-            document = await service.fetch(
-                FetchRequest(str(rows[0]["url"]), render_policy="auto")
-            )
+            document = await service.fetch(FetchRequest(str(rows[0]["url"]), render_policy="auto"))
             self.fetcher = document.fetcher
             coverages = []
             candidates = []
@@ -802,9 +831,7 @@ async def test_real_gateway_fetch_playwright_chain_feeds_v5_graph(
             return {"report_ref": "artifact:dynamic-evidence-report"}
 
     fetch_stage = FetchStage()
-    executable = DEEP_RESEARCH_V5.bind(
-        checkpointer=InMemoryNativeCheckpointStore()
-    )
+    executable = DEEP_RESEARCH_V5.bind(checkpointer=InMemoryNativeCheckpointStore())
     state = deep_research_initial_state(
         topic="中国小学教育动态页面证据",
         run_id="run-v5-real-retrieval",

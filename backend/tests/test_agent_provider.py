@@ -9,6 +9,7 @@ Covers:
 - session_id parameter accepted but currently ignored
 - ServiceContext.agent_engine slot accepts AgentProvider instances
 """
+
 from __future__ import annotations
 
 import pytest

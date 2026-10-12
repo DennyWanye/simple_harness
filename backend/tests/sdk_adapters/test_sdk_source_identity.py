@@ -26,9 +26,7 @@ def source_install(tmp_path, monkeypatch):
     for name in ("simple_harness", "agent_orchestrator"):
         package = root / "src" / name
         package.mkdir(parents=True)
-        (package / "__init__.py").write_text(
-            f'__version__ = "{candidate.SDK_VERSION}"\n'
-        )
+        (package / "__init__.py").write_text(f'__version__ = "{candidate.SDK_VERSION}"\n')
         (package / "schema.sql").write_text("CREATE TABLE example(id INTEGER);\n")
         module = ModuleType(name)
         module.__file__ = str(package / "__init__.py")
@@ -37,21 +35,35 @@ def source_install(tmp_path, monkeypatch):
         module.__spec__ = SimpleNamespace(origin=module.__file__)
         modules[name] = module
     for args in (
-        ("init", "-q"), ("add", "."),
-        ("-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
-         "commit", "-qm", "fixture"),
+        ("init", "-q"),
+        ("add", "."),
+        (
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "-qm",
+            "fixture",
+        ),
     ):
         subprocess.run(["git", "-C", str(root), *args], check=True, capture_output=True)
     dist = tmp_path / f"simple_harness_sdk-{candidate.SDK_VERSION}.dist-info"
     dist.mkdir()
     (dist / "METADATA").write_text(
-        "Metadata-Version: 2.1\nName: simple-harness-sdk\n"
-        f"Version: {candidate.SDK_VERSION}\n"
+        f"Metadata-Version: 2.1\nName: simple-harness-sdk\nVersion: {candidate.SDK_VERSION}\n"
     )
-    (dist / "direct_url.json").write_text(json.dumps({
-        "url": root.as_uri(), "dir_info": {"editable": True},
-    }))
-    monkeypatch.setattr(paths.metadata, "distribution", lambda _name: metadata.Distribution.at(dist))
+    (dist / "direct_url.json").write_text(
+        json.dumps(
+            {
+                "url": root.as_uri(),
+                "dir_info": {"editable": True},
+            }
+        )
+    )
+    monkeypatch.setattr(
+        paths.metadata, "distribution", lambda _name: metadata.Distribution.at(dist)
+    )
     monkeypatch.setattr(paths, "sys", SimpleNamespace(modules=modules, frozen=False))
     wheel = tmp_path / "baseline.whl"
     wheel.write_bytes(b"fixture baseline: never the editable implementation")
@@ -63,8 +75,9 @@ def source_install(tmp_path, monkeypatch):
     attestation.write_text(json.dumps(paths.capture_sdk_source_attestation(root)))
     monkeypatch.setenv(candidate.SDK_RUNTIME_MODE_ENV, "editable-source")
     monkeypatch.setenv(candidate.SDK_SOURCE_ATTESTATION_ENV, str(attestation))
-    return SimpleNamespace(root=root, dist=dist, modules=modules, baseline=baseline,
-                           attestation=attestation)
+    return SimpleNamespace(
+        root=root, dist=dist, modules=modules, baseline=baseline, attestation=attestation
+    )
 
 
 def test_explicit_editable_identity_is_verified_without_claiming_wheel_match(source_install):
@@ -98,9 +111,23 @@ def test_stale_source_attestation_fails_closed(source_install, change):
     elif change == "metadata":
         (source_install.root / "pyproject.toml").write_text("# changed package metadata\n")
     else:
-        subprocess.run(["git", "-C", str(source_install.root), "-c", "user.name=Fixture",
-                        "-c", "user.email=fixture@example.invalid", "commit", "--allow-empty",
-                        "-qm", "new commit"], check=True, capture_output=True)
+        subprocess.run(
+            [
+                "git",
+                "-C",
+                str(source_install.root),
+                "-c",
+                "user.name=Fixture",
+                "-c",
+                "user.email=fixture@example.invalid",
+                "commit",
+                "--allow-empty",
+                "-qm",
+                "new commit",
+            ],
+            check=True,
+            capture_output=True,
+        )
     with pytest.raises(RuntimeError, match="SDK source"):
         paths.verify_runtime_identity(identity)
 
@@ -118,18 +145,40 @@ def test_attested_uncommitted_inputs_allowed_and_outer_docs_do_not_block(source_
     assert paths.verify_runtime_identity(candidate.build_runtime_identity())
 
 
-@pytest.mark.parametrize("problem", ["wheel_url", "not_editable", "version", "imported_version",
-                                    "root_origin", "root_inside",
-                                    "leaf_origin", "package_path", "spec_origin", "frozen", "symlink"])
-def test_wrong_installation_or_frozen_source_is_refused(source_install, problem, monkeypatch, tmp_path):
+@pytest.mark.parametrize(
+    "problem",
+    [
+        "wheel_url",
+        "not_editable",
+        "version",
+        "imported_version",
+        "root_origin",
+        "root_inside",
+        "leaf_origin",
+        "package_path",
+        "spec_origin",
+        "frozen",
+        "symlink",
+    ],
+)
+def test_wrong_installation_or_frozen_source_is_refused(
+    source_install, problem, monkeypatch, tmp_path
+):
     identity = candidate.build_runtime_identity()
     module = source_install.modules["simple_harness"]
     if problem in ("wheel_url", "not_editable"):
-        (source_install.dist / "direct_url.json").write_text(json.dumps({
-            "url": (source_install.baseline.wheel_path if problem == "wheel_url"
-                    else source_install.root).as_uri(),
-            "dir_info": {"editable": problem != "not_editable"},
-        }))
+        (source_install.dist / "direct_url.json").write_text(
+            json.dumps(
+                {
+                    "url": (
+                        source_install.baseline.wheel_path
+                        if problem == "wheel_url"
+                        else source_install.root
+                    ).as_uri(),
+                    "dir_info": {"editable": problem != "not_editable"},
+                }
+            )
+        )
     elif problem == "version":
         (source_install.dist / "METADATA").write_text(
             "Metadata-Version: 2.1\nName: simple-harness-sdk\nVersion: 0.0.0\n"
@@ -159,8 +208,18 @@ def test_wrong_installation_or_frozen_source_is_refused(source_install, problem,
         paths.verify_runtime_identity(identity)
 
 
-@pytest.mark.parametrize("problem", ["missing", "invalid_json", "wrong_root", "bad_hash", "unknown_mode",
-                                    "implicit_mode", "frozen"])
+@pytest.mark.parametrize(
+    "problem",
+    [
+        "missing",
+        "invalid_json",
+        "wrong_root",
+        "bad_hash",
+        "unknown_mode",
+        "implicit_mode",
+        "frozen",
+    ],
+)
 def test_source_selection_requires_explicit_valid_attestation(source_install, problem, monkeypatch):
     if problem == "missing":
         monkeypatch.delenv(candidate.SDK_SOURCE_ATTESTATION_ENV)
@@ -190,8 +249,11 @@ def test_bad_source_is_rejected_before_dependencies_or_database(source_install, 
     (source_install.root / "src/simple_harness/new.py").write_text("CHANGED = True\n")
     loaded = []
     runtime_paths = paths.ProductRuntimePathsAdapter(tmp_path / "userdata")
-    stack = ProductSdkRuntimeStack(paths=runtime_paths, candidate_identity=identity,
-                                   dependency_loader=lambda: loaded.append(True))
+    stack = ProductSdkRuntimeStack(
+        paths=runtime_paths,
+        candidate_identity=identity,
+        dependency_loader=lambda: loaded.append(True),
+    )
     with pytest.raises(RuntimeError, match="SDK source"):
         asyncio.run(stack.start())
     assert loaded == []
@@ -209,7 +271,8 @@ def test_valid_source_reaches_real_composition_dependency_boundary(source_instal
 
     stack = ProductSdkRuntimeStack(
         paths=paths.ProductRuntimePathsAdapter(tmp_path / "userdata"),
-        candidate_identity=candidate.build_runtime_identity(), dependency_loader=dependencies,
+        candidate_identity=candidate.build_runtime_identity(),
+        dependency_loader=dependencies,
     )
     with pytest.raises(RuntimeError, match="fixture dependency boundary reached"):
         asyncio.run(stack.start())
@@ -240,8 +303,10 @@ def test_manifest_distinguishes_version_from_verified_source_and_rejects_drift(s
     report = distributions()
     assert report["version_match"] is True
     assert report["consistent"] is True
-    assert report["pin"] == {"version": candidate.SDK_VERSION,
-                             "wheel_sha256": candidate.SDK_WHEEL_SHA256}
+    assert report["pin"] == {
+        "version": candidate.SDK_VERSION,
+        "wheel_sha256": candidate.SDK_WHEEL_SHA256,
+    }
     assert report["runtime_identity"]["source_verified"] is True
     assert report["runtime_identity"]["installed_wheel_verified"] is False
     (source_install.root / "src/agent_orchestrator/new.json").write_text('{"new":true}')
@@ -255,5 +320,9 @@ def test_wheel_manifest_does_not_claim_byte_verification(monkeypatch):
     monkeypatch.delenv(candidate.SDK_RUNTIME_MODE_ENV, raising=False)
     monkeypatch.delenv(candidate.SDK_SOURCE_ATTESTATION_ENV, raising=False)
     report = candidate.runtime_identity_report()
-    assert report == {"mode": "wheel", "source_verified": False,
-                      "installed_wheel_verified": False, "verification": "version-only"}
+    assert report == {
+        "mode": "wheel",
+        "source_verified": False,
+        "installed_wheel_verified": False,
+        "verification": "version-only",
+    }

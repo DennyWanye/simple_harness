@@ -12,6 +12,7 @@
 红线：不写 goal_resolutions.validity。
 观察表变化（验收公式读的观察表）等带观察器的测试世界，并入"前提 / 观测"那条主循环用例。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -48,7 +49,8 @@ class _SecondStepHeld(LayeredScriptedProvider):
 
     async def invoke(self, request, *, cancel):  # type: ignore[no-untyped-def]
         if role_of(request) == "worker" and "NOTES.md" in (
-                package_of(request).get("task_contract", {}).get("outputs") or []):
+            package_of(request).get("task_contract", {}).get("outputs") or []
+        ):
             self.second_entered.set()
             await self.go.wait()
         return await super().invoke(request, cancel=cancel)
@@ -57,7 +59,8 @@ class _SecondStepHeld(LayeredScriptedProvider):
 def _acceptance_certificate(store: Any, mission_id: str) -> Any:
     [row] = store.connection.execute(
         "SELECT * FROM assurance_use_certificates WHERE mission_id=? AND consumer_kind='ACCEPTANCE'",
-        (mission_id,)).fetchall()
+        (mission_id,),
+    ).fetchall()
     assert decode(row["certificate_json"])["decision"] == "USABLE"
     return row
 
@@ -66,8 +69,13 @@ def test_a_tampered_accepted_review_is_named_stale_and_reaches_the_planner(tmp_p
     async def case():
         provider = _SecondStepHeld()
         async with product_world(tmp_path / "root", provider) as world:
-            mission_id = world.create({"goal": "先整理事实再写笔记", "idempotency_key": "evidence-recheck",
-                                       "success_criteria": list(CHAIN_CRITERIA)})["mission_id"]
+            mission_id = world.create(
+                {
+                    "goal": "先整理事实再写笔记",
+                    "idempotency_key": "evidence-recheck",
+                    "success_criteria": list(CHAIN_CRITERIA),
+                }
+            )["mission_id"]
             store, tenant = world.loop.store, world.deployment.tenant_id
             stop = asyncio.Event()
 
@@ -87,18 +95,29 @@ def test_a_tampered_accepted_review_is_named_stale_and_reaches_the_planner(tmp_p
                     observed = consumer._observe_locked(row, now_ms=int(store.now * 1000))
                 # The product kept writing after this certificate (the second step was
                 # dispatched): unrelated changes leave it current.
-                assert observed["validity"] == "CURRENT" and observed["changed_items"] == [], observed
+                assert observed["validity"] == "CURRENT" and observed["changed_items"] == [], (
+                    observed
+                )
 
-                review_key = next(item["key"] for item in certificate["read_set"]
-                                  if item["channel"] == "OBJECT" and decode(item["key"])["kind"] == "review")
+                review_key = next(
+                    item["key"]
+                    for item in certificate["read_set"]
+                    if item["channel"] == "OBJECT" and decode(item["key"])["kind"] == "review"
+                )
                 with store.transaction():
                     lift_immutable_guards(store.connection, "review_records")
                     store.connection.execute(
                         "UPDATE review_records SET record_json=json_set(record_json,'$.reviewer_turn_id',"
-                        "'tampered-on-disk') WHERE record_id=?", (decode(review_key)["id"],))
+                        "'tampered-on-disk') WHERE record_id=?",
+                        (decode(review_key)["id"],),
+                    )
                 with store.read_view():
                     changed = changed_items(store, tenant_id=tenant, certificate=certificate)
-                assert {"channel": "OBJECT", "key": review_key, "reason": "REF_BODY_CONFLICT"} in changed
+                assert {
+                    "channel": "OBJECT",
+                    "key": review_key,
+                    "reason": "REF_BODY_CONFLICT",
+                } in changed
 
                 provider.go.set()
                 for _ in range(600):
@@ -111,19 +130,32 @@ def test_a_tampered_accepted_review_is_named_stale_and_reaches_the_planner(tmp_p
                 await asyncio.wait_for(runner, 30)
 
             assert provider.repair_packages, "the stale evidence never reached the planner"
-            [request] = [entry["request"] for entry in provider.repair_packages[0]["repair_requests"]
-                         if entry["request"]["trigger_source"] == "EVIDENCE_INVALIDATION"]
+            [request] = [
+                entry["request"]
+                for entry in provider.repair_packages[0]["repair_requests"]
+                if entry["request"]["trigger_source"] == "EVIDENCE_INVALIDATION"
+            ]
             context = request["context"]
             assert context["reason"] == "evidence_stale"
             assert context["certificate_id"] == row["certificate_id"]
-            assert {"channel": "OBJECT", "key": review_key, "reason": "REF_BODY_CONFLICT"} in context["changed_items"]
+            assert {
+                "channel": "OBJECT",
+                "key": review_key,
+                "reason": "REF_BODY_CONFLICT",
+            } in context["changed_items"]
             assert store.get_mission(mission_id).status.value != "COMPLETED"
             closeout = store.connection.execute(
-                "SELECT state, check_body_json FROM assurance_closeouts WHERE mission_id=?", (mission_id,)).fetchone()
+                "SELECT state, check_body_json FROM assurance_closeouts WHERE mission_id=?",
+                (mission_id,),
+            ).fetchone()
             assert closeout["state"] == "NOT_READY"
             assert "EVIDENCE_STALE" in decode(closeout["check_body_json"])["reasons"]
             # Red line: nothing here touched the resolutions' validity column.
-            assert store.connection.execute(
-                "SELECT count(*) FROM goal_resolutions WHERE validity!='CURRENT'").fetchone()[0] == 0
+            assert (
+                store.connection.execute(
+                    "SELECT count(*) FROM goal_resolutions WHERE validity!='CURRENT'"
+                ).fetchone()[0]
+                == 0
+            )
 
     asyncio.run(case())

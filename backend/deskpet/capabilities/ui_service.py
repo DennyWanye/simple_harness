@@ -42,17 +42,13 @@ class CapabilityCenterError(RuntimeError):
 
 
 def _operation_id(idempotency_key: str) -> str:
-    return hashlib.sha256(
-        f"capability:{idempotency_key}".encode()
-    ).hexdigest()
+    return hashlib.sha256(f"capability:{idempotency_key}".encode()).hexdigest()
 
 
 def _required_text(value: object, field_name: str) -> str:
     text = str(value or "").strip()
     if not text:
-        raise CapabilityCenterError(
-            f"missing_{field_name}", f"{field_name} is required"
-        )
+        raise CapabilityCenterError(f"missing_{field_name}", f"{field_name} is required")
     return text
 
 
@@ -112,9 +108,7 @@ class CapabilityCenterService:
         self.hub = hub
         self._notifier = notifier
         self._default_user_key = str(default_user_key or "").strip()
-        if self._default_user_key and not self._default_user_key.startswith(
-            "user:v2:"
-        ):
+        if self._default_user_key and not self._default_user_key.startswith("user:v2:"):
             raise ValueError("default_user_key must be an opaque user:v2 key")
         self._tasks: dict[str, asyncio.Task[Any]] = {}
         self._task_lock = asyncio.Lock()
@@ -136,9 +130,7 @@ class CapabilityCenterService:
         *,
         owner_key: str | None = None,
     ) -> list[dict[str, Any]]:
-        snapshot = await self.hub.snapshot(
-            scope or self.default_scope(), owner_key=owner_key
-        )
+        snapshot = await self.hub.snapshot(scope or self.default_scope(), owner_key=owner_key)
         projected = project_capability_snapshot(snapshot)
         for descriptor, item in zip(
             snapshot.descriptors,
@@ -166,8 +158,7 @@ class CapabilityCenterService:
             if (
                 manifest.id != descriptor.version.capability_id
                 or manifest.version != descriptor.version.version
-                or manifest.manifest_hash
-                != descriptor.version.manifest_hash
+                or manifest.manifest_hash != descriptor.version.manifest_hash
             ):
                 continue
             item["manifest"] = project_pack_manifest(manifest)
@@ -183,30 +174,31 @@ class CapabilityCenterService:
                 item.update(_unavailable_after_rehydrate(failure))
         for failure in failed.values():
             descriptor = failure.record.descriptor
-            projected.append({
-                "capability_id": descriptor.capability_id,
-                "name": descriptor.display_name,
-                "description": descriptor.description,
-                "categories": ["pack"],
-                "version": descriptor.version,
-                "source": {"type": "local", "label": str(failure.record.install_path)[-120:]},
-                "scope": "user",
-                "installed": True,
-                **_unavailable_after_rehydrate(failure),
-            })
+            projected.append(
+                {
+                    "capability_id": descriptor.capability_id,
+                    "name": descriptor.display_name,
+                    "description": descriptor.description,
+                    "categories": ["pack"],
+                    "version": descriptor.version,
+                    "source": {"type": "local", "label": str(failure.record.install_path)[-120:]},
+                    "scope": "user",
+                    "installed": True,
+                    **_unavailable_after_rehydrate(failure),
+                }
+            )
         return projected
 
     async def _rollback_target(
         self, operation: CapabilityOperationRecord
     ) -> CapabilityBinding | None:
-        if (
-            operation.status != "succeeded"
-            or operation.kind not in {"update", "repair", "rollback"}
-        ):
+        if operation.status != "succeeded" or operation.kind not in {
+            "update",
+            "repair",
+            "rollback",
+        }:
             return None
-        intent = await self.store.get_publish_intent_for_operation(
-            operation.operation_id
-        )
+        intent = await self.store.get_publish_intent_for_operation(operation.operation_id)
         if intent is None:
             return None
         target = _binding_from_projection(intent.old_binding)
@@ -251,10 +243,7 @@ class CapabilityCenterService:
             or not current.active
             or current.version != published_version
             or current.manifest_hash != published_hash
-            or (
-                published_generation is not None
-                and current.generation != published_generation
-            )
+            or (published_generation is not None and current.generation != published_generation)
         ):
             return None
         version = await self.store.get_version(
@@ -297,9 +286,7 @@ class CapabilityCenterService:
             source = operation.request.get("source")
             return isinstance(source, Mapping)
         return bool(
-            operation.pack_id
-            and operation.requested_scope
-            and operation.requested_scope_key
+            operation.pack_id and operation.requested_scope and operation.requested_scope_key
         )
 
     async def _project_operation(
@@ -308,9 +295,7 @@ class CapabilityCenterService:
         *,
         authorization_mode: str,
     ) -> dict[str, Any]:
-        validation = await self.store.list_validation_results(
-            operation.operation_id
-        )
+        validation = await self.store.list_validation_results(operation.operation_id)
         receipt = await self.store.get_operation_receipt(operation.operation_id)
         rollback_target = await self._rollback_target(operation)
         uninstall_binding = await self._uninstall_binding(operation)
@@ -321,9 +306,7 @@ class CapabilityCenterService:
             operation,
             authorization_mode=authorization_mode,  # type: ignore[arg-type]
             verification_results=validation,
-            receipt_ref=(
-                receipt.operation_receipt_hash if receipt is not None else None
-            ),
+            receipt_ref=(receipt.operation_receipt_hash if receipt is not None else None),
             cancellable=cancellable,
             retryable=self._retryable(operation),
             rollback_available=rollback_target is not None,
@@ -334,9 +317,7 @@ class CapabilityCenterService:
         policy = await self.store.get_policy_state()
         operations = await self.store.list_operations(limit=limit)
         return [
-            await self._project_operation(
-                operation, authorization_mode=policy.mode
-            )
+            await self._project_operation(operation, authorization_mode=policy.mode)
             for operation in operations
         ]
 
@@ -347,9 +328,7 @@ class CapabilityCenterService:
         if operation is None:
             return
         policy = await self.store.get_policy_state()
-        projection = await self._project_operation(
-            operation, authorization_mode=policy.mode
-        )
+        projection = await self._project_operation(operation, authorization_mode=policy.mode)
         try:
             await self._notifier(
                 {
@@ -366,9 +345,7 @@ class CapabilityCenterService:
                 await self._notifier(
                     {
                         "type": "capability_list_response",
-                        "payload": {
-                            "capabilities": await self.list_capabilities()
-                        },
+                        "payload": {"capabilities": await self.list_capabilities()},
                     }
                 )
         except Exception:
@@ -455,10 +432,7 @@ class CapabilityCenterService:
         binding: CapabilityBinding | None = None
         if source_operation_id:
             source_operation = await self.store.get_operation(source_operation_id)
-            if (
-                source_operation is None
-                or source_operation.pack_id != capability_id
-            ):
+            if source_operation is None or source_operation.pack_id != capability_id:
                 raise CapabilityCenterError(
                     "operation_capability_mismatch",
                     "operation does not belong to the requested capability",
@@ -509,13 +483,9 @@ class CapabilityCenterService:
         operation_id: str,
         capability_id: str | None = None,
     ) -> CapabilityOperationRecord:
-        source = await self.store.get_operation(
-            _required_text(operation_id, "operation_id")
-        )
+        source = await self.store.get_operation(_required_text(operation_id, "operation_id"))
         if source is None:
-            raise CapabilityCenterError(
-                "operation_not_found", f"unknown operation: {operation_id}"
-            )
+            raise CapabilityCenterError("operation_not_found", f"unknown operation: {operation_id}")
         if capability_id and source.pack_id != capability_id:
             raise CapabilityCenterError(
                 "operation_capability_mismatch",
@@ -527,13 +497,9 @@ class CapabilityCenterService:
                 "rollback_unavailable",
                 "the exact previous healthy binding is no longer current",
             )
-        current = await self.store.get_binding(
-            target.scope, target.scope_key, target.capability_id
-        )
+        current = await self.store.get_binding(target.scope, target.scope_key, target.capability_id)
         if current is None:
-            raise CapabilityCenterError(
-                "binding_not_found", "current binding is absent"
-            )
+            raise CapabilityCenterError("binding_not_found", "current binding is absent")
         idempotency_key = (
             "capability-center:rollback:"
             f"{source.operation_id}:{current.generation}:"
@@ -569,24 +535,17 @@ class CapabilityCenterService:
 
         return await self._start_precreated(operation, run)
 
-    async def request_retry(
-        self, *, operation_id: str
-    ) -> CapabilityOperationRecord:
-        source = await self.store.get_operation(
-            _required_text(operation_id, "operation_id")
-        )
+    async def request_retry(self, *, operation_id: str) -> CapabilityOperationRecord:
+        source = await self.store.get_operation(_required_text(operation_id, "operation_id"))
         if source is None:
-            raise CapabilityCenterError(
-                "operation_not_found", f"unknown operation: {operation_id}"
-            )
+            raise CapabilityCenterError("operation_not_found", f"unknown operation: {operation_id}")
         if not self._retryable(source):
             raise CapabilityCenterError(
                 "retry_unavailable",
                 "this operation cannot be replayed safely",
             )
         idempotency_key = (
-            "capability-center:retry:"
-            f"{source.operation_id}:{int(source.updated_at * 1_000_000)}"
+            f"capability-center:retry:{source.operation_id}:{int(source.updated_at * 1_000_000)}"
         )
         next_operation_id = _operation_id(idempotency_key)
         request = dict(source.request)
@@ -630,12 +589,8 @@ class CapabilityCenterService:
                 kwargs.update(
                     {
                         "parent_version": request.get("parent_version"),
-                        "parent_manifest_hash": request.get(
-                            "parent_manifest_hash"
-                        ),
-                        "derived_from_receipt_ref": request.get(
-                            "derived_from_receipt_ref"
-                        ),
+                        "parent_manifest_hash": request.get("parent_manifest_hash"),
+                        "derived_from_receipt_ref": request.get("derived_from_receipt_ref"),
                     }
                 )
                 return await self.manager.repair(pack_source, **kwargs)
@@ -647,17 +602,9 @@ class CapabilityCenterService:
             return await self.manager.rollback(
                 pack_id=str(request.get("pack_id") or source.pack_id or ""),
                 target_version=str(request.get("target_version") or ""),
-                target_manifest_hash=str(
-                    request.get("target_manifest_hash") or ""
-                ),
-                scope=str(
-                    request.get("scope") or source.requested_scope or ""
-                ),  # type: ignore[arg-type]
-                scope_key=str(
-                    request.get("scope_key")
-                    or source.requested_scope_key
-                    or ""
-                ),
+                target_manifest_hash=str(request.get("target_manifest_hash") or ""),
+                scope=str(request.get("scope") or source.requested_scope or ""),  # type: ignore[arg-type]
+                scope_key=str(request.get("scope_key") or source.requested_scope_key or ""),
                 idempotency_key=idempotency_key,
                 root_run_id=source.root_run_id,
             )
@@ -665,14 +612,8 @@ class CapabilityCenterService:
         async def run_uninstall() -> Any:
             return await self.manager.uninstall(
                 pack_id=str(request.get("pack_id") or source.pack_id or ""),
-                scope=str(
-                    request.get("scope") or source.requested_scope or ""
-                ),  # type: ignore[arg-type]
-                scope_key=str(
-                    request.get("scope_key")
-                    or source.requested_scope_key
-                    or ""
-                ),
+                scope=str(request.get("scope") or source.requested_scope or ""),  # type: ignore[arg-type]
+                scope_key=str(request.get("scope_key") or source.requested_scope_key or ""),
                 idempotency_key=idempotency_key,
                 root_run_id=source.root_run_id,
             )
@@ -686,9 +627,7 @@ class CapabilityCenterService:
         )
         return await self._start_precreated(operation, runner)
 
-    async def request_cancel(
-        self, *, operation_id: str
-    ) -> CapabilityOperationRecord:
+    async def request_cancel(self, *, operation_id: str) -> CapabilityOperationRecord:
         operation_id = _required_text(operation_id, "operation_id")
         async with self._task_lock:
             task = self._tasks.get(operation_id)
@@ -706,9 +645,7 @@ class CapabilityCenterService:
         if operation is not None and operation.status == "running":
             operation = await self.manager.cancel_operation(operation_id)
         if operation is None:
-            raise CapabilityCenterError(
-                "operation_not_found", f"unknown operation: {operation_id}"
-            )
+            raise CapabilityCenterError("operation_not_found", f"unknown operation: {operation_id}")
         await self._notify_operation(operation_id)
         return operation
 

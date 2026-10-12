@@ -6,6 +6,7 @@
 Fixtures captured verbatim from the real incident that corrupted
 test-research-helper/backend/app/services/llm_service.py.
 """
+
 import pytest
 from providers._response_sanitizer import (
     extract_dsml_tool_calls,
@@ -18,7 +19,7 @@ INCIDENT = (
     "# Inline thinking-tag filtering (stateful)\n"
     "<｜end▁of▁thinking｜>API 测试通过！LLM 正常工作。现在继续优化。让我并行推进多个模块。\n"
     "\n"
-    '<｜｜DSML｜｜tool_calls>\n'
+    "<｜｜DSML｜｜tool_calls>\n"
     '<｜｜DSML｜｜invoke name="todo_write">\n'
     '<｜｜DSML｜｜parameter name="items" string="false">'
     '[{"activeForm": "验证", "content": "验证后端", "status": "completed"}]'
@@ -64,7 +65,7 @@ def test_extract_dsml_todo_write():
 
 def test_dsml_malformed_payload_no_raise_no_leak(caplog):
     bad = (
-        '<｜｜DSML｜｜tool_calls>'
+        "<｜｜DSML｜｜tool_calls>"
         '<｜｜DSML｜｜invoke name="todo_write">'
         '<｜｜DSML｜｜parameter name="items" string="false">{not json,,'
     )

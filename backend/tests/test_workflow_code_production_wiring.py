@@ -178,12 +178,8 @@ async def test_proposal_port_rejects_undeclared_prepared_output(
     tmp_path: Path,
 ) -> None:
     class _TargetRegistry(_ProposalRegistry):
-        def prepare_call(
-            self, tool_name, raw_params, session_id, stable_call_id
-        ):
-            prepared = super().prepare_call(
-                tool_name, raw_params, session_id, stable_call_id
-            )
+        def prepare_call(self, tool_name, raw_params, session_id, stable_call_id):
+            prepared = super().prepare_call(tool_name, raw_params, session_id, stable_call_id)
             target = PreparedTarget.prepare(
                 tmp_path / str(raw_params["path"]),
                 run_id="run-1",
@@ -201,9 +197,7 @@ async def test_proposal_port_rejects_undeclared_prepared_output(
                 effect_type=prepared.effect_type,
             )
 
-    contract = TaskOutputContractV1.freeze(
-        str(tmp_path), output_refs=["declared.txt"]
-    )
+    contract = TaskOutputContractV1.freeze(str(tmp_path), output_refs=["declared.txt"])
     outcome = await ProposalPort(
         _ProposalLLM(),
         _TargetRegistry(),
@@ -291,15 +285,18 @@ async def test_durable_proposal_compacts_at_seventy_percent_and_checkpoints_mess
     assert outcome.compaction_ref.startswith("workflow-compaction:sha256:")
     assert outcome.token_estimate > 0
     assert llm.messages == list(outcome.compacted_messages)
-    assert ProposalStateV1.from_dict(
-        {
-            **payload,
-            "messages": list(outcome.compacted_messages),
-            "compaction_summary": outcome.compaction_summary,
-            "compaction_ref": outcome.compaction_ref,
-            "token_estimate": outcome.token_estimate,
-        }
-    ).compaction_ref == outcome.compaction_ref
+    assert (
+        ProposalStateV1.from_dict(
+            {
+                **payload,
+                "messages": list(outcome.compacted_messages),
+                "compaction_summary": outcome.compaction_summary,
+                "compaction_ref": outcome.compaction_ref,
+                "token_estimate": outcome.token_estimate,
+            }
+        ).compaction_ref
+        == outcome.compaction_ref
+    )
 
 
 @pytest.mark.asyncio
@@ -327,9 +324,7 @@ async def test_durable_proposal_continues_when_compaction_fails() -> None:
 @pytest.mark.asyncio
 async def test_proposal_port_returns_recoverable_error_when_prepare_rejects_args() -> None:
     class _RejectingRegistry(_ProposalRegistry):
-        def prepare_call(
-            self, tool_name, raw_params, session_id, stable_call_id
-        ):
+        def prepare_call(self, tool_name, raw_params, session_id, stable_call_id):
             del tool_name, raw_params, session_id, stable_call_id
             raise ValueError("name must not contain path separators")
 
@@ -343,14 +338,8 @@ async def test_proposal_port_returns_recoverable_error_when_prepare_rejects_args
     assert outcome.error is not None
     assert outcome.error.code == "tool_prepare_rejected"
     assert outcome.error.retryable is True
-    assert (
-        outcome.error.details["reason"]
-        == "name must not contain path separators"
-    )
-    assert (
-        outcome.raw_tool_proposals[0]["prepare_error"]
-        == "name must not contain path separators"
-    )
+    assert outcome.error.details["reason"] == "name must not contain path separators"
+    assert outcome.raw_tool_proposals[0]["prepare_error"] == "name must not contain path separators"
 
 
 @pytest.mark.asyncio
@@ -386,16 +375,12 @@ async def test_proposal_hides_repeatable_search_tools_after_discovery_limit() ->
             "status": "success",
             "tool_name": name,
         }
-        for index, name in enumerate(
-            ("capability_search", "capability_search", "tool_search")
-        )
+        for index, name in enumerate(("capability_search", "capability_search", "tool_search"))
     }
     state = ProposalStateV1.from_dict(payload)
     llm = _ProposalLLM()
 
-    await ProposalPort(llm, _SearchRegistry(), session_id="session-1").propose(
-        state
-    )
+    await ProposalPort(llm, _SearchRegistry(), session_id="session-1").propose(state)
 
     assert [schema["function"]["name"] for schema in llm.tools] == [
         "write_file",
@@ -474,9 +459,7 @@ async def test_proposal_counts_mixed_discovery_turns_and_compacts_old_searches()
             }
             for call_index, name in enumerate(tool_names)
         ]
-        payload["messages"].append(
-            {"role": "assistant", "content": "", "tool_calls": calls}
-        )
+        payload["messages"].append({"role": "assistant", "content": "", "tool_calls": calls})
         payload["messages"].extend(
             {
                 "role": "tool",
@@ -489,9 +472,7 @@ async def test_proposal_counts_mixed_discovery_turns_and_compacts_old_searches()
     state = ProposalStateV1.from_dict(payload)
     llm = _CaptureLLM()
 
-    await ProposalPort(llm, _SearchRegistry(), session_id="session-1").propose(
-        state
-    )
+    await ProposalPort(llm, _SearchRegistry(), session_id="session-1").propose(state)
 
     assert [schema["function"]["name"] for schema in llm.tools] == [
         "write_file",
@@ -501,8 +482,7 @@ async def test_proposal_counts_mixed_discovery_turns_and_compacts_old_searches()
         message["content"]
         for message in llm.messages
         if message.get("role") == "tool"
-        and message.get("name")
-        in {"capability_search", "tool_search"}
+        and message.get("name") in {"capability_search", "tool_search"}
     ]
     assert sum("superseded_search_result" in item for item in search_payloads) == 2
     assert "x" * 1000 in search_payloads[-1]
@@ -708,9 +688,7 @@ def _state_with_activation_batch(
                     "arguments": json.dumps(
                         {
                             "capability_id": (
-                                ref.name
-                                if use_unqualified_ids
-                                else ref.capability_id
+                                ref.name if use_unqualified_ids else ref.capability_id
                             ),
                             "schema_hash": ref.schema_hash,
                             "describe_nonce": nonce,
@@ -812,12 +790,8 @@ def test_durable_context_replays_same_turn_activation_batch_into_live_scope() ->
         runtime_tool_state=runtime,
     )
 
-    effective = port._effective_prepared_tool_set(
-        _state_with_activation_batch(prepared)
-    )
-    replayed = port._effective_prepared_tool_set(
-        _state_with_activation_batch(prepared)
-    )
+    effective = port._effective_prepared_tool_set(_state_with_activation_batch(prepared))
+    replayed = port._effective_prepared_tool_set(_state_with_activation_batch(prepared))
 
     assert effective.revision == 3
     assert [item.ref.name for item in effective.activated] == [
@@ -831,11 +805,14 @@ def test_durable_context_replays_same_turn_activation_batch_into_live_scope() ->
     ]
     assert runtime.prepared_tool_set.schema_fingerprint == effective.schema_fingerprint
     assert replayed.schema_fingerprint == effective.schema_fingerprint
-    assert scopes.get(
-        prepared.scope_id,
-        session_id=eligibility.session_id,
-        request_id=eligibility.request_id,
-    ).prepared.revision == 3
+    assert (
+        scopes.get(
+            prepared.scope_id,
+            session_id=eligibility.session_id,
+            request_id=eligibility.request_id,
+        ).prepared.revision
+        == 3
+    )
 
 
 def test_durable_context_replay_accepts_unambiguous_provider_tool_name() -> None:
@@ -910,9 +887,7 @@ async def test_proposal_provider_identity_advances_with_native_node_retry(
         "deskpet.workflows.adapters.code_runtime.coordinate_provider_call",
         capture_provider_call,
     )
-    port = ProposalPort(
-        _ProposalLLM(), _ProposalRegistry(), session_id="session-1"
-    )
+    port = ProposalPort(_ProposalLLM(), _ProposalRegistry(), session_id="session-1")
 
     def identity(attempt: int) -> NodeExecutionIdentity:
         return NodeExecutionIdentity(
@@ -927,12 +902,8 @@ async def test_proposal_provider_identity_advances_with_native_node_retry(
             attempt=attempt,
         )
 
-    await port.propose_for_execution(
-        _proposal_state(), execution_identity=identity(1)
-    )
-    await port.propose_for_execution(
-        _proposal_state(), execution_identity=identity(2)
-    )
+    await port.propose_for_execution(_proposal_state(), execution_identity=identity(1))
+    await port.propose_for_execution(_proposal_state(), execution_identity=identity(2))
 
     assert attempt_ids == [
         "request-1:turn-1:proposal:node-attempt:1",
@@ -1035,10 +1006,7 @@ async def test_durable_context_marks_activated_provider_call_as_admitted() -> No
     outcome = await port.propose(_state_with_activation_batch(prepared))
 
     assert outcome.prepared_calls[0].tool_name == "file_write"
-    assert (
-        outcome.raw_tool_proposals[0]["capability_admission"]
-        == "context_os_activated"
-    )
+    assert outcome.raw_tool_proposals[0]["capability_admission"] == "context_os_activated"
 
 
 @pytest.mark.asyncio
@@ -1090,9 +1058,7 @@ class _DispatchRegistry:
     async def execute_tool_outcome(
         self, name, params, session_id, task_id, *, execution_context=None
     ):
-        self.outcome_calls.append(
-            (name, params, session_id, task_id, execution_context)
-        )
+        self.outcome_calls.append((name, params, session_id, task_id, execution_context))
         return NormalizedToolOutcome.success({"path": params["path"]})
 
 
@@ -1100,9 +1066,7 @@ class _DispatchRegistry:
 async def test_dispatch_port_uses_stable_effect_ids_and_reuses_prior_results(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    async def no_production_context(
-        *, session_id: str, workflow_name: str = "code_complex"
-    ):
+    async def no_production_context(*, session_id: str, workflow_name: str = "code_complex"):
         del workflow_name
         assert session_id == "session-1"
         return None
@@ -1140,9 +1104,7 @@ async def test_dispatch_port_uses_stable_effect_ids_and_reuses_prior_results(
 async def test_dispatch_plan_approval_builds_exact_trusted_authorization(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    async def no_production_context(
-        *, session_id: str, workflow_name: str = "code_complex"
-    ):
+    async def no_production_context(*, session_id: str, workflow_name: str = "code_complex"):
         del session_id, workflow_name
         return None
 
@@ -1165,9 +1127,7 @@ async def test_dispatch_plan_approval_builds_exact_trusted_authorization(
         run_id="child-1",
         trace_id="trace-1",
     )
-    await ToolDispatchPort(
-        registry, session_id="session-1", execution_context=context
-    ).dispatch(
+    await ToolDispatchPort(registry, session_id="session-1", execution_context=context).dispatch(
         [prepared],
         workflow_step_id="step-1",
         prior_results={},
@@ -1188,9 +1148,7 @@ async def test_dispatch_plan_approval_builds_exact_trusted_authorization(
 async def test_dispatch_port_falls_back_to_permission_aware_registry_path(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    async def no_production_context(
-        *, session_id: str, workflow_name: str = "code_complex"
-    ):
+    async def no_production_context(*, session_id: str, workflow_name: str = "code_complex"):
         del workflow_name
         assert session_id == "session-1"
         return None
@@ -1247,41 +1205,55 @@ async def test_code_ports_bind_exact_call_and_effect_to_trusted_context(
 
     class ProposalRegistry(_ProposalRegistry):
         def prepare_call(
-            self, tool_name, raw_params, session_id, stable_call_id, *,
+            self,
+            tool_name,
+            raw_params,
+            session_id,
+            stable_call_id,
+            *,
             execution_context=None,
         ):
             contexts.append(("prepare", execution_context))
-            return super().prepare_call(
-                tool_name, raw_params, session_id, stable_call_id
-            )
+            return super().prepare_call(tool_name, raw_params, session_id, stable_call_id)
 
     base = ToolExecutionContext(
-        scope_id="scope-1", session_id="session-1", request_id="request-1",
-        root_run_id="run-1", turn_id="turn-1", venue="code",
-        workspace="F:/workspace", write_scope_root="F:/workspace",
-        capability_hash="capability-1", scope_hash="scope-hash-1",
-        provider_plan=("provider-1",), run_id="run-1", trace_id="trace-1",
+        scope_id="scope-1",
+        session_id="session-1",
+        request_id="request-1",
+        root_run_id="run-1",
+        turn_id="turn-1",
+        venue="code",
+        workspace="F:/workspace",
+        write_scope_root="F:/workspace",
+        capability_hash="capability-1",
+        scope_hash="scope-hash-1",
+        provider_plan=("provider-1",),
+        run_id="run-1",
+        trace_id="trace-1",
     )
     proposal = await ProposalPort(
-        _ProposalLLM(), ProposalRegistry(), session_id="session-1",
+        _ProposalLLM(),
+        ProposalRegistry(),
+        session_id="session-1",
         execution_context=base,
     ).propose(_proposal_state())
     prepared = proposal.prepared_calls[0]
     assert contexts[0][1].call_id == prepared.stable_call_id
     assert contexts[0][1].effect_id == ""
 
-
     class DispatchRegistry:
         async def execute_prepared(
-            self, prepared_call, *, effect_id, authorization=None,
+            self,
+            prepared_call,
+            *,
+            effect_id,
+            authorization=None,
             execution_context=None,
         ):
             contexts.append(("execute", execution_context))
             return NormalizedToolOutcome.success({"path": "result.txt"})
 
-    async def no_production_context(
-        *, session_id: str, workflow_name: str = "code_complex"
-    ):
+    async def no_production_context(*, session_id: str, workflow_name: str = "code_complex"):
         del workflow_name
         return None
 
@@ -1292,7 +1264,9 @@ async def test_code_ports_bind_exact_call_and_effect_to_trusted_context(
     await ToolDispatchPort(
         DispatchRegistry(), session_id="session-1", execution_context=base
     ).dispatch(
-        [prepared], workflow_step_id="step-1", prior_results={},
+        [prepared],
+        workflow_step_id="step-1",
+        prior_results={},
         authorizations={},
     )
     effect_id = derive_effect_id("step-1", prepared)
@@ -1346,9 +1320,7 @@ def test_prepared_file_target_uses_trusted_workspace(tmp_path: Path) -> None:
     )
 
     assert len(prepared.prepared_targets) == 1
-    assert Path(prepared.prepared_targets[0].final_path) == (
-        tmp_path / "calculator.py"
-    ).resolve()
+    assert Path(prepared.prepared_targets[0].final_path) == (tmp_path / "calculator.py").resolve()
 
 
 def test_capability_and_session_snapshots_are_serializable_and_redacted(tmp_path) -> None:
@@ -1394,19 +1366,16 @@ def test_capability_and_session_snapshots_are_serializable_and_redacted(tmp_path
 def test_main_routes_code_through_the_single_product_harness_ingress() -> None:
     tree = ast.parse(MAIN_PATH.read_text(encoding="utf-8"), filename=str(MAIN_PATH))
     ingress = next(
-        node for node in tree.body
-        if isinstance(node, ast.AsyncFunctionDef)
-        and node.name == "_run_product_harness_chat"
+        node
+        for node in tree.body
+        if isinstance(node, ast.AsyncFunctionDef) and node.name == "_run_product_harness_chat"
     )
     calls = [node for node in ast.walk(ingress) if isinstance(node, ast.Call)]
     assert any(
-        isinstance(node.func, ast.Name)
-        and node.func.id == "_execute_sdk_run"
-        for node in calls
+        isinstance(node.func, ast.Name) and node.func.id == "_execute_sdk_run" for node in calls
     )
     assert not any(
-        isinstance(node.func, ast.Name)
-        and node.func.id in {"build_agent", "_route_workflow_task"}
+        isinstance(node.func, ast.Name) and node.func.id in {"build_agent", "_route_workflow_task"}
         for node in calls
     )
     assert not any(

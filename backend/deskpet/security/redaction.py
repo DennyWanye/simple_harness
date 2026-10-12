@@ -34,9 +34,7 @@ _BEARER = re.compile(r"\bBearer\s+[-._~+/A-Za-z0-9=]{12,}\b", re.IGNORECASE)
 class TraceRedactor:
     sensitive_keys: frozenset[str] = field(default_factory=lambda: _DEFAULT_KEYS)
     replacement: str = "[REDACTED]"
-    value_patterns: tuple[re.Pattern[str], ...] = field(
-        default_factory=lambda: (_TOKEN, _BEARER)
-    )
+    value_patterns: tuple[re.Pattern[str], ...] = field(default_factory=lambda: (_TOKEN, _BEARER))
 
     @classmethod
     def from_file(cls, path: str) -> TraceRedactor:
@@ -77,7 +75,9 @@ class TraceRedactor:
     def redact(self, value: Any) -> Any:
         if isinstance(value, dict):
             return {
-                str(key): self.replacement if str(key).casefold() in self.sensitive_keys else self.redact(item)
+                str(key): self.replacement
+                if str(key).casefold() in self.sensitive_keys
+                else self.redact(item)
                 for key, item in value.items()
             }
         if isinstance(value, list):

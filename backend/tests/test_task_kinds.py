@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: BUSL-1.1
 """TG-0.1 — task_kinds 事务分型注册表。"""
+
 from __future__ import annotations
 
 from deskpet.agent.task_kinds import (
@@ -33,9 +34,7 @@ def test_no_kind_exposes_spawn_tools():  # 0.1.3 递归守门
 
 
 def test_load_overrides_merges():  # 0.1.4
-    merged = load_kind_overrides(
-        {"subagent_kinds": {"research": {"max_iterations": 20}}}
-    )
+    merged = load_kind_overrides({"subagent_kinds": {"research": {"max_iterations": 20}}})
     assert merged["research"].max_iterations == 20
     # 其余字段保留
     assert "deepresearch" not in resolve_kind("research", overrides=merged).tools

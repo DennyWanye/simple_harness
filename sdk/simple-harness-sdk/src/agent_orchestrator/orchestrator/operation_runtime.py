@@ -113,10 +113,13 @@ def ensure_assured_proposal_reviews(orchestrator: Any, mission_id: str) -> bool:
         if HtnStore(store).official_review_record(package_id) is not None:
             continue
         key = purpose_review_key("ACTION_PROPOSAL", mission_id, package_id)
-        if store.connection.execute(
-            "SELECT 1 FROM assurance_review_invocations WHERE mission_id=? AND review_key=?",
-            (mission_id, key),
-        ).fetchone() is not None:
+        if (
+            store.connection.execute(
+                "SELECT 1 FROM assurance_review_invocations WHERE mission_id=? AND review_key=?",
+                (mission_id, key),
+            ).fetchone()
+            is not None
+        ):
             continue
         try:
             with store.transaction():
@@ -133,7 +136,9 @@ def ensure_assured_proposal_reviews(orchestrator: Any, mission_id: str) -> bool:
             # orchestrator round.  Logged and retried next round instead.
             logger.warning(
                 "assured proposal review not opened intent=%s: %s: %s",
-                row["intent_id"], type(error).__name__, error,
+                row["intent_id"],
+                type(error).__name__,
+                error,
             )
     return progressed
 
@@ -191,18 +196,28 @@ async def dispatch_materialized_operations(orchestrator: Any, mission_id: str) -
         if receipt is None:
             continue
         action = orchestrator.store.get_action(receipt["action_key"])
-        if action is None or action["mission_id"] != mission_id or action["state"] not in HANDOFF_READY_STATES:
+        if (
+            action is None
+            or action["mission_id"] != mission_id
+            or action["state"] not in HANDOFF_READY_STATES
+        ):
             continue
         key = str(action["action_key"])
         await orchestrator.actions.hand_off(key)
         after = orchestrator.store.get_action(key)
         if after is not None and after["state"] in HANDOFF_READY_STATES:
             from ..contracts.error_table import handoff_refusal_transient
+
             if handoff_refusal_transient(orchestrator.actions.last_refusal.get(key, "")):
                 return False  # stays handoff-ready; tried again next round
-            orchestrator._commit_fail_mission(mission_id, stop_reason=MissionStopReason.ACTION_FAILED,
-                detail={"action_key": key, "reason": "handoff_refused:"
-                        + orchestrator.actions.last_refusal.get(key, "")})
+            orchestrator._commit_fail_mission(
+                mission_id,
+                stop_reason=MissionStopReason.ACTION_FAILED,
+                detail={
+                    "action_key": key,
+                    "reason": "handoff_refused:" + orchestrator.actions.last_refusal.get(key, ""),
+                },
+            )
             await orchestrator._release_mission(mission_id)
         return True
     return False
@@ -261,13 +276,17 @@ def advance_operation_outcomes(orchestrator: Any, mission_id: str) -> bool:
                         accept_operation_outcome(
                             orchestrator.commit,
                             mission_id=mission_id,
-                            binding_id=existing["binding_id"], service_authority=runtime.service_authority,
+                            binding_id=existing["binding_id"],
+                            service_authority=runtime.service_authority,
                         )
                         return True
-                    if (record.verdict is ReviewVerdict.INCONCLUSIVE
-                            and adjudication_of(store, str(record.record_id)) is None
-                            and orchestrator._ask_person_to_adjudicate_outcome(
-                                store.get_mission(mission_id), record, existing["document"])):
+                    if (
+                        record.verdict is ReviewVerdict.INCONCLUSIVE
+                        and adjudication_of(store, str(record.record_id)) is None
+                        and orchestrator._ask_person_to_adjudicate_outcome(
+                            store.get_mission(mission_id), record, existing["document"]
+                        )
+                    ):
                         # 判不下来（含审阅员两次回复都无法采用）→ 问人；答复被消费后下一轮验收。
                         return True
                     if record.verdict in {ReviewVerdict.REJECTED, ReviewVerdict.REWORK}:
@@ -275,17 +294,29 @@ def advance_operation_outcomes(orchestrator: Any, mission_id: str) -> bool:
                         # 一次（问用户、改计划由它判断）；它回应过仍没解决就具名停下，不挂着等。
                         from .system_operations import _ask_planner_once, _stop
 
-                        facts = {"reason": "operation_outcome_rejected", "binding_id": existing["binding_id"],
-                                 "effect_key": row["binding"]["completion"]["effect_key"],
-                                 "verdict": str(record.verdict), "review_record_id": str(record.record_id),
-                                 "requirements_revision": int(owner.requirements_ref.revision),
-                                 "criteria": [dict(item) for item in record.to_json().get("criteria") or ()]}
+                        facts = {
+                            "reason": "operation_outcome_rejected",
+                            "binding_id": existing["binding_id"],
+                            "effect_key": row["binding"]["completion"]["effect_key"],
+                            "verdict": str(record.verdict),
+                            "review_record_id": str(record.record_id),
+                            "requirements_revision": int(owner.requirements_ref.revision),
+                            "criteria": [
+                                dict(item) for item in record.to_json().get("criteria") or ()
+                            ],
+                        }
                         if _ask_planner_once(
-                                orchestrator, store.get_mission(mission_id),
-                                key="operation-outcome-rejected:" + existing["binding_id"],
-                                event_type="VerifierAcceptanceRejected", detail=facts,
-                                stop=lambda why, facts=facts: _stop(orchestrator, mission_id, {
-                                    **facts, "explanation": "操作的结果没有通过审阅" + why})):
+                            orchestrator,
+                            store.get_mission(mission_id),
+                            key="operation-outcome-rejected:" + existing["binding_id"],
+                            event_type="VerifierAcceptanceRejected",
+                            detail=facts,
+                            stop=lambda why, facts=facts: _stop(
+                                orchestrator,
+                                mission_id,
+                                {**facts, "explanation": "操作的结果没有通过审阅" + why},
+                            ),
+                        ):
                             return True
                 # 2026-09-29：唯一一份审阅被重启打断而用完（不是审阅员的结论）——重审一次。
                 if not outcome_retake_due(store, mission_id, current):

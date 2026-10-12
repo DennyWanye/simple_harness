@@ -15,6 +15,7 @@
 * F03：曝光批次同号异体被库拒，链不连续冷读拒。
 * F08：换版本资料、改要求、确认完成映射三类真实写方各推一次纪元、旧证明被拒。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -64,7 +65,9 @@ def test_labels_exact_disclosure():
     labels = {evidence_label("review-a", ref) for ref in (v1, v2, as_source)}
     assert len(labels) == 3  # 同一编号：两个版本、另一种类，各有各的标签
     assert evidence_label("review-a", v1) == evidence_label("review-a", v1)  # 冷恢复后算出来还是它
-    assert evidence_label("review-b", v1) != evidence_label("review-a", v1)  # 换一次审阅就是另一个标签
+    assert evidence_label("review-b", v1) != evidence_label(
+        "review-a", v1
+    )  # 换一次审阅就是另一个标签
 
     catalogue = build_catalogue("review-a", (v1, v2, as_source, v1))
     assert [entry.ref for entry in catalogue].count(v1) == 1 and len(catalogue) == 3
@@ -73,16 +76,30 @@ def test_labels_exact_disclosure():
     # 审阅员引用标签 → 找回的是当时那个版本的精确引用
     assert resolve_evidence_ids("review-a", (by_ref[v1],), catalogue, shown) == (v1,)
     # 目录里有、但没给审阅员看过的那个版本：不能引用
-    _refused(lambda: resolve_evidence_ids("review-a", (by_ref[v2],), catalogue, shown), "UNEXPOSED_EVIDENCE")
+    _refused(
+        lambda: resolve_evidence_ids("review-a", (by_ref[v2],), catalogue, shown),
+        "UNEXPOSED_EVIDENCE",
+    )
     # 目录之外的标签：不能引用
-    _refused(lambda: resolve_evidence_ids("review-a", ("ev-" + "0" * 64,), catalogue, shown), "UNEXPOSED_EVIDENCE")
+    _refused(
+        lambda: resolve_evidence_ids("review-a", ("ev-" + "0" * 64,), catalogue, shown),
+        "UNEXPOSED_EVIDENCE",
+    )
     # 把第 1 版的标签挂到第 2 版上（伪造目录）：按名拒绝
     forged = (CatalogueEntry(by_ref[v1], v2),)
-    _refused(lambda: resolve_evidence_ids("review-a", (by_ref[v1],), forged, shown), "CATALOGUE_LABEL_BINDING")
+    _refused(
+        lambda: resolve_evidence_ids("review-a", (by_ref[v1],), forged, shown),
+        "CATALOGUE_LABEL_BINDING",
+    )
     # 别的审阅的目录拿到这次审阅来用：标签对不上
-    _refused(lambda: resolve_evidence_ids("review-b", (by_ref[v1],), catalogue, shown), "CATALOGUE_LABEL_BINDING")
-    _refused(lambda: resolve_evidence_ids("review-a", (by_ref[v1], by_ref[v1]), catalogue, shown),
-             "DUPLICATE_EVIDENCE_LABEL")
+    _refused(
+        lambda: resolve_evidence_ids("review-b", (by_ref[v1],), catalogue, shown),
+        "CATALOGUE_LABEL_BINDING",
+    )
+    _refused(
+        lambda: resolve_evidence_ids("review-a", (by_ref[v1], by_ref[v1]), catalogue, shown),
+        "DUPLICATE_EVIDENCE_LABEL",
+    )
 
 
 # --------------------------------------------------------------------------- F04
@@ -100,36 +117,66 @@ def test_checked_policy_truth_table():
 
     policy = CriterionPolicy("c", "CHECKED", ((spec("fmt"), spec("rule")), (spec("alt"),)))
     # 第一组有一项没过、第二组过了：通过，只消费第二组的回执
-    gate = evaluate_check_gate(policy, {spec("fmt"): result("fmt", Grade.FAIL), spec("rule"): result("rule"),
-                                        spec("alt"): result("alt")})
-    assert (gate.grade, gate.reason, gate.consumed) == (Grade.PASS, "CHECK_GROUP_SATISFIED", (receipt("alt"),))
+    gate = evaluate_check_gate(
+        policy,
+        {
+            spec("fmt"): result("fmt", Grade.FAIL),
+            spec("rule"): result("rule"),
+            spec("alt"): result("alt"),
+        },
+    )
+    assert (gate.grade, gate.reason, gate.consumed) == (
+        Grade.PASS,
+        "CHECK_GROUP_SATISFIED",
+        (receipt("alt"),),
+    )
     # 第一组缺一张回执（不知道）、第二组过了：同样通过
     gate = evaluate_check_gate(policy, {spec("fmt"): result("fmt"), spec("alt"): result("alt")})
     assert (gate.grade, gate.consumed) == (Grade.PASS, (receipt("alt"),))
     # 两组都过：按冻结的顺序取第一组
-    gate = evaluate_check_gate(policy, {spec("fmt"): result("fmt"), spec("rule"): result("rule"),
-                                        spec("alt"): result("alt")})
+    gate = evaluate_check_gate(
+        policy,
+        {spec("fmt"): result("fmt"), spec("rule"): result("rule"), spec("alt"): result("alt")},
+    )
     assert set(gate.consumed) == {receipt("fmt"), receipt("rule")}
     # 第一组没过、第二组跑出错：不知道，不是通过也不是没过
-    gate = evaluate_check_gate(policy, {spec("fmt"): result("fmt", Grade.FAIL), spec("rule"): result("rule"),
-                                        spec("alt"): result("alt", state="ERROR")})
+    gate = evaluate_check_gate(
+        policy,
+        {
+            spec("fmt"): result("fmt", Grade.FAIL),
+            spec("rule"): result("rule"),
+            spec("alt"): result("alt", state="ERROR"),
+        },
+    )
     assert (gate.grade, gate.reason) == (Grade.UNKNOWN, "CHECK_EVIDENCE_INCOMPLETE")
     # 两组都没过：没过
-    gate = evaluate_check_gate(policy, {spec("fmt"): result("fmt", Grade.FAIL), spec("rule"): result("rule"),
-                                        spec("alt"): result("alt", Grade.FAIL)})
+    gate = evaluate_check_gate(
+        policy,
+        {
+            spec("fmt"): result("fmt", Grade.FAIL),
+            spec("rule"): result("rule"),
+            spec("alt"): result("alt", Grade.FAIL),
+        },
+    )
     assert (gate.grade, gate.reason) == (Grade.FAIL, "CHECK_GROUPS_FAILED")
 
 
 # --------------------------------------------------------------------------- F11
 def _closeout_row(connection: sqlite3.Connection, mission_id: str) -> dict[str, Any] | None:
-    cursor = connection.execute("SELECT * FROM assurance_closeouts WHERE mission_id=?", (mission_id,))
+    cursor = connection.execute(
+        "SELECT * FROM assurance_closeouts WHERE mission_id=?", (mission_id,)
+    )
     row = cursor.fetchone()
     return None if row is None else dict(zip([c[0] for c in cursor.description], tuple(row)))
 
 
-def _insert_closeout(connection: sqlite3.Connection, row: dict[str, Any], verb: str = "INSERT") -> None:
-    connection.execute(f"{verb} INTO assurance_closeouts ({', '.join(row)}) VALUES ({', '.join('?' for _ in row)})",
-                       tuple(row.values()))
+def _insert_closeout(
+    connection: sqlite3.Connection, row: dict[str, Any], verb: str = "INSERT"
+) -> None:
+    connection.execute(
+        f"{verb} INTO assurance_closeouts ({', '.join(row)}) VALUES ({', '.join('?' for _ in row)})",
+        tuple(row.values()),
+    )
 
 
 def test_sql_bypass_initial_and_delete(tmp_path, monkeypatch):
@@ -145,13 +192,26 @@ def test_sql_bypass_initial_and_delete(tmp_path, monkeypatch):
         world = seen["world"]
         connection = world.store.connection
         resolved = connection.execute(
-            "SELECT resolution_id, mission_id FROM goal_resolutions ORDER BY rowid DESC LIMIT 1").fetchone()
-        if seen["born_finalized"] is None and _closeout_row(connection, resolved["mission_id"]) is None:
+            "SELECT resolution_id, mission_id FROM goal_resolutions ORDER BY rowid DESC LIMIT 1"
+        ).fetchone()
+        if (
+            seen["born_finalized"] is None
+            and _closeout_row(connection, resolved["mission_id"]) is None
+        ):
             # 根结论刚写下、收尾行还没出生：直接写一行"已定稿"
-            receipt = connection.execute("SELECT commit_id FROM commit_receipts LIMIT 1").fetchone()[0]
-            forged = {"mission_id": resolved["mission_id"], "resolution_id": resolved["resolution_id"],
-                      "state": "FINALIZED", "row_version": 1, "check_body_hash": HASH, "check_body_json": "{}",
-                      "last_receipt_id": receipt, "updated_at_ms": 0}
+            receipt = connection.execute(
+                "SELECT commit_id FROM commit_receipts LIMIT 1"
+            ).fetchone()[0]
+            forged = {
+                "mission_id": resolved["mission_id"],
+                "resolution_id": resolved["resolution_id"],
+                "state": "FINALIZED",
+                "row_version": 1,
+                "check_body_hash": HASH,
+                "check_body_json": "{}",
+                "last_receipt_id": receipt,
+                "updated_at_ms": 0,
+            }
             try:
                 _insert_closeout(connection, forged)
                 seen["born_finalized"] = "written"
@@ -164,36 +224,58 @@ def test_sql_bypass_initial_and_delete(tmp_path, monkeypatch):
     async def case():
         async with product_world(tmp_path / "root", LayeredScriptedProvider()) as world:
             seen["world"] = world
-            ids = [world.create({"goal": f"写一份笔记 {name}", "idempotency_key": "findings-f11-" + name,
-                                 "success_criteria": [f"file:notes/{name}.md"]})["mission_id"] for name in "ab"]
+            ids = [
+                world.create(
+                    {
+                        "goal": f"写一份笔记 {name}",
+                        "idempotency_key": "findings-f11-" + name,
+                        "success_criteria": [f"file:notes/{name}.md"],
+                    }
+                )["mission_id"]
+                for name in "ab"
+            ]
             for mission_id in ids:
                 for _ in range(30):
                     try:
                         await world.drain(timeout=20)
                     except AssertionError:
                         pass
-                    if str(world.store.get_mission(mission_id).status.value) in {"COMPLETED", "FAILED", "CANCELLED"}:
+                    if str(world.store.get_mission(mission_id).status.value) in {
+                        "COMPLETED",
+                        "FAILED",
+                        "CANCELLED",
+                    }:
                         break
             assert seen["born_finalized"] == "closeout must begin NOT_READY v1"
             mine, other = ids
             connection = world.store.connection
-            assert [str(world.store.get_mission(m).status.value) for m in ids] == ["COMPLETED", "COMPLETED"]
+            assert [str(world.store.get_mission(m).status.value) for m in ids] == [
+                "COMPLETED",
+                "COMPLETED",
+            ]
             row = _closeout_row(connection, mine)
             assert row is not None and row["state"] == "FINALIZED"
 
             with pytest.raises(sqlite3.IntegrityError, match="retain closeout history"):
                 connection.execute("DELETE FROM assurance_closeouts WHERE mission_id=?", (mine,))
             reborn = dict(row, state="NOT_READY", row_version=1)
-            with pytest.raises(sqlite3.IntegrityError, match="duplicate identity; use original receipt"):
+            with pytest.raises(
+                sqlite3.IntegrityError, match="duplicate identity; use original receipt"
+            ):
                 _insert_closeout(connection, reborn, "INSERT OR REPLACE")
             with pytest.raises(sqlite3.IntegrityError, match="invalid closeout update"):
-                connection.execute("UPDATE assurance_closeouts SET state='READY', row_version=row_version+1 "
-                                   "WHERE mission_id=?", (mine,))
+                connection.execute(
+                    "UPDATE assurance_closeouts SET state='READY', row_version=row_version+1 "
+                    "WHERE mission_id=?",
+                    (mine,),
+                )
             assert _closeout_row(connection, mine) == row
 
             # 钉子：新钉一份（合法的出生状态），审阅键是另一个任务的 → 标"已绑定"被拒
             foreign_key = connection.execute(
-                "SELECT review_key FROM assurance_review_bindings WHERE mission_id=? LIMIT 1", (other,)).fetchone()[0]
+                "SELECT review_key FROM assurance_review_bindings WHERE mission_id=? LIMIT 1",
+                (other,),
+            ).fetchone()[0]
             receipt = row["last_receipt_id"]
             connection.execute("SAVEPOINT forged_pin")
             try:
@@ -202,10 +284,28 @@ def test_sql_bypass_initial_and_delete(tmp_path, monkeypatch):
                         "INSERT INTO assurance_blob_pins (pin_id, mission_id, review_key, blob_hash, object_ref_json, "
                         "state, row_version, created_at_ms, released_at_ms, source_receipt_id, last_receipt_id) "
                         "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                        ("pin-" + name, mine, review_key, OTHER_HASH, "{}", "PREPARING", 1, 0, None, receipt, receipt))
-                    with pytest.raises(sqlite3.IntegrityError, match="BOUND pin lacks same-mission review"):
-                        connection.execute("UPDATE assurance_blob_pins SET state='BOUND', row_version=row_version+1 "
-                                           "WHERE pin_id=?", ("pin-" + name,))
+                        (
+                            "pin-" + name,
+                            mine,
+                            review_key,
+                            OTHER_HASH,
+                            "{}",
+                            "PREPARING",
+                            1,
+                            0,
+                            None,
+                            receipt,
+                            receipt,
+                        ),
+                    )
+                    with pytest.raises(
+                        sqlite3.IntegrityError, match="BOUND pin lacks same-mission review"
+                    ):
+                        connection.execute(
+                            "UPDATE assurance_blob_pins SET state='BOUND', row_version=row_version+1 "
+                            "WHERE pin_id=?",
+                            ("pin-" + name,),
+                        )
             finally:
                 connection.execute("ROLLBACK TO forged_pin")
                 connection.execute("RELEASE forged_pin")
@@ -226,8 +326,13 @@ def test_all_writers_barrier_and_expiry(tmp_path):
 
     async def case():
         async with product_world(tmp_path / "root", LayeredScriptedProvider(), auto=False) as world:
-            mission_id = world.create({"goal": "按规格写一份说明", "success_criteria": ["file:notes/a.md"],
-                                       "idempotency_key": "findings-f08"})["mission_id"]
+            mission_id = world.create(
+                {
+                    "goal": "按规格写一份说明",
+                    "success_criteria": ["file:notes/a.md"],
+                    "idempotency_key": "findings-f08",
+                }
+            )["mission_id"]
             store = world.store
 
             def epochs():
@@ -235,14 +340,24 @@ def test_all_writers_barrier_and_expiry(tmp_path):
                     return read_epochs_locked(connection, mission_id)
 
             def changed():
-                return [e for e in store.list_events(mission_id) if e.type == "AssuranceEvidenceChanged"]
+                return [
+                    e for e in store.list_events(mission_id) if e.type == "AssuranceEvidenceChanged"
+                ]
 
             captured, before = epochs(), len(changed())
-            world.control.register_source({"mission_id": mission_id, "path": "sources/spec.md",
-                                           "content": "# 规格\n", "kind": "markdown",
-                                           "idempotency_key": "findings-f08-source"})
+            world.control.register_source(
+                {
+                    "mission_id": mission_id,
+                    "path": "sources/spec.md",
+                    "content": "# 规格\n",
+                    "kind": "markdown",
+                    "idempotency_key": "findings-f08-source",
+                }
+            )
             current = epochs()
-            assert current.mission > captured.mission and current.environment == captured.environment
+            assert (
+                current.mission > captured.mission and current.environment == captured.environment
+            )
             events = changed()[before:]
             assert events and "sources" in {e.payload["source_table"] for e in events}
             assert events[-1].payload["epoch"] == current.mission
@@ -253,11 +368,18 @@ def test_all_writers_barrier_and_expiry(tmp_path):
                 assert raised.value.code == "RECHECK_REQUIRED"
                 require_epochs_locked(connection, mission_id, current, now_ms=now_ms)
 
-            triggers = {row[0] for row in store.connection.execute(
-                "SELECT name FROM sqlite_master WHERE type='trigger' AND name LIKE 'assurance_source_%'")}
-            missing = sorted(f"assurance_source_{table}_{verb}" for table in (*MISSION_TABLES, *GLOBAL_TABLES)
-                             for verb in ("insert", "update", "delete")
-                             if f"assurance_source_{table}_{verb}" not in triggers)
+            triggers = {
+                row[0]
+                for row in store.connection.execute(
+                    "SELECT name FROM sqlite_master WHERE type='trigger' AND name LIKE 'assurance_source_%'"
+                )
+            }
+            missing = sorted(
+                f"assurance_source_{table}_{verb}"
+                for table in (*MISSION_TABLES, *GLOBAL_TABLES)
+                for verb in ("insert", "update", "delete")
+                if f"assurance_source_{table}_{verb}" not in triggers
+            )
             assert missing == []
 
     asyncio.run(case())
@@ -275,53 +397,99 @@ def test_internal_ref_resolvers(tmp_path):
 
     async def case():
         async with product_world(tmp_path / "root", LayeredScriptedProvider(), auto=False) as world:
-            mine, other = (world.create({"goal": f"写一份笔记 {name}", "idempotency_key": "findings-f02-" + name,
-                                         "success_criteria": [f"file:notes/{name}.md"]})["mission_id"] for name in "ab")
+            mine, other = (
+                world.create(
+                    {
+                        "goal": f"写一份笔记 {name}",
+                        "idempotency_key": "findings-f02-" + name,
+                        "success_criteria": [f"file:notes/{name}.md"],
+                    }
+                )["mission_id"]
+                for name in "ab"
+            )
             store = world.store
             reader = AssuranceReader(store, tenant_id=TENANT, mission_id=mine)
 
             def requirements(mission_id: str) -> AssuranceRef:
                 row = store.connection.execute(
                     "SELECT revision_id, revision, revision_json FROM requirements_revisions WHERE mission_id=?",
-                    (mission_id,)).fetchone()
-                return AssuranceRef("requirements", Pin(row[0], int(row[1]), fingerprint(decode(row[2]))))
+                    (mission_id,),
+                ).fetchone()
+                return AssuranceRef(
+                    "requirements", Pin(row[0], int(row[1]), fingerprint(decode(row[2])))
+                )
 
             good = requirements(mine)
             assert decode(reader.read_exact_metadata(good).body_json)["mission_id"] == mine
-            _refused(lambda: reader.read_exact_metadata(
-                AssuranceRef("requirements", Pin(good.pin.id, good.pin.revision, OTHER_HASH))), "REF_BODY_CONFLICT")
+            _refused(
+                lambda: reader.read_exact_metadata(
+                    AssuranceRef("requirements", Pin(good.pin.id, good.pin.revision, OTHER_HASH))
+                ),
+                "REF_BODY_CONFLICT",
+            )
             # 身份还在、钉的版本不是现在这版：当前性错误（第 2 批 A08）
-            _refused(lambda: reader.read_exact_metadata(
-                AssuranceRef("requirements", Pin(good.pin.id, good.pin.revision + 1, good.pin.content_hash))),
-                "SOURCE_NOT_CURRENT")
+            _refused(
+                lambda: reader.read_exact_metadata(
+                    AssuranceRef(
+                        "requirements",
+                        Pin(good.pin.id, good.pin.revision + 1, good.pin.content_hash),
+                    )
+                ),
+                "SOURCE_NOT_CURRENT",
+            )
             # 别的任务的要求书：这个任务的读取器读不到
             _refused(lambda: reader.read_exact_metadata(requirements(other)), "SOURCE_UNAVAILABLE")
             # 不可变的种类带了版本号
-            _refused(lambda: reader.read_exact_metadata(AssuranceRef("review", Pin("rec-x", 1, HASH))),
-                     "REF_REVISION_MISMATCH")
+            _refused(
+                lambda: reader.read_exact_metadata(AssuranceRef("review", Pin("rec-x", 1, HASH))),
+                "REF_REVISION_MISMATCH",
+            )
             # 读取器不认识的种类
-            _refused(lambda: reader.read_exact_metadata(AssuranceRef("tool_receipt", Pin("t-1", 0, HASH))),
-                     "REF_KIND_UNSUPPORTED")
+            _refused(
+                lambda: reader.read_exact_metadata(
+                    AssuranceRef("tool_receipt", Pin("t-1", 0, HASH))
+                ),
+                "REF_KIND_UNSUPPORTED",
+            )
             # 别的租户
             foreign = AssuranceReader(store, tenant_id="another-tenant", mission_id=mine)
             _refused(lambda: foreign.read_exact_metadata(good), "REF_SCOPE_MISMATCH")
 
             # 事件类引用：别的任务的事件、不是这一类的事件
             kind = sorted(EVENT_REF_KINDS)[0]
-            created = {m: next(e for e in store.list_events(m) if e.type == "MissionCreated") for m in (mine, other)}
-            _refused(lambda: reader.read_exact_metadata(
-                AssuranceRef(kind, Pin(created[other].id, 0, fingerprint(created[other].to_json())))),
-                "REF_SCOPE_MISMATCH")
-            _refused(lambda: reader.read_exact_metadata(
-                AssuranceRef(kind, Pin(created[mine].id, 0, fingerprint(created[mine].to_json())))),
-                "REF_ISSUER_MISMATCH")
+            created = {
+                m: next(e for e in store.list_events(m) if e.type == "MissionCreated")
+                for m in (mine, other)
+            }
+            _refused(
+                lambda: reader.read_exact_metadata(
+                    AssuranceRef(
+                        kind, Pin(created[other].id, 0, fingerprint(created[other].to_json()))
+                    )
+                ),
+                "REF_SCOPE_MISMATCH",
+            )
+            _refused(
+                lambda: reader.read_exact_metadata(
+                    AssuranceRef(
+                        kind, Pin(created[mine].id, 0, fingerprint(created[mine].to_json()))
+                    )
+                ),
+                "REF_ISSUER_MISMATCH",
+            )
             # 回执：别的任务的回执
             row = store.connection.execute(
                 "SELECT commit_id, receipt_json FROM commit_receipts WHERE json_extract(receipt_json,'$.mission_id')=?"
-                " LIMIT 1", (other,)).fetchone()
+                " LIMIT 1",
+                (other,),
+            ).fetchone()
             assert row is not None
-            _refused(lambda: reader.read_exact_metadata(
-                AssuranceRef("commit_receipt", Pin(row[0], 0, fingerprint(decode(row[1]))))), "REF_SCOPE_MISMATCH")
+            _refused(
+                lambda: reader.read_exact_metadata(
+                    AssuranceRef("commit_receipt", Pin(row[0], 0, fingerprint(decode(row[1]))))
+                ),
+                "REF_SCOPE_MISMATCH",
+            )
 
     asyncio.run(case())
 
@@ -350,17 +518,26 @@ def test_direct_judge_waits_closeout(tmp_path, monkeypatch):
         provider = LayeredScriptedProvider()
         provider.held.add("worker")
         async with product_world(tmp_path / "root", provider) as world:
-            mission_id = world.create({"goal": "写一份笔记", "idempotency_key": "findings-f06",
-                                       "success_criteria": ["file:notes.md"]})["mission_id"]
+            mission_id = world.create(
+                {
+                    "goal": "写一份笔记",
+                    "idempotency_key": "findings-f06",
+                    "success_criteria": ["file:notes.md"],
+                }
+            )["mission_id"]
             store, commit = world.store, world.loop.commit
 
             def events(kind: str) -> list[Any]:
                 return [e for e in store.list_events(mission_id) if e.type == kind]
 
             def reservations() -> list[tuple[Any, ...]]:
-                return [tuple(row) for row in store.connection.execute(
-                    "SELECT subject_id, state FROM budget_reservations WHERE mission_id=? ORDER BY subject_id",
-                    (mission_id,))]
+                return [
+                    tuple(row)
+                    for row in store.connection.execute(
+                        "SELECT subject_id, state FROM budget_reservations WHERE mission_id=? ORDER BY subject_id",
+                        (mission_id,),
+                    )
+                ]
 
             for _ in range(20):
                 await world.drain(timeout=5)
@@ -370,7 +547,9 @@ def test_direct_judge_waits_closeout(tmp_path, monkeypatch):
             # 执行者还在跑：直接判定被拒，任务状态、预留都不动
             before = (reservations(), store.get_mission(mission_id).version)
             with pytest.raises(CommitRejected):
-                commit.judge_mission(mission_id, judgments=[{"criterion": "file:notes.md", "met": True}], summary="x")
+                commit.judge_mission(
+                    mission_id, judgments=[{"criterion": "file:notes.md", "met": True}], summary="x"
+                )
             assert (reservations(), store.get_mission(mission_id).version) == before
             assert not events("MissionSuccessJudged") and not events("MissionCompleted")
 
@@ -383,10 +562,14 @@ def test_direct_judge_waits_closeout(tmp_path, monkeypatch):
                 if events("MissionSuccessJudged"):
                     break
             [judged] = events("MissionSuccessJudged")
-            assert str(store.get_mission(mission_id).status.value) == "ACTIVE" and commit.assured_closeout_pending(mission_id)
+            assert str(
+                store.get_mission(mission_id).status.value
+            ) == "ACTIVE" and commit.assured_closeout_pending(mission_id)
             # 判定过了、收尾被挡着：再直接判一次，仍不完成
             before = reservations()
-            again = commit.judge_mission(mission_id, judgments=judged.payload["judgments"], summary="again")
+            again = commit.judge_mission(
+                mission_id, judgments=judged.payload["judgments"], summary="again"
+            )
             assert str(again.status.value) == "ACTIVE" and reservations() == before
             assert not events("MissionCompleted")
 
@@ -418,32 +601,50 @@ def test_no_parallel_scoped_review(tmp_path):
             def snapshot() -> dict[str, Any]:
                 bindings = connection.execute(
                     "SELECT review_key, package_id FROM assurance_review_bindings WHERE mission_id=?",
-                    (mission_id,)).fetchall()
+                    (mission_id,),
+                ).fetchall()
                 invocations = connection.execute(
                     "SELECT review_key, ordinal FROM assurance_review_invocations WHERE mission_id=?",
-                    (mission_id,)).fetchall()
+                    (mission_id,),
+                ).fetchall()
                 return {
                     "purposes": sorted(str(row[0]).split(":")[0] for row in bindings),
                     "packages": sorted(row[1] for row in bindings),
                     "invocations": sorted((row[0], row[1]) for row in invocations),
-                    "official": dict(connection.execute(
-                        "SELECT package_id, count(*) FROM review_records WHERE mission_id=? AND official=1 "
-                        "GROUP BY package_id", (mission_id,)).fetchall()),
-                    "reservations": dict(connection.execute(
-                        "SELECT subject_id, count(*) FROM budget_reservations WHERE mission_id=? "
-                        "AND subject_id LIKE ? GROUP BY subject_id", (mission_id, mission_id + ":assurance:%")).fetchall()),
+                    "official": dict(
+                        connection.execute(
+                            "SELECT package_id, count(*) FROM review_records WHERE mission_id=? AND official=1 "
+                            "GROUP BY package_id",
+                            (mission_id,),
+                        ).fetchall()
+                    ),
+                    "reservations": dict(
+                        connection.execute(
+                            "SELECT subject_id, count(*) FROM budget_reservations WHERE mission_id=? "
+                            "AND subject_id LIKE ? GROUP BY subject_id",
+                            (mission_id, mission_id + ":assurance:%"),
+                        ).fetchall()
+                    ),
                 }
 
             done = snapshot()
-            assert done["purposes"] == ["assurance-action-proposal", "assurance-content", "assurance-method-plan",
-                                        "assurance-mission-final", "assurance-operation-outcome"]
+            assert done["purposes"] == [
+                "assurance-action-proposal",
+                "assurance-content",
+                "assurance-method-plan",
+                "assurance-mission-final",
+                "assurance-operation-outcome",
+            ]
             assert len(done["packages"]) == len(set(done["packages"])) == len(done["purposes"])
-            assert len(done["purposes"]) == len(set(done["purposes"]))  # 这个任务里每类审阅只发生一次
+            assert len(done["purposes"]) == len(
+                set(done["purposes"])
+            )  # 这个任务里每类审阅只发生一次
             assert all(count == 1 for count in done["official"].values())
             assert set(done["official"]) <= set(done["packages"])
             assert [ordinal for _, ordinal in done["invocations"]] == [1] * len(done["purposes"])
-            assert done["reservations"] == {f"{mission_id}:assurance:{key}:{ordinal}": 1
-                                            for key, ordinal in done["invocations"]}
+            assert done["reservations"] == {
+                f"{mission_id}:assurance:{key}:{ordinal}": 1 for key, ordinal in done["invocations"]
+            }
             for _ in range(3):
                 await world.world.drain()
             assert snapshot() == done
@@ -452,7 +653,9 @@ def test_no_parallel_scoped_review(tmp_path):
 
 
 # --------------------------------------------------------------------------- F01（补：组合审阅 + 同通知重送）
-def test_every_purpose_including_composition_is_cut_once_even_when_its_notice_is_resent(tmp_path, monkeypatch):
+def test_every_purpose_including_composition_is_cut_once_even_when_its_notice_is_resent(
+    tmp_path, monkeypatch
+):
     """F01 具名反例"同一通知派两次审阅"：把每个用途"切审阅"的那一步（通知到达时的 ensure）原样再送一遍，
     带子目标的任务（多出**组合审阅**这一类）从头跑到完成——每个审查包只有一次调用、一笔预留、至多一条
     正式记录；重送回来的是同一次调用。``test_no_parallel_scoped_review`` 只覆盖带发布任务的五类，没有组合
@@ -480,9 +683,16 @@ def test_every_purpose_including_composition_is_cut_once_even_when_its_notice_is
     monkeypatch.setattr(AssuranceReviewRuntime, "_ensure_purpose", ensure_twice)
 
     async def case():
-        async with product_world(tmp_path / "root", LayeredScriptedProvider(planner=sub_goal_planner)) as world:
-            mission_id = world.create({"goal": "写两份笔记", "idempotency_key": "findings-f01-composition",
-                                       "success_criteria": ["file:notes/a.md", "file:NOTES.md"]})["mission_id"]
+        async with product_world(
+            tmp_path / "root", LayeredScriptedProvider(planner=sub_goal_planner)
+        ) as world:
+            mission_id = world.create(
+                {
+                    "goal": "写两份笔记",
+                    "idempotency_key": "findings-f01-composition",
+                    "success_criteria": ["file:notes/a.md", "file:NOTES.md"],
+                }
+            )["mission_id"]
             mission = await world.run_until_settled(mission_id, rounds=20)
             assert str(mission.status.value) == "COMPLETED", (mission.status, mission.final_report)
             connection = world.store.connection
@@ -490,35 +700,59 @@ def test_every_purpose_including_composition_is_cut_once_even_when_its_notice_is
             def snapshot() -> dict[str, Any]:
                 bindings = connection.execute(
                     "SELECT review_key, package_id FROM assurance_review_bindings WHERE mission_id=?",
-                    (mission_id,)).fetchall()
+                    (mission_id,),
+                ).fetchall()
                 invocations = connection.execute(
                     "SELECT review_key, ordinal FROM assurance_review_invocations WHERE mission_id=?",
-                    (mission_id,)).fetchall()
+                    (mission_id,),
+                ).fetchall()
                 return {
                     "keys": sorted(row[0] for row in bindings),
                     "packages": sorted(row[1] for row in bindings),
                     "invocations": sorted((row[0], row[1]) for row in invocations),
-                    "official": dict(connection.execute(
-                        "SELECT package_id, count(*) FROM review_records WHERE mission_id=? AND official=1 "
-                        "GROUP BY package_id", (mission_id,)).fetchall()),
-                    "reservations": dict(connection.execute(
-                        "SELECT subject_id, count(*) FROM budget_reservations WHERE mission_id=? "
-                        "AND subject_id LIKE ? GROUP BY subject_id", (mission_id, mission_id + ":assurance:%")).fetchall()),
+                    "official": dict(
+                        connection.execute(
+                            "SELECT package_id, count(*) FROM review_records WHERE mission_id=? AND official=1 "
+                            "GROUP BY package_id",
+                            (mission_id,),
+                        ).fetchall()
+                    ),
+                    "reservations": dict(
+                        connection.execute(
+                            "SELECT subject_id, count(*) FROM budget_reservations WHERE mission_id=? "
+                            "AND subject_id LIKE ? GROUP BY subject_id",
+                            (mission_id, mission_id + ":assurance:%"),
+                        ).fetchall()
+                    ),
                 }
 
             done = snapshot()
             purposes = {key.split(":")[0] for key in done["keys"]}
-            assert {"assurance-composition", "assurance-content", "assurance-method-plan",
-                    "assurance-mission-final"} <= purposes, purposes
-            assert len(done["keys"]) == len(set(done["keys"])) == len(set(done["packages"]))  # 一包一审阅
-            assert [ordinal for _, ordinal in done["invocations"]] == [1] * len(done["keys"])  # 每审阅一次调用
+            assert {
+                "assurance-composition",
+                "assurance-content",
+                "assurance-method-plan",
+                "assurance-mission-final",
+            } <= purposes, purposes
+            assert (
+                len(done["keys"]) == len(set(done["keys"])) == len(set(done["packages"]))
+            )  # 一包一审阅
+            assert [ordinal for _, ordinal in done["invocations"]] == [1] * len(
+                done["keys"]
+            )  # 每审阅一次调用
             assert sorted(key for key, _ in done["invocations"]) == done["keys"]
-            assert all(count == 1 for count in done["official"].values()) and set(done["official"]) <= set(done["packages"])
-            assert done["reservations"] == {f"{mission_id}:assurance:{key}:{ordinal}": 1
-                                            for key, ordinal in done["invocations"]}  # 每次调用恰好一笔预留
+            assert all(count == 1 for count in done["official"].values()) and set(
+                done["official"]
+            ) <= set(done["packages"])
+            assert done["reservations"] == {
+                f"{mission_id}:assurance:{key}:{ordinal}": 1 for key, ordinal in done["invocations"]
+            }  # 每次调用恰好一笔预留
             # 重送确实发生在每一类上，且每次回来的都是同一次调用
-            assert {name for name, _ in resent} >= {"assurance-composition-review", "assurance-method-plan-review",
-                                                     "assurance-mission-final-review"}, resent
+            assert {name for name, _ in resent} >= {
+                "assurance-composition-review",
+                "assurance-method-plan-review",
+                "assurance-mission-final-review",
+            }, resent
             assert all(same for _, same in resent), [name for name, same in resent if not same]
             for _ in range(3):
                 await world.drain()
@@ -528,7 +762,9 @@ def test_every_purpose_including_composition_is_cut_once_even_when_its_notice_is
 
 
 # --------------------------------------------------------------------------- F02（补：已结清预留 + 错采集身份）
-def test_a_settled_reservation_cannot_fund_a_new_review_call_and_a_foreign_collector_is_refused(tmp_path):
+def test_a_settled_reservation_cannot_fund_a_new_review_call_and_a_foreign_collector_is_refused(
+    tmp_path,
+):
     """F02 具名反例"已结算 reserve 被用于新调用"与"错 collector"。做法审阅已经结清、执行者还在跑（任务
     ACTIVE）：拿这个已结清的审阅调用再过一次派发闸门 → 按名拒（``REVIEW_RESERVATION_NOT_ACTIVE``），预留
     行仍是 SETTLED、费用照记；把它的回合交给另一个采集身份去读（创建键 / 输入哈希与产出这回合的代理不符）
@@ -545,8 +781,13 @@ def test_a_settled_reservation_cannot_fund_a_new_review_call_and_a_foreign_colle
         provider = LayeredScriptedProvider()
         provider.held.add("worker")
         async with product_world(tmp_path / "root", provider) as world:
-            mission_id = world.create({"goal": "写一份笔记", "idempotency_key": "findings-f02-reserve",
-                                       "success_criteria": ["file:notes.md"]})["mission_id"]
+            mission_id = world.create(
+                {
+                    "goal": "写一份笔记",
+                    "idempotency_key": "findings-f02-reserve",
+                    "success_criteria": ["file:notes.md"],
+                }
+            )["mission_id"]
             store, commit = world.store, world.loop.commit
             for _ in range(20):
                 await world.drain(timeout=5)
@@ -554,29 +795,57 @@ def test_a_settled_reservation_cannot_fund_a_new_review_call_and_a_foreign_colle
                     break
             assert provider.entered.is_set()
             assert str(store.get_mission(mission_id).status.value) == "ACTIVE"
-            reviews = [store.get_intent(row[0]) for row in store.connection.execute(
-                "SELECT intent_id FROM dispatch_intents WHERE mission_id=? ORDER BY created_at", (mission_id,))]
-            reviews = [i for i in reviews if i.config.get("assurance_protocol") == "assurance-exec-v1.1"]
-            settled = [i for i in reviews if (commit.ledger.reservation(i.subject_id) or {}).get("state") == "SETTLED"]
+            reviews = [
+                store.get_intent(row[0])
+                for row in store.connection.execute(
+                    "SELECT intent_id FROM dispatch_intents WHERE mission_id=? ORDER BY created_at",
+                    (mission_id,),
+                )
+            ]
+            reviews = [
+                i for i in reviews if i.config.get("assurance_protocol") == "assurance-exec-v1.1"
+            ]
+            settled = [
+                i
+                for i in reviews
+                if (commit.ledger.reservation(i.subject_id) or {}).get("state") == "SETTLED"
+            ]
             assert settled, [(i.kind, i.state) for i in reviews]  # 做法审阅已结清
             intent = settled[0]
             before = dict(commit.ledger.reservation(intent.subject_id))
             # 已结清的预留开不了新调用
-            _refused(lambda: require_review_handoff(commit, intent), "REVIEW_RESERVATION_NOT_ACTIVE")
+            _refused(
+                lambda: require_review_handoff(commit, intent), "REVIEW_RESERVATION_NOT_ACTIVE"
+            )
             after = dict(commit.ledger.reservation(intent.subject_id))
             assert after == before and after["state"] == "SETTLED"  # 旧费用照入，不动
-            assert not [row for row in store.connection.execute(
-                "SELECT 1 FROM assurance_review_invocations WHERE mission_id=? AND ordinal>1", (mission_id,))]
+            assert not [
+                row
+                for row in store.connection.execute(
+                    "SELECT 1 FROM assurance_review_invocations WHERE mission_id=? AND ordinal>1",
+                    (mission_id,),
+                )
+            ]
             # 错采集身份：同一回合，换个创建键 / 输入哈希来认领
             bridge = world.loop.bridge_for(intent)
             assert intent.agent_id and intent.expected_turn_id
             read_actual_review_turn(bridge, intent)  # 本来的身份读得回来
-            _refused(lambda: read_actual_review_turn(bridge, replace(intent, creation_key=intent.creation_key + ":other")),
-                     "REVIEW_RUNTIME_SOURCE_MISMATCH")
-            _refused(lambda: read_actual_review_turn(bridge, replace(intent, input_hash=OTHER_HASH)),
-                     "REVIEW_RUNTIME_SOURCE_MISMATCH")
-            _refused(lambda: read_actual_review_turn(bridge, replace(intent, expected_turn_id="turn-of-nobody")),
-                     "REVIEW_TURN_UNAVAILABLE")
+            _refused(
+                lambda: read_actual_review_turn(
+                    bridge, replace(intent, creation_key=intent.creation_key + ":other")
+                ),
+                "REVIEW_RUNTIME_SOURCE_MISMATCH",
+            )
+            _refused(
+                lambda: read_actual_review_turn(bridge, replace(intent, input_hash=OTHER_HASH)),
+                "REVIEW_RUNTIME_SOURCE_MISMATCH",
+            )
+            _refused(
+                lambda: read_actual_review_turn(
+                    bridge, replace(intent, expected_turn_id="turn-of-nobody")
+                ),
+                "REVIEW_TURN_UNAVAILABLE",
+            )
 
     asyncio.run(case())
 
@@ -594,39 +863,75 @@ def test_an_appended_disclosure_batch_that_conflicts_is_refused(tmp_path):
 
     async def case():
         async with product_world(tmp_path / "root", LayeredScriptedProvider()) as world:
-            mission_id = world.create({"goal": "写一份笔记", "idempotency_key": "findings-f03-append",
-                                       "success_criteria": ["file:notes.md"]})["mission_id"]
+            mission_id = world.create(
+                {
+                    "goal": "写一份笔记",
+                    "idempotency_key": "findings-f03-append",
+                    "success_criteria": ["file:notes.md"],
+                }
+            )["mission_id"]
             mission = await world.run_until_settled(mission_id, rounds=20)
             assert str(mission.status.value) == "COMPLETED", mission.final_report
             store, commit = world.store, world.loop.commit
             # 曝光批次挂在真实的审阅上（外键）：取这个任务内容审阅的审阅键，接在它已有的链后面追加
-            [review_key] = [row[0] for row in store.connection.execute(
-                "SELECT review_key FROM assurance_review_bindings WHERE mission_id=? AND review_key LIKE 'assurance-content:%'",
-                (mission_id,))]
+            [review_key] = [
+                row[0]
+                for row in store.connection.execute(
+                    "SELECT review_key FROM assurance_review_bindings WHERE mission_id=? AND review_key LIKE 'assurance-content:%'",
+                    (mission_id,),
+                )
+            ]
             side = AssuranceStore(store)
             existing = side.disclosure_chain(mission_id, review_key)
             start, previous = len(existing), (existing[-1].content_hash if existing else None)
-            agent, turn = "reviewer-f03", AssuranceRef("agent_turn_receipt", Pin("turn-f03", 0, HASH))
-            a, b, c = (AssuranceRef("artifact", Pin("doc-1", 1, HASH)), AssuranceRef("artifact", Pin("doc-2", 1, OTHER_HASH)),
-                       AssuranceRef("source", Pin("spec.md", 1, HASH)))
+            agent, turn = (
+                "reviewer-f03",
+                AssuranceRef("agent_turn_receipt", Pin("turn-f03", 0, HASH)),
+            )
+            a, b, c = (
+                AssuranceRef("artifact", Pin("doc-1", 1, HASH)),
+                AssuranceRef("artifact", Pin("doc-2", 1, OTHER_HASH)),
+                AssuranceRef("source", Pin("spec.md", 1, HASH)),
+            )
 
             def entry(ref: AssuranceRef) -> CatalogueEntry:
                 return CatalogueEntry(evidence_label(review_key, ref), ref)
 
-            def batch(no: int, prior: str | None, refs: tuple[AssuranceRef, ...], *, delivered: bool = True,
-                      suffix: str = "") -> DisclosureBatch:
+            def batch(
+                no: int,
+                prior: str | None,
+                refs: tuple[AssuranceRef, ...],
+                *,
+                delivered: bool = True,
+                suffix: str = "",
+            ) -> DisclosureBatch:
                 ordered = tuple(sorted((entry(ref) for ref in refs), key=lambda e: e.label))
                 if not delivered:  # 只给冷读用，不落事件
                     ref = AssuranceRef("disclosure_receipt", Pin("ev-" + str(no) + suffix, 0, HASH))
                 else:
-                    payload = {"review_key": review_key, "batch_no": no, "previous_batch_hash": prior,
-                               "delta_hash": fingerprint([e.to_json() for e in ordered]), "reviewer_agent_id": agent,
-                               "turn_receipt_ref": turn.to_json(), "provider_input_hash": HASH, "visible_message_ids": ["m-1"]}
+                    payload = {
+                        "review_key": review_key,
+                        "batch_no": no,
+                        "previous_batch_hash": prior,
+                        "delta_hash": fingerprint([e.to_json() for e in ordered]),
+                        "reviewer_agent_id": agent,
+                        "turn_receipt_ref": turn.to_json(),
+                        "provider_input_hash": HASH,
+                        "visible_message_ids": ["m-1"],
+                    }
                     with store.transaction():
-                        event = commit._emit("AssuranceEvidenceDisclosed", mission_id, key=f"{review_key}:{no}{suffix}",
-                                             payload=payload)
-                    ref = AssuranceRef("disclosure_receipt", Pin(event.id, 0, fingerprint(event.to_json())))
-                return DisclosureBatch(mission_id, review_key, no, prior, ordered, agent, turn, HASH, ("m-1",), ref)
+                        event = commit._emit(
+                            "AssuranceEvidenceDisclosed",
+                            mission_id,
+                            key=f"{review_key}:{no}{suffix}",
+                            payload=payload,
+                        )
+                    ref = AssuranceRef(
+                        "disclosure_receipt", Pin(event.id, 0, fingerprint(event.to_json()))
+                    )
+                return DisclosureBatch(
+                    mission_id, review_key, no, prior, ordered, agent, turn, HASH, ("m-1",), ref
+                )
 
             first = batch(start, previous, (a,))
             assert side.record_disclosure(first) is True
@@ -636,18 +941,36 @@ def test_an_appended_disclosure_batch_that_conflicts_is_refused(tmp_path):
             conflicting = batch(start + 1, first.content_hash, (c,), suffix=":alt")  # 同号异体
             _refused(lambda: side.record_disclosure(conflicting), "IMMUTABLE_IDENTITY_CONFLICT")
             chain = side.disclosure_chain(mission_id, review_key)
-            assert [x.content_hash for x in chain] == [*(x.content_hash for x in existing), first.content_hash,
-                                                       second.content_hash]
+            assert [x.content_hash for x in chain] == [
+                *(x.content_hash for x in existing),
+                first.content_hash,
+                second.content_hash,
+            ]
 
-            identity = dict(mission_id=mission_id, review_key=review_key, agent_id=agent,
-                            turn_receipt_ref=turn, provider_input_hash=HASH)
+            identity = dict(
+                mission_id=mission_id,
+                review_key=review_key,
+                agent_id=agent,
+                turn_receipt_ref=turn,
+                provider_input_hash=HASH,
+            )
             assert disclosed_to_turn(chain, **identity) == {entry(a).label, entry(b).label}
             # 另一位代理 / 另一回合看不到为本回合曝光的标签
-            assert disclosed_to_turn(chain, **{**identity, "agent_id": "reviewer-else"}) == frozenset()
+            assert (
+                disclosed_to_turn(chain, **{**identity, "agent_id": "reviewer-else"}) == frozenset()
+            )
             # 冷读：前序哈希对不上、批号重复、链不从 0 起，都按名拒
-            _refused(lambda: disclosed_to_turn((*existing, first, batch(start + 1, OTHER_HASH, (b,), delivered=False)),
-                                               **identity), "DISCLOSURE_CHAIN_INVALID")
-            _refused(lambda: disclosed_to_turn((*existing, first, first), **identity), "DISCLOSURE_CHAIN_INVALID")
+            _refused(
+                lambda: disclosed_to_turn(
+                    (*existing, first, batch(start + 1, OTHER_HASH, (b,), delivered=False)),
+                    **identity,
+                ),
+                "DISCLOSURE_CHAIN_INVALID",
+            )
+            _refused(
+                lambda: disclosed_to_turn((*existing, first, first), **identity),
+                "DISCLOSURE_CHAIN_INVALID",
+            )
             _refused(lambda: disclosed_to_turn((second,), **identity), "DISCLOSURE_CHAIN_INVALID")
 
     asyncio.run(case())
@@ -680,7 +1003,9 @@ def test_each_product_writer_class_moves_the_barrier_in_its_own_transaction(tmp_
                     return read_epochs_locked(connection, mission_id)
 
             def changed() -> list[Any]:
-                return [e for e in store.list_events(mission_id) if e.type == "AssuranceEvidenceChanged"]
+                return [
+                    e for e in store.list_events(mission_id) if e.type == "AssuranceEvidenceChanged"
+                ]
 
             def write_and_check(name: str, write: Any, *tables: str) -> None:
                 captured, seen = epochs(), len(changed())
@@ -701,31 +1026,68 @@ def test_each_product_writer_class_moves_the_barrier_in_its_own_transaction(tmp_
 
             def latest_ref() -> dict[str, Any]:
                 from agent_orchestrator.storage.htn_store import HtnStore
+
                 latest = HtnStore(store).latest_requirements_revision(mission_id)
-                return {"id": str(latest.revision_id), "revision": int(latest.revision),
-                        "content_hash": latest.content_hash()}
+                return {
+                    "id": str(latest.revision_id),
+                    "revision": int(latest.revision),
+                    "content_hash": latest.content_hash(),
+                }
 
             registered: dict[str, Any] = {}
 
             def register() -> None:
-                registered.update(world.control.register_source({
-                    "mission_id": mission_id, "path": "sources/spec.md", "content": "# 规格 v1\n", "kind": "markdown",
-                    "idempotency_key": "f08-src-1"}))
+                registered.update(
+                    world.control.register_source(
+                        {
+                            "mission_id": mission_id,
+                            "path": "sources/spec.md",
+                            "content": "# 规格 v1\n",
+                            "kind": "markdown",
+                            "idempotency_key": "f08-src-1",
+                        }
+                    )
+                )
 
             def supersede() -> None:  # 换版本是两步：提出 → 人批准，写入发生在批准那一步
-                proposal = world.control.supersede_source({
-                    "mission_id": mission_id, "path": "sources/spec.md", "content": "# 规格 v2\n", "kind": "markdown",
-                    "idempotency_key": "f08-src-2", "expected_version_hash": registered["version_hash"]})
+                proposal = world.control.supersede_source(
+                    {
+                        "mission_id": mission_id,
+                        "path": "sources/spec.md",
+                        "content": "# 规格 v2\n",
+                        "kind": "markdown",
+                        "idempotency_key": "f08-src-2",
+                        "expected_version_hash": registered["version_hash"],
+                    }
+                )
                 world.control.decide(proposal["request_id"], "approve", nonce="approve-f08-src-2")
 
             write_and_check("register_source", register, "sources")
             write_and_check("supersede_source", supersede, "sources")
-            write_and_check("amend_requirements", lambda: world.control.amend_requirements({
-                "mission_id": mission_id, "command_id": "f08-amend-1", "expected_requirements_ref": latest_ref(),
-                "changes": [{"op": "add", "statement": "file:reports/appendix.md"}], "reason": "用户补充了要求",
-                "source": {"kind": "MAIN_AGENT", "run_id": "run-1", "call_id": "call-1", "permission_mode": "auto"}}),
-                "requirements_revisions", "obligations")
-            write_and_check("approve_operation_completion_spec", lambda: confirm_completion(world, mission_id),
-                            "operation_completion_specs")
+            write_and_check(
+                "amend_requirements",
+                lambda: world.control.amend_requirements(
+                    {
+                        "mission_id": mission_id,
+                        "command_id": "f08-amend-1",
+                        "expected_requirements_ref": latest_ref(),
+                        "changes": [{"op": "add", "statement": "file:reports/appendix.md"}],
+                        "reason": "用户补充了要求",
+                        "source": {
+                            "kind": "MAIN_AGENT",
+                            "run_id": "run-1",
+                            "call_id": "call-1",
+                            "permission_mode": "auto",
+                        },
+                    }
+                ),
+                "requirements_revisions",
+                "obligations",
+            )
+            write_and_check(
+                "approve_operation_completion_spec",
+                lambda: confirm_completion(world, mission_id),
+                "operation_completion_specs",
+            )
 
     asyncio.run(case())

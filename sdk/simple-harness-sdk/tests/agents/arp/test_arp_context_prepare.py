@@ -30,11 +30,15 @@ from simple_harness.execution.provider_invocations import provider_request_finge
 from tool_fixture import ECHO_SCHEMA, EchoToolExecutor
 
 CONFIG = AgentConfig(name="w", instructions="你是助手。", model_profile_ref="p")
-TOOL_CONFIG = AgentConfig(name="w", instructions="你是助手。", model_profile_ref="p", tool_names=("echo",))
+TOOL_CONFIG = AgentConfig(
+    name="w", instructions="你是助手。", model_profile_ref="p", tool_names=("echo",)
+)
 
 
 def _tool_ports():
-    return dict(tool_executor=EchoToolExecutor(), tool_names=("echo",), tool_schemas={"echo": ECHO_SCHEMA})
+    return dict(
+        tool_executor=EchoToolExecutor(), tool_names=("echo",), tool_schemas={"echo": ECHO_SCHEMA}
+    )
 
 
 async def _turn(agent, text: str, input_id: str):  # type: ignore[no-untyped-def]
@@ -53,11 +57,19 @@ def _manifests(runtime):  # type: ignore[no-untyped-def]
 def test_uncertified_counter_is_refused_before_assembly() -> None:
     tokenizer = UpperBoundTokenizer()
     with pytest.raises(ArpError) as info:
-        model_limits(model=MODEL, tokenizer=tokenizer, input_limit_tokens=8192, max_output_tokens=1024)
+        model_limits(
+            model=MODEL, tokenizer=tokenizer, input_limit_tokens=8192, max_output_tokens=1024
+        )
     assert info.value.code == "GENERIC_TOKEN_BOUND_UNCERTIFIED"
-    limits = model_limits(model=MODEL, tokenizer=ExactWordTokenizer(), input_limit_tokens=8192, max_output_tokens=1024)
+    limits = model_limits(
+        model=MODEL, tokenizer=ExactWordTokenizer(), input_limit_tokens=8192, max_output_tokens=1024
+    )
     with pytest.raises(ArpError) as info:
-        MeterBinding(tokenizer=tokenizer, model_limits=limits, certification_ref=Pin("receipt", "x", 0, "a" * 64))
+        MeterBinding(
+            tokenizer=tokenizer,
+            model_limits=limits,
+            certification_ref=Pin("receipt", "x", 0, "a" * 64),
+        )
     assert info.value.code == "GENERIC_TOKEN_BOUND_UNCERTIFIED"
 
 
@@ -80,25 +92,41 @@ def test_every_provider_request_has_a_frozen_manifest_with_the_real_wire_count(t
                 assert body["token_receipt"]["request_hash"] == body["planned_request_hash"]
                 assert body["token_receipt"]["count_mode"] == "EXACT"
                 expected = runtime.arp.meter.count_wire(sent)
-                assert body["input_token_charge"] == expected == body["token_receipt"]["wire_input_tokens"]
+                assert (
+                    body["input_token_charge"]
+                    == expected
+                    == body["token_receipt"]["wire_input_tokens"]
+                )
                 assert body["input_token_charge"] <= body["effective_input_budget"]
                 assert body["reserved_output_tokens"] == sent.max_output_tokens
                 assert body["session_generation"] == 1 and body["adoption_revision"] == 1
                 sections = {s["section"] for s in body["sections"]}
                 assert {"A", "E", "G"} <= sections
-                assert all(s["trust"] == "CONTROL" for s in body["sections"] if s["section"] in ("A", "E"))
+                assert all(
+                    s["trust"] == "CONTROL" for s in body["sections"] if s["section"] in ("A", "E")
+                )
                 # Retrieval always has an aggregate result, never a page in flight.
-                recall = store.read_context_recall(runtime.uow.database.connection, body["retrieval_receipt_ref"]["id"])
+                recall = store.read_context_recall(
+                    runtime.uow.database.connection, body["retrieval_receipt_ref"]["id"]
+                )
                 assert recall is not None and recall.phase in ("READY", "SKIPPED")
-                assert recall.result is not None and digest(recall.result) == body["retrieval_receipt_ref"]["content_hash"]
+                assert (
+                    recall.result is not None
+                    and digest(recall.result) == body["retrieval_receipt_ref"]["content_hash"]
+                )
             del tokenizer
             first, second = manifests
             assert first.provider_request_ordinal == 1 and second.provider_request_ordinal == 2
             assert first.turn_id == second.turn_id
             # The second request carries the closed tool group as a required (open tail
             # became closed after the result) or recent group, never a stray message.
-            assert any(s["section"] == "G" and s["block_id"].startswith("group:") for s in second.manifest["sections"])
-            events = [e.event_type for e in store.list_event_bindings(runtime.uow.database.connection)]
+            assert any(
+                s["section"] == "G" and s["block_id"].startswith("group:")
+                for s in second.manifest["sections"]
+            )
+            events = [
+                e.event_type for e in store.list_event_bindings(runtime.uow.database.connection)
+            ]
             assert events.count("RuntimeContextPrepared") == 2
             # Replaying the frozen request reproduces the identical wire (same hash).
             wire = runtime._assembled.wire
@@ -132,7 +160,9 @@ def test_closure_and_turn_counting_come_from_the_ledger(tmp_path) -> None:
             assert closed.call_ids and set(closed.call_ids) == set(closed.result_call_ids)
             assert closed.closed and closed.indexable
             assert snapshot.body["turns"][0]["completed"] is True
-            assert set(snapshot.body["turns"][0]["required_group_ids"]) == {g.group_id for g in snapshot.groups}
+            assert set(snapshot.body["turns"][0]["required_group_ids"]) == {
+                g.group_id for g in snapshot.groups
+            }
             second = await _turn(agent, "第二轮", "i2")
             assert second.state is AgentTurnState.COMMITTED
             manifest = _manifests(runtime)[-1].manifest
@@ -154,12 +184,16 @@ def test_required_content_over_the_final_budget_is_a_definite_refusal(tmp_path) 
         async with runtime:
             huge = " ".join(f"规则{i}" for i in range(300))
             agent = await runtime.create(
-                AgentConfig(name="w", instructions=huge, model_profile_ref="p"), creation_key="k1", caller=trusted_caller()
+                AgentConfig(name="w", instructions=huge, model_profile_ref="p"),
+                creation_key="k1",
+                caller=trusted_caller(),
             )
             result = await _turn(agent, "你好", "i1")
             assert result.state is AgentTurnState.FAILED
             assert provider.calls == 0
-            assert "REQUIRED_CONTEXT_TOO_LARGE" in str(result.error) or "NO_INPUT_BUDGET" in str(result.error)
+            assert "REQUIRED_CONTEXT_TOO_LARGE" in str(result.error) or "NO_INPUT_BUDGET" in str(
+                result.error
+            )
             assert _manifests(runtime) == []
 
     asyncio.run(case())
@@ -170,12 +204,21 @@ def test_meter_refuses_output_above_the_deployment_limit(tmp_path) -> None:
     from simple_harness.contracts import Message, MessageRole, RequestId
     from simple_harness.providers import ProviderRequest
 
-    request = ProviderRequest(RequestId("a:provider-turn:1"), (Message(MessageRole.USER, "hi"),), max_output_tokens=4096)
+    request = ProviderRequest(
+        RequestId("a:provider-turn:1"), (Message(MessageRole.USER, "hi"),), max_output_tokens=4096
+    )
     with pytest.raises(ArpError) as info:
-        runtime.arp.meter.measure(request, run_id="a", max_input_budget=100, requested_output_tokens=4096)
+        runtime.arp.meter.measure(
+            request, run_id="a", max_input_budget=100, requested_output_tokens=4096
+        )
     assert info.value.code == "INVALID_OUTPUT_RESERVE"
-    ok = runtime.arp.meter.measure(request, run_id="a", max_input_budget=100, requested_output_tokens=256)
-    assert ok.wire_tokens == runtime.arp.meter.count_wire(request) and ok.receipt["coverage"] == "TEXT_TOOLS_JSON"
+    ok = runtime.arp.meter.measure(
+        request, run_id="a", max_input_budget=100, requested_output_tokens=256
+    )
+    assert (
+        ok.wire_tokens == runtime.arp.meter.count_wire(request)
+        and ok.receipt["coverage"] == "TEXT_TOOLS_JSON"
+    )
     runtime.uow.database.close()
 
 
@@ -193,15 +236,35 @@ def test_meter_binding_requires_the_runtime_tokenizer(tmp_path) -> None:
 
     root = bootstrap_root(tmp_path / "root", root_id="root-test")
     ports = AgentRuntimePorts(
-        provider=ScriptedProvider([]), authorization=RecordingAuthorization(), database_path=str(tmp_path / "runtime.db"),
-        model=MODEL, tokenizer=ExactWordTokenizer(), default_max_output_tokens=128, max_output_tokens_ceiling=256,
+        provider=ScriptedProvider([]),
+        authorization=RecordingAuthorization(),
+        database_path=str(tmp_path / "runtime.db"),
+        model=MODEL,
+        tokenizer=ExactWordTokenizer(),
+        default_max_output_tokens=128,
+        max_output_tokens_ceiling=256,
     )
     other = meter_binding(ExactWordTokenizer(), max_output=256)
     with pytest.raises(ArpError) as info:
-        build_arp_runtime(ports, ArpPorts(root_dir=root.directory, profile=standalone_profile(), activation_receipt=activation_receipt(), meter=other))
+        build_arp_runtime(
+            ports,
+            ArpPorts(
+                root_dir=root.directory,
+                profile=standalone_profile(),
+                activation_receipt=activation_receipt(),
+                meter=other,
+            ),
+        )
     assert info.value.code == "TOKEN_SERIALIZER_CHANGED"
     with pytest.raises(ArpError) as info:
-        build_arp_runtime(ports, ArpPorts(root_dir=root.directory, profile=standalone_profile(), activation_receipt=activation_receipt()))
+        build_arp_runtime(
+            ports,
+            ArpPorts(
+                root_dir=root.directory,
+                profile=standalone_profile(),
+                activation_receipt=activation_receipt(),
+            ),
+        )
     assert info.value.code == "GENERIC_TOKEN_BOUND_UNCERTIFIED"
 
 
@@ -211,7 +274,14 @@ def test_shrink_drops_the_turn_of_a_dropped_group_from_the_complete_count() -> N
 
     g1 = Group("g1", "t1", 1, 10)
     g2 = Group("g2", "t2", 2, 10)
-    selection = Selection(recent=(g1, g2), recalled=(), used=20, input_budget=100, complete_turn_ids=("t1", "t2"), count_complete=True)
+    selection = Selection(
+        recent=(g1, g2),
+        recalled=(),
+        used=20,
+        input_budget=100,
+        complete_turn_ids=("t1", "t2"),
+        count_complete=True,
+    )
     shrunk = _shrink(selection)
     assert shrunk is not None
     assert shrunk.recent == (g2,) and shrunk.used == 10

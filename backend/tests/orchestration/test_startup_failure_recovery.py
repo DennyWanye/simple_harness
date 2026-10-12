@@ -19,8 +19,10 @@ from deskpet.orchestration.service import (
 
 def _service(tmp_path, principal, **kwargs):
     service = OrchestrationService(
-        tmp_path, OrchestrationSettings(backoff_max_seconds=0.001),
-        principal=principal, **kwargs,
+        tmp_path,
+        OrchestrationSettings(backoff_max_seconds=0.001),
+        principal=principal,
+        **kwargs,
     )
     service._config = object()
     service._deployment = SimpleNamespace(to_json=lambda: {})
@@ -36,7 +38,10 @@ def _candidate():
     db = sqlite3.connect(":memory:")
     db.execute("CREATE TABLE events(seq INTEGER, type TEXT, payload_json TEXT, created_at REAL)")
     return SimpleNamespace(
-        __aenter__=AsyncMock(), __aexit__=AsyncMock(), run=AsyncMock(), commit=object(),
+        __aenter__=AsyncMock(),
+        __aexit__=AsyncMock(),
+        run=AsyncMock(),
+        commit=object(),
         store=SimpleNamespace(connection=db),
     )
 
@@ -46,7 +51,11 @@ class _Control(tuple):
     桩照真门面答 NATIVE，让这里只测候选的重试/关闭协议。"""
 
     def assurance_root_diagnostic(self):
-        return {"state": "NATIVE", "execution_allowed": True, "current_authentication_required": False}
+        return {
+            "state": "NATIVE",
+            "execution_allowed": True,
+            "current_authentication_required": False,
+        }
 
 
 def _wire_candidates(monkeypatch, candidates):
@@ -55,9 +64,14 @@ def _wire_candidates(monkeypatch, candidates):
     pending = iter(candidates)
     monkeypatch.setattr(event_handler, "Orchestrator", lambda *args, **kwargs: next(pending))
     # One (stub) native pool: an empty pool set is the "only DeepSeek" refusal.
-    monkeypatch.setattr(service_module, "source_runtime_options",
-                        lambda *args, **kwargs: {"profiles": {"deepseek-native-256k-v1": object()}})
-    monkeypatch.setattr(facade, "MissionControlV1", lambda candidate, **kwargs: _Control(("control", candidate)))
+    monkeypatch.setattr(
+        service_module,
+        "source_runtime_options",
+        lambda *args, **kwargs: {"profiles": {"deepseek-native-256k-v1": object()}},
+    )
+    monkeypatch.setattr(
+        facade, "MissionControlV1", lambda candidate, **kwargs: _Control(("control", candidate))
+    )
     monkeypatch.setattr(policies, "PolicyApi", lambda commit, *args, **kwargs: ("policy", commit))
 
 

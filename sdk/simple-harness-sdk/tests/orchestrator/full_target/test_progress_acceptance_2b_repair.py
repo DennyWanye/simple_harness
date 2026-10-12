@@ -51,8 +51,11 @@ OPEN = ("PENDING", "CLAIMED", "AGENT_CREATED", "SUBMITTED")
 
 
 def _planner_intents(loop, mission_id: str) -> list:
-    return [i for i in loop.store.list_intents(*OPEN, "SETTLED", "FAILED")
-            if i.mission_id == mission_id and i.kind == "plan" and ":planner:" in i.subject_id]
+    return [
+        i
+        for i in loop.store.list_intents(*OPEN, "SETTLED", "FAILED")
+        if i.mission_id == mission_id and i.kind == "plan" and ":planner:" in i.subject_id
+    ]
 
 
 def _ledger(loop, mission_id: str) -> dict[str, int]:
@@ -80,7 +83,9 @@ async def _slow_entrances(loop, mission) -> list[bool]:
 
 
 def _no_claims(request):  # type: ignore[no-untyped-def]
-    body = json.loads(result_envelope(request)[len("<result_envelope>"):-len("</result_envelope>")])
+    body = json.loads(
+        result_envelope(request)[len("<result_envelope>") : -len("</result_envelope>")]
+    )
     body["claims"] = []
     return "<result_envelope>" + json.dumps(body, ensure_ascii=False) + "</result_envelope>"
 
@@ -102,7 +107,9 @@ async def _owed_repair(world) -> dict[str, int]:  # type: ignore[no-untyped-def]
 
 
 def _failing_worker():  # type: ignore[no-untyped-def]
-    return scripted_worker(("workspace_write_file", {"path": OUTPUT, "content": "# 要点\n"}), _no_claims)
+    return scripted_worker(
+        ("workspace_write_file", {"path": OUTPUT, "content": "# 要点\n"}), _no_claims
+    )
 
 
 def test_one_structural_gap_opens_one_planner_round_across_repeated_ticks(tmp_path) -> None:
@@ -113,7 +120,9 @@ def test_one_structural_gap_opens_one_planner_round_across_repeated_ticks(tmp_pa
             loop, mission = world.loop, world.mission
             opened = await _owed_repair(world)
             # 同一事实再收集三次：不再记录新请求；那一轮还开着，不再开第二轮。
-            assert [collect_triggers(loop, loop.store.get_mission(mission.id)) for _ in range(3)] == [False] * 3
+            assert [
+                collect_triggers(loop, loop.store.get_mission(mission.id)) for _ in range(3)
+            ] == [False] * 3
             for _ in range(3):
                 assert not any(await _slow_entrances(loop, mission))
             for _ in range(3):

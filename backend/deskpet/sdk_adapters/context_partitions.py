@@ -203,9 +203,10 @@ def text_tokens(value: object) -> int:
         text = _JSON_UNICODE_ESCAPE.sub(_fold, text)
     literal_cjk = sum(1 for char in text if "\u3400" <= char <= "\u9fff")
     non_cjk = max(0, len(text) - literal_cjk)
-    return cjk_tokens(literal_cjk + escaped_cjk) + (
-        non_cjk + NON_CJK_CHARS_PER_TOKEN - 1
-    ) // NON_CJK_CHARS_PER_TOKEN
+    return (
+        cjk_tokens(literal_cjk + escaped_cjk)
+        + (non_cjk + NON_CJK_CHARS_PER_TOKEN - 1) // NON_CJK_CHARS_PER_TOKEN
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -256,9 +257,7 @@ class ProviderTokenCalibration:
         return int(math.ceil(max(0, int(tokens)) * self.ratio(provider_turn_ordinal)))
 
     def apply_tool_schema(self, tokens: int, *, provider_turn_ordinal: int = 0) -> int:
-        return int(
-            math.ceil(max(0, int(tokens)) * self.tool_schema_ratio(provider_turn_ordinal))
-        )
+        return int(math.ceil(max(0, int(tokens)) * self.tool_schema_ratio(provider_turn_ordinal)))
 
 
 DEFAULT_CALIBRATION = ProviderTokenCalibration()
@@ -527,9 +526,10 @@ def assemble_partitions(
         return sum(token_estimator(item.content) for item in group.items)
 
     protected_items = list(protected)
-    if len(protected_items) > caps["protected"]["items_max"] or sum(
-        item.bytes_len for item in protected_items
-    ) > caps["protected"]["bytes_max"]:
+    if (
+        len(protected_items) > caps["protected"]["items_max"]
+        or sum(item.bytes_len for item in protected_items) > caps["protected"]["bytes_max"]
+    ):
         raise ContextBudgetExceeded("sdk_context_protected_partition_over_cap")
 
     partitions: dict[str, list[PartitionItem]] = {
@@ -549,17 +549,13 @@ def assemble_partitions(
     trimmed_groups = 0
 
     def closed_groups() -> list[int]:
-        return [
-            index
-            for index, group in enumerate(groups)
-            if not group.open_run
-        ]
+        return [index for index, group in enumerate(groups) if not group.open_run]
 
-    while len(closed_groups()) > int(group_caps["groups_max"]) or sum(
-        group.item_count for group in groups
-    ) > int(group_caps["items_max"]) or sum(
-        group.bytes_len for group in groups
-    ) > int(group_caps["bytes_max"]):
+    while (
+        len(closed_groups()) > int(group_caps["groups_max"])
+        or sum(group.item_count for group in groups) > int(group_caps["items_max"])
+        or sum(group.bytes_len for group in groups) > int(group_caps["bytes_max"])
+    ):
         candidates = closed_groups()
         if not candidates:
             raise ContextBudgetExceeded("sdk_context_causal_groups_over_cap")

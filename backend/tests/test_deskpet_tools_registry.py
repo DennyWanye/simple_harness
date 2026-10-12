@@ -16,6 +16,7 @@ Covers every Requirement in ``openspec/changes/p4-poseidon-agent-harness
 We exercise both the module-level ``registry`` (which ran auto-discovery
 at import) and fresh ``ToolRegistry()`` instances for isolated tests.
 """
+
 from __future__ import annotations
 
 import json
@@ -154,6 +155,7 @@ def test_register_validates_handler(fresh: ToolRegistry):
 def test_register_duplicate_without_optin_raises(fresh: ToolRegistry):
     """WI-T4.1 v3：同名重注册且双方都未 opt-in → ToolNameConflictError."""
     from deskpet.tools.registry import ToolNameConflictError
+
     fresh.register("a", "control", _fake_schema("a"), lambda a, t: '"v1"')
     with pytest.raises(ToolNameConflictError):
         fresh.register("a", "control", _fake_schema("a"), lambda a, t: '"v2"')
@@ -163,7 +165,10 @@ def test_register_replaces_duplicate_with_optin(fresh: ToolRegistry, caplog):
     """WI-T4.1 v3：opt-in replace_allowed=True → 允许覆盖 + 仅 warn."""
     fresh.register("a", "control", _fake_schema("a"), lambda a, t: '"v1"')
     fresh.register(
-        "a", "control", _fake_schema("a"), lambda a, t: '"v2"',
+        "a",
+        "control",
+        _fake_schema("a"),
+        lambda a, t: '"v2"',
         replace_allowed=True,
     )
     assert fresh.dispatch("a", {}) == '"v2"'
@@ -182,9 +187,7 @@ def test_schemas_filtered_by_toolset(fresh: ToolRegistry):
     fresh.register("m1", "memory", _fake_schema("m1"), lambda a, t: "{}")
     fresh.register("t1", "todo", _fake_schema("t1"), lambda a, t: "{}")
     fresh.register("c1", "control", _fake_schema("c1"), lambda a, t: "{}")
-    got = [s["function"]["name"] for s in fresh.schemas(
-        enabled_toolsets=["memory", "todo"]
-    )]
+    got = [s["function"]["name"] for s in fresh.schemas(enabled_toolsets=["memory", "todo"])]
     assert sorted(got) == ["m1", "t1"]
 
 
@@ -231,9 +234,7 @@ def test_requires_env_empty_string_still_hides(fresh: ToolRegistry, monkeypatch)
         lambda a, t: "{}",
         requires_env=["BRAVE_API_KEY"],
     )
-    assert "web_search_brave" not in [
-        s["function"]["name"] for s in fresh.schemas()
-    ]
+    assert "web_search_brave" not in [s["function"]["name"] for s in fresh.schemas()]
 
 
 # ---------------------------------------------------------------------

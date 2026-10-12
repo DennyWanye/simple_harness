@@ -95,13 +95,15 @@ class HandoffOutcomeCheck:
 
 
 #: what a resend's record says it stands on, per verdict
-RESEND_GROUNDS = MappingProxyType({
-    "no_handoff": "nothing_sent",
-    "result_known": "result_known_import_pending",
-    "confirmed_not_started": "confirmed_not_started",
-    "refused_on_wire": "provider_refused_on_wire",
-    "unresolved": "outcome_unconfirmed",
-})
+RESEND_GROUNDS = MappingProxyType(
+    {
+        "no_handoff": "nothing_sent",
+        "result_known": "result_known_import_pending",
+        "confirmed_not_started": "confirmed_not_started",
+        "refused_on_wire": "provider_refused_on_wire",
+        "unresolved": "outcome_unconfirmed",
+    }
+)
 
 
 def check_unknown_handoff(store, uow, *, intent_id: str) -> HandoffOutcomeCheck:
@@ -234,9 +236,9 @@ def ensure_wire_terminal_table(store) -> None:
 def held_guarded_grants(store) -> int:
     """Guarded grants occupying a physical slot, as every pool sharing the store counts them."""
     ensure_wire_terminal_table(store)
-    return int(store.connection.execute(
-        "SELECT COUNT(*) FROM (" + _HELD_GRANTS_SQL + ")"
-    ).fetchone()[0])
+    return int(
+        store.connection.execute("SELECT COUNT(*) FROM (" + _HELD_GRANTS_SQL + ")").fetchone()[0]
+    )
 
 
 class ProviderBudgetCommitAdapter:
@@ -297,6 +299,7 @@ class ProviderBudgetCommitAdapter:
             ):
                 raise _deny("provider Task is terminal or differs from Mission")
         from ..storage.store import StoreError
+
         try:
             self.commit.require_taskgraph_handoff(intent)
         except StoreError as error:
@@ -327,16 +330,26 @@ class ProviderBudgetCommitAdapter:
         role = intent.config.get("role")
         if role not in {"operation_proposal_reviewer", "operation_outcome_reviewer"}:
             return False
-        source = OperationIntentStore(self.store).get(str(intent.config.get("operation_intent_id", "")))
-        if (source is None or source["mission_id"] != intent.mission_id
-            or source["producer_task_id"] != task.id or source["source_result_id"] != task.accepted_result_id):
+        source = OperationIntentStore(self.store).get(
+            str(intent.config.get("operation_intent_id", ""))
+        )
+        if (
+            source is None
+            or source["mission_id"] != intent.mission_id
+            or source["producer_task_id"] != task.id
+            or source["source_result_id"] != task.accepted_result_id
+        ):
             return False
         if role == "operation_proposal_reviewer":
             return intent.config.get("review_package_id") == source["review_package_id"]
         outcome = OperationCompletionStore(self.store).get_outcome_binding_exact(
-            intent.mission_id, str(intent.config.get("outcome_binding_id", "")))
-        return (outcome is not None and outcome["document"].intent_id == source["intent_id"]
-            and outcome["review_package_id"] == intent.config.get("review_package_id"))
+            intent.mission_id, str(intent.config.get("outcome_binding_id", ""))
+        )
+        return (
+            outcome is not None
+            and outcome["document"].intent_id == source["intent_id"]
+            and outcome["review_package_id"] == intent.config.get("review_package_id")
+        )
 
     def grow(self, reservation, *, required: int) -> None:
         if required <= reservation["reserved_tokens"]:
@@ -487,7 +500,9 @@ class ProviderBudgetGuard:
                 # The grant and ticket carry the identity the request was frozen with
                 # (accepted by ``authority``), so every later equality check agrees.
                 ticket = ProviderAdmissionTicket(
-                    ticket.invocation_id, ticket.handoff_ordinal, ticket.wire_fingerprint,
+                    ticket.invocation_id,
+                    ticket.handoff_ordinal,
+                    ticket.wire_fingerprint,
                     str(intent.config["provider_admission_fingerprint"]),
                 )
                 if (
@@ -579,7 +594,9 @@ class ProviderBudgetGuard:
                         continue
                     if str(previous.state) == "claimed":
                         continue  # a proven never-handed-off request has no usage
-                    actual = _usage(previous) if str(previous.state) in {"succeeded", "failed"} else None
+                    actual = (
+                        _usage(previous) if str(previous.state) in {"succeeded", "failed"} else None
+                    )
                     if actual is not None:
                         prior_output += actual[1]
                         continue
@@ -643,8 +660,8 @@ class ProviderBudgetGuard:
                                 reason_code="profile_identity_unknown",
                             )
                         held_profiles.append(held_profile)
-                    own_active = (
-                        held_profiles.count(profile) + held_legacy_slots(self.store, profile)
+                    own_active = held_profiles.count(profile) + held_legacy_slots(
+                        self.store, profile
                     )
                     profile_available = own_active < self.profile_slots[profile]
                 if active < self.max_slots and profile_available:
@@ -940,7 +957,10 @@ class ProviderBudgetGuard:
                     else:
                         if row["state"] in HELD and row["state"] != "UNKNOWN":
                             self._update(ticket, "UNKNOWN")
-                        if str(record.state) == "unknown" and record.handoff_attempt == row["handoff_ordinal"]:
+                        if (
+                            str(record.state) == "unknown"
+                            and record.handoff_attempt == row["handoff_ordinal"]
+                        ):
                             # Older libraries: an unknown call already ended on the wire.
                             self._mark_wire_terminal(ticket)
                         elif self._owner_gone(uow, binding, row):

@@ -26,7 +26,12 @@ __all__ = ("TENANT", "native_options", "opened", "request")
 def request(key: str, **overrides: Any) -> dict[str, Any]:
     """一个普通的用户建任务请求（门面字段）。"""
 
-    return {"goal": "核对来源", "success_criteria": ["file:REPORT.md"], "idempotency_key": key, **overrides}
+    return {
+        "goal": "核对来源",
+        "success_criteria": ["file:REPORT.md"],
+        "idempotency_key": key,
+        **overrides,
+    }
 
 
 @contextmanager
@@ -45,8 +50,9 @@ def opened(root: Path, provider: Any = None, **config: Any):
             loop.close()
 
 
-def native_options(config: Any, provider: Any, *, tenant_id: str = TENANT,
-                   principal_id: str = "product-world-user") -> dict[str, Any]:
+def native_options(
+    config: Any, provider: Any, *, tenant_id: str = TENANT, principal_id: str = "product-world-user"
+) -> dict[str, Any]:
     """``Orchestrator(config, provider, **native_options(...))``：产品的原生执行池（测试计数器）。"""
 
     from agent_orchestrator.deployment.native_pools import NativePools, pool_options
@@ -54,6 +60,12 @@ def native_options(config: Any, provider: Any, *, tenant_id: str = TENANT,
     from agent_orchestrator.testing.word_counter import FixtureWordCounter
 
     counter = FixtureWordCounter()
-    native = NativePools(tenant_id=tenant_id, principal_id=principal_id, allowed_tools=DEFAULT_TOOLS,
-                         meter_factory=counter.meter_factory)
-    return pool_options(config, native=native, provider=provider, counter=counter, provider_kind="fixtures")
+    native = NativePools(
+        tenant_id=tenant_id,
+        principal_id=principal_id,
+        allowed_tools=DEFAULT_TOOLS,
+        meter_factory=counter.meter_factory,
+    )
+    return pool_options(
+        config, native=native, provider=provider, counter=counter, provider_kind="fixtures"
+    )

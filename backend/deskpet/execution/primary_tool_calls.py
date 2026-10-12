@@ -11,6 +11,7 @@ by ``(evidence_id, envelope_hash)``, and joins them back when a history group
 is projected. Nothing here is a grant, and no archived envelope changes: an
 observation without rows renders exactly as before.
 """
+
 from __future__ import annotations
 
 import json
@@ -51,11 +52,17 @@ def side_record_body(record, *, host_run_id):
     for call in record["tool_calls"]:
         text, _ = redact_credential_shapes(canonical_json(call["arguments"]))
         calls.append(dict(call_id=call["call_id"], name=call["name"], arguments=text))
-    return dict(schema_version=1, kind=KIND, sdk_run_id=record["sdk_run_id"], host_run_id=host_run_id,
-                message_ordinal=record["message_ordinal"],
-                provider_invocation_id=record["provider_invocation_id"],
-                provider_turn_ordinal=record["provider_turn_ordinal"],
-                provider_response_hash=record["provider_response_hash"], tool_calls=calls)
+    return dict(
+        schema_version=1,
+        kind=KIND,
+        sdk_run_id=record["sdk_run_id"],
+        host_run_id=host_run_id,
+        message_ordinal=record["message_ordinal"],
+        provider_invocation_id=record["provider_invocation_id"],
+        provider_turn_ordinal=record["provider_turn_ordinal"],
+        provider_response_hash=record["provider_response_hash"],
+        tool_calls=calls,
+    )
 
 
 def consistent_with_transcript(body, messages) -> bool:
@@ -68,17 +75,28 @@ def consistent_with_transcript(body, messages) -> bool:
     """
     ordinal = body.get("message_ordinal")
     calls = body.get("tool_calls")
-    if (type(ordinal) is not int or not 1 < ordinal <= len(messages)
-            or messages[ordinal - 1].get("role") != "assistant"
-            or not isinstance(calls, list) or not calls
-            or not all(isinstance(call, dict) and set(call) == _CALL_KEYS
-                       and all(isinstance(call[key], str) for key in _CALL_KEYS) for call in calls)):
+    if (
+        type(ordinal) is not int
+        or not 1 < ordinal <= len(messages)
+        or messages[ordinal - 1].get("role") != "assistant"
+        or not isinstance(calls, list)
+        or not calls
+        or not all(
+            isinstance(call, dict)
+            and set(call) == _CALL_KEYS
+            and all(isinstance(call[key], str) for key in _CALL_KEYS)
+            for call in calls
+        )
+    ):
         return False
-    following = messages[ordinal:ordinal + len(calls)]
+    following = messages[ordinal : ordinal + len(calls)]
     return len(following) == len(calls) and all(
-        isinstance(item, dict) and item.get("role") == "tool"
-        and item.get("call_id") == call["call_id"] and item.get("name") == call["name"]
-        for item, call in zip(following, calls))
+        isinstance(item, dict)
+        and item.get("role") == "tool"
+        and item.get("call_id") == call["call_id"]
+        and item.get("name") == call["name"]
+        for item, call in zip(following, calls)
+    )
 
 
 async def _side_record_installed(db) -> bool:
@@ -88,8 +106,9 @@ async def _side_record_installed(db) -> bool:
     return version in SIDE_RECORD_USER_VERSIONS
 
 
-async def write_assistant_tool_calls_tx(db, *, host_run_id, sdk_run_id, evidence_id, envelope_hash,
-                                        messages, records, recorded_at) -> int:
+async def write_assistant_tool_calls_tx(
+    db, *, host_run_id, sdk_run_id, evidence_id, envelope_hash, messages, records, recorded_at
+) -> int:
     """Archive the side rows inside the terminal observation's own transaction.
 
     A row that cannot be made durable (private-shape rejection, transcript
@@ -111,30 +130,49 @@ async def write_assistant_tool_calls_tx(db, *, host_run_id, sdk_run_id, evidence
             except TaskScopeProtocolError as exc:
                 reason = str(exc)
         if reason is not None:
-            log.warning("primary_assistant_tool_calls_skipped sdk_run_id=%s message_ordinal=%s reason=%s",
-                        sdk_run_id, ordinal, reason)
+            log.warning(
+                "primary_assistant_tool_calls_skipped sdk_run_id=%s message_ordinal=%s reason=%s",
+                sdk_run_id,
+                ordinal,
+                reason,
+            )
             continue
         try:
             await db.execute(
                 "INSERT INTO primary_assistant_tool_calls(record_id,sdk_run_id,host_run_id,message_ordinal,"
                 "observation_evidence_id,observation_envelope_hash,body_json,body_hash,recorded_at) "
                 "VALUES (?,?,?,?,?,?,?,?,?)",
-                (record_id(sdk_run_id, ordinal), sdk_run_id, host_run_id, ordinal, evidence_id, envelope_hash,
-                 canonical_json(body), canonical_hash(body), float(recorded_at)),
+                (
+                    record_id(sdk_run_id, ordinal),
+                    sdk_run_id,
+                    host_run_id,
+                    ordinal,
+                    evidence_id,
+                    envelope_hash,
+                    canonical_json(body),
+                    canonical_hash(body),
+                    float(recorded_at),
+                ),
             )
         except sqlite3.IntegrityError:
             # A row for this (sdk_run_id, ordinal) already exists — the append-only
             # table refuses the second write. SQLite rolls back the failed statement
             # only, so the terminal observation's own transaction stays intact: an
             # enrichment must never be able to fail an archival commit.
-            log.warning("primary_assistant_tool_calls_skipped sdk_run_id=%s message_ordinal=%s reason=%s",
-                        sdk_run_id, ordinal, "already_recorded")
+            log.warning(
+                "primary_assistant_tool_calls_skipped sdk_run_id=%s message_ordinal=%s reason=%s",
+                sdk_run_id,
+                ordinal,
+                "already_recorded",
+            )
             continue
         written += 1
     return written
 
 
-async def read_assistant_tool_calls_tx(db, *, sdk_run_id, evidence_id, envelope_hash, messages) -> dict:
+async def read_assistant_tool_calls_tx(
+    db, *, sdk_run_id, evidence_id, envelope_hash, messages
+) -> dict:
     """``{message_ordinal: [{call_id, name, arguments}, ...]}`` for one archived observation.
 
     Rows are verified against their own hash, their identity columns and the
@@ -157,17 +195,25 @@ async def read_assistant_tool_calls_tx(db, *, sdk_run_id, evidence_id, envelope_
         ordinal = row["message_ordinal"]
         try:
             body = json.loads(row["body_json"])
-            ok = (isinstance(body, dict) and body.get("kind") == KIND and body.get("schema_version") == 1
-                  and body.get("sdk_run_id") == sdk_run_id and body.get("host_run_id") == row["host_run_id"]
-                  and body.get("message_ordinal") == ordinal
-                  and row["record_id"] == record_id(sdk_run_id, ordinal)
-                  and canonical_hash(body) == row["body_hash"]
-                  and consistent_with_transcript(body, messages))
+            ok = (
+                isinstance(body, dict)
+                and body.get("kind") == KIND
+                and body.get("schema_version") == 1
+                and body.get("sdk_run_id") == sdk_run_id
+                and body.get("host_run_id") == row["host_run_id"]
+                and body.get("message_ordinal") == ordinal
+                and row["record_id"] == record_id(sdk_run_id, ordinal)
+                and canonical_hash(body) == row["body_hash"]
+                and consistent_with_transcript(body, messages)
+            )
         except (ValueError, TypeError):
             ok = False
         if not ok:
-            log.warning("primary_assistant_tool_calls_ignored sdk_run_id=%s message_ordinal=%s",
-                        sdk_run_id, ordinal)
+            log.warning(
+                "primary_assistant_tool_calls_ignored sdk_run_id=%s message_ordinal=%s",
+                sdk_run_id,
+                ordinal,
+            )
             return {}
         result[int(ordinal)] = [dict(call) for call in body["tool_calls"]]
     return result

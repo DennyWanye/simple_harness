@@ -34,8 +34,9 @@ from product_assembly import unstarted
 
 
 def _create(world, key: str) -> str:
-    return world.create({"goal": "写一份说明", "success_criteria": ["file:NOTES.md"],
-                         "idempotency_key": key})["mission_id"]
+    return world.create(
+        {"goal": "写一份说明", "success_criteria": ["file:NOTES.md"], "idempotency_key": key}
+    )["mission_id"]
 
 
 def _held_planner() -> LayeredScriptedProvider:
@@ -47,15 +48,21 @@ def _held_planner() -> LayeredScriptedProvider:
 def _freeze_old_schema(loop, mission_id: str) -> None:
     """把一条任务的冻结档案改写成结构 1 的形状（测试库，直接改行）。"""
     row = loop.store.connection.execute(
-        "SELECT json FROM mission_domains WHERE mission_id=?", (mission_id,)).fetchone()
+        "SELECT json FROM mission_domains WHERE mission_id=?", (mission_id,)
+    ).fetchone()
     body = json.loads(row[0])
-    body.update(schema=1, planner_floor=[], synthesis_default_policy=[],
-                conflict_template={"policy": [], "decides_with": "code_test", "probe": None})
+    body.update(
+        schema=1,
+        planner_floor=[],
+        synthesis_default_policy=[],
+        conflict_template={"policy": [], "decides_with": "code_test", "probe": None},
+    )
     with loop.store.transaction():
         lift_immutable_guards(loop.store.connection, "mission_domains")
         loop.store.connection.execute(
             "UPDATE mission_domains SET json=? WHERE mission_id=?",
-            (json.dumps(body, ensure_ascii=False, sort_keys=True), mission_id))
+            (json.dumps(body, ensure_ascii=False, sort_keys=True), mission_id),
+        )
 
 
 def test_a_mission_frozen_under_the_old_profile_schema_is_stopped_by_name(tmp_path) -> None:
@@ -81,7 +88,9 @@ def test_a_mission_frozen_under_the_old_profile_schema_is_stopped_by_name(tmp_pa
                 assert loop.store.get_mission(current).status is not MissionStatus.FAILED
 
                 await loop._cycle()  # a second round does not stop it twice
-                assert len([e for e in loop.store.list_events(old) if e.type == "MissionFailed"]) == 1
+                assert (
+                    len([e for e in loop.store.list_events(old) if e.type == "MissionFailed"]) == 1
+                )
         finally:
             provider.release.set()
 
@@ -92,7 +101,12 @@ def test_the_current_profile_round_trips_and_refuses_unknown_or_missing_fields()
     assert DOMAIN_SCHEMA_VERSION == 2
     body = CODE_PROFILE.to_json()
     assert DomainProfileV1.from_json(body) == CODE_PROFILE
-    assert {"planner_floor", "conflict_template", "synthesis_default_policy", "adapters"}.isdisjoint(body)
+    assert {
+        "planner_floor",
+        "conflict_template",
+        "synthesis_default_policy",
+        "adapters",
+    }.isdisjoint(body)
     with pytest.raises(ValueError, match="unknown"):
         DomainProfileV1.from_json({**body, "planner_floor": []})
     missing = dict(body)
@@ -109,6 +123,7 @@ def test_publishing_never_decodes_another_missions_frozen_profile(tmp_path) -> N
 
     **改坏检验**：恢复 ``_source_publish_refusal`` 里遍历 ``domain_for`` 的捷径 → 本条失败。
     """
+
     async def case():
         provider = _held_planner()
         try:
@@ -138,8 +153,13 @@ def test_the_action_judgment_has_no_document_branch_left(tmp_path) -> None:
 
     async def create() -> str:
         async with product_world(root, LayeredScriptedProvider()) as world:
-            return world.create({"goal": "写一份说明", "success_criteria": ["file:NOTES.md"],
-                                 "idempotency_key": "action-judgment"})["mission_id"]
+            return world.create(
+                {
+                    "goal": "写一份说明",
+                    "success_criteria": ["file:NOTES.md"],
+                    "idempotency_key": "action-judgment",
+                }
+            )["mission_id"]
 
     mission_id = asyncio.run(create())
 

@@ -56,7 +56,9 @@ WORKSPACE_TOOLS = ("workspace_read_file", "workspace_write_file", "workspace_lis
 KNOWLEDGE_TOOLS = ("knowledge_list", "knowledge_read")
 TERMINAL = frozenset({"COMPLETED", "FAILED", "CANCELLED"})
 #: 第 2 批 A02：保证通道根隔离时服务状态里的说明（原计划 §10.1：标记缺失 / 不符 → 隔离，只开非披露诊断）
-QUARANTINE_REASON = "保证通道根已隔离（库标记不符或状态文件缺失）：只开非披露诊断，不派发任务，不自动写回"
+QUARANTINE_REASON = (
+    "保证通道根已隔离（库标记不符或状态文件缺失）：只开非披露诊断，不派发任务，不自动写回"
+)
 #: 第 2～4 批补齐评估处置（H01）：SDK 重启恢复协议降级时，服务不当"可用"——不派发、不收新任务与改要求，
 #: 只开读取与诊断；失败的那一步写在 ``status().recovery`` 里，界面照实显示。
 DEGRADED_RECOVERY_REASON = "重启恢复没有完成（降级恢复）：任务不派发，只开读取与诊断"
@@ -87,11 +89,19 @@ def _notice_line(row: Mapping[str, Any]) -> str:
     head = f"- mission_id={row['mission_id']} status={row['status']} goal={row['goal'][:80]!r}"
     settled = row.get("action_settled")
     if settled:
-        return (head + f" action_checked={settled['operation']} {settled['target']}"
-                f" result={'applied' if settled['applied'] else 'not_applied'}")
-    return (head + (f" stop_reason={row['stop_reason']}" if row["stop_reason"] else "")
-            + (f" unresolved_actions={row['unresolved_actions']} (outcome unknown; the system keeps checking)"
-               if row.get("unresolved_actions") else ""))
+        return (
+            head + f" action_checked={settled['operation']} {settled['target']}"
+            f" result={'applied' if settled['applied'] else 'not_applied'}"
+        )
+    return (
+        head
+        + (f" stop_reason={row['stop_reason']}" if row["stop_reason"] else "")
+        + (
+            f" unresolved_actions={row['unresolved_actions']} (outcome unknown; the system keeps checking)"
+            if row.get("unresolved_actions")
+            else ""
+        )
+    )
 
 
 def backoff_delay(failures: int, maximum: float) -> float:
@@ -117,7 +127,7 @@ def _with_publish_sources(criteria: list[str]) -> list[str]:
     for item in criteria:
         text = str(item).strip()
         if text.startswith(PUBLISH_PREFIX):
-            source = "file:" + text[len(PUBLISH_PREFIX):].strip()
+            source = "file:" + text[len(PUBLISH_PREFIX) :].strip()
             if source != "file:" and source not in present:
                 result.append(source)
                 present.add(source)
@@ -231,10 +241,15 @@ class OrchestrationService:
             self.wake()
 
         self._user_missions = UserMissionDeployment(
-            tenant_id=self.tenant_id, principal=self._principal, world_factory=planning_world,
+            tenant_id=self.tenant_id,
+            principal=self._principal,
+            world_factory=planning_world,
             names=RootNames(ROOT_TYPE, ROOT_TASK_PREFIX, ROOT_DUTY_PREFIX),
-            host_fingerprint=host_fingerprint(), notify=notify, wake=lambda: self.wake(),
-            taskgraph_ports=taskgraph_deployment)
+            host_fingerprint=host_fingerprint(),
+            notify=notify,
+            wake=lambda: self.wake(),
+            taskgraph_ports=taskgraph_deployment,
+        )
         self._duties = self._user_missions.duties
 
     # ------------------------------------------------------------ lifecycle
@@ -256,7 +271,11 @@ class OrchestrationService:
             if not imported["consistent"]:
                 write_manifest(
                     self.root,
-                    {"schema": MANIFEST_SCHEMA, "distributions": imported, "refused": "pin_mismatch"},
+                    {
+                        "schema": MANIFEST_SCHEMA,
+                        "distributions": imported,
+                        "refused": "pin_mismatch",
+                    },
                 )
                 raise RuntimeError("实际导入的 SDK 与钉版不一致（见 deployment-manifest.json）")
             # 执行图原计划 §0.3 / §16（补齐第 1 批 V12）：部署验收门没通过就不开生产开关。安装包里的
@@ -265,11 +284,17 @@ class OrchestrationService:
             if acceptance != "VALIDATED":
                 write_manifest(
                     self.root,
-                    {"schema": MANIFEST_SCHEMA, "distributions": imported,
-                     "refused": "taskgraph_acceptance_not_validated", "taskgraph_acceptance": acceptance},
+                    {
+                        "schema": MANIFEST_SCHEMA,
+                        "distributions": imported,
+                        "refused": "taskgraph_acceptance_not_validated",
+                        "taskgraph_acceptance": acceptance,
+                    },
                 )
-                raise RuntimeError(f"执行图部署验收门没有通过（清单记为 {acceptance}），不开生产开关；"
-                                   "先跑 scripts/acceptance/taskgraph_gate.py 并用 taskgraph_manifest.py validate 写入")
+                raise RuntimeError(
+                    f"执行图部署验收门没有通过（清单记为 {acceptance}），不开生产开关；"
+                    "先跑 scripts/acceptance/taskgraph_gate.py 并用 taskgraph_manifest.py validate 写入"
+                )
             await self._open()
             self._manifest = build_manifest(
                 root=self.root,
@@ -303,6 +328,7 @@ class OrchestrationService:
             InstalledHtnWiringAcceptance,
         )
         from agent_orchestrator.runtime.planning_operations import SourceUnavailable
+
         try:
             return InstalledHtnWiringAcceptance().acceptance_status()
         except SourceUnavailable:
@@ -338,7 +364,11 @@ class OrchestrationService:
         # model-side tools; a Mission's Worker gets them through the original four-way
         # intersection (the SDK never freezes them into a request on a legacy pool).
         skill_tools = self._native_skill_tools()
-        base_tools = (*WORKSPACE_TOOLS, *KNOWLEDGE_TOOLS, "run_tests") if sandboxed else (*WORKSPACE_TOOLS, *KNOWLEDGE_TOOLS)
+        base_tools = (
+            (*WORKSPACE_TOOLS, *KNOWLEDGE_TOOLS, "run_tests")
+            if sandboxed
+            else (*WORKSPACE_TOOLS, *KNOWLEDGE_TOOLS)
+        )
         self._deployment = DeploymentPolicy(
             allowed_tools=(*base_tools, *skill_tools),
             skill_tools=skill_tools,
@@ -352,7 +382,10 @@ class OrchestrationService:
             # operation verdict before its closing envelope reached the Host.
             # 2026-10-10 用户决定：封顶 32768 → 131072（线路实测一次输出 103,000 正常结束；10-09 两局
             # 执行者 9 次把 32768 全部用来思考）。起步值不动，写满才翻倍。
-            knobs = {"default_max_output_tokens": 16384, "max_output_tokens_ceiling": NATIVE_OUTPUT_TOKENS}
+            knobs = {
+                "default_max_output_tokens": 16384,
+                "max_output_tokens_ceiling": NATIVE_OUTPUT_TOKENS,
+            }
         self._config = OrchestratorConfig(
             evidence_root=self.root,
             model=self._snapshot.requested_model if self._snapshot is not None else "agent-model",
@@ -370,8 +403,11 @@ class OrchestrationService:
         self._effective_provider = provider  # kept for a rebuild after repeated failures
         self._native = self._build_native()
         self._runtime_options = source_runtime_options(
-            self._config, provider, self._snapshot,
-            settings=self.settings, native=self._native,
+            self._config,
+            provider,
+            self._snapshot,
+            settings=self.settings,
+            native=self._native,
             native_test_counter=self._native_test_counter,
             thinking_provider=self._thinking_provider(),
         )
@@ -379,13 +415,17 @@ class OrchestrationService:
             # 2026-09-30 用户决定：旧式执行池删除，编排只在原生池上跑；没有认证计数器
             # （非 DeepSeek 模型）就明说不支持，不再退回旧池。
             raise ProviderUnavailable(ONLY_DEEPSEEK_REASON)
+
         def assemble_startup(orchestrator: Any) -> None:
             self._user_missions.assemble(orchestrator)
             if self._native is not None:
                 self._native.bind_orchestrator(orchestrator)
 
         self._orchestrator = Orchestrator(
-            self._config, provider, owner=self.owner, connectors=self._connectors,
+            self._config,
+            provider,
+            owner=self.owner,
+            connectors=self._connectors,
             startup_assembly=assemble_startup,
             assurance_root_setup=self._user_missions.assurance_root_setup(),
             **self._runtime_options,
@@ -421,10 +461,18 @@ class OrchestrationService:
     def assurance_root_diagnostic(self) -> dict[str, Any]:
         """非披露诊断（原计划 §10.3，第 2 批 A40）：状态、能否执行、是否要当前认证、匿名阻塞码，加 Host
         自己的状态。没有任务标题、路径、对象 id、通知正文。隔离时也开。"""
-        if (self._state not in ("available", "degraded", "degraded_recovery", "quarantined")
-                or self._control is None):
-            raise OrchestrationRequestError("orchestration_unavailable", self._reason or "编排服务不可用")
-        report = self._quarantine if self._quarantine is not None else self._control.assurance_root_diagnostic()
+        if (
+            self._state not in ("available", "degraded", "degraded_recovery", "quarantined")
+            or self._control is None
+        ):
+            raise OrchestrationRequestError(
+                "orchestration_unavailable", self._reason or "编排服务不可用"
+            )
+        report = (
+            self._quarantine
+            if self._quarantine is not None
+            else self._control.assurance_root_diagnostic()
+        )
         return {**dict(report), "host_state": self._state}
 
     def _publish_connector(self) -> Any:
@@ -631,7 +679,9 @@ class OrchestrationService:
                         logger.exception("orchestrator rebuild failed")
                         self._state = "degraded"
                         self._reason = f"编排循环重建失败：{rebuild_error}"[:300]
-                await asyncio.sleep(backoff_delay(self._failures, self.settings.backoff_max_seconds))
+                await asyncio.sleep(
+                    backoff_delay(self._failures, self.settings.backoff_max_seconds)
+                )
                 continue
             try:
                 await asyncio.wait_for(self._wake.wait(), timeout=self._tick())
@@ -654,21 +704,29 @@ class OrchestrationService:
             meter_factory = self._native_test_counter.meter_factory
         else:
             from agent_orchestrator.runtime.deepseek_meter import deepseek_meter_binding
+
             meter_factory = deepseek_meter_binding
         models_dir = None
         try:
             from paths import user_models_dir
+
             models_dir = Path(user_models_dir())
         except Exception:  # noqa: BLE001 - no model directory means lexical-only, reported
             models_dir = None
         return build_native_pools(
-            tenant_id=self.tenant_id, principal_id=str(self._principal.principal_id),
-            allowed_tools=tuple(self._deployment.allowed_tools) if self._deployment is not None else (),
-            models_dir=models_dir, meter_factory=meter_factory, script_executor=self._executor,
+            tenant_id=self.tenant_id,
+            principal_id=str(self._principal.principal_id),
+            allowed_tools=tuple(self._deployment.allowed_tools)
+            if self._deployment is not None
+            else (),
+            models_dir=models_dir,
+            meter_factory=meter_factory,
+            script_executor=self._executor,
         )
 
     def _native_profile_ids(self) -> list[str]:
         from agent_orchestrator.deployment.native_pools import is_native_profile
+
         return [key for key in self._runtime_options.get("profiles", {}) if is_native_profile(key)]
 
     def _native_pool(self, profile_id: str | None) -> Any:
@@ -701,7 +759,9 @@ class OrchestrationService:
         pool = self._native_pool(profile_id)
         from simple_harness.api.runtime_plane import RuntimePlaneService
 
-        response = await RuntimePlaneService(pool.runtime).handle(body, caller=self._native.control_caller(body))
+        response = await RuntimePlaneService(pool.runtime).handle(
+            body, caller=self._native.control_caller(body)
+        )
         self.wake()
         return response
 
@@ -772,9 +832,13 @@ class OrchestrationService:
         try:
             pin = Pin.from_json(dict(request.get("evaluation_ref") or {}))
         except Exception as error:  # noqa: BLE001 - malformed reference
-            raise OrchestrationRequestError("invalid_request", "evaluation_ref 不是有效的评估引用") from error
+            raise OrchestrationRequestError(
+                "invalid_request", "evaluation_ref 不是有效的评估引用"
+            ) from error
         if pin.kind != "evaluation":
-            raise OrchestrationRequestError("invalid_request", "evaluation_ref 必须指向一条 Skill 评估")
+            raise OrchestrationRequestError(
+                "invalid_request", "evaluation_ref 必须指向一条 Skill 评估"
+            )
         return pin
 
     def skill_evaluation_mission(self, request: Mapping[str, Any]) -> dict[str, Any]:
@@ -801,21 +865,40 @@ class OrchestrationService:
         if not isinstance(request, Mapping):
             raise OrchestrationRequestError("invalid_request", "请求必须是一个对象")
         pin = self._evaluation_pin(request)
-        mission_id, task_id, command_id = request.get("mission_id"), request.get("task_id"), request.get("command_id")
-        for name, value in (("mission_id", mission_id), ("task_id", task_id), ("command_id", command_id)):
+        mission_id, task_id, command_id = (
+            request.get("mission_id"),
+            request.get("task_id"),
+            request.get("command_id"),
+        )
+        for name, value in (
+            ("mission_id", mission_id),
+            ("task_id", task_id),
+            ("command_id", command_id),
+        ):
             if not isinstance(value, str) or not value.strip():
                 raise OrchestrationRequestError("invalid_request", f"{name} 不能为空")
         control = self._require()
         mission = control._mission(mission_id)
         if mission.idempotency_key != evaluation_mission_key(pin):
-            raise OrchestrationRequestError("invalid_request", "这个 Mission 不是该评估的原始 Mission")
+            raise OrchestrationRequestError(
+                "invalid_request", "这个 Mission 不是该评估的原始 Mission"
+            )
         task = self._orchestrator.store.get_task(task_id)
         if task is None or task.mission_id != mission_id:
             raise OrchestrationRequestError("not_found", "任务不属于这个 Mission")
         # the evaluation belongs to the shared catalogue's owner (the only pool that admits)
         pool = self._native_pool(self._native.catalogue_owner_id)
-        caller = self._native.control_caller({"command_id": command_id, "evaluation_ref": pin.to_json(), "mission_id": mission_id, "task_id": task_id})
-        body = pool.runtime.arp.lifecycle.record_evaluation_dispatch(pin, mission_id=mission_id, task_id=task_id, caller=caller, command_id=command_id)
+        caller = self._native.control_caller(
+            {
+                "command_id": command_id,
+                "evaluation_ref": pin.to_json(),
+                "mission_id": mission_id,
+                "task_id": task_id,
+            }
+        )
+        body = pool.runtime.arp.lifecycle.record_evaluation_dispatch(
+            pin, mission_id=mission_id, task_id=task_id, caller=caller, command_id=command_id
+        )
         self.wake()
         return dict(body)
 
@@ -837,7 +920,9 @@ class OrchestrationService:
         try:
             return str(await self._permission_mode_reader()) == "auto"
         except Exception:  # noqa: BLE001 - unreadable mode means manual
-            logger.warning("permission mode unreadable; confirmations and planning authority stay manual")
+            logger.warning(
+                "permission mode unreadable; confirmations and planning authority stay manual"
+            )
             return False
 
     async def _auto_confirm_content_completion(self) -> int:
@@ -868,20 +953,27 @@ class OrchestrationService:
                 logger.exception("orchestrator close during rebuild failed")
         self._native = self._build_native()
         self._runtime_options = source_runtime_options(
-            self._config, self._effective_provider, self._snapshot,
-            settings=self.settings, native=self._native,
+            self._config,
+            self._effective_provider,
+            self._snapshot,
+            settings=self.settings,
+            native=self._native,
             native_test_counter=self._native_test_counter,
             thinking_provider=self._thinking_provider(),
         )
         if not self._runtime_options["profiles"]:
             raise ProviderUnavailable(ONLY_DEEPSEEK_REASON)
+
         def assemble_startup(orchestrator: Any) -> None:
             self._user_missions.assemble(orchestrator)
             if self._native is not None:
                 self._native.bind_orchestrator(orchestrator)
 
         candidate = Orchestrator(
-            self._config, self._effective_provider, owner=self.owner, connectors=self._connectors,
+            self._config,
+            self._effective_provider,
+            owner=self.owner,
+            connectors=self._connectors,
             startup_assembly=assemble_startup,
             assurance_root_setup=self._user_missions.assurance_root_setup(),
             **self._runtime_options,
@@ -946,8 +1038,12 @@ class OrchestrationService:
         ``recovery_status()["isolated_missions"]``；读不到当作没有隔离，不抛。"""
         try:
             isolated = dict(self._orchestrator.recovery_status()).get("isolated_missions") or {}
-            return {str(mission_id): {"tables": [str(name) for name in (item or {}).get("tables") or ()]}
-                    for mission_id, item in dict(isolated).items()}
+            return {
+                str(mission_id): {
+                    "tables": [str(name) for name in (item or {}).get("tables") or ()]
+                }
+                for mission_id, item in dict(isolated).items()
+            }
         except Exception:  # noqa: BLE001 - 读不到当作没有隔离
             return {}
 
@@ -979,14 +1075,16 @@ class OrchestrationService:
             for identifier in (native_profile_id(tokens), native_profile_id(tokens, thinking=True)):
                 if identifier not in profiles:
                     continue
-                rows.append({
-                    "profile_id": identifier,
-                    "max_input_tokens": profiles[identifier].context_policy.input_budget(),
-                    "default_max_output_tokens": 8192,
-                    "max_output_tokens_ceiling": NATIVE_OUTPUT_TOKENS,
-                    # A bounded multi-turn allowance, not a charge for unused capacity.
-                    "mission_max_tokens": self.settings.default_mission_max_tokens,
-                })
+                rows.append(
+                    {
+                        "profile_id": identifier,
+                        "max_input_tokens": profiles[identifier].context_policy.input_budget(),
+                        "default_max_output_tokens": 8192,
+                        "max_output_tokens_ceiling": NATIVE_OUTPUT_TOKENS,
+                        # A bounded multi-turn allowance, not a charge for unused capacity.
+                        "mission_max_tokens": self.settings.default_mission_max_tokens,
+                    }
+                )
         return rows
 
     def _thinking_provider(self) -> Any:
@@ -997,7 +1095,11 @@ class OrchestrationService:
         from .runtime_profile import DEEPSEEK_COUNTER_MODELS
 
         snapshot, client = self._snapshot, self._http_client
-        if snapshot is None or client is None or snapshot.requested_model not in DEEPSEEK_COUNTER_MODELS:
+        if (
+            snapshot is None
+            or client is None
+            or snapshot.requested_model not in DEEPSEEK_COUNTER_MODELS
+        ):
             return None
         cached = getattr(self, "_thinking_provider_instance", None)
         if cached is None:
@@ -1005,7 +1107,9 @@ class OrchestrationService:
             from .runtime_profile import THINKING_EFFORT
 
             cached = provider_on_client(
-                client, snapshot, timeout=900.0,
+                client,
+                snapshot,
+                timeout=900.0,
                 thinking="enabled",
                 reasoning_effort=THINKING_EFFORT,
             )
@@ -1019,8 +1123,10 @@ class OrchestrationService:
         # The thinking setting picks the pool of a *new* Mission only; an existing Mission keeps
         # the pool (and so the thinking mode) it was frozen on.
         thinking = getattr(self.settings, "thinking", "disabled") == "enabled"
-        for selected in (native_profile_id(self.settings.context_input_tokens, thinking=thinking),
-                         native_profile_id(self.settings.context_input_tokens)):
+        for selected in (
+            native_profile_id(self.settings.context_input_tokens, thinking=thinking),
+            native_profile_id(self.settings.context_input_tokens),
+        ):
             if selected in available:
                 return selected
         return None
@@ -1037,31 +1143,54 @@ class OrchestrationService:
         running = self._orchestrator is not None and self._state in ("available", "degraded")
         now = self._orchestrator.store.now if running else time.time()
         limit = int(self.settings.global_monthly_max_tokens)
-        row = {"month": global_account_id(now).removeprefix(GLOBAL_ACCOUNT_PREFIX), "max_tokens": limit,
-               "opened": False, "used_tokens": 0, "reserved_tokens": 0, "remaining_tokens": limit}
+        row = {
+            "month": global_account_id(now).removeprefix(GLOBAL_ACCOUNT_PREFIX),
+            "max_tokens": limit,
+            "opened": False,
+            "used_tokens": 0,
+            "reserved_tokens": 0,
+            "remaining_tokens": limit,
+        }
         pool = self._orchestrator.commit.global_account() if running else None
         if pool is None:
             return row
         remaining = pool.remaining_tokens()
-        return {**row, "month": pool.account_id.removeprefix(GLOBAL_ACCOUNT_PREFIX),
-                "max_tokens": int(pool.limits.max_tokens or limit), "opened": True,
-                "used_tokens": int(pool.settled_tokens), "reserved_tokens": int(pool.reserved_tokens),
-                "remaining_tokens": int(limit if remaining is None else remaining)}
+        return {
+            **row,
+            "month": pool.account_id.removeprefix(GLOBAL_ACCOUNT_PREFIX),
+            "max_tokens": int(pool.limits.max_tokens or limit),
+            "opened": True,
+            "used_tokens": int(pool.settled_tokens),
+            "reserved_tokens": int(pool.reserved_tokens),
+            "remaining_tokens": int(limit if remaining is None else remaining),
+        }
 
     def _mission_token_default(self, profile_id: str | None = None) -> int:
         selected = profile_id or self._context_default()
-        return next((p["mission_max_tokens"] for p in self._context_profiles()
-                     if p["profile_id"] == selected), self.settings.default_mission_max_tokens)
+        return next(
+            (
+                p["mission_max_tokens"]
+                for p in self._context_profiles()
+                if p["profile_id"] == selected
+            ),
+            self.settings.default_mission_max_tokens,
+        )
 
     def status(self) -> dict[str, Any]:
         import agent_orchestrator
         import simple_harness
 
         active = 0
-        if self._orchestrator is not None and self._state in ("available", "degraded", "degraded_recovery"):
+        if self._orchestrator is not None and self._state in (
+            "available",
+            "degraded",
+            "degraded_recovery",
+        ):
             try:
                 active = sum(
-                    1 for m in self._orchestrator.store.list_missions() if str(m.status) not in TERMINAL
+                    1
+                    for m in self._orchestrator.store.list_missions()
+                    if str(m.status) not in TERMINAL
                 )
             except Exception:  # noqa: BLE001
                 active = 0
@@ -1090,8 +1219,13 @@ class OrchestrationService:
             "storage_over_warn": bool(self._storage.over_warn),
             "context_profiles": self._context_profiles(),
             "native_plane": (
-                self._native.status() if self._native is not None
-                else {"enabled": True, "available": False, "reason": self._reason or ONLY_DEEPSEEK_REASON}
+                self._native.status()
+                if self._native is not None
+                else {
+                    "enabled": True,
+                    "available": False,
+                    "reason": self._reason or ONLY_DEEPSEEK_REASON,
+                }
             ),
             "default_context_profile_id": self._context_default(),
             "mission_budget_defaults": {
@@ -1106,7 +1240,11 @@ class OrchestrationService:
     def _assurance_root_status(self) -> dict[str, Any] | None:
         if self._quarantine is not None:
             return dict(self._quarantine)
-        if self._control is None or self._state not in ("available", "degraded", "degraded_recovery"):
+        if self._control is None or self._state not in (
+            "available",
+            "degraded",
+            "degraded_recovery",
+        ):
             return None
         try:
             return dict(self._control.assurance_root_diagnostic())
@@ -1125,8 +1263,13 @@ class OrchestrationService:
 
     # ------------------------------------------------------------ helpers
     def _require(self) -> Any:
-        if self._state not in ("available", "degraded", "degraded_recovery") or self._control is None:
-            raise OrchestrationRequestError("orchestration_unavailable", self._reason or "编排服务不可用")
+        if (
+            self._state not in ("available", "degraded", "degraded_recovery")
+            or self._control is None
+        ):
+            raise OrchestrationRequestError(
+                "orchestration_unavailable", self._reason or "编排服务不可用"
+            )
         return self._control
 
     def _refuse_new_work(self, message: str) -> None:
@@ -1134,7 +1277,9 @@ class OrchestrationService:
         if self._state == "degraded":
             raise OrchestrationRequestError("orchestration_degraded", message)
         if self._state == "degraded_recovery":
-            raise OrchestrationRequestError("orchestration_degraded_recovery", self._reason or DEGRADED_RECOVERY_REASON)
+            raise OrchestrationRequestError(
+                "orchestration_degraded_recovery", self._reason or DEGRADED_RECOVERY_REASON
+            )
 
     def _deploy(self, method: str, body: Mapping[str, Any]) -> dict[str, Any]:
         """Create through the SDK's one user-Mission deployment (root and TaskGraph binding in
@@ -1145,7 +1290,9 @@ class OrchestrationService:
         try:
             return dict(getattr(self._user_missions, method)(self._orchestrator, control, body))
         except FacadeError as error:
-            raise OrchestrationRequestError(FACADE_CODES.get(error.code, error.code), str(error)) from error
+            raise OrchestrationRequestError(
+                FACADE_CODES.get(error.code, error.code), str(error)
+            ) from error
 
     def _call(self, method: str, *args: Any, **kwargs: Any) -> Any:
         from agent_orchestrator.api.facade import FacadeError
@@ -1154,8 +1301,10 @@ class OrchestrationService:
         try:
             return getattr(control, method)(*args, **kwargs)
         except FacadeError as error:
-            raise OrchestrationRequestError(FACADE_CODES.get(error.code, error.code),
-                                            FACADE_MESSAGES.get(error.code, str(error))) from error
+            raise OrchestrationRequestError(
+                FACADE_CODES.get(error.code, error.code),
+                FACADE_MESSAGES.get(error.code, str(error)),
+            ) from error
 
     def _secret_values(self) -> tuple[str, ...]:
         return () if self._snapshot is None else (self._snapshot.api_key,)
@@ -1181,7 +1330,11 @@ class OrchestrationService:
             raise OrchestrationRequestError(
                 "local_tests_disabled",
                 "本机没有可用的隔离环境：成功条件不能使用 pytest:"
-                + (f"（{self._sandbox.get('reason')}）" if (self._sandbox or {}).get("reason") else ""),
+                + (
+                    f"（{self._sandbox.get('reason')}）"
+                    if (self._sandbox or {}).get("reason")
+                    else ""
+                ),
             )
         enabled = set(getattr(deployment, "enabled_connectors", ()) or ())
         for criterion in criteria:
@@ -1226,14 +1379,21 @@ class OrchestrationService:
         # the facade, so the persisted receipt's spec hash includes the defaults.
         # Default selection applies only to new Missions. Old blank-request retries
         # must preserve their original charter and budget across a source upgrade.
-        found = self._orchestrator.store.find_mission(
-            self.tenant_id, str(body.get("idempotency_key", "")),
-        ) if self._orchestrator is not None else None
+        found = (
+            self._orchestrator.store.find_mission(
+                self.tenant_id,
+                str(body.get("idempotency_key", "")),
+            )
+            if self._orchestrator is not None
+            else None
+        )
         existing = found[0] if found else None
         profiles = self._context_profiles()
         if "runtime_profile_id" in body:
             selected = body["runtime_profile_id"]
-            if not isinstance(selected, str) or not any(p["profile_id"] == selected for p in profiles):
+            if not isinstance(selected, str) or not any(
+                p["profile_id"] == selected for p in profiles
+            ):
                 raise OrchestrationRequestError("invalid_request", "所选上下文配置当前不可用")
         elif existing is not None:
             selected = (existing.final_report or {}).get("runtime_profile_id")
@@ -1243,10 +1403,16 @@ class OrchestrationService:
             selected = self._context_default()
             if selected is not None:
                 body["runtime_profile_id"] = selected
-        token_default = (existing.budget.max_tokens if existing is not None
-                         else self._mission_token_default(selected))
-        attempt_default = (existing.budget.max_attempts if existing is not None
-                           else self.settings.default_mission_max_attempts)
+        token_default = (
+            existing.budget.max_tokens
+            if existing is not None
+            else self._mission_token_default(selected)
+        )
+        attempt_default = (
+            existing.budget.max_attempts
+            if existing is not None
+            else self.settings.default_mission_max_attempts
+        )
         budget = body.get("budget")
         if budget is None:
             budget = {}
@@ -1270,7 +1436,11 @@ class OrchestrationService:
         self._require()
         self._refuse_new_work("编排循环目前不正常，暂不接受新的 Mission；已有的仍可取消或接管")
         receipt = self._deploy("create_mission", self._door(request))
-        return {"mission_id": receipt["mission_id"], "created": receipt["created"], "spec_hash": receipt["spec_hash"]}
+        return {
+            "mission_id": receipt["mission_id"],
+            "created": receipt["created"],
+            "spec_hash": receipt["spec_hash"],
+        }
 
     def create_mission_with_sources(self, request: Mapping[str, Any]) -> dict[str, Any]:
         """The UI's atomic batch; never create and then register in separate transactions."""
@@ -1279,9 +1449,13 @@ class OrchestrationService:
         if set(request) != {"mission", "sources"} or not isinstance(request["mission"], Mapping):
             raise OrchestrationRequestError("invalid_request", "需要 mission 与 sources 原子批次")
         self._refuse_secrets(request)
-        receipt = self._deploy("create_mission_with_sources", {
-            "mission": self._door(request["mission"]), "sources": request["sources"],
-        })
+        receipt = self._deploy(
+            "create_mission_with_sources",
+            {
+                "mission": self._door(request["mission"]),
+                "sources": request["sources"],
+            },
+        )
         return dict(receipt)
 
     def planning_authorization(self, request: Mapping[str, Any]) -> dict[str, Any]:
@@ -1309,14 +1483,19 @@ class OrchestrationService:
         self._refuse_secrets(request)
         changes = [dict(item) for item in request.get("changes") or () if isinstance(item, Mapping)]
         # 第 2 批车道 L（H19）：``{op: "goal", statement}`` 换的是任务目标文本，不是一条要求，不按要求格式查
-        statements = [str(item.get("statement") or "").strip() for item in changes
-                      if item.get("statement") and item.get("op") != "goal"]
+        statements = [
+            str(item.get("statement") or "").strip()
+            for item in changes
+            if item.get("statement") and item.get("op") != "goal"
+        ]
         self._check_criteria(statements)
         # 新增"发布某文件"时，先得有一条"写出这个文件"的要求（与建任务同一条规矩）
         detail = self._call("snapshot", str(request.get("mission_id") or ""))
         workspace = (detail.get("snapshot") or {}).get("operation_workspace") or {}
-        current = {str(item.get("id")): str(item.get("statement") or "").strip()
-                   for item in workspace.get("criteria") or ()}
+        current = {
+            str(item.get("id")): str(item.get("statement") or "").strip()
+            for item in workspace.get("criteria") or ()
+        }
         added: list[str] = []
         for item in changes:  # 改完之后的要求清单
             if item.get("op") == "add":
@@ -1327,9 +1506,14 @@ class OrchestrationService:
                 current[str(item.get("criterion_id"))] = str(item.get("statement") or "").strip()
         resulting = [*current.values(), *added]
         # 同一个函数：每个要发布的文件先得有一条"写出它"的要求；缺的补成新增条目
-        sources = [{"op": "add", "statement": source}
-                   for source in _with_publish_sources(resulting) if source not in resulting]
-        receipt = self._call("amend_requirements", {**dict(request), "changes": [*sources, *changes]})
+        sources = [
+            {"op": "add", "statement": source}
+            for source in _with_publish_sources(resulting)
+            if source not in resulting
+        ]
+        receipt = self._call(
+            "amend_requirements", {**dict(request), "changes": [*sources, *changes]}
+        )
         self.wake()
         return dict(receipt)
 
@@ -1357,7 +1541,9 @@ class OrchestrationService:
         """Explicit operation submission; caller identity stays in the SDK facade."""
         self._require()
         if self._state == "degraded":
-            raise OrchestrationRequestError("orchestration_degraded", "编排循环异常，暂不接受新操作")
+            raise OrchestrationRequestError(
+                "orchestration_degraded", "编排循环异常，暂不接受新操作"
+            )
         self._refuse_secrets(request)
         receipt = self._call("submit_operation_intent", dict(request))
         self.wake()
@@ -1369,7 +1555,11 @@ class OrchestrationService:
 
     def source_command(self, operation: str, request: Mapping[str, Any]) -> dict[str, Any]:
         """Explicit IPC verbs, using the same facade's fixed authenticated principal."""
-        methods = {"register": "register_source", "supersede": "supersede_source", "revoke": "revoke_source"}
+        methods = {
+            "register": "register_source",
+            "supersede": "supersede_source",
+            "revoke": "revoke_source",
+        }
         if operation not in methods:
             raise OrchestrationRequestError("invalid_request", "未知来源操作")
         self._require()
@@ -1430,16 +1620,21 @@ class OrchestrationService:
                 "status_zh": _STATUS_ZH.get(status, status),
                 "goal": str(mission.goal or "")[:200],
                 "stop_reason": None if mission.stop_reason is None else str(mission.stop_reason),
-                "unresolved_actions": len((mission.final_report or {}).get("unresolved_actions") or ()),
+                "unresolved_actions": len(
+                    (mission.final_report or {}).get("unresolved_actions") or ()
+                ),
             }
             # 一致性补改 H-2：通知的事件若是"停下后对外操作有了结果"，卡片说的是那个结果
             found = self._orchestrator.store.connection.execute(
-                "SELECT type, payload_json FROM events WHERE event_id=?", (notice["notice_id"],)).fetchone()
+                "SELECT type, payload_json FROM events WHERE event_id=?", (notice["notice_id"],)
+            ).fetchone()
             if found is not None and found[0] == ACTION_SETTLED_AFTER_STOP:
                 payload = json.loads(found[1])
-                row["action_settled"] = {"operation": str(payload.get("operation") or ""),
-                                         "target": str(payload.get("target") or ""),
-                                         "applied": payload.get("applied") is True}
+                row["action_settled"] = {
+                    "operation": str(payload.get("operation") or ""),
+                    "target": str(payload.get("target") or ""),
+                    "applied": payload.get("applied") is True,
+                }
             rows.append(row)
         return rows
 
@@ -1471,9 +1666,12 @@ class OrchestrationService:
             return ""
         lines = [_notice_line(row) for row in pending[-limit:]]
         more = len(pending) - len(lines)
-        return ("\nHost task notices (background tasks that ended; the user has not acknowledged them "
-                "in this chat yet; use mission_status for details and tell the user when relevant):\n"
-                + "\n".join(lines) + (f"\n- …and {more} more" if more > 0 else ""))
+        return (
+            "\nHost task notices (background tasks that ended; the user has not acknowledged them "
+            "in this chat yet; use mission_status for details and tell the user when relevant):\n"
+            + "\n".join(lines)
+            + (f"\n- …and {more} more" if more > 0 else "")
+        )
 
     # ------------------------------------------------------------ reads
     def list_missions(self, *, limit: int = 50) -> list[dict[str, Any]]:
@@ -1504,8 +1702,12 @@ class OrchestrationService:
                         mission["status"],
                         attempt_statuses=() if terminal else self._attempt_statuses(mission_id),
                         task_statuses=task_statuses,
-                        waiting=not terminal and (bool(mission.get("pending_approvals")) or self._waiting(mission_id)
-                                                  or mission_id in planning_waits),
+                        waiting=not terminal
+                        and (
+                            bool(mission.get("pending_approvals"))
+                            or self._waiting(mission_id)
+                            or mission_id in planning_waits
+                        ),
                         blocked=blocked,
                     ),
                 }
@@ -1521,7 +1723,11 @@ class OrchestrationService:
     def _attempt_statuses(self, mission_id: str) -> list[str]:
         try:
             store = self._orchestrator.store
-            return [str(a.status) for t in store.list_tasks(mission_id) for a in store.list_attempts(t.id)]
+            return [
+                str(a.status)
+                for t in store.list_tasks(mission_id)
+                for a in store.list_attempts(t.id)
+            ]
         except Exception:  # noqa: BLE001
             return []
 
@@ -1548,7 +1754,9 @@ class OrchestrationService:
             for mission_id in {m.id for m in store.list_missions()} - waits:
                 for row in humans.list(mission_id):
                     request = row.get("request") or {}
-                    if row.get("state") == "PENDING" and (request.get("payload") or {}).get("blocking"):
+                    if row.get("state") == "PENDING" and (request.get("payload") or {}).get(
+                        "blocking"
+                    ):
                         waits.add(mission_id)
                         break
             return waits
@@ -1569,30 +1777,39 @@ class OrchestrationService:
             view = self._call("snapshot", mission_id)
             detail = project_detail(view, blocked=self._blocked(mission_id))
             raw = view["snapshot"].get("mission", {})
-            detail["recovery_isolated"] = (None if str(raw.get("status")) in TERMINAL
-                                           else self._recovery_isolated().get(mission_id))
+            detail["recovery_isolated"] = (
+                None
+                if str(raw.get("status")) in TERMINAL
+                else self._recovery_isolated().get(mission_id)
+            )
             identifier = (raw.get("final_report") or {}).get("runtime_profile_id")
             profile = self._runtime_options.get("profiles", {}).get(identifier)
             if profile is not None and profile.context_policy is not None:
                 detail["runtime_context"] = {
                     "profile_id": identifier,
                     "max_input_tokens": profile.context_policy.input_budget(),
-                    **({"max_total_tokens": profile.context_policy.max_total_tokens}
-                       if profile.context_policy.max_total_tokens is not None else {}),
+                    **(
+                        {"max_total_tokens": profile.context_policy.max_total_tokens}
+                        if profile.context_policy.max_total_tokens is not None
+                        else {}
+                    ),
                     "fingerprint": profile.context_snapshot()["fingerprint"],
                 }
             return detail
 
     def taskgraph_read(self, operation: str, request: Mapping[str, Any]) -> dict[str, Any]:
         from .taskgraph import read_taskgraph
+
         return read_taskgraph(self, operation, request)
 
     def taskgraph_operate(self, verb: str, request: Mapping[str, Any]) -> dict[str, Any]:
         from .taskgraph import operate_taskgraph
+
         return operate_taskgraph(self, verb, request)
 
     def assurance_read(self, verb: str, request: Mapping[str, Any]) -> dict[str, Any]:
         from .assurance import read_assurance
+
         return read_assurance(self, verb, request)
 
     def enable_taskgraph_contract(self, mission_id: str, command_id: str) -> dict[str, Any]:
@@ -1622,19 +1839,28 @@ class OrchestrationService:
         except ImportError:
             return False
         store = getattr(self._orchestrator, "store", None)
-        return all(callable(value) for value in (
-            getattr(self._control, "snapshot", None),
-            getattr(store, "read_view", None),
-            getattr(store, "snapshot", None),
-            getattr(store, "iter_events", None),
-            diagnostics.verify_mission,
-            diagnostics.failure_timeline, diagnostics.attribution,
-        ))
+        return all(
+            callable(value)
+            for value in (
+                getattr(self._control, "snapshot", None),
+                getattr(store, "read_view", None),
+                getattr(store, "snapshot", None),
+                getattr(store, "iter_events", None),
+                diagnostics.verify_mission,
+                diagnostics.failure_timeline,
+                diagnostics.attribution,
+            )
+        )
 
-    def mission_diagnostics(self, request: Mapping[str, Any], *, export: bool = False) -> dict[str, Any]:
+    def mission_diagnostics(
+        self, request: Mapping[str, Any], *, export: bool = False
+    ) -> dict[str, Any]:
         self._require()
-        if (set(request) != {"mission_id"} or not isinstance(request["mission_id"], str)
-                or not request["mission_id"].strip()):
+        if (
+            set(request) != {"mission_id"}
+            or not isinstance(request["mission_id"], str)
+            or not request["mission_id"].strip()
+        ):
             raise OrchestrationRequestError("invalid_request", "只接受当前任务的 mission_id")
         if not self.status()["diagnostics_available"]:
             raise OrchestrationRequestError("diagnostics_unavailable", "当前运行版本未开放任务诊断")
@@ -1645,7 +1871,9 @@ class OrchestrationService:
             # Authenticate before any event, attribution or support-file read/write.
             snapshot = self._call("snapshot", mission_id)
             report = build_diagnostics(
-                self._orchestrator, mission_id=mission_id, snapshot_view=snapshot,
+                self._orchestrator,
+                mission_id=mission_id,
+                snapshot_view=snapshot,
                 versions=dict(self._manifest or {}),
                 extra_secrets=self._secret_values(),
             )
@@ -1653,9 +1881,14 @@ class OrchestrationService:
             return report
         # 导出时才核对执行图历史（要在临时副本上重建，比只看诊断贵）；读视图之外做。
         from .diagnostics import taskgraph_history
+
         try:
-            reads = self._orchestrator.taskgraph_read_api(tenant_id=self.tenant_id, principal=self._principal)
-            history = taskgraph_history(self._orchestrator.store, reads, mission_id, self.root / "support" / "tmp")
+            reads = self._orchestrator.taskgraph_read_api(
+                tenant_id=self.tenant_id, principal=self._principal
+            )
+            history = taskgraph_history(
+                self._orchestrator.store, reads, mission_id, self.root / "support" / "tmp"
+            )
         except Exception as error:  # noqa: BLE001 - the rest of the report is still exported
             history = {"status": "READ_UNAVAILABLE", "error": type(error).__name__}
         report = {**report, "taskgraph_history": history}
@@ -1695,7 +1928,11 @@ class OrchestrationService:
         configured = int(self.settings.max_concurrency)
         if "mission_concurrency" in params and int(params["mission_concurrency"]) != configured:
             return [
-                {"name": "mission_concurrency", "config": configured, "active": int(params["mission_concurrency"])}
+                {
+                    "name": "mission_concurrency",
+                    "config": configured,
+                    "active": int(params["mission_concurrency"]),
+                }
             ]
         return []
 
@@ -1715,7 +1952,12 @@ class OrchestrationService:
         blocked = []
         for attempt_id, liveness in last.items():
             attempt = store.get_attempt(attempt_id)
-            if attempt is None or str(attempt.status) in {"COMPLETED", "FAILED", "CANCELLED", "LOST"}:
+            if attempt is None or str(attempt.status) in {
+                "COMPLETED",
+                "FAILED",
+                "CANCELLED",
+                "LOST",
+            }:
                 continue
             # Queueing and a bounded, still-awaited response keep the Attempt
             # alive. The latter is billable, but neither proves a lost process.
@@ -1726,7 +1968,11 @@ class OrchestrationService:
             )
             if liveness.get("blocked") and not known_wait:
                 blocked.append(
-                    {"task_id": attempt.task_id, "attempt_id": attempt_id, "reason": "turn_outcome_unknown"}
+                    {
+                        "task_id": attempt.task_id,
+                        "attempt_id": attempt_id,
+                        "reason": "turn_outcome_unknown",
+                    }
                 )
         return blocked
 

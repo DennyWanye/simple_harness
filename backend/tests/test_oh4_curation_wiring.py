@@ -21,6 +21,7 @@ config + lifespan + build_agent 这条**真实接线链**而测不到。
 
 不走 ``import main; reload``（monolithic main.py 99% 翻车，见 verify wiring 注释）。
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -70,13 +71,15 @@ def test_factory_config_lights_up_curation_nudge():
 
 def test_load_config_parses_curation_flags(tmp_path):
     """显式 [memory.v2] curation_nudge/auto_learnings/every_n → 正确解析."""
-    cfg = load_config(_write(
-        tmp_path,
-        "[memory]\n[memory.v2]\n"
-        "curation_nudge = true\n"
-        "curation_nudge_every_n_turns = 2\n"
-        "auto_learnings = true\n",
-    ))
+    cfg = load_config(
+        _write(
+            tmp_path,
+            "[memory]\n[memory.v2]\n"
+            "curation_nudge = true\n"
+            "curation_nudge_every_n_turns = 2\n"
+            "auto_learnings = true\n",
+        )
+    )
     v2 = cfg.memory.v2
     assert v2.curation_nudge is True
     assert v2.curation_nudge_every_n_turns == 2
@@ -89,7 +92,7 @@ def test_curation_flags_default_on_when_absent(tmp_path):
     历史上这两 flag 默认 False 导致 curator 死链；测试阶段出厂即开，此处钉住
     "漏配 config 也默认点亮"，防回退到死链状态。
     """
-    cfg = load_config(_write(tmp_path, "[memory]\nembedding_model = \"bge-m3\"\n"))
+    cfg = load_config(_write(tmp_path, '[memory]\nembedding_model = "bge-m3"\n'))
     assert cfg.memory.v2.curation_nudge is True
     assert cfg.memory.v2.auto_learnings is True
 

@@ -18,6 +18,7 @@ open group 的组成（同一份证据）：20 条 assistant 工具调用回声 
 本文件用真实估算器 + 真实冻结预算复现这一形态：main 上是红（raise），修复后是绿
 （注入一条确定性收尾指令、只保留本轮受保护部分与用户消息，请求装得下）。
 """
+
 import pytest
 from deskpet.sdk_adapters.context_partitions import (
     ContextBudgetExceeded,
@@ -51,13 +52,23 @@ def _build(system_chars: int) -> tuple:
     for index in range(ECHOES):
         messages.append(Message(MessageRole.ASSISTANT, "a" * ECHO_BYTES))
         if index < DESCRIPTORS:
-            messages.append(Message(MessageRole.TOOL, "d" * DESCRIPTOR_BYTES,
-                                    name="context_page_in",
-                                    call_id=CallId("call_00_d%02d%s" % (index, "d" * 18))))
+            messages.append(
+                Message(
+                    MessageRole.TOOL,
+                    "d" * DESCRIPTOR_BYTES,
+                    name="context_page_in",
+                    call_id=CallId("call_00_d%02d%s" % (index, "d" * 18)),
+                )
+            )
         if index >= ECHOES - NOTICES:
-            messages.append(Message(MessageRole.TOOL, "n" * NOTICE_BYTES,
-                                    name="tool_search",
-                                    call_id=CallId("call_00_n%02d%s" % (index, "n" * 18))))
+            messages.append(
+                Message(
+                    MessageRole.TOOL,
+                    "n" * NOTICE_BYTES,
+                    name="tool_search",
+                    call_id=CallId("call_00_n%02d%s" % (index, "n" * 18)),
+                )
+            )
     # 最后一条是 tool 结果：这一组未终结，正是事件 Z 里那个不可裁的 open group。
     assert messages[-1].role is MessageRole.TOOL
     assert sum(1 for m in messages if m.role is MessageRole.TOOL) == DESCRIPTORS + NOTICES
@@ -68,9 +79,14 @@ def _plan(messages, **kwargs):
     from deskpet.sdk_adapters.context_authority import _plan_turn_messages
 
     return _plan_turn_messages(
-        messages, WINDOW, tools=(), exact_tool_sources=True,
-        model_id="deepseek-v4-flash", provider_turn_ordinal=21,
-        allow_full_group_trim=True, **kwargs,
+        messages,
+        WINDOW,
+        tools=(),
+        exact_tool_sources=True,
+        model_id="deepseek-v4-flash",
+        provider_turn_ordinal=21,
+        allow_full_group_trim=True,
+        **kwargs,
     )
 
 
@@ -142,9 +158,9 @@ def test_wrap_up_message_is_deterministic_and_part_of_the_request(incident):
 
     first, second = context_budget_wrap_up_message(), context_budget_wrap_up_message()
     assert first.content == second.content
-    assert first.metadata == second.metadata == {
-        "source": "context_budget", "trust": "host_authority"
-    }
+    assert (
+        first.metadata == second.metadata == {"source": "context_budget", "trust": "host_authority"}
+    )
 
     messages, _ = incident
     planned_a, _ = _plan(messages, wrap_up_message=first)
@@ -165,7 +181,8 @@ def test_a_healthy_turn_is_untouched_by_the_wrap_up_parameter(flash_calibration)
     messages = _build(4)[:4]
     plain, plain_facts = _plan(messages, raise_on_overflow=False)
     wrapped, wrapped_facts = _plan(
-        messages, raise_on_overflow=False,
+        messages,
+        raise_on_overflow=False,
         wrap_up_message=context_budget_wrap_up_message(),
     )
     assert plain_facts["open_group_items_dropped"] == 0
@@ -215,8 +232,7 @@ def test_threshold_is_one_react_step_and_fires_on_every_turn_that_needs_it():
     assert authority._should_wrap_up("run-a", CONTEXT_BUDGET_WRAP_UP_HEADROOM_TOKENS) is False
     # 事故的那一串余量：第 13 轮的劝告之后，第 14–18 轮每一轮都还得收尾，
     # 唯一的例外是真的够一个步的 2316。
-    decisions = [authority._should_wrap_up("run-a", headroom)
-                 for headroom in AG_HEADROOMS]
+    decisions = [authority._should_wrap_up("run-a", headroom) for headroom in AG_HEADROOMS]
     assert decisions == [True, True, True, False, True, True], decisions
     # 而真正装不下的第 19 轮，无论前面收尾过多少次，都必须还能收尾。
     assert authority._should_wrap_up("run-a", -AG_OVERSHOOT) is True
@@ -257,13 +273,23 @@ def _build_ag(system_chars: int) -> tuple:
     ]
     for index in range(AG_PAGE_INS):
         messages.append(Message(MessageRole.ASSISTANT, "a" * AG_ECHO_BYTES))
-        messages.append(Message(MessageRole.TOOL, "p" * AG_PAGE_IN_BYTES,
-                                name="context_page_in",
-                                call_id=CallId("call_00_p%02d%s" % (index, "p" * 18))))
+        messages.append(
+            Message(
+                MessageRole.TOOL,
+                "p" * AG_PAGE_IN_BYTES,
+                name="context_page_in",
+                call_id=CallId("call_00_p%02d%s" % (index, "p" * 18)),
+            )
+        )
         if index < AG_DESCRIPTORS:
-            messages.append(Message(MessageRole.TOOL, "d" * AG_DESCRIPTOR_BYTES,
-                                    name="read_file",
-                                    call_id=CallId("call_00_d%02d%s" % (index, "d" * 18))))
+            messages.append(
+                Message(
+                    MessageRole.TOOL,
+                    "d" * AG_DESCRIPTOR_BYTES,
+                    name="read_file",
+                    call_id=CallId("call_00_d%02d%s" % (index, "d" * 18)),
+                )
+            )
     assert messages[-1].role is MessageRole.TOOL
     return tuple(messages)
 
@@ -272,9 +298,14 @@ def _plan_ag(messages, **kwargs):
     from deskpet.sdk_adapters.context_authority import _plan_turn_messages
 
     return _plan_turn_messages(
-        messages, WINDOW, tools=(), exact_tool_sources=True,
-        model_id="deepseek-v4-flash", provider_turn_ordinal=19,
-        allow_full_group_trim=True, **kwargs,
+        messages,
+        WINDOW,
+        tools=(),
+        exact_tool_sources=True,
+        model_id="deepseek-v4-flash",
+        provider_turn_ordinal=19,
+        allow_full_group_trim=True,
+        **kwargs,
     )
 
 

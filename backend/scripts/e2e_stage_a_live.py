@@ -24,6 +24,7 @@ This is the diagnostic the user can run while doing the chat-panel
 real-test in the Tauri shell. The real Tauri-side smoke is documented
 in docs/EVIDENCE/skill-platform-v1.md (Wave 6).
 """
+
 from __future__ import annotations
 
 import asyncio

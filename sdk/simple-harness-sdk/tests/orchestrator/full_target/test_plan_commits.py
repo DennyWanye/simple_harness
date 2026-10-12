@@ -143,8 +143,13 @@ def _events(loop: Any, mission_id: str, kind: str) -> list[Any]:
 def _twin(original: Any, instance_id: str = "mi-twin") -> Any:
     """同一组槽位上的第二个做法实例。"""
 
-    return dataclasses.replace(original, instance_id=instance_id, child_bindings=tuple(
-        dataclasses.replace(child, instance_id=instance_id) for child in original.child_bindings))
+    return dataclasses.replace(
+        original,
+        instance_id=instance_id,
+        child_bindings=tuple(
+            dataclasses.replace(child, instance_id=instance_id) for child in original.child_bindings
+        ),
+    )
 
 
 def _without_the_delta(command: CommitPlanCommand) -> CommitPlanCommand:
@@ -153,57 +158,100 @@ def _without_the_delta(command: CommitPlanCommand) -> CommitPlanCommand:
     network = command.network
     added = {spec.task_id for spec in command.delta.occurrences}
     root = next(binding for binding in network.task_bindings if binding.task_id not in added)
-    return dataclasses.replace(command, network=dataclasses.replace(
-        network,
-        occurrences=tuple(spec for spec in network.occurrences if spec.task_id == root.task_id),
-        task_bindings=(dataclasses.replace(root, adopted_method_instance_id=None),),
-        order_constraints=(), data_requirements=(), typed_edges=(), method_instances=(),
-        adopted_instance_ids=(), obligation_coverage=(), required_obligations=(),
-    ))
+    return dataclasses.replace(
+        command,
+        network=dataclasses.replace(
+            network,
+            occurrences=tuple(spec for spec in network.occurrences if spec.task_id == root.task_id),
+            task_bindings=(dataclasses.replace(root, adopted_method_instance_id=None),),
+            order_constraints=(),
+            data_requirements=(),
+            typed_edges=(),
+            method_instances=(),
+            adopted_instance_ids=(),
+            obligation_coverage=(),
+            required_obligations=(),
+        ),
+    )
 
 
 def _looped(command: CommitPlanCommand) -> CommitPlanCommand:
-    first, last = command.network.occurrences[0].occurrence_id, command.network.occurrences[-1].occurrence_id
-    return dataclasses.replace(command, network=dataclasses.replace(command.network, order_constraints=(
-        OrderConstraint(before=first, after=last, release_condition=ReleaseCondition.ACCEPTED),
-        OrderConstraint(before=last, after=first, release_condition=ReleaseCondition.ACCEPTED))))
+    first, last = (
+        command.network.occurrences[0].occurrence_id,
+        command.network.occurrences[-1].occurrence_id,
+    )
+    return dataclasses.replace(
+        command,
+        network=dataclasses.replace(
+            command.network,
+            order_constraints=(
+                OrderConstraint(
+                    before=first, after=last, release_condition=ReleaseCondition.ACCEPTED
+                ),
+                OrderConstraint(
+                    before=last, after=first, release_condition=ReleaseCondition.ACCEPTED
+                ),
+            ),
+        ),
+    )
 
 
 def _form_flipped(command: CommitPlanCommand) -> CommitPlanCommand:
     leaf = command.delta.occurrences[0]
     flipped = TaskForm.COMPOUND if leaf.form is TaskForm.PRIMITIVE else TaskForm.PRIMITIVE
-    return dataclasses.replace(command, delta=dataclasses.replace(
-        command.delta, occurrences=(dataclasses.replace(leaf, form=flipped), *command.delta.occurrences[1:])))
+    return dataclasses.replace(
+        command,
+        delta=dataclasses.replace(
+            command.delta,
+            occurrences=(dataclasses.replace(leaf, form=flipped), *command.delta.occurrences[1:]),
+        ),
+    )
 
 
 def _unasked_opening(command: CommitPlanCommand) -> CommitPlanCommand:
     """增量里多出一个义务开口，没有哪个槽位要这份工作。"""
 
-    root = next(binding for binding in command.network.task_bindings
-                if binding.task_id not in {spec.task_id for spec in command.delta.occurrences})
+    root = next(
+        binding
+        for binding in command.network.task_bindings
+        if binding.task_id not in {spec.task_id for spec in command.delta.occurrences}
+    )
     opening = ObligationOpening(
-        obligation_id="obl-nobody-asked", parent_obligation_id=root.obligation_id,
-        relation=ObligationRelation.REFINES_PARENT, requirement_refs=tuple(root.requirement_refs),
-        goal_signature=root.goal_signature, budget_inheritance=BudgetInheritance.INHERIT_PARENT_FUEL_SHARE,
-        fuel_share=1)
-    return dataclasses.replace(command, delta=dataclasses.replace(command.delta, obligation_openings=(opening,)))
+        obligation_id="obl-nobody-asked",
+        parent_obligation_id=root.obligation_id,
+        relation=ObligationRelation.REFINES_PARENT,
+        requirement_refs=tuple(root.requirement_refs),
+        goal_signature=root.goal_signature,
+        budget_inheritance=BudgetInheritance.INHERIT_PARENT_FUEL_SHARE,
+        fuel_share=1,
+    )
+    return dataclasses.replace(
+        command, delta=dataclasses.replace(command.delta, obligation_openings=(opening,))
+    )
 
 
 #: 篡改编译产物的各档（原 RW-P2 用例各自想撞到的提交层检查写在右边）。
 TAMPERED_COMPILATIONS = {
     # 别修订的证书 → 原 PLAN_REVISION_STALE
     "certificate_for_another_revision": lambda c: dataclasses.replace(
-        c, network=dataclasses.replace(c.network, plan_revision=5)),
+        c, network=dataclasses.replace(c.network, plan_revision=5)
+    ),
     # 别任务的网络 → 原 STRUCTURE_INVALID
     "network_of_another_mission": lambda c: dataclasses.replace(
-        c, network=dataclasses.replace(c.network, mission_id="mission-elsewhere")),
+        c, network=dataclasses.replace(c.network, mission_id="mission-elsewhere")
+    ),
     # 网络不含增量 → 原 PLAN_REVISION_STALE / 静默丢占用 → 原 PLAN_NOT_PRESERVED
     "network_without_the_delta": _without_the_delta,
     # 合并成环 → 原 STRUCTURE_INVALID
     "network_with_a_cycle": _looped,
     # 增量采用证书外的实例 / 第二个采用实例 → 原 OR_NOT_RESOLVED
-    "delta_adopts_past_the_certificate": lambda c: dataclasses.replace(c, delta=dataclasses.replace(
-        c.delta, method_instances=(*c.delta.method_instances, _twin(c.network.method_instances[0])))),
+    "delta_adopts_past_the_certificate": lambda c: dataclasses.replace(
+        c,
+        delta=dataclasses.replace(
+            c.delta,
+            method_instances=(*c.delta.method_instances, _twin(c.network.method_instances[0])),
+        ),
+    ),
     # 增量与网络的绑定不一致 → 原 STRUCTURE_INVALID（commit-ready 一族）
     "delta_disagrees_with_the_bindings": _form_flipped,
     # 没有槽位要的开口 → 原 DEMAND_NOT_ADMITTED（开口 / 重开 / 需求准入一族）
@@ -222,16 +270,25 @@ def test_a_tampered_compilation_is_refused_by_the_preview_identity_gate_before_a
 
     tamper = TAMPERED_COMPILATIONS[tampered]
     refusals = refuse_tampered_first(
-        monkeypatch, lambda command, principal, kwargs: (tamper(command), principal, kwargs),
-        "PREVIEW_IDENTITY_STALE")
+        monkeypatch,
+        lambda command, principal, kwargs: (tamper(command), principal, kwargs),
+        "PREVIEW_IDENTITY_STALE",
+    )
 
     async def case() -> None:
-        async with reviewed(tmp_path, key=f"identity-{tampered}") as ((loop, mission, _w, _r, dispatch, _p), opener, _prov):
+        async with reviewed(tmp_path, key=f"identity-{tampered}") as (
+            (loop, mission, _w, _r, dispatch, _p),
+            opener,
+            _prov,
+        ):
             await loop._collect_plan_decision(
-                opener, object(), mission, plan_reply(opener.config["planning_package"]), dispatch)
+                opener, object(), mission, plan_reply(opener.config["planning_package"]), dispatch
+            )
             assert len(refusals) == 1 and "preview compilation identity changed" in refusals[0]
             assert _decision_row(loop, opener.intent_id)["status"] == "COMMITTED"
-            assert [item.revision for item in HtnStore(loop.store).list_plan_revisions(mission.id)] == [1]
+            assert [
+                item.revision for item in HtnStore(loop.store).list_plan_revisions(mission.id)
+            ] == [1]
 
     asyncio.run(case())
 
@@ -245,27 +302,43 @@ def test_the_plan_commit_has_one_way_in_and_it_carries_the_preview():
     import agent_orchestrator
 
     root = Path(agent_orchestrator.__file__).parent
-    sources = {str(path.relative_to(root)): path.read_text(encoding="utf-8") for path in root.rglob("*.py")}
+    sources = {
+        str(path.relative_to(root)): path.read_text(encoding="utf-8") for path in root.rglob("*.py")
+    }
 
     def callers(needle: str) -> list[str]:
-        return sorted(name for name, text in sources.items()
-                      if needle in text.replace(f"def {needle}", ""))
+        return sorted(
+            name for name, text in sources.items() if needle in text.replace(f"def {needle}", "")
+        )
 
     assert callers("CommitPlanCommand(") == ["orchestrator/hierarchical_dispatch.py"]
     assert callers("commit_plan_revision(") == ["orchestrator/planning_admission_commits.py"]
     assert callers("commit_planning_revision(") == [
-        "orchestrator/hierarchical_dispatch.py", "orchestrator/planning_backend_commit.py"]
+        "orchestrator/hierarchical_dispatch.py",
+        "orchestrator/planning_backend_commit.py",
+    ]
     dispatch = sources["orchestrator/hierarchical_dispatch.py"]
-    build = dispatch[dispatch.index("    def build_command("):]
-    build = build[:build.index("\n    def ", 10)]
-    for field in ("delta=compilation.delta", "network=compilation.network",
-                  "task_bindings=compilation.task_bindings", "budget_requirement=compilation.budget_requirement",
-                  "compilation.superseded_occurrences", "read_installed_graph_policy"):
+    build = dispatch[dispatch.index("    def build_command(") :]
+    build = build[: build.index("\n    def ", 10)]
+    for field in (
+        "delta=compilation.delta",
+        "network=compilation.network",
+        "task_bindings=compilation.task_bindings",
+        "budget_requirement=compilation.budget_requirement",
+        "compilation.superseded_occurrences",
+        "read_installed_graph_policy",
+    ):
         assert field in build, field
     preview = sources["planning/plan_preview.py"]
     gate = sources["orchestrator/planning_admission_commits.py"]
-    assert '"delta": compilation.delta.to_json(),\n                "network": _source_snapshot_payload(compilation.network)' in preview
-    assert '"delta": command.delta.to_json(),\n            "network": _source_snapshot_payload(command.network)' in gate
+    assert (
+        '"delta": compilation.delta.to_json(),\n                "network": _source_snapshot_payload(compilation.network)'
+        in preview
+    )
+    assert (
+        '"delta": command.delta.to_json(),\n            "network": _source_snapshot_payload(command.network)'
+        in gate
+    )
     # 产品部署不装规划求解器，第二个调用方（求解器通道）在产品路径上不开。
     from agent_orchestrator.runtime.assembly import OrchestratorConfig
 
@@ -273,13 +346,19 @@ def test_the_plan_commit_has_one_way_in_and_it_carries_the_preview():
 
 
 # ============================ 产品同形世界：封包后提交前状态变了 / 任务结束后重放（RW-P1）
-def test_a_reply_whose_mission_ended_between_preview_and_commit_is_refused_and_writes_nothing(tmp_path):
+def test_a_reply_whose_mission_ended_between_preview_and_commit_is_refused_and_writes_nothing(
+    tmp_path,
+):
     """规划器的回复在收集器里、预览之后提交之前，人取消了任务：提交在它自己的事务里重读
     计划来源，按名拒绝，计划一版也没写。（分诊表期望 ``MISSION_NOT_WRITABLE``；产品上执行图
     参与方先查到来源已变，以 ``TASKGRAPH_PLAN_SOURCE_CHANGED`` 拒，记偏离。）"""
 
     async def case() -> None:
-        async with reviewed(tmp_path, key="plan-commit-ended-in-window") as ((loop, mission, _w, _r, dispatch, product), opener, _prov):
+        async with reviewed(tmp_path, key="plan-commit-ended-in-window") as (
+            (loop, mission, _w, _r, dispatch, product),
+            opener,
+            _prov,
+        ):
             original = dispatch.preview_plan_proposal
 
             def preview_then_cancel(proposal: Any, *, inputs: Any) -> Any:
@@ -290,7 +369,12 @@ def test_a_reply_whose_mission_ended_between_preview_and_commit_is_refused_and_w
             dispatch.preview_plan_proposal = preview_then_cancel  # type: ignore[method-assign]
             try:
                 await loop._collect_plan_decision(
-                    opener, object(), mission, plan_reply(opener.config["planning_package"]), dispatch)
+                    opener,
+                    object(),
+                    mission,
+                    plan_reply(opener.config["planning_package"]),
+                    dispatch,
+                )
             finally:
                 dispatch.preview_plan_proposal = original  # type: ignore[method-assign]
             row = _decision_row(loop, opener.intent_id)
@@ -304,7 +388,9 @@ def test_a_reply_whose_mission_ended_between_preview_and_commit_is_refused_and_w
 
 
 # ============================== 产品同形世界：第一次提交留下的账 + 任务结束后重放（RW-P4）
-def test_the_first_commit_leaves_one_receipt_one_event_an_indexed_read_set_and_no_dispatch(tmp_path):
+def test_the_first_commit_leaves_one_receipt_one_event_an_indexed_read_set_and_no_dispatch(
+    tmp_path,
+):
     """主循环真跑出第 1 版计划（提做法 → 独立审阅 → 采用），执行者被扣住。
 
     * 回执：命令号、基于第 0 版出第 1 版、意图哈希 / 读集哈希与事件一致、产出身份；
@@ -317,7 +403,14 @@ def test_the_first_commit_leaves_one_receipt_one_event_an_indexed_read_set_and_n
     """
 
     async def case() -> None:
-        async with committed(tmp_path, key="plan-commit-ledger") as (loop, mission, _w, _r, dispatch, product):
+        async with committed(tmp_path, key="plan-commit-ledger") as (
+            loop,
+            mission,
+            _w,
+            _r,
+            dispatch,
+            product,
+        ):
             opener, raw = committing_round(loop, mission.id)
             semantics = HtnStore(loop.store)
             receipt = semantics.get_commit_receipt("plan:" + opener.intent_id)
@@ -325,14 +418,20 @@ def test_the_first_commit_leaves_one_receipt_one_event_an_indexed_read_set_and_n
             payload = event.payload
             assert (receipt.base_plan_revision, receipt.new_plan_revision) == (0, 1)
             assert receipt.intent_hash == payload["intent_hash"]
-            assert receipt.read_set_hash == payload["read_set_hash"] == content_hash_of(receipt.read_set.to_json())
+            assert (
+                receipt.read_set_hash
+                == payload["read_set_hash"]
+                == content_hash_of(receipt.read_set.to_json())
+            )
             assert receipt.output_identity["plan_revision"] == 1
             assert receipt.output_identity["pending_dispatch"] == payload["pending_dispatch"]
 
             proposal = payload["proposal_id"]
             stored = semantics.get_read_set(mission.id, proposal)
             assert stored.to_json() == receipt.read_set.to_json()
-            kinds = {item["subject_type"] for item in semantics.list_read_set_items(mission.id, proposal)}
+            kinds = {
+                item["subject_type"] for item in semantics.list_read_set_items(mission.id, proposal)
+            }
             assert {"requirements", "task", "method"} <= kinds
 
             assert payload["plan_revision"] == 1 and payload["base_plan_revision"] == 0
@@ -342,14 +441,21 @@ def test_the_first_commit_leaves_one_receipt_one_event_an_indexed_read_set_and_n
             assert payload["revoked_dispatch_generations"] == {}
             row = loop.store.connection.execute(
                 "SELECT payload_json FROM events WHERE mission_id = ? AND type = ?",
-                (mission.id, PLAN_REVISION_COMMITTED)).fetchone()
+                (mission.id, PLAN_REVISION_COMMITTED),
+            ).fetchone()
             assert row[0] == canonical_json(json.loads(row[0]))
 
-            committed_at = next(item.seq for item in _events(loop, mission.id, "PlanningDecisionEvaluated")
-                                if item.payload.get("status") == "COMMITTED")
+            committed_at = next(
+                item.seq
+                for item in _events(loop, mission.id, "PlanningDecisionEvaluated")
+                if item.payload.get("status") == "COMMITTED"
+            )
             materialised = set(payload["materialised_tasks"])
-            assert materialised == {str(spec.task_id) for spec in dispatch.network(mission.id).occurrences
-                                    if str(spec.task_id) != root_task(mission.id)}
+            assert materialised == {
+                str(spec.task_id)
+                for spec in dispatch.network(mission.id).occurrences
+                if str(spec.task_id) != root_task(mission.id)
+            }
             first_attempt = min(item.seq for item in _events(loop, mission.id, "AttemptCreated"))
             assert first_attempt > committed_at
 
@@ -362,11 +468,19 @@ def test_the_first_commit_leaves_one_receipt_one_event_an_indexed_read_set_and_n
             assert payload["opened_obligations"] == [] and payload["admitted_demands"] == []
 
             assert product.control.cancel(mission.id)["changed"] is True
-            before = (_decision_row(loop, opener.intent_id), len(loop.store.list_events(mission.id)),
-                      loop.store.connection.total_changes)
-            await loop._collect_plan_decision(opener, object(), loop.store.get_mission(mission.id), raw, dispatch)
-            after = (_decision_row(loop, opener.intent_id), len(loop.store.list_events(mission.id)),
-                     loop.store.connection.total_changes)
+            before = (
+                _decision_row(loop, opener.intent_id),
+                len(loop.store.list_events(mission.id)),
+                loop.store.connection.total_changes,
+            )
+            await loop._collect_plan_decision(
+                opener, object(), loop.store.get_mission(mission.id), raw, dispatch
+            )
+            after = (
+                _decision_row(loop, opener.intent_id),
+                len(loop.store.list_events(mission.id)),
+                loop.store.connection.total_changes,
+            )
             assert after == before
             assert semantics.get_commit_receipt("plan:" + opener.intent_id) == receipt
 
@@ -374,7 +488,9 @@ def test_the_first_commit_leaves_one_receipt_one_event_an_indexed_read_set_and_n
 
 
 # ============================ 产品同形世界：修复时同做法同参数再落地（09-27 真机缺陷）
-def test_a_repair_that_re_grounds_the_adopted_method_is_refused_by_name_and_the_next_round_recovers(tmp_path):
+def test_a_repair_that_re_grounds_the_adopted_method_is_refused_by_name_and_the_next_round_recovers(
+    tmp_path,
+):
     """唯一一步的内容被审阅打回；修复轮里规划器发 REPLACE_METHOD，换上的还是正在用的那个做法、
     同样的参数。实例号由（目标、占用、做法、参数）派生，与库里已采用的那个相同：提交按
     ``REPAIR_NOT_ALLOWED`` 具名拒绝（不再是唯一约束冲突的内部错误）、这一轮什么都没提交；
@@ -386,9 +502,14 @@ def test_a_repair_that_re_grounds_the_adopted_method_is_refused_by_name_and_the_
         data = review_input(request)
         if data is None:
             return None
-        if str((data.get("package") or {}).get("purpose")) == "TASK_CONTENT" and not state["rejected"]:
+        if (
+            str((data.get("package") or {}).get("purpose")) == "TASK_CONTENT"
+            and not state["rejected"]
+        ):
             state["rejected"] = True
-            return review_reply(data, verdict="REJECTED", grade="FAIL", reason="脚本化审阅：要点不够具体。")
+            return review_reply(
+                data, verdict="REJECTED", grade="FAIL", reason="脚本化审阅：要点不够具体。"
+            )
         return review_reply(data)
 
     def planner(request: Any) -> Any:
@@ -397,33 +518,65 @@ def test_a_repair_that_re_grounds_the_adopted_method_is_refused_by_name_and_the_
             return planner_reply(request)
         if not state["replaced"]:
             state["replaced"] = True
-            [goal] = [item for item in package["views"]["goals"]
-                      if item.get("under_repair") and item.get("adopted_method")]
-            subject = next(item["subject_key"] for item in package["planning_subjects"]
-                           if item["occurrence_id"] == goal["occurrence_id"])
-            instance = next(item for item in package["visible_refs"] if item["kind"] == "method_instance"
-                            and item["id"] == goal["adopted_method"]["method_instance_id"])
-            return decision(subject, "REPAIR", {
-                "repair_kind": "REPLACE_METHOD", "rejected_method_instance": instance,
-                "replacement_method_ref": dict(goal["adopted_method"]["method_ref"]), "bindings": goal["params"],
-            }, "换成同一个做法、同样的参数。")
+            [goal] = [
+                item
+                for item in package["views"]["goals"]
+                if item.get("under_repair") and item.get("adopted_method")
+            ]
+            subject = next(
+                item["subject_key"]
+                for item in package["planning_subjects"]
+                if item["occurrence_id"] == goal["occurrence_id"]
+            )
+            instance = next(
+                item
+                for item in package["visible_refs"]
+                if item["kind"] == "method_instance"
+                and item["id"] == goal["adopted_method"]["method_instance_id"]
+            )
+            return decision(
+                subject,
+                "REPAIR",
+                {
+                    "repair_kind": "REPLACE_METHOD",
+                    "rejected_method_instance": instance,
+                    "replacement_method_ref": dict(goal["adopted_method"]["method_ref"]),
+                    "bindings": goal["params"],
+                },
+                "换成同一个做法、同样的参数。",
+            )
         return retry_same_method(request)
 
     async def case() -> None:
         provider = LayeredScriptedProvider(planner=planner, reviewer=reviewer)
         async with product_world(tmp_path / "root", provider) as world:
-            mission_id = world.create({"goal": "写一份 NOTES.md，列出三条要点。", "idempotency_key": "re-ground",
-                                       "success_criteria": ["file:NOTES.md"]})["mission_id"]
+            mission_id = world.create(
+                {
+                    "goal": "写一份 NOTES.md，列出三条要点。",
+                    "idempotency_key": "re-ground",
+                    "success_criteria": ["file:NOTES.md"],
+                }
+            )["mission_id"]
             mission = await world.run_until_settled(mission_id, rounds=30)
             assert str(mission.status.value) == "COMPLETED", (mission.status, mission.final_report)
-            evaluated = [item.payload for item in _events(world.loop, mission_id, "PlanningDecisionEvaluated")]
+            evaluated = [
+                item.payload
+                for item in _events(world.loop, mission_id, "PlanningDecisionEvaluated")
+            ]
             [refused] = [item for item in evaluated if item.get("status") == "COMMIT_REJECTED"]
-            assert refused["decision_type"] == "REPAIR" and refused["rejection_codes"] == ["REPAIR_NOT_ALLOWED"]
-            assert "a repair must choose a different method or different parameters" in json.dumps(refused["detail"])
+            assert refused["decision_type"] == "REPAIR" and refused["rejection_codes"] == [
+                "REPAIR_NOT_ALLOWED"
+            ]
+            assert "a repair must choose a different method or different parameters" in json.dumps(
+                refused["detail"]
+            )
             with pytest.raises(StoreError):
                 HtnStore(world.store).get_commit_receipt("plan:" + refused["request_id"])
-            retried = [item for item in evaluated if item.get("decision_type") == "REPAIR"
-                       and item.get("status") == "COMMITTED"]
+            retried = [
+                item
+                for item in evaluated
+                if item.get("decision_type") == "REPAIR" and item.get("status") == "COMMITTED"
+            ]
             assert len(retried) == 1
             adopted = HtnStore(world.store).list_method_instances(mission_id, state="ADOPTED")
             assert len({str(item.instance_id) for item in adopted}) == 1
@@ -432,31 +585,53 @@ def test_a_repair_that_re_grounds_the_adopted_method_is_refused_by_name_and_the_
 
 
 # ================================== 经产品组装建任务：同一义务放弃后可再要、撤回要签名（D）
-def test_a_duty_given_up_may_be_asked_for_again_and_a_withdrawal_must_be_signed_and_evidenced(tmp_path):
+def test_a_duty_given_up_may_be_asked_for_again_and_a_withdrawal_must_be_signed_and_evidenced(
+    tmp_path,
+):
     """根义务的需求在建任务时由"任务本身"准入。撤回再准入是第二次准入（两条事件、两个编号），
     不是第一次的重放；没签名、签名全是空白、没写依据的撤回都被拒。"""
 
     async def case() -> None:
         async with product_world(tmp_path / "root", LayeredScriptedProvider(), auto=False) as world:
-            mission_id = world.create({"goal": "写一份 NOTES.md。", "idempotency_key": "duty-again",
-                                       "success_criteria": ["file:NOTES.md"]})["mission_id"]
+            mission_id = world.create(
+                {
+                    "goal": "写一份 NOTES.md。",
+                    "idempotency_key": "duty-again",
+                    "success_criteria": ["file:NOTES.md"],
+                }
+            )["mission_id"]
             commit, duty = world.loop.commit, root_duty(mission_id)
             duties = ObligationStore(world.store)
             principal = world.deployment.principal.principal_id
             requester = {"kind": "mission_root"}
             assert len(_events(world.loop, mission_id, DEMAND_ADMITTED)) == 1
-            for signer, evidence in (("", {"reason": "r"}), ("   ", {"reason": "r"}), (principal, {})):
+            for signer, evidence in (
+                ("", {"reason": "r"}),
+                ("   ", {"reason": "r"}),
+                (principal, {}),
+            ):
                 with pytest.raises(ContractError):
-                    commit.withdraw_obligation_demand(mission_id, duty, principal=signer,
-                                                      requester=requester, evidence=evidence)
+                    commit.withdraw_obligation_demand(
+                        mission_id, duty, principal=signer, requester=requester, evidence=evidence
+                    )
             assert duties.account(mission_id, duty).has_admitted_demand is True
 
-            commit.withdraw_obligation_demand(mission_id, duty, principal=principal, requester=requester,
-                                              evidence={"reason": "the branch that asked for it retired"})
+            commit.withdraw_obligation_demand(
+                mission_id,
+                duty,
+                principal=principal,
+                requester=requester,
+                evidence={"reason": "the branch that asked for it retired"},
+            )
             assert duties.account(mission_id, duty).has_admitted_demand is False
             assert len(_events(world.loop, mission_id, DEMAND_WITHDRAWN)) == 1
-            commit.admit_obligation_demand(mission_id, duty, principal=principal, requester=requester,
-                                           evidence={"requirement_refs": ["c-user-1"]})
+            commit.admit_obligation_demand(
+                mission_id,
+                duty,
+                principal=principal,
+                requester=requester,
+                evidence={"requirement_refs": ["c-user-1"]},
+            )
             assert duties.account(mission_id, duty).has_admitted_demand is True
             admissions = _events(world.loop, mission_id, DEMAND_ADMITTED)
             assert len(admissions) == 2, "asking again is a second act, not a replay of the first"
@@ -530,26 +705,46 @@ def _pure_bundle() -> tuple[Any, Any, Any]:
     env = _env("mission-e")
     contract = _outer()
     assert env.admit(contract).admitted
-    binding = task_binding(env, "plan.goal", task_id=ROOT_TASK, obligation=ROOT_DUTY, parameters={"subject": "alpha"})
-    report = assess_method(binding, contract, env.snapshot(), env.capabilities(), registry=env.predicates)
+    binding = task_binding(
+        env, "plan.goal", task_id=ROOT_TASK, obligation=ROOT_DUTY, parameters={"subject": "alpha"}
+    )
+    report = assess_method(
+        binding, contract, env.snapshot(), env.capabilities(), registry=env.predicates
+    )
     draft = ground_method(binding, contract, {}, report, catalog=env.catalog, schemas=env.schemas)
-    bundle = compile_refinement_bundle(draft, root_network(env, binding), method=contract, catalog=env.catalog,
-                                       schemas=env.schemas, registry=env.registry, requirements_revision=0)
+    bundle = compile_refinement_bundle(
+        draft,
+        root_network(env, binding),
+        method=contract,
+        catalog=env.catalog,
+        schemas=env.schemas,
+        registry=env.registry,
+        requirements_revision=0,
+    )
     return env, binding, bundle
 
 
 def _pure_command(**changes: Any) -> CommitPlanCommand:
     _env_, _binding, bundle = _pure_bundle()
-    command = CommitPlanCommand(command_id="cmd-1", mission_id="mission-e", delta=bundle.delta, network=bundle.network,
-                                task_bindings=bundle.task_bindings, issued_by="manager-1",
-                                scope_id="mission", source={"intent_id": "plan-1"})
+    command = CommitPlanCommand(
+        command_id="cmd-1",
+        mission_id="mission-e",
+        delta=bundle.delta,
+        network=bundle.network,
+        task_bindings=bundle.task_bindings,
+        issued_by="manager-1",
+        scope_id="mission",
+        source={"intent_id": "plan-1"},
+    )
     return dataclasses.replace(command, **changes)
 
 
 def test_the_default_spec_hashes_like_the_explicit_hierarchical_one():
     """A Host that names the mode and one that omits it send the same request."""
 
-    spec = MissionSpec(goal="g", success_criteria=("file:a.md",), tenant_id="t", idempotency_key="hash")
+    spec = MissionSpec(
+        goal="g", success_criteria=("file:a.md",), tenant_id="t", idempotency_key="hash"
+    )
     explicit = dataclasses.replace(spec, orchestration_semantics_version=HIERARCHICAL_SEMANTICS)
     assert spec.to_json()[SEMANTICS_KEY] == HIERARCHICAL_SEMANTICS
     assert spec.to_json() == explicit.to_json()
@@ -557,8 +752,13 @@ def test_the_default_spec_hashes_like_the_explicit_hierarchical_one():
 
 def test_an_unknown_semantics_version_is_refused_by_the_spec_itself():
     with pytest.raises(ContractError):
-        MissionSpec(goal="g", success_criteria=("file:a.md",), tenant_id="t", idempotency_key="bad",
-                    orchestration_semantics_version="v2-maybe")
+        MissionSpec(
+            goal="g",
+            success_criteria=("file:a.md",),
+            tenant_id="t",
+            idempotency_key="bad",
+            orchestration_semantics_version="v2-maybe",
+        )
 
 
 @pytest.mark.parametrize(
@@ -570,9 +770,17 @@ def test_an_unknown_semantics_version_is_refused_by_the_spec_itself():
         ("", "mission", PlanPrincipal("manager-2", "mission"), "PRINCIPAL_MISMATCH"),
         ("   ", "mission", PlanPrincipal("manager-1", "mission"), "PRINCIPAL_MISMATCH"),
     ),
-    ids=("forged-presenter", "another-scope", "unsigned", "unsigned-any-presenter", "whitespace-issuer"),
+    ids=(
+        "forged-presenter",
+        "another-scope",
+        "unsigned",
+        "unsigned-any-presenter",
+        "whitespace-issuer",
+    ),
 )
-def test_authorship_and_scope_are_stated_by_the_command_and_never_inferred(issued_by, scope_id, presenter, reason):
+def test_authorship_and_scope_are_stated_by_the_command_and_never_inferred(
+    issued_by, scope_id, presenter, reason
+):
     """主体 / 范围核对（产品上的真实入口版见 test_h1h_authority_matrix::test_a03_*）。"""
 
     command = _pure_command(issued_by=issued_by, scope_id=scope_id)
@@ -586,7 +794,9 @@ def test_a_replay_answers_the_same_intent_and_refuses_another_intent_under_the_s
 
     command = _pure_command()
     same_payload = dataclasses.replace(command, source={"intent_id": "a-later-delivery"})
-    other = dataclasses.replace(command, structure_budget=dataclasses.replace(command.structure_budget, budget_version=99))
+    other = dataclasses.replace(
+        command, structure_budget=dataclasses.replace(command.structure_budget, budget_version=99)
+    )
     assert same_payload.intent_hash() == command.intent_hash()
     assert other.intent_hash() != command.intent_hash()
 
@@ -599,17 +809,26 @@ def test_a_replay_answers_the_same_intent_and_refuses_another_intent_under_the_s
             return receipt
 
     assert CommitService._replayed_receipt(_Receipts(), command, command.intent_hash()) is receipt
-    assert CommitService._replayed_receipt(_Receipts(), dataclasses.replace(command, command_id="cmd-new"),
-                                           command.intent_hash()) is None
+    assert (
+        CommitService._replayed_receipt(
+            _Receipts(), dataclasses.replace(command, command_id="cmd-new"), command.intent_hash()
+        )
+        is None
+    )
     with pytest.raises(PlanCommitRejected) as caught:
         CommitService._replayed_receipt(_Receipts(), other, other.intent_hash())
     assert caught.value.reason == "COMMAND_PAYLOAD_CONFLICT"
 
 
 def _criterion(identifier: str = "c-1") -> Criterion:
-    return Criterion(criterion_id=identifier, revision=1, origin=CriterionOrigin.USER_EXPLICIT,
-                     statement=f"criterion {identifier} is satisfied",
-                     requirement_class=RequirementClass.REQUIRED_OUTCOME, evaluation_kind=EvaluationKind.SEMANTIC)
+    return Criterion(
+        criterion_id=identifier,
+        revision=1,
+        origin=CriterionOrigin.USER_EXPLICIT,
+        statement=f"criterion {identifier} is satisfied",
+        requirement_class=RequirementClass.REQUIRED_OUTCOME,
+        evaluation_kind=EvaluationKind.SEMANTIC,
+    )
 
 
 def _observe(semantics: HtnStore, mission_id: str, name: str, key: str, at: int) -> None:
@@ -618,14 +837,25 @@ def _observe(semantics: HtnStore, mission_id: str, name: str, key: str, at: int)
     from agent_orchestrator.planning.htn.observers.workspace import workspace_predicates
 
     signature = workspace_predicates()[0]
-    semantics.insert_observation(mission_id, ObservationRecord(
-        observation_id=name, proposition_key=proposition_key(signature, {"path": key}), polarity=True,
-        source_ref=TypedRef(kind=TypedRefKind.OBSERVATION, id=name, revision=1, content_hash="a" * 64),
-        observed_at_ms=at, recorded_at_ms=at),
-        question={"predicate_ref": signature.predicate_ref.to_json(), "arguments": {"path": key}})
+    semantics.insert_observation(
+        mission_id,
+        ObservationRecord(
+            observation_id=name,
+            proposition_key=proposition_key(signature, {"path": key}),
+            polarity=True,
+            source_ref=TypedRef(
+                kind=TypedRefKind.OBSERVATION, id=name, revision=1, content_hash="a" * 64
+            ),
+            observed_at_ms=at,
+            recorded_at_ms=at,
+        ),
+        question={"predicate_ref": signature.predicate_ref.to_json(), "arguments": {"path": key}},
+    )
 
 
-def test_the_read_set_checker_refuses_a_stale_item_channel_by_channel_and_cannot_be_fooled_by_a_ghost(tmp_path):
+def test_the_read_set_checker_refuses_a_stale_item_channel_by_channel_and_cannot_be_fooled_by_a_ghost(
+    tmp_path,
+):
     """读集检查器，按渠道（原读集 19 条合一，直接测 ``SemanticReadSetChecker.verify``）。
 
     任务经产品组装建出；各渠道的状态是这条用例写进库的测试数据（直接测检查函数，不当产品世界用）。
@@ -638,8 +868,13 @@ def test_the_read_set_checker_refuses_a_stale_item_channel_by_channel_and_cannot
     async def case() -> None:
         async with product_world(tmp_path / "root", LayeredScriptedProvider(), auto=False) as world:
             store = world.store
-            mission_id = world.create({"goal": "写一份 NOTES.md。", "idempotency_key": "read-set-channels",
-                                       "success_criteria": ["file:NOTES.md"]})["mission_id"]
+            mission_id = world.create(
+                {
+                    "goal": "写一份 NOTES.md。",
+                    "idempotency_key": "read-set-channels",
+                    "success_criteria": ["file:NOTES.md"],
+                }
+            )["mission_id"]
             semantics = HtnStore(store)
             checker = SemanticReadSetChecker(store, semantics, mission_id=mission_id)
 
@@ -647,7 +882,9 @@ def test_the_read_set_checker_refuses_a_stale_item_channel_by_channel_and_cannot
                 return int(semantics.latest_requirements_revision(mission_id).revision)
 
             def verdict(**channels: Any) -> Any:
-                return checker.verify(SemanticReadSet(requirements_revision=current_requirements(), **channels))
+                return checker.verify(
+                    SemanticReadSet(requirements_revision=current_requirements(), **channels)
+                )
 
             def stale(**channels: Any) -> set[str]:
                 found = verdict(**channels)
@@ -662,18 +899,29 @@ def test_the_read_set_checker_refuses_a_stale_item_channel_by_channel_and_cannot
             # 要求修订
             read = SemanticReadSet(requirements_revision=current_requirements())
             assert checker.verify(read).ok
-            semantics.insert_requirements_revision(RequirementsRevision(
-                revision_id="requirements-moved", mission_id=mission_id,  # type: ignore[arg-type]
-                revision=current_requirements() + 1, criteria=(_criterion(),),
-                success_expression=AllExpr((CriterionExpr("c-1"),))))
+            semantics.insert_requirements_revision(
+                RequirementsRevision(
+                    revision_id="requirements-moved",
+                    mission_id=mission_id,  # type: ignore[arg-type]
+                    revision=current_requirements() + 1,
+                    criteria=(_criterion(),),
+                    success_expression=AllExpr((CriterionExpr("c-1"),)),
+                )
+            )
             assert {item.channel for item in checker.verify(read).stale} == {"requirements"}
 
             # 目标契约
             goal = checker.read_item(ReadItemKind.TASK, root_task(mission_id))
             assert stale(goal_revisions=(goal,)) == set()
             binding = semantics.task_semantics_of(mission_id, root_task(mission_id))
-            semantics.put_task_semantics(mission_id, dataclasses.replace(
-                binding, contract_revision=int(binding.contract_revision) + 1, contract_hash=HEX_OTHER))
+            semantics.put_task_semantics(
+                mission_id,
+                dataclasses.replace(
+                    binding,
+                    contract_revision=int(binding.contract_revision) + 1,
+                    contract_hash=HEX_OTHER,
+                ),
+            )
             assert stale(goal_revisions=(goal,)) == {"goal"}
 
             # 做法：定义变了、被停用；库里没有的做法查不了
@@ -682,15 +930,30 @@ def test_the_read_set_checker_refuses_a_stale_item_channel_by_channel_and_cannot
             assert env.admit(contract).admitted
             registration = env.registry.registration(contract.method_ref())
             semantics.register_method(contract, registration)
-            method_read = ReadItem(kind=ReadItemKind.METHOD, id=contract.method_id,
-                                   semantic_revision=contract.method_version,
-                                   content_hash=contract.method_ref().content_hash)
+            method_read = ReadItem(
+                kind=ReadItemKind.METHOD,
+                id=contract.method_id,
+                semantic_revision=contract.method_version,
+                content_hash=contract.method_ref().content_hash,
+            )
             assert stale(method_revisions=(method_read,)) == set()
-            assert stale(method_revisions=(dataclasses.replace(method_read, content_hash=HEX_OTHER),)) == {"method"}
-            semantics.set_method_registration(dataclasses.replace(registration, status=MethodRegistryStatus.SUSPENDED))
+            assert stale(
+                method_revisions=(dataclasses.replace(method_read, content_hash=HEX_OTHER),)
+            ) == {"method"}
+            semantics.set_method_registration(
+                dataclasses.replace(registration, status=MethodRegistryStatus.SUSPENDED)
+            )
             assert stale(method_revisions=(method_read,)) == {"method"}
-            assert unresolved(method_revisions=(ReadItem(kind=ReadItemKind.METHOD, id="plan.nowhere",
-                                                         semantic_revision=1, content_hash=HEX_OTHER),))
+            assert unresolved(
+                method_revisions=(
+                    ReadItem(
+                        kind=ReadItemKind.METHOD,
+                        id="plan.nowhere",
+                        semantic_revision=1,
+                        content_hash=HEX_OTHER,
+                    ),
+                )
+            )
 
             # 观测：被后来的反记录取代即过期；不存在的事实查不了
             _observe(semantics, mission_id, "obs-1", "p-alpha", 10)
@@ -698,31 +961,68 @@ def test_the_read_set_checker_refuses_a_stale_item_channel_by_channel_and_cannot
             assert stale(observation_revisions=(observed,)) == set()
             _observe(semantics, mission_id, "obs-2", "p-alpha", 20)
             assert stale(observation_revisions=(observed,)) == {"observation"}
-            assert unresolved(observation_revisions=(ReadItem(kind=ReadItemKind.FACT, id="obs-ghost",
-                                                              semantic_revision=0, content_hash=HEX_OTHER),))
+            assert unresolved(
+                observation_revisions=(
+                    ReadItem(
+                        kind=ReadItemKind.FACT,
+                        id="obs-ghost",
+                        semantic_revision=0,
+                        content_hash=HEX_OTHER,
+                    ),
+                )
+            )
 
             # 验收：库里没有的验收查不了（有效 / 不再有效两档见文件头偏离说明）
-            assert unresolved(acceptance_revisions=(ReadItem(kind=ReadItemKind.ACCEPTANCE, id="acc-ghost",
-                                                             semantic_revision=1, content_hash=HEX_OTHER),))
+            assert unresolved(
+                acceptance_revisions=(
+                    ReadItem(
+                        kind=ReadItemKind.ACCEPTANCE,
+                        id="acc-ghost",
+                        semantic_revision=1,
+                        content_hash=HEX_OTHER,
+                    ),
+                )
+            )
 
             # 义务：内容改了就过期（它答应的要求换了）
             duty = checker.read_item(ReadItemKind.OBLIGATION, root_duty(mission_id))
             assert stale(obligation_revisions=(duty,)) == set()
-            ObligationStore(store).revise_requirement_refs(mission_id, root_duty(mission_id),  # type: ignore[arg-type]
-                                                           ["c-user-1", "c-user-9"])
+            ObligationStore(store).revise_requirement_refs(
+                mission_id,
+                root_duty(mission_id),  # type: ignore[arg-type]
+                ["c-user-1", "c-user-9"],
+            )
             assert stale(obligation_revisions=(duty,)) == {"obligation"}
 
             # 授权记录：改版即过期
-            store.put_approval({"request_id": "auth-1", "kind": "plan", "mission_id": mission_id,
-                                "subject_key": root_task(mission_id), "state": "granted", "version": 1})
+            store.put_approval(
+                {
+                    "request_id": "auth-1",
+                    "kind": "plan",
+                    "mission_id": mission_id,
+                    "subject_key": root_task(mission_id),
+                    "state": "granted",
+                    "version": 1,
+                }
+            )
             authority = checker.read_item(ReadItemKind.AUTHORITY, "auth-1")
             assert stale(authority_revisions=(authority,)) == set()
-            store.put_approval({"request_id": "auth-1", "kind": "plan", "mission_id": mission_id,
-                                "subject_key": root_task(mission_id), "state": "revoked", "version": 2})
+            store.put_approval(
+                {
+                    "request_id": "auth-1",
+                    "kind": "plan",
+                    "mission_id": mission_id,
+                    "subject_key": root_task(mission_id),
+                    "state": "revoked",
+                    "version": 2,
+                }
+            )
             assert stale(authority_revisions=(authority,)) == {"authority"}
 
             # 有效性纪元：抬了即过期
-            epoch = ScopeEpochRead(scope_id="evidence", validity_epoch=semantics.epoch(mission_id, "evidence"))
+            epoch = ScopeEpochRead(
+                scope_id="evidence", validity_epoch=semantics.epoch(mission_id, "evidence")
+            )
             assert stale(scope_epochs=(epoch,)) == set()
             semantics.bump_epoch(mission_id, "evidence", bumped_by="a later recheck")
             assert stale(scope_epochs=(epoch,)) == {"validity_epoch"}
@@ -730,12 +1030,22 @@ def test_the_read_set_checker_refuses_a_stale_item_channel_by_channel_and_cannot
             # 缺席：后来有了即过期；不认识的缺席谓词查不了
             absence = AbsenceRead(predicate="no_obligation", scope_id="obl-later", range_revision=0)
             assert stale(absences=(absence,)) == set()
-            ObligationStore(store).register(Obligation(obligation_id="obl-later", mission_id=mission_id,  # type: ignore[arg-type]
-                                                       requirement_refs=("c-user-1",), goal_signature_id="user-goal"),
-                                            recursion_fuel=1)
+            ObligationStore(store).register(
+                Obligation(
+                    obligation_id="obl-later",
+                    mission_id=mission_id,  # type: ignore[arg-type]
+                    requirement_refs=("c-user-1",),
+                    goal_signature_id="user-goal",
+                ),
+                recursion_fuel=1,
+            )
             assert stale(absences=(absence,)) == {"absence"}
             with pytest.raises(ReadSetChannelUnknown):
-                verdict(absences=(AbsenceRead(predicate="no_unicorns", scope_id="anywhere", range_revision=0),))
+                verdict(
+                    absences=(
+                        AbsenceRead(predicate="no_unicorns", scope_id="anywhere", range_revision=0),
+                    )
+                )
 
             # 一个渠道过期就够，其余过期的照样报出来
             both = verdict(goal_revisions=(goal,), scope_epochs=(epoch,))
@@ -753,8 +1063,11 @@ def test_the_snapshot_itself_refuses_two_adopted_methods_over_one_occurrence_but
     network = bundle.network
     twin = _twin(network.method_instances[0])
     with pytest.raises(ContractError) as caught:
-        dataclasses.replace(network, method_instances=(*network.method_instances, twin),
-                            adopted_instance_ids=(*network.adopted_instance_ids, twin.instance_id))
+        dataclasses.replace(
+            network,
+            method_instances=(*network.method_instances, twin),
+            adopted_instance_ids=(*network.adopted_instance_ids, twin.instance_id),
+        )
     assert "alternatives are OR, not AND" in str(caught.value)
     alternative = dataclasses.replace(network, method_instances=(*network.method_instances, twin))
     assert set(alternative.adopted_instance_ids) == set(network.adopted_instance_ids)
@@ -767,14 +1080,24 @@ def test_an_opening_states_its_authority_and_a_model_cannot_claim_the_demand_was
 
     _env_, binding, _bundle = _pure_bundle()
     with pytest.raises(ContractError, match="authorised it"):
-        ObligationOpening(obligation_id="obl-independent", parent_obligation_id=ROOT_DUTY,  # type: ignore[arg-type]
-                          relation=ObligationRelation.INDEPENDENT_AUTHORIZED, requirement_refs=("req-1",),
-                          goal_signature=binding.goal_signature, budget_inheritance=BudgetInheritance.SEPARATE_GRANT,
-                          grant_ref="grant-1")
-    payload = ObligationOpening(obligation_id="obl-child", parent_obligation_id=ROOT_DUTY,  # type: ignore[arg-type]
-                                relation="refines_parent", requirement_refs=("req-1",),
-                                goal_signature=binding.goal_signature,
-                                budget_inheritance=BudgetInheritance.INHERIT_PARENT_FUEL_SHARE, fuel_share=2).to_json()
+        ObligationOpening(
+            obligation_id="obl-independent",
+            parent_obligation_id=ROOT_DUTY,  # type: ignore[arg-type]
+            relation=ObligationRelation.INDEPENDENT_AUTHORIZED,
+            requirement_refs=("req-1",),
+            goal_signature=binding.goal_signature,
+            budget_inheritance=BudgetInheritance.SEPARATE_GRANT,
+            grant_ref="grant-1",
+        )
+    payload = ObligationOpening(
+        obligation_id="obl-child",
+        parent_obligation_id=ROOT_DUTY,  # type: ignore[arg-type]
+        relation="refines_parent",
+        requirement_refs=("req-1",),
+        goal_signature=binding.goal_signature,
+        budget_inheritance=BudgetInheritance.INHERIT_PARENT_FUEL_SHARE,
+        fuel_share=2,
+    ).to_json()
     assert "demand_admitted" not in payload and "has_admitted_demand" not in payload
     with pytest.raises(ContractError, match="demand_admitted"):
         ObligationOpening.from_json({**payload, "demand_admitted": True})

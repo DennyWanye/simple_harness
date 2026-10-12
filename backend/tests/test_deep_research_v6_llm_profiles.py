@@ -40,9 +40,7 @@ EXTRACT_RESPONSE_FORMAT = {
 
 def _profile_hashes() -> dict[str, str]:
     return {
-        "evidence_candidate_extract": research_response_format_hash(
-            EXTRACT_RESPONSE_FORMAT
-        ),
+        "evidence_candidate_extract": research_response_format_hash(EXTRACT_RESPONSE_FORMAT),
         "evidence_inference_synthesize": "b" * 64,
         "evidence_structured_repair": "c" * 64,
     }
@@ -110,20 +108,14 @@ async def _payload(blobs, identity) -> str:
 
 
 def _adapter(*, journal, blobs, resolve, llm_call, **adapter_options):
-    profile = build_v6_research_llm_profiles(_profile_hashes())[
-        "evidence_candidate_extract"
-    ]
+    profile = build_v6_research_llm_profiles(_profile_hashes())["evidence_candidate_extract"]
     return DurableResearchCallEffectAdapter(
         journal=journal,
         blobs=blobs,
         llm=ResearchLLMPortV2(llm_call),
         resolve_effect_context=resolve,
-        reserve_cost_micros=lambda _role, input_tokens, output_tokens: (
-            input_tokens + output_tokens
-        ),
-        actual_cost_micros=lambda result: (
-            (result.input_tokens or 0) + (result.output_tokens or 0)
-        ),
+        reserve_cost_micros=lambda _role, input_tokens, output_tokens: input_tokens + output_tokens,
+        actual_cost_micros=lambda result: (result.input_tokens or 0) + (result.output_tokens or 0),
         profile=profile,
         response_format=EXTRACT_RESPONSE_FORMAT,
         **adapter_options,
@@ -159,8 +151,7 @@ def test_v6_profiles_have_frozen_distinct_identities_and_roles() -> None:
     )
     assert set(profiles) <= RESEARCH_LLM_ROLES
     assert {
-        role: (profile.profile_id, profile.profile_hash)
-        for role, profile in profiles.items()
+        role: (profile.profile_id, profile.profile_hash) for role, profile in profiles.items()
     } == {
         "evidence_candidate_extract": (
             "rlp_923c405d206b784c495246c3",
@@ -181,21 +172,26 @@ def test_v6_profiles_have_frozen_distinct_identities_and_roles() -> None:
 
 
 def test_v6_three_prepared_calls_are_byte_frozen_goldens() -> None:
-    profiles = build_v6_research_llm_profiles({
-        role: research_response_format_hash(value)
-        for role, value in V6_RESEARCH_RESPONSE_FORMATS.items()
-    })
+    profiles = build_v6_research_llm_profiles(
+        {
+            role: research_response_format_hash(value)
+            for role, value in V6_RESEARCH_RESPONSE_FORMATS.items()
+        }
+    )
     fixtures = {
         "evidence_candidate_extract": (
-            "a", "1",
+            "a",
+            "1",
             '{"args_hash":"7daa7216846e4560c4f7797c1ce0fa60bb0e6014a91ec6dc9dd0554209acf813","effect_type":"research_llm","final_params":{"max_output_tokens":4096,"payload_ref":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","response_format_hash":"dc89783d978b70d7f16446e47f92e090d8f4f83ecc93aa373454e52f9ea4978c","role":"evidence_candidate_extract"},"input_blob_hashes":[],"permission_policy_version":"research-readonly-v1","prepared_targets":[],"schema_hash":"evidence-candidate-bundle-v1","stable_call_id":"1111111111111111111111111111111111111111111111111111111111111111","tool_name":"research_llm_v2","tool_spec_version":"deep-research-v6-evidence-candidate-v1"}',
         ),
         "evidence_inference_synthesize": (
-            "b", "2",
+            "b",
+            "2",
             '{"args_hash":"1ac8557bf3ca0675d172d126b486e6fd4d59c559d25094848f3ba699862141b3","effect_type":"research_llm","final_params":{"max_output_tokens":4096,"payload_ref":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","response_format_hash":"06829396ef6c1ba0ba44c8e700bda5ed0e04eedb71f371f4ae35f3f5444316c9","role":"evidence_inference_synthesize"},"input_blob_hashes":[],"permission_policy_version":"research-readonly-v1","prepared_targets":[],"schema_hash":"inference-proposal-bundle-v1","stable_call_id":"2222222222222222222222222222222222222222222222222222222222222222","tool_name":"research_llm_v2","tool_spec_version":"deep-research-v6-inference-proposal-v1"}',
         ),
         "evidence_structured_repair": (
-            "c", "3",
+            "c",
+            "3",
             '{"args_hash":"67cc8cb21b479ebd3940937995f1ba9d6183d79229772e0c60cbf9cb7ee127c0","effect_type":"research_llm","final_params":{"max_output_tokens":4096,"payload_ref":"sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","response_format_hash":"d26c755f2e6c156be5ad82681caac4797da10f76329fda19e3e8bd6c5cc4ec59","role":"evidence_structured_repair"},"input_blob_hashes":[],"permission_policy_version":"research-readonly-v1","prepared_targets":[],"schema_hash":"structured-repair-result-union-v1","stable_call_id":"3333333333333333333333333333333333333333333333333333333333333333","tool_name":"research_llm_v2","tool_spec_version":"deep-research-v6-structured-repair-v1"}',
         ),
     }
@@ -218,30 +214,56 @@ def test_v6_provider_formats_are_frozen_strict_role_contracts() -> None:
     assert extract["strict"] is True and inference["strict"] is True
     assert repair["strict"] is True
     assert set(extract["schema"]["properties"]) == {
-        "schema_version", "bundle_id", "run_id", "spec_hash", "work_group_id",
-        "logical_page_id", "page_plan_ordinal", "page_result_ref",
-        "route_decision_ref", "route_policy_ref", "extraction_policy_ref",
-        "repair_round", "candidates", "bundle_reason_codes",
+        "schema_version",
+        "bundle_id",
+        "run_id",
+        "spec_hash",
+        "work_group_id",
+        "logical_page_id",
+        "page_plan_ordinal",
+        "page_result_ref",
+        "route_decision_ref",
+        "route_policy_ref",
+        "extraction_policy_ref",
+        "repair_round",
+        "candidates",
+        "bundle_reason_codes",
     }
     assert set(inference["schema"]["properties"]) == {
-        "schema_version", "bundle_id", "run_id", "spec_hash", "work_group_id",
-        "input_evidence_head_hash", "ordinal", "profile_ref",
-        "premise_fact_refs", "proposals",
+        "schema_version",
+        "bundle_id",
+        "run_id",
+        "spec_hash",
+        "work_group_id",
+        "input_evidence_head_hash",
+        "ordinal",
+        "profile_ref",
+        "premise_fact_refs",
+        "proposals",
     }
     assert repair["schema"]["additionalProperties"] is False
     assert set(repair["schema"]["properties"]) == {
-        "result_kind", "candidate_bundle", "inference_bundle"
+        "result_kind",
+        "candidate_bundle",
+        "inference_bundle",
     }
     assert repair["schema"]["properties"]["result_kind"]["enum"] == [
-        "candidate_bundle", "inference_bundle"
+        "candidate_bundle",
+        "inference_bundle",
     ]
 
 
 def test_v6_logical_effect_id_includes_group_page_round_and_is_prompt_independent() -> None:
     identity = NodeExecutionIdentity(
-        workflow_name="deep_research", workflow_version="v6", thread_id="thread",
-        run_id="run", checkpoint_id="checkpoint", checkpoint_ns="root",
-        task_id="task", node_id="extract_candidate_bundles", attempt=1,
+        workflow_name="deep_research",
+        workflow_version="v6",
+        thread_id="thread",
+        run_id="run",
+        checkpoint_id="checkpoint",
+        checkpoint_ns="root",
+        task_id="task",
+        node_id="extract_candidate_bundles",
+        attempt=1,
     )
     payload = {
         "work_group": {"work_group_id": "wg_1"},
@@ -250,19 +272,23 @@ def test_v6_logical_effect_id_includes_group_page_round_and_is_prompt_independen
         "body": "content is intentionally outside the identity",
     }
     expected = "v6-extract:root:checkpoint:task:wg_1:page_1:r0"
-    assert DurableV6ResearchLLMStagePort.logical_effect_id(
-        stage="evidence_candidate_extract", payload=payload, identity=identity
-    ) == expected
+    assert (
+        DurableV6ResearchLLMStagePort.logical_effect_id(
+            stage="evidence_candidate_extract", payload=payload, identity=identity
+        )
+        == expected
+    )
     payload["body"] = "changed prompt bytes"
-    assert DurableV6ResearchLLMStagePort.logical_effect_id(
-        stage="evidence_candidate_extract", payload=payload, identity=identity
-    ) == expected
+    assert (
+        DurableV6ResearchLLMStagePort.logical_effect_id(
+            stage="evidence_candidate_extract", payload=payload, identity=identity
+        )
+        == expected
+    )
 
 
 def test_v6_profile_rejects_schema_drift_before_effect_begin() -> None:
-    profile = build_v6_research_llm_profiles(_profile_hashes())[
-        "evidence_candidate_extract"
-    ]
+    profile = build_v6_research_llm_profiles(_profile_hashes())["evidence_candidate_extract"]
     with pytest.raises(ValueError, match="does not match the profile hash"):
         DurableResearchCallEffectAdapter(
             journal=None,  # type: ignore[arg-type]
@@ -281,9 +307,7 @@ async def test_v6_extract_profile_commits_and_replays_without_resend(tmp_path) -
     database, identity, journal, blobs, resolve = await _runtime(tmp_path)
     calls = 0
 
-    async def complete(
-        prompt, *, max_output_tokens, stable_call_id, response_format=None
-    ):
+    async def complete(prompt, *, max_output_tokens, stable_call_id, response_format=None):
         nonlocal calls
         calls += 1
         assert prompt == "extract candidate facts"
@@ -298,9 +322,7 @@ async def test_v6_extract_profile_commits_and_replays_without_resend(tmp_path) -
             stable_call_id,
         )
 
-    adapter = _adapter(
-        journal=journal, blobs=blobs, resolve=resolve, llm_call=complete
-    )
+    adapter = _adapter(journal=journal, blobs=blobs, resolve=resolve, llm_call=complete)
     profile_payload = adapter.profile.to_json()
     profile_payload.pop("profile_id")
     profile_payload.pop("profile_hash")
@@ -311,9 +333,7 @@ async def test_v6_extract_profile_commits_and_replays_without_resend(tmp_path) -
     )
     assert f"sha256:{registered_profile.sha256}" == adapter.profile.profile_ref
     payload_ref = await _payload(blobs, identity)
-    logical_effect_id = (
-        "v6-extract:root:checkpoint-1:task-extract:wg_test:page_test:r0"
-    )
+    logical_effect_id = "v6-extract:root:checkpoint-1:task-extract:wg_test:page_test:r0"
     kwargs = {
         "role": "evidence_candidate_extract",
         "payload_ref": payload_ref,
@@ -328,9 +348,7 @@ async def test_v6_extract_profile_commits_and_replays_without_resend(tmp_path) -
 
     async with aiosqlite.connect(database) as db:
         row = await (
-            await db.execute(
-                "SELECT policy_json,prepared_json FROM workflow_effects"
-            )
+            await db.execute("SELECT policy_json,prepared_json FROM workflow_effects")
         ).fetchone()
     policy = json.loads(row[0])
     prepared = json.loads(row[1])
@@ -370,9 +388,7 @@ async def test_v6_opaque_fault_is_held_and_replay_never_resends(tmp_path) -> Non
         calls += 1
         raise TimeoutError("ambiguous provider timeout")
 
-    adapter = _adapter(
-        journal=journal, blobs=blobs, resolve=resolve, llm_call=complete
-    )
+    adapter = _adapter(journal=journal, blobs=blobs, resolve=resolve, llm_call=complete)
     profile_payload = adapter.profile.to_json()
     profile_payload.pop("profile_id")
     profile_payload.pop("profile_hash")
@@ -382,9 +398,7 @@ async def test_v6_opaque_fault_is_held_and_replay_never_resends(tmp_path) -> Non
         media_type="application/vnd.deskpet.research-llm-profile.v1+json",
     )
     payload_ref = await _payload(blobs, identity)
-    logical_effect_id = (
-        "v6-extract:root:checkpoint-1:task-extract:wg_test:page_test:r0"
-    )
+    logical_effect_id = "v6-extract:root:checkpoint-1:task-extract:wg_test:page_test:r0"
     kwargs = {
         "role": "evidence_candidate_extract",
         "payload_ref": payload_ref,
@@ -417,22 +431,25 @@ async def test_v6_budget_denial_is_a_canonical_no_call_effect(tmp_path) -> None:
         raise AssertionError("budget-denied effects must not reach the provider")
 
     adapter = _adapter(
-        journal=journal, blobs=blobs, resolve=resolve, llm_call=complete,
+        journal=journal,
+        blobs=blobs,
+        resolve=resolve,
+        llm_call=complete,
         route_resource_budget_kind="llm",
     )
     profile_payload = adapter.profile.to_json()
     profile_payload.pop("profile_id")
     profile_payload.pop("profile_hash")
     await blobs.put(
-        canonical_json(profile_payload).encode("utf-8"), identity,
+        canonical_json(profile_payload).encode("utf-8"),
+        identity,
         media_type="application/vnd.deskpet.research-llm-profile.v1+json",
     )
     payload_ref = await _payload(blobs, identity)
-    logical_effect_id = (
-        "v6-extract:root:checkpoint-1:task-extract:wg_test:page_test:r0"
-    )
+    logical_effect_id = "v6-extract:root:checkpoint-1:task-extract:wg_test:page_test:r0"
     envelope = await adapter.complete_with_effect(
-        role="evidence_candidate_extract", payload_ref=payload_ref,
+        role="evidence_candidate_extract",
+        payload_ref=payload_ref,
         max_output_tokens=256,
         stable_call_id=hashlib.sha256(logical_effect_id.encode()).hexdigest(),
         execution_identity=identity,
@@ -474,25 +491,36 @@ async def test_v6_route_llm_round_budget_consumes_once_and_replay_does_not_repea
         nonlocal calls
         calls += 1
         return ResearchLLMResult(
-            '{"bundle_id":"ecb_test"}', "test-model", 3, 2, 0,
-            "provider", kwargs["stable_call_id"],
+            '{"bundle_id":"ecb_test"}',
+            "test-model",
+            3,
+            2,
+            0,
+            "provider",
+            kwargs["stable_call_id"],
         )
 
     adapter = _adapter(
-        journal=journal, blobs=blobs, resolve=resolve, llm_call=complete,
+        journal=journal,
+        blobs=blobs,
+        resolve=resolve,
+        llm_call=complete,
         route_resource_budget_kind="llm",
     )
     profile_payload = adapter.profile.to_json()
-    profile_payload.pop("profile_id"); profile_payload.pop("profile_hash")
+    profile_payload.pop("profile_id")
+    profile_payload.pop("profile_hash")
     await blobs.put(canonical_json(profile_payload).encode(), identity)
     payload_ref = await _payload(blobs, identity)
 
     async def invoke(logical: str):
         return await adapter.complete_with_effect(
-            role="evidence_candidate_extract", payload_ref=payload_ref,
+            role="evidence_candidate_extract",
+            payload_ref=payload_ref,
             max_output_tokens=256,
             stable_call_id=hashlib.sha256(logical.encode()).hexdigest(),
-            execution_identity=identity, logical_effect_id=logical,
+            execution_identity=identity,
+            logical_effect_id=logical,
         )
 
     first_logical = "v6-extract:root:checkpoint-1:task-extract:wg:page:r0"
@@ -502,10 +530,13 @@ async def test_v6_route_llm_round_budget_consumes_once_and_replay_does_not_repea
     assert denied.status == "budget_denied"
     assert calls == 1
     async with aiosqlite.connect(database) as db:
-        budget = await (await db.execute(
-            "SELECT reserved,consumed FROM workflow_research_resource_budgets "
-            "WHERE run_id=? AND resource_kind='llm'", (identity.run_id,),
-        )).fetchone()
+        budget = await (
+            await db.execute(
+                "SELECT reserved,consumed FROM workflow_research_resource_budgets "
+                "WHERE run_id=? AND resource_kind='llm'",
+                (identity.run_id,),
+            )
+        ).fetchone()
     assert budget == (0, 1)
 
 
@@ -520,19 +551,25 @@ async def test_v6_deadline_denial_is_durable_no_result_and_never_calls_provider(
         raise AssertionError("expired deadline must fence provider transport")
 
     adapter = _adapter(
-        journal=journal, blobs=blobs, resolve=resolve, llm_call=complete,
+        journal=journal,
+        blobs=blobs,
+        resolve=resolve,
+        llm_call=complete,
         deadline_observer=lambda _identity: False,
     )
     profile_payload = adapter.profile.to_json()
-    profile_payload.pop("profile_id"); profile_payload.pop("profile_hash")
+    profile_payload.pop("profile_id")
+    profile_payload.pop("profile_hash")
     await blobs.put(canonical_json(profile_payload).encode(), identity)
     payload_ref = await _payload(blobs, identity)
     logical = "v6-extract:root:checkpoint-1:task-extract:wg:page:r0"
     kwargs = dict(
-        role="evidence_candidate_extract", payload_ref=payload_ref,
+        role="evidence_candidate_extract",
+        payload_ref=payload_ref,
         max_output_tokens=256,
         stable_call_id=hashlib.sha256(logical.encode()).hexdigest(),
-        execution_identity=identity, logical_effect_id=logical,
+        execution_identity=identity,
+        logical_effect_id=logical,
     )
     first = await adapter.complete_with_effect(**kwargs)
     replay = await adapter.complete_with_effect(**kwargs)
@@ -541,9 +578,11 @@ async def test_v6_deadline_denial_is_durable_no_result_and_never_calls_provider(
     assert first.result_ref is replay.result_ref is None
     assert calls == 0
     async with aiosqlite.connect(database) as db:
-        row = await (await db.execute(
-            "SELECT status,outcome_json FROM workflow_effects WHERE effect_id=?",
-            (first.effect_id,),
-        )).fetchone()
+        row = await (
+            await db.execute(
+                "SELECT status,outcome_json FROM workflow_effects WHERE effect_id=?",
+                (first.effect_id,),
+            )
+        ).fetchone()
     assert row[0] == "failed"
     assert json.loads(row[1])["error"]["code"] == "deadline"

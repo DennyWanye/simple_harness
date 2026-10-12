@@ -15,6 +15,7 @@ any decorator (e.g. RedactingMemoryStore) rather than on the Protocol,
 so a minimal backend (e.g. in-memory test double) isn't forced to
 implement admin endpoints.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -24,6 +25,7 @@ from typing import Protocol, runtime_checkable
 @dataclass(frozen=True)
 class ConversationTurn:
     """One exchange leg — `role` is 'user' or 'assistant'."""
+
     role: str
     content: str
     created_at: float  # unix timestamp, for ordering
@@ -36,6 +38,7 @@ class StoredTurn:
     Separate from ``ConversationTurn`` so the agent-facing Protocol stays
     minimal (agent doesn't need row ids).
     """
+
     id: int
     session_id: str
     role: str
@@ -46,6 +49,7 @@ class StoredTurn:
 @dataclass(frozen=True)
 class SessionSummary:
     """One row per session — for the "pick a session to inspect" list."""
+
     session_id: str
     turn_count: int
     last_message_at: float
@@ -59,9 +63,7 @@ class MemoryStore(Protocol):
     - clear removes all turns for session_id (test/reset path).
     """
 
-    async def get_recent(
-        self, session_id: str, limit: int = 10
-    ) -> list[ConversationTurn]: ...
+    async def get_recent(self, session_id: str, limit: int = 10) -> list[ConversationTurn]: ...
 
     async def append(self, session_id: str, role: str, content: str) -> None: ...
 

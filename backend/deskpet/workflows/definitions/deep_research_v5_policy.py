@@ -49,9 +49,7 @@ TECHNOLOGY_DIMENSION_IDS = (
     "tech_outlook",
 )
 
-_PROFILES = frozenset(
-    {"generic_research", "policy_education", "technology_intelligence"}
-)
+_PROFILES = frozenset({"generic_research", "policy_education", "technology_intelligence"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -252,7 +250,14 @@ _DIMENSION_ALIASES = {
     "edu_scale_trend": ("规模", "趋势", "enrollment", "scale", "trend"),
     "edu_equity_urban_rural_region": ("城乡", "区域", "均衡", "urban-rural", "regional equity"),
     "edu_teacher_finance": ("教师", "师资", "财政", "teacher", "finance"),
-    "edu_double_reduction_after_school_burden": ("双减", "课后服务", "负担", "double reduction", "after-school", "burden"),
+    "edu_double_reduction_after_school_burden": (
+        "双减",
+        "课后服务",
+        "负担",
+        "double reduction",
+        "after-school",
+        "burden",
+    ),
     "edu_national_next_plan": ("下一步计划", "国家计划", "next plan", "roadmap"),
     "generic_who": ("相关方", "人群", "who", "stakeholder"),
     "generic_what": ("范围", "定义", "what", "scope"),
@@ -300,7 +305,9 @@ def _locale(question: str) -> str:
 
 
 def _explicit_as_of(question: str, fallback: date) -> str:
-    full = re.search(r"(?:截至|截止|as of|by)\s*(\d{4})[-年/](\d{1,2})[-月/](\d{1,2})日?", question, re.I)
+    full = re.search(
+        r"(?:截至|截止|as of|by)\s*(\d{4})[-年/](\d{1,2})[-月/](\d{1,2})日?", question, re.I
+    )
     if full:
         try:
             parsed = date(int(full.group(1)), int(full.group(2)), int(full.group(3)))
@@ -334,27 +341,68 @@ def _geography(question: str) -> str | None:
 def _profile(question: str) -> str:
     folded = question.casefold()
     education_terms = (
-        "教育", "小学", "中学", "义务教育", "学校", "双减", "课后服务",
-        "education", "primary school", "schooling", "teacher workforce",
+        "教育",
+        "小学",
+        "中学",
+        "义务教育",
+        "学校",
+        "双减",
+        "课后服务",
+        "education",
+        "primary school",
+        "schooling",
+        "teacher workforce",
     )
     if any(term in folded for term in education_terms):
         return "policy_education"
     technology_entities = (
-        "人工智能", "大模型", "生成式ai", "llm", "gpt", "claude", "gemini",
-        "openai", "anthropic", "deepseek", "model", "foundation model",
+        "人工智能",
+        "大模型",
+        "生成式ai",
+        "llm",
+        "gpt",
+        "claude",
+        "gemini",
+        "openai",
+        "anthropic",
+        "deepseek",
+        "model",
+        "foundation model",
     )
     intelligence_terms = (
-        "最新", "近期", "发布", "版本", "基准", "能力", "对比", "比较",
-        "最强", "前10", "前十", "排名", "排行", "优缺点", "哪个好",
-        "latest", "recent", "release", "version", "benchmark", "capability", "compare",
-        "strongest", "top 10", "ranking", "rank", "pros and cons", "which is better",
+        "最新",
+        "近期",
+        "发布",
+        "版本",
+        "基准",
+        "能力",
+        "对比",
+        "比较",
+        "最强",
+        "前10",
+        "前十",
+        "排名",
+        "排行",
+        "优缺点",
+        "哪个好",
+        "latest",
+        "recent",
+        "release",
+        "version",
+        "benchmark",
+        "capability",
+        "compare",
+        "strongest",
+        "top 10",
+        "ranking",
+        "rank",
+        "pros and cons",
+        "which is better",
     )
     has_ai_entity = any(term in folded for term in technology_entities) or bool(
         re.search(r"(?<![a-z0-9])ai(?![a-z0-9])", folded)
     )
-    if has_ai_entity and any(
-        term in folded for term in intelligence_terms
-    ):
+    if has_ai_entity and any(term in folded for term in intelligence_terms):
         return "technology_intelligence"
     return "generic_research"
 
@@ -449,10 +497,14 @@ def _facet_dimensions(
     intent: DetectedResearchIntent,
 ) -> tuple[ResearchDimension, ...]:
     facets = set(intent.intent_facets)
-    if intent.profile == "technology_intelligence" and {
-        "ranking_top_n",
-        "pros_cons",
-    } & facets:
+    if (
+        intent.profile == "technology_intelligence"
+        and {
+            "ranking_top_n",
+            "pros_cons",
+        }
+        & facets
+    ):
         return (
             _dimension(
                 "tech_ranking_method_candidates",
@@ -474,19 +526,79 @@ def _facet_dimensions(
         )
     if "product_comparison" in facets:
         return (
-            _dimension("product_camera", "How do the products compare on camera hardware, image quality, and video?", ("official_specification", "independent_review"), ("camera specification image quality video comparison",), first_party_required=True),
-            _dimension("product_battery", "How do battery capacity, endurance, charging, and thermal behavior compare?", ("official_specification", "independent_test"), ("battery endurance charging thermal comparison",), first_party_required=True),
-            _dimension("product_price", "What are the current official prices, configurations, and availability?", ("official_pricing", "official_store"), ("official price configuration availability",), first_party_required=True),
-            _dimension("product_ecosystem", "How do operating systems, update support, services, and device ecosystems compare?", ("official_documentation", "independent_review"), ("operating system updates ecosystem services",), first_party_required=True),
-            _dimension("product_drawbacks", "What are the material drawbacks, limitations, and contrary evidence for each product?", ("independent_review", "official_support"), ("drawbacks limitations issues comparison",), first_party_required=False),
-            _dimension("product_recommendation", "Which user profiles and priorities make each product the better choice?", ("independent_review", "official_specification"), ("suitable users purchase recommendation tradeoffs",), first_party_required=False),
+            _dimension(
+                "product_camera",
+                "How do the products compare on camera hardware, image quality, and video?",
+                ("official_specification", "independent_review"),
+                ("camera specification image quality video comparison",),
+                first_party_required=True,
+            ),
+            _dimension(
+                "product_battery",
+                "How do battery capacity, endurance, charging, and thermal behavior compare?",
+                ("official_specification", "independent_test"),
+                ("battery endurance charging thermal comparison",),
+                first_party_required=True,
+            ),
+            _dimension(
+                "product_price",
+                "What are the current official prices, configurations, and availability?",
+                ("official_pricing", "official_store"),
+                ("official price configuration availability",),
+                first_party_required=True,
+            ),
+            _dimension(
+                "product_ecosystem",
+                "How do operating systems, update support, services, and device ecosystems compare?",
+                ("official_documentation", "independent_review"),
+                ("operating system updates ecosystem services",),
+                first_party_required=True,
+            ),
+            _dimension(
+                "product_drawbacks",
+                "What are the material drawbacks, limitations, and contrary evidence for each product?",
+                ("independent_review", "official_support"),
+                ("drawbacks limitations issues comparison",),
+                first_party_required=False,
+            ),
+            _dimension(
+                "product_recommendation",
+                "Which user profiles and priorities make each product the better choice?",
+                ("independent_review", "official_specification"),
+                ("suitable users purchase recommendation tradeoffs",),
+                first_party_required=False,
+            ),
         )
     if {"official_statistics", "exact_fact_lookup"} <= facets:
         return (
-            _dimension("stat_total_population", "What was the total population for the requested year?", ("official_statistics",), ("total population requested year",), first_party_required=True),
-            _dimension("stat_birth_population", "How many births were recorded for the requested year?", ("official_statistics",), ("birth population requested year",), first_party_required=True),
-            _dimension("stat_age_65_share", "What share of the population was aged 65 or older?", ("official_statistics",), ("population age 65 and over share",), first_party_required=True),
-            _dimension("stat_urbanization_rate", "What was the urbanization rate for the requested year?", ("official_statistics",), ("urbanization rate requested year",), first_party_required=True),
+            _dimension(
+                "stat_total_population",
+                "What was the total population for the requested year?",
+                ("official_statistics",),
+                ("total population requested year",),
+                first_party_required=True,
+            ),
+            _dimension(
+                "stat_birth_population",
+                "How many births were recorded for the requested year?",
+                ("official_statistics",),
+                ("birth population requested year",),
+                first_party_required=True,
+            ),
+            _dimension(
+                "stat_age_65_share",
+                "What share of the population was aged 65 or older?",
+                ("official_statistics",),
+                ("population age 65 and over share",),
+                first_party_required=True,
+            ),
+            _dimension(
+                "stat_urbanization_rate",
+                "What was the urbanization rate for the requested year?",
+                ("official_statistics",),
+                ("urbanization rate requested year",),
+                first_party_required=True,
+            ),
         )
     return profile_definition(intent.profile).dimensions
 
@@ -503,10 +615,13 @@ def _explicit_exclusions(
         for alias in _DIMENSION_ALIASES.get(dimension.dimension_id, ()):
             for occurrence in re.finditer(re.escape(alias.casefold()), folded):
                 start = occurrence.start()
-                left = max(
-                    (question.rfind(mark, 0, start) for mark in boundaries),
-                    default=-1,
-                ) + 1
+                left = (
+                    max(
+                        (question.rfind(mark, 0, start) for mark in boundaries),
+                        default=-1,
+                    )
+                    + 1
+                )
                 candidates = [
                     position
                     for mark in boundaries
@@ -514,9 +629,7 @@ def _explicit_exclusions(
                 ]
                 right = min(candidates) if candidates else len(question)
                 clause = _normalized(question[left:right])
-                if not any(
-                    marker in clause.casefold() for marker in _EXCLUSION_MARKERS
-                ):
+                if not any(marker in clause.casefold() for marker in _EXCLUSION_MARKERS):
                     continue
                 exclusions.append((dimension.dimension_id, clause))
                 matched = True
@@ -583,8 +696,13 @@ def _dimension_from_model(value: object) -> ResearchDimension:
     if not isinstance(value, Mapping):
         raise ContractValidationError("modeling dimension must be an object")
     allowed = {
-        "dimension_id", "question", "importance", "expected_source_types",
-        "query_targets", "first_party_required", "not_applicable_when",
+        "dimension_id",
+        "question",
+        "importance",
+        "expected_source_types",
+        "query_targets",
+        "first_party_required",
+        "not_applicable_when",
     }
     unknown = set(value) - allowed
     missing = allowed - set(value)
@@ -610,22 +728,16 @@ def validate_modeling_output(
     # Older or drifted providers may echo them, but they can never override the
     # server policy and must not poison otherwise useful semantic dimensions.
     value = {
-        key: item
-        for key, item in value.items()
-        if key not in {"profile", "locale", "geography"}
+        key: item for key, item in value.items() if key not in {"profile", "locale", "geography"}
     }
-    allowed = {
-        "subjects", "expected_decision", "dimensions"
-    }
+    allowed = {"subjects", "expected_decision", "dimensions"}
     unknown = set(value) - allowed
     if unknown:
         raise ContractValidationError(f"unknown modeling fields: {sorted(unknown)}")
     if require_complete:
         missing = {"subjects", "expected_decision", "dimensions"} - set(value)
         if missing:
-            raise ContractValidationError(
-                f"missing required modeling fields: {sorted(missing)}"
-            )
+            raise ContractValidationError(f"missing required modeling fields: {sorted(missing)}")
     expected_decision = value.get("expected_decision")
     if expected_decision is not None and (
         not isinstance(expected_decision, str) or not expected_decision.strip()
@@ -634,8 +746,10 @@ def validate_modeling_output(
     subjects_raw = value.get("subjects")
     subjects: tuple[str, ...] | None = None
     if subjects_raw is not None:
-        if not isinstance(subjects_raw, list) or not subjects_raw or not all(
-            isinstance(item, str) and item.strip() for item in subjects_raw
+        if (
+            not isinstance(subjects_raw, list)
+            or not subjects_raw
+            or not all(isinstance(item, str) and item.strip() for item in subjects_raw)
         ):
             raise ContractValidationError("modeling subjects must be a non-empty string array")
         subjects = tuple(dict.fromkeys(item.strip() for item in subjects_raw))
@@ -653,10 +767,7 @@ def validate_modeling_output(
             try:
                 dimension = _dimension_from_model(raw_dimension)
                 question_key = _normalized(dimension.question).casefold()
-                target_keys = {
-                    _normalized(target).casefold()
-                    for target in dimension.query_targets
-                }
+                target_keys = {_normalized(target).casefold() for target in dimension.query_targets}
                 if dimension.dimension_id in seen_ids:
                     raise ContractValidationError("duplicate dimension_id")
                 if question_key in seen_questions:
@@ -670,8 +781,10 @@ def validate_modeling_output(
             seen_ids.add(dimension.dimension_id)
             seen_questions.add(question_key)
             seen_targets.update(target_keys)
-        if len(accepted) < 3 or len(accepted) > 8 or not any(
-            item.importance == "core" for item in accepted
+        if (
+            len(accepted) < 3
+            or len(accepted) > 8
+            or not any(item.importance == "core" for item in accepted)
         ):
             raise ContractValidationError(
                 "modeling dimensions have no usable 3-to-8 item set with a core item"
@@ -781,8 +894,8 @@ def initial_dimension_coverages(brief: ResearchBrief) -> tuple[DimensionCoverage
             gap_reasons=(
                 f"user_explicit_exclusion:{exclusions[item.dimension_id]}"
                 if item.dimension_id in exclusions
-                else "missing_evidence"
-            ,),
+                else "missing_evidence",
+            ),
         )
         for item in brief.dimensions
     )

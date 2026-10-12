@@ -43,7 +43,9 @@ def test_invalid_bound_snapshot_cannot_fall_back_to_registry(tmp_path, damage):
         with world.store.transaction():
             lift_immutable_guards(world.store.connection, "mission_domains")
             world.store.connection.execute(
-                "UPDATE mission_domains SET json=? WHERE mission_id=?", (json.dumps(body), mission_id))
+                "UPDATE mission_domains SET json=? WHERE mission_id=?",
+                (json.dumps(body), mission_id),
+            )
         with pytest.raises(CommitRejected, match="invalid frozen domain"):
             world.loop.commit.domain_for(mission_id)
 

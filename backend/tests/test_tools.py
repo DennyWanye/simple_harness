@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 """Tests for Tool protocol, ToolRegistry, and built-in tools."""
+
 from __future__ import annotations
 
 from datetime import datetime

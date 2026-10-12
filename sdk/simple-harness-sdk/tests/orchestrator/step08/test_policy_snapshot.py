@@ -64,7 +64,9 @@ def test_s8_07_model_profile_and_configuration_differences_name_their_source(tmp
         diff["config.model"]["source"] == "OrchestratorConfig.model"
         and diff["config.model"]["b"] == "deepseek-flash"
     )
-    assert diff["config.max_planning_attempts"]["source"] == "OrchestratorConfig.max_planning_attempts"
+    assert (
+        diff["config.max_planning_attempts"]["source"] == "OrchestratorConfig.max_planning_attempts"
+    )
     assert (
         diff["config.knowledge_sharing"]["a"] is True
         and diff["config.knowledge_sharing"]["b"] is False
@@ -107,4 +109,3 @@ def test_an_unclassified_field_is_refused(tmp_path):
 
     with pytest.raises(ValueError, match="brand_new_knob"):
         policy_snapshot(Wider(evidence_root=Path(tmp_path) / "w"))
-

@@ -14,12 +14,14 @@ class _FakeWs:
 def test_public_section_drops_sensitive_or_private_preview() -> None:
     import main
 
-    section = main._public_context_section({
-        "kind": "system",
-        "label": "System",
-        "estimated_tokens": 4,
-        "ref": "Authorization: Bearer sk-private /Users/private/file",
-    })
+    section = main._public_context_section(
+        {
+            "kind": "system",
+            "label": "System",
+            "estimated_tokens": 4,
+            "ref": "Authorization: Bearer sk-private /Users/private/file",
+        }
+    )
     assert section is not None
     assert section["public_preview"] is None
 
@@ -73,14 +75,16 @@ async def test_breakdown_reads_only_durable_public_snapshot_and_usage(monkeypatc
                 "snapshot_fingerprint": "sha256:public-7",
                 "session_id": session_id,
                 "provider_binding": {"model_id": "deepseek-v4", "context_window": 128_000},
-                "sections": [{
-                    "kind": "history",
-                    "label": "Conversation history",
-                    "count": 2,
-                    "estimated_tokens": 18,
-                    "availability": "available",
-                    "ref": "2 条已脱敏历史消息",
-                }],
+                "sections": [
+                    {
+                        "kind": "history",
+                        "label": "Conversation history",
+                        "count": 2,
+                        "estimated_tokens": 18,
+                        "availability": "available",
+                        "ref": "2 条已脱敏历史消息",
+                    }
+                ],
                 "budget": {
                     "estimated_prompt_tokens": 20,
                     "context_window": 128_000,
@@ -131,16 +135,18 @@ async def test_breakdown_reads_only_durable_public_snapshot_and_usage(monkeypatc
     assert result["usage_version"] == 9
     assert result["sample_id"] == "sample-9"
     assert result["model"] == "deepseek-v4"
-    assert result["sections"] == [{
-        "kind": "history",
-        "label": "Conversation history",
-        "count": 2,
-        "tokens": 18,
-        "token_source": "estimated",
-        "availability": "available",
-        "public_preview": "2 条已脱敏历史消息",
-        "preview_truncated": False,
-    }]
+    assert result["sections"] == [
+        {
+            "kind": "history",
+            "label": "Conversation history",
+            "count": 2,
+            "tokens": 18,
+            "token_source": "estimated",
+            "availability": "available",
+            "public_preview": "2 条已脱敏历史消息",
+            "preview_truncated": False,
+        }
+    ]
     assert "preview" not in result["sections"][0]
     assert "history" not in result
 
@@ -185,14 +191,18 @@ async def test_breakdown_without_snapshot_is_explicitly_unavailable_not_zero():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("payload", [
-    {},
-    {"session_id": "session-a"},
-    {"request_id": "request-a"},
-    {"session_id": "session-b", "request_id": "request-a"},
-])
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {},
+        {"session_id": "session-a"},
+        {"request_id": "request-a"},
+        {"session_id": "session-b", "request_id": "request-a"},
+    ],
+)
 async def test_breakdown_handler_fails_closed_without_exact_session_and_correlation(
-    monkeypatch, payload,
+    monkeypatch,
+    payload,
 ):
     import main
 
@@ -235,14 +245,16 @@ async def test_breakdown_handler_echoes_correlation_and_current_identities(monke
         owner_session_id="session-a",
     )
     assert accepted is True
-    assert ws.frames == [{
-        "type": "context_breakdown_response",
-        "payload": {
-            "session_id": "session-a",
-            "snapshot_id": "snapshot-current",
-            "snapshot_version": 4,
-            "sample_id": "sample-current",
-            "usage_version": 8,
-            "correlation_id": "request-current",
-        },
-    }]
+    assert ws.frames == [
+        {
+            "type": "context_breakdown_response",
+            "payload": {
+                "session_id": "session-a",
+                "snapshot_id": "snapshot-current",
+                "snapshot_version": 4,
+                "sample_id": "sample-current",
+                "usage_version": 8,
+                "correlation_id": "request-current",
+            },
+        }
+    ]

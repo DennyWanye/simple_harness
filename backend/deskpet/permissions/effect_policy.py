@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 """Pure host policy for Companion tool visibility and explicit confirmation."""
+
 from __future__ import annotations
 
 from collections.abc import Iterable
@@ -33,12 +34,7 @@ _NO_TOOL_RUN_KINDS = frozenset({"reflection", "evaluation"})
 
 def is_companion_owner(owner_key: str) -> bool:
     parts = str(owner_key).split(":")
-    return (
-        len(parts) == 3
-        and parts[0] == "companion"
-        and bool(parts[1])
-        and bool(parts[2])
-    )
+    return len(parts) == 3 and parts[0] == "companion" and bool(parts[1]) and bool(parts[2])
 
 
 @dataclass(frozen=True)
@@ -93,9 +89,7 @@ class IrreversibleEffectPolicy:
             except ValueError:
                 idempotency = IdempotencyClass.UNKNOWN
             high_risk = effect_class in _CONFIRM_ONLY
-            disposition = (
-                "excluded" if restricted_read_only and high_risk else "visible"
-            )
+            disposition = "excluded" if restricted_read_only and high_risk else "visible"
             if disposition != "excluded":
                 visible.append(name)
                 if companion and high_risk:

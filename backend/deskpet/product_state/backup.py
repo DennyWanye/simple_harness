@@ -56,9 +56,7 @@ def create_verified_backup(
     live = Path(database_path).resolve(strict=True)
     backup = live.with_name(f"{live.name}.pre-v2.sqlite3")
     sidecar = backup.with_suffix(f"{backup.suffix}.json")
-    descriptor, temporary_name = tempfile.mkstemp(
-        prefix=f".{backup.name}.tmp-", dir=live.parent
-    )
+    descriptor, temporary_name = tempfile.mkstemp(prefix=f".{backup.name}.tmp-", dir=live.parent)
     os.close(descriptor)
     temporary = Path(temporary_name)
     try:
@@ -124,9 +122,7 @@ def create_verified_migration_backup(
         with temporary.open("rb") as stream:
             os.fsync(stream.fileno())
         digest = _sha256(temporary)
-        backup = live.with_name(
-            f"{live.name}.pre-v{source_version + 1}.{digest}.sqlite3"
-        )
+        backup = live.with_name(f"{live.name}.pre-v{source_version + 1}.{digest}.sqlite3")
         sidecar = backup.with_suffix(f"{backup.suffix}.json")
         if backup.exists():
             if _sha256(backup) != digest:
@@ -135,14 +131,17 @@ def create_verified_migration_backup(
         else:
             os.replace(temporary, backup)
             _fsync_parent(backup)
-        _write_sidecar(sidecar, {
-            "schema": "product-state-migration-backup-v1",
-            "database_name": live.name,
-            "source_version": source_version,
-            "target_version": source_version + 1,
-            "sha256": digest,
-            "size": backup.stat().st_size,
-        })
+        _write_sidecar(
+            sidecar,
+            {
+                "schema": "product-state-migration-backup-v1",
+                "database_name": live.name,
+                "source_version": source_version,
+                "target_version": source_version + 1,
+                "sha256": digest,
+                "size": backup.stat().st_size,
+            },
+        )
         return backup, sidecar
     except BaseException:
         temporary.unlink(missing_ok=True)
@@ -195,9 +194,7 @@ def _restore_backup_offline(
         # SQLite's backup API cannot make progress from a connection holding a
         # write transaction against the same database.
         exclusive.rollback()
-        recovery = live.with_name(
-            f"{live.name}.pre-restore-v{recovery_version}.sqlite3"
-        )
+        recovery = live.with_name(f"{live.name}.pre-restore-v{recovery_version}.sqlite3")
         target = sqlite3.connect(recovery)
         try:
             exclusive.backup(target)

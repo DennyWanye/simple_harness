@@ -4,6 +4,7 @@
 No graph, duty, usage, or Attempt row is copied or reset here. A permit becomes
 usable only in the same transaction that records the original decision COMMITTED.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -24,20 +25,36 @@ def _enabled(store: Any, mission_id: str) -> bool:
     return PlanningDecisionStore(store).get_mission_protocol(mission_id) is not None
 
 
-def retry_binding(store: Any, mission_id: str, task_id: str,
-                  payload: RepairRetrySameMethodDecision, *, expected_plan_revision: int) -> dict[str, Any]:
+def retry_binding(
+    store: Any,
+    mission_id: str,
+    task_id: str,
+    payload: RepairRetrySameMethodDecision,
+    *,
+    expected_plan_revision: int,
+) -> dict[str, Any]:
     """Compile a retry from live, authoritative rows, within the caller transaction."""
     if not _enabled(store, mission_id):
         raise ContractError("RETRY_SAME_METHOD is not enabled for this Mission")
     task = store.get_task(task_id)
-    if (task is None or task.mission_id != mission_id or task.accepted_result_id
-            or str(task.status) not in {"READY", "ACTIVE", "VERIFYING"} or task.paused):
+    if (
+        task is None
+        or task.mission_id != mission_id
+        or task.accepted_result_id
+        or str(task.status) not in {"READY", "ACTIVE", "VERIFYING"}
+        or task.paused
+    ):
         raise ContractError("retry target is not an unaccepted, active Task")
     attempts = store.list_attempts(task_id)
     latest = max(attempts, key=lambda a: a.ordinal, default=None)
-    if (latest is None or latest.id != payload.failed_attempt_id or latest.status not in TERMINAL_ATTEMPT
-            or str(latest.status) in {"CANCELLED", "SUPERSEDED"} or not latest.failure
-            or any(a.status not in TERMINAL_ATTEMPT for a in attempts)):
+    if (
+        latest is None
+        or latest.id != payload.failed_attempt_id
+        or latest.status not in TERMINAL_ATTEMPT
+        or str(latest.status) in {"CANCELLED", "SUPERSEDED"}
+        or not latest.failure
+        or any(a.status not in TERMINAL_ATTEMPT for a in attempts)
+    ):
         raise ContractError("retry must name the latest failed Attempt with no open sibling")
     # An unknown *charge* on a call that definitely failed is not a reason to freeze:
     # user count rule (2026-09-24) — overcount, never undercount, never freeze.  Its
@@ -60,18 +77,25 @@ def retry_binding(store: Any, mission_id: str, task_id: str,
     active = htn.active_plan_revision(mission_id)
     if active is None or int(active.revision) != expected_plan_revision:
         raise ContractError("REQUEST_BINDING_STALE: retry Plan changed")
-    occurrences = [spec for spec in htn.list_plan_memberships(mission_id, expected_plan_revision)
-                   if str(spec.task_id) == task_id and spec.form is TaskForm.PRIMITIVE]
+    occurrences = [
+        spec
+        for spec in htn.list_plan_memberships(mission_id, expected_plan_revision)
+        if str(spec.task_id) == task_id and spec.form is TaskForm.PRIMITIVE
+    ]
     if len(occurrences) != 1:
         raise ContractError("retry requires one active primitive occurrence")
     ref = payload.method_instance_ref
     instance = htn.get_method_instance(mission_id, ref.id)
     occurrence = occurrences[0]
-    if (htn.method_instance_state(mission_id, ref.id) != "ADOPTED"
-            or max(1, int(instance.plan_revision)) != ref.semantic_revision
-            or instance.parameters_digest() != ref.content_hash
-            or not any((child.goal_occurrence_id or child.occurrence_id) == occurrence.occurrence_id
-                       for child in instance.child_bindings)):
+    if (
+        htn.method_instance_state(mission_id, ref.id) != "ADOPTED"
+        or max(1, int(instance.plan_revision)) != ref.semantic_revision
+        or instance.parameters_digest() != ref.content_hash
+        or not any(
+            (child.goal_occurrence_id or child.occurrence_id) == occurrence.occurrence_id
+            for child in instance.child_bindings
+        )
+    ):
         raise ContractError("retry Method identity or occurrence membership changed")
     binding = htn.task_semantics_of(mission_id, task_id)
     if binding is None or binding.obligation_id != occurrence.obligation_id:
@@ -79,31 +103,51 @@ def retry_binding(store: Any, mission_id: str, task_id: str,
     snapshot = build_operation_snapshot(mission_id, reader=StoreOperationReader(store))
     if snapshot.unresolved:
         raise ContractError("OPERATION_UNRESOLVED: reconcile before retry")
-    return {"mission_id": mission_id, "task_id": task_id, "task_version": task.version,
-            "occurrence_id": str(occurrence.occurrence_id), "plan_revision": expected_plan_revision,
-            "failed_attempt_id": latest.id, "method_instance_ref": ref.to_json(),
-            "binding_hash": content_hash_of(binding.to_json()), "operation_digest": snapshot.read_digest}
+    return {
+        "mission_id": mission_id,
+        "task_id": task_id,
+        "task_version": task.version,
+        "occurrence_id": str(occurrence.occurrence_id),
+        "plan_revision": expected_plan_revision,
+        "failed_attempt_id": latest.id,
+        "method_instance_ref": ref.to_json(),
+        "binding_hash": content_hash_of(binding.to_json()),
+        "operation_digest": snapshot.read_digest,
+    }
 
 
 def pending_retry_permit(store: Any, mission_id: str, task_id: str) -> dict[str, Any] | None:
     """Return a current committed permit, or None. Missing evidence never authorizes."""
     from ..runtime.planning_operations import SourceUnavailable
     from ..storage.store import StoreError
+
     for event in reversed(tuple(store.iter_events(mission_id))):
         if event.type != RETRY_AUTHORIZED or event.payload.get("task_id") != task_id:
             continue
         data = dict(event.payload)
         row = PlanningDecisionStore(store).get_planning_decision(str(data["decision_id"]))
-        if (row is None or row["status"] != "COMMITTED"
-                or row["canonical_hash"] != data["canonical_hash"]
-                or row["request_id"] != data["request_id"]):
+        if (
+            row is None
+            or row["status"] != "COMMITTED"
+            or row["canonical_hash"] != data["canonical_hash"]
+            or row["request_id"] != data["request_id"]
+        ):
             continue
         try:
-            payload = RepairRetrySameMethodDecision.from_json({
-                "repair_kind": "RETRY_SAME_METHOD", "failed_attempt_id": data["failed_attempt_id"],
-                "method_instance_ref": data["method_instance_ref"]})
-            current = retry_binding(store, mission_id, task_id, payload,
-                                    expected_plan_revision=int(data["plan_revision"]))
+            payload = RepairRetrySameMethodDecision.from_json(
+                {
+                    "repair_kind": "RETRY_SAME_METHOD",
+                    "failed_attempt_id": data["failed_attempt_id"],
+                    "method_instance_ref": data["method_instance_ref"],
+                }
+            )
+            current = retry_binding(
+                store,
+                mission_id,
+                task_id,
+                payload,
+                expected_plan_revision=int(data["plan_revision"]),
+            )
         except (ContractError, StoreError, SourceUnavailable, KeyError):
             return None
         return data if all(data.get(key) == value for key, value in current.items()) else None
@@ -115,9 +159,13 @@ def retry_decision_required(store: Any, mission_id: str, task_id: str) -> bool:
         return False
     attempts = store.list_attempts(task_id)
     latest = max(attempts, key=lambda a: a.ordinal, default=None)
-    return bool(latest is not None and latest.status in TERMINAL_ATTEMPT and latest.failure
-                and str(latest.status) not in {"CANCELLED", "SUPERSEDED"}
-                and not _failed_in_an_older_generation(store, mission_id, task_id, latest))
+    return bool(
+        latest is not None
+        and latest.status in TERMINAL_ATTEMPT
+        and latest.failure
+        and str(latest.status) not in {"CANCELLED", "SUPERSEDED"}
+        and not _failed_in_an_older_generation(store, mission_id, task_id, latest)
+    )
 
 
 def _failed_in_an_older_generation(store: Any, mission_id: str, task_id: str, attempt: Any) -> bool:
@@ -126,10 +174,18 @@ def _failed_in_an_older_generation(store: Any, mission_id: str, task_id: str, at
     代号按尝试开始时已写入的最后一版语义记录算（时间在前的版本）。"""
     rows = store.connection.execute(
         "SELECT dispatch_generation, created_at FROM task_semantics WHERE mission_id=? AND task_id=?"
-        " ORDER BY binding_revision", (mission_id, task_id)).fetchall()
+        " ORDER BY binding_revision",
+        (mission_id, task_id),
+    ).fetchall()
     if not rows:
         return False
     current = int(rows[-1][0])
-    at_attempt = max((int(generation) for generation, created in rows
-                      if float(created) <= float(attempt.created_at)), default=int(rows[0][0]))
+    at_attempt = max(
+        (
+            int(generation)
+            for generation, created in rows
+            if float(created) <= float(attempt.created_at)
+        ),
+        default=int(rows[0][0]),
+    )
     return current > at_attempt

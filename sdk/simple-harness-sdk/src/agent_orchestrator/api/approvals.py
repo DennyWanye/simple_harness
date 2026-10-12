@@ -92,8 +92,10 @@ class ApprovalApi:
                     "params": action.get("params"),
                     "params_hash": action.get("params_hash"),
                     "artifact_hash": action.get("artifact_hash"),
-                    "reason": {"text": action.get("reason"),
-                               "source": action.get("reason_source", "model (untrusted)")},
+                    "reason": {
+                        "text": action.get("reason"),
+                        "source": action.get("reason_source", "model (untrusted)"),
+                    },
                 }
             items.append(item)
         return items

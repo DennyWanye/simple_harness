@@ -88,9 +88,7 @@ class ProviderProjectionEnvelopeV1:
                 _read(value, "effective_ceiling"), "effective_ceiling"
             ),
             usage=usage,
-            provider_request_id=(
-                str(_read(value, "provider_request_id") or "").strip() or None
-            ),
+            provider_request_id=(str(_read(value, "provider_request_id") or "").strip() or None),
             error_code=str(_read(value, "error_code") or "").strip() or None,
             handoff_attempt=(
                 None
@@ -143,13 +141,12 @@ class SdkProviderSettlementReconciler:
         envelope: ProviderProjectionEnvelopeV1 | object,
     ) -> ProviderProjectionEnvelopeV1:
         return (
-            envelope if isinstance(envelope, ProviderProjectionEnvelopeV1)
+            envelope
+            if isinstance(envelope, ProviderProjectionEnvelopeV1)
             else ProviderProjectionEnvelopeV1.from_value(envelope)
         )
 
-    async def project_attempt(
-        self, envelope: ProviderProjectionEnvelopeV1 | object
-    ) -> str:
+    async def project_attempt(self, envelope: ProviderProjectionEnvelopeV1 | object) -> str:
         """Durably project attempt/usage without moving the source cursor."""
 
         item = self._coerce(envelope)
@@ -157,37 +154,39 @@ class SdkProviderSettlementReconciler:
         if item.has_trusted_usage:
             usage = item.usage
             assert usage is not None
-            await self._db.record_context_usage_sample({
-                "session_id": item.session_id,
-                "source_event_id": f"sdk-provider-invocation:{item.invocation_id}",
-                "run_id": item.root_run_id,
-                "request_id": item.request_id,
-                "attempt_id": item.invocation_id,
-                "event_type": "provider_attempt",
-                "tokens_after": usage["input_tokens"],
-                "prompt_tokens": usage["input_tokens"],
-                "completion_tokens": usage["output_tokens"],
-                # ContextUsageStateV2 predates nullable cache telemetry and
-                # stores an integer.  Preserve the availability bit in the
-                # immutable sample metadata so an absent field is never
-                # presented as a measured zero.
-                "cached_tokens": usage["cache_tokens"] or 0,
-                "context_window": item.context_window,
-                "effective_ceiling": item.effective_ceiling,
-                "estimate_method": "provider_usage",
-                "provider_id": item.provider_id,
-                "model_id": item.model_id,
-                "binding_epoch": item.binding_epoch,
-                "metadata": {
-                    "snapshot_id": item.snapshot_id,
-                    "settlement_version": item.settlement_version,
-                    "total_tokens": usage["total_tokens"],
-                    "cache_tokens_available": usage["cache_tokens"] is not None,
-                    "reasoning_tokens": usage.get("reasoning_tokens"),
-                },
-                "completed_at": item.settled_at,
-                "created_at": time.time(),
-            })
+            await self._db.record_context_usage_sample(
+                {
+                    "session_id": item.session_id,
+                    "source_event_id": f"sdk-provider-invocation:{item.invocation_id}",
+                    "run_id": item.root_run_id,
+                    "request_id": item.request_id,
+                    "attempt_id": item.invocation_id,
+                    "event_type": "provider_attempt",
+                    "tokens_after": usage["input_tokens"],
+                    "prompt_tokens": usage["input_tokens"],
+                    "completion_tokens": usage["output_tokens"],
+                    # ContextUsageStateV2 predates nullable cache telemetry and
+                    # stores an integer.  Preserve the availability bit in the
+                    # immutable sample metadata so an absent field is never
+                    # presented as a measured zero.
+                    "cached_tokens": usage["cache_tokens"] or 0,
+                    "context_window": item.context_window,
+                    "effective_ceiling": item.effective_ceiling,
+                    "estimate_method": "provider_usage",
+                    "provider_id": item.provider_id,
+                    "model_id": item.model_id,
+                    "binding_epoch": item.binding_epoch,
+                    "metadata": {
+                        "snapshot_id": item.snapshot_id,
+                        "settlement_version": item.settlement_version,
+                        "total_tokens": usage["total_tokens"],
+                        "cache_tokens_available": usage["cache_tokens"] is not None,
+                        "reasoning_tokens": usage.get("reasoning_tokens"),
+                    },
+                    "completed_at": item.settled_at,
+                    "created_at": time.time(),
+                }
+            )
         return result
 
     async def advance_cursor(
@@ -204,8 +203,7 @@ class SdkProviderSettlementReconciler:
         else:
             should_advance = False
         current_position = (
-            (float(cursor["settled_at"]), str(cursor["invocation_id"]))
-            if cursor else (-1.0, "")
+            (float(cursor["settled_at"]), str(cursor["invocation_id"])) if cursor else (-1.0, "")
         )
         if source_sequence is None:
             should_advance = (item.settled_at, item.invocation_id) > current_position

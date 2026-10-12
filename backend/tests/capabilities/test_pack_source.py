@@ -17,16 +17,12 @@ async def test_local_source_copies_only_into_empty_staging(tmp_path: Path) -> No
     (source / "deskpet-pack.json").write_text("{}", encoding="utf-8")
     destination = tmp_path / "staging" / "op-1"
     resolver = CapabilitySourceResolver()
-    staged = await resolver.stage(
-        PackSourceRequest("local", str(source), "rev-1"), destination
-    )
+    staged = await resolver.stage(PackSourceRequest("local", str(source), "rev-1"), destination)
     assert staged.root == destination.resolve()
     assert (staged.root / "deskpet-pack.json").read_text(encoding="utf-8") == "{}"
 
     with pytest.raises(CapabilitySourceError) as caught:
-        await resolver.stage(
-            PackSourceRequest("local", str(source), "rev-1"), destination
-        )
+        await resolver.stage(PackSourceRequest("local", str(source), "rev-1"), destination)
     assert caught.value.code == "staging_exists"
 
 
@@ -37,9 +33,7 @@ async def test_configured_source_resolves_alias_without_recursion(tmp_path: Path
     (source / "deskpet-pack.json").write_text("{}", encoding="utf-8")
     (source / "file.txt").write_text("ok", encoding="utf-8")
     resolver = CapabilitySourceResolver(
-        configured_sources={
-            "trusted": PackSourceRequest("local", str(source), "catalog-rev")
-        }
+        configured_sources={"trusted": PackSourceRequest("local", str(source), "catalog-rev")}
     )
     destination = tmp_path / "staging" / "op"
     staged = await resolver.stage(

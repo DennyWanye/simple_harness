@@ -60,11 +60,14 @@ def compile_scripted(dispatch: Any, mission_id: str, proposal: PlanProposal) -> 
     )
     # The steps the scripted decision named (TaskGraph 补全第三批), resolved against what
     # this network holds; the slots of an instance being replaced leave with it.
-    held = {str(entry.occurrence_id): entry for entry in shared_goal_index(
-        network,
-        catalog=world.catalog,
-        exclude_occurrence_ids=tuple(_occurrences_leaving_with(network, retiring)),
-    )}
+    held = {
+        str(entry.occurrence_id): entry
+        for entry in shared_goal_index(
+            network,
+            catalog=world.catalog,
+            exclude_occurrence_ids=tuple(_occurrences_leaving_with(network, retiring)),
+        )
+    }
     reuse = {step: held[str(occurrence)] for step, occurrence in operation.reuse.items()}
     draft = ground_method(
         parent,

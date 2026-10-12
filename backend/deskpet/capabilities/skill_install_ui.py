@@ -48,9 +48,7 @@ class TrustedProjectInstallContext:
             "project_id": str(getattr(binding, "project_id", "") or "").strip(),
             "project_name": str(getattr(binding, "project_name", "") or "").strip(),
             "project_revision": int(getattr(binding, "project_revision", 0) or 0),
-            "project_identity": str(
-                getattr(binding, "project_identity", "") or ""
-            ).strip(),
+            "project_identity": str(getattr(binding, "project_identity", "") or "").strip(),
             "project_root": str(getattr(binding, "project_root", "") or "").strip(),
         }
         if (
@@ -112,11 +110,14 @@ def _split_github_tree_url(source_url: str) -> tuple[str, str, str]:
     """Translate a Settings / marketplace URL into (repository, ref, sub-directory)."""
     if source_url.startswith("github:"):
         # The marketplace registry lists ``github:owner/repo[/tree/<ref>/<path>]``.
-        rest = [part for part in source_url[len("github:"):].split("/") if part]
+        rest = [part for part in source_url[len("github:") :].split("/") if part]
         if len(rest) >= 2:
             tree = len(rest) >= 4 and rest[2] == "tree"
-            return (f"https://github.com/{rest[0]}/{rest[1]}", rest[3] if tree else "HEAD",
-                    "/".join(rest[4:]) if tree else "")
+            return (
+                f"https://github.com/{rest[0]}/{rest[1]}",
+                rest[3] if tree else "HEAD",
+                "/".join(rest[4:]) if tree else "",
+            )
     parsed = urlsplit(source_url)
     parts = [part for part in parsed.path.split("/") if part]
     if (
@@ -125,9 +126,7 @@ def _split_github_tree_url(source_url: str) -> tuple[str, str, str]:
         and len(parts) >= 4
         and parts[2] == "tree"
     ):
-        repository_url = urlunsplit(
-            ("https", "github.com", f"/{parts[0]}/{parts[1]}", "", "")
-        )
+        repository_url = urlunsplit(("https", "github.com", f"/{parts[0]}/{parts[1]}", "", ""))
         return repository_url, parts[3], "/".join(parts[4:])
     return source_url, "HEAD", ""
 
@@ -204,17 +203,19 @@ class ProjectSkillInstallUIAdapter:
             )
             authority_argument = {"project": authority}
         repository_url, requested_ref, requested_subpath = _split_github_tree_url(source_url)
-        result = await _await(stage(
-            url=repository_url,
-            requested_ref=requested_ref,
-            **({"requested_subpath": requested_subpath} if requested_subpath else {}),
-            **authority_argument,
-            run_id=f"settings:{stable}",
-            root_run_id=f"settings:{stable}",
-            call_id=f"settings-call:{stable}",
-            effect_id=f"settings-effect:{stable}",
-            channel="settings",
-        ))
+        result = await _await(
+            stage(
+                url=repository_url,
+                requested_ref=requested_ref,
+                **({"requested_subpath": requested_subpath} if requested_subpath else {}),
+                **authority_argument,
+                run_id=f"settings:{stable}",
+                root_run_id=f"settings:{stable}",
+                call_id=f"settings-call:{stable}",
+                effect_id=f"settings-effect:{stable}",
+                channel="settings",
+            )
+        )
         projection = _safe_projection(result)
         intent_id = str(projection.get("intent_id") or "")
         store = getattr(self._service, "store", None)
@@ -224,35 +225,42 @@ class ProjectSkillInstallUIAdapter:
             intent = await _await(get_intent(intent_id))
             members = await _await(get_members(intent_id))
             if intent is not None:
-                projection.update({
-                    "digest": intent.member_set_stamp,
-                    "decision_nonce": intent.confirmation_nonce,
-                    "decision_version": intent.confirmation_version,
-                    "repository_url": str(intent.source.get("normalized_url") or source_url),
-                    "resolved_commit": intent.exact_commit,
-                    "expires_at": intent.expires_at,
-                    "project": (
-                        {"project_id": project.project_id,
-                         "project_name": project.project_name,
-                         "project_revision": project.project_revision,
-                         "project_identity": project.project_identity}
-                        if project is not None
-                        else {"project_id": "", "project_name": "全局用户",
-                              "project_revision": 0}
-                    ),
-                    "members": [
-                        {
-                            "name": member.normalized_name,
-                            "version": member.version,
-                            "manifest_hash": member.manifest_hash,
-                            "content_hash": member.content_hash,
-                            "permission_categories": list(
-                                member.member.get("allowed_tools", ())
-                            ),
-                        }
-                        for member in members
-                    ],
-                })
+                projection.update(
+                    {
+                        "digest": intent.member_set_stamp,
+                        "decision_nonce": intent.confirmation_nonce,
+                        "decision_version": intent.confirmation_version,
+                        "repository_url": str(intent.source.get("normalized_url") or source_url),
+                        "resolved_commit": intent.exact_commit,
+                        "expires_at": intent.expires_at,
+                        "project": (
+                            {
+                                "project_id": project.project_id,
+                                "project_name": project.project_name,
+                                "project_revision": project.project_revision,
+                                "project_identity": project.project_identity,
+                            }
+                            if project is not None
+                            else {
+                                "project_id": "",
+                                "project_name": "全局用户",
+                                "project_revision": 0,
+                            }
+                        ),
+                        "members": [
+                            {
+                                "name": member.normalized_name,
+                                "version": member.version,
+                                "manifest_hash": member.manifest_hash,
+                                "content_hash": member.content_hash,
+                                "permission_categories": list(
+                                    member.member.get("allowed_tools", ())
+                                ),
+                            }
+                            for member in members
+                        ],
+                    }
+                )
         # 2026-09-25 UI 全量点击：安装服务失败时返回"已拒绝"投影而不抛异常，以前被
         # 原样包成 ok:true，前端只能报"缺字段"，真正原因（如地址不合法）被吞掉。
         if not intent_id:
@@ -263,7 +271,6 @@ class ProjectSkillInstallUIAdapter:
                 retryable=bool(projection.get("retryable", False)),
             )
         return projection
-
 
     async def settle(
         self,
@@ -311,9 +318,7 @@ class ProjectSkillInstallUIAdapter:
         )
         receipt_projection = _safe_projection(receipt)
         discriminator = str(
-            receipt_projection.get("kind")
-            or receipt_projection.get("channel")
-            or ""
+            receipt_projection.get("kind") or receipt_projection.get("channel") or ""
         ).strip()
         sdk_fields = {
             "run_id",
@@ -330,9 +335,7 @@ class ProjectSkillInstallUIAdapter:
                 "settings_install_receipt_invalid",
                 "The Host returned a non-Settings installation receipt.",
             )
-        method_name = (
-            "confirm_authorized" if decision == "approve" else "cancel_authorized"
-        )
+        method_name = "confirm_authorized" if decision == "approve" else "cancel_authorized"
         settle = getattr(self._service, method_name, None)
         if not callable(settle):
             raise ProjectSkillInstallUIError(

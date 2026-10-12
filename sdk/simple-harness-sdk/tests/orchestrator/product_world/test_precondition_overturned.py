@@ -9,6 +9,7 @@
 
 **改坏检验**（H-01）：系统扫描不看前提许可 → 只剩停滞请求 → 变红。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -45,10 +46,19 @@ def write_then_tidy_in_one_method(context: dict[str, Any]) -> dict[str, Any]:
     method["ordering"] = [{"before": "write", "after": "tidy"}]
     method["applicable_when"] = [NOT_YET]
     method["composition"]["criterion_links"] = [
-        {"parent_criterion_id": first, "child_step": "write", "child_criterion_id": first,
-         "evidence_requirement": "write 这一步写出 out.md"},
-        {"parent_criterion_id": second, "child_step": "tidy", "child_criterion_id": second,
-         "evidence_requirement": "tidy 这一步整理出 NOTES.md"}]
+        {
+            "parent_criterion_id": first,
+            "child_step": "write",
+            "child_criterion_id": first,
+            "evidence_requirement": "write 这一步写出 out.md",
+        },
+        {
+            "parent_criterion_id": second,
+            "child_step": "tidy",
+            "child_criterion_id": second,
+            "evidence_requirement": "tidy 这一步整理出 NOTES.md",
+        },
+    ]
     method["composition"]["finalizer_step"] = "tidy"
     return method
 
@@ -75,25 +85,51 @@ def test_an_overturned_precondition_reaches_the_planner_before_any_stall(tmp_pat
             return ask_file_present(goals[0]["subject_key"], "out.md")
         if contexts and not state["proposed"]:
             state["proposed"] = True
-            return decision(contexts[0]["subject_key"], "PROPOSE_METHOD",
-                            {"method_proposal": {"method": write_then_tidy_in_one_method(contexts[0]),
-                                                 "rationale": "趁 out.md 还没有，先写再整理。"}}, "提做法。")
+            return decision(
+                contexts[0]["subject_key"],
+                "PROPOSE_METHOD",
+                {
+                    "method_proposal": {
+                        "method": write_then_tidy_in_one_method(contexts[0]),
+                        "rationale": "趁 out.md 还没有，先写再整理。",
+                    }
+                },
+                "提做法。",
+            )
         for selection in package.get("method_selection") or ():
             if selection.get("applicable"):
                 chosen = selection["applicable"][0]
-                goal = next(item for item in goals if item["occurrence_id"] == selection["occurrence_id"])
-                return decision(goal["subject_key"], "REFINE", {
-                    "method_ref": {"kind": "method", "id": chosen["method_id"],
-                                   "semantic_revision": chosen["method_version"],
-                                   "content_hash": chosen["method_content_hash"]},
-                    "bindings": dict(selection.get("bindings") or goal["params"])}, "采用通过审阅的做法。")
+                goal = next(
+                    item for item in goals if item["occurrence_id"] == selection["occurrence_id"]
+                )
+                return decision(
+                    goal["subject_key"],
+                    "REFINE",
+                    {
+                        "method_ref": {
+                            "kind": "method",
+                            "id": chosen["method_id"],
+                            "semantic_revision": chosen["method_version"],
+                            "content_hash": chosen["method_content_hash"],
+                        },
+                        "bindings": dict(selection.get("bindings") or goal["params"]),
+                    },
+                    "采用通过审阅的做法。",
+                )
         return planner_reply(request)
 
     async def case():
-        async with product_world(tmp_path / "root", LayeredScriptedProvider(planner=planner)) as world:
+        async with product_world(
+            tmp_path / "root", LayeredScriptedProvider(planner=planner)
+        ) as world:
             store = world.store
-            mission_id = world.create({"goal": "写 out.md 再整理", "idempotency_key": "overturned-1",
-                                       "success_criteria": ["file:out.md", "file:NOTES.md"]})["mission_id"]
+            mission_id = world.create(
+                {
+                    "goal": "写 out.md 再整理",
+                    "idempotency_key": "overturned-1",
+                    "success_criteria": ["file:out.md", "file:NOTES.md"],
+                }
+            )["mission_id"]
             stop = asyncio.Event()
 
             async def drive() -> None:
@@ -106,10 +142,17 @@ def test_an_overturned_precondition_reaches_the_planner_before_any_stall(tmp_pat
             found: list[dict[str, Any]] = []
             try:
                 for _ in range(1200):
-                    found = [r for r in _requests(store, mission_id)
-                             if _detail(r).get("reason") == "method_precondition_false"]
-                    if found or runner.done() or str(store.get_mission(mission_id).status.value) in {
-                            "COMPLETED", "FAILED", "CANCELLED"}:
+                    found = [
+                        r
+                        for r in _requests(store, mission_id)
+                        if _detail(r).get("reason") == "method_precondition_false"
+                    ]
+                    if (
+                        found
+                        or runner.done()
+                        or str(store.get_mission(mission_id).status.value)
+                        in {"COMPLETED", "FAILED", "CANCELLED"}
+                    ):
                         break
                     await asyncio.sleep(0.05)
             finally:

@@ -54,8 +54,11 @@ def _world(root: Path, *, thinking: bool = False):
     """产品同形部署；``thinking`` 时部署另配一组思考池（产品的"思考模式"设置，2026-09-24），
     拼法见 ``tests/orchestrator/product_assembly.py``。"""
 
-    return started(root, LayeredScriptedProvider(),
-                   thinking_provider=LayeredScriptedProvider() if thinking else None)
+    return started(
+        root,
+        LayeredScriptedProvider(),
+        thinking_provider=LayeredScriptedProvider() if thinking else None,
+    )
 
 
 def _route(loop, mission_id: str, role: str, kind: str | None = None) -> str:
@@ -73,20 +76,31 @@ def test_public_create_freezes_profile_and_keeps_omitted_hash(tmp_path):
             same = control.create(_request("new", runtime_profile_id=LARGE))
             assert old["created"] and new["created"] and not same["created"]
             assert same["spec_hash"] == new["spec_hash"]
-            assert "runtime_profile_id" not in loop.store.get_mission(old["mission_id"]).final_report
-            assert loop.store.get_mission(new["mission_id"]).final_report["runtime_profile_id"] == LARGE
+            assert (
+                "runtime_profile_id" not in loop.store.get_mission(old["mission_id"]).final_report
+            )
+            assert (
+                loop.store.get_mission(new["mission_id"]).final_report["runtime_profile_id"]
+                == LARGE
+            )
             # 不选的任务走部署默认池；选了的任务所有角色都走它。
             assert _route(loop, old["mission_id"], "planner") == SMALL
             for role, kind in (("planner", None), ("worker", "code"), ("unknown", None)):
                 assert _route(loop, new["mission_id"], role, kind) == LARGE
             # 两个任务同一个策略版本：路由缓存仍按所选的池分开。
-            assert loop.policy_version_of(old["mission_id"]) == loop.policy_version_of(new["mission_id"])
+            assert loop.policy_version_of(old["mission_id"]) == loop.policy_version_of(
+                new["mission_id"]
+            )
             with pytest.raises(FacadeError) as changed:
                 control.create(_request("new"))
             assert changed.value.code == "conflict"
             assert (
-                MissionSpec(goal="x", success_criteria=("file:x",), tenant_id="t", idempotency_key="k")
-                .to_json().get("runtime_profile_id") is None
+                MissionSpec(
+                    goal="x", success_criteria=("file:x",), tenant_id="t", idempotency_key="k"
+                )
+                .to_json()
+                .get("runtime_profile_id")
+                is None
             )
             return old["mission_id"], new["mission_id"]
 
@@ -139,13 +153,22 @@ def test_source_and_direct_paths_validate_selection(tmp_path):
             )
             assert _route(loop, receipt["mission_id"], "unknown") == LARGE
             with pytest.raises(MissionRequestError, match="not configured"):
-                loop.create_mission(tenant_id=TENANT, request=_request("direct-missing", runtime_profile_id="missing"))
+                loop.create_mission(
+                    tenant_id=TENANT,
+                    request=_request("direct-missing", runtime_profile_id="missing"),
+                )
             assert len(loop.store.list_missions()) == 1
             with pytest.raises(MissionConflict):
                 loop.commit.create_mission(
-                    MissionSpec(goal="Write NOTES.md", success_criteria=("file:NOTES.md",), tenant_id=TENANT,
-                                idempotency_key="source", allowed_tools=loop.config.deployment_policy.allowed_tools,
-                                budget=Budget(max_tokens=2_000_000, max_attempts=4), runtime_profile_id=SMALL)
+                    MissionSpec(
+                        goal="Write NOTES.md",
+                        success_criteria=("file:NOTES.md",),
+                        tenant_id=TENANT,
+                        idempotency_key="source",
+                        allowed_tools=loop.config.deployment_policy.allowed_tools,
+                        budget=Budget(max_tokens=2_000_000, max_attempts=4),
+                        runtime_profile_id=SMALL,
+                    )
                 )
 
     asyncio.run(run())
@@ -157,8 +180,13 @@ def test_bare_commit_cannot_bypass_profile_binding(tmp_path):
         commit = CommitService(store)
         with pytest.raises(CommitRejected, match="requires an Orchestrator"):
             commit.create_mission(
-                MissionSpec(goal="Write NOTES.md", success_criteria=("file:NOTES.md",), tenant_id="tenant",
-                            idempotency_key="bare", runtime_profile_id=LARGE)
+                MissionSpec(
+                    goal="Write NOTES.md",
+                    success_criteria=("file:NOTES.md",),
+                    tenant_id="tenant",
+                    idempotency_key="bare",
+                    runtime_profile_id=LARGE,
+                )
             )
         assert store.list_missions() == []
     finally:

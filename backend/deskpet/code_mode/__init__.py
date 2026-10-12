@@ -13,6 +13,7 @@ The actual heavy lifting (new tools, prompt template, etc.) lives in
 sibling modules: ``backend/deskpet/tools/code_tools/`` for the tool
 implementations.
 """
+
 from __future__ import annotations
 
 from .intent_detector import maybe_suggest_code_mode

@@ -15,6 +15,7 @@ Time is injected via a ``clock`` callable so tests don't sleep. Locks
 are ``asyncio.Lock`` (the breaker is touched by both dispatch and the
 watchdog from different tasks).
 """
+
 from __future__ import annotations
 
 import pytest

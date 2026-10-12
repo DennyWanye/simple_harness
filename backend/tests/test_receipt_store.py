@@ -5,6 +5,7 @@
 
 覆盖 PRD §3 D5 + D11 + 二轮 N1（信任面）+ §5 健康区间 metric。
 """
+
 from __future__ import annotations
 
 import importlib
@@ -32,6 +33,7 @@ from deskpet.tools.receipt_store import (
 )
 
 # ─── TG-7 HMAC sign/verify roundtrip + key 文件兜底 ────────
+
 
 def test_t7_1_sign_then_verify_roundtrip():
     r = make_receipt(
@@ -71,6 +73,7 @@ def test_t7_3_tampered_sig_rejected():
 def test_t7_4_args_hash_key_order_insensitive():
     """canonical_json sorts keys — args_hash 跨调用确定。"""
     from deskpet.tools.receipt import args_hash
+
     h1 = args_hash({"a": 1, "b": 2})
     h2 = args_hash({"b": 2, "a": 1})
     assert h1 == h2
@@ -166,6 +169,7 @@ def test_t7_6_sanity_echo_validates_key():
 
 # ─── TG-8 ReceiptStore 持久化 ───────────────────────────────
 
+
 def _make_store(tmp_path, **kwargs):
     """构造 store 用确定性 key（避免依赖 keystore 状态）。"""
     return ReceiptStore(
@@ -214,14 +218,18 @@ def test_t8_2_load_session_returns_valid_receipts(tmp_path):
 def test_t8_3_load_session_filters_sig_invalid(tmp_path, caplog):
     """N1 信任面：jsonl 中有 sig-invalid receipt → 整条剔除 + warn log。"""
     import logging
+
     caplog.set_level(logging.WARNING)
     store = _make_store(tmp_path)
     # 写一条正常 receipt
     emit_receipt(
-        store, tool_name="t", args={},
+        store,
+        tool_name="t",
+        args={},
         started_at=datetime(2026, 5, 23, tzinfo=UTC),
         ended_at=datetime(2026, 5, 23, tzinfo=UTC),
-        ok=True, session_id="s",
+        ok=True,
+        session_id="s",
     )
     # 手动追加一条 sig 错误的
     bad = ToolReceipt(
@@ -250,14 +258,18 @@ def test_t8_3_load_session_filters_sig_invalid(tmp_path, caplog):
 def test_t8_4_cleanup_expired_deletes_old(tmp_path):
     store = _make_store(tmp_path, retention_days=7)
     emit_receipt(
-        store, tool_name="t", args={},
+        store,
+        tool_name="t",
+        args={},
         started_at=datetime(2026, 5, 23, tzinfo=UTC),
         ended_at=datetime(2026, 5, 23, tzinfo=UTC),
-        ok=True, session_id="s_old",
+        ok=True,
+        session_id="s_old",
     )
     # 把文件 mtime 改成 30 天前
     path = tmp_path / "receipts" / "s_old.jsonl"
     import os
+
     old_time = (datetime.now(UTC) - timedelta(days=30)).timestamp()
     os.utime(path, (old_time, old_time))
 
@@ -270,10 +282,13 @@ def test_t8_5_archive_for_key_rotation(tmp_path):
     """HMAC key 重生时旧 jsonl 整体归档到 receipts/archived/。"""
     store = _make_store(tmp_path)
     emit_receipt(
-        store, tool_name="t", args={},
+        store,
+        tool_name="t",
+        args={},
         started_at=datetime(2026, 5, 23, tzinfo=UTC),
         ended_at=datetime(2026, 5, 23, tzinfo=UTC),
-        ok=True, session_id="s",
+        ok=True,
+        session_id="s",
     )
     assert (tmp_path / "receipts" / "s.jsonl").exists()
 
@@ -290,19 +305,29 @@ def test_t8_5_archive_for_key_rotation(tmp_path):
 def test_t8_6_io_error_does_not_crash(tmp_path, monkeypatch, caplog):
     """磁盘满 / 权限错误时 append fire-and-forget + warn log，不阻 dispatch。"""
     import logging
+
     caplog.set_level(logging.WARNING)
     store = _make_store(tmp_path)
 
     # mock open to raise OSError
     def _bad_open(*args, **kwargs):
         raise OSError("disk full")
+
     monkeypatch.setattr("builtins.open", _bad_open)
     # 这条不应抛
-    store.append(ToolReceipt(
-        receipt_id="x", tool_name="t", args_hash="0" * 64,
-        started_at="x", ended_at="x", duration_ms=0, ok=True,
-        session_id="s", sig="0" * 64,
-    ))
+    store.append(
+        ToolReceipt(
+            receipt_id="x",
+            tool_name="t",
+            args_hash="0" * 64,
+            started_at="x",
+            ended_at="x",
+            duration_ms=0,
+            ok=True,
+            session_id="s",
+            sig="0" * 64,
+        )
+    )
     assert any("receipt append failed" in r.message for r in caplog.records)
 
 

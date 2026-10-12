@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 """P4-S22 — CodeModeManager state lifecycle + session-id derivation."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -61,8 +62,10 @@ def test_session_id_differs_for_different_paths(tmp_path):
 
 def test_per_base_session_isolation(tmp_path):
     """Two base sessions can have different code-mode states simultaneously."""
-    proj_a = tmp_path / "a"; proj_a.mkdir()
-    proj_b = tmp_path / "b"; proj_b.mkdir()
+    proj_a = tmp_path / "a"
+    proj_a.mkdir()
+    proj_b = tmp_path / "b"
+    proj_b.mkdir()
     mgr = CodeModeManager()
     mgr.enter("alice", proj_a)
     mgr.enter("bob", proj_b)
@@ -76,7 +79,7 @@ def test_per_base_session_isolation(tmp_path):
 def test_code_session_id_helper_is_deterministic_8_hex(tmp_path):
     sid = _code_session_id(tmp_path)
     assert sid.startswith("code-")
-    rest = sid[len("code-"):]
+    rest = sid[len("code-") :]
     assert len(rest) == 8
     assert all(c in "0123456789abcdef" for c in rest)
 

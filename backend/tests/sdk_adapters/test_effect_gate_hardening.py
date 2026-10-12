@@ -70,18 +70,36 @@ async def _new_route_receipt(env, scope_id: str, *, turn: int, tag: str):  # typ
     effect_id = EffectId(f"effect-route-{tag}")
     envelope = await env.task_authority.issue_envelope(
         TaskExecutionEnvelopeRequest(
-            h.RUN, call_id.value, effect_id.value, f"raw-route-{tag}", turn, 0, "context_route", policy, None
+            h.RUN,
+            call_id.value,
+            effect_id.value,
+            f"raw-route-{tag}",
+            turn,
+            0,
+            "context_route",
+            policy,
+            None,
         )
     )
     context = ToolContext(
-        h.RUN, h.REQUEST, CancellationToken(), call_id=call_id, effect_id=effect_id,
+        h.RUN,
+        h.REQUEST,
+        CancellationToken(),
+        call_id=call_id,
+        effect_id=effect_id,
         task_execution_envelope=envelope,
     )
     execution = await env.effects.execute(
         effect_id=effect_id,
-        call=ToolCall(call_id, "context_route", {"route": "resume_existing", "task_scope_id": scope_id}),
-        context=context, execution_lease=h.LEASE, run_fence=h.FENCE,
-        raw_call_id=f"raw-route-{tag}", turn_ordinal=turn, call_ordinal=0,
+        call=ToolCall(
+            call_id, "context_route", {"route": "resume_existing", "task_scope_id": scope_id}
+        ),
+        context=context,
+        execution_lease=h.LEASE,
+        run_fence=h.FENCE,
+        raw_call_id=f"raw-route-{tag}",
+        turn_ordinal=turn,
+        call_ordinal=0,
     )
     assert execution.result.outcome.value == "succeeded", execution.result
     receipt_id = execution.result.value["context_route_receipt"]["receipt_id"]
@@ -94,7 +112,15 @@ async def _write_envelope(env, receipt, *, turn: int, tag: str):  # type: ignore
     policy = env.exposure.execution_policy(h.RUN, "write_file")
     return await env.task_authority.issue_envelope(
         TaskExecutionEnvelopeRequest(
-            h.RUN, f"call-write-{tag}", f"effect-write-{tag}", f"raw-write-{tag}", turn, 1, "write_file", policy, receipt
+            h.RUN,
+            f"call-write-{tag}",
+            f"effect-write-{tag}",
+            f"raw-write-{tag}",
+            turn,
+            1,
+            "write_file",
+            policy,
+            receipt,
         )
     )
 
@@ -148,10 +174,14 @@ async def test_gate_head_and_scope_status_read_in_single_snapshot(tmp_path: Path
         "SELECT status FROM harness_evidence_reservations WHERE source_event_id=?",
         f"effect:{envelope.effect_id.value}",
     ) == [("ingested",)]  # 首次写的预留；本次被拒未新增
-    assert _memo_rows(env) == [(h.RUN.value, envelope.route_receipt_id, "workspace_binding_receipt_superseded")]
+    assert _memo_rows(env) == [
+        (h.RUN.value, envelope.route_receipt_id, "workspace_binding_receipt_superseded")
+    ]
     # ① 直接看门：同 receipt 现在是 sticky（快照裁决曾放行，是写锁再核抓住的）。
     env.gate._fault_inject = None
-    assert _code(await env.gate.verify(_context(envelope), "write_file")) == EFFECT_GATE_STICKY_REASON
+    assert (
+        _code(await env.gate.verify(_context(envelope), "write_file")) == EFFECT_GATE_STICKY_REASON
+    )
 
 
 @pytest.mark.asyncio
@@ -160,7 +190,9 @@ async def test_reservation_check_raises_inside_reservation_transaction(tmp_path:
     ``EffectGateRejected``（同一 BEGIN IMMEDIATE 内回滚）。"""
 
     env, scope_a, _root, envelope = await _routed_write(tmp_path)
-    bare = ToolContext(h.RUN, h.REQUEST, CancellationToken(), call_id=CallId("call-x"), effect_id=EffectId("e-x"))
+    bare = ToolContext(
+        h.RUN, h.REQUEST, CancellationToken(), call_id=CallId("call-x"), effect_id=EffectId("e-x")
+    )
     assert env.gate.reservation_check(bare, "read_file") is None
     check = env.gate.reservation_check(_context(envelope), "write_file")
     assert check is not None
@@ -196,15 +228,22 @@ async def test_gate_rejection_sticky_until_new_route_receipt(tmp_path: Path) -> 
     env, scope_a, root_a, envelope = await _routed_write(tmp_path)
     moved = root_a.parent / "moved-a"
     root_a.rename(moved)
-    assert _code(await env.gate.verify(_context(envelope), "write_file")) == "workspace_root_unavailable"
+    assert (
+        _code(await env.gate.verify(_context(envelope), "write_file"))
+        == "workspace_root_unavailable"
+    )
     moved.rename(root_a)
     # 条件恢复，同 receipt：sticky。
-    assert _code(await env.gate.verify(_context(envelope), "write_file")) == EFFECT_GATE_STICKY_REASON
+    assert (
+        _code(await env.gate.verify(_context(envelope), "write_file")) == EFFECT_GATE_STICKY_REASON
+    )
     execution = await _execute(env, envelope)
     assert execution.effect is None and execution.result.error_code == EFFECT_GATE_STICKY_REASON
     assert not (root_a / "z.txt").exists()
     # memo 只记首码，重复拒绝不改写（append-only + UNIQUE）。
-    assert _memo_rows(env) == [(h.RUN.value, envelope.route_receipt_id, "workspace_root_unavailable")]
+    assert _memo_rows(env) == [
+        (h.RUN.value, envelope.route_receipt_id, "workspace_root_unavailable")
+    ]
     # 同 Run 新 route receipt → 新 envelope 不受旧 memo 影响。
     receipt = await _new_route_receipt(env, scope_a, turn=3, tag="again")
     assert receipt.receipt_id != envelope.route_receipt_id
@@ -212,13 +251,21 @@ async def test_gate_rejection_sticky_until_new_route_receipt(tmp_path: Path) -> 
     assert fresh.route_receipt_id == receipt.receipt_id
     assert await env.gate.verify(_context(fresh), "write_file") is None
     execution = await env.effects.execute(
-        effect_id=fresh.effect_id, call=_write_call(fresh, "fresh.txt"), context=_context(fresh),
-        execution_lease=h.LEASE, run_fence=h.FENCE, raw_call_id="raw-write-again", turn_ordinal=3, call_ordinal=1,
+        effect_id=fresh.effect_id,
+        call=_write_call(fresh, "fresh.txt"),
+        context=_context(fresh),
+        execution_lease=h.LEASE,
+        run_fence=h.FENCE,
+        raw_call_id="raw-write-again",
+        turn_ordinal=3,
+        call_ordinal=1,
     )
     assert execution.result.outcome.value == "succeeded"
     assert (root_a / "fresh.txt").read_text(encoding="utf-8") == "zeta"
     # 旧 receipt 依旧 sticky（memo 按 receipt 键，不是按 Run 清空）。
-    assert _code(await env.gate.verify(_context(envelope), "write_file")) == EFFECT_GATE_STICKY_REASON
+    assert (
+        _code(await env.gate.verify(_context(envelope), "write_file")) == EFFECT_GATE_STICKY_REASON
+    )
 
 
 @pytest.mark.asyncio
@@ -226,7 +273,10 @@ async def test_step_one_rejections_are_not_sticky(tmp_path: Path) -> None:
     """步骤 1（envelope 缺失/身份回声）没有可信 receipt → 不写 memo；同 receipt 的后续合法调用照常放行。"""
 
     env, _scope, _root, envelope = await _routed_write(tmp_path)
-    assert _code(await env.gate.verify(_context(envelope), "edit_file")) == "effect_gate_envelope_identity_mismatch"
+    assert (
+        _code(await env.gate.verify(_context(envelope), "edit_file"))
+        == "effect_gate_envelope_identity_mismatch"
+    )
     assert _memo_rows(env) == []
     assert await env.gate.verify(_context(envelope), "write_file") is None
 
@@ -259,14 +309,25 @@ async def test_gate_missing_head_is_authority_missing_not_superseded(tmp_path: P
 async def test_gate_requires_effect_id_echo(tmp_path: Path) -> None:
     env, _scope, _root, envelope = await _routed_write(tmp_path)
     no_effect = ToolContext(
-        h.RUN, h.REQUEST, CancellationToken(), call_id=envelope.call_id, effect_id=None,
+        h.RUN,
+        h.REQUEST,
+        CancellationToken(),
+        call_id=envelope.call_id,
+        effect_id=None,
         task_execution_envelope=envelope,
     )
-    assert _code(await env.gate.verify(no_effect, "write_file")) == "effect_gate_envelope_identity_mismatch"
+    assert (
+        _code(await env.gate.verify(no_effect, "write_file"))
+        == "effect_gate_envelope_identity_mismatch"
+    )
     # 非 None 但不同的 effect_id 由 SDK ToolContext 契约本身拒绝（Host 是最后一道，不是唯一一道）。
     with pytest.raises(ValueError, match="TaskExecutionEnvelope effect differs"):
         ToolContext(
-            h.RUN, h.REQUEST, CancellationToken(), call_id=envelope.call_id, effect_id=EffectId("effect-other"),
+            h.RUN,
+            h.REQUEST,
+            CancellationToken(),
+            call_id=envelope.call_id,
+            effect_id=EffectId("effect-other"),
             task_execution_envelope=envelope,
         )
     assert _memo_rows(env) == []
@@ -285,13 +346,19 @@ async def test_gate_rejects_inode_drift_and_symlink_root(tmp_path: Path) -> None
     root_a.rmdir()
     root_a.mkdir()
     assert os.stat(root_a).st_ino != before
-    assert _code(await env.gate.verify(_context(envelope), "write_file")) == "workspace_root_identity_drift"
+    assert (
+        _code(await env.gate.verify(_context(envelope), "write_file"))
+        == "workspace_root_identity_drift"
+    )
     # symlink 根：路径解析不等于自身 → not canonical（另一 env，避免 sticky）。
     env2, _scope2, root_b, envelope2 = await _routed_write(tmp_path / "two")
     target = root_b.parent / "real-b"
     root_b.rename(target)
     root_b.symlink_to(target, target_is_directory=True)
-    assert _code(await env2.gate.verify(_context(envelope2), "write_file")) == "workspace_root_not_canonical"
+    assert (
+        _code(await env2.gate.verify(_context(envelope2), "write_file"))
+        == "workspace_root_not_canonical"
+    )
 
 
 @pytest.mark.asyncio
@@ -301,8 +368,12 @@ async def test_gate_rejects_cross_run_envelope(tmp_path: Path) -> None:
     env, _scope, _root, envelope = await _routed_write(tmp_path)
     with pytest.raises(ValueError, match="belongs to another Run"):
         ToolContext(
-            RunId("run-other"), h.REQUEST, CancellationToken(), call_id=envelope.call_id,
-            effect_id=envelope.effect_id, task_execution_envelope=envelope,
+            RunId("run-other"),
+            h.REQUEST,
+            CancellationToken(),
+            call_id=envelope.call_id,
+            effect_id=envelope.effect_id,
+            task_execution_envelope=envelope,
         )
     foreign = replace(envelope, run_id=RunId("run-other"))
     with pytest.raises(ValueError, match="belongs to another Run"):
@@ -310,7 +381,10 @@ async def test_gate_rejects_cross_run_envelope(tmp_path: Path) -> None:
     # Host 最后一道：绕过 SDK 构造校验的上下文（属性级伪造）仍被步骤 1 拒绝。
     forged = _context(envelope)
     object.__setattr__(forged, "run_id", RunId("run-other"))
-    assert _code(await env.gate.verify(forged, "write_file")) == "effect_gate_envelope_identity_mismatch"
+    assert (
+        _code(await env.gate.verify(forged, "write_file"))
+        == "effect_gate_envelope_identity_mismatch"
+    )
     assert _memo_rows(env) == []
 
 
@@ -327,9 +401,13 @@ def test_snapshot_passthrough_when_exposure_lacks_execution_policy() -> None:
     assert _visible_provider_specs(bare, h.RUN, ContextRouteState.UNROUTED) == specs
     # 有 execution_policy 的 exposure：ROUTED_TASK 之前隐藏 PROJECT_EFFECT。
     exposure = h.RouteExposure()
-    unrouted = [s.name for s in _visible_provider_specs(exposure, h.RUN, ContextRouteState.UNROUTED)]
+    unrouted = [
+        s.name for s in _visible_provider_specs(exposure, h.RUN, ContextRouteState.UNROUTED)
+    ]
     assert "write_file" not in unrouted and "read_file" in unrouted
-    routed = [s.name for s in _visible_provider_specs(exposure, h.RUN, ContextRouteState.ROUTED_TASK)]
+    routed = [
+        s.name for s in _visible_provider_specs(exposure, h.RUN, ContextRouteState.ROUTED_TASK)
+    ]
     assert "write_file" in routed
 
 
@@ -340,7 +418,9 @@ def test_run_fault_memo_isolated_per_run() -> None:
     memo.record("run-b", "catalog_execution_policy_unavailable")
     assert memo.read("run-a") == "sdk_task_execution_route_authority_missing"
     memo.release("run-a")
-    assert memo.read("run-a") is None and memo.read("run-b") == "catalog_execution_policy_unavailable"
+    assert (
+        memo.read("run-a") is None and memo.read("run-b") == "catalog_execution_policy_unavailable"
+    )
 
 
 def test_effect_gate_constructor_rejects_missing_pieces(tmp_path: Path) -> None:
@@ -385,7 +465,9 @@ async def test_rejected_effect_reservation_abandoned_immediately(tmp_path: Path)
 
         class _Deny:
             async def prepare(self, prepared):  # type: ignore[no-untyped-def]
-                return AuthorizationResult(AuthorizationDecision.DENY, reason_code="product_policy:deny")
+                return AuthorizationResult(
+                    AuthorizationDecision.DENY, reason_code="product_policy:deny"
+                )
 
         case.executor._authorization = _Deny()
         denied = await case.execute(effect_id="effect-denied", path="denied.txt")
@@ -399,7 +481,9 @@ async def test_rejected_effect_reservation_abandoned_immediately(tmp_path: Path)
             "LEFT JOIN task_scope_events e ON e.event_id=i.event_id WHERE r.run_id=? ORDER BY r.source_sequence",
             env.run_id,
         )
-        by_source = {s: (status, json.loads(payload)["public_payload"]) for s, status, payload in rows}
+        by_source = {
+            s: (status, json.loads(payload)["public_payload"]) for s, status, payload in rows
+        }
         assert by_source["effect:effect-ok"][0] == "ingested"
         status, public = by_source["effect:effect-denied"]
         assert status == "abandoned"
@@ -408,11 +492,18 @@ async def test_rejected_effect_reservation_abandoned_immediately(tmp_path: Path)
         assert public["reason_code"] == denied.result.error_code
         assert is_material_event("harness.tool_invocation", {"public_payload": public}) is False
         # 无 reserved 残留；脏只来自 effect-ok；terminal 无需排空即可放行。
-        assert h.rows(env.db_path, "SELECT COUNT(*) FROM harness_evidence_reservations WHERE run_id=? AND status='reserved'", env.run_id) == [(0,)]
+        assert h.rows(
+            env.db_path,
+            "SELECT COUNT(*) FROM harness_evidence_reservations WHERE run_id=? AND status='reserved'",
+            env.run_id,
+        ) == [(0,)]
         dirty = await dirty_state(CanonicalTaskScopeStore(env.db_path), ch.SCOPE)
-        assert [e.source_event_id for e in dirty.material_events] == ["execution:effect:effect-ok"] or sorted(
-            e.event_kind for e in dirty.material_events
-        ) == ["harness.tool_invocation", "host.file"]
+        assert [e.source_event_id for e in dirty.material_events] == [
+            "execution:effect:effect-ok"
+        ] or sorted(e.event_kind for e in dirty.material_events) == [
+            "harness.tool_invocation",
+            "host.file",
+        ]
         observed = await ch.observe_terminal(env, ch.FakeRunFacts(env.run_id))
         assert observed is not None
         assert (await env.ingress.authorize_terminal(env.run_id)).terminal_source_sequence == 3
@@ -440,31 +531,64 @@ async def test_drain_degrades_on_objective_evidence_hash_conflict(tmp_path: Path
 
     env = await ch.bound_run(tmp_path, "sdk-run-drain")
     # ① 私有载荷：objective payload 命中凭据形状（手工构造，绕过 classify 的脱敏）。
-    await env.ingress.reserve(run_id=env.run_id, task_scope_id=ch.SCOPE, kind="tool_invocation", source_event_id="effect:e-private", tool_name="write_file")
+    await env.ingress.reserve(
+        run_id=env.run_id,
+        task_scope_id=ch.SCOPE,
+        kind="tool_invocation",
+        source_event_id="effect:e-private",
+        tool_name="write_file",
+    )
     private = ToolInvocationFact(
-        run_id=env.run_id, effect_id="e-private", call_id="call:e-private", tool_name="write_file",
-        effect_state="succeeded", outcome="succeeded", error_code=None,
-        objective=ObjectiveEventSpec("host.file", {"tool_name": "write_file", "targets": ["bearer abcdefghijklmnop"]}),
+        run_id=env.run_id,
+        effect_id="e-private",
+        call_id="call:e-private",
+        tool_name="write_file",
+        effect_state="succeeded",
+        outcome="succeeded",
+        error_code=None,
+        objective=ObjectiveEventSpec(
+            "host.file", {"tool_name": "write_file", "targets": ["bearer abcdefghijklmnop"]}
+        ),
     )
     # ② objective hash 冲突：同 idempotency key 已有不同载荷的 evidence 行。
-    await env.ingress.reserve(run_id=env.run_id, task_scope_id=ch.SCOPE, kind="tool_invocation", source_event_id="effect:e-conflict", tool_name="write_file")
+    await env.ingress.reserve(
+        run_id=env.run_id,
+        task_scope_id=ch.SCOPE,
+        kind="tool_invocation",
+        source_event_id="effect:e-conflict",
+        tool_name="write_file",
+    )
     program = HumanMemoryProgramStore(env.db_path)
     primary = await program.initialize_subject(ch.SUBJECT)
     envelope, receipt = build_host_typed_evidence(
-        subject=ch.SUBJECT, authority_ref="host:objective-event-recorder:v1",
+        subject=ch.SUBJECT,
+        authority_ref="host:objective-event-recorder:v1",
         payload={"tool_name": "write_file", "targets": ["first.txt"]},
-        idempotency_key="objective:effect:e-conflict", source_ref="host-objective:effect:e-conflict", run_id=env.run_id,
+        idempotency_key="objective:effect:e-conflict",
+        source_ref="host-objective:effect:e-conflict",
+        run_id=env.run_id,
     )
     store = CanonicalTaskScopeStore(env.db_path)
     async with store._connection() as db:
         await db.execute("BEGIN IMMEDIATE")
-        await program.append_evidence_tx(db, envelope, receipt, primary_conversation_id=primary.primary_conversation_id, committed_at=1.0)
+        await program.append_evidence_tx(
+            db,
+            envelope,
+            receipt,
+            primary_conversation_id=primary.primary_conversation_id,
+            committed_at=1.0,
+        )
         await db.commit()
     conflict = ch.write_fact(env.run_id, "e-conflict", path="second.txt")
-    facts = ch.FakeRunFacts(env.run_id, facts={"effect:e-private": private, "effect:e-conflict": conflict})
+    facts = ch.FakeRunFacts(
+        env.run_id, facts={"effect:e-private": private, "effect:e-conflict": conflict}
+    )
 
     report = await env.ingress.drain_reservations(env.run_id, fact_reader=facts)
-    assert report.ingested == () and set(report.abandoned) == {"effect:e-private", "effect:e-conflict"}
+    assert report.ingested == () and set(report.abandoned) == {
+        "effect:e-private",
+        "effect:e-conflict",
+    }
     rows = h.rows(
         env.db_path,
         "SELECT r.source_event_id,r.status,e.payload_json FROM harness_evidence_reservations r "
@@ -472,7 +596,10 @@ async def test_drain_degrades_on_objective_evidence_hash_conflict(tmp_path: Path
         "JOIN task_scope_events e ON e.event_id=i.event_id WHERE r.run_id=? ORDER BY r.source_sequence",
         env.run_id,
     )
-    assert [(s, st) for s, st, _p in rows] == [("effect:e-private", "abandoned"), ("effect:e-conflict", "abandoned")]
+    assert [(s, st) for s, st, _p in rows] == [
+        ("effect:e-private", "abandoned"),
+        ("effect:e-conflict", "abandoned"),
+    ]
     publics = {s: json.loads(p)["public_payload"] for s, _st, p in rows}
     assert publics["effect:e-private"]["status"] == "rejected_fact"
     assert publics["effect:e-private"]["reason_code"].startswith("credential_value_rejected")
@@ -482,7 +609,10 @@ async def test_drain_degrades_on_objective_evidence_hash_conflict(tmp_path: Path
         assert public["effect_class"] == "project_effect"
         assert is_material_event("harness.tool_invocation", {"public_payload": public}) is True
     dirty = await dirty_state(store, ch.SCOPE)
-    assert [e.source_event_id for e in dirty.material_events] == ["execution:effect:e-private", "execution:effect:e-conflict"]
+    assert [e.source_event_id for e in dirty.material_events] == [
+        "execution:effect:e-private",
+        "execution:effect:e-conflict",
+    ]
     # 排空幂等 + terminal 收敛。
     again = await env.ingress.drain_reservations(env.run_id, fact_reader=facts)
     assert again.ingested == () and again.abandoned == ()

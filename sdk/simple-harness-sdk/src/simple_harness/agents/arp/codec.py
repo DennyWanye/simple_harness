@@ -360,7 +360,9 @@ def validate_semantics(name: str, value: Any) -> None:  # noqa: C901 - one rule 
         )
         need(
             any(
-                g["kind"] == "USER_ANCHOR" and g["mandatory"] and g["turn_id"] == value["current_turn_id"]
+                g["kind"] == "USER_ANCHOR"
+                and g["mandatory"]
+                and g["turn_id"] == value["current_turn_id"]
                 for g in value["groups"]
             )
         )
@@ -373,7 +375,10 @@ def validate_semantics(name: str, value: Any) -> None:  # noqa: C901 - one rule 
             and value["prior_output_reserve_tokens"] == receipt["prior_output_reserve_tokens"],
             "BAD_TOKEN_RECEIPT",
         )
-        need(value["reserved_output_tokens"] == receipt["requested_output_tokens"], "BAD_TOKEN_RECEIPT")
+        need(
+            value["reserved_output_tokens"] == receipt["requested_output_tokens"],
+            "BAD_TOKEN_RECEIPT",
+        )
         need(value["recent_complete_turn_count"] == len(set(value["selected_turn_ids"])))
     if name in CATALOGUE_ITEM_TYPES:
         need(value["kind"].lower() == value["definition_ref"]["kind"], "CATALOGUE_KIND_MISMATCH")

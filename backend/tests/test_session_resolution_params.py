@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 """Mode-neutral session model-parameter resolution."""
+
 from __future__ import annotations
 
 import asyncio
@@ -43,9 +44,7 @@ def _resolve(binding):
 
 
 def test_unbound_session_uses_provider_default() -> None:
-    entries = _resolve(
-        {"provider_id": None, "preferred_model": None, "model_params": None}
-    )
+    entries = _resolve({"provider_id": None, "preferred_model": None, "model_params": None})
     assert entries[0].model == "deepseek-v4-pro"
     assert entries[0].code_params == {}
 

@@ -13,7 +13,14 @@ for sz in ["1536x1024", "1792x1024", "1344x768"]:
         r = cli.post(
             "https://chinzy.com/v1/images/generations",
             headers={"Authorization": f"Bearer {k}", "Content-Type": "application/json"},
-            json={"model": "doubao-seedream-4.0", "prompt": "a wide cinematic ocean horizon", "size": sz, "n": 1, "quality": "high", "response_format": "b64_json"},
+            json={
+                "model": "doubao-seedream-4.0",
+                "prompt": "a wide cinematic ocean horizon",
+                "size": sz,
+                "n": 1,
+                "quality": "high",
+                "response_format": "b64_json",
+            },
         )
         dt = (time.time() - t0) * 1000
         if r.status_code < 400:

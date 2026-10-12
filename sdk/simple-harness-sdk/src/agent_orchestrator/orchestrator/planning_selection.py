@@ -8,6 +8,7 @@
 执行或审阅被打断），系统原样重做该步。它走与规划决定相同的准入与提交管道，但来源如实
 记为 ``system_infrastructure_retry``，不是规划器的决定。
 """
+
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -39,20 +40,36 @@ def candidate_context(dispatch: Any, mission_id: str, reports: Any) -> list[dict
     for occurrence, result in sorted(candidates.items()):
         usable, held = [], []
         for item in result.applicable:
-            refusal = adoption_refusal(dispatch.store, mission_id, MethodRef(
-                method_id=item.method_id, version=int(item.method_version),
-                content_hash=item.method_content_hash), seeded)
+            refusal = adoption_refusal(
+                dispatch.store,
+                mission_id,
+                MethodRef(
+                    method_id=item.method_id,
+                    version=int(item.method_version),
+                    content_hash=item.method_content_hash,
+                ),
+                seeded,
+            )
             if refusal is None:
                 usable.append(item)
             else:
-                held.append({"method_id": item.method_id, "method_version": int(item.method_version),
-                             "review": refusal["review"]})
-        rows.append({"occurrence_id": occurrence,
-                     "applicable": [item.to_json() for item in usable[:12]],
-                     "applicable_count": len(usable),
-                     "omitted_count": max(0, len(usable) - 12),
-                     "not_adoptable": held[:12],
-                     "bindings": dict(network.binding_for_occurrence(occurrence).typed_parameters)})
+                held.append(
+                    {
+                        "method_id": item.method_id,
+                        "method_version": int(item.method_version),
+                        "review": refusal["review"],
+                    }
+                )
+        rows.append(
+            {
+                "occurrence_id": occurrence,
+                "applicable": [item.to_json() for item in usable[:12]],
+                "applicable_count": len(usable),
+                "omitted_count": max(0, len(usable) - 12),
+                "not_adoptable": held[:12],
+                "bindings": dict(network.binding_for_occurrence(occurrence).typed_parameters),
+            }
+        )
     return rows
 
 
@@ -63,8 +80,10 @@ from .failure_classes import NON_MODEL, interrupted_review
 
 
 def _lost_execution(request: Mapping[str, Any], context: Mapping[str, Any]) -> bool:
-    return (request.get("trigger_source") == "RUNTIME_UNAVAILABLE"
-            and context.get("reason") == "provider_outcome_unknown")
+    return (
+        request.get("trigger_source") == "RUNTIME_UNAVAILABLE"
+        and context.get("reason") == "provider_outcome_unknown"
+    )
 
 
 def _interrupted_review(request: Mapping[str, Any], context: Mapping[str, Any]) -> bool:
@@ -74,15 +93,20 @@ def _interrupted_review(request: Mapping[str, Any], context: Mapping[str, Any]) 
     still unreconciled (a DeepSeek call never becomes reconcilable), so the step is
     redone instead — the user's intent "an interruption must not end the step".
     """
-    if (request.get("trigger_source") != "VERIFIER_ACCEPTANCE_REJECT"
-            or context.get("event_type") != "VerificationFailed"):
+    if (
+        request.get("trigger_source") != "VERIFIER_ACCEPTANCE_REJECT"
+        or context.get("event_type") != "VerificationFailed"
+    ):
         return False
     return interrupted_review((context.get("detail") or {}).get("failures") or ())
 
 
 def _not_models_fault(request: Mapping[str, Any], context: Mapping[str, Any]) -> bool:
-    return (context.get("failure_class") in NON_MODEL
-            or _lost_execution(request, context) or _interrupted_review(request, context))
+    return (
+        context.get("failure_class") in NON_MODEL
+        or _lost_execution(request, context)
+        or _interrupted_review(request, context)
+    )
 
 
 def _runtime_lost_retry(package: Mapping[str, Any]) -> dict[str, Any] | None:
@@ -91,10 +115,17 @@ def _runtime_lost_retry(package: Mapping[str, Any]) -> dict[str, Any] | None:
         return None
     # 审阅 2026-09-28：包里是整个任务的全部待处理请求，两步同时失败时不止一条——挑第一条
     # 非模型原因的原地处理，其余留给后续几轮。
-    item = next((entry for entry in package.get("repair_requests") or ()
-                 if _not_models_fault((entry.get("request") or {}),
-                                      ((entry.get("request") or {}).get("context") or {}))
-                 and not (entry.get("impact") or {}).get("unresolved_operations")), None)
+    item = next(
+        (
+            entry
+            for entry in package.get("repair_requests") or ()
+            if _not_models_fault(
+                (entry.get("request") or {}), ((entry.get("request") or {}).get("context") or {})
+            )
+            and not (entry.get("impact") or {}).get("unresolved_operations")
+        ),
+        None,
+    )
     if item is None:
         return None
     request = item.get("request") or {}
@@ -108,7 +139,9 @@ def _runtime_lost_retry(package: Mapping[str, Any]) -> dict[str, Any] | None:
     task_id, marker, ordinal = failed.rpartition(":attempt-")
     if not marker or not ordinal.isdigit():
         return None
-    subject = next((s for s in package.get("planning_subjects", ()) if s.get("task_id") == task_id), None)
+    subject = next(
+        (s for s in package.get("planning_subjects", ()) if s.get("task_id") == task_id), None
+    )
     if subject is None:
         return None
     occurrence = subject["occurrence_id"]
@@ -122,17 +155,32 @@ def _runtime_lost_retry(package: Mapping[str, Any]) -> dict[str, Any] | None:
     if len(instance_ids) != 1:
         return None
     instance_id = next(iter(instance_ids))
-    ref = [r for r in package.get("visible_refs", ())
-           if r.get("kind") == "method_instance" and r.get("id") == instance_id]
+    ref = [
+        r
+        for r in package.get("visible_refs", ())
+        if r.get("kind") == "method_instance" and r.get("id") == instance_id
+    ]
     if len(ref) != 1:
         return None
-    document: dict[str, Any] = {"schema_version": 1, "subject_key": subject["subject_key"],
-        "decision_type": "REPAIR", "reason_refs": [ref[0]], "assumptions": [], "uncertainties": [],
-        "alternatives": [], "replan_triggers": [],
-        "rationale": ("上一次失败不是模型自己做错（格式、服务出错或执行/审阅被中断）；"
-                      "系统按规则原样重做该步，不扣任务次数，原调用的用量照常记账。"),
-        "payload": {"repair_kind": "RETRY_SAME_METHOD", "failed_attempt_id": failed,
-                    "method_instance_ref": ref[0]}}
+    document: dict[str, Any] = {
+        "schema_version": 1,
+        "subject_key": subject["subject_key"],
+        "decision_type": "REPAIR",
+        "reason_refs": [ref[0]],
+        "assumptions": [],
+        "uncertainties": [],
+        "alternatives": [],
+        "replan_triggers": [],
+        "rationale": (
+            "上一次失败不是模型自己做错（格式、服务出错或执行/审阅被中断）；"
+            "系统按规则原样重做该步，不扣任务次数，原调用的用量照常记账。"
+        ),
+        "payload": {
+            "repair_kind": "RETRY_SAME_METHOD",
+            "failed_attempt_id": failed,
+            "method_instance_ref": ref[0],
+        },
+    }
     return PlanningDecisionEnvelopeV1.from_json(document).to_json()
 
 
@@ -150,9 +198,17 @@ async def dispatch_local(handler: Any, intent: Any) -> bool:
     if mission is None or dispatch is None or intent.kind != "plan":
         raise ContractError("system retry lost its original hierarchical Mission")
     text = "<planning_decision>" + canonical_json(dict(document)) + "</planning_decision>"
-    append_hierarchical_event(handler.store, "NativePlanningDecisionPrepared", mission.id,
-        key=intent.intent_id, payload={"intent_id": intent.intent_id,
-            "origin": SYSTEM_RETRY_ORIGIN, "decision": dict(document)})
+    append_hierarchical_event(
+        handler.store,
+        "NativePlanningDecisionPrepared",
+        mission.id,
+        key=intent.intent_id,
+        payload={
+            "intent_id": intent.intent_id,
+            "origin": SYSTEM_RETRY_ORIGIN,
+            "decision": dict(document),
+        },
+    )
     # No Agent/turn/provider receipt is fabricated. This method already accepts a
     # locally resumed decision and reads the original request's durable authority.
     await handler._collect_plan_decision(intent, None, mission, text, dispatch)
@@ -170,10 +226,14 @@ def awaits_authority(store: Any, intent: Any) -> bool:
         return False
     from ..storage.planning_admission_store import PlanningAdmissionStore
     from ..storage.planning_decision_store import PlanningDecisionStore
+
     with store.read_view():
         decisions = PlanningDecisionStore(store)
         protocol = decisions.get_mission_protocol(intent.mission_id)
         if protocol is None:  # a flat-mode Mission has no planning protocol
             return False
         request = decisions.get_planning_request_for_intent(intent.intent_id)
-        return request is not None and PlanningAdmissionStore(store).get_request_binding(request.request_id) is None
+        return (
+            request is not None
+            and PlanningAdmissionStore(store).get_request_binding(request.request_id) is None
+        )

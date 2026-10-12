@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 """Typed proof input for a settled-terminal ORDER edge, never an execution grant."""
+
 from dataclasses import dataclass
 
 from .notification_contracts import _hash, _integer, _text

@@ -8,6 +8,7 @@
 
 **改坏检验**：把材料的发放条件改回"只给没有做法的目标"→ 变红。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -47,14 +48,21 @@ def test_a_repair_round_carries_method_material_for_the_goal_under_repair(tmp_pa
         if data is None:
             return None
         if str((data.get("package") or {}).get("purpose")) == "TASK_CONTENT":
-            return review_reply(data, verdict="REJECTED", grade="FAIL", reason="脚本化审阅：内容不满足要求。")
+            return review_reply(
+                data, verdict="REJECTED", grade="FAIL", reason="脚本化审阅：内容不满足要求。"
+            )
         return review_reply(data)
 
     async def case():
         provider = LayeredScriptedProvider(planner=planner, reviewer=reviewer)
         async with product_world(tmp_path / "root", provider) as world:
-            created = world.create({"goal": "写一份 NOTES.md", "idempotency_key": "repair-material",
-                                    "success_criteria": ["file:NOTES.md"]})
+            created = world.create(
+                {
+                    "goal": "写一份 NOTES.md",
+                    "idempotency_key": "repair-material",
+                    "success_criteria": ["file:NOTES.md"],
+                }
+            )
             for _ in range(20):
                 await world.drain(timeout=20)
                 if repair_packages:
@@ -63,7 +71,9 @@ def test_a_repair_round_carries_method_material_for_the_goal_under_repair(tmp_pa
             package = repair_packages[0]
             repaired = [goal for goal in package["views"]["goals"] if goal.get("under_repair")]
             assert repaired, package["views"]["goals"]
-            offered = {item["subject_key"] for item in package.get("method_proposal_contexts") or ()}
+            offered = {
+                item["subject_key"] for item in package.get("method_proposal_contexts") or ()
+            }
             assert {goal["subject_key"] for goal in repaired} <= offered
             assert created["mission_id"]
 

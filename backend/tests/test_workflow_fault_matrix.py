@@ -102,9 +102,7 @@ async def _checkpoint_counts(store: WorkflowRunStore, run_id: str) -> tuple[int,
     db = await store._connect()
     try:
         checkpoint = await (
-            await db.execute(
-                "SELECT COUNT(*) FROM workflow_checkpoints WHERE run_id=?", (run_id,)
-            )
+            await db.execute("SELECT COUNT(*) FROM workflow_checkpoints WHERE run_id=?", (run_id,))
         ).fetchone()
         owner = await (
             await db.execute(
@@ -130,9 +128,7 @@ async def test_checkpoint_fault_before_and_after_commit_converges(tmp_path, stag
         connection = await original_connect()
         return _FaultingConnection(
             connection,
-            sql_marker=(
-                "INSERT INTO workflow_checkpoints" if stage == "before_commit" else None
-            ),
+            sql_marker=("INSERT INTO workflow_checkpoints" if stage == "before_commit" else None),
             after_commit=stage == "after_commit",
         )
 
@@ -150,9 +146,7 @@ async def test_checkpoint_fault_before_and_after_commit_converges(tmp_path, stag
     assert row is not None
     expected_count = 0 if stage == "before_commit" else 1
     assert await _checkpoint_counts(store, run_id) == (expected_count, expected_count)
-    assert row["head_checkpoint_id"] == (
-        None if stage == "before_commit" else checkpoint["id"]
-    )
+    assert row["head_checkpoint_id"] == (None if stage == "before_commit" else checkpoint["id"])
 
     written = await saver.aput(
         config,
@@ -232,54 +226,88 @@ async def test_native_commit_after_durable_commit_replays_operation(tmp_path, ki
     faulting = NativeCheckpointStore(path, fault_injector=inject)
     clean = NativeCheckpointStore(path)
     if kind == "genesis":
+
         async def invoke(saver):
             return await saver.ensure_genesis(
                 fence, run_id, state, [task], operation_id="stable-operation"
             )
     else:
-        genesis = await clean.ensure_genesis(
-            fence, run_id, state, [task], operation_id="genesis"
-        )
+        genesis = await clean.ensure_genesis(fence, run_id, state, [task], operation_id="genesis")
         head = genesis["checkpoint_id"]
         if kind == "task":
+
             async def invoke(saver):
                 return await saver.commit_task_result(
-                    fence, head, task, 1, {"values": {"done": True}},
+                    fence,
+                    head,
+                    task,
+                    1,
+                    {"values": {"done": True}},
                     operation_id="stable-operation",
                 )
         elif kind == "frontier":
             await clean.commit_task_result(
-                fence, head, task, 1, {"values": {"done": True}},
+                fence,
+                head,
+                task,
+                1,
+                {"values": {"done": True}},
                 operation_id="frontier-task-result",
             )
+
             async def invoke(saver):
                 return await saver.commit_frontier(
-                    fence, head, state={"run_id": run_id, "values": {"done": True}},
-                    frontier=[], step=1, operation_id="stable-operation",
+                    fence,
+                    head,
+                    state={"run_id": run_id, "values": {"done": True}},
+                    frontier=[],
+                    step=1,
+                    operation_id="stable-operation",
                 )
         elif kind == "retry":
+
             async def invoke(saver):
                 return await saver.commit_retry(
-                    fence, head, task, 1, next_attempt_at=123.0,
-                    error_ref="retryable", operation_id="stable-operation",
+                    fence,
+                    head,
+                    task,
+                    1,
+                    next_attempt_at=123.0,
+                    error_ref="retryable",
+                    operation_id="stable-operation",
                 )
         elif kind == "interrupt":
+
             async def invoke(saver):
                 return await saver.commit_interrupt(
-                    fence, head, task, state=state, frontier=[task], step=1,
-                    interrupt_id="confirm", prompt={"question": "continue?"},
+                    fence,
+                    head,
+                    task,
+                    state=state,
+                    frontier=[task],
+                    step=1,
+                    interrupt_id="confirm",
+                    prompt={"question": "continue?"},
                     operation_id="stable-operation",
                 )
         elif kind == "failure":
+
             async def invoke(saver):
                 return await saver.commit_failure(
-                    fence, head, task, error={"code": "node_failed"},
+                    fence,
+                    head,
+                    task,
+                    error={"code": "node_failed"},
                     operation_id="stable-operation",
                 )
         else:
+
             async def invoke(saver):
                 return await saver.commit_engine_failure(
-                    fence, head, [], error={"code": "invalid_frontier"},
+                    fence,
+                    head,
+                    [],
+                    error={"code": "invalid_frontier"},
                     operation_id="stable-operation",
                 )
 

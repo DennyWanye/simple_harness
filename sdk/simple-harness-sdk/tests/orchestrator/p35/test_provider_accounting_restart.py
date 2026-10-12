@@ -46,6 +46,7 @@ Host 每个进程一个新的编排 owner；重开用 ``product_world_as`` 给�
   ``test_provider_accounting`` 计价 1、``test_provider_budget_identity`` 计价 1；随旧执行池删：
   ``test_succeeded_missing_usage_boundary::test_legacy_execution_reconciliation_cannot_replace_succeeded_usage``。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -108,29 +109,46 @@ def test_a_restart_frees_the_dead_calls_slot_and_redoes_the_queued_turn_as_lease
         root = tmp_path / "root"
         first = HeldStep("a.md")
         async with product_world_as(root, first, owner="process-1", **QUICK) as world:
-            mission_id = world.create({"goal": "写两份文件", "success_criteria": ["file:a.md", "file:b.md"],
-                                       "idempotency_key": "restart-lease"})["mission_id"]
+            mission_id = world.create(
+                {
+                    "goal": "写两份文件",
+                    "success_criteria": ["file:a.md", "file:b.md"],
+                    "idempotency_key": "restart-lease",
+                }
+            )["mission_id"]
             store = world.store
             pools = list(world.loop.assembled.pools.values())
 
             def queued() -> str | None:
                 for subject, agent_id, turn_id in store.connection.execute(
-                        "SELECT subject_id, agent_id, expected_turn_id FROM dispatch_intents"
-                        " WHERE mission_id=? AND kind='attempt' AND agent_id IS NOT NULL", (mission_id,)):
-                    if any(pool.bridge.runtime.ports.provider_admission.waiting_for_slot(
-                            agent_id=agent_id, turn_id=turn_id) for pool in pools):
+                    "SELECT subject_id, agent_id, expected_turn_id FROM dispatch_intents"
+                    " WHERE mission_id=? AND kind='attempt' AND agent_id IS NOT NULL",
+                    (mission_id,),
+                ):
+                    if any(
+                        pool.bridge.runtime.ports.provider_admission.waiting_for_slot(
+                            agent_id=agent_id, turn_id=turn_id
+                        )
+                        for pool in pools
+                    ):
                         return subject
                 return None
 
             await _run_then_exit(world, first.stuck, also=lambda: queued() is not None)
             waiter = queued()
-            [(dead, dead_grant)] = [(row["subject_id"], row) for row in grants(store)
-                                    if row["subject_id"].startswith("task-") and row["actual_tokens"] is None]
+            [(dead, dead_grant)] = [
+                (row["subject_id"], row)
+                for row in grants(store)
+                if row["subject_id"].startswith("task-") and row["actual_tokens"] is None
+            ]
             # 排队的这一轮已经做完过一次调用（结了账），正在等下一次的槽位
             before_restart = grants(store, waiter)
             assert dead != waiter and [row["state"] for row in before_restart] == ["SETTLED"]
             # 进程活着时，在路上的调用占着唯一的槽位
-            assert (dead_grant["invocation_id"], dead_grant["handoff_ordinal"]) not in wire_terminal(store)
+            assert (
+                dead_grant["invocation_id"],
+                dead_grant["handoff_ordinal"],
+            ) not in wire_terminal(store)
 
         second = Scripted()
         async with product_world_as(root, second, owner="process-2", **QUICK) as world:
@@ -145,8 +163,10 @@ def test_a_restart_frees_the_dead_calls_slot_and_redoes_the_queued_turn_as_lease
             assert physical_calls(root)[row["invocation_id"]][1] == 1  # 只交出过那一次
             assert str(tried[dead].status.value) == "LOST"
             assert classify_failure(tried[dead].failure) == INTERRUPTED
-            counted = {event.payload["subject_id"]: event.payload
-                       for event in events(store, mission_id, "ReservationCountedAtUpperBound")}
+            counted = {
+                event.payload["subject_id"]: event.payload
+                for event in events(store, mission_id, "ReservationCountedAtUpperBound")
+            }
             assert counted[dead]["counted_tokens"] >= row["total_upper"]
 
             # 排队的那一轮：新进程接着跑，准入以 lease_lost 拒绝、没交出去；原地重做，不扣次数
@@ -154,13 +174,22 @@ def test_a_restart_frees_the_dead_calls_slot_and_redoes_the_queued_turn_as_lease
             assert classify_failure(tried[waiter].failure) == INTERRUPTED
             assert tried[waiter].failure["error"]["detail"]["reason_code"] == "lease_lost"
             assert grants(store, waiter) == before_restart  # 被拒的那次没有授权、没交出去
-            released = {event.attempt_id: event.payload for event in events(store, mission_id, "AttemptChargeReleased")}
-            assert released[waiter]["failure_class"] == released[dead]["failure_class"] == "INTERRUPTED"
+            released = {
+                event.attempt_id: event.payload
+                for event in events(store, mission_id, "AttemptChargeReleased")
+            }
+            assert (
+                released[waiter]["failure_class"]
+                == released[dead]["failure_class"]
+                == "INTERRUPTED"
+            )
             redone = {attempt.retry_of: attempt for attempt in tried.values() if attempt.retry_of}
             assert set(redone) == {dead, waiter}
             assert all(str(attempt.status.value) == "COMPLETED" for attempt in redone.values())
             # 新进程没有替旧的两轮向模型发过任何请求（不重发、不猜）
-            assert not [request for request in second.requests if attempt_of(request) in {dead, waiter}]
+            assert not [
+                request for request in second.requests if attempt_of(request) in {dead, waiter}
+            ]
 
     asyncio.run(case())
 
@@ -175,7 +204,10 @@ class HeldReview(Scripted):
 
     async def invoke(self, request, *, cancel):  # type: ignore[no-untyped-def]
         package = review_input(request) if role_of(request) == "unknown" else None
-        if package is not None and str((package.get("package") or {}).get("purpose")) == "TASK_CONTENT":
+        if (
+            package is not None
+            and str((package.get("package") or {}).get("purpose")) == "TASK_CONTENT"
+        ):
             self.stuck.set()
             await self.never.wait()
         return await super().invoke(request, cancel=cancel)
@@ -186,17 +218,27 @@ def test_a_review_whose_call_died_with_the_process_does_not_hold_the_closeout(tm
         root = tmp_path / "root"
         first = HeldReview()
         async with product_world_as(root, first, owner="process-1", **QUICK) as world:
-            mission_id = world.create({"goal": "写一份 NOTES.md", "success_criteria": ["file:NOTES.md"],
-                                       "idempotency_key": "restart-review"})["mission_id"]
+            mission_id = world.create(
+                {
+                    "goal": "写一份 NOTES.md",
+                    "success_criteria": ["file:NOTES.md"],
+                    "idempotency_key": "restart-review",
+                }
+            )["mission_id"]
             store = world.store
 
             def review_on_the_wire() -> bool:
-                return any(row["subject_id"].split(":assurance:")[-1].startswith("assurance-content:")
-                           for row in grants(store))
+                return any(
+                    row["subject_id"].split(":assurance:")[-1].startswith("assurance-content:")
+                    for row in grants(store)
+                )
 
             await _run_then_exit(world, first.stuck, also=review_on_the_wire)
-            [review] = [row["subject_id"] for row in grants(store)
-                        if row["subject_id"].split(":assurance:")[-1].startswith("assurance-content:")]
+            [review] = [
+                row["subject_id"]
+                for row in grants(store)
+                if row["subject_id"].split(":assurance:")[-1].startswith("assurance-content:")
+            ]
             [reviewed] = [key for key in attempts(store, mission_id)]
 
         second = Scripted()
@@ -205,21 +247,34 @@ def test_a_review_whose_call_died_with_the_process_does_not_hold_the_closeout(tm
             assert await settle(world, mission_id) == "COMPLETED", world.loop.progress_log[-10:]
             # 那次审阅记为"等原调用对账"，没有重发
             [row] = grants(store, review)
-            assert row["state"] == "UNKNOWN" and (row["invocation_id"], row["handoff_ordinal"]) in wire_terminal(store)
-            waiting = [event.payload for event in events(store, mission_id, "AssuranceProviderReconciliationRequired")
-                       if event.payload["intent_id"] == "intent-critic-" + review]
-            assert waiting, [event.payload for event in events(store, mission_id,
-                                                                 "AssuranceProviderReconciliationRequired")]
+            assert row["state"] == "UNKNOWN" and (
+                row["invocation_id"],
+                row["handoff_ordinal"],
+            ) in wire_terminal(store)
+            waiting = [
+                event.payload
+                for event in events(store, mission_id, "AssuranceProviderReconciliationRequired")
+                if event.payload["intent_id"] == "intent-critic-" + review
+            ]
+            assert waiting, [
+                event.payload
+                for event in events(store, mission_id, "AssuranceProviderReconciliationRequired")
+            ]
             assert physical_calls(root)[row["invocation_id"]][1] == 1
             # 被审的那一步被打断、不扣次数，重做后通过
             tried = attempts(store, mission_id)
-            released = {event.attempt_id: event.payload for event in events(store, mission_id, "AttemptChargeReleased")}
+            released = {
+                event.attempt_id: event.payload
+                for event in events(store, mission_id, "AttemptChargeReleased")
+            }
             assert released[reviewed]["failure_class"] == "INTERRUPTED"
             [redo] = [attempt for attempt in tried.values() if attempt.retry_of == reviewed]
             assert str(redo.status.value) == "COMPLETED"
             # 它不挡收尾：原调用的额度按上限（整笔审阅预留）计入，任务完成
-            counted = {event.payload["subject_id"]: event.payload
-                       for event in events(store, mission_id, "ReservationCountedAtUpperBound")}
+            counted = {
+                event.payload["subject_id"]: event.payload
+                for event in events(store, mission_id, "ReservationCountedAtUpperBound")
+            }
             assert counted[review]["counted_tokens"] >= row["total_upper"]
             assert world.loop.commit.ledger.reservation(review)["state"] == "SETTLED"
 

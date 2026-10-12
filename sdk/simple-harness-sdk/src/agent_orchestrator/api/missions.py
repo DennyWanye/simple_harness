@@ -68,6 +68,7 @@ def spec_from_request(
             raise MissionRequestError(f"{name} must be a list of strings")
     # 第 2 批车道 H（H06）：两种计数型停止条件的阈值写法在建任务时就校验，不留到主循环里才发现
     from ..orchestrator.stop_conditions import parse_stop_conditions
+
     try:
         parse_stop_conditions(request.get("stop_conditions") or (), None)
     except ContractError as error:
@@ -93,7 +94,9 @@ def spec_from_request(
     # refuses it, like every other field.
     protocol_kwargs: dict[str, Any] = {}
     if "orchestration_semantics_version" in request:
-        protocol_kwargs["orchestration_semantics_version"] = request["orchestration_semantics_version"]
+        protocol_kwargs["orchestration_semantics_version"] = request[
+            "orchestration_semantics_version"
+        ]
     if "planning_protocol_version" in request:
         protocol_kwargs["planning_protocol_version"] = request["planning_protocol_version"]
     try:
@@ -103,7 +106,9 @@ def spec_from_request(
             tenant_id=tenant_id,
             idempotency_key=str(request.get("idempotency_key", "")),
             stop_conditions=tuple(
-                request.get("stop_conditions", MissionSpec.__dataclass_fields__["stop_conditions"].default)
+                request.get(
+                    "stop_conditions", MissionSpec.__dataclass_fields__["stop_conditions"].default
+                )
             ),
             allowed_tools=tuple(request.get("allowed_tools", default_tools)),
             risk_level=str(request.get("risk_level", "sandbox")),

@@ -208,8 +208,6 @@ def test_v5_continuation_initial_state_hydrates_snapshot_and_only_gap_route():
     assert values["executed_query_fingerprints"] == list(snapshot.query_fingerprints)
     assert values["budget_summary"] == snapshot.budget_summary
     route = next(
-        item
-        for item in DEEP_RESEARCH_V5_DEFINITION.conditional_edges
-        if item.source == "model"
+        item for item in DEEP_RESEARCH_V5_DEFINITION.conditional_edges if item.source == "model"
     )
     assert route.selector(state, object()) == "gap_evaluate"

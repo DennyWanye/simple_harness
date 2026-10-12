@@ -162,7 +162,9 @@ def carried_review_binding(store: Any, body: Any, result: Any) -> bool:
     from .operation_completion import OperationCompletionError
 
     try:
-        return int(body["requirements_ref"]["revision"]) > frozen_requirements_revision(store, result)
+        return int(body["requirements_ref"]["revision"]) > frozen_requirements_revision(
+            store, result
+        )
     except OperationCompletionError:
         return False
 
@@ -179,7 +181,9 @@ def carried_review_alive(store: Any, mission_id: str, task_id: str) -> bool:
     htn = HtnStore(store)
     active = htn.active_plan_revision(mission_id)
     return active is not None and any(
-        str(item.task_id) == str(task_id) for item in htn.list_plan_memberships(mission_id, active.revision))
+        str(item.task_id) == str(task_id)
+        for item in htn.list_plan_memberships(mission_id, active.revision)
+    )
 
 
 def read_imported_review_locked(
@@ -198,19 +202,27 @@ def read_imported_review_locked(
     # Two shapes are importable (阶段 C 第 3 条): a reply that decoded, and the *second*
     # call's reply that still could not be decoded — that one is imported as "no usable
     # reply" (an INCONCLUSIVE record, see ``_interpret``), never as the reviewer's verdict.
-    readable = (meta["kind"] == "AssuranceReviewClassified"
-                and source.get("classification") == "READY_FOR_CURRENT_REVIEW"
-                and source.get("error_code") is None)
-    unusable = (meta["kind"] == "AssuranceReviewFormatRejected"
-                and source.get("classification") == "FORMAT_INVALID"
-                and isinstance(source.get("error_code"), str) and value["ordinal"] == 2)
+    readable = (
+        meta["kind"] == "AssuranceReviewClassified"
+        and source.get("classification") == "READY_FOR_CURRENT_REVIEW"
+        and source.get("error_code") is None
+    )
+    unusable = (
+        meta["kind"] == "AssuranceReviewFormatRejected"
+        and source.get("classification") == "FORMAT_INVALID"
+        and isinstance(source.get("error_code"), str)
+        and value["ordinal"] == 2
+    )
     # 2026-10-09 四项修复第 1 条：第 2 次调用的回合失败、又不是被打断（调用上限、工具用错、
     # 输出上限用完……审阅员自己的事）——同样导入为"没有可采用的回复"的正式记录，交人裁决。
     # 被打断的第 2 次（有被打断回执）不在此列：仍是"被打断用完"，终审重切、步骤重做。
-    failed_second = (meta["kind"] == "AssuranceReviewClassified"
-                     and source.get("classification") == "TURN_FAILED"
-                     and isinstance(source.get("error_code"), str) and value["ordinal"] == 2
-                     and reader.store.get_receipt("assurance-review-interrupted:" + str(intent_id)) is None)
+    failed_second = (
+        meta["kind"] == "AssuranceReviewClassified"
+        and source.get("classification") == "TURN_FAILED"
+        and isinstance(source.get("error_code"), str)
+        and value["ordinal"] == 2
+        and reader.store.get_receipt("assurance-review-interrupted:" + str(intent_id)) is None
+    )
     if (
         not (readable or unusable or failed_second)
         or meta["subject_id"] != intent_id
@@ -274,8 +286,15 @@ def read_imported_review_locked(
             AssuranceRef("review_package", Pin.from_json(bound["package_ref"]))
         )
         return ImportedReview(
-            invocation, binding, classified, turn, None, (), (),
-            tuple(catalogue[k] for k in sorted(catalogue)), frozenset(),
+            invocation,
+            binding,
+            classified,
+            turn,
+            None,
+            (),
+            (),
+            tuple(catalogue[k] for k in sorted(catalogue)),
+            frozenset(),
             canonical(decode(package.body_json, limit=MAX_RECORD_BYTES)),
         )
     manifest = reader.read_exact_metadata(
@@ -336,23 +355,40 @@ def read_imported_review_locked(
 #: its own mistake, not a missing source.  POLICY_CATALOGUE_MISMATCH is the
 #: package's, not the reply's, and stays final.
 REPAIRABLE_INTERPRETATION_ERRORS = frozenset(
-    {"UNEXPOSED_EVIDENCE", "DUPLICATE_CRITERION", "FINDING_SCOPE", "MANDATORY_CRITERIA_INVALID",
-     "DUPLICATE_CLAIM", "CLAIM_SCOPE", "DUPLICATE_METHOD", "METHOD_SCOPE", "SUMMARY_SCOPE"}
+    {
+        "UNEXPOSED_EVIDENCE",
+        "DUPLICATE_CRITERION",
+        "FINDING_SCOPE",
+        "MANDATORY_CRITERIA_INVALID",
+        "DUPLICATE_CLAIM",
+        "CLAIM_SCOPE",
+        "DUPLICATE_METHOD",
+        "METHOD_SCOPE",
+        "SUMMARY_SCOPE",
+    }
 )
 NO_USABLE_REPLY = "NO_USABLE_REPLY"
 
 
-def _no_usable_reply(bound: Mapping[str, Any], code: str, *, second_call_reason: str | None = None) -> ReviewReply:
+def _no_usable_reply(
+    bound: Mapping[str, Any], code: str, *, second_call_reason: str | None = None
+) -> ReviewReply:
     """What the record says when the reviewer's last reply could not be used: nothing was
     judged.  Every criterion is UNKNOWN with the reason named; the overall word is
     INCONCLUSIVE — the same exit as a reviewer that says it cannot tell (a person rules).
     2026-10-10（第三轮复查）：请人裁决时要看得懂两次各自为什么——标记里带上第二次调用的缘由
     （第一次为什么没用上）和第二次自己的错误码。"""
-    marker = "REVIEW_NO_USABLE_REPLY:" + code + (f";FIRST_CALL={second_call_reason}" if second_call_reason else "")
+    marker = (
+        "REVIEW_NO_USABLE_REPLY:"
+        + code
+        + (f";FIRST_CALL={second_call_reason}" if second_call_reason else "")
+    )
     return ReviewReply(
         "INCONCLUSIVE",
-        tuple(Assessment(row["criterion_id"], Grade.UNKNOWN, (), marker, (marker,))
-              for row in sorted(bound["check_requirements"], key=lambda row: row["criterion_id"])),
+        tuple(
+            Assessment(row["criterion_id"], Grade.UNKNOWN, (), marker, (marker,))
+            for row in sorted(bound["check_requirements"], key=lambda row: row["criterion_id"])
+        ),
         (),
     )
 
@@ -373,18 +409,29 @@ def _interpret(
     if source.get("classification") in {"FORMAT_INVALID", "TURN_FAILED"}:
         # 不合法 JSON，或这一轮根本没交出回复（2026-10-09）：都是"没有可采用的回复"
         code = str(source["error_code"])
-        return _interpret_reply(imported, _no_usable_reply(bound, code, second_call_reason=why_second), checks, code)
+        return _interpret_reply(
+            imported, _no_usable_reply(bound, code, second_call_reason=why_second), checks, code
+        )
     try:
         return _interpret_reply(imported, decode_review_reply(raw), checks, None)
     except AssuranceError as error:
-        if (error.code not in REPAIRABLE_INTERPRETATION_ERRORS
-                or imported.invocation.to_json()["ordinal"] != 2):
+        if (
+            error.code not in REPAIRABLE_INTERPRETATION_ERRORS
+            or imported.invocation.to_json()["ordinal"] != 2
+        ):
             raise
-        return _interpret_reply(imported, _no_usable_reply(bound, error.code, second_call_reason=why_second), checks, error.code)
+        return _interpret_reply(
+            imported,
+            _no_usable_reply(bound, error.code, second_call_reason=why_second),
+            checks,
+            error.code,
+        )
 
 
 def _interpret_reply(
-    imported: ImportedReview, reply: ReviewReply, checks: Mapping[AssuranceRef, CheckResult],
+    imported: ImportedReview,
+    reply: ReviewReply,
+    checks: Mapping[AssuranceRef, CheckResult],
     no_usable_reply: str | None,
 ) -> tuple[ReviewRecord, dict]:
     bound = imported.binding.to_json()
@@ -402,8 +449,11 @@ def _interpret_reply(
     # 全局问题（F04）：BLOCKER 的那几条挂到哪些准则上由 decide_review 同一个规则定；审阅员的原话
     # 写进这些准则的说明，随打回交到后面——不然被打回的一方只看到"不成立"，不知道为什么。
     blocked = set(global_blocker_targets(reply, tuple(bound["mandatory_ids"]), set(policies)))
-    blocker_notes = [f"全局问题（BLOCKER）：{item.reason}" for item in reply.global_findings
-                     if item.severity == "BLOCKER"]
+    blocker_notes = [
+        f"全局问题（BLOCKER）：{item.reason}"
+        for item in reply.global_findings
+        if item.severity == "BLOCKER"
+    ]
     outcomes, details = [], []
     for assessment in sorted(reply.assessments, key=lambda item: item.criterion_id):
         name = assessment.criterion_id
@@ -478,24 +528,31 @@ def _interpret_reply(
         refs = resolve_evidence_ids(
             bound["review_key"], item.evidence_ids, imported.catalogue, imported.exposed
         )
-        confirmations.append({
-            "claim_id": item.claim_id,
-            "content_sha256": listed[item.claim_id]["content_sha256"],
-            "confirmed": bool(item.confirmed),
-            "evidence_refs": [ref.to_json() for ref in refs],
-            "reason": item.reason,
-        })
+        confirmations.append(
+            {
+                "claim_id": item.claim_id,
+                "content_sha256": listed[item.claim_id]["content_sha256"],
+                "confirmed": bool(item.confirmed),
+                "evidence_refs": [ref.to_json() for ref in refs],
+                "reason": item.reason,
+            }
+        )
     # 做法与摘要（阶段 C3）：与逐条确认同一个规矩——只能说审查包里列出的；漏写就是没表态。
     judged = {row["method_ref"]: row for row in package.methods_to_judge}
     methods = []
     for item in sorted(reply.methods, key=lambda item: item.method_ref):
         if item.method_ref not in judged:
             raise AssuranceError("METHOD_SCOPE")
-        methods.append({
-            "method_ref": item.method_ref, "based_on": judged[item.method_ref]["based_on"],
-            "reusable": bool(item.reusable), "purpose": item.purpose,
-            "at_fault": bool(item.at_fault), "reason": item.reason,
-        })
+        methods.append(
+            {
+                "method_ref": item.method_ref,
+                "based_on": judged[item.method_ref]["based_on"],
+                "reusable": bool(item.reusable),
+                "purpose": item.purpose,
+                "at_fault": bool(item.at_fault),
+                "reason": item.reason,
+            }
+        )
     summary = None
     if reply.summary is not None:
         if package.summary_to_confirm is None:
@@ -503,7 +560,8 @@ def _interpret_reply(
         summary = {
             "result_ref": package.summary_to_confirm["result_ref"],
             "summary_sha256": package.summary_to_confirm["summary_sha256"],
-            "faithful": bool(reply.summary.faithful), "reason": reply.summary.reason,
+            "faithful": bool(reply.summary.faithful),
+            "reason": reply.summary.reason,
         }
     verdict = reply.verdict
     if verdict == "ACCEPT" and not decision.acceptable:
@@ -522,7 +580,9 @@ def _interpret_reply(
             {"criterion_id": item.criterion_id, "severity": item.severity, "reason": item.reason}
             for item in reply.findings
         ],
-        "global_findings": [{"severity": item.severity, "reason": item.reason} for item in reply.global_findings],
+        "global_findings": [
+            {"severity": item.severity, "reason": item.reason} for item in reply.global_findings
+        ],
         "claims": confirmations,
         "methods": methods,
         "summary": summary,
@@ -531,11 +591,15 @@ def _interpret_reply(
         "exposed_evidence_refs": [
             item.to_json() for item in imported.catalogue if item.label in imported.exposed
         ],
-        "provider_manifest_ref": (None if imported.provider_manifest is None
-                                  else imported.provider_manifest.ref.to_json()),
+        "provider_manifest_ref": (
+            None if imported.provider_manifest is None else imported.provider_manifest.ref.to_json()
+        ),
         "disclosure_refs": [batch.delivery_receipt_ref.to_json() for batch in imported.disclosures],
-        **({} if no_usable_reply is None
-           else {"interpretation": NO_USABLE_REPLY, "error_code": no_usable_reply}),
+        **(
+            {}
+            if no_usable_reply is None
+            else {"interpretation": NO_USABLE_REPLY, "error_code": no_usable_reply}
+        ),
     }
     record = ReviewRecord(
         "assurance-review:"
@@ -599,15 +663,23 @@ class PreparedOfficialReview:
     def _record_method_blame(self, store: Any) -> None:
         """根终审打回时审阅员写明"是做法本身的错"（阶段 C3）：对照全库先例写的做法，记一条归因。
         程序只记审阅员明确写出的；同一任务只算一次、两个任务即退役，在 method_library 里数。"""
-        if str(self.record.purpose) != "MISSION_FINAL" or str(self.record.verdict) not in {"REWORK", "REJECTED"}:
+        if str(self.record.purpose) != "MISSION_FINAL" or str(self.record.verdict) not in {
+            "REWORK",
+            "REJECTED",
+        }:
             return
         from .method_library import record_attribution
 
         for row in decode(self.manifest_json).get("methods") or ():
             if row["at_fault"] and row["based_on"]:
                 record_attribution(
-                    store, mission_id=self.identity.mission_id, method_ref=row["method_ref"],
-                    source_ref=str(self.record.record_id), source_kind="ROOT_REVIEW", reason=row["reason"])
+                    store,
+                    mission_id=self.identity.mission_id,
+                    method_ref=row["method_ref"],
+                    source_ref=str(self.record.record_id),
+                    source_kind="ROOT_REVIEW",
+                    reason=row["reason"],
+                )
 
     def require_locked(self, store: Any, record: ReviewRecord) -> None:
         if (
@@ -836,8 +908,11 @@ def prepare_official_review(
         refs.update(item.ref for item in imported.disclosure_metadata)
         # 解析时就核用途与访问（第 2 批 A10）：授权与身份进读取器，许可随解析结果回来。
         reader = AssuranceReader(
-            store, tenant_id=reader.tenant_id, mission_id=reader.mission_id,
-            authority=authority, identity=identity,
+            store,
+            tenant_id=reader.tenant_id,
+            mission_id=reader.mission_id,
+            authority=authority,
+            identity=identity,
         )
         metadata = tuple(
             reader.read_exact_metadata(ref, now_ms=now_ms)

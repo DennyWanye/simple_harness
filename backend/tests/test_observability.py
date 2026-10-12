@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 """Tests for stage_timer + VRAM detection."""
+
 from __future__ import annotations
 
 import asyncio
@@ -37,6 +38,7 @@ async def test_stage_timer_success_emits_stage_complete(caplog, capsys):
     means the event lands in caplog, not stdout — swap capsys→caplog.
     """
     import logging
+
     with caplog.at_level(logging.INFO):
         async with stage_timer("asr", conn="c1"):
             await asyncio.sleep(0.01)
@@ -51,6 +53,7 @@ async def test_stage_timer_success_emits_stage_complete(caplog, capsys):
 async def test_stage_timer_raises_but_still_emits(caplog, capsys):
     """Exception propagates AND stage_error is logged with error field."""
     import logging
+
     with caplog.at_level(logging.INFO):
         with pytest.raises(ValueError):
             async with stage_timer("asr"):
@@ -65,6 +68,7 @@ async def test_stage_timer_raises_but_still_emits(caplog, capsys):
 async def test_stage_timer_context_fields_emitted(caplog, capsys):
     """Additional kwargs pass through to the log record."""
     import logging
+
     with caplog.at_level(logging.INFO):
         async with stage_timer("tool_invoke", tool_name="get_time", session="s1"):
             pass
@@ -79,6 +83,7 @@ async def test_stage_timer_context_fields_emitted(caplog, capsys):
 def test_detect_vram_when_no_torch(monkeypatch):
     """If torch import fails, return 0.0."""
     import builtins
+
     orig_import = builtins.__import__
 
     def stub_import(name, *a, **kw):

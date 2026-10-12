@@ -16,6 +16,7 @@ main.py lifespan 调用本模块后读 ``availability`` dict 决定相关 flag
 是否要强制关掉（D17 v2 / R8 v2）：ALTER 失败时禁掉 cross_key_merge /
 memory_forget，否则后续 SQL 会跑 OperationalError。
 """
+
 from __future__ import annotations
 
 import logging
@@ -74,19 +75,20 @@ async def ensure_memory_v2_columns(db_path: str | Path) -> dict[str, bool]:
                     availability[col_name] = True
                     continue
                 try:
-                    await conn.execute(
-                        f"ALTER TABLE {table} ADD COLUMN {col_name} {ddl}"
-                    )
+                    await conn.execute(f"ALTER TABLE {table} ADD COLUMN {col_name} {ddl}")
                     await conn.commit()
                     availability[col_name] = True
                     log.info(
                         "schema_v2_migrator: ALTER TABLE %s ADD %s OK",
-                        table, col_name,
+                        table,
+                        col_name,
                     )
                 except Exception as exc:  # noqa: BLE001
                     log.warning(
                         "schema_v2_migrator: ALTER %s.%s FAILED: %s",
-                        table, col_name, exc,
+                        table,
+                        col_name,
+                        exc,
                     )
                     availability[col_name] = False
                     _ALTER_FAILURES[col_name] = True

@@ -39,6 +39,7 @@ from .routing import stable_batches
 def _metric(event: str, detail: dict) -> None:
     try:
         from observability.metrics_sink import record
+
         record(event, detail)
     except Exception:
         pass
@@ -128,8 +129,7 @@ class SearchGateway:
         # run cannot lose its circuit generation while requests are in flight.
         stale_before = now - 3600.0
         self._run_health = {
-            key: value for key, value in self._run_health.items()
-            if value[0] >= stale_before
+            key: value for key, value in self._run_health.items() if value[0] >= stale_before
         }
         health = self._new_health()
         self._run_health[run_id] = (now, health)
@@ -137,8 +137,11 @@ class SearchGateway:
 
     def _cache_key(self, request: SearchRequest) -> str:
         parts = [
-            request.query.casefold(), request.region or "auto", request.mode,
-            str(request.max_results), str(request.hydrate_top),
+            request.query.casefold(),
+            request.region or "auto",
+            request.mode,
+            str(request.max_results),
+            str(request.hydrate_top),
         ]
         if request.dimension_id is not None or request.query_terms:
             parts.extend((request.dimension_id or "", *request.query_terms))
@@ -151,7 +154,9 @@ class SearchGateway:
             or float(getattr(config, "cooldown_ttl_s", 300.0)) != 300.0
         )
 
-        def policy(name: str, defaults: tuple[int, float, float, float], *, retry_max: float = 3600.0) -> FailurePolicy:
+        def policy(
+            name: str, defaults: tuple[int, float, float, float], *, retry_max: float = 3600.0
+        ) -> FailurePolicy:
             threshold, open_s, probe_base_s, probe_max_s = defaults
             if legacy_override:
                 threshold = int(config.cooldown_threshold)
@@ -192,9 +197,7 @@ class SearchGateway:
             # Preserve legacy multi-provider diversity before final max_results.
             result_slots=request.max_results * (configured_count + 1),
             cdp_slots=self.config.request_cdp_budget,
-            hydrate_slots=min(
-                request.hydrate_top, self.config.request_hydrate_budget
-            ),
+            hydrate_slots=min(request.hydrate_top, self.config.request_hydrate_budget),
         )
         lease = await allocator.reserve_query(
             dimension_id="quick",
@@ -257,9 +260,7 @@ class SearchGateway:
             provider_call_slots=provider_cap,
             result_slots=result_cap,
             cdp_slots=(
-                int(self.config.request_cdp_budget)
-                if cdp_slots is None
-                else int(cdp_slots)
+                int(self.config.request_cdp_budget) if cdp_slots is None else int(cdp_slots)
             ),
             hydrate_slots=(
                 int(self.config.request_hydrate_budget)
@@ -281,21 +282,16 @@ class SearchGateway:
         first_core: list[DimensionSearchRequest] = []
         for dimension_id in dimension_order:
             queue = queues[dimension_id]
-            core_index = next(
-                (index for index, item in enumerate(queue) if item.core), None
-            )
+            core_index = next((index for index, item in enumerate(queue) if item.core), None)
             if core_index is not None:
                 first_core.append(queue.pop(core_index))
         core_leases = await allocator.reserve_core_round(
-            [
-                (item.dimension_id, item.budget_query_key)
-                for item in first_core
-            ],
+            [(item.dimension_id, item.budget_query_key) for item in first_core],
             min_results_per_core=min_results_per_core,
         )
-        scheduled: list[
-            tuple[DimensionSearchRequest, QueryBudgetLease]
-        ] = list(zip(first_core, core_leases, strict=True))
+        scheduled: list[tuple[DimensionSearchRequest, QueryBudgetLease]] = list(
+            zip(first_core, core_leases, strict=True)
+        )
 
         exhausted = False
         while not exhausted and any(queues.values()):
@@ -324,9 +320,7 @@ class SearchGateway:
                 item.request,
                 mode="research",
                 dimension_id=item.dimension_id,
-                query_terms=(
-                    item.query_terms or extract_query_terms(item.request.query)
-                ),
+                query_terms=(item.query_terms or extract_query_terms(item.request.query)),
             )
             try:
                 response = await self._execute_query(request, lease, allocator)
@@ -353,9 +347,7 @@ class SearchGateway:
                 request_id=request.request_id,
                 run_id=request.run_id,
             )
-            await allocator.validate_attempt_coverage(
-                budget_lease, response.attempts
-            )
+            await allocator.validate_attempt_coverage(budget_lease, response.attempts)
             return response
         if not self.config.enabled:
             attempt = ProviderAttempt(
@@ -374,27 +366,24 @@ class SearchGateway:
                 request_id=request.request_id,
                 run_id=request.run_id,
             )
-            await allocator.validate_attempt_coverage(
-                budget_lease, response.attempts
-            )
+            await allocator.validate_attempt_coverage(budget_lease, response.attempts)
             return response
         cache_key = self._cache_key(request)
         cached = await self.cache.get(cache_key)
         if cached is not None:
-            accepted = await allocator.commit_cache_hit(
-                budget_lease, len(cached)
-            )
+            accepted = await allocator.commit_cache_hit(budget_lease, len(cached))
             cached = cached[:accepted]
-            attempt = ProviderAttempt(
-                "gateway", AttemptStatus.CACHE_HIT, 0, len(cached)
+            attempt = ProviderAttempt("gateway", AttemptStatus.CACHE_HIT, 0, len(cached))
+            _metric(
+                "search_gateway_cache",
+                {
+                    "request_id": request.request_id,
+                    "run_id": request.run_id,
+                    "cache_hit": True,
+                    "count": len(cached),
+                    "mode": request.mode,
+                },
             )
-            _metric("search_gateway_cache", {
-                "request_id": request.request_id,
-                "run_id": request.run_id,
-                "cache_hit": True,
-                "count": len(cached),
-                "mode": request.mode,
-            })
             response = SearchResponse(
                 request.query,
                 cached,
@@ -403,20 +392,23 @@ class SearchGateway:
                 request_id=request.request_id,
                 run_id=request.run_id,
             )
-            await allocator.validate_attempt_coverage(
-                budget_lease, response.attempts
-            )
+            await allocator.validate_attempt_coverage(budget_lease, response.attempts)
             return response
-        _metric("search_gateway_cache", {
-            "request_id": request.request_id,
-            "run_id": request.run_id,
-            "cache_hit": False,
-            "mode": request.mode,
-        })
+        _metric(
+            "search_gateway_cache",
+            {
+                "request_id": request.request_id,
+                "run_id": request.run_id,
+                "cache_hit": False,
+                "mode": request.mode,
+            },
+        )
 
         budget = SearchBudget(
             deadline=budget_lease.deadline,
-            provider_concurrency=min(2, self.config.max_concurrency) if request.mode == "quick" else self.config.max_concurrency,
+            provider_concurrency=min(2, self.config.max_concurrency)
+            if request.mode == "quick"
+            else self.config.max_concurrency,
             per_provider_timeout_s=self.config.per_provider_timeout_s,
             cdp_remaining=0,
             hydrate_remaining=0,
@@ -439,7 +431,8 @@ class SearchGateway:
             self._track(probe_task)
 
         batches = stable_batches(
-            request.query, configured,
+            request.query,
+            configured,
             searxng="searxng" in configured,
             google_reachable=self._google_reachable is True,
         )
@@ -464,11 +457,15 @@ class SearchGateway:
                     executed.update(batch)
                     before = len(candidates)
                     candidates = dedupe_candidates(candidates)
-                    _metric("search_gateway_dedupe", {
-                        "candidates": before, "kept": len(candidates),
-                        "dropped": before - len(candidates),
-                        "domains": len({normalized_host(c.canonical_url) for c in candidates}),
-                    })
+                    _metric(
+                        "search_gateway_dedupe",
+                        {
+                            "candidates": before,
+                            "kept": len(candidates),
+                            "dropped": before - len(candidates),
+                            "domains": len({normalized_host(c.canonical_url) for c in candidates}),
+                        },
+                    )
                 if self._enough(request, candidates):
                     break
                 if index == 0 and probe_task is not None:
@@ -478,7 +475,11 @@ class SearchGateway:
                         raise
                     except Exception:
                         self._google_reachable = False
-                    if self._google_reachable and "google-cdp" in configured and "google-cdp" not in executed:
+                    if (
+                        self._google_reachable
+                        and "google-cdp" in configured
+                        and "google-cdp" not in executed
+                    ):
                         probe_wave = ["google-cdp"]
                         if "bing-cdp" in configured and "bing-cdp" not in executed:
                             probe_wave.append("bing-cdp")
@@ -503,7 +504,7 @@ class SearchGateway:
             for start in range(0, len(leftovers), budget.provider_concurrency):
                 if budget.remaining_s <= 0 or self._enough(request, candidates):
                     break
-                batch = leftovers[start:start + budget.provider_concurrency]
+                batch = leftovers[start : start + budget.provider_concurrency]
                 rows, batch_attempts = await self._run_batch(
                     batch,
                     request,
@@ -550,7 +551,7 @@ class SearchGateway:
             dedupe_candidates(candidates),
             query_terms=request.query_terms or None,
             dimension_id=request.dimension_id,
-        )[:request.max_results]
+        )[: request.max_results]
         if request.hydrate_top and self.fetch_service is not None:
             ranked = await self._hydrate(ranked, request, budget)
         elapsed_ms = int((time.monotonic() - started) * 1000)
@@ -571,15 +572,18 @@ class SearchGateway:
             rescue_upstream_called,
         )
         await allocator.commit_query(budget_lease)
-        await allocator.validate_attempt_coverage(
-            budget_lease, response.attempts
+        await allocator.validate_attempt_coverage(budget_lease, response.attempts)
+        _metric(
+            "search_gateway_request",
+            {
+                "request_id": request.request_id,
+                "run_id": request.run_id,
+                "mode": request.mode,
+                "duration_ms": elapsed_ms,
+                "count": len(ranked),
+                "degraded": degraded,
+            },
         )
-        _metric("search_gateway_request", {
-            "request_id": request.request_id,
-            "run_id": request.run_id,
-            "mode": request.mode, "duration_ms": elapsed_ms,
-            "count": len(ranked), "degraded": degraded,
-        })
         if ranked:
             await self.cache.put(cache_key, response.results)
         return response
@@ -611,15 +615,11 @@ class SearchGateway:
         if budget.remaining_s <= 0:
             return [], None, "deadline_exhausted", None, False
 
-        available_names = [
-            name for name in configured if availability.get(name, False)
-        ]
+        available_names = [name for name in configured if availability.get(name, False)]
         latest = {attempt.provider: attempt for attempt in attempts}
         health = self._health_for(request)
         snapshots = {name: await health.snapshot(name) for name in available_names}
-        closed_names = [
-            name for name, snapshot in snapshots.items() if snapshot.state == "closed"
-        ]
+        closed_names = [name for name, snapshot in snapshots.items() if snapshot.state == "closed"]
         if not closed_names or any(
             latest.get(name) is None
             or latest[name].status is not AttemptStatus.EMPTY
@@ -627,9 +627,7 @@ class SearchGateway:
             for name in closed_names
         ):
             return [], None, "ineligible", None, False
-        non_closed = [
-            name for name, snapshot in snapshots.items() if snapshot.state != "closed"
-        ]
+        non_closed = [name for name, snapshot in snapshots.items() if snapshot.state != "closed"]
         if not non_closed:
             return [], None, "ineligible", None, False
 
@@ -653,13 +651,16 @@ class SearchGateway:
             try:
                 await asyncio.sleep(wait_s)
             except asyncio.CancelledError:
-                _metric("search_gateway_cancelled_wait", {
-                    "request_id": request.request_id,
-                    "run_id": request.run_id,
-                    "provider": candidate.provider,
-                    "status": "cancelled_rescue_eligibility",
-                    "is_rescue": True,
-                })
+                _metric(
+                    "search_gateway_cancelled_wait",
+                    {
+                        "request_id": request.request_id,
+                        "run_id": request.run_id,
+                        "provider": candidate.provider,
+                        "status": "cancelled_rescue_eligibility",
+                        "is_rescue": True,
+                    },
+                )
                 raise
 
         rows, attempt = await self._run_provider(
@@ -780,11 +781,13 @@ class SearchGateway:
             )
             for name in names
         ]
-        for task in tasks: self._track(task)
+        for task in tasks:
+            self._track(task)
         try:
             results = await asyncio.gather(*tasks)
         except asyncio.CancelledError:
-            for task in tasks: task.cancel()
+            for task in tasks:
+                task.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
             raise
         rows: list[RetrievalCandidate] = []
@@ -878,13 +881,16 @@ class SearchGateway:
         try:
             lease = await self.limiter.acquire(name, budget.deadline)
         except asyncio.CancelledError:
-            _metric("search_gateway_cancelled_wait", {
-                "request_id": request.request_id,
-                "run_id": request.run_id,
-                "provider": name,
-                "status": "cancelled",
-                "is_rescue": is_rescue,
-            })
+            _metric(
+                "search_gateway_cancelled_wait",
+                {
+                    "request_id": request.request_id,
+                    "run_id": request.run_id,
+                    "provider": name,
+                    "status": "cancelled",
+                    "is_rescue": is_rescue,
+                },
+            )
             raise
         if lease is None:
             elapsed = int((time.monotonic() - started) * 1000)
@@ -948,23 +954,26 @@ class SearchGateway:
         if not available:
             permit = CircuitPermit("closed", 0)
             self._attempt_metric(
-                request, provider=name, status="unavailable", elapsed_ms=0,
-                permit=permit, error_code="unavailable", is_rescue=is_rescue,
+                request,
+                provider=name,
+                status="unavailable",
+                elapsed_ms=0,
+                permit=permit,
+                error_code="unavailable",
+                is_rescue=is_rescue,
             )
             return [], ProviderAttempt(
-                name, AttemptStatus.UNAVAILABLE, 0,
+                name,
+                AttemptStatus.UNAVAILABLE,
+                0,
                 public_error_code=PublicErrorCode.UNAVAILABLE,
                 upstream_called=False,
                 is_rescue=is_rescue,
             )
 
         before_permit = await health.snapshot(name)
-        if (
-            expected_generation is not None
-            and (
-                before_permit.generation != expected_generation
-                or before_permit.state == "closed"
-            )
+        if expected_generation is not None and (
+            before_permit.generation != expected_generation or before_permit.state == "closed"
         ):
             busy = before_permit.state == "half_open"
             status = AttemptStatus.HALF_OPEN_BUSY if busy else AttemptStatus.COOLDOWN
@@ -1017,8 +1026,12 @@ class SearchGateway:
             status = AttemptStatus.HALF_OPEN_BUSY if busy else AttemptStatus.COOLDOWN
             code = PublicErrorCode.HALF_OPEN_BUSY if busy else PublicErrorCode.COOLDOWN
             self._attempt_metric(
-                request, provider=name, status=status.value, elapsed_ms=0,
-                permit=permit, error_code=code.value,
+                request,
+                provider=name,
+                status=status.value,
+                elapsed_ms=0,
+                permit=permit,
+                error_code=code.value,
                 failure_class=permit.failure_class,
                 is_rescue=is_rescue,
             )
@@ -1058,7 +1071,9 @@ class SearchGateway:
                     is_rescue=is_rescue,
                 )
             return [], ProviderAttempt(
-                name, AttemptStatus.BUDGET_EXHAUSTED, 0,
+                name,
+                AttemptStatus.BUDGET_EXHAUSTED,
+                0,
                 public_error_code=PublicErrorCode.BUDGET_EXHAUSTED,
                 permit=permit.kind,
                 circuit_generation=permit.generation,
@@ -1100,8 +1115,11 @@ class SearchGateway:
                 upstream_called=True,
                 budget_attempt_id=budget_attempt.attempt_id,
             )
+
         try:
-            rows = await asyncio.wait_for(provider.search(request, budget, self.client), timeout=timeout)
+            rows = await asyncio.wait_for(
+                provider.search(request, budget, self.client), timeout=timeout
+            )
             elapsed = int((time.monotonic() - started) * 1000)
             if rows:
                 if permit.probe_owner:
@@ -1119,8 +1137,12 @@ class SearchGateway:
                     await health.record_success(name, permit=permit)
                     after_state = "closed"
                 self._attempt_metric(
-                    request, provider=name, status="hit", elapsed_ms=elapsed,
-                    count=len(rows), permit=permit,
+                    request,
+                    provider=name,
+                    status="hit",
+                    elapsed_ms=elapsed,
+                    count=len(rows),
+                    permit=permit,
                     probe_outcome="hit" if permit.probe_owner else None,
                     failure_class=permit.failure_class,
                     transition=f"half_open_to_{after_state}" if permit.probe_owner else None,
@@ -1130,7 +1152,10 @@ class SearchGateway:
                 return await commit_transport(
                     rows,
                     ProviderAttempt(
-                        name, AttemptStatus.HIT, elapsed, len(rows),
+                        name,
+                        AttemptStatus.HIT,
+                        elapsed,
+                        len(rows),
                         permit=permit.kind,
                         circuit_generation=permit.generation,
                         probe_outcome="hit" if permit.probe_owner else None,
@@ -1153,7 +1178,10 @@ class SearchGateway:
                 await health.record_success(name, permit=permit)
                 after_state = "closed"
             self._attempt_metric(
-                request, provider=name, status="empty", elapsed_ms=elapsed,
+                request,
+                provider=name,
+                status="empty",
+                elapsed_ms=elapsed,
                 permit=permit,
                 probe_outcome="empty" if permit.probe_owner else None,
                 failure_class=permit.failure_class,
@@ -1164,7 +1192,9 @@ class SearchGateway:
             return await commit_transport(
                 [],
                 ProviderAttempt(
-                    name, AttemptStatus.EMPTY, elapsed,
+                    name,
+                    AttemptStatus.EMPTY,
+                    elapsed,
                     permit=permit.kind,
                     circuit_generation=permit.generation,
                     probe_outcome="empty" if permit.probe_owner else None,
@@ -1218,7 +1248,10 @@ class SearchGateway:
         except TimeoutError:
             if permit.probe_owner:
                 await health.complete_probe(
-                    name, permit, "failure", failure_class="timeout",
+                    name,
+                    permit,
+                    "failure",
+                    failure_class="timeout",
                 )
                 after_state = await self._circuit_metric(
                     request,
@@ -1241,8 +1274,12 @@ class SearchGateway:
                 )
             elapsed = int((time.monotonic() - started) * 1000)
             self._attempt_metric(
-                request, provider=name, status="timeout", elapsed_ms=elapsed,
-                permit=permit, error_code="timeout",
+                request,
+                provider=name,
+                status="timeout",
+                elapsed_ms=elapsed,
+                permit=permit,
+                error_code="timeout",
                 probe_outcome="failure" if permit.probe_owner else None,
                 failure_class="timeout",
                 transition=f"{'half_open' if permit.probe_owner else 'closed'}_to_{after_state}",
@@ -1252,7 +1289,9 @@ class SearchGateway:
             return await commit_transport(
                 [],
                 ProviderAttempt(
-                    name, AttemptStatus.TIMEOUT, elapsed,
+                    name,
+                    AttemptStatus.TIMEOUT,
+                    elapsed,
                     public_error_code=PublicErrorCode.TIMEOUT,
                     permit=permit.kind,
                     circuit_generation=permit.generation,
@@ -1309,18 +1348,26 @@ class SearchGateway:
             status = _FAILURE_STATUS.get(exc.code, AttemptStatus.ERROR)
             upstream_called = True
             self._attempt_metric(
-                request, provider=name, status=status.value, elapsed_ms=elapsed,
-                permit=permit, error_code=exc.code.value,
+                request,
+                provider=name,
+                status=status.value,
+                elapsed_ms=elapsed,
+                permit=permit,
+                error_code=exc.code.value,
                 probe_outcome="failure" if permit.probe_owner and failure_class else None,
                 failure_class=failure_class or permit.failure_class,
-                transition=f"{before_state}_to_{after_state}" if failure_class or permit.probe_owner else None,
+                transition=f"{before_state}_to_{after_state}"
+                if failure_class or permit.probe_owner
+                else None,
                 upstream_called=upstream_called,
                 is_rescue=is_rescue,
             )
             return await commit_transport(
                 [],
                 ProviderAttempt(
-                    name, status, elapsed,
+                    name,
+                    status,
+                    elapsed,
                     public_error_code=exc.code,
                     permit=permit.kind,
                     circuit_generation=permit.generation,
@@ -1332,7 +1379,10 @@ class SearchGateway:
         except Exception:
             if permit.probe_owner:
                 await health.complete_probe(
-                    name, permit, "failure", failure_class="http",
+                    name,
+                    permit,
+                    "failure",
+                    failure_class="http",
                 )
                 before_state = "half_open"
             else:
@@ -1349,8 +1399,12 @@ class SearchGateway:
             )
             elapsed = int((time.monotonic() - started) * 1000)
             self._attempt_metric(
-                request, provider=name, status="error", elapsed_ms=elapsed,
-                permit=permit, error_code="http_error",
+                request,
+                provider=name,
+                status="error",
+                elapsed_ms=elapsed,
+                permit=permit,
+                error_code="http_error",
                 probe_outcome="failure" if permit.probe_owner else None,
                 failure_class="http",
                 transition=f"{before_state}_to_{after_state}",
@@ -1360,7 +1414,9 @@ class SearchGateway:
             return await commit_transport(
                 [],
                 ProviderAttempt(
-                    name, AttemptStatus.ERROR, elapsed,
+                    name,
+                    AttemptStatus.ERROR,
+                    elapsed,
                     public_error_code=PublicErrorCode.HTTP_ERROR,
                     permit=permit.kind,
                     circuit_generation=permit.generation,
@@ -1372,42 +1428,63 @@ class SearchGateway:
 
     async def _hydrate(self, ranked, request, budget):
         from .contracts import FetchRequest
+
         hydrated: list[RetrievalCandidate] = []
         for index, item in enumerate(ranked):
             if index >= request.hydrate_top or not await budget.claim_hydrate():
                 hydrated.append(item)
                 continue
             try:
-                document = await self.fetch_service.fetch(FetchRequest(item.url, request_budget=budget))
+                document = await self.fetch_service.fetch(
+                    FetchRequest(item.url, request_budget=budget)
+                )
                 hydrated.append(replace(item, text=document.text[:4000]))
             except Exception:
                 hydrated.append(replace(item, hydration_error=PublicErrorCode.FETCH_FAILED.value))
-        _metric("search_gateway_hydrate", {
-            "count": sum(1 for item in hydrated if item.text),
-            "dropped": sum(1 for item in hydrated if item.hydration_error),
-        })
+        _metric(
+            "search_gateway_hydrate",
+            {
+                "count": sum(1 for item in hydrated if item.text),
+                "dropped": sum(1 for item in hydrated if item.hydration_error),
+            },
+        )
         return hydrated
 
     @staticmethod
     def _region(query: str) -> str:
         from deskpet.tools.search_provider import region_for_query
+
         return region_for_query(query)
 
     def _enough(self, request: SearchRequest, candidates) -> bool:
-        target_results = self.config.quick_min_results if request.mode == "quick" else self.config.research_target_results
-        target_domains = self.config.quick_min_domains if request.mode == "quick" else self.config.research_target_domains
-        return len(candidates) >= target_results and len({normalized_host(c.canonical_url) for c in candidates}) >= target_domains
+        target_results = (
+            self.config.quick_min_results
+            if request.mode == "quick"
+            else self.config.research_target_results
+        )
+        target_domains = (
+            self.config.quick_min_domains
+            if request.mode == "quick"
+            else self.config.research_target_domains
+        )
+        return (
+            len(candidates) >= target_results
+            and len({normalized_host(c.canonical_url) for c in candidates}) >= target_domains
+        )
 
     def _track(self, task: asyncio.Task) -> None:
         self._tasks.add(task)
         task.add_done_callback(self._tasks.discard)
 
     async def shutdown(self) -> None:
-        if self._closed: return
+        if self._closed:
+            return
         self._closed = True
         pending = list(self._tasks)
-        for task in pending: task.cancel()
-        if pending: await asyncio.gather(*pending, return_exceptions=True)
+        for task in pending:
+            task.cancel()
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
         await self.cache.clear()
         await self.health.clear()
         run_health = [value[1] for value in self._run_health.values()]
@@ -1416,6 +1493,7 @@ class SearchGateway:
             await health.clear()
         if self.fetch_service is not None:
             await self.fetch_service.close()
-        if self._owns_client: await self.client.aclose()
+        if self._owns_client:
+            await self.client.aclose()
 
     close = shutdown

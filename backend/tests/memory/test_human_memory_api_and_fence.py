@@ -16,9 +16,7 @@ from deskpet.memory.session_db import SessionDB
 
 
 def _auth() -> AuthenticatedHostSnapshot:
-    return AuthenticatedHostSnapshot(
-        "subject-api", "principal-api", "host:test-api"
-    )
+    return AuthenticatedHostSnapshot("subject-api", "principal-api", "host:test-api")
 
 
 @pytest.mark.asyncio
@@ -38,9 +36,7 @@ async def test_ws_api_rejects_client_authority_and_binds_host_subject(
         factory=factory,
         auth=_auth(),
     )
-    assert rejected["payload"]["error"]["code"] == (
-        "human_memory_public_authority_field_rejected"
-    )
+    assert rejected["payload"]["error"]["code"] == ("human_memory_public_authority_field_rejected")
 
     opened = await handle_human_memory_command(
         {
@@ -53,12 +49,8 @@ async def test_ws_api_rejects_client_authority_and_binds_host_subject(
         auth=_auth(),
     )
     assert opened["payload"]["ok"] is True
-    receipt = await HumanMemoryProgramStore(path).open_primary_conversation(
-        "subject-api"
-    )
-    assert opened["payload"]["result"]["primary_ref"] == (
-        receipt.primary_conversation_id
-    )
+    receipt = await HumanMemoryProgramStore(path).open_primary_conversation("subject-api")
+    assert opened["payload"]["result"]["primary_ref"] == (receipt.primary_conversation_id)
 
 
 @pytest.mark.asyncio
@@ -73,9 +65,7 @@ async def test_ws_api_reports_stable_legacy_epoch_code() -> None:
         factory=None,
         auth=_auth(),
     )
-    assert response["payload"]["error"]["code"] == (
-        "human_memory_legacy_epoch_unsupported"
-    )
+    assert response["payload"]["error"]["code"] == ("human_memory_legacy_epoch_unsupported")
 
 
 @pytest.mark.asyncio
@@ -182,9 +172,7 @@ async def test_ws_api_exposes_bounded_subject_bound_evidence_pages(
         factory=factory,
         auth=_auth(),
     )
-    assert rejected["payload"]["error"]["code"] == (
-        "human_memory_public_authority_field_rejected"
-    )
+    assert rejected["payload"]["error"]["code"] == ("human_memory_public_authority_field_rejected")
 
 
 @pytest.mark.asyncio

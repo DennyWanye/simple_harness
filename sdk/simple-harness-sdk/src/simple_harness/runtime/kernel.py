@@ -584,9 +584,7 @@ class RuntimeUnitOfWork(ExecutionUnitOfWork, RunFencePort, WorkflowLaunchTicketP
     def require_legacy_or_unmanaged_run(self, run_id: str) -> None: ...
 
     # BaseAgent (execution schema v10)
-    def reserve_base_agent_run_mode(
-        self, *, run_id: str, intent_hash: str, now: float
-    ) -> None: ...
+    def reserve_base_agent_run_mode(self, *, run_id: str, intent_hash: str, now: float) -> None: ...
 
     def require_base_agent_run_mode(self, run_id: str) -> None: ...
 
@@ -2970,9 +2968,16 @@ class Runtime:
                             self._heartbeats.pop(run_id, None)
                         self._retiring_leases.discard(run_id)
                     current_run = self._uow.read_run(run_id)
-                    if not self._closing and current_run is not None and current_run.state in {
-                        RunState.RUNNING, RunState.WAITING, RunState.CANCEL_REQUESTED,
-                    }:
+                    if (
+                        not self._closing
+                        and current_run is not None
+                        and current_run.state
+                        in {
+                            RunState.RUNNING,
+                            RunState.WAITING,
+                            RunState.CANCEL_REQUESTED,
+                        }
+                    ):
                         self._pending_wakes.add(run_id)
                     return
                 self._leases[run_id] = renewed
@@ -2995,7 +3000,9 @@ class Runtime:
     def _schedule(self, run_id: str) -> None:
         current = self._uow.read_run(run_id)
         if current is not None and current.state in {
-            RunState.COMPLETED, RunState.FAILED, RunState.CANCELLED,
+            RunState.COMPLETED,
+            RunState.FAILED,
+            RunState.CANCELLED,
         }:
             self._pending_wakes.discard(run_id)
             return
@@ -3014,7 +3021,9 @@ class Runtime:
         # failure, and the stale queued wake must not revive the terminal Run.
         current = self._uow.read_run(run_id)
         if current is not None and current.state in {
-            RunState.COMPLETED, RunState.FAILED, RunState.CANCELLED,
+            RunState.COMPLETED,
+            RunState.FAILED,
+            RunState.CANCELLED,
         }:
             return
         continuation_claim: ContinuationRecord | None = None
@@ -3414,9 +3423,7 @@ class Runtime:
         assert result is not None
         return result
 
-    def _commit_authorization_wait(
-        self, run_id: str, pending: ToolAuthorizationPending
-    ) -> None:
+    def _commit_authorization_wait(self, run_id: str, pending: ToolAuthorizationPending) -> None:
         prepared = pending.prepared
         arguments = thaw_json(prepared.call.arguments)
         metadata = thaw_json(pending.request.metadata)
@@ -3437,9 +3444,7 @@ class Runtime:
                 "prompt": pending.request.prompt,
                 "resources": [resource.to_json() for resource in prepared.resources],
                 "resources_digest": resource_digest(prepared.resources),
-                "sidecar_digest": (
-                    None if prepared.sidecar is None else prepared.sidecar.digest
-                ),
+                "sidecar_digest": (None if prepared.sidecar is None else prepared.sidecar.digest),
                 "tool_name": prepared.call.name,
             },
             response=None,

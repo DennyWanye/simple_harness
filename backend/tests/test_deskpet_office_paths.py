@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 """TDD T0 — office_paths.py path authorization (防手滑层)."""
+
 from __future__ import annotations
 
 import os
@@ -34,8 +35,6 @@ def test_t0_3_dir_authorization_is_recursive(tmp_path: Path):
     assert op.is_authorized(tmp_path / "sub" / "deep.docx")
 
 
-
-
 def test_t0_5_resolve_for_read_authorized(tmp_path: Path):
     f = tmp_path / "a.docx"
     f.write_text("x")
@@ -48,9 +47,7 @@ def test_t0_5_resolve_for_read_authorized(tmp_path: Path):
 def test_t0_6_write_into_system_dir_refused(tmp_path: Path):
     op.authorize_path("C:\\Windows")
     with pytest.raises(op.PathError):
-        op.resolve_for_write(
-            "C:\\Windows\\evil.docx", default_prefix="d", default_suffix=".docx"
-        )
+        op.resolve_for_write("C:\\Windows\\evil.docx", default_prefix="d", default_suffix=".docx")
 
 
 def test_t0_7_write_into_temp_allowed():

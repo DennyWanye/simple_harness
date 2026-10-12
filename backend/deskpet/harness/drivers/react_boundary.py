@@ -1,4 +1,5 @@
 """Durable ReAct command boundary and its JSON codec."""
+
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -35,19 +36,50 @@ from deskpet.workflows.effects import (
 
 def _call_payload(call: PreparedToolCall) -> dict[str, Any]:
     return call.to_dict()
+
+
 def _load_call(value: Mapping[str, Any]) -> PreparedToolCall:
     return PreparedToolCall.from_dict(value)
+
+
 def _context_payload(context: ToolExecutionContext) -> dict[str, Any]:
-    return {'scope_id': context.scope_id, 'session_id': context.session_id, 'request_id': context.request_id, 'origin': context.origin, 'root_run_id': context.root_run_id, 'parent_run_id': context.parent_run_id, 'turn_id': context.turn_id, 'venue': context.venue, 'workspace': context.workspace, 'write_scope_root': context.write_scope_root, 'capability_hash': context.capability_hash, 'scope_hash': context.scope_hash, 'provider_plan': list(context.provider_plan), 'run_id': context.run_id, 'command_id': context.command_id, 'call_id': context.call_id, 'effect_id': context.effect_id, 'trace_id': context.trace_id, 'owner_key': context.owner_key, 'profile_generation': context.profile_generation, 'binding_epoch': context.binding_epoch, 'capability_snapshot_ref': context.capability_snapshot_ref, 'active_skill_scope_ids': list(context.active_skill_scope_ids), 'effective_skill_tool_ref_hashes': list(context.effective_skill_tool_ref_hashes), 'effective_skill_tool_refs_hash': context.effective_skill_tool_refs_hash}
+    return {
+        "scope_id": context.scope_id,
+        "session_id": context.session_id,
+        "request_id": context.request_id,
+        "origin": context.origin,
+        "root_run_id": context.root_run_id,
+        "parent_run_id": context.parent_run_id,
+        "turn_id": context.turn_id,
+        "venue": context.venue,
+        "workspace": context.workspace,
+        "write_scope_root": context.write_scope_root,
+        "capability_hash": context.capability_hash,
+        "scope_hash": context.scope_hash,
+        "provider_plan": list(context.provider_plan),
+        "run_id": context.run_id,
+        "command_id": context.command_id,
+        "call_id": context.call_id,
+        "effect_id": context.effect_id,
+        "trace_id": context.trace_id,
+        "owner_key": context.owner_key,
+        "profile_generation": context.profile_generation,
+        "binding_epoch": context.binding_epoch,
+        "capability_snapshot_ref": context.capability_snapshot_ref,
+        "active_skill_scope_ids": list(context.active_skill_scope_ids),
+        "effective_skill_tool_ref_hashes": list(context.effective_skill_tool_ref_hashes),
+        "effective_skill_tool_refs_hash": context.effective_skill_tool_refs_hash,
+    }
+
+
 def _load_context(value: Mapping[str, Any]) -> ToolExecutionContext:
     data = dict(value)
-    data['provider_plan'] = tuple((str(item) for item in data.get('provider_plan', ())))
-    data['active_skill_scope_ids'] = tuple(
-        str(item) for item in data.get('active_skill_scope_ids', ())
+    data["provider_plan"] = tuple((str(item) for item in data.get("provider_plan", ())))
+    data["active_skill_scope_ids"] = tuple(
+        str(item) for item in data.get("active_skill_scope_ids", ())
     )
-    data['effective_skill_tool_ref_hashes'] = tuple(
-        str(item)
-        for item in data.get('effective_skill_tool_ref_hashes', ())
+    data["effective_skill_tool_ref_hashes"] = tuple(
+        str(item) for item in data.get("effective_skill_tool_ref_hashes", ())
     )
     return ToolExecutionContext(**data)
 
@@ -65,10 +97,16 @@ def _skill_tool_intersection(
         active_scope_ids=active_scope_ids,
         activated_scopes=activated_scopes,
     )
+
+
 def _outcome_payload(outcome: NormalizedToolOutcome) -> dict[str, Any]:
     return outcome.to_dict()
+
+
 def _load_outcome(value: Mapping[str, Any]) -> NormalizedToolOutcome:
     return NormalizedToolOutcome.from_dict(value)
+
+
 @dataclass(frozen=True)
 class ReactCommandBoundary:
     run_id: str
@@ -109,11 +147,19 @@ class ReactCommandBoundary:
 
     def __post_init__(self) -> None:
         if not self.outcome_statuses:
-            object.__setattr__(self, 'outcome_statuses', (None,) * len(self.outcomes))
+            object.__setattr__(self, "outcome_statuses", (None,) * len(self.outcomes))
         if not self.outcome_metadata:
-            object.__setattr__(self, 'outcome_metadata', tuple(MappingProxyType({}) for _ in self.outcomes))
-        if not (len(self.pending_calls) == len(self.tool_contexts) == len(self.outcomes) == len(self.outcome_statuses) == len(self.outcome_metadata)):
-            raise ValueError('pending calls, contexts and outcomes must align')
+            object.__setattr__(
+                self, "outcome_metadata", tuple(MappingProxyType({}) for _ in self.outcomes)
+            )
+        if not (
+            len(self.pending_calls)
+            == len(self.tool_contexts)
+            == len(self.outcomes)
+            == len(self.outcome_statuses)
+            == len(self.outcome_metadata)
+        ):
+            raise ValueError("pending calls, contexts and outcomes must align")
         commands = tuple(self.brokered_commands)
         if len({item.parent_index for item in commands}) != len(commands):
             raise ValueError("brokered parent indexes must be unique")
@@ -123,17 +169,10 @@ class ReactCommandBoundary:
             call = self.pending_calls[command.parent_index]
             if command.provider_call_id != call.stable_call_id:
                 raise ValueError("brokered command provider call binding mismatch")
-            if (
-                command.status != "terminal"
-                and self.outcomes[command.parent_index] is not None
-            ):
-                raise ValueError(
-                    "active brokered parent cannot have a provider-visible outcome"
-                )
+            if command.status != "terminal" and self.outcomes[command.parent_index] is not None:
+                raise ValueError("active brokered parent cannot have a provider-visible outcome")
         object.__setattr__(self, "brokered_commands", commands)
-        snapshot_ref = str(
-            self.capability_snapshot.get("catalog_snapshot_ref") or ""
-        )
+        snapshot_ref = str(self.capability_snapshot.get("catalog_snapshot_ref") or "")
         if self.capability_snapshot_ref is None:
             object.__setattr__(
                 self,
@@ -141,51 +180,32 @@ class ReactCommandBoundary:
                 snapshot_ref or None,
             )
         elif self.capability_snapshot_ref != snapshot_ref:
-            raise ValueError(
-                "command boundary capability snapshot ref mismatch"
-            )
+            raise ValueError("command boundary capability snapshot ref mismatch")
         selection = (
-            self.capability_snapshot.get("host_extensions", {})
-            .get("deskpet.companion.selection.v1")
-            if isinstance(
-                self.capability_snapshot.get("host_extensions"), Mapping
+            self.capability_snapshot.get("host_extensions", {}).get(
+                "deskpet.companion.selection.v1"
             )
+            if isinstance(self.capability_snapshot.get("host_extensions"), Mapping)
             else None
         )
         initial_active = (
             ()
             if not isinstance(selection, Mapping)
-            else tuple(
-                str(item)
-                for item in selection.get("active_skill_scope_ids", ())
-            )
+            else tuple(str(item) for item in selection.get("active_skill_scope_ids", ()))
         )
-        active_scopes = tuple(
-            sorted(
-                dict.fromkeys(
-                    self.active_skill_scope_ids or initial_active
-                )
-            )
-        )
+        active_scopes = tuple(sorted(dict.fromkeys(self.active_skill_scope_ids or initial_active)))
         object.__setattr__(self, "active_skill_scope_ids", active_scopes)
         activated_scopes = tuple(
-            MappingProxyType(dict(thaw_json(item)))
-            for item in self.activated_skill_scopes
+            MappingProxyType(dict(thaw_json(item))) for item in self.activated_skill_scopes
         )
-        object.__setattr__(
-            self, "activated_skill_scopes", activated_scopes
-        )
+        object.__setattr__(self, "activated_skill_scopes", activated_scopes)
         intersection = _skill_tool_intersection(
             self.capability_snapshot,
             self.request_payload,
             active_scope_ids=active_scopes,
             activated_scopes=activated_scopes,
         )
-        computed_hash = (
-            None
-            if intersection is None
-            else intersection.effective_tool_refs_hash
-        )
+        computed_hash = None if intersection is None else intersection.effective_tool_refs_hash
         if self.effective_skill_tool_refs_hash is None:
             object.__setattr__(
                 self,
@@ -193,9 +213,7 @@ class ReactCommandBoundary:
                 computed_hash,
             )
         elif self.effective_skill_tool_refs_hash != computed_hash:
-            raise ValueError(
-                "command boundary effective Skill ToolRefs drifted"
-            )
+            raise ValueError("command boundary effective Skill ToolRefs drifted")
         for context in self.tool_contexts:
             context_intersection = _skill_tool_intersection(
                 self.capability_snapshot,
@@ -218,17 +236,11 @@ class ReactCommandBoundary:
                     else context_intersection.effective_tool_refs_hash
                 )
             ):
-                raise ValueError(
-                    "tool context differs from the trusted Skill ToolRef "
-                    "boundary"
-                )
+                raise ValueError("tool context differs from the trusted Skill ToolRef boundary")
         object.__setattr__(
             self,
             "raw_failures",
-            tuple(
-                MappingProxyType(dict(thaw_json(item)))
-                for item in self.raw_failures
-            ),
+            tuple(MappingProxyType(dict(thaw_json(item))) for item in self.raw_failures),
         )
         identities = {
             *(call.stable_call_id for call in self.pending_calls),
@@ -237,9 +249,9 @@ class ReactCommandBoundary:
         if "" in identities:
             raise ValueError("provider call identities may not be empty")
         if self.provider_call_order:
-            if set(self.provider_call_order) != identities or len(
-                self.provider_call_order
-            ) != len(identities):
+            if set(self.provider_call_order) != identities or len(self.provider_call_order) != len(
+                identities
+            ):
                 raise ValueError("provider call order must cover each call exactly once")
         else:
             object.__setattr__(
@@ -247,21 +259,20 @@ class ReactCommandBoundary:
                 "provider_call_order",
                 (
                     *(call.stable_call_id for call in self.pending_calls),
-                    *(
-                        str(item["provider_call_id"])
-                        for item in self.raw_failures
-                    ),
+                    *(str(item["provider_call_id"]) for item in self.raw_failures),
                 ),
             )
         object.__setattr__(
             self,
             "canonical_messages",
-            tuple(
-                MappingProxyType(dict(thaw_json(item)))
-                for item in self.canonical_messages
-            ),
+            tuple(MappingProxyType(dict(thaw_json(item))) for item in self.canonical_messages),
         )
-        for name in ('provider_state', 'completion_state', 'capability_snapshot', 'request_payload'):
+        for name in (
+            "provider_state",
+            "completion_state",
+            "capability_snapshot",
+            "request_payload",
+        ):
             object.__setattr__(
                 self,
                 name,
@@ -269,14 +280,15 @@ class ReactCommandBoundary:
             )
         confirm_only = tuple(sorted(dict.fromkeys(self.confirm_only_names)))
         if confirm_only and (
-            not self.confirm_only_snapshot_ref
-            or not self.confirm_only_snapshot_hash
+            not self.confirm_only_snapshot_ref or not self.confirm_only_snapshot_hash
         ):
             raise ValueError("confirm-only boundary is missing frozen snapshot fences")
         object.__setattr__(self, "confirm_only_names", confirm_only)
+
     @property
     def pending_indexes(self) -> tuple[int, ...]:
         return tuple((index for index, outcome in enumerate(self.outcomes) if outcome is None))
+
     @property
     def provider_execution_indexes(self) -> tuple[int, ...]:
         deferred = {
@@ -284,34 +296,64 @@ class ReactCommandBoundary:
             for command in self.brokered_commands
             if command.status != "terminal"
         }
-        return tuple(
-            index for index in self.pending_indexes if index not in deferred
-        )
+        return tuple(index for index in self.pending_indexes if index not in deferred)
+
     @property
     def active_brokered_commands(self) -> tuple[BrokeredCommandBoundary, ...]:
-        return tuple(
-            command
-            for command in self.brokered_commands
-            if command.status != "terminal"
-        )
-    def with_outcomes(self, updates: Mapping[int, NormalizedToolOutcome], statuses: Mapping[int, OutcomeStatus], metadata: Mapping[int, Mapping[str, Any]] | None=None) -> ReactCommandBoundary:
+        return tuple(command for command in self.brokered_commands if command.status != "terminal")
+
+    def with_outcomes(
+        self,
+        updates: Mapping[int, NormalizedToolOutcome],
+        statuses: Mapping[int, OutcomeStatus],
+        metadata: Mapping[int, Mapping[str, Any]] | None = None,
+    ) -> ReactCommandBoundary:
         outcomes = list(self.outcomes)
         outcome_statuses = list(self.outcome_statuses)
         outcome_metadata = list(self.outcome_metadata)
         for index, outcome in updates.items():
             if outcomes[index] is not None and outcomes[index] != outcome:
-                raise ValueError('outcome already recorded with different value')
+                raise ValueError("outcome already recorded with different value")
             outcomes[index] = outcome
             outcome_statuses[index] = OutcomeStatus(statuses[index])
             if metadata and index in metadata:
-                outcome_metadata[index] = MappingProxyType(
-                    dict(thaw_json(metadata[index]))
-                )
-        return replace(self, outcomes=tuple(outcomes), outcome_statuses=tuple(outcome_statuses), outcome_metadata=tuple(outcome_metadata), version=self.version + 1)
-    def to_start(self, scoped_evidence: EvidenceSelection | None=UNKNOWN_EVIDENCE) -> DriverStart:
-        launch = self.completion_state if self.command_kind == 'provider_launch' else {}
-        snapshot = launch.get('provider_launch_snapshot')
-        return DriverStart(run_id=self.run_id, session_id=self.session_id, canonical_messages=self.canonical_messages, session_projection_cursor=self.session_projection_cursor, prepared_context_ref=self.prepared_context_ref, tool_set_snapshot_ref=self.tool_set_snapshot_ref, provider_state=self.provider_state, iteration=self.iteration, completion_state=self.completion_state, run_context=self.run_context, run_spec=self.run_spec, capability_snapshot=self.capability_snapshot, request_payload=self.request_payload, scoped_evidence=scoped_evidence, launch_operation_id=str(launch['launch_operation_id']) if snapshot is not None else None, provider_launch_snapshot=ProviderLaunchSnapshot.from_dict(snapshot) if isinstance(snapshot, Mapping) else None, active_skill_scope_ids=self.active_skill_scope_ids, activated_skill_scopes=self.activated_skill_scopes)
+                outcome_metadata[index] = MappingProxyType(dict(thaw_json(metadata[index])))
+        return replace(
+            self,
+            outcomes=tuple(outcomes),
+            outcome_statuses=tuple(outcome_statuses),
+            outcome_metadata=tuple(outcome_metadata),
+            version=self.version + 1,
+        )
+
+    def to_start(self, scoped_evidence: EvidenceSelection | None = UNKNOWN_EVIDENCE) -> DriverStart:
+        launch = self.completion_state if self.command_kind == "provider_launch" else {}
+        snapshot = launch.get("provider_launch_snapshot")
+        return DriverStart(
+            run_id=self.run_id,
+            session_id=self.session_id,
+            canonical_messages=self.canonical_messages,
+            session_projection_cursor=self.session_projection_cursor,
+            prepared_context_ref=self.prepared_context_ref,
+            tool_set_snapshot_ref=self.tool_set_snapshot_ref,
+            provider_state=self.provider_state,
+            iteration=self.iteration,
+            completion_state=self.completion_state,
+            run_context=self.run_context,
+            run_spec=self.run_spec,
+            capability_snapshot=self.capability_snapshot,
+            request_payload=self.request_payload,
+            scoped_evidence=scoped_evidence,
+            launch_operation_id=str(launch["launch_operation_id"])
+            if snapshot is not None
+            else None,
+            provider_launch_snapshot=ProviderLaunchSnapshot.from_dict(snapshot)
+            if isinstance(snapshot, Mapping)
+            else None,
+            active_skill_scope_ids=self.active_skill_scope_ids,
+            activated_skill_scopes=self.activated_skill_scopes,
+        )
+
     def to_payload(self) -> dict[str, Any]:
         delegate = self.pending_delegate
         decision = self.pending_decision
@@ -319,27 +361,20 @@ class ReactCommandBoundary:
             "session_id": self.session_id,
             "command_id": self.command_id,
             "command_kind": self.command_kind,
-            "canonical_messages": [
-                dict(item) for item in self.canonical_messages
-            ],
+            "canonical_messages": [dict(item) for item in self.canonical_messages],
             "session_projection_cursor": self.session_projection_cursor,
             "prepared_context_ref": self.prepared_context_ref,
             "tool_set_snapshot_ref": self.tool_set_snapshot_ref,
             "calls": [_call_payload(call) for call in self.pending_calls],
-            "contexts": [
-                _context_payload(context) for context in self.tool_contexts
-            ],
+            "contexts": [_context_payload(context) for context in self.tool_contexts],
             "outcomes": [
                 _outcome_payload(outcome) if outcome is not None else None
                 for outcome in self.outcomes
             ],
             "outcome_statuses": [
-                status.value if status is not None else None
-                for status in self.outcome_statuses
+                status.value if status is not None else None for status in self.outcome_statuses
             ],
-            "outcome_metadata": [
-                dict(item) for item in self.outcome_metadata
-            ],
+            "outcome_metadata": [dict(item) for item in self.outcome_metadata],
             "authorization_indexes": list(self.authorization_indexes),
             "durable_indexes": list(self.durable_indexes),
             "confirm_only_names": list(self.confirm_only_names),
@@ -347,30 +382,18 @@ class ReactCommandBoundary:
             "confirm_only_snapshot_hash": self.confirm_only_snapshot_hash,
             "raw_failures": [dict(item) for item in self.raw_failures],
             "provider_call_order": list(self.provider_call_order),
-            "brokered_commands": [
-                item.to_mapping() for item in self.brokered_commands
-            ],
+            "brokered_commands": [item.to_mapping() for item in self.brokered_commands],
             "capability_snapshot_ref": self.capability_snapshot_ref,
             "active_skill_scope_ids": list(self.active_skill_scope_ids),
-            "activated_skill_scopes": [
-                dict(item) for item in self.activated_skill_scopes
-            ],
-            "effective_skill_tool_refs_hash": (
-                self.effective_skill_tool_refs_hash
-            ),
+            "activated_skill_scopes": [dict(item) for item in self.activated_skill_scopes],
+            "effective_skill_tool_refs_hash": (self.effective_skill_tool_refs_hash),
             "provider_state": dict(self.provider_state),
             "iteration": self.iteration,
             "completion_state": dict(self.completion_state),
             "capability_snapshot": dict(self.capability_snapshot),
             "request_payload": dict(self.request_payload),
-            "run_context": (
-                None
-                if self.run_context is None
-                else self.run_context.to_dict()
-            ),
-            "run_spec": (
-                None if self.run_spec is None else self.run_spec.to_dict()
-            ),
+            "run_context": (None if self.run_context is None else self.run_context.to_dict()),
+            "run_spec": (None if self.run_spec is None else self.run_spec.to_dict()),
             "decision": (
                 None
                 if decision is None
@@ -417,8 +440,75 @@ class ReactCommandBoundary:
     @classmethod
     def from_record(cls, record: Any) -> ReactCommandBoundary:
         value = dict(record.payload)
-        decision = value.get('decision')
-        delegate = value.get('delegate')
-        return cls(run_id=record.run_id, session_id=str(value['session_id']), command_id=str(value['command_id']), command_kind=str(value['command_kind']), canonical_messages=tuple(value['canonical_messages']), session_projection_cursor=int(value['session_projection_cursor']), prepared_context_ref=value.get('prepared_context_ref'), tool_set_snapshot_ref=value.get('tool_set_snapshot_ref'), pending_calls=tuple((_load_call(item) for item in value['calls'])), tool_contexts=tuple((_load_context(item) for item in value['contexts'])), outcomes=tuple((_load_outcome(item) if item is not None else None for item in value['outcomes'])), provider_state=dict(value['provider_state']), iteration=int(value['iteration']), completion_state=dict(value['completion_state']), capability_snapshot=dict(value.get('capability_snapshot') or {}), request_payload=dict(value.get('request_payload') or {}), run_context=RunContext.from_dict(value['run_context']) if value.get('run_context') is not None else None, run_spec=RunCreate.from_dict(value['run_spec']) if value.get('run_spec') is not None else None, pending_decision=OpenDecision(**decision) if decision is not None else None, pending_delegate=DelegateRun(run_id=str(delegate['run_id']), command_id=str(delegate['command_id']), child_request=dict(delegate['child_request']), route_hint=str(delegate['route_hint']), capability_subset=tuple(delegate['capability_subset']), attachment_policy=AttachmentPolicy(str(delegate['attachment_policy'])), join_policy=JoinPolicy(str(delegate['join_policy'])), profile_launch_ticket_ref=delegate.get('profile_launch_ticket_ref'), profile_launch_request=delegate.get('profile_launch_request')) if delegate is not None else None, version=int(record.version), outcome_statuses=tuple(OutcomeStatus(item) if item is not None else None for item in value.get('outcome_statuses', ())), outcome_metadata=tuple(dict(item) for item in value.get('outcome_metadata', ())), authorization_indexes=tuple(int(item) for item in value.get('authorization_indexes', ())), durable_indexes=tuple(int(item) for item in value.get('durable_indexes', ())), confirm_only_names=tuple(str(item) for item in value.get('confirm_only_names', ())), confirm_only_snapshot_ref=value.get('confirm_only_snapshot_ref'), confirm_only_snapshot_hash=value.get('confirm_only_snapshot_hash'), raw_failures=tuple(dict(item) for item in value.get('raw_failures', ())), provider_call_order=tuple(str(item) for item in value.get('provider_call_order', ())), brokered_commands=tuple(BrokeredCommandBoundary.from_mapping(item) for item in value.get('brokered_commands', ())), capability_snapshot_ref=value.get('capability_snapshot_ref'), active_skill_scope_ids=tuple(str(item) for item in value.get('active_skill_scope_ids', ())), activated_skill_scopes=tuple(dict(item) for item in value.get('activated_skill_scopes', ())), effective_skill_tool_refs_hash=value.get('effective_skill_tool_refs_hash'))
+        decision = value.get("decision")
+        delegate = value.get("delegate")
+        return cls(
+            run_id=record.run_id,
+            session_id=str(value["session_id"]),
+            command_id=str(value["command_id"]),
+            command_kind=str(value["command_kind"]),
+            canonical_messages=tuple(value["canonical_messages"]),
+            session_projection_cursor=int(value["session_projection_cursor"]),
+            prepared_context_ref=value.get("prepared_context_ref"),
+            tool_set_snapshot_ref=value.get("tool_set_snapshot_ref"),
+            pending_calls=tuple((_load_call(item) for item in value["calls"])),
+            tool_contexts=tuple((_load_context(item) for item in value["contexts"])),
+            outcomes=tuple(
+                (_load_outcome(item) if item is not None else None for item in value["outcomes"])
+            ),
+            provider_state=dict(value["provider_state"]),
+            iteration=int(value["iteration"]),
+            completion_state=dict(value["completion_state"]),
+            capability_snapshot=dict(value.get("capability_snapshot") or {}),
+            request_payload=dict(value.get("request_payload") or {}),
+            run_context=RunContext.from_dict(value["run_context"])
+            if value.get("run_context") is not None
+            else None,
+            run_spec=RunCreate.from_dict(value["run_spec"])
+            if value.get("run_spec") is not None
+            else None,
+            pending_decision=OpenDecision(**decision) if decision is not None else None,
+            pending_delegate=DelegateRun(
+                run_id=str(delegate["run_id"]),
+                command_id=str(delegate["command_id"]),
+                child_request=dict(delegate["child_request"]),
+                route_hint=str(delegate["route_hint"]),
+                capability_subset=tuple(delegate["capability_subset"]),
+                attachment_policy=AttachmentPolicy(str(delegate["attachment_policy"])),
+                join_policy=JoinPolicy(str(delegate["join_policy"])),
+                profile_launch_ticket_ref=delegate.get("profile_launch_ticket_ref"),
+                profile_launch_request=delegate.get("profile_launch_request"),
+            )
+            if delegate is not None
+            else None,
+            version=int(record.version),
+            outcome_statuses=tuple(
+                OutcomeStatus(item) if item is not None else None
+                for item in value.get("outcome_statuses", ())
+            ),
+            outcome_metadata=tuple(dict(item) for item in value.get("outcome_metadata", ())),
+            authorization_indexes=tuple(
+                int(item) for item in value.get("authorization_indexes", ())
+            ),
+            durable_indexes=tuple(int(item) for item in value.get("durable_indexes", ())),
+            confirm_only_names=tuple(str(item) for item in value.get("confirm_only_names", ())),
+            confirm_only_snapshot_ref=value.get("confirm_only_snapshot_ref"),
+            confirm_only_snapshot_hash=value.get("confirm_only_snapshot_hash"),
+            raw_failures=tuple(dict(item) for item in value.get("raw_failures", ())),
+            provider_call_order=tuple(str(item) for item in value.get("provider_call_order", ())),
+            brokered_commands=tuple(
+                BrokeredCommandBoundary.from_mapping(item)
+                for item in value.get("brokered_commands", ())
+            ),
+            capability_snapshot_ref=value.get("capability_snapshot_ref"),
+            active_skill_scope_ids=tuple(
+                str(item) for item in value.get("active_skill_scope_ids", ())
+            ),
+            activated_skill_scopes=tuple(
+                dict(item) for item in value.get("activated_skill_scopes", ())
+            ),
+            effective_skill_tool_refs_hash=value.get("effective_skill_tool_refs_hash"),
+        )
+
 
 __all__ = ["ReactCommandBoundary"]

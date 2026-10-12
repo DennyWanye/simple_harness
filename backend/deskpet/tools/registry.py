@@ -39,6 +39,7 @@ Design notes
   Handler execution runs **outside** the lock so slow tools never block
   other dispatches.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -201,9 +202,7 @@ def _normalize_with_parser(parser_id: str, raw: Any) -> Any:
 
     payload = _result_payload(raw)
     if parser_id == "opaque_manual_v1":
-        return NormalizedToolOutcome.malformed(
-            "opaque tool outcome requires manual reconciliation"
-        )
+        return NormalizedToolOutcome.malformed("opaque tool outcome requires manual reconciliation")
     if parser_id == "mcp_explicit_v1":
         if not isinstance(payload, Mapping) or "isError" not in payload:
             return NormalizedToolOutcome.malformed(
@@ -237,7 +236,11 @@ def _normalize_with_parser(parser_id: str, raw: Any) -> Any:
             "nonzero_exit", _failure_message(payload), value=dict(payload)
         )
     if parser_id == "accepted_run_v1":
-        if isinstance(payload, Mapping) and payload.get("accepted") is True and payload.get("run_id"):
+        if (
+            isinstance(payload, Mapping)
+            and payload.get("accepted") is True
+            and payload.get("run_id")
+        ):
             return NormalizedToolOutcome.success(dict(payload))
         if isinstance(payload, Mapping) and (payload.get("ok") is False or payload.get("error")):
             return NormalizedToolOutcome.failure(
@@ -246,9 +249,7 @@ def _normalize_with_parser(parser_id: str, raw: Any) -> Any:
         return NormalizedToolOutcome.malformed("accepted outcome needs accepted=true and run_id")
     if parser_id == "activation_proposed_v1":
         if not isinstance(payload, Mapping):
-            return NormalizedToolOutcome.malformed(
-                "tool activation outcome is not a JSON object"
-            )
+            return NormalizedToolOutcome.malformed("tool activation outcome is not a JSON object")
         if (
             payload.get("error")
             or payload.get("ok") is False
@@ -264,29 +265,19 @@ def _normalize_with_parser(parser_id: str, raw: Any) -> Any:
                 value=dict(payload),
             )
         control = payload.get("__deskpet_control")
-        capability_id = (
-            control.get("capability_id") if isinstance(control, Mapping) else None
-        )
-        schema_hash = (
-            control.get("schema_hash") if isinstance(control, Mapping) else None
-        )
+        capability_id = control.get("capability_id") if isinstance(control, Mapping) else None
+        schema_hash = control.get("schema_hash") if isinstance(control, Mapping) else None
         schema = control.get("schema") if isinstance(control, Mapping) else None
         nonce = control.get("nonce") if isinstance(control, Mapping) else None
         base_scope_revision = (
-            control.get("base_scope_revision")
-            if isinstance(control, Mapping)
-            else None
+            control.get("base_scope_revision") if isinstance(control, Mapping) else None
         )
         function_schema: Mapping[str, Any] | None = None
         if isinstance(schema, Mapping):
-            if (
-                schema.get("type") == "function"
-                and isinstance(schema.get("function"), Mapping)
-            ):
+            if schema.get("type") == "function" and isinstance(schema.get("function"), Mapping):
                 function_schema = schema["function"]
-            elif (
-                isinstance(schema.get("name"), str)
-                and isinstance(schema.get("parameters"), Mapping)
+            elif isinstance(schema.get("name"), str) and isinstance(
+                schema.get("parameters"), Mapping
             ):
                 function_schema = schema
         valid_function_schema = bool(
@@ -300,7 +291,8 @@ def _normalize_with_parser(parser_id: str, raw: Any) -> Any:
             and len(schema_hash) == 64
             and all(character in "0123456789abcdef" for character in schema_hash)
             and function_schema is not None
-            and schema_hash in {
+            and schema_hash
+            in {
                 _schema_hash(schema),
                 _schema_hash(function_schema),
             }
@@ -351,9 +343,7 @@ def _normalize_with_parser(parser_id: str, raw: Any) -> Any:
         if "ok" in payload and not isinstance(payload.get("ok"), bool):
             return NormalizedToolOutcome.malformed("tool outcome has a non-boolean ok field")
         if "success" in payload and not isinstance(payload.get("success"), bool):
-            return NormalizedToolOutcome.malformed(
-                "tool outcome has a non-boolean success field"
-            )
+            return NormalizedToolOutcome.malformed("tool outcome has a non-boolean success field")
         if payload.get("cancelled") is True or payload.get("canceled") is True:
             return NormalizedToolOutcome.failure(
                 "tool_cancelled",
@@ -393,9 +383,7 @@ def _normalize_with_parser(parser_id: str, raw: Any) -> Any:
                 value=dict(payload),
             )
         if state in {"accepted", "in_progress", "pending", "queued", "running"}:
-            return NormalizedToolOutcome.malformed(
-                f"tool outcome is not terminal: {state}"
-            )
+            return NormalizedToolOutcome.malformed(f"tool outcome is not terminal: {state}")
         if state and state not in {
             "complete",
             "completed",
@@ -404,14 +392,8 @@ def _normalize_with_parser(parser_id: str, raw: Any) -> Any:
             "success",
             "succeeded",
         }:
-            return NormalizedToolOutcome.malformed(
-                f"tool outcome has an unknown state: {state}"
-            )
-        if (
-            payload.get("ok") is False
-            or payload.get("success") is False
-            or payload.get("error")
-        ):
+            return NormalizedToolOutcome.malformed(f"tool outcome has an unknown state: {state}")
+        if payload.get("ok") is False or payload.get("success") is False or payload.get("error"):
             return NormalizedToolOutcome.failure(
                 "tool_failed", _failure_message(payload), value=dict(payload)
             )
@@ -624,9 +606,7 @@ def _default_prepared_targets(
     final = Path(raw_path).expanduser()
     if not final.is_absolute():
         trusted_workspace = (
-            workspace
-            or params.get("_project_root")
-            or params.get("_write_scope_root")
+            workspace or params.get("_project_root") or params.get("_write_scope_root")
         )
         if trusted_workspace:
             final = Path(str(trusted_workspace)).expanduser() / final
@@ -683,9 +663,7 @@ def _default_builtin_resource_resolver(
                 {
                     "tool": name,
                     "params": {
-                        key: value
-                        for key, value in args.items()
-                        if not str(key).startswith("_")
+                        key: value for key, value in args.items() if not str(key).startswith("_")
                     },
                 }
             )
@@ -701,11 +679,7 @@ def _default_builtin_resource_resolver(
             raw = str(args.get("dir_path") or "").strip()
             if not raw:
                 raise ValueError("file_organize_resource_missing")
-            access = (
-                ("read",)
-                if bool(args.get("dry_run", True))
-                else ("read", "write")
-            )
+            access = ("read",) if bool(args.get("dry_run", True)) else ("read", "write")
             return (ResourceSelector.filesystem(raw, *access),)
 
         output_key = "file_path" if name == "doc_edit" else "output_path"
@@ -717,15 +691,9 @@ def _default_builtin_resource_resolver(
             input_path = str(args.get("input_path") or "").strip()
             if not input_path:
                 raise ValueError("pdf_export_input_resource_missing")
-            selectors.append(
-                ResourceSelector.filesystem(input_path, "read")
-            )
-        output_access = (
-            ("read", "write") if name == "doc_edit" else ("write",)
-        )
-        selectors.append(
-            ResourceSelector.filesystem(output, *output_access)
-        )
+            selectors.append(ResourceSelector.filesystem(input_path, "read"))
+        output_access = ("read", "write") if name == "doc_edit" else ("write",)
+        selectors.append(ResourceSelector.filesystem(output, *output_access))
         if name == "ppt_pro":
             selectors.append(
                 ResourceSelector(
@@ -887,7 +855,8 @@ class ToolSpec:
         except Exception as exc:  # noqa: BLE001 — never break schema build
             logger.warning(
                 "tool %r visible_when predicate raised, hiding: %s",
-                self.name, exc,
+                self.name,
+                exc,
             )
             return False
 
@@ -927,14 +896,10 @@ def _legacy_tool_spec_fingerprint_v1_payload(spec: ToolSpec) -> dict[str, Any]:
         "permission_policy_version": str(spec.permission_policy_version),
         "dangerous": bool(spec.dangerous),
         "effect_kind": effect_kind,
-        "effect_policy_version": str(
-            getattr(spec.effect_policy, "version", "") or ""
-        ),
+        "effect_policy_version": str(getattr(spec.effect_policy, "version", "") or ""),
         "spec_version": str(spec.spec_version or "v1"),
         "dispatch_kind": (
-            "trusted_context_handler"
-            if spec.context_handler is not None
-            else "legacy_handler"
+            "trusted_context_handler" if spec.context_handler is not None else "legacy_handler"
         ),
         "concurrency_safe": bool(spec.concurrency_safe),
         "completion_semantics": str(spec.completion_semantics),
@@ -943,12 +908,8 @@ def _legacy_tool_spec_fingerprint_v1_payload(spec: ToolSpec) -> dict[str, Any]:
         "outcome_parser_hash": str(spec.outcome_parser_hash),
     }
     if spec.resource_scope_resolver is not None:
-        payload["resource_scope_resolver_id"] = str(
-            spec.resource_scope_resolver_id
-        )
-        payload["resource_scope_resolver_version"] = str(
-            spec.resource_scope_resolver_version
-        )
+        payload["resource_scope_resolver_id"] = str(spec.resource_scope_resolver_id)
+        payload["resource_scope_resolver_version"] = str(spec.resource_scope_resolver_version)
     if spec.runtime_provenance_ref:
         payload["runtime_provenance_ref"] = spec.runtime_provenance_ref
     return payload
@@ -1000,21 +961,15 @@ def tool_spec_fingerprint(spec: ToolSpec) -> str:
             "stable_handler_id": str(spec.stable_handler_id),
             "effect_class": spec.effect_class.value,
             "idempotency": spec.idempotency.value,
-            "target_normalizer_version": str(
-                spec.target_normalizer_version
-            ),
+            "target_normalizer_version": str(spec.target_normalizer_version),
             "execution_build_identity": (
                 spec.execution_build_identity.fingerprint_payload()
                 if spec.execution_build_identity is not None
                 else None
             ),
             "dispatch_adapter_id": str(spec.dispatch_adapter_id),
-            "dispatch_adapter_version": str(
-                spec.dispatch_adapter_version
-            ),
-            "dispatch_adapter_fingerprint": str(
-                spec.dispatch_adapter_fingerprint
-            ),
+            "dispatch_adapter_version": str(spec.dispatch_adapter_version),
+            "dispatch_adapter_fingerprint": str(spec.dispatch_adapter_fingerprint),
         }
     )
     return _canonical_hash(payload)
@@ -1058,16 +1013,16 @@ class ToolRegistry:
     def __init__(self) -> None:
         self._tools: dict[str, ToolSpec] = {}
         self._retired_specs: dict[str, ToolSpec] = {}
-        self._snapshot_spec_leases: dict[
-            tuple[str, str], frozenset[str]
-        ] = {}
+        self._snapshot_spec_leases: dict[tuple[str, str], frozenset[str]] = {}
         self._lock = threading.RLock()
         self._catalog_revision = 0
         # The durable GrowthAuthorityRouter owns when this value advances.
         # Registry only provides the atomic, manifest-checked projection.
         self._authority_phase = "legacy"
         self._capability_scope_store: ToolCapabilityScopeStore | None = None
-        self._dynamic_capability_admission_provider: Callable[[str, ToolExecutionContext, ToolSpec], bool] | None = None
+        self._dynamic_capability_admission_provider: (
+            Callable[[str, ToolExecutionContext, ToolSpec], bool] | None
+        ) = None
         self._context_os_enabled_provider: Callable[[], bool] = lambda: False
         self._context_os_e2e_hooks: Any | None = None
         self._mcp_catalog_stale_callback: Callable[[str], None] | None = None
@@ -1113,8 +1068,12 @@ class ToolRegistry:
         self._late_prepared_calls: dict[
             str,
             tuple[
-                asyncio.Future[Any], ToolSpec, PreparedToolCall,
-                ToolExecutionContext | None, str, bool,
+                asyncio.Future[Any],
+                ToolSpec,
+                PreparedToolCall,
+                ToolExecutionContext | None,
+                str,
+                bool,
             ],
         ] = {}
         self._prepared_ready_callback: Callable[[str], None] | None = None
@@ -1123,9 +1082,7 @@ class ToolRegistry:
     def set_tool_completion_latch(self, latch: Any | None) -> None:
         self._tool_completion_latch = latch
 
-    def _set_prepared_ready_callback(
-        self, callback: Callable[[str], None] | None
-    ) -> None:
+    def _set_prepared_ready_callback(self, callback: Callable[[str], None] | None) -> None:
         self._prepared_ready_callback = callback
 
     def set_permission_gate(self, gate) -> None:  # type: ignore[no-untyped-def]
@@ -1141,9 +1098,7 @@ class ToolRegistry:
         """
         self._tools_config_provider = provider
 
-    def set_capability_scope_store(
-        self, store: ToolCapabilityScopeStore | None
-    ) -> None:
+    def set_capability_scope_store(self, store: ToolCapabilityScopeStore | None) -> None:
         self._capability_scope_store = store
 
     def set_dynamic_capability_admission_provider(
@@ -1164,9 +1119,7 @@ class ToolRegistry:
     def set_context_os_e2e_hooks(self, hooks: Any | None) -> None:
         self._context_os_e2e_hooks = hooks
 
-    def set_mcp_catalog_stale_callback(
-        self, callback: Callable[[str], None] | None
-    ) -> None:
+    def set_mcp_catalog_stale_callback(self, callback: Callable[[str], None] | None) -> None:
         self._mcp_catalog_stale_callback = callback
 
     def invalidate_mcp_catalog_sources(self, sources: Iterable[str]) -> None:
@@ -1175,9 +1128,7 @@ class ToolRegistry:
         if not source_set:
             return
         with self._lock:
-            stale_names = [
-                name for name, spec in self._tools.items() if spec.source in source_set
-            ]
+            stale_names = [name for name, spec in self._tools.items() if spec.source in source_set]
             for name in stale_names:
                 removed = self._tools.pop(name, None)
                 if removed is not None:
@@ -1343,19 +1294,13 @@ class ToolRegistry:
         if context_handler is not None and not callable(context_handler):
             raise TypeError("context_handler must be callable")
         if context_handler is not None and source.startswith(("plugin:", "mcp:")):
-            raise ValueError(
-                "plugin and MCP handlers cannot receive trusted host context"
-            )
-        if resource_scope_resolver is not None and not callable(
-            resource_scope_resolver
-        ):
+            raise ValueError("plugin and MCP handlers cannot receive trusted host context")
+        if resource_scope_resolver is not None and not callable(resource_scope_resolver):
             raise TypeError("resource_scope_resolver must be callable")
         if resource_scope_resolver is None and (
             resource_scope_resolver_id or resource_scope_resolver_version
         ):
-            raise ValueError(
-                "resource resolver identity requires resource_scope_resolver"
-            )
+            raise ValueError("resource resolver identity requires resource_scope_resolver")
         if not spec_version or not permission_policy_version:
             raise ValueError("tool spec and permission policy versions are required")
         if visibility_scope not in {"global", "session"}:
@@ -1368,14 +1313,9 @@ class ToolRegistry:
             raise ValueError("only builtin tools may declare delegate_control")
         if runtime_provenance_ref and (
             len(runtime_provenance_ref) != 64
-            or any(
-                character not in "0123456789abcdef"
-                for character in runtime_provenance_ref
-            )
+            or any(character not in "0123456789abcdef" for character in runtime_provenance_ref)
         ):
-            raise ValueError(
-                "runtime_provenance_ref must be a lowercase SHA-256 digest"
-            )
+            raise ValueError("runtime_provenance_ref must be a lowercase SHA-256 digest")
         if bool(dispatch_adapter_id) != bool(dispatch_adapter_version):
             raise ValueError("dispatch adapter id and version must be set together")
 
@@ -1408,7 +1348,9 @@ class ToolRegistry:
                         schema = {**schema, "name": qualified_name}
                     logger.info(
                         "registry: auto-prefixed plugin tool %r → %r (source=%s)",
-                        name, qualified_name, source,
+                        name,
+                        qualified_name,
+                        source,
                     )
 
         if (
@@ -1416,41 +1358,30 @@ class ToolRegistry:
             and qualified_name in _DEFAULT_BUILTIN_RESOURCE_TOOLS
             and resource_scope_resolver is None
         ):
-            resource_scope_resolver = (
-                _default_builtin_resource_resolver(qualified_name)
-            )
-            resource_scope_resolver_id = (
-                f"builtin-exact-resource:{qualified_name}"
-            )
+            resource_scope_resolver = _default_builtin_resource_resolver(qualified_name)
+            resource_scope_resolver_id = f"builtin-exact-resource:{qualified_name}"
             resource_scope_resolver_version = "v1"
 
         resolved_policy = effect_policy or _default_effect_policy(
             qualified_name, source, permission_category
         )
-        authority = (
-            core_authority_for_tool(qualified_name)
-            if source == "builtin"
-            else None
-        )
+        authority = core_authority_for_tool(qualified_name) if source == "builtin" else None
         if authority is not None and (
-            authority.planned
-            or not authority_accepts_handler(authority, handler)
+            authority.planned or not authority_accepts_handler(authority, handler)
         ):
             # A planned manifest row reserves authority metadata; it never
             # manufactures a callable or silently blesses an early registration.
             authority = None
         resolved_handler_id = str(
-            stable_handler_id
-            or (authority.handler_id if authority is not None else "")
+            stable_handler_id or (authority.handler_id if authority is not None else "")
         )
         resolved_effect_metadata = (
             effect_metadata
             or (authority.effect if authority is not None else None)
             or ToolEffectMetadata.unknown()
         )
-        resolved_build_identity = (
-            execution_build_identity
-            or (authority.build if authority is not None else None)
+        resolved_build_identity = execution_build_identity or (
+            authority.build if authority is not None else None
         )
         if (
             resolved_build_identity is not None
@@ -1482,12 +1413,9 @@ class ToolRegistry:
         resolved_resource_resolver_version = ""
         if resource_scope_resolver is not None:
             resolved_resource_resolver_id = (
-                resource_scope_resolver_id
-                or f"{source or 'builtin'}:{qualified_name}"
+                resource_scope_resolver_id or f"{source or 'builtin'}:{qualified_name}"
             )
-            resolved_resource_resolver_version = (
-                resource_scope_resolver_version or "v1"
-            )
+            resolved_resource_resolver_version = resource_scope_resolver_version or "v1"
         is_staged = getattr(getattr(resolved_policy, "kind", None), "value", None) == "staged_file"
         if is_staged:
             stage = stage or _staged_lifecycle_method("stage")
@@ -1522,9 +1450,7 @@ class ToolRegistry:
             stable_handler_id=resolved_handler_id,
             effect_class=resolved_effect_metadata.effect_class,
             idempotency=resolved_effect_metadata.idempotency,
-            target_normalizer_version=(
-                resolved_effect_metadata.target_normalizer_version
-            ),
+            target_normalizer_version=(resolved_effect_metadata.target_normalizer_version),
             execution_build_identity=resolved_build_identity,
             dispatch_adapter_id=dispatch_adapter_id,
             dispatch_adapter_version=dispatch_adapter_version,
@@ -1565,7 +1491,11 @@ class ToolRegistry:
                 logger.warning(
                     "tool %r re-registered (toolset=%s → %s, source=%s → %s); "
                     "previous definition replaced (replace_allowed opt-in)",
-                    name, existing.toolset, toolset, existing.source, source,
+                    name,
+                    existing.toolset,
+                    toolset,
+                    existing.source,
+                    source,
                 )
                 self._retire_spec_if_leased_locked(existing)
             self._tools[name] = spec
@@ -1635,9 +1565,7 @@ class ToolRegistry:
                     spec.source != source and before_tools.get(name) is not spec
                     for name, spec in self._tools.items()
                 ):
-                    raise ToolCatalogMutationError(
-                        "batch registration published a foreign source"
-                    )
+                    raise ToolCatalogMutationError("batch registration published a foreign source")
             except Exception:
                 self._tools = before_tools
                 self._retired_specs = before_retired
@@ -1657,8 +1585,7 @@ class ToolRegistry:
 
     def _fingerprint_is_leased_locked(self, fingerprint: str) -> bool:
         return any(
-            fingerprint in fingerprints
-            for fingerprints in self._snapshot_spec_leases.values()
+            fingerprint in fingerprints for fingerprints in self._snapshot_spec_leases.values()
         )
 
     def _retire_spec_if_leased_locked(self, spec: ToolSpec) -> None:
@@ -1685,39 +1612,32 @@ class ToolRegistry:
         durable owner releases the same ``(snapshot_ref, run_id)`` lease.
         """
 
-        if (
-            len(snapshot_ref) != 64
-            or any(character not in "0123456789abcdef" for character in snapshot_ref)
+        if len(snapshot_ref) != 64 or any(
+            character not in "0123456789abcdef" for character in snapshot_ref
         ):
             raise ToolCatalogMutationError("snapshot_ref must be a SHA-256 digest")
         if not isinstance(run_id, str) or not run_id:
             raise ToolCatalogMutationError("run_id is required")
         fingerprints = frozenset(str(item) for item in tool_spec_fingerprints)
         if any(
-            len(item) != 64
-            or any(character not in "0123456789abcdef" for character in item)
+            len(item) != 64 or any(character not in "0123456789abcdef" for character in item)
             for item in fingerprints
         ):
-            raise ToolCatalogMutationError(
-                "tool_spec_fingerprints must be SHA-256 digests"
-            )
+            raise ToolCatalogMutationError("tool_spec_fingerprints must be SHA-256 digests")
         key = (snapshot_ref, run_id)
         with self._lock:
             existing = self._snapshot_spec_leases.get(key)
             if existing is not None:
                 if existing != fingerprints:
-                    raise ToolCatalogMutationError(
-                        "snapshot lease identity changed"
-                    )
+                    raise ToolCatalogMutationError("snapshot lease identity changed")
                 return
-            available = {
-                tool_spec_fingerprint(spec) for spec in self._tools.values()
-            } | set(self._retired_specs)
+            available = {tool_spec_fingerprint(spec) for spec in self._tools.values()} | set(
+                self._retired_specs
+            )
             missing = sorted(fingerprints - available)
             if missing:
                 raise ToolCatalogSnapshotUnavailable(
-                    "snapshot references unavailable ToolSpecs: "
-                    + ",".join(missing)
+                    "snapshot references unavailable ToolSpecs: " + ",".join(missing)
                 )
             self._snapshot_spec_leases[key] = fingerprints
 
@@ -1725,9 +1645,7 @@ class ToolRegistry:
         """Release one process-local snapshot pin and collect retired specs."""
 
         with self._lock:
-            removed = self._snapshot_spec_leases.pop(
-                (snapshot_ref, run_id), None
-            )
+            removed = self._snapshot_spec_leases.pop((snapshot_ref, run_id), None)
             self._collect_unleased_retired_specs_locked()
             return removed is not None
 
@@ -1769,9 +1687,7 @@ class ToolRegistry:
                 )
             schema_name = spec.schema.get("name")
             if isinstance(schema_name, str) and schema_name != spec.name:
-                raise ToolCatalogMutationError(
-                    f"replacement schema name differs for {spec.name!r}"
-                )
+                raise ToolCatalogMutationError(f"replacement schema name differs for {spec.name!r}")
             replacement_by_name[spec.name] = replace(
                 spec,
                 schema=copy.deepcopy(spec.schema),
@@ -1781,37 +1697,25 @@ class ToolRegistry:
             if not isinstance(name, str) or not name:
                 raise ToolCatalogMutationError("expected names must be non-empty")
             if fingerprint is None and name not in replacement_by_name:
-                raise ToolCatalogMutationError(
-                    f"absent expectation {name!r} has no replacement"
-                )
+                raise ToolCatalogMutationError(f"absent expectation {name!r} has no replacement")
             if fingerprint is not None and (
                 len(fingerprint) != 64
-                or any(
-                    character not in "0123456789abcdef"
-                    for character in fingerprint
-                )
+                or any(character not in "0123456789abcdef" for character in fingerprint)
             ):
-                raise ToolCatalogMutationError(
-                    f"expected fingerprint is invalid for {name!r}"
-                )
+                raise ToolCatalogMutationError(f"expected fingerprint is invalid for {name!r}")
 
         with self._lock:
             if self._catalog_revision != expected_revision:
                 raise ToolCatalogRevisionConflict(
-                    f"registry revision is {self._catalog_revision}, "
-                    f"expected {expected_revision}"
+                    f"registry revision is {self._catalog_revision}, expected {expected_revision}"
                 )
             for name, fingerprint in expected.items():
                 current = self._tools.get(name)
                 if fingerprint is None:
                     if current is not None:
-                        raise ToolCatalogMutationError(
-                            f"tool {name!r} was expected to be absent"
-                        )
+                        raise ToolCatalogMutationError(f"tool {name!r} was expected to be absent")
                 elif current is None or tool_spec_fingerprint(current) != fingerprint:
-                    raise ToolCatalogMutationError(
-                        f"tool {name!r} fingerprint changed"
-                    )
+                    raise ToolCatalogMutationError(f"tool {name!r} fingerprint changed")
 
             proposed = dict(self._tools)
             for name in expected:
@@ -1823,8 +1727,7 @@ class ToolRegistry:
                     successor = proposed.get(name)
                     if current is not None and (
                         successor is None
-                        or tool_spec_fingerprint(successor)
-                        != tool_spec_fingerprint(current)
+                        or tool_spec_fingerprint(successor) != tool_spec_fingerprint(current)
                     ):
                         self._retire_spec_if_leased_locked(current)
                 self._tools = proposed
@@ -1867,9 +1770,7 @@ class ToolRegistry:
         """
 
         if target_phase != "companion":
-            raise ToolCatalogMutationError(
-                "durable authority restore only supports companion"
-            )
+            raise ToolCatalogMutationError("durable authority restore only supports companion")
         expected_ids = authority_handler_ids(
             phase="legacy",
             include_planned=False,
@@ -1896,15 +1797,12 @@ class ToolRegistry:
                 or not authority_accepts_handler(authority, spec.handler)
                 or (
                     spec.context_handler is not None
-                    and not authority_accepts_handler(
-                        authority, spec.context_handler
-                    )
+                    and not authority_accepts_handler(authority, spec.context_handler)
                 )
                 or authority.handler_id != spec.stable_handler_id
                 or spec.effect_class is not authority.effect.effect_class
                 or spec.idempotency is not authority.effect.idempotency
-                or spec.target_normalizer_version
-                != authority.effect.target_normalizer_version
+                or spec.target_normalizer_version != authority.effect.target_normalizer_version
                 or spec.execution_build_identity != authority.build
             ):
                 raise ToolCatalogMutationError(
@@ -1926,8 +1824,7 @@ class ToolRegistry:
         with self._lock:
             if self._catalog_revision != expected_revision:
                 raise ToolCatalogRevisionConflict(
-                    f"registry revision is {self._catalog_revision}, "
-                    f"expected {expected_revision}"
+                    f"registry revision is {self._catalog_revision}, expected {expected_revision}"
                 )
             if self._authority_phase == target_phase:
                 return ToolCatalogSnapshot(
@@ -1943,8 +1840,7 @@ class ToolRegistry:
                 )
             if self._authority_phase != "legacy":
                 raise ToolCatalogMutationError(
-                    f"registry authority phase is {self._authority_phase}, "
-                    "expected legacy"
+                    f"registry authority phase is {self._authority_phase}, expected legacy"
                 )
             current_ids = {
                 spec.stable_handler_id
@@ -1954,8 +1850,7 @@ class ToolRegistry:
             unexpected = current_ids - expected_ids
             if unexpected:
                 raise ToolCatalogMutationError(
-                    "legacy registry contains unexpected handlers: "
-                    f"{sorted(unexpected)!r}"
+                    f"legacy registry contains unexpected handlers: {sorted(unexpected)!r}"
                 )
             if not removal_ids.issubset(current_ids):
                 raise ToolCatalogMutationError(
@@ -2054,8 +1949,7 @@ class ToolRegistry:
         with self._lock:
             if self._catalog_revision != expected_revision:
                 raise ToolCatalogRevisionConflict(
-                    f"registry revision is {self._catalog_revision}, "
-                    f"expected {expected_revision}"
+                    f"registry revision is {self._catalog_revision}, expected {expected_revision}"
                 )
             if self._authority_phase != expected_phase:
                 raise ToolCatalogMutationError(
@@ -2179,10 +2073,7 @@ class ToolRegistry:
                 stale_reason = "schema_hash"
             elif spec.spec_version != capability.ref.spec_version:
                 stale_reason = "spec_version"
-            elif (
-                spec.permission_policy_version
-                != capability.ref.permission_policy_version
-            ):
+            elif spec.permission_policy_version != capability.ref.permission_policy_version:
                 stale_reason = "permission_policy_version"
             elif not spec.env_satisfied():
                 stale_reason = "environment"
@@ -2236,10 +2127,10 @@ class ToolRegistry:
                             item.get("fixture_epoch") if isinstance(item, dict) else None,
                             spec.fixture_spec_hash[:12],
                             str(item.get("fixture_spec_hash", ""))[:12]
-                            if isinstance(item, dict) else None,
+                            if isinstance(item, dict)
+                            else None,
                             spec.fixture_spec_version,
-                            item.get("fixture_spec_version")
-                            if isinstance(item, dict) else None,
+                            item.get("fixture_spec_version") if isinstance(item, dict) else None,
                         )
                         stale = True
                         break
@@ -2247,9 +2138,7 @@ class ToolRegistry:
                 self.invalidate_mcp_catalog_sources(spec.source for spec in fixture_specs)
                 raise RuntimeError("tool_catalog_stale")
 
-    def schemas(
-        self, enabled_toolsets: list[str] | None = None
-    ) -> list[dict[str, Any]]:
+    def schemas(self, enabled_toolsets: list[str] | None = None) -> list[dict[str, Any]]:
         """Return OpenAI-format schema list.
 
         Filtering rules (applied in order):
@@ -2268,9 +2157,7 @@ class ToolRegistry:
           5. ★v3 WI-T5.1：``cfg.tools.dangerous_tools_allowlist`` —
              非空时过 dangerous=True 工具白名单。
         """
-        allowed: set[str] | None = (
-            set(enabled_toolsets) if enabled_toolsets is not None else None
-        )
+        allowed: set[str] | None = set(enabled_toolsets) if enabled_toolsets is not None else None
 
         # WI-T5.1 v3：cfg.tools 字段（cfg provider 已注入）
         cfg_disabled: set[str] = set()
@@ -2283,9 +2170,7 @@ class ToolRegistry:
                 cfg_disabled_schema_only = set(
                     getattr(cfg, "disabled_toolsets_schema_only", []) or []
                 )
-                dangerous_allowlist = set(
-                    getattr(cfg, "dangerous_tools_allowlist", []) or []
-                )
+                dangerous_allowlist = set(getattr(cfg, "dangerous_tools_allowlist", []) or [])
             except Exception as _exc:  # noqa: BLE001
                 logger.warning("tools_config_provider read failed in schemas: %s", _exc)
 
@@ -2317,9 +2202,7 @@ class ToolRegistry:
     # ------------------------------------------------------------------
     # Dispatch
     # ------------------------------------------------------------------
-    def dispatch(
-        self, name: str, args: dict[str, Any], task_id: str = ""
-    ) -> str:
+    def dispatch(self, name: str, args: dict[str, Any], task_id: str = "") -> str:
         """Invoke a tool by name. Always returns a JSON string.
 
         * Unknown tool → ``{"error":"unknown tool: <name>","retriable":false}``
@@ -2338,9 +2221,7 @@ class ToolRegistry:
             spec = self._tools.get(name)
 
         if spec is None:
-            return json.dumps(
-                {"error": f"unknown tool: {name}", "retriable": False}
-            )
+            return json.dumps({"error": f"unknown tool: {name}", "retriable": False})
 
         if spec.check_fn is not None:
             try:
@@ -2368,14 +2249,13 @@ class ToolRegistry:
             # 生产 code-mode 走 V2 registry.execute_tool（原生 async 分流），
             # 不经此处。
             import inspect as _inspect2
+
             if _inspect2.iscoroutine(result):
                 result = _run_coro_sync(result)
         except Exception as exc:  # noqa: BLE001 — everything caught by design
             retriable = _classify_retriable(exc)
             err = f"{type(exc).__name__}: {exc}"
-            logger.info(
-                "tool %r raised (retriable=%s): %s", name, retriable, err
-            )
+            logger.info("tool %r raised (retriable=%s): %s", name, retriable, err)
             return json.dumps({"error": err, "retriable": retriable})
 
         if isinstance(result, str):
@@ -2493,10 +2373,7 @@ class ToolRegistry:
                     "result": None,
                     "error": "capability_denied: missing execution context",
                 }
-            if (
-                execution_context.session_id != session_id
-                or not execution_context.scope_id
-            ):
+            if execution_context.session_id != session_id or not execution_context.scope_id:
                 return {"ok": False, "result": None, "error": "capability_denied"}
             if self._capability_scope_store is None:
                 return {
@@ -2519,9 +2396,11 @@ class ToolRegistry:
             if prepared is None:
                 provider = self._dynamic_capability_admission_provider
                 try:
-                    dynamically_admitted = bool(
-                        provider(name, execution_context, spec)
-                    ) if provider is not None else False
+                    dynamically_admitted = (
+                        bool(provider(name, execution_context, spec))
+                        if provider is not None
+                        else False
+                    )
                 except Exception as exc:  # noqa: BLE001 - admission is fail-closed
                     logger.warning(
                         "dynamic_capability_admission_failed tool=%s error_type=%s",
@@ -2551,8 +2430,7 @@ class ToolRegistry:
                     and (
                         prepared.ref.schema_hash != spec.schema_hash
                         or prepared.ref.spec_version != spec.spec_version
-                        or prepared.ref.permission_policy_version
-                        != spec.permission_policy_version
+                        or prepared.ref.permission_policy_version != spec.permission_policy_version
                     )
                 )
                 or not spec.env_satisfied()
@@ -2588,7 +2466,8 @@ class ToolRegistry:
                     }
             except Exception as _exc:  # noqa: BLE001
                 logger.warning(
-                    "tools_config_provider read failed in execute_tool: %s", _exc,
+                    "tools_config_provider read failed in execute_tool: %s",
+                    _exc,
                 )
 
         # WI-CC-2 (plan mode 物理只读): 规划期对写/执行类工具硬拦。
@@ -2603,7 +2482,9 @@ class ToolRegistry:
         ):
             logger.info(
                 "plan_read_only_deny sid=%s tool=%s category=%s",
-                session_id, name, spec.permission_category,
+                session_id,
+                name,
+                spec.permission_category,
             )
             return {
                 "ok": False,
@@ -2669,6 +2550,7 @@ class ToolRegistry:
         # 这里捕真 started_at，emit_receipt 时用它对账 ended_at。
         from datetime import datetime as _dt
         from datetime import timezone as _tz
+
         _started_at = _dt.now(UTC)
         try:
             import asyncio as _asyncio
@@ -2687,18 +2569,16 @@ class ToolRegistry:
                     )
                 except Exception:  # noqa: BLE001
                     pass
-            timeout_s = float(getattr(spec, "timeout_seconds", cfg_default_timeout)) or cfg_default_timeout
+            timeout_s = (
+                float(getattr(spec, "timeout_seconds", cfg_default_timeout)) or cfg_default_timeout
+            )
 
             async def _run_handler() -> Any:
                 host_context = execution_context
                 if host_context is not None and active_policy is not None:
-                    host_context = replace(
-                        host_context, policy_snapshot=active_policy
-                    )
+                    host_context = replace(host_context, policy_snapshot=active_policy)
                 token = (
-                    set_tool_execution_context(host_context)
-                    if host_context is not None
-                    else None
+                    set_tool_execution_context(host_context) if host_context is not None else None
                 )
                 try:
                     if _inspect.iscoroutinefunction(spec.handler):
@@ -2715,9 +2595,7 @@ class ToolRegistry:
             try:
                 result = await _asyncio.wait_for(_run_handler(), timeout=timeout_s)
             except TimeoutError:
-                logger.warning(
-                    "execute_tool %r timed out after %.1fs", name, timeout_s
-                )
+                logger.warning("execute_tool %r timed out after %.1fs", name, timeout_s)
                 if self._breaker is not None:
                     await self._breaker.record_call(session_id, name, ok=False)
                 return {
@@ -2755,18 +2633,21 @@ class ToolRegistry:
             try:
                 cfg = self._tools_config_provider()
                 envelope_on = bool(
-                    getattr(getattr(cfg, "last_mile", None),
-                            "artifact_envelope", False)
+                    getattr(getattr(cfg, "last_mile", None), "artifact_envelope", False)
                 )
                 if envelope_on:
                     from deskpet.tools.artifact import maybe_add_artifacts
+
                     envelope = maybe_add_artifacts(
-                        envelope=envelope, tool_name=name, enable=True,
+                        envelope=envelope,
+                        tool_name=name,
+                        enable=True,
                     )
             except Exception as _exc:  # noqa: BLE001 — never break dispatch
                 logger.warning(
                     "tools_config_provider raised in execute_tool %r: %s",
-                    name, _exc,
+                    name,
+                    _exc,
                 )
 
         # WI-T2.2 P0 修：emit receipt（PRD §3 D5 + 二轮 P0-1 接电）。
@@ -2777,6 +2658,7 @@ class ToolRegistry:
                 store = self._receipt_store_provider()
                 if store is not None:
                     from deskpet.tools.receipt_store import emit_receipt
+
                     self._session_iteration[session_id] = (
                         self._session_iteration.get(session_id, 0) + 1
                     )
@@ -2790,33 +2672,34 @@ class ToolRegistry:
                     # 录）+ now() 算 duration_ms。原 v2.1 用两次 now() 间隔仅
                     # 微秒，导致 receipt duration_ms ~0 → p95 监控失效。
                     receipt_args = {
-                        k: v for k, v in dict(merged_params or {}).items()
+                        k: v
+                        for k, v in dict(merged_params or {}).items()
                         if not (isinstance(k, str) and k.startswith("_"))
                     }
                     try:
-                        receipt_args = json.loads(json.dumps(
-                            receipt_args, ensure_ascii=False, default=str
-                        ))
+                        receipt_args = json.loads(
+                            json.dumps(receipt_args, ensure_ascii=False, default=str)
+                        )
                     except (TypeError, ValueError):
-                        receipt_args = {
-                            str(k): str(v) for k, v in receipt_args.items()
-                        }
+                        receipt_args = {str(k): str(v) for k, v in receipt_args.items()}
                     _artifact_shas: list[str] | None = None
                     _env_arts = envelope.get("artifacts")
                     if not (isinstance(_env_arts, list) and _env_arts) and envelope_ok:
                         from deskpet.tools.artifact import extract_artifacts_from_result
+
                         _env_arts = [
                             artifact.to_dict()
                             for artifact in extract_artifacts_from_result(
-                                tool_name=name, result_json=result,
+                                tool_name=name,
+                                result_json=result,
                             )
                         ]
                     if isinstance(_env_arts, list) and _env_arts:
                         from deskpet.tools.artifact import sha256_file_async
+
                         _shas: list[str] = []
-                        _workspace = (
-                            merged_params.get("_project_root")
-                            or merged_params.get("_write_scope_root")
+                        _workspace = merged_params.get("_project_root") or merged_params.get(
+                            "_write_scope_root"
                         )
                         _workspace_root = Path(str(_workspace)).resolve() if _workspace else None
                         for _a in _env_arts:
@@ -2852,7 +2735,8 @@ class ToolRegistry:
             except Exception as _exc:  # noqa: BLE001 — never break dispatch
                 logger.warning(
                     "receipt_store_provider raised in execute_tool %r: %s",
-                    name, _exc,
+                    name,
+                    _exc,
                 )
 
         # P5-S2 Phase 3: record success/failure to the breaker. The
@@ -2963,32 +2847,19 @@ class ToolRegistry:
             active = self._tools.get(tool_name)
             if (
                 active is not None
-                and tool_spec_fingerprint(active)
-                == expected_tool_spec_fingerprint
+                and tool_spec_fingerprint(active) == expected_tool_spec_fingerprint
             ):
                 spec = active
             else:
-                run_id = (
-                    ""
-                    if execution_context is None
-                    else execution_context.run_id
+                run_id = "" if execution_context is None else execution_context.run_id
+                leased = bool(
+                    run_id
+                ) and expected_tool_spec_fingerprint in self._snapshot_spec_leases.get(
+                    (catalog_snapshot_ref, run_id), frozenset()
                 )
-                leased = (
-                    bool(run_id)
-                    and expected_tool_spec_fingerprint
-                    in self._snapshot_spec_leases.get(
-                        (catalog_snapshot_ref, run_id), frozenset()
-                    )
-                )
-                spec = (
-                    self._retired_specs.get(expected_tool_spec_fingerprint)
-                    if leased
-                    else None
-                )
+                spec = self._retired_specs.get(expected_tool_spec_fingerprint) if leased else None
         if spec is None or spec.name != tool_name:
-            raise PreparedToolCallStale(
-                "frozen ToolSpec is no longer active or leased"
-            )
+            raise PreparedToolCallStale("frozen ToolSpec is no longer active or leased")
         return self._prepare_call_with_spec(
             spec,
             raw_params,
@@ -3014,13 +2885,9 @@ class ToolRegistry:
             if not isinstance(execution_context, ToolExecutionContext):
                 raise TypeError("execution_context must be ToolExecutionContext")
             if execution_context.session_id != session_id:
-                raise ValueError(
-                    "trusted context session does not match preparation session"
-                )
+                raise ValueError("trusted context session does not match preparation session")
             if execution_context.call_id != stable_call_id:
-                raise ValueError(
-                    "trusted context call does not match stable_call_id"
-                )
+                raise ValueError("trusted context call does not match stable_call_id")
             reject_reserved_model_fields(raw_params)
         tool_name = spec.name
         spec_fingerprint = tool_spec_fingerprint(spec)
@@ -3037,12 +2904,9 @@ class ToolRegistry:
             raise TypeError("tool params must be a JSON object")
         params.update(dict(thawed_params))
         params = _schema_defaults(spec.schema, params)
-        input_blob_hashes = tuple(
-            str(item) for item in params.pop("_input_blob_hashes", ()) or ()
-        )
+        input_blob_hashes = tuple(str(item) for item in params.pop("_input_blob_hashes", ()) or ())
         effect_type = str(
-            getattr(getattr(spec.effect_policy, "kind", None), "value", None)
-            or "opaque_manual"
+            getattr(getattr(spec.effect_policy, "kind", None), "value", None) or "opaque_manual"
         )
         targets: Sequence[Any]
         if spec.prepare is not None:
@@ -3080,8 +2944,7 @@ class ToolRegistry:
                 session_id=session_id,
                 stable_call_id=stable_call_id,
                 workspace=(
-                    execution_context.write_scope_root
-                    or execution_context.workspace
+                    execution_context.write_scope_root or execution_context.workspace
                     if execution_context is not None
                     else None
                 ),
@@ -3122,25 +2985,15 @@ class ToolRegistry:
         if resolver is None:
             return ()
         if execution_context is None:
-            raise ValueError(
-                f"tool {spec.name} requires trusted context for resource resolution"
-            )
+            raise ValueError(f"tool {spec.name} requires trusted context for resource resolution")
         resolved = tuple(resolver(dict(thaw_json(params)), execution_context))
         if not resolved:
-            raise ValueError(
-                f"tool {spec.name} resource resolver returned no selectors"
-            )
+            raise ValueError(f"tool {spec.name} resource resolver returned no selectors")
         if not all(isinstance(item, ResourceSelector) for item in resolved):
-            raise TypeError(
-                f"tool {spec.name} resource resolver returned an invalid selector"
-            )
-        identities = {
-            (item.kind, item.canonical_value, item.access) for item in resolved
-        }
+            raise TypeError(f"tool {spec.name} resource resolver returned an invalid selector")
+        identities = {(item.kind, item.canonical_value, item.access) for item in resolved}
         if len(identities) != len(resolved):
-            raise ValueError(
-                f"tool {spec.name} resource resolver returned duplicate selectors"
-            )
+            raise ValueError(f"tool {spec.name} resource resolver returned duplicate selectors")
         return resolved
 
     def _normalize_result(self, spec: ToolSpec, raw: Any) -> NormalizedToolOutcome:
@@ -3192,9 +3045,7 @@ class ToolRegistry:
             return raw
         try:
             cfg = self._tools_config_provider()
-            enabled = bool(
-                getattr(getattr(cfg, "last_mile", None), "artifact_envelope", False)
-            )
+            enabled = bool(getattr(getattr(cfg, "last_mile", None), "artifact_envelope", False))
         except Exception as exc:  # noqa: BLE001 - config cannot break dispatch
             logger.warning(
                 "tools_config_provider raised in prepared artifact %r: %s",
@@ -3206,9 +3057,7 @@ class ToolRegistry:
             return raw
 
         payload = _result_payload(raw)
-        if isinstance(payload, Mapping) and (
-            payload.get("ok") is False or payload.get("error")
-        ):
+        if isinstance(payload, Mapping) and (payload.get("ok") is False or payload.get("error")):
             return raw
         if isinstance(payload, Mapping) and isinstance(payload.get("artifacts"), list):
             return raw
@@ -3226,11 +3075,7 @@ class ToolRegistry:
                 if execution_context is not None
                 else None
             )
-            workspace_root = (
-                Path(workspace_value).resolve()
-                if workspace_value
-                else None
-            )
+            workspace_root = Path(workspace_value).resolve() if workspace_value else None
             artifacts = envelope.get("artifacts")
             if workspace_root is not None and isinstance(artifacts, list):
                 for artifact in artifacts:
@@ -3284,12 +3129,9 @@ class ToolRegistry:
         return None
 
     @staticmethod
-    def _prepared_snapshot_matches(
-        prepared: PreparedToolCall, spec: ToolSpec
-    ) -> bool:
+    def _prepared_snapshot_matches(prepared: PreparedToolCall, spec: ToolSpec) -> bool:
         effect_type = str(
-            getattr(getattr(spec.effect_policy, "kind", None), "value", None)
-            or "opaque_manual"
+            getattr(getattr(spec.effect_policy, "kind", None), "value", None) or "opaque_manual"
         )
         return (
             prepared.tool_spec_version,
@@ -3320,8 +3162,7 @@ class ToolRegistry:
                 spec = active
             elif (
                 active is not None
-                and tool_spec_fingerprint(active)
-                == prepared.tool_spec_fingerprint
+                and tool_spec_fingerprint(active) == prepared.tool_spec_fingerprint
             ):
                 spec = active
             else:
@@ -3337,19 +3178,15 @@ class ToolRegistry:
                     else any(
                         snapshot_ref == prepared.catalog_snapshot_ref
                         and prepared.tool_spec_fingerprint in fingerprints
-                        for (snapshot_ref, _run_id), fingerprints
-                        in self._snapshot_spec_leases.items()
+                        for (
+                            snapshot_ref,
+                            _run_id,
+                        ), fingerprints in self._snapshot_spec_leases.items()
                     )
                 )
-                spec = (
-                    self._retired_specs.get(prepared.tool_spec_fingerprint)
-                    if leased
-                    else None
-                )
+                spec = self._retired_specs.get(prepared.tool_spec_fingerprint) if leased else None
         if spec is None or spec.name != prepared.tool_name:
-            raise PreparedToolCallStale(
-                "prepared ToolSpec is no longer active or leased"
-            )
+            raise PreparedToolCallStale("prepared ToolSpec is no longer active or leased")
         if prepared.tool_spec_fingerprint and (
             tool_spec_fingerprint(spec) != prepared.tool_spec_fingerprint
         ):
@@ -3360,9 +3197,7 @@ class ToolRegistry:
             raise PreparedToolCallStale("prepared call policy snapshot is stale")
         return spec
 
-    def is_concurrency_safe(
-        self, tool: str | PreparedToolCall
-    ) -> bool:
+    def is_concurrency_safe(self, tool: str | PreparedToolCall) -> bool:
         """Return concurrency policy from the exact prepared ToolSpec.
 
         String lookup remains as a compatibility adapter for non-durable
@@ -3377,16 +3212,13 @@ class ToolRegistry:
         # keeps one bogus name from serializing unrelated valid calls.
         return bool(spec.concurrency_safe) if spec is not None else True
 
-    def prepared_execution_policy(
-        self, prepared: PreparedToolCall
-    ) -> tuple[bool, bool]:
+    def prepared_execution_policy(self, prepared: PreparedToolCall) -> tuple[bool, bool]:
         """Return trusted (authorization, durable-effect) policy for a snapshot."""
         if not isinstance(prepared, PreparedToolCall):
             raise TypeError("prepared execution policy requires PreparedToolCall")
         spec = self.resolve_prepared_spec(prepared)
         effect_type = str(
-            getattr(getattr(spec.effect_policy, "kind", None), "value", None)
-            or "opaque_manual"
+            getattr(getattr(spec.effect_policy, "kind", None), "value", None) or "opaque_manual"
         )
         authorization = bool(
             spec.dangerous or spec.permission_category in _WRITE_PERMISSION_CATEGORIES
@@ -3422,19 +3254,25 @@ class ToolRegistry:
         )
 
     async def _record_prepared_receipt(
-        self, spec: ToolSpec, prepared: PreparedToolCall, outcome: NormalizedToolOutcome, *,
-        effect_id: str, session_id: str, started_at: Any,
+        self,
+        spec: ToolSpec,
+        prepared: PreparedToolCall,
+        outcome: NormalizedToolOutcome,
+        *,
+        effect_id: str,
+        session_id: str,
+        started_at: Any,
         execution_context: ToolExecutionContext | None,
     ) -> None:
         status = self._outcome_status(spec, prepared, outcome)
-        self._prepared_execution_metadata[effect_id] = {
-            "outcome_status": status.value
-        }
+        self._prepared_execution_metadata[effect_id] = {"outcome_status": status.value}
         try:
             from deskpet.tools.artifact import extract_artifacts_from_result, sha256_file_async
 
             encoded = json.dumps(outcome.to_dict()["value"], ensure_ascii=False, default=str)
-            artifacts = extract_artifacts_from_result(tool_name=prepared.tool_name, result_json=encoded)
+            artifacts = extract_artifacts_from_result(
+                tool_name=prepared.tool_name, result_json=encoded
+            )
             refs: list[str] = []
             for artifact in artifacts:
                 digest = artifact.sha256
@@ -3464,24 +3302,33 @@ class ToolRegistry:
 
             accepted = status is OutcomeStatus.ACCEPTED
             receipt = emit_receipt(
-                store, tool_name=prepared.tool_name,
+                store,
+                tool_name=prepared.tool_name,
                 args={
-                    k: v
-                    for k, v in prepared.arguments_json().items()
-                    if not str(k).startswith("_")
+                    k: v for k, v in prepared.arguments_json().items() if not str(k).startswith("_")
                 },
-                started_at=started_at, ended_at=datetime.now(UTC),
-                ok=status is OutcomeStatus.SUCCEEDED, session_id=session_id,
-                artifact_shas=refs or None, phase="accepted" if accepted else "executed",
-                outcome="pending" if accepted else "success" if status is OutcomeStatus.SUCCEEDED else "failed",
+                started_at=started_at,
+                ended_at=datetime.now(UTC),
+                ok=status is OutcomeStatus.SUCCEEDED,
+                session_id=session_id,
+                artifact_shas=refs or None,
+                phase="accepted" if accepted else "executed",
+                outcome="pending"
+                if accepted
+                else "success"
+                if status is OutcomeStatus.SUCCEEDED
+                else "failed",
                 run_id=execution_context.run_id if execution_context is not None else None,
-                node_execution_id=prepared.stable_call_id, effect_id=effect_id,
+                node_execution_id=prepared.stable_call_id,
+                effect_id=effect_id,
             )
-            self._prepared_execution_metadata[effect_id].update({
-                "receipt_ref": receipt.receipt_id,
-                "artifact_refs": list(dict.fromkeys(refs)),
-                "evidence_verified": bool(receipt.receipt_id),
-            })
+            self._prepared_execution_metadata[effect_id].update(
+                {
+                    "receipt_ref": receipt.receipt_id,
+                    "artifact_refs": list(dict.fromkeys(refs)),
+                    "evidence_verified": bool(receipt.receipt_id),
+                }
+            )
         except Exception as exc:  # noqa: BLE001 - observability cannot break dispatch
             logger.warning("prepared receipt emission failed for %r: %s", prepared.tool_name, exc)
 
@@ -3520,9 +3367,15 @@ class ToolRegistry:
             )
         self._prepared_execution_outcomes[effect_id] = outcome
         from datetime import datetime, timezone
+
         await self._record_prepared_receipt(
-            spec, prepared, outcome, effect_id=effect_id, session_id=session_id,
-            started_at=datetime.now(UTC), execution_context=context,
+            spec,
+            prepared,
+            outcome,
+            effect_id=effect_id,
+            session_id=session_id,
+            started_at=datetime.now(UTC),
+            execution_context=context,
         )
         return "complete", outcome
 
@@ -3537,18 +3390,16 @@ class ToolRegistry:
         return tuple(
             sorted(
                 effect_id
-                for effect_id, (future, _, _, context, _, _) in
-                self._late_prepared_calls.items()
-                if future.done()
-                and context is not None
-                and context.run_id == run_id
+                for effect_id, (future, _, _, context, _, _) in self._late_prepared_calls.items()
+                if future.done() and context is not None and context.run_id == run_id
             )
         )
 
     async def close_prepared_executions(self, timeout: float) -> None:
         """Bound shutdown wait without discarding still-running effect evidence."""
-        pending = tuple(future for future, *_ in self._late_prepared_calls.values()
-                        if not future.done())
+        pending = tuple(
+            future for future, *_ in self._late_prepared_calls.values() if not future.done()
+        )
         if pending:
             await asyncio.wait(pending, timeout=max(0.0, timeout))
 
@@ -3570,13 +3421,9 @@ class ToolRegistry:
             raise ValueError("prepared call does not match trusted context")
         if execution_context.effect_id != effect_id:
             raise ValueError("effect id does not match trusted context")
-        spec = self.resolve_prepared_spec(
-            prepared, run_id=execution_context.run_id
-        )
+        spec = self.resolve_prepared_spec(prepared, run_id=execution_context.run_id)
         if spec.dispatch_adapter_id != "builtin.function":
-            raise RuntimeError(
-                f"prepared dispatch adapter unavailable: {spec.dispatch_adapter_id}"
-            )
+            raise RuntimeError(f"prepared dispatch adapter unavailable: {spec.dispatch_adapter_id}")
         build_identity = spec.execution_build_identity
         runtime_identity = str(
             spec.runtime_provenance_ref
@@ -3619,11 +3466,7 @@ class ToolRegistry:
         )
 
         async def invoke() -> NormalizedToolOutcome:
-            authorization = (
-                authorization_provider()
-                if authorization_provider is not None
-                else None
-            )
+            authorization = authorization_provider() if authorization_provider is not None else None
             return await self.execute_prepared(
                 prepared,
                 effect_id=effect_id,
@@ -3694,13 +3537,9 @@ class ToolRegistry:
                 "scope_hash": execution_context.scope_hash,
                 "trace_id": execution_context.trace_id,
             }
-            missing = sorted(
-                key for key, value in required_context.items() if not str(value or "")
-            )
+            missing = sorted(key for key, value in required_context.items() if not str(value or ""))
             if missing:
-                return NormalizedToolOutcome.failure(
-                    "trusted_context_missing", ",".join(missing)
-                )
+                return NormalizedToolOutcome.failure("trusted_context_missing", ",".join(missing))
             if execution_context.call_id != prepared.stable_call_id:
                 return NormalizedToolOutcome.failure(
                     "trusted_context_call_binding_mismatch",
@@ -3719,13 +3558,10 @@ class ToolRegistry:
 
         cache_key = (prepared.tool_name, prepared.stable_call_id, prepared.args_hash)
         current_effect_type = str(
-            getattr(getattr(spec.effect_policy, "kind", None), "value", None)
-            or "opaque_manual"
+            getattr(getattr(spec.effect_policy, "kind", None), "value", None) or "opaque_manual"
         )
         grant_session_id = (
-            self._grant_value(authorization, "session_id")
-            if authorization is not None
-            else None
+            self._grant_value(authorization, "session_id") if authorization is not None else None
         )
         session_id = str(
             execution_context.session_id
@@ -3742,18 +3578,29 @@ class ToolRegistry:
                     "policy_recheck_failed", f"tools config unavailable: {type(exc).__name__}"
                 )
         if not spec.env_satisfied():
-            return NormalizedToolOutcome.failure("tool_disabled", "required environment is unavailable")
-        if session_id in self._plan_read_only_sessions and spec.permission_category in _WRITE_PERMISSION_CATEGORIES:
-            return NormalizedToolOutcome.failure("plan_read_only", "write tool is disabled during planning")
+            return NormalizedToolOutcome.failure(
+                "tool_disabled", "required environment is unavailable"
+            )
+        if (
+            session_id in self._plan_read_only_sessions
+            and spec.permission_category in _WRITE_PERMISSION_CATEGORIES
+        ):
+            return NormalizedToolOutcome.failure(
+                "plan_read_only", "write tool is disabled during planning"
+            )
         if spec.check_fn is not None:
             try:
                 if not bool(spec.check_fn()):
-                    return NormalizedToolOutcome.failure("tool_not_ready", "dynamic tool check failed")
+                    return NormalizedToolOutcome.failure(
+                        "tool_not_ready", "dynamic tool check failed"
+                    )
             except Exception as exc:  # noqa: BLE001
                 return NormalizedToolOutcome.failure(
                     "tool_not_ready", f"dynamic tool check raised {type(exc).__name__}"
                 )
-        if self._breaker is not None and not await self._breaker.can_call(session_id, prepared.tool_name):
+        if self._breaker is not None and not await self._breaker.can_call(
+            session_id, prepared.tool_name
+        ):
             return NormalizedToolOutcome.failure("circuit_open", "tool circuit breaker is open")
         if authorization is not None:
             if execution_context is not None:
@@ -3778,11 +3625,11 @@ class ToolRegistry:
             if grant_error is not None:
                 return NormalizedToolOutcome.failure(grant_error, "authorization grant is invalid")
         elif execution_context is not None and (
-            spec.dangerous
-            or spec.permission_category in _WRITE_PERMISSION_CATEGORIES
+            spec.dangerous or spec.permission_category in _WRITE_PERMISSION_CATEGORIES
         ):
             return NormalizedToolOutcome.failure(
-                "authorization_required", "prepared execution requires a durable authorization grant"
+                "authorization_required",
+                "prepared execution requires a durable authorization grant",
             )
 
         exact_params = prepared.arguments_json()
@@ -3804,9 +3651,7 @@ class ToolRegistry:
                     )
                     try:
                         if spec.context_handler is not None:
-                            return await spec.context_handler(
-                                exact_params, execution_context
-                            )
+                            return await spec.context_handler(exact_params, execution_context)
                         return await spec.handler(exact_params, effect_id)
                     finally:
                         if token is not None:
@@ -3844,7 +3689,11 @@ class ToolRegistry:
                     )
                     raise
 
-            raw = await invoke() if not _inspect.iscoroutinefunction(spec.context_handler or spec.handler) else await asyncio.wait_for(invoke(), timeout=spec.timeout_seconds)
+            raw = (
+                await invoke()
+                if not _inspect.iscoroutinefunction(spec.context_handler or spec.handler)
+                else await asyncio.wait_for(invoke(), timeout=spec.timeout_seconds)
+            )
             raw = self._prepared_artifact_envelope(spec, raw, execution_context)
             outcome = self._normalize_result(spec, raw)
             if self._tool_completion_latch is not None and execution_context is not None:
@@ -3860,10 +3709,7 @@ class ToolRegistry:
             late_pending = effect_id in self._late_prepared_calls
             if late_pending:
                 self._prepared_execution_metadata[effect_id] = {"late_pending": True}
-                if (
-                    self._prepared_ready_callback is not None
-                    and execution_context is not None
-                ):
+                if self._prepared_ready_callback is not None and execution_context is not None:
                     future.add_done_callback(
                         lambda _done, run_id=execution_context.run_id: (
                             self._prepared_ready_callback(run_id)
@@ -3886,8 +3732,13 @@ class ToolRegistry:
 
         if not late_pending:
             await self._record_prepared_receipt(
-                spec, prepared, outcome, effect_id=effect_id, session_id=session_id,
-                started_at=started_at, execution_context=execution_context,
+                spec,
+                prepared,
+                outcome,
+                effect_id=effect_id,
+                session_id=session_id,
+                started_at=started_at,
+                execution_context=execution_context,
             )
         if self._breaker is not None:
             await self._breaker.record_call(
@@ -3941,11 +3792,7 @@ class ToolRegistry:
             sorted(
                 spec.name
                 for spec in specs
-                if (
-                    spec.dangerous
-                    or spec.permission_category
-                    in _WRITE_PERMISSION_CATEGORIES
-                )
+                if (spec.dangerous or spec.permission_category in _WRITE_PERMISSION_CATEGORIES)
                 and spec.resource_scope_resolver is None
             )
         )
@@ -3997,10 +3844,9 @@ class ToolRegistry:
         out: list[dict[str, Any] | None] = [None] * len(calls)
 
         if safe_batch:
-            safe_results = await asyncio.gather(*(
-                self.execute_tool(n, a, session_id, t)
-                for (_, n, a, t) in safe_batch
-            ))
+            safe_results = await asyncio.gather(
+                *(self.execute_tool(n, a, session_id, t) for (_, n, a, t) in safe_batch)
+            )
             for (orig_i, _, _, _), res in zip(safe_batch, safe_results):
                 out[orig_i] = res
 
@@ -4032,9 +3878,7 @@ class ToolRegistry:
             siblings = [
                 s.name
                 for s in self._tools.values()
-                if s.toolset == spec.toolset
-                and s.name != name
-                and s.env_satisfied()
+                if s.toolset == spec.toolset and s.name != name and s.env_satisfied()
             ]
         siblings.sort()
 
@@ -4042,10 +3886,7 @@ class ToolRegistry:
             cooldown_str = f"剩余 {cooldown_left:.0f} 秒"
         else:
             cooldown_str = "请稍后重试"
-        hint = (
-            f"{name} 连续失败 3 次已熔断 ({cooldown_str})。"
-            "检查参数或换个工具。"
-        )
+        hint = f"{name} 连续失败 3 次已熔断 ({cooldown_str})。检查参数或换个工具。"
         result_payload = {
             "ok": False,
             "error": "circuit_open",
@@ -4072,9 +3913,7 @@ class ToolRegistry:
         with self._lock:
             if source is None:
                 return sorted(self._tools.keys())
-            return sorted(
-                n for n, s in self._tools.items() if s.source == source
-            )
+            return sorted(n for n, s in self._tools.items() if s.source == source)
 
     def get(self, name: str) -> ToolSpec | None:
         """Return the full spec for one tool, or None if absent.

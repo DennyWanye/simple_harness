@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: BUSL-1.1
 """TG-0.2 — SubagentScheduler 有界并发 + 背压 + 进度。"""
+
 from __future__ import annotations
 
 import asyncio
@@ -28,8 +29,13 @@ def test_global_cap_bounds_concurrency():  # 0.2.1
 
         results = await asyncio.gather(
             *[
-                sched.run(kind="general", run_id=f"r{i}", task_id=f"t{i}",
-                          parent_sid="p", coro_factory=one)
+                sched.run(
+                    kind="general",
+                    run_id=f"r{i}",
+                    task_id=f"t{i}",
+                    parent_sid="p",
+                    coro_factory=one,
+                )
                 for i in range(6)
             ]
         )
@@ -56,10 +62,14 @@ def test_lane_cap_independent():  # 0.2.2
             await asyncio.sleep(0.01)
 
         await asyncio.gather(
-            *[sched.run(kind="A", run_id=f"a{i}", task_id=f"a{i}", parent_sid="p",
-                        coro_factory=a) for i in range(3)],
-            *[sched.run(kind="B", run_id=f"b{i}", task_id=f"b{i}", parent_sid="p",
-                        coro_factory=b) for i in range(3)],
+            *[
+                sched.run(kind="A", run_id=f"a{i}", task_id=f"a{i}", parent_sid="p", coro_factory=a)
+                for i in range(3)
+            ],
+            *[
+                sched.run(kind="B", run_id=f"b{i}", task_id=f"b{i}", parent_sid="p", coro_factory=b)
+                for i in range(3)
+            ],
         )
 
     _run(body())
@@ -78,8 +88,7 @@ def test_progress_sequence():  # 0.2.3
         async def one():
             return 1
 
-        await sched.run(kind="general", run_id="r1", task_id="t1",
-                        parent_sid="p", coro_factory=one)
+        await sched.run(kind="general", run_id="r1", task_id="t1", parent_sid="p", coro_factory=one)
 
     _run(body())
     statuses = [s for (r, s) in events if r == "r1"]
@@ -90,14 +99,14 @@ def test_failure_emits_failed_and_reraises():  # 0.2.4
     events: list[str] = []
 
     async def body():
-        sched = SubagentScheduler(
-            progress_sink=lambda p: events.append(p["status"]))
+        sched = SubagentScheduler(progress_sink=lambda p: events.append(p["status"]))
 
         async def boom():
             raise ValueError("nope")
 
-        await sched.run(kind="general", run_id="r1", task_id="t1",
-                        parent_sid="p", coro_factory=boom)
+        await sched.run(
+            kind="general", run_id="r1", task_id="t1", parent_sid="p", coro_factory=boom
+        )
 
     with pytest.raises(ValueError):
         _run(body())
@@ -114,8 +123,9 @@ def test_progress_sink_exception_does_not_break():  # 0.2.5
         async def one():
             return "still-ok"
 
-        return await sched.run(kind="general", run_id="r1", task_id="t1",
-                               parent_sid="p", coro_factory=one)
+        return await sched.run(
+            kind="general", run_id="r1", task_id="t1", parent_sid="p", coro_factory=one
+        )
 
     assert _run(body()) == "still-ok"
 
@@ -132,9 +142,7 @@ def test_queued_cancel_emits_terminal_progress():  # 0.2.7
         # 全局 cap=1：第一个占住槽，第二个只能排队 → 取消它时仍在 queued。
         sched = SubagentScheduler(
             global_concurrency=1,
-            progress_sink=lambda p: events.append(
-                (p["run_id"], p["status"], p.get("reason"))
-            ),
+            progress_sink=lambda p: events.append((p["run_id"], p["status"], p.get("reason"))),
         )
 
         started = asyncio.Event()
@@ -147,13 +155,13 @@ def test_queued_cancel_emits_terminal_progress():  # 0.2.7
             await asyncio.sleep(0.2)
 
         t_hog = asyncio.create_task(
-            sched.run(kind="general", run_id="hog", task_id="hog",
-                      parent_sid="p", coro_factory=hog)
+            sched.run(kind="general", run_id="hog", task_id="hog", parent_sid="p", coro_factory=hog)
         )
         await started.wait()  # 确保 hog 已占槽
         t_victim = asyncio.create_task(
-            sched.run(kind="general", run_id="vic", task_id="vic",
-                      parent_sid="p", coro_factory=victim)
+            sched.run(
+                kind="general", run_id="vic", task_id="vic", parent_sid="p", coro_factory=victim
+            )
         )
         await asyncio.sleep(0.01)  # 让 victim 跑到 queued 并在信号量上 await
         t_victim.cancel()
@@ -194,8 +202,9 @@ def test_running_cancel_tags_reason_cancelled():  # 0.2.8
             await asyncio.sleep(1.0)  # 跑起来后挂住，等被取消
 
         t = asyncio.create_task(
-            sched.run(kind="general", run_id="r1", task_id="t1",
-                      parent_sid="p", coro_factory=long_task)
+            sched.run(
+                kind="general", run_id="r1", task_id="t1", parent_sid="p", coro_factory=long_task
+            )
         )
         await running.wait()  # 确保已进 running（拿到双闸）
         t.cancel()
@@ -204,7 +213,7 @@ def test_running_cancel_tags_reason_cancelled():  # 0.2.8
         return sched.snapshot()
 
     snap = _run(body())
-    assert ("running", None) in events       # 真进过 running
+    assert ("running", None) in events  # 真进过 running
     assert ("failed", "cancelled") in events  # 取消态带 reason
     assert snap["running"] == 0 and snap["queued"] == 0  # 无泄漏
 
@@ -221,12 +230,13 @@ def test_genuine_failure_has_no_cancelled_reason():  # 0.2.9
         async def boom():
             raise ValueError("nope")
 
-        await sched.run(kind="general", run_id="r1", task_id="t1",
-                        parent_sid="p", coro_factory=boom)
+        await sched.run(
+            kind="general", run_id="r1", task_id="t1", parent_sid="p", coro_factory=boom
+        )
 
     with pytest.raises(ValueError):
         _run(body())
-    assert ("failed", None) in events                  # 失败但无 cancelled 标记
+    assert ("failed", None) in events  # 失败但无 cancelled 标记
     assert ("failed", "cancelled") not in events
 
 
@@ -238,8 +248,16 @@ def test_snapshot_returns_to_zero():  # 0.2.6
             await asyncio.sleep(0.005)
 
         await asyncio.gather(
-            *[sched.run(kind="general", run_id=f"r{i}", task_id=f"t{i}",
-                        parent_sid="p", coro_factory=one) for i in range(4)]
+            *[
+                sched.run(
+                    kind="general",
+                    run_id=f"r{i}",
+                    task_id=f"t{i}",
+                    parent_sid="p",
+                    coro_factory=one,
+                )
+                for i in range(4)
+            ]
         )
         return sched.snapshot()
 

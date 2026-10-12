@@ -36,9 +36,7 @@ class ProviderFenceLease(Protocol):
 
 
 class ProviderInvocationUnitOfWork(Protocol):
-    async def claim_provider_invocation(
-        self, record: Any, **kwargs: Any
-    ) -> Any: ...
+    async def claim_provider_invocation(self, record: Any, **kwargs: Any) -> Any: ...
     async def complete_provider_invocation(
         self,
         run_id: str,
@@ -126,9 +124,7 @@ class ClaimedProviderDispatch:
     claim_record: Any
     fence_lease: ProviderFenceLease
     operation: DispatchOperation | None = None
-    start_resolution: (
-        DispatchStartedAck | DispatchNotStarted | DispatchStartUnknown | None
-    ) = None
+    start_resolution: DispatchStartedAck | DispatchNotStarted | DispatchStartUnknown | None = None
 
     @property
     def identity(self) -> DispatchIdentity:
@@ -174,11 +170,7 @@ def _ordinal(source: Any, name: str, default: int = 0) -> int:
 
 
 def _exception_code(exc: BaseException) -> str:
-    return str(
-        getattr(exc, "code", "")
-        or getattr(exc, "error_code", "")
-        or ""
-    )
+    return str(getattr(exc, "code", "") or getattr(exc, "error_code", "") or "")
 
 
 def _jsonable(value: Any) -> Any:
@@ -225,10 +217,7 @@ def _bounded_observability_value(
             projected["_truncated_fields"] = len(items) - 80
         return projected
     if isinstance(value, (list, tuple)):
-        projected = [
-            _bounded_observability_value(item, depth=depth + 1)
-            for item in value[:80]
-        ]
+        projected = [_bounded_observability_value(item, depth=depth + 1) for item in value[:80]]
         if len(value) > 80:
             projected.append({"_truncated_items": len(value) - 80})
         return projected
@@ -239,10 +228,7 @@ def _redact_provider_input_strings(value: Any) -> Any:
     if isinstance(value, str):
         return redact_sensitive_text(value)
     if isinstance(value, Mapping):
-        return {
-            str(key): _redact_provider_input_strings(item)
-            for key, item in value.items()
-        }
+        return {str(key): _redact_provider_input_strings(item) for key, item in value.items()}
     if isinstance(value, (list, tuple)):
         return [_redact_provider_input_strings(item) for item in value]
     return value
@@ -257,9 +243,7 @@ def build_provider_input_projection(request_payload: Any) -> dict[str, Any]:
     context into an unbounded durable database.
     """
 
-    redacted = _redact_provider_input_strings(
-        TraceRedactor().redact(_jsonable(request_payload))
-    )
+    redacted = _redact_provider_input_strings(TraceRedactor().redact(_jsonable(request_payload)))
     raw_size = len(_canonical_bytes(redacted))
     if raw_size <= _PROVIDER_INPUT_MAX_BYTES:
         return {
@@ -279,9 +263,7 @@ def build_provider_input_projection(request_payload: Any) -> dict[str, Any]:
         and str(message.get("role") or "") in {"system", "developer"}
     ][:1]
     recent_start = max(0, len(messages) - _PROVIDER_INPUT_RECENT_MESSAGES)
-    included_indexes = sorted(
-        set((*leading_indexes, *range(recent_start, len(messages))))
-    )
+    included_indexes = sorted(set((*leading_indexes, *range(recent_start, len(messages)))))
     included_messages = [
         {
             "_message_index": index,
@@ -336,9 +318,7 @@ class ProviderInvocationCoordinator:
         self,
         uow: ProviderInvocationUnitOfWork,
         *,
-        fence_reacquirer: Callable[
-            [str], Awaitable[ProviderFenceLease]
-        ] | None = None,
+        fence_reacquirer: Callable[[str], Awaitable[ProviderFenceLease]] | None = None,
         claim_owner: str = "provider-invocation-coordinator",
         fault_script: Any | None = None,
     ) -> None:
@@ -412,21 +392,15 @@ class ProviderInvocationCoordinator:
         if fence_lease.run_id != dispatch.identity.run_id:
             raise RuntimeError("provider fence lease run mismatch")
         record = self._build_claim_record(dispatch, fence_lease)
-        input_projection = build_provider_input_projection(
-            dispatch.snapshot.request_payload
-        )
+        input_projection = build_provider_input_projection(dispatch.snapshot.request_payload)
         input_payload_json = _canonical_bytes(input_projection).decode("utf-8")
         input_kwargs = {
             "input_payload_json": input_payload_json,
-            "input_payload_hash": hashlib.sha256(
-                input_payload_json.encode("utf-8")
-            ).hexdigest(),
+            "input_payload_hash": hashlib.sha256(input_payload_json.encode("utf-8")).hexdigest(),
             "input_created_at": float(record.claimed_at),
         }
         try:
-            claimed = await self._uow.claim_provider_invocation(
-                record, **input_kwargs
-            )
+            claimed = await self._uow.claim_provider_invocation(record, **input_kwargs)
         except BaseException as exc:
             if _exception_code(exc) != "write_outcome_unknown":
                 await _release_lease(fence_lease)
@@ -443,9 +417,7 @@ class ProviderInvocationCoordinator:
                 # The exact transaction is proven absent.  Retrying the same
                 # immutable claim is safe and still precedes any transport.
                 try:
-                    claimed = await self._uow.claim_provider_invocation(
-                        record, **input_kwargs
-                    )
+                    claimed = await self._uow.claim_provider_invocation(record, **input_kwargs)
                 except BaseException:
                     await _release_lease(fence_lease)
                     raise
@@ -474,45 +446,19 @@ class ProviderInvocationCoordinator:
             fault = await self._fault_script.consume_main(
                 run_id=dispatch.identity.run_id,
                 session_id=(
-                    str(
-                        dispatch.prepared.snapshot.policy_snapshot.get(
-                            "session_id"
-                        )
-                        or ""
-                    )
-                    or None
+                    str(dispatch.prepared.snapshot.policy_snapshot.get("session_id") or "") or None
                 ),
                 root_run_id=(
-                    str(
-                        dispatch.prepared.snapshot.policy_snapshot.get(
-                            "root_run_id"
-                        )
-                        or ""
-                    )
-                    or None
+                    str(dispatch.prepared.snapshot.policy_snapshot.get("root_run_id") or "") or None
                 ),
                 parent_run_id=(
-                    str(
-                        dispatch.prepared.snapshot.policy_snapshot.get(
-                            "parent_run_id"
-                        )
-                        or ""
-                    )
+                    str(dispatch.prepared.snapshot.policy_snapshot.get("parent_run_id") or "")
                     or None
                 ),
                 profile_key=(
-                    str(
-                        dispatch.prepared.snapshot.policy_snapshot.get(
-                            "profile_key"
-                        )
-                        or ""
-                    )
-                    or None
+                    str(dispatch.prepared.snapshot.policy_snapshot.get("profile_key") or "") or None
                 ),
-                purpose=str(
-                    dispatch.prepared.snapshot.policy_snapshot.get("purpose")
-                    or ""
-                ),
+                purpose=str(dispatch.prepared.snapshot.policy_snapshot.get("purpose") or ""),
             )
             if fault is not None:
                 error = fault.to_exception()
@@ -540,14 +486,12 @@ class ProviderInvocationCoordinator:
                 return_when=asyncio.FIRST_COMPLETED,
             )
             if operation.handoff.started in done:
-                resolution: (
-                    DispatchStartedAck
-                    | DispatchNotStarted
-                    | DispatchStartUnknown
-                ) = operation.handoff.started.result()
+                resolution: DispatchStartedAck | DispatchNotStarted | DispatchStartUnknown = (
+                    operation.handoff.started.result()
+                )
             elif operation.completion in done:
-                resolution: DispatchNotStarted | DispatchStartUnknown = (
-                    DispatchNotStarted(dispatch.identity, "transport_not_entered")
+                resolution: DispatchNotStarted | DispatchStartUnknown = DispatchNotStarted(
+                    dispatch.identity, "transport_not_entered"
                 )
             elif operation.handoff.transport_entered:
                 resolution = DispatchStartUnknown(
@@ -610,10 +554,7 @@ class ProviderInvocationCoordinator:
         except BaseException as exc:
             root_error = exc
             seen: set[int] = set()
-            while (
-                root_error.__cause__ is not None
-                and id(root_error) not in seen
-            ):
+            while root_error.__cause__ is not None and id(root_error) not in seen:
                 seen.add(id(root_error))
                 root_error = root_error.__cause__
             root_error_type = type(root_error).__name__
@@ -694,9 +635,7 @@ class ProviderInvocationCoordinator:
                 error_type=root_error_type,
                 error_message=root_error_message,
             )
-            raise ProviderDispatchUnknownError(
-                "provider_dispatch_unknown_after_handoff"
-            ) from exc
+            raise ProviderDispatchUnknownError("provider_dispatch_unknown_after_handoff") from exc
 
         if self._fence_reacquirer is None:
             await self._mark_unknown(dispatch, reason="fence_reacquirer_unavailable")
@@ -705,8 +644,7 @@ class ProviderInvocationCoordinator:
         try:
             if (
                 refreshed.run_id != dispatch.identity.run_id
-                or refreshed.revocation_epoch
-                != dispatch.fence_lease.revocation_epoch
+                or refreshed.revocation_epoch != dispatch.fence_lease.revocation_epoch
             ):
                 await self._mark_unknown(
                     dispatch,
@@ -719,9 +657,7 @@ class ProviderInvocationCoordinator:
                 await self._uow.complete_provider_invocation(
                     dispatch.identity.run_id,
                     dispatch.identity.invocation_id,
-                    expected_claim_epoch=int(
-                        getattr(dispatch.claim_record, "claim_epoch", 1)
-                    ),
+                    expected_claim_epoch=int(getattr(dispatch.claim_record, "claim_epoch", 1)),
                     outcome=outcome,
                     dispatch_started_ack_ref=resolution.ack_ref,
                     dispatch_started_ack_hash=resolution.ack_hash,
@@ -748,15 +684,13 @@ class ProviderInvocationCoordinator:
                     )
                     if (
                         stored is not None
-                        and str(getattr(stored, "status", "")).split(".")[-1].lower()
-                        == "completed"
+                        and str(getattr(stored, "status", "")).split(".")[-1].lower() == "completed"
                         and durable_outcome == outcome
                     ):
                         return result
                     if (
                         stored is not None
-                        and str(getattr(stored, "status", "")).split(".")[-1].lower()
-                        == "claimed"
+                        and str(getattr(stored, "status", "")).split(".")[-1].lower() == "claimed"
                     ):
                         await self._mark_unknown(
                             dispatch,
@@ -784,15 +718,9 @@ class ProviderInvocationCoordinator:
             dispatch.identity.run_id,
             dispatch.identity.invocation_id,
         )
-        if (
-            stored is None
-            or str(getattr(stored, "status", "")).split(".")[-1].lower()
-            != "claimed"
-        ):
+        if stored is None or str(getattr(stored, "status", "")).split(".")[-1].lower() != "claimed":
             return
-        transport_entered = bool(
-            operation is not None and operation.handoff.transport_entered
-        )
+        transport_entered = bool(operation is not None and operation.handoff.transport_entered)
         if transport_entered or isinstance(
             dispatch.start_resolution,
             (DispatchStartedAck, DispatchStartUnknown),
@@ -839,9 +767,7 @@ class ProviderInvocationCoordinator:
             "claim_epoch": 1,
             "claimed_at": time.time(),
             "revocation_epoch": lease.revocation_epoch,
-            "stream_epoch": self._durable_stream_epoch(
-                dispatch.identity.stream_epoch
-            ),
+            "stream_epoch": self._durable_stream_epoch(dispatch.identity.stream_epoch),
             "claim_hash": dispatch.claim_hash,
             "dispatch_started_ack_ref": None,
             "dispatch_started_ack_hash": None,
@@ -898,27 +824,20 @@ class ProviderInvocationCoordinator:
     ) -> bool:
         return (
             str(getattr(record, "run_id", "")) == dispatch.identity.run_id
-            and str(getattr(record, "invocation_id", ""))
-            == dispatch.identity.invocation_id
+            and str(getattr(record, "invocation_id", "")) == dispatch.identity.invocation_id
             and str(getattr(record, "request_hash", "")) == dispatch.request_hash
-            and int(getattr(record, "revocation_epoch", -1))
-            == lease.revocation_epoch
-            and str(getattr(record, "provider_id", ""))
-            == dispatch.identity.provider_id
-            and str(getattr(record, "model_id", ""))
-            == dispatch.identity.model_id
-            and str(getattr(record, "adapter_id", ""))
-            == dispatch.identity.adapter_id
+            and int(getattr(record, "revocation_epoch", -1)) == lease.revocation_epoch
+            and str(getattr(record, "provider_id", "")) == dispatch.identity.provider_id
+            and str(getattr(record, "model_id", "")) == dispatch.identity.model_id
+            and str(getattr(record, "adapter_id", "")) == dispatch.identity.adapter_id
             and str(getattr(record, "idempotency_group_id", ""))
             == dispatch.snapshot.idempotency_group_id
-            and int(getattr(record, "attempt_ordinal", -1))
-            == dispatch.snapshot.attempt_ordinal
+            and int(getattr(record, "attempt_ordinal", -1)) == dispatch.snapshot.attempt_ordinal
             and int(getattr(record, "stream_epoch", -1))
             == self._durable_stream_epoch(dispatch.identity.stream_epoch)
             and str(getattr(record, "policy_snapshot_json", ""))
             == _canonical_bytes(dict(dispatch.snapshot.policy_snapshot)).decode("utf-8")
-            and str(getattr(record, "status", "")).split(".")[-1].lower()
-            == "claimed"
+            and str(getattr(record, "status", "")).split(".")[-1].lower() == "claimed"
         )
 
     async def _mark_unknown(
@@ -939,9 +858,7 @@ class ProviderInvocationCoordinator:
         await self._uow.mark_unknown_provider_invocation(
             dispatch.identity.run_id,
             dispatch.identity.invocation_id,
-            expected_claim_epoch=int(
-                getattr(dispatch.claim_record, "claim_epoch", 1)
-            ),
+            expected_claim_epoch=int(getattr(dispatch.claim_record, "claim_epoch", 1)),
             outcome_ref=audit_ref,
             outcome_hash=audit_hash,
             dispatch_started_ack_ref=None if ack is None else ack.ack_ref,
@@ -971,9 +888,7 @@ class ProviderInvocationCoordinator:
         await self._uow.fail_provider_invocation(
             dispatch.identity.run_id,
             dispatch.identity.invocation_id,
-            expected_claim_epoch=int(
-                getattr(dispatch.claim_record, "claim_epoch", 1)
-            ),
+            expected_claim_epoch=int(getattr(dispatch.claim_record, "claim_epoch", 1)),
             outcome_ref=audit_ref,
             outcome_hash=audit_hash,
             dispatch_started_ack_ref=None if ack is None else ack.ack_ref,
@@ -999,8 +914,7 @@ class ProviderInvocationCoordinator:
         }
         digest = _hash(payload)
         return (
-            f"provider-audit:{dispatch.identity.run_id}:"
-            f"{dispatch.identity.invocation_id}:{status}",
+            f"provider-audit:{dispatch.identity.run_id}:{dispatch.identity.invocation_id}:{status}",
             digest,
         )
 
@@ -1028,10 +942,7 @@ def _agent_attempt_snapshot(
         or getattr(provider, "name", "")
         or type(provider).__name__
     )
-    adapter_id = str(
-        getattr(provider, "adapter_id", "")
-        or type(provider).__name__
-    )
+    adapter_id = str(getattr(provider, "adapter_id", "") or type(provider).__name__)
     model_id = str(
         getattr(provider, "model", "")
         or getattr(provider, "default_model", "")
@@ -1137,8 +1048,7 @@ async def coordinate_provider_call(
         except ProviderDispatchRetryableResponseError as exc:
             if retry_ordinal == 0:
                 logger.warning(
-                    "provider_dispatch_transient_retry "
-                    "run_id=%s attempt_id=%s status_code=%s",
+                    "provider_dispatch_transient_retry run_id=%s attempt_id=%s status_code=%s",
                     run_id,
                     attempt_id,
                     exc.status_code,
@@ -1219,19 +1129,13 @@ async def coordinate_provider_stream(
                     and isinstance(item.get("content"), str)
                 ):
                     item_type = str(item["type"])
-                    if (
-                        pending_delta_type is not None
-                        and item_type != pending_delta_type
-                    ):
+                    if pending_delta_type is not None and item_type != pending_delta_type:
                         await _flush_pending_delta()
                     pending_delta_type = item_type
                     content = str(item.get("content") or "")
                     pending_delta_parts.append(content)
                     pending_delta_chars += len(content)
-                    if (
-                        pending_delta_chars >= 256
-                        or len(pending_delta_parts) >= 32
-                    ):
+                    if pending_delta_chars >= 256 or len(pending_delta_parts) >= 32:
                         await _flush_pending_delta()
                     continue
                 await _flush_pending_delta()

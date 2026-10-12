@@ -97,9 +97,15 @@ def apply_scripted_plan(
     )
 
 
-def approve_content_only_completion(service: Any, mission: Any, binding: Any, *,
-                                    command_id: str, delivery: str | None = None,
-                                    statements: Mapping[str, str] | None = None) -> Any:
+def approve_content_only_completion(
+    service: Any,
+    mission: Any,
+    binding: Any,
+    *,
+    command_id: str,
+    delivery: str | None = None,
+    statements: Mapping[str, str] | None = None,
+) -> Any:
     """Publish and confirm the root's requirement contract (CONTENT_ONLY).
 
     A hierarchical Mission cannot publish a dispatchable plan without an approved
@@ -122,10 +128,15 @@ def approve_content_only_completion(service: Any, mission: Any, binding: Any, *,
         # （产品里就是这样从要求原文落到步骤判据上的）。
         import dataclasses
 
-        requirements = dataclasses.replace(requirements, criteria=tuple(
-            dataclasses.replace(item, statement=statements[item.criterion_id])
-            if item.criterion_id in statements else item
-            for item in requirements.criteria))
+        requirements = dataclasses.replace(
+            requirements,
+            criteria=tuple(
+                dataclasses.replace(item, statement=statements[item.criterion_id])
+                if item.criterion_id in statements
+                else item
+                for item in requirements.criteria
+            ),
+        )
     HtnStore(service.store).insert_requirements_revision(requirements)
     reference = {
         "id": str(requirements.revision_id),

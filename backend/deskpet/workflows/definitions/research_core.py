@@ -56,9 +56,7 @@ class ResearchStageCancelled(RuntimeError):
 
 
 class SearchCall(Protocol):
-    async def __call__(
-        self, query: str, *, max_results: int
-    ) -> list[dict[str, Any]]: ...
+    async def __call__(self, query: str, *, max_results: int) -> list[dict[str, Any]]: ...
 
 
 class ExtractCall(Protocol):
@@ -66,9 +64,7 @@ class ExtractCall(Protocol):
 
 
 class DirectCall(Protocol):
-    async def __call__(
-        self, query: str, source: str
-    ) -> object: ...
+    async def __call__(self, query: str, source: str) -> object: ...
 
 
 class ArtifactSaveCall(Protocol):
@@ -245,9 +241,7 @@ class ResearchSearchPort:
     async def search(self, query: str, *, max_results: int) -> list[dict[str, Any]]:
         return await self.search_call(query, max_results=max_results)
 
-    async def direct(
-        self, query: str, source: str
-    ) -> DirectOutcome:
+    async def direct(self, query: str, source: str) -> DirectOutcome:
         if self.direct_call is None:
             return DirectOutcome(source, [], "empty")
         result = await self.direct_call(query, source)
@@ -256,9 +250,7 @@ class ResearchSearchPort:
         if isinstance(result, tuple) and len(result) == 2:
             result_source, items = result
             normalized = list(items or [])
-            return DirectOutcome(
-                str(result_source), normalized, "hit" if normalized else "empty"
-            )
+            return DirectOutcome(str(result_source), normalized, "hit" if normalized else "empty")
         raise TypeError("direct source must return DirectOutcome or (source, items)")
 
     async def reset(self) -> None:
@@ -517,10 +509,7 @@ async def search_stage(
     state.route["source_packs_hit"] = packs
     state.route["source_pack_queries"] = pack_queries
     results = await legacy._gather_safe(
-        [
-            ports.search.search(query, max_results=config.max_urls_per_query)
-            for query, _ in specs
-        ],
+        [ports.search.search(query, max_results=config.max_urls_per_query) for query, _ in specs],
         label="search",
     )
     state.elapsed_ms_per_stage["search"] = _stage_ms(start)
@@ -564,21 +553,39 @@ async def fetch_extract_stage(
 
 def _keywords(state: ResearchCoreState) -> list[str]:
     raw = legacy._topic_keywords(state.request_topic) + [
-        keyword
-        for question in state.sub_questions
-        for keyword in legacy._topic_keywords(question)
+        keyword for question in state.sub_questions for keyword in legacy._topic_keywords(question)
     ]
     # Repeated plan wording must not dilute the deterministic relevance score.
     return list(dict.fromkeys(raw))
 
 
 _GENERIC_ASCII_RESEARCH_WORDS = {
-    "best", "deep", "latest", "practices", "report", "research", "study",
-    "topic", "update",
+    "best",
+    "deep",
+    "latest",
+    "practices",
+    "report",
+    "research",
+    "study",
+    "topic",
+    "update",
 }
 _GENERIC_CJK_BIGRAMS = {
-    "什么", "哪些", "如何", "怎么", "最佳", "实践", "报告", "调研",
-    "深度", "来源", "引用", "最后", "一份", "帮我", "请问",
+    "什么",
+    "哪些",
+    "如何",
+    "怎么",
+    "最佳",
+    "实践",
+    "报告",
+    "调研",
+    "深度",
+    "来源",
+    "引用",
+    "最后",
+    "一份",
+    "帮我",
+    "请问",
 }
 
 
@@ -596,9 +603,7 @@ def _topic_anchors(topic: str) -> list[str]:
     return list(dict.fromkeys(anchors))
 
 
-def _passes_topic_anchor_gate(
-    state: ResearchCoreState, passage: legacy.Passage
-) -> bool:
+def _passes_topic_anchor_gate(state: ResearchCoreState, passage: legacy.Passage) -> bool:
     """Reject obvious cross-topic fallback pages without relying on an LLM.
 
     Both ASCII terms and CJK bigrams participate. Ordinary lexical relevance
@@ -612,6 +617,7 @@ def _passes_topic_anchor_gate(
     if not anchors:
         return True
     haystack = f"{passage.citation.title}\n{passage.text}".lower()
+
     def anchored(anchor: str) -> bool:
         variants = {anchor}
         if anchor.endswith("ies") and len(anchor) > 5:
@@ -629,9 +635,7 @@ def _passes_topic_anchor_gate(
         return True
     if float(dims.get("semantic_relevance", 0.0)) >= 5.0:
         return True
-    return bool(dims.get("llm_rerank_verified")) and float(
-        dims.get("relevance", 0.0)
-    ) >= 5.0
+    return bool(dims.get("llm_rerank_verified")) and float(dims.get("relevance", 0.0)) >= 5.0
 
 
 def _passage_from_extract(
@@ -653,9 +657,7 @@ def _passage_from_extract(
     explicit_ok = payload.get("ok")
     extract_ok = bool(explicit_ok) if explicit_ok is not None else bool(payload.get("text"))
     if not extract_ok:
-        error = (
-            payload.get("error", "extract failed")
-        )
+        error = payload.get("error", "extract failed")
         state.errors.append(f"extract:{url}: {error}")
         return None
     if research_scoring.is_low_quality(url):
@@ -747,9 +749,7 @@ async def direct_stage(
                 seen_specs.add(key)
                 specs.append((question, source))
 
-    async def run_direct(
-        question: str, source: str
-    ) -> DirectOutcome:
+    async def run_direct(question: str, source: str) -> DirectOutcome:
         try:
             return await ports.search.direct(question, source)
         except Exception as exc:  # noqa: BLE001
@@ -758,6 +758,7 @@ async def direct_stage(
 
     results: list[Any]
     if specs:
+
         async def execute_direct_calls() -> list[Any]:
             reach_results: list[Any] = []
             other_tasks = []
@@ -767,9 +768,7 @@ async def direct_stage(
                 else:
                     other_tasks.append(run_direct(question, source))
             other_results = (
-                await legacy._gather_safe(other_tasks, label="direct")
-                if other_tasks
-                else []
+                await legacy._gather_safe(other_tasks, label="direct") if other_tasks else []
             )
             return [*reach_results, *other_results]
 
@@ -937,11 +936,7 @@ async def score_rerank_stage(
 
     state.passages = _stable_sort_passages(state.passages)
     state.reranker = "off"
-    if (
-        config.rerank_mode != "off"
-        and state.passages
-        and ports.llm.rerank is not None
-    ):
+    if config.rerank_mode != "off" and state.passages and ports.llm.rerank is not None:
         pool_size = min(
             len(state.passages),
             max(
@@ -1004,10 +999,7 @@ async def gap_stage(
         return state
     state.rounds = 2
     hits = await legacy._gather_safe(
-        [
-            ports.search.search(query, max_results=config.max_urls_per_query)
-            for query in followups
-        ],
+        [ports.search.search(query, max_results=config.max_urls_per_query) for query in followups],
         label="search2",
     )
     seen = set(state.candidate_urls)
@@ -1053,14 +1045,10 @@ async def synth_stage(
         )
     except Exception as exc:  # noqa: BLE001
         state.errors.append(f"synth_llm: {exc}")
-        report_md = legacy._passages_only_fallback(
-            state.request_topic, state.passages
-        )
+        report_md = legacy._passages_only_fallback(state.request_topic, state.passages)
     state.report_md = (report_md or "").strip()
     if not state.report_md:
-        state.report_md = legacy._passages_only_fallback(
-            state.request_topic, state.passages
-        )
+        state.report_md = legacy._passages_only_fallback(state.request_topic, state.passages)
     state.elapsed_ms_per_stage["synth"] = _stage_ms(start)
     return state
 
@@ -1080,13 +1068,9 @@ async def citation_stage(
 
 def _coverage(state: ResearchCoreState) -> dict[str, Any]:
     domains = {
-        legacy._host(citation.url)
-        for citation in state.citations
-        if legacy._host(citation.url)
+        legacy._host(citation.url) for citation in state.citations if legacy._host(citation.url)
     }
-    diversity = research_scoring.diversity_report(
-        [citation.url for citation in state.citations]
-    )
+    diversity = research_scoring.diversity_report([citation.url for citation in state.citations])
     return {
         "n_sources": len(state.citations),
         "n_domains": len(domains),
@@ -1105,16 +1089,19 @@ def _coverage(state: ResearchCoreState) -> dict[str, Any]:
     }
 
 
-async def _default_direct_call(
-    query: str, source: str
-) -> DirectOutcome:
+async def _default_direct_call(query: str, source: str) -> DirectOutcome:
     from ...tools import research_sources
 
     backend = None
     if source == "agent_reach":
-        items, status, reason, backend, channel, doctor = (
-            await research_sources.agent_reach_search_with_status(query, max_results=3)
-        )
+        (
+            items,
+            status,
+            reason,
+            backend,
+            channel,
+            doctor,
+        ) = await research_sources.agent_reach_search_with_status(query, max_results=3)
         return DirectOutcome(
             source,
             list(items),
@@ -1133,9 +1120,7 @@ async def _default_direct_call(
         fetcher = research_sources.DIRECT_FETCHERS.get(source)
         items = await fetcher(query, max_results=3) if fetcher else []
     normalized = list(items or [])
-    return DirectOutcome(
-        source, normalized, "hit" if normalized else "empty", backend
-    )
+    return DirectOutcome(source, normalized, "hit" if normalized else "empty", backend)
 
 
 def _legacy_search_reset() -> None:
@@ -1267,9 +1252,7 @@ async def run_research_core(
         return legacy.ResearchReport(
             topic=request_topic,
             summary="",
-            report_md=legacy._no_results_template(
-                request_topic, state.sub_questions
-            ),
+            report_md=legacy._no_results_template(request_topic, state.sub_questions),
             citations=[],
             sub_questions=state.sub_questions,
             coverage={

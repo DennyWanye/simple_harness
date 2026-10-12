@@ -12,6 +12,7 @@
 ``wait_for_graph`` 不看 ``completed`` → 第 2 条红；``event_handler`` 停止处的三元式两支对调（或固定写
 ``NO_DISPATCHABLE_WORK``）→ 死锁行为用例红。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -40,16 +41,22 @@ from agent_orchestrator.scheduling.wait_for import (
 
 def test_a_cycle_of_waits_is_found_named_and_reproducible():
     graph = wait_for_graph(
-        order=[("a", "b"), ("c", "d")],          # b 等 a；d 等 c
-        data=[("b", "a", "req-1")],               # a 等 b 的产出 → a↔b 成环
-        fences=[("job-1", "FENCED", "d")],        # d 被围栏围住：d 等 fence
+        order=[("a", "b"), ("c", "d")],  # b 等 a；d 等 c
+        data=[("b", "a", "req-1")],  # a 等 b 的产出 → a↔b 成环
+        fences=[("job-1", "FENCED", "d")],  # d 被围栏围住：d 等 fence
         live_attempt_tasks=(),
         handoffs=[("c", "act-1", "HANDED_OFF")],  # c 等对外操作
     )
     cycles = graph.cycles()
     assert [c.members for c in cycles] == [("a", "b")]
-    assert {(e.waiter, e.holder, e.kind) for e in cycles[0].edges} == {("b", "a", "order"), ("a", "b", "data")}
-    assert cycles[0].digest == wait_for_graph(order=[("a", "b")], data=[("b", "a", "req-1")]).cycles()[0].digest
+    assert {(e.waiter, e.holder, e.kind) for e in cycles[0].edges} == {
+        ("b", "a", "order"),
+        ("a", "b", "data"),
+    }
+    assert (
+        cycles[0].digest
+        == wait_for_graph(order=[("a", "b")], data=[("b", "a", "req-1")]).cycles()[0].digest
+    )
     facts = deadlock_facts(graph)
     assert has_deadlock(facts) and facts["code"] == "resource_wait_cycle"
     assert facts["cycles"][0]["members"] == ["a", "b"] and facts["edges"] == 5
@@ -63,13 +70,19 @@ def test_a_cycle_of_waits_is_found_named_and_reproducible():
 def test_only_live_waits_make_edges():
     task_of = {"a": "ta", "b": "tb", "c": "tc"}
     graph = wait_for_graph(
-        order=[("a", "b"), ("b", "c")], data=[("c", "a", "r")], task_of=task_of,
+        order=[("a", "b"), ("b", "c")],
+        data=[("c", "a", "r")],
+        task_of=task_of,
         task_status={"ta": "COMPLETED", "tb": "ACTIVE", "tc": "CANCELLED"},
     )
     # b 等 a：a 已完成，不等了；c 等 b：c 已结束，不在等；a 等 c 的产出：a 已结束
     assert graph.edges == ()
-    fenced = wait_for_graph(fences=[("j", "FENCED", "a"), ("j", "APPLIED", "b"), ("j", "WAITING", "c")],
-                            task_of=task_of, task_status={"tc": "ACTIVE"}, live_attempt_tasks={"tc"})
+    fenced = wait_for_graph(
+        fences=[("j", "FENCED", "a"), ("j", "APPLIED", "b"), ("j", "WAITING", "c")],
+        task_of=task_of,
+        task_status={"tc": "ACTIVE"},
+        live_attempt_tasks={"tc"},
+    )
     assert {(e.waiter, e.holder) for e in fenced.edges} == {("a", "fence:j"), ("fence:j", "c")}
     assert wait_for_graph(handoffs=[("a", "k", "SUCCEEDED")]).edges == ()
 
@@ -83,7 +96,10 @@ def test_the_deadlock_stop_reason_and_the_lane_codes_are_registered():
     assert set(SCHEDULING_ERRORS) == set(SchedulingStopCode)
     assert set(RECOVERY_ERRORS) == set(RecoveryBoundaryCode)
     assert classify("RECOVERY_LOCK_HELD").category is ErrorCategory.COMMIT_CONFLICT
-    assert classify(RecoveryBoundaryCode.DEGRADED_RECOVERY).category is ErrorCategory.SOURCE_UNAVAILABLE
+    assert (
+        classify(RecoveryBoundaryCode.DEGRADED_RECOVERY).category
+        is ErrorCategory.SOURCE_UNAVAILABLE
+    )
     assert classify("SIDE_EFFECTS_DISABLED").category is ErrorCategory.SOURCE_UNAVAILABLE
 
 
@@ -124,7 +140,9 @@ def _stop_with_graph(tmp_path, monkeypatch, graph: WaitForGraph, key: str):
     return asyncio.run(case())
 
 
-def test_a_wait_cycle_after_the_planner_changed_nothing_stops_as_deadlock(tmp_path, monkeypatch, _quick):
+def test_a_wait_cycle_after_the_planner_changed_nothing_stops_as_deadlock(
+    tmp_path, monkeypatch, _quick
+):
     cyclic = wait_for_graph(order=[("occ-a", "occ-b")], data=[("occ-b", "occ-a", "req-1")])
     carried, mission, events = _stop_with_graph(tmp_path, monkeypatch, cyclic, "deadlock-stop")
     assert carried is False
@@ -139,7 +157,10 @@ def test_a_wait_cycle_after_the_planner_changed_nothing_stops_as_deadlock(tmp_pa
     assert [c["members"] for c in detail["wait_for"]["cycles"]] == [["occ-a", "occ-b"]]
     assert detail["wait_for"] == deadlock_facts(cyclic)
     # 交给规划器的那条请求也带着同一份环的事实
-    assert _stall_requests(events)[0].payload["request"]["context"]["wait_for"]["code"] == "resource_wait_cycle"
+    assert (
+        _stall_requests(events)[0].payload["request"]["context"]["wait_for"]["code"]
+        == "resource_wait_cycle"
+    )
 
 
 def test_without_a_wait_cycle_the_same_stop_is_no_dispatchable_work(tmp_path, monkeypatch, _quick):

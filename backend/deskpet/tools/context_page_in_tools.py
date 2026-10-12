@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: BUSL-1.1
 """Strict request-scoped page-in references for retrieved context."""
+
 from __future__ import annotations
 
 import hashlib
@@ -31,16 +32,16 @@ CONTEXT_PAGE_IN_SCHEMA: dict[str, Any] = {
     # 把新增的分页说明摊回原来的量级——工具 schema 每轮都随请求走，8192 档没有余量。
     "description": (
         "Load one exact page reference prepared for this request. Copy reference_id and "
-        "source_hash verbatim from a truncation marker carrying page_tool=\"context_page_in\", or "
-        "from a \"[Context page-in reference: id=... hash=...]\" line; nothing else is accepted. A "
-        "context_route recall fragment ref (fragments[].ref, e.g. \"recall-item:<id>:1\") is a memory "
+        'source_hash verbatim from a truncation marker carrying page_tool="context_page_in", or '
+        'from a "[Context page-in reference: id=... hash=...]" line; nothing else is accepted. A '
+        'context_route recall fragment ref (fragments[].ref, e.g. "recall-item:<id>:1") is a memory '
         "item id, not a page reference. If this request offers no such reference_id, do "
         # 事件 AF-2：第 12 次 T17 的两次失败都是把 reference_id 抄成「前缀 + 摘要」、
         # 丢掉了 ":<offset>" 尾巴，所以这里说的必须是「不许发明**也不许丢**」。新增的
         # 2 个 token 由上一句删掉的「, and fails」（本就与「nothing else is accepted」
         # 重复）抵掉，整段说明净变化 <= 0——8192 档的受保护预算余量是 0，见
         # ``test_persona_and_route_schema_still_fit_the_8192_tier_megabyte_turn``。
-        "not call this tool. A reference_id always ends in \":<offset>\", a BYTE offset into "
+        'not call this tool. A reference_id always ends in ":<offset>", a BYTE offset into '
         "the body, not a page index and not always a multiple of page_size; never invent or "
         "drop it — use the summary's valid_offsets, a page's next_reference_id, or a "
         "rejection's retry_reference_id. "
@@ -52,11 +53,18 @@ CONTEXT_PAGE_IN_SCHEMA: dict[str, Any] = {
     "parameters": {
         "type": "object",
         "properties": {
-            "reference_id": {"type": "string", "minLength": 1,
+            "reference_id": {
+                "type": "string",
+                "minLength": 1,
                 "description": "Verbatim reference_id from a page reference prepared for this "
-                                "request; never a recall fragment ref such as \"recall-item:<id>:1\"."},
-            "source_hash": {"type": "string", "minLength": 64, "maxLength": 64,
-                "description": "The source_hash published beside that reference_id."},
+                'request; never a recall fragment ref such as "recall-item:<id>:1".',
+            },
+            "source_hash": {
+                "type": "string",
+                "minLength": 64,
+                "maxLength": 64,
+                "description": "The source_hash published beside that reference_id.",
+            },
         },
         "required": ["reference_id", "source_hash"],
         "additionalProperties": False,
@@ -89,8 +97,9 @@ class ContextPageInStore:
 
     DEFAULT_MAX_BYTES = 8 * 1024 * 1024
 
-    def __init__(self, *, ttl_seconds: float = 300.0, max_refs: int = 512,
-                 max_bytes: int = DEFAULT_MAX_BYTES) -> None:
+    def __init__(
+        self, *, ttl_seconds: float = 300.0, max_refs: int = 512, max_bytes: int = DEFAULT_MAX_BYTES
+    ) -> None:
         self._ttl = max(1.0, float(ttl_seconds))
         self._max = max(1, int(max_refs))
         self._max_bytes = max(1, int(max_bytes))
@@ -118,8 +127,16 @@ class ContextPageInStore:
             self._bytes = 0
         self._active.discard(reference_id)
 
-    def put(self, *, kind: str, source: str, content: str, session_id: str,
-            request_id: str, scope_id: str) -> ContextPageInReference:
+    def put(
+        self,
+        *,
+        kind: str,
+        source: str,
+        content: str,
+        session_id: str,
+        request_id: str,
+        scope_id: str,
+    ) -> ContextPageInReference:
         self.purge_expired()
         content = str(content)
         encoded = content.encode("utf-8")
@@ -130,10 +147,13 @@ class ContextPageInStore:
             self._drop(next(iter(self._records)))
         ref = ContextPageInReference(
             reference_id=uuid.uuid4().hex,
-            kind=str(kind), source=str(source),
+            kind=str(kind),
+            source=str(source),
             source_hash=hashlib.sha256(encoded).hexdigest(),
-            session_id=str(session_id), request_id=str(request_id),
-            scope_id=str(scope_id), content=content,
+            session_id=str(session_id),
+            request_id=str(request_id),
+            scope_id=str(scope_id),
+            content=content,
             expires_at=time.monotonic() + self._ttl,
         )
         self._records[ref.reference_id] = ref
@@ -141,9 +161,18 @@ class ContextPageInStore:
         self._bytes += size
         if self.receipt_ledger is not None:
             self.receipt_ledger.record_sync(
-                phase="issued", reference_id=ref.reference_id, kind=ref.kind, source=ref.source,
-                source_hash=ref.source_hash, session_id=ref.session_id, request_id=ref.request_id,
-                scope_id=ref.scope_id, sdk_run_id=None, effect_id=None, outcome="issued")
+                phase="issued",
+                reference_id=ref.reference_id,
+                kind=ref.kind,
+                source=ref.source,
+                source_hash=ref.source_hash,
+                session_id=ref.session_id,
+                request_id=ref.request_id,
+                scope_id=ref.scope_id,
+                sdk_run_id=None,
+                effect_id=None,
+                outcome="issued",
+            )
         return ref
 
     def get(self, reference_id: str) -> ContextPageInReference | None:
@@ -155,11 +184,13 @@ class ContextPageInStore:
             raise KeyError(reference_id)
         self._active.add(reference_id)
 
-    def is_active(self, reference_id: str, *, session_id: str, scope_id: str,
-                  request_id: str | None = None) -> bool:
+    def is_active(
+        self, reference_id: str, *, session_id: str, scope_id: str, request_id: str | None = None
+    ) -> bool:
         ref = self.get(reference_id)
         return bool(
-            ref is not None and reference_id in self._active
+            ref is not None
+            and reference_id in self._active
             and ref.session_id == session_id
             and (request_id is None or ref.request_id == request_id)
             and ref.scope_id == scope_id
@@ -170,8 +201,9 @@ class ContextPageInStore:
         for key in [k for k, value in self._records.items() if value.expires_at <= now]:
             self._drop(key)
 
-    def live_reference_ids(self, *, session_id: str, request_id: str, scope_id: str,
-                           limit: int = MAX_LISTED_REFERENCES) -> list[str]:
+    def live_reference_ids(
+        self, *, session_id: str, request_id: str, scope_id: str, limit: int = MAX_LISTED_REFERENCES
+    ) -> list[str]:
         """本次请求里仍然可用的引用（**最新的**在前，最多 ``limit`` 条）。
 
         事件 AF-2：只用于拒绝详情里的"下一步"。严格按 session / request / scope
@@ -183,8 +215,11 @@ class ContextPageInStore:
         live: list[str] = []
         # ``_records`` 是插入序（淘汰也从头部走），所以倒着遍历就是"最新发布的在前"。
         for record in reversed(self._records.values()):
-            if (record.session_id == session_id and record.request_id == request_id
-                    and record.scope_id == scope_id):
+            if (
+                record.session_id == session_id
+                and record.request_id == request_id
+                and record.scope_id == scope_id
+            ):
                 live.append(record.reference_id)
                 if len(live) >= max(0, int(limit)):
                     break
@@ -197,8 +232,14 @@ def build_context_page_in_handler(
     execution_context_getter: Callable[[], Any],
     skill_body_getter: Callable[[str], str] | None = None,
 ):
-    async def receipt(runtime: Any, *, reference_id: str, kind: str, outcome: str,
-                      ref: ContextPageInReference | None = None) -> None:
+    async def receipt(
+        runtime: Any,
+        *,
+        reference_id: str,
+        kind: str,
+        outcome: str,
+        ref: ContextPageInReference | None = None,
+    ) -> None:
         # Durable consume/deny receipt keyed by the SDK effect (coverage join);
         # payload-free and never able to change the result already computed.
         ledger = store.receipt_ledger
@@ -207,11 +248,18 @@ def build_context_page_in_handler(
         effect = getattr(runtime, "effect_id", None)
         run = getattr(runtime, "run_id", None)
         await ledger.record(
-            phase="consumed" if outcome == "ok" else "denied", reference_id=reference_id, kind=kind,
-            source=ref.source if ref else None, source_hash=ref.source_hash if ref else None,
-            session_id=getattr(runtime, "session_id", None), request_id=getattr(runtime, "request_id", None),
+            phase="consumed" if outcome == "ok" else "denied",
+            reference_id=reference_id,
+            kind=kind,
+            source=ref.source if ref else None,
+            source_hash=ref.source_hash if ref else None,
+            session_id=getattr(runtime, "session_id", None),
+            request_id=getattr(runtime, "request_id", None),
             scope_id=getattr(runtime, "scope_id", None),
-            sdk_run_id=getattr(run, "value", run), effect_id=getattr(effect, "value", effect), outcome=outcome)
+            sdk_run_id=getattr(run, "value", run),
+            effect_id=getattr(effect, "value", effect),
+            outcome=outcome,
+        )
 
     async def handle(args: dict[str, Any], task_id: str) -> str:  # noqa: ARG001
         runtime = execution_context_getter()
@@ -219,11 +267,21 @@ def build_context_page_in_handler(
             return _error("context_scope_missing")
         from deskpet.execution.current_tool_pages import PREFIX as CURRENT_PREFIX
         from deskpet.execution.primary_context_pages import PREFIX, PrimaryContextPageUnavailable
+
         reference_id = str(args.get("reference_id", "") or "").strip()
-        if isinstance(args.get("reference_id"), str) and args["reference_id"].startswith((PREFIX, CURRENT_PREFIX)):
-            kind = "primary_page" if args["reference_id"].startswith(PREFIX) else "current_tool_page"
+        if isinstance(args.get("reference_id"), str) and args["reference_id"].startswith(
+            (PREFIX, CURRENT_PREFIX)
+        ):
+            kind = (
+                "primary_page" if args["reference_id"].startswith(PREFIX) else "current_tool_page"
+            )
             if store.primary_reader is None:
-                await receipt(runtime, reference_id=reference_id, kind=kind, outcome="primary_page_reader_unavailable")
+                await receipt(
+                    runtime,
+                    reference_id=reference_id,
+                    kind=kind,
+                    outcome="primary_page_reader_unavailable",
+                )
                 return _error("primary_page_reader_unavailable")
             try:
                 result = json.dumps(await store.primary_reader(args), ensure_ascii=False)
@@ -233,8 +291,13 @@ def build_context_page_in_handler(
                 # 只有 ``error_code`` + ``public_message`` 两个字段能抵达模型
                 # （``sdk_adapters.tools._result`` 把 value 丢掉），所以详情跟在
                 # 固定前缀之后。稳定码本身一个字未改，重放不受影响。
-                return json.dumps({"ok": False, "error_code": str(exc),
-                    "public_message": _primary_page_message(getattr(exc, "detail", None))})
+                return json.dumps(
+                    {
+                        "ok": False,
+                        "error_code": str(exc),
+                        "public_message": _primary_page_message(getattr(exc, "detail", None)),
+                    }
+                )
             await receipt(runtime, reference_id=reference_id, kind=kind, outcome="ok")
             return result
         source_hash = str(args.get("source_hash", "") or "").strip()
@@ -245,18 +308,27 @@ def build_context_page_in_handler(
             # ``{"error":"reference_stale"}``，模型既不知道是过期还是压根不存在，也
             # 不知道现在能用哪一条。稳定码 ``reference_stale`` 一个字未改（审计与既
             # 有比对都靠它），新增的只是同一个信封里的结构化原因。
-            await receipt(runtime, reference_id=reference_id, kind="unknown", outcome="reference_stale")
-            return _error("reference_stale", detail=dict(
-                _unresolved_reference_reason(args.get("reference_id")),
-                available_reference_ids=store.live_reference_ids(
-                    session_id=str(getattr(runtime, "session_id", "")),
-                    request_id=str(getattr(runtime, "request_id", "")),
-                    scope_id=str(getattr(runtime, "scope_id", "")))))
+            await receipt(
+                runtime, reference_id=reference_id, kind="unknown", outcome="reference_stale"
+            )
+            return _error(
+                "reference_stale",
+                detail=dict(
+                    _unresolved_reference_reason(args.get("reference_id")),
+                    available_reference_ids=store.live_reference_ids(
+                        session_id=str(getattr(runtime, "session_id", "")),
+                        request_id=str(getattr(runtime, "request_id", "")),
+                        scope_id=str(getattr(runtime, "scope_id", "")),
+                    ),
+                ),
+            )
         outcome = "ok"
         content = ref.content
-        if (ref.session_id != str(getattr(runtime, "session_id", ""))
-                or ref.request_id != str(getattr(runtime, "request_id", ""))
-                or ref.scope_id != str(getattr(runtime, "scope_id", ""))):
+        if (
+            ref.session_id != str(getattr(runtime, "session_id", ""))
+            or ref.request_id != str(getattr(runtime, "request_id", ""))
+            or ref.scope_id != str(getattr(runtime, "scope_id", ""))
+        ):
             outcome = "reference_scope_denied"
         elif source_hash != ref.source_hash:
             outcome = "reference_hash_mismatch"
@@ -272,26 +344,46 @@ def build_context_page_in_handler(
                     if hashlib.sha256(content.encode("utf-8")).hexdigest() != ref.source_hash:
                         outcome = "reference_stale"
         if outcome != "ok":
-            await receipt(runtime, reference_id=reference_id, kind=ref.kind, outcome=outcome, ref=ref)
+            await receipt(
+                runtime, reference_id=reference_id, kind=ref.kind, outcome=outcome, ref=ref
+            )
             return _error(outcome)
         store.mark_active(ref.reference_id)
         await receipt(runtime, reference_id=reference_id, kind=ref.kind, outcome="ok", ref=ref)
-        return json.dumps({"ok": True, "reference_id": ref.reference_id,
-                           "kind": ref.kind, "source": ref.source,
-                           "source_hash": ref.source_hash, "content": content},
-                          ensure_ascii=False)
+        return json.dumps(
+            {
+                "ok": True,
+                "reference_id": ref.reference_id,
+                "kind": ref.kind,
+                "source": ref.source,
+                "source_hash": ref.source_hash,
+                "content": content,
+            },
+            ensure_ascii=False,
+        )
+
     return handle
 
 
-def register_context_page_in(registry: object, store: ContextPageInStore, *,
-                             execution_context_getter: Callable[[], Any],
-                             skill_body_getter: Callable[[str], str] | None = None) -> None:
+def register_context_page_in(
+    registry: object,
+    store: ContextPageInStore,
+    *,
+    execution_context_getter: Callable[[], Any],
+    skill_body_getter: Callable[[str], str] | None = None,
+) -> None:
     registry.register(
-        name="context_page_in", toolset="memory", schema=CONTEXT_PAGE_IN_SCHEMA,
+        name="context_page_in",
+        toolset="memory",
+        schema=CONTEXT_PAGE_IN_SCHEMA,
         handler=build_context_page_in_handler(
-            store, execution_context_getter=execution_context_getter,
+            store,
+            execution_context_getter=execution_context_getter,
             skill_body_getter=skill_body_getter,
-        ), permission_category="read_file", source="builtin", concurrency_safe=True,
+        ),
+        permission_category="read_file",
+        source="builtin",
+        concurrency_safe=True,
     )
 
 
@@ -302,8 +394,7 @@ def _error(code: str, detail: dict[str, Any] | None = None) -> str:
     主页面拒绝那样只有 ``error_code`` + ``public_message`` 两个字段能穿过
     ``sdk_adapters.tools._result``。因此结构化原因直接放在 ``detail`` 里。
     """
-    envelope: dict[str, Any] = {"ok": False, "error": code,
-                                "retriable": code == "reference_stale"}
+    envelope: dict[str, Any] = {"ok": False, "error": code, "retriable": code == "reference_stale"}
     if detail:
         envelope["detail"] = detail
     return json.dumps(envelope, ensure_ascii=False)
@@ -318,19 +409,25 @@ def _unresolved_reference_reason(reference_id: Any) -> dict[str, str]:
     """
     value = reference_id if isinstance(reference_id, str) else ""
     if value.startswith(RECALL_FRAGMENT_PREFIX):
-        return dict(reason="page_reference_unknown",
-                    next_step="this is a context_route recall fragment ref (a memory item id), "
-                              "not a page reference; its text is already in the context_route "
-                              "result, so do not page it in")
+        return dict(
+            reason="page_reference_unknown",
+            next_step="this is a context_route recall fragment ref (a memory item id), "
+            "not a page reference; its text is already in the context_route "
+            "result, so do not page it in",
+        )
     if len(value) == 32 and all(c in "0123456789abcdef" for c in value):
-        return dict(reason="page_reference_stale",
-                    next_step="this request-scoped reference expired or was evicted; re-run the "
-                              "tool that produced it, or use one of available_reference_ids")
-    return dict(reason="page_reference_unknown",
-                next_step="reference_id must be copied verbatim from a reference published in "
-                          "THIS request (a truncation marker with page_tool=\"context_page_in\", "
-                          "or a \"[Context page-in reference: id=... hash=...]\" line); if this "
-                          "request offers none, do not call this tool")
+        return dict(
+            reason="page_reference_stale",
+            next_step="this request-scoped reference expired or was evicted; re-run the "
+            "tool that produced it, or use one of available_reference_ids",
+        )
+    return dict(
+        reason="page_reference_unknown",
+        next_step="reference_id must be copied verbatim from a reference published in "
+        'THIS request (a truncation marker with page_tool="context_page_in", '
+        'or a "[Context page-in reference: id=... hash=...]" line); if this '
+        "request offers none, do not call this tool",
+    )
 
 
 # ``sdk_adapters.tools._MAX_HANDLER_PUBLIC_MESSAGE``：超出即被截断，截断后的
@@ -347,11 +444,21 @@ def _primary_page_message(detail: Any) -> str:
     """
     if not isinstance(detail, dict) or not detail:
         return PRIMARY_PAGE_PUBLIC_MESSAGE
-    rendered = PRIMARY_PAGE_PUBLIC_MESSAGE + " " + json.dumps(
-        detail, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    rendered = (
+        PRIMARY_PAGE_PUBLIC_MESSAGE
+        + " "
+        + json.dumps(detail, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    )
     return rendered if len(rendered) <= _MAX_PRIMARY_PAGE_MESSAGE else PRIMARY_PAGE_PUBLIC_MESSAGE
 
 
-__all__ = ["CONTEXT_PAGE_IN_SCHEMA", "MAX_LISTED_REFERENCES", "PRIMARY_PAGE_PUBLIC_MESSAGE",
-           "RECALL_FRAGMENT_PREFIX", "ContextPageInReference", "ContextPageInStore",
-           "build_context_page_in_handler", "register_context_page_in"]
+__all__ = [
+    "CONTEXT_PAGE_IN_SCHEMA",
+    "MAX_LISTED_REFERENCES",
+    "PRIMARY_PAGE_PUBLIC_MESSAGE",
+    "RECALL_FRAGMENT_PREFIX",
+    "ContextPageInReference",
+    "ContextPageInStore",
+    "build_context_page_in_handler",
+    "register_context_page_in",
+]

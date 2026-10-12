@@ -4,14 +4,21 @@
 读不懂（没有决定块）、扣答错次数、事实写进决定行给下一问看。
 
 **Mutation**: route every uncommitted turn to ``PlannerTurnFailed`` again → red."""
+
 import asyncio
 from types import SimpleNamespace
 
 from agent_orchestrator.orchestrator.event_handler import Orchestrator
 from simple_harness.agents import AgentTurnState
 
-_EXHAUSTED = {"error_code": "provider_empty_response", "source_kind": "tool_parse",
-              "detail": {"finish_reason": "length", "usage": {"output_tokens": 32768, "reasoning_tokens": 32768}}}
+_EXHAUSTED = {
+    "error_code": "provider_empty_response",
+    "source_kind": "tool_parse",
+    "detail": {
+        "finish_reason": "length",
+        "usage": {"output_tokens": 32768, "reasoning_tokens": 32768},
+    },
+}
 
 
 def _reply(error):
@@ -31,7 +38,11 @@ def _reply(error):
     fake._planning_rejected = rejected
     intent = SimpleNamespace(intent_id="i1", subject_id="s", mission_id="m1", config={})
     result = SimpleNamespace(state=AgentTurnState.FAILED, error=error)
-    asyncio.run(Orchestrator._collect_plan_hierarchical(fake, intent, result, SimpleNamespace(id="m1"), "", None))
+    asyncio.run(
+        Orchestrator._collect_plan_hierarchical(
+            fake, intent, result, SimpleNamespace(id="m1"), "", None
+        )
+    )
     return calls
 
 
@@ -40,4 +51,7 @@ def test_an_output_exhausted_planner_turn_is_evaluated_as_an_empty_reply():
 
 
 def test_other_uncommitted_turns_still_take_the_no_reply_path():
-    assert _reply({"error_code": "provider_server_error"}) == [("settle", "FAILED"), ("rejected", "proposal_unreadable", True)]
+    assert _reply({"error_code": "provider_server_error"}) == [
+        ("settle", "FAILED"),
+        ("rejected", "proposal_unreadable", True),
+    ]

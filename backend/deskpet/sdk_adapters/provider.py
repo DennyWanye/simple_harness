@@ -59,7 +59,9 @@ _PROVIDER_TOOL_CALLS_METADATA_KEY = "provider_tool_calls"
 _PROVIDER_REASONING_CONTENT_METADATA_KEY = "provider_reasoning_content"
 _PUBLIC_PROGRESS_ARGUMENT = "deskpet_public_progress"
 logger = logging.getLogger(__name__)
-_diagnostic_request_ref: ContextVar[str] = ContextVar("provider_diagnostic_request_ref", default="missing")
+_diagnostic_request_ref: ContextVar[str] = ContextVar(
+    "provider_diagnostic_request_ref", default="missing"
+)
 # The one parse failure that a fresh sample of the *same* request can fix: the
 # model serialized a tool call whose ``arguments`` string is not JSON and that
 # ``_repaired_tool_arguments`` could not repair information-preservingly.
@@ -88,6 +90,7 @@ class _DiagnosticPostClient:
     SDK status rejection precedes response parsing. Observe that one returned
     response here, while leaving SDK cancellation, taxonomy and parsing intact.
     """
+
     def __init__(self, client: httpx.AsyncClient, redactor: Any) -> None:
         self._client = client
         self._redactor = redactor
@@ -111,7 +114,12 @@ class _DiagnosticPostClient:
                     error = payload.get("error") if isinstance(payload, Mapping) else None
                     if isinstance(error, Mapping):
                         diagnostic["body_format"] = "structured_error"
-                        for field, limit in (("code", 128), ("type", 128), ("param", 256), ("message", 1024)):
+                        for field, limit in (
+                            ("code", 128),
+                            ("type", 128),
+                            ("param", 256),
+                            ("message", 1024),
+                        ):
                             value = error.get(field)
                             if isinstance(value, str):
                                 # Redact before truncation, including a secret
@@ -120,14 +128,20 @@ class _DiagnosticPostClient:
                                 diagnostic[field] = self._redactor.text(value)[:limit]
                 logger.warning(
                     "product_provider_http_rejected request_ref=%s status_code=%s diagnostic=%s",
-                    _diagnostic_request_ref.get(), response.status_code,
-                    json.dumps(diagnostic, ensure_ascii=True, sort_keys=True, separators=(",", ":")),
+                    _diagnostic_request_ref.get(),
+                    response.status_code,
+                    json.dumps(
+                        diagnostic, ensure_ascii=True, sort_keys=True, separators=(",", ":")
+                    ),
                 )
             except Exception:
                 # Diagnostics must never replace the original Provider error.
                 try:
-                    logger.warning("product_provider_http_rejection_diagnostic_unavailable request_ref=%s status_code=%s",
-                                   _diagnostic_request_ref.get(), response.status_code)
+                    logger.warning(
+                        "product_provider_http_rejection_diagnostic_unavailable request_ref=%s status_code=%s",
+                        _diagnostic_request_ref.get(),
+                        response.status_code,
+                    )
                 except Exception:
                     pass
         return response
@@ -251,7 +265,10 @@ def _json_error_kind(exc: BaseException) -> str:
     log injection impossible.
     """
 
-    return re.sub(r"[^a-z]+", "_", str(getattr(exc, "msg", "") or "").lower()).strip("_")[:48] or "unknown"
+    return (
+        re.sub(r"[^a-z]+", "_", str(getattr(exc, "msg", "") or "").lower()).strip("_")[:48]
+        or "unknown"
+    )
 
 
 def _parse_failure_diagnostic(
@@ -453,9 +470,7 @@ def _response_shape(payload: object) -> dict[str, object]:
         "choice_count": len(choices) if isinstance(choices, list) else -1,
         "message_mapping": isinstance(message, Mapping),
         "content_kind": (
-            type(message.get("content")).__name__
-            if isinstance(message, Mapping)
-            else "missing"
+            type(message.get("content")).__name__ if isinstance(message, Mapping) else "missing"
         ),
         "tool_calls_kind": type(raw_calls).__name__,
         "tool_call_count": len(raw_calls) if isinstance(raw_calls, list) else -1,
@@ -593,11 +608,7 @@ class _ProductOpenAICompatibleProvider(OpenAICompatibleProvider):
         once the SDK carries the field.
         """
 
-        memo = (
-            arguments_memo
-            if arguments_memo is not None
-            else default_tool_call_arguments_memo()
-        )
+        memo = arguments_memo if arguments_memo is not None else default_tool_call_arguments_memo()
         # A raw provider call_id is only unique within one (run, turn, ordinal)
         # — the SDK hashes exactly those into its internal CallId
         # (``react_loop.py::_internal_effect_identity``), and index-style ids
@@ -660,9 +671,7 @@ class _ProductOpenAICompatibleProvider(OpenAICompatibleProvider):
                         "function": {
                             "name": name,
                             "arguments": (
-                                EMPTY_TOOL_CALL_ARGUMENTS_JSON
-                                if restored is None
-                                else restored
+                                EMPTY_TOOL_CALL_ARGUMENTS_JSON if restored is None else restored
                             ),
                         },
                     }
@@ -703,23 +712,18 @@ class _ProductOpenAICompatibleProvider(OpenAICompatibleProvider):
                 if not isinstance(raw_block, Mapping):
                     continue
                 block = dict(raw_block)
-                if block.get("type") == "input_text" and isinstance(
-                    block.get("data"), str
-                ):
+                if block.get("type") == "input_text" and isinstance(block.get("data"), str):
                     name = str(block.get("name") or "attachment.txt").strip()
-                    provider_content.append({
-                        "type": "text",
-                        "text": (
-                            f'Attached text file "{name}":\n'
-                            + str(block["data"])
-                        ),
-                    })
+                    provider_content.append(
+                        {
+                            "type": "text",
+                            "text": (f'Attached text file "{name}":\n' + str(block["data"])),
+                        }
+                    )
                 else:
                     provider_content.append(block)
             payload["content"] = provider_content
-        raw_reasoning = message.metadata.get(
-            _PROVIDER_REASONING_CONTENT_METADATA_KEY
-        )
+        raw_reasoning = message.metadata.get(_PROVIDER_REASONING_CONTENT_METADATA_KEY)
         if (
             message.role is MessageRole.ASSISTANT
             and isinstance(raw_reasoning, str)
@@ -730,9 +734,11 @@ class _ProductOpenAICompatibleProvider(OpenAICompatibleProvider):
             # SDK-private metadata and is never used for public projection.
             payload["reasoning_content"] = raw_reasoning
         raw_calls = message.metadata.get(_PROVIDER_TOOL_CALLS_METADATA_KEY)
-        if message.role is not MessageRole.ASSISTANT or not isinstance(
-            raw_calls, Sequence
-        ) or isinstance(raw_calls, (str, bytes, bytearray)):
+        if (
+            message.role is not MessageRole.ASSISTANT
+            or not isinstance(raw_calls, Sequence)
+            or isinstance(raw_calls, (str, bytes, bytearray))
+        ):
             return payload
 
         calls: list[dict[str, Any]] = []
@@ -914,9 +920,7 @@ class _ProductOpenAICompatibleProvider(OpenAICompatibleProvider):
         choice = choices[0]
         raw_message = choice.get("message") if isinstance(choice, Mapping) else None
         raw_reasoning = (
-            raw_message.get("reasoning_content")
-            if isinstance(raw_message, Mapping)
-            else None
+            raw_message.get("reasoning_content") if isinstance(raw_message, Mapping) else None
         )
         if not isinstance(raw_reasoning, str) or not raw_reasoning:
             return parsed
@@ -940,11 +944,7 @@ def _retain_tool_calls_in_message(
 ) -> ProviderResponse:
     if not response.tool_calls:
         return response
-    memo = (
-        arguments_memo
-        if arguments_memo is not None
-        else default_tool_call_arguments_memo()
-    )
+    memo = arguments_memo if arguments_memo is not None else default_tool_call_arguments_memo()
     metadata = dict(response.message.metadata)
     retained: list[dict[str, Any]] = []
     for call in response.tool_calls:
@@ -953,9 +953,7 @@ def _retain_tool_calls_in_message(
         # dict() copy leaves unsupported frozen containers below the first
         # level. Thaw the full JSON tree before crossing that contract.
         arguments = thaw_json(call.arguments)
-        retained.append(
-            {"id": call.call_id.value, "name": call.name, "arguments": arguments}
-        )
+        retained.append({"id": call.call_id.value, "name": call.name, "arguments": arguments})
         # HM-TO-A6 incident K: the same object must survive the durable Context
         # round trip, which strips this metadata by SDK contract. The memo is
         # the Host's own copy, read back by ``_wire_messages`` on every later
@@ -1001,16 +999,10 @@ def _extract_public_progress(response: ProviderResponse) -> ProviderResponse:
         assert isinstance(thawed_arguments, dict)
         arguments = thawed_arguments
         raw_progress = arguments.pop(_PUBLIC_PROGRESS_ARGUMENT, "")
-        candidate = (
-            _public_progress_text(raw_progress)
-            if isinstance(raw_progress, str)
-            else ""
-        )
+        candidate = _public_progress_text(raw_progress) if isinstance(raw_progress, str) else ""
         if candidate and not narration:
             narration = candidate
-        cleaned_calls.append(
-            ProviderToolCall(call.call_id, call.name, arguments)
-        )
+        cleaned_calls.append(ProviderToolCall(call.call_id, call.name, arguments))
     if not narration:
         return replace(response, tool_calls=tuple(cleaned_calls))
     content = response.message.content.strip() or narration
@@ -1065,7 +1057,11 @@ def provider_endpoint_identity(entry: Any, *, base_url: str | None = None) -> st
     ledger derive the same value from the same durable facts.
     """
 
-    resolved = str(base_url if base_url is not None else getattr(entry, "base_url", "")).strip().rstrip("/")
+    resolved = (
+        str(base_url if base_url is not None else getattr(entry, "base_url", ""))
+        .strip()
+        .rstrip("/")
+    )
     endpoint_payload = {
         "base_url": resolved,
         "config_revision": int(getattr(entry, "config_revision", 0) or 0),
@@ -1172,9 +1168,7 @@ class ProductProviderAdapter:
             str(price[2]),
         )
         endpoint_identity = provider_endpoint_identity(entry, base_url=base_url)
-        pricing_key = (
-            f"{provider_id}:{frozen_model}:{self.price_snapshot.fingerprint}"
-        )
+        pricing_key = f"{provider_id}:{frozen_model}:{self.price_snapshot.fingerprint}"
         from llm.provider_capabilities import (
             declared_reasoning_capability,
             reasoning_wire_fields,
@@ -1290,9 +1284,7 @@ class ProductProviderAdapter:
                 )
         raise AssertionError("unreachable: the last attempt always returns or raises")
 
-    async def invoke(
-        self, request: ProviderRequest, *, cancel: CancelToken
-    ) -> ProviderResponse:
+    async def invoke(self, request: ProviderRequest, *, cancel: CancelToken) -> ProviderResponse:
         # Only this pre-delegate boundary may reject as a definite request
         # failure. Do not reclassify errors after a physical handoff.
         if self._pre_invoke_guard is not None:
@@ -1436,9 +1428,7 @@ class ProductProviderAdapter:
                 # progress / _retain_tool_calls_in_message 都原样带过),所以
                 # 它就是响应侧「到底有没有思考」的直接证据。
                 reasoning_content_seen=bool(
-                    response.message.metadata.get(
-                        _PROVIDER_REASONING_CONTENT_METADATA_KEY
-                    )
+                    response.message.metadata.get(_PROVIDER_REASONING_CONTENT_METADATA_KEY)
                 ),
             )
         await self._capture_public_tool_narration(request, response)
@@ -1483,9 +1473,7 @@ class ProductProviderAdapter:
         if request_id.startswith("provider-turn:"):
             raw_turn = request_id.removeprefix("provider-turn:")
         else:
-            legacy_run_id, marker, raw_turn = request_id.rpartition(
-                ":provider-turn:"
-            )
+            legacy_run_id, marker, raw_turn = request_id.rpartition(":provider-turn:")
             if not marker:
                 return
             run_id = legacy_run_id
@@ -1553,7 +1541,9 @@ class ProductProviderInvocationCoordinator(ProviderInvocationCoordinator):
     a tombstone).
     """
 
-    def __init__(self, *args: Any, evidence_ingress: Any | None = None, typed_terminal=None, **kwargs: Any) -> None:
+    def __init__(
+        self, *args: Any, evidence_ingress: Any | None = None, typed_terminal=None, **kwargs: Any
+    ) -> None:
         super().__init__(*args, **kwargs)
         self._evidence_ingress = evidence_ingress
         self._typed_terminal = typed_terminal
@@ -1606,23 +1596,36 @@ class ProductProviderInvocationCoordinator(ProviderInvocationCoordinator):
     async def prepare_context_use_terminal(self, run_id, request, *, checkpoint, execution_lease):
         # SDK calls this after the actual successful response is checkpointed.
         await super().prepare_context_use_terminal(
-            run_id, request, checkpoint=checkpoint, execution_lease=execution_lease,
+            run_id,
+            request,
+            checkpoint=checkpoint,
+            execution_lease=execution_lease,
         )
         if self._typed_terminal is not None:
             from simple_harness import ProviderContextUseAttemptV1
+
             attempt = ProviderContextUseAttemptV1.from_json(checkpoint["context_use_attempt"])
             await self._typed_terminal.record_terminal(run_id, request, attempt)
 
     def verify_context_use_terminal(self, run_id, request_id, *, checkpoint, execution_lease):
         view = super().verify_context_use_terminal(
-            run_id, request_id, checkpoint=checkpoint, execution_lease=execution_lease,
+            run_id,
+            request_id,
+            checkpoint=checkpoint,
+            execution_lease=execution_lease,
         )
         if self._typed_terminal is not None:
             self._typed_terminal.verify_terminal(run_id, request_id, checkpoint, verified_use=view)
         return view
 
 
-def provider_invocation_fact(run_id: str, request: ProviderRequest, response: ProviderResponse | None, *, error_code: str | None = None):
+def provider_invocation_fact(
+    run_id: str,
+    request: ProviderRequest,
+    response: ProviderResponse | None,
+    *,
+    error_code: str | None = None,
+):
     """Public-only Harness fact for one settled Provider invocation."""
 
     from deskpet.execution.evidence_ingress import ProviderInvocationFact

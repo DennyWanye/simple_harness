@@ -167,11 +167,7 @@ def evaluation_store(tmp_path):
         effect_topology_hash="readonly-effects",
         source_facts={},
         target_facts={"expected_absent": True},
-        files=(
-            CandidatePackageFile(
-                "SKILL.md", "instruction", digest, len(payload), "skill"
-            ),
-        ),
+        files=(CandidatePackageFile("SKILL.md", "instruction", digest, len(payload), "skill"),),
         blobs=(CandidatePackageBlob("file", "skill", digest, payload),),
     )
     attempt = CandidateAttempt(
@@ -400,9 +396,7 @@ def test_real_store_evaluation_execution_fence_start_and_completion(
         launch_id="real-store-launch",
         claim_owner="real-store-worker",
     )
-    store.create_evaluation_case_launch(
-        owner, launch, claim_owner="real-store-worker"
-    )
+    store.create_evaluation_case_launch(owner, launch, claim_owner="real-store-worker")
     start_facts = {
         "schema_version": 1,
         "launch_id": launch.launch_id,
@@ -476,11 +470,11 @@ def test_real_store_evaluation_execution_fence_start_and_completion(
 def test_evaluation_permit_case_launch_result_and_report_are_fenced(evaluation_store) -> None:
     store, owner, _ = evaluation_store
     permit = _issue_permit(store, owner)
-    assert store.issue_evaluation_execution_permit(owner, permit)["permit_hash"] == permit.permit_hash
+    assert (
+        store.issue_evaluation_execution_permit(owner, permit)["permit_hash"] == permit.permit_hash
+    )
     with pytest.raises(CompanionConflictError, match="permit_hash_mismatch"):
-        store.issue_evaluation_execution_permit(
-            owner, replace(permit, permit_hash="drift")
-        )
+        store.issue_evaluation_execution_permit(owner, replace(permit, permit_hash="drift"))
 
     old_hash = _complete_variant(
         store, owner, variant="old", worker="worker-old", launch_id="launch-old"
@@ -522,26 +516,27 @@ def test_evaluation_permit_case_launch_result_and_report_are_fenced(evaluation_s
     assert outbox_payload["candidate_id"] == "candidate-1"
     assert outbox_payload["pack_id"] == "personal.summarize-day"
     assert outbox_payload["candidate_version"] == "1.0.0"
-    assert outbox_payload["evaluation_report_hash"] == canonical_hash(
-        result_items
-    )
+    assert outbox_payload["evaluation_report_hash"] == canonical_hash(result_items)
     assert outbox_payload["risk_id"] == "risk-1"
     assert outbox_payload["risk_assessment_hash"] == "risk-hash-1"
     assert outbox_payload["owner_key"] == "companion:alice:1"
     assert outbox_payload["scope"] == "user"
     assert outbox_payload["expected_binding_generation"] == 0
-    assert store.create_evaluation_report(
-        owner,
-        report_id="report-1",
-        evaluation_id="evaluation-1",
-        candidate_package_hash="package-1",
-        dataset_hash="dataset-1",
-        suite_hash="suite-1",
-        required_cases=(("case-1", "old"), ("case-1", "candidate")),
-        results_root_hash=canonical_hash(result_items),
-        verdict="passed",
-        reason_code="all_required_committed",
-    )["report_id"] == "report-1"
+    assert (
+        store.create_evaluation_report(
+            owner,
+            report_id="report-1",
+            evaluation_id="evaluation-1",
+            candidate_package_hash="package-1",
+            dataset_hash="dataset-1",
+            suite_hash="suite-1",
+            required_cases=(("case-1", "old"), ("case-1", "candidate")),
+            results_root_hash=canonical_hash(result_items),
+            verdict="passed",
+            reason_code="all_required_committed",
+        )["report_id"]
+        == "report-1"
+    )
 
 
 def test_failed_report_atomically_invalidates_and_enqueues_genesis_replan(
@@ -635,9 +630,7 @@ def test_failed_report_atomically_invalidates_and_enqueues_genesis_replan(
             "payload": job_payload,
             "budget_reserved_tokens": 4_000,
             "budget_reserved_ms": 120_000,
-            "reason_code": (
-                "independent_evaluation_failed_replan_queued"
-            ),
+            "reason_code": ("independent_evaluation_failed_replan_queued"),
         },
     }
     report_kwargs = {
@@ -655,14 +648,20 @@ def test_failed_report_atomically_invalidates_and_enqueues_genesis_replan(
         "reason_code": "candidate_failed",
         "failed_replan": failed_replan,
     }
-    assert store.create_evaluation_report(
-        owner,
-        **report_kwargs,
-    )["verdict"] == "failed"
-    assert store.create_evaluation_report(
-        owner,
-        **report_kwargs,
-    )["report_id"] == "report-1"
+    assert (
+        store.create_evaluation_report(
+            owner,
+            **report_kwargs,
+        )["verdict"]
+        == "failed"
+    )
+    assert (
+        store.create_evaluation_report(
+            owner,
+            **report_kwargs,
+        )["report_id"]
+        == "report-1"
+    )
     with store.read() as db:
         candidate = db.execute(
             """SELECT status,reason_code FROM candidate_artifacts
@@ -677,22 +676,28 @@ def test_failed_report_atomically_invalidates_and_enqueues_genesis_replan(
                  AND target_id='target-1'""",
             (owner.profile_id, owner.profile_generation),
         ).fetchone()
-        assert db.execute(
-            """SELECT COUNT(*) FROM growth_events
+        assert (
+            db.execute(
+                """SELECT COUNT(*) FROM growth_events
                WHERE profile_id=? AND profile_generation=?
                  AND event_id=?""",
-            (
-                owner.profile_id,
-                owner.profile_generation,
-                event["event_id"],
-            ),
-        ).fetchone()[0] == 1
-        assert db.execute(
-            """SELECT COUNT(*) FROM jobs
+                (
+                    owner.profile_id,
+                    owner.profile_generation,
+                    event["event_id"],
+                ),
+            ).fetchone()[0]
+            == 1
+        )
+        assert (
+            db.execute(
+                """SELECT COUNT(*) FROM jobs
                WHERE profile_id=? AND profile_generation=?
                  AND job_id='reflection:evaluation-replan:event-1'""",
-            (owner.profile_id, owner.profile_generation),
-        ).fetchone()[0] == 1
+                (owner.profile_id, owner.profile_generation),
+            ).fetchone()[0]
+            == 1
+        )
     assert dict(candidate) == {
         "status": "invalidated",
         "reason_code": "evaluation_failed_replan",
@@ -728,9 +733,7 @@ def test_failed_report_atomically_invalidates_and_enqueues_genesis_replan(
         structured_diff={"requested_change": "fix all evaluator gaps"},
         expected_improvement="All assertions pass.",
         risk_hints=("instruction_only",),
-        evaluation_plan=(
-            {"case_id": "case-1", "assertion": "all gaps covered"},
-        ),
+        evaluation_plan=({"case_id": "case-1", "assertion": "all gaps covered"},),
     )
     claim = store.claim_job(
         owner,
@@ -793,9 +796,7 @@ def test_expired_case_lease_is_recovery_only_and_cannot_start_again(evaluation_s
         recovered, variant="old", launch_id="launch-recovery", claim_owner="worker-recovery"
     )
     with pytest.raises(CompanionStateError, match="recovery_only"):
-        store.create_evaluation_case_launch(
-            owner, launch, claim_owner="worker-recovery"
-        )
+        store.create_evaluation_case_launch(owner, launch, claim_owner="worker-recovery")
     stale_launch, _ = _launch(
         first, variant="old", launch_id="launch-stale", claim_owner="worker-old"
     )
@@ -848,14 +849,10 @@ def test_policy_issuer_safe_auto_uses_store_permit_without_activation(
         candidate_kind="instruction",
         declared_tool_refs=("memory_recall@v1",),
         referenced_tool_refs=("memory_recall@v1",),
-        tool_facts=(
-            EffectFactV1("memory_recall@v1", "read_only", True),
-        ),
+        tool_facts=(EffectFactV1("memory_recall@v1", "read_only", True),),
     )
     preflight = StaticRiskPreflight().inspect(candidate)
-    risk = CapabilityRiskPolicy().assess(
-        preflight, EffectTopologyDiffV1()
-    )
+    risk = CapabilityRiskPolicy().assess(preflight, EffectTopologyDiffV1())
     outcome = EvaluationPermitIssuer(store).issue(
         owner,
         EvaluationGateRequestV1(
@@ -867,12 +864,10 @@ def test_policy_issuer_safe_auto_uses_store_permit_without_activation(
     assert outcome.permit is not None
     assert outcome.permit.mode == "safe_auto"
     with store.read() as db:
-        assert db.execute(
-            "SELECT mode FROM evaluation_execution_permits"
-        ).fetchone()[0] == "safe_auto"
-        assert db.execute(
-            "SELECT count(*) FROM capability_activation_requests"
-        ).fetchone()[0] == 0
+        assert (
+            db.execute("SELECT mode FROM evaluation_execution_permits").fetchone()[0] == "safe_auto"
+        )
+        assert db.execute("SELECT count(*) FROM capability_activation_requests").fetchone()[0] == 0
 
 
 def test_policy_issuer_safe_static_requires_instruction_and_frozen_zero_tools(
@@ -946,9 +941,7 @@ def test_policy_issuer_user_authorized_consumes_eval_only_authorization(
         candidate_kind="code",
     )
     preflight = StaticRiskPreflight().inspect(candidate)
-    risk = CapabilityRiskPolicy().assess(
-        preflight, EffectTopologyDiffV1()
-    )
+    risk = CapabilityRiskPolicy().assess(preflight, EffectTopologyDiffV1())
     EvaluationAuthorizationService(store, clock=clock).authorize(
         owner,
         EvaluationAuthorizationCommandV1(
@@ -983,9 +976,7 @@ def test_policy_issuer_user_authorized_consumes_eval_only_authorization(
         ).fetchone()
         assert row["mode"] == "user_authorized"
         assert row["consumed_at"] is not None
-        assert db.execute(
-            "SELECT count(*) FROM capability_activation_requests"
-        ).fetchone()[0] == 0
+        assert db.execute("SELECT count(*) FROM capability_activation_requests").fetchone()[0] == 0
 
 
 def test_unknown_risk_can_only_receive_user_authorized_eval_permit(
@@ -1037,9 +1028,7 @@ def test_unknown_risk_can_only_receive_user_authorized_eval_permit(
     assert issued.permit.mode == "user_authorized"
 
 
-def _prepare_install_request(
-    store: CompanionStore, owner: OwnerRef
-) -> MutationRequest:
+def _prepare_install_request(store: CompanionStore, owner: OwnerRef) -> MutationRequest:
     with store._write() as db:
         now = store._now()
         db.execute(
@@ -1173,9 +1162,7 @@ def test_low_risk_decision_enqueues_exact_activation_request(
 def test_mutation_receipt_settle_guard_and_incident_are_one_way(evaluation_store) -> None:
     store, owner, _ = evaluation_store
     _issue_permit(store, owner)
-    old_hash = _complete_variant(
-        store, owner, variant="old", worker="old", launch_id="launch-old"
-    )
+    old_hash = _complete_variant(store, owner, variant="old", worker="old", launch_id="launch-old")
     candidate_hash = _complete_variant(
         store, owner, variant="candidate", worker="candidate", launch_id="launch-candidate"
     )
@@ -1234,7 +1221,10 @@ def test_mutation_receipt_settle_guard_and_incident_are_one_way(evaluation_store
     )
     settled = store.settle_capability_mutation_receipt(owner, receipt)
     assert settled["result_hash"] == "manager-result-1"
-    assert store.settle_capability_mutation_receipt(owner, receipt)["result_hash"] == "manager-result-1"
+    assert (
+        store.settle_capability_mutation_receipt(owner, receipt)["result_hash"]
+        == "manager-result-1"
+    )
     queried_receipt = store.get_capability_activation_receipt(
         owner,
         activation_request_id=request.request_id,
@@ -1252,19 +1242,23 @@ def test_mutation_receipt_settle_guard_and_incident_are_one_way(evaluation_store
     assert proof["decision"] == "activate"
     assert proof["receipt"]["result_hash"] == "manager-result-1"
     with pytest.raises(CompanionConflictError, match="receipt_conflict"):
-        store.settle_capability_mutation_receipt(
-            owner, replace(receipt, result_hash="drift")
-        )
+        store.settle_capability_mutation_receipt(owner, replace(receipt, result_hash="drift"))
     with store.read() as db:
-        assert db.execute(
-            "SELECT status FROM candidate_artifacts WHERE candidate_id='candidate-1'"
-        ).fetchone()[0] == "active"
-        assert db.execute(
-            "SELECT status FROM growth_target_reservations"
-        ).fetchone()[0] == "consumed"
-        assert db.execute(
-            "SELECT status FROM capability_activation_guards WHERE guard_id='guard-1'"
-        ).fetchone()[0] == "open"
+        assert (
+            db.execute(
+                "SELECT status FROM candidate_artifacts WHERE candidate_id='candidate-1'"
+            ).fetchone()[0]
+            == "active"
+        )
+        assert (
+            db.execute("SELECT status FROM growth_target_reservations").fetchone()[0] == "consumed"
+        )
+        assert (
+            db.execute(
+                "SELECT status FROM capability_activation_guards WHERE guard_id='guard-1'"
+            ).fetchone()[0]
+            == "open"
+        )
 
     incident = CapabilityGuardIncident(
         guard_id="guard-1",
@@ -1294,13 +1288,19 @@ def test_mutation_receipt_settle_guard_and_incident_are_one_way(evaluation_store
             owner, replace(incident, source_receipt_hash="drift")
         )
     with store.read() as db:
-        assert db.execute(
-            "SELECT status FROM capability_activation_guards WHERE guard_id='guard-1'"
-        ).fetchone()[0] == "rollback_pending"
-        assert db.execute(
-            "SELECT status FROM capability_quarantines WHERE pack_id=?",
-            (request.pack_id,),
-        ).fetchone()[0] == "rollback_pending"
+        assert (
+            db.execute(
+                "SELECT status FROM capability_activation_guards WHERE guard_id='guard-1'"
+            ).fetchone()[0]
+            == "rollback_pending"
+        )
+        assert (
+            db.execute(
+                "SELECT status FROM capability_quarantines WHERE pack_id=?",
+                (request.pack_id,),
+            ).fetchone()[0]
+            == "rollback_pending"
+        )
         rollback = db.execute(
             """SELECT action,candidate_id,candidate_mode,rollback_kind,status
                FROM capability_activation_requests
@@ -1313,14 +1313,20 @@ def test_mutation_receipt_settle_guard_and_incident_are_one_way(evaluation_store
             "same_owner_version",
             "pending",
         )
-        assert db.execute(
-            """SELECT from_id FROM lineage_edges
+        assert (
+            db.execute(
+                """SELECT from_id FROM lineage_edges
                WHERE to_kind='capability_mutation_request'
                  AND to_id='rollback-1' AND relation='rollback'"""
-        ).fetchone()[0] == "candidate-1"
-        assert db.execute(
-            "SELECT status FROM candidate_artifacts WHERE candidate_id='candidate-1'"
-        ).fetchone()[0] == "rollback_pending"
+            ).fetchone()[0]
+            == "candidate-1"
+        )
+        assert (
+            db.execute(
+                "SELECT status FROM candidate_artifacts WHERE candidate_id='candidate-1'"
+            ).fetchone()[0]
+            == "rollback_pending"
+        )
 
     claim = store.claim_capability_mutation_request(
         owner,
@@ -1354,9 +1360,7 @@ def test_mutation_receipt_settle_guard_and_incident_are_one_way(evaluation_store
             pack_id=request.pack_id,
             version="0.9.0",
             manifest_hash="manifest-old",
-            source_fence_hash=canonical_hash(
-                rollback_plan["source_fence"]
-            ),
+            source_fence_hash=canonical_hash(rollback_plan["source_fence"]),
             binding_generation=2,
             owner_binding_set_stamp="owner-stamp-rollback",
             result_hash="rollback-result",
@@ -1364,18 +1368,24 @@ def test_mutation_receipt_settle_guard_and_incident_are_one_way(evaluation_store
         ),
     )
     with store.read() as db:
-        assert db.execute(
-            "SELECT status FROM candidate_artifacts WHERE candidate_id='candidate-1'"
-        ).fetchone()[0] == "rolled_back"
+        assert (
+            db.execute(
+                "SELECT status FROM candidate_artifacts WHERE candidate_id='candidate-1'"
+            ).fetchone()[0]
+            == "rolled_back"
+        )
         guard = db.execute(
             """SELECT status,rollback_receipt_hash
                FROM capability_activation_guards WHERE guard_id='guard-1'"""
         ).fetchone()
         assert tuple(guard) == ("rolled_back", "rollback-result")
-        assert db.execute(
-            "SELECT status FROM capability_quarantines WHERE pack_id=?",
-            (request.pack_id,),
-        ).fetchone()[0] == "released"
+        assert (
+            db.execute(
+                "SELECT status FROM capability_quarantines WHERE pack_id=?",
+                (request.pack_id,),
+            ).fetchone()[0]
+            == "released"
+        )
         settled_rollback = dict(
             db.execute(
                 """SELECT * FROM capability_activation_requests
@@ -1398,9 +1408,7 @@ def test_mutation_receipt_settle_guard_and_incident_are_one_way(evaluation_store
             target_version=settled_rollback["target_version"],
             target_manifest_hash=settled_rollback["target_manifest_hash"],
             source_fence=json.loads(settled_rollback["source_fence_json"]),
-            target_expected_absent=bool(
-                settled_rollback["target_expected_absent"]
-            ),
+            target_expected_absent=bool(settled_rollback["target_expected_absent"]),
             target_expected_binding_generation=settled_rollback[
                 "target_expected_binding_generation"
             ],
@@ -1412,14 +1420,20 @@ def test_mutation_receipt_settle_guard_and_incident_are_one_way(evaluation_store
     )
     assert replay["status"] == "succeeded"
     with store.read() as db:
-        assert db.execute(
-            """SELECT from_id FROM lineage_edges
+        assert (
+            db.execute(
+                """SELECT from_id FROM lineage_edges
                WHERE to_kind='capability_mutation_request'
                  AND to_id='rollback-1' AND relation='rollback'"""
-        ).fetchone()[0] == "candidate-1"
-        assert db.execute(
-            "SELECT status FROM candidate_artifacts WHERE candidate_id='candidate-1'"
-        ).fetchone()[0] == "rolled_back"
+            ).fetchone()[0]
+            == "candidate-1"
+        )
+        assert (
+            db.execute(
+                "SELECT status FROM candidate_artifacts WHERE candidate_id='candidate-1'"
+            ).fetchone()[0]
+            == "rolled_back"
+        )
 
 
 def test_forget_active_candidate_quarantines_and_enqueues_disable(
@@ -1427,9 +1441,7 @@ def test_forget_active_candidate_quarantines_and_enqueues_disable(
 ) -> None:
     store, owner, _ = evaluation_store
     _issue_permit(store, owner)
-    old_hash = _complete_variant(
-        store, owner, variant="old", worker="old", launch_id="launch-old"
-    )
+    old_hash = _complete_variant(store, owner, variant="old", worker="old", launch_id="launch-old")
     candidate_hash = _complete_variant(
         store,
         owner,
@@ -1482,18 +1494,25 @@ def test_forget_active_candidate_quarantines_and_enqueues_disable(
         reason_code="user_forget",
     )
     with store.read() as db:
-        assert db.execute(
-            "SELECT status FROM candidate_artifacts WHERE candidate_id='candidate-1'"
-        ).fetchone()[0] == "invalidated"
-        assert db.execute(
-            "SELECT verdict FROM evaluation_reports WHERE report_id='report-1'"
-        ).fetchone()[0] == "inconclusive"
-        assert db.execute(
-            "SELECT decision FROM growth_decisions WHERE decision_id='decision-1'"
-        ).fetchone()[0] == "stale"
-        assert db.execute(
-            "SELECT status FROM capability_quarantines"
-        ).fetchone()[0] == "active"
+        assert (
+            db.execute(
+                "SELECT status FROM candidate_artifacts WHERE candidate_id='candidate-1'"
+            ).fetchone()[0]
+            == "invalidated"
+        )
+        assert (
+            db.execute(
+                "SELECT verdict FROM evaluation_reports WHERE report_id='report-1'"
+            ).fetchone()[0]
+            == "inconclusive"
+        )
+        assert (
+            db.execute(
+                "SELECT decision FROM growth_decisions WHERE decision_id='decision-1'"
+            ).fetchone()[0]
+            == "stale"
+        )
+        assert db.execute("SELECT status FROM capability_quarantines").fetchone()[0] == "active"
         follow_up = db.execute(
             """SELECT action,status,cause_ref,target_expected_binding_generation
                FROM capability_activation_requests
@@ -1505,13 +1524,16 @@ def test_forget_active_candidate_quarantines_and_enqueues_disable(
             "growth_event:event-1",
             1,
         )
-        assert db.execute(
-            """SELECT count(*) FROM outbox
+        assert (
+            db.execute(
+                """SELECT count(*) FROM outbox
                WHERE event_kind='capability_mutation'
                  AND event_id=(SELECT activation_request_id
                                FROM capability_activation_requests
                                WHERE activation_request_id<>'activation-1')"""
-        ).fetchone()[0] == 1
+            ).fetchone()[0]
+            == 1
+        )
 
 
 def test_mutation_replay_drift_and_genesis_fence_are_rejected(evaluation_store) -> None:
@@ -1575,14 +1597,17 @@ def test_authority_transition_is_strict_and_replay_verifies_payload(evaluation_s
         reason_code="prepare",
     )
     assert state["phase"] == "preparing"
-    assert store.transition_growth_authority_state(
-        "legacy",
-        "preparing",
-        migration_generation=2,
-        marker_committed=False,
-        journal_payload=payload,
-        reason_code="prepare",
-    )["generation"] == 2
+    assert (
+        store.transition_growth_authority_state(
+            "legacy",
+            "preparing",
+            migration_generation=2,
+            marker_committed=False,
+            journal_payload=payload,
+            reason_code="prepare",
+        )["generation"]
+        == 2
+    )
     with pytest.raises(CompanionConflictError, match="replay_conflict"):
         store.transition_growth_authority_state(
             "legacy",

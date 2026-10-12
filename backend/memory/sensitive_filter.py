@@ -19,6 +19,7 @@ Design notes:
 - Order matters: we redact long, specific patterns first (JWT, API keys)
   before shorter generic ones (hex tokens) so we don't bite off a prefix.
 """
+
 from __future__ import annotations
 
 from deskpet.security.sensitive_text import redact_sensitive_text as redact

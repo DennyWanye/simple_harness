@@ -25,6 +25,7 @@ fix is broken — check the backend log for the
 extracted from turn 1's response and whether it ended up in turn 2's
 outgoing message stack.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -36,10 +37,7 @@ import websockets
 
 async def smoke(secret: str) -> int:
     sid = "p4s24-smoke"
-    url = (
-        f"ws://127.0.0.1:8100/ws/control?secret={secret}"
-        f"&session_id={sid}"
-    )
+    url = f"ws://127.0.0.1:8100/ws/control?secret={secret}&session_id={sid}"
     saw_400 = False
     saw_final_turn1 = False
     saw_final_turn2 = False
@@ -47,10 +45,14 @@ async def smoke(secret: str) -> int:
     async with websockets.connect(url, ping_interval=None) as ws:
 
         async def send_chat(text: str) -> None:
-            await ws.send(json.dumps({
-                "type": "chat_v2",
-                "payload": {"text": text, "session_id": sid},
-            }))
+            await ws.send(
+                json.dumps(
+                    {
+                        "type": "chat_v2",
+                        "payload": {"text": text, "session_id": sid},
+                    }
+                )
+            )
 
         async def drain_until_final() -> bool:
             """Read until chat_v2_final or chat_v2_error.
@@ -73,7 +75,9 @@ async def smoke(secret: str) -> int:
                     return True
                 if t == "chat_v2_error":
                     detail = msg["payload"].get("detail", "")
-                    print(f"   <- chat_v2_error reason={msg['payload'].get('reason')} detail={detail[:200]}")
+                    print(
+                        f"   <- chat_v2_error reason={msg['payload'].get('reason')} detail={detail[:200]}"
+                    )
                     if "HTTP 400" in detail or "reasoning_content" in detail:
                         saw_400 = True
                     return False
@@ -84,16 +88,12 @@ async def smoke(secret: str) -> int:
 
         # --- Turn 1 ----------------------------------------------------
         print("\n=== Turn 1: send first message ===")
-        await send_chat(
-            "请用一句话告诉我现在几点（用 get_time 工具）。"
-        )
+        await send_chat("请用一句话告诉我现在几点（用 get_time 工具）。")
         saw_final_turn1 = await drain_until_final()
 
         # --- Turn 2 (the critical one — would 400 before fix) ---------
         print("\n=== Turn 2: send second message ===")
-        await send_chat(
-            "好的，那再用一句话告诉我今天是星期几。"
-        )
+        await send_chat("好的，那再用一句话告诉我今天是星期几。")
         saw_final_turn2 = await drain_until_final()
 
     print("\n=== Result ===")

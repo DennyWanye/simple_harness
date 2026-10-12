@@ -266,9 +266,7 @@ class PreparedAuthorizationRuntime:
         grant_instance_id: str | None = None,
     ) -> TaskGrant:
         if current.source != source:
-            seed_resources = _merge_selectors(
-                (*current.resource_selectors, *resources)
-            )
+            seed_resources = _merge_selectors((*current.resource_selectors, *resources))
             return self._new_task_grant(
                 state=state,
                 source=source,
@@ -280,12 +278,8 @@ class PreparedAuthorizationRuntime:
                 now=now,
                 grant_instance_id=grant_instance_id,
             )
-        resources = _merge_selectors(
-            (*current.resource_selectors, *resources)
-        )
-        permissions = tuple(
-            sorted({*current.permission_categories, permission_category})
-        )
+        resources = _merge_selectors((*current.resource_selectors, *resources))
+        permissions = tuple(sorted({*current.permission_categories, permission_category}))
         effects = tuple(sorted({*current.effect_kinds, effect_kind}))
         next_version = current.version + 1
         next_id = self._task_grant_id(
@@ -328,9 +322,7 @@ class PreparedAuthorizationRuntime:
     ) -> ExactGrantRequest:
         current_time = float(self._clock()) if now is None else float(now)
         if not call.resource_selectors:
-            raise ValueError(
-                "prepared tool has no deterministic resource selectors"
-            )
+            raise ValueError("prepared tool has no deterministic resource selectors")
         if not context.root_run_id or not context.run_id:
             raise ValueError("prepared tool is missing its trusted run identity")
         exact_expiry = min(
@@ -388,8 +380,7 @@ class PreparedAuthorizationRuntime:
             *((decision_id,) if confirmed else ()),
         )
         if explicit_only and any(
-            not isinstance(value, str) or not value.strip()
-            for value in explicit_fences
+            not isinstance(value, str) or not value.strip() for value in explicit_fences
         ):
             return PreparedAuthorizationPlan(
                 action="deny",
@@ -432,14 +423,9 @@ class PreparedAuthorizationRuntime:
             decision_expires_at=decision_expires_at,
             now=now,
         )
-        current = (
-            await self._store.get_task_grant(task_grant_id)
-            if task_grant_id
-            else None
-        )
+        current = await self._store.get_task_grant(task_grant_id) if task_grant_id else None
         if current is not None and (
-            current.root_run_id != context.root_run_id
-            or current.principal_id != principal
+            current.root_run_id != context.root_run_id or current.principal_id != principal
         ):
             current = None
 
@@ -448,8 +434,7 @@ class PreparedAuthorizationRuntime:
         candidate = current
         covers = bool(
             not explicit_only
-            and
-            current
+            and current
             and current.is_current(
                 now=now,
                 policy_mode=state.mode,
@@ -479,11 +464,7 @@ class PreparedAuthorizationRuntime:
             )
         if not covers and (state.mode == "auto" or confirmed):
             source: Literal["user", "policy:auto"] = (
-                "user"
-                if explicit_only
-                else "policy:auto"
-                if state.mode == "auto"
-                else "user"
+                "user" if explicit_only else "policy:auto" if state.mode == "auto" else "user"
             )
             if current is None:
                 proposal = self._new_task_grant(
@@ -496,9 +477,7 @@ class PreparedAuthorizationRuntime:
                     effect_kind=call.effect_type,
                     now=now,
                     grant_instance_id=(
-                        decision_id
-                        if confirmed and state.mode != "auto"
-                        else context.effect_id
+                        decision_id if confirmed and state.mode != "auto" else context.effect_id
                     ),
                 )
             else:
@@ -513,9 +492,7 @@ class PreparedAuthorizationRuntime:
                     effect_kind=call.effect_type,
                     now=now,
                     grant_instance_id=(
-                        decision_id
-                        if confirmed and state.mode != "auto"
-                        else context.effect_id
+                        decision_id if confirmed and state.mode != "auto" else context.effect_id
                     ),
                 )
             candidate = proposal
@@ -542,17 +519,11 @@ class PreparedAuthorizationRuntime:
             current_task_grant=current,
             proposed_task_grant=proposal,
             policy_decision=decision,
-            authorization_origin=(
-                "explicit_decision" if explicit_only else "policy"
-            ),
+            authorization_origin=("explicit_decision" if explicit_only else "policy"),
             decision_id=decision_id if explicit_only else None,
             decision_nonce=decision_nonce if explicit_only else None,
-            confirm_only_snapshot_ref=(
-                confirm_only_snapshot_ref if explicit_only else None
-            ),
-            confirm_only_snapshot_hash=(
-                confirm_only_snapshot_hash if explicit_only else None
-            ),
+            confirm_only_snapshot_ref=(confirm_only_snapshot_ref if explicit_only else None),
+            confirm_only_snapshot_hash=(confirm_only_snapshot_hash if explicit_only else None),
         )
 
 

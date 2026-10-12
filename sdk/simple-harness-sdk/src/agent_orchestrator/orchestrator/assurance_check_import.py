@@ -62,7 +62,9 @@ def read_local_check_binding_locked(
         decode(reader.read_exact_metadata(completion_scope).body_json)
     )
     try:
-        current = OperationCompletionReader(store).read_scope(mission_id, scope.plan_ref, scope.occurrence_id)
+        current = OperationCompletionReader(store).read_scope(
+            mission_id, scope.plan_ref, scope.occurrence_id
+        )
     except OperationCompletionError as error:
         # 检查在跑的时候用户改了要求（阶段 E）：这一步的完成范围按旧版要求定，已过期——与范围变了
         # 同一个结论（HTN 补齐 F1 随机序列发现）。别的完整性错误照旧抛出
@@ -88,7 +90,8 @@ def read_local_check_binding_locked(
     result = decode(reader.read_exact_metadata(result_ref).body_json)
     stored_result = store.get_result(result_ref.pin.id)
     frozen = load_completion_result_inputs(
-        store, stored_result, requirements_revision=int(scope.requirements_ref.revision))
+        store, stored_result, requirements_revision=int(scope.requirements_ref.revision)
+    )
     if frozen is None or frozen.scope != scope:
         raise AssuranceError("CHECK_SCOPE_CHANGED")
     manifest = decode(reader.read_exact_metadata(manifest_ref).body_json)

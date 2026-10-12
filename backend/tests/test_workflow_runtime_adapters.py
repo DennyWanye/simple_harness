@@ -35,9 +35,7 @@ def test_generic_runtime_registry_is_single_owner_and_fail_closed():
             )
         },
     )
-    code = WorkflowRuntimeAdapter(
-        "code_complex", "v1", _state_factory, _context_factory
-    )
+    code = WorkflowRuntimeAdapter("code_complex", "v1", _state_factory, _context_factory)
     ppt = WorkflowRuntimeAdapter("ppt_pro", "v1", _state_factory, _context_factory)
     registry.register(deep)
     registry.register(code)
@@ -59,9 +57,7 @@ def test_generic_runtime_registry_is_single_owner_and_fail_closed():
     registry.require_active()
     with pytest.raises(WorkflowRuntimeAdapterError, match="after seal"):
         registry.register(
-            WorkflowRuntimeAdapter(
-                "deep_research", "v6", _state_factory, _context_factory
-            )
+            WorkflowRuntimeAdapter("deep_research", "v6", _state_factory, _context_factory)
         )
 
 
@@ -107,8 +103,6 @@ async def test_bootstrap_can_prepare_then_activate_runtime(tmp_path):
     service.runtime_adapters.register(
         WorkflowRuntimeAdapter("deep_research", "v5", _state_factory, _context_factory)
     )
-    await service.activate_runtime(
-        required_runtime_identities=(("deep_research", "v5"),)
-    )
+    await service.activate_runtime(required_runtime_identities=(("deep_research", "v5"),))
     service.ensure_runtime_active()
     assert service.runtime_adapters.active is True

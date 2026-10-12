@@ -85,13 +85,19 @@ def read_actual_review_turn(bridge: AgentBridge, intent: DispatchIntent) -> Actu
         }
         arp = getattr(bridge.runtime, "arp", None)
         try:
-            exposure = _exposure(uow, agent.run_id, turn, result, native_context=getattr(arp, "context", None))
+            exposure = _exposure(
+                uow, agent.run_id, turn, result, native_context=getattr(arp, "context", None)
+            )
         except AssuranceError as error:
             return ActualReviewTurn(raw_json, canonical(source), None, error.code)
-        return ActualReviewTurn(raw_json, canonical(source), canonical(exposure, limit=MAX_RECORD_BYTES), None)
+        return ActualReviewTurn(
+            raw_json, canonical(source), canonical(exposure, limit=MAX_RECORD_BYTES), None
+        )
 
 
-def _exposure(uow: Any, run_id: str, turn: Any, result: AgentTurnResult, *, native_context: Any = None) -> dict:
+def _exposure(
+    uow: Any, run_id: str, turn: Any, result: AgentTurnResult, *, native_context: Any = None
+) -> dict:
     from simple_harness.contracts import RequestId
 
     if result.state is not AgentTurnState.COMMITTED:
@@ -184,7 +190,9 @@ def _exposure(uow: Any, run_id: str, turn: Any, result: AgentTurnResult, *, nati
     }
 
 
-def _native_exposure(uow: Any, provider: Any, request_id: str, result: AgentTurnResult, native_context: Any) -> dict:
+def _native_exposure(
+    uow: Any, provider: Any, request_id: str, result: AgentTurnResult, native_context: Any
+) -> dict:
     """The native runtime plane's proof of what the final request showed the model.
 
     The plane persists only the request's required content; what it sent is the frozen

@@ -203,9 +203,7 @@ def test_dangling_binding_hard_fails_and_downgrades_completed() -> None:
 
     assert result.answer_status == "partial"
     assert result.quality_audit.hard_gate_status == "failed"
-    assert {"claim_binding_dangling", "claim_binding_mismatch"} <= set(
-        result.hard_failure_codes
-    )
+    assert {"claim_binding_dangling", "claim_binding_mismatch"} <= set(result.hard_failure_codes)
 
 
 def test_unsupported_visible_claim_is_never_admitted_by_soft_quality() -> None:
@@ -257,13 +255,21 @@ def test_claim_batch_and_audit_roundtrip_are_deterministic_and_tamper_evident() 
 
     assert first.claim_batch.to_json() == second.claim_batch.to_json()
     assert first.quality_audit.to_json() == second.quality_audit.to_json()
-    assert ClaimBatchV1.from_json(first.claim_batch.to_json()).to_json() == first.claim_batch.to_json()
-    assert QualityAuditV1.from_json(first.quality_audit.to_json()).to_json() == first.quality_audit.to_json()
-    assert validate_q1_exact_scalar_integrity(
-        claim_batch=first.claim_batch,
-        quality_audit=first.quality_audit,
-        **inputs,
-    ) == first
+    assert (
+        ClaimBatchV1.from_json(first.claim_batch.to_json()).to_json() == first.claim_batch.to_json()
+    )
+    assert (
+        QualityAuditV1.from_json(first.quality_audit.to_json()).to_json()
+        == first.quality_audit.to_json()
+    )
+    assert (
+        validate_q1_exact_scalar_integrity(
+            claim_batch=first.claim_batch,
+            quality_audit=first.quality_audit,
+            **inputs,
+        )
+        == first
+    )
 
     tampered_claim = first.claim_batch.to_json()["claims"][0]
     tampered_claim["normalized_proposition"] = "tampered"

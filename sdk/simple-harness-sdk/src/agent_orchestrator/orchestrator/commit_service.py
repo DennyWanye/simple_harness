@@ -152,6 +152,7 @@ SUBMITTED_STATES = frozenset({AttemptStatus.SUBMITTED, AttemptStatus.VERIFYING})
 ACTOR_SYSTEM = "system"
 ORCHESTRATOR_ID = "orchestrator"
 
+
 class CommitRejected(StoreError):
     """The proposal violates a contract, a budget or the state machine; nothing was written."""
 
@@ -183,7 +184,10 @@ class MissionSpec:
     idempotency_key: str
     # 第 2 批车道 H（H06）：两种计数型停止默认开启，阈值取部署政策（``stop_conditions`` 模块）
     stop_conditions: tuple[str, ...] = (
-        "verification_passed", "budget_exhausted", "no_new_knowledge", "result_duplication",
+        "verification_passed",
+        "budget_exhausted",
+        "no_new_knowledge",
+        "result_duplication",
     )
     allowed_tools: tuple[str, ...] = ()
     risk_level: str = "sandbox"
@@ -268,10 +272,19 @@ def task_account(task_id: str) -> str:
     return f"budget:{task_id}"
 
 
-class CommitService(ProtectedTailCommitsMixin,
-    ActionCommitsMixin, HumanCommitsMixin, PolicyCommitsMixin, SourceCommitsMixin, ObligationCommitsMixin,
-    PlanningAdmissionCommitsMixin, PlanCommitsMixin, ResolutionCommitsMixin, OperationCompletionCommitsMixin,
-    OperationMaterializationCommitsMixin, OperationReconciliationCommitsMixin,
+class CommitService(
+    ProtectedTailCommitsMixin,
+    ActionCommitsMixin,
+    HumanCommitsMixin,
+    PolicyCommitsMixin,
+    SourceCommitsMixin,
+    ObligationCommitsMixin,
+    PlanningAdmissionCommitsMixin,
+    PlanCommitsMixin,
+    ResolutionCommitsMixin,
+    OperationCompletionCommitsMixin,
+    OperationMaterializationCommitsMixin,
+    OperationReconciliationCommitsMixin,
 ):  # step 7: the action ledger + approvals half; step 9: the policy registry half; P2.3a: the plan revision half; P2.3c: the accept half
     def __init__(
         self,
@@ -323,7 +336,10 @@ class CommitService(ProtectedTailCommitsMixin,
         """The one rule for a Global account's limits (N3-24): they equal the deployment's
         configured monthly quota.  Must run inside a transaction."""
 
-        if self._global_budget is not None and self._ledger.account(account_id).limits != self._global_budget:
+        if (
+            self._global_budget is not None
+            and self._ledger.account(account_id).limits != self._global_budget
+        ):
             self._ledger.set_limits(account_id, self._global_budget)
 
     def _follow_global_quota_on_start(self) -> None:
@@ -400,8 +416,13 @@ class CommitService(ProtectedTailCommitsMixin,
         from .resource_requests import LAPSED
 
         with self._store.transaction():
-            return self._emit(LAPSED, mission_id, key=failed_attempt_id, task_id=task_id,
-                              payload={"failed_attempt_id": failed_attempt_id, **dict(detail)})
+            return self._emit(
+                LAPSED,
+                mission_id,
+                key=failed_attempt_id,
+                task_id=task_id,
+                payload={"failed_attempt_id": failed_attempt_id, **dict(detail)},
+            )
 
     def record_backlog_response(
         self, response: BacklogResponse, *, mission_ids: Sequence[str]
@@ -420,8 +441,14 @@ class CommitService(ProtectedTailCommitsMixin,
                 return False
             changes += 1
             self._store.put_scheduler_state(BACKLOG_KEY, {**document, "changes": changes})
-            before = None if previous is None else {
-                key: previous.get(key) for key in ("verifier_workers", "decomposition_paused", "reason")}
+            before = (
+                None
+                if previous is None
+                else {
+                    key: previous.get(key)
+                    for key in ("verifier_workers", "decomposition_paused", "reason")
+                }
+            )
             for mission_id in mission_ids:
                 self._emit(
                     "BacklogResponseChanged",
@@ -620,6 +647,7 @@ class CommitService(ProtectedTailCommitsMixin,
     def install_taskgraph_dispatch(self, binding: TaskGraphDispatchBinding) -> None:
         """Called by fixed deployment assembly, never from model or Host JSON."""
         from .taskgraph_dispatch import TaskGraphDispatchBinding
+
         if not isinstance(binding, TaskGraphDispatchBinding) or binding.store is not self._store:
             raise ValueError("TaskGraph dispatch binding must use this Commit Store")
         if self._taskgraph_dispatch is not None and self._taskgraph_dispatch is not binding:
@@ -635,10 +663,12 @@ class CommitService(ProtectedTailCommitsMixin,
 
     def require_taskgraph_handoff(self, intent: DispatchIntent) -> None:
         from ..storage.taskgraph_store import require_bound
+
         require_bound(self._store, intent.mission_id)
         if self._taskgraph_dispatch is None:
             raise StoreError("TASKGRAPH_EXECUTION_ASSEMBLY_REQUIRED")
         from ..runtime.planning_operations import SourceUnavailable
+
         try:
             self._taskgraph_dispatch.require_handoff(intent)
         except (SourceUnavailable, ContractError) as error:
@@ -661,15 +691,20 @@ class CommitService(ProtectedTailCommitsMixin,
 
         if HtnStore(self._store).task_semantics_of(mission_id, task_id) is not None:
             return "bound"
-        return "missing" if TaskGraphStore(self._store).ever_member(mission_id, task_id) else "outside"
+        return (
+            "missing" if TaskGraphStore(self._store).ever_member(mission_id, task_id) else "outside"
+        )
 
     def _unbound_open_tasks(self, mission_id: str) -> list[str]:
         """Open TaskGraph members whose binding is damaged: they end with the Mission and
         get no terminal record (2026-10-03 阶段 B 裁决第 7 类); the final report names them."""
 
-        return sorted(task.id for task in self._store.list_tasks(mission_id)
-                      if task.status in {TaskStatus.READY, TaskStatus.ACTIVE, TaskStatus.VERIFYING}
-                      and self._terminal_binding(mission_id, task.id) == "missing")
+        return sorted(
+            task.id
+            for task in self._store.list_tasks(mission_id)
+            if task.status in {TaskStatus.READY, TaskStatus.ACTIVE, TaskStatus.VERIFYING}
+            and self._terminal_binding(mission_id, task.id) == "missing"
+        )
 
     def _emit(
         self,
@@ -685,6 +720,7 @@ class CommitService(ProtectedTailCommitsMixin,
     ) -> Event:
         idempotency_key = f"{event_type}:{key}"
         from .taskgraph_terminal import TERMINAL_EVENTS, record_terminal_event
+
         bind_terminal = event_type in TERMINAL_EVENTS and task_id is not None
         if bind_terminal:
             binding = self._terminal_binding(mission_id, str(task_id))
@@ -733,16 +769,20 @@ class CommitService(ProtectedTailCommitsMixin,
     def ensure_assurance_format_repair(self, *, tenant_id: str, prior_failure: Any):
         from .assurance_review_transport import ensure_format_repair_invocation
 
-        return ensure_format_repair_invocation(self, tenant_id=tenant_id, prior_failure=prior_failure)
+        return ensure_format_repair_invocation(
+            self, tenant_id=tenant_id, prior_failure=prior_failure
+        )
 
-    def import_assurance_check_locked(self, *, mission_id: str, execution_ref: Any,
-                                      completion_scope: Any):
+    def import_assurance_check_locked(
+        self, *, mission_id: str, execution_ref: Any, completion_scope: Any
+    ):
         from ..assurance.codec import AssuranceError
 
         if self._assurance_check_importer is None:
             raise AssuranceError("CHECK_IMPORTER_UNAVAILABLE")
         return self._assurance_check_importer.import_check_locked(
-            mission_id=mission_id, execution_ref=execution_ref, completion_scope=completion_scope)
+            mission_id=mission_id, execution_ref=execution_ref, completion_scope=completion_scope
+        )
 
     def install_assurance_root(self, *, principal: Any, tenant_id: str, command_id: str):
         from .assurance_root_commits import install_native_root
@@ -751,9 +791,13 @@ class CommitService(ProtectedTailCommitsMixin,
             from ..assurance.codec import AssuranceError
 
             raise AssuranceError("ASSURANCE_ROOT_GATE_UNBOUND")
-        return install_native_root(self, self._assurance_root_gate, principal=principal,
-                                   tenant_id=tenant_id, command_id=command_id)
-
+        return install_native_root(
+            self,
+            self._assurance_root_gate,
+            principal=principal,
+            tenant_id=tenant_id,
+            command_id=command_id,
+        )
 
     def create_mission(
         self,
@@ -782,6 +826,7 @@ class CommitService(ProtectedTailCommitsMixin,
         except KeyError as error:
             raise CommitRejected(f"unknown domain profile {spec.domain!r}") from error
         from ..storage.assurance_work import atomic
+
         with atomic(self._store):
             found = self._store.find_mission(spec.tenant_id, spec.idempotency_key)
             if found is not None:
@@ -796,6 +841,7 @@ class CommitService(ProtectedTailCommitsMixin,
                 if conflict is not None:
                     raise MissionConflict(conflict)
                 from .assurance_factory import validate_creation_replay
+
                 validate_creation_replay(self, mission)
                 return mission, False
             mission_id = ids.mission_id(spec.tenant_id, spec.idempotency_key)
@@ -823,9 +869,13 @@ class CommitService(ProtectedTailCommitsMixin,
                     "task_kind": spec.task_kind,
                     "workspace_seed": dict(spec.workspace_seed),
                     "untrusted_sources": list(spec.untrusted_sources),
-                    **({} if spec.runtime_profile_id is None else {
-                        "runtime_profile_id": spec.runtime_profile_id,
-                    }),
+                    **(
+                        {}
+                        if spec.runtime_profile_id is None
+                        else {
+                            "runtime_profile_id": spec.runtime_profile_id,
+                        }
+                    ),
                     SEMANTICS_KEY: semantics_version,
                 },
             )
@@ -864,7 +914,9 @@ class CommitService(ProtectedTailCommitsMixin,
             )
             if spec.runtime_profile_id is not None:
                 if self._mission_profile_validator is None:
-                    raise CommitRejected("runtime profile selection requires an Orchestrator binding")
+                    raise CommitRejected(
+                        "runtime profile selection requires an Orchestrator binding"
+                    )
                 version = self._store.get_policy_version(str(binding["version_id"]))
                 if version is None:
                     raise CommitRejected("bound policy version is unavailable")
@@ -896,6 +948,7 @@ class CommitService(ProtectedTailCommitsMixin,
                 actor_id=spec.tenant_id,
             )
             from .assurance_factory import record_mission_creation
+
             record_mission_creation(self, mission, spec, creation_event)
             # 2026-10-03: a Mission is created with its root and its TaskGraph binding in
             # this one transaction, whichever door it came through.
@@ -937,18 +990,24 @@ class CommitService(ProtectedTailCommitsMixin,
                 return existing
             first_hold = (
                 self.protected_tail_hold(self.critic_tail_id(attempt_id))
-                if kind == "critic" and attempt_id is not None and task_id is not None else None
+                if kind == "critic" and attempt_id is not None and task_id is not None
+                else None
             )
             first_reservation = (
                 self._ledger.reservation(first_hold["subject_id"]) if first_hold else None
             )
-            if first_reservation and first_reservation["state"] != "SETTLED" and (
-                first_reservation["reserved_tokens"] > 0
+            if (
+                first_reservation
+                and first_reservation["state"] != "SETTLED"
+                and (first_reservation["reserved_tokens"] > 0)
             ):
                 assert isinstance(attempt_id, str) and isinstance(task_id, str)
                 self.consume_critic_tail(
-                    attempt_id=attempt_id, task_id=task_id, subject_id=subject_id,
-                    account_id=account_id, reservation=reservation,
+                    attempt_id=attempt_id,
+                    task_id=task_id,
+                    subject_id=subject_id,
+                    account_id=account_id,
+                    reservation=reservation,
                     semantic_revision=self.protected_tail_revision(task_id),
                 )
             else:
@@ -1090,19 +1149,29 @@ class CommitService(ProtectedTailCommitsMixin,
             if stored is None or stored.verification_state not in {"PENDING", "RUNNING"}:
                 return None
             attempt = self._require_attempt(stored.envelope.attempt_id)
-            if attempt.status not in {AttemptStatus.RUNNING, AttemptStatus.SUBMITTED, AttemptStatus.VERIFYING}:
+            if attempt.status not in {
+                AttemptStatus.RUNNING,
+                AttemptStatus.SUBMITTED,
+                AttemptStatus.VERIFYING,
+            }:
                 return None
             task = self._require_task(stored.envelope.task_id)
             self._store.set_result_verification(result_id, state="REJECTED", verdict="superseded")
             self._reject_open_claims(result_id)
             self._store.update_attempt(
-                next_attempt(attempt, AttemptStatus.RETRY_WAIT, failure={"reason": "superseded", **detail}),
+                next_attempt(
+                    attempt, AttemptStatus.RETRY_WAIT, failure={"reason": "superseded", **detail}
+                ),
                 expected_version=attempt.version,
             )
-            others_submitted = any(other.id != attempt.id and other.status in SUBMITTED_STATES
-                                   for other in self._store.list_attempts(task.id))
+            others_submitted = any(
+                other.id != attempt.id and other.status in SUBMITTED_STATES
+                for other in self._store.list_attempts(task.id)
+            )
             if task.status is TaskStatus.VERIFYING and not others_submitted:
-                self._store.update_task(next_task(task, TaskStatus.ACTIVE), expected_version=task.version)
+                self._store.update_task(
+                    next_task(task, TaskStatus.ACTIVE), expected_version=task.version
+                )
             self._release_attempt_charge(self._require_attempt(attempt.id))
             self._emit(
                 "ResultRejected",
@@ -1139,8 +1208,10 @@ class CommitService(ProtectedTailCommitsMixin,
         envelope = stored.envelope
         confirmed = self._review_confirmations(mission, envelope.id, review)
         registration = self._knowledge_registration(mission, certificate) if confirmed else {}
-        used = {knowledge_id: version
-                for knowledge_id, version in map(parse_knowledge_ref, envelope.used_knowledge)}
+        used = {
+            knowledge_id: version
+            for knowledge_id, version in map(parse_knowledge_ref, envelope.used_knowledge)
+        }
         domain = self.domain_for(mission.id)
         untrusted = [str(p) for p in (mission.final_report or {}).get("untrusted_sources", [])]
         artifact_paths = [
@@ -1153,32 +1224,50 @@ class CommitService(ProtectedTailCommitsMixin,
         # summaries are not execution receipts.
         from .completion_inputs import frozen_requirements_revision
 
-        layers = [dict(item) for item in self._store.list_verifications(
-            envelope.id, requirements_revision=frozen_requirements_revision(self._store, stored))]
+        layers = [
+            dict(item)
+            for item in self._store.list_verifications(
+                envelope.id, requirements_revision=frozen_requirements_revision(self._store, stored)
+            )
+        ]
         from ..memory.code_observations import scoped_test_observations
 
         artifacts = [self._store.get_artifact(item) for item in stored.artifacts]
         observations = scoped_test_observations(
             envelope, [a for a in artifacts if a is not None], layers, self._store.now, task
         )
-        grading_layers = [{"layer": "code_test", "detail": {"runs": [
-            {"target": record.verifier["target"], "passed": True}
-            for _, record in observations
-        ]}}]
+        grading_layers = [
+            {
+                "layer": "code_test",
+                "detail": {
+                    "runs": [
+                        {"target": record.verifier["target"], "passed": True}
+                        for _, record in observations
+                    ]
+                },
+            }
+        ]
         resolved_refs: set[str] = set()
         for proposal in envelope.claims:
             for ref in proposal.evidence or envelope.evidence:
                 if ref.startswith("knowledge:"):
                     record = self._store.get_knowledge(ref.removeprefix("knowledge:"))
-                    if (record is not None and used.get(record.id) == record.version
-                            and record.mission_id == mission.id
-                            and knowledge_standing(self._store, record) == KNOWLEDGE_CURRENT
-                            and self._accepted_result(record.source_result)):
+                    if (
+                        record is not None
+                        and used.get(record.id) == record.version
+                        and record.mission_id == mission.id
+                        and knowledge_standing(self._store, record) == KNOWLEDGE_CURRENT
+                        and self._accepted_result(record.source_result)
+                    ):
                         resolved_refs.add(ref)
                 elif ref.startswith("tool-run:"):
                     run = self._store.get_tool_call(ref.removeprefix("tool-run:"))
-                    if (run is not None and run["mission_id"] == mission.id
-                            and run["subject_id"] == attempt.id and run["outcome"] == "succeeded"):
+                    if (
+                        run is not None
+                        and run["mission_id"] == mission.id
+                        and run["subject_id"] == attempt.id
+                        and run["outcome"] == "succeeded"
+                    ):
                         resolved_refs.add(ref)
         report: list[dict[str, Any]] = []
         existing_claims = [
@@ -1230,15 +1319,23 @@ class CommitService(ProtectedTailCommitsMixin,
             target_status = grade.status
             verifier = dict(grade.basis)
             confirmation = confirmed.get(claim.id)
-            if (confirmation is not None and target_status is not ClaimStatus.VERIFIED
-                    and confirmation["content_sha256"]
-                    == hashlib.sha256(claim.content.encode("utf-8")).hexdigest()):
+            if (
+                confirmation is not None
+                and target_status is not ClaimStatus.VERIFIED
+                and confirmation["content_sha256"]
+                == hashlib.sha256(claim.content.encode("utf-8")).hexdigest()
+            ):
                 # The independent reviewer confirmed this claim against evidence other
                 # than the reviewed result itself: that is what makes it knowledge.
                 target_status = ClaimStatus.VERIFIED
-                verifier = {key: value for key, value in confirmation.items() if key != "content_sha256"}
+                verifier = {
+                    key: value for key, value in confirmation.items() if key != "content_sha256"
+                }
                 metadata["grade"] = "verified"
-                metadata["basis"] = {"layer": "review", "reason": "confirmed by the independent review"}
+                metadata["basis"] = {
+                    "layer": "review",
+                    "reason": "confirmed by the independent review",
+                }
             # D4-6': conflict precedes grading — a contested claim is capped at DISPUTED
             # and never projected, whatever its own evidence says
             contradiction = find_contradiction(claim, existing_claims)
@@ -1280,7 +1377,8 @@ class CommitService(ProtectedTailCommitsMixin,
                     supersedes=supersedes,
                     evidence_trust=grade.evidence_trust,
                     support=self._knowledge_support(
-                        mission, task, stored, updated.id, updated.evidence, confirmation),
+                        mission, task, stored, updated.id, updated.evidence, confirmation
+                    ),
                     **(registration if confirmation is not None else {}),
                 )
                 self._store.upsert_knowledge(record)
@@ -1304,16 +1402,29 @@ class CommitService(ProtectedTailCommitsMixin,
                     self._supersede_knowledge(supersedes, by=record)
         for observation, record in observations:
             record = replace(
-                record, verifier={**dict(record.verifier), "basis": "test_observation"},
-                support=self._knowledge_support(mission, task, stored, record.id, record.evidence, None))
+                record,
+                verifier={**dict(record.verifier), "basis": "test_observation"},
+                support=self._knowledge_support(
+                    mission, task, stored, record.id, record.evidence, None
+                ),
+            )
             self._store.upsert_claim(observation)
             self._store.upsert_knowledge(record)
             report.append({"claim_id": observation.id, "status": "VERIFIED", "key": None})
-            self._emit("KnowledgeCommitted", mission.id, key=record.id,
-                       task_id=task.id, attempt_id=attempt.id,
-                       payload={"knowledge_id": record.id, "verifier": dict(record.verifier),
-                                "system_observation": True, "basis": "test_observation",
-                                "support": dict(record.support)})
+            self._emit(
+                "KnowledgeCommitted",
+                mission.id,
+                key=record.id,
+                task_id=task.id,
+                attempt_id=attempt.id,
+                payload={
+                    "knowledge_id": record.id,
+                    "verifier": dict(record.verifier),
+                    "system_observation": True,
+                    "basis": "test_observation",
+                    "support": dict(record.support),
+                },
+            )
         for knowledge_id in used:
             source = self._store.get_knowledge(knowledge_id)
             if source is None or source.mission_id != mission.id or source.status != "VERIFIED":
@@ -1336,7 +1447,9 @@ class CommitService(ProtectedTailCommitsMixin,
             )
         return report
 
-    def _review_confirmations(self, mission: Mission, result_id: str, review: Any) -> dict[str, dict[str, Any]]:
+    def _review_confirmations(
+        self, mission: Mission, result_id: str, review: Any
+    ) -> dict[str, dict[str, Any]]:
         """The claims the official content review confirmed, by claim id (阶段 C).
 
         Read from the record's authenticated manifest.  A confirmation counts only when
@@ -1351,20 +1464,33 @@ class CommitService(ProtectedTailCommitsMixin,
         from ..storage.assurance_reads import AssuranceReader
 
         reader = AssuranceReader(self._store, tenant_id=validity.tenant_id, mission_id=mission.id)
-        manifest = decode(reader.read_exact_metadata(AssuranceRef(
-            "input_manifest", Pin(review.evidence_manifest_hash, 0, review.evidence_manifest_hash))).body_json)
+        manifest = decode(
+            reader.read_exact_metadata(
+                AssuranceRef(
+                    "input_manifest",
+                    Pin(review.evidence_manifest_hash, 0, review.evidence_manifest_hash),
+                )
+            ).body_json
+        )
         ruling = adjudication_of(self._store, str(review.record_id))
         found: dict[str, dict[str, Any]] = {}
         for row in manifest.get("claims", ()):
-            independent = [ref for ref in row["evidence_refs"]
-                           if not (ref["kind"] == "result" and ref["pin"]["id"] == result_id)]
+            independent = [
+                ref
+                for ref in row["evidence_refs"]
+                if not (ref["kind"] == "result" and ref["pin"]["id"] == result_id)
+            ]
             if not row["confirmed"] or not independent:
                 continue
             found[row["claim_id"]] = {
-                "basis": "review_confirmed", "record_id": str(review.record_id),
-                "review_key": manifest["review_key"], "reviewer_agent_id": str(review.reviewer_agent_id),
-                "manifest_hash": review.evidence_manifest_hash, "reason": row["reason"],
-                "evidence_refs": row["evidence_refs"], "adjudication": ruling,
+                "basis": "review_confirmed",
+                "record_id": str(review.record_id),
+                "review_key": manifest["review_key"],
+                "reviewer_agent_id": str(review.reviewer_agent_id),
+                "manifest_hash": review.evidence_manifest_hash,
+                "reason": row["reason"],
+                "evidence_refs": row["evidence_refs"],
+                "adjudication": ruling,
                 "content_sha256": row["content_sha256"],
             }
         return found
@@ -1376,11 +1502,17 @@ class CommitService(ProtectedTailCommitsMixin,
         from ..assurance.codec import AssuranceError
         from ..storage.assurance_store import AssuranceStore
 
-        out: dict[str, Any] = {"validity_interval": None, "permitted_uses": None, "assurance_level": None}
+        out: dict[str, Any] = {
+            "validity_interval": None,
+            "permitted_uses": None,
+            "assurance_level": None,
+        }
         if certificate is not None:
             out["validity_interval"] = {
                 "valid_from_ms": int(certificate.issued_at_ms),
-                "valid_until_ms": None if certificate.not_after_ms is None else int(certificate.not_after_ms),
+                "valid_until_ms": None
+                if certificate.not_after_ms is None
+                else int(certificate.not_after_ms),
                 "mission_epoch": int(certificate.mission_epoch),
             }
         try:
@@ -1390,8 +1522,13 @@ class CommitService(ProtectedTailCommitsMixin,
         return out
 
     def _knowledge_support(
-        self, mission: Mission, task: Task, stored: StoredResult, knowledge_id: str,
-        evidence: Sequence[str], confirmation: Mapping[str, Any] | None,
+        self,
+        mission: Mission,
+        task: Task,
+        stored: StoredResult,
+        knowledge_id: str,
+        evidence: Sequence[str],
+        confirmation: Mapping[str, Any] | None,
     ) -> dict[str, Any]:
         """What a piece of knowledge rests on, computed here and stored on its record: the
         acceptance of its source step, the evidence artifacts (the ones the reviewer cited
@@ -1402,8 +1539,11 @@ class CommitService(ProtectedTailCommitsMixin,
         from .completion_inputs import frozen_requirements_revision
 
         envelope = stored.envelope
-        cited = {ref["pin"]["id"] for ref in (confirmation or {}).get("evidence_refs", ())
-                 if ref["kind"] == "artifact"}
+        cited = {
+            ref["pin"]["id"]
+            for ref in (confirmation or {}).get("evidence_refs", ())
+            if ref["kind"] == "artifact"
+        }
         artifacts = [a for a in map(self._store.get_artifact, stored.artifacts) if a is not None]
         named = [a for a in artifacts if a.id in cited or a.path in evidence]
         knowledge = []
@@ -1411,13 +1551,21 @@ class CommitService(ProtectedTailCommitsMixin,
             source = self._store.get_knowledge(source_id)
             if source is None or source.mission_id != mission.id or source.id == knowledge_id:
                 continue
-            knowledge.append({"id": source.id, "version": int(source.version),
-                              "content_hash": content_hash_of(source.content)})
+            knowledge.append(
+                {
+                    "id": source.id,
+                    "version": int(source.version),
+                    "content_hash": content_hash_of(source.content),
+                }
+            )
         return {
             "acceptance_id": acceptance_id_for(
-                task.id, envelope.id, frozen_requirements_revision(self._store, stored)),
-            "artifacts": [{"id": a.id, "version": int(a.version), "content_hash": a.content_hash}
-                          for a in (named or artifacts)],
+                task.id, envelope.id, frozen_requirements_revision(self._store, stored)
+            ),
+            "artifacts": [
+                {"id": a.id, "version": int(a.version), "content_hash": a.content_hash}
+                for a in (named or artifacts)
+            ],
             "knowledge": knowledge,
         }
 
@@ -1442,10 +1590,17 @@ class CommitService(ProtectedTailCommitsMixin,
             record = self._store.get_knowledge(other.id)
             if record is not None and claim.id not in record.disputed_by:
                 # K07：谁改了它，与这次改动同一次写入
-                self._store.upsert_knowledge(modified(
-                    replace(record, disputed_by=(*record.disputed_by, claim.id)),
-                    change="DISPUTED", by=claim.id, task_id=claim.source_task,
-                    attempt_id=claim.source_attempt, proposed_by=claim.proposed_by, at=self._store.now))
+                self._store.upsert_knowledge(
+                    modified(
+                        replace(record, disputed_by=(*record.disputed_by, claim.id)),
+                        change="DISPUTED",
+                        by=claim.id,
+                        task_id=claim.source_task,
+                        attempt_id=claim.source_attempt,
+                        proposed_by=claim.proposed_by,
+                        at=self._store.now,
+                    )
+                )
         elif other.status is not ClaimStatus.DISPUTED:
             self._store.upsert_claim(
                 next_claim(other, ClaimStatus.DISPUTED, disputed_by=(*other.disputed_by, claim.id))
@@ -1505,10 +1660,19 @@ class CommitService(ProtectedTailCommitsMixin,
         record = self._store.get_knowledge(knowledge_id)
         if record is None or record.status != "VERIFIED":
             return
-        self._store.upsert_knowledge(modified(
-            replace(record, status="SUPERSEDED", superseded_by=by.id),  # P2-13: version = identity
-            change="SUPERSEDED", by=by.id, task_id=by.source_task, attempt_id=by.source_attempt,
-            proposed_by=by.proposed_by, at=self._store.now))
+        self._store.upsert_knowledge(
+            modified(
+                replace(
+                    record, status="SUPERSEDED", superseded_by=by.id
+                ),  # P2-13: version = identity
+                change="SUPERSEDED",
+                by=by.id,
+                task_id=by.source_task,
+                attempt_id=by.source_attempt,
+                proposed_by=by.proposed_by,
+                at=self._store.now,
+            )
+        )
         claim = self._store.get_claim(record.claim_id)
         if claim is not None and claim.status is ClaimStatus.VERIFIED:
             self._store.upsert_claim(next_claim(claim, ClaimStatus.SUPERSEDED, superseded_by=by.id))
@@ -1654,14 +1818,22 @@ class CommitService(ProtectedTailCommitsMixin,
         (HTN 一致性补改 H-2)."""
         from ..runtime.operation_reconciliation import action_outcome_unresolved
 
-        rows = [{"action_key": str(action["action_key"]), "action_id": str(action.get("action_id") or ""),
-                 "operation": str(action.get("operation") or ""), "target": str(action.get("target") or ""),
-                 "state": str(action.get("state") or "")}
-                for action in self._store.list_actions(mission_id)
-                if action_outcome_unresolved(self._store, action)]
+        rows = [
+            {
+                "action_key": str(action["action_key"]),
+                "action_id": str(action.get("action_id") or ""),
+                "operation": str(action.get("operation") or ""),
+                "target": str(action.get("target") or ""),
+                "state": str(action.get("state") or ""),
+            }
+            for action in self._store.list_actions(mission_id)
+            if action_outcome_unresolved(self._store, action)
+        ]
         if rows:
             report["unresolved_actions"] = rows
-            report["unresolved_actions_note"] = "这些对外操作已经交出、结果还不明；系统会继续核对，有结果再通知"
+            report["unresolved_actions_note"] = (
+                "这些对外操作已经交出、结果还不明；系统会继续核对，有结果再通知"
+            )
 
     def _cascade_stop(self, mission_id: str, *, skip_task: str | None) -> list[str]:
         """D3-13': every READY / ACTIVE / VERIFYING Task (except ``skip_task``) is
@@ -1679,7 +1851,9 @@ class CommitService(ProtectedTailCommitsMixin,
                 # BLOCKED Task it ends with the Mission; its open Attempts still close.
                 for attempt in self._store.list_attempts(task.id):
                     if attempt.status in OPEN_ATTEMPT_STATES:
-                        self._close_attempt(attempt, AttemptStatus.CANCELLED, reason="mission_stopped")
+                        self._close_attempt(
+                            attempt, AttemptStatus.CANCELLED, reason="mission_stopped"
+                        )
                         cancelled.append(attempt.id)
                 continue
             if task.status is TaskStatus.VERIFYING:
@@ -1746,16 +1920,34 @@ class CommitService(ProtectedTailCommitsMixin,
         return updated
 
     # ------------------------------------------------------------- attempts
-    def authorize_planning_retry(self, *, mission_id: str, task_id: str,
-                                 payload: Any, expected_plan_revision: int,
-                                 decision_id: str, canonical_hash: str, request_id: str) -> dict[str, Any]:
+    def authorize_planning_retry(
+        self,
+        *,
+        mission_id: str,
+        task_id: str,
+        payload: Any,
+        expected_plan_revision: int,
+        decision_id: str,
+        canonical_hash: str,
+        request_id: str,
+    ) -> dict[str, Any]:
         """Commit one retry permit; caller atomically records the admitted decision."""
         from .planning_retry import RETRY_AUTHORIZED, retry_binding
+
         with self._store.transaction():
-            binding = retry_binding(self._store, mission_id, task_id, payload,
-                                    expected_plan_revision=expected_plan_revision)
-            data = {**binding, "decision_id": decision_id, "canonical_hash": canonical_hash,
-                    "request_id": request_id}
+            binding = retry_binding(
+                self._store,
+                mission_id,
+                task_id,
+                payload,
+                expected_plan_revision=expected_plan_revision,
+            )
+            data = {
+                **binding,
+                "decision_id": decision_id,
+                "canonical_hash": canonical_hash,
+                "request_id": request_id,
+            }
             self._emit(RETRY_AUTHORIZED, mission_id, key=decision_id, task_id=task_id, payload=data)
             return data
 
@@ -1796,7 +1988,9 @@ class CommitService(ProtectedTailCommitsMixin,
         with self._store.transaction():
             task = self._require_task(task_id)
             if task.accepted_result_id:
-                raise CommitRejected("accepted preparation waits for completion, not another Worker")
+                raise CommitRejected(
+                    "accepted preparation waits for completion, not another Worker"
+                )
             if task.status not in {TaskStatus.READY, TaskStatus.ACTIVE, TaskStatus.VERIFYING}:
                 raise CommitRejected(f"task {task_id} is {task.status}; no new Attempt")
             from .failure_classes import NON_MODEL_FAILURE_CAP, non_model_failures
@@ -1807,15 +2001,23 @@ class CommitService(ProtectedTailCommitsMixin,
             if task.paused and task.pause_reason == "provider_admission:usage_unresolved":
                 raise CommitRejected("provider admission is waiting for unresolved usage")
             from .planning_runtime_block import pending_block
+
             if pending_block(self._store, task.mission_id) is not None:
                 raise CommitRejected("H4 runtime block prevents new Attempts")
             from .planning_retry import pending_retry_permit, retry_decision_required
+
             if retry_decision_required(self._store, task.mission_id, task.id):
                 permit = pending_retry_permit(self._store, task.mission_id, task.id)
                 if permit is None or permit["failed_attempt_id"] != retry_of:
-                    raise CommitRejected("H4 retry needs a current committed RETRY_SAME_METHOD decision")
-                intent_config = {**dict(intent_config), "planning_retry_decision_id": permit["decision_id"]}
+                    raise CommitRejected(
+                        "H4 retry needs a current committed RETRY_SAME_METHOD decision"
+                    )
+                intent_config = {
+                    **dict(intent_config),
+                    "planning_retry_decision_id": permit["decision_id"],
+                }
             from ..storage.taskgraph_store import require_bound
+
             try:
                 require_bound(self._store, task.mission_id)
             except StoreError as error:
@@ -1825,15 +2027,28 @@ class CommitService(ProtectedTailCommitsMixin,
             from ..artifacts.store import ArtifactStoreError
             from ..artifacts.versioning import ArtifactConflict
             from ..runtime.planning_operations import SourceUnavailable
+
             try:
                 graph_prepared = self._taskgraph_dispatch.prepare(
-                    task_id, intent_config=intent_config, inputs=inputs, input_hash=input_hash,
+                    task_id,
+                    intent_config=intent_config,
+                    inputs=inputs,
+                    input_hash=input_hash,
                 )
-            except (StoreError, ContractError, ArtifactStoreError, ArtifactConflict, SourceUnavailable) as error:
+            except (
+                StoreError,
+                ContractError,
+                ArtifactStoreError,
+                ArtifactConflict,
+                SourceUnavailable,
+            ) as error:
                 # A named per-Mission refusal stays in the original admission
                 # path; it must not abort scheduling for unrelated Missions.
                 raise CommitRejected(str(error)) from error
-            intent_config = {**dict(intent_config), "taskgraph_inputs": graph_prepared.intent_binding()}
+            intent_config = {
+                **dict(intent_config),
+                "taskgraph_inputs": graph_prepared.intent_binding(),
+            }
             existing = self._store.list_attempts(task_id)
             open_attempts = [a for a in existing if a.status in OPEN_ATTEMPT_STATES]
             if open_attempts:
@@ -1868,28 +2083,48 @@ class CommitService(ProtectedTailCommitsMixin,
                 PointUseRefused,
                 require_point_use_locked,
             )
+
             try:
                 require_point_use_locked(
-                    self, mission_id=task.mission_id, purpose="CONTEXT", consumer_kind=ATTEMPT_CONSUMER,
-                    consumer_id=attempt_id, claims=tuple(context_evidence), subject=("task", task_id))
+                    self,
+                    mission_id=task.mission_id,
+                    purpose="CONTEXT",
+                    consumer_kind=ATTEMPT_CONSUMER,
+                    consumer_id=attempt_id,
+                    claims=tuple(context_evidence),
+                    subject=("task", task_id),
+                )
             except PointUseRefused as refused:
-                raise CommitRejected(f"CONTEXT_EVIDENCE_NOT_CURRENT: {'; '.join(refused.use.refusals)}") from refused
+                raise CommitRejected(
+                    f"CONTEXT_EVIDENCE_NOT_CURRENT: {'; '.join(refused.use.refusals)}"
+                ) from refused
             from .completion_inputs import freeze_attempt_completion_inputs
+
             frozen_completion = freeze_attempt_completion_inputs(
-                self._store, self, task,
-                attempt_id=attempt_id, request_id=ids.intent_id("attempt", attempt_id),
+                self._store,
+                self,
+                task,
+                attempt_id=attempt_id,
+                request_id=ids.intent_id("attempt", attempt_id),
             )
             if self._source_artifact_store is not None:
                 from .attempt_execution import freeze_attempt_execution
 
                 execution = freeze_attempt_execution(
-                    self._store, self._source_artifact_store, task=task,
-                    intent_config=intent_config, inputs=inputs, retry_of=retry_of,
+                    self._store,
+                    self._source_artifact_store,
+                    task=task,
+                    intent_config=intent_config,
+                    inputs=inputs,
+                    retry_of=retry_of,
                     validated_input_identities=frozenset(
-                        (str(item["artifact_id"]), str(item["path"]), str(item["content_hash"])) for item in inputs),
+                        (str(item["artifact_id"]), str(item["path"]), str(item["content_hash"]))
+                        for item in inputs
+                    ),
                 )
-                if ("attempt_execution" in intent_config
-                        and sha256_hex(intent_config["attempt_execution"]) != sha256_hex(execution)):
+                if "attempt_execution" in intent_config and sha256_hex(
+                    intent_config["attempt_execution"]
+                ) != sha256_hex(execution):
                     raise CommitRejected("attempt execution conflicts with actual frozen inputs")
                 intent_config = {**dict(intent_config), "attempt_execution": execution}
             elif "attempt_execution" in intent_config:
@@ -1898,7 +2133,8 @@ class CommitService(ProtectedTailCommitsMixin,
                 from ..governance.tail_budget import TailReserve
 
                 self.reserve_critic_tail(
-                    attempt_id=attempt_id, task_id=task.id,
+                    attempt_id=attempt_id,
+                    task_id=task.id,
                     reserve=TailReserve(tokens=critic_tail.tokens),
                     semantic_revision=self.protected_tail_revision(task.id),
                 )
@@ -2144,7 +2380,6 @@ class CommitService(ProtectedTailCommitsMixin,
             return intent.creation_key
         return intent.subject_id
 
-
     def record_submitted(self, intent_id: str, *, receipt: Mapping[str, Any]) -> DispatchIntent:
         """Save the real SDK receipt; the Attempt becomes RUNNING (§25.2 start)."""
 
@@ -2286,10 +2521,13 @@ class CommitService(ProtectedTailCommitsMixin,
         category = classify_failure(attempt.failure)
         if category not in NON_MODEL:
             return False
-        if self._store.connection.execute(
-            "SELECT 1 FROM events WHERE idempotency_key = ?",
-            (f"AttemptChargeReleased:{attempt.id}",),
-        ).fetchone() is not None:
+        if (
+            self._store.connection.execute(
+                "SELECT 1 FROM events WHERE idempotency_key = ?",
+                (f"AttemptChargeReleased:{attempt.id}",),
+            ).fetchone()
+            is not None
+        ):
             return False
         reservation = self._ledger.reservation(attempt.id)
         if reservation is None or reservation["account_id"] != task_account(attempt.task_id):
@@ -2318,7 +2556,10 @@ class CommitService(ProtectedTailCommitsMixin,
             if attempt.status is AttemptStatus.LOST:
                 return attempt
             updated = next_attempt(
-                attempt, AttemptStatus.LOST, failure={"reason": reason, **jsonable(dict(detail or {}))})
+                attempt,
+                AttemptStatus.LOST,
+                failure={"reason": reason, **jsonable(dict(detail or {}))},
+            )
             self._store.update_attempt(updated, expected_version=attempt.version)
             self._release_attempt_charge(updated)
             # Loss is a control-plane observation, not proof that the SDK call
@@ -2391,7 +2632,9 @@ class CommitService(ProtectedTailCommitsMixin,
         # A terminal business state cannot downgrade UNKNOWN to known-only zero: the
         # ledger's strict settlement check is the only one.
         if self._assurance_settlement is None:
-            raise BudgetError("Assurance physical settlement reader is not installed; reservation held")
+            raise BudgetError(
+                "Assurance physical settlement reader is not installed; reservation held"
+            )
         self._assurance_settlement.require_settled_locked(subject_id, mission_id)
         if self._taskgraph_dispatch is None:
             raise CommitRejected("TASKGRAPH_SETTLEMENT_ASSEMBLY_REQUIRED")
@@ -2463,6 +2706,7 @@ class CommitService(ProtectedTailCommitsMixin,
             existing = self._store.find_result_for_attempt(attempt_id)
             if existing is not None and existing.turn_id == turn_id:
                 from .completion_inputs import load_completion_result_inputs
+
                 frozen = load_completion_result_inputs(self._store, existing)
                 if tuple(port_claims) != tuple(frozen.port_claims):
                     raise CommitRejected("result replay changed its frozen output claims")
@@ -2498,10 +2742,15 @@ class CommitService(ProtectedTailCommitsMixin,
                 registered.append(artifact)
             stored = replace(stored, artifacts=tuple(artifact.id for artifact in registered))
             from .completion_inputs import validate_result_port_claims
+
             completion_claims = validate_result_port_claims(
-                self._store, commit=self, mission=self._require_mission(attempt.mission_id),
-                task=self._require_task(attempt.task_id), result=stored,
-                artifacts=registered, port_claims=port_claims,
+                self._store,
+                commit=self,
+                mission=self._require_mission(attempt.mission_id),
+                task=self._require_task(attempt.task_id),
+                result=stored,
+                artifacts=registered,
+                port_claims=port_claims,
             )
             self._store.insert_result(stored)
             self._store.fault("mid_commit", "attempt")
@@ -2552,8 +2801,11 @@ class CommitService(ProtectedTailCommitsMixin,
                     "outcome": str(envelope.outcome),
                     "artifacts": list(stored.artifacts),
                     "claims": len(envelope.claims),
-                    **({"completion_port_claims": list(completion_claims)}
-                       if completion_claims is not None else {}),
+                    **(
+                        {"completion_port_claims": list(completion_claims)}
+                        if completion_claims is not None
+                        else {}
+                    ),
                 },
                 actor_type="agent",
                 actor_id=attempt.agent_id or attempt_id,
@@ -2801,17 +3053,25 @@ class CommitService(ProtectedTailCommitsMixin,
                 return task
             updated = next_task(task, paused=True, pause_reason=reason)
             self._store.update_task(updated, expected_version=task.version)
-            self._emit("TaskPaused", task.mission_id, key=f"{attempt_id}:admission_usage",
-                       task_id=task.id, attempt_id=attempt_id,
-                       payload={"reason": reason, "admission": dict(detail)})
+            self._emit(
+                "TaskPaused",
+                task.mission_id,
+                key=f"{attempt_id}:admission_usage",
+                task_id=task.id,
+                attempt_id=attempt_id,
+                payload={"reason": reason, "admission": dict(detail)},
+            )
             return updated
 
     def resume_admission_usage(self, task_id: str) -> bool:
         """Clear only our accounting pause, after all real reservations settle."""
         with self._store.transaction():
             task = self._require_task(task_id)
-            if (not task.paused or task.pause_reason != "provider_admission:usage_unresolved"
-                    or task.status in TERMINAL_TASK):
+            if (
+                not task.paused
+                or task.pause_reason != "provider_admission:usage_unresolved"
+                or task.status in TERMINAL_TASK
+            ):
                 return False
             attempts = self._store.list_attempts(task_id)
             for attempt in attempts:
@@ -2822,9 +3082,13 @@ class CommitService(ProtectedTailCommitsMixin,
                     return False
             updated = next_task(task, paused=False, pause_reason=None)
             self._store.update_task(updated, expected_version=task.version)
-            self._emit("TaskResumed", task.mission_id,
-                       key=f"{task_id}:admission_usage:{task.version}", task_id=task.id,
-                       payload={"reason": "provider_usage_reconciled"})
+            self._emit(
+                "TaskResumed",
+                task.mission_id,
+                key=f"{task_id}:admission_usage:{task.version}",
+                task_id=task.id,
+                payload={"reason": "provider_usage_reconciled"},
+            )
             return True
 
     def start_verification(self, result_id: str) -> StoredResult:
@@ -2849,7 +3113,12 @@ class CommitService(ProtectedTailCommitsMixin,
             return self._require_result(result_id)
 
     def record_verification_layer(
-        self, result_id: str, *, layer: str, status: str, detail: Mapping[str, Any],
+        self,
+        result_id: str,
+        *,
+        layer: str,
+        status: str,
+        detail: Mapping[str, Any],
         requirements_revision: int | None = None,
     ) -> None:
         """Record one layer under the requirements revision it was judged against: the
@@ -2866,15 +3135,20 @@ class CommitService(ProtectedTailCommitsMixin,
             from .assurance_validity import acceptance_id_for
 
             accepted = (
-                stored.verification_state == "DONE" and stored.verdict == "PASS" and revision == frozen
+                stored.verification_state == "DONE"
+                and stored.verdict == "PASS"
+                and revision == frozen
             ) or OperationCompletionStore(self._store).get_acceptance_scope_exact(
-                stored.envelope.mission_id, acceptance_id_for(stored.envelope.task_id, result_id, revision)
+                stored.envelope.mission_id,
+                acceptance_id_for(stored.envelope.task_id, result_id, revision),
             ) is not None
             if accepted:
                 known = next(
                     (
                         row
-                        for row in self._store.list_verifications(result_id, requirements_revision=revision)
+                        for row in self._store.list_verifications(
+                            result_id, requirements_revision=revision
+                        )
                         if row["layer"] == layer
                     ),
                     None,
@@ -2913,9 +3187,16 @@ class CommitService(ProtectedTailCommitsMixin,
             )
 
     def _acceptance_materials(
-        self, stored: StoredResult, task: Task, attempt: Attempt, mission: Mission,
-        *, verifier_results: Sequence[Mapping[str, Any]], owner: str | None,
-        connectors: Mapping[str, Any] | None, deployment: DeploymentPolicy | None,
+        self,
+        stored: StoredResult,
+        task: Task,
+        attempt: Attempt,
+        mission: Mission,
+        *,
+        verifier_results: Sequence[Mapping[str, Any]],
+        owner: str | None,
+        connectors: Mapping[str, Any] | None,
+        deployment: DeploymentPolicy | None,
     ) -> dict[str, Any] | Task:
         """Shared nonpublishing eligibility; failures retain their actual failure path.
 
@@ -2923,9 +3204,7 @@ class CommitService(ProtectedTailCommitsMixin,
         action, or completed/superseded an Attempt.
         """
         result_id = stored.envelope.id
-        stale = KnowledgeIndex.load(self._store, mission.id).check(
-            stored.envelope.used_knowledge
-        )
+        stale = KnowledgeIndex.load(self._store, mission.id).check(stored.envelope.used_knowledge)
         if stale:  # D4-4': the reference check is repeated inside the Commit (TOCTOU)
             return self.fail_result(
                 result_id,
@@ -2944,8 +3223,12 @@ class CommitService(ProtectedTailCommitsMixin,
         return {"verifier_results": verifier_results}
 
     def accept_result(
-        self, result_id: str, *, verifier_results: Sequence[Mapping[str, Any]],
-        owner: str | None = None, connectors: Mapping[str, Any] | None = None,
+        self,
+        result_id: str,
+        *,
+        verifier_results: Sequence[Mapping[str, Any]],
+        owner: str | None = None,
+        connectors: Mapping[str, Any] | None = None,
         deployment: DeploymentPolicy | None = None,
     ) -> Task:
         from .resolution_commits import ResolutionCommitRejected
@@ -2954,9 +3237,13 @@ class CommitService(ProtectedTailCommitsMixin,
         for retry in (False, True):
             try:
                 with self._store.transaction():
-                    completed = self._accept_result(result_id, verifier_results=verifier_results,
-                                                    owner=owner, connectors=connectors,
-                                                    deployment=deployment)
+                    completed = self._accept_result(
+                        result_id,
+                        verifier_results=verifier_results,
+                        owner=owner,
+                        connectors=connectors,
+                        deployment=deployment,
+                    )
             except ResolutionCommitRejected as error:
                 # A source moved between the fresh preparation and BEGIN IMMEDIATE.
                 # Exactly one bounded re-preparation; never a licence by retry.
@@ -2966,8 +3253,9 @@ class CommitService(ProtectedTailCommitsMixin,
                 continue
             break
         if prepared is not None:
-            self._assurance_validity.forget(prepared.identity.mission_id,
-                                            str(prepared.record.record_id))
+            self._assurance_validity.forget(
+                prepared.identity.mission_id, str(prepared.record.record_id)
+            )
         return completed
 
     def accept_carried_result(self, result_id: str, *, requirements_revision: int) -> Any:
@@ -2985,10 +3273,13 @@ class CommitService(ProtectedTailCommitsMixin,
             if validity is None:
                 return None
             try:
-                return validity.prepare_accept_use_for_result(mission_id, result_id, requirements_revision)
+                return validity.prepare_accept_use_for_result(
+                    mission_id, result_id, requirements_revision
+                )
             except AssuranceError as error:
                 raise ResolutionCommitRejected(
-                    error.code, "the current use certificate could not be prepared") from error
+                    error.code, "the current use certificate could not be prepared"
+                ) from error
 
         prepared = prepare()
         for retry in (False, True):
@@ -3002,7 +3293,9 @@ class CommitService(ProtectedTailCommitsMixin,
                 continue
             break
         if prepared is not None:
-            self._assurance_validity.forget(prepared.identity.mission_id, str(prepared.record.record_id))
+            self._assurance_validity.forget(
+                prepared.identity.mission_id, str(prepared.record.record_id)
+            )
         return receipt
 
     def _accept_carried(self, result_id: str, requirements_revision: int) -> Any:
@@ -3011,14 +3304,22 @@ class CommitService(ProtectedTailCommitsMixin,
 
         stored = self._require_result(result_id)
         if stored.verification_state != "DONE" or stored.verdict != "PASS":
-            raise CommitRejected("only an accepted result is reviewed again under newer requirements")
+            raise CommitRejected(
+                "only an accepted result is reviewed again under newer requirements"
+            )
         attempt = self._require_attempt(stored.envelope.attempt_id)
         mission_id, task_id = stored.envelope.mission_id, stored.envelope.task_id
-        frozen = load_completion_result_inputs(self._store, stored, requirements_revision=requirements_revision)
+        frozen = load_completion_result_inputs(
+            self._store, stored, requirements_revision=requirements_revision
+        )
         self._lock_assured_acceptance(mission_id, task_id, result_id, requirements_revision)
         receipt = LeafAcceptanceAssembly(self._store, self).accept(
-            mission_id, task_id, result_id=result_id,
-            layers=self._store.list_verifications(result_id, requirements_revision=requirements_revision),
+            mission_id,
+            task_id,
+            result_id=result_id,
+            layers=self._store.list_verifications(
+                result_id, requirements_revision=requirements_revision
+            ),
             artifacts=tuple(self._store.get_artifact(key) for key in stored.artifacts),
             producer_agent_ids=(attempt.agent_id,),
             reviewer_agent_id=f"critic:{attempt.id}",
@@ -3027,11 +3328,16 @@ class CommitService(ProtectedTailCommitsMixin,
             port_claims=frozen.port_claims,
         )
         self._emit(
-            "CarriedResultAccepted", mission_id,
+            "CarriedResultAccepted",
+            mission_id,
             key=f"{result_id}:r{requirements_revision}",
-            task_id=task_id, attempt_id=attempt.id,
-            payload={"result_id": result_id, "requirements_revision": int(requirements_revision),
-                     "acceptance_id": str(receipt.acceptance_id)},
+            task_id=task_id,
+            attempt_id=attempt.id,
+            payload={
+                "result_id": result_id,
+                "requirements_revision": int(requirements_revision),
+                "acceptance_id": str(receipt.acceptance_id),
+            },
         )
         return receipt
 
@@ -3061,8 +3367,13 @@ class CommitService(ProtectedTailCommitsMixin,
                 error.code, "the current use certificate could not be prepared"
             ) from error
 
-    def _lock_assured_acceptance(self, mission_id: str, task_id: str, result_id: str,
-                                 requirements_revision: int | None = None) -> Any:
+    def _lock_assured_acceptance(
+        self,
+        mission_id: str,
+        task_id: str,
+        result_id: str,
+        requirements_revision: int | None = None,
+    ) -> Any:
         """Assurance 1.1: the prepared ACCEPT use is locked before this UoW's own writes.
 
         The freshness/authority/root gates must see the world as it was when the
@@ -3080,8 +3391,11 @@ class CommitService(ProtectedTailCommitsMixin,
             return None
         from .completion_inputs import frozen_requirements_revision
 
-        revision = (frozen_requirements_revision(self._store, self._require_result(result_id))
-                    if requirements_revision is None else int(requirements_revision))
+        revision = (
+            frozen_requirements_revision(self._store, self._require_result(result_id))
+            if requirements_revision is None
+            else int(requirements_revision)
+        )
         candidate = validity.candidate_for_consumer(
             mission_id, ACCEPTANCE_CONSUMER, acceptance_id_for(task_id, result_id, revision)
         )
@@ -3116,24 +3430,39 @@ class CommitService(ProtectedTailCommitsMixin,
             if stored.verification_state == "DONE" and stored.verdict == "PASS":
                 from ..storage.operation_completion_store import OperationCompletionStore
                 from .assurance_validity import acceptance_id_for
+
                 acceptance_id = acceptance_id_for(
-                    stored.envelope.task_id, result_id, frozen_requirements_revision(self._store, stored))
-                if OperationCompletionStore(self._store).get_acceptance_scope_exact(
-                    stored.envelope.mission_id, acceptance_id
-                ) is None:
+                    stored.envelope.task_id,
+                    result_id,
+                    frozen_requirements_revision(self._store, stored),
+                )
+                if (
+                    OperationCompletionStore(self._store).get_acceptance_scope_exact(
+                        stored.envelope.mission_id, acceptance_id
+                    )
+                    is None
+                ):
                     raise CommitRejected("verified result has no atomic scoped Acceptance")
                 return self._require_task(stored.envelope.task_id)
-            licensed = self._lock_assured_acceptance(stored.envelope.mission_id,
-                                                     stored.envelope.task_id, result_id)
+            licensed = self._lock_assured_acceptance(
+                stored.envelope.mission_id, stored.envelope.task_id, result_id
+            )
             attempt = self._require_attempt(stored.envelope.attempt_id)
             self._require_lease(attempt, owner)
             task = self._require_task(stored.envelope.task_id)
             mission = self._require_mission(stored.envelope.mission_id)
             from .completion_inputs import load_completion_result_inputs
+
             frozen_completion = load_completion_result_inputs(self._store, stored)
             materials = self._acceptance_materials(
-                stored, task, attempt, mission, verifier_results=verifier_results, owner=owner,
-                connectors=connectors, deployment=deployment,
+                stored,
+                task,
+                attempt,
+                mission,
+                verifier_results=verifier_results,
+                owner=owner,
+                connectors=connectors,
+                deployment=deployment,
             )
             if isinstance(materials, Task):
                 return materials
@@ -3156,9 +3485,11 @@ class CommitService(ProtectedTailCommitsMixin,
             )
             completed = next_task(
                 task,
-                (TaskStatus.VERIFYING
-                 if frozen_completion.scope.required_effect_keys
-                 else TaskStatus.COMPLETED),
+                (
+                    TaskStatus.VERIFYING
+                    if frozen_completion.scope.required_effect_keys
+                    else TaskStatus.COMPLETED
+                ),
                 accepted_result_id=result_id,
                 accepted_artifacts=stored.artifacts,
             )
@@ -3171,12 +3502,17 @@ class CommitService(ProtectedTailCommitsMixin,
                 stored, mission_id=mission.id, task_id=task.id, result_id=result_id
             )
             from .leaf_acceptance import LeafAcceptanceAssembly
+
             # Preparation, its accepted bytes and contribution share the result
             # transaction. No effect proposal is inferred from a Worker file.
             LeafAcceptanceAssembly(self._store, self).accept(
-                mission.id, task.id, result_id=result_id,
+                mission.id,
+                task.id,
+                result_id=result_id,
                 layers=self._store.list_verifications(
-                    result_id, requirements_revision=frozen_requirements_revision(self._store, stored)),
+                    result_id,
+                    requirements_revision=frozen_requirements_revision(self._store, stored),
+                ),
                 artifacts=tuple(self._store.get_artifact(key) for key in stored.artifacts),
                 producer_agent_ids=(attempt.agent_id,),
                 reviewer_agent_id=f"critic:{attempt.id}",
@@ -3205,7 +3541,9 @@ class CommitService(ProtectedTailCommitsMixin,
                     self._close_attempt(other, AttemptStatus.SUPERSEDED, reason="sibling_accepted")
                     superseded.append(other.id)
             self._emit(
-                "TaskCompleted" if completed.status is TaskStatus.COMPLETED else "PreparationAccepted",
+                "TaskCompleted"
+                if completed.status is TaskStatus.COMPLETED
+                else "PreparationAccepted",
                 mission.id,
                 key=task.id,
                 task_id=task.id,
@@ -3280,7 +3618,9 @@ class CommitService(ProtectedTailCommitsMixin,
 
             criteria = list(current_statements(self._store, mission))
             if [item.get("criterion") for item in judgments] != criteria:
-                raise CommitRejected("judgments must cover the Mission's current requirements in order")
+                raise CommitRejected(
+                    "judgments must cover the Mission's current requirements in order"
+                )
             met = all(bool(item.get("met")) for item in judgments)
             # 2026-10-11 偏离 5（TaskGraph §8.4）：分层计划里步骤之间没有依赖边，"最后一个叶"退化成任取
             # 一步，报告的结果、产物只有那一步的。现在：产物是全部验收步骤的（按网络顺序），"终结步"
@@ -3299,8 +3639,14 @@ class CommitService(ProtectedTailCommitsMixin,
                 "accepted_result_id": None if finalizer is None else finalizer.accepted_result_id,
                 "accepted_artifacts": artifact_ids,
                 "terminal_task_id": None if finalizer is None else finalizer.id,
-                "accepted_results": [{"task_id": task.id, "result_id": task.accepted_result_id,
-                                      "artifacts": list(task.accepted_artifacts)} for task in accepted],
+                "accepted_results": [
+                    {
+                        "task_id": task.id,
+                        "result_id": task.accepted_result_id,
+                        "artifacts": list(task.accepted_artifacts),
+                    }
+                    for task in accepted
+                ],
                 "summary": summary,
                 "attempts": sum(task.attempt_count for task in tasks),
                 "tasks": self._task_reports(mission_id),
@@ -3309,8 +3655,11 @@ class CommitService(ProtectedTailCommitsMixin,
                 "knowledge": [
                     k.id for k in self._store.list_knowledge(mission_id, status="VERIFIED")
                 ],
-                "lineage": lineage(self._store, mission_id,  # D4-14 / 30-27
-                                   terminal_task_id=None if finalizer is None else finalizer.id),
+                "lineage": lineage(
+                    self._store,
+                    mission_id,  # D4-14 / 30-27
+                    terminal_task_id=None if finalizer is None else finalizer.id,
+                ),
             }
             judged = self._emit(
                 "MissionSuccessJudged",
@@ -3333,7 +3682,8 @@ class CommitService(ProtectedTailCommitsMixin,
                     AssuranceStore(self._store).require_assured(mission_id)
                 except AssuranceError as error:
                     raise CommitRejected(
-                        f"mission {mission_id} cannot be judged complete: {error.code}") from error
+                        f"mission {mission_id} cannot be judged complete: {error.code}"
+                    ) from error
                 return request_assured_closeout(self, mission, report=report, judged=judged)
             self._note_unresolved_actions(mission_id, report)
             failed = next_mission(
@@ -3485,10 +3835,13 @@ class CommitService(ProtectedTailCommitsMixin,
             return
         network = self._judgment_network(mission)
         from .completion_status import read_occurrence_completion
+
         # Assurance §7.2（2026-10-06 车道 O）：判定读的是根的内容是否满足（根结论据此形成）；根的
         # 必需效果由收尾核对收敛（结果不明 → BLOCKED_UNKNOWN），不是判定的前置。
-        if not all(read_occurrence_completion(self._store, mission_id, str(root)).content_ready
-                   for root in network.root_occurrence_ids):
+        if not all(
+            read_occurrence_completion(self._store, mission_id, str(root)).content_ready
+            for root in network.root_occurrence_ids
+        ):
             raise CommitRejected("approved completion Scope still has unmet content")
         semantics = HtnStore(self._store)
         unresolved = sorted(

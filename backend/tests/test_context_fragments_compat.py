@@ -128,10 +128,7 @@ async def test_tool_component_outputs_intent_only_when_context_os_on() -> None:
         "reminder_cancel",
     )
     assert "source:builtin" in slice_.tool_exposure_intent.discoverable_selectors
-    assert (
-        "source:capability:*"
-        in slice_.tool_exposure_intent.discoverable_selectors
-    )
+    assert "source:capability:*" in slice_.tool_exposure_intent.discoverable_selectors
     assert "generate_image" not in slice_.tool_exposure_intent.deny_selectors
 
 
@@ -164,12 +161,13 @@ async def test_tool_component_e2e_direct_override_is_dev_only(monkeypatch) -> No
             config={"features": {"context_os_v1": True}},
         )
     )
-    assert e2e.tool_exposure_intent.direct_selectors.count(
-        "mcp_context-os-e2e_mcp_ctx_fixture_tool_001"
-    ) == 1
-    assert e2e.meta["e2e_direct_tools"] == (
-        "mcp_context-os-e2e_mcp_ctx_fixture_tool_001",
+    assert (
+        e2e.tool_exposure_intent.direct_selectors.count(
+            "mcp_context-os-e2e_mcp_ctx_fixture_tool_001"
+        )
+        == 1
     )
+    assert e2e.meta["e2e_direct_tools"] == ("mcp_context-os-e2e_mcp_ctx_fixture_tool_001",)
 
     other_session = await ToolComponent().provide(
         ComponentContext(

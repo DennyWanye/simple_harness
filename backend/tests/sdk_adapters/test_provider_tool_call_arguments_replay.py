@@ -68,8 +68,7 @@ def _issued_response(*calls: tuple[str, str, dict]) -> ProviderResponse:
         request_id=RequestId("provider-turn:1"),
         message=Message(MessageRole.ASSISTANT, ""),
         tool_calls=tuple(
-            ProviderToolCall(CallId(call_id), name, arguments)
-            for call_id, name, arguments in calls
+            ProviderToolCall(CallId(call_id), name, arguments) for call_id, name, arguments in calls
         ),
         model="test-model",
         finish_reason="tool_calls",
@@ -176,8 +175,11 @@ def test_memo_miss_falls_back_to_empty_object_and_counts(caplog) -> None:
         wire = _ProductOpenAICompatibleProvider._wire_messages(messages, arguments_memo=memo)
     assert json.loads(wire[1]["tool_calls"][0]["function"]["arguments"]) == SEARCH_ARGUMENTS
     assert wire[3]["tool_calls"][0]["function"]["arguments"] == "{}"
-    records = [r for r in caplog.records
-               if r.getMessage().startswith("product_provider_tool_call_arguments_unavailable")]
+    records = [
+        r
+        for r in caplog.records
+        if r.getMessage().startswith("product_provider_tool_call_arguments_unavailable")
+    ]
     assert len(records) == 1
     message = records[0].getMessage()
     assert "rebuilt=2 restored=1 fallback_empty=1" in message
@@ -197,12 +199,13 @@ def test_full_hit_logs_no_fallback_warning(caplog) -> None:
             (
                 Message(MessageRole.USER, "继续"),
                 Message(MessageRole.ASSISTANT, ""),
-                Message(MessageRole.TOOL, "{}", name="task_scope_search", call_id=CallId("call_ok")),
+                Message(
+                    MessageRole.TOOL, "{}", name="task_scope_search", call_id=CallId("call_ok")
+                ),
             ),
             arguments_memo=memo,
         )
-    assert not [r for r in caplog.records
-                if "tool_call_arguments_unavailable" in r.getMessage()]
+    assert not [r for r in caplog.records if "tool_call_arguments_unavailable" in r.getMessage()]
 
 
 def test_restored_bytes_equal_the_live_metadata_path() -> None:
@@ -213,9 +216,7 @@ def test_restored_bytes_equal_the_live_metadata_path() -> None:
         _issued_response(("call_same", "task_scope_search", SEARCH_ARGUMENTS)),
         arguments_memo=memo,
     )
-    tool = Message(
-        MessageRole.TOOL, "{}", name="task_scope_search", call_id=CallId("call_same")
-    )
+    tool = Message(MessageRole.TOOL, "{}", name="task_scope_search", call_id=CallId("call_same"))
     live = _ProductOpenAICompatibleProvider._wire_messages(
         (Message(MessageRole.USER, "继续"), retained.message, tool), arguments_memo=memo
     )
@@ -242,16 +243,25 @@ def test_live_metadata_serialisation_is_byte_frozen() -> None:
     live = Message(
         MessageRole.ASSISTANT,
         "",
-        metadata={"provider_tool_calls": [{
-            "id": "call_frozen", "name": "write_file",
-            "arguments": {"z": 1, "a": "中文", "n": None, "f": 1.5,
-                          "nested": {"b": [1, "二"], "a": True}},
-        }]},
+        metadata={
+            "provider_tool_calls": [
+                {
+                    "id": "call_frozen",
+                    "name": "write_file",
+                    "arguments": {
+                        "z": 1,
+                        "a": "中文",
+                        "n": None,
+                        "f": 1.5,
+                        "nested": {"b": [1, "二"], "a": True},
+                    },
+                }
+            ]
+        },
     )
     payload = _ProductOpenAICompatibleProvider._message_payload(live)
     assert payload["tool_calls"][0]["function"]["arguments"] == (
-        '{"a":"\\u4e2d\\u6587","f":1.5,"n":null,'
-        '"nested":{"a":true,"b":[1,"\\u4e8c"]},"z":1}'
+        '{"a":"\\u4e2d\\u6587","f":1.5,"n":null,"nested":{"a":true,"b":[1,"\\u4e8c"]},"z":1}'
     )
 
 
@@ -305,31 +315,59 @@ def test_real_http_continuation_hop_sends_the_original_arguments() -> None:
     def physical(request: httpx.Request) -> httpx.Response:
         sent.append(json.loads(request.content))
         if len(sent) == 1:
-            return httpx.Response(200, json={
-                "id": "hop-1", "model": "model-a",
-                "choices": [{"message": {"role": "assistant", "content": "", "tool_calls": [{
-                    "id": "call_hop", "type": "function",
-                    # 带上 Host 内部叙述字段：它必须在留存前就被剥掉，
-                    # 从而锁定 invoke 里 _extract_public_progress 在
-                    # _retain_tool_calls_in_message **之前**这一顺序。
-                    "function": {"name": "task_scope_search",
-                                 "arguments": json.dumps(
-                                     {**SEARCH_ARGUMENTS,
-                                      "deskpet_public_progress": "NARRATION_CANARY"})},
-                }]}, "finish_reason": "tool_calls"}],
+            return httpx.Response(
+                200,
+                json={
+                    "id": "hop-1",
+                    "model": "model-a",
+                    "choices": [
+                        {
+                            "message": {
+                                "role": "assistant",
+                                "content": "",
+                                "tool_calls": [
+                                    {
+                                        "id": "call_hop",
+                                        "type": "function",
+                                        # 带上 Host 内部叙述字段：它必须在留存前就被剥掉，
+                                        # 从而锁定 invoke 里 _extract_public_progress 在
+                                        # _retain_tool_calls_in_message **之前**这一顺序。
+                                        "function": {
+                                            "name": "task_scope_search",
+                                            "arguments": json.dumps(
+                                                {
+                                                    **SEARCH_ARGUMENTS,
+                                                    "deskpet_public_progress": "NARRATION_CANARY",
+                                                }
+                                            ),
+                                        },
+                                    }
+                                ],
+                            },
+                            "finish_reason": "tool_calls",
+                        }
+                    ],
+                    "usage": {"prompt_tokens": 10, "completion_tokens": 10, "total_tokens": 20},
+                },
+            )
+        return httpx.Response(
+            200,
+            json={
+                "id": "hop-2",
+                "model": "model-a",
+                "choices": [
+                    {"message": {"role": "assistant", "content": "查完了"}, "finish_reason": "stop"}
+                ],
                 "usage": {"prompt_tokens": 10, "completion_tokens": 10, "total_tokens": 20},
-            })
-        return httpx.Response(200, json={
-            "id": "hop-2", "model": "model-a",
-            "choices": [{"message": {"role": "assistant", "content": "查完了"},
-                         "finish_reason": "stop"}],
-            "usage": {"prompt_tokens": 10, "completion_tokens": 10, "total_tokens": 20},
-        })
+            },
+        )
 
     async def case() -> None:
         client = httpx.AsyncClient(transport=httpx.MockTransport(physical))
         adapter = ProductProviderAdapter(
-            Registry("fixture-secret"), provider_id="relay", client=client,
+            Registry("fixture-secret"),
+            provider_id="relay",
+            client=client,
             price_resolver=lambda *_: (1, 1, "price-v1"),
             tool_call_arguments_memo=ToolCallArgumentsMemo(),
         )
@@ -349,8 +387,12 @@ def test_real_http_continuation_hop_sends_the_original_arguments() -> None:
                 messages=(
                     Message(MessageRole.USER, "继续青海湖那个任务"),
                     _durable_assistant(first),
-                    Message(MessageRole.TOOL, '{"candidates":[]}',
-                            name="task_scope_search", call_id=CallId("call_hop")),
+                    Message(
+                        MessageRole.TOOL,
+                        '{"candidates":[]}',
+                        name="task_scope_search",
+                        call_id=CallId("call_hop"),
+                    ),
                 ),
                 tools=(),
             ),
@@ -399,8 +441,11 @@ def test_reused_call_id_never_staples_another_turns_arguments(caplog) -> None:
         wire = _ProductOpenAICompatibleProvider._wire_messages(messages, arguments_memo=memo)
     assert wire[1]["tool_calls"][0]["function"]["arguments"] == "{}"
     assert wire[3]["tool_calls"][0]["function"]["arguments"] == "{}"
-    record = next(r.getMessage() for r in caplog.records
-                  if "tool_call_arguments_unavailable" in r.getMessage())
+    record = next(
+        r.getMessage()
+        for r in caplog.records
+        if "tool_call_arguments_unavailable" in r.getMessage()
+    )
     assert "rebuilt=2 restored=0 fallback_empty=2 ambiguous_call_ids=2" in record
     for secret in ("call_0", "read_file", "A.md", "B.md"):
         assert secret not in record
@@ -494,11 +539,14 @@ def test_record_never_raises_into_the_provider_path() -> None:
     assert memo.read("call_boom", "t") is None
 
 
-
-
 def test_memo_rejects_invalid_bounds() -> None:
-    for kwargs in ({"capacity": 0}, {"max_bytes": 0}, {"entry_max_bytes": 0},
-                   {"capacity": True}, {"capacity": "4"}):
+    for kwargs in (
+        {"capacity": 0},
+        {"max_bytes": 0},
+        {"entry_max_bytes": 0},
+        {"capacity": True},
+        {"capacity": "4"},
+    ):
         with pytest.raises(ValueError):
             ToolCallArgumentsMemo(**kwargs)
 

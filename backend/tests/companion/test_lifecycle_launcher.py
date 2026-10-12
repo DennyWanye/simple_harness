@@ -25,13 +25,7 @@ RUNTIME_ROOT = (
 
 def _powershell() -> str:
     system_root = Path(os.environ.get("SystemRoot", r"C:\Windows"))
-    executable = (
-        system_root
-        / "System32"
-        / "WindowsPowerShell"
-        / "v1.0"
-        / "powershell.exe"
-    )
+    executable = system_root / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
     if not executable.is_file():
         pytest.skip("Windows PowerShell is unavailable")
     return str(executable)
@@ -312,9 +306,7 @@ def test_stop_falls_back_to_frozen_root_ancestry_when_helper_is_dead() -> None:
             "npm_shim_sha256": "",
             "npm_shim_file_identity": "",
         }
-        (launch_root / "process-manifest.json").write_text(
-            json.dumps(manifest), encoding="utf-8"
-        )
+        (launch_root / "process-manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
         result = _run_launcher(
             "-Action",
             "Stop",
@@ -359,9 +351,7 @@ def test_stop_falls_back_to_frozen_root_ancestry_when_helper_is_dead() -> None:
             str(vite_port),
         )
         assert repeated.returncode == 0, repeated.stdout + repeated.stderr
-        repeated_cleanup = json.loads(
-            (launch_root / "cleanup-result.json").read_text()
-        )
+        repeated_cleanup = json.loads((launch_root / "cleanup-result.json").read_text())
         assert repeated_cleanup["survivor_count"] == 0
     finally:
         if root.poll() is None:

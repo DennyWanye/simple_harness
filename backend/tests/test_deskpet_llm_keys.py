@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 """Unit tests for llm.keys: env precedence, mask_key shape."""
+
 from __future__ import annotations
 
 import llm.keys as keys_mod

@@ -13,7 +13,7 @@ from production_fixture import enabled_world
 
 def test_a_verified_revision_is_reused_only_while_nothing_changed(tmp_path):
     async def case():
-        async with enabled_world(tmp_path, key='tg-revision-cache', hold_worker=True) as world:
+        async with enabled_world(tmp_path, key="tg-revision-cache", hold_worker=True) as world:
             await world.commit_seed()
             store, mission = world.loop.store, world.mission.id
             reader = TaskGraphStore(store)
@@ -45,11 +45,15 @@ def test_a_verified_revision_is_reused_only_while_nothing_changed(tmp_path):
             # 这条链依据的任何一个字节变了（含损坏）→ 重新校验，不拿旧结果
             with store.transaction() as connection:
                 connection.execute("DROP TRIGGER taskgraph_revision_records_no_update")
-                connection.execute("UPDATE taskgraph_revision_records SET manifest_hash=? "
-                                   "WHERE mission_id=? AND revision=1", ("f" * 64, mission))
+                connection.execute(
+                    "UPDATE taskgraph_revision_records SET manifest_hash=? "
+                    "WHERE mission_id=? AND revision=1",
+                    ("f" * 64, mission),
+                )
             try:
                 reader.read_revision(mission, 1)
             except Exception:
                 pass
             assert len(verified) == 2
+
     asyncio.run(case())

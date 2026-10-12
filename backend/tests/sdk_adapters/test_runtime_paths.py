@@ -83,17 +83,13 @@ def test_durable_run_start_probe_reads_only_sdk_execution_database(
 ) -> None:
     paths = ProductRuntimePathsAdapter(tmp_path / "user-data")
     with sqlite3.connect(paths.execution_database) as db:
-        db.execute(
-            "CREATE TABLE run_start_snapshots(run_id TEXT PRIMARY KEY, snapshot_json TEXT)"
-        )
+        db.execute("CREATE TABLE run_start_snapshots(run_id TEXT PRIMARY KEY, snapshot_json TEXT)")
         db.execute(
             "INSERT INTO run_start_snapshots(run_id,snapshot_json) VALUES('sdk-waiting','{}')"
         )
     workflow_db = paths.user_data_root / "data/workflow.db"
     with sqlite3.connect(workflow_db) as db:
-        db.execute(
-            "CREATE TABLE run_start_snapshots(run_id TEXT PRIMARY KEY, snapshot_json TEXT)"
-        )
+        db.execute("CREATE TABLE run_start_snapshots(run_id TEXT PRIMARY KEY, snapshot_json TEXT)")
         db.execute(
             "INSERT INTO run_start_snapshots(run_id,snapshot_json) VALUES('legacy-only','{}')"
         )
@@ -102,7 +98,9 @@ def test_durable_run_start_probe_reads_only_sdk_execution_database(
     assert not durable_sdk_run_start_exists(paths.execution_database, "legacy-only")
 
 
-def test_a_frozen_executable_skips_only_the_build_host_origin_check(tmp_path: Path, monkeypatch) -> None:
+def test_a_frozen_executable_skips_only_the_build_host_origin_check(
+    tmp_path: Path, monkeypatch
+) -> None:
     """2026-10-08 macOS 冻结包冒烟启动：PyInstaller 带进来的 direct_url.json 指向打包机路径，
     冻结包里必然对不上。冻结时只跳过"安装来源"这一项；版本与 wheel 字节照样核对。
 

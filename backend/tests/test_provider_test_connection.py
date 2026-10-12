@@ -10,6 +10,7 @@ WebSocket. That covers the reachable path shape + the validation rules,
 which is what matters for the slice; slice-wide WS coverage lives in
 ``test_e2e_integration.py`` (out of scope here).
 """
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
@@ -37,6 +38,7 @@ class _FakeWS:
 def handler():
     # Import lazily — same reason as the other tests in this slice.
     from provider_test_connection import handle_provider_test_connection
+
     return handle_provider_test_connection
 
 
@@ -44,11 +46,14 @@ async def test_returns_ok_true_when_provider_reports_healthy(handler):
     ws = _FakeWS()
     with patch("provider_test_connection.OpenAICompatibleProvider") as M:
         M.return_value.health_check = AsyncMock(return_value=True)
-        await handler(ws, {
-            "base_url": "http://fake/v1",
-            "api_key": "sk-test",
-            "model": "qwen3.6-plus",
-        })
+        await handler(
+            ws,
+            {
+                "base_url": "http://fake/v1",
+                "api_key": "sk-test",
+                "model": "qwen3.6-plus",
+            },
+        )
     assert len(ws.sent) == 1
     reply = ws.sent[0]
     assert reply["type"] == "provider_test_connection_result"
@@ -60,11 +65,14 @@ async def test_returns_ok_false_when_provider_reports_unhealthy(handler):
     ws = _FakeWS()
     with patch("provider_test_connection.OpenAICompatibleProvider") as M:
         M.return_value.health_check = AsyncMock(return_value=False)
-        await handler(ws, {
-            "base_url": "http://fake/v1",
-            "api_key": "sk-test",
-            "model": "qwen3.6-plus",
-        })
+        await handler(
+            ws,
+            {
+                "base_url": "http://fake/v1",
+                "api_key": "sk-test",
+                "model": "qwen3.6-plus",
+            },
+        )
     reply = ws.sent[0]
     assert reply["type"] == "provider_test_connection_result"
     assert reply["payload"]["ok"] is False
@@ -84,11 +92,14 @@ async def test_exception_in_provider_is_reported_not_raised(handler):
     ws = _FakeWS()
     with patch("provider_test_connection.OpenAICompatibleProvider") as M:
         M.return_value.health_check = AsyncMock(side_effect=RuntimeError("boom"))
-        await handler(ws, {
-            "base_url": "http://fake/v1",
-            "api_key": "sk-test",
-            "model": "qwen3.6-plus",
-        })
+        await handler(
+            ws,
+            {
+                "base_url": "http://fake/v1",
+                "api_key": "sk-test",
+                "model": "qwen3.6-plus",
+            },
+        )
     reply = ws.sent[0]
     assert reply["payload"]["ok"] is False
     assert "boom" in (reply["payload"].get("error") or "")

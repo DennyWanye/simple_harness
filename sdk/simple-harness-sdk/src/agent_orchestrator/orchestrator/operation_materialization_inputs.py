@@ -266,12 +266,16 @@ def build_operation_materialization_inputs(
         )
         from ..contracts.operation_intents import OperationIntentSourceKind
 
-        if (sources.command.intent_source.kind is OperationIntentSourceKind.AUTHORIZED_SLOT
-                and decision.required_approvals < 1):
+        if (
+            sources.command.intent_source.kind is OperationIntentSourceKind.AUTHORIZED_SLOT
+            and decision.required_approvals < 1
+        ):
             # 2026-09-29：系统只代办需要人批准的操作；不需要批准的会被自动执行，不能由系统
             # 代为提交（审阅：AppWorld 注册了 L1 操作）。
             raise OperationMaterializationInputError(
-                "OP_CAPABILITY_UNSUPPORTED", "a system-prepared operation must require human approval")
+                "OP_CAPABILITY_UNSUPPORTED",
+                "a system-prepared operation must require human approval",
+            )
         effective = bind_artifact_params(
             candidate["params"], _actual_accepted_artifacts(store, sources)
         )
@@ -300,7 +304,8 @@ def build_operation_materialization_inputs(
 
     condition = policy.required_target_condition
     expected_target_version = (
-        condition.get("value") if isinstance(condition, Mapping) and condition.get("kind") == "ETAG"
+        condition.get("value")
+        if isinstance(condition, Mapping) and condition.get("kind") == "ETAG"
         else None
     )
     candidate_ref = sources.command.candidate_artifact_ref

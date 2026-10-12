@@ -17,10 +17,7 @@ def _required(value: str, name: str) -> str:
 
 def _hash(value: str, name: str) -> str:
     normalized = _required(value, name)
-    if (
-        len(normalized) != 64
-        or any(char not in "0123456789abcdef" for char in normalized)
-    ):
+    if len(normalized) != 64 or any(char not in "0123456789abcdef" for char in normalized):
         raise ValueError(f"{name} must be lowercase SHA-256")
     return normalized
 
@@ -38,10 +35,7 @@ class TerminalCommitFenceV1:
     release_receipt_kind: str
 
     def __post_init__(self) -> None:
-        if (
-            isinstance(self.delivery_fence_epoch, bool)
-            or self.delivery_fence_epoch < 0
-        ):
+        if isinstance(self.delivery_fence_epoch, bool) or self.delivery_fence_epoch < 0:
             raise ValueError("delivery_fence_epoch must be non-negative")
         if isinstance(self.owner_generation, bool) or self.owner_generation < 1:
             raise ValueError("owner_generation must be positive")
@@ -124,9 +118,7 @@ class UnboundRunExecutionFence:
 
 
 class UnboundTerminalDeliveryFence:
-    async def authorize(
-        self, *, run_id: str, delivery_id: str, release_receipt_ref: str
-    ) -> bool:
+    async def authorize(self, *, run_id: str, delivery_id: str, release_receipt_ref: str) -> bool:
         return bool(
             str(run_id or "").strip()
             and str(delivery_id or "").strip()

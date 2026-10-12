@@ -28,6 +28,7 @@ assistant/tool) and convert on entry. Reasons:
 Streaming uses anthropic.messages.stream which yields text deltas and
 content-block-stop events. tool_use comes as a full block at block_stop.
 """
+
 from __future__ import annotations
 
 import json
@@ -150,9 +151,7 @@ class AnthropicAdapter(BaseLLMAdapter):
         """
         messages, _ = split_wire_messages(messages)
         attempt_options = current_provider_attempt_options()
-        cache_boundary = (
-            attempt_options.cache_boundary if attempt_options is not None else None
-        )
+        cache_boundary = attempt_options.cache_boundary if attempt_options is not None else None
         if cache_boundary is not None and cache_boundary >= len(messages):
             raise ValueError("cache boundary is outside the message list")
 
@@ -167,10 +166,7 @@ class AnthropicAdapter(BaseLLMAdapter):
                     system_blocks.append({"type": "text", "text": content})
                 elif isinstance(content, list):
                     system_blocks.extend(content)
-                if (
-                    system_blocks
-                    and (cache_boundary is None or message_index <= cache_boundary)
-                ):
+                if system_blocks and (cache_boundary is None or message_index <= cache_boundary):
                     cache_block_index = len(system_blocks) - 1
             elif role == "tool":
                 # OpenAI tool message -> Anthropic user message with tool_result.
@@ -417,7 +413,9 @@ class AnthropicAdapter(BaseLLMAdapter):
                         if u is not None:
                             final_usage = ChatUsage(
                                 input_tokens=getattr(u, "input_tokens", final_usage.input_tokens),
-                                output_tokens=getattr(u, "output_tokens", final_usage.output_tokens),
+                                output_tokens=getattr(
+                                    u, "output_tokens", final_usage.output_tokens
+                                ),
                                 cache_read_tokens=getattr(
                                     u, "cache_read_input_tokens", final_usage.cache_read_tokens
                                 ),

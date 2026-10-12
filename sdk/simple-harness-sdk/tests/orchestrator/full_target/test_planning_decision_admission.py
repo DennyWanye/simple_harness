@@ -201,9 +201,7 @@ def _valid_refs() -> tuple[PlanningRefV1, ...]:
     seen: dict[tuple[str, str, int, str], PlanningRefV1] = {}
     for path in _valid_paths():
         for ref in _walk_refs(_read(path)):
-            seen.setdefault(
-                (str(ref.kind), ref.id, ref.semantic_revision, ref.content_hash), ref
-            )
+            seen.setdefault((str(ref.kind), ref.id, ref.semantic_revision, ref.content_hash), ref)
     return tuple(seen[key] for key in sorted(seen))
 
 
@@ -402,15 +400,11 @@ def _context_for_knob(code: str) -> AdmissionContext:
         )
     if code == "PLANNING_BOUND_REACHED":
         return _context(
-            budget=BudgetView(
-                planning_rounds_remaining=2, bound_remaining=0, budget_available=True
-            )
+            budget=BudgetView(planning_rounds_remaining=2, bound_remaining=0, budget_available=True)
         )
     if code == "CAPABILITY_MISSING":
         return _context(
-            methods=_with_method(
-                _method(required_capabilities=("cap.write",)), "code.fix-by-patch"
-            )
+            methods=_with_method(_method(required_capabilities=("cap.write",)), "code.fix-by-patch")
         )
     if code == "EVIDENCE_REQUIRED":
         return _context(
@@ -809,9 +803,7 @@ def test_a_retired_method_is_refused() -> None:
     feedback = _reject(
         _valid_envelope("refine"),
         _context(
-            methods=_with_method(
-                _method(status=MethodRegistryStatus.RETIRED), "code.fix-by-patch"
-            )
+            methods=_with_method(_method(status=MethodRegistryStatus.RETIRED), "code.fix-by-patch")
         ),
     )
     assert _codes(feedback) == ["METHOD_RETIRED"]
@@ -821,9 +813,7 @@ def test_a_rejected_method_is_refused() -> None:
     feedback = _reject(
         _valid_envelope("refine"),
         _context(
-            methods=_with_method(
-                _method(status=MethodRegistryStatus.REJECTED), "code.fix-by-patch"
-            )
+            methods=_with_method(_method(status=MethodRegistryStatus.REJECTED), "code.fix-by-patch")
         ),
     )
     assert _codes(feedback) == ["METHOD_REJECTED"]
@@ -876,9 +866,7 @@ def test_an_unregistered_predicate_is_evidence_required() -> None:
     feedback = _reject(
         _valid_envelope("refine"),
         _context(
-            methods=_with_method(
-                _method(predicate_keys=("pred.missing",)), "code.fix-by-patch"
-            ),
+            methods=_with_method(_method(predicate_keys=("pred.missing",)), "code.fix-by-patch"),
             predicates=frozenset(),
         ),
     )
@@ -966,9 +954,7 @@ def test_the_planning_bound_is_refused() -> None:
     feedback = _reject(
         _valid_envelope("refine"),
         _context(
-            budget=BudgetView(
-                planning_rounds_remaining=2, bound_remaining=0, budget_available=True
-            )
+            budget=BudgetView(planning_rounds_remaining=2, bound_remaining=0, budget_available=True)
         ),
     )
     assert _codes(feedback) == ["PLANNING_BOUND_REACHED"]
@@ -1200,9 +1186,7 @@ SECTION_32_SYSTEM_FIELDS = frozenset(
 )
 
 
-@pytest.mark.parametrize(
-    ("name", "raw", "expect"), _h1f_cases(), ids=_h1f_ids()
-)
+@pytest.mark.parametrize(("name", "raw", "expect"), _h1f_cases(), ids=_h1f_ids())
 def test_a_refusal_never_mentions_a_system_field_or_an_internal_id(
     name: str, raw: Any, expect: dict[str, Any]
 ) -> None:
@@ -1319,6 +1303,7 @@ def _exposed(*refs: PlanningRefV1) -> tuple[PlanningRefV1, ...]:
 
 # --- P1-1: an empty collection must not crash the feedback builder ----------------
 
+
 def test_an_empty_enabled_set_refuses_rather_than_crashing() -> None:
     # §12: a phase that enables nothing still owes the model a refusal, not an
     # exception.  The gate's ``expected`` list is empty here, and §40 allows the
@@ -1348,6 +1333,7 @@ def test_empty_bindings_refuse_rather_than_crashing() -> None:
 
 # --- P1-2: an empty saved list is a refusal, not a pass ---------------------------
 
+
 def test_an_empty_saved_list_still_refuses_a_cited_reference() -> None:
     determination = _reject(
         _valid_envelope("refine"),
@@ -1372,6 +1358,7 @@ def test_an_empty_saved_list_does_not_block_a_decision_that_cites_nothing() -> N
 
 
 # --- P1-3 / P2-4: method identity is version AND content hash ---------------------
+
 
 def test_a_method_whose_hash_moved_under_the_same_version_is_refused() -> None:
     raw = _raw_fixture("refine")
@@ -1487,6 +1474,7 @@ def test_a_moved_replacement_method_ref_is_refused() -> None:
 
 # --- P1-6: the repair target is the instance that quadruple names ------------------
 
+
 def test_a_repair_target_with_the_right_id_and_the_wrong_hash_is_refused() -> None:
     feedback = _reject(
         _valid_envelope("repair-replace-method"),
@@ -1515,6 +1503,7 @@ def test_a_repair_target_whose_revision_moved_is_refused() -> None:
 
 
 # --- P1-11 / P1-12: every binding revision component speaks ------------------------
+
 
 def test_a_moved_requirements_revision_is_request_binding_stale() -> None:
     feedback = _reject(_valid_envelope("refine"), _context(requirements_revision=12))

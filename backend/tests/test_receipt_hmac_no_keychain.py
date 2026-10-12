@@ -22,6 +22,7 @@ _RECEIPT_STORE = _BACKEND / "deskpet" / "tools" / "receipt_store.py"
 # 该增量点名禁止的 keychain service 名。
 _FORBIDDEN_SERVICE = "deskpet.receipt_hmac"
 
+
 def _receipt(receipt_id: str, *, key: bytes | None = None):
     """构造一条**已按给定 key 签名**的 receipt。
 
@@ -43,7 +44,6 @@ def _receipt(receipt_id: str, *, key: bytes | None = None):
     if key is not None:
         receipt.sig = hmac_sign(receipt, key)
     return receipt
-
 
 
 def _production_sources() -> list[Path]:
@@ -108,7 +108,7 @@ def test_receipt_store_never_reaches_keychain_even_if_the_module_is_present(
     store = ReceiptStore(user_data_dir=tmp_path)
     store.append(_receipt("r1", key=store.key))
 
-    store_again = ReceiptStore(user_data_dir=tmp_path)   # 重启
+    store_again = ReceiptStore(user_data_dir=tmp_path)  # 重启
     loaded = store_again.load_session("s1")
     assert [r.receipt_id for r in loaded] == ["r1"], (
         "重启后读不回 receipt —— 本地 key 未稳定复用（若 key 重生，验签会把行过滤掉）"

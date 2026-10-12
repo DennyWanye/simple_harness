@@ -5,6 +5,7 @@ Harness 只做计数与上限：执行者数在建尝试时核、不随"非模�
 检索类工具（按工具名查表），建尝试时按账户链剩余预留、网关按预留拦、结清按工具调用表的事实记。
 搜索次数用完不停任务：只拒绝检索类工具调用。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -30,10 +31,16 @@ def _ledger(tmp_path: Any, limits: Budget) -> tuple[Store, BudgetLedger]:
     store = Store.open(tmp_path / "o.db")
     ledger = BudgetLedger(store)
     with store.transaction():
-        ledger.open_account(account_id="budget:m", scope="mission", parent_id=None, mission_id="m",
-                            limits=limits)
-        ledger.open_account(account_id="budget:t", scope="task", parent_id="budget:m", mission_id="m",
-                            limits=inherit_limits(Budget(), limits))
+        ledger.open_account(
+            account_id="budget:m", scope="mission", parent_id=None, mission_id="m", limits=limits
+        )
+        ledger.open_account(
+            account_id="budget:t",
+            scope="task",
+            parent_id="budget:m",
+            mission_id="m",
+            limits=inherit_limits(Budget(), limits),
+        )
     return store, ledger
 
 
@@ -68,24 +75,49 @@ def test_executor_count_is_checked_on_the_chain_and_never_given_back(tmp_path: A
             ledger.reserve(account_id="budget:t", subject_id="a3", tokens=0, counts_attempt=True)
         assert refused.value.dimension == "agents"
         # 服务调用（规划器、审阅员）不是执行者，不计数
-        ledger.reserve(account_id="budget:t", subject_id="planner-1", tokens=0, counts_attempt=False)
+        ledger.reserve(
+            account_id="budget:t", subject_id="planner-1", tokens=0, counts_attempt=False
+        )
     assert ledger.account("budget:m").to_json()["remaining_agents"] == 0
 
 
 def test_search_calls_are_reserved_then_settled_on_the_executed_search_tools(tmp_path: Any) -> None:
     store, ledger = _ledger(tmp_path, Budget(max_search_calls=3))
     with store.transaction():
-        ledger.reserve(account_id="budget:t", subject_id="a1", tokens=0, counts_attempt=True, search_calls=3)
+        ledger.reserve(
+            account_id="budget:t", subject_id="a1", tokens=0, counts_attempt=True, search_calls=3
+        )
         assert ledger.account("budget:m").remaining_search_calls() == 0
         with pytest.raises(BudgetExhausted) as refused:
-            ledger.reserve(account_id="budget:t", subject_id="a2", tokens=0, counts_attempt=True, search_calls=1)
+            ledger.reserve(
+                account_id="budget:t",
+                subject_id="a2",
+                tokens=0,
+                counts_attempt=True,
+                search_calls=1,
+            )
         assert refused.value.dimension == "search_calls"
-    store.record_tool_call(call_key="a1:c1", subject_id="a1", mission_id="m", tool="knowledge_list",
-                           outcome="succeeded")
-    store.record_tool_call(call_key="a1:c2", subject_id="a1", mission_id="m", tool="workspace_read_file",
-                           outcome="succeeded")
-    store.record_tool_call(call_key="a1:c3", subject_id="a1", mission_id="m", tool="knowledge_list",
-                           outcome="rejected:search_budget_exhausted")
+    store.record_tool_call(
+        call_key="a1:c1",
+        subject_id="a1",
+        mission_id="m",
+        tool="knowledge_list",
+        outcome="succeeded",
+    )
+    store.record_tool_call(
+        call_key="a1:c2",
+        subject_id="a1",
+        mission_id="m",
+        tool="workspace_read_file",
+        outcome="succeeded",
+    )
+    store.record_tool_call(
+        call_key="a1:c3",
+        subject_id="a1",
+        mission_id="m",
+        tool="knowledge_list",
+        outcome="rejected:search_budget_exhausted",
+    )
     assert store.count_search_calls("a1") == 1
     with store.transaction():
         settled = ledger.settle(subject_id="a1", tool_calls=2)
@@ -97,11 +129,16 @@ def test_search_calls_are_reserved_then_settled_on_the_executed_search_tools(tmp
 
 # ---------------------------------------------------------------- 产品同形：网关按预留拦，任务照常完成
 
+
 def _tool_results(request: Any) -> list[str]:
-    return [str(message.content) for message in request.messages if "tool" in str(message.role).lower()]
+    return [
+        str(message.content) for message in request.messages if "tool" in str(message.role).lower()
+    ]
 
 
-def test_a_spent_search_budget_refuses_search_tools_but_the_mission_still_completes(tmp_path: Any) -> None:
+def test_a_spent_search_budget_refuses_search_tools_but_the_mission_still_completes(
+    tmp_path: Any,
+) -> None:
     from agent_orchestrator.testing.product_world import DEFAULT_TOOLS, product_world
     from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider, worker_reply
 
@@ -113,22 +150,40 @@ def test_a_spent_search_budget_refuses_search_tools_but_the_mission_still_comple
             return ("knowledge_list", {})
         if len(results) == 2:
             seen.extend(results)
-            return ("workspace_write_file", {"path": "NOTES.md", "content": "# 要点\n\n- 一\n- 二\n- 三\n"})
+            return (
+                "workspace_write_file",
+                {"path": "NOTES.md", "content": "# 要点\n\n- 一\n- 二\n- 三\n"},
+            )
         return worker_reply(request)
 
     async def case() -> dict[str, Any]:
-        async with product_world(tmp_path / "root", LayeredScriptedProvider(worker=worker),
-                                 allowed_tools=DEFAULT_TOOLS + ("knowledge_list", "knowledge_read"),
-                                 global_budget=Budget(max_search_calls=1)) as world:
-            mission_id = world.create({"goal": "写一份 NOTES.md", "success_criteria": ["file:NOTES.md"],
-                                       "idempotency_key": "r3-search"})["mission_id"]
+        async with product_world(
+            tmp_path / "root",
+            LayeredScriptedProvider(worker=worker),
+            allowed_tools=DEFAULT_TOOLS + ("knowledge_list", "knowledge_read"),
+            global_budget=Budget(max_search_calls=1),
+        ) as world:
+            mission_id = world.create(
+                {
+                    "goal": "写一份 NOTES.md",
+                    "success_criteria": ["file:NOTES.md"],
+                    "idempotency_key": "r3-search",
+                }
+            )["mission_id"]
             mission = await world.run_until_settled(mission_id, rounds=30)
             store = world.loop.store
             attempts = [a for t in store.list_tasks(mission_id) for a in store.list_attempts(t.id)]
-            reservations = [store.connection.execute(
-                "SELECT reserved_search_calls, settled_search_calls FROM budget_reservations WHERE subject_id=?",
-                (a.id,)).fetchone() for a in attempts]
-            return {"mission": mission, "reservations": [tuple(r) for r in reservations if r is not None]}
+            reservations = [
+                store.connection.execute(
+                    "SELECT reserved_search_calls, settled_search_calls FROM budget_reservations WHERE subject_id=?",
+                    (a.id,),
+                ).fetchone()
+                for a in attempts
+            ]
+            return {
+                "mission": mission,
+                "reservations": [tuple(r) for r in reservations if r is not None],
+            }
 
     seen_state = asyncio.run(case())
     assert seen_state["mission"].status.value == "COMPLETED", seen_state["mission"].final_report

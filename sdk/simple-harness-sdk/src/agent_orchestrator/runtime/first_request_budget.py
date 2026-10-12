@@ -70,8 +70,12 @@ class ProviderInputCap:
     @classmethod
     def from_json(cls, value: object) -> ProviderInputCap:
         if not isinstance(value, Mapping) or set(value) != {
-            "schema_version", "profile_id", "model", "max_input_tokens",
-            "context_fingerprint", "estimator_fingerprint",
+            "schema_version",
+            "profile_id",
+            "model",
+            "max_input_tokens",
+            "context_fingerprint",
+            "estimator_fingerprint",
         }:
             raise ValueError("invalid provider input-cap payload")
         return cls(
@@ -153,9 +157,7 @@ def actual_output_ceiling(
     """Match ``assemble_orchestrator_runtime``'s effective SDK output ceiling."""
 
     default = _positive_int(config_default_max_output_tokens, "config_default_max_output_tokens")
-    configured = _positive_int(
-        config_max_output_tokens_ceiling, "config_max_output_tokens_ceiling"
-    )
+    configured = _positive_int(config_max_output_tokens_ceiling, "config_max_output_tokens_ceiling")
     if profile_default_max_output_tokens is not None:
         default = _positive_int(
             profile_default_max_output_tokens, "profile_default_max_output_tokens"
@@ -188,9 +190,7 @@ class FirstRequestInputCapExceeded(ProviderRequestRejectedError):
     error_code = "provider_input_cap_exceeded"
 
     def __init__(self, *, actual_input_tokens: int, provider_input_cap: ProviderInputCap) -> None:
-        super().__init__(
-            public_message="Final provider wire input exceeds its frozen input cap."
-        )
+        super().__init__(public_message="Final provider wire input exceeds its frozen input cap.")
         self.detail = {
             "schema_version": INPUT_CAP_SCHEMA_VERSION,
             "reason_code": "final_wire_input_exceeded",

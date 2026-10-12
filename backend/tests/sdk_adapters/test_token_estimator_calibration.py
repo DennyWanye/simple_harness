@@ -49,9 +49,7 @@ def _text(cjk_chars: int, other_chars: int) -> str:
 def _sample_estimate(sample: dict, calibration: ProviderTokenCalibration) -> int:
     ordinal = int(sample["provider_turn_ordinal"])
     estimate = turn_token_estimator(calibration, provider_turn_ordinal=ordinal)
-    total = sum(
-        estimate(_text(m["cjk_chars"], m["other_chars"])) for m in sample["messages"]
-    )
+    total = sum(estimate(_text(m["cjk_chars"], m["other_chars"])) for m in sample["messages"])
     schema = sum(
         text_tokens(_text(t["cjk_chars"], t["other_chars"])) + WIRE_TOOL_SPEC_OVERHEAD_TOKENS
         for t in sample["tools"]
@@ -82,9 +80,7 @@ def _pre_fix_estimate(sample: dict) -> int:
     # CJK_CHARS_PER_TOKEN has to be made here too, in the open.
     [(0, 0), (1, 1), (13, 10), (14, 11), (100, 77), (1_000, 770), (4_962, 3_817)],
 )
-def test_text_tokens_prices_cjk_at_the_measured_density(
-    cjk_chars: int, expected: int
-) -> None:
+def test_text_tokens_prices_cjk_at_the_measured_density(cjk_chars: int, expected: int) -> None:
     """事件 W-c: one token per CJK character was a guess, and an expensive one.
 
     Measured against the real DeepSeek tokenizer on the thinking-disabled pairs
@@ -183,8 +179,11 @@ def test_tool_schema_tokens_survives_a_schema_that_will_not_serialise() -> None:
     Here it degrades to a rough figure instead of failing context assembly.
     """
 
-    row = {"name": "odd", "description": "unserialisable enum",
-           "input_schema": {"type": "string", "enum": {"a", "b"}}}
+    row = {
+        "name": "odd",
+        "description": "unserialisable enum",
+        "input_schema": {"type": "string", "enum": {"a", "b"}},
+    }
     assert tool_schema_tokens([row]) > WIRE_TOOL_SPEC_OVERHEAD_TOKENS
 
 
@@ -265,7 +264,9 @@ def test_a_missing_window_falls_back_to_a_known_models_own_window() -> None:
     from llm.model_info import resolve
 
     assert window_tokens_for(None, "deepseek-v4-pro") == resolve("deepseek-v4-pro").context_window
-    assert window_tokens_for(0, "relay/deepseek-v4-pro") == resolve("deepseek-v4-pro").context_window
+    assert (
+        window_tokens_for(0, "relay/deepseek-v4-pro") == resolve("deepseek-v4-pro").context_window
+    )
 
 
 def test_an_unknown_model_still_falls_back_to_the_smallest_tier() -> None:
@@ -372,7 +373,9 @@ def test_uncalibrated_model_still_beats_the_pre_fix_estimate(evidence: dict) -> 
     """An unknown model gets no ratio, but does get the wire-shaped accounting."""
 
     for sample in evidence["samples"]:
-        assert _sample_estimate(sample, DEFAULT_CALIBRATION) > _pre_fix_estimate(sample), sample["id"]
+        assert _sample_estimate(sample, DEFAULT_CALIBRATION) > _pre_fix_estimate(sample), sample[
+            "id"
+        ]
 
 
 def test_wire_overhead_constants_are_positive() -> None:
@@ -385,8 +388,11 @@ def test_wire_overhead_constants_are_positive() -> None:
 def _messages(*pairs):
     from simple_harness.contracts.messages import Message, MessageRole
 
-    roles = {"system": MessageRole.SYSTEM, "user": MessageRole.USER,
-             "assistant": MessageRole.ASSISTANT}
+    roles = {
+        "system": MessageRole.SYSTEM,
+        "user": MessageRole.USER,
+        "assistant": MessageRole.ASSISTANT,
+    }
     return tuple(Message(roles[role], content) for role, content in pairs)
 
 
@@ -410,8 +416,10 @@ def test_plan_turn_messages_charges_the_tool_schemas() -> None:
     assert without["tool_schema_tokens"] == 0
     assert with_tools["tool_schema_tokens"] > 0
     assert with_tools["planned_input_tokens"] > without["planned_input_tokens"]
-    assert (with_tools["planned_input_tokens"] - without["planned_input_tokens"]
-            == with_tools["tool_schema_tokens"])
+    assert (
+        with_tools["planned_input_tokens"] - without["planned_input_tokens"]
+        == with_tools["tool_schema_tokens"]
+    )
 
 
 def test_plan_turn_messages_fails_closed_when_tool_schemas_fill_the_window() -> None:
@@ -447,8 +455,9 @@ def test_plan_turn_messages_applies_the_per_model_calibration() -> None:
 def test_plan_turn_messages_reports_tool_schema_tokens_with_no_tail() -> None:
     from deskpet.sdk_adapters.context_authority import _plan_turn_messages
 
-    kept, facts = _plan_turn_messages(_messages(("system", "rules")), 32768,
-                                      tools=_tool_specs(4, 100))
+    kept, facts = _plan_turn_messages(
+        _messages(("system", "rules")), 32768, tools=_tool_specs(4, 100)
+    )
     assert len(kept) == 1
     assert facts["tool_schema_tokens"] > 0
 
@@ -476,8 +485,9 @@ def test_primary_context_and_turn_planner_agree_on_tool_schema_tokens() -> None:
     from deskpet.sdk_adapters.context_authority import _plan_turn_messages
 
     specs = _tool_specs(9, 500)
-    _, facts = _plan_turn_messages(_messages(("system", "rules"), ("user", "q")),
-                                   32768, tools=specs)
+    _, facts = _plan_turn_messages(
+        _messages(("system", "rules"), ("user", "q")), 32768, tools=specs
+    )
     assert facts["tool_schema_tokens"] == tool_schema_tokens(specs)
 
 
@@ -506,12 +516,21 @@ def _megabyte_fixed_model_facing_specs() -> list[dict]:
     from deskpet.sdk_adapters.task_scope_mutation import TASK_SCOPE_UPDATE_SCHEMA
     from deskpet.tools.context_page_in_tools import CONTEXT_PAGE_IN_SCHEMA
 
-    specs = [{"name": name, "description": name, "input_schema": schema}
-             for name, schema in (("context_route", CONTEXT_ROUTE_SCHEMA),
-                                  ("task_scope_search", TASK_SCOPE_SEARCH_SCHEMA),
-                                  ("task_scope_update", TASK_SCOPE_UPDATE_SCHEMA))]
-    specs.append({"name": "context_page_in", "description": "Load exact context",
-                  "input_schema": CONTEXT_PAGE_IN_SCHEMA["parameters"]})
+    specs = [
+        {"name": name, "description": name, "input_schema": schema}
+        for name, schema in (
+            ("context_route", CONTEXT_ROUTE_SCHEMA),
+            ("task_scope_search", TASK_SCOPE_SEARCH_SCHEMA),
+            ("task_scope_update", TASK_SCOPE_UPDATE_SCHEMA),
+        )
+    ]
+    specs.append(
+        {
+            "name": "context_page_in",
+            "description": "Load exact context",
+            "input_schema": CONTEXT_PAGE_IN_SCHEMA["parameters"],
+        }
+    )
     return specs
 
 
@@ -571,15 +590,22 @@ def _sample_messages(sample: dict):
     from simple_harness.contracts.identity import CallId
     from simple_harness.contracts.messages import Message, MessageRole
 
-    roles = {"system": MessageRole.SYSTEM, "user": MessageRole.USER,
-             "assistant": MessageRole.ASSISTANT, "tool": MessageRole.TOOL}
+    roles = {
+        "system": MessageRole.SYSTEM,
+        "user": MessageRole.USER,
+        "assistant": MessageRole.ASSISTANT,
+        "tool": MessageRole.TOOL,
+    }
     built = []
     for index, entry in enumerate(sample["messages"]):
         role = roles[entry["role"]]
         text = _text(entry["cjk_chars"], entry["other_chars"])
         if role is MessageRole.TOOL:
-            built.append(Message(role, text, name=entry.get("name") or "tool",
-                                 call_id=CallId(f"call-{index}")))
+            built.append(
+                Message(
+                    role, text, name=entry.get("name") or "tool", call_id=CallId(f"call-{index}")
+                )
+            )
         else:
             built.append(Message(role, text))
     return tuple(built)
@@ -597,8 +623,9 @@ def _sample_specs(sample: dict) -> list[dict]:
     for entry in sample["tools"]:
         other = int(entry["other_chars"]) - 5
         assert other >= 0
-        specs.append({"name": "t", "description": _text(entry["cjk_chars"], other),
-                      "input_schema": {}})
+        specs.append(
+            {"name": "t", "description": _text(entry["cjk_chars"], other), "input_schema": {}}
+        )
     return specs
 
 
@@ -702,10 +729,13 @@ def test_flash_calibration_is_tighter_than_the_one_it_replaces(flash_evidence: d
     flash = _flash_calibration()
     pro = calibration_for_model("deepseek-v4-pro")
     paired = [
-        (int(s["provider_turn_ordinal"]),
-         _sample_estimate(s, flash) / s["provider_input_tokens"],
-         _sample_estimate(s, pro) / s["provider_input_tokens"])
-        for s in flash_evidence["samples"] if s["provider_input_tokens"]
+        (
+            int(s["provider_turn_ordinal"]),
+            _sample_estimate(s, flash) / s["provider_input_tokens"],
+            _sample_estimate(s, pro) / s["provider_input_tokens"],
+        )
+        for s in flash_evidence["samples"]
+        if s["provider_input_tokens"]
     ]
     ours = sorted(value for _, value, _ in paired)
     theirs = sorted(value for _, _, value in paired)
@@ -738,19 +768,27 @@ def test_run6_turn5_request_set_no_longer_fails_closed(flash_evidence: dict) -> 
     assert window == 32000
     biggest_tool_search = max(
         text_tokens(_text(m["cjk_chars"], m["other_chars"]))
-        for s in flash_evidence["samples"] for m in s["messages"]
+        for s in flash_evidence["samples"]
+        for m in s["messages"]
         if m.get("name") == "tool_search"
     )
     seventh = (
         Message(MessageRole.ASSISTANT, "x" * 60),
-        Message(MessageRole.TOOL, "x" * (biggest_tool_search * 4), name="tool_search",
-                call_id=CallId("call-seventh")),
+        Message(
+            MessageRole.TOOL,
+            "x" * (biggest_tool_search * 4),
+            name="tool_search",
+            call_id=CallId("call-seventh"),
+        ),
     )
     messages = (*_sample_messages(sample), *seventh)
 
     _, facts = _plan_turn_messages(
-        messages, window, tools=_sample_specs(sample),
-        provider_turn_ordinal=6, model_id=flash_evidence["model_id"],
+        messages,
+        window,
+        tools=_sample_specs(sample),
+        provider_turn_ordinal=6,
+        model_id=flash_evidence["model_id"],
     )
     assert facts["budget_tier"] == 8192  # 32000 lands on the 8192 tier
     effective = effective_input_budget(window)
@@ -778,14 +816,16 @@ def test_history_is_spent_before_the_budget_ever_fails_closed() -> None:
 
     history = []
     for index in range(6):
-        history.extend([("user", f"q{index} " + "x" * 12000),
-                        ("assistant", f"a{index} " + "x" * 12000)])
+        history.extend(
+            [("user", f"q{index} " + "x" * 12000), ("assistant", f"a{index} " + "x" * 12000)]
+        )
     messages = _messages(("system", "rules" * 40), *history, ("user", "the current turn"))
 
     with pytest.raises(ContextBudgetExceeded):
         _plan_turn_messages(messages, 8192, tools=_tool_specs(4, 400))
-    kept, facts = _plan_turn_messages(messages, 8192, tools=_tool_specs(4, 400),
-                                      allow_full_group_trim=True)
+    kept, facts = _plan_turn_messages(
+        messages, 8192, tools=_tool_specs(4, 400), allow_full_group_trim=True
+    )
     assert facts["groups_trimmed_for_budget"] > 0
     assert facts["planned_input_tokens"] <= effective_input_budget(8192)
     # The turn the user is actually waiting on survives the degradation.
@@ -807,15 +847,17 @@ def test_the_budget_raise_names_the_irreducible_parts() -> None:
 
     messages = _messages(("system", "rules"), ("user", "the current turn"))
     with pytest.raises(ContextBudgetExceeded) as raised:
-        _plan_turn_messages(messages, 32768, tools=_tool_specs(40, 4000),
-                            allow_full_group_trim=True)
+        _plan_turn_messages(
+            messages, 32768, tools=_tool_specs(40, 4000), allow_full_group_trim=True
+        )
     assert str(raised.value) == "sdk_context_budget_exceeded"
     diagnostics = raised.value.diagnostics
     assert diagnostics["planned"] > diagnostics["effective"]
     # The schemas are the whole story here, and the breakdown says so.
     assert diagnostics["tool_schemas"] > diagnostics["protected_messages"]
-    assert (diagnostics["protected_messages"] + diagnostics["tool_schemas"]
-            == diagnostics["protected"])
+    assert (
+        diagnostics["protected_messages"] + diagnostics["tool_schemas"] == diagnostics["protected"]
+    )
     assert diagnostics["protected"] + diagnostics["open_group"] == diagnostics["planned"]
 
 
@@ -833,8 +875,7 @@ def test_probe_reports_the_overflow_instead_of_raising_it() -> None:
     tools = _tool_specs(40, 4000)
     _, facts = _plan_turn_messages(messages, 32768, tools=tools, raise_on_overflow=False)
     assert facts["budget_headroom"] < 0
-    assert (facts["planned_input_tokens"] + facts["budget_headroom"]
-            == effective_input_budget(32768))
+    assert facts["planned_input_tokens"] + facts["budget_headroom"] == effective_input_budget(32768)
 
 
 # ── Incident P (F-TOK-6): pro re-fitted on the pooled evidence ───────────────
@@ -850,9 +891,7 @@ def test_probe_reports_the_overflow_instead_of_raising_it() -> None:
 # The fixture below carries the pooled evidence (attempt 5 + attempt 4 +
 # b3682fe1 = 423 pairs over 68 Runs) as character-class counts, selected so the
 # tightest pair at every ordinal is present.
-PRO_FIXTURE = (
-    Path(__file__).resolve().parents[1] / "fixtures" / "hm_to_a6_pro_pool_samples.json"
-)
+PRO_FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "hm_to_a6_pro_pool_samples.json"
 
 
 @pytest.fixture(scope="module")
@@ -931,13 +970,13 @@ def test_the_replaced_pro_calibration_under_counted_this_evidence(pro_evidence: 
 
     replaced = _replaced_calibration(pro_evidence)
     under = [
-        s for s in pro_evidence["samples"]
+        s
+        for s in pro_evidence["samples"]
         if _sample_estimate(s, replaced) < s["provider_input_tokens"]
     ]
     assert under, "the fixture must retain requests the replaced ladder under-counted"
     worst = min(
-        _sample_estimate(s, replaced) / s["provider_input_tokens"]
-        for s in pro_evidence["samples"]
+        _sample_estimate(s, replaced) / s["provider_input_tokens"] for s in pro_evidence["samples"]
     )
     assert worst == pytest.approx(
         pro_evidence["population"]["worst_ratio_of_the_replaced_calibration"], abs=1e-3
@@ -984,7 +1023,7 @@ def test_pro_keeps_a_ten_percent_margin_at_every_ordinal(pro_evidence: dict) -> 
 
 
 def test_pro_saturates_instead_of_growing_without_bound(pro_evidence: dict) -> None:
-    """"Cap the growth sensibly" has to be an observation, not a hope.
+    """ "Cap the growth sensibly" has to be an observation, not a hope.
 
     The needed ratio is ``density + cumulative_reasoning / wire``.  Reasoning
     mass grows every turn — but so does the wire, because each turn adds its own
@@ -1040,10 +1079,14 @@ def test_every_over_budget_pro_request_the_old_ladder_hid_is_now_visible(
     assert budget == 26752
     replaced = _replaced_calibration(pro_evidence)
     pro = _pro_calibration()
-    hidden = [s for s in pro_evidence["samples"]
-              if "hidden_over_budget_before" in s["selected_for"]]
-    assert len(hidden) == pro_evidence["population"][
-        "over_budget_hidden_by_the_replaced_calibration"] == 5
+    hidden = [
+        s for s in pro_evidence["samples"] if "hidden_over_budget_before" in s["selected_for"]
+    ]
+    assert (
+        len(hidden)
+        == pro_evidence["population"]["over_budget_hidden_by_the_replaced_calibration"]
+        == 5
+    )
     for sample in hidden:
         assert sample["provider_input_tokens"] > budget, sample["id"]
         assert _sample_estimate(sample, replaced) <= budget, sample["id"]
@@ -1083,16 +1126,24 @@ def test_the_worst_pro_assembly_is_now_planned_as_over_budget(pro_evidence: dict
     ordinal = int(sample["provider_turn_ordinal"])
 
     _, before = _plan_turn_messages(
-        messages, window, tools=specs, provider_turn_ordinal=ordinal,
-        model_id="an-uncalibrated-model", raise_on_overflow=False,
+        messages,
+        window,
+        tools=specs,
+        provider_turn_ordinal=ordinal,
+        model_id="an-uncalibrated-model",
+        raise_on_overflow=False,
     )
     # The wire-shaped figure alone — no hidden-mass correction at all — is what
     # the pre-Incident-N lane could see, and it fits comfortably.
     assert before["budget_headroom"] > 0
 
     _, after = _plan_turn_messages(
-        messages, window, tools=specs, provider_turn_ordinal=ordinal,
-        model_id=pro_evidence["model_id"], raise_on_overflow=False,
+        messages,
+        window,
+        tools=specs,
+        provider_turn_ordinal=ordinal,
+        model_id=pro_evidence["model_id"],
+        raise_on_overflow=False,
     )
     assert after["budget_headroom"] < 0
     assert after["planned_input_tokens"] >= sample["provider_input_tokens"]
@@ -1124,9 +1175,11 @@ def test_the_worst_pro_turn_needs_force_paging_not_only_history(
 
     sample = _worst_pro_sample(pro_evidence)
     window = int(pro_evidence["context_window"])
-    plan = dict(tools=_sample_specs(sample),
-                provider_turn_ordinal=int(sample["provider_turn_ordinal"]),
-                model_id=pro_evidence["model_id"])
+    plan = dict(
+        tools=_sample_specs(sample),
+        provider_turn_ordinal=int(sample["provider_turn_ordinal"]),
+        model_id=pro_evidence["model_id"],
+    )
     messages = _sample_messages(sample)
 
     with pytest.raises(ContextBudgetExceeded) as raised:
@@ -1136,8 +1189,9 @@ def test_the_worst_pro_turn_needs_force_paging_not_only_history(
     assert diagnostics["planned"] > diagnostics["effective"]
     # The pageable bodies, not the persona and not the catalog.
     assert diagnostics["open_group"] > diagnostics["protected"]
-    assert (diagnostics["protected_messages"] + diagnostics["tool_schemas"]
-            == diagnostics["protected"])
+    assert (
+        diagnostics["protected_messages"] + diagnostics["tool_schemas"] == diagnostics["protected"]
+    )
     # And the catalog inside that breakdown is priced at the schema ratio.
     pro = _pro_calibration()
     assert diagnostics["tool_schemas"] == pro.apply_tool_schema(
@@ -1164,11 +1218,11 @@ def test_pro_overflow_walks_the_degrade_order_before_it_fails_closed() -> None:
 
     history = []
     for index in range(4):
-        history.extend([("user", f"q{index} " + "x" * 8000),
-                        ("assistant", f"a{index} " + "x" * 8000)])
+        history.extend(
+            [("user", f"q{index} " + "x" * 8000), ("assistant", f"a{index} " + "x" * 8000)]
+        )
     messages = _messages(("system", "rules" * 40), *history, ("user", "the current turn"))
-    plan = dict(tools=_tool_specs(4, 400), provider_turn_ordinal=9,
-                model_id="deepseek-v4-pro")
+    plan = dict(tools=_tool_specs(4, 400), provider_turn_ordinal=9, model_id="deepseek-v4-pro")
     effective = effective_input_budget(32768)
 
     _, probe = _plan_turn_messages(messages, 32768, raise_on_overflow=False, **plan)
@@ -1187,9 +1241,12 @@ def test_pro_overflow_walks_the_degrade_order_before_it_fails_closed() -> None:
     # Nothing left to give: no history at all, and a catalog that alone overflows.
     with pytest.raises(ContextBudgetExceeded) as raised:
         _plan_turn_messages(
-            _messages(("system", "rules"), ("user", "the current turn")), 32768,
-            tools=_tool_specs(40, 4000), provider_turn_ordinal=9,
-            model_id="deepseek-v4-pro", allow_full_group_trim=True,
+            _messages(("system", "rules"), ("user", "the current turn")),
+            32768,
+            tools=_tool_specs(40, 4000),
+            provider_turn_ordinal=9,
+            model_id="deepseek-v4-pro",
+            allow_full_group_trim=True,
         )
     assert str(raised.value) == "sdk_context_budget_exceeded"
     diagnostics = raised.value.diagnostics

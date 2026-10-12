@@ -37,9 +37,7 @@ def test_cn_statistics_role_resolves_nbs_without_question_or_answer_oracle() -> 
     assert target.authority_id == "cn.nbs"
     assert target.registrable_domains == ("stats.gov.cn",)
     assert target.search_directives == ("site:stats.gov.cn",)
-    assert target.seed_urls == (
-        "https://www.stats.gov.cn/sj/tjgb/ndtjgb/qgndtjgb/",
-    )
+    assert target.seed_urls == ("https://www.stats.gov.cn/sj/tjgb/ndtjgb/qgndtjgb/",)
     assert target.matched_authority_roles == ("national_statistics_office",)
     assert target.source_types == ("official_statistic",)
     assert "preferred_authority_match" in target.reason_codes
@@ -65,9 +63,7 @@ def test_resolution_uses_semantic_constraints_not_user_wording() -> None:
     replay = resolve_official_sources(
         OfficialSourceRequestV1.from_json(_statistics_request().to_json())
     )
-    unrelated_jurisdiction = resolve_official_sources(
-        _statistics_request(jurisdiction="BR")
-    )
+    unrelated_jurisdiction = resolve_official_sources(_statistics_request(jurisdiction="BR"))
 
     assert replay == first
     assert unrelated_jurisdiction == ()
@@ -75,9 +71,7 @@ def test_resolution_uses_semantic_constraints_not_user_wording() -> None:
 
 def test_registry_request_and_target_are_strict_canonical_roundtrips() -> None:
     registry_payload = DEFAULT_OFFICIAL_SOURCE_REGISTRY.to_json()
-    restored_registry = OfficialSourceRegistryV1.from_json(
-        copy.deepcopy(registry_payload)
-    )
+    restored_registry = OfficialSourceRegistryV1.from_json(copy.deepcopy(registry_payload))
     assert restored_registry == DEFAULT_OFFICIAL_SOURCE_REGISTRY
     assert restored_registry.to_json() == registry_payload
 
@@ -112,9 +106,7 @@ def test_registry_rejects_query_oracle_directives() -> None:
             organization_names=("Example Statistics Office",),
             registrable_domains=("statistics.example",),
             source_types=("official_statistic",),
-            search_directives=(
-                "2024 total population site:statistics.example",
-            ),
+            search_directives=("2024 total population site:statistics.example",),
         )
 
 

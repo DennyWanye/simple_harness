@@ -175,14 +175,10 @@ class WorkflowRuntimeAdapterRegistry:
             )
         self._entries[adapter.identity] = adapter
 
-    def get(
-        self, workflow_name: str, workflow_version: str
-    ) -> WorkflowRuntimeAdapter | None:
+    def get(self, workflow_name: str, workflow_version: str) -> WorkflowRuntimeAdapter | None:
         return self._entries.get(_identity(workflow_name, workflow_version))
 
-    def require(
-        self, workflow_name: str, workflow_version: str
-    ) -> WorkflowRuntimeAdapter:
+    def require(self, workflow_name: str, workflow_version: str) -> WorkflowRuntimeAdapter:
         identity = _identity(workflow_name, workflow_version)
         adapter = self._entries.get(identity)
         if adapter is None:
@@ -244,9 +240,7 @@ class DeepResearchRuntimeView:
 
     def versions(self) -> tuple[str, ...]:
         return tuple(
-            version
-            for name, version in self._registry.identities()
-            if name == "deep_research"
+            version for name, version in self._registry.identities() if name == "deep_research"
         )
 
     def get(self, workflow_version: str) -> DeepResearchRuntimeExtension | None:

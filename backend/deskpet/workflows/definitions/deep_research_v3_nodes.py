@@ -74,8 +74,19 @@ def _meaningful_structured_claims(claims: list[Any]) -> list[Any]:
 
 
 PUBLIC_STAGE_IDS = (
-    "normalize", "plan", "expand", "search", "direct", "fetch", "score",
-    "gap", "rerank", "synth", "cite", "persist", "finalize",
+    "normalize",
+    "plan",
+    "expand",
+    "search",
+    "direct",
+    "fetch",
+    "score",
+    "gap",
+    "rerank",
+    "synth",
+    "cite",
+    "persist",
+    "finalize",
 )
 _NEXT_STAGE = {
     stage: PUBLIC_STAGE_IDS[index + 1] if index + 1 < len(PUBLIC_STAGE_IDS) else ""
@@ -139,7 +150,9 @@ def _config(values: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _budget(config: Mapping[str, Any]) -> BranchBudgetState:
-    deadline = float(config.get("deadline_at") or (time.time() + float(config.get("timeout_seconds", 300))))
+    deadline = float(
+        config.get("deadline_at") or (time.time() + float(config.get("timeout_seconds", 300)))
+    )
     return BranchBudgetState(
         query_remaining=max(0, int(config.get("query_budget", 6))),
         url_remaining=max(0, int(config.get("url_budget", 12))),
@@ -171,7 +184,9 @@ async def normalize_handler(state: WorkflowState, context: WorkflowContext) -> S
     if isinstance(search, ResearchSearchPort):
         await search.reset()
     return _public_patch(
-        state, "normalize", {"mode": str(_values(state).get("mode") or "standard")},
+        state,
+        "normalize",
+        {"mode": str(_values(state).get("mode") or "standard")},
         updates={"topic": topic, "research_config": copy.deepcopy(config)},
         degraded=not bool(topic),
     )
@@ -182,7 +197,9 @@ async def plan_handler(state: WorkflowState, context: WorkflowContext) -> StateP
     config = _config(values)
     raw_questions = config.get("sub_questions")
     if isinstance(raw_questions, list):
-        questions = sorted({str(value).strip() for value in raw_questions if str(value).strip()})[:5]
+        questions = sorted({str(value).strip() for value in raw_questions if str(value).strip()})[
+            :5
+        ]
     else:
         topic = str(values.get("topic") or "").strip()
         questions = []
@@ -200,7 +217,7 @@ async def plan_handler(state: WorkflowState, context: WorkflowContext) -> StateP
                 raw_plan = await asyncio.wait_for(
                     llm.complete(
                         "Break the research topic into distinct, independently searchable sub-questions. "
-                        f"Return only strict JSON with exactly this schema: {{\"sub_questions\":[\"...\"]}}. "
+                        f'Return only strict JSON with exactly this schema: {{"sub_questions":["..."]}}. '
                         f"Return 3 to {maximum} non-overlapping items and do not answer them. "
                         "Each item must isolate one independently verifiable aspect and prefer primary sources. "
                         f"Topic: {topic}"
@@ -219,20 +236,35 @@ async def plan_handler(state: WorkflowState, context: WorkflowContext) -> StateP
             questions = list(dict.fromkeys((*questions, *fallback)))[:maximum]
     fanout = bool(config.get("subagent_fanout", True))
     threshold = max(2, int(config.get("fanout_threshold", 2)))
-    active_count = min(6, len(questions)) if fanout and len(questions) >= threshold else int(bool(questions))
+    active_count = (
+        min(6, len(questions)) if fanout and len(questions) >= threshold else int(bool(questions))
+    )
     budget = _budget(config)
     work_items: dict[str, JsonValue] = {}
     for index, branch_id in enumerate(BRANCH_IDS):
         branch_questions = (
-            (questions[index],) if active_count > 1 and index < active_count
-            else tuple(questions) if active_count == 1 and index == 0
+            (questions[index],)
+            if active_count > 1 and index < active_count
+            else tuple(questions)
+            if active_count == 1 and index == 0
             else ()
         )
-        item = BranchWorkItem(branch_id, bool(branch_questions), "fanout" if active_count > 1 else "flat", branch_questions)
+        item = BranchWorkItem(
+            branch_id,
+            bool(branch_questions),
+            "fanout" if active_count > 1 else "flat",
+            branch_questions,
+        )
         work_items[branch_id] = {**item.to_json(), "budget": budget.to_json()}
     return _public_patch(
-        state, "plan", {"question_count": len(questions), "active_branch_count": active_count},
-        updates={"sub_questions": questions, "branch_work_items": work_items, "active_branch_count": active_count},
+        state,
+        "plan",
+        {"question_count": len(questions), "active_branch_count": active_count},
+        updates={
+            "sub_questions": questions,
+            "branch_work_items": work_items,
+            "active_branch_count": active_count,
+        },
         degraded=not bool(questions),
     )
 
@@ -243,7 +275,9 @@ def _work_item(state: WorkflowState, branch_id: str) -> tuple[BranchWorkItem, Br
     if not isinstance(raw, Mapping):
         raise ValueError(f"missing work item {branch_id}")
     item = BranchWorkItem(
-        branch_id, bool(raw.get("active")), str(raw.get("mode")),
+        branch_id,
+        bool(raw.get("active")),
+        str(raw.get("mode")),
         tuple(str(value) for value in raw.get("questions", [])),
     )
     budget_raw = raw.get("budget")
@@ -260,20 +294,29 @@ def _previous_patch(state: WorkflowState, branch_id: str, stage: str) -> Mapping
 
 
 def _event(branch_id: str, stage: str, code: str) -> dict[str, JsonValue]:
-    return {"id": f"{branch_id}:{stage}:{code}", "branch_id": branch_id, "stage": stage, "error_code": code}
+    return {
+        "id": f"{branch_id}:{stage}:{code}",
+        "branch_id": branch_id,
+        "stage": stage,
+        "error_code": code,
+    }
 
 
-def _safe_search_observation(branch_id: str, observation: Mapping[str, Any]) -> dict[str, JsonValue]:
+def _safe_search_observation(
+    branch_id: str, observation: Mapping[str, Any]
+) -> dict[str, JsonValue]:
     attempts: list[dict[str, JsonValue]] = []
     for raw in observation.get("provider_attempts", []):
         if not isinstance(raw, Mapping):
             continue
-        attempts.append({
-            "provider": str(raw.get("provider") or "unknown")[:64],
-            "status": str(raw.get("status") or "unknown")[:64],
-            "permit": str(raw.get("permit") or "")[:64],
-            "probe_outcome": str(raw.get("probe_outcome") or "")[:64],
-        })
+        attempts.append(
+            {
+                "provider": str(raw.get("provider") or "unknown")[:64],
+                "status": str(raw.get("status") or "unknown")[:64],
+                "permit": str(raw.get("permit") or "")[:64],
+                "probe_outcome": str(raw.get("probe_outcome") or "")[:64],
+            }
+        )
     return {
         "id": f"{branch_id}:search-observation:{str(observation.get('request_id') or '')[:64]}",
         "kind": "search_observation",
@@ -281,7 +324,9 @@ def _safe_search_observation(branch_id: str, observation: Mapping[str, Any]) -> 
         "stage": "search",
         "request_id": str(observation.get("request_id") or "")[:64],
         "run_id": str(observation.get("run_id") or "")[:64],
-        "provider_attempt_count": max(0, int(observation.get("provider_attempt_count") or len(attempts))),
+        "provider_attempt_count": max(
+            0, int(observation.get("provider_attempt_count") or len(attempts))
+        ),
         "provider_probe_count": max(0, int(observation.get("provider_probe_count") or 0)),
         "provider_attempts": attempts,
     }
@@ -305,7 +350,10 @@ async def _resolved_document_text(document: Mapping[str, Any], context: Workflow
 
 
 async def _evidence_document(
-    *, candidate: Mapping[str, Any], extracted: Mapping[str, Any], context: WorkflowContext,
+    *,
+    candidate: Mapping[str, Any],
+    extracted: Mapping[str, Any],
+    context: WorkflowContext,
 ) -> tuple[dict[str, JsonValue] | None, dict[str, JsonValue] | None]:
     text = str(extracted.get("text") or extracted.get("content") or candidate.get("snippet") or "")
     if not text.strip():
@@ -321,8 +369,16 @@ async def _evidence_document(
         "text": text,
     }
     for key in (
-        "published_at", "date", "provider", "providers", "provider_rank",
-        "source_kind", "searched_at", "fetcher", "extractor", "fetched_at",
+        "published_at",
+        "date",
+        "provider",
+        "providers",
+        "provider_rank",
+        "source_kind",
+        "searched_at",
+        "fetcher",
+        "extractor",
+        "fetched_at",
     ):
         value = extracted.get(key)
         if value in (None, "", []):
@@ -330,8 +386,14 @@ async def _evidence_document(
         if value not in (None, "", []):
             document[key] = copy.deepcopy(value)
     blob_store = context.ports.get("blob")
-    if isinstance(blob_store, RegisteredBlobStore) and context.identity is not None and len(text.encode()) >= 2048:
-        ref = await blob_store.put(text.encode(), context.identity, media_type="text/plain; charset=utf-8")
+    if (
+        isinstance(blob_store, RegisteredBlobStore)
+        and context.identity is not None
+        and len(text.encode()) >= 2048
+    ):
+        ref = await blob_store.put(
+            text.encode(), context.identity, media_type="text/plain; charset=utf-8"
+        )
         document["blob_ref"] = ref.to_json()
         document.pop("text", None)
         return document, {"id": ref.sha256, "sha256": ref.sha256}
@@ -389,10 +451,16 @@ async def _score_evidence_document(
     }, None
 
 
-async def branch_handler(stage: str, branch_id: str, state: WorkflowState, context: WorkflowContext) -> StatePatch:
+async def branch_handler(
+    stage: str, branch_id: str, state: WorkflowState, context: WorkflowContext
+) -> StatePatch:
     item, initial_budget = _work_item(state, branch_id)
     previous = _previous_patch(state, branch_id, stage)
-    budget = BranchBudgetState.from_json(previous.get("budget_after", {})) if isinstance(previous, Mapping) else initial_budget
+    budget = (
+        BranchBudgetState.from_json(previous.get("budget_after", {}))
+        if isinstance(previous, Mapping)
+        else initial_budget
+    )
     if not item.active:
         return StatePatch({f"branch_{stage}": {branch_id: no_op_patch(item, stage, budget)}})
     # Scoring is local and deterministic. Once fetch has already paid the
@@ -400,10 +468,21 @@ async def branch_handler(stage: str, branch_id: str, state: WorkflowState, conte
     # it only prevents additional upstream work.
     if stage != "score" and budget.deadline_at and time.time() >= budget.deadline_at:
         error = _event(branch_id, stage, "deadline_exhausted")
-        return StatePatch({
-            f"branch_{stage}": {branch_id: branch_patch(work_item=item, stage=stage, result=[], errors=[error], budget_before=budget, budget_after=budget)},
-            "branch_events": [error],
-        })
+        return StatePatch(
+            {
+                f"branch_{stage}": {
+                    branch_id: branch_patch(
+                        work_item=item,
+                        stage=stage,
+                        result=[],
+                        errors=[error],
+                        budget_before=budget,
+                        budget_after=budget,
+                    )
+                },
+                "branch_events": [error],
+            }
+        )
 
     errors: list[dict[str, JsonValue]] = []
     telemetry: list[dict[str, JsonValue]] = []
@@ -420,9 +499,7 @@ async def branch_handler(stage: str, branch_id: str, state: WorkflowState, conte
             if not normalized or key in seen or len(result) >= maximum:
                 return
             seen.add(key)
-            result.append(
-                {"query": normalized, "question": question, "kind": kind, **extra}
-            )
+            result.append({"query": normalized, "question": question, "kind": kind, **extra})
 
         for question in item.questions:
             append(question, question, "question")
@@ -432,9 +509,9 @@ async def branch_handler(stage: str, branch_id: str, state: WorkflowState, conte
                     0,
                     min(6, int(config.get("source_pack_max_queries_per_question", 3))),
                 )
-                for pack_name, source_query in legacy_research._source_pack_queries_for(
-                    question
-                )[:pack_limit]:
+                for pack_name, source_query in legacy_research._source_pack_queries_for(question)[
+                    :pack_limit
+                ]:
                     append(
                         source_query,
                         question,
@@ -452,7 +529,9 @@ async def branch_handler(stage: str, branch_id: str, state: WorkflowState, conte
         else:
             for spec in specs[: budget.query_remaining]:
                 query = str(spec.get("query") if isinstance(spec, Mapping) else spec)
-                question = str(spec.get("question") or query) if isinstance(spec, Mapping) else query
+                question = (
+                    str(spec.get("question") or query) if isinstance(spec, Mapping) else query
+                )
                 try:
                     rows = await port.search(query, max_results=min(5, budget.url_remaining))
                 except Exception:
@@ -469,17 +548,29 @@ async def branch_handler(stage: str, branch_id: str, state: WorkflowState, conte
                 for row in rows:
                     if not isinstance(row, Mapping) or not row.get("url"):
                         continue
-                    result.append({
-                        "url": str(row["url"]), "canonical_url": canonical_url(str(row["url"])),
-                        "title": str(row.get("title") or ""), "snippet": str(row.get("snippet") or row.get("body") or ""),
-                        "provider": str(row.get("provider") or row.get("engine") or "search"),
-                        "question": question,
-                    })
-            result = sorted(result, key=lambda value: (str(value["canonical_url"]), str(value["title"])))[: budget.url_remaining]
-            after = budget.consume(query_remaining=min(len(specs), budget.query_remaining), url_remaining=len(result))
+                    result.append(
+                        {
+                            "url": str(row["url"]),
+                            "canonical_url": canonical_url(str(row["url"])),
+                            "title": str(row.get("title") or ""),
+                            "snippet": str(row.get("snippet") or row.get("body") or ""),
+                            "provider": str(row.get("provider") or row.get("engine") or "search"),
+                            "question": question,
+                        }
+                    )
+            result = sorted(
+                result, key=lambda value: (str(value["canonical_url"]), str(value["title"]))
+            )[: budget.url_remaining]
+            after = budget.consume(
+                query_remaining=min(len(specs), budget.query_remaining), url_remaining=len(result)
+            )
     elif stage == "direct":
         port = context.ports.get("search")
-        if isinstance(port, ResearchSearchPort) and port.direct_call is not None and budget.query_remaining:
+        if (
+            isinstance(port, ResearchSearchPort)
+            and port.direct_call is not None
+            and budget.query_remaining
+        ):
             for question in item.questions[: budget.query_remaining]:
                 for source in ("official", "academic"):
                     try:
@@ -489,28 +580,45 @@ async def branch_handler(stage: str, branch_id: str, state: WorkflowState, conte
                         continue
                     for row in outcome.items:
                         if isinstance(row, Mapping) and row.get("url"):
-                            result.append({
-                                "url": str(row["url"]), "canonical_url": canonical_url(str(row["url"])),
-                                "title": str(row.get("title") or ""), "snippet": str(row.get("snippet") or ""),
-                                "provider": outcome.source, "direct": True,
-                                "question": question,
-                            })
-            after = budget.consume(query_remaining=min(len(item.questions), budget.query_remaining), url_remaining=len(result))
+                            result.append(
+                                {
+                                    "url": str(row["url"]),
+                                    "canonical_url": canonical_url(str(row["url"])),
+                                    "title": str(row.get("title") or ""),
+                                    "snippet": str(row.get("snippet") or ""),
+                                    "provider": outcome.source,
+                                    "direct": True,
+                                    "question": question,
+                                }
+                            )
+            after = budget.consume(
+                query_remaining=min(len(item.questions), budget.query_remaining),
+                url_remaining=len(result),
+            )
     elif stage == "fetch":
         search_rows = list((state.get("branch_search") or {}).get(branch_id, {}).get("result", []))  # type: ignore[union-attr]
         direct_rows = list((state.get("branch_direct") or {}).get(branch_id, {}).get("result", []))  # type: ignore[union-attr]
-        candidates = {str(row.get("canonical_url")): row for row in (*search_rows, *direct_rows) if isinstance(row, Mapping) and row.get("canonical_url")}
+        candidates = {
+            str(row.get("canonical_url")): row
+            for row in (*search_rows, *direct_rows)
+            if isinstance(row, Mapping) and row.get("canonical_url")
+        }
         fetch = context.ports.get("fetch")
         refs: list[dict[str, JsonValue]] = []
         for url, candidate in sorted(candidates.items())[: budget.fetch_remaining]:
             try:
-                extracted = await fetch.extract(str(candidate.get("url") or url)) if isinstance(fetch, FetchPort) else {}
+                extracted = (
+                    await fetch.extract(str(candidate.get("url") or url))
+                    if isinstance(fetch, FetchPort)
+                    else {}
+                )
             except Exception:
                 extracted = {}
                 errors.append(_event(branch_id, stage, "fetch_failure"))
             document, ref = await _evidence_document(
                 candidate={**candidate, "url": str(candidate.get("url") or url)},
-                extracted=extracted if isinstance(extracted, Mapping) else {}, context=context,
+                extracted=extracted if isinstance(extracted, Mapping) else {},
+                context=context,
             )
             if document is not None:
                 result.append(document)
@@ -518,7 +626,16 @@ async def branch_handler(stage: str, branch_id: str, state: WorkflowState, conte
                 refs.append(ref)
         after = budget.consume(fetch_remaining=min(len(candidates), budget.fetch_remaining))
         payload: dict[str, JsonValue] = {
-            f"branch_{stage}": {branch_id: branch_patch(work_item=item, stage=stage, result=result, errors=errors, budget_before=budget, budget_after=after)}
+            f"branch_{stage}": {
+                branch_id: branch_patch(
+                    work_item=item,
+                    stage=stage,
+                    result=result,
+                    errors=errors,
+                    budget_before=budget,
+                    budget_after=after,
+                )
+            }
         }
         if refs:
             payload["blob_refs"] = refs
@@ -536,8 +653,25 @@ async def branch_handler(stage: str, branch_id: str, state: WorkflowState, conte
                 result.append(scored)
             elif error_code:
                 errors.append(_event(branch_id, stage, error_code))
-        result.sort(key=lambda value: (-float(value.get("score", 0)), str(value.get("canonical_url", "")), str(value.get("content_hash", ""))))
-    payload = {f"branch_{stage}": {branch_id: branch_patch(work_item=item, stage=stage, result=result, errors=errors, budget_before=budget, budget_after=after)}}
+        result.sort(
+            key=lambda value: (
+                -float(value.get("score", 0)),
+                str(value.get("canonical_url", "")),
+                str(value.get("content_hash", "")),
+            )
+        )
+    payload = {
+        f"branch_{stage}": {
+            branch_id: branch_patch(
+                work_item=item,
+                stage=stage,
+                result=result,
+                errors=errors,
+                budget_before=budget,
+                budget_after=after,
+            )
+        }
+    }
     if errors or telemetry:
         payload["branch_events"] = [*errors, *telemetry]
     return StatePatch(payload)
@@ -546,6 +680,7 @@ async def branch_handler(stage: str, branch_id: str, state: WorkflowState, conte
 def make_branch_handler(stage: str, branch_id: str):
     async def handler(state: WorkflowState, context: WorkflowContext) -> StatePatch:
         return await branch_handler(stage, branch_id, state, context)
+
     handler.__name__ = f"{stage}_{branch_id}_handler"
     handler.__qualname__ = handler.__name__
     return handler
@@ -560,7 +695,11 @@ async def join_handler(stage: str, state: WorkflowState, context: WorkflowContex
     errors: list[dict[str, JsonValue]] = []
     for branch_id in BRANCH_IDS:
         payload = channel[branch_id]
-        if not isinstance(payload, Mapping) or payload.get("branch_id") != branch_id or payload.get("stage") != stage:
+        if (
+            not isinstance(payload, Mapping)
+            or payload.get("branch_id") != branch_id
+            or payload.get("stage") != stage
+        ):
             raise ValueError(f"invalid {stage} branch payload: {branch_id}")
         rows.extend(copy.deepcopy(list(payload.get("result", []))))
         errors.extend(copy.deepcopy(list(payload.get("errors", []))))
@@ -569,22 +708,38 @@ async def join_handler(stage: str, state: WorkflowState, context: WorkflowContex
         for row in rows:
             if not isinstance(row, Mapping):
                 continue
-            key = (str(row.get("canonical_url") or row.get("url") or ""), str(row.get("content_hash") or ""))
+            key = (
+                str(row.get("canonical_url") or row.get("url") or ""),
+                str(row.get("content_hash") or ""),
+            )
             keyed.setdefault(key, copy.deepcopy(dict(row)))
         rows = [keyed[key] for key in sorted(keyed)]
     if stage == "expand":
         metrics = {"query_count": len(rows)}
     elif stage == "search":
-        observations = [value for value in state.get("branch_events", []) if isinstance(value, Mapping) and value.get("kind") == "search_observation"]
+        observations = [
+            value
+            for value in state.get("branch_events", [])
+            if isinstance(value, Mapping) and value.get("kind") == "search_observation"
+        ]
         metrics = {
-            "providers_attempted": sum(int(value.get("provider_attempt_count") or 0) for value in observations),
+            "providers_attempted": sum(
+                int(value.get("provider_attempt_count") or 0) for value in observations
+            ),
             "providers_hit": len({str(row.get("provider")) for row in rows}),
             "candidates": len(rows),
         }
     elif stage == "direct":
-        metrics = {"direct_sources": len({str(row.get('provider')) for row in rows}), "candidates": len(rows)}
+        metrics = {
+            "direct_sources": len({str(row.get("provider")) for row in rows}),
+            "candidates": len(rows),
+        }
     elif stage == "fetch":
-        metrics = {"attempted": len(rows) + len(errors), "succeeded": len(rows), "dropped": len(errors)}
+        metrics = {
+            "attempted": len(rows) + len(errors),
+            "succeeded": len(rows),
+            "dropped": len(errors),
+        }
     else:
         metrics = {"passages": len(rows), "kept": len(rows)}
     return _public_patch(
@@ -594,13 +749,16 @@ async def join_handler(stage: str, state: WorkflowState, context: WorkflowContex
         updates={f"joined_{stage}": rows},
         degraded=bool(errors),
         result_code="stage_degraded" if errors else "stage_ok",
-        diagnostic_codes=tuple(sorted({str(value.get("error_code") or "stage_degraded") for value in errors})),
+        diagnostic_codes=tuple(
+            sorted({str(value.get("error_code") or "stage_degraded") for value in errors})
+        ),
     )
 
 
 def make_join_handler(stage: str):
     async def handler(state: WorkflowState, context: WorkflowContext) -> StatePatch:
         return await join_handler(stage, state, context)
+
     handler.__name__ = f"{stage}_join_handler"
     handler.__qualname__ = handler.__name__
     return handler
@@ -608,7 +766,9 @@ def make_join_handler(stage: str):
 
 async def gap_handler(state: WorkflowState, context: WorkflowContext) -> StatePatch:
     values = _values(state)
-    evidence = [dict(value) for value in values.get("joined_score", []) if isinstance(value, Mapping)]
+    evidence = [
+        dict(value) for value in values.get("joined_score", []) if isinstance(value, Mapping)
+    ]
     questions = [str(value) for value in values.get("sub_questions", [])]
     covered = {str(value.get("question") or "") for value in evidence}
     missing_questions = [question for question in questions if question not in covered]
@@ -633,10 +793,7 @@ async def gap_handler(state: WorkflowState, context: WorkflowContext) -> StatePa
     attempted = 0
     fetch_attempted = 0
     rounds_completed = 0
-    seen_urls = {
-        str(value.get("canonical_url") or value.get("url") or "")
-        for value in evidence
-    }
+    seen_urls = {str(value.get("canonical_url") or value.get("url") or "") for value in evidence}
     if isinstance(search, ResearchSearchPort) and isinstance(fetch, FetchPort):
         remaining = list(missing_questions)
         for round_index in range(max_rounds):
@@ -701,7 +858,8 @@ async def gap_handler(state: WorkflowState, context: WorkflowContext) -> StatePa
                         break
             remaining = [value for value in remaining if value not in covered_this_round]
     patch = _public_patch(
-        state, "gap",
+        state,
+        "gap",
         {
             "iteration": rounds_completed,
             "followup_count": attempted,
@@ -725,7 +883,11 @@ async def gap_handler(state: WorkflowState, context: WorkflowContext) -> StatePa
 
 async def rerank_handler(state: WorkflowState, context: WorkflowContext) -> StatePatch:
     values = _values(state)
-    evidence = [dict(value) for value in (*values.get("joined_score", []), *values.get("gap_evidence", [])) if isinstance(value, Mapping)]
+    evidence = [
+        dict(value)
+        for value in (*values.get("joined_score", []), *values.get("gap_evidence", []))
+        if isinstance(value, Mapping)
+    ]
     for value in evidence:
         if "score" not in value:
             scored, _ = await _score_evidence_document(
@@ -751,7 +913,13 @@ async def rerank_handler(state: WorkflowState, context: WorkflowContext) -> Stat
                 semantic_applied = True
         except Exception:
             pass
-    evidence.sort(key=lambda value: (-float(value.get("score", 0)), str(value.get("canonical_url", "")), str(value.get("content_hash", ""))))
+    evidence.sort(
+        key=lambda value: (
+            -float(value.get("score", 0)),
+            str(value.get("canonical_url", "")),
+            str(value.get("content_hash", "")),
+        )
+    )
     # Global diversity pass: keep the strongest item from each domain before
     # allowing a single domain to contribute additional passages.
     diverse: list[dict[str, JsonValue]] = []
@@ -775,9 +943,7 @@ async def rerank_handler(state: WorkflowState, context: WorkflowContext) -> Stat
     unique_url_remainder: list[dict[str, JsonValue]] = []
     duplicate_remainder: list[dict[str, JsonValue]] = []
     for value in remainder:
-        normalized_url = canonical_url(
-            str(value.get("canonical_url") or value.get("url") or "")
-        )
+        normalized_url = canonical_url(str(value.get("canonical_url") or value.get("url") or ""))
         if normalized_url and normalized_url not in seen_urls:
             seen_urls.add(normalized_url)
             unique_url_remainder.append(value)
@@ -785,9 +951,7 @@ async def rerank_handler(state: WorkflowState, context: WorkflowContext) -> Stat
             duplicate_remainder.append(value)
     maximum = max(1, int(_config(values).get("max_total_passages", 12)))
     ranked = (diverse + unique_url_remainder + duplicate_remainder)[:maximum]
-    diversity = research_scoring.diversity_report(
-        [str(value.get("url") or "") for value in ranked]
-    )
+    diversity = research_scoring.diversity_report([str(value.get("url") or "") for value in ranked])
     return _public_patch(
         state,
         "rerank",
@@ -860,7 +1024,9 @@ def _score_synthesis_candidate(
 
 async def synth_handler(state: WorkflowState, context: WorkflowContext) -> StatePatch:
     values = _values(state)
-    evidence = [dict(value) for value in values.get("ranked_evidence", []) if isinstance(value, Mapping)]
+    evidence = [
+        dict(value) for value in values.get("ranked_evidence", []) if isinstance(value, Mapping)
+    ]
     citation_sources: list[dict[str, JsonValue]] = []
     passage_documents: list[dict[str, Any]] = []
     for item in evidence[:16]:
@@ -873,7 +1039,9 @@ async def synth_handler(state: WorkflowState, context: WorkflowContext) -> State
             "url": str(item.get("url") or ""),
             "canonical_url": str(item.get("canonical_url") or item.get("url") or ""),
             "title": str(item.get("title") or ""),
-            "content_hash": str(item.get("content_hash") or hashlib.sha256(text.encode()).hexdigest()),
+            "content_hash": str(
+                item.get("content_hash") or hashlib.sha256(text.encode()).hexdigest()
+            ),
         }
         citation_sources.append(source)
         passage_documents.append({**item, **source, "text": text})
@@ -939,23 +1107,14 @@ async def synth_handler(state: WorkflowState, context: WorkflowContext) -> State
             # poison an otherwise strong result and caused the selector to
             # fall back to page headings / metadata sentences.
             if config.get("prefer_structured_synthesis") and structured_claims:
-                supported_claims, _, _, _ = repair_and_prune(
-                    structured_claims, passages
-                )
+                supported_claims, _, _, _ = repair_and_prune(structured_claims, passages)
                 structured_claims = supported_claims
-                factual_claims = [
-                    claim for claim in structured_claims if claim.kind == "factual"
-                ]
+                factual_claims = [claim for claim in structured_claims if claim.kind == "factual"]
                 used_citation_ids = {
-                    citation_id
-                    for claim in factual_claims
-                    for citation_id in claim.citation_ids
+                    citation_id for claim in factual_claims for citation_id in claim.citation_ids
                 }
                 minimum_citations = int(config.get("minimum_publish_citations", 8))
-                if (
-                    len(factual_claims) < 8
-                    or len(used_citation_ids) < minimum_citations
-                ):
+                if len(factual_claims) < 8 or len(used_citation_ids) < minimum_citations:
                     unused_evidence = [
                         value
                         for value in prompt_evidence
@@ -993,13 +1152,9 @@ async def synth_handler(state: WorkflowState, context: WorkflowContext) -> State
                             )
                             supplemental_claims = parse_structured_claims(
                                 supplemental_raw,
-                                valid_citation_ids=set(
-                                    range(1, len(citation_sources) + 1)
-                                ),
+                                valid_citation_ids=set(range(1, len(citation_sources) + 1)),
                             )
-                            supplemental_claims = _meaningful_structured_claims(
-                                supplemental_claims
-                            )
+                            supplemental_claims = _meaningful_structured_claims(supplemental_claims)
                             merged_claims: list[Any] = []
                             seen_claims: set[tuple[str, str, tuple[int, ...]]] = set()
                             for claim in (*structured_claims, *supplemental_claims):
@@ -1022,17 +1177,14 @@ async def synth_handler(state: WorkflowState, context: WorkflowContext) -> State
                 hybrid_claims: list[Any] = []
                 hybrid_seen: set[tuple[str, str, tuple[int, ...]]] = set()
                 used_citations = {
-                    citation_id
-                    for claim in structured_claims
-                    for citation_id in claim.citation_ids
+                    citation_id for claim in structured_claims for citation_id in claim.citation_ids
                 }
                 filtered_extractive = _meaningful_structured_claims(extractive_claims)
                 ordered_extractive = sorted(
                     filtered_extractive,
                     key=lambda claim: (
                         not any(
-                            citation_id not in used_citations
-                            for citation_id in claim.citation_ids
+                            citation_id not in used_citations for citation_id in claim.citation_ids
                         ),
                         claim.claim_id,
                     ),
@@ -1050,10 +1202,10 @@ async def synth_handler(state: WorkflowState, context: WorkflowContext) -> State
                     candidates.append(("structured_hybrid", hybrid_claims))
         except Exception:
             pass
-    sources_by_id = {
-        int(value["citation_id"]): value for value in citation_sources
-    }
-    evaluated: list[tuple[tuple[int, int, int, int, float, int], int, str, list[Any], dict[str, JsonValue]]] = []
+    sources_by_id = {int(value["citation_id"]): value for value in citation_sources}
+    evaluated: list[
+        tuple[tuple[int, int, int, int, float, int], int, str, list[Any], dict[str, JsonValue]]
+    ] = []
     for index, (name, candidate_claims) in enumerate(candidates):
         if not candidate_claims:
             continue
@@ -1114,16 +1266,37 @@ async def cite_handler(state: WorkflowState, context: WorkflowContext) -> StateP
     values = _values(state)
     from .deep_research_v3_contracts import AtomicClaim, EvidencePassage
 
-    claims = [AtomicClaim.from_json(value) for value in values.get("atomic_claims", []) if isinstance(value, Mapping)]
-    passages = [EvidencePassage.from_json(value) for value in values.get("evidence_passages", []) if isinstance(value, Mapping)]
-    source_rows = [dict(value) for value in values.get("citation_sources", []) if isinstance(value, Mapping)]
-    sources = {int(value.get("citation_id") or 0): value for value in source_rows if int(value.get("citation_id") or 0) > 0}
+    claims = [
+        AtomicClaim.from_json(value)
+        for value in values.get("atomic_claims", [])
+        if isinstance(value, Mapping)
+    ]
+    passages = [
+        EvidencePassage.from_json(value)
+        for value in values.get("evidence_passages", [])
+        if isinstance(value, Mapping)
+    ]
+    source_rows = [
+        dict(value) for value in values.get("citation_sources", []) if isinstance(value, Mapping)
+    ]
+    sources = {
+        int(value.get("citation_id") or 0): value
+        for value in source_rows
+        if int(value.get("citation_id") or 0) > 0
+    }
     canonical_representative: dict[str, int] = {}
     source_representative: dict[int, int] = {}
     for source_id in sorted(sources):
         source = sources[source_id]
-        canonical = str(source.get("canonical_url") or source.get("url") or "").strip().casefold().rstrip("/")
-        representative = canonical_representative.setdefault(canonical or f"missing:{source_id}", source_id)
+        canonical = (
+            str(source.get("canonical_url") or source.get("url") or "")
+            .strip()
+            .casefold()
+            .rstrip("/")
+        )
+        representative = canonical_representative.setdefault(
+            canonical or f"missing:{source_id}", source_id
+        )
         source_representative[source_id] = representative
     initial_decisions = evaluate_support(claims, passages)
     published, published_decisions, repaired, discarded = repair_and_prune(claims, passages)
@@ -1131,10 +1304,16 @@ async def cite_handler(state: WorkflowState, context: WorkflowContext) -> StateP
     render_claims = [
         replace(
             claim,
-            citation_ids=tuple(sorted({
-                source_representative.get(source_id, source_id)
-                for source_id in decision_by_claim[claim.claim_id].winning_source_citation_ids
-            })),
+            citation_ids=tuple(
+                sorted(
+                    {
+                        source_representative.get(source_id, source_id)
+                        for source_id in decision_by_claim[
+                            claim.claim_id
+                        ].winning_source_citation_ids
+                    }
+                )
+            ),
         )
         for claim in published
         if claim.claim_id in decision_by_claim
@@ -1176,11 +1355,15 @@ async def cite_handler(state: WorkflowState, context: WorkflowContext) -> StateP
         source_representative.get(source_id, source_id) for source_id in used_source_ids
     }
     citations = [sources[source_id] for source_id in sorted(used_representatives)]
-    branch_events = [dict(value) for value in state.get("branch_events", []) if isinstance(value, Mapping)]
+    branch_events = [
+        dict(value) for value in state.get("branch_events", []) if isinstance(value, Mapping)
+    ]
     search_observations = [
         value for value in branch_events if value.get("kind") == "search_observation"
     ] + [
-        dict(value) for value in values.get("gap_search_observations", []) if isinstance(value, Mapping)
+        dict(value)
+        for value in values.get("gap_search_observations", [])
+        if isinstance(value, Mapping)
     ]
     visible_errors = [value for value in branch_events if value.get("error_code")]
     reason_histogram: dict[str, JsonValue] = {}
@@ -1189,10 +1372,18 @@ async def cite_handler(state: WorkflowState, context: WorkflowContext) -> StateP
             reason_histogram[code] = int(reason_histogram.get(code) or 0) + 1
     coverage: dict[str, JsonValue] = {
         **{key: value for key, value in quality.items() if key not in {"claims", "decisions"}},
-        "candidates": sum(len(value.get("result", [])) for value in (state.get("branch_search") or {}).values() if isinstance(value, Mapping)),  # type: ignore[union-attr]
+        "candidates": sum(
+            len(value.get("result", []))
+            for value in (state.get("branch_search") or {}).values()
+            if isinstance(value, Mapping)
+        ),  # type: ignore[union-attr]
         "passages": len(passages),
-        "provider_attempt_count": sum(int(value.get("provider_attempt_count") or 0) for value in search_observations),
-        "provider_probe_count": sum(int(value.get("provider_probe_count") or 0) for value in search_observations),
+        "provider_attempt_count": sum(
+            int(value.get("provider_attempt_count") or 0) for value in search_observations
+        ),
+        "provider_probe_count": sum(
+            int(value.get("provider_probe_count") or 0) for value in search_observations
+        ),
         "provider_attempts": [
             copy.deepcopy(dict(attempt))
             for value in search_observations
@@ -1200,7 +1391,12 @@ async def cite_handler(state: WorkflowState, context: WorkflowContext) -> StateP
             if isinstance(attempt, Mapping)
         ],
         "reason_code_histogram": reason_histogram,
-        "native_fanout": {"active": int(values.get("active_branch_count") or 0), "completed": 6, "failed": len({str(value.get('branch_id')) for value in visible_errors}), "waves": 5},
+        "native_fanout": {
+            "active": int(values.get("active_branch_count") or 0),
+            "completed": 6,
+            "failed": len({str(value.get("branch_id")) for value in visible_errors}),
+            "waves": 5,
+        },
     }
     report = render_report(
         topic=str(values.get("topic") or "DeepResearch"),
@@ -1210,9 +1406,12 @@ async def cite_handler(state: WorkflowState, context: WorkflowContext) -> StateP
         coverage=coverage,
         errors=visible_errors,
     )
-    diagnostic_codes = tuple(dict.fromkeys((*publish_decision.reason_codes, *(("claim_pruned",) if discarded else ()))))
+    diagnostic_codes = tuple(
+        dict.fromkeys((*publish_decision.reason_codes, *(("claim_pruned",) if discarded else ())))
+    )
     return _public_patch(
-        state, "cite",
+        state,
+        "cite",
         {
             "factual_claims_pre_repair": publish_decision.factual_claim_count_pre_repair,
             "supported_factual": publish_decision.supported_factual_count,
@@ -1227,7 +1426,8 @@ async def cite_handler(state: WorkflowState, context: WorkflowContext) -> StateP
         updates={"claim_quality": quality, "report_payload": report},
         degraded=not publish_decision.passed or bool(discarded),
         result_code="stage_ok" if publish_decision.passed else "insufficient_evidence",
-        diagnostic_codes=diagnostic_codes or (() if publish_decision.passed else ("insufficient_evidence",)),
+        diagnostic_codes=diagnostic_codes
+        or (() if publish_decision.passed else ("insufficient_evidence",)),
     )
 
 
@@ -1238,7 +1438,11 @@ async def persist_handler(state: WorkflowState, context: WorkflowContext) -> Sta
     report_md = str(report.get("report_md") or "")
     artifact: dict[str, JsonValue] | None = None
     artifact_port = context.ports.get("artifact")
-    if isinstance(artifact_port, ResearchArtifactPort) and report_md and report.get("status") == "completed":
+    if (
+        isinstance(artifact_port, ResearchArtifactPort)
+        and report_md
+        and report.get("status") == "completed"
+    ):
         run_id = context.identity.run_id if context.identity else str(state.get("run_id") or "")
         saved = await artifact_port.save(
             topic=str(report.get("topic") or "DeepResearch"),
@@ -1283,9 +1487,27 @@ async def finalize_handler(state: WorkflowState, context: WorkflowContext) -> St
         # was introduced still deliver a valid text artifact.
         artifact_payload["report"] = dict(report)
     intents: list[dict[str, JsonValue]] = [
-        {"intent_id": f"{run_id}:report", "kind": "report", "channel": "workflow_report", "payload": {"report": dict(report)}},
-        {"intent_id": f"{run_id}:artifact", "kind": "artifact_card", "channel": "artifact", "payload": artifact_payload},
-        {"intent_id": f"{run_id}:assistant", "kind": "final_assistant", "channel": "final_assistant", "payload": {"text": str(report.get("report_md") or ""), "report_hash": str(report.get("report_hash") or "")}},
+        {
+            "intent_id": f"{run_id}:report",
+            "kind": "report",
+            "channel": "workflow_report",
+            "payload": {"report": dict(report)},
+        },
+        {
+            "intent_id": f"{run_id}:artifact",
+            "kind": "artifact_card",
+            "channel": "artifact",
+            "payload": artifact_payload,
+        },
+        {
+            "intent_id": f"{run_id}:assistant",
+            "kind": "final_assistant",
+            "channel": "final_assistant",
+            "payload": {
+                "text": str(report.get("report_md") or ""),
+                "report_hash": str(report.get("report_hash") or ""),
+            },
+        },
     ]
     quality = values.get("claim_quality")
     quality = dict(quality) if isinstance(quality, Mapping) else {}
@@ -1303,7 +1525,9 @@ async def finalize_handler(state: WorkflowState, context: WorkflowContext) -> St
         updates={
             "delivery_intents": intents,
             "terminal_status": "completed" if completed else "error",
-            "terminal_error": None if completed else {"code": "deep_research_no_results", "user_message": "未找到可核验来源"},
+            "terminal_error": None
+            if completed
+            else {"code": "deep_research_no_results", "user_message": "未找到可核验来源"},
         },
         degraded=not completed,
         result_code="stage_ok" if completed else "no_results",
@@ -1312,7 +1536,17 @@ async def finalize_handler(state: WorkflowState, context: WorkflowContext) -> St
 
 
 __all__ = [
-    "PUBLIC_STAGE_IDS", "branch_handler", "cite_handler", "finalize_handler", "gap_handler",
-    "join_handler", "make_branch_handler", "make_join_handler", "normalize_handler",
-    "persist_handler", "plan_handler", "rerank_handler", "synth_handler",
+    "PUBLIC_STAGE_IDS",
+    "branch_handler",
+    "cite_handler",
+    "finalize_handler",
+    "gap_handler",
+    "join_handler",
+    "make_branch_handler",
+    "make_join_handler",
+    "normalize_handler",
+    "persist_handler",
+    "plan_handler",
+    "rerank_handler",
+    "synth_handler",
 ]

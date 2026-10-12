@@ -31,7 +31,6 @@ the new ports and shows the ``inspect`` leaf waiting for, then receiving, the pa
 （``test_code_domain_world.py``）；这里只留三条直接核对目录与报价的用例。
 """
 
-
 from __future__ import annotations
 
 import json
@@ -105,15 +104,25 @@ def test_the_v2_rows_declare_the_ports_as_optional() -> None:
 
 def test_the_operator_offers_list_one_version_per_task_type_the_latest() -> None:
     world = build_planning_world("m-offers", domains=("code",))
-    goal = next(spec for spec in world.catalog.task_types()
-                if spec.task_type_ref.id == "code.fix-failing-test")
+    goal = next(
+        spec
+        for spec in world.catalog.task_types()
+        if spec.task_type_ref.id == "code.fix-failing-test"
+    )
     binding = TaskSemanticBindingV1(
-        task_id=TaskRef("task-root"), obligation_id=ObligationId("obl-root"),
-        contract_revision=1, contract_hash="a" * 64, form=TaskForm.COMPOUND,
-        goal_signature=goal.goal_signature, typed_parameters={},
-        requirement_refs=tuple(goal.goal_signature.coverage_criteria), semantic_scope="mission")
-    offers = build_context(binding, world.capabilities(), world.registry,
-                           catalog=world.catalog, domain="code").operators
+        task_id=TaskRef("task-root"),
+        obligation_id=ObligationId("obl-root"),
+        contract_revision=1,
+        contract_hash="a" * 64,
+        form=TaskForm.COMPOUND,
+        goal_signature=goal.goal_signature,
+        typed_parameters={},
+        requirement_refs=tuple(goal.goal_signature.coverage_criteria),
+        semantic_scope="mission",
+    )
+    offers = build_context(
+        binding, world.capabilities(), world.registry, catalog=world.catalog, domain="code"
+    ).operators
     by_id: dict[str, list[Any]] = {}
     for offer in offers:
         by_id.setdefault(offer.task_type_id, []).append(offer)

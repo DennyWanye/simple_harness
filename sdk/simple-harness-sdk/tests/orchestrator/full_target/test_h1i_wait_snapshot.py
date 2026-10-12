@@ -27,9 +27,17 @@ def test_planner_task_state_projection_holds_one_write_snapshot(
     """
 
     async def case() -> None:
-        async with committed(tmp_path, key="h1i-wait-snapshot") as (loop, mission, _world, _root, dispatch, _product):
+        async with committed(tmp_path, key="h1i-wait-snapshot") as (
+            loop,
+            mission,
+            _world,
+            _root,
+            dispatch,
+            _product,
+        ):
             leaves = [
-                task for task in loop.store.list_tasks(mission.id)
+                task
+                for task in loop.store.list_tasks(mission.id)
                 if task.id != root_task(mission.id) and task.status is TaskStatus.ACTIVE
             ]
             assert len(leaves) == 1, leaves
@@ -41,9 +49,7 @@ def test_planner_task_state_projection_holds_one_write_snapshot(
             def outcomes_with_competing_writer(mission_id: str, network: object):
                 nonlocal lock_refused
                 outcomes = original(mission_id, network)
-                contender = sqlite3.connect(
-                    loop.store.path, timeout=0, isolation_level=None
-                )
+                contender = sqlite3.connect(loop.store.path, timeout=0, isolation_level=None)
                 try:
                     with pytest.raises(sqlite3.OperationalError, match="locked"):
                         contender.execute(
@@ -75,13 +81,13 @@ def test_planner_task_state_projection_holds_one_write_snapshot(
             assert stored.status is TaskStatus.ACTIVE
             assert stored.version == task.version
             rows = [
-                row for row in intent.config["planning_package"]["views"]["goals"]
+                row
+                for row in intent.config["planning_package"]["views"]["goals"]
                 if row["task_id"] == task.id
             ]
             assert rows
             assert {
-                (row["task_status"], row["task_version"], row["occurrence_outcome"])
-                for row in rows
+                (row["task_status"], row["task_version"], row["occurrence_outcome"]) for row in rows
             } == {(str(TaskStatus.ACTIVE), task.version, "RUNNING")}
 
     asyncio.run(case())

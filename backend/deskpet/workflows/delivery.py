@@ -38,9 +38,7 @@ class DeliveryAttemptResultV1:
             "disposition": self.disposition.value,
             "reason_code": self.reason_code,
             "artifact_projection": (
-                dict(self.artifact_projection)
-                if self.artifact_projection is not None
-                else None
+                dict(self.artifact_projection) if self.artifact_projection is not None else None
             ),
         }
 
@@ -105,9 +103,7 @@ async def broadcast_websocket_best_effort(
             if marker in seen:
                 continue
             seen.add(marker)
-            await asyncio.wait_for(
-                target_ws.send_json(dict(envelope)), timeout=float(timeout_s)
-            )
+            await asyncio.wait_for(target_ws.send_json(dict(envelope)), timeout=float(timeout_s))
     except TimeoutError:
         return DeliveryAttemptResultV1.retryable_failure("websocket_send_timeout")
     except Exception:

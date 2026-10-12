@@ -65,7 +65,9 @@ class GenericAdmittedFactV1:
     def __post_init__(self) -> None:
         _required_text(self.requirement_id, "requirement_id")
         object.__setattr__(self, "binding_ids", _canonical_strings(self.binding_ids, "binding_ids"))
-        object.__setattr__(self, "axis_member_ids", _canonical_strings(self.axis_member_ids, "axis_member_ids"))
+        object.__setattr__(
+            self, "axis_member_ids", _canonical_strings(self.axis_member_ids, "axis_member_ids")
+        )
         object.__setattr__(self, "facet_ids", _canonical_strings(self.facet_ids, "facet_ids"))
         if self.item_or_cell_id is not None:
             _required_text(self.item_or_cell_id, "item_or_cell_id")
@@ -119,7 +121,9 @@ class GenericAdmittedFactV1:
             binding_ids=tuple(binding_ids),
             item_or_cell_id=item_or_cell_id,
             axis_member_ids=tuple(axis_member_ids),
-            entity_values=tuple((key, copy.deepcopy(value)) for key, value in (entity_values or {}).items()),
+            entity_values=tuple(
+                (key, copy.deepcopy(value)) for key, value in (entity_values or {}).items()
+            ),
             field_key=field_key,
             value=copy.deepcopy(value),
             claim_kind=claim_kind,
@@ -148,7 +152,11 @@ class GenericAdmittedInferenceV1:
             _required_text(self.item_or_cell_id, "item_or_cell_id")
         _required_text(self.assessment_claim_kind, "assessment_claim_kind")
         object.__setattr__(self, "facet_ids", _canonical_strings(self.facet_ids, "facet_ids"))
-        object.__setattr__(self, "premise_binding_ids", _canonical_strings(self.premise_binding_ids, "premise_binding_ids"))
+        object.__setattr__(
+            self,
+            "premise_binding_ids",
+            _canonical_strings(self.premise_binding_ids, "premise_binding_ids"),
+        )
         parse_blob_ref(self.inference_ref)
         if self.support_status != "supported":
             raise ValueError("only registered supported inferences enter assessment")
@@ -262,7 +270,9 @@ def decode_assessment_inputs(
             value = registered_objects[ref]
         except KeyError as exc:
             raise ValueError("assessment inference ref missing") from exc
-        decoded = decode_registered_inference(RegisteredInferenceV1.from_json(value), inference_ref=ref)
+        decoded = decode_registered_inference(
+            RegisteredInferenceV1.from_json(value), inference_ref=ref
+        )
         if decoded is not None:
             inferences.append(decoded)
     return tuple(facts), tuple(inferences)
@@ -310,9 +320,13 @@ def _assess_scalar(requirement: Mapping[str, JsonValue], facts: Sequence[Generic
     bindings = sorted({binding for fact in facts for binding in fact.binding_ids})
     conflicted = any(fact.conflicted for fact in facts)
     if conflicted:
-        result = _result(requirement_id, requirement_id, "conflicted", bindings, ["admitted_conflict"])
+        result = _result(
+            requirement_id, requirement_id, "conflicted", bindings, ["admitted_conflict"]
+        )
     elif bindings:
-        result = _result(requirement_id, requirement_id, "supported", bindings, ["binding_admitted"])
+        result = _result(
+            requirement_id, requirement_id, "supported", bindings, ["binding_admitted"]
+        )
     else:
         result = _result(requirement_id, requirement_id, "missing", (), ["no_admitted_binding"])
     return [result], bool(bindings) and not conflicted, bool(bindings), conflicted
@@ -323,7 +337,9 @@ def _assess_matrix(requirement: Mapping[str, JsonValue], facts: Sequence[Generic
     axes = requirement["axes"]
     assert isinstance(axes, list)
     member_lists = [[str(member["member_id"]) for member in axis["members"]] for axis in axes]
-    excluded = {tuple(str(value) for value in item) for item in requirement["required_cells"]["excluded"]}
+    excluded = {
+        tuple(str(value) for value in item) for item in requirement["required_cells"]["excluded"]
+    }
     expected = [members for members in itertools.product(*member_lists) if members not in excluded]
     by_members: dict[tuple[str, ...], list[GenericAdmittedFactV1]] = {}
     for fact in facts:
@@ -351,12 +367,18 @@ def _assess_matrix(requirement: Mapping[str, JsonValue], facts: Sequence[Generic
         cell_id = derive_matrix_cell_id(requirement_id, members)
         if conflicted:
             has_conflict = True
-            results.append(_result(requirement_id, cell_id, "conflicted", bindings, ["cell_conflicted"]))
+            results.append(
+                _result(requirement_id, cell_id, "conflicted", bindings, ["cell_conflicted"])
+            )
         elif len(bindings) >= minimum:
             supported += 1
-            results.append(_result(requirement_id, cell_id, "supported", bindings, ["cell_minimum_met"]))
+            results.append(
+                _result(requirement_id, cell_id, "supported", bindings, ["cell_minimum_met"])
+            )
         else:
-            results.append(_result(requirement_id, cell_id, "missing", bindings, ["cell_minimum_not_met"]))
+            results.append(
+                _result(requirement_id, cell_id, "missing", bindings, ["cell_minimum_not_met"])
+            )
     ratio = 1_000_000 if not expected else supported * 1_000_000 // len(expected)
     minimum_ratio = int(requirement["coverage"]["minimum_ratio_ppm"])
     # The coverage ratio is the requirement's completion threshold.  Any
@@ -367,13 +389,20 @@ def _assess_matrix(requirement: Mapping[str, JsonValue], facts: Sequence[Generic
 
 
 def _compare_json(left: JsonValue, right: JsonValue) -> int:
-    if isinstance(left, (int, float)) and not isinstance(left, bool) and isinstance(right, (int, float)) and not isinstance(right, bool):
+    if (
+        isinstance(left, (int, float))
+        and not isinstance(left, bool)
+        and isinstance(right, (int, float))
+        and not isinstance(right, bool)
+    ):
         return (left > right) - (left < right)
     left_key, right_key = canonical_json(left), canonical_json(right)
     return (left_key > right_key) - (left_key < right_key)
 
 
-def _assess_collection(requirement: Mapping[str, JsonValue], facts: Sequence[GenericAdmittedFactV1]):
+def _assess_collection(
+    requirement: Mapping[str, JsonValue], facts: Sequence[GenericAdmittedFactV1]
+):
     requirement_id = str(requirement["requirement_id"])
     schema = requirement["item_schema"]
     selection = requirement["selection"]
@@ -409,7 +438,8 @@ def _assess_collection(requirement: Mapping[str, JsonValue], facts: Sequence[Gen
             )
             distinct = {
                 _normalize_unique_value(fact.value)
-                if field_key in unique_keys else canonical_json(fact.value)
+                if field_key in unique_keys
+                else canonical_json(fact.value)
                 for fact in field_facts
             }
             if len(distinct) > 1:
@@ -417,15 +447,22 @@ def _assess_collection(requirement: Mapping[str, JsonValue], facts: Sequence[Gen
             if field_facts:
                 values[field_key] = field_facts[0].value
             field_bindings = {binding for fact in field_facts for binding in fact.binding_ids}
-            if bool(field["required"]) and len(field_bindings) < int(field["minimum_admitted_bindings"]):
+            if bool(field["required"]) and len(field_bindings) < int(
+                field["minimum_admitted_bindings"]
+            ):
                 missing_fields.append(field_key)
         as_of = selection["as_of"]
         if as_of is not None and any(fact.as_of != as_of for fact in item_facts):
             missing_fields.append("as_of")
-        candidates.append({
-            "item_id": item_id, "bindings": bindings, "conflicts": conflicts,
-            "values": values, "missing": sorted(set(missing_fields)),
-        })
+        candidates.append(
+            {
+                "item_id": item_id,
+                "bindings": bindings,
+                "conflicts": conflicts,
+                "values": values,
+                "missing": sorted(set(missing_fields)),
+            }
+        )
 
     ranking = selection["ranking_rule"]
     eligible = [item for item in candidates if not item["conflicts"] and not item["missing"]]
@@ -437,7 +474,10 @@ def _assess_collection(requirement: Mapping[str, JsonValue], facts: Sequence[Gen
         def compare(left: dict[str, object], right: dict[str, object]) -> int:
             left_values, right_values = left["values"], right["values"]
             assert isinstance(left_values, dict) and isinstance(right_values, dict)
-            left_missing, right_missing = metric_key not in left_values, metric_key not in right_values
+            left_missing, right_missing = (
+                metric_key not in left_values,
+                metric_key not in right_values,
+            )
             if left_missing != right_missing:
                 return 1 if left_missing else -1
             if not left_missing:
@@ -457,17 +497,36 @@ def _assess_collection(requirement: Mapping[str, JsonValue], facts: Sequence[Gen
         eligible.sort(key=lambda item: str(item["item_id"]))
     selected = eligible[: int(selection["maximum_items"])]
     results = [
-        _result(requirement_id, str(item["item_id"]), "supported", item["bindings"], ["collection_item_eligible"])
+        _result(
+            requirement_id,
+            str(item["item_id"]),
+            "supported",
+            item["bindings"],
+            ["collection_item_eligible"],
+        )
         for item in selected
     ]
     for item in candidates:
         if item in selected:
             continue
         if item["conflicts"]:
-            results.append(_result(requirement_id, str(item["item_id"]), "conflicted", item["bindings"], ["unique_key_collision_conflict"]))
+            results.append(
+                _result(
+                    requirement_id,
+                    str(item["item_id"]),
+                    "conflicted",
+                    item["bindings"],
+                    ["unique_key_collision_conflict"],
+                )
+            )
         elif item["missing"]:
-            reasons = ["required_field_missing" if value != "as_of" else "as_of_mismatch" for value in item["missing"]]
-            results.append(_result(requirement_id, str(item["item_id"]), "missing", item["bindings"], reasons))
+            reasons = [
+                "required_field_missing" if value != "as_of" else "as_of_mismatch"
+                for value in item["missing"]
+            ]
+            results.append(
+                _result(requirement_id, str(item["item_id"]), "missing", item["bindings"], reasons)
+            )
     count = len(selected)
     minimum = int(selection["minimum_items"])
     has_conflict = any(bool(item["conflicts"]) for item in candidates)
@@ -489,9 +548,7 @@ def rank_collection_item_ids(
         raise ValueError("rank_collection_item_ids requires a collection requirement")
     results, _, _, _ = _assess_collection(requirement, facts)
     return tuple(
-        str(item["item_or_cell_id"])
-        for item in results
-        if item["support_status"] == "supported"
+        str(item["item_or_cell_id"]) for item in results if item["support_status"] == "supported"
     )
 
 
@@ -504,8 +561,7 @@ def _assess_claim_set(requirement: Mapping[str, JsonValue], facts: Sequence[Gene
         # research they are premise evidence for conclusion/limitation/etc.
         # and do not themselves satisfy a requested semantic claim kind.
         if (
-            fact.claim_kind not in rules
-            and fact.claim_kind != "policy_fact"
+            fact.claim_kind not in rules and fact.claim_kind != "policy_fact"
         ) or fact.item_or_cell_id is None:
             raise ValueError(f"claim-set fact has invalid kind/identity for {requirement_id}")
         by_claim.setdefault(fact.item_or_cell_id, []).append(fact)
@@ -528,7 +584,9 @@ def _assess_claim_set(requirement: Mapping[str, JsonValue], facts: Sequence[Gene
             supported = supported or inference
         if conflicted:
             has_conflict = True
-            results.append(_result(requirement_id, claim_id, "conflicted", bindings, ["claim_conflicted"]))
+            results.append(
+                _result(requirement_id, claim_id, "conflicted", bindings, ["claim_conflicted"])
+            )
         elif supported:
             if kind in supported_by_kind:
                 supported_by_kind[kind] += 1
@@ -537,15 +595,26 @@ def _assess_claim_set(requirement: Mapping[str, JsonValue], facts: Sequence[Gene
             reason = "registered_inference" if inference and not bindings else "binding_admitted"
             results.append(_result(requirement_id, claim_id, "supported", bindings, [reason]))
         else:
-            results.append(_result(requirement_id, claim_id, "missing", bindings, ["claim_support_minimum_not_met"]))
-    kinds_met = all(supported_by_kind[kind] >= int(rule["minimum_claims"]) for kind, rule in rules.items())
+            results.append(
+                _result(
+                    requirement_id, claim_id, "missing", bindings, ["claim_support_minimum_not_met"]
+                )
+            )
+    kinds_met = all(
+        supported_by_kind[kind] >= int(rule["minimum_claims"]) for kind, rule in rules.items()
+    )
     facets_met = all(
         supported_by_facet.get(str(facet["facet_id"]), 0) >= int(facet["minimum_claims"])
         for facet in requirement["topic_facets"]
     )
     blocking_conflict = has_conflict and requirement["contradiction_policy"] == "block_completed"
     supported_count = sum(supported_by_kind.values())
-    return results, kinds_met and facets_met and not blocking_conflict, supported_count > 0, blocking_conflict
+    return (
+        results,
+        kinds_met and facets_met and not blocking_conflict,
+        supported_count > 0,
+        blocking_conflict,
+    )
 
 
 def assess_requirements(

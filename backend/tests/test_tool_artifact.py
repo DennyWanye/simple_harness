@@ -8,6 +8,7 @@ PRD §3 D1 信封 + D5 sha256 异步；测试对照 plans/2026-05-23-tool-last-m
 注意 T2-5/T2-5b 的字节级硬保证：flag OFF 时 envelope dict 不得 emit
 ``artifacts`` 键（不是空数组，是缺键）。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -24,6 +25,7 @@ from deskpet.tools.artifact import (
 )
 
 # ─── T2-1 ~ T2-4 dataclass 基础 ─────────────────────────────
+
 
 def test_t2_1_to_dict_field_order_stable():
     """字段顺序固定（用于字节级 golden file 对账）。"""
@@ -54,15 +56,14 @@ def test_t2_3_url_kind_requires_url():
 
 def test_t2_4_preview_truncated_at_2kb():
     long = "x" * 3000
-    art = ToolArtifact(
-        kind="text", title="t", preview=long, created_at="2026-05-23T00:00:00Z"
-    )
+    art = ToolArtifact(kind="text", title="t", preview=long, created_at="2026-05-23T00:00:00Z")
     assert art.preview is not None
     assert len(art.preview) <= 2048
     assert art.preview.endswith("…(truncated)")
 
 
 # ─── T2-5 / T2-5b 字节级硬保证 ──────────────────────────────
+
 
 def test_t2_5_extract_returns_empty_when_no_path():
     """无 path/url 字段的 result → 0 artifacts（registry 应不加 key）。"""
@@ -78,19 +79,25 @@ def test_t2_5b_envelope_omits_artifacts_key_when_empty():
     （不是 'artifacts': []）—— 字节级一致硬保证。"""
     # 验证 registry 包装逻辑（在 artifact.py 提供的 helper）
     from deskpet.tools.artifact import maybe_add_artifacts
-    base = {"ok": True, "result": "{\"ok\": true}", "error": None}
+
+    base = {"ok": True, "result": '{"ok": true}', "error": None}
     enhanced = maybe_add_artifacts(
-        envelope=base, tool_name="x", enable=False,  # flag OFF
+        envelope=base,
+        tool_name="x",
+        enable=False,  # flag OFF
     )
     assert "artifacts" not in enhanced
     # 即便 enable=True 但无可提取 path 也不加键
     enhanced2 = maybe_add_artifacts(
-        envelope=base, tool_name="x", enable=True,
+        envelope=base,
+        tool_name="x",
+        enable=True,
     )
     assert "artifacts" not in enhanced2
 
 
 # ─── T2-6 path → 单 artifact 推断 ───────────────────────────
+
 
 def test_t2_6_infer_single_file_artifact_from_path():
     arts = extract_artifacts_from_result(
@@ -106,6 +113,7 @@ def test_t2_6_infer_single_file_artifact_from_path():
 
 # ─── T2-7 多调用不串号 ─────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_t2_7_concurrent_extracts_no_crosstalk():
     async def run(tool_name: str, path: str):
@@ -113,14 +121,14 @@ async def test_t2_7_concurrent_extracts_no_crosstalk():
             tool_name=tool_name,
             result_json=json.dumps({"ok": True, "path": path}),
         )
-    results = await asyncio.gather(
-        *[run("ppt_create", f"C:\\out\\a{i}.pptx") for i in range(10)]
-    )
+
+    results = await asyncio.gather(*[run("ppt_create", f"C:\\out\\a{i}.pptx") for i in range(10)])
     paths = {r[0].path for r in results}
     assert len(paths) == 10  # 10 个不同 path 互不串扰
 
 
 # ─── T2-8 大文件 sha256 异步不阻塞 ──────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_t2_8_large_file_sha256_uses_executor(tmp_path: Path):
@@ -144,6 +152,7 @@ async def test_t2_8_large_file_sha256_uses_executor(tmp_path: Path):
 
 # ─── T2-9 sha256 超时 → sha256_pending ──────────────────────
 
+
 @pytest.mark.asyncio
 async def test_t2_9_sha256_timeout_marks_pending(tmp_path: Path, monkeypatch):
     """sha256 超时 → 返回 None，调用方可标 sha256_pending。
@@ -159,6 +168,7 @@ async def test_t2_9_sha256_timeout_marks_pending(tmp_path: Path, monkeypatch):
 
     def _slow_sha(path):
         import time
+
         time.sleep(1.0)
         return "deadbeef" * 8
 
@@ -200,9 +210,7 @@ def _make_fake_registry():
 async def test_t2_int_no_provider_bc_envelope_unchanged():
     """BC：没设 tools_config_provider → envelope 不含 artifacts 键（字节级保证）。"""
     registry = _make_fake_registry()
-    env = await registry.execute_tool(
-        "fake_ppt", {"path": "/tmp/demo.pptx"}, session_id="s1"
-    )
+    env = await registry.execute_tool("fake_ppt", {"path": "/tmp/demo.pptx"}, session_id="s1")
     assert env["ok"] is True
     assert "artifacts" not in env
 
@@ -220,9 +228,7 @@ async def test_t2_int_provider_flag_on_adds_artifacts():
 
     registry.set_tools_config_provider(lambda: _FakeCfg())
 
-    env = await registry.execute_tool(
-        "fake_ppt", {"path": "/tmp/demo.pptx"}, session_id="s1"
-    )
+    env = await registry.execute_tool("fake_ppt", {"path": "/tmp/demo.pptx"}, session_id="s1")
     assert env["ok"] is True
     assert "artifacts" in env
     assert len(env["artifacts"]) == 1
@@ -244,9 +250,7 @@ async def test_t2_int_provider_flag_off_omits_artifacts():
 
     registry.set_tools_config_provider(lambda: _FakeCfg())
 
-    env = await registry.execute_tool(
-        "fake_ppt", {"path": "/tmp/demo.pptx"}, session_id="s1"
-    )
+    env = await registry.execute_tool("fake_ppt", {"path": "/tmp/demo.pptx"}, session_id="s1")
     assert env["ok"] is True
     assert "artifacts" not in env
 
@@ -255,16 +259,17 @@ async def test_t2_int_provider_flag_off_omits_artifacts():
 async def test_t2_int_provider_exception_does_not_break_dispatch(caplog):
     """provider 异常 → warn log + envelope 仍正常返回（never break dispatch）。"""
     import logging
+
     caplog.set_level(logging.WARNING)
 
     registry = _make_fake_registry()
+
     def _bad_provider():
         raise RuntimeError("synthetic config crash")
+
     registry.set_tools_config_provider(_bad_provider)
 
-    env = await registry.execute_tool(
-        "fake_ppt", {"path": "/tmp/x.pptx"}, session_id="s1"
-    )
+    env = await registry.execute_tool("fake_ppt", {"path": "/tmp/x.pptx"}, session_id="s1")
     assert env["ok"] is True
     assert "artifacts" not in env
     # warn log 存在

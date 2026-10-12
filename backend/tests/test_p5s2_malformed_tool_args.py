@@ -22,6 +22,7 @@ Also covers: connect timeout bumped from 5s to 10s after seeing real
 ConnectTimeout failures while the relay reported no errors (TLS handshake
 on Windows occasionally takes 6-8s on first connect).
 """
+
 from __future__ import annotations
 
 import json
@@ -46,9 +47,7 @@ def test_default_connect_timeout_is_10s():
     hops, so the larger budget covers slow individual reasoning tokens
     (5KB+ chunks) without false-failing on healthy long generations.
     """
-    p = OpenAICompatibleProvider(
-        base_url="https://example.test", api_key="k", model="m"
-    )
+    p = OpenAICompatibleProvider(base_url="https://example.test", api_key="k", model="m")
     # `httpx.Timeout` carries connect/read/write/pool fields.
     assert isinstance(p.timeout, httpx.Timeout)
     assert p.timeout.connect == 10.0, (
@@ -181,10 +180,12 @@ async def test_well_formed_args_reach_external_tool_batch_unchanged():
     reg = _RealRegistry()
 
     good_tc = ToolCall(
-        id="c1", name="write_file",
+        id="c1",
+        name="write_file",
         arguments={"path": "/tmp/x", "content": "hi"},
         # Both metadata fields None → not malformed
     )
+
     class _OneCallLLM:
         async def chat_with_fallback(self, *a, **k):
             return ChatResponse(

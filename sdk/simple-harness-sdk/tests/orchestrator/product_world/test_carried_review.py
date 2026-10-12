@@ -9,6 +9,7 @@
 
 **改坏检验**：TG4-02 重审打回不发修复请求 → 第一条变红；TG4-03 重审不看上游 → 第二条变红。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -30,7 +31,9 @@ from agent_orchestrator.testing.scripted_replies import (
     review_reply,
 )
 
-_spec = importlib.util.spec_from_file_location("_amend_script", Path(__file__).with_name("test_requirements_amend.py"))
+_spec = importlib.util.spec_from_file_location(
+    "_amend_script", Path(__file__).with_name("test_requirements_amend.py")
+)
 amend_script = importlib.util.module_from_spec(_spec)
 sys.modules["_amend_script"] = amend_script
 _spec.loader.exec_module(amend_script)
@@ -52,8 +55,9 @@ class HeldStep(LayeredScriptedProvider):
         self.go = asyncio.Event()
 
     async def invoke(self, request, *, cancel):  # type: ignore[no-untyped-def]
-        if (role_of(request) == "worker"
-                and package_of(request).get("task_contract", {}).get("outputs") == [self.held_output]):
+        if role_of(request) == "worker" and package_of(request).get("task_contract", {}).get(
+            "outputs"
+        ) == [self.held_output]:
             await self.go.wait()
         return await super().invoke(request, cancel=cancel)
 
@@ -65,11 +69,14 @@ def reject_second_review_of(criterion: str, seen: dict[str, int]):
         data = review_input(request)
         if data is None:
             return None
-        if (str((data.get("package") or {}).get("purpose")) == "TASK_CONTENT"
-                and list(data.get("criterion_ids") or ()) == [criterion]):
+        if str((data.get("package") or {}).get("purpose")) == "TASK_CONTENT" and list(
+            data.get("criterion_ids") or ()
+        ) == [criterion]:
             seen[criterion] = seen.get(criterion, 0) + 1
             if seen[criterion] == 2:
-                return review_reply(data, verdict="REWORK", grade="FAIL", reason="按新版要求看，这份内容不够。")
+                return review_reply(
+                    data, verdict="REWORK", grade="FAIL", reason="按新版要求看，这份内容不够。"
+                )
         return review_reply(data)
 
     return reviewer
@@ -79,19 +86,35 @@ def successor(package: dict[str, Any], step: dict[str, Any], why: str) -> Any:
     subject = next(row for row in package["planning_subjects"] if row["task_id"] == step["task_id"])
 
     def visible(kind: str, identity: str) -> Any:
-        return next(row for row in package["visible_refs"] if row["kind"] == kind and row["id"] == identity)
+        return next(
+            row for row in package["visible_refs"] if row["kind"] == kind and row["id"] == identity
+        )
 
-    [task_type] = [row for row in package["successor_types"]
-                   if row["statement"] == step["statement"] and row["form"] == "primitive"]
-    return decision(subject["subject_key"], "REPAIR", {
-        "repair_kind": "PROPOSE_SUCCESSOR", "old_task_ref": visible("task", step["task_id"]),
-        "obligation_ref": visible("obligation", step["obligation_id"]),
-        "goal_type_ref": task_type["task_type_ref"], "bindings": dict(step["params"])}, why)
+    [task_type] = [
+        row
+        for row in package["successor_types"]
+        if row["statement"] == step["statement"] and row["form"] == "primitive"
+    ]
+    return decision(
+        subject["subject_key"],
+        "REPAIR",
+        {
+            "repair_kind": "PROPOSE_SUCCESSOR",
+            "old_task_ref": visible("task", step["task_id"]),
+            "obligation_ref": visible("obligation", step["obligation_id"]),
+            "goal_type_ref": task_type["task_type_ref"],
+            "bindings": dict(step["params"]),
+        },
+        why,
+    )
 
 
 def _carried_rejections(package: dict[str, Any]) -> list[dict[str, Any]]:
-    return [entry["request"] for entry in package.get("repair_requests") or ()
-            if (entry["request"].get("context") or {}).get("reason_code") == "CARRIED_RESULT_REJECTED"]
+    return [
+        entry["request"]
+        for entry in package.get("repair_requests") or ()
+        if (entry["request"].get("context") or {}).get("reason_code") == "CARRIED_RESULT_REJECTED"
+    ]
 
 
 def test_a_kept_step_rejected_under_the_new_requirements_goes_to_the_planner(tmp_path):
@@ -102,41 +125,64 @@ def test_a_kept_step_rejected_under_the_new_requirements_goes_to_the_planner(tmp
 
     def planner(request: Any) -> Any:
         package = package_of(request)
-        sources = {entry["request"].get("trigger_source") for entry in package.get("repair_requests") or ()}
+        sources = {
+            entry["request"].get("trigger_source") for entry in package.get("repair_requests") or ()
+        }
         steps = [item for item in package["views"]["goals"] if item["form"] == "primitive"]
         done = {row["producer_occurrence"] for row in package["views"]["accepted_results"]}
         if "REQUIREMENTS_UPDATE" in sources and not state["second"]:
             state["second"] = True
             [unfinished] = [item for item in steps if item["occurrence_id"] not in done]
-            return successor(package, unfinished, "要求改了：只换掉还没做完的那一步，做完的那步留着。")
+            return successor(
+                package, unfinished, "要求改了：只换掉还没做完的那一步，做完的那步留着。"
+            )
         rejected = _carried_rejections(package)
         if rejected and not state["redone"]:
             state["redone"] = True
             state["rejections"] = rejected
-            kept = next(item for item in steps
-                        if item["occurrence_id"] == rejected[0]["context"]["occurrence_id"])
+            kept = next(
+                item
+                for item in steps
+                if item["occurrence_id"] == rejected[0]["context"]["occurrence_id"]
+            )
             return successor(package, kept, "沿用的那一步按新版没过：换掉重做。")
         return base(request)
 
     async def case():
-        provider = HeldStep("b.md", planner=planner, reviewer=reject_second_review_of("c-user-1", reviews))
+        provider = HeldStep(
+            "b.md", planner=planner, reviewer=reject_second_review_of("c-user-1", reviews)
+        )
         async with product_world(tmp_path / "root", provider) as world:
-            mission_id = world.create({"goal": "写 a.md 和 b.md", "idempotency_key": "carried-rejected",
-                                       "success_criteria": ["file:a.md", "file:b.md"]})["mission_id"]
+            mission_id = world.create(
+                {
+                    "goal": "写 a.md 和 b.md",
+                    "idempotency_key": "carried-rejected",
+                    "success_criteria": ["file:a.md", "file:b.md"],
+                }
+            )["mission_id"]
             htn = HtnStore(world.store)
             for _ in range(20):
                 await world.drain(timeout=20)
                 if htn.list_acceptances(mission_id):
                     break
             [first] = htn.list_acceptances(mission_id)
-            amend_script.amend(world, mission_id,
-                               [{"op": "rewrite", "criterion_id": "c-user-2", "statement": "file:b2.md"}])
+            amend_script.amend(
+                world,
+                mission_id,
+                [{"op": "rewrite", "criterion_id": "c-user-2", "statement": "file:b2.md"}],
+            )
             provider.go.set()
             try:
-                mission = await asyncio.wait_for(world.run_until_settled(mission_id, rounds=60), 240)
+                mission = await asyncio.wait_for(
+                    world.run_until_settled(mission_id, rounds=60), 240
+                )
             except TimeoutError as error:
                 raise AssertionError(f"the mission never settled: {state}") from error
-            assert str(mission.status.value) == "COMPLETED", (mission.status, mission.final_report, state)
+            assert str(mission.status.value) == "COMPLETED", (
+                mission.status,
+                mission.final_report,
+                state,
+            )
             # 规划器拿到的是一条带原因与审阅员意见的修复请求
             [request] = state["rejections"]
             context = request["context"]
@@ -145,14 +191,24 @@ def test_a_kept_step_rejected_under_the_new_requirements_goes_to_the_planner(tmp
             kept_task = str(first.task_id)
             assert len(world.store.list_attempts(kept_task)) == 1
             result_id = world.store.get_task(kept_task).accepted_result_id
-            layers = [row for row in world.store.list_verifications(result_id, requirements_revision=2)
-                      if row["layer"] == "critic_review"]
+            layers = [
+                row
+                for row in world.store.list_verifications(result_id, requirements_revision=2)
+                if row["layer"] == "critic_review"
+            ]
             assert [row["status"] for row in layers] == ["FAIL"]
-            assert [int(item.requirements_revision) for item in htn.list_acceptances(mission_id)
-                    if str(item.task_id) == kept_task] == [1]
-            assert world.store.connection.execute(
-                "SELECT COUNT(*) FROM assurance_review_bindings WHERE mission_id=? AND request_command_id=?",
-                (mission_id, f"content-review:{result_id}:r2")).fetchone()[0] == 1
+            assert [
+                int(item.requirements_revision)
+                for item in htn.list_acceptances(mission_id)
+                if str(item.task_id) == kept_task
+            ] == [1]
+            assert (
+                world.store.connection.execute(
+                    "SELECT COUNT(*) FROM assurance_review_bindings WHERE mission_id=? AND request_command_id=?",
+                    (mission_id, f"content-review:{result_id}:r2"),
+                ).fetchone()[0]
+                == 1
+            )
             events = list(world.store.list_events(mission_id))
             assert not [e for e in events if e.type == "CarriedResultAccepted"]
             # 被换掉的那一步已不在现行计划里：它的结果读起来是"范围过期"（归档），不是完整性错误
@@ -168,7 +224,10 @@ def test_a_kept_step_rejected_under_the_new_requirements_goes_to_the_planner(tmp
                 load_completion_result_inputs(world.store, world.store.get_result(result_id))
             assert stale.value.code == "OP_EFFECT_SCOPE_STALE"
             [judged] = [e.payload for e in events if e.type == "MissionSuccessJudged"]
-            assert [j["criterion"] for j in judged["judgments"]] == ["file:a.md", "file:b2.md"] and judged["met"]
+            assert [j["criterion"] for j in judged["judgments"]] == [
+                "file:a.md",
+                "file:b2.md",
+            ] and judged["met"]
 
     asyncio.run(case())
 
@@ -178,21 +237,34 @@ def relay_then_third(context: dict[str, Any]) -> dict[str, Any]:
     request = context["request"]
     method = one_step_method(context)
     [step] = method["steps"]
-    follow = next(item for item in request["operators"]
-                  if str(item["task_type_ref"]["id"]).endswith("continue-delivery"))
+    follow = next(
+        item
+        for item in request["operators"]
+        if str(item["task_type_ref"]["id"]).endswith("continue-delivery")
+    )
     first, second, third = [item["id"] for item in request["criterion_evidence"]]
     method["steps"] = [
         dict(step, local_id="s1"),
-        {"local_id": "s2", "task_type_ref": follow["task_type_ref"], "form": "primitive",
-         "arguments": {"delivery": {"op": "output", "step": "s1", "port": "delivery"}},
-         "required_capabilities": list(follow["required_capabilities"]), "obligation_relation": "refines_parent"},
+        {
+            "local_id": "s2",
+            "task_type_ref": follow["task_type_ref"],
+            "form": "primitive",
+            "arguments": {"delivery": {"op": "output", "step": "s1", "port": "delivery"}},
+            "required_capabilities": list(follow["required_capabilities"]),
+            "obligation_relation": "refines_parent",
+        },
         dict(step, local_id="s3"),
     ]
     method["ordering"] = []
     method["composition"]["criterion_links"] = [
-        {"parent_criterion_id": name, "child_step": f"s{n}", "child_criterion_id": name,
-         "evidence_requirement": f"s{n} 这一步写出 {name} 要求的文件"}
-        for n, name in enumerate((first, second, third), start=1)]
+        {
+            "parent_criterion_id": name,
+            "child_step": f"s{n}",
+            "child_criterion_id": name,
+            "evidence_requirement": f"s{n} 这一步写出 {name} 要求的文件",
+        }
+        for n, name in enumerate((first, second, third), start=1)
+    ]
     method["composition"]["finalizer_step"] = "s3"
     return method
 
@@ -208,14 +280,25 @@ def test_a_downstream_step_is_not_reviewed_while_its_upstream_does_not_count(tmp
         sources = {entry["request"].get("trigger_source") for entry in requests}
         if contexts and not state["root"]:
             state["root"] = True
-            return decision(contexts[0]["subject_key"], "PROPOSE_METHOD", {"method_proposal": {
-                "method": relay_then_third(contexts[0]), "rationale": "先写、接着写，另写一份。"}}, "三步。")
+            return decision(
+                contexts[0]["subject_key"],
+                "PROPOSE_METHOD",
+                {
+                    "method_proposal": {
+                        "method": relay_then_third(contexts[0]),
+                        "rationale": "先写、接着写，另写一份。",
+                    }
+                },
+                "三步。",
+            )
         steps = [item for item in package["views"]["goals"] if item["form"] == "primitive"]
         done = {row["producer_occurrence"] for row in package["views"]["accepted_results"]}
         if "REQUIREMENTS_UPDATE" in sources and not state["second"]:
             state["second"] = True
             [unfinished] = [item for item in steps if item["occurrence_id"] not in done]
-            return successor(package, unfinished, "要求改了：只换掉还没做完的那一步，做完的两步留着。")
+            return successor(
+                package, unfinished, "要求改了：只换掉还没做完的那一步，做完的两步留着。"
+            )
         if _carried_rejections(package):
             state["rejections"] = _carried_rejections(package)
             return None  # 这条用例到此为止：怎么重做上下游是第五批的事
@@ -224,10 +307,17 @@ def test_a_downstream_step_is_not_reviewed_while_its_upstream_does_not_count(tmp
         return planner_reply(request)
 
     async def case():
-        provider = HeldStep("c.md", planner=planner, reviewer=reject_second_review_of("c-user-1", reviews))
+        provider = HeldStep(
+            "c.md", planner=planner, reviewer=reject_second_review_of("c-user-1", reviews)
+        )
         async with product_world(tmp_path / "root", provider) as world:
-            mission_id = world.create({"goal": "写 a.md，据它写 b.md，另写 c.md", "idempotency_key": "carried-order",
-                                       "success_criteria": ["file:a.md", "file:b.md", "file:c.md"]})["mission_id"]
+            mission_id = world.create(
+                {
+                    "goal": "写 a.md，据它写 b.md，另写 c.md",
+                    "idempotency_key": "carried-order",
+                    "success_criteria": ["file:a.md", "file:b.md", "file:c.md"],
+                }
+            )["mission_id"]
             htn = HtnStore(world.store)
             for _ in range(40):
                 await world.drain(timeout=20)
@@ -235,24 +325,44 @@ def test_a_downstream_step_is_not_reviewed_while_its_upstream_does_not_count(tmp
                     break
             accepted = {str(item.task_id) for item in htn.list_acceptances(mission_id)}
             assert len(accepted) == 2, accepted
-            amend_script.amend(world, mission_id,
-                               [{"op": "rewrite", "criterion_id": "c-user-3", "statement": "file:c2.md"}])
+            amend_script.amend(
+                world,
+                mission_id,
+                [{"op": "rewrite", "criterion_id": "c-user-3", "statement": "file:c2.md"}],
+            )
             provider.go.set()
             for _ in range(60):
                 await world.drain(timeout=20)
                 if state["rejections"]:
                     break
-            assert state["rejections"], "the kept upstream step was never rejected under the new requirements"
+            assert state["rejections"], (
+                "the kept upstream step was never rejected under the new requirements"
+            )
             for _ in range(3):  # 再转几轮：下游这时也不该被送审
                 await world.drain(timeout=5)
-            by_output = {tuple(task.outputs): task for task in world.store.list_tasks(mission_id)
-                         if task.id in accepted}
+            by_output = {
+                tuple(task.outputs): task
+                for task in world.store.list_tasks(mission_id)
+                if task.id in accepted
+            }
             upstream, downstream = by_output[("a.md",)], by_output[("b.md",)]
             assert state["rejections"][0]["context"]["result_id"] == upstream.accepted_result_id
-            assert [row["status"] for row in world.store.list_verifications(
-                upstream.accepted_result_id, requirements_revision=2) if row["layer"] == "critic_review"] == ["FAIL"]
-            assert world.store.list_verifications(downstream.accepted_result_id, requirements_revision=2) == []
-            assert reviews == {"c-user-1": 2}  # 负责第 1 条的那步审过两次（旧版、新版），下游没被送审
+            assert [
+                row["status"]
+                for row in world.store.list_verifications(
+                    upstream.accepted_result_id, requirements_revision=2
+                )
+                if row["layer"] == "critic_review"
+            ] == ["FAIL"]
+            assert (
+                world.store.list_verifications(
+                    downstream.accepted_result_id, requirements_revision=2
+                )
+                == []
+            )
+            assert reviews == {
+                "c-user-1": 2
+            }  # 负责第 1 条的那步审过两次（旧版、新版），下游没被送审
 
     asyncio.run(case())
 
@@ -269,21 +379,35 @@ def test_a_replacing_method_may_name_the_kept_step_and_it_is_reviewed_again(tmp_
 
         reply = base(request)
         package = package_of(request)
-        kept = [row for row in package.get("sharing_candidates") or ()
-                if row["status"] == "accepted_under_old_requirements"]
+        kept = [
+            row
+            for row in package.get("sharing_candidates") or ()
+            if row["status"] == "accepted_under_old_requirements"
+        ]
         if isinstance(reply, str) and '"REPLACE_METHOD"' in reply and kept:
-            body = json.loads(reply.removeprefix("<planning_decision>").removesuffix("</planning_decision>"))
+            body = json.loads(
+                reply.removeprefix("<planning_decision>").removesuffix("</planning_decision>")
+            )
             body["payload"]["reuse"] = {"s1": kept[0]["occurrence_id"]}
             state["named"] = kept[0]["occurrence_id"]
             state["statuses"] = [row["status"] for row in package["sharing_candidates"]]
-            return "<planning_decision>" + json.dumps(body, ensure_ascii=False) + "</planning_decision>"
+            return (
+                "<planning_decision>"
+                + json.dumps(body, ensure_ascii=False)
+                + "</planning_decision>"
+            )
         return reply
 
     async def case():
         provider = HeldStep("b.md", planner=planner)
         async with product_world(tmp_path / "root", provider) as world:
-            mission_id = world.create({"goal": "写 a.md 和 b.md", "idempotency_key": "carried-named",
-                                       "success_criteria": ["file:a.md", "file:b.md"]})["mission_id"]
+            mission_id = world.create(
+                {
+                    "goal": "写 a.md 和 b.md",
+                    "idempotency_key": "carried-named",
+                    "success_criteria": ["file:a.md", "file:b.md"],
+                }
+            )["mission_id"]
             htn = HtnStore(world.store)
             for _ in range(20):
                 await world.drain(timeout=20)
@@ -293,20 +417,36 @@ def test_a_replacing_method_may_name_the_kept_step_and_it_is_reviewed_again(tmp_
             amend_script.amend(world, mission_id, [{"op": "add", "statement": "file:extra.md"}])
             provider.go.set()
             try:
-                mission = await asyncio.wait_for(world.run_until_settled(mission_id, rounds=60), 240)
+                mission = await asyncio.wait_for(
+                    world.run_until_settled(mission_id, rounds=60), 240
+                )
             except TimeoutError as error:
                 raise AssertionError(f"the mission never settled: {state}") from error
-            rejected = [e.payload for e in world.store.list_events(mission_id)
-                        if e.type == "PlanningDecisionEvaluated" and e.payload.get("status") == "REJECTED"]
-            assert str(mission.status.value) == "COMPLETED", (mission.status, mission.final_report, state,
-                                                              rejected[-2:])
+            rejected = [
+                e.payload
+                for e in world.store.list_events(mission_id)
+                if e.type == "PlanningDecisionEvaluated" and e.payload.get("status") == "REJECTED"
+            ]
+            assert str(mission.status.value) == "COMPLETED", (
+                mission.status,
+                mission.final_report,
+                state,
+                rejected[-2:],
+            )
             assert state["named"], "the planner never saw a kept step to name"
             kept_task = str(first.task_id)
             assert len(world.store.list_attempts(kept_task)) == 1  # 没有重做
-            assert sorted(int(item.requirements_revision) for item in htn.list_acceptances(mission_id)
-                          if str(item.task_id) == kept_task) == [1, 2]
+            assert sorted(
+                int(item.requirements_revision)
+                for item in htn.list_acceptances(mission_id)
+                if str(item.task_id) == kept_task
+            ) == [1, 2]
             # a.md 只有那一个任务在写
-            writers = [task for task in world.store.list_tasks(mission_id) if tuple(task.outputs) == ("a.md",)]
+            writers = [
+                task
+                for task in world.store.list_tasks(mission_id)
+                if tuple(task.outputs) == ("a.md",)
+            ]
             assert [task.id for task in writers] == [kept_task]
 
     asyncio.run(case())
@@ -320,8 +460,11 @@ def test_a_review_that_cannot_run_ends_with_the_planner_not_the_loop(tmp_path, m
     from agent_orchestrator.assurance.codec import AssuranceError
     from agent_orchestrator.orchestrator import assurance_review_runtime as runtime
 
-    [owner] = [value for value in vars(runtime).values()
-               if isinstance(value, type) and "run_task" in vars(value)]
+    [owner] = [
+        value
+        for value in vars(runtime).values()
+        if isinstance(value, type) and "run_task" in vars(value)
+    ]
     original = owner.run_task
     calls = {"carried": 0}
 
@@ -338,7 +481,9 @@ def test_a_review_that_cannot_run_ends_with_the_planner_not_the_loop(tmp_path, m
 
     def planner(request: Any) -> Any:
         package = package_of(request)
-        sources = {entry["request"].get("trigger_source") for entry in package.get("repair_requests") or ()}
+        sources = {
+            entry["request"].get("trigger_source") for entry in package.get("repair_requests") or ()
+        }
         steps = [item for item in package["views"]["goals"] if item["form"] == "primitive"]
         done = {row["producer_occurrence"] for row in package["views"]["accepted_results"]}
         if "REQUIREMENTS_UPDATE" in sources and not state["second"]:
@@ -353,16 +498,24 @@ def test_a_review_that_cannot_run_ends_with_the_planner_not_the_loop(tmp_path, m
     async def case():
         provider = HeldStep("b.md", planner=planner)
         async with product_world(tmp_path / "root", provider) as world:
-            mission_id = world.create({"goal": "写 a.md 和 b.md", "idempotency_key": "carried-unavailable",
-                                       "success_criteria": ["file:a.md", "file:b.md"]})["mission_id"]
+            mission_id = world.create(
+                {
+                    "goal": "写 a.md 和 b.md",
+                    "idempotency_key": "carried-unavailable",
+                    "success_criteria": ["file:a.md", "file:b.md"],
+                }
+            )["mission_id"]
             htn = HtnStore(world.store)
             for _ in range(20):
                 await world.drain(timeout=20)
                 if htn.list_acceptances(mission_id):
                     break
             assert htn.list_acceptances(mission_id)
-            amend_script.amend(world, mission_id,
-                               [{"op": "rewrite", "criterion_id": "c-user-2", "statement": "file:b2.md"}])
+            amend_script.amend(
+                world,
+                mission_id,
+                [{"op": "rewrite", "criterion_id": "c-user-2", "statement": "file:b2.md"}],
+            )
             provider.go.set()
             try:
                 for _ in range(60):
@@ -370,7 +523,9 @@ def test_a_review_that_cannot_run_ends_with_the_planner_not_the_loop(tmp_path, m
                     if state["rejections"]:
                         break
             except Exception as error:  # noqa: BLE001 - 冲出主循环就是这条要抓的缺陷
-                raise AssertionError(f"main loop crashed: {type(error).__name__}: {error}") from error
+                raise AssertionError(
+                    f"main loop crashed: {type(error).__name__}: {error}"
+                ) from error
             assert state["rejections"], f"the planner was never told ({calls})"
             context = state["rejections"][0]["context"]
             assert "REVIEW_ROUTE_UNAVAILABLE" in context["review_error"], context
@@ -399,13 +554,17 @@ def test_a_re_review_nobody_can_settle_asks_the_person_and_their_pass_counts(tmp
 
     def planner(request: Any) -> Any:
         package = package_of(request)
-        sources = {entry["request"].get("trigger_source") for entry in package.get("repair_requests") or ()}
+        sources = {
+            entry["request"].get("trigger_source") for entry in package.get("repair_requests") or ()
+        }
         steps = [item for item in package["views"]["goals"] if item["form"] == "primitive"]
         done = {row["producer_occurrence"] for row in package["views"]["accepted_results"]}
         if "REQUIREMENTS_UPDATE" in sources and not state["second"]:
             state["second"] = True
             [unfinished] = [item for item in steps if item["occurrence_id"] not in done]
-            return successor(package, unfinished, "要求改了：只换掉还没做完的那一步，做完的那步留着。")
+            return successor(
+                package, unfinished, "要求改了：只换掉还没做完的那一步，做完的那步留着。"
+            )
         assert not _carried_rejections(package), "判不下来不是打回：规划器不该收到修复请求"
         return base(request)
 
@@ -413,30 +572,42 @@ def test_a_re_review_nobody_can_settle_asks_the_person_and_their_pass_counts(tmp
         data = review_input(request)
         if data is None:
             return None
-        if (str((data.get("package") or {}).get("purpose")) == "TASK_CONTENT"
-                and list(data.get("criterion_ids") or ()) == ["c-user-1"]):
+        if str((data.get("package") or {}).get("purpose")) == "TASK_CONTENT" and list(
+            data.get("criterion_ids") or ()
+        ) == ["c-user-1"]:
             reviews["c-user-1"] = reviews.get("c-user-1", 0) + 1
             if reviews["c-user-1"] >= 2:
                 return "我看过了，没有问题。"  # 不是约定的回复格式：给不出可用结论
         return review_reply(data)
 
     def questions(world: Any, mission_id: str) -> list[dict[str, Any]]:
-        return [row for row in PlanningHumanStore(world.store).list(mission_id)
-                if str(row["decision_id"]).startswith("adjudicate-carried:")]
+        return [
+            row
+            for row in PlanningHumanStore(world.store).list(mission_id)
+            if str(row["decision_id"]).startswith("adjudicate-carried:")
+        ]
 
     async def case():
         provider = HeldStep("b.md", planner=planner, reviewer=reviewer)
         async with product_world(tmp_path / "root", provider) as world:
-            mission_id = world.create({"goal": "写 a.md 和 b.md", "idempotency_key": "carried-no-verdict",
-                                       "success_criteria": ["file:a.md", "file:b.md"]})["mission_id"]
+            mission_id = world.create(
+                {
+                    "goal": "写 a.md 和 b.md",
+                    "idempotency_key": "carried-no-verdict",
+                    "success_criteria": ["file:a.md", "file:b.md"],
+                }
+            )["mission_id"]
             htn = HtnStore(world.store)
             for _ in range(20):
                 await world.drain(timeout=20)
                 if htn.list_acceptances(mission_id):
                     break
             [first] = htn.list_acceptances(mission_id)
-            amend_script.amend(world, mission_id,
-                               [{"op": "rewrite", "criterion_id": "c-user-2", "statement": "file:b2.md"}])
+            amend_script.amend(
+                world,
+                mission_id,
+                [{"op": "rewrite", "criterion_id": "c-user-2", "statement": "file:b2.md"}],
+            )
             provider.go.set()
             for _ in range(40):
                 await world.drain(timeout=20)
@@ -447,21 +618,38 @@ def test_a_re_review_nobody_can_settle_asks_the_person_and_their_pass_counts(tmp
             mission = world.store.get_mission(mission_id)
             assert str(mission.status.value) == "ACTIVE"
             kept_task = str(first.task_id)
-            assert [int(item.requirements_revision) for item in htn.list_acceptances(mission_id)
-                    if str(item.task_id) == kept_task] == [1]
+            assert [
+                int(item.requirements_revision)
+                for item in htn.list_acceptances(mission_id)
+                if str(item.task_id) == kept_task
+            ] == [1]
             answer_planning_question(
-                world.loop, tenant_id=mission.tenant_id, principal=world.deployment.principal,
-                decision_id=row["decision_id"], answer="pass", expected_version=row["version"],
-                nonce="n-" + row["decision_id"])
+                world.loop,
+                tenant_id=mission.tenant_id,
+                principal=world.deployment.principal,
+                decision_id=row["decision_id"],
+                answer="pass",
+                expected_version=row["version"],
+                nonce="n-" + row["decision_id"],
+            )
             try:
-                mission = await asyncio.wait_for(world.run_until_settled(mission_id, rounds=60), 240)
+                mission = await asyncio.wait_for(
+                    world.run_until_settled(mission_id, rounds=60), 240
+                )
             except TimeoutError as error:
                 raise AssertionError(f"the mission never settled: {state}") from error
             assert str(mission.status.value) == "COMPLETED", (mission.status, mission.final_report)
             assert len(world.store.list_attempts(kept_task)) == 1
-            assert sorted(int(item.requirements_revision) for item in htn.list_acceptances(mission_id)
-                          if str(item.task_id) == kept_task) == [1, 2]
+            assert sorted(
+                int(item.requirements_revision)
+                for item in htn.list_acceptances(mission_id)
+                if str(item.task_id) == kept_task
+            ) == [1, 2]
             events = list(world.store.list_events(mission_id))
-            assert [e.payload["requirements_revision"] for e in events if e.type == "CarriedResultAccepted"] == [2]
+            assert [
+                e.payload["requirements_revision"]
+                for e in events
+                if e.type == "CarriedResultAccepted"
+            ] == [2]
 
     asyncio.run(case())

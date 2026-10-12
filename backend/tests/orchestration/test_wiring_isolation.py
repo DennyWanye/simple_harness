@@ -85,7 +85,13 @@ async def test_a_disabled_section_is_honoured_without_an_error(tmp_path):
 
 class _Registry:
     def get_chain(self) -> list[dict]:
-        return [{"id": "primary", "base_url": "http://127.0.0.1:28181/v1", "model": "deepseek-v4.1-flash"}]
+        return [
+            {
+                "id": "primary",
+                "base_url": "http://127.0.0.1:28181/v1",
+                "model": "deepseek-v4.1-flash",
+            }
+        ]
 
     def resolve_api_key(self, _provider_id: str) -> str:
         return "test-key-not-real"
@@ -95,11 +101,16 @@ class _Registry:
 @pytest.mark.parametrize(
     ("section", "expected"),
     [
-        ('response_model_aliases = "deepseek-ai/DeepSeek-V4.1-Flash"\n', ("deepseek-ai/DeepSeek-V4.1-Flash",)),
+        (
+            'response_model_aliases = "deepseek-ai/DeepSeek-V4.1-Flash"\n',
+            ("deepseek-ai/DeepSeek-V4.1-Flash",),
+        ),
         ("", ()),
     ],
 )
-async def test_the_declared_relay_echo_alias_reaches_the_app_provider(tmp_path, monkeypatch, section, expected):
+async def test_the_declared_relay_echo_alias_reaches_the_app_provider(
+    tmp_path, monkeypatch, section, expected
+):
     """2026-09-25 native UI run: the app path must carry the relay's declared echo name,
     or every call's usage stays untrusted; an undeclared alias is never guessed."""
 

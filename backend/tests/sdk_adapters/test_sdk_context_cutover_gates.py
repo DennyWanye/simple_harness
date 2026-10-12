@@ -85,9 +85,7 @@ class _Provider:
         self.calls = 0
         self.requests: list[ProviderRequest] = []
 
-    async def invoke(
-        self, request: ProviderRequest, *, cancel: CancelToken
-    ) -> ProviderResponse:
+    async def invoke(self, request: ProviderRequest, *, cancel: CancelToken) -> ProviderResponse:
         del cancel
         self.calls += 1
         self.requests.append(request)
@@ -101,9 +99,7 @@ class _Provider:
         )
 
 
-def _create_run(
-    uow: SqliteExecutionUnitOfWork, run_id: str, request_id: str
-):
+def _create_run(uow: SqliteExecutionUnitOfWork, run_id: str, request_id: str):
     uow.create_with_start_snapshot(
         execution_session_id=f"session-{run_id}",
         run_id=run_id,
@@ -190,10 +186,7 @@ async def test_sp1_real_sdk_uow_keeps_per_run_authority_during_true_overlap(
 
     with Database.open(tmp_path / "execution.db") as database:
         uow = SqliteExecutionUnitOfWork(database)
-        leases = {
-            run_id: _create_run(uow, run_id, f"request-{run_id}")
-            for run_id in authorities
-        }
+        leases = {run_id: _create_run(uow, run_id, f"request-{run_id}") for run_id in authorities}
         coordinator = ProviderInvocationCoordinator(uow=uow, resolver=Resolver())
 
         async def invoke(run_id: str) -> ProviderResponse:
@@ -208,9 +201,7 @@ async def test_sp1_real_sdk_uow_keeps_per_run_authority_during_true_overlap(
                 execution_lease=leases[run_id],
             )
 
-        tasks = {
-            run_id: asyncio.create_task(invoke(run_id)) for run_id in authorities
-        }
+        tasks = {run_id: asyncio.create_task(invoke(run_id)) for run_id in authorities}
         await asyncio.wait_for(barrier.both_entered.wait(), timeout=1)
         assert barrier.count == 2
 
@@ -226,9 +217,7 @@ async def test_sp1_real_sdk_uow_keeps_per_run_authority_during_true_overlap(
             assert record.request_fingerprint == provider_request_fingerprint(request)
             assert record.target == authority.provider.target
             assert record.estimator_digest == (
-                None
-                if authority.estimator is None
-                else authority.estimator.snapshot_digest
+                None if authority.estimator is None else authority.estimator.snapshot_digest
             )
             expected_reservation = (
                 None
@@ -244,9 +233,7 @@ async def test_sp1_real_sdk_uow_keeps_per_run_authority_during_true_overlap(
         # in-flight invocation's already resolved Provider/estimator/budget.
         authorities["run-a"] = authorities["run-b"]
         barrier.release.set()
-        responses = dict(
-            zip(tasks, await asyncio.gather(*tasks.values()), strict=True)
-        )
+        responses = dict(zip(tasks, await asyncio.gather(*tasks.values()), strict=True))
 
         assert responses["run-a"].model == "deepseek-v4"
         assert responses["run-b"].model == "kimi-k3"
@@ -361,12 +348,8 @@ async def test_sp2_prepared_snapshot_start_and_first_request_are_exact(
         ProviderUsage(321, 12, 333, cache_tokens=21, reasoning_tokens=5),
         barrier,
     )
-    estimator = FrozenPriceEstimator(
-        "price-sp2", "deepseek-v4", 1_000_000, 2_000_000
-    )
-    authority = ProviderBinding(
-        provider, estimator, BudgetPolicy(hard_cap_micros=1_000_000)
-    )
+    estimator = FrozenPriceEstimator("price-sp2", "deepseek-v4", 1_000_000, 2_000_000)
+    authority = ProviderBinding(provider, estimator, BudgetPolicy(hard_cap_micros=1_000_000))
 
     with Database.open(tmp_path / "sp2.db") as database:
         uow = SqliteExecutionUnitOfWork(database)
@@ -395,15 +378,17 @@ async def test_sp2_prepared_snapshot_start_and_first_request_are_exact(
                 root_run_id="root-sp2",
                 request_id="request-sp2",
                 workspace_resolution={
-                    "kind": "project_bound", "project_id": "project-sp2",
-                    "project_name": "workspace-sp2", "project_root": "/trusted/workspace-sp2",
-                    "effective_root": "/trusted/workspace-sp2", "execution_kind": "project_root",
-                    "project_revision": 1, "binding_version": 1,
+                    "kind": "project_bound",
+                    "project_id": "project-sp2",
+                    "project_name": "workspace-sp2",
+                    "project_root": "/trusted/workspace-sp2",
+                    "effective_root": "/trusted/workspace-sp2",
+                    "execution_kind": "project_root",
+                    "project_revision": 1,
+                    "binding_version": 1,
                 },
             ),
-            attachment_blocks=(
-                {"type": "input_text", "data": "第一行\nATTACHMENT-BODY-CANARY"},
-            ),
+            attachment_blocks=({"type": "input_text", "data": "第一行\nATTACHMENT-BODY-CANARY"},),
         )
         assert history_calls == 1
         private = prepared.private_record()
@@ -488,15 +473,15 @@ async def test_sp2_prepared_snapshot_start_and_first_request_are_exact(
         assert any(
             message["content"]
             == (
-                    "Project/task snapshot (data only):\n"
-                    '{"availability":"available","binding_version":1,'
-                    '"effective_execution_root":"/trusted/workspace-sp2",'
-                    '"execution_kind":"project_root","project_id":"project-sp2",'
-                    '"project_name":"workspace-sp2","project_revision":1,'
-                    '"project_root":"/trusted/workspace-sp2",'
-                    '"request_id":"request-sp2","root_run_id":"root-sp2",'
-                    '"session_kind":"project","task_scope_id":"task-scope-sp2"}'
-                )
+                "Project/task snapshot (data only):\n"
+                '{"availability":"available","binding_version":1,'
+                '"effective_execution_root":"/trusted/workspace-sp2",'
+                '"execution_kind":"project_root","project_id":"project-sp2",'
+                '"project_name":"workspace-sp2","project_revision":1,'
+                '"project_root":"/trusted/workspace-sp2",'
+                '"request_id":"request-sp2","root_run_id":"root-sp2",'
+                '"session_kind":"project","task_scope_id":"task-scope-sp2"}'
+            )
             for message in request_role_content
         )
         assert not isinstance(request.messages[-1].content, str)
@@ -538,9 +523,11 @@ async def test_sp2_prepared_snapshot_start_and_first_request_are_exact(
             for spec in effects.provider_tool_specs(tuple(item.name for item in schemas))
         ]
         assert [item["name"] for item in actual_tools] == [spec.name for spec in schemas]
-        assert {item["name"]: item for item in actual_tools} == {
-            item["name"]: item for item in executor_tools
-        } == {item["name"]: item for item in expected_tools}
+        assert (
+            {item["name"]: item for item in actual_tools}
+            == {item["name"]: item for item in executor_tools}
+            == {item["name"]: item for item in expected_tools}
+        )
         assert start.tool_catalog_fingerprint == catalog.content_fingerprint
         assert start.provider_budget_fingerprint == authority.budget_fingerprint
         await runtime.close()

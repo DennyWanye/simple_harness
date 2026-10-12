@@ -14,6 +14,7 @@ chat_v2_final 给除发起窗口（self.control_ws = originator）外的所有 c
 
 测试组对应 spec §7.1（5 条）。
 """
+
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
@@ -79,8 +80,14 @@ class _RecordingBroadcast:
         self.calls.append((originator, msg))
 
 
-def _make_pipe(*, session_id="default", broadcast=None, control_ws=None,
-               asr_text="你可以问我做什么", reply="当然可以呀"):
+def _make_pipe(
+    *,
+    session_id="default",
+    broadcast=None,
+    control_ws=None,
+    asr_text="你可以问我做什么",
+    reply="当然可以呀",
+):
     return VoicePipeline(
         vad=_FakeVAD(),
         asr=_FakeASR(asr_text),
@@ -102,8 +109,11 @@ async def test_default_session_broadcasts_user_and_final():
     control = _FakeWS()
     bc = _RecordingBroadcast()
     pipe = _make_pipe(
-        session_id="default", broadcast=bc, control_ws=control,
-        asr_text="你可以问我做什么", reply="当然可以呀",
+        session_id="default",
+        broadcast=bc,
+        control_ws=control,
+        asr_text="你可以问我做什么",
+        reply="当然可以呀",
     )
 
     await pipe._process_utterance(b"fake-pcm-in", _FakeWS())
@@ -193,9 +203,7 @@ async def test_broadcasts_regardless_of_control_ws_snapshot():
         run_session=static_run("reply", "default"),
     )
     await pipe2._process_utterance(b"fake", _FakeWS())
-    assert len(bc2.calls) == 3, (
-        f"control_ws=None（根因场景）时仍须广播，实际 {len(bc2.calls)}"
-    )
+    assert len(bc2.calls) == 3, f"control_ws=None（根因场景）时仍须广播，实际 {len(bc2.calls)}"
     assert bc2.calls[0][1]["type"] == "chat_v2_user_echo"
     assert bc2.calls[1][1]["type"] == "run_event"
     assert bc2.calls[2][1]["type"] == "chat_v2_final"

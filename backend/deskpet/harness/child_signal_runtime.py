@@ -94,9 +94,7 @@ class ChildSignalRuntime:
             if previous is not None:
                 active.task = None
                 if previous.cancelled():
-                    raise RuntimeError(
-                        "previous parent Run execution owner was cancelled"
-                    )
+                    raise RuntimeError("previous parent Run execution owner was cancelled")
                 previous.result()
 
             async def resume_parent() -> None:
@@ -104,9 +102,7 @@ class ChildSignalRuntime:
                     await self._runtime.consume_fenced(
                         registration,
                         parent,
-                        lambda lease: registration.driver.signal(
-                            signal, recovery_lease=lease
-                        ),
+                        lambda lease: registration.driver.signal(signal, recovery_lease=lease),
                         recovery_lease,
                         heartbeat_interval=self._heartbeat_interval,
                         release=True,
@@ -145,9 +141,7 @@ class ChildSignalRuntime:
             await self._runtime.consume_fenced(
                 registration,
                 parent,
-                lambda lease: registration.driver.signal(
-                    signal, recovery_lease=lease
-                ),
+                lambda lease: registration.driver.signal(signal, recovery_lease=lease),
                 recovery_lease,
                 heartbeat_interval=self._heartbeat_interval,
             )

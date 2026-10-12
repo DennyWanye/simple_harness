@@ -16,12 +16,8 @@ async def test_harness_and_product_provenance_have_one_authority(tmp_path):
         memory_authority="harness",
     )
     with sqlite3.connect(tmp_path / "state.db") as db:
-        assert db.execute(
-            "SELECT count(*) FROM memory_user_bindings"
-        ).fetchone() == (0,)
-        assert db.execute(
-            "SELECT count(*) FROM product_memory_outbox"
-        ).fetchone() == (0,)
+        assert db.execute("SELECT count(*) FROM memory_user_bindings").fetchone() == (0,)
+        assert db.execute("SELECT count(*) FROM product_memory_outbox").fetchone() == (0,)
     product_id = await session.append_message(
         "session-a",
         "assistant",
@@ -30,12 +26,13 @@ async def test_harness_and_product_provenance_have_one_authority(tmp_path):
         memory_authority="product",
     )
     with sqlite3.connect(tmp_path / "state.db") as db:
-        ids = [row[0] for row in db.execute(
-            "SELECT message_id FROM product_memory_outbox ORDER BY message_id"
-        )]
-        bindings = db.execute(
-            "SELECT count(*) FROM memory_user_bindings"
-        ).fetchone()
+        ids = [
+            row[0]
+            for row in db.execute(
+                "SELECT message_id FROM product_memory_outbox ORDER BY message_id"
+            )
+        ]
+        bindings = db.execute("SELECT count(*) FROM memory_user_bindings").fetchone()
     # 2026-09-10 认知记忆 SDK 移除（4b4dfba23）：outbox 没有消费者，product
     # 权威也不再产生新行；只保留 product 权威的用户绑定，harness 权威不绑定。
     assert ids == []
@@ -49,17 +46,27 @@ async def test_tool_workflow_and_excluded_projections_are_not_memory_ingress(tmp
     session = SessionDB(tmp_path / "state.db")
     await session.initialize()
     await session.append_message(
-        "session-a", "assistant", "workflow status",
-        workflow_event_id="workflow:event:1", user_id="user-a",
-    )
-    await session.append_message(
-        "session-a", "assistant", "tool envelope",
-        tool_calls=[{"id": "call-1", "type": "function", "function": {"name": "x", "arguments": "{}"}}],
+        "session-a",
+        "assistant",
+        "workflow status",
+        workflow_event_id="workflow:event:1",
         user_id="user-a",
     )
     await session.append_message(
-        "session-a", "assistant", "excluded progress",
-        projection_kind="workflow_progress", context_visibility="exclude",
+        "session-a",
+        "assistant",
+        "tool envelope",
+        tool_calls=[
+            {"id": "call-1", "type": "function", "function": {"name": "x", "arguments": "{}"}}
+        ],
+        user_id="user-a",
+    )
+    await session.append_message(
+        "session-a",
+        "assistant",
+        "excluded progress",
+        projection_kind="workflow_progress",
+        context_visibility="exclude",
         user_id="user-a",
     )
     with sqlite3.connect(tmp_path / "state.db") as db:

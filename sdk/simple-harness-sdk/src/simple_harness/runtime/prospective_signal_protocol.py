@@ -149,9 +149,11 @@ class ProspectiveSignalIntent:
         if signal_kind is ProspectiveSignalKind.TIME_DUE:
             if not isinstance(self.trigger, ProspectiveTimeTrigger):
                 raise ValueError("time_due requires ProspectiveTimeTrigger")
-            if transition_from not in {
-                ProspectiveLifecycleState.PENDING, ProspectiveLifecycleState.RESCHEDULED
-            } or transition_to is not ProspectiveLifecycleState.TRIGGERED:
+            if (
+                transition_from
+                not in {ProspectiveLifecycleState.PENDING, ProspectiveLifecycleState.RESCHEDULED}
+                or transition_to is not ProspectiveLifecycleState.TRIGGERED
+            ):
                 raise ValueError("time_due must bind pending or rescheduled to triggered")
             if observed_at < self.trigger.trigger_at:
                 raise ValueError("time_due observed_at precedes trigger_at")
@@ -163,12 +165,16 @@ class ProspectiveSignalIntent:
             ):
                 raise ValueError("event_occurred must bind pending to triggered")
         elif signal_kind is ProspectiveSignalKind.EXPIRED:
-            if transition_from not in {
-                ProspectiveLifecycleState.PENDING,
-                ProspectiveLifecycleState.TRIGGERED,
-                ProspectiveLifecycleState.IN_PROGRESS,
-                ProspectiveLifecycleState.RESCHEDULED,
-            } or transition_to is not ProspectiveLifecycleState.EXPIRED:
+            if (
+                transition_from
+                not in {
+                    ProspectiveLifecycleState.PENDING,
+                    ProspectiveLifecycleState.TRIGGERED,
+                    ProspectiveLifecycleState.IN_PROGRESS,
+                    ProspectiveLifecycleState.RESCHEDULED,
+                }
+                or transition_to is not ProspectiveLifecycleState.EXPIRED
+            ):
                 raise ValueError("expired signal must bind a live intent to expired")
         trigger_hash = prospective_trigger_hash(self.trigger)
         object.__setattr__(self, "signal_kind", signal_kind)
@@ -231,11 +237,26 @@ class ProspectiveSignalIntent:
         _exact_keys(
             value,
             {
-                "schema_version", "signal_id", "subject", "scope", "target_memory_id",
-                "target_revision", "signal_kind", "trigger", "trigger_hash",
-                "scheduler_registration_ref", "registration_revision", "signal_receipt_id",
-                "signal_receipt_hash", "observed_at", "transition_from", "transition_to",
-                "outbox_id", "outbox_payload_hash", "run_id", "operation_id",
+                "schema_version",
+                "signal_id",
+                "subject",
+                "scope",
+                "target_memory_id",
+                "target_revision",
+                "signal_kind",
+                "trigger",
+                "trigger_hash",
+                "scheduler_registration_ref",
+                "registration_revision",
+                "signal_receipt_id",
+                "signal_receipt_hash",
+                "observed_at",
+                "transition_from",
+                "transition_to",
+                "outbox_id",
+                "outbox_payload_hash",
+                "run_id",
+                "operation_id",
                 "occurrence_key",
             },
             "ProspectiveSignalIntent",
@@ -252,7 +273,8 @@ class ProspectiveSignalIntent:
             signal_kind=ProspectiveSignalKind(value["signal_kind"]),  # type: ignore[arg-type]
             trigger=trigger,
             scheduler_registration_ref=_identifier(
-                value["scheduler_registration_ref"], "scheduler_registration_ref",
+                value["scheduler_registration_ref"],
+                "scheduler_registration_ref",
                 max_length=1024,
             ),
             registration_revision=_positive_int(
@@ -340,8 +362,17 @@ class ProspectiveSignalAuthority:
     def from_json(cls, value: Mapping[str, object]) -> ProspectiveSignalAuthority:
         _exact_keys(
             value,
-            {"schema_version", "authority_id", "intent", "intent_hash", "issued_at",
-             "expires_at", "nonce", "issuer_ref", "replay_identity"},
+            {
+                "schema_version",
+                "authority_id",
+                "intent",
+                "intent_hash",
+                "issued_at",
+                "expires_at",
+                "nonce",
+                "issuer_ref",
+                "replay_identity",
+            },
             "ProspectiveSignalAuthority",
         )
         intent = ProspectiveSignalIntent.from_json(_object(value["intent"], "intent"))

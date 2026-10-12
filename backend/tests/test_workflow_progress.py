@@ -128,8 +128,7 @@ def test_public_stage_mapping_matches_task2_exactly():
         actual = PUBLIC_WORKFLOW_STAGES[workflow_name]
         assert set(actual) == set(expected)
         assert {
-            node_id: (stage.ordinal, stage.total, stage.label)
-            for node_id, stage in actual.items()
+            node_id: (stage.ordinal, stage.total, stage.label) for node_id, stage in actual.items()
         } == expected
 
 
@@ -224,10 +223,9 @@ async def test_durable_task_progress_scopes_repeated_nodes_by_safe_task_identity
     serialized_keys = repr(tuple(service.outbox.events))
     assert "private-task-a" not in serialized_keys
     assert "private-task-b" not in serialized_keys
-    assert {
-        event["payload"]["workflow_label"]
-        for event in service.outbox.events.values()
-    } == {"多步骤任务"}
+    assert {event["payload"]["workflow_label"] for event in service.outbox.events.values()} == {
+        "多步骤任务"
+    }
     payloads = [event["payload"] for event in service.outbox.events.values()]
     assert {payload["workflow_name"] for payload in payloads} == {"多步骤任务"}
     assert {payload["stage"] for payload in payloads} == {"规划下一步"}
@@ -238,9 +236,7 @@ async def test_unknown_internal_node_is_not_projected():
     service = _Service()
     reporter = WorkflowProgressReporter(service, (("session_message", "session-1"),))
 
-    result = await reporter.report(
-        _identity(workflow="ppt_pro", node="internal_probe"), "started"
-    )
+    result = await reporter.report(_identity(workflow="ppt_pro", node="internal_probe"), "started")
 
     assert result is None
     assert service.outbox.events == {}
@@ -257,9 +253,7 @@ async def test_progress_failure_does_not_escape_reporter():
     service.outbox = _BrokenOutbox()
     reporter = WorkflowProgressReporter(service, (("session_message", "session-1"),))
 
-    result = await reporter.report(
-        _identity(workflow="code_complex", node="test"), "failed"
-    )
+    result = await reporter.report(_identity(workflow="code_complex", node="test"), "failed")
 
     assert result is None
     assert service.delivered == []
@@ -290,8 +284,15 @@ async def test_v7_children_snapshot_is_safe_complete_and_idempotent():
     service = _Service()
     reporter = WorkflowProgressReporter(service, (("websocket", "session-secret"),))
     identity = NodeExecutionIdentity(
-        "deep_research", "v7", "thread-secret", "run-v7", "checkpoint-secret", "",
-        "task-plan", "plan", 1,
+        "deep_research",
+        "v7",
+        "thread-secret",
+        "run-v7",
+        "checkpoint-secret",
+        "",
+        "task-plan",
+        "plan",
+        1,
     )
     children = [
         {
@@ -328,8 +329,15 @@ async def test_v7_progress_uses_six_user_visible_stages():
     service = _Service()
     reporter = WorkflowProgressReporter(service, (("websocket", "session-1"),))
     identity = NodeExecutionIdentity(
-        "deep_research", "v7", "thread", "run-v7", "checkpoint", "",
-        "task-search", "search", 1,
+        "deep_research",
+        "v7",
+        "thread",
+        "run-v7",
+        "checkpoint",
+        "",
+        "task-search",
+        "search",
+        1,
     )
 
     await reporter.report(identity, "started")
@@ -405,9 +413,7 @@ async def test_compiled_workflow_progress_persists_once_to_original_session(
         outbox=outbox,
         delivery_handlers={"session_message": persist_progress},
     )
-    reporter = WorkflowProgressReporter(
-        service, (("session_message", session_id),)
-    )
+    reporter = WorkflowProgressReporter(service, (("session_message", session_id),))
     context = WorkflowContext(
         ports={
             "llm": ResearchLLMPort(complete=llm),
@@ -445,18 +451,12 @@ async def test_compiled_workflow_progress_persists_once_to_original_session(
 
     persisted_events = await outbox.events_after(run_id, 0, limit=100)
     progress_events = [
-        event
-        for event in persisted_events["events"]
-        if event["event_type"] == "workflow.progress"
+        event for event in persisted_events["events"] if event["event_type"] == "workflow.progress"
     ]
     assert event_ids == [event["event_id"] for event in progress_events]
-    assert {event["payload"]["ordinal"] for event in progress_events}.issuperset(
-        {1, 2, 3, 6, 7}
-    )
+    assert {event["payload"]["ordinal"] for event in progress_events}.issuperset({1, 2, 3, 6, 7})
 
-    search_event = next(
-        event for event in progress_events if event["payload"]["ordinal"] == 3
-    )
+    search_event = next(event for event in progress_events if event["payload"]["ordinal"] == 3)
     duplicate_id = await reporter.report(
         NodeExecutionIdentity(
             workflow_name="deep_research",
@@ -476,8 +476,7 @@ async def test_compiled_workflow_progress_persists_once_to_original_session(
     assert duplicate_id != search_event["event_id"]
     assert retried.status is WorkflowRunStatus.COMPLETED
     assert [
-        message["workflow_event_id"]
-        for message in await session_db.get_messages(session_id)
+        message["workflow_event_id"] for message in await session_db.get_messages(session_id)
     ] == [*event_ids, duplicate_id]
 
 
@@ -486,8 +485,16 @@ def test_v2_completed_intent_is_pure_safe_and_stable():
         object(), (("session_message", "session-1"), ("websocket", "session-1"))
     )
     identity = NodeExecutionIdentity(
-        "deep_research", "v2", "thread-1", "run-1", "checkpoint-1", "",
-        "task-1", "search_join", 2, 100.0,
+        "deep_research",
+        "v2",
+        "thread-1",
+        "run-1",
+        "checkpoint-1",
+        "",
+        "task-1",
+        "search_join",
+        2,
+        100.0,
     )
     projection = {
         "stage_id": "search",
@@ -516,16 +523,27 @@ def test_v2_completed_intent_rejects_unknown_metrics():
     identity = NodeExecutionIdentity(
         "deep_research", "v2", "thread", "run", "checkpoint", "", "task", "search_join", 1
     )
-    assert reporter.build_completion_intent(
-        identity, {"stage_id": "search", "metrics": {"secret_query": "do not leak"}}
-    ) is None
+    assert (
+        reporter.build_completion_intent(
+            identity, {"stage_id": "search", "metrics": {"secret_query": "do not leak"}}
+        )
+        is None
+    )
 
 
 def test_v2_completed_event_key_ignores_retry_attempt_and_session_text_is_allowlisted():
     reporter = WorkflowProgressReporter(object(), ())
-    projection = {"stage_id": "finalize", "metrics": {"citations": 3, "status": "completed"}, "completed_count": 13}
-    first = NodeExecutionIdentity("deep_research", "v2", "thread", "run", "checkpoint", "", "task", "finalize", 1)
-    retried = NodeExecutionIdentity("deep_research", "v2", "thread", "run", "checkpoint", "", "task", "finalize", 2)
+    projection = {
+        "stage_id": "finalize",
+        "metrics": {"citations": 3, "status": "completed"},
+        "completed_count": 13,
+    }
+    first = NodeExecutionIdentity(
+        "deep_research", "v2", "thread", "run", "checkpoint", "", "task", "finalize", 1
+    )
+    retried = NodeExecutionIdentity(
+        "deep_research", "v2", "thread", "run", "checkpoint", "", "task", "finalize", 2
+    )
     first_intent = reporter.build_completion_intent(first, projection)
     retry_intent = reporter.build_completion_intent(retried, projection)
     assert first_intent is not None and retry_intent is not None
@@ -539,8 +557,15 @@ async def test_v2_started_progress_uses_thirteen_stage_projection_for_join_nodes
     service = _Service()
     reporter = WorkflowProgressReporter(service, (("websocket", "session-1"),))
     identity = NodeExecutionIdentity(
-        "deep_research", "v2", "thread", "run-v2", "checkpoint", "",
-        "task-search-join", "search_join", 1,
+        "deep_research",
+        "v2",
+        "thread",
+        "run-v2",
+        "checkpoint",
+        "",
+        "task-search-join",
+        "search_join",
+        1,
     )
 
     event_id = await reporter.report(identity, "started")
@@ -559,8 +584,15 @@ async def test_v2_started_progress_uses_thirteen_stage_projection_for_join_nodes
 def test_v3_completed_intent_uses_same_safe_stage_contract_and_filters_diagnostics():
     reporter = WorkflowProgressReporter(object(), ())
     identity = NodeExecutionIdentity(
-        "deep_research", "v3", "thread", "run-v3", "checkpoint", "",
-        "task-cite", "cite", 1,
+        "deep_research",
+        "v3",
+        "thread",
+        "run-v3",
+        "checkpoint",
+        "",
+        "task-cite",
+        "cite",
+        1,
     )
     projection = {
         "stage_id": "cite",
@@ -599,15 +631,31 @@ def test_v3_completed_intent_uses_same_safe_stage_contract_and_filters_diagnosti
 def test_v3_completed_intent_allows_production_branch_and_quality_diagnostics():
     reporter = WorkflowProgressReporter(object(), ())
     identity = NodeExecutionIdentity(
-        "deep_research", "v3", "thread", "run-v3", "checkpoint", "",
-        "task-cite", "cite", 1,
+        "deep_research",
+        "v3",
+        "thread",
+        "run-v3",
+        "checkpoint",
+        "",
+        "task-cite",
+        "cite",
+        1,
     )
     production_codes = {
-        "deadline_exhausted", "search_port_unavailable", "provider_failure",
-        "direct_failure", "fetch_failure", "blob_unavailable", "low_quality_source",
-        "low_quality_content", "search_degraded", "support_rate_below_threshold",
-        "published_factual_below_threshold", "citation_count_below_threshold",
-        "domain_count_below_threshold", "body_bytes_below_threshold",
+        "deadline_exhausted",
+        "search_port_unavailable",
+        "provider_failure",
+        "direct_failure",
+        "fetch_failure",
+        "blob_unavailable",
+        "low_quality_source",
+        "low_quality_content",
+        "search_degraded",
+        "support_rate_below_threshold",
+        "published_factual_below_threshold",
+        "citation_count_below_threshold",
+        "domain_count_below_threshold",
+        "body_bytes_below_threshold",
     }
     projection = {
         "stage_id": "cite",
@@ -631,8 +679,15 @@ async def test_v3_started_progress_uses_schema_two_public_projection():
     service = _Service()
     reporter = WorkflowProgressReporter(service, (("websocket", "session-1"),))
     identity = NodeExecutionIdentity(
-        "deep_research", "v3", "thread", "run-v3", "checkpoint", "",
-        "task-fetch", "fetch_join", 1,
+        "deep_research",
+        "v3",
+        "thread",
+        "run-v3",
+        "checkpoint",
+        "",
+        "task-fetch",
+        "fetch_join",
+        1,
     )
 
     event_id = await reporter.report(identity, "started")
@@ -650,8 +705,15 @@ async def test_v3_started_progress_uses_schema_two_public_projection():
 def test_v4_search_completion_uses_unambiguous_gateway_counts():
     reporter = WorkflowProgressReporter(object(), ())
     identity = NodeExecutionIdentity(
-        "deep_research", "v4", "thread", "run-v4", "checkpoint", "",
-        "task-search", "search_join", 1,
+        "deep_research",
+        "v4",
+        "thread",
+        "run-v4",
+        "checkpoint",
+        "",
+        "task-search",
+        "search_join",
+        1,
     )
     projection = {
         "stage_id": "search",
@@ -694,8 +756,15 @@ async def test_v4_started_progress_uses_existing_durable_stage_contract():
     service = _Service()
     reporter = WorkflowProgressReporter(service, (("websocket", "session-1"),))
     identity = NodeExecutionIdentity(
-        "deep_research", "v4", "thread", "run-v4", "checkpoint", "",
-        "task-direct", "direct_join", 1,
+        "deep_research",
+        "v4",
+        "thread",
+        "run-v4",
+        "checkpoint",
+        "",
+        "task-direct",
+        "direct_join",
+        1,
     )
 
     event_id = await reporter.report(identity, "started")

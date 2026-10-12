@@ -2,6 +2,7 @@
 
 只读探测，不生图（生图烧钱）。图像候选只发一张最小请求看 relay 接不接、报什么错。
 """
+
 from __future__ import annotations
 
 import json
@@ -61,7 +62,29 @@ def list_models(cli: httpx.Client, key: str) -> list[str]:
         ids = sorted(str(m.get("id")) for m in data)
         print(f"count={len(ids)}")
         # 分类
-        img = [i for i in ids if any(k in i.lower() for k in ("image", "dall", "flux", "sd", "stable", "midjourney", "mj", "ideogram", "imagen", "seedream", "qwen-image", "gpt-image", "cogview", "kolors"))]
+        img = [
+            i
+            for i in ids
+            if any(
+                k in i.lower()
+                for k in (
+                    "image",
+                    "dall",
+                    "flux",
+                    "sd",
+                    "stable",
+                    "midjourney",
+                    "mj",
+                    "ideogram",
+                    "imagen",
+                    "seedream",
+                    "qwen-image",
+                    "gpt-image",
+                    "cogview",
+                    "kolors",
+                )
+            )
+        ]
         emb = [i for i in ids if "embed" in i.lower() or "bge" in i.lower() or "m3e" in i.lower()]
         print("\n[图像类候选]:")
         for i in img:
@@ -82,7 +105,12 @@ def probe_image(cli: httpx.Client, key: str, model: str) -> None:
         r = cli.post(
             f"{BASE}/images/generations",
             headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-            json={"model": model, "prompt": "a small red circle on white", "n": 1, "size": "1024x1024"},
+            json={
+                "model": model,
+                "prompt": "a small red circle on white",
+                "n": 1,
+                "size": "1024x1024",
+            },
         )
         dt = (time.time() - t0) * 1000
         ok = r.status_code < 400
@@ -109,7 +137,12 @@ def probe_chat(cli: httpx.Client, key: str, model: str = "gpt-5.5") -> None:
             r = cli.post(
                 f"{BASE}/chat/completions",
                 headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-                json={"model": model, "messages": [{"role": "user", "content": "回复一个字：好"}], "max_tokens": 8, "stream": False},
+                json={
+                    "model": model,
+                    "messages": [{"role": "user", "content": "回复一个字：好"}],
+                    "max_tokens": 8,
+                    "stream": False,
+                },
             )
             dt = (time.time() - t0) * 1000
             txt = ""
@@ -117,9 +150,9 @@ def probe_chat(cli: httpx.Client, key: str, model: str = "gpt-5.5") -> None:
                 txt = r.json()["choices"][0]["message"]["content"][:20]
             except Exception:
                 txt = r.text[:120]
-            print(f"  #{i+1} status={r.status_code} {dt:.0f}ms reply={txt!r}")
+            print(f"  #{i + 1} status={r.status_code} {dt:.0f}ms reply={txt!r}")
         except Exception as e:  # noqa: BLE001
-            print(f"  #{i+1} EXC {repr(e)[:160]}")
+            print(f"  #{i + 1} EXC {repr(e)[:160]}")
 
 
 def main() -> int:
@@ -135,7 +168,22 @@ def main() -> int:
         candidates = []
         for i in ids:
             il = i.lower()
-            if any(k in il for k in ("image", "flux", "dall", "seedream", "qwen-image", "cogview", "kolors", "ideogram", "imagen", "mj_", "midjourney")):
+            if any(
+                k in il
+                for k in (
+                    "image",
+                    "flux",
+                    "dall",
+                    "seedream",
+                    "qwen-image",
+                    "cogview",
+                    "kolors",
+                    "ideogram",
+                    "imagen",
+                    "mj_",
+                    "midjourney",
+                )
+            ):
                 candidates.append(i)
         # 去重保序
         seen = set()

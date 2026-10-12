@@ -14,6 +14,7 @@
    不是把请求原样回显）；
 3. 无 store 时降级快照标记 `authoritative=False`，不会谎称权威。
 """
+
 from __future__ import annotations
 
 import main
@@ -32,9 +33,7 @@ def restore_capability_store():
 
 
 @pytest.mark.asyncio
-async def test_snapshot_reads_workflow_db_authority(
-    tmp_path, restore_capability_store
-) -> None:
+async def test_snapshot_reads_workflow_db_authority(tmp_path, restore_capability_store) -> None:
     path = await initialize_capability_database(tmp_path / "workflow.db")
     store = CapabilityStore(path)
     main.service_context.register("capability_store", store)
@@ -60,9 +59,7 @@ async def test_snapshot_reflects_persisted_state_after_write(
     main.service_context.register("capability_store", store)
 
     initial = await store.get_policy_state()
-    await store.compare_and_set_policy_mode(
-        "manual", expected_generation=initial.generation
-    )
+    await store.compare_and_set_policy_mode("manual", expected_generation=initial.generation)
 
     snapshot = await main._authorization_policy_snapshot()
     assert snapshot["mode"] == "manual"

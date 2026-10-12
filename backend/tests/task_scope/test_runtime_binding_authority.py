@@ -26,9 +26,7 @@ class _Policy:
 
 
 def _auth() -> AuthenticatedHostSnapshot:
-    return AuthenticatedHostSnapshot(
-        "binding-owner", "binding-principal", "host:binding-test"
-    )
+    return AuthenticatedHostSnapshot("binding-owner", "binding-principal", "host:binding-test")
 
 
 async def _request(factory, authority, request_id, operation, request):  # type: ignore[no-untyped-def]
@@ -116,18 +114,19 @@ async def test_manual_binding_requires_durable_challenge_then_exact_allow(
     )
     assert replay["payload"]["result"] == allowed_result
     with sqlite3.connect(db_path) as db:
-        assert db.execute(
-            "SELECT COUNT(*) FROM human_memory_evidence WHERE subject='binding-owner'"
-        ).fetchone()[0] == 3
-        assert db.execute(
-            "SELECT COUNT(*) FROM task_workspace_manual_challenges"
-        ).fetchone()[0] == 1
-        assert db.execute(
-            "SELECT COUNT(*) FROM task_workspace_manual_decisions"
-        ).fetchone()[0] == 1
-        assert db.execute(
-            "SELECT COUNT(*) FROM task_workspace_binding_revisions"
-        ).fetchone()[0] == 1
+        assert (
+            db.execute(
+                "SELECT COUNT(*) FROM human_memory_evidence WHERE subject='binding-owner'"
+            ).fetchone()[0]
+            == 3
+        )
+        assert (
+            db.execute("SELECT COUNT(*) FROM task_workspace_manual_challenges").fetchone()[0] == 1
+        )
+        assert db.execute("SELECT COUNT(*) FROM task_workspace_manual_decisions").fetchone()[0] == 1
+        assert (
+            db.execute("SELECT COUNT(*) FROM task_workspace_binding_revisions").fetchone()[0] == 1
+        )
 
 
 @pytest.mark.asyncio
@@ -176,12 +175,10 @@ async def test_manual_binding_deny_preserves_evidence_without_appending_root(
     )
     assert denied["payload"]["result"]["status"] == "denied"
     with sqlite3.connect(db_path) as db:
-        assert db.execute(
-            "SELECT COUNT(*) FROM task_workspace_manual_decisions"
-        ).fetchone()[0] == 1
-        assert db.execute(
-            "SELECT COUNT(*) FROM task_workspace_binding_revisions"
-        ).fetchone()[0] == 0
+        assert db.execute("SELECT COUNT(*) FROM task_workspace_manual_decisions").fetchone()[0] == 1
+        assert (
+            db.execute("SELECT COUNT(*) FROM task_workspace_binding_revisions").fetchone()[0] == 0
+        )
 
 
 @pytest.mark.asyncio
@@ -253,10 +250,15 @@ async def test_auto_binding_uses_only_current_foreground_run_snapshot(
     import sqlite3 as _sqlite3
 
     with _sqlite3.connect(db_path) as _db:
-        assert _db.execute("SELECT COUNT(*) FROM task_workspace_manual_challenges").fetchone()[0] == 0
-        assert _db.execute(
-            "SELECT COUNT(*) FROM task_workspace_run_mode_snapshots WHERE mode='auto'"
-        ).fetchone()[0] == 1
+        assert (
+            _db.execute("SELECT COUNT(*) FROM task_workspace_manual_challenges").fetchone()[0] == 0
+        )
+        assert (
+            _db.execute(
+                "SELECT COUNT(*) FROM task_workspace_run_mode_snapshots WHERE mode='auto'"
+            ).fetchone()[0]
+            == 1
+        )
         grants = _db.execute("SELECT grant_json FROM task_workspace_binding_grants").fetchall()
     assert len(grants) == 1 and '"source": "auto"' in grants[0][0].replace('":"', '": "')
 
@@ -274,9 +276,7 @@ async def test_auto_binding_uses_only_current_foreground_run_snapshot(
         "binding.append",
         {"scope_ref": other["payload"]["result"]["scope_ref"], "root": str(target)},
     )
-    assert rejected["payload"]["error"]["code"] == (
-        "workspace_binding_current_run_authority_stale"
-    )
+    assert rejected["payload"]["error"]["code"] == ("workspace_binding_current_run_authority_stale")
 
 
 async def _claim_unscoped_run(foreground, factory, authority, *, key: str):
@@ -409,9 +409,9 @@ async def test_auto_binding_from_unscoped_run_without_captured_origin(
     assert bound["payload"]["result"]["status"] == "bound"
     assert bound["payload"]["result"]["binding_set_revision"] == 1
     with sqlite3.connect(db_path) as db:
-        assert db.execute(
-            "SELECT COUNT(*) FROM task_workspace_binding_revisions"
-        ).fetchone()[0] == 1
+        assert (
+            db.execute("SELECT COUNT(*) FROM task_workspace_binding_revisions").fetchone()[0] == 1
+        )
     assert authority._primary_target.get() is None
 
 
@@ -453,9 +453,7 @@ async def test_auto_binding_still_refuses_a_foreign_invocation_origin(
         {"fixture_key": "foreign", "title": "Foreign", "goal": "must not bind"},
     )
     scope_ref = created["payload"]["result"]["scope_ref"]
-    admitted = await _claim_unscoped_run(
-        foreground, factory, authority, key="foreign"
-    )
+    admitted = await _claim_unscoped_run(foreground, factory, authority, key="foreign")
     stale = SimpleNamespace(
         host_run_id=admitted.host_run_id,
         sdk_run_id="product-sdk-foreign",
@@ -473,10 +471,8 @@ async def test_auto_binding_still_refuses_a_foreign_invocation_origin(
         )
     finally:
         product_tools._foreground_invocation_origin.reset(token)
-    assert rejected["payload"]["error"]["code"] == (
-        "workspace_binding_invocation_origin_stale"
-    )
+    assert rejected["payload"]["error"]["code"] == ("workspace_binding_invocation_origin_stale")
     with sqlite3.connect(db_path) as db:
-        assert db.execute(
-            "SELECT COUNT(*) FROM task_workspace_binding_revisions"
-        ).fetchone()[0] == 0
+        assert (
+            db.execute("SELECT COUNT(*) FROM task_workspace_binding_revisions").fetchone()[0] == 0
+        )

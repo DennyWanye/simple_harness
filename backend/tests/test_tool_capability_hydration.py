@@ -64,13 +64,17 @@ def _runtime():
     service = ToolCapabilityBridgeService(registry, scopes)
     register_capability_bridge_tools(registry, service)
     eligibility = ToolEligibilityContext("s", "r", "chat")
-    prepared = ToolCapabilityResolver(registry).resolve_draft(
-        ToolExposureIntent(
-            direct_selectors=("source:builtin",),
-            discoverable_selectors=("source:mcp:*",),
-        ),
-        eligibility=eligibility,
-    ).finalize(scope_id="scope")
+    prepared = (
+        ToolCapabilityResolver(registry)
+        .resolve_draft(
+            ToolExposureIntent(
+                direct_selectors=("source:builtin",),
+                discoverable_selectors=("source:mcp:*",),
+            ),
+            eligibility=eligibility,
+        )
+        .finalize(scope_id="scope")
+    )
     scopes.open(prepared, eligibility)
     return registry, scopes, service, prepared
 
@@ -112,9 +116,7 @@ def test_bare_capability_name_is_ambiguous_fail_closed() -> None:
             deferred=(*record.prepared.deferred, duplicate),
         ),
     )
-    token = set_tool_execution_context(
-        ToolExecutionContext("scope", "s", "r")
-    )
+    token = set_tool_execution_context(ToolExecutionContext("scope", "s", "r"))
     try:
         with pytest.raises(RuntimeError, match="^capability_denied$"):
             service.describe("mcp_demo_lookup")
@@ -205,13 +207,9 @@ def test_nonce_follows_pinned_request_scope_not_model_thinking_time(
     from deskpet.tools import capabilities as capability_module
 
     monotonic = [10.0]
-    monkeypatch.setattr(
-        capability_module.time, "monotonic", lambda: monotonic[0]
-    )
+    monkeypatch.setattr(capability_module.time, "monotonic", lambda: monotonic[0])
     _registry, scopes, service, _prepared = _runtime()
-    token = set_tool_execution_context(
-        ToolExecutionContext("scope", "s", "r")
-    )
+    token = set_tool_execution_context(ToolExecutionContext("scope", "s", "r"))
     try:
         described = service.describe("mcp:demo:mcp_demo_lookup")
         assert scopes.pin("scope", session_id="s", request_id="r") is not None
@@ -327,13 +325,17 @@ async def test_agent_loop_exposes_search_then_yields_external_tool_boundary() ->
     # The replacement intentionally makes the old deferred ref stale; resolve
     # a fresh request exactly as production does.
     eligibility = ToolEligibilityContext("s", "r2", "chat")
-    fresh = ToolCapabilityResolver(registry).resolve_draft(
-        ToolExposureIntent(
-            direct_selectors=("source:builtin",),
-            discoverable_selectors=("source:mcp:*",),
-        ),
-        eligibility=eligibility,
-    ).finalize(scope_id="scope2")
+    fresh = (
+        ToolCapabilityResolver(registry)
+        .resolve_draft(
+            ToolExposureIntent(
+                direct_selectors=("source:builtin",),
+                discoverable_selectors=("source:mcp:*",),
+            ),
+            eligibility=eligibility,
+        )
+        .finalize(scope_id="scope2")
+    )
     scopes.open(fresh, eligibility)
     registry.set_capability_scope_store(scopes)
     registry.set_context_os_enabled_provider(lambda: True)
@@ -411,9 +413,7 @@ async def test_activation_snapshot_cas_failure_keeps_scope_and_local_set_unchang
 
     class _ConflictStore:
         async def update_tool_context_cas(self, *_args, **kwargs):
-            assert kwargs["prepared_toolset_summary"]["activated_names"] == [
-                "mcp_demo_lookup"
-            ]
+            assert kwargs["prepared_toolset_summary"]["activated_names"] == ["mcp_demo_lookup"]
             assert kwargs["prepared_toolset_summary"]["adapter_state"] == "prepared"
             raise SnapshotConflictError(1, 2)
 
@@ -439,4 +439,3 @@ async def test_activation_snapshot_cas_failure_keeps_scope_and_local_set_unchang
     assert current.snapshot_handle == handle
     assert prepared_context.tool_set is prepared
     assert prepared_context.active_snapshot_handle == handle
-

@@ -28,6 +28,7 @@ Expected weight layout (from the ModelScope bundle):
 ``model_dir`` points at that directory. The reference prompt audio lives
 under ``asset/`` inside the bundle and is used for zero-shot cloning.
 """
+
 from __future__ import annotations
 
 import io

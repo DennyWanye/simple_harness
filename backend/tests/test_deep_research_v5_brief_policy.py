@@ -72,9 +72,10 @@ def test_sc_edu_01_has_exact_six_core_dimensions_and_source_requirements() -> No
     assert ResearchBrief.from_json(brief.to_json()) == brief
 
     fields = {item.dimension_id: item for item in brief.dimensions}
-    assert "double reduction implementation" in fields[
-        "edu_double_reduction_after_school_burden"
-    ].query_targets
+    assert (
+        "double reduction implementation"
+        in fields["edu_double_reduction_after_school_burden"].query_targets
+    )
     assert "national_plan" in fields["edu_national_next_plan"].expected_source_types
     assert "finance_budget" in fields["edu_teacher_finance"].expected_source_types
 
@@ -137,9 +138,7 @@ def test_only_explicit_user_exclusion_can_create_not_applicable_coverage() -> No
 
     forged = replace(
         ordinary,
-        not_applicable_conditions=(
-            "edu_teacher_finance|user_explicit:fabricated exclusion",
-        ),
+        not_applicable_conditions=("edu_teacher_finance|user_explicit:fabricated exclusion",),
     )
     with pytest.raises(ContractValidationError, match="explicit user exclusion"):
         initial_dimension_coverages(forged)
@@ -169,8 +168,9 @@ def test_modeling_output_is_strict_and_ignores_deterministic_identity_echoes() -
 
 def test_real_provider_replay_keeps_valid_dimensions_and_normalizes_bounded_enums() -> None:
     payload = json.loads(
-        (Path(__file__).parent / "fixtures" / "deep_research_v5_modeling_provider_response.json")
-        .read_text(encoding="utf-8")
+        (
+            Path(__file__).parent / "fixtures" / "deep_research_v5_modeling_provider_response.json"
+        ).read_text(encoding="utf-8")
     )["modeling_output"]
     validated = validate_modeling_output(payload)
     assert tuple(item.dimension_id for item in validated.dimensions or ()) == (
@@ -213,10 +213,7 @@ def test_real_provider_replay_keeps_valid_dimensions_and_normalizes_bounded_enum
 
 
 def test_gate_f_three_natural_questions_build_topic_specific_faceted_dimensions() -> None:
-    ai_question = (
-        "请你帮我调研一下，现在最强的ai 大模型前10是哪几个？"
-        "每一个的优缺点都要调研出来"
-    )
+    ai_question = "请你帮我调研一下，现在最强的ai 大模型前10是哪几个？每一个的优缺点都要调研出来"
     statistics_question = (
         "帮我深入调研一下：2024年中国总人口、出生人口、65岁以上人口占比和"
         "城镇化率分别是多少？请优先使用国家统计局原始资料，并把每一个数字的来源说清楚。"
@@ -252,9 +249,7 @@ def test_gate_f_three_natural_questions_build_topic_specific_faceted_dimensions(
     assert all(item.first_party_required for item in statistics.dimensions)
 
     product_intent = detect_research_intent(product_question, as_of_date=AS_OF)
-    assert {"product_comparison", "purchase_recommendation"} <= set(
-        product_intent.intent_facets
-    )
+    assert {"product_comparison", "purchase_recommendation"} <= set(product_intent.intent_facets)
     product = build_research_brief(product_question, as_of_date=AS_OF)
     assert product.subjects == ("iPhone 17 Pro", "小米 15 Ultra")
     assert tuple(item.dimension_id for item in product.dimensions) == (
@@ -302,7 +297,9 @@ def test_fixed_profile_modeling_cannot_remove_required_core_dimensions() -> None
     modeled = [
         _model_dimension("edu_current_state", "Current state?", "edu state"),
         _model_dimension("edu_scale_trend", "Scale trend?", "edu scale"),
-        _model_dimension("custom_context", "What context helps?", "edu context", importance="supporting"),
+        _model_dimension(
+            "custom_context", "What context helps?", "edu context", importance="supporting"
+        ),
     ]
     merged = merge_modeling_output(brief, {"dimensions": modeled})
     assert tuple(item.dimension_id for item in merged.dimensions[:6]) == EDUCATION_DIMENSION_IDS

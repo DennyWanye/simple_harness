@@ -1,4 +1,5 @@
 """记忆 SDK 接入后端启动 smoke：import main.py → 初始化 SessionDB+MemoryBackend → 走一条消息。"""
+
 from __future__ import annotations
 
 import asyncio

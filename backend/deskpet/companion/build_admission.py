@@ -148,9 +148,7 @@ class ExplicitGrowthBuildAdmissionV1:
     build_id: str
     evidence_set_hash: str
     reservation_key: str
-    publish_policy: CapabilityBuildPublishPolicy = (
-        CapabilityBuildPublishPolicy.CANDIDATE_ONLY
-    )
+    publish_policy: CapabilityBuildPublishPolicy = CapabilityBuildPublishPolicy.CANDIDATE_ONLY
 
     def __post_init__(self) -> None:
         for name in (
@@ -222,9 +220,7 @@ class GrowthBuildAdmissionRouter:
             raise GrowthBuildAdmissionError("governance_admission_required")
         if proposal is None or proposal.target is None:
             raise GrowthBuildAdmissionError("structured_growth_proposal_required")
-        if proposal.target.kind.value not in {
-            item.value for item in trusted.requested_entry_kinds
-        }:
+        if proposal.target.kind.value not in {item.value for item in trusted.requested_entry_kinds}:
             raise GrowthBuildAdmissionError("proposal_entry_kind_mismatch")
 
         source_ref = (
@@ -239,9 +235,7 @@ class GrowthBuildAdmissionRouter:
                 "root_run_id": trusted.root_run_id,
                 "user_message_ref": trusted.user_message_ref,
                 "user_message_hash": trusted.user_message_hash,
-                "requested_entry_kinds": [
-                    item.value for item in trusted.requested_entry_kinds
-                ],
+                "requested_entry_kinds": [item.value for item in trusted.requested_entry_kinds],
             }
         )
         proposal_ref = "proposal:" + _hash(
@@ -364,9 +358,7 @@ class GrowthCandidateBuildPermitV1:
             "target_fence_hash": target_fence_hash,
             "lease_epoch": lease_epoch,
         }
-        permit_hash = _hash(
-            {"schema": "growth-candidate-build-permit-v1", **values}
-        )
+        permit_hash = _hash({"schema": "growth-candidate-build-permit-v1", **values})
         return cls(
             **values,
             permit_hash=permit_hash,
@@ -437,9 +429,7 @@ class CandidateDraftReceiptV1:
         }
 
     @classmethod
-    def from_authoritative_row(
-        cls, row: Mapping[str, object]
-    ) -> CandidateDraftReceiptV1:
+    def from_authoritative_row(cls, row: Mapping[str, object]) -> CandidateDraftReceiptV1:
         fields = (
             "receipt_id",
             "builder_launch_id",
@@ -506,9 +496,7 @@ class CandidateDraftReceiptV1:
         }
         return cls(
             **values,
-            receipt_hash=_hash(
-                {"schema": "candidate-draft-receipt-v1", **values}
-            ),
+            receipt_hash=_hash({"schema": "candidate-draft-receipt-v1", **values}),
             _host_token=_HOST_ISSUER,
         )
 
@@ -555,9 +543,7 @@ class CandidateDraftReceiptExpectationV1:
     def verify(self, receipt: CandidateDraftReceiptV1) -> None:
         for name in self.__dataclass_fields__:
             if getattr(receipt, name) != getattr(self, name):
-                raise GrowthBuildAdmissionError(
-                    f"candidate_draft_receipt_{name}_mismatch"
-                )
+                raise GrowthBuildAdmissionError(f"candidate_draft_receipt_{name}_mismatch")
 
 
 class GrowthCandidateBuildPermitQueryPort(Protocol):

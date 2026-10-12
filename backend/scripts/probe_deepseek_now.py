@@ -1,6 +1,7 @@
 """Quick health probe: is deepseek-v4-pro 403ing on the relay right now? Compare vs gpt-5.5.
 Direct connect (no proxy). Read-only diagnostic — NOT test evidence.
 """
+
 from __future__ import annotations
 
 import os

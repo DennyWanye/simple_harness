@@ -45,8 +45,6 @@ from .tool_gateway import TOOL_NAMES, WorkspaceToolGateway, read_tool_schemas
 OWNER_SCOPE = "agent-orchestrator"  # D3-10': one scope shared by every orchestrator instance
 
 
-
-
 @dataclass(frozen=True, slots=True)
 class OrchestratorConfig:
     evidence_root: Path
@@ -108,9 +106,13 @@ class OrchestratorConfig:
     appworld_execute: Callable[[str], Mapping[str, Any]] | None = field(
         default=None, repr=False, compare=False
     )
-    domain_tools: Mapping[str, DomainTool] = field(default_factory=dict, kw_only=True, repr=False, compare=False)
+    domain_tools: Mapping[str, DomainTool] = field(
+        default_factory=dict, kw_only=True, repr=False, compare=False
+    )
     # step 5 (D5-2 / D5-6 / D5-7 / D5-8 / D5-15)
-    planning_backend: PlanningBackend | None = field(default=None, repr=False, compare=False, kw_only=True)
+    planning_backend: PlanningBackend | None = field(
+        default=None, repr=False, compare=False, kw_only=True
+    )
     planning_backend_limits: PlanningLimits | None = field(default=None, kw_only=True)
     aging_window_seconds: float = 300.0
     # step 6 (D6-1 / D6-8)
@@ -175,13 +177,21 @@ class OrchestratorConfig:
             )
         # Physical capacity is a deployment limit, independent of logical candidate
         # count. Provider admission reports slot waiting explicitly to liveness.
-        if (isinstance(self.max_concurrent_model_calls, bool)
-                or not isinstance(self.max_concurrent_model_calls, int)
-                or self.max_concurrent_model_calls < 1):
+        if (
+            isinstance(self.max_concurrent_model_calls, bool)
+            or not isinstance(self.max_concurrent_model_calls, int)
+            or self.max_concurrent_model_calls < 1
+        ):
             raise ValueError("max_concurrent_model_calls must be a positive integer")
         if self.verifier_workers_ceiling is None:
-            object.__setattr__(self, "verifier_workers_ceiling", max(
-                self.verifier_workers, min(2 * self.verifier_workers, self.max_concurrent_model_calls)))
+            object.__setattr__(
+                self,
+                "verifier_workers_ceiling",
+                max(
+                    self.verifier_workers,
+                    min(2 * self.verifier_workers, self.max_concurrent_model_calls),
+                ),
+            )
         if self.verifier_workers_ceiling < self.verifier_workers:  # type: ignore[operator]
             raise ValueError("verifier_workers_ceiling must be >= verifier_workers")
 
@@ -211,8 +221,12 @@ class OrchestratorConfig:
     def to_json(self) -> dict[str, Any]:
         return {
             "planning": {
-                "backend_id": None if self.planning_backend is None else self.planning_backend.backend_id,
-                "limits": None if self.planning_backend_limits is None else self.planning_backend_limits.to_json(),
+                "backend_id": None
+                if self.planning_backend is None
+                else self.planning_backend.backend_id,
+                "limits": None
+                if self.planning_backend_limits is None
+                else self.planning_backend_limits.to_json(),
             },
             "model": self.model,
             "owner_id": self.owner_id,
@@ -329,7 +343,9 @@ def _read_context_identity(database: Path) -> dict[str, Any] | None:
 
 
 def resolve_profile_context_policy(
-    config: OrchestratorConfig, *, profile_id: str = DEFAULT_PROFILE,
+    config: OrchestratorConfig,
+    *,
+    profile_id: str = DEFAULT_PROFILE,
     tokenizer: TokenizerPort | None = None,
     fresh_policy: ContextPolicy | None = None,
 ) -> ContextPolicy | None:
@@ -346,7 +362,9 @@ def resolve_profile_context_policy(
     if frozen is not None:
         counter = tokenizer if tokenizer is not None else UpperBoundTokenizer()
         if frozen.get("tokenizer_fingerprint") != counter.fingerprint:
-            raise ValueError("context identity requires the matching explicitly configured tokenizer")
+            raise ValueError(
+                "context identity requires the matching explicitly configured tokenizer"
+            )
         try:
             return ContextPolicy(**frozen["policy"])
         except (KeyError, TypeError, ValueError) as error:
@@ -375,13 +393,16 @@ def _bind_context_identity(database: Path, profile: RuntimeProfile) -> None:
     if database.exists():
         # Refuse even a library with an Agent but no context selections yet.
         # Empty pre-created SQLite files are not proof of a new profile either.
-        raise ValueError("context identity missing on legacy execution pool; use its legacy profile")
+        raise ValueError(
+            "context identity missing on legacy execution pool; use its legacy profile"
+        )
     database.parent.mkdir(parents=True, exist_ok=True)
     path = _context_identity_path(database)
     temporary: str | None = None
     try:
-        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=database.parent,
-                                         prefix=".context-", delete=False) as stream:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=database.parent, prefix=".context-", delete=False
+        ) as stream:
             temporary = stream.name
             stream.write(canonical_json(wanted))
             stream.flush()
@@ -406,7 +427,9 @@ def admission_accepts(admission: Any, frozen: object) -> bool:
 
 
 def _check_intent_contexts(
-    config: OrchestratorConfig, profile: RuntimeProfile, provider_admission: Any = None,
+    config: OrchestratorConfig,
+    profile: RuntimeProfile,
+    provider_admission: Any = None,
 ) -> None:
     """The frozen intent also detects a missing/incorrect sidecar before SDK recovery."""
 
@@ -423,7 +446,9 @@ def _check_intent_contexts(
             if str(frozen.get("runtime_profile_id") or DEFAULT_PROFILE) == profile.profile_id:
                 if frozen.get("runtime_context") != profile.context_snapshot():
                     raise ValueError("context identity differs from a persisted dispatch intent")
-                if not admission_accepts(provider_admission, frozen.get("provider_admission_fingerprint")):
+                if not admission_accepts(
+                    provider_admission, frozen.get("provider_admission_fingerprint")
+                ):
                     raise ValueError("provider admission identity differs from a persisted intent")
 
 
@@ -445,9 +470,7 @@ def assemble_orchestrator_runtime(
     if profiles is None:
         if provider is None:
             raise ValueError("either a provider or runtime profiles are required")
-        profiles = {
-            DEFAULT_PROFILE: RuntimeProfile(DEFAULT_PROFILE, provider, config.model)
-        }
+        profiles = {DEFAULT_PROFILE: RuntimeProfile(DEFAULT_PROFILE, provider, config.model)}
     if not profiles:
         raise ValueError("at least one runtime profile is required")
     chosen_default = default_profile or (
@@ -472,13 +495,17 @@ def assemble_orchestrator_runtime(
         provider_admission is not None or set(provider_admissions) != set(profiles)
     ):
         raise ValueError("per-pool admissions must cover exactly the configured profiles")
-    if local_provider_admissions is not None and not set(local_provider_admissions) <= set(profiles):
+    if local_provider_admissions is not None and not set(local_provider_admissions) <= set(
+        profiles
+    ):
         raise ValueError("local admissions name an unconfigured profile")
     for profile_id, profile in profiles.items():
         if profile_id != profile.profile_id:
             raise ValueError(f"profile key {profile_id!r} != profile_id {profile.profile_id!r}")
         database = execution_db_for(config, profile_id)
-        admission = provider_admission if provider_admissions is None else provider_admissions[profile_id]
+        admission = (
+            provider_admission if provider_admissions is None else provider_admissions[profile_id]
+        )
         _check_intent_contexts(config, profile, admission)
         _bind_context_identity(database, profile)
         default_out = profile.default_max_output_tokens or config.default_max_output_tokens
@@ -494,8 +521,10 @@ def assemble_orchestrator_runtime(
             database_path=str(database),
             tool_executor=gateway,
             tool_names=(*TOOL_NAMES, *config.domain_tools),
-            tool_schemas={**read_tool_schemas(large=profile.context_policy is not None),
-                          **{name: tool.schema for name, tool in config.domain_tools.items()}},
+            tool_schemas={
+                **read_tool_schemas(large=profile.context_policy is not None),
+                **{name: tool.schema for name, tool in config.domain_tools.items()},
+            },
             context_policy=profile.context_policy or ContextPolicy(),
             tokenizer=profile.tokenizer,
             model=profile.model,

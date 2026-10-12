@@ -10,6 +10,7 @@ code-session-model-params/spec.md
     - Legacy row without params stays valid
     - Clear binding restores global chain
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -47,11 +48,7 @@ def test_set_get_model_params_round_trip(sdb: SessionDB) -> None:
         "context": "1m",
         "effort": "high",
     }
-    _run(
-        sdb.set_code_session_provider_binding(
-            "code:proj-a", None, "gpt-5.5", params
-        )
-    )
+    _run(sdb.set_code_session_provider_binding("code:proj-a", None, "gpt-5.5", params))
     got = _run(sdb.get_code_session_provider_binding("code:proj-a"))
     assert got["preferred_model"] == "gpt-5.5"
     assert got["provider_id"] is None
@@ -60,26 +57,17 @@ def test_set_get_model_params_round_trip(sdb: SessionDB) -> None:
 
 def test_legacy_row_without_params_is_valid(sdb: SessionDB) -> None:
     # Simulate a pre-008 / no-params row written via the model-only path.
-    _run(
-        sdb.set_code_session_provider_binding(
-            "code:legacy", None, "deepseek-v4-pro"
-        )
-    )
+    _run(sdb.set_code_session_provider_binding("code:legacy", None, "deepseek-v4-pro"))
     got = _run(sdb.get_code_session_provider_binding("code:legacy"))
     assert got["preferred_model"] == "deepseek-v4-pro"
     assert got["model_params"] is None  # provider defaults, no error
 
 
 def test_corrupt_params_json_degrades_to_none(sdb: SessionDB) -> None:
-    _run(
-        sdb.set_code_session_provider_binding(
-            "code:bad", None, "gpt-5.5", {"effort": "high"}
-        )
-    )
+    _run(sdb.set_code_session_provider_binding("code:bad", None, "gpt-5.5", {"effort": "high"}))
     con = sqlite3.connect(sdb._db_path)
     con.execute(
-        "UPDATE code_session_provider SET model_params=? "
-        "WHERE base_session_id=?",
+        "UPDATE code_session_provider SET model_params=? WHERE base_session_id=?",
         ("{not json", "code:bad"),
     )
     con.commit()
@@ -89,11 +77,7 @@ def test_corrupt_params_json_degrades_to_none(sdb: SessionDB) -> None:
 
 
 def test_clear_binding_preserves_epoch_tombstone(sdb: SessionDB) -> None:
-    _run(
-        sdb.set_code_session_provider_binding(
-            "code:proj-c", None, "gpt-5.5", {"effort": "max"}
-        )
-    )
+    _run(sdb.set_code_session_provider_binding("code:proj-c", None, "gpt-5.5", {"effort": "max"}))
     _run(sdb.set_code_session_provider_binding("code:proj-c", None, None, None))
     got = _run(sdb.get_code_session_provider_binding("code:proj-c"))
     assert got == {

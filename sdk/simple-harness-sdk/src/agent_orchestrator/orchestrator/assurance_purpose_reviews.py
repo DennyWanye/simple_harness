@@ -142,7 +142,12 @@ def _scope_ref_for(store: Any, mission_id: str, occurrence_id: str) -> Assurance
 
 
 def next_review_round(
-    connection: Any, *, mission_id: str, review_key: str, purpose: str, owner_task_id: str,
+    connection: Any,
+    *,
+    mission_id: str,
+    review_key: str,
+    purpose: str,
+    owner_task_id: str,
     occurrence_id: str | None,
 ) -> int:
     """同一个审阅对象（任务 × 用途 × 出现）再准备一份新审阅包就是新一轮（第 2 批 A15）。
@@ -227,7 +232,11 @@ def prepare_purpose_review(
         )
         # 解析时就核用途与访问（第 2 批 A10）：授权与身份进读取器，许可随解析结果回来。
         reader = AssuranceReader(
-            store, tenant_id=tenant_id, mission_id=mission_id, authority=authority, identity=identity
+            store,
+            tenant_id=tenant_id,
+            mission_id=mission_id,
+            authority=authority,
+            identity=identity,
         )
         existing = store.connection.execute(
             "SELECT dispatch_intent_id FROM assurance_review_invocations "
@@ -294,8 +303,12 @@ def prepare_purpose_review(
         complete = read_complete_evidence_snapshot(reader, scope_id=subject.scope_id)
         permissions = tuple((item.ref, item.permission) for item in metadata)
         round_no = next_review_round(
-            store.connection, mission_id=mission_id, review_key=review_key, purpose=purpose,
-            owner_task_id=subject.owner_task.id, occurrence_id=subject.occurrence_id,
+            store.connection,
+            mission_id=mission_id,
+            review_key=review_key,
+            purpose=purpose,
+            owner_task_id=subject.owner_task.id,
+            occurrence_id=subject.occurrence_id,
         )
         reads = [item.read_item for item in metadata] + [item.read_item for item in complete]
         for _, permission in permissions:
@@ -459,7 +472,7 @@ def method_plan_package(
         # One manifest per exact method: a revised proposal keeps the method id and
         # takes a new version, and is a different review of a different candidate.
         request_id=f"assurance-method-plan:{method_ref.id}@{int(method_ref.revision)}:"
-                   f"{method_ref.content_hash[:16]}",
+        f"{method_ref.content_hash[:16]}",
     )
     occurrence_id = None
     scope_ref = None
@@ -467,8 +480,9 @@ def method_plan_package(
     latest = htn.latest_requirements_revision(mission_id)
     # 阶段 E：用户改了要求、按新版的计划还没提交时，这个目标在活动计划里的完成范围是旧版要求的，
     # 与这次做法审阅无关——和"还没有完成范围"同样处理。
-    if active is not None and (latest is None
-                               or int(active.read_set.requirements_revision) == int(latest.revision)):
+    if active is not None and (
+        latest is None or int(active.read_set.requirements_revision) == int(latest.revision)
+    ):
         row = store.connection.execute(
             "SELECT occurrence_id FROM plan_memberships WHERE mission_id=? AND revision=? "
             "AND task_id=? LIMIT 2",
@@ -620,7 +634,9 @@ def action_proposal_subject(
     # 原计划 §2（:41）申请单审查"接实际 payload/spec/owner"：范围钉住的那一份已批准完成规格
     # （范围表外键指向它），经原 OCC 读者读（推后第 3 批 A11）。
     materials.add(
-        AssuranceRef("completion_spec", Pin(str(scope_row["spec_id"]), 0, str(scope_row["spec_hash"])))
+        AssuranceRef(
+            "completion_spec", Pin(str(scope_row["spec_id"]), 0, str(scope_row["spec_hash"]))
+        )
     )
     # The accepted file the frozen parameters publish (the reviewer judges
     # "parameters and candidate" against it; the freeze already refused any other
@@ -785,7 +801,9 @@ def mission_final_subject(
             "MISSION_FINAL", {"contributions": list(contributions)}
         ),
         material_refs=frozenset(
-            _acceptance_refs(store, contributions) | effects | _sources_in_force(store, mission_id, dispatch)
+            _acceptance_refs(store, contributions)
+            | effects
+            | _sources_in_force(store, mission_id, dispatch)
         ),
         scope_id=scope_ref.pin.id,
     )
@@ -802,9 +820,13 @@ def _sources_in_force(store: Any, mission_id: str, dispatch: Any) -> set[Assuran
     rows = store.list_sources(mission_id)
     replaced = {str(row["path"]) for row in rows if row["superseded_by"] is not None}
     return {
-        AssuranceRef("source", Pin(str(row["path"]), int(row["revision"]), str(row["version_hash"])))
+        AssuranceRef(
+            "source", Pin(str(row["path"]), int(row["revision"]), str(row["version_hash"]))
+        )
         for row in rows
-        if row["superseded_by"] is None and not row["revoked"] and str(row["path"]) in replaced
+        if row["superseded_by"] is None
+        and not row["revoked"]
+        and str(row["path"]) in replaced
         and in_source_roots(str(row["path"]), roots)
     }
 

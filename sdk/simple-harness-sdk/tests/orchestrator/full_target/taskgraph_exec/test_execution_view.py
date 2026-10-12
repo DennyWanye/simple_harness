@@ -7,6 +7,7 @@ the model replies are scripted.  The execution read shares the graph's read toke
 mixing cuts, links execution instances by recorded identities, shows a turn's
 visible work through the whitelist, and writes nothing.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -18,8 +19,12 @@ from agent_orchestrator.orchestrator.taskgraph_execution_view import EDGE_KINDS,
 from production_fixture import OUTPUT, enabled_world, scripted_worker
 
 SECRET = "sk-" + "a" * 30
+
+
 def _worker():  # type: ignore[no-untyped-def]
-    return scripted_worker(("workspace_write_file", {"path": OUTPUT, "content": "Repository facts, " + SECRET}))
+    return scripted_worker(
+        ("workspace_write_file", {"path": OUTPUT, "content": "Repository facts, " + SECRET})
+    )
 
 
 def test_execution_view_shares_the_graph_token_links_instances_and_reads_turns(tmp_path):
@@ -28,12 +33,20 @@ def test_execution_view_shares_the_graph_token_links_instances_and_reads_turns(t
             await world.commit_seed()
             await world.run_worker()
             store, mission, reads = world.loop.store, world.mission.id, world.graph.reads
-            before = (store.last_event_seq(mission), world.provider.calls, store.connection.total_changes)
+            before = (
+                store.last_event_seq(mission),
+                world.provider.calls,
+                store.connection.total_changes,
+            )
 
             view = reads.execution_snapshot(mission)
             graph = reads.snapshot(mission)
             assert view["read_token"] == view["graph"]["read_token"]
-            assert view["graph"]["read_token"]["plan_revision"] == graph["read_token"]["plan_revision"] == 1
+            assert (
+                view["graph"]["read_token"]["plan_revision"]
+                == graph["read_token"]["plan_revision"]
+                == 1
+            )
             assert view["complete"] is True and view["next_cursor"] is None
             labels = {row["occurrence_id"]: row for row in view["occurrence_labels"]}
             assert labels and all(row["step_key"] for row in labels.values())
@@ -45,7 +58,9 @@ def test_execution_view_shares_the_graph_token_links_instances_and_reads_turns(t
             [check] = [n for n in nodes.values() if n["kind"] == "check"]
             # The Planner proposed a method, it passed its independent review, then the Planner
             # adopted it: two Planner rounds, the second one committed plan revision 1.
-            proposer, planner = [n for n in nodes.values() if n["kind"] == "planning" and n["role"] == "planner"]
+            proposer, planner = [
+                n for n in nodes.values() if n["kind"] == "planning" and n["role"] == "planner"
+            ]
             assert [d["decision_type"] for d in proposer["decisions"]] == ["PROPOSE_METHOD"]
             structure = {n["occurrence_id"] for n in view["graph"]["nodes"]}
             assert attempt["occurrence_id"] in structure and attempt["plan_revision"] == 1
@@ -57,19 +72,26 @@ def test_execution_view_shares_the_graph_token_links_instances_and_reads_turns(t
             assert ("committed_as", planner["node_id"], "plan_revision:1") in edges
             assert [d["decision_type"] for d in planner["decisions"]] == ["REFINE"]
             # process edges never masquerade as scheduling edges
-            assert not {"order", "data", "refinement"} & {e["kind"] for e in view["execution_edges"]}
+            assert not {"order", "data", "refinement"} & {
+                e["kind"] for e in view["execution_edges"]
+            }
 
             detail = reads.execution_detail(mission, attempt["node_id"])
             assert detail["turn"]["coverage"] == "COMPLETE"
             tools = [item for item in detail["items"] if item["t"] == "tool"]
             assert tools and tools[0]["tool"] == "workspace_write_file" and tools[0]["ok"] is True
-            assert any(item["t"] == "submit" and item["text"] == "写好了要求的文件"
-                       for item in detail["items"])
+            assert any(
+                item["t"] == "submit" and item["text"] == "写好了要求的文件"
+                for item in detail["items"]
+            )
             text = json.dumps(detail, ensure_ascii=False)
             assert SECRET not in text  # tool arguments never leave, credentials redacted
             assert "[role:worker]" not in text and "instructions" not in text
-            pinned = reads.execution_detail(mission, attempt["node_id"],
-                                            through_journal_seq=detail["turn"]["through_journal_seq"])
+            pinned = reads.execution_detail(
+                mission,
+                attempt["node_id"],
+                through_journal_seq=detail["turn"]["through_journal_seq"],
+            )
             assert pinned["items"] == detail["items"]
 
             # keyset pages under one pinned cut; a tampered cursor is refused
@@ -85,6 +107,7 @@ def test_execution_view_shares_the_graph_token_links_instances_and_reads_turns(t
             assert seen == [n["node_id"] for n in view["execution_nodes"]]
             first = reads.execution_snapshot(mission, limit=1)
             import base64
+
             forged = json.loads(base64.urlsafe_b64decode(first["next_cursor"]))
             forged["h"] = "0" * 64
             bad = base64.urlsafe_b64encode(json.dumps(forged).encode()).decode()
@@ -102,8 +125,11 @@ def test_execution_view_shares_the_graph_token_links_instances_and_reads_turns(t
             assert absent.value.code == "REVISION_NOT_FOUND"
 
             # reads write nothing and call no model
-            assert (store.last_event_seq(mission), world.provider.calls,
-                    store.connection.total_changes) == before
+            assert (
+                store.last_event_seq(mission),
+                world.provider.calls,
+                store.connection.total_changes,
+            ) == before
 
     asyncio.run(case())
 
@@ -129,7 +155,10 @@ def test_execution_reads_never_hand_out_a_view_outside_the_public_contract(tmp_p
                 return built
 
             monkeypatch.setattr(module.ExecutionProjection, "build", drifted)
-            for read in (lambda: reads.execution_snapshot(mission), lambda: reads.execution_detail(mission, node_id)):
+            for read in (
+                lambda: reads.execution_snapshot(mission),
+                lambda: reads.execution_detail(mission, node_id),
+            ):
                 with pytest.raises(TaskGraphReadError) as refused:
                     read()
                 assert refused.value.code == "GRAPH_INTEGRITY"

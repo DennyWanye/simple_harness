@@ -15,6 +15,7 @@ QUERY_SET（整任务全表的超集）、权限 ACCESS、策略 POLICY。此前
 
 红线（用户 2026-10-01）：结果只用来判"仍有效 / 已过期"和拦住收尾，从不写 ``goal_resolutions.validity``。
 """
+
 from __future__ import annotations
 
 from collections.abc import Iterator
@@ -52,7 +53,9 @@ def certificate_expired(row: Any, *, now_ms: int) -> bool:
     return row["not_after_ms"] is not None and int(now_ms) >= int(row["not_after_ms"])
 
 
-def changed_items(store: Any, *, tenant_id: str, certificate: dict[str, Any]) -> list[dict[str, str]]:
+def changed_items(
+    store: Any, *, tenant_id: str, certificate: dict[str, Any]
+) -> list[dict[str, str]]:
     """证书读集里真正变了的项（只比钉住对象）；空列表 = 依据仍成立。须在一致读或写事务里调用。"""
     mission_id = str(certificate["mission_id"])
     reader = AssuranceReader(store, tenant_id=tenant_id, mission_id=mission_id)
@@ -61,7 +64,10 @@ def changed_items(store: Any, *, tenant_id: str, certificate: dict[str, Any]) ->
         channel, key = str(item["channel"]), str(item["key"])
         if channel == "OBJECT":
             pin = decode(key)
-            ref = AssuranceRef(str(pin["kind"]), Pin(str(pin["id"]), int(pin["revision"]), str(item["fingerprint"])))
+            ref = AssuranceRef(
+                str(pin["kind"]),
+                Pin(str(pin["id"]), int(pin["revision"]), str(item["fingerprint"])),
+            )
             try:
                 reader.read_exact_metadata(ref)
             except AssuranceError as error:
@@ -71,10 +77,14 @@ def changed_items(store: Any, *, tenant_id: str, certificate: dict[str, Any]) ->
 
 def stale_source_key(certificate_id: str, changed: list[dict[str, str]]) -> str:
     """同一张证书同一处变化只记一条修复请求。"""
-    return "evidence-stale:" + fingerprint({"certificate_id": certificate_id, "changed_items": changed})
+    return "evidence-stale:" + fingerprint(
+        {"certificate_id": certificate_id, "changed_items": changed}
+    )
 
 
-def closeout_certificates(store: Any, mission_id: str, *, limit: int = 4096) -> Iterator[tuple[Any, str]]:
+def closeout_certificates(
+    store: Any, mission_id: str, *, limit: int = 4096
+) -> Iterator[tuple[Any, str]]:
     """收尾所依赖的证书：根结论 / 中间目标结论 / 每条贡献验收，且消费方还**现行**（验收 validity=CURRENT；
     目标结论 adopted=1 且 CURRENT）。每项是 (证书行, 消费方的任务编号)。重做后新验收是新的消费方身份，
     旧证书自然不再算；同一身份更新的证书顶掉旧的（``live_usable_certificates`` 只取最新一张）。"""
@@ -86,11 +96,14 @@ def closeout_certificates(store: Any, mission_id: str, *, limit: int = 4096) -> 
         if kind == "ACCEPTANCE":
             current = connection.execute(
                 "SELECT task_id FROM acceptances WHERE acceptance_id=? AND mission_id=? AND validity='CURRENT'",
-                (consumer_id, mission_id)).fetchone()
+                (consumer_id, mission_id),
+            ).fetchone()
         else:
             current = connection.execute(
                 "SELECT goal_task_id FROM goal_resolutions WHERE resolution_id=? AND mission_id=? "
-                "AND adopted=1 AND validity='CURRENT'", (consumer_id, mission_id)).fetchone()
+                "AND adopted=1 AND validity='CURRENT'",
+                (consumer_id, mission_id),
+            ).fetchone()
         if current is None:
             continue
         yield row, str(current[0])
@@ -110,8 +123,12 @@ def closeout_authorization(
     for row, _ in closeout_certificates(store, mission_id):
         certificate = decode(row["certificate_json"])
         identity = UseIdentity(
-            str(certificate["mission_id"]), str(certificate["consumer_kind"]), str(certificate["consumer_id"]),
-            str(certificate["scope_id"]), str(certificate["principal_id"]), str(certificate["purpose"]),
+            str(certificate["mission_id"]),
+            str(certificate["consumer_kind"]),
+            str(certificate["consumer_id"]),
+            str(certificate["scope_id"]),
+            str(certificate["principal_id"]),
+            str(certificate["purpose"]),
             str(certificate["root_incarnation_id"]),
         )
         permission = authority(identity, root_ref)
@@ -146,22 +163,34 @@ def stale_certificates(
         certificate = decode(row["certificate_json"])
         changed = changed_items(store, tenant_id=tenant_id, certificate=certificate)
         if certificate_expired(row, now_ms=now_ms):
-            changed = [*changed, {"channel": "VALIDITY", "key": str(row["certificate_id"]), "reason": "EXPIRED"}]
+            changed = [
+                *changed,
+                {"channel": "VALIDITY", "key": str(row["certificate_id"]), "reason": "EXPIRED"},
+            ]
         if not changed:
             continue
         source_key = stale_source_key(str(row["certificate_id"]), changed)
         if requested.get(source_key) in handled:
             continue
-        out.append({"certificate_id": str(row["certificate_id"]), "consumer_kind": kind,
-                    "consumer_id": consumer_id, "scope_id": str(row["scope_id"]),
-                    "task_id": task_id, "changed_items": changed, "source_key": source_key})
+        out.append(
+            {
+                "certificate_id": str(row["certificate_id"]),
+                "consumer_kind": kind,
+                "consumer_id": consumer_id,
+                "scope_id": str(row["scope_id"]),
+                "task_id": task_id,
+                "changed_items": changed,
+                "source_key": source_key,
+            }
+        )
     return out
 
 
 def closeout_detail(store: Any, mission_id: str) -> tuple[Any, dict[str, Any]] | None:
     """收尾行连同最近一次评估的内部核对字段（在那次评估的回执里，不在 closeout-v1 正文里——第 2 批车道 N）。"""
     row = store.connection.execute(
-        "SELECT * FROM assurance_closeouts WHERE mission_id=?", (mission_id,)).fetchone()
+        "SELECT * FROM assurance_closeouts WHERE mission_id=?", (mission_id,)
+    ).fetchone()
     if row is None:
         return None
     receipt = store.get_receipt(str(row["last_receipt_id"]))
@@ -181,6 +210,16 @@ def closeout_stale_findings(store: Any, mission_id: str) -> list[dict[str, Any]]
     return [dict(item) for item in detail.get("stale_certificates") or ()]
 
 
-__all__ = ("closeout_authorization", "closeout_certificates", "closeout_detail", "closeout_stale_findings",
-           "CLOSEOUT_CONSUMER_KINDS", "EVIDENCE_STALE", "certificate_expired", "changed_items",
-           "live_usable_certificates", "stale_certificates", "stale_source_key")
+__all__ = (
+    "closeout_authorization",
+    "closeout_certificates",
+    "closeout_detail",
+    "closeout_stale_findings",
+    "CLOSEOUT_CONSUMER_KINDS",
+    "EVIDENCE_STALE",
+    "certificate_expired",
+    "changed_items",
+    "live_usable_certificates",
+    "stale_certificates",
+    "stale_source_key",
+)

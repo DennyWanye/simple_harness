@@ -74,9 +74,7 @@ async def _collect(agen):
 
 def _read_jsonl(path: Path) -> list[dict]:
     return [
-        json.loads(line)
-        for line in path.read_text(encoding="utf-8").splitlines()
-        if line.strip()
+        json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()
     ]
 
 
@@ -112,7 +110,6 @@ async def test_tracer_writes_jsonl_with_full_tool_args(tmp_path: Path) -> None:
     args = llm_out["tool_calls"][0]["args"]
     assert args["full"] == "x" * 500
     assert args["nested"] == {"keep": ["all", "args"]}
-
 
 
 @pytest.mark.asyncio

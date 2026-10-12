@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 """Dump messages for the p4s24-smoke session — debug helper."""
+
 import os
 import sqlite3
 import sys
@@ -17,9 +18,9 @@ if not db_path:
 
 print(f"DB: {db_path}")
 conn = sqlite3.connect(db_path)
-tables = [r[0] for r in conn.execute(
-    "SELECT name FROM sqlite_master WHERE type='table'"
-).fetchall()]
+tables = [
+    r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+]
 print("Tables:", tables)
 print("user_version:", conn.execute("PRAGMA user_version").fetchone()[0])
 print()

@@ -106,11 +106,7 @@ class TaskSessionManager:
 
     def peers_for_group(self, effective_sid: str) -> list[str]:
         with self._lock:
-            return [
-                peer
-                for peer, group in self._peer_groups.items()
-                if group == effective_sid
-            ]
+            return [peer for peer, group in self._peer_groups.items() if group == effective_sid]
 
     @staticmethod
     def _strip_command(text: str, command: str) -> str | None:
@@ -118,7 +114,7 @@ class TaskSessionManager:
             return ""
         prefix = command + " "
         if text.startswith(prefix):
-            return text[len(prefix):].lstrip()
+            return text[len(prefix) :].lstrip()
         return None
 
     @staticmethod

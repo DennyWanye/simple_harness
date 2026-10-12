@@ -25,9 +25,7 @@ def _grant(tmp_path, *, source: str = "user", generation: int = 2) -> TaskGrant:
         resource_selectors=(
             ResourceSelector.filesystem(tmp_path / "workspace", "read", "write"),
             ResourceSelector.network("https://Example.COM:443/api", "connect"),
-            ResourceSelector(
-                "process_executable", "godot.exe", ("execute",)
-            ),
+            ResourceSelector("process_executable", "godot.exe", ("execute",)),
         ),
         permission_categories=("filesystem_read", "filesystem_write"),
         effect_kinds=("read_only", "staged_file"),
@@ -49,11 +47,7 @@ def _request(tmp_path, *, target: str = "inside.txt") -> ExactGrantRequest:
         capability_hash=_hash("capability"),
         schema_hash=_hash("schema"),
         scope_hash=_hash("scope"),
-        resource_selectors=(
-            ResourceSelector.filesystem(
-                tmp_path / "workspace" / target, "write"
-            ),
-        ),
+        resource_selectors=(ResourceSelector.filesystem(tmp_path / "workspace" / target, "write"),),
         permission_categories=("filesystem_write",),
         effect_kinds=("staged_file",),
         expires_at=200.0,
@@ -89,10 +83,7 @@ def test_exact_grant_is_bound_to_every_prepared_fingerprint(tmp_path) -> None:
     assert exact.args_hash == request.args_hash
     changed = ExactGrantRequest(
         **{
-            **{
-                field: getattr(request, field)
-                for field in request.__dataclass_fields__
-            },
+            **{field: getattr(request, field) for field in request.__dataclass_fields__},
             "args_hash": _hash("different"),
         }
     )

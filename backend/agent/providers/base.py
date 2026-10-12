@@ -11,6 +11,7 @@ Hermes 不稳定的规避措施。
 本文件定义 AgentProvider Protocol — 所有 Agent 实现（SimpleLLMAgent、
 未来的 HermesAgent、ToolUsingAgent 等）通过此接口接入 ServiceContext。
 """
+
 from __future__ import annotations
 
 from collections.abc import AsyncIterator

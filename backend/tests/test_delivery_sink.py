@@ -1,4 +1,5 @@
 """Unit tests for _DeliverySink."""
+
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -69,9 +70,16 @@ async def test_deliver_strategy_3_nested_event(delivery_sink, mock_delivery_adap
             "root_run_id": run_id,
             "session_id": "test_session",
             "durable_seq": 1,
-            "candidate": {"kind": "tool_call", "status": "running", "driver_kind": "react", "correlation": {}, "error": None, "artifact_refs": []},
-            "created_at": 1234567890.0
-        }
+            "candidate": {
+                "kind": "tool_call",
+                "status": "running",
+                "driver_kind": "react",
+                "correlation": {},
+                "error": None,
+                "artifact_refs": [],
+            },
+            "created_at": 1234567890.0,
+        },
     }
     idempotency_key = "event:3"  # No run_id in key
 

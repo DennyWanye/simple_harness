@@ -49,9 +49,7 @@ def _context(workspace: Path, call_id: str) -> ToolExecutionContext:
 
 def test_contract_rejects_escape_and_overlapping_scratch(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="relative"):
-        TaskOutputContractV1.freeze(
-            str(tmp_path), output_refs=[str(tmp_path / "absolute.txt")]
-        )
+        TaskOutputContractV1.freeze(str(tmp_path), output_refs=[str(tmp_path / "absolute.txt")])
     with pytest.raises(ValueError, match="overlap"):
         TaskOutputContractV1.freeze(
             str(tmp_path),
@@ -59,21 +57,15 @@ def test_contract_rejects_escape_and_overlapping_scratch(tmp_path: Path) -> None
             scratch_refs=["build/"],
         )
     with pytest.raises(ValueError, match="relative"):
-        TaskOutputContractV1.freeze(
-            str(tmp_path), output_refs=[r"C:\outside\result.txt"]
-        )
+        TaskOutputContractV1.freeze(str(tmp_path), output_refs=[r"C:\outside\result.txt"])
     with pytest.raises(ValueError, match="name files"):
         TaskOutputContractV1.freeze(str(tmp_path), output_refs=["build/"])
     with pytest.raises(ValueError, match="directory prefixes"):
-        TaskOutputContractV1.freeze(
-            str(tmp_path), output_refs=[], scratch_refs=["scratch"]
-        )
+        TaskOutputContractV1.freeze(str(tmp_path), output_refs=[], scratch_refs=["scratch"])
 
 
 def test_prepared_file_target_must_be_declared(tmp_path: Path) -> None:
-    contract = TaskOutputContractV1.freeze(
-        str(tmp_path), output_refs=["result.json"]
-    )
+    contract = TaskOutputContractV1.freeze(str(tmp_path), output_refs=["result.json"])
     registry = _registry()
     allowed = registry.prepare_call(
         "file_write",
@@ -100,9 +92,7 @@ def test_workspace_audit_requires_outputs_and_rejects_undeclared_change(
 ) -> None:
     source = tmp_path / "input.txt"
     source.write_text("before", encoding="utf-8")
-    contract = TaskOutputContractV1.freeze(
-        str(tmp_path), output_refs=["result.json"]
-    )
+    contract = TaskOutputContractV1.freeze(str(tmp_path), output_refs=["result.json"])
 
     assert contract.audit_workspace()["missing_outputs"] == ["result.json"]
     (tmp_path / "result.json").write_text("{}", encoding="utf-8")
@@ -151,9 +141,7 @@ def test_workspace_audit_allows_cleaned_scratch_only(tmp_path: Path) -> None:
 def test_workspace_audit_rejects_symlink_as_declared_output(tmp_path: Path) -> None:
     outside = tmp_path.parent / f"{tmp_path.name}-external-output.txt"
     outside.write_text("not a task artifact", encoding="utf-8")
-    contract = TaskOutputContractV1.freeze(
-        str(tmp_path), output_refs=["result.txt"]
-    )
+    contract = TaskOutputContractV1.freeze(str(tmp_path), output_refs=["result.txt"])
     (tmp_path / "result.txt").symlink_to(outside)
 
     audit = contract.audit_workspace()

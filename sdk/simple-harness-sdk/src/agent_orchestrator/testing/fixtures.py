@@ -41,9 +41,11 @@ def lift_immutable_guards(connection: Any, *tables: str) -> None:
 
     for table in tables:
         for (name,) in connection.execute(
-                "SELECT name FROM sqlite_master WHERE type='trigger' AND tbl_name=?"
-                " AND (upper(sql) LIKE '%BEFORE UPDATE%' OR upper(sql) LIKE '%BEFORE DELETE%')"
-                " AND upper(sql) LIKE '%RAISE(%'", (table,)).fetchall():
+            "SELECT name FROM sqlite_master WHERE type='trigger' AND tbl_name=?"
+            " AND (upper(sql) LIKE '%BEFORE UPDATE%' OR upper(sql) LIKE '%BEFORE DELETE%')"
+            " AND upper(sql) LIKE '%RAISE(%'",
+            (table,),
+        ).fetchall():
             connection.execute(f"DROP TRIGGER {name}")
 
 
@@ -196,7 +198,6 @@ def critic_step(
         return "<critic_verdict>" + json.dumps(body, ensure_ascii=False) + "</critic_verdict>"
 
     return step
-
 
 
 __all__ = (

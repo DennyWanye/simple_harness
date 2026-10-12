@@ -60,7 +60,9 @@ def _grok_runtime_path() -> Path:
 
 def _grok_cli_version() -> str:
     try:
-        out = subprocess.run(["grok", "--version"], capture_output=True, text=True, timeout=20).stdout
+        out = subprocess.run(
+            ["grok", "--version"], capture_output=True, text=True, timeout=20
+        ).stdout
         # "grok 1.0.30 (04b7ffed98c6)"
         return out.split()[1] if out.startswith("grok ") else "1.0.30"
     except Exception:  # noqa: BLE001
@@ -119,7 +121,9 @@ def cmd_write(args: argparse.Namespace) -> int:
 
 def cmd_status(args: argparse.Namespace) -> int:
     entry = _auth_entry()
-    print(f"auth.json      : {AUTH_JSON} (mtime {datetime.fromtimestamp(AUTH_JSON.stat().st_mtime).isoformat(timespec='seconds')})")
+    print(
+        f"auth.json      : {AUTH_JSON} (mtime {datetime.fromtimestamp(AUTH_JSON.stat().st_mtime).isoformat(timespec='seconds')})"
+    )
     for f in ("auth_mode", "create_time", "expires_at", "principal_type"):
         print(f"  {f:<13}: {entry.get(f)}")
     print(f"  token        : <{len(str(entry.get('key') or ''))} chars>")
@@ -133,7 +137,9 @@ def cmd_status(args: argparse.Namespace) -> int:
     print(f"live runtime   : {live}")
     if live.exists():
         lr = json.loads(live.read_text(encoding="utf-8"))
-        print(f"  base_url     : {lr.get('base_url')}   model: {lr.get('model')}   lane: {lr.get('_lane', 'default')}")
+        print(
+            f"  base_url     : {lr.get('base_url')}   model: {lr.get('model')}   lane: {lr.get('_lane', 'default')}"
+        )
     backups = sorted(live.parent.glob("llm_runtime.json.bak-grok-*"))
     print(f"grok backups   : {len(backups)}" + (f" (latest {backups[-1].name})" if backups else ""))
     return 0
@@ -144,7 +150,9 @@ async def _probe(rt: dict) -> int:
     from providers.openai_compatible import OpenAICompatibleProvider
 
     p = OpenAICompatibleProvider(
-        base_url=rt["base_url"], api_key=rt["api_key"], model=rt["model"],
+        base_url=rt["base_url"],
+        api_key=rt["api_key"],
+        model=rt["model"],
         extra_headers=rt.get("extra_headers") or {},
     )
     t0 = time.time()
@@ -156,22 +164,31 @@ async def _probe(rt: dict) -> int:
         out.append(tok)
     print(f"[stream] {time.time() - t0:.1f}s text={''.join(out)!r} usage={p.last_usage}")
 
-    tools = [{
-        "type": "function",
-        "function": {
-            "name": "get_time",
-            "description": "Return the current time",
-            "parameters": {"type": "object", "properties": {"tz": {"type": "string"}}, "required": ["tz"]},
-        },
-    }]
+    tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "get_time",
+                "description": "Return the current time",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"tz": {"type": "string"}},
+                    "required": ["tz"],
+                },
+            },
+        }
+    ]
     t0 = time.time()
     r = await p.chat_with_tools(
         [{"role": "user", "content": "What time is it in Taipei? You must call the tool."}],
-        tools=tools, max_tokens=int(rt.get("max_tokens", 256)),
+        tools=tools,
+        max_tokens=int(rt.get("max_tokens", 256)),
     )
     calls = r.get("tool_calls") or []
-    print(f"[tools]  {time.time() - t0:.1f}s model_echo={r.get('model')!r} stop={r.get('stop_reason')!r} "
-          f"tool_calls={[(c.get('function') or c).get('name') for c in calls]} usage={r.get('usage')}")
+    print(
+        f"[tools]  {time.time() - t0:.1f}s model_echo={r.get('model')!r} stop={r.get('stop_reason')!r} "
+        f"tool_calls={[(c.get('function') or c).get('name') for c in calls]} usage={r.get('usage')}"
+    )
     ok = "API connection successful" in "".join(out) and bool(calls)
     print("PROBE", "OK" if ok else "FAILED")
     return 0 if ok else 1
@@ -238,9 +255,13 @@ def cmd_refresh(args: argparse.Namespace) -> int:
     refresh = str(entry.get("refresh_token") or "")
     client_id = str(entry.get("oidc_client_id") or "")
     if not (issuer and refresh and client_id):
-        sys.exit("auth.json entry lacks oidc_issuer / refresh_token / oidc_client_id: run `grok login`")
+        sys.exit(
+            "auth.json entry lacks oidc_issuer / refresh_token / oidc_client_id: run `grok login`"
+        )
     try:
-        disc = json.load(urllib.request.urlopen(issuer + "/.well-known/openid-configuration", timeout=20))
+        disc = json.load(
+            urllib.request.urlopen(issuer + "/.well-known/openid-configuration", timeout=20)
+        )
         endpoint = disc.get("token_endpoint") or issuer + "/oauth2/token"
     except Exception:  # noqa: BLE001
         endpoint = issuer + "/oauth2/token"
@@ -248,7 +269,8 @@ def cmd_refresh(args: argparse.Namespace) -> int:
         {"grant_type": "refresh_token", "refresh_token": refresh, "client_id": client_id}
     ).encode()
     req = urllib.request.Request(
-        endpoint, data=body,
+        endpoint,
+        data=body,
         headers={"Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json"},
     )
     try:
@@ -279,21 +301,33 @@ def cmd_refresh(args: argparse.Namespace) -> int:
     tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     os.chmod(tmp, 0o600)
     os.replace(tmp, AUTH_JSON)
-    print(f"REFRESH OK expires_at={entry['expires_at']} ttl={ttl}s rotated_refresh_token={bool(tok.get('refresh_token'))}")
+    print(
+        f"REFRESH OK expires_at={entry['expires_at']} ttl={ttl}s rotated_refresh_token={bool(tok.get('refresh_token'))}"
+    )
     return 0
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     sub = ap.add_subparsers(dest="cmd", required=True)
     w = sub.add_parser("write", help="generate llm_runtime.grok.json from ~/.grok/auth.json")
     w.add_argument("--model", default=DEFAULT_MODEL)
     w.add_argument("--max-tokens", type=int, default=6144)
     w.set_defaults(fn=cmd_write)
-    sub.add_parser("status", help="show token/lane state without secrets").set_defaults(fn=cmd_status)
-    sub.add_parser("probe", help="stream + tool call via the Host provider").set_defaults(fn=cmd_probe)
-    sub.add_parser("refresh", help="renew the subscription key via OIDC refresh_token (no secrets printed)").set_defaults(fn=cmd_refresh)
-    sub.add_parser("apply", help="swap the grok lane into llm_runtime.json (with backup)").set_defaults(fn=cmd_apply)
+    sub.add_parser("status", help="show token/lane state without secrets").set_defaults(
+        fn=cmd_status
+    )
+    sub.add_parser("probe", help="stream + tool call via the Host provider").set_defaults(
+        fn=cmd_probe
+    )
+    sub.add_parser(
+        "refresh", help="renew the subscription key via OIDC refresh_token (no secrets printed)"
+    ).set_defaults(fn=cmd_refresh)
+    sub.add_parser(
+        "apply", help="swap the grok lane into llm_runtime.json (with backup)"
+    ).set_defaults(fn=cmd_apply)
     r = sub.add_parser("restore", help="restore llm_runtime.json from the latest grok backup")
     r.add_argument("--keep-backup", action="store_true")
     r.set_defaults(fn=cmd_restore)

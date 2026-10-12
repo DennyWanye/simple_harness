@@ -100,7 +100,13 @@ class DimensionQuery:
                 raise ContractValidationError(f"{name} is required")
         if self.query_family not in QUERY_FAMILIES:
             raise ContractValidationError("invalid query_family")
-        allowed_axes = {"none", "urban_rural_region", "temporal_trend", "policy_phase", "peer_object"}
+        allowed_axes = {
+            "none",
+            "urban_rural_region",
+            "temporal_trend",
+            "policy_phase",
+            "peer_object",
+        }
         if self.comparison_axis not in allowed_axes:
             raise ContractValidationError("invalid comparison_axis")
         if self.query_family == "comparison" and self.comparison_axis == "none":
@@ -127,8 +133,12 @@ class DimensionQuery:
     @classmethod
     def from_json(cls, value: Mapping[str, Any]) -> DimensionQuery:
         expected = {
-            "dimension_id", "query_family", "comparison_axis", "source_target",
-            "query", "freshness_window",
+            "dimension_id",
+            "query_family",
+            "comparison_axis",
+            "source_target",
+            "query",
+            "freshness_window",
         }
         unknown = set(value) - expected
         missing = expected - set(value)
@@ -314,9 +324,7 @@ def build_initial_query_plan(
     include_supporting: bool = False,
 ) -> tuple[DimensionQuery, ...]:
     dimensions = tuple(
-        item
-        for item in brief.dimensions
-        if item.importance == "core" or include_supporting
+        item for item in brief.dimensions if item.importance == "core" or include_supporting
     )
     facet_priority = {
         "tech_ranking_method_candidates": 0,
@@ -326,13 +334,15 @@ def build_initial_query_plan(
         "tech_recent_changes": 4,
     }
     if any(item.dimension_id in facet_priority for item in dimensions):
-        dimensions = tuple(sorted(
-            dimensions,
-            key=lambda item: (
-                facet_priority.get(item.dimension_id, len(facet_priority)),
-                brief.dimensions.index(item),
-            ),
-        ))
+        dimensions = tuple(
+            sorted(
+                dimensions,
+                key=lambda item: (
+                    facet_priority.get(item.dimension_id, len(facet_priority)),
+                    brief.dimensions.index(item),
+                ),
+            )
+        )
     probes: list[DimensionQuery] = []
     product_comparison_ids = {
         "camera_capability",
@@ -343,9 +353,8 @@ def build_initial_query_plan(
         "performance_and_daily_experience",
         "user_fit_recommendation",
     }
-    is_product_comparison = (
-        len(brief.subjects) >= 2
-        and any(item.dimension_id in product_comparison_ids for item in dimensions)
+    is_product_comparison = len(brief.subjects) >= 2 and any(
+        item.dimension_id in product_comparison_ids for item in dimensions
     )
     for dimension in dimensions:
         # Pairwise product discovery must first find pages about both exact
@@ -355,7 +364,9 @@ def build_initial_query_plan(
         family: QueryFamily = (
             "general"
             if is_product_comparison
-            else "official" if dimension.first_party_required else "general"
+            else "official"
+            if dimension.first_party_required
+            else "general"
         )
         probes.append(
             next(
@@ -412,9 +423,7 @@ def build_gap_query_plan(
         coverage_by_id[coverage.dimension_id] = coverage
     executed = {value.casefold() for value in executed_query_fingerprints}
     source_families = executed_source_families or {}
-    global_excluded = {
-        normalize_query_text(value) for value in source_families.get("*", ())
-    }
+    global_excluded = {normalize_query_text(value) for value in source_families.get("*", ())}
     selected: list[DimensionQuery] = []
     for dimension in brief.dimensions:
         if dimension.importance != "core":
@@ -423,8 +432,7 @@ def build_gap_query_plan(
         if coverage is None or coverage.status not in {"uncovered", "partially_covered"}:
             continue
         dimension_excluded = global_excluded | {
-            normalize_query_text(value)
-            for value in source_families.get(dimension.dimension_id, ())
+            normalize_query_text(value) for value in source_families.get(dimension.dimension_id, ())
         }
         for query in build_dimension_queries(brief, dimension):
             if query.fingerprint.casefold() in executed:

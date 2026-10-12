@@ -127,7 +127,6 @@ def corpus_batch_deadline_seconds(max_wall_seconds: float | None = None) -> int:
 
     return int(
         math.ceil(
-            external_deadline_floor_seconds(max_wall_seconds)
-            + CASE_MULTI_RUN_ALLOWANCE_SECONDS
+            external_deadline_floor_seconds(max_wall_seconds) + CASE_MULTI_RUN_ALLOWANCE_SECONDS
         )
     )

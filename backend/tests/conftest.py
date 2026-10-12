@@ -9,6 +9,7 @@
 测试缓存的路径会串到下一个用例。autouse fixture 在每个测试前后清缓存，
 保证路径解析测试与执行顺序无关。对不碰路径的测试是无害的 no-op。
 """
+
 from __future__ import annotations
 
 import aiosqlite

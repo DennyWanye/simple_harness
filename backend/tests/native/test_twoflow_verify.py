@@ -94,7 +94,9 @@ def _progress(root: Path, patches: dict[int, dict[str, int]], policy_mode: str =
             row = {
                 "ts": "2026-09-09T%02d:%02d:00+0800" % (9 + idx // 6, (idx * 7) % 60),
                 "turn": turn,
-                "kind": "restart" if turn == tf.RESTART_TURN else ("ui" if turn in tf.UI_TURNS else "send"),
+                "kind": "restart"
+                if turn == tf.RESTART_TURN
+                else ("ui" if turn in tf.UI_TURNS else "send"),
                 "phase": "flow1" if 0 <= turn <= 11 else "flow2",
                 "outcome": "settled",
                 "elapsed_s": 1.0,
@@ -156,12 +158,26 @@ def test_tf17_reads_the_policy_from_workflow_db_not_the_product_state_residue(ev
     """
     root, data = evidence_root
     _default_state(data)
-    _make(data / "workflow.db", _POLICY_DDL,
-          [("insert into authorization_policy_state values (?,?,?,?,?,?,?)",
-            (1, "manual", 1, 2.0, "user_explicit", 2, "policy-user-set:1"))])
-    _make(data / "sdk-product-state.db", _POLICY_DDL,
-          [("insert into authorization_policy_state values (?,?,?,?,?,?,?)",
-            (1, "auto", 0, 1.0, "factory_default", 2, None))])
+    _make(
+        data / "workflow.db",
+        _POLICY_DDL,
+        [
+            (
+                "insert into authorization_policy_state values (?,?,?,?,?,?,?)",
+                (1, "manual", 1, 2.0, "user_explicit", 2, "policy-user-set:1"),
+            )
+        ],
+    )
+    _make(
+        data / "sdk-product-state.db",
+        _POLICY_DDL,
+        [
+            (
+                "insert into authorization_policy_state values (?,?,?,?,?,?,?)",
+                (1, "auto", 0, 1.0, "factory_default", 2, None),
+            )
+        ],
+    )
     _progress(root, {}, policy_mode="manual")
 
     item = _item(root, "TF-17")
@@ -169,19 +185,34 @@ def test_tf17_reads_the_policy_from_workflow_db_not_the_product_state_residue(ev
     assert item.numbers["workflow_mode"] == "manual"
     # 残留行仍被读出来放进 numbers（供人核对），但不参与判定。
     assert item.numbers["product_state_residue_row"] == {
-        "mode": "auto", "provenance": "factory_default",
+        "mode": "auto",
+        "provenance": "factory_default",
     }
 
 
 def test_tf17_passes_on_auto_and_records_the_residue_row_without_believing_it(evidence_root):
     root, data = evidence_root
     _default_state(data)
-    _make(data / "workflow.db", _POLICY_DDL,
-          [("insert into authorization_policy_state values (?,?,?,?,?,?,?)",
-            (1, "auto", 1, 2.0, "user_explicit", 2, "policy-user-set:1"))])
-    _make(data / "sdk-product-state.db", _POLICY_DDL,
-          [("insert into authorization_policy_state values (?,?,?,?,?,?,?)",
-            (1, "manual", 0, 1.0, "factory_default", 2, None))])
+    _make(
+        data / "workflow.db",
+        _POLICY_DDL,
+        [
+            (
+                "insert into authorization_policy_state values (?,?,?,?,?,?,?)",
+                (1, "auto", 1, 2.0, "user_explicit", 2, "policy-user-set:1"),
+            )
+        ],
+    )
+    _make(
+        data / "sdk-product-state.db",
+        _POLICY_DDL,
+        [
+            (
+                "insert into authorization_policy_state values (?,?,?,?,?,?,?)",
+                (1, "manual", 0, 1.0, "factory_default", 2, None),
+            )
+        ],
+    )
     _progress(root, {}, policy_mode="auto")
 
     item = _item(root, "TF-17")
@@ -193,9 +224,16 @@ def test_tf17_is_inconclusive_when_workflow_db_is_missing_and_never_falls_back(e
     """缺 workflow.db 时只能 INCONCLUSIVE —— 回落读残留表会把 FAIL 洗成 PASS。"""
     root, data = evidence_root
     _default_state(data)
-    _make(data / "sdk-product-state.db", _POLICY_DDL,
-          [("insert into authorization_policy_state values (?,?,?,?,?,?,?)",
-            (1, "auto", 0, 1.0, "factory_default", 2, None))])
+    _make(
+        data / "sdk-product-state.db",
+        _POLICY_DDL,
+        [
+            (
+                "insert into authorization_policy_state values (?,?,?,?,?,?,?)",
+                (1, "auto", 0, 1.0, "factory_default", 2, None),
+            )
+        ],
+    )
     _progress(root, {}, policy_mode="auto")
 
     item = _item(root, "TF-17")
@@ -206,16 +244,25 @@ def test_tf17_is_inconclusive_when_workflow_db_is_missing_and_never_falls_back(e
 
 
 def _tf16_progress(root: Path, *, t4_root: int, t15_root: int, t15_effects: int) -> None:
-    _progress(root, {
-        2: {"binding_roots": 1, "binding_revisions": 1, "foreground_run_heads": 2},
-        4: {"binding_roots": t4_root,
-            "binding_proposals": 1 if t4_root > 1 else 0,
-            "binding_revisions": 2 if t4_root > 1 else 1,
-            "execution_effects": 2, "foreground_run_heads": 4},
-        7: {"binding_roots": t4_root + 1, "foreground_run_heads": 7},
-        15: {"binding_roots": t15_root, "execution_effects": t15_effects,
-             "foreground_run_heads": 15},
-    })
+    _progress(
+        root,
+        {
+            2: {"binding_roots": 1, "binding_revisions": 1, "foreground_run_heads": 2},
+            4: {
+                "binding_roots": t4_root,
+                "binding_proposals": 1 if t4_root > 1 else 0,
+                "binding_revisions": 2 if t4_root > 1 else 1,
+                "execution_effects": 2,
+                "foreground_run_heads": 4,
+            },
+            7: {"binding_roots": t4_root + 1, "foreground_run_heads": 7},
+            15: {
+                "binding_roots": t15_root,
+                "execution_effects": t15_effects,
+                "foreground_run_heads": 15,
+            },
+        },
+    )
 
 
 def test_tf16_passes_when_flow2_reuses_the_binding_made_by_the_read_gate_in_flow1(evidence_root):
@@ -268,12 +315,24 @@ def test_tf16_is_inconclusive_on_an_old_driver_without_the_binding_counters(evid
     running = {"execution_effects": 0, "foreground_run_heads": 0}
     with open(root / tf.PROGRESS_NAME, "w", encoding="utf-8") as fh:
         for turn in [0] + list(range(1, 23)):
-            fh.write(json.dumps({
-                "ts": "2026-09-09T09:00:00+0800", "turn": turn, "kind": "send",
-                "phase": "flow1", "outcome": "settled", "elapsed_s": 1.0,
-                "primary_conversation_id": "p", "last_run_state": "COMPLETED",
-                "note": "", **running,
-            }, ensure_ascii=False) + "\n")
+            fh.write(
+                json.dumps(
+                    {
+                        "ts": "2026-09-09T09:00:00+0800",
+                        "turn": turn,
+                        "kind": "send",
+                        "phase": "flow1",
+                        "outcome": "settled",
+                        "elapsed_s": 1.0,
+                        "primary_conversation_id": "p",
+                        "last_run_state": "COMPLETED",
+                        "note": "",
+                        **running,
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n"
+            )
 
     item = _item(root, "TF-16")
     assert item.verdict == tf.INCONCLUSIVE
@@ -333,7 +392,8 @@ def test_twoflow_dry_run_prints_all_22_turns_without_touching_anything(tmp_path:
     evidence = tmp_path / "ev"
     out = subprocess.run(
         ["bash", str(_TWOFLOW_DRIVER), "com.example.absent", str(userdata), str(evidence), "all"],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
         env={**os.environ, "TWOFLOW_DRY_RUN": "1"},
     )
     assert out.returncode == 0, out.stderr

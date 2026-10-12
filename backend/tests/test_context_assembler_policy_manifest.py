@@ -26,10 +26,7 @@ def test_default_policy_manifest_for_harness_task_types() -> None:
         "reminder_cancel",
     } <= set(policies["chat"].tool_exposure.direct)
     assert "source:builtin" in policies["chat"].tool_exposure.discoverable
-    assert (
-        "source:capability:*"
-        in policies["chat"].tool_exposure.discoverable
-    )
+    assert "source:capability:*" in policies["chat"].tool_exposure.discoverable
     assert {"tool", "skill"} <= _components(policies["task"])
     assert {
         "file_read",
@@ -38,12 +35,8 @@ def test_default_policy_manifest_for_harness_task_types() -> None:
         "reminder_create",
         "reminder_list",
         "reminder_cancel",
-    } <= set(
-        policies["task"].tool_exposure.direct
-    )
-    assert {"tool", "workspace", "workspace_memory", "skill"} <= _components(
-        policies["code"]
-    )
+    } <= set(policies["task"].tool_exposure.direct)
+    assert {"tool", "workspace", "workspace_memory", "skill"} <= _components(policies["code"])
     assert {
         "deepresearch",
         "web_search",
@@ -64,9 +57,7 @@ def test_every_policy_with_nonempty_tools_runs_tool_component() -> None:
 def test_every_policy_component_is_registered_by_default_assembler() -> None:
     policies = load_policies()
     expected = {
-        component
-        for policy in policies.values()
-        for component in [*policy.must, *policy.prefer]
+        component for policy in policies.values() for component in [*policy.must, *policy.prefer]
     }
     assembler = build_default_assembler()
     registry = assembler._registry  # policy/registry contract guard

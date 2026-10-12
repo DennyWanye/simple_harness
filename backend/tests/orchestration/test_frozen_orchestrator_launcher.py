@@ -18,16 +18,12 @@ from pathlib import Path
 
 import pytest
 
-SCRIPT = (
-    Path(__file__).resolve().parents[3] / "scripts/native/launch_frozen_orchestrator.py"
-)
+SCRIPT = Path(__file__).resolve().parents[3] / "scripts/native/launch_frozen_orchestrator.py"
 
 
 @pytest.fixture
 def launcher(tmp_path, monkeypatch):
-    spec = importlib.util.spec_from_file_location(
-        "frozen_orchestrator_launcher", SCRIPT
-    )
+    spec = importlib.util.spec_from_file_location("frozen_orchestrator_launcher", SCRIPT)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     monkeypatch.setattr(module, "HOST_ROOT", tmp_path)
@@ -68,13 +64,9 @@ def args(tmp_path, bundle, *extra):
     ]
 
 
-def test_dry_run_prepares_only_keyfree_local_configuration(
-    launcher, bundle, tmp_path, monkeypatch
-):
+def test_dry_run_prepares_only_keyfree_local_configuration(launcher, bundle, tmp_path, monkeypatch):
     def forbidden(*a, **kw):
-        raise AssertionError(
-            "dry run must not read credentials, launch, or make requests"
-        )
+        raise AssertionError("dry run must not read credentials, launch, or make requests")
 
     monkeypatch.setattr(launcher, "read_key", forbidden)
     monkeypatch.setattr(launcher.subprocess, "Popen", forbidden)
@@ -120,9 +112,9 @@ def test_invalid_bundle_refuses_before_preparation(launcher, bundle, tmp_path, d
     else:
         path = bundle / "Contents/Info.plist"
         info = plistlib.loads(path.read_bytes())
-        info[
-            "CFBundleIdentifier" if damage == "default_id" else "CFBundleExecutable"
-        ] = "com.dennywanye.simpleharness" if damage == "default_id" else "../outside"
+        info["CFBundleIdentifier" if damage == "default_id" else "CFBundleExecutable"] = (
+            "com.dennywanye.simpleharness" if damage == "default_id" else "../outside"
+        )
         path.write_bytes(plistlib.dumps(info))
     with pytest.raises(launcher.LauncherError):
         launcher.main(args(tmp_path, bundle))
@@ -166,9 +158,7 @@ def test_resume_freezes_all_resources_before_reading_key_or_spawning(
     resource.write_text("resource = 'frozen'\n")
     launcher.main(args(tmp_path, bundle))
     assert launcher.main(args(tmp_path, bundle, "--resume")) == 0
-    marker = json.loads(
-        (tmp_path / ".local-test-evidence/g/run/prepared.json").read_text()
-    )
+    marker = json.loads((tmp_path / ".local-test-evidence/g/run/prepared.json").read_text())
     assert len(marker["bundle"]["internal_tree_sha256"]) == 64
     assert len(marker["bundle"]["resource_tree_sha256"]) == 64
 
@@ -178,9 +168,7 @@ def test_resume_freezes_all_resources_before_reading_key_or_spawning(
         resource.write_text("resource = 'replacement'\n")
     elif damage == "internal_link_target":
         public_link.unlink()
-        public_link.symlink_to(
-            "Versions/Current/Python-copy"
-        )  # same bytes, different binding
+        public_link.symlink_to("Versions/Current/Python-copy")  # same bytes, different binding
     else:
         external = tmp_path / "outside"
         external.mkdir()
@@ -191,9 +179,7 @@ def test_resume_freezes_all_resources_before_reading_key_or_spawning(
         )
 
     def forbidden(*args, **kwargs):
-        raise AssertionError(
-            "changed resources must fail before key read or process spawn"
-        )
+        raise AssertionError("changed resources must fail before key read or process spawn")
 
     monkeypatch.setattr(launcher, "read_key", forbidden)
     monkeypatch.setattr(launcher.subprocess, "Popen", forbidden)
@@ -202,10 +188,7 @@ def test_resume_freezes_all_resources_before_reading_key_or_spawning(
     if damage.startswith("external"):
         with pytest.raises(launcher.LauncherError):
             launcher.main(args(tmp_path, bundle, "--launch"))
-    assert (
-        json.loads((tmp_path / ".local-test-evidence/g/run/prepared.json").read_text())
-        == marker
-    )
+    assert json.loads((tmp_path / ".local-test-evidence/g/run/prepared.json").read_text()) == marker
 
 
 @pytest.mark.parametrize(
@@ -291,9 +274,7 @@ def test_child_environment_is_allowlisted_and_key_is_process_only(
 
 
 def test_dotenv_reads_only_dedicated_field_without_expansion(launcher, tmp_path):
-    (tmp_path / ".env").write_text(
-        'APIKEY=wrong\nexport DEEPSEEKER_APIKEY="fake-$literal"\n'
-    )
+    (tmp_path / ".env").write_text('APIKEY=wrong\nexport DEEPSEEKER_APIKEY="fake-$literal"\n')
     assert launcher.read_key() == "fake-$literal"
     (tmp_path / ".env").write_text("APIKEY=wrong\n")
     with pytest.raises(launcher.LauncherError):
@@ -335,11 +316,7 @@ def test_final_drain_keeps_buffered_tail_and_redacts_split_utf8_and_credentials(
     text = output.getvalue()
     assert result["complete"] is True
     assert text.endswith("final无换行") and text.startswith("中文\n")
-    assert (
-        secret not in text
-        and "secret-token" not in text
-        and "SHARED_SECRET=token" not in text
-    )
+    assert secret not in text and "secret-token" not in text and "SHARED_SECRET=token" not in text
 
 
 def test_redactor_covers_bearer_and_handshake_tokens(launcher):
@@ -351,9 +328,7 @@ def test_redactor_covers_bearer_and_handshake_tokens(launcher):
     )
 
 
-def test_oversized_line_is_omitted_without_leaking_a_split_secret(
-    launcher, monkeypatch
-):
+def test_oversized_line_is_omitted_without_leaking_a_split_secret(launcher, monkeypatch):
     monkeypatch.setattr(launcher, "MAX_LINE_BYTES", 64)
     read_fd, write_fd = os.pipe()
     data = b"x" * 63 + b"fake-key" + b"x" * 1000 + b"\nsafe tail\n"
@@ -422,6 +397,8 @@ def test_log_byte_limit_still_drains_to_eof(launcher, monkeypatch):
 
 def test_redactor_removes_connection_query_credentials(launcher):
     raw = 'WebSocket /ws/control?secret=opaque-session&session_id=default "accepted"\n'
-    assert launcher.redact(raw, 'dedicated-key') == raw.replace('opaque-session', '[REDACTED]')
-    for field in ('token', 'api_key'):
-        assert 'opaque-session' not in launcher.redact(f'https://local/?{field}=opaque-session&ok=1', '')
+    assert launcher.redact(raw, "dedicated-key") == raw.replace("opaque-session", "[REDACTED]")
+    for field in ("token", "api_key"):
+        assert "opaque-session" not in launcher.redact(
+            f"https://local/?{field}=opaque-session&ok=1", ""
+        )

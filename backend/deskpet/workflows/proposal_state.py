@@ -65,9 +65,7 @@ class GateConfigV1:
                 else None
             ),
             max_budget_usd=(
-                float(value["max_budget_usd"])
-                if value.get("max_budget_usd") is not None
-                else None
+                float(value["max_budget_usd"]) if value.get("max_budget_usd") is not None else None
             ),
             per_tool_max_consecutive=int(value.get("per_tool_max_consecutive", 8)),
         )
@@ -265,7 +263,9 @@ class ProposalStateV1:
             raise ValueError("proposal state counters must not be negative")
         object.__setattr__(self, "messages", _json_objects(self.messages))
         object.__setattr__(self, "skill_refs", tuple(str(value) for value in self.skill_refs))
-        object.__setattr__(self, "active_todo_ids", tuple(str(value) for value in self.active_todo_ids))
+        object.__setattr__(
+            self, "active_todo_ids", tuple(str(value) for value in self.active_todo_ids)
+        )
         object.__setattr__(
             self,
             "tool_signature_repeat_window",
@@ -279,7 +279,9 @@ class ProposalStateV1:
         object.__setattr__(self, "model_snapshot", _json_object(self.model_snapshot))
         object.__setattr__(self, "fallback_attempts", _json_objects(self.fallback_attempts))
         object.__setattr__(self, "pending_tool_results", _json_object(self.pending_tool_results))
-        object.__setattr__(self, "committed_tool_results", _json_object(self.committed_tool_results))
+        object.__setattr__(
+            self, "committed_tool_results", _json_object(self.committed_tool_results)
+        )
 
     def to_dict(self) -> dict[str, JsonValue]:
         payload: dict[str, JsonValue] = {
@@ -331,18 +333,32 @@ class ProposalStateV1:
             original_request=str(value.get("original_request", "")),
             request_id=str(value.get("request_id", "")),
             turn_id=str(value.get("turn_id", "")),
-            system_prompt_ref=(str(value["system_prompt_ref"]) if value.get("system_prompt_ref") is not None else None),
+            system_prompt_ref=(
+                str(value["system_prompt_ref"])
+                if value.get("system_prompt_ref") is not None
+                else None
+            ),
             prompt_ref=(str(value["prompt_ref"]) if value.get("prompt_ref") is not None else None),
             skill_refs=list(value.get("skill_refs", [])),
-            compaction_summary=(str(value["compaction_summary"]) if value.get("compaction_summary") is not None else None),
-            compaction_ref=(str(value["compaction_ref"]) if value.get("compaction_ref") is not None else None),
+            compaction_summary=(
+                str(value["compaction_summary"])
+                if value.get("compaction_summary") is not None
+                else None
+            ),
+            compaction_ref=(
+                str(value["compaction_ref"]) if value.get("compaction_ref") is not None else None
+            ),
             token_estimate=int(value.get("token_estimate", 0)),
             iteration=int(value.get("iteration", 0)),
             proposal_turns_used=int(value.get("proposal_turns_used", 0)),
             fix_rounds_used=int(value.get("fix_rounds_used", 0)),
             tools_used=int(value.get("tools_used", 0)),
-            active_plan_id=(str(value["active_plan_id"]) if value.get("active_plan_id") is not None else None),
-            active_step_id=(str(value["active_step_id"]) if value.get("active_step_id") is not None else None),
+            active_plan_id=(
+                str(value["active_plan_id"]) if value.get("active_plan_id") is not None else None
+            ),
+            active_step_id=(
+                str(value["active_step_id"]) if value.get("active_step_id") is not None else None
+            ),
             active_todo_ids=list(value.get("active_todo_ids", [])),
             tool_signature_repeat_window=list(value.get("tool_signature_repeat_window", [])),
             completion_attempts=int(value.get("completion_attempts", 0)),
@@ -355,7 +371,9 @@ class ProposalStateV1:
             provider_snapshot=dict(value.get("provider_snapshot", {})),
             model_snapshot=dict(value.get("model_snapshot", {})),
             fallback_attempts=list(value.get("fallback_attempts", [])),
-            last_error=(ProposalErrorV1.from_dict(raw_error) if isinstance(raw_error, Mapping) else None),
+            last_error=(
+                ProposalErrorV1.from_dict(raw_error) if isinstance(raw_error, Mapping) else None
+            ),
             pending_tool_results=dict(value.get("pending_tool_results", {})),
             committed_tool_results=dict(value.get("committed_tool_results", {})),
             gate_config=GateConfigV1.from_dict(dict(value.get("gate_config", {}))),
@@ -440,9 +458,15 @@ class ProposalOutcomeV1:
         return cls(
             schema_version=int(value.get("schema_version", PROPOSAL_STATE_SCHEMA_VERSION)),
             assistant_content=str(value.get("assistant_content", "")),
-            reasoning_summary_ref=(str(value["reasoning_summary_ref"]) if value.get("reasoning_summary_ref") is not None else None),
+            reasoning_summary_ref=(
+                str(value["reasoning_summary_ref"])
+                if value.get("reasoning_summary_ref") is not None
+                else None
+            ),
             raw_tool_proposals=list(value.get("raw_tool_proposals", [])),
-            prepared_calls=[PreparedToolCall.from_dict(item) for item in value.get("prepared_calls", [])],
+            prepared_calls=[
+                PreparedToolCall.from_dict(item) for item in value.get("prepared_calls", [])
+            ],
             stop_reason=str(value.get("stop_reason", "unknown")),
             usage=dict(value.get("usage", {})),
             provider=str(value.get("provider", "")),
@@ -458,13 +482,17 @@ class ProposalOutcomeV1:
                 else None
             ),
             compaction_ref=(
-                str(value["compaction_ref"])
-                if value.get("compaction_ref") is not None
-                else None
+                str(value["compaction_ref"]) if value.get("compaction_ref") is not None else None
             ),
             token_estimate=int(value.get("token_estimate", 0)),
-            gate_request=(dict(value["gate_request"]) if isinstance(value.get("gate_request"), Mapping) else None),
-            error=(ProposalErrorV1.from_dict(raw_error) if isinstance(raw_error, Mapping) else None),
+            gate_request=(
+                dict(value["gate_request"])
+                if isinstance(value.get("gate_request"), Mapping)
+                else None
+            ),
+            error=(
+                ProposalErrorV1.from_dict(raw_error) if isinstance(raw_error, Mapping) else None
+            ),
         )
 
 

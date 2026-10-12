@@ -24,6 +24,9 @@ def register_v4_workflows(registry: WorkflowRegistry) -> None:
 
 
 __all__ = [
-    "DEFAULT_DEEP_RESEARCH_VERSION", "DEEP_RESEARCH_V4", "DEEP_RESEARCH_V4_DEFINITION",
-    "deep_research_initial_state", "register_v4_workflows",
+    "DEFAULT_DEEP_RESEARCH_VERSION",
+    "DEEP_RESEARCH_V4",
+    "DEEP_RESEARCH_V4_DEFINITION",
+    "deep_research_initial_state",
+    "register_v4_workflows",
 ]

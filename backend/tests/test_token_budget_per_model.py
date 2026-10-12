@@ -14,6 +14,7 @@ when provided); ContextManager passes config.model_info.context_window;
 stale _KNOWN_WINDOWS deepseek entries synced to reality for legacy
 direct callers.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -98,6 +99,7 @@ def test_context_manager_v1_rollback_still_uses_legacy_window():
 # WI-1B-3 自适应 compact_at_pct — flag OFF 字节级 BC；ON 时 agentic 提前压。
 # ---------------------------------------------------------------------------
 
+
 def test_adaptive_pct_off_equals_fixed():
     """OFF（默认）: compact_at_tokens_for(True)==for(False)==compact_at_tokens。"""
     from agent.context_manager import ContextConfig
@@ -118,9 +120,7 @@ def test_adaptive_pct_on_agentic_lower():
     from llm.model_info import resolve
 
     info = resolve("deepseek-v4-pro", None)  # 1M, compact_at_pct 0.75
-    cfg = ContextConfig(
-        model_info=info, v2_enabled=True, adaptive_compact_pct=True
-    )
+    cfg = ContextConfig(model_info=info, v2_enabled=True, adaptive_compact_pct=True)
     window = info.context_window
     agentic = cfg.compact_at_tokens_for(agentic=True)
     chat = cfg.compact_at_tokens_for(agentic=False)
@@ -146,7 +146,7 @@ def test_adaptive_pct_clamp_caps_extreme_delta():
         v2_enabled=True,
         adaptive_compact_pct=True,
         agentic_pct_delta=-0.40,  # 0.75-0.40=0.35 → clamp 0.6
-        chat_pct_delta=+0.40,     # 0.75+0.40=1.15 → clamp 0.95
+        chat_pct_delta=+0.40,  # 0.75+0.40=1.15 → clamp 0.95
     )
     assert cfg.compact_at_tokens_for(agentic=True) == int(window * 0.6)
     assert cfg.compact_at_tokens_for(agentic=False) == int(window * 0.95)
@@ -158,9 +158,11 @@ def test_adaptive_pct_clamp_caps_extreme_delta():
 # 修复:CJK 字符按 ≈1 token/字计(等效 4 ASCII chars)。
 # ---------------------------------------------------------------------------
 
+
 def test_estimate_tokens_cjk_not_underestimated():
     """1000 个汉字 ≈ 1000 tokens(±30%),旧 char/4 只给 ~250 → 必须修。"""
     from agent.token_budget import estimate_tokens
+
     msgs = [{"role": "user", "content": "会" * 1000}]
     est = estimate_tokens(msgs)
     assert est >= 700, f"CJK underestimated: {est} for 1000 hanzi (expect ~1000)"
@@ -169,6 +171,7 @@ def test_estimate_tokens_cjk_not_underestimated():
 def test_estimate_tokens_ascii_unchanged():
     """纯 ASCII 仍 ~char/4(4000 chars ≈ 1000 tokens ±20%)。"""
     from agent.token_budget import estimate_tokens
+
     msgs = [{"role": "user", "content": "a" * 4000}]
     est = estimate_tokens(msgs)
     assert 800 <= est <= 1300, f"ASCII estimate drifted: {est}"
@@ -177,6 +180,7 @@ def test_estimate_tokens_ascii_unchanged():
 def test_estimate_tokens_mixed_cjk_ascii():
     """混合:500 汉字 + 2000 ASCII ≈ 500 + 500 = ~1000 tokens(±30%)。"""
     from agent.token_budget import estimate_tokens
+
     msgs = [{"role": "user", "content": "中" * 500 + "x" * 2000}]
     est = estimate_tokens(msgs)
     assert 700 <= est <= 1400, f"mixed estimate off: {est}"

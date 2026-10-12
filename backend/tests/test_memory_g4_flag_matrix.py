@@ -20,6 +20,7 @@
 不测 main.py lifespan 的运行时 warn 逻辑（内联在 lifespan，需起整个 app，
 归 e2e/启动测试；本文件聚焦可单测的 config 契约层）。
 """
+
 from __future__ import annotations
 
 import dataclasses
@@ -30,9 +31,18 @@ from config import MemoryV2Config
 
 # 记忆 v2 的全部 flag（与 MemoryV2Config 字段对应）
 _ALL_FLAGS = [
-    "feedback_loop", "facts_extract", "rerank", "enhanced_retriever",
-    "chunking", "query_rewrite", "workspace_memory", "reflection",
-    "cross_key_merge", "memory_forget", "entity_path", "episodic_to_semantic",
+    "feedback_loop",
+    "facts_extract",
+    "rerank",
+    "enhanced_retriever",
+    "chunking",
+    "query_rewrite",
+    "workspace_memory",
+    "reflection",
+    "cross_key_merge",
+    "memory_forget",
+    "entity_path",
+    "episodic_to_semantic",
 ]
 
 # 仓库 config.toml（出厂模板）
@@ -73,9 +83,7 @@ def test_g4_1b_only_b_table_flags_default_false() -> None:
     for f in dataclasses.fields(MemoryV2Config):
         if isinstance(f.default, bool):
             if f.name in _B_TABLE_DEFAULT_FALSE:
-                assert f.default is False, (
-                    f"B 表 flag {f.name} 应默认 False（code 专属，主线不开）"
-                )
+                assert f.default is False, f"B 表 flag {f.name} 应默认 False（code 专属，主线不开）"
             else:
                 assert f.default is True, (
                     f"flag {f.name} dataclass 默认 False —— 测试阶段应点亮（不灰度）。"
@@ -112,8 +120,13 @@ def test_g4_2_f4_invariant_toml_true_dataclass_false() -> None:
 # ----------------------------------------------------------------------
 # 出厂运行配置层必须出现的关键语义 flag（防漏配）。测试阶段它们全 True。
 _FACTORY_REQUIRED_FLAGS = {
-    "facts_extract", "enhanced_retriever", "cross_key_merge",
-    "reflection", "feedback_loop", "query_rewrite", "workspace_memory",
+    "facts_extract",
+    "enhanced_retriever",
+    "cross_key_merge",
+    "reflection",
+    "feedback_loop",
+    "query_rewrite",
+    "workspace_memory",
 }
 
 
@@ -134,9 +147,7 @@ def test_g4_3_factory_config_fully_lit() -> None:
         )
     # 反向：关键语义 flag 都得在 toml 真出现（防漏配）。
     for flag in _FACTORY_REQUIRED_FLAGS:
-        assert flag in toml_v2, (
-            f"语义记忆 flag {flag} 未出现在 config.toml [memory.v2]（漏配）"
-        )
+        assert flag in toml_v2, f"语义记忆 flag {flag} 未出现在 config.toml [memory.v2]（漏配）"
 
 
 # ----------------------------------------------------------------------

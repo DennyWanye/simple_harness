@@ -12,9 +12,7 @@ from deskpet.companion.clock import (
 
 
 def test_production_store_and_scheduler_share_selected_clock() -> None:
-    source = (
-        Path(__file__).resolve().parents[2] / "main.py"
-    ).read_text(encoding="utf-8")
+    source = (Path(__file__).resolve().parents[2] / "main.py").read_text(encoding="utf-8")
     start = source.index("async def _initialize_growth_authority()")
     end = source.index(
         "\n\nasync def _initialize_companion_projection_services",
@@ -52,9 +50,7 @@ def test_dev_mode_requires_both_process_environment_values() -> None:
         }
     )
     assert isinstance(clock, DevFrozenClock)
-    assert clock.now_utc() == datetime(
-        2026, 7, 25, 8, 0, 0, 123000, tzinfo=UTC
-    )
+    assert clock.now_utc() == datetime(2026, 7, 25, 8, 0, 0, 123000, tzinfo=UTC)
 
 
 def test_frozen_build_cannot_activate_dev_clock() -> None:

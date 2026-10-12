@@ -48,17 +48,12 @@ def _action_schema_version(value: object, name: str) -> int:
 
 
 def _action_evidence_refs_from_json(value: object) -> tuple[EvidenceRef, ...]:
-    refs = tuple(
-        EvidenceRef.from_json(item)
-        for item in _objects(value, "evidence_refs")
-    )
+    refs = tuple(EvidenceRef.from_json(item) for item in _objects(value, "evidence_refs"))
     return _evidence_refs(refs)
 
 
 def _canonical_span_hashes(value: object) -> tuple[str, ...]:
-    if not isinstance(value, (tuple, list)) or not all(
-        isinstance(item, str) for item in value
-    ):
+    if not isinstance(value, (tuple, list)) or not all(isinstance(item, str) for item in value):
         raise TypeError("evidence_span_hashes must be an array of strings")
     hashes = tuple(_digest(item, "evidence_span_hash") for item in value)
     if not hashes or len(hashes) > 64:
@@ -175,12 +170,8 @@ class MemoryActionIntent:
             canonical_operation_index=_positive_int(
                 value["canonical_operation_index"], "canonical_operation_index"
             ),
-            operation_intent_hash=_digest(
-                value["operation_intent_hash"], "operation_intent_hash"
-            ),
-            schema_version=_action_schema_version(
-                value["schema_version"], "MemoryActionIntent"
-            ),
+            operation_intent_hash=_digest(value["operation_intent_hash"], "operation_intent_hash"),
+            schema_version=_action_schema_version(value["schema_version"], "MemoryActionIntent"),
         )
 
 
@@ -273,9 +264,7 @@ class MemoryActionAuthority:
             expires_at=_non_negative_number(value["expires_at"], "expires_at"),
             nonce=_identifier(value["nonce"], "nonce", max_length=1024),
             issuer_ref=_identifier(value["issuer_ref"], "issuer_ref", max_length=1024),
-            schema_version=_action_schema_version(
-                value["schema_version"], "MemoryActionAuthority"
-            ),
+            schema_version=_action_schema_version(value["schema_version"], "MemoryActionAuthority"),
         )
         if _digest(value["replay_identity"], "replay_identity") != authority.replay_identity:
             raise ValueError("MemoryActionAuthority replay_identity differs")

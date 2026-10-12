@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 """Resume an original durable H1 reply when its exact convergence job is READY."""
+
 from __future__ import annotations
 
 import hashlib
@@ -27,7 +28,8 @@ def _ended_by_refusal(orchestrator: Any, job: ConvergenceJob) -> bool:
         return False
     with store.transaction():
         orchestrator._taskgraph_notifications.convergence.jobs.release_for_decision(
-            job.mission_id, job.decision_id, reason="decision_refused", now_ms=int(store.now * 1000))
+            job.mission_id, job.decision_id, reason="decision_refused", now_ms=int(store.now * 1000)
+        )
     return True
 
 
@@ -43,8 +45,13 @@ async def resume_converged_plan(orchestrator: Any, job: ConvergenceJob) -> None:
         decisions = PlanningDecisionStore(store)
         request = decisions.get_planning_request(job.request_id)
         decision = decisions.get_planning_decision(job.decision_id)
-        if (request is None or request.mission_id != job.mission_id or request.base_plan_revision != job.source_revision
-                or decision is None or decision["request_id"] != job.request_id):
+        if (
+            request is None
+            or request.mission_id != job.mission_id
+            or request.base_plan_revision != job.source_revision
+            or decision is None
+            or decision["request_id"] != job.request_id
+        ):
             raise StoreError("TASKGRAPH_RESUME_ORIGINAL_DECISION_MISSING")
         if decision["status"] != "COMPILED":
             # A decision refused at commit has already ended its fence in the refusal's
@@ -52,15 +59,24 @@ async def resume_converged_plan(orchestrator: Any, job: ConvergenceJob) -> None:
             # stays as the guard that resuming never re-asks the model.
             raise StoreConflict("TASKGRAPH_RESUME_ORIGINAL_DECISION_NOT_COMPILED")
         preview = PreviewBindingV1.from_json(decision.get("detail", {}).get("taskgraph_preview"))
-        if (preview.required_convergence_ids != (job.job_id,) or preview.decision_id != job.decision_id
-                or preview.candidate_hash != job.candidate_hash or preview.request_id != request.request_id
-                or preview.decision_hash != decision["canonical_hash"]):
+        if (
+            preview.required_convergence_ids != (job.job_id,)
+            or preview.decision_id != job.decision_id
+            or preview.candidate_hash != job.candidate_hash
+            or preview.request_id != request.request_id
+            or preview.decision_hash != decision["canonical_hash"]
+        ):
             raise StoreConflict("TASKGRAPH_RESUME_PREVIEW_IDENTITY_CHANGED")
         intent = store.get_intent(request.intent_id)
         mission = store.get_mission(job.mission_id)
         hierarchy = orchestrator._dispatch_for(job.mission_id)
-        if (intent is None or intent.mission_id != job.mission_id or mission is None or hierarchy is None
-                or job.command_id != f"plan:{intent.intent_id}"):
+        if (
+            intent is None
+            or intent.mission_id != job.mission_id
+            or mission is None
+            or hierarchy is None
+            or job.command_id != f"plan:{intent.intent_id}"
+        ):
             raise StoreError("TASKGRAPH_RESUME_RUNTIME_IDENTITY_MISSING")
         if mission.status in TERMINAL_MISSION:
             # A saved reply retains accounting/convergence responsibility, never

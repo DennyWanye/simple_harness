@@ -216,9 +216,7 @@ class _Store:
 
     async def pending_signals(self, host_run_id: str):  # type: ignore[no-untyped-def]
         acked = {signal_id for signal_id, _ in self.acks}
-        return tuple(
-            signal for signal in self.signals if signal.signal_id not in acked
-        )
+        return tuple(signal for signal in self.signals if signal.signal_id not in acked)
 
     async def acknowledge_signal(self, **kwargs):  # type: ignore[no-untyped-def]
         self.acks.append((kwargs["signal_id"], kwargs["sdk_signal_id"]))
@@ -232,9 +230,7 @@ class _Store:
         return kwargs
 
     async def close_current_lease(self, **kwargs):  # type: ignore[no-untyped-def]
-        self.closed_leases.append(
-            (kwargs["host_run_id"], kwargs["generation"])
-        )
+        self.closed_leases.append((kwargs["host_run_id"], kwargs["generation"]))
         return kwargs
 
     async def record_reconciliation(self, **kwargs):  # type: ignore[no-untyped-def]
@@ -296,18 +292,31 @@ class _Provider:
     async def freeze(self, **kwargs):  # type: ignore[no-untyped-def]
         claimed = kwargs["claimed"]
         return FrozenProviderAuthority(
-            claimed.host_run_id, kwargs["sdk_run_id"], claimed.owner_id,
+            claimed.host_run_id,
+            kwargs["sdk_run_id"],
+            claimed.owner_id,
             claimed.generation,
-            "provider:1", "3" * 64, "provider", "incarnation", 1, 1,
-            "model", {}, 4096,
+            "provider:1",
+            "3" * 64,
+            "provider",
+            "incarnation",
+            1,
+            1,
+            "model",
+            {},
+            4096,
         )
 
     async def bind(self, **kwargs):  # type: ignore[no-untyped-def]
         frozen = kwargs["frozen"]
         return BoundProviderAuthority(
-            frozen.host_run_id, frozen.sdk_run_id, frozen.owner_id,
+            frozen.host_run_id,
+            frozen.sdk_run_id,
+            frozen.owner_id,
             frozen.generation,
-            "provider-binding:1", "4" * 64, _Binding(),
+            "provider-binding:1",
+            "4" * 64,
+            _Binding(),
         )
 
     def mark_terminal(self, sdk_run_id: str, state: str) -> None:
@@ -347,9 +356,7 @@ class _Ingress:
 
     async def signal(self, **kwargs):  # type: ignore[no-untyped-def]
         self.signals.append(kwargs)
-        return type(
-            "Delivery", (), {"delivery_id": f"sdk-delivery:{kwargs['signal_id']}"}
-        )()
+        return type("Delivery", (), {"delivery_id": f"sdk-delivery:{kwargs['signal_id']}"})()
 
     async def start(self, **kwargs):  # type: ignore[no-untyped-def]
         from deskpet.sdk_adapters.ingress import SdkRuntimeIngress
@@ -359,8 +366,15 @@ class _Ingress:
         ).value
         self.starts.append(kwargs)
         self.records[run_id] = type(
-            "Record", (), {"state": type("State", (), {"value": "completed"})(), "version": 1,
-                           "run_id": run_id, "execution_session_id": kwargs["session_id"], "request_id": kwargs["request_id"]}
+            "Record",
+            (),
+            {
+                "state": type("State", (), {"value": "completed"})(),
+                "version": 1,
+                "run_id": run_id,
+                "execution_session_id": kwargs["session_id"],
+                "request_id": kwargs["request_id"],
+            },
         )()
         return IngressStartReceipt(run_id, 1, kwargs["session_id"], kwargs["request_id"])
 
@@ -441,9 +455,9 @@ async def test_restart_with_durable_binding_queries_sdk_and_never_starts_again()
     ingress = _Ingress()
     from deskpet.sdk_adapters.ingress import SdkRuntimeIngress
 
-    session_id = "foreground-execution-" + __import__("hashlib").sha256(
-        host_run_id.encode()
-    ).hexdigest()
+    session_id = (
+        "foreground-execution-" + __import__("hashlib").sha256(host_run_id.encode()).hexdigest()
+    )
     request_id = "foreground-request-turn-1"
     sdk_run_id = SdkRuntimeIngress._compute_run_id(  # noqa: SLF001
         session_id, request_id, "turn-1"
@@ -454,22 +468,33 @@ async def test_restart_with_durable_binding_queries_sdk_and_never_starts_again()
         sdk_run_id=sdk_run_id,
     )
     ingress.records[sdk_run_id] = type(
-        "Record", (), {"state": type("State", (), {"value": "waiting"})(), "version": 4,
-                       "run_id": sdk_run_id, "execution_session_id": session_id, "request_id": request_id}
+        "Record",
+        (),
+        {
+            "state": type("State", (), {"value": "waiting"})(),
+            "version": 4,
+            "run_id": sdk_run_id,
+            "execution_session_id": session_id,
+            "request_id": request_id,
+        },
     )()
 
     reconciled = False
     notifications = []
     original_reconcile = store.record_reconciliation
+
     async def reconcile(**kwargs):
         nonlocal reconciled
         result = await original_reconcile(**kwargs)
         if kwargs["observed_state"] == "BOUND_WAITING":
             reconciled = True
         return result
+
     store.record_reconciliation = reconcile
+
     async def changed():
         notifications.append(reconciled)
+
     class WaitingTerminal:
         async def observe(self, **kwargs):  # type: ignore[no-untyped-def]
             # Recovery may have no preceding invalidation. If one exists,
@@ -521,9 +546,9 @@ async def test_restart_after_bind_before_start_retries_same_sdk_identity_once() 
     ingress = _Ingress()
     from deskpet.sdk_adapters.ingress import SdkRuntimeIngress
 
-    session_id = "foreground-execution-" + __import__("hashlib").sha256(
-        host_run_id.encode()
-    ).hexdigest()
+    session_id = (
+        "foreground-execution-" + __import__("hashlib").sha256(host_run_id.encode()).hexdigest()
+    )
     request_id = "foreground-request-turn-1"
     sdk_run_id = SdkRuntimeIngress._compute_run_id(  # noqa: SLF001
         session_id, request_id, "turn-1"
@@ -647,25 +672,16 @@ async def test_human_lifespan_registers_one_real_runtime_and_legacy_does_not(
 
     await main._activate_human_memory_host_ports(epoch)
     scheduler = main.service_context.get("human_memory_foreground_scheduler_wake")
-    runtime = main.service_context.get(
-        "human_memory_foreground_runtime_execution_authority"
-    )
+    runtime = main.service_context.get("human_memory_foreground_runtime_execution_authority")
     assert scheduler is runtime
     assert isinstance(runtime, ForegroundRuntimeExecutionAuthority)
     assert runtime.subject == "deskpet-local-owner-v1"
     await runtime.close()
 
-    legacy = type(
-        "Epoch", (), {"composition_mode": StartupCompositionMode.LEGACY}
-    )()
+    legacy = type("Epoch", (), {"composition_mode": StartupCompositionMode.LEGACY})()
     await main._activate_human_memory_host_ports(legacy)
     assert main.service_context.get("human_memory_foreground_scheduler_wake") is None
-    assert (
-        main.service_context.get(
-            "human_memory_foreground_runtime_execution_authority"
-        )
-        is None
-    )
+    assert main.service_context.get("human_memory_foreground_runtime_execution_authority") is None
 
 
 def _signal_envelope(
@@ -900,24 +916,12 @@ async def test_durable_control_commit_wakes_active_runtime_immediately() -> None
 
 
 def test_resolve_host_terminal_keeps_stop_and_cancel_distinct() -> None:
-    assert (
-        resolve_host_terminal("cancelled", RunState.STOP_REQUESTED.value)
-        is RunState.STOPPED
-    )
-    assert (
-        resolve_host_terminal("cancelled", RunState.CANCEL_REQUESTED.value)
-        is RunState.CANCELLED
-    )
+    assert resolve_host_terminal("cancelled", RunState.STOP_REQUESTED.value) is RunState.STOPPED
+    assert resolve_host_terminal("cancelled", RunState.CANCEL_REQUESTED.value) is RunState.CANCELLED
     assert resolve_host_terminal("cancelled", None) is RunState.CANCELLED
     # The Host never fabricates a cancellation terminal over a finished Run.
-    assert (
-        resolve_host_terminal("completed", RunState.STOP_REQUESTED.value)
-        is RunState.COMPLETED
-    )
-    assert (
-        resolve_host_terminal("failed", RunState.STOP_REQUESTED.value)
-        is RunState.FAILED
-    )
+    assert resolve_host_terminal("completed", RunState.STOP_REQUESTED.value) is RunState.COMPLETED
+    assert resolve_host_terminal("failed", RunState.STOP_REQUESTED.value) is RunState.FAILED
     assert resolve_host_terminal("waiting", None) is None
 
 
@@ -964,9 +968,7 @@ async def test_superseding_stop_during_pause_ack_is_still_delivered_live() -> No
                 # ack: the real store hides the pause via desired_control and
                 # exposes the stop signal.
                 self.signals = [
-                    signal
-                    for signal in self.signals
-                    if signal.signal_id != "sig-pause"
+                    signal for signal in self.signals if signal.signal_id != "sig-pause"
                 ]
                 self.signals.append(
                     _signal_envelope(

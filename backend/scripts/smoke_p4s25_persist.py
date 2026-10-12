@@ -10,6 +10,7 @@
 
 Run AFTER deskpet has restarted (so backend re-loaded code_sessions).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -50,10 +51,14 @@ async def smoke(secret: str) -> int:
         # Step 2: pull messages for each restored session
         for it in items:
             target = it["base_session_id"]
-            await ws.send(json.dumps({
-                "type": "session_messages_load",
-                "payload": {"session_id": target, "limit": 50},
-            }))
+            await ws.send(
+                json.dumps(
+                    {
+                        "type": "session_messages_load",
+                        "payload": {"session_id": target, "limit": 50},
+                    }
+                )
+            )
             for _ in range(20):
                 raw = await asyncio.wait_for(ws.recv(), timeout=15.0)
                 msg = json.loads(raw)
@@ -71,14 +76,18 @@ async def smoke(secret: str) -> int:
         existing_sid = existing["base_session_id"]
         existing_root = existing["project_root"]
         new_random_sid = "code-RANDOM-fresh-" + str(asyncio.get_event_loop().time())[-4:]
-        await ws.send(json.dumps({
-            "type": "code_mode_enter",
-            "payload": {
-                "project_path": existing_root,
-                "suggested_name": "untitled",
-                "session_id": new_random_sid,
-            },
-        }))
+        await ws.send(
+            json.dumps(
+                {
+                    "type": "code_mode_enter",
+                    "payload": {
+                        "project_path": existing_root,
+                        "suggested_name": "untitled",
+                        "session_id": new_random_sid,
+                    },
+                }
+            )
+        )
         for _ in range(20):
             raw = await asyncio.wait_for(ws.recv(), timeout=15.0)
             msg = json.loads(raw)
@@ -86,9 +95,13 @@ async def smoke(secret: str) -> int:
                 returned_sid = msg["payload"].get("session_id")
                 print(f"-> code_mode_state returned session_id={returned_sid}")
                 if returned_sid == existing_sid:
-                    print(f"   PASS: backend reused existing sid {existing_sid} (not the fresh {new_random_sid})")
+                    print(
+                        f"   PASS: backend reused existing sid {existing_sid} (not the fresh {new_random_sid})"
+                    )
                 else:
-                    print(f"   FAIL: backend created new sid {returned_sid} instead of reusing {existing_sid}")
+                    print(
+                        f"   FAIL: backend created new sid {returned_sid} instead of reusing {existing_sid}"
+                    )
                     return 1
                 break
 

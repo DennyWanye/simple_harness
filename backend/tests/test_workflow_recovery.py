@@ -137,7 +137,20 @@ async def test_cancel_waits_for_active_effect_then_recovery_converges(tmp_path):
             """INSERT INTO workflow_effects(effect_id,run_id,node_execution_id,effect_fingerprint,
             effect_type,policy_json,args_hash,status,prepared_json,lease_epoch,started_at,updated_at)
             VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
-            ("effect", run_id, "node", "fingerprint", "file", "{}", "args", "running", "{}", 0, 10.0, 10.0),
+            (
+                "effect",
+                run_id,
+                "node",
+                "fingerprint",
+                "file",
+                "{}",
+                "args",
+                "running",
+                "{}",
+                0,
+                10.0,
+                10.0,
+            ),
         )
         await db.commit()
     finally:
@@ -306,9 +319,7 @@ async def test_native_recovery_projects_durable_retry_as_next_attempt(tmp_path):
         error_ref="transient",
     )
 
-    execution = await saver.load_execution(
-        run_id=run_id, thread_id=run_id, checkpoint_ns=""
-    )
+    execution = await saver.load_execution(run_id=run_id, thread_id=run_id, checkpoint_ns="")
     recovered_task = execution.snapshot.frontier[0]
     assert recovered_task.task_id == "task-1"
     assert recovered_task.retry_attempt == 2

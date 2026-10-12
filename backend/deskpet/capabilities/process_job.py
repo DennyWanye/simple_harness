@@ -221,24 +221,20 @@ class ManagedProcessJobAdapter:
         if (
             receipt.job_identity != ack.start_identity.get("job_identity")
             or receipt.pid != ack.start_identity.get("pid")
-            or receipt.process_create_time
-            != ack.start_identity.get("process_create_time")
-            or receipt.command_line_hash
-            != ack.start_identity.get("command_line_hash")
+            or receipt.process_create_time != ack.start_identity.get("process_create_time")
+            or receipt.command_line_hash != ack.start_identity.get("command_line_hash")
         ):
             raise RuntimeError("managed process recovered identity mismatch")
-        detail = dict(
-            await self._port.await_health(receipt, spec.health_envelope)
-        )
+        detail = dict(await self._port.await_health(receipt, spec.health_envelope))
         healthy = detail.get("healthy") is True
         return RuntimeHealthOutcome(
             operation_id=ack.operation_id,
             entry_id=spec.entry_id,
             healthy=healthy,
             outcome_hash=hashlib.sha256(
-                json.dumps(
-                    detail, sort_keys=True, separators=(",", ":"), default=str
-                ).encode("utf-8")
+                json.dumps(detail, sort_keys=True, separators=(",", ":"), default=str).encode(
+                    "utf-8"
+                )
             ).hexdigest(),
             detail=detail,
         )
@@ -248,14 +244,8 @@ class ManagedProcessJobAdapter:
         spec: PreparedRuntimeInstanceSpec,
         start: RuntimeStartResult | None,
     ) -> None:
-        runtime_instance_id = str(
-            getattr(start, "runtime_instance_id", "") or ""
-        )
-        receipt = (
-            None
-            if not runtime_instance_id
-            else self._receipts.pop(runtime_instance_id, None)
-        )
+        runtime_instance_id = str(getattr(start, "runtime_instance_id", "") or "")
+        receipt = None if not runtime_instance_id else self._receipts.pop(runtime_instance_id, None)
         if receipt is None and isinstance(start, RuntimeStartedAck):
             receipt = await self._port.recover_exact(
                 runtime_instance_id=start.runtime_instance_id,

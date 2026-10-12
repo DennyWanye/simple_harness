@@ -1,4 +1,5 @@
 """Bounded nullable extension; no general union/combinator support."""
+
 import copy
 
 import pytest
@@ -12,8 +13,12 @@ from simple_harness.tools.schema import (
 
 
 def wrapper(child, *, required=False):
-    return {"type": "object", "properties": {"value": child},
-            "required": ["value"] if required else [], "additionalProperties": False}
+    return {
+        "type": "object",
+        "properties": {"value": child},
+        "required": ["value"] if required else [],
+        "additionalProperties": False,
+    }
 
 
 def test_nullable_preserves_constraints_required_enum_const_and_frozen_input():
@@ -22,10 +27,22 @@ def test_nullable_preserves_constraints_required_enum_const_and_frozen_input():
         ("integer", {"minimum": 1, "maximum": 2}, 1, [0, 3, True, 1.5]),
         ("number", {"minimum": 1, "maximum": 2}, 1.5, [0, 3, True]),
         ("boolean", {}, False, [0, "false"]),
-        ("array", {"minItems": 1, "maxItems": 1, "items": {"type": "string"}},
-         ["ok"], [[], ["a", "b"], [1]]),
-        ("object", {"properties": {"x": {"type": "string"}}, "required": ["x"],
-                    "additionalProperties": False}, {"x": "ok"}, [{}, {"x": "ok", "extra": 1}]),
+        (
+            "array",
+            {"minItems": 1, "maxItems": 1, "items": {"type": "string"}},
+            ["ok"],
+            [[], ["a", "b"], [1]],
+        ),
+        (
+            "object",
+            {
+                "properties": {"x": {"type": "string"}},
+                "required": ["x"],
+                "additionalProperties": False,
+            },
+            {"x": "ok"},
+            [{}, {"x": "ok", "extra": 1}],
+        ),
     ]
     for base, constraints, good, invalid in examples:
         for types in ([base, "null"], ["null", base]):
@@ -57,9 +74,20 @@ def test_nullable_preserves_constraints_required_enum_const_and_frozen_input():
 
 
 def test_nullable_rejects_malformed_definitions_and_keeps_legacy_string_strict():
-    for raw in ([], ["null"], ["string"], ["null", "null"], ["string", "string"],
-                ["string", "integer"], ["string", "integer", "null"],
-                [["string"], "null"], [1, "null"], ["unknown", "null"], {}, None):
+    for raw in (
+        [],
+        ["null"],
+        ["string"],
+        ["null", "null"],
+        ["string", "string"],
+        ["string", "integer"],
+        ["string", "integer", "null"],
+        [["string"], "null"],
+        [1, "null"],
+        ["unknown", "null"],
+        {},
+        None,
+    ):
         with pytest.raises(SchemaDefinitionError):
             validate_tool_schema(wrapper({"type": raw}))
     for child in (

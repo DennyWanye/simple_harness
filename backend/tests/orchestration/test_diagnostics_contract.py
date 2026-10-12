@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: BUSL-1.1
 """P36 PD1/PD2: real facade ownership, fixed export scope and read-only completed data."""
+
 from __future__ import annotations
 
 import json
@@ -29,8 +30,12 @@ def _foreign_copy(store, mission_id: str, *, tenant_id: str) -> str:
     other = mission_id + "-foreign"
     document = json.loads(copied["json"])
     document.update({"id": other, "tenant_id": tenant_id, "idempotency_key": "p36-foreign"})
-    copied.update(mission_id=other, tenant_id=tenant_id, idempotency_key="p36-foreign",
-                  json=json.dumps(document, ensure_ascii=False, sort_keys=True))
+    copied.update(
+        mission_id=other,
+        tenant_id=tenant_id,
+        idempotency_key="p36-foreign",
+        json=json.dumps(document, ensure_ascii=False, sort_keys=True),
+    )
     with store.transaction():
         store.connection.execute(
             f"INSERT INTO missions({','.join(copied)}) VALUES ({','.join('?' * len(copied))})",
@@ -43,8 +48,14 @@ def _foreign_copy(store, mission_id: str, *, tenant_id: str) -> str:
 async def test_diagnostics_authenticates_before_reading_and_rejects_scope_overrides(
     orchestration_root, principal, monkeypatch
 ):
-    service = OrchestrationService(orchestration_root, OrchestrationSettings(),
-        provider=notes_provider(), principal=principal, drive=False, native_test_counter=FixtureWordCounter())
+    service = OrchestrationService(
+        orchestration_root,
+        OrchestrationSettings(),
+        provider=notes_provider(),
+        principal=principal,
+        drive=False,
+        native_test_counter=FixtureWordCounter(),
+    )
     await service.start()
     try:
         own = service.create_mission(notes_request("p36-owned"))["mission_id"]
@@ -52,18 +63,26 @@ async def test_diagnostics_authenticates_before_reading_and_rejects_scope_overri
         # 拒），所以直接在测试库里复制一行、换掉归属，只为验证"别人的任务读不到"。
         other = _foreign_copy(service._orchestrator.store, own, tenant_id="another-user")
         assert service.status()["diagnostics_available"] is True
+
         def forbidden(*args, **kwargs):
             pytest.fail("diagnostics read ran before ownership/request validation")
+
         monkeypatch.setattr("deskpet.orchestration.diagnostics.build_diagnostics", forbidden)
         for action in ("mission_diagnostics", "mission_support_export"):
             errors = []
             for mission_id in (other, "missing-mission"):
-                result = await handle(service, action, {"mission_id": mission_id}, request_id="auth")
+                result = await handle(
+                    service, action, {"mission_id": mission_id}, request_id="auth"
+                )
                 errors.append(result["payload"])
             assert errors[0] == errors[1]
             assert errors[0]["error_code"] == "not_found"
-            for extra in ({"directory": "/tmp/unauthorized"}, {"tenant_id": "another-user"},
-                          {"include_history": True}, {"path": "../outside"}):
+            for extra in (
+                {"directory": "/tmp/unauthorized"},
+                {"tenant_id": "another-user"},
+                {"include_history": True},
+                {"path": "../outside"},
+            ):
                 result = await handle(service, action, {"mission_id": own, **extra})
                 assert result["payload"]["error_code"] == "invalid_request"
         assert not (orchestration_root / "support").exists()
@@ -93,8 +112,18 @@ async def test_completed_diagnostics_and_exports_preserve_state_calls_and_artifa
         assert report["attribution"]["version"] == "attribution-v2"
         chain = report["attribution"]["goal_chain"]
         assert chain and [row["is_mission_root"] for row in chain].count(True) == 1, chain
-        assert all(set(row) == {"resolution_id", "goal_task_id", "obligation_id", "is_mission_root",
-                                "child_resolution_ids", "contributing_acceptances"} for row in chain)
+        assert all(
+            set(row)
+            == {
+                "resolution_id",
+                "goal_task_id",
+                "obligation_id",
+                "is_mission_root",
+                "child_resolution_ids",
+                "contributing_acceptances",
+            }
+            for row in chain
+        )
         assert all(row.get("acceptance_id") for row in report["attribution"]["final_products"])
         assert report["replay"]["status"] == "CONSISTENT" and "library" not in report["replay"]
         assert report["verification"]["results"]
@@ -121,8 +150,14 @@ async def test_completed_diagnostics_and_exports_preserve_state_calls_and_artifa
 @pytest.mark.asyncio
 async def test_unadvertised_diagnostics_is_unavailable(orchestration_root, principal, monkeypatch):
     monkeypatch.setattr(OrchestrationService, "_detect_diagnostics", lambda self: False)
-    service = OrchestrationService(orchestration_root, OrchestrationSettings(),
-        provider=notes_provider(), principal=principal, drive=False, native_test_counter=FixtureWordCounter())
+    service = OrchestrationService(
+        orchestration_root,
+        OrchestrationSettings(),
+        provider=notes_provider(),
+        principal=principal,
+        drive=False,
+        native_test_counter=FixtureWordCounter(),
+    )
     await service.start()
     try:
         assert service.status()["diagnostics_available"] is False

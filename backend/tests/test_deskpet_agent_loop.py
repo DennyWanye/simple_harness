@@ -9,6 +9,7 @@ Coverage:
     - multi-call batch ordering without internal dispatch
     - budget and provider errors before tool execution
 """
+
 from __future__ import annotations
 
 import json
@@ -41,12 +42,14 @@ class FakeLLMRegistry:
         model: str | None = None,
         **kwargs: Any,
     ) -> ChatResponse:
-        self.calls.append({
-            "messages": messages,
-            "tools": tools,
-            "model": model,
-            "kwargs": dict(kwargs),
-        })
+        self.calls.append(
+            {
+                "messages": messages,
+                "tools": tools,
+                "model": model,
+                "kwargs": dict(kwargs),
+            }
+        )
         if not self._responses:
             raise AssertionError("FakeLLMRegistry ran out of programmed responses")
         item = self._responses.pop(0)
@@ -77,9 +80,7 @@ class FakeToolRegistry:
         return self._handlers[name](args)
 
     def get(self, name: str) -> Any:
-        return SimpleNamespace(
-            completion_semantics=self._completion_semantics.get(name, "sync")
-        )
+        return SimpleNamespace(completion_semantics=self._completion_semantics.get(name, "sync"))
 
 
 # ───────────────────── tests ─────────────────────
@@ -171,8 +172,7 @@ async def test_reasoning_only_turn_is_retried_and_can_emit_tool_call():
     )
     assert any(
         message.get("role") == "system"
-        and "emit the actual structured tool call now"
-        in str(message.get("content") or "")
+        and "emit the actual structured tool call now" in str(message.get("content") or "")
         for message in second_messages
     )
 
@@ -199,28 +199,25 @@ async def test_exclusive_tool_is_split_from_mixed_batch_without_model_retry(
             arguments={"query": "ppt"},
         ),
     ]
-    llm = FakeLLMRegistry(responses=[
-        ChatResponse(
-            content="",
-            tool_calls=response_calls,
-            stop_reason="tool_use",
-            model="fixture-model",
-        )
-    ])
+    llm = FakeLLMRegistry(
+        responses=[
+            ChatResponse(
+                content="",
+                tool_calls=response_calls,
+                stop_reason="tool_use",
+                model="fixture-model",
+            )
+        ]
+    )
     tools = FakeToolRegistry(
         completion_semantics={
-            exclusive_name: (
-                "accepted_async" if exclusive_name == "capability_build" else "sync"
-            )
+            exclusive_name: ("accepted_async" if exclusive_name == "capability_build" else "sync")
         }
     )
     loop = AgentLoop(llm_registry=llm, tool_registry=tools, max_iterations=2)
 
     events = [
-        event
-        async for event in loop.run(
-            messages=[{"role": "user", "content": "make a deck"}]
-        )
+        event async for event in loop.run(messages=[{"role": "user", "content": "make a deck"}])
     ]
 
     assert len(llm.calls) == 1
@@ -241,40 +238,37 @@ async def test_exclusive_tool_is_split_from_mixed_batch_without_model_retry(
 
 @pytest.mark.asyncio
 async def test_mixed_batch_executes_only_first_exclusive_call():
-    llm = FakeLLMRegistry(responses=[
-        ChatResponse(
-            content="",
-            tool_calls=[
-                ToolCall(
-                    id="activate_1",
-                    name="tool_activate",
-                    arguments={"name": "ppt_create"},
-                ),
-                ToolCall(
-                    id="build_2",
-                    name="capability_build",
-                    arguments={"objective": "make the deck"},
-                ),
-                ToolCall(
-                    id="search_3",
-                    name="tool_search",
-                    arguments={"query": "ppt"},
-                ),
-            ],
-            stop_reason="tool_use",
-            model="fixture-model",
-        )
-    ])
-    tools = FakeToolRegistry(
-        completion_semantics={"capability_build": "accepted_async"}
+    llm = FakeLLMRegistry(
+        responses=[
+            ChatResponse(
+                content="",
+                tool_calls=[
+                    ToolCall(
+                        id="activate_1",
+                        name="tool_activate",
+                        arguments={"name": "ppt_create"},
+                    ),
+                    ToolCall(
+                        id="build_2",
+                        name="capability_build",
+                        arguments={"objective": "make the deck"},
+                    ),
+                    ToolCall(
+                        id="search_3",
+                        name="tool_search",
+                        arguments={"query": "ppt"},
+                    ),
+                ],
+                stop_reason="tool_use",
+                model="fixture-model",
+            )
+        ]
     )
+    tools = FakeToolRegistry(completion_semantics={"capability_build": "accepted_async"})
     loop = AgentLoop(llm_registry=llm, tool_registry=tools, max_iterations=2)
 
     events = [
-        event
-        async for event in loop.run(
-            messages=[{"role": "user", "content": "make a deck"}]
-        )
+        event async for event in loop.run(messages=[{"role": "user", "content": "make a deck"}])
     ]
 
     batch = next(event for event in events if isinstance(event, ToolBatchEvent))
@@ -313,10 +307,7 @@ async def test_empty_turn_is_retried_and_can_emit_visible_answer():
     )
 
     events = [
-        event
-        async for event in loop.run(
-            messages=[{"role": "user", "content": "answer the task"}]
-        )
+        event async for event in loop.run(messages=[{"role": "user", "content": "answer the task"}])
     ]
 
     assert len(llm.calls) == 2
@@ -366,10 +357,7 @@ async def test_repeated_reasoning_only_turn_fails_instead_of_empty_success():
     )
 
     events = [
-        event
-        async for event in loop.run(
-            messages=[{"role": "user", "content": "do the task"}]
-        )
+        event async for event in loop.run(messages=[{"role": "user", "content": "do the task"}])
     ]
 
     assert len(llm.calls) == 4
@@ -406,9 +394,7 @@ async def test_tool_name_filter_reaches_llm_schema_surface():
         )
     ]
 
-    assert [schema["function"]["name"] for schema in llm.calls[0]["tools"]] == [
-        "deepresearch"
-    ]
+    assert [schema["function"]["name"] for schema in llm.calls[0]["tools"]] == ["deepresearch"]
 
 
 @pytest.mark.asyncio
@@ -435,8 +421,8 @@ async def test_tool_name_filter_also_narrows_prepared_context_schema_surface():
             logical_schemas=lambda: [
                 {"type": "function", "function": {"name": "allowed"}},
                 {"type": "function", "function": {"name": "not_exposed"}},
-            ]
-        )
+            ],
+        ),
     )
     loop = AgentLoop(llm_registry=llm, tool_registry=tools)
 
@@ -449,9 +435,7 @@ async def test_tool_name_filter_also_narrows_prepared_context_schema_surface():
         )
     ]
 
-    assert [schema["function"]["name"] for schema in llm.calls[0]["tools"]] == [
-        "allowed"
-    ]
+    assert [schema["function"]["name"] for schema in llm.calls[0]["tools"]] == ["allowed"]
 
 
 @pytest.mark.asyncio
@@ -477,7 +461,11 @@ async def test_tool_use_yields_external_batch_and_pauses():
         schemas=[
             {
                 "type": "function",
-                "function": {"name": "get_time", "description": "current time", "parameters": {"type": "object"}},
+                "function": {
+                    "name": "get_time",
+                    "description": "current time",
+                    "parameters": {"type": "object"},
+                },
             }
         ],
         handlers={"get_time": lambda args: {"time": "10:30"}},
@@ -486,9 +474,7 @@ async def test_tool_use_yields_external_batch_and_pauses():
     events = [e async for e in loop.run(messages=[{"role": "user", "content": "What time is it?"}])]
     assert [e.type for e in events] == ["assistant_message", "tool_batch"]
     batch = next(e for e in events if isinstance(e, ToolBatchEvent))
-    assert [(call.name, call.arguments) for call in batch.tool_calls] == [
-        ("get_time", {})
-    ]
+    assert [(call.name, call.arguments) for call in batch.tool_calls] == [("get_time", {})]
     assert tools.calls == []
     assert len(llm.calls) == 1
 
@@ -661,9 +647,7 @@ async def test_budget_exceeded_aborts_with_error(tmp_path):
 
 @pytest.mark.asyncio
 async def test_llm_error_surfaces_as_error_event():
-    llm = FakeLLMRegistry(
-        responses=[LLMProviderError("all providers failed: gone")]
-    )
+    llm = FakeLLMRegistry(responses=[LLMProviderError("all providers failed: gone")])
     loop = AgentLoop(llm_registry=llm, tool_registry=FakeToolRegistry())
     events = [e async for e in loop.run(messages=[{"role": "user", "content": "x"}])]
     assert len(events) == 1

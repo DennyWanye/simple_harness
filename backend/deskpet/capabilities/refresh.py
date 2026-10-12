@@ -64,36 +64,28 @@ def exposure_intent_ref(intent: ToolExposureIntent) -> str:
     return fingerprint_json(exposure_intent_payload(intent))
 
 
-def context_os_snapshot_ref(
-    prepared: PreparedToolSet, eligibility: ToolEligibilityContext
-) -> str:
+def context_os_snapshot_ref(prepared: PreparedToolSet, eligibility: ToolEligibilityContext) -> str:
     return fingerprint_json(dump_context_os_snapshot(prepared, eligibility))
 
 
 class CapabilityRefreshSnapshotRepository(Protocol):
     async def load_context_os(
         self, snapshot_ref: str
-    ) -> tuple[PreparedToolSet, ToolEligibilityContext]:
-        ...
+    ) -> tuple[PreparedToolSet, ToolEligibilityContext]: ...
 
     async def put_context_os(
         self,
         snapshot_ref: str,
         payload: Mapping[str, JsonValue],
-    ) -> str:
-        ...
+    ) -> str: ...
 
-    async def load_exposure_intent(
-        self, intent_ref: str
-    ) -> ToolExposureIntent:
-        ...
+    async def load_exposure_intent(self, intent_ref: str) -> ToolExposureIntent: ...
 
     async def put_exposure_intent(
         self,
         intent_ref: str,
         intent: ToolExposureIntent,
-    ) -> str:
-        ...
+    ) -> str: ...
 
 
 class SqliteCapabilityRefreshSnapshotRepository:
@@ -143,9 +135,7 @@ class SqliteCapabilityRefreshSnapshotRepository:
             )
         return snapshot_ref
 
-    async def _load(
-        self, *, snapshot_ref: str, snapshot_kind: str
-    ) -> Mapping[str, JsonValue]:
+    async def _load(self, *, snapshot_ref: str, snapshot_kind: str) -> Mapping[str, JsonValue]:
         async with self._store.read_connection() as db:
             row = await (
                 await db.execute(
@@ -194,23 +184,17 @@ class SqliteCapabilityRefreshSnapshotRepository:
             payload=payload,
         )
 
-    async def load_exposure_intent(
-        self, intent_ref: str
-    ) -> ToolExposureIntent:
+    async def load_exposure_intent(self, intent_ref: str) -> ToolExposureIntent:
         payload = await self._load(
             snapshot_ref=intent_ref,
             snapshot_kind="exposure_intent",
         )
         return ToolExposureIntent(
-            direct_selectors=tuple(
-                str(item) for item in payload.get("direct_selectors", ())
-            ),
+            direct_selectors=tuple(str(item) for item in payload.get("direct_selectors", ())),
             discoverable_selectors=tuple(
                 str(item) for item in payload.get("discoverable_selectors", ())
             ),
-            deny_selectors=tuple(
-                str(item) for item in payload.get("deny_selectors", ())
-            ),
+            deny_selectors=tuple(str(item) for item in payload.get("deny_selectors", ())),
             required_direct_names=tuple(
                 str(item) for item in payload.get("required_direct_names", ())
             ),
@@ -227,6 +211,7 @@ class SqliteCapabilityRefreshSnapshotRepository:
             payload=exposure_intent_payload(intent),
         )
 
+
 class CapabilityToolSetRebuilder(Protocol):
     def rebuild(
         self,
@@ -236,8 +221,7 @@ class CapabilityToolSetRebuilder(Protocol):
         eligibility: ToolEligibilityContext,
         receipt: CapabilityOperationReceipt,
         catalog_snapshot: CapabilityCatalogSnapshot,
-    ) -> PreparedToolSet:
-        ...
+    ) -> PreparedToolSet: ...
 
 
 class RegistryExposureToolSetRebuilder:
@@ -256,9 +240,7 @@ class RegistryExposureToolSetRebuilder:
         catalog_snapshot: CapabilityCatalogSnapshot,
     ) -> PreparedToolSet:
         del receipt
-        activated_names = tuple(
-            capability.ref.name for capability in old_tool_set.activated
-        )
+        activated_names = tuple(capability.ref.name for capability in old_tool_set.activated)
         draft = self._resolver.resolve_draft(
             exposure_intent,
             eligibility=eligibility,
@@ -269,9 +251,7 @@ class RegistryExposureToolSetRebuilder:
                 "refresh_registry_drift",
                 "tool exposure and capability snapshot used different registry revisions",
             )
-        conditional_names = {
-            capability.ref.name for capability in draft.conditional_direct
-        }
+        conditional_names = {capability.ref.name for capability in draft.conditional_direct}
         fresh = draft.finalize(
             required_conditional_names=tuple(
                 name for name in activated_names if name in conditional_names
@@ -334,8 +314,7 @@ class PreparedCapabilityRefresh:
 
 ContinuationCommitter = Callable[
     [aiosqlite.Connection, PreparedCapabilityRefresh],
-    CapabilityContinuationCommitEvidence
-    | Awaitable[CapabilityContinuationCommitEvidence],
+    CapabilityContinuationCommitEvidence | Awaitable[CapabilityContinuationCommitEvidence],
 ]
 RefreshSourceStager = Callable[
     [aiosqlite.Connection, CapabilityRefreshIntent],
@@ -509,9 +488,7 @@ class CapabilityRefreshService:
     ) -> PreparedCapabilityRefresh:
         intent = await self.store.get_refresh_intent(intent_id)
         if intent is None:
-            raise CapabilityRefreshError(
-                "refresh_intent_not_found", intent_id
-            )
+            raise CapabilityRefreshError("refresh_intent_not_found", intent_id)
         if intent.status != "pending":
             raise CapabilityRefreshError(
                 "refresh_intent_not_pending",
@@ -519,23 +496,16 @@ class CapabilityRefreshService:
             )
         receipt = await self.store.get_operation_receipt(intent.operation_id)
         if receipt is None:
-            raise CapabilityRefreshError(
-                "operation_receipt_not_found", intent.operation_id
-            )
+            raise CapabilityRefreshError("operation_receipt_not_found", intent.operation_id)
         old_tool_set, eligibility = await self.snapshots.load_context_os(
             intent.old_tool_set_snapshot_ref
         )
-        if (
-            context_os_snapshot_ref(old_tool_set, eligibility)
-            != intent.old_tool_set_snapshot_ref
-        ):
+        if context_os_snapshot_ref(old_tool_set, eligibility) != intent.old_tool_set_snapshot_ref:
             raise CapabilityRefreshError(
                 "old_tool_set_snapshot_mismatch",
                 "old Context OS snapshot does not match its durable reference",
             )
-        exposure = await self.snapshots.load_exposure_intent(
-            intent.exposure_intent_ref
-        )
+        exposure = await self.snapshots.load_exposure_intent(intent.exposure_intent_ref)
         if exposure_intent_ref(exposure) != intent.exposure_intent_ref:
             raise CapabilityRefreshError(
                 "exposure_intent_mismatch",
@@ -571,9 +541,7 @@ class CapabilityRefreshService:
                 )
             context_os = dump_context_os_snapshot(candidate, eligibility)
             new_tool_set_ref = fingerprint_json(context_os)
-            persisted_ref = await self.snapshots.put_context_os(
-                new_tool_set_ref, context_os
-            )
+            persisted_ref = await self.snapshots.put_context_os(new_tool_set_ref, context_os)
             if persisted_ref != new_tool_set_ref:
                 raise CapabilityRefreshError(
                     "refresh_snapshot_repository_mismatch",
@@ -585,9 +553,7 @@ class CapabilityRefreshService:
                 run_id=intent.run_id,
                 operation_id=intent.operation_id,
                 refresh_nonce=intent.refresh_nonce,
-                expected_continuation_version=(
-                    intent.expected_continuation_version
-                ),
+                expected_continuation_version=(intent.expected_continuation_version),
                 old_stamp=intent.old_stamp,
                 new_stamp=catalog.stamp,
                 old_catalog_snapshot_ref=intent.old_catalog_snapshot_ref,
@@ -595,9 +561,7 @@ class CapabilityRefreshService:
                 old_tool_set_snapshot_ref=intent.old_tool_set_snapshot_ref,
                 new_tool_set_snapshot_ref=new_tool_set_ref,
                 new_context_os=context_os,
-                affected_tool_spec_fingerprints=(
-                    receipt.affected_tool_spec_fingerprints
-                ),
+                affected_tool_spec_fingerprints=(receipt.affected_tool_spec_fingerprints),
             )
             prepared = PreparedCapabilityRefresh(
                 intent=intent,
@@ -624,9 +588,7 @@ class CapabilityRefreshService:
                     evidence = commit_continuation(db, prepared)
                     if inspect.isawaitable(evidence):
                         evidence = await evidence
-                    if not isinstance(
-                        evidence, CapabilityContinuationCommitEvidence
-                    ):
+                    if not isinstance(evidence, CapabilityContinuationCommitEvidence):
                         raise CapabilityStoreConflict(
                             "refresh_continuation_evidence_missing",
                             "execution UoW must return refresh commit evidence",

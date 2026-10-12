@@ -144,7 +144,9 @@ def test_run_binding_registry_retains_waiting_reconstructs_and_releases_terminal
 
 
 @pytest.mark.asyncio
-async def test_provider_projection_audits_all_states_but_measures_only_trusted_success(tmp_path) -> None:
+async def test_provider_projection_audits_all_states_but_measures_only_trusted_success(
+    tmp_path,
+) -> None:
     db = SessionDB(tmp_path / "state.db")
     reconciler = SdkProviderSettlementReconciler(db, consumer_id="sdk-context-v1")
     base = dict(
@@ -160,24 +162,51 @@ async def test_provider_projection_audits_all_states_but_measures_only_trusted_s
         context_window=128_000,
         effective_ceiling=100_000,
     )
-    success = ProviderProjectionEnvelopeV1.from_value({
-        **base,
-        "invocation_id": "inv-success",
-        "state": "succeeded",
-        "usage": {"input_tokens": 10, "output_tokens": 3, "total_tokens": 13, "cache_tokens": 2},
-    })
-    missing = ProviderProjectionEnvelopeV1.from_value({
-        **base, "invocation_id": "inv-missing", "settled_at": 101.0,
-        "state": "succeeded", "usage": None,
-    })
-    failed = ProviderProjectionEnvelopeV1.from_value({
-        **base, "invocation_id": "inv-failed", "settled_at": 102.0,
-        "state": "failed", "usage": {"input_tokens": 99, "output_tokens": 99, "total_tokens": 198, "cache_tokens": 0},
-    })
-    unknown = ProviderProjectionEnvelopeV1.from_value({
-        **base, "invocation_id": "inv-unknown", "settled_at": 103.0,
-        "state": "unknown", "usage": None,
-    })
+    success = ProviderProjectionEnvelopeV1.from_value(
+        {
+            **base,
+            "invocation_id": "inv-success",
+            "state": "succeeded",
+            "usage": {
+                "input_tokens": 10,
+                "output_tokens": 3,
+                "total_tokens": 13,
+                "cache_tokens": 2,
+            },
+        }
+    )
+    missing = ProviderProjectionEnvelopeV1.from_value(
+        {
+            **base,
+            "invocation_id": "inv-missing",
+            "settled_at": 101.0,
+            "state": "succeeded",
+            "usage": None,
+        }
+    )
+    failed = ProviderProjectionEnvelopeV1.from_value(
+        {
+            **base,
+            "invocation_id": "inv-failed",
+            "settled_at": 102.0,
+            "state": "failed",
+            "usage": {
+                "input_tokens": 99,
+                "output_tokens": 99,
+                "total_tokens": 198,
+                "cache_tokens": 0,
+            },
+        }
+    )
+    unknown = ProviderProjectionEnvelopeV1.from_value(
+        {
+            **base,
+            "invocation_id": "inv-unknown",
+            "settled_at": 103.0,
+            "state": "unknown",
+            "usage": None,
+        }
+    )
 
     for envelope in (success, missing, failed, unknown):
         await reconciler.project(envelope)
@@ -185,11 +214,17 @@ async def test_provider_projection_audits_all_states_but_measures_only_trusted_s
 
     attempts = await db.list_sdk_provider_attempts("session-a")
     assert [item["invocation_id"] for item in attempts] == [
-        "inv-success", "inv-missing", "inv-failed", "inv-unknown"
+        "inv-success",
+        "inv-missing",
+        "inv-failed",
+        "inv-unknown",
     ]
     assert attempts[0]["usage"] == {
-        "input_tokens": 10, "output_tokens": 3, "total_tokens": 13,
-        "cache_tokens": 2, "reasoning_tokens": None,
+        "input_tokens": 10,
+        "output_tokens": 3,
+        "total_tokens": 13,
+        "cache_tokens": 2,
+        "reasoning_tokens": None,
     }
     assert attempts[1]["usage"] is None
     assert attempts[2]["state"] == "failed"
@@ -206,19 +241,36 @@ async def test_provider_projection_conflict_does_not_advance_cursor(tmp_path) ->
     db = SessionDB(tmp_path / "state.db")
     reconciler = SdkProviderSettlementReconciler(db, consumer_id="consumer")
     raw = {
-        "invocation_id": "inv-a", "settlement_version": 1, "settled_at": 1.0,
-        "session_id": "s", "root_run_id": "r", "request_id": "q",
-        "snapshot_id": "snap", "state": "succeeded", "provider_id": "p",
-        "model_id": "m", "binding_epoch": 1, "context_window": 100,
+        "invocation_id": "inv-a",
+        "settlement_version": 1,
+        "settled_at": 1.0,
+        "session_id": "s",
+        "root_run_id": "r",
+        "request_id": "q",
+        "snapshot_id": "snap",
+        "state": "succeeded",
+        "provider_id": "p",
+        "model_id": "m",
+        "binding_epoch": 1,
+        "context_window": 100,
         "effective_ceiling": 90,
         "usage": {"input_tokens": 2, "output_tokens": 1, "total_tokens": 3, "cache_tokens": 0},
     }
     await reconciler.project(ProviderProjectionEnvelopeV1.from_value(raw))
     with pytest.raises(SnapshotContractConflict):
-        await reconciler.project(ProviderProjectionEnvelopeV1.from_value({
-            **raw,
-            "usage": {"input_tokens": 8, "output_tokens": 1, "total_tokens": 9, "cache_tokens": 0},
-        }))
+        await reconciler.project(
+            ProviderProjectionEnvelopeV1.from_value(
+                {
+                    **raw,
+                    "usage": {
+                        "input_tokens": 8,
+                        "output_tokens": 1,
+                        "total_tokens": 9,
+                        "cache_tokens": 0,
+                    },
+                }
+            )
+        )
     cursor = await db.get_sdk_provider_projection_cursor("consumer")
     assert cursor is not None and cursor["version"] == 1
     await db.close()

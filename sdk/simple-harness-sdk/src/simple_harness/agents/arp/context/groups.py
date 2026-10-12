@@ -87,7 +87,9 @@ class GroupView:
 
     @property
     def record_refs(self) -> tuple[Pin, ...]:
-        return tuple(Pin("journal_record", r.record_id, r.seq, r.content_hash) for r in self.records)
+        return tuple(
+            Pin("journal_record", r.record_id, r.seq, r.content_hash) for r in self.records
+        )
 
     @property
     def view_hash(self) -> str:
@@ -100,7 +102,16 @@ class GroupView:
                 "receipt",
                 f"{self.group_id}:closed",
                 0,
-                digest({"calls": list(self.call_ids), "results": [[r.record_id, r.content_hash] for r in self.records if r.kind == "tool_result"]}),
+                digest(
+                    {
+                        "calls": list(self.call_ids),
+                        "results": [
+                            [r.record_id, r.content_hash]
+                            for r in self.records
+                            if r.kind == "tool_result"
+                        ],
+                    }
+                ),
             ).to_json()
         return {
             "session_id": session_id,
@@ -110,7 +121,9 @@ class GroupView:
             "source_hash": self.source_hash,
             "closed": self.closed,
             "record_ids": [r.record_id for r in self.records],
-            "rendered_view_ref": Pin("artifact", f"view:{self.group_id}", 0, self.view_hash).to_json(),
+            "rendered_view_ref": Pin(
+                "artifact", f"view:{self.group_id}", 0, self.view_hash
+            ).to_json(),
             "budget_charge": self.budget_charge,
             "turn_id": self.turn_id,
             "kind": self.kind,
@@ -136,7 +149,9 @@ class GroupSnapshot:
 
     @property
     def pin(self) -> Pin:
-        return Pin("artifact", f"group-snapshot:{self.highwater}", self.highwater, self.snapshot_hash)
+        return Pin(
+            "artifact", f"group-snapshot:{self.highwater}", self.highwater, self.snapshot_hash
+        )
 
     @property
     def expected_group_set_hash(self) -> str:
@@ -219,8 +234,14 @@ def capture(
             turn_id = first.turn_id or (running_turn or current_turn_id)
             views.append(
                 GroupView(
-                    group_id, "USER_ANCHOR", turn_id, tuple(members), (), (),
-                    mandatory=(turn_id == current_turn_id), closed=True,
+                    group_id,
+                    "USER_ANCHOR",
+                    turn_id,
+                    tuple(members),
+                    (),
+                    (),
+                    mandatory=(turn_id == current_turn_id),
+                    closed=True,
                     source_hash=source_hash_of(tuple(members)),
                     budget_charge=sum(charge(r) for r in members if r.visibility == "context"),
                 )
@@ -233,7 +254,9 @@ def capture(
         if first.kind == "assistant":
             _, _, ordinal = group_id.rpartition(":provider-turn:")
             issued = calls_by_ordinal.get(int(ordinal), ()) if ordinal.isdigit() else ()
-            answered = tuple(c for c in (_call_id_of(r) for r in members if r.kind == "tool_result") if c)
+            answered = tuple(
+                c for c in (_call_id_of(r) for r in members if r.kind == "tool_result") if c
+            )
             if issued:
                 closed = set(issued) == set(answered) and len(set(answered)) == len(answered)
                 kind = "CLOSED_TOOL" if closed else "OPEN_TAIL"
@@ -242,8 +265,14 @@ def capture(
                 kind = "TERMINAL_ANSWER" if turn_done else "HISTORY_MESSAGE"
             views.append(
                 GroupView(
-                    group_id, kind, turn_id, tuple(members), tuple(issued), answered,
-                    mandatory=(kind == "OPEN_TAIL"), closed=closed,
+                    group_id,
+                    kind,
+                    turn_id,
+                    tuple(members),
+                    tuple(issued),
+                    answered,
+                    mandatory=(kind == "OPEN_TAIL"),
+                    closed=closed,
                     source_hash=source_hash_of(tuple(members)),
                     budget_charge=sum(charge(r) for r in members if r.visibility == "context"),
                 )
@@ -251,8 +280,14 @@ def capture(
         else:
             views.append(
                 GroupView(
-                    group_id, "HISTORY_MESSAGE", turn_id, tuple(members), (), (),
-                    mandatory=False, closed=True,
+                    group_id,
+                    "HISTORY_MESSAGE",
+                    turn_id,
+                    tuple(members),
+                    (),
+                    (),
+                    mandatory=False,
+                    closed=True,
                     source_hash=source_hash_of(tuple(members)),
                     budget_charge=sum(charge(r) for r in members if r.visibility == "context"),
                 )
@@ -295,7 +330,17 @@ def capture(
         "mandatory_group_ids": [g.group_id for g in groups if g.mandatory],
     }
     body["snapshot_hash"] = digest(body)
-    return GroupSnapshot(check("ProtocolGroupSnapshot", body), groups, instructions, highwater, current_turn_id)
+    return GroupSnapshot(
+        check("ProtocolGroupSnapshot", body), groups, instructions, highwater, current_turn_id
+    )
 
 
-__all__ = ("GROUP_KINDS", "GroupSnapshot", "GroupView", "PROVENANCE_OF", "capture", "issued_calls", "source_hash_of")
+__all__ = (
+    "GROUP_KINDS",
+    "GroupSnapshot",
+    "GroupView",
+    "PROVENANCE_OF",
+    "capture",
+    "issued_calls",
+    "source_hash_of",
+)

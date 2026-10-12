@@ -134,9 +134,7 @@ class ProviderFaultScriptV1:
         if not raw_path:
             return None
         if values.get("DESKPET_DEV_MODE") != "1":
-            raise ProviderFaultScriptRejected(
-                "provider fault script requires DESKPET_DEV_MODE=1"
-            )
+            raise ProviderFaultScriptRejected("provider fault script requires DESKPET_DEV_MODE=1")
         return cls.from_file(raw_path, environ=values)
 
     @classmethod
@@ -148,9 +146,7 @@ class ProviderFaultScriptV1:
     ) -> ProviderFaultScriptV1:
         values = os.environ if environ is None else environ
         if values.get("DESKPET_DEV_MODE") != "1":
-            raise ProviderFaultScriptRejected(
-                "provider fault script requires DESKPET_DEV_MODE=1"
-            )
+            raise ProviderFaultScriptRejected("provider fault script requires DESKPET_DEV_MODE=1")
         source_path = Path(path).resolve()
         try:
             raw = source_path.read_bytes()
@@ -191,8 +187,10 @@ class ProviderFaultScriptV1:
             "action",
         }
         optional = {"retry_after_s", "model_quota", "run_kind", "autorun"}
-        if not isinstance(value, dict) or not required.issubset(value) or (
-            set(value) - required - optional
+        if (
+            not isinstance(value, dict)
+            or not required.issubset(value)
+            or (set(value) - required - optional)
         ):
             raise ProviderFaultScriptRejected("provider fault rule shape is invalid")
         strings = {
@@ -215,9 +213,7 @@ class ProviderFaultScriptV1:
         occurrence = occurrence_raw
         retry_after_raw = value.get("retry_after_s")
         try:
-            retry_after_s = (
-                None if retry_after_raw is None else float(retry_after_raw)
-            )
+            retry_after_s = None if retry_after_raw is None else float(retry_after_raw)
         except (TypeError, ValueError) as exc:
             raise ProviderFaultScriptRejected("provider fault retry_after_s is invalid") from exc
         if retry_after_s is not None and retry_after_s < 0:
@@ -281,9 +277,8 @@ class ProviderFaultScriptV1:
             run_kind=run_kind,
             autorun=autorun,
         )
-    async def consume(
-        self, context: ProviderWorkloadContext
-    ) -> ProviderFaultMatch | None:
+
+    async def consume(self, context: ProviderWorkloadContext) -> ProviderFaultMatch | None:
         root_run_id = str(context.root_run_id or "").strip() or None
         correlation_id = root_run_id or str(context.request_id or "").strip()
         if not correlation_id:

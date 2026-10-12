@@ -30,7 +30,9 @@ from deskpet.workflows.store.run_store import WorkflowRunStore
 
 
 def _canonical(value):
-    return json.dumps(value, ensure_ascii=True, allow_nan=False, sort_keys=True, separators=(",", ":"))
+    return json.dumps(
+        value, ensure_ascii=True, allow_nan=False, sort_keys=True, separators=(",", ":")
+    )
 
 
 class Clock:
@@ -47,7 +49,12 @@ async def _put(path, root, value, *, raw=False):
         await db.execute(
             """INSERT OR IGNORE INTO workflow_blobs(
             sha256,size_bytes,media_type,relative_path,created_at) VALUES(?,?,?,?,900)""",
-            (ref.sha256, ref.size_bytes, ref.media_type, BlobStore(root).path_for(ref.sha256).relative_to(root).as_posix()),
+            (
+                ref.sha256,
+                ref.size_bytes,
+                ref.media_type,
+                BlobStore(root).path_for(ref.sha256).relative_to(root).as_posix(),
+            ),
         )
         await db.commit()
     return "sha256:" + ref.sha256
@@ -59,25 +66,46 @@ async def _seed_parent(tmp_path, parent="11111111-1111-1111-1111-111111111111"):
     clock = Clock()
     store = WorkflowRunStore(path, clock=clock)
     await store.create_run(
-        request_key="root:" + parent, session_id="session-1", request_id="root-request",
-        turn_id="root-turn", workflow_name="deep_research", workflow_version="v6",
-        manifest_hash="manifest-v6", implementation_hash="implementation-v6",
-        capability_hash="capability-v6", capability_snapshot={"research": True},
-        state_schema_version=6, run_id=parent, trace_id="root-trace", thread_id="root-thread",
+        request_key="root:" + parent,
+        session_id="session-1",
+        request_id="root-request",
+        turn_id="root-turn",
+        workflow_name="deep_research",
+        workflow_version="v6",
+        manifest_hash="manifest-v6",
+        implementation_hash="implementation-v6",
+        capability_hash="capability-v6",
+        capability_snapshot={"research": True},
+        state_schema_version=6,
+        run_id=parent,
+        trace_id="root-trace",
+        thread_id="root-thread",
     )
     await store.bind_session_refs(parent, (("base", "session-1", 1), ("delivery", "session-1", 1)))
     repo = ResearchWorkflowRepository(path, clock=clock, blob_root=root)
-    await repo.ensure_root_lineage(run_id=parent, operation_id="research:" + parent, budget_lease_id="root-budget")
+    await repo.ensure_root_lineage(
+        run_id=parent, operation_id="research:" + parent, budget_lease_id="root-budget"
+    )
 
     spec = compile_research_spec(
         "What was China's total population in 2024?",
-        answer_locale="en-US", as_of_date="2026-07-18",
+        answer_locale="en-US",
+        as_of_date="2026-07-18",
     )
     spec_hash = spec.spec_hash
     spec_ref = await _put(path, root, spec.to_json())
     policy_keys = (
-        "compiler", "route", "extraction", "llm_extract", "llm_repair", "llm_inference",
-        "admission", "inference", "assessment", "claim", "quality",
+        "compiler",
+        "route",
+        "extraction",
+        "llm_extract",
+        "llm_repair",
+        "llm_inference",
+        "admission",
+        "inference",
+        "assessment",
+        "claim",
+        "quality",
     )
     policy_refs = {
         key: await _put(path, root, {"schema_version": 1, "policy_id": f"{key}-test-v1"})
@@ -85,74 +113,140 @@ async def _seed_parent(tmp_path, parent="11111111-1111-1111-1111-111111111111"):
     }
     requirement_id = str(spec.requirements[0]["requirement_id"])
     fact = AdmittedResearchFactV1.create(
-        run_id=parent, spec_hash=spec_hash, requirement_id=requirement_id,
-        target_kind="scalar", item_or_cell_id=None, field_or_facet_key=None,
-        candidate_id="ecd-repository", page_id="page-repository", span_id="span-repository",
-        binding_id="binding-repository", source_family_id="official-repository",
-        source_tier="first_party", admission_policy_hash=parse_blob_ref(policy_refs["admission"]),
-        status="admitted", semantic_payload={
-            "value": 140828, "canonical_unit": "ten_thousand_persons",
-            "time_scope": "2024", "scope": "China",
+        run_id=parent,
+        spec_hash=spec_hash,
+        requirement_id=requirement_id,
+        target_kind="scalar",
+        item_or_cell_id=None,
+        field_or_facet_key=None,
+        candidate_id="ecd-repository",
+        page_id="page-repository",
+        span_id="span-repository",
+        binding_id="binding-repository",
+        source_family_id="official-repository",
+        source_tier="first_party",
+        admission_policy_hash=parse_blob_ref(policy_refs["admission"]),
+        status="admitted",
+        semantic_payload={
+            "value": 140828,
+            "canonical_unit": "ten_thousand_persons",
+            "time_scope": "2024",
+            "scope": "China",
             "definition": "year-end national population",
         },
     )
     provenance_ref = await _put(path, root, fact.to_json())
     batch = EvidenceFactBatchV1.create(
-        batch_kind="facts", run_id=parent, spec_hash=spec_hash,
-        previous_head_hash=GENESIS_EVIDENCE_HEAD, ordinal=0,
-        page_result_refs=(), candidate_slot_results=(), inference_slot_results=(),
-        admitted_fact_refs=(provenance_ref,), registered_inference_refs=(),
-        rejected_candidate_ids=(), conflict_ids=(), provenance_refs=(provenance_ref,),
+        batch_kind="facts",
+        run_id=parent,
+        spec_hash=spec_hash,
+        previous_head_hash=GENESIS_EVIDENCE_HEAD,
+        ordinal=0,
+        page_result_refs=(),
+        candidate_slot_results=(),
+        inference_slot_results=(),
+        admitted_fact_refs=(provenance_ref,),
+        registered_inference_refs=(),
+        rejected_candidate_ids=(),
+        conflict_ids=(),
+        provenance_refs=(provenance_ref,),
         policy_refs=policy_refs,
     )
     batch_ref = await _put(path, root, batch.to_json())
     evidence_head_hash = batch.head_hash
     assessment = AnswerAssessmentV1.create(
-        spec_hash=spec_hash, evidence_head_hash=evidence_head_hash,
-        requirement_results=(), missing_requirement_ids=(requirement_id,),
-        minimum_useful=False, status="insufficient", reason_codes=("required_evidence_missing",),
+        spec_hash=spec_hash,
+        evidence_head_hash=evidence_head_hash,
+        requirement_results=(),
+        missing_requirement_ids=(requirement_id,),
+        minimum_useful=False,
+        status="insufficient",
+        reason_codes=("required_evidence_missing",),
         policy_hash=parse_blob_ref(policy_refs["assessment"]),
-        ordered_fact_refs=(provenance_ref,), ordered_inference_refs=(),
+        ordered_fact_refs=(provenance_ref,),
+        ordered_inference_refs=(),
     )
     assessment_hash = assessment.assessment_hash
     assessment_input_hash = assessment.assessment_input_hash
     assessment_ref = await _put(path, root, assessment.to_json())
     claim = ClaimBatchV1.create(
-        run_id=parent, spec_hash=spec_hash, evidence_head_hash=evidence_head_hash,
+        run_id=parent,
+        spec_hash=spec_hash,
+        evidence_head_hash=evidence_head_hash,
         assessment_hash=assessment_hash,
-        claim_policy_hash=parse_blob_ref(policy_refs["claim"]), claims=(), status="valid",
+        claim_policy_hash=parse_blob_ref(policy_refs["claim"]),
+        claims=(),
+        status="valid",
     )
     claim_ref = await _put(path, root, claim.to_json())
-    closure = sorted({
-        spec_ref, batch_ref, assessment_ref, claim_ref, provenance_ref, *policy_refs.values(),
-    })
+    closure = sorted(
+        {
+            spec_ref,
+            batch_ref,
+            assessment_ref,
+            claim_ref,
+            provenance_ref,
+            *policy_refs.values(),
+        }
+    )
     snapshot_base = {
-        "schema_version": 1, "run_id": parent, "workflow_name": "deep_research",
-        "workflow_version": "v6", "spec_ref": spec_ref, "spec_hash": spec_hash,
-        "fact_batch_refs": [batch_ref], "evidence_head_hash": evidence_head_hash,
-        "assessment_ref": assessment_ref, "assessment_hash": assessment_hash,
-        "assessment_input_hash": assessment_input_hash, "claim_batch_ref": claim_ref,
-        "provenance_refs": [provenance_ref], "policy_refs": policy_refs, "closure_refs": closure,
+        "schema_version": 1,
+        "run_id": parent,
+        "workflow_name": "deep_research",
+        "workflow_version": "v6",
+        "spec_ref": spec_ref,
+        "spec_hash": spec_hash,
+        "fact_batch_refs": [batch_ref],
+        "evidence_head_hash": evidence_head_hash,
+        "assessment_ref": assessment_ref,
+        "assessment_hash": assessment_hash,
+        "assessment_input_hash": assessment_input_hash,
+        "claim_batch_ref": claim_ref,
+        "provenance_refs": [provenance_ref],
+        "policy_refs": policy_refs,
+        "closure_refs": closure,
     }
     snapshot_hash = hashlib.sha256(_canonical(snapshot_base).encode()).hexdigest()
-    snapshot = {**snapshot_base, "snapshot_id": "rcs_" + snapshot_hash[:24], "snapshot_hash": snapshot_hash}
+    snapshot = {
+        **snapshot_base,
+        "snapshot_id": "rcs_" + snapshot_hash[:24],
+        "snapshot_hash": snapshot_hash,
+    }
     snapshot_ref = await _put(path, root, snapshot)
     final_ref = await _put(path, root, {"text": "answer"})
     report_ref = await _put(path, root, {"text": "report"})
     quality_ref = await _put(path, root, {"hard_gate_status": "passed"})
     manifest = TerminalDeliveryManifestV1.create(
-        workflow_name="deep_research", workflow_version="v6", run_id=parent,
-        answer_status="partial", spec_hash=spec_hash, assessment_hash=assessment_hash,
+        workflow_name="deep_research",
+        workflow_version="v6",
+        run_id=parent,
+        answer_status="partial",
+        spec_hash=spec_hash,
+        assessment_hash=assessment_hash,
         claim_policy_hash=parse_blob_ref(policy_refs["claim"]),
         quality_policy_hash=parse_blob_ref(policy_refs["quality"]),
-        continuation_snapshot_ref=snapshot_ref, continuation_snapshot_hash=snapshot_hash,
-        content_refs={"final_assistant_ref": final_ref, "report_ref": report_ref,
-                      "safe_summary_ref": None, "claim_batch_ref": claim_ref,
-                      "quality_audit_ref": quality_ref},
-        intent_specs=build_intent_specs(run_id=parent, final_assistant_ref=final_ref,
-                                        report_ref=report_ref, artifact_required=True),
-        cardinality={"final_assistant": 1, "workflow_final_status": 1, "report": 1,
-                     "artifact": 1, "run_terminal": 1},
+        continuation_snapshot_ref=snapshot_ref,
+        continuation_snapshot_hash=snapshot_hash,
+        content_refs={
+            "final_assistant_ref": final_ref,
+            "report_ref": report_ref,
+            "safe_summary_ref": None,
+            "claim_batch_ref": claim_ref,
+            "quality_audit_ref": quality_ref,
+        },
+        intent_specs=build_intent_specs(
+            run_id=parent,
+            final_assistant_ref=final_ref,
+            report_ref=report_ref,
+            artifact_required=True,
+        ),
+        cardinality={
+            "final_assistant": 1,
+            "workflow_final_status": 1,
+            "report": 1,
+            "artifact": 1,
+            "run_terminal": 1,
+        },
         engine_terminal={"status": "completed", "error_code": None, "recovery_action": None},
     )
     manifest_ref = await _put(path, root, manifest.to_json())
@@ -162,7 +256,8 @@ async def _seed_parent(tmp_path, parent="11111111-1111-1111-1111-111111111111"):
         await db.execute("PRAGMA foreign_keys=ON")
         await db.execute(
             """UPDATE workflow_runs SET status='completed',head_checkpoint_id='terminal-head',
-            head_checkpoint_ns='',ended_at=999,updated_at=999 WHERE run_id=?""", (parent,),
+            head_checkpoint_ns='',ended_at=999,updated_at=999 WHERE run_id=?""",
+            (parent,),
         )
         await db.execute(
             """INSERT INTO workflow_checkpoints(
@@ -174,7 +269,8 @@ async def _seed_parent(tmp_path, parent="11111111-1111-1111-1111-111111111111"):
         await db.execute(
             """INSERT INTO workflow_checkpoint_owners(
             run_id,thread_id,checkpoint_ns,checkpoint_id,parent_checkpoint_id,created_at)
-            VALUES(?,'root-thread','','terminal-head',NULL,999)""", (parent,),
+            VALUES(?,'root-thread','','terminal-head',NULL,999)""",
+            (parent,),
         )
         for ref in all_refs:
             await db.execute(
@@ -188,24 +284,26 @@ async def _seed_parent(tmp_path, parent="11111111-1111-1111-1111-111111111111"):
         )
         await db.commit()
     await repo.persist_v6_continuation_snapshot(
-        run_id=parent, operation_id="research:" + parent,
-        terminal_manifest_ref=manifest_ref, continue_until=2_000.0,
+        run_id=parent,
+        operation_id="research:" + parent,
+        terminal_manifest_ref=manifest_ref,
+        continue_until=2_000.0,
     )
     return path, root, repo, clock, snapshot
 
 
 def test_v6_continuation_identity_golden_is_independent_constant():
-    canonical_name = (
-        '{"parent_run_id":"11111111-1111-1111-1111-111111111111","policy_version":1}'
-    )
+    canonical_name = '{"parent_run_id":"11111111-1111-1111-1111-111111111111","policy_version":1}'
     namespace = uuid.uuid5(
         uuid.NAMESPACE_URL,
         "https://deskpet.local/workflow/deep-research/v6/continuation",
     )
-    assert canonical_name == _canonical({
-        "parent_run_id": "11111111-1111-1111-1111-111111111111",
-        "policy_version": 1,
-    })
+    assert canonical_name == _canonical(
+        {
+            "parent_run_id": "11111111-1111-1111-1111-111111111111",
+            "policy_version": 1,
+        }
+    )
     assert str(namespace) == "a7e5f48a-9b2b-549f-a67c-3ebdee7b9c78"
     identity = _v6_continuation_identity("11111111-1111-1111-1111-111111111111")
     assert identity["child_run_id"] == "2c2bba0d-c87b-5e70-ba41-1bf66ade02ff"
@@ -216,9 +314,7 @@ def test_v6_continuation_identity_golden_is_independent_constant():
     assert identity["child_request_key"] == (
         "research-continuation-v6:11111111-1111-1111-1111-111111111111:1"
     )
-    assert identity["child_request_id"] == (
-        "continue:v6:2c2bba0d-c87b-5e70-ba41-1bf66ade02ff"
-    )
+    assert identity["child_request_id"] == ("continue:v6:2c2bba0d-c87b-5e70-ba41-1bf66ade02ff")
     assert identity["child_turn_id"] == "7a7859966d71596fa9ab7d17b75526bc"
     assert identity["child_trace_id"] == "12f427c8b6a85a5aa12ccdde03333ece"
     assert identity["child_thread_id"] == "b072c692df6c5afdb875d5b84f28250d"
@@ -231,9 +327,9 @@ async def test_v6_create_get_is_single_head_audit_only_and_hydrates(tmp_path):
     first = await repo.create_or_get_continuation_v6(
         "11111111-1111-1111-1111-111111111111", "caller-a"
     )
-    second = await ResearchWorkflowRepository(path, clock=clock, blob_root=root).create_or_get_continuation_v6(
-        first.parent_run_id, "caller-b"
-    )
+    second = await ResearchWorkflowRepository(
+        path, clock=clock, blob_root=root
+    ).create_or_get_continuation_v6(first.parent_run_id, "caller-b")
     replay = await repo.create_or_get_continuation_v6(first.parent_run_id, "caller-a")
     assert first.created is True and second.created is False and replay.created is True
     assert first.child_run_id == second.child_run_id == replay.child_run_id
@@ -242,8 +338,14 @@ async def test_v6_create_get_is_single_head_audit_only_and_hydrates(tmp_path):
     assert first.audit_operation_id != second.audit_operation_id
     assert await repo.load_continuation_snapshot_v6(first.child_run_id) == snapshot
     async with aiosqlite.connect(path) as db:
-        assert (await (await db.execute("SELECT COUNT(*) FROM workflow_research_continuation_heads")).fetchone())[0] == 1
-        await db.execute("UPDATE workflow_research_snapshot_pins SET expires_at=999 WHERE pin_kind='continue_parent'")
+        assert (
+            await (
+                await db.execute("SELECT COUNT(*) FROM workflow_research_continuation_heads")
+            ).fetchone()
+        )[0] == 1
+        await db.execute(
+            "UPDATE workflow_research_snapshot_pins SET expires_at=999 WHERE pin_kind='continue_parent'"
+        )
         await db.execute(
             "UPDATE workflow_events SET payload_json=? WHERE event_id='terminal-event'",
             (_canonical({"manifest_ref": "sha256:" + "0" * 64, "answer_status": "completed"}),),
@@ -308,8 +410,10 @@ async def test_v6_two_connections_race_to_one_child(tmp_path):
     assert start_request["request_key"] == (
         "research-continuation-v6:11111111-1111-1111-1111-111111111111:1"
     )
-    assert start_request["request_id"] == run["request_id"] == (
-        "continue:v6:2c2bba0d-c87b-5e70-ba41-1bf66ade02ff"
+    assert (
+        start_request["request_id"]
+        == run["request_id"]
+        == ("continue:v6:2c2bba0d-c87b-5e70-ba41-1bf66ade02ff")
     )
     assert identity["logical_slot"] == start_request["request_key"]
     assert start_operation["request_hash"] == results[0].start_request_hash
@@ -320,30 +424,56 @@ async def test_v6_two_connections_race_to_one_child(tmp_path):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("stage", (
-    "after_capability_insert", "after_run_insert", "after_audit_operation_insert",
-    "after_start_request_insert", "after_session_refs_insert", "after_lineage_insert",
-    "after_snapshot_pin_insert", "after_start_operation_insert",
-    "after_inherited_staging_owners_insert", "after_continuation_head_insert", "before_commit",
-))
+@pytest.mark.parametrize(
+    "stage",
+    (
+        "after_capability_insert",
+        "after_run_insert",
+        "after_audit_operation_insert",
+        "after_start_request_insert",
+        "after_session_refs_insert",
+        "after_lineage_insert",
+        "after_snapshot_pin_insert",
+        "after_start_operation_insert",
+        "after_inherited_staging_owners_insert",
+        "after_continuation_head_insert",
+        "before_commit",
+    ),
+)
 async def test_v6_new_branch_fault_points_fully_roll_back(tmp_path, stage):
     path, root, _, clock, _ = await _seed_parent(tmp_path)
+
     async def fail(point):
         if point == stage:
             raise RuntimeError(stage)
+
     repo = ResearchWorkflowRepository(path, clock=clock, blob_root=root, fault_injector=fail)
     with pytest.raises(RuntimeError, match=stage):
-        await repo.create_or_get_continuation_v6(
-            "11111111-1111-1111-1111-111111111111", "fault"
-        )
+        await repo.create_or_get_continuation_v6("11111111-1111-1111-1111-111111111111", "fault")
     child = "2c2bba0d-c87b-5e70-ba41-1bf66ade02ff"
     async with aiosqlite.connect(path) as db:
-        for table in ("workflow_research_continuation_heads", "workflow_research_lineage",
-                      "workflow_operations", "workflow_start_requests", "workflow_session_refs"):
+        for table in (
+            "workflow_research_continuation_heads",
+            "workflow_research_lineage",
+            "workflow_operations",
+            "workflow_start_requests",
+            "workflow_session_refs",
+        ):
             column = "child_run_id" if table == "workflow_research_continuation_heads" else "run_id"
-            count = (await (await db.execute(f"SELECT COUNT(*) FROM {table} WHERE {column}=?", (child,))).fetchone())[0]
+            count = (
+                await (
+                    await db.execute(f"SELECT COUNT(*) FROM {table} WHERE {column}=?", (child,))
+                ).fetchone()
+            )[0]
             assert count == 0
-        assert (await (await db.execute("SELECT COUNT(*) FROM workflow_blob_refs WHERE owner_kind='run_staging' AND owner_id=?", (child,))).fetchone())[0] == 0
+        assert (
+            await (
+                await db.execute(
+                    "SELECT COUNT(*) FROM workflow_blob_refs WHERE owner_kind='run_staging' AND owner_id=?",
+                    (child,),
+                )
+            ).fetchone()
+        )[0] == 0
 
 
 @pytest.mark.asyncio
@@ -353,9 +483,11 @@ async def test_v6_existing_branch_fault_rolls_back_only_new_audit(tmp_path, stag
     first = await repo.create_or_get_continuation_v6(
         "11111111-1111-1111-1111-111111111111", "first"
     )
+
     async def fail(point):
         if point == stage:
             raise RuntimeError(stage)
+
     crashing = ResearchWorkflowRepository(path, clock=clock, blob_root=root, fault_injector=fail)
     with pytest.raises(RuntimeError, match=stage):
         await crashing.create_or_get_continuation_v6(first.parent_run_id, "new-audit")
@@ -363,8 +495,21 @@ async def test_v6_existing_branch_fault_rolls_back_only_new_audit(tmp_path, stag
         ("deep-research-v6-continuation-audit-v1|" + first.parent_run_id + "|new-audit").encode()
     ).hexdigest()
     async with aiosqlite.connect(path) as db:
-        assert (await (await db.execute("SELECT COUNT(*) FROM workflow_operations WHERE operation_id=?", (audit_id,))).fetchone())[0] == 0
-        assert (await (await db.execute("SELECT COUNT(*) FROM workflow_research_continuation_heads WHERE child_run_id=?", (first.child_run_id,))).fetchone())[0] == 1
+        assert (
+            await (
+                await db.execute(
+                    "SELECT COUNT(*) FROM workflow_operations WHERE operation_id=?", (audit_id,)
+                )
+            ).fetchone()
+        )[0] == 0
+        assert (
+            await (
+                await db.execute(
+                    "SELECT COUNT(*) FROM workflow_research_continuation_heads WHERE child_run_id=?",
+                    (first.child_run_id,),
+                )
+            ).fetchone()
+        )[0] == 1
 
 
 @pytest.mark.asyncio
@@ -399,9 +544,7 @@ async def _publish_mutated_snapshot(path, root, snapshot, mutate):
                 "SELECT payload_json FROM workflow_events WHERE event_id='terminal-event'"
             )
         ).fetchone()
-    old_manifest = json.loads(
-        BlobStore(root).get(json.loads(row[0])["manifest_ref"][7:]).decode()
-    )
+    old_manifest = json.loads(BlobStore(root).get(json.loads(row[0])["manifest_ref"][7:]).decode())
     base = dict(snapshot)
     base.pop("snapshot_id")
     base.pop("snapshot_hash")
@@ -463,8 +606,10 @@ async def test_v6_snapshot_recomputes_exact_transitive_closure(tmp_path, case, e
     manifest_ref = await _publish_mutated_snapshot(path, root, snapshot, mutate)
     with pytest.raises(ResearchRepositoryError) as caught:
         await repo.persist_v6_continuation_snapshot(
-            run_id=snapshot["run_id"], operation_id="research:" + snapshot["run_id"],
-            terminal_manifest_ref=manifest_ref, continue_until=2_000.0,
+            run_id=snapshot["run_id"],
+            operation_id="research:" + snapshot["run_id"],
+            terminal_manifest_ref=manifest_ref,
+            continue_until=2_000.0,
         )
     assert caught.value.code == error
 
@@ -472,72 +617,108 @@ async def test_v6_snapshot_recomputes_exact_transitive_closure(tmp_path, case, e
 @pytest.mark.asyncio
 async def test_v6_repository_child_terminal_snapshot_creates_hydratable_grandchild(tmp_path):
     path, root, repo, _, parent_snapshot = await _seed_parent(tmp_path)
-    child = await repo.create_or_get_continuation_v6(
-        parent_snapshot["run_id"], "child-create"
-    )
+    child = await repo.create_or_get_continuation_v6(parent_snapshot["run_id"], "child-create")
     spec = json.loads(BlobStore(root).get(parent_snapshot["spec_ref"][7:]).decode())
-    old_batch = json.loads(
-        BlobStore(root).get(parent_snapshot["fact_batch_refs"][-1][7:]).decode()
-    )
+    old_batch = json.loads(BlobStore(root).get(parent_snapshot["fact_batch_refs"][-1][7:]).decode())
     policy_refs = dict(parent_snapshot["policy_refs"])
     requirement_id = str(spec["requirements"][0]["requirement_id"])
     child_fact = AdmittedResearchFactV1.create(
-        run_id=child.child_run_id, spec_hash=parent_snapshot["spec_hash"],
-        requirement_id=requirement_id, target_kind="scalar", item_or_cell_id=None,
-        field_or_facet_key=None, candidate_id="ecd-child", page_id="page-child",
-        span_id="span-child", binding_id="binding-child",
-        source_family_id="official-child", source_tier="first_party",
-        admission_policy_hash=parse_blob_ref(policy_refs["admission"]), status="admitted",
+        run_id=child.child_run_id,
+        spec_hash=parent_snapshot["spec_hash"],
+        requirement_id=requirement_id,
+        target_kind="scalar",
+        item_or_cell_id=None,
+        field_or_facet_key=None,
+        candidate_id="ecd-child",
+        page_id="page-child",
+        span_id="span-child",
+        binding_id="binding-child",
+        source_family_id="official-child",
+        source_tier="first_party",
+        admission_policy_hash=parse_blob_ref(policy_refs["admission"]),
+        status="admitted",
         semantic_payload={
-            "value": 140829, "canonical_unit": "ten_thousand_persons",
-            "time_scope": "2025", "scope": "China", "definition": "test continuation fact",
+            "value": 140829,
+            "canonical_unit": "ten_thousand_persons",
+            "time_scope": "2025",
+            "scope": "China",
+            "definition": "test continuation fact",
         },
     )
     child_fact_ref = await _put(path, root, child_fact.to_json())
     child_batch = EvidenceFactBatchV1.create(
-        batch_kind="facts", run_id=child.child_run_id,
+        batch_kind="facts",
+        run_id=child.child_run_id,
         spec_hash=parent_snapshot["spec_hash"],
-        previous_head_hash=parent_snapshot["evidence_head_hash"], ordinal=1,
-        page_result_refs=(), candidate_slot_results=(), inference_slot_results=(),
-        admitted_fact_refs=(child_fact_ref,), registered_inference_refs=(),
-        rejected_candidate_ids=(), conflict_ids=(), provenance_refs=(child_fact_ref,),
+        previous_head_hash=parent_snapshot["evidence_head_hash"],
+        ordinal=1,
+        page_result_refs=(),
+        candidate_slot_results=(),
+        inference_slot_results=(),
+        admitted_fact_refs=(child_fact_ref,),
+        registered_inference_refs=(),
+        rejected_candidate_ids=(),
+        conflict_ids=(),
+        provenance_refs=(child_fact_ref,),
         policy_refs=policy_refs,
     )
     child_batch_ref = await _put(path, root, child_batch.to_json())
     ordered_facts = [parent_snapshot["provenance_refs"][0], child_fact_ref]
     assessment = AnswerAssessmentV1.create(
-        spec_hash=parent_snapshot["spec_hash"], evidence_head_hash=child_batch.head_hash,
-        requirement_results=(), missing_requirement_ids=(requirement_id,),
-        minimum_useful=False, status="insufficient", reason_codes=("required_evidence_missing",),
+        spec_hash=parent_snapshot["spec_hash"],
+        evidence_head_hash=child_batch.head_hash,
+        requirement_results=(),
+        missing_requirement_ids=(requirement_id,),
+        minimum_useful=False,
+        status="insufficient",
+        reason_codes=("required_evidence_missing",),
         policy_hash=parse_blob_ref(policy_refs["assessment"]),
-        ordered_fact_refs=ordered_facts, ordered_inference_refs=(),
+        ordered_fact_refs=ordered_facts,
+        ordered_inference_refs=(),
     )
     assessment_ref = await _put(path, root, assessment.to_json())
     claim = ClaimBatchV1.create(
-        run_id=child.child_run_id, spec_hash=parent_snapshot["spec_hash"],
-        evidence_head_hash=child_batch.head_hash, assessment_hash=assessment.assessment_hash,
-        claim_policy_hash=parse_blob_ref(policy_refs["claim"]), claims=(), status="valid",
+        run_id=child.child_run_id,
+        spec_hash=parent_snapshot["spec_hash"],
+        evidence_head_hash=child_batch.head_hash,
+        assessment_hash=assessment.assessment_hash,
+        claim_policy_hash=parse_blob_ref(policy_refs["claim"]),
+        claims=(),
+        status="valid",
     )
     claim_ref = await _put(path, root, claim.to_json())
     provenance = sorted({*parent_snapshot["provenance_refs"], child_fact_ref})
     child_snapshot_base = {
-        "schema_version": 1, "run_id": child.child_run_id,
-        "workflow_name": "deep_research", "workflow_version": "v6",
-        "spec_ref": parent_snapshot["spec_ref"], "spec_hash": parent_snapshot["spec_hash"],
+        "schema_version": 1,
+        "run_id": child.child_run_id,
+        "workflow_name": "deep_research",
+        "workflow_version": "v6",
+        "spec_ref": parent_snapshot["spec_ref"],
+        "spec_hash": parent_snapshot["spec_hash"],
         "fact_batch_refs": [*parent_snapshot["fact_batch_refs"], child_batch_ref],
-        "evidence_head_hash": child_batch.head_hash, "assessment_ref": assessment_ref,
+        "evidence_head_hash": child_batch.head_hash,
+        "assessment_ref": assessment_ref,
         "assessment_hash": assessment.assessment_hash,
         "assessment_input_hash": assessment.assessment_input_hash,
-        "claim_batch_ref": claim_ref, "provenance_refs": provenance,
+        "claim_batch_ref": claim_ref,
+        "provenance_refs": provenance,
         "policy_refs": policy_refs,
-        "closure_refs": sorted({
-            parent_snapshot["spec_ref"], *parent_snapshot["fact_batch_refs"], child_batch_ref,
-            assessment_ref, claim_ref, *provenance, *policy_refs.values(),
-        }),
+        "closure_refs": sorted(
+            {
+                parent_snapshot["spec_ref"],
+                *parent_snapshot["fact_batch_refs"],
+                child_batch_ref,
+                assessment_ref,
+                claim_ref,
+                *provenance,
+                *policy_refs.values(),
+            }
+        ),
     }
     child_snapshot_hash = hashlib.sha256(_canonical(child_snapshot_base).encode()).hexdigest()
     child_snapshot = {
-        **child_snapshot_base, "snapshot_id": "rcs_" + child_snapshot_hash[:24],
+        **child_snapshot_base,
+        "snapshot_id": "rcs_" + child_snapshot_hash[:24],
         "snapshot_hash": child_snapshot_hash,
     }
     child_snapshot_ref = await _put(path, root, child_snapshot)
@@ -545,32 +726,46 @@ async def test_v6_repository_child_terminal_snapshot_creates_hydratable_grandchi
     report_ref = await _put(path, root, {"text": "continued report"})
     quality_ref = await _put(path, root, {"hard_gate_status": "passed"})
     manifest = TerminalDeliveryManifestV1.create(
-        workflow_name="deep_research", workflow_version="v6", run_id=child.child_run_id,
-        answer_status="partial", spec_hash=parent_snapshot["spec_hash"],
+        workflow_name="deep_research",
+        workflow_version="v6",
+        run_id=child.child_run_id,
+        answer_status="partial",
+        spec_hash=parent_snapshot["spec_hash"],
         assessment_hash=assessment.assessment_hash,
         claim_policy_hash=parse_blob_ref(policy_refs["claim"]),
         quality_policy_hash=parse_blob_ref(policy_refs["quality"]),
         continuation_snapshot_ref=child_snapshot_ref,
         continuation_snapshot_hash=child_snapshot_hash,
         content_refs={
-            "final_assistant_ref": final_ref, "report_ref": report_ref,
-            "safe_summary_ref": None, "claim_batch_ref": claim_ref,
+            "final_assistant_ref": final_ref,
+            "report_ref": report_ref,
+            "safe_summary_ref": None,
+            "claim_batch_ref": claim_ref,
             "quality_audit_ref": quality_ref,
         },
         intent_specs=build_intent_specs(
-            run_id=child.child_run_id, final_assistant_ref=final_ref,
-            report_ref=report_ref, artifact_required=True,
+            run_id=child.child_run_id,
+            final_assistant_ref=final_ref,
+            report_ref=report_ref,
+            artifact_required=True,
         ),
         cardinality={
-            "final_assistant": 1, "workflow_final_status": 1, "report": 1,
-            "artifact": 1, "run_terminal": 1,
+            "final_assistant": 1,
+            "workflow_final_status": 1,
+            "report": 1,
+            "artifact": 1,
+            "run_terminal": 1,
         },
         engine_terminal={"status": "completed", "error_code": None, "recovery_action": None},
     )
     manifest_ref = await _put(path, root, manifest.to_json())
     terminal_refs = {
-        manifest_ref, child_snapshot_ref, *child_snapshot["closure_refs"],
-        final_ref, report_ref, quality_ref,
+        manifest_ref,
+        child_snapshot_ref,
+        *child_snapshot["closure_refs"],
+        final_ref,
+        report_ref,
+        quality_ref,
     }
     async with aiosqlite.connect(path) as db:
         db.row_factory = aiosqlite.Row
@@ -582,44 +777,62 @@ async def test_v6_repository_child_terminal_snapshot_creates_hydratable_grandchi
         ).fetchone()
         await db.execute(
             "UPDATE workflow_runs SET status='completed',head_checkpoint_id='terminal-child',"
-            "ended_at=1100,updated_at=1100 WHERE run_id=?", (child.child_run_id,),
+            "ended_at=1100,updated_at=1100 WHERE run_id=?",
+            (child.child_run_id,),
         )
         await db.execute(
             """INSERT INTO workflow_checkpoints(
             thread_id,checkpoint_ns,checkpoint_id,parent_checkpoint_id,run_id,checkpoint_type,
             checkpoint_blob,metadata_blob,engine_kind,snapshot_version,created_at)
             VALUES(?,?,?,?,?,'native',X'7B7D',X'7B7D','deskpet-native',1,1100)""",
-            (run["thread_id"], run["checkpoint_ns"], "terminal-child",
-             run["source_checkpoint_id"], child.child_run_id),
+            (
+                run["thread_id"],
+                run["checkpoint_ns"],
+                "terminal-child",
+                run["source_checkpoint_id"],
+                child.child_run_id,
+            ),
         )
         await db.execute(
             """INSERT INTO workflow_checkpoint_owners(
             run_id,thread_id,checkpoint_ns,checkpoint_id,parent_checkpoint_id,created_at)
             VALUES(?,?,?,?,?,1100)""",
-            (child.child_run_id, run["thread_id"], run["checkpoint_ns"],
-             "terminal-child", run["source_checkpoint_id"]),
+            (
+                child.child_run_id,
+                run["thread_id"],
+                run["checkpoint_ns"],
+                "terminal-child",
+                run["source_checkpoint_id"],
+            ),
         )
         for ref in terminal_refs:
             await db.execute(
                 "INSERT OR IGNORE INTO workflow_blob_refs(sha256,owner_kind,owner_id,created_at) "
-                "VALUES(?,'checkpoint','terminal-child',1100)", (ref[7:],),
+                "VALUES(?,'checkpoint','terminal-child',1100)",
+                (ref[7:],),
             )
         await db.execute(
             """INSERT INTO workflow_events(
             event_id,event_key,run_id,seq,event_type,payload_json,created_at)
             VALUES('terminal-event-child','run:terminal',?,1,'workflow.final',?,1100)""",
-            (child.child_run_id, _canonical({
-                "manifest_ref": manifest_ref, "answer_status": "partial",
-            })),
+            (
+                child.child_run_id,
+                _canonical(
+                    {
+                        "manifest_ref": manifest_ref,
+                        "answer_status": "partial",
+                    }
+                ),
+            ),
         )
         await db.commit()
     await repo.persist_v6_continuation_snapshot(
-        run_id=child.child_run_id, operation_id=child.child_operation_id,
-        terminal_manifest_ref=manifest_ref, continue_until=2_000.0,
+        run_id=child.child_run_id,
+        operation_id=child.child_operation_id,
+        terminal_manifest_ref=manifest_ref,
+        continue_until=2_000.0,
     )
-    grandchild = await repo.create_or_get_continuation_v6(
-        child.child_run_id, "grandchild-create"
-    )
+    grandchild = await repo.create_or_get_continuation_v6(child.child_run_id, "grandchild-create")
     inherited = await repo.load_continuation_snapshot_v6(grandchild.child_run_id)
     assert inherited == child_snapshot
     assert inherited["spec_ref"] == parent_snapshot["spec_ref"]
@@ -635,11 +848,20 @@ async def test_v6_generate_now_clamps_to_automatic_wall_guard_and_cancel_obeys_i
     clock = Clock()
     store = WorkflowRunStore(path, clock=clock)
     await store.create_run(
-        request_key="deadline-root", session_id="session-1", request_id="request-1",
-        turn_id="turn-1", workflow_name="deep_research", workflow_version="v6",
-        manifest_hash="manifest-v6", implementation_hash="implementation-v6",
-        capability_hash="capability-v6", capability_snapshot={"research": True},
-        state_schema_version=6, run_id="deadline-run", trace_id="trace", thread_id="thread",
+        request_key="deadline-root",
+        session_id="session-1",
+        request_id="request-1",
+        turn_id="turn-1",
+        workflow_name="deep_research",
+        workflow_version="v6",
+        manifest_hash="manifest-v6",
+        implementation_hash="implementation-v6",
+        capability_hash="capability-v6",
+        capability_snapshot={"research": True},
+        state_schema_version=6,
+        run_id="deadline-run",
+        trace_id="trace",
+        thread_id="thread",
     )
     async with aiosqlite.connect(path) as db:
         await db.execute("PRAGMA foreign_keys=ON")
@@ -654,7 +876,8 @@ async def test_v6_generate_now_clamps_to_automatic_wall_guard_and_cancel_obeys_i
             await db.execute(
                 """INSERT INTO workflow_checkpoint_owners(
                 run_id,thread_id,checkpoint_ns,checkpoint_id,parent_checkpoint_id,created_at)
-                VALUES(?,'thread','',?,?,1000)""", ("deadline-run", checkpoint, parent),
+                VALUES(?,'thread','',?,?,1000)""",
+                ("deadline-run", checkpoint, parent),
             )
         await db.execute(
             """UPDATE workflow_runs SET status='running',run_version=7,head_checkpoint_id='head',
@@ -666,22 +889,29 @@ async def test_v6_generate_now_clamps_to_automatic_wall_guard_and_cancel_obeys_i
             budget_ms,remaining_ms,created_at,last_observed_at,wall_not_after,offline_policy,
             rollback_tolerance_ms,revision,status)
             VALUES('deadline-id',1,'deadline-run',NULL,'run:automatic',?,900000,900000,
-            1000,1000,1900,'count',0,0,'open')""", ("a" * 64,),
+            1000,1000,1900,'count',0,0,'open')""",
+            ("a" * 64,),
         )
         await db.commit()
     repo = ResearchWorkflowRepository(path, clock=clock)
     command, _ = await repo.open_control(
-        run_id="deadline-run", idempotency_key="generate", action="generate_now",
-        expected_run_version=7, expected_head_checkpoint_ns="", expected_head_checkpoint_id="head",
+        run_id="deadline-run",
+        idempotency_key="generate",
+        action="generate_now",
+        expected_run_version=7,
+        expected_head_checkpoint_ns="",
+        expected_head_checkpoint_id="head",
     )
     clock.value = 1895.0
     accepted = await repo.accept_generate_now(
         command["command_id"], brief_checkpoint_ns="", brief_checkpoint_id="brief"
     )
     assert accepted["settle_deadline"] == 1900.0
-    assert (await repo.request_cancel_settle(
-        "deadline-run", idempotency_key="cancel", expected_run_version=7
-    ))["action"] == "cancel_settle"
+    assert (
+        await repo.request_cancel_settle(
+            "deadline-run", idempotency_key="cancel", expected_run_version=7
+        )
+    )["action"] == "cancel_settle"
     clock.value = 1900.0
     with pytest.raises(Exception, match="wall guard"):
         await repo.request_cancel_settle(

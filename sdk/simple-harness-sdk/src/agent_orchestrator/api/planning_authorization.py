@@ -91,6 +91,7 @@ class PlanningAuthorizationApi:
         if str(mission.status) in {str(item) for item in TERMINAL_MISSION}:
             raise StoreConflict("planning authorization cannot change a terminal mission")
         from ..governance.planning_authorization import planning_policy_for_mission
+
         self._policy = planning_policy_for_mission(self._store, mission_id)
         return mission
 

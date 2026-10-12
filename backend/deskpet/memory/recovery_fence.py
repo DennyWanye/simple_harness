@@ -70,9 +70,7 @@ class RecoveryLifecyclePort:
                 await self._fail_closed_on_error(coordinator, exc)
                 raise
 
-    async def drain_checkpoint_seal(
-        self, *, subject: str
-    ) -> Mapping[str, object]:
+    async def drain_checkpoint_seal(self, *, subject: str) -> Mapping[str, object]:
         """Complete an explicitly started close and leave its manifest sealed."""
 
         subject = self._assert_subject(subject)
@@ -95,9 +93,7 @@ class RecoveryLifecyclePort:
                     receipt = await coordinator.current_manifest()
                     drained_or_parked = True
                 else:
-                    raise HumanMemoryRecoveryError(
-                        "human_memory_recovery_not_closing"
-                    )
+                    raise HumanMemoryRecoveryError("human_memory_recovery_not_closing")
                 wal_busy = await self._wal_busy(receipt.generation)
                 return {
                     **_manifest_mapping(subject, receipt),
@@ -121,9 +117,7 @@ class RecoveryLifecyclePort:
             row = await cursor.fetchone()
             await cursor.close()
         if row is None:
-            raise HumanMemoryRecoveryError(
-                "human_memory_recovery_checkpoint_missing"
-            )
+            raise HumanMemoryRecoveryError("human_memory_recovery_checkpoint_missing")
         return int(row[0])
 
     async def sealed_manifest(self, *, subject: str) -> Mapping[str, object]:
@@ -148,8 +142,7 @@ class RecoveryLifecyclePort:
                 export_id = str(
                     uuid.uuid5(
                         uuid.NAMESPACE_URL,
-                        "simple-harness:human-memory-export:"
-                        f"{subject}:{manifest.generation}",
+                        f"simple-harness:human-memory-export:{subject}:{manifest.generation}",
                     )
                 )
                 receipt = await coordinator.emergency_export(export_id=export_id)
@@ -245,14 +238,10 @@ def build_recovery_lifecycle_port(
 ) -> RecoveryLifecyclePort:
     """Bind the trusted Host lifecycle authority without opening the DB yet."""
 
-    return RecoveryLifecyclePort(
-        db_path=Path(db_path), artifact_dir=Path(artifact_dir)
-    )
+    return RecoveryLifecyclePort(db_path=Path(db_path), artifact_dir=Path(artifact_dir))
 
 
-def _manifest_mapping(
-    subject: str, receipt: RecoveryManifestReceipt
-) -> Mapping[str, object]:
+def _manifest_mapping(subject: str, receipt: RecoveryManifestReceipt) -> Mapping[str, object]:
     return {
         "subject": subject,
         "manifest_ref": receipt.manifest_id,

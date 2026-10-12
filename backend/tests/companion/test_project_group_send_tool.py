@@ -11,9 +11,7 @@ class _Transport:
     def __init__(self) -> None:
         self.calls: list[tuple[str, str]] = []
 
-    def send_all_project_groups(
-        self, *, content: str, idempotency_key: str
-    ) -> dict[str, object]:
+    def send_all_project_groups(self, *, content: str, idempotency_key: str) -> dict[str, object]:
         self.calls.append((content, idempotency_key))
         return {
             "ok": True,

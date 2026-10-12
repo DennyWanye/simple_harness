@@ -74,9 +74,7 @@ from .terminal_projection import VersionedActionMatrix, WorkflowActionContext
 from .trace.store import TraceStore
 
 START_SNAPSHOT_KEY = "_workflow_start"
-_UUID_V4_RE = re.compile(
-    r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
-)
+_UUID_V4_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
 
 
 class WorkflowServiceError(RuntimeError):
@@ -324,9 +322,8 @@ class WorkflowService:
         delivery_handlers: Mapping[str, Callable[..., Any | Awaitable[Any]]] | None = None,
         session_delivery_state_reader: Callable[[str], Awaitable[Mapping[str, Any]]] | None = None,
         research_repository: object | None = None,
-        research_snapshot_loader: Callable[
-            [str], Awaitable[bytes | Mapping[str, JsonValue]]
-        ] | None = None,
+        research_snapshot_loader: Callable[[str], Awaitable[bytes | Mapping[str, JsonValue]]]
+        | None = None,
         action_matrix: VersionedActionMatrix | None = None,
         runtime_adapters: WorkflowRuntimeAdapterRegistry | None = None,
         execution_ports: WorkflowExecutionPorts | None = None,
@@ -339,7 +336,9 @@ class WorkflowService:
             selected = getattr(runner, "store", None)
         if selected is None:
             raise ValueError("WorkflowService requires a workflow run store")
-        self.run_store = selected if isinstance(selected, WorkflowRunStore) else WorkflowRunStore(selected)
+        self.run_store = (
+            selected if isinstance(selected, WorkflowRunStore) else WorkflowRunStore(selected)
+        )
         self.runner = runner
         self.human_store = human_store or decision_store or HumanDecisionStore(self.run_store.path)
         self.trace_store = trace_store or TraceStore(self.run_store.path)
@@ -355,7 +354,11 @@ class WorkflowService:
         self.action_matrix = action_matrix or VersionedActionMatrix()
         self.runtime_adapters = runtime_adapters or WorkflowRuntimeAdapterRegistry()
         self.execution_ports = execution_ports
-        self._owner_uow = execution_ports.unit_of_work if execution_ports else SqliteExecutionUnitOfWork(self.run_store.path)
+        self._owner_uow = (
+            execution_ports.unit_of_work
+            if execution_ports
+            else SqliteExecutionUnitOfWork(self.run_store.path)
+        )
         self._owns_execution_uow = execution_ports is None or owns_execution_uow
         self._close_lock = asyncio.Lock()
         self._closed = False
@@ -517,9 +520,8 @@ class WorkflowService:
             ):
                 terminal_at = row.get("ended_at") or row.get("updated_at")
                 if isinstance(terminal_at, (int, float)) and (
-                    float(terminal_at) + 30.0 * 24.0 * 60.0 * 60.0 > datetime.now(
-                        tz=UTC
-                    ).timestamp()
+                    float(terminal_at) + 30.0 * 24.0 * 60.0 * 60.0
+                    > datetime.now(tz=UTC).timestamp()
                 ):
                     if await self.persist_v6_continuation_snapshot(str(row["run_id"])):
                         recovered.append(str(row["run_id"]))
@@ -679,9 +681,7 @@ class WorkflowService:
             venue=self._required(venue, "venue"),
             base_session_id=self._required(base_session_id, "base_session_id"),
             code_session_id=str(code_session_id or ""),
-            delivery_session_id=self._required(
-                delivery_session_id, "delivery_session_id"
-            ),
+            delivery_session_id=self._required(delivery_session_id, "delivery_session_id"),
             base_epoch=int(base_epoch),
             code_epoch=int(code_epoch),
             request_id=self._required(request_id, "request_id"),
@@ -747,8 +747,7 @@ class WorkflowService:
             raise WorkflowServiceError("invalid_request", "delivery targets must be unique")
         resolved_run_id = str(run_id or uuid.uuid5(uuid.NAMESPACE_URL, identity.identity_key).hex)
         resolved_trace_id = str(
-            trace_id
-            or uuid.uuid5(uuid.NAMESPACE_URL, f"trace:{identity.identity_key}").hex
+            trace_id or uuid.uuid5(uuid.NAMESPACE_URL, f"trace:{identity.identity_key}").hex
         )
         return PreparedWorkflowStart(
             identity=identity,
@@ -839,11 +838,13 @@ class WorkflowService:
         }
         if admission_launch is None:
             if not kernel_owned_spec:
-                expected.update({
-                    "profile_key": prepared.profile_key,
-                    "payload_fingerprint": prepared.request_hash,
-                    "capability_fingerprint": prepared.capability_hash,
-                })
+                expected.update(
+                    {
+                        "profile_key": prepared.profile_key,
+                        "payload_fingerprint": prepared.request_hash,
+                        "capability_fingerprint": prepared.capability_hash,
+                    }
+                )
         else:
             boundary = admission_launch.boundary
             if (
@@ -869,10 +870,12 @@ class WorkflowService:
             "auth_epoch": identity.base_epoch,
         }
         if not kernel_owned_spec:
-            context_expected.update({
-                "root_run_id": prepared.run_id,
-                "parent_run_id": None,
-            })
+            context_expected.update(
+                {
+                    "root_run_id": prepared.run_id,
+                    "parent_run_id": None,
+                }
+            )
         if admission_launch is None and not kernel_owned_spec:
             context_expected["capability_hash"] = prepared.capability_hash
         if any(getattr(spec.context, key) != value for key, value in context_expected.items()):
@@ -968,7 +971,8 @@ class WorkflowService:
         run_id: str,
         state: object,
         context: WorkflowContext | None = None,
-        *, active_lease: Any | None = None,
+        *,
+        active_lease: Any | None = None,
     ) -> Any:
         runner = self.runner
         call = getattr(runner, "run_precreated", None)
@@ -977,14 +981,20 @@ class WorkflowService:
                 "workflow_execution_ports_required",
                 "workflow runner cannot drive a precreated execution",
             )
-        return await call(str(run_id), state, context, **({} if active_lease is None else {"active_lease": active_lease}))
+        return await call(
+            str(run_id),
+            state,
+            context,
+            **({} if active_lease is None else {"active_lease": active_lease}),
+        )
 
     async def resume_precreated(
         self,
         run_id: str,
         responses: Mapping[str, JsonValue],
         context: WorkflowContext | None = None,
-        *, active_lease: Any | None = None,
+        *,
+        active_lease: Any | None = None,
     ) -> Any:
         runner = self.runner
         call = getattr(runner, "resume_precreated", None)
@@ -993,11 +1003,14 @@ class WorkflowService:
                 "workflow_execution_ports_required",
                 "workflow runner cannot resume a precreated execution",
             )
-        return await call(str(run_id), responses, context, **({} if active_lease is None else {"active_lease": active_lease}))
+        return await call(
+            str(run_id),
+            responses,
+            context,
+            **({} if active_lease is None else {"active_lease": active_lease}),
+        )
 
-    async def cancel_precreated(
-        self, run_id: str, reason: str = "user"
-    ) -> dict[str, Any]:
+    async def cancel_precreated(self, run_id: str, reason: str = "user") -> dict[str, Any]:
         runner = self.runner
         call = getattr(runner, "request_cancel_precreated", None)
         if not callable(call):
@@ -1034,7 +1047,12 @@ class WorkflowService:
             raise WorkflowServiceError(
                 "workflow_start_unavailable", "The workflow runner cannot start workflows"
             )
-        if isinstance(base_epoch, bool) or base_epoch < 0 or isinstance(code_epoch, bool) or code_epoch < 0:
+        if (
+            isinstance(base_epoch, bool)
+            or base_epoch < 0
+            or isinstance(code_epoch, bool)
+            or code_epoch < 0
+        ):
             raise WorkflowServiceError("invalid_request", "session epochs must be non-negative")
         identity = WorkflowStartIdentity(
             venue=self._required(venue, "venue"),
@@ -1220,7 +1238,10 @@ class WorkflowService:
     async def require_legacy_owner(self, run_id: str, operation: str) -> None:
         owner = await self.execution_owner(run_id)
         if owner is not None:
-            raise WorkflowServiceError("execution_owner", f"legacy {operation} is forbidden for execution-owned run: {owner[0]}/{owner[1]}")
+            raise WorkflowServiceError(
+                "execution_owner",
+                f"legacy {operation} is forbidden for execution-owned run: {owner[0]}/{owner[1]}",
+            )
 
     async def list_runs(
         self,
@@ -1359,12 +1380,14 @@ class WorkflowService:
 
     get_trace_tree = trace_tree
 
-    async def checkpoint_history(
-        self, run_id: str, *, limit: int | None = None
-    ) -> dict[str, Any]:
+    async def checkpoint_history(self, run_id: str, *, limit: int | None = None) -> dict[str, Any]:
         await self._require_run(run_id)
         method = getattr(self.runner, "get_state_history", None)
-        history = [] if not callable(method) else [dict(item) for item in await method(run_id, limit=limit)]
+        history = (
+            []
+            if not callable(method)
+            else [dict(item) for item in await method(run_id, limit=limit)]
+        )
         db = await self._connect()
         try:
             rows = await (
@@ -1478,9 +1501,7 @@ class WorkflowService:
                     "execution-owned cancel requires trusted actor context",
                 )
             try:
-                await self._owner_uow.authorize(
-                    RunRef(run_id, actor.session_id), actor, "cancel"
-                )
+                await self._owner_uow.authorize(RunRef(run_id, actor.session_id), actor, "cancel")
             except AuthorizationError as exc:
                 raise WorkflowServiceError(exc.code, str(exc)) from exc
             return _plain(await self.cancel_precreated(run_id, reason))
@@ -1512,7 +1533,9 @@ class WorkflowService:
             or not isinstance(expected_version, int)
             or expected_version < 0
         ):
-            raise WorkflowServiceError("invalid_run_version", "expected_version must be non-negative")
+            raise WorkflowServiceError(
+                "invalid_run_version", "expected_version must be non-negative"
+            )
         action_payload = copy.deepcopy(dict(payload or {}))
         validate_json_value(action_payload, path="$.action_payload")
         await self.require_legacy_owner(run_id, "action")
@@ -1530,7 +1553,9 @@ class WorkflowService:
         engine_status = str(row.get("status") or "")
 
         if (workflow_name, workflow_version, action_id) == (
-            "deep_research", "v4", "retry_from_start"
+            "deep_research",
+            "v4",
+            "retry_from_start",
         ):
             if not self.action_matrix.allows(
                 workflow_name,
@@ -1538,7 +1563,9 @@ class WorkflowService:
                 action_id,
                 WorkflowActionContext(engine_status=engine_status),
             ):
-                raise WorkflowServiceError("workflow_action_not_allowed", "workflow action is not allowed")
+                raise WorkflowServiceError(
+                    "workflow_action_not_allowed", "workflow action is not allowed"
+                )
             return await self.retry_run_from_start(
                 run_id, action_id=action_id, retry_key=idempotency_key
             )
@@ -1573,9 +1600,14 @@ class WorkflowService:
                         "v6 continuation repository returned an invalid result",
                     )
                 expected_result_keys = {
-                    "schema_version", "parent_run_id", "child_run_id",
-                    "child_operation_id", "created", "start_payload",
-                    "start_request_hash", "audit_operation_id",
+                    "schema_version",
+                    "parent_run_id",
+                    "child_run_id",
+                    "child_operation_id",
+                    "created",
+                    "start_payload",
+                    "start_request_hash",
+                    "audit_operation_id",
                 }
                 if set(result) != expected_result_keys or result.get("schema_version") != 1:
                     raise WorkflowServiceError(
@@ -1585,7 +1617,9 @@ class WorkflowService:
                 child_run_id = self._required(str(result["child_run_id"]), "child_run_id")
                 start_payload = result["start_payload"]
                 if not isinstance(start_payload, Mapping) or set(start_payload) != {
-                    "schema_version", "parent_run_id", "source_snapshot_hash"
+                    "schema_version",
+                    "parent_run_id",
+                    "source_snapshot_hash",
                 }:
                     raise WorkflowServiceError(
                         "invalid_continuation_result",
@@ -1623,7 +1657,9 @@ class WorkflowService:
                     action_id,
                     WorkflowActionContext(engine_status=engine_status),
                 ):
-                    raise WorkflowServiceError("workflow_action_not_allowed", "retry_from_start is not allowed")
+                    raise WorkflowServiceError(
+                        "workflow_action_not_allowed", "retry_from_start is not allowed"
+                    )
                 return await self.retry_run_from_start(
                     run_id, action_id=action_id, retry_key=idempotency_key
                 )
@@ -1681,7 +1717,9 @@ class WorkflowService:
                         brief_committed=True,
                     ),
                 ):
-                    raise WorkflowServiceError("workflow_action_not_allowed", "generate_now is not allowed")
+                    raise WorkflowServiceError(
+                        "workflow_action_not_allowed", "generate_now is not allowed"
+                    )
                 opened, created = await repository.open_control(
                     run_id=run_id,
                     idempotency_key=idempotency_key,
@@ -1728,11 +1766,14 @@ class WorkflowService:
                         active_control_status=(str(active.get("status")) if active else None),
                     ),
                 ):
-                    raise WorkflowServiceError("workflow_action_not_allowed", "cancel_settle is not allowed")
+                    raise WorkflowServiceError(
+                        "workflow_action_not_allowed", "cancel_settle is not allowed"
+                    )
                 request_cancel = getattr(repository, "request_cancel_settle", None)
                 if not callable(request_cancel):
                     raise WorkflowServiceError(
-                        "workflow_action_unavailable", "cancel_settle repository support is unavailable"
+                        "workflow_action_unavailable",
+                        "cancel_settle repository support is unavailable",
                     )
                 existing_marker = (
                     active.get("payload", {}).get("_cancel_settle")
@@ -1793,7 +1834,9 @@ class WorkflowService:
                         snapshot_available=True,
                     ),
                 ):
-                    raise WorkflowServiceError("workflow_action_not_allowed", "continue_research is not allowed")
+                    raise WorkflowServiceError(
+                        "workflow_action_not_allowed", "continue_research is not allowed"
+                    )
                 stable = uuid.uuid5(uuid.NAMESPACE_URL, f"deskpet:{run_id}:{idempotency_key}")
                 child_run_id = str(stable)
                 child_operation_id = f"research:{child_run_id}"
@@ -1895,7 +1938,9 @@ class WorkflowService:
             raise WorkflowServiceError("not_found", "workflow run was not found")
         initial_identity = initial.get("identity")
         if not isinstance(initial_identity, Mapping):
-            raise WorkflowServiceError("invalid_start_snapshot", "workflow start identity is invalid")
+            raise WorkflowServiceError(
+                "invalid_start_snapshot", "workflow start identity is invalid"
+            )
         delivery_session_id = self._required(
             str(initial_identity.get("delivery_session_id") or ""), "delivery_session_id"
         )
@@ -1906,7 +1951,9 @@ class WorkflowService:
                 raise WorkflowServiceError("not_found", "workflow run was not found")
             identity_value = source.get("identity")
             if not isinstance(identity_value, Mapping):
-                raise WorkflowServiceError("invalid_start_snapshot", "workflow start identity is invalid")
+                raise WorkflowServiceError(
+                    "invalid_start_snapshot", "workflow start identity is invalid"
+                )
             try:
                 identity = WorkflowStartIdentity(**dict(identity_value))
             except (TypeError, ValueError) as exc:
@@ -1914,7 +1961,9 @@ class WorkflowService:
                     "invalid_start_snapshot", "workflow start identity is invalid"
                 ) from exc
             if identity.delivery_session_id != delivery_session_id:
-                raise WorkflowServiceError("retry_session_changed", "workflow delivery session changed")
+                raise WorkflowServiceError(
+                    "retry_session_changed", "workflow delivery session changed"
+                )
             if (
                 str(source.get("status") or "") != "failed"
                 or str(source.get("workflow_name") or "") != "deep_research"
@@ -1931,14 +1980,18 @@ class WorkflowService:
                 or delivery_ref.get("deleted_at") is not None
                 or str(delivery_ref.get("session_id") or "") != delivery_session_id
             ):
-                raise WorkflowServiceError("session_deleted", "workflow delivery session is deleted")
+                raise WorkflowServiceError(
+                    "session_deleted", "workflow delivery session is deleted"
+                )
             if self._session_delivery_state_reader is None:
                 raise WorkflowServiceError(
                     "session_state_unavailable", "session delivery state reader is unavailable"
                 )
             delivery_state = await self._session_delivery_state_reader(delivery_session_id)
             if delivery_state.get("deleted_at") is not None:
-                raise WorkflowServiceError("session_deleted", "workflow delivery session is deleted")
+                raise WorkflowServiceError(
+                    "session_deleted", "workflow delivery session is deleted"
+                )
             if int(delivery_state.get("epoch", -1)) != int(delivery_ref.get("session_epoch", -2)):
                 raise WorkflowServiceError(
                     "session_epoch_mismatch", "workflow delivery session epoch changed"
@@ -1989,7 +2042,9 @@ class WorkflowService:
         await self.require_legacy_owner(run_id, "fork")
         method = self._forker
         if method is None:
-            method = getattr(self.runner, "fork_checkpoint", None) or getattr(self.runner, "fork", None)
+            method = getattr(self.runner, "fork_checkpoint", None) or getattr(
+                self.runner, "fork", None
+            )
         if not callable(method):
             raise WorkflowServiceError(
                 "workflow_fork_unavailable",
@@ -2006,8 +2061,7 @@ class WorkflowService:
         }
         parameters = inspect.signature(method).parameters
         accepts_confirmation = "confirm_dangerous_effects" in parameters or any(
-            parameter.kind is inspect.Parameter.VAR_KEYWORD
-            for parameter in parameters.values()
+            parameter.kind is inspect.Parameter.VAR_KEYWORD for parameter in parameters.values()
         )
         if accepts_confirmation:
             arguments["confirm_dangerous_effects"] = confirm_dangerous_effects
@@ -2061,7 +2115,9 @@ class WorkflowService:
             await db.close()
         by_id = {str(row["event_id"]): dict(row) for row in rows}
         aggregate = await self.outbox.delivery_aggregate(run_id)
-        events = [hydrate_event(by_id[event_id], run=run) for event_id in event_ids if event_id in by_id]
+        events = [
+            hydrate_event(by_id[event_id], run=run) for event_id in event_ids if event_id in by_id
+        ]
         if aggregate is not None:
             for event in events:
                 event["delivery_aggregate"] = aggregate
@@ -2163,9 +2219,8 @@ class WorkflowService:
             run_id = str(row["run_id"])
             run = run_by_id.get(run_id)
             ref = ref_by_run.get(run_id)
-            epoch_matches = (
-                current_session_epoch is None
-                or (ref is not None and int(ref["session_epoch"]) == int(current_session_epoch))
+            epoch_matches = current_session_epoch is None or (
+                ref is not None and int(ref["session_epoch"]) == int(current_session_epoch)
             )
             if (
                 run is None
@@ -2239,10 +2294,14 @@ class WorkflowService:
                 results.append(delivery)
                 continue
             is_v6 = delivery.get("manifest_ref") is not None
-            if is_v6 and delivery["status"] == "failed" and (
-                delivery.get("next_attempt_at") is None
-                or int(delivery["attempts"]) >= 5
-                or float(delivery["next_attempt_at"]) > self.outbox._clock()
+            if (
+                is_v6
+                and delivery["status"] == "failed"
+                and (
+                    delivery.get("next_attempt_at") is None
+                    or int(delivery["attempts"]) >= 5
+                    or float(delivery["next_attempt_at"]) > self.outbox._clock()
+                )
             ):
                 results.append(delivery)
                 continue
@@ -2429,9 +2488,7 @@ class WorkflowService:
     async def compare_experiments(
         self, left_experiment_id: str, right_experiment_id: str
     ) -> dict[str, Any]:
-        return _plain(
-            await self.evaluation_store.compare(left_experiment_id, right_experiment_id)
-        )
+        return _plain(await self.evaluation_store.compare(left_experiment_id, right_experiment_id))
 
     async def run_detail(self, run_id: str) -> dict[str, Any]:
         run = await self._require_run(run_id)
@@ -2456,9 +2513,7 @@ class WorkflowService:
         # though the inspector can see the waiting run.  Project the same
         # immutable decision fence here; resolution is routed back through the
         # RunKernel in ``main.py`` rather than the legacy human store.
-        list_execution_decisions = getattr(
-            self._owner_uow, "list_open_decision_projections", None
-        )
+        list_execution_decisions = getattr(self._owner_uow, "list_open_decision_projections", None)
         if callable(list_execution_decisions):
             for projection in await list_execution_decisions(str(run["session_id"])):
                 decision = projection["decision"]
@@ -2468,9 +2523,7 @@ class WorkflowService:
                 raw_prompt = _plain(request.prompt)
                 nested_prompt = raw_prompt.get("prompt")
                 display_prompt = (
-                    dict(nested_prompt)
-                    if isinstance(nested_prompt, Mapping)
-                    else raw_prompt
+                    dict(nested_prompt) if isinstance(nested_prompt, Mapping) else raw_prompt
                 )
                 decisions.append(
                     {

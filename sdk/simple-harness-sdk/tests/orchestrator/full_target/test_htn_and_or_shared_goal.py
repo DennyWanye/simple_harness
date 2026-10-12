@@ -319,9 +319,13 @@ def test_and_children_with_no_declared_order_run_in_parallel() -> None:
 # ======================================================================= sharing
 
 
-def signature(env: Env, task_type: str = "demo.shared-read", *, scope: str | None = None) -> SharingSignature:
+def signature(
+    env: Env, task_type: str = "demo.shared-read", *, scope: str | None = None
+) -> SharingSignature:
     spec = env.catalog.require(ref(task_type))
-    return SharingSignature.of(spec, authority_scope=scope or env.mission, semantic_scope=scope or env.mission)
+    return SharingSignature.of(
+        spec, authority_scope=scope or env.mission, semantic_scope=scope or env.mission
+    )
 
 
 def two_root_network(env: Env, *roots) -> TaskNetworkSnapshot:
@@ -348,20 +352,43 @@ def two_root_network(env: Env, *roots) -> TaskNetworkSnapshot:
 
 
 def _refine(env: Env, root, contract, network, *, reuse=None, retire=()):
-    report = assess_method(root, contract, env.snapshot(), env.capabilities(), registry=env.predicates)
-    draft = ground_method(root, contract, {}, report, catalog=env.catalog, schemas=env.schemas,
-                          reuse=reuse, plan_revision=network.plan_revision)
-    bundle = compile_refinement_bundle(draft, network, method=contract, catalog=env.catalog,
-                                       schemas=env.schemas, registry=env.registry, reuse=reuse,
-                                       retire_instance_ids=tuple(retire))
+    report = assess_method(
+        root, contract, env.snapshot(), env.capabilities(), registry=env.predicates
+    )
+    draft = ground_method(
+        root,
+        contract,
+        {},
+        report,
+        catalog=env.catalog,
+        schemas=env.schemas,
+        reuse=reuse,
+        plan_revision=network.plan_revision,
+    )
+    bundle = compile_refinement_bundle(
+        draft,
+        network,
+        method=contract,
+        catalog=env.catalog,
+        schemas=env.schemas,
+        registry=env.registry,
+        reuse=reuse,
+        retire_instance_ids=tuple(retire),
+    )
     return draft, bundle
 
 
-def _entry(network: TaskNetworkSnapshot, occurrence_id, env: Env, *, acceptance=None) -> SharedGoalEntry:
+def _entry(
+    network: TaskNetworkSnapshot, occurrence_id, env: Env, *, acceptance=None
+) -> SharedGoalEntry:
     binding = network.binding_for_occurrence(occurrence_id)
-    return SharedGoalEntry(occurrence_id=occurrence_id, task_id=binding.task_id,
-                           obligation_id=binding.obligation_id, signature=signature(env),
-                           acceptance_ref=acceptance)
+    return SharedGoalEntry(
+        occurrence_id=occurrence_id,
+        task_id=binding.task_id,
+        obligation_id=binding.obligation_id,
+        signature=signature(env),
+        acceptance_ref=acceptance,
+    )
 
 
 def two_consumers(env: Env):
@@ -375,15 +402,27 @@ def two_consumers(env: Env):
     )
     env.admit(first)
     env.admit(second)
-    root_one = task_binding(env, "demo.goal", task_id="task-one", obligation="obl-one",
-                            parameters={"subject": "alpha"})
-    root_two = task_binding(env, "demo.goal2", task_id="task-two", obligation="obl-two",
-                            parameters={"subject": "alpha"})
+    root_one = task_binding(
+        env, "demo.goal", task_id="task-one", obligation="obl-one", parameters={"subject": "alpha"}
+    )
+    root_two = task_binding(
+        env, "demo.goal2", task_id="task-two", obligation="obl-two", parameters={"subject": "alpha"}
+    )
     draft_one, bundle_one = _refine(env, root_one, first, two_root_network(env, root_one, root_two))
     slot = next(item for item in draft_one.child_bindings if item.slot_key == "shared")
-    _, bundle_two = _refine(env, root_two, second, bundle_one.network,
-                            reuse={"shared": _entry(bundle_one.network, slot.occurrence_id, env)})
-    return bundle_two.network, str(draft_one.instance_id), str(slot.occurrence_id), (root_one, root_two)
+    _, bundle_two = _refine(
+        env,
+        root_two,
+        second,
+        bundle_one.network,
+        reuse={"shared": _entry(bundle_one.network, slot.occurrence_id, env)},
+    )
+    return (
+        bundle_two.network,
+        str(draft_one.instance_id),
+        str(slot.occurrence_id),
+        (root_one, root_two),
+    )
 
 
 def test_a_named_shared_step_exists_once_with_two_consumers() -> None:
@@ -391,11 +430,17 @@ def test_a_named_shared_step_exists_once_with_two_consumers() -> None:
     network, _, shared, _ = two_consumers(env)
     assert sum(1 for spec in network.occurrences if str(spec.occurrence_id) == shared) == 1
     assert len(network.refinement_view().parents_of[shared]) == 2
-    second = next(draft for draft in network.method_instances if draft.method_ref.method_id == "demo.second")
+    second = next(
+        draft for draft in network.method_instances if draft.method_ref.method_id == "demo.second"
+    )
     slot = next(item for item in second.child_bindings if item.slot_key == "shared")
     assert str(slot.occurrence_id) == shared and slot.reuse_policy is ReusePolicy.SHARE_ACTIVE
-    owners = [binding for binding in network.task_bindings if binding.occurrence_binding is not None
-              and str(binding.occurrence_binding.occurrence_id) == shared]
+    owners = [
+        binding
+        for binding in network.task_bindings
+        if binding.occurrence_binding is not None
+        and str(binding.occurrence_binding.occurrence_id) == shared
+    ]
     assert len(owners) == 1  # no second Task binding for a borrowed step
     assert validate_execution_projection(network.execution_projection(), BUDGET).ok
     assert validate_refinement_acyclic(network).ok
@@ -408,37 +453,68 @@ def test_without_a_name_the_same_step_is_done_twice() -> None:
     env.say("demo.primary-ready", {"subject": "alpha"}, TruthValue.TRUE)
     env.say("demo.fallback-ready", {"subject": "alpha"}, TruthValue.TRUE)
     first = alternative("demo.first", "demo.primary-ready", "a")
-    second = alternative("demo.second", "demo.fallback-ready", "b", goal="demo.goal2", criterion="c-done2")
+    second = alternative(
+        "demo.second", "demo.fallback-ready", "b", goal="demo.goal2", criterion="c-done2"
+    )
     env.admit(first)
     env.admit(second)
-    root_one = task_binding(env, "demo.goal", task_id="task-one", obligation="obl-one", parameters={"subject": "alpha"})
-    root_two = task_binding(env, "demo.goal2", task_id="task-two", obligation="obl-two", parameters={"subject": "alpha"})
+    root_one = task_binding(
+        env, "demo.goal", task_id="task-one", obligation="obl-one", parameters={"subject": "alpha"}
+    )
+    root_two = task_binding(
+        env, "demo.goal2", task_id="task-two", obligation="obl-two", parameters={"subject": "alpha"}
+    )
     _, bundle_one = _refine(env, root_one, first, two_root_network(env, root_one, root_two))
     _, bundle_two = _refine(env, root_two, second, bundle_one.network)
-    reads = [spec for spec in bundle_two.network.occurrences
-             if str(bundle_two.network.binding_for_occurrence(spec.occurrence_id).goal_signature.signature_id)
-             == "demo.shared-read"]
+    reads = [
+        spec
+        for spec in bundle_two.network.occurrences
+        if str(
+            bundle_two.network.binding_for_occurrence(
+                spec.occurrence_id
+            ).goal_signature.signature_id
+        )
+        == "demo.shared-read"
+    ]
     assert len(reads) == 2
 
 
 @pytest.mark.parametrize("leaving", ["first", "second"])
-def test_one_branch_changing_its_method_keeps_the_shared_step_and_the_other_branch_edges(leaving: str) -> None:
+def test_one_branch_changing_its_method_keeps_the_shared_step_and_the_other_branch_edges(
+    leaving: str,
+) -> None:
     """TaskGraph 补全第三批（改坏：编译器合并改回"碰到就删"→ 变红）：一个分支换做法，只撤它
     自己对共用步骤的需求；共用步骤留着，它到留下那个分支下游的数据边也留着。两个方向都测：
     首建方换做法、共用方换做法。"""
 
     env = or_env()
     network, first_instance, shared, (root_one, root_two) = two_consumers(env)
-    second_instance = next(str(draft.instance_id) for draft in network.method_instances
-                           if draft.method_ref.method_id == "demo.second")
+    second_instance = next(
+        str(draft.instance_id)
+        for draft in network.method_instances
+        if draft.method_ref.method_id == "demo.second"
+    )
     root, retire, staying_tail, goal, criterion = (
-        (root_one, first_instance, "b", "demo.goal", "c-done") if leaving == "first"
-        else (root_two, second_instance, "a", "demo.goal2", "c-done2"))
+        (root_one, first_instance, "b", "demo.goal", "c-done")
+        if leaving == "first"
+        else (root_two, second_instance, "a", "demo.goal2", "c-done2")
+    )
     replacement = method(
-        f"demo.replacement-{leaving}", goal, parameter_schema=f"{goal}.params",
-        steps=(step("solo", "demo.private-read", TaskForm.PRIMITIVE, {"subject": param("subject")},
-                    capabilities=("demo.read",)),),
-        links=((criterion, "solo", "c-solo"),), finalizer="solo")
+        f"demo.replacement-{leaving}",
+        goal,
+        parameter_schema=f"{goal}.params",
+        steps=(
+            step(
+                "solo",
+                "demo.private-read",
+                TaskForm.PRIMITIVE,
+                {"subject": param("subject")},
+                capabilities=("demo.read",),
+            ),
+        ),
+        links=((criterion, "solo", "c-solo"),),
+        finalizer="solo",
+    )
     env.admit(replacement)
     try:
         _, bundle = _refine(env, root, replacement, network, retire=(retire,))
@@ -448,11 +524,16 @@ def test_one_branch_changing_its_method_keeps_the_shared_step_and_the_other_bran
     after = bundle.network
     assert any(str(spec.occurrence_id) == shared for spec in after.occurrences)
     assert len(after.refinement_view().parents_of[shared]) == 1
-    staying = next(spec.occurrence_id for spec in after.occurrences
-                   if str(after.binding_for_occurrence(spec.occurrence_id).goal_signature.signature_id)
-                   == f"demo.{staying_tail}")
-    assert any(str(item.producer_occurrence) == shared and item.consumer_occurrence == staying
-               for item in after.data_requirements)
+    staying = next(
+        spec.occurrence_id
+        for spec in after.occurrences
+        if str(after.binding_for_occurrence(spec.occurrence_id).goal_signature.signature_id)
+        == f"demo.{staying_tail}"
+    )
+    assert any(
+        str(item.producer_occurrence) == shared and item.consumer_occurrence == staying
+        for item in after.data_requirements
+    )
     assert validate_execution_projection(after.execution_projection(), BUDGET).ok
 
 
@@ -461,34 +542,68 @@ def _three_levels(env: Env, *, share_inner_read: bool):
     second 在 share_inner_read 时点名共用 inner 的 shared 那一步。返回（网络, outer 实例, inner 实例,
     part 出现, inner 的 shared 出现, root one）。"""
 
-    env.register_type("demo.part", form=TaskForm.COMPOUND, parameters=(("subject", "string"),), domain="demo")
+    env.register_type(
+        "demo.part", form=TaskForm.COMPOUND, parameters=(("subject", "string"),), domain="demo"
+    )
     env.say("demo.primary-ready", {"subject": "alpha"}, TruthValue.TRUE)
     env.say("demo.fallback-ready", {"subject": "alpha"}, TruthValue.TRUE)
-    outer = method("demo.outer", "demo.goal", parameter_schema="demo.goal.params",
-                   steps=(step("part", "demo.part", TaskForm.COMPOUND, {"subject": param("subject")}),),
-                   links=(("c-done", "part", "c-done"),))
-    inner = alternative("demo.inner", "demo.primary-ready", "a", goal="demo.part", criterion="c-done")
-    second = alternative("demo.second", "demo.fallback-ready", "b", goal="demo.goal2", criterion="c-done2")
+    outer = method(
+        "demo.outer",
+        "demo.goal",
+        parameter_schema="demo.goal.params",
+        steps=(step("part", "demo.part", TaskForm.COMPOUND, {"subject": param("subject")}),),
+        links=(("c-done", "part", "c-done"),),
+    )
+    inner = alternative(
+        "demo.inner", "demo.primary-ready", "a", goal="demo.part", criterion="c-done"
+    )
+    second = alternative(
+        "demo.second", "demo.fallback-ready", "b", goal="demo.goal2", criterion="c-done2"
+    )
     for contract in (outer, inner, second):
         env.admit(contract)
-    root_one = task_binding(env, "demo.goal", task_id="task-one", obligation="obl-one", parameters={"subject": "alpha"})
-    root_two = task_binding(env, "demo.goal2", task_id="task-two", obligation="obl-two", parameters={"subject": "alpha"})
+    root_one = task_binding(
+        env, "demo.goal", task_id="task-one", obligation="obl-one", parameters={"subject": "alpha"}
+    )
+    root_two = task_binding(
+        env, "demo.goal2", task_id="task-two", obligation="obl-two", parameters={"subject": "alpha"}
+    )
     draft_outer, bundle = _refine(env, root_one, outer, two_root_network(env, root_one, root_two))
     [part] = [item.occurrence_id for item in draft_outer.child_bindings]
     sub_goal = bundle.network.binding_for_occurrence(part)
-    report = assess_method(sub_goal, inner, env.snapshot(), env.capabilities(), registry=env.predicates)
-    draft_inner = ground_method(sub_goal, inner, {}, report, catalog=env.catalog, schemas=env.schemas,
-                                plan_revision=bundle.network.plan_revision, goal_occurrence_id=part)
-    bundle = compile_refinement_bundle(draft_inner, bundle.network, method=inner, catalog=env.catalog,
-                                       schemas=env.schemas, registry=env.registry)
-    shared = next(item.occurrence_id for item in draft_inner.child_bindings if item.slot_key == "shared")
+    report = assess_method(
+        sub_goal, inner, env.snapshot(), env.capabilities(), registry=env.predicates
+    )
+    draft_inner = ground_method(
+        sub_goal,
+        inner,
+        {},
+        report,
+        catalog=env.catalog,
+        schemas=env.schemas,
+        plan_revision=bundle.network.plan_revision,
+        goal_occurrence_id=part,
+    )
+    bundle = compile_refinement_bundle(
+        draft_inner,
+        bundle.network,
+        method=inner,
+        catalog=env.catalog,
+        schemas=env.schemas,
+        registry=env.registry,
+    )
+    shared = next(
+        item.occurrence_id for item in draft_inner.child_bindings if item.slot_key == "shared"
+    )
     reuse = {"shared": _entry(bundle.network, shared, env)} if share_inner_read else None
     _, bundle = _refine(env, root_two, second, bundle.network, reuse=reuse)
     return bundle.network, draft_outer.instance_id, draft_inner.instance_id, part, shared, root_one
 
 
 @pytest.mark.parametrize("share_inner_read", [False, True])
-def test_replacing_a_method_retires_the_refinement_of_the_sub_goal_it_orphans(share_inner_read: bool) -> None:
+def test_replacing_a_method_retires_the_refinement_of_the_sub_goal_it_orphans(
+    share_inner_read: bool,
+) -> None:
     """夜间 N6（TaskGraph 代码级计划 §5.3 ``retired_targets``）：上级换做法时，被换掉的做法实例细化出
     的子目标没有别人持有，就离开计划；它下面采用的做法实例随之退役（写进增量的 retired_instance_ids，
     提交据此记 RETIRED、收回执行权）。此前它留在网络里，合并报 ``refines unknown task``。
@@ -497,12 +612,25 @@ def test_replacing_a_method_retires_the_refinement_of_the_sub_goal_it_orphans(sh
     **改坏检验**：``_retirement_closure`` 只返回点名的那一个 → 合并被拒 → 变红。"""
 
     env = or_env()
-    network, outer, inner, part, shared, root_one = _three_levels(env, share_inner_read=share_inner_read)
+    network, outer, inner, part, shared, root_one = _three_levels(
+        env, share_inner_read=share_inner_read
+    )
     replacement = method(
-        "demo.replacement-outer", "demo.goal", parameter_schema="demo.goal.params",
-        steps=(step("solo", "demo.private-read", TaskForm.PRIMITIVE, {"subject": param("subject")},
-                    capabilities=("demo.read",)),),
-        links=(("c-done", "solo", "c-solo"),), finalizer="solo")
+        "demo.replacement-outer",
+        "demo.goal",
+        parameter_schema="demo.goal.params",
+        steps=(
+            step(
+                "solo",
+                "demo.private-read",
+                TaskForm.PRIMITIVE,
+                {"subject": param("subject")},
+                capabilities=("demo.read",),
+            ),
+        ),
+        links=(("c-done", "solo", "c-solo"),),
+        finalizer="solo",
+    )
     env.admit(replacement)
     _, bundle = _refine(env, root_one, replacement, network, retire=(outer,))
     assert set(bundle.delta.retired_instance_ids) == {outer, inner}
@@ -510,19 +638,31 @@ def test_replacing_a_method_retires_the_refinement_of_the_sub_goal_it_orphans(sh
     live = {spec.occurrence_id for spec in after.occurrences}
     assert part not in live
     assert {draft.instance_id for draft in after.method_instances}.isdisjoint({outer, inner})
-    inner_a = [spec.occurrence_id for spec in network.occurrences
-               if str(network.binding_for_occurrence(spec.occurrence_id).goal_signature.signature_id) == "demo.a"]
+    inner_a = [
+        spec.occurrence_id
+        for spec in network.occurrences
+        if str(network.binding_for_occurrence(spec.occurrence_id).goal_signature.signature_id)
+        == "demo.a"
+    ]
     assert inner_a and not set(inner_a) & live
     assert (shared in live) is share_inner_read
     if share_inner_read:
-        staying = next(spec.occurrence_id for spec in after.occurrences
-                       if str(after.binding_for_occurrence(spec.occurrence_id).goal_signature.signature_id) == "demo.b")
+        staying = next(
+            spec.occurrence_id
+            for spec in after.occurrences
+            if str(after.binding_for_occurrence(spec.occurrence_id).goal_signature.signature_id)
+            == "demo.b"
+        )
         assert len(after.refinement_view().parents_of[shared]) == 1
-        assert any(item.producer_occurrence == shared and item.consumer_occurrence == staying
-                   for item in after.data_requirements)
+        assert any(
+            item.producer_occurrence == shared and item.consumer_occurrence == staying
+            for item in after.data_requirements
+        )
     assert all(item.before in live and item.after in live for item in after.order_constraints)
-    assert all(item.producer_occurrence in live and item.consumer_occurrence in live
-               for item in after.data_requirements)
+    assert all(
+        item.producer_occurrence in live and item.consumer_occurrence in live
+        for item in after.data_requirements
+    )
     assert validate_execution_projection(after.execution_projection(), BUDGET).ok
     assert validate_refinement_acyclic(after).ok
 
@@ -540,20 +680,37 @@ def test_an_edge_into_a_replaced_method_from_another_branch_leaves_with_it() -> 
     network, first_instance, shared, (root_one, _root_two) = two_consumers(env)
 
     def tail(name: str):
-        return next(spec.occurrence_id for spec in network.occurrences
-                    if str(network.binding_for_occurrence(spec.occurrence_id).goal_signature.signature_id)
-                    == f"demo.{name}")
+        return next(
+            spec.occurrence_id
+            for spec in network.occurrences
+            if str(network.binding_for_occurrence(spec.occurrence_id).goal_signature.signature_id)
+            == f"demo.{name}"
+        )
 
     leaving, staying = tail("a"), tail("b")
     template = network.order_constraints[0] if network.order_constraints else None
-    crossing = (_replace(template, before=staying, after=leaving) if template is not None
-                else OrderConstraint(before=staying, after=leaving))
+    crossing = (
+        _replace(template, before=staying, after=leaving)
+        if template is not None
+        else OrderConstraint(before=staying, after=leaving)
+    )
     network = _replace(network, order_constraints=(*network.order_constraints, crossing))
     replacement = method(
-        "demo.replacement-crossing", "demo.goal", parameter_schema="demo.goal.params",
-        steps=(step("solo", "demo.private-read", TaskForm.PRIMITIVE, {"subject": param("subject")},
-                    capabilities=("demo.read",)),),
-        links=(("c-done", "solo", "c-solo"),), finalizer="solo")
+        "demo.replacement-crossing",
+        "demo.goal",
+        parameter_schema="demo.goal.params",
+        steps=(
+            step(
+                "solo",
+                "demo.private-read",
+                TaskForm.PRIMITIVE,
+                {"subject": param("subject")},
+                capabilities=("demo.read",),
+            ),
+        ),
+        links=(("c-done", "solo", "c-solo"),),
+        finalizer="solo",
+    )
     env.admit(replacement)
     try:
         _, bundle = _refine(env, root_one, replacement, network, retire=(first_instance,))
@@ -564,10 +721,14 @@ def test_an_edge_into_a_replaced_method_from_another_branch_leaves_with_it() -> 
     live = {spec.occurrence_id for spec in after.occurrences}
     assert leaving not in live and staying in live
     assert all(item.before in live and item.after in live for item in after.order_constraints)
-    assert all(item.producer_occurrence in live and item.consumer_occurrence in live
-               for item in after.data_requirements)
-    assert any(str(item.producer_occurrence) == shared and item.consumer_occurrence == staying
-               for item in after.data_requirements)
+    assert all(
+        item.producer_occurrence in live and item.consumer_occurrence in live
+        for item in after.data_requirements
+    )
+    assert any(
+        str(item.producer_occurrence) == shared and item.consumer_occurrence == staying
+        for item in after.data_requirements
+    )
 
 
 # ============================================================== sharing refusals
@@ -602,21 +763,44 @@ def _single_root(env: Env):
     contract = alternative("demo.names", "demo.primary-ready", "a")
     env.admit(contract)
     root = task_binding(env, "demo.goal", parameters={"subject": "alpha"})
-    other = task_binding(env, "demo.shared-read", task_id="task-shared", obligation="obl-shared",
-                         parameters={"subject": "alpha"})
+    other = task_binding(
+        env,
+        "demo.shared-read",
+        task_id="task-shared",
+        obligation="obl-shared",
+        parameters={"subject": "alpha"},
+    )
     from agent_orchestrator.contracts.htn import OccurrenceSpec
 
-    network = root_network(env, root, extra_occurrences=(OccurrenceSpec(
-        occurrence_id="occ-shared", task_id=other.task_id, obligation_id=other.obligation_id,
-        form=TaskForm.PRIMITIVE),), extra_bindings=(other,))
-    entry = SharedGoalEntry(occurrence_id="occ-shared", task_id=other.task_id,
-                            obligation_id=other.obligation_id, signature=signature(env))
+    network = root_network(
+        env,
+        root,
+        extra_occurrences=(
+            OccurrenceSpec(
+                occurrence_id="occ-shared",
+                task_id=other.task_id,
+                obligation_id=other.obligation_id,
+                form=TaskForm.PRIMITIVE,
+            ),
+        ),
+        extra_bindings=(other,),
+    )
+    entry = SharedGoalEntry(
+        occurrence_id="occ-shared",
+        task_id=other.task_id,
+        obligation_id=other.obligation_id,
+        signature=signature(env),
+    )
     return root, contract, network, entry
 
 
 def _ground(env: Env, root, contract, reuse):
-    report = assess_method(root, contract, env.snapshot(), env.capabilities(), registry=env.predicates)
-    return ground_method(root, contract, {}, report, catalog=env.catalog, schemas=env.schemas, reuse=reuse)
+    report = assess_method(
+        root, contract, env.snapshot(), env.capabilities(), registry=env.predicates
+    )
+    return ground_method(
+        root, contract, {}, report, catalog=env.catalog, schemas=env.schemas, reuse=reuse
+    )
 
 
 def test_naming_a_step_the_method_does_not_have_is_refused() -> None:
@@ -628,18 +812,31 @@ def test_naming_a_step_the_method_does_not_have_is_refused() -> None:
 
 def test_a_sub_goal_cannot_be_named() -> None:
     env = or_env()
-    env.register_type("demo.sub", form=TaskForm.COMPOUND, parameters=(("subject", "string"),),
-                      criteria=("c-sub",), domain="demo")
+    env.register_type(
+        "demo.sub",
+        form=TaskForm.COMPOUND,
+        parameters=(("subject", "string"),),
+        criteria=("c-sub",),
+        domain="demo",
+    )
     env.say("demo.primary-ready", {"subject": "alpha"}, TruthValue.TRUE)
     contract = method(
-        "demo.with-sub", "demo.goal", parameter_schema="demo.goal.params",
+        "demo.with-sub",
+        "demo.goal",
+        parameter_schema="demo.goal.params",
         applicable=(atom("demo.primary-ready", {"subject": param("subject")}),),
         steps=(step("sub", "demo.sub", TaskForm.COMPOUND, {"subject": param("subject")}),),
-        links=(("c-done", "sub", "c-sub"),), finalizer="sub")
+        links=(("c-done", "sub", "c-sub"),),
+        finalizer="sub",
+    )
     env.admit(contract)
     root = task_binding(env, "demo.goal", parameters={"subject": "alpha"})
-    entry = SharedGoalEntry(occurrence_id="occ-x", task_id="task-x", obligation_id="obl-x",
-                            signature=signature(env, "demo.sub"))
+    entry = SharedGoalEntry(
+        occurrence_id="occ-x",
+        task_id="task-x",
+        obligation_id="obl-x",
+        signature=signature(env, "demo.sub"),
+    )
     with pytest.raises(ReuseRefused, match="sub-goal"):
         _ground(env, root, contract, {"sub": entry})
 
@@ -651,10 +848,18 @@ def test_an_accepted_step_is_reused_under_its_exact_acceptance() -> None:
     root, contract, _, entry = _single_root(env)
     from dataclasses import replace
 
-    draft = _ground(env, root, contract, {"shared": replace(entry, acceptance_ref=acceptance_ref("acceptance-24"))})
+    draft = _ground(
+        env,
+        root,
+        contract,
+        {"shared": replace(entry, acceptance_ref=acceptance_ref("acceptance-24"))},
+    )
     slot = next(item for item in draft.child_bindings if item.slot_key == "shared")
     assert slot.occurrence_id == "occ-shared"
-    assert slot.reuse_policy is ReusePolicy.REUSE_ACCEPTED and slot.acceptance_ref == acceptance_ref("acceptance-24")
+    assert (
+        slot.reuse_policy is ReusePolicy.REUSE_ACCEPTED
+        and slot.acceptance_ref == acceptance_ref("acceptance-24")
+    )
 
 
 def test_a_running_step_is_shared_with_no_acceptance() -> None:

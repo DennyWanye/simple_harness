@@ -49,9 +49,9 @@ class V6FetchedPageRefPayloadV1:
         final_hash = _digest(self.final_url_hash, "final_url_hash")
         _digest(self.canonical_url_hash, "canonical_url_hash")
         _digest(self.title_hash, "title_hash")
-        expected_page_id = "page_" + hashlib.sha256(
-            (final_hash + body_hash).encode("ascii")
-        ).hexdigest()[:24]
+        expected_page_id = (
+            "page_" + hashlib.sha256((final_hash + body_hash).encode("ascii")).hexdigest()[:24]
+        )
         if self.page_id != expected_page_id:
             raise ValueError("page_id does not match final URL/body identity")
         if not self.authority_id.strip() or not self.media_type.strip():
@@ -85,9 +85,18 @@ class V6FetchedPageRefPayloadV1:
     @classmethod
     def from_json(cls, value: Mapping[str, Any]) -> V6FetchedPageRefPayloadV1:
         keys = {
-            "schema_version", "page_id", "ordinal", "source_locator_ref",
-            "body_ref", "body_hash", "canonical_url_hash", "final_url_hash",
-            "authority_id", "title_hash", "media_type", "admission_status",
+            "schema_version",
+            "page_id",
+            "ordinal",
+            "source_locator_ref",
+            "body_ref",
+            "body_hash",
+            "canonical_url_hash",
+            "final_url_hash",
+            "authority_id",
+            "title_hash",
+            "media_type",
+            "admission_status",
             "reason_codes",
         }
         if not isinstance(value, Mapping) or set(value) != keys:
@@ -101,21 +110,34 @@ class V6FetchedPageRefPayloadV1:
         if isinstance(ordinal, bool) or not isinstance(ordinal, int):
             raise ValueError("ordinal must be an integer")
         fields = (
-            "page_id", "source_locator_ref", "body_ref", "body_hash",
-            "canonical_url_hash", "final_url_hash", "authority_id", "title_hash",
-            "media_type", "admission_status",
+            "page_id",
+            "source_locator_ref",
+            "body_ref",
+            "body_hash",
+            "canonical_url_hash",
+            "final_url_hash",
+            "authority_id",
+            "title_hash",
+            "media_type",
+            "admission_status",
         )
         if any(not isinstance(value[field], str) for field in fields):
             raise ValueError("page ref text fields must be strings")
         if any(not isinstance(item, str) for item in reason_codes):
             raise ValueError("reason_codes values must be strings")
         return cls(
-            page_id=value["page_id"], ordinal=ordinal,
-            source_locator_ref=value["source_locator_ref"], body_ref=value["body_ref"],
-            body_hash=value["body_hash"], canonical_url_hash=value["canonical_url_hash"],
-            final_url_hash=value["final_url_hash"], authority_id=value["authority_id"],
-            title_hash=value["title_hash"], media_type=value["media_type"],
-            admission_status=value["admission_status"], reason_codes=tuple(reason_codes),
+            page_id=value["page_id"],
+            ordinal=ordinal,
+            source_locator_ref=value["source_locator_ref"],
+            body_ref=value["body_ref"],
+            body_hash=value["body_hash"],
+            canonical_url_hash=value["canonical_url_hash"],
+            final_url_hash=value["final_url_hash"],
+            authority_id=value["authority_id"],
+            title_hash=value["title_hash"],
+            media_type=value["media_type"],
+            admission_status=value["admission_status"],
+            reason_codes=tuple(reason_codes),
         )
 
 
@@ -144,7 +166,10 @@ class V6ExtractedEvidenceRefV1:
     @classmethod
     def from_json(cls, value: Mapping[str, Any]) -> V6ExtractedEvidenceRefV1:
         keys = {
-            "schema_version", "requirement_id", "page_id", "evidence_ref",
+            "schema_version",
+            "requirement_id",
+            "page_id",
+            "evidence_ref",
             "source_locator_ref",
         }
         if not isinstance(value, Mapping) or set(value) != keys or value.get("schema_version") != 1:
@@ -152,7 +177,8 @@ class V6ExtractedEvidenceRefV1:
         if any(not isinstance(value[key], str) for key in keys - {"schema_version"}):
             raise ValueError("evidence ref fields must be strings")
         return cls(
-            requirement_id=value["requirement_id"], page_id=value["page_id"],
+            requirement_id=value["requirement_id"],
+            page_id=value["page_id"],
             evidence_ref=value["evidence_ref"],
             source_locator_ref=value["source_locator_ref"],
         )
@@ -185,27 +211,56 @@ def _string_array(value: object, name: str, *, ordered: bool = False) -> tuple[s
 
 
 _CANDIDATE_KEYS = {
-    "schema_version", "candidate_id", "candidate_kind", "work_group_id",
-    "logical_page_id", "page_plan_ordinal", "candidate_ordinal",
-    "requirement_id", "span_start_byte", "span_end_byte", "excerpt_hash",
-    "normalized_proposition", "payload",
+    "schema_version",
+    "candidate_id",
+    "candidate_kind",
+    "work_group_id",
+    "logical_page_id",
+    "page_plan_ordinal",
+    "candidate_ordinal",
+    "requirement_id",
+    "span_start_byte",
+    "span_end_byte",
+    "excerpt_hash",
+    "normalized_proposition",
+    "payload",
 }
 _PAYLOAD_KEYS = {
     "scalar": {
-        "item_or_cell_id", "value", "canonical_unit", "time_scope", "scope",
+        "item_or_cell_id",
+        "value",
+        "canonical_unit",
+        "time_scope",
+        "scope",
         "definition",
     },
     "matrix_cell": {
-        "cell_id", "axis_member_ids", "field_key", "value", "canonical_unit",
-        "time_scope", "scope", "definition",
+        "cell_id",
+        "axis_member_ids",
+        "field_key",
+        "value",
+        "canonical_unit",
+        "time_scope",
+        "scope",
+        "definition",
     },
     "collection_field": {
-        "item_id", "unique_key_values", "field_key", "value", "canonical_unit",
-        "as_of", "rank_inputs",
+        "item_id",
+        "unique_key_values",
+        "field_key",
+        "value",
+        "canonical_unit",
+        "as_of",
+        "rank_inputs",
     },
     "claim_fact": {
-        "claim_instance_id", "facet_key", "value", "canonical_unit", "time_scope",
-        "scope", "definition",
+        "claim_instance_id",
+        "facet_key",
+        "value",
+        "canonical_unit",
+        "time_scope",
+        "scope",
+        "definition",
     },
 }
 
@@ -230,7 +285,12 @@ class EvidenceCandidateV1:
     def __post_init__(self) -> None:
         if self.candidate_kind not in _PAYLOAD_KEYS:
             raise ValueError("candidate_kind is invalid")
-        for name in ("work_group_id", "logical_page_id", "requirement_id", "normalized_proposition"):
+        for name in (
+            "work_group_id",
+            "logical_page_id",
+            "requirement_id",
+            "normalized_proposition",
+        ):
             _text(getattr(self, name), name)
         for name in ("page_plan_ordinal", "candidate_ordinal", "span_start_byte", "span_end_byte"):
             value = getattr(self, name)
@@ -259,7 +319,10 @@ class EvidenceCandidateV1:
         elif self.candidate_kind == "collection_field":
             _text(payload["item_id"], "item_id")
             _text(payload["field_key"], "field_key")
-            if not isinstance(payload["unique_key_values"], list) or not payload["unique_key_values"]:
+            if (
+                not isinstance(payload["unique_key_values"], list)
+                or not payload["unique_key_values"]
+            ):
                 raise ValueError("unique_key_values must be a non-empty array")
             rank_inputs = payload["rank_inputs"]
             if not isinstance(rank_inputs, list):
@@ -268,7 +331,9 @@ class EvidenceCandidateV1:
                 if not isinstance(item, Mapping) or set(item) != {"field_key", "value", "missing"}:
                     raise ValueError("rank input keys differ")
                 _text(item["field_key"], "rank input field_key")
-                if not isinstance(item["missing"], bool) or (item["missing"] != (item["value"] is None)):
+                if not isinstance(item["missing"], bool) or (
+                    item["missing"] != (item["value"] is None)
+                ):
                     raise ValueError("rank input missing/value truth table differs")
         else:
             _text(payload["claim_instance_id"], "claim_instance_id")
@@ -319,18 +384,28 @@ class EvidenceCandidateV1:
 
     @classmethod
     def from_json(cls, value: Mapping[str, Any], *, body_bytes: bytes) -> EvidenceCandidateV1:
-        if not isinstance(value, Mapping) or set(value) != _CANDIDATE_KEYS or value.get("schema_version") != 1:
+        if (
+            not isinstance(value, Mapping)
+            or set(value) != _CANDIDATE_KEYS
+            or value.get("schema_version") != 1
+        ):
             raise ValueError("EvidenceCandidateV1 keys/version differ")
         payload = value["payload"]
         if not isinstance(payload, Mapping):
             raise ValueError("candidate payload must be an object")
         candidate = cls(
-            candidate_id=str(value["candidate_id"]), candidate_kind=str(value["candidate_kind"]),
-            work_group_id=str(value["work_group_id"]), logical_page_id=str(value["logical_page_id"]),
-            page_plan_ordinal=value["page_plan_ordinal"], candidate_ordinal=value["candidate_ordinal"],
-            requirement_id=str(value["requirement_id"]), span_start_byte=value["span_start_byte"],
-            span_end_byte=value["span_end_byte"], excerpt_hash=str(value["excerpt_hash"]),
-            normalized_proposition=str(value["normalized_proposition"]), payload=dict(payload),
+            candidate_id=str(value["candidate_id"]),
+            candidate_kind=str(value["candidate_kind"]),
+            work_group_id=str(value["work_group_id"]),
+            logical_page_id=str(value["logical_page_id"]),
+            page_plan_ordinal=value["page_plan_ordinal"],
+            candidate_ordinal=value["candidate_ordinal"],
+            requirement_id=str(value["requirement_id"]),
+            span_start_byte=value["span_start_byte"],
+            span_end_byte=value["span_end_byte"],
+            excerpt_hash=str(value["excerpt_hash"]),
+            normalized_proposition=str(value["normalized_proposition"]),
+            payload=dict(payload),
         )
         candidate.validate_body_span(body_bytes)
         return candidate
@@ -353,18 +428,38 @@ class EvidenceCandidateBundleV1:
     bundle_reason_codes: tuple[str, ...]
 
     def __post_init__(self) -> None:
-        _text(self.run_id, "run_id"); _digest(self.spec_hash, "spec_hash")
-        _text(self.work_group_id, "work_group_id"); _text(self.logical_page_id, "logical_page_id")
-        for name in ("page_result_ref", "route_decision_ref", "route_policy_ref", "extraction_policy_ref"):
+        _text(self.run_id, "run_id")
+        _digest(self.spec_hash, "spec_hash")
+        _text(self.work_group_id, "work_group_id")
+        _text(self.logical_page_id, "logical_page_id")
+        for name in (
+            "page_result_ref",
+            "route_decision_ref",
+            "route_policy_ref",
+            "extraction_policy_ref",
+        ):
             _ref(getattr(self, name), name)
         if self.repair_round not in {0, 1}:
             raise ValueError("repair_round must equal 0 or 1")
-        if isinstance(self.page_plan_ordinal, bool) or not isinstance(self.page_plan_ordinal, int) or self.page_plan_ordinal < 0:
+        if (
+            isinstance(self.page_plan_ordinal, bool)
+            or not isinstance(self.page_plan_ordinal, int)
+            or self.page_plan_ordinal < 0
+        ):
             raise ValueError("page_plan_ordinal must be non-negative")
-        expected_order = tuple(sorted(self.candidates, key=lambda item: (item.candidate_ordinal, item.candidate_id)))
-        if self.candidates != expected_order or tuple(item.candidate_ordinal for item in self.candidates) != tuple(range(len(self.candidates))):
+        expected_order = tuple(
+            sorted(self.candidates, key=lambda item: (item.candidate_ordinal, item.candidate_id))
+        )
+        if self.candidates != expected_order or tuple(
+            item.candidate_ordinal for item in self.candidates
+        ) != tuple(range(len(self.candidates))):
             raise ValueError("candidates must be continuously ordered")
-        if any(item.work_group_id != self.work_group_id or item.logical_page_id != self.logical_page_id or item.page_plan_ordinal != self.page_plan_ordinal for item in self.candidates):
+        if any(
+            item.work_group_id != self.work_group_id
+            or item.logical_page_id != self.logical_page_id
+            or item.page_plan_ordinal != self.page_plan_ordinal
+            for item in self.candidates
+        ):
             raise ValueError("candidate bundle identity differs from candidate")
         _string_array(self.bundle_reason_codes, "bundle_reason_codes")
         expected = "ecb_" + sha256_json(self._base_json())[:24]
@@ -373,11 +468,17 @@ class EvidenceCandidateBundleV1:
 
     def _base_json(self) -> dict[str, JsonValue]:
         return {
-            "schema_version": 1, "run_id": self.run_id, "spec_hash": self.spec_hash,
-            "work_group_id": self.work_group_id, "logical_page_id": self.logical_page_id,
-            "page_plan_ordinal": self.page_plan_ordinal, "page_result_ref": self.page_result_ref,
-            "route_decision_ref": self.route_decision_ref, "route_policy_ref": self.route_policy_ref,
-            "extraction_policy_ref": self.extraction_policy_ref, "repair_round": self.repair_round,
+            "schema_version": 1,
+            "run_id": self.run_id,
+            "spec_hash": self.spec_hash,
+            "work_group_id": self.work_group_id,
+            "logical_page_id": self.logical_page_id,
+            "page_plan_ordinal": self.page_plan_ordinal,
+            "page_result_ref": self.page_result_ref,
+            "route_decision_ref": self.route_decision_ref,
+            "route_policy_ref": self.route_policy_ref,
+            "extraction_policy_ref": self.extraction_policy_ref,
+            "repair_round": self.repair_round,
             "candidates": [item.to_json() for item in self.candidates],
             "bundle_reason_codes": list(self.bundle_reason_codes),
         }
@@ -397,18 +498,44 @@ class EvidenceCandidateBundleV1:
 
     @classmethod
     def from_json(cls, value: Mapping[str, Any], *, body_bytes: bytes) -> EvidenceCandidateBundleV1:
-        keys = {"schema_version", "bundle_id", "run_id", "spec_hash", "work_group_id", "logical_page_id", "page_plan_ordinal", "page_result_ref", "route_decision_ref", "route_policy_ref", "extraction_policy_ref", "repair_round", "candidates", "bundle_reason_codes"}
+        keys = {
+            "schema_version",
+            "bundle_id",
+            "run_id",
+            "spec_hash",
+            "work_group_id",
+            "logical_page_id",
+            "page_plan_ordinal",
+            "page_result_ref",
+            "route_decision_ref",
+            "route_policy_ref",
+            "extraction_policy_ref",
+            "repair_round",
+            "candidates",
+            "bundle_reason_codes",
+        }
         if not isinstance(value, Mapping) or set(value) != keys or value.get("schema_version") != 1:
             raise ValueError("EvidenceCandidateBundleV1 keys/version differ")
-        if not isinstance(value["candidates"], list) or not isinstance(value["bundle_reason_codes"], list):
+        if not isinstance(value["candidates"], list) or not isinstance(
+            value["bundle_reason_codes"], list
+        ):
             raise ValueError("bundle arrays differ")
         return cls(
-            bundle_id=str(value["bundle_id"]), run_id=str(value["run_id"]), spec_hash=str(value["spec_hash"]),
-            work_group_id=str(value["work_group_id"]), logical_page_id=str(value["logical_page_id"]),
-            page_plan_ordinal=value["page_plan_ordinal"], page_result_ref=str(value["page_result_ref"]),
-            route_decision_ref=str(value["route_decision_ref"]), route_policy_ref=str(value["route_policy_ref"]),
-            extraction_policy_ref=str(value["extraction_policy_ref"]), repair_round=value["repair_round"],
-            candidates=tuple(EvidenceCandidateV1.from_json(item, body_bytes=body_bytes) for item in value["candidates"]),
+            bundle_id=str(value["bundle_id"]),
+            run_id=str(value["run_id"]),
+            spec_hash=str(value["spec_hash"]),
+            work_group_id=str(value["work_group_id"]),
+            logical_page_id=str(value["logical_page_id"]),
+            page_plan_ordinal=value["page_plan_ordinal"],
+            page_result_ref=str(value["page_result_ref"]),
+            route_decision_ref=str(value["route_decision_ref"]),
+            route_policy_ref=str(value["route_policy_ref"]),
+            extraction_policy_ref=str(value["extraction_policy_ref"]),
+            repair_round=value["repair_round"],
+            candidates=tuple(
+                EvidenceCandidateV1.from_json(item, body_bytes=body_bytes)
+                for item in value["candidates"]
+            ),
             bundle_reason_codes=tuple(str(item) for item in value["bundle_reason_codes"]),
         )
 
@@ -426,17 +553,32 @@ class CandidateProducerOutcomeV1:
     dependency_refs: tuple[str, ...]
 
     def __post_init__(self) -> None:
-        if self.origin not in {"deterministic", "llm"} or self.status not in {"validated", "malformed", "opaque_uncertain", "deadline", "budget_denied"}:
+        if self.origin not in {"deterministic", "llm"} or self.status not in {
+            "validated",
+            "malformed",
+            "opaque_uncertain",
+            "deadline",
+            "budget_denied",
+        }:
             raise ValueError("candidate producer origin/status invalid")
-        _text(self.logical_page_id, "logical_page_id"); _text(self.work_group_id, "work_group_id")
-        _ref(self.bundle_ref, "bundle_ref", nullable=True); _ref(self.llm_effect_outcome_ref, "llm_effect_outcome_ref", nullable=True); _ref(self.policy_ref, "policy_ref")
+        _text(self.logical_page_id, "logical_page_id")
+        _text(self.work_group_id, "work_group_id")
+        _ref(self.bundle_ref, "bundle_ref", nullable=True)
+        _ref(self.llm_effect_outcome_ref, "llm_effect_outcome_ref", nullable=True)
+        _ref(self.policy_ref, "policy_ref")
         dependencies = _string_array(self.dependency_refs, "dependency_refs")
         required = {self.policy_ref}
-        if self.bundle_ref is not None: required.add(self.bundle_ref)
-        if self.llm_effect_outcome_ref is not None: required.add(self.llm_effect_outcome_ref)
+        if self.bundle_ref is not None:
+            required.add(self.bundle_ref)
+        if self.llm_effect_outcome_ref is not None:
+            required.add(self.llm_effect_outcome_ref)
         if not required.issubset(set(dependencies)):
             raise ValueError("producer dependencies omit direct refs")
-        if self.origin == "deterministic" and (self.status != "validated" or self.bundle_ref is None or self.llm_effect_outcome_ref is not None):
+        if self.origin == "deterministic" and (
+            self.status != "validated"
+            or self.bundle_ref is None
+            or self.llm_effect_outcome_ref is not None
+        ):
             raise ValueError("deterministic producer truth table differs")
         if self.origin == "deterministic" and len(dependencies) != 3:
             raise ValueError("deterministic producer dependencies must be page, bundle, policy")
@@ -447,23 +589,61 @@ class CandidateProducerOutcomeV1:
             raise ValueError("producer outcome_id mismatch")
 
     def _base_json(self) -> dict[str, JsonValue]:
-        return {"schema_version": 1, "origin": self.origin, "status": self.status, "logical_page_id": self.logical_page_id, "work_group_id": self.work_group_id, "bundle_ref": self.bundle_ref, "llm_effect_outcome_ref": self.llm_effect_outcome_ref, "policy_ref": self.policy_ref, "dependency_refs": list(self.dependency_refs)}
+        return {
+            "schema_version": 1,
+            "origin": self.origin,
+            "status": self.status,
+            "logical_page_id": self.logical_page_id,
+            "work_group_id": self.work_group_id,
+            "bundle_ref": self.bundle_ref,
+            "llm_effect_outcome_ref": self.llm_effect_outcome_ref,
+            "policy_ref": self.policy_ref,
+            "dependency_refs": list(self.dependency_refs),
+        }
 
-    def to_json(self) -> dict[str, JsonValue]: return {**self._base_json(), "outcome_id": self.outcome_id}
+    def to_json(self) -> dict[str, JsonValue]:
+        return {**self._base_json(), "outcome_id": self.outcome_id}
 
     @classmethod
     def create(cls, **values: Any) -> CandidateProducerOutcomeV1:
         values["dependency_refs"] = tuple(sorted(set(values["dependency_refs"])))
         provisional = cls.__new__(cls)
-        for key, value in values.items(): object.__setattr__(provisional, key, value)
+        for key, value in values.items():
+            object.__setattr__(provisional, key, value)
         return cls(outcome_id="cpo_" + sha256_json(provisional._base_json())[:24], **values)
 
     @classmethod
     def from_json(cls, value: Mapping[str, Any]) -> CandidateProducerOutcomeV1:
-        keys = {"schema_version", "outcome_id", "origin", "status", "logical_page_id", "work_group_id", "bundle_ref", "llm_effect_outcome_ref", "policy_ref", "dependency_refs"}
-        if not isinstance(value, Mapping) or set(value) != keys or value.get("schema_version") != 1 or not isinstance(value["dependency_refs"], list):
+        keys = {
+            "schema_version",
+            "outcome_id",
+            "origin",
+            "status",
+            "logical_page_id",
+            "work_group_id",
+            "bundle_ref",
+            "llm_effect_outcome_ref",
+            "policy_ref",
+            "dependency_refs",
+        }
+        if (
+            not isinstance(value, Mapping)
+            or set(value) != keys
+            or value.get("schema_version") != 1
+            or not isinstance(value["dependency_refs"], list)
+        ):
             raise ValueError("CandidateProducerOutcomeV1 keys/version differ")
-        return cls(outcome_id=str(value["outcome_id"]), origin=str(value["origin"]), status=str(value["status"]), logical_page_id=str(value["logical_page_id"]), work_group_id=str(value["work_group_id"]), bundle_ref=value["bundle_ref"], llm_effect_outcome_ref=value["llm_effect_outcome_ref"], policy_ref=str(value["policy_ref"]), dependency_refs=tuple(str(item) for item in value["dependency_refs"]))
+        return cls(
+            outcome_id=str(value["outcome_id"]),
+            origin=str(value["origin"]),
+            status=str(value["status"]),
+            logical_page_id=str(value["logical_page_id"]),
+            work_group_id=str(value["work_group_id"]),
+            bundle_ref=value["bundle_ref"],
+            llm_effect_outcome_ref=value["llm_effect_outcome_ref"],
+            policy_ref=str(value["policy_ref"]),
+            dependency_refs=tuple(str(item) for item in value["dependency_refs"]),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -479,30 +659,89 @@ class InferenceProposalV1:
     model_policy_ref: str
 
     def __post_init__(self) -> None:
-        if self.inference_kind not in {"impact", "comparison", "preference", "conclusion", "limitation", "counterevidence", "uncertainty"}:
+        if self.inference_kind not in {
+            "impact",
+            "comparison",
+            "preference",
+            "conclusion",
+            "limitation",
+            "counterevidence",
+            "uncertainty",
+        }:
             raise ValueError("inference_kind invalid")
-        _text(self.requirement_id, "requirement_id"); _text(self.item_or_cell_id, "item_or_cell_id", nullable=True); _text(self.normalized_proposition, "normalized_proposition"); _text(self.model_id, "model_id"); _ref(self.model_policy_ref, "model_policy_ref")
-        _string_array(self.facet_ids, "facet_ids"); refs = _string_array(self.premise_fact_refs, "premise_fact_refs")
-        if not refs: raise ValueError("premise_fact_refs must be non-empty")
-        for ref in refs: parse_blob_ref(ref)
+        _text(self.requirement_id, "requirement_id")
+        _text(self.item_or_cell_id, "item_or_cell_id", nullable=True)
+        _text(self.normalized_proposition, "normalized_proposition")
+        _text(self.model_id, "model_id")
+        _ref(self.model_policy_ref, "model_policy_ref")
+        _string_array(self.facet_ids, "facet_ids")
+        refs = _string_array(self.premise_fact_refs, "premise_fact_refs")
+        if not refs:
+            raise ValueError("premise_fact_refs must be non-empty")
+        for ref in refs:
+            parse_blob_ref(ref)
         expected = "inp_" + sha256_json(self._base_json())[:24]
-        if self.proposal_id != expected: raise ValueError("proposal_id mismatch")
+        if self.proposal_id != expected:
+            raise ValueError("proposal_id mismatch")
 
     def _base_json(self) -> dict[str, JsonValue]:
-        return {"schema_version": 1, "requirement_id": self.requirement_id, "inference_kind": self.inference_kind, "item_or_cell_id": self.item_or_cell_id, "facet_ids": list(self.facet_ids), "normalized_proposition": self.normalized_proposition, "premise_fact_refs": list(self.premise_fact_refs), "model_id": self.model_id, "model_policy_ref": self.model_policy_ref}
-    def to_json(self) -> dict[str, JsonValue]: return {**self._base_json(), "proposal_id": self.proposal_id}
+        return {
+            "schema_version": 1,
+            "requirement_id": self.requirement_id,
+            "inference_kind": self.inference_kind,
+            "item_or_cell_id": self.item_or_cell_id,
+            "facet_ids": list(self.facet_ids),
+            "normalized_proposition": self.normalized_proposition,
+            "premise_fact_refs": list(self.premise_fact_refs),
+            "model_id": self.model_id,
+            "model_policy_ref": self.model_policy_ref,
+        }
+
+    def to_json(self) -> dict[str, JsonValue]:
+        return {**self._base_json(), "proposal_id": self.proposal_id}
+
     @classmethod
     def create(cls, **values: Any) -> InferenceProposalV1:
         values["facet_ids"] = tuple(sorted(set(values.get("facet_ids", ()))))
         values["premise_fact_refs"] = tuple(sorted(set(values["premise_fact_refs"])))
         provisional = cls.__new__(cls)
-        for key, value in values.items(): object.__setattr__(provisional, key, value)
+        for key, value in values.items():
+            object.__setattr__(provisional, key, value)
         return cls(proposal_id="inp_" + sha256_json(provisional._base_json())[:24], **values)
+
     @classmethod
     def from_json(cls, value: Mapping[str, Any]) -> InferenceProposalV1:
-        keys={"schema_version","proposal_id","requirement_id","inference_kind","item_or_cell_id","facet_ids","normalized_proposition","premise_fact_refs","model_id","model_policy_ref"}
-        if not isinstance(value,Mapping) or set(value)!=keys or value.get("schema_version")!=1 or not isinstance(value["facet_ids"],list) or not isinstance(value["premise_fact_refs"],list): raise ValueError("InferenceProposalV1 keys/version differ")
-        return cls(proposal_id=str(value["proposal_id"]),requirement_id=str(value["requirement_id"]),inference_kind=str(value["inference_kind"]),item_or_cell_id=value["item_or_cell_id"],facet_ids=tuple(str(x) for x in value["facet_ids"]),normalized_proposition=str(value["normalized_proposition"]),premise_fact_refs=tuple(str(x) for x in value["premise_fact_refs"]),model_id=str(value["model_id"]),model_policy_ref=str(value["model_policy_ref"]))
+        keys = {
+            "schema_version",
+            "proposal_id",
+            "requirement_id",
+            "inference_kind",
+            "item_or_cell_id",
+            "facet_ids",
+            "normalized_proposition",
+            "premise_fact_refs",
+            "model_id",
+            "model_policy_ref",
+        }
+        if (
+            not isinstance(value, Mapping)
+            or set(value) != keys
+            or value.get("schema_version") != 1
+            or not isinstance(value["facet_ids"], list)
+            or not isinstance(value["premise_fact_refs"], list)
+        ):
+            raise ValueError("InferenceProposalV1 keys/version differ")
+        return cls(
+            proposal_id=str(value["proposal_id"]),
+            requirement_id=str(value["requirement_id"]),
+            inference_kind=str(value["inference_kind"]),
+            item_or_cell_id=value["item_or_cell_id"],
+            facet_ids=tuple(str(x) for x in value["facet_ids"]),
+            normalized_proposition=str(value["normalized_proposition"]),
+            premise_fact_refs=tuple(str(x) for x in value["premise_fact_refs"]),
+            model_id=str(value["model_id"]),
+            model_policy_ref=str(value["model_policy_ref"]),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -518,34 +757,105 @@ class InferenceProposalBundleV1:
     proposals: tuple[InferenceProposalV1, ...]
 
     def __post_init__(self) -> None:
-        _text(self.run_id,"run_id"); _digest(self.spec_hash,"spec_hash"); _text(self.work_group_id,"work_group_id"); _digest(self.input_evidence_head_hash,"input_evidence_head_hash"); _ref(self.profile_ref,"profile_ref")
-        if isinstance(self.ordinal,bool) or not isinstance(self.ordinal,int) or self.ordinal<0: raise ValueError("ordinal invalid")
-        refs=_string_array(self.premise_fact_refs,"premise_fact_refs")
-        for ref in refs: parse_blob_ref(ref)
-        expected_union=tuple(sorted({ref for proposal in self.proposals for ref in proposal.premise_fact_refs}))
-        if refs!=expected_union: raise ValueError("top-level premise refs differ from proposal union")
-        if self.proposals!=tuple(sorted(self.proposals,key=lambda x:(self.work_group_id,x.inference_kind,x.proposal_id))): raise ValueError("proposals must be canonically sorted")
-        expected="ipb_"+sha256_json(self._base_json())[:24]
-        if self.bundle_id!=expected: raise ValueError("inference bundle_id mismatch")
-    def _base_json(self)->dict[str,JsonValue]: return {"schema_version":1,"run_id":self.run_id,"spec_hash":self.spec_hash,"work_group_id":self.work_group_id,"input_evidence_head_hash":self.input_evidence_head_hash,"ordinal":self.ordinal,"profile_ref":self.profile_ref,"premise_fact_refs":list(self.premise_fact_refs),"proposals":[x.to_json() for x in self.proposals]}
-    def to_json(self)->dict[str,JsonValue]: return {**self._base_json(),"bundle_id":self.bundle_id}
+        _text(self.run_id, "run_id")
+        _digest(self.spec_hash, "spec_hash")
+        _text(self.work_group_id, "work_group_id")
+        _digest(self.input_evidence_head_hash, "input_evidence_head_hash")
+        _ref(self.profile_ref, "profile_ref")
+        if isinstance(self.ordinal, bool) or not isinstance(self.ordinal, int) or self.ordinal < 0:
+            raise ValueError("ordinal invalid")
+        refs = _string_array(self.premise_fact_refs, "premise_fact_refs")
+        for ref in refs:
+            parse_blob_ref(ref)
+        expected_union = tuple(
+            sorted({ref for proposal in self.proposals for ref in proposal.premise_fact_refs})
+        )
+        if refs != expected_union:
+            raise ValueError("top-level premise refs differ from proposal union")
+        if self.proposals != tuple(
+            sorted(
+                self.proposals, key=lambda x: (self.work_group_id, x.inference_kind, x.proposal_id)
+            )
+        ):
+            raise ValueError("proposals must be canonically sorted")
+        expected = "ipb_" + sha256_json(self._base_json())[:24]
+        if self.bundle_id != expected:
+            raise ValueError("inference bundle_id mismatch")
+
+    def _base_json(self) -> dict[str, JsonValue]:
+        return {
+            "schema_version": 1,
+            "run_id": self.run_id,
+            "spec_hash": self.spec_hash,
+            "work_group_id": self.work_group_id,
+            "input_evidence_head_hash": self.input_evidence_head_hash,
+            "ordinal": self.ordinal,
+            "profile_ref": self.profile_ref,
+            "premise_fact_refs": list(self.premise_fact_refs),
+            "proposals": [x.to_json() for x in self.proposals],
+        }
+
+    def to_json(self) -> dict[str, JsonValue]:
+        return {**self._base_json(), "bundle_id": self.bundle_id}
+
     @classmethod
-    def create(cls,**values:Any)->InferenceProposalBundleV1:
-        values["proposals"]=tuple(sorted(values.get("proposals",()),key=lambda x:(values["work_group_id"],x.inference_kind,x.proposal_id)))
-        values["premise_fact_refs"]=tuple(sorted({ref for proposal in values["proposals"] for ref in proposal.premise_fact_refs}))
-        provisional=cls.__new__(cls)
-        for key,value in values.items(): object.__setattr__(provisional,key,value)
-        return cls(bundle_id="ipb_"+sha256_json(provisional._base_json())[:24],**values)
+    def create(cls, **values: Any) -> InferenceProposalBundleV1:
+        values["proposals"] = tuple(
+            sorted(
+                values.get("proposals", ()),
+                key=lambda x: (values["work_group_id"], x.inference_kind, x.proposal_id),
+            )
+        )
+        values["premise_fact_refs"] = tuple(
+            sorted({ref for proposal in values["proposals"] for ref in proposal.premise_fact_refs})
+        )
+        provisional = cls.__new__(cls)
+        for key, value in values.items():
+            object.__setattr__(provisional, key, value)
+        return cls(bundle_id="ipb_" + sha256_json(provisional._base_json())[:24], **values)
+
     @classmethod
-    def from_json(cls,value:Mapping[str,Any])->InferenceProposalBundleV1:
-        keys={"schema_version","bundle_id","run_id","spec_hash","work_group_id","input_evidence_head_hash","ordinal","profile_ref","premise_fact_refs","proposals"}
-        if not isinstance(value,Mapping) or set(value)!=keys or value.get("schema_version")!=1 or not isinstance(value["premise_fact_refs"],list) or not isinstance(value["proposals"],list): raise ValueError("InferenceProposalBundleV1 keys/version differ")
-        return cls(bundle_id=str(value["bundle_id"]),run_id=str(value["run_id"]),spec_hash=str(value["spec_hash"]),work_group_id=str(value["work_group_id"]),input_evidence_head_hash=str(value["input_evidence_head_hash"]),ordinal=value["ordinal"],profile_ref=str(value["profile_ref"]),premise_fact_refs=tuple(str(x) for x in value["premise_fact_refs"]),proposals=tuple(InferenceProposalV1.from_json(x) for x in value["proposals"]))
+    def from_json(cls, value: Mapping[str, Any]) -> InferenceProposalBundleV1:
+        keys = {
+            "schema_version",
+            "bundle_id",
+            "run_id",
+            "spec_hash",
+            "work_group_id",
+            "input_evidence_head_hash",
+            "ordinal",
+            "profile_ref",
+            "premise_fact_refs",
+            "proposals",
+        }
+        if (
+            not isinstance(value, Mapping)
+            or set(value) != keys
+            or value.get("schema_version") != 1
+            or not isinstance(value["premise_fact_refs"], list)
+            or not isinstance(value["proposals"], list)
+        ):
+            raise ValueError("InferenceProposalBundleV1 keys/version differ")
+        return cls(
+            bundle_id=str(value["bundle_id"]),
+            run_id=str(value["run_id"]),
+            spec_hash=str(value["spec_hash"]),
+            work_group_id=str(value["work_group_id"]),
+            input_evidence_head_hash=str(value["input_evidence_head_hash"]),
+            ordinal=value["ordinal"],
+            profile_ref=str(value["profile_ref"]),
+            premise_fact_refs=tuple(str(x) for x in value["premise_fact_refs"]),
+            proposals=tuple(InferenceProposalV1.from_json(x) for x in value["proposals"]),
+        )
 
 
 _LLM_RESULT_KINDS = {"candidate_bundle", "inference_bundle"}
 _LLM_OUTCOME_STATUSES = {
-    "validated", "malformed", "opaque_uncertain", "deadline", "budget_denied",
+    "validated",
+    "malformed",
+    "opaque_uncertain",
+    "deadline",
+    "budget_denied",
 }
 
 
@@ -569,8 +879,11 @@ class EvidenceRepairRequestV1:
         if self.result_kind not in _LLM_RESULT_KINDS:
             raise ValueError("repair result_kind invalid")
         for name in (
-            "original_profile_ref", "repair_profile_ref", "original_prompt_ref",
-            "prior_outcome_ref", "raw_result_ref",
+            "original_profile_ref",
+            "repair_profile_ref",
+            "original_prompt_ref",
+            "prior_outcome_ref",
+            "raw_result_ref",
         ):
             _ref(getattr(self, name), name)
         if self.original_profile_ref == self.repair_profile_ref:
@@ -606,9 +919,7 @@ class EvidenceRepairRequestV1:
 
     @classmethod
     def create(cls, **values: Any) -> EvidenceRepairRequestV1:
-        values["validation_reason_codes"] = tuple(
-            sorted(set(values["validation_reason_codes"]))
-        )
+        values["validation_reason_codes"] = tuple(sorted(set(values["validation_reason_codes"])))
         provisional = cls.__new__(cls)
         for key, value in values.items():
             object.__setattr__(provisional, key, value)
@@ -617,10 +928,18 @@ class EvidenceRepairRequestV1:
     @classmethod
     def from_json(cls, value: Mapping[str, Any]) -> EvidenceRepairRequestV1:
         keys = {
-            "schema_version", "repair_id", "result_kind", "original_profile_ref",
-            "repair_profile_ref", "original_prompt_ref", "prior_outcome_ref",
-            "raw_result_ref", "validation_reason_codes", "logical_page_id",
-            "work_group_id", "repair_round",
+            "schema_version",
+            "repair_id",
+            "result_kind",
+            "original_profile_ref",
+            "repair_profile_ref",
+            "original_prompt_ref",
+            "prior_outcome_ref",
+            "raw_result_ref",
+            "validation_reason_codes",
+            "logical_page_id",
+            "work_group_id",
+            "repair_round",
         }
         if (
             not isinstance(value, Mapping)
@@ -686,7 +1005,10 @@ class ResearchLLMEffectOutcomeV1:
         _ref(self.profile_ref, "profile_ref")
         _ref(self.prompt_ref, "prompt_ref")
         for name in (
-            "raw_result_ref", "result_ref", "repair_request_ref", "prior_outcome_ref",
+            "raw_result_ref",
+            "result_ref",
+            "repair_request_ref",
+            "prior_outcome_ref",
         ):
             _ref(getattr(self, name), name, nullable=True)
         _string_array(self.reason_codes, "reason_codes")
@@ -709,12 +1031,22 @@ class ResearchLLMEffectOutcomeV1:
         elif self.raw_result_ref is not None or self.result_ref is not None:
             raise ValueError("opaque/deadline/budget outcome forbids raw and result refs")
 
-        expected_dependencies = tuple(sorted({
-            ref for ref in (
-                self.profile_ref, self.prompt_ref, self.raw_result_ref, self.result_ref,
-                self.repair_request_ref, self.prior_outcome_ref,
-            ) if ref is not None
-        }))
+        expected_dependencies = tuple(
+            sorted(
+                {
+                    ref
+                    for ref in (
+                        self.profile_ref,
+                        self.prompt_ref,
+                        self.raw_result_ref,
+                        self.result_ref,
+                        self.repair_request_ref,
+                        self.prior_outcome_ref,
+                    )
+                    if ref is not None
+                }
+            )
+        )
         if dependencies != expected_dependencies:
             raise ValueError("LLM outcome dependency_refs are not the exact non-null ref set")
         expected = "rlo_" + sha256_json(self._base_json())[:24]
@@ -745,13 +1077,22 @@ class ResearchLLMEffectOutcomeV1:
     @classmethod
     def create(cls, **values: Any) -> ResearchLLMEffectOutcomeV1:
         values["reason_codes"] = tuple(sorted(set(values.get("reason_codes", ()))))
-        values["dependency_refs"] = tuple(sorted({
-            ref for ref in (
-                values.get("profile_ref"), values.get("prompt_ref"),
-                values.get("raw_result_ref"), values.get("result_ref"),
-                values.get("repair_request_ref"), values.get("prior_outcome_ref"),
-            ) if ref is not None
-        }))
+        values["dependency_refs"] = tuple(
+            sorted(
+                {
+                    ref
+                    for ref in (
+                        values.get("profile_ref"),
+                        values.get("prompt_ref"),
+                        values.get("raw_result_ref"),
+                        values.get("result_ref"),
+                        values.get("repair_request_ref"),
+                        values.get("prior_outcome_ref"),
+                    )
+                    if ref is not None
+                }
+            )
+        )
         provisional = cls.__new__(cls)
         for key, value in values.items():
             object.__setattr__(provisional, key, value)
@@ -760,9 +1101,20 @@ class ResearchLLMEffectOutcomeV1:
     @classmethod
     def from_json(cls, value: Mapping[str, Any]) -> ResearchLLMEffectOutcomeV1:
         keys = {
-            "schema_version", "outcome_id", "logical_effect_id", "effect_id", "status",
-            "result_kind", "profile_ref", "prompt_ref", "raw_result_ref", "result_ref",
-            "repair_request_ref", "prior_outcome_ref", "repair_round", "reason_codes",
+            "schema_version",
+            "outcome_id",
+            "logical_effect_id",
+            "effect_id",
+            "status",
+            "result_kind",
+            "profile_ref",
+            "prompt_ref",
+            "raw_result_ref",
+            "result_ref",
+            "repair_request_ref",
+            "prior_outcome_ref",
+            "repair_round",
+            "reason_codes",
             "dependency_refs",
         }
         if (
@@ -776,8 +1128,13 @@ class ResearchLLMEffectOutcomeV1:
         ):
             raise ValueError("ResearchLLMEffectOutcomeV1 keys/version differ")
         required_text = {
-            "outcome_id", "logical_effect_id", "effect_id", "status", "result_kind",
-            "profile_ref", "prompt_ref",
+            "outcome_id",
+            "logical_effect_id",
+            "effect_id",
+            "status",
+            "result_kind",
+            "profile_ref",
+            "prompt_ref",
         }
         nullable_text = {"raw_result_ref", "result_ref", "repair_request_ref", "prior_outcome_ref"}
         if any(not isinstance(value[key], str) for key in required_text) or any(
@@ -805,7 +1162,13 @@ class ResearchLLMEffectOutcomeV1:
 
 
 __all__ = [
-    "CandidateProducerOutcomeV1", "EvidenceCandidateBundleV1", "EvidenceCandidateV1",
-    "EvidenceRepairRequestV1", "InferenceProposalBundleV1", "InferenceProposalV1",
-    "ResearchLLMEffectOutcomeV1", "V6ExtractedEvidenceRefV1", "V6FetchedPageRefPayloadV1",
+    "CandidateProducerOutcomeV1",
+    "EvidenceCandidateBundleV1",
+    "EvidenceCandidateV1",
+    "EvidenceRepairRequestV1",
+    "InferenceProposalBundleV1",
+    "InferenceProposalV1",
+    "ResearchLLMEffectOutcomeV1",
+    "V6ExtractedEvidenceRefV1",
+    "V6FetchedPageRefPayloadV1",
 ]

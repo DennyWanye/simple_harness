@@ -24,12 +24,20 @@ from simple_harness.agents.arp import store
 from simple_harness.agents.contracts import AgentTurnState
 from tool_fixture import ECHO_SCHEMA, EchoToolExecutor
 
-CONFIG = AgentConfig(name="w", instructions="你是审阅者。", model_profile_ref="p", tool_names=("echo",))
+CONFIG = AgentConfig(
+    name="w", instructions="你是审阅者。", model_profile_ref="p", tool_names=("echo",)
+)
 
 
 def _review(tmp_path, script, *, tamper=None):  # type: ignore[no-untyped-def]
     async def case():  # type: ignore[no-untyped-def]
-        runtime = build(tmp_path, ScriptedProvider(script), tool_executor=EchoToolExecutor(), tool_names=("echo",), tool_schemas={"echo": ECHO_SCHEMA})
+        runtime = build(
+            tmp_path,
+            ScriptedProvider(script),
+            tool_executor=EchoToolExecutor(),
+            tool_names=("echo",),
+            tool_schemas={"echo": ECHO_SCHEMA},
+        )
         async with runtime:
             agent = await runtime.create(CONFIG, creation_key="review", caller=trusted_caller())
             receipt = await agent.submit("请审阅：报告写了三个要点", input_id="i1")
@@ -40,8 +48,12 @@ def _review(tmp_path, script, *, tamper=None):  # type: ignore[no-untyped-def]
             turn = uow.read_agent_turn(receipt.turn_id)
             if tamper is not None:
                 tamper(uow.database.connection)
-            exposure = _exposure(uow, binding.run_id, turn, result, native_context=runtime.arp.context)
-            frozen = store.read_context_by_request_key(uow.database.connection, exposure["provider_request_id"])
+            exposure = _exposure(
+                uow, binding.run_id, turn, result, native_context=runtime.arp.context
+            )
+            frozen = store.read_context_by_request_key(
+                uow.database.connection, exposure["provider_request_id"]
+            )
             return exposure, frozen
 
     return asyncio.run(case())
@@ -66,7 +78,9 @@ def test_tool_turn_review_proves_the_actual_wire_including_the_tool_result(tmp_p
 def test_a_manifest_that_no_longer_reproduces_its_hash_is_never_accepted(tmp_path) -> None:
     def tamper(connection):  # type: ignore[no-untyped-def]
         connection.execute("DROP TRIGGER IF EXISTS arp_context_requests_immutable")
-        for (name,) in connection.execute("SELECT name FROM sqlite_master WHERE type='trigger' AND tbl_name='arp_context_requests'").fetchall():
+        for (name,) in connection.execute(
+            "SELECT name FROM sqlite_master WHERE type='trigger' AND tbl_name='arp_context_requests'"
+        ).fetchall():
             connection.execute(f'DROP TRIGGER "{name}"')
         connection.execute("UPDATE arp_context_requests SET planned_request_hash=?", ("0" * 64,))
 

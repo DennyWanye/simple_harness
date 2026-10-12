@@ -10,6 +10,7 @@ deskpet 没有图像生成工具，LLM 没有合法动作可做 → 漂移到 8 
 
 acceptance scenarios 来自 specs/capability-gate/spec.md。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -92,18 +93,14 @@ def test_gate_auto_passes_when_image_tool_registered() -> None:
         "write_file",
         "generate_image",  # 新增的图像工具
     ]
-    verdict = asyncio.run(
-        classify_request("帮我生成一个海报图片", available_tools=available)
-    )
+    verdict = asyncio.run(classify_request("帮我生成一个海报图片", available_tools=available))
     assert verdict.verdict is Verdict.PASS
 
 
 def test_gate_auto_passes_when_video_tool_registered() -> None:
     """视频工具注册后视频请求自动 PASS。"""
     available = ["read_file", "mcp_media_generate_video"]
-    verdict = asyncio.run(
-        classify_request("帮我做个视频片头", available_tools=available)
-    )
+    verdict = asyncio.run(classify_request("帮我做个视频片头", available_tools=available))
     assert verdict.verdict is Verdict.PASS
 
 

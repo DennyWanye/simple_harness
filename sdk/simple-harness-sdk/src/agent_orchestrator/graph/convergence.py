@@ -168,7 +168,11 @@ def compute_plan_effects(before: NetworkDocumentV1, candidate: NetworkDocumentV1
     # retained occurrences until that producer exists. This is deliberately kept
     # separate from exact cancellation targets and never withdraws shared demand.
     retained = (previous & current) - retiring
-    return PlanEffectSet(retained=tuple(sorted(retained)),
-                         revalidate=tuple(sorted(retained)),
-                         retiring=tuple(sorted(retiring)), newly_materialized=tuple(sorted(current - previous)),
-                         shared_retained=impact.preserved_occurrences, coverage="CONSERVATIVE")
+    return PlanEffectSet(
+        retained=tuple(sorted(retained)),
+        revalidate=tuple(sorted(retained)),
+        retiring=tuple(sorted(retiring)),
+        newly_materialized=tuple(sorted(current - previous)),
+        shared_retained=impact.preserved_occurrences,
+        coverage="CONSERVATIVE",
+    )

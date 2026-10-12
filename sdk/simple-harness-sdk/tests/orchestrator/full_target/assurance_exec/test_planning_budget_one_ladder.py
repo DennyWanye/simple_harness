@@ -10,6 +10,7 @@
 
 HTN 补齐阶段 A′：跑在产品同形世界（:mod:`_assured_loop`），只有模型回复是脚本。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -46,34 +47,44 @@ def test_the_default_is_three_wrong_answers() -> None:
 def test_three_refused_answers_end_the_first_plan_but_the_first_unreadable_reask_is_free(tmp_path):
     """**Mutation**: drop the ``_free_reask`` skip in ``_planning_attempts`` → the Mission fails after
     three planner calls and the fourth script step is never used → red."""
+
     async def case():
-        scripted = provider(planner=[
-            "this is not a decision",                 # unreadable: the same request is re-asked for free
-            "still not a decision",                   # the re-ask is still unreadable: wrong 1
-            adopt_unknown,                            # readable, refers to nothing it was shown: wrong 2
-            adopt_unknown,                            # wrong 3 → stop
-            adopt_unknown,                            # must never be asked for
-        ])
+        scripted = provider(
+            planner=[
+                "this is not a decision",  # unreadable: the same request is re-asked for free
+                "still not a decision",  # the re-ask is still unreadable: wrong 1
+                adopt_unknown,  # readable, refers to nothing it was shown: wrong 2
+                adopt_unknown,  # wrong 3 → stop
+                adopt_unknown,  # must never be asked for
+            ]
+        )
         async with assured_loop(tmp_path, scripted) as world:
             assert await run_until(world, lambda w: _status(w) is MissionStatus.FAILED)
             assert scripted.by_role == {"planner": 4}
             rejected = events_of(world, "PlanningRejected")
             assert [event.payload["reason"] for event in rejected] == [
-                "proposal_unreadable", "proposal_unreadable", "proposal_not_grounded", "proposal_not_grounded"]
+                "proposal_unreadable",
+                "proposal_unreadable",
+                "proposal_not_grounded",
+                "proposal_not_grounded",
+            ]
             [failed] = events_of(world, "MissionFailed")
             assert failed.payload["stop_reason"] == "planning_failed"
             assert failed.payload["reason"] == "proposal_not_grounded"
+
     asyncio.run(case())
 
 
 def test_an_accepted_proposal_is_not_a_wrong_answer_and_a_commit_starts_the_count_again(tmp_path):
     async def case():
-        scripted = provider(planner=[
-            adopt_unknown,                            # wrong: 1
-            adopt_unknown,                            # wrong: 2
-            propose(),                                # accepted: sent to review, not an answer refused
-            adopt(1),                                 # commits
-        ])
+        scripted = provider(
+            planner=[
+                adopt_unknown,  # wrong: 1
+                adopt_unknown,  # wrong: 2
+                propose(),  # accepted: sent to review, not an answer refused
+                adopt(1),  # commits
+            ]
+        )
         async with assured_loop(tmp_path, scripted) as world:
             assert await run_until(world, lambda w: events_of(w, "PlanRevisionCommitted"))
             assert scripted.by_role["planner"] == 4
@@ -82,4 +93,5 @@ def test_an_accepted_proposal_is_not_a_wrong_answer_and_a_commit_starts_the_coun
             # the commit answered the question: the next one starts at zero
             assert world.loop._planning_attempts(world.mission.id) == 0
             assert not world.loop._planning_ladder_spent(world.mission.id)
+
     asyncio.run(case())

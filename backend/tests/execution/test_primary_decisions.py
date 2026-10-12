@@ -99,9 +99,7 @@ async def setup(tmp_path, *, expired=False, wake=False):
         run_binding_reader=lambda rid: stack.read_closure_run_facts(rid).binding_record,
     )
     await service.enqueue_turn(
-        QueueTurnRequest(
-            None, "authorized-create", "Create a project and write its file"
-        )
+        QueueTurnRequest(None, "authorized-create", "Create a project and write its file")
     )
     await asyncio.wait_for(runtime._drive_once(), 10)
     current = await queue.current_snapshot(auth.subject)
@@ -171,41 +169,27 @@ async def test_production_challenge_exact_bound_response_resume_and_physical_eff
             for item in items:
                 assert item["decision_id"] not in seen
                 seen.add(item["decision_id"])
-                response = await s["request"](
-                    "primary.decisions.respond", reply(s, item)
-                )
-                assert response["payload"]["ok"], (
-                    response["payload"].get("error", {}).get("code")
-                )
+                response = await s["request"]("primary.decisions.respond", reply(s, item))
+                assert response["payload"]["ok"], response["payload"].get("error", {}).get("code")
                 assert response["payload"]["result"]["outcome"] == "allowed"
             await asyncio.sleep(0)
             await s["runtime"]._ingress.wait_idle(s["current"].sdk_run_id)
             if len(seen) == 1:
                 before_calls = len(s["provider"].requests)
-                replay = await s["request"](
-                    "primary.decisions.respond", reply(s, first)
-                )
+                replay = await s["request"]("primary.decisions.respond", reply(s, first))
                 assert replay["payload"]["ok"]
                 assert replay["payload"]["result"]["duplicate"] is True
                 assert len(s["provider"].requests) == before_calls
                 wrong_version = reply(s, first)
                 wrong_version["version"] += 1
-                rejected = await s["request"](
-                    "primary.decisions.respond", wrong_version
-                )
+                rejected = await s["request"]("primary.decisions.respond", wrong_version)
                 assert rejected["payload"]["ok"] is False
             await asyncio.wait_for(s["runtime"].drain(), 10)
             assert s["runtime"].last_error is None
-            if (
-                s["runtime"]._ingress.query(s["current"].sdk_run_id).state.value
-                == "completed"
-            ):
+            if s["runtime"]._ingress.query(s["current"].sdk_run_id).state.value == "completed":
                 break
         assert len(seen) >= 2  # Sequential production challenges, not an ALLOW stub.
-        assert (
-            s["runtime"]._ingress.query(s["current"].sdk_run_id).state.value
-            == "completed"
-        )
+        assert s["runtime"]._ingress.query(s["current"].sdk_run_id).state.value == "completed"
         files = list(s["configured"].glob("task-*/fresh.txt"))
         assert len(files) == 1 and files[0].read_text() == "created in exact task root"
         assert len(s["provider"].requests) == 7
@@ -393,9 +377,7 @@ async def test_expired_real_policy_challenge_reports_expired_not_allowed(tmp_pat
         response = await s["request"]("primary.decisions.respond", reply(s, item))
         assert response["payload"]["ok"]
         assert response["payload"]["result"]["outcome"] == "expired"
-        assert (
-            s["runtime"]._ingress.query(s["current"].sdk_run_id).state.value == "failed"
-        )
+        assert s["runtime"]._ingress.query(s["current"].sdk_run_id).state.value == "failed"
         assert not list(s["configured"].glob("task-*"))
     finally:
         await close(s)
@@ -415,9 +397,7 @@ async def test_actual_legacy_signal_entry_cannot_bypass_primary_authentication(
         monkeypatch.setattr(main, "_sdk_ingress", s["runtime"]._ingress)
         monkeypatch.setattr(main, "_sdk_run_ids_by_root", {})
         fields = {**item, "run_id": s["current"].sdk_run_id}
-        with pytest.raises(
-            ValueError, match="primary_decision_requires_authenticated_control"
-        ):
+        with pytest.raises(ValueError, match="primary_decision_requires_authenticated_control"):
             await main._signal_product_harness_decision(
                 item["session_id"], fields, {"decision": "allow"}, authorization=True
             )

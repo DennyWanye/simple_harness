@@ -86,9 +86,9 @@ async def _fixed_clock_samples(root: Path) -> dict:
 
     captured: list[dict] = []
     original_record = metrics_sink.record
-    metrics_sink.record = lambda event, detail: captured.append(
-        {"event": event, "detail": dict(detail)}
-    ) or True
+    metrics_sink.record = lambda event, detail: (
+        captured.append({"event": event, "detail": dict(detail)}) or True
+    )
     try:
         for index in range(SAMPLE_COUNT):
             identity = NodeExecutionIdentity(
@@ -175,6 +175,7 @@ async def _one_slow_stage(stage: str, index: int, events: list[dict]) -> None:
     url = f"https://calibration-{stage}-{index}.test/article"
     client: httpx.AsyncClient | None = None
     if stage == "robots":
+
         async def robots_handler(request: httpx.Request) -> httpx.Response:
             if request.url.path == "/robots.txt":
                 await asyncio.sleep(SLOW_DELAY_S)
@@ -183,17 +184,21 @@ async def _one_slow_stage(stage: str, index: int, events: list[dict]) -> None:
 
         client = httpx.AsyncClient(transport=httpx.MockTransport(robots_handler))
         service = FetchExtractService(
-            transport=_StaticTransport(), client=client, respect_robots=True,
+            transport=_StaticTransport(),
+            client=client,
+            respect_robots=True,
             request_interval_ms=0,
         )
         request = FetchRequest(url, run_id=f"slow-{stage}-{index}", render_policy="never")
     elif stage == "static":
         service = FetchExtractService(
             transport=_StaticTransport(delay_s=SLOW_DELAY_S),
-            respect_robots=False, request_interval_ms=0,
+            respect_robots=False,
+            request_interval_ms=0,
         )
         request = FetchRequest(url, run_id=f"slow-{stage}-{index}", render_policy="never")
     elif stage == "httpx":
+
         async def httpx_handler(_request: httpx.Request) -> httpx.Response:
             await asyncio.sleep(SLOW_DELAY_S)
             return httpx.Response(
@@ -204,15 +209,22 @@ async def _one_slow_stage(stage: str, index: int, events: list[dict]) -> None:
 
         client = httpx.AsyncClient(transport=httpx.MockTransport(httpx_handler))
         service = FetchExtractService(
-            transport=_StaticTransport(succeed=False), client=client,
-            respect_robots=False, request_interval_ms=0,
+            transport=_StaticTransport(succeed=False),
+            client=client,
+            respect_robots=False,
+            request_interval_ms=0,
         )
         request = FetchRequest(
-            url, run_id=f"slow-{stage}-{index}", render_policy="never", prefer_httpx=True,
+            url,
+            run_id=f"slow-{stage}-{index}",
+            render_policy="never",
+            prefer_httpx=True,
         )
     elif stage == "browser":
         service = FetchExtractService(
-            transport=_StaticTransport(), respect_robots=False, request_interval_ms=0,
+            transport=_StaticTransport(),
+            respect_robots=False,
+            request_interval_ms=0,
             playwright_renderer=_SlowRenderer(),
         )
         request = FetchRequest(url, run_id=f"slow-{stage}-{index}", render_policy="always")
@@ -294,7 +306,16 @@ async def _offline_official_samples(repo_root: Path, root: Path) -> dict:
     for index in range(SAMPLE_COUNT):
         run_root = root / f"official-{index:02d}"
         run_root.mkdir(parents=True, exist_ok=False)
-        database, store, runner, run_id, context, stages, _providers, _blobs = await fixture._runtime(
+        (
+            database,
+            store,
+            runner,
+            run_id,
+            context,
+            stages,
+            _providers,
+            _blobs,
+        ) = await fixture._runtime(
             run_root, "official_exact_fact", owner=f"timing-calibration-{index}"
         )
         state = fixture.initial_state(
@@ -386,7 +407,10 @@ def main() -> None:
     parser.add_argument(
         "--output",
         type=Path,
-        default=repo_root / "plans" / "2026-07-17-deepresearch-answer-contract-stability" / "timing-calibration.json",
+        default=repo_root
+        / "plans"
+        / "2026-07-17-deepresearch-answer-contract-stability"
+        / "timing-calibration.json",
     )
     args = parser.parse_args()
     asyncio.run(_run(args.output.resolve()))

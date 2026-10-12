@@ -29,7 +29,10 @@ async def test_trace_tree_propagates_parent_and_redacts(tmp_path):
     assert tree is not None
     assert tree["run"]["status"] == "ok"
     spans = {span["name"]: span for span in tree["spans"]}
-    assert spans["deep-research"]["attributes_json"] == '{"authorization": "[REDACTED]", "safe": "yes"}'
+    assert (
+        spans["deep-research"]["attributes_json"]
+        == '{"authorization": "[REDACTED]", "safe": "yes"}'
+    )
     assert spans["search"]["parent_span_id"] == root.span_id
     assert spans["search"]["duration_ms"] == 500.0
 
@@ -84,8 +87,16 @@ async def test_succeeded_pending_span_reconciles_after_result_commit_crash(tmp_p
                 task_id,task_path,latest_attempt,latest_status,updated_at
             ) VALUES(?,?,?,?,?,?,?,?,?,?)""",
             (
-                "execution-1", run_id, "node-1", "checkpoint-1", "invoke-1",
-                "task-1", "node-1", 1, "succeeded_pending", 19.0,
+                "execution-1",
+                run_id,
+                "node-1",
+                "checkpoint-1",
+                "invoke-1",
+                "task-1",
+                "node-1",
+                1,
+                "succeeded_pending",
+                19.0,
             ),
         )
         await db.commit()

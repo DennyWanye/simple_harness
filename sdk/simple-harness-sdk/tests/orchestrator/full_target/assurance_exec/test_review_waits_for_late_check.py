@@ -19,6 +19,7 @@
   （P1a 偏差裁决第 3 件）；
 * 内容审阅只调一次模型，任务完成、验收一次。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -48,8 +49,11 @@ def _quick(monkeypatch):
 
 def test_a_late_check_wakes_the_waiting_review_without_a_second_model_call(tmp_path, monkeypatch):
     state: dict = {"defer": True, "held": [], "prepared": [], "released": False}
-    bind, prepare, tick = (CommitService.import_assurance_check_locked,
-                           AssuranceReviewConsumer.prepare, AssuranceTick.tick)
+    bind, prepare, tick = (
+        CommitService.import_assurance_check_locked,
+        AssuranceReviewConsumer.prepare,
+        AssuranceTick.tick,
+    )
     one_step = scripted.one_step_method
 
     def own_criterion_step(context):  # type: ignore[no-untyped-def]
@@ -62,7 +66,9 @@ def test_a_late_check_wakes_the_waiting_review_without_a_second_model_call(tmp_p
         review_key = work_key.removeprefix("review-import:").rpartition(":")[0]
         row = store.connection.execute(
             "SELECT json_extract(binding_json,'$.subject.purpose'), json_extract(binding_json,'$.check_requirements') "
-            "FROM assurance_review_bindings WHERE review_key=?", (review_key,)).fetchone()
+            "FROM assurance_review_bindings WHERE review_key=?",
+            (review_key,),
+        ).fetchone()
         return row is not None and row[0] == "TASK_CONTENT" and '"CHECKED"' in row[1]
 
     def held_bind(self, **command):  # type: ignore[no-untyped-def]
@@ -74,8 +80,12 @@ def test_a_late_check_wakes_the_waiting_review_without_a_second_model_call(tmp_p
 
     async def watched_prepare(self, claim):  # type: ignore[no-untyped-def]
         result = await prepare(self, claim)
-        if claim.work_key.startswith("review-import:") and content_review(self.store, claim.work_key):
-            state["prepared"].append(result.reason if isinstance(result, AssuranceWait) else type(result).__name__)
+        if claim.work_key.startswith("review-import:") and content_review(
+            self.store, claim.work_key
+        ):
+            state["prepared"].append(
+                result.reason if isinstance(result, AssuranceWait) else type(result).__name__
+            )
         return result
 
     async def timed_tick(self):  # type: ignore[no-untyped-def]
@@ -107,7 +117,9 @@ def test_a_late_check_wakes_the_waiting_review_without_a_second_model_call(tmp_p
                 "SELECT w.work_key, w.state, e.type, json_extract(e.payload_json,'$.source_table') "
                 "FROM assurance_pending_work w JOIN events e "
                 "ON e.event_id=w.trigger_event_id WHERE w.mission_id=? AND w.consumer='REVIEW' "
-                "AND w.work_key LIKE 'review-import:%'", (case.mission_id,)).fetchall()
+                "AND w.work_key LIKE 'review-import:%'",
+                (case.mission_id,),
+            ).fetchall()
             [row] = [tuple(row[1:]) for row in rows if content_review(case.store, row[0])]
             # 同一项导入工作被检查绑定的屏障事件唤醒后做完（不是到点重看，也没有另起一项）
             assert row == ("DONE", "AssuranceEvidenceChanged", "assurance_check_bindings")

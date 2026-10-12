@@ -41,8 +41,8 @@ async def test_created_child_startup_scan_hydrates_snapshot_runs_eleven_nodes_an
 ):
     # Build a real insufficient terminal parent so continuation is admitted by
     # the production repository contract rather than by a test-only fixture.
-    database, parent_store, parent_runner, parent_id, parent_context, _, _, blobs = (
-        await _runtime(tmp_path, "comparison", force_llm_deadline=True)
+    database, parent_store, parent_runner, parent_id, parent_context, _, _, blobs = await _runtime(
+        tmp_path, "comparison", force_llm_deadline=True
     )
     repository = ResearchWorkflowRepository(database, blob_root=tmp_path / "blobs")
     await repository.ensure_root_lineage(
@@ -95,16 +95,13 @@ async def test_created_child_startup_scan_hydrates_snapshot_runs_eleven_nodes_an
         run_id=child_id,
         force_llm_deadline=True,
     )
-    restart_repository = ResearchWorkflowRepository(
-        database, blob_root=tmp_path / "blobs"
-    )
+    restart_repository = ResearchWorkflowRepository(database, blob_root=tmp_path / "blobs")
     hydrated_calls: list[dict] = []
 
     async def hydrate_state(**values):
         hydrated_calls.append(dict(values))
         assert {
-            key: values[key]
-            for key in ("schema_version", "parent_run_id", "source_snapshot_hash")
+            key: values[key] for key in ("schema_version", "parent_run_id", "source_snapshot_hash")
         } == persisted_start
         snapshot = decode_continuation_snapshot(
             await restart_repository.load_continuation_snapshot_v6(str(values["run_id"]))
@@ -194,9 +191,7 @@ async def test_created_child_startup_scan_hydrates_snapshot_runs_eleven_nodes_an
     assert pre_recovery_snapshots == 0
 
     # A new process startup hook repairs the terminal-commit -> pin window.
-    recovery_repository = ResearchWorkflowRepository(
-        database, blob_root=tmp_path / "blobs"
-    )
+    recovery_repository = ResearchWorkflowRepository(database, blob_root=tmp_path / "blobs")
     recovery_service = WorkflowService(
         run_store=child_store,
         runner=child_runner,
@@ -261,9 +256,7 @@ async def test_created_child_startup_scan_hydrates_snapshot_runs_eleven_nodes_an
         run_id=grandchild_id,
         force_llm_deadline=True,
     )
-    grandchild_repository = ResearchWorkflowRepository(
-        database, blob_root=tmp_path / "blobs"
-    )
+    grandchild_repository = ResearchWorkflowRepository(database, blob_root=tmp_path / "blobs")
     hydrated_grandchild_states: list[dict] = []
 
     async def hydrate_grandchild(**start_values):
@@ -272,9 +265,7 @@ async def test_created_child_startup_scan_hydrates_snapshot_runs_eleven_nodes_an
             for key in ("schema_version", "parent_run_id", "source_snapshot_hash")
         } == grandchild_start
         snapshot = decode_continuation_snapshot(
-            await grandchild_repository.load_continuation_snapshot_v6(
-                str(start_values["run_id"])
-            )
+            await grandchild_repository.load_continuation_snapshot_v6(str(start_values["run_id"]))
         )
         spec = await _json_ref(grandchild_blobs, str(snapshot["spec_ref"]))
         state = initial_state(
@@ -312,16 +303,11 @@ async def test_created_child_startup_scan_hydrates_snapshot_runs_eleven_nodes_an
     assert len(hydrated_grandchild_states) == 1
     grandchild_initial = hydrated_grandchild_states[0]
     assert grandchild_initial["values"]["spec_hash"] == inherited["spec_hash"]
-    assert grandchild_initial["values"]["evidence_head_hash"] == values[
-        "evidence_head_hash"
-    ]
-    assert grandchild_initial["values"]["fact_batch_refs"] == values[
-        "fact_batch_refs"
-    ]
-    assert {
-        "sha256:" + str(item["sha256"])
-        for item in grandchild_initial["blob_refs"]
-    } == set(grandchild_inherited["closure_refs"])
+    assert grandchild_initial["values"]["evidence_head_hash"] == values["evidence_head_hash"]
+    assert grandchild_initial["values"]["fact_batch_refs"] == values["fact_batch_refs"]
+    assert {"sha256:" + str(item["sha256"]) for item in grandchild_initial["blob_refs"]} == set(
+        grandchild_inherited["closure_refs"]
+    )
 
     async with aiosqlite.connect(database) as db:
         lineage = [

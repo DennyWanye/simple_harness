@@ -39,8 +39,18 @@ class PlanningAdmissionStore:
         value["allowed_decisions"] = tuple(json.loads(value.pop("allowed_decisions_json")))
         value["planner_principal_id"] = value["grantee_id"]
         value["grant_hash"] = value["content_hash"]
-        value.update({key: payload[key] for key in ("command_hash", "reason", "approval_source",
-                                                   "on_behalf_of_principal_id") if key in payload})
+        value.update(
+            {
+                key: payload[key]
+                for key in (
+                    "command_hash",
+                    "reason",
+                    "approval_source",
+                    "on_behalf_of_principal_id",
+                )
+                if key in payload
+            }
+        )
         value["created_at"] = payload.get("created_at", 0.0)
         return value
 
@@ -142,8 +152,11 @@ class PlanningAdmissionStore:
         payload = {
             "command_hash": command_hash,
             "reason": str(grant.get("reason", "")),
-            **{key: str(grant[key]) for key in ("approval_source", "on_behalf_of_principal_id")
-               if key in grant},
+            **{
+                key: str(grant[key])
+                for key in ("approval_source", "on_behalf_of_principal_id")
+                if key in grant
+            },
             "created_at": float(grant.get("created_at", self._store.now)),
         }
         values = (
@@ -211,9 +224,15 @@ class PlanningAdmissionStore:
                     raise StoreConflict("request authority binding is required")
                 self._insert_binding(connection, request_id, binding, planner)
             from .taskgraph_source_events import record_source_change
-            record_source_change(self._store, str(grant["mission_id"]), kind="planning_grant",
-                source_id=str(grant["grant_id"]), revision=int(grant["revision"]),
-                content_hash=str(grant["grant_hash"]))
+
+            record_source_change(
+                self._store,
+                str(grant["mission_id"]),
+                kind="planning_grant",
+                source_id=str(grant["grant_id"]),
+                revision=int(grant["revision"]),
+                content_hash=str(grant["grant_hash"]),
+            )
         return self._grant_row(
             self._store.connection.execute(
                 "SELECT * FROM planning_lane_grants WHERE grant_id = ? AND revision = ?",

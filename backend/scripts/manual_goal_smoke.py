@@ -6,6 +6,7 @@
 跑法：
     G:\\projects\\deskpet\\backend\\.venv\\Scripts\\python.exe scripts/manual_goal_smoke.py
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -25,14 +26,18 @@ async def main():
 
     # 1. 真构造 SessionGoalStore
     from deskpet.agent.goal_store import SessionGoalStore
+
     store = SessionGoalStore()
     print("\n[1] SessionGoalStore() OK")
 
     # 2. 调真 dispatch_slash_command('/goal write a haiku')
     from deskpet.commands import dispatch_slash_command
+
     print("\n[2] dispatch_slash_command('goal', 'write a haiku about cats', 'sid-test')")
     res = await dispatch_slash_command(
-        "goal", "write a haiku about cats", "sid-test",
+        "goal",
+        "write a haiku about cats",
+        "sid-test",
         session_goal_store=store,
     )
     print(f"    type: {res['type']}")
@@ -50,7 +55,10 @@ async def main():
     # 4. /goal clear
     print("\n[3] dispatch_slash_command('goal', 'clear', 'sid-test')")
     res2 = await dispatch_slash_command(
-        "goal", "clear", "sid-test", session_goal_store=store,
+        "goal",
+        "clear",
+        "sid-test",
+        session_goal_store=store,
     )
     assert res2["type"] == "goal_cleared"
     assert res2["ok"] is True
@@ -74,6 +82,7 @@ async def main():
 
     # 6. metrics.jsonl 应不变（GoalChecker 单独调用不直接 emit；agent_loop 接电才 emit）
     from paths import user_data_dir
+
     metrics_path = Path(user_data_dir()) / "metrics.jsonl"
     if metrics_path.exists():
         before_lines = metrics_path.read_text(encoding="utf-8").splitlines()
@@ -82,6 +91,7 @@ async def main():
 
     # 7. 真 emit metric 验证写盘
     from observability.metrics_sink import record
+
     ok = record("goal_checker_invoked", {"ok": True, "count": 1})
     assert ok, "record() should return True"
     print("    [6] record('goal_checker_invoked', ...) 返 True")

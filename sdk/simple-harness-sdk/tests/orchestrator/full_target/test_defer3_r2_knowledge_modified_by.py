@@ -11,6 +11,7 @@
 
 **改坏检验**：取代写方不追加修改记录 → 本文件第二条失败。
 """
+
 from __future__ import annotations
 
 import json
@@ -26,41 +27,94 @@ from agent_orchestrator.orchestrator.commit_service import CommitService
 
 def _record(kid: str = "k1", **extra: Any) -> KnowledgeRecord:
     fields: dict[str, Any] = dict(
-        id=kid, mission_id="m", claim_id=kid, content="空输入返回空列表", type="statement",
-        status="VERIFIED", version=1, key="impl_a.empty_input", stance="affirms", proposed_by="agent-1",
-        source_task="t1", source_attempt="t1:attempt-1", source_result="r1",
-        evidence=("pytest:tests/x.py",), verifier={"basis": "review_confirmed"}, created_at=1.0)
+        id=kid,
+        mission_id="m",
+        claim_id=kid,
+        content="空输入返回空列表",
+        type="statement",
+        status="VERIFIED",
+        version=1,
+        key="impl_a.empty_input",
+        stance="affirms",
+        proposed_by="agent-1",
+        source_task="t1",
+        source_attempt="t1:attempt-1",
+        source_result="r1",
+        evidence=("pytest:tests/x.py",),
+        verifier={"basis": "review_confirmed"},
+        created_at=1.0,
+    )
     return KnowledgeRecord(**{**fields, **extra})
 
 
 def test_a_modification_entry_round_trips_and_is_shown_in_the_lineage() -> None:
     plain = _record()
     assert plain.modified_by == ()
-    changed = modified(plain, change="DISPUTED", by="claim-9", task_id="t2", attempt_id="t2:attempt-1",
-                       proposed_by="agent-2", at=5.0)
-    assert changed.modified_by == ({"change": "DISPUTED", "by": "claim-9", "task_id": "t2",
-                                    "attempt_id": "t2:attempt-1", "proposed_by": "agent-2", "at": 5.0},)
+    changed = modified(
+        plain,
+        change="DISPUTED",
+        by="claim-9",
+        task_id="t2",
+        attempt_id="t2:attempt-1",
+        proposed_by="agent-2",
+        at=5.0,
+    )
+    assert changed.modified_by == (
+        {
+            "change": "DISPUTED",
+            "by": "claim-9",
+            "task_id": "t2",
+            "attempt_id": "t2:attempt-1",
+            "proposed_by": "agent-2",
+            "at": 5.0,
+        },
+    )
     assert KnowledgeRecord.from_json(json.loads(json.dumps(changed.to_json()))) == changed
     assert _view(changed)["modified_by"] == [dict(changed.modified_by[0])]
     with pytest.raises(ContractError, match="modified_by"):
-        _record(modified_by=({"change": "EDITED", "by": "x", "task_id": "t", "attempt_id": "a",
-                              "proposed_by": "p", "at": 1.0},))
+        _record(
+            modified_by=(
+                {
+                    "change": "EDITED",
+                    "by": "x",
+                    "task_id": "t",
+                    "attempt_id": "a",
+                    "proposed_by": "p",
+                    "at": 1.0,
+                },
+            )
+        )
     with pytest.raises(ContractError, match="modified_by"):
         _record(modified_by=({"change": "DISPUTED", "by": "x"},))
 
 
 def test_superseding_knowledge_records_who_superseded_it() -> None:
-    old, new = _record("k1"), _record("k2", source_task="t5", source_attempt="t5:attempt-2", proposed_by="agent-5")
+    old, new = (
+        _record("k1"),
+        _record("k2", source_task="t5", source_attempt="t5:attempt-2", proposed_by="agent-5"),
+    )
     rows = {old.id: old, new.id: new}
     emitted: list[tuple[str, dict[str, Any]]] = []
     store = SimpleNamespace(
-        now=42.0, get_knowledge=rows.get,
+        now=42.0,
+        get_knowledge=rows.get,
         upsert_knowledge=lambda record: rows.__setitem__(record.id, record),
-        get_claim=lambda claim_id: None)
-    service = SimpleNamespace(_store=store, _emit=lambda kind, mission, **kw: emitted.append((kind, kw["payload"])))
+        get_claim=lambda claim_id: None,
+    )
+    service = SimpleNamespace(
+        _store=store, _emit=lambda kind, mission, **kw: emitted.append((kind, kw["payload"]))
+    )
     CommitService._supersede_knowledge(service, old.id, by=new)
     after = rows[old.id]
     assert after.status == "SUPERSEDED" and after.superseded_by == new.id
-    assert after.modified_by == ({"change": "SUPERSEDED", "by": new.id, "task_id": "t5",
-                                  "attempt_id": "t5:attempt-2", "proposed_by": "agent-5", "at": 42.0},)
+    assert after.modified_by == (
+        {
+            "change": "SUPERSEDED",
+            "by": new.id,
+            "task_id": "t5",
+            "attempt_id": "t5:attempt-2",
+            "proposed_by": "agent-5",
+            "at": 42.0,
+        },
+    )
     assert [kind for kind, _ in emitted] == ["KnowledgeSuperseded"]

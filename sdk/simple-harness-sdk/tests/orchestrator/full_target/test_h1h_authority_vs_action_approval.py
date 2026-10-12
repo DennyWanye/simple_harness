@@ -54,16 +54,24 @@ def test_a06_zero_declared_approvals_and_applicable_method_do_not_replace_grant(
     and is still refused without any plan or action write."""
 
     async def case() -> None:
-        async with reviewed(tmp_path, key="h1h-a06-no-grant") as ((loop, mission, _world, _root, dispatch, product), opener, _provider):
+        async with reviewed(tmp_path, key="h1h-a06-no-grant") as (
+            (loop, mission, _world, _root, dispatch, product),
+            opener,
+            _provider,
+        ):
             package = opener.config["planning_package"]
             assert package["method_selection"][0]["applicable"]
             binding = PlanningAdmissionStore(loop.store).get_request_binding(opener.intent_id)
             assert binding is not None
-            product.control.planning_authorization({
-                "operation": "revoke", "grant_id": binding["grant_id"],
-                "expected_revision": int(binding["grant_revision"]),
-                "command_id": "person-revoke-h1h-a06", "reason": "the person withdrew it",
-            })
+            product.control.planning_authorization(
+                {
+                    "operation": "revoke",
+                    "grant_id": binding["grant_id"],
+                    "expected_revision": int(binding["grant_revision"]),
+                    "command_id": "person-revoke-h1h-a06",
+                    "reason": "the person withdrew it",
+                }
+            )
             # No approval is named by the planner decision.  This must not be
             # confused with the separate durable planning-lane grant.
             reply = plan_reply(package)
@@ -100,8 +108,12 @@ def test_a06_unapproved_external_write_with_complete_origin_link_cannot_handoff(
         async with operation_world(tmp_path, key="h1h-a06-unapproved") as world:
             action = await until_pending(world)
             assert action["required_approvals"] == 1
-            link = PlanningAdmissionStore(world.store).get_operation_action_link_for_action(action["action_key"])
-            assert link is not None and link["action_key"] == action["action_key"]  # a complete, real link
+            link = PlanningAdmissionStore(world.store).get_operation_action_link_for_action(
+                action["action_key"]
+            )
+            assert (
+                link is not None and link["action_key"] == action["action_key"]
+            )  # a complete, real link
             before_handed_off = len(world.events("ActionHandedOff"))
 
             handed, reason = world.service.begin_handoff(
@@ -128,7 +140,11 @@ def test_a06_valid_grant_allows_real_refine_commit(tmp_path):
     """Positive planning control; kept separate until a real action origin exists."""
 
     async def case() -> None:
-        async with reviewed(tmp_path, key="h1h-a06-valid-grant") as ((loop, mission, _world, _root, dispatch, _product), opener, _provider):
+        async with reviewed(tmp_path, key="h1h-a06-valid-grant") as (
+            (loop, mission, _world, _root, dispatch, _product),
+            opener,
+            _provider,
+        ):
             before = _revision_count(loop, mission.id)
             await loop._collect_plan_decision(
                 opener,

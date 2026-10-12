@@ -71,11 +71,15 @@ class _FakeService:
 
     async def decide_manual_binding(self, request):
         return await self.binding_append.decide_manual_binding(
-            challenge_ref=request.challenge_ref, decision=request.decision)
+            challenge_ref=request.challenge_ref, decision=request.decision
+        )
 
     async def append_binding(self, request):
-        return await self.binding_append.append_binding(task_scope_id=request.scope_ref,
-            root=request.root, idempotency_key=request.idempotency_key)
+        return await self.binding_append.append_binding(
+            task_scope_id=request.scope_ref,
+            root=request.root,
+            idempotency_key=request.idempotency_key,
+        )
 
     # HM-TO-A6 incident B: the zero-hit case is the one the real model looped on.
     empty_search = False
@@ -86,8 +90,12 @@ class _FakeService:
                 []
                 if self.empty_search
                 else [
-                    {"scope_ref": "scope-a", "title": "Task A", "rank": -1.0,
-                     "source_hash": "e" * 64}
+                    {
+                        "scope_ref": "scope-a",
+                        "title": "Task A",
+                        "rank": -1.0,
+                        "source_hash": "e" * 64,
+                    }
                 ]
             ),
             "next_cursor": None,
@@ -120,8 +128,12 @@ class _FakeDisclosureReader:
 
     async def __call__(self, run_id, package, effect_id):
         self.calls.append((run_id, package, effect_id))
-        return {**package, "source_id": "authorized-source", "source_hash": "f" * 64,
-                "read_views": {"RESUME": {"content": "Authorized projection"}}}
+        return {
+            **package,
+            "source_id": "authorized-source",
+            "source_hash": "f" * 64,
+            "read_views": {"RESUME": {"content": "Authorized projection"}},
+        }
 
 
 @pytest_asyncio.fixture()
@@ -183,9 +195,7 @@ async def test_direct_standalone_commits_receipt_and_ledger(state_db: Path) -> N
     assert receipt.effect_id == "effect-1"
     assert receipt.task_scope_id is None
     assert "ok" not in result and "error" not in result
-    assert _decision_rows(state_db) == [
-        ("direct_standalone", "context_tool", "effect-1")
-    ]
+    assert _decision_rows(state_db) == [("direct_standalone", "context_tool", "effect-1")]
     assert _invocation_rows(state_db) == [("accepted", "effect-1")]
 
 
@@ -222,9 +232,7 @@ async def test_resume_exact_open_returns_receipt_and_resume_package(
     assert receipt.binding_set_receipt_id == "bind-a"
     assert result["resume_package"]["read_views"]["RESUME"]["content"] == "Authorized projection"
     assert reader.calls[0][::2] == (RUN, "effect-1")
-    assert _decision_rows(state_db) == [
-        ("resume_existing", "context_tool", "effect-1")
-    ]
+    assert _decision_rows(state_db) == [("resume_existing", "context_tool", "effect-1")]
 
 
 @pytest.mark.asyncio
@@ -258,17 +266,16 @@ async def test_continue_active_uses_latest_task_decision_and_live_head(
     binding_store.receipts["scope-a"] = SimpleNamespace(
         binding_set_revision=2, receipt_id="bind-a", receipt_hash="b" * 64
     )
-    tool = _service(state_db, binding_store=binding_store,
-                    disclosure_reader=_FakeDisclosureReader())
+    tool = _service(
+        state_db, binding_store=binding_store, disclosure_reader=_FakeDisclosureReader()
+    )
     resumed = await tool.handle_context_route(
         {"route": "resume_existing", "task_scope_id": "scope-a"}
     )
     assert "context_route_receipt" in resumed
 
     continuing = ContextRouteToolService(
-        service_factory_getter=lambda: SimpleNamespace(
-            bind=lambda auth, **kw: _FakeService()
-        ),
+        service_factory_getter=lambda: SimpleNamespace(bind=lambda auth, **kw: _FakeService()),
         binding_store_factory=lambda: binding_store,
         binding_append_getter=lambda: None,
         ledger=ContextRouteLedgerStore(state_db),
@@ -280,9 +287,7 @@ async def test_continue_active_uses_latest_task_decision_and_live_head(
     assert receipt.binding_set_revision == 2
 
     mismatch = ContextRouteToolService(
-        service_factory_getter=lambda: SimpleNamespace(
-            bind=lambda auth, **kw: _FakeService()
-        ),
+        service_factory_getter=lambda: SimpleNamespace(bind=lambda auth, **kw: _FakeService()),
         binding_store_factory=lambda: binding_store,
         binding_append_getter=lambda: None,
         ledger=ContextRouteLedgerStore(state_db),
@@ -320,9 +325,7 @@ async def test_create_new_manual_authorization_is_stable_rejection(
         {"route": "create_new", "title": "Write weekly report"}
     )
     assert result["ok"] is False
-    assert (
-        result["error"]["code"] == "context_route_binding_authorization_required"
-    )
+    assert result["error"]["code"] == "context_route_binding_authorization_required"
     assert append.decisions == []
     assert _decision_rows(state_db) == []
 
@@ -339,8 +342,12 @@ async def test_create_new_manual_user_confirmation_is_the_binding_decision(
     )
     append = _FakeBindingAppend(manual=True)
     asked: list[tuple[str, str]] = []
-    tool = _service(state_db, binding_store=binding_store, binding_append=append,
-                    user_confirmed=lambda run_id, effect_id: asked.append((run_id, effect_id)) or True)
+    tool = _service(
+        state_db,
+        binding_store=binding_store,
+        binding_append=append,
+        user_confirmed=lambda run_id, effect_id: asked.append((run_id, effect_id)) or True,
+    )
     result = await tool.handle_context_route(
         {"route": "create_new", "title": "Write weekly report"}
     )
@@ -389,7 +396,9 @@ async def test_task_scope_search_returns_candidates_without_authority(
     candidate = result["candidates"][0]
     assert candidate["task_scope_id"] == "scope-a"
     assert candidate["source_hash"] == "f" * 64
-    assert candidate["scope_disclosure"]["read_views"]["RESUME"]["content"] == "Authorized projection"
+    assert (
+        candidate["scope_disclosure"]["read_views"]["RESUME"]["content"] == "Authorized projection"
+    )
     assert reader.calls[0][::2] == (RUN, "effect-1")
     assert "context_route_receipt" not in result
     assert _decision_rows(state_db) == []
@@ -405,7 +414,8 @@ async def test_scope_disclosure_reader_missing_rejects(state_db, operation):
     tool = _service(state_db, binding_store=binding_store)
     if operation == "resume":
         result = await tool.handle_context_route(
-            {"route": "resume_existing", "task_scope_id": "scope-a"})
+            {"route": "resume_existing", "task_scope_id": "scope-a"}
+        )
     else:
         result = await tool.handle_task_scope_search({"query": "Task A"})
     assert result["error"]["code"] == "scope_disclosure_reader_missing"
@@ -523,7 +533,9 @@ def test_persona_tells_the_model_a_self_rewrite_needs_no_context_tool() -> None:
     """
     from deskpet.execution.primary_context import PERSONA
 
-    assert "Rewriting or shortening the user's own words needs no context tool or recall." in PERSONA
+    assert (
+        "Rewriting or shortening the user's own words needs no context tool or recall." in PERSONA
+    )
     # 与既有的 direct_standalone 指引同段，不重复也不矛盾。
     assert "not a new project task" in PERSONA
 
@@ -629,7 +641,8 @@ def _invocation_detail(state_db: Path, effect_id: str = "effect-1") -> dict:
     with sqlite3.connect(state_db) as db:
         row = db.execute(
             "SELECT detail_json FROM context_route_tool_invocations "
-            "WHERE sdk_run_id=? AND effect_id=?", (RUN, effect_id),
+            "WHERE sdk_run_id=? AND effect_id=?",
+            (RUN, effect_id),
         ).fetchone()
     return json.loads(row[0])
 
@@ -707,9 +720,7 @@ def _multi_hit_service(*scope_refs: str) -> _FakeService:
     return inner
 
 
-async def _tool_with_active_scope(
-    state_db: Path, *scope_refs: str, resumable: str | None = None
-):
+async def _tool_with_active_scope(state_db: Path, *scope_refs: str, resumable: str | None = None):
     """A service whose Run already committed ``create_new`` → ``scope-new-1``."""
 
     binding_store = _FakeBindingStore()
@@ -815,9 +826,13 @@ async def test_run_scope_conflict_names_both_scopes_and_the_only_next_step(
     assert "resume_existing task_scope_id=scope-b" in error["next_step_zh"]
     # 拒绝按原样落库，含新的原因码。
     with sqlite3.connect(state_db) as db:
-        detail = json.loads(db.execute(
-            "SELECT detail_json FROM context_route_tool_invocations "
-            "WHERE sdk_run_id=? AND verdict='rejected'", (RUN,)).fetchone()[0])
+        detail = json.loads(
+            db.execute(
+                "SELECT detail_json FROM context_route_tool_invocations "
+                "WHERE sdk_run_id=? AND verdict='rejected'",
+                (RUN,),
+            ).fetchone()[0]
+        )
     assert detail["reason_code"] == RUN_SCOPE_BOUND_ELSEWHERE
     assert detail["bound_task_scope_id"] == "scope-new-1"
 
@@ -832,7 +847,9 @@ def test_persona_routes_a_named_task_that_is_not_the_active_one() -> None:
     assert "irreversibly" in PERSONA
     # 事故 B 与 F-NC1 钉住的既有口径不得被这次压缩改掉。
     assert "an active scope needs no search" in PERSONA
-    assert "Rewriting or shortening the user's own words needs no context tool or recall." in PERSONA
+    assert (
+        "Rewriting or shortening the user's own words needs no context tool or recall." in PERSONA
+    )
     assert len(PERSONA) <= 4900
 
 
@@ -844,13 +861,17 @@ def test_context_route_description_names_the_named_task_rule() -> None:
     source = Path(__file__).resolve().parents[2] / "main.py"
     route_block = re.search(
         r'name="context_route",\s*\n\s*description=\((.*?)\n\s*\),',
-        source.read_text(encoding="utf-8"), re.S)
+        source.read_text(encoding="utf-8"),
+        re.S,
+    )
     assert route_block is not None
     assert "is_active=false" in route_block.group(1)
     assert "can never rebind" in route_block.group(1)
 
     search_block = re.search(
         r'name="task_scope_search",\s*\n\s*description=\((.*?)\n\s*\),',
-        source.read_text(encoding="utf-8"), re.S)
+        source.read_text(encoding="utf-8"),
+        re.S,
+    )
     assert search_block is not None
     assert "is_active" in search_block.group(1)

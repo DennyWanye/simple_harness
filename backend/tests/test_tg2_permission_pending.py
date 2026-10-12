@@ -29,9 +29,7 @@ async def test_in_flight_prompt_does_not_create_process_local_pending_state() ->
         return PermissionResponse(request_id=req.request_id, decision="allow")
 
     gate.set_responder(responder)
-    task = asyncio.create_task(
-        gate.check("shell", {"command": "echo hi"}, session_id="s1")
-    )
+    task = asyncio.create_task(gate.check("shell", {"command": "echo hi"}, session_id="s1"))
     await asyncio.wait_for(started.wait(), timeout=2.0)
 
     assert gate.list_pending() == []

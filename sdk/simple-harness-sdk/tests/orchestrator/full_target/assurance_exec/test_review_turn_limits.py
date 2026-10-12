@@ -36,8 +36,13 @@ def test_turn_tool_cap_matches_gateway_cap_and_covers_the_observed_reviewer():
 
 def test_near_the_cap_every_evidence_result_says_to_conclude():
     used = {"n": 0}
-    tools = SimpleNamespace(orchestrator=SimpleNamespace(assembled=SimpleNamespace(
-        gateway=SimpleNamespace(executed_calls=lambda _run: used["n"]))))
+    tools = SimpleNamespace(
+        orchestrator=SimpleNamespace(
+            assembled=SimpleNamespace(
+                gateway=SimpleNamespace(executed_calls=lambda _run: used["n"])
+            )
+        )
+    )
     notice = ReviewerEvidenceTools._budget_notice
     assert "budget_notice" not in notice(tools, "r", {})
     used["n"] = MAX_EVIDENCE_TOOL_CALLS - 1 - EVIDENCE_CALLS_WARNING

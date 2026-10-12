@@ -131,7 +131,16 @@ def test_delegation_uniques(tmp_path):
         connection.execute("BEGIN")
         _seed_binding_and_turn(connection)
         row = (
-            "d-1", "a1", "t1", 1, "child-a", "child-run", "ticket-1", "reserved", 0.0, 0.0,
+            "d-1",
+            "a1",
+            "t1",
+            1,
+            "child-a",
+            "child-run",
+            "ticket-1",
+            "reserved",
+            0.0,
+            0.0,
         )
         connection.execute(
             "INSERT INTO base_agent_delegations_v1 VALUES (?,?,?,?,?,?,?,?,?,?)", row

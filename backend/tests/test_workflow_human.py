@@ -96,9 +96,7 @@ async def test_open_rolls_back_if_run_fence_was_invalidated(tmp_path):
     await runs.request_cancel(run_id, "concurrent cancel")
 
     with pytest.raises(StaleRunFence):
-        await store.open_decision(
-            "decision-1", fence=fence, interrupt_id="interrupt-1"
-        )
+        await store.open_decision("decision-1", fence=fence, interrupt_id="interrupt-1")
     decision = await store.get_decision("decision-1")
     assert decision is not None
     assert decision.status is DecisionStatus.PREPARED
@@ -111,9 +109,7 @@ async def test_resolve_validates_and_uses_nonce_version_cas(tmp_path):
     now = [100.0]
     path = tmp_path / "workflow.db"
     runs, run_id, fence = await _claimed_run(path, clock=lambda: now[0])
-    store = HumanDecisionStore(
-        path, clock=lambda: now[0], validators={"approval": _approval}
-    )
+    store = HumanDecisionStore(path, clock=lambda: now[0], validators={"approval": _approval})
     await store.prepare_decision(
         fence=fence,
         decision_id="decision-1",
@@ -121,9 +117,7 @@ async def test_resolve_validates_and_uses_nonce_version_cas(tmp_path):
         prompt={},
         checkpoint_id="checkpoint-1",
     )
-    opened = await store.open_decision(
-        "decision-1", fence=fence, interrupt_id="interrupt-1"
-    )
+    opened = await store.open_decision("decision-1", fence=fence, interrupt_id="interrupt-1")
 
     with pytest.raises(HumanDecisionError) as invalid:
         await store.resolve_decision(
@@ -151,9 +145,7 @@ async def test_resolve_validates_and_uses_nonce_version_cas(tmp_path):
         )
     assert stale_version.value.code == "stale_decision"
 
-    restarted = HumanDecisionStore(
-        path, clock=lambda: now[0], validators={"approval": _approval}
-    )
+    restarted = HumanDecisionStore(path, clock=lambda: now[0], validators={"approval": _approval})
     resolved = await restarted.resolve_decision(
         "decision-1",
         nonce=opened.nonce,
@@ -162,9 +154,7 @@ async def test_resolve_validates_and_uses_nonce_version_cas(tmp_path):
     )
     assert resolved.status is DecisionStatus.RESOLVED
     assert resolved.response == {"approved": True}
-    assert await restarted.resume_payload("decision-1") == {
-        "interrupt-1": {"approved": True}
-    }
+    assert await restarted.resume_payload("decision-1") == {"interrupt-1": {"approved": True}}
     run = await runs.get_run(run_id)
     assert run is not None and run["status"] == "retryable"
 
@@ -191,18 +181,14 @@ async def test_resolved_decision_is_consumed_once_by_checkpoint_commit(tmp_path)
         prompt={},
         checkpoint_id="waiting-checkpoint",
     )
-    opened = await store.open_decision(
-        "decision-1", fence=fence, interrupt_id="interrupt-1"
-    )
+    opened = await store.open_decision("decision-1", fence=fence, interrupt_id="interrupt-1")
     resolved = await store.resolve_decision(
         "decision-1",
         nonce=opened.nonce,
         expected_version=opened.version,
         response={"approved": True},
     )
-    assert await store.build_run_resume_payload(run_id) == {
-        "interrupt-1": {"approved": True}
-    }
+    assert await store.build_run_resume_payload(run_id) == {"interrupt-1": {"approved": True}}
 
     db = await runs._connect()
     try:
@@ -250,9 +236,7 @@ async def test_expired_resolution_closes_decision_grant_and_blocks_run(tmp_path)
         checkpoint_id="checkpoint-1",
         expires_at=110.0,
     )
-    opened = await store.open_decision(
-        "decision-1", fence=fence, interrupt_id="interrupt-1"
-    )
+    opened = await store.open_decision("decision-1", fence=fence, interrupt_id="interrupt-1")
     grant = await store.prepare_grant(
         decision_id="decision-1", grant_id="grant-1", scope={"tool": "write_file"}
     )
@@ -292,9 +276,7 @@ async def test_expiry_sweeper_closes_prepared_decisions_without_exposing_them(tm
         checkpoint_id="checkpoint-1",
         expires_at=101.0,
     )
-    await store.prepare_grant(
-        decision_id="prepared", grant_id="prepared-grant", scope={}
-    )
+    await store.prepare_grant(decision_id="prepared", grant_id="prepared-grant", scope={})
     now[0] = 102.0
 
     assert await store.expire_decisions() == 1
@@ -318,9 +300,7 @@ async def test_cancel_atomically_closes_open_decisions_and_grants(tmp_path):
         prompt={},
         checkpoint_id="checkpoint-1",
     )
-    await store.open_decision(
-        "decision-1", fence=fence, interrupt_id="interrupt-1"
-    )
+    await store.open_decision("decision-1", fence=fence, interrupt_id="interrupt-1")
     await store.prepare_grant(
         decision_id="decision-1", grant_id="grant-1", scope={"args_hash": "abc"}
     )

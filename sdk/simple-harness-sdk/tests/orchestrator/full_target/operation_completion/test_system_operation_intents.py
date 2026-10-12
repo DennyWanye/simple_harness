@@ -13,6 +13,7 @@
   就被拒（connector_not_enabled），这条在产品上走不到；
 * 下面两条纯函数（取哪一份文件）照旧；"只有确认人能带着槽位授权提交"在产品世界里重写。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -52,19 +53,36 @@ def test_a_continued_file_is_taken_from_the_most_downstream_step():
     from agent_orchestrator.orchestrator.system_operations import _leaves, _sources
 
     def artifact(ident, path):
-        return SimpleNamespace(id=ident, path=path, content_hash=ident * 2, verification_status="VERIFIED")
+        return SimpleNamespace(
+            id=ident, path=path, content_hash=ident * 2, verification_status="VERIFIED"
+        )
 
-    first, second, other = artifact("a1", "README.md"), artifact("a2", "README.md"), artifact("a3", "notes.md")
-    tasks = {"t1": SimpleNamespace(id="t1", dependency_ids=(), accepted_result_id="r1", outputs=()),
-             "t2": SimpleNamespace(id="t2", dependency_ids=(), accepted_result_id="r2", outputs=())}
-    results = {"r1": SimpleNamespace(artifacts=("a1", "a3")), "r2": SimpleNamespace(artifacts=("a2",))}
+    first, second, other = (
+        artifact("a1", "README.md"),
+        artifact("a2", "README.md"),
+        artifact("a3", "notes.md"),
+    )
+    tasks = {
+        "t1": SimpleNamespace(id="t1", dependency_ids=(), accepted_result_id="r1", outputs=()),
+        "t2": SimpleNamespace(id="t2", dependency_ids=(), accepted_result_id="r2", outputs=()),
+    }
+    results = {
+        "r1": SimpleNamespace(artifacts=("a1", "a3")),
+        "r2": SimpleNamespace(artifacts=("a2",)),
+    }
     artifacts = {a.id: a for a in (first, second, other)}
     store = SimpleNamespace(get_task=tasks.get, get_result=results.get, get_artifact=artifacts.get)
     acceptance = lambda *items: SimpleNamespace(  # noqa: E731
-        validity="CURRENT", artifact_refs=tuple(SimpleNamespace(id=a.id, content_hash=a.content_hash) for a in items))
-    members = (SimpleNamespace(occurrence_id="o1", task_id="t1", form=TaskForm.PRIMITIVE),
-               SimpleNamespace(occurrence_id="o2", task_id="t2", form=TaskForm.PRIMITIVE))
-    edges = [SimpleNamespace(producer_occurrence="o1", consumer_occurrence="o2")]  # o2 续写 o1 的交付
+        validity="CURRENT",
+        artifact_refs=tuple(SimpleNamespace(id=a.id, content_hash=a.content_hash) for a in items),
+    )
+    members = (
+        SimpleNamespace(occurrence_id="o1", task_id="t1", form=TaskForm.PRIMITIVE),
+        SimpleNamespace(occurrence_id="o2", task_id="t2", form=TaskForm.PRIMITIVE),
+    )
+    edges = [
+        SimpleNamespace(producer_occurrence="o1", consumer_occurrence="o2")
+    ]  # o2 续写 o1 的交付
 
     def htn():
         return SimpleNamespace(
@@ -72,7 +90,8 @@ def test_a_continued_file_is_taken_from_the_most_downstream_step():
             list_plan_memberships=lambda mission_id, revision: members,
             list_order_constraints=lambda mission_id, revision: (),
             list_data_requirements=lambda mission_id, revision: tuple(edges),
-            list_acceptances=lambda mission_id: (acceptance(first, other), acceptance(second)))
+            list_acceptances=lambda mission_id: (acceptance(first, other), acceptance(second)),
+        )
 
     graph = htn()
     [(chosen, _, leaf)] = _sources(store, graph, "m", _leaves(store, graph, "m"), "README.md")
@@ -90,29 +109,48 @@ def test_the_declared_producer_decides_which_file_is_published():
     from agent_orchestrator.orchestrator.system_operations import _leaves, _sources
 
     def artifact(ident, path):
-        return SimpleNamespace(id=ident, path=path, content_hash=ident * 2, verification_status="VERIFIED")
+        return SimpleNamespace(
+            id=ident, path=path, content_hash=ident * 2, verification_status="VERIFIED"
+        )
 
-    items = [artifact("a1", "README.md"), artifact("a2", "README.md"), artifact("a3", "README.md"),
-             artifact("a4", "docs/README.md")]
+    items = [
+        artifact("a1", "README.md"),
+        artifact("a2", "README.md"),
+        artifact("a3", "README.md"),
+        artifact("a4", "docs/README.md"),
+    ]
     tasks = {
         "t1": SimpleNamespace(id="t1", accepted_result_id="r1", outputs=("README.md",)),  # 声明产出
         "t2": SimpleNamespace(id="t2", accepted_result_id="r2", outputs=()),  # t1 下游续写
         "t3": SimpleNamespace(id="t3", accepted_result_id="r3", outputs=()),  # 并行分支
     }
-    results = {"r1": SimpleNamespace(artifacts=("a1",)), "r2": SimpleNamespace(artifacts=("a2", "a4")),
-               "r3": SimpleNamespace(artifacts=("a3",))}
+    results = {
+        "r1": SimpleNamespace(artifacts=("a1",)),
+        "r2": SimpleNamespace(artifacts=("a2", "a4")),
+        "r3": SimpleNamespace(artifacts=("a3",)),
+    }
     by_id = {a.id: a for a in items}
     store = SimpleNamespace(get_task=tasks.get, get_result=results.get, get_artifact=by_id.get)
-    members = tuple(SimpleNamespace(occurrence_id=f"o{n}", task_id=f"t{n}", form=TaskForm.PRIMITIVE)
-                    for n in (1, 2, 3))
+    members = tuple(
+        SimpleNamespace(occurrence_id=f"o{n}", task_id=f"t{n}", form=TaskForm.PRIMITIVE)
+        for n in (1, 2, 3)
+    )
     graph = SimpleNamespace(
         active_plan_revision=lambda mission_id: SimpleNamespace(revision=1),
         list_plan_memberships=lambda mission_id, revision: members,
         list_order_constraints=lambda mission_id, revision: (),
         list_data_requirements=lambda mission_id, revision: (
-            SimpleNamespace(producer_occurrence="o1", consumer_occurrence="o2"),),
-        list_acceptances=lambda mission_id: (SimpleNamespace(validity="CURRENT", artifact_refs=tuple(
-            SimpleNamespace(id=a.id, content_hash=a.content_hash) for a in items)),))
+            SimpleNamespace(producer_occurrence="o1", consumer_occurrence="o2"),
+        ),
+        list_acceptances=lambda mission_id: (
+            SimpleNamespace(
+                validity="CURRENT",
+                artifact_refs=tuple(
+                    SimpleNamespace(id=a.id, content_hash=a.content_hash) for a in items
+                ),
+            ),
+        ),
+    )
     [(chosen, _, leaf)] = _sources(store, graph, "m", _leaves(store, graph, "m"), "README.md")
     assert (chosen.id, leaf.task.id) == ("a2", "t2")
     # 没有声明时照旧：三个同名版本里 t1→t2 与 t3 互不相连，判断不了（多个匹配交给规划器）
@@ -130,33 +168,62 @@ def test_only_the_confirming_person_can_carry_the_slot_authority(tmp_path):
             [row] = OperationIntentStore(case.store).for_mission(case.mission_id)
             assert row["source_kind"] == "AUTHORIZED_SLOT"
             assert row["principal_id"] == case.world.deployment.principal.principal_id
-            [artifact] = [a for a in case.store.list_mission_artifacts(case.mission_id) if a.path == TARGET]
+            [artifact] = [
+                a for a in case.store.list_mission_artifacts(case.mission_id) if a.path == TARGET
+            ]
             assert row["candidate_artifact_id"] == artifact.id
             [acceptance] = HtnStore(case.store).list_acceptances(case.mission_id)
             spec_hash = case.store.connection.execute(
-                "SELECT spec_hash FROM operation_completion_specs WHERE mission_id=?", (case.mission_id,)).fetchone()[0]
+                "SELECT spec_hash FROM operation_completion_specs WHERE mission_id=?",
+                (case.mission_id,),
+            ).fetchone()[0]
             command = SubmitOperationIntentV2(
-                schema_version=2, mission_id=case.mission_id, idempotency_key="another-submission",
-                intent_source=OperationIntentSourceV2(OperationIntentSourceKind.AUTHORIZED_SLOT,
-                                                      origin_receipt_id=row["origin_receipt_id"],
-                                                      slot_key=row["slot_key"]),
-                candidate_artifact_ref=TypedRef(TypedRefKind.ARTIFACT, artifact.id, artifact.version,
-                                                artifact.content_hash, Provenance.TOOL),
-                prepared_acceptance_refs=(TypedRef(TypedRefKind.ACCEPTANCE, str(acceptance.acceptance_id), 1,
-                                                   content_hash_of(acceptance.to_json()), Provenance.TOOL),),
+                schema_version=2,
+                mission_id=case.mission_id,
+                idempotency_key="another-submission",
+                intent_source=OperationIntentSourceV2(
+                    OperationIntentSourceKind.AUTHORIZED_SLOT,
+                    origin_receipt_id=row["origin_receipt_id"],
+                    slot_key=row["slot_key"],
+                ),
+                candidate_artifact_ref=TypedRef(
+                    TypedRefKind.ARTIFACT,
+                    artifact.id,
+                    artifact.version,
+                    artifact.content_hash,
+                    Provenance.TOOL,
+                ),
+                prepared_acceptance_refs=(
+                    TypedRef(
+                        TypedRefKind.ACCEPTANCE,
+                        str(acceptance.acceptance_id),
+                        1,
+                        content_hash_of(acceptance.to_json()),
+                        Provenance.TOOL,
+                    ),
+                ),
                 supersedes_intent_id=None,
-                completion_slot=CompletionSlotV2(spec_hash=spec_hash, effect_key="publish-weekly"))
+                completion_slot=CompletionSlotV2(spec_hash=spec_hash, effect_key="publish-weekly"),
+            )
             tenant = case.world.deployment.tenant_id
             commit = case.world.loop.commit
             before = case.store.connection.total_changes
             with pytest.raises(ValueError, match="AUTHORIZED_SLOT authority differs"):
-                commit.submit_operation_intent(command, tenant_id=tenant, principal=Principal("someone-else"))
-            forged = dataclasses.replace(command, intent_source=OperationIntentSourceV2(
-                OperationIntentSourceKind.AUTHORIZED_SLOT, origin_receipt_id=row["origin_receipt_id"],
-                slot_key="another-effect"))
+                commit.submit_operation_intent(
+                    command, tenant_id=tenant, principal=Principal("someone-else")
+                )
+            forged = dataclasses.replace(
+                command,
+                intent_source=OperationIntentSourceV2(
+                    OperationIntentSourceKind.AUTHORIZED_SLOT,
+                    origin_receipt_id=row["origin_receipt_id"],
+                    slot_key="another-effect",
+                ),
+            )
             with pytest.raises(ValueError, match="AUTHORIZED_SLOT authority differs"):
-                commit.submit_operation_intent(forged, tenant_id=tenant,
-                                               principal=Principal(row["principal_id"]))
+                commit.submit_operation_intent(
+                    forged, tenant_id=tenant, principal=Principal(row["principal_id"])
+                )
             assert case.store.connection.total_changes == before
             assert len(OperationIntentStore(case.store).for_mission(case.mission_id)) == 1
 

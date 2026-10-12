@@ -17,6 +17,7 @@ Covers:
   R8 — _remount_skills: over 25K budget → drops least-recently-used skill.
   R9 — skill_loader injected but skill not found (KeyError) → graceful skip.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -44,15 +45,27 @@ def test_context_page_in_active_skill_remounts_and_stale_hash_fails_closed() -> 
     import hashlib
 
     loader = _FakeSkillLoader({"skill_a": _SKILL_A_BODY})
-    loop = AgentLoop(llm_registry=_FakeLLM(), tool_registry=_FakeToolRegistry(),
-                     skill_loader=loader)
+    loop = AgentLoop(
+        llm_registry=_FakeLLM(), tool_registry=_FakeToolRegistry(), skill_loader=loader
+    )
     store = ContextPageInStore()
-    authority = store.put(kind="skill", source="skill_a", content=_SKILL_A_BODY,
-                          session_id="sid", request_id="request", scope_id="scope")
+    authority = store.put(
+        kind="skill",
+        source="skill_a",
+        content=_SKILL_A_BODY,
+        session_id="sid",
+        request_id="request",
+        scope_id="scope",
+    )
     prepared = PreparedContext(
-        messages=[], tool_set=SimpleNamespace(scope_id="scope"), page_in_store=store,
-        page_in_refs=(PageInRef(authority.reference_id, "skill", "skill_a",
-                                authority.source_hash, "skill:skill_a"),),
+        messages=[],
+        tool_set=SimpleNamespace(scope_id="scope"),
+        page_in_store=store,
+        page_in_refs=(
+            PageInRef(
+                authority.reference_id, "skill", "skill_a", authority.source_hash, "skill:skill_a"
+            ),
+        ),
     )
     # Merely overflowing into a reference does not activate/remount it.
     assert loop._remount_skills([], "sid", prepared_context=prepared) == []
@@ -76,6 +89,7 @@ class _FakeLLM:
 
     async def chat_with_fallback(self, messages, *, tools=None, model=None, **kw):
         from llm.types import ChatResponse
+
         return ChatResponse(
             content="done",
             stop_reason="end_turn",
@@ -98,6 +112,7 @@ class _FakeCompressor:
 
     async def compress(self, messages, *, goal_text=None, pending_tasks=None):
         from deskpet.agent.context_compressor import CompressionResult
+
         self._call_count += 1
         if self._call_count == 1:
             return CompressionResult(
@@ -119,8 +134,10 @@ class _FakeSkillLoader:
     def get(self, name: str):
         # Return a truthy stub or None
         if name in self._skills:
+
             class _Meta:
                 pass
+
             return _Meta()
         return None
 
@@ -131,8 +148,10 @@ class _FakeSkillLoader:
 
     def list_all(self):
         """Return list of skill-like objects for matcher."""
+
         class _Meta:
             pass
+
         result = []
         for n in self._skills:
             m = _Meta()
@@ -170,6 +189,7 @@ def _build_loop(
 # R7 — BC: new params exist with default None
 # ---------------------------------------------------------------------------
 
+
 def test_agent_loop_accepts_skill_loader_param():
     """AgentLoop.__init__ accepts skill_loader= kwarg with default None (BC)."""
     sig = inspect.signature(AgentLoop.__init__)
@@ -195,6 +215,7 @@ def test_agent_loop_stores_skill_loader():
 def test_agent_loop_stores_skill_matcher():
     class _DummyMatcher:
         pass
+
     m = _DummyMatcher()
     loop = _build_loop(skill_matcher=m)
     assert loop.skill_matcher is m
@@ -203,6 +224,7 @@ def test_agent_loop_stores_skill_matcher():
 # ---------------------------------------------------------------------------
 # R5 — BC: skill_loader=None → no-op (remount never called)
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_skill_loader_none_no_remount():
@@ -216,8 +238,7 @@ async def test_skill_loader_none_no_remount():
     # Simulate a convo; no skill_invoke calls in this test
     msgs = [
         {"role": "system", "content": "[skill_prelude] desc list"},
-        *[{"role": "user" if i % 2 == 0 else "assistant", "content": f"msg {i}"}
-          for i in range(6)],
+        *[{"role": "user" if i % 2 == 0 else "assistant", "content": f"msg {i}"} for i in range(6)],
     ]
 
     received: list[list[dict]] = []
@@ -226,9 +247,12 @@ async def test_skill_loader_none_no_remount():
         async def chat_with_fallback(self, messages, *, tools=None, model=None, **kw):
             received.append(list(messages))
             from llm.types import ChatResponse
+
             return ChatResponse(
-                content="done", stop_reason="end_turn",
-                tool_calls=[], usage={"input_tokens": 10, "output_tokens": 2},
+                content="done",
+                stop_reason="end_turn",
+                tool_calls=[],
+                usage={"input_tokens": 10, "output_tokens": 2},
             )
 
     loop.llm = _RecordingLLM()
@@ -239,18 +263,19 @@ async def test_skill_loader_none_no_remount():
     # Gather all messages ever seen by LLM
     all_seen = [m for msgs_snapshot in received for m in msgs_snapshot]
     remount_blocks = [
-        m for m in all_seen
+        m
+        for m in all_seen
         if m.get("role") == "system" and _REMOUNT_MARKER in (m.get("content") or "")
     ]
     assert remount_blocks == [], (
-        "With skill_loader=None, no remount block should appear, "
-        f"but got: {remount_blocks}"
+        f"With skill_loader=None, no remount block should appear, but got: {remount_blocks}"
     )
 
 
 # ---------------------------------------------------------------------------
 # R4 — no skill used this run → no-op
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_no_skill_used_no_remount():
@@ -264,8 +289,7 @@ async def test_no_skill_used_no_remount():
 
     msgs = [
         {"role": "system", "content": "[skill_prelude] desc list"},
-        *[{"role": "user" if i % 2 == 0 else "assistant", "content": f"msg {i}"}
-          for i in range(6)],
+        *[{"role": "user" if i % 2 == 0 else "assistant", "content": f"msg {i}"} for i in range(6)],
     ]
 
     received: list[list[dict]] = []
@@ -274,9 +298,12 @@ async def test_no_skill_used_no_remount():
         async def chat_with_fallback(self, messages, *, tools=None, model=None, **kw):
             received.append(list(messages))
             from llm.types import ChatResponse
+
             return ChatResponse(
-                content="done", stop_reason="end_turn",
-                tool_calls=[], usage={"input_tokens": 10, "output_tokens": 2},
+                content="done",
+                stop_reason="end_turn",
+                tool_calls=[],
+                usage={"input_tokens": 10, "output_tokens": 2},
             )
 
     loop.llm = _RecordingLLM()
@@ -286,18 +313,19 @@ async def test_no_skill_used_no_remount():
 
     all_seen = [m for snap in received for m in snap]
     remount_blocks = [
-        m for m in all_seen
+        m
+        for m in all_seen
         if m.get("role") == "system" and _REMOUNT_MARKER in (m.get("content") or "")
     ]
     assert remount_blocks == [], (
-        "No skill used → no remount block expected, "
-        f"but got: {remount_blocks}"
+        f"No skill used → no remount block expected, but got: {remount_blocks}"
     )
 
 
 # ---------------------------------------------------------------------------
 # R1 — skill_invoke used → compaction fires → remount block present with body
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_skill_invoke_then_compaction_remounts_skill():
@@ -311,8 +339,7 @@ async def test_skill_invoke_then_compaction_remounts_skill():
 
     msgs = [
         {"role": "system", "content": "[skill_prelude] desc list"},
-        *[{"role": "user" if i % 2 == 0 else "assistant", "content": f"msg {i}"}
-          for i in range(6)],
+        *[{"role": "user" if i % 2 == 0 else "assistant", "content": f"msg {i}"} for i in range(6)],
     ]
 
     # We need to inject skill_invoke usage BEFORE compaction fires.
@@ -332,22 +359,22 @@ async def test_skill_invoke_then_compaction_remounts_skill():
 
     # Assert [已重挂技能] block present
     remount_blocks = [
-        m for m in result
+        m
+        for m in result
         if m.get("role") == "system" and _REMOUNT_MARKER in (m.get("content") or "")
     ]
     assert len(remount_blocks) == 1, (
-        f"Expected exactly 1 remount block, got {len(remount_blocks)}.\n"
-        f"Messages: {result}"
+        f"Expected exactly 1 remount block, got {len(remount_blocks)}.\nMessages: {result}"
     )
     assert _SKILL_A_BODY in remount_blocks[0]["content"], (
-        f"skill_a body not in remount block content.\n"
-        f"Content: {remount_blocks[0]['content']!r}"
+        f"skill_a body not in remount block content.\nContent: {remount_blocks[0]['content']!r}"
     )
 
 
 # ---------------------------------------------------------------------------
 # R2 — remount block within 25K token budget
 # ---------------------------------------------------------------------------
+
 
 def test_remount_block_within_25k_budget():
     """Remount block total content must not exceed 25K chars (token budget proxy)."""
@@ -363,14 +390,13 @@ def test_remount_block_within_25k_budget():
     result = loop._remount_skills(msgs, "test_r2")  # type: ignore[attr-defined]
 
     remount_blocks = [
-        m for m in result
+        m
+        for m in result
         if m.get("role") == "system" and _REMOUNT_MARKER in (m.get("content") or "")
     ]
     assert len(remount_blocks) == 1
     content = remount_blocks[0]["content"]
-    assert len(content) <= 25_000, (
-        f"Remount block exceeds 25K chars: {len(content)}"
-    )
+    assert len(content) <= 25_000, f"Remount block exceeds 25K chars: {len(content)}"
 
 
 def test_remount_over_budget_drops_lru():
@@ -394,7 +420,8 @@ def test_remount_over_budget_drops_lru():
     result = loop._remount_skills(msgs, "test_r8")  # type: ignore[attr-defined]
 
     remount_blocks = [
-        m for m in result
+        m
+        for m in result
         if m.get("role") == "system" and _REMOUNT_MARKER in (m.get("content") or "")
     ]
     assert len(remount_blocks) == 1, f"Expected 1 remount block, got {len(remount_blocks)}"
@@ -415,6 +442,7 @@ def test_remount_over_budget_drops_lru():
 # R3 — second compaction → single remount block (no pile-up)
 # ---------------------------------------------------------------------------
 
+
 def test_second_remount_replaces_first():
     """Calling _remount_skills twice produces exactly ONE [已重挂技能] block
     (the old block is removed before inserting the new one)."""
@@ -431,7 +459,8 @@ def test_second_remount_replaces_first():
     # First remount
     after_first = loop._remount_skills(base_msgs, "sid")  # type: ignore[attr-defined]
     remount_count = sum(
-        1 for m in after_first
+        1
+        for m in after_first
         if m.get("role") == "system" and _REMOUNT_MARKER in (m.get("content") or "")
     )
     assert remount_count == 1, f"After 1st remount: expected 1 block, got {remount_count}"
@@ -440,7 +469,8 @@ def test_second_remount_replaces_first():
     loop._skills_used_this_run = {"skill_a"}  # type: ignore[attr-defined]
     after_second = loop._remount_skills(after_first, "sid")  # type: ignore[attr-defined]
     remount_count2 = sum(
-        1 for m in after_second
+        1
+        for m in after_second
         if m.get("role") == "system" and _REMOUNT_MARKER in (m.get("content") or "")
     )
     assert remount_count2 == 1, (
@@ -453,6 +483,7 @@ def test_second_remount_replaces_first():
 # R6 — skill_matcher=None → still works via skill_invoke tracking only
 # ---------------------------------------------------------------------------
 
+
 def test_remount_works_without_matcher():
     """skill_matcher=None → remount still works using skill_invoke tracking."""
     loader = _FakeSkillLoader({"skill_a": _SKILL_A_BODY})
@@ -463,7 +494,8 @@ def test_remount_works_without_matcher():
     result = loop._remount_skills(msgs, "sid")  # type: ignore[attr-defined]
 
     remount_blocks = [
-        m for m in result
+        m
+        for m in result
         if m.get("role") == "system" and _REMOUNT_MARKER in (m.get("content") or "")
     ]
     assert len(remount_blocks) == 1
@@ -473,6 +505,7 @@ def test_remount_works_without_matcher():
 # ---------------------------------------------------------------------------
 # R9 — skill not found (KeyError) → graceful skip
 # ---------------------------------------------------------------------------
+
 
 def test_remount_unknown_skill_graceful_skip():
     """If a tracked skill_name doesn't exist in the loader (KeyError),
@@ -488,7 +521,8 @@ def test_remount_unknown_skill_graceful_skip():
     assert result is not None
     # No remount block since all skills failed to load
     remount_blocks = [
-        m for m in result
+        m
+        for m in result
         if m.get("role") == "system" and _REMOUNT_MARKER in (m.get("content") or "")
     ]
     assert remount_blocks == [], "Unknown skill should not produce a remount block"
@@ -497,6 +531,7 @@ def test_remount_unknown_skill_graceful_skip():
 # ---------------------------------------------------------------------------
 # Integration: _remount_skills called directly after simulated run() tracking
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_skill_invoke_batch_defers_tracking_then_direct_remount_works():
@@ -536,6 +571,7 @@ async def test_skill_invoke_batch_defers_tracking_then_direct_remount_works():
 
         async def compress(self, messages, *, goal_text=None, pending_tasks=None):
             from deskpet.agent.context_compressor import CompressionResult
+
             self._compress_calls += 1
             if self._compress_calls == 1:
                 return CompressionResult(
@@ -576,8 +612,13 @@ async def test_skill_invoke_batch_defers_tracking_then_direct_remount_works():
 
     class _SkillToolRegistry:
         def schemas(self, enabled_toolsets=None):
-            return [{"name": "skill_invoke", "description": "invoke",
-                     "parameters": {"type": "object", "properties": {}}}]
+            return [
+                {
+                    "name": "skill_invoke",
+                    "description": "invoke",
+                    "parameters": {"type": "object", "properties": {}},
+                }
+            ]
 
         async def execute_tool(self, name, args, task_id):
             return '{"ok": true}'
@@ -594,9 +635,7 @@ async def test_skill_invoke_batch_defers_tracking_then_direct_remount_works():
             if compressor._compress_calls >= 1 and not self._compaction_seen:
                 received_post_compaction.append(list(messages))
                 self._compaction_seen = True
-            return await inner_llm.chat_with_fallback(
-                messages, tools=tools, model=model, **kw
-            )
+            return await inner_llm.chat_with_fallback(messages, tools=tools, model=model, **kw)
 
     loop = AgentLoop(
         llm_registry=_RecordingLLM(),
@@ -611,9 +650,7 @@ async def test_skill_invoke_batch_defers_tracking_then_direct_remount_works():
         {"role": "user", "content": "please use skill_a"},
     ]
 
-    events = [
-        event async for event in loop.run(msgs, session_id="test_integration")
-    ]
+    events = [event async for event in loop.run(msgs, session_id="test_integration")]
 
     batch = next(event for event in events if isinstance(event, ToolBatchEvent))
     assert [call.name for call in batch.tool_calls] == ["skill_invoke"]
@@ -626,7 +663,8 @@ async def test_skill_invoke_batch_defers_tracking_then_direct_remount_works():
         _make_compressed_msgs(), "test_integration"
     )
     remount_blocks = [
-        m for m in result
+        m
+        for m in result
         if m.get("role") == "system" and _REMOUNT_MARKER in (m.get("content") or "")
     ]
     assert len(remount_blocks) == 1

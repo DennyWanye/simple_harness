@@ -169,12 +169,9 @@ async def _handle(
                 result = await result
         except Exception as exc:
             raw_code = str(exc).strip()
-            stable_code = (
-                raw_code if _SAFE_RESOLUTION_ERROR.fullmatch(raw_code) else "unclassified"
-            )
+            stable_code = raw_code if _SAFE_RESOLUTION_ERROR.fullmatch(raw_code) else "unclassified"
             log.exception(
-                "sdk_skill_resource_load_failed run_id=%s skill=%s "
-                "error_type=%s stable_code=%s",
+                "sdk_skill_resource_load_failed run_id=%s skill=%s error_type=%s stable_code=%s",
                 run_id,
                 name.strip(),
                 type(exc).__name__,
@@ -226,12 +223,9 @@ async def _handle(
             result = await result
     except Exception as exc:
         raw_code = str(exc).strip()
-        stable_code = (
-            raw_code if _SAFE_RESOLUTION_ERROR.fullmatch(raw_code) else "unclassified"
-        )
+        stable_code = raw_code if _SAFE_RESOLUTION_ERROR.fullmatch(raw_code) else "unclassified"
         log.exception(
-            "sdk_skill_instruction_load_failed run_id=%s skill=%s "
-            "error_type=%s stable_code=%s",
+            "sdk_skill_instruction_load_failed run_id=%s skill=%s error_type=%s stable_code=%s",
             run_id,
             name.strip(),
             type(exc).__name__,
@@ -283,9 +277,7 @@ async def _handle(
             skill_name=name.strip(),
             reason="frozen_skill_scope_identity_invalid",
         )
-    allowed_ref_hashes = sorted(
-        canonical_hash(dict(item)) for item in payload["allowed_tool_refs"]
-    )
+    allowed_ref_hashes = sorted(canonical_hash(dict(item)) for item in payload["allowed_tool_refs"])
     exact_fact_fields = {
         "name",
         "stable_handler_id",
@@ -328,9 +320,7 @@ async def _handle(
             skill_name=name.strip(),
             reason="frozen_skill_scope_widening_control",
         )
-    frozen_instruction_hash = instruction_content_hash(
-        str(payload["instruction"])
-    )
+    frozen_instruction_hash = instruction_content_hash(str(payload["instruction"]))
     activation_identity = {
         "schema": "skill-scope-activation/v1",
         "run_id": run_id,
@@ -338,14 +328,10 @@ async def _handle(
         "scope_hash": str(payload["scope_hash"]),
         "capability_snapshot_ref": snapshot_ref,
         "instruction_content_hash": frozen_instruction_hash,
-        "effective_tool_refs_hash": str(
-            payload["effective_tool_refs_hash"]
-        ),
+        "effective_tool_refs_hash": str(payload["effective_tool_refs_hash"]),
     }
     activation = {
-        "activation_id": (
-            "skill-scope-activation:" + canonical_hash(activation_identity)
-        ),
+        "activation_id": ("skill-scope-activation:" + canonical_hash(activation_identity)),
         "run_id": run_id,
         "root_run_id": str(context.root_run_id or run_id),
         "scope_id": str(payload["scope_id"]),
@@ -362,12 +348,8 @@ async def _handle(
                 separators=(",", ":"),
             ),
         ),
-        "effective_tool_ref_hashes": sorted(
-            set(payload["effective_tool_ref_hashes"])
-        ),
-        "effective_tool_refs_hash": str(
-            payload["effective_tool_refs_hash"]
-        ),
+        "effective_tool_ref_hashes": sorted(set(payload["effective_tool_ref_hashes"])),
+        "effective_tool_refs_hash": str(payload["effective_tool_refs_hash"]),
         "instruction_content_hash": frozen_instruction_hash,
     }
     log.info(
@@ -401,9 +383,13 @@ async def _handle(
 
 def register_static_tools(registry) -> None:
     registry.register(
-        name="skill_invoke", toolset="control", schema=_SCHEMA,
-        handler=_reject_untrusted, context_handler=_handle,
-        permission_category="read_file", source="builtin",
+        name="skill_invoke",
+        toolset="control",
+        schema=_SCHEMA,
+        handler=_reject_untrusted,
+        context_handler=_handle,
+        permission_category="read_file",
+        source="builtin",
         spec_version="core.skill_invoke.v2",
         permission_policy_version="v1",
     )

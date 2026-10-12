@@ -20,6 +20,7 @@ lane cap。``agent_parallel`` / ``spawn_subagents`` 的每个子任务带一个 
   合并覆盖；单条坏覆盖逐条 try/except 跳过，不污染整表（防 b05823b 式
   config 静默失效）。
 """
+
 from __future__ import annotations
 
 import os
@@ -55,9 +56,7 @@ class SpawnDepthExceeded(RuntimeError):
     def __init__(self, depth: int, limit: int) -> None:
         self.depth = depth
         self.limit = limit
-        super().__init__(
-            f"子代理 spawn 深度 {depth} 超过上界 {limit}（递归守门：拒绝再 spawn）"
-        )
+        super().__init__(f"子代理 spawn 深度 {depth} 超过上界 {limit}（递归守门：拒绝再 spawn）")
 
 
 def current_spawn_depth() -> int:
@@ -245,11 +244,7 @@ def resolve_kind(
     """
     table = overrides or _BUILTIN_KINDS
     key = (name or "").strip().lower()
-    prof = (
-        table.get(key)
-        or table.get(_DEFAULT_KIND)
-        or _BUILTIN_KINDS[_DEFAULT_KIND]
-    )
+    prof = table.get(key) or table.get(_DEFAULT_KIND) or _BUILTIN_KINDS[_DEFAULT_KIND]
     return replace(prof, tools=_strip_forbidden(prof.tools))
 
 
@@ -287,9 +282,7 @@ def load_kind_overrides(
                 max_iterations=int(spec.get("max_iterations", base.max_iterations)),
                 framing=str(spec.get("framing", base.framing)),
                 model=spec.get("model", base.model),
-                lane_concurrency=int(
-                    spec.get("lane_concurrency", base.lane_concurrency)
-                ),
+                lane_concurrency=int(spec.get("lane_concurrency", base.lane_concurrency)),
             )
         except Exception:  # noqa: BLE001 — 单条坏覆盖不污染整表
             continue

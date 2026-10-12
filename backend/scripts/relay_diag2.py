@@ -1,4 +1,5 @@
 """复测：seedream 用生产同款 payload；4.5/5.0 试不同 size 看 400 根因。"""
+
 from __future__ import annotations
 
 import json
@@ -18,9 +19,11 @@ def key() -> str:
 def post(cli, k, model, payload):
     t0 = time.time()
     try:
-        r = cli.post(f"{BASE}/images/generations",
-                     headers={"Authorization": f"Bearer {k}", "Content-Type": "application/json"},
-                     json={"model": model, **payload})
+        r = cli.post(
+            f"{BASE}/images/generations",
+            headers={"Authorization": f"Bearer {k}", "Content-Type": "application/json"},
+            json={"model": model, **payload},
+        )
         dt = (time.time() - t0) * 1000
         try:
             j = r.json()
@@ -40,8 +43,29 @@ def main():
     k = key()
     cli = httpx.Client(timeout=httpx.Timeout(connect=8, read=60, write=8, pool=8), trust_env=False)
     print("=== seedream-4.0 生产同款 payload（response_format=b64_json + quality）===")
-    post(cli, k, "doubao-seedream-4.0", {"prompt": "a small red circle on white", "size": "1024x1024", "n": 1, "quality": "high", "response_format": "b64_json"})
-    post(cli, k, "doubao-seedream-4.0", {"prompt": "a small red circle on white", "size": "1024x1024", "n": 1, "response_format": "b64_json"})
+    post(
+        cli,
+        k,
+        "doubao-seedream-4.0",
+        {
+            "prompt": "a small red circle on white",
+            "size": "1024x1024",
+            "n": 1,
+            "quality": "high",
+            "response_format": "b64_json",
+        },
+    )
+    post(
+        cli,
+        k,
+        "doubao-seedream-4.0",
+        {
+            "prompt": "a small red circle on white",
+            "size": "1024x1024",
+            "n": 1,
+            "response_format": "b64_json",
+        },
+    )
     print("\n=== 4.5 / 5.0-lite 试不同 size ===")
     for m in ("doubao-seedream-4.5", "doubao-seedream-5.0-lite"):
         for sz in ("1024x1024", "2048x2048", "1K", "2K"):

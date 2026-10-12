@@ -19,7 +19,9 @@ def _heartbeat(attempt_id: str, liveness: dict[str, Any]) -> SimpleNamespace:
     )
 
 
-def _service(*, heartbeats: list[SimpleNamespace], statuses: dict[str, str]) -> OrchestrationService:
+def _service(
+    *, heartbeats: list[SimpleNamespace], statuses: dict[str, str]
+) -> OrchestrationService:
     attempts = {
         attempt_id: SimpleNamespace(id=attempt_id, task_id=f"task-{attempt_id}", status=status)
         for attempt_id, status in statuses.items()
@@ -51,7 +53,9 @@ def _service(*, heartbeats: list[SimpleNamespace], statuses: dict[str, str]) -> 
             }
         },
     )
-    service = OrchestrationService(".", OrchestrationSettings(), principal=object(), native_test_counter=FixtureWordCounter())
+    service = OrchestrationService(
+        ".", OrchestrationSettings(), principal=object(), native_test_counter=FixtureWordCounter()
+    )
     service._state = "available"
     service._control = control
     service._orchestrator = SimpleNamespace(store=store)
@@ -169,11 +173,15 @@ def test_completed_tasks_await_mission_judgment_in_list_and_detail() -> None:
         SimpleNamespace(id="task-done", status="COMPLETED")
     ]
     [row] = service.list_missions()
-    detail = project_detail({"snapshot": {
-        "mission": {"id": "mission-1", "status": "ACTIVE"},
-        "tasks": [{"id": "task-done", "status": "COMPLETED"}],
-        "attempts": [{"id": "done", "task_id": "task-done", "status": "COMPLETED"}],
-    }})
+    detail = project_detail(
+        {
+            "snapshot": {
+                "mission": {"id": "mission-1", "status": "ACTIVE"},
+                "tasks": [{"id": "task-done", "status": "COMPLETED"}],
+                "attempts": [{"id": "done", "task_id": "task-done", "status": "COMPLETED"}],
+            }
+        }
+    )
     assert row["ui_state"] == detail["mission"]["ui_state"] == "verifying"
     assert ui_state("ACTIVE", task_statuses=["COMPLETED", "READY"]) == "queued"
     assert ui_state("ACTIVE", task_statuses=[]) == "queued"
@@ -185,7 +193,8 @@ def test_completed_tasks_await_mission_judgment_in_list_and_detail() -> None:
 def test_list_rows_count_completed_tasks_for_the_progress_bar() -> None:
     service = _service(heartbeats=[], statuses={"done": "COMPLETED"})
     service._orchestrator.store.list_tasks = lambda mid: [
-        SimpleNamespace(id="a", status="COMPLETED"), SimpleNamespace(id="b", status="ACTIVE"),
+        SimpleNamespace(id="a", status="COMPLETED"),
+        SimpleNamespace(id="b", status="ACTIVE"),
         SimpleNamespace(id="c", status="TaskStatus.COMPLETED"),
     ]
     [row] = service.list_missions()
@@ -202,6 +211,7 @@ def test_a_finished_mission_row_reads_no_event_log() -> None:
 
     service._orchestrator.store.list_events = forbidden
     service._control.missions = lambda *, limit: [
-        {"mission_id": "mission-1", "status": "COMPLETED", "pending_approvals": 0}]
+        {"mission_id": "mission-1", "status": "COMPLETED", "pending_approvals": 0}
+    ]
     [row] = service.list_missions()
     assert row["ui_state"] == "delivered" and row["blocked"] is False

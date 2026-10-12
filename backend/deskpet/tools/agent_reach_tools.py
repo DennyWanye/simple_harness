@@ -80,12 +80,20 @@ def _read(args: dict[str, Any], task_id: str) -> str:
 
 def register_static_tools(registry) -> None:
     registry.register(
-        "agent_reach_doctor", "web", _DOCTOR_SCHEMA, _doctor,
-        permission_category="network", timeout_seconds=30.0,
+        "agent_reach_doctor",
+        "web",
+        _DOCTOR_SCHEMA,
+        _doctor,
+        permission_category="network",
+        timeout_seconds=30.0,
     )
     registry.register(
-        "agent_reach_read", "web", _READ_SCHEMA, _read,
-        permission_category="network", timeout_seconds=45.0,
+        "agent_reach_read",
+        "web",
+        _READ_SCHEMA,
+        _read,
+        permission_category="network",
+        timeout_seconds=45.0,
     )
 
 

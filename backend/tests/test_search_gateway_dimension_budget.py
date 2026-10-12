@@ -268,11 +268,7 @@ async def test_availability_is_rechecked_after_limiter_before_budget_claim() -> 
     gateway = _gateway(provider)
     try:
         batch = await gateway.search_dimension_batch(
-            [
-                DimensionSearchRequest(
-                    "dimension", SearchRequest("flaps", mode="research")
-                )
-            ],
+            [DimensionSearchRequest("dimension", SearchRequest("flaps", mode="research"))],
             query_slots=1,
             provider_call_slots=1,
             result_slots=1,
@@ -323,9 +319,7 @@ async def test_negative_core_floor_and_duplicate_allocator_key_fail_fast() -> No
         hydrate_slots=0,
     )
     with pytest.raises(ValueError, match="non-negative integer"):
-        await allocator.reserve_core_round(
-            [("dimension", "fingerprint")], min_results_per_core=-1
-        )
+        await allocator.reserve_core_round([("dimension", "fingerprint")], min_results_per_core=-1)
     lease = await allocator.reserve_query(
         dimension_id="dimension",
         query_key="fingerprint",

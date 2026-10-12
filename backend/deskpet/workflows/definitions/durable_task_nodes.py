@@ -6,4 +6,3 @@ runs import it through this module; the old module remains only so frozen
 """
 
 from .code_nodes import *  # noqa: F403 - compatibility re-export is intentional
-

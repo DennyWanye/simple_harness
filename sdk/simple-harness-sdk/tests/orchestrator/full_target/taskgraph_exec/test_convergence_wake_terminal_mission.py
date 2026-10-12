@@ -14,6 +14,7 @@
 （场景与 ``product_world/test_repair_replace_method.py`` 同一份脚本）。不再手插作业行、
 不再拆掉身份守卫触发器。唤醒调度器的时钟由测试给（模拟时间流逝）。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -57,19 +58,26 @@ class Waiting(NamedTuple):
 def _job(store: Any, mission_id: str) -> Any:
     return store.connection.execute(
         "SELECT job_id,state,row_version FROM taskgraph_convergence_jobs WHERE mission_id=? "
-        "ORDER BY created_at DESC LIMIT 1", (mission_id,)).fetchone()
+        "ORDER BY created_at DESC LIMIT 1",
+        (mission_id,),
+    ).fetchone()
 
 
 def _cancelled_by_convergence(store: Any, mission_id: str) -> bool:
-    return any(event.type == "AttemptCancelled"
-               and str(event.payload.get("reason", "")).startswith("taskgraph_convergence:")
-               for event in store.list_events(mission_id))
+    return any(
+        event.type == "AttemptCancelled"
+        and str(event.payload.get("reason", "")).startswith("taskgraph_convergence:")
+        for event in store.list_events(mission_id)
+    )
 
 
 def _open_followups(store: Any, mission_id: str) -> int:
-    return int(store.connection.execute(
-        "SELECT COUNT(*) FROM taskgraph_followups WHERE mission_id=? AND delivery_state<>'ACKED'",
-        (mission_id,)).fetchone()[0])
+    return int(
+        store.connection.execute(
+            "SELECT COUNT(*) FROM taskgraph_followups WHERE mission_id=? AND delivery_state<>'ACKED'",
+            (mission_id,),
+        ).fetchone()[0]
+    )
 
 
 @asynccontextmanager
@@ -81,8 +89,13 @@ async def waiting_convergence(tmp_path: Path, *, key: str) -> AsyncIterator[Wait
     provider = _Provider()
     try:
         async with product_world(tmp_path / "root", provider) as world:
-            mission_id = world.create({"goal": "整理事实并写笔记", "idempotency_key": key,
-                                       "success_criteria": list(CRITERIA)})["mission_id"]
+            mission_id = world.create(
+                {
+                    "goal": "整理事实并写笔记",
+                    "idempotency_key": key,
+                    "success_criteria": list(CRITERIA),
+                }
+            )["mission_id"]
             store = world.loop.store
             stop = asyncio.Event()
 
@@ -95,10 +108,12 @@ async def waiting_convergence(tmp_path: Path, *, key: str) -> AsyncIterator[Wait
             runner = asyncio.create_task(drive())
             try:
                 async with asyncio.timeout(60):
-                    while not (_cancelled_by_convergence(store, mission_id)
-                               and _job(store, mission_id) is not None
-                               and _job(store, mission_id)["state"] == "WAITING"
-                               and _open_followups(store, mission_id) == 0):
+                    while not (
+                        _cancelled_by_convergence(store, mission_id)
+                        and _job(store, mission_id) is not None
+                        and _job(store, mission_id)["state"] == "WAITING"
+                        and _open_followups(store, mission_id) == 0
+                    ):
                         if runner.done():
                             runner.result()
                         await asyncio.sleep(0.05)
@@ -115,8 +130,11 @@ async def waiting_convergence(tmp_path: Path, *, key: str) -> AsyncIterator[Wait
 
 
 def _wakes(store: Any, mission_id: str) -> int:
-    return sum(1 for event in store.list_events(mission_id)
-               if event.type == "TaskGraphConvergenceWakeRequested")
+    return sum(
+        1
+        for event in store.list_events(mission_id)
+        if event.type == "TaskGraphConvergenceWakeRequested"
+    )
 
 
 def test_a_waiting_job_of_a_live_mission_is_woken(tmp_path):
@@ -135,12 +153,14 @@ def test_a_waiting_job_of_a_live_mission_is_woken(tmp_path):
 def _ack_all(store: Any, mission_id: str) -> None:
     """替身：把这次唤醒派生的跟进当作已投递确认（真实投递由 CONVERGE 消费者做）。"""
     from agent_orchestrator.testing.fixtures import lift_immutable_guards
+
     lift_immutable_guards(store.connection, "taskgraph_followups")
     with store.transaction():
         store.connection.execute(
             "UPDATE taskgraph_followups SET delivery_state='ACKED', consumer_receipt_json='{\"test\":\"ack\"}'"
             " WHERE mission_id=? AND kind='CONVERGE' AND delivery_state<>'ACKED'",
-            (mission_id,))
+            (mission_id,),
+        )
 
 
 def test_a_waiting_jobs_wakes_back_off_while_it_keeps_waiting(tmp_path):
@@ -148,21 +168,28 @@ def test_a_waiting_jobs_wakes_back_off_while_it_keeps_waiting(tmp_path):
     占了主循环七成 CPU。连续等着时间隔翻倍到 60 秒封顶。
 
     **Mutation**: ``_interval_ms`` returning ``self.interval_ms`` → red."""
+
     async def case() -> None:
         async with waiting_convergence(tmp_path, key="wake-backoff") as waiting:
             store, mission_id = waiting.world.store, waiting.mission_id
             wakeups = TaskGraphConvergenceWakeups(TaskGraphFollowupStore(store), interval_ms=5_000)
             t0 = int(store.now * 1000) + 10 * MINUTE_MS
-            assert wakeups.schedule(mission_id, now_ms=t0) == 1          # 第 1 次：下次 5 s 后
+            assert wakeups.schedule(mission_id, now_ms=t0) == 1  # 第 1 次：下次 5 s 后
             _ack_all(store, mission_id)
             assert wakeups.schedule(mission_id, now_ms=t0 + 4_000) == 0
             assert wakeups.schedule(mission_id, now_ms=t0 + 5_000) == 1  # 第 2 次：下次 10 s 后
             _ack_all(store, mission_id)
             assert wakeups.schedule(mission_id, now_ms=t0 + 5_000 + 9_000) == 0
-            assert wakeups.schedule(mission_id, now_ms=t0 + 5_000 + 10_000) == 1  # 第 3 次：下次 20 s 后
+            assert (
+                wakeups.schedule(mission_id, now_ms=t0 + 5_000 + 10_000) == 1
+            )  # 第 3 次：下次 20 s 后
             _ack_all(store, mission_id)
             assert wakeups.schedule(mission_id, now_ms=t0 + 15_000 + 19_000) == 0
-            assert (wakeups._interval_ms(1), wakeups._interval_ms(5), wakeups._interval_ms(9)) == (5_000, 60_000, 60_000)
+            assert (wakeups._interval_ms(1), wakeups._interval_ms(5), wakeups._interval_ms(9)) == (
+                5_000,
+                60_000,
+                60_000,
+            )
 
     asyncio.run(case())
 
@@ -171,6 +198,7 @@ def test_the_backoff_restarts_once_the_job_moved(tmp_path):
     """2026-10-11（opt.177 核验建议 d）：退避是对"一直等着"的；作业推进过（行版本变了）就从头数。
 
     **Mutation**: ignore ``job_version`` when counting the ordinal → red."""
+
     async def case() -> None:
         async with waiting_convergence(tmp_path, key="wake-restart") as waiting:
             store, mission_id = waiting.world.store, waiting.mission_id
@@ -178,15 +206,23 @@ def test_the_backoff_restarts_once_the_job_moved(tmp_path):
             t0 = int(store.now * 1000) + 10 * MINUTE_MS
             assert wakeups.schedule(mission_id, now_ms=t0) == 1
             _ack_all(store, mission_id)
-            assert wakeups.schedule(mission_id, now_ms=t0 + 5_000) == 1   # ordinal 2: next in 10 s
+            assert wakeups.schedule(mission_id, now_ms=t0 + 5_000) == 1  # ordinal 2: next in 10 s
             _ack_all(store, mission_id)
             from agent_orchestrator.testing.fixtures import lift_immutable_guards
+
             lift_immutable_guards(store.connection, "taskgraph_convergence_jobs")
             with store.transaction():  # the job moved (its row version changed)
                 store.connection.execute(
-                    "UPDATE taskgraph_convergence_jobs SET row_version=row_version+1 WHERE mission_id=?", (mission_id,))
-            wakes_before, followups_before = _wakes(store, mission_id), _open_followups(store, mission_id)
-            assert wakeups.schedule(mission_id, now_ms=t0 + 15_000) == 1  # due; counted as ordinal 1 again
+                    "UPDATE taskgraph_convergence_jobs SET row_version=row_version+1 WHERE mission_id=?",
+                    (mission_id,),
+                )
+            wakes_before, followups_before = (
+                _wakes(store, mission_id),
+                _open_followups(store, mission_id),
+            )
+            assert (
+                wakeups.schedule(mission_id, now_ms=t0 + 15_000) == 1
+            )  # due; counted as ordinal 1 again
             # 独立核验 opt.184 M1：重数后的唤醒真的写出来了（事件与跟进都多一条），不是撞旧编号被吞
             assert _wakes(store, mission_id) == wakes_before + 1
             assert _open_followups(store, mission_id) == followups_before + 1
@@ -218,9 +254,13 @@ def test_a_waiting_job_of_a_cancelled_mission_is_not_woken_and_keeps_its_fence(t
 
 
 def _followup_states(store: Any, mission_id: str) -> list[tuple[str, int]]:
-    return [tuple(row) for row in store.connection.execute(
-        "SELECT delivery_state, attempts FROM taskgraph_followups WHERE mission_id=? ORDER BY message_id",
-        (mission_id,))]
+    return [
+        tuple(row)
+        for row in store.connection.execute(
+            "SELECT delivery_state, attempts FROM taskgraph_followups WHERE mission_id=? ORDER BY message_id",
+            (mission_id,),
+        )
+    ]
 
 
 def test_an_isolated_missions_followups_are_left_exactly_as_they_are(tmp_path):
@@ -241,9 +281,17 @@ def test_an_isolated_missions_followups_are_left_exactly_as_they_are(tmp_path):
             assert any(state == "PENDING" for state, _ in before), before
             loop._recovery_isolated[mission_id] = {"tables": ["fixture"], "silent_changes": []}
             delivered = await notifications.pump.pump_taskgraph_followups(limit=16)
-            assert all(item.message_id not in {m for m, in store.connection.execute(
-                "SELECT message_id FROM taskgraph_followups WHERE mission_id=?", (mission_id,))}
-                       for item in delivered)
+            assert all(
+                item.message_id
+                not in {
+                    m
+                    for (m,) in store.connection.execute(
+                        "SELECT message_id FROM taskgraph_followups WHERE mission_id=?",
+                        (mission_id,),
+                    )
+                }
+                for item in delivered
+            )
             assert _followup_states(store, mission_id) == before
 
     asyncio.run(case())

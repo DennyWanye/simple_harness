@@ -30,6 +30,7 @@ Note ``auto_resume_succeeded`` is emitted by **main.py** when the
 spawned task's ``FinalEvent`` fires — orchestrator never knows the new
 task succeeded (fire-and-forget by design).
 """
+
 from __future__ import annotations
 
 import logging
@@ -94,14 +95,16 @@ AuditWriter = Callable[[dict[str, Any]], Awaitable[None]]
 # Reasons the chat handler will forward to the orchestrator. Anything
 # outside this set falls through to the existing chat_v2_error path
 # untouched.
-_AUTO_RESUME_TRIGGER_REASONS: frozenset[str] = frozenset({
-    "max_iterations",
-    "permanent_tool_error",
-    "circuit_open",
-    "hallucination",
-    "verify_exhausted",    # WI-2.2: verify 两次重试+ephemeral 都失败 → 升级目标级 spawn 重试
-    "evaluator_revise",   # WI-2.4: external evaluator 判定质量不足 → 目标级 replan
-})
+_AUTO_RESUME_TRIGGER_REASONS: frozenset[str] = frozenset(
+    {
+        "max_iterations",
+        "permanent_tool_error",
+        "circuit_open",
+        "hallucination",
+        "verify_exhausted",  # WI-2.2: verify 两次重试+ephemeral 都失败 → 升级目标级 spawn 重试
+        "evaluator_revise",  # WI-2.4: external evaluator 判定质量不足 → 目标级 replan
+    }
+)
 
 
 def is_auto_resume_trigger(reason: str) -> bool:
@@ -118,13 +121,13 @@ def is_auto_resume_trigger(reason: str) -> bool:
 #: is unknown is never re-sent by this path (it only starts a new agent turn).
 _DETERMINISTIC_HINTS: dict[str, str] = {
     "max_iterations": "上一轮因为步数用完停下了。先根据已有结果确认哪些已经完成，不要重复已做过的工具调用，"
-                      "直接推进剩下的部分；做不完就如实说明卡在哪里。",
+    "直接推进剩下的部分；做不完就如实说明卡在哪里。",
     "circuit_open": "某个工具连续失败已被暂时停用。不要再调用同一个工具和同样的参数，换一种办法完成，"
-                    "或者如实说明需要用户处理的地方。",
+    "或者如实说明需要用户处理的地方。",
     "permanent_tool_error": "上一个工具调用返回了不可重试的错误。不要原样重试，检查参数或换一种办法；"
-                            "如果需要用户提供信息或权限，直接说明。",
+    "如果需要用户提供信息或权限，直接说明。",
     "hallucination": "上一轮提到了没有真实工具结果支持的内容。只依据真实的工具结果陈述已完成的事情，"
-                     "缺的就去做或如实说明。",
+    "缺的就去做或如实说明。",
     "verify_exhausted": "上一轮的自检多次没有通过。先读取失败原因，针对原因修改，再验证一次。",
     "evaluator_revise": "外部评估认为结果质量不够。按评估意见补足，再交付。",
 }
@@ -139,12 +142,20 @@ class DeterministicResumePolicy:
         reason = str((snapshot or {}).get("reason") or "").strip()
         hint = _DETERMINISTIC_HINTS.get(reason)
         if hint is None:
-            return SupervisorAction(action="ask_user", severity="yellow",
-                                    diagnosis=f"no deterministic resume for {reason or 'unknown'}",
-                                    raw_action="ask_user")
-        return SupervisorAction(action="nudge", severity="yellow", diagnosis=f"deterministic:{reason}",
-                                hint_for_main_agent=hint, alert_id=f"auto-resume:{reason}",
-                                raw_action="nudge")
+            return SupervisorAction(
+                action="ask_user",
+                severity="yellow",
+                diagnosis=f"no deterministic resume for {reason or 'unknown'}",
+                raw_action="ask_user",
+            )
+        return SupervisorAction(
+            action="nudge",
+            severity="yellow",
+            diagnosis=f"deterministic:{reason}",
+            hint_for_main_agent=hint,
+            alert_id=f"auto-resume:{reason}",
+            raw_action="nudge",
+        )
 
 
 # ─────────────── orchestrator ───────────────
@@ -241,7 +252,9 @@ class AutoResumeOrchestrator:
             logger.info(
                 "auto_resume_skipped sid=%s reason=supervisor_decided_ask_user "
                 "attempts=%d snapshot_reason=%s",
-                sid, attempts_so_far, snapshot.get("reason", ""),
+                sid,
+                attempts_so_far,
+                snapshot.get("reason", ""),
             )
             return AutoResumeResult(
                 action="ask_user",
@@ -256,7 +269,8 @@ class AutoResumeOrchestrator:
             logger.info(
                 "auto_resume_skipped sid=%s reason=supervisor_no_actionable_nudge "
                 "action=%s has_hint=%s attempts=%d",
-                sid, sup_action.action,
+                sid,
+                sup_action.action,
                 bool(sup_action.hint_for_main_agent),
                 attempts_so_far,
             )
@@ -271,40 +285,49 @@ class AutoResumeOrchestrator:
         new_msgs = list(original_msgs)
         _gt = self._goal_text_getter(sid) if self._goal_text_getter else None
         if _gt:
-            new_msgs.append({
+            new_msgs.append(
+                {
+                    "role": "system",
+                    "content": f"[goal] 恢复任务，原目标仍是：{_gt}\n继续推进。",
+                    "_is_goal_anchor": True,
+                }
+            )
+        new_msgs.append(
+            {
                 "role": "system",
-                "content": f"[goal] 恢复任务，原目标仍是：{_gt}\n继续推进。",
-                "_is_goal_anchor": True,
-            })
-        new_msgs.append({
-            "role": "system",
-            "content": f"[Supervisor Hint] {hint_text}",
-            "_is_supervisor_hint": True,
-        })
+                "content": f"[Supervisor Hint] {hint_text}",
+                "_is_supervisor_hint": True,
+            }
+        )
         new_attempt = await self._activity.increment_auto_resume_attempts(sid)
 
         # Audit BEFORE dispatch — so even a dispatcher crash leaves a row.
         if self._audit is not None:
             try:
-                await self._audit({
-                    "session_id": sid,
-                    "alert_id": sup_action.alert_id or "",
-                    "hint_text": hint_text,
-                    "action": "auto_resumed",
-                    "severity": sup_action.severity or "yellow",
-                    "diagnosis": sup_action.diagnosis or "",
-                })
+                await self._audit(
+                    {
+                        "session_id": sid,
+                        "alert_id": sup_action.alert_id or "",
+                        "hint_text": hint_text,
+                        "action": "auto_resumed",
+                        "severity": sup_action.severity or "yellow",
+                        "diagnosis": sup_action.diagnosis or "",
+                    }
+                )
             except Exception as exc:  # noqa: BLE001
                 logger.debug("auto_resume_audit_failed sid=%s err=%s", sid, exc)
 
         # ws event BEFORE dispatch — banner shows up immediately.
         if self._emit is not None:
             try:
-                await self._emit("auto_resume_started", {
-                    "session_id": sid,
-                    "attempt": new_attempt,
-                    "hint_preview": hint_text[:200],
-                })
+                await self._emit(
+                    "auto_resume_started",
+                    {
+                        "session_id": sid,
+                        "attempt": new_attempt,
+                        "hint_preview": hint_text[:200],
+                    },
+                )
             except Exception as exc:  # noqa: BLE001
                 logger.debug("auto_resume_emit_started_failed sid=%s err=%s", sid, exc)
 
@@ -326,7 +349,9 @@ class AutoResumeOrchestrator:
 
         logger.info(
             "auto_resume_spawned sid=%s attempt=%d hint=%s",
-            sid, new_attempt, hint_text[:100],
+            sid,
+            new_attempt,
+            hint_text[:100],
         )
         return AutoResumeResult(
             action="spawned",
@@ -344,22 +369,21 @@ class AutoResumeOrchestrator:
             return None
 
     async def _emit_exhausted(
-        self, sid: str, snapshot: dict[str, Any], attempts: int,
+        self,
+        sid: str,
+        snapshot: dict[str, Any],
+        attempts: int,
     ) -> None:
         # final_error: best-effort summary from snapshot
         final_error = (
-            snapshot.get("detail")
-            or snapshot.get("error")
-            or snapshot.get("reason")
-            or ""
+            snapshot.get("detail") or snapshot.get("error") or snapshot.get("reason") or ""
         )
         # 2026-05-15: 此前这里只 emit WS 不写日志 → 用户在 UI 上看到红字
         # "自愈失败（N 次尝试）: ..." 但 backend.log 里找不到对应记录，事后
         # 完全没法溯源到底卡在哪个 supervisor 决策上。WARNING 级别落盘 +
         # snapshot 的 reason/iteration 一并打下来，方便后续翻 transcript。
         logger.warning(
-            "auto_resume_exhausted sid=%s attempts=%d reason=%s "
-            "snapshot_iter=%s final_error=%s",
+            "auto_resume_exhausted sid=%s attempts=%d reason=%s snapshot_iter=%s final_error=%s",
             sid,
             attempts,
             snapshot.get("reason", ""),
@@ -369,11 +393,14 @@ class AutoResumeOrchestrator:
         if self._emit is None:
             return
         try:
-            await self._emit("auto_resume_exhausted", {
-                "session_id": sid,
-                "final_error": str(final_error)[:200],
-                "attempts": attempts,
-            })
+            await self._emit(
+                "auto_resume_exhausted",
+                {
+                    "session_id": sid,
+                    "final_error": str(final_error)[:200],
+                    "attempts": attempts,
+                },
+            )
         except Exception as exc:  # noqa: BLE001
             logger.debug("auto_resume_emit_exhausted_failed sid=%s err=%s", sid, exc)
 

@@ -15,6 +15,7 @@ Two new mechanisms:
    into a concrete ``nudge`` with a "stop and commit" hint. This
    unblocks AutoResumeOrchestrator (which only auto-spawns on nudge).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -45,13 +46,15 @@ async def _stub_snap_with_reason(sid: str) -> dict:
 async def test_max_iter_rescues_ask_user_to_nudge():
     """When LLM returned ask_user but reason=max_iterations, rescue
     rewrites to nudge with 'stop and commit' hint."""
-    raw = json.dumps({
-        "action": "ask_user",
-        "severity": "yellow",
-        "diagnosis": "agent might still be working",
-        "user_message": "continue?",
-        "suggested_buttons": ["yes", "no"],
-    })
+    raw = json.dumps(
+        {
+            "action": "ask_user",
+            "severity": "yellow",
+            "diagnosis": "agent might still be working",
+            "user_message": "continue?",
+            "suggested_buttons": ["yes", "no"],
+        }
+    )
     broadcasts = []
 
     async def bc(typ, payload):
@@ -85,11 +88,13 @@ async def test_max_iter_rescues_ask_user_to_nudge():
 async def test_max_iter_rescues_wait_to_nudge():
     """Even if LLM returned wait (overly conservative), rescue forces nudge
     when reason=max_iterations."""
-    raw = json.dumps({
-        "action": "wait",
-        "severity": "green",
-        "diagnosis": "still working",
-    })
+    raw = json.dumps(
+        {
+            "action": "wait",
+            "severity": "green",
+            "diagnosis": "still working",
+        }
+    )
     snap = {"session_id": "sid-B", "reason": "max_iterations", "detail": "x", "iteration": 50}
     agent = SupervisorAgent(
         provider=_FakeProvider(raw),
@@ -102,14 +107,16 @@ async def test_max_iter_rescues_wait_to_nudge():
 @pytest.mark.asyncio
 async def test_max_iter_rescue_does_not_override_existing_nudge():
     """If LLM already returned a nudge, don't rewrite it."""
-    raw = json.dumps({
-        "action": "nudge",
-        "severity": "yellow",
-        "diagnosis": "real diag",
-        "hint_for_main_agent": "real hint from LLM",
-        "user_message": "msg",
-        "suggested_buttons": ["a"],
-    })
+    raw = json.dumps(
+        {
+            "action": "nudge",
+            "severity": "yellow",
+            "diagnosis": "real diag",
+            "hint_for_main_agent": "real hint from LLM",
+            "user_message": "msg",
+            "suggested_buttons": ["a"],
+        }
+    )
     snap = {"session_id": "sid-C", "reason": "max_iterations", "detail": "x", "iteration": 50}
     agent = SupervisorAgent(
         provider=_FakeProvider(raw),
@@ -124,12 +131,14 @@ async def test_max_iter_rescue_does_not_override_existing_nudge():
 @pytest.mark.asyncio
 async def test_other_reasons_do_not_trigger_rescue():
     """Rescue only fires on reason=max_iterations, not other reasons."""
-    raw = json.dumps({
-        "action": "ask_user",
-        "severity": "yellow",
-        "diagnosis": "x",
-        "user_message": "continue?",
-    })
+    raw = json.dumps(
+        {
+            "action": "ask_user",
+            "severity": "yellow",
+            "diagnosis": "x",
+            "user_message": "continue?",
+        }
+    )
     snap = {"session_id": "sid-D", "reason": "permanent_tool_error", "detail": "x", "iteration": 5}
     agent = SupervisorAgent(
         provider=_FakeProvider(raw),
@@ -142,12 +151,14 @@ async def test_other_reasons_do_not_trigger_rescue():
 @pytest.mark.asyncio
 async def test_no_reason_field_does_not_trigger_rescue():
     """Snapshot without reason field (e.g. watchdog scan) doesn't trigger rescue."""
-    raw = json.dumps({
-        "action": "ask_user",
-        "severity": "yellow",
-        "diagnosis": "x",
-        "user_message": "continue?",
-    })
+    raw = json.dumps(
+        {
+            "action": "ask_user",
+            "severity": "yellow",
+            "diagnosis": "x",
+            "user_message": "continue?",
+        }
+    )
     snap = {"session_id": "sid-E", "status": "running"}  # no reason
     agent = SupervisorAgent(
         provider=_FakeProvider(raw),
@@ -168,6 +179,7 @@ def test_selfcheck_constants_loaded():
         _SELFCHECK_TIER3_AT,
         _build_selfcheck_message,
     )
+
     assert _SELFCHECK_EVERY == 10
     assert _SELFCHECK_TIER2_AT == 20
     assert _SELFCHECK_TIER3_AT == 30
@@ -185,6 +197,7 @@ def test_selfcheck_constants_loaded():
 
 def test_selfcheck_tier_escalation():
     from agent.agent_loop import _build_selfcheck_message
+
     # Tier 1 / 2 / 3 messages should differ
     m1 = _build_selfcheck_message(10, 50, 1)
     m2 = _build_selfcheck_message(20, 50, 1)

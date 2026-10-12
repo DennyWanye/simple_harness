@@ -11,27 +11,48 @@ from deskpet.tools.orchestration_controls import register_orchestration_controls
 from deskpet.tools.registry import ToolRegistry
 
 
-@pytest.mark.parametrize("name", [
-    "mission_create", "mission_create_with_sources", "create_with_sources",
-    "mission_source_register", "mission_source_supersede", "mission_source_revoke",
-    "register_source", "supersede_source", "revoke_source",
-])
+@pytest.mark.parametrize(
+    "name",
+    [
+        "mission_create",
+        "mission_create_with_sources",
+        "create_with_sources",
+        "mission_source_register",
+        "mission_source_supersede",
+        "mission_source_revoke",
+        "register_source",
+        "supersede_source",
+        "revoke_source",
+    ],
+)
 @pytest.mark.asyncio
 async def test_model_dispatch_cannot_enter_mission_source_facade(name, monkeypatch):
     registry = ToolRegistry()
-    register_orchestration_controls(registry, ProfileRegistry((
-        ProfileSpec(profile_key="agent.general", route_tag=None, driver_kind="react"),
-    )))
+    register_orchestration_controls(
+        registry,
+        ProfileRegistry(
+            (ProfileSpec(profile_key="agent.general", route_tag=None, driver_kind="react"),)
+        ),
+    )
     assert name not in {item["name"] for item in load_tool_manifest().tools}
     call = Mock(side_effect=AssertionError("model must not enter Mission facade"))
     monkeypatch.setattr(OrchestrationService, "_call", call)
-    result = json.loads(registry.dispatch(name, {
-        "origin": "ui", "is_ui": True, "sources": [{"path": "sources/forged.md", "content": "x"}],
-    }, task_id="model-task"))
+    result = json.loads(
+        registry.dispatch(
+            name,
+            {
+                "origin": "ui",
+                "is_ui": True,
+                "sources": [{"path": "sources/forged.md", "content": "x"}],
+            },
+            task_id="model-task",
+        )
+    )
     assert result["error"] == f"unknown tool: {name}"
     assert result["retriable"] is False
-    actual = await registry.execute_tool(name, {"origin": "ui", "is_ui": True},
-                                         session_id="s", task_id="model-task")
+    actual = await registry.execute_tool(
+        name, {"origin": "ui", "is_ui": True}, session_id="s", task_id="model-task"
+    )
     assert actual == {"ok": False, "result": None, "error": f"unknown tool: {name}"}
     call.assert_not_called()
 

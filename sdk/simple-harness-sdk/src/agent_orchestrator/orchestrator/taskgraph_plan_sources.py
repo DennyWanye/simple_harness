@@ -6,6 +6,7 @@ external runtime facts remain mandatory; no local empty set substitutes for them
 The provider must verify its original receipts/currentness; it may not do external
 IO inside this Store view. It supplies facts, never a candidate or a PASS verdict.
 """
+
 from __future__ import annotations
 
 import json
@@ -58,13 +59,21 @@ class ImportedExecutionSource:
 
     def __post_init__(self) -> None:
         value = json.loads(self.canonical_document)
-        if (self.kind not in {"runtime", "execution_policy"} or not isinstance(value, dict)
-                or not self.mission_id or canonical_json(value) != self.canonical_document
-                or value.get("mission_id") != self.mission_id):
+        if (
+            self.kind not in {"runtime", "execution_policy"}
+            or not isinstance(value, dict)
+            or not self.mission_id
+            or canonical_json(value) != self.canonical_document
+            or value.get("mission_id") != self.mission_id
+        ):
             raise ValueError("imported execution source must be a canonical Mission-bound document")
 
     def to_json(self) -> dict[str, Any]:
-        return {"mission_id": self.mission_id, "kind": self.kind, "document": json.loads(self.canonical_document)}
+        return {
+            "mission_id": self.mission_id,
+            "kind": self.kind,
+            "document": json.loads(self.canonical_document),
+        }
 
 
 class ExecutionImports(Protocol):
@@ -72,7 +81,9 @@ class ExecutionImports(Protocol):
         """Complete physical/provider/tool inventory through the original reliable importer."""
         ...
 
-    def read_execution_policy(self, store: Store, mission_id: str) -> CompleteRead[ImportedExecutionSource]:
+    def read_execution_policy(
+        self, store: Store, mission_id: str
+    ) -> CompleteRead[ImportedExecutionSource]:
         """Current execution grants, permission intersection and resource policy receipts."""
         ...
 
@@ -85,8 +96,9 @@ class ExecutionReadContext:
     operation_snapshot: CompleteRead[Any]
 
 
-def eligible_sharing(reader: Any, local: Any, world: Any,
-                     requirement: Any) -> tuple[list[SharedGoalEntry], dict[str, Any]]:
+def eligible_sharing(
+    reader: Any, local: Any, world: Any, requirement: Any
+) -> tuple[list[SharedGoalEntry], dict[str, Any]]:
     """The steps a refining decision may name in ``reuse``, with the proof of their
     inputs — the one reading behind the Planner package's ``sharing_candidates`` and
     the preview / commit checks (TaskGraph 补全第三批): a step that is running, or
@@ -101,12 +113,15 @@ def eligible_sharing(reader: Any, local: Any, world: Any,
         accepted = None
         carried = False
         if outcome is OccurrenceOutcome.ACCEPTED:
-            eligible = [item for item in acceptances
+            eligible = [
+                item
+                for item in acceptances
                 if str(item.task_id) == str(entry.task_id)
                 and item.obligation_id == entry.obligation_id
                 and item.contract_revision == int(binding.contract_revision)
                 and item.requirements_revision == int(requirement.revision)
-                and str(item.validity) == "CURRENT"]
+                and str(item.validity) == "CURRENT"
+            ]
             # Multiple original Acceptances require an explicit choice;
             # neither insertion order nor the newest timestamp grants one.
             if len(eligible) != 1:
@@ -122,13 +137,31 @@ def eligible_sharing(reader: Any, local: Any, world: Any,
         elif outcome is not OccurrenceOutcome.RUNNING:
             continue
         if accepted is not None:
-            def ref(item: Any) -> TypedRef:
-                return TypedRef(kind=TypedRefKind.ACCEPTANCE, id=str(item.acceptance_id),
-                                revision=item.contract_revision, content_hash=sha256_hex(item.to_json()))
 
-            earlier = () if carried else tuple(
-                ref(item) for item in _earlier_acceptances(reader.store, acceptances, entry, binding, requirement))
-            entry = replace(entry, carried=carried, acceptance_ref=ref(accepted), earlier_acceptance_refs=earlier)
+            def ref(item: Any) -> TypedRef:
+                return TypedRef(
+                    kind=TypedRefKind.ACCEPTANCE,
+                    id=str(item.acceptance_id),
+                    revision=item.contract_revision,
+                    content_hash=sha256_hex(item.to_json()),
+                )
+
+            earlier = (
+                ()
+                if carried
+                else tuple(
+                    ref(item)
+                    for item in _earlier_acceptances(
+                        reader.store, acceptances, entry, binding, requirement
+                    )
+                )
+            )
+            entry = replace(
+                entry,
+                carried=carried,
+                acceptance_ref=ref(accepted),
+                earlier_acceptance_refs=earlier,
+            )
         proof = read_shared_inputs(reader, local, entry, accepted)
         if proof is None:
             continue
@@ -137,8 +170,9 @@ def eligible_sharing(reader: Any, local: Any, world: Any,
     return entries, proofs
 
 
-def _kept_acceptance(store: Store, acceptances: Any, entry: SharedGoalEntry, binding: Any,
-                     requirement: Any) -> Any | None:
+def _kept_acceptance(
+    store: Store, acceptances: Any, entry: SharedGoalEntry, binding: Any, requirement: Any
+) -> Any | None:
     """The one acceptance a step's accepted result holds under an earlier requirements
     revision, when the step may be kept across the amendment: same Task contract, not
     yet judged under the current revision (the reviewer's rejection ends the candidacy)."""
@@ -152,8 +186,9 @@ def _kept_acceptance(store: Store, acceptances: Any, entry: SharedGoalEntry, bin
     return max(kept, key=lambda item: int(item.requirements_revision)) if kept else None
 
 
-def _earlier_acceptances(store: Store, acceptances: Any, entry: SharedGoalEntry, binding: Any,
-                         requirement: Any) -> list[Any]:
+def _earlier_acceptances(
+    store: Store, acceptances: Any, entry: SharedGoalEntry, binding: Any, requirement: Any
+) -> list[Any]:
     """The acceptances the step's accepted result holds under earlier requirements revisions."""
     from .assurance_validity import acceptance_id_for
 
@@ -161,39 +196,68 @@ def _earlier_acceptances(store: Store, acceptances: Any, entry: SharedGoalEntry,
     result_id = None if task is None else task.accepted_result_id
     if not result_id:
         return []
-    return [item for item in acceptances
-            if str(item.task_id) == str(entry.task_id)
-            and item.obligation_id == entry.obligation_id
-            and item.contract_revision == int(binding.contract_revision)
-            and int(item.requirements_revision) < int(requirement.revision)
-            and str(item.validity) == "CURRENT"
-            and str(item.acceptance_id) == acceptance_id_for(
-                entry.task_id, result_id, int(item.requirements_revision))]
+    return [
+        item
+        for item in acceptances
+        if str(item.task_id) == str(entry.task_id)
+        and item.obligation_id == entry.obligation_id
+        and item.contract_revision == int(binding.contract_revision)
+        and int(item.requirements_revision) < int(requirement.revision)
+        and str(item.validity) == "CURRENT"
+        and str(item.acceptance_id)
+        == acceptance_id_for(entry.task_id, result_id, int(item.requirements_revision))
+    ]
 
 
 class TaskGraphPlanSourceReader:
     def __init__(self, local: TaskGraphLocalExecutionReader, *, imports: ExecutionImports) -> None:
-        if not callable(getattr(imports, "read_runtime", None)) or not callable(getattr(imports, "read_execution_policy", None)):
+        if not callable(getattr(imports, "read_runtime", None)) or not callable(
+            getattr(imports, "read_execution_policy", None)
+        ):
             raise ValueError("actual H1 runtime and execution-policy producers are mandatory")
         self.local, self.store, self.imports = local, local.store, imports
 
-    def read_execution(self, mission_id: str, *, materializing: bool = False) -> ExecutionReadContext:
+    def read_execution(
+        self, mission_id: str, *, materializing: bool = False
+    ) -> ExecutionReadContext:
         with self.store.read_view():
             local = self.local.read(mission_id, materializing=materializing)
             through = local.structure.token.through_seq
-            def imported(kind: str, value: CompleteRead[ImportedExecutionSource]) -> CompleteRead[ImportedExecutionSource]:
-                if (not isinstance(value, CompleteRead) or not isinstance(value.value, ImportedExecutionSource)
-                        or value.value.mission_id != mission_id or value.value.kind != kind
-                        or value.through_seq > through or value.source_digest != sha256_hex(value.value.to_json())):
+
+            def imported(
+                kind: str, value: CompleteRead[ImportedExecutionSource]
+            ) -> CompleteRead[ImportedExecutionSource]:
+                if (
+                    not isinstance(value, CompleteRead)
+                    or not isinstance(value.value, ImportedExecutionSource)
+                    or value.value.mission_id != mission_id
+                    or value.value.kind != kind
+                    or value.through_seq > through
+                    or value.source_digest != sha256_hex(value.value.to_json())
+                ):
                     raise SourceUnavailable("taskgraph_execution_import_invalid", detail=kind)
                 return value
+
             runtime = imported("runtime", self.imports.read_runtime(self.store, mission_id))
-            policy = imported("execution_policy", self.imports.read_execution_policy(self.store, mission_id))
-            operations = build_operation_snapshot(mission_id, reader=StoreOperationReader(self.store),
-                                                  now_ms=int(self.store.now * 1000))
-            return ExecutionReadContext(local=local, running_work=runtime, execution_policy=policy,
-                operation_snapshot=CompleteRead(value=operations, source_id=mission_id+":operations",
-                    source_digest=operations.read_digest, through_seq=through))
+            policy = imported(
+                "execution_policy", self.imports.read_execution_policy(self.store, mission_id)
+            )
+            operations = build_operation_snapshot(
+                mission_id,
+                reader=StoreOperationReader(self.store),
+                now_ms=int(self.store.now * 1000),
+            )
+            return ExecutionReadContext(
+                local=local,
+                running_work=runtime,
+                execution_policy=policy,
+                operation_snapshot=CompleteRead(
+                    value=operations,
+                    source_id=mission_id + ":operations",
+                    source_digest=operations.read_digest,
+                    through_seq=through,
+                ),
+            )
 
     def sharing_candidates(self, mission_id: str) -> tuple[tuple[SharedGoalEntry, ...], Any]:
         """The steps a refining decision may name now, read the way preview reads them."""
@@ -206,8 +270,9 @@ class TaskGraphPlanSourceReader:
             entries, _ = eligible_sharing(self.local, local, world, requirement)
             return tuple(entries), local
 
-    def __call__(self, store: Store, request_id: str, decision_id: str,
-                 principal: PlanPrincipal) -> PlanMutationSources:
+    def __call__(
+        self, store: Store, request_id: str, decision_id: str, principal: PlanPrincipal
+    ) -> PlanMutationSources:
         if store is not self.store:
             raise SourceUnavailable("taskgraph_plan_store_mismatch")
         with store.read_view() as db:
@@ -220,27 +285,39 @@ class TaskGraphPlanSourceReader:
             if not isinstance(raw, str) or not raw:
                 raise SourceUnavailable("taskgraph_plan_decision_unreadable")
             import hashlib
+
             decision_body = json.loads(raw)
-            if canonical_json(decision_body) != raw or hashlib.sha256(raw.encode()).hexdigest() != decision["canonical_hash"]:
+            if (
+                canonical_json(decision_body) != raw
+                or hashlib.sha256(raw.encode()).hexdigest() != decision["canonical_hash"]
+            ):
                 raise SourceUnavailable("taskgraph_plan_decision_hash_invalid")
             intent = store.get_intent(request.intent_id)
             if intent is None or intent.mission_id != request.mission_id:
                 raise SourceUnavailable("taskgraph_plan_intent_missing")
             package = intent.config.get("planning_package")
             from collections.abc import Mapping
+
             if not isinstance(package, Mapping):
                 raise SourceUnavailable("taskgraph_plan_package_missing")
             from ..planning.htn.planner_package import package_hash
+
             if package_hash(package) != request.package_hash:
                 raise SourceUnavailable("taskgraph_plan_package_changed")
-            visible = tuple(PlanningRefV1.from_json(item) for item in package.get("visible_refs", ()))
+            visible = tuple(
+                PlanningRefV1.from_json(item) for item in package.get("visible_refs", ())
+            )
             execution = self.read_execution(request.mission_id)
             local = execution.local
             if local.structure.token.plan_revision != request.base_plan_revision:
                 raise SourceUnavailable("taskgraph_plan_base_stale")
-            authority = build_planning_authorization(request_id,
+            authority = build_planning_authorization(
+                request_id,
                 read=StorePlanningAuthorityReader(PlanningAdmissionStore(store), store),
-                caller=principal, policy=planning_policy_for_mission(store, request.mission_id), now_ms=int(store.now*1000))
+                caller=principal,
+                policy=planning_policy_for_mission(store, request.mission_id),
+                now_ms=int(store.now * 1000),
+            )
             if not isinstance(authority, PlanningAuthorizationSnapshot):
                 raise SourceUnavailable("taskgraph_plan_authority_unavailable")
             authority_body = authority.to_json()
@@ -249,33 +326,61 @@ class TaskGraphPlanSourceReader:
             requirement = semantics.latest_requirements_revision(request.mission_id)
             if requirement is None or int(requirement.revision) != request.requirements_revision:
                 raise SourceUnavailable("taskgraph_plan_requirements_stale")
-            requirements_ref = TypedRef(kind=TypedRefKind.REQUIREMENTS, id=str(requirement.revision_id),
-                revision=int(requirement.revision), content_hash=sha256_hex(requirement.to_json()))
+            requirements_ref = TypedRef(
+                kind=TypedRefKind.REQUIREMENTS,
+                id=str(requirement.revision_id),
+                revision=int(requirement.revision),
+                content_hash=sha256_hex(requirement.to_json()),
+            )
             tasks = store.list_tasks(request.mission_id)
             from .taskgraph_bindings import current_bindings
+
             bindings = current_bindings(semantics, request.mission_id)
             world = self.local.dispatch_for(request.mission_id).require_planning_world()
             world_semantics = getattr(world, "semantics", None)
-            if (not isinstance(world_semantics, HtnStore) or world_semantics._store is not store
-                    or str(getattr(world, "mission_id", "")) != request.mission_id):
+            if (
+                not isinstance(world_semantics, HtnStore)
+                or world_semantics._store is not store
+                or str(getattr(world, "mission_id", "")) != request.mission_id
+            ):
                 raise SourceUnavailable("taskgraph_plan_evidence_store_unbound")
             methods = []
             method_definitions = []
             for ref in world.registry.method_refs():
-                definition, registration = world.registry.definition(ref), world.registry.registration(ref)
+                definition, registration = (
+                    world.registry.definition(ref),
+                    world.registry.registration(ref),
+                )
                 if definition is None or registration is None:
                     raise SourceUnavailable("taskgraph_plan_method_source_incomplete")
                 method_definitions.append(definition)
-                methods.append({"ref": ref.to_json(), "definition": definition.to_json(),
-                    "registration": registration.to_json(), "receipt": _document(world.registry.receipt(ref))})
+                methods.append(
+                    {
+                        "ref": ref.to_json(),
+                        "definition": definition.to_json(),
+                        "registration": registration.to_json(),
+                        "receipt": _document(world.registry.receipt(ref)),
+                    }
+                )
+
             def receipt(value: CompleteRead[Any]) -> dict[str, Any]:
                 # Event sequence is the snapshot boundary, not a source identity.
                 # An unrelated event cannot invalidate otherwise identical inputs.
-                return {"source_id": value.source_id, "digest": value.source_digest, "value": _document(value.value)}
+                return {
+                    "source_id": value.source_id,
+                    "digest": value.source_digest,
+                    "value": _document(value.value),
+                }
+
             acceptances = semantics.list_acceptances(request.mission_id)
-            sharing_entries, sharing_inputs = eligible_sharing(self.local, local, world, requirement)
-            operation_producers = read_operation_producers(store, execution.operation_snapshot.value)
+            sharing_entries, sharing_inputs = eligible_sharing(
+                self.local, local, world, requirement
+            )
+            operation_producers = read_operation_producers(
+                store, execution.operation_snapshot.value
+            )
             from .taskgraph_completion_sources import read_completion_sources
+
             completion = read_completion_sources(store, request.mission_id, local.view.network)
             network_body = _source_snapshot_payload(local.view.network)
             evidence = world.snapshot()
@@ -290,56 +395,115 @@ class TaskGraphPlanSourceReader:
             # cannot stale a planning round in flight.
             demand_accounts = [dict(account) for account in obligation_accounts]
             bodies = {
-                "request": {"request": request.to_json(), "decision": decision_body,
+                "request": {
+                    "request": request.to_json(),
+                    "decision": decision_body,
                     "visible_refs": [ref.to_json() for ref in visible],
-                    "planning_subjects": _document(package.get("planning_subjects", ()))},
-                "authorization": {"planning": authority_body, "execution": receipt(execution.execution_policy)},
-                "network": {"document": local.structure.document.to_json(), "current": network_body,
-                    "bindings": [item.to_json() for item in bindings], "requirements": requirement.to_json()},
-                "methods": {"store": _document(local.current_method_registrations.value), "registry": methods,
+                    "planning_subjects": _document(package.get("planning_subjects", ())),
+                },
+                "authorization": {
+                    "planning": authority_body,
+                    "execution": receipt(execution.execution_policy),
+                },
+                "network": {
+                    "document": local.structure.document.to_json(),
+                    "current": network_body,
+                    "bindings": [item.to_json() for item in bindings],
+                    "requirements": requirement.to_json(),
+                },
+                "methods": {
+                    "store": _document(local.current_method_registrations.value),
+                    "registry": methods,
                     "catalog": [item.to_json() for item in world.catalog.task_types()],
-                    "schemas": [item.to_json() for item in world.schemas.schemas()]},
+                    "schemas": [item.to_json() for item in world.schemas.schemas()],
+                },
                 # 2026-09-30（结构修复真机第 4 局）：开工许可与执行许可是派发进展，归"正在跑的工作"
                 # （续跑时允许变化）；原来放在证据里，等收敛期间别的步骤一开工，修复就永远提交不了。
-                "evidence": {"world": _document(evidence), "witnesses": _document(local.witnesses.value.witnesses),
+                "evidence": {
+                    "world": _document(evidence),
+                    "witnesses": _document(local.witnesses.value.witnesses),
                     "epochs": _document(local.scope_epochs.value),
-                    "predicates": sorted((item.to_json() for item in predicates), key=canonical_json)},
+                    "predicates": sorted(
+                        (item.to_json() for item in predicates), key=canonical_json
+                    ),
+                },
                 "capabilities": _document(local.deployment_capabilities.value),
-                "operations": {"snapshot": receipt(execution.operation_snapshot),
-                    "producers": _document(operation_producers)},
-                "running_work": {"local": local.local_work.value.to_json(), "import": receipt(execution.running_work),
+                "operations": {
+                    "snapshot": receipt(execution.operation_snapshot),
+                    "producers": _document(operation_producers),
+                },
+                "running_work": {
+                    "local": local.local_work.value.to_json(),
+                    "import": receipt(execution.running_work),
                     "starts": _document(local.witnesses.value.starts),
-                    "licences": _document(local.witnesses.value.licences)},
-                "acceptances": {"outputs": _document(local.accepted_outputs.value),
+                    "licences": _document(local.witnesses.value.licences),
+                },
+                "acceptances": {
+                    "outputs": _document(local.accepted_outputs.value),
                     "acceptances": _document(acceptances),
                     "completion": _document(completion),
                     "resolutions": _document(semantics.list_goal_resolutions(request.mission_id)),
-                    "receipts": _document(semantics.list_acceptance_receipts(request.mission_id))},
-                "demand": {"accounts": demand_accounts,
-                    "obligations": _document(local.obligations.value), "slots": _document(local.active_demands.value),
-                    "independent": _document(local.independent_obligations.value)},
-                "budget": {"accounts": _document(local.budget_snapshots.value),
+                    "receipts": _document(semantics.list_acceptance_receipts(request.mission_id)),
+                },
+                "demand": {
+                    "accounts": demand_accounts,
+                    "obligations": _document(local.obligations.value),
+                    "slots": _document(local.active_demands.value),
+                    "independent": _document(local.independent_obligations.value),
+                },
+                "budget": {
+                    "accounts": _document(local.budget_snapshots.value),
                     "obligation_accounts": obligation_accounts,
-                    "resource_policy": receipt(execution.execution_policy)},
-                "inputs": {"policy": local.source_input_policy.source_digest,
-                    "targets": _document(local.target_rules.value), "manifests": [dict(row) for row in db.execute(
-                        "SELECT DISTINCT m.* FROM input_manifests m JOIN input_manifest_bindings b "
-                        "ON b.manifest_hash=m.manifest_hash WHERE b.mission_id=? ORDER BY m.manifest_hash",
-                        (request.mission_id,))], "manifest_bindings": [dict(row) for row in db.execute(
-                        "SELECT * FROM input_manifest_bindings WHERE mission_id=? ORDER BY task_id,manifest_hash",
-                        (request.mission_id,))]},
+                    "resource_policy": receipt(execution.execution_policy),
+                },
+                "inputs": {
+                    "policy": local.source_input_policy.source_digest,
+                    "targets": _document(local.target_rules.value),
+                    "manifests": [
+                        dict(row)
+                        for row in db.execute(
+                            "SELECT DISTINCT m.* FROM input_manifests m JOIN input_manifest_bindings b "
+                            "ON b.manifest_hash=m.manifest_hash WHERE b.mission_id=? ORDER BY m.manifest_hash",
+                            (request.mission_id,),
+                        )
+                    ],
+                    "manifest_bindings": [
+                        dict(row)
+                        for row in db.execute(
+                            "SELECT * FROM input_manifest_bindings WHERE mission_id=? ORDER BY task_id,manifest_hash",
+                            (request.mission_id,),
+                        )
+                    ],
+                },
             }
-            settlement_reader = self.local.dispatch_for(request.mission_id)._taskgraph_settlement_reader
+            settlement_reader = self.local.dispatch_for(
+                request.mission_id
+            )._taskgraph_settlement_reader
             if not callable(settlement_reader):
                 raise SourceUnavailable("taskgraph_sharing_settlement_source_missing")
-            settlements = settlement_reader(request.mission_id, local.view.network, local.view.outcomes,
-                predecessors=frozenset(item.occurrence_id for item in local.view.network.occurrences))
-            sharing = SharingSources(entries=tuple(sharing_entries), input_proofs=sharing_inputs,
-                outcomes=local.view.outcomes, settlements=settlements,
-                starts=local.view.starts, epochs=dict(local.scope_epochs.value), evidence=evidence,
-                predicates=predicates, methods=tuple(method_definitions),
-                now_ms=int(store.now * 1000), independent_required=independently_required_occurrences(
-                    local.structure.document, local.independent_obligations.value))
+            settlements = settlement_reader(
+                request.mission_id,
+                local.view.network,
+                local.view.outcomes,
+                predecessors=frozenset(
+                    item.occurrence_id for item in local.view.network.occurrences
+                ),
+            )
+            sharing = SharingSources(
+                entries=tuple(sharing_entries),
+                input_proofs=sharing_inputs,
+                outcomes=local.view.outcomes,
+                settlements=settlements,
+                starts=local.view.starts,
+                epochs=dict(local.scope_epochs.value),
+                evidence=evidence,
+                predicates=predicates,
+                methods=tuple(method_definitions),
+                now_ms=int(store.now * 1000),
+                independent_required=independently_required_occurrences(
+                    local.structure.document, local.independent_obligations.value
+                ),
+            )
             bodies["acceptances"]["sharing_entries"] = _document(sharing.entries)
             # The eligible sharing set can change when an original Attempt
             # settles. Actual immutable manifest bytes stay in the inputs lane;
@@ -348,11 +512,29 @@ class TaskGraphPlanSourceReader:
             bodies["acceptances"]["sharing_input_proofs"] = _document(sharing.input_proofs)
             bodies["acceptances"]["outcomes"] = _document(sharing.outcomes)
             bodies["running_work"]["settlements"] = _document(sharing.settlements)
-            bodies["demand"]["independent_required_occurrences"] = sorted(sharing.independent_required)
-            reads = tuple(GraphSourceRead(channel=channel, identity=f"{request.mission_id}:{channel}",
-                digest=sha256_hex(body), coverage="COMPLETE") for channel, body in sorted(bodies.items()))
-            return PlanMutationSources(mission_id=request.mission_id, request_id=request_id,
-                decision_id=decision_id, decision_hash=decision["canonical_hash"],
-                source_snapshot_hash=sha256_hex(network_body), before=local.structure.document,
-                requirements_ref=requirements_ref, current_bindings=bindings,
-                existing_task_ids=frozenset(task.id for task in tasks), source_reads=reads, sharing=sharing, operation_producers=operation_producers)
+            bodies["demand"]["independent_required_occurrences"] = sorted(
+                sharing.independent_required
+            )
+            reads = tuple(
+                GraphSourceRead(
+                    channel=channel,
+                    identity=f"{request.mission_id}:{channel}",
+                    digest=sha256_hex(body),
+                    coverage="COMPLETE",
+                )
+                for channel, body in sorted(bodies.items())
+            )
+            return PlanMutationSources(
+                mission_id=request.mission_id,
+                request_id=request_id,
+                decision_id=decision_id,
+                decision_hash=decision["canonical_hash"],
+                source_snapshot_hash=sha256_hex(network_body),
+                before=local.structure.document,
+                requirements_ref=requirements_ref,
+                current_bindings=bindings,
+                existing_task_ids=frozenset(task.id for task in tasks),
+                source_reads=reads,
+                sharing=sharing,
+                operation_producers=operation_producers,
+            )

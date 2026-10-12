@@ -56,8 +56,15 @@ def test_source_mission_accepts_disjoint_publish_directory(tmp_path):
     with publishing(tmp_path / "evidence", publisher) as world:
         created = world.control.create(request("g-1", domain=CODE_DOMAIN))
         assert created["created"] is True
-        world.control.register_source({"mission_id": created["mission_id"], "path": "sources/a.md",
-                                       "content": "原文。", "kind": "markdown", "idempotency_key": "a"})
+        world.control.register_source(
+            {
+                "mission_id": created["mission_id"],
+                "path": "sources/a.md",
+                "content": "原文。",
+                "kind": "markdown",
+                "idempotency_key": "a",
+            }
+        )
         assert len(world.store.list_sources(created["mission_id"])) == 1
 
 
@@ -70,8 +77,15 @@ def test_source_storage_validation_uses_current_deployment_after_reopen(tmp_path
     with publishing(evidence, unsafe) as second:
         before = second.store.snapshot(mission_id)
         with pytest.raises(FacadeError, match="source_publish_root_overlap"):
-            second.control.register_source({"mission_id": mission_id, "path": "sources/a.md",
-                                            "content": "原文。", "kind": "markdown", "idempotency_key": "a"})
+            second.control.register_source(
+                {
+                    "mission_id": mission_id,
+                    "path": "sources/a.md",
+                    "content": "原文。",
+                    "kind": "markdown",
+                    "idempotency_key": "a",
+                }
+            )
         assert second.store.snapshot(mission_id) == before
         assert second.store.list_sources(mission_id) == []
 

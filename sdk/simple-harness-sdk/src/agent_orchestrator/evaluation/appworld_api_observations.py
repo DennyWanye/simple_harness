@@ -15,18 +15,20 @@ from uuid import uuid4
 
 # Host-approved public GETs only, with exact fields admitted into evidence.
 # API names supplied by agents or clients cannot extend this immutable policy.
-PUBLIC_READ_APIS: Mapping[tuple[str, str], tuple[str, ...]] = MappingProxyType({
-    ("supervisor", "show_active_task"): ("instruction", "status", "answer"),
-    ("supervisor", "show_profile"): ("first_name", "last_name"),
-})
+PUBLIC_READ_APIS: Mapping[tuple[str, str], tuple[str, ...]] = MappingProxyType(
+    {
+        ("supervisor", "show_active_task"): ("instruction", "status", "answer"),
+        ("supervisor", "show_profile"): ("first_name", "last_name"),
+    }
+)
 
-_PROFILE_RAW_FIELDS = {"first_name", "last_name", "email", "phone_number",
-                       "birthday", "sex"}
+_PROFILE_RAW_FIELDS = {"first_name", "last_name", "email", "phone_number", "birthday", "sex"}
 
 
 def canonical(value: Any) -> bytes:
-    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
-                      allow_nan=False).encode("utf-8")
+    return json.dumps(
+        value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False
+    ).encode("utf-8")
 
 
 def digest(value: Any) -> str:
@@ -72,26 +74,55 @@ class AppWorldAPILedger:
         self.run_id, self.task_id, self.episode_id = run_id, task_id, episode_id
         self._registered: dict[str, AppWorldAPIReceipt] = {}
 
-    def record(self, *, world_version: int, app: str, api: str,
-               response: dict[str, str | None],
-               service_identity: str | None) -> AppWorldAPIReceipt:
+    def record(
+        self,
+        *,
+        world_version: int,
+        app: str,
+        api: str,
+        response: dict[str, str | None],
+        service_identity: str | None,
+    ) -> AppWorldAPIReceipt:
         receipt = AppWorldAPIReceipt(
-            uuid4().hex, self.run_id, self.task_id, self.episode_id, world_version,
-            app, api, digest({}), digest(project(app, api, response)), service_identity,
+            uuid4().hex,
+            self.run_id,
+            self.task_id,
+            self.episode_id,
+            world_version,
+            app,
+            api,
+            digest({}),
+            digest(project(app, api, response)),
+            service_identity,
         )
         self._registered[receipt.receipt_id] = receipt
         return replace(receipt)
 
     def list_receipts(self, *, world_version: int | None = None) -> tuple[AppWorldAPIReceipt, ...]:
-        return tuple(replace(receipt) for receipt in self._registered.values()
-                     if world_version is None or receipt.world_version == world_version)
+        return tuple(
+            replace(receipt)
+            for receipt in self._registered.values()
+            if world_version is None or receipt.world_version == world_version
+        )
 
-    def verify(self, receipt: AppWorldAPIReceipt, *, run_id: str, task_id: str,
-               episode_id: str, world_version: int, app: str, api: str,
-               response: Any, service_identity: str | None) -> bool:
-        if (type(receipt) is not AppWorldAPIReceipt
-                or type(receipt.world_version) is not int
-                or type(world_version) is not int):
+    def verify(
+        self,
+        receipt: AppWorldAPIReceipt,
+        *,
+        run_id: str,
+        task_id: str,
+        episode_id: str,
+        world_version: int,
+        app: str,
+        api: str,
+        response: Any,
+        service_identity: str | None,
+    ) -> bool:
+        if (
+            type(receipt) is not AppWorldAPIReceipt
+            or type(receipt.world_version) is not int
+            or type(world_version) is not int
+        ):
             return False
         stored = self._registered.get(receipt.receipt_id)
         if stored is None or stored != receipt:
@@ -100,15 +131,18 @@ class AppWorldAPILedger:
             projected = project(app, api, response)
         except (ValueError, TypeError):
             return False
-        return (receipt.run_id == run_id == self.run_id
-                and receipt.task_id == task_id == self.task_id
-                and receipt.episode_id == episode_id == self.episode_id
-                and receipt.world_version == world_version
-                and receipt.app == app and receipt.api == api
-                and receipt.parameters_sha256 == digest({})
-                and receipt.response_sha256 == digest(projected)
-                and receipt.service_identity == service_identity
-                and receipt.evidence_kind == "host_public_api_observation")
+        return (
+            receipt.run_id == run_id == self.run_id
+            and receipt.task_id == task_id == self.task_id
+            and receipt.episode_id == episode_id == self.episode_id
+            and receipt.world_version == world_version
+            and receipt.app == app
+            and receipt.api == api
+            and receipt.parameters_sha256 == digest({})
+            and receipt.response_sha256 == digest(projected)
+            and receipt.service_identity == service_identity
+            and receipt.evidence_kind == "host_public_api_observation"
+        )
 
 
 __all__ = ("AppWorldAPIReceipt", "PUBLIC_READ_APIS")

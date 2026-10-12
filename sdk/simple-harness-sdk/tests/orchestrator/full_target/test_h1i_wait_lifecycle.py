@@ -66,33 +66,55 @@ TWO = ("file:NOTES.md", "file:SUMMARY.md")
 
 def _two_step_method(context: dict[str, Any]) -> dict[str, Any]:
     request = context["request"]
-    step = next(item for item in request["operators"]
-                if str(item["task_type_ref"]["id"]).endswith("prepare-delivery"))
+    step = next(
+        item
+        for item in request["operators"]
+        if str(item["task_type_ref"]["id"]).endswith("prepare-delivery")
+    )
     first, second = [item["id"] for item in request["criterion_evidence"]]
     identity = request["new_method_identity"]
 
     def primitive(local_id: str) -> dict[str, Any]:
-        return {"local_id": local_id, "task_type_ref": step["task_type_ref"], "form": "primitive",
-                "arguments": {}, "required_capabilities": list(step["required_capabilities"]),
-                "obligation_relation": "refines_parent"}
+        return {
+            "local_id": local_id,
+            "task_type_ref": step["task_type_ref"],
+            "form": "primitive",
+            "arguments": {},
+            "required_capabilities": list(step["required_capabilities"]),
+            "obligation_relation": "refines_parent",
+        }
 
     return {
-        "schema_version": 1, "method_id": identity["method_id"], "method_version": identity["method_version"],
+        "schema_version": 1,
+        "method_id": identity["method_id"],
+        "method_version": identity["method_version"],
         "goal_type_ref": request["goal_type_ref"],
         "parameter_schema_ref": request["goal_signature"]["parameter_schema_ref"],
         "output_schema_ref": request["goal_signature"]["output_schema_ref"],
-        "applicable_when": [], "exploration_assumptions": [],
+        "applicable_when": [],
+        "exploration_assumptions": [],
         "steps": [primitive("first"), primitive("second")],
         "ordering": [{"before": "first", "after": "second"}],
-        "required_capabilities": [], "expected_effects": [],
+        "required_capabilities": [],
+        "expected_effects": [],
         "composition": {
             "criterion_links": [
-                {"parent_criterion_id": first, "child_step": "first", "child_criterion_id": first,
-                 "evidence_requirement": "first 这一步完成第一条要求"},
-                {"parent_criterion_id": second, "child_step": "second", "child_criterion_id": second,
-                 "evidence_requirement": "second 这一步完成第二条要求"},
+                {
+                    "parent_criterion_id": first,
+                    "child_step": "first",
+                    "child_criterion_id": first,
+                    "evidence_requirement": "first 这一步完成第一条要求",
+                },
+                {
+                    "parent_criterion_id": second,
+                    "child_step": "second",
+                    "child_criterion_id": second,
+                    "evidence_requirement": "second 这一步完成第二条要求",
+                },
             ],
-            "outputs": {}, "finalizer_step": "second", "independent_review_required": True,
+            "outputs": {},
+            "finalizer_step": "second",
+            "independent_review_required": True,
         },
         "basis_refs": [],
     }
@@ -105,10 +127,17 @@ def _two_steps(request: Any) -> Any:
     selection = (package.get("method_selection") or [{}])[0]
     contexts = package.get("method_proposal_contexts") or []
     if contexts and not selection.get("applicable"):
-        return decision(contexts[0]["subject_key"], "PROPOSE_METHOD",
-                        {"method_proposal": {"method": _two_step_method(contexts[0]),
-                                             "rationale": "先写第一份，再写第二份。"}},
-                        "两步依次完成两条要求。")
+        return decision(
+            contexts[0]["subject_key"],
+            "PROPOSE_METHOD",
+            {
+                "method_proposal": {
+                    "method": _two_step_method(contexts[0]),
+                    "rationale": "先写第一份，再写第二份。",
+                }
+            },
+            "两步依次完成两条要求。",
+        )
     return seed_planner(request)
 
 
@@ -188,14 +217,18 @@ def _planner_intents(loop: Orchestrator, mission_id: str) -> list[Any]:
     return [
         i
         for i in loop.store.list_intents("PENDING", "CLAIMED", "AGENT_CREATED", "SUBMITTED")
-        if i.mission_id == mission_id
-        and i.kind == "plan"
+        if i.mission_id == mission_id and i.kind == "plan"
     ]
 
 
 def _plan(tmp_path: Path, key: str, **kwargs: Any) -> Any:
-    return committed(tmp_path, key=key, provider=kwargs.pop("provider", None) or _provider(),
-                     criteria=TWO, **kwargs)
+    return committed(
+        tmp_path,
+        key=key,
+        provider=kwargs.pop("provider", None) or _provider(),
+        criteria=TWO,
+        **kwargs,
+    )
 
 
 async def _first_finishes_and_wakes(product: Any) -> None:
@@ -220,8 +253,18 @@ async def _first_completed(product: Any, loop: Orchestrator, mission: Any) -> An
 
 def test_wait_registration_is_durable_and_does_not_add_inflight_work(tmp_path: Path) -> None:
     async def case() -> None:
-        async with _plan(tmp_path, "h1i-wait-register") as (loop, mission, _world, _root, dispatch, product):
-            inflight_before = {i.intent_id for i in loop.store.list_intents("PENDING", "CLAIMED", "AGENT_CREATED", "SUBMITTED")}
+        async with _plan(tmp_path, "h1i-wait-register") as (
+            loop,
+            mission,
+            _world,
+            _root,
+            dispatch,
+            product,
+        ):
+            inflight_before = {
+                i.intent_id
+                for i in loop.store.list_intents("PENDING", "CLAIMED", "AGENT_CREATED", "SUBMITTED")
+            }
             evaluated_before = len(events(loop, mission.id, "PlanningDecisionEvaluated"))
             opener, _reply, visible = await _register_wait(loop, mission, dispatch, product)
             evaluated = events(loop, mission.id, "PlanningDecisionEvaluated")
@@ -232,7 +275,10 @@ def test_wait_registration_is_durable_and_does_not_add_inflight_work(tmp_path: P
             assert loop._has_pending_planning_waits(mission.id)
             # The WAIT is durable external work: it puts nothing in flight of its own;
             # what is in flight is exactly the leaf's held turn from before the round.
-            inflight_after = {i.intent_id for i in loop.store.list_intents("PENDING", "CLAIMED", "AGENT_CREATED", "SUBMITTED")}
+            inflight_after = {
+                i.intent_id
+                for i in loop.store.list_intents("PENDING", "CLAIMED", "AGENT_CREATED", "SUBMITTED")
+            }
             assert opener.intent_id not in inflight_after
             assert inflight_after == inflight_before
 
@@ -241,7 +287,14 @@ def test_wait_registration_is_durable_and_does_not_add_inflight_work(tmp_path: P
 
 def test_wait_ignores_fake_event_and_wakes_once_from_exact_terminal_task(tmp_path: Path) -> None:
     async def case() -> None:
-        async with _plan(tmp_path, "h1i-wait-store") as (loop, mission, _world, _root, dispatch, product):
+        async with _plan(tmp_path, "h1i-wait-store") as (
+            loop,
+            mission,
+            _world,
+            _root,
+            dispatch,
+            product,
+        ):
             _opener, _reply, visible = await _register_wait(loop, mission, dispatch, product)
             # An event that merely mentions the target is no completion evidence.
             append_hierarchical_event(
@@ -266,7 +319,14 @@ def test_wait_ignores_fake_event_and_wakes_once_from_exact_terminal_task(tmp_pat
 
 def test_wait_target_terminal_before_registration_wakes(tmp_path: Path) -> None:
     async def case() -> None:
-        async with _plan(tmp_path, "h1i-wait-first") as (loop, mission, _world, _root, dispatch, product):
+        async with _plan(tmp_path, "h1i-wait-first") as (
+            loop,
+            mission,
+            _world,
+            _root,
+            dispatch,
+            product,
+        ):
             leaf = await _first_completed(product, loop, mission)
             opener = await _open_round(loop, mission, product, "grant-wait-first")
             reply, _visible = _wait_reply(opener.config["planning_package"], leaf.id)
@@ -284,7 +344,14 @@ def test_wait_target_terminal_before_registration_wakes(tmp_path: Path) -> None:
 
 def test_wait_wake_fault_rolls_back_woken_and_planner_intent_together(tmp_path: Path) -> None:
     async def case() -> None:
-        async with _plan(tmp_path, "h1i-wait-wake-fault") as (loop, mission, _world, _root, dispatch, product):
+        async with _plan(tmp_path, "h1i-wait-wake-fault") as (
+            loop,
+            mission,
+            _world,
+            _root,
+            dispatch,
+            product,
+        ):
             await _register_wait(loop, mission, dispatch, product)
             # The crash hits the loop's own wake, in the cycle after the leaf completes.
             loop.store.arm("planning_wait_before_wake_commit")
@@ -309,9 +376,18 @@ def test_wait_registration_fault_rolls_back_terminal_decision_and_registration(
     tmp_path: Path,
 ) -> None:
     async def case() -> None:
-        async with _plan(tmp_path, "h1i-wait-register-fault") as (loop, mission, _world, _root, dispatch, product):
+        async with _plan(tmp_path, "h1i-wait-register-fault") as (
+            loop,
+            mission,
+            _world,
+            _root,
+            dispatch,
+            product,
+        ):
             opener = await _open_round(loop, mission, product, "grant-wait-fault")
-            reply, _visible = _wait_reply(opener.config["planning_package"], _first(loop, mission).id)
+            reply, _visible = _wait_reply(
+                opener.config["planning_package"], _first(loop, mission).id
+            )
             evaluated_before = len(events(loop, mission.id, "PlanningDecisionEvaluated"))
             loop.store.arm("planning_wait_before_registration_commit")
             with pytest.raises(InjectedCrash, match="planning_wait_before_registration_commit"):
@@ -327,7 +403,14 @@ def test_wait_registration_fault_rolls_back_terminal_decision_and_registration(
 
 def test_wait_reopens_from_durable_store(tmp_path: Path) -> None:
     async def case() -> None:
-        async with _plan(tmp_path, "h1i-wait-reopen") as (first, mission, _world, _root, dispatch, product):
+        async with _plan(tmp_path, "h1i-wait-reopen") as (
+            first,
+            mission,
+            _world,
+            _root,
+            dispatch,
+            product,
+        ):
             leaf = await _first_completed(product, first, mission)
             opener = await _open_round(first, mission, product, "grant-wait-reopen")
             reply, _visible = _wait_reply(opener.config["planning_package"], leaf.id)
@@ -356,7 +439,14 @@ def test_wait_for_a_target_with_no_running_producer_is_rejected_without_registra
     tmp_path: Path,
 ) -> None:
     async def case() -> None:
-        async with seeded(tmp_path, key="h1i-wait-unsupported") as (loop, mission, _world, _root, dispatch, product):
+        async with seeded(tmp_path, key="h1i-wait-unsupported") as (
+            loop,
+            mission,
+            _world,
+            _root,
+            dispatch,
+            product,
+        ):
             opener = await _open_round(loop, mission, product, "grant-wait-unsupported")
             package = opener.config["planning_package"]
             # The root's obligation is a valid, visible protocol ref, but before any plan
@@ -391,11 +481,20 @@ def test_repeated_satisfied_wait_stops_instead_of_registering_a_busy_loop(tmp_pa
         return _two_steps(request)
 
     async def case() -> None:
-        async with _plan(tmp_path, "h1i-wait-repeat", provider=_provider(planner=planner)) as (loop, mission, _world, _root, dispatch, product):
+        async with _plan(tmp_path, "h1i-wait-repeat", provider=_provider(planner=planner)) as (
+            loop,
+            mission,
+            _world,
+            _root,
+            dispatch,
+            product,
+        ):
             await _register_wait(loop, mission, dispatch, product)
             waited["id"] = _first(loop, mission).id
             resume(product)
-            await run_until(product, lambda: loop.store.get_mission(mission.id).status.name == "FAILED")
+            await run_until(
+                product, lambda: loop.store.get_mission(mission.id).status.name == "FAILED"
+            )
             assert len(events(loop, mission.id, "PlanningWaitRegistered")) == 2
             assert len(events(loop, mission.id, "PlanningWaitWoken")) == 1
             assert len(_planner_intents(loop, mission.id)) == 0
@@ -408,7 +507,14 @@ def test_repeated_satisfied_wait_stops_instead_of_registering_a_busy_loop(tmp_pa
 
 def test_wait_woken_by_a_completed_task_names_its_settled_state(tmp_path: Path) -> None:
     async def case() -> None:
-        async with _plan(tmp_path, "h1i-wait-completed") as (loop, mission, _world, _root, dispatch, product):
+        async with _plan(tmp_path, "h1i-wait-completed") as (
+            loop,
+            mission,
+            _world,
+            _root,
+            dispatch,
+            product,
+        ):
             _opener, _reply, visible = await _register_wait(loop, mission, dispatch, product)
             await _first_finishes_and_wakes(product)
             woken = events(loop, mission.id, "PlanningWaitWoken")[-1]
@@ -419,7 +525,14 @@ def test_wait_woken_by_a_completed_task_names_its_settled_state(tmp_path: Path) 
 
 def test_wait_wakeup_freezes_terminal_task_outcome_in_new_protocol_package(tmp_path: Path) -> None:
     async def case() -> None:
-        async with _plan(tmp_path, "h1i-wait-package") as (loop, mission, _world, _root, dispatch, product):
+        async with _plan(tmp_path, "h1i-wait-package") as (
+            loop,
+            mission,
+            _world,
+            _root,
+            dispatch,
+            product,
+        ):
             opener, _reply, visible = await _register_wait(loop, mission, dispatch, product)
             opener_hash = loop.store.connection.execute(
                 "SELECT package_hash FROM planning_requests WHERE intent_id = ?",
@@ -432,9 +545,7 @@ def test_wait_wakeup_freezes_terminal_task_outcome_in_new_protocol_package(tmp_p
             intent = _planner_intents(loop, mission.id)[0]
             package = intent.config["planning_package"]
             row = next(
-                item
-                for item in package["views"]["goals"]
-                if item["task_id"] == visible["id"]
+                item for item in package["views"]["goals"] if item["task_id"] == visible["id"]
             )
             assert row["task_status"] == str(TaskStatus.COMPLETED)
             assert row["task_version"] == task.version
@@ -468,7 +579,14 @@ def test_registered_wait_tolerates_active_to_ready_retry_without_stopping(tmp_pa
     async def case() -> None:
         provider = _provider(worker=broken_once)
         holder["provider"] = provider
-        async with _plan(tmp_path, "h1i-wait-retry-ready", provider=provider) as (loop, mission, _world, _root, dispatch, product):
+        async with _plan(tmp_path, "h1i-wait-retry-ready", provider=provider) as (
+            loop,
+            mission,
+            _world,
+            _root,
+            dispatch,
+            product,
+        ):
             _opener, _reply, visible = await _register_wait(loop, mission, dispatch, product)
             asked = resume(product, hold=("planner",))
             await run_until(product, provider.entered.is_set)
@@ -489,7 +607,14 @@ def test_registered_wait_tolerates_active_to_ready_retry_without_stopping(tmp_pa
 
 def test_wait_rejects_blocked_target_that_has_no_inflight_work(tmp_path: Path) -> None:
     async def case() -> None:
-        async with _plan(tmp_path, "h1i-wait-blocked") as (loop, mission, _world, _root, dispatch, product):
+        async with _plan(tmp_path, "h1i-wait-blocked") as (
+            loop,
+            mission,
+            _world,
+            _root,
+            dispatch,
+            product,
+        ):
             # The root is a compound occurrence waiting for its children: BLOCKED, and no
             # turn of its own is running.
             root = loop.store.get_task(root_task(mission.id))
@@ -506,7 +631,14 @@ def test_wait_unknown_or_foreign_mission_ref_never_passes_from_task_existence(
     tmp_path: Path,
 ) -> None:
     async def case() -> None:
-        async with _plan(tmp_path, "h1i-wait-negative") as (loop, mission, _world, _root, _dispatch, product):
+        async with _plan(tmp_path, "h1i-wait-negative") as (
+            loop,
+            mission,
+            _world,
+            _root,
+            _dispatch,
+            product,
+        ):
             leaf = await _first_completed(product, loop, mission)
             semantic = HtnStore(loop.store).task_semantics_of(mission.id, leaf.id)
             assert semantic is not None
@@ -521,9 +653,14 @@ def test_wait_unknown_or_foreign_mission_ref_never_passes_from_task_existence(
 
             from agent_orchestrator.contracts.planning_decisions import PlanningRefV1
 
-            exact = PlanningRefV1.from_json({"kind": "task", "id": leaf.id,
-                                             "semantic_revision": int(semantic.contract_revision),
-                                             "content_hash": semantic.content_hash()})
+            exact = PlanningRefV1.from_json(
+                {
+                    "kind": "task",
+                    "id": leaf.id,
+                    "semantic_revision": int(semantic.contract_revision),
+                    "content_hash": semantic.content_hash(),
+                }
+            )
             assert loop._planning_wait_ref_satisfied(mission, exact)
             assert not loop._planning_wait_ref_satisfied(mission, ref("unknown"))
             assert not loop._planning_wait_ref_satisfied(
@@ -540,14 +677,29 @@ def test_wait_takes_the_one_task_ref_the_planner_is_shown(tmp_path: Path) -> Non
     from agent_orchestrator.contracts.planning_decisions import PlanningRefV1
 
     async def case() -> None:
-        async with _plan(tmp_path, "h1i-wait-contract-hash") as (loop, mission, _world, _root, _dispatch, product):
+        async with _plan(tmp_path, "h1i-wait-contract-hash") as (
+            loop,
+            mission,
+            _world,
+            _root,
+            _dispatch,
+            product,
+        ):
             leaf = _first(loop, mission)
             assert leaf.status is TaskStatus.ACTIVE
             semantics = HtnStore(loop.store).task_semantics_of(mission.id, leaf.id)
             assert semantics is not None and semantics.contract_hash != semantics.content_hash()
-            visible = {"kind": "task", "id": leaf.id, "semantic_revision": int(semantics.contract_revision)}
-            by_contract = PlanningRefV1.from_json({**visible, "content_hash": semantics.contract_hash})
-            by_content = PlanningRefV1.from_json({**visible, "content_hash": semantics.content_hash()})
+            visible = {
+                "kind": "task",
+                "id": leaf.id,
+                "semantic_revision": int(semantics.contract_revision),
+            }
+            by_contract = PlanningRefV1.from_json(
+                {**visible, "content_hash": semantics.contract_hash}
+            )
+            by_content = PlanningRefV1.from_json(
+                {**visible, "content_hash": semantics.content_hash()}
+            )
             wrong = PlanningRefV1.from_json({**visible, "content_hash": "0" * 64})
             assert loop._planning_wait_ref_waitable(mission, by_content)
             assert not loop._planning_wait_ref_waitable(mission, by_contract)

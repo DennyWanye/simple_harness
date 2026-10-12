@@ -16,6 +16,7 @@ Integration point: ``agent.run_conversation`` calls
 ``await assembler.assemble(...)`` and THEN, before entering the loop,
 ``prenarration.speak(task_type)``.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -99,9 +100,7 @@ class TTSPreNarrator:
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
-            logger.warning(
-                "tts_prenarration.no_running_loop", task_type=task_type
-            )
+            logger.warning("tts_prenarration.no_running_loop", task_type=task_type)
             return None
         return loop.create_task(self._speak_safely(phrase, task_type))
 

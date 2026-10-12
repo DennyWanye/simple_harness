@@ -39,10 +39,7 @@ class _Platform:
     async def read_detail_snapshot(self, keys):
         self.keys = tuple(keys)
         return {
-            "tokens": [
-                {**key.to_dict(), "exists": False, "version": self.version}
-                for key in keys
-            ],
+            "tokens": [{**key.to_dict(), "exists": False, "version": self.version} for key in keys],
             "bindings": [],
         }
 
@@ -149,11 +146,7 @@ def _authoritative_chain(store: CompanionStore, owner: OwnerRef):
             "scope_key": "profile-a",
             "expected_absent": True,
         },
-        files=(
-            CandidatePackageFile(
-                "SKILL.md", "instruction", digest, len(payload), "skill"
-            ),
-        ),
+        files=(CandidatePackageFile("SKILL.md", "instruction", digest, len(payload), "skill"),),
         blobs=(CandidatePackageBlob("file", "skill", digest, payload),),
     )
     attempt = CandidateAttempt(
@@ -326,12 +319,8 @@ async def test_detail_exact_protocol_pagination_redaction_and_cursor_fences(tmp_
     )
     notification = _notification(store, owner)
     platform = _Platform()
-    query = CompanionDetailQueryPort(
-        store=store, platform_store=platform, cursor_secret=b"s" * 32
-    )
-    version = await query.current_detail_version(
-        frozen_identity=frozen, notification=notification
-    )
+    query = CompanionDetailQueryPort(store=store, platform_store=platform, cursor_secret=b"s" * 32)
+    version = await query.current_detail_version(frozen_identity=frozen, notification=notification)
     request = {
         "notification_id": "n1",
         "section": "evidence",
@@ -339,9 +328,7 @@ async def test_detail_exact_protocol_pagination_redaction_and_cursor_fences(tmp_
         "page_size": 1,
         "expected_detail_version": version,
     }
-    first = await query.query(
-        frozen_identity=frozen, control_epoch=9, request=request
-    )
+    first = await query.query(frozen_identity=frozen, control_epoch=9, request=request)
     assert first["detail_version"] == version
     assert first["items"][0]["id"]
     assert "Bearer abcdefghijklmnop" not in str(first)
@@ -441,12 +428,8 @@ async def test_detail_walks_authoritative_lineage_and_ignores_prefilled_sections
     )
     notification = _authoritative_chain(store, owner)
     platform = _Platform()
-    query = CompanionDetailQueryPort(
-        store=store, platform_store=platform, cursor_secret=b"s" * 32
-    )
-    version = await query.current_detail_version(
-        frozen_identity=frozen, notification=notification
-    )
+    query = CompanionDetailQueryPort(store=store, platform_store=platform, cursor_secret=b"s" * 32)
+    version = await query.current_detail_version(frozen_identity=frozen, notification=notification)
     common = {
         "notification_id": "chain-notification",
         "cursor": None,
@@ -524,9 +507,7 @@ async def test_detail_detects_platform_vector_change_between_reads(tmp_path):
         cursor_secret=b"s" * 32,
     )
     with pytest.raises(CompanionDetailQueryError, match="detail_changed"):
-        await query.current_detail_version(
-            frozen_identity=frozen, notification=notification
-        )
+        await query.current_detail_version(frozen_identity=frozen, notification=notification)
 
 
 @pytest.mark.asyncio
@@ -543,9 +524,7 @@ async def test_detail_detects_companion_version_change_during_page(tmp_path):
     query = CompanionDetailQueryPort(
         store=store, platform_store=_Platform(), cursor_secret=b"s" * 32
     )
-    version = await query.current_detail_version(
-        frozen_identity=frozen, notification=notification
-    )
+    version = await query.current_detail_version(frozen_identity=frozen, notification=notification)
     original = store.get_detail_version
     calls = 0
 
@@ -597,9 +576,7 @@ async def test_detail_detects_companion_version_change_during_page(tmp_path):
         ),
     ],
 )
-async def test_detail_detects_each_exact_platform_token_transition(
-    tmp_path, before, after
-):
+async def test_detail_detects_each_exact_platform_token_transition(tmp_path, before, after):
     owner = OwnerRef("profile-a", 1)
     frozen = FrozenOwnerIdentity(owner, "owner-a", 9)
     store = CompanionStore(tmp_path / "companion.db")
@@ -627,9 +604,7 @@ async def test_detail_detects_each_exact_platform_token_transition(
         cursor_secret=b"s" * 32,
     )
     with pytest.raises(CompanionDetailQueryError, match="detail_changed"):
-        await query.current_detail_version(
-            frozen_identity=frozen, notification=notification
-        )
+        await query.current_detail_version(frozen_identity=frozen, notification=notification)
 
 
 @pytest.mark.asyncio
@@ -759,7 +734,5 @@ async def test_platform_keys_reject_cross_owner_but_accept_builtin_owner(tmp_pat
         store=store, platform_store=_Platform(), cursor_secret=b"s" * 32
     )
     with pytest.raises(CompanionDetailQueryError) as rejected:
-        await query.current_detail_version(
-            frozen_identity=frozen, notification=notification
-        )
+        await query.current_detail_version(frozen_identity=frozen, notification=notification)
     assert rejected.value.code == "unavailable"

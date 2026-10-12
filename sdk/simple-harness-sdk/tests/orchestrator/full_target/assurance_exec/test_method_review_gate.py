@@ -16,6 +16,7 @@ HTN 补齐阶段 A′：跑在产品同形世界（:mod:`_assured_loop`：产品
 自己拒"一条删除：产品上规划器在等审阅时不被叫醒，那道检查只能手搭命令直接调提交核心才碰得到；
 同一道闸由下面"被打回""没有结论"两条经真实回复碰到。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -49,8 +50,11 @@ def _versions(world) -> list[int]:
 
 
 def _proposed_ref(world, version: int = 1) -> dict:
-    [event] = [item for item in events_of(world, "PlanningMethodProposed")
-               if item.payload["method_ref"]["version"] == version]
+    [event] = [
+        item
+        for item in events_of(world, "PlanningMethodProposed")
+        if item.payload["method_ref"]["version"] == version
+    ]
     return event.payload["method_ref"]
 
 
@@ -82,22 +86,32 @@ def test_a_proposed_method_waits_for_its_review_and_the_conclusion_wakes_the_pla
             assert scripted.by_role["planner"] == 2
             assert _versions(world) == [1]
             assert not world.loop._has_pending_planning_waits(world.mission.id)
+
     asyncio.run(case())
 
 
-def test_a_rejected_method_reaches_the_planner_in_the_reviewers_words_and_cannot_be_adopted(tmp_path):
+def test_a_rejected_method_reaches_the_planner_in_the_reviewers_words_and_cannot_be_adopted(
+    tmp_path,
+):
     seen: list[dict] = []
     seen_last: list[dict] = []
 
     async def case():
         scripted = provider(
             planner=[propose(), adopt(1, seen=seen), propose(), adopt(2, seen=seen_last)],
-            reviewer=[review("REWORK", limitation="no step writes the report"), review("ACCEPT"),
-                      *[review("ACCEPT")] * 4])
+            reviewer=[
+                review("REWORK", limitation="no step writes the report"),
+                review("ACCEPT"),
+                *[review("ACCEPT")] * 4,
+            ],
+        )
         async with assured_loop(tmp_path, scripted) as world:
             assert await run_until(world, lambda w: events_of(w, "PlanRevisionCommitted"))
             rejected, passed = events_of(world, "PlanningMethodReviewed")
-            assert rejected.payload["outcome"] == "REJECTED" and rejected.payload["verdict"] == "REWORK"
+            assert (
+                rejected.payload["outcome"] == "REJECTED"
+                and rejected.payload["verdict"] == "REWORK"
+            )
             [finding] = rejected.payload["findings"]
             assert finding["criterion_id"] == CRITERION
             assert "no step writes the report" in " ".join(finding["limitations"])
@@ -106,47 +120,74 @@ def test_a_rejected_method_reaches_the_planner_in_the_reviewers_words_and_cannot
 
             # the round the rejection woke was shown the method, its review and the words
             [package] = seen
-            row = next(item for item in package["views"]["methods"] if item["method_ref"]["semantic_revision"] == 1)
+            row = next(
+                item
+                for item in package["views"]["methods"]
+                if item["method_ref"]["semantic_revision"] == 1
+            )
             assert row["review"]["outcome"] == "REJECTED"
             assert "no step writes the report" in str(row["review"]["findings"])
 
             # adopting the rejected method was refused by the commit gate, by name
-            refused = [event.payload for event in events_of(world, "PlanningDecisionEvaluated")
-                       if event.payload.get("status") == "COMMIT_REJECTED"]
+            refused = [
+                event.payload
+                for event in events_of(world, "PlanningDecisionEvaluated")
+                if event.payload.get("status") == "COMMIT_REJECTED"
+            ]
             assert [item["rejection_codes"] for item in refused] == [["METHOD_NOT_AUTHORIZED"]]
             assert "no step writes the report" in str(refused[0]["detail"])
             assert _versions(world) == [2]
 
             # only the newest version of a method is on offer (a method id is one method;
             # 迁移裁决 C1): the rejected v1 is gone from the last round, v2 shows its review
-            rows = {item["method_ref"]["semantic_revision"]: item for item in seen_last[-1]["views"]["methods"]}
+            rows = {
+                item["method_ref"]["semantic_revision"]: item
+                for item in seen_last[-1]["views"]["methods"]
+            }
             assert set(rows) == {2} and rows[2]["review"]["outcome"] == "PASSED"
+
     asyncio.run(case())
 
 
-@pytest.mark.parametrize(("answer", "outcome", "adopted"), [
-    ("pass", "PASSED", [1]),
-    ("fail", "REJECTED", []),
-])
+@pytest.mark.parametrize(
+    ("answer", "outcome", "adopted"),
+    [
+        ("pass", "PASSED", [1]),
+        ("fail", "REJECTED", []),
+    ],
+)
 def test_two_inconclusive_method_reviews_ask_the_person_and_the_ruling_decides(
-        tmp_path, answer, outcome, adopted):
+    tmp_path, answer, outcome, adopted
+):
     async def case():
         unsure = review("INCONCLUSIVE", limitation="cannot tell whether one step is enough")
-        scripted = provider(planner=[propose(), adopt(1)], reviewer=[unsure, unsure, *[review()] * 4])
+        scripted = provider(
+            planner=[propose(), adopt(1)], reviewer=[unsure, unsure, *[review()] * 4]
+        )
         async with assured_loop(tmp_path, scripted) as world:
             questions = PlanningHumanStore(world.store)
             assert await run_until(world, lambda w: questions.pending(w.mission.id))
-            [question] = [row for row in questions.list(world.mission.id) if row["state"] == "PENDING"]
+            [question] = [
+                row for row in questions.list(world.mission.id) if row["state"] == "PENDING"
+            ]
             assert question["decision_id"].startswith("adjudicate-method:")
-            assert "cannot tell whether one step is enough" in question["request"]["payload"]["question"]
+            assert (
+                "cannot tell whether one step is enough"
+                in question["request"]["payload"]["question"]
+            )
             await spin(world, 10)
             assert scripted.by_role.get("planner") == 1  # nobody is woken while the person decides
             assert not events_of(world, "PlanningMethodReviewed")
 
             # the person answers on the page (the authenticated facade)
-            world.control.answer_planning_question({
-                "decision_id": question["decision_id"], "answer": answer,
-                "expected_version": question["version"], "nonce": "n-1"})
+            world.control.answer_planning_question(
+                {
+                    "decision_id": question["decision_id"],
+                    "answer": answer,
+                    "expected_version": question["version"],
+                    "nonce": "n-1",
+                }
+            )
             assert await run_until(world, lambda w: events_of(w, "PlanningMethodReviewed"))
             [reviewed] = events_of(world, "PlanningMethodReviewed")
             assert reviewed.payload["outcome"] == outcome
@@ -155,9 +196,11 @@ def test_two_inconclusive_method_reviews_ask_the_person_and_the_ruling_decides(
             # the ruling, not the answered question, is what wakes the Planner — once
             assert await run_until(world, lambda w: w.provider.asked.count("planner") == 2)
             await spin(world, 10)
-            assert [e.payload["source_type"] for e in events_of(world, "PlanningServiceResumed")] == [
-                "PlanningMethodReviewed"]
+            assert [
+                e.payload["source_type"] for e in events_of(world, "PlanningServiceResumed")
+            ] == ["PlanningMethodReviewed"]
             assert _versions(world) == adopted
+
     asyncio.run(case())
 
 
@@ -175,30 +218,44 @@ def test_a_method_review_without_a_usable_reply_asks_the_person_and_is_never_ado
       ``test_service_intent_provider_blocker.py::test_a_method_review_that_never_answers_is_reported_as_no_verdict`` 守。"""
 
     async def case():
-        scripted = provider(planner=[propose(), adopt(1)],
-                            reviewer=["this is not a verdict", "still not a verdict"])
+        scripted = provider(
+            planner=[propose(), adopt(1)], reviewer=["this is not a verdict", "still not a verdict"]
+        )
         async with assured_loop(tmp_path, scripted) as world:
             questions = PlanningHumanStore(world.store)
             assert await run_until(world, lambda w: questions.pending(w.mission.id))
-            [question] = [row for row in questions.list(world.mission.id) if row["state"] == "PENDING"]
+            [question] = [
+                row for row in questions.list(world.mission.id) if row["state"] == "PENDING"
+            ]
             assert question["decision_id"].startswith("adjudicate-method:")
             # the reply and its one repair, never a third (the reviewer counts as "unknown" here)
             assert scripted.by_role.get("unknown") == 2
             from agent_orchestrator.storage.htn_store import HtnStore
-            record = HtnStore(world.store).get_review_record(
-                question["decision_id"].partition(":")[2]).record
+
+            record = (
+                HtnStore(world.store)
+                .get_review_record(question["decision_id"].partition(":")[2])
+                .record
+            )
             assert record.verdict.value == "INCONCLUSIVE"
-            assert all(str(item.verdict) == "UNKNOWN"
-                       and item.limitations[0].startswith("REVIEW_NO_USABLE_REPLY:")
-                       for item in record.criteria)
+            assert all(
+                str(item.verdict) == "UNKNOWN"
+                and item.limitations[0].startswith("REVIEW_NO_USABLE_REPLY:")
+                for item in record.criteria
+            )
             await spin(world, 10)
             assert scripted.by_role.get("planner") == 1  # nobody is woken while the person decides
             assert not events_of(world, "PlanningMethodReviewed")
             assert _versions(world) == []
 
-            world.control.answer_planning_question({
-                "decision_id": question["decision_id"], "answer": "fail",
-                "expected_version": question["version"], "nonce": "n-1"})
+            world.control.answer_planning_question(
+                {
+                    "decision_id": question["decision_id"],
+                    "answer": "fail",
+                    "expected_version": question["version"],
+                    "nonce": "n-1",
+                }
+            )
             assert await run_until(world, lambda w: events_of(w, "PlanningMethodReviewed"))
             [reviewed] = events_of(world, "PlanningMethodReviewed")
             assert reviewed.payload["outcome"] == "REJECTED"
@@ -207,9 +264,13 @@ def test_a_method_review_without_a_usable_reply_asks_the_person_and_is_never_ado
             await spin(world, 10)
             # reported, and still not adoptable: no usable verdict is not a pass
             assert _versions(world) == []
-            refused = [event.payload for event in events_of(world, "PlanningDecisionEvaluated")
-                       if event.payload.get("status") == "COMMIT_REJECTED"]
+            refused = [
+                event.payload
+                for event in events_of(world, "PlanningDecisionEvaluated")
+                if event.payload.get("status") == "COMMIT_REJECTED"
+            ]
             assert [item["rejection_codes"] for item in refused] == [["METHOD_NOT_AUTHORIZED"]]
+
     asyncio.run(case())
 
 
@@ -234,4 +295,5 @@ def test_a_ruling_question_is_not_retired_by_an_epoch_change(tmp_path):
             assert question["state"] == "PENDING"
             assert events_of(world, "PlanningMethodReviewed") == []
             assert _versions(world) == []
+
     asyncio.run(case())

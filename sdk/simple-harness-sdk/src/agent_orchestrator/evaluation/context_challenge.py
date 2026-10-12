@@ -329,15 +329,12 @@ def _capacity_padding(source_id: str, position: str, entity: str, units: int) ->
         content=(
             f"Source {source_id}; entity={entity}; position={position}; "
             "scope=capacity_padding. This record exists only to occupy context capacity; "
-            "it is not a decision source.\n"
-            + _FILLER_LINE * units
+            "it is not a decision source.\n" + _FILLER_LINE * units
         ),
     )
 
 
-def _render_request(
-    difficulty: str, challenge_id: str, records: tuple[SourceRecord, ...]
-) -> str:
+def _render_request(difficulty: str, challenge_id: str, records: tuple[SourceRecord, ...]) -> str:
     decision_entities = {record.entity for record in records if record.scope == "decision"}
     if len(decision_entities) != 1:
         raise ValueError("challenge must declare exactly one decision entity")

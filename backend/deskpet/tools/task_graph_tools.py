@@ -24,6 +24,7 @@ Two factories expose the same tool family for the two call sites:
 Tool names are prefixed ``goal_task_`` to avoid collision with the
 existing ``team_task_*`` tools (which work on TeamStore, not TaskGraphStore).
 """
+
 from __future__ import annotations
 
 import json
@@ -183,6 +184,7 @@ def _node_to_dict(n: Any) -> dict[str, Any]:
 # Shared handler bodies (goal_id/session_id supplied by the caller)
 # ──────────────────────────────────────────────────────────────────────
 
+
 async def _do_list(store: TaskGraphStore, goal_id: str) -> str:
     try:
         nodes = await store.list(goal_id)
@@ -219,9 +221,7 @@ async def _do_create(
         return _err("title (non-empty string) required")
     depends_on = args.get("depends_on")
     if depends_on is not None:
-        if not isinstance(depends_on, list) or not all(
-            isinstance(d, str) for d in depends_on
-        ):
+        if not isinstance(depends_on, list) or not all(isinstance(d, str) for d in depends_on):
             return _err("depends_on must be a list of task_id strings")
     note = args.get("note")
     try:
@@ -240,9 +240,7 @@ async def _do_create(
     # Optional note → store as initial result without changing status.
     if isinstance(note, str) and note.strip():
         try:
-            node = await store.update(
-                node.task_id, status=node.status, result=note.strip()
-            )
+            node = await store.update(node.task_id, status=node.status, result=note.strip())
         except Exception as exc:  # noqa: BLE001 — note is best-effort
             log.warning("goal_task_create note attach failed: %s", exc)
     return _ok(
@@ -273,6 +271,7 @@ async def _do_get(store: TaskGraphStore, args: dict[str, Any]) -> str:
 # ──────────────────────────────────────────────────────────────────────
 # Factory: teammate path — build tool triples bound to (store, goal_id)
 # ──────────────────────────────────────────────────────────────────────
+
 
 def build_goal_task_tools(
     *,

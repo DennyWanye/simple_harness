@@ -56,7 +56,10 @@ def test_root_refuses_a_symlink(tmp_path):
 @pytest.mark.asyncio
 async def test_start_creates_the_library_and_reports_available(orchestration_root, principal):
     service = OrchestrationService(
-        orchestration_root, OrchestrationSettings(), provider=notes_provider(), principal=principal,
+        orchestration_root,
+        OrchestrationSettings(),
+        provider=notes_provider(),
+        principal=principal,
         native_test_counter=FixtureWordCounter(),
     )
     await service.start()
@@ -78,7 +81,10 @@ async def test_start_failure_is_isolated(tmp_path, principal):
     blocker = tmp_path / "not-a-directory"
     blocker.write_text("x", encoding="utf-8")
     service = OrchestrationService(
-        blocker, OrchestrationSettings(), provider=notes_provider(), principal=principal,
+        blocker,
+        OrchestrationSettings(),
+        provider=notes_provider(),
+        principal=principal,
         native_test_counter=FixtureWordCounter(),
     )
     await service.start()  # never raises into the Host lifespan
@@ -96,7 +102,10 @@ async def test_no_model_configured_is_unavailable_not_a_crash(orchestration_root
     """HA-17: a fresh install has no provider chain; the chat still starts."""
 
     service = OrchestrationService(
-        orchestration_root, OrchestrationSettings(), provider=None, principal=principal,
+        orchestration_root,
+        OrchestrationSettings(),
+        provider=None,
+        principal=principal,
         native_test_counter=FixtureWordCounter(),
     )
     await service.start()
@@ -112,7 +121,10 @@ async def test_each_process_has_its_own_owner(orchestration_root, principal):
     """Plan review P0-2: owner = deskpet-orchestrator-<pid>-<random>, never shared."""
 
     service = OrchestrationService(
-        orchestration_root, OrchestrationSettings(), provider=notes_provider(), principal=principal,
+        orchestration_root,
+        OrchestrationSettings(),
+        provider=notes_provider(),
+        principal=principal,
         native_test_counter=FixtureWordCounter(),
     )
     await service.start()
@@ -125,7 +137,9 @@ async def test_each_process_has_its_own_owner(orchestration_root, principal):
 
 
 @pytest.mark.asyncio
-async def test_driver_loop_runs_a_mission_without_being_asked(orchestration_root, principal, monkeypatch):
+async def test_driver_loop_runs_a_mission_without_being_asked(
+    orchestration_root, principal, monkeypatch
+):
     from ._layered_lane import layered_service, notes_mission, quick_runtime
 
     quick_runtime(monkeypatch)
@@ -151,7 +165,10 @@ async def test_driver_loop_runs_a_mission_without_being_asked(orchestration_root
 async def test_close_leaves_no_task_behind(orchestration_root, principal):
     before = {t for t in asyncio.all_tasks() if not t.done()}
     service = OrchestrationService(
-        orchestration_root, OrchestrationSettings(), provider=notes_provider(), principal=principal,
+        orchestration_root,
+        OrchestrationSettings(),
+        provider=notes_provider(),
+        principal=principal,
         native_test_counter=FixtureWordCounter(),
     )
     await service.start()

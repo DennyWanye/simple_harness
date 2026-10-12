@@ -25,9 +25,7 @@ async def test_dev_reset_rebuilds_three_databases_and_removes_sidecars(tmp_path,
         Path(f"{database}-wal").write_bytes(b"stale")
         Path(f"{database}-shm").write_bytes(b"stale")
     monkeypatch.setenv("DESKPET_DEV_MODE", "1")
-    await reset_storage_set(
-        state_db=str(state), execution_db=str(execution), memory_db=str(memory)
-    )
+    await reset_storage_set(state_db=str(state), execution_db=str(execution), memory_db=str(memory))
     assert all(path.is_file() for path in (state, execution))
     # 2026-09-10 认知记忆 SDK 移除（4b4dfba23）：memory.db 只清空不重建。
     assert not memory.exists()
@@ -47,7 +45,9 @@ async def test_dev_reset_rebuilds_three_databases_and_removes_sidecars(tmp_path,
 
 
 @pytest.mark.asyncio
-async def test_dev_reset_rejects_disabled_relative_and_symlink_without_mutation(tmp_path, monkeypatch):
+async def test_dev_reset_rejects_disabled_relative_and_symlink_without_mutation(
+    tmp_path, monkeypatch
+):
     data = tmp_path / "userdata" / "data"
     paths = (
         data / "state.db",

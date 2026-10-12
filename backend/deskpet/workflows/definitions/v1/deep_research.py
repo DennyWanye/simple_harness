@@ -215,9 +215,7 @@ def _decode_core(state: Mapping[str, object]) -> ResearchCoreState:
     raw_extracted = research_nodes.decode_large_value(
         payload.get("extracted", []), blob_store=store
     )
-    raw_passages = research_nodes.decode_large_value(
-        payload.get("passages", []), blob_store=store
-    )
+    raw_passages = research_nodes.decode_large_value(payload.get("passages", []), blob_store=store)
     if not isinstance(raw_extracted, list) or not isinstance(raw_passages, list):
         raise ValueError("research checkpoint payload lists are invalid")
     passages: list[legacy.Passage] = []
@@ -256,8 +254,7 @@ def _decode_core(state: Mapping[str, object]) -> ResearchCoreState:
         expansion_queries=[str(value) for value in payload.get("expansion_queries", [])],
         search_specs=[(str(spec[0]), str(spec[1])) for spec in raw_specs],
         url_to_question={
-            str(key): str(value)
-            for key, value in dict(payload.get("url_to_question", {})).items()
+            str(key): str(value) for key, value in dict(payload.get("url_to_question", {})).items()
         },
         candidate_urls=[str(value) for value in payload.get("candidate_urls", [])],
         extracted=raw_extracted,
@@ -379,15 +376,8 @@ async def gap_handler(state: WorkflowState, context: WorkflowContext) -> StatePa
     config = _normalized_config(effective)
     counters = state.get("loop_counters", {})
     used = int(counters.get("gap_iterations", 0)) if isinstance(counters, Mapping) else 0
-    if (
-        core.request_topic
-        and core.passages
-        and config.max_rounds > 1
-        and used < MAX_GAP_ITERATIONS
-    ):
-        await research_nodes.gap_node(
-            core, ResearchPorts.from_workflow_context(context), config
-        )
+    if core.request_topic and core.passages and config.max_rounds > 1 and used < MAX_GAP_ITERATIONS:
+        await research_nodes.gap_node(core, ResearchPorts.from_workflow_context(context), config)
         used += 1
     return StatePatch(
         {
@@ -501,7 +491,9 @@ async def finalize_handler(state: WorkflowState, context: WorkflowContext) -> St
     if not isinstance(report, dict):
         raise ValueError("persisted report payload is missing")
     core = _decode_core(effective)
-    run_id = context.identity.run_id if context.identity is not None else str(state.get("run_id", ""))
+    run_id = (
+        context.identity.run_id if context.identity is not None else str(state.get("run_id", ""))
+    )
     if not run_id:
         raise ValueError("workflow run id is missing")
     summary = legacy._extract_summary(core.report_md)
@@ -578,9 +570,7 @@ DEEP_RESEARCH_V1_DEFINITION = WorkflowDefinition(
     ),
     channels={
         "values": _single(JsonType.OBJECT, _VALUE_WRITERS),
-        "loop_counters": _single(
-            JsonType.OBJECT, frozenset({"normalize", "gap"})
-        ),
+        "loop_counters": _single(JsonType.OBJECT, frozenset({"normalize", "gap"})),
         "budgets": _single(JsonType.OBJECT, frozenset({"normalize"})),
         "blob_refs": _single(JsonType.ARRAY, frozenset({"persist"})),
     },

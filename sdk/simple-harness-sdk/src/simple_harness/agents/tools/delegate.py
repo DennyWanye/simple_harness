@@ -311,6 +311,7 @@ class AgentDelegateTool:
                     "status": "failed",
                 },
             )
+
         async def launch_child() -> None:
             # The original delegation ticket + kernel child launch (unchanged); under the
             # native plane it runs as the creation factory's deferred kernel step (BW01).
@@ -361,9 +362,21 @@ class AgentDelegateTool:
             from ..arp.strict import digest
 
             caller = TrustedCaller(
-                principal_ref=Pin("principal", f"agent:{parent.agent_id}", 0, digest({"agent": parent.agent_id})),
-                owner_contract_ref=Pin("policy", f"{arp.profile.profile_id}:owner-mode:{arp.ports.profile.owner_mode}", arp.profile.revision, arp.profile.body_hash),
-                command_receipt_ref=Pin("receipt", f"delegation:{delegation_id}", 0, digest({"delegation": delegation_id, "intent": intent_hash})),
+                principal_ref=Pin(
+                    "principal", f"agent:{parent.agent_id}", 0, digest({"agent": parent.agent_id})
+                ),
+                owner_contract_ref=Pin(
+                    "policy",
+                    f"{arp.profile.profile_id}:owner-mode:{arp.ports.profile.owner_mode}",
+                    arp.profile.revision,
+                    arp.profile.body_hash,
+                ),
+                command_receipt_ref=Pin(
+                    "receipt",
+                    f"delegation:{delegation_id}",
+                    0,
+                    digest({"delegation": delegation_id, "intent": intent_hash}),
+                ),
             )
             try:
                 await arp.creation.create(
@@ -379,7 +392,9 @@ class AgentDelegateTool:
                 uow.set_agent_delegation_state(delegation_id=delegation_id, state="failed", now=now)
                 return _failed(
                     context,
-                    "agent_instance_cap_exceeded" if "max_agents" in str(error) else "agent_delegation_creation_refused",
+                    "agent_instance_cap_exceeded"
+                    if "max_agents" in str(error)
+                    else "agent_delegation_creation_refused",
                     f"child Agent could not be created: {error}",
                 )
             self._fault("delegate.after_launch")

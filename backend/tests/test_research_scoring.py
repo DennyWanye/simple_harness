@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 """Deep-research V8 — research_scoring (tiered authority, recency, diversity)."""
+
 from __future__ import annotations
 
 import time
@@ -10,12 +11,14 @@ from deskpet.tools import research_scoring as rs
 
 # --- domain extraction (multi-part TLDs) ---
 
+
 def test_get_domain_multipart_cn():
     assert rs.get_domain("https://news.xinhuanet.com/a/b") == "xinhuanet.com"
     assert rs.get_domain("https://x.edu.cn/p") == "x.edu.cn"
 
 
 # --- authority tiers ---
+
 
 def test_authority_tier1_academic():
     assert rs.score_authority("https://arxiv.org/abs/1234") == 9.5
@@ -43,6 +46,7 @@ def test_authority_unknown_baseline():
 
 # --- recency by velocity ---
 
+
 def test_recency_fresh_vs_old():
     now = time.time()
     recent = time.strftime("%Y-%m-%d", time.localtime(now - 30 * 86400))
@@ -58,10 +62,15 @@ def test_recency_unknown_date():
 
 # --- diversity / concentration ---
 
+
 def test_diversity_passes_with_spread():
     urls = [
-        "https://arxiv.org/a", "https://nature.com/b", "https://36kr.com/c",
-        "https://reuters.com/d", "https://gov.cn/e", "https://zhihu.com/f",
+        "https://arxiv.org/a",
+        "https://nature.com/b",
+        "https://36kr.com/c",
+        "https://reuters.com/d",
+        "https://gov.cn/e",
+        "https://zhihu.com/f",
     ]
     rep = rs.diversity_report(urls)
     assert rep["unique_domains"] == 6
@@ -79,6 +88,7 @@ def test_diversity_fails_when_one_domain_dominates():
 
 # --- topic velocity heuristic ---
 
+
 def test_velocity_fast_for_tech():
     assert rs.infer_topic_velocity("2026 大模型最新趋势") == "fast"
 
@@ -93,6 +103,7 @@ def test_velocity_default_medium():
 
 # --- 源质量过滤 (codex 评审驱动): 自媒体降权 + AI 生成内容检测 ---
 
+
 def test_self_media_below_unknown_baseline():
     # 自媒体/转帖农场 2.0 < unknown 3.0 < TIER_3 5.5
     assert rs.score_authority("https://www.sohu.com/a/123_456") == 2.0
@@ -100,7 +111,9 @@ def test_self_media_below_unknown_baseline():
     assert rs.score_authority("https://www.163.com/dy/article/X.html") == 2.0
     # 真权威源仍稳压自媒体
     assert rs.score_authority("https://www.gov.cn/x") > rs.score_authority("https://sohu.com/a")
-    assert rs.score_authority("https://arxiv.org/abs/1") > rs.score_authority("https://163.com/dy/x")
+    assert rs.score_authority("https://arxiv.org/abs/1") > rs.score_authority(
+        "https://163.com/dy/x"
+    )
 
 
 def test_ai_generated_disclaimer_detected():
@@ -115,6 +128,7 @@ def test_ai_generated_clean_text_not_flagged():
 
 
 # --- 乱码源检测 (codex 复评抓到 [^11] 整段乱码) ---
+
 
 def test_is_mojibake_replacement_chars():
     assert rs.is_mojibake("正常开头" + "�" * 50 + "结尾乱码一片") is True
@@ -131,13 +145,23 @@ def test_is_mojibake_latin1_garbage():
 
 
 def test_is_mojibake_clean_chinese_not_flagged():
-    assert rs.is_mojibake("2025年中国新能源汽车销量大幅增长，渗透率超过百分之五十，"
-                          "纯电和插混都在上升，燃油车市场份额持续下降。" * 5) is False
+    assert (
+        rs.is_mojibake(
+            "2025年中国新能源汽车销量大幅增长，渗透率超过百分之五十，"
+            "纯电和插混都在上升，燃油车市场份额持续下降。" * 5
+        )
+        is False
+    )
 
 
 def test_is_mojibake_clean_english_not_flagged():
-    assert rs.is_mojibake("Solid state batteries are entering commercial production "
-                          "in 2025 with rising energy density and falling costs. " * 5) is False
+    assert (
+        rs.is_mojibake(
+            "Solid state batteries are entering commercial production "
+            "in 2025 with rising energy density and falling costs. " * 5
+        )
+        is False
+    )
 
 
 def test_is_mojibake_short_text_safe():

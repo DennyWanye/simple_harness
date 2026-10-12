@@ -95,7 +95,9 @@ async def test_door_refuses_and_writes_nothing(orchestration_root, principal, ov
         {"surprise": 1},  # unknown field
     ],
 )
-async def test_fields_the_facade_does_not_open_are_refused(orchestration_root, principal, overrides):
+async def test_fields_the_facade_does_not_open_are_refused(
+    orchestration_root, principal, overrides
+):
     """Plan v3 (P3.1 §3.3): no field is silently dropped; there is no local-tests switch."""
 
     service = OrchestrationService(

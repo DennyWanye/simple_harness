@@ -6,6 +6,7 @@
 This module is intentionally best-effort. WPS startup can be slow and COM
 availability depends on the host machine, so callers decide when to use it.
 """
+
 from __future__ import annotations
 
 import os
@@ -70,8 +71,7 @@ def _kill_wps() -> None:
 
     for name in ("wpp.exe", "wps.exe", "wpscloudsvr.exe", "et.exe"):
         try:
-            subprocess.run(["taskkill", "/F", "/IM", name],
-                           capture_output=True, timeout=10)
+            subprocess.run(["taskkill", "/F", "/IM", name], capture_output=True, timeout=10)
         except Exception:  # noqa: BLE001
             pass
 
@@ -103,14 +103,21 @@ def render_pptx_to_pngs_safe(
         dest.mkdir(parents=True, exist_ok=True)
         backend_dir = Path(__file__).resolve().parents[2]  # backend/
         proc_args = [
-            sys.executable, "-m", "deskpet.tools.ppt_render",
-            str(Path(pptx_path).expanduser().resolve()), str(dest),
-            str(int(width)), str(int(height)), str(int(max_slides)),
+            sys.executable,
+            "-m",
+            "deskpet.tools.ppt_render",
+            str(Path(pptx_path).expanduser().resolve()),
+            str(dest),
+            str(int(width)),
+            str(int(height)),
+            str(int(max_slides)),
         ]
         try:
             subprocess.run(
-                proc_args, cwd=str(backend_dir),
-                capture_output=True, timeout=timeout,
+                proc_args,
+                cwd=str(backend_dir),
+                capture_output=True,
+                timeout=timeout,
             )
         except subprocess.TimeoutExpired:
             log_warn = True
@@ -119,8 +126,7 @@ def render_pptx_to_pngs_safe(
             pass
         # 读 out_dir 里实际产出的 png(超时也能拿到已渲染的前几页)
         return sorted(
-            str(p) for p in dest.glob("slide*.png")
-            if p.is_file() and p.stat().st_size > 1024
+            str(p) for p in dest.glob("slide*.png") if p.is_file() and p.stat().st_size > 1024
         )
     except Exception:  # noqa: BLE001
         return []

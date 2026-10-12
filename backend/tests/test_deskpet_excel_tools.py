@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 """TDD T1 — excel_tools.py (excel_create)."""
+
 from __future__ import annotations
 
 import os
@@ -38,10 +39,12 @@ def test_t1_1_single_sheet_data(tmp_path: Path):
 
 
 def test_t1_2_multi_sheet(tmp_path: Path):
-    spec = {"sheets": [
-        {"name": "Alpha", "rows": [["a"]]},
-        {"name": "Beta", "rows": [["b"]]},
-    ]}
+    spec = {
+        "sheets": [
+            {"name": "Alpha", "rows": [["a"]]},
+            {"name": "Beta", "rows": [["b"]]},
+        ]
+    }
     r = xl.excel_create(spec, output_path=str(tmp_path / "m.xlsx"))
     assert r["ok"]
     wb = _load(r["path"])
@@ -57,11 +60,21 @@ def test_t1_3_formula_cell(tmp_path: Path):
 
 
 def test_t1_4_chart_present(tmp_path: Path):
-    spec = {"sheets": [{
-        "name": "S",
-        "rows": [["cat", "val"], ["a", 3], ["b", 5]],
-        "chart": {"type": "bar", "title": "T", "data": "B1:B3", "categories": "A2:A3", "anchor": "D2"},
-    }]}
+    spec = {
+        "sheets": [
+            {
+                "name": "S",
+                "rows": [["cat", "val"], ["a", 3], ["b", 5]],
+                "chart": {
+                    "type": "bar",
+                    "title": "T",
+                    "data": "B1:B3",
+                    "categories": "A2:A3",
+                    "anchor": "D2",
+                },
+            }
+        ]
+    }
     r = xl.excel_create(spec, output_path=str(tmp_path / "c.xlsx"))
     assert r["ok"]
     wb = _load(r["path"])
@@ -69,11 +82,15 @@ def test_t1_4_chart_present(tmp_path: Path):
 
 
 def test_t1_5_conditional_format(tmp_path: Path):
-    spec = {"sheets": [{
-        "name": "S",
-        "rows": [["v"], [1], [9]],
-        "conditional_format": {"range": "A2:A3", "rule": "color_scale"},
-    }]}
+    spec = {
+        "sheets": [
+            {
+                "name": "S",
+                "rows": [["v"], [1], [9]],
+                "conditional_format": {"range": "A2:A3", "rule": "color_scale"},
+            }
+        ]
+    }
     r = xl.excel_create(spec, output_path=str(tmp_path / "cf.xlsx"))
     assert r["ok"]
     wb = _load(r["path"])
@@ -81,12 +98,16 @@ def test_t1_5_conditional_format(tmp_path: Path):
 
 
 def test_t1_6_header_style_and_width(tmp_path: Path):
-    spec = {"sheets": [{
-        "name": "S",
-        "rows": [["Head1", "Head2"], [1, 2]],
-        "header_row": True,
-        "column_widths": {"A": 25},
-    }]}
+    spec = {
+        "sheets": [
+            {
+                "name": "S",
+                "rows": [["Head1", "Head2"], [1, 2]],
+                "header_row": True,
+                "column_widths": {"A": 25},
+            }
+        ]
+    }
     r = xl.excel_create(spec, output_path=str(tmp_path / "h.xlsx"))
     assert r["ok"]
     wb = _load(r["path"])
@@ -129,13 +150,18 @@ def test_t1_11_empty_sheets_list_rejected():
 
 # --- 复杂 Excel 升级 (number_formats / merge / cell_styles / charts / images) ---
 
+
 def test_t1_12_number_format_by_col(tmp_path: Path):
-    spec = {"sheets": [{
-        "name": "钱",
-        "rows": [["项目", "金额"], ["A", 1200], ["B", 300]],
-        "header_row": True,
-        "number_formats": [{"col": "B", "format": "#,##0.00"}],
-    }]}
+    spec = {
+        "sheets": [
+            {
+                "name": "钱",
+                "rows": [["项目", "金额"], ["A", 1200], ["B", 300]],
+                "header_row": True,
+                "number_formats": [{"col": "B", "format": "#,##0.00"}],
+            }
+        ]
+    }
     r = xl.excel_create(spec, output_path=str(tmp_path / "nf.xlsx"))
     assert r["ok"], r
     wb = _load(r["path"])
@@ -147,11 +173,15 @@ def test_t1_12_number_format_by_col(tmp_path: Path):
 
 
 def test_t1_13_number_format_by_range(tmp_path: Path):
-    spec = {"sheets": [{
-        "name": "P",
-        "rows": [["率"], [0.25], [0.5]],
-        "number_formats": [{"range": "A2:A3", "format": "0.0%"}],
-    }]}
+    spec = {
+        "sheets": [
+            {
+                "name": "P",
+                "rows": [["率"], [0.25], [0.5]],
+                "number_formats": [{"range": "A2:A3", "format": "0.0%"}],
+            }
+        ]
+    }
     r = xl.excel_create(spec, output_path=str(tmp_path / "pct.xlsx"))
     assert r["ok"], r
     ws = _load(r["path"])["P"]
@@ -159,11 +189,15 @@ def test_t1_13_number_format_by_range(tmp_path: Path):
 
 
 def test_t1_14_merge_cells(tmp_path: Path):
-    spec = {"sheets": [{
-        "name": "M",
-        "rows": [["季度汇总", None, None], ["Q1", "Q2", "Q3"]],
-        "merge_cells": ["A1:C1"],
-    }]}
+    spec = {
+        "sheets": [
+            {
+                "name": "M",
+                "rows": [["季度汇总", None, None], ["Q1", "Q2", "Q3"]],
+                "merge_cells": ["A1:C1"],
+            }
+        ]
+    }
     r = xl.excel_create(spec, output_path=str(tmp_path / "mg.xlsx"))
     assert r["ok"], r
     ws = _load(r["path"])["M"]
@@ -171,18 +205,24 @@ def test_t1_14_merge_cells(tmp_path: Path):
 
 
 def test_t1_15_cell_styles_fill_and_color(tmp_path: Path):
-    spec = {"sheets": [{
-        "name": "St",
-        "rows": [["标题"], ["数据"]],
-        "cell_styles": [{
-            "range": "A1",
-            "bold": True,
-            "fill": "#1F4E78",
-            "font_color": "#FFFFFF",
-            "align": "center",
-            "border": True,
-        }],
-    }]}
+    spec = {
+        "sheets": [
+            {
+                "name": "St",
+                "rows": [["标题"], ["数据"]],
+                "cell_styles": [
+                    {
+                        "range": "A1",
+                        "bold": True,
+                        "fill": "#1F4E78",
+                        "font_color": "#FFFFFF",
+                        "align": "center",
+                        "border": True,
+                    }
+                ],
+            }
+        ]
+    }
     r = xl.excel_create(spec, output_path=str(tmp_path / "st.xlsx"))
     assert r["ok"], r
     ws = _load(r["path"])["St"]
@@ -194,14 +234,18 @@ def test_t1_15_cell_styles_fill_and_color(tmp_path: Path):
 
 
 def test_t1_16_multiple_charts(tmp_path: Path):
-    spec = {"sheets": [{
-        "name": "Ch",
-        "rows": [["m", "v"], ["a", 1], ["b", 2]],
-        "charts": [
-            {"type": "bar", "data": "B1:B3", "categories": "A2:A3", "anchor": "D2"},
-            {"type": "line", "data": "B1:B3", "categories": "A2:A3", "anchor": "D20"},
-        ],
-    }]}
+    spec = {
+        "sheets": [
+            {
+                "name": "Ch",
+                "rows": [["m", "v"], ["a", 1], ["b", 2]],
+                "charts": [
+                    {"type": "bar", "data": "B1:B3", "categories": "A2:A3", "anchor": "D2"},
+                    {"type": "line", "data": "B1:B3", "categories": "A2:A3", "anchor": "D20"},
+                ],
+            }
+        ]
+    }
     r = xl.excel_create(spec, output_path=str(tmp_path / "ch.xlsx"))
     assert r["ok"], r
     ws = _load(r["path"])["Ch"]
@@ -216,11 +260,15 @@ def test_t1_17_image_embedded(tmp_path: Path):
 
     img_path = tmp_path / "dot.png"
     _PILImage.new("RGB", (10, 10), (255, 0, 0)).save(img_path)
-    spec = {"sheets": [{
-        "name": "Img",
-        "rows": [["see chart"]],
-        "images": [{"path": str(img_path), "anchor": "C2"}],
-    }]}
+    spec = {
+        "sheets": [
+            {
+                "name": "Img",
+                "rows": [["see chart"]],
+                "images": [{"path": str(img_path), "anchor": "C2"}],
+            }
+        ]
+    }
     r = xl.excel_create(spec, output_path=str(tmp_path / "img.xlsx"))
     assert r["ok"], r
     ws = _load(r["path"])["Img"]

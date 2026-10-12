@@ -15,6 +15,7 @@ the permission gate fired exactly once with category=desktop_write.
 Run:
     cd backend && python -m scripts.e2e_stage_a_full
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -73,17 +74,13 @@ async def main() -> int:
     # v2 registry + gate
     registry = ToolRegistry()
     register_os_tools(registry)
-    gate = PermissionGate(
-        config=PermissionGateConfig(timeout_s=2.0)
-    )
+    gate = PermissionGate(config=PermissionGateConfig(timeout_s=2.0))
     permission_log: list[tuple[str, str]] = []
 
     async def auto_approve(req):
         permission_log.append((req.category, req.summary))
         _print(f"popup: category={req.category} summary={req.summary!r} -> ALLOW")
-        return PermissionResponse(
-            request_id=req.request_id, decision="allow"
-        )
+        return PermissionResponse(request_id=req.request_id, decision="allow")
 
     gate.set_responder(auto_approve)
     registry.set_permission_gate(gate)
@@ -110,8 +107,7 @@ async def main() -> int:
             {
                 "role": "user",
                 "content": (
-                    "Create a file called todo.txt on my desktop with "
-                    "the content '吃饭买菜'."
+                    "Create a file called todo.txt on my desktop with the content '吃饭买菜'."
                 ),
             },
         ],

@@ -10,6 +10,7 @@ These tests pin:
   2. ``load_config`` ignores a plaintext ``[llm.cloud].api_key`` in TOML,
      emits a WARN log pointing the user to SettingsPanel.
 """
+
 from __future__ import annotations
 
 import logging
@@ -22,12 +23,14 @@ import textwrap
 
 def test_resolve_returns_env_value_when_set(monkeypatch):
     from config import resolve_cloud_api_key
+
     monkeypatch.setenv("DESKPET_CLOUD_API_KEY", "sk-from-keyring-via-env")
     assert resolve_cloud_api_key() == "sk-from-keyring-via-env"
 
 
 def test_resolve_returns_none_when_env_unset(monkeypatch):
     from config import resolve_cloud_api_key
+
     monkeypatch.delenv("DESKPET_CLOUD_API_KEY", raising=False)
     assert resolve_cloud_api_key() is None
 
@@ -37,6 +40,7 @@ def test_resolve_treats_empty_string_as_none(monkeypatch):
     # "configured but blank" — downstream provider would reject it with a
     # less helpful error.
     from config import resolve_cloud_api_key
+
     monkeypatch.setenv("DESKPET_CLOUD_API_KEY", "")
     assert resolve_cloud_api_key() is None
 
@@ -52,7 +56,8 @@ def test_load_config_warns_on_plaintext_cloud_api_key(tmp_path, caplog):
     from config import load_config
 
     cfg_path = tmp_path / "config.toml"
-    cfg_path.write_text(textwrap.dedent("""
+    cfg_path.write_text(
+        textwrap.dedent("""
         [llm]
         strategy = "local_first"
 
@@ -65,7 +70,9 @@ def test_load_config_warns_on_plaintext_cloud_api_key(tmp_path, caplog):
         model = "qwen3.6-plus"
         base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
         api_key = "sk-real-leftover-from-P2-1-S1"
-    """).strip(), encoding="utf-8")
+    """).strip(),
+        encoding="utf-8",
+    )
 
     with caplog.at_level(logging.WARNING):
         cfg = load_config(cfg_path)
@@ -89,12 +96,15 @@ def test_load_config_silent_when_cloud_api_key_is_placeholder(tmp_path, caplog):
     from config import load_config
 
     cfg_path = tmp_path / "config.toml"
-    cfg_path.write_text(textwrap.dedent("""
+    cfg_path.write_text(
+        textwrap.dedent("""
         [llm.cloud]
         model = "qwen3.6-plus"
         base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
         api_key = "sk-..."
-    """).strip(), encoding="utf-8")
+    """).strip(),
+        encoding="utf-8",
+    )
 
     with caplog.at_level(logging.WARNING):
         load_config(cfg_path)

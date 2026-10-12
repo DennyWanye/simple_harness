@@ -38,7 +38,11 @@ class ExactWordTokenizer:
 
 
 def meter_binding(
-    tokenizer: ExactWordTokenizer, *, input_limit: int = 8192, max_output: int = 8192, combined: int | None = None
+    tokenizer: ExactWordTokenizer,
+    *,
+    input_limit: int = 8192,
+    max_output: int = 8192,
+    combined: int | None = None,
 ) -> MeterBinding:
     limits = model_limits(
         model=MODEL,
@@ -51,7 +55,12 @@ def meter_binding(
     return MeterBinding(
         tokenizer=tokenizer,
         model_limits=limits,
-        certification_ref=Pin("receipt", "meter-certification:test-exact-words", 0, digest({"rule": "one token per word"})),
+        certification_ref=Pin(
+            "receipt",
+            "meter-certification:test-exact-words",
+            0,
+            digest({"rule": "one token per word"}),
+        ),
     )
 
 
@@ -112,7 +121,9 @@ def trusted_caller(command_id: str = "create-1") -> TrustedCaller:
     return TrustedCaller(
         principal_ref=Pin("principal", "user:test", 1, HASH),
         owner_contract_ref=Pin("policy", "owner-standalone", 1, HASH),
-        command_receipt_ref=Pin("receipt", f"host:command:{command_id}", 0, digest({"command_id": command_id})),
+        command_receipt_ref=Pin(
+            "receipt", f"host:command:{command_id}", 0, digest({"command_id": command_id})
+        ),
     )
 
 
@@ -167,7 +178,11 @@ def build(
         fault=fault,
         meter=meter_binding(tokenizer, input_limit=input_limit, max_output=max_output),
         embedding=embedding,
-        embedding_resource_ref=None if embedding is None else Pin("deployment", "embedding-test", 1, digest(str(getattr(embedding, "fingerprint", "?")))),
+        embedding_resource_ref=None
+        if embedding is None
+        else Pin(
+            "deployment", "embedding-test", 1, digest(str(getattr(embedding, "fingerprint", "?")))
+        ),
         acceptance=acceptance,
         script_runner=script_runner,
         artifacts=artifacts,

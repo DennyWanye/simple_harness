@@ -90,9 +90,7 @@ def _terminal(uow, lease, fence, spec, *, state=RunState.COMPLETED, fault=None):
         "root_terminal.run.before_write",
     ),
 )
-def test_terminal_and_committed_turn_rollback_together(
-    tmp_path: Path, fault_point: str
-) -> None:
+def test_terminal_and_committed_turn_rollback_together(tmp_path: Path, fault_point: str) -> None:
     database, uow, lease, fence = _setup(tmp_path / f"{fault_point}.db")
 
     def fault(point: str) -> None:

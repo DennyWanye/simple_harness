@@ -42,7 +42,8 @@ def test_source_mode_retains_interpreter_unavailable_reason(tmp_path, monkeypatc
     monkeypatch.setattr(sandbox.SeatbeltExecutor, "for_interpreter", unavailable)
     service = service_at(tmp_path)
     assert asyncio.run(service._probe_sandbox()) == {
-        "ok": False, "reason": "unit interpreter unavailable",
+        "ok": False,
+        "reason": "unit interpreter unavailable",
     }
     assert seen == [sys.executable] and service._executor is None
 

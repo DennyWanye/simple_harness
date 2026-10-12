@@ -111,9 +111,7 @@ class _States:
         if self.crash_before_ack_child:
             self.crash_before_ack_child = False
             raise RuntimeError("crash_before_child_ack")
-        self.state = replace(
-            self.state, status=CandidateBuildStatus.CHILD_PRECREATED
-        )
+        self.state = replace(self.state, status=CandidateBuildStatus.CHILD_PRECREATED)
         return self.state
 
     def ack_running(self, permit, **kwargs):
@@ -278,17 +276,13 @@ async def test_launch_requires_companion_ack_before_child_start() -> None:
     )
 
     assert state.status is CandidateBuildStatus.RUNNING
-    assert trace.index("companion.ack_child_precreated") < trace.index(
-        "execution.start"
-    )
+    assert trace.index("companion.ack_child_precreated") < trace.index("execution.start")
     assert launches.precreates == 1
     assert launches.starts == 1
     assert receipts.reads == output.invocations == 0
 
     launches.complete()
-    state = await coordinator.reconcile(
-        permit, task_workspace="workspace-1"
-    )
+    state = await coordinator.reconcile(permit, task_workspace="workspace-1")
     assert state.status is CandidateBuildStatus.BUILT
     assert receipts.reads == output.invocations == 1
 
@@ -299,16 +293,12 @@ async def test_child_precreated_but_companion_not_acked_recovers_exact_child() -
     states.crash_before_ack_child = True
 
     with pytest.raises(RuntimeError, match="crash_before_child_ack"):
-        await coordinator.reconcile(
-            permit, task_workspace="workspace-1"
-        )
+        await coordinator.reconcile(permit, task_workspace="workspace-1")
     assert states.state.status is CandidateBuildStatus.LAUNCH_PENDING
     assert launches.precreates == 1
     assert launches.starts == 0
 
-    state = await coordinator.reconcile(
-        permit, task_workspace="workspace-1"
-    )
+    state = await coordinator.reconcile(permit, task_workspace="workspace-1")
     assert state.status is CandidateBuildStatus.RUNNING
     assert launches.precreates == 1
     assert launches.starts == 1
@@ -322,15 +312,11 @@ async def test_handoff_pending_recovery_never_restarts_child() -> None:
     states.crash_after_ack_handoff = True
 
     with pytest.raises(RuntimeError, match="crash_after_handoff_ack"):
-        await coordinator.reconcile(
-            permit, task_workspace="workspace-1"
-        )
+        await coordinator.reconcile(permit, task_workspace="workspace-1")
     assert states.state.status is CandidateBuildStatus.HANDOFF_PENDING
     starts_before = launches.starts
 
-    state = await coordinator.reconcile(
-        permit, task_workspace="workspace-1"
-    )
+    state = await coordinator.reconcile(permit, task_workspace="workspace-1")
     assert state.status is CandidateBuildStatus.BUILT
     assert launches.starts == starts_before
     assert receipts.reads == output.invocations == 1
@@ -348,9 +334,7 @@ async def test_mismatched_precreated_child_marks_build_stale() -> None:
         CandidateBuildCoordinationError,
         match="reserved_builder_child_identity_mismatch",
     ):
-        await coordinator.reconcile(
-            permit, task_workspace="workspace-1"
-        )
+        await coordinator.reconcile(permit, task_workspace="workspace-1")
 
     assert states.state.status is CandidateBuildStatus.STALE
     assert launches.starts == 0
@@ -362,9 +346,7 @@ async def test_failed_child_terminates_without_receipt_or_handoff() -> None:
     await coordinator.reconcile(permit, task_workspace="workspace-1")
     launches.child = launches._identity("failed")
 
-    state = await coordinator.reconcile(
-        permit, task_workspace="workspace-1"
-    )
+    state = await coordinator.reconcile(permit, task_workspace="workspace-1")
 
     assert state.status is CandidateBuildStatus.FAILED
     assert state.last_error == "builder_child_failed"
@@ -379,16 +361,12 @@ async def test_handoff_completed_but_built_ack_missing_replays_same_candidate() 
     states.crash_before_ack_built = True
 
     with pytest.raises(RuntimeError, match="crash_before_built_ack"):
-        await coordinator.reconcile(
-            permit, task_workspace="workspace-1"
-        )
+        await coordinator.reconcile(permit, task_workspace="workspace-1")
     assert states.state.status is CandidateBuildStatus.HANDOFF_PENDING
     assert output.creations == 1
     starts_before = launches.starts
 
-    state = await coordinator.reconcile(
-        permit, task_workspace="workspace-1"
-    )
+    state = await coordinator.reconcile(permit, task_workspace="workspace-1")
     assert state.status is CandidateBuildStatus.BUILT
     assert launches.starts == starts_before
     assert receipts.reads == output.invocations == 2

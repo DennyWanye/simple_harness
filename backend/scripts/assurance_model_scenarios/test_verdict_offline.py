@@ -14,6 +14,7 @@
     backend/.venv/bin/python backend/scripts/assurance_model_scenarios/test_verdict_offline.py
     # 或 backend/.venv/bin/python -m pytest -q backend/scripts/assurance_model_scenarios/test_verdict_offline.py
 """
+
 from __future__ import annotations
 
 import json
@@ -26,7 +27,11 @@ from types import SimpleNamespace
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import run  # noqa: E402
 
-GOOD_ORACLE = {"root_resolution_accepted": True, "closeout_finalized": True, "report_accepted": True}
+GOOD_ORACLE = {
+    "root_resolution_accepted": True,
+    "closeout_finalized": True,
+    "report_accepted": True,
+}
 
 
 def _usage(tokens: int, calls: int) -> dict:
@@ -35,14 +40,29 @@ def _usage(tokens: int, calls: int) -> dict:
 
 def test_limits_come_only_from_plan_json() -> None:
     body = json.loads(run.PLAN_SCENARIOS.read_text(encoding="utf-8"))["limits"]
-    assert run.LIMITS == {"tokens": body["total_model_tokens"], "model_calls": body["model_calls"],
-                          "tool_calls": body["tool_calls"], "wall": body["wall_time_seconds"]}
+    assert run.LIMITS == {
+        "tokens": body["total_model_tokens"],
+        "model_calls": body["model_calls"],
+        "tool_calls": body["tool_calls"],
+        "wall": body["wall_time_seconds"],
+    }
     # 五个场景没有自己的预算；换一份 JSON 预算就跟着变，证明数字不在脚本里
     assert all("limits" not in spec for spec in run.SCENARIOS.values())
     with tempfile.TemporaryDirectory() as tmp:
         other = Path(tmp) / "scenarios.json"
-        other.write_text(json.dumps({"limits": {"total_model_tokens": 7, "model_calls": 1, "tool_calls": 2,
-                                                "wall_time_seconds": 3}}), encoding="utf-8")
+        other.write_text(
+            json.dumps(
+                {
+                    "limits": {
+                        "total_model_tokens": 7,
+                        "model_calls": 1,
+                        "tool_calls": 2,
+                        "wall_time_seconds": 3,
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
         assert run.plan_limits(other) == {"tokens": 7, "model_calls": 1, "tool_calls": 2, "wall": 3}
 
 
@@ -60,12 +80,18 @@ def test_over_budget_is_a_failed_trial_with_reason() -> None:
     assert any("token 总量 420000 > 上限 300000" in r for r in result["fail_reasons"])
     # 模型调用数超 → FAIL
     result = run.verdict("COMPLETED", GOOD_ORACLE, _usage(100_000, 17), 240.0, limits)
-    assert result["passed"] is False and any("模型调用数 17 > 上限 16" in r for r in result["fail_reasons"])
+    assert result["passed"] is False and any(
+        "模型调用数 17 > 上限 16" in r for r in result["fail_reasons"]
+    )
     # 墙钟超 → FAIL
     result = run.verdict("COMPLETED", GOOD_ORACLE, _usage(100_000, 9), 901.0, limits)
-    assert result["passed"] is False and any("墙钟秒数 901 > 上限 900" in r for r in result["fail_reasons"])
+    assert result["passed"] is False and any(
+        "墙钟秒数 901 > 上限 900" in r for r in result["fail_reasons"]
+    )
     # 用量缺失不能当作在预算内
-    result = run.verdict("COMPLETED", GOOD_ORACLE, {"model_calls": 9, "tokens": None}, 100.0, limits)
+    result = run.verdict(
+        "COMPLETED", GOOD_ORACLE, {"model_calls": 9, "tokens": None}, 100.0, limits
+    )
     assert result["passed"] is False and result["within_budget"] is False
 
 
@@ -74,8 +100,12 @@ def test_unfinished_or_wrong_oracle_still_fails() -> None:
     result = run.verdict("FAILED", GOOD_ORACLE, _usage(1000, 1), 10.0, limits)
     assert result["passed"] is False and result["within_budget"] is True
     assert any("不是 COMPLETED" in r for r in result["fail_reasons"])
-    result = run.verdict("COMPLETED", {**GOOD_ORACLE, "total": False}, _usage(1000, 1), 10.0, limits)
-    assert result["passed"] is False and any("判定 total 未成立" in r for r in result["fail_reasons"])
+    result = run.verdict(
+        "COMPLETED", {**GOOD_ORACLE, "total": False}, _usage(1000, 1), 10.0, limits
+    )
+    assert result["passed"] is False and any(
+        "判定 total 未成立" in r for r in result["fail_reasons"]
+    )
 
 
 def test_rerun_same_trial_keeps_old_attempt() -> None:
@@ -87,7 +117,9 @@ def test_rerun_same_trial_keeps_old_attempt() -> None:
         second, n2 = run.new_attempt_dir(out, "accurate-report", 2)
         assert n2 == 2 and second == out / "accurate-report/trial-2/attempt-2"
         # 旧记录一个字节没动，新目录是空的
-        assert (first / "record.json").read_text(encoding="utf-8") == '{"attempt": 1, "passed": false}'
+        assert (first / "record.json").read_text(
+            encoding="utf-8"
+        ) == '{"attempt": 1, "passed": false}'
         assert list(second.iterdir()) == []
         # 别的局号互不影响
         third, n3 = run.new_attempt_dir(out, "accurate-report", 3)
@@ -96,8 +128,14 @@ def test_rerun_same_trial_keeps_old_attempt() -> None:
 
 # ------------------------------------------------------------------ V28：两条线共用一步、其中一条换做法
 SPEC = run.SCENARIOS["shared-step-switch-method"]
-COSTS = json.dumps({"rows": [{"item": "A", "cost": 120}, {"item": "B", "cost": 100}], "total_cost": 220,
-                    "source_sha256": run.sha(run.FACTS_V1)}, ensure_ascii=False)
+COSTS = json.dumps(
+    {
+        "rows": [{"item": "A", "cost": 120}, {"item": "B", "cost": 100}],
+        "total_cost": 220,
+        "source_sha256": run.sha(run.FACTS_V1),
+    },
+    ensure_ascii=False,
+)
 FINANCE = "item,cost\nA,120\nB,100\nTOTAL,220\n"
 SUMMARY = "| item | cost |\n| --- | --- |\n| A | 120 |\n| B | 100 |\n\n合计：220 元\n"
 MISSION = "mission-v28"
@@ -127,36 +165,89 @@ class World:
     仍点名共用）；``branches=False`` 时造 10-05 联测那种形状（根做法里明细排成前置步骤，没有点名共用、没有换做法）。"""
 
     def __init__(self, root: Path, *, branches: bool = True) -> None:
-        self.backend = SimpleNamespace(userdata=root / "userdata", run_dir=root, published=root / "published")
+        self.backend = SimpleNamespace(
+            userdata=root / "userdata", run_dir=root, published=root / "published"
+        )
         base = self.backend.userdata / "data/agent-orchestrator"
         (base / "artifacts/sha256").mkdir(parents=True)
         self.base = base
         self.db = sqlite3.connect(base / "orchestrator.db")
         self.db.executescript(SCHEMA)
         self.n = 0
-        self.db.execute("INSERT INTO goal_resolutions VALUES (?,?,?)", (MISSION, "ACCEPT", "CURRENT"))
+        self.db.execute(
+            "INSERT INTO goal_resolutions VALUES (?,?,?)", (MISSION, "ACCEPT", "CURRENT")
+        )
         self.db.execute("INSERT INTO assurance_closeouts VALUES (?,?)", (MISSION, "FINALIZED"))
         for _ in range(2):
-            self.db.execute("INSERT INTO review_records VALUES (?,?,?,?)", (MISSION, 1, "ACCEPTED", "{}"))
+            self.db.execute(
+                "INSERT INTO review_records VALUES (?,?,?,?)", (MISSION, 1, "ACCEPTED", "{}")
+            )
         if branches:
-            self.revision(0, "RETIRED", {"occ-costs": "t-costs", "occ-fin": "t-fin", "occ-sum": "t-sum"})
-            self.revision(1, "ACTIVE", {"occ-costs": "t-costs", "occ-fin": "t-fin", "occ-sum2": "t-sum2"})
-            self.instance("mi-root", "occ-root", "m-root", 1, 0, "ADOPTED", {"left": ("occ-left", "new_work"),
-                                                                             "right": ("occ-right", "new_work")})
-            self.instance("mi-left", "occ-left", "m-left", 1, 0, "ADOPTED", {"costs": ("occ-costs", "new_work"),
-                                                                             "fin": ("occ-fin", "new_work")})
-            self.instance("mi-right", "occ-right", "m-right", 1, 0, "RETIRED", {"costs": ("occ-costs", "share_active"),
-                                                                                "sum": ("occ-sum", "new_work")})
-            self.instance("mi-right2", "occ-right", "m-right", 2, 1, "ADOPTED", {"costs": ("occ-costs", "reuse_accepted"),
-                                                                                 "sum": ("occ-sum2", "new_work")})
+            self.revision(
+                0, "RETIRED", {"occ-costs": "t-costs", "occ-fin": "t-fin", "occ-sum": "t-sum"}
+            )
+            self.revision(
+                1, "ACTIVE", {"occ-costs": "t-costs", "occ-fin": "t-fin", "occ-sum2": "t-sum2"}
+            )
+            self.instance(
+                "mi-root",
+                "occ-root",
+                "m-root",
+                1,
+                0,
+                "ADOPTED",
+                {"left": ("occ-left", "new_work"), "right": ("occ-right", "new_work")},
+            )
+            self.instance(
+                "mi-left",
+                "occ-left",
+                "m-left",
+                1,
+                0,
+                "ADOPTED",
+                {"costs": ("occ-costs", "new_work"), "fin": ("occ-fin", "new_work")},
+            )
+            self.instance(
+                "mi-right",
+                "occ-right",
+                "m-right",
+                1,
+                0,
+                "RETIRED",
+                {"costs": ("occ-costs", "share_active"), "sum": ("occ-sum", "new_work")},
+            )
+            self.instance(
+                "mi-right2",
+                "occ-right",
+                "m-right",
+                2,
+                1,
+                "ADOPTED",
+                {"costs": ("occ-costs", "reuse_accepted"), "sum": ("occ-sum2", "new_work")},
+            )
             self.accept("t-costs", {"costs.json": COSTS})
             self.accept("t-fin", {"finance.csv": FINANCE})
-            self.accept("t-sum", {"summary.md": run.BAD_SUMMARY}, validity="REVOKED")  # 被打回的错稿
+            self.accept(
+                "t-sum", {"summary.md": run.BAD_SUMMARY}, validity="REVOKED"
+            )  # 被打回的错稿
             self.accept("t-sum2", {"summary.md": SUMMARY})
         else:
-            self.revision(0, "ACTIVE", {"occ-costs": "t-costs", "occ-fin": "t-fin", "occ-sum": "t-sum"})
-            self.instance("mi-root", "occ-root", "m-root", 1, 0, "ADOPTED", {
-                "costs": ("occ-costs", "new_work"), "fin": ("occ-fin", "new_work"), "sum": ("occ-sum", "new_work")})
+            self.revision(
+                0, "ACTIVE", {"occ-costs": "t-costs", "occ-fin": "t-fin", "occ-sum": "t-sum"}
+            )
+            self.instance(
+                "mi-root",
+                "occ-root",
+                "m-root",
+                1,
+                0,
+                "ADOPTED",
+                {
+                    "costs": ("occ-costs", "new_work"),
+                    "fin": ("occ-fin", "new_work"),
+                    "sum": ("occ-sum", "new_work"),
+                },
+            )
             self.accept("t-costs", {"costs.json": COSTS})
             self.accept("t-fin", {"finance.csv": FINANCE})
             self.accept("t-sum", {"summary.md": SUMMARY})
@@ -165,16 +256,40 @@ class World:
     def revision(self, revision: int, state: str, members: dict[str, str]) -> None:
         self.db.execute("INSERT INTO plan_revisions VALUES (?,?,?)", (MISSION, revision, state))
         for occurrence, task in members.items():
-            self.db.execute("INSERT INTO plan_memberships VALUES (?,?,?,?,?,?)",
-                            (MISSION, revision, occurrence, task, "primitive", 1))
+            self.db.execute(
+                "INSERT INTO plan_memberships VALUES (?,?,?,?,?,?)",
+                (MISSION, revision, occurrence, task, "primitive", 1),
+            )
 
-    def instance(self, instance: str, goal: str, method: str, version: int, revision: int, state: str,
-                 children: dict[str, tuple[str, str]]) -> None:
-        self.db.execute("INSERT INTO method_instances VALUES (?,?,?,?,?,?,?,?,?)",
-                        (MISSION, instance, goal, method, version, f"hash-{method}-{version}", revision, state, revision))
+    def instance(
+        self,
+        instance: str,
+        goal: str,
+        method: str,
+        version: int,
+        revision: int,
+        state: str,
+        children: dict[str, tuple[str, str]],
+    ) -> None:
+        self.db.execute(
+            "INSERT INTO method_instances VALUES (?,?,?,?,?,?,?,?,?)",
+            (
+                MISSION,
+                instance,
+                goal,
+                method,
+                version,
+                f"hash-{method}-{version}",
+                revision,
+                state,
+                revision,
+            ),
+        )
         for slot, (occurrence, policy) in children.items():
-            self.db.execute("INSERT INTO method_child_occurrences VALUES (?,?,?,?,?)",
-                            (MISSION, instance, slot, occurrence, policy))
+            self.db.execute(
+                "INSERT INTO method_child_occurrences VALUES (?,?,?,?,?)",
+                (MISSION, instance, slot, occurrence, policy),
+            )
 
     def accept(self, task: str, files: dict[str, str], *, validity: str = "CURRENT") -> None:
         refs = []
@@ -182,17 +297,29 @@ class World:
             self.n += 1
             digest = run.sha(text)
             (self.base / "artifacts/sha256" / digest).write_text(text, encoding="utf-8")
-            self.db.execute("INSERT INTO artifacts VALUES (?,?,?,?,?)", (f"art-{self.n}", MISSION, task, path, digest))
+            self.db.execute(
+                "INSERT INTO artifacts VALUES (?,?,?,?,?)",
+                (f"art-{self.n}", MISSION, task, path, digest),
+            )
             refs.append({"id": f"art-{self.n}", "content_hash": digest})
-        self.db.execute("INSERT INTO acceptances VALUES (?,?,?,?)",
-                        (MISSION, task, validity, json.dumps({"artifact_refs": refs})))
+        self.db.execute(
+            "INSERT INTO acceptances VALUES (?,?,?,?)",
+            (MISSION, task, validity, json.dumps({"artifact_refs": refs})),
+        )
         self.db.commit()
 
     def judge(self, *, tokens: int = 200_000, calls: int = 12, wall: float = 400.0) -> dict:
-        record = {"scenario": "shared-step-switch-method", "mission_id": MISSION, "final_status": "COMPLETED",
-                  "hooks": [{"hook": "swap_first_report", "event": "installed"},
-                            {"hook": "swap_first_report", "path": "summary.md", "swapped": True}],
-                  "events_seen": [], "triggers": []}
+        record = {
+            "scenario": "shared-step-switch-method",
+            "mission_id": MISSION,
+            "final_status": "COMPLETED",
+            "hooks": [
+                {"hook": "swap_first_report", "event": "installed"},
+                {"hook": "swap_first_report", "path": "summary.md", "swapped": True},
+            ],
+            "events_seen": [],
+            "triggers": [],
+        }
         record["oracle"] = run.oracle_shared(self.backend, record, SPEC)
         record["usage"] = {"model_calls": calls, "tokens": tokens}
         record.update(run.verdict("COMPLETED", record["oracle"], record["usage"], wall, LIMITS))
@@ -238,8 +365,10 @@ def test_v28_shared_step_executed_twice_fails() -> None:
     """两条线各自算了一遍 costs.json、两份都在现行计划里被验收 → 共用步骤重复执行 → FAIL。"""
     with tempfile.TemporaryDirectory() as tmp:
         world = World(Path(tmp))
-        world.db.execute("INSERT INTO plan_memberships VALUES (?,?,?,?,?,?)",
-                         (MISSION, 1, "occ-costs-again", "t-costs-again", "primitive", 1))
+        world.db.execute(
+            "INSERT INTO plan_memberships VALUES (?,?,?,?,?,?)",
+            (MISSION, 1, "occ-costs-again", "t-costs-again", "primitive", 1),
+        )
         world.accept("t-costs-again", {"costs.json": COSTS})
         record = world.judge()
     assert record["oracle"]["shared_step_accepted_once"] is False
@@ -264,7 +393,10 @@ def test_v28_bad_draft_accepted_or_wrong_content_fails() -> None:
         world.db.execute("UPDATE plan_memberships SET task_id='t-sum' WHERE task_id='t-sum2'")
         world.db.commit()
         record = world.judge()
-    assert record["oracle"]["bad_draft_never_accepted"] is False and record["oracle"]["summary_content"] is False
+    assert (
+        record["oracle"]["bad_draft_never_accepted"] is False
+        and record["oracle"]["summary_content"] is False
+    )
     assert record["passed"] is False
     with tempfile.TemporaryDirectory() as tmp:
         world = World(Path(tmp))
@@ -291,8 +423,19 @@ def test_v28_root_replacement_keeping_a_step_is_not_two_branch_sharing() -> None
     with tempfile.TemporaryDirectory() as tmp:
         world = World(Path(tmp), branches=False)
         world.db.execute("UPDATE method_instances SET state='RETIRED' WHERE instance_id='mi-root'")
-        world.instance("mi-root2", "occ-root", "m-root", 2, 1, "ADOPTED", {
-            "costs": ("occ-costs", "reuse_accepted"), "fin": ("occ-fin", "new_work"), "sum": ("occ-sum", "new_work")})
+        world.instance(
+            "mi-root2",
+            "occ-root",
+            "m-root",
+            2,
+            1,
+            "ADOPTED",
+            {
+                "costs": ("occ-costs", "reuse_accepted"),
+                "fin": ("occ-fin", "new_work"),
+                "sum": ("occ-sum", "new_work"),
+            },
+        )
         world.db.commit()
         record = world.judge()
     assert record["observed"] == {"named_sharing": False, "method_switched": False}
@@ -302,7 +445,11 @@ def test_v28_root_replacement_keeping_a_step_is_not_two_branch_sharing() -> None
 
 
 def test_v28_env_failure_line_says_observations_missing() -> None:
-    record = {"scenario": "shared-step-switch-method", "final_status": "INVALID_ENV", "passed": False}
+    record = {
+        "scenario": "shared-step-switch-method",
+        "final_status": "INVALID_ENV",
+        "passed": False,
+    }
     line = run.summary_line(record, Path("/x"))
     assert "observed" in line and line["observed"] is None
     assert run.observed_text(None).startswith("没有记录")

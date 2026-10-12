@@ -54,9 +54,7 @@ class _Ingress:
 
     async def start_skill_install_verification(self, **values):
         self.start_values = values
-        attempt = await self.store.get_skill_install_verification_attempt(
-            values["attempt_id"]
-        )
+        attempt = await self.store.get_skill_install_verification_attempt(values["attempt_id"])
         driver = self.service.driver_for_attempt(attempt)
         result = await driver.start(
             SimpleNamespace(
@@ -272,13 +270,9 @@ async def test_real_store_capability_and_sdk_saga_reaches_attested(tmp_path) -> 
     assert ingress.start_values["tool_catalog_generation"] == 7
     assert ingress.start_values["tool_catalog_fingerprint"] == "f" * 64
     final_intent = await store.get_skill_install_intent(intent.intent_id)
-    final_attempt = await store.get_current_skill_install_verification_attempt(
-        intent.intent_id
-    )
+    final_attempt = await store.get_current_skill_install_verification_attempt(intent.intent_id)
     assert final_intent.status == "succeeded"
     assert final_attempt.status == "attested"
-    release = await store.get_snapshot_lease_release_receipt(
-        final_attempt.lease_intent_id
-    )
+    release = await store.get_snapshot_lease_release_receipt(final_attempt.lease_intent_id)
     assert release is not None
     assert release.status == "released"

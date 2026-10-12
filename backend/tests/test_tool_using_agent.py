@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 """Tests for ToolUsingAgent — text-protocol tool routing layer."""
+
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
@@ -145,9 +146,7 @@ async def test_session_id_forwarded_to_base():
     reg = ToolRegistry()
     agent = ToolUsingAgent(base=base, registry=reg, inject_system_prompt=False)
 
-    async for _ in agent.chat_stream(
-        [{"role": "user", "content": "hi"}], session_id="user-42"
-    ):
+    async for _ in agent.chat_stream([{"role": "user", "content": "hi"}], session_id="user-42"):
         pass
 
     assert base.last_session_id == "user-42"

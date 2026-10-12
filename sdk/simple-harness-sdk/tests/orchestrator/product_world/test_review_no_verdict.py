@@ -7,6 +7,7 @@
 
 **改坏检验**：消费者里把第 2 次格式错误重新送回"格式用完" → 第一条变红（没有正式记录、没有裁决题）。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -46,40 +47,68 @@ def _unusable(purpose: str, reply: Any, calls: dict[str, int]) -> Any:
 
 
 def _questions(world: Any, mission_id: str, prefix: str) -> list[dict[str, Any]]:
-    return [row for row in PlanningHumanStore(world.store).list(mission_id)
-            if str(row["decision_id"]).startswith(prefix)]
+    return [
+        row
+        for row in PlanningHumanStore(world.store).list(mission_id)
+        if str(row["decision_id"]).startswith(prefix)
+    ]
 
 
 def _answer(world: Any, mission: Any, row: dict[str, Any], answer: str) -> None:
     answer_planning_question(
-        world.loop, tenant_id=mission.tenant_id, principal=world.deployment.principal,
-        decision_id=row["decision_id"], answer=answer, expected_version=row["version"],
-        nonce="n-" + row["decision_id"])
+        world.loop,
+        tenant_id=mission.tenant_id,
+        principal=world.deployment.principal,
+        decision_id=row["decision_id"],
+        answer=answer,
+        expected_version=row["version"],
+        nonce="n-" + row["decision_id"],
+    )
 
 
 def _imported(world: Any, mission_id: str) -> list[dict[str, Any]]:
-    return [event.payload for event in world.store.list_events(mission_id)
-            if event.type == "AssuranceReviewImported"]
+    return [
+        event.payload
+        for event in world.store.list_events(mission_id)
+        if event.type == "AssuranceReviewImported"
+    ]
 
 
 def test_final_review_without_usable_reply_asks_person(tmp_path):
     async def case():
         calls: dict[str, int] = {}
         provider = LayeredScriptedProvider(
-            reviewer=_unusable("MISSION_FINAL", lambda data: "我看过了，没有问题。", calls))
+            reviewer=_unusable("MISSION_FINAL", lambda data: "我看过了，没有问题。", calls)
+        )
         async with product_world(tmp_path / "root", provider) as world:
-            mission_id = world.create({"goal": "写一份 NOTES.md", "success_criteria": ["file:NOTES.md"],
-                                       "idempotency_key": "final-no-verdict"})["mission_id"]
+            mission_id = world.create(
+                {
+                    "goal": "写一份 NOTES.md",
+                    "success_criteria": ["file:NOTES.md"],
+                    "idempotency_key": "final-no-verdict",
+                }
+            )["mission_id"]
             mission = await world.run_until_settled(mission_id, rounds=8)
             assert mission.status.value == "ACTIVE"
             assert calls["MISSION_FINAL"] == 2  # the reply and its one repair; never a third
             [row] = _questions(world, mission_id, "adjudicate-root:")
             assert row["state"] == "PENDING"
-            record = HtnStore(world.store).get_review_record(row["request"]["repair_context"]["record_id"]).record
+            record = (
+                HtnStore(world.store)
+                .get_review_record(row["request"]["repair_context"]["record_id"])
+                .record
+            )
             assert record.verdict.value == "INCONCLUSIVE"
-            assert all(str(item.verdict) == "UNKNOWN" and item.limitations[0].startswith("REVIEW_NO_USABLE_REPLY:")
-                       for item in record.criteria)
-            assert not [e for e in world.store.list_events(mission_id) if e.type == "AssuranceReviewFormatExhausted"]
+            assert all(
+                str(item.verdict) == "UNKNOWN"
+                and item.limitations[0].startswith("REVIEW_NO_USABLE_REPLY:")
+                for item in record.criteria
+            )
+            assert not [
+                e
+                for e in world.store.list_events(mission_id)
+                if e.type == "AssuranceReviewFormatExhausted"
+            ]
             _answer(world, mission, row, "pass")
             mission = await world.run_until_settled(mission_id, rounds=8)
             assert mission.status.value == "COMPLETED"
@@ -100,21 +129,40 @@ def test_final_review_whose_second_call_failed_by_its_own_doing_asks_person(tmp_
         calls: dict[str, int] = {}
         # 审阅员只查不答，撞上调用上限（react_max_turns_exceeded）：它自己的事，不是被打断
         provider = LayeredScriptedProvider(
-            reviewer=_unusable("MISSION_FINAL", lambda data: ("knowledge_list", {}), calls))
+            reviewer=_unusable("MISSION_FINAL", lambda data: ("knowledge_list", {}), calls)
+        )
         async with product_world(tmp_path / "root", provider) as world:
-            mission_id = world.create({"goal": "写一份 NOTES.md", "success_criteria": ["file:NOTES.md"],
-                                       "idempotency_key": "final-call-failed"})["mission_id"]
+            mission_id = world.create(
+                {
+                    "goal": "写一份 NOTES.md",
+                    "success_criteria": ["file:NOTES.md"],
+                    "idempotency_key": "final-call-failed",
+                }
+            )["mission_id"]
             mission = await world.run_until_settled(mission_id, rounds=8)
             assert mission.status.value == "ACTIVE", mission.stop_reason
-            assert calls["MISSION_FINAL"] == 6  # 两次审阅调用、每次 3 次模型调用；没有第三次审阅调用
+            assert (
+                calls["MISSION_FINAL"] == 6
+            )  # 两次审阅调用、每次 3 次模型调用；没有第三次审阅调用
             [row] = _questions(world, mission_id, "adjudicate-root:")
             assert row["state"] == "PENDING"
-            record = HtnStore(world.store).get_review_record(row["request"]["repair_context"]["record_id"]).record
+            record = (
+                HtnStore(world.store)
+                .get_review_record(row["request"]["repair_context"]["record_id"])
+                .record
+            )
             assert record.verdict.value == "INCONCLUSIVE"
             # 2026-10-10：标记带上第二次调用的缘由（第一次为什么没用上），人裁决时看得懂两次各自的原因
-            assert all(item.limitations[0] == "REVIEW_NO_USABLE_REPLY:REVIEW_TURN_NOT_COMMITTED;FIRST_CALL=TURN_RETRY"
-                       for item in record.criteria)
-            assert not [e for e in world.store.list_events(mission_id) if e.type == "AssuranceReviewFormatExhausted"]
+            assert all(
+                item.limitations[0]
+                == "REVIEW_NO_USABLE_REPLY:REVIEW_TURN_NOT_COMMITTED;FIRST_CALL=TURN_RETRY"
+                for item in record.criteria
+            )
+            assert not [
+                e
+                for e in world.store.list_events(mission_id)
+                if e.type == "AssuranceReviewFormatExhausted"
+            ]
             _answer(world, mission, row, "pass")
             mission = await world.run_until_settled(mission_id, rounds=8)
             assert mission.status.value == "COMPLETED"
@@ -139,12 +187,20 @@ async def _publish_until_outcome_question(tmp_path, key: str):  # type: ignore[n
     policy = DeploymentPolicy(enabled_connectors=("file_publish",), max_action_level="L2")
     calls: dict[str, int] = {}
     provider = LayeredScriptedProvider(reviewer=_unusable("OPERATION_OUTCOME", _extra_field, calls))
-    context = product_world(tmp_path / "root", provider, connectors={"file_publish": connector},
-                            deployment_policy=policy)
+    context = product_world(
+        tmp_path / "root",
+        provider,
+        connectors={"file_publish": connector},
+        deployment_policy=policy,
+    )
     world = await context.__aenter__()
-    mission_id = world.create({"goal": "写一份周报 reports/weekly.md 并发布",
-                               "success_criteria": ["file:" + TARGET, PUBLISH],
-                               "idempotency_key": key})["mission_id"]
+    mission_id = world.create(
+        {
+            "goal": "写一份周报 reports/weekly.md 并发布",
+            "success_criteria": ["file:" + TARGET, PUBLISH],
+            "idempotency_key": key,
+        }
+    )["mission_id"]
     await world.drain()
     _confirm_completion(world, mission_id)
     approvals: list[dict[str, Any]] = []
@@ -193,8 +249,11 @@ def test_outcome_review_ruled_fail_is_not_accepted_and_is_named_in_the_stop(tmp_
             mission = await world.run_until_settled(mission_id, rounds=20)
             assert not _accepted(world, mission_id)
             record_id = row["request"]["repair_context"]["record_id"]
-            assert {"kind": "outcome", "record_id": record_id, "ruling": "fail"} in \
-                world.loop._inconclusive_reviews(mission_id)
+            assert {
+                "kind": "outcome",
+                "record_id": record_id,
+                "ruling": "fail",
+            } in world.loop._inconclusive_reviews(mission_id)
             assert mission.status.value != "COMPLETED"
         finally:
             await context.__aexit__(None, None, None)
@@ -212,11 +271,17 @@ def test_composition_ruling_survives_epoch_change(tmp_path):
 
     async def case():
         calls: dict[str, int] = {}
-        provider = LayeredScriptedProvider(planner=planner,
-                                           reviewer=_unusable("COMPOSITION", lambda data: "无法给出结论", calls))
+        provider = LayeredScriptedProvider(
+            planner=planner, reviewer=_unusable("COMPOSITION", lambda data: "无法给出结论", calls)
+        )
         async with product_world(tmp_path / "root", provider) as world:
-            mission_id = world.create({"goal": "写两份笔记", "idempotency_key": "composition-stale",
-                                       "success_criteria": ["file:notes/a.md", "file:NOTES.md"]})["mission_id"]
+            mission_id = world.create(
+                {
+                    "goal": "写两份笔记",
+                    "idempotency_key": "composition-stale",
+                    "success_criteria": ["file:notes/a.md", "file:NOTES.md"],
+                }
+            )["mission_id"]
             for _ in range(20):
                 await world.drain()
                 if _questions(world, mission_id, "adjudicate-compound:"):
@@ -229,9 +294,12 @@ def test_composition_ruling_survives_epoch_change(tmp_path):
             [row] = _questions(world, mission_id, "adjudicate-compound:")
             assert row["state"] == "PENDING"
             record_id = row["request"]["repair_context"]["record_id"]
-            assert not [e for e in world.store.list_events(mission_id)
-                        if e.type == "PlanningRepairRequested"
-                        and e.payload.get("source_key") == "composition-review:" + record_id]
+            assert not [
+                e
+                for e in world.store.list_events(mission_id)
+                if e.type == "PlanningRepairRequested"
+                and e.payload.get("source_key") == "composition-review:" + record_id
+            ]
 
     asyncio.run(case())
 
@@ -256,20 +324,40 @@ def test_a_root_ruling_question_made_stale_by_an_amendment_goes_to_the_planner(t
     async def case():
         calls: dict[str, int] = {}
         provider = LayeredScriptedProvider(
-            planner=planner, reviewer=_unusable("MISSION_FINAL", lambda data: "我看过了，没有问题。", calls))
+            planner=planner,
+            reviewer=_unusable("MISSION_FINAL", lambda data: "我看过了，没有问题。", calls),
+        )
         async with product_world(tmp_path / "root", provider) as world:
-            mission_id = world.create({"goal": "写一份 NOTES.md", "success_criteria": ["file:NOTES.md"],
-                                       "idempotency_key": "final-stale-ruling"})["mission_id"]
+            mission_id = world.create(
+                {
+                    "goal": "写一份 NOTES.md",
+                    "success_criteria": ["file:NOTES.md"],
+                    "idempotency_key": "final-stale-ruling",
+                }
+            )["mission_id"]
             await world.run_until_settled(mission_id, rounds=8)
             [row] = _questions(world, mission_id, "adjudicate-root:")
             assert row["state"] == "PENDING"
             latest = HtnStore(world.store).latest_requirements_revision(mission_id)
-            world.control.amend_requirements({
-                "mission_id": mission_id, "command_id": "amend-stale-ruling",
-                "expected_requirements_ref": {"id": str(latest.revision_id), "revision": int(latest.revision),
-                                              "content_hash": latest.content_hash()},
-                "changes": [{"op": "add", "statement": "file:MORE.md"}], "reason": "用户补充",
-                "source": {"kind": "MAIN_AGENT", "run_id": "r", "call_id": "c", "permission_mode": "auto"}})
+            world.control.amend_requirements(
+                {
+                    "mission_id": mission_id,
+                    "command_id": "amend-stale-ruling",
+                    "expected_requirements_ref": {
+                        "id": str(latest.revision_id),
+                        "revision": int(latest.revision),
+                        "content_hash": latest.content_hash(),
+                    },
+                    "changes": [{"op": "add", "statement": "file:MORE.md"}],
+                    "reason": "用户补充",
+                    "source": {
+                        "kind": "MAIN_AGENT",
+                        "run_id": "r",
+                        "call_id": "c",
+                        "permission_mode": "auto",
+                    },
+                }
+            )
             for _ in range(8):
                 await world.drain()
             [row] = _questions(world, mission_id, "adjudicate-root:")
@@ -279,7 +367,11 @@ def test_a_root_ruling_question_made_stale_by_an_amendment_goes_to_the_planner(t
             assert updates and updates[0]["context"]["changes"]["added"] == ["c-user-2"]
             # 一条路：旧终审随旧要求作废，不再为旧记录发"没有结论"
             record_id = row["request"]["repair_context"]["record_id"]
-            assert not [e for e in world.store.list_events(mission_id) if e.type == "PlanningRepairRequested"
-                        and e.payload.get("source_key") == "root-review:" + record_id]
+            assert not [
+                e
+                for e in world.store.list_events(mission_id)
+                if e.type == "PlanningRepairRequested"
+                and e.payload.get("source_key") == "root-review:" + record_id
+            ]
 
     asyncio.run(case())

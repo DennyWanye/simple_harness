@@ -14,9 +14,7 @@ _REDACTOR = TraceRedactor()
 class ProviderPublicProjectorV1:
     """Expose only low-sensitivity, structured Provider metadata."""
 
-    _USAGE_FIELDS = frozenset(
-        {"input_tokens", "output_tokens", "total_tokens", "cached_tokens"}
-    )
+    _USAGE_FIELDS = frozenset({"input_tokens", "output_tokens", "total_tokens", "cached_tokens"})
 
     def project(
         self,
@@ -44,9 +42,7 @@ class ProviderPublicProjectorV1:
             "duration_ms": self._safe_number(record.get("duration_ms")),
             "usage": usage,
             "narration_code": self._safe_string(record.get("narration_code")),
-            "assistant_content_ref": self._safe_string(
-                record.get("assistant_content_ref")
-            ),
+            "assistant_content_ref": self._safe_string(record.get("assistant_content_ref")),
             "invocation_id": self._safe_string(record.get("invocation_id")),
             "detached": bool(record.get("detached", False)),
         }

@@ -57,8 +57,9 @@ class UserMissionDeployment:
     assurance: Any = field(init=False, default=None)
 
     def __post_init__(self) -> None:
-        self.duties = DeploymentDuties(None, None, tenant_id=self.tenant_id, principal=self.principal,
-                                       wake=self.wake)
+        self.duties = DeploymentDuties(
+            None, None, tenant_id=self.tenant_id, principal=self.principal, wake=self.wake
+        )
 
     # ---- install ------------------------------------------------------------------------------
 
@@ -70,7 +71,8 @@ class UserMissionDeployment:
 
         def install(orchestrator: Any) -> None:
             orchestrator.commit.install_assurance_root(
-                principal=self.principal, tenant_id=self.tenant_id, command_id=ROOT_COMMAND_ID)
+                principal=self.principal, tenant_id=self.tenant_id, command_id=ROOT_COMMAND_ID
+            )
 
         return install
 
@@ -82,19 +84,33 @@ class UserMissionDeployment:
 
         install_planning(orchestrator, self.world_factory)
         ports = self.taskgraph_ports or TaskGraphDeploymentPorts(
-            tenant_id=self.tenant_id, principal=self.principal, graph_budget=self.graph_budget,
-            deployment_acceptance=self.deployment_acceptance or InstalledHtnWiringAcceptance())
+            tenant_id=self.tenant_id,
+            principal=self.principal,
+            graph_budget=self.graph_budget,
+            deployment_acceptance=self.deployment_acceptance or InstalledHtnWiringAcceptance(),
+        )
         if ports.tenant_id != self.tenant_id or ports.principal != self.principal:
-            raise RuntimeError("TaskGraph deployment must bind the authenticated principal and tenant")
+            raise RuntimeError(
+                "TaskGraph deployment must bind the authenticated principal and tenant"
+            )
         self.taskgraph = orchestrator.install_taskgraph(ports)
-        self.assurance = install_assurance(orchestrator, AssuranceDeploymentPorts(
-            tenant_id=self.tenant_id, principal=self.principal,
-            requirements=lambda mission, spec: user_requirements(mission, self.principal),
-            notify_transport=self.notify, host_fingerprint=self.host_fingerprint,
-            # Projects each frozen Scope's check policy right before its first review.
-            check_policy_projector=lambda mission_id: self.duties.project_check_policies(mission_id),
-        ))
-        orchestrator.commit._mission_completer = lambda mission: self._complete(orchestrator, mission)
+        self.assurance = install_assurance(
+            orchestrator,
+            AssuranceDeploymentPorts(
+                tenant_id=self.tenant_id,
+                principal=self.principal,
+                requirements=lambda mission, spec: user_requirements(mission, self.principal),
+                notify_transport=self.notify,
+                host_fingerprint=self.host_fingerprint,
+                # Projects each frozen Scope's check policy right before its first review.
+                check_policy_projector=lambda mission_id: self.duties.project_check_policies(
+                    mission_id
+                ),
+            ),
+        )
+        orchestrator.commit._mission_completer = lambda mission: self._complete(
+            orchestrator, mission
+        )
 
     def bind(self, orchestrator: Any, control: Any) -> None:
         self.duties.bind(orchestrator, control)
@@ -103,14 +119,18 @@ class UserMissionDeployment:
 
     # ---- create -------------------------------------------------------------------------------
 
-    def create_mission(self, orchestrator: Any, control: Any, body: Mapping[str, Any]) -> dict[str, Any]:
+    def create_mission(
+        self, orchestrator: Any, control: Any, body: Mapping[str, Any]
+    ) -> dict[str, Any]:
         """Create a user Mission through the authenticated facade; the commit layer
         completes it (root and TaskGraph binding) in the creation transaction."""
         receipt = control.create(body)
         self.wake()
         return receipt
 
-    def create_mission_with_sources(self, orchestrator: Any, control: Any, body: Mapping[str, Any]) -> dict[str, Any]:
+    def create_mission_with_sources(
+        self, orchestrator: Any, control: Any, body: Mapping[str, Any]
+    ) -> dict[str, Any]:
         """The atomic batch: the Mission, its sources, its root and its binding together."""
         receipt = control.create_with_sources(body)
         self.wake()
@@ -119,9 +139,16 @@ class UserMissionDeployment:
     def _complete(self, orchestrator: Any, mission: Any) -> None:
         from ..orchestrator.taskgraph_policy import enable_command_id
 
-        initialize_root(orchestrator, mission, self.principal, world_factory=self.world_factory,
-                        root_type=self.names.root_type, task_prefix=self.names.task_prefix,
-                        duty_prefix=self.names.duty_prefix, root_parameters=self.root_parameters)
+        initialize_root(
+            orchestrator,
+            mission,
+            self.principal,
+            world_factory=self.world_factory,
+            root_type=self.names.root_type,
+            task_prefix=self.names.task_prefix,
+            duty_prefix=self.names.duty_prefix,
+            root_parameters=self.root_parameters,
+        )
         if self.taskgraph is None:
             raise RuntimeError("TASKGRAPH_DEPLOYMENT_UNINSTALLED")
         self.taskgraph.policy.enable_taskgraph_contract(mission.id, enable_command_id(mission.id))

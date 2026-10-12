@@ -11,6 +11,7 @@ out, retry via ReAct, or hand off to the supervisor.
 Conservative default: unknown errors → ``TransientToolError`` (better to
 waste a retry than to incorrectly kill a turn).
 """
+
 from __future__ import annotations
 
 import pytest
@@ -23,8 +24,7 @@ def test_classify_missing_param_is_permanent() -> None:
     """`missing required parameter: <field>` is a schema-level mistake;
     retrying with the same args will fail the same way → PermanentToolError."""
     assert (
-        errors.classify({"error": "missing required parameter: path"})
-        is errors.PermanentToolError
+        errors.classify({"error": "missing required parameter: path"}) is errors.PermanentToolError
     )
 
 
@@ -57,17 +57,13 @@ def test_classify_would_overwrite_is_permanent() -> None:
 
 def test_classify_file_not_found_is_permanent() -> None:
     """A file that doesn't exist won't appear by retrying."""
-    assert (
-        errors.classify({"error": "file_not_found: /tmp/nope.txt"})
-        is errors.PermanentToolError
-    )
+    assert errors.classify({"error": "file_not_found: /tmp/nope.txt"}) is errors.PermanentToolError
 
 
 def test_classify_permission_denied_is_permanent() -> None:
     """Permission gate denied — retry won't change the gate's mind."""
     assert (
-        errors.classify({"error": "permission_denied (source=user)"})
-        is errors.PermanentToolError
+        errors.classify({"error": "permission_denied (source=user)"}) is errors.PermanentToolError
     )
 
 
@@ -88,7 +84,9 @@ def test_classify_502_is_transient() -> None:
 
 
 def test_classify_rate_limit_is_transient() -> None:
-    assert errors.classify({"error": "rate_limit exceeded, retry later"}) is errors.TransientToolError
+    assert (
+        errors.classify({"error": "rate_limit exceeded, retry later"}) is errors.TransientToolError
+    )
 
 
 def test_classify_connection_reset_is_transient() -> None:
@@ -151,8 +149,7 @@ def test_classify_exception_input_works() -> None:
     """classify must accept an Exception (str(exc) is inspected)."""
     assert errors.classify(TimeoutError("timeout while reading")) is errors.TransientToolError
     assert (
-        errors.classify(ValueError("missing required parameter: path"))
-        is errors.PermanentToolError
+        errors.classify(ValueError("missing required parameter: path")) is errors.PermanentToolError
     )
 
 

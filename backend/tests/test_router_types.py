@@ -6,6 +6,7 @@
 The contract is consumed by S3 / S7 / S8; we verify shape, immutability,
 and the default `allow_all_budget` hook behavior.
 """
+
 from __future__ import annotations
 
 import dataclasses

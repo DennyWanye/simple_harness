@@ -48,15 +48,11 @@ class _DurableManualAuthority:
     def trust_decision(self, check: ManualWorkspaceDecisionAuthorityCheck) -> None:
         self.interactions[check.challenge.interaction_event_id] = check
 
-    async def verify_manual_challenge(
-        self, check: ManualWorkspaceChallengeAuthorityCheck
-    ) -> None:
+    async def verify_manual_challenge(self, check: ManualWorkspaceChallengeAuthorityCheck) -> None:
         if self.evidence.get(check.authorization_evidence_id) != check:
             raise WorkspaceBindingError("workspace_binding_manual_evidence_not_durable")
 
-    async def verify_manual_decision(
-        self, check: ManualWorkspaceDecisionAuthorityCheck
-    ) -> None:
+    async def verify_manual_decision(self, check: ManualWorkspaceDecisionAuthorityCheck) -> None:
         if self.interactions.get(check.challenge.interaction_event_id) != check:
             raise WorkspaceBindingError("workspace_binding_manual_interaction_not_durable")
 
@@ -86,9 +82,7 @@ class _DurableCurrentRunAuthority:
             lifecycle,
         )
 
-    async def load_current_run_binding(
-        self, run_id: str
-    ) -> CurrentRunBindingAuthority | None:
+    async def load_current_run_binding(self, run_id: str) -> CurrentRunBindingAuthority | None:
         return self.states.get(run_id)
 
 
@@ -224,9 +218,7 @@ async def test_manual_append_restart_replay_and_exact_frozen_effect_revision(
         revision=1,
         key="append-2",
     )
-    _, _, second_grant = await _manual_grant(
-        store, second, nonce="nonce-2", authority=manual
-    )
+    _, _, second_grant = await _manual_grant(store, second, nonce="nonce-2", authority=manual)
     receipt2 = await store.append_binding(second, second_grant)
     assert receipt2.parent_receipt_id == receipt1.receipt_id
     assert set(receipt2.root_identity_hashes) == {
@@ -240,12 +232,15 @@ async def test_manual_append_restart_replay_and_exact_frozen_effect_revision(
         clock_millis=lambda: 1500,
     )
     assert await reopened.current_receipt("scope-1") == receipt2
-    assert await reopened.exact_receipt(
-        task_scope_id="scope-1",
-        binding_set_revision=receipt1.binding_set_revision,
-        binding_set_receipt_id=receipt1.receipt_id,
-        binding_set_receipt_hash=receipt1.receipt_hash,
-    ) == receipt1
+    assert (
+        await reopened.exact_receipt(
+            task_scope_id="scope-1",
+            binding_set_revision=receipt1.binding_set_revision,
+            binding_set_receipt_id=receipt1.receipt_id,
+            binding_set_receipt_hash=receipt1.receipt_hash,
+        )
+        == receipt1
+    )
     route = ContextRouteReceipt(
         "route-1",
         "run-1",
@@ -328,9 +323,7 @@ async def test_manual_records_and_grants_must_match_durable_host_rows(tmp_path: 
         store, proposal, nonce="nonce-1", authority=manual
     )
 
-    forged_proposal = replace(
-        proposal, proposal_id="proposal-forged", idempotency_key="forged"
-    )
+    forged_proposal = replace(proposal, proposal_id="proposal-forged", idempotency_key="forged")
     manual.trust_challenge(
         ManualWorkspaceChallengeAuthorityCheck(
             forged_proposal,
@@ -845,9 +838,7 @@ async def test_symlink_broad_root_identity_drift_and_candidate_are_not_authority
         )
 
     proposal = _proposal(root)
-    _, _, grant = await _manual_grant(
-        store, proposal, nonce="nonce-1", authority=manual
-    )
+    _, _, grant = await _manual_grant(store, proposal, nonce="nonce-1", authority=manual)
     moved = tmp_path / "moved"
     root.rename(moved)
     root.mkdir()
@@ -880,9 +871,7 @@ async def test_same_root_cross_scope_allowed_same_base_cas_only_one_wins_and_fau
     )
 
     first = _proposal(shared)
-    _, _, grant1 = await _manual_grant(
-        store, first, nonce="nonce-1", authority=manual
-    )
+    _, _, grant1 = await _manual_grant(store, first, nonce="nonce-1", authority=manual)
     await store.append_binding(first, grant1)
     second_scope = _proposal(
         shared,
@@ -890,9 +879,7 @@ async def test_same_root_cross_scope_allowed_same_base_cas_only_one_wins_and_fau
         proposal_id="proposal-scope-2",
         key="append-scope-2",
     )
-    _, _, grant2 = await _manual_grant(
-        store, second_scope, nonce="nonce-2", authority=manual
-    )
+    _, _, grant2 = await _manual_grant(store, second_scope, nonce="nonce-2", authority=manual)
     assert (await store.append_binding(second_scope, grant2)).binding_set_revision == 1
 
     candidates = []
@@ -933,9 +920,7 @@ async def test_same_root_cross_scope_allowed_same_base_cas_only_one_wins_and_fau
         revision=current.binding_set_revision,
         key="append-fault",
     )
-    _, _, grant4 = await _manual_grant(
-        store, proposal4, nonce="nonce-fault", authority=manual
-    )
+    _, _, grant4 = await _manual_grant(store, proposal4, nonce="nonce-fault", authority=manual)
 
     def crash(stage: str) -> None:
         if stage == "before_binding_commit":
@@ -987,9 +972,7 @@ async def test_effect_rejects_filesystem_identity_drift_after_commit(tmp_path: P
         manual_authorization_authority=manual,
     )
     proposal = _proposal(root)
-    _, _, grant = await _manual_grant(
-        store, proposal, nonce="nonce-1", authority=manual
-    )
+    _, _, grant = await _manual_grant(store, proposal, nonce="nonce-1", authority=manual)
     receipt = await store.append_binding(proposal, grant)
     root.rename(tmp_path / "old-project")
     root.mkdir()
@@ -1035,10 +1018,7 @@ async def test_v38_migration_fault_reopens_with_one_exact_marker(
         await initialize_human_memory_program_state_db(db_path, fault_inject=crash)
     await initialize_human_memory_program_state_db(db_path)
     with sqlite3.connect(db_path) as db:
-        assert (
-            db.execute("PRAGMA user_version").fetchone()[0]
-            == HUMAN_MEMORY_TARGET_SCHEMA_VERSION
-        )
+        assert db.execute("PRAGMA user_version").fetchone()[0] == HUMAN_MEMORY_TARGET_SCHEMA_VERSION
         assert db.execute("SELECT COUNT(*) FROM task_workspace_binding_marker").fetchone()[0] == 1
         assert (
             db.execute(
@@ -1066,9 +1046,7 @@ async def test_binding_history_is_immutable_but_guarded_head_only_advances(
         manual_authorization_authority=manual,
     )
     proposal = _proposal(root)
-    _, _, grant = await _manual_grant(
-        store, proposal, nonce="nonce-1", authority=manual
-    )
+    _, _, grant = await _manual_grant(store, proposal, nonce="nonce-1", authority=manual)
     await store.append_binding(proposal, grant)
     with sqlite3.connect(db_path) as db:
         with pytest.raises(sqlite3.IntegrityError, match="append_only"):

@@ -95,9 +95,7 @@ async def test_fenced_handler_result_never_marks_delivered_or_rebinds_and_new_ru
     await session_db.ensure_session("session-a")
     old_run = await _run(store, "old", "session-a", 0)
     outbox = WorkflowOutbox(store)
-    old_event, old_manifest = await _v6_event(
-        outbox, store, run_id=old_run, session_id="session-a"
-    )
+    old_event, old_manifest = await _v6_event(outbox, store, run_id=old_run, session_id="session-a")
     service = WorkflowService(
         store,
         runner=object(),
@@ -120,16 +118,14 @@ async def test_fenced_handler_result_never_marks_delivered_or_rebinds_and_new_ru
     assert replay["deliveries"][0]["status"] == "discarded"
     assert await session_db.get_messages("session-a") == []
     with pytest.raises(OutboxError, match="frozen outbox policy"):
-        await service.retry_delivery(
-            old_row["delivery_id"], expected_version=old_row["version"]
-        )
-    assert (await service.delivery_aggregate(old_run, manifest_ref=old_manifest))["status"] == "fenced"
+        await service.retry_delivery(old_row["delivery_id"], expected_version=old_row["version"])
+    assert (await service.delivery_aggregate(old_run, manifest_ref=old_manifest))[
+        "status"
+    ] == "fenced"
 
     state = await session_db.get_session_delivery_state("session-a")
     new_run = await _run(store, "new", "session-a", int(state["epoch"]))
-    new_event, _ = await _v6_event(
-        outbox, store, run_id=new_run, session_id="session-a"
-    )
+    new_event, _ = await _v6_event(outbox, store, run_id=new_run, session_id="session-a")
     delivered = await service.deliver_event_once(new_event["event_id"])
     assert delivered["deliveries"][0]["status"] == "delivered"
     assert delivered["delivery_aggregate"]["status"] == "delivered"
@@ -162,9 +158,7 @@ async def test_retryable_session_failure_retries_once_then_deduplicates_without_
         nonlocal calls
         calls += 1
         if calls == 1:
-            return DeliveryAttemptResultV1.retryable_failure(
-                "session_db_temporary_error"
-            )
+            return DeliveryAttemptResultV1.retryable_failure("session_db_temporary_error")
         return await durable(envelope, delivery)
 
     # Deliberately omit a websocket handler: realtime transport is optional and
@@ -233,10 +227,7 @@ async def test_required_delivery_aggregate_is_query_time_receipt_reduction(tmp_p
     assert queued["status"] == "queued"
     assert queued["required_total"] == 2 and queued["pending"] == 2
 
-    rows = {
-        row["channel"]: row
-        for row in await outbox.list_event_deliveries(event["event_id"])
-    }
+    rows = {row["channel"]: row for row in await outbox.list_event_deliveries(event["event_id"])}
     begun = await outbox.mutate_delivery(
         rows["session_message"]["delivery_id"],
         action="begin",
@@ -274,9 +265,7 @@ async def test_legacy_shaped_discard_return_is_contract_error_not_delivered(tmp_
     store = WorkflowRunStore(tmp_path / "workflow.db")
     run_id = await _run(store, "bad-handler", "session-d", 0)
     outbox = WorkflowOutbox(store, clock=lambda: 50.0)
-    event, _ = await _v6_event(
-        outbox, store, run_id=run_id, session_id="session-d"
-    )
+    event, _ = await _v6_event(outbox, store, run_id=run_id, session_id="session-d")
 
     async def invalid_legacy_shape(_event, _delivery):
         return {"discarded": True}

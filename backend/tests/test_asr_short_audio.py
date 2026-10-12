@@ -16,6 +16,7 @@ Drives the two core changes in FasterWhisperASR:
 We mock WhisperModel entirely so these tests run without CUDA / the
 1.6GB model file.
 """
+
 from __future__ import annotations
 
 import sys
@@ -132,9 +133,7 @@ async def test_short_audio_is_padded_front_and_back(fake_asr):
 
     assert fake.last_audio is not None
     expected = audio_samples + 2 * PAD_SAMPLES
-    assert len(fake.last_audio) == expected, (
-        f"expected {expected}, got {len(fake.last_audio)}"
-    )
+    assert len(fake.last_audio) == expected, f"expected {expected}, got {len(fake.last_audio)}"
     # Front pad should be zeros
     assert np.all(fake.last_audio[:PAD_SAMPLES] == 0.0)
     # Back pad should be zeros

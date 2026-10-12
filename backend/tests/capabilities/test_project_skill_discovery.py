@@ -148,6 +148,4 @@ def test_composite_rejects_skill_name_collisions() -> None:
             return [self.meta]
 
     with pytest.raises(RuntimeError, match="skill_name_collision:PLAN-TEST"):
-        CompositeSkillDiscoveryProjection(
-            (Projection("plan-test"), Projection("PLAN-TEST"))
-        )
+        CompositeSkillDiscoveryProjection((Projection("plan-test"), Projection("PLAN-TEST")))

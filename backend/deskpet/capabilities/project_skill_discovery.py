@@ -80,9 +80,7 @@ class ProjectSkillDiscoveryService:
         self._environment = environment
         self._owner_key = owner_key
 
-    async def projection_for_scope(
-        self, scope: CapabilityScope
-    ) -> ManagedSkillDiscoveryProjection:
+    async def projection_for_scope(self, scope: CapabilityScope) -> ManagedSkillDiscoveryProjection:
         if scope.project_key is None:
             return ManagedSkillDiscoveryProjection(
                 (), owner_key=self._owner_key, scope_label="project"
@@ -140,9 +138,7 @@ class ProjectSkillDiscoveryService:
                         skill_id=skill.id,
                         version=manifest.version,
                         manifest_hash=manifest.manifest_hash,
-                        content_hash=hashlib.sha256(
-                            skill_path.read_bytes()
-                        ).hexdigest(),
+                        content_hash=hashlib.sha256(skill_path.read_bytes()).hexdigest(),
                         allowed_tools=skill.allowed_tools,
                         skill_path=skill_path,
                         pack_root=root,

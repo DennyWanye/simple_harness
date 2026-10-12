@@ -309,7 +309,9 @@ def _claim_text(
         return fallback
     chunks: list[str] = []
     for item in selected:
-        citations = "".join(f" [{labels[source_id]}]" for source_id in item.source_ids if source_id in labels)
+        citations = "".join(
+            f" [{labels[source_id]}]" for source_id in item.source_ids if source_id in labels
+        )
         prefix = "推断：" if item.is_inference else ""
         chunks.append(f"{prefix}{item.text}{citations}")
     return "；".join(chunks)
@@ -359,7 +361,9 @@ def render_report(
 
     lines = ["# 深度研究报告", "", "## 关键判断", ""]
     for item in key_claims:
-        citations = "".join(f" [{labels[source_id]}]" for source_id in item.source_ids if source_id in labels)
+        citations = "".join(
+            f" [{labels[source_id]}]" for source_id in item.source_ids if source_id in labels
+        )
         inference = "推断：" if item.is_inference else ""
         lines.append(f"- {inference}{item.text}{citations}")
 
@@ -426,7 +430,9 @@ def render_report(
     lines.extend(["## 风险与不确定性", ""])
     if risk_claims:
         for item in risk_claims:
-            citations = "".join(f" [{labels[source_id]}]" for source_id in item.source_ids if source_id in labels)
+            citations = "".join(
+                f" [{labels[source_id]}]" for source_id in item.source_ids if source_id in labels
+            )
             lines.append(f"- {item.text}{citations}")
     else:
         has_evidence_gap = any(
@@ -466,7 +472,9 @@ def lint_rendered_report(
 
     _require_text(markdown, "markdown")
     positions = [markdown.find(heading) for heading in _REQUIRED_HEADINGS]
-    section_order_correct = all(position >= 0 for position in positions) and positions == sorted(positions)
+    section_order_correct = all(position >= 0 for position in positions) and positions == sorted(
+        positions
+    )
     heading_lines = re.findall(r"(?m)^#{1,6}\s+.+$", markdown)
     no_duplicate_headings = len(heading_lines) == len(set(heading_lines))
 
@@ -541,7 +549,8 @@ def audit_report_quality(
     applicable_core = [
         item
         for item in brief.dimensions
-        if item.importance == "core" and coverage_by_id[item.dimension_id].status != "not_applicable"
+        if item.importance == "core"
+        and coverage_by_id[item.dimension_id].status != "not_applicable"
     ]
     covered_or_partial = [
         item
@@ -561,12 +570,9 @@ def audit_report_quality(
             and analysis_by_id[item.dimension_id].relevance_score >= 0.65
         ),
     )
-    normalized_intent = _normalized_match_text(
-        " ".join((brief.user_question, *brief.subjects))
-    )
+    normalized_intent = _normalized_match_text(" ".join((brief.user_question, *brief.subjects)))
     dimension_intent = {
-        item.dimension_id: _normalized_match_text(item.question)
-        for item in brief.dimensions
+        item.dimension_id: _normalized_match_text(item.question) for item in brief.dimensions
     }
 
     def key_claim_maps_intent(claim: ReportClaim) -> bool:
@@ -636,19 +642,21 @@ def audit_report_quality(
     )
     two_strong_ratio = _ratio(
         covered,
-        lambda item: len(
-            {
-                source.family_id
-                for source in sources
-                if source.dimension_id == item.dimension_id
-                and source.winning
-                and source.strong_family
-                and not source.invalid_page
-                and not source.captcha
-                and not source.aggregator_replacement
-            }
-        )
-        >= 2,
+        lambda item: (
+            len(
+                {
+                    source.family_id
+                    for source in sources
+                    if source.dimension_id == item.dimension_id
+                    and source.winning
+                    and source.strong_family
+                    and not source.invalid_page
+                    and not source.captcha
+                    and not source.aggregator_replacement
+                }
+            )
+            >= 2
+        ),
     )
 
     def winners_clean(dimension_id: str) -> bool:
@@ -664,9 +672,7 @@ def audit_report_quality(
             for source_id in winning_ids
         )
 
-    clean_winner_ratio = _ratio(
-        applicable_core, lambda item: winners_clean(item.dimension_id)
-    )
+    clean_winner_ratio = _ratio(applicable_core, lambda item: winners_clean(item.dimension_id))
     source_quality = _component(
         ((10, first_party_ratio), (5, two_strong_ratio), (5, clean_winner_ratio)), 20
     )
@@ -691,14 +697,14 @@ def audit_report_quality(
     impact_ratio = _ratio(
         covered_or_partial, lambda item: supported_field(item.dimension_id, "impact")
     )
-    synthesis_reasoning = _component(
-        ((5, current_ratio), (5, driver_ratio), (5, impact_ratio)), 15
-    )
+    synthesis_reasoning = _component(((5, current_ratio), (5, driver_ratio), (5, impact_ratio)), 15)
 
     time_sensitive = [
         item
         for item in applicable_core
-        if any(source.dimension_id == item.dimension_id and source.time_sensitive for source in sources)
+        if any(
+            source.dimension_id == item.dimension_id and source.time_sensitive for source in sources
+        )
     ]
 
     def time_satisfied(dimension_id: str) -> bool:
@@ -735,9 +741,7 @@ def audit_report_quality(
         )
     else:
         uncertainty_ratio = Decimal("1")
-    timeliness_uncertainty = _component(
-        ((5, temporal_ratio), (5, uncertainty_ratio)), 10
-    )
+    timeliness_uncertainty = _component(((5, temporal_ratio), (5, uncertainty_ratio)), 10)
 
     readability = _component(
         (
@@ -761,6 +765,7 @@ def audit_report_quality(
     hard_failures: list[str] = []
     if any(coverage_by_id[item.dimension_id].status == "uncovered" for item in applicable_core):
         hard_failures.append("completed_core_uncovered")
+
     def key_claim_supported(claim: ReportClaim) -> bool:
         return (
             bool(claim.supported_fact_refs)
@@ -786,8 +791,7 @@ def audit_report_quality(
     if any(source.secondary_replaces_available_official for source in cited_sources):
         hard_failures.append("secondary_replaces_available_official")
     if any(
-        source_id in source_by_id
-        and source_by_id[source_id].dimension_id != claim.dimension_id
+        source_id in source_by_id and source_by_id[source_id].dimension_id != claim.dimension_id
         for claim in claims
         for source_id in claim.source_ids
     ):
@@ -797,7 +801,9 @@ def audit_report_quality(
 
     universal_failures = set(hard_failures) - {"completed_core_uncovered"}
     all_core_covered = bool(applicable_core) and len(covered) == len(applicable_core)
-    supported_key_claims = bool(key_claims) and all(key_claim_supported(claim) for claim in key_claims)
+    supported_key_claims = bool(key_claims) and all(
+        key_claim_supported(claim) for claim in key_claims
+    )
     partial_minimum = max(1, math.ceil(len(applicable_core) * 0.5))
 
     if total >= Decimal("80") and all_core_covered and not hard_failures:

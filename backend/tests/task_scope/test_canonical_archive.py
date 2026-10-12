@@ -125,69 +125,125 @@ async def _ready(tmp_path: Path) -> tuple[Path, CanonicalTaskScopeStore, str]:
 async def test_host_event_order_and_idempotent_source_hash(tmp_path: Path) -> None:
     _, store, _ = await _ready(tmp_path)
     recorder = TaskEventRecorder(store)
-    turn = await recorder.record_turn(task_scope_id="scope-1", source_event_id="turn-1", payload={"turn_id": "turn-1"})
-    file_event = await recorder.record_file(task_scope_id="scope-1", source_event_id="file-1", payload={"path": "README.md", "action": "read"})
-    test_event = await recorder.record_test(task_scope_id="scope-1", source_event_id="test-1", payload={"command": "pytest", "result": "passed"})
+    turn = await recorder.record_turn(
+        task_scope_id="scope-1", source_event_id="turn-1", payload={"turn_id": "turn-1"}
+    )
+    file_event = await recorder.record_file(
+        task_scope_id="scope-1",
+        source_event_id="file-1",
+        payload={"path": "README.md", "action": "read"},
+    )
+    test_event = await recorder.record_test(
+        task_scope_id="scope-1",
+        source_event_id="test-1",
+        payload={"command": "pytest", "result": "passed"},
+    )
     assert [turn.event_sequence, file_event.event_sequence, test_event.event_sequence] == [1, 2, 3]
-    assert await recorder.record_turn(task_scope_id="scope-1", source_event_id="turn-1", payload={"turn_id": "turn-1"}) == turn
+    assert (
+        await recorder.record_turn(
+            task_scope_id="scope-1", source_event_id="turn-1", payload={"turn_id": "turn-1"}
+        )
+        == turn
+    )
     with pytest.raises(TaskScopeConflict, match="source_event_payload_conflict"):
-        await recorder.record_turn(task_scope_id="scope-1", source_event_id="turn-1", payload={"turn_id": "different"})
+        await recorder.record_turn(
+            task_scope_id="scope-1", source_event_id="turn-1", payload={"turn_id": "different"}
+        )
 
 
 @pytest.mark.asyncio
 async def test_mutation_cas_and_cancel_supersede_reasons_are_canonical(tmp_path: Path) -> None:
     db_path, store, evidence_hash = await _ready(tmp_path)
     operations = [
-        _operation("step-add", "plan.step.add", "implement archive", "user_confirmed", evidence_hash),
-        _operation("step-cancel", "plan.step.cancel", "step-add", "requirement_changed", evidence_hash),
-        _operation("decision-1", "decision.record", "keep raw forever", "user_confirmed", evidence_hash),
-        _operation("decision-2", "decision.supersede", "decision-1", "newer_user_direction", evidence_hash),
+        _operation(
+            "step-add", "plan.step.add", "implement archive", "user_confirmed", evidence_hash
+        ),
+        _operation(
+            "step-cancel", "plan.step.cancel", "step-add", "requirement_changed", evidence_hash
+        ),
+        _operation(
+            "decision-1", "decision.record", "keep raw forever", "user_confirmed", evidence_hash
+        ),
+        _operation(
+            "decision-2", "decision.supersede", "decision-1", "newer_user_direction", evidence_hash
+        ),
     ]
-    receipt = await store.apply_mutation_plan(_plan(plan_id="plan-1", base_revision=1, content_hash=evidence_hash, operations=operations))
+    receipt = await store.apply_mutation_plan(
+        _plan(plan_id="plan-1", base_revision=1, content_hash=evidence_hash, operations=operations)
+    )
     assert receipt.committed_revision == 2
     with sqlite3.connect(db_path) as db:
-        state = json.loads(db.execute("SELECT state_json FROM task_scope_canonical_revisions WHERE task_scope_id='scope-1' AND revision=2").fetchone()[0])
+        state = json.loads(
+            db.execute(
+                "SELECT state_json FROM task_scope_canonical_revisions WHERE task_scope_id='scope-1' AND revision=2"
+            ).fetchone()[0]
+        )
         assert [item["reason_code"] for item in state["operations"]] == [
-            "user_confirmed", "requirement_changed", "user_confirmed", "newer_user_direction"
+            "user_confirmed",
+            "requirement_changed",
+            "user_confirmed",
+            "newer_user_direction",
         ]
         assert db.execute("SELECT COUNT(*) FROM task_scope_steps").fetchone()[0] == 2
         assert db.execute("SELECT COUNT(*) FROM task_scope_mutation_decisions").fetchone()[0] == 1
         assert db.execute("SELECT COUNT(*) FROM task_scope_projection_outbox").fetchone()[0] == 2
         assert db.execute("SELECT COUNT(*) FROM task_scope_search_outbox").fetchone()[0] == 2
-    stale = _plan(plan_id="plan-stale", base_revision=1, content_hash=evidence_hash, operations=[_operation("goal", "goal.set", "stale", "model_proposed", evidence_hash)])
+    stale = _plan(
+        plan_id="plan-stale",
+        base_revision=1,
+        content_hash=evidence_hash,
+        operations=[_operation("goal", "goal.set", "stale", "model_proposed", evidence_hash)],
+    )
     with pytest.raises(TaskScopeConflict, match="mutation_base_revision_conflict"):
         await store.apply_mutation_plan(stale)
     with sqlite3.connect(db_path) as db:
-        assert db.execute("SELECT result FROM task_scope_mutation_attempts WHERE plan_id='plan-stale'").fetchone()[0] == "cas_conflict"
+        assert (
+            db.execute(
+                "SELECT result FROM task_scope_mutation_attempts WHERE plan_id='plan-stale'"
+            ).fetchone()[0]
+            == "cas_conflict"
+        )
         assert db.execute("SELECT COUNT(*) FROM task_scope_canonical_revisions").fetchone()[0] == 2
 
 
 @pytest.mark.asyncio
-async def test_checkpoint_is_immutable_and_projection_rebuilds_from_canonical(tmp_path: Path) -> None:
+async def test_checkpoint_is_immutable_and_projection_rebuilds_from_canonical(
+    tmp_path: Path,
+) -> None:
     db_path, store, _ = await _ready(tmp_path)
     await TaskEventRecorder(store).record_test(
         task_scope_id="scope-1",
         source_event_id="checkpoint-test-event",
         payload={"command": "pytest", "result": "passed"},
     )
-    checkpoint = await store.create_checkpoint(checkpoint_id="checkpoint-1", task_scope_id="scope-1", metadata={"why": "pause"})
-    duplicate = await store.create_checkpoint(checkpoint_id="checkpoint-1", task_scope_id="scope-1", metadata={"why": "pause"})
+    checkpoint = await store.create_checkpoint(
+        checkpoint_id="checkpoint-1", task_scope_id="scope-1", metadata={"why": "pause"}
+    )
+    duplicate = await store.create_checkpoint(
+        checkpoint_id="checkpoint-1", task_scope_id="scope-1", metadata={"why": "pause"}
+    )
     assert duplicate == checkpoint
     with sqlite3.connect(db_path) as db:
         with pytest.raises(sqlite3.IntegrityError, match="task_scope_append_only"):
-            db.execute("UPDATE task_scope_checkpoints SET checkpoint_json='{}' WHERE checkpoint_id='checkpoint-1'")
+            db.execute(
+                "UPDATE task_scope_checkpoints SET checkpoint_json='{}' WHERE checkpoint_id='checkpoint-1'"
+            )
         with pytest.raises(sqlite3.IntegrityError, match="task_scope_append_only"):
             db.execute("DELETE FROM task_scope_checkpoints WHERE checkpoint_id='checkpoint-1'")
         with pytest.raises(sqlite3.IntegrityError, match="task_scope_append_only"):
             db.execute("UPDATE task_scope_events SET payload_json='{}'")
         with pytest.raises(sqlite3.IntegrityError, match="task_scope_append_only"):
             db.execute("DELETE FROM task_scope_canonical_revisions WHERE task_scope_id='scope-1'")
-        expected = db.execute("SELECT projection_hash FROM task_scope_projection_cache WHERE task_scope_id='scope-1' AND canonical_revision=1").fetchone()[0]
+        expected = db.execute(
+            "SELECT projection_hash FROM task_scope_projection_cache WHERE task_scope_id='scope-1' AND canonical_revision=1"
+        ).fetchone()[0]
         db.execute("DELETE FROM task_scope_projection_cache WHERE task_scope_id='scope-1'")
         db.commit()
     assert await store.rebuild_projection("scope-1", 1) == expected
     with pytest.raises(TaskScopeConflict, match="checkpoint_id_hash_conflict"):
-        await store.create_checkpoint(checkpoint_id="checkpoint-1", task_scope_id="scope-1", metadata={"why": "different"})
+        await store.create_checkpoint(
+            checkpoint_id="checkpoint-1", task_scope_id="scope-1", metadata={"why": "different"}
+        )
 
 
 def _execution(event_id: str, sequence: int, kind: str, content_hash: str) -> _Dto:
@@ -210,17 +266,30 @@ def _execution(event_id: str, sequence: int, kind: str, content_hash: str) -> _D
 async def test_execution_ingress_contiguous_watermark_and_terminal_gate(tmp_path: Path) -> None:
     db_path, _, evidence_hash = await _ready(tmp_path)
     ingress = ExecutionEvidenceIngress(db_path)
-    terminal = await ingress.ingest(task_scope_id="scope-1", source_sequence=3, evidence=_execution("exec-3", 3, "run_terminal", evidence_hash))
+    terminal = await ingress.ingest(
+        task_scope_id="scope-1",
+        source_sequence=3,
+        evidence=_execution("exec-3", 3, "run_terminal", evidence_hash),
+    )
     assert terminal.durable_source_sequence == 0
     assert terminal.terminal_source_sequence == 3
     with pytest.raises(TerminalWatermarkPending):
         await ingress.authorize_terminal("run-1")
-    first = await ingress.ingest(task_scope_id="scope-1", source_sequence=1, evidence=_execution("exec-1", 1, "route_decision", evidence_hash))
+    first = await ingress.ingest(
+        task_scope_id="scope-1",
+        source_sequence=1,
+        evidence=_execution("exec-1", 1, "route_decision", evidence_hash),
+    )
     assert first.durable_source_sequence == 1
     second_evidence = _execution("exec-2", 2, "tool_invocation", evidence_hash)
-    second = await ingress.ingest(task_scope_id="scope-1", source_sequence=2, evidence=second_evidence)
+    second = await ingress.ingest(
+        task_scope_id="scope-1", source_sequence=2, evidence=second_evidence
+    )
     assert second.durable_source_sequence == 3
-    assert await ingress.ingest(task_scope_id="scope-1", source_sequence=2, evidence=second_evidence) == second
+    assert (
+        await ingress.ingest(task_scope_id="scope-1", source_sequence=2, evidence=second_evidence)
+        == second
+    )
     gate = await ingress.authorize_terminal("run-1")
     assert gate.durable_source_sequence == gate.terminal_source_sequence == 3
     with pytest.raises(TaskScopeConflict, match="execution_after_terminal_rejected"):
@@ -254,7 +323,9 @@ async def test_structural_protocol_rejects_bool_schema_and_credential_value(tmp_
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("fault_stage", ["before_task_scope_archive_commit", "after_task_scope_archive_commit"])
+@pytest.mark.parametrize(
+    "fault_stage", ["before_task_scope_archive_commit", "after_task_scope_archive_commit"]
+)
 async def test_v36_fault_restart_and_marker_integrity(tmp_path: Path, fault_stage: str) -> None:
     db_path = tmp_path / "state.db"
 
@@ -266,12 +337,14 @@ async def test_v36_fault_restart_and_marker_integrity(tmp_path: Path, fault_stag
         await initialize_human_memory_program_state_db(db_path, fault_inject=crash)
     await initialize_human_memory_program_state_db(db_path)
     with sqlite3.connect(db_path) as db:
-        assert (
-            db.execute("PRAGMA user_version").fetchone()[0]
-            == HUMAN_MEMORY_TARGET_SCHEMA_VERSION
-        )
+        assert db.execute("PRAGMA user_version").fetchone()[0] == HUMAN_MEMORY_TARGET_SCHEMA_VERSION
         assert db.execute("SELECT COUNT(*) FROM task_scope_archive_marker").fetchone()[0] == 1
-        assert db.execute("SELECT COUNT(*) FROM schema_migrations WHERE version='028_task_scope_archive_v36.sql'").fetchone()[0] == 1
+        assert (
+            db.execute(
+                "SELECT COUNT(*) FROM schema_migrations WHERE version='028_task_scope_archive_v36.sql'"
+            ).fetchone()[0]
+            == 1
+        )
 
 
 @pytest.mark.asyncio
@@ -286,4 +359,9 @@ async def test_task_scope_entry_refuses_old_v34_without_writes(tmp_path: Path) -
     assert db_path.read_bytes() == before
     with sqlite3.connect(db_path) as db:
         assert db.execute("PRAGMA user_version").fetchone()[0] == 34
-        assert db.execute("SELECT COUNT(*) FROM sqlite_master WHERE name LIKE 'task_scope_%'").fetchone()[0] == 0
+        assert (
+            db.execute(
+                "SELECT COUNT(*) FROM sqlite_master WHERE name LIKE 'task_scope_%'"
+            ).fetchone()[0]
+            == 0
+        )

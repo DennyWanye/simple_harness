@@ -167,7 +167,9 @@ def _missing_result_ids(assessment: AnswerAssessmentV1) -> tuple[str, ...]:
     )
 
 
-def _append_gaps(lines: list[str], assessment: AnswerAssessmentV1, labels: Mapping[str, str]) -> None:
+def _append_gaps(
+    lines: list[str], assessment: AnswerAssessmentV1, labels: Mapping[str, str]
+) -> None:
     missing = _missing_result_ids(assessment)
     if not missing:
         return
@@ -188,10 +190,13 @@ def _render_comparison(
     cell_labels: dict[str, str] = {}
     for members in itertools.product(*(axis["members"] for axis in axes)):  # type: ignore[index]
         member_ids = tuple(str(member["member_id"]) for member in members)
-        cell_labels[derive_matrix_cell_id(str(requirement["requirement_id"]), member_ids)] = " × ".join(
-            str(member["label"]) for member in members
+        cell_labels[derive_matrix_cell_id(str(requirement["requirement_id"]), member_ids)] = (
+            " × ".join(str(member["label"]) for member in members)
         )
-    cells = sorted({str(claim.item_or_cell_id) for claim in claims}, key=lambda value: cell_labels.get(value, value))
+    cells = sorted(
+        {str(claim.item_or_cell_id) for claim in claims},
+        key=lambda value: cell_labels.get(value, value),
+    )
     category = (("fact", "facts"), ("inference", "inferences"), ("preference", "preferences"))
     for cell_id in cells:
         lines.extend(("", f"### {cell_labels.get(cell_id, cell_id)}"))
@@ -214,11 +219,11 @@ def _render_top_n(
     labels: Mapping[str, str],
 ) -> tuple[list[str], int, int]:
     ranked_ids = rank_collection_item_ids(requirement, facts)  # single ranking owner
-    unknown_items = {
-        str(claim.item_or_cell_id) for claim in claims
-    } - set(ranked_ids)
+    unknown_items = {str(claim.item_or_cell_id) for claim in claims} - set(ranked_ids)
     if unknown_items:
-        raise ValueError(f"ranked claims are absent from the assessment ranking: {sorted(unknown_items)}")
+        raise ValueError(
+            f"ranked claims are absent from the assessment ranking: {sorted(unknown_items)}"
+        )
     by_item = {
         item_id: [claim for claim in claims if str(claim.item_or_cell_id) == item_id]
         for item_id in ranked_ids
@@ -279,7 +284,8 @@ def _render_policy(
     lines = [f"## {labels['answer']}", "", f"### {labels['policy_facts']}"]
     for facet in ("issuer", "document", "date", "commitment"):
         selected = [
-            claim for claim in claims
+            claim
+            for claim in claims
             if kinds.get(str(claim.item_or_cell_id)) == "policy_fact"
             and facet in facets.get(str(claim.item_or_cell_id), ())
         ]
@@ -288,8 +294,7 @@ def _render_policy(
         if not selected:
             lines.append(labels["none"])
     impact = [
-        claim for claim in claims
-        if kinds.get(str(claim.item_or_cell_id)) == "impact_inference"
+        claim for claim in claims if kinds.get(str(claim.item_or_cell_id)) == "impact_inference"
     ]
     lines.extend(("", f"### {labels['impact']}"))
     lines.extend(_claim_line(claim, citations) for claim in impact)
@@ -317,8 +322,7 @@ def _render_open_research(
     lines = [f"## {labels['answer']}"]
     for semantic_kind in ("conclusion", "limitation", "counterevidence", "uncertainty"):
         selected = [
-            claim for claim in claims
-            if kinds.get(str(claim.item_or_cell_id)) == semantic_kind
+            claim for claim in claims if kinds.get(str(claim.item_or_cell_id)) == semantic_kind
         ]
         lines.extend(("", f"### {labels[semantic_kind]}"))
         lines.extend(_claim_line(claim, citations) for claim in selected)
@@ -354,11 +358,17 @@ def render_typed_report(
             citations=citations,
             labels=labels,
         )
-        status = "completed" if actual >= target else ("partial" if actual else "insufficient_evidence")
+        status = (
+            "completed" if actual >= target else ("partial" if actual else "insufficient_evidence")
+        )
     elif spec.intent_type == "policy":
-        lines = _render_policy(facts=admitted_facts, claims=visible, citations=citations, labels=labels)
+        lines = _render_policy(
+            facts=admitted_facts, claims=visible, citations=citations, labels=labels
+        )
     elif spec.intent_type == "open_research":
-        lines = _render_open_research(facts=admitted_facts, claims=visible, citations=citations, labels=labels)
+        lines = _render_open_research(
+            facts=admitted_facts, claims=visible, citations=citations, labels=labels
+        )
     else:  # defensive: ResearchSpecV1 already validates the enum
         raise ValueError(f"unsupported renderer intent: {spec.intent_type}")
 

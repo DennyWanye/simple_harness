@@ -211,9 +211,7 @@ def test_compile_linear_graph_has_stable_manifest_and_sync_durability(tmp_path):
     for value in first.manifest.to_dict().values():
         assert value is not None
 
-    changed = compile_workflow(
-        _linear_definition(prompt="prompt-v2"), dependency_lock_path=lock
-    )
+    changed = compile_workflow(_linear_definition(prompt="prompt-v2"), dependency_lock_path=lock)
     assert changed.manifest.prompt_hash != first.manifest.prompt_hash
     assert changed.manifest.implementation_bundle_hash != first.manifest.implementation_bundle_hash
     assert changed.manifest.definition_hash == first.manifest.definition_hash
@@ -240,9 +238,7 @@ def test_compile_conditional_loop(tmp_path):
         max_supersteps=10,
         edges=(Edge("start", "finish"),),
         conditional_edges=(
-            ConditionalEdge(
-                "finish", route_selector, {"again": "start", "done": END_NODE}
-            ),
+            ConditionalEdge("finish", route_selector, {"again": "start", "done": END_NODE}),
         ),
         loop_budgets={"again": 3},
     )
@@ -346,9 +342,7 @@ def test_parallel_fanout_join_and_deterministic_reducers(tmp_path):
         (
             _linear_definition(
                 channels={
-                    "result": ChannelSpec(
-                        JsonType.STRING, "last_write_wins", frozenset({"start"})
-                    )
+                    "result": ChannelSpec(JsonType.STRING, "last_write_wins", frozenset({"start"}))
                 }
             ),
             "unknown_reducer",
@@ -387,9 +381,7 @@ def test_patch_writer_and_type_validation(tmp_path):
 
 
 def test_single_writer_channel_rejects_parallel_writes(tmp_path):
-    compiled = compile_workflow(
-        _linear_definition(), dependency_lock_path=_lock_file(tmp_path)
-    )
+    compiled = compile_workflow(_linear_definition(), dependency_lock_path=_lock_file(tmp_path))
     with pytest.raises(StateMergeConflict) as caught:
         compiled.merge_patches(
             (
@@ -444,9 +436,12 @@ def test_valid_exclusive_interrupt_join_compiles(tmp_path):
             Edge("wait", END_NODE),
         ),
     )
-    assert compile_workflow(
-        definition, dependency_lock_path=_lock_file(tmp_path)
-    ).manifest.workflow_name == "interrupt"
+    assert (
+        compile_workflow(
+            definition, dependency_lock_path=_lock_file(tmp_path)
+        ).manifest.workflow_name
+        == "interrupt"
+    )
 
 
 @pytest.mark.parametrize(
@@ -499,9 +494,7 @@ def test_interrupt_rejects_fanout_sibling(tmp_path):
 
 
 def test_write_tools_require_effect_and_outcome_inventory(tmp_path):
-    unclassified = ToolInventoryEntry(
-        "write_file", ToolAccess.WRITE, "v1", "schema-hash"
-    )
+    unclassified = ToolInventoryEntry("write_file", ToolAccess.WRITE, "v1", "schema-hash")
     with pytest.raises(WorkflowDefinitionError) as caught:
         compile_workflow(
             _linear_definition(tools=(unclassified,)),
@@ -511,9 +504,7 @@ def test_write_tools_require_effect_and_outcome_inventory(tmp_path):
 
     classified = replace(
         unclassified,
-        effect_policy=EffectPolicy(
-            "staged-file", "v1", EffectKind.STAGED_FILE, max_attempts=2
-        ),
+        effect_policy=EffectPolicy("staged-file", "v1", EffectKind.STAGED_FILE, max_attempts=2),
         outcome_parser_id="json_error_envelope_v1",
         outcome_parser_version="v1",
         outcome_parser_hash="parser-hash",
@@ -614,9 +605,9 @@ async def test_execution_facade_always_uses_sync_durability():
         implementation_bundle_hash="bundle",
     )
     executable = WorkflowExecutable(graph=graph, manifest=manifest)
-    assert await executable.ainvoke(
-        {}, WorkflowContext(), thread_id="thread", run_id="run"
-    ) == {"ok": True}
+    assert await executable.ainvoke({}, WorkflowContext(), thread_id="thread", run_id="run") == {
+        "ok": True
+    }
     assert graph.calls[0][1]["durability"] == "sync"
     assert graph.calls[0][1]["config"]["recursion_limit"] == 64
     assert graph.calls[0][1]["config"]["configurable"] == {
@@ -737,9 +728,7 @@ async def test_execution_facade_rejects_conflicting_or_non_json_fence_config():
 
 @pytest.mark.asyncio
 async def test_native_adapter_defaults_to_ephemeral_store(tmp_path):
-    compiled = compile_workflow(
-        _linear_definition(), dependency_lock_path=_lock_file(tmp_path)
-    )
+    compiled = compile_workflow(_linear_definition(), dependency_lock_path=_lock_file(tmp_path))
     executable = compiled.bind()
     assert callable(executable.ainvoke)
     assert callable(executable.resume)

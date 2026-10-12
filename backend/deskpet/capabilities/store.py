@@ -87,9 +87,7 @@ BATCH_CAPABILITY_OPERATION_PHASES: tuple[str, ...] = (
     "batch_catalog_swapped",
     "batch_committed",
 )
-ALL_CAPABILITY_OPERATION_PHASES = (
-    CAPABILITY_OPERATION_PHASES + BATCH_CAPABILITY_OPERATION_PHASES
-)
+ALL_CAPABILITY_OPERATION_PHASES = CAPABILITY_OPERATION_PHASES + BATCH_CAPABILITY_OPERATION_PHASES
 LegacyAuthorizationImportOutcome = Literal[
     "imported",
     "missing",
@@ -456,8 +454,7 @@ CREATE INDEX IF NOT EXISTS idx_task_grants_root_active
 # exact legacy text above immutable lets that owner validate and copy old rows;
 # this definition is the fresh-v2 contract used after the rebuild.
 CAPABILITY_SCHEMA_SQL = (
-    CAPABILITY_SCHEMA_V1_SQL
-    .replace(
+    CAPABILITY_SCHEMA_V1_SQL.replace(
         "'activate','install','update','build','repair','rollback','uninstall'",
         "'activate','install','update','build','repair','rollback','uninstall',"
         "'skill_install_batch'",
@@ -1219,8 +1216,7 @@ class CapabilitySchemaMissing(CapabilityStoreError):
 class ExecutionDatabaseOwner(Protocol):
     path: Path
 
-    async def initialize(self) -> None:
-        ...
+    async def initialize(self) -> None: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -1358,9 +1354,8 @@ class CapabilityVersionStorage:
         object.__setattr__(
             self, "manifest_hash", _validated_digest(self.manifest_hash, "manifest_hash")
         )
-        if (
-            len(self.storage_key) != 32
-            or any(character not in "0123456789abcdef" for character in self.storage_key)
+        if len(self.storage_key) != 32 or any(
+            character not in "0123456789abcdef" for character in self.storage_key
         ):
             raise ValueError("storage_key must be 32 lowercase hex characters")
         if self.pack_storage_schema not in {"legacy_v1", "content_key_v2_pack"}:
@@ -1371,21 +1366,17 @@ class CapabilityVersionStorage:
         }:
             raise ValueError("invalid environment storage schema")
         for name in ("pack_root_hash", "environment_root_hash", "archive_hash"):
-            object.__setattr__(
-                self, name, _validated_digest(getattr(self, name), name)
-            )
+            object.__setattr__(self, name, _validated_digest(getattr(self, name), name))
         if not math.isfinite(float(self.created_at)):
             raise ValueError("created_at must be finite")
 
     @staticmethod
-    def derive_storage_key(
-        pack_id: str, version: str, manifest_hash: str
-    ) -> str:
+    def derive_storage_key(pack_id: str, version: str, manifest_hash: str) -> str:
         _validated_digest(manifest_hash, "manifest_hash")
         return hashlib.sha256(
-            canonical_json(
-                ["capability-storage-v2", pack_id, version, manifest_hash]
-            ).encode("utf-8")
+            canonical_json(["capability-storage-v2", pack_id, version, manifest_hash]).encode(
+                "utf-8"
+            )
         ).hexdigest()[:32]
 
     @property
@@ -1435,9 +1426,7 @@ class CapabilityRuntimeInstanceSpec:
         }:
             raise ValueError("invalid runtime kind")
         for name in ("adapter_fingerprint", "argv_hash", "env_scope_hash"):
-            object.__setattr__(
-                self, name, _validated_digest(getattr(self, name), name)
-            )
+            object.__setattr__(self, name, _validated_digest(getattr(self, name), name))
 
     def to_dict(self) -> dict[str, JsonValue]:
         return {
@@ -1757,21 +1746,14 @@ class LegacyAuthorizationImportRecord:
             raise ValueError(f"unknown legacy import outcome: {self.outcome}")
         if self.source_fingerprint is not None and (
             len(self.source_fingerprint) != 64
-            or any(
-                character not in "0123456789abcdef"
-                for character in self.source_fingerprint
-            )
+            or any(character not in "0123456789abcdef" for character in self.source_fingerprint)
         ):
-            raise ValueError(
-                "legacy import source_fingerprint must be a lowercase SHA-256 digest"
-            )
+            raise ValueError("legacy import source_fingerprint must be a lowercase SHA-256 digest")
         if self.imported_mode is not None and self.imported_mode not in {
             "manual",
             "auto",
         }:
-            raise ValueError(
-                f"unknown imported authorization mode: {self.imported_mode}"
-            )
+            raise ValueError(f"unknown imported authorization mode: {self.imported_mode}")
         if not math.isfinite(float(self.imported_at)):
             raise ValueError("legacy import timestamp must be finite")
         if self.outcome == "imported":
@@ -1789,9 +1771,7 @@ class LegacyAuthorizationImportRecord:
             ):
                 raise ValueError("missing legacy state cannot carry source data")
         elif self.imported_mode is not None or not self.error_code:
-            raise ValueError(
-                "invalid legacy state requires no mode and an error code"
-            )
+            raise ValueError("invalid legacy state requires no mode and an error code")
 
 
 def _json_object(raw: str | None) -> Mapping[str, JsonValue] | None:
@@ -1824,12 +1804,8 @@ def _descriptor_from_json(raw: str) -> CapabilityVersionDescriptor:
             description=str(value["description"]),
             aliases=tuple(str(item) for item in value["aliases"]),
             logical_tool_ids=tuple(str(item) for item in value["logical_tool_ids"]),
-            provider_tool_names=tuple(
-                str(item) for item in value["provider_tool_names"]
-            ),
-            permission_categories=tuple(
-                str(item) for item in value["permission_categories"]
-            ),
+            provider_tool_names=tuple(str(item) for item in value["provider_tool_names"]),
+            permission_categories=tuple(str(item) for item in value["permission_categories"]),
             effect_kinds=tuple(str(item) for item in value["effect_kinds"]),
             schema_hash=str(value["schema_hash"]),
             manifest_hash=str(value["manifest_hash"]),
@@ -1853,20 +1829,14 @@ def _binding_from_row(row: Mapping[str, Any]) -> CapabilityBinding:
         scope_key=str(row["scope_key"]),
         active=bool(row["enabled"]),
         generation=int(row["generation"]),
-        owner_key=(
-            str(row["owner_key"])
-            if "owner_key" in keys
-            else _default_owner_key(scope)
-        ),
+        owner_key=(str(row["owner_key"]) if "owner_key" in keys else _default_owner_key(scope)),
         management_policy=(
             str(row["management_policy"])
             if "management_policy" in keys
             else ("host_managed" if scope == "builtin" else "legacy_import")
         ),  # type: ignore[arg-type]
         management_generation=(
-            int(row["management_generation"])
-            if "management_generation" in keys
-            else 0
+            int(row["management_generation"]) if "management_generation" in keys else 0
         ),
     )
 
@@ -1881,9 +1851,7 @@ def _detail_token_from_row(row: Mapping[str, Any]) -> PlatformDetailToken:
         exists=str(row["row_state"]) == "existing",
         version=int(row["version"]),
         owner_catalog_generation=int(row["owner_catalog_generation"]),
-        committed_owner_binding_set_stamp=str(
-            row["committed_owner_binding_set_stamp"]
-        ),
+        committed_owner_binding_set_stamp=str(row["committed_owner_binding_set_stamp"]),
         manager_receipt_set_hash=str(row["manager_receipt_set_hash"]),
     )
 
@@ -1904,19 +1872,13 @@ def _snapshot_lease_intent_from_row(
         owner_operation_id=str(row["owner_operation_id"]),
         lease_owner_kind=str(row["lease_owner_kind"]),
         owner_record_ref=(
-            None
-            if row["owner_record_ref"] is None
-            else str(row["owner_record_ref"])
+            None if row["owner_record_ref"] is None else str(row["owner_record_ref"])
         ),
         owner_record_hash=(
-            None
-            if row["owner_record_hash"] is None
-            else str(row["owner_record_hash"])
+            None if row["owner_record_hash"] is None else str(row["owner_record_hash"])
         ),
         start_fingerprint=(
-            None
-            if row["start_fingerprint"] is None
-            else str(row["start_fingerprint"])
+            None if row["start_fingerprint"] is None else str(row["start_fingerprint"])
         ),
         run_catalog_content_stamp=str(row["run_catalog_content_stamp"]),
         entry_set_hash=str(row["entry_set_hash"]),
@@ -1924,9 +1886,7 @@ def _snapshot_lease_intent_from_row(
         status=str(row["status"]),
         prepared_at=float(row["prepared_at"]),
         bound_at=None if row["bound_at"] is None else float(row["bound_at"]),
-        released_at=(
-            None if row["released_at"] is None else float(row["released_at"])
-        ),
+        released_at=(None if row["released_at"] is None else float(row["released_at"])),
         last_error=None if row["last_error"] is None else str(row["last_error"]),
     )
 
@@ -1938,11 +1898,7 @@ def _runtime_projection_receipt_from_row(
         projection_receipt_id=str(row["projection_receipt_id"]),
         projection_receipt_hash=str(row["projection_receipt_hash"]),
         purpose=str(row["purpose"]),
-        lease_intent_id=(
-            None
-            if row["lease_intent_id"] is None
-            else str(row["lease_intent_id"])
-        ),
+        lease_intent_id=(None if row["lease_intent_id"] is None else str(row["lease_intent_id"])),
         run_catalog_content_stamp=(
             None
             if row["run_catalog_content_stamp"] is None
@@ -1950,28 +1906,16 @@ def _runtime_projection_receipt_from_row(
         ),
         process_instance_id=str(row["process_instance_id"]),
         process_catalog_stamp=(
-            None
-            if row["process_catalog_stamp"] is None
-            else str(row["process_catalog_stamp"])
+            None if row["process_catalog_stamp"] is None else str(row["process_catalog_stamp"])
         ),
         prepared_tool_set_hash=(
-            None
-            if row["prepared_tool_set_hash"] is None
-            else str(row["prepared_tool_set_hash"])
+            None if row["prepared_tool_set_hash"] is None else str(row["prepared_tool_set_hash"])
         ),
-        pin_token_hash=(
-            None
-            if row["pin_token_hash"] is None
-            else str(row["pin_token_hash"])
-        ),
+        pin_token_hash=(None if row["pin_token_hash"] is None else str(row["pin_token_hash"])),
         status=str(row["status"]),
         created_at=float(row["created_at"]),
-        ready_at=(
-            None if row["ready_at"] is None else float(row["ready_at"])
-        ),
-        retired_at=(
-            None if row["retired_at"] is None else float(row["retired_at"])
-        ),
+        ready_at=(None if row["ready_at"] is None else float(row["ready_at"])),
+        retired_at=(None if row["retired_at"] is None else float(row["retired_at"])),
     )
 
 
@@ -1985,26 +1929,16 @@ def _snapshot_release_receipt_from_row(
         run_id=str(row["run_id"]),
         snapshot_ref=str(row["snapshot_ref"]),
         release_reason=str(row["release_reason"]),
-        owner_terminal_or_transition_ref=str(
-            row["owner_terminal_or_transition_ref"]
-        ),
-        owner_terminal_or_transition_hash=str(
-            row["owner_terminal_or_transition_hash"]
-        ),
-        last_active_member_for_snapshot=bool(
-            row["last_active_member_for_snapshot"]
-        ),
+        owner_terminal_or_transition_ref=str(row["owner_terminal_or_transition_ref"]),
+        owner_terminal_or_transition_hash=str(row["owner_terminal_or_transition_hash"]),
+        last_active_member_for_snapshot=bool(row["last_active_member_for_snapshot"]),
         cleanup_ticket_ref=str(row["cleanup_ticket_ref"]),
         cleanup_ticket_hash=str(row["cleanup_ticket_hash"]),
         cleanup_status=str(row["cleanup_status"]),
         status="released",
         created_at=float(row["created_at"]),
-        cleaned_at=(
-            None if row["cleaned_at"] is None else float(row["cleaned_at"])
-        ),
-        last_error=(
-            None if row["last_error"] is None else str(row["last_error"])
-        ),
+        cleaned_at=(None if row["cleaned_at"] is None else float(row["cleaned_at"])),
+        last_error=(None if row["last_error"] is None else str(row["last_error"])),
     )
 
 
@@ -2037,43 +1971,27 @@ def _runtime_prepare_intent_from_row(
         status=str(row["status"]),
         runtime_set_hash=str(row["runtime_set_hash"]),
         authorization_hash=(
-            None
-            if row["authorization_hash"] is None
-            else str(row["authorization_hash"])
+            None if row["authorization_hash"] is None else str(row["authorization_hash"])
         ),
         launch_revocation_epoch=int(row["launch_revocation_epoch"]),
         adapter_fingerprint=str(row["adapter_fingerprint"]),
         argv_hash=str(row["argv_hash"]),
         env_scope_hash=str(row["env_scope_hash"]),
         workdir=str(row["workdir"]),
-        job_identity=(
-            None if row["job_identity"] is None else str(row["job_identity"])
-        ),
+        job_identity=(None if row["job_identity"] is None else str(row["job_identity"])),
         pid=None if row["pid"] is None else int(row["pid"]),
         process_create_time=(
-            None
-            if row["process_create_time"] is None
-            else float(row["process_create_time"])
+            None if row["process_create_time"] is None else float(row["process_create_time"])
         ),
         session_identity=(
-            None
-            if row["session_identity"] is None
-            else str(row["session_identity"])
+            None if row["session_identity"] is None else str(row["session_identity"])
         ),
-        start_outcome=(
-            None if row["start_outcome"] is None else str(row["start_outcome"])
-        ),
-        start_ack_at=(
-            None if row["start_ack_at"] is None else float(row["start_ack_at"])
-        ),
+        start_outcome=(None if row["start_outcome"] is None else str(row["start_outcome"])),
+        start_ack_at=(None if row["start_ack_at"] is None else float(row["start_ack_at"])),
         health_outcome_hash=(
-            None
-            if row["health_outcome_hash"] is None
-            else str(row["health_outcome_hash"])
+            None if row["health_outcome_hash"] is None else str(row["health_outcome_hash"])
         ),
-        started_at=(
-            None if row["started_at"] is None else float(row["started_at"])
-        ),
+        started_at=(None if row["started_at"] is None else float(row["started_at"])),
         updated_at=float(row["updated_at"]),
         last_error=None if row["last_error"] is None else str(row["last_error"]),
     )
@@ -2087,30 +2005,18 @@ def _runtime_set_from_rows(
         operation_id=str(row["operation_id"]),
         purpose=str(row["purpose"]),
         lifecycle_action=(
-            None
-            if row["lifecycle_action"] is None
-            else str(row["lifecycle_action"])
+            None if row["lifecycle_action"] is None else str(row["lifecycle_action"])
         ),
         owner_activation_id=(
-            None
-            if row["owner_activation_id"] is None
-            else str(row["owner_activation_id"])
+            None if row["owner_activation_id"] is None else str(row["owner_activation_id"])
         ),
         lease_activation_id=(
-            None
-            if row["lease_activation_id"] is None
-            else str(row["lease_activation_id"])
+            None if row["lease_activation_id"] is None else str(row["lease_activation_id"])
         ),
-        target_pack_id=(
-            None if row["target_pack_id"] is None else str(row["target_pack_id"])
-        ),
-        target_version=(
-            None if row["target_version"] is None else str(row["target_version"])
-        ),
+        target_pack_id=(None if row["target_pack_id"] is None else str(row["target_pack_id"])),
+        target_version=(None if row["target_version"] is None else str(row["target_version"])),
         owner_binding_set_stamp=(
-            None
-            if row["owner_binding_set_stamp"] is None
-            else str(row["owner_binding_set_stamp"])
+            None if row["owner_binding_set_stamp"] is None else str(row["owner_binding_set_stamp"])
         ),
         run_catalog_content_stamp=(
             None
@@ -2118,30 +2024,22 @@ def _runtime_set_from_rows(
             else str(row["run_catalog_content_stamp"])
         ),
         target_package_hash=(
-            None
-            if row["target_package_hash"] is None
-            else str(row["target_package_hash"])
+            None if row["target_package_hash"] is None else str(row["target_package_hash"])
         ),
         target_manifest_hash=(
-            None
-            if row["target_manifest_hash"] is None
-            else str(row["target_manifest_hash"])
+            None if row["target_manifest_hash"] is None else str(row["target_manifest_hash"])
         ),
         runtime_set_hash=str(row["runtime_set_hash"]),
         expected_instance_count=int(row["expected_instance_count"]),
         authorization_hash=(
-            None
-            if row["authorization_hash"] is None
-            else str(row["authorization_hash"])
+            None if row["authorization_hash"] is None else str(row["authorization_hash"])
         ),
         launch_revocation_epoch=int(row["launch_revocation_epoch"]),
         status=str(row["status"]),
         created_at=float(row["created_at"]),
         updated_at=float(row["updated_at"]),
         last_error=None if row["last_error"] is None else str(row["last_error"]),
-        instances=tuple(
-            _runtime_prepare_intent_from_row(item) for item in instances
-        ),
+        instances=tuple(_runtime_prepare_intent_from_row(item) for item in instances),
     )
 
 
@@ -2152,13 +2050,9 @@ def _version_from_row(row: Mapping[str, Any]) -> CapabilityVersionRecord:
         install_path=Path(str(row["install_path"])),
         validation_status=str(row["validation_status"]),
         expected_tool_fingerprints=tuple(str(item) for item in fingerprints),
-        parent_version=(
-            None if row["parent_version"] is None else str(row["parent_version"])
-        ),
+        parent_version=(None if row["parent_version"] is None else str(row["parent_version"])),
         parent_manifest_hash=(
-            None
-            if row["parent_manifest_hash"] is None
-            else str(row["parent_manifest_hash"])
+            None if row["parent_manifest_hash"] is None else str(row["parent_manifest_hash"])
         ),
         derived_from_receipt_ref=(
             None
@@ -2201,20 +2095,14 @@ def _operation_from_row(row: Mapping[str, Any]) -> CapabilityOperationRecord:
         root_run_id=None if row["root_run_id"] is None else str(row["root_run_id"]),
         kind=str(row["kind"]),
         pack_id=None if row["pack_id"] is None else str(row["pack_id"]),
-        requested_scope=(
-            None if row["requested_scope"] is None else str(row["requested_scope"])
-        ),
+        requested_scope=(None if row["requested_scope"] is None else str(row["requested_scope"])),
         requested_scope_key=(
-            None
-            if row["requested_scope_key"] is None
-            else str(row["requested_scope_key"])
+            None if row["requested_scope_key"] is None else str(row["requested_scope_key"])
         ),
         phase=str(row["phase"]),
         status=str(row["status"]),
         request=request,
-        error=_json_object(
-            None if row["error_json"] is None else str(row["error_json"])
-        ),
+        error=_json_object(None if row["error_json"] is None else str(row["error_json"])),
         started_at=float(row["started_at"]),
         updated_at=float(row["updated_at"]),
         ended_at=None if row["ended_at"] is None else float(row["ended_at"]),
@@ -2226,9 +2114,7 @@ def _failure_receipt_from_row(
 ) -> CapabilityFailureReceipt:
     canonical_args = _json_object(str(row["canonical_args_json"]))
     if canonical_args is None:  # pragma: no cover - NOT NULL in schema
-        raise CapabilityStoreError(
-            "corrupt_failure_receipt", "canonical args cannot be null"
-        )
+        raise CapabilityStoreError("corrupt_failure_receipt", "canonical args cannot be null")
     return CapabilityFailureReceipt(
         receipt_ref=str(row["receipt_ref"]),
         root_run_id=str(row["root_run_id"]),
@@ -2248,10 +2134,7 @@ def _failure_receipt_from_row(
         args_hash=str(row["args_hash"]),
         error_code=str(row["error_code"]),
         error_fingerprint=str(row["error_fingerprint"]),
-        evidence_refs=tuple(
-            str(item)
-            for item in _json_array(str(row["evidence_refs_json"]))
-        ),
+        evidence_refs=tuple(str(item) for item in _json_array(str(row["evidence_refs_json"]))),
     )
 
 
@@ -2265,12 +2148,8 @@ def _repair_attempt_from_row(
         failure_receipt_ref=str(row["failure_receipt_ref"]),
         control_call_id=str(row["control_call_id"]),
         status=str(row["status"]),  # type: ignore[arg-type]
-        child_run_id=(
-            None if row["child_run_id"] is None else str(row["child_run_id"])
-        ),
-        operation_id=(
-            None if row["operation_id"] is None else str(row["operation_id"])
-        ),
+        child_run_id=(None if row["child_run_id"] is None else str(row["child_run_id"])),
+        operation_id=(None if row["operation_id"] is None else str(row["operation_id"])),
     )
 
 
@@ -2305,33 +2184,43 @@ def _skill_install_intent_from_row(
     if source is None:
         raise CapabilityStoreError("corrupt_skill_install_intent", "source is null")
     return CapabilitySkillInstallIntent(
-        intent_id=str(row["intent_id"]), effect_id=str(row["effect_id"]),
-        call_id=str(row["call_id"]), root_run_id=str(row["root_run_id"]),
-        run_id=str(row["run_id"]), channel=str(row["channel"]),
+        intent_id=str(row["intent_id"]),
+        effect_id=str(row["effect_id"]),
+        call_id=str(row["call_id"]),
+        root_run_id=str(row["root_run_id"]),
+        run_id=str(row["run_id"]),
+        channel=str(row["channel"]),
         project_scope_key=str(row["project_scope_key"]),
-        principal_id=str(row["principal_id"]), source=source,
-        exact_commit=str(row["exact_commit"]), archive_hash=str(row["archive_hash"]),
+        principal_id=str(row["principal_id"]),
+        source=source,
+        exact_commit=str(row["exact_commit"]),
+        archive_hash=str(row["archive_hash"]),
         raw_tree_hash=str(row["raw_tree_hash"]),
         member_set_stamp=str(row["member_set_stamp"]),
         permission_set_hash=str(row["permission_set_hash"]),
         confirmation_nonce=str(row["confirmation_nonce"]),
         confirmation_version=int(row["confirmation_version"]),
-        expires_at=float(row["expires_at"]), status=str(row["status"]),
+        expires_at=float(row["expires_at"]),
+        status=str(row["status"]),
         state_version=int(row["state_version"]),
         settlement_ref=None if row["settlement_ref"] is None else str(row["settlement_ref"]),
         cleanup_ref=None if row["cleanup_ref"] is None else str(row["cleanup_ref"]),
         verification_ref=None if row["verification_ref"] is None else str(row["verification_ref"]),
         error=_json_object(None if row["error_json"] is None else str(row["error_json"])),
-        created_at=float(row["created_at"]), updated_at=float(row["updated_at"]),
+        created_at=float(row["created_at"]),
+        updated_at=float(row["updated_at"]),
         verification_attempt_generation=int(row["verification_attempt_generation"])
-            if "verification_attempt_generation" in row.keys() else 0,
+        if "verification_attempt_generation" in row.keys()
+        else 0,
         current_verification_attempt_id=(
-            None if "current_verification_attempt_id" not in row.keys()
+            None
+            if "current_verification_attempt_id" not in row.keys()
             or row["current_verification_attempt_id"] is None
             else str(row["current_verification_attempt_id"])
         ),
         migrated_verification_provenance=(
-            None if "migrated_verification_provenance" not in row.keys()
+            None
+            if "migrated_verification_provenance" not in row.keys()
             or row["migrated_verification_provenance"] is None
             else str(row["migrated_verification_provenance"])
         ),
@@ -2343,23 +2232,37 @@ def _skill_install_member_from_row(row: Mapping[str, Any]) -> CapabilitySkillIns
     if member is None:
         raise CapabilityStoreError("corrupt_skill_install_member", "member is null")
     return CapabilitySkillInstallMember(
-        intent_id=str(row["intent_id"]), ordinal=int(row["ordinal"]),
-        normalized_name=str(row["normalized_name"]), pack_id=str(row["pack_id"]),
-        version=str(row["version"]), manifest_hash=str(row["manifest_hash"]),
-        content_hash=str(row["content_hash"]), source_digest=str(row["source_digest"]),
+        intent_id=str(row["intent_id"]),
+        ordinal=int(row["ordinal"]),
+        normalized_name=str(row["normalized_name"]),
+        pack_id=str(row["pack_id"]),
+        version=str(row["version"]),
+        manifest_hash=str(row["manifest_hash"]),
+        content_hash=str(row["content_hash"]),
+        source_digest=str(row["source_digest"]),
         member=member,
     )
 
 
 def _operation_member_from_row(row: Mapping[str, Any]) -> CapabilityOperationMember:
     return CapabilityOperationMember(
-        operation_id=str(row["operation_id"]), ordinal=int(row["ordinal"]),
-        normalized_name=str(row["normalized_name"]), pack_id=str(row["pack_id"]),
-        version=str(row["version"]), manifest_hash=str(row["manifest_hash"]),
-        content_hash=str(row["content_hash"]), source_digest=str(row["source_digest"]),
-        committed_version=None if row["committed_version"] is None else str(row["committed_version"]),
-        committed_manifest_hash=None if row["committed_manifest_hash"] is None else str(row["committed_manifest_hash"]),
-        committed_set_stamp=None if row["committed_set_stamp"] is None else str(row["committed_set_stamp"]),
+        operation_id=str(row["operation_id"]),
+        ordinal=int(row["ordinal"]),
+        normalized_name=str(row["normalized_name"]),
+        pack_id=str(row["pack_id"]),
+        version=str(row["version"]),
+        manifest_hash=str(row["manifest_hash"]),
+        content_hash=str(row["content_hash"]),
+        source_digest=str(row["source_digest"]),
+        committed_version=None
+        if row["committed_version"] is None
+        else str(row["committed_version"]),
+        committed_manifest_hash=None
+        if row["committed_manifest_hash"] is None
+        else str(row["committed_manifest_hash"]),
+        committed_set_stamp=None
+        if row["committed_set_stamp"] is None
+        else str(row["committed_set_stamp"]),
     )
 
 
@@ -2400,13 +2303,9 @@ def _legacy_authorization_import_from_row(
         source_key=str(row["source_key"]),
         outcome=str(row["outcome"]),  # type: ignore[arg-type]
         source_fingerprint=(
-            None
-            if row["source_fingerprint"] is None
-            else str(row["source_fingerprint"])
+            None if row["source_fingerprint"] is None else str(row["source_fingerprint"])
         ),
-        imported_mode=(
-            None if row["imported_mode"] is None else str(row["imported_mode"])
-        ),  # type: ignore[arg-type]
+        imported_mode=(None if row["imported_mode"] is None else str(row["imported_mode"])),  # type: ignore[arg-type]
         error_code=None if row["error_code"] is None else str(row["error_code"]),
         imported_at=float(row["imported_at"]),
     )
@@ -2428,21 +2327,15 @@ def _refresh_intent_from_row(
 ) -> CapabilityRefreshIntent:
     value = json.loads(str(row["intent_json"]))
     if not isinstance(value, dict):
-        raise CapabilityStoreError(
-            "corrupt_refresh_intent", "refresh intent is not an object"
-        )
+        raise CapabilityStoreError("corrupt_refresh_intent", "refresh intent is not an object")
     value["status"] = str(row["status"])
-    value["commit_hash"] = (
-        None if row["commit_hash"] is None else str(row["commit_hash"])
-    )
+    value["commit_hash"] = None if row["commit_hash"] is None else str(row["commit_hash"])
     if row["commit_json"] is None:
         value["commit"] = None
     else:
         commit = json.loads(str(row["commit_json"]))
         if not isinstance(commit, dict):
-            raise CapabilityStoreError(
-                "corrupt_refresh_intent", "refresh commit is not an object"
-            )
+            raise CapabilityStoreError("corrupt_refresh_intent", "refresh commit is not an object")
         value["commit"] = commit
     return refresh_intent_from_dict(value)
 
@@ -2451,9 +2344,7 @@ def _default_owner_key(scope: str) -> str:
     return "builtin" if scope == "builtin" else LEGACY_LOCAL_OWNER_KEY
 
 
-async def _capability_table_columns(
-    db: aiosqlite.Connection, table: str
-) -> set[str]:
+async def _capability_table_columns(db: aiosqlite.Connection, table: str) -> set[str]:
     rows = await (await db.execute(f"PRAGMA table_info({table})")).fetchall()
     return {str(row[1]) for row in rows}
 
@@ -2494,9 +2385,7 @@ async def _migrate_snapshot_leases_v1_to_v2(
     await db.execute(CAPABILITY_SNAPSHOT_LEASE_V2_SQL)
     grouped: dict[tuple[str, str], list[Mapping[str, Any]]] = {}
     for row in legacy_rows:
-        grouped.setdefault(
-            (str(row["snapshot_ref"]), str(row["run_id"])), []
-        ).append(row)
+        grouped.setdefault((str(row["snapshot_ref"]), str(row["run_id"])), []).append(row)
     now = time.time()
     for (snapshot_ref, run_id), rows in grouped.items():
         root_run_id = str(rows[0]["root_run_id"])
@@ -2512,9 +2401,7 @@ async def _migrate_snapshot_leases_v1_to_v2(
                     "pack_id": str(row["pack_id"]),
                     "version": str(row["version"]),
                     "manifest_hash": str(row["manifest_hash"]),
-                    "tool_spec_fingerprints": json.loads(
-                        str(row["tool_spec_fingerprints_json"])
-                    ),
+                    "tool_spec_fingerprints": json.loads(str(row["tool_spec_fingerprints_json"])),
                 }
             )
         run_catalog_content_stamp = fingerprint_json(
@@ -2574,11 +2461,7 @@ async def _migrate_snapshot_leases_v1_to_v2(
         start_fingerprint = fingerprint_json(
             {"legacy_snapshot_ref": snapshot_ref, "run_id": run_id}
         )
-        released_at = (
-            max(float(row["released_at"]) for row in rows)
-            if all_released
-            else None
-        )
+        released_at = max(float(row["released_at"]) for row in rows) if all_released else None
         await db.execute(
             """INSERT INTO capability_snapshot_lease_intents(
                 lease_intent_id,lease_intent_hash,snapshot_ref,
@@ -2702,11 +2585,7 @@ async def _migrate_snapshot_leases_v1_to_v2(
                     str(row["manifest_hash"]),
                     str(row["tool_spec_fingerprints_json"]),
                     float(row["acquired_at"]),
-                    (
-                        None
-                        if row["released_at"] is None
-                        else float(row["released_at"])
-                    ),
+                    (None if row["released_at"] is None else float(row["released_at"])),
                 ),
             )
     await db.execute("DROP TABLE capability_snapshot_leases")
@@ -2790,9 +2669,7 @@ async def migrate_capability_schema_v1_to_v2(
         )
 
     old_count = int(
-        (await (await db.execute("SELECT COUNT(*) FROM capability_bindings")).fetchone())[
-            0
-        ]
+        (await (await db.execute("SELECT COUNT(*) FROM capability_bindings")).fetchone())[0]
     )
     await db.execute(
         """
@@ -2843,11 +2720,7 @@ async def migrate_capability_schema_v1_to_v2(
         (LEGACY_LOCAL_OWNER_KEY,),
     )
     new_count = int(
-        (
-            await (
-                await db.execute("SELECT COUNT(*) FROM capability_bindings_v2")
-            ).fetchone()
-        )[0]
+        (await (await db.execute("SELECT COUNT(*) FROM capability_bindings_v2")).fetchone())[0]
     )
     if new_count != old_count:
         raise CapabilityStoreError(
@@ -2931,9 +2804,7 @@ async def migrate_capability_schema_v2_to_v3(
     """
 
     state = await (
-        await db.execute(
-            "SELECT schema_version FROM capability_schema_state WHERE singleton_id=1"
-        )
+        await db.execute("SELECT schema_version FROM capability_schema_state WHERE singleton_id=1")
     ).fetchone()
     if state is None:
         raise CapabilitySchemaMissing(
@@ -2941,9 +2812,7 @@ async def migrate_capability_schema_v2_to_v3(
         )
     version = int(state[0])
     if version in {3, 4}:
-        columns = await _capability_table_columns(
-            db, "capability_skill_install_intents"
-        )
+        columns = await _capability_table_columns(db, "capability_skill_install_intents")
         required_columns = {
             "verification_attempt_generation",
             "current_verification_attempt_id",
@@ -2952,9 +2821,7 @@ async def migrate_capability_schema_v2_to_v3(
         tables = {
             str(row[0])
             for row in await (
-                await db.execute(
-                    "SELECT name FROM sqlite_master WHERE type='table'"
-                )
+                await db.execute("SELECT name FROM sqlite_master WHERE type='table'")
             ).fetchall()
         }
         required_tables = {
@@ -2962,9 +2829,7 @@ async def migrate_capability_schema_v2_to_v3(
             "capability_skill_install_verification_attestations",
             "capability_skill_install_verification_migration_quarantine",
         }
-        if not required_columns.issubset(columns) or not required_tables.issubset(
-            tables
-        ):
+        if not required_columns.issubset(columns) or not required_tables.issubset(tables):
             raise CapabilitySchemaMissing(
                 "capability_schema_v3_incomplete",
                 "execution Skill-install verification schema is incomplete",
@@ -3014,9 +2879,7 @@ async def migrate_capability_schema_v3_to_v4(
     """
 
     state = await (
-        await db.execute(
-            "SELECT schema_version FROM capability_schema_state WHERE singleton_id=1"
-        )
+        await db.execute("SELECT schema_version FROM capability_schema_state WHERE singleton_id=1")
     ).fetchone()
     if state is None:
         raise CapabilitySchemaMissing(
@@ -3096,8 +2959,7 @@ async def migrate_capability_schema_v3_to_v4(
         await db.execute(f"DROP {object_type.upper()} {name}")
     await db.execute("DROP TABLE capability_skill_install_intents")
     await db.execute(
-        "ALTER TABLE capability_skill_install_intents_v4 "
-        "RENAME TO capability_skill_install_intents"
+        "ALTER TABLE capability_skill_install_intents_v4 RENAME TO capability_skill_install_intents"
     )
     for _object_type, _name, sql in dependent_sql:
         await db.execute(sql)
@@ -3157,20 +3019,26 @@ class CapabilityStoreTx:
                 "invalid_publish_intent_members",
                 "member ordinals must be dense and ordered",
             )
-        existing = await (await self._db.execute(
-            "SELECT * FROM capability_publish_intent_members "
-            "WHERE publish_intent_id=? ORDER BY ordinal",
-            (publish_intent_id,),
-        )).fetchall()
+        existing = await (
+            await self._db.execute(
+                "SELECT * FROM capability_publish_intent_members "
+                "WHERE publish_intent_id=? ORDER BY ordinal",
+                (publish_intent_id,),
+            )
+        ).fetchall()
         if existing:
-            current = tuple(CapabilityPublishIntentMember(
-                publish_intent_id=str(row["publish_intent_id"]),
-                operation_id=str(row["operation_id"]), ordinal=int(row["ordinal"]),
-                old_binding=_json_object(
-                    None if row["old_binding_json"] is None else str(row["old_binding_json"])
-                ),
-                new_binding=_json_object(str(row["new_binding_json"])) or {},
-            ) for row in existing)
+            current = tuple(
+                CapabilityPublishIntentMember(
+                    publish_intent_id=str(row["publish_intent_id"]),
+                    operation_id=str(row["operation_id"]),
+                    ordinal=int(row["ordinal"]),
+                    old_binding=_json_object(
+                        None if row["old_binding_json"] is None else str(row["old_binding_json"])
+                    ),
+                    new_binding=_json_object(str(row["new_binding_json"])) or {},
+                )
+                for row in existing
+            )
             if current != tuple(members):
                 raise CapabilityStoreConflict(
                     "publish_intent_members_conflict", "publish members changed"
@@ -3183,9 +3051,15 @@ class CapabilityStoreTx:
                 )
             await self._db.execute(
                 "INSERT INTO capability_publish_intent_members VALUES(?,?,?,?,?)",
-                (member.publish_intent_id, member.operation_id, member.ordinal,
-                 None if member.old_binding is None else canonical_json(dict(member.old_binding)),
-                 canonical_json(dict(member.new_binding))),
+                (
+                    member.publish_intent_id,
+                    member.operation_id,
+                    member.ordinal,
+                    None
+                    if member.old_binding is None
+                    else canonical_json(dict(member.old_binding)),
+                    canonical_json(dict(member.new_binding)),
+                ),
             )
         return tuple(members)
 
@@ -3200,9 +3074,7 @@ class CapabilityStoreTx:
     ) -> CapabilityVersionStorage:
         return await self._store._put_version_storage_tx(self._db, record)
 
-    async def prepare_runtime_set(
-        self, **kwargs: Any
-    ) -> CapabilityRuntimeSetRecord:
+    async def prepare_runtime_set(self, **kwargs: Any) -> CapabilityRuntimeSetRecord:
         return await self._store._prepare_runtime_set_tx(self._db, **kwargs)
 
     async def mark_runtime_instance_ready(
@@ -3212,19 +3084,11 @@ class CapabilityStoreTx:
             self._db, operation_id, runtime_instance_id, **kwargs
         )
 
-    async def mark_runtime_set_ready(
-        self, operation_id: str
-    ) -> CapabilityRuntimeSetRecord:
-        return await self._store._mark_runtime_set_ready_tx(
-            self._db, operation_id
-        )
+    async def mark_runtime_set_ready(self, operation_id: str) -> CapabilityRuntimeSetRecord:
+        return await self._store._mark_runtime_set_ready_tx(self._db, operation_id)
 
-    async def retire_runtime_set(
-        self, operation_id: str
-    ) -> CapabilityRuntimeSetRecord:
-        return await self._store._retire_runtime_set_tx(
-            self._db, operation_id
-        )
+    async def retire_runtime_set(self, operation_id: str) -> CapabilityRuntimeSetRecord:
+        return await self._store._retire_runtime_set_tx(self._db, operation_id)
 
     async def set_binding(
         self,
@@ -3256,36 +3120,29 @@ class CapabilityStoreTx:
         return await self._store._create_operation_tx(self._db, **kwargs)
 
     async def create_skill_install_intent(
-        self, intent: CapabilitySkillInstallIntent,
+        self,
+        intent: CapabilitySkillInstallIntent,
         members: Sequence[CapabilitySkillInstallMember],
     ) -> CapabilitySkillInstallIntent:
-        return await self._store._create_skill_install_intent_tx(
-            self._db, intent, members
-        )
+        return await self._store._create_skill_install_intent_tx(self._db, intent, members)
 
-    async def cas_skill_install_intent(self, intent_id: str, **kwargs: Any) -> CapabilitySkillInstallIntent:
-        return await self._store._cas_skill_install_intent_tx(
-            self._db, intent_id, **kwargs
-        )
+    async def cas_skill_install_intent(
+        self, intent_id: str, **kwargs: Any
+    ) -> CapabilitySkillInstallIntent:
+        return await self._store._cas_skill_install_intent_tx(self._db, intent_id, **kwargs)
 
-    async def handoff_skill_install_intent(self, intent_id: str, **kwargs: Any) -> CapabilitySkillInstallHandoff:
-        return await self._store._handoff_skill_install_intent_tx(
-            self._db, intent_id, **kwargs
-        )
+    async def handoff_skill_install_intent(
+        self, intent_id: str, **kwargs: Any
+    ) -> CapabilitySkillInstallHandoff:
+        return await self._store._handoff_skill_install_intent_tx(self._db, intent_id, **kwargs)
 
     async def bind_operation_pack_id(
         self, operation_id: str, pack_id: str
     ) -> CapabilityOperationRecord:
-        return await self._store._bind_operation_pack_id_tx(
-            self._db, operation_id, pack_id
-        )
+        return await self._store._bind_operation_pack_id_tx(self._db, operation_id, pack_id)
 
-    async def record_phase_intent(
-        self, operation_id: str, phase: str
-    ) -> CapabilityOperationRecord:
-        return await self._store._record_phase_intent_tx(
-            self._db, operation_id, phase
-        )
+    async def record_phase_intent(self, operation_id: str, phase: str) -> CapabilityOperationRecord:
+        return await self._store._record_phase_intent_tx(self._db, operation_id, phase)
 
     async def commit_phase(
         self,
@@ -3294,9 +3151,7 @@ class CapabilityStoreTx:
         *,
         evidence: Mapping[str, JsonValue] | None = None,
     ) -> CapabilityOperationRecord:
-        return await self._store._commit_phase_tx(
-            self._db, operation_id, phase, evidence=evidence
-        )
+        return await self._store._commit_phase_tx(self._db, operation_id, phase, evidence=evidence)
 
     async def create_publish_intent(self, **kwargs: Any) -> CapabilityPublishIntent:
         return await self._store._create_publish_intent_tx(self._db, **kwargs)
@@ -3311,12 +3166,8 @@ class CapabilityStoreTx:
     async def acquire_snapshot_lease(self, **kwargs: Any) -> None:
         await self._store._acquire_snapshot_lease_tx(self._db, **kwargs)
 
-    async def release_snapshot_lease(
-        self, snapshot_ref: str, run_id: str
-    ) -> int:
-        return await self._store._release_snapshot_lease_tx(
-            self._db, snapshot_ref, run_id
-        )
+    async def release_snapshot_lease(self, snapshot_ref: str, run_id: str) -> int:
+        return await self._store._release_snapshot_lease_tx(self._db, snapshot_ref, run_id)
 
     async def clone_snapshot_lease(
         self,
@@ -3337,9 +3188,7 @@ class CapabilityStoreTx:
     async def prepare_run_catalog_projection_in_tx(
         self, **kwargs: Any
     ) -> PreparedRunCatalogProjection:
-        return await self._store.prepare_run_catalog_projection_in_tx(
-            self._db, **kwargs
-        )
+        return await self._store.prepare_run_catalog_projection_in_tx(self._db, **kwargs)
 
     async def adopt_snapshot_lease_intent_in_tx(
         self, lease_intent_id: str, **kwargs: Any
@@ -3376,47 +3225,29 @@ class CapabilityStoreTx:
         *,
         error: Mapping[str, JsonValue],
     ) -> CapabilityRefreshIntent:
-        return await self._store._fail_refresh_intent_tx(
-            self._db, intent_id, error=error
-        )
+        return await self._store._fail_refresh_intent_tx(self._db, intent_id, error=error)
 
-    async def create_runtime_lease(
-        self, **kwargs: Any
-    ) -> CapabilityRuntimeLease:
+    async def create_runtime_lease(self, **kwargs: Any) -> CapabilityRuntimeLease:
         return await self._store._create_runtime_lease_tx(self._db, **kwargs)
 
     async def transition_runtime_lease(
         self, runtime_lease_id: str, **kwargs: Any
     ) -> CapabilityRuntimeLease:
-        return await self._store._transition_runtime_lease_tx(
-            self._db, runtime_lease_id, **kwargs
-        )
+        return await self._store._transition_runtime_lease_tx(self._db, runtime_lease_id, **kwargs)
 
     async def reconnect_runtime_lease(
         self, runtime_lease_id: str, **kwargs: Any
     ) -> CapabilityRuntimeLease:
-        return await self._store._reconnect_runtime_lease_tx(
-            self._db, runtime_lease_id, **kwargs
-        )
+        return await self._store._reconnect_runtime_lease_tx(self._db, runtime_lease_id, **kwargs)
 
-    async def claim_runtime_call(
-        self, **kwargs: Any
-    ) -> CapabilityRuntimeCallLease:
+    async def claim_runtime_call(self, **kwargs: Any) -> CapabilityRuntimeCallLease:
         return await self._store._claim_runtime_call_tx(self._db, **kwargs)
 
-    async def mark_runtime_call_running(
-        self, call_lease_id: str
-    ) -> CapabilityRuntimeCallLease:
-        return await self._store._mark_runtime_call_running_tx(
-            self._db, call_lease_id
-        )
+    async def mark_runtime_call_running(self, call_lease_id: str) -> CapabilityRuntimeCallLease:
+        return await self._store._mark_runtime_call_running_tx(self._db, call_lease_id)
 
-    async def settle_runtime_call(
-        self, call_lease_id: str
-    ) -> CapabilityRuntimeCallLease:
-        return await self._store._settle_runtime_call_tx(
-            self._db, call_lease_id
-        )
+    async def settle_runtime_call(self, call_lease_id: str) -> CapabilityRuntimeCallLease:
+        return await self._store._settle_runtime_call_tx(self._db, call_lease_id)
 
     async def put_failure_receipt(
         self, receipt: CapabilityFailureReceipt
@@ -3438,24 +3269,34 @@ class CapabilityStoreTx:
         )
 
     async def _create_skill_install_intent_tx(
-        self, db: aiosqlite.Connection, intent: CapabilitySkillInstallIntent,
+        self,
+        db: aiosqlite.Connection,
+        intent: CapabilitySkillInstallIntent,
         members: Sequence[CapabilitySkillInstallMember],
     ) -> CapabilitySkillInstallIntent:
         if intent.state_version != 1 or intent.status != "staging":
-            raise CapabilityStoreError("invalid_skill_install_intent", "new intent must be staging at version 1")
+            raise CapabilityStoreError(
+                "invalid_skill_install_intent", "new intent must be staging at version 1"
+            )
         if tuple(member.ordinal for member in members) != tuple(range(len(members))):
-            raise CapabilityStoreError("invalid_skill_install_members", "member ordinals must be dense and ordered")
+            raise CapabilityStoreError(
+                "invalid_skill_install_members", "member ordinals must be dense and ordered"
+            )
         if any(member.intent_id != intent.intent_id for member in members):
             raise CapabilityStoreError("invalid_skill_install_members", "member intent differs")
-        existing = await (await db.execute(
-            "SELECT * FROM capability_skill_install_intents WHERE intent_id=? OR (effect_id=? AND call_id=?)",
-            (intent.intent_id, intent.effect_id, intent.call_id),
-        )).fetchone()
+        existing = await (
+            await db.execute(
+                "SELECT * FROM capability_skill_install_intents WHERE intent_id=? OR (effect_id=? AND call_id=?)",
+                (intent.intent_id, intent.effect_id, intent.call_id),
+            )
+        ).fetchone()
         if existing is not None:
             current = _skill_install_intent_from_row(existing)
             current_members = await self._skill_install_members_tx(db, current.intent_id)
             if current != intent or current_members != tuple(members):
-                raise CapabilityStoreConflict("skill_install_intent_conflict", "install intent identity changed")
+                raise CapabilityStoreConflict(
+                    "skill_install_intent_conflict", "install intent identity changed"
+                )
             return current
         await db.execute(
             """INSERT INTO capability_skill_install_intents(
@@ -3465,28 +3306,56 @@ class CapabilityStoreTx:
                 confirmation_version,expires_at,status,state_version,settlement_ref,
                 cleanup_ref,verification_ref,error_json,created_at,updated_at
             ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (intent.intent_id,intent.effect_id,intent.call_id,intent.root_run_id,
-             intent.run_id,intent.channel,intent.project_scope_key,intent.principal_id,
-             canonical_json(dict(intent.source)),intent.exact_commit,intent.archive_hash,
-             intent.raw_tree_hash,intent.member_set_stamp,intent.permission_set_hash,
-             intent.confirmation_nonce,intent.confirmation_version,intent.expires_at,
-             intent.status,intent.state_version,intent.settlement_ref,intent.cleanup_ref,
-             intent.verification_ref,None if intent.error is None else canonical_json(dict(intent.error)),
-             intent.created_at,intent.updated_at),
+            (
+                intent.intent_id,
+                intent.effect_id,
+                intent.call_id,
+                intent.root_run_id,
+                intent.run_id,
+                intent.channel,
+                intent.project_scope_key,
+                intent.principal_id,
+                canonical_json(dict(intent.source)),
+                intent.exact_commit,
+                intent.archive_hash,
+                intent.raw_tree_hash,
+                intent.member_set_stamp,
+                intent.permission_set_hash,
+                intent.confirmation_nonce,
+                intent.confirmation_version,
+                intent.expires_at,
+                intent.status,
+                intent.state_version,
+                intent.settlement_ref,
+                intent.cleanup_ref,
+                intent.verification_ref,
+                None if intent.error is None else canonical_json(dict(intent.error)),
+                intent.created_at,
+                intent.updated_at,
+            ),
         )
         for member in members:
             await db.execute(
                 """INSERT INTO capability_skill_install_members(
                     intent_id,ordinal,normalized_name,pack_id,version,manifest_hash,
                     content_hash,source_digest,member_json) VALUES(?,?,?,?,?,?,?,?,?)""",
-                (member.intent_id,member.ordinal,member.normalized_name,member.pack_id,
-                 member.version,member.manifest_hash,member.content_hash,
-                 member.source_digest,canonical_json(dict(member.member))),
+                (
+                    member.intent_id,
+                    member.ordinal,
+                    member.normalized_name,
+                    member.pack_id,
+                    member.version,
+                    member.manifest_hash,
+                    member.content_hash,
+                    member.source_digest,
+                    canonical_json(dict(member.member)),
+                ),
             )
         return intent
 
     async def create_skill_install_intent(
-        self, intent: CapabilitySkillInstallIntent,
+        self,
+        intent: CapabilitySkillInstallIntent,
         members: Sequence[CapabilitySkillInstallMember],
     ) -> CapabilitySkillInstallIntent:
         async with self.write_transaction() as db:
@@ -3494,59 +3363,87 @@ class CapabilityStoreTx:
 
     async def get_skill_install_intent(self, intent_id: str) -> CapabilitySkillInstallIntent | None:
         async with self.read_connection() as db:
-            row = await (await db.execute(
-                "SELECT * FROM capability_skill_install_intents WHERE intent_id=?", (intent_id,)
-            )).fetchone()
+            row = await (
+                await db.execute(
+                    "SELECT * FROM capability_skill_install_intents WHERE intent_id=?", (intent_id,)
+                )
+            ).fetchone()
             return None if row is None else _skill_install_intent_from_row(row)
 
     async def get_skill_install_intent_for_effect(
         self, effect_id: str, call_id: str
     ) -> CapabilitySkillInstallIntent | None:
         async with self.read_connection() as db:
-            row = await (await db.execute(
-                "SELECT * FROM capability_skill_install_intents "
-                "WHERE effect_id=? AND call_id=?",
-                (effect_id, call_id),
-            )).fetchone()
+            row = await (
+                await db.execute(
+                    "SELECT * FROM capability_skill_install_intents "
+                    "WHERE effect_id=? AND call_id=?",
+                    (effect_id, call_id),
+                )
+            ).fetchone()
             return None if row is None else _skill_install_intent_from_row(row)
 
-    async def _skill_install_members_tx(self, db: aiosqlite.Connection, intent_id: str) -> tuple[CapabilitySkillInstallMember, ...]:
-        rows = await (await db.execute(
-            "SELECT * FROM capability_skill_install_members WHERE intent_id=? ORDER BY ordinal", (intent_id,)
-        )).fetchall()
+    async def _skill_install_members_tx(
+        self, db: aiosqlite.Connection, intent_id: str
+    ) -> tuple[CapabilitySkillInstallMember, ...]:
+        rows = await (
+            await db.execute(
+                "SELECT * FROM capability_skill_install_members WHERE intent_id=? ORDER BY ordinal",
+                (intent_id,),
+            )
+        ).fetchall()
         return tuple(_skill_install_member_from_row(row) for row in rows)
 
-    async def skill_install_members(self, intent_id: str) -> tuple[CapabilitySkillInstallMember, ...]:
+    async def skill_install_members(
+        self, intent_id: str
+    ) -> tuple[CapabilitySkillInstallMember, ...]:
         async with self.read_connection() as db:
             return await self._skill_install_members_tx(db, intent_id)
 
-    async def pending_skill_install_intents(self, *, now: float | None = None) -> tuple[CapabilitySkillInstallIntent, ...]:
+    async def pending_skill_install_intents(
+        self, *, now: float | None = None
+    ) -> tuple[CapabilitySkillInstallIntent, ...]:
         async with self.read_connection() as db:
             params: tuple[Any, ...] = () if now is None else (now,)
             expiry = "" if now is None else " AND expires_at<=?"
-            rows = await (await db.execute(
-                "SELECT * FROM capability_skill_install_intents WHERE status NOT IN "
-                "('succeeded','stage_failed','denied','expired')" + expiry +
-                " ORDER BY expires_at,intent_id", params,
-            )).fetchall()
+            rows = await (
+                await db.execute(
+                    "SELECT * FROM capability_skill_install_intents WHERE status NOT IN "
+                    "('succeeded','stage_failed','denied','expired')"
+                    + expiry
+                    + " ORDER BY expires_at,intent_id",
+                    params,
+                )
+            ).fetchall()
             return tuple(_skill_install_intent_from_row(row) for row in rows)
 
     async def _cas_skill_install_intent_tx(
-        self, db: aiosqlite.Connection, intent_id: str, *, expected_state_version: int,
-        status: str, settlement_ref: str | None = None, cleanup_ref: str | None = None,
-        verification_ref: str | None = None, error: Mapping[str, JsonValue] | None = None,
+        self,
+        db: aiosqlite.Connection,
+        intent_id: str,
+        *,
+        expected_state_version: int,
+        status: str,
+        settlement_ref: str | None = None,
+        cleanup_ref: str | None = None,
+        verification_ref: str | None = None,
+        error: Mapping[str, JsonValue] | None = None,
     ) -> CapabilitySkillInstallIntent:
-        row = await (await db.execute(
-            "SELECT * FROM capability_skill_install_intents WHERE intent_id=?",
-            (intent_id,),
-        )).fetchone()
+        row = await (
+            await db.execute(
+                "SELECT * FROM capability_skill_install_intents WHERE intent_id=?",
+                (intent_id,),
+            )
+        ).fetchone()
         if row is None:
             raise CapabilityStoreError("skill_install_intent_not_found", intent_id)
         current = _skill_install_intent_from_row(row)
         transitions = {
             "staging": {"awaiting_confirmation", "stage_failed_cleanup_pending"},
             "awaiting_confirmation": {
-                "publishing", "denied_cleanup_pending", "expired_cleanup_pending"
+                "publishing",
+                "denied_cleanup_pending",
+                "expired_cleanup_pending",
             },
             "stage_failed_cleanup_pending": {"stage_failed"},
             "denied_cleanup_pending": {"denied"},
@@ -3569,15 +3466,31 @@ class CapabilityStoreTx:
                settlement_ref=COALESCE(?,settlement_ref),cleanup_ref=COALESCE(?,cleanup_ref),
                verification_ref=COALESCE(?,verification_ref),error_json=?,updated_at=?
                WHERE intent_id=? AND state_version=?""",
-            (status,settlement_ref,cleanup_ref,verification_ref,
-             None if error is None else canonical_json(dict(error)),self._clock(),intent_id,expected_state_version),
+            (
+                status,
+                settlement_ref,
+                cleanup_ref,
+                verification_ref,
+                None if error is None else canonical_json(dict(error)),
+                self._clock(),
+                intent_id,
+                expected_state_version,
+            ),
         )
         if cursor.rowcount != 1:
-            raise CapabilityStoreConflict("skill_install_intent_cas_conflict", "install intent state changed")
-        row = await (await db.execute("SELECT * FROM capability_skill_install_intents WHERE intent_id=?", (intent_id,))).fetchone()
+            raise CapabilityStoreConflict(
+                "skill_install_intent_cas_conflict", "install intent state changed"
+            )
+        row = await (
+            await db.execute(
+                "SELECT * FROM capability_skill_install_intents WHERE intent_id=?", (intent_id,)
+            )
+        ).fetchone()
         return _skill_install_intent_from_row(row)
 
-    async def cas_skill_install_intent(self, intent_id: str, **kwargs: Any) -> CapabilitySkillInstallIntent:
+    async def cas_skill_install_intent(
+        self, intent_id: str, **kwargs: Any
+    ) -> CapabilitySkillInstallIntent:
         async with self.write_transaction() as db:
             return await self._cas_skill_install_intent_tx(db, intent_id, **kwargs)
 
@@ -3599,10 +3512,12 @@ class CapabilityStoreTx:
                 "Skill install retry identity is incomplete",
             )
         async with self.write_transaction() as db:
-            row = await (await db.execute(
-                "SELECT * FROM capability_skill_install_intents WHERE intent_id=?",
-                (intent_id,),
-            )).fetchone()
+            row = await (
+                await db.execute(
+                    "SELECT * FROM capability_skill_install_intents WHERE intent_id=?",
+                    (intent_id,),
+                )
+            ).fetchone()
             if row is None:
                 raise CapabilityStoreError("skill_install_intent_not_found", intent_id)
             current = _skill_install_intent_from_row(row)
@@ -3646,10 +3561,12 @@ class CapabilityStoreTx:
                     "skill_install_retry_cas_conflict",
                     "Skill install retry was claimed concurrently",
                 )
-            updated = await (await db.execute(
-                "SELECT * FROM capability_skill_install_intents WHERE intent_id=?",
-                (intent_id,),
-            )).fetchone()
+            updated = await (
+                await db.execute(
+                    "SELECT * FROM capability_skill_install_intents WHERE intent_id=?",
+                    (intent_id,),
+                )
+            ).fetchone()
             return _skill_install_intent_from_row(updated), True
 
     async def settle_skill_install_retry(
@@ -3669,10 +3586,12 @@ class CapabilityStoreTx:
                 "skill_install_retry_state_invalid", "Retry terminal state is invalid"
             )
         async with self.write_transaction() as db:
-            row = await (await db.execute(
-                "SELECT * FROM capability_skill_install_intents WHERE intent_id=?",
-                (intent_id,),
-            )).fetchone()
+            row = await (
+                await db.execute(
+                    "SELECT * FROM capability_skill_install_intents WHERE intent_id=?",
+                    (intent_id,),
+                )
+            ).fetchone()
             if row is None:
                 raise CapabilityStoreError("skill_install_intent_not_found", intent_id)
             current = _skill_install_intent_from_row(row)
@@ -3715,10 +3634,12 @@ class CapabilityStoreTx:
                     "skill_install_retry_settlement_conflict",
                     "Skill install retry settlement was committed concurrently",
                 )
-            updated = await (await db.execute(
-                "SELECT * FROM capability_skill_install_intents WHERE intent_id=?",
-                (intent_id,),
-            )).fetchone()
+            updated = await (
+                await db.execute(
+                    "SELECT * FROM capability_skill_install_intents WHERE intent_id=?",
+                    (intent_id,),
+                )
+            ).fetchone()
             return _skill_install_intent_from_row(updated)
 
     async def bind_skill_install_confirmation(
@@ -3742,14 +3663,21 @@ class CapabilityStoreTx:
                        state_version=state_version+1,updated_at=?
                    WHERE intent_id=? AND state_version=?
                      AND status='awaiting_confirmation'""",
-                (confirmation_nonce, confirmation_version, self._clock(),
-                 intent_id, expected_state_version),
+                (
+                    confirmation_nonce,
+                    confirmation_version,
+                    self._clock(),
+                    intent_id,
+                    expected_state_version,
+                ),
             )
             if cursor.rowcount != 1:
-                current = await (await db.execute(
-                    "SELECT * FROM capability_skill_install_intents WHERE intent_id=?",
-                    (intent_id,),
-                )).fetchone()
+                current = await (
+                    await db.execute(
+                        "SELECT * FROM capability_skill_install_intents WHERE intent_id=?",
+                        (intent_id,),
+                    )
+                ).fetchone()
                 if current is not None:
                     value = _skill_install_intent_from_row(current)
                     if (
@@ -3761,42 +3689,70 @@ class CapabilityStoreTx:
                     "skill_install_confirmation_cas_conflict",
                     "install confirmation identity changed",
                 )
-            row = await (await db.execute(
-                "SELECT * FROM capability_skill_install_intents WHERE intent_id=?",
-                (intent_id,),
-            )).fetchone()
+            row = await (
+                await db.execute(
+                    "SELECT * FROM capability_skill_install_intents WHERE intent_id=?",
+                    (intent_id,),
+                )
+            ).fetchone()
             return _skill_install_intent_from_row(row)
 
     async def _handoff_skill_install_intent_tx(
-        self, db: aiosqlite.Connection, intent_id: str, *, expected_state_version: int,
-        operation_id: str, idempotency_key: str, confirmation_receipt_hash: str,
+        self,
+        db: aiosqlite.Connection,
+        intent_id: str,
+        *,
+        expected_state_version: int,
+        operation_id: str,
+        idempotency_key: str,
+        confirmation_receipt_hash: str,
     ) -> CapabilitySkillInstallHandoff:
-        existing = await (await db.execute(
-            "SELECT * FROM capability_skill_install_handoffs WHERE intent_id=? OR operation_id=?",
-            (intent_id, operation_id),
-        )).fetchone()
+        existing = await (
+            await db.execute(
+                "SELECT * FROM capability_skill_install_handoffs WHERE intent_id=? OR operation_id=?",
+                (intent_id, operation_id),
+            )
+        ).fetchone()
         if existing is not None:
             handoff = CapabilitySkillInstallHandoff(
-                intent_id=str(existing["intent_id"]),operation_id=str(existing["operation_id"]),
+                intent_id=str(existing["intent_id"]),
+                operation_id=str(existing["operation_id"]),
                 confirmation_receipt_hash=str(existing["confirmation_receipt_hash"]),
-                member_set_stamp=str(existing["member_set_stamp"]),created_at=float(existing["created_at"]),
+                member_set_stamp=str(existing["member_set_stamp"]),
+                created_at=float(existing["created_at"]),
             )
-            if handoff.intent_id != intent_id or handoff.operation_id != operation_id or handoff.confirmation_receipt_hash != confirmation_receipt_hash:
-                raise CapabilityStoreConflict("skill_install_handoff_conflict", "handoff identity changed")
+            if (
+                handoff.intent_id != intent_id
+                or handoff.operation_id != operation_id
+                or handoff.confirmation_receipt_hash != confirmation_receipt_hash
+            ):
+                raise CapabilityStoreConflict(
+                    "skill_install_handoff_conflict", "handoff identity changed"
+                )
             return handoff
-        intent_row = await (await db.execute(
-            "SELECT * FROM capability_skill_install_intents WHERE intent_id=?", (intent_id,)
-        )).fetchone()
+        intent_row = await (
+            await db.execute(
+                "SELECT * FROM capability_skill_install_intents WHERE intent_id=?", (intent_id,)
+            )
+        ).fetchone()
         if intent_row is None:
             raise CapabilityStoreError("skill_install_intent_not_found", intent_id)
         intent = _skill_install_intent_from_row(intent_row)
-        if intent.status != "awaiting_confirmation" or intent.state_version != expected_state_version:
-            raise CapabilityStoreConflict("skill_install_handoff_cas_conflict", "confirmation is not consumable")
+        if (
+            intent.status != "awaiting_confirmation"
+            or intent.state_version != expected_state_version
+        ):
+            raise CapabilityStoreConflict(
+                "skill_install_handoff_cas_conflict", "confirmation is not consumable"
+            )
         members = await self._skill_install_members_tx(db, intent_id)
         await self._create_operation_tx(
-            db, operation_id=operation_id, idempotency_key=idempotency_key,
-            kind="skill_install_batch", request={"install_intent_id": intent_id,
-            "member_set_stamp": intent.member_set_stamp}, root_run_id=intent.root_run_id,
+            db,
+            operation_id=operation_id,
+            idempotency_key=idempotency_key,
+            kind="skill_install_batch",
+            request={"install_intent_id": intent_id, "member_set_stamp": intent.member_set_stamp},
+            root_run_id=intent.root_run_id,
             requested_scope=intent.install_scope,
             requested_scope_key=intent.install_scope_key,
         )
@@ -3804,101 +3760,183 @@ class CapabilityStoreTx:
             await db.execute(
                 """INSERT INTO capability_operation_members(operation_id,ordinal,normalized_name,
                    pack_id,version,manifest_hash,content_hash,source_digest) VALUES(?,?,?,?,?,?,?,?)""",
-                (operation_id,member.ordinal,member.normalized_name,member.pack_id,member.version,
-                 member.manifest_hash,member.content_hash,member.source_digest),
+                (
+                    operation_id,
+                    member.ordinal,
+                    member.normalized_name,
+                    member.pack_id,
+                    member.version,
+                    member.manifest_hash,
+                    member.content_hash,
+                    member.source_digest,
+                ),
             )
         now = self._clock()
         await db.execute(
             "INSERT INTO capability_skill_install_handoffs VALUES(?,?,?,?,?)",
-            (intent_id,operation_id,confirmation_receipt_hash,intent.member_set_stamp,now),
+            (intent_id, operation_id, confirmation_receipt_hash, intent.member_set_stamp, now),
         )
-        await self._cas_skill_install_intent_tx(db,intent_id,expected_state_version=expected_state_version,
-                                                status="publishing",settlement_ref=confirmation_receipt_hash)
-        return CapabilitySkillInstallHandoff(intent_id,operation_id,confirmation_receipt_hash,intent.member_set_stamp,now)
+        await self._cas_skill_install_intent_tx(
+            db,
+            intent_id,
+            expected_state_version=expected_state_version,
+            status="publishing",
+            settlement_ref=confirmation_receipt_hash,
+        )
+        return CapabilitySkillInstallHandoff(
+            intent_id, operation_id, confirmation_receipt_hash, intent.member_set_stamp, now
+        )
 
-    async def handoff_skill_install_intent(self, intent_id: str, **kwargs: Any) -> CapabilitySkillInstallHandoff:
+    async def handoff_skill_install_intent(
+        self, intent_id: str, **kwargs: Any
+    ) -> CapabilitySkillInstallHandoff:
         async with self.write_transaction() as db:
             return await self._handoff_skill_install_intent_tx(db, intent_id, **kwargs)
 
     async def operation_members(self, operation_id: str) -> tuple[CapabilityOperationMember, ...]:
         async with self.read_connection() as db:
-            rows = await (await db.execute(
-                "SELECT * FROM capability_operation_members WHERE operation_id=? ORDER BY ordinal", (operation_id,)
-            )).fetchall()
+            rows = await (
+                await db.execute(
+                    "SELECT * FROM capability_operation_members WHERE operation_id=? ORDER BY ordinal",
+                    (operation_id,),
+                )
+            ).fetchall()
             return tuple(_operation_member_from_row(row) for row in rows)
 
     async def put_publish_intent_members(
-        self, publish_intent_id: str,
+        self,
+        publish_intent_id: str,
         members: Sequence[CapabilityPublishIntentMember],
     ) -> tuple[CapabilityPublishIntentMember, ...]:
         if tuple(member.ordinal for member in members) != tuple(range(len(members))):
-            raise CapabilityStoreError("invalid_publish_intent_members", "member ordinals must be dense and ordered")
+            raise CapabilityStoreError(
+                "invalid_publish_intent_members", "member ordinals must be dense and ordered"
+            )
         async with self.write_transaction() as db:
-            existing = await (await db.execute(
-                "SELECT * FROM capability_publish_intent_members WHERE publish_intent_id=? ORDER BY ordinal",
-                (publish_intent_id,),
-            )).fetchall()
+            existing = await (
+                await db.execute(
+                    "SELECT * FROM capability_publish_intent_members WHERE publish_intent_id=? ORDER BY ordinal",
+                    (publish_intent_id,),
+                )
+            ).fetchall()
             if existing:
-                current = tuple(CapabilityPublishIntentMember(
-                    publish_intent_id=str(row["publish_intent_id"]), operation_id=str(row["operation_id"]),
-                    ordinal=int(row["ordinal"]),
-                    old_binding=_json_object(None if row["old_binding_json"] is None else str(row["old_binding_json"])),
-                    new_binding=_json_object(str(row["new_binding_json"])) or {},
-                ) for row in existing)
+                current = tuple(
+                    CapabilityPublishIntentMember(
+                        publish_intent_id=str(row["publish_intent_id"]),
+                        operation_id=str(row["operation_id"]),
+                        ordinal=int(row["ordinal"]),
+                        old_binding=_json_object(
+                            None
+                            if row["old_binding_json"] is None
+                            else str(row["old_binding_json"])
+                        ),
+                        new_binding=_json_object(str(row["new_binding_json"])) or {},
+                    )
+                    for row in existing
+                )
                 if current != tuple(members):
-                    raise CapabilityStoreConflict("publish_intent_members_conflict", "publish members changed")
+                    raise CapabilityStoreConflict(
+                        "publish_intent_members_conflict", "publish members changed"
+                    )
                 return current
             for member in members:
                 if member.publish_intent_id != publish_intent_id:
-                    raise CapabilityStoreError("invalid_publish_intent_members", "publish intent differs")
+                    raise CapabilityStoreError(
+                        "invalid_publish_intent_members", "publish intent differs"
+                    )
                 await db.execute(
                     "INSERT INTO capability_publish_intent_members VALUES(?,?,?,?,?)",
-                    (member.publish_intent_id,member.operation_id,member.ordinal,
-                     None if member.old_binding is None else canonical_json(dict(member.old_binding)),
-                     canonical_json(dict(member.new_binding))),
+                    (
+                        member.publish_intent_id,
+                        member.operation_id,
+                        member.ordinal,
+                        None
+                        if member.old_binding is None
+                        else canonical_json(dict(member.old_binding)),
+                        canonical_json(dict(member.new_binding)),
+                    ),
                 )
             return tuple(members)
 
-    async def publish_intent_members(self, publish_intent_id: str) -> tuple[CapabilityPublishIntentMember, ...]:
+    async def publish_intent_members(
+        self, publish_intent_id: str
+    ) -> tuple[CapabilityPublishIntentMember, ...]:
         async with self.read_connection() as db:
-            rows = await (await db.execute(
-                "SELECT * FROM capability_publish_intent_members WHERE publish_intent_id=? ORDER BY ordinal",
-                (publish_intent_id,),
-            )).fetchall()
-            return tuple(CapabilityPublishIntentMember(
-                publish_intent_id=str(row["publish_intent_id"]),operation_id=str(row["operation_id"]),
-                ordinal=int(row["ordinal"]),
-                old_binding=_json_object(None if row["old_binding_json"] is None else str(row["old_binding_json"])),
-                new_binding=_json_object(str(row["new_binding_json"])) or {},
-            ) for row in rows)
+            rows = await (
+                await db.execute(
+                    "SELECT * FROM capability_publish_intent_members WHERE publish_intent_id=? ORDER BY ordinal",
+                    (publish_intent_id,),
+                )
+            ).fetchall()
+            return tuple(
+                CapabilityPublishIntentMember(
+                    publish_intent_id=str(row["publish_intent_id"]),
+                    operation_id=str(row["operation_id"]),
+                    ordinal=int(row["ordinal"]),
+                    old_binding=_json_object(
+                        None if row["old_binding_json"] is None else str(row["old_binding_json"])
+                    ),
+                    new_binding=_json_object(str(row["new_binding_json"])) or {},
+                )
+                for row in rows
+            )
 
-    async def put_operation_evidence(self, evidence: CapabilityOperationEvidence) -> CapabilityOperationEvidence:
+    async def put_operation_evidence(
+        self, evidence: CapabilityOperationEvidence
+    ) -> CapabilityOperationEvidence:
         payload = canonical_json(dict(evidence.evidence))
         async with self.write_transaction() as db:
-            row = await (await db.execute(
-                "SELECT * FROM capability_operation_evidence WHERE idempotency_key=?", (evidence.idempotency_key,)
-            )).fetchone()
+            row = await (
+                await db.execute(
+                    "SELECT * FROM capability_operation_evidence WHERE idempotency_key=?",
+                    (evidence.idempotency_key,),
+                )
+            ).fetchone()
             if row is not None:
-                current = CapabilityOperationEvidence(str(row["operation_id"]),str(row["evidence_kind"]),
-                    str(row["idempotency_key"]),_json_object(str(row["evidence_json"])) or {},float(row["created_at"]))
+                current = CapabilityOperationEvidence(
+                    str(row["operation_id"]),
+                    str(row["evidence_kind"]),
+                    str(row["idempotency_key"]),
+                    _json_object(str(row["evidence_json"])) or {},
+                    float(row["created_at"]),
+                )
                 if current != evidence:
-                    raise CapabilityStoreConflict("operation_evidence_conflict", "evidence identity changed")
+                    raise CapabilityStoreConflict(
+                        "operation_evidence_conflict", "evidence identity changed"
+                    )
                 return current
-            await db.execute("INSERT INTO capability_operation_evidence VALUES(?,?,?,?,?)",
-                             (evidence.operation_id,evidence.evidence_kind,evidence.idempotency_key,payload,evidence.created_at))
+            await db.execute(
+                "INSERT INTO capability_operation_evidence VALUES(?,?,?,?,?)",
+                (
+                    evidence.operation_id,
+                    evidence.evidence_kind,
+                    evidence.idempotency_key,
+                    payload,
+                    evidence.created_at,
+                ),
+            )
             return evidence
 
-    async def operation_evidence(self, operation_id: str) -> tuple[CapabilityOperationEvidence, ...]:
+    async def operation_evidence(
+        self, operation_id: str
+    ) -> tuple[CapabilityOperationEvidence, ...]:
         async with self.read_connection() as db:
-            rows = await (await db.execute(
-                "SELECT * FROM capability_operation_evidence WHERE operation_id=? ORDER BY created_at,evidence_kind,idempotency_key",
-                (operation_id,),
-            )).fetchall()
-            return tuple(CapabilityOperationEvidence(
-                operation_id=str(row["operation_id"]), evidence_kind=str(row["evidence_kind"]),
-                idempotency_key=str(row["idempotency_key"]),
-                evidence=_json_object(str(row["evidence_json"])) or {}, created_at=float(row["created_at"]),
-            ) for row in rows)
+            rows = await (
+                await db.execute(
+                    "SELECT * FROM capability_operation_evidence WHERE operation_id=? ORDER BY created_at,evidence_kind,idempotency_key",
+                    (operation_id,),
+                )
+            ).fetchall()
+            return tuple(
+                CapabilityOperationEvidence(
+                    operation_id=str(row["operation_id"]),
+                    evidence_kind=str(row["evidence_kind"]),
+                    idempotency_key=str(row["idempotency_key"]),
+                    evidence=_json_object(str(row["evidence_json"])) or {},
+                    created_at=float(row["created_at"]),
+                )
+                for row in rows
+            )
 
     async def put_task_grant(self, grant: TaskGrant) -> TaskGrant:
         return await self._store._put_task_grant_tx(self._db, grant)
@@ -3915,7 +3953,9 @@ class CapabilityStoreTx:
         user_set_receipt_ref: str | None = None,
     ) -> AuthorizationPolicyState:
         return await self._store._compare_and_set_policy_mode_tx(
-            self._db, mode, expected_generation=expected_generation,
+            self._db,
+            mode,
+            expected_generation=expected_generation,
             provenance=provenance,
             user_set_receipt_ref=user_set_receipt_ref,
         )
@@ -3923,16 +3963,12 @@ class CapabilityStoreTx:
     async def get_legacy_authorization_import(
         self, source_key: str
     ) -> LegacyAuthorizationImportRecord | None:
-        return await self._store._get_legacy_authorization_import_tx(
-            self._db, source_key
-        )
+        return await self._store._get_legacy_authorization_import_tx(self._db, source_key)
 
     async def put_legacy_authorization_import(
         self, record: LegacyAuthorizationImportRecord
     ) -> LegacyAuthorizationImportRecord:
-        return await self._store._put_legacy_authorization_import_tx(
-            self._db, record
-        )
+        return await self._store._put_legacy_authorization_import_tx(self._db, record)
 
 
 class CapabilityStore:
@@ -3950,9 +3986,7 @@ class CapabilityStore:
         else:
             self.path = Path(execution_database.path)
             self._owner = execution_database
-        self.product_owned = bool(
-            getattr(execution_database, "is_product_state_owner", False)
-        )
+        self.product_owned = bool(getattr(execution_database, "is_product_state_owner", False))
         self._owned_connection_ids: set[int] = set()
         self._clock = clock
         self._initialize_lock = asyncio.Lock()
@@ -3987,8 +4021,7 @@ class CapabilityStore:
                     )
                 state = await (
                     await db.execute(
-                        "SELECT schema_version FROM capability_schema_state "
-                        "WHERE singleton_id=1"
+                        "SELECT schema_version FROM capability_schema_state WHERE singleton_id=1"
                     )
                 ).fetchone()
                 version = int(state[0]) if state else 0
@@ -4002,16 +4035,14 @@ class CapabilityStore:
                 await db.commit()
             self._initialized = True
 
-    async def _migrate_authorization_policy_provenance(
-        self, db: aiosqlite.Connection
-    ) -> None:
+    async def _migrate_authorization_policy_provenance(self, db: aiosqlite.Connection) -> None:
         """Add the v2 provenance columns and classify legacy rows once."""
 
         columns = {
             str(row[1])
-            for row in await (await db.execute(
-                "PRAGMA table_info(authorization_policy_state)"
-            )).fetchall()
+            for row in await (
+                await db.execute("PRAGMA table_info(authorization_policy_state)")
+            ).fetchall()
         }
         if "provenance" not in columns:
             await db.execute(
@@ -4170,9 +4201,7 @@ class CapabilityStore:
             )
         ).fetchone()
         if row is None:  # pragma: no cover - INSERT OR IGNORE guarantees it
-            raise CapabilityStoreError(
-                "owner_detail_missing", "owner detail row was not created"
-            )
+            raise CapabilityStoreError("owner_detail_missing", "owner detail row was not created")
         return _detail_token_from_row(row)
 
     async def _touch_owner_detail_tx(
@@ -4209,9 +4238,7 @@ class CapabilityStore:
             )
         ).fetchone()
         if row is None:  # pragma: no cover
-            raise CapabilityStoreError(
-                "owner_detail_missing", "owner detail row disappeared"
-            )
+            raise CapabilityStoreError("owner_detail_missing", "owner detail row disappeared")
         return _detail_token_from_row(row)
 
     async def _record_version_tx(
@@ -4251,12 +4278,10 @@ class CapabilityStore:
                 current.descriptor.manifest_hash != descriptor.manifest_hash
                 or current.descriptor.fingerprint != descriptor.fingerprint
                 or current.install_path != install_path
-                or current.expected_tool_fingerprints
-                != record.expected_tool_fingerprints
+                or current.expected_tool_fingerprints != record.expected_tool_fingerprints
                 or current.parent_version != record.parent_version
                 or current.parent_manifest_hash != record.parent_manifest_hash
-                or current.derived_from_receipt_ref
-                != record.derived_from_receipt_ref
+                or current.derived_from_receipt_ref != record.derived_from_receipt_ref
             ):
                 raise CapabilityStoreConflict(
                     "capability_version_conflict",
@@ -4274,9 +4299,7 @@ class CapabilityStore:
         await self._bump_generation_tx(db, catalog=True, binding=False)
         return record
 
-    async def record_version(
-        self, record: CapabilityVersionRecord
-    ) -> CapabilityVersionRecord:
+    async def record_version(self, record: CapabilityVersionRecord) -> CapabilityVersionRecord:
         async with self.write_transaction() as db:
             return await self._record_version_tx(db, record)
 
@@ -4297,14 +4320,11 @@ class CapabilityStore:
         """
 
         expected = tuple(str(value) for value in expected_fingerprints)
-        replacement = tuple(
-            str(value) for value in replacement_fingerprints
-        )
+        replacement = tuple(str(value) for value in replacement_fingerprints)
         if not expected or len(expected) != len(replacement):
             raise ValueError("fingerprint migration requires equal non-empty sets")
         if any(
-            len(value) != 64
-            or any(character not in "0123456789abcdef" for character in value)
+            len(value) != 64 or any(character not in "0123456789abcdef" for character in value)
             for value in expected + replacement
         ):
             raise ValueError("fingerprint migration values must be sha256 hex")
@@ -4489,12 +4509,8 @@ class CapabilityStore:
             return tuple(_version_from_row(row) for row in rows)
 
     @staticmethod
-    def _binding_id(
-        owner_key: str, scope: str, scope_key: str, pack_id: str
-    ) -> str:
-        return hashlib.sha256(
-            f"{owner_key}|{scope}|{scope_key}|{pack_id}".encode()
-        ).hexdigest()
+    def _binding_id(owner_key: str, scope: str, scope_key: str, pack_id: str) -> str:
+        return hashlib.sha256(f"{owner_key}|{scope}|{scope_key}|{pack_id}".encode()).hexdigest()
 
     async def _set_binding_tx(
         self,
@@ -4516,17 +4532,14 @@ class CapabilityStore:
         if not resolved_owner_key:
             raise CapabilityStoreError("invalid_owner_key", "owner key is required")
         resolved_management_policy = str(
-            management_policy
-            or ("host_managed" if scope == "builtin" else "legacy_import")
+            management_policy or ("host_managed" if scope == "builtin" else "legacy_import")
         )
         if resolved_management_policy not in {
             "host_managed",
             "user_managed",
             "legacy_import",
         }:
-            raise CapabilityStoreError(
-                "invalid_management_policy", "unknown management policy"
-            )
+            raise CapabilityStoreError("invalid_management_policy", "unknown management policy")
         version_row = await (
             await db.execute(
                 """SELECT 1 FROM capability_versions
@@ -4547,9 +4560,7 @@ class CapabilityStore:
             )
         ).fetchone()
         now = self._clock()
-        binding_id = self._binding_id(
-            resolved_owner_key, scope, scope_key, pack_id
-        )
+        binding_id = self._binding_id(resolved_owner_key, scope, scope_key, pack_id)
         previous_identity: tuple[str, str, str] | None = None
         if row is None:
             if expected_generation != 0:
@@ -4638,8 +4649,7 @@ class CapabilityStore:
         )
         await self._touch_owner_detail_tx(db, key)
         if previous_identity is not None and (
-            previous_identity != (pack_id, version, manifest_hash)
-            or not enabled
+            previous_identity != (pack_id, version, manifest_hash) or not enabled
         ):
             await self._drain_unreferenced_runtimes_tx(
                 db,
@@ -4658,9 +4668,7 @@ class CapabilityStore:
             generation=generation,
             owner_key=resolved_owner_key,
             management_policy=resolved_management_policy,  # type: ignore[arg-type]
-            management_generation=(
-                1 if row is None else current.management_generation + 1
-            ),
+            management_generation=(1 if row is None else current.management_generation + 1),
         )
 
     async def set_binding(self, **kwargs: Any) -> CapabilityBinding:
@@ -4685,13 +4693,18 @@ class CapabilityStore:
                 "invalid_global_owner_key", "validated user-global owner is required"
             )
         active_statuses = (
-            "staging", "awaiting_confirmation", "publishing",
-            "published_pending_runtime_verification", "succeeded", "unknown",
+            "staging",
+            "awaiting_confirmation",
+            "publishing",
+            "published_pending_runtime_verification",
+            "succeeded",
+            "unknown",
         )
         results: list[Mapping[str, JsonValue]] = []
         async with self.write_transaction() as db:
-            rows = await (await db.execute(
-                f"""SELECT b.binding_id,b.owner_key,b.scope_key,b.pack_id,
+            rows = await (
+                await db.execute(
+                    f"""SELECT b.binding_id,b.owner_key,b.scope_key,b.pack_id,
                            b.active_version AS version,
                            b.active_manifest_hash AS manifest_hash,b.generation,
                            i.intent_id,i.status,i.settlement_ref,i.verification_ref,
@@ -4718,39 +4731,46 @@ class CapabilityStore:
                       ON om.operation_id=h.operation_id AND om.ordinal=m.ordinal
                     WHERE b.scope='project' AND b.enabled=1
                       AND i.source_json NOT LIKE '%global-skill-install-source-v2%'
-                      AND i.status IN ({','.join('?' for _ in active_statuses)})
+                      AND i.status IN ({",".join("?" for _ in active_statuses)})
                     ORDER BY b.pack_id,b.owner_key,b.scope_key,b.binding_id,i.intent_id""",
-                active_statuses,
-            )).fetchall()
+                    active_statuses,
+                )
+            ).fetchall()
             by_pack: dict[str, list[Mapping[str, Any]]] = {}
             for row in rows:
                 by_pack.setdefault(str(row["pack_id"]), []).append(row)
             for pack_id, candidates in sorted(by_pack.items()):
                 frozen = []
                 for row in candidates:
-                    evidence = _json_object(
-                        None if row["evidence_json"] is None else str(row["evidence_json"])
-                    ) or {}
-                    evidence_members = tuple(
-                        item for item in evidence.get("members", ())
-                        if isinstance(item, Mapping)
+                    evidence = (
+                        _json_object(
+                            None if row["evidence_json"] is None else str(row["evidence_json"])
+                        )
+                        or {}
                     )
-                    operation_member_rows = await (await db.execute(
-                        """SELECT ordinal,normalized_name,pack_id,version,
+                    evidence_members = tuple(
+                        item for item in evidence.get("members", ()) if isinstance(item, Mapping)
+                    )
+                    operation_member_rows = await (
+                        await db.execute(
+                            """SELECT ordinal,normalized_name,pack_id,version,
                                   manifest_hash,content_hash,source_digest,
                                   committed_version,committed_manifest_hash,
                                   committed_set_stamp
                            FROM capability_operation_members
                            WHERE operation_id=? ORDER BY ordinal""",
-                        (str(row["operation_id"] or ""),),
-                    )).fetchall()
-                    intent_member_rows = await (await db.execute(
-                        """SELECT ordinal,normalized_name,pack_id,version,
+                            (str(row["operation_id"] or ""),),
+                        )
+                    ).fetchall()
+                    intent_member_rows = await (
+                        await db.execute(
+                            """SELECT ordinal,normalized_name,pack_id,version,
                                   manifest_hash,content_hash,source_digest
                            FROM capability_skill_install_members
                            WHERE intent_id=? ORDER BY ordinal""",
-                        (str(row["intent_id"]),),
-                    )).fetchall()
+                            (str(row["intent_id"]),),
+                        )
+                    ).fetchall()
                     rebuilt_members = [
                         {
                             "pack_id": str(item["pack_id"]),
@@ -4784,8 +4804,10 @@ class CapabilityStore:
                         == tuple(range(len(operation_member_rows)))
                         and all(
                             str(item["committed_version"] or "") == str(item["version"])
-                            and str(item["committed_manifest_hash"] or "") == str(item["manifest_hash"])
-                            and str(item["committed_set_stamp"] or "") == str(row["member_set_stamp"])
+                            and str(item["committed_manifest_hash"] or "")
+                            == str(item["manifest_hash"])
+                            and str(item["committed_set_stamp"] or "")
+                            == str(row["member_set_stamp"])
                             for item in operation_member_rows
                         )
                     )
@@ -4796,103 +4818,128 @@ class CapabilityStore:
                         "content_hash": str(row["content_hash"]),
                     }
                     matching_members = [
-                        item for item in evidence_members
-                        if all(str(item.get(key) or "") == value for key, value in expected_member.items())
+                        item
+                        for item in evidence_members
+                        if all(
+                            str(item.get(key) or "") == value
+                            for key, value in expected_member.items()
+                        )
                     ]
                     receipt_payload = {
-                        key: value for key, value in evidence.items()
+                        key: value
+                        for key, value in evidence.items()
                         if key not in {"manager_receipt_hash", "install_root"}
                     }
                     receipt_hash = str(evidence.get("manager_receipt_hash") or "")
-                    operation_request = _json_object(
-                        None if row["request_json"] is None else str(row["request_json"])
-                    ) or {}
-                    evidence_valid = all((
-                        str(row["status"]) == "succeeded",
-                        str(row["operation_kind"] or "") == "skill_install_batch",
-                        str(row["operation_phase"] or "") == "batch_committed",
-                        str(row["operation_status"] or "") == "succeeded",
-                        str(row["evidence_status"] or "") == "committed",
-                        str(evidence.get("schema") or "") == "capability-batch-manager-receipt-v1",
-                        str(evidence.get("operation_id") or "") == str(row["operation_id"] or ""),
-                        str(evidence.get("scope") or "") == "project",
-                        str(evidence.get("scope_key") or "") == str(row["scope_key"]),
-                        str(evidence.get("project_scope_key") or "") == str(row["scope_key"]),
-                        str(evidence.get("owner_key") or "") == str(row["owner_key"]),
-                        str(evidence.get("committed_set_stamp") or "") == str(row["member_set_stamp"]),
-                        str(row["handoff_member_set_stamp"] or "") == str(row["member_set_stamp"]),
-                        str(operation_request.get("member_set_stamp") or "") == str(row["member_set_stamp"]),
-                        str(evidence.get("publication_state") or "") == "active",
-                        len(matching_members) == 1,
-                        full_member_set_valid,
-                        str(row["committed_version"] or "") == str(row["version"]),
-                        str(row["committed_manifest_hash"] or "") == str(row["manifest_hash"]),
-                        str(row["committed_set_stamp"] or "") == str(row["member_set_stamp"]),
-                        len(receipt_hash) == 64,
-                        receipt_hash == fingerprint_json(receipt_payload),
-                        str(row["settlement_ref"] or "") == receipt_hash,
-                        bool(str(row["verification_ref"] or "")),
-                    ))
-                    frozen.append({
-                        "binding_id": str(row["binding_id"]),
-                        "owner_key": str(row["owner_key"]),
-                        "scope_key": str(row["scope_key"]),
-                        "generation": int(row["generation"]),
-                        "intent_id": str(row["intent_id"]),
-                        "intent_status": str(row["status"]),
-                        "version": str(row["version"]),
-                        "manifest_hash": str(row["manifest_hash"]),
-                        "content_hash": str(row["content_hash"]),
-                        "manager_receipt_hash": receipt_hash,
-                        "runtime_verification_ref": str(row["verification_ref"] or ""),
-                        "manager_evidence_valid": evidence_valid,
-                        "ordered_member_set_hash": fingerprint_json(rebuilt_members),
-                    })
+                    operation_request = (
+                        _json_object(
+                            None if row["request_json"] is None else str(row["request_json"])
+                        )
+                        or {}
+                    )
+                    evidence_valid = all(
+                        (
+                            str(row["status"]) == "succeeded",
+                            str(row["operation_kind"] or "") == "skill_install_batch",
+                            str(row["operation_phase"] or "") == "batch_committed",
+                            str(row["operation_status"] or "") == "succeeded",
+                            str(row["evidence_status"] or "") == "committed",
+                            str(evidence.get("schema") or "")
+                            == "capability-batch-manager-receipt-v1",
+                            str(evidence.get("operation_id") or "")
+                            == str(row["operation_id"] or ""),
+                            str(evidence.get("scope") or "") == "project",
+                            str(evidence.get("scope_key") or "") == str(row["scope_key"]),
+                            str(evidence.get("project_scope_key") or "") == str(row["scope_key"]),
+                            str(evidence.get("owner_key") or "") == str(row["owner_key"]),
+                            str(evidence.get("committed_set_stamp") or "")
+                            == str(row["member_set_stamp"]),
+                            str(row["handoff_member_set_stamp"] or "")
+                            == str(row["member_set_stamp"]),
+                            str(operation_request.get("member_set_stamp") or "")
+                            == str(row["member_set_stamp"]),
+                            str(evidence.get("publication_state") or "") == "active",
+                            len(matching_members) == 1,
+                            full_member_set_valid,
+                            str(row["committed_version"] or "") == str(row["version"]),
+                            str(row["committed_manifest_hash"] or "") == str(row["manifest_hash"]),
+                            str(row["committed_set_stamp"] or "") == str(row["member_set_stamp"]),
+                            len(receipt_hash) == 64,
+                            receipt_hash == fingerprint_json(receipt_payload),
+                            str(row["settlement_ref"] or "") == receipt_hash,
+                            bool(str(row["verification_ref"] or "")),
+                        )
+                    )
+                    frozen.append(
+                        {
+                            "binding_id": str(row["binding_id"]),
+                            "owner_key": str(row["owner_key"]),
+                            "scope_key": str(row["scope_key"]),
+                            "generation": int(row["generation"]),
+                            "intent_id": str(row["intent_id"]),
+                            "intent_status": str(row["status"]),
+                            "version": str(row["version"]),
+                            "manifest_hash": str(row["manifest_hash"]),
+                            "content_hash": str(row["content_hash"]),
+                            "manager_receipt_hash": receipt_hash,
+                            "runtime_verification_ref": str(row["verification_ref"] or ""),
+                            "manager_evidence_valid": evidence_valid,
+                            "ordered_member_set_hash": fingerprint_json(rebuilt_members),
+                        }
+                    )
                 source_stamp = fingerprint_json(frozen)
-                prior = await (await db.execute(
-                    """SELECT * FROM capability_legacy_global_convergence
+                prior = await (
+                    await db.execute(
+                        """SELECT * FROM capability_legacy_global_convergence
                        WHERE global_owner_key=? AND pack_id=?""",
-                    (owner_key, pack_id),
-                )).fetchone()
+                        (owner_key, pack_id),
+                    )
+                ).fetchone()
                 if prior is not None:
                     if str(prior["source_binding_set_stamp"]) != source_stamp:
                         raise CapabilityStoreConflict(
                             "legacy_global_convergence_source_changed",
                             f"legacy source set changed after decision for {pack_id}",
                         )
-                    results.append({
-                        "pack_id": pack_id, "outcome": str(prior["outcome"]),
-                        "source_binding_set_stamp": source_stamp,
-                    })
+                    results.append(
+                        {
+                            "pack_id": pack_id,
+                            "outcome": str(prior["outcome"]),
+                            "source_binding_set_stamp": source_stamp,
+                        }
+                    )
                     continue
                 identities = {
                     (item["version"], item["manifest_hash"], item["content_hash"])
                     for item in frozen
                 }
                 selected = next(iter(identities)) if len(identities) == 1 else None
-                existing = await (await db.execute(
-                    """SELECT b.*,v.derived_from_receipt_ref
+                existing = await (
+                    await db.execute(
+                        """SELECT b.*,v.derived_from_receipt_ref
                        FROM capability_bindings b
                        JOIN capability_versions v
                          ON v.pack_id=b.pack_id AND v.version=b.active_version
                         AND v.manifest_hash=b.active_manifest_hash
                        WHERE b.owner_key=? AND b.scope='user' AND b.scope_key=?
                          AND b.pack_id=?""",
-                    (owner_key, owner_key, pack_id),
-                )).fetchone()
+                        (owner_key, owner_key, pack_id),
+                    )
+                ).fetchone()
                 conflict_reasons: list[str] = []
                 if selected is None:
                     conflict_reasons.append("legacy_sources_differ")
                 if any(not item["manager_evidence_valid"] for item in frozen):
                     conflict_reasons.append("legacy_manager_receipt_invalid")
-                if existing is not None and selected is not None and (
-                    str(existing["active_version"]), str(existing["active_manifest_hash"])
-                ) != selected[:2]:
+                if (
+                    existing is not None
+                    and selected is not None
+                    and (str(existing["active_version"]), str(existing["active_manifest_hash"]))
+                    != selected[:2]
+                ):
                     conflict_reasons.append("existing_global_binding_differs")
                 if existing is not None and selected is not None:
-                    receipt_hashes = {
-                        str(item["manager_receipt_hash"]) for item in frozen
-                    }
+                    receipt_hashes = {str(item["manager_receipt_hash"]) for item in frozen}
                     existing_receipt = str(existing["derived_from_receipt_ref"] or "")
                     # Version/manifest alone do not identify installed bytes.  The
                     # immutable version row must point at one of the Manager
@@ -4910,15 +4957,25 @@ class CapabilityStore:
                            ) VALUES(?,?,?,'legacy_global_conflict',NULL,?,?)""",
                         (owner_key, pack_id, source_stamp, canonical_json(conflict), self._clock()),
                     )
-                    results.append({"pack_id": pack_id, "outcome": "legacy_global_conflict",
-                                    "source_binding_set_stamp": source_stamp})
+                    results.append(
+                        {
+                            "pack_id": pack_id,
+                            "outcome": "legacy_global_conflict",
+                            "source_binding_set_stamp": source_stamp,
+                        }
+                    )
                     continue
                 assert selected is not None
                 await self._set_binding_tx(
-                    db, scope="user", scope_key=owner_key, pack_id=pack_id,
-                    version=selected[0], manifest_hash=selected[1],
+                    db,
+                    scope="user",
+                    scope_key=owner_key,
+                    pack_id=pack_id,
+                    version=selected[0],
+                    manifest_hash=selected[1],
                     expected_generation=(0 if existing is None else int(existing["generation"])),
-                    owner_key=owner_key, management_policy="user_managed",
+                    owner_key=owner_key,
+                    management_policy="user_managed",
                 )
                 retired_binding_ids: set[str] = set()
                 for item in frozen:
@@ -4940,21 +4997,33 @@ class CapabilityStore:
                     )
                 await self._bump_generation_tx(db, catalog=True, binding=True)
                 selected_json = {
-                    "version": selected[0], "manifest_hash": selected[1],
+                    "version": selected[0],
+                    "manifest_hash": selected[1],
                     "content_hash": selected[2],
-                    "manager_receipt_set_hash": fingerprint_json(sorted(
-                        str(item["manager_receipt_hash"]) for item in frozen
-                    )),
+                    "manager_receipt_set_hash": fingerprint_json(
+                        sorted(str(item["manager_receipt_hash"]) for item in frozen)
+                    ),
                 }
                 await db.execute(
                     """INSERT INTO capability_legacy_global_convergence(
                        global_owner_key,pack_id,source_binding_set_stamp,outcome,
                        selected_identity_json,conflict_json,created_at
                        ) VALUES(?,?,?,'promoted',?,NULL,?)""",
-                    (owner_key, pack_id, source_stamp, canonical_json(selected_json), self._clock()),
+                    (
+                        owner_key,
+                        pack_id,
+                        source_stamp,
+                        canonical_json(selected_json),
+                        self._clock(),
+                    ),
                 )
-                results.append({"pack_id": pack_id, "outcome": "promoted",
-                                "source_binding_set_stamp": source_stamp})
+                results.append(
+                    {
+                        "pack_id": pack_id,
+                        "outcome": "promoted",
+                        "source_binding_set_stamp": source_stamp,
+                    }
+                )
         return tuple(results)
 
     async def get_binding(
@@ -4976,9 +5045,7 @@ class CapabilityStore:
             ).fetchone()
             return None if row is None else _binding_from_row(row)
 
-    async def ensure_owner_detail_key(
-        self, key: OwnerScopeKey
-    ) -> PlatformDetailToken:
+    async def ensure_owner_detail_key(self, key: OwnerScopeKey) -> PlatformDetailToken:
         async with self.write_transaction() as db:
             return await self._ensure_owner_detail_key_tx(db, key)
 
@@ -4990,13 +5057,9 @@ class CapabilityStore:
         ordered = tuple(sorted(set(keys)))
         if not ordered:
             return PlatformDetailTokenVector(())
-        clauses = " OR ".join(
-            "(owner_key=? AND scope=? AND scope_key=?)" for _ in ordered
-        )
+        clauses = " OR ".join("(owner_key=? AND scope=? AND scope_key=?)" for _ in ordered)
         params = tuple(
-            value
-            for key in ordered
-            for value in (key.owner_key, key.scope, key.scope_key)
+            value for key in ordered for value in (key.owner_key, key.scope, key.scope_key)
         )
         rows = await (
             await db.execute(
@@ -5021,9 +5084,7 @@ class CapabilityStore:
                     exists=False,
                     version=0,
                     owner_catalog_generation=0,
-                    committed_owner_binding_set_stamp=(
-                        EMPTY_OWNER_BINDING_SET_STAMP
-                    ),
+                    committed_owner_binding_set_stamp=(EMPTY_OWNER_BINDING_SET_STAMP),
                     manager_receipt_set_hash=EMPTY_RECEIPT_SET_HASH,
                 )
                 for key in ordered
@@ -5036,9 +5097,7 @@ class CapabilityStore:
         async with self.read_connection() as db:
             return await self._read_detail_tokens_tx(db, keys)
 
-    async def read_detail_snapshot(
-        self, keys: Sequence[OwnerScopeKey]
-    ) -> PlatformDetailSnapshot:
+    async def read_detail_snapshot(self, keys: Sequence[OwnerScopeKey]) -> PlatformDetailSnapshot:
         """Read exact owner keys in one Store transaction.
 
         Platform-level publish locks, CatalogGate checks, Manager receipts, and
@@ -5055,8 +5114,7 @@ class CapabilityStore:
                     bindings: tuple[CapabilityBinding, ...] = ()
                 else:
                     clauses = " OR ".join(
-                        "(owner_key=? AND scope=? AND scope_key=?)"
-                        for _ in ordered
+                        "(owner_key=? AND scope=? AND scope_key=?)" for _ in ordered
                     )
                     params = tuple(
                         value
@@ -5087,7 +5145,9 @@ class CapabilityStore:
         expected_generation: int,
     ) -> bool:
         key = OwnerScopeKey(
-            owner_key, scope, scope_key  # type: ignore[arg-type]
+            owner_key,
+            scope,
+            scope_key,  # type: ignore[arg-type]
         )
         async with self.write_transaction() as db:
             cursor = await db.execute(
@@ -5130,10 +5190,7 @@ class CapabilityStore:
         created_at: float | None = None,
         require_complete: bool = False,
     ) -> str:
-        vector = {
-            str(key): int(value)
-            for key, value in sorted(catalog_generation_vector.items())
-        }
+        vector = {str(key): int(value) for key, value in sorted(catalog_generation_vector.items())}
         if any(value < 0 for value in vector.values()):
             raise CapabilityStoreError(
                 "invalid_catalog_generation_vector",
@@ -5188,18 +5245,13 @@ class CapabilityStore:
                 "runtime_descriptor_hash",
             ):
                 value = envelope.get(field_name)
-                if (
-                    require_complete
-                    and (not isinstance(value, str) or len(value) != 64)
-                ):
+                if require_complete and (not isinstance(value, str) or len(value) != 64):
                     raise CapabilityStoreError(
                         "invalid_catalog_entry",
                         f"{field_name} is required for durable catalog entries",
                     )
                 required_hashes[field_name] = (
-                    value
-                    if isinstance(value, str) and len(value) == 64
-                    else empty_hash
+                    value if isinstance(value, str) and len(value) == 64 else empty_hash
                 )
             host_build = envelope.get("host_build_identity")
             expected_rows.append(
@@ -5225,11 +5277,7 @@ class CapabilityStore:
                     envelope.get("host_spec_version"),
                     envelope.get("host_schema_hash"),
                     envelope.get("host_content_hash"),
-                    (
-                        None
-                        if host_build is None
-                        else canonical_json(host_build)
-                    ),
+                    (None if host_build is None else canonical_json(host_build)),
                     canonical_json(tool_fingerprints),
                     required_hashes["instruction_refs_hash"],
                     required_hashes["workflow_refs_hash"],
@@ -5280,8 +5328,8 @@ class CapabilityStore:
             (stamp.fingerprint, *header, now),
         )
         for row in expected_rows:
-                await db.execute(
-                    """INSERT INTO capability_run_catalog_snapshot_entries(
+            await db.execute(
+                """INSERT INTO capability_run_catalog_snapshot_entries(
                         run_catalog_content_stamp,ordinal,entry_kind,
                         selected_binding_id,selected_owner_key,selected_scope,
                         selected_scope_key,selected_binding_generation,
@@ -5293,8 +5341,8 @@ class CapabilityStore:
                         tool_spec_fingerprints_json,instruction_refs_hash,
                         workflow_refs_hash,runtime_descriptor_hash
                     ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                    row,
-                )
+                row,
+            )
         return stamp.fingerprint
 
     async def put_run_catalog_snapshot(
@@ -5331,18 +5379,14 @@ class CapabilityStore:
         expected_entry_count: int,
     ) -> CapabilitySnapshotLeaseIntent:
         if snapshot_ref_schema not in {"legacy_v1", "run_catalog_v2"}:
-            raise CapabilityStoreError(
-                "invalid_snapshot_ref_schema", "unknown snapshot ref schema"
-            )
+            raise CapabilityStoreError("invalid_snapshot_ref_schema", "unknown snapshot ref schema")
         if lease_owner_kind not in {
             "run_start",
             "refresh_commit",
             "legacy_boundary",
             "queued_child_legacy",
         }:
-            raise CapabilityStoreError(
-                "invalid_lease_owner_kind", "unknown lease owner kind"
-            )
+            raise CapabilityStoreError("invalid_lease_owner_kind", "unknown lease owner kind")
         if snapshot_ref_schema == "run_catalog_v2" and lease_owner_kind not in {
             "run_start",
             "refresh_commit",
@@ -5387,10 +5431,7 @@ class CapabilityStore:
                 turn_id,
                 lease_owner_kind,
             )
-            if (
-                record.lease_intent_hash != fingerprint_json(candidate)
-                or immutable != requested
-            ):
+            if record.lease_intent_hash != fingerprint_json(candidate) or immutable != requested:
                 raise CapabilityStoreConflict(
                     "snapshot_lease_intent_conflict",
                     "owner operation already has another lease intent",
@@ -5415,9 +5456,7 @@ class CapabilityStore:
                 "snapshot_lease_intent_active",
                 "previous run lease intent is not released",
             )
-        lease_generation = (
-            1 if previous is None else int(previous["lease_generation"]) + 1
-        )
+        lease_generation = 1 if previous is None else int(previous["lease_generation"]) + 1
         identity["lease_generation"] = lease_generation
         lease_intent_hash = fingerprint_json(identity)
         now = self._clock()
@@ -5767,9 +5806,7 @@ class CapabilityStore:
             )
         )
         if not rows:
-            raise CapabilityStoreError(
-                "snapshot_lease_intent_missing", "lease intent is absent"
-            )
+            raise CapabilityStoreError("snapshot_lease_intent_missing", "lease intent is absent")
         current = _snapshot_lease_intent_from_row(rows[0])
         expected = (
             owner_record_ref,
@@ -5895,9 +5932,7 @@ class CapabilityStore:
                 "runtime_projection_receipt_missing",
                 "snapshot pin projection receipt is absent or ambiguous",
             )
-        projection = _runtime_projection_receipt_from_row(
-            projection_rows[0]
-        )
+        projection = _runtime_projection_receipt_from_row(projection_rows[0])
         return SnapshotLeaseAdoptionReceipt(
             intent_id=intent.lease_intent_id,
             intent_hash=intent.lease_intent_hash,
@@ -5939,9 +5974,7 @@ class CapabilityStore:
             )
         )
         if not intent_rows:
-            raise CapabilityStoreError(
-                "snapshot_lease_intent_missing", "lease intent is absent"
-            )
+            raise CapabilityStoreError("snapshot_lease_intent_missing", "lease intent is absent")
         intent = _snapshot_lease_intent_from_row(intent_rows[0])
         if intent.lease_intent_hash != intent_hash:
             raise CapabilityStoreConflict(
@@ -5955,12 +5988,8 @@ class CapabilityStore:
             "run_id": intent.run_id,
             "snapshot_ref": intent.snapshot_ref,
             "release_reason": release_reason,
-            "owner_terminal_or_transition_ref": (
-                owner_terminal_or_transition_ref
-            ),
-            "owner_terminal_or_transition_hash": (
-                owner_terminal_or_transition_hash
-            ),
+            "owner_terminal_or_transition_ref": (owner_terminal_or_transition_ref),
+            "owner_terminal_or_transition_hash": (owner_terminal_or_transition_hash),
         }
         release_receipt_id = fingerprint_json(receipt_payload)
         release_receipt_hash = release_receipt_id
@@ -6009,9 +6038,7 @@ class CapabilityStore:
                 {
                     "domain": "prepared-lease-release-v1",
                     "lease_intent_id": lease_intent_id,
-                    "owner_transition_hash": (
-                        owner_terminal_or_transition_hash
-                    ),
+                    "owner_transition_hash": (owner_terminal_or_transition_hash),
                 }
             )
             owner_record_ref = owner_terminal_or_transition_ref
@@ -6059,8 +6086,7 @@ class CapabilityStore:
         )
         last_active = active_count == 0
         cleanup_ticket_ref = (
-            f"capability-cleanup:{intent.snapshot_ref}:"
-            f"{'last' if last_active else lease_intent_id}"
+            f"capability-cleanup:{intent.snapshot_ref}:{'last' if last_active else lease_intent_id}"
         )
         cleanup_ticket_hash = fingerprint_json(
             {
@@ -6130,9 +6156,7 @@ class CapabilityStore:
                 lease_intent_id,
                 intent_hash=current.lease_intent_hash,
                 release_reason="cancel",
-                owner_terminal_or_transition_ref=(
-                    f"legacy-release:{lease_intent_id}"
-                ),
+                owner_terminal_or_transition_ref=(f"legacy-release:{lease_intent_id}"),
                 owner_terminal_or_transition_hash=fingerprint_json(
                     {"legacy_release": lease_intent_id}
                 ),
@@ -6150,10 +6174,13 @@ class CapabilityStore:
         self, lease_intent_id: str
     ) -> CapabilitySnapshotLeaseReleaseReceipt | None:
         async with self.read_connection() as db:
-            rows = await _fetch_mappings(await db.execute(
-                "SELECT * FROM capability_snapshot_lease_release_receipts "
-                "WHERE lease_intent_id=?", (lease_intent_id,)
-            ))
+            rows = await _fetch_mappings(
+                await db.execute(
+                    "SELECT * FROM capability_snapshot_lease_release_receipts "
+                    "WHERE lease_intent_id=?",
+                    (lease_intent_id,),
+                )
+            )
             if not rows:
                 return None
             if len(rows) != 1:
@@ -6207,9 +6234,7 @@ class CapabilityStore:
                     "runtime_projection_receipt_missing",
                     "snapshot pin projection receipt is absent or ambiguous",
                 )
-            current = _runtime_projection_receipt_from_row(
-                projection_rows[0]
-            )
+            current = _runtime_projection_receipt_from_row(projection_rows[0])
             expected_process = (
                 process_instance_id,
                 process_catalog_stamp,
@@ -6291,24 +6316,16 @@ class CapabilityStore:
                 lease_intent_hash=str(row["lease_intent_hash"]),
                 intent_status=str(row["intent_status"]),
                 start_fingerprint=(
-                    None
-                    if row["start_fingerprint"] is None
-                    else str(row["start_fingerprint"])
+                    None if row["start_fingerprint"] is None else str(row["start_fingerprint"])
                 ),
-                run_catalog_content_stamp=str(
-                    row["run_catalog_content_stamp"]
-                ),
+                run_catalog_content_stamp=str(row["run_catalog_content_stamp"]),
                 process_instance_id=str(row["process_instance_id"]),
                 process_catalog_stamp=str(row["process_catalog_stamp"]),
                 projection_status=str(row["projection_status"]),
                 projection_receipt_id=str(row["projection_receipt_id"]),
-                projection_receipt_hash=str(
-                    row["projection_receipt_hash"]
-                ),
+                projection_receipt_hash=str(row["projection_receipt_hash"]),
                 pin_token_hash=(
-                    None
-                    if row["pin_token_hash"] is None
-                    else str(row["pin_token_hash"])
+                    None if row["pin_token_hash"] is None else str(row["pin_token_hash"])
                 ),
             )
 
@@ -6348,9 +6365,7 @@ class CapabilityStore:
                 "launch_revocation_epoch": launch_revocation_epoch,
                 "instances": [
                     item.to_dict()
-                    for item in sorted(
-                        instances, key=lambda item: (item.ordinal, item.entry_id)
-                    )
+                    for item in sorted(instances, key=lambda item: (item.ordinal, item.entry_id))
                 ],
             }
         )
@@ -6394,10 +6409,7 @@ class CapabilityStore:
             or len({item.entry_id for item in specs}) != len(specs)
             or len({item.runtime_instance_id for item in specs}) != len(specs)
             or recomputed != record.runtime_set_hash
-            or any(
-                item.runtime_set_hash != record.runtime_set_hash
-                for item in record.instances
-            )
+            or any(item.runtime_set_hash != record.runtime_set_hash for item in record.instances)
         ):
             raise CapabilityStoreConflict(
                 "runtime_set_incomplete",
@@ -6447,13 +6459,9 @@ class CapabilityStore:
         runtime_set_hash: str | None = None,
     ) -> CapabilityRuntimeSetRecord:
         if not operation_id:
-            raise CapabilityStoreError(
-                "invalid_runtime_set", "operation id is required"
-            )
+            raise CapabilityStoreError("invalid_runtime_set", "operation id is required")
         if not isinstance(launch_revocation_epoch, int) or launch_revocation_epoch < 0:
-            raise CapabilityStoreError(
-                "invalid_runtime_set", "launch revocation epoch is invalid"
-            )
+            raise CapabilityStoreError("invalid_runtime_set", "launch revocation epoch is invalid")
         if purpose == "mutation":
             valid_shape = (
                 lifecycle_action is not None
@@ -6496,12 +6504,8 @@ class CapabilityStore:
                 try:
                     _validated_digest(value, name)
                 except ValueError as exc:
-                    raise CapabilityStoreError(
-                        "invalid_runtime_set", str(exc)
-                    ) from exc
-        ordered = tuple(
-            sorted(tuple(instances), key=lambda item: (item.ordinal, item.entry_id))
-        )
+                    raise CapabilityStoreError("invalid_runtime_set", str(exc)) from exc
+        ordered = tuple(sorted(tuple(instances), key=lambda item: (item.ordinal, item.entry_id)))
         if (
             len({item.runtime_instance_id for item in ordered}) != len(ordered)
             or len({item.entry_id for item in ordered}) != len(ordered)
@@ -6648,20 +6652,14 @@ class CapabilityStore:
             )
         prepared = await self._get_runtime_set_tx(db, operation_id)
         if prepared is None:  # pragma: no cover
-            raise CapabilityStoreError(
-                "runtime_set_missing", "prepared runtime set disappeared"
-            )
+            raise CapabilityStoreError("runtime_set_missing", "prepared runtime set disappeared")
         return prepared
 
-    async def prepare_runtime_set(
-        self, **kwargs: Any
-    ) -> CapabilityRuntimeSetRecord:
+    async def prepare_runtime_set(self, **kwargs: Any) -> CapabilityRuntimeSetRecord:
         async with self.write_transaction() as db:
             return await self._prepare_runtime_set_tx(db, **kwargs)
 
-    async def get_runtime_set(
-        self, operation_id: str
-    ) -> CapabilityRuntimeSetRecord | None:
+    async def get_runtime_set(self, operation_id: str) -> CapabilityRuntimeSetRecord | None:
         async with self.read_connection() as db:
             return await self._get_runtime_set_tx(db, operation_id)
 
@@ -6689,9 +6687,7 @@ class CapabilityStore:
             )
         )
         if not rows:
-            raise CapabilityStoreError(
-                "runtime_instance_missing", "runtime instance is absent"
-            )
+            raise CapabilityStoreError("runtime_instance_missing", "runtime instance is absent")
         current = _runtime_prepare_intent_from_row(rows[0])
         expected_runtime = (
             job_identity,
@@ -6761,9 +6757,7 @@ class CapabilityStore:
     ) -> CapabilityRuntimeSetRecord:
         current = await self._get_runtime_set_tx(db, operation_id)
         if current is None:
-            raise CapabilityStoreError(
-                "runtime_set_missing", "runtime set is absent"
-            )
+            raise CapabilityStoreError("runtime_set_missing", "runtime set is absent")
         self._validate_runtime_set_integrity(current)
         if current.status == "activated":
             return current
@@ -6794,9 +6788,7 @@ class CapabilityStore:
         assert ready is not None
         return ready
 
-    async def mark_runtime_set_ready(
-        self, operation_id: str
-    ) -> CapabilityRuntimeSetRecord:
+    async def mark_runtime_set_ready(self, operation_id: str) -> CapabilityRuntimeSetRecord:
         async with self.write_transaction() as db:
             return await self._mark_runtime_set_ready_tx(db, operation_id)
 
@@ -6805,9 +6797,7 @@ class CapabilityStore:
     ) -> CapabilityRuntimeSetRecord:
         current = await self._get_runtime_set_tx(db, operation_id)
         if current is None:
-            raise CapabilityStoreError(
-                "runtime_set_missing", "runtime set is absent"
-            )
+            raise CapabilityStoreError("runtime_set_missing", "runtime set is absent")
         if current.status == "aborted":
             return current
         if current.status == "cleanup_required":
@@ -6832,9 +6822,7 @@ class CapabilityStore:
         assert retired is not None
         return retired
 
-    async def retire_runtime_set(
-        self, operation_id: str
-    ) -> CapabilityRuntimeSetRecord:
+    async def retire_runtime_set(self, operation_id: str) -> CapabilityRuntimeSetRecord:
         async with self.write_transaction() as db:
             return await self._retire_runtime_set_tx(db, operation_id)
 
@@ -6854,9 +6842,7 @@ class CapabilityStore:
             )
             records: list[CapabilityRuntimeSetRecord] = []
             for row in rows:
-                record = await self._get_runtime_set_tx(
-                    db, str(row["operation_id"])
-                )
+                record = await self._get_runtime_set_tx(db, str(row["operation_id"]))
                 if record is not None:
                     self._validate_runtime_set_integrity(record)
                     records.append(record)
@@ -6869,9 +6855,7 @@ class CapabilityStore:
 
         async with self.read_connection() as db:
             owner_clause = "" if owner_key is None else "AND b.owner_key=?"
-            parameters: tuple[Any, ...] = (
-                () if owner_key is None else (owner_key,)
-            )
+            parameters: tuple[Any, ...] = () if owner_key is None else (owner_key,)
             rows = await (
                 await db.execute(
                     f"""SELECT DISTINCT v.*
@@ -6892,20 +6876,12 @@ class CapabilityStore:
     ) -> tuple[CapabilityCatalogEntry, ...]:
         keys = scope.binding_keys()
         owner_keys = tuple(
-            (
-                "builtin"
-                if scope_name == "builtin"
-                else str(owner_key or LEGACY_LOCAL_OWNER_KEY)
-            )
+            ("builtin" if scope_name == "builtin" else str(owner_key or LEGACY_LOCAL_OWNER_KEY))
             for scope_name, _scope_key in keys
         )
-        clauses = " OR ".join(
-            "(b.owner_key=? AND b.scope=? AND b.scope_key=?)" for _ in keys
-        )
+        clauses = " OR ".join("(b.owner_key=? AND b.scope=? AND b.scope_key=?)" for _ in keys)
         params = tuple(
-            value
-            for owner, item in zip(owner_keys, keys, strict=True)
-            for value in (owner, *item)
+            value for owner, item in zip(owner_keys, keys, strict=True) for value in (owner, *item)
         )
         async with self.read_connection() as db:
             rows = await (
@@ -6934,10 +6910,7 @@ class CapabilityStore:
                 descriptor.manifest_hash,
             )
             fingerprints = tuple(
-                str(item)
-                for item in _json_array(
-                    str(row["expected_tool_fingerprints_json"])
-                )
+                str(item) for item in _json_array(str(row["expected_tool_fingerprints_json"]))
             )
             if key not in grouped:
                 grouped[key] = (descriptor, [], fingerprints)
@@ -6974,9 +6947,7 @@ class CapabilityStore:
             "uninstall",
             "skill_install_batch",
         }:
-            raise CapabilityStoreError(
-                "invalid_operation_kind", f"unknown operation kind: {kind}"
-            )
+            raise CapabilityStoreError("invalid_operation_kind", f"unknown operation kind: {kind}")
         request_json = canonical_json(dict(request))
         existing = await (
             await db.execute(
@@ -6991,12 +6962,8 @@ class CapabilityStore:
             # staged manifest validates.  Binding that discovered identity to
             # the durable operation must not make the original request cease
             # to be idempotent when it intentionally supplied pack_id=None.
-            pack_identity_matches = (
-                record.pack_id == pack_id
-                or (
-                    pack_id is None
-                    and record.request.get("expected_pack_id") is None
-                )
+            pack_identity_matches = record.pack_id == pack_id or (
+                pack_id is None and record.request.get("expected_pack_id") is None
             )
             if (
                 record.operation_id != operation_id
@@ -7048,9 +7015,7 @@ class CapabilityStore:
         async with self.write_transaction() as db:
             return await self._create_operation_tx(db, **kwargs)
 
-    async def get_operation(
-        self, operation_id: str
-    ) -> CapabilityOperationRecord | None:
+    async def get_operation(self, operation_id: str) -> CapabilityOperationRecord | None:
         async with self.read_connection() as db:
             row = await (
                 await db.execute(
@@ -7133,7 +7098,9 @@ class CapabilityStore:
             else CAPABILITY_OPERATION_PHASES
         )
         if operation.phase not in phase_order or phase not in phase_order:
-            raise CapabilityStoreConflict("invalid_phase_transition", "operation phase graph differs")
+            raise CapabilityStoreConflict(
+                "invalid_phase_transition", "operation phase graph differs"
+            )
         current_index = phase_order.index(operation.phase)
         target_index = phase_order.index(phase)
         if target_index not in {current_index, current_index + 1}:
@@ -7164,9 +7131,7 @@ class CapabilityStore:
             )
         return operation
 
-    async def record_phase_intent(
-        self, operation_id: str, phase: str
-    ) -> CapabilityOperationRecord:
+    async def record_phase_intent(self, operation_id: str, phase: str) -> CapabilityOperationRecord:
         async with self.write_transaction() as db:
             return await self._record_phase_intent_tx(db, operation_id, phase)
 
@@ -7220,9 +7185,7 @@ class CapabilityStore:
             ),
         )
         if cursor.rowcount != 1 and operation.phase != phase:
-            raise CapabilityStoreConflict(
-                "operation_phase_conflict", "operation phase changed"
-            )
+            raise CapabilityStoreConflict("operation_phase_conflict", "operation phase changed")
         current = await self.get_operation_from_db(db, operation_id)
         if current is None:  # pragma: no cover
             raise CapabilityStoreError("operation_not_found", operation_id)
@@ -7236,9 +7199,7 @@ class CapabilityStore:
         evidence: Mapping[str, JsonValue] | None = None,
     ) -> CapabilityOperationRecord:
         async with self.write_transaction() as db:
-            return await self._commit_phase_tx(
-                db, operation_id, phase, evidence=evidence
-            )
+            return await self._commit_phase_tx(db, operation_id, phase, evidence=evidence)
 
     async def get_operation_from_db(
         self, db: aiosqlite.Connection, operation_id: str
@@ -7287,8 +7248,7 @@ class CapabilityStore:
             record = _operation_from_row(row)
             if cursor.rowcount != 1 and (
                 record.status != status
-                or canonical_json(dict(record.error or {}))
-                != canonical_json(dict(error))
+                or canonical_json(dict(record.error or {})) != canonical_json(dict(error))
             ):
                 raise CapabilityStoreConflict(
                     "operation_terminal_conflict",
@@ -7309,9 +7269,7 @@ class CapabilityStore:
             ).fetchall()
             return tuple(_operation_from_row(row) for row in rows)
 
-    async def list_operations(
-        self, *, limit: int = 100
-    ) -> tuple[CapabilityOperationRecord, ...]:
+    async def list_operations(self, *, limit: int = 100) -> tuple[CapabilityOperationRecord, ...]:
         bounded = max(1, min(int(limit), 500))
         async with self.read_connection() as db:
             rows = await (
@@ -7341,9 +7299,7 @@ class CapabilityStore:
                     "check_name": str(row["check_name"]),
                     "status": str(row["status"]),
                     "evidence_ref": (
-                        None
-                        if row["evidence_ref"] is None
-                        else str(row["evidence_ref"])
+                        None if row["evidence_ref"] is None else str(row["evidence_ref"])
                     ),
                     "created_at": float(row["created_at"]),
                 }
@@ -7376,11 +7332,7 @@ class CapabilityStore:
                 if (
                     str(row["status"]) != status
                     or str(row["detail_json"]) != detail_json
-                    or (
-                        None
-                        if row["evidence_ref"] is None
-                        else str(row["evidence_ref"])
-                    )
+                    or (None if row["evidence_ref"] is None else str(row["evidence_ref"]))
                     != evidence_ref
                 ):
                     raise CapabilityStoreConflict(
@@ -7416,9 +7368,7 @@ class CapabilityStore:
     ) -> CapabilityPublishIntent:
         old_specs_json = canonical_json([dict(item) for item in old_specs])
         new_specs_json = canonical_json([dict(item) for item in new_specs])
-        old_binding_json = (
-            None if old_binding is None else canonical_json(dict(old_binding))
-        )
+        old_binding_json = None if old_binding is None else canonical_json(dict(old_binding))
         new_binding_json = canonical_json(dict(new_binding))
         existing = await (
             await db.execute(
@@ -7449,9 +7399,11 @@ class CapabilityStore:
                 )
             return current
         now = self._clock()
-        operation_row = await (await db.execute(
-            "SELECT kind FROM capability_operations WHERE operation_id=?", (operation_id,)
-        )).fetchone()
+        operation_row = await (
+            await db.execute(
+                "SELECT kind FROM capability_operations WHERE operation_id=?", (operation_id,)
+            )
+        ).fetchone()
         publish_phase = (
             "batch_publish_intent"
             if operation_row is not None and str(operation_row["kind"]) == "skill_install_batch"
@@ -7498,12 +7450,15 @@ class CapabilityStore:
         status: str,
     ) -> CapabilityPublishIntent:
         if phase not in {
-            "publish_intent", "catalog_swapped", "bound", "batch_publish_intent",
-            "batch_files_materialized", "batch_catalog_swapped", "batch_committed",
+            "publish_intent",
+            "catalog_swapped",
+            "bound",
+            "batch_publish_intent",
+            "batch_files_materialized",
+            "batch_catalog_swapped",
+            "batch_committed",
         }:
-            raise CapabilityStoreError(
-                "invalid_publish_phase", f"unknown publish phase: {phase}"
-            )
+            raise CapabilityStoreError("invalid_publish_phase", f"unknown publish phase: {phase}")
         if status not in {"pending", "committed", "rolled_back", "unknown"}:
             raise CapabilityStoreError(
                 "invalid_publish_status", f"unknown publish status: {status}"
@@ -7518,8 +7473,12 @@ class CapabilityStore:
             raise CapabilityStoreError("publish_intent_not_found", intent_id)
         current = _publish_intent_from_row(row)
         order = (
-            {"batch_publish_intent": 0, "batch_files_materialized": 1,
-             "batch_catalog_swapped": 2, "batch_committed": 3}
+            {
+                "batch_publish_intent": 0,
+                "batch_files_materialized": 1,
+                "batch_catalog_swapped": 2,
+                "batch_committed": 3,
+            }
             if current.phase.startswith("batch_")
             else {"publish_intent": 0, "catalog_swapped": 1, "bound": 2}
         )
@@ -7555,9 +7514,7 @@ class CapabilityStore:
         self, intent_id: str, *, phase: str, status: str = "pending"
     ) -> CapabilityPublishIntent:
         async with self.write_transaction() as db:
-            return await self._advance_publish_intent_tx(
-                db, intent_id, phase=phase, status=status
-            )
+            return await self._advance_publish_intent_tx(db, intent_id, phase=phase, status=status)
 
     async def pending_publish_intents(
         self,
@@ -7599,9 +7556,7 @@ class CapabilityStore:
             )
         ).fetchone()
         if operation_row is None:
-            raise CapabilityStoreError(
-                "operation_not_found", receipt.operation_id
-            )
+            raise CapabilityStoreError("operation_not_found", receipt.operation_id)
         operation = _operation_from_row(operation_row)
         if operation.status != "succeeded" or operation.phase != "published":
             raise CapabilityStoreConflict(
@@ -7657,9 +7612,7 @@ class CapabilityStore:
         async with self.write_transaction() as db:
             return await self._put_operation_receipt_tx(db, receipt)
 
-    async def get_operation_receipt(
-        self, operation_id: str
-    ) -> CapabilityOperationReceipt | None:
+    async def get_operation_receipt(self, operation_id: str) -> CapabilityOperationReceipt | None:
         async with self.read_connection() as db:
             row = await (
                 await db.execute(
@@ -7689,9 +7642,7 @@ class CapabilityStore:
             )
         ).fetchone()
         if receipt_row is None:
-            raise CapabilityStoreError(
-                "operation_receipt_not_found", intent.operation_id
-            )
+            raise CapabilityStoreError("operation_receipt_not_found", intent.operation_id)
         receipt = _operation_receipt_from_row(receipt_row)
         if (
             receipt.root_run_id != intent.root_run_id
@@ -7745,9 +7696,7 @@ class CapabilityStore:
         )
         return intent
 
-    async def get_refresh_intent(
-        self, intent_id: str
-    ) -> CapabilityRefreshIntent | None:
+    async def get_refresh_intent(self, intent_id: str) -> CapabilityRefreshIntent | None:
         async with self.read_connection() as db:
             row = await (
                 await db.execute(
@@ -7776,7 +7725,7 @@ class CapabilityStore:
             rows = await (
                 await db.execute(
                     f"""SELECT * FROM capability_refresh_intents
-                        WHERE {' AND '.join(clauses)}
+                        WHERE {" AND ".join(clauses)}
                         ORDER BY created_at,intent_id""",
                     tuple(params),
                 )
@@ -7798,9 +7747,7 @@ class CapabilityStore:
             )
         ).fetchone()
         if row is None:
-            raise CapabilityStoreError(
-                "refresh_intent_not_found", commit.intent_id
-            )
+            raise CapabilityStoreError("refresh_intent_not_found", commit.intent_id)
         current = _refresh_intent_from_row(row)
         if current.status == "committed":
             if current.commit_hash != commit.fingerprint:
@@ -7848,14 +7795,9 @@ class CapabilityStore:
             )
         ).fetchone()
         if receipt_row is None:
-            raise CapabilityStoreError(
-                "operation_receipt_not_found", commit.operation_id
-            )
+            raise CapabilityStoreError("operation_receipt_not_found", commit.operation_id)
         receipt = _operation_receipt_from_row(receipt_row)
-        if (
-            receipt.affected_tool_spec_fingerprints
-            != commit.affected_tool_spec_fingerprints
-        ):
+        if receipt.affected_tool_spec_fingerprints != commit.affected_tool_spec_fingerprints:
             raise CapabilityStoreConflict(
                 "refresh_commit_fingerprint_mismatch",
                 "refresh commit differs from published ToolSpec evidence",
@@ -7939,19 +7881,14 @@ class CapabilityStore:
         pid: int | None,
     ) -> None:
         if not all(
-            isinstance(value, str) and value
-            for value in (runtime_lease_id, pack_id, version)
+            isinstance(value, str) and value for value in (runtime_lease_id, pack_id, version)
         ):
             raise CapabilityStoreError(
                 "invalid_runtime_identity",
                 "runtime lease, pack and version identities are required",
             )
-        if (
-            len(manifest_hash) != 64
-            or any(
-                character not in "0123456789abcdef"
-                for character in manifest_hash
-            )
+        if len(manifest_hash) != 64 or any(
+            character not in "0123456789abcdef" for character in manifest_hash
         ):
             raise CapabilityStoreError(
                 "invalid_runtime_identity",
@@ -7982,9 +7919,7 @@ class CapabilityStore:
             pid=pid,
         )
         if run_id is not None and not run_id:
-            raise CapabilityStoreError(
-                "invalid_runtime_identity", "run_id cannot be empty"
-            )
+            raise CapabilityStoreError("invalid_runtime_identity", "run_id cannot be empty")
         existing = await (
             await db.execute(
                 "SELECT * FROM capability_runtime_leases WHERE lease_id=?",
@@ -8041,9 +7976,7 @@ class CapabilityStore:
         async with self.write_transaction() as db:
             return await self._create_runtime_lease_tx(db, **kwargs)
 
-    async def get_runtime_lease(
-        self, runtime_lease_id: str
-    ) -> CapabilityRuntimeLease | None:
+    async def get_runtime_lease(self, runtime_lease_id: str) -> CapabilityRuntimeLease | None:
         async with self.read_connection() as db:
             row = await (
                 await db.execute(
@@ -8077,9 +8010,7 @@ class CapabilityStore:
     ) -> CapabilityRuntimeLease:
         states = {"starting", "ready", "draining", "stopped", "unknown"}
         if expected_state not in states or target_state not in states:
-            raise CapabilityStoreError(
-                "invalid_runtime_state", "unknown runtime lease state"
-            )
+            raise CapabilityStoreError("invalid_runtime_state", "unknown runtime lease state")
         if pid is not None and (not isinstance(pid, int) or pid <= 0):
             raise CapabilityStoreError(
                 "invalid_runtime_pid", "runtime pid must be a positive integer"
@@ -8091,16 +8022,10 @@ class CapabilityStore:
             )
         ).fetchone()
         if row is None:
-            raise CapabilityStoreError(
-                "runtime_lease_not_found", runtime_lease_id
-            )
+            raise CapabilityStoreError("runtime_lease_not_found", runtime_lease_id)
         current = _runtime_lease_from_row(row)
-        if expected_generation is not None and (
-            current.session_generation != expected_generation
-        ):
-            raise CapabilityStoreConflict(
-                "runtime_generation_conflict", "runtime session changed"
-            )
+        if expected_generation is not None and (current.session_generation != expected_generation):
+            raise CapabilityStoreConflict("runtime_generation_conflict", "runtime session changed")
         if current.state == target_state:
             return current
         if current.state != expected_state:
@@ -8156,9 +8081,7 @@ class CapabilityStore:
         self, runtime_lease_id: str, **kwargs: Any
     ) -> CapabilityRuntimeLease:
         async with self.write_transaction() as db:
-            return await self._transition_runtime_lease_tx(
-                db, runtime_lease_id, **kwargs
-            )
+            return await self._transition_runtime_lease_tx(db, runtime_lease_id, **kwargs)
 
     async def _reconnect_runtime_lease_tx(
         self,
@@ -8188,9 +8111,7 @@ class CapabilityStore:
                 )
             ).fetchone()
             if row is None:
-                raise CapabilityStoreError(
-                    "runtime_lease_not_found", runtime_lease_id
-                )
+                raise CapabilityStoreError("runtime_lease_not_found", runtime_lease_id)
             raise CapabilityStoreConflict(
                 "runtime_generation_conflict",
                 "runtime cannot reconnect from its current state or generation",
@@ -8207,9 +8128,7 @@ class CapabilityStore:
         self, runtime_lease_id: str, **kwargs: Any
     ) -> CapabilityRuntimeLease:
         async with self.write_transaction() as db:
-            return await self._reconnect_runtime_lease_tx(
-                db, runtime_lease_id, **kwargs
-            )
+            return await self._reconnect_runtime_lease_tx(db, runtime_lease_id, **kwargs)
 
     async def heartbeat_runtime_lease(
         self, runtime_lease_id: str, *, session_generation: int
@@ -8280,9 +8199,7 @@ class CapabilityStore:
             )
         ).fetchone()
         if runtime_row is None:
-            raise CapabilityStoreError(
-                "runtime_lease_not_found", runtime_lease_id
-            )
+            raise CapabilityStoreError("runtime_lease_not_found", runtime_lease_id)
         runtime = _runtime_lease_from_row(runtime_row)
         if runtime.state != "ready":
             raise CapabilityStoreConflict(
@@ -8312,9 +8229,7 @@ class CapabilityStore:
         ).fetchone()
         return _runtime_call_lease_from_row(row)
 
-    async def claim_runtime_call(
-        self, **kwargs: Any
-    ) -> CapabilityRuntimeCallLease:
+    async def claim_runtime_call(self, **kwargs: Any) -> CapabilityRuntimeCallLease:
         async with self.write_transaction() as db:
             return await self._claim_runtime_call_tx(db, **kwargs)
 
@@ -8329,9 +8244,7 @@ class CapabilityStore:
             )
         ).fetchone()
         if row is None:
-            raise CapabilityStoreError(
-                "runtime_call_not_found", call_lease_id
-            )
+            raise CapabilityStoreError("runtime_call_not_found", call_lease_id)
         current = _runtime_call_lease_from_row(row)
         if current.state == "running":
             return current
@@ -8354,9 +8267,7 @@ class CapabilityStore:
         ).fetchone()
         return _runtime_call_lease_from_row(row)
 
-    async def mark_runtime_call_running(
-        self, call_lease_id: str
-    ) -> CapabilityRuntimeCallLease:
+    async def mark_runtime_call_running(self, call_lease_id: str) -> CapabilityRuntimeCallLease:
         async with self.write_transaction() as db:
             return await self._mark_runtime_call_running_tx(db, call_lease_id)
 
@@ -8371,9 +8282,7 @@ class CapabilityStore:
             )
         ).fetchone()
         if row is None:
-            raise CapabilityStoreError(
-                "runtime_call_not_found", call_lease_id
-            )
+            raise CapabilityStoreError("runtime_call_not_found", call_lease_id)
         current = _runtime_call_lease_from_row(row)
         if current.state == "settled":
             return current
@@ -8392,9 +8301,7 @@ class CapabilityStore:
         ).fetchone()
         return _runtime_call_lease_from_row(row)
 
-    async def settle_runtime_call(
-        self, call_lease_id: str
-    ) -> CapabilityRuntimeCallLease:
+    async def settle_runtime_call(self, call_lease_id: str) -> CapabilityRuntimeCallLease:
         async with self.write_transaction() as db:
             return await self._settle_runtime_call_tx(db, call_lease_id)
 
@@ -8420,15 +8327,10 @@ class CapabilityStore:
                 )
             ).fetchone()
             if row is None:
-                raise CapabilityStoreError(
-                    "runtime_lease_not_found", runtime_lease_id
-                )
+                raise CapabilityStoreError("runtime_lease_not_found", runtime_lease_id)
             return (
                 str(row["state"]) == "draining"
-                and await self._active_runtime_call_count_tx(
-                    db, runtime_lease_id
-                )
-                == 0
+                and await self._active_runtime_call_count_tx(db, runtime_lease_id) == 0
             )
 
     async def _drain_unreferenced_runtimes_tx(
@@ -8515,15 +8417,11 @@ class CapabilityStore:
             selected = entry.bindings[0]
             envelope: dict[str, JsonValue] = {
                 "selected_binding": selected.to_dict(),
-                "visible_bindings": [
-                    binding.to_dict() for binding in entry.bindings
-                ],
+                "visible_bindings": [binding.to_dict() for binding in entry.bindings],
                 "pack_id": entry.version.capability_id,
                 "version": entry.version.version,
                 "manifest_hash": entry.version.manifest_hash,
-                "tool_spec_fingerprints": list(
-                    entry.expected_tool_fingerprints
-                ),
+                "tool_spec_fingerprints": list(entry.expected_tool_fingerprints),
                 "instruction_refs_hash": empty_hash,
                 "workflow_refs_hash": empty_hash,
                 "runtime_descriptor_hash": fingerprint_json(
@@ -8657,9 +8555,7 @@ class CapabilityStore:
 
     async def release_snapshot_lease(self, snapshot_ref: str, run_id: str) -> int:
         async with self.write_transaction() as db:
-            return await self._release_snapshot_lease_tx(
-                db, snapshot_ref, run_id
-            )
+            return await self._release_snapshot_lease_tx(db, snapshot_ref, run_id)
 
     async def _snapshot_lease_fingerprints_tx(
         self,
@@ -8680,9 +8576,7 @@ class CapabilityStore:
         fingerprints: set[str] = set()
         for row in rows:
             payload = json.loads(str(row["tool_spec_fingerprints_json"]))
-            if not isinstance(payload, list) or not all(
-                isinstance(item, str) for item in payload
-            ):
+            if not isinstance(payload, list) or not all(isinstance(item, str) for item in payload):
                 raise CapabilityStoreError(
                     "corrupt_snapshot_lease",
                     "snapshot lease tool fingerprints are invalid",
@@ -8735,9 +8629,7 @@ class CapabilityStore:
         for row in rows:
             payload = str(row["tool_spec_fingerprints_json"])
             parsed = json.loads(payload)
-            if not isinstance(parsed, list) or not all(
-                isinstance(item, str) for item in parsed
-            ):
+            if not isinstance(parsed, list) or not all(isinstance(item, str) for item in parsed):
                 raise CapabilityStoreError(
                     "corrupt_snapshot_lease",
                     "snapshot lease tool fingerprints are invalid",
@@ -8769,9 +8661,7 @@ class CapabilityStore:
             expected_entry_count=int(first["expected_entry_count"]),
         )
         await self._put_snapshot_lease_rows_tx(db, intent)
-        owner_record_ref = (
-            f"legacy-child-boundary:{source_run_id}:{target_run_id}:{snapshot_ref}"
-        )
+        owner_record_ref = f"legacy-child-boundary:{source_run_id}:{target_run_id}:{snapshot_ref}"
         await self._bind_snapshot_lease_intent_tx(
             db,
             intent.lease_intent_id,
@@ -8807,9 +8697,7 @@ class CapabilityStore:
                 root_run_id=root_run_id,
             )
 
-    async def active_snapshot_refs_for_run(
-        self, run_id: str
-    ) -> tuple[str, ...]:
+    async def active_snapshot_refs_for_run(self, run_id: str) -> tuple[str, ...]:
         async with self.read_connection() as db:
             rows = await (
                 await db.execute(
@@ -8838,10 +8726,7 @@ class CapabilityStore:
                        ORDER BY lease.run_id,lease.snapshot_ref"""
                 )
             ).fetchall()
-            return tuple(
-                (str(row["snapshot_ref"]), str(row["run_id"]))
-                for row in rows
-            )
+            return tuple((str(row["snapshot_ref"]), str(row["run_id"])) for row in rows)
 
     async def version_has_active_lease(
         self, pack_id: str, version: str, manifest_hash: str
@@ -8885,10 +8770,7 @@ class CapabilityStore:
                 )
             ).fetchone()
             if row is not None:
-                if (
-                    str(row["receipt_id"]) != receipt_id
-                    or str(row["result_json"]) != result_json
-                ):
+                if str(row["receipt_id"]) != receipt_id or str(row["result_json"]) != result_json:
                     raise CapabilityStoreConflict(
                         "search_receipt_conflict",
                         "search receipt identity changed",
@@ -9026,9 +8908,7 @@ class CapabilityStore:
                 )
             expected = {
                 str(item)
-                for item in _json_array(
-                    str(version_row["expected_tool_fingerprints_json"])
-                )
+                for item in _json_array(str(version_row["expected_tool_fingerprints_json"]))
             }
             descriptor = _descriptor_from_json(str(version_row["descriptor_json"]))
             if (
@@ -9086,9 +8966,7 @@ class CapabilityStore:
             )
             return await self._put_failure_receipt_tx(db, receipt)
 
-    async def get_failure_receipt(
-        self, receipt_ref: str
-    ) -> CapabilityFailureReceipt | None:
+    async def get_failure_receipt(self, receipt_ref: str) -> CapabilityFailureReceipt | None:
         async with self.read_connection() as db:
             row = await (
                 await db.execute(
@@ -9222,9 +9100,7 @@ class CapabilityStore:
                 ).fetchall()
             return tuple(_repair_attempt_from_row(row) for row in rows)
 
-    async def _get_policy_state_tx(
-        self, db: aiosqlite.Connection
-    ) -> AuthorizationPolicyState:
+    async def _get_policy_state_tx(self, db: aiosqlite.Connection) -> AuthorizationPolicyState:
         row = await (
             await db.execute(
                 """SELECT mode,generation,updated_at,provenance,
@@ -9243,8 +9119,7 @@ class CapabilityStore:
             provenance=str(row["provenance"]),  # type: ignore[arg-type]
             schema_generation=int(row["schema_generation"]),
             user_set_receipt_ref=(
-                None if row["user_set_receipt_ref"] is None
-                else str(row["user_set_receipt_ref"])
+                None if row["user_set_receipt_ref"] is None else str(row["user_set_receipt_ref"])
             ),
         )
 
@@ -9263,7 +9138,9 @@ class CapabilityStore:
     ) -> AuthorizationPolicyState:
         current = await self._get_policy_state_tx(db)
         successor = current.transition(
-            mode, expected_generation=expected_generation, now=self._clock(),
+            mode,
+            expected_generation=expected_generation,
+            now=self._clock(),
             provenance=provenance,
             user_set_receipt_ref=user_set_receipt_ref,
         )
@@ -9298,7 +9175,9 @@ class CapabilityStore:
     ) -> AuthorizationPolicyState:
         async with self.write_transaction() as db:
             return await self._compare_and_set_policy_mode_tx(
-                db, mode, expected_generation=expected_generation,
+                db,
+                mode,
+                expected_generation=expected_generation,
                 provenance=provenance,
                 user_set_receipt_ref=user_set_receipt_ref,
             )
@@ -9332,9 +9211,7 @@ class CapabilityStore:
         db: aiosqlite.Connection,
         record: LegacyAuthorizationImportRecord,
     ) -> LegacyAuthorizationImportRecord:
-        existing = await self._get_legacy_authorization_import_tx(
-            db, record.source_key
-        )
+        existing = await self._get_legacy_authorization_import_tx(db, record.source_key)
         if existing is not None:
             if existing != record:
                 raise CapabilityStoreConflict(
@@ -9364,9 +9241,7 @@ class CapabilityStore:
         async with self.write_transaction() as db:
             return await self._put_legacy_authorization_import_tx(db, record)
 
-    async def _put_task_grant_tx(
-        self, db: aiosqlite.Connection, grant: TaskGrant
-    ) -> TaskGrant:
+    async def _put_task_grant_tx(self, db: aiosqlite.Connection, grant: TaskGrant) -> TaskGrant:
         grant_json = canonical_json(grant.to_dict())
         existing = await (
             await db.execute(
@@ -9429,13 +9304,19 @@ class CapabilityStore:
             return cursor.rowcount == 1
 
 
-def _verification_attempt_from_row(row: Mapping[str, Any]) -> CapabilitySkillInstallVerificationAttempt:
+def _verification_attempt_from_row(
+    row: Mapping[str, Any],
+) -> CapabilitySkillInstallVerificationAttempt:
     optional = lambda name: None if name not in row.keys() or row[name] is None else str(row[name])
     return CapabilitySkillInstallVerificationAttempt(
-        attempt_id=str(row["attempt_id"]), intent_id=str(row["intent_id"]),
-        attempt_generation=int(row["attempt_generation"]), state_version=int(row["state_version"]),
-        status=str(row["status"]), verifier_session_id=str(row["verifier_session_id"]),
-        request_id=str(row["request_id"]), turn_id=str(row["turn_id"]),
+        attempt_id=str(row["attempt_id"]),
+        intent_id=str(row["intent_id"]),
+        attempt_generation=int(row["attempt_generation"]),
+        state_version=int(row["state_version"]),
+        status=str(row["status"]),
+        verifier_session_id=str(row["verifier_session_id"]),
+        request_id=str(row["request_id"]),
+        turn_id=str(row["turn_id"]),
         expected_run_id=str(row["expected_run_id"]),
         actual_run_id=None if row["actual_run_id"] is None else str(row["actual_run_id"]),
         manager_operation_id=str(row["manager_operation_id"]),
@@ -9443,22 +9324,31 @@ def _verification_attempt_from_row(row: Mapping[str, Any]) -> CapabilitySkillIns
         committed_set_stamp=str(row["committed_set_stamp"]),
         project_scope_key=str(row["project_scope_key"]),
         expected_member_set_stamp=str(row["expected_member_set_stamp"]),
-        lease_intent_id=optional("lease_intent_id"), lease_intent_hash=optional("lease_intent_hash"),
+        lease_intent_id=optional("lease_intent_id"),
+        lease_intent_hash=optional("lease_intent_hash"),
         capability_snapshot_ref=optional("capability_snapshot_ref"),
         run_catalog_content_stamp=optional("run_catalog_content_stamp"),
         process_catalog_stamp=optional("process_catalog_stamp"),
         projection_receipt_id=optional("projection_receipt_id"),
         projection_receipt_hash=optional("projection_receipt_hash"),
-        terminal_event_id=None if row["terminal_event_id"] is None else str(row["terminal_event_id"]),
-        terminal_event_hash=None if row["terminal_event_hash"] is None else str(row["terminal_event_hash"]),
-        evidence_hash=optional("evidence_hash"), release_receipt_id=optional("release_receipt_id"),
+        terminal_event_id=None
+        if row["terminal_event_id"] is None
+        else str(row["terminal_event_id"]),
+        terminal_event_hash=None
+        if row["terminal_event_hash"] is None
+        else str(row["terminal_event_hash"]),
+        evidence_hash=optional("evidence_hash"),
+        release_receipt_id=optional("release_receipt_id"),
         release_receipt_hash=optional("release_receipt_hash"),
         release_owner_event_hash=optional("release_owner_event_hash"),
         migration_classification=optional("migration_classification"),
         migration_classification_hash=optional("migration_classification_hash"),
-        superseded_by_attempt_id=None if row["superseded_by_attempt_id"] is None else str(row["superseded_by_attempt_id"]),
+        superseded_by_attempt_id=None
+        if row["superseded_by_attempt_id"] is None
+        else str(row["superseded_by_attempt_id"]),
         error=_json_object(None if row["error_json"] is None else str(row["error_json"])),
-        created_at=float(row["created_at"]), updated_at=float(row["updated_at"]),
+        created_at=float(row["created_at"]),
+        updated_at=float(row["updated_at"]),
         terminal_at=None if row["terminal_at"] is None else float(row["terminal_at"]),
     )
 
@@ -9484,69 +9374,84 @@ def _verification_attestation_from_row(
 
 async def _get_skill_install_verification_attempt(self, attempt_id: str):
     async with self.read_connection() as db:
-        row = await (await db.execute(
-            "SELECT * FROM capability_skill_install_verification_attempts WHERE attempt_id=?",
-            (attempt_id,),
-        )).fetchone()
+        row = await (
+            await db.execute(
+                "SELECT * FROM capability_skill_install_verification_attempts WHERE attempt_id=?",
+                (attempt_id,),
+            )
+        ).fetchone()
         return None if row is None else _verification_attempt_from_row(row)
 
 
 async def _get_current_skill_install_verification_attempt(self, intent_id: str):
     async with self.read_connection() as db:
-        row = await (await db.execute(
-            "SELECT a.* FROM capability_skill_install_intents i JOIN "
-            "capability_skill_install_verification_attempts a "
-            "ON a.attempt_id=i.current_verification_attempt_id "
-            "WHERE i.intent_id=?", (intent_id,),
-        )).fetchone()
+        row = await (
+            await db.execute(
+                "SELECT a.* FROM capability_skill_install_intents i JOIN "
+                "capability_skill_install_verification_attempts a "
+                "ON a.attempt_id=i.current_verification_attempt_id "
+                "WHERE i.intent_id=?",
+                (intent_id,),
+            )
+        ).fetchone()
         return None if row is None else _verification_attempt_from_row(row)
 
 
 async def _list_pending_skill_install_verification_attempts(
-    self, *, limit: int = 100,
+    self,
+    *,
+    limit: int = 100,
 ):
     if limit < 1 or limit > 1000:
         raise ValueError("limit must be between 1 and 1000")
     async with self.read_connection() as db:
-        rows = await (await db.execute(
-            "SELECT a.* FROM capability_skill_install_intents i JOIN "
-            "capability_skill_install_verification_attempts a "
-            "ON a.attempt_id=i.current_verification_attempt_id "
-            "WHERE a.status IN ('allocated','start_submitted','run_durable',"
-            "'catalog_ready','page_in_proven','terminal_observed','lease_released','unknown') "
-            "ORDER BY a.updated_at,a.intent_id,a.attempt_generation LIMIT ?",
-            (limit,),
-        )).fetchall()
+        rows = await (
+            await db.execute(
+                "SELECT a.* FROM capability_skill_install_intents i JOIN "
+                "capability_skill_install_verification_attempts a "
+                "ON a.attempt_id=i.current_verification_attempt_id "
+                "WHERE a.status IN ('allocated','start_submitted','run_durable',"
+                "'catalog_ready','page_in_proven','terminal_observed','lease_released','unknown') "
+                "ORDER BY a.updated_at,a.intent_id,a.attempt_generation LIMIT ?",
+                (limit,),
+            )
+        ).fetchall()
         return tuple(_verification_attempt_from_row(row) for row in rows)
 
 
 async def _list_succeeded_global_skill_install_intents(
-    self, *, limit: int = 100,
+    self,
+    *,
+    limit: int = 100,
 ):
     """Return attested global installs that may still need binding activation."""
 
     if limit < 1 or limit > 1000:
         raise ValueError("limit must be between 1 and 1000")
     async with self.read_connection() as db:
-        rows = await (await db.execute(
-            "SELECT * FROM capability_skill_install_intents "
-            "WHERE status='succeeded' "
-            "AND current_verification_attempt_id IS NOT NULL "
-            "AND json_extract(source_json, '$.schema')="
-            "'global-skill-install-source-v2' "
-            "ORDER BY updated_at,intent_id LIMIT ?",
-            (limit,),
-        )).fetchall()
+        rows = await (
+            await db.execute(
+                "SELECT * FROM capability_skill_install_intents "
+                "WHERE status='succeeded' "
+                "AND current_verification_attempt_id IS NOT NULL "
+                "AND json_extract(source_json, '$.schema')="
+                "'global-skill-install-source-v2' "
+                "ORDER BY updated_at,intent_id LIMIT ?",
+                (limit,),
+            )
+        ).fetchall()
         return tuple(_skill_install_intent_from_row(row) for row in rows)
 
 
 async def _get_skill_install_verification_attestation(self, intent_id: str):
     async with self.read_connection() as db:
-        rows = await (await db.execute(
-            "SELECT * FROM capability_skill_install_verification_attestations "
-            "WHERE intent_id=? ORDER BY created_at DESC,attestation_id DESC",
-            (intent_id,),
-        )).fetchall()
+        rows = await (
+            await db.execute(
+                "SELECT * FROM capability_skill_install_verification_attestations "
+                "WHERE intent_id=? ORDER BY created_at DESC,attestation_id DESC",
+                (intent_id,),
+            )
+        ).fetchall()
         if not rows:
             return None
         if len(rows) != 1:
@@ -9558,25 +9463,37 @@ async def _get_skill_install_verification_attestation(self, intent_id: str):
 
 
 async def _allocate_skill_install_verification_attempt(
-    self, intent_id: str, *, expected_state_version: int,
-    manager_operation_id: str, manager_receipt_hash: str,
-    committed_set_stamp: str, project_scope_key: str,
-    expected_member_set_stamp: str, verifier_session_id: str,
+    self,
+    intent_id: str,
+    *,
+    expected_state_version: int,
+    manager_operation_id: str,
+    manager_receipt_hash: str,
+    committed_set_stamp: str,
+    project_scope_key: str,
+    expected_member_set_stamp: str,
+    verifier_session_id: str,
 ):
     async with self.write_transaction() as db:
-        row = await (await db.execute(
-            "SELECT * FROM capability_skill_install_intents WHERE intent_id=?", (intent_id,)
-        )).fetchone()
+        row = await (
+            await db.execute(
+                "SELECT * FROM capability_skill_install_intents WHERE intent_id=?", (intent_id,)
+            )
+        ).fetchone()
         if row is None:
             raise CapabilityStoreError("skill_install_intent_not_found", intent_id)
         intent = _skill_install_intent_from_row(row)
         if intent.current_verification_attempt_id:
-            current = await (await db.execute(
-                "SELECT * FROM capability_skill_install_verification_attempts WHERE attempt_id=?",
-                (intent.current_verification_attempt_id,),
-            )).fetchone()
+            current = await (
+                await db.execute(
+                    "SELECT * FROM capability_skill_install_verification_attempts WHERE attempt_id=?",
+                    (intent.current_verification_attempt_id,),
+                )
+            ).fetchone()
             if current is None:
-                raise CapabilityStoreConflict("skill_install_verification_attempt_missing", "current attempt is missing")
+                raise CapabilityStoreConflict(
+                    "skill_install_verification_attempt_missing", "current attempt is missing"
+                )
             existing = _verification_attempt_from_row(current)
             if (
                 existing.manager_operation_id != manager_operation_id
@@ -9591,15 +9508,25 @@ async def _allocate_skill_install_verification_attempt(
                     "current attempt differs from immutable allocation",
                 )
             return existing
-        if intent.state_version != expected_state_version or intent.status != "published_pending_runtime_verification":
-            raise CapabilityStoreConflict("skill_install_verification_attempt_cas_conflict", "intent cannot allocate verification")
+        if (
+            intent.state_version != expected_state_version
+            or intent.status != "published_pending_runtime_verification"
+        ):
+            raise CapabilityStoreConflict(
+                "skill_install_verification_attempt_cas_conflict",
+                "intent cannot allocate verification",
+            )
         generation = intent.verification_attempt_generation + 1
         identity = {
-            "domain":"skill-install-verification-attempt-v1","intent_id":intent_id,
-            "attempt_generation":generation,"manager_operation_id":manager_operation_id,
-            "manager_receipt_hash":manager_receipt_hash,"committed_set_stamp":committed_set_stamp,
-            "project_scope_key":project_scope_key,"expected_member_set_stamp":expected_member_set_stamp,
-            "verifier_session_id":verifier_session_id,
+            "domain": "skill-install-verification-attempt-v1",
+            "intent_id": intent_id,
+            "attempt_generation": generation,
+            "manager_operation_id": manager_operation_id,
+            "manager_receipt_hash": manager_receipt_hash,
+            "committed_set_stamp": committed_set_stamp,
+            "project_scope_key": project_scope_key,
+            "expected_member_set_stamp": expected_member_set_stamp,
+            "verifier_session_id": verifier_session_id,
         }
         attempt_id = fingerprint_json(identity)
         request_id = f"skill-install-verify-request:{attempt_id}"
@@ -9613,49 +9540,102 @@ async def _allocate_skill_install_verification_attempt(
             "request_id,turn_id,expected_run_id,manager_operation_id,manager_receipt_hash,"
             "committed_set_stamp,project_scope_key,expected_member_set_stamp,created_at,updated_at) "
             "VALUES(?,?,?,1,'allocated',?,?,?,?,?,?,?,?,?,?,?)",
-            (attempt_id,intent_id,generation,verifier_session_id,request_id,turn_id,expected_run_id,
-             manager_operation_id,manager_receipt_hash,committed_set_stamp,project_scope_key,
-             expected_member_set_stamp,now,now),
+            (
+                attempt_id,
+                intent_id,
+                generation,
+                verifier_session_id,
+                request_id,
+                turn_id,
+                expected_run_id,
+                manager_operation_id,
+                manager_receipt_hash,
+                committed_set_stamp,
+                project_scope_key,
+                expected_member_set_stamp,
+                now,
+                now,
+            ),
         )
         changed = await db.execute(
             "UPDATE capability_skill_install_intents SET verification_attempt_generation=?,"
             "current_verification_attempt_id=?,state_version=state_version+1,updated_at=? "
             "WHERE intent_id=? AND state_version=? AND current_verification_attempt_id IS NULL",
-            (generation,attempt_id,now,intent_id,expected_state_version),
+            (generation, attempt_id, now, intent_id, expected_state_version),
         )
         if changed.rowcount != 1:
-            raise CapabilityStoreConflict("skill_install_verification_attempt_cas_conflict", "attempt allocation lost CAS")
-        row = await (await db.execute(
-            "SELECT * FROM capability_skill_install_verification_attempts WHERE attempt_id=?", (attempt_id,)
-        )).fetchone()
+            raise CapabilityStoreConflict(
+                "skill_install_verification_attempt_cas_conflict", "attempt allocation lost CAS"
+            )
+        row = await (
+            await db.execute(
+                "SELECT * FROM capability_skill_install_verification_attempts WHERE attempt_id=?",
+                (attempt_id,),
+            )
+        ).fetchone()
         return _verification_attempt_from_row(row)
 
 
 async def _cas_skill_install_verification_attempt(
-    self, attempt_id: str, *, expected_state_version: int, status: str, **fields: Any,
+    self,
+    attempt_id: str,
+    *,
+    expected_state_version: int,
+    status: str,
+    **fields: Any,
 ):
-    transitions = {"allocated":{"start_submitted","unknown","terminal_failed"},
-                   "start_submitted":{"run_durable","unknown","terminal_failed"},
-                   "run_durable":{"catalog_ready","unknown","terminal_failed"},
-                   "catalog_ready":{"page_in_proven","unknown","terminal_failed"},
-                   "page_in_proven":{"terminal_observed","unknown","terminal_failed"},
-                   "terminal_observed":{"lease_released","unknown","terminal_failed"},
-                   "unknown":{"start_submitted","run_durable","catalog_ready","page_in_proven","terminal_observed","lease_released","terminal_failed","superseded"},
-                   "terminal_failed":{"superseded"}}
+    transitions = {
+        "allocated": {"start_submitted", "unknown", "terminal_failed"},
+        "start_submitted": {"run_durable", "unknown", "terminal_failed"},
+        "run_durable": {"catalog_ready", "unknown", "terminal_failed"},
+        "catalog_ready": {"page_in_proven", "unknown", "terminal_failed"},
+        "page_in_proven": {"terminal_observed", "unknown", "terminal_failed"},
+        "terminal_observed": {"lease_released", "unknown", "terminal_failed"},
+        "unknown": {
+            "start_submitted",
+            "run_durable",
+            "catalog_ready",
+            "page_in_proven",
+            "terminal_observed",
+            "lease_released",
+            "terminal_failed",
+            "superseded",
+        },
+        "terminal_failed": {"superseded"},
+    }
     async with self.write_transaction() as db:
-        row = await (await db.execute(
-            "SELECT * FROM capability_skill_install_verification_attempts WHERE attempt_id=?", (attempt_id,)
-        )).fetchone()
+        row = await (
+            await db.execute(
+                "SELECT * FROM capability_skill_install_verification_attempts WHERE attempt_id=?",
+                (attempt_id,),
+            )
+        ).fetchone()
         if row is None:
             raise CapabilityStoreError("skill_install_verification_attempt_not_found", attempt_id)
         current = _verification_attempt_from_row(row)
-        if current.state_version != expected_state_version or status not in transitions.get(current.status,set()):
-            raise CapabilityStoreConflict("skill_install_verification_attempt_cas_conflict", "attempt transition conflict")
-        allowed = ("actual_run_id","lease_intent_id","lease_intent_hash","capability_snapshot_ref",
-                   "run_catalog_content_stamp","process_catalog_stamp","projection_receipt_id",
-                   "projection_receipt_hash","terminal_event_id","terminal_event_hash","evidence_hash",
-                   "release_receipt_id","release_receipt_hash","release_owner_event_hash",
-                   "superseded_by_attempt_id")
+        if current.state_version != expected_state_version or status not in transitions.get(
+            current.status, set()
+        ):
+            raise CapabilityStoreConflict(
+                "skill_install_verification_attempt_cas_conflict", "attempt transition conflict"
+            )
+        allowed = (
+            "actual_run_id",
+            "lease_intent_id",
+            "lease_intent_hash",
+            "capability_snapshot_ref",
+            "run_catalog_content_stamp",
+            "process_catalog_stamp",
+            "projection_receipt_id",
+            "projection_receipt_hash",
+            "terminal_event_id",
+            "terminal_event_hash",
+            "evidence_hash",
+            "release_receipt_id",
+            "release_receipt_hash",
+            "release_owner_event_hash",
+            "superseded_by_attempt_id",
+        )
         values = [fields.get(name) for name in allowed]
         for name in allowed:
             supplied = fields.get(name)
@@ -9671,12 +9651,23 @@ async def _cas_skill_install_verification_attempt(
         }
         required = {
             "run_durable": ("actual_run_id",),
-            "catalog_ready": ("actual_run_id","lease_intent_id","lease_intent_hash",
-                              "capability_snapshot_ref","run_catalog_content_stamp",
-                              "process_catalog_stamp","projection_receipt_id","projection_receipt_hash"),
+            "catalog_ready": (
+                "actual_run_id",
+                "lease_intent_id",
+                "lease_intent_hash",
+                "capability_snapshot_ref",
+                "run_catalog_content_stamp",
+                "process_catalog_stamp",
+                "projection_receipt_id",
+                "projection_receipt_hash",
+            ),
             "page_in_proven": ("evidence_hash",),
-            "terminal_observed": ("terminal_event_id","terminal_event_hash"),
-            "lease_released": ("release_receipt_id","release_receipt_hash","release_owner_event_hash"),
+            "terminal_observed": ("terminal_event_id", "terminal_event_hash"),
+            "lease_released": (
+                "release_receipt_id",
+                "release_receipt_hash",
+                "release_owner_event_hash",
+            ),
         }.get(status, ())
         if any(not effective.get(name) for name in required):
             raise CapabilityStoreConflict(
@@ -9688,39 +9679,100 @@ async def _cas_skill_install_verification_attempt(
             "UPDATE capability_skill_install_verification_attempts SET status=?,state_version=state_version+1,"
             + ",".join(f"{name}=COALESCE(?,{name})" for name in allowed)
             + ",error_json=?,updated_at=?,terminal_at=? WHERE attempt_id=? AND state_version=?",
-            (status,*values,None if fields.get("error") is None else canonical_json(dict(fields["error"])),
-             now, now if status.startswith("terminal_") else None,attempt_id,expected_state_version),
+            (
+                status,
+                *values,
+                None if fields.get("error") is None else canonical_json(dict(fields["error"])),
+                now,
+                now if status.startswith("terminal_") else None,
+                attempt_id,
+                expected_state_version,
+            ),
         )
         if changed.rowcount != 1:
-            raise CapabilityStoreConflict("skill_install_verification_attempt_cas_conflict", "attempt CAS lost")
-        row = await (await db.execute("SELECT * FROM capability_skill_install_verification_attempts WHERE attempt_id=?",(attempt_id,))).fetchone()
+            raise CapabilityStoreConflict(
+                "skill_install_verification_attempt_cas_conflict", "attempt CAS lost"
+            )
+        row = await (
+            await db.execute(
+                "SELECT * FROM capability_skill_install_verification_attempts WHERE attempt_id=?",
+                (attempt_id,),
+            )
+        ).fetchone()
         return _verification_attempt_from_row(row)
 
 
 async def _attach_skill_install_verification_attestation(
-    self, intent_id: str, *, expected_intent_state_version: int, attempt_id: str,
-    expected_attempt_state_version: int, attestation: Mapping[str, JsonValue],
+    self,
+    intent_id: str,
+    *,
+    expected_intent_state_version: int,
+    attempt_id: str,
+    expected_attempt_state_version: int,
+    attestation: Mapping[str, JsonValue],
 ):
     evidence_hash = str(attestation.get("evidence_hash") or "")
     verification_ref = fingerprint_json(dict(attestation))
-    attestation_id = fingerprint_json({"intent_id":intent_id,"attempt_id":attempt_id,"verification_ref":verification_ref})
+    attestation_id = fingerprint_json(
+        {"intent_id": intent_id, "attempt_id": attempt_id, "verification_ref": verification_ref}
+    )
     async with self.write_transaction() as db:
-        attempt = await (await db.execute("SELECT * FROM capability_skill_install_verification_attempts WHERE attempt_id=? AND intent_id=?",(attempt_id,intent_id))).fetchone()
-        intent = await (await db.execute("SELECT * FROM capability_skill_install_intents WHERE intent_id=?",(intent_id,))).fetchone()
-        if attempt is None or intent is None or str(attempt["status"]) != "lease_released" or int(attempt["state_version"]) != expected_attempt_state_version or int(intent["state_version"]) != expected_intent_state_version or str(intent["current_verification_attempt_id"] or "") != attempt_id or not evidence_hash:
-            raise CapabilityStoreConflict("skill_install_verification_attestation_cas_conflict", "attestation authority differs")
+        attempt = await (
+            await db.execute(
+                "SELECT * FROM capability_skill_install_verification_attempts WHERE attempt_id=? AND intent_id=?",
+                (attempt_id, intent_id),
+            )
+        ).fetchone()
+        intent = await (
+            await db.execute(
+                "SELECT * FROM capability_skill_install_intents WHERE intent_id=?", (intent_id,)
+            )
+        ).fetchone()
+        if (
+            attempt is None
+            or intent is None
+            or str(attempt["status"]) != "lease_released"
+            or int(attempt["state_version"]) != expected_attempt_state_version
+            or int(intent["state_version"]) != expected_intent_state_version
+            or str(intent["current_verification_attempt_id"] or "") != attempt_id
+            or not evidence_hash
+        ):
+            raise CapabilityStoreConflict(
+                "skill_install_verification_attestation_cas_conflict",
+                "attestation authority differs",
+            )
         now = self._clock()
-        await db.execute("INSERT INTO capability_skill_install_verification_attestations(attestation_id,intent_id,attempt_id,provenance,runtime_proof_valid,verification_ref,evidence_hash,attestation_json,created_at) VALUES(?,?,?,'runtime_v3',1,?,?,?,?)",(attestation_id,intent_id,attempt_id,verification_ref,evidence_hash,canonical_json(dict(attestation)),now))
+        await db.execute(
+            "INSERT INTO capability_skill_install_verification_attestations(attestation_id,intent_id,attempt_id,provenance,runtime_proof_valid,verification_ref,evidence_hash,attestation_json,created_at) VALUES(?,?,?,'runtime_v3',1,?,?,?,?)",
+            (
+                attestation_id,
+                intent_id,
+                attempt_id,
+                verification_ref,
+                evidence_hash,
+                canonical_json(dict(attestation)),
+                now,
+            ),
+        )
         transitioned = await db.execute(
             "UPDATE capability_skill_install_verification_attempts SET status='attested',"
             "state_version=state_version+1,updated_at=? WHERE attempt_id=? AND state_version=? "
-            "AND status='lease_released'", (now,attempt_id,expected_attempt_state_version)
+            "AND status='lease_released'",
+            (now, attempt_id, expected_attempt_state_version),
         )
         if transitioned.rowcount != 1:
-            raise CapabilityStoreConflict("skill_install_verification_attestation_cas_conflict", "attempt attestation CAS lost")
-        changed = await db.execute("UPDATE capability_skill_install_intents SET status='succeeded',verification_ref=?,state_version=state_version+1,updated_at=? WHERE intent_id=? AND state_version=? AND current_verification_attempt_id=? AND status='published_pending_runtime_verification'",(verification_ref,now,intent_id,expected_intent_state_version,attempt_id))
+            raise CapabilityStoreConflict(
+                "skill_install_verification_attestation_cas_conflict",
+                "attempt attestation CAS lost",
+            )
+        changed = await db.execute(
+            "UPDATE capability_skill_install_intents SET status='succeeded',verification_ref=?,state_version=state_version+1,updated_at=? WHERE intent_id=? AND state_version=? AND current_verification_attempt_id=? AND status='published_pending_runtime_verification'",
+            (verification_ref, now, intent_id, expected_intent_state_version, attempt_id),
+        )
         if changed.rowcount != 1:
-            raise CapabilityStoreConflict("skill_install_verification_attestation_cas_conflict", "intent attestation CAS lost")
+            raise CapabilityStoreConflict(
+                "skill_install_verification_attestation_cas_conflict", "intent attestation CAS lost"
+            )
         return CapabilitySkillInstallVerificationAttestation(
             attestation_id=attestation_id,
             intent_id=intent_id,
@@ -9735,19 +9787,28 @@ async def _attach_skill_install_verification_attestation(
 
 
 async def _supersede_skill_install_verification_attempt(
-    self, intent_id: str, *, expected_intent_state_version: int,
-    attempt_id: str, expected_attempt_state_version: int,
+    self,
+    intent_id: str,
+    *,
+    expected_intent_state_version: int,
+    attempt_id: str,
+    expected_attempt_state_version: int,
     verifier_session_id: str,
 ):
     """Atomically replace one unresolved/failed attempt with its next generation."""
     async with self.write_transaction() as db:
-        intent_row = await (await db.execute(
-            "SELECT * FROM capability_skill_install_intents WHERE intent_id=?", (intent_id,)
-        )).fetchone()
-        attempt_row = await (await db.execute(
-            "SELECT * FROM capability_skill_install_verification_attempts "
-            "WHERE attempt_id=? AND intent_id=?", (attempt_id, intent_id)
-        )).fetchone()
+        intent_row = await (
+            await db.execute(
+                "SELECT * FROM capability_skill_install_intents WHERE intent_id=?", (intent_id,)
+            )
+        ).fetchone()
+        attempt_row = await (
+            await db.execute(
+                "SELECT * FROM capability_skill_install_verification_attempts "
+                "WHERE attempt_id=? AND intent_id=?",
+                (attempt_id, intent_id),
+            )
+        ).fetchone()
         if intent_row is None or attempt_row is None:
             raise CapabilityStoreError("skill_install_verification_attempt_not_found", attempt_id)
         old = _verification_attempt_from_row(attempt_row)
@@ -9795,10 +9856,22 @@ async def _supersede_skill_install_verification_attempt(
             "request_id,turn_id,expected_run_id,manager_operation_id,manager_receipt_hash,"
             "committed_set_stamp,project_scope_key,expected_member_set_stamp,created_at,updated_at) "
             "VALUES(?,?,?,1,'allocated',?,?,?,?,?,?,?,?,?,?,?)",
-            (successor_id, intent_id, generation, verifier_session_id, request_id, turn_id,
-             expected_run_id, old.manager_operation_id, old.manager_receipt_hash,
-             old.committed_set_stamp, old.project_scope_key, old.expected_member_set_stamp,
-             now, now),
+            (
+                successor_id,
+                intent_id,
+                generation,
+                verifier_session_id,
+                request_id,
+                turn_id,
+                expected_run_id,
+                old.manager_operation_id,
+                old.manager_receipt_hash,
+                old.committed_set_stamp,
+                old.project_scope_key,
+                old.expected_member_set_stamp,
+                now,
+                now,
+            ),
         )
         await db.execute(
             "UPDATE capability_skill_install_verification_attempts "
@@ -9815,10 +9888,12 @@ async def _supersede_skill_install_verification_attempt(
             raise CapabilityStoreConflict(
                 "skill_install_verification_attempt_cas_conflict", "intent supersession lost CAS"
             )
-        row = await (await db.execute(
-            "SELECT * FROM capability_skill_install_verification_attempts WHERE attempt_id=?",
-            (successor_id,),
-        )).fetchone()
+        row = await (
+            await db.execute(
+                "SELECT * FROM capability_skill_install_verification_attempts WHERE attempt_id=?",
+                (successor_id,),
+            )
+        ).fetchone()
         return _verification_attempt_from_row(row)
 
 
@@ -9826,18 +9901,29 @@ async def _supersede_skill_install_verification_attempt(
 # repository.  Bind it explicitly here so callers get both caller-owned and
 # self-owned transaction APIs without duplicating the CAS implementation.
 for _skill_install_method in (
-    "_create_skill_install_intent_tx", "create_skill_install_intent",
-    "get_skill_install_intent", "get_skill_install_intent_for_effect",
+    "_create_skill_install_intent_tx",
+    "create_skill_install_intent",
+    "get_skill_install_intent",
+    "get_skill_install_intent_for_effect",
     "_skill_install_members_tx",
-    "skill_install_members", "pending_skill_install_intents",
-    "_cas_skill_install_intent_tx", "cas_skill_install_intent",
-    "claim_skill_install_retry", "settle_skill_install_retry",
-    "_handoff_skill_install_intent_tx", "handoff_skill_install_intent",
-    "operation_members", "put_operation_evidence",
-    "put_publish_intent_members", "publish_intent_members", "operation_evidence",
+    "skill_install_members",
+    "pending_skill_install_intents",
+    "_cas_skill_install_intent_tx",
+    "cas_skill_install_intent",
+    "claim_skill_install_retry",
+    "settle_skill_install_retry",
+    "_handoff_skill_install_intent_tx",
+    "handoff_skill_install_intent",
+    "operation_members",
+    "put_operation_evidence",
+    "put_publish_intent_members",
+    "publish_intent_members",
+    "operation_evidence",
     "bind_skill_install_confirmation",
 ):
-    setattr(CapabilityStore, _skill_install_method, getattr(CapabilityStoreTx, _skill_install_method))
+    setattr(
+        CapabilityStore, _skill_install_method, getattr(CapabilityStoreTx, _skill_install_method)
+    )
 
 for _name, _method in {
     "get_skill_install_verification_attempt": _get_skill_install_verification_attempt,

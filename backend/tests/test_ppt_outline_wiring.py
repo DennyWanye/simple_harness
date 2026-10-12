@@ -89,18 +89,24 @@ async def test_workflow_outline_card_resumes_generic_decision_without_blocking(m
     assert resolved == [
         (
             "decision-1",
-            {"nonce": "nonce-1", "response": {"action": "accept", "feedback": "", "reuse_id": None}, "expected_version": 3},
+            {
+                "nonce": "nonce-1",
+                "response": {"action": "accept", "feedback": "", "reuse_id": None},
+                "expected_version": 3,
+            },
         )
     ]
     assert notices == [("sid-1", "大纲已确认，正在生成 PPT。完成后文件会发送到当前会话。")]
-    assert ws.sent == [{
-        "type": "ppt_outline_resolved",
-        "payload": {
-            "outline_id": oid,
-            "session_id": "sid-1",
-            "decision_status": main._ppt_outline_decision_notice("accept"),
-        },
-    }]
+    assert ws.sent == [
+        {
+            "type": "ppt_outline_resolved",
+            "payload": {
+                "outline_id": oid,
+                "session_id": "sid-1",
+                "decision_status": main._ppt_outline_decision_notice("accept"),
+            },
+        }
+    ]
 
 
 @pytest.mark.asyncio
@@ -149,9 +155,7 @@ async def test_workflow_outline_card_uses_kernel_decision_fence(monkeypatch):
             {"action": "accept", "feedback": "", "reuse_id": None},
         )
     ]
-    assert notices == [
-        ("sid-owner", main._ppt_outline_decision_notice("accept"))
-    ]
+    assert notices == [("sid-owner", main._ppt_outline_decision_notice("accept"))]
 
 
 @pytest.mark.asyncio
@@ -330,10 +334,14 @@ async def test_ppt_notify_chat_bubble_persists_before_sending(monkeypatch):
 
     default_ws = _FakeWebSocket()
     panel_ws = _FakeWebSocket()
-    monkeypatch.setattr(main, "_control_connections", {
-        "default": default_ws,
-        "message-panel-main": panel_ws,
-    })
+    monkeypatch.setattr(
+        main,
+        "_control_connections",
+        {
+            "default": default_ws,
+            "message-panel-main": panel_ws,
+        },
+    )
     rows = []
     vectors = []
 
@@ -384,7 +392,9 @@ def test_ppt_pro_startup_wires_only_durable_workflow(monkeypatch):
     import main
 
     seen = {}
-    monkeypatch.setattr(main.ppt_tools, "set_ppt_pro_services", lambda **kwargs: seen.update(kwargs))
+    monkeypatch.setattr(
+        main.ppt_tools, "set_ppt_pro_services", lambda **kwargs: seen.update(kwargs)
+    )
 
     main._configure_ppt_production()
 

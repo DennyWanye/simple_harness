@@ -120,8 +120,11 @@ class _Case:
             now=1.0,
         )
         _, self.lease = self.uow.claim_runtime_activation(
-            run_id=RUN.value, owner_id="runtime-1", namespace="runtime.kernel",
-            now=2.0, lease_ttl_seconds=1000.0,
+            run_id=RUN.value,
+            owner_id="runtime-1",
+            namespace="runtime.kernel",
+            now=2.0,
+            lease_ttl_seconds=1000.0,
         )
         self.fence = None
         self.handler_calls = 0
@@ -158,13 +161,21 @@ class _Case:
     async def execute(self, effect_id: str = "effect-1", path: str = "note.txt"):  # type: ignore[no-untyped-def]
         call = ToolCall(CallId(f"call:{effect_id}"), "write_file", {"path": path})
         context = ToolContext(
-            RUN, RequestId("request-1"), CancellationToken(),
-            call_id=call.call_id, effect_id=EffectId(effect_id),
+            RUN,
+            RequestId("request-1"),
+            CancellationToken(),
+            call_id=call.call_id,
+            effect_id=EffectId(effect_id),
         )
         return await self.executor.execute(
-            effect_id=EffectId(effect_id), call=call, context=context,
-            execution_lease=self.lease, run_fence=self.fence,
-            raw_call_id=f"raw:{effect_id}", turn_ordinal=1, call_ordinal=0,
+            effect_id=EffectId(effect_id),
+            call=call,
+            context=context,
+            execution_lease=self.lease,
+            run_fence=self.fence,
+            raw_call_id=f"raw:{effect_id}",
+            turn_ordinal=1,
+            call_ordinal=0,
         )
 
     def ledger_state(self, effect_id: str = "effect-1") -> str:
@@ -179,7 +190,9 @@ class _Case:
 
 
 @pytest.mark.asyncio
-async def test_gate_skips_replay_of_settled_effect_and_returns_original_result(tmp_path: Path) -> None:
+async def test_gate_skips_replay_of_settled_effect_and_returns_original_result(
+    tmp_path: Path,
+) -> None:
     """settle 后 gate 条件失效（例如 binding 追加）→ 重放同 effect：返回原 SUCCEEDED 结果，
     gate 不再调用、handler 调用次数不变、磁盘/账本一致。"""
     case = _Case(tmp_path / "case")
@@ -229,7 +242,9 @@ async def test_gate_does_not_preempt_unknown_effect_reconciliation(tmp_path: Pat
 
         case.fail_handler = False
         case.gate.reject_with = "effect_gate_frozen_scope_mismatch"
-        reconciled_result = ToolResult.succeeded(CallId("call:effect-1"), {"ok": True, "reconciled": True})
+        reconciled_result = ToolResult.succeeded(
+            CallId("call:effect-1"), {"ok": True, "reconciled": True}
+        )
         case.reconciliation.observation = ReconciliationObservation(
             ReconciliationState.COMPLETED, "external:receipt:1", reconciled_result
         )
@@ -305,7 +320,9 @@ async def _bound_case(tmp_path: Path):  # type: ignore[no-untyped-def]
 
 
 @pytest.mark.asyncio
-async def test_commit_fact_redacts_credential_like_path_and_never_raises_after_settle(tmp_path: Path) -> None:
+async def test_commit_fact_redacts_credential_like_path_and_never_raises_after_settle(
+    tmp_path: Path,
+) -> None:
     """F-1（P1）：模型给的路径命中凭据形状（``docs/bearer authentication.md``）时，settle 之后的 Host 记账
     **永不抛出**：路径片段确定性脱敏为 ``[redacted:credential]``、事件 payload ``redacted=true``、事件照写、
     material 照标；重放同错不再发生；terminal 排空与放行收敛。"""
@@ -330,18 +347,32 @@ async def test_commit_fact_redacts_credential_like_path_and_never_raises_after_s
         # `(?i)\bbearer\s+[a-z0-9._~+/=-]{8,}` 吞掉 "bearer authentication.md" 整段（确定性）。
         assert payload["targets"] == ["docs/[redacted:credential]"]
         assert "bearer authentication" not in payload_json
-        assert ch.rows(env.db_path, "SELECT status FROM harness_evidence_reservations WHERE source_event_id='effect:effect-cred'") == [("ingested",)]
+        assert ch.rows(
+            env.db_path,
+            "SELECT status FROM harness_evidence_reservations WHERE source_event_id='effect:effect-cred'",
+        ) == [("ingested",)]
         # 重放（exact replay）：同一结果、不再抛错、恰一份事件。
         replay = await case.execute(effect_id="effect-cred", path=path)
         assert replay.result == first.result
-        assert ch.rows(env.db_path, "SELECT COUNT(*) FROM task_scope_events WHERE source_event_id='effect:effect-cred'") == [(1,)]
+        assert ch.rows(
+            env.db_path,
+            "SELECT COUNT(*) FROM task_scope_events WHERE source_event_id='effect:effect-cred'",
+        ) == [(1,)]
         # 另一种凭据形状（sk-…）同样脱敏、不抛。
         second = await case.execute(effect_id="effect-key", path="keys/sk-abcdefghijklmnopqrst.txt")
         assert second.result.outcome.value == "succeeded"
-        [(payload_json2,)] = ch.rows(env.db_path, "SELECT payload_json FROM task_scope_events WHERE source_kind='host' AND source_event_id='effect:effect-key'")
+        [(payload_json2,)] = ch.rows(
+            env.db_path,
+            "SELECT payload_json FROM task_scope_events WHERE source_kind='host' AND source_event_id='effect:effect-key'",
+        )
         assert json.loads(payload_json2)["targets"] == ["keys/[redacted:credential].txt"]
         dirty = await dirty_state(CanonicalTaskScopeStore(env.db_path), ch.SCOPE)
-        assert sorted(e.event_kind for e in dirty.material_events) == ["harness.tool_invocation", "harness.tool_invocation", "host.file", "host.file"]
+        assert sorted(e.event_kind for e in dirty.material_events) == [
+            "harness.tool_invocation",
+            "harness.tool_invocation",
+            "host.file",
+            "host.file",
+        ]
         # terminal：排空 + run_terminal + 放行，收敛。
         observed = await ch.observe_terminal(env, ch.FakeRunFacts(env.run_id))
         assert observed is not None
@@ -367,7 +398,10 @@ async def test_abandoned_project_effect_reservation_is_material_dirty(tmp_path: 
         with pytest.raises(asyncio.CancelledError):
             await case.execute(effect_id="effect-unknown", path="maybe.txt")
         assert case.ledger_state("effect-unknown") == "unknown"
-        [(status, tool_name)] = ch.rows(env.db_path, "SELECT status,tool_name FROM harness_evidence_reservations WHERE source_event_id='effect:effect-unknown'")
+        [(status, tool_name)] = ch.rows(
+            env.db_path,
+            "SELECT status,tool_name FROM harness_evidence_reservations WHERE source_event_id='effect:effect-unknown'",
+        )
         assert (status, tool_name) == ("reserved", "write_file")
         assert not (await dirty_state(CanonicalTaskScopeStore(env.db_path), ch.SCOPE)).is_dirty
         # terminal 排空：SDK 账本非终态 → tombstone（同 kind），携带 tool_name / effect_class。
@@ -379,20 +413,37 @@ async def test_abandoned_project_effect_reservation_is_material_dirty(tmp_path: 
         )
         public = json.loads(payload_json)["public_payload"]
         assert kind == "harness.tool_invocation"
-        assert public["status"] == "abandoned" and public["tool_name"] == "write_file" and public["effect_class"] == "project_effect"
+        assert (
+            public["status"] == "abandoned"
+            and public["tool_name"] == "write_file"
+            and public["effect_class"] == "project_effect"
+        )
         assert is_material_event("harness.tool_invocation", json.loads(payload_json)) is True
         dirty = await dirty_state(CanonicalTaskScopeStore(env.db_path), ch.SCOPE)
-        assert dirty.is_dirty and [e.event_kind for e in dirty.material_events] == ["harness.tool_invocation"]
+        assert dirty.is_dirty and [e.event_kind for e in dirty.material_events] == [
+            "harness.tool_invocation"
+        ]
         assert dirty.material_events[0].source_event_id == "execution:effect:effect-unknown"
         # 非 PROJECT_EFFECT 的 abandoned tombstone 仍是 trivial。
-        assert is_material_event(
-            "harness.tool_invocation",
-            {"public_payload": {"status": "abandoned", "tool_name": "read_file", "effect_class": "non_project_effect"}},
-        ) is False
-        assert ch.rows(env.db_path, "SELECT status FROM harness_evidence_reservations WHERE source_event_id='effect:effect-unknown'") == [("abandoned",)]
+        assert (
+            is_material_event(
+                "harness.tool_invocation",
+                {
+                    "public_payload": {
+                        "status": "abandoned",
+                        "tool_name": "read_file",
+                        "effect_class": "non_project_effect",
+                    }
+                },
+            )
+            is False
+        )
+        assert ch.rows(
+            env.db_path,
+            "SELECT status FROM harness_evidence_reservations WHERE source_event_id='effect:effect-unknown'",
+        ) == [("abandoned",)]
     finally:
         case.close()
-
 
 
 @pytest.mark.asyncio
@@ -415,19 +466,28 @@ async def test_read_reserved_fact_reads_sdk_ledger(tmp_path: Path) -> None:
         stack._uow = case.uow  # 只接 read_reserved_fact 所依赖的账本读口（生产同一 uow）
 
         def reservation(source_event_id: str, run_id: str = RUN.value):  # type: ignore[no-untyped-def]
-            return SimpleNamespace(source_event_id=source_event_id, run_id=run_id, kind="tool_invocation")
+            return SimpleNamespace(
+                source_event_id=source_event_id, run_id=run_id, kind="tool_invocation"
+            )
 
         fact = await stack.read_reserved_fact(reservation("effect:effect-fact"))
         assert isinstance(fact, ToolInvocationFact)
         assert (fact.run_id, fact.effect_id, fact.tool_name, fact.effect_state, fact.outcome) == (
-            RUN.value, "effect-fact", "write_file", "succeeded", "succeeded",
+            RUN.value,
+            "effect-fact",
+            "write_file",
+            "succeeded",
+            "succeeded",
         )
         assert fact.source_event_id == "effect:effect-fact" and fact.kind == "tool_invocation"
         assert fact.objective is not None and fact.objective.event_kind == "host.file"
         assert fact.objective.payload["targets"] == ["docs/fact.txt"]
         assert "written" not in str(fact.objective.payload)
         # run_id 不匹配 → None（不把别的 Run 的 effect 记到本 Run）。
-        assert await stack.read_reserved_fact(reservation("effect:effect-fact", run_id="run-other")) is None
+        assert (
+            await stack.read_reserved_fact(reservation("effect:effect-fact", run_id="run-other"))
+            is None
+        )
         # 无记录 / 未知前缀 / provider 行不存在 → None。
         assert await stack.read_reserved_fact(reservation("effect:effect-missing")) is None
         assert await stack.read_reserved_fact(reservation("snapshot:1")) is None

@@ -24,7 +24,6 @@ in which case the criterion nobody would check wins, as before.
 用例（``test_code_domain_world.py``）；这里只留直接测函数的用例。
 """
 
-
 from __future__ import annotations
 
 import sys
@@ -107,9 +106,7 @@ def test_a_writing_leaf_keeps_the_system_default() -> None:
 def test_a_pytest_criterion_on_a_read_only_leaf_still_runs_code_test() -> None:
     """A criterion nobody would check is worse than a redundant layer (host 0.9.8)."""
 
-    assert "code_test" in occurrence_policy(
-        ("pytest:tests/test_x.py",), DEPLOYED, read_only=True
-    )
+    assert "code_test" in occurrence_policy(("pytest:tests/test_x.py",), DEPLOYED, read_only=True)
 
 
 def test_a_declared_policy_is_narrowed_but_not_rewritten_for_a_read_only_leaf() -> None:

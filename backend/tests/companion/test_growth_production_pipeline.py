@@ -289,26 +289,21 @@ async def test_candidate_terminal_extension_persists_model_authored_skill():
         "effects": ["external_send", "read_only"]
     }
     with pytest.raises(ValueError, match="candidate_allowed_tools_mismatch"):
-        extension.product_and_receipt(
-            {**structured, "allowed_tools": ["memory_recall"]}
-        )
+        extension.product_and_receipt({**structured, "allowed_tools": ["memory_recall"]})
     receipt_ref = await extension.apply_terminal_commit(
         transaction,
         record=SimpleNamespace(run_id="run-1"),
         terminal_event=SimpleNamespace(
             kind="run.final",
-            payload={
-                "text": json.dumps(
-                    structured
-                )
-            },
+            payload={"text": json.dumps(structured)},
         ),
     )
     assert receipt_ref.kind == "deskpet.candidate-draft.v1"
     assert transaction.receipt is not None
     assert transaction.material is not None
-    assert hashlib_sha256(transaction.material["archive_bytes"]) == (
-        transaction.receipt[0]["archive_hash"]
+    assert (
+        hashlib_sha256(transaction.material["archive_bytes"])
+        == (transaction.receipt[0]["archive_hash"])
     )
 
     fenced_transaction = _Transaction()
@@ -318,11 +313,7 @@ async def test_candidate_terminal_extension_persists_model_authored_skill():
         terminal_event=SimpleNamespace(
             kind="run.final",
             status="succeeded",
-            payload={
-                "text": "```json\n"
-                + json.dumps(structured, ensure_ascii=False)
-                + "\n```"
-            },
+            payload={"text": "```json\n" + json.dumps(structured, ensure_ascii=False) + "\n```"},
         ),
     )
     assert fenced_ref.kind == "deskpet.candidate-draft.v1"
@@ -564,9 +555,7 @@ async def test_built_candidate_retry_resumes_exact_evaluation_admission():
         },
     )
 
-    assert admitted == [
-        (OWNER, proposal, "candidate-1", ("event-1",), 0)
-    ]
+    assert admitted == [(OWNER, proposal, "candidate-1", ("event-1",), 0)]
     assert store.claim_calls == 0
 
 
@@ -661,8 +650,7 @@ class _EvaluationSettlementStore:
         assert owner == OWNER
         assert candidate_id == "candidate-1"
         return SimpleNamespace(
-            candidate_id=candidate_id,
-            package=SimpleNamespace(candidate_package_hash="a" * 64)
+            candidate_id=candidate_id, package=SimpleNamespace(candidate_package_hash="a" * 64)
         )
 
     def create_evaluation_report(self, owner, **kwargs):
@@ -789,9 +777,7 @@ async def test_failed_semantic_evaluation_invalidates_candidate_and_replans():
             "candidate_status": "failed",
             "improved": True,
             "baseline_regression": False,
-            "explanation": (
-                "Missing explicit config error and partial-send reporting."
-            ),
+            "explanation": ("Missing explicit config error and partial-send reporting."),
         },
         terminal_payload={"text": "{}"},
         artifact_refs=(),
@@ -813,9 +799,7 @@ async def test_failed_semantic_evaluation_invalidates_candidate_and_replans():
     replan = store.report["failed_replan"]
     assert replan["candidate_id"] == "candidate-1"
     assert replan["exhausted"] is False
-    assert replan["event"]["reason_code"] == (
-        "independent_evaluation_failed_replan"
-    )
+    assert replan["event"]["reason_code"] == ("independent_evaluation_failed_replan")
     assert replan["event"]["payload"]["replan_attempt"] == 1
     payload = replan["job"]["payload"]
     assert payload["request_payload"]["semantic_replan_attempt"] == 1
@@ -867,9 +851,7 @@ async def test_failed_semantic_evaluation_replan_is_bounded():
             "case_id": "case-1",
             "suite_hash": "suite-1",
             "proposal": _candidate_retry_proposal().to_dict(),
-            "semantic_replan_attempt": (
-                pipeline._MAX_SEMANTIC_REPLAN_ATTEMPTS
-            ),
+            "semantic_replan_attempt": (pipeline._MAX_SEMANTIC_REPLAN_ATTEMPTS),
         },
     )
 
@@ -953,8 +935,7 @@ async def test_reminder_draft_stage_validates_frozen_facts_and_returns_durable_b
         purpose="delegated_task",
         evidence_ids=tuple(payload["evidence_ids"]),
         delegated_grants=tuple(
-            DelegatedPreparationGrant.from_mapping(item)
-            for item in payload["delegated_grants"]
+            DelegatedPreparationGrant.from_mapping(item) for item in payload["delegated_grants"]
         ),
     )
     base = PreparedRunContextV1(persistence_required=True)
@@ -988,10 +969,7 @@ async def test_reminder_draft_stage_validates_frozen_facts_and_returns_durable_b
         status="succeeded",
         result_ref="companion-background:reminder-draft-job:execution-run-1",
         result_hash="a" * 64,
-        text=(
-            "本周已完成角色移动；待办是接入存档；"
-            "风险是移动端性能。"
-        ),
+        text=("本周已完成角色移动；待办是接入存档；风险是移动端性能。"),
         structured_result=None,
         terminal_payload={"text": "draft"},
         artifact_refs=(),
@@ -1024,8 +1002,7 @@ async def test_reminder_draft_stage_fails_closed_on_external_send_request():
         purpose="delegated_task",
         evidence_ids=tuple(payload["evidence_ids"]),
         delegated_grants=tuple(
-            DelegatedPreparationGrant.from_mapping(item)
-            for item in payload["delegated_grants"]
+            DelegatedPreparationGrant.from_mapping(item) for item in payload["delegated_grants"]
         ),
     )
 

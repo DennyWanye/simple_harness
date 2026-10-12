@@ -84,8 +84,10 @@ def _evidence(
             " state text, settled_at real)",
         ],
         [
-            ("insert into foreground_run_heads values (?,?,?,?)",
-             (f"h{n}", "COMPLETED", run, 100.0 + n))
+            (
+                "insert into foreground_run_heads values (?,?,?,?)",
+                (f"h{n}", "COMPLETED", run, 100.0 + n),
+            )
             for n, run in enumerate(foreground_runs or [_RUN])
         ]
         + [
@@ -158,8 +160,9 @@ def _evidence(
                     # 被闸门拦下的那次请求从未发出, 所以没有 usage 可落。
                     None
                     if inv["input_tokens"] is None
-                    else json.dumps({"usage": {"input_tokens": inv["input_tokens"],
-                                               "output_tokens": 100}}),
+                    else json.dumps(
+                        {"usage": {"input_tokens": inv["input_tokens"], "output_tokens": 100}}
+                    ),
                     inv.get("error_code", ""),
                 ),
             )
@@ -180,10 +183,19 @@ def _evidence(
 
 def _turn(ordinal: int, *, planned: int, billed: int, run: str = _RUN) -> tuple[dict, dict]:
     fingerprint = f"fp-{run[-8:]}-{ordinal}"
-    receipt = {"run": run, "ordinal": ordinal, "revision": ordinal,
-               "fingerprint": fingerprint, "planned": planned}
-    invocation = {"run": run, "ordinal": ordinal, "fingerprint": fingerprint,
-                  "input_tokens": billed}
+    receipt = {
+        "run": run,
+        "ordinal": ordinal,
+        "revision": ordinal,
+        "fingerprint": fingerprint,
+        "planned": planned,
+    }
+    invocation = {
+        "run": run,
+        "ordinal": ordinal,
+        "fingerprint": fingerprint,
+        "input_tokens": billed,
+    }
     return receipt, invocation
 
 
@@ -212,8 +224,7 @@ def test_a6_3_fails_on_a_billed_prompt_over_budget_even_with_a_timeout_turn(tmp_
 
     pairs = [_turn(n, planned=20_000 + 300 * n, billed=13_000 + 4_500 * n) for n in range(1, 15)]
     receipts, invocations = _split(pairs)
-    ev = _evidence(tmp_path, receipts=receipts, invocations=invocations,
-                   progress=_TIMEOUT_PROGRESS)
+    ev = _evidence(tmp_path, receipts=receipts, invocations=invocations, progress=_TIMEOUT_PROGRESS)
     try:
         item = _a6_3(ev)
     finally:
@@ -352,8 +363,9 @@ def test_a6_3_judges_the_foreground_lane_and_reports_the_others_separately(tmp_p
     other, other_inv = _turn(1, planned=9_000, billed=40_000, run="product-sdk-workflow")
     receipts.append(other)
     invocations.append(other_inv)
-    ev = _evidence(tmp_path, receipts=receipts, invocations=invocations,
-                   foreground_runs=foreground_runs)
+    ev = _evidence(
+        tmp_path, receipts=receipts, invocations=invocations, foreground_runs=foreground_runs
+    )
     try:
         item = _a6_3(ev)
     finally:

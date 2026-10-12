@@ -39,8 +39,7 @@ class ProjectionSourceReceipt:
 
 async def projection_source_schema_ready(db: aiosqlite.Connection) -> bool:
     cursor = await db.execute(
-        "SELECT 1 FROM sqlite_master WHERE type='table' "
-        "AND name='task_scope_projection_sources'"
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='task_scope_projection_sources'"
     )
     result = await cursor.fetchone()
     await cursor.close()
@@ -50,9 +49,7 @@ async def projection_source_schema_ready(db: aiosqlite.Connection) -> bool:
 def _fold_hash(domain: str, hashes: list[str]) -> str:
     digest = hashlib.sha256(f"{domain}\0".encode()).hexdigest()
     for value in hashes:
-        digest = canonical_hash(
-            {"domain": domain, "prior_root": digest, "item_hash": value}
-        )
+        digest = canonical_hash({"domain": domain, "prior_root": digest, "item_hash": value})
     return digest
 
 

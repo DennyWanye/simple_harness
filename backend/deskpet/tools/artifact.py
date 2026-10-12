@@ -17,6 +17,7 @@ WI-T1.1 — Stage 1 第一基石。所有产生"用户可操作产物"的工具�
   - 30s 超时 → sha256 字段留空，receipt 由调用方标 ``sha256_pending`` 走
     VerifyGate 放行路径（PRD D6 末段 + TG-9 T9-16）。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -79,6 +80,7 @@ ActionId = Literal["open", "show_in_folder", "copy_path", "save_as", "preview"]
 @dataclass
 class ArtifactAction:
     """前端按 kind 默认 + 工具可显式覆盖。"""
+
     id: ActionId
     label: str = ""
 
@@ -96,15 +98,21 @@ def _default_actions_for(kind: str) -> list[ArtifactAction]:
             ArtifactAction(id="save_as", label="另存为"),
         ]
     if kind == "url":
-        return [ArtifactAction(id="open", label="在浏览器中打开"),
-                ArtifactAction(id="copy_path", label="复制链接")]
+        return [
+            ArtifactAction(id="open", label="在浏览器中打开"),
+            ArtifactAction(id="copy_path", label="复制链接"),
+        ]
     if kind == "text":
-        return [ArtifactAction(id="preview", label="预览"),
-                ArtifactAction(id="copy_path", label="复制内容")]
+        return [
+            ArtifactAction(id="preview", label="预览"),
+            ArtifactAction(id="copy_path", label="复制内容"),
+        ]
     if kind == "image":
-        return [ArtifactAction(id="open", label="打开"),
-                ArtifactAction(id="show_in_folder", label="在文件夹中显示"),
-                ArtifactAction(id="save_as", label="另存为")]
+        return [
+            ArtifactAction(id="open", label="打开"),
+            ArtifactAction(id="show_in_folder", label="在文件夹中显示"),
+            ArtifactAction(id="save_as", label="另存为"),
+        ]
     if kind == "table":
         return [ArtifactAction(id="preview", label="预览")]
     return []
@@ -121,6 +129,7 @@ class ToolArtifact:
 
     字段顺序必须稳定（用于字节级 golden file 对账，TG-12 T12-1）。
     """
+
     kind: Kind
     path: str | None = None
     url: str | None = None
@@ -152,9 +161,7 @@ class ToolArtifact:
                 self.title = "untitled"
         # 默认 created_at = now（UTC, ISO-8601 with Z）
         if not self.created_at:
-            self.created_at = datetime.now(UTC).strftime(
-                "%Y-%m-%dT%H:%M:%SZ"
-            )
+            self.created_at = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
         # 默认 mime（仅 file）
         if self.kind in ("file", "image") and self.path and not self.mime:
             ext = Path(self.path).suffix.lower()
@@ -170,15 +177,17 @@ class ToolArtifact:
         actions 序列化为 [{id, label}, ...]。
         """
         d = asdict(self)
-        d["actions"] = [a if isinstance(a, dict) else a.to_dict()
-                        if hasattr(a, "to_dict") else dict(a)
-                        for a in self.actions]
+        d["actions"] = [
+            a if isinstance(a, dict) else a.to_dict() if hasattr(a, "to_dict") else dict(a)
+            for a in self.actions
+        ]
         # asdict 已展开 ArtifactAction 为 dict，但 .to_dict() 路径更稳；
         # 这里兜底确保 list[dict]。
         return d
 
 
 # ─── sha256 异步 ──────────────────────────────────────────────
+
 
 def _sha256_file_sync(path: Path) -> str:
     """同步算 sha256（线程池里调）。读 1MB chunk 防 OOM。"""
@@ -223,7 +232,9 @@ async def sha256_file_async(
     except TimeoutError:
         logger.warning(
             "sha256_file_async timed out after %.2fs: %s (size=%d)",
-            timeout_s, path, size,
+            timeout_s,
+            path,
+            size,
         )
         return None
     except Exception as exc:  # noqa: BLE001
@@ -232,6 +243,7 @@ async def sha256_file_async(
 
 
 # ─── result JSON → ToolArtifact 推断 ─────────────────────────
+
 
 def extract_artifacts_from_result(
     *,
@@ -267,7 +279,8 @@ def extract_artifacts_from_result(
             except (ValueError, TypeError) as exc:
                 logger.warning(
                     "extract_artifacts: tool %r emit_invalid_artifact: %s",
-                    tool_name, exc,
+                    tool_name,
+                    exc,
                 )
         return out
 
@@ -300,6 +313,7 @@ def _artifact_from_dict(d: dict[str, Any]) -> ToolArtifact:
 
 
 # ─── registry 包装 helper ────────────────────────────────────
+
 
 def maybe_add_artifacts(
     *,

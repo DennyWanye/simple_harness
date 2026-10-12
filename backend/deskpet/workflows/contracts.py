@@ -29,9 +29,7 @@ def validate_json_value(value: object, *, path: str = "$") -> None:
         return
     if isinstance(value, float):
         if not math.isfinite(value):
-            raise InvalidStatePatch(
-                "non_finite_number", f"{path} must contain a finite number"
-            )
+            raise InvalidStatePatch("non_finite_number", f"{path} must contain a finite number")
         return
     if isinstance(value, list):
         for index, item in enumerate(value):
@@ -40,9 +38,7 @@ def validate_json_value(value: object, *, path: str = "$") -> None:
     if isinstance(value, dict):
         for key, item in value.items():
             if not isinstance(key, str):
-                raise InvalidStatePatch(
-                    "non_string_key", f"{path} contains a non-string key"
-                )
+                raise InvalidStatePatch("non_string_key", f"{path} contains a non-string key")
             validate_json_value(item, path=f"{path}.{key}")
         return
     raise InvalidStatePatch(
@@ -178,9 +174,7 @@ class ChannelSpec:
                 "channel_without_writer", "A channel must allow at least one writer"
             )
         if not self.item_id_key:
-            raise WorkflowDefinitionError(
-                "invalid_item_id_key", "item_id_key must not be empty"
-            )
+            raise WorkflowDefinitionError("invalid_item_id_key", "item_id_key must not be empty")
 
 
 @dataclass(frozen=True)
@@ -245,14 +239,10 @@ class NodeExecutionIdentity:
             attempt=attempt,
             first_attempt_time=getattr(execution_info, "node_first_attempt_time", None),
             activation_id=(
-                str(value)
-                if (value := getattr(execution_info, "activation_id", None))
-                else None
+                str(value) if (value := getattr(execution_info, "activation_id", None)) else None
             ),
             invocation_key=(
-                str(value)
-                if (value := getattr(execution_info, "invocation_key", None))
-                else None
+                str(value) if (value := getattr(execution_info, "invocation_key", None)) else None
             ),
         )
 
@@ -315,12 +305,8 @@ class WorkflowContext:
         return replace(self, identity=identity, _writer_node_id=identity.node_id)
 
 
-NodeHandler: TypeAlias = Callable[
-    [WorkflowState, WorkflowContext], Awaitable[StatePatch]
-]
-RouteSelector: TypeAlias = Callable[
-    [WorkflowState, WorkflowContext], str | Awaitable[str]
-]
+NodeHandler: TypeAlias = Callable[[WorkflowState, WorkflowContext], Awaitable[StatePatch]]
+RouteSelector: TypeAlias = Callable[[WorkflowState, WorkflowContext], str | Awaitable[str]]
 
 
 @dataclass(frozen=True)
@@ -334,9 +320,7 @@ class RetryPolicy:
     def __post_init__(self) -> None:
         object.__setattr__(self, "retryable_codes", frozenset(self.retryable_codes))
         if self.max_attempts < 1:
-            raise WorkflowDefinitionError(
-                "invalid_retry_policy", "max_attempts must be at least 1"
-            )
+            raise WorkflowDefinitionError("invalid_retry_policy", "max_attempts must be at least 1")
         if self.initial_delay_seconds < 0 or self.max_delay_seconds < 0:
             raise WorkflowDefinitionError(
                 "invalid_retry_policy", "retry delays must not be negative"

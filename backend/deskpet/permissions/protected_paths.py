@@ -42,7 +42,15 @@ Op = Literal["read", "write"]
 Verdict = Literal["allow", "ask"]
 
 # Credentials and keys: reading them is as sensitive as writing.
-_CREDENTIAL_DIRS = (".ssh", ".aws", ".gnupg", ".kube", ".grok", ".config/gcloud", "Library/Keychains")
+_CREDENTIAL_DIRS = (
+    ".ssh",
+    ".aws",
+    ".gnupg",
+    ".kube",
+    ".grok",
+    ".config/gcloud",
+    "Library/Keychains",
+)
 _CREDENTIAL_FILES = (".docker/config.json", ".netrc")
 _CREDENTIAL_NAME = re.compile(
     r"^(?:\.env(?:\..+)?|llm_runtime.*\.json|id_rsa.*|id_ed25519.*|id_ecdsa.*|login\.keychain.*|"
@@ -50,13 +58,48 @@ _CREDENTIAL_NAME = re.compile(
     re.IGNORECASE,
 )
 # Operating-system directories: reading is fine, writing asks.
-_SYSTEM_ROOTS_POSIX = ("/System", "/usr", "/bin", "/sbin", "/etc", "/private/etc", "/private/var/db", "/Library")
+_SYSTEM_ROOTS_POSIX = (
+    "/System",
+    "/usr",
+    "/bin",
+    "/sbin",
+    "/etc",
+    "/private/etc",
+    "/private/var/db",
+    "/Library",
+)
 _SYSTEM_EXCEPTIONS_POSIX = ("/usr/local",)
 
-READ_TOOL_HINTS = ("read", "list", "glob", "grep", "search", "ocr", "extract", "view", "inspect", "stat", "find")
+READ_TOOL_HINTS = (
+    "read",
+    "list",
+    "glob",
+    "grep",
+    "search",
+    "ocr",
+    "extract",
+    "view",
+    "inspect",
+    "stat",
+    "find",
+)
 PATH_ARGUMENT_KEYS = (
-    "path", "file_path", "dir_path", "directory", "source", "src", "destination", "dest", "target",
-    "output_path", "output", "input_path", "image_path", "cwd", "save_path", "filename",
+    "path",
+    "file_path",
+    "dir_path",
+    "directory",
+    "source",
+    "src",
+    "destination",
+    "dest",
+    "target",
+    "output_path",
+    "output",
+    "input_path",
+    "image_path",
+    "cwd",
+    "save_path",
+    "filename",
 )
 
 MESSAGE = (
@@ -163,7 +206,9 @@ def protected_reason(path: Path, op: Op) -> str | None:
     """Which protected class ``path`` (canonical) falls in for ``op``, if any."""
 
     home = _home()
-    if any(_under(path, home / d) for d in _CREDENTIAL_DIRS) or any(_under(path, home / f) for f in _CREDENTIAL_FILES):
+    if any(_under(path, home / d) for d in _CREDENTIAL_DIRS) or any(
+        _under(path, home / f) for f in _CREDENTIAL_FILES
+    ):
         return "credential"
     if _CREDENTIAL_NAME.match(path.name):
         return "credential"
@@ -187,8 +232,13 @@ def protected_reason(path: Path, op: Op) -> str | None:
     return None
 
 
-def classify(path: str | os.PathLike[str], op: Op, *, base: Path | None = None,
-             extra_allowed: Iterable[str | os.PathLike[str]] = ()) -> Verdict:
+def classify(
+    path: str | os.PathLike[str],
+    op: Op,
+    *,
+    base: Path | None = None,
+    extra_allowed: Iterable[str | os.PathLike[str]] = (),
+) -> Verdict:
     canonical = _canonical(path, base)
     reason = protected_reason(canonical, op)
     if reason == "credential":
@@ -218,13 +268,22 @@ def shell_tokens(command: str) -> list[str]:
         word = os.path.expandvars(word)  # ``cat $HOME/.ssh/key`` names the same file
         for part in re.split(r"[=<>|;&]+", word):
             part = part.strip("\"'")
-            if part and ("/" in part or "\\" in part or part.startswith(("~", ".")) or _CREDENTIAL_NAME.match(Path(part).name)):
+            if part and (
+                "/" in part
+                or "\\" in part
+                or part.startswith(("~", "."))
+                or _CREDENTIAL_NAME.match(Path(part).name)
+            ):
                 out.append(part)
     return out
 
 
 def credential_reads_in_command(command: str, base: Path | None = None) -> list[Path]:
-    return [p for p in (_canonical(t, base) for t in shell_tokens(command)) if protected_reason(p, "read") == "credential"]
+    return [
+        p
+        for p in (_canonical(t, base) for t in shell_tokens(command))
+        if protected_reason(p, "read") == "credential"
+    ]
 
 
 def paths_in_arguments(arguments: Mapping[str, Any]) -> list[str]:
@@ -288,7 +347,9 @@ def _key(path: Path, op: Op) -> tuple[str, Op]:
 def granted(session_id: str, path: Path, op: Op, *, consume: bool) -> bool:
     key = _key(path, op)
     with _lock:
-        if key in _session_grants.get(session_id, set()) or (op == "read" and _key(path, "write") in _session_grants.get(session_id, set())):
+        if key in _session_grants.get(session_id, set()) or (
+            op == "read" and _key(path, "write") in _session_grants.get(session_id, set())
+        ):
             return True
         once = _once_grants.get(session_id, set())
         if key in once:
@@ -303,7 +364,11 @@ async def request(session_id: str, path: Path, op: Op, tool: str, reason: str) -
 
     with _lock:
         for pending in _pending.values():
-            if (pending.session_id, _fold(Path(pending.path)), pending.op) == (session_id, _fold(path), op):
+            if (pending.session_id, _fold(Path(pending.path)), pending.op) == (
+                session_id,
+                _fold(path),
+                op,
+            ):
                 existing = pending
                 break
         else:
@@ -315,9 +380,19 @@ async def request(session_id: str, path: Path, op: Op, tool: str, reason: str) -
     # disconnected must come back on the model's retry (the UI dedupes by id).
     if _notifier is not None:
         try:
-            await _notifier({"type": "protected_path_request", "payload": {
-                "request_id": target.request_id, "session_id": session_id, "path": target.path,
-                "op": op, "tool": tool, "reason": _REASON_LABEL.get(reason, reason)}})
+            await _notifier(
+                {
+                    "type": "protected_path_request",
+                    "payload": {
+                        "request_id": target.request_id,
+                        "session_id": session_id,
+                        "path": target.path,
+                        "op": op,
+                        "tool": tool,
+                        "reason": _REASON_LABEL.get(reason, reason),
+                    },
+                }
+            )
         except Exception as error:  # noqa: BLE001 - the refusal already reached the model
             logger.warning("protected_path_request_push_failed: %s", error)
     return target
@@ -350,14 +425,18 @@ def is_credential(path: str | os.PathLike[str]) -> bool:
 
 
 def refusal_message(path: Path, op: Op, reason: str) -> str:
-    return MESSAGE.format(path=path, reason=_REASON_LABEL.get(reason, reason),
-                          op_label="读取" if op == "read" else "写入")
+    return MESSAGE.format(
+        path=path,
+        reason=_REASON_LABEL.get(reason, reason),
+        op_label="读取" if op == "read" else "写入",
+    )
 
 
 # ------------------------------------------------------------ clearance
 
 _clearance: contextvars.ContextVar[frozenset[tuple[str, Op]]] = contextvars.ContextVar(
-    "protected_path_clearance", default=frozenset())
+    "protected_path_clearance", default=frozenset()
+)
 
 
 @contextlib.contextmanager
@@ -369,8 +448,13 @@ def dispatch_clearance(cleared: Iterable[tuple[Path, Op]]) -> Iterator[None]:
         _clearance.reset(token)
 
 
-def guard(path: str | os.PathLike[str], op: Op, *, base: Path | None = None,
-          extra_allowed: Iterable[str | os.PathLike[str]] = ()) -> str | None:
+def guard(
+    path: str | os.PathLike[str],
+    op: Op,
+    *,
+    base: Path | None = None,
+    extra_allowed: Iterable[str | os.PathLike[str]] = (),
+) -> str | None:
     """Per-tool containment check: ``None`` admits, else the refusal text.
 
     Paths the central checkpoint already cleared for this dispatch pass; so do
@@ -385,8 +469,14 @@ def guard(path: str | os.PathLike[str], op: Op, *, base: Path | None = None,
     return refusal_message(canonical, op, protected_reason(canonical, op) or "self")
 
 
-async def check_call(session_id: str, tool: str, arguments: Mapping[str, Any], *, base: Path | None,
-                     extra_allowed: Iterable[str | os.PathLike[str]] = ()) -> tuple[str | None, list[tuple[Path, Op]]]:
+async def check_call(
+    session_id: str,
+    tool: str,
+    arguments: Mapping[str, Any],
+    *,
+    base: Path | None,
+    extra_allowed: Iterable[str | os.PathLike[str]] = (),
+) -> tuple[str | None, list[tuple[Path, Op]]]:
     """The central checkpoint for one tool call.
 
     Returns ``(refusal, cleared)``: a refusal text when some protected path has
@@ -396,7 +486,9 @@ async def check_call(session_id: str, tool: str, arguments: Mapping[str, Any], *
     op = op_for_tool(tool)
     cleared: list[tuple[Path, Op]] = []
     extra = list(extra_allowed)
-    targets: list[tuple[Path, Op]] = [(_canonical(raw, base), op) for raw in paths_in_arguments(arguments)]
+    targets: list[tuple[Path, Op]] = [
+        (_canonical(raw, base), op) for raw in paths_in_arguments(arguments)
+    ]
     command = arguments.get("command")
     if isinstance(command, str):
         targets += [(p, "read") for p in credential_reads_in_command(command, base)]
@@ -413,8 +505,23 @@ async def check_call(session_id: str, tool: str, arguments: Mapping[str, Any], *
 
 
 __all__ = (
-    "PATH_ARGUMENT_KEYS", "PendingRequest", "allowed_roots", "check_call", "classify", "decide",
-    "credential_reads_in_command", "dispatch_clearance", "granted", "guard", "is_credential", "op_for_tool",
-    "paths_in_arguments", "protected_reason", "shell_tokens",
-    "refusal_message", "request", "reset_for_tests", "set_notifier",
+    "PATH_ARGUMENT_KEYS",
+    "PendingRequest",
+    "allowed_roots",
+    "check_call",
+    "classify",
+    "decide",
+    "credential_reads_in_command",
+    "dispatch_clearance",
+    "granted",
+    "guard",
+    "is_credential",
+    "op_for_tool",
+    "paths_in_arguments",
+    "protected_reason",
+    "shell_tokens",
+    "refusal_message",
+    "request",
+    "reset_for_tests",
+    "set_notifier",
 )

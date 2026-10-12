@@ -32,6 +32,7 @@ Three orthogonal questions this module answers:
 The ``DESKPET_*`` env vars exist so CI, E2E scripts, and dev workflows
 can pin paths explicitly without touching the filesystem defaults.
 """
+
 from __future__ import annotations
 
 import logging
@@ -253,9 +254,7 @@ def user_data_dir() -> Path:
         # backend/userdata — paths.py lives in backend/, so .parent is it.
         resolved = Path(__file__).resolve().parent / "userdata"
     else:
-        resolved = Path(
-            platformdirs.user_data_dir(_APP_NAME, appauthor=_APP_AUTHOR, roaming=True)
-        )
+        resolved = Path(platformdirs.user_data_dir(_APP_NAME, appauthor=_APP_AUTHOR, roaming=True))
     _USER_DATA_DIR_CACHE = resolved
     return resolved
 

@@ -16,6 +16,7 @@ asserts:
   2. No `hallucination` reason fires
   3. No auto_resume_engaged with reason=hallucination
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -71,10 +72,14 @@ async def main() -> int:
         return 1
 
     print("Connected. Sending legitimate-exploration prompt.")
-    await ws.send(json.dumps({
-        "type": "chat_v2",
-        "payload": {"text": LEGIT_PROMPT, "session_id": "p6-legit-test"},
-    }))
+    await ws.send(
+        json.dumps(
+            {
+                "type": "chat_v2",
+                "payload": {"text": LEGIT_PROMPT, "session_id": "p6-legit-test"},
+            }
+        )
+    )
 
     started = time.time()
     tool_count = 0
@@ -100,7 +105,9 @@ async def main() -> int:
                 tc = payload.get("tool_call") or {}
                 if tc.get("name") == "read_file":
                     read_file_count += 1
-                print(f"  [tool_call #{tool_count}] {tc.get('name')} iter={payload.get('iteration')}")
+                print(
+                    f"  [tool_call #{tool_count}] {tc.get('name')} iter={payload.get('iteration')}"
+                )
             elif mtype == "tool_result":
                 pass
             elif mtype == "chat_v2_final":
@@ -156,7 +163,9 @@ async def main() -> int:
         print("[PASS] agent finished naturally, no false hallucination.")
         return 0
     if terminate_reason in ("error_tool_budget", "error_max_turns"):
-        print(f"[WARN] Agent hit a different hard cap ({terminate_reason}) but NOT hallucination - fix verified.")
+        print(
+            f"[WARN] Agent hit a different hard cap ({terminate_reason}) but NOT hallucination - fix verified."
+        )
         return 0
     print(f"[WARN] Terminated with unexpected reason {terminate_reason}")
     return 1

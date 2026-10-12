@@ -222,8 +222,7 @@ READ_BINDING_AUTH_MESSAGE = (
 READ_BINDING_REVISED_MESSAGE = (
     "The directory containing the requested path has been bound to this task "
     "(a new workspace binding revision). The read was not executed, because "
-    "this Run's route receipt still names the previous binding revision. "
-    + _REROUTE_STEP
+    "this Run's route receipt still names the previous binding revision. " + _REROUTE_STEP
 )
 READ_ROOT_TOO_BROAD_MESSAGE = (
     "Read rejected: binding the directory that would be needed for this path "
@@ -372,9 +371,7 @@ def containing_root(candidate: str, roots: Sequence[str]) -> str | None:
     return None
 
 
-def read_arguments_violation(
-    arguments: Mapping[str, Any], root: str | Sequence[str]
-) -> bool:
+def read_arguments_violation(arguments: Mapping[str, Any], root: str | Sequence[str]) -> bool:
     """Does any path/pattern argument leave the bound root set?  Fail closed."""
 
     return read_target_violation(arguments, root)[1] is not None
@@ -612,9 +609,7 @@ class WorkspaceReadGate:
             return hashes
         return tuple(sorted(hashes, key=lambda value: (order.get(value, 1 << 31), value)))
 
-    async def bound_context(
-        self, run_id: str
-    ) -> tuple[BoundReadContext | None, str | None]:
+    async def bound_context(self, run_id: str) -> tuple[BoundReadContext | None, str | None]:
         """``(read authority, reason code)`` for one Run's durable task route.
 
         Exactly one of the two is set.  ``task_only=True``: a standalone route
@@ -624,18 +619,17 @@ class WorkspaceReadGate:
         ``task_scope_update``.
         """
 
-        decision = await self._route_ledger.latest_route_decision_for_run(
-            run_id, task_only=True
-        )
+        decision = await self._route_ledger.latest_route_decision_for_run(run_id, task_only=True)
         if decision is None or not decision.get("task_scope_id"):
             return None, READ_ROUTE_REASON
         scope_id = str(decision["task_scope_id"])
         route_receipt = await self._route_ledger.read_route_receipt(
             run_id, str(decision.get("receipt_id") or "")
         )
-        if route_receipt is None or str(
-            getattr(route_receipt, "task_scope_id", "") or ""
-        ) != scope_id:
+        if (
+            route_receipt is None
+            or str(getattr(route_receipt, "task_scope_id", "") or "") != scope_id
+        ):
             return None, READ_ROOT_REASON
         # Same lineage the EffectGate walks for a write: the *exact* binding
         # revision this route committed, never the live head.  A later append
@@ -728,9 +722,7 @@ class WorkspaceReadGate:
             code,
             proposal_ref or "-",
         )
-        return ToolResult.rejected(
-            reject_call_id, code, read_gate_public_message(code)
-        )
+        return ToolResult.rejected(reject_call_id, code, read_gate_public_message(code))
 
     # ----------------------------------------------------- F-Z1b proposal
 
@@ -935,9 +927,7 @@ class WorkspaceReadGate:
                         db,
                         sdk_run_id=run_id,
                         payload_kind=READ_GATE_AUDIT_KIND,
-                        reason_code=(
-                            f"{READ_GATE_AUDIT_PREFIX}{tool_name}.{reason_code}{suffix}"
-                        ),
+                        reason_code=(f"{READ_GATE_AUDIT_PREFIX}{tool_name}.{reason_code}{suffix}"),
                         payload_hash=canonical_hash(_hashable(payload)),
                         now=float(self._clock()),
                     )
@@ -972,10 +962,7 @@ async def workspace_read_audit_rows(
         )
         rows = await cursor.fetchall()
         await cursor.close()
-    return [
-        (None if row[0] is None else str(row[0]), str(row[1]), str(row[2]))
-        for row in rows
-    ]
+    return [(None if row[0] is None else str(row[0]), str(row[1]), str(row[2])) for row in rows]
 
 
 def _hashable(payload: Mapping[str, Any]) -> dict[str, Any]:

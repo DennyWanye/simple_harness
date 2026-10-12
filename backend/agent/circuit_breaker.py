@@ -27,6 +27,7 @@ project-specific, and depending on a 3rd-party breaker would import
 threading semantics that don't compose with the agent loop's asyncio
 model.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -41,9 +42,9 @@ from dataclasses import dataclass
 class _BreakerState:
     """Per-(sid, tool) record. Mutated in-place under the breaker lock."""
 
-    state: str = "CLOSED"          # CLOSED | OPEN | HALF_OPEN
+    state: str = "CLOSED"  # CLOSED | OPEN | HALF_OPEN
     failure_count: int = 0
-    opened_at: float = 0.0          # monotonic seconds when state→OPEN
+    opened_at: float = 0.0  # monotonic seconds when state→OPEN
     half_open_in_flight: bool = False  # True between probe-allow and probe-resolve
 
 
@@ -68,9 +69,7 @@ class ToolCircuitBreaker:
         if threshold <= 0:
             raise ValueError(f"threshold must be > 0, got {threshold!r}")
         if cooldown_seconds <= 0:
-            raise ValueError(
-                f"cooldown_seconds must be > 0, got {cooldown_seconds!r}"
-            )
+            raise ValueError(f"cooldown_seconds must be > 0, got {cooldown_seconds!r}")
         self._threshold = int(threshold)
         self._cooldown = float(cooldown_seconds)
         self._clock = clock

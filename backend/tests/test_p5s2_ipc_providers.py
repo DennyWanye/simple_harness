@@ -29,6 +29,7 @@ identity introduced by ``session-provider-authority`` v23:
 or ``expected_versions`` for reorder. Omitting them is a ``missing_field``
 error, not a mutation — see ``_expect_identity`` below.
 """
+
 from __future__ import annotations
 
 import json
@@ -182,9 +183,7 @@ async def fresh_session_db(tmp_path: Path):
 
 def _ws_open(client: TestClient, sid: str = "default"):
     """Open a control ws with shared secret + drain startup frame."""
-    cm = client.websocket_connect(
-        f"/ws/control?secret={SHARED_SECRET}&session_id={sid}"
-    )
+    cm = client.websocket_connect(f"/ws/control?secret={SHARED_SECRET}&session_id={sid}")
     ws = cm.__enter__()
     _drain_startup(ws)
     return cm, ws
@@ -444,14 +443,16 @@ def test_probe_saved_provider_resolves_key_server_side(fresh_registry, monkeypat
     client = TestClient(app)
     cm, ws = _ws_open(client)
     try:
-        ws.send_json({
-            "type": "settings_providers_probe_models",
-            "payload": {
-                "provider_id": "deepseek",
-                "base_url": "https://api.deepseek.com",
-                "api_key": "",
-            },
-        })
+        ws.send_json(
+            {
+                "type": "settings_providers_probe_models",
+                "payload": {
+                    "provider_id": "deepseek",
+                    "base_url": "https://api.deepseek.com",
+                    "api_key": "",
+                },
+            }
+        )
         response = _drain_until(ws, "settings_providers_probe_models_response")
     finally:
         cm.__exit__(None, None, None)
@@ -476,14 +477,16 @@ def test_probe_saved_provider_rejects_changed_base_url(fresh_registry):
     client = TestClient(app)
     cm, ws = _ws_open(client)
     try:
-        ws.send_json({
-            "type": "settings_providers_probe_models",
-            "payload": {
-                "provider_id": "deepseek",
-                "base_url": "https://attacker.invalid/v1",
-                "api_key": "",
-            },
-        })
+        ws.send_json(
+            {
+                "type": "settings_providers_probe_models",
+                "payload": {
+                    "provider_id": "deepseek",
+                    "base_url": "https://attacker.invalid/v1",
+                    "api_key": "",
+                },
+            }
+        )
         response = _drain_until(ws, "settings_providers_probe_models_response")
     finally:
         cm.__exit__(None, None, None)
@@ -742,9 +745,7 @@ def test_providers_changed_broadcasts_to_all_conns(fresh_registry):
 
 
 @pytest.mark.asyncio
-async def test_set_provider_binding_persists(
-    fresh_registry, fresh_session_db, routing_ready
-):
+async def test_set_provider_binding_persists(fresh_registry, fresh_session_db, routing_ready):
     reg, _kc, _cfg = fresh_registry
     sdb = fresh_session_db
     await reg.add_provider(_seed_provider_args(pid="relay", api_key="sk"))
@@ -760,9 +761,7 @@ async def test_set_provider_binding_persists(
                 "payload": {
                     "session_id": "vpn-tunnel",
                     "provider_id": "relay",
-                    **await _binding_expectations(
-                        sdb, "vpn-tunnel", reg=reg, provider_id="relay"
-                    ),
+                    **await _binding_expectations(sdb, "vpn-tunnel", reg=reg, provider_id="relay"),
                 },
             }
         )
@@ -791,9 +790,7 @@ async def test_set_provider_binding_persists(
 
 
 @pytest.mark.asyncio
-async def test_set_provider_null_clears_binding(
-    fresh_registry, fresh_session_db, routing_ready
-):
+async def test_set_provider_null_clears_binding(fresh_registry, fresh_session_db, routing_ready):
     reg, _kc, _cfg = fresh_registry
     sdb = fresh_session_db
     await reg.add_provider(_seed_provider_args(pid="relay", api_key="sk"))
@@ -838,9 +835,7 @@ async def test_set_provider_null_clears_binding(
 
 
 @pytest.mark.asyncio
-async def test_set_model_alone_keeps_chain_global(
-    fresh_registry, fresh_session_db, routing_ready
-):
+async def test_set_model_alone_keeps_chain_global(fresh_registry, fresh_session_db, routing_ready):
     """User sets preferred_model on an unbound session: provider_id stays
     None (still global chain), but preferred_model is recorded."""
     reg, _kc, _cfg = fresh_registry
@@ -885,9 +880,7 @@ async def test_set_model_alone_keeps_chain_global(
 
 
 @pytest.mark.asyncio
-async def test_set_model_with_params_round_trip(
-    fresh_registry, fresh_session_db, routing_ready
-):
+async def test_set_model_with_params_round_trip(fresh_registry, fresh_session_db, routing_ready):
     """Cursor picker sends {session_id, model, params}; backend persists
     and echoes model_params."""
     reg, _kc, _cfg = fresh_registry

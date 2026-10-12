@@ -268,11 +268,16 @@ class TerminationState:
             previous_turn = 0
             previous_run = None
             for ordinal, feedback in enumerate(self.mandatory_context_repairs, 1):
-                if type(feedback) is not MandatoryContextFeedbackV1 or feedback.repair_ordinal != ordinal:
+                if (
+                    type(feedback) is not MandatoryContextFeedbackV1
+                    or feedback.repair_ordinal != ordinal
+                ):
                     raise ValueError("mandatory_context_repair_sequence_differs")
-                if (feedback.rejection.provider_turn_ordinal <= previous_turn
-                        or feedback.rejection.provider_turn_ordinal > self.provider_turns_reserved_total
-                        or (previous_run is not None and feedback.rejection.run_id != previous_run)):
+                if (
+                    feedback.rejection.provider_turn_ordinal <= previous_turn
+                    or feedback.rejection.provider_turn_ordinal > self.provider_turns_reserved_total
+                    or (previous_run is not None and feedback.rejection.run_id != previous_run)
+                ):
                     raise ValueError("mandatory_context_repair_lineage_differs")
                 previous_turn = feedback.rejection.provider_turn_ordinal
                 previous_run = feedback.rejection.run_id
@@ -280,10 +285,12 @@ class TerminationState:
             if not self.mandatory_context_repairs:
                 raise ValueError("mandatory_context_repair_phase_lacks_feedback")
             last = self.mandatory_context_repairs[-1]
-            if (last.provider_request_id != self.provider_request_id
-                    or last.response_digest != self.provider_response_digest
-                    or last.rejection.request_fingerprint != self.provider_request_fingerprint
-                    or last.rejection.provider_turn_ordinal != self.provider_turns_reserved_total):
+            if (
+                last.provider_request_id != self.provider_request_id
+                or last.response_digest != self.provider_response_digest
+                or last.rejection.request_fingerprint != self.provider_request_fingerprint
+                or last.rejection.provider_turn_ordinal != self.provider_turns_reserved_total
+            ):
                 raise ValueError("mandatory_context_repair_checkpoint_differs")
         if self.context_use_attempt is not None:
             from simple_harness.execution.context_use import ProviderContextUseAttemptV1
@@ -453,7 +460,10 @@ class TerminationState:
                 context_use_authority_scope=self.context_use_authority_scope,
             )
         if self.source_schema_version == 8:
-            result.update(schema_version=8, mandatory_context_repairs=[f.to_json() for f in self.mandatory_context_repairs])
+            result.update(
+                schema_version=8,
+                mandatory_context_repairs=[f.to_json() for f in self.mandatory_context_repairs],
+            )
         return result
 
     @classmethod
@@ -488,7 +498,9 @@ class TerminationState:
         if not isinstance(raw_repairs, list):
             raise ValueError("mandatory_context_repairs_must_be_array")
         return cls(
-            mandatory_context_repairs=tuple(MandatoryContextFeedbackV1.from_json(f) for f in raw_repairs),
+            mandatory_context_repairs=tuple(
+                MandatoryContextFeedbackV1.from_json(f) for f in raw_repairs
+            ),
             started_at=_float(value["started_at"]),
             last_observed_at=_float(value["last_observed_at"]),
             provider_turns_reserved_total=_int(value["provider_turns_reserved_total"]),

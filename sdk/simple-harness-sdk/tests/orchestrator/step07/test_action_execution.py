@@ -29,13 +29,23 @@ def _quick(monkeypatch):
 
 
 def _approve(w, action, *, nonce, deployment=ENABLED):
-    w.service.decide_approval(action["approval_request_id"], principal=ALICE, decision="grant",
-                              nonce=nonce, deployment=deployment)
+    w.service.decide_approval(
+        action["approval_request_id"],
+        principal=ALICE,
+        decision="grant",
+        nonce=nonce,
+        deployment=deployment,
+    )
 
 
 def _hand_off(w, action, deployment=ENABLED):
-    handed, reason = w.service.begin_handoff(action["action_key"], owner="orch-1", lease_seconds=30.0,
-                                             connectors=w.connectors, deployment=deployment)
+    handed, reason = w.service.begin_handoff(
+        action["action_key"],
+        owner="orch-1",
+        lease_seconds=30.0,
+        connectors=w.connectors,
+        deployment=deployment,
+    )
     assert handed is None
     return reason
 
@@ -44,8 +54,11 @@ def _hand_off(w, action, deployment=ENABLED):
 def test_hand_off_rechecks_everything_the_approval_was_bound_to(tmp_path):
     async def case():
         async with ledger_world(tmp_path) as w:
-            short = DeploymentPolicy(enabled_connectors=("file_publish",), max_action_level="L2",
-                                     approval_ttl_seconds=0.6)
+            short = DeploymentPolicy(
+                enabled_connectors=("file_publish",),
+                max_action_level="L2",
+                approval_ttl_seconds=0.6,
+            )
             pending = w.propose(candidate(target="a.md"))
             late = w.propose(candidate(target="b.md"), deployment=short)
             _approve(w, late, nonce="n-b", deployment=short)
@@ -60,7 +73,9 @@ def test_hand_off_rechecks_everything_the_approval_was_bound_to(tmp_path):
                 _hand_off(w, late),  # approved, but the approval ran out
                 _hand_off(w, v1),  # the approval was for v1 only
                 _hand_off(w, live, DeploymentPolicy()),  # the deployment changed
-                _hand_off(w, live),  # every action is linked to the operation it was materialised from
+                _hand_off(
+                    w, live
+                ),  # every action is linked to the operation it was materialised from
             ]
             assert reasons == [
                 "not_ready:AWAITING_APPROVAL",
@@ -89,7 +104,8 @@ def test_altered_stored_parameters_are_refused_at_hand_off(tmp_path):
             with w.store.transaction() as connection:
                 connection.execute(
                     "UPDATE actions SET json = json_set(json, '$.params.content_hash', ?) WHERE action_key = ?",
-                    ("e" * 64, action["action_key"]))
+                    ("e" * 64, action["action_key"]),
+                )
             assert _hand_off(w, action) == "params_hash_mismatch"
             assert w.events("ActionHandoffRefused")[-1]["reason"] == "params_hash_mismatch"
             assert w.store.get_action(action["action_key"])["handoffs"] == 0

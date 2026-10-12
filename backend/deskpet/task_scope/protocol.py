@@ -22,20 +22,46 @@ class TaskScopeProtocolError(ValueError):
 
 
 _DISCLOSURE_KEYS = {
-    "schema_version", "run_id", "subject", "recipient", "recipient_id",
-    "intended_audience", "purpose", "source", "trust", "generation",
-    "authority_ref", "reason_codes",
+    "schema_version",
+    "run_id",
+    "subject",
+    "recipient",
+    "recipient_id",
+    "intended_audience",
+    "purpose",
+    "source",
+    "trust",
+    "generation",
+    "authority_ref",
+    "reason_codes",
 }
 _REF_KEYS = {"evidence_id", "content_hash", "ordinal"}
 _EXECUTION_KEYS = {
-    "schema_version", "event_id", "run_id", "subject", "kind",
-    "public_payload", "disclosure_context", "evidence_refs",
-    "idempotency_key", "occurred_at",
+    "schema_version",
+    "event_id",
+    "run_id",
+    "subject",
+    "kind",
+    "public_payload",
+    "disclosure_context",
+    "evidence_refs",
+    "idempotency_key",
+    "occurred_at",
 }
 _PLAN_KEYS = {
-    "schema_version", "plan_id", "run_id", "subject", "task_scope_id",
-    "base_revision", "outcome", "operations", "closure_reason",
-    "source_turn_id", "disclosure_context", "evidence_refs", "idempotency_key",
+    "schema_version",
+    "plan_id",
+    "run_id",
+    "subject",
+    "task_scope_id",
+    "base_revision",
+    "outcome",
+    "operations",
+    "closure_reason",
+    "source_turn_id",
+    "disclosure_context",
+    "evidence_refs",
+    "idempotency_key",
 }
 _OPERATION_KEYS = {"operation_id", "kind", "value", "evidence_refs", "reason_code"}
 # Mirror of ``deskpet.execution.evidence_ingress.RESERVATION_KINDS`` — the S4
@@ -45,20 +71,44 @@ _OPERATION_KEYS = {"operation_id", "kind", "value", "evidence_refs", "reason_cod
 # ``context_use_recollection``: event AA's bounded re-collection receipt (event
 # AI added it here — it had shipped in the ledger but in neither vocabulary).
 _EXECUTION_KINDS = {
-    "provider_invocation", "tool_invocation", "context_snapshot",
-    "route_decision", "context_use_recollection", "run_terminal",
+    "provider_invocation",
+    "tool_invocation",
+    "context_snapshot",
+    "route_decision",
+    "context_use_recollection",
+    "run_terminal",
 }
 _MUTATION_KINDS = {
-    "goal.set", "goal.revise", "scope.include", "scope.exclude",
-    "decision.record", "decision.supersede", "plan.step.add",
-    "plan.step.revise", "plan.step.cancel", "plan.reorder", "task.pause",
-    "task.block", "task.resume", "task.complete", "resume.update",
-    "checkpoint.request", "relation.add",
+    "goal.set",
+    "goal.revise",
+    "scope.include",
+    "scope.exclude",
+    "decision.record",
+    "decision.supersede",
+    "plan.step.add",
+    "plan.step.revise",
+    "plan.step.cancel",
+    "plan.reorder",
+    "task.pause",
+    "task.block",
+    "task.resume",
+    "task.complete",
+    "resume.update",
+    "checkpoint.request",
+    "relation.add",
 }
 _FORBIDDEN_KEYS = {
-    "api_key", "access_token", "authorization", "authorization_header",
-    "cookie", "password", "private_key", "reasoning", "reasoning_content",
-    "thinking", "chain_of_thought",
+    "api_key",
+    "access_token",
+    "authorization",
+    "authorization_header",
+    "cookie",
+    "password",
+    "private_key",
+    "reasoning",
+    "reasoning_content",
+    "thinking",
+    "chain_of_thought",
 }
 _CREDENTIAL_PATTERNS = (
     re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----"),
@@ -72,7 +122,9 @@ _CREDENTIAL_PATTERNS = (
 
 def canonical_json(value: object) -> str:
     try:
-        return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
+        return json.dumps(
+            value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False
+        )
     except (TypeError, ValueError) as exc:
         raise TaskScopeProtocolError("non_canonical_json_value") from exc
 
@@ -154,7 +206,11 @@ def _validate_disclosure(value: object, run_id: str, subject: str) -> None:
         if value.get(name) is not None:
             identifier(value[name], f"disclosure_{name}", 256)
     reasons = value.get("reason_codes")
-    if not isinstance(reasons, list) or not all(isinstance(item, str) and item for item in reasons) or len(reasons) != len(set(reasons)):
+    if (
+        not isinstance(reasons, list)
+        or not all(isinstance(item, str) and item for item in reasons)
+        or len(reasons) != len(set(reasons))
+    ):
         raise TaskScopeProtocolError("disclosure_reason_codes_invalid")
 
 
@@ -167,11 +223,13 @@ def validate_refs(value: object, *, required: bool = False) -> list[dict[str, ob
             raise TaskScopeProtocolError("evidence_ref_fields_differ")
         if item.get("ordinal") != ordinal or isinstance(item.get("ordinal"), bool):
             raise TaskScopeProtocolError("evidence_ref_ordinal_invalid")
-        result.append({
-            "evidence_id": identifier(item.get("evidence_id"), "evidence_ref_id"),
-            "content_hash": digest(item.get("content_hash"), "evidence_ref_content_hash"),
-            "ordinal": ordinal,
-        })
+        result.append(
+            {
+                "evidence_id": identifier(item.get("evidence_id"), "evidence_ref_id"),
+                "content_hash": digest(item.get("content_hash"), "evidence_ref_content_hash"),
+                "ordinal": ordinal,
+            }
+        )
     if len({item["evidence_id"] for item in result}) != len(result):
         raise TaskScopeProtocolError("evidence_ref_duplicate")
     return result
@@ -227,7 +285,12 @@ def validate_execution_evidence(value: object) -> tuple[dict[str, Any], str]:
     _validate_disclosure(raw.get("disclosure_context"), raw["run_id"], raw["subject"])
     validate_refs(raw.get("evidence_refs"))
     occurred = raw.get("occurred_at")
-    if isinstance(occurred, bool) or not isinstance(occurred, (int, float)) or not math.isfinite(float(occurred)) or occurred < 0:
+    if (
+        isinstance(occurred, bool)
+        or not isinstance(occurred, (int, float))
+        or not math.isfinite(float(occurred))
+        or occurred < 0
+    ):
         raise TaskScopeProtocolError("execution_evidence_occurred_at_invalid")
     evidence_hash = canonical_hash(raw)
     if digest(getattr(value, "evidence_hash", None), "evidence_hash") != evidence_hash:
@@ -240,7 +303,14 @@ def validate_mutation_plan(value: object) -> tuple[dict[str, Any], str]:
     _schema_v1(raw.get("schema_version"), "task_scope_mutation_plan")
     if getattr(value, "schema_version", None) != raw.get("schema_version"):
         raise TaskScopeProtocolError("mutation_plan_object_json_mismatch")
-    for name in ("plan_id", "run_id", "subject", "task_scope_id", "source_turn_id", "idempotency_key"):
+    for name in (
+        "plan_id",
+        "run_id",
+        "subject",
+        "task_scope_id",
+        "source_turn_id",
+        "idempotency_key",
+    ):
         if getattr(value, name, None) != raw.get(name):
             raise TaskScopeProtocolError("mutation_plan_object_json_mismatch")
         identifier(raw.get(name), name, 512)

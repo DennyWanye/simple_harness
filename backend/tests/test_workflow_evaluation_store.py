@@ -65,7 +65,9 @@ async def test_store_compares_pass_rate_score_latency_and_errors(tmp_path):
         expected={"tests": "pass"},
     )
     left = await store.start_experiment(dataset_id=dataset.dataset_id, version_key="workflow:left")
-    right = await store.start_experiment(dataset_id=dataset.dataset_id, version_key="workflow:right")
+    right = await store.start_experiment(
+        dataset_id=dataset.dataset_id, version_key="workflow:right"
+    )
 
     left_eval = await store.record_evaluation(
         trace_id="left-trace",

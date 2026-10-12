@@ -73,8 +73,13 @@ def test_each_leaf_is_handed_the_root_criteria_linked_to_it_and_no_other(tmp_pat
         provider = FinalReviewProvider()
         provider.held.add("worker")
         async with product_world(tmp_path / "root", provider) as world:
-            mission_id = world.create({"goal": GOAL, "idempotency_key": "carried-criteria",
-                                       "success_criteria": list(CRITERIA)})["mission_id"]
+            mission_id = world.create(
+                {
+                    "goal": GOAL,
+                    "idempotency_key": "carried-criteria",
+                    "success_criteria": list(CRITERIA),
+                }
+            )["mission_id"]
             try:
                 await run_until(world, lambda: len(provider.worker_packages) == 2, timeout=40)
             finally:

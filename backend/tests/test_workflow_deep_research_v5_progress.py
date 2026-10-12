@@ -49,13 +49,18 @@ def _state() -> dict:
                 "dimensions": [
                     {"dimension_id": "core-a", "importance": "core", "question": "secret question"},
                     {"dimension_id": "core-b", "importance": "core", "question": "secret question"},
-                    {"dimension_id": "support-c", "importance": "supporting", "question": "secret question"},
+                    {
+                        "dimension_id": "support-c",
+                        "importance": "supporting",
+                        "question": "secret question",
+                    },
                 ]
             },
             "dimension_coverages": [
                 _coverage("core-a", "covered", first_party=True, families=["family-secret-a"]),
                 _coverage(
-                    "core-b", "partially_covered",
+                    "core-b",
+                    "partially_covered",
                     families=["family-secret-a", "family-secret-b"],
                 ),
                 _coverage("support-c", "uncovered"),
@@ -169,25 +174,51 @@ def test_v5_projection_is_complete_count_safe_and_never_copies_sensitive_state()
     )
 
     assert set(projection) == {
-        "stage_id", "public_stage_id", "action", "result", "discarded",
-        "remaining_gap", "next_step", "dimension_counts",
-        "dimension_status_changes", "source_counts", "active_gap",
-        "elapsed_seconds", "soft_checkpoint", "lease_reason", "quality_score",
-        "hard_failures", "predicted_delivery", "token_budget_ratio",
-        "control_action", "control_status", "parent_operation",
-        "failed_dimensions", "rejection_reasons",
+        "stage_id",
+        "public_stage_id",
+        "action",
+        "result",
+        "discarded",
+        "remaining_gap",
+        "next_step",
+        "dimension_counts",
+        "dimension_status_changes",
+        "source_counts",
+        "active_gap",
+        "elapsed_seconds",
+        "soft_checkpoint",
+        "lease_reason",
+        "quality_score",
+        "hard_failures",
+        "predicted_delivery",
+        "token_budget_ratio",
+        "control_action",
+        "control_status",
+        "parent_operation",
+        "failed_dimensions",
+        "rejection_reasons",
     }
     assert projection["dimension_counts"] == {
-        "total": 3, "core_total": 2, "covered": 1, "partially_covered": 1,
-        "uncovered": 1, "not_applicable": 0,
-        "core_covered": 1, "core_partially_covered": 1, "core_uncovered": 0,
+        "total": 3,
+        "core_total": 2,
+        "covered": 1,
+        "partially_covered": 1,
+        "uncovered": 1,
+        "not_applicable": 0,
+        "core_covered": 1,
+        "core_partially_covered": 1,
+        "core_uncovered": 0,
     }
     assert projection["dimension_status_changes"] == {
-        "improved": 1, "regressed": 0, "unchanged": 2,
+        "improved": 1,
+        "regressed": 0,
+        "unchanged": 2,
     }
     assert projection["source_counts"] == {"valid": 2, "first_party": 1}
     assert projection["active_gap"] == {
-        "status": "running", "work_kind": "query", "dimension_ordinal": 2,
+        "status": "running",
+        "work_kind": "query",
+        "dimension_ordinal": 2,
     }
     assert projection["elapsed_seconds"] == 321
     assert projection["soft_checkpoint"] == "reached"
@@ -216,9 +247,17 @@ def test_v5_projection_is_complete_count_safe_and_never_copies_sensitive_state()
     ]
     serialized = json.dumps(projection, ensure_ascii=False, sort_keys=True)
     for secret in (
-        "secret question", "family-secret", "secret raw query", "secret raw reason",
-        "secret raw error", "secret prompt", "secret_failure", "secret token",
-        "secret command prompt", "secret-parent-operation", "core-b",
+        "secret question",
+        "family-secret",
+        "secret raw query",
+        "secret raw reason",
+        "secret raw error",
+        "secret prompt",
+        "secret_failure",
+        "secret token",
+        "secret command prompt",
+        "secret-parent-operation",
+        "core-b",
     ):
         assert secret not in serialized
 
@@ -280,7 +319,9 @@ def test_supporting_coverage_never_masks_an_uncovered_core_dimension() -> None:
     assert projection["predicted_delivery"] == "insufficient_evidence"
 
 
-def test_first_party_source_family_is_deduped_across_dimensions_and_not_inferred_without_records() -> None:
+def test_first_party_source_family_is_deduped_across_dimensions_and_not_inferred_without_records() -> (
+    None
+):
     state = _state()
     projection = build_v5_stage_projection(state, stage_id="score")
     assert projection["source_counts"] == {"valid": 2, "first_party": 1}
@@ -314,9 +355,10 @@ def test_v5_completion_replay_is_stable_but_child_activations_are_distinct() -> 
 def test_v5_completion_fails_closed_without_native_activation_identity_or_on_extra_field() -> None:
     reporter = WorkflowProgressReporter(object(), ())
     projection = build_v5_stage_projection(_state(), stage_id="gap_evaluate")
-    assert reporter.build_completion_intent(
-        replace(_identity(), activation_id=None), projection
-    ) is None
+    assert (
+        reporter.build_completion_intent(replace(_identity(), activation_id=None), projection)
+        is None
+    )
     unsafe = {**projection, "query": "secret raw query"}
     assert reporter.build_completion_intent(_identity(), unsafe) is None
 
@@ -387,8 +429,15 @@ def test_node_execution_identity_native_fields_are_additive_for_legacy_callers()
 def test_historical_v4_completion_payload_bytes_remain_locked() -> None:
     reporter = WorkflowProgressReporter(object(), ())
     identity = NodeExecutionIdentity(
-        "deep_research", "v4", "thread", "run", "checkpoint", "", "task-search",
-        "search_join", 1,
+        "deep_research",
+        "v4",
+        "thread",
+        "run",
+        "checkpoint",
+        "",
+        "task-search",
+        "search_join",
+        1,
     )
     projection = {
         "stage_id": "search",
@@ -400,7 +449,9 @@ def test_historical_v4_completion_payload_bytes_remain_locked() -> None:
     }
     intent = reporter.build_completion_intent(identity, projection)
     assert intent is not None
-    encoded = json.dumps(intent["payload"], ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    encoded = json.dumps(
+        intent["payload"], ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    )
     assert hashlib.sha256(encoded.encode("utf-8")).hexdigest() == (
         "79973789cad4d7eed59bd9d019b6733bcffa226191ebc653c0d09e45ce366ac8"
     )
@@ -421,17 +472,13 @@ def test_v5_control_projection_is_owned_by_committed_brief_and_terminal_matrix()
     state = _state()
     state["values"].pop("control_command")
     running = build_v5_stage_projection(state, stage_id="model")
-    assert (running["control_action"], running["control_status"]) == (
-        "generate_now", "open"
-    )
+    assert (running["control_action"], running["control_status"]) == ("generate_now", "open")
     state["values"]["terminal_public"] = {
         "delivery_status": "partial",
         "action_matrix": [{"action_id": "continue_research", "enabled": True}],
     }
     terminal = build_v5_stage_projection(state, stage_id="finalize")
-    assert (terminal["control_action"], terminal["control_status"]) == (
-        "continue_research", "open"
-    )
+    assert (terminal["control_action"], terminal["control_status"]) == ("continue_research", "open")
 
 
 @pytest.mark.asyncio

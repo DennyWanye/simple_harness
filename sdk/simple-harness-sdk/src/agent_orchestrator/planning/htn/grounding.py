@@ -194,7 +194,9 @@ class SharingSignature:
     effect_identity: str | None = None
 
     @classmethod
-    def of(cls, spec: TaskTypeSpec, *, authority_scope: str, semantic_scope: str) -> SharingSignature:
+    def of(
+        cls, spec: TaskTypeSpec, *, authority_scope: str, semantic_scope: str
+    ) -> SharingSignature:
         return cls(
             goal_type_ref=spec.task_type_ref,
             authority_scope=identifier(authority_scope, "authority_scope"),
@@ -208,14 +210,25 @@ class SharingSignature:
 def named_share_refusal(existing: SharingSignature, slot: SharingSignature) -> str | None:
     """Why a slot may not be the existing step it named — or ``None`` when it may."""
 
-    differing = [name for name in ("goal_type_ref", "authority_scope", "semantic_scope",
-                                   "domain_semantics", "side_effect_kind", "effect_identity")
-                 if getattr(existing, name) != getattr(slot, name)]
+    differing = [
+        name
+        for name in (
+            "goal_type_ref",
+            "authority_scope",
+            "semantic_scope",
+            "domain_semantics",
+            "side_effect_kind",
+            "effect_identity",
+        )
+        if getattr(existing, name) != getattr(slot, name)
+    ]
     if differing:
         return "the named step differs in " + ", ".join(differing) + "; it is another kind of work"
     if existing.side_effect_kind not in READ_ONLY_EFFECTS and existing.effect_identity is None:
-        return ("the named step writes outside the orchestrator; two such actions are two "
-                "actions and are never shared (§8.3)")
+        return (
+            "the named step writes outside the orchestrator; two such actions are two "
+            "actions and are never shared (§8.3)"
+        )
     return None
 
 
@@ -259,10 +272,13 @@ def slot_criteria(method: MethodContract, slot: str) -> frozenset[str]:
     return frozenset(
         str(link.child_criterion_id or link.parent_criterion_id)
         for link in composition.criterion_links
-        if (link.child_step or composition.finalizer_step) == slot)
+        if (link.child_step or composition.finalizer_step) == slot
+    )
 
 
-def occurrence_criteria(network: Any, definition_of: Any, occurrence_id: OccurrenceId) -> frozenset[str]:
+def occurrence_criteria(
+    network: Any, definition_of: Any, occurrence_id: OccurrenceId
+) -> frozenset[str]:
     """Every criterion the adopted plan currently hands to one step (all the methods
     that hold it).  ``definition_of``: a method reference → its contract."""
 
@@ -571,7 +587,8 @@ def plan_slots(
         )
         arguments = resolve_arguments(step, parameters, path=f"step[{step.local_id}]")
         signature = SharingSignature.of(
-            spec, authority_scope=task.semantic_scope, semantic_scope=task.semantic_scope)
+            spec, authority_scope=task.semantic_scope, semantic_scope=task.semantic_scope
+        )
         entry = reuse.get(step.local_id)
         if entry is None:
             plans.append(
@@ -590,12 +607,17 @@ def plan_slots(
             )
             continue
         if step.form is not TaskForm.PRIMITIVE:
-            raise ReuseRefused(f"step {step.local_id!r} is a sub-goal; only an ordinary step can be shared")
+            raise ReuseRefused(
+                f"step {step.local_id!r} is a sub-goal; only an ordinary step can be shared"
+            )
         refusal = named_share_refusal(entry.signature, signature)
         if refusal is not None:
             raise ReuseRefused(f"step {step.local_id!r} cannot be {entry.occurrence_id}: {refusal}")
-        policy = (ReusePolicy.REUSE_ACCEPTED if entry.acceptance_ref is not None
-                  else ReusePolicy.SHARE_ACTIVE)
+        policy = (
+            ReusePolicy.REUSE_ACCEPTED
+            if entry.acceptance_ref is not None
+            else ReusePolicy.SHARE_ACTIVE
+        )
         plans.append(
             SlotPlan(
                 step=step,
@@ -653,8 +675,15 @@ def child_task_bindings(
     for plan in plans:
         if plan.shared:
             continue
-        out.append(task_binding_for(plan, draft, task, schemas=schemas,
-                                    writes=tuple((write_targets or {}).get(plan.identity.slot_key, ()))))
+        out.append(
+            task_binding_for(
+                plan,
+                draft,
+                task,
+                schemas=schemas,
+                writes=tuple((write_targets or {}).get(plan.identity.slot_key, ())),
+            )
+        )
     return tuple(out)
 
 
@@ -705,10 +734,17 @@ def task_binding_for(
         ),
         resource_reads=spec.resource_reads if spec.form is TaskForm.PRIMITIVE else (),
         resource_writes=(
-            (*spec.resource_writes,
-             *(ResourceRef(WORKSPACE_FILE, path) for path in dict.fromkeys(writes)
-               if (WORKSPACE_FILE, path) not in {ref.key for ref in spec.resource_writes}))
-            if spec.form is TaskForm.PRIMITIVE else ()),
+            (
+                *spec.resource_writes,
+                *(
+                    ResourceRef(WORKSPACE_FILE, path)
+                    for path in dict.fromkeys(writes)
+                    if (WORKSPACE_FILE, path) not in {ref.key for ref in spec.resource_writes}
+                ),
+            )
+            if spec.form is TaskForm.PRIMITIVE
+            else ()
+        ),
         side_effect_kind=spec.side_effect_kind if spec.form is TaskForm.PRIMITIVE else None,
     )
 

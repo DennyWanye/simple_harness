@@ -48,30 +48,58 @@ def _quick(monkeypatch):
     monkeypatch.setattr(event_handler, "WAIT_BACKOFF_MAX", 0.05)
 
 
-def _method(context: dict[str, Any], steps: list[tuple[str, str, dict[str, Any]]],
-            links: list[tuple[str, int]], finalizer: str, ordering=()) -> dict[str, Any]:
+def _method(
+    context: dict[str, Any],
+    steps: list[tuple[str, str, dict[str, Any]]],
+    links: list[tuple[str, int]],
+    finalizer: str,
+    ordering=(),
+) -> dict[str, Any]:
     request = context["request"]
     kinds = {str(item["task_type_ref"]["id"]): item for item in request["operators"]}
-    kinds.update({str(item["task_type_ref"]["id"]): item for item in request.get("subgoal_types", ())})
+    kinds.update(
+        {str(item["task_type_ref"]["id"]): item for item in request.get("subgoal_types", ())}
+    )
     criteria = [item["id"] for item in request["criterion_evidence"]]
     identity = request["new_method_identity"]
     return {
-        "schema_version": 1, "method_id": identity["method_id"], "method_version": identity["method_version"],
+        "schema_version": 1,
+        "method_id": identity["method_id"],
+        "method_version": identity["method_version"],
         "goal_type_ref": request["goal_type_ref"],
         "parameter_schema_ref": request["goal_signature"]["parameter_schema_ref"],
         "output_schema_ref": request["goal_signature"]["output_schema_ref"],
-        "applicable_when": [], "exploration_assumptions": [],
-        "steps": [{"local_id": local, "task_type_ref": kinds[kind]["task_type_ref"],
-                   "form": "compound" if kind.startswith("sub-goal") else "primitive", "arguments": arguments,
-                   "required_capabilities": [] if kind.startswith("sub-goal") else list(kinds[kind]["required_capabilities"]),
-                   "obligation_relation": "refines_parent"} for local, kind, arguments in steps],
+        "applicable_when": [],
+        "exploration_assumptions": [],
+        "steps": [
+            {
+                "local_id": local,
+                "task_type_ref": kinds[kind]["task_type_ref"],
+                "form": "compound" if kind.startswith("sub-goal") else "primitive",
+                "arguments": arguments,
+                "required_capabilities": []
+                if kind.startswith("sub-goal")
+                else list(kinds[kind]["required_capabilities"]),
+                "obligation_relation": "refines_parent",
+            }
+            for local, kind, arguments in steps
+        ],
         "ordering": [{"before": before, "after": after} for before, after in ordering],
-        "required_capabilities": [], "expected_effects": [],
+        "required_capabilities": [],
+        "expected_effects": [],
         "composition": {
-            "criterion_links": [{"parent_criterion_id": criteria[index], "child_step": local,
-                                 "child_criterion_id": criteria[index],
-                                 "evidence_requirement": f"{local} 完成 {criteria[index]}"} for local, index in links],
-            "outputs": {}, "finalizer_step": finalizer, "independent_review_required": True,
+            "criterion_links": [
+                {
+                    "parent_criterion_id": criteria[index],
+                    "child_step": local,
+                    "child_criterion_id": criteria[index],
+                    "evidence_requirement": f"{local} 完成 {criteria[index]}",
+                }
+                for local, index in links
+            ],
+            "outputs": {},
+            "finalizer_step": finalizer,
+            "independent_review_required": True,
         },
         "basis_refs": [],
     }
@@ -93,12 +121,25 @@ def test_accepted_children_do_not_mix_sibling_acceptances_on_a_shared_duty(tmp_p
         if contexts and not (package.get("method_selection") or [{}])[0].get("applicable"):
             goal = str((contexts[0]["request"].get("goal_type_ref") or {}).get("id"))
             if goal == "user-goal":
-                method = _method(contexts[0], [("assess", "sub-goal-1", SUB)], [("assess", 0), ("assess", 1)], "assess")
+                method = _method(
+                    contexts[0],
+                    [("assess", "sub-goal-1", SUB)],
+                    [("assess", 0), ("assess", 1)],
+                    "assess",
+                )
             else:
-                method = _method(contexts[0], [("facts", "prepare-delivery", {}), ("reproduce", "prepare-delivery", {})],
-                                 [("facts", 0), ("reproduce", 1)], "reproduce")
-            return decision(contexts[0]["subject_key"], "PROPOSE_METHOD",
-                            {"method_proposal": {"method": method, "rationale": goal}}, goal)
+                method = _method(
+                    contexts[0],
+                    [("facts", "prepare-delivery", {}), ("reproduce", "prepare-delivery", {})],
+                    [("facts", 0), ("reproduce", 1)],
+                    "reproduce",
+                )
+            return decision(
+                contexts[0]["subject_key"],
+                "PROPOSE_METHOD",
+                {"method_proposal": {"method": method, "rationale": goal}},
+                goal,
+            )
         return planner_reply(request)
 
     class Provider(LayeredScriptedProvider):
@@ -109,7 +150,9 @@ def test_accepted_children_do_not_mix_sibling_acceptances_on_a_shared_duty(tmp_p
 
         async def invoke(self, request, *, cancel):  # type: ignore[no-untyped-def]
             if role_of(request) == "worker" and "reproduce.md" in json.dumps(
-                    package_of(request).get("task_contract", {}).get("outputs") or [], ensure_ascii=False):
+                package_of(request).get("task_contract", {}).get("outputs") or [],
+                ensure_ascii=False,
+            ):
                 self.reproducing.set()
                 await self.release_reproduce.wait()
             return await super().invoke(request, cancel=cancel)
@@ -118,28 +161,52 @@ def test_accepted_children_do_not_mix_sibling_acceptances_on_a_shared_duty(tmp_p
 
     async def case() -> Any:
         try:
-            async with product_world(tmp_path / "root", provider, **{**CONFIG, "max_concurrency": 2,
-                                                                       "max_concurrent_model_calls": 2}) as world:
-                mission_id = world.create({"goal": "整理两份文件", "idempotency_key": "p23l-n7-siblings",
-                                           "success_criteria": ["file:facts.md", "file:reproduce.md"]})["mission_id"]
+            async with product_world(
+                tmp_path / "root",
+                provider,
+                **{**CONFIG, "max_concurrency": 2, "max_concurrent_model_calls": 2},
+            ) as world:
+                mission_id = world.create(
+                    {
+                        "goal": "整理两份文件",
+                        "idempotency_key": "p23l-n7-siblings",
+                        "success_criteria": ["file:facts.md", "file:reproduce.md"],
+                    }
+                )["mission_id"]
                 store = world.store
                 dispatch = world.loop._dispatch_for(mission_id)
 
                 def facts_accepted() -> bool:
                     network = dispatch.network(mission_id)
-                    return provider.reproducing.is_set() and any(
-                        task.status.value == "COMPLETED" and "facts.md" in " ".join(task.success_criteria)
-                        for task in store.list_tasks(mission_id)) and network is not None
+                    return (
+                        provider.reproducing.is_set()
+                        and any(
+                            task.status.value == "COMPLETED"
+                            and "facts.md" in " ".join(task.success_criteria)
+                            for task in store.list_tasks(mission_id)
+                        )
+                        and network is not None
+                    )
 
                 await run_until(world, facts_accepted, timeout=60)
                 network = dispatch.network(mission_id)
-                assess = next(spec for spec in network.occurrences
-                              if str(network.binding_for_occurrence(spec.occurrence_id).goal_signature.signature_id)
-                              == "sub-goal-1")
+                assess = next(
+                    spec
+                    for spec in network.occurrences
+                    if str(
+                        network.binding_for_occurrence(
+                            spec.occurrence_id
+                        ).goal_signature.signature_id
+                    )
+                    == "sub-goal-1"
+                )
                 children = list(network.adopted_children(assess.occurrence_id))
                 by_slot = {child.slot_key: str(child.occurrence_id) for child in children}
-                return by_slot, current_child_supports(store, mission_id, children), \
-                    HtnStore(store).list_goal_resolutions(mission_id)
+                return (
+                    by_slot,
+                    current_child_supports(store, mission_id, children),
+                    HtnStore(store).list_goal_resolutions(mission_id),
+                )
         finally:
             provider.release_reproduce.set()
 
@@ -147,7 +214,8 @@ def test_accepted_children_do_not_mix_sibling_acceptances_on_a_shared_duty(tmp_p
     assert set(by_slot) == {"facts", "reproduce"}
     assert by_slot["facts"] in accepted
     assert by_slot["reproduce"] not in accepted, (
-        f"a sibling's CURRENT acceptance on the shared duty must not stand in for reproduce: {accepted}")
+        f"a sibling's CURRENT acceptance on the shared duty must not stand in for reproduce: {accepted}"
+    )
     assert resolutions == (), "no composition resolution while a gating child is unaccepted"
 
 
@@ -164,12 +232,24 @@ def test_c_composition_without_coverage_does_not_form_accept(tmp_path) -> None:
     def planner(request: Any) -> Any:
         package = package_of(request)
         contexts = package.get("method_proposal_contexts") or []
-        if (contexts and str((contexts[0]["request"].get("goal_type_ref") or {}).get("id")) == "user-goal"
-                and not (package.get("method_selection") or [{}])[0].get("applicable")):
-            method = _method(contexts[0], [("assess", "sub-goal-1", SUB), ("revert", "prepare-delivery", {})],
-                             [("revert", 0)], "revert", ordering=[("assess", "revert")])
-            return decision(contexts[0]["subject_key"], "PROPOSE_METHOD",
-                            {"method_proposal": {"method": method, "rationale": "子目标不承接要求"}}, "x")
+        if (
+            contexts
+            and str((contexts[0]["request"].get("goal_type_ref") or {}).get("id")) == "user-goal"
+            and not (package.get("method_selection") or [{}])[0].get("applicable")
+        ):
+            method = _method(
+                contexts[0],
+                [("assess", "sub-goal-1", SUB), ("revert", "prepare-delivery", {})],
+                [("revert", 0)],
+                "revert",
+                ordering=[("assess", "revert")],
+            )
+            return decision(
+                contexts[0]["subject_key"],
+                "PROPOSE_METHOD",
+                {"method_proposal": {"method": method, "rationale": "子目标不承接要求"}},
+                "x",
+            )
         return planner_reply(request)
 
     provider = LayeredScriptedProvider(planner=planner)
@@ -178,19 +258,35 @@ def test_c_composition_without_coverage_does_not_form_accept(tmp_path) -> None:
     async def case() -> Any:
         try:
             async with product_world(tmp_path / "root", provider, **CONFIG) as world:
-                mission_id = world.create({"goal": "写出 NOTES.md", "idempotency_key": "p23m-i07-uncovered",
-                                           "success_criteria": ["file:NOTES.md"]})["mission_id"]
+                mission_id = world.create(
+                    {
+                        "goal": "写出 NOTES.md",
+                        "idempotency_key": "p23m-i07-uncovered",
+                        "success_criteria": ["file:NOTES.md"],
+                    }
+                )["mission_id"]
                 store = world.store
 
                 def refused() -> list[Any]:
-                    return [event for event in store.list_events(mission_id) if event.type == "PlanningRejected"]
+                    return [
+                        event
+                        for event in store.list_events(mission_id)
+                        if event.type == "PlanningRejected"
+                    ]
 
                 await run_until(world, lambda: bool(refused()), timeout=60)
                 semantics = HtnStore(store)
-                packages = [item for item in semantics.list_review_packages(mission_id)
-                            if str(item.package_id).startswith("pkg-compose-")]
-                return refused(), semantics.active_plan_revision(mission_id), \
-                    semantics.list_goal_resolutions(mission_id), packages
+                packages = [
+                    item
+                    for item in semantics.list_review_packages(mission_id)
+                    if str(item.package_id).startswith("pkg-compose-")
+                ]
+                return (
+                    refused(),
+                    semantics.active_plan_revision(mission_id),
+                    semantics.list_goal_resolutions(mission_id),
+                    packages,
+                )
         finally:
             provider.release.set()
 
@@ -199,7 +295,10 @@ def test_c_composition_without_coverage_does_not_form_accept(tmp_path) -> None:
     assert refusals[0].payload["reason"] == "proposal_not_grounded"
     # 要守的是"这个子目标证明不了对完成有贡献，整份计划被拒、什么都不写"；开发期只认现行的
     # 具名原因（冻结完成范围时拒绝），旧位置的旧文字不再接受（2026-10-07 发版评估建议第 2 条）。
-    assert "OP_COMPLETION_SCOPE_UNRESOLVED" in detail and "no provable completion contribution" in detail, detail
+    assert (
+        "OP_COMPLETION_SCOPE_UNRESOLVED" in detail
+        and "no provable completion contribution" in detail
+    ), detail
     assert active is None, "the whole plan is refused"
     assert resolutions == ()
     assert packages == []

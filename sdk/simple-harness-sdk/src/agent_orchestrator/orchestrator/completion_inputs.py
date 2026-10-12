@@ -255,8 +255,11 @@ def _verify_frozen_document(store: Store, frozen: FrozenCompletionInputs) -> Non
     ):
         raise _refuse("OP_COMPLETION_INPUTS_UNAVAILABLE", "stored input manifest is not frozen")
     # 2026-10-11 第三批：清单哈希覆盖端口绑定与交付绑定两部分（与 ``InputManifest._hash_payload`` 同形）
-    payload = {"consumer_task_ref": document["consumer_task_ref"], "bindings": document["bindings"],
-               "deliveries": document["deliveries"]}
+    payload = {
+        "consumer_task_ref": document["consumer_task_ref"],
+        "bindings": document["bindings"],
+        "deliveries": document["deliveries"],
+    }
     if sha256_hex(payload) != frozen.embedded_manifest_hash:
         raise _refuse("OP_COMPLETION_INPUTS_UNAVAILABLE", "stored embedded manifest hash differs")
 
@@ -338,8 +341,9 @@ def validate_result_port_claims(
     return tuple({"port_key": item.port_key, "path": item.path} for item in port_claims)
 
 
-def _current_scope(store: Store, mission_id: str, frozen: FrozenCompletionInputs,
-                   *, carried: bool = False) -> Any:
+def _current_scope(
+    store: Store, mission_id: str, frozen: FrozenCompletionInputs, *, carried: bool = False
+) -> Any:
     """The completion scope this Attempt's result is judged under: the one frozen at
     dispatch, or — when a later plan revision did not change it in anything but the
     revision (:meth:`OperationCompletionStore.scope_unchanged`, the same reading that
@@ -369,14 +373,18 @@ def _current_scope(store: Store, mission_id: str, frozen: FrozenCompletionInputs
         raise _refuse("OP_EFFECT_SCOPE_STALE", "the adopted plan is unavailable")
     plan_ref = PlanRevisionPinV1(revision=active.revision, snapshot_hash=active.snapshot_hash)
     try:
-        scope = OperationCompletionReader(store).read_scope(mission_id, plan_ref, frozen.occurrence_id)
+        scope = OperationCompletionReader(store).read_scope(
+            mission_id, plan_ref, frozen.occurrence_id
+        )
     except OperationCompletionError as error:
         # 这一步已不在现行计划里（做法被换掉、分支被取消、换了后继）：它的范围过期了，
         # 与"计划换了一版"同一个结论——结果归档，不是完整性错误
         if error.code != "OP_COMPLETION_SCOPE_UNRESOLVED":
             raise
         raise _refuse("OP_EFFECT_SCOPE_STALE", "the step left the adopted plan") from error
-    if scope != original and not completion.scope_unchanged(original, scope, across_requirements=carried):
+    if scope != original and not completion.scope_unchanged(
+        original, scope, across_requirements=carried
+    ):
         raise _refuse("OP_EFFECT_SCOPE_STALE", "the completion scope changed under the Attempt")
     return scope
 
@@ -394,7 +402,8 @@ def frozen_requirements_revision(store: Store, result: Any) -> int:
         raise _refuse("OP_COMPLETION_INPUTS_UNAVAILABLE", "original Attempt intent is unavailable")
     frozen = FrozenCompletionInputs.from_json(intent.config.get("completion_inputs"))
     row = OperationCompletionStore(store).get_scope_exact(
-        str(envelope.mission_id), frozen.plan_revision, frozen.occurrence_id)
+        str(envelope.mission_id), frozen.plan_revision, frozen.occurrence_id
+    )
     if row is None or str(row["document"].scope_id) != frozen.scope_id:
         raise _refuse("OP_EFFECT_SCOPE_STALE", "frozen completion scope differs")
     return int(row["document"].requirements_ref.revision)
@@ -450,13 +459,23 @@ def load_completion_result_inputs(
     ):
         raise _refuse("OP_COMPLETION_INPUTS_UNAVAILABLE", "input manifest is not bound to Attempt")
 
-    carried = requirements_revision is not None and int(requirements_revision) != frozen_requirements_revision(
-        store, result)
-    if carried and (getattr(result, "verification_state", None) != "DONE" or getattr(result, "verdict", None) != "PASS"):
-        raise _refuse("OP_EFFECT_SCOPE_STALE", "only an accepted result is reviewed under newer requirements")
+    carried = requirements_revision is not None and int(
+        requirements_revision
+    ) != frozen_requirements_revision(store, result)
+    if carried and (
+        getattr(result, "verification_state", None) != "DONE"
+        or getattr(result, "verdict", None) != "PASS"
+    ):
+        raise _refuse(
+            "OP_EFFECT_SCOPE_STALE", "only an accepted result is reviewed under newer requirements"
+        )
     scope = _current_scope(store, mission_id, frozen, carried=carried)
-    if requirements_revision is not None and int(scope.requirements_ref.revision) != int(requirements_revision):
-        raise _refuse("OP_EFFECT_SCOPE_STALE", "the current scope is of another requirements revision")
+    if requirements_revision is not None and int(scope.requirements_ref.revision) != int(
+        requirements_revision
+    ):
+        raise _refuse(
+            "OP_EFFECT_SCOPE_STALE", "the current scope is of another requirements revision"
+        )
 
     events = [
         event

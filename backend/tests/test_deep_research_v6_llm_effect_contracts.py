@@ -35,14 +35,23 @@ def test_repair_request_roundtrip_identity_and_exact_keys() -> None:
     )
     assert request.repair_id == "err_79ae49e47b777283cf6bad66"
     assert request.validation_reason_codes == (
-        "candidate_id_mismatch", "schema_invalid",
+        "candidate_id_mismatch",
+        "schema_invalid",
     )
     assert EvidenceRepairRequestV1.from_json(request.to_json()) == request
     assert set(request.to_json()) == {
-        "schema_version", "repair_id", "result_kind", "original_profile_ref",
-        "repair_profile_ref", "original_prompt_ref", "prior_outcome_ref",
-        "raw_result_ref", "validation_reason_codes", "logical_page_id",
-        "work_group_id", "repair_round",
+        "schema_version",
+        "repair_id",
+        "result_kind",
+        "original_profile_ref",
+        "repair_profile_ref",
+        "original_prompt_ref",
+        "prior_outcome_ref",
+        "raw_result_ref",
+        "validation_reason_codes",
+        "logical_page_id",
+        "work_group_id",
+        "repair_round",
     }
 
 

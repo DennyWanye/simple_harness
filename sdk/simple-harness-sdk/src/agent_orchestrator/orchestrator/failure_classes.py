@@ -5,6 +5,7 @@
 格式没写对、服务出错、执行被打断不扣，直接重做，但同一步合计有上限，防止无限重试。
 表里没有的原因一律按模型做错：宁可多扣，不能漏扣。
 """
+
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -27,22 +28,31 @@ REVIEW_INTERRUPTED_CODE = "REVIEW_INTERRUPTED"
 REVIEW_CALL_ABANDONED = "REVIEW_CALL_ABANDONED"
 
 # 模型原地打转、调了不存在的工具、工具参数不合规定：模型自己的错（审阅 2026-09-29）。
-_MODEL_TURN_CODES = frozenset({
-    "react_max_turns_exceeded", "react_max_tool_calls_exceeded",
-    "tool_not_exposed", "tool_not_exposed_for_agent", "invalid_tool_arguments",
-})
+_MODEL_TURN_CODES = frozenset(
+    {
+        "react_max_turns_exceeded",
+        "react_max_tool_calls_exceeded",
+        "tool_not_exposed",
+        "tool_not_exposed_for_agent",
+        "invalid_tool_arguments",
+    }
+)
 _INFRA_TURN_KINDS = frozenset({"provider_unavailable", "provider_error"})
 # 单轮墙钟超时：2026-09-29 真机第八局，应用停机/重启期间这一轮的时限走完，重启后报超时。
 # 这不是模型把内容做错；按被打断处理（原地重做、不扣次数、同一步合计有上限）。
 # 执行层内部异常：第九局重启后"模型调用已交出、结果未知"（ProviderInvocationConflictError）
 # 以 base_agent_driver_exception 结束这一轮——运行时自己的异常，从来不是模型做错。
 _INTERRUPTED_TURN_CODES = frozenset({"react_wall_clock_exceeded", "base_agent_driver_exception"})
-_INTERRUPTED_REASONS = frozenset({
-    "executor_stalled", "executor_turn_missing", "executor_agent_missing",
-    "provider_outcome_unknown",
-    # 推后第 1 批 A26：重启后在途尝试开工时装进上下文的证据已不当前，不恢复、拿当前上下文重做
-    "recovery_use_refused",
-})
+_INTERRUPTED_REASONS = frozenset(
+    {
+        "executor_stalled",
+        "executor_turn_missing",
+        "executor_agent_missing",
+        "provider_outcome_unknown",
+        # 推后第 1 批 A26：重启后在途尝试开工时装进上下文的证据已不当前，不恢复、拿当前上下文重做
+        "recovery_use_refused",
+    }
+)
 
 
 def output_exhausted(error: Mapping[str, Any] | None) -> bool:
@@ -93,11 +103,13 @@ def interrupted_review(failures: Any) -> bool:
 
     items = tuple(failures or ())
     return bool(items) and all(
-        isinstance(item, Mapping) and item.get("layer") == "critic_review"
+        isinstance(item, Mapping)
+        and item.get("layer") == "critic_review"
         and item.get("status") == "ERROR"
         and isinstance(item.get("detail"), Mapping)
         and item["detail"].get("code") == REVIEW_INTERRUPTED_CODE
-        for item in items)
+        for item in items
+    )
 
 
 def classify_failure(failure: Mapping[str, Any] | None) -> str:
@@ -120,7 +132,10 @@ def classify_failure(failure: Mapping[str, Any] | None) -> str:
             return INTERRUPTED
         if output_exhausted(error):
             return MODEL  # 输出上限用完是模型这一轮没完成，不是服务出错（2026-10-09）
-        if failure.get("error_kind") in _INFRA_TURN_KINDS or error.get("source_kind") == "tool_parse":
+        if (
+            failure.get("error_kind") in _INFRA_TURN_KINDS
+            or error.get("source_kind") == "tool_parse"
+        ):
             return INFRA
         return MODEL
     if reason == "provider_admission_denied":
@@ -145,8 +160,11 @@ def charges_attempt(failure: Mapping[str, Any] | None) -> bool:
 def non_model_failures(attempts: Any) -> int:
     """How many of a Task's Attempts ended for a reason that did not charge an attempt."""
 
-    return sum(1 for attempt in attempts
-               if getattr(attempt, "failure", None) and not charges_attempt(attempt.failure))
+    return sum(
+        1
+        for attempt in attempts
+        if getattr(attempt, "failure", None) and not charges_attempt(attempt.failure)
+    )
 
 
 # 2026-09-29：被重启打断的审阅调用（不挂在执行尝试上的审阅：整局最终审查、发布结果审阅）。
@@ -168,22 +186,37 @@ def review_turn_interrupted(error: Mapping[str, Any] | None) -> bool:
     code = str(error.get("error_code", ""))
     if code in _MODEL_TURN_CODES or output_exhausted(error):
         return False
-    return (code in _INTERRUPTED_TURN_CODES or code.startswith("provider_")
-            or error.get("source_kind") == "tool_parse")
+    return (
+        code in _INTERRUPTED_TURN_CODES
+        or code.startswith("provider_")
+        or error.get("source_kind") == "tool_parse"
+    )
 
 
-def record_review_interruption(store: Any, *, mission_id: str, review_key: str, ordinal: int,
-                               intent_id: str, error_code: str) -> None:
+def record_review_interruption(
+    store: Any, *, mission_id: str, review_key: str, ordinal: int, intent_id: str, error_code: str
+) -> None:
     """Once per review call (keyed by its intent); replays write nothing."""
     from ..contracts.semantic_base import content_hash_of
 
     receipt_id = "assurance-review-interrupted:" + intent_id
     if store.get_receipt(receipt_id) is not None:
         return
-    body = {"mission_id": mission_id, "review_key": review_key, "invocation_ordinal": int(ordinal),
-            "intent_id": intent_id, "error_code": error_code}
-    store.insert_receipt(commit_id=receipt_id, kind=REVIEW_TURN_INTERRUPTED, subject_id=intent_id,
-                         base_version=0, proposal_hash=content_hash_of(body), receipt=body)
+    body = {
+        "mission_id": mission_id,
+        "review_key": review_key,
+        "invocation_ordinal": int(ordinal),
+        "intent_id": intent_id,
+        "error_code": error_code,
+    }
+    store.insert_receipt(
+        commit_id=receipt_id,
+        kind=REVIEW_TURN_INTERRUPTED,
+        subject_id=intent_id,
+        base_version=0,
+        proposal_hash=content_hash_of(body),
+        receipt=body,
+    )
 
 
 def review_exhausted_by_interruption(store: Any, review_key: str) -> bool:

@@ -18,6 +18,7 @@ it round-trips through ``result`` to the LLM consumer.
 ``deskpet/tools/registry.py`` — its ``execute_tool`` async method
 is the v2 dispatch path; ``registry_v2.py`` was never split out.)
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -67,9 +68,7 @@ def test_execute_tool_preserves_hint_in_result() -> None:
     payload = json.loads(out["result"])
     assert payload["ok"] is False
     assert payload["error"] == "x"
-    assert payload["hint"] == "do y", (
-        f"hint field was eaten by dispatch! payload={payload!r}"
-    )
+    assert payload["hint"] == "do y", f"hint field was eaten by dispatch! payload={payload!r}"
     assert payload["examples"] == [{"path": "ok.txt", "content": "hi"}]
 
 
@@ -78,7 +77,5 @@ def test_dispatch_sync_preserves_hint() -> None:
     reg = _make_registry_with_hinted_handler()
     raw = reg.dispatch("hinted_tool", {}, "")
     payload = json.loads(raw)
-    assert payload["hint"] == "do y", (
-        f"sync dispatch lost hint: {payload!r}"
-    )
+    assert payload["hint"] == "do y", f"sync dispatch lost hint: {payload!r}"
     assert payload["examples"] == [{"path": "ok.txt", "content": "hi"}]

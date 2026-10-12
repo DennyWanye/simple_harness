@@ -71,9 +71,9 @@ def test_freeze_sdk_catalog_thaws_nested_frozen_tool_schema():
     frozen = main._freeze_sdk_catalog(adapter, 7)
 
     assert frozen["generation"] == 7
-    assert frozen["specs"][0]["input_schema"]["properties"]["payload"][
-        "properties"
-    ]["name"] == {"type": "string"}
+    assert frozen["specs"][0]["input_schema"]["properties"]["payload"]["properties"]["name"] == {
+        "type": "string"
+    }
     assert len(frozen["schema_fingerprints"]["nested_schema"]) == 64
 
 
@@ -107,10 +107,7 @@ def test_skill_install_verifier_binds_only_after_sdk_runtime_is_ready():
     sdk_activation = inspect.getsource(main._activate_product_sdk_runtime)
 
     assert "skill_install_runtime_verifier.bind(" not in capability_bootstrap
-    assert (
-        "skill_install_runtime_verifier.bind(skill_install_verification)"
-        in sdk_activation
-    )
+    assert "skill_install_runtime_verifier.bind(skill_install_verification)" in sdk_activation
 
 
 # 2026-09-10 removed with the Memory SDK: test_real_product_sdk_production_composition_starts
@@ -216,9 +213,7 @@ def test_per_run_binding_resolver_retains_waiting_and_releases_terminal(monkeypa
 
 @pytest.mark.asyncio
 async def test_provider_authority_uses_session_params_and_epoch_cas():
-    host = SimpleNamespace(
-        provider_bindings=(("deepseek", "deepseek-v4-pro", "inc-1", 4, 7),)
-    )
+    host = SimpleNamespace(provider_bindings=(("deepseek", "deepseek-v4-pro", "inc-1", 4, 7),))
     session_db = SimpleNamespace(
         get_session_provider_binding_authority=AsyncMock(
             return_value={
@@ -234,17 +229,13 @@ async def test_provider_authority_uses_session_params_and_epoch_cas():
         )
     )
 
-    authority = await main._freeze_sdk_provider_authority(
-        session_db, "session-1", host
-    )
+    authority = await main._freeze_sdk_provider_authority(session_db, "session-1", host)
 
     assert authority["model_params"]["thinking"] is True
     assert authority["model_params"]["effort"] == "max"
     assert authority["context_window"] == 1_000_000
 
-    session_db.get_session_provider_binding_authority.return_value[
-        "binding_epoch"
-    ] = 8
+    session_db.get_session_provider_binding_authority.return_value["binding_epoch"] = 8
     with pytest.raises(RuntimeError, match="changed_during_start"):
         await main._freeze_sdk_provider_authority(session_db, "session-1", host)
 

@@ -21,6 +21,7 @@ Builtin commands:
   - /prefs clear intent|plan — 按 kind 清除
   - /<skill_name>  — 调用 SkillLoader（直接走 invoke_script，不经 LLM）
 """
+
 from __future__ import annotations
 
 import inspect
@@ -62,9 +63,7 @@ class FrozenSkillCommandCatalog:
                 version=str(metadata.get("version") or ""),
                 manifest_hash=str(metadata.get("manifest_hash") or ""),
                 content_hash=str(getattr(record, "content_hash", "") or ""),
-                allowed_tools=tuple(
-                    str(item) for item in (metadata.get("allowed_tools") or ())
-                ),
+                allowed_tools=tuple(str(item) for item in (metadata.get("allowed_tools") or ())),
                 scope_hash=str(metadata.get("scope_hash") or ""),
             )
             # Re-parse the serialized form to validate every required identity
@@ -72,9 +71,7 @@ class FrozenSkillCommandCatalog:
             scope = PreparedSkillInvocationScopeV1.from_dict(scope.to_dict())
             self._skills[key] = {
                 "name": name,
-                "description": str(
-                    getattr(record, "description", "") or name
-                ),
+                "description": str(getattr(record, "description", "") or name),
                 "allowed_tools": list(scope.allowed_tools),
                 "owner_key": scope.owner_key,
                 "pack_id": scope.pack_id,
@@ -209,17 +206,21 @@ def _handle_help(skill_loader: Any) -> dict[str, Any]:
     if skill_loader is not None:
         try:
             for s in skill_loader.list_skills():
-                skills.append({
-                    "name": s.get("name") or "",
-                    "description": (s.get("description") or "")[:120],
-                })
+                skills.append(
+                    {
+                        "name": s.get("name") or "",
+                        "description": (s.get("description") or "")[:120],
+                    }
+                )
         except Exception as exc:  # noqa: BLE001
             log.warning("list_skills failed: %s", exc)
     return {"type": "help", "builtins": builtins, "skills": skills}
 
 
 async def _handle_goal(
-    args: str, session_id: str, store: Any,
+    args: str,
+    session_id: str,
+    store: Any,
 ) -> dict[str, Any]:
     if store is None:
         return {
@@ -267,9 +268,7 @@ async def _handle_goal(
 _PREFS_VALID_KINDS = ("intent", "plan")
 
 
-async def _handle_prefs_routed(
-    args: str, pref_memory: Any
-) -> dict[str, Any]:
+async def _handle_prefs_routed(args: str, pref_memory: Any) -> dict[str, Any]:
     """Use the async authority ingress when the production proxy exposes it."""
 
     if pref_memory is None:
@@ -347,10 +346,7 @@ def _handle_prefs(args: str, pref_memory: Any) -> dict[str, Any]:
             if kind_arg not in _PREFS_VALID_KINDS:
                 return {
                     "type": "error",
-                    "message": (
-                        f"未知 kind: {kind_arg}（可选 "
-                        f"{'/'.join(_PREFS_VALID_KINDS)}）"
-                    ),
+                    "message": (f"未知 kind: {kind_arg}（可选 {'/'.join(_PREFS_VALID_KINDS)}）"),
                 }
             kind = kind_arg
         try:
@@ -368,7 +364,9 @@ def _handle_prefs(args: str, pref_memory: Any) -> dict[str, Any]:
 
 
 def _handle_skill(
-    name: str, args: str, skill_catalog: Any,
+    name: str,
+    args: str,
+    skill_catalog: Any,
 ) -> dict[str, Any]:
     selection_payload: dict[str, Any] | None = None
     resolver = getattr(skill_catalog, "resolve_selection", None)

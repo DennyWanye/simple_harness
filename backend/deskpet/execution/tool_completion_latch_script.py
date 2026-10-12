@@ -62,9 +62,7 @@ class ToolCompletionLatchScriptV1:
     ) -> ToolCompletionLatchScriptV1:
         values = os.environ if environ is None else environ
         if values.get("DESKPET_DEV_MODE") != "1":
-            raise ToolCompletionLatchRejected(
-                "tool completion latch requires DESKPET_DEV_MODE=1"
-            )
+            raise ToolCompletionLatchRejected("tool completion latch requires DESKPET_DEV_MODE=1")
         source_path = Path(path).resolve()
         try:
             raw = source_path.read_bytes()
@@ -77,9 +75,7 @@ class ToolCompletionLatchScriptV1:
         try:
             payload = json.loads(raw.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise ToolCompletionLatchRejected(
-                "tool completion latch is not valid JSON"
-            ) from exc
+            raise ToolCompletionLatchRejected("tool completion latch is not valid JSON") from exc
         if not isinstance(payload, dict) or set(payload) != {"schema_version", "rules"}:
             raise ToolCompletionLatchRejected("tool completion latch envelope is invalid")
         if payload["schema_version"] != cls.schema_version:
@@ -104,18 +100,22 @@ class ToolCompletionLatchScriptV1:
     @classmethod
     def _parse_rule(cls, value: object, parent: Path) -> _Rule:
         required = {
-            "rule_id", "injection_ref", "session_id", "tool_name",
-            "occurrence", "armed_file", "release_file",
+            "rule_id",
+            "injection_ref",
+            "session_id",
+            "tool_name",
+            "occurrence",
+            "armed_file",
+            "release_file",
         }
         optional = {"timeout_seconds"}
-        if not isinstance(value, dict) or not required.issubset(value) or (
-            set(value) - required - optional
+        if (
+            not isinstance(value, dict)
+            or not required.issubset(value)
+            or (set(value) - required - optional)
         ):
             raise ToolCompletionLatchRejected("tool completion latch rule shape is invalid")
-        strings = {
-            key: str(value.get(key) or "").strip()
-            for key in required - {"occurrence"}
-        }
+        strings = {key: str(value.get(key) or "").strip() for key in required - {"occurrence"}}
         if any(not item for item in strings.values()):
             raise ToolCompletionLatchRejected("tool completion latch strings are required")
         occurrence = value["occurrence"]
@@ -132,10 +132,14 @@ class ToolCompletionLatchScriptV1:
         if armed_path == release_path or release_path.exists():
             raise ToolCompletionLatchRejected("tool completion latch control state is stale")
         return _Rule(
-            rule_id=strings["rule_id"], injection_ref=strings["injection_ref"],
-            session_id=strings["session_id"], tool_name=strings["tool_name"],
-            occurrence=occurrence, armed_path=armed_path,
-            release_path=release_path, timeout_seconds=timeout_seconds,
+            rule_id=strings["rule_id"],
+            injection_ref=strings["injection_ref"],
+            session_id=strings["session_id"],
+            tool_name=strings["tool_name"],
+            occurrence=occurrence,
+            armed_path=armed_path,
+            release_path=release_path,
+            timeout_seconds=timeout_seconds,
         )
 
     @staticmethod
@@ -164,9 +168,7 @@ class ToolCompletionLatchScriptV1:
         selected: _Rule | None = None
         async with self._lock:
             for rule in self._rules:
-                if rule.consumed or (
-                    rule.session_id != session_id or rule.tool_name != tool_name
-                ):
+                if rule.consumed or (rule.session_id != session_id or rule.tool_name != tool_name):
                     continue
                 rule.seen += 1
                 if rule.seen != rule.occurrence:
@@ -195,9 +197,7 @@ class ToolCompletionLatchScriptV1:
         deadline = asyncio.get_running_loop().time() + selected.timeout_seconds
         while not selected.release_path.exists():
             if asyncio.get_running_loop().time() >= deadline:
-                raise TimeoutError(
-                    f"tool_completion_latch_timeout:{selected.injection_ref}"
-                )
+                raise TimeoutError(f"tool_completion_latch_timeout:{selected.injection_ref}")
             await asyncio.sleep(0.05)
         return selected.injection_ref
 

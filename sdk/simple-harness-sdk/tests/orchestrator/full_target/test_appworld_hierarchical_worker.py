@@ -68,17 +68,23 @@ def _attempt_intents(tmp_path, *, domain: str | None, tools):
         try:
             # The episode environment an AppWorld deployment binds (a stand-in: no call reaches it).
             episode = {} if domain is None else {"appworld_execute": lambda code: {"stdout": ""}}
-            async with product_world(Path(tmp_path) / "root", provider, allowed_tools=tuple(tools),
-                                     **CONFIG, **episode) as world:
-                request = {"goal": "写一份 NOTES.md，列出三条要点。", "success_criteria": ["file:NOTES.md"],
-                           "idempotency_key": f"p23d-worker-{domain}"}
+            async with product_world(
+                Path(tmp_path) / "root", provider, allowed_tools=tuple(tools), **CONFIG, **episode
+            ) as world:
+                request = {
+                    "goal": "写一份 NOTES.md，列出三条要点。",
+                    "success_criteria": ["file:NOTES.md"],
+                    "idempotency_key": f"p23d-worker-{domain}",
+                }
                 if domain is not None:
                     request["domain"] = domain
                 mission_id = world.create(request)["mission_id"]
                 await run_until(world, provider.entered.is_set)
                 return [
                     item
-                    for item in world.store.list_intents("PENDING", "CLAIMED", "AGENT_CREATED", "SUBMITTED")
+                    for item in world.store.list_intents(
+                        "PENDING", "CLAIMED", "AGENT_CREATED", "SUBMITTED"
+                    )
                     if item.mission_id == mission_id and item.kind == "attempt"
                 ]
         finally:
@@ -112,7 +118,7 @@ def test_the_prompt_is_the_appworld_hierarchical_one(tmp_path) -> None:
     # run_tests 等没开给这一步的工具），不是这一步真拿到的工具——疑似产品缺陷，已报告；这里只看
     # 这一段以外的文字（提示词本身）有没有叫它跑 pytest。
     head, _, rest = content.partition("## tools_and_permissions")
-    instructions = head + (rest[rest.find("\n## "):] if "\n## " in rest else "")
+    instructions = head + (rest[rest.find("\n## ") :] if "\n## " in rest else "")
     assert "run_tests" not in instructions, (
         "an AppWorld Worker must not be told to run pytest; that is the code domain's "
         "prompt, and reading it while operating a simulated world is defect D1's "

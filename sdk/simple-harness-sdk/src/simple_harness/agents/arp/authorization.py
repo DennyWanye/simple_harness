@@ -118,7 +118,9 @@ class RuntimeAuthorizationAdapter:
 
     def __post_init__(self) -> None:
         if is_allow_all(self.evaluator):
-            raise ArpError("AUTHORITY_SOURCE_MISSING", "AllowAll evaluators are refused for ARP runtimes")
+            raise ArpError(
+                "AUTHORITY_SOURCE_MISSING", "AllowAll evaluators are refused for ARP runtimes"
+            )
         if not callable(getattr(self.evaluator, "evaluate", None)):
             raise ArpError("AUTHORITY_SOURCE_MISSING", "evaluator has no evaluate()")
 
@@ -129,11 +131,14 @@ class RuntimeAuthorizationAdapter:
         if not isinstance(decision, OriginalDecision):
             raise ArpError("AUTHORITY_SOURCE_MISSING", "evaluator returned no original decision")
         if request.expected_policy_refs and decision.policy_ref not in request.expected_policy_refs:
-            raise ArpError("POLICY_CONFLICT", "evaluated policy differs from the expected policy pin")
+            raise ArpError(
+                "POLICY_CONFLICT", "evaluated policy differs from the expected policy pin"
+            )
         observed = self.clock_ms()
         receipt = {
             "schema_version": 1,
-            "authorization_id": "auth-" + digest({"request": request.to_json(), "at": observed})[:32],
+            "authorization_id": "auth-"
+            + digest({"request": request.to_json(), "at": observed})[:32],
             "request_key": request.request_key,
             "session_id": request.session_id,
             "agent_id": request.agent_id,

@@ -88,8 +88,14 @@ def worktree(tmp_path) -> Path:
     return root
 
 
-def _open_product_mission(tmp_path, *, key: str, criteria: tuple[str, ...] = ("file:NOTES.md",),
-                          wrap: Any = None, **world: Any):
+def _open_product_mission(
+    tmp_path,
+    *,
+    key: str,
+    criteria: tuple[str, ...] = ("file:NOTES.md",),
+    wrap: Any = None,
+    **world: Any,
+):
     """A user Mission created through the product's deployment assembly (HTN 补齐阶段 A′):
     root initialised, TaskGraph bound, Assurance on, the completion mapping confirmed the
     product's way and planning begun — then held open for synchronous test code.  Yields
@@ -102,16 +108,26 @@ def _open_product_mission(tmp_path, *, key: str, criteria: tuple[str, ...] = ("f
     from h1i_seed import CONFIG, GOAL, Seed, root_task
 
     loop = asyncio.new_event_loop()
-    opened = product_world(Path(tmp_path) / "root", LayeredScriptedProvider(), auto=False, **{**CONFIG, **world})
+    opened = product_world(
+        Path(tmp_path) / "root", LayeredScriptedProvider(), auto=False, **{**CONFIG, **world}
+    )
     product = loop.run_until_complete(opened.__aenter__())
     try:
-        created = product.create({"goal": GOAL, "idempotency_key": key, "success_criteria": list(criteria)})
+        created = product.create(
+            {"goal": GOAL, "idempotency_key": key, "success_criteria": list(criteria)}
+        )
         mission_id = created["mission_id"]
         product.deployment.duties.auto_confirm_content_completion(auto=True)
         product.loop.commit.begin_planning(mission_id)
         dispatch = product.loop._dispatch_for(mission_id)
-        seed = Seed(product.loop, product.store.get_mission(mission_id), dispatch.planning,
-                    HtnStore(product.store).latest_task_semantics(root_task(mission_id)), dispatch, product)
+        seed = Seed(
+            product.loop,
+            product.store.get_mission(mission_id),
+            dispatch.planning,
+            HtnStore(product.store).latest_task_semantics(root_task(mission_id)),
+            dispatch,
+            product,
+        )
         yield seed if wrap is None else wrap(seed)
     finally:
         loop.run_until_complete(opened.__aexit__(None, None, None))
@@ -315,14 +331,23 @@ def _observe(world, semantics, mission_id: str, *, polarity: bool, at: int = 1) 
 
         def observe(self, signature, arguments, *, now_ms: int) -> Observation:
             if polarity:
-                return observed(signature, arguments, polarity=True, observer_id=self.observer_id, now_ms=now_ms)
-            return denial(signature, arguments, observer_id=self.observer_id, now_ms=now_ms,
-                          coverage_scope="worktree:/tmp")
+                return observed(
+                    signature, arguments, polarity=True, observer_id=self.observer_id, now_ms=now_ms
+                )
+            return denial(
+                signature,
+                arguments,
+                observer_id=self.observer_id,
+                now_ms=now_ms,
+                coverage_scope="worktree:/tmp",
+            )
 
     index = build_index(world.predicates, (Reader(),))
     outcome = record_observation(
-        semantics, mission_id,
-        observe_predicate(index, ref("code.repo-checked-out"), {"repository": "r1"}, now_ms=at))
+        semantics,
+        mission_id,
+        observe_predicate(index, ref("code.repo-checked-out"), {"repository": "r1"}, now_ms=at),
+    )
     assert outcome.recorded, outcome
 
 
@@ -861,7 +886,9 @@ class SynthWorld:
 
 @pytest.fixture
 def synth(tmp_path) -> Any:
-    yield from _open_product_mission(tmp_path, key="synth", criteria=("file:wordfreq.py",), wrap=SynthWorld)
+    yield from _open_product_mission(
+        tmp_path, key="synth", criteria=("file:wordfreq.py",), wrap=SynthWorld
+    )
 
 
 def test_the_method_context_carries_no_authority_vocabulary(synth: SynthWorld) -> None:
@@ -911,12 +938,20 @@ def test_an_unusable_capability_is_reported_as_unavailable(tmp_path) -> None:
     from agent_orchestrator.governance.policies import DeploymentPolicy
 
     tools = ("workspace_read_file",)
-    for synth in _open_product_mission(tmp_path, key="unusable", wrap=SynthWorld, allowed_tools=tools,
-                                       deployment_policy=DeploymentPolicy(allowed_tools=tools)):
+    for synth in _open_product_mission(
+        tmp_path,
+        key="unusable",
+        wrap=SynthWorld,
+        allowed_tools=tools,
+        deployment_policy=DeploymentPolicy(allowed_tools=tools),
+    ):
         assert tuple(synth.mission.allowed_tools) == tools
         request = synth.context()
         assert "workspace.prepare" in request["unavailable_capabilities"]
-        assert request["operators"] and [item for item in request["operators"] if item["available"]] == []
+        assert (
+            request["operators"]
+            and [item for item in request["operators"] if item["available"]] == []
+        )
 
 
 # ======================================================================================

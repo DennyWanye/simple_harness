@@ -83,7 +83,9 @@ class ProfileRow:
         return Pin("profile", self.profile_id, self.revision, self.body_hash)
 
 
-def read_profile(connection: sqlite3.Connection, profile_id: str, revision: int) -> ProfileRow | None:
+def read_profile(
+    connection: sqlite3.Connection, profile_id: str, revision: int
+) -> ProfileRow | None:
     row = connection.execute(
         "SELECT profile_id,revision,body_hash,body_json,activation_receipt_json FROM arp_profiles"
         " WHERE profile_id=? AND revision=?",
@@ -103,7 +105,9 @@ def put_profile_locked(
     existing = read_profile(connection, value["profile_id"], value["profile_revision"])
     if existing is not None:
         if existing.body_hash != body_hash:
-            raise ArpError("SOURCE_HASH_CONFLICT", "profile identity already exists with another body")
+            raise ArpError(
+                "SOURCE_HASH_CONFLICT", "profile identity already exists with another body"
+            )
         return existing
     connection.execute(
         "INSERT INTO arp_profiles(profile_id,revision,body_hash,body_json,activation_receipt_json)"
@@ -255,7 +259,11 @@ def read_protocol(connection: sqlite3.Connection, agent_id: str) -> ProtocolRow 
     if row is None:
         return None
     return ProtocolRow(
-        str(row[0]), str(row[1]), Pin.from_json(_load(row[2]), kinds=("receipt",)), str(row[3]), int(row[4])
+        str(row[0]),
+        str(row[1]),
+        Pin.from_json(_load(row[2]), kinds=("receipt",)),
+        str(row[3]),
+        int(row[4]),
     )
 
 
@@ -277,7 +285,9 @@ def put_protocol_locked(
             or existing.creation_receipt_ref != creation_receipt_ref
             or existing.marker_hash != marker_hash
         ):
-            raise ArpError("CREATION_IDENTITY_CONFLICT", "agent already has a different creation protocol")
+            raise ArpError(
+                "CREATION_IDENTITY_CONFLICT", "agent already has a different creation protocol"
+            )
         return existing
     connection.execute(
         "INSERT INTO arp_agent_protocols(agent_id,protocol,creation_receipt_ref_json,marker_hash,marked_at_ms)"
@@ -387,7 +397,9 @@ def read_live_session(connection: sqlite3.Connection, agent_id: str) -> SessionR
     return None if row is None else _session(row)
 
 
-def read_session_by_creation_key(connection: sqlite3.Connection, creation_key: str) -> SessionRow | None:
+def read_session_by_creation_key(
+    connection: sqlite3.Connection, creation_key: str
+) -> SessionRow | None:
     row = connection.execute(
         f"SELECT {_SESSION_COLUMNS} FROM arp_agent_sessions WHERE creation_key=?", (creation_key,)
     ).fetchone()
@@ -443,7 +455,9 @@ def insert_session_locked(
             or existing.create_command_hash != create_command_hash
             or existing.relative_directory != relative_directory
         ):
-            raise ArpError("SESSION_IDENTITY_MISMATCH", "session identity already exists differently")
+            raise ArpError(
+                "SESSION_IDENTITY_MISMATCH", "session identity already exists differently"
+            )
         return existing
     connection.execute(
         "INSERT INTO arp_agent_sessions(session_id,agent_id,profile_id,profile_revision,profile_hash,"
@@ -518,7 +532,10 @@ def transition_session_locked(
             values,
         ).rowcount
     except sqlite3.IntegrityError as error:
-        raise ArpError("PURGE_STATE_INVALID" if "purge" in str(error) else "STATE_COMBINATION_INVALID", str(error)) from error
+        raise ArpError(
+            "PURGE_STATE_INVALID" if "purge" in str(error) else "STATE_COMBINATION_INVALID",
+            str(error),
+        ) from error
     if updated != 1:
         raise ArpError("GENERATION_STALE", "session row changed concurrently")
     after = read_session(connection, current.session_id)
@@ -543,7 +560,9 @@ class PolicyObjectRow:
         return Pin("policy", self.policy_id, self.revision, self.content_hash)
 
 
-def read_policy_object(connection: sqlite3.Connection, policy_id: str, revision: int) -> PolicyObjectRow | None:
+def read_policy_object(
+    connection: sqlite3.Connection, policy_id: str, revision: int
+) -> PolicyObjectRow | None:
     row = connection.execute(
         "SELECT policy_id,revision,content_hash,body_json,approval_ref_json,source_receipt_ref_json"
         " FROM arp_policy_objects WHERE policy_id=? AND revision=?",
@@ -552,7 +571,12 @@ def read_policy_object(connection: sqlite3.Connection, policy_id: str, revision:
     if row is None:
         return None
     return PolicyObjectRow(
-        str(row[0]), int(row[1]), str(row[2]), _load(row[3]), Pin.from_json(_load(row[4])), Pin.from_json(_load(row[5]))
+        str(row[0]),
+        int(row[1]),
+        str(row[2]),
+        _load(row[3]),
+        Pin.from_json(_load(row[4])),
+        Pin.from_json(_load(row[5])),
     )
 
 
@@ -595,7 +619,9 @@ def put_policy_object_locked(
             _pin_column(source_receipt_ref),
         ),
     )
-    return PolicyObjectRow(value["policy_id"], revision, content_hash, value, approval_ref, source_receipt_ref)
+    return PolicyObjectRow(
+        value["policy_id"], revision, content_hash, value, approval_ref, source_receipt_ref
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -640,9 +666,12 @@ def latest_adoption(connection: sqlite3.Connection, session_id: str) -> PolicyAd
     return None if row is None else _adoption(row)
 
 
-def read_adoption_by_command(connection: sqlite3.Connection, command_id: str) -> PolicyAdoptionRow | None:
+def read_adoption_by_command(
+    connection: sqlite3.Connection, command_id: str
+) -> PolicyAdoptionRow | None:
     row = connection.execute(
-        f"SELECT {_ADOPTION_COLUMNS} FROM arp_context_policy_adoptions WHERE command_id=?", (command_id,)
+        f"SELECT {_ADOPTION_COLUMNS} FROM arp_context_policy_adoptions WHERE command_id=?",
+        (command_id,),
     ).fetchone()
     return None if row is None else _adoption(row)
 
@@ -732,7 +761,11 @@ def append_runtime_event_locked(
         if str(existing[3]) != body_hash:
             raise ArpError("SOURCE_HASH_CONFLICT", "event dedupe key reused with another body")
         return EventBindingRow(
-            str(existing[0]), int(existing[1]), str(existing[2]), str(existing[3]), _load(existing[4]),
+            str(existing[0]),
+            int(existing[1]),
+            str(existing[2]),
+            str(existing[3]),
+            _load(existing[4]),
             Pin.from_json(_load(existing[5])),
         )
     sequence = int(
@@ -758,7 +791,14 @@ def append_runtime_event_locked(
     connection.execute(
         "INSERT INTO arp_event_bindings(original_event_id,original_eventseq,event_type,body_hash,"
         "body_json,source_receipt_ref_json) VALUES (?,?,?,?,?,?)",
-        (event_id, sequence, event_type, body_hash, _json_column(value), _pin_column(source_receipt_ref)),
+        (
+            event_id,
+            sequence,
+            event_type,
+            body_hash,
+            _json_column(value),
+            _pin_column(source_receipt_ref),
+        ),
     )
     return EventBindingRow(event_id, sequence, event_type, body_hash, value, source_receipt_ref)
 
@@ -774,7 +814,9 @@ def list_event_bindings(
         (*args, limit),
     ).fetchall()
     return tuple(
-        EventBindingRow(str(r[0]), int(r[1]), str(r[2]), str(r[3]), _load(r[4]), Pin.from_json(_load(r[5])))
+        EventBindingRow(
+            str(r[0]), int(r[1]), str(r[2]), str(r[3]), _load(r[4]), Pin.from_json(_load(r[5]))
+        )
         for r in rows
     )
 
@@ -809,8 +851,18 @@ _JOB_COLUMNS = (
 
 def _job(row: sqlite3.Row | tuple) -> JobRow:
     return JobRow(
-        str(row[0]), str(row[1]), str(row[2]), str(row[3]), _load(row[4]), str(row[5]), int(row[6]),
-        str(row[7]), int(row[8]), int(row[9]), int(row[10]), int(row[11]),
+        str(row[0]),
+        str(row[1]),
+        str(row[2]),
+        str(row[3]),
+        _load(row[4]),
+        str(row[5]),
+        int(row[6]),
+        str(row[7]),
+        int(row[8]),
+        int(row[9]),
+        int(row[10]),
+        int(row[11]),
         None if row[12] is None else str(row[12]),
         None if row[13] is None else int(row[13]),
         None if row[14] is None else Pin.from_json(_load(row[14])),
@@ -818,11 +870,15 @@ def _job(row: sqlite3.Row | tuple) -> JobRow:
 
 
 def read_job(connection: sqlite3.Connection, job_id: str) -> JobRow | None:
-    row = connection.execute(f"SELECT {_JOB_COLUMNS} FROM arp_jobs WHERE job_id=?", (job_id,)).fetchone()
+    row = connection.execute(
+        f"SELECT {_JOB_COLUMNS} FROM arp_jobs WHERE job_id=?", (job_id,)
+    ).fetchone()
     return None if row is None else _job(row)
 
 
-def read_job_by_key(connection: sqlite3.Connection, session_id: str, kind: str, semantic_key: str) -> JobRow | None:
+def read_job_by_key(
+    connection: sqlite3.Connection, session_id: str, kind: str, semantic_key: str
+) -> JobRow | None:
     row = connection.execute(
         f"SELECT {_JOB_COLUMNS} FROM arp_jobs WHERE session_id=? AND kind=? AND semantic_key=?",
         (session_id, kind, semantic_key),
@@ -831,7 +887,11 @@ def read_job_by_key(connection: sqlite3.Connection, session_id: str, kind: str, 
 
 
 def list_session_jobs(
-    connection: sqlite3.Connection, session_id: str, *, kinds: Sequence[str] | None = None, states: Sequence[str] | None = None
+    connection: sqlite3.Connection,
+    session_id: str,
+    *,
+    kinds: Sequence[str] | None = None,
+    states: Sequence[str] | None = None,
 ) -> tuple[JobRow, ...]:
     """Every job of one Session (oldest first), optionally narrowed by kind / state."""
 
@@ -844,7 +904,8 @@ def list_session_jobs(
         where.append(f"state IN ({','.join('?' for _ in states)})")
         args.extend(states)
     rows = connection.execute(
-        f"SELECT {_JOB_COLUMNS} FROM arp_jobs WHERE {' AND '.join(where)} ORDER BY next_at_ms, job_id", args
+        f"SELECT {_JOB_COLUMNS} FROM arp_jobs WHERE {' AND '.join(where)} ORDER BY next_at_ms, job_id",
+        args,
     ).fetchall()
     return tuple(_job(r) for r in rows)
 
@@ -864,7 +925,11 @@ def put_job_locked(
     require_transaction(connection)
     if kind not in JOB_KINDS:
         raise ArpError("ENUM", field_path="kind")
-    payload_name = {"INDEX": "IndexJobPayload", "PURGE": "PurgeJobPayload", "BIND_IMPORT": "BindImportJobPayload"}[kind]
+    payload_name = {
+        "INDEX": "IndexJobPayload",
+        "PURGE": "PurgeJobPayload",
+        "BIND_IMPORT": "BindImportJobPayload",
+    }[kind]
     value = check(payload_name, dict(payload))
     payload_hash = digest(value)
     existing = read_job_by_key(connection, session_id, kind, semantic_key)
@@ -874,7 +939,17 @@ def put_job_locked(
         return existing
     connection.execute(
         f"INSERT INTO arp_jobs({_JOB_COLUMNS}) VALUES (?,?,?,?,?,?,?,'PENDING',1,0,?,?,NULL,NULL,NULL)",
-        (job_id, session_id, kind, semantic_key, _json_column(value), payload_hash, generation, next_at_ms, deadline_ms),
+        (
+            job_id,
+            session_id,
+            kind,
+            semantic_key,
+            _json_column(value),
+            payload_hash,
+            generation,
+            next_at_ms,
+            deadline_ms,
+        ),
     )
     created = read_job(connection, job_id)
     assert created is not None
@@ -896,7 +971,9 @@ def claim_jobs_locked(
 
     require_transaction(connection)
     scope = "" if session_id is None else " AND session_id=?"
-    params: tuple[Any, ...] = (now_ms, now_ms) if session_id is None else (now_ms, session_id, now_ms, session_id)
+    params: tuple[Any, ...] = (
+        (now_ms, now_ms) if session_id is None else (now_ms, session_id, now_ms, session_id)
+    )
     rows = connection.execute(
         f"SELECT {_JOB_COLUMNS} FROM arp_jobs WHERE ((state='PENDING' AND next_at_ms<=?){scope})"
         f" OR ((state='LEASED' AND lease_until_ms<?){scope}) ORDER BY next_at_ms, job_id LIMIT ?",
@@ -1031,20 +1108,39 @@ _CONTEXT_COLUMNS = (
 
 def _context(row: sqlite3.Row | tuple) -> ContextRequestRow:
     return ContextRequestRow(
-        str(row[0]), str(row[1]), str(row[2]), str(row[3]), int(row[4]), int(row[5]), int(row[6]), str(row[7]),
-        _load(row[8]), str(row[9]), str(row[10]), int(row[11]), int(row[12]), int(row[13]), int(row[14]),
-        _load(row[15]), int(row[16]),
+        str(row[0]),
+        str(row[1]),
+        str(row[2]),
+        str(row[3]),
+        int(row[4]),
+        int(row[5]),
+        int(row[6]),
+        str(row[7]),
+        _load(row[8]),
+        str(row[9]),
+        str(row[10]),
+        int(row[11]),
+        int(row[12]),
+        int(row[13]),
+        int(row[14]),
+        _load(row[15]),
+        int(row[16]),
     )
 
 
 def read_context(connection: sqlite3.Connection, context_id: str) -> ContextRequestRow | None:
-    row = connection.execute(f"SELECT {_CONTEXT_COLUMNS} FROM arp_context_requests WHERE context_id=?", (context_id,)).fetchone()
+    row = connection.execute(
+        f"SELECT {_CONTEXT_COLUMNS} FROM arp_context_requests WHERE context_id=?", (context_id,)
+    ).fetchone()
     return None if row is None else _context(row)
 
 
-def read_context_by_request_key(connection: sqlite3.Connection, original_request_key: str) -> ContextRequestRow | None:
+def read_context_by_request_key(
+    connection: sqlite3.Connection, original_request_key: str
+) -> ContextRequestRow | None:
     row = connection.execute(
-        f"SELECT {_CONTEXT_COLUMNS} FROM arp_context_requests WHERE original_request_key=?", (original_request_key,)
+        f"SELECT {_CONTEXT_COLUMNS} FROM arp_context_requests WHERE original_request_key=?",
+        (original_request_key,),
     ).fetchone()
     return None if row is None else _context(row)
 
@@ -1074,16 +1170,30 @@ def put_context_locked(
     existing = read_context_by_request_key(connection, original_request_key)
     if existing is not None:
         if existing.manifest_hash != manifest_hash:
-            raise ArpError("REQUEST_HASH_MISMATCH", "request key already frozen with another manifest")
+            raise ArpError(
+                "REQUEST_HASH_MISMATCH", "request key already frozen with another manifest"
+            )
         return existing
     connection.execute(
         f"INSERT INTO arp_context_requests({_CONTEXT_COLUMNS}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (
-            value["context_id"], value["session_id"], value["agent_id"], value["turn_id"],
-            int(value["provider_request_ordinal"]), int(value["session_generation"]), int(value["journal_highwater"]),
-            manifest_hash, _json_column(value), value["planned_request_hash"], original_request_key,
-            int(value["input_token_charge"]), int(value["effective_input_budget"]), int(value["reserved_output_tokens"]),
-            int(catalog_epoch), _json_column(dict(source_read_set)), int(now_ms),
+            value["context_id"],
+            value["session_id"],
+            value["agent_id"],
+            value["turn_id"],
+            int(value["provider_request_ordinal"]),
+            int(value["session_generation"]),
+            int(value["journal_highwater"]),
+            manifest_hash,
+            _json_column(value),
+            value["planned_request_hash"],
+            original_request_key,
+            int(value["input_token_charge"]),
+            int(value["effective_input_budget"]),
+            int(value["reserved_output_tokens"]),
+            int(catalog_epoch),
+            _json_column(dict(source_read_set)),
+            int(now_ms),
         ),
     )
     created = read_context(connection, value["context_id"])
@@ -1130,25 +1240,41 @@ _RECALL_COLUMNS = (
 
 def _recall(row: sqlite3.Row | tuple) -> ContextRecallRow:
     return ContextRecallRow(
-        str(row[0]), str(row[1]), str(row[2]), str(row[3]), str(row[4]), int(row[5]), int(row[6]), str(row[7]),
-        _load(row[8]), str(row[9]),
+        str(row[0]),
+        str(row[1]),
+        str(row[2]),
+        str(row[3]),
+        str(row[4]),
+        int(row[5]),
+        int(row[6]),
+        str(row[7]),
+        _load(row[8]),
+        str(row[9]),
         None if row[10] is None else Pin.from_json(_load(row[10])),
         None if row[11] is None else Pin.from_json(_load(row[11])),
-        str(row[12]), _load(row[13]),
+        str(row[12]),
+        _load(row[13]),
         None if row[14] is None else _load(row[14]),
         None if row[15] is None else str(row[15]),
-        int(row[16]), int(row[17]), int(row[18]),
+        int(row[16]),
+        int(row[17]),
+        int(row[18]),
     )
 
 
 def read_context_recall(connection: sqlite3.Connection, recall_key: str) -> ContextRecallRow | None:
-    row = connection.execute(f"SELECT {_RECALL_COLUMNS} FROM arp_context_recalls WHERE recall_key=?", (recall_key,)).fetchone()
+    row = connection.execute(
+        f"SELECT {_RECALL_COLUMNS} FROM arp_context_recalls WHERE recall_key=?", (recall_key,)
+    ).fetchone()
     return None if row is None else _recall(row)
 
 
-def get_context_recall_exact(connection: sqlite3.Connection, original_request_key: str) -> ContextRecallRow | None:
+def get_context_recall_exact(
+    connection: sqlite3.Connection, original_request_key: str
+) -> ContextRecallRow | None:
     row = connection.execute(
-        f"SELECT {_RECALL_COLUMNS} FROM arp_context_recalls WHERE original_request_key=?", (original_request_key,)
+        f"SELECT {_RECALL_COLUMNS} FROM arp_context_recalls WHERE original_request_key=?",
+        (original_request_key,),
     ).fetchone()
     return None if row is None else _recall(row)
 
@@ -1166,28 +1292,48 @@ def list_pending_recalls(
     return tuple(_recall(r) for r in rows)
 
 
-def put_context_recall_locked(connection: sqlite3.Connection, *, request: Json, checkpoint: Json) -> ContextRecallRow:
+def put_context_recall_locked(
+    connection: sqlite3.Connection, *, request: Json, checkpoint: Json
+) -> ContextRecallRow:
     """C0: freeze the ``ContextRecallRequest`` and its PREPARING checkpoint under one identity."""
 
     require_transaction(connection)
     value = check("ContextRecallRequest", dict(request))
     request_hash = digest(value)
     point = check("ContextRecallCheckpoint", dict(checkpoint))
-    if point["phase"] != "PREPARING" or point["request_hash"] != request_hash or point["recall_key"] != value["recall_key"]:
-        raise ArpError("RECALL_BINDING_INVALID", "initial checkpoint must be PREPARING for this request")
+    if (
+        point["phase"] != "PREPARING"
+        or point["request_hash"] != request_hash
+        or point["recall_key"] != value["recall_key"]
+    ):
+        raise ArpError(
+            "RECALL_BINDING_INVALID", "initial checkpoint must be PREPARING for this request"
+        )
     if point["deadline_ms"] != value["deadline_ms"]:
         raise ArpError("RECALL_BINDING_INVALID", "checkpoint deadline differs from the request")
     existing = get_context_recall_exact(connection, value["original_request_key"])
     if existing is not None:
         if existing.request_hash != request_hash:
-            raise ArpError("RECALL_BINDING_INVALID", "request key already coordinated with another request")
+            raise ArpError(
+                "RECALL_BINDING_INVALID", "request key already coordinated with another request"
+            )
         return existing
     connection.execute(
         f"INSERT INTO arp_context_recalls({_RECALL_COLUMNS}) VALUES (?,?,?,?,?,?,?,?,?,?,NULL,NULL,'PREPARING',?,NULL,NULL,?,?,1)",
         (
-            value["recall_key"], value["session_id"], value["agent_id"], value["turn_id"], value["original_request_key"],
-            int(value["provider_request_ordinal"]), int(value["control_generation"]), request_hash, _json_column(value),
-            point["query_id"], _json_column(point), int(value["deadline_ms"]), int(point["next_wake_at_ms"]),
+            value["recall_key"],
+            value["session_id"],
+            value["agent_id"],
+            value["turn_id"],
+            value["original_request_key"],
+            int(value["provider_request_ordinal"]),
+            int(value["control_generation"]),
+            request_hash,
+            _json_column(value),
+            point["query_id"],
+            _json_column(point),
+            int(value["deadline_ms"]),
+            int(point["next_wake_at_ms"]),
         ),
     )
     created = read_context_recall(connection, value["recall_key"])
@@ -1214,7 +1360,10 @@ def cas_context_recall_locked(
         raise ArpError("RECALL_BINDING_INVALID", "checkpoint query/deadline immutable")
     if current.checkpoint.get("mode") is not None and point["mode"] != current.checkpoint["mode"]:
         raise ArpError("RECALL_BINDING_INVALID", "mode is frozen once chosen")
-    if current.checkpoint.get("index_snapshot_ref") is not None and point["index_snapshot_ref"] != current.checkpoint["index_snapshot_ref"]:
+    if (
+        current.checkpoint.get("index_snapshot_ref") is not None
+        and point["index_snapshot_ref"] != current.checkpoint["index_snapshot_ref"]
+    ):
         raise ArpError("RECALL_BINDING_INVALID", "snapshot is frozen once chosen")
     if point["last_observed_at_ms"] < int(current.checkpoint["last_observed_at_ms"]):
         raise ArpError("CLOCK_ROLLBACK", "observed clock went backwards")
@@ -1225,7 +1374,10 @@ def cas_context_recall_locked(
         if result is None:
             raise ArpError("RECALL_BINDING_INVALID", "terminal READY/SKIPPED needs its result")
         value = check("ContextRecallResult", dict(result))
-        if value["recall_key"] != current.recall_key or value["request_hash"] != current.request_hash:
+        if (
+            value["recall_key"] != current.recall_key
+            or value["request_hash"] != current.request_hash
+        ):
             raise ArpError("RECALL_BINDING_INVALID", "result identity differs from the row")
         if (value["outcome"] == "READY") != (phase == "READY"):
             raise ArpError("RECALL_BINDING_INVALID", "result outcome differs from the phase")
@@ -1240,10 +1392,15 @@ def cas_context_recall_locked(
         " index_snapshot_ref_json=COALESCE(index_snapshot_ref_json, ?), embedding_invocation_ref_json=COALESCE(embedding_invocation_ref_json, ?),"
         " row_version=row_version+1 WHERE recall_key=? AND row_version=?",
         (
-            phase, _json_column(point), result_json, result_hash, int(point["next_wake_at_ms"]),
+            phase,
+            _json_column(point),
+            result_json,
+            result_hash,
+            int(point["next_wake_at_ms"]),
             None if snapshot_ref is None else _json_column(snapshot_ref),
             None if embedding_ref is None else _json_column(embedding_ref),
-            current.recall_key, current.row_version,
+            current.recall_key,
+            current.row_version,
         ),
     ).rowcount
     if updated != 1:
@@ -1268,17 +1425,32 @@ class IndexPublicationRow:
 
     @property
     def pin(self) -> Pin:
-        return Pin("index_generation", f"{self.session_id}:gen:{self.index_generation}", self.index_generation, self.generation_manifest_hash)
+        return Pin(
+            "index_generation",
+            f"{self.session_id}:gen:{self.index_generation}",
+            self.index_generation,
+            self.generation_manifest_hash,
+        )
 
 
 def _publication(row: sqlite3.Row | tuple) -> IndexPublicationRow:
-    return IndexPublicationRow(str(row[0]), int(row[1]), str(row[2]), str(row[3]), int(row[4]), str(row[5]), Pin.from_json(_load(row[6])))
+    return IndexPublicationRow(
+        str(row[0]),
+        int(row[1]),
+        str(row[2]),
+        str(row[3]),
+        int(row[4]),
+        str(row[5]),
+        Pin.from_json(_load(row[6])),
+    )
 
 
 _PUBLICATION_COLUMNS = "session_id,index_generation,partition_id,generation_manifest_hash,source_highwater,state,publish_receipt_ref_json"
 
 
-def active_index_publication(connection: sqlite3.Connection, session_id: str) -> IndexPublicationRow | None:
+def active_index_publication(
+    connection: sqlite3.Connection, session_id: str
+) -> IndexPublicationRow | None:
     row = connection.execute(
         f"SELECT {_PUBLICATION_COLUMNS} FROM arp_index_publications WHERE session_id=? AND state='ACTIVE' ORDER BY index_generation DESC LIMIT 1",
         (session_id,),
@@ -1306,7 +1478,10 @@ def publish_index_generation_locked(
     ).fetchone()
     if row is not None:
         existing = _publication(row)
-        if existing.generation_manifest_hash != generation_manifest_hash or existing.partition_id != partition_id:
+        if (
+            existing.generation_manifest_hash != generation_manifest_hash
+            or existing.partition_id != partition_id
+        ):
             raise ArpError("GENERATION_STALE", "generation already published with another manifest")
         return existing
     current = active_index_publication(connection, session_id)
@@ -1319,7 +1494,14 @@ def publish_index_generation_locked(
         )
     connection.execute(
         f"INSERT INTO arp_index_publications({_PUBLICATION_COLUMNS}) VALUES (?,?,?,?,?,'ACTIVE',?)",
-        (session_id, index_generation, partition_id, generation_manifest_hash, int(source_highwater), _pin_column(publish_receipt_ref)),
+        (
+            session_id,
+            index_generation,
+            partition_id,
+            generation_manifest_hash,
+            int(source_highwater),
+            _pin_column(publish_receipt_ref),
+        ),
     )
     created = active_index_publication(connection, session_id)
     assert created is not None
@@ -1331,15 +1513,29 @@ def publish_index_generation_locked(
 
 def read_host_command(connection: sqlite3.Connection, command_id: str) -> Mapping[str, Any] | None:
     row = connection.execute(
-        "SELECT verb,subject_id,command_hash,body_json,body_hash FROM arp_host_commands WHERE command_id=?", (command_id,)
+        "SELECT verb,subject_id,command_hash,body_json,body_hash FROM arp_host_commands WHERE command_id=?",
+        (command_id,),
     ).fetchone()
     if row is None:
         return None
-    return {"command_id": command_id, "verb": str(row[0]), "subject_id": str(row[1]), "command_hash": str(row[2]), "body": _load(row[3]), "body_hash": str(row[4])}
+    return {
+        "command_id": command_id,
+        "verb": str(row[0]),
+        "subject_id": str(row[1]),
+        "command_hash": str(row[2]),
+        "body": _load(row[3]),
+        "body_hash": str(row[4]),
+    }
 
 
 def put_host_command_locked(
-    connection: sqlite3.Connection, *, command_id: str, verb: str, subject_id: str, command_hash: str, body: Json
+    connection: sqlite3.Connection,
+    *,
+    command_id: str,
+    verb: str,
+    subject_id: str,
+    command_hash: str,
+    body: Json,
 ) -> Mapping[str, Any]:
     """First write wins; the same command id with another command hash is a conflict."""
 
@@ -1352,7 +1548,14 @@ def put_host_command_locked(
     value = dict(body)
     connection.execute(
         "INSERT INTO arp_host_commands(command_id,verb,subject_id,command_hash,body_json,body_hash) VALUES (?,?,?,?,?,?)",
-        (_text(command_id, "command_id"), _text(verb, "verb"), _text(subject_id, "subject_id"), command_hash, _json_column(value), digest(value)),
+        (
+            _text(command_id, "command_id"),
+            _text(verb, "verb"),
+            _text(subject_id, "subject_id"),
+            command_hash,
+            _json_column(value),
+            digest(value),
+        ),
     )
     created = read_host_command(connection, command_id)
     assert created is not None
@@ -1392,43 +1595,86 @@ def put_retention_permit_locked(
     ).fetchone()
     if existing is not None:
         if Pin.from_json(_load(existing[1])) != source_receipt_ref:
-            raise ArpError("SOURCE_HASH_CONFLICT", "retention permit already granted from another receipt")
-        return {"table_name": table_name, "row_key": key, "body_hash": body_hash, "expires_at_ms": int(existing[0]), "source_receipt_ref": source_receipt_ref.to_json()}
+            raise ArpError(
+                "SOURCE_HASH_CONFLICT", "retention permit already granted from another receipt"
+            )
+        return {
+            "table_name": table_name,
+            "row_key": key,
+            "body_hash": body_hash,
+            "expires_at_ms": int(existing[0]),
+            "source_receipt_ref": source_receipt_ref.to_json(),
+        }
     connection.execute(
         "INSERT INTO arp_retention_permits(table_name,row_key,body_hash,expires_at_ms,source_receipt_ref_json) VALUES (?,?,?,?,?)",
-        (_text(table_name, "table_name"), key, body_hash, expires_at_ms, _pin_column(source_receipt_ref)),
+        (
+            _text(table_name, "table_name"),
+            key,
+            body_hash,
+            expires_at_ms,
+            _pin_column(source_receipt_ref),
+        ),
     )
-    return {"table_name": table_name, "row_key": key, "body_hash": body_hash, "expires_at_ms": expires_at_ms, "source_receipt_ref": source_receipt_ref.to_json()}
+    return {
+        "table_name": table_name,
+        "row_key": key,
+        "body_hash": body_hash,
+        "expires_at_ms": expires_at_ms,
+        "source_receipt_ref": source_receipt_ref.to_json(),
+    }
 
 
 # ---- original receipts (run_events rows for facts that have no table of their own) -----------
 
 
-def put_skill_use_locked(connection: sqlite3.Connection, *, use: Mapping[str, Any], use_key: str, original_call_ref: Pin | None) -> Mapping[str, Any]:
+def put_skill_use_locked(
+    connection: sqlite3.Connection,
+    *,
+    use: Mapping[str, Any],
+    use_key: str,
+    original_call_ref: Pin | None,
+) -> Mapping[str, Any]:
     """Persist one immutable ``SkillUse``; the same key with the same body replays."""
 
     require_transaction(connection)
     use_hash = digest(use)
-    existing = connection.execute("SELECT use_hash, body_json FROM arp_skill_uses WHERE session_id=? AND use_key=?", (use["session_id"], use_key)).fetchone()
+    existing = connection.execute(
+        "SELECT use_hash, body_json FROM arp_skill_uses WHERE session_id=? AND use_key=?",
+        (use["session_id"], use_key),
+    ).fetchone()
     if existing is not None:
         if str(existing[0]) != use_hash:
             raise ArpError("SOURCE_HASH_CONFLICT", "skill use key reused with another body")
         return _load(existing[1])
     connection.execute(
         "INSERT INTO arp_skill_uses(use_id,session_id,turn_id,use_key,use_hash,body_json,original_call_ref_json) VALUES (?,?,?,?,?,?,?)",
-        (use["use_id"], use["session_id"], use["turn_id"], use_key, use_hash, _json_column(use), None if original_call_ref is None else _json_column(original_call_ref.to_json())),
+        (
+            use["use_id"],
+            use["session_id"],
+            use["turn_id"],
+            use_key,
+            use_hash,
+            _json_column(use),
+            None if original_call_ref is None else _json_column(original_call_ref.to_json()),
+        ),
     )
     return use
 
 
-def read_skill_uses(connection: sqlite3.Connection, session_id: str, *, mode: str | None = None) -> tuple[Mapping[str, Any], ...]:
-    rows = connection.execute("SELECT body_json FROM arp_skill_uses WHERE session_id=? ORDER BY rowid ASC", (session_id,)).fetchall()
+def read_skill_uses(
+    connection: sqlite3.Connection, session_id: str, *, mode: str | None = None
+) -> tuple[Mapping[str, Any], ...]:
+    rows = connection.execute(
+        "SELECT body_json FROM arp_skill_uses WHERE session_id=? ORDER BY rowid ASC", (session_id,)
+    ).fetchall()
     uses = tuple(_load(r[0]) for r in rows)
     return uses if mode is None else tuple(u for u in uses if u["mode"] == mode)
 
 
 def read_skill_use(connection: sqlite3.Connection, use_id: str) -> Mapping[str, Any] | None:
-    raw = connection.execute("SELECT body_json FROM arp_skill_uses WHERE use_id=?", (use_id,)).fetchone()
+    raw = connection.execute(
+        "SELECT body_json FROM arp_skill_uses WHERE use_id=?", (use_id,)
+    ).fetchone()
     return None if raw is None else _load(raw[0])
 
 
@@ -1447,7 +1693,9 @@ def append_original_receipt_locked(
     value = dict(body)
     body_hash = digest(value)
     event_id = f"arp:{kind}:{digest({'key': receipt_key})[:32]}"
-    existing = connection.execute("SELECT payload_json FROM run_events WHERE event_id=?", (event_id,)).fetchone()
+    existing = connection.execute(
+        "SELECT payload_json FROM run_events WHERE event_id=?", (event_id,)
+    ).fetchone()
     if existing is not None:
         stored = _load(existing[0])
         if stored.get("body_hash") != body_hash:
@@ -1458,7 +1706,13 @@ def append_original_receipt_locked(
             "SELECT COALESCE(MAX(durable_seq), 0) + 1 FROM run_events WHERE run_id = ?", (run_id,)
         ).fetchone()[0]
     )
-    payload = {"schema_version": 1, "kind": kind, "receipt_key": receipt_key, "body_hash": body_hash, "body": value}
+    payload = {
+        "schema_version": 1,
+        "kind": kind,
+        "receipt_key": receipt_key,
+        "body_hash": body_hash,
+        "body": value,
+    }
     connection.execute(
         "INSERT INTO run_events(event_id, run_id, durable_seq, kind, payload_json, created_at) VALUES (?, ?, ?, ?, ?, ?)",
         (event_id, run_id, sequence, f"arp.{kind}.v1", _json_column(payload), now),
@@ -1469,9 +1723,13 @@ def append_original_receipt_locked(
     return Pin("receipt", f"{kind}:{receipt_key}", 0, body_hash)
 
 
-def read_original_receipt(connection: sqlite3.Connection, *, kind: str, receipt_key: str) -> Mapping[str, Any] | None:
+def read_original_receipt(
+    connection: sqlite3.Connection, *, kind: str, receipt_key: str
+) -> Mapping[str, Any] | None:
     event_id = f"arp:{kind}:{digest({'key': receipt_key})[:32]}"
-    row = connection.execute("SELECT payload_json FROM run_events WHERE event_id=?", (event_id,)).fetchone()
+    row = connection.execute(
+        "SELECT payload_json FROM run_events WHERE event_id=?", (event_id,)
+    ).fetchone()
     return None if row is None else _load(row[0])["body"]
 
 

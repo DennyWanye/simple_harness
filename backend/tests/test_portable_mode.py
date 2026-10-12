@@ -9,6 +9,7 @@ Tested via the public surface: monkeypatch `sys.frozen=True` and
 then assert ``user_data_dir`` / ``user_models_dir`` / ``user_log_dir``
 all resolve under the install's `userdata/`.
 """
+
 from __future__ import annotations
 
 import sys

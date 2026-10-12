@@ -17,6 +17,7 @@ Design:
 - Report files are append-only — the app never reads them back; a future
   config-panel slice can expose them in the UI.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -84,9 +85,7 @@ def install_crash_reporter(directory: Path | None = None) -> None:
                 msg = context.get("message", "unknown")
                 body = f"asyncio error (no exception): {msg}\ncontext={context!r}\n"
             else:
-                body = "".join(
-                    traceback.format_exception(type(exc), exc, exc.__traceback__)
-                )
+                body = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
             path = _write_report("asyncio", body, directory)
             logger.error(
                 "asyncio_task_exception",

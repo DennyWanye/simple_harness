@@ -13,6 +13,7 @@ and Gemini reports 0 on both (context caching only in paid tier). The
 caller MUST NOT assume non-Anthropic adapters zero-out these fields by
 accident — registry tests enforce all 4 fields present.
 """
+
 from __future__ import annotations
 
 from typing import Any, Optional

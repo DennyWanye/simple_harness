@@ -88,19 +88,21 @@ class DriverRuntime:
                 if terminal and self._child_runs is not None:
                     self._child_runs.trigger_reconciliation()
                 return
-            if (terminal and event.durable_seq is not None and
-                    (active.record is None
-                     or active.record.status not in TERMINAL_RUN_STATUSES)):
+            if (
+                terminal
+                and event.durable_seq is not None
+                and (active.record is None or active.record.status not in TERMINAL_RUN_STATUSES)
+            ):
                 current = await self._uow.query(
-                    RunRef(event.run_id, event.session_id), active.actor)
+                    RunRef(event.run_id, event.session_id), active.actor
+                )
                 if isinstance(current, RunRecord):
                     self._live.adopt(current)
             if not any(item.event_id == event.event_id for item in active.events):
                 self._live.publish(active, event)
             if terminal:
                 release_child = (
-                    active.record is not None
-                    and active.record.context.parent_run_id is not None
+                    active.record is not None and active.record.context.parent_run_id is not None
                 )
                 self._live.finish(event.run_id, active, release=release_child)
                 active.subscribers.clear()
@@ -115,7 +117,8 @@ class DriverRuntime:
     async def emit_live(self, record: RunRecord, candidate: RunEventCandidate) -> None:
         async with self._live.lock:
             active = self._live.get(record.run_id) or self._live.add(
-                record.run_id, record.context.actor(),
+                record.run_id,
+                record.context.actor(),
             )
             live_seq = active.next_live_seq
             active.next_live_seq += 1
@@ -179,10 +182,9 @@ class DriverRuntime:
     ) -> None:
         try:
             await self.consume_fenced(
-                registration, record,
-                lambda current: registration.driver.recover(
-                    record.run_id, current
-                ),
+                registration,
+                record,
+                lambda current: registration.driver.recover(record.run_id, current),
                 lease,
                 release=True,
             )
@@ -192,8 +194,7 @@ class DriverRuntime:
             # authoritative, so this is convergence rather than a failed
             # recovery attempt.
             logger.info(
-                "driver_recovery_converged run_id=%s driver_kind=%s "
-                "reason=%s",
+                "driver_recovery_converged run_id=%s driver_kind=%s reason=%s",
                 record.run_id,
                 registration.kind,
                 getattr(exc, "code", "terminal_conflict"),
@@ -201,16 +202,13 @@ class DriverRuntime:
             return
         except Exception as exc:
             logger.exception(
-                "driver_recovery_failed run_id=%s driver_kind=%s "
-                "error_type=%s error_code=%s",
+                "driver_recovery_failed run_id=%s driver_kind=%s error_type=%s error_code=%s",
                 record.run_id,
                 registration.kind,
                 type(exc).__name__,
                 getattr(exc, "code", ""),
             )
-            if await self.terminalize_permanent_recovery_failure(
-                registration, record, exc
-            ):
+            if await self.terminalize_permanent_recovery_failure(registration, record, exc):
                 return
             raise
 
@@ -245,8 +243,7 @@ class DriverRuntime:
         except TerminalConflict:
             return True
         logger.error(
-            "driver_recovery_permanently_terminalized "
-            "run_id=%s driver_kind=%s failure_code=%s",
+            "driver_recovery_permanently_terminalized run_id=%s driver_kind=%s failure_code=%s",
             record.run_id,
             registration.kind,
             failure_code,
@@ -289,9 +286,7 @@ class DriverRuntime:
             nonlocal current, pending
             pending = asyncio.create_task(operation)
             while not pending.done():
-                done, _ = await asyncio.wait(
-                    (pending,), timeout=max(0.001, heartbeat_interval)
-                )
+                done, _ = await asyncio.wait((pending,), timeout=max(0.001, heartbeat_interval))
                 if not done:
                     current = await self._uow.recovery_scope(current)
             result = pending.result()
@@ -420,10 +415,7 @@ class DriverRuntime:
                 outcomes = tuple(
                     NormalizedToolOutcome.failure(
                         "tool_argument_projection_invalid",
-                        (
-                            "prepared tool arguments could not be projected "
-                            "to canonical JSON"
-                        ),
+                        ("prepared tool arguments could not be projected to canonical JSON"),
                     )
                     for _call in candidate.calls
                 )
@@ -456,7 +448,9 @@ class DriverRuntime:
             if self._tool_executor is None:
                 raise RuntimeError("tool executor is unavailable")
             batch = await self._tool_executor.execute(
-                record, record.context.actor(), candidate,
+                record,
+                record.context.actor(),
+                candidate,
                 **self._lease_kwargs(recovery_lease),
             )
             if batch is None:
@@ -474,9 +468,7 @@ class DriverRuntime:
             await self._tool_executor.acknowledge_committed(batch.ready_refs)
             return consumed
         if candidate.kind == "delegate_run" and self._child_runs is not None:
-            await self._child_runs.submit(
-                record, candidate, **self._lease_kwargs(recovery_lease)
-            )
+            await self._child_runs.submit(record, candidate, **self._lease_kwargs(recovery_lease))
         acknowledged = candidate.kind == "cancel_acknowledged"
         event = self.event_candidate(registration.kind, candidate)
         if event is not None:
@@ -484,9 +476,7 @@ class DriverRuntime:
         return acknowledged
 
     @staticmethod
-    def event_candidate(
-        driver_kind: str, candidate: DriverEvent
-    ) -> RunEventCandidate | None:
+    def event_candidate(driver_kind: str, candidate: DriverEvent) -> RunEventCandidate | None:
         if candidate.kind == "token":
             return RunEventCandidate(
                 event_key=f"token:{uuid.uuid4().hex}",
@@ -644,9 +634,7 @@ class DriverRuntime:
             RunStatus.FAILED: OutcomeStatus.FAILED,
             RunStatus.CANCELLED: OutcomeStatus.CANCELLED,
         }[status]
-        failure_code = str(
-            terminal.correlation.get("failure_code") or "driver_failed"
-        )
+        failure_code = str(terminal.correlation.get("failure_code") or "driver_failed")
         event = await self._finalize(
             current,
             expected_version=current.version,

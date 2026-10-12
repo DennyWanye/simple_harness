@@ -45,7 +45,8 @@ def _settlement(actions):
 def test_action_reservation_uses_the_original_operation_proof(monkeypatch):
     calls = []
     monkeypatch.setattr(
-        taskgraph_action_settlement, "require_action_settlement",
+        taskgraph_action_settlement,
+        "require_action_settlement",
         lambda orchestrator, subject, mission: calls.append((subject, mission)),
     )
     settlement = _settlement([{"reservation_subject": "action:a:v1"}])

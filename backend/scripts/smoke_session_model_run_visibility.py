@@ -51,9 +51,7 @@ def _run(command: Sequence[str], *, cwd: Path) -> None:
     print(f"[run] cwd={cwd} command={' '.join(command)}", flush=True)
     completed = subprocess.run(command, cwd=cwd, check=False)
     if completed.returncode:
-        raise VisibilitySmokeError(
-            f"surface command failed with exit {completed.returncode}"
-        )
+        raise VisibilitySmokeError(f"surface command failed with exit {completed.returncode}")
 
 
 def run_backend_matrix() -> None:

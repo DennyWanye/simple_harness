@@ -212,22 +212,20 @@ def _finalize_citations(report_md: str, citations: list[Citation]) -> tuple[str,
             report_md,
         )
     if citations and not (refs & known):
-        report_md = report_md.rstrip() + "\n\n## Key sources\n\n" + "\n".join(
-            f"- {item.title}: {item.snippet[:240]}[^{item.n}]" for item in citations
+        report_md = (
+            report_md.rstrip()
+            + "\n\n## Key sources\n\n"
+            + "\n".join(f"- {item.title}: {item.snippet[:240]}[^{item.n}]" for item in citations)
         )
         refs = {item.n for item in citations}
     used = [item for item in citations if item.n in refs] or citations
     if used:
         report_md = re.sub(r"(?ms)\n---\n\n## (?:引用|Sources).*\Z", "", report_md).rstrip()
-        report_md += "\n\n---\n\n## 引用\n\n" + "\n".join(
-            item.footnote() for item in used
-        ) + "\n"
+        report_md += "\n\n---\n\n## 引用\n\n" + "\n".join(item.footnote() for item in used) + "\n"
     return report_md, errors
 
 
-async def _publish_progress(
-    context: WorkflowContext, children: list[dict[str, JsonValue]]
-) -> None:
+async def _publish_progress(context: WorkflowContext, children: list[dict[str, JsonValue]]) -> None:
     try:
         reporter = context.port("progress")
     except (KeyError, LookupError):
@@ -301,7 +299,11 @@ async def search_handler(state, context: WorkflowContext) -> StatePatch:
     ports = ResearchPorts.from_context(context)
     values = _values(state)
     sources: list[dict[str, JsonValue]] = []
-    children = [copy.deepcopy(dict(item)) for item in values.get("child_records", []) if isinstance(item, Mapping)]
+    children = [
+        copy.deepcopy(dict(item))
+        for item in values.get("child_records", [])
+        if isinstance(item, Mapping)
+    ]
     errors: list[str] = []
     seen_urls: set[str] = set()
     max_attempts = int(values.get("max_child_attempts") or 2)
@@ -354,7 +356,12 @@ async def search_handler(state, context: WorkflowContext) -> StatePatch:
             accepted += len(sources) - before
             reason = "ok" if accepted else "no_citations"
             attempts.append(
-                {"attempt": attempt, "status": "valid" if accepted else "retryable", "reason_code": reason, "n_sources": accepted}
+                {
+                    "attempt": attempt,
+                    "status": "valid" if accepted else "retryable",
+                    "reason_code": reason,
+                    "n_sources": accepted,
+                }
             )
             if accepted:
                 break
@@ -363,13 +370,19 @@ async def search_handler(state, context: WorkflowContext) -> StatePatch:
                     continuation = (
                         await ports.llm.complete(
                             CONTINUATION_PROMPT.format(question=question, reason=reason),
-                            operation_key=operation_key(state, "search", f"continue:{index}:{attempt}"),
+                            operation_key=operation_key(
+                                state, "search", f"continue:{index}:{attempt}"
+                            ),
                         )
                     ).strip()[:1024]
                 except Exception as exc:  # noqa: BLE001
                     errors.append(f"continuation:{index}:{type(exc).__name__}")
                     continuation = f"{question} official primary source"
-        record = children[index] if index < len(children) else {"child_id": f"dr-{index}", "question": question}
+        record = (
+            children[index]
+            if index < len(children)
+            else {"child_id": f"dr-{index}", "question": question}
+        )
         record.update(
             status="valid" if accepted else "insufficient",
             attempt=len(attempts),
@@ -402,7 +415,9 @@ async def synth_handler(state, context: WorkflowContext) -> StatePatch:
         f"({item.n}) {item.title}\nURL: {item.url}\n{item.snippet}" for item in citations
     )
     topic = str(values["topic"])
-    errors = [str(value) for value in values.get("plan_errors", [])] + [str(value) for value in values.get("search_errors", [])]
+    errors = [str(value) for value in values.get("plan_errors", [])] + [
+        str(value) for value in values.get("search_errors", [])
+    ]
     if citations:
         try:
             report = await ports.llm.complete(
@@ -417,10 +432,8 @@ async def synth_handler(state, context: WorkflowContext) -> StatePatch:
         report, citation_errors = _finalize_citations(report.strip(), citations)
         errors.extend(citation_errors)
     else:
-        report = (
-            f"# {topic}\n\n## TL;DR\n\n未能找到可用来源。\n\n"
-            "## 已尝试方向\n\n"
-            + "\n".join(f"- {value}" for value in values.get("sub_questions", []))
+        report = f"# {topic}\n\n## TL;DR\n\n未能找到可用来源。\n\n## 已尝试方向\n\n" + "\n".join(
+            f"- {value}" for value in values.get("sub_questions", [])
         )
     children = [dict(item) for item in values.get("child_records", []) if isinstance(item, Mapping)]
     insufficient = [item for item in children if item.get("status") != "valid"]
@@ -429,7 +442,9 @@ async def synth_handler(state, context: WorkflowContext) -> StatePatch:
             f"- {item.get('question')}: {item.get('reason_code')}，尝试 {item.get('attempt')} 次。"
             for item in insufficient
         )
-    status = "insufficient_evidence" if not citations else "partial" if insufficient else "completed"
+    status = (
+        "insufficient_evidence" if not citations else "partial" if insufficient else "completed"
+    )
     research_report = ResearchReport(
         topic,
         _summary(report, topic),

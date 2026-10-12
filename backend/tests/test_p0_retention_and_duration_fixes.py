@@ -11,6 +11,7 @@ WI-T2.3 P0-3: emit_receipt duration_ms ~0
 
 测试组对照 plans/2026-05-24-tool-layer-optimization-v3/01-TDD.md §A2/§A3。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -46,8 +47,7 @@ def test_t2_2_main_py_does_not_truncate_retention():
     main_py_path = Path(__file__).parent.parent / "main.py"
     lines = main_py_path.read_text(encoding="utf-8").splitlines()
     code_only = [
-        ln for ln in lines
-        if "min(retention, 7)" in ln and not ln.lstrip().startswith("#")
+        ln for ln in lines if "min(retention, 7)" in ln and not ln.lstrip().startswith("#")
     ]
     assert not code_only, (
         f"WI-T2.2 regression: main.py truncates retention at 7 days "
@@ -61,6 +61,7 @@ def test_t2_2_main_py_does_not_truncate_retention():
 def _trivial_handler(params, task_id):
     """Toy handler that sleeps a bit then returns ok envelope."""
     import time
+
     time.sleep(0.05)  # 50ms — ensure duration_ms > 0
     return json.dumps({"ok": True, "result": "done"}, ensure_ascii=False)
 
@@ -90,14 +91,17 @@ async def test_t2_3_receipt_duration_ms_reflects_real_dispatch():
         registry.set_receipt_store_provider(lambda: store)
 
         result = await registry.execute_tool(
-            "sleeper", params={}, session_id="t2_3_dispatch_timing", task_id="t",
+            "sleeper",
+            params={},
+            session_id="t2_3_dispatch_timing",
+            task_id="t",
         )
         assert result["ok"] is True
 
         # Receipt 已写盘，加载回来查 duration_ms
         ledger = store.load_session("t2_3_dispatch_timing")
-        assert len(ledger) == 1, (
-            "execute_tool should emit exactly one receipt; got %d" % len(ledger)
+        assert len(ledger) == 1, "execute_tool should emit exactly one receipt; got %d" % len(
+            ledger
         )
         rec = ledger[0]
         assert rec.duration_ms >= 40, (
@@ -138,7 +142,10 @@ async def test_t2_3_receipt_duration_ms_zero_for_instant_handler():
         registry.set_receipt_store_provider(lambda: store)
 
         await registry.execute_tool(
-            "instant", params={}, session_id="t2_3_instant", task_id="t",
+            "instant",
+            params={},
+            session_id="t2_3_instant",
+            task_id="t",
         )
         ledger = store.load_session("t2_3_instant")
         assert len(ledger) == 1
@@ -210,9 +217,7 @@ async def test_receipt_rejects_relative_artifact_traversal(tmp_path):
             name="maker_escape",
             toolset="test",
             schema={"description": "escape probe", "parameters": {}},
-            handler=lambda args, task_id="": _json.dumps(
-                {"ok": True, "path": "../outside.txt"}
-            ),
+            handler=lambda args, task_id="": _json.dumps({"ok": True, "path": "../outside.txt"}),
             permission_category="read_file",
         )
     store = ReceiptStore(tmp_path / "receipts", key=b"\x42" * 32)
@@ -222,17 +227,13 @@ async def test_receipt_rejects_relative_artifact_traversal(tmp_path):
         lambda: SimpleNamespace(last_mile=SimpleNamespace(artifact_envelope=False))
     )
 
-    await registry.execute_tool(
-        "maker_escape", params={}, session_id="escape", task_id="t"
-    )
+    await registry.execute_tool("maker_escape", params={}, session_id="escape", task_id="t")
 
     assert store.load_session("escape")[0].artifacts == []
 
 
 @pytest.mark.asyncio
-async def test_receipt_never_resolves_relative_artifact_against_process_cwd(
-    tmp_path, monkeypatch
-):
+async def test_receipt_never_resolves_relative_artifact_against_process_cwd(tmp_path, monkeypatch):
     import json as _json
     from types import SimpleNamespace
 
@@ -247,9 +248,7 @@ async def test_receipt_never_resolves_relative_artifact_against_process_cwd(
             name="maker_cwd",
             toolset="test",
             schema={"description": "cwd probe", "parameters": {}},
-            handler=lambda args, task_id="": _json.dumps(
-                {"ok": True, "path": "cwd-artifact.txt"}
-            ),
+            handler=lambda args, task_id="": _json.dumps({"ok": True, "path": "cwd-artifact.txt"}),
             permission_category="read_file",
         )
     store = ReceiptStore(tmp_path / "receipts", key=b"\x42" * 32)
@@ -258,9 +257,7 @@ async def test_receipt_never_resolves_relative_artifact_against_process_cwd(
         lambda: SimpleNamespace(last_mile=SimpleNamespace(artifact_envelope=False))
     )
 
-    await registry.execute_tool(
-        "maker_cwd", params={}, session_id="cwd", task_id="t"
-    )
+    await registry.execute_tool("maker_cwd", params={}, session_id="cwd", task_id="t")
 
     assert store.load_session("cwd")[0].artifacts == []
 
@@ -303,7 +300,10 @@ async def test_receipt_copies_artifact_shas_from_envelope(tmp_path):
     )
 
     result = await registry.execute_tool(
-        "maker", params={}, session_id="sha_probe", task_id="t",
+        "maker",
+        params={},
+        session_id="sha_probe",
+        task_id="t",
     )
     assert result["ok"] is True
     assert result.get("artifacts"), "前置:envelope 应含 artifacts"

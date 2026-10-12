@@ -19,21 +19,30 @@ from simple_harness.execution.uow import RunState, UnitOfWorkConflict
 
 @pytest.mark.parametrize("cancel_requested", [False, True])
 def test_same_runtime_lease_loss_recovers_original_turn_without_duplicate_handoff(
-    tmp_path, monkeypatch, caplog, cancel_requested,
+    tmp_path,
+    monkeypatch,
+    caplog,
+    cancel_requested,
 ):
     async def exercise():
         clock = {"now": 10.0}
         provider = ScriptedProvider(["original answer"])
         ports = AgentRuntimePorts(
-            provider=provider, authorization=AllowAllAuthorization(), model=MODEL,
-            database_path=str(tmp_path / "execution.db"), owner_id="same-owner",
-            lease_ttl_seconds=.3, clock=lambda: clock["now"],
+            provider=provider,
+            authorization=AllowAllAuthorization(),
+            model=MODEL,
+            database_path=str(tmp_path / "execution.db"),
+            owner_id="same-owner",
+            lease_ttl_seconds=0.3,
+            clock=lambda: clock["now"],
         )
         async with build_agent_runtime(ports) as runtime:
             context = runtime.kernel._ports.context
             original_prepare = context.prepare
             preparing, driver_cancelled, renewal_lost = (
-                asyncio.Event(), asyncio.Event(), asyncio.Event(),
+                asyncio.Event(),
+                asyncio.Event(),
+                asyncio.Event(),
             )
             first = True
             lost = {}
@@ -67,8 +76,10 @@ def test_same_runtime_lease_loss_recovers_original_turn_without_duplicate_handof
             monkeypatch.setattr(context, "prepare", pause_before_provider)
             monkeypatch.setattr(uow_type, "renew_runtime_lease", observe_real_renewal)
             agent = await runtime.create(
-                AgentConfig(name="worker", instructions="Answer the question.",
-                            model_profile_ref="default"), creation_key="original-agent",
+                AgentConfig(
+                    name="worker", instructions="Answer the question.", model_profile_ref="default"
+                ),
+                creation_key="original-agent",
             )
             receipt = await agent.submit("original input", input_id="original-input")
             await asyncio.wait_for(preparing.wait(), 3)
@@ -91,8 +102,10 @@ def test_same_runtime_lease_loss_recovers_original_turn_without_duplicate_handof
                 # driver can terminalize it. This is not an in-memory token edit.
                 run = runtime.uow.read_run(agent.run_id)
                 runtime.uow.request_run_cancel(
-                    run_id=run.run_id, expected_version=run.version,
-                    event_id="user-cancel-original", now=clock["now"],
+                    run_id=run.run_id,
+                    expected_version=run.version,
+                    event_id="user-cancel-original",
+                    now=clock["now"],
                 )
                 assert runtime.uow.read_run(agent.run_id).state is RunState.CANCEL_REQUESTED
 
@@ -105,7 +118,8 @@ def test_same_runtime_lease_loss_recovers_original_turn_without_duplicate_handof
                 # Agent.wait_turn's timeout uses the intentionally frozen ports
                 # clock. The runner bound must instead use the real event loop.
                 result = await asyncio.wait_for(
-                    agent.wait_turn(receipt.turn_id, timeout=2), timeout=3,
+                    agent.wait_turn(receipt.turn_id, timeout=2),
+                    timeout=3,
                 )
                 assert result.state is AgentTurnState.COMMITTED
                 assert result.public_output.content == "original answer"
@@ -114,7 +128,7 @@ def test_same_runtime_lease_loss_recovers_original_turn_without_duplicate_handof
                 assert current.input_id == original_turn.input_id
                 assert current.input_hash == original_turn.input_hash
                 assert current.lease_epoch > lost["epoch"]
-                invocation, = runtime.uow.list_provider_invocations(RunId(agent.run_id))
+                (invocation,) = runtime.uow.list_provider_invocations(RunId(agent.run_id))
                 assert invocation.handoff_attempt == 1 and str(invocation.state) == "succeeded"
                 assert provider.calls == 1
             assert len(runtime.uow.list_agent_turns(agent.agent_id)) == 1

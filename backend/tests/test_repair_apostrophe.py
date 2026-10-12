@@ -10,6 +10,7 @@ Mirrors the multi-strategy repair chain in
   2. ``\\X`` → ``X``       (any invalid JSON escape, regex-driven)
   3. ``strict=False``      (raw control chars inside strings)
 """
+
 import json
 import re
 
@@ -53,13 +54,17 @@ def test_bad_apostrophe_in_react_import_repaired() -> None:
     # Raw bytes the LLM streamed (single byte sequences):
     #   {"path": "a.py", "content": "import { x } from \'react\'"}
     # That's 4 chars: backslash + apostrophe inside the JSON string.
-    raw = "".join([
-        '{"path": "a.py", "content": "import { x } from ',
-        chr(92), chr(39),  # \'
-        'react',
-        chr(92), chr(39),  # \'
-        '"}',
-    ])
+    raw = "".join(
+        [
+            '{"path": "a.py", "content": "import { x } from ',
+            chr(92),
+            chr(39),  # \'
+            "react",
+            chr(92),
+            chr(39),  # \'
+            '"}',
+        ]
+    )
     # Confirm raw is unparseable (the bug)
     with pytest.raises(json.JSONDecodeError):
         json.loads(raw)
@@ -90,10 +95,17 @@ def test_unrepairable_returns_none() -> None:
 def test_invalid_escape_repair_catches_apostrophe() -> None:
     """The broad-regex repair catches \\' as a fallback even when
     strategy 1 wasn't enough (e.g. mixed bad escapes)."""
-    raw = "".join([
-        '{"path": "a.tsx", "content": "import { x } from ',
-        chr(92), chr(39), 'react', chr(92), chr(39), '"}',
-    ])
+    raw = "".join(
+        [
+            '{"path": "a.tsx", "content": "import { x } from ',
+            chr(92),
+            chr(39),
+            "react",
+            chr(92),
+            chr(39),
+            '"}',
+        ]
+    )
     parsed, label = _try_repair(raw)
     assert parsed is not None
     assert label in ("stripped_backslash_apostrophe", "stripped_invalid_escapes")

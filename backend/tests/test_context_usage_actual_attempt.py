@@ -33,9 +33,7 @@ def test_context_usage_prefers_latest_successful_context_os_attempt() -> None:
     previous = main.service_context.get("context_attempt_store")
     try:
         main.service_context.register("context_attempt_store", _AttemptStore())
-        event = main._snapshot_context_usage_event(
-            "actual-session", provider_chain=[_Provider()]
-        )
+        event = main._snapshot_context_usage_event("actual-session", provider_chain=[_Provider()])
     finally:
         main.service_context.register("context_attempt_store", previous)
 

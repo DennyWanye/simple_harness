@@ -48,6 +48,7 @@ Design choices
 * No async lock — the agent loop is single-threaded per session; we can
   add an ``asyncio.Lock`` later if cross-session shared store is needed.
 """
+
 from __future__ import annotations
 
 import logging
@@ -149,11 +150,13 @@ class ToolResultRefStore:
         # 文件读取永远可重读,不受影响)。显式参数 > env > 模块默认(256/400)。
         # env: DESKPET_TOOL_REF_MAX_ENTRIES / DESKPET_TOOL_REF_SPILL_MAX_FILES。
         self._cap = (
-            int(max_entries) if max_entries is not None
+            int(max_entries)
+            if max_entries is not None
             else _env_int("DESKPET_TOOL_REF_MAX_ENTRIES", DEFAULT_MAX_ENTRIES)
         )
         self._spill_max = (
-            int(spill_max_files) if spill_max_files is not None
+            int(spill_max_files)
+            if spill_max_files is not None
             else _env_int("DESKPET_TOOL_REF_SPILL_MAX_FILES", _SPILL_MAX_FILES)
         )
         # OrderedDict gives us O(1) move-to-end (LRU update) + popitem(last=False).

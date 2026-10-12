@@ -23,6 +23,7 @@ Design constraints (per project decision 2026-06-13):
 * Synchronous (``search``) AND async (``search_async``) entry points so
   both the blocking Code tool and the async research pipeline reuse it.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -144,6 +145,7 @@ def _research_raw() -> dict[str, Any]:
     """
     try:
         import config as _cfg  # type: ignore[import-not-found]
+
         obj = getattr(_cfg, "config", None)  # 若有发布的单例优先
         if obj is not None and hasattr(obj, "raw"):
             raw = obj.raw.get("research") or {}
@@ -166,7 +168,9 @@ def _serp_hardening() -> bool:
 
 def _serp_render_timeout() -> float:
     try:
-        return float(_research_raw().get("serp_render_timeout", _SERP_RENDER_TIMEOUT) or _SERP_RENDER_TIMEOUT)
+        return float(
+            _research_raw().get("serp_render_timeout", _SERP_RENDER_TIMEOUT) or _SERP_RENDER_TIMEOUT
+        )
     except (TypeError, ValueError):
         return _SERP_RENDER_TIMEOUT
 
@@ -390,6 +394,7 @@ def _looks_like_bing_captcha(html: str, results: list[dict[str, str]]) -> bool:
         return False
     try:
         from selectolax.parser import HTMLParser  # type: ignore
+
         if HTMLParser(html).css_first("li.b_algo") is not None:
             return False
     except ImportError:
@@ -655,8 +660,13 @@ def search(
         cached = _cached_results(engine, q, reg)
         if cached is not None:
             _mark_engine_hit(engine)
-            return {"query": q, "count": len(cached), "results": cached,
-                    "region": reg, "engine": engine}
+            return {
+                "query": q,
+                "count": len(cached),
+                "results": cached,
+                "region": reg,
+                "engine": engine,
+            }
         req = _engine_request(engine, q, reg)
         if req is None:
             continue
@@ -667,7 +677,9 @@ def search(
             for attempt in range(attempts):
                 headers = _headers_for_request(engine, q, hardened=_serp_hardening())
                 try:
-                    with httpx.Client(headers=headers, timeout=timeout, follow_redirects=True) as client:
+                    with httpx.Client(
+                        headers=headers, timeout=timeout, follow_redirects=True
+                    ) as client:
                         resp = client.request(method, url, **kw)
                     resp.raise_for_status()
                     results = _engine_parse(engine, resp.text, n)
@@ -687,11 +699,21 @@ def search(
             _record_engine_success(engine)
             _cache_results(engine, q, reg, results)
             _mark_engine_hit(engine)
-            return {"query": q, "count": len(results), "results": results,
-                    "region": reg, "engine": engine}
+            return {
+                "query": q,
+                "count": len(results),
+                "results": results,
+                "region": reg,
+                "engine": engine,
+            }
         _record_engine_failure(engine)
-    return {"query": q, "count": 0, "results": [], "region": reg,
-            "error": last_err or "all engines returned empty"}
+    return {
+        "query": q,
+        "count": 0,
+        "results": [],
+        "region": reg,
+        "error": last_err or "all engines returned empty",
+    }
 
 
 async def search_async(
@@ -712,13 +734,16 @@ async def search_async(
     if engines is None:
         from deskpet.retrieval.contracts import SearchRequest
         from deskpet.retrieval.runtime import get_default_gateway
-        response = await get_default_gateway().search(SearchRequest(
-            query=q,
-            max_results=max_results,
-            region=region,
-            mode="research",
-            total_timeout_s=timeout,
-        ))
+
+        response = await get_default_gateway().search(
+            SearchRequest(
+                query=q,
+                max_results=max_results,
+                region=region,
+                mode="research",
+                total_timeout_s=timeout,
+            )
+        )
         return [
             {
                 "url": item.url,
@@ -752,7 +777,9 @@ async def search_async(
                     _record_search_error("bing-cdp: budget exhausted")
                     continue
                 try:
-                    html = await cdp_edge_render(_bing_serp_url(q, reg), timeout=_serp_render_timeout())
+                    html = await cdp_edge_render(
+                        _bing_serp_url(q, reg), timeout=_serp_render_timeout()
+                    )
                     if html is None:
                         _record_engine_failure(engine)
                         _record_search_error("bing-cdp: render returned none")
@@ -785,7 +812,9 @@ async def search_async(
                     _record_search_error("google-cdp: budget exhausted")
                     continue
                 try:
-                    html = await cdp_edge_render(_google_serp_url(q, reg), timeout=_serp_render_timeout())
+                    html = await cdp_edge_render(
+                        _google_serp_url(q, reg), timeout=_serp_render_timeout()
+                    )
                     if html is None:
                         _record_engine_failure(engine)
                         _record_search_error("google-cdp: render returned none")
@@ -893,9 +922,15 @@ async def search_async(
 
 
 __all__ = [
-    "search", "search_async", "region_for_query",
-    "parse_ddg_html", "parse_bing_html", "parse_baidu_html",
-    "get_last_engines_hit", "get_last_search_errors",
-    "reset_search_cdp_budget", "reset_search_runtime_state",
+    "search",
+    "search_async",
+    "region_for_query",
+    "parse_ddg_html",
+    "parse_bing_html",
+    "parse_baidu_html",
+    "get_last_engines_hit",
+    "get_last_search_errors",
+    "reset_search_cdp_budget",
+    "reset_search_runtime_state",
     "reset_google_reachable_cache",
 ]

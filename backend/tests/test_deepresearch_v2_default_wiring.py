@@ -25,7 +25,10 @@ def test_new_deepresearch_runs_default_to_v7_with_bounded_parallelism() -> None:
     assert RECOVERY_V3_VERSION == "v3"
     assert RECOVERY_V2_VERSION == "v2"
     assert 2 <= config.workflows.deep_research_max_parallel_tasks <= 6
-    assert NativeExecutionPolicy(config.workflows.deep_research_max_parallel_tasks).max_parallel_tasks == 4
+    assert (
+        NativeExecutionPolicy(config.workflows.deep_research_max_parallel_tasks).max_parallel_tasks
+        == 4
+    )
 
 
 def test_product_config_enables_deepresearch_v7() -> None:

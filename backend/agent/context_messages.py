@@ -28,9 +28,7 @@ Lifetime = Literal["platform", "stable", "task", "retrieved", "history", "curren
 TrimPolicy = Literal["never", "truncate", "drop", "summarize", "page_in"]
 
 _PLACEMENTS = frozenset({"prefix", "transcript", "control"})
-_LIFETIMES = frozenset(
-    {"platform", "stable", "task", "retrieved", "history", "current"}
-)
+_LIFETIMES = frozenset({"platform", "stable", "task", "retrieved", "history", "current"})
 _TRIM_POLICIES = frozenset({"never", "truncate", "drop", "summarize", "page_in"})
 
 
@@ -123,24 +121,18 @@ class ProviderAttemptOptions:
 
     def __post_init__(self) -> None:
         if self.cache_boundary is not None:
-            if isinstance(self.cache_boundary, bool) or not isinstance(
-                self.cache_boundary, int
-            ):
+            if isinstance(self.cache_boundary, bool) or not isinstance(self.cache_boundary, int):
                 raise TypeError("cache_boundary must be an integer or None")
             if self.cache_boundary < 0:
                 raise ValueError("cache_boundary must be non-negative")
         if self.workload_class == "session-auxiliary" and (
             self.detached or not self.session_id or not self.root_run_id
         ):
-            raise ValueError(
-                "session-auxiliary attempt requires session_id/root_run_id"
-            )
+            raise ValueError("session-auxiliary attempt requires session_id/root_run_id")
         if self.workload_class == "system-maintenance" and (
             not self.detached or self.session_id is not None or self.root_run_id is not None
         ):
-            raise ValueError(
-                "system-maintenance attempt must be detached without Session/Root"
-            )
+            raise ValueError("system-maintenance attempt must be detached without Session/Root")
 
 
 _PROVIDER_ATTEMPT_OPTIONS: ContextVar[ProviderAttemptOptions | None] = ContextVar(
@@ -202,9 +194,7 @@ def provider_purpose_scope(
     """
 
     current = current_provider_attempt_options()
-    if current is not None and all(
-        (current.session_id, current.request_id, current.attempt_id)
-    ):
+    if current is not None and all((current.session_id, current.request_id, current.attempt_id)):
         yield current
         return
     options = ProviderAttemptOptions(
@@ -253,15 +243,11 @@ def split_wire_messages(
         copied = copy.deepcopy(dict(message))
         raw_meta = copied.pop(CONTEXT_MESSAGE_META_KEY, None)
         wire.append(copied)
-        aligned.append(
-            None if raw_meta is None else ContextMessageMeta.from_mapping(raw_meta)
-        )
+        aligned.append(None if raw_meta is None else ContextMessageMeta.from_mapping(raw_meta))
     return wire, aligned
 
 
-def stable_prefix_bytes(
-    messages: Sequence[Mapping[str, Any]], cache_boundary: int | None
-) -> bytes:
+def stable_prefix_bytes(messages: Sequence[Mapping[str, Any]], cache_boundary: int | None) -> bytes:
     """Serialize the explicit stable prefix into canonical UTF-8 JSON bytes."""
 
     wire, _ = split_wire_messages(messages)

@@ -169,7 +169,11 @@ class _Network:
 
 
 def hierarchical_planner_package(
-    mission: Any, network: Any, *, registry: Any = None, authoritative_refs: Sequence[Any] = (),
+    mission: Any,
+    network: Any,
+    *,
+    registry: Any = None,
+    authoritative_refs: Sequence[Any] = (),
     previous_feedback: Any = None,
 ) -> dict[str, Any]:
     """The package as the pure assembler builds it from a network and a registry.
@@ -184,9 +188,13 @@ def hierarchical_planner_package(
     if registry is not None:
         views["methods"] = method_rows(registry, method_signatures(network))[0]
     return assemble_planner_package(
-        package_version=PACKAGE_VERSION, mission=mission, network=network, views=views,
+        package_version=PACKAGE_VERSION,
+        mission=mission,
+        network=network,
+        views=views,
         authorities=_merge_authorities(_network_authorities(network), authoritative_refs),
-        previous_feedback=previous_feedback)
+        previous_feedback=previous_feedback,
+    )
 
 
 def stub_package(**kwargs: Any) -> dict[str, Any]:
@@ -255,9 +263,7 @@ def task_authorities(network: Any) -> list[dict[str, Any]]:
 class _WideBinding:
     """Enough of ``TaskSemanticBindingV1`` for the packager: id, revision, digest."""
 
-    def __init__(
-        self, task_id: str, obligation_id: str, digest: str, revision: int = 1
-    ) -> None:
+    def __init__(self, task_id: str, obligation_id: str, digest: str, revision: int = 1) -> None:
         self.task_id = task_id
         self.obligation_id = obligation_id
         self.contract_revision = revision
@@ -350,8 +356,12 @@ def method_entry(index: int, *, version: int = 1) -> dict[str, Any]:
     digest = hex_digest(index)
     return {
         "goal_signature_id": "sig",
-        "method_ref": {"kind": "method", "id": f"m-{index:04d}", "semantic_revision": version,
-                       "content_hash": digest},
+        "method_ref": {
+            "kind": "method",
+            "id": f"m-{index:04d}",
+            "semantic_revision": version,
+            "content_hash": digest,
+        },
         "registry_status": "UNKNOWN",
     }
 
@@ -436,8 +446,11 @@ def test_planning_subjects_are_unique_stable_and_cover_every_occurrence(tmp_path
         network = seed.dispatch.network(seed.mission.id)
         first = hierarchical_planner_package(seed.mission, network, registry=seed.world.registry)
         second = hierarchical_planner_package(seed.mission, network, registry=seed.world.registry)
-        return first["planning_subjects"], second["planning_subjects"], {
-            str(item.occurrence_id) for item in network.occurrences}
+        return (
+            first["planning_subjects"],
+            second["planning_subjects"],
+            {str(item.occurrence_id) for item in network.occurrences},
+        )
 
     first, second, occurrences = _on_product_mission(tmp_path, build)
     assert first == second, "same request, same subjects"
@@ -445,8 +458,16 @@ def test_planning_subjects_are_unique_stable_and_cover_every_occurrence(tmp_path
     assert keys and len(keys) == len(set(keys)), "every subject_key is unique"
     assert all(item["subject_key"].startswith("subject-") for item in first)
     for item in first:
-        assert set(item) == {"subject_key", "occurrence_id", "task_id", "obligation_id", "contract_revision"}
-        assert isinstance(item["contract_revision"], int) and not isinstance(item["contract_revision"], bool)
+        assert set(item) == {
+            "subject_key",
+            "occurrence_id",
+            "task_id",
+            "obligation_id",
+            "contract_revision",
+        }
+        assert isinstance(item["contract_revision"], int) and not isinstance(
+            item["contract_revision"], bool
+        )
     assert {item["occurrence_id"] for item in first} == occurrences
 
 
@@ -456,9 +477,7 @@ def test_planning_subjects_are_unique_stable_and_cover_every_occurrence(tmp_path
 
 
 def test_a_method_library_entry_becomes_a_method_ref() -> None:
-    refs = refs_of(
-        empty_package(methods=[method_entry(1, version=3)])
-    )
+    refs = refs_of(empty_package(methods=[method_entry(1, version=3)]))
     assert [dict(item) for item in refs] == [
         {
             "kind": "method",
@@ -558,9 +577,7 @@ def test_a_task_ref_takes_the_sidecars_revision_and_hash_verbatim() -> None:
 
 def test_a_committed_primitive_yields_a_task_and_an_obligation_ref() -> None:
     package = empty_package(
-        goals=[
-            {"occurrence_id": "occ-2", "task_id": "task-2", "obligation_id": "obl-2"}
-        ]
+        goals=[{"occurrence_id": "occ-2", "task_id": "task-2", "obligation_id": "obl-2"}]
     )
     authorities = [
         authority("task", "task-2", 1, "d" * 64),
@@ -621,9 +638,7 @@ def test_a_non_integer_revision_is_skipped_not_coerced() -> None:
 def test_a_non_positive_revision_is_skipped_not_raised_to_one() -> None:
     """P2-1: §5.1's "无则 1" is only for the ledger; a 0 revision has no valid四元组."""
 
-    package = empty_package(
-        goals=[{"task_id": "task-1", "obligation_id": "obl-1"}]
-    )
+    package = empty_package(goals=[{"task_id": "task-1", "obligation_id": "obl-1"}])
     authorities = [
         authority("task", "task-1", 0, "a" * 64),
         authority("obligation", "obl-1", 0, "b" * 64),
@@ -670,9 +685,7 @@ def test_the_authority_table_keys_on_kind_and_id_not_id_alone() -> None:
     """P2-5: a task and an obligation may share an id; the ref must not cross kinds."""
 
     package = empty_package(
-        goals=[
-            {"task_id": "shared", "obligation_id": "shared", "contract_revision": 1}
-        ]
+        goals=[{"task_id": "shared", "obligation_id": "shared", "contract_revision": 1}]
     )
     refs = by_key(
         package,
@@ -733,9 +746,7 @@ def test_an_authority_row_with_only_one_kind_does_not_answer_for_the_other() -> 
     """P2-5: the obligation entry is not served by a task row that shares its id."""
 
     package = empty_package(
-        goals=[
-            {"task_id": "shared", "obligation_id": "shared", "contract_revision": 1}
-        ]
+        goals=[{"task_id": "shared", "obligation_id": "shared", "contract_revision": 1}]
     )
     authorities = [authority("task", "shared", 1, "a" * 64)]
     assert [item["kind"] for item in refs_of(package, authorities)] == ["task"]
@@ -780,9 +791,7 @@ def test_a_resolution_ref_is_used_when_no_acceptance_ref_is_present() -> None:
             {"resolution_ref": {"id": "res-1", "semantic_revision": 1, "content_hash": "b" * 64}}
         ]
     )
-    assert [item["kind"] for item in refs_of(package)] == [
-        "resolution"
-    ]
+    assert [item["kind"] for item in refs_of(package)] == ["resolution"]
 
 
 def test_the_refs_are_sorted_by_hash_as_the_last_component() -> None:
@@ -883,9 +892,7 @@ def test_the_refs_are_sorted_by_kind_ahead_of_id() -> None:
     sorts *before* the obligation id, so only a kind-first key yields obligation first.
     """
 
-    package = empty_package(
-        goals=[{"task_id": "a", "obligation_id": "z", "contract_revision": 1}]
-    )
+    package = empty_package(goals=[{"task_id": "a", "obligation_id": "z", "contract_revision": 1}])
     authorities = [
         authority("task", "a", 1, "a" * 64),
         authority("obligation", "z", 1, "a" * 64),
@@ -899,9 +906,7 @@ def test_the_refs_are_sorted_by_kind_ahead_of_id() -> None:
 def test_a_malformed_authority_row_is_ignored_without_raising() -> None:
     """P2-10: a caller's junk row must not crash the collector nor produce a ref."""
 
-    package = empty_package(
-        goals=[{"task_id": "task-1", "obligation_id": "obl-1"}]
-    )
+    package = empty_package(goals=[{"task_id": "task-1", "obligation_id": "obl-1"}])
     authorities = [
         "not-a-row",
         {"kind": "task"},  # no id
@@ -929,9 +934,12 @@ def test_a_malformed_authority_row_does_not_crash_the_builder() -> None:
         {"id": "task-000"},  # no kind
         *task_authorities(network),
     ]
-    package = hierarchical_planner_package(_Mission(), network, registry=None, authoritative_refs=authorities)
+    package = hierarchical_planner_package(
+        _Mission(), network, registry=None, authoritative_refs=authorities
+    )
     assert {("task", "task-000"), ("task", "task-001")} <= {
-        (item["kind"], item["id"]) for item in package["visible_refs"]}
+        (item["kind"], item["id"]) for item in package["visible_refs"]
+    }
 
 
 def test_a_malformed_source_ref_is_skipped_rather_than_invented() -> None:
@@ -963,8 +971,9 @@ def test_every_built_ref_is_a_plain_valid_quadruple_and_nothing_is_guessed(tmp_p
         network = seed.dispatch.network(seed.mission.id)
         authorities = task_authorities(network)
         bare = hierarchical_planner_package(seed.mission, network, registry=seed.world.registry)
-        with_rows = hierarchical_planner_package(seed.mission, network, registry=seed.world.registry,
-                                                 authoritative_refs=authorities)
+        with_rows = hierarchical_planner_package(
+            seed.mission, network, registry=seed.world.registry, authoritative_refs=authorities
+        )
         return bare, with_rows, authorities
 
     bare, with_rows, authorities = _on_product_mission(tmp_path, build)
@@ -979,8 +988,10 @@ def test_every_built_ref_is_a_plain_valid_quadruple_and_nothing_is_guessed(tmp_p
         assert set(row) == {"kind", "id", "semantic_revision", "content_hash"}
         PlanningRefV1.from_json(row)
     assert {row["kind"] for row in authorities} == {"task"}
-    assert by_key(with_rows, authorities)[("task", authorities[0]["id"])]["content_hash"] == (
-        authorities[0]["content_hash"])
+    assert (
+        by_key(with_rows, authorities)[("task", authorities[0]["id"])]["content_hash"]
+        == (authorities[0]["content_hash"])
+    )
 
 
 def test_the_same_package_twice_yields_the_same_refs_in_the_same_order() -> None:
@@ -1010,10 +1021,14 @@ def test_the_authority_table_is_a_lookup_and_never_a_source_of_refs() -> None:
     obligation no goal on the board carries is not something a decision may reference.
     A reference no row carries (an adopted method instance) is passed as ``extra``."""
 
-    rows = [authority("obligation", "obl-elsewhere", 1, "a" * 64),
-            authority("method_instance", "mi-1", 1, "b" * 64)]
+    rows = [
+        authority("obligation", "obl-elsewhere", 1, "a" * 64),
+        authority("method_instance", "mi-1", 1, "b" * 64),
+    ]
     assert refs_of(empty_package(), rows) == ()
-    assert [item["id"] for item in collect_refs(empty_package(), authorities=rows, extra=rows[1:])] == ["mi-1"]
+    assert [
+        item["id"] for item in collect_refs(empty_package(), authorities=rows, extra=rows[1:])
+    ] == ["mi-1"]
 
 
 def test_more_than_128_refs_is_refused_not_cut() -> None:
@@ -1049,8 +1064,9 @@ def test_a_supplied_obligation_ledger_digest_reaches_the_built_package(tmp_path:
         duty = ObligationStore(seed.loop.store).obligation(seed.mission.id, duty_id)
         digest = content_hash_of(duty.to_json())
         authorities = [*task_authorities(network), authority("obligation", duty_id, 1, digest)]
-        package = hierarchical_planner_package(seed.mission, network, registry=seed.world.registry,
-                                               authoritative_refs=authorities)
+        package = hierarchical_planner_package(
+            seed.mission, network, registry=seed.world.registry, authoritative_refs=authorities
+        )
         return package, authorities, duty_id, digest
 
     package, authorities, duty_id, digest = _on_product_mission(tmp_path, build)
@@ -1058,7 +1074,11 @@ def test_a_supplied_obligation_ledger_digest_reaches_the_built_package(tmp_path:
     assert package["visible_refs"] == list(refs_of(package, authorities))
     assert {item["kind"] for item in package["visible_refs"]} == {"task", "obligation"}
     assert by_key(package, authorities)[("obligation", duty_id)] == {
-        "kind": "obligation", "id": duty_id, "semantic_revision": 1, "content_hash": digest}
+        "kind": "obligation",
+        "id": duty_id,
+        "semantic_revision": 1,
+        "content_hash": digest,
+    }
 
 
 def test_a_task_ref_is_the_bindings_own_stored_digest_whoever_calls(tmp_path: Any) -> None:
@@ -1071,16 +1091,26 @@ def test_a_task_ref_is_the_bindings_own_stored_digest_whoever_calls(tmp_path: An
 
     def build(seed: Any) -> tuple[Any, ...]:
         network = seed.dispatch.network(seed.mission.id)
-        bindings = {str(spec.task_id): network.binding_for_occurrence(spec.occurrence_id)
-                    for spec in network.occurrences}
-        stored = {str(row[0]): str(row[1]) for row in seed.loop.store.connection.execute(
-            "SELECT task_id, content_hash FROM task_semantics WHERE mission_id = ?", (seed.mission.id,))}
+        bindings = {
+            str(spec.task_id): network.binding_for_occurrence(spec.occurrence_id)
+            for spec in network.occurrences
+        }
+        stored = {
+            str(row[0]): str(row[1])
+            for row in seed.loop.store.connection.execute(
+                "SELECT task_id, content_hash FROM task_semantics WHERE mission_id = ?",
+                (seed.mission.id,),
+            )
+        }
         authorities = task_authorities(network)
         some = next(iter(bindings))
         bogus = authority("task", some, 99, "f" * 64)
-        packages = [hierarchical_planner_package(seed.mission, network, registry=seed.world.registry,
-                                                 authoritative_refs=rows)
-                    for rows in ((), authorities, [bogus])]
+        packages = [
+            hierarchical_planner_package(
+                seed.mission, network, registry=seed.world.registry, authoritative_refs=rows
+            )
+            for rows in ((), authorities, [bogus])
+        ]
         return bindings, stored, authorities, packages, bogus
 
     bindings, stored, authorities, packages, bogus = _on_product_mission(tmp_path, build)
@@ -1089,11 +1119,14 @@ def test_a_task_ref_is_the_bindings_own_stored_digest_whoever_calls(tmp_path: An
         emitted = {(item["kind"], item["id"]): dict(item) for item in package["visible_refs"]}
         for task_id, binding in bindings.items():
             ref = emitted[("task", task_id)]
-            assert ref["content_hash"] == binding.content_hash() == content_hash_of(binding.to_json())
+            assert (
+                ref["content_hash"] == binding.content_hash() == content_hash_of(binding.to_json())
+            )
             assert ref["content_hash"] == stored[task_id]
             assert ref["semantic_revision"] == int(binding.contract_revision)
             assert ref["content_hash"] != content_hash_of(
-                {"kind": "task", "id": task_id, "semantic_revision": int(binding.contract_revision)})
+                {"kind": "task", "id": task_id, "semantic_revision": int(binding.contract_revision)}
+            )
             assert ref["content_hash"] != bogus["content_hash"]
     assert packages[1]["visible_refs"] == packages[0]["visible_refs"] == packages[2]["visible_refs"]
 
@@ -1183,17 +1216,30 @@ def test_the_caller_authority_rows_are_an_input_set_not_a_sequence(tmp_path: Any
 
         def both(rows: list[Any]) -> tuple[Any, Any]:
             make = lambda refs: hierarchical_planner_package(  # noqa: E731
-                seed.mission, network, registry=seed.world.registry, authoritative_refs=refs)
+                seed.mission, network, registry=seed.world.registry, authoritative_refs=refs
+            )
             return make(rows), make(list(reversed(rows)))
 
         return {
             "duty": duty,
-            "distinct": both([authority("obligation", duty, 1, "b" * 64),
-                              authority("obligation", "obl-second", 1, "c" * 64)]),
-            "same_rev": both([authority("obligation", duty, 1, "b" * 64),
-                              authority("obligation", duty, 1, "a" * 64)]),
-            "crossed": both([authority("obligation", duty, 2, "a" * 64),
-                             authority("obligation", duty, 1, "f" * 64)]),
+            "distinct": both(
+                [
+                    authority("obligation", duty, 1, "b" * 64),
+                    authority("obligation", "obl-second", 1, "c" * 64),
+                ]
+            ),
+            "same_rev": both(
+                [
+                    authority("obligation", duty, 1, "b" * 64),
+                    authority("obligation", duty, 1, "a" * 64),
+                ]
+            ),
+            "crossed": both(
+                [
+                    authority("obligation", duty, 2, "a" * 64),
+                    authority("obligation", duty, 1, "f" * 64),
+                ]
+            ),
         }
 
     built = _on_product_mission(tmp_path, build)
@@ -1203,7 +1249,9 @@ def test_the_caller_authority_rows_are_an_input_set_not_a_sequence(tmp_path: Any
         assert forward == backward, name
 
     def winner(package: dict[str, Any]) -> dict[str, Any]:
-        return {(item["kind"], item["id"]): item for item in package["visible_refs"]}[("obligation", built["duty"])]
+        return {(item["kind"], item["id"]): item for item in package["visible_refs"]}[
+            ("obligation", built["duty"])
+        ]
 
     assert winner(built["same_rev"][0])["content_hash"] == "a" * 64
     crossed = winner(built["crossed"][0])

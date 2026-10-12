@@ -82,8 +82,7 @@ def test_production_limits_match_task0_machine_baseline() -> None:
 @pytest.mark.parametrize("count,allowed", [(2, True), (3, True), (4, False)])
 def test_file_count_boundary(count: int, allowed: bool) -> None:
     raw = archive(
-        [("deskpet-pack.json", b"{}")]
-        + [(f"f{index}.txt", b"x") for index in range(count - 1)]
+        [("deskpet-pack.json", b"{}")] + [(f"f{index}.txt", b"x") for index in range(count - 1)]
     )
     validator = CapabilityPackageValidator(limits(file_count=3))
     if allowed:
@@ -138,9 +137,7 @@ def test_archive_bytes_limit_is_checked_before_zip_parse() -> None:
     raw = minimal_archive()
     CapabilityPackageValidator(limits(archive_bytes=len(raw))).preflight_zip_index(raw)
     with pytest.raises(CapabilityPackageValidationError) as exc:
-        CapabilityPackageValidator(
-            limits(archive_bytes=len(raw) - 1)
-        ).preflight_zip_index(raw)
+        CapabilityPackageValidator(limits(archive_bytes=len(raw) - 1)).preflight_zip_index(raw)
     assert_limit(exc, "archive_bytes")
 
 
@@ -235,9 +232,7 @@ def test_windows_path_policy_rejects_unsafe_shapes(path: str) -> None:
 )
 def test_windows_reserved_devices_are_rejected(component: str) -> None:
     with pytest.raises(CapabilityPackageValidationError) as exc:
-        WindowsPackagePathPolicyV1(limits()).validate_relative_path(
-            f"safe/{component}"
-        )
+        WindowsPackagePathPolicyV1(limits()).validate_relative_path(f"safe/{component}")
     assert exc.value.reason == "path_reserved_device"
 
 
@@ -371,9 +366,7 @@ def test_streaming_detects_forged_central_directory_size() -> None:
     raw[signatures[1] + 24 : signatures[1] + 28] = (1).to_bytes(4, "little")
 
     with pytest.raises(CapabilityPackageValidationError) as exc:
-        CapabilityPackageValidator(limits()).validate_zip_archive(
-            bytes(raw), source_kind="local"
-        )
+        CapabilityPackageValidator(limits()).validate_zip_archive(bytes(raw), source_kind="local")
     assert exc.value.reason == "archive_stream_validation_failed"
 
 
@@ -392,9 +385,7 @@ def test_validated_ref_binds_archive_manifest_file_set_and_policy() -> None:
     assert result.policy_hash == validator.limits.policy_hash
     assert result.baseline_hash == BASELINE_HASH
 
-    with pytest.raises(
-        CapabilityPackageValidationError, match="validated_ref_host_only"
-    ):
+    with pytest.raises(CapabilityPackageValidationError, match="validated_ref_host_only"):
         ValidatedCapabilityPackageRefV1(
             source_kind="local",
             policy_version=PACKAGE_POLICY_VERSION,

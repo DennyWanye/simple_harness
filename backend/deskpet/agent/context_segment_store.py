@@ -6,6 +6,7 @@
 原模块已移除，等待 simple-harness-memory-sdk 集成。
 此 stub 仅防止 session_history_planner.py 在导入时崩溃。
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -96,9 +97,7 @@ class ContextSegmentStore:
     async def delete(self, segment_id: str) -> None:
         pass
 
-    async def list_coverage(
-        self, session_id: str, limit: int = 100
-    ) -> list[ContextSegment]:
+    async def list_coverage(self, session_id: str, limit: int = 100) -> list[ContextSegment]:
         return []
 
     async def commit_coverage(self, proof: CoverageCommitProof) -> None:

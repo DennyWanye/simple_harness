@@ -65,7 +65,10 @@ class SourceRef:
     @classmethod
     def from_json(cls, value: object) -> SourceRef:
         if not isinstance(value, Mapping) or set(value) != {
-            "channel", "identity", "revision", "digest"
+            "channel",
+            "identity",
+            "revision",
+            "digest",
         }:
             _bad("SourceRef has missing or unknown fields")
         return cls(**dict(value))
@@ -86,9 +89,13 @@ class PlanAdmissionCertificate:
             _bad("preview must be PreviewBindingV1")
 
     def to_json(self) -> dict[str, Any]:
-        return {"version": 1, "kind": self.kind, "preview": self.preview.to_json(),
-                "commit_receipt_ref": self.commit_receipt_ref.to_json(),
-                "admission_check_ref": self.admission_check_ref.to_json()}
+        return {
+            "version": 1,
+            "kind": self.kind,
+            "preview": self.preview.to_json(),
+            "commit_receipt_ref": self.commit_receipt_ref.to_json(),
+            "admission_check_ref": self.admission_check_ref.to_json(),
+        }
 
 
 RevisionCertificate: TypeAlias = PlanAdmissionCertificate
@@ -102,10 +109,13 @@ def certificate_from_json(value: object) -> RevisionCertificate:
         expected = {"version", "kind", "preview", "commit_receipt_ref", "admission_check_ref"}
         if set(value) != expected:
             _bad("PLAN_ADMISSION certificate has missing or unknown fields")
-        return PlanAdmissionCertificate(version=value["version"], kind=value["kind"],
+        return PlanAdmissionCertificate(
+            version=value["version"],
+            kind=value["kind"],
             preview=PreviewBindingV1.from_json(value["preview"]),
             commit_receipt_ref=SourceRef.from_json(value["commit_receipt_ref"]),
-            admission_check_ref=SourceRef.from_json(value["admission_check_ref"]))
+            admission_check_ref=SourceRef.from_json(value["admission_check_ref"]),
+        )
     _bad("certificate kind is unsupported")
 
 
@@ -132,5 +142,11 @@ class HistoricalRevision:
     reason: str = "HISTORICAL_STRUCTURE_NON_EXECUTABLE"
 
 
-__all__ = ["HistoricalRevision", "PlanAdmissionCertificate",
-           "RevisionCertificate", "RevisionRecord", "SourceRef", "certificate_from_json"]
+__all__ = [
+    "HistoricalRevision",
+    "PlanAdmissionCertificate",
+    "RevisionCertificate",
+    "RevisionRecord",
+    "SourceRef",
+    "certificate_from_json",
+]

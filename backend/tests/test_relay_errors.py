@@ -7,6 +7,7 @@ TODO(M6): assertions track the heuristic contract in
 `llm/relay_errors.py`. Re-tighten once the relay 402/401 body shape is
 confirmed with the relay side.
 """
+
 from __future__ import annotations
 
 from llm.relay_errors import (

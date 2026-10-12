@@ -20,6 +20,7 @@ Design constraints (from spec + §7 red line):
 Pin items (pinned=1) are forced to the top with 📌 marker.
 Top-N default 10 (spec §2 says 8-12).
 """
+
 from __future__ import annotations
 
 import logging
@@ -49,9 +50,7 @@ _PREFERENCE_VALUE_SEMANTICS = {
         "责任人、行动项和其他可执行信息；若完整与简短冲突，完整优先，"
         "不能只留下结论。"
     ),
-    ("response.detail", "detailed"): (
-        "detailed（完整展开必要过程、依据和步骤，同时避免无关赘述）"
-    ),
+    ("response.detail", "detailed"): ("detailed（完整展开必要过程、依据和步骤，同时避免无关赘述）"),
 }
 
 
@@ -59,6 +58,7 @@ def _approx_tokens(text: str) -> int:
     if not text:
         return 0
     from deskpet.agent.tokens import count_text_tokens
+
     return count_text_tokens(text)
 
 
@@ -227,16 +227,9 @@ class PreferenceProfileComponent:
                     }
                 )
         # WI-CC-5: append 'learning' only when flag ON (BC: default set unchanged).
-        categories = (
-            tuple(
-                item
-                for item in _PROFILE_CATEGORIES
-                if resolution is None or item != "preference"
-            )
-            + (
-            (_LEARNING_CATEGORY,) if self._include_learnings else ()
-            )
-        )
+        categories = tuple(
+            item for item in _PROFILE_CATEGORIES if resolution is None or item != "preference"
+        ) + ((_LEARNING_CATEGORY,) if self._include_learnings else ())
         if self._store is not None:
             for cat in categories:
                 rows = await self._store.list_active(
@@ -248,7 +241,7 @@ class PreferenceProfileComponent:
         # Sort: pinned=1 first, then by confidence DESC, then recency (updated_at DESC)
         all_rows.sort(
             key=lambda r: (
-                -int(r.get("pinned") or 0),     # pinned first (negate for desc)
+                -int(r.get("pinned") or 0),  # pinned first (negate for desc)
                 -float(r.get("confidence") or 0.0),
                 -float(r.get("updated_at") or 0.0),
             )

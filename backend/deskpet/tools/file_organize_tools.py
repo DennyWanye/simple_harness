@@ -19,6 +19,7 @@ Safety contract:
 * Moves never overwrite: a name collision in the target folder gets a
   ``" (2)"`` suffix.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -141,14 +142,18 @@ def file_organize(
 
     if mode == "dedup":
         result = _plan_dedup(files, resolved)
-        return {"ok": True, "mode": mode, "dry_run": True, **result,
-                "note": "dedup is read-only: review duplicates and delete manually"}
+        return {
+            "ok": True,
+            "mode": mode,
+            "dry_run": True,
+            **result,
+            "note": "dedup is read-only: review duplicates and delete manually",
+        }
 
     plan = _plan_by_type(files, resolved) if mode == "by_type" else _plan_by_date(files, resolved)
 
     if dry_run:
-        return {"ok": True, "mode": mode, "dry_run": True, "plan": plan,
-                "file_count": len(plan)}
+        return {"ok": True, "mode": mode, "dry_run": True, "plan": plan, "file_count": len(plan)}
 
     moved = 0
     for item in plan:
@@ -164,8 +169,7 @@ def file_organize(
         except OSError as exc:
             log.warning("file_organize move failed %s: %s", src, exc)
 
-    return {"ok": True, "mode": mode, "dry_run": False, "moved": moved,
-            "file_count": len(plan)}
+    return {"ok": True, "mode": mode, "dry_run": False, "moved": moved, "file_count": len(plan)}
 
 
 # ---------------------------------------------------------------------------
@@ -215,14 +219,15 @@ def _handle(args: dict[str, Any], task_id: str = "") -> str:
 
 
 def register_static_tools(registry) -> None:
-        registry.register(
-            "file_organize",
-            "office",
-            _SCHEMA,
-            _handle,
-            permission_category="write_file",
-            timeout_seconds=60.0,
-            concurrency_safe=False,  # G3: bulk filesystem mutation
-        )
+    registry.register(
+        "file_organize",
+        "office",
+        _SCHEMA,
+        _handle,
+        permission_category="write_file",
+        timeout_seconds=60.0,
+        concurrency_safe=False,  # G3: bulk filesystem mutation
+    )
+
 
 __all__ = ["file_organize", "register_static_tools"]

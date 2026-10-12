@@ -62,14 +62,20 @@ class MissionNotices:
             # 不让一个通知文件把整个编排服务拖垮；目录本身不可用由 start() 如实报不可用。
             self._rows.clear()
             self.last_seq = 0
-            logger.warning("mission notices unreadable, starting empty: %s: %s", type(exc).__name__, exc)
+            logger.warning(
+                "mission notices unreadable, starting empty: %s: %s", type(exc).__name__, exc
+            )
 
     def _save(self) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
         rows = sorted(self._rows.values(), key=lambda row: (row["notified_at"], row["notice_id"]))
         temporary = self._path.with_suffix(".tmp")
-        temporary.write_text(json.dumps({"version": 2, "last_seq": self.last_seq, "notices": rows}, ensure_ascii=False),
-                             encoding="utf-8")
+        temporary.write_text(
+            json.dumps(
+                {"version": 2, "last_seq": self.last_seq, "notices": rows}, ensure_ascii=False
+            ),
+            encoding="utf-8",
+        )
         os.replace(temporary, self._path)
 
     def _add(self, payload: Mapping[str, Any], *, at: float) -> bool:

@@ -62,21 +62,36 @@ class BackgroundHealthBook:
         self._last_logged: dict[tuple[str, str], int] = {}
 
     def ok(self, loop: Loop) -> None:
-        self._rows[loop] = replace(self._rows[loop], consecutive_failures=0, last_ok_at_ms=self._clock_ms(),
-                                   stuck_item=None)
+        self._rows[loop] = replace(
+            self._rows[loop],
+            consecutive_failures=0,
+            last_ok_at_ms=self._clock_ms(),
+            stuck_item=None,
+        )
 
     def fail(self, loop: Loop, error: BaseException, *, item: str | None = None) -> None:
         now = self._clock_ms()
         code = error_code(error)
         row = self._rows[loop]
-        self._rows[loop] = replace(row, consecutive_failures=row.consecutive_failures + 1, last_error_at_ms=now,
-                                   last_error_code=code, stuck_item=item)
+        self._rows[loop] = replace(
+            row,
+            consecutive_failures=row.consecutive_failures + 1,
+            last_error_at_ms=now,
+            last_error_code=code,
+            stuck_item=item,
+        )
         key = (loop, code)
         last = self._last_logged.get(key)
         if last is None or now - last >= LOG_INTERVAL_MS:
             self._last_logged[key] = now
-            logger.warning("background loop %s failed (%s) item=%s consecutive=%d", loop, code, item,
-                           row.consecutive_failures + 1, exc_info=error)
+            logger.warning(
+                "background loop %s failed (%s) item=%s consecutive=%d",
+                loop,
+                code,
+                item,
+                row.consecutive_failures + 1,
+                exc_info=error,
+            )
 
     def snapshot(self) -> tuple[BackgroundHealth, ...]:
         return tuple(self._rows[loop] for loop in LOOPS)

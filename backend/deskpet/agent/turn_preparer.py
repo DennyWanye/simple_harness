@@ -1,4 +1,3 @@
-
 # SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: BUSL-1.1
 """Product-owned preparation stages used before either execution driver.
@@ -7,6 +6,7 @@ Companion preferences and owner-scoped selections enter only through the typed
 ``CompanionTurnAuthority``.  Historical callback composition was removed at
 the Task 13 cutover so a caller cannot recreate a second preference writer.
 """
+
 from __future__ import annotations
 
 import inspect
@@ -30,16 +30,18 @@ from deskpet.execution.run_block_signals import (
 from deskpet.tools.capabilities import ToolExposureIntent
 
 logger = structlog.get_logger(__name__)
-Venue = Literal['text', 'voice', 'background']
+Venue = Literal["text", "voice", "background"]
+
 
 @dataclass(frozen=True, slots=True)
 class TurnInput:
     """Complete product input; adapters are not allowed to drop fields."""
+
     text: str
     session_id: str
     request_id: str | None = None
     turn_id: str | None = None
-    venue: Venue = 'text'
+    venue: Venue = "text"
     memory_policy: Mapping[str, Any] | None = None
     explicit_new: bool = False
     attachment_blocks: tuple[Mapping[str, Any], ...] = ()
@@ -55,20 +57,16 @@ class TurnInput:
     def __post_init__(self) -> None:
         if self.venue not in {"text", "voice", "background"}:
             raise ValueError(f"unsupported product venue: {self.venue}")
-        if (
-            self.active_execution_budget_seconds is not None
-            and (
-                not math.isfinite(self.active_execution_budget_seconds)
-                or self.active_execution_budget_seconds <= 0
-            )
+        if self.active_execution_budget_seconds is not None and (
+            not math.isfinite(self.active_execution_budget_seconds)
+            or self.active_execution_budget_seconds <= 0
         ):
-            raise ValueError(
-                "active execution budget must be positive and finite"
-            )
+            raise ValueError("active execution budget must be positive and finite")
 
     @property
     def is_sentinel(self) -> bool:
-        return self.text.startswith('<<') and self.text.endswith('>>')
+        return self.text.startswith("<<") and self.text.endswith(">>")
+
 
 @dataclass(slots=True)
 class PreparedTurnContext:
@@ -95,6 +93,7 @@ class PreparedTurnContext:
     current_message_id: int | None = None
     companion_ingress_owner: Any | None = None
 
+
 @dataclass(slots=True)
 class RoutedTurnIntent:
     prepared: PreparedTurnContext
@@ -106,6 +105,7 @@ class RoutedTurnIntent:
     commands: tuple[ProductDomainCommand, ...] = ()
     continue_turn: bool = True
 
+
 @dataclass(slots=True)
 class PlannedTurnDecision:
     routed: RoutedTurnIntent
@@ -113,17 +113,21 @@ class PlannedTurnDecision:
     auto_confirmed: bool = False
     commands: tuple[ProductDomainCommand, ...] = ()
 
+
 @dataclass(frozen=True, slots=True)
 class ProductDomainCommand:
     """Venue-neutral product interaction interpreted by RunPresenter."""
-    kind: Literal['pipeline_event', 'clarification', 'plan_proposed', 'plan_confirmation']
+
+    kind: Literal["pipeline_event", "clarification", "plan_proposed", "plan_confirmation"]
     payload: Mapping[str, Any]
+
 
 PRODUCT_ROUTE_OWNED_TOOL_NAMES: tuple[str, ...] = (
     "deepresearch",
     "ppt_create",
     "ppt_pro",
 )
+
 
 def _needs_process_start_direct(text: str) -> bool:
     """Expose the long-lived launcher only for an explicit launch/control ask."""
@@ -223,18 +227,22 @@ def _needs_process_start_direct(text: str) -> bool:
             clause,
         ):
             return True
-        if re.search(
-            rf"^\s*(?:(?:please|now)\s+|go ahead(?:\s+and)?\s+)*{english_action}\b",
-            clause,
-        ) or (
-            not description_only
-            and re.search(
-            rf"\b(?:can|could|would)\s+you\s+(?:please\s+)?{english_action}\b",
-            clause,
+        if (
+            re.search(
+                rf"^\s*(?:(?:please|now)\s+|go ahead(?:\s+and)?\s+)*{english_action}\b",
+                clause,
             )
-        ) or re.search(
-            rf"\b(?:please|go ahead and|i want you to)\s+{english_action}\b",
-            clause,
+            or (
+                not description_only
+                and re.search(
+                    rf"\b(?:can|could|would)\s+you\s+(?:please\s+)?{english_action}\b",
+                    clause,
+                )
+            )
+            or re.search(
+                rf"\b(?:please|go ahead and|i want you to)\s+{english_action}\b",
+                clause,
+            )
         ):
             return True
     return False
@@ -263,20 +271,12 @@ class ProductTurnPreparer:
         if turn.workspace_ref:
             return turn.workspace_ref
         raw = getattr(config, "raw", None)
-        companion = (
-            raw.get("companion", {})
-            if isinstance(raw, Mapping)
-            else {}
-        )
+        companion = raw.get("companion", {}) if isinstance(raw, Mapping) else {}
         if not bool(companion.get("write_scope_enforced", True)):
             return None
         from agent.write_scope import resolve_workspace_root
 
-        return str(
-            resolve_workspace_root(
-                configured=str(companion.get("workspace_root", ""))
-            )
-        )
+        return str(resolve_workspace_root(configured=str(companion.get("workspace_root", ""))))
 
     @staticmethod
     def _has_active_skill_scope(prepared: PreparedTurnContext) -> bool:
@@ -288,9 +288,7 @@ class ProductTurnPreparer:
         unrelated pre-run clarification or chitchat short circuit.
         """
         authority = prepared.companion_authority_state
-        if authority is not None and tuple(
-            getattr(authority, "active_skill_scope_ids", ()) or ()
-        ):
+        if authority is not None and tuple(getattr(authority, "active_skill_scope_ids", ()) or ()):
             return True
         bundle = prepared.bundle
         decisions = getattr(bundle, "decisions", None)
@@ -302,9 +300,7 @@ class ProductTurnPreparer:
             return False
         meta = getattr(trace, "meta", None)
         return bool(
-            tuple(meta.get("active_skill_scope_ids", ()) or ())
-            if isinstance(meta, Mapping)
-            else ()
+            tuple(meta.get("active_skill_scope_ids", ()) or ()) if isinstance(meta, Mapping) else ()
         )
 
     @staticmethod
@@ -336,21 +332,20 @@ class ProductTurnPreparer:
             if str(scope.get("scope_id") or "") not in active:
                 continue
             allowed = scope.get("allowed_tools", ())
-            if (
-                isinstance(allowed, (str, bytes))
-                or not isinstance(allowed, (list, tuple))
-            ):
+            if isinstance(allowed, (str, bytes)) or not isinstance(allowed, (list, tuple)):
                 raise RuntimeError("assembled_skill_allowed_tools_invalid")
             names.extend(str(item) for item in allowed if str(item))
         return tuple(dict.fromkeys(names))
 
     @staticmethod
     def prepare_workflow_request_payload(
-        routed: Any, turn: TurnInput, config: Any,
+        routed: Any,
+        turn: TurnInput,
+        config: Any,
     ) -> dict[str, Any]:
         """Keep product loop/research policy outside the generic Harness."""
-        problem = getattr(getattr(config, 'features', None), 'problem_pipeline', None)
-        intent = getattr(routed.pre_loop, 'intent', None)
+        problem = getattr(getattr(config, "features", None), "problem_pipeline", None)
+        intent = getattr(routed.pre_loop, "intent", None)
         response_quality = None
         preference_resolution = getattr(
             getattr(routed, "prepared", None),
@@ -367,67 +362,87 @@ class ProductTurnPreparer:
                     "mode": "semantic_completeness",
                     "preference_key": "response.detail",
                     "preference_value": "brief",
-                    "snapshot_hash": str(
-                        getattr(preference_resolution, "snapshot_hash", "")
-                        or ""
-                    ),
+                    "snapshot_hash": str(getattr(preference_resolution, "snapshot_hash", "") or ""),
                 }
                 break
         loop = {
-            'user_request': None if turn.is_sentinel else turn.text,
-            'is_sentinel_run': turn.is_sentinel,
-            'pipeline_problem_type': routed.problem_type,
-            'pipeline_needs_investigation': bool(getattr(intent, 'needs_investigation', False)),
-            'pipeline_observability': bool(getattr(problem, 'observability_events', False)),
-            'convergence_report_on_stop': bool(
-                routed.pre_loop and not routed.pre_loop.short_circuit
-                and getattr(problem, 'convergence_report_on_stop', False)
+            "user_request": None if turn.is_sentinel else turn.text,
+            "is_sentinel_run": turn.is_sentinel,
+            "pipeline_problem_type": routed.problem_type,
+            "pipeline_needs_investigation": bool(getattr(intent, "needs_investigation", False)),
+            "pipeline_observability": bool(getattr(problem, "observability_events", False)),
+            "convergence_report_on_stop": bool(
+                routed.pre_loop
+                and not routed.pre_loop.short_circuit
+                and getattr(problem, "convergence_report_on_stop", False)
             ),
-            'response_quality': response_quality,
+            "response_quality": response_quality,
         }
-        raw = getattr(config, 'raw', None)
-        research = raw.get('research', {}) if isinstance(raw, dict) else {}
+        raw = getattr(config, "raw", None)
+        research = raw.get("research", {}) if isinstance(raw, dict) else {}
         return {
-            'provider_ref': turn.provider_ref, 'capability_ref': turn.capability_ref,
-            'workspace_ref': turn.workspace_ref, 'loop': loop,
-            'context_usage_basis_sample_id': (
-                turn.context_usage_basis_sample_id
-            ),
-            'research_config': {
+            "provider_ref": turn.provider_ref,
+            "capability_ref": turn.capability_ref,
+            "workspace_ref": turn.workspace_ref,
+            "loop": loop,
+            "context_usage_basis_sample_id": (turn.context_usage_basis_sample_id),
+            "research_config": {
                 key: bool(research[key])
-                for key in ('direct_sources', 'source_packs') if key in research
-            } if isinstance(research, dict) else {},
+                for key in ("direct_sources", "source_packs")
+                if key in research
+            }
+            if isinstance(research, dict)
+            else {},
         }
 
-    async def prepare_context(self, turn: TurnInput, *, services: Mapping[str, Any], config: Any, local_llm: Any, tool_registry: Any, current_message_id: int | None, summary_user_is_confused: Callable[[str], bool], summary_latest_task_snapshot: Callable[[Sequence[Any]], str | None], summary_build_reinject_msg: Callable[[str], dict[str, Any]], provider: Any = None, companion_ingress_owner: Any = None) -> PreparedTurnContext:
-        projection_gate = services.get(
-            "session_terminal_projection_gate"
-        )
+    async def prepare_context(
+        self,
+        turn: TurnInput,
+        *,
+        services: Mapping[str, Any],
+        config: Any,
+        local_llm: Any,
+        tool_registry: Any,
+        current_message_id: int | None,
+        summary_user_is_confused: Callable[[str], bool],
+        summary_latest_task_snapshot: Callable[[Sequence[Any]], str | None],
+        summary_build_reinject_msg: Callable[[str], dict[str, Any]],
+        provider: Any = None,
+        companion_ingress_owner: Any = None,
+    ) -> PreparedTurnContext:
+        projection_gate = services.get("session_terminal_projection_gate")
         if projection_gate is not None:
             # Product context must never be assembled from a view known to be
             # stale.  Projection failures propagate and stop the turn.
             await projection_gate.ensure_current(turn.session_id)
         bundle = None
-        assembler = services.get('context_assembler')
-        if assembler is not None and getattr(assembler, 'enabled', True):
+        assembler = services.get("context_assembler")
+        if assembler is not None and getattr(assembler, "enabled", True):
             try:
                 # ``provider`` is the already resolved and Session-bound
                 # provider for this exact product turn. ``local_llm`` is only
                 # a global fallback and can name a different default model.
                 persona_provider = provider or local_llm
-                persona_model = getattr(persona_provider, 'model', 'unknown')
-                persona_base = getattr(persona_provider, 'base_url', '')
+                persona_model = getattr(persona_provider, "model", "unknown")
+                persona_base = getattr(persona_provider, "base_url", "")
                 skill_config: dict[str, Any] = {}
                 try:
                     disclosure = config.skills.auto_disclosure
-                    skill_config = {'auto_disclosure': {'enabled': bool(disclosure.enabled), 'strong_threshold': float(disclosure.strong_threshold), 'budget_tokens': int(disclosure.budget_tokens), 'per_skill_max_tokens': int(disclosure.per_skill_max_tokens)}}
+                    skill_config = {
+                        "auto_disclosure": {
+                            "enabled": bool(disclosure.enabled),
+                            "strong_threshold": float(disclosure.strong_threshold),
+                            "budget_tokens": int(disclosure.budget_tokens),
+                            "per_skill_max_tokens": int(disclosure.per_skill_max_tokens),
+                        }
+                    }
                 except Exception:
                     pass
                 workspace_config = (
                     {
-                        'verified': True,
-                        'root': turn.workspace_ref,
-                        'active_path': turn.workspace_ref,
+                        "verified": True,
+                        "root": turn.workspace_ref,
+                        "active_path": turn.workspace_ref,
                     }
                     if turn.workspace_ref
                     else {}
@@ -443,34 +458,34 @@ class ProductTurnPreparer:
                     )
                 bundle = await assembler.assemble(
                     user_message=turn.text,
-                    memory_manager=services.get('memory_manager'),
+                    memory_manager=services.get("memory_manager"),
                     tool_registry=tool_registry,
                     skill_registry=(
-                        services.get('managed_skill_discovery_projection')
-                        or services.get('skill_loader')
+                        services.get("managed_skill_discovery_projection")
+                        or services.get("skill_loader")
                     ),
-                    mcp_manager=services.get('mcp_manager'),
+                    mcp_manager=services.get("mcp_manager"),
                     session_id=turn.session_id,
                     current_message_id=current_message_id,
                     # The product root is always the same general agent.  Legacy
                     # classifier labels may rank retrieval candidates elsewhere,
                     # but they cannot select a persona, policy or tool surface.
-                    task_type_override='chat',
+                    task_type_override="chat",
                     memory_policy_override=turn.memory_policy,
                     config={
-                        'llm': {'model': persona_model, 'base_url': persona_base},
-                        'workspace_context': workspace_config,
-                        'task_conversation': {
-                            'root_run_id': turn.root_run_id,
-                            'task_scope_id': turn.task_scope_id,
+                        "llm": {"model": persona_model, "base_url": persona_base},
+                        "workspace_context": workspace_config,
+                        "task_conversation": {
+                            "root_run_id": turn.root_run_id,
+                            "task_scope_id": turn.task_scope_id,
                         },
-                        'provider_workload_context': provider_workload_context,
-                        'skills': skill_config,
-                        'features': {
-                            'context_os_v1': bool(
+                        "provider_workload_context": provider_workload_context,
+                        "skills": skill_config,
+                        "features": {
+                            "context_os_v1": bool(
                                 getattr(
-                                    getattr(config, 'features', None),
-                                    'context_os_v1',
+                                    getattr(config, "features", None),
+                                    "context_os_v1",
                                     False,
                                 )
                             )
@@ -492,9 +507,8 @@ class ProductTurnPreparer:
                         )
                         if tool_registry.has(name)
                     )
-                    if (
-                        _needs_process_start_direct(turn.text)
-                        and tool_registry.has("process_start")
+                    if _needs_process_start_direct(turn.text) and tool_registry.has(
+                        "process_start"
                     ):
                         # A GUI/server launch must return a durable process
                         # lease immediately.  Do not expose this dangerous
@@ -530,50 +544,55 @@ class ProductTurnPreparer:
                         ),
                     )
             except Exception as exc:
-                logger.warning('p4_assembler_failed', error=str(exc), error_type=type(exc).__name__)
+                logger.warning("p4_assembler_failed", error=str(exc), error_type=type(exc).__name__)
                 bundle = None
         if bundle is not None:
-            messages = bundle.build_messages(user_message=turn.text, history=bundle.history, late_system_nudge=bundle.late_system_nudge)
+            messages = bundle.build_messages(
+                user_message=turn.text,
+                history=bundle.history,
+                late_system_nudge=bundle.late_system_nudge,
+            )
         else:
-            messages = [{'role': 'user', 'content': turn.text}]
+            messages = [{"role": "user", "content": turn.text}]
         if turn.attachment_blocks:
             messages = append_user_attachment_blocks(messages, turn.attachment_blocks)
         prepared_context = None
         eligibility = None
-        if bool(getattr(getattr(config, 'features', None), 'context_os_v1', False)):
+        if bool(getattr(getattr(config, "features", None), "context_os_v1", False)):
             if bundle is None:
                 raise PreflightBlocked(
                     RootBlockReasonV1.CAPABILITY_UNAVAILABLE,
-                    ('capability-context:bundle-unavailable',),
+                    ("capability-context:bundle-unavailable",),
                 )
-            planner = services.get('context_request_planner')
-            scope_store = services.get('tool_capability_scope_store')
+            planner = services.get("context_request_planner")
+            scope_store = services.get("tool_capability_scope_store")
             if planner is None or scope_store is None:
                 raise PreflightBlocked(
                     RootBlockReasonV1.CAPABILITY_UNAVAILABLE,
-                    ('capability-context:tool-runtime-unavailable',),
+                    ("capability-context:tool-runtime-unavailable",),
                 )
             from llm.model_info import resolve as resolve_model_info
 
             from deskpet.agent.attachment_budget import collect_attachment_budget
             from deskpet.tools.capabilities import ToolEligibilityContext
+
             eligibility = ToolEligibilityContext(
                 session_id=turn.session_id,
-                request_id=str(turn.request_id or ''),
-                task_type='chat',
-                mode='general',
+                request_id=str(turn.request_id or ""),
+                task_type="chat",
+                mode="general",
             )
             if not eligibility.request_id:
                 raise PreflightBlocked(
                     RootBlockReasonV1.CAPABILITY_UNAVAILABLE,
-                    ('capability-context:request-identity-unavailable',),
+                    ("capability-context:request-identity-unavailable",),
                 )
             selected_provider = provider or local_llm
             model_info = resolve_model_info(
-                str(getattr(selected_provider, 'model', '') or turn.provider_ref or '_default')
+                str(getattr(selected_provider, "model", "") or turn.provider_ref or "_default")
             )
             active_snapshot = None
-            project_snapshot = services.get('project_initial_context_snapshot')
+            project_snapshot = services.get("project_initial_context_snapshot")
             if callable(project_snapshot):
                 active_snapshot = await project_snapshot(
                     session_id=turn.session_id,
@@ -582,13 +601,13 @@ class ProductTurnPreparer:
                     user_text=turn.text,
                     explicit_new=turn.explicit_new,
                 )
-            attach_snapshot = services.get('attach_task_snapshot_to_request')
+            attach_snapshot = services.get("attach_task_snapshot_to_request")
             if callable(attach_snapshot):
                 attach_snapshot(bundle, messages, active_snapshot)
             attachment_refs, attachment_tokens = collect_attachment_budget(messages)
             planned_request = await planner.prepare_initial(
                 bundle,
-                base_system='',
+                base_system="",
                 history=bundle.history,
                 user_message=turn.text,
                 eligibility=eligibility,
@@ -610,39 +629,50 @@ class ProductTurnPreparer:
             )
             messages = prepared_context.messages
         if turn.is_sentinel:
-            directive = '\uff08\u7cfb\u7edf\u81ea\u52a8\u7eed\u8dd1\uff1a\u4f60\u4e0a\u4e00\u8f6e\u8fd8\u6ca1\u628a\u7528\u6237\u8bf7\u6c42\u7684\u4efb\u52a1\u505a\u5b8c\u5c31\u8fbe\u5230\u4e86\u8fed\u4ee3\u4e0a\u9650\u3002**\u4e0d\u8981\u91cd\u65b0\u81ea\u6211\u4ecb\u7ecd\u3001\u4e0d\u8981\u53cd\u95ee\u7528\u6237\u60f3\u505a\u4ec0\u4e48**\u2014\u2014\u56de\u987e\u4e0a\u9762\u7684\u5bf9\u8bdd\u5386\u53f2\u4e0e\u5de5\u5177\u7ed3\u679c\uff0c\u627e\u51fa\u7528\u6237\u6700\u521d\u8bf7\u6c42\u7684\u90a3\u4e2a\u4efb\u52a1\u8fd8\u5dee\u54ea\u4e9b\u6b65\u9aa4\uff0c\u76f4\u63a5\u7ee7\u7eed\u628a\u5b83\u505a\u5b8c\u3002\uff09'
+            directive = "\uff08\u7cfb\u7edf\u81ea\u52a8\u7eed\u8dd1\uff1a\u4f60\u4e0a\u4e00\u8f6e\u8fd8\u6ca1\u628a\u7528\u6237\u8bf7\u6c42\u7684\u4efb\u52a1\u505a\u5b8c\u5c31\u8fbe\u5230\u4e86\u8fed\u4ee3\u4e0a\u9650\u3002**\u4e0d\u8981\u91cd\u65b0\u81ea\u6211\u4ecb\u7ecd\u3001\u4e0d\u8981\u53cd\u95ee\u7528\u6237\u60f3\u505a\u4ec0\u4e48**\u2014\u2014\u56de\u987e\u4e0a\u9762\u7684\u5bf9\u8bdd\u5386\u53f2\u4e0e\u5de5\u5177\u7ed3\u679c\uff0c\u627e\u51fa\u7528\u6237\u6700\u521d\u8bf7\u6c42\u7684\u90a3\u4e2a\u4efb\u52a1\u8fd8\u5dee\u54ea\u4e9b\u6b65\u9aa4\uff0c\u76f4\u63a5\u7ee7\u7eed\u628a\u5b83\u505a\u5b8c\u3002\uff09"
             for index in range(len(messages) - 1, -1, -1):
-                if messages[index].get('role') == 'user':
-                    messages[index] = {**messages[index], 'content': directive}
+                if messages[index].get("role") == "user":
+                    messages[index] = {**messages[index], "content": directive}
                     break
             else:
-                messages.append({'role': 'user', 'content': directive})
+                messages.append({"role": "user", "content": directive})
         try:
-            nudge_queue = services.get('nudge_queue')
+            nudge_queue = services.get("nudge_queue")
             if nudge_queue is not None:
                 hints = await nudge_queue.pop_all(turn.session_id)
-                hint_text = format_hints_for_injection(hints) if hints else ''
+                hint_text = format_hints_for_injection(hints) if hints else ""
                 if hint_text:
-                    self._insert_after_system(messages, {'role': 'system', 'content': hint_text, '_is_supervisor_hint': True})
-                    session_db = services.get('session_db')
+                    self._insert_after_system(
+                        messages,
+                        {"role": "system", "content": hint_text, "_is_supervisor_hint": True},
+                    )
+                    session_db = services.get("session_db")
                     if session_db is not None:
                         for hint in hints:
                             try:
-                                await session_db.append_supervisor_hint(session_id=turn.session_id, alert_id=hint.alert_id or '', hint_text=hint.text, action='dispatched', severity=hint.severity)
+                                await session_db.append_supervisor_hint(
+                                    session_id=turn.session_id,
+                                    alert_id=hint.alert_id or "",
+                                    hint_text=hint.text,
+                                    action="dispatched",
+                                    severity=hint.severity,
+                                )
                             except Exception as exc:
-                                logger.debug('supervisor_dispatched_audit_failed', error=str(exc))
+                                logger.debug("supervisor_dispatched_audit_failed", error=str(exc))
         except Exception as exc:
-            logger.debug('supervisor_hint_inject_failed', error=str(exc))
-        summary_enabled = bool(getattr(getattr(config, 'features', None), 'summary_quality_loop', False))
+            logger.debug("supervisor_hint_inject_failed", error=str(exc))
+        summary_enabled = bool(
+            getattr(getattr(config, "features", None), "summary_quality_loop", False)
+        )
         if summary_enabled and (not turn.is_sentinel) and summary_user_is_confused(turn.text):
             try:
-                file_memory = services.get('file_memory')
+                file_memory = services.get("file_memory")
                 if file_memory is not None:
-                    latest = summary_latest_task_snapshot(await file_memory.list_entries('memory'))
+                    latest = summary_latest_task_snapshot(await file_memory.list_entries("memory"))
                     if latest:
                         self._insert_after_system(messages, summary_build_reinject_msg(latest))
             except Exception as exc:
-                logger.debug('wi1b4_summary_loop_skipped', sid=turn.session_id, error=str(exc))
+                logger.debug("wi1b4_summary_loop_skipped", sid=turn.session_id, error=str(exc))
         preference_resolution = None
         owner_memory_read_scope = None
         growth_dependencies: tuple[Any, ...] = ()
@@ -663,23 +693,13 @@ class ProductTurnPreparer:
                     if skill_trace is None or not skill_trace.included
                     else dict(skill_trace.meta)
                 )
-                raw_auto_scopes = skill_meta.get(
-                    "skill_invocation_scopes", ()
-                )
-                raw_auto_ids = skill_meta.get(
-                    "active_skill_scope_ids", ()
-                )
+                raw_auto_scopes = skill_meta.get("skill_invocation_scopes", ())
+                raw_auto_ids = skill_meta.get("active_skill_scope_ids", ())
                 if any(
-                    isinstance(value, (str, bytes))
-                    or not isinstance(value, (list, tuple))
+                    isinstance(value, (str, bytes)) or not isinstance(value, (list, tuple))
                     for value in (raw_auto_scopes, raw_auto_ids)
-                ) or any(
-                    not isinstance(item, Mapping)
-                    for item in raw_auto_scopes
-                ):
-                    raise RuntimeError(
-                        "assembled_skill_scope_shape_invalid"
-                    )
+                ) or any(not isinstance(item, Mapping) for item in raw_auto_scopes):
+                    raise RuntimeError("assembled_skill_scope_shape_invalid")
                 auto_scopes = [dict(item) for item in raw_auto_scopes]
                 required_scope_fields = {
                     "owner_key",
@@ -692,24 +712,12 @@ class ProductTurnPreparer:
                     "scope_id",
                     "scope_hash",
                 }
-                if any(
-                    not required_scope_fields.issubset(scope)
-                    for scope in auto_scopes
-                ):
-                    raise RuntimeError(
-                        "assembled_skill_scope_identity_incomplete"
-                    )
+                if any(not required_scope_fields.issubset(scope) for scope in auto_scopes):
+                    raise RuntimeError("assembled_skill_scope_identity_incomplete")
                 auto_scope_ids = [str(item) for item in raw_auto_ids]
-                known_auto_ids = {
-                    str(item.get("scope_id") or "")
-                    for item in auto_scopes
-                }
-                if "" in known_auto_ids or not set(
-                    auto_scope_ids
-                ).issubset(known_auto_ids):
-                    raise RuntimeError(
-                        "assembled_active_skill_scope_invalid"
-                    )
+                known_auto_ids = {str(item.get("scope_id") or "") for item in auto_scopes}
+                if "" in known_auto_ids or not set(auto_scope_ids).issubset(known_auto_ids):
+                    raise RuntimeError("assembled_active_skill_scope_invalid")
             active_ids = set(auto_scope_ids)
             auto_instruction_refs = [
                 {
@@ -729,33 +737,23 @@ class ProductTurnPreparer:
                 for scope in auto_scopes
                 if str(scope.get("scope_id") or "") in active_ids
             ]
-            authority_result = (
-                self._companion_turn_authority.prepare_turn(
-                    CompanionTurnPreparationRequestV1(
-                        turn=turn,
-                        services=services,
-                        current_message_id=current_message_id,
-                        ingress_owner=companion_ingress_owner,
-                        selected_instruction_refs=tuple(
-                            auto_instruction_refs
-                        ),
-                        skill_invocation_scopes=tuple(auto_scopes),
-                        active_skill_scope_ids=tuple(auto_scope_ids),
-                    )
+            authority_result = self._companion_turn_authority.prepare_turn(
+                CompanionTurnPreparationRequestV1(
+                    turn=turn,
+                    services=services,
+                    current_message_id=current_message_id,
+                    ingress_owner=companion_ingress_owner,
+                    selected_instruction_refs=tuple(auto_instruction_refs),
+                    skill_invocation_scopes=tuple(auto_scopes),
+                    active_skill_scope_ids=tuple(auto_scope_ids),
                 )
             )
             if inspect.isawaitable(authority_result):
                 authority_result = await authority_result
-            if not isinstance(
-                authority_result, PreparedCompanionTurnV1
-            ):
-                raise RuntimeError(
-                    "companion_turn_authority_prepare_invalid"
-                )
+            if not isinstance(authority_result, PreparedCompanionTurnV1):
+                raise RuntimeError("companion_turn_authority_prepare_invalid")
             companion_authority_state = authority_result
-            preference_resolution = (
-                authority_result.preference_resolution
-            )
+            preference_resolution = authority_result.preference_resolution
             growth_dependencies = (
                 *preference_resolution.dependencies,
                 *authority_result.base_dependencies,
@@ -797,9 +795,7 @@ class ProductTurnPreparer:
             run_prepared_context=run_prepared_context,
             companion_authority_state=companion_authority_state,
             companion_turn_finalizer=(
-                self._companion_turn_authority
-                if companion_authority_state is not None
-                else None
+                self._companion_turn_authority if companion_authority_state is not None else None
             ),
             current_message_id=current_message_id,
             companion_ingress_owner=companion_ingress_owner,
@@ -820,10 +816,12 @@ class ProductTurnPreparer:
         )
         return RoutedTurnIntent(prepared=prepared)
 
-    async def route_intent(self, prepared: PreparedTurnContext, *, services: Mapping[str, Any]) -> RoutedTurnIntent:
+    async def route_intent(
+        self, prepared: PreparedTurnContext, *, services: Mapping[str, Any]
+    ) -> RoutedTurnIntent:
         result = RoutedTurnIntent(prepared=prepared)
-        pipeline = services.get('problem_pipeline')
-        if pipeline is None or not getattr(pipeline, 'enabled', False) or prepared.turn.is_sentinel:
+        pipeline = services.get("problem_pipeline")
+        if pipeline is None or not getattr(pipeline, "enabled", False) or prepared.turn.is_sentinel:
             await self._settle_growth_intent(
                 prepared,
                 services=services,
@@ -834,14 +832,13 @@ class ProductTurnPreparer:
         try:
             turn = prepared.turn
             if not turn.request_id or not turn.root_run_id:
-                raise RuntimeError(
-                    "problem pre-analysis requires frozen request/root identity"
-                )
+                raise RuntimeError("problem pre-analysis requires frozen request/root identity")
             pre_loop = await pipeline.run_pre_loop(
                 turn.text,
                 prior_task_type=(
-                    getattr(prepared.bundle, 'task_type', None)
-                    if prepared.bundle is not None else None
+                    getattr(prepared.bundle, "task_type", None)
+                    if prepared.bundle is not None
+                    else None
                 ),
                 workload_context=workload_context(
                     "agent.problem_preanalysis",
@@ -852,16 +849,21 @@ class ProductTurnPreparer:
                 ),
             )
             result.pre_loop = pre_loop
-            commands = [ProductDomainCommand('pipeline_event', {'type': event['type'], 'payload': {'session_id': prepared.turn.session_id, **event['payload']}}) for event in pre_loop.events]
+            commands = [
+                ProductDomainCommand(
+                    "pipeline_event",
+                    {
+                        "type": event["type"],
+                        "payload": {"session_id": prepared.turn.session_id, **event["payload"]},
+                    },
+                )
+                for event in pre_loop.events
+            ]
             result.problem_type = (
-                getattr(pre_loop.intent, "problem_type", None)
-                if pre_loop.intent
-                else None
+                getattr(pre_loop.intent, "problem_type", None) if pre_loop.intent else None
             )
             result.requires_action_plan = (
-                getattr(pre_loop.intent, "requires_action_plan", None)
-                if pre_loop.intent
-                else None
+                getattr(pre_loop.intent, "requires_action_plan", None) if pre_loop.intent else None
             )
             growth_signal_kind = (
                 getattr(pre_loop.intent, "growth_signal_kind", "none")
@@ -872,18 +874,20 @@ class ProductTurnPreparer:
             if pre_loop.short_circuit and not active_skill_scope:
                 result.commands = tuple(commands)
                 return result
-            if (
-                pre_loop.needs_clarification
-                and pre_loop.intent
-                and not active_skill_scope
-            ):
-                commands.append(ProductDomainCommand('clarification', {'session_id': prepared.turn.session_id, 'text': '\n'.join(pre_loop.intent.clarifying_questions)}))
+            if pre_loop.needs_clarification and pre_loop.intent and not active_skill_scope:
+                commands.append(
+                    ProductDomainCommand(
+                        "clarification",
+                        {
+                            "session_id": prepared.turn.session_id,
+                            "text": "\n".join(pre_loop.intent.clarifying_questions),
+                        },
+                    )
+                )
                 result.commands = tuple(commands)
                 result.continue_turn = False
                 return result
-            if active_skill_scope and (
-                pre_loop.short_circuit or pre_loop.needs_clarification
-            ):
+            if active_skill_scope and (pre_loop.short_circuit or pre_loop.needs_clarification):
                 logger.info(
                     "intent_triage_deferred_to_active_skill",
                     sid=prepared.turn.session_id,
@@ -891,13 +895,17 @@ class ProductTurnPreparer:
                     needs_clarification=bool(pre_loop.needs_clarification),
                 )
             for injection in pre_loop.system_injections:
-                self._insert_after_system(prepared.messages, {'role': 'system', 'content': injection})
+                self._insert_after_system(
+                    prepared.messages, {"role": "system", "content": injection}
+                )
             if pre_loop.contradiction is not None:
                 result.attack_order = pre_loop.contradiction.attack_order
-                result.contradiction_descs = {item.id: item.desc for item in pre_loop.contradiction.contradictions}
+                result.contradiction_descs = {
+                    item.id: item.desc for item in pre_loop.contradiction.contradictions
+                }
             result.commands = tuple(commands)
         except Exception as exc:
-            logger.warning('pipeline_pre_loop_failed', sid=prepared.turn.session_id, error=str(exc))
+            logger.warning("pipeline_pre_loop_failed", sid=prepared.turn.session_id, error=str(exc))
         finally:
             await self._settle_growth_intent(
                 prepared,
@@ -963,7 +971,7 @@ class ProductTurnPreparer:
                     error=str(exc),
                 )
         try:
-            pipeline_config = getattr(getattr(config, 'features', None), 'problem_pipeline', None)
+            pipeline_config = getattr(getattr(config, "features", None), "problem_pipeline", None)
             authorization_required = (
                 policy_mode != "auto"
                 # Unknown fails closed to a model-generated plan in manual
@@ -974,9 +982,8 @@ class ProductTurnPreparer:
                 provider,
                 turn.text,
                 target_directory,
-                planning_enabled=bool(
-                    pipeline_config and pipeline_config.plan_companion_enabled
-                ) or authorization_required,
+                planning_enabled=bool(pipeline_config and pipeline_config.plan_companion_enabled)
+                or authorization_required,
                 authorization_required=authorization_required,
                 problem_type=routed.problem_type,
                 attack_order=routed.attack_order,
@@ -1001,37 +1008,54 @@ class ProductTurnPreparer:
             # preference is not a substitute for the current task's scoped
             # TaskGrant.
             result.auto_confirmed = policy_mode == "auto"
-            steps = [{'title': step.title, 'detail': step.detail} for step in plan.steps]
+            steps = [{"title": step.title, "detail": step.detail} for step in plan.steps]
             awaiting = gate_on and (not result.auto_confirmed)
-            self._insert_after_system(routed.prepared.messages, {'role': 'system', 'content': plan_to_system_message(plan)})
+            self._insert_after_system(
+                routed.prepared.messages,
+                {"role": "system", "content": plan_to_system_message(plan)},
+            )
             presentation = {
-                'session_id': turn.session_id,
-                'rationale': plan.rationale,
-                'steps': steps,
-                'target_directory': target_directory,
-                'action_categories': list(action_categories),
-                'awaiting_confirm': awaiting,
-                'auto_confirmed': result.auto_confirmed,
+                "session_id": turn.session_id,
+                "rationale": plan.rationale,
+                "steps": steps,
+                "target_directory": target_directory,
+                "action_categories": list(action_categories),
+                "awaiting_confirm": awaiting,
+                "auto_confirmed": result.auto_confirmed,
             }
-            commands = [ProductDomainCommand('plan_proposed', presentation)]
+            commands = [ProductDomainCommand("plan_proposed", presentation)]
             if awaiting:
-                commands.append(ProductDomainCommand('plan_confirmation', {
-                    'session_id': turn.session_id,
-                    'text': turn.text,
-                    'target_directory': target_directory,
-                    'action_categories': list(action_categories),
-                    'timeout_seconds': 900.0,
-                    'read_only': bool(getattr(config.features, 'plan_read_only', False)),
-                }))
+                commands.append(
+                    ProductDomainCommand(
+                        "plan_confirmation",
+                        {
+                            "session_id": turn.session_id,
+                            "text": turn.text,
+                            "target_directory": target_directory,
+                            "action_categories": list(action_categories),
+                            "timeout_seconds": 900.0,
+                            "read_only": bool(getattr(config.features, "plan_read_only", False)),
+                        },
+                    )
+                )
             result.commands = tuple(commands)
         except Exception as exc:
-            logger.debug('p4s25_plan_skipped', error=str(exc))
+            logger.debug("p4s25_plan_skipped", error=str(exc))
         return result
 
     @staticmethod
     def _insert_after_system(messages: list[dict[str, Any]], message: dict[str, Any]) -> None:
         index = 0
-        while index < len(messages) and messages[index].get('role') == 'system':
+        while index < len(messages) and messages[index].get("role") == "system":
             index += 1
         messages.insert(index, message)
-__all__ = ['PlannedTurnDecision', 'PreparedTurnContext', 'ProductDomainCommand', 'ProductTurnPreparer', 'RoutedTurnIntent', 'TurnInput']
+
+
+__all__ = [
+    "PlannedTurnDecision",
+    "PreparedTurnContext",
+    "ProductDomainCommand",
+    "ProductTurnPreparer",
+    "RoutedTurnIntent",
+    "TurnInput",
+]

@@ -4,18 +4,23 @@
 目标。能被唤醒的只有步骤（跑完）和已完成的记录；这里沿当前计划里已采用的方法实例往下
 走，列出方法实例 / 目标下面的叶子步骤，由调用方再挑出正在跑的那些去等。
 """
+
 from __future__ import annotations
 
 from typing import Any
 
 
-def steps_under(network: Any, *, instance_id: str | None = None,
-                obligation_id: str | None = None) -> tuple[str, ...]:
+def steps_under(
+    network: Any, *, instance_id: str | None = None, obligation_id: str | None = None
+) -> tuple[str, ...]:
     """Task ids of the leaf steps below one adopted method instance or one duty."""
 
     adopted = {str(item) for item in network.adopted_instance_ids}
-    instances = {str(item.instance_id): item for item in network.method_instances
-                 if str(item.instance_id) in adopted}
+    instances = {
+        str(item.instance_id): item
+        for item in network.method_instances
+        if str(item.instance_id) in adopted
+    }
     by_goal = {str(item.effective_goal_occurrence_id): item for item in instances.values()}
     specs = {str(spec.occurrence_id): spec for spec in network.occurrences}
     if instance_id is not None:

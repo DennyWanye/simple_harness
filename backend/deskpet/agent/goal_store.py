@@ -20,6 +20,7 @@ sequentially per WS connection), so a plain ``dict`` is sufficient.
 If callers spawn parallel coros per session, wrap the store in a lock
 at the call site.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -63,7 +64,7 @@ class SessionGoal:
     done: bool = False
     # —— 新增（全默认值；goal_id="" 即未落库内存态，BC）——
     goal_id: str = ""
-    status: str = "active"          # active | done | abandoned（落库权威）
+    status: str = "active"  # active | done | abandoned（落库权威）
     progress: float = 0.0
     criteria: str | None = None
     updated_at: float = 0.0
@@ -82,7 +83,7 @@ class SessionGoalStore:
 
     def __init__(self) -> None:
         self._goals: dict[str, SessionGoal] = {}
-        self._session_db = None          # set via bind_persistence
+        self._session_db = None  # set via bind_persistence
         # /goal clear 落 abandoned 用：记下被清条目的 goal_id
         self._last_cleared_goal_id: dict[str, str] = {}
         self._logger = logging.getLogger("deskpet.agent.goal_store")
@@ -120,9 +121,7 @@ class SessionGoalStore:
             try:
                 await cb(session_id, text)
             except Exception as exc:  # noqa: BLE001 — safe-fail, no block
-                self._logger.warning(
-                    "on_goal_set_callback_failed sid=%s: %s", session_id, exc
-                )
+                self._logger.warning("on_goal_set_callback_failed sid=%s: %s", session_id, exc)
 
         try:
             loop = asyncio.get_event_loop()
@@ -164,7 +163,9 @@ class SessionGoalStore:
             )
         except Exception as exc:  # noqa: BLE001 — safe-fail
             self._logger.warning(
-                "goal_store.persist failed sid=%s: %s", goal.session_id, exc,
+                "goal_store.persist failed sid=%s: %s",
+                goal.session_id,
+                exc,
             )
 
     async def load_persisted(self) -> int:
@@ -181,7 +182,7 @@ class SessionGoalStore:
         n = 0
         for r in rows:
             sid = r["session_id"]
-            if sid in self._goals:       # 已有更新的（倒序首条）→ 跳过旧的
+            if sid in self._goals:  # 已有更新的（倒序首条）→ 跳过旧的
                 continue
             self._goals[sid] = SessionGoal(
                 session_id=sid,
@@ -205,9 +206,7 @@ class SessionGoalStore:
         g = self._goals.get(session_id)
         return g.text if g is not None else None
 
-    def get_active_goal_context(
-        self, session_id: str | None = None
-    ) -> tuple[str, str] | None:
+    def get_active_goal_context(self, session_id: str | None = None) -> tuple[str, str] | None:
         """Resolve ``(goal_id, session_id)`` for an active goal.
 
         WI-TG-1 方案A: the main-agent global ``goal_task_*`` tools have no
@@ -227,18 +226,13 @@ class SessionGoalStore:
             g = self._goals.get(session_id)
             if g is not None and g.goal_id and g.status == "active":
                 return (g.goal_id, g.session_id)
-        candidates = [
-            g for g in self._goals.values()
-            if g.goal_id and g.status == "active"
-        ]
+        candidates = [g for g in self._goals.values() if g.goal_id and g.status == "active"]
         if not candidates:
             return None
         best = max(candidates, key=lambda g: g.updated_at or g.set_at)
         return (best.goal_id, best.session_id)
 
-    def get_active_goal_context_for_session(
-        self, session_id: str
-    ) -> tuple[str, str] | None:
+    def get_active_goal_context_for_session(self, session_id: str) -> tuple[str, str] | None:
         """Strict session lookup used by Context OS capability eligibility.
 
         Unlike :meth:`get_active_goal_context`, this method never falls back
@@ -271,6 +265,7 @@ class SessionGoalStore:
         existing entry (new goal = fresh counter).
         """
         import uuid
+
         now = time.time()
         goal = SessionGoal(
             session_id=session_id,
@@ -320,17 +315,23 @@ class SessionGoalStore:
             for r in rows:
                 if r["goal_id"] == gid:
                     await self._session_db.upsert_session_goal(
-                        goal_id=gid, session_id=session_id, text=r["text"],
-                        status="abandoned", progress=r["progress"],
+                        goal_id=gid,
+                        session_id=session_id,
+                        text=r["text"],
+                        status="abandoned",
+                        progress=r["progress"],
                         criteria=r["criteria"],
                         max_iterations=r["max_iterations"],
                         iterations_used=r["iterations_used"],
-                        set_at=r["set_at"], updated_at=time.time(),
+                        set_at=r["set_at"],
+                        updated_at=time.time(),
                     )
                     break
         except Exception as exc:  # noqa: BLE001 — safe-fail
             self._logger.warning(
-                "persist_abandon failed sid=%s: %s", session_id, exc,
+                "persist_abandon failed sid=%s: %s",
+                session_id,
+                exc,
             )
 
     def mark_done(self, session_id: str) -> bool:
@@ -379,8 +380,7 @@ class SessionGoalStore:
             raise RuntimeError("durable Goal projection requires SessionDB")
         if not await self._session_db.project_goal_terminal(goal_id, status):
             return False
-        goal = next((item for item in self._goals.values()
-                     if item.goal_id == goal_id), None)
+        goal = next((item for item in self._goals.values() if item.goal_id == goal_id), None)
         if goal is not None:
             goal.status = status
             goal.done = status == "done"

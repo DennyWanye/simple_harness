@@ -111,12 +111,20 @@ class FrozenContextAuthority:
     def __post_init__(self):
         if self.scope_disclosure is not None:
             from simple_harness import freeze_json, thaw_json
-            object.__setattr__(self, "scope_disclosure", freeze_json(thaw_json(self.scope_disclosure)))
+
+            object.__setattr__(
+                self, "scope_disclosure", freeze_json(thaw_json(self.scope_disclosure))
+            )
         if self.visibility_dependencies is not None:
             from simple_harness import freeze_json
 
             from deskpet.execution.primary_dependencies import parse_dependencies
-            object.__setattr__(self, "visibility_dependencies", freeze_json(parse_dependencies(self.visibility_dependencies)))
+
+            object.__setattr__(
+                self,
+                "visibility_dependencies",
+                freeze_json(parse_dependencies(self.visibility_dependencies)),
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -146,9 +154,7 @@ class AuthenticatedTerminalObservation:
 
 
 class ForegroundContextPreparationPort(Protocol):
-    async def draft_lineage(
-        self, candidate: PreparationCandidate
-    ) -> ContextLineage: ...
+    async def draft_lineage(self, candidate: PreparationCandidate) -> ContextLineage: ...
 
     async def prepare(
         self,
@@ -162,9 +168,7 @@ class ForegroundContextPreparationPort(Protocol):
         tools: FrozenToolAuthority,
     ) -> FrozenContextAuthority: ...
 
-    async def verify_initial_route(
-        self, receipt: ContextRouteReceipt
-    ) -> None: ...
+    async def verify_initial_route(self, receipt: ContextRouteReceipt) -> None: ...
 
 
 class ForegroundProviderAuthorityPort(Protocol):
@@ -312,9 +316,7 @@ _PROVIDER_RECONCILE_DRAIN_POLLS = 60
 _PROVIDER_RECONCILE_DRAIN_INTERVAL_SECONDS = 0.05
 
 
-def resolve_host_terminal(
-    raw_sdk_state: str, host_head_state: str | None
-) -> RunState | None:
+def resolve_host_terminal(raw_sdk_state: str, host_head_state: str | None) -> RunState | None:
     """Resolve the Host terminal state from authenticated SDK evidence.
 
     SDK 0.7 reports ``completed``/``failed``/``cancelled`` only.  The Host
@@ -331,9 +333,7 @@ def resolve_host_terminal(
         "failed": RunState.FAILED,
         "cancelled": RunState.CANCELLED,
     }.get(raw_sdk_state)
-    if mapped is RunState.CANCELLED and host_head_state == (
-        RunState.STOP_REQUESTED.value
-    ):
+    if mapped is RunState.CANCELLED and host_head_state == (RunState.STOP_REQUESTED.value):
         return RunState.STOPPED
     return mapped
 
@@ -536,9 +536,7 @@ class ForegroundRuntimeExecutionAuthority:
                 host_run_id=snapshot.host_run_id,
                 owner_id=self._owner_id,
                 generation=snapshot.generation,
-                idempotency_key=(
-                    f"runtime-shutdown:{snapshot.host_run_id}:g{snapshot.generation}"
-                ),
+                idempotency_key=(f"runtime-shutdown:{snapshot.host_run_id}:g{snapshot.generation}"),
             )
         except ForegroundQueueError as exc:
             if exc.code not in {
@@ -599,9 +597,7 @@ class ForegroundRuntimeExecutionAuthority:
             int(getattr(authority, "generation", 0)),
         )
         if observed != (host_run_id, sdk_run_id, owner_id, generation):
-            raise ForegroundRuntimeError(
-                "foreground_runtime_authority_identity_drift"
-            )
+            raise ForegroundRuntimeError("foreground_runtime_authority_identity_drift")
 
     @staticmethod
     def _reason_audit_fields(exc: BaseException) -> dict[str, object]:
@@ -675,8 +671,7 @@ class ForegroundRuntimeExecutionAuthority:
                         # 正是我们要消灭的那种空转。只有距上次失败已经安静地
                         # 跑满一个冷却窗口，才认为故障过去了。
                         if last_failure is not None and (
-                            time.monotonic() - last_failure
-                            >= DRIVER_RETRY_COOLDOWN_SECONDS
+                            time.monotonic() - last_failure >= DRIVER_RETRY_COOLDOWN_SECONDS
                         ):
                             attempt, last_failure = 0, None
                         continue
@@ -751,20 +746,23 @@ class ForegroundRuntimeExecutionAuthority:
     async def _drive_once(self) -> bool:
         snapshot = await self._store.current_snapshot(self._subject)
         if snapshot is None:
-            candidate = await self._store.read_next_preparation_candidate(
-                self._subject
-            )
+            candidate = await self._store.read_next_preparation_candidate(self._subject)
             if candidate is None:
                 return False
             if candidate.subject != self._subject:
                 raise ForegroundRuntimeError("foreground_runtime_candidate_subject_drift")
             from deskpet.memory.trusted_disclosure import TrustedDisclosureError
+
             try:
                 lineage = await self._context.draft_lineage(candidate)
             except TrustedDisclosureError as exc:
-                if exc.code not in {"host_disclosure_binding_stale", "host_disclosure_legacy_policy_changed"}:
+                if exc.code not in {
+                    "host_disclosure_binding_stale",
+                    "host_disclosure_legacy_policy_changed",
+                }:
                     raise
                 from deskpet.execution.admission_rejection import reject_stale_candidate
+
                 await reject_stale_candidate(self._store, candidate)
                 self._notify_state_changed()
                 return True
@@ -796,7 +794,8 @@ class ForegroundRuntimeExecutionAuthority:
             if not reclaim:
                 try:
                     await self._store.read_claimed_execution(
-                        host_run_id=snapshot.host_run_id, owner_id=self._owner_id,
+                        host_run_id=snapshot.host_run_id,
+                        owner_id=self._owner_id,
                         generation=snapshot.generation,
                     )
                 except ForegroundQueueError as exc:
@@ -848,9 +847,13 @@ class ForegroundRuntimeExecutionAuthority:
         if self._lease_identity != identity or self._lease_task is None or self._lease_task.done():
             await self._stop_lease_keeper()
             self._lease_identity = identity
-            self._lease_task = asyncio.create_task(self._maintain_lease(snapshot), name="foreground-lease-keeper")
+            self._lease_task = asyncio.create_task(
+                self._maintain_lease(snapshot), name="foreground-lease-keeper"
+            )
             # Retrieve idle failures too; the next driver still observes them.
-            self._lease_task.add_done_callback(lambda task: None if task.cancelled() else task.exception())
+            self._lease_task.add_done_callback(
+                lambda task: None if task.cancelled() else task.exception()
+            )
         keeper = self._lease_task
         work = asyncio.create_task(self._drive_claimed(snapshot.host_run_id, snapshot.sdk_run_id))
         succeeded = False
@@ -887,24 +890,33 @@ class ForegroundRuntimeExecutionAuthority:
                 if current is None:
                     return  # the authenticated Host terminal has committed
                 if (current.host_run_id, current.owner_id, current.generation) != (
-                    snapshot.host_run_id, self._owner_id, snapshot.generation
+                    snapshot.host_run_id,
+                    self._owner_id,
+                    snapshot.generation,
                 ):
                     raise ForegroundQueueError("foreground_generation_stale")
                 if asyncio.get_running_loop().time() >= renew_at:
                     ordinal += 1
                     await self._store.heartbeat(
-                        host_run_id=snapshot.host_run_id, owner_id=self._owner_id,
-                        generation=snapshot.generation, lease_seconds=self._lease_seconds,
+                        host_run_id=snapshot.host_run_id,
+                        owner_id=self._owner_id,
+                        generation=snapshot.generation,
+                        lease_seconds=self._lease_seconds,
                         idempotency_key=f"runtime-heartbeat:{snapshot.host_run_id}:g{snapshot.generation}:{incarnation}:{ordinal}",
                     )
                     renew_at = asyncio.get_running_loop().time() + interval
                 # Durable controls can be committed by another connection.
                 # Waiting alone must not busy-reprepare the original history.
-                if not self._closed and current.sdk_run_id is not None and (self._driver is None or self._driver.done()):
+                if (
+                    not self._closed
+                    and current.sdk_run_id is not None
+                    and (self._driver is None or self._driver.done())
+                ):
                     record = self._ingress.query(current.sdk_run_id)
                     state = str(getattr(getattr(record, "state", None), "value", ""))
                     if state in {"completed", "failed", "cancelled"} or (
-                        current.desired_control is not None and await self._store.pending_signals(current.host_run_id)
+                        current.desired_control is not None
+                        and await self._store.pending_signals(current.host_run_id)
                     ):
                         await self.after_enqueue(subject=self._subject)
         except asyncio.CancelledError:
@@ -912,9 +924,12 @@ class ForegroundRuntimeExecutionAuthority:
         except Exception as exc:
             self._last_error = exc
             self._notify_state_changed()
-            self._record_audit("foreground.runtime.lease_keeper_failed",
-                host_run_id=snapshot.host_run_id, generation=snapshot.generation,
-                error_code=str(getattr(exc, "code", type(exc).__name__)))
+            self._record_audit(
+                "foreground.runtime.lease_keeper_failed",
+                host_run_id=snapshot.host_run_id,
+                generation=snapshot.generation,
+                error_code=str(getattr(exc, "code", type(exc).__name__)),
+            )
             raise
 
     async def _drive_claimed(
@@ -943,32 +958,52 @@ class ForegroundRuntimeExecutionAuthority:
         # not prevent STOP or the recording of an already-failed SDK terminal.
         record = None if previously_bound_sdk_run_id is None else self._ingress.query(sdk_run_id)
         if record is not None:
-            if (getattr(record, "run_id", None), getattr(record, "execution_session_id", None),
-                getattr(record, "request_id", None)) != (sdk_run_id, execution_session_id, request_id):
+            if (
+                getattr(record, "run_id", None),
+                getattr(record, "execution_session_id", None),
+                getattr(record, "request_id", None),
+            ) != (sdk_run_id, execution_session_id, request_id):
                 raise ForegroundRuntimeError("foreground_runtime_sdk_binding_drift")
             await self._store.bind_sdk_run(
-                host_run_id=host_run_id, sdk_run_id=sdk_run_id, owner_id=self._owner_id,
-                generation=claimed.generation, idempotency_key=f"runtime-sdk-bind:{host_run_id}",
+                host_run_id=host_run_id,
+                sdk_run_id=sdk_run_id,
+                owner_id=self._owner_id,
+                generation=claimed.generation,
+                idempotency_key=f"runtime-sdk-bind:{host_run_id}",
             )
             await self._store.record_start_observation(
-                host_run_id=host_run_id, sdk_run_id=sdk_run_id, owner_id=self._owner_id,
-                generation=claimed.generation, outcome="QUERY_FOUND",
+                host_run_id=host_run_id,
+                sdk_run_id=sdk_run_id,
+                owner_id=self._owner_id,
+                generation=claimed.generation,
+                outcome="QUERY_FOUND",
                 result_ref=f"sdk-run:{sdk_run_id}:v{getattr(record, 'version', 0)}",
-                result_hash=canonical_hash({"run_id": sdk_run_id,
-                    "state": str(getattr(getattr(record, "state", None), "value", "")),
-                    "version": int(getattr(record, "version", 0))}),
+                result_hash=canonical_hash(
+                    {
+                        "run_id": sdk_run_id,
+                        "state": str(getattr(getattr(record, "state", None), "value", "")),
+                        "version": int(getattr(record, "version", 0)),
+                    }
+                ),
                 idempotency_key=f"runtime-recovery-query:{host_run_id}:g{claimed.generation}:v{getattr(record, 'version', 0)}",
             )
             if snapshot.state is RunState.CLAIMED:
                 await self._store.record_sdk_started(
-                    host_run_id=host_run_id, sdk_run_id=sdk_run_id, owner_id=self._owner_id,
+                    host_run_id=host_run_id,
+                    sdk_run_id=sdk_run_id,
+                    owner_id=self._owner_id,
                     generation=claimed.generation,
                     sdk_event_id=f"sdk-query:{sdk_run_id}:v{getattr(record, 'version', 0)}",
                     idempotency_key=f"runtime-recovered-running:{host_run_id}:g{claimed.generation}",
                 )
             if self._effect_gate is not None:
-                self._effect_gate.register(store=self._store, host_run_id=host_run_id,
-                    sdk_run_id=sdk_run_id, owner_id=self._owner_id, generation=claimed.generation)
+                self._effect_gate.register(
+                    store=self._store,
+                    host_run_id=host_run_id,
+                    sdk_run_id=sdk_run_id,
+                    owner_id=self._owner_id,
+                    generation=claimed.generation,
+                )
             await self._finish_bound(claimed, sdk_run_id)
             return
 
@@ -980,6 +1015,7 @@ class ForegroundRuntimeExecutionAuthority:
                 owner_id=self._owner_id,
                 generation=claimed.generation,
             )
+
         provider = await self._provider.freeze(
             claimed=claimed,
             execution_session_id=execution_session_id,
@@ -1022,9 +1058,13 @@ class ForegroundRuntimeExecutionAuthority:
                 or rejection.evidence_id != candidate.evidence_id
                 or rejection.evidence_hash != candidate.evidence_hash
             ):
-                raise ForegroundRuntimeError("foreground_preparation_rejection_identity_mismatch") from exc
+                raise ForegroundRuntimeError(
+                    "foreground_preparation_rejection_identity_mismatch"
+                ) from exc
             await self._store.settle_preparation_rejection(
-                rejection=exc.rejection, owner_id=claimed.owner_id, generation=claimed.generation,
+                rejection=exc.rejection,
+                owner_id=claimed.owner_id,
+                generation=claimed.generation,
             )
             self._notify_state_changed()
             return
@@ -1046,9 +1086,7 @@ class ForegroundRuntimeExecutionAuthority:
         ):
             raise ForegroundRuntimeError("foreground_runtime_route_authority_missing")
         if not claimed.admission_receipt_id or not claimed.admission_receipt_hash:
-            raise ForegroundRuntimeError(
-                "foreground_runtime_admission_receipt_missing"
-            )
+            raise ForegroundRuntimeError("foreground_runtime_admission_receipt_missing")
         route = None
         if candidate.task_scope_id is not None:
             host_ref = claimed.admission_receipt_id
@@ -1082,12 +1120,11 @@ class ForegroundRuntimeExecutionAuthority:
         if not isinstance(tool_names, (list, tuple)):
             raise ForegroundRuntimeError("foreground_runtime_tool_catalog_invalid")
         from simple_harness import thaw_json
+
         start_payload = {
             "input": {"text": context.current_text},
             "messages": [dict(item) for item in context.provider_messages],
-            "capability_snapshot": {
-                "tools": [str(item) for item in tool_names]
-            },
+            "capability_snapshot": {"tools": [str(item) for item in tool_names]},
             "context_metadata": {
                 "session_id": execution_session_id,
                 "root_run_id": host_run_id,
@@ -1187,9 +1224,7 @@ class ForegroundRuntimeExecutionAuthority:
                             f"runtime-reconcile:{host_run_id}:g{claimed.generation}:missing"
                         ),
                     )
-                    raise ForegroundRuntimeError(
-                        "foreground_runtime_orphaned_start"
-                    )
+                    raise ForegroundRuntimeError("foreground_runtime_orphaned_start")
                 await self._store.record_reconciliation(
                     host_run_id=host_run_id,
                     sdk_run_id=sdk_run_id,
@@ -1212,11 +1247,7 @@ class ForegroundRuntimeExecutionAuthority:
                     result_hash=canonical_hash(
                         {
                             "run_id": sdk_run_id,
-                            "state": str(
-                                getattr(
-                                    getattr(record, "state", None), "value", ""
-                                )
-                            ),
+                            "state": str(getattr(getattr(record, "state", None), "value", "")),
                             "version": int(getattr(record, "version", 0)),
                         }
                     ),
@@ -1236,9 +1267,7 @@ class ForegroundRuntimeExecutionAuthority:
                         sdk_run_id=sdk_run_id,
                         owner_id=self._owner_id,
                         generation=claimed.generation,
-                        sdk_event_id=(
-                            f"sdk-query:{sdk_run_id}:v{getattr(record, 'version', 0)}"
-                        ),
+                        sdk_event_id=(f"sdk-query:{sdk_run_id}:v{getattr(record, 'version', 0)}"),
                         idempotency_key=f"runtime-running:{host_run_id}",
                     )
         if should_start:
@@ -1310,17 +1339,11 @@ class ForegroundRuntimeExecutionAuthority:
                     owner_id=self._owner_id,
                     generation=claimed.generation,
                     outcome="QUERY_FOUND",
-                    result_ref=(
-                        f"sdk-run:{sdk_run_id}:v{getattr(discovered, 'version', 0)}"
-                    ),
+                    result_ref=(f"sdk-run:{sdk_run_id}:v{getattr(discovered, 'version', 0)}"),
                     result_hash=canonical_hash(
                         {
                             "run_id": sdk_run_id,
-                            "state": str(
-                                getattr(
-                                    getattr(discovered, "state", None), "value", ""
-                                )
-                            ),
+                            "state": str(getattr(getattr(discovered, "state", None), "value", "")),
                             "version": int(getattr(discovered, "version", 0)),
                         }
                     ),
@@ -1335,14 +1358,10 @@ class ForegroundRuntimeExecutionAuthority:
                     ),
                 )
                 start_returned = False
-                result_ref = (
-                    f"sdk-query:{sdk_run_id}:v{getattr(discovered, 'version', 0)}"
-                )
+                result_ref = f"sdk-query:{sdk_run_id}:v{getattr(discovered, 'version', 0)}"
             if start_returned:
                 if receipt.run_id != sdk_run_id:
-                    raise ForegroundRuntimeError(
-                        "foreground_runtime_ingress_identity_drift"
-                    )
+                    raise ForegroundRuntimeError("foreground_runtime_ingress_identity_drift")
                 result_ref = f"sdk-start:{sdk_run_id}:g{receipt.generation}"
                 result_hash = canonical_hash(
                     {
@@ -1407,7 +1426,9 @@ class ForegroundRuntimeExecutionAuthority:
         except Exception as exc:  # noqa: BLE001 - 不能让 reconcile 失败把 Run 变成静默停摆
             self._record_audit(
                 "foreground.runtime.provider_reconcile_failed",
-                host_run_id=host_run_id, sdk_run_id=sdk_run_id, generation=generation,
+                host_run_id=host_run_id,
+                sdk_run_id=sdk_run_id,
+                generation=generation,
                 round=round_ordinal,
                 error_code=str(getattr(exc, "code", type(exc).__name__)),
                 error_detail=str(exc)[:500],
@@ -1417,7 +1438,9 @@ class ForegroundRuntimeExecutionAuthority:
         if sdk_run_id in exhausted:
             self._record_audit(
                 "foreground.runtime.provider_unknown_exhausted",
-                host_run_id=host_run_id, sdk_run_id=sdk_run_id, generation=generation,
+                host_run_id=host_run_id,
+                sdk_run_id=sdk_run_id,
+                generation=generation,
                 round=round_ordinal,
             )
             try:
@@ -1425,7 +1448,9 @@ class ForegroundRuntimeExecutionAuthority:
             except Exception as exc:  # noqa: BLE001 - 入口关闭等；租约保活会在终态时续推
                 self._record_audit(
                     "foreground.runtime.provider_unknown_cancel_failed",
-                    host_run_id=host_run_id, sdk_run_id=sdk_run_id, generation=generation,
+                    host_run_id=host_run_id,
+                    sdk_run_id=sdk_run_id,
+                    generation=generation,
                     error_code=str(getattr(exc, "code", type(exc).__name__)),
                 )
                 return False
@@ -1441,8 +1466,12 @@ class ForegroundRuntimeExecutionAuthority:
             if state_value != "waiting" or version != before_version:
                 self._record_audit(
                     "foreground.runtime.provider_reconciled",
-                    host_run_id=host_run_id, sdk_run_id=sdk_run_id, generation=generation,
-                    round=round_ordinal, sdk_state=state_value, settled=int(settled),
+                    host_run_id=host_run_id,
+                    sdk_run_id=sdk_run_id,
+                    generation=generation,
+                    round=round_ordinal,
+                    sdk_state=state_value,
+                    settled=int(settled),
                     sdk_version=version,
                 )
                 return True
@@ -1454,7 +1483,9 @@ class ForegroundRuntimeExecutionAuthority:
         record = self._ingress.query(sdk_run_id)
         state = str(getattr(getattr(record, "state", None), "value", ""))
         if resolve_host_terminal(state, None) is None:
-            await self._deliver_controls(host_run_id=host_run_id, sdk_run_id=sdk_run_id, generation=claimed.generation)
+            await self._deliver_controls(
+                host_run_id=host_run_id, sdk_run_id=sdk_run_id, generation=claimed.generation
+            )
         # F06（2026-09-07）：SDK 把 provider 传输超时记 UNKNOWN 后 Run 进 waiting 并挂
         # provider wait-blocker，等 Host 给可判定结论。之前这里记完 BOUND_WAITING 就
         # return，驱动循环随即"无进展"退出，Run 永久停摆。现在：waiting → 触发
@@ -1471,12 +1502,8 @@ class ForegroundRuntimeExecutionAuthority:
             if terminal is not None:
                 break
             state = self._ingress.query(sdk_run_id)
-            state_value = str(
-                getattr(getattr(state, "state", None), "value", "")
-            ).lower()
-            observed = (
-                "BOUND_WAITING" if state_value == "waiting" else "BOUND_RUNNING"
-            )
+            state_value = str(getattr(getattr(state, "state", None), "value", "")).lower()
+            observed = "BOUND_WAITING" if state_value == "waiting" else "BOUND_RUNNING"
             await self._store.record_reconciliation(
                 host_run_id=host_run_id,
                 sdk_run_id=sdk_run_id,
@@ -1491,8 +1518,10 @@ class ForegroundRuntimeExecutionAuthority:
             if observed == "BOUND_WAITING" and reconcile_rounds < _PROVIDER_RECONCILE_MAX_ROUNDS:
                 reconcile_rounds += 1
                 if await self._reconcile_waiting_run(
-                    host_run_id=host_run_id, sdk_run_id=sdk_run_id,
-                    generation=claimed.generation, round_ordinal=reconcile_rounds,
+                    host_run_id=host_run_id,
+                    sdk_run_id=sdk_run_id,
+                    generation=claimed.generation,
+                    round_ordinal=reconcile_rounds,
                 ):
                     continue
             if observed == "BOUND_WAITING":
@@ -1506,9 +1535,7 @@ class ForegroundRuntimeExecutionAuthority:
             observed_state="BOUND_TERMINAL",
             evidence_ref=terminal.sdk_event_id,
             evidence_hash=terminal.sdk_event_hash,
-            idempotency_key=(
-                f"runtime-reconcile:{host_run_id}:g{claimed.generation}:terminal"
-            ),
+            idempotency_key=(f"runtime-reconcile:{host_run_id}:g{claimed.generation}:terminal"),
         )
         if self._closure_fallback is not None:
             # SDK terminal observed (final answer already delivered by the SDK
@@ -1533,8 +1560,11 @@ class ForegroundRuntimeExecutionAuthority:
             if settlement.status == "lease_lost":
                 raise ForegroundRuntimeError("foreground_runtime_lease_lost_during_closure")
         run_binding, endpoint_identity = self._terminal_binding(sdk_run_id)
-        terminal_hook = (None if self._terminal_commit_hook_factory is None else
-                         self._terminal_commit_hook_factory(sdk_run_id))
+        terminal_hook = (
+            None
+            if self._terminal_commit_hook_factory is None
+            else self._terminal_commit_hook_factory(sdk_run_id)
+        )
         await self._store.record_sdk_terminal(
             host_run_id=host_run_id,
             sdk_run_id=sdk_run_id,
@@ -1647,9 +1677,7 @@ class ForegroundRuntimeExecutionAuthority:
                     signal_id=signal.signal_id,
                 )
 
-    async def _pump_controls(
-        self, *, host_run_id: str, sdk_run_id: str, generation: int
-    ) -> None:
+    async def _pump_controls(self, *, host_run_id: str, sdk_run_id: str, generation: int) -> None:
         """Deliver durably committed controls to the active Run immediately.
 
         Runs alongside terminal observation.  ``after_control`` wakes the pump
@@ -1661,9 +1689,7 @@ class ForegroundRuntimeExecutionAuthority:
         poll_interval = min(1.0, self._lease_seconds / 3)
         while True:
             try:
-                await asyncio.wait_for(
-                    self._control_wake.wait(), timeout=poll_interval
-                )
+                await asyncio.wait_for(self._control_wake.wait(), timeout=poll_interval)
             except TimeoutError:
                 pass
             self._control_wake.clear()
@@ -1693,8 +1719,13 @@ class ForegroundRuntimeExecutionAuthority:
         record = self._ingress.query(sdk_run_id)
         state = str(getattr(getattr(record, "state", None), "value", ""))
         if resolve_host_terminal(state, None) is not None:
-            return await self._terminal.observe(host_run_id=host_run_id, sdk_run_id=sdk_run_id,
-                subject=self._subject, owner_id=self._owner_id, generation=generation)
+            return await self._terminal.observe(
+                host_run_id=host_run_id,
+                sdk_run_id=sdk_run_id,
+                subject=self._subject,
+                owner_id=self._owner_id,
+                generation=generation,
+            )
         pump_task = asyncio.create_task(
             self._pump_controls(
                 host_run_id=host_run_id,
@@ -1712,22 +1743,16 @@ class ForegroundRuntimeExecutionAuthority:
             )
         finally:
             pump_task.cancel()
-            results = await asyncio.gather(
-                pump_task, return_exceptions=True
-            )
+            results = await asyncio.gather(pump_task, return_exceptions=True)
             for result in results:
-                if isinstance(result, Exception) and not isinstance(
-                    result, asyncio.CancelledError
-                ):
+                if isinstance(result, Exception) and not isinstance(result, asyncio.CancelledError):
                     # Terminal observation already succeeded; the durable
                     # ledger stays authoritative, so surface the helper
                     # failure without discarding the authenticated terminal.
                     self._record_audit(
                         "foreground.runtime.helper_failed",
                         host_run_id=host_run_id,
-                        error_code=str(
-                            getattr(result, "code", type(result).__name__)
-                        ),
+                        error_code=str(getattr(result, "code", type(result).__name__)),
                     )
 
 
@@ -1791,9 +1816,7 @@ class SqliteSdkTerminalObserver:
     ) -> AuthenticatedTerminalObservation | None:
         await self._ingress.wait_idle(sdk_run_id)
         record = self._ingress.query(sdk_run_id)
-        raw_state = str(
-            getattr(getattr(record, "state", None), "value", "")
-        ).lower()
+        raw_state = str(getattr(getattr(record, "state", None), "value", "")).lower()
         async with aiosqlite.connect(self._db_path) as db:
             cursor = await db.execute(
                 "SELECT current_state FROM foreground_run_heads WHERE host_run_id=?",
@@ -1801,19 +1824,14 @@ class SqliteSdkTerminalObserver:
             )
             head = await cursor.fetchone()
             await cursor.close()
-        terminal = resolve_host_terminal(
-            raw_state, None if head is None else str(head[0])
-        )
+        terminal = resolve_host_terminal(raw_state, None if head is None else str(head[0]))
         if terminal is None:
             return None
-        read_terminal = getattr(
-            self._runtime_stack, "read_run_terminal_evidence", None
-        )
+        read_terminal = getattr(self._runtime_stack, "read_run_terminal_evidence", None)
         if not callable(read_terminal):
-            raise ForegroundRuntimeError(
-                "foreground_sdk_terminal_evidence_reader_unavailable"
-            )
+            raise ForegroundRuntimeError("foreground_sdk_terminal_evidence_reader_unavailable")
         from simple_harness.execution.audit import RunAuditUnavailable
+
         try:
             sdk_evidence = read_terminal(sdk_run_id)
         except RunAuditUnavailable as exc:
@@ -1828,14 +1846,16 @@ class SqliteSdkTerminalObserver:
             # Repair only the actual still-owned Host/SDK binding being observed.
             # This is Host SQL; the SDK independently owns all terminal sources.
             async with aiosqlite.connect(self._db_path) as recovery_db:
-                bound = await (await recovery_db.execute(
-                    "SELECT 1 FROM foreground_run_heads h "
-                    "JOIN foreground_runs r ON r.host_run_id=h.host_run_id "
-                    "JOIN foreground_run_sdk_bindings b ON b.host_run_id=h.host_run_id "
-                    "WHERE h.host_run_id=? AND r.subject=? AND h.owner_id=? "
-                    "AND h.generation=? AND h.sdk_run_id=? AND b.sdk_run_id=?",
-                    (host_run_id, subject, owner_id, generation, sdk_run_id, sdk_run_id),
-                )).fetchone()
+                bound = await (
+                    await recovery_db.execute(
+                        "SELECT 1 FROM foreground_run_heads h "
+                        "JOIN foreground_runs r ON r.host_run_id=h.host_run_id "
+                        "JOIN foreground_run_sdk_bindings b ON b.host_run_id=h.host_run_id "
+                        "WHERE h.host_run_id=? AND r.subject=? AND h.owner_id=? "
+                        "AND h.generation=? AND h.sdk_run_id=? AND b.sdk_run_id=?",
+                        (host_run_id, subject, owner_id, generation, sdk_run_id, sdk_run_id),
+                    )
+                ).fetchone()
             if bound is None:
                 raise ForegroundRuntimeError("foreground_sdk_terminal_recovery_binding_mismatch")
             sdk_evidence = recover(sdk_run_id)
@@ -1847,10 +1867,9 @@ class SqliteSdkTerminalObserver:
             or not str(getattr(sdk_evidence, "event_id", "")).strip()
             or len(str(getattr(sdk_evidence, "event_hash", ""))) != 64
         ):
-            raise ForegroundRuntimeError(
-                "foreground_sdk_terminal_evidence_mismatch"
-            )
+            raise ForegroundRuntimeError("foreground_sdk_terminal_evidence_mismatch")
         from deskpet.execution.evidence_ingress import ExecutionEvidenceIngress
+
         evidence_ingress = ExecutionEvidenceIngress(self._db_path, fault_inject=self._fault_inject)
         effective_scope = await evidence_ingress.resolve_run_scope(sdk_run_id)
         read_messages = getattr(self._runtime_stack, "read_primary_run_messages", None)
@@ -1869,35 +1888,47 @@ class SqliteSdkTerminalObserver:
             text = json.loads(turn[0])["payload"]["text"]
             messages = read_messages(sdk_run_id, current_text=text)
             from deskpet.execution.primary_dependencies import read_run_dependencies
+
             proof = None
             if callable(getattr(self._runtime_stack, "read_primary_dependency_facts", None)):
                 async with aiosqlite.connect(self._db_path) as dependency_db:
                     dependency_db.row_factory = aiosqlite.Row
                     try:
-                        source = await read_run_dependencies(db=dependency_db,
-                            stack=self._runtime_stack, sdk_run_id=sdk_run_id)
+                        source = await read_run_dependencies(
+                            db=dependency_db, stack=self._runtime_stack, sdk_run_id=sdk_run_id
+                        )
                         proof = None if source is None else source[1]
                     except (ValueError, TypeError, KeyError):
                         # Unverifiable/old source stays archived; never fabricate
                         # an empty complete proof to make generated history visible.
                         proof = None
             from deskpet.execution.primary_history import record_terminal_observation
+
             occurrence_sources = None
             coordinator = self._occurrence_coordinator
             if coordinator is not None and coordinator.source_dependencies is not None:
                 try:
-                    occurrence_sources = await coordinator.source_dependencies.for_run(coordinator, sdk_run_id)
+                    occurrence_sources = await coordinator.source_dependencies.for_run(
+                        coordinator, sdk_run_id
+                    )
                     if proof is not None:
                         from simple_harness import thaw_json
+
                         proof = thaw_json(proof)
-                        bindings = {item['evidence_id']: item['envelope_hash'] for item in proof['evidence']}
+                        bindings = {
+                            item["evidence_id"]: item["envelope_hash"] for item in proof["evidence"]
+                        }
                         for snapshot in occurrence_sources:
-                            for item in snapshot['evidence']:
-                                previous = bindings.setdefault(item['evidence_id'], item['envelope_hash'])
-                                if previous != item['envelope_hash']:
-                                    raise ValueError('s5c_occurrence_source_hash_conflict')
-                        proof['evidence'] = [dict(evidence_id=key, envelope_hash=value)
-                                             for key, value in sorted(bindings.items())]
+                            for item in snapshot["evidence"]:
+                                previous = bindings.setdefault(
+                                    item["evidence_id"], item["envelope_hash"]
+                                )
+                                if previous != item["envelope_hash"]:
+                                    raise ValueError("s5c_occurrence_source_hash_conflict")
+                        proof["evidence"] = [
+                            dict(evidence_id=key, envelope_hash=value)
+                            for key, value in sorted(bindings.items())
+                        ]
                 except (ValueError, TypeError, KeyError):
                     # Archive the actual terminal even if source closure is no
                     # longer available. A7 physical preflight already rejects a
@@ -1909,34 +1940,61 @@ class SqliteSdkTerminalObserver:
             # verified provider records; an older stack without it keeps the
             # sources-only path and archives no side record.
             read_tool_causality = getattr(self._runtime_stack, "read_primary_tool_causality", None)
-            read_tool_sources = getattr(self._runtime_stack, "read_primary_tool_causal_sources", None)
-            if terminal is RunState.COMPLETED and any(message.get("role") == "tool" for message in messages):
+            read_tool_sources = getattr(
+                self._runtime_stack, "read_primary_tool_causal_sources", None
+            )
+            if terminal is RunState.COMPLETED and any(
+                message.get("role") == "tool" for message in messages
+            ):
                 from deskpet.memory.primary_tool_causality import PrimaryToolCausalityUnavailable
+
                 try:
                     if callable(read_tool_causality):
-                        tool_sources, assistant_tool_calls = await read_tool_causality(db_path=self._db_path,
-                            host_run_id=host_run_id, run_id=sdk_run_id, subject=subject,
-                            current_text=text, messages=messages)
+                        tool_sources, assistant_tool_calls = await read_tool_causality(
+                            db_path=self._db_path,
+                            host_run_id=host_run_id,
+                            run_id=sdk_run_id,
+                            subject=subject,
+                            current_text=text,
+                            messages=messages,
+                        )
                     elif callable(read_tool_sources):
-                        tool_sources = await read_tool_sources(db_path=self._db_path,
-                            host_run_id=host_run_id, run_id=sdk_run_id, subject=subject,
-                            current_text=text, messages=messages)
+                        tool_sources = await read_tool_sources(
+                            db_path=self._db_path,
+                            host_run_id=host_run_id,
+                            run_id=sdk_run_id,
+                            subject=subject,
+                            current_text=text,
+                            messages=messages,
+                        )
                 except PrimaryToolCausalityUnavailable:
                     # Archive the complete original terminal. A missing or
                     # incomplete tool source never permits partial indexing.
                     tool_sources, assistant_tool_calls = None, None
             primary_event_id, primary_event_hash = await record_terminal_observation(
-                self._db_path, host_run_id=host_run_id, sdk_run_id=sdk_run_id, subject=subject,
-                owner_id=owner_id, generation=generation, terminal=terminal,
-                sdk_evidence=sdk_evidence, messages=messages, visibility_dependencies=proof,
+                self._db_path,
+                host_run_id=host_run_id,
+                sdk_run_id=sdk_run_id,
+                subject=subject,
+                owner_id=owner_id,
+                generation=generation,
+                terminal=terminal,
+                sdk_evidence=sdk_evidence,
+                messages=messages,
+                visibility_dependencies=proof,
                 occurrence_sources=occurrence_sources,
-                tool_causal_sources=tool_sources, assistant_tool_calls=assistant_tool_calls,
-                error_code=self._terminal_error_code(sdk_run_id, sdk_evidence) if terminal is RunState.FAILED else None,
+                tool_causal_sources=tool_sources,
+                assistant_tool_calls=assistant_tool_calls,
+                error_code=self._terminal_error_code(sdk_run_id, sdk_evidence)
+                if terminal is RunState.FAILED
+                else None,
             )
             if effective_scope is None:
                 if self._fault_inject is not None:
                     self._fault_inject("primary-terminal-observed")
-                return AuthenticatedTerminalObservation(terminal, primary_event_id, primary_event_hash)
+                return AuthenticatedTerminalObservation(
+                    terminal, primary_event_id, primary_event_hash
+                )
         elif effective_scope is None:
             raise ForegroundRuntimeError("foreground_primary_message_reader_unavailable")
         async with aiosqlite.connect(self._db_path) as db:
@@ -1976,14 +2034,10 @@ class SqliteSdkTerminalObserver:
                 authority = None
         from deskpet.execution.evidence_ingress import ExecutionEvidenceIngress
 
-        evidence_ingress = ExecutionEvidenceIngress(
-            self._db_path, fault_inject=self._fault_inject
-        )
+        evidence_ingress = ExecutionEvidenceIngress(self._db_path, fault_inject=self._fault_inject)
         if row is None:
             if authority is None or effective_scope is None:
-                raise ForegroundRuntimeError(
-                    "foreground_terminal_task_scope_authority_missing"
-                )
+                raise ForegroundRuntimeError("foreground_terminal_task_scope_authority_missing")
             # S5b Task 2 (design-freeze §3): the terminal observer is the
             # single drainer.  Every still-reserved Harness row is resolved
             # first — ingested from the SDK ledger when its fact is readable

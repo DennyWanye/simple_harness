@@ -2,6 +2,7 @@
 Helps diagnose: did re-login update access_token but not the cloud-llm key the backend uses?
 Read-only. Does NOT print full tokens (only prefix/len/hash).
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -45,8 +46,12 @@ def test_key(key: str) -> str:
         r = cli.post(
             f"{BASE}/chat/completions",
             headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-            json={"model": "deepseek-v4-pro", "messages": [{"role": "user", "content": "好"}],
-                  "stream": False, "max_tokens": 8},
+            json={
+                "model": "deepseek-v4-pro",
+                "messages": [{"role": "user", "content": "好"}],
+                "stream": False,
+                "max_tokens": 8,
+            },
         )
         return f"HTTP {r.status_code} {r.text[:120].strip()!r}"
     except Exception as exc:  # noqa: BLE001

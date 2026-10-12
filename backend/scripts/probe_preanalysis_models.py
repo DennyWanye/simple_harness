@@ -3,6 +3,7 @@
 
 Read-only probe to unblock the real UI E2E — NOT used as test evidence.
 """
+
 from __future__ import annotations
 
 import os
@@ -41,16 +42,21 @@ def probe_structured(cli: httpx.Client, key: str, model: str) -> None:
         "model": model,
         "messages": [
             {"role": "system", "content": "You output only compact JSON."},
-            {"role": "user", "content": '返回 JSON：{"problem_type":"debug","ambiguity":0.2}。只输出 JSON。'},
+            {
+                "role": "user",
+                "content": '返回 JSON：{"problem_type":"debug","ambiguity":0.2}。只输出 JSON。',
+            },
         ],
         "max_tokens": 64,
         "stream": False,
         "response_format": {"type": "json_object"},
     }
     try:
-        r = cli.post(f"{BASE}/chat/completions",
-                     headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-                     json=body)
+        r = cli.post(
+            f"{BASE}/chat/completions",
+            headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+            json=body,
+        )
         dt = (time.time() - t0) * 1000
         txt = ""
         try:
@@ -74,8 +80,19 @@ def main() -> int:
         print("\n=== NON-STREAM structured (json_object) latency probe ===")
         # the model the pipeline currently uses + likely fast/non-thinking candidates
         wanted = ["gpt-5.5"]
-        for cand in ["gpt-4.1", "gpt-4.1-mini", "gpt-4o", "gpt-4o-mini", "gpt-5-mini",
-                     "deepseek-v3", "deepseek-v3.1", "qwen-max", "qwen-plus", "glm-4.6", "claude-haiku-4.5"]:
+        for cand in [
+            "gpt-4.1",
+            "gpt-4.1-mini",
+            "gpt-4o",
+            "gpt-4o-mini",
+            "gpt-5-mini",
+            "deepseek-v3",
+            "deepseek-v3.1",
+            "qwen-max",
+            "qwen-plus",
+            "glm-4.6",
+            "claude-haiku-4.5",
+        ]:
             if cand in ids:
                 wanted.append(cand)
         for m in wanted:

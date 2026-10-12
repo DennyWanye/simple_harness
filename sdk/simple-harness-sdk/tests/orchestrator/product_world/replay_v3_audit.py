@@ -11,6 +11,7 @@
 报告记"豁免"与理由，不算失败。默认只观察，不改变用例结果。``--replay-v3-audit-strict`` 时，有任何"不一致"（含静默改动）、
 或全库检查不一致，整轮判失败。范围外的任务（按别的口径建的）如实计数，不算失败。
 """
+
 from __future__ import annotations
 
 import json
@@ -37,36 +38,63 @@ def audit_database(path: Path) -> dict[str, Any]:
 
     store = Store.open_readonly(path)
     try:
-        missions = [row[0] for row in store.connection.execute(
-            "SELECT mission_id FROM missions ORDER BY created_at")]
+        missions = [
+            row[0]
+            for row in store.connection.execute(
+                "SELECT mission_id FROM missions ORDER BY created_at"
+            )
+        ]
         reports = {mission_id: verify_mission(store, mission_id) for mission_id in missions}
         library = verify_library(store)
         ledgers = verify_execution_ledgers(store, sorted(path.parent.glob("execution*.db")))
-        volume = [(row[0], int(row[1]), int(row[2])) for row in store.connection.execute(
-            "SELECT mission_id, count(*), sum(length(payload_json)) FROM events"
-            " WHERE type='RowsWritten' AND mission_id != 'deployment' GROUP BY mission_id")]
+        volume = [
+            (row[0], int(row[1]), int(row[2]))
+            for row in store.connection.execute(
+                "SELECT mission_id, count(*), sum(length(payload_json)) FROM events"
+                " WHERE type='RowsWritten' AND mission_id != 'deployment' GROUP BY mission_id"
+            )
+        ]
     finally:
         store.close()
     statuses = Counter(report["status"] for report in reports.values())
-    bad_tables = sorted({f"{name}:{item['status']}" for report in reports.values()
-                         for name, item in report["tables"].items()
-                         if item["status"] == INCONSISTENT})
-    failed = library["status"] != CONSISTENT or ledgers["status"] != CONSISTENT or statuses[INCONSISTENT]
-    return {"database": str(path), "library": library["status"], "unnamed": library["unnamed_count"],
-            "execution_ledgers": {k: v for k, v in ledgers.items() if v},
-            # 偏差裁决 1 R9：整行事件最多的那个任务的条数与字节
-            "rows_written_max": max(({"mission_id": m, "events": n, "bytes": b} for m, n, b in volume),
-                                    key=lambda item: item["bytes"], default=None),
-            "missions": dict(sorted(statuses.items())), "tables_not_consistent": bad_tables,
-            "status": INCONSISTENT if failed else CONSISTENT,
-            "out_of_scope": statuses[OUT_OF_SCOPE]}
+    bad_tables = sorted(
+        {
+            f"{name}:{item['status']}"
+            for report in reports.values()
+            for name, item in report["tables"].items()
+            if item["status"] == INCONSISTENT
+        }
+    )
+    failed = (
+        library["status"] != CONSISTENT or ledgers["status"] != CONSISTENT or statuses[INCONSISTENT]
+    )
+    return {
+        "database": str(path),
+        "library": library["status"],
+        "unnamed": library["unnamed_count"],
+        "execution_ledgers": {k: v for k, v in ledgers.items() if v},
+        # 偏差裁决 1 R9：整行事件最多的那个任务的条数与字节
+        "rows_written_max": max(
+            ({"mission_id": m, "events": n, "bytes": b} for m, n, b in volume),
+            key=lambda item: item["bytes"],
+            default=None,
+        ),
+        "missions": dict(sorted(statuses.items())),
+        "tables_not_consistent": bad_tables,
+        "status": INCONSISTENT if failed else CONSISTENT,
+        "out_of_scope": statuses[OUT_OF_SCOPE],
+    }
 
 
 def pytest_addoption(parser: Any) -> None:
     group = parser.getgroup("replay-v3-audit")
     group.addoption("--replay-v3-audit", default=None, help="write the v3 replay audit JSON here")
-    group.addoption("--replay-v3-audit-strict", action="store_true", default=False,
-                    help="fail the run when any audited library is not consistent")
+    group.addoption(
+        "--replay-v3-audit-strict",
+        action="store_true",
+        default=False,
+        help="fail the run when any audited library is not consistent",
+    )
 
 
 @pytest.hookimpl(hookwrapper=True)
@@ -79,27 +107,40 @@ def pytest_runtest_teardown(item: Any, nextitem: Any) -> Any:
         return
     exempt = item.get_closest_marker("replay_audit_exempt")
     if exempt is not None:  # 用例故意改坏库，或绕过产品路径直接写库来造局面：如实记"豁免"与理由
-        _RESULTS.append({"test": item.nodeid, "status": "EXEMPT",
-                         "reason": (exempt.args or exempt.kwargs.get("reason", ("",)))[0]})
+        _RESULTS.append(
+            {
+                "test": item.nodeid,
+                "status": "EXEMPT",
+                "reason": (exempt.args or exempt.kwargs.get("reason", ("",)))[0],
+            }
+        )
         return
     for database in sorted(Path(root).rglob("orchestrator.db")):
         try:
             result = audit_database(database)
         except Exception as error:  # noqa: BLE001 - an unreadable library is itself a finding
-            result = {"database": str(database), "status": "UNREADABLE",
-                      "error": f"{type(error).__name__}: {error}"}
+            result = {
+                "database": str(database),
+                "status": "UNREADABLE",
+                "error": f"{type(error).__name__}: {error}",
+            }
         _RESULTS.append({"test": item.nodeid, **result})
     _write(item.config.getoption("--replay-v3-audit"))  # 每条用例后都更新：中途被打断也不丢已核的
 
 
 def _write(target: str) -> list[dict[str, Any]]:
     failed = [row for row in _RESULTS if row["status"] not in {CONSISTENT, "EXEMPT"}]
-    summary = {"databases": len(_RESULTS), "not_consistent": len(failed),
-               "exempt": sum(1 for row in _RESULTS if row["status"] == "EXEMPT"),
-               "missions": dict(sum((Counter(row.get("missions") or {}) for row in _RESULTS), Counter())),
-               "results": _RESULTS}
+    summary = {
+        "databases": len(_RESULTS),
+        "not_consistent": len(failed),
+        "exempt": sum(1 for row in _RESULTS if row["status"] == "EXEMPT"),
+        "missions": dict(sum((Counter(row.get("missions") or {}) for row in _RESULTS), Counter())),
+        "results": _RESULTS,
+    }
     Path(target).parent.mkdir(parents=True, exist_ok=True)
-    Path(target).write_text(json.dumps(summary, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+    Path(target).write_text(
+        json.dumps(summary, ensure_ascii=False, indent=1) + "\n", encoding="utf-8"
+    )
     return failed
 
 

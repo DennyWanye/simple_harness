@@ -123,11 +123,7 @@ class WindowsPackagePathPolicyV1:
     def validate_relative_path(self, raw: str) -> ValidatedPackagePathV1:
         if not isinstance(raw, str) or not raw or "\x00" in raw:
             self._reject("path_empty_or_nul")
-        if (
-            raw.startswith(("/", "\\"))
-            or _DRIVE_PATH.match(raw)
-            or raw.startswith(("//", "\\\\"))
-        ):
+        if raw.startswith(("/", "\\")) or _DRIVE_PATH.match(raw) or raw.startswith(("//", "\\\\")):
             self._reject("path_absolute")
         if "\\" in raw:
             self._reject("path_backslash_or_mixed_separator")
@@ -161,9 +157,7 @@ class WindowsPackagePathPolicyV1:
             max_component_utf8_bytes=max_component,
         )
 
-    def validate_unique_paths(
-        self, paths: Iterable[str]
-    ) -> tuple[ValidatedPackagePathV1, ...]:
+    def validate_unique_paths(self, paths: Iterable[str]) -> tuple[ValidatedPackagePathV1, ...]:
         result: list[ValidatedPackagePathV1] = []
         seen: dict[tuple[str, ...], str] = {}
         for raw in paths:
@@ -175,12 +169,9 @@ class WindowsPackagePathPolicyV1:
             # CompareStringOrdinal is an additional platform-native veto.
             if os.name == "nt":
                 for existing in result:
-                    if self._win32_ordinal_equal(
-                        existing.relative_path, path.relative_path
-                    ):
+                    if self._win32_ordinal_equal(existing.relative_path, path.relative_path):
                         self._reject(
-                            f"path_win32_collision:{existing.relative_path}:"
-                            f"{path.relative_path}"
+                            f"path_win32_collision:{existing.relative_path}:{path.relative_path}"
                         )
             seen[path.collision_key] = path.relative_path
             result.append(path)
@@ -259,9 +250,7 @@ class ValidatedCapabilityPackageRefV1:
             "validation_receipt_hash",
         ):
             if not _DIGEST.fullmatch(str(getattr(self, name))):
-                raise CapabilityPackageValidationError(
-                    "validated_ref_hash_invalid", dimension=name
-                )
+                raise CapabilityPackageValidationError("validated_ref_hash_invalid", dimension=name)
         expected = _hash(
             {
                 "schema": "validated-capability-package-ref-v1",
@@ -277,9 +266,7 @@ class ValidatedCapabilityPackageRefV1:
             }
         )
         if self.validation_receipt_hash != expected:
-            raise CapabilityPackageValidationError(
-                "validated_ref_receipt_hash_mismatch"
-            )
+            raise CapabilityPackageValidationError("validated_ref_receipt_hash_mismatch")
 
     def to_evidence(self) -> dict[str, str | int]:
         """Return the complete durable representation of this host-issued ref."""
@@ -455,16 +442,12 @@ class CapabilityPackageValidator:
         except CapabilityPackageValidationError:
             raise
         except (zipfile.BadZipFile, RuntimeError, EOFError) as exc:
-            raise CapabilityPackageValidationError(
-                "archive_stream_validation_failed"
-            ) from exc
+            raise CapabilityPackageValidationError("archive_stream_validation_failed") from exc
         hashes.sort(key=lambda item: str(item["path"]))
         if manifest_hash is None:
             raise CapabilityPackageValidationError("manifest_missing")
         archive_hash = hashlib.sha256(raw).hexdigest()
-        file_set_hash = _hash(
-            {"schema": "capability-package-file-set-v1", "files": hashes}
-        )
+        file_set_hash = _hash({"schema": "capability-package-file-set-v1", "files": hashes})
         return ValidatedCapabilityPackageRefV1.issue(
             source_kind=source_kind,
             limits=self.limits,
@@ -515,10 +498,7 @@ class CapabilityPackageValidator:
             before = path.stat(follow_symlinks=False)
             if before.st_size > self.limits.max_single_file_bytes:
                 self._limit("max_single_file_bytes")
-            if (
-                relative == "deskpet-pack.json"
-                and before.st_size > self.limits.manifest_bytes
-            ):
+            if relative == "deskpet-pack.json" and before.st_size > self.limits.manifest_bytes:
                 self._limit("manifest_bytes")
             digest = hashlib.sha256()
             actual = 0
@@ -554,14 +534,10 @@ class CapabilityPackageValidator:
             content_hash = digest.hexdigest()
             if relative == "deskpet-pack.json":
                 manifest_hash = content_hash
-            rows.append(
-                {"path": relative, "size": actual, "sha256": content_hash}
-            )
+            rows.append({"path": relative, "size": actual, "sha256": content_hash})
         if manifest_hash is None:
             raise CapabilityPackageValidationError("manifest_missing")
-        file_set_hash = _hash(
-            {"schema": "capability-package-file-set-v1", "files": rows}
-        )
+        file_set_hash = _hash({"schema": "capability-package-file-set-v1", "files": rows})
         archive_hash = (
             expected_ref.archive_hash
             if expected_ref is not None
@@ -607,17 +583,13 @@ class CapabilityPackageValidator:
         try:
             with zipfile.ZipFile(io.BytesIO(raw), "r") as package:
                 for info in package.infolist():
-                    validated = self.path_policy.validate_relative_path(
-                        info.filename.rstrip("/")
-                    )
+                    validated = self.path_policy.validate_relative_path(info.filename.rstrip("/"))
                     output = target.joinpath(*validated.relative_path.split("/"))
                     self._assert_contained(target, output)
                     self._ensure_safe_parents(target, output.parent)
                     if info.is_dir():
                         output.mkdir(exist_ok=True)
-                        self._assert_not_link_or_reparse(
-                            output, require_regular=False
-                        )
+                        self._assert_not_link_or_reparse(output, require_regular=False)
                         continue
                     output.parent.mkdir(parents=True, exist_ok=True)
                     self._ensure_safe_parents(target, output.parent)
@@ -632,17 +604,11 @@ class CapabilityPackageValidator:
                                 self._limit("max_single_file_bytes")
                             sink.write(chunk)
                         sink.flush()
-                        self._assert_stat_safe(
-                            os.fstat(sink.fileno()), require_regular=True
-                        )
+                        self._assert_stat_safe(os.fstat(sink.fileno()), require_regular=True)
                     if actual != info.file_size:
-                        raise CapabilityPackageValidationError(
-                            "archive_declared_size_mismatch"
-                        )
+                        raise CapabilityPackageValidationError("archive_declared_size_mismatch")
                     self._assert_contained(target, output)
-                    self._assert_not_link_or_reparse(
-                        output, require_regular=True
-                    )
+                    self._assert_not_link_or_reparse(output, require_regular=True)
             return self.validate_materialized_tree(
                 target, source_kind=source_kind, expected_ref=expected
             )
@@ -684,16 +650,10 @@ class CapabilityPackageValidator:
             ) from exc
 
     @classmethod
-    def _assert_not_link_or_reparse(
-        cls, path: Path, *, require_regular: bool
-    ) -> None:
+    def _assert_not_link_or_reparse(cls, path: Path, *, require_regular: bool) -> None:
         if path.is_symlink():
-            raise CapabilityPackageValidationError(
-                "materialized_link_rejected", dimension="path"
-            )
-        cls._assert_stat_safe(
-            path.stat(follow_symlinks=False), require_regular=require_regular
-        )
+            raise CapabilityPackageValidationError("materialized_link_rejected", dimension="path")
+        cls._assert_stat_safe(path.stat(follow_symlinks=False), require_regular=require_regular)
 
     @staticmethod
     def _assert_stat_safe(value: os.stat_result, *, require_regular: bool) -> None:
@@ -718,9 +678,7 @@ class CapabilityPackageValidator:
         for component in parent.relative_to(root).parts:
             current = current / component
             if current.exists():
-                cls._assert_not_link_or_reparse(
-                    current, require_regular=False
-                )
+                cls._assert_not_link_or_reparse(current, require_regular=False)
 
     def _bounded_archive_stream(
         self, archive: bytes | bytearray | Path | BinaryIO
@@ -743,9 +701,7 @@ class CapabilityPackageValidator:
             self._limit("archive_bytes")
         return archive, size, False
 
-    def _read_bounded_archive(
-        self, archive: bytes | bytearray | Path | BinaryIO
-    ) -> bytes:
+    def _read_bounded_archive(self, archive: bytes | bytearray | Path | BinaryIO) -> bytes:
         stream, _size, close = self._bounded_archive_stream(archive)
         try:
             stream.seek(0)
@@ -770,9 +726,7 @@ class CapabilityPackageValidator:
             )
         dos_attributes = info.external_attr & 0xFFFF
         if dos_attributes & 0x400:
-            raise CapabilityPackageValidationError(
-                "archive_reparse_entry", dimension="path"
-            )
+            raise CapabilityPackageValidationError("archive_reparse_entry", dimension="path")
 
     @staticmethod
     def _limit(dimension: str) -> None:

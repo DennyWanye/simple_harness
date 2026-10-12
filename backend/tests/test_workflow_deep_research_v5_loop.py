@@ -45,9 +45,7 @@ class VirtualClock:
         self.active = active
         self.wall = datetime(2026, 7, 16, 8, 0, tzinfo=UTC)
 
-    def active_seconds(
-        self, *, operation_id: str, accumulated_active_seconds: float
-    ) -> float:
+    def active_seconds(self, *, operation_id: str, accumulated_active_seconds: float) -> float:
         assert operation_id
         assert self.active >= accumulated_active_seconds
         return self.active
@@ -93,9 +91,7 @@ class ControlPort:
         self.polls += 1
         return self.command
 
-    async def settle(
-        self, command_id, *, checkpoint_ns, checkpoint_id, result
-    ):
+    async def settle(self, command_id, *, checkpoint_ns, checkpoint_id, result):
         assert self.command is not None and self.command.command_id == command_id
         payload = self.command.to_json()
         payload["status"] = "settled"
@@ -105,9 +101,7 @@ class ControlPort:
         self.settles += 1
         return self.command
 
-    async def consume(
-        self, command_id, *, checkpoint_ns, checkpoint_id, result
-    ):
+    async def consume(self, command_id, *, checkpoint_ns, checkpoint_id, result):
         assert self.command is not None and self.command.command_id == command_id
         payload = self.command.to_json()
         payload["status"] = "consumed"
@@ -139,9 +133,7 @@ class SnapshotPort:
             "dimension_coverages": copy.deepcopy(values["dimension_coverages"]),
             "passage_blob_refs": [],
             "source_families": [],
-            "query_fingerprints": copy.deepcopy(
-                values.get("executed_query_fingerprints", [])
-            ),
+            "query_fingerprints": copy.deepcopy(values.get("executed_query_fingerprints", [])),
             "budget_summary": {},
             "created_at": created_at,
             "continue_until": continue_until,
@@ -196,9 +188,7 @@ def _command(action: str, *, run_id: str = "run-v5") -> ResearchControlCommand:
 async def test_fetch_observes_generate_now_while_atomic_effect_is_inflight(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        deep_research_v5_nodes, "CONTROL_OBSERVE_INTERVAL_SECONDS", 0.001
-    )
+    monkeypatch.setattr(deep_research_v5_nodes, "CONTROL_OBSERVE_INTERVAL_SECONDS", 0.001)
     fetch = BlockingFetchPort()
     control = ObservingControlPort(_command("generate_now"))
     identity = NodeExecutionIdentity(
@@ -212,13 +202,9 @@ async def test_fetch_observes_generate_now_while_atomic_effect_is_inflight(
         node_id="fetch",
         attempt=1,
     )
-    context = WorkflowContext(
-        ports={"fetch": fetch, "control": control}, identity=identity
-    )
+    context = WorkflowContext(ports={"fetch": fetch, "control": control}, identity=identity)
     task = asyncio.create_task(
-        fetch_handler(
-            {"run_id": "run-v5", "values": {"topic": "topic"}}, context
-        )
+        fetch_handler({"run_id": "run-v5", "values": {"topic": "topic"}}, context)
     )
     await fetch.started.wait()
     while control.polls == 0:
@@ -266,9 +252,7 @@ def _coverage_payload(payload: Mapping[str, object], covered_count: int) -> list
         dimension_id = str(dimension["dimension_id"])
         covered = index < covered_count
         evidence_ids = (
-            (f"evidence-{dimension_id}-1", f"evidence-{dimension_id}-2")
-            if covered
-            else ()
+            (f"evidence-{dimension_id}-1", f"evidence-{dimension_id}-2") if covered else ()
         )
         result.append(
             DimensionCoverage(
@@ -277,9 +261,7 @@ def _coverage_payload(payload: Mapping[str, object], covered_count: int) -> list
                 evidence_passage_ids=evidence_ids,
                 winning_evidence_ids=evidence_ids,
                 source_family_ids=(
-                    (f"family-{dimension_id}-1", f"family-{dimension_id}-2")
-                    if covered
-                    else ()
+                    (f"family-{dimension_id}-1", f"family-{dimension_id}-2") if covered else ()
                 ),
                 first_party_satisfied=covered,
                 relevance_score=0.9 if covered else 0.0,
@@ -307,10 +289,7 @@ def _evidence_candidates(payload: Mapping[str, object], covered_count: int) -> l
                     f"教育 {dimension_id} current_state。",
                     f"教育 {dimension_id} driver_change。",
                     f"教育 {dimension_id} impact。",
-                    *(
-                        f"教育 {dimension_id} 关键判断 {key_index}。"
-                        for key_index in range(1, 8)
-                    ),
+                    *(f"教育 {dimension_id} 关键判断 {key_index}。" for key_index in range(1, 8)),
                 ]
             )
             result.append(
@@ -418,9 +397,7 @@ def _ports(
         if stage == "report_synthesis":
             return _structured_draft(payload)
         if stage == "quality_audit":
-            return (quality_handler or (lambda _s, _p: {"route": "persist"}))(
-                stage, payload
-            )
+            return (quality_handler or (lambda _s, _p: {"route": "persist"}))(stage, payload)
         if stage == "targeted_repair":
             return {"route": "quality_audit"}
         return {}
@@ -598,35 +575,37 @@ def test_fixture_pins_graph_loop_budgets() -> None:
 
 def test_report_synthesis_payload_is_bounded_to_admitted_evidence() -> None:
     huge_body = "full fetched page " * 20_000
-    payload = _report_synthesis_payload({
-        "research_brief": {"schema_version": 1, "user_question": "compare models"},
-        "dimension_coverages": [{"dimension_id": "ranking", "status": "partial"}],
-        "synthesis_route": "partial_synthesis",
-        "dimension_analysis_result": None,
-        "search_result": {"raw": huge_body},
-        "fetch_result": {"raw": huge_body},
-        "evidence_candidates": [
-            {
-                "candidate_id": "accepted",
-                "dimension_id": "ranking",
-                "title": "Benchmark",
-                "family_id": "family-1",
-                "source_tier": "secondary",
-                "source_type": "article",
-                "published_date": "2026-07-17",
-                "relevance": 0.8,
-                "span_text": "direct supporting excerpt",
-                "body_text": huge_body,
-                "admitted": True,
-            },
-            {
-                "candidate_id": "rejected",
-                "dimension_id": "ranking",
-                "body_text": huge_body,
-                "admitted": False,
-            },
-        ],
-    })
+    payload = _report_synthesis_payload(
+        {
+            "research_brief": {"schema_version": 1, "user_question": "compare models"},
+            "dimension_coverages": [{"dimension_id": "ranking", "status": "partial"}],
+            "synthesis_route": "partial_synthesis",
+            "dimension_analysis_result": None,
+            "search_result": {"raw": huge_body},
+            "fetch_result": {"raw": huge_body},
+            "evidence_candidates": [
+                {
+                    "candidate_id": "accepted",
+                    "dimension_id": "ranking",
+                    "title": "Benchmark",
+                    "family_id": "family-1",
+                    "source_tier": "secondary",
+                    "source_type": "article",
+                    "published_date": "2026-07-17",
+                    "relevance": 0.8,
+                    "span_text": "direct supporting excerpt",
+                    "body_text": huge_body,
+                    "admitted": True,
+                },
+                {
+                    "candidate_id": "rejected",
+                    "dimension_id": "ranking",
+                    "body_text": huge_body,
+                    "admitted": False,
+                },
+            ],
+        }
+    )
 
     encoded = json.dumps(payload, ensure_ascii=False)
     assert set(payload) == {
@@ -636,12 +615,8 @@ def test_report_synthesis_payload_is_bounded_to_admitted_evidence() -> None:
         "dimension_analysis_result",
         "evidence_candidates",
     }
-    assert [item["candidate_id"] for item in payload["evidence_candidates"]] == [
-        "accepted"
-    ]
-    assert payload["evidence_candidates"][0]["evidence_text"] == (
-        "direct supporting excerpt"
-    )
+    assert [item["candidate_id"] for item in payload["evidence_candidates"]] == ["accepted"]
+    assert payload["evidence_candidates"][0]["evidence_text"] == ("direct supporting excerpt")
     assert "full fetched page" not in encoded
     assert len(encoded.encode("utf-8")) < 16_000
 
@@ -659,9 +634,7 @@ def test_workflow_context_accepts_independent_control_port_without_changing_lega
 async def test_sc_lease_then_two_no_gain_rounds_plateau_and_checkpoint() -> None:
     clock = VirtualClock(active=300.0)
 
-    def query_strategy(
-        _stage: str, payload: Mapping[str, object]
-    ) -> Mapping[str, object]:
+    def query_strategy(_stage: str, payload: Mapping[str, object]) -> Mapping[str, object]:
         work_item = payload["work_item"]
         assert isinstance(work_item, Mapping)
         return {
@@ -677,9 +650,7 @@ async def test_sc_lease_then_two_no_gain_rounds_plateau_and_checkpoint() -> None
             ]
         }
 
-    context, ports = _ports(
-        clock, fetch_covered=1, query_strategy_handler=query_strategy
-    )
+    context, ports = _ports(clock, fetch_covered=1, query_strategy_handler=query_strategy)
     result, store, _ = await _run(context)
 
     loop = LoopPolicyState.from_json(result["values"]["loop_policy"])
@@ -696,9 +667,7 @@ async def test_sc_lease_then_two_no_gain_rounds_plateau_and_checkpoint() -> None
         for stage, payload in zip(ports["search"].calls, ports["search"].payloads)
         if stage == "gap_work"
     ]
-    assert gap_payloads[1]["work_item"]["query"] == (
-        "adaptive query after deterministic no gain"
-    )
+    assert gap_payloads[1]["work_item"]["query"] == ("adaptive query after deterministic no gain")
     assert result["values"]["terminal_status"] == "completed"
     assert result["values"]["terminal_public"] == {
         "delivery_status": "insufficient_evidence",
@@ -762,26 +731,28 @@ async def test_sc_cap_allows_started_atomic_work_to_finish_then_forbids_more() -
             if isinstance(item, Mapping)
         ]
         coverages = [
-            coverage.to_json()
-            if item["dimension_id"] == dimension_id
-            else item
+            coverage.to_json() if item["dimension_id"] == dimension_id else item
             for item in coverages
         ]
         return {
             "coverages": coverages,
             "quality_score": 20.0,
-            "admission_decisions": [{
-                "candidate_id": "candidate-gap",
-                "dimension_id": dimension_id,
-                "accepted": False,
-                "stage": "passage_admission",
-                "reason": "dimension_relevance_below_threshold",
-            }],
+            "admission_decisions": [
+                {
+                    "candidate_id": "candidate-gap",
+                    "dimension_id": dimension_id,
+                    "accepted": False,
+                    "stage": "passage_admission",
+                    "reason": "dimension_relevance_below_threshold",
+                }
+            ],
             "rejection_reason_counts": {"dimension_relevance_below_threshold": 1},
-            "rejection_summary_by_dimension": [{
-                "dimension_id": dimension_id,
-                "reason_counts": {"dimension_relevance_below_threshold": 1},
-            }],
+            "rejection_summary_by_dimension": [
+                {
+                    "dimension_id": dimension_id,
+                    "reason_counts": {"dimension_relevance_below_threshold": 1},
+                }
+            ],
         }
 
     context, _ = _ports(clock, fetch_covered=1, gap_handler=gap)
@@ -792,9 +763,7 @@ async def test_sc_cap_allows_started_atomic_work_to_finish_then_forbids_more() -
     assert loop.prohibit_new_upstream is True
     assert loop.current_progress.coverage_points == 2.0
     assert result["loop_counters"]["gap_work_iterations"] == 1
-    assert result["values"]["rejection_reason_counts"] == {
-        "dimension_relevance_below_threshold": 1
-    }
+    assert result["values"]["rejection_reason_counts"] == {"dimension_relevance_below_threshold": 1}
     assert result["values"]["rejection_summary_by_dimension"][0]["reason_counts"] == {
         "dimension_relevance_below_threshold": 1
     }
@@ -834,9 +803,7 @@ async def test_cancel_settle_fences_upstream_but_preserves_engine_business_termi
 @pytest.mark.asyncio
 async def test_cancel_settle_with_committed_evidence_uses_no_new_llm_and_consumes_control() -> None:
     clock = VirtualClock(active=125.0)
-    context, ports = _ports(
-        clock, fetch_covered=1, control=_command("cancel_settle")
-    )
+    context, ports = _ports(clock, fetch_covered=1, control=_command("cancel_settle"))
     control = context.ports["control"]
     assert isinstance(control, ControlPort)
     result, _, _ = await _run(context)

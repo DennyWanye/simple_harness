@@ -61,9 +61,7 @@ def _call(
         permission_policy_version="v1",
         effect_type="staged_file",
         resource_selectors=(
-            selectors
-            if selectors is not None
-            else (ResourceSelector.filesystem(path, "write"),)
+            selectors if selectors is not None else (ResourceSelector.filesystem(path, "write"),)
         ),
     )
 
@@ -135,9 +133,7 @@ async def test_manual_confirm_once_covers_later_call_inside_workspace(
     )
     assert confirmed.action == "allow"
     assert confirmed.proposed_task_grant is not None
-    store.grants[
-        confirmed.proposed_task_grant.task_grant_id
-    ] = confirmed.proposed_task_grant
+    store.grants[confirmed.proposed_task_grant.task_grant_id] = confirmed.proposed_task_grant
 
     second_context = _context(tmp_path, call_id="call-2")
     second = await runtime.plan_prepared_call(
@@ -162,9 +158,7 @@ async def test_manual_out_of_scope_waits_and_auto_expands_with_new_version(
         task_grant_id="grant-original",
         root_run_id="root-1",
         principal_id="user-1",
-        resource_selectors=(
-            ResourceSelector.filesystem(tmp_path / "inside", "write"),
-        ),
+        resource_selectors=(ResourceSelector.filesystem(tmp_path / "inside", "write"),),
         permission_categories=("write_file",),
         effect_kinds=("staged_file",),
         source="user",
@@ -215,9 +209,7 @@ async def test_auto_grant_is_stale_immediately_after_switch_to_manual(
         principal_id="user-1",
     )
     assert initial.proposed_task_grant is not None
-    store.grants[
-        initial.proposed_task_grant.task_grant_id
-    ] = initial.proposed_task_grant
+    store.grants[initial.proposed_task_grant.task_grant_id] = initial.proposed_task_grant
 
     store.state = AuthorizationPolicyState("manual", 9, 101.0)
     stale = await runtime.plan_prepared_call(
@@ -298,9 +290,7 @@ async def test_confirm_only_never_uses_auto_or_historical_grant(
     assert commit.decision_id == "decision-external"
     assert commit.confirm_only_snapshot_hash == _hash("confirm-only-set")
 
-    store.grants[confirmed.proposed_task_grant.task_grant_id] = (
-        confirmed.proposed_task_grant
-    )
+    store.grants[confirmed.proposed_task_grant.task_grant_id] = confirmed.proposed_task_grant
     replay_without_confirmation = await runtime.plan_prepared_call(
         call=call,
         context=context,

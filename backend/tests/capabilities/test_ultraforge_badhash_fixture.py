@@ -22,9 +22,7 @@ from deskpet.capabilities.store import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-FIXTURE_ROOT = (
-    REPO_ROOT / "capability-packs" / "fixtures" / "ultraforge-badhash"
-)
+FIXTURE_ROOT = REPO_ROOT / "capability-packs" / "fixtures" / "ultraforge-badhash"
 
 
 class _MustNotPublish:
@@ -42,22 +40,16 @@ async def test_configured_ultraforge_is_discoverable_but_never_activated(
         uri=str(FIXTURE_ROOT),
         revision="fixture-badhash-v1",
     )
-    catalog = await ConfiguredCapabilityCatalogSource(
-        {"ultraforge": configured}
-    ).snapshot()
+    catalog = await ConfiguredCapabilityCatalogSource({"ultraforge": configured}).snapshot()
     assert len(catalog.entries) == 1
     assert catalog.entries[0].version.capability_id == "ultraforge"
-    assert catalog.entries[0].version.source.startswith(
-        "configured:ultraforge@"
-    )
+    assert catalog.entries[0].version.source.startswith("configured:ultraforge@")
 
     canary = tmp_path / "ultraforge-executed.canary"
     monkeypatch.setenv("DESKPET_ULTRAFORGE_CANARY", str(canary))
     db = await initialize_capability_database(tmp_path / "execution.db")
     store = CapabilityStore(db, clock=lambda: 100.0)
-    resolver = CapabilitySourceResolver(
-        configured_sources={"ultraforge": configured}
-    )
+    resolver = CapabilitySourceResolver(configured_sources={"ultraforge": configured})
     manager = CapabilityPackManager(
         store=store,
         user_data_root=tmp_path / "user-data",
@@ -77,9 +69,7 @@ async def test_configured_ultraforge_is_discoverable_but_never_activated(
         revision="configured",
     )
     for _ in range(2):
-        with pytest.raises(
-            (PackManifestError, CapabilityManagerError)
-        ) as caught:
+        with pytest.raises((PackManifestError, CapabilityManagerError)) as caught:
             await manager.install(
                 request,
                 scope="user",
@@ -92,7 +82,5 @@ async def test_configured_ultraforge_is_discoverable_but_never_activated(
     assert not canary.exists()
     assert await store.list_versions("ultraforge") == ()
     assert await store.get_binding("user", "default", "ultraforge") is None
-    operation_id = hashlib.sha256(
-        b"capability:ua-ultraforge-badhash"
-    ).hexdigest()
+    operation_id = hashlib.sha256(b"capability:ua-ultraforge-badhash").hexdigest()
     assert not manager.layout.staging_path(operation_id).exists()

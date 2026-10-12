@@ -89,9 +89,9 @@ async def test_present_error_send_both_failure_sends_fallback():
     )
 
     # Patch _send_both to fail
-    with patch('deskpet.agent.run_presenter._send_both',
-               side_effect=RuntimeError("Send both failed")):
-
+    with patch(
+        "deskpet.agent.run_presenter._send_both", side_effect=RuntimeError("Send both failed")
+    ):
         # Call presenter
         await _present_error(event, context, state)
 
@@ -113,18 +113,20 @@ async def test_health_check_timeout_values():
     # Repository-relative: the original absolute path only existed on the
     # authoring machine (/Users/denny/...).
     control_ws = (
-        Path(__file__).resolve().parents[2]
-        / "tauri-app" / "src" / "code-panel" / "controlWs.ts"
+        Path(__file__).resolve().parents[2] / "tauri-app" / "src" / "code-panel" / "controlWs.ts"
     )
-    with open(control_ws, 'r', encoding='utf-8') as f:
+    with open(control_ws, "r", encoding="utf-8") as f:
         content = f.read()
 
     # Check timeout values
-    assert 'SESSION_HEALTH_CHECK_INTERVAL = 15_000' in content or 'SESSION_HEALTH_CHECK_INTERVAL = 15000' in content, \
-        "Health check interval should be 15 seconds"
+    assert (
+        "SESSION_HEALTH_CHECK_INTERVAL = 15_000" in content
+        or "SESSION_HEALTH_CHECK_INTERVAL = 15000" in content
+    ), "Health check interval should be 15 seconds"
 
-    assert 'SESSION_STUCK_TIMEOUT = 60_000' in content or 'SESSION_STUCK_TIMEOUT = 60000' in content, \
-        "Stuck timeout should be 60 seconds"
+    assert (
+        "SESSION_STUCK_TIMEOUT = 60_000" in content or "SESSION_STUCK_TIMEOUT = 60000" in content
+    ), "Stuck timeout should be 60 seconds"
 
     print("✅ Health check timeouts set correctly: 15s interval, 60s timeout")
 

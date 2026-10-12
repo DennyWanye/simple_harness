@@ -19,6 +19,7 @@ Fallback chain format:
     first element is "primary", rest are backups. Depth > 2 is trimmed
     silently (spec requirement: MUST ≤ primary + 2).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -247,7 +248,11 @@ class LLMRegistry:
                     if attempt >= max_retries:
                         errors.append(f"{provider_name}: rate-limited after {attempt} retries")
                         break
-                    wait_s = exc.retry_after if exc.retry_after is not None else backoff * (2 ** (attempt - 1))
+                    wait_s = (
+                        exc.retry_after
+                        if exc.retry_after is not None
+                        else backoff * (2 ** (attempt - 1))
+                    )
                     logger.warning(
                         "llm %s rate-limited (attempt %d/%d); sleeping %.2fs",
                         provider_name,
@@ -277,7 +282,10 @@ class LLMRegistry:
                     wait_s = backoff * (2 ** (attempt - 1))
                     logger.warning(
                         "llm %s timeout/conn-drop (attempt %d/%d); retrying same provider in %.2fs",
-                        provider_name, attempt, max_retries, wait_s,
+                        provider_name,
+                        attempt,
+                        max_retries,
+                        wait_s,
                     )
                     await asyncio.sleep(wait_s)
                     continue

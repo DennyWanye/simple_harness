@@ -46,6 +46,7 @@ Test matrix
     _last_anchor_iter bookkeeping: anchor message injected exactly once per
     qualifying iteration, not twice.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -127,8 +128,7 @@ async def test_compact_injects_anchor():
         goal_text="整理纪要",
     )
     anchor_msgs = [
-        m for m in result
-        if m.get("role") == "system" and "[目标锚定]" in str(m.get("content", ""))
+        m for m in result if m.get("role") == "system" and "[目标锚定]" in str(m.get("content", ""))
     ]
     assert anchor_msgs, "Expected at least one [目标锚定] system message"
     anchor_content = anchor_msgs[0]["content"]
@@ -152,8 +152,7 @@ async def test_compact_anchor_not_injected_when_should_not_compact():
         goal_text="some goal",
     )
     anchor_msgs = [
-        m for m in result
-        if m.get("role") == "system" and "[目标锚定]" in str(m.get("content", ""))
+        m for m in result if m.get("role") == "system" and "[目标锚定]" in str(m.get("content", ""))
     ]
     assert anchor_msgs == [], "No anchor on below-threshold early-return"
 
@@ -173,8 +172,7 @@ async def test_compact_anchor_not_injected_on_empty_range():
         keep_recent=1000,  # huge keep_recent → nothing to compact
     )
     anchor_msgs = [
-        m for m in result
-        if m.get("role") == "system" and "[目标锚定]" in str(m.get("content", ""))
+        m for m in result if m.get("role") == "system" and "[目标锚定]" in str(m.get("content", ""))
     ]
     assert anchor_msgs == [], "No anchor when compact range is empty"
 
@@ -193,10 +191,7 @@ async def test_compact_anchor_not_injected_on_summarize_fail():
     )
     # Should be a shallow copy of original (no modifications)
     assert result == list(msgs)
-    anchor_msgs = [
-        m for m in result
-        if "[目标锚定]" in str(m.get("content", ""))
-    ]
+    anchor_msgs = [m for m in result if "[目标锚定]" in str(m.get("content", ""))]
     assert anchor_msgs == []
 
 
@@ -213,10 +208,7 @@ async def test_compact_anchor_not_injected_on_empty_summary():
         goal_text="goal on empty summary",
     )
     assert result == list(msgs)
-    anchor_msgs = [
-        m for m in result
-        if "[目标锚定]" in str(m.get("content", ""))
-    ]
+    anchor_msgs = [m for m in result if "[目标锚定]" in str(m.get("content", ""))]
     assert anchor_msgs == []
 
 
@@ -234,8 +226,7 @@ async def test_compact_anchor_message_format():
         goal_text=goal,
     )
     anchor_msgs = [
-        m for m in result
-        if m.get("role") == "system" and "[目标锚定]" in str(m.get("content", ""))
+        m for m in result if m.get("role") == "system" and "[目标锚定]" in str(m.get("content", ""))
     ]
     assert anchor_msgs, "anchor message must exist"
     content = anchor_msgs[0]["content"]
@@ -270,6 +261,7 @@ async def test_compact_anchor_is_appended_after_inject_summary():
 def test_agent_loop_goal_anchor_module_const():
     """_GOAL_ANCHOR_EVERY must be defined as 5 in agent_loop module."""
     from agent import agent_loop
+
     assert hasattr(agent_loop, "_GOAL_ANCHOR_EVERY"), (
         "_GOAL_ANCHOR_EVERY constant missing from agent_loop"
     )
@@ -281,6 +273,7 @@ def test_agent_loop_goal_anchor_module_const():
 
 def _make_final_response():
     from llm.types import ChatResponse, ChatUsage
+
     return ChatResponse(
         content="done",
         stop_reason="end_turn",
@@ -291,6 +284,7 @@ def _make_final_response():
 
 def _make_tool_response(tool_name: str = "my_tool"):
     from llm.types import ChatResponse, ChatUsage, ToolCall
+
     return ChatResponse(
         content="",
         stop_reason="tool_use",
@@ -365,10 +359,13 @@ async def test_agent_loop_injects_anchor_at_anchor_every_iteration():
         session_goal_store=store,
     )
 
-    events = [e async for e in loop.run(
-        messages=[{"role": "user", "content": "go"}],
-        session_id="sess1",
-    )]
+    events = [
+        e
+        async for e in loop.run(
+            messages=[{"role": "user", "content": "go"}],
+            session_id="sess1",
+        )
+    ]
 
     # Check that at some point (around iteration _GOAL_ANCHOR_EVERY) a
     # [目标锚定] message was part of working_messages sent to the LLM.
@@ -376,10 +373,7 @@ async def test_agent_loop_injects_anchor_at_anchor_every_iteration():
     found_anchor = False
     for call_msgs in llm.all_messages:
         for m in call_msgs:
-            if (
-                m.get("role") == "system"
-                and "[目标锚定]" in str(m.get("content", ""))
-            ):
+            if m.get("role") == "system" and "[目标锚定]" in str(m.get("content", "")):
                 found_anchor = True
                 break
         if found_anchor:
@@ -417,10 +411,13 @@ async def test_agent_loop_no_anchor_when_no_goal():
         session_goal_store=None,
     )
 
-    events = [e async for e in loop.run(
-        messages=[{"role": "user", "content": "go"}],
-        session_id="sess_no_goal",
-    )]
+    events = [
+        e
+        async for e in loop.run(
+            messages=[{"role": "user", "content": "go"}],
+            session_id="sess_no_goal",
+        )
+    ]
 
     for call_msgs in llm.all_messages:
         for m in call_msgs:
@@ -458,10 +455,13 @@ async def test_agent_loop_anchor_deduped_same_iteration():
         max_iterations=n + 2,
         session_goal_store=store,
     )
-    events = [e async for e in loop.run(
-        messages=[{"role": "user", "content": "go"}],
-        session_id="sess_dedup",
-    )]
+    events = [
+        e
+        async for e in loop.run(
+            messages=[{"role": "user", "content": "go"}],
+            session_id="sess_dedup",
+        )
+    ]
 
     # Count how many times [目标锚定] appears across ALL LLM calls at
     # the anchor iteration (call index n-1, 0-based).
@@ -473,7 +473,8 @@ async def test_agent_loop_anchor_deduped_same_iteration():
     # many times it appears in that single call's message list.
     for call_msgs in llm.all_messages:
         anchor_count = sum(
-            1 for m in call_msgs
+            1
+            for m in call_msgs
             if m.get("role") == "system" and "[目标锚定]" in str(m.get("content", ""))
         )
         if anchor_count > 0:

@@ -204,11 +204,22 @@ def test_a_reviewer_at_the_cap_is_told_to_conclude_now(tmp_path):
     workspaces = WorkspaceManager(tmp_path / "ws")
     workspaces.create("m:task-1:attempt-1", seed={"a.md": "x"})
     gateway = WorkspaceToolGateway(workspaces)
-    gateway.bind("run-1", WorkspaceBinding("m:task-1:attempt-1", "verify", False,
-                                           ("assurance_find_evidence",), max_tool_calls=1,
-                                           mission_id="m", review_key="rk"))
-    gateway.bind("run-2", WorkspaceBinding("m:task-1:attempt-1", "work", True,
-                                           ("workspace_list",), max_tool_calls=1))
+    gateway.bind(
+        "run-1",
+        WorkspaceBinding(
+            "m:task-1:attempt-1",
+            "verify",
+            False,
+            ("assurance_find_evidence",),
+            max_tool_calls=1,
+            mission_id="m",
+            review_key="rk",
+        ),
+    )
+    gateway.bind(
+        "run-2",
+        WorkspaceBinding("m:task-1:attempt-1", "work", True, ("workspace_list",), max_tool_calls=1),
+    )
     gateway.assurance_review_refusal = lambda _run, _binding: None  # 审阅权限在别处测
     gateway.assurance_evidence_reader = lambda _run, _mission, _name, _args, **_kw: {"items": []}
 
@@ -216,8 +227,13 @@ def test_a_reviewer_at_the_cap_is_told_to_conclude_now(tmp_path):
         return str(result.to_json() if hasattr(result, "to_json") else result)
 
     async def case(run_id, name):
-        return [await gateway.execute(ToolCall(call_id=CallId(f"{run_id}-c{n}"), name=name,
-                                               arguments={}), {"run_id": run_id}) for n in range(2)]
+        return [
+            await gateway.execute(
+                ToolCall(call_id=CallId(f"{run_id}-c{n}"), name=name, arguments={}),
+                {"run_id": run_id},
+            )
+            for n in range(2)
+        ]
 
     first, second = asyncio.run(case("run-1", "assurance_find_evidence"))
     assert first.error_code is None

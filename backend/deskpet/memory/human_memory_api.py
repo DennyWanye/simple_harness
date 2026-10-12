@@ -57,9 +57,7 @@ def _reject_authority_fields(value: object) -> None:
     if isinstance(value, Mapping):
         for key, child in value.items():
             if str(key).strip().lower().replace("-", "_") in _AUTHORITY_FIELDS:
-                raise HumanMemoryHostServiceError(
-                    "human_memory_public_authority_field_rejected"
-                )
+                raise HumanMemoryHostServiceError("human_memory_public_authority_field_rejected")
             _reject_authority_fields(child)
     elif isinstance(value, (list, tuple)):
         for child in value:
@@ -145,7 +143,11 @@ async def send_human_memory_response(
 
     payload = response.get("payload", {})
     operation = payload.get("operation")
-    binding_operations = {"primary.bindings.pending", "primary.bindings.status", "primary.bindings.decide"}
+    binding_operations = {
+        "primary.bindings.pending",
+        "primary.bindings.status",
+        "primary.bindings.decide",
+    }
     if not payload.get("ok") or operation not in binding_operations:
         await send(response)
         return
@@ -162,10 +164,12 @@ async def send_human_memory_response(
     except Exception as exc:
         if checked:
             raise
-        await send(_error(
-            response["request_id"],
-            str(getattr(exc, "code", "primary_binding_delivery_rejected")),
-        ))
+        await send(
+            _error(
+                response["request_id"],
+                str(getattr(exc, "code", "primary_binding_delivery_rejected")),
+            )
+        )
 
 
 async def _dispatch(  # type: ignore[no-untyped-def]
@@ -197,14 +201,22 @@ async def _dispatch(  # type: ignore[no-untyped-def]
             return await service.read_primary_state(request_id=request_id)
         if operation == "primary.messages.page":
             return await service.read_primary_messages(request_id=request_id, **request)
-        return await service.read_primary_message_detail(
-            request_id=request_id, **request
-        )
-    if operation in {"primary.bindings.pending", "primary.bindings.status", "primary.bindings.decide"}:
+        return await service.read_primary_message_detail(request_id=request_id, **request)
+    if operation in {
+        "primary.bindings.pending",
+        "primary.bindings.status",
+        "primary.bindings.decide",
+    }:
         from deskpet.memory.primary_read_model import PrimaryReadError
         from deskpet.memory.primary_workspace_bindings import IDENTITY_FIELDS
-        fields = ({"primary_ref", "cursor"} if operation == "primary.bindings.pending" else
-                  {"primary_ref", "challenge_ref"} if operation == "primary.bindings.status" else IDENTITY_FIELDS | {"decision"})
+
+        fields = (
+            {"primary_ref", "cursor"}
+            if operation == "primary.bindings.pending"
+            else {"primary_ref", "challenge_ref"}
+            if operation == "primary.bindings.status"
+            else IDENTITY_FIELDS | {"decision"}
+        )
         required = {"primary_ref"} if operation == "primary.bindings.pending" else fields
         if not required <= set(request) <= fields:
             raise PrimaryReadError("primary_binding_request_invalid")
@@ -215,6 +227,7 @@ async def _dispatch(  # type: ignore[no-untyped-def]
         return await service.respond_primary_binding(**request)
     if operation in {"primary.decisions.list", "primary.decisions.respond"}:
         from deskpet.memory.primary_read_model import PrimaryReadError
+
         fields = {"primary_ref", "expected_run_ref", "expected_generation"}
         if operation == "primary.decisions.respond":
             fields |= {"decision_id", "nonce", "version", "decision"}
@@ -251,8 +264,11 @@ async def _dispatch(  # type: ignore[no-untyped-def]
         if not set(request) <= {"limit", "cursor"}:
             raise HumanMemoryHostServiceError("human_memory_request_invalid")
         limit, cursor = request.get("limit", 20), request.get("cursor")
-        if (isinstance(limit, bool) or not isinstance(limit, int)
-                or (cursor is not None and not isinstance(cursor, str))):
+        if (
+            isinstance(limit, bool)
+            or not isinstance(limit, int)
+            or (cursor is not None and not isinstance(cursor, str))
+        ):
             raise HumanMemoryHostServiceError("human_memory_request_invalid")
         try:
             return await service.list_task_scopes(ListTaskScopesRequest(limit, cursor))
@@ -282,9 +298,7 @@ async def _dispatch(  # type: ignore[no-untyped-def]
                 scope_ref=str(request["scope_ref"]),
                 source_ref=str(request["source_ref"]),
                 source_hash=str(request["source_hash"]),
-                cursor=None
-                if request.get("cursor") is None
-                else str(request["cursor"]),
+                cursor=None if request.get("cursor") is None else str(request["cursor"]),
                 limit=int(request.get("limit", 8)),
             )
         )
@@ -296,9 +310,7 @@ async def _dispatch(  # type: ignore[no-untyped-def]
                 source_hash=str(request["source_hash"]),
                 group_ref=str(request["group_ref"]),
                 group_hash=str(request["group_hash"]),
-                cursor=None
-                if request.get("cursor") is None
-                else str(request["cursor"]),
+                cursor=None if request.get("cursor") is None else str(request["cursor"]),
             )
         )
     if operation == "task_scope.mutate":
@@ -315,15 +327,11 @@ async def _dispatch(  # type: ignore[no-untyped-def]
         )
     if operation == "binding.append":
         return await service.append_binding(
-            AppendBindingRequest(
-                str(request["scope_ref"]), str(request["root"]), request_id
-            )
+            AppendBindingRequest(str(request["scope_ref"]), str(request["root"]), request_id)
         )
     if operation == "binding.manual.propose":
         return await service.propose_manual_binding(
-            AppendBindingRequest(
-                str(request["scope_ref"]), str(request["root"]), request_id
-            )
+            AppendBindingRequest(str(request["scope_ref"]), str(request["root"]), request_id)
         )
     if operation == "binding.manual.decide":
         return await service.decide_manual_binding(
@@ -337,15 +345,23 @@ async def _dispatch(  # type: ignore[no-untyped-def]
         fields = {"recipient", "recipient_id", "intended_audience", "purpose", "expected_ref"}
         if set(request) != fields:
             raise HumanMemoryHostServiceError("host_disclosure_configuration_fields_invalid")
-        return await service.configure_disclosure(request_id=request_id,
+        return await service.configure_disclosure(
+            request_id=request_id,
             expected_ref=request["expected_ref"],
-            selection={key: request[key] for key in fields - {"expected_ref"}})
+            selection={key: request[key] for key in fields - {"expected_ref"}},
+        )
     if operation == "disclosure.current":
         if request:
             raise HumanMemoryHostServiceError("host_disclosure_configuration_fields_invalid")
         return await service.current_disclosure_configuration()
     if operation == "queue.enqueue":
-        if not set(request) <= {"scope_ref", "delivery_key", "text", "disclosure_binding_ref", "input_declaration"}:
+        if not set(request) <= {
+            "scope_ref",
+            "delivery_key",
+            "text",
+            "disclosure_binding_ref",
+            "input_declaration",
+        }:
             raise HumanMemoryHostServiceError("human_memory_queue_fields_invalid")
         return await service.enqueue_turn(
             QueueTurnRequest(
@@ -361,9 +377,7 @@ async def _dispatch(  # type: ignore[no-untyped-def]
             from deskpet.memory.primary_read_model import PrimaryReadError
 
             required = {"expected_run_ref", "expected_generation", "control"}
-            if not required <= set(request) or not set(request) <= required | {
-                "reason"
-            }:
+            if not required <= set(request) or not set(request) <= required | {"reason"}:
                 raise PrimaryReadError("primary_exact_control_invalid")
             return await service.control_current_run(
                 ExactControlRunRequest(

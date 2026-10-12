@@ -148,8 +148,10 @@ PPT_PRO_V2_DEFINITION = WorkflowDefinition(
     ),
     conditional_edges=(
         ConditionalEdge(
-            "research_gap", nodes.research_gap_route,
-            {"continue": "research_gap", "done": "research_rerank", "outline": "outline"}, "pure"
+            "research_gap",
+            nodes.research_gap_route,
+            {"continue": "research_gap", "done": "research_rerank", "outline": "outline"},
+            "pure",
         ),
         ConditionalEdge(
             "apply_outline_decision",
@@ -157,11 +159,33 @@ PPT_PRO_V2_DEFINITION = WorkflowDefinition(
             {"preflight": "preflight", "revise": "revise_outline", "terminal": "terminal"},
             "pure",
         ),
-        ConditionalEdge("preflight", nodes.preflight_route, {"probe": "image_probe", "terminal": "terminal"}, "pure"),
-        ConditionalEdge("prepare_slides", nodes.prepare_slides_route, {"images": "image_map", "terminal": "terminal"}, "pure"),
-        ConditionalEdge("image_map", nodes.image_map_route, {"pending": "image_map", "done": "render", "terminal": "terminal"}, "pure"),
-        ConditionalEdge("render", nodes.render_route, {"preview": "preview", "terminal": "terminal"}, "pure"),
-        ConditionalEdge("visual_evaluate", nodes.visual_route, {"revise": "visual_revise", "publish": "publish", "terminal": "terminal"}, "pure"),
+        ConditionalEdge(
+            "preflight",
+            nodes.preflight_route,
+            {"probe": "image_probe", "terminal": "terminal"},
+            "pure",
+        ),
+        ConditionalEdge(
+            "prepare_slides",
+            nodes.prepare_slides_route,
+            {"images": "image_map", "terminal": "terminal"},
+            "pure",
+        ),
+        ConditionalEdge(
+            "image_map",
+            nodes.image_map_route,
+            {"pending": "image_map", "done": "render", "terminal": "terminal"},
+            "pure",
+        ),
+        ConditionalEdge(
+            "render", nodes.render_route, {"preview": "preview", "terminal": "terminal"}, "pure"
+        ),
+        ConditionalEdge(
+            "visual_evaluate",
+            nodes.visual_route,
+            {"revise": "visual_revise", "publish": "publish", "terminal": "terminal"},
+            "pure",
+        ),
     ),
     recursion_limit=256,
     max_supersteps=192,

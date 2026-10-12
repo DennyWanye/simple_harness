@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 """P5-S1: WatchdogLoop unit tests."""
+
 from __future__ import annotations
 
 import asyncio
@@ -404,7 +405,7 @@ async def test_watchdog_triggers_on_tool_signature_repeat(store: SessionActivity
         session_activity=store,
         hook=hook,
         scan_interval_seconds=0.05,
-        stuck_threshold_seconds=900,        # rule (b) won't fire
+        stuck_threshold_seconds=900,  # rule (b) won't fire
         dedup_seconds=720,
         startup_grace_seconds=0.0,
         idle_with_todos_threshold_seconds=60,
@@ -425,10 +426,16 @@ async def test_watchdog_signature_repeat_below_threshold_no_trigger(
     fire rule (d). Guards against hair-trigger false positives."""
     sid = "code-loop-2"
     await store.bump(
-        sid, event_type="tool_call", name="write_file", args={"path": "/x"},
+        sid,
+        event_type="tool_call",
+        name="write_file",
+        args={"path": "/x"},
     )
     await store.bump(
-        sid, event_type="tool_call", name="write_file", args={"path": "/x"},
+        sid,
+        event_type="tool_call",
+        name="write_file",
+        args={"path": "/x"},
     )
     sa = await store.get(sid)
     assert sa is not None
@@ -451,6 +458,4 @@ async def test_watchdog_signature_repeat_below_threshold_no_trigger(
         tool_signature_repeat_threshold=3,
     )
     await wd._tick()
-    assert triggered == [], (
-        f"rule (d) fired below threshold; got {triggered!r}"
-    )
+    assert triggered == [], f"rule (d) fired below threshold; got {triggered!r}"

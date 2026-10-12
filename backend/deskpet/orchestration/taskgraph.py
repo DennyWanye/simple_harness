@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: BUSL-1.1
 """Read-only TaskGraph verbs on the existing authenticated control transport."""
+
 from __future__ import annotations
 
 import logging
@@ -22,11 +23,19 @@ def _invalid() -> None:
 
 
 def read_taskgraph(service: Any, operation: str, request: Mapping[str, Any]) -> dict[str, Any]:
-    required = {"snapshot": {"mission_id"}, "why_not_ready": {"mission_id", "occurrence_id"},
-                "diff": {"mission_id", "from_revision", "to_revision"}, "convergence": {"mission_id"},
-                "execution_snapshot": {"mission_id"}, "execution_detail": {"mission_id", "node_id"}}
-    optional = {"snapshot": {"revision"}, "execution_snapshot": {"cursor", "limit"},
-                "execution_detail": {"through_journal_seq"}}
+    required = {
+        "snapshot": {"mission_id"},
+        "why_not_ready": {"mission_id", "occurrence_id"},
+        "diff": {"mission_id", "from_revision", "to_revision"},
+        "convergence": {"mission_id"},
+        "execution_snapshot": {"mission_id"},
+        "execution_detail": {"mission_id", "node_id"},
+    }
+    optional = {
+        "snapshot": {"revision"},
+        "execution_snapshot": {"cursor", "limit"},
+        "execution_detail": {"through_journal_seq"},
+    }
     if operation not in required:
         _invalid()
     allowed = required[operation] | optional.get(operation, set())
@@ -40,7 +49,11 @@ def read_taskgraph(service: Any, operation: str, request: Mapping[str, Any]) -> 
                 _invalid()
         elif key == "cursor" and value is None:
             continue
-        elif not isinstance(value, str) or not value.strip() or len(value) > (4096 if key == "cursor" else 512):
+        elif (
+            not isinstance(value, str)
+            or not value.strip()
+            or len(value) > (4096 if key == "cursor" else 512)
+        ):
             _invalid()
     mission_id = request["mission_id"]
     # Ownership is checked before optional SDK capability detection. Tenant and
@@ -54,7 +67,9 @@ def read_taskgraph(service: Any, operation: str, request: Mapping[str, Any]) -> 
         from agent_orchestrator.storage.store import StoreError
         from agent_orchestrator.storage.taskgraph_store import GraphIntegrityError
     except ImportError as error:
-        raise OrchestrationRequestError("taskgraph_unavailable", "当前 SDK 尚未安装执行图读取接口") from error
+        raise OrchestrationRequestError(
+            "taskgraph_unavailable", "当前 SDK 尚未安装执行图读取接口"
+        ) from error
     try:
         read_api = getattr(service._orchestrator, "taskgraph_read_api", None)
         if not callable(read_api):
@@ -68,23 +83,43 @@ def read_taskgraph(service: Any, operation: str, request: Mapping[str, Any]) -> 
             return api.diff(mission_id, request["from_revision"], request["to_revision"])
         if operation == "execution_snapshot":
             limit = request.get("limit")
-            return api.execution_snapshot(mission_id, cursor=request.get("cursor"),
-                                          **({} if limit is None else {"limit": limit}))
+            return api.execution_snapshot(
+                mission_id,
+                cursor=request.get("cursor"),
+                **({} if limit is None else {"limit": limit}),
+            )
         if operation == "execution_detail":
-            return api.execution_detail(mission_id, request["node_id"],
-                                        through_journal_seq=request.get("through_journal_seq"))
+            return api.execution_detail(
+                mission_id,
+                request["node_id"],
+                through_journal_seq=request.get("through_journal_seq"),
+            )
         return api.convergence(mission_id)
     except TaskGraphReadError as error:
         raise TaskGraphRequestError(error.error.to_json()) from error
     except (GraphIntegrityError, ContractError, SourceUnavailable, StoreError) as error:
-        code = "GRAPH_INTEGRITY" if isinstance(error, (GraphIntegrityError, ContractError)) else "SOURCE_UNAVAILABLE"
+        code = (
+            "GRAPH_INTEGRITY"
+            if isinstance(error, (GraphIntegrityError, ContractError))
+            else "SOURCE_UNAVAILABLE"
+        )
         # 2026-09-25: the wire hides the cause on purpose (operator repair, not a model
         # hint), so the cause must at least reach the Host log or nobody can repair it.
-        logger.warning("taskgraph %s read failed for %s: %s: %s", operation, mission_id, type(error).__name__, error)
-        wire = TaskGraphErrorV1(origin="SYSTEM", stage="READ", code=code,
+        logger.warning(
+            "taskgraph %s read failed for %s: %s: %s",
+            operation,
+            mission_id,
+            type(error).__name__,
+            error,
+        )
+        wire = TaskGraphErrorV1(
+            origin="SYSTEM",
+            stage="READ",
+            code=code,
             detail="执行图来源不可读，请保留当前画面并重新读取。",
             retry_kind="OPERATOR_REPAIR" if code == "GRAPH_INTEGRITY" else "REQUERY",
-            source_identity=None)
+            source_identity=None,
+        )
         raise TaskGraphRequestError(wire.to_json()) from error
 
 
@@ -106,16 +141,21 @@ def operate_taskgraph(service: Any, verb: str, request: Mapping[str, Any]) -> di
     """
     import uuid
 
-    fields = {"abandon_convergence": ("mission_id", "job_id", "expected_version", "reason"),
-              "retry_notification": ("mission_id", "message_id", "expected_version", "reason")}
+    fields = {
+        "abandon_convergence": ("mission_id", "job_id", "expected_version", "reason"),
+        "retry_notification": ("mission_id", "message_id", "expected_version", "reason"),
+    }
     if verb not in fields or set(request) != set(fields[verb]):
         _invalid()
     version = request["expected_version"]
     if type(version) is not int or not 1 <= version <= 2**53 - 1:
         _invalid()
     for key in fields[verb]:
-        if key != "expected_version" and (not isinstance(request[key], str) or not request[key].strip()
-                                          or len(request[key]) > (2048 if key == "reason" else 512)):
+        if key != "expected_version" and (
+            not isinstance(request[key], str)
+            or not request[key].strip()
+            or len(request[key]) > (2048 if key == "reason" else 512)
+        ):
             _invalid()
     service._refuse_secrets(request["reason"])
     mission_id = request["mission_id"]
@@ -124,22 +164,36 @@ def operate_taskgraph(service: Any, verb: str, request: Mapping[str, Any]) -> di
 
     command_id = f"ui-click-{verb}-{uuid.uuid4().hex}"
     try:
-        operator = service._orchestrator.taskgraph_operator_api(tenant_id=service.tenant_id,
-                                                                principal=service._principal)
+        operator = service._orchestrator.taskgraph_operator_api(
+            tenant_id=service.tenant_id, principal=service._principal
+        )
         if verb == "abandon_convergence":
-            receipt = operator.abandon_convergence(mission_id, request["job_id"], expected_version=version,
-                                                   command_id=command_id, reason=request["reason"])
+            receipt = operator.abandon_convergence(
+                mission_id,
+                request["job_id"],
+                expected_version=version,
+                command_id=command_id,
+                reason=request["reason"],
+            )
         else:
-            receipt = operator.retry_notification(mission_id, request["message_id"], expected_version=version,
-                                                  command_id=command_id, reason=request["reason"])
+            receipt = operator.retry_notification(
+                mission_id,
+                request["message_id"],
+                expected_version=version,
+                command_id=command_id,
+                reason=request["reason"],
+            )
     except StoreError as error:  # StoreConflict is a StoreError
         # 只读异常上的类型码，不从文字里切（第 1 批 T02）；没带码的拒绝如实说"原因未具名"并记日志。
         code = getattr(error, "code", None)
         if not isinstance(code, str) or not code:
-            logger.warning("taskgraph %s refused for %s without a typed code: %s", verb, mission_id, error)
+            logger.warning(
+                "taskgraph %s refused for %s without a typed code: %s", verb, mission_id, error
+            )
             raise OrchestrationRequestError("taskgraph_refused", "没有做成：原因未具名") from error
         logger.info("taskgraph %s refused for %s: %s", verb, mission_id, code)
-        raise OrchestrationRequestError("taskgraph_refused", _OPERATOR_REFUSALS.get(code, f"没有做成：{code}")) from error
+        raise OrchestrationRequestError(
+            "taskgraph_refused", _OPERATOR_REFUSALS.get(code, f"没有做成：{code}")
+        ) from error
     service.wake()
     return dict(receipt)
-

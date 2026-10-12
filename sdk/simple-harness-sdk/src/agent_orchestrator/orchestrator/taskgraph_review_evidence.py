@@ -4,6 +4,7 @@
 These are observations about an accepted result, never authority to accept the
 root. Read the immutable VerificationPassed event, not mutable latest reports.
 """
+
 from __future__ import annotations
 
 import json
@@ -16,22 +17,26 @@ from ..contracts.semantic_base import content_hash_of
 from ..storage.store import StoreError
 
 
-def accepted_verification_evidence(store: Any, semantics: Any, mission_id: str,
-                                   acceptance: Any) -> dict[str, Any]:
+def accepted_verification_evidence(
+    store: Any, semantics: Any, mission_id: str, acceptance: Any
+) -> dict[str, Any]:
     review = semantics.get_review_record(str(acceptance.review_record_id))
     package = semantics.get_review_package(str(review.record.package_id))
     binding = package.binding
-    if (not review.official or review.record.verdict != ReviewVerdict.ACCEPT
-            or review.record.binding != binding
-            or review.record.purpose != package.purpose
-            or str(acceptance.mission_id) != mission_id
-            or str(binding.mission_id) != mission_id
-            or str(binding.subject_ref.kind) != "task"
-            or str(binding.subject_ref.id) != str(acceptance.task_id)
-            or binding.subject_ref.revision != acceptance.contract_revision
-            or binding.obligation_id != acceptance.obligation_id
-            or binding.requirements_revision != acceptance.requirements_revision
-            or binding.input_manifest_hash != acceptance.input_manifest_hash):
+    if (
+        not review.official
+        or review.record.verdict != ReviewVerdict.ACCEPT
+        or review.record.binding != binding
+        or review.record.purpose != package.purpose
+        or str(acceptance.mission_id) != mission_id
+        or str(binding.mission_id) != mission_id
+        or str(binding.subject_ref.kind) != "task"
+        or str(binding.subject_ref.id) != str(acceptance.task_id)
+        or binding.subject_ref.revision != acceptance.contract_revision
+        or binding.obligation_id != acceptance.obligation_id
+        or binding.requirements_revision != acceptance.requirements_revision
+        or binding.input_manifest_hash != acceptance.input_manifest_hash
+    ):
         raise StoreError("TASKGRAPH_REVIEW_EVIDENCE_IDENTITY_MISMATCH")
     candidates = []
     for ref in package.candidate_refs:
@@ -39,8 +44,11 @@ def accepted_verification_evidence(store: Any, semantics: Any, mission_id: str,
         if result is not None:
             if ref.content_hash != fingerprint(result.envelope.to_json()):
                 raise StoreError("TASKGRAPH_REVIEW_EVIDENCE_RESULT_MISMATCH")
-            if (str(package.purpose) != "TASK_CONTENT"
-                    or result.verification_state != "DONE" or result.verdict != "PASS"):
+            if (
+                str(package.purpose) != "TASK_CONTENT"
+                or result.verification_state != "DONE"
+                or result.verdict != "PASS"
+            ):
                 raise StoreError("TASKGRAPH_REVIEW_EVIDENCE_RESULT_NOT_ACCEPTED")
             candidates.append(result.envelope)
     if not candidates:
@@ -54,7 +62,8 @@ def accepted_verification_evidence(store: Any, semantics: Any, mission_id: str,
         "SELECT event_id,seq,payload_json FROM events WHERE mission_id=? AND task_id=? "
         "AND attempt_id=? AND type='VerificationPassed' "
         "AND json_extract(payload_json,'$.result_id')=? ORDER BY seq",
-        (mission_id, result.task_id, result.attempt_id, result.id)).fetchall()
+        (mission_id, result.task_id, result.attempt_id, result.id),
+    ).fetchall()
     if not rows:
         return {"status": "UNAVAILABLE", "reason": "original_verification_event_missing"}
     if len(rows) != 1:
@@ -65,9 +74,14 @@ def accepted_verification_evidence(store: Any, semantics: Any, mission_id: str,
         layers = _bounded_layers(payload, mission_id, result)
     except (KeyError, TypeError, ValueError, AttributeError) as exc:
         raise StoreError("TASKGRAPH_REVIEW_EVIDENCE_MALFORMED_EVENT") from exc
-    return {"status": "RECORDED", "result_id": result.id, "attempt_id": result.attempt_id,
-            "source_event": {"id": row[0], "seq": row[1], "payload_hash": content_hash_of(payload)},
-            "layers": layers, "scope": "Original child verification only; independent root review is still required."}
+    return {
+        "status": "RECORDED",
+        "result_id": result.id,
+        "attempt_id": result.attempt_id,
+        "source_event": {"id": row[0], "seq": row[1], "payload_hash": content_hash_of(payload)},
+        "layers": layers,
+        "scope": "Original child verification only; independent root review is still required.",
+    }
 
 
 def _bounded_layers(payload: dict[str, Any], mission_id: str, result: Any) -> list[dict[str, Any]]:
@@ -88,33 +102,70 @@ def _bounded_layers(payload: dict[str, Any], mission_id: str, result: Any) -> li
             detail = layer.get("detail", {})
             scope = detail.get("observation_scope")
             if scope is not None:
-                if any(scope.get(key) != value for key, value in {
-                        "mission_id": mission_id, "task_id": result.task_id,
-                        "attempt_id": result.attempt_id, "result_id": result.id}.items()):
+                if any(
+                    scope.get(key) != value
+                    for key, value in {
+                        "mission_id": mission_id,
+                        "task_id": result.task_id,
+                        "attempt_id": result.attempt_id,
+                        "result_id": result.id,
+                    }.items()
+                ):
                     raise StoreError("TASKGRAPH_REVIEW_EVIDENCE_SCOPE_MISMATCH")
-                item["observation_scope"] = {key: _text(scope.get(key), 256) for key in
-                    ("schema", "mission_id", "task_id", "attempt_id", "result_id", "workspace_hash", "checker")}
+                item["observation_scope"] = {
+                    key: _text(scope.get(key), 256)
+                    for key in (
+                        "schema",
+                        "mission_id",
+                        "task_id",
+                        "attempt_id",
+                        "result_id",
+                        "workspace_hash",
+                        "checker",
+                    )
+                }
                 item["observation_scope"].update(
                     criteria_count=len(scope.get("criteria", [])),
                     artifact_count=len(scope.get("artifact_hashes", {})),
-                    projection="identities_and_counts_only")
+                    projection="identities_and_counts_only",
+                )
             runs = detail.get("runs", [])
             if not isinstance(runs, list):
                 raise ValueError("invalid runs")
             if runs and scope is None:
-                layers.append({"layer": name, "evidence_status": "UNBOUND",
-                               "run_count": len(runs),
-                               "summary": "Original test observations lack a result-bound scope; no test verdict is supplied."})
+                layers.append(
+                    {
+                        "layer": name,
+                        "evidence_status": "UNBOUND",
+                        "run_count": len(runs),
+                        "summary": "Original test observations lack a result-bound scope; no test verdict is supplied.",
+                    }
+                )
                 continue
             item.update(run_count=len(runs), runs_truncated=len(runs) > 16, runs=[])
             for run in runs[:16]:
                 receipt = run.get("receipt", {})
                 target = run.get("target", "")
-                item["runs"].append({"target": _text(target, 512), "target_truncated": isinstance(target, str) and len(target) > 512,
-                    "passed": _scalar(run.get("passed")), "returncode": _scalar(run.get("returncode")),
-                    "timed_out": _scalar(run.get("timed_out")),
-                    "receipt": {key: _scalar(receipt.get(key)) for key in
-                        ("execution_id", "status", "exit_code", "isolated", "timed_out", "environment_digest")}})
+                item["runs"].append(
+                    {
+                        "target": _text(target, 512),
+                        "target_truncated": isinstance(target, str) and len(target) > 512,
+                        "passed": _scalar(run.get("passed")),
+                        "returncode": _scalar(run.get("returncode")),
+                        "timed_out": _scalar(run.get("timed_out")),
+                        "receipt": {
+                            key: _scalar(receipt.get(key))
+                            for key in (
+                                "execution_id",
+                                "status",
+                                "exit_code",
+                                "isolated",
+                                "timed_out",
+                                "environment_digest",
+                            )
+                        },
+                    }
+                )
         layers.append(item)
     return layers
 

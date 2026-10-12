@@ -4,6 +4,7 @@
 Harness 只做计数与上限：规划轮之间知识库 / 验收记录的新增计数、结果内容哈希的重复计数。
 达到上限先把事实交给规划器一次（现有停滞路径），规划器仍停在原地（这一版计划没有改动）才停。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -50,50 +51,84 @@ def _event(kind: str, **payload: Any) -> Any:
 
 # ---------------------------------------------------------------- 配置：名字、阈值、默认值
 
+
 def test_the_two_stop_conditions_are_on_by_default_with_deployment_thresholds() -> None:
     policy = DeploymentPolicy()
-    assert "no_new_knowledge" in MissionSpec(goal="g", success_criteria=("c",), tenant_id="t",
-                                             idempotency_key="k").stop_conditions
+    assert (
+        "no_new_knowledge"
+        in MissionSpec(
+            goal="g", success_criteria=("c",), tenant_id="t", idempotency_key="k"
+        ).stop_conditions
+    )
     spec = spec_from_request("t", {"goal": "g", "success_criteria": ["c"], "idempotency_key": "k"})
     parsed = sc.parse_stop_conditions(spec.stop_conditions, policy)
-    assert parsed == {"no_new_knowledge": policy.no_new_knowledge_rounds,
-                      "result_duplication": policy.result_duplication_rate}
+    assert parsed == {
+        "no_new_knowledge": policy.no_new_knowledge_rounds,
+        "result_duplication": policy.result_duplication_rate,
+    }
     assert policy.no_new_knowledge_rounds == 5 and policy.result_duplication_rate == 0.5
     assert policy.result_duplication_min_results == 4
 
 
 def test_a_mission_may_set_its_own_thresholds_or_leave_a_condition_out() -> None:
-    parsed = sc.parse_stop_conditions(("verification_passed", "no_new_knowledge=3", "result_duplication=0.75"),
-                                      DeploymentPolicy())
+    parsed = sc.parse_stop_conditions(
+        ("verification_passed", "no_new_knowledge=3", "result_duplication=0.75"), DeploymentPolicy()
+    )
     assert parsed == {"no_new_knowledge": 3, "result_duplication": 0.75}
-    assert sc.parse_stop_conditions(("verification_passed", "budget_exhausted"), DeploymentPolicy()) == {}
+    assert (
+        sc.parse_stop_conditions(("verification_passed", "budget_exhausted"), DeploymentPolicy())
+        == {}
+    )
 
 
-@pytest.mark.parametrize("bad", ("no_new_knowledge=0", "no_new_knowledge=x", "result_duplication=1.5",
-                                 "result_duplication=0"))
+@pytest.mark.parametrize(
+    "bad",
+    ("no_new_knowledge=0", "no_new_knowledge=x", "result_duplication=1.5", "result_duplication=0"),
+)
 def test_a_bad_threshold_is_refused_when_the_mission_is_created(bad: str) -> None:
     with pytest.raises(ContractError):
         sc.parse_stop_conditions((bad,), DeploymentPolicy())
     with pytest.raises(MissionRequestError):
-        spec_from_request("t", {"goal": "g", "success_criteria": ["c"], "idempotency_key": "k",
-                                "stop_conditions": [bad]})
+        spec_from_request(
+            "t",
+            {
+                "goal": "g",
+                "success_criteria": ["c"],
+                "idempotency_key": "k",
+                "stop_conditions": [bad],
+            },
+        )
 
 
 def test_the_deployment_defaults_do_not_change_the_policy_bytes() -> None:
     assert "no_new_knowledge_rounds" not in DeploymentPolicy().to_json()
-    custom = DeploymentPolicy(no_new_knowledge_rounds=2, result_duplication_rate=0.9,
-                              result_duplication_min_results=3).to_json()
-    assert (custom["no_new_knowledge_rounds"], custom["result_duplication_rate"],
-            custom["result_duplication_min_results"]) == (2, 0.9, 3)
+    custom = DeploymentPolicy(
+        no_new_knowledge_rounds=2, result_duplication_rate=0.9, result_duplication_min_results=3
+    ).to_json()
+    assert (
+        custom["no_new_knowledge_rounds"],
+        custom["result_duplication_rate"],
+        custom["result_duplication_min_results"],
+    ) == (2, 0.9, 3)
 
 
 # ---------------------------------------------------------------- 计数：只数，不判语义
 
+
 def test_the_streak_counts_closed_planning_rounds_with_no_new_knowledge_or_acceptance() -> None:
     commit = _event("PlanningDecisionEvaluated", status="COMMITTED")
     rejected = _event("PlanningDecisionEvaluated", status="REJECTED")
-    events = [commit, _event("KnowledgeCommitted"), commit, commit, rejected, _event("AcceptanceCommitted"),
-              commit, commit, commit]
+    events = [
+        commit,
+        _event("KnowledgeCommitted"),
+        commit,
+        commit,
+        rejected,
+        _event("AcceptanceCommitted"),
+        commit,
+        commit,
+        commit,
+    ]
     # 第 1 轮有知识 → 0；第 2 轮空 → 1；第 3 轮有验收 → 0；第 4、5 轮空 → 2；最后一轮还没关
     assert sc.knowledge_streak(events) == 2
     assert sc.knowledge_streak([commit]) == 0
@@ -106,12 +141,17 @@ def test_the_streak_ignores_the_systems_own_infrastructure_retries() -> None:
     既不把连续空轮往上数，也不把计数清零。主会话合并时发现：执行者连续结果不明时，五次系统重试
     把"连续多轮没有新知识"数满，任务没按"非模型原因失败到上限"停，反而去问了规划器。"""
     from agent_orchestrator.orchestrator.planning_selection import SYSTEM_RETRY_ORIGIN
+
     assert sc.SYSTEM_RETRY_ORIGIN == SYSTEM_RETRY_ORIGIN  # 两处常量必须同名同值
     commit = _event("PlanningDecisionEvaluated", status="COMMITTED")
-    retry = _event("PlanningDecisionEvaluated", status="COMMITTED", decision_origin=SYSTEM_RETRY_ORIGIN)
+    retry = _event(
+        "PlanningDecisionEvaluated", status="COMMITTED", decision_origin=SYSTEM_RETRY_ORIGIN
+    )
     assert sc.knowledge_streak([retry] * 6) == 0
-    assert sc.knowledge_streak([commit, retry, retry, commit]) == 1          # 两次重试夹在中间不算轮
-    assert sc.knowledge_streak([commit, commit, retry, retry, retry]) == 1   # 重试不把已数的清零、也不加
+    assert sc.knowledge_streak([commit, retry, retry, commit]) == 1  # 两次重试夹在中间不算轮
+    assert (
+        sc.knowledge_streak([commit, commit, retry, retry, retry]) == 1
+    )  # 重试不把已数的清零、也不加
 
 
 def test_duplicates_are_counted_by_content_hash() -> None:
@@ -127,6 +167,7 @@ def test_duplicates_are_counted_by_content_hash() -> None:
 
 def test_result_rows_carry_the_requirements_revision_in_force_when_each_result_landed() -> None:
     """同一份内容在第 1 版要求下交了两次、改要求（第 2 版）后又交了一次：前两份是重复，第三份不是。"""
+
     class _Store:
         def list_tasks(self, mission_id):
             return [SimpleNamespace(id="t")]
@@ -136,8 +177,12 @@ def test_result_rows_carry_the_requirements_revision_in_force_when_each_result_l
 
         def find_result_for_attempt(self, attempt_id):
             at = {"a0": 10.0, "a1": 20.0, "a2": 40.0}[attempt_id]
-            return SimpleNamespace(received_at=at, envelope=SimpleNamespace(artifacts=(), summary="同一句话"),
-                                   verification_state="DONE", verdict="FAIL")
+            return SimpleNamespace(
+                received_at=at,
+                envelope=SimpleNamespace(artifacts=(), summary="同一句话"),
+                verification_state="DONE",
+                verdict="FAIL",
+            )
 
     amended = _event("RequirementsAmended", requirements_revision=2)
     amended.created_at = 30.0
@@ -155,12 +200,23 @@ def test_result_rows_carry_the_requirements_revision_in_force_when_each_result_l
 
 def test_reached_reports_each_condition_at_or_over_its_limit() -> None:
     policy = DeploymentPolicy(result_duplication_min_results=4)
-    mission = SimpleNamespace(id="m", stop_conditions=("no_new_knowledge=2", "result_duplication=0.5"))
+    mission = SimpleNamespace(
+        id="m", stop_conditions=("no_new_knowledge=2", "result_duplication=0.5")
+    )
     reached = sc.reached_stop_conditions(mission, policy, streak=2, hashes=["a", "a", "b", "a"])
     assert [row["condition"] for row in reached] == ["no_new_knowledge", "result_duplication"]
-    assert reached[0] == {"condition": "no_new_knowledge", "rounds_without_new_knowledge": 2, "limit": 2}
-    assert reached[1] == {"condition": "result_duplication", "duplicate_results": 2, "results": 4,
-                          "rate": 0.5, "limit": 0.5}
+    assert reached[0] == {
+        "condition": "no_new_knowledge",
+        "rounds_without_new_knowledge": 2,
+        "limit": 2,
+    }
+    assert reached[1] == {
+        "condition": "result_duplication",
+        "duplicate_results": 2,
+        "results": 4,
+        "rate": 0.5,
+        "limit": 0.5,
+    }
     # 结果太少不算（最少结果数来自部署政策）
     assert sc.reached_stop_conditions(mission, policy, streak=1, hashes=["a", "a"]) == []
     # 任务没配这两条就永远不达
@@ -172,13 +228,16 @@ def test_reached_reports_each_condition_at_or_over_its_limit() -> None:
 
 # ---------------------------------------------------------------- 接线：先问规划器一次，停在原地才停
 
+
 def test_a_reached_condition_asks_the_planner_once_and_stops_only_when_the_plan_stayed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     reached = [{"condition": "no_new_knowledge", "rounds_without_new_knowledge": 5, "limit": 5}]
     # 主循环自己每轮也会读一次：种子计划提交前不达，之后由用例直接调用处理函数推进
     switch = {"on": False}
-    monkeypatch.setattr(sc, "reached_stop_conditions", lambda *a, **k: list(reached) if switch["on"] else [])
+    monkeypatch.setattr(
+        sc, "reached_stop_conditions", lambda *a, **k: list(reached) if switch["on"] else []
+    )
 
     async def case() -> dict[str, Any]:
         async with enabled_world(tmp_path, key="b2h-stop", hold_worker=True) as world:
@@ -188,23 +247,45 @@ def test_a_reached_condition_asks_the_planner_once_and_stops_only_when_the_plan_
             switch["on"] = True
 
             first = await loop._stop_conditions_reached(store.get_mission(mission_id), new_mode)
-            asked = [e for e in store.iter_events(mission_id) if e.type == REQUESTED
-                     and str(e.payload["source_key"]).startswith(sc.STOP_PREFIX)]
+            asked = [
+                e
+                for e in store.iter_events(mission_id)
+                if e.type == REQUESTED and str(e.payload["source_key"]).startswith(sc.STOP_PREFIX)
+            ]
             # 规划器还没答：等，不停，也不重复问
             second = await loop._stop_conditions_reached(store.get_mission(mission_id), new_mode)
             still_active = store.get_mission(mission_id).status
-            asked_again = [e for e in store.iter_events(mission_id) if e.type == REQUESTED
-                           and str(e.payload["source_key"]).startswith(sc.STOP_PREFIX)]
+            asked_again = [
+                e
+                for e in store.iter_events(mission_id)
+                if e.type == REQUESTED and str(e.payload["source_key"]).startswith(sc.STOP_PREFIX)
+            ]
             # 规划器了结了这条请求、计划版本没变 → 停
             request_id = str(asked[0].payload["request_id"])
-            append_hierarchical_event(store, ADDRESSED, mission_id, key="test:" + request_id,
-                                      payload={"decision_id": "d-1", "decision_type": "NO_CHANGE",
-                                               "status": "NO_STATE_CHANGE", "subject_key": None,
-                                               "repair_request_ids": [request_id]})
+            append_hierarchical_event(
+                store,
+                ADDRESSED,
+                mission_id,
+                key="test:" + request_id,
+                payload={
+                    "decision_id": "d-1",
+                    "decision_type": "NO_CHANGE",
+                    "status": "NO_STATE_CHANGE",
+                    "subject_key": None,
+                    "repair_request_ids": [request_id],
+                },
+            )
             third = await loop._stop_conditions_reached(store.get_mission(mission_id), new_mode)
             mission = store.get_mission(mission_id)
-            return {"first": first, "second": second, "third": third, "asked": asked,
-                    "asked_again": asked_again, "still_active": still_active, "mission": mission}
+            return {
+                "first": first,
+                "second": second,
+                "third": third,
+                "asked": asked,
+                "asked_again": asked_again,
+                "still_active": still_active,
+                "mission": mission,
+            }
 
     seen = asyncio.run(case())
     assert seen["first"] is True and len(seen["asked"]) == 1
@@ -218,7 +299,8 @@ def test_a_reached_condition_asks_the_planner_once_and_stops_only_when_the_plan_
     assert seen["mission"].stop_reason == "no_new_knowledge"
     detail = seen["mission"].final_report["detail"]
     assert detail["conditions"] == reached and detail["planner_asked"]["request_id"] == str(
-        seen["asked"][0].payload["request_id"])
+        seen["asked"][0].payload["request_id"]
+    )
 
 
 def test_a_reached_condition_is_not_raised_while_an_admitted_step_waits_to_start(
@@ -242,19 +324,30 @@ def test_a_reached_condition_is_not_raised_while_an_admitted_step_waits_to_start
             # the leaf is admitted but not started: READY (the loop may already have dispatched it;
             # put the row back to READY directly — the gate reads the status, not the history)
             import dataclasses
+
             if leaf.status is not TaskStatus.READY:
                 with store.transaction():
-                    store.update_task(dataclasses.replace(leaf, status=TaskStatus.READY), expected_version=leaf.version)
-            asked_ready = await loop._stop_conditions_reached(store.get_mission(mission_id), new_mode)
-            requests = [e for e in store.iter_events(mission_id) if e.type == REQUESTED
-                        and str(e.payload["source_key"]).startswith(sc.STOP_PREFIX)]
+                    store.update_task(
+                        dataclasses.replace(leaf, status=TaskStatus.READY),
+                        expected_version=leaf.version,
+                    )
+            asked_ready = await loop._stop_conditions_reached(
+                store.get_mission(mission_id), new_mode
+            )
+            requests = [
+                e
+                for e in store.iter_events(mission_id)
+                if e.type == REQUESTED and str(e.payload["source_key"]).startswith(sc.STOP_PREFIX)
+            ]
             return {"asked_ready": asked_ready, "requests": requests}
 
     seen = asyncio.run(case())
     assert seen["asked_ready"] is False and seen["requests"] == []
 
 
-def test_nothing_reached_means_nothing_asked_and_nothing_stopped(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_nothing_reached_means_nothing_asked_and_nothing_stopped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setattr(sc, "reached_stop_conditions", lambda *a, **k: [])
 
     async def case() -> Any:
@@ -262,7 +355,9 @@ def test_nothing_reached_means_nothing_asked_and_nothing_stopped(tmp_path: Path,
             await world.commit_seed()
             loop, store, mission_id = world.loop, world.store, world.mission.id
             new_mode = loop._new_mode(store.get_mission(mission_id))
-            progressed = await loop._stop_conditions_reached(store.get_mission(mission_id), new_mode)
+            progressed = await loop._stop_conditions_reached(
+                store.get_mission(mission_id), new_mode
+            )
             asked = [e for e in store.iter_events(mission_id) if e.type == REQUESTED]
             return progressed, asked, store.get_mission(mission_id).status
 

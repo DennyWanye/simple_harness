@@ -4,6 +4,7 @@
 ``test_fault_points.py`` 只证明注入点在真实路径上；这里验恢复（切点清单 K03、K06 目标结论那一半、
 K08、K09、K13）。重开用同一个数据目录、一个新的产品同形世界——与真重启走同一条恢复路径。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -67,15 +68,26 @@ def test_work_the_executor_already_received_is_found_again_not_created_anew(tmp_
             world.loop.arm_fault(point, kind="attempt")
             mission_id = world.create({**NOTE, "idempotency_key": "crash-" + point})["mission_id"]
             await _until_crash(world, f"{point}:attempt")
-            intents = [tuple(r) for r in world.store.connection.execute(
-                "SELECT intent_id FROM dispatch_intents WHERE mission_id=? AND kind='attempt'", (mission_id,))]
+            intents = [
+                tuple(r)
+                for r in world.store.connection.execute(
+                    "SELECT intent_id FROM dispatch_intents WHERE mission_id=? AND kind='attempt'",
+                    (mission_id,),
+                )
+            ]
             assert len(intents) == 1
         async with product_world(root, LayeredScriptedProvider()) as world:
             assert await _until_done(world, mission_id) == "COMPLETED"
-            assert [tuple(r) for r in world.store.connection.execute(
-                "SELECT intent_id FROM dispatch_intents WHERE mission_id=? AND kind='attempt'",
-                (mission_id,))] == intents
-            assert _count(world, "SELECT COUNT(*) FROM attempts WHERE mission_id=?", mission_id) == 1
+            assert [
+                tuple(r)
+                for r in world.store.connection.execute(
+                    "SELECT intent_id FROM dispatch_intents WHERE mission_id=? AND kind='attempt'",
+                    (mission_id,),
+                )
+            ] == intents
+            assert (
+                _count(world, "SELECT COUNT(*) FROM attempts WHERE mission_id=?", mission_id) == 1
+            )
 
     asyncio.run(case())
 
@@ -118,21 +130,31 @@ def _publishing(tmp_path: Path, provider: LayeredScriptedProvider):  # type: ign
 
     connector.execute = counted  # type: ignore[method-assign]
     policy = DeploymentPolicy(enabled_connectors=("file_publish",), max_action_level="L2")
-    return product_world(tmp_path / "root", provider, connectors={"file_publish": connector},
-                         deployment_policy=policy)
+    return product_world(
+        tmp_path / "root",
+        provider,
+        connectors={"file_publish": connector},
+        deployment_policy=policy,
+    )
 
 
 async def _crash_while_publishing(tmp_path: Path, point: str) -> str:
     async with _publishing(tmp_path, LayeredScriptedProvider()) as world:
-        mission_id = world.create({"goal": "写一份周报 reports/weekly.md 并发布",
-                                   "success_criteria": ["file:" + TARGET, PUBLISH],
-                                   "idempotency_key": "crash-" + point})["mission_id"]
+        mission_id = world.create(
+            {
+                "goal": "写一份周报 reports/weekly.md 并发布",
+                "success_criteria": ["file:" + TARGET, PUBLISH],
+                "idempotency_key": "crash-" + point,
+            }
+        )["mission_id"]
         await world.drain()
         _confirm_completion(world, mission_id)
         approvals: list[dict[str, Any]] = []
         for _ in range(20):
             await world.drain()
-            approvals = [a for a in world.control.approvals(mission_id) if a.get("state") == "PENDING"]
+            approvals = [
+                a for a in world.control.approvals(mission_id) if a.get("state") == "PENDING"
+            ]
             if approvals:
                 break
         world.loop.arm_fault(point, kind="action")
@@ -148,8 +170,11 @@ def _after_the_lease(world: Any) -> None:
 
 
 def _published(tmp_path: Path) -> list[str]:
-    return sorted(str(p.relative_to(tmp_path / "published")) for p in (tmp_path / "published").rglob("*")
-                  if p.is_file())
+    return sorted(
+        str(p.relative_to(tmp_path / "published"))
+        for p in (tmp_path / "published").rglob("*")
+        if p.is_file()
+    )
 
 
 @pytest.mark.parametrize("point", ["after_handoff_before_call", "after_external_effect"])
@@ -197,7 +222,11 @@ def test_a_fault_while_reconciling_one_action_is_that_missions_round_fault(tmp_p
             _after_the_lease(world)
             await world.drain(timeout=20)  # run() must not raise
             assert broken["hits"] >= 1
-            faults = [e.payload for e in world.store.list_events(mission_id) if e.type == "MissionRoundFault"]
+            faults = [
+                e.payload
+                for e in world.store.list_events(mission_id)
+                if e.type == "MissionRoundFault"
+            ]
             assert any(str(fault["where"]).startswith("reconcile:") for fault in faults), faults
             broken["on"] = False
             assert await _until_done(world, mission_id) == "COMPLETED"

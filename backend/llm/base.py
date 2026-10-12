@@ -18,6 +18,7 @@ chat() contract:
               output from P4-S5.
     model:    specific model name. None → adapter's default.
 """
+
 from __future__ import annotations
 
 import abc

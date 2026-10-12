@@ -40,11 +40,15 @@ def test_extracts_two_independent_statistics_from_one_official_page() -> None:
     assert all(item.canonical_unit == "person" for item in evidence)
     assert evidence[0].span_id != evidence[1].span_id
     encoded = body.encode("utf-8")
-    assert encoded[evidence[0].start_byte : evidence[0].end_byte].decode("utf-8").startswith(
-        "年末全国人口"
+    assert (
+        encoded[evidence[0].start_byte : evidence[0].end_byte]
+        .decode("utf-8")
+        .startswith("年末全国人口")
     )
-    assert encoded[evidence[1].start_byte : evidence[1].end_byte].decode("utf-8").startswith(
-        "全年出生人口"
+    assert (
+        encoded[evidence[1].start_byte : evidence[1].end_byte]
+        .decode("utf-8")
+        .startswith("全年出生人口")
     )
 
 

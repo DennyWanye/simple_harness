@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 """P4-S22 — project root resolution + path safety."""
+
 from __future__ import annotations
 
 import os

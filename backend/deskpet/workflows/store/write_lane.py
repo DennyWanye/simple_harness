@@ -225,9 +225,7 @@ class ExecutionWriteLane:
             self._state = ExecutionWriteLaneState.IDLE
 
     @asynccontextmanager
-    async def transaction(
-        self, *, result_ref: str | None = None
-    ) -> AsyncIterator[_LaneConnection]:
+    async def transaction(self, *, result_ref: str | None = None) -> AsyncIterator[_LaneConnection]:
         await self.open()
         await self._lock.acquire()
         db = self._require_db()
@@ -306,9 +304,7 @@ class ExecutionWriteLane:
     async def _commit_current(self) -> ExecutionWriteCommit:
         tx_id = self._require_tx_id()
         if self._state is ExecutionWriteLaneState.COMMITTED:
-            return ExecutionWriteCommit(
-                tx_id, ExecutionWriteLaneState.COMMITTED, self._result_ref
-            )
+            return ExecutionWriteCommit(tx_id, ExecutionWriteLaneState.COMMITTED, self._result_ref)
         if self._state is not ExecutionWriteLaneState.BEGUN:
             raise ExecutionWriteLaneError(
                 "invalid_write_lane_state",
@@ -346,9 +342,7 @@ class ExecutionWriteLane:
             await self._settle_commit_failure(exc)
             raise
         self._state = ExecutionWriteLaneState.COMMITTED
-        return ExecutionWriteCommit(
-            tx_id, ExecutionWriteLaneState.COMMITTED, self._result_ref
-        )
+        return ExecutionWriteCommit(tx_id, ExecutionWriteLaneState.COMMITTED, self._result_ref)
 
     async def _settle_commit_failure(self, exc: BaseException) -> None:
         db = self._db
@@ -381,6 +375,7 @@ class ExecutionWriteLane:
         self._state = ExecutionWriteLaneState.POISONED
         db, self._db = self._db, None
         if db is not None:
+
             async def close_connection() -> None:
                 try:
                     await db.close()
@@ -410,9 +405,7 @@ class ExecutionWriteLane:
         if self._db is None:
             if self._state is ExecutionWriteLaneState.POISONED:
                 raise ExecutionWriteLanePoisoned()
-            raise ExecutionWriteLaneError(
-                "write_lane_closed", "execution write lane is not open"
-            )
+            raise ExecutionWriteLaneError("write_lane_closed", "execution write lane is not open")
         return self._db
 
     def _require_tx_id(self) -> str:
@@ -423,9 +416,9 @@ class ExecutionWriteLane:
         return self._tx_id
 
 
-_LANES: weakref.WeakValueDictionary[
-    tuple[int, str], ExecutionWriteLane
-] = weakref.WeakValueDictionary()
+_LANES: weakref.WeakValueDictionary[tuple[int, str], ExecutionWriteLane] = (
+    weakref.WeakValueDictionary()
+)
 
 
 def get_execution_write_lane(path: str | Path) -> ExecutionWriteLane:

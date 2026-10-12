@@ -115,7 +115,8 @@ class _StructuredProvider:
             group = payload["work_group"]
             requirement_id = group["requirement_ids"][0]
             requirement = next(
-                item for item in payload["spec"]["requirements"]
+                item
+                for item in payload["spec"]["requirements"]
                 if item["requirement_id"] == requirement_id
             )
             body = payload["body"].encode("utf-8")
@@ -125,16 +126,19 @@ class _StructuredProvider:
                     [member["member_id"] for member in axis["members"]]
                     for axis in requirement["axes"]
                 ]
-                candidate_payloads = [{
-                    "cell_id": derive_matrix_cell_id(requirement_id, members),
-                    "axis_member_ids": list(members),
-                    "field_key": "value",
-                    "value": f"documented comparison {index}",
-                    "canonical_unit": None,
-                    "time_scope": requirement["time_scope"],
-                    "scope": requirement["scope"],
-                    "definition": "documented comparison cell",
-                } for index, members in enumerate(itertools.product(*member_lists))]
+                candidate_payloads = [
+                    {
+                        "cell_id": derive_matrix_cell_id(requirement_id, members),
+                        "axis_member_ids": list(members),
+                        "field_key": "value",
+                        "value": f"documented comparison {index}",
+                        "canonical_unit": None,
+                        "time_scope": requirement["time_scope"],
+                        "scope": requirement["scope"],
+                        "definition": "documented comparison cell",
+                    }
+                    for index, members in enumerate(itertools.product(*member_lists))
+                ]
             elif requirement["kind"] == "collection":
                 candidate_kind = "collection_field"
                 candidate_payloads = []
@@ -148,34 +152,40 @@ class _StructuredProvider:
                     name = f"Example Product {rank + 1}"
                     unique_values = [name]
                     for field in requirement["item_schema"]["fields"]:
-                        candidate_payloads.append({
-                            "item_id": derive_collection_item_id(requirement_id, unique_values),
-                            "unique_key_values": unique_values,
-                            "field_key": field["field_key"],
-                            "value": field_values[field["field_key"]](name, rank),
-                            "canonical_unit": None,
-                            "as_of": requirement["selection"]["as_of"],
-                            "rank_inputs": [{
-                                "field_key": "attention_score",
-                                "value": 100 - rank,
-                                "missing": False,
-                            }],
-                        })
+                        candidate_payloads.append(
+                            {
+                                "item_id": derive_collection_item_id(requirement_id, unique_values),
+                                "unique_key_values": unique_values,
+                                "field_key": field["field_key"],
+                                "value": field_values[field["field_key"]](name, rank),
+                                "canonical_unit": None,
+                                "as_of": requirement["selection"]["as_of"],
+                                "rank_inputs": [
+                                    {
+                                        "field_key": "attention_score",
+                                        "value": 100 - rank,
+                                        "missing": False,
+                                    }
+                                ],
+                            }
+                        )
             else:
                 candidate_kind = "claim_fact"
                 fact_facets = [
-                    facet for facet in requirement["topic_facets"]
-                    if facet["facet_id"] != "impact"
+                    facet for facet in requirement["topic_facets"] if facet["facet_id"] != "impact"
                 ]
-                candidate_payloads = [{
-                    "claim_instance_id": f"claim-{payload['spec']['intent_type']}-{facet['facet_id']}",
-                    "facet_key": facet["facet_id"],
-                    "value": "documented source fact",
-                    "canonical_unit": None,
-                    "time_scope": requirement["time_scope"],
-                    "scope": requirement["scope"],
-                    "definition": "documented source claim",
-                } for facet in fact_facets]
+                candidate_payloads = [
+                    {
+                        "claim_instance_id": f"claim-{payload['spec']['intent_type']}-{facet['facet_id']}",
+                        "facet_key": facet["facet_id"],
+                        "value": "documented source fact",
+                        "canonical_unit": None,
+                        "time_scope": requirement["time_scope"],
+                        "scope": requirement["scope"],
+                        "definition": "documented source claim",
+                    }
+                    for facet in fact_facets
+                ]
             candidates = tuple(
                 EvidenceCandidateV1.create(
                     body_bytes=body,
@@ -225,32 +235,30 @@ class _StructuredProvider:
             for inference_kind in requested_kinds:
                 matching = next(
                     (
-                        item for item in facts
-                        if inference_kind
-                        in item["fact"]["semantic_payload"].get("facet_ids", ())
+                        item
+                        for item in facts
+                        if inference_kind in item["fact"]["semantic_payload"].get("facet_ids", ())
                     ),
                     facts[0],
                 )
                 premise_ref = matching["fact_ref"]
                 fact = matching["fact"]
-                proposals.append(InferenceProposalV1.create(
-                    requirement_id=fact["requirement_id"],
-                    inference_kind=inference_kind,
-                    item_or_cell_id=(
-                        f"{fact['item_or_cell_id']}-{inference_kind}-inference"
-                        if fact["target_kind"] == "claim_fact"
-                        else fact["item_or_cell_id"]
-                    ),
-                    facet_ids=(
-                        ("impact",)
-                        if intent_type == "policy"
-                        else (inference_kind,)
-                    ),
-                    normalized_proposition=f"registered {inference_kind} inference",
-                    premise_fact_refs=(premise_ref,),
-                    model_id="test-v6-model",
-                    model_policy_ref=self.profile_ref,
-                ))
+                proposals.append(
+                    InferenceProposalV1.create(
+                        requirement_id=fact["requirement_id"],
+                        inference_kind=inference_kind,
+                        item_or_cell_id=(
+                            f"{fact['item_or_cell_id']}-{inference_kind}-inference"
+                            if fact["target_kind"] == "claim_fact"
+                            else fact["item_or_cell_id"]
+                        ),
+                        facet_ids=(("impact",) if intent_type == "policy" else (inference_kind,)),
+                        normalized_proposition=f"registered {inference_kind} inference",
+                        premise_fact_refs=(premise_ref,),
+                        model_id="test-v6-model",
+                        model_policy_ref=self.profile_ref,
+                    )
+                )
             value = InferenceProposalBundleV1.create(
                 run_id=payload["route_decision"]["run_id"],
                 spec_hash=payload["spec"]["spec_hash"],
@@ -263,8 +271,13 @@ class _StructuredProvider:
         else:
             raise AssertionError("valid provider output must not invoke repair")
         return ResearchLLMResult(
-            canonical_json(value), "test-v6-model", 20, 10, 0,
-            "provider", stable_call_id,
+            canonical_json(value),
+            "test-v6-model",
+            20,
+            10,
+            0,
+            "provider",
+            stable_call_id,
         )
 
 
@@ -342,13 +355,14 @@ async def _runtime(
     }
     if run_id is None:
         run_id = await runner.start(
-            session_id=f"session-{intent}", request_id=f"request-{intent}",
-            turn_id=f"turn-{intent}", workflow_name="deep_research",
-            workflow_version="v6", capability_snapshot=capability,
+            session_id=f"session-{intent}",
+            request_id=f"request-{intent}",
+            turn_id=f"turn-{intent}",
+            workflow_name="deep_research",
+            workflow_version="v6",
+            capability_snapshot=capability,
         )
-        await store.bind_session_refs(
-            run_id, (("delivery", f"session-{intent}", 0),)
-        )
+        await store.bind_session_refs(run_id, (("delivery", f"session-{intent}", 0),))
     blobs = RegisteredBlobStore(tmp_path / "blobs", database)
     journal = EffectJournal(database)
     signals = WorkflowControlSignalHub(poll_interval=0.005)
@@ -361,11 +375,14 @@ async def _runtime(
             EffectExecutionContext(
                 journal=journal,
                 fence=RunFence(
-                    identity.run_id, str(row["lease_owner"]), int(row["lease_epoch"]),
+                    identity.run_id,
+                    str(row["lease_owner"]),
+                    int(row["lease_epoch"]),
                     int(row["run_version"]),
                 ),
                 node_execution_id=f"test-{identity.checkpoint_id}-{identity.task_id}",
-                workflow_name="deep_research", workflow_version="v6",
+                workflow_name="deep_research",
+                workflow_version="v6",
                 node_id=identity.node_id,
             ),
         )
@@ -375,11 +392,15 @@ async def _runtime(
     async def route_transport(payload, identity):
         spec = ResearchSpecV1.from_json(payload["spec"])
         policy_ref = await _put_json(
-            blobs, identity, route_policy,
+            blobs,
+            identity,
+            route_policy,
             "application/vnd.deskpet.deepresearch-v6-route-policy+json",
         )
         decision = build_route_decision_from_spec(
-            spec, run_id=identity.run_id, policy_hash=policy_ref[7:],
+            spec,
+            run_id=identity.run_id,
+            policy_hash=policy_ref[7:],
             capability_snapshot_hash="c" * 64,
             budget={
                 "query": 4,
@@ -397,7 +418,8 @@ async def _runtime(
             budgets=dict(decision.to_json()["budget"]),
         )
         return {
-            "route_policy_ref": policy_ref, "route_policy_hash": policy_ref[7:],
+            "route_policy_ref": policy_ref,
+            "route_policy_hash": policy_ref[7:],
             "route_decision_ref": decision_ref,
             "route_id": decision.to_json()["route_id"],
             "blob_refs": _blob_items((policy_ref, decision_ref)),
@@ -409,23 +431,35 @@ async def _runtime(
         url_hash = hashlib.sha256(URL.encode()).hexdigest()
         authority_id = "cn.nbs" if intent == "official_exact_fact" else "test.authority"
         locator_base = {
-            "schema_version": 1, "canonical_url": URL, "final_url": URL,
-            "canonical_url_hash": url_hash, "final_url_hash": url_hash,
-            "authority_id": authority_id, "verification_status": "verified",
-            "verification_policy_hash": "f" * 64, "redirect_chain_hashes": [],
+            "schema_version": 1,
+            "canonical_url": URL,
+            "final_url": URL,
+            "canonical_url_hash": url_hash,
+            "final_url_hash": url_hash,
+            "authority_id": authority_id,
+            "verification_status": "verified",
+            "verification_policy_hash": "f" * 64,
+            "redirect_chain_hashes": [],
         }
         locator = {
             **locator_base,
-            "locator_id": "locator_" + hashlib.sha256(canonical_json(locator_base).encode()).hexdigest()[:24],
+            "locator_id": "locator_"
+            + hashlib.sha256(canonical_json(locator_base).encode()).hexdigest()[:24],
         }
         locator_ref = await _put_json(blobs, identity, locator)
         page_id = "page_" + hashlib.sha256((url_hash + body_blob.sha256).encode()).hexdigest()[:24]
         page = V6FetchedPageRefPayloadV1(
-            page_id=page_id, ordinal=0, source_locator_ref=locator_ref,
-            body_ref=f"sha256:{body_blob.sha256}", body_hash=body_blob.sha256,
-            canonical_url_hash=url_hash, final_url_hash=url_hash,
-            authority_id=authority_id, title_hash=hashlib.sha256(b"title").hexdigest(),
-            media_type="text/plain; charset=utf-8", admission_status="admitted",
+            page_id=page_id,
+            ordinal=0,
+            source_locator_ref=locator_ref,
+            body_ref=f"sha256:{body_blob.sha256}",
+            body_hash=body_blob.sha256,
+            canonical_url_hash=url_hash,
+            final_url_hash=url_hash,
+            authority_id=authority_id,
+            title_hash=hashlib.sha256(b"title").hexdigest(),
+            media_type="text/plain; charset=utf-8",
+            admission_status="admitted",
             reason_codes=("test_page",),
         )
         page_ref = await _put_json(blobs, identity, page.to_json())
@@ -463,29 +497,41 @@ async def _runtime(
             url_hash = hashlib.sha256(URL.encode()).hexdigest()
             authority_id = "cn.nbs" if intent == "official_exact_fact" else "test.authority"
             search_locator = SourceLocatorV1.create(
-                canonical_url=URL, final_url=URL, canonical_url_hash=url_hash,
-                final_url_hash=url_hash, authority_id=authority_id,
-                verification_status="unverified", verification_policy_hash="f" * 64,
+                canonical_url=URL,
+                final_url=URL,
+                canonical_url_hash=url_hash,
+                final_url_hash=url_hash,
+                authority_id=authority_id,
+                verification_status="unverified",
+                verification_policy_hash="f" * 64,
                 redirect_chain_hashes=(),
             )
             search_locator_ref = await _put_json(
-                blobs, identity, search_locator.to_json(),
+                blobs,
+                identity,
+                search_locator.to_json(),
                 "application/vnd.deskpet.source-locator.v1+json",
             )
             search_candidate = SearchCandidateV1.create(
-                ordinal=0, source_locator_ref=search_locator_ref,
+                ordinal=0,
+                source_locator_ref=search_locator_ref,
                 title_hash=hashlib.sha256(b"title").hexdigest(),
                 snippet_hash=hashlib.sha256(b"").hexdigest(),
-                authority_match="unverified", reason_codes=("candidate_unverified",),
+                authority_match="unverified",
+                reason_codes=("candidate_unverified",),
             )
 
             async def search_transport(attempt):
                 return OfficialSearchResultV1.create(
                     logical_effect_id=attempt.logical_effect_id,
-                    attempt_no=attempt.attempt_no, request_id="runner-search-0",
+                    attempt_no=attempt.attempt_no,
+                    request_id="runner-search-0",
                     query_hash=hashlib.sha256(b"runner query").hexdigest(),
-                    target_id="runner-target-0", candidates=(search_candidate,),
-                    outcome="succeeded", error_code=None, deadline_id=attempt.deadline_id,
+                    target_id="runner-target-0",
+                    candidates=(search_candidate,),
+                    outcome="succeeded",
+                    error_code=None,
+                    deadline_id=attempt.deadline_id,
                 )
 
             await read_effects.execute(
@@ -524,20 +570,29 @@ async def _runtime(
                     attempt_no=attempt.attempt_no,
                     source_locator_ref=page.source_locator_ref,
                     page_record={
-                        "schema_version": 1, "page_id": page.page_id,
+                        "schema_version": 1,
+                        "page_id": page.page_id,
                         "source_locator_ref": page.source_locator_ref,
                         "canonical_url_hash": page.canonical_url_hash,
                         "final_url_hash": page.final_url_hash,
                         "authority_id": page.authority_id,
                         "source_family_id": page.authority_id,
-                        "source_tier": "first_party" if intent == "official_exact_fact" else "general",
-                        "body_ref": page.body_ref, "body_hash": page.body_hash,
+                        "source_tier": "first_party"
+                        if intent == "official_exact_fact"
+                        else "general",
+                        "body_ref": page.body_ref,
+                        "body_hash": page.body_hash,
                         "fetched_at": "2026-07-18T00:00:00Z",
-                        "media_type": page.media_type, "admission_status": "admitted",
+                        "media_type": page.media_type,
+                        "admission_status": "admitted",
                         "reason_codes": list(page.reason_codes),
                     },
-                    spans=(), bindings=(), outcome="succeeded", error_code=None,
-                    deadline_id=attempt.deadline_id, control_command_id=None,
+                    spans=(),
+                    bindings=(),
+                    outcome="succeeded",
+                    error_code=None,
+                    deadline_id=attempt.deadline_id,
+                    control_command_id=None,
                 )
 
             result = await read_effects.execute(
@@ -556,28 +611,32 @@ async def _runtime(
             assert PageExtractionResultV1.from_json(result).outcome == "succeeded"
             assert page_output is not None
             typed = PageExtractionResultV1.from_json(result)
-            canonical_ref = "sha256:" + hashlib.sha256(
-                canonical_json(typed.to_json()).encode()
-            ).hexdigest()
+            canonical_ref = (
+                "sha256:" + hashlib.sha256(canonical_json(typed.to_json()).encode()).hexdigest()
+            )
             async with aiosqlite.connect(database) as db:
-                effect_outcome = await (await db.execute(
-                    """SELECT outcome_json FROM workflow_effects
+                effect_outcome = await (
+                    await db.execute(
+                        """SELECT outcome_json FROM workflow_effects
                     WHERE effect_type='deep_research_v6_page_fetch' AND status='committed'
                     ORDER BY ended_at DESC LIMIT 1"""
-                )).fetchone()
+                    )
+                ).fetchone()
             assert effect_outcome is not None
             assert json.loads(effect_outcome[0])["canonical_result_ref"] == canonical_ref
             return {
                 "page_result_refs": [canonical_ref],
-                "blob_refs": _blob_items((
-                    canonical_ref, search_locator_ref, *typed.dependency_refs()
-                )),
+                "blob_refs": _blob_items(
+                    (canonical_ref, search_locator_ref, *typed.dependency_refs())
+                ),
             }
 
-    profiles = build_v6_research_llm_profiles({
-        role: research_response_format_hash(value)
-        for role, value in V6_RESEARCH_RESPONSE_FORMATS.items()
-    })
+    profiles = build_v6_research_llm_profiles(
+        {
+            role: research_response_format_hash(value)
+            for role, value in V6_RESEARCH_RESPONSE_FORMATS.items()
+        }
+    )
     providers = providers if providers is not None else {}
     stages = {}
     if intent == "official_exact_fact":
@@ -588,10 +647,8 @@ async def _runtime(
         async def raw_result_fault(stage_name):
             nonlocal raw_result_fault_fired
             if (
-                stage_name == (
-                    crash_llm_stage
-                    or "research_llm.after_result_blob_before_effect_commit"
-                )
+                stage_name
+                == (crash_llm_stage or "research_llm.after_result_blob_before_effect_commit")
                 and not raw_result_fault_fired
             ):
                 raw_result_fault_fired = True
@@ -603,11 +660,16 @@ async def _runtime(
                 provider = _StructuredProvider(role, profile.profile_ref)
                 providers[role] = provider
             effect = DurableResearchCallEffectAdapter(
-                journal=journal, blobs=blobs, llm=ResearchLLMPortV2(provider),
+                journal=journal,
+                blobs=blobs,
+                llm=ResearchLLMPortV2(provider),
                 resolve_effect_context=resolve,
                 reserve_cost_micros=lambda _role, _input, output: output,
-                actual_cost_micros=lambda result: (result.input_tokens or 0) + (result.output_tokens or 0),
-                control_signals=signals, profile=profile,
+                actual_cost_micros=lambda result: (
+                    (result.input_tokens or 0) + (result.output_tokens or 0)
+                ),
+                control_signals=signals,
+                profile=profile,
                 response_format=V6_RESEARCH_RESPONSE_FORMATS[role],
                 deadline_observer=(
                     (lambda _identity: False)
@@ -631,7 +693,9 @@ async def _runtime(
     )
     context = WorkflowContext(
         ports={
-            "blob": blobs, "retrieval": Retrieval(), "semantic": semantic,
+            "blob": blobs,
+            "retrieval": Retrieval(),
+            "semantic": semantic,
             "llm_extract": stages["evidence_candidate_extract"],
             "llm_inference": stages["evidence_inference_synthesize"],
             "llm_repair": stages["evidence_structured_repair"],
@@ -650,7 +714,8 @@ async def test_real_v6_port_registers_semantic_deadline_outcome_without_provider
     result = await runner.run(
         run_id,
         initial_state(
-            topic=TOPICS["comparison"], run_id=run_id,
+            topic=TOPICS["comparison"],
+            run_id=run_id,
             session_id="session-deadline",
         ),
         context,
@@ -658,19 +723,22 @@ async def test_real_v6_port_registers_semantic_deadline_outcome_without_provider
     assert result.error is None, await runner.history(run_id)
     assert sum(provider.calls for provider in providers.values()) == 0
     async with aiosqlite.connect(database) as db:
-        rows = await (await db.execute(
-            """SELECT sha256 FROM workflow_blobs
+        rows = await (
+            await db.execute(
+                """SELECT sha256 FROM workflow_blobs
             WHERE media_type='application/vnd.deskpet.deepresearch-v6-llm-effect-outcome+json'"""
-        )).fetchall()
-        effect_rows = await (await db.execute(
-            "SELECT status,outcome_json FROM workflow_effects "
-            "WHERE run_id=? AND effect_type='research_llm'", (run_id,),
-        )).fetchall()
+            )
+        ).fetchall()
+        effect_rows = await (
+            await db.execute(
+                "SELECT status,outcome_json FROM workflow_effects "
+                "WHERE run_id=? AND effect_type='research_llm'",
+                (run_id,),
+            )
+        ).fetchall()
     assert rows and effect_rows
     semantic_outcomes = [
-        ResearchLLMEffectOutcomeV1.from_json(
-            json.loads((await blobs.get(row[0])).decode())
-        )
+        ResearchLLMEffectOutcomeV1.from_json(json.loads((await blobs.get(row[0])).decode()))
         for row in rows
     ]
     assert all(outcome.status == "deadline" for outcome in semantic_outcomes)
@@ -682,53 +750,89 @@ async def test_real_v6_port_registers_semantic_deadline_outcome_without_provider
 @pytest.mark.asyncio
 @pytest.mark.parametrize("intent", list(TOPICS))
 async def test_real_runner_five_intents_use_durable_effects_and_eleven_nodes(tmp_path, intent):
-    database, store, runner, run_id, context, stages, providers, blobs = await _runtime(tmp_path, intent)
+    database, store, runner, run_id, context, stages, providers, blobs = await _runtime(
+        tmp_path, intent
+    )
     state = initial_state(topic=TOPICS[intent], run_id=run_id, session_id=f"session-{intent}")
     result = await runner.run(run_id, state, context)
     assert result.error is None, await runner.history(run_id)
     output = result.output
     assert output["values"]["terminal_manifest_ref"].startswith("sha256:")
     async with aiosqlite.connect(database) as db:
-        node_ids = [row[0] for row in await (await db.execute(
-            "SELECT node_id FROM workflow_nodes WHERE run_id=? AND latest_status='succeeded'",
-            (run_id,),
-        )).fetchall()]
-        checkpoint_count = (await (await db.execute(
-            "SELECT COUNT(*) FROM workflow_checkpoints WHERE run_id=?", (run_id,)
-        )).fetchone())[0]
-    assert set((
-        "compile_spec", "plan_route", "load_pages", "extract_candidate_bundles",
-        "admit_facts", "synthesize_inferences", "register_inferences", "assess_answer",
-        "render_claims", "integrity", "persist_manifest",
-    )).issubset(set(node_ids))
+        node_ids = [
+            row[0]
+            for row in await (
+                await db.execute(
+                    "SELECT node_id FROM workflow_nodes WHERE run_id=? AND latest_status='succeeded'",
+                    (run_id,),
+                )
+            ).fetchall()
+        ]
+        checkpoint_count = (
+            await (
+                await db.execute(
+                    "SELECT COUNT(*) FROM workflow_checkpoints WHERE run_id=?", (run_id,)
+                )
+            ).fetchone()
+        )[0]
+    assert set(
+        (
+            "compile_spec",
+            "plan_route",
+            "load_pages",
+            "extract_candidate_bundles",
+            "admit_facts",
+            "synthesize_inferences",
+            "register_inferences",
+            "assess_answer",
+            "render_claims",
+            "integrity",
+            "persist_manifest",
+        )
+    ).issubset(set(node_ids))
     assert checkpoint_count >= 12
     async with aiosqlite.connect(database) as db:
-        effects = (await (await db.execute(
-            "SELECT COUNT(*) FROM workflow_effects WHERE run_id=?", (run_id,)
-        )).fetchone())[0]
-        llm_effects = (await (await db.execute(
-            "SELECT COUNT(*) FROM workflow_effects WHERE run_id=? AND effect_type='research_llm'",
-            (run_id,),
-        )).fetchone())[0]
-        llm_reservations = (await (await db.execute(
-            "SELECT COUNT(*) FROM workflow_effect_budget_reservations WHERE run_id=? AND ledger_kind='research_llm_budget'",
-            (run_id,),
-        )).fetchone())[0]
-        read_rows = await (await db.execute(
-            """SELECT logical_effect_id,effect_id,attempt_no,status,prepared_json
+        effects = (
+            await (
+                await db.execute("SELECT COUNT(*) FROM workflow_effects WHERE run_id=?", (run_id,))
+            ).fetchone()
+        )[0]
+        llm_effects = (
+            await (
+                await db.execute(
+                    "SELECT COUNT(*) FROM workflow_effects WHERE run_id=? AND effect_type='research_llm'",
+                    (run_id,),
+                )
+            ).fetchone()
+        )[0]
+        llm_reservations = (
+            await (
+                await db.execute(
+                    "SELECT COUNT(*) FROM workflow_effect_budget_reservations WHERE run_id=? AND ledger_kind='research_llm_budget'",
+                    (run_id,),
+                )
+            ).fetchone()
+        )[0]
+        read_rows = await (
+            await db.execute(
+                """SELECT logical_effect_id,effect_id,attempt_no,status,prepared_json
             FROM workflow_effects WHERE run_id=? AND logical_effect_id IS NOT NULL""",
-            (run_id,),
-        )).fetchall()
-        route_budgets = await (await db.execute(
-            """SELECT resource_kind,hard_limit,reserved,consumed
+                (run_id,),
+            )
+        ).fetchall()
+        route_budgets = await (
+            await db.execute(
+                """SELECT resource_kind,hard_limit,reserved,consumed
             FROM workflow_research_resource_budgets
             WHERE run_id=? ORDER BY resource_kind""",
-            (run_id,),
-        )).fetchall()
+                (run_id,),
+            )
+        ).fetchall()
     assert effects >= 2
     assert len(read_rows) == 2
     assert {json.loads(row[4])["final_params"]["operation_kind"] for row in read_rows} == {
-        "official_search", "page_fetch"
+        "official_search",
+        "page_fetch",
     }
     for logical, effect_id, attempt_no, status, prepared_json in read_rows:
         prepared = json.loads(prepared_json)["final_params"]
@@ -741,9 +845,7 @@ async def test_real_runner_five_intents_use_durable_effects_and_eleven_nodes(tmp
         assert logical == expected
         assert effect_id == hashlib.sha256(f"{run_id}|{logical}|1".encode()).hexdigest()
         assert (attempt_no, status) == (1, "committed")
-    assert {kind for kind, _, _, _ in route_budgets} == {
-        "query", "fetch", "browser", "llm", "lane"
-    }
+    assert {kind for kind, _, _, _ in route_budgets} == {"query", "fetch", "browser", "llm", "lane"}
     llm_route_budget = next(row for row in route_budgets if row[0] == "llm")
 
     spec = await _load_json_ref(blobs, output["values"]["spec_ref"])
@@ -764,9 +866,9 @@ async def test_real_runner_five_intents_use_durable_effects_and_eleven_nodes(tmp
     assert render["claims"]
     assert {claim["requirement_id"] for claim in render["claims"]}.issubset(requirement_ids)
     assert any(set(claim["binding_ids"]) & binding_ids for claim in render["claims"])
-    final_text = (
-        await blobs.get(render["final_assistant_ref"].removeprefix("sha256:"))
-    ).decode("utf-8")
+    final_text = (await blobs.get(render["final_assistant_ref"].removeprefix("sha256:"))).decode(
+        "utf-8"
+    )
     assert URL in final_text
 
     snapshot_ref = output["values"]["continuation_snapshot_ref"]
@@ -813,12 +915,11 @@ async def test_real_runner_five_intents_use_durable_effects_and_eleven_nodes(tmp
         assert llm_route_budget[2] == 0
         assert llm_route_budget[3] == llm_effects
         if intent == "open_research":
-            semantic_kinds = {
-                "conclusion", "limitation", "counterevidence", "uncertainty"
-            }
+            semantic_kinds = {"conclusion", "limitation", "counterevidence", "uncertainty"}
             by_kind = {
                 kind: [
-                    (ref, item) for ref, item in zip(inference_refs, inferences)
+                    (ref, item)
+                    for ref, item in zip(inference_refs, inferences)
                     if item["inference_kind"] == kind
                 ]
                 for kind in semantic_kinds
@@ -832,20 +933,12 @@ async def test_real_runner_five_intents_use_durable_effects_and_eleven_nodes(tmp
                 for binding in item["binding_ids"]
             }
             render_claims = render["claims"]
-            claim_batch = await _load_json_ref(
-                blobs, output["values"]["claim_batch_ref"]
-            )
-            quality = await _load_json_ref(
-                blobs, output["values"]["quality_audit_ref"]
-            )
+            claim_batch = await _load_json_ref(blobs, output["values"]["claim_batch_ref"])
+            quality = await _load_json_ref(blobs, output["values"]["quality_audit_ref"])
             assert quality["hard_gate_status"] == "passed"
             assert quality["claim_batch_ref"] == output["values"]["claim_batch_ref"]
-            batch_claims = {
-                claim["claim_id"]: claim for claim in claim_batch["claims"]
-            }
-            assert all(
-                batch_claims[claim["claim_id"]] == claim for claim in render_claims
-            )
+            batch_claims = {claim["claim_id"]: claim for claim in claim_batch["claims"]}
+            assert all(batch_claims[claim["claim_id"]] == claim for claim in render_claims)
             for kind, rows in by_kind.items():
                 for inference_ref, inference in rows:
                     assert inference["status"] == "registered"
@@ -853,15 +946,15 @@ async def test_real_runner_five_intents_use_durable_effects_and_eleven_nodes(tmp
                     assert inference["premise_fact_refs"]
                     assert inference["proposed_premise_fact_refs"] == inference["premise_fact_refs"]
                     premises = [
-                        fact_by_ref[premise_ref]
-                        for premise_ref in inference["premise_fact_refs"]
+                        fact_by_ref[premise_ref] for premise_ref in inference["premise_fact_refs"]
                     ]
                     premise_bindings = {fact["binding_id"] for fact in premises}
                     assert premise_bindings == set(inference["premise_binding_ids"])
                     assert premise_bindings.issubset(assessed_bindings)
                     rendered_kind = "inference" if kind == "conclusion" else kind
                     matching_render = [
-                        claim for claim in render_claims
+                        claim
+                        for claim in render_claims
                         if claim["claim_kind"] == rendered_kind
                         and claim["inference_ref"] == inference_ref
                     ]
@@ -881,7 +974,7 @@ async def test_real_runner_five_intents_use_durable_effects_and_eleven_nodes(tmp
             for kind in semantic_kinds:
                 marker = f"registered {kind} inference"
                 marker_at = final_text.index(marker)
-                assert URL in final_text[marker_at:marker_at + len(marker) + 300]
+                assert URL in final_text[marker_at : marker_at + len(marker) + 300]
             assert URL in final_text
 
 
@@ -889,12 +982,8 @@ RECOVERY_SEAMS = {
     "llm_provider_return": {
         "crash_llm_stage": "research_llm.after_provider_return_before_result_blob"
     },
-    "llm_raw_result": {
-        "crash_llm_stage": "research_llm.after_result_blob_before_effect_commit"
-    },
-    "llm_effect_commit": {
-        "crash_llm_stage": "research_llm.after_effect_commit_before_return"
-    },
+    "llm_raw_result": {"crash_llm_stage": "research_llm.after_result_blob_before_effect_commit"},
+    "llm_effect_commit": {"crash_llm_stage": "research_llm.after_effect_commit_before_return"},
     "candidate_bundle": {"crash_task_node": "extract_candidate_bundles"},
     "fact_head": {"crash_frontier_stage": "facts_admitted"},
     "inference_bundle": {"crash_task_node": "synthesize_inferences"},
@@ -929,29 +1018,33 @@ async def test_real_runner_recovers_seven_durable_llm_and_head_crash_seams_witho
     with pytest.raises(asyncio.CancelledError):
         await runner.run(run_id, state, context)
 
-    calls_at_crash = {
-        role: provider.calls for role, provider in providers.items()
-    }
+    calls_at_crash = {role: provider.calls for role, provider in providers.items()}
     assert calls_at_crash["evidence_candidate_extract"] >= 1
     assert (calls_at_crash["evidence_inference_synthesize"] > 0) == (
         seam in {"inference_bundle", "inference_head"}
     )
     async with aiosqlite.connect(database) as db:
-        effect_rows_at_crash = await (await db.execute(
+        effect_rows_at_crash = await (
+            await db.execute(
                 "SELECT effect_id,status,outcome_json FROM workflow_effects "
                 "WHERE run_id=? AND effect_type='research_llm'",
                 (run_id,),
-            )).fetchall()
+            )
+        ).fetchall()
         effects_at_crash = {row[0] for row in effect_rows_at_crash}
-        raw_rows_at_crash = await (await db.execute(
-            "SELECT sha256,size_bytes FROM workflow_blobs "
-            "WHERE media_type='application/vnd.deskpet.research-llm-result+json'",
-        )).fetchall()
-        extract_node_status_at_crash = await (await db.execute(
-            "SELECT latest_status FROM workflow_nodes "
-            "WHERE run_id=? AND node_id='extract_candidate_bundles'",
-            (run_id,),
-        )).fetchone()
+        raw_rows_at_crash = await (
+            await db.execute(
+                "SELECT sha256,size_bytes FROM workflow_blobs "
+                "WHERE media_type='application/vnd.deskpet.research-llm-result+json'",
+            )
+        ).fetchall()
+        extract_node_status_at_crash = await (
+            await db.execute(
+                "SELECT latest_status FROM workflow_nodes "
+                "WHERE run_id=? AND node_id='extract_candidate_bundles'",
+                (run_id,),
+            )
+        ).fetchone()
     assert len(effects_at_crash) == sum(calls_at_crash.values())
     if seam == "llm_provider_return":
         assert not raw_rows_at_crash
@@ -960,23 +1053,21 @@ async def test_real_runner_recovers_seven_durable_llm_and_head_crash_seams_witho
     if seam == "llm_effect_commit":
         assert extract_node_status_at_crash is not None
         assert extract_node_status_at_crash[0] != "succeeded"
-        committed_at_crash = [
-            row for row in effect_rows_at_crash if row[1] == "committed"
-        ]
+        committed_at_crash = [row for row in effect_rows_at_crash if row[1] == "committed"]
         assert len(committed_at_crash) == 1
         committed_effect_id, _, committed_outcome_json = committed_at_crash[0]
         committed_outcome = json.loads(committed_outcome_json)
         committed_result_ref = committed_outcome["value"]["result_ref"]
         assert committed_result_ref == "sha256:" + raw_rows_at_crash[0][0]
         async with aiosqlite.connect(database) as db:
-            committed_owner = await (await db.execute(
-                "SELECT owner_kind,owner_id FROM workflow_blob_refs "
-                "WHERE sha256=? AND owner_kind='effect'",
-                (committed_result_ref.removeprefix("sha256:"),),
-            )).fetchall()
-        assert [tuple(row) for row in committed_owner] == [
-            ("effect", committed_effect_id)
-        ]
+            committed_owner = await (
+                await db.execute(
+                    "SELECT owner_kind,owner_id FROM workflow_blob_refs "
+                    "WHERE sha256=? AND owner_kind='effect'",
+                    (committed_result_ref.removeprefix("sha256:"),),
+                )
+            ).fetchall()
+        assert [tuple(row) for row in committed_owner] == [("effect", committed_effect_id)]
     crashed_row = await store.get_run(run_id)
     assert crashed_row is not None and crashed_row["status"] == "running"
 
@@ -1000,9 +1091,10 @@ async def test_real_runner_recovers_seven_durable_llm_and_head_crash_seams_witho
         # to canonical opaque_uncertain without sending the call again.
         assert any(record.reason == "lease_expired" for record in records)
         assert recovered_row["status"] == "retryable"
-        assert providers["evidence_candidate_extract"].calls == calls_at_crash[
-            "evidence_candidate_extract"
-        ]
+        assert (
+            providers["evidence_candidate_extract"].calls
+            == calls_at_crash["evidence_candidate_extract"]
+        )
         assert providers["evidence_inference_synthesize"].calls == 0
         assert providers["evidence_structured_repair"].calls == 0
     if seam in {"candidate_bundle", "inference_bundle"}:
@@ -1026,8 +1118,7 @@ async def test_real_runner_recovers_seven_durable_llm_and_head_crash_seams_witho
     assert len(batch_refs) == 2
     assert len(batch_refs) == len(set(batch_refs))
     batches = [
-        EvidenceFactBatchV1.from_json(await _load_json_ref(blobs, ref))
-        for ref in batch_refs
+        EvidenceFactBatchV1.from_json(await _load_json_ref(blobs, ref)) for ref in batch_refs
     ]
     assert [batch.batch_kind for batch in batches] == ["facts", "inferences"]
     assert [batch.ordinal for batch in batches] == [0, 1]
@@ -1059,25 +1150,33 @@ async def test_real_runner_recovers_seven_durable_llm_and_head_crash_seams_witho
         assert await blobs.get(digest)
 
     async with aiosqlite.connect(database) as db:
-        llm_effect_rows = await (await db.execute(
-            "SELECT effect_id,status,prepared_json FROM workflow_effects "
-            "WHERE run_id=? AND effect_type='research_llm'",
-            (run_id,),
-        )).fetchall()
-        raw_rows = await (await db.execute(
-            "SELECT sha256,size_bytes FROM workflow_blobs "
-            "WHERE media_type='application/vnd.deskpet.research-llm-result+json'",
-        )).fetchall()
-        semantic_outcome_rows = await (await db.execute(
-            "SELECT sha256 FROM workflow_blobs "
-            "WHERE media_type="
-            "'application/vnd.deskpet.deepresearch-v6-llm-effect-outcome+json'",
-        )).fetchall()
-        producer_outcome_rows = await (await db.execute(
-            "SELECT sha256 FROM workflow_blobs "
-            "WHERE media_type="
-            "'application/vnd.deskpet.candidate-producer-outcome.v1+json'",
-        )).fetchall()
+        llm_effect_rows = await (
+            await db.execute(
+                "SELECT effect_id,status,prepared_json FROM workflow_effects "
+                "WHERE run_id=? AND effect_type='research_llm'",
+                (run_id,),
+            )
+        ).fetchall()
+        raw_rows = await (
+            await db.execute(
+                "SELECT sha256,size_bytes FROM workflow_blobs "
+                "WHERE media_type='application/vnd.deskpet.research-llm-result+json'",
+            )
+        ).fetchall()
+        semantic_outcome_rows = await (
+            await db.execute(
+                "SELECT sha256 FROM workflow_blobs "
+                "WHERE media_type="
+                "'application/vnd.deskpet.deepresearch-v6-llm-effect-outcome+json'",
+            )
+        ).fetchall()
+        producer_outcome_rows = await (
+            await db.execute(
+                "SELECT sha256 FROM workflow_blobs "
+                "WHERE media_type="
+                "'application/vnd.deskpet.candidate-producer-outcome.v1+json'",
+            )
+        ).fetchall()
     final_effect_ids = {row[0] for row in llm_effect_rows}
     assert effects_at_crash.issubset(final_effect_ids)
     assert len(llm_effect_rows) == sum(provider.calls for provider in providers.values())
@@ -1086,9 +1185,7 @@ async def test_real_runner_recovers_seven_durable_llm_and_head_crash_seams_witho
     statuses = {row[1] for row in llm_effect_rows}
     assert statuses <= {"committed", "uncertain"}
     if seam in {"llm_provider_return", "llm_raw_result"}:
-        uncertain_effect_ids = {
-            row[0] for row in llm_effect_rows if row[1] == "uncertain"
-        }
+        uncertain_effect_ids = {row[0] for row in llm_effect_rows if row[1] == "uncertain"}
         assert len(uncertain_effect_ids) == 1
         assert uncertain_effect_ids == effects_at_crash
 
@@ -1108,8 +1205,7 @@ async def test_real_runner_recovers_seven_durable_llm_and_head_crash_seams_witho
         assert opaque_outcome["result_ref"] is None
 
         producer_outcomes = [
-            json.loads((await blobs.get(row[0])).decode("utf-8"))
-            for row in producer_outcome_rows
+            json.loads((await blobs.get(row[0])).decode("utf-8")) for row in producer_outcome_rows
         ]
         opaque_producer_outcomes = [
             item for item in producer_outcomes if item["status"] == "opaque_uncertain"
@@ -1133,9 +1229,7 @@ async def test_real_runner_recovers_seven_durable_llm_and_head_crash_seams_witho
                 for row in semantic_outcome_rows
             ]
             recovered_outcomes = [
-                item
-                for item in semantic_outcomes
-                if item["effect_id"] in effects_at_crash
+                item for item in semantic_outcomes if item["effect_id"] in effects_at_crash
             ]
             assert len(recovered_outcomes) == 1
             assert recovered_outcomes[0]["status"] == "validated"

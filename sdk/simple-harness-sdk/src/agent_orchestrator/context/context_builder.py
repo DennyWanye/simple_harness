@@ -160,9 +160,10 @@ def _task_contract(task: Task) -> dict[str, Any]:
 
 
 def _result_output_contract(task: Task, attempt: Attempt, domain: DomainProfileV1) -> str:
-    if (domain.id != CODE_DOMAIN or domain.completion_rules.get(
-        "result_envelope_contract"
-    ) != "candidate-json-v1"):
+    if (
+        domain.id != CODE_DOMAIN
+        or domain.completion_rules.get("result_envelope_contract") != "candidate-json-v1"
+    ):
         return "<result_envelope>{json}</result_envelope>"
     example: dict[str, Any] = {
         "task_id": task.id,

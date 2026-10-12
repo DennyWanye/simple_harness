@@ -36,8 +36,11 @@ from h1i_seed import run_until
 
 def _spec(key: str, **extra) -> MissionSpec:
     return MissionSpec(
-        goal="写一份说明", success_criteria=("说明写清楚",), tenant_id=TENANT,
-        idempotency_key=key, **extra,
+        goal="写一份说明",
+        success_criteria=("说明写清楚",),
+        tenant_id=TENANT,
+        idempotency_key=key,
+        **extra,
     )
 
 
@@ -59,10 +62,14 @@ def test_flat_mode_is_refused_at_every_door_and_nothing_is_written(tmp_path) -> 
             with pytest.raises(CommitRejected, match="flat orchestration mode was removed"):
                 loop.commit.create_mission(sneaked)
             with pytest.raises(FacadeError) as refused:
-                control.create({
-                    "goal": "写一份说明", "success_criteria": ["说明写清楚"],
-                    "idempotency_key": "flat-facade", "orchestration_semantics_version": "legacy",
-                })
+                control.create(
+                    {
+                        "goal": "写一份说明",
+                        "success_criteria": ["说明写清楚"],
+                        "idempotency_key": "flat-facade",
+                        "orchestration_semantics_version": "legacy",
+                    }
+                )
             assert refused.value.code == "invalid_request"
             assert "flat orchestration mode was removed" in str(refused.value)
             assert _missions(loop) == before
@@ -99,7 +106,10 @@ def test_a_flat_mission_left_in_the_library_is_stopped_by_name(tmp_path) -> None
                 flat = world.create({**request, "idempotency_key": "left-over"})["mission_id"]
                 layered = world.create({**request, "idempotency_key": "layered"})["mission_id"]
                 _make_flat(loop, flat)
-                assert loop.store.get_mission(flat).final_report["orchestration_semantics_version"] == "legacy"
+                assert (
+                    loop.store.get_mission(flat).final_report["orchestration_semantics_version"]
+                    == "legacy"
+                )
 
                 await world.deployment.between_cycles(auto=True)
                 await loop._cycle()
@@ -118,7 +128,9 @@ def test_a_flat_mission_left_in_the_library_is_stopped_by_name(tmp_path) -> None
 
                 # A second round does not stop it twice.
                 await loop._cycle()
-                assert len([e for e in loop.store.list_events(flat) if e.type == "MissionFailed"]) == 1
+                assert (
+                    len([e for e in loop.store.list_events(flat) if e.type == "MissionFailed"]) == 1
+                )
 
                 listed = {item["mission_id"]: item for item in control.missions()}
                 assert listed[flat]["status"] == "FAILED"

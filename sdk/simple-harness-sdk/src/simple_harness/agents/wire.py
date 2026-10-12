@@ -62,7 +62,7 @@ def _ledger_reasoning(connection: sqlite3.Connection, run_id: str) -> dict[int, 
         (run_id,),
     ):
         request_id = str(request_id)
-        if not request_id.startswith(prefix) or not request_id[len(prefix):].isdigit():
+        if not request_id.startswith(prefix) or not request_id[len(prefix) :].isdigit():
             continue
         try:
             continuation = json.loads(str(response_json)).get("continuation") or {}
@@ -70,7 +70,7 @@ def _ledger_reasoning(connection: sqlite3.Connection, run_id: str) -> dict[int, 
             continue
         text = continuation.get("reasoning_content") if isinstance(continuation, dict) else None
         if isinstance(text, str):
-            reasoning[int(request_id[len(prefix):])] = text
+            reasoning[int(request_id[len(prefix) :])] = text
     return reasoning
 
 
@@ -276,7 +276,10 @@ class AgentProviderWire:
         wire_request = request
         if run_id is not None and (
             any(m.role is MessageRole.TOOL for m in request.messages)
-            or (self._replay_reasoning and any(m.role is MessageRole.ASSISTANT for m in request.messages))
+            or (
+                self._replay_reasoning
+                and any(m.role is MessageRole.ASSISTANT for m in request.messages)
+            )
         ):
             messages, fallbacks = restore_wire_messages(
                 tuple(request.messages),

@@ -9,6 +9,7 @@
 * Every dispatch outcome (handler ok / not ok / raised) is recorded
   to the breaker so it can transition.
 """
+
 from __future__ import annotations
 
 import json
@@ -134,9 +135,7 @@ async def test_dispatch_records_outcome_success() -> None:
     reg = _make_registry_with_breaker(breaker)
     reg.register("write_file", "file", _trivial_schema("write_file"), _ok_handler())
 
-    envelope = await reg.execute_tool(
-        "write_file", {}, session_id="sY", task_id="t1"
-    )
+    envelope = await reg.execute_tool("write_file", {}, session_id="sY", task_id="t1")
     assert envelope["ok"] is True
 
     # No failure recorded.
@@ -149,14 +148,10 @@ async def test_dispatch_records_outcome_failure_envelope() -> None:
     3 of these in a row → breaker OPEN."""
     breaker = ToolCircuitBreaker(threshold=3, cooldown_seconds=60.0)
     reg = _make_registry_with_breaker(breaker)
-    reg.register(
-        "write_file", "file", _trivial_schema("write_file"), _fail_envelope_handler()
-    )
+    reg.register("write_file", "file", _trivial_schema("write_file"), _fail_envelope_handler())
 
     for _ in range(3):
-        env = await reg.execute_tool(
-            "write_file", {}, session_id="sZ", task_id="t"
-        )
+        env = await reg.execute_tool("write_file", {}, session_id="sZ", task_id="t")
         # The dispatch envelope is "ok" at the registry level (handler
         # returned a string, no exception). The failure is *inside* the
         # nested result. The breaker must look at that nested layer.
@@ -166,9 +161,7 @@ async def test_dispatch_records_outcome_failure_envelope() -> None:
     assert await breaker.state("sZ", "write_file") == "OPEN"
 
     # 4th call — handler should NOT fire.
-    env4 = await reg.execute_tool(
-        "write_file", {}, session_id="sZ", task_id="t"
-    )
+    env4 = await reg.execute_tool("write_file", {}, session_id="sZ", task_id="t")
     payload = json.loads(env4["result"])
     assert payload["error"] == "circuit_open"
 
@@ -183,9 +176,7 @@ async def test_dispatch_records_outcome_handler_raised() -> None:
     reg.register("write_file", "file", _trivial_schema("write_file"), handler)
 
     for _ in range(3):
-        env = await reg.execute_tool(
-            "write_file", {}, session_id="sR", task_id="t"
-        )
+        env = await reg.execute_tool("write_file", {}, session_id="sR", task_id="t")
         assert env["ok"] is False  # exception → ok=False at envelope level
 
     assert handler.counter["calls"] == 3
@@ -199,7 +190,5 @@ async def test_dispatch_with_no_breaker_works_unchanged() -> None:
     reg = _make_registry_with_breaker(None)  # no breaker attached
     reg.register("read_file", "file", _trivial_schema("read_file"), _ok_handler())
 
-    env = await reg.execute_tool(
-        "read_file", {}, session_id="s", task_id="t"
-    )
+    env = await reg.execute_tool("read_file", {}, session_id="s", task_id="t")
     assert env["ok"] is True

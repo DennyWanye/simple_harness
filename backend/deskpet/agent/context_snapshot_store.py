@@ -6,6 +6,7 @@
 原模块已移除，等待 simple-harness-memory-sdk 集成。
 此 stub 防止 tool_context_persistence.py / agent_loop.py 在运行时崩溃。
 """
+
 from __future__ import annotations
 
 import asyncio

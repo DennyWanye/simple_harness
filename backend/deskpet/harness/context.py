@@ -65,13 +65,14 @@ class HostContextFactory:
         provider_ids = tuple(str(item).strip() for item in provider_plan)
         exact_bindings = tuple(tuple(item) for item in provider_bindings)
         if any(
-            len(item) not in (2, 5)
-            or not str(item[0]).strip()
-            or not str(item[1]).strip()
+            len(item) not in (2, 5) or not str(item[0]).strip() or not str(item[1]).strip()
             for item in exact_bindings
         ):
             raise ValueError("provider bindings require provider_id and model_id")
-        if exact_bindings and tuple(str(item[0]).strip() for item in exact_bindings) != provider_ids:
+        if (
+            exact_bindings
+            and tuple(str(item[0]).strip() for item in exact_bindings) != provider_ids
+        ):
             raise ValueError("provider bindings must match the provider plan order")
         frozen_provider_plan: dict[str, object] = {
             "providers": list(provider_ids),
@@ -169,9 +170,7 @@ class HostContextFactory:
             binding_epoch=run_context.binding_epoch,
             capability_snapshot_ref=capability_snapshot_ref,
             active_skill_scope_ids=tuple(active_skill_scope_ids),
-            effective_skill_tool_ref_hashes=tuple(
-                effective_skill_tool_ref_hashes
-            ),
+            effective_skill_tool_ref_hashes=tuple(effective_skill_tool_ref_hashes),
             effective_skill_tool_refs_hash=effective_skill_tool_refs_hash,
         )
 
@@ -179,13 +178,8 @@ class HostContextFactory:
 def authorize_live(ref: RunRef, actor: ActorContext, record: RunRecord) -> None:
     """Apply the same ownership checks before serving an in-memory Run."""
     context = record.context
-    if (
-        ref.expected_session_id != context.session_id
-        or actor.session_id != context.session_id
-    ):
-        raise AuthorizationError(
-            "actor_not_authorized", "actor does not own the run session"
-        )
+    if ref.expected_session_id != context.session_id or actor.session_id != context.session_id:
+        raise AuthorizationError("actor_not_authorized", "actor does not own the run session")
     if actor.internal:
         if (
             actor.root_run_id != context.root_run_id
@@ -193,17 +187,12 @@ def authorize_live(ref: RunRef, actor: ActorContext, record: RunRecord) -> None:
             or actor.expires_at is None
             or actor.expires_at <= time.time()
         ):
-            raise AuthorizationError(
-                "actor_not_authorized", "internal authority is stale"
-            )
+            raise AuthorizationError("actor_not_authorized", "internal authority is stale")
         return
     if (
         actor.principal_id != context.principal_id
         or actor.auth_epoch != context.auth_epoch
-        or (
-            actor.root_run_id is not None
-            and actor.root_run_id != context.root_run_id
-        )
+        or (actor.root_run_id is not None and actor.root_run_id != context.root_run_id)
     ):
         raise AuthorizationError(
             "actor_not_authorized",

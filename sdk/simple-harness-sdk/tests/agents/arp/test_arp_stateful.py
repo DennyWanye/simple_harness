@@ -48,8 +48,25 @@ class Slot:
         return self.session_id is not None
 
 
-def _req(verb: str, payload, *, subject: str, command_id: str | None = None, expected_revision: int | None = None) -> dict:  # type: ignore[no-untyped-def]
-    return {"schema_version": 1, "verb": verb, "command_id": command_id, "subject_id": subject, "expected_revision": expected_revision, "cursor": None, "limit": 8, "payload_ref": None, "payload": payload}
+def _req(
+    verb: str,
+    payload,
+    *,
+    subject: str,
+    command_id: str | None = None,
+    expected_revision: int | None = None,
+) -> dict:  # type: ignore[no-untyped-def]
+    return {
+        "schema_version": 1,
+        "verb": verb,
+        "command_id": command_id,
+        "subject_id": subject,
+        "expected_revision": expected_revision,
+        "cursor": None,
+        "limit": 8,
+        "payload_ref": None,
+        "payload": payload,
+    }
 
 
 class World:
@@ -91,7 +108,9 @@ class World:
         return self.runtime.uow.database.connection
 
     def fail(self, message: str) -> None:
-        raise AssertionError(f"seed {self.seed} step {len(self.history)} history {self.history[-12:]}: {message}")
+        raise AssertionError(
+            f"seed {self.seed} step {len(self.history)} history {self.history[-12:]}: {message}"
+        )
 
     # ---- reference ledger check ----------------------------------------------------------------
 
@@ -114,19 +133,32 @@ class World:
             if row.generation != slot.generation:
                 self.fail(f"{slot.key}: generation {row.generation} != ledger {slot.generation}")
             adoption = store.latest_adoption(self.connection, slot.session_id)
-            if adoption is None or adoption.adoption_revision != slot.adoption or adoption.policy_ref.to_json() != slot.effective:
-                self.fail(f"{slot.key}: adoption {adoption and adoption.adoption_revision} != ledger {slot.adoption}")
-            if row.state == "PURGED" and (self.runtime.arp.root.directory / row.relative_directory).exists():
+            if (
+                adoption is None
+                or adoption.adoption_revision != slot.adoption
+                or adoption.policy_ref.to_json() != slot.effective
+            ):
+                self.fail(
+                    f"{slot.key}: adoption {adoption and adoption.adoption_revision} != ledger {slot.adoption}"
+                )
+            if (
+                row.state == "PURGED"
+                and (self.runtime.arp.root.directory / row.relative_directory).exists()
+            ):
                 self.fail(f"{slot.key}: PURGED but the directory still exists")
 
     # ---- actions -----------------------------------------------------------------------------
 
     async def create(self, slot: Slot) -> None:
         try:
-            agent = await self.runtime.create(CONFIG, creation_key=slot.key, caller=trusted_caller())
+            agent = await self.runtime.create(
+                CONFIG, creation_key=slot.key, caller=trusted_caller()
+            )
         except ArpError as error:
             if not slot.exists or slot.state == "ACTIVE":
-                self.fail(f"{slot.key}: create refused ({error.code}) although the key is free or ACTIVE")
+                self.fail(
+                    f"{slot.key}: create refused ({error.code}) although the key is free or ACTIVE"
+                )
             return
         if slot.exists:
             if slot.state != "ACTIVE":
@@ -160,29 +192,63 @@ class World:
         if not slot.exists:
             return
         if self.policies is None:
-            got = await self.service.handle(_req("agent_context_settings_get", {"session_id": slot.session_id}, subject=slot.agent_id), caller=self.caller)
+            got = await self.service.handle(
+                _req(
+                    "agent_context_settings_get",
+                    {"session_id": slot.session_id},
+                    subject=slot.agent_id,
+                ),
+                caller=self.caller,
+            )
             if got["error"] is not None:
                 return  # a non-ACTIVE session cannot bootstrap the second policy revision
             view = got["items"][0]
             policy = dict(view["configured_policy"])
             policy["recall_max_tokens"] += 8
             submitted = await self.service.handle(
-                _req("agent_context_policy_submit", {"schema_version": 1, "policy": policy, "expected_policy_ref": view["effective_policy_ref"]}, subject=slot.agent_id, command_id=f"p{self.seed}", expected_revision=0),
+                _req(
+                    "agent_context_policy_submit",
+                    {
+                        "schema_version": 1,
+                        "policy": policy,
+                        "expected_policy_ref": view["effective_policy_ref"],
+                    },
+                    subject=slot.agent_id,
+                    command_id=f"p{self.seed}",
+                    expected_revision=0,
+                ),
                 caller=self.caller,
             )
             if submitted["error"] is not None:
                 self.fail(f"policy submit refused: {submitted['error']}")
             self.policies = [view["effective_policy_ref"], submitted["items"][0]["policy_ref"]]
         candidate = self.policies[1] if slot.effective == self.policies[0] else self.policies[0]
-        payload = {"schema_version": 1, "session_id": slot.session_id, "candidate_policy_ref": candidate, "expected_effective_policy_ref": slot.effective, "expected_adoption_revision": slot.adoption}
-        response = await self.service.handle(_req("agent_context_settings_update", payload, subject=slot.agent_id, command_id=f"u{self.seed}-{step}", expected_revision=slot.adoption), caller=self.caller)
+        payload = {
+            "schema_version": 1,
+            "session_id": slot.session_id,
+            "candidate_policy_ref": candidate,
+            "expected_effective_policy_ref": slot.effective,
+            "expected_adoption_revision": slot.adoption,
+        }
+        response = await self.service.handle(
+            _req(
+                "agent_context_settings_update",
+                payload,
+                subject=slot.agent_id,
+                command_id=f"u{self.seed}-{step}",
+                expected_revision=slot.adoption,
+            ),
+            caller=self.caller,
+        )
         if slot.state == "ACTIVE":
             if response["error"] is not None:
                 self.fail(f"{slot.key}: settings update refused on ACTIVE: {response['error']}")
             slot.adoption += 1
             slot.effective = candidate
             if response["items"][0]["adoption_revision"] != slot.adoption:
-                self.fail(f"{slot.key}: adoption {response['items'][0]['adoption_revision']} != {slot.adoption}")
+                self.fail(
+                    f"{slot.key}: adoption {response['items'][0]['adoption_revision']} != {slot.adoption}"
+                )
         elif response["error"] is None:
             self.fail(f"{slot.key}: settings update applied to a {slot.state} session")
 
@@ -190,17 +256,25 @@ class World:
         if not slot.exists:
             return
         command = {
-            "schema_version": 1, "session_id": slot.session_id, "expected_generation": slot.generation, "command_id": f"d{self.seed}-{step}",
-            "reason": "USER_DESTROY", "retention_policy_ref": self.runtime.arp.ports.profile.refs.retention_policy_ref.to_json(),
+            "schema_version": 1,
+            "session_id": slot.session_id,
+            "expected_generation": slot.generation,
+            "command_id": f"d{self.seed}-{step}",
+            "reason": "USER_DESTROY",
+            "retention_policy_ref": self.runtime.arp.ports.profile.refs.retention_policy_ref.to_json(),
         }
         try:
-            after = await self.runtime.arp.sessions.destroy(command, caller=trusted_caller(f"d{step}"), command_id=command["command_id"])
+            after = await self.runtime.arp.sessions.destroy(
+                command, caller=trusted_caller(f"d{step}"), command_id=command["command_id"]
+            )
         except ArpError:
             if slot.state == "ACTIVE":
                 self.fail(f"{slot.key}: destroy of an ACTIVE session was refused")
             return
         if slot.state != "ACTIVE":
-            self.fail(f"{slot.key}: a second destroy command was accepted on a {slot.state} session")
+            self.fail(
+                f"{slot.key}: a second destroy command was accepted on a {slot.state} session"
+            )
         if after.state not in ("DRAINING", "PURGING") or after.generation != slot.generation + 1:
             self.fail(f"{slot.key}: destroy produced {after.state} gen {after.generation}")
         slot.state, slot.generation = after.state, after.generation

@@ -42,15 +42,11 @@ def test_checked_manifest_is_canonical_and_current() -> None:
 
 
 def test_source_effect_build_handler_sets_are_strictly_equal() -> None:
-    sources = json.loads(
-        TOOLS.joinpath("execution_build_sources.json").read_text(encoding="utf-8")
-    )
+    sources = json.loads(TOOLS.joinpath("execution_build_sources.json").read_text(encoding="utf-8"))
     effects = json.loads(
         TOOLS.joinpath("tool_effect_policy_manifest.json").read_text(encoding="utf-8")
     )
-    build = json.loads(
-        TOOLS.joinpath("execution_build_manifest.json").read_text(encoding="utf-8")
-    )
+    build = json.loads(TOOLS.joinpath("execution_build_manifest.json").read_text(encoding="utf-8"))
     sets = [
         {item["handler_id"] for item in manifest["handlers"]}
         for manifest in (sources, effects, build)
@@ -228,16 +224,12 @@ def test_runtime_bound_general_tools_keep_checked_metadata() -> None:
 def test_generator_detects_stale_output_and_rejects_escape(
     tmp_path: Path,
 ) -> None:
-    sources = json.loads(
-        TOOLS.joinpath("execution_build_sources.json").read_text(encoding="utf-8")
-    )
+    sources = json.loads(TOOLS.joinpath("execution_build_sources.json").read_text(encoding="utf-8"))
     copied_sources = tmp_path / "sources.json"
     copied_effects = tmp_path / "effects.json"
     output = tmp_path / "manifest.json"
     copied_sources.write_text(json.dumps(sources), encoding="utf-8")
-    copied_effects.write_bytes(
-        TOOLS.joinpath("tool_effect_policy_manifest.json").read_bytes()
-    )
+    copied_effects.write_bytes(TOOLS.joinpath("tool_effect_policy_manifest.json").read_bytes())
     written = _run(
         "--write",
         "--sources",
@@ -300,18 +292,19 @@ def test_tool_spec_fingerprint_covers_effect_build_and_dispatch_identity() -> No
     changed_dispatch = replace(base, dispatch_adapter_fingerprint="b" * 64)
     changed_build = replace(
         base,
-        execution_build_identity=replace(
-            authority.build, build_digest="c" * 64
-        ),
+        execution_build_identity=replace(authority.build, build_digest="c" * 64),
     )
-    assert len(
-        {
-            tool_spec_fingerprint(base),
-            tool_spec_fingerprint(changed_effect),
-            tool_spec_fingerprint(changed_dispatch),
-            tool_spec_fingerprint(changed_build),
-        }
-    ) == 4
+    assert (
+        len(
+            {
+                tool_spec_fingerprint(base),
+                tool_spec_fingerprint(changed_effect),
+                tool_spec_fingerprint(changed_dispatch),
+                tool_spec_fingerprint(changed_build),
+            }
+        )
+        == 4
+    )
 
 
 def test_known_name_with_unhashed_callable_is_not_blessed() -> None:

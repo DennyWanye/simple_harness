@@ -95,6 +95,7 @@ def empty_legacy_checkpoint() -> dict[str, Any]:
         "updated_channels": None,
     }
 
+
 from ..contracts import JsonValue, canonical_json, validate_json_value
 from ..errors import AsyncOnlyWorkflowError, UnsupportedDeltaChannelError, WorkflowContractError
 from .run_store import RunFence, StaleRunFence
@@ -146,9 +147,15 @@ class FencedAsyncSqliteSaver(BaseCheckpointSaver[int]):
 
     def __getattr__(self, name: str) -> Any:
         native_methods = {
-            "ensure_genesis", "load_execution", "commit_task_result",
-            "commit_route_selection", "commit_frontier", "commit_retry",
-            "commit_interrupt", "commit_failure", "commit_engine_failure",
+            "ensure_genesis",
+            "load_execution",
+            "commit_task_result",
+            "commit_route_selection",
+            "commit_frontier",
+            "commit_retry",
+            "commit_interrupt",
+            "commit_failure",
+            "commit_engine_failure",
         }
         if name in native_methods:
             return getattr(NativeCheckpointStore(self.path), name)
@@ -176,7 +183,9 @@ class FencedAsyncSqliteSaver(BaseCheckpointSaver[int]):
                 int(values["deskpet_run_version"]),
             )
         except (KeyError, TypeError, ValueError) as exc:
-            raise ValueError("workflow checkpoint write requires a complete DeskPet run fence") from exc
+            raise ValueError(
+                "workflow checkpoint write requires a complete DeskPet run fence"
+            ) from exc
 
     @staticmethod
     async def _assert_fence(
@@ -262,7 +271,11 @@ class FencedAsyncSqliteSaver(BaseCheckpointSaver[int]):
                 json.loads(bytes(row["metadata_blob"]).decode("utf-8")),
                 parent,
                 [
-                    (item["task_id"], item["channel"], self.serde.loads_typed((item["value_type"], item["value_blob"])))
+                    (
+                        item["task_id"],
+                        item["channel"],
+                        self.serde.loads_typed((item["value_type"], item["value_blob"])),
+                    )
                     for item in pending_rows
                 ],
             )
@@ -306,7 +319,9 @@ class FencedAsyncSqliteSaver(BaseCheckpointSaver[int]):
                     }
                 }
             )
-            if item is not None and (not filter or all(item.metadata.get(k) == v for k, v in filter.items())):
+            if item is not None and (
+                not filter or all(item.metadata.get(k) == v for k, v in filter.items())
+            ):
                 yield item
 
     async def aput(
@@ -324,7 +339,10 @@ class FencedAsyncSqliteSaver(BaseCheckpointSaver[int]):
         parent_id = values.get("checkpoint_id")
         checkpoint_type, checkpoint_blob = self.serde.dumps_typed(checkpoint)
         metadata_blob = json.dumps(
-            get_checkpoint_metadata(config, metadata), ensure_ascii=False, sort_keys=True, separators=(",", ":")
+            get_checkpoint_metadata(config, metadata),
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
         ).encode("utf-8")
         now = time.time()
         db = await self._connect()
@@ -351,7 +369,17 @@ class FencedAsyncSqliteSaver(BaseCheckpointSaver[int]):
                 ) VALUES(?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(thread_id,checkpoint_ns,checkpoint_id) DO UPDATE SET
                     checkpoint_blob=excluded.checkpoint_blob,metadata_blob=excluded.metadata_blob""",
-                (thread_id, namespace, checkpoint_id, parent_id, run_id, checkpoint_type, checkpoint_blob, metadata_blob, now),
+                (
+                    thread_id,
+                    namespace,
+                    checkpoint_id,
+                    parent_id,
+                    run_id,
+                    checkpoint_type,
+                    checkpoint_blob,
+                    metadata_blob,
+                    now,
+                ),
             )
             await db.execute(
                 """INSERT OR IGNORE INTO workflow_checkpoint_owners(
@@ -657,7 +685,9 @@ class FencedAsyncSqliteSaver(BaseCheckpointSaver[int]):
                 raise ValueError("cannot delete a shared workflow thread")
             await db.execute("BEGIN IMMEDIATE")
             await db.execute("DELETE FROM workflow_pending_writes WHERE thread_id=?", (thread_id,))
-            await db.execute("DELETE FROM workflow_checkpoint_owners WHERE thread_id=?", (thread_id,))
+            await db.execute(
+                "DELETE FROM workflow_checkpoint_owners WHERE thread_id=?", (thread_id,)
+            )
             await db.execute("DELETE FROM workflow_checkpoints WHERE thread_id=?", (thread_id,))
             await db.commit()
         except BaseException:
@@ -721,7 +751,10 @@ class FencedAsyncSqliteSaver(BaseCheckpointSaver[int]):
         try:
             await db.execute("BEGIN IMMEDIATE")
             target_exists = await (
-                await db.execute("SELECT 1 FROM workflow_checkpoints WHERE thread_id=? LIMIT 1", (target_thread_id,))
+                await db.execute(
+                    "SELECT 1 FROM workflow_checkpoints WHERE thread_id=? LIMIT 1",
+                    (target_thread_id,),
+                )
             ).fetchone()
             if target_exists:
                 raise ValueError(f"target checkpoint thread already exists: {target_thread_id}")
@@ -806,10 +839,22 @@ class FencedAsyncSqliteSaver(BaseCheckpointSaver[int]):
     def list(self, config: RunnableConfig | None, **kwargs: Any):
         raise AsyncOnlyWorkflowError("workflow checkpoint saver is async-only")
 
-    def put(self, config: RunnableConfig, checkpoint: Checkpoint, metadata: CheckpointMetadata, new_versions: ChannelVersions):
+    def put(
+        self,
+        config: RunnableConfig,
+        checkpoint: Checkpoint,
+        metadata: CheckpointMetadata,
+        new_versions: ChannelVersions,
+    ):
         raise AsyncOnlyWorkflowError("workflow checkpoint saver is async-only")
 
-    def put_writes(self, config: RunnableConfig, writes: Sequence[tuple[str, Any]], task_id: str, task_path: str = ""):
+    def put_writes(
+        self,
+        config: RunnableConfig,
+        writes: Sequence[tuple[str, Any]],
+        task_id: str,
+        task_path: str = "",
+    ):
         raise AsyncOnlyWorkflowError("workflow checkpoint saver is async-only")
 
     def delete_thread(self, thread_id: str) -> None:
@@ -954,7 +999,8 @@ class NativeCheckpointStore:
             checkpoint_id=str(payload["checkpoint_id"]),
             parent_checkpoint_id=(
                 str(payload["parent_checkpoint_id"])
-                if payload.get("parent_checkpoint_id") is not None else None
+                if payload.get("parent_checkpoint_id") is not None
+                else None
             ),
             run_id=str(payload["run_id"]),
             state_schema_version=int(payload["state_schema_version"]),
@@ -964,10 +1010,16 @@ class NativeCheckpointStore:
             completed_activations={
                 str(key): tuple(str(item) for item in value)
                 for key, value in dict(completed).items()
-            } if isinstance(completed, Mapping) else {},
-            join_firings=tuple(str(item) for item in joins) if not isinstance(joins, Mapping) else tuple(joins),
+            }
+            if isinstance(completed, Mapping)
+            else {},
+            join_firings=tuple(str(item) for item in joins)
+            if not isinstance(joins, Mapping)
+            else tuple(joins),
             node_writes=copy.deepcopy(dict(writes)) if isinstance(writes, Mapping) else {},
-            interrupt=(copy.deepcopy(dict(payload["interrupt"])) if payload.get("interrupt") else None),
+            interrupt=(
+                copy.deepcopy(dict(payload["interrupt"])) if payload.get("interrupt") else None
+            ),
             metadata=copy.deepcopy(dict(payload.get("metadata") or {})),
         )
 
@@ -1116,9 +1168,17 @@ class NativeCheckpointStore:
                 checkpoint_type,checkpoint_blob,metadata_blob,engine_kind,snapshot_version,created_at
             ) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
             (
-                run["thread_id"], run["checkpoint_ns"], checkpoint_id, parent,
-                run["run_id"], NATIVE_CHECKPOINT_TYPE, blob, metadata_blob,
-                NATIVE_ENGINE_KIND, NATIVE_SNAPSHOT_VERSION, now,
+                run["thread_id"],
+                run["checkpoint_ns"],
+                checkpoint_id,
+                parent,
+                run["run_id"],
+                NATIVE_CHECKPOINT_TYPE,
+                blob,
+                metadata_blob,
+                NATIVE_ENGINE_KIND,
+                NATIVE_SNAPSHOT_VERSION,
+                now,
             ),
         )
         await db.execute(
@@ -1168,9 +1228,18 @@ class NativeCheckpointStore:
                 channel,value_type,value_blob,task_path,write_kind,payload_json,node_execution_id
             ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
-                run["thread_id"], run["checkpoint_ns"], base_checkpoint_id, task_id,
-                write_index, f"__native__:{write_kind}", "json", payload_json.encode("utf-8"),
-                task_path, write_kind, payload_json, node_execution_id,
+                run["thread_id"],
+                run["checkpoint_ns"],
+                base_checkpoint_id,
+                task_id,
+                write_index,
+                f"__native__:{write_kind}",
+                "json",
+                payload_json.encode("utf-8"),
+                task_path,
+                write_kind,
+                payload_json,
+                node_execution_id,
             ),
         )
         return True
@@ -1193,7 +1262,8 @@ class NativeCheckpointStore:
                 await db.execute(
                     """SELECT c.* FROM workflow_checkpoint_owners o
                     JOIN workflow_checkpoints c USING(thread_id,checkpoint_ns,checkpoint_id)
-                    WHERE o.run_id=? AND o.checkpoint_id=? AND c.engine_kind=?""" + clause,
+                    WHERE o.run_id=? AND o.checkpoint_id=? AND c.engine_kind=?"""
+                    + clause,
                     params,
                 )
             ).fetchone()
@@ -1291,7 +1361,9 @@ class NativeCheckpointStore:
         if thread_id is not None and str(snapshot["thread_id"]) != thread_id:
             raise NativeCheckpointError("run_identity_mismatch", "native thread id changed")
         if checkpoint_ns is not None and str(snapshot["checkpoint_ns"]) != checkpoint_ns:
-            raise NativeCheckpointError("run_identity_mismatch", "native checkpoint namespace changed")
+            raise NativeCheckpointError(
+                "run_identity_mismatch", "native checkpoint namespace changed"
+            )
         from ..contracts import StatePatch
         from ..native import NativeExecution
 
@@ -1300,11 +1372,16 @@ class NativeCheckpointStore:
             for item in pending
             if item["write_kind"] == "state_patch"
         }
-        pending_consumed_interrupt_ids = tuple(sorted({
-            str(interrupt_id)
-            for item in pending if item["write_kind"] == "state_patch"
-            for interrupt_id in item["payload"].get("consumed_interrupt_ids", ())
-        }))
+        pending_consumed_interrupt_ids = tuple(
+            sorted(
+                {
+                    str(interrupt_id)
+                    for item in pending
+                    if item["write_kind"] == "state_patch"
+                    for interrupt_id in item["payload"].get("consumed_interrupt_ids", ())
+                }
+            )
+        )
         route_selections = {
             str(item["task_id"]): copy.deepcopy(dict(item["payload"]))
             for item in pending
@@ -1325,7 +1402,8 @@ class NativeCheckpointStore:
             ).fetchall()
             first_attempt_times = {
                 str(row["task_id"]): float(row["first_started"])
-                for row in rows if row["task_id"] is not None and row["first_started"] is not None
+                for row in rows
+                if row["task_id"] is not None and row["first_started"] is not None
             }
             retry_rows = await (
                 await db.execute(
@@ -1391,7 +1469,10 @@ class NativeCheckpointStore:
         try:
             await db.execute("BEGIN IMMEDIATE")
             existing = await self._operation(
-                db, operation_id=op_id, run_id=run_id, operation_kind="genesis",
+                db,
+                operation_id=op_id,
+                run_id=run_id,
+                operation_kind="genesis",
                 request_hash=request_hash,
             )
             if existing is not None:
@@ -1400,9 +1481,7 @@ class NativeCheckpointStore:
             run_row = await self._run_row(db, run_id)
             self._assert_fence_row(run_row, fence)
             self._assert_head(run_row, None)
-            checkpoint_id = self._stable_id(
-                run_id, str(run_row["checkpoint_ns"]), "genesis"
-            )
+            checkpoint_id = self._stable_id(run_id, str(run_row["checkpoint_ns"]), "genesis")
             if provided_snapshot is not None:
                 checkpoint_id = str(provided_snapshot["checkpoint_id"])
             snapshot = self._snapshot_payload(
@@ -1439,8 +1518,13 @@ class NativeCheckpointStore:
                 "snapshot": snapshot,
             }
             await self._record_operation(
-                db, operation_id=op_id, run_id=run_id,
-                operation_kind="genesis", request_hash=request_hash, result=result, now=now,
+                db,
+                operation_id=op_id,
+                run_id=run_id,
+                operation_kind="genesis",
+                request_hash=request_hash,
+                result=result,
+                now=now,
             )
             await db.commit()
         except BaseException:
@@ -1472,7 +1556,13 @@ class NativeCheckpointStore:
             if execution_info is not None:
                 info = _native_mapping(execution_info, name="execution_info")
                 attempt = int(info["node_attempt"])
-        if fence is None or expected_head is None or task is None or attempt is None or patch is None:
+        if (
+            fence is None
+            or expected_head is None
+            or task is None
+            or attempt is None
+            or patch is None
+        ):
             raise TypeError("commit_task_result requires a fence, head, task, attempt and patch")
         task_data = _native_mapping(task, name="task")
         patch_data = _native_mapping(patch, name="patch")
@@ -1480,14 +1570,17 @@ class NativeCheckpointStore:
         node_id = str(task_data.get("node_id") or "").strip()
         activation_id = str(task_data.get("activation_id") or task_id).strip()
         if not task_id or not node_id or attempt < 1:
-            raise NativeCheckpointError("invalid_task_result", "task_id, node_id and attempt>=1 are required")
+            raise NativeCheckpointError(
+                "invalid_task_result", "task_id, node_id and attempt>=1 are required"
+            )
         validate_json_value(patch_data, path="$.state_patch")
         op_id = operation_id or self._stable_id(
             fence.run_id, expected_head, "task_result", task_id, attempt
         )
-        execution_id = str(task_data.get("node_execution_id") or self._stable_id(
-            fence.run_id, expected_head, task_id, node_id
-        ))
+        execution_id = str(
+            task_data.get("node_execution_id")
+            or self._stable_id(fence.run_id, expected_head, task_id, node_id)
+        )
         payload: dict[str, JsonValue] = {
             "task_id": task_id,
             "activation_id": activation_id,
@@ -1503,7 +1596,10 @@ class NativeCheckpointStore:
         try:
             await db.execute("BEGIN IMMEDIATE")
             existing = await self._operation(
-                db, operation_id=op_id, run_id=fence.run_id, operation_kind="task_result",
+                db,
+                operation_id=op_id,
+                run_id=fence.run_id,
+                operation_kind="task_result",
                 request_hash=request_hash,
             )
             if existing is not None:
@@ -1522,8 +1618,15 @@ class NativeCheckpointStore:
                     latest_attempt=MAX(latest_attempt,excluded.latest_attempt),
                     latest_status='succeeded_pending',updated_at=excluded.updated_at""",
                 (
-                    execution_id, fence.run_id, node_id, expected_head, activation_id,
-                    task_id, str(task_data.get("task_path") or ""), attempt, now,
+                    execution_id,
+                    fence.run_id,
+                    node_id,
+                    expected_head,
+                    activation_id,
+                    task_id,
+                    str(task_data.get("task_path") or ""),
+                    attempt,
+                    now,
                 ),
             )
             await db.execute(
@@ -1533,24 +1636,40 @@ class NativeCheckpointStore:
                 ON CONFLICT(node_execution_id,retry_attempt) DO UPDATE SET
                     status='succeeded_pending',ended_at=excluded.ended_at,error_ref=NULL,next_attempt_at=NULL""",
                 (
-                    execution_id, attempt, task_id, str(task_data.get("task_path") or ""),
-                    float(task_data.get("started_at") or now), now,
+                    execution_id,
+                    attempt,
+                    task_id,
+                    str(task_data.get("task_path") or ""),
+                    float(task_data.get("started_at") or now),
+                    now,
                 ),
             )
             await self._write_pending(
-                db, run=run, base_checkpoint_id=expected_head, task_id=task_id,
-                write_index=0, write_kind="state_patch", payload=payload,
-                node_execution_id=execution_id, task_path=str(task_data.get("task_path") or ""),
+                db,
+                run=run,
+                base_checkpoint_id=expected_head,
+                task_id=task_id,
+                write_index=0,
+                write_kind="state_patch",
+                payload=payload,
+                node_execution_id=execution_id,
+                task_path=str(task_data.get("task_path") or ""),
             )
             pending_owner = f"{fence.run_id}:{expected_head}:{task_id}"
             for sha256 in payload["blob_refs"]:
-                if len(str(sha256)) != 64 or any(ch not in "0123456789abcdef" for ch in str(sha256)):
-                    raise NativeCheckpointError("invalid_blob_ref", "task result contains an invalid blob digest")
+                if len(str(sha256)) != 64 or any(
+                    ch not in "0123456789abcdef" for ch in str(sha256)
+                ):
+                    raise NativeCheckpointError(
+                        "invalid_blob_ref", "task result contains an invalid blob digest"
+                    )
                 exists = await (
                     await db.execute("SELECT 1 FROM workflow_blobs WHERE sha256=?", (str(sha256),))
                 ).fetchone()
                 if exists is None:
-                    raise NativeCheckpointError("blob_not_found", f"unknown blob reference: {sha256}")
+                    raise NativeCheckpointError(
+                        "blob_not_found", f"unknown blob reference: {sha256}"
+                    )
                 await db.execute(
                     """INSERT OR IGNORE INTO workflow_blob_refs(
                     sha256,owner_kind,owner_id,created_at) VALUES(?,'pending_task',?,?)""",
@@ -1569,8 +1688,13 @@ class NativeCheckpointStore:
                 "operation_id": op_id,
             }
             await self._record_operation(
-                db, operation_id=op_id, run_id=fence.run_id,
-                operation_kind="task_result", request_hash=request_hash, result=result, now=now,
+                db,
+                operation_id=op_id,
+                run_id=fence.run_id,
+                operation_kind="task_result",
+                request_hash=request_hash,
+                result=result,
+                now=now,
             )
             await db.commit()
         except BaseException:
@@ -1613,8 +1737,12 @@ class NativeCheckpointStore:
         try:
             await db.execute("BEGIN IMMEDIATE")
             existing = await self._operation(
-                db, operation_id=op_id, run_id=fence.run_id, operation_kind="route_selection",
-                request_hash=request_hash, request_conflict_code="route_nondeterminism",
+                db,
+                operation_id=op_id,
+                run_id=fence.run_id,
+                operation_kind="route_selection",
+                request_hash=request_hash,
+                request_conflict_code="route_nondeterminism",
             )
             if existing is not None:
                 stored = existing.get("selection")
@@ -1628,8 +1756,13 @@ class NativeCheckpointStore:
             self._assert_fence_row(run, fence)
             self._assert_head(run, expected_head)
             await self._write_pending(
-                db, run=run, base_checkpoint_id=expected_head, task_id=route_task_id,
-                write_index=1, write_kind="route_selection", payload=payload,
+                db,
+                run=run,
+                base_checkpoint_id=expected_head,
+                task_id=route_task_id,
+                write_index=1,
+                write_kind="route_selection",
+                payload=payload,
                 node_execution_id=None,
             )
             result: dict[str, JsonValue] = {
@@ -1639,8 +1772,13 @@ class NativeCheckpointStore:
                 "selection": payload,
             }
             await self._record_operation(
-                db, operation_id=op_id, run_id=fence.run_id,
-                operation_kind="route_selection", request_hash=request_hash, result=result, now=now,
+                db,
+                operation_id=op_id,
+                run_id=fence.run_id,
+                operation_kind="route_selection",
+                request_hash=request_hash,
+                result=result,
+                now=now,
             )
             await db.commit()
         except BaseException:
@@ -1692,7 +1830,9 @@ class NativeCheckpointStore:
                 continue
             if str(row["status"]) != "resolved" or row["consumed_at"] is not None:
                 raise NativeCheckpointError("decision_not_resolved", "decision is not resumable")
-            if expected_version is not None and int(row["decision_version"]) != int(expected_version):
+            if expected_version is not None and int(row["decision_version"]) != int(
+                expected_version
+            ):
                 raise NativeCheckpointError("stale_decision", "decision version changed")
             cursor = await db.execute(
                 """UPDATE workflow_decisions SET status='consumed',consumed_at=?,
@@ -1755,7 +1895,15 @@ class NativeCheckpointStore:
                 """INSERT INTO workflow_events(
                     event_id,event_key,run_id,seq,event_type,payload_json,created_at
                 ) VALUES(?,?,?,?,?,?,?)""",
-                (event_id, event_key, run["run_id"], int(seq["event_seq"]), event_type, payload_json, now),
+                (
+                    event_id,
+                    event_key,
+                    run["run_id"],
+                    int(seq["event_seq"]),
+                    event_type,
+                    payload_json,
+                    now,
+                ),
             )
         elif (
             str(existing["event_id"]) != event_id
@@ -1842,9 +1990,7 @@ class NativeCheckpointStore:
                 )
                 business_channel = str(intent.get("channel") or "").strip().lower()
                 if business_channel in {"artifact", "receipt"}:
-                    raw_deliveries.append(
-                        {"channel": business_channel, "target_id": target_id}
-                    )
+                    raw_deliveries.append({"channel": business_channel, "target_id": target_id})
                 if business_channel == "final":
                     raw_deliveries.append({"channel": "receipt", "target_id": target_id})
         for delivery in raw_deliveries:
@@ -1903,13 +2049,18 @@ class NativeCheckpointStore:
         if step is None:
             current = await self.load_head(fence.run_id)
             if current is None or str(current["checkpoint_id"]) != expected_head:
-                raise NativeCheckpointError("stale_checkpoint_head", "workflow checkpoint head changed")
+                raise NativeCheckpointError(
+                    "stale_checkpoint_head", "workflow checkpoint head changed"
+                )
             step = int(current["step"]) + 1
-        resolved_decisions: Sequence[str | Mapping[str, Any]] = (
-            tuple(decision_ids) + tuple(consumed_interrupt_ids)
+        resolved_decisions: Sequence[str | Mapping[str, Any]] = tuple(decision_ids) + tuple(
+            consumed_interrupt_ids
         )
         op_id = operation_id or self._stable_id(
-            fence.run_id, expected_head, "frontier", step,
+            fence.run_id,
+            expected_head,
+            "frontier",
+            step,
             hashlib.sha256(canonical_json(dict(state)).encode("utf-8")).hexdigest(),
         )
         checkpoint_id = self._stable_id(fence.run_id, expected_head, "frontier", op_id)
@@ -1920,7 +2071,8 @@ class NativeCheckpointStore:
                 "step": step,
                 "completed_activations": (
                     {key: list(value) for key, value in completed_activations.items()}
-                    if isinstance(completed_activations, Mapping) else list(completed_activations)
+                    if isinstance(completed_activations, Mapping)
+                    else list(completed_activations)
                 ),
                 "join_firings": (
                     dict(join_firings) if isinstance(join_firings, Mapping) else list(join_firings)
@@ -1937,22 +2089,29 @@ class NativeCheckpointStore:
                 "recovery_action": recovery_action,
             }
         )
-        if terminal_status is not None and (frontier_data or terminal_status not in {"completed", "failed", "cancelled"}):
+        if terminal_status is not None and (
+            frontier_data or terminal_status not in {"completed", "failed", "cancelled"}
+        ):
             raise NativeCheckpointError(
-                "invalid_terminal_frontier", "terminal status requires an empty frontier and an allowed status"
+                "invalid_terminal_frontier",
+                "terminal status requires an empty frontier and an allowed status",
             )
         now = self._clock()
         db = await self._connect()
         try:
             await db.execute("BEGIN IMMEDIATE")
             existing = await self._operation(
-                db, operation_id=op_id, run_id=fence.run_id, operation_kind="frontier",
+                db,
+                operation_id=op_id,
+                run_id=fence.run_id,
+                operation_kind="frontier",
                 request_hash=request_hash,
             )
             if existing is not None:
                 await db.commit()
                 if protocol_call:
                     from ..native import NativeCommitResult
+
                     return NativeCommitResult(
                         self._snapshot_object(existing["snapshot"]),
                         tuple(existing.get("event_ids") or ()),
@@ -1984,8 +2143,7 @@ class NativeCheckpointStore:
                 )
             head_snapshot = json.loads(bytes(head_row["checkpoint_blob"]).decode("utf-8"))
             expected_task_ids = {
-                str(item.get("task_id") or "")
-                for item in list(head_snapshot.get("frontier") or [])
+                str(item.get("task_id") or "") for item in list(head_snapshot.get("frontier") or [])
             }
             expected_task_ids.discard("")
             completed_task_ids = {
@@ -2016,14 +2174,24 @@ class NativeCheckpointStore:
             if protocol_call:
                 node_writes = {
                     str(item["task_id"]): copy.deepcopy(dict(item["payload"]))
-                    for item in pending_write_items if item["write_kind"] == "state_patch"
+                    for item in pending_write_items
+                    if item["write_kind"] == "state_patch"
                 }
             snapshot = self._snapshot_payload(
-                run=run, checkpoint_id=checkpoint_id, parent_checkpoint_id=expected_head,
-                step=step, state=state, frontier=frontier_data,
-                completed_activations=completed_activations, join_firings=join_firings,
+                run=run,
+                checkpoint_id=checkpoint_id,
+                parent_checkpoint_id=expected_head,
+                step=step,
+                state=state,
+                frontier=frontier_data,
+                completed_activations=completed_activations,
+                join_firings=join_firings,
                 node_writes=node_writes,
-                metadata={**dict(metadata or {}), "operation_id": op_id, "operation_kind": "frontier"},
+                metadata={
+                    **dict(metadata or {}),
+                    "operation_id": op_id,
+                    "operation_kind": "frontier",
+                },
             )
             await self._insert_checkpoint(db, run=run, snapshot=snapshot, now=now)
             consumed = await (
@@ -2044,7 +2212,8 @@ class NativeCheckpointStore:
                 )
             )
             execution_ids = [
-                str(row["node_execution_id"]) for row in pending_rows
+                str(row["node_execution_id"])
+                for row in pending_rows
                 if row["write_kind"] == "state_patch" and row["node_execution_id"] is not None
             ]
             for execution_id in execution_ids:
@@ -2080,7 +2249,9 @@ class NativeCheckpointStore:
                     await db.execute("SELECT 1 FROM workflow_blobs WHERE sha256=?", (str(sha256),))
                 ).fetchone()
                 if exists is None:
-                    raise NativeCheckpointError("blob_not_found", f"unknown blob reference: {sha256}")
+                    raise NativeCheckpointError(
+                        "blob_not_found", f"unknown blob reference: {sha256}"
+                    )
                 await db.execute(
                     """INSERT OR IGNORE INTO workflow_blob_refs(
                         sha256,owner_kind,owner_id,created_at
@@ -2093,14 +2264,12 @@ class NativeCheckpointStore:
             if pending_owner_ids:
                 await db.execute(
                     f"""DELETE FROM workflow_blob_refs WHERE owner_kind='pending_task'
-                    AND owner_id IN ({','.join('?' for _ in pending_owner_ids)})""",
+                    AND owner_id IN ({",".join("?" for _ in pending_owner_ids)})""",
                     pending_owner_ids,
                 )
             event_ids = [
                 await (
-                    execution_adapter.materialize_intent(
-                        db, run=run, intent=intent, now=now
-                    )
+                    execution_adapter.materialize_intent(db, run=run, intent=intent, now=now)
                     if execution_adapter is not None
                     else self._materialize_intent(db, run=run, intent=intent, now=now)
                 )
@@ -2115,8 +2284,12 @@ class NativeCheckpointStore:
                     (
                         checkpoint_id,
                         canonical_json([str(item.get("node_id", "")) for item in frontier_data]),
-                        now, fence.run_id, expected_head, fence.owner,
-                        fence.lease_epoch, fence.run_version,
+                        now,
+                        fence.run_id,
+                        expected_head,
+                        fence.owner,
+                        fence.lease_epoch,
+                        fence.run_version,
                     ),
                 )
             else:
@@ -2131,8 +2304,17 @@ class NativeCheckpointStore:
                     WHERE run_id=? AND head_checkpoint_id=? AND status='running'
                     AND lease_owner=? AND lease_epoch=? AND run_version=?""",
                     (
-                        checkpoint_id, terminal_status, error_json, recovery_action, now, now,
-                        fence.run_id, expected_head, fence.owner, fence.lease_epoch, fence.run_version,
+                        checkpoint_id,
+                        terminal_status,
+                        error_json,
+                        recovery_action,
+                        now,
+                        now,
+                        fence.run_id,
+                        expected_head,
+                        fence.owner,
+                        fence.lease_epoch,
+                        fence.run_version,
                     ),
                 )
             if cursor.rowcount != 1:
@@ -2163,8 +2345,13 @@ class NativeCheckpointStore:
                 "snapshot": snapshot,
             }
             await self._record_operation(
-                db, operation_id=op_id, run_id=fence.run_id,
-                operation_kind="frontier", request_hash=request_hash, result=result, now=now,
+                db,
+                operation_id=op_id,
+                run_id=fence.run_id,
+                operation_kind="frontier",
+                request_hash=request_hash,
+                result=result,
+                now=now,
             )
             await db.commit()
         except BaseException:
@@ -2176,6 +2363,7 @@ class NativeCheckpointStore:
         await self._fault("frontier.after_db_commit_before_return")
         if protocol_call:
             from ..native import NativeCommitResult
+
             return NativeCommitResult(
                 self._snapshot_object(result["snapshot"]), tuple(result["event_ids"])
             )
@@ -2212,10 +2400,13 @@ class NativeCheckpointStore:
         node_id = str(task_data.get("node_id") or "").strip()
         activation_id = str(task_data.get("activation_id") or task_id).strip()
         if not task_id or not node_id or attempt < 1:
-            raise NativeCheckpointError("invalid_retry", "task_id, node_id and attempt>=1 are required")
-        execution_id = str(task_data.get("node_execution_id") or self._stable_id(
-            fence.run_id, expected_head, task_id, node_id
-        ))
+            raise NativeCheckpointError(
+                "invalid_retry", "task_id, node_id and attempt>=1 are required"
+            )
+        execution_id = str(
+            task_data.get("node_execution_id")
+            or self._stable_id(fence.run_id, expected_head, task_id, node_id)
+        )
         op_id = operation_id or self._stable_id(
             fence.run_id, expected_head, "retry", task_id, attempt
         )
@@ -2232,7 +2423,10 @@ class NativeCheckpointStore:
         try:
             await db.execute("BEGIN IMMEDIATE")
             existing = await self._operation(
-                db, operation_id=op_id, run_id=fence.run_id, operation_kind="retry",
+                db,
+                operation_id=op_id,
+                run_id=fence.run_id,
+                operation_kind="retry",
                 request_hash=request_hash,
             )
             if existing is not None:
@@ -2249,8 +2443,15 @@ class NativeCheckpointStore:
                 ON CONFLICT(node_execution_id) DO UPDATE SET latest_attempt=excluded.latest_attempt,
                     latest_status='retryable',updated_at=excluded.updated_at""",
                 (
-                    execution_id, fence.run_id, node_id, expected_head, activation_id,
-                    task_id, str(task_data.get("task_path") or ""), attempt, now,
+                    execution_id,
+                    fence.run_id,
+                    node_id,
+                    expected_head,
+                    activation_id,
+                    task_id,
+                    str(task_data.get("task_path") or ""),
+                    attempt,
+                    now,
                 ),
             )
             await db.execute(
@@ -2262,8 +2463,14 @@ class NativeCheckpointStore:
                     status='retryable',ended_at=excluded.ended_at,error_ref=excluded.error_ref,
                     next_attempt_at=excluded.next_attempt_at""",
                 (
-                    execution_id, attempt, task_id, str(task_data.get("task_path") or ""),
-                    float(task_data.get("started_at") or now), now, error_ref, float(next_attempt_at),
+                    execution_id,
+                    attempt,
+                    task_id,
+                    str(task_data.get("task_path") or ""),
+                    float(task_data.get("started_at") or now),
+                    now,
+                    error_ref,
+                    float(next_attempt_at),
                 ),
             )
             updated = await (
@@ -2274,22 +2481,35 @@ class NativeCheckpointStore:
                     AND head_checkpoint_id=? AND lease_owner=? AND lease_epoch=? AND run_version=?
                     RETURNING run_version""",
                     (
-                        now, fence.run_id, expected_head, fence.owner,
-                        fence.lease_epoch, fence.run_version,
+                        now,
+                        fence.run_id,
+                        expected_head,
+                        fence.owner,
+                        fence.lease_epoch,
+                        fence.run_version,
                     ),
                 )
             ).fetchone()
             if updated is None:
                 raise StaleRunFence(f"stale retry writer: {fence.run_id}")
             result: dict[str, JsonValue] = {
-                "run_id": fence.run_id, "checkpoint_id": expected_head,
-                "task_id": task_id, "node_execution_id": execution_id,
-                "attempt": attempt, "next_attempt_at": float(next_attempt_at),
-                "run_version": int(updated["run_version"]), "operation_id": op_id,
+                "run_id": fence.run_id,
+                "checkpoint_id": expected_head,
+                "task_id": task_id,
+                "node_execution_id": execution_id,
+                "attempt": attempt,
+                "next_attempt_at": float(next_attempt_at),
+                "run_version": int(updated["run_version"]),
+                "operation_id": op_id,
             }
             await self._record_operation(
-                db, operation_id=op_id, run_id=fence.run_id,
-                operation_kind="retry", request_hash=request_hash, result=result, now=now,
+                db,
+                operation_id=op_id,
+                run_id=fence.run_id,
+                operation_kind="retry",
+                request_hash=request_hash,
+                result=result,
+                now=now,
             )
             await db.commit()
         except BaseException:
@@ -2338,7 +2558,9 @@ class NativeCheckpointStore:
         if state is None or frontier is None or step is None:
             current = await self.load_head(fence.run_id)
             if current is None or str(current["checkpoint_id"]) != expected_head:
-                raise NativeCheckpointError("stale_checkpoint_head", "workflow checkpoint head changed")
+                raise NativeCheckpointError(
+                    "stale_checkpoint_head", "workflow checkpoint head changed"
+                )
             state = dict(current["state"])
             frontier = [dict(item) for item in current["frontier"]]
             step = int(current["step"])
@@ -2369,7 +2591,10 @@ class NativeCheckpointStore:
         try:
             await db.execute("BEGIN IMMEDIATE")
             existing = await self._operation(
-                db, operation_id=op_id, run_id=fence.run_id, operation_kind="interrupt",
+                db,
+                operation_id=op_id,
+                run_id=fence.run_id,
+                operation_kind="interrupt",
                 request_hash=request_hash,
             )
             if existing is not None:
@@ -2380,8 +2605,12 @@ class NativeCheckpointStore:
             self._assert_fence_row(run, fence)
             self._assert_head(run, expected_head)
             snapshot = self._snapshot_payload(
-                run=run, checkpoint_id=checkpoint_id, parent_checkpoint_id=expected_head,
-                step=step, state=state, frontier=frontier,
+                run=run,
+                checkpoint_id=checkpoint_id,
+                parent_checkpoint_id=expected_head,
+                step=step,
+                state=state,
+                frontier=frontier,
                 completed_activations=(current or {}).get("completed_activations", ()),
                 join_firings=(current or {}).get("join_firings", ()),
                 node_writes=(current or {}).get("node_writes", ()),
@@ -2390,9 +2619,14 @@ class NativeCheckpointStore:
             )
             await self._insert_checkpoint(db, run=run, snapshot=snapshot, now=now)
             await self._write_pending(
-                db, run=run, base_checkpoint_id=checkpoint_id,
-                task_id=task_id or f"interrupt:{interrupt_id}", write_index=-1,
-                write_kind="interrupt", payload=interrupt_data, node_execution_id=None,
+                db,
+                run=run,
+                base_checkpoint_id=checkpoint_id,
+                task_id=task_id or f"interrupt:{interrupt_id}",
+                write_index=-1,
+                write_kind="interrupt",
+                payload=interrupt_data,
+                node_execution_id=None,
             )
             if execution_adapter is not None:
                 decision_data = await execution_adapter.open_decision(
@@ -2408,9 +2642,16 @@ class NativeCheckpointStore:
                 )
             else:
                 decision = await HumanDecisionStore.open_graph_interrupt_in_transaction(
-                    db, fence=fence, interrupt_id=interrupt_id, prompt=prompt,
-                    checkpoint_id=checkpoint_id, checkpoint_ns=str(run["checkpoint_ns"]),
-                    task_id=task_id or None, kind=kind, expires_at=expires_at, now=now,
+                    db,
+                    fence=fence,
+                    interrupt_id=interrupt_id,
+                    prompt=prompt,
+                    checkpoint_id=checkpoint_id,
+                    checkpoint_ns=str(run["checkpoint_ns"]),
+                    task_id=task_id or None,
+                    kind=kind,
+                    expires_at=expires_at,
+                    now=now,
                 )
                 decision_data = {
                     "decision_id": decision.decision_id,
@@ -2443,9 +2684,7 @@ class NativeCheckpointStore:
                     db, run=run, intent=decision_event_intent, now=now
                 )
                 if execution_adapter is not None
-                else self._materialize_intent(
-                    db, run=run, intent=decision_event_intent, now=now
-                )
+                else self._materialize_intent(db, run=run, intent=decision_event_intent, now=now)
             )
             if execution_adapter is not None:
                 waiting = await db.execute(
@@ -2464,18 +2703,24 @@ class NativeCheckpointStore:
                     ),
                 )
                 if waiting.rowcount != 1:
-                    raise StaleRunFence(
-                        f"stale interrupt writer: {fence.run_id}"
-                    )
+                    raise StaleRunFence(f"stale interrupt writer: {fence.run_id}")
             result: dict[str, JsonValue] = {
-                "run_id": fence.run_id, "checkpoint_id": checkpoint_id,
-                "decision_id": str(decision_data["decision_id"]), "interrupt_id": interrupt_id,
-                "operation_id": op_id, "snapshot": snapshot,
+                "run_id": fence.run_id,
+                "checkpoint_id": checkpoint_id,
+                "decision_id": str(decision_data["decision_id"]),
+                "interrupt_id": interrupt_id,
+                "operation_id": op_id,
+                "snapshot": snapshot,
                 "event_ids": [decision_event_id],
             }
             await self._record_operation(
-                db, operation_id=op_id, run_id=fence.run_id,
-                operation_kind="interrupt", request_hash=request_hash, result=result, now=now,
+                db,
+                operation_id=op_id,
+                run_id=fence.run_id,
+                operation_kind="interrupt",
+                request_hash=request_hash,
+                result=result,
+                now=now,
             )
             await db.commit()
         except BaseException:
@@ -2512,8 +2757,11 @@ class NativeCheckpointStore:
         try:
             await db.execute("BEGIN IMMEDIATE")
             existing = await self._operation(
-                db, operation_id=operation_id, run_id=fence.run_id,
-                operation_kind=operation_kind, request_hash=request_hash,
+                db,
+                operation_id=operation_id,
+                run_id=fence.run_id,
+                operation_kind=operation_kind,
+                request_hash=request_hash,
             )
             if existing is not None:
                 await db.commit()
@@ -2528,9 +2776,12 @@ class NativeCheckpointStore:
                 task_id = str(task_data.get("task_id") or "")
                 node_id = str(task_data.get("node_id") or "")
                 activation = str(task_data.get("activation_id") or task_id)
-                execution_ids.append(str(task_data.get("node_execution_id") or self._stable_id(
-                    fence.run_id, expected_head, task_id, node_id
-                )))
+                execution_ids.append(
+                    str(
+                        task_data.get("node_execution_id")
+                        or self._stable_id(fence.run_id, expected_head, task_id, node_id)
+                    )
+                )
             for item in frontier:
                 if item.get("node_execution_id"):
                     execution_ids.append(str(item["node_execution_id"]))
@@ -2549,13 +2800,9 @@ class NativeCheckpointStore:
             if intent is not None:
                 event_ids.append(
                     await (
-                        execution_adapter.materialize_intent(
-                            db, run=run, intent=intent, now=now
-                        )
+                        execution_adapter.materialize_intent(db, run=run, intent=intent, now=now)
                         if execution_adapter is not None
-                        else self._materialize_intent(
-                            db, run=run, intent=intent, now=now
-                        )
+                        else self._materialize_intent(db, run=run, intent=intent, now=now)
                     )
                 )
             updated = await (
@@ -2566,8 +2813,14 @@ class NativeCheckpointStore:
                     AND head_checkpoint_id=? AND lease_owner=? AND lease_epoch=? AND run_version=?
                     RETURNING run_version""",
                     (
-                        canonical_json(dict(error)), now, now, fence.run_id, expected_head,
-                        fence.owner, fence.lease_epoch, fence.run_version,
+                        canonical_json(dict(error)),
+                        now,
+                        now,
+                        fence.run_id,
+                        expected_head,
+                        fence.owner,
+                        fence.lease_epoch,
+                        fence.run_version,
                     ),
                 )
             ).fetchone()
@@ -2586,14 +2839,21 @@ class NativeCheckpointStore:
                 if terminal_event_id not in event_ids:
                     event_ids.append(terminal_event_id)
             result: dict[str, JsonValue] = {
-                "run_id": fence.run_id, "checkpoint_id": expected_head,
-                "status": "failed", "run_version": int(updated["run_version"]),
-                "event_ids": event_ids, "operation_id": operation_id,
+                "run_id": fence.run_id,
+                "checkpoint_id": expected_head,
+                "status": "failed",
+                "run_version": int(updated["run_version"]),
+                "event_ids": event_ids,
+                "operation_id": operation_id,
             }
             await self._record_operation(
-                db, operation_id=operation_id, run_id=fence.run_id,
-                operation_kind=operation_kind, request_hash=request_hash,
-                result=result, now=now,
+                db,
+                operation_id=operation_id,
+                run_id=fence.run_id,
+                operation_kind=operation_kind,
+                request_hash=request_hash,
+                result=result,
+                now=now,
             )
             await db.commit()
         except BaseException:
@@ -2617,9 +2877,7 @@ class NativeCheckpointStore:
         error_data = copy.deepcopy(dict(error))
         validate_json_value(error_data, path="$.error")
         operation_id = self._stable_id(run_id, "launch_failure")
-        request_hash = self._request_hash(
-            {"error": error_data, "recovery_action": recovery_action}
-        )
+        request_hash = self._request_hash({"error": error_data, "recovery_action": recovery_action})
         now = self._clock()
         db = await self._connect()
         try:
@@ -2642,31 +2900,27 @@ class NativeCheckpointStore:
                     "launch failure can only finalize an unclaimed created run",
                 )
             final_intent = {
-                    "intent_id": f"{run_id}:run-final",
-                    "event_key": "run:terminal",
-                    "event_type": "workflow.final",
-                    "channel": "final",
-                    "payload": {
-                        "kind": "final",
+                "intent_id": f"{run_id}:run-final",
+                "event_key": "run:terminal",
+                "event_type": "workflow.final",
+                "channel": "final",
+                "payload": {
+                    "kind": "final",
+                    "status": "failed",
+                    "error": error_data,
+                    "recovery_action": recovery_action,
+                    "card": {
+                        "run_id": run_id,
                         "status": "failed",
                         "error": error_data,
                         "recovery_action": recovery_action,
-                        "card": {
-                            "run_id": run_id,
-                            "status": "failed",
-                            "error": error_data,
-                            "recovery_action": recovery_action,
-                        },
                     },
-                }
+                },
+            }
             event_id = await (
-                execution_adapter.materialize_intent(
-                    db, run=run, intent=final_intent, now=now
-                )
+                execution_adapter.materialize_intent(db, run=run, intent=final_intent, now=now)
                 if execution_adapter is not None
-                else self._materialize_intent(
-                    db, run=run, intent=final_intent, now=now
-                )
+                else self._materialize_intent(db, run=run, intent=final_intent, now=now)
             )
             updated = await (
                 await db.execute(
@@ -2746,12 +3000,22 @@ class NativeCheckpointStore:
                 "kind": "final",
                 "status": "failed",
                 "error": copy.deepcopy(error_data),
-                "card": {"run_id": fence.run_id, "status": "failed", "error": copy.deepcopy(error_data)},
+                "card": {
+                    "run_id": fence.run_id,
+                    "status": "failed",
+                    "error": copy.deepcopy(error_data),
+                },
             },
         }
         result = await self._commit_failure_kind(
-            fence, expected_head, error=error_data, operation_id=op_id,
-            operation_kind="failure", task=task_data, frontier=(), intent=final_intent,
+            fence,
+            expected_head,
+            error=error_data,
+            operation_id=op_id,
+            operation_kind="failure",
+            task=task_data,
+            frontier=(),
+            intent=final_intent,
         )
         return None if protocol_call else result
 
@@ -2785,12 +3049,22 @@ class NativeCheckpointStore:
                 "kind": "final",
                 "status": "failed",
                 "error": copy.deepcopy(error_data),
-                "card": {"run_id": fence.run_id, "status": "failed", "error": copy.deepcopy(error_data)},
+                "card": {
+                    "run_id": fence.run_id,
+                    "status": "failed",
+                    "error": copy.deepcopy(error_data),
+                },
             },
         }
         result = await self._commit_failure_kind(
-            fence, expected_head, error=error_data, operation_id=op_id,
-            operation_kind="engine_failure", task=None, frontier=frontier_data, intent=final_intent,
+            fence,
+            expected_head,
+            error=error_data,
+            operation_id=op_id,
+            operation_kind="engine_failure",
+            task=None,
+            frontier=frontier_data,
+            intent=final_intent,
         )
         return None if protocol_call else result
 
@@ -2815,7 +3089,9 @@ class NativeCheckpointStore:
             child = await self._run_row(db, str(saga["child_run_id"]))
             if str(saga["status"]) == "checkpointed":
                 if str(child["head_checkpoint_id"]) != child_checkpoint_id:
-                    raise NativeCheckpointError("fork_identity_conflict", "fork checkpoint id changed")
+                    raise NativeCheckpointError(
+                        "fork_identity_conflict", "fork checkpoint id changed"
+                    )
                 await db.commit()
                 return {
                     "run_id": str(child["run_id"]),
@@ -2827,8 +3103,10 @@ class NativeCheckpointStore:
                     """SELECT * FROM workflow_checkpoints WHERE thread_id=? AND checkpoint_ns=?
                     AND checkpoint_id=? AND engine_kind=?""",
                     (
-                        child["thread_id"], saga["source_checkpoint_ns"],
-                        saga["source_checkpoint_id"], NATIVE_ENGINE_KIND,
+                        child["thread_id"],
+                        saga["source_checkpoint_ns"],
+                        saga["source_checkpoint_id"],
+                        NATIVE_ENGINE_KIND,
                     ),
                 )
             ).fetchone()
@@ -2855,7 +3133,8 @@ class NativeCheckpointStore:
                 }
             )
             snapshot = self._snapshot_payload(
-                run=child, checkpoint_id=child_checkpoint_id,
+                run=child,
+                checkpoint_id=child_checkpoint_id,
                 parent_checkpoint_id=str(saga["source_checkpoint_id"]),
                 step=int(source_snapshot.get("step") or 0) + 1,
                 state=state,
@@ -2889,8 +3168,10 @@ class NativeCheckpointStore:
                 ) SELECT ?,thread_id,checkpoint_ns,checkpoint_id,parent_checkpoint_id,created_at
                   FROM ancestors""",
                 (
-                    child["thread_id"], saga["source_checkpoint_ns"],
-                    saga["source_checkpoint_id"], child["run_id"],
+                    child["thread_id"],
+                    saga["source_checkpoint_ns"],
+                    saga["source_checkpoint_id"],
+                    child["run_id"],
                 ),
             )
             cursor = await db.execute(
@@ -2898,9 +3179,11 @@ class NativeCheckpointStore:
                 active_nodes_json=?,updated_at=? WHERE run_id=? AND head_checkpoint_id IS NULL
                 AND status='created'""",
                 (
-                    child["checkpoint_ns"], child_checkpoint_id,
+                    child["checkpoint_ns"],
+                    child_checkpoint_id,
                     canonical_json([str(item.get("node_id", "")) for item in snapshot["frontier"]]),
-                    now, child["run_id"],
+                    now,
+                    child["run_id"],
                 ),
             )
             if cursor.rowcount != 1:

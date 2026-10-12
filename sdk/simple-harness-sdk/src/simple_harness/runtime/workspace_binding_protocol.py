@@ -45,9 +45,7 @@ def workspace_binding_root_set_digest(root_identity_hashes: tuple[str, ...]) -> 
         raise ValueError("root_identity_hashes must be sorted")
     if len(set(hashes)) != len(hashes):
         raise ValueError("root_identity_hashes must be unique")
-    return _domain_hash(
-        "workspace-binding/root-set/v1", {"root_identity_hashes": list(hashes)}
-    )
+    return _domain_hash("workspace-binding/root-set/v1", {"root_identity_hashes": list(hashes)})
 
 
 EMPTY_WORKSPACE_BINDING_ROOT_SET_DIGEST = workspace_binding_root_set_digest(())

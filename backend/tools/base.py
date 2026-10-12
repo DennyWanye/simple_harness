@@ -7,6 +7,7 @@ MVP: tools are zero-arg for now (get_time doesn't need params). Protocol
 keeps `invoke(**kwargs)` so we can add parameter parsing without breaking
 the contract.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -22,6 +23,7 @@ class ToolSpec:
     user confirmation (Tauri dialog via control channel) before ``invoke``.
     Defaults to False so existing tools keep their behaviour.
     """
+
     name: str
     description: str
     requires_confirmation: bool = False

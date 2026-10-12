@@ -115,8 +115,13 @@ async def test_user_stated_decision_and_goal_are_admitted_on_a_clean_scope(tmp_p
     decision = await _apply(
         service,
         env,
-        _mutate(refs, base_revision=revision, key="decision-1", kind="decision.record",
-                value="以主清单 A 为准，参照件 B 只作参照"),
+        _mutate(
+            refs,
+            base_revision=revision,
+            key="decision-1",
+            kind="decision.record",
+            value="以主清单 A 为准，参照件 B 只作参照",
+        ),
     )
     assert decision.accepted, decision.error_code
     assert decision.committed_revision == revision + 1
@@ -142,7 +147,9 @@ async def test_user_stated_decision_and_goal_are_admitted_on_a_clean_scope(tmp_p
 
 
 @pytest.mark.asyncio
-async def test_no_mutation_on_a_clean_scope_is_rejected_and_says_what_would_count(tmp_path: Path) -> None:
+async def test_no_mutation_on_a_clean_scope_is_rejected_and_says_what_would_count(
+    tmp_path: Path,
+) -> None:
     env, service, store, refs = await _clean_scope(tmp_path, "sdk-run-clean-nomutation")
     revision, _ = h.head(env.db_path)
     before = h.receipts(env.db_path)
@@ -172,7 +179,9 @@ async def test_no_mutation_still_accepted_while_dirt_or_pending_exists(tmp_path:
     revision, _ = h.head(env.db_path)
 
     closed = await _apply(
-        service, env, h.no_mutation_arguments(h.scope_evidence_ids(env.db_path), base_revision=revision)
+        service,
+        env,
+        h.no_mutation_arguments(h.scope_evidence_ids(env.db_path), base_revision=revision),
     )
     assert closed.accepted, closed.error_code
     assert closed.receipt.outcome == "no_mutation"
@@ -188,25 +197,44 @@ async def test_clean_scope_keeps_every_other_guard(tmp_path: Path) -> None:
 
     # payload_invalid：未知 operation kind。
     with pytest.raises(ClosureRejected) as invalid:
-        await _apply(service, env, _mutate(refs, base_revision=revision, key="bad",
-                                           kind="status.update", value="x"))
+        await _apply(
+            service,
+            env,
+            _mutate(refs, base_revision=revision, key="bad", kind="status.update", value="x"),
+        )
     assert invalid.value.code == "task_scope_update_payload_invalid"
 
     # refs_outside_scope：引用未链接到本 scope 的证据。
     with pytest.raises(ClosureRejected) as outside:
-        await _apply(service, env, _mutate(["not-in-scope"], base_revision=revision, key="outside",
-                                           kind="decision.record", value="x"))
+        await _apply(
+            service,
+            env,
+            _mutate(
+                ["not-in-scope"],
+                base_revision=revision,
+                key="outside",
+                kind="decision.record",
+                value="x",
+            ),
+        )
     assert outside.value.code == "task_scope_update_refs_outside_scope"
 
     # base_revision 漂移：CAS 冲突原样透传且可重试。
     with pytest.raises(ClosureRejected) as stale:
-        await _apply(service, env, _mutate(refs, base_revision=revision + 7, key="stale",
-                                           kind="decision.record", value="x"))
+        await _apply(
+            service,
+            env,
+            _mutate(
+                refs, base_revision=revision + 7, key="stale", kind="decision.record", value="x"
+            ),
+        )
     assert stale.value.code == "mutation_base_revision_conflict" and stale.value.retryable
     assert h.head(env.db_path)[0] == revision
 
     # 幂等：同 key 同载荷重放 → 同一 receipt，不写第二行。
-    arguments = _mutate(refs, base_revision=revision, key="once", kind="decision.record", value="只记一次")
+    arguments = _mutate(
+        refs, base_revision=revision, key="once", kind="decision.record", value="只记一次"
+    )
     once = await _apply(service, env, arguments)
     assert once.accepted and once.replayed is False
     again = await _apply(service, env, arguments)
@@ -215,10 +243,28 @@ async def test_clean_scope_keeps_every_other_guard(tmp_path: Path) -> None:
     assert len([row for row in h.receipts(env.db_path) if row[3] == once.receipt.plan_id]) == 1
 
     # 迁移表：complete 之后禁 plan.*（干净档案同样适用）。
-    done = await _apply(service, env, _mutate(refs, base_revision=h.head(env.db_path)[0], key="done",
-                                              kind="task.complete", value="全部核对完毕"))
+    done = await _apply(
+        service,
+        env,
+        _mutate(
+            refs,
+            base_revision=h.head(env.db_path)[0],
+            key="done",
+            kind="task.complete",
+            value="全部核对完毕",
+        ),
+    )
     assert done.accepted, done.error_code
     with pytest.raises(ClosureRejected) as after:
-        await _apply(service, env, _mutate(refs, base_revision=h.head(env.db_path)[0], key="after",
-                                           kind="plan.step.add", value="再补一步"))
+        await _apply(
+            service,
+            env,
+            _mutate(
+                refs,
+                base_revision=h.head(env.db_path)[0],
+                key="after",
+                kind="plan.step.add",
+                value="再补一步",
+            ),
+        )
     assert after.value.code == "task_scope_update_after_complete"

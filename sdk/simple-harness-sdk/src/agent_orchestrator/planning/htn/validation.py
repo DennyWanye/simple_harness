@@ -245,6 +245,7 @@ def validate_delta(
     if type(taskgraph_contract) is not bool:
         raise ContractError("taskgraph_contract must be a boolean")
     from ...graph.taskgraph_validation import pending_compounds, taskgraph_projection_report
+
     pending = pending_compounds(merged)
     if taskgraph_contract:
         projection_report = taskgraph_projection_report(merged, projection_report)
@@ -280,7 +281,12 @@ def validate_delta(
 
     unbound = _check_ports(delta, merged, problems)
     verdicts = _check_preconditions(delta, methods, snapshot, predicates, problems, now_ms=now_ms)
-    _check_coverage(delta, merged, problems, pending_roots=frozenset(pending) if taskgraph_contract else frozenset())
+    _check_coverage(
+        delta,
+        merged,
+        problems,
+        pending_roots=frozenset(pending) if taskgraph_contract else frozenset(),
+    )
     return DeltaReport(
         problems=tuple(sorted(problems, key=lambda item: (str(item.kind), item.detail))),
         projection_report=projection_report,
@@ -288,8 +294,10 @@ def validate_delta(
         preconditions=verdicts,
         unbound_ports=unbound,
         pending_compounds=pending,
-        structural_check_complete=not any(problem.kind in {ProblemKind.PARTIAL_CHECK, ProblemKind.BOUND_REACHED}
-            for problem in (*projection_report.problems, *refinement_report.problems)),
+        structural_check_complete=not any(
+            problem.kind in {ProblemKind.PARTIAL_CHECK, ProblemKind.BOUND_REACHED}
+            for problem in (*projection_report.problems, *refinement_report.problems)
+        ),
         decomposition_complete=not pending,
     )
 
@@ -436,7 +444,8 @@ def _check_coverage(
     delta: ProposedPlanDelta,
     merged: TaskNetworkSnapshot,
     problems: list[DeltaProblem],
-    *, pending_roots: frozenset[str] = frozenset(),
+    *,
+    pending_roots: frozenset[str] = frozenset(),
 ) -> None:
     """Every root criterion must be claimed by an occurrence this plan contains."""
 
@@ -825,8 +834,6 @@ def unsupported_features(
                 if isinstance(argument, ConstantValue) and isinstance(argument.value, float):
                     note("numeric-fluents")
     return tuple(features)
-
-
 
 
 def _note_order_feature(constraint: OrderConstraint, note: Any) -> None:

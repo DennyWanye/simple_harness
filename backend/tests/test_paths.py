@@ -13,6 +13,7 @@ Priority order the implementation must satisfy for :func:`model_root`:
   3. sys._MEIPASS if set (PyInstaller runtime marker)
   4. backend/models/ relative to paths.py (dev mode)
 """
+
 from __future__ import annotations
 
 import sys
@@ -22,6 +23,7 @@ import paths
 import pytest
 
 # ---- Fixtures --------------------------------------------------------
+
 
 @pytest.fixture
 def clean_env(monkeypatch):
@@ -46,6 +48,7 @@ def clean_env(monkeypatch):
 
 
 # ---- model_root ------------------------------------------------------
+
 
 def test_model_root_dev_mode(clean_env):
     """Dev mode: no env, no _MEIPASS, user_models_dir empty → backend/models/."""
@@ -100,6 +103,7 @@ def test_resolve_model_dir_does_not_verify_existence(clean_env, tmp_path):
 
 
 # ---- user_data_dir / user_cache_dir / user_log_dir -------------------
+
 
 def test_user_data_dir_env_override(clean_env, tmp_path):
     clean_env.setenv("DESKPET_USER_DATA_DIR", str(tmp_path))
@@ -162,6 +166,7 @@ def test_user_log_dir_env_override(clean_env, tmp_path):
 
 # ---- ensure_user_dirs ------------------------------------------------
 
+
 def test_ensure_user_dirs_creates_expected_tree(clean_env, tmp_path):
     data = tmp_path / "data_root"
     cache = tmp_path / "cache_root"
@@ -171,7 +176,13 @@ def test_ensure_user_dirs_creates_expected_tree(clean_env, tmp_path):
     clean_env.setenv("DESKPET_MODEL_ROOT", str(models))
     # Reset the monkeypatch on user_models_dir from clean_env — we want the
     # real function now so ensure_user_dirs creates the env-pointed path.
-    clean_env.setattr(paths, "user_models_dir", paths.user_models_dir.__wrapped__ if hasattr(paths.user_models_dir, "__wrapped__") else lambda: Path(str(models)))
+    clean_env.setattr(
+        paths,
+        "user_models_dir",
+        paths.user_models_dir.__wrapped__
+        if hasattr(paths.user_models_dir, "__wrapped__")
+        else lambda: Path(str(models)),
+    )
 
     paths.ensure_user_dirs()
     assert data.is_dir()
@@ -192,6 +203,7 @@ def test_ensure_user_dirs_idempotent(clean_env, tmp_path):
 
 
 # ---- portable user data ----------------------------------------------
+
 
 def _freeze_backend_install(monkeypatch, install_root: Path) -> None:
     backend_dir = install_root / "backend"
@@ -322,12 +334,12 @@ def test_user_data_dir_memoized_until_reset(clean_env, monkeypatch, tmp_path):
 
     a = paths.user_data_dir()
     b = paths.user_data_dir()
-    assert a == b == tmp_path / "ud1"   # 缓存命中：fake_portable 只调一次
+    assert a == b == tmp_path / "ud1"  # 缓存命中：fake_portable 只调一次
     assert calls["n"] == 1
 
     paths.reset_path_cache()
     c = paths.user_data_dir()
-    assert c == tmp_path / "ud2"          # reset 后重算
+    assert c == tmp_path / "ud2"  # reset 后重算
     assert calls["n"] == 2
 
 

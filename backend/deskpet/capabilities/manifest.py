@@ -80,9 +80,7 @@ _KNOWN_EFFECTS = frozenset(
         "opaque_manual",
     }
 )
-_WRITE_PERMISSIONS = frozenset(
-    {"filesystem_write", "write_file", "desktop_write"}
-)
+_WRITE_PERMISSIONS = frozenset({"filesystem_write", "write_file", "desktop_write"})
 _OPAQUE_PERMISSIONS = frozenset(
     {
         "process_execute",
@@ -318,13 +316,9 @@ def _mapping(
     missing = sorted(required_set - set(value))
     extra = sorted(set(value) - allowed)
     if missing:
-        raise PackManifestError(
-            "missing_field", f"{name} is missing: {', '.join(missing)}"
-        )
+        raise PackManifestError("missing_field", f"{name} is missing: {', '.join(missing)}")
     if extra:
-        raise PackManifestError(
-            "unknown_field", f"{name} has unknown fields: {', '.join(extra)}"
-        )
+        raise PackManifestError("unknown_field", f"{name} has unknown fields: {', '.join(extra)}")
     return dict(value)
 
 
@@ -352,9 +346,7 @@ def _objects(value: object, name: str) -> list[object]:
 def _relative_path(value: object, name: str) -> str:
     text = _text(value, name)
     if "\\" in text:
-        raise PackManifestError(
-            "noncanonical_path", f"{name} must use '/' separators"
-        )
+        raise PackManifestError("noncanonical_path", f"{name} must use '/' separators")
     path = PurePosixPath(text)
     if (
         path.is_absolute()
@@ -362,14 +354,10 @@ def _relative_path(value: object, name: str) -> str:
         or any(part in {"", ".", ".."} for part in path.parts)
         or ":" in path.parts[0]
     ):
-        raise PackManifestError(
-            "path_traversal", f"{name} must be a canonical relative path"
-        )
+        raise PackManifestError("path_traversal", f"{name} must be a canonical relative path")
     canonical = path.as_posix()
     if canonical != text:
-        raise PackManifestError(
-            "noncanonical_path", f"{name} is not in canonical form"
-        )
+        raise PackManifestError("noncanonical_path", f"{name} is not in canonical form")
     return canonical
 
 
@@ -397,9 +385,7 @@ def parse_pack_manifest(
         raise PackManifestError("invalid_manifest", "manifest must be an object")
     schema_version = value.get("schema_version")
     if isinstance(schema_version, bool) or not isinstance(schema_version, int):
-        raise PackManifestError(
-            "invalid_schema_version", "schema_version must be an integer"
-        )
+        raise PackManifestError("invalid_schema_version", "schema_version must be an integer")
     if schema_version not in SUPPORTED_PACK_SCHEMA_VERSIONS:
         raise PackManifestError(
             "unsupported_schema",
@@ -439,9 +425,7 @@ def parse_pack_manifest(
     )
     source_type = _text(source_raw["type"], "source.type")
     if source_type not in _SOURCE_TYPES:
-        raise PackManifestError(
-            "invalid_source", f"unsupported source type: {source_type}"
-        )
+        raise PackManifestError("invalid_source", f"unsupported source type: {source_type}")
     source = PackSource(
         type=source_type,
         uri=_text(source_raw["uri"], "source.uri"),
@@ -492,9 +476,7 @@ def parse_pack_manifest(
                 f"entries.skills[{index}].id is not canonical",
             )
         if skill_id in skill_ids:
-            raise PackManifestError(
-                "duplicate_skill_id", f"duplicate Skill id: {skill_id}"
-            )
+            raise PackManifestError("duplicate_skill_id", f"duplicate Skill id: {skill_id}")
         skill_ids.add(skill_id)
         allowed_tools = (
             _string_list(
@@ -514,15 +496,11 @@ def parse_pack_manifest(
                 "invalid_tool_name",
                 f"entries.skills[{index}].allowed_tools contains an invalid tool name",
             )
-        skills.append(
-            SkillEntry(id=skill_id, path=path, allowed_tools=allowed_tools)
-        )
+        skills.append(SkillEntry(id=skill_id, path=path, allowed_tools=allowed_tools))
 
     workflows: list[WorkflowEntry] = []
     workflow_ids: set[str] = set()
-    for index, item in enumerate(
-        _objects(entries_raw.get("workflows", []), "entries.workflows")
-    ):
+    for index, item in enumerate(_objects(entries_raw.get("workflows", []), "entries.workflows")):
         row = _mapping(
             item,
             name=f"entries.workflows[{index}]",
@@ -537,9 +515,7 @@ def parse_pack_manifest(
         workflows.append(
             WorkflowEntry(
                 id=workflow_id,
-                path=_relative_path(
-                    row["path"], f"entries.workflows[{index}].path"
-                ),
+                path=_relative_path(row["path"], f"entries.workflows[{index}].path"),
                 interpreter_id=_text(
                     row["interpreter_id"],
                     f"entries.workflows[{index}].interpreter_id",
@@ -575,9 +551,7 @@ def parse_pack_manifest(
             expected_name = provider_tool_name(pack_id, logical_id)
         except CapabilityContractError as exc:
             raise PackManifestError(exc.code, str(exc)) from exc
-        actual_name = _text(
-            row["provider_name"], f"entries.tools[{index}].provider_name"
-        )
+        actual_name = _text(row["provider_name"], f"entries.tools[{index}].provider_name")
         if actual_name != expected_name:
             raise PackManifestError(
                 "provider_name_mismatch",
@@ -588,15 +562,11 @@ def parse_pack_manifest(
                 "reserved_tool_name", f"{actual_name!r} is a core reserved name"
             )
         if logical_id in logical_ids or actual_name in provider_names:
-            raise PackManifestError(
-                "tool_name_collision", "logical or provider tool name collides"
-            )
+            raise PackManifestError("tool_name_collision", "logical or provider tool name collides")
         logical_ids.add(logical_id)
         provider_names.add(actual_name)
         runtime = _text(row["runtime"], f"entries.tools[{index}].runtime")
-        profile = _text(
-            row["execution_profile"], f"entries.tools[{index}].execution_profile"
-        )
+        profile = _text(row["execution_profile"], f"entries.tools[{index}].execution_profile")
         if runtime not in _RUNTIMES:
             raise PackManifestError("invalid_runtime", f"unsupported runtime: {runtime}")
         if profile not in _EXECUTION_PROFILES:
@@ -609,16 +579,10 @@ def parse_pack_manifest(
                 provider_name=actual_name,
                 runtime=runtime,
                 execution_profile=profile,
-                input_views=_string_list(
-                    row["input_views"], f"entries.tools[{index}].input_views"
-                ),
+                input_views=_string_list(row["input_views"], f"entries.tools[{index}].input_views"),
                 entry=_relative_path(row["entry"], f"entries.tools[{index}].entry"),
-                schema=_relative_path(
-                    row["schema"], f"entries.tools[{index}].schema"
-                ),
-                healthcheck=_text(
-                    row["healthcheck"], f"entries.tools[{index}].healthcheck"
-                ),
+                schema=_relative_path(row["schema"], f"entries.tools[{index}].schema"),
+                healthcheck=_text(row["healthcheck"], f"entries.tools[{index}].healthcheck"),
             )
         )
 
@@ -634,9 +598,7 @@ def parse_pack_manifest(
         )
         server_id = _text(row["id"], f"entries.mcp_servers[{index}].id")
         if server_id in mcp_ids:
-            raise PackManifestError(
-                "mcp_server_collision", f"duplicate MCP server id: {server_id}"
-            )
+            raise PackManifestError("mcp_server_collision", f"duplicate MCP server id: {server_id}")
         mcp_ids.add(server_id)
         mcp_servers.append(
             McpServerEntry(
@@ -662,9 +624,7 @@ def parse_pack_manifest(
             f"unknown permissions: {', '.join(unknown_permissions)}",
         )
     if unknown_effects:
-        raise PackManifestError(
-            "unknown_effect", f"unknown effects: {', '.join(unknown_effects)}"
-        )
+        raise PackManifestError("unknown_effect", f"unknown effects: {', '.join(unknown_effects)}")
     if set(permissions) & _WRITE_PERMISSIONS and not (
         {"staged_file", "opaque_manual"} & set(effects)
     ):
@@ -684,9 +644,7 @@ def parse_pack_manifest(
         required={"python", "commands"},
     )
     python_dependencies: list[PythonDependency] = []
-    for index, item in enumerate(
-        _objects(dependencies_raw["python"], "dependencies.python")
-    ):
+    for index, item in enumerate(_objects(dependencies_raw["python"], "dependencies.python")):
         if isinstance(item, str):
             requirement = _text(item, f"dependencies.python[{index}]")
         else:
@@ -695,16 +653,12 @@ def parse_pack_manifest(
                 name=f"dependencies.python[{index}]",
                 required={"requirement"},
             )
-            requirement = _text(
-                row["requirement"], f"dependencies.python[{index}].requirement"
-            )
+            requirement = _text(row["requirement"], f"dependencies.python[{index}].requirement")
         python_dependencies.append(PythonDependency(requirement=requirement))
 
     command_dependencies: list[CommandDependency] = []
     command_names: set[str] = set()
-    for index, item in enumerate(
-        _objects(dependencies_raw["commands"], "dependencies.commands")
-    ):
+    for index, item in enumerate(_objects(dependencies_raw["commands"], "dependencies.commands")):
         row = _mapping(
             item,
             name=f"dependencies.commands[{index}]",
@@ -712,25 +666,19 @@ def parse_pack_manifest(
         )
         name = _text(row["name"], f"dependencies.commands[{index}].name")
         if name in command_names:
-            raise PackManifestError(
-                "dependency_collision", f"duplicate command dependency: {name}"
-            )
+            raise PackManifestError("dependency_collision", f"duplicate command dependency: {name}")
         command_names.add(name)
         command_dependencies.append(
             CommandDependency(
                 name=name,
-                version=_text(
-                    row["version"], f"dependencies.commands[{index}].version"
-                ),
+                version=_text(row["version"], f"dependencies.commands[{index}].version"),
             )
         )
 
     files: list[PackFile] = []
     file_paths: set[str] = set()
     for index, item in enumerate(_objects(raw["files"], "files")):
-        row = _mapping(
-            item, name=f"files[{index}]", required={"path", "sha256"}
-        )
+        row = _mapping(item, name=f"files[{index}]", required={"path", "sha256"})
         path = _relative_path(row["path"], f"files[{index}].path")
         digest = _text(row["sha256"], f"files[{index}].sha256")
         if not _SHA256_RE.fullmatch(digest):
@@ -819,9 +767,7 @@ def _version_parts(value: str) -> tuple[int, int, int, tuple[tuple[int, object],
         for token in prerelease_text.split("."):
             prerelease.append((0, int(token)) if token.isdigit() else (1, token))
     # A release sorts after its prereleases.
-    marker: tuple[tuple[int, object], ...] = (
-        tuple(prerelease) if prerelease else ((2, ""),)
-    )
+    marker: tuple[tuple[int, object], ...] = tuple(prerelease) if prerelease else ((2, ""),)
     return (
         int(match.group(1)),
         int(match.group(2)),
@@ -859,11 +805,8 @@ def validate_compatibility(
     manifest: PackManifest,
     environment: PackEnvironment,
 ) -> None:
-    if (
-        environment.deskpet_version is not None
-        and not _version_satisfies(
-            environment.deskpet_version, manifest.compatibility.deskpet
-        )
+    if environment.deskpet_version is not None and not _version_satisfies(
+        environment.deskpet_version, manifest.compatibility.deskpet
     ):
         raise PackCompatibilityError(
             "incompatible_deskpet",
@@ -875,9 +818,7 @@ def validate_compatibility(
             f"pack supports {manifest.compatibility.os}, not {environment.os}",
         )
     architecture = (
-        environment.architecture.lower()
-        .replace("amd64", "x86_64")
-        .replace("arm64", "aarch64")
+        environment.architecture.lower().replace("amd64", "x86_64").replace("arm64", "aarch64")
     )
     supported = {
         item.lower().replace("amd64", "x86_64").replace("arm64", "aarch64")
@@ -888,9 +829,7 @@ def validate_compatibility(
             "incompatible_architecture",
             f"pack supports {sorted(supported)}, not {architecture}",
         )
-    if not _version_satisfies(
-        environment.python_version, manifest.compatibility.python
-    ):
+    if not _version_satisfies(environment.python_version, manifest.compatibility.python):
         raise PackCompatibilityError(
             "incompatible_python",
             f"pack requires Python {manifest.compatibility.python}",
@@ -902,9 +841,7 @@ def _resolve_pack_path(root: Path, relative: str) -> Path:
     try:
         candidate.relative_to(root)
     except ValueError as exc:
-        raise PackManifestError(
-            "path_traversal", f"pack path escapes root: {relative}"
-        ) from exc
+        raise PackManifestError("path_traversal", f"pack path escapes root: {relative}") from exc
     return candidate
 
 
@@ -961,18 +898,11 @@ def _validate_v2_skill_frontmatter(root: Path, entry: SkillEntry) -> None:
     try:
         lines = path.read_text(encoding="utf-8").lstrip("\ufeff").splitlines()
     except (OSError, UnicodeError) as exc:
-        raise PackManifestError(
-            "invalid_skill", f"cannot read skill {entry.path}: {exc}"
-        ) from exc
+        raise PackManifestError("invalid_skill", f"cannot read skill {entry.path}: {exc}") from exc
     if not lines or lines[0].strip() != "---":
-        raise PackManifestError(
-            "invalid_skill_frontmatter", f"{entry.path} has no frontmatter"
-        )
+        raise PackManifestError("invalid_skill_frontmatter", f"{entry.path} has no frontmatter")
     try:
-        end = next(
-            index for index, line in enumerate(lines[1:], start=1)
-            if line.strip() == "---"
-        )
+        end = next(index for index, line in enumerate(lines[1:], start=1) if line.strip() == "---")
         frontmatter = yaml.safe_load("\n".join(lines[1:end])) or {}
     except (StopIteration, yaml.YAMLError) as exc:
         raise PackManifestError(
@@ -984,9 +914,7 @@ def _validate_v2_skill_frontmatter(root: Path, entry: SkillEntry) -> None:
             f"{entry.path} name must equal manifest skill id {entry.id!r}",
         )
     allowed = frontmatter.get("allowed-tools")
-    if not isinstance(allowed, list) or any(
-        not isinstance(item, str) for item in allowed
-    ):
+    if not isinstance(allowed, list) or any(not isinstance(item, str) for item in allowed):
         raise PackManifestError(
             "skill_allowed_tools_missing",
             f"{entry.path} must declare allowed-tools as a list",
@@ -1014,9 +942,7 @@ def load_and_validate_pack(
     try:
         raw = json.loads(manifest_path.read_text(encoding="utf-8"))
     except FileNotFoundError as exc:
-        raise PackManifestError(
-            "manifest_missing", f"{PACK_MANIFEST_NAME} is missing"
-        ) from exc
+        raise PackManifestError("manifest_missing", f"{PACK_MANIFEST_NAME} is missing") from exc
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         raise PackManifestError(
             "manifest_invalid", f"cannot parse {PACK_MANIFEST_NAME}: {exc}"

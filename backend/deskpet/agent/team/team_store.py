@@ -41,6 +41,7 @@ db files mean it's free):
 * ``permissions(req_id INTEGER PK AUTOINCREMENT, team_id, teammate_id,
   action, granted, decided_at, created_at)``
 """
+
 from __future__ import annotations
 
 import logging
@@ -422,9 +423,7 @@ class TeamStore:
             await db.commit()
         return task_id
 
-    async def claim_task(
-        self, team_id: str, teammate_id: str
-    ) -> TeamTask | None:
+    async def claim_task(self, team_id: str, teammate_id: str) -> TeamTask | None:
         """Atomically claim the oldest pending task. None if pool empty.
 
         Concurrency: SQLite's UPDATE...RETURNING is transactional under
@@ -498,9 +497,7 @@ class TeamStore:
                     return None
                 self._fault("team_saga_after_task_claim")
                 task = self._row_to_task(row)
-                operation_id = team_idempotency_key(
-                    team_id, task.task_id, task.claim_epoch
-                )
+                operation_id = team_idempotency_key(team_id, task.task_id, task.claim_epoch)
                 intent = intent_factory(operation_id, task)
                 if intent.operation_id != operation_id:
                     raise ValueError("team child intent operation_id is not canonical")
@@ -523,8 +520,13 @@ class TeamStore:
                     created_at,intent_payload_json
                     ) VALUES(?,?,?,?,?,'pending',?,?)""",
                     (
-                        operation_id, team_id, task.task_id, task.claim_epoch,
-                        child_run_id, now, intent_payload_json,
+                        operation_id,
+                        team_id,
+                        task.task_id,
+                        task.claim_epoch,
+                        child_run_id,
+                        now,
+                        intent_payload_json,
                     ),
                 )
                 self._fault("team_saga_after_command_enqueue")
@@ -632,10 +634,7 @@ class TeamStore:
                     (team_id, limit),
                 )
             ).fetchall()
-        return tuple(
-            (self._row_to_task(row[:12]), TeamChildRunCommand(*row[12:]))
-            for row in rows
-        )
+        return tuple((self._row_to_task(row[:12]), TeamChildRunCommand(*row[12:])) for row in rows)
 
     async def apply_child_terminal(
         self,
@@ -685,8 +684,13 @@ class TeamStore:
                           AND claimed_pending_run=?
                           AND status IN ('claimed','in_progress')""",
                         (
-                            task_status, result, now, str(command[0]), team_id,
-                            int(command[1]), str(command[2]),
+                            task_status,
+                            result,
+                            now,
+                            str(command[0]),
+                            team_id,
+                            int(command[1]),
+                            str(command[2]),
                         ),
                     )
                     if cursor.rowcount != 1:
@@ -752,9 +756,7 @@ class TeamStore:
             return False
         return changed > 0
 
-    async def list_tasks(
-        self, team_id: str, status: str | None = None
-    ) -> list[TeamTask]:
+    async def list_tasks(self, team_id: str, status: str | None = None) -> list[TeamTask]:
         """Snapshot of tasks (optionally filtered by status)."""
         await self._ensure_schema(team_id)
         try:
@@ -806,9 +808,7 @@ class TeamStore:
     # Mailbox
     # ------------------------------------------------------------------
 
-    async def send_message(
-        self, team_id: str, from_id: str, to_id: str, content: str
-    ) -> bool:
+    async def send_message(self, team_id: str, from_id: str, to_id: str, content: str) -> bool:
         """Append a message to the team mailbox."""
         await self._ensure_schema(team_id)
         try:
@@ -883,9 +883,7 @@ class TeamStore:
     # Permission queue
     # ------------------------------------------------------------------
 
-    async def request_permission(
-        self, team_id: str, teammate_id: str, action: str
-    ) -> int:
+    async def request_permission(self, team_id: str, teammate_id: str, action: str) -> int:
         """Queue a permission request. Returns its req_id.
 
         Caller (teammate tool) typically polls ``get_permission`` until
@@ -908,9 +906,7 @@ class TeamStore:
             return 0
         return new_id
 
-    async def grant_permission(
-        self, team_id: str, req_id: int, allow: bool
-    ) -> bool:
+    async def grant_permission(self, team_id: str, req_id: int, allow: bool) -> bool:
         """Leader decides on a queued permission request."""
         await self._ensure_schema(team_id)
         try:
@@ -928,9 +924,7 @@ class TeamStore:
             return False
         return changed > 0
 
-    async def get_permission(
-        self, team_id: str, req_id: int
-    ) -> TeamPermissionRequest | None:
+    async def get_permission(self, team_id: str, req_id: int) -> TeamPermissionRequest | None:
         """Read one permission request (any state)."""
         await self._ensure_schema(team_id)
         try:

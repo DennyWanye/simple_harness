@@ -41,9 +41,9 @@ class AuthorizationTerminalEvidence:
 
 
 class AuthorizationTerminalLifecyclePort(Protocol):
-    def settle_authorization_terminal(
-        self, evidence: AuthorizationTerminalEvidence
-    ) -> object: ...
+    def settle_authorization_terminal(self, evidence: AuthorizationTerminalEvidence) -> object: ...
+
+
 def _hash(value: object) -> str:
     return hashlib.sha256(
         json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
@@ -74,7 +74,10 @@ class ProductAuthorizationAdapter:
 
     async def prepare(self, prepared: PreparedToolEffect) -> AuthorizationResult:
         replay = await self._replay_of_durable_authorization(prepared)
-        if isinstance(replay, AuthorizationResult) and replay.decision is AuthorizationDecision.DENY:
+        if (
+            isinstance(replay, AuthorizationResult)
+            and replay.decision is AuthorizationDecision.DENY
+        ):
             return replay
         # Product policies expose the Host authorization port as
         # ``decide(prepared, request=...)``.  Older unit fixtures supplied a
@@ -111,17 +114,15 @@ class ProductAuthorizationAdapter:
         if result.decision is AuthorizationDecision.ALLOW:
             if identity.tool_name == "skill_install":
                 approval_for = getattr(self._policy, "auto_skill_approval_for", None)
-                metadata = (
-                    dict(approval_for(prepared)) if callable(approval_for) else {}
-                )
+                metadata = dict(approval_for(prepared)) if callable(approval_for) else {}
                 required = (
-                    "skill_install_intent_id", "skill_install_content_digest",
-                    "skill_install_member_digest", "skill_install_expires_at",
+                    "skill_install_intent_id",
+                    "skill_install_content_digest",
+                    "skill_install_member_digest",
+                    "skill_install_expires_at",
                 )
                 if any(not metadata.get(name) for name in required):
-                    raise RuntimeError(
-                        "Auto Skill approval requires a completed trusted preflight"
-                    )
+                    raise RuntimeError("Auto Skill approval requires a completed trusted preflight")
                 nonce, host_hash = auto_skill_approval_receipt(
                     identity,
                     intent_id=str(metadata["skill_install_intent_id"]),
@@ -171,11 +172,13 @@ class ProductAuthorizationAdapter:
             )
         return result
 
-    _REPLAYABLE = frozenset({
-        AuthorizationSagaState.PREPARED,
-        AuthorizationSagaState.DECISION_BOUND,
-        AuthorizationSagaState.EFFECT_BOUND,
-    })
+    _REPLAYABLE = frozenset(
+        {
+            AuthorizationSagaState.PREPARED,
+            AuthorizationSagaState.DECISION_BOUND,
+            AuthorizationSagaState.EFFECT_BOUND,
+        }
+    )
 
     async def _replay_of_durable_authorization(
         self, prepared: PreparedToolEffect
@@ -253,10 +256,7 @@ class ProductAuthorizationAdapter:
         sdk_receipt: AuthorizationReceipt,
     ) -> AuthorizationReceipt:
         record = self._record(prepared)
-        if (
-            record.bound_decision_nonce is not None
-            and request.nonce != record.bound_decision_nonce
-        ):
+        if record.bound_decision_nonce is not None and request.nonce != record.bound_decision_nonce:
             raise RuntimeError("authorization decision nonce differs from durable identity")
         receipt_ref = (
             f"product-decision:{record.identity.authorization_id}:"
@@ -289,9 +289,7 @@ class ProductAuthorizationAdapter:
                         policy_generation=record.identity.policy_generation,
                         now=self._clock(),
                     )
-                return AuthorizationReceipt(
-                    receipt_ref, host_hash, sdk_receipt.receipt_hash
-                )
+                return AuthorizationReceipt(receipt_ref, host_hash, sdk_receipt.receipt_hash)
             raise RuntimeError("authorization decision conflicts with durable binding")
         bound = self._repository.bind_decision(
             record.identity.authorization_id,
@@ -355,8 +353,7 @@ class ProductAuthorizationAdapter:
             }
         )
         receipt_ref = (
-            f"product-handoff:{record.identity.authorization_id}:"
-            f"{record.identity.effect_id}"
+            f"product-handoff:{record.identity.authorization_id}:{record.identity.effect_id}"
         )
         handoff_hash = _hash(
             {
@@ -372,9 +369,7 @@ class ProductAuthorizationAdapter:
                 and record.handoff_sdk_receipt_hash == sdk_receipt.receipt_hash
                 and record.handoff_host_receipt_hash == handoff_hash
             ):
-                return AuthorizationReceipt(
-                    receipt_ref, handoff_hash, sdk_receipt.receipt_hash
-                )
+                return AuthorizationReceipt(receipt_ref, handoff_hash, sdk_receipt.receipt_hash)
             raise RuntimeError("effect handoff conflicts with durable binding")
         if record.state in {
             AuthorizationSagaState.PREPARED,
@@ -407,9 +402,7 @@ class ProductAuthorizationAdapter:
     def revoke(self, prepared: PreparedToolEffect, *, reason: str) -> None:
         self._terminate(prepared, reason=reason, operation="revoke")
 
-    def mark_dispatch_unknown(
-        self, prepared: PreparedToolEffect, *, evidence_hash: str
-    ) -> None:
+    def mark_dispatch_unknown(self, prepared: PreparedToolEffect, *, evidence_hash: str) -> None:
         record = self._record(prepared)
         self._repository.mark_dispatch_unknown(
             record.identity.authorization_id,
@@ -428,9 +421,7 @@ class ProductAuthorizationAdapter:
             now=self._clock(),
         )
 
-    def _terminate(
-        self, prepared: PreparedToolEffect, *, reason: str, operation: str
-    ) -> None:
+    def _terminate(self, prepared: PreparedToolEffect, *, reason: str, operation: str) -> None:
         record = self._record(prepared)
         now = self._clock()
         reason_hash = _hash({"operation": operation, "reason": reason})
@@ -488,8 +479,7 @@ class ProductAuthorizationAdapter:
             # SDK ToolCall recursively freezes nested JSON containers.  A
             # shallow dict() leaves MappingProxyType values inside arrays and
             # objects, which crashes the JSON hash during effect handoff.
-            or _hash(record.identity.arguments)
-            != _hash(thaw_json(prepared.call.arguments))
+            or _hash(record.identity.arguments) != _hash(thaw_json(prepared.call.arguments))
         ):
             raise RuntimeError("prepared Tool effect differs from durable authorization identity")
         return record

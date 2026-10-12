@@ -67,10 +67,20 @@ def test_the_format_retry_answers_the_openers_request_once_and_reports_its_budge
     """
 
     async def case() -> None:
-        async with seeded(tmp_path, key="h1h-wiring-ladder") as (loop, mission, _world, _root, dispatch, product):
+        async with seeded(tmp_path, key="h1h-wiring-ladder") as (
+            loop,
+            mission,
+            _world,
+            _root,
+            dispatch,
+            product,
+        ):
             opener = await _open_planner_round(loop, mission, dispatch, ordinal=1)
             _grant(loop, mission, product, opener, "grant-h1h-wiring-opener")
-            assert loop._planning_request_retry_id(intent=opener, mission=mission, new_mode=dispatch) is None
+            assert (
+                loop._planning_request_retry_id(intent=opener, mission=mission, new_mode=dispatch)
+                is None
+            )
             # Authority and operation producers observe one deferred Store view; nested
             # reader views join that same connection rather than opening a second snapshot.
             original_read_view = loop.store.read_view
@@ -105,32 +115,45 @@ def test_the_format_retry_answers_the_openers_request_once_and_reports_its_budge
             ]
 
             retry = await _open_planner_round(loop, mission, dispatch, ordinal=2)
-            assert loop._planning_request_retry_id(intent=retry, mission=mission, new_mode=dispatch) == (
-                opener.intent_id
-            )
+            assert loop._planning_request_retry_id(
+                intent=retry, mission=mission, new_mode=dispatch
+            ) == (opener.intent_id)
             assert loop._planning_format_retry_remaining(intent=retry, mission=mission) == 0
-            assert loop._format_retry_exhausted(intent=retry, reason="proposal_unreadable", mission=mission)
+            assert loop._format_retry_exhausted(
+                intent=retry, reason="proposal_unreadable", mission=mission
+            )
             retry_context = loop._hierarchical_admission_context(
                 intent=retry, mission=mission, new_mode=dispatch, raw_text="{}"
             )
             assert retry_context.retry_budgets.same_request_format_retries_remaining == 0
 
             # The re-ask may not change anything but the answering intent.
-            drifted = SimpleNamespace(package={
-                **retry.config["planning_package"],
-                "views": {**retry.config["planning_package"]["views"], "plans": [{"plan_revision": 9}]},
-            })
+            drifted = SimpleNamespace(
+                package={
+                    **retry.config["planning_package"],
+                    "views": {
+                        **retry.config["planning_package"]["views"],
+                        "plans": [{"plan_revision": 9}],
+                    },
+                }
+            )
             with pytest.raises(ContractError):
                 loop._bind_hierarchical_planning_request(
-                    intent=retry, mission=mission, new_mode=dispatch, package=drifted,
-                    template=SimpleNamespace(prompt_version=retry.config["prompt_version"],
-                                             instructions="prompt"),
+                    intent=retry,
+                    mission=mission,
+                    new_mode=dispatch,
+                    package=drifted,
+                    template=SimpleNamespace(
+                        prompt_version=retry.config["prompt_version"], instructions="prompt"
+                    ),
                     request_id=opener.intent_id,
                 )
 
             await loop._collect_plan_decision(retry, object(), mission, _UNREADABLE, dispatch)
             decisions = PlanningDecisionStore(loop.store)
-            attempts = [decisions.get_planning_decision_by_attempt(opener.intent_id, n) for n in (0, 1)]
+            attempts = [
+                decisions.get_planning_decision_by_attempt(opener.intent_id, n) for n in (0, 1)
+            ]
             assert [row["status"] for row in attempts] == ["UNREADABLE", "UNREADABLE"]
             evaluated = events(loop, mission.id, "PlanningDecisionEvaluated")
             assert [e.payload["attempt_ordinal"] for e in evaluated] == [0, 1]
@@ -139,31 +162,46 @@ def test_the_format_retry_answers_the_openers_request_once_and_reports_its_budge
             # The collector opened the next round itself; it is a request of its own.
             third = loop.store.get_intent_for_subject(f"{mission.id}:planner:3")
             assert third is not None
-            assert loop._planning_request_retry_id(intent=third, mission=mission, new_mode=dispatch) is None
+            assert (
+                loop._planning_request_retry_id(intent=third, mission=mission, new_mode=dispatch)
+                is None
+            )
             assert decisions.get_planning_request(third.intent_id) is not None
 
     asyncio.run(case())
 
 
-def test_only_a_codec_refusal_reuses_the_request_and_an_unbound_round_fails_closed(tmp_path) -> None:
+def test_only_a_codec_refusal_reuses_the_request_and_an_unbound_round_fails_closed(
+    tmp_path,
+) -> None:
     """A reply the protocol could read and admission refused is a different answer from
     one it could not read: the next round opens a request of its own.  A round whose
     request binding is gone (damaged store) is never evaluated."""
 
     async def case() -> None:
-        async with seeded(tmp_path, key="h1h-wiring-non-format") as (loop, mission, _world, _root, dispatch, product):
+        async with seeded(tmp_path, key="h1h-wiring-non-format") as (
+            loop,
+            mission,
+            _world,
+            _root,
+            dispatch,
+            product,
+        ):
             first = await _open_planner_round(loop, mission, dispatch, ordinal=1)
             _grant(loop, mission, product, first, "grant-h1h-wiring-first")
-            await loop._collect_plan_decision(
-                first, object(), mission, _rejected_reply(), dispatch
+            await loop._collect_plan_decision(first, object(), mission, _rejected_reply(), dispatch)
+            row = PlanningDecisionStore(loop.store).get_planning_decision_by_attempt(
+                first.intent_id, 0
             )
-            row = PlanningDecisionStore(loop.store).get_planning_decision_by_attempt(first.intent_id, 0)
             assert row is not None and row["status"] == "REJECTED", row
 
             # The collector opened the next round itself.
             second = loop.store.get_intent_for_subject(f"{mission.id}:planner:2")
             assert second is not None
-            assert loop._planning_request_retry_id(intent=second, mission=mission, new_mode=dispatch) is None
+            assert (
+                loop._planning_request_retry_id(intent=second, mission=mission, new_mode=dispatch)
+                is None
+            )
             request = PlanningDecisionStore(loop.store).get_planning_request(second.intent_id)
             assert request is not None and request.request_id == second.intent_id
 
@@ -195,8 +233,12 @@ def test_the_http_field_reaches_the_mission_spec_and_its_binding(tmp_path) -> No
     from agent_orchestrator.testing.product_world import product_world
     from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider
 
-    request = {"goal": "goal", "success_criteria": ["done"], "idempotency_key": "http-new",
-               "planning_protocol_version": PLANNING_DECISION_V1}
+    request = {
+        "goal": "goal",
+        "success_criteria": ["done"],
+        "idempotency_key": "http-new",
+        "planning_protocol_version": PLANNING_DECISION_V1,
+    }
     assert spec_from_request("tenant", request).planning_protocol_version == PLANNING_DECISION_V1
 
     async def case() -> None:
@@ -204,15 +246,16 @@ def test_the_http_field_reaches_the_mission_spec_and_its_binding(tmp_path) -> No
             store = world.store
             created = world.control.create(request)
             assert created["created"]
-            assert planning_protocol_for_mission(store, created["mission_id"])["protocol_version"] == (
-                PLANNING_DECISION_V1
-            )
+            assert planning_protocol_for_mission(store, created["mission_id"])[
+                "protocol_version"
+            ] == (PLANNING_DECISION_V1)
             # An omitted key is the same default.
             default = world.control.create(
-                {"goal": "goal", "success_criteria": ["done"], "idempotency_key": "http-default"})
-            assert planning_protocol_for_mission(store, default["mission_id"])["protocol_version"] == (
-                PLANNING_DECISION_V1
+                {"goal": "goal", "success_criteria": ["done"], "idempotency_key": "http-default"}
             )
+            assert planning_protocol_for_mission(store, default["mission_id"])[
+                "protocol_version"
+            ] == (PLANNING_DECISION_V1)
 
     asyncio.run(case())
 

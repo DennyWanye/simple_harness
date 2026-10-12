@@ -39,8 +39,14 @@ def _quick(monkeypatch):
     monkeypatch.setattr(event_handler, "WAIT_BACKOFF_MAX", 0.05)
 
 
-def two_then_merge(context: dict[str, Any], *, order: tuple[str, str] = ("a", "b"),
-                   extra_file: str | None = None, relay: bool = False, same_port: bool = False) -> dict[str, Any]:
+def two_then_merge(
+    context: dict[str, Any],
+    *,
+    order: tuple[str, str] = ("a", "b"),
+    extra_file: str | None = None,
+    relay: bool = False,
+    same_port: bool = False,
+) -> dict[str, Any]:
     """做法：a、b 两个起始步骤各写一个文件，互不依赖；c 接着交付，输入端口接 a、b 两个上游，
     数组先后 = ``order``。``extra_file``：a、b 都额外写它（用于造同一路径不同内容）。
     ``relay``：b 改为接着 a 交付（a→b 有数据边、b 收到 a 的全部文件），c 仍接 a、b 两份。
@@ -48,29 +54,74 @@ def two_then_merge(context: dict[str, Any], *, order: tuple[str, str] = ("a", "b
     request = context["request"]
     method = one_step_method(context)
     start = method["steps"][0]
-    follow = next(item for item in request["operators"]
-                  if str(item["task_type_ref"]["id"]).endswith("continue-delivery"))
+    follow = next(
+        item
+        for item in request["operators"]
+        if str(item["task_type_ref"]["id"]).endswith("continue-delivery")
+    )
     first, second, third = [item["id"] for item in request["criterion_evidence"]]
-    b_step = ({"local_id": "b", "task_type_ref": follow["task_type_ref"], "form": "primitive",
-               "arguments": {"delivery": {"op": "output", "step": "a", "port": "delivery"}},
-               "required_capabilities": list(follow["required_capabilities"]), "obligation_relation": "refines_parent"}
-              if relay else {**start, "local_id": "b"})
+    b_step = (
+        {
+            "local_id": "b",
+            "task_type_ref": follow["task_type_ref"],
+            "form": "primitive",
+            "arguments": {"delivery": {"op": "output", "step": "a", "port": "delivery"}},
+            "required_capabilities": list(follow["required_capabilities"]),
+            "obligation_relation": "refines_parent",
+        }
+        if relay
+        else {**start, "local_id": "b"}
+    )
     method["steps"] = [
-        {**start, "local_id": "a"}, b_step,
-        {"local_id": "c", "task_type_ref": follow["task_type_ref"], "form": "primitive",
-         "arguments": {"delivery": {"op": "array", "items": [
-             {"op": "output", "step": step, "port": "delivery"} for step in order]}},
-         "required_capabilities": list(follow["required_capabilities"]), "obligation_relation": "refines_parent"}]
+        {**start, "local_id": "a"},
+        b_step,
+        {
+            "local_id": "c",
+            "task_type_ref": follow["task_type_ref"],
+            "form": "primitive",
+            "arguments": {
+                "delivery": {
+                    "op": "array",
+                    "items": [{"op": "output", "step": step, "port": "delivery"} for step in order],
+                }
+            },
+            "required_capabilities": list(follow["required_capabilities"]),
+            "obligation_relation": "refines_parent",
+        },
+    ]
     method["ordering"] = []
     method["composition"]["criterion_links"] = [
-        {"parent_criterion_id": first, "child_step": "a", "child_criterion_id": first,
-         "evidence_requirement": f"a 写出 {A}" + (f" 与 {extra_file}" if extra_file else "")},
-        *([{"parent_criterion_id": first, "child_step": "b", "child_criterion_id": first,
-            "evidence_requirement": f"b 也写出 {A}"}] if same_port else []),
-        {"parent_criterion_id": second, "child_step": "b", "child_criterion_id": second,
-         "evidence_requirement": f"b 写出 {B}" + (f" 与 {extra_file}" if extra_file else "")},
-        {"parent_criterion_id": third, "child_step": "c", "child_criterion_id": third,
-         "evidence_requirement": f"c 读 a、b 的产出写出 {C}"}]
+        {
+            "parent_criterion_id": first,
+            "child_step": "a",
+            "child_criterion_id": first,
+            "evidence_requirement": f"a 写出 {A}" + (f" 与 {extra_file}" if extra_file else ""),
+        },
+        *(
+            [
+                {
+                    "parent_criterion_id": first,
+                    "child_step": "b",
+                    "child_criterion_id": first,
+                    "evidence_requirement": f"b 也写出 {A}",
+                }
+            ]
+            if same_port
+            else []
+        ),
+        {
+            "parent_criterion_id": second,
+            "child_step": "b",
+            "child_criterion_id": second,
+            "evidence_requirement": f"b 写出 {B}" + (f" 与 {extra_file}" if extra_file else ""),
+        },
+        {
+            "parent_criterion_id": third,
+            "child_step": "c",
+            "child_criterion_id": third,
+            "evidence_requirement": f"c 读 a、b 的产出写出 {C}",
+        },
+    ]
     method["composition"]["finalizer_step"] = "c"
     return method
 
@@ -79,8 +130,14 @@ class _Provider(LayeredScriptedProvider):
     """规划器：根目标提 a/b→c 的做法、采用；别的局面按默认。执行者：按声明写文件；
     ``extra_file`` 时 a、b 各多写一份内容不同的同名文件并一并交出。"""
 
-    def __init__(self, *, order: tuple[str, str] = ("a", "b"), extra_file: str | None = None,
-                 relay: bool = False, same_port: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        order: tuple[str, str] = ("a", "b"),
+        extra_file: str | None = None,
+        relay: bool = False,
+        same_port: bool = False,
+    ) -> None:
         self.extra_file, self.worker_packages = extra_file, []
 
         def planner(request: Any) -> Any:
@@ -88,10 +145,23 @@ class _Provider(LayeredScriptedProvider):
             contexts = package.get("method_proposal_contexts") or []
             selection = (package.get("method_selection") or [{}])[0]
             if contexts and not selection.get("applicable"):
-                return decision(contexts[0]["subject_key"], "PROPOSE_METHOD", {"method_proposal": {
-                    "method": two_then_merge(contexts[0], order=order, extra_file=extra_file, relay=relay,
-                                             same_port=same_port),
-                    "rationale": "a、b 并行，c 汇合。"}}, "两个起始步骤并行，第三步接住两份交付。")
+                return decision(
+                    contexts[0]["subject_key"],
+                    "PROPOSE_METHOD",
+                    {
+                        "method_proposal": {
+                            "method": two_then_merge(
+                                contexts[0],
+                                order=order,
+                                extra_file=extra_file,
+                                relay=relay,
+                                same_port=same_port,
+                            ),
+                            "rationale": "a、b 并行，c 汇合。",
+                        }
+                    },
+                    "两个起始步骤并行，第三步接住两份交付。",
+                )
             return planner_reply(request)
 
         def worker(request: Any) -> Any:
@@ -107,15 +177,24 @@ class _Provider(LayeredScriptedProvider):
             if extra_file in outputs and outputs[0] != B:
                 return reply  # 这一步声明的产出就是它，不再多写
             if written == len(outputs):  # 声明的文件写完了，再写一份同名、内容不同的
-                return ("workspace_write_file", {"path": extra_file, "content": f"# 由写 {outputs[0]} 的那一步写的\n"})
+                return (
+                    "workspace_write_file",
+                    {"path": extra_file, "content": f"# 由写 {outputs[0]} 的那一步写的\n"},
+                )
             if written > len(outputs) and isinstance(reply, str):
-                body = json.loads(reply[len("<result_envelope>"):-len("</result_envelope>")])
+                body = json.loads(reply[len("<result_envelope>") : -len("</result_envelope>")])
                 if extra_file in body["artifacts"]:
                     return reply
                 body["artifacts"].append(extra_file)
                 body["evidence"].append(extra_file)
-                body["claims"].append({"content": f"{extra_file} 已写出", "confidence": 0.8, "evidence": [extra_file]})
-                return "<result_envelope>" + json.dumps(body, ensure_ascii=False) + "</result_envelope>"
+                body["claims"].append(
+                    {"content": f"{extra_file} 已写出", "confidence": 0.8, "evidence": [extra_file]}
+                )
+                return (
+                    "<result_envelope>"
+                    + json.dumps(body, ensure_ascii=False)
+                    + "</result_envelope>"
+                )
             return reply
 
         super().__init__(planner=planner, worker=worker)
@@ -126,26 +205,49 @@ def _run(tmp_path, provider: _Provider, *, rounds: int = 60) -> dict[str, Any]:
 
     async def case():
         async with product_world(tmp_path / "root", provider, max_concurrency=2) as world:
-            created = world.create({"goal": f"写 {A} 和 {B}，再据两者写 {C}", "idempotency_key": "merge",
-                                    "success_criteria": [f"file:{A}", f"file:{B}", f"file:{C}"],
-                                    "budget": {"max_tokens": 8_000_000, "max_attempts": 12}})
+            created = world.create(
+                {
+                    "goal": f"写 {A} 和 {B}，再据两者写 {C}",
+                    "idempotency_key": "merge",
+                    "success_criteria": [f"file:{A}", f"file:{B}", f"file:{C}"],
+                    "budget": {"max_tokens": 8_000_000, "max_attempts": 12},
+                }
+            )
             mission = await world.run_until_settled(created["mission_id"], rounds=rounds)
             dispatch = world.loop._dispatch_for(mission.id)
             network = dispatch.network(mission.id)
             # 汇合步 c：接着交付类型里唯一不再喂别的步骤的那一个（接力时 b 也是接着交付类型）
-            producers = {str(network.occurrence(item.producer_occurrence).task_id) for item in network.data_requirements}
-            [merge] = [str(spec.task_id) for spec in network.occurrences
-                       if str(network.binding_for_occurrence(spec.occurrence_id).goal_signature.signature_id)
-                       == "continue-delivery" and str(spec.task_id) not in producers]
-            facts: dict[str, Any] = {"mission": mission, "merge": merge, "inputs": [], "overlaid": [],
-                                     "port_order": [], "events": list(world.store.list_events(mission.id)),
-                                     "merge_attempts": len(dispatch.store.list_attempts(merge)),
-                                     "clashes": dispatch.write_conflicts(mission.id)}
+            producers = {
+                str(network.occurrence(item.producer_occurrence).task_id)
+                for item in network.data_requirements
+            }
+            [merge] = [
+                str(spec.task_id)
+                for spec in network.occurrences
+                if str(
+                    network.binding_for_occurrence(spec.occurrence_id).goal_signature.signature_id
+                )
+                == "continue-delivery"
+                and str(spec.task_id) not in producers
+            ]
+            facts: dict[str, Any] = {
+                "mission": mission,
+                "merge": merge,
+                "inputs": [],
+                "overlaid": [],
+                "port_order": [],
+                "events": list(world.store.list_events(mission.id)),
+                "merge_attempts": len(dispatch.store.list_attempts(merge)),
+                "clashes": dispatch.write_conflicts(mission.id),
+            }
             if mission.status.value == "COMPLETED":
                 # 2026-10-11 第二批：做完的下游不再被写入冲突扫描逐个解析（opt.176 核验建议 1）
                 resolved: list[str] = []
                 original = dispatch.attempt_inputs
-                dispatch.attempt_inputs = lambda mid, consumer, *a, **k: (resolved.append(consumer), original(mid, consumer, *a, **k))[1]
+                dispatch.attempt_inputs = lambda mid, consumer, *a, **k: (
+                    resolved.append(consumer),
+                    original(mid, consumer, *a, **k),
+                )[1]
                 try:
                     dispatch.write_conflicts(mission.id)
                 finally:
@@ -154,7 +256,10 @@ def _run(tmp_path, provider: _Provider, *, rounds: int = 60) -> dict[str, Any]:
                 # 2026-10-11 偏离 5：完成报告是全部验收步骤的，终结步是做法声明的收尾步骤
                 report = world.store.get_mission(mission.id).final_report or {}
                 facts["report"] = {
-                    "paths": sorted(world.store.get_artifact(a).path for a in report.get("accepted_artifacts", [])),
+                    "paths": sorted(
+                        world.store.get_artifact(a).path
+                        for a in report.get("accepted_artifacts", [])
+                    ),
                     "terminal": report.get("terminal_task_id"),
                     "results": [item["task_id"] for item in report.get("accepted_results", [])],
                 }
@@ -162,16 +267,27 @@ def _run(tmp_path, provider: _Provider, *, rounds: int = 60) -> dict[str, Any]:
                 spec = next(item for item in network.occurrences if str(item.task_id) == merge)
                 manifest = dispatch.input_result(mission.id, network, spec).manifest
                 # 2026-10-11 第三批：清单（端口绑定 + 交付绑定）的物化结果就是全部输入，没有第二套叠加
-                port_paths = {str(item.producer_task_ref): item.source_identity.path for item in manifest.bindings}
-                facts["inputs"] = [item for item in inputs if item.path in port_paths.values()
-                                   and item.acceptance_id in {b.acceptance_id for b in manifest.bindings}
-                                   and item.carried_from is None]
+                port_paths = {
+                    str(item.producer_task_ref): item.source_identity.path
+                    for item in manifest.bindings
+                }
+                facts["inputs"] = [
+                    item
+                    for item in inputs
+                    if item.path in port_paths.values()
+                    and item.acceptance_id in {b.acceptance_id for b in manifest.bindings}
+                    and item.carried_from is None
+                ]
                 facts["overlaid"] = inputs
-                facts["deliveries"] = [(str(d.producer_task_ref), d.path, d.witness_id, d.carried_from)
-                                       for d in manifest.deliveries]
+                facts["deliveries"] = [
+                    (str(d.producer_task_ref), d.path, d.witness_id, d.carried_from)
+                    for d in manifest.deliveries
+                ]
                 by_path = port_paths
-                facts["port_order"] = [by_path[str(item.producer_task_ref)]
-                                       for item in sorted(manifest.bindings, key=lambda item: item.port_ordinal)]
+                facts["port_order"] = [
+                    by_path[str(item.producer_task_ref)]
+                    for item in sorted(manifest.bindings, key=lambda item: item.port_ordinal)
+                ]
             return facts
 
     return asyncio.run(case())
@@ -185,12 +301,19 @@ def test_the_merge_step_receives_both_upstream_deliveries_in_the_methods_order(t
     provider = _Provider()
     facts = _run(tmp_path, provider)
     mission = facts["mission"]
-    assert mission.status.value == "COMPLETED", (mission.status, mission.stop_reason, mission.final_report)
+    assert mission.status.value == "COMPLETED", (
+        mission.status,
+        mission.stop_reason,
+        mission.final_report,
+    )
     assert sorted(item.path for item in facts["inputs"]) == [A, B]  # 端口文件：两个上游各一份
     assert sorted(item.path for item in facts["overlaid"]) == [A, B]
     # 汇合那一步开工时，工作区里确实有两份上游文件（规划器并不并行是它的选择，这里只记录不作条件）
-    merge_packages = [p for p in provider.worker_packages
-                      if (p.get("task_contract") or {}).get("task_id") == facts["merge"]]
+    merge_packages = [
+        p
+        for p in provider.worker_packages
+        if (p.get("task_contract") or {}).get("task_id") == facts["merge"]
+    ]
     assert merge_packages, [p.get("task_contract") for p in provider.worker_packages]
     seen = json.dumps(merge_packages[0], ensure_ascii=False)
     assert A in seen and B in seen
@@ -206,7 +329,10 @@ def test_the_explicit_order_follows_the_array_not_the_slot_names(tmp_path):
 
     **Mutation**: ``_explicit_port_orders`` returning the ids sorted → red."""
     facts = _run(tmp_path, _Provider(order=("b", "a")))
-    assert facts["mission"].status.value == "COMPLETED", (facts["mission"].status, facts["mission"].stop_reason)
+    assert facts["mission"].status.value == "COMPLETED", (
+        facts["mission"].status,
+        facts["mission"].stop_reason,
+    )
     assert facts["port_order"] == [B, A]
 
 
@@ -216,11 +342,18 @@ def test_two_upstreams_writing_one_path_differently_is_a_write_conflict_for_the_
 
     **Mutation**: ``resolve_deliveries`` 先到先占（MU-02）→ red."""
     facts = _run(tmp_path, _Provider(extra_file="shared.md"), rounds=30)
-    assert facts["mission"].status.value != "COMPLETED", (facts["mission"].status, facts["mission"].stop_reason)
+    assert facts["mission"].status.value != "COMPLETED", (
+        facts["mission"].status,
+        facts["mission"].stop_reason,
+    )
     assert [item["path"] for item in facts["clashes"]] == ["shared.md"], facts["clashes"]
     assert facts["merge_attempts"] == 0  # 汇合那一步没有开过工
-    requests = [e for e in facts["events"] if e.type == "PlanningRepairRequested"
-                and json.dumps(e.payload, ensure_ascii=False).count("write_conflict")]
+    requests = [
+        e
+        for e in facts["events"]
+        if e.type == "PlanningRepairRequested"
+        and json.dumps(e.payload, ensure_ascii=False).count("write_conflict")
+    ]
     assert requests, sorted({e.type for e in facts["events"]})
 
 
@@ -232,7 +365,11 @@ def test_a_relay_then_merge_takes_the_relayed_version_and_is_no_conflict(tmp_pat
     provider = _Provider(extra_file="shared.md", relay=True)
     facts = _run(tmp_path, provider)
     mission = facts["mission"]
-    assert mission.status.value == "COMPLETED", (mission.status, mission.stop_reason, facts["clashes"])
+    assert mission.status.value == "COMPLETED", (
+        mission.status,
+        mission.stop_reason,
+        facts["clashes"],
+    )
     assert facts["clashes"] == []
     shared = [item for item in facts["overlaid"] if item.path == "shared.md"]
     assert len(shared) == 1
@@ -240,7 +377,9 @@ def test_a_relay_then_merge_takes_the_relayed_version_and_is_no_conflict(tmp_pat
     assert shared[0].task_id == b_task  # 接力：取 b 改后的版本
     assert sorted(item.path for item in facts["overlaid"]) == [A, B, "shared.md"]
     # 2026-10-11 第三批：交付绑定在冻结清单里，带真实产出者那次验收的见证
-    assert [(step, path, bool(witness)) for step, path, witness, _ in facts["deliveries"]] == [(b_task, "shared.md", True)]
+    assert [(step, path, bool(witness)) for step, path, witness, _ in facts["deliveries"]] == [
+        (b_task, "shared.md", True)
+    ]
     assert all(item.acceptance_id and item.witness_id for item in facts["overlaid"])
 
 
@@ -257,8 +396,10 @@ def test_two_port_files_at_one_path_are_a_write_conflict_not_an_artifact_stop(tm
     assert mission.stop_reason != "ARTIFACT_CONFLICT", (mission.stop_reason, mission.final_report)
     assert [item["path"] for item in facts["clashes"]] == [A], facts["clashes"]
     assert facts["merge_attempts"] == 0
-    assert any(e.type == "PlanningRepairRequested" and "write_conflict" in json.dumps(e.payload)
-               for e in facts["events"]), sorted({e.type for e in facts["events"]})
+    assert any(
+        e.type == "PlanningRepairRequested" and "write_conflict" in json.dumps(e.payload)
+        for e in facts["events"]
+    ), sorted({e.type for e in facts["events"]})
 
 
 def test_a_relayed_tests_file_reaches_the_merge_step_in_its_newest_version(tmp_path):
@@ -269,7 +410,11 @@ def test_a_relayed_tests_file_reaches_the_merge_step_in_its_newest_version(tmp_p
     **Mutation**: ``resolve_deliveries`` 的 ``others`` 置空（先到先占，MU-02）→ red."""
     facts = _run(tmp_path, _Provider(extra_file="tests/test_shared.py", relay=True))
     mission = facts["mission"]
-    assert mission.status.value == "COMPLETED", (mission.status, mission.stop_reason, facts["clashes"])
+    assert mission.status.value == "COMPLETED", (
+        mission.status,
+        mission.stop_reason,
+        facts["clashes"],
+    )
     shared = [item for item in facts["overlaid"] if item.path == "tests/test_shared.py"]
     b_task = next(item.task_id for item in facts["inputs"] if item.path == B)
     assert [item.task_id for item in shared] == [b_task]
@@ -287,8 +432,10 @@ def test_a_relayer_rewriting_the_upstream_port_file_is_a_conflict_for_the_planne
     assert [item["path"] for item in facts["clashes"]] == [A], facts["clashes"]
     assert facts["clashes"][0].get("consumer") == facts["merge"]
     assert facts["merge_attempts"] == 0
-    assert any(e.type == "PlanningRepairRequested" and "write_conflict" in json.dumps(e.payload)
-               for e in facts["events"]), sorted({e.type for e in facts["events"]})
+    assert any(
+        e.type == "PlanningRepairRequested" and "write_conflict" in json.dumps(e.payload)
+        for e in facts["events"]
+    ), sorted({e.type for e in facts["events"]})
 
 
 def test_a_single_chain_relayer_rewriting_the_port_file_is_plain_relay(tmp_path):
@@ -299,7 +446,11 @@ def test_a_single_chain_relayer_rewriting_the_port_file_is_plain_relay(tmp_path)
     # same_port：b 也承接 a.md 这条要求，所以 b 的端口文件就是它改写的 a.md（内容与 a 的不同）
     facts = _run(tmp_path, _Provider(same_port=True, relay=True, order=("b",)))
     mission = facts["mission"]
-    assert mission.status.value == "COMPLETED", (mission.status, mission.stop_reason, facts["clashes"])
+    assert mission.status.value == "COMPLETED", (
+        mission.status,
+        mission.stop_reason,
+        facts["clashes"],
+    )
     assert facts["clashes"] == []
     [b_task] = {item.task_id for item in facts["inputs"]}  # c 只有 b 一个上游
     assert [item.path for item in facts["inputs"]] == [A]
@@ -314,15 +465,24 @@ def test_the_continue_delivery_port_is_a_set_in_the_methods_order(tmp_path):
 
     async def case():
         async with product_world(tmp_path / "root", _Provider(), max_concurrency=1) as world:
-            created = world.create({"goal": "x", "idempotency_key": "catalogue", "success_criteria": ["file:x.md"]})
+            created = world.create(
+                {"goal": "x", "idempotency_key": "catalogue", "success_criteria": ["file:x.md"]}
+            )
             mission = world.store.get_mission(created["mission_id"])
             from agent_orchestrator.testing.product_world import user_goal_world
+
             catalogue = user_goal_world(world.loop, mission).catalog
             specs = {str(spec.task_type_ref.id): spec for spec in catalogue.task_types()}
             [port] = specs["continue-delivery"].input_ports
             assert (port.port_key, port.cardinality, port.ordering) == (
-                "delivery", PortCardinality.SET, PortOrdering.EXPLICIT)
+                "delivery",
+                PortCardinality.SET,
+                PortOrdering.EXPLICIT,
+            )
             assert specs["prepare-delivery"].input_ports == ()
-            assert "one or more accepted upstream deliveries" in specs["continue-delivery"].goal_signature.statement
+            assert (
+                "one or more accepted upstream deliveries"
+                in specs["continue-delivery"].goal_signature.statement
+            )
 
     asyncio.run(case())

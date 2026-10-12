@@ -7,6 +7,7 @@
 
 发起审阅时的预留、事后对账读的账户，两处用同一个函数，不会对不上。
 """
+
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -26,12 +27,15 @@ def _package(purpose: ReviewPurpose):
     return SimpleNamespace(purpose=purpose, account=account_for_purpose(purpose))
 
 
-@pytest.mark.parametrize("purpose, subject", [
-    (ReviewPurpose.COMPOSITION, MISSION),    # a compound holds no tokens of its own
-    (ReviewPurpose.MISSION_FINAL, MISSION),
-    (ReviewPurpose.METHOD_PLAN, MISSION),
-    (ReviewPurpose.TASK_CONTENT, TASK),      # a step pays for its own content review
-])
+@pytest.mark.parametrize(
+    "purpose, subject",
+    [
+        (ReviewPurpose.COMPOSITION, MISSION),  # a compound holds no tokens of its own
+        (ReviewPurpose.MISSION_FINAL, MISSION),
+        (ReviewPurpose.METHOD_PLAN, MISSION),
+        (ReviewPurpose.TASK_CONTENT, TASK),  # a step pays for its own content review
+    ],
+)
 def test_which_account_a_review_is_charged_to(purpose, subject):
     assert review_budget_subject(None, MISSION, _package(purpose), TASK) == subject
 

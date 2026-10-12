@@ -611,9 +611,9 @@ class ResolutionCommitsMixin:
                 self._require_kind(replayed, ACCEPTANCE_KIND)
                 from ..storage.operation_completion_store import OperationCompletionStore
 
-                replayed_contribution = OperationCompletionStore(self._store).get_acceptance_scope_exact(
-                    command.mission_id, replayed.subject_id
-                )
+                replayed_contribution = OperationCompletionStore(
+                    self._store
+                ).get_acceptance_scope_exact(command.mission_id, replayed.subject_id)
                 if replayed_contribution is None:
                     raise ResolutionCommitRejected(
                         "OP_COMPLETION_SCOPE_UNRESOLVED", "accepted review has no contribution"
@@ -626,18 +626,26 @@ class ResolutionCommitsMixin:
             binding = self._require_binding(semantics, command.mission_id, command.task_id)
             if command.purpose is ReviewPurpose.TASK_CONTENT:
                 from .taskgraph_review import read_review_origin
+
                 result_id = command.source.get("result_id")
                 if not isinstance(result_id, str):
-                    raise ResolutionCommitRejected("TASKGRAPH_REVIEW_RESULT_UNAVAILABLE",
-                                                   "TaskGraph acceptance requires the actual result identity")
+                    raise ResolutionCommitRejected(
+                        "TASKGRAPH_REVIEW_RESULT_UNAVAILABLE",
+                        "TaskGraph acceptance requires the actual result identity",
+                    )
                 origin = read_review_origin(self, command.mission_id, command.task_id, result_id)
                 frozen = origin.context.inputs.binding
                 subject = command.package.binding.subject_ref
-                if (subject.id != frozen.task_id or subject.revision != frozen.binding_revision
-                        or subject.content_hash != frozen.contract_hash
-                        or command.package.binding.input_manifest_hash != frozen.manifest_hash):
-                    raise ResolutionCommitRejected("TASKGRAPH_REVIEW_ORIGIN_MISMATCH",
-                                                   "review must name the actual Attempt's frozen contract and inputs")
+                if (
+                    subject.id != frozen.task_id
+                    or subject.revision != frozen.binding_revision
+                    or subject.content_hash != frozen.contract_hash
+                    or command.package.binding.input_manifest_hash != frozen.manifest_hash
+                ):
+                    raise ResolutionCommitRejected(
+                        "TASKGRAPH_REVIEW_ORIGIN_MISMATCH",
+                        "review must name the actual Attempt's frozen contract and inputs",
+                    )
             if str(binding.obligation_id) != command.obligation_id:
                 raise ResolutionCommitRejected(
                     "BINDING_MISMATCH",
@@ -693,7 +701,8 @@ class ResolutionCommitsMixin:
                 from .operation_outcomes import validate_scoped_outcome_command
 
                 projection = validate_scoped_outcome_command(
-                    self._store, command,
+                    self._store,
+                    command,
                     runtime=getattr(self, "_operation_materialization_runtime", None),
                 )
                 checker = acceptable_scoped_operation_outcome
@@ -795,12 +804,15 @@ class ResolutionCommitsMixin:
             delivery_pin = None
             if command.purpose is ReviewPurpose.OPERATION_OUTCOME:
                 delivery = semantics.record_delivery_receipt(
-                    command.mission_id, projection.delivery_receipt,
+                    command.mission_id,
+                    projection.delivery_receipt,
                     command_id="delivery:" + command.command_id,
                     intent_hash=intent,
                 )
                 delivery_pin = CompletionPinV1(
-                    id=delivery.receipt_id, revision=1, content_hash=content_hash_of(delivery.to_json()),
+                    id=delivery.receipt_id,
+                    revision=1,
+                    content_hash=content_hash_of(delivery.to_json()),
                 )
             contribution = AcceptanceContributionScopeV1(
                 schema_version=1,
@@ -815,24 +827,24 @@ class ResolutionCommitsMixin:
                     if projection.scope.role is CompletionScopeRole.CONTENT
                     else ContributionKind.PREPARATION
                 ),
-                content_criterion_ids=() if command.purpose is ReviewPurpose.OPERATION_OUTCOME else tuple(
-                    sorted(item.criterion_id for item in projection.criteria)
-                ),
-                effect_keys=(projection.effect_key,) if command.purpose is ReviewPurpose.OPERATION_OUTCOME else (),
+                content_criterion_ids=()
+                if command.purpose is ReviewPurpose.OPERATION_OUTCOME
+                else tuple(sorted(item.criterion_id for item in projection.criteria)),
+                effect_keys=(projection.effect_key,)
+                if command.purpose is ReviewPurpose.OPERATION_OUTCOME
+                else (),
                 output_artifact_refs=projection.artifacts,
-                outcome_binding_id=projection.binding_id if command.purpose is ReviewPurpose.OPERATION_OUTCOME else None,
+                outcome_binding_id=projection.binding_id
+                if command.purpose is ReviewPurpose.OPERATION_OUTCOME
+                else None,
                 delivery_receipt_ref=delivery_pin,
             )
-            self._store.fault(
-                "completion_acceptance_before_contribution", "operation_completion"
-            )
+            self._store.fault("completion_acceptance_before_contribution", "operation_completion")
             OperationCompletionStore(self._store).insert_acceptance_scope(
                 contribution,
                 producer_receipt_id=command.command_id,
             )
-            self._store.fault(
-                "completion_acceptance_after_contribution", "operation_completion"
-            )
+            self._store.fault("completion_acceptance_after_contribution", "operation_completion")
             return AcceptanceReceipt(acceptance=acceptance, commit=commit, decision=decision)
 
     def _record_accepted_outputs(
@@ -880,9 +892,12 @@ class ResolutionCommitsMixin:
         pinned = None
         if command.purpose is ReviewPurpose.TASK_CONTENT:
             from .taskgraph_review import read_review_origin
+
             result_id = command.source.get("result_id")
             if not isinstance(result_id, str) or not result_id:
-                raise ResolutionCommitRejected("TASKGRAPH_REVIEW_SOURCE_MISSING", "The actual Result is required")
+                raise ResolutionCommitRejected(
+                    "TASKGRAPH_REVIEW_SOURCE_MISSING", "The actual Result is required"
+                )
             pinned = read_review_origin(self, command.mission_id, command.task_id, result_id)
         active = semantics.active_plan_revision(command.mission_id)
         if active is None:
@@ -909,7 +924,9 @@ class ResolutionCommitsMixin:
             )
         if pinned is not None:
             if str(producer) != pinned.context.inputs.binding.occurrence_id:
-                raise ResolutionCommitRejected("TASKGRAPH_REVIEW_OCCURRENCE_CHANGED", "The producer occurrence changed")
+                raise ResolutionCommitRejected(
+                    "TASKGRAPH_REVIEW_OCCURRENCE_CHANGED", "The producer occurrence changed"
+                )
             # A new consumer or unrelated adoption must not retroactively change
             # the output contract of work that was already dispatched.
             revision = pinned.context.inputs.binding.source_revision
@@ -1065,7 +1082,8 @@ class ResolutionCommitsMixin:
             else:
                 raise ResolutionCommitRejected(
                     "REVIEW_PURPOSE_MISMATCH",
-                    "an intermediate goal is resolved by its COMPOSITION review")
+                    "an intermediate goal is resolved by its COMPOSITION review",
+                )
             self._check_resolution_identity(
                 semantics,
                 command,
@@ -1460,7 +1478,9 @@ class ResolutionCommitsMixin:
                 self, self._store.get_mission(mission_id).tenant_id, official
             )
         except AssuranceError as error:
-            raise ResolutionCommitRejected(error.code, "official Assurance runtime source is unavailable") from error
+            raise ResolutionCommitRejected(
+                error.code, "official Assurance runtime source is unavailable"
+            ) from error
         try:
             stored_revision = semantics.get_requirements_revision(
                 mission_id, int(requirements.revision)
@@ -1570,9 +1590,7 @@ class ResolutionCommitsMixin:
             else required_criterion_ids
         )
         missing = tuple(
-            criterion_id
-            for criterion_id in required_ids
-            if criterion_id not in reported
+            criterion_id for criterion_id in required_ids if criterion_id not in reported
         )
         if missing:
             raise ResolutionCommitRejected(
@@ -1757,7 +1775,9 @@ class ResolutionCommitsMixin:
             candidate.certificate_id,
         )
 
-    def _require_assured_compound_use(self, command: CommitGoalResolutionCommand) -> tuple[Any, str]:
+    def _require_assured_compound_use(
+        self, command: CommitGoalResolutionCommand
+    ) -> tuple[Any, str]:
         """2026-10-01（第 3 项）：中间目标结论的许可 = 组合审阅记录的当前证书，同根终审。"""
 
         from ..assurance.codec import AssuranceError
@@ -1829,7 +1849,9 @@ class ResolutionCommitsMixin:
         try:
             scope = OperationCompletionReader(self._store).read_scope(
                 command.mission_id,
-                PlanRevisionPinV1(revision=int(active.revision), snapshot_hash=active.snapshot_hash),
+                PlanRevisionPinV1(
+                    revision=int(active.revision), snapshot_hash=active.snapshot_hash
+                ),
                 str(members[0].occurrence_id),
             )
             return root_content_projection(command.requirements, scope)
@@ -1889,7 +1911,6 @@ class ResolutionCommitsMixin:
             ),
             candidate.certificate_id,
         )
-
 
     @staticmethod
     def _check_posture(posture: ExecutionPosture) -> None:

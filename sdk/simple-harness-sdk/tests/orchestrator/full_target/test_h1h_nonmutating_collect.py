@@ -49,10 +49,21 @@ def test_p08_state_free_decisions_use_real_collector_without_shape_or_operation_
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, decision_type: str
 ) -> None:
     async def case() -> None:
-        async with committed(tmp_path, key=f"h1h-p08-{decision_type.lower()}") as (loop, mission, _world, _root, dispatch, product):
+        async with committed(tmp_path, key=f"h1h-p08-{decision_type.lower()}") as (
+            loop,
+            mission,
+            _world,
+            _root,
+            dispatch,
+            product,
+        ):
             provider = product.provider
             asked = len(provider.asked)
-            [leaf] = [task for task in loop.store.list_tasks(mission.id) if task.id != root_task(mission.id)]
+            [leaf] = [
+                task
+                for task in loop.store.list_tasks(mission.id)
+                if task.id != root_task(mission.id)
+            ]
             revisions = HtnStore(loop.store).list_plan_revisions(mission.id)
             committed_events = len(_events(loop, mission.id, "PlanRevisionCommitted"))
             opener = await _open_planner_round(
@@ -106,7 +117,9 @@ def test_p08_state_free_decisions_use_real_collector_without_shape_or_operation_
     asyncio.run(case())
 
 
-def test_an_answer_with_material_is_registered_as_a_source_the_next_attempt_mounts(tmp_path: Path) -> None:
+def test_an_answer_with_material_is_registered_as_a_source_the_next_attempt_mounts(
+    tmp_path: Path,
+) -> None:
     """架构方案 C（2026-09-30）：用户回答里给的数据登记成任务资料，不只是一条备注。
 
     真机第 4、5 轮：回答只进规划器和备注，执行者拿不到文件；"换输入"决定绑不到资料。资料是
@@ -118,26 +131,44 @@ def test_an_answer_with_material_is_registered_as_a_source_the_next_attempt_moun
     from agent_orchestrator.storage.planning_human_store import PlanningHumanStore
 
     async def case() -> None:
-        async with seeded(tmp_path, key="h1h-answer-source") as (loop, mission, _world, _root, dispatch, product):
+        async with seeded(tmp_path, key="h1h-answer-source") as (
+            loop,
+            mission,
+            _world,
+            _root,
+            dispatch,
+            product,
+        ):
             user = product.deployment.principal
             opener = await _open_planner_round(loop, mission, dispatch, ordinal=1)
-            PlanningAuthorizationApi(loop.store, tenant_id=mission.tenant_id,
-                                     principal=user).issue(
-                mission.id, command_id="grant-h1h-answer-source", request_id=opener.intent_id)
+            PlanningAuthorizationApi(loop.store, tenant_id=mission.tenant_id, principal=user).issue(
+                mission.id, command_id="grant-h1h-answer-source", request_id=opener.intent_id
+            )
             # 片 A（2026-10-01）："卡住了"只有问用户一种：问题由规划器的 REQUEST_HUMAN 登记
             # （声明受阻这种决定已删除），被测的"回答附资料"行为不变。
             body = json.loads((_FIXTURES / "request-human.json").read_text(encoding="utf-8"))
-            body["subject_key"] = opener.config["planning_package"]["planning_subjects"][0]["subject_key"]
-            body["payload"] = {"question": "工作区里没有 data/sales.csv，无法汇总，请提供数据",
-                               "options": [], "blocking": True}
+            body["subject_key"] = opener.config["planning_package"]["planning_subjects"][0][
+                "subject_key"
+            ]
+            body["payload"] = {
+                "question": "工作区里没有 data/sales.csv，无法汇总，请提供数据",
+                "options": [],
+                "blocking": True,
+            }
             reply = serialize_planning_decision(PlanningDecisionEnvelopeV1.from_json(body))
             await loop._collect_plan_decision(opener, object(), mission, reply, dispatch)
             question = PlanningHumanStore(loop.store).list(mission.id)[0]
 
             data = "month,region,amount\n2026-07,华东,120\n2026-08,华北,98"
-            call = dict(tenant_id=mission.tenant_id, principal=user,
-                        decision_id=question["decision_id"], answer=data,
-                        expected_version=question["version"], nonce="n-src", attach_as_source=True)
+            call = dict(
+                tenant_id=mission.tenant_id,
+                principal=user,
+                decision_id=question["decision_id"],
+                answer=data,
+                expected_version=question["version"],
+                nonce="n-src",
+                attach_as_source=True,
+            )
             receipt = answer_planning_question(loop, **call)
 
             path = answer_source_path("sources/", question["decision_id"])
@@ -147,11 +178,17 @@ def test_an_answer_with_material_is_registered_as_a_source_the_next_attempt_moun
             assert sources[path]["trust"] == "untrusted_external"
             assert len(_events(loop, mission.id, "SourceRegistered")) == 1
             assert _events(loop, mission.id, "PlanningHumanAnswered")
-            note = [e for e in _events(loop, mission.id, "HumanCommentAdded")
-                    if e.payload.get("target_id") == mission.id][0]
+            note = [
+                e
+                for e in _events(loop, mission.id, "HumanCommentAdded")
+                if e.payload.get("target_id") == mission.id
+            ][0]
             assert path in note.payload["text"] and "2026-07,华东,120" in note.payload["text"]
             # 下一次派发冻结的就是现行资料：这份文件在里面，执行者原样重试时直接挂载
-            assert loop._active_source_binding(mission.id)["source_versions"][path] == receipt["source"]["version_hash"]
+            assert (
+                loop._active_source_binding(mission.id)["source_versions"][path]
+                == receipt["source"]["version_hash"]
+            )
 
             # 重放同一回答：回答与登记都幂等，不多登记一次
             assert answer_planning_question(loop, **call) == receipt
@@ -162,17 +199,41 @@ def test_an_answer_with_material_is_registered_as_a_source_the_next_attempt_moun
                 loop, mission, dispatch, ordinal=loop._next_planning_ordinal(mission.id)
             )
             PlanningAuthorizationApi(loop.store, tenant_id=mission.tenant_id, principal=user).issue(
-                mission.id, command_id="grant-h1h-answer-choice", request_id=ask.intent_id)
-            choice_body = {**body, "subject_key": ask.config["planning_package"]["planning_subjects"][0]["subject_key"],
-                           "payload": {"question": "选哪个？", "options": [{"key": "a", "label": "甲"}],
-                                       "blocking": True}}
+                mission.id, command_id="grant-h1h-answer-choice", request_id=ask.intent_id
+            )
+            choice_body = {
+                **body,
+                "subject_key": ask.config["planning_package"]["planning_subjects"][0][
+                    "subject_key"
+                ],
+                "payload": {
+                    "question": "选哪个？",
+                    "options": [{"key": "a", "label": "甲"}],
+                    "blocking": True,
+                },
+            }
             await loop._collect_plan_decision(
-                ask, object(), mission,
-                serialize_planning_decision(PlanningDecisionEnvelopeV1.from_json(choice_body)), dispatch)
-            choice = next(item for item in PlanningHumanStore(loop.store).list(mission.id)
-                          if item["decision_id"] != question["decision_id"])
+                ask,
+                object(),
+                mission,
+                serialize_planning_decision(PlanningDecisionEnvelopeV1.from_json(choice_body)),
+                dispatch,
+            )
+            choice = next(
+                item
+                for item in PlanningHumanStore(loop.store).list(mission.id)
+                if item["decision_id"] != question["decision_id"]
+            )
             with pytest.raises(ContractError, match="choice answer"):
-                answer_planning_question(loop, **{**call, "decision_id": choice["decision_id"], "answer": "a",
-                                                  "expected_version": choice["version"], "nonce": "n-choice"})
+                answer_planning_question(
+                    loop,
+                    **{
+                        **call,
+                        "decision_id": choice["decision_id"],
+                        "answer": "a",
+                        "expected_version": choice["version"],
+                        "nonce": "n-choice",
+                    },
+                )
 
     asyncio.run(case())

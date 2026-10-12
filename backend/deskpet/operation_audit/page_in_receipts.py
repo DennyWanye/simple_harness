@@ -67,16 +67,37 @@ class ContextPageInReceiptLedger:
         finally:
             db.close()
 
-    def _row(self, *, phase, reference_id, kind, source, source_hash, session_id, request_id,
-             scope_id, sdk_run_id, effect_id, outcome) -> tuple:
+    def _row(
+        self,
+        *,
+        phase,
+        reference_id,
+        kind,
+        source,
+        source_hash,
+        session_id,
+        request_id,
+        scope_id,
+        sdk_run_id,
+        effect_id,
+        outcome,
+    ) -> tuple:
         if phase not in PHASES:
             raise ValueError("page_in_receipt_phase_invalid")
         return (
-            uuid.uuid4().hex, phase, reference_ref_hash(reference_id), str(kind),
-            _scope_hash("source", source), source_hash or None,
-            _scope_hash("session", session_id), _scope_hash("request", request_id), _scope_hash("scope", scope_id),
-            str(sdk_run_id) if sdk_run_id else None, str(effect_id) if effect_id else None,
-            str(outcome), float(self.clock()),
+            uuid.uuid4().hex,
+            phase,
+            reference_ref_hash(reference_id),
+            str(kind),
+            _scope_hash("source", source),
+            source_hash or None,
+            _scope_hash("session", session_id),
+            _scope_hash("request", request_id),
+            _scope_hash("scope", scope_id),
+            str(sdk_run_id) if sdk_run_id else None,
+            str(effect_id) if effect_id else None,
+            str(outcome),
+            float(self.clock()),
         )
 
     def record_sync(self, **fields) -> None:

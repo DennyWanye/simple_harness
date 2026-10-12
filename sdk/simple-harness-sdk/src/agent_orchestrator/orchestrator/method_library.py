@@ -72,8 +72,10 @@ def proposals(store: Any, mission_id: str) -> dict[str, dict[str, Any]]:
         if not isinstance(reference, Mapping):
             continue
         found[method_key(reference)] = {
-            "method_ref": dict(reference), "subject_task_id": event.payload.get("subject_task_id"),
-            "based_on": event.payload.get("based_on"), "catalog_digest": event.payload.get("catalog_digest"),
+            "method_ref": dict(reference),
+            "subject_task_id": event.payload.get("subject_task_id"),
+            "based_on": event.payload.get("based_on"),
+            "catalog_digest": event.payload.get("catalog_digest"),
         }
     return found
 
@@ -89,17 +91,25 @@ def adopted_methods(store: Any, mission_id: str) -> list[dict[str, Any]]:
     for draft in htn.list_method_instances(mission_id, state="ADOPTED"):
         key = method_key(draft.method_ref)
         proposal = proposed.get(key)
-        if proposal is None or key in rows or not review_of(store, mission_id, draft.method_ref).passed:
+        if (
+            proposal is None
+            or key in rows
+            or not review_of(store, mission_id, draft.method_ref).passed
+        ):
             continue
         stored = htn.get_method(draft.method_ref.method_id, int(draft.method_ref.version))
         goal = htn.latest_task_semantics(str(draft.goal_id))
         rows[key] = {
-            "method_ref": key, "based_on": proposal["based_on"],
-            "goal": {"task_id": str(draft.goal_id),
-                     "goal_type": None if goal is None else goal.goal_signature.signature_id,
-                     "parameters": {} if goal is None else dict(goal.typed_parameters)},
+            "method_ref": key,
+            "based_on": proposal["based_on"],
+            "goal": {
+                "task_id": str(draft.goal_id),
+                "goal_type": None if goal is None else goal.goal_signature.signature_id,
+                "parameters": {} if goal is None else dict(goal.typed_parameters),
+            },
             "method": stored.contract.to_json(),
-            "_contract": stored.contract, "_proposal": proposal,
+            "_contract": stored.contract,
+            "_proposal": proposal,
         }
     return [rows[key] for key in sorted(rows)]
 
@@ -111,14 +121,17 @@ def methods_to_judge(store: Any, mission: Any) -> tuple[dict[str, Any], ...]:
     rows = adopted_methods(store, mission.id)
     if mission_untrusted_input(store, mission):
         rows = [row for row in rows if row["based_on"]]
-    return tuple({key: value for key, value in row.items() if not key.startswith("_")} for row in rows)
+    return tuple(
+        {key: value for key, value in row.items() if not key.startswith("_")} for row in rows
+    )
 
 
 def review_manifest(store: Any, record: Any) -> dict[str, Any]:
     """The authenticated manifest an official review record was imported with."""
     row = store.connection.execute(
         "SELECT manifest_json FROM input_manifests WHERE manifest_hash=?",
-        (record.evidence_manifest_hash,)).fetchone()
+        (record.evidence_manifest_hash,),
+    ).fetchone()
     return {} if row is None else json.loads(row[0])
 
 
@@ -137,12 +150,20 @@ def promote_methods(store: Any, mission_id: str, resolution: Any) -> list[str]:
     if mission_untrusted_input(store, mission):
         own = [row["method_ref"] for row in adopted_methods(store, mission_id)]
         if own:
-            _emit(store, PROMOTION_SKIPPED, mission_id, f"{mission_id}:untrusted-input",
-                  {"reason": "untrusted_input", "methods": own})
+            _emit(
+                store,
+                PROMOTION_SKIPPED,
+                mission_id,
+                f"{mission_id}:untrusted-input",
+                {"reason": "untrusted_input", "methods": own},
+            )
         return []
     record = htn.get_review_record(str(resolution.review_receipt_id)).record
-    judged = {row["method_ref"]: row for row in review_manifest(store, record).get("methods") or ()
-              if row.get("reusable") and row.get("purpose")}
+    judged = {
+        row["method_ref"]: row
+        for row in review_manifest(store, record).get("methods") or ()
+        if row.get("reusable") and row.get("purpose")
+    }
     if not judged:
         return []
     library, owner, promoted = MethodLibraryStore(store), library_owner(store, mission), []
@@ -155,12 +176,18 @@ def promote_methods(store: Any, mission_id: str, resolution: Any) -> list[str]:
             continue
         reference = contract.method_ref()
         entry = {
-            "entry_id": "lib-" + content_hash_of({"owner": owner, "method": reference.to_json()})[:24],
-            "owner": owner, "goal_type_id": contract.goal_type_ref.id,
-            "catalog_digest": proposal["catalog_digest"], "method_id": contract.method_id,
-            "method_version": int(contract.method_version), "method_hash": reference.content_hash,
-            "purpose": verdict["purpose"], "source_mission_id": mission_id,
-            "root_review_record_id": str(record.record_id), "based_on": _still_there(library, proposal["based_on"]),
+            "entry_id": "lib-"
+            + content_hash_of({"owner": owner, "method": reference.to_json()})[:24],
+            "owner": owner,
+            "goal_type_id": contract.goal_type_ref.id,
+            "catalog_digest": proposal["catalog_digest"],
+            "method_id": contract.method_id,
+            "method_version": int(contract.method_version),
+            "method_hash": reference.content_hash,
+            "purpose": verdict["purpose"],
+            "source_mission_id": mission_id,
+            "root_review_record_id": str(record.record_id),
+            "based_on": _still_there(library, proposal["based_on"]),
         }
         library.insert(entry)
         _emit(store, PROMOTED, mission_id, entry["entry_id"], entry)
@@ -172,33 +199,56 @@ def _still_there(library: MethodLibraryStore, entry_id: Any) -> str | None:
     return str(entry_id) if entry_id and library.get(str(entry_id)) is not None else None
 
 
-def listed_entries(store: Any, *, owner: str, digest: str, goal_types: Iterable[str]) -> dict[str, list[dict[str, Any]]]:
+def listed_entries(
+    store: Any, *, owner: str, digest: str, goal_types: Iterable[str]
+) -> dict[str, list[dict[str, Any]]]:
     """The one rule for what a Mission may see of the library — the directory, a read and a
     ``based_on`` all go through it: same owner, same type catalogue, still listed, for one of
     these goal types.  Newest first; nothing is scored."""
     library = MethodLibraryStore(store)
-    return {goal_type: library.listed(owner, digest, goal_type) for goal_type in sorted(set(goal_types))}
+    return {
+        goal_type: library.listed(owner, digest, goal_type) for goal_type in sorted(set(goal_types))
+    }
 
 
-def directory(store: Any, mission: Any, digest: str, goal_types: Iterable[str]) -> list[dict[str, Any]]:
+def directory(
+    store: Any, mission: Any, digest: str, goal_types: Iterable[str]
+) -> list[dict[str, Any]]:
     """What the planning package shows: per goal type the newest few entries — id, goal type,
     one line of purpose, date — and how many more there are.  Never the method itself."""
     rows = []
     for goal_type, entries in listed_entries(
-            store, owner=library_owner(store, mission), digest=digest, goal_types=goal_types).items():
-        rows.append({
-            "goal_type": goal_type,
-            "entries": [{"entry_id": item["entry_id"], "goal_type": goal_type, "purpose": item["purpose"],
-                         "promoted_at": item["promoted_at"]} for item in entries[:DIRECTORY_LIMIT]],
-            "omitted": max(0, len(entries) - DIRECTORY_LIMIT),
-        })
+        store, owner=library_owner(store, mission), digest=digest, goal_types=goal_types
+    ).items():
+        rows.append(
+            {
+                "goal_type": goal_type,
+                "entries": [
+                    {
+                        "entry_id": item["entry_id"],
+                        "goal_type": goal_type,
+                        "purpose": item["purpose"],
+                        "promoted_at": item["promoted_at"],
+                    }
+                    for item in entries[:DIRECTORY_LIMIT]
+                ],
+                "omitted": max(0, len(entries) - DIRECTORY_LIMIT),
+            }
+        )
     return [row for row in rows if row["entries"]]
 
 
-def visible_entry(store: Any, mission: Any, digest: str, goal_types: Iterable[str], entry_id: str) -> dict[str, Any] | None:
+def visible_entry(
+    store: Any, mission: Any, digest: str, goal_types: Iterable[str], entry_id: str
+) -> dict[str, Any] | None:
     """The entry, when this Mission may see it for one of these goal types."""
-    found = listed_entries(store, owner=library_owner(store, mission), digest=digest, goal_types=goal_types)
-    return next((item for entries in found.values() for item in entries if item["entry_id"] == entry_id), None)
+    found = listed_entries(
+        store, owner=library_owner(store, mission), digest=digest, goal_types=goal_types
+    )
+    return next(
+        (item for entries in found.values() for item in entries if item["entry_id"] == entry_id),
+        None,
+    )
 
 
 def library_reads(store: Any, mission_id: str) -> list[dict[str, Any]]:
@@ -213,8 +263,14 @@ def library_reads(store: Any, mission_id: str) -> list[dict[str, Any]]:
                 continue
             seen.add(entry_id)
             contract = htn.get_method(entry["method_id"], int(entry["method_version"])).contract
-            rows.append({"entry_id": entry_id, "goal_type": entry["goal_type_id"], "purpose": entry["purpose"],
-                         "method": contract.to_json()})
+            rows.append(
+                {
+                    "entry_id": entry_id,
+                    "goal_type": entry["goal_type_id"],
+                    "purpose": entry["purpose"],
+                    "method": contract.to_json(),
+                }
+            )
     return rows[:READ_ENTRIES_LIMIT]
 
 
@@ -222,41 +278,70 @@ def reads_used(store: Any, mission_id: str) -> int:
     return store.count_events(mission_id, LIBRARY_READ)
 
 
-def record_attribution(store: Any, *, mission_id: str, method_ref: Any, source_ref: str,
-                       source_kind: str, reason: str) -> str | None:
+def record_attribution(
+    store: Any, *, mission_id: str, method_ref: Any, source_ref: str, source_kind: str, reason: str
+) -> str | None:
     """One explicit "the method was at fault", for a method written after a library precedent.
     Counted per Mission: the Planner and the reviewer blaming it in one Mission is one failure.
     The second Mission retires the entry, in the same transaction.  Returns the entry id when
     something was recorded."""
     proposal = proposals(store, mission_id).get(method_key(method_ref))
     library = MethodLibraryStore(store)
-    entry = None if proposal is None or not proposal["based_on"] else library.get(str(proposal["based_on"]))
+    entry = (
+        None
+        if proposal is None or not proposal["based_on"]
+        else library.get(str(proposal["based_on"]))
+    )
     if entry is None:
         return None
     reference = proposal["method_ref"]
     if not library.add_attribution(
-            entry["entry_id"], source_ref=source_ref, source_kind=source_kind, mission_id=mission_id,
-            method_id=str(reference.get("id") or reference["method_id"]), method_version=int(reference["version"]),
-            method_hash=str(reference["content_hash"]), reason=reason):
+        entry["entry_id"],
+        source_ref=source_ref,
+        source_kind=source_kind,
+        mission_id=mission_id,
+        method_id=str(reference.get("id") or reference["method_id"]),
+        method_version=int(reference["version"]),
+        method_hash=str(reference["content_hash"]),
+        reason=reason,
+    ):
         return None
     blamed = library.attributions(entry["entry_id"])
     missions = sorted({row["mission_id"] for row in blamed})
     if len(missions) >= RETIRE_AFTER_MISSIONS:
-        retire_entry(store, entry["entry_id"], by="attribution", mission_id=mission_id,
-                     reason="；".join(dict.fromkeys(row["reason"] for row in blamed))[:600])
+        retire_entry(
+            store,
+            entry["entry_id"],
+            by="attribution",
+            mission_id=mission_id,
+            reason="；".join(dict.fromkeys(row["reason"] for row in blamed))[:600],
+        )
     return entry["entry_id"]
 
 
-def retire_entry(store: Any, entry_id: str, *, by: str, reason: str, mission_id: str | None = None) -> bool:
+def retire_entry(
+    store: Any, entry_id: str, *, by: str, reason: str, mission_id: str | None = None
+) -> bool:
     """LISTED → RETIRED.  A retired entry is no longer listed, read or cited; a method already
     written after it is the Mission's own and is not touched."""
     library = MethodLibraryStore(store)
     entry = library.get(entry_id)
     if entry is None or not library.retire(entry_id, by=by, reason=reason):
         return False
-    _emit(store, RETIRED_EVENT, mission_id or entry["source_mission_id"], f"{entry_id}:retired",
-          {"entry_id": entry_id, "retired_by": by, "reason": reason,
-           "blamed_by_missions": sorted({row["mission_id"] for row in library.attributions(entry_id)})})
+    _emit(
+        store,
+        RETIRED_EVENT,
+        mission_id or entry["source_mission_id"],
+        f"{entry_id}:retired",
+        {
+            "entry_id": entry_id,
+            "retired_by": by,
+            "reason": reason,
+            "blamed_by_missions": sorted(
+                {row["mission_id"] for row in library.attributions(entry_id)}
+            ),
+        },
+    )
     return True
 
 
@@ -269,45 +354,106 @@ class LibraryCommandError(Exception):
         self.code = code
 
 
-def retire_by_command(store: Any, *, command_id: str, entry_id: str, reason: str, principal: str) -> dict[str, Any]:
+def retire_by_command(
+    store: Any, *, command_id: str, entry_id: str, reason: str, principal: str
+) -> dict[str, Any]:
     """The person's retirement of one entry (through the main Agent).  One transaction; the
     same command id replays its receipt, a command id reused for another entry is refused."""
     proposal_hash = content_hash_of({"entry_id": entry_id, "reason": reason})
     with store.transaction():
         earlier = store.get_receipt(command_id)
         if earlier is not None:
-            if earlier.get("kind") != RETIRE_RECEIPT_KIND or earlier.get("proposal_hash") != proposal_hash:
-                raise LibraryCommandError("LIBRARY_COMMAND_REUSED", "this command id already did something else")
+            if (
+                earlier.get("kind") != RETIRE_RECEIPT_KIND
+                or earlier.get("proposal_hash") != proposal_hash
+            ):
+                raise LibraryCommandError(
+                    "LIBRARY_COMMAND_REUSED", "this command id already did something else"
+                )
             return dict(earlier)
         entry = MethodLibraryStore(store).get(entry_id)
         if entry is None:
             raise LibraryCommandError("LIBRARY_ENTRY_UNKNOWN", f"no library entry {entry_id!r}")
         if entry["state"] != LISTED:
-            raise LibraryCommandError("LIBRARY_ENTRY_RETIRED", f"library entry {entry_id!r} is already retired")
+            raise LibraryCommandError(
+                "LIBRARY_ENTRY_RETIRED", f"library entry {entry_id!r} is already retired"
+            )
         retire_entry(store, entry_id, by="user", reason=reason)
-        receipt = {"kind": RETIRE_RECEIPT_KIND, "command_id": command_id, "entry_id": entry_id,
-                   "purpose": entry["purpose"], "reason": reason, "principal": principal,
-                   "proposal_hash": proposal_hash}
-        store.insert_receipt(commit_id=command_id, kind=RETIRE_RECEIPT_KIND, subject_id=entry_id,
-                             base_version=None, proposal_hash=proposal_hash, receipt=receipt)
+        receipt = {
+            "kind": RETIRE_RECEIPT_KIND,
+            "command_id": command_id,
+            "entry_id": entry_id,
+            "purpose": entry["purpose"],
+            "reason": reason,
+            "principal": principal,
+            "proposal_hash": proposal_hash,
+        }
+        store.insert_receipt(
+            commit_id=command_id,
+            kind=RETIRE_RECEIPT_KIND,
+            subject_id=entry_id,
+            base_version=None,
+            proposal_hash=proposal_hash,
+            receipt=receipt,
+        )
     return receipt
 
 
 def library_listing(store: Any) -> list[dict[str, Any]]:
     """Every entry, for the person (the main Agent's tool and the diagnostic command)."""
     library = MethodLibraryStore(store)
-    return [{**{key: entry[key] for key in ("entry_id", "owner", "goal_type_id", "purpose", "state",
-                                             "source_mission_id", "based_on", "promoted_at",
-                                             "retired_by", "retired_reason")},
-             "method_ref": f"{entry['method_id']}@{entry['method_version']}",
-             "blamed_by_missions": sorted({row["mission_id"] for row in library.attributions(entry["entry_id"])})}
-            for entry in library.all()]
+    return [
+        {
+            **{
+                key: entry[key]
+                for key in (
+                    "entry_id",
+                    "owner",
+                    "goal_type_id",
+                    "purpose",
+                    "state",
+                    "source_mission_id",
+                    "based_on",
+                    "promoted_at",
+                    "retired_by",
+                    "retired_reason",
+                )
+            },
+            "method_ref": f"{entry['method_id']}@{entry['method_version']}",
+            "blamed_by_missions": sorted(
+                {row["mission_id"] for row in library.attributions(entry["entry_id"])}
+            ),
+        }
+        for entry in library.all()
+    ]
 
 
 __all__: Sequence[str] = (
-    "DIRECTORY_LIMIT", "LIBRARY_READ", "MAX_LIBRARY_READS", "PROMOTED", "PROMOTION_SKIPPED",
-    "READ_ENTRIES_LIMIT", "RETIRED_EVENT", "RETIRE_AFTER_MISSIONS", "adopted_methods", "directory",
-    "LibraryCommandError", "RETIRE_RECEIPT_KIND", "retire_by_command", "library_listing", "library_owner", "library_reads", "listed_entries", "method_key",
-    "methods_to_judge", "mission_untrusted_input", "promote_methods", "proposals", "reads_used",
-    "record_attribution", "retire_entry", "review_manifest", "visible_entry",
+    "DIRECTORY_LIMIT",
+    "LIBRARY_READ",
+    "MAX_LIBRARY_READS",
+    "PROMOTED",
+    "PROMOTION_SKIPPED",
+    "READ_ENTRIES_LIMIT",
+    "RETIRED_EVENT",
+    "RETIRE_AFTER_MISSIONS",
+    "adopted_methods",
+    "directory",
+    "LibraryCommandError",
+    "RETIRE_RECEIPT_KIND",
+    "retire_by_command",
+    "library_listing",
+    "library_owner",
+    "library_reads",
+    "listed_entries",
+    "method_key",
+    "methods_to_judge",
+    "mission_untrusted_input",
+    "promote_methods",
+    "proposals",
+    "reads_used",
+    "record_attribution",
+    "retire_entry",
+    "review_manifest",
+    "visible_entry",
 )

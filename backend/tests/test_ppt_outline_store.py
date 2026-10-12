@@ -109,14 +109,17 @@ def test_ppt_outline_history_degrades_when_db_unavailable(caplog):
     def broken_factory():
         raise sqlite3.OperationalError("cannot open database")
 
-    assert save_outline(
-        "outline-1",
-        "sid-1",
-        "topic",
-        [SlideOutline(title="x")],
-        1,
-        conn_factory=broken_factory,
-    ) is False
+    assert (
+        save_outline(
+            "outline-1",
+            "sid-1",
+            "topic",
+            [SlideOutline(title="x")],
+            1,
+            conn_factory=broken_factory,
+        )
+        is False
+    )
     assert mark_status("outline-1", "accepted", conn_factory=broken_factory) is False
     assert list_history("sid-1", conn_factory=broken_factory) == []
     assert get_outline("outline-1", conn_factory=broken_factory) is None

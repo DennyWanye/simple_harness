@@ -52,7 +52,9 @@ def test_validation_refuses_what_cannot_be_published_to(tmp_path):
 
 def test_write_keeps_the_rest_of_the_config_and_revoke_removes_the_key(tmp_path):
     config = tmp_path / "config.toml"
-    config.write_text('# 注释保留\n[orchestration]\nmax_concurrency = 2\n\n[other]\nx = 1\n', encoding="utf-8")
+    config.write_text(
+        "# 注释保留\n[orchestration]\nmax_concurrency = 2\n\n[other]\nx = 1\n", encoding="utf-8"
+    )
     write_publish_dir(config, "/tmp/pub")
     parsed = tomllib.loads(config.read_text(encoding="utf-8"))
     assert parsed["orchestration"] == {"max_concurrency": 2, "publish_dir": "/tmp/pub"}
@@ -69,12 +71,18 @@ def test_set_restarts_once_and_a_refusal_changes_nothing(tmp_path):
     restarts = []
 
     async def restart():
-        restarts.append(tomllib.loads(config.read_text(encoding="utf-8"))["orchestration"].get("publish_dir"))
+        restarts.append(
+            tomllib.loads(config.read_text(encoding="utf-8"))["orchestration"].get("publish_dir")
+        )
 
     async def case():
-        await set_publish_dir(str(target), config_path=config, protected=[tmp_path / "data"], restart=restart)
+        await set_publish_dir(
+            str(target), config_path=config, protected=[tmp_path / "data"], restart=restart
+        )
         with pytest.raises(PublishDirRefused):
-            await set_publish_dir(str(tmp_path / "nope"), config_path=config, protected=[], restart=restart)
+            await set_publish_dir(
+                str(tmp_path / "nope"), config_path=config, protected=[], restart=restart
+            )
         await set_publish_dir("", config_path=config, protected=[], restart=restart)
 
     asyncio.run(case())
@@ -83,7 +91,9 @@ def test_set_restarts_once_and_a_refusal_changes_nothing(tmp_path):
 
 def test_the_control_channel_handles_both_verbs_before_the_orchestration_prefix():
     source = MAIN.read_text(encoding="utf-8")
-    verbs = source.index('msg_type in ("orchestration_publish_dir_get", "orchestration_publish_dir_set")')
+    verbs = source.index(
+        'msg_type in ("orchestration_publish_dir_get", "orchestration_publish_dir_set")'
+    )
     prefix = source.index('msg_type.startswith(("mission_", "orchestration_", "taskgraph."))')
     assert verbs < prefix
     assert "restart=_restart_orchestration" in source

@@ -46,18 +46,29 @@ def test_occ11_projection_uses_only_verified_result_layers_and_artifact_identity
             leaf = _leaf(case)
             requirements = HtnStore(case.store).latest_requirements_revision(case.mission_id)
             spec_hash = case.store.connection.execute(
-                "SELECT spec_hash FROM operation_completion_specs WHERE mission_id=?", (case.mission_id,)).fetchone()[0]
-            projection = read_task_content_projection(case.store, case.mission_id, leaf.id, leaf.accepted_result_id)
+                "SELECT spec_hash FROM operation_completion_specs WHERE mission_id=?",
+                (case.mission_id,),
+            ).fetchone()[0]
+            projection = read_task_content_projection(
+                case.store, case.mission_id, leaf.id, leaf.accepted_result_id
+            )
             assert projection.requirements == requirements
             assert projection.spec.content_hash() == spec_hash
-            assert str(projection.scope.role) == "CONTENT" and not projection.scope.owned_effect_keys
+            assert (
+                str(projection.scope.role) == "CONTENT" and not projection.scope.owned_effect_keys
+            )
             assert tuple(item.criterion_id for item in projection.criteria) == ("c-user-1",)
-            [artifact] = [a for a in case.store.list_mission_artifacts(case.mission_id) if a.path == TARGET]
+            [artifact] = [
+                a for a in case.store.list_mission_artifacts(case.mission_id) if a.path == TARGET
+            ]
             assert tuple(item.id for item in projection.artifacts) == (artifact.id,)
             assert projection.artifacts[0].content_hash == artifact.content_hash
-            assert {row["layer"] for row in case.store.list_verifications(
-                leaf.accepted_result_id, requirements_revision=1)} >= {
-                "critic_review"}
+            assert {
+                row["layer"]
+                for row in case.store.list_verifications(
+                    leaf.accepted_result_id, requirements_revision=1
+                )
+            } >= {"critic_review"}
 
     asyncio.run(run())
 
@@ -70,26 +81,40 @@ def test_occ11_preparation_acceptance_is_scoped_replay_safe_and_not_an_effect(tm
             commit = case.world.loop.commit
             [acceptance] = HtnStore(case.store).list_acceptances(case.mission_id)
             contribution = OperationCompletionStore(case.store).get_acceptance_scope_exact(
-                case.mission_id, str(acceptance.acceptance_id))
+                case.mission_id, str(acceptance.acceptance_id)
+            )
             assert contribution is not None
             document = contribution["document"]
             assert document.content_criterion_ids == ("c-user-1",)
             assert not document.effect_keys
             assert document.outcome_binding_id is None and document.delivery_receipt_ref is None
-            [artifact] = [a for a in case.store.list_mission_artifacts(case.mission_id) if a.path == TARGET]
+            [artifact] = [
+                a for a in case.store.list_mission_artifacts(case.mission_id) if a.path == TARGET
+            ]
             assert tuple(item.id for item in document.output_artifact_refs) == (artifact.id,)
             before = case.store.connection.total_changes
             with pytest.raises(CommitRejected):
-                commit.create_attempt(leaf.id, role="worker", model="agent-model", prompt_version="v1",
-                                      context_version="scoped-content-v1",
-                                      reservation=Reservation(tokens=1_000),
-                                      intent_config={"message": "must not dispatch another worker"},
-                                      input_hash="b" * 64)
+                commit.create_attempt(
+                    leaf.id,
+                    role="worker",
+                    model="agent-model",
+                    prompt_version="v1",
+                    context_version="scoped-content-v1",
+                    reservation=Reservation(tokens=1_000),
+                    intent_config={"message": "must not dispatch another worker"},
+                    input_hash="b" * 64,
+                )
             again = commit.accept_result(leaf.accepted_result_id, verifier_results=())
             assert again.accepted_result_id == leaf.accepted_result_id
             assert case.store.connection.total_changes == before
-            assert len(OperationCompletionStore(case.store).list_scoped_contributions(
-                case.mission_id, document.completion_scope_id)) == 1
+            assert (
+                len(
+                    OperationCompletionStore(case.store).list_scoped_contributions(
+                        case.mission_id, document.completion_scope_id
+                    )
+                )
+                == 1
+            )
 
     asyncio.run(run())
 
@@ -102,9 +127,13 @@ def test_occ11_contribution_fault_rolls_back_acceptance_and_scope_together(tmp_p
             with pytest.raises(InjectedCrash, match="completion_acceptance_after_contribution"):
                 await case.run_until(lambda: False, timeout=60)
             assert HtnStore(case.store).list_acceptances(case.mission_id) == ()
-            assert case.store.connection.execute(
-                "SELECT count(*) FROM operation_acceptance_scopes WHERE mission_id=?",
-                (case.mission_id,)).fetchone()[0] == 0
+            assert (
+                case.store.connection.execute(
+                    "SELECT count(*) FROM operation_acceptance_scopes WHERE mission_id=?",
+                    (case.mission_id,),
+                ).fetchone()[0]
+                == 0
+            )
             assert all(t.accepted_result_id is None for t in case.store.list_tasks(case.mission_id))
             assert not case.events("AcceptanceCommitted") and case.actions() == []
 

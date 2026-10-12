@@ -23,8 +23,11 @@ from ._support import notes_provider, notes_request
 @pytest.mark.asyncio
 async def test_completion_confirmation_uses_actual_host_principal(orchestration_root, principal):
     service = OrchestrationService(
-        orchestration_root, OrchestrationSettings(), provider=notes_provider(),
-        principal=principal, drive=False,
+        orchestration_root,
+        OrchestrationSettings(),
+        provider=notes_provider(),
+        principal=principal,
+        drive=False,
         native_test_counter=FixtureWordCounter(),
     )
     await service.start()
@@ -41,18 +44,25 @@ async def test_completion_confirmation_uses_actual_host_principal(orchestration_
         [criterion] = requirements.criteria
         assert criterion.statement == "file:NOTES.md"
         ref = TypedRef(
-            kind=TypedRefKind.REQUIREMENTS, id=str(requirements.revision_id), revision=1,
+            kind=TypedRefKind.REQUIREMENTS,
+            id=str(requirements.revision_id),
+            revision=1,
             content_hash=requirements.content_hash(),
         )
         body = {
-            "mission_id": mission_id, "command_id": "confirm-host-completion",
+            "mission_id": mission_id,
+            "command_id": "confirm-host-completion",
             "expected_requirements_ref": ref.to_json(),
             "proposal": {
-                "schema_version": 1, "mission_id": mission_id,
+                "schema_version": 1,
+                "mission_id": mission_id,
                 "requirements_ref": {
-                    "id": ref.id, "revision": ref.revision, "content_hash": ref.content_hash,
+                    "id": ref.id,
+                    "revision": ref.revision,
+                    "content_hash": ref.content_hash,
                 },
-                "mode": "CONTENT_ONLY", "content_criterion_ids": [criterion.criterion_id],
+                "mode": "CONTENT_ONLY",
+                "content_criterion_ids": [criterion.criterion_id],
                 "effects": [],
             },
         }
@@ -62,16 +72,19 @@ async def test_completion_confirmation_uses_actual_host_principal(orchestration_
         assert receipt["authority"]["issuer_id"] == principal.principal_id
         assert receipt["authority"]["tenant_id"] == service.tenant_id
         assert receipt["authority"]["kind"] == "USER_CONFIRMED"
-        assert OperationCompletionReader(store).read_requirements(
-            mission_id, ref
-        ).content_hash() == receipt["spec_hash"]
+        assert (
+            OperationCompletionReader(store).read_requirements(mission_id, ref).content_hash()
+            == receipt["spec_hash"]
+        )
         before = store.connection.total_changes
         repeated = await handle(service, "mission_operation_completion_approve", body)
         assert repeated["payload"]["data"] == receipt
         assert store.connection.total_changes == before
         for field in ("principal", "approved", "requirement_authority"):
             rejected = await handle(
-                service, "mission_operation_completion_approve", {**body, field: True},
+                service,
+                "mission_operation_completion_approve",
+                {**body, field: True},
             )
             assert rejected["payload"]["ok"] is False
             assert rejected["payload"]["error_code"] == "invalid_request"
@@ -81,8 +94,11 @@ async def test_completion_confirmation_uses_actual_host_principal(orchestration_
         assert recovered["payload"]["ok"], recovered
         assert recovered["payload"]["data"] == receipt
         recovered_store = service._orchestrator.store
-        assert OperationCompletionReader(recovered_store).read_requirements(
-            mission_id, ref
-        ).content_hash() == receipt["spec_hash"]
+        assert (
+            OperationCompletionReader(recovered_store)
+            .read_requirements(mission_id, ref)
+            .content_hash()
+            == receipt["spec_hash"]
+        )
     finally:
         await service.close()

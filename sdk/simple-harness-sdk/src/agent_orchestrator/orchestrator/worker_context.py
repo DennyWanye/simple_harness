@@ -42,8 +42,10 @@ def parent_goal(store: Any, network: Any, mission: Mission, task: Task) -> dict[
         return {
             "data_not_instruction": True,
             "version": PARENT_GOAL_VERSION,
-            "unavailable": (f"method instance {placement.method_instance_id} is not in the current plan "
-                            "snapshot (the step was kept from an earlier plan)"),
+            "unavailable": (
+                f"method instance {placement.method_instance_id} is not in the current plan "
+                "snapshot (the step was kept from an earlier plan)"
+            ),
             "slot_key": placement.slot_key,
         }
     goal_row = store.get_task(str(draft.goal_id))
@@ -52,7 +54,9 @@ def parent_goal(store: Any, network: Any, mission: Mission, task: Task) -> dict[
         "data_not_instruction": True,
         "version": PARENT_GOAL_VERSION,
         "task_id": str(draft.goal_id),
-        "occurrence_id": None if draft.goal_occurrence_id is None else str(draft.goal_occurrence_id),
+        "occurrence_id": None
+        if draft.goal_occurrence_id is None
+        else str(draft.goal_occurrence_id),
         "obligation_id": str(draft.obligation_id),
         "goal": goal_binding.goal_signature.statement if goal_row is None else goal_row.goal,
         "goal_type": str(goal_binding.goal_signature.signature_id),
@@ -84,11 +88,13 @@ def upstream_steps(
                 "occurrence_id": str(producer.occurrence_id),
                 "ports": [],
             }
-        row["ports"].append({
-            "requirement_id": requirement.requirement_id,
-            "output_port": requirement.output_port,
-            "input_port": requirement.input_port,
-        })
+        row["ports"].append(
+            {
+                "requirement_id": requirement.requirement_id,
+                "output_port": requirement.output_port,
+                "input_port": requirement.input_port,
+            }
+        )
     if not producers:
         return []
     checked = {row["source_task"]: row for row in step_summaries(store, mission.id)}
@@ -102,15 +108,19 @@ def upstream_steps(
             stored = store.get_result(result_id) if result_id else None
             summary = None if stored is None else str(stored.envelope.summary or "")
             checked_by = None
-        row.update({
-            "goal": None if producer_task is None else producer_task.goal,
-            "status": None if producer_task is None else str(producer_task.status),
-            "accepted_result_id": result_id,
-            "accepted_summary": summary,
-            # 审阅员核对过"摘要忠实于原结果"的记录编号；None = 没核对过，摘要只是执行者自己的话
-            "summary_checked_by": checked_by,
-            "accepted_artifacts": [item.to_json() for item in inputs if item.task_id == producer_id],
-        })
+        row.update(
+            {
+                "goal": None if producer_task is None else producer_task.goal,
+                "status": None if producer_task is None else str(producer_task.status),
+                "accepted_result_id": result_id,
+                "accepted_summary": summary,
+                # 审阅员核对过"摘要忠实于原结果"的记录编号；None = 没核对过，摘要只是执行者自己的话
+                "summary_checked_by": checked_by,
+                "accepted_artifacts": [
+                    item.to_json() for item in inputs if item.task_id == producer_id
+                ],
+            }
+        )
     return [producers[key] for key in sorted(producers)]
 
 

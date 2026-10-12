@@ -53,9 +53,12 @@ def _task_action_scope(
 
     # 2026-09-28 真机第四局：分层步骤的要求是编号（c-user-5 = 第 5 条原始要求），直接按
     # 文字解析一条也认不出，每一步都看到了整个任务的全部操作。先还原成原文再收窄。
-    return {parsed for criterion in task_criteria
-            if (parsed := parse_action_criterion(
-                task_criterion_text(criterion, mission_criteria))) is not None}
+    return {
+        parsed
+        for criterion in task_criteria
+        if (parsed := parse_action_criterion(task_criterion_text(criterion, mission_criteria)))
+        is not None
+    }
 
 
 def _action_contract(
@@ -72,8 +75,11 @@ def _action_contract(
     Other descriptors are projected as declared; no parameter types are guessed.
     """
 
-    charter = {parsed for criterion in mission_criteria.values()
-               if (parsed := parse_action_criterion(criterion)) is not None}
+    charter = {
+        parsed
+        for criterion in mission_criteria.values()
+        if (parsed := parse_action_criterion(criterion)) is not None
+    }
     task_scope = _task_action_scope(mission_criteria, task_criteria)
     # A Task may declare its action solely by its actions/*.json output, with the
     # action criterion remaining at Mission level. Never infer an operation outside
@@ -91,8 +97,11 @@ def _action_contract(
         if spec is None or decision.refused is not None:
             continue
         required = tuple(spec.required_params)
-        is_publish = (name == "file_publish" and operation == "publish"
-                      and isinstance(connector, FilePublishConnector))
+        is_publish = (
+            name == "file_publish"
+            and operation == "publish"
+            and isinstance(connector, FilePublishConnector)
+        )
         if is_publish:
             if not {"artifact_path", "content_hash", "storage_uri"}.issubset(required):
                 continue  # declaration changed; do not invent a model-facing schema
@@ -101,16 +110,21 @@ def _action_contract(
             continue  # cannot describe an unrecognised system-bound operation
         else:
             model_required = list(required)
-        operations.append({
-            "connector": name,
-            "operation": operation,
-            "target": target,
-            "level": decision.level,
-            "required_approvals": decision.required_approvals,
-            "required_model_params": model_required,
-            **({"system_bound_artifact_fields": sorted(BOUND_ARTIFACT_FIELDS)}
-               if is_publish else {}),
-        })
+        operations.append(
+            {
+                "connector": name,
+                "operation": operation,
+                "target": target,
+                "level": decision.level,
+                "required_approvals": decision.required_approvals,
+                "required_model_params": model_required,
+                **(
+                    {"system_bound_artifact_fields": sorted(BOUND_ARTIFACT_FIELDS)}
+                    if is_publish
+                    else {}
+                ),
+            }
+        )
     if not operations:
         return None
     # The normal ContextPackage/request budget bounds this projection. Do not
@@ -120,8 +134,11 @@ def _action_contract(
         "required_fields": list(CANDIDATE_FIELDS),
         "additional_fields": False,
         "field_types": {
-            "connector": "non-empty string", "operation": "non-empty string",
-            "target": "non-empty string", "params": "object", "reason": "non-empty string",
+            "connector": "non-empty string",
+            "operation": "non-empty string",
+            "target": "non-empty string",
+            "params": "object",
+            "reason": "non-empty string",
         },
         "operations": operations,
         "notice": (
@@ -151,8 +168,9 @@ def declared_action_outputs(store: Any, mission_id: str, task: Any) -> tuple[str
     if any(path.startswith("actions/") and path.endswith(".json") for path in outputs):
         return outputs
     binding = HtnStore(store).task_semantics_of(mission_id, task.id)
-    if binding is not None and any(port.port_key == OPERATION_CANDIDATE_PORT
-                                   for port in binding.output_ports):
+    if binding is not None and any(
+        port.port_key == OPERATION_CANDIDATE_PORT for port in binding.output_ports
+    ):
         return (*outputs, OPERATION_CANDIDATE_FILE)
     return outputs
 
@@ -165,13 +183,16 @@ def worker_action_contract(
     connectors: Mapping[str, Any],
     deployment: DeploymentPolicy,
 ) -> dict[str, Any] | None:
-    outputs = sorted({path for path in task_outputs
-                      if path.startswith("actions/") and path.endswith(".json")})
+    outputs = sorted(
+        {path for path in task_outputs if path.startswith("actions/") and path.endswith(".json")}
+    )
     if not outputs:
         return None
     contract = _action_contract(
-        mission_criteria=mission_criteria, task_criteria=task_criteria,
-        connectors=connectors, deployment=deployment,
+        mission_criteria=mission_criteria,
+        task_criteria=task_criteria,
+        connectors=connectors,
+        deployment=deployment,
     )
     if contract is None:
         return None
@@ -227,8 +248,11 @@ def with_candidate_targets(listed: Sequence[Any], workspace: Any) -> list[Any]:
 
 
 __all__ = (
-    "ACTION_CANDIDATE_CONTEXT_VERSION", "OPERATION_CANDIDATE_DIR", "OPERATION_CANDIDATE_FILE",
-    "OPERATION_CANDIDATE_PORT", "is_operation_candidate_path",
+    "ACTION_CANDIDATE_CONTEXT_VERSION",
+    "OPERATION_CANDIDATE_DIR",
+    "OPERATION_CANDIDATE_FILE",
+    "OPERATION_CANDIDATE_PORT",
+    "is_operation_candidate_path",
     "declared_action_outputs",
     "worker_action_contract",
 )

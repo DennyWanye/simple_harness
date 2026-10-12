@@ -87,20 +87,13 @@ class TaskScopeForegroundContextPort:
         )
 
     @staticmethod
-    def _verify_binding(
-        candidate: PreparationCandidate, package: Mapping[str, object]
-    ) -> None:
-        if (
-            int(package.get("binding_set_revision") or 0)
-            != candidate.binding_set_revision
-            or str(package.get("binding_receipt_hash") or "")
-            != str(candidate.binding_set_receipt_hash or "")
-        ):
+    def _verify_binding(candidate: PreparationCandidate, package: Mapping[str, object]) -> None:
+        if int(package.get("binding_set_revision") or 0) != candidate.binding_set_revision or str(
+            package.get("binding_receipt_hash") or ""
+        ) != str(candidate.binding_set_receipt_hash or ""):
             raise RuntimeError("foreground_resume_binding_lineage_stale")
 
-    async def draft_lineage(
-        self, candidate: PreparationCandidate
-    ) -> ContextLineage:
+    async def draft_lineage(self, candidate: PreparationCandidate) -> ContextLineage:
         if candidate.subject != self._subject or candidate.task_scope_id is None:
             raise RuntimeError("foreground_task_scope_authority_missing")
         opened = await self._open(candidate.task_scope_id)
@@ -170,13 +163,13 @@ class TaskScopeForegroundContextPort:
             text=_turn_text(candidate),
             provider_binding=provider_binding,
             catalog=tools.catalog,
-            project_task_snapshot=opened.resume_package if ordinary_projection is None else ordinary_projection,
+            project_task_snapshot=opened.resume_package
+            if ordinary_projection is None
+            else ordinary_projection,
         )
         private = snapshot.private_record()
         messages = tuple(
-            dict(item)
-            for item in private["provider_messages"]
-            if isinstance(item, Mapping)
+            dict(item) for item in private["provider_messages"] if isinstance(item, Mapping)
         )
         return FrozenContextAuthority(
             host_run_id=claimed.host_run_id,

@@ -513,9 +513,16 @@ def delivery_binding_id(consumer: str, artifact_id: str, acceptance_id: str) -> 
     """Keyed by consumer + artifact + acceptance: one file reaching one consumer through
     two relay paths is one binding, not two."""
 
-    return "delivery-" + sha256_hex(
-        {"consumer_task_ref": consumer, "artifact_id": artifact_id, "acceptance_id": acceptance_id}
-    )[:16]
+    return (
+        "delivery-"
+        + sha256_hex(
+            {
+                "consumer_task_ref": consumer,
+                "artifact_id": artifact_id,
+                "acceptance_id": acceptance_id,
+            }
+        )[:16]
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -1047,8 +1054,12 @@ def resolve_declared_inputs(
     declared_keys: dict[tuple[str, str], list[str]] = {}
     for requirement in requirements:
         spec = ports.get(requirement.input_port)
-        if (requirement.consumer_occurrence == consumer_occurrence and spec is not None
-                and spec.cardinality is PortCardinality.MAP and requirement.map_key is not None):
+        if (
+            requirement.consumer_occurrence == consumer_occurrence
+            and spec is not None
+            and spec.cardinality is PortCardinality.MAP
+            and requirement.map_key is not None
+        ):
             declared_keys.setdefault((requirement.input_port, requirement.map_key), []).append(
                 requirement.requirement_id
             )
@@ -1203,9 +1214,7 @@ def resolve_declared_inputs(
                 continue
         else:
             ordinals = (0,) * len(entries)
-        for ordinal, (requirement, candidate, witness_id) in zip(
-            ordinals, entries, strict=True
-        ):
+        for ordinal, (requirement, candidate, witness_id) in zip(ordinals, entries, strict=True):
             bindings.append(
                 ResolvedInputBinding(
                     binding_id=_binding_id(requirement, candidate, str(consumer.task_id)),
@@ -1371,8 +1380,14 @@ def resolve_deliveries(
         target_rules,
     )
     if port_plan.problems:
-        return ResolutionResult(manifest=None, problems=tuple(sorted(
-            (*problems, *port_plan.problems), key=lambda item: (str(item.kind), item.detail))))
+        return ResolutionResult(
+            manifest=None,
+            problems=tuple(
+                sorted(
+                    (*problems, *port_plan.problems), key=lambda item: (str(item.kind), item.detail)
+                )
+            ),
+        )
     bindings_by_id = {binding.binding_id: binding for binding in manifest.bindings}
     ports: dict[str, tuple[str, tuple[str, ...], tuple[str, ...]]] = {}
     for entry in port_plan.entries:
@@ -1393,8 +1408,12 @@ def resolve_deliveries(
     # of a content is the one recorded, so the result never depends on read order
     ordered = sorted(
         sources.files,
-        key=lambda item: (item.carried_from is not None, str(item.producer_task_ref),
-                          item.artifact_id, item.acceptance_id),
+        key=lambda item: (
+            item.carried_from is not None,
+            str(item.producer_task_ref),
+            item.artifact_id,
+            item.acceptance_id,
+        ),
     )
     by_path: dict[str, dict[str, DeliveredFile]] = {}
     for item in ordered:
@@ -1407,8 +1426,11 @@ def resolve_deliveries(
         if port is not None:
             port_hash, port_acceptances, port_artifacts = port
             known = received_by(port_acceptances)
-            rivals = [item for item in versions.values()
-                      if item.content_hash != port_hash and item.version_key not in known]
+            rivals = [
+                item
+                for item in versions.values()
+                if item.content_hash != port_hash and item.version_key not in known
+            ]
             if rivals:
                 problems.append(
                     ResolutionProblem(
@@ -1419,10 +1441,14 @@ def resolve_deliveries(
                             "proves which version this step takes"
                         ),
                         candidates=(*port_artifacts, *(item.artifact_id for item in rivals)),
-                        producers=(*(str(bindings_by_id[b].producer_task_ref)
-                                     for b in sorted(bindings_by_id)
-                                     if bindings_by_id[b].artifact_id in port_artifacts),
-                                   *(str(item.producer_task_ref) for item in rivals)),
+                        producers=(
+                            *(
+                                str(bindings_by_id[b].producer_task_ref)
+                                for b in sorted(bindings_by_id)
+                                if bindings_by_id[b].artifact_id in port_artifacts
+                            ),
+                            *(str(item.producer_task_ref) for item in rivals),
+                        ),
                     )
                 )
             continue  # the port document is the file at this place
@@ -1433,8 +1459,10 @@ def resolve_deliveries(
             chosen = None
             for candidate in versions.values():
                 others = [item.version_key for item in versions.values() if item is not candidate]
-                if all(key in sources.received.get(candidate.acceptance_id, frozenset())
-                       for key in others):
+                if all(
+                    key in sources.received.get(candidate.acceptance_id, frozenset())
+                    for key in others
+                ):
                     chosen = candidate
                     break
             if chosen is None:
@@ -1466,13 +1494,19 @@ def resolve_deliveries(
                 kind, detail = problem
                 problems.append(
                     ResolutionProblem(
-                        kind=(ResolutionProblemKind.DELIVERY_WITNESS_MISSING
-                              if kind is ResolutionProblemKind.WITNESS_MISSING
-                              else ResolutionProblemKind.DELIVERY_WITNESS_NOT_USABLE),
+                        kind=(
+                            ResolutionProblemKind.DELIVERY_WITNESS_MISSING
+                            if kind is ResolutionProblemKind.WITNESS_MISSING
+                            else ResolutionProblemKind.DELIVERY_WITNESS_NOT_USABLE
+                        ),
                         detail=(
                             f"delivered file {path!r} (artifact {chosen.artifact_id}, accepted "
                             f"under {chosen.acceptance_id} of {chosen.producer_task_ref!s}"
-                            + (f", relayed by {chosen.carried_from!s}" if chosen.carried_from else "")
+                            + (
+                                f", relayed by {chosen.carried_from!s}"
+                                if chosen.carried_from
+                                else ""
+                            )
                             + f"): {detail}"
                         ),
                         candidates=(chosen.artifact_id,),
@@ -1619,9 +1653,17 @@ def materialise_plan(manifest: InputManifest, target_rules: TargetRules) -> Mate
             )
             continue
         key = target.collation_key(case_insensitive=target_rules.case_insensitive)
-        grouped.setdefault(key, []).append((target, binding.content_hash, binding.artifact_id,
-                                            binding.binding_id, binding.input_port, binding.requirement_id,
-                                            str(binding.producer_task_ref)))
+        grouped.setdefault(key, []).append(
+            (
+                target,
+                binding.content_hash,
+                binding.artifact_id,
+                binding.binding_id,
+                binding.input_port,
+                binding.requirement_id,
+                str(binding.producer_task_ref),
+            )
+        )
     for delivery in manifest.deliveries:
         target = ResourceIdentity(namespace=target_rules.namespace, path=delivery.path)
         if target.is_escaping:
@@ -1638,8 +1680,17 @@ def materialise_plan(manifest: InputManifest, target_rules: TargetRules) -> Mate
             )
             continue
         key = target.collation_key(case_insensitive=target_rules.case_insensitive)
-        grouped.setdefault(key, []).append((target, delivery.content_hash, delivery.artifact_id,
-                                            delivery.binding_id, None, None, str(delivery.producer_task_ref)))
+        grouped.setdefault(key, []).append(
+            (
+                target,
+                delivery.content_hash,
+                delivery.artifact_id,
+                delivery.binding_id,
+                None,
+                None,
+                str(delivery.producer_task_ref),
+            )
+        )
 
     entries: list[MaterialisationEntry] = []
     for key in sorted(grouped):

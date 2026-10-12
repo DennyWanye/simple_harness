@@ -57,10 +57,7 @@ class _VersionStore:
 
 class _VersionStoreMany:
     def __init__(self, *items) -> None:
-        self.items = {
-            (item.pack_id, item.version, item.manifest_hash): item
-            for item in items
-        }
+        self.items = {(item.pack_id, item.version, item.manifest_hash): item for item in items}
         self.calls: list[tuple[str, str, str]] = []
 
     async def get_version(self, pack_id: str, version: str, manifest_hash: str):
@@ -109,9 +106,7 @@ def _copy_versioned_summarize_pack(
     manifest["version"] = version
     manifest["source"]["revision"] = f"test-{version}"
     relative = "skills/summarize-day/SKILL.md"
-    manifest["files"][0]["sha256"] = hashlib.sha256(
-        skill_path.read_bytes()
-    ).hexdigest()
+    manifest["files"][0]["sha256"] = hashlib.sha256(skill_path.read_bytes()).hexdigest()
     assert manifest["files"][0]["path"] == relative
     manifest_path.write_text(
         json.dumps(manifest, ensure_ascii=False, separators=(",", ":")),
@@ -164,9 +159,7 @@ async def test_snapshot_resolver_reads_declared_resource_relative_to_skill_entry
     scope = ManagedSkillDiscoveryProjection([item]).resolve_selection("summarize-day")
     resolver = SkillPackSnapshotResolver(version_store=_VersionStore(item))
 
-    resolved_path, raw = await resolver.resolve_skill_resource(
-        scope, "../shared/config.md"
-    )
+    resolved_path, raw = await resolver.resolve_skill_resource(scope, "../shared/config.md")
 
     assert resolved_path == "skills/shared/config.md"
     assert raw == b"shared config"
@@ -343,9 +336,7 @@ def _exact_fact(cap: PreparedToolCapability) -> dict[str, object]:
         "execution_build_identity": {"provider": "builtin", "build": "test"},
         "dispatch_adapter_id": "builtin",
         "dispatch_adapter_version": "v1",
-        "dispatch_adapter_fingerprint": canonical_hash(
-            {"adapter": cap.ref.name}
-        ),
+        "dispatch_adapter_fingerprint": canonical_hash({"adapter": cap.ref.name}),
         "effect_policy": None,
         "idempotency": "read_only",
     }
@@ -490,9 +481,7 @@ async def test_skill_invoke_emits_activation_intent_not_fake_receipt(caplog) -> 
     result = json.loads(raw)
     assert result["ok"] is True
     assert result["scope_activation"]["scope_id"] == "skill-scope:" + "d" * 64
-    assert result["scope_activation"]["activation_id"].startswith(
-        "skill-scope-activation:"
-    )
+    assert result["scope_activation"]["activation_id"].startswith("skill-scope-activation:")
     assert "loaded_skill_body_count=1" in caplog.text
     assert "instruction_content_hash=" in caplog.text
     assert "frozen body" not in caplog.text
@@ -676,9 +665,7 @@ async def test_run_catalog_resolver_uses_catalog_version_not_live_inventory(
                     {
                         "name": cap.ref.name,
                         "stable_handler_id": f"builtin:{cap.ref.name}",
-                        "tool_spec_fingerprint": canonical_hash(
-                            {"name": cap.ref.name}
-                        ),
+                        "tool_spec_fingerprint": canonical_hash({"name": cap.ref.name}),
                         "schema_hash": cap.ref.schema_hash,
                         "execution_build_identity": {
                             "provider": "builtin",
@@ -686,9 +673,7 @@ async def test_run_catalog_resolver_uses_catalog_version_not_live_inventory(
                         },
                         "dispatch_adapter_id": "builtin",
                         "dispatch_adapter_version": "v1",
-                        "dispatch_adapter_fingerprint": canonical_hash(
-                            {"adapter": cap.ref.name}
-                        ),
+                        "dispatch_adapter_fingerprint": canonical_hash({"adapter": cap.ref.name}),
                         "effect_policy": None,
                         "idempotency": "read_only",
                     }
@@ -723,7 +708,5 @@ async def test_run_catalog_resolver_uses_catalog_version_not_live_inventory(
 
     assert result["scope_id"].startswith("skill-scope:")
     assert result["allowed_tools"] == ["memory_recall"]
-    assert [item["name"] for item in result["allowed_tool_refs"]] == [
-        "memory_recall"
-    ]
+    assert [item["name"] for item in result["allowed_tool_refs"]] == ["memory_recall"]
     assert len(result["effective_tool_ref_hashes"]) == 1

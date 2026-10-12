@@ -66,7 +66,9 @@ def snapshot_from_registry(registry: Any) -> ProviderSnapshot:
         raise ProviderUnavailable(NO_MODEL)
     entry = dict(chain[0])
     models = list(entry.get("models") or ())
-    configured = str(entry.get("default_model") or entry.get("model") or (models[0] if models else ""))
+    configured = str(
+        entry.get("default_model") or entry.get("model") or (models[0] if models else "")
+    )
     base_url = str(entry.get("base_url") or "")
     provider_id = str(entry.get("id") or "")
     if not (configured and base_url and provider_id):
@@ -83,8 +85,13 @@ def snapshot_from_registry(registry: Any) -> ProviderSnapshot:
     )
 
 
-def build_provider(snapshot: ProviderSnapshot, *, timeout: float = 180.0,
-                   allow_private_http: bool = False, thinking: str | None = None) -> tuple[Any, Any]:
+def build_provider(
+    snapshot: ProviderSnapshot,
+    *,
+    timeout: float = 180.0,
+    allow_private_http: bool = False,
+    thinking: str | None = None,
+) -> tuple[Any, Any]:
     """``(provider, http_client)`` — the caller closes the client on shutdown."""
 
     import httpx
@@ -99,9 +106,15 @@ def build_provider(snapshot: ProviderSnapshot, *, timeout: float = 180.0,
     return provider, client
 
 
-def provider_on_client(client: Any, snapshot: ProviderSnapshot, *, timeout: float = 180.0,
-                       allow_private_http: bool = False, thinking: str | None = None,
-                       reasoning_effort: str | None = None) -> Any:
+def provider_on_client(
+    client: Any,
+    snapshot: ProviderSnapshot,
+    *,
+    timeout: float = 180.0,
+    allow_private_http: bool = False,
+    thinking: str | None = None,
+    reasoning_effort: str | None = None,
+) -> Any:
     """An adapter on an existing client (the thinking-mode pools share the Host's client)."""
 
     import inspect
@@ -120,7 +133,12 @@ def provider_on_client(client: Any, snapshot: ProviderSnapshot, *, timeout: floa
     if snapshot.response_model_aliases:
         options["response_model_aliases"] = tuple(snapshot.response_model_aliases)
     return OpenAICompatibleProvider(
-        client, snapshot.base_url, snapshot.requested_model, Secret(snapshot.api_key), timeout=timeout, **options
+        client,
+        snapshot.base_url,
+        snapshot.requested_model,
+        Secret(snapshot.api_key),
+        timeout=timeout,
+        **options,
     )
 
 

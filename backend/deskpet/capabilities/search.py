@@ -34,11 +34,7 @@ class CapabilitySearchError(ValueError):
 class SemanticEmbedder(Protocol):
     def embed(
         self, texts: Sequence[str]
-    ) -> (
-        Sequence[Sequence[float]]
-        | Awaitable[Sequence[Sequence[float]]]
-    ):
-        ...
+    ) -> Sequence[Sequence[float]] | Awaitable[Sequence[Sequence[float]]]: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,9 +61,7 @@ def _normalize(value: str) -> str:
 
 def _tokens(value: str) -> frozenset[str]:
     return frozenset(
-        token
-        for token in re.findall(r"[\w-]+", _normalize(value), flags=re.UNICODE)
-        if token
+        token for token in re.findall(r"[\w-]+", _normalize(value), flags=re.UNICODE) if token
     )
 
 
@@ -150,9 +144,7 @@ class CapabilitySearch:
         self._embedding_cache: dict[str, tuple[tuple[float, ...], ...]] = {}
         self._cache_lock = asyncio.Lock()
 
-    async def _documents(
-        self, snapshot: CapabilityCatalogSnapshot
-    ) -> tuple[_SearchDocument, ...]:
+    async def _documents(self, snapshot: CapabilityCatalogSnapshot) -> tuple[_SearchDocument, ...]:
         key = snapshot.stamp.fingerprint
         cached = self._index_cache.get(key)
         if cached is not None:
@@ -181,28 +173,19 @@ class CapabilitySearch:
             document_vectors = self._embedding_cache.get(key)
             if document_vectors is None:
                 values = await _maybe_await(
-                    self.embedder.embed(
-                        [document.normalized_text for document in documents]
-                    )
+                    self.embedder.embed([document.normalized_text for document in documents])
                 )
-                document_vectors = tuple(
-                    tuple(float(item) for item in vector) for vector in values
-                )
+                document_vectors = tuple(tuple(float(item) for item in vector) for vector in values)
                 if len(document_vectors) != len(documents):
                     raise ValueError("embedder returned the wrong vector count")
                 async with self._cache_lock:
                     self._embedding_cache[key] = document_vectors
             query_values = await _maybe_await(self.embedder.embed([query]))
-            query_vectors = tuple(
-                tuple(float(item) for item in vector) for vector in query_values
-            )
+            query_vectors = tuple(tuple(float(item) for item in vector) for vector in query_values)
             if len(query_vectors) != 1:
                 raise ValueError("embedder returned the wrong query vector count")
             return (
-                tuple(
-                    _cosine(query_vectors[0], vector)
-                    for vector in document_vectors
-                ),
+                tuple(_cosine(query_vectors[0], vector) for vector in document_vectors),
                 True,
             )
         except Exception:
@@ -222,9 +205,7 @@ class CapabilitySearch:
         if not normalized_query:
             raise CapabilitySearchError("empty_query", "search query is required")
         if limit < 1 or limit > 100:
-            raise CapabilitySearchError(
-                "invalid_limit", "search limit must be between 1 and 100"
-            )
+            raise CapabilitySearchError("invalid_limit", "search limit must be between 1 and 100")
         documents = await self._documents(snapshot)
         query_tokens = _tokens(normalized_query)
         semantic_scores, semantic_used = await self._semantic_scores(

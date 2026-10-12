@@ -144,9 +144,7 @@ async def test_capability_v1_to_v2_migration_preserves_binding_and_repeats(
         await db.commit()
 
         state = await (
-            await db.execute(
-                "SELECT schema_version FROM capability_schema_state"
-            )
+            await db.execute("SELECT schema_version FROM capability_schema_state")
         ).fetchone()
         binding = await (
             await db.execute(
@@ -209,17 +207,11 @@ async def test_workflow_fresh_schema_installs_current_capability_schema_idempote
     await initialize_workflow_db(path)
     await initialize_workflow_db(path)
     async with aiosqlite.connect(path) as db:
-        workflow_version = await (
-            await db.execute("PRAGMA user_version")
-        ).fetchone()
+        workflow_version = await (await db.execute("PRAGMA user_version")).fetchone()
         capability_version = await (
-            await db.execute(
-                "SELECT schema_version FROM capability_schema_state"
-            )
+            await db.execute("SELECT schema_version FROM capability_schema_state")
         ).fetchone()
-        columns = await (
-            await db.execute("PRAGMA table_info(capability_bindings)")
-        ).fetchall()
+        columns = await (await db.execute("PRAGMA table_info(capability_bindings)")).fetchall()
     assert workflow_version == (WORKFLOW_SCHEMA_VERSION,)
     # Fresh installs land on the current capability schema (v4 since
     # a1e5d96b4); the v2 owner columns must still be present.
@@ -244,15 +236,11 @@ async def test_workflow_v17_migrates_existing_capability_v1_atomically(
         await _insert_v1_version_and_binding(db, record)
         await db.commit()
 
-    monkeypatch.setattr(
-        workflow_schema, "WORKFLOW_SCHEMA_VERSION", WORKFLOW_SCHEMA_VERSION
-    )
+    monkeypatch.setattr(workflow_schema, "WORKFLOW_SCHEMA_VERSION", WORKFLOW_SCHEMA_VERSION)
     await workflow_schema.initialize_workflow_db(path)
     await workflow_schema.initialize_workflow_db(path)
     async with aiosqlite.connect(path) as db:
-        workflow_version = await (
-            await db.execute("PRAGMA user_version")
-        ).fetchone()
+        workflow_version = await (await db.execute("PRAGMA user_version")).fetchone()
         binding = await (
             await db.execute(
                 """SELECT binding_id,owner_key,generation,management_policy
@@ -338,10 +326,7 @@ async def test_detail_tokens_preserve_missing_deleted_and_aba_versions(
 
     missing = (await store.read_detail_token_vector((key,))).items[0]
     assert (missing.exists, missing.version) == (False, 0)
-    assert (
-        missing.committed_owner_binding_set_stamp
-        == EMPTY_OWNER_BINDING_SET_STAMP
-    )
+    assert missing.committed_owner_binding_set_stamp == EMPTY_OWNER_BINDING_SET_STAMP
     ensured = await store.ensure_owner_detail_key(key)
     assert (ensured.exists, ensured.version) == (True, 0)
 
@@ -425,9 +410,7 @@ async def test_run_catalog_stamp_and_lease_intent_are_durable_and_idempotent(
             "pack_id": record.descriptor.capability_id,
             "version": record.descriptor.version,
             "manifest_hash": record.descriptor.manifest_hash,
-            "tool_spec_fingerprints": list(
-                record.expected_tool_fingerprints
-            ),
+            "tool_spec_fingerprints": list(record.expected_tool_fingerprints),
         },
     )
     stamp = RunCatalogContentStamp(
@@ -500,26 +483,12 @@ async def test_run_catalog_stamp_and_lease_intent_are_durable_and_idempotent(
         "owner_record_hash": _hash("owner-record"),
         "start_fingerprint": _hash("run-start"),
     }
-    bound = await store.bind_snapshot_lease_intent(
-        prepared.lease_intent_id, **bind_kwargs
-    )
+    bound = await store.bind_snapshot_lease_intent(prepared.lease_intent_id, **bind_kwargs)
     assert bound.status == "bound"
-    assert (
-        await store.bind_snapshot_lease_intent(
-            prepared.lease_intent_id, **bind_kwargs
-        )
-        == bound
-    )
-    released = await store.release_snapshot_lease_intent(
-        prepared.lease_intent_id
-    )
+    assert await store.bind_snapshot_lease_intent(prepared.lease_intent_id, **bind_kwargs) == bound
+    released = await store.release_snapshot_lease_intent(prepared.lease_intent_id)
     assert released.status == "released"
-    assert (
-        await store.release_snapshot_lease_intent(
-            prepared.lease_intent_id
-        )
-        == released
-    )
+    assert await store.release_snapshot_lease_intent(prepared.lease_intent_id) == released
     next_intent = await store.prepare_snapshot_lease_intent(
         **{
             **prepare_kwargs,

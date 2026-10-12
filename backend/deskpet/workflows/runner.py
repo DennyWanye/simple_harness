@@ -16,6 +16,7 @@ from typing import Any
 
 def _owned_call(method):
     """Keep this runner's owner alive until admitted calls have unwound."""
+
     @wraps(method)
     async def call(self, *args, **kwargs):
         task = asyncio.current_task()
@@ -33,7 +34,9 @@ def _owned_call(method):
                 del self._active_calls[task]
             if not self._active_calls:
                 self._idle.set()
+
     return call
+
 
 from deskpet.execution.contracts import (
     DeliveryPolicy,
@@ -140,7 +143,9 @@ class WorkflowRegistry:
         existing = self._entries.get(key)
         if existing is not None and not replace:
             if manifest_hash(existing.manifest) != manifest_hash(manifest):
-                raise ValueError(f"workflow version already registered with different code: {name}@{version}")
+                raise ValueError(
+                    f"workflow version already registered with different code: {name}@{version}"
+                )
             return existing
         entry = RegisteredWorkflow(workflow, manifest, executable)
         self._entries[key] = entry
@@ -186,8 +191,7 @@ class WorkflowRegistry:
     def implementation_hashes(self) -> tuple[str, ...]:
         return tuple(
             sorted(
-                str(entry.manifest.implementation_bundle_hash)
-                for entry in self._entries.values()
+                str(entry.manifest.implementation_bundle_hash) for entry in self._entries.values()
             )
         )
 
@@ -328,8 +332,12 @@ class WorkflowRunner:
         entry = self.registry.require(workflow_name, workflow_version)
         manifest = entry.manifest
         snapshot = dict(capability_snapshot)
-        snapshot_json = json.dumps(snapshot, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-        resolved_capability_hash = capability_hash or hashlib.sha256(snapshot_json.encode("utf-8")).hexdigest()
+        snapshot_json = json.dumps(
+            snapshot, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        )
+        resolved_capability_hash = (
+            capability_hash or hashlib.sha256(snapshot_json.encode("utf-8")).hexdigest()
+        )
         resolved_request_key = request_key or ":".join(
             (session_id, request_id, turn_id, workflow_name)
         )
@@ -369,7 +377,8 @@ class WorkflowRunner:
         run_id: str,
         state: object,
         context: WorkflowContext | None = None,
-        *, active_lease: ActiveLease | None = None,
+        *,
+        active_lease: ActiveLease | None = None,
     ) -> WorkflowRunResult:
         """Drive an already-atomic generic/workflow start without creating an id."""
 
@@ -415,7 +424,8 @@ class WorkflowRunner:
         run_id: str,
         responses: Mapping[str, JsonValue],
         context: WorkflowContext | None = None,
-        *, active_lease: ActiveLease | None = None,
+        *,
+        active_lease: ActiveLease | None = None,
     ) -> WorkflowRunResult:
         if not responses:
             raise ValueError("workflow resume requires at least one response")
@@ -443,19 +453,20 @@ class WorkflowRunner:
         )
 
     @_owned_call
-    async def claim_execution_recovery(self, run_id: str, recovery_lease: RecoveryLease) -> ActiveLease:
+    async def claim_execution_recovery(
+        self, run_id: str, recovery_lease: RecoveryLease
+    ) -> ActiveLease:
         if self.execution_ports is None:
             raise RuntimeError("execution recovery requires configured execution ports")
         handoff = await self.execution_ports.unit_of_work.claim_workflow_recovery_handoff(
-            recovery_lease, workflow_owner=self.owner, ttl_seconds=self._leases.ttl_seconds)
+            recovery_lease, workflow_owner=self.owner, ttl_seconds=self._leases.ttl_seconds
+        )
         if handoff.run_id != run_id:
             raise StaleRunFence(f"execution handoff names another run: {run_id}")
         return ActiveLease(handoff, self._leases.heartbeat_interval, self._leases.ttl_seconds)
 
     @_owned_call
-    async def request_cancel_precreated(
-        self, run_id: str, reason: str = "user"
-    ) -> dict[str, Any]:
+    async def request_cancel_precreated(self, run_id: str, reason: str = "user") -> dict[str, Any]:
         """Request cancel through the generic UoW; settlement remains checkpoint-owned."""
 
         execution = await self._require_precreated(run_id)
@@ -463,14 +474,10 @@ class WorkflowRunner:
         if str(execution["status"]) == "cancel_requested":
             native = await self._require_run(run_id)
             native_status = WorkflowRunStatus(str(native["status"]))
-            if (
-                native_status not in TERMINAL_RUN_STATUSES
-                and native_status
-                not in {
-                    WorkflowRunStatus.CANCEL_REQUESTED,
-                    WorkflowRunStatus.CANCELLING,
-                }
-            ):
+            if native_status not in TERMINAL_RUN_STATUSES and native_status not in {
+                WorkflowRunStatus.CANCEL_REQUESTED,
+                WorkflowRunStatus.CANCELLING,
+            }:
                 await self.store.request_cancel(run_id, reason)
             return await self._converge_cancel(run_id)
         event = RunEventCandidate(
@@ -634,7 +641,9 @@ class WorkflowRunner:
         return records
 
     @_owned_call
-    async def get_state_history(self, run_id: str, *, limit: int | None = None) -> list[dict[str, Any]]:
+    async def get_state_history(
+        self, run_id: str, *, limit: int | None = None
+    ) -> list[dict[str, Any]]:
         return await self._replay.history(run_id, limit=limit)
 
     @_owned_call
@@ -694,11 +703,10 @@ class WorkflowRunner:
                 WorkflowRunStatus.CANCEL_REQUESTED,
                 WorkflowRunStatus.CANCELLING,
             }:
-                if (
-                    not precreated
-                    and status
-                    in {WorkflowRunStatus.CANCEL_REQUESTED, WorkflowRunStatus.CANCELLING}
-                ):
+                if not precreated and status in {
+                    WorkflowRunStatus.CANCEL_REQUESTED,
+                    WorkflowRunStatus.CANCELLING,
+                }:
                     row = await self._converge_cancel(run_id)
                     status = WorkflowRunStatus(row["status"])
                 if precreated and status in TERMINAL_RUN_STATUSES:
@@ -768,8 +776,8 @@ class WorkflowRunner:
                         raise RuntimeError(
                             "precreated workflow returned without a checkpoint-owned terminal commit"
                         )
-                    target_status, result_error, result_recovery = (
-                        _domain_terminal_from_output(output)
+                    target_status, result_error, result_recovery = _domain_terminal_from_output(
+                        output
                     )
                     current = await transition_run(
                         self.store,
@@ -788,9 +796,7 @@ class WorkflowRunner:
                         else None
                     )
                     result_recovery = (
-                        str(current["recovery_action"])
-                        if current.get("recovery_action")
-                        else None
+                        str(current["recovery_action"]) if current.get("recovery_action") else None
                     )
                 if precreated and WorkflowRunStatus(current["status"]) in TERMINAL_RUN_STATUSES:
                     await self._assert_precreated_terminal(
@@ -819,8 +825,7 @@ class WorkflowRunner:
                         return self._result_from_row(current)
                     raise
                 logger.exception(
-                    "workflow_native_execute_failed run_id=%s workflow=%s@%s "
-                    "error_type=%s",
+                    "workflow_native_execute_failed run_id=%s workflow=%s@%s error_type=%s",
                     run_id,
                     row["workflow_name"],
                     row["workflow_version"],
@@ -828,7 +833,10 @@ class WorkflowRunner:
                 )
                 current = await self._require_run(run_id)
                 current_status = WorkflowRunStatus(current["status"])
-                if current_status in {WorkflowRunStatus.CANCEL_REQUESTED, WorkflowRunStatus.CANCELLING}:
+                if current_status in {
+                    WorkflowRunStatus.CANCEL_REQUESTED,
+                    WorkflowRunStatus.CANCELLING,
+                }:
                     current = await self._converge_cancel(run_id)
                     return self._result_from_row(current)
                 failure = map_workflow_failure(exc)

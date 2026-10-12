@@ -13,6 +13,7 @@ Covers the "Tool Search for Lazy Schema Loading" requirement:
 * matches come back in OpenAI function-calling envelope shape so the
   agent can forward them straight to a follow-up turn.
 """
+
 from __future__ import annotations
 
 import json
@@ -54,9 +55,7 @@ def test_tool_search_excludes_itself():
 def test_tool_search_all_tokens_required():
     # "crawl xyz123_nonexistent" should produce 0 matches because no
     # tool description contains the second token.
-    out = json.loads(
-        _dispatch_legacy({"query": "crawl xyz123_nonexistent"})
-    )
+    out = json.loads(_dispatch_legacy({"query": "crawl xyz123_nonexistent"}))
     assert out["count"] == 0
 
 

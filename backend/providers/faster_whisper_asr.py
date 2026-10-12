@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 """faster-whisper ASR provider — local CUDA inference."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -62,6 +63,7 @@ class FasterWhisperASR:
         # local_dir OR let faster-whisper pull from HuggingFace).
         if self.local_dir:
             from pathlib import Path as _Path
+
             local_dir_p = _Path(self.local_dir)
             if not local_dir_p.exists():
                 logger.warning(
@@ -69,8 +71,8 @@ class FasterWhisperASR:
                     local_dir=str(local_dir_p),
                     fallback_model=self.model_name,
                     hint="Run scripts/download_faster_whisper.py to install "
-                         "the model locally, or accept the HuggingFace "
-                         "auto-download (5GB on first transcribe).",
+                    "the model locally, or accept the HuggingFace "
+                    "auto-download (5GB on first transcribe).",
                 )
                 model_path = self.model_name
             else:

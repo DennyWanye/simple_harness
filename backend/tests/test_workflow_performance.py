@@ -73,6 +73,5 @@ async def test_100_run_event_and_list_round_trips_stay_within_local_ci_gate(tmp_
         )
     )
     assert elapsed < limit, (
-        f"{OPERATION_COUNT} run/event/list round trips took {elapsed:.3f}s "
-        f"(limit {limit:.3f}s)"
+        f"{OPERATION_COUNT} run/event/list round trips took {elapsed:.3f}s (limit {limit:.3f}s)"
     )

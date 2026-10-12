@@ -10,6 +10,7 @@
 
 **改坏检验**：主循环收集审阅意图时不再计时（改回当作规划轮）→ 第一条超时变红。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -55,12 +56,20 @@ class _ReviewHeld(LayeredScriptedProvider):
 
 
 def _notes(key: str) -> dict:
-    return {"goal": "写一份 NOTES.md", "success_criteria": ["file:NOTES.md"], "idempotency_key": key}
+    return {
+        "goal": "写一份 NOTES.md",
+        "success_criteria": ["file:NOTES.md"],
+        "idempotency_key": key,
+    }
 
 
 def _abandoned(store, mission_id: str) -> list[dict[str, Any]]:
-    return [event.payload for event in store.iter_events(mission_id)
-            if event.type == "AssuranceReviewClassified" and event.payload.get("error_code") == "REVIEW_CALL_ABANDONED"]
+    return [
+        event.payload
+        for event in store.iter_events(mission_id)
+        if event.type == "AssuranceReviewClassified"
+        and event.payload.get("error_code") == "REVIEW_CALL_ABANDONED"
+    ]
 
 
 async def _drive_until(world, predicate, *, timeout: float) -> None:
@@ -68,6 +77,7 @@ async def _drive_until(world, predicate, *, timeout: float) -> None:
         while not predicate():
             await world.drain(timeout=3)
             await asyncio.sleep(0.05)
+
     await asyncio.wait_for(loop(), timeout)
 
 
@@ -75,21 +85,36 @@ def test_a_root_review_that_never_answers_is_reopened(tmp_path):
     async def case():
         provider = _ReviewHeld("MISSION_FINAL", times=1)
         try:
-            async with product_world(tmp_path / "root", provider, turn_deadline_seconds=3.0) as world:
+            async with product_world(
+                tmp_path / "root", provider, turn_deadline_seconds=3.0
+            ) as world:
                 store = world.store
                 mission_id = world.create(_notes("root-held"))["mission_id"]
-                await _drive_until(world, lambda: str(store.get_mission(mission_id).status.value) in TERMINAL,
-                                   timeout=120)
+                await _drive_until(
+                    world,
+                    lambda: str(store.get_mission(mission_id).status.value) in TERMINAL,
+                    timeout=120,
+                )
                 assert str(store.get_mission(mission_id).status.value) == "COMPLETED"
                 [abandoned] = _abandoned(store, mission_id)
-                assert abandoned["invocation_ordinal"] == 1 and abandoned["abandoned"]["shape"] == "running"
+                assert (
+                    abandoned["invocation_ordinal"] == 1
+                    and abandoned["abandoned"]["shape"] == "running"
+                )
                 assert provider.purpose_calls == 2  # the second call, in a fresh session, answered
                 intent = store.get_intent(abandoned["intent_id"])
                 assert intent.state == "FAILED"
-                assert store.get_receipt("assurance-review-interrupted:" + abandoned["intent_id"]) is not None
+                assert (
+                    store.get_receipt("assurance-review-interrupted:" + abandoned["intent_id"])
+                    is not None
+                )
                 # 阶段 G 第 5 批：打断回执与它的事件同一事务，点名归本任务；整个任务重建一致
-                named = [item["key"]["commit_id"] for event in store.list_events(mission_id, types=("RowsWritten",))
-                         for item in event.payload["named"] if item["table"] == "commit_receipts"]
+                named = [
+                    item["key"]["commit_id"]
+                    for event in store.list_events(mission_id, types=("RowsWritten",))
+                    for item in event.payload["named"]
+                    if item["table"] == "commit_receipts"
+                ]
                 assert named.count("assurance-review-interrupted:" + abandoned["intent_id"]) == 1
                 assert verify_mission(store, mission_id)["status"] == CONSISTENT
                 assert verify_library(store)["status"] == CONSISTENT
@@ -108,15 +133,25 @@ def test_a_review_that_never_answers_twice_is_recut_not_left_hanging(tmp_path):
     async def case():
         provider = _ReviewHeld("MISSION_FINAL", times=2)
         try:
-            async with product_world(tmp_path / "root", provider, turn_deadline_seconds=3.0) as world:
+            async with product_world(
+                tmp_path / "root", provider, turn_deadline_seconds=3.0
+            ) as world:
                 store = world.store
                 mission_id = world.create(_notes("root-held-twice"))["mission_id"]
-                await _drive_until(world, lambda: len(_abandoned(store, mission_id)) == 2, timeout=120)
+                await _drive_until(
+                    world, lambda: len(_abandoned(store, mission_id)) == 2, timeout=120
+                )
                 provider.let_go.set()
-                await _drive_until(world, lambda: str(store.get_mission(mission_id).status.value) in TERMINAL,
-                                   timeout=120)
+                await _drive_until(
+                    world,
+                    lambda: str(store.get_mission(mission_id).status.value) in TERMINAL,
+                    timeout=120,
+                )
                 assert str(store.get_mission(mission_id).status.value) == "COMPLETED"
-                assert [item["invocation_ordinal"] for item in _abandoned(store, mission_id)] == [1, 2]
+                assert [item["invocation_ordinal"] for item in _abandoned(store, mission_id)] == [
+                    1,
+                    2,
+                ]
                 assert provider.purpose_calls == 3
         finally:
             provider.let_go.set()
@@ -166,7 +201,9 @@ def test_a_root_review_interrupted_by_a_restart_does_not_keep_the_loop_busy(tmp_
             # After a restart the old call is either gone or held as an unknown outcome; both are
             # timed from the intent's submission in the first run, so it closes at once.
             assert abandoned["abandoned"]["shape"] in {"missing", "blocked"}
-            assert abandoned["abandoned"]["waited_seconds"] >= abandoned["abandoned"]["limit_seconds"]
+            assert (
+                abandoned["abandoned"]["waited_seconds"] >= abandoned["abandoned"]["limit_seconds"]
+            )
             assert second.purpose_calls == 1
 
     asyncio.run(case())
@@ -190,12 +227,16 @@ def test_a_slow_review_inside_the_turn_deadline_is_not_abandoned(tmp_path):
 
         releaser = asyncio.create_task(release_later())
         try:
-            async with product_world(tmp_path / "root", provider, stall_seconds=1.0,
-                                     turn_deadline_seconds=30.0) as world:
+            async with product_world(
+                tmp_path / "root", provider, stall_seconds=1.0, turn_deadline_seconds=30.0
+            ) as world:
                 store = world.store
                 mission_id = world.create(_notes("root-slow"))["mission_id"]
-                await _drive_until(world, lambda: str(store.get_mission(mission_id).status.value) in TERMINAL,
-                                   timeout=120)
+                await _drive_until(
+                    world,
+                    lambda: str(store.get_mission(mission_id).status.value) in TERMINAL,
+                    timeout=120,
+                )
                 assert str(store.get_mission(mission_id).status.value) == "COMPLETED"
                 assert _abandoned(store, mission_id) == []
                 assert provider.purpose_calls == 1
@@ -215,10 +256,16 @@ def test_a_final_review_that_never_answers_stops_by_name(tmp_path):
 
     def planner(request: Any) -> Any:
         package = package_of(request)
-        if any(entry["request"]["trigger_source"] == "NO_DISPATCHABLE_WORK"
-               for entry in package.get("repair_requests") or ()):
-            return decision(package["planning_subjects"][0]["subject_key"], "NO_CHANGE",
-                            {"reason": "审阅一直没有回复，计划本身没有可改的。"}, "不改计划。")
+        if any(
+            entry["request"]["trigger_source"] == "NO_DISPATCHABLE_WORK"
+            for entry in package.get("repair_requests") or ()
+        ):
+            return decision(
+                package["planning_subjects"][0]["subject_key"],
+                "NO_CHANGE",
+                {"reason": "审阅一直没有回复，计划本身没有可改的。"},
+                "不改计划。",
+            )
         return planner_reply(request)
 
     class _AlwaysLate(_ReviewHeld):
@@ -236,11 +283,16 @@ def test_a_final_review_that_never_answers_stops_by_name(tmp_path):
         provider = _AlwaysLate("MISSION_FINAL", times=0)
         provider._answer["planner"] = planner
         try:
-            async with product_world(tmp_path / "root", provider, turn_deadline_seconds=2.0) as world:
+            async with product_world(
+                tmp_path / "root", provider, turn_deadline_seconds=2.0
+            ) as world:
                 store = world.store
                 mission_id = world.create(_notes("root-never"))["mission_id"]
-                await _drive_until(world, lambda: str(store.get_mission(mission_id).status.value) in TERMINAL,
-                                   timeout=240)
+                await _drive_until(
+                    world,
+                    lambda: str(store.get_mission(mission_id).status.value) in TERMINAL,
+                    timeout=240,
+                )
                 mission = store.get_mission(mission_id)
                 assert mission.final_report["stop_reason"] == "no_dispatchable_work"
                 assert provider.purpose_calls == 6

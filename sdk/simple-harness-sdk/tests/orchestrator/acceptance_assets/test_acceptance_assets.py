@@ -8,6 +8,7 @@
 
 只检查清单与代码对得上，不跑任何被绑定的用例。
 """
+
 from __future__ import annotations
 
 import importlib
@@ -30,13 +31,16 @@ SEAMS = _load("seams_current.json")["rows"]
 POINTS = _load("crash_points.json")["points"]
 MUTATIONS = _load("mutations.json")["mutations"]
 # 进程强退的切点由这个测试辅助脚本埋（K01、K02），其余注入点都在源码里
-CRASH_SEEDS = [SDK / path for path in ['tests/orchestrator/full_target/taskgraph_exec/crash_seed.py']]
+CRASH_SEEDS = [
+    SDK / path for path in ["tests/orchestrator/full_target/taskgraph_exec/crash_seed.py"]
+]
 
 
 @lru_cache(maxsize=1)
 def _code_text() -> str:
-    return "\n".join(path.read_text(encoding="utf-8")
-                     for path in [*(SDK / "src").rglob("*.py"), *CRASH_SEEDS])
+    return "\n".join(
+        path.read_text(encoding="utf-8") for path in [*(SDK / "src").rglob("*.py"), *CRASH_SEEDS]
+    )
 
 
 def _test_exists(nodeid: str) -> bool:
@@ -47,8 +51,14 @@ def _test_exists(nodeid: str) -> bool:
     if not rest:
         return True
     name = rest.split("::")[-1].split("[")[0]
-    return re.search(rf"^\s*(async\s+)?def {re.escape(name)}\(", path.read_text(encoding="utf-8"),
-                     re.MULTILINE) is not None
+    return (
+        re.search(
+            rf"^\s*(async\s+)?def {re.escape(name)}\(",
+            path.read_text(encoding="utf-8"),
+            re.MULTILINE,
+        )
+        is not None
+    )
 
 
 def _resolve(target: str) -> object:
@@ -83,7 +93,9 @@ def test_every_crash_point_names_real_code(row: dict) -> None:
         name = re.split(r"[（(\s]", injection, maxsplit=1)[0]
         if "函数级" in injection:  # 在这个函数里抛错，不是具名注入点
             function = name.rsplit(".", 1)[-1]
-            assert re.search(rf"def {re.escape(function)}\(", text), f"{row['id']}: {name} is not in the code"
+            assert re.search(rf"def {re.escape(function)}\(", text), (
+                f"{row['id']}: {name} is not in the code"
+            )
             continue
         assert f'"{name}"' in text or f"'{name}'" in text, f"{row['id']}: {name} is not in the code"
     for nodeid in row.get("tests") or ():
@@ -96,7 +108,9 @@ def test_every_mutation_anchors_exactly_once(row: dict) -> None:
         assert not row["tests"] and row["original"] is None, row["id"]
         return
     source = (SDK / row["file"]).read_text(encoding="utf-8")
-    assert source.count(row["original"]) == 1, f"{row['id']}: anchor found {source.count(row['original'])} times"
+    assert source.count(row["original"]) == 1, (
+        f"{row['id']}: anchor found {source.count(row['original'])} times"
+    )
     assert row["replacement"] != row["original"]
     assert row["tests"], row["id"]
     for nodeid in row["tests"]:

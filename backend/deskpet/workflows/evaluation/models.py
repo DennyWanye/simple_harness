@@ -68,11 +68,15 @@ class EvaluationOutcome:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "evaluator_name", _required(self.evaluator_name, "evaluator_name"))
-        object.__setattr__(self, "evaluator_version", _required(self.evaluator_version, "evaluator_version"))
+        object.__setattr__(
+            self, "evaluator_version", _required(self.evaluator_version, "evaluator_version")
+        )
         object.__setattr__(self, "evaluator_type", _required(self.evaluator_type, "evaluator_type"))
         object.__setattr__(self, "verdict", _required(self.verdict, "verdict").lower())
         object.__setattr__(self, "labels", _string_tuple(self.labels, "labels"))
-        object.__setattr__(self, "evidence_refs", _string_tuple(self.evidence_refs, "evidence_refs"))
+        object.__setattr__(
+            self, "evidence_refs", _string_tuple(self.evidence_refs, "evidence_refs")
+        )
         if self.score is not None:
             score = float(self.score)
             if not math.isfinite(score):

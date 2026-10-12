@@ -8,9 +8,7 @@ from llm.provider_capabilities import (
 def test_unknown_model_emits_no_private_reasoning_fields() -> None:
     capability = declared_reasoning_capability("relay-mystery-model")
     assert capability is UNKNOWN_REASONING_CAPABILITY
-    assert reasoning_wire_fields(
-        capability, {"reasoning_mode": "thinking", "effort": "max"}
-    ) == {}
+    assert reasoning_wire_fields(capability, {"reasoning_mode": "thinking", "effort": "max"}) == {}
 
 
 def test_deepseek_toggleable_modes_are_explicit() -> None:

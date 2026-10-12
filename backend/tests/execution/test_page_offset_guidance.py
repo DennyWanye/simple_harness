@@ -21,6 +21,7 @@
 这一组测试钉住修复后的形态：描述符讲清 offset 的单位与页数，拒绝带上页起点
 清单与本 Run 的下一个未读 offset，引用真的不在本请求里时给一个不同的稳定码。
 """
+
 import json
 import sqlite3
 from types import SimpleNamespace
@@ -83,9 +84,13 @@ class PageEffect(FakeEffect):
     """一个 ``context_page_in`` 效果：额外带上它自己的实参（拒绝提示要读）。"""
 
     def __init__(self, *, effect_id, reference_id, source_hash, state="succeeded"):
-        super().__init__(effect_id=effect_id, tool_name="context_page_in",
-                         raw_call_id="call_pg_" + effect_id[-24:], value={"ok": True},
-                         state=state)
+        super().__init__(
+            effect_id=effect_id,
+            tool_name="context_page_in",
+            raw_call_id="call_pg_" + effect_id[-24:],
+            value={"ok": True},
+            state=state,
+        )
         self.arguments = {"reference_id": reference_id, "source_hash": source_hash}
 
 
@@ -100,52 +105,86 @@ class Stack:
         effect = self.effects.get(effect_id)
         if effect is None or run_id != RUN_ID:
             raise PrimaryContextPageUnavailable("primary_effect_page_effect_missing")
-        head = SimpleNamespace(result_hash="a1" * 32,
-                               provider_invocation_id="inv-" + str(effect_id)[-8:])
-        parent = SimpleNamespace(invocation_id="inv-" + str(effect_id)[-8:],
-                                 response_json={"id": effect_id})
+        head = SimpleNamespace(
+            result_hash="a1" * 32, provider_invocation_id="inv-" + str(effect_id)[-8:]
+        )
+        parent = SimpleNamespace(
+            invocation_id="inv-" + str(effect_id)[-8:], response_json={"id": effect_id}
+        )
         return effect, head, parent, SimpleNamespace(messages=self.request_messages)
 
 
 async def _identities(path, rows):
     """Host 的不可变顺序索引；``admitted_current_page`` 只从这里取先后关系。"""
     with sqlite3.connect(path) as db:
-        db.execute("CREATE TABLE IF NOT EXISTS primary_effect_identities (sequence INTEGER PRIMARY KEY, "
-                   "host_run_id TEXT, sdk_run_id TEXT, effect_id TEXT, tool_name TEXT, "
-                   "identity_hash TEXT, identity_json TEXT)")
+        db.execute(
+            "CREATE TABLE IF NOT EXISTS primary_effect_identities (sequence INTEGER PRIMARY KEY, "
+            "host_run_id TEXT, sdk_run_id TEXT, effect_id TEXT, tool_name TEXT, "
+            "identity_hash TEXT, identity_json TEXT)"
+        )
         for sequence, (effect_id, tool_name) in enumerate(rows, start=1):
-            identity = dict(host_run_id=HOST_RUN_ID, sdk_run_id=RUN_ID,
-                            effect_id=effect_id, tool_name=tool_name)
-            db.execute("INSERT OR REPLACE INTO primary_effect_identities VALUES (?,?,?,?,?,?,?)",
-                       (sequence, HOST_RUN_ID, RUN_ID, effect_id, tool_name,
-                        canonical_hash(identity), canonical_json(identity)))
+            identity = dict(
+                host_run_id=HOST_RUN_ID, sdk_run_id=RUN_ID, effect_id=effect_id, tool_name=tool_name
+            )
+            db.execute(
+                "INSERT OR REPLACE INTO primary_effect_identities VALUES (?,?,?,?,?,?,?)",
+                (
+                    sequence,
+                    HOST_RUN_ID,
+                    RUN_ID,
+                    effect_id,
+                    tool_name,
+                    canonical_hash(identity),
+                    canonical_json(identity),
+                ),
+            )
 
 
 def _scenario(tmp_path, *, lines=520, prior_pages=(), wire=summary):
     """一个真实形状的场景：CJK 正文 + 已分页的父请求 + 若干已准入的历史页。"""
     value = cjk_value(lines)
-    source = FakeEffect(effect_id=SOURCE_EFFECT, tool_name="read_file",
-                        raw_call_id="call_00_" + "d" * 24, value=value)
+    source = FakeEffect(
+        effect_id=SOURCE_EFFECT,
+        tool_name="read_file",
+        raw_call_id="call_00_" + "d" * 24,
+        value=value,
+    )
     effects = {SOURCE_EFFECT: source}
     descriptor, content = source_content(
-        Stack(effects, ()).read_primary_effect_page_facts(RUN_ID, SOURCE_EFFECT), min_bytes=0)
+        Stack(effects, ()).read_primary_effect_page_facts(RUN_ID, SOURCE_EFFECT), min_bytes=0
+    )
     body = wire(descriptor, content)
-    messages = [Message(MessageRole.TOOL, body, name="read_file",
-                        call_id=CallId(source.raw_call_id), metadata={"source": MARKER})]
+    messages = [
+        Message(
+            MessageRole.TOOL,
+            body,
+            name="read_file",
+            call_id=CallId(source.raw_call_id),
+            metadata={"source": MARKER},
+        )
+    ]
     rows = [(SOURCE_EFFECT, "read_file")]
     for index, offset in enumerate(prior_pages):
         prior_id = "effect-prior%02d%s" % (index, "c" * 54)
-        effects[prior_id] = PageEffect(effect_id=prior_id,
-                                       reference_id=reference(descriptor, offset),
-                                       source_hash=descriptor["content_hash"])
+        effects[prior_id] = PageEffect(
+            effect_id=prior_id,
+            reference_id=reference(descriptor, offset),
+            source_hash=descriptor["content_hash"],
+        )
         rows.append((prior_id, "context_page_in"))
     caller = PageEffect(effect_id=PAGE_EFFECT, reference_id="", source_hash="")
     effects[PAGE_EFFECT] = caller
     rows.append((PAGE_EFFECT, "context_page_in"))
     path = str(tmp_path / "state.db")
-    return SimpleNamespace(path=path, rows=rows, stack=Stack(effects, messages),
-                           descriptor=descriptor, content=content, caller=caller,
-                           run={"host_run_id": HOST_RUN_ID})
+    return SimpleNamespace(
+        path=path,
+        rows=rows,
+        stack=Stack(effects, messages),
+        descriptor=descriptor,
+        content=content,
+        caller=caller,
+        run={"host_run_id": HOST_RUN_ID},
+    )
 
 
 def mid_codepoint(content, low, high):
@@ -156,18 +195,25 @@ def mid_codepoint(content, low, high):
 
 async def _page(scenario, offset, *, digest=None):
     await _identities(scenario.path, scenario.rows)
-    ref = (PREFIX + digest + ":" + str(offset)) if digest else reference(scenario.descriptor, offset)
+    ref = (
+        (PREFIX + digest + ":" + str(offset)) if digest else reference(scenario.descriptor, offset)
+    )
     async with aiosqlite.connect(scenario.path) as db:
         db.row_factory = aiosqlite.Row
         return await admitted_current_page(
-            db=db, stack=scenario.stack, run=scenario.run, sdk_run_id=RUN_ID,
+            db=db,
+            stack=scenario.stack,
+            run=scenario.run,
+            sdk_run_id=RUN_ID,
             page_effect=scenario.caller,
-            arguments={"reference_id": ref, "source_hash": scenario.descriptor["content_hash"]})
+            arguments={"reference_id": ref, "source_hash": scenario.descriptor["content_hash"]},
+        )
 
 
 # --------------------------------------------------------------------------
 # 1. 事故的形状：等距 offset 在中文正文上必然撞死
 # --------------------------------------------------------------------------
+
 
 def test_the_incident_shape_is_reproduced_by_construction():
     """证据里的 7 次失败全部是「在范围内、但不在码点边界上」。"""
@@ -189,6 +235,7 @@ def test_the_incident_shape_is_reproduced_by_construction():
 # 2. 描述符：offset 的单位与页数由描述符自己讲清楚
 # --------------------------------------------------------------------------
 
+
 def test_descriptor_publishes_the_offset_unit_and_the_exact_page_count():
     # 2026-09-09 事件 AG：页大小 1024 -> 4096，同一份正文的页数掉到四分之一，
     # 所以这里的取样点也跟着走——60 行（2 页、页起点恰好是页大小的整数倍，清单
@@ -197,11 +244,18 @@ def test_descriptor_publishes_the_offset_unit_and_the_exact_page_count():
     listed_branches = set()
     for lines in (60, 150, 520):
         value = cjk_value(lines)
-        effect = FakeEffect(effect_id=SOURCE_EFFECT, tool_name="read_file",
-                            raw_call_id="call_00_" + "d" * 24, value=value)
+        effect = FakeEffect(
+            effect_id=SOURCE_EFFECT,
+            tool_name="read_file",
+            raw_call_id="call_00_" + "d" * 24,
+            value=value,
+        )
         descriptor, content = source_content(
-            Stack({SOURCE_EFFECT: effect}, ()).read_primary_effect_page_facts(RUN_ID, SOURCE_EFFECT),
-            min_bytes=0)
+            Stack({SOURCE_EFFECT: effect}, ()).read_primary_effect_page_facts(
+                RUN_ID, SOURCE_EFFECT
+            ),
+            min_bytes=0,
+        )
         wire = json.loads(summary(descriptor, content))
         starts = page_starts(content)
         assert wire["page_size"] == PAGE_SIZE == PAGE_BYTES
@@ -209,8 +263,9 @@ def test_descriptor_publishes_the_offset_unit_and_the_exact_page_count():
         assert "pages" not in wire
         # 印清单的判据与产线完全一致：页数在上限内**且**清单带信息
         # （页起点不是页大小的整数倍，那正是多字节正文推不出来的那一种）。
-        listed = (len(starts) <= DESCRIPTOR_OFFSET_LIMIT
-                  and starts != list(range(0, descriptor["content_bytes"], PAGE_SIZE)))
+        listed = len(starts) <= DESCRIPTOR_OFFSET_LIMIT and starts != list(
+            range(0, descriptor["content_bytes"], PAGE_SIZE)
+        )
         listed_branches.add(listed)
         if listed:
             assert wire["valid_offsets"] == starts
@@ -221,11 +276,16 @@ def test_descriptor_publishes_the_offset_unit_and_the_exact_page_count():
 
 def test_descriptor_omits_offsets_that_page_size_already_determines():
     """单字节正文的页起点就是 page_size 的整数倍，重复印是白花字节。"""
-    effect = FakeEffect(effect_id=SOURCE_EFFECT, tool_name="tool_search",
-                        raw_call_id="call_00_" + "d" * 24, value={"filler": "x" * 3000})
+    effect = FakeEffect(
+        effect_id=SOURCE_EFFECT,
+        tool_name="tool_search",
+        raw_call_id="call_00_" + "d" * 24,
+        value={"filler": "x" * 3000},
+    )
     descriptor, content = source_content(
         Stack({SOURCE_EFFECT: effect}, ()).read_primary_effect_page_facts(RUN_ID, SOURCE_EFFECT),
-        min_bytes=0)
+        min_bytes=0,
+    )
     wire = json.loads(summary(descriptor, content))
     assert wire["page_count"] <= DESCRIPTOR_OFFSET_LIMIT and "valid_offsets" not in wire
     assert page_starts(content) == list(range(0, descriptor["content_bytes"], PAGE_SIZE))
@@ -247,6 +307,7 @@ def test_the_three_earlier_wire_shapes_are_still_verifiable(tmp_path):
 # --------------------------------------------------------------------------
 # 3. 拒绝详情：三种形态各自的稳定码与可执行下一步
 # --------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_offset_off_a_character_boundary_is_rejected_with_the_page_starts(tmp_path):
@@ -360,15 +421,24 @@ async def test_rejection_detail_is_deterministic(tmp_path):
 # 4. 工具层：详情真的抵达模型，前缀逐字不变
 # --------------------------------------------------------------------------
 
+
 def test_public_message_keeps_the_frozen_prefix_and_carries_the_next_step():
-    detail = dict(reason="offset_not_on_character_boundary", requested_offset=2048,
-                  page_size=1024, page_count=48, content_bytes=48272,
-                  valid_offsets=[0, 1023, 2046], offsets_listed=3, next_offset=41984,
-                  retry_reference_id=PREFIX + "b" * 64 + ":41984", next_step="x")
+    detail = dict(
+        reason="offset_not_on_character_boundary",
+        requested_offset=2048,
+        page_size=1024,
+        page_count=48,
+        content_bytes=48272,
+        valid_offsets=[0, 1023, 2046],
+        offsets_listed=3,
+        next_offset=41984,
+        retry_reference_id=PREFIX + "b" * 64 + ":41984",
+        next_step="x",
+    )
     message = _primary_page_message(detail)
     # ``primary_dependencies`` 靠这个前缀认出主页面的确定性拒绝。
     assert message.startswith(PRIMARY_PAGE_PUBLIC_MESSAGE)
-    assert json.loads(message[len(PRIMARY_PAGE_PUBLIC_MESSAGE) + 1:]) == detail
+    assert json.loads(message[len(PRIMARY_PAGE_PUBLIC_MESSAGE) + 1 :]) == detail
     # ``sdk_adapters.tools._MAX_HANDLER_PUBLIC_MESSAGE`` 是 2048，必须留在里面。
     assert len(message) <= 2048
     # 没有详情时逐字回到升级前的那一句。
@@ -392,6 +462,7 @@ def test_tool_description_states_the_offset_unit():
     # 之前的量（8192 档受保护预算余量为 0，见
     # ``test_persona_and_route_schema_still_fit_the_8192_tier_megabyte_turn``）。
     from deskpet.sdk_adapters.context_partitions import text_tokens
+
     assert text_tokens(description) <= DESCRIPTION_TOKENS_BEFORE_AF2
     # 参数说明不加字：它进 ``tool_schema_tokens``，而 8192 档的受保护预算没有余量。
     parameter = CONTEXT_PAGE_IN_SCHEMA["parameters"]["properties"]["reference_id"]["description"]
@@ -415,10 +486,12 @@ def test_the_page_size_upgrade_does_not_touch_which_offsets_are_admitted():
     assert page_starts(content) != page_starts(content, LEGACY_PAGE_SIZE)
     for offset in (boundaries[0], boundaries[len(boundaries) // 2], boundaries[-1]):
         # 旧页链上的起点、以及任何一个码点边界，两种页大小下都照样读得出来。
-        assert _excerpt(content, offset) == raw[offset:offset + PAGE_BYTES].decode(
-            "utf-8", errors="ignore")
+        assert _excerpt(content, offset) == raw[offset : offset + PAGE_BYTES].decode(
+            "utf-8", errors="ignore"
+        )
         assert _excerpt(content, offset, LEGACY_PAGE_SIZE) == raw[
-            offset:offset + LEGACY_PAGE_SIZE].decode("utf-8", errors="ignore")
+            offset : offset + LEGACY_PAGE_SIZE
+        ].decode("utf-8", errors="ignore")
     # 旧页大小算出来的每一个页起点，在新页大小下仍然是合法 offset。
     for offset in page_starts(content, LEGACY_PAGE_SIZE):
         assert _excerpt(content, offset)
@@ -426,17 +499,28 @@ def test_the_page_size_upgrade_does_not_touch_which_offsets_are_admitted():
 
 def test_the_reference_and_the_admission_digest_are_page_size_free():
     """引用 = ``canonical_hash(descriptor)`` + 字节 offset，描述符里没有页大小。"""
-    effect = FakeEffect(effect_id=SOURCE_EFFECT, tool_name="read_file",
-                        raw_call_id="call_00_" + "d" * 24, value=cjk_value(520))
+    effect = FakeEffect(
+        effect_id=SOURCE_EFFECT,
+        tool_name="read_file",
+        raw_call_id="call_00_" + "d" * 24,
+        value=cjk_value(520),
+    )
     descriptor, content = source_content(
         Stack({SOURCE_EFFECT: effect}, ()).read_primary_effect_page_facts(RUN_ID, SOURCE_EFFECT),
-        min_bytes=0)
+        min_bytes=0,
+    )
     assert "page_size" not in descriptor and "page_count" not in descriptor
     # 升级前后同一个 offset 的引用逐字节相同——已持久化的引用全部照样解析。
     for offset in (0, 1024, 2046, 12278):
-        assert reference(descriptor, offset) == PREFIX + canonical_hash(descriptor) + ":" + str(offset)
-    assert canonical_hash(descriptor) == json.loads(
-        legacy_af_summary(descriptor, content))["reference_id"].removeprefix(PREFIX).split(":")[0]
+        assert reference(descriptor, offset) == PREFIX + canonical_hash(descriptor) + ":" + str(
+            offset
+        )
+    assert (
+        canonical_hash(descriptor)
+        == json.loads(legacy_af_summary(descriptor, content))["reference_id"]
+        .removeprefix(PREFIX)
+        .split(":")[0]
+    )
 
 
 @pytest.mark.asyncio
@@ -448,11 +532,23 @@ async def test_a_page_recorded_before_the_upgrade_replays_byte_for_byte(tmp_path
     async with aiosqlite.connect(scenario.path) as db:
         db.row_factory = aiosqlite.Row
         args = {"reference_id": ref, "source_hash": scenario.descriptor["content_hash"]}
-        fresh = await admitted_current_page(db=db, stack=scenario.stack, run=scenario.run,
-            sdk_run_id=RUN_ID, page_effect=scenario.caller, arguments=args)
-        old = await admitted_current_page(db=db, stack=scenario.stack, run=scenario.run,
-            sdk_run_id=RUN_ID, page_effect=scenario.caller, arguments=args,
-            page_bytes=LEGACY_PAGE_SIZE)
+        fresh = await admitted_current_page(
+            db=db,
+            stack=scenario.stack,
+            run=scenario.run,
+            sdk_run_id=RUN_ID,
+            page_effect=scenario.caller,
+            arguments=args,
+        )
+        old = await admitted_current_page(
+            db=db,
+            stack=scenario.stack,
+            run=scenario.run,
+            sdk_run_id=RUN_ID,
+            page_effect=scenario.caller,
+            arguments=args,
+            page_bytes=LEGACY_PAGE_SIZE,
+        )
     assert len(fresh["content"].encode("utf-8")) == PAGE_BYTES == 4096
     assert len(old["content"].encode("utf-8")) == LEGACY_PAGE_SIZE == 1024
     # 准入身份完全一致；不同的只有「这一页多少字节」和由它决定的下一页。

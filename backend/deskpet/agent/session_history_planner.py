@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 """Budget-aware, gap-free Session history planner for Context OS."""
+
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
@@ -75,8 +76,7 @@ def _flatten(groups: Sequence[CausalMessageGroup]) -> list[Mapping[str, Any]]:
 
 def _coverage_entry_for_group(group: CausalMessageGroup) -> CoverageEntry:
     recovered = any(
-        bool(message.get("__deskpet_recovered_causal_group"))
-        for message in group.messages
+        bool(message.get("__deskpet_recovered_causal_group")) for message in group.messages
     )
     return CoverageEntry("recovered_raw" if recovered else "raw", group.message_ids)
 
@@ -149,15 +149,11 @@ class SessionHistoryPlanner:
         # under-counted Chinese text, producing a plan that was rejected before
         # AgentLoop could execute the required compaction.
         self._estimate = token_estimator or (
-            lambda messages: count_messages_tokens(
-                [dict(message) for message in messages]
-            )
+            lambda messages: count_messages_tokens([dict(message) for message in messages])
         )
         self._raw_leaf_max_messages = raw_leaf_max_messages
         self._page_size = page_size
-        self._compaction_summary_reserve_tokens = max(
-            0, int(compaction_summary_reserve_tokens)
-        )
+        self._compaction_summary_reserve_tokens = max(0, int(compaction_summary_reserve_tokens))
 
     async def _load_all(self, session_id: str) -> list[Mapping[str, Any]]:
         getter = getattr(self._session_db, "get_messages", None)
@@ -181,9 +177,7 @@ class SessionHistoryPlanner:
         current_message_id: int | None = None,
     ) -> SessionHistoryPlan:
         rows = await self._load_all(session_id)
-        eligible, _recovery_errors = recover_broken_causal_messages(
-            eligible_session_messages(rows)
-        )
+        eligible, _recovery_errors = recover_broken_causal_messages(eligible_session_messages(rows))
         eligible_ids = tuple(_message_id(message) for message in eligible)
         groups, group_errors = group_causal_messages(eligible)
         await self._segments.replace_raw_index(
@@ -299,8 +293,10 @@ class SessionHistoryPlanner:
                     tuple(
                         _message_id(message)
                         for message in history_messages[
-                            message_positions[segment.first_message_id] :
-                            message_positions[segment.last_message_id] + 1
+                            message_positions[segment.first_message_id] : message_positions[
+                                segment.last_message_id
+                            ]
+                            + 1
                         ]
                     ),
                     segment_id=segment.segment_id,
@@ -474,11 +470,7 @@ class SessionHistoryPlanner:
                 break
             tail_cost += cost
             tail_start = start
-        tail = [
-            group
-            for group in groups
-            if positions.get(group.message_ids[0], -1) >= tail_start
-        ]
+        tail = [group for group in groups if positions.get(group.message_ids[0], -1) >= tail_start]
         jobs: list[CoverageCompactionJob] = []
         for segment, start, end, covered in valid_segments:
             if start < max(0, int(compact_start_index)) or end >= tail_start:

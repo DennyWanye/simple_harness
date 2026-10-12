@@ -24,6 +24,7 @@ LLM 兜底（复用 ContextAssembler classifier 的 chat_with_fallback 基础设
 **Strangler-Fig**：`enabled=False`（来自 `[companion].capability_gate_enabled`）
 → 永远 PASS，退回旧"啥都进 loop"行为。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -258,8 +259,7 @@ _LLM_SYSTEM = (
 )
 
 _GENERIC_ALT = (
-    "如果你是想让我帮你写调用这类生成服务的代码，请先选择对应工作区；"
-    "或者直接用对应的外部工具。"
+    "如果你是想让我帮你写调用这类生成服务的代码，请先选择对应工作区；或者直接用对应的外部工具。"
 )
 
 
@@ -308,9 +308,7 @@ async def _llm_fallback(
 
 # 规则"可能相关但不确定"的弱信号：含生成动词 + 模糊媒体词，但没命中
 # 精确 intent。用来决定是否值得花一次 LLM 兜底。
-_AMBIGUOUS = re.compile(
-    rf"({_GEN_VERB}|{_GEN_VERB_EN})", re.IGNORECASE
-)
+_AMBIGUOUS = re.compile(rf"({_GEN_VERB}|{_GEN_VERB_EN})", re.IGNORECASE)
 
 
 async def classify_request(

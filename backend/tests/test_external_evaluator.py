@@ -17,6 +17,7 @@ Tests (TDD, red before green):
   11. is_auto_resume_trigger("evaluator_revise") is True.
   12. ExternalEvaluator.evaluate: quality_score >= threshold with pass verdict → returns pass (no replan).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -46,9 +47,7 @@ def _make_receipt(tool_name: str, ok: bool = True) -> ToolReceipt:
 
 
 def _make_usage() -> ChatUsage:
-    return ChatUsage(
-        input_tokens=10, output_tokens=5, cache_read_tokens=0, cache_write_tokens=0
-    )
+    return ChatUsage(input_tokens=10, output_tokens=5, cache_read_tokens=0, cache_write_tokens=0)
 
 
 def _final_resp(content: str) -> ChatResponse:
@@ -195,12 +194,14 @@ from deskpet.agent.external_evaluator import ExternalEvaluator
 @pytest.mark.asyncio
 async def test_evaluator_revise_verdict():
     """evaluate returns dict with verdict=revise and quality_score < threshold."""
-    revise_json = json.dumps({
-        "quality_score": 3,
-        "issues": ["产物为空 PPT，缺少内容"],
-        "verdict": "revise",
-        "reason": "产物不满足目标要求",
-    })
+    revise_json = json.dumps(
+        {
+            "quality_score": 3,
+            "issues": ["产物为空 PPT，缺少内容"],
+            "verdict": "revise",
+            "reason": "产物不满足目标要求",
+        }
+    )
     call_count = 0
 
     async def _fake_llm(prompt: str) -> str:
@@ -224,12 +225,14 @@ async def test_evaluator_revise_verdict():
 @pytest.mark.asyncio
 async def test_evaluator_pass_verdict():
     """evaluate returns pass when quality is high."""
-    pass_json = json.dumps({
-        "quality_score": 8,
-        "issues": [],
-        "verdict": "pass",
-        "reason": "产物满足目标要求",
-    })
+    pass_json = json.dumps(
+        {
+            "quality_score": 8,
+            "issues": [],
+            "verdict": "pass",
+            "reason": "产物满足目标要求",
+        }
+    )
 
     async def _fake_llm(prompt: str) -> str:
         return pass_json
@@ -248,6 +251,7 @@ async def test_evaluator_pass_verdict():
 # ──────────────────────────────────────────────────────────────────────────────
 # 7. provider=None → safe-fail (returns pass) + evaluator_skipped metric
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_evaluator_provider_none_safe_fail(monkeypatch):
@@ -294,7 +298,7 @@ async def test_agent_loop_defers_evaluator_until_external_tool_outcome():
     # ExternalEvaluator mock returns revise → should emit ErrorEvent.
     llm_responses = [
         _tool_resp("ppt_create", {"title": "报告"}),  # iter 0: tool call
-        _final_resp("PPT 已生成"),                      # iter 1: end_turn
+        _final_resp("PPT 已生成"),  # iter 1: end_turn
     ]
     fake_llm = FakeLLMRegistry(llm_responses)
     fake_tools = FakeToolRegistry({"ppt_create": json.dumps({"ok": True, "path": "/tmp/r.pptx"})})
@@ -304,12 +308,14 @@ async def test_agent_loop_defers_evaluator_until_external_tool_outcome():
     fake_receipt_store.load_session.return_value = [_make_receipt("ppt_create")]
 
     # Build evaluator that returns revise
-    revise_json = json.dumps({
-        "quality_score": 2,
-        "issues": ["PPT 内容为空"],
-        "verdict": "revise",
-        "reason": "不满足目标",
-    })
+    revise_json = json.dumps(
+        {
+            "quality_score": 2,
+            "issues": ["PPT 内容为空"],
+            "verdict": "revise",
+            "reason": "不满足目标",
+        }
+    )
     eval_call_count = 0
 
     async def _revise_llm(prompt: str) -> str:
@@ -344,6 +350,7 @@ async def test_agent_loop_defers_evaluator_until_external_tool_outcome():
 # ──────────────────────────────────────────────────────────────────────────────
 # 9. agent_loop: flag on + non-high-consequence → evaluator NOT called
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_agent_loop_read_batch_does_not_run_evaluator_before_outcome():
@@ -396,6 +403,7 @@ async def test_agent_loop_read_batch_does_not_run_evaluator_before_outcome():
 # ──────────────────────────────────────────────────────────────────────────────
 # 10. agent_loop: flag off → evaluator path entirely skipped (BC)
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_agent_loop_flag_off_keeps_external_batch_boundary():
@@ -456,6 +464,7 @@ def test_random_reason_not_in_triggers():
 # 12. Evaluator prompt contract: no persona/emotion leakage
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_evaluator_prompt_no_persona_leakage():
     """Evaluator prompt must NOT include user persona/character fields in INPUT section.
@@ -469,12 +478,14 @@ async def test_evaluator_prompt_no_persona_leakage():
 
     async def _capture_llm(prompt: str) -> str:
         captured_prompts.append(prompt)
-        return json.dumps({
-            "quality_score": 8,
-            "issues": [],
-            "verdict": "pass",
-            "reason": "ok",
-        })
+        return json.dumps(
+            {
+                "quality_score": 8,
+                "issues": [],
+                "verdict": "pass",
+                "reason": "ok",
+            }
+        )
 
     ev = ExternalEvaluator(llm_call=_capture_llm)
     # NOTE: we only pass the whitelisted fields (goal, artifacts, evidence, summary).

@@ -10,6 +10,7 @@ Local provider → cost=0 regardless of tokens.
 
 DailyBudgetHook contract: see docs/superpowers/specs/2026-04-15-p2-1-finale-design.md §1.1.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -150,11 +151,7 @@ class BillingLedger:
         # 0..100. Keep the division-by-zero guard returning 100 (fully
         # consumed) — matches `daily_budget_cny = 0.0` meaning "always
         # denied".
-        pct = (
-            (spent / self._daily_budget) * 100.0
-            if self._daily_budget > 0
-            else 100.0
-        )
+        pct = (spent / self._daily_budget) * 100.0 if self._daily_budget > 0 else 100.0
         return {
             "spent_today_cny": spent,
             "daily_budget_cny": self._daily_budget,
@@ -171,7 +168,9 @@ class BillingLedger:
     WARN_THRESHOLD_PCT: float = 80.0
 
     async def check_budget_warning(
-        self, *, today_override: str | None = None,
+        self,
+        *,
+        today_override: str | None = None,
     ) -> dict:
         """WI-04 — decide whether to fire the 80%-budget early warning.
 
@@ -225,6 +224,7 @@ class BillingLedger:
           - local route → always allow (local is free)
           - cloud route → deny once spent_today >= daily_budget_cny
         """
+
         async def _hook(ctx: BudgetContext) -> BudgetDecision:
             if ctx.route == _LOCAL_ROUTE:
                 return BudgetDecision(allow=True)
@@ -232,10 +232,7 @@ class BillingLedger:
             if spent >= self._daily_budget:
                 return BudgetDecision(
                     allow=False,
-                    reason=(
-                        f"daily_budget_exceeded:"
-                        f"{spent:.3f}/{self._daily_budget:.3f}"
-                    ),
+                    reason=(f"daily_budget_exceeded:{spent:.3f}/{self._daily_budget:.3f}"),
                 )
             return BudgetDecision(allow=True)
 

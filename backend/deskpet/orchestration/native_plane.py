@@ -79,7 +79,9 @@ class BgeM3EmbeddingPort:
         options = ort.SessionOptions()
         options.enable_cpu_mem_arena = False  # a desktop app: return buffers after each batch
         self._session = ort.InferenceSession(
-            str(self.model_dir / BGE_M3_MODEL_FILE), sess_options=options, providers=["CPUExecutionProvider"],
+            str(self.model_dir / BGE_M3_MODEL_FILE),
+            sess_options=options,
+            providers=["CPUExecutionProvider"],
         )
         tokenizer = Tokenizer.from_file(str(self.model_dir / "tokenizer.json"))
         tokenizer.enable_truncation(max_length=self.max_tokens)
@@ -94,7 +96,10 @@ class BgeM3EmbeddingPort:
                 self._load()
             except Exception as error:  # noqa: BLE001 - recorded by the SDK as a FAILED receipt
                 self._load_error = error
-                logger.warning("BGE-M3 load failed; native sessions degrade to lexical retrieval: %s", type(error).__name__)
+                logger.warning(
+                    "BGE-M3 load failed; native sessions degrade to lexical retrieval: %s",
+                    type(error).__name__,
+                )
                 raise
         import numpy as np
 
@@ -104,7 +109,9 @@ class BgeM3EmbeddingPort:
             encoded = self._tokenizer.encode_batch(items[start : start + 8])
             ids = np.array([e.ids for e in encoded], dtype=np.int64)
             mask = np.array([e.attention_mask for e in encoded], dtype=np.int64)
-            dense = self._session.run(["sentence_embedding"], {"input_ids": ids, "attention_mask": mask})[0]
+            dense = self._session.run(
+                ["sentence_embedding"], {"input_ids": ids, "attention_mask": mask}
+            )[0]
             norms = np.linalg.norm(dense, axis=1, keepdims=True)
             dense = dense / np.where(norms == 0, 1.0, norms)
             vectors.extend([float(x) for x in row] for row in dense)
@@ -146,12 +153,17 @@ def build_native_pools(
     embedding, reason = embedding_port(models_dir)
     extra = {} if clock_ms is None else {"clock_ms": clock_ms}
     return NativePools(
-        tenant_id=tenant_id, principal_id=principal_id, allowed_tools=allowed_tools,
-        meter_factory=meter_factory, embedding=embedding, embedding_reason=reason,
+        tenant_id=tenant_id,
+        principal_id=principal_id,
+        allowed_tools=allowed_tools,
+        meter_factory=meter_factory,
+        embedding=embedding,
+        embedding_reason=reason,
         # The sandbox executor this deployment proved at start (P3.2 probe); None when the
         # machine has no usable sandbox, and then SCRIPT skills are refused by name.
-        script_runner=None if script_executor is None else (
-            lambda runs_dir: SandboxScriptRunner(script_executor, runs_dir)),
+        script_runner=None
+        if script_executor is None
+        else (lambda runs_dir: SandboxScriptRunner(script_executor, runs_dir)),
         script_runner_label=None if script_executor is None else f"sandbox:{script_executor.kind}",
         **extra,
     )

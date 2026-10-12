@@ -97,7 +97,9 @@ async def test_real_model_mission_reaches_a_terminal_state(orchestration_root, p
                     "review_pass",
                     note="HA-11 测试运行：复核按预先设置（SH_REAL_REVIEW=pass）由测试执行者通过，产物保存在证据里供事后核对",
                 )
-                decisions.append({"request_id": request["request_id"], "summary": request.get("summary")})
+                decisions.append(
+                    {"request_id": request["request_id"], "summary": request.get("summary")}
+                )
             await asyncio.sleep(5)
             detail = service.mission_detail(mission_id)
 
@@ -132,4 +134,6 @@ async def test_real_model_mission_reaches_a_terminal_state(orchestration_root, p
 
     status = summary["mission"]["status"]  # type: ignore[index]
     assert "waiting_on_person" not in summary, summary.get("waiting_on_person")
-    assert status in {"COMPLETED", "FAILED"}, f"not terminal after {summary['elapsed_s']} s: {status}"
+    assert status in {"COMPLETED", "FAILED"}, (
+        f"not terminal after {summary['elapsed_s']} s: {status}"
+    )

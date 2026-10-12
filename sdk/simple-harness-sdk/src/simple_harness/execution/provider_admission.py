@@ -143,8 +143,13 @@ class LocalProviderAdmission:
         return (agent_id, turn_id) in self._waiting.values()
 
     async def acquire(
-        self, *, request: ProviderRequest, record: ProviderInvocationRecord,
-        cancel: CancelToken, uow: Any, execution_lease: object,
+        self,
+        *,
+        request: ProviderRequest,
+        record: ProviderInvocationRecord,
+        cancel: CancelToken,
+        uow: Any,
+        execution_lease: object,
     ) -> ProviderAdmissionTicket:
         from .provider_invocations import provider_request_fingerprint
 
@@ -164,8 +169,10 @@ class LocalProviderAdmission:
                     admission_detail=ProviderAdmissionFailure(reason_code="cancelled")
                 )
             ticket = ProviderAdmissionTicket(
-                record.invocation_id, record.handoff_attempt + 1,
-                provider_request_fingerprint(request), self.fingerprint,
+                record.invocation_id,
+                record.handoff_attempt + 1,
+                provider_request_fingerprint(request),
+                self.fingerprint,
             )
             self._acquired[record.invocation_id] = identity
             return ticket
@@ -178,7 +185,11 @@ class LocalProviderAdmission:
 
     @contextmanager
     def handoff(
-        self, ticket: ProviderAdmissionTicket, *, request: ProviderRequest, cancel: CancelToken,
+        self,
+        ticket: ProviderAdmissionTicket,
+        *,
+        request: ProviderRequest,
+        cancel: CancelToken,
     ) -> Iterator[None]:
         if cancel.is_cancelled:
             raise ProviderAdmissionDenied(
@@ -190,7 +201,10 @@ class LocalProviderAdmission:
             yield
 
     def observe(
-        self, ticket: ProviderAdmissionTicket, *, record: ProviderInvocationRecord | None,
+        self,
+        ticket: ProviderAdmissionTicket,
+        *,
+        record: ProviderInvocationRecord | None,
     ) -> None:
         if self._acquired.pop(ticket.invocation_id, None) is not None:
             if self._semaphore is not None:

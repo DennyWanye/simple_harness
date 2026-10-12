@@ -35,9 +35,7 @@ def test_matrix_cartesian_cells_are_independent_and_half_coverage_is_partial() -
     subject_members = [item["member_id"] for item in requirement["axes"][0]["members"]]
     criterion_members = [item["member_id"] for item in requirement["axes"][1]["members"]]
     supported_cells = [
-        (subject, criterion)
-        for subject in subject_members
-        for criterion in criterion_members[:3]
+        (subject, criterion) for subject in subject_members for criterion in criterion_members[:3]
     ]
     facts = [
         _fact(requirement_id, f"binding-{index}", axis_member_ids=members)
@@ -47,7 +45,9 @@ def test_matrix_cartesian_cells_are_independent_and_half_coverage_is_partial() -
     assessment = assess_requirements(spec=spec, evidence_head_hash=HEAD, facts=facts)
 
     assert len(assessment.requirement_results) == 12
-    assert sum(item["support_status"] == "supported" for item in assessment.requirement_results) == 6
+    assert (
+        sum(item["support_status"] == "supported" for item in assessment.requirement_results) == 6
+    )
     assert assessment.status == "partial_candidate"
     assert assessment.minimum_useful is True
     expected_ids = {
@@ -70,11 +70,15 @@ def test_matrix_inference_and_preference_do_not_impersonate_required_facts() -> 
     )
     facts = [
         _fact(requirement_id, "binding-inference", axis_member_ids=members, claim_kind="inference"),
-        _fact(requirement_id, "binding-preference", axis_member_ids=members, claim_kind="preference"),
+        _fact(
+            requirement_id, "binding-preference", axis_member_ids=members, claim_kind="preference"
+        ),
     ]
     assessment = assess_requirements(spec=spec, evidence_head_hash=HEAD, facts=facts)
     cell_id = derive_matrix_cell_id(requirement_id, members)
-    cell = next(item for item in assessment.requirement_results if item["item_or_cell_id"] == cell_id)
+    cell = next(
+        item for item in assessment.requirement_results if item["item_or_cell_id"] == cell_id
+    )
     assert cell["support_status"] == "missing"
     assert cell["binding_ids"] == []
     assert assessment.status == "insufficient"
@@ -94,37 +98,48 @@ def _collection_facts(spec, count: int, *, duplicate_first: bool = False):
             "disadvantages": [f"disadvantage {index}"],
         }
         for field_key, value in values.items():
-            facts.append(_fact(
-                requirement_id,
-                f"binding-{index}-{field_key}",
-                entity_values={"product_name": name},
-                field_key=field_key,
-                value=value,
-                as_of=as_of,
-            ))
+            facts.append(
+                _fact(
+                    requirement_id,
+                    f"binding-{index}-{field_key}",
+                    entity_values={"product_name": name},
+                    field_key=field_key,
+                    value=value,
+                    as_of=as_of,
+                )
+            )
     if duplicate_first:
-        facts.append(_fact(
-            requirement_id,
-            "binding-duplicate-name",
-            entity_values={"product_name": "ＰＲＯＤＵＣＴ １"},
-            field_key="product_name",
-            value="ＰＲＯＤＵＣＴ １",
-            as_of=as_of,
-        ))
+        facts.append(
+            _fact(
+                requirement_id,
+                "binding-duplicate-name",
+                entity_values={"product_name": "ＰＲＯＤＵＣＴ １"},
+                field_key="product_name",
+                value="ＰＲＯＤＵＣＴ １",
+                as_of=as_of,
+            )
+        )
     return facts
 
 
 def test_top_n_dynamic_dedupe_ranking_and_nine_of_ten_is_partial() -> None:
-    spec = compile_research_spec(
-        "Top 10 AI products ranked by attention", as_of_date="2026-07-18"
-    )
+    spec = compile_research_spec("Top 10 AI products ranked by attention", as_of_date="2026-07-18")
     requirement = _requirement(spec)
     facts = _collection_facts(spec, 9, duplicate_first=True)
 
     assessment = assess_requirements(spec=spec, evidence_head_hash=HEAD, facts=facts)
 
     assert assessment.status == "partial_candidate"
-    assert len([item for item in assessment.requirement_results if item["support_status"] == "supported"]) == 9
+    assert (
+        len(
+            [
+                item
+                for item in assessment.requirement_results
+                if item["support_status"] == "supported"
+            ]
+        )
+        == 9
+    )
     assert len(assessment.requirement_results) == 9
     ranked = rank_collection_item_ids(requirement, facts)
     assert ranked == tuple(
@@ -134,16 +149,13 @@ def test_top_n_dynamic_dedupe_ranking_and_nine_of_ten_is_partial() -> None:
 
 
 def test_top_n_ten_items_is_completed_and_assessment_storage_is_identity_sorted() -> None:
-    spec = compile_research_spec(
-        "Top 10 AI products ranked by attention", as_of_date="2026-07-18"
-    )
+    spec = compile_research_spec("Top 10 AI products ranked by attention", as_of_date="2026-07-18")
     assessment = assess_requirements(
         spec=spec, evidence_head_hash=HEAD, facts=_collection_facts(spec, 10)
     )
     assert assessment.status == "completed_candidate"
     identities = [
-        (item["requirement_id"], item["item_or_cell_id"])
-        for item in assessment.requirement_results
+        (item["requirement_id"], item["item_or_cell_id"]) for item in assessment.requirement_results
     ]
     assert identities == sorted(identities)
 
@@ -163,26 +175,28 @@ def test_policy_facts_and_registered_impact_inference_remain_separate() -> None:
         )
         for facet in ("issuer", "document", "date", "commitment")
     ]
-    facts.append(GenericAdmittedFactV1.create(
-        requirement_id=requirement_id,
-        item_or_cell_id="claim-impact",
-        claim_kind="impact_inference",
-        facet_ids=("impact",),
-        inference_ref="sha256:" + "f" * 64,
-    ))
+    facts.append(
+        GenericAdmittedFactV1.create(
+            requirement_id=requirement_id,
+            item_or_cell_id="claim-impact",
+            claim_kind="impact_inference",
+            facet_ids=("impact",),
+            inference_ref="sha256:" + "f" * 64,
+        )
+    )
 
     assessment = assess_requirements(spec=spec, evidence_head_hash=HEAD, facts=facts)
 
     assert assessment.status == "completed_candidate"
-    impact = next(item for item in assessment.requirement_results if item["item_or_cell_id"] == "claim-impact")
+    impact = next(
+        item for item in assessment.requirement_results if item["item_or_cell_id"] == "claim-impact"
+    )
     assert impact["binding_ids"] == []
     assert impact["reason_codes"] == ["registered_inference"]
 
 
 def test_open_research_enforces_all_four_claim_kind_minima() -> None:
-    spec = compile_research_spec(
-        "How will AI change design work?", as_of_date="2026-07-18"
-    )
+    spec = compile_research_spec("How will AI change design work?", as_of_date="2026-07-18")
     requirement_id = _requirement(spec)["requirement_id"]
     kinds = ("conclusion", "limitation", "counterevidence", "uncertainty")
     facts = [
@@ -203,9 +217,7 @@ def test_open_research_enforces_all_four_claim_kind_minima() -> None:
 
 
 def test_recomputation_is_deterministic_across_fact_order() -> None:
-    spec = compile_research_spec(
-        "Top 10 AI products ranked by attention", as_of_date="2026-07-18"
-    )
+    spec = compile_research_spec("Top 10 AI products ranked by attention", as_of_date="2026-07-18")
     facts = _collection_facts(spec, 10)
     shuffled = list(facts)
     random.Random(7718).shuffle(shuffled)
@@ -226,13 +238,15 @@ def test_exact_scalar_remains_compatible_with_one_result_per_requirement() -> No
         facts=[_fact(requirement_id, "binding-population")],
     )
     assert assessment.status == "completed_candidate"
-    assert assessment.requirement_results == ({
-        "requirement_id": requirement_id,
-        "item_or_cell_id": requirement_id,
-        "support_status": "supported",
-        "binding_ids": ["binding-population"],
-        "reason_codes": ["binding_admitted"],
-    },)
+    assert assessment.requirement_results == (
+        {
+            "requirement_id": requirement_id,
+            "item_or_cell_id": requirement_id,
+            "support_status": "supported",
+            "binding_ids": ["binding-population"],
+            "reason_codes": ["binding_admitted"],
+        },
+    )
 
 
 def test_two_required_scalars_with_one_supported_is_honest_partial() -> None:

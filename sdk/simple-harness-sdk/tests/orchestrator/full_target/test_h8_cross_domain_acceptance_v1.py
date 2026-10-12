@@ -17,7 +17,10 @@ def test_plan_has_three_domains_and_48_scenarios_with_three_trials() -> None:
     for domain in plan.domains:
         for kind in ScenarioKind:
             expected = {"normal": 8, "repair": 4, "evidence-conflict": 2, "recovery": 2}
-            assert sum(item.domain == domain and item.kind is kind for item in plan.scenarios) == expected[kind.value]
+            assert (
+                sum(item.domain == domain and item.kind is kind for item in plan.scenarios)
+                == expected[kind.value]
+            )
 
 
 def test_four_arms_share_frozen_model_tools_and_budget() -> None:

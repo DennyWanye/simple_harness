@@ -185,9 +185,7 @@ class WindowsWindowBackend:
             if width <= 0 or height <= 0:
                 return True
             pid_value = wintypes.DWORD()
-            self._user32.GetWindowThreadProcessId(
-                hwnd, ctypes.byref(pid_value)
-            )
+            self._user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid_value))
             pid = int(pid_value.value)
             try:
                 created = float(psutil.Process(pid).create_time())
@@ -217,13 +215,9 @@ class WindowsWindowBackend:
         foreground = int(self._user32.GetForegroundWindow() or 0)
         current_thread = int(self._kernel32.GetCurrentThreadId())
         foreground_thread = (
-            int(self._user32.GetWindowThreadProcessId(foreground, None))
-            if foreground
-            else 0
+            int(self._user32.GetWindowThreadProcessId(foreground, None)) if foreground else 0
         )
-        target_thread = int(
-            self._user32.GetWindowThreadProcessId(hwnd, None)
-        )
+        target_thread = int(self._user32.GetWindowThreadProcessId(hwnd, None))
         attached: list[int] = []
         detach_ok = True
         try:
@@ -231,9 +225,7 @@ class WindowsWindowBackend:
                 if (
                     thread_id
                     and thread_id != current_thread
-                    and self._user32.AttachThreadInput(
-                        current_thread, thread_id, True
-                    )
+                    and self._user32.AttachThreadInput(current_thread, thread_id, True)
                 ):
                     attached.append(thread_id)
             self._user32.ShowWindow(hwnd, 9)  # SW_RESTORE
@@ -244,16 +236,11 @@ class WindowsWindowBackend:
             for thread_id in reversed(attached):
                 detached = False
                 for _attempt in range(2):
-                    if self._user32.AttachThreadInput(
-                        current_thread, thread_id, False
-                    ):
+                    if self._user32.AttachThreadInput(current_thread, thread_id, False):
                         detached = True
                         break
                 detach_ok = detach_ok and detached
-        return (
-            detach_ok
-            and int(self._user32.GetForegroundWindow() or 0) == int(hwnd)
-        )
+        return detach_ok and int(self._user32.GetForegroundWindow() or 0) == int(hwnd)
 
     def _virtual_key(self, key: str) -> int:
         normalized = str(key or "").strip().casefold()
@@ -291,10 +278,7 @@ class WindowsWindowBackend:
         flags = _KEYEVENTF_SCANCODE
         if key_up:
             flags |= _KEYEVENTF_KEYUP
-        if (
-            virtual_key in _EXTENDED_VIRTUAL_KEYS
-            or scan_code & 0xFF00 in {0xE000, 0xE100}
-        ):
+        if virtual_key in _EXTENDED_VIRTUAL_KEYS or scan_code & 0xFF00 in {0xE000, 0xE100}:
             flags |= _KEYEVENTF_EXTENDEDKEY
         keyboard = self._keyboard_input_type(
             0,
@@ -345,15 +329,9 @@ def _parse_target(args: dict[str, Any]) -> tuple[int, float, int, str]:
     title_contains = str(args.get("title_contains") or "").strip()
     if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
         raise ValueError("pid must be a positive integer")
-    if (
-        not isinstance(created, (int, float))
-        or isinstance(created, bool)
-        or float(created) <= 0
-    ):
+    if not isinstance(created, (int, float)) or isinstance(created, bool) or float(created) <= 0:
         raise ValueError("creation_time must be a positive number")
-    if (
-        not isinstance(hwnd, int) or isinstance(hwnd, bool) or hwnd <= 0
-    ):
+    if not isinstance(hwnd, int) or isinstance(hwnd, bool) or hwnd <= 0:
         raise ValueError("hwnd must be a positive integer")
     return pid, float(created), hwnd, title_contains
 
@@ -366,19 +344,12 @@ def _find_target(args: dict[str, Any]) -> WindowIdentity:
         if window.pid == pid
         and abs(window.creation_time - created) < 0.01
         and window.hwnd == hwnd
-        and (
-            not title_contains
-            or title_contains.casefold() in window.title.casefold()
-        )
+        and (not title_contains or title_contains.casefold() in window.title.casefold())
     ]
     if not matches:
-        raise LookupError(
-            "no visible window matches the exact process identity"
-        )
+        raise LookupError("no visible window matches the exact process identity")
     if len(matches) > 1:
-        raise LookupError(
-            "multiple windows match; pass hwnd or title_contains from window_list"
-        )
+        raise LookupError("multiple windows match; pass hwnd or title_contains from window_list")
     return matches[0]
 
 
@@ -397,9 +368,7 @@ def _window_list(args: dict[str, Any], _task_id: str = "") -> str:
     visible = [
         window.to_dict()
         for window in windows
-        if not query
-        or query in window.title.casefold()
-        or query == str(window.pid)
+        if not query or query in window.title.casefold() or query == str(window.pid)
     ]
     return _ok(windows=visible[:_MAX_WINDOWS], count=len(visible))
 
@@ -434,11 +403,7 @@ def _capture_target(
     named_target: Path | None = None
     if name:
         relative = Path(name)
-        if (
-            relative.is_absolute()
-            or relative.drive
-            or str(relative).startswith(("\\\\", "//"))
-        ):
+        if relative.is_absolute() or relative.drive or str(relative).startswith(("\\\\", "//")):
             return _err("name must be workspace-relative")
         named_target = (root / relative).resolve(strict=False)
         try:
@@ -469,28 +434,20 @@ def _capture_target(
         }
         shot = sct.grab(region)
         verified = _find_target(args)
-        if (
-            verified.minimized
-            or (
-                verified.left,
-                verified.top,
-                verified.width,
-                verified.height,
-            )
-            != (
-                window.left,
-                window.top,
-                window.width,
-                window.height,
-            )
+        if verified.minimized or (
+            verified.left,
+            verified.top,
+            verified.width,
+            verified.height,
+        ) != (
+            window.left,
+            window.top,
+            window.width,
+            window.height,
         ):
-            raise RuntimeError(
-                "target window geometry changed during capture"
-            )
+            raise RuntimeError("target window geometry changed during capture")
         target = named_target or (
-            root
-            / "screenshots"
-            / f"window-{window.pid}-{int(time.time() * 1000)}.png"
+            root / "screenshots" / f"window-{window.pid}-{int(time.time() * 1000)}.png"
         )
         target.parent.mkdir(parents=True, exist_ok=True)
         from mss.tools import to_png
@@ -507,11 +464,7 @@ def _capture_target(
             except Exception as exc:  # noqa: BLE001
                 close_error = exc
     if capture_error is not None:
-        suffix = (
-            f"; backend close also failed: {close_error}"
-            if close_error is not None
-            else ""
-        )
+        suffix = f"; backend close also failed: {close_error}" if close_error is not None else ""
         return _err(
             f"window capture failed: {capture_error}{suffix}",
             retriable=True,
@@ -536,17 +489,13 @@ def _window_capture(args: dict[str, Any], _task_id: str = "") -> str:
     return _capture_target(args, root=_workspace_root())
 
 
-def _window_capture_context(
-    args: dict[str, Any], context: ToolExecutionContext
-) -> str:
+def _window_capture_context(args: dict[str, Any], context: ToolExecutionContext) -> str:
     return _capture_target(args, root=_capture_workspace(context))
 
 
 def _parse_key_press(args: dict[str, Any]) -> tuple[tuple[str, ...], int]:
     keys = str(args.get("keys") or "").strip()
-    parts = tuple(
-        part.strip().casefold() for part in keys.split("+") if part.strip()
-    )
+    parts = tuple(part.strip().casefold() for part in keys.split("+") if part.strip())
     if not parts or len(parts) > 4:
         raise ValueError("keys must contain one to four '+'-joined keys")
     hold_ms = args.get("hold_ms", 0)
@@ -555,23 +504,18 @@ def _parse_key_press(args: dict[str, Any]) -> tuple[tuple[str, ...], int]:
         or isinstance(hold_ms, bool)
         or not 0 <= hold_ms <= _MAX_HOLD_MS
     ):
-        raise ValueError(
-            f"hold_ms must be an integer from 0 to {_MAX_HOLD_MS}"
-        )
+        raise ValueError(f"hold_ms must be an integer from 0 to {_MAX_HOLD_MS}")
     return parts, hold_ms
 
 
-def _execute_key_press(
-    args: dict[str, Any], parts: tuple[str, ...], hold_ms: int
-) -> str:
+def _execute_key_press(args: dict[str, Any], parts: tuple[str, ...], hold_ms: int) -> str:
     try:
         window = _find_target(args)
         backend = _load_window_backend()
         if not backend.focus(window.hwnd):
             return _err("window focus was not acquired", retriable=True)
         use_native_keys = all(
-            callable(getattr(backend, method, None))
-            for method in ("key_down", "key_up")
+            callable(getattr(backend, method, None)) for method in ("key_down", "key_up")
         )
         pg = None if use_native_keys else _load_pyautogui()
     except Exception as exc:  # noqa: BLE001 - normalized tool envelope
@@ -606,19 +550,14 @@ def _execute_key_press(
             except Exception as exc:  # noqa: BLE001
                 release_errors.append(f"{part}: {exc}")
     if input_error is not None:
-        suffix = (
-            f"; key release errors: {', '.join(release_errors)}"
-            if release_errors
-            else ""
-        )
+        suffix = f"; key release errors: {', '.join(release_errors)}" if release_errors else ""
         return _err(
             f"window key input failed: {input_error}{suffix}",
             retriable=True,
         )
     if release_errors:
         return _err(
-            "window key release could not be verified: "
-            + ", ".join(release_errors),
+            "window key release could not be verified: " + ", ".join(release_errors),
             "Do not send more input until the target window state is checked.",
             retriable=True,
         )
@@ -635,9 +574,7 @@ def _parse_key_sequence(
     steps: Any,
 ) -> tuple[tuple[tuple[str, ...], int, int], ...]:
     if not isinstance(steps, list) or not 1 <= len(steps) <= _MAX_SEQUENCE_STEPS:
-        raise ValueError(
-            f"steps must contain 1 to {_MAX_SEQUENCE_STEPS} key steps"
-        )
+        raise ValueError(f"steps must contain 1 to {_MAX_SEQUENCE_STEPS} key steps")
     parsed: list[tuple[tuple[str, ...], int, int]] = []
     total_ms = 0
     key_step_count = 0
@@ -651,8 +588,7 @@ def _parse_key_sequence(
             or not 0 <= pause_ms <= _MAX_SEQUENCE_PAUSE_MS
         ):
             raise ValueError(
-                f"steps[{index}].pause_ms must be an integer from 0 to "
-                f"{_MAX_SEQUENCE_PAUSE_MS}"
+                f"steps[{index}].pause_ms must be an integer from 0 to {_MAX_SEQUENCE_PAUSE_MS}"
             )
         if str(step.get("keys") or "").strip():
             parts, hold_ms = _parse_key_press(step)
@@ -660,13 +596,9 @@ def _parse_key_sequence(
         else:
             hold_ms = step.get("hold_ms", 0)
             if hold_ms not in (0, None):
-                raise ValueError(
-                    f"steps[{index}].hold_ms requires a non-empty keys value"
-                )
+                raise ValueError(f"steps[{index}].hold_ms requires a non-empty keys value")
             if pause_ms <= 0:
-                raise ValueError(
-                    f"steps[{index}] must contain keys or a positive pause_ms"
-                )
+                raise ValueError(f"steps[{index}] must contain keys or a positive pause_ms")
             parts = ()
             hold_ms = 0
         total_ms += hold_ms + pause_ms
@@ -793,6 +725,7 @@ def _window_capture_resources(
 _TOOLSET = "computer_use"
 _TARGET_REQUIRED = ["pid", "creation_time", "hwnd"]
 
+
 def register_static_tools(registry) -> None:
     list_schema = {
         "name": "window_list",
@@ -884,29 +817,48 @@ def register_static_tools(registry) -> None:
         },
     }
     registry.register(
-        "window_list", _TOOLSET, list_schema, _window_list,
-        permission_category="read_file", requires_env=_CU_HIDE_ENV,
+        "window_list",
+        _TOOLSET,
+        list_schema,
+        _window_list,
+        permission_category="read_file",
+        requires_env=_CU_HIDE_ENV,
     )
     registry.register(
-        "window_focus", _TOOLSET, focus_schema, _window_focus,
-        permission_category="shell", dangerous=True,
-        requires_env=_CU_HIDE_ENV, concurrency_safe=False,
+        "window_focus",
+        _TOOLSET,
+        focus_schema,
+        _window_focus,
+        permission_category="shell",
+        dangerous=True,
+        requires_env=_CU_HIDE_ENV,
+        concurrency_safe=False,
         resource_scope_resolver=_window_resources,
         resource_scope_resolver_id="builtin:window_focus:exact-window",
     )
     registry.register(
-        "window_capture", _TOOLSET, capture_schema, _window_capture,
+        "window_capture",
+        _TOOLSET,
+        capture_schema,
+        _window_capture,
         context_handler=_window_capture_context,
-        permission_category="read_file", requires_env=_CU_HIDE_ENV,
+        permission_category="read_file",
+        requires_env=_CU_HIDE_ENV,
         concurrency_safe=False,
         resource_scope_resolver=_window_capture_resources,
         resource_scope_resolver_id="builtin:window_capture:exact-window",
     )
     registry.register(
-        "window_key", _TOOLSET, key_schema, _window_key,
-        permission_category="shell", dangerous=True,
-        requires_env=_CU_HIDE_ENV, timeout_seconds=15.0,
-        concurrency_safe=False, resource_scope_resolver=_window_resources,
+        "window_key",
+        _TOOLSET,
+        key_schema,
+        _window_key,
+        permission_category="shell",
+        dangerous=True,
+        requires_env=_CU_HIDE_ENV,
+        timeout_seconds=15.0,
+        concurrency_safe=False,
+        resource_scope_resolver=_window_resources,
         resource_scope_resolver_id="builtin:window_key:exact-window",
     )
 

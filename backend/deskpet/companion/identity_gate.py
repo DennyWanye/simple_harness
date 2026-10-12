@@ -38,10 +38,7 @@ class IdentityReadyGate:
         if identity.binding_epoch < 1 or not identity.owner_key:
             raise ValueError("invalid owner binding")
         with self._lock:
-            if (
-                self._current is not None
-                and identity.binding_epoch < self._current.binding_epoch
-            ):
+            if self._current is not None and identity.binding_epoch < self._current.binding_epoch:
                 raise ValueError("binding_epoch_moved_backwards")
             if (
                 self._current is not None
@@ -53,19 +50,14 @@ class IdentityReadyGate:
 
     def unbind(self, *, expected_binding_epoch: int) -> None:
         with self._lock:
-            if (
-                self._current is not None
-                and self._current.binding_epoch != expected_binding_epoch
-            ):
+            if self._current is not None and self._current.binding_epoch != expected_binding_epoch:
                 raise ValueError("binding_epoch_mismatch")
             self._current = None
 
     def freeze(self) -> FrozenOwnerIdentity:
         with self._lock:
             if self._current is None:
-                raise CompanionIdentityNotReady(
-                    CompanionIdentityNotReady.code
-                )
+                raise CompanionIdentityNotReady(CompanionIdentityNotReady.code)
             return self._current
 
 

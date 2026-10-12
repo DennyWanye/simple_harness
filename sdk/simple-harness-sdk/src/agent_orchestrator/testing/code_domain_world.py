@@ -10,6 +10,7 @@
 * 做法必须由规划器**提出**：种子做法的判据链接挂在代码目标自己的判据号（``c-test-passes`` 等）上，
   产品根的要求号是 ``c-user-<n>``，种子做法对不上产品根。
 """
+
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -42,14 +43,26 @@ def code_world_factory(loop: Any, mission: Any) -> Any:
     from ..deployment.root import criterion_ids
     from ..planning.htn.world import build_planning_world
 
-    world = build_planning_world(mission.id, domains=("code",), semantics=HtnStore(loop.store),
-                                 deployed_layers=("code_test",))
-    template = next(t for t in world.catalog.task_types() if t.task_type_ref.id == "code.fix-failing-test")
-    signature = dataclasses.replace(template.goal_signature, signature_id=ROOT_TYPE,
-                                    coverage_criteria=criterion_ids(mission))
+    world = build_planning_world(
+        mission.id,
+        domains=("code",),
+        semantics=HtnStore(loop.store),
+        deployed_layers=("code_test",),
+    )
+    template = next(
+        t for t in world.catalog.task_types() if t.task_type_ref.id == "code.fix-failing-test"
+    )
+    signature = dataclasses.replace(
+        template.goal_signature, signature_id=ROOT_TYPE, coverage_criteria=criterion_ids(mission)
+    )
     body = {"name": ROOT_TYPE, "form": str(template.form), "signature": signature.to_json()}
-    world.catalog.register(dataclasses.replace(
-        template, task_type_ref=VersionedRef(ROOT_TYPE, 1, content_hash_of(body)), goal_signature=signature))
+    world.catalog.register(
+        dataclasses.replace(
+            template,
+            task_type_ref=VersionedRef(ROOT_TYPE, 1, content_hash_of(body)),
+            goal_signature=signature,
+        )
+    )
     return world
 
 
@@ -58,15 +71,33 @@ def code_root_parameters(_mission: Any) -> dict[str, Any]:
 
 
 @asynccontextmanager
-async def code_world(tmp_path: Path, provider: Any, *, root_parameters: Callable[[Any], dict[str, Any]] = code_root_parameters,
-                     allowed_tools: tuple[str, ...] = TOOLS, **config: Any):
+async def code_world(
+    tmp_path: Path,
+    provider: Any,
+    *,
+    root_parameters: Callable[[Any], dict[str, Any]] = code_root_parameters,
+    allowed_tools: tuple[str, ...] = TOOLS,
+    **config: Any,
+):
     """产品同形世界，规划世界换成代码领域（:func:`code_world_factory`），根参数由 ``root_parameters`` 给。"""
-    async with product_world(tmp_path / "root", provider, world_factory=code_world_factory, names=CODE_NAMES,
-                             root_parameters=root_parameters, allowed_tools=allowed_tools,
-                             **{**CONFIG, **config}) as world:
+    async with product_world(
+        tmp_path / "root",
+        provider,
+        world_factory=code_world_factory,
+        names=CODE_NAMES,
+        root_parameters=root_parameters,
+        allowed_tools=allowed_tools,
+        **{**CONFIG, **config},
+    ) as world:
         yield world
 
 
-
-__all__ = ("CODE_NAMES", "CONFIG", "ROOT_TYPE", "TOOLS", "code_root_parameters", "code_world",
-           "code_world_factory")
+__all__ = (
+    "CODE_NAMES",
+    "CONFIG",
+    "ROOT_TYPE",
+    "TOOLS",
+    "code_root_parameters",
+    "code_world",
+    "code_world_factory",
+)

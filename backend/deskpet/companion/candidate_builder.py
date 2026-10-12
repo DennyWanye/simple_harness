@@ -68,9 +68,7 @@ def _sha256(payload: bytes) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
-def _json_object(
-    value: Mapping[str, object], name: str
-) -> Mapping[str, JsonValue]:
+def _json_object(value: Mapping[str, object], name: str) -> Mapping[str, JsonValue]:
     try:
         cloned = json.loads(_canonical_json(dict(value)))
     except (TypeError, ValueError) as exc:
@@ -78,9 +76,7 @@ def _json_object(
             "candidate_seed_invalid", f"{name} must be a closed JSON object"
         ) from exc
     if not isinstance(cloned, dict):
-        raise CandidateBuildIdentityError(
-            "candidate_seed_invalid", f"{name} must be a JSON object"
-        )
+        raise CandidateBuildIdentityError("candidate_seed_invalid", f"{name} must be a JSON object")
     return MappingProxyType(cloned)
 
 
@@ -99,26 +95,18 @@ class CandidateFileInputV1:
             or path == _MANIFEST_NAME
             or any(part in {"", ".", ".."} for part in path.split("/"))
         ):
-            raise CandidateBuildIdentityError(
-                "candidate_relative_path_invalid", self.relative_path
-            )
+            raise CandidateBuildIdentityError("candidate_relative_path_invalid", self.relative_path)
         if ":" in path or "\\" in self.relative_path:
-            raise CandidateBuildIdentityError(
-                "candidate_relative_path_invalid", self.relative_path
-            )
+            raise CandidateBuildIdentityError("candidate_relative_path_invalid", self.relative_path)
         if not isinstance(self.content, bytes):
-            raise CandidateBuildIdentityError(
-                "candidate_file_bytes_required", self.relative_path
-            )
+            raise CandidateBuildIdentityError("candidate_file_bytes_required", self.relative_path)
         if (
             self.file_kind != "file"
             or not isinstance(self.file_mode, int)
             or isinstance(self.file_mode, bool)
             or self.file_mode < 0
         ):
-            raise CandidateBuildIdentityError(
-                "candidate_file_metadata_invalid", self.relative_path
-            )
+            raise CandidateBuildIdentityError("candidate_file_metadata_invalid", self.relative_path)
         object.__setattr__(self, "relative_path", path)
 
     @property
@@ -203,9 +191,7 @@ class CandidateSeedInputV1:
                 self.target_fence.scope_key,
                 self.target_fence.binding_generation,
             ):
-                raise CandidateBuildIdentityError(
-                    "candidate_update_source_target_mismatch"
-                )
+                raise CandidateBuildIdentityError("candidate_update_source_target_mismatch")
         elif (
             self.source_fence.owner_key != "builtin"
             or self.source_fence.scope != "builtin"
@@ -221,9 +207,7 @@ class CandidateSeedInputV1:
             "owner_key": self.owner_key,
             "target": self.target.to_dict(),
             "candidate_mode": CandidateMode(self.candidate_mode).value,
-            "source_fence": (
-                None if self.source_fence is None else self.source_fence.to_dict()
-            ),
+            "source_fence": (None if self.source_fence is None else self.source_fence.to_dict()),
             "target_fence": self.target_fence.to_dict(),
             # Bytes, not just filenames or model-authored diff text, are part
             # of the seed.  Base64 gives one platform-neutral JSON encoding.
@@ -312,8 +296,7 @@ class DeterministicCandidateBuilder:
             "revision": version,
         }
         manifest["files"] = [
-            {"path": item.relative_path, "sha256": item.content_hash}
-            for item in files
+            {"path": item.relative_path, "sha256": item.content_hash} for item in files
         ]
         manifest_bytes = _canonical_json(manifest).encode("utf-8")
         manifest_hash = self._digest(manifest_bytes)
@@ -330,9 +313,9 @@ class DeterministicCandidateBuilder:
             for item in files
         ]
         file_set_hash = self._digest(
-            _canonical_json(
-                {"schema": "candidate-file-set-v1", "files": file_set_payload}
-            ).encode("utf-8")
+            _canonical_json({"schema": "candidate-file-set-v1", "files": file_set_payload}).encode(
+                "utf-8"
+            )
         )
         effect_topology_hash = self._digest(
             _canonical_json(
@@ -422,11 +405,7 @@ class DeterministicCandidateBuilder:
             candidate_package_hash=package_hash,
             archive_hash=archive_hash,
             effect_topology_hash=effect_topology_hash,
-            source_facts=(
-                {}
-                if seed.source_fence is None
-                else seed.source_fence.to_dict()
-            ),
+            source_facts=({} if seed.source_fence is None else seed.source_fence.to_dict()),
             target_facts=seed.target_fence.to_dict(),
             files=tuple(package_files),
             blobs=tuple(blobs),
@@ -438,9 +417,7 @@ class DeterministicCandidateBuilder:
             exact_identity_hash = _sha256(
                 seed_bytes + b"\0" + manifest_bytes + b"\0" + archive_bytes
             )
-            self._collision_guard.claim(
-                package, exact_identity_hash=exact_identity_hash
-            )
+            self._collision_guard.claim(package, exact_identity_hash=exact_identity_hash)
         return CandidateBuildProductV1(
             package=package,
             manifest=MappingProxyType(manifest),
@@ -464,17 +441,13 @@ class DeterministicCandidateBuilder:
         return f"{major}.{minor}.{patch + 1}"
 
     @staticmethod
-    def _canonical_archive(
-        manifest_bytes: bytes, files: Sequence[CandidateFileInputV1]
-    ) -> bytes:
+    def _canonical_archive(manifest_bytes: bytes, files: Sequence[CandidateFileInputV1]) -> bytes:
         output = io.BytesIO()
         with zipfile.ZipFile(
             output, mode="w", compression=zipfile.ZIP_STORED, strict_timestamps=True
         ) as archive:
             entries = [(_MANIFEST_NAME, manifest_bytes, 0o644)]
-            entries.extend(
-                (item.relative_path, item.content, item.file_mode) for item in files
-            )
+            entries.extend((item.relative_path, item.content, item.file_mode) for item in files)
             for path, payload, mode in sorted(entries, key=lambda item: item[0]):
                 info = zipfile.ZipInfo(path, date_time=(1980, 1, 1, 0, 0, 0))
                 info.compress_type = zipfile.ZIP_STORED

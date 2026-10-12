@@ -10,6 +10,7 @@
   - 复杂问题：注入 <意图>+<主要矛盾>，发 chat_v2_intent + chat_v2_contradiction 事件
   - observability_events=False 时不发事件
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -44,20 +45,23 @@ def test_flag_off_short_circuits_everything() -> None:
 def test_chitchat_short_circuit() -> None:
     card = IntentCard(problem_type="chitchat", short_circuit=True)
     pipe = ProblemHandlingPipeline(
-        enabled=True, intent_triage=_make_triage_returning(card),
+        enabled=True,
+        intent_triage=_make_triage_returning(card),
         observability_events=True,
     )
     res = asyncio.run(pipe.run_pre_loop("你好", prior_task_type="chat"))
     assert res.short_circuit is True
-    assert res.system_injections == []          # 短路不注入
+    assert res.system_injections == []  # 短路不注入
     # 短路前已发 intent 事件（observability on）
     assert any(e["type"] == "chat_v2_intent" for e in res.events)
 
 
 def test_clarification_exit() -> None:
     card = IntentCard(
-        problem_type="ambiguous", ambiguity_score=0.9,
-        clarifying_questions=["A 还是 B？"], needs_clarification=True,
+        problem_type="ambiguous",
+        ambiguity_score=0.9,
+        clarifying_questions=["A 还是 B？"],
+        needs_clarification=True,
     )
     pipe = ProblemHandlingPipeline(enabled=True, intent_triage=_make_triage_returning(card))
     res = asyncio.run(pipe.run_pre_loop("那个", prior_task_type=None))
@@ -68,15 +72,20 @@ def test_clarification_exit() -> None:
 def test_complex_injects_intent_and_contradiction() -> None:
     cmap = ContradictionMap(
         contradictions=[Contradiction(id=1, desc="token 过期", aspect="认证")],
-        principal=1, principal_aspect="认证链路", attack_order=[1],
+        principal=1,
+        principal_aspect="认证链路",
+        attack_order=[1],
         rationale="先修 token",
     )
     card = IntentCard(
-        restated_intent="修复登录", problem_type="debug",
-        needs_investigation=True, contradiction=cmap,
+        restated_intent="修复登录",
+        problem_type="debug",
+        needs_investigation=True,
+        contradiction=cmap,
     )
     pipe = ProblemHandlingPipeline(
-        enabled=True, intent_triage=_make_triage_returning(card),
+        enabled=True,
+        intent_triage=_make_triage_returning(card),
         observability_events=True,
     )
     res = asyncio.run(pipe.run_pre_loop("登录报错", prior_task_type="code"))
@@ -96,7 +105,8 @@ def test_complex_injects_intent_and_contradiction() -> None:
 def test_observability_off_no_events() -> None:
     card = IntentCard(restated_intent="x", problem_type="factual_qa", contradiction=None)
     pipe = ProblemHandlingPipeline(
-        enabled=True, intent_triage=_make_triage_returning(card),
+        enabled=True,
+        intent_triage=_make_triage_returning(card),
         observability_events=False,
     )
     res = asyncio.run(pipe.run_pre_loop("查个事实", prior_task_type="recall"))

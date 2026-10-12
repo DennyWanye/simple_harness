@@ -271,6 +271,7 @@ ENABLED_DECISIONS: frozenset[str] = frozenset(
 # functions below are the only translation between the two spellings, in both
 # directions.
 
+
 class UnsupportedPlanningPackage(ContractError):
     """A Mission is bound to (or a request names) a planning package this build no
     longer serves.  2026-09-25: historical pairings are gone on purpose (development
@@ -290,7 +291,7 @@ def exposed_enablement(keys: Iterable[str] = ENABLED_DECISIONS) -> tuple[list[st
     kinds: set[str] = set()
     for key in keys:
         if key.startswith(REPAIR_ENABLEMENT_PREFIX):
-            kinds.add(str(RepairKind(key[len(REPAIR_ENABLEMENT_PREFIX):])))
+            kinds.add(str(RepairKind(key[len(REPAIR_ENABLEMENT_PREFIX) :])))
             types.add(str(PlanningDecisionType.REPAIR))
         else:
             types.add(str(PlanningDecisionType(key)))
@@ -379,9 +380,7 @@ class PlanningRefV1:
 
     @classmethod
     def from_json(cls, value: object, name: str = "planning_ref") -> PlanningRefV1:
-        data = fields_of(
-            value, name, required=("kind", "id", "semantic_revision", "content_hash")
-        )
+        data = fields_of(value, name, required=("kind", "id", "semantic_revision", "content_hash"))
         return cls(
             kind=data["kind"],
             id=data["id"],
@@ -558,9 +557,7 @@ class PlanningProblemDetailV1:
         object.__setattr__(
             self,
             "field_path",
-            None
-            if self.field_path is None
-            else identifier(self.field_path, "problem.field_path"),
+            None if self.field_path is None else identifier(self.field_path, "problem.field_path"),
         )
         object.__setattr__(self, "detail", text(self.detail, "problem.detail"))
         object.__setattr__(self, "expected", _optional_text(self.expected, "problem.expected"))
@@ -617,9 +614,7 @@ class PlanningRetryBudgetView:
 
     def __post_init__(self) -> None:
         for name in self._FIELDS[:3]:
-            object.__setattr__(
-                self, name, index(getattr(self, name), name, minimum=0)
-            )
+            object.__setattr__(self, name, index(getattr(self, name), name, minimum=0))
         object.__setattr__(
             self,
             "repeated_failure_before_escalation_remaining",
@@ -701,9 +696,7 @@ class PlanningFeedbackV1:
                 _planning_ref,
             ),
         )
-        object.__setattr__(
-            self, "budgets", _retry_budget(self.budgets, "feedback.budgets")
-        )
+        object.__setattr__(self, "budgets", _retry_budget(self.budgets, "feedback.budgets"))
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -814,9 +807,7 @@ class AssumptionV1:
                 limit=len(PlanningDecisionType),
             ),
         )
-        object.__setattr__(
-            self, "risk", enum_of(AssumptionRisk, self.risk, "assumption.risk")
-        )
+        object.__setattr__(self, "risk", enum_of(AssumptionRisk, self.risk, "assumption.risk"))
         object.__setattr__(
             self,
             "suggested_predicate_key",
@@ -940,9 +931,7 @@ class AlternativeSummaryV1:
 
     @classmethod
     def from_json(cls, value: object, name: str = "alternative") -> AlternativeSummaryV1:
-        data = fields_of(
-            value, name, required=("method_ref", "label", "disposition", "reason")
-        )
+        data = fields_of(value, name, required=("method_ref", "label", "disposition", "reason"))
         return cls(
             method_ref=data["method_ref"],
             label=data["label"],
@@ -1044,7 +1033,12 @@ def _reuse_map(value: object, name: str) -> Mapping[str, str]:
         raise ContractError(f"{name} has more than {MAX_PD_BINDINGS} entries")
     out: dict[str, str] = {}
     for step, occurrence in value.items():
-        if not isinstance(step, str) or not step.strip() or not isinstance(occurrence, str) or not occurrence.strip():
+        if (
+            not isinstance(step, str)
+            or not step.strip()
+            or not isinstance(occurrence, str)
+            or not occurrence.strip()
+        ):
             raise ContractError(f"{name} maps step names to occurrence ids (non-empty strings)")
         out[step.strip()] = occurrence.strip()
     if len(set(out.values())) != len(out):
@@ -1079,13 +1073,18 @@ class RefineDecision:
         object.__setattr__(self, "reuse", _reuse_map(self.reuse, "refine.reuse"))
 
     def to_json(self) -> dict[str, Any]:
-        return {"method_ref": self.method_ref.to_json(), "bindings": dict(self.bindings),
-                **({"reuse": dict(self.reuse)} if self.reuse else {})}
+        return {
+            "method_ref": self.method_ref.to_json(),
+            "bindings": dict(self.bindings),
+            **({"reuse": dict(self.reuse)} if self.reuse else {}),
+        }
 
     @classmethod
     def from_json(cls, value: object, name: str = "refine") -> RefineDecision:
         data = fields_of(value, name, required=("method_ref", "bindings"), optional=("reuse",))
-        return cls(method_ref=data["method_ref"], bindings=data["bindings"], reuse=data.get("reuse") or {})
+        return cls(
+            method_ref=data["method_ref"], bindings=data["bindings"], reuse=data.get("reuse") or {}
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -1101,19 +1100,37 @@ class RepairRetrySameMethodDecision:
         if kind is not RepairKind.RETRY_SAME_METHOD:
             raise ContractError("repair_retry.repair_kind must be RETRY_SAME_METHOD")
         object.__setattr__(self, "repair_kind", kind)
-        object.__setattr__(self, "failed_attempt_id", identifier(self.failed_attempt_id, "repair_retry.failed_attempt_id"))
-        object.__setattr__(self, "method_instance_ref", _has_method_instance_kind(
-            _planning_ref(self.method_instance_ref, "repair_retry.method_instance_ref"), "repair_retry.method_instance_ref"))
+        object.__setattr__(
+            self,
+            "failed_attempt_id",
+            identifier(self.failed_attempt_id, "repair_retry.failed_attempt_id"),
+        )
+        object.__setattr__(
+            self,
+            "method_instance_ref",
+            _has_method_instance_kind(
+                _planning_ref(self.method_instance_ref, "repair_retry.method_instance_ref"),
+                "repair_retry.method_instance_ref",
+            ),
+        )
 
     def to_json(self) -> dict[str, Any]:
-        return {"repair_kind": str(self.repair_kind), "failed_attempt_id": self.failed_attempt_id,
-                "method_instance_ref": self.method_instance_ref.to_json()}
+        return {
+            "repair_kind": str(self.repair_kind),
+            "failed_attempt_id": self.failed_attempt_id,
+            "method_instance_ref": self.method_instance_ref.to_json(),
+        }
 
     @classmethod
     def from_json(cls, value: object, name: str = "repair_retry") -> RepairRetrySameMethodDecision:
-        data = fields_of(value, name, required=("repair_kind", "failed_attempt_id", "method_instance_ref"))
-        return cls(repair_kind=data["repair_kind"], failed_attempt_id=data["failed_attempt_id"],
-                   method_instance_ref=data["method_instance_ref"])
+        data = fields_of(
+            value, name, required=("repair_kind", "failed_attempt_id", "method_instance_ref")
+        )
+        return cls(
+            repair_kind=data["repair_kind"],
+            failed_attempt_id=data["failed_attempt_id"],
+            method_instance_ref=data["method_instance_ref"],
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -1129,12 +1146,22 @@ class RepairCancelBranchDecision:
         if kind is not RepairKind.CANCEL_BRANCH:
             raise ContractError("repair_cancel.repair_kind must be CANCEL_BRANCH")
         object.__setattr__(self, "repair_kind", kind)
-        object.__setattr__(self, "method_instance_ref", _has_method_instance_kind(
-            _planning_ref(self.method_instance_ref, "repair_cancel.method_instance_ref"), "repair_cancel.method_instance_ref"))
+        object.__setattr__(
+            self,
+            "method_instance_ref",
+            _has_method_instance_kind(
+                _planning_ref(self.method_instance_ref, "repair_cancel.method_instance_ref"),
+                "repair_cancel.method_instance_ref",
+            ),
+        )
         object.__setattr__(self, "step", identifier(self.step, "repair_cancel.step"))
 
     def to_json(self) -> dict[str, Any]:
-        return {"repair_kind": str(self.repair_kind), "method_instance_ref": self.method_instance_ref.to_json(), "step": self.step}
+        return {
+            "repair_kind": str(self.repair_kind),
+            "method_instance_ref": self.method_instance_ref.to_json(),
+            "step": self.step,
+        }
 
     @classmethod
     def from_json(cls, value: object, name: str = "repair_cancel") -> RepairCancelBranchDecision:
@@ -1165,21 +1192,36 @@ class RepairRebindInputDecision:
             object.__setattr__(self, name, ref)
         for name in ("requirement_id", "output_port"):
             object.__setattr__(self, name, identifier(getattr(self, name), f"repair_rebind.{name}"))
-        object.__setattr__(self, "expected_requirement_hash", hash_hex(
-            self.expected_requirement_hash, "repair_rebind.expected_requirement_hash"))
+        object.__setattr__(
+            self,
+            "expected_requirement_hash",
+            hash_hex(self.expected_requirement_hash, "repair_rebind.expected_requirement_hash"),
+        )
 
     def to_json(self) -> dict[str, Any]:
-        return {"repair_kind": str(self.repair_kind),
-                "consumer_task_ref": self.consumer_task_ref.to_json(),
-                "producer_task_ref": self.producer_task_ref.to_json(),
-                "requirement_id": self.requirement_id,
-                "expected_requirement_hash": self.expected_requirement_hash,
-                "output_port": self.output_port}
+        return {
+            "repair_kind": str(self.repair_kind),
+            "consumer_task_ref": self.consumer_task_ref.to_json(),
+            "producer_task_ref": self.producer_task_ref.to_json(),
+            "requirement_id": self.requirement_id,
+            "expected_requirement_hash": self.expected_requirement_hash,
+            "output_port": self.output_port,
+        }
 
     @classmethod
     def from_json(cls, value: object, name: str = "repair_rebind") -> RepairRebindInputDecision:
-        data = fields_of(value, name, required=("repair_kind", "consumer_task_ref", "producer_task_ref",
-            "requirement_id", "expected_requirement_hash", "output_port"))
+        data = fields_of(
+            value,
+            name,
+            required=(
+                "repair_kind",
+                "consumer_task_ref",
+                "producer_task_ref",
+                "requirement_id",
+                "expected_requirement_hash",
+                "output_port",
+            ),
+        )
         return cls(**data)
 
 
@@ -1197,19 +1239,35 @@ class RepairRefineDeeperDecision:
         if kind is not RepairKind.REFINE_DEEPER:
             raise ContractError("repair_refine.repair_kind must be REFINE_DEEPER")
         object.__setattr__(self, "repair_kind", kind)
-        object.__setattr__(self, "method_ref", _planning_ref(self.method_ref, "repair_refine.method_ref"))
-        object.__setattr__(self, "bindings", _json_arg_map(self.bindings, "repair_refine.bindings", limit=MAX_PD_BINDINGS))
+        object.__setattr__(
+            self, "method_ref", _planning_ref(self.method_ref, "repair_refine.method_ref")
+        )
+        object.__setattr__(
+            self,
+            "bindings",
+            _json_arg_map(self.bindings, "repair_refine.bindings", limit=MAX_PD_BINDINGS),
+        )
         object.__setattr__(self, "reuse", _reuse_map(self.reuse, "repair_refine.reuse"))
 
     def to_json(self) -> dict[str, Any]:
-        return {"repair_kind": str(self.repair_kind), "method_ref": self.method_ref.to_json(),
-                "bindings": dict(self.bindings), **({"reuse": dict(self.reuse)} if self.reuse else {})}
+        return {
+            "repair_kind": str(self.repair_kind),
+            "method_ref": self.method_ref.to_json(),
+            "bindings": dict(self.bindings),
+            **({"reuse": dict(self.reuse)} if self.reuse else {}),
+        }
 
     @classmethod
     def from_json(cls, value: object, name: str = "repair_refine") -> RepairRefineDeeperDecision:
-        data = fields_of(value, name, required=("repair_kind", "method_ref", "bindings"), optional=("reuse",))
-        return cls(repair_kind=data["repair_kind"], method_ref=data["method_ref"], bindings=data["bindings"],
-                   reuse=data.get("reuse") or {})
+        data = fields_of(
+            value, name, required=("repair_kind", "method_ref", "bindings"), optional=("reuse",)
+        )
+        return cls(
+            repair_kind=data["repair_kind"],
+            method_ref=data["method_ref"],
+            bindings=data["bindings"],
+            reuse=data.get("reuse") or {},
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -1231,7 +1289,8 @@ class RepairReplaceMethodDecision:
             reason = text(self.method_at_fault, "repair_replace.method_at_fault")
             if len(reason) > MAX_METHOD_AT_FAULT_CHARS:
                 raise ContractError(
-                    f"repair_replace.method_at_fault is at most {MAX_METHOD_AT_FAULT_CHARS} characters")
+                    f"repair_replace.method_at_fault is at most {MAX_METHOD_AT_FAULT_CHARS} characters"
+                )
             object.__setattr__(self, "method_at_fault", reason)
         repair_kind = enum_of(RepairKind, self.repair_kind, "repair_replace.repair_kind")
         if repair_kind is not RepairKind.REPLACE_METHOD:
@@ -1250,9 +1309,7 @@ class RepairReplaceMethodDecision:
         object.__setattr__(
             self,
             "replacement_method_ref",
-            _planning_ref(
-                self.replacement_method_ref, "repair_replace.replacement_method_ref"
-            ),
+            _planning_ref(self.replacement_method_ref, "repair_replace.replacement_method_ref"),
         )
         object.__setattr__(
             self,
@@ -1272,9 +1329,7 @@ class RepairReplaceMethodDecision:
         }
 
     @classmethod
-    def from_json(
-        cls, value: object, name: str = "repair_replace"
-    ) -> RepairReplaceMethodDecision:
+    def from_json(cls, value: object, name: str = "repair_replace") -> RepairReplaceMethodDecision:
         data = fields_of(
             value,
             name,
@@ -1414,29 +1469,53 @@ class RepairRuntimeBlockedDecision:
         if kind is not RepairKind.DECLARE_RUNTIME_BLOCKED:
             raise ContractError("repair_blocked.repair_kind must be DECLARE_RUNTIME_BLOCKED")
         object.__setattr__(self, "repair_kind", kind)
-        object.__setattr__(self, "repair_request_id", hash_hex(self.repair_request_id, "repair_blocked.repair_request_id"))
-        blockers = sequence_of(self.blockers, "repair_blocked.blockers", _blocked_item,
-                               limit=MAX_PD_BLOCKERS)
-        resumable_if = sequence_of(self.resumable_if, "repair_blocked.resumable_if",
-                                   lambda entry, where: enum_of(ResumableIf, entry, where))
+        object.__setattr__(
+            self,
+            "repair_request_id",
+            hash_hex(self.repair_request_id, "repair_blocked.repair_request_id"),
+        )
+        blockers = sequence_of(
+            self.blockers, "repair_blocked.blockers", _blocked_item, limit=MAX_PD_BLOCKERS
+        )
+        resumable_if = sequence_of(
+            self.resumable_if,
+            "repair_blocked.resumable_if",
+            lambda entry, where: enum_of(ResumableIf, entry, where),
+        )
         if not blockers:
             raise ContractError("runtime blockage needs at least one blocker")
-        if any(item not in {ResumableIf.EVIDENCE_UPDATED, ResumableIf.HUMAN_RESOLVED,
-                            ResumableIf.PLAN_REVISION_CHANGED} for item in resumable_if):
+        if any(
+            item
+            not in {
+                ResumableIf.EVIDENCE_UPDATED,
+                ResumableIf.HUMAN_RESOLVED,
+                ResumableIf.PLAN_REVISION_CHANGED,
+            }
+            for item in resumable_if
+        ):
             raise ContractError("runtime resume condition has no supported authoritative reader")
         object.__setattr__(self, "blockers", blockers)
         object.__setattr__(self, "resumable_if", resumable_if)
 
     def to_json(self) -> dict[str, Any]:
-        return {"repair_kind": str(self.repair_kind), "repair_request_id": self.repair_request_id,
-                "blockers": [item.to_json() for item in self.blockers],
-                "resumable_if": [str(item) for item in self.resumable_if]}
+        return {
+            "repair_kind": str(self.repair_kind),
+            "repair_request_id": self.repair_request_id,
+            "blockers": [item.to_json() for item in self.blockers],
+            "resumable_if": [str(item) for item in self.resumable_if],
+        }
 
     @classmethod
     def from_json(cls, value: object, name: str = "repair_blocked") -> RepairRuntimeBlockedDecision:
-        data = fields_of(value, name, required=("repair_kind", "repair_request_id", "blockers", "resumable_if"))
-        return cls(repair_kind=data["repair_kind"], repair_request_id=data["repair_request_id"],
-                   blockers=data["blockers"], resumable_if=data["resumable_if"])
+        data = fields_of(
+            value, name, required=("repair_kind", "repair_request_id", "blockers", "resumable_if")
+        )
+        return cls(
+            repair_kind=data["repair_kind"],
+            repair_request_id=data["repair_request_id"],
+            blockers=data["blockers"],
+            resumable_if=data["resumable_if"],
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -1666,14 +1745,17 @@ class ReadMethodLibraryDecision:
         entries = tuple(identifier(item, "read_method_library.entries") for item in self.entries)
         if not 1 <= len(entries) <= MAX_LIBRARY_READ_ENTRIES or len(set(entries)) != len(entries):
             raise ContractError(
-                f"read_method_library.entries names 1 to {MAX_LIBRARY_READ_ENTRIES} distinct entries")
+                f"read_method_library.entries names 1 to {MAX_LIBRARY_READ_ENTRIES} distinct entries"
+            )
         object.__setattr__(self, "entries", entries)
 
     def to_json(self) -> dict[str, Any]:
         return {"entries": list(self.entries)}
 
     @classmethod
-    def from_json(cls, value: object, name: str = "read_method_library") -> ReadMethodLibraryDecision:
+    def from_json(
+        cls, value: object, name: str = "read_method_library"
+    ) -> ReadMethodLibraryDecision:
         data = fields_of(value, name, required=("entries",))
         return cls(entries=data["entries"])
 
@@ -1708,9 +1790,7 @@ REPAIR_PAYLOAD_BY_KIND: Mapping[RepairKind, type[Any]] = MappingProxyType(
 )
 
 
-def _payload_class(
-    decision_type: PlanningDecisionType, payload: object, name: str
-) -> type[Any]:
+def _payload_class(decision_type: PlanningDecisionType, payload: object, name: str) -> type[Any]:
     if decision_type is PlanningDecisionType.REPAIR:
         if isinstance(payload, RepairRuntimeBlockedDecision):
             return RepairRuntimeBlockedDecision
@@ -1757,9 +1837,7 @@ _ALL_PAYLOAD_CLASSES = (
 )
 
 
-def _decode_payload(
-    decision_type: PlanningDecisionType, payload: object, name: str
-) -> object:
+def _decode_payload(decision_type: PlanningDecisionType, payload: object, name: str) -> object:
     kind = _payload_class(decision_type, payload, name)
     if isinstance(payload, kind):
         return payload
@@ -1901,7 +1979,6 @@ class PlanningDecisionEnvelopeV1:
             alternatives=data["alternatives"],
             replan_triggers=data["replan_triggers"],
         )
-
 
 
 def _unique_refs(value: object, name: str, *, limit: int) -> tuple[PlanningRefV1, ...]:

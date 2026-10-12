@@ -277,9 +277,7 @@ async def test_projection_is_deterministic_across_source_fact_order():
         TaskFact("a", "First", "goal_task", "pending"),
     )
     left = TaskContextProjector(
-        goal_source=_ProjectionSource(
-            AuthorityProjection("goal", "g1", "1", "Goal", pending=facts)
-        )
+        goal_source=_ProjectionSource(AuthorityProjection("goal", "g1", "1", "Goal", pending=facts))
     )
     right = TaskContextProjector(
         goal_source=_ProjectionSource(
@@ -317,9 +315,7 @@ async def test_workflow_adapter_projects_active_nodes_and_decision_read_only():
             }
 
     service = _WorkflowService()
-    projector = TaskContextProjector(
-        workflow_source=WorkflowProjectionAdapter(service)
-    )
+    projector = TaskContextProjector(workflow_source=WorkflowProjectionAdapter(service))
 
     snapshot = await projector.project(effective_sid="s1")
 

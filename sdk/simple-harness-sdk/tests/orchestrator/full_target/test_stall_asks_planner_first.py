@@ -27,6 +27,7 @@
 * §18 两种许可并存 / 同主体冲突 / 同键第二意见 / 无规划世界不发许可（前提与观测通道，产品
   ``observers=()``）：按分诊裁决⑥，等阶段 D 带观察器的 world_factory，本轮删。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -94,8 +95,14 @@ class _FinalReviewLate(LayeredScriptedProvider):
 
 def stall_request(request: Any) -> dict[str, Any] | None:
     package = package_of(request)
-    return next((entry for entry in package.get("repair_requests") or ()
-                 if entry["request"]["trigger_source"] == "NO_DISPATCHABLE_WORK"), None)
+    return next(
+        (
+            entry
+            for entry in package.get("repair_requests") or ()
+            if entry["request"]["trigger_source"] == "NO_DISPATCHABLE_WORK"
+        ),
+        None,
+    )
 
 
 def planner_answering(on_stall: Callable[[Any, dict[str, Any]], Any]) -> Callable[[Any], Any]:
@@ -117,7 +124,9 @@ TURN_DEADLINE = 1.0
 
 
 def _cut_budget_spent(loop: Any, mission_id: str) -> bool:
-    return any(event.type == ROOT_REVIEW_CUT_BUDGET_SPENT for event in loop.store.list_events(mission_id))
+    return any(
+        event.type == ROOT_REVIEW_CUT_BUDGET_SPENT for event in loop.store.list_events(mission_id)
+    )
 
 
 class Stalled(NamedTuple):
@@ -127,26 +136,39 @@ class Stalled(NamedTuple):
     provider: LayeredScriptedProvider
 
     def events(self, kind: str | None = None) -> list[Any]:
-        return [event for event in self.loop.store.list_events(self.mission_id)
-                if kind is None or event.type == kind]
+        return [
+            event
+            for event in self.loop.store.list_events(self.mission_id)
+            if kind is None or event.type == kind
+        ]
 
     def mission(self) -> Any:
         return self.loop.store.get_mission(self.mission_id)
 
 
 @asynccontextmanager
-async def stalled(tmp_path: Any, *, key: str,
-                  on_stall: Callable[[Any, dict[str, Any]], Any] = no_change) -> AsyncIterator[Stalled]:
+async def stalled(
+    tmp_path: Any, *, key: str, on_stall: Callable[[Any, dict[str, Any]], Any] = no_change
+) -> AsyncIterator[Stalled]:
     """The Mission's one step is accepted and its final review ended without a verdict; the
     loop is stepped (deployment duties + one cycle, as the product runs a round) up to that
     point and handed over idle: nothing in flight, the stall not yet recorded."""
 
-    provider = _FinalReviewLate(planner=planner_answering(on_stall), reviewer=final_review_never_answers)
+    provider = _FinalReviewLate(
+        planner=planner_answering(on_stall), reviewer=final_review_never_answers
+    )
     try:
-        async with product_world(tmp_path / "root", provider, turn_deadline_seconds=TURN_DEADLINE, **CONFIG) as world:
+        async with product_world(
+            tmp_path / "root", provider, turn_deadline_seconds=TURN_DEADLINE, **CONFIG
+        ) as world:
             loop = world.loop
-            mission_id = world.create({"goal": "写一份 NOTES.md，列出三条要点。", "success_criteria": ["file:NOTES.md"],
-                                       "idempotency_key": key})["mission_id"]
+            mission_id = world.create(
+                {
+                    "goal": "写一份 NOTES.md，列出三条要点。",
+                    "success_criteria": ["file:NOTES.md"],
+                    "idempotency_key": key,
+                }
+            )["mission_id"]
             await loop.recover()
             async with asyncio.timeout(60):
                 while not (_cut_budget_spent(loop, mission_id) and not loop._has_inflight()):
@@ -154,15 +176,23 @@ async def stalled(tmp_path: Any, *, key: str,
                     await loop._cycle()
                     await asyncio.sleep(0.01)
             assert loop.store.get_mission(mission_id).status is MissionStatus.ACTIVE
-            assert not [event for event in loop.store.list_events(mission_id) if event.type == MISSION_STALLED]
+            assert not [
+                event
+                for event in loop.store.list_events(mission_id)
+                if event.type == MISSION_STALLED
+            ]
             yield Stalled(world, loop, mission_id, provider)
     finally:
         provider.release.set()
 
 
 def _stall_requests(events) -> list:
-    return [event for event in events if event.type == requests.REQUESTED
-            and event.payload["request"]["trigger_source"] == "NO_DISPATCHABLE_WORK"]
+    return [
+        event
+        for event in events
+        if event.type == requests.REQUESTED
+        and event.payload["request"]["trigger_source"] == "NO_DISPATCHABLE_WORK"
+    ]
 
 
 # ======================================================================================
@@ -174,7 +204,9 @@ def test_no_dispatchable_work_is_a_trigger_source_of_its_own() -> None:
     assert RepairTriggerSource("NO_DISPATCHABLE_WORK") is RepairTriggerSource.NO_DISPATCHABLE_WORK
     request = RepairEventAdapter.request_from_event(
         {"type": "NoDispatchableWork", "trigger_refs": ("task-1",), "payload": {"context": {}}},
-        mission_id="mission-1", plan_revision=3)
+        mission_id="mission-1",
+        plan_revision=3,
+    )
     assert request.trigger_source is RepairTriggerSource.NO_DISPATCHABLE_WORK
 
 
@@ -182,7 +214,11 @@ def test_the_request_key_names_the_mission_and_the_plan_revision() -> None:
     """事件的幂等键全库唯一：键里没有任务号，库里第一个任务占了"第 3 版"之后，别的任务的第 3 版
     请求就写不进去；没有版本号，换了计划之后就不会再问。"""
     assert requests.stalled_key("m1", 3) == "stalled:m1:3"
-    assert requests.stalled_key("m2", 3) != requests.stalled_key("m1", 3) != requests.stalled_key("m1", 4)
+    assert (
+        requests.stalled_key("m2", 3)
+        != requests.stalled_key("m1", 3)
+        != requests.stalled_key("m1", 4)
+    )
 
 
 def test_a_stall_request_of_an_older_plan_revision_is_superseded() -> None:
@@ -203,7 +239,7 @@ def test_the_prompt_explains_the_request_as_facts() -> None:
 
 
 def test_a_review_whose_second_reply_was_refused_counts_as_ended_without_a_verdict() -> None:
-    """"审阅用完了"不只是格式重试用完：第二次回复能解码却不能采用（引用了没展示的证据等）
+    """ "审阅用完了"不只是格式重试用完：第二次回复能解码却不能采用（引用了没展示的证据等）
     同样是终局，同样要进停机报告。"""
     import json
     import sqlite3
@@ -215,24 +251,63 @@ def test_a_review_whose_second_reply_was_refused_counts_as_ended_without_a_verdi
     connection.execute("CREATE TABLE events(mission_id, seq, type, payload_json)")
     connection.execute("CREATE TABLE commit_receipts(commit_id, kind, receipt_json)")
     rows = [
-        (1, "AssuranceReviewInterpretationRejected", {"review_key": "assurance-mission-final:k1", "error_code": "UNEXPOSED_EVIDENCE"}),
-        (2, "AssuranceReviewImportRejected", {"review_key": "assurance-mission-final:k1", "reason": "UNEXPOSED_EVIDENCE"}),
-        (3, "AssuranceReviewImportRejected", {"review_key": "assurance-content:k2", "reason": "FINDING_SCOPE"}),
+        (
+            1,
+            "AssuranceReviewInterpretationRejected",
+            {"review_key": "assurance-mission-final:k1", "error_code": "UNEXPOSED_EVIDENCE"},
+        ),
+        (
+            2,
+            "AssuranceReviewImportRejected",
+            {"review_key": "assurance-mission-final:k1", "reason": "UNEXPOSED_EVIDENCE"},
+        ),
+        (
+            3,
+            "AssuranceReviewImportRejected",
+            {"review_key": "assurance-content:k2", "reason": "FINDING_SCOPE"},
+        ),
     ]
-    connection.executemany("INSERT INTO events VALUES ('m1', ?, ?, ?)",
-                           [(seq, kind, json.dumps(payload)) for seq, kind, payload in rows])
-    fake = SimpleNamespace(store=SimpleNamespace(connection=connection, get_receipt=lambda receipt_id: None))
-    fake._exhausted_reviews = lambda mission_id, prefix: Orchestrator._exhausted_reviews(fake, mission_id, prefix)
+    connection.executemany(
+        "INSERT INTO events VALUES ('m1', ?, ?, ?)",
+        [(seq, kind, json.dumps(payload)) for seq, kind, payload in rows],
+    )
+    fake = SimpleNamespace(
+        store=SimpleNamespace(connection=connection, get_receipt=lambda receipt_id: None)
+    )
+    fake._exhausted_reviews = lambda mission_id, prefix: Orchestrator._exhausted_reviews(
+        fake, mission_id, prefix
+    )
     fake._inconclusive_reviews = lambda mission_id: []
     assert Orchestrator._exhausted_reviews(fake, "m1", "assurance-mission-final:") == [
-        {"reason": "UNEXPOSED_EVIDENCE", "review_key": "assurance-mission-final:k1", "interrupted": False}]
-    assert Orchestrator._reviews_without_verdict_detail(fake, "m1") == {"final_review": {
-        "reason": "UNEXPOSED_EVIDENCE", "review_key": "assurance-mission-final:k1", "interrupted": False}}
+        {
+            "reason": "UNEXPOSED_EVIDENCE",
+            "review_key": "assurance-mission-final:k1",
+            "interrupted": False,
+        }
+    ]
+    assert Orchestrator._reviews_without_verdict_detail(fake, "m1") == {
+        "final_review": {
+            "reason": "UNEXPOSED_EVIDENCE",
+            "review_key": "assurance-mission-final:k1",
+            "interrupted": False,
+        }
+    }
     # 片 C 真机第 2 局：中间目标的组合审查两次回复都按格式错误拒收，同样没有结论，同样要说。
-    connection.execute("INSERT INTO events VALUES ('m2', 9, 'AssuranceReviewFormatExhausted', ?)",
-                       (json.dumps({"review_key": "assurance-composition:k3", "reason": "OBJECT_FIELDS_UNKNOWN"}),))
-    assert Orchestrator._reviews_without_verdict_detail(fake, "m2") == {"composition_review": {
-        "reason": "OBJECT_FIELDS_UNKNOWN", "review_key": "assurance-composition:k3", "interrupted": False}}
+    connection.execute(
+        "INSERT INTO events VALUES ('m2', 9, 'AssuranceReviewFormatExhausted', ?)",
+        (
+            json.dumps(
+                {"review_key": "assurance-composition:k3", "reason": "OBJECT_FIELDS_UNKNOWN"}
+            ),
+        ),
+    )
+    assert Orchestrator._reviews_without_verdict_detail(fake, "m2") == {
+        "composition_review": {
+            "reason": "OBJECT_FIELDS_UNKNOWN",
+            "review_key": "assurance-composition:k3",
+            "interrupted": False,
+        }
+    }
 
 
 # ======================================================================================
@@ -240,7 +315,9 @@ def test_a_review_whose_second_reply_was_refused_counts_as_ended_without_a_verdi
 # ======================================================================================
 
 
-def test_a_stall_is_recorded_confirmed_and_stops_the_mission_once_the_planner_changed_nothing(tmp_path) -> None:
+def test_a_stall_is_recorded_confirmed_and_stops_the_mission_once_the_planner_changed_nothing(
+    tmp_path,
+) -> None:
     """整条路经 ``run()``：记录停滞（原因随记录走、自带指纹）→ 问规划器一次（它答"不改"）→ 同一版
     计划又停在原地 → 多看一轮确认 → 按"没有可派发的工作"停。停机报告列出每一条被挡的步骤与还欠着的
     义务，写明问过、规划器那一轮开出来了；停机不是完成：没有根结论、没有任务完成、义务没有透支。"""
@@ -250,8 +327,10 @@ def test_a_stall_is_recorded_confirmed_and_stops_the_mission_once_the_planner_ch
             await world.loop.run()
             admissions = world.loop._dispatch_for(world.mission_id).admissions(world.mission_id)
             duties = ObligationStore(world.loop.store)
-            fuel = [duties.account(world.mission_id, ObligationId(str(duty))).remaining_fuel
-                    for duty in duties.obligation_ids(world.mission_id)]
+            fuel = [
+                duties.account(world.mission_id, ObligationId(str(duty))).remaining_fuel
+                for duty in duties.obligation_ids(world.mission_id)
+            ]
             return world.mission(), world.events(), admissions, fuel, list(world.provider.asked)
 
     mission, events, admissions, fuel, asked = asyncio.run(case())
@@ -280,11 +359,18 @@ def test_a_stall_is_recorded_confirmed_and_stops_the_mission_once_the_planner_ch
     assert len(detail["withheld"]) == len(admissions.refusals), "every refusal, not a sample"
     assert all(item["reason"] and item["detail_codes"] for item in detail["withheld"])
     assert detail["outstanding_obligations"], "the duties still owed are named"
-    assert all(set(item) >= {"obligation_id", "has_admitted_demand", "remaining_fuel"}
-               for item in detail["outstanding_obligations"])
+    assert all(
+        set(item) >= {"obligation_id", "has_admitted_demand", "remaining_fuel"}
+        for item in detail["outstanding_obligations"]
+    )
     assert detail["plan_revision"] == int(admissions.plan_revision)
     # §7.4: a bound, not a verdict about the goal
-    assert report["stop_reason"] not in {"insufficient_evidence", "mission_criteria_unmet", "planning_failed", "no_progress"}
+    assert report["stop_reason"] not in {
+        "insufficient_evidence",
+        "mission_criteria_unmet",
+        "planning_failed",
+        "no_progress",
+    }
     # §21.5: a stop is never a completion
     assert "MissionCompleted" not in kinds
     assert "GoalResolutionCommitted" not in kinds, "no root Resolution was formed"
@@ -364,16 +450,26 @@ def test_the_run_opens_a_planner_turn_for_the_stall(tmp_path) -> None:
                 task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await task
-            intents = [intent for intent in world.loop.store.list_intents("PENDING", "CLAIMED", "AGENT_CREATED", "SUBMITTED")
-                       if intent.mission_id == world.mission_id and intent.kind == "plan"]
+            intents = [
+                intent
+                for intent in world.loop.store.list_intents(
+                    "PENDING", "CLAIMED", "AGENT_CREATED", "SUBMITTED"
+                )
+                if intent.mission_id == world.mission_id and intent.kind == "plan"
+            ]
             return world.mission(), world.events(), intents
 
     mission, events, planner_intents = asyncio.run(case())
     [asked] = _stall_requests(events)
-    resumed = [event for event in events if event.type == "PlanningServiceResumed"
-               and event.payload["source_type"] == requests.REQUESTED]
+    resumed = [
+        event
+        for event in events
+        if event.type == "PlanningServiceResumed"
+        and event.payload["source_type"] == requests.REQUESTED
+    ]
     assert [event.payload["service_id"] for event in resumed] == [
-        f"{requests.REQUESTED}:{asked.payload['request_id']}"]
+        f"{requests.REQUESTED}:{asked.payload['request_id']}"
+    ]
     assert [intent.intent_id for intent in planner_intents] == [resumed[0].payload["intent_id"]]
     assert mission.status is MissionStatus.ACTIVE
     assert "MissionFailed" not in [event.type for event in events]
@@ -469,7 +565,7 @@ def test_run_itself_comes_back_round_after_a_carry_on(tmp_path) -> None:
 
     timeline = asyncio.run(case())
     assert "carry-on" in timeline, "the confirmation asked the loop for another cycle"
-    after = timeline[timeline.index("carry-on") + 1:]
+    after = timeline[timeline.index("carry-on") + 1 :]
     assert "cycle" in after, (
         "run() returned on a carry-on instead of coming back round; the work the "
         "confirmation unblocked would never be dispatched"
@@ -537,7 +633,9 @@ def test_stall_asks_are_counted_since_the_last_new_attempt() -> None:
     from types import SimpleNamespace as E
 
     def asked(revision: int) -> Any:
-        return E(type=requests.REQUESTED, payload={"source_key": requests.stalled_key("m", revision)})
+        return E(
+            type=requests.REQUESTED, payload={"source_key": requests.stalled_key("m", revision)}
+        )
 
     other = E(type=requests.REQUESTED, payload={"source_key": "event:x"})
     events = [asked(1), E(type="AttemptCreated", payload={}), asked(2), other, asked(3)]
@@ -545,7 +643,9 @@ def test_stall_asks_are_counted_since_the_last_new_attempt() -> None:
     assert requests.stall_asks_since_new_work(store, "m") == 2  # the new attempt reset the count
 
 
-def test_a_stall_asked_about_too_often_without_new_work_stops_without_asking_again(tmp_path, monkeypatch) -> None:
+def test_a_stall_asked_about_too_often_without_new_work_stops_without_asking_again(
+    tmp_path, monkeypatch
+) -> None:
     """计数到上限时：不再记请求、不再问规划器，按"没有可派发的工作"停，详情写明次数与上限。
     （整条"规划器反复提交不派新步骤的改动"的循环在产品同形世界里造价高，这里只证明接线；
     计数本身由上一条证明。）"""

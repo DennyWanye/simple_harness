@@ -132,11 +132,7 @@ class FakeEvaluator:
     async def evaluate_ppt(self, **kwargs):
         self.calls += 1
         issues = self.reviews.pop(0) if self.reviews else []
-        issue_pages = {
-            int(issue.get("page") or 0)
-            for issue in issues
-            if isinstance(issue, dict)
-        }
+        issue_pages = {int(issue.get("page") or 0) for issue in issues if isinstance(issue, dict)}
         reviews = [
             {
                 "page": int(preview.get("page") or index),
@@ -172,20 +168,14 @@ def test_rendered_deck_quality_gate_rejects_corruption_and_wrong_page_count(
     deck.slides.add_slide(deck.slide_layouts[6])
     deck.save(valid_path)
 
-    assert ppt_pro_nodes.inspect_rendered_deck(
-        str(valid_path), expected_slide_count=2
-    )["passed"]
-    mismatch = ppt_pro_nodes.inspect_rendered_deck(
-        str(valid_path), expected_slide_count=3
-    )
+    assert ppt_pro_nodes.inspect_rendered_deck(str(valid_path), expected_slide_count=2)["passed"]
+    mismatch = ppt_pro_nodes.inspect_rendered_deck(str(valid_path), expected_slide_count=3)
     assert not mismatch["passed"]
     assert mismatch["hard_failures"][0]["code"] == "ppt_slide_count_mismatch"
 
     corrupt_path = tmp_path / "corrupt.pptx"
     corrupt_path.write_bytes(b"not-a-pptx")
-    corrupt = ppt_pro_nodes.inspect_rendered_deck(
-        str(corrupt_path), expected_slide_count=2
-    )
+    corrupt = ppt_pro_nodes.inspect_rendered_deck(str(corrupt_path), expected_slide_count=2)
     assert not corrupt["passed"]
     assert corrupt["hard_failures"][0]["code"] == "ppt_package_invalid"
 
@@ -200,16 +190,12 @@ def test_rendered_deck_quality_gate_rejects_corruption_and_wrong_page_count(
                 "</p:sldIdLst></p:presentation>"
             ),
         )
-    truncated = ppt_pro_nodes.inspect_rendered_deck(
-        str(truncated_path), expected_slide_count=2
-    )
+    truncated = ppt_pro_nodes.inspect_rendered_deck(str(truncated_path), expected_slide_count=2)
     assert not truncated["passed"]
     assert truncated["hard_failures"][0]["code"] == "ppt_package_parts_missing"
 
     missing_rels_path = tmp_path / "missing-slide-rels.pptx"
-    with zipfile.ZipFile(valid_path) as source, zipfile.ZipFile(
-        missing_rels_path, "w"
-    ) as target:
+    with zipfile.ZipFile(valid_path) as source, zipfile.ZipFile(missing_rels_path, "w") as target:
         for item in source.infolist():
             if item.filename == "ppt/slides/_rels/slide1.xml.rels":
                 continue
@@ -357,9 +343,7 @@ async def test_visual_gate_rejects_malformed_evaluator_payloads(
         MalformedEvaluator(),
     )
 
-    assert expected_code in {
-        item["code"] for item in result["hard_failures"]
-    }
+    assert expected_code in {item["code"] for item in result["hard_failures"]}
 
 
 @pytest.mark.asyncio
@@ -454,23 +438,17 @@ async def test_publish_rejects_replaced_preview_and_forged_review_hash(
     tmp_path: Path,
 ) -> None:
     values, preview_path = await _publish_values(tmp_path)
-    valid = await ppt_pro_graph.publish_handler(
-        {"values": values}, WorkflowContext()
-    )
+    valid = await ppt_pro_graph.publish_handler({"values": values}, WorkflowContext())
     assert valid.values["values"]["terminal_status"] == "success"
 
     preview_path.write_bytes(b"replaced-after-review")
-    replaced = await ppt_pro_graph.publish_handler(
-        {"values": values}, WorkflowContext()
-    )
+    replaced = await ppt_pro_graph.publish_handler({"values": values}, WorkflowContext())
     assert replaced.values["values"]["terminal_status"] == "error"
     assert "artifact_refs" not in replaced.values
 
     restored, _ = await _publish_values(tmp_path)
     restored["visual_review"]["review_hash"] = "FORGED"
-    forged = await ppt_pro_graph.publish_handler(
-        {"values": restored}, WorkflowContext()
-    )
+    forged = await ppt_pro_graph.publish_handler({"values": restored}, WorkflowContext())
     assert forged.values["values"]["terminal_status"] == "error"
     assert "artifact_refs" not in forged.values
 
@@ -490,9 +468,7 @@ async def test_publish_rejects_consistent_but_unresolved_visual_issue(
     review["review_hash"] = ppt_pro_nodes.content_hash(review)
     values["visual_review"] = review
 
-    patch = await ppt_pro_graph.publish_handler(
-        {"values": values}, WorkflowContext()
-    )
+    patch = await ppt_pro_graph.publish_handler({"values": values}, WorkflowContext())
 
     assert patch.values["values"]["terminal_status"] == "error"
     assert "ppt_visual_issues_remaining" in patch.values["values"]["terminal_error"]
@@ -573,11 +549,11 @@ def _context(
         }
 
     ports = {
-            "llm": ResearchLLMPort(complete=llm.complete),
-            "search": ResearchSearchPort(search_call=search),
-            "fetch": FetchPort(extractor=fetch),
-            "tool": tool,
-            "evaluator": evaluator,
+        "llm": ResearchLLMPort(complete=llm.complete),
+        "search": ResearchSearchPort(search_call=search),
+        "fetch": FetchPort(extractor=fetch),
+        "tool": tool,
+        "evaluator": evaluator,
     }
     if notifier is not None:
         ports["notifier"] = notifier
@@ -700,7 +676,14 @@ async def test_prepare_slides_removes_flattened_layouts_for_editable_run(
 
 
 async def _invoke_to_waiting(
-    tmp_path, *, llm=None, tool=None, evaluator=None, notifier=None, progress=None, **state_overrides
+    tmp_path,
+    *,
+    llm=None,
+    tool=None,
+    evaluator=None,
+    notifier=None,
+    progress=None,
+    **state_overrides,
 ):
     run_id = "ppt-run"
     saver = MemoryNativeStore()
@@ -724,9 +707,7 @@ def _interrupt_id(waiting: dict) -> str:
 
 
 @pytest.mark.asyncio
-async def test_compiled_ppt_progress_persists_to_original_session(
-    tmp_path, monkeypatch
-) -> None:
+async def test_compiled_ppt_progress_persists_to_original_session(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("DESKPET_STATE_DB_PATH", str(tmp_path / "state.db"))
     session_id = "ppt-progress-session"
     session_db = SessionDB(tmp_path / "session.db")
@@ -768,9 +749,7 @@ async def test_compiled_ppt_progress_persists_to_original_session(
         outbox=outbox,
         delivery_handlers={"session_message": persist},
     )
-    progress = WorkflowProgressReporter(
-        service, (("session_message", session_id),)
-    )
+    progress = WorkflowProgressReporter(service, (("session_message", session_id),))
     result = await runner.run(
         run_id,
         _state(tmp_path, run_id, session_id=session_id),
@@ -814,7 +793,14 @@ async def test_outline_ready_notifies_original_session_before_waiting(
     assert "Durable decks" in notifications[0]["topic"]
     assert notifications[0]["outline_md"]
     started = {node for node, transition in progress.events if transition == "started"}
-    assert {"normalize", "research_plan", "research_search", "research_synth", "outline", "wait_outline_decision"}.issubset(started)
+    assert {
+        "normalize",
+        "research_plan",
+        "research_search",
+        "research_synth",
+        "outline",
+        "wait_outline_decision",
+    }.issubset(started)
 
 
 @pytest.mark.asyncio
@@ -909,9 +895,7 @@ async def test_slide_pending_recovery_reuses_committed_image_checkpoint(
 ) -> None:
     monkeypatch.setenv("DESKPET_STATE_DB_PATH", str(tmp_path / "state.db"))
     tool = FakeToolPort(tmp_path)
-    executable, saver, context, waiting, _, tool, _ = await _invoke_to_waiting(
-        tmp_path, tool=tool
-    )
+    executable, saver, context, waiting, _, tool, _ = await _invoke_to_waiting(tmp_path, tool=tool)
     pending_id = _interrupt_id(waiting)
     # Stable ids are visible in the accepted outline and survive preparation.
     tool.crash_slide = "slide-002-" + "placeholder"
@@ -1032,9 +1016,7 @@ async def test_terminal_intents_cover_success_error_cancel_without_research_deli
 ) -> None:
     monkeypatch.setenv("DESKPET_STATE_DB_PATH", str(tmp_path / "state.db"))
     tool = FakeToolPort(tmp_path, render_ok=render_ok)
-    executable, _, context, waiting, _, _, _ = await _invoke_to_waiting(
-        tmp_path, tool=tool
-    )
+    executable, _, context, waiting, _, _, _ = await _invoke_to_waiting(tmp_path, tool=tool)
     assert "delivery_intents" not in waiting.get("values", {})
 
     completed = await executable.resume(
@@ -1064,9 +1046,7 @@ async def test_full_page_provider_unavailable_fails_instead_of_using_template(
         return False
 
     tool.probe_images = unavailable  # type: ignore[method-assign]
-    executable, _, context, waiting, _, tool, _ = await _invoke_to_waiting(
-        tmp_path, tool=tool
-    )
+    executable, _, context, waiting, _, tool, _ = await _invoke_to_waiting(tmp_path, tool=tool)
     completed = await executable.resume(
         {_interrupt_id(waiting): {"action": "accept"}},
         context,
@@ -1085,9 +1065,7 @@ async def test_full_page_provider_unavailable_fails_instead_of_using_template(
 
 
 @pytest.mark.asyncio
-async def test_full_page_visual_revision_budget_fails_closed(
-    tmp_path, monkeypatch
-) -> None:
+async def test_full_page_visual_revision_budget_fails_closed(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("DESKPET_STATE_DB_PATH", str(tmp_path / "state.db"))
     issue = {"page": 1, "action": "shrink_text"}
     evaluator = FakeEvaluator([[issue], [issue], [issue]])
@@ -1102,9 +1080,12 @@ async def test_full_page_visual_revision_budget_fails_closed(
         run_id="ppt-run",
     )
 
-    assert next(item for item in _intents(completed) if item["kind"] == "receipt")[
-        "payload"
-    ]["outcome"] == "error"
+    assert (
+        next(item for item in _intents(completed) if item["kind"] == "receipt")["payload"][
+            "outcome"
+        ]
+        == "error"
+    )
     assert not any(item["kind"] == "artifact_card" for item in _intents(completed))
     final = next(item for item in _intents(completed) if item["kind"] == "final_assistant")
     assert "PPT page quality issues remain" in final["payload"]["text"]
@@ -1271,7 +1252,7 @@ def test_outline_history_restart_expiry_skips_graph_projection(tmp_path) -> None
     )
 
     assert ppt_outline_store.expire_dangling_proposed(conn_factory=connect) == 1
-    assert ppt_outline_store.get_outline(
-        "legacy-outline", conn_factory=connect
-    )["status"] == "expired"
+    assert (
+        ppt_outline_store.get_outline("legacy-outline", conn_factory=connect)["status"] == "expired"
+    )
     assert ppt_outline_store.get_outline(graph_id, conn_factory=connect)["status"] == "proposed"

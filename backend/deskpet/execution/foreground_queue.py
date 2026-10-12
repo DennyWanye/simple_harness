@@ -353,7 +353,11 @@ class ForegroundQueueStore:
                 "SELECT format_epoch,schema_version FROM foreground_execution_marker WHERE singleton=1",
                 (),
             )
-        if row is None or row["format_epoch"] != "human-memory-v1" or int(row["schema_version"]) != 1:
+        if (
+            row is None
+            or row["format_epoch"] != "human-memory-v1"
+            or int(row["schema_version"]) != 1
+        ):
             raise ForegroundQueueError("foreground_queue_schema_uninitialized")
         if (
             execution_row is None
@@ -375,19 +379,22 @@ class ForegroundQueueStore:
         disclosure_binding_ref: str | None = None,
         input_declaration: dict | None = None,
         input_auth: object | None = None,
-        admitted_evidence_pair: tuple[
-            SanitizedEvidenceEnvelopeLike, SanitizedEvidenceReceiptLike
-        ] | None = None,
+        admitted_evidence_pair: tuple[SanitizedEvidenceEnvelopeLike, SanitizedEvidenceReceiptLike]
+        | None = None,
     ) -> EnqueueReceipt:
         subject = identifier(subject, "subject", 512)
-        primary_conversation_id = identifier(primary_conversation_id, "primary_conversation_id", 512)
+        primary_conversation_id = identifier(
+            primary_conversation_id, "primary_conversation_id", 512
+        )
         evidence_id = identifier(evidence_id, "evidence_id", 512)
         evidence_hash = digest(evidence_hash, "evidence_hash")
         idempotency_key = identifier(idempotency_key, "idempotency_key", 512)
         if task_scope_id is not None:
             task_scope_id = identifier(task_scope_id, "task_scope_id", 512)
         if disclosure_binding_ref is not None:
-            disclosure_binding_ref = identifier(disclosure_binding_ref, "disclosure_binding_ref", 512)
+            disclosure_binding_ref = identifier(
+                disclosure_binding_ref, "disclosure_binding_ref", 512
+            )
         if not isinstance(turn_payload, Mapping):
             raise ForegroundQueueError("foreground_turn_payload_invalid")
         payload = dict(turn_payload)
@@ -426,10 +433,14 @@ class ForegroundQueueStore:
                 )
                 from deskpet.memory.trusted_disclosure import current_record_tx, enqueue_binding_tx
 
-                existing_request = None if existing is None else json.loads(str(existing["turn_json"]))
+                existing_request = (
+                    None if existing is None else json.loads(str(existing["turn_json"]))
+                )
                 if existing_request is not None and "disclosure_binding" in existing_request:
                     current = await current_record_tx(db, subject)
-                    selected_ref = disclosure_binding_ref or (None if current is None else current["binding_ref"])
+                    selected_ref = disclosure_binding_ref or (
+                        None if current is None else current["binding_ref"]
+                    )
                     if selected_ref != existing_request["disclosure_binding"]["binding_ref"]:
                         raise ForegroundQueueError("foreground_turn_idempotency_conflict")
                 elif existing_request is not None and disclosure_binding_ref is not None:
@@ -441,30 +452,54 @@ class ForegroundQueueStore:
                         validate_input_use,
                     )
                     from deskpet.memory.writer_fence import require_authenticated_host_snapshot
+
                     require_authenticated_host_snapshot(input_auth)
                     current = await current_record_tx(db, subject)
-                    if (current is None or disclosure_binding_ref != current["binding_ref"]
-                            or admitted_evidence_pair is None or task_scope_id is not None):
+                    if (
+                        current is None
+                        or disclosure_binding_ref != current["binding_ref"]
+                        or admitted_evidence_pair is None
+                        or task_scope_id is not None
+                    ):
                         raise ForegroundQueueError("foreground_input_configuration_unavailable")
-                    input_use = build_input_use(auth=input_auth, envelope=envelope, receipt=receipt,
-                        primary_ref=primary_conversation_id, delivery_key=idempotency_key,
-                        config=current, declared=input_declaration)
+                    input_use = build_input_use(
+                        auth=input_auth,
+                        envelope=envelope,
+                        receipt=receipt,
+                        primary_ref=primary_conversation_id,
+                        delivery_key=idempotency_key,
+                        config=current,
+                        declared=input_declaration,
+                    )
                     if existing_request is not None:
                         original = existing_request.get("input_use")
                         if original is None:
                             raise ForegroundQueueError("foreground_turn_idempotency_conflict")
-                        validate_input_use(original, envelope=envelope, receipt=receipt,
-                            primary_ref=primary_conversation_id, delivery_key=idempotency_key, config=current)
+                        validate_input_use(
+                            original,
+                            envelope=envelope,
+                            receipt=receipt,
+                            primary_ref=primary_conversation_id,
+                            delivery_key=idempotency_key,
+                            config=current,
+                        )
                         # A verified reconnect preserves the original admission lease.
                         comparable = dict(input_use)
-                        comparable["control"] = dict(input_use["control"], lease_ref=original["control"]["lease_ref"])
+                        comparable["control"] = dict(
+                            input_use["control"], lease_ref=original["control"]["lease_ref"]
+                        )
                         if comparable != original:
                             raise ForegroundQueueError("foreground_turn_idempotency_conflict")
                         input_use = original
                     request["input_use"] = input_use
-                token = await enqueue_binding_tx(db, subject=subject, requested_ref=disclosure_binding_ref,
-                    legacy=existing_request is not None and "disclosure_binding" not in existing_request,
-                    input_use=input_use)
+                token = await enqueue_binding_tx(
+                    db,
+                    subject=subject,
+                    requested_ref=disclosure_binding_ref,
+                    legacy=existing_request is not None
+                    and "disclosure_binding" not in existing_request,
+                    input_use=input_use,
+                )
                 if token is not None:
                     request["disclosure_binding"] = token
                 turn_hash = canonical_hash(request)
@@ -487,7 +522,9 @@ class ForegroundQueueStore:
                         # Even a replay must validate the complete supplied pair;
                         # an existing turn cannot launder a forged S1 receipt.
                         await HumanMemoryProgramStore(self._db_path).append_evidence_tx(
-                            db, envelope, receipt,
+                            db,
+                            envelope,
+                            receipt,
                             primary_conversation_id=primary_conversation_id,
                             committed_at=now,
                         )
@@ -499,13 +536,16 @@ class ForegroundQueueStore:
                     # Only a real insertion in THIS transaction can establish
                     # atomic source order. Already admitted evidence stays legacy.
                     prior_source = await self._fetchone(
-                        db, "SELECT evidence_id FROM human_memory_evidence WHERE evidence_id=?",
+                        db,
+                        "SELECT evidence_id FROM human_memory_evidence WHERE evidence_id=?",
                         (evidence_id,),
                     )
                     if input_use is not None and prior_source is not None:
                         raise ForegroundQueueError("foreground_input_source_not_new")
                     await HumanMemoryProgramStore(self._db_path).append_evidence_tx(
-                        db, envelope, receipt,
+                        db,
+                        envelope,
+                        receipt,
                         primary_conversation_id=primary_conversation_id,
                         committed_at=now,
                     )
@@ -566,7 +606,9 @@ class ForegroundQueueStore:
                     (turn_id, subject, TurnState.QUEUED.value, transition_id, transition_hash, now),
                 )
                 self._fault("enqueue.before_commit")
-                row = await self._fetchone(db, "SELECT * FROM foreground_turns WHERE turn_id=?", (turn_id,))
+                row = await self._fetchone(
+                    db, "SELECT * FROM foreground_turns WHERE turn_id=?", (turn_id,)
+                )
                 await db.commit()
             except Exception:
                 await db.rollback()
@@ -575,9 +617,7 @@ class ForegroundQueueStore:
         assert row is not None
         return self._enqueue_receipt(row)
 
-    async def read_next_preparation_candidate(
-        self, subject: str
-    ) -> PreparationCandidate | None:
+    async def read_next_preparation_candidate(self, subject: str) -> PreparationCandidate | None:
         """Read the exact oldest turn without minting any execution authority."""
 
         subject = identifier(subject, "subject", 512)
@@ -596,9 +636,7 @@ class ForegroundQueueStore:
         """Persist an inert pre-claim draft for the current oldest candidate."""
 
         subject = identifier(subject, "subject", 512)
-        expected_candidate_hash = digest(
-            expected_candidate_hash, "expected_candidate_hash"
-        )
+        expected_candidate_hash = digest(expected_candidate_hash, "expected_candidate_hash")
         context = self._validate_context(context)
         idempotency_key = identifier(idempotency_key, "idempotency_key", 512)
         now = _clock_value(self._clock)
@@ -616,16 +654,12 @@ class ForegroundQueueStore:
                 if existing is not None:
                     if (
                         str(existing["candidate_hash"]) != expected_candidate_hash
-                        or str(existing["context_snapshot_id"])
-                        != context.context_snapshot_id
+                        or str(existing["context_snapshot_id"]) != context.context_snapshot_id
                         or int(existing["context_snapshot_revision"])
                         != context.context_snapshot_revision
-                        or str(existing["context_snapshot_hash"])
-                        != context.context_snapshot_hash
+                        or str(existing["context_snapshot_hash"]) != context.context_snapshot_hash
                     ):
-                        raise ForegroundQueueError(
-                            "foreground_preparation_idempotency_conflict"
-                        )
+                        raise ForegroundQueueError("foreground_preparation_idempotency_conflict")
                     await db.commit()
                     return self._preparation_draft(existing)
                 candidate = await self._preparation_candidate_tx(db, subject)
@@ -633,9 +667,7 @@ class ForegroundQueueStore:
                     raise ForegroundQueueError("foreground_preparation_candidate_missing")
                 if candidate.candidate_hash != expected_candidate_hash:
                     raise ForegroundQueueError("foreground_preparation_candidate_stale")
-                draft_id = _uuid(
-                    f"foreground-preparation:{subject}:{idempotency_key}"
-                )
+                draft_id = _uuid(f"foreground-preparation:{subject}:{idempotency_key}")
                 payload = {
                     "schema_version": 1,
                     "draft_id": draft_id,
@@ -701,12 +733,8 @@ class ForegroundQueueStore:
         subject = identifier(subject, "subject", 512)
         owner_id = identifier(owner_id, "owner_id", 512)
         claim_idempotency_key = identifier(claim_idempotency_key, "claim_idempotency_key", 512)
-        preparation_draft_id = identifier(
-            preparation_draft_id, "preparation_draft_id", 512
-        )
-        preparation_draft_hash = digest(
-            preparation_draft_hash, "preparation_draft_hash"
-        )
+        preparation_draft_id = identifier(preparation_draft_id, "preparation_draft_id", 512)
+        preparation_draft_hash = digest(preparation_draft_hash, "preparation_draft_hash")
         duration = _duration(lease_seconds)
         now = _clock_value(self._clock)
         expires_at = now + duration
@@ -912,9 +940,7 @@ class ForegroundQueueStore:
         await self.initialize()
         async with self._connection() as db:
             run = await self._run_tx(db, host_run_id)
-            await self._validate_lease_tx(
-                db, host_run_id, owner_id, generation, now
-            )
+            await self._validate_lease_tx(db, host_run_id, owner_id, generation, now)
             binding = await self._fetchone(
                 db,
                 "SELECT b.*,d.*,t.evidence_id,t.evidence_hash "
@@ -967,9 +993,7 @@ class ForegroundQueueStore:
         now = _clock_value(self._clock)
         await self.initialize()
         async with self._connection() as db:
-            await self._validate_lease_tx(
-                db, host_run_id, owner_id, generation, now
-            )
+            await self._validate_lease_tx(db, host_run_id, owner_id, generation, now)
             cursor = await db.execute(
                 "SELECT outcome FROM foreground_execution_start_observations "
                 "WHERE host_run_id=? ORDER BY recorded_at,observation_id",
@@ -1002,9 +1026,7 @@ class ForegroundQueueStore:
         provider_hash = digest(provider_hash, "provider_hash")
         tool_ref = identifier(tool_ref, "tool_ref", 1024)
         tool_hash = digest(tool_hash, "tool_hash")
-        execution_request_hash = digest(
-            execution_request_hash, "execution_request_hash"
-        )
+        execution_request_hash = digest(execution_request_hash, "execution_request_hash")
         idempotency_key = identifier(idempotency_key, "idempotency_key", 512)
         now = _clock_value(self._clock)
         await self.initialize()
@@ -1012,9 +1034,7 @@ class ForegroundQueueStore:
             await db.execute("BEGIN IMMEDIATE")
             await assert_human_memory_ingress_open_tx(db)
             try:
-                await self._validate_lease_tx(
-                    db, host_run_id, owner_id, generation, now
-                )
+                await self._validate_lease_tx(db, host_run_id, owner_id, generation, now)
                 binding = await self._fetchone(
                     db,
                     "SELECT draft_id,draft_hash FROM foreground_run_preparation_bindings "
@@ -1022,12 +1042,8 @@ class ForegroundQueueStore:
                     (host_run_id,),
                 )
                 if binding is None:
-                    raise ForegroundQueueError(
-                        "foreground_preparation_binding_missing"
-                    )
-                preparation_id = _uuid(
-                    f"foreground-execution-preparation:{host_run_id}"
-                )
+                    raise ForegroundQueueError("foreground_preparation_binding_missing")
+                preparation_id = _uuid(f"foreground-execution-preparation:{host_run_id}")
                 existing = await self._fetchone(
                     db,
                     "SELECT * FROM foreground_execution_preparations WHERE host_run_id=?",
@@ -1043,13 +1059,10 @@ class ForegroundQueueStore:
                         or existing["provider_hash"] != provider_hash
                         or existing["tool_ref"] != tool_ref
                         or existing["tool_hash"] != tool_hash
-                        or existing["execution_request_hash"]
-                        != execution_request_hash
+                        or existing["execution_request_hash"] != execution_request_hash
                         or existing["idempotency_key"] != idempotency_key
                     ):
-                        raise ForegroundQueueError(
-                            "foreground_execution_preparation_immutable"
-                        )
+                        raise ForegroundQueueError("foreground_execution_preparation_immutable")
                     await db.commit()
                     return self._audit_receipt(
                         existing,
@@ -1141,9 +1154,7 @@ class ForegroundQueueStore:
             await db.execute("BEGIN IMMEDIATE")
             await assert_human_memory_ingress_open_tx(db)
             try:
-                await self._validate_lease_tx(
-                    db, host_run_id, owner_id, generation, now
-                )
+                await self._validate_lease_tx(db, host_run_id, owner_id, generation, now)
                 preparation = await self._fetchone(
                     db,
                     "SELECT preparation_id,preparation_hash FROM foreground_execution_preparations "
@@ -1151,9 +1162,7 @@ class ForegroundQueueStore:
                     (host_run_id,),
                 )
                 if preparation is None:
-                    raise ForegroundQueueError(
-                        "foreground_execution_preparation_missing"
-                    )
+                    raise ForegroundQueueError("foreground_execution_preparation_missing")
                 intent_id = _uuid(f"foreground-start-intent:{host_run_id}")
                 existing = await self._fetchone(
                     db,
@@ -1163,16 +1172,12 @@ class ForegroundQueueStore:
                 if existing is not None:
                     if (
                         existing["sdk_run_id"] != sdk_run_id
-                        or existing["preparation_id"]
-                        != preparation["preparation_id"]
-                        or existing["preparation_hash"]
-                        != preparation["preparation_hash"]
+                        or existing["preparation_id"] != preparation["preparation_id"]
+                        or existing["preparation_hash"] != preparation["preparation_hash"]
                         or existing["start_request_hash"] != start_request_hash
                         or existing["idempotency_key"] != idempotency_key
                     ):
-                        raise ForegroundQueueError(
-                            "foreground_execution_start_intent_immutable"
-                        )
+                        raise ForegroundQueueError("foreground_execution_start_intent_immutable")
                     await db.commit()
                     return self._audit_receipt(
                         existing,
@@ -1324,9 +1329,7 @@ class ForegroundQueueStore:
             await db.execute("BEGIN IMMEDIATE")
             await assert_human_memory_ingress_open_tx(db)
             try:
-                head = await self._validate_lease_tx(
-                    db, host_run_id, owner_id, generation, now
-                )
+                head = await self._validate_lease_tx(db, host_run_id, owner_id, generation, now)
                 existing = await self._fetchone(
                     db,
                     "SELECT * FROM foreground_run_sdk_bindings WHERE host_run_id=?",
@@ -1346,14 +1349,11 @@ class ForegroundQueueStore:
                     raise ForegroundQueueError("foreground_sdk_run_binding_conflict")
                 intent = await self._fetchone(
                     db,
-                    "SELECT sdk_run_id FROM foreground_execution_start_intents "
-                    "WHERE host_run_id=?",
+                    "SELECT sdk_run_id FROM foreground_execution_start_intents WHERE host_run_id=?",
                     (host_run_id,),
                 )
                 if intent is None or intent["sdk_run_id"] != sdk_run_id:
-                    raise ForegroundQueueError(
-                        "foreground_execution_start_intent_missing"
-                    )
+                    raise ForegroundQueueError("foreground_execution_start_intent_missing")
                 if head["sdk_run_id"] is not None and head["sdk_run_id"] != sdk_run_id:
                     raise ForegroundQueueError("foreground_sdk_run_binding_conflict")
                 payload = {
@@ -1367,7 +1367,15 @@ class ForegroundQueueStore:
                 binding_id = _uuid(f"foreground-sdk-binding:{host_run_id}")
                 await db.execute(
                     "INSERT INTO foreground_run_sdk_bindings(binding_id,host_run_id,sdk_run_id,idempotency_key,binding_hash,binding_json,bound_at) VALUES (?,?,?,?,?,?,?)",
-                    (binding_id, host_run_id, sdk_run_id, idempotency_key, binding_hash, canonical_json(payload), now),
+                    (
+                        binding_id,
+                        host_run_id,
+                        sdk_run_id,
+                        idempotency_key,
+                        binding_hash,
+                        canonical_json(payload),
+                        now,
+                    ),
                 )
                 await db.execute(
                     "UPDATE foreground_run_heads SET sdk_run_id=?,updated_at=? WHERE host_run_id=?",
@@ -1482,7 +1490,11 @@ class ForegroundQueueStore:
                     outcome = "already_terminal"
                     reduced_state = current_state
                 else:
-                    current_kind = str(head["desired_control"]) if head["desired_control"] is not None else None
+                    current_kind = (
+                        str(head["desired_control"])
+                        if head["desired_control"] is not None
+                        else None
+                    )
                     current_priority = self._control_priority(current_kind)
                     requested_priority = self._control_priority(kind.value)
                     if requested_priority < current_priority:
@@ -1530,7 +1542,14 @@ class ForegroundQueueStore:
                     )
                     await db.execute(
                         "UPDATE foreground_run_heads SET current_state=?,desired_control=?,last_transition_id=?,last_transition_hash=?,updated_at=? WHERE host_run_id=?",
-                        (reduced_state, kind.value, transition_id, transition_hash, now, host_run_id),
+                        (
+                            reduced_state,
+                            kind.value,
+                            transition_id,
+                            transition_hash,
+                            now,
+                            host_run_id,
+                        ),
                     )
                 await db.execute(
                     "INSERT INTO foreground_control_intents(control_id,host_run_id,subject,control_kind,reason,requested_generation,outcome,reduced_state,idempotency_key,control_hash,control_json,recorded_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -1580,10 +1599,7 @@ class ForegroundQueueStore:
         await self.initialize()
         async with self._connection() as db:
             head = await self._head_tx(db, host_run_id)
-            if (
-                str(head["current_state"]) in TERMINAL_STATES
-                or head["desired_control"] is None
-            ):
+            if str(head["current_state"]) in TERMINAL_STATES or head["desired_control"] is None:
                 return ()
             cursor = await db.execute(
                 "SELECT s.*,b.sdk_run_id FROM foreground_signal_outbox s "
@@ -1630,27 +1646,33 @@ class ForegroundQueueStore:
             await db.execute("BEGIN IMMEDIATE")
             await assert_human_memory_ingress_open_tx(db)
             try:
-                signal = await self._fetchone(db, "SELECT * FROM foreground_signal_outbox WHERE signal_id=?", (signal_id,))
+                signal = await self._fetchone(
+                    db, "SELECT * FROM foreground_signal_outbox WHERE signal_id=?", (signal_id,)
+                )
                 if signal is None:
                     raise ForegroundQueueError("foreground_signal_not_found")
                 head = await self._head_tx(db, str(signal["host_run_id"]))
-                if (
-                    int(signal["generation"]) != generation
-                    or int(head["generation"]) != generation
-                ):
+                if int(signal["generation"]) != generation or int(head["generation"]) != generation:
                     raise ForegroundQueueError("foreground_generation_stale")
                 if (
                     str(head["current_state"]) in TERMINAL_STATES
                     or head["desired_control"] != signal["control_kind"]
                 ):
                     raise ForegroundQueueError("foreground_signal_superseded")
-                existing = await self._fetchone(db, "SELECT * FROM foreground_signal_acks WHERE signal_id=?", (signal_id,))
+                existing = await self._fetchone(
+                    db, "SELECT * FROM foreground_signal_acks WHERE signal_id=?", (signal_id,)
+                )
                 if existing is not None:
-                    if existing["sdk_signal_id"] != sdk_signal_id or existing["sdk_run_id"] != sdk_run_id:
+                    if (
+                        existing["sdk_signal_id"] != sdk_signal_id
+                        or existing["sdk_run_id"] != sdk_run_id
+                    ):
                         raise ForegroundQueueError("foreground_signal_ack_conflict")
                     await db.commit()
                     return self._signal_ack(existing)
-                await self._validate_lease_tx(db, str(signal["host_run_id"]), owner_id, generation, now)
+                await self._validate_lease_tx(
+                    db, str(signal["host_run_id"]), owner_id, generation, now
+                )
                 await self._validate_sdk_binding_tx(db, str(signal["host_run_id"]), sdk_run_id)
                 payload = {
                     "schema_version": 1,
@@ -1665,9 +1687,21 @@ class ForegroundQueueStore:
                 ack_id = _uuid(f"foreground-signal-ack:{signal_id}")
                 await db.execute(
                     "INSERT INTO foreground_signal_acks(ack_id,signal_id,host_run_id,sdk_run_id,generation,sdk_signal_id,ack_hash,ack_json,acknowledged_at) VALUES (?,?,?,?,?,?,?,?,?)",
-                    (ack_id, signal_id, signal["host_run_id"], sdk_run_id, generation, sdk_signal_id, ack_hash, canonical_json(payload), now),
+                    (
+                        ack_id,
+                        signal_id,
+                        signal["host_run_id"],
+                        sdk_run_id,
+                        generation,
+                        sdk_signal_id,
+                        ack_hash,
+                        canonical_json(payload),
+                        now,
+                    ),
                 )
-                row = await self._fetchone(db, "SELECT * FROM foreground_signal_acks WHERE ack_id=?", (ack_id,))
+                row = await self._fetchone(
+                    db, "SELECT * FROM foreground_signal_acks WHERE ack_id=?", (ack_id,)
+                )
                 await db.commit()
             except Exception:
                 await db.rollback()
@@ -1746,23 +1780,17 @@ class ForegroundQueueStore:
             await db.execute("BEGIN IMMEDIATE")
             await assert_human_memory_ingress_open_tx(db)
             try:
-                existing = await self._lease_by_key_tx(
-                    db, host_run_id, idempotency_key
-                )
+                existing = await self._lease_by_key_tx(db, host_run_id, idempotency_key)
                 if existing is not None:
                     if (
                         existing["owner_id"] != owner_id
                         or int(existing["generation"]) != generation
                         or existing["action"] != "close"
                     ):
-                        raise ForegroundQueueError(
-                            "foreground_lease_idempotency_conflict"
-                        )
+                        raise ForegroundQueueError("foreground_lease_idempotency_conflict")
                     await db.commit()
                     return self._lease_receipt(existing)
-                await self._validate_lease_tx(
-                    db, host_run_id, owner_id, generation, now
-                )
+                await self._validate_lease_tx(db, host_run_id, owner_id, generation, now)
                 receipt = await self._insert_lease_receipt_tx(
                     db,
                     host_run_id=host_run_id,
@@ -1915,7 +1943,15 @@ class ForegroundQueueStore:
                 )
                 await db.execute(
                     "UPDATE foreground_run_heads SET current_state='RUNNING',desired_control=NULL,owner_id=?,generation=?,lease_expires_at=?,last_transition_id=?,last_transition_hash=?,updated_at=? WHERE host_run_id=?",
-                    (owner_id, new_generation, expires_at, transition_id, transition_hash, now, host_run_id),
+                    (
+                        owner_id,
+                        new_generation,
+                        expires_at,
+                        transition_id,
+                        transition_hash,
+                        now,
+                        host_run_id,
+                    ),
                 )
                 snapshot = await self._snapshot_tx(db, host_run_id)
                 await db.commit()
@@ -1928,7 +1964,10 @@ class ForegroundQueueStore:
         from deskpet.execution.preparation_rejection import settle_preparation_rejection
 
         return await settle_preparation_rejection(
-            self, rejection=rejection, owner_id=owner_id, generation=generation,
+            self,
+            rejection=rejection,
+            owner_id=owner_id,
+            generation=generation,
         )
 
     async def record_sdk_terminal(
@@ -1995,7 +2034,9 @@ class ForegroundQueueStore:
                     ):
                         raise ForegroundQueueError("foreground_terminal_immutable")
                     if terminal_observer_tx is not None:
-                        await terminal_observer_tx(db,host_run_id=host_run_id,sdk_run_id=sdk_run_id)
+                        await terminal_observer_tx(
+                            db, host_run_id=host_run_id, sdk_run_id=sdk_run_id
+                        )
                     await db.commit()
                     return self._terminal_receipt(existing)
                 head = await self._validate_lease_tx(db, host_run_id, owner_id, generation, now)
@@ -2003,13 +2044,20 @@ class ForegroundQueueStore:
                 run = await self._run_tx(db, host_run_id)
                 from deskpet.execution.evidence_ingress import ExecutionEvidenceIngress
                 from deskpet.execution.primary_history import terminal_observation_tx
-                effective_scope = await ExecutionEvidenceIngress(self._db_path).resolve_run_scope_tx(db, sdk_run_id)
+
+                effective_scope = await ExecutionEvidenceIngress(
+                    self._db_path
+                ).resolve_run_scope_tx(db, sdk_run_id)
                 observed = await terminal_observation_tx(
-                    db, host_run_id=host_run_id, sdk_run_id=sdk_run_id, subject=str(head["subject"]),
+                    db,
+                    host_run_id=host_run_id,
+                    sdk_run_id=sdk_run_id,
+                    subject=str(head["subject"]),
                 )
                 if effective_scope is None:
                     residual = await self._fetchone(
-                        db, "SELECT source_event_id FROM task_scope_execution_ingest_receipts WHERE run_id=? "
+                        db,
+                        "SELECT source_event_id FROM task_scope_execution_ingest_receipts WHERE run_id=? "
                         "UNION ALL SELECT source_event_id FROM harness_evidence_reservations WHERE run_id=? LIMIT 1",
                         (sdk_run_id, sdk_run_id),
                     )
@@ -2018,9 +2066,11 @@ class ForegroundQueueStore:
                     if observed is None:
                         raise ForegroundQueueError("foreground_terminal_sdk_evidence_missing")
                     observation, public_payload = observed
-                    if (observation["evidence_id"] != sdk_event_id
-                            or observation["envelope_sha256"] != sdk_event_hash
-                            or public_payload.get("kind") != "primary_run_terminal"):
+                    if (
+                        observation["evidence_id"] != sdk_event_id
+                        or observation["envelope_sha256"] != sdk_event_hash
+                        or public_payload.get("kind") != "primary_run_terminal"
+                    ):
                         raise ForegroundQueueError("foreground_terminal_sdk_evidence_invalid")
                     gate = None
                 else:
@@ -2036,9 +2086,7 @@ class ForegroundQueueStore:
                     )
                     if receipt is None:
                         raise ForegroundQueueError("foreground_terminal_sdk_evidence_missing")
-                    if (
-                        receipt["task_scope_id"] != effective_scope.task_scope_id
-                    ):
+                    if receipt["task_scope_id"] != effective_scope.task_scope_id:
                         raise ForegroundQueueError("foreground_terminal_scope_mismatch")
                     gate = await self._fetchone(
                         db,
@@ -2123,14 +2171,16 @@ class ForegroundQueueStore:
                     "generation": generation,
                     "sdk_event_id": sdk_event_id,
                     "sdk_event_hash": sdk_event_hash,
-                    "terminal_authority_kind": "primary_runtime_observation" if gate is None else "task_scope_watermarks",
+                    "terminal_authority_kind": "primary_runtime_observation"
+                    if gate is None
+                    else "task_scope_watermarks",
                     "terminal_gate_receipt_id": None if gate is None else gate["gate_receipt_id"],
-                    "terminal_source_sequence": None if gate is None else int(
-                        gate["terminal_source_sequence"]
-                    ),
-                    "terminal_gate_durable_source_sequence": None if gate is None else int(
-                        gate["durable_source_sequence"]
-                    ),
+                    "terminal_source_sequence": None
+                    if gate is None
+                    else int(gate["terminal_source_sequence"]),
+                    "terminal_gate_durable_source_sequence": None
+                    if gate is None
+                    else int(gate["durable_source_sequence"]),
                     "recorded_at": now,
                 }
                 if observed is not None:
@@ -2139,7 +2189,18 @@ class ForegroundQueueStore:
                 terminal_hash = canonical_hash(terminal_payload)
                 await db.execute(
                     "INSERT INTO foreground_terminal_receipts(terminal_receipt_id,host_run_id,sdk_run_id,terminal_state,generation,sdk_event_id,sdk_event_hash,receipt_hash,receipt_json,recorded_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
-                    (terminal_id, host_run_id, sdk_run_id, terminal.value, generation, sdk_event_id, sdk_event_hash, terminal_hash, canonical_json(terminal_payload), now),
+                    (
+                        terminal_id,
+                        host_run_id,
+                        sdk_run_id,
+                        terminal.value,
+                        generation,
+                        sdk_event_id,
+                        sdk_event_hash,
+                        terminal_hash,
+                        canonical_json(terminal_payload),
+                        now,
+                    ),
                 )
                 await self._insert_lease_receipt_tx(
                     db,
@@ -2179,13 +2240,19 @@ class ForegroundQueueStore:
                         run_binding=run_binding,
                         endpoint_identity=endpoint_identity,
                         now=now,
-                        dead_letter_reason=None if run_binding is not None else outbox_dead_letter_reason,
+                        dead_letter_reason=None
+                        if run_binding is not None
+                        else outbox_dead_letter_reason,
                     )
                     self._fault("terminal.after_outbox")
                 if terminal_observer_tx is not None:
-                    await terminal_observer_tx(db,host_run_id=host_run_id,sdk_run_id=sdk_run_id)
+                    await terminal_observer_tx(db, host_run_id=host_run_id, sdk_run_id=sdk_run_id)
                 self._fault("terminal.before_commit")
-                row = await self._fetchone(db, "SELECT * FROM foreground_terminal_receipts WHERE host_run_id=?", (host_run_id,))
+                row = await self._fetchone(
+                    db,
+                    "SELECT * FROM foreground_terminal_receipts WHERE host_run_id=?",
+                    (host_run_id,),
+                )
                 await db.commit()
             except Exception:
                 await db.rollback()
@@ -2236,8 +2303,13 @@ class ForegroundQueueStore:
                     raise ForegroundQueueError("foreground_effect_state_rejected")
                 await self._validate_sdk_binding_tx(db, host_run_id, sdk_run_id)
                 attempt_id = await self._insert_post_turn_attempt_tx(
-                    db, host_run_id=host_run_id, sdk_run_id=sdk_run_id, generation=generation,
-                    attempt=attempt, members=members, now=now,
+                    db,
+                    host_run_id=host_run_id,
+                    sdk_run_id=sdk_run_id,
+                    generation=generation,
+                    attempt=attempt,
+                    members=members,
+                    now=now,
                 )
                 if input_observer_tx is not None:
                     await input_observer_tx(attempt, db)
@@ -2284,8 +2356,13 @@ class ForegroundQueueStore:
                 if str(attempt.get("purpose")) != "analysis":
                     raise ForegroundQueueError("foreground_post_turn_purpose_invalid")
                 attempt_id = await self._insert_post_turn_attempt_tx(
-                    db, host_run_id=host_run_id, sdk_run_id=sdk_run_id, generation=int(head["generation"]),
-                    attempt=attempt, members=members, now=now,
+                    db,
+                    host_run_id=host_run_id,
+                    sdk_run_id=sdk_run_id,
+                    generation=int(head["generation"]),
+                    attempt=attempt,
+                    members=members,
+                    now=now,
                 )
                 if input_observer_tx is not None:
                     await input_observer_tx(attempt, db)
@@ -2378,7 +2455,9 @@ class ForegroundQueueStore:
         evidence_ids = [str(turn["evidence_id"])]
         envelope_hash = canonical_hash({"envelope_hashes": sorted([str(turn["envelope_sha256"])])})
         if run_binding is not None:
-            lineage: Mapping[str, object] = analysis_lineage_payload(run_binding, endpoint_identity=endpoint_identity)
+            lineage: Mapping[str, object] = analysis_lineage_payload(
+                run_binding, endpoint_identity=endpoint_identity
+            )
             state = "pending"
             last_error: str | None = None
         else:
@@ -2395,10 +2474,15 @@ class ForegroundQueueStore:
             last_error = reason
         outbox_id = _uuid(f"memory-ingestion-outbox:{sdk_run_id}:{turn_id}")
         existing = await self._fetchone(
-            db, "SELECT evidence_ids_json,envelope_hash FROM memory_ingestion_outbox WHERE outbox_id=?", (outbox_id,)
+            db,
+            "SELECT evidence_ids_json,envelope_hash FROM memory_ingestion_outbox WHERE outbox_id=?",
+            (outbox_id,),
         )
         if existing is not None:
-            if json.loads(str(existing["evidence_ids_json"])) != evidence_ids or str(existing["envelope_hash"]) != envelope_hash:
+            if (
+                json.loads(str(existing["evidence_ids_json"])) != evidence_ids
+                or str(existing["envelope_hash"]) != envelope_hash
+            ):
                 raise ForegroundQueueError("memory_ingestion_outbox_conflict")
             return outbox_id
         await db.execute(
@@ -2407,8 +2491,19 @@ class ForegroundQueueStore:
             "receipt_json,last_error,created_at,updated_at) "
             "VALUES (?,?,?,?,?,?,?,?,?,?,0,NULL,NULL,NULL,?,?,?)",
             (
-                outbox_id, host_run_id, sdk_run_id, turn_id, subject, canonical_json(evidence_ids),
-                envelope_hash, str(lineage["model_config_hash"]), canonical_json(lineage), state, last_error, now, now,
+                outbox_id,
+                host_run_id,
+                sdk_run_id,
+                turn_id,
+                subject,
+                canonical_json(evidence_ids),
+                envelope_hash,
+                str(lineage["model_config_hash"]),
+                canonical_json(lineage),
+                state,
+                last_error,
+                now,
+                now,
             ),
         )
         for evidence_id in evidence_ids:
@@ -2480,7 +2575,10 @@ class ForegroundQueueStore:
                     (host_run_id, idempotency_key),
                 )
                 if replay is not None:
-                    if replay["to_state"] != to_state.value or replay["sdk_event_id"] != sdk_event_id:
+                    if (
+                        replay["to_state"] != to_state.value
+                        or replay["sdk_event_id"] != sdk_event_id
+                    ):
                         raise ForegroundQueueError("foreground_state_idempotency_conflict")
                     snapshot = await self._snapshot_tx(db, host_run_id)
                     await db.commit()
@@ -2499,9 +2597,7 @@ class ForegroundQueueStore:
                         (host_run_id, sdk_run_id),
                     )
                     if observation is None:
-                        raise ForegroundQueueError(
-                            "foreground_execution_start_observation_missing"
-                        )
+                        raise ForegroundQueueError("foreground_execution_start_observation_missing")
                 transition_id, transition_hash = await self._insert_run_transition_tx(
                     db,
                     host_run_id=host_run_id,
@@ -2542,14 +2638,20 @@ class ForegroundQueueStore:
         if turn is None:
             return None
         from deskpet.execution.admission_rejection import read_admission_rejection_tx
+
         while turn is not None:
-            rejected = await read_admission_rejection_tx(db, turn_id=turn["turn_id"], subject=subject)
+            rejected = await read_admission_rejection_tx(
+                db, turn_id=turn["turn_id"], subject=subject
+            )
             if rejected is None:
                 break
-            turn = await self._fetchone(db,
+            turn = await self._fetchone(
+                db,
                 "SELECT t.* FROM foreground_turns t JOIN foreground_turn_heads h ON h.turn_id=t.turn_id "
                 "WHERE t.subject=? AND h.current_state='QUEUED' AND t.enqueue_sequence>? "
-                "ORDER BY t.enqueue_sequence,t.turn_id LIMIT 1", (subject, turn["enqueue_sequence"]))
+                "ORDER BY t.enqueue_sequence,t.turn_id LIMIT 1",
+                (subject, turn["enqueue_sequence"]),
+            )
         if turn is None:
             return None
         binding_revision = 0
@@ -2593,9 +2695,7 @@ class ForegroundQueueStore:
             turn_id=str(turn["turn_id"]),
             primary_conversation_id=str(turn["primary_conversation_id"]),
             task_scope_id=(
-                str(turn["task_scope_id"])
-                if turn["task_scope_id"] is not None
-                else None
+                str(turn["task_scope_id"]) if turn["task_scope_id"] is not None else None
             ),
             evidence_id=str(turn["evidence_id"]),
             evidence_hash=str(turn["evidence_hash"]),
@@ -2622,9 +2722,7 @@ class ForegroundQueueStore:
                 turn_id=str(value["turn_id"]),
                 primary_conversation_id=str(value["primary_conversation_id"]),
                 task_scope_id=(
-                    str(value["task_scope_id"])
-                    if value["task_scope_id"] is not None
-                    else None
+                    str(value["task_scope_id"]) if value["task_scope_id"] is not None else None
                 ),
                 evidence_id=str(value["evidence_id"]),
                 evidence_hash=str(value["evidence_hash"]),
@@ -2714,22 +2812,15 @@ class ForegroundQueueStore:
             await db.execute("BEGIN IMMEDIATE")
             await assert_human_memory_ingress_open_tx(db)
             try:
-                await self._validate_lease_tx(
-                    db, host_run_id, owner_id, generation, now
-                )
+                await self._validate_lease_tx(db, host_run_id, owner_id, generation, now)
                 intent = await self._fetchone(
                     db,
-                    "SELECT sdk_run_id FROM foreground_execution_start_intents "
-                    "WHERE host_run_id=?",
+                    "SELECT sdk_run_id FROM foreground_execution_start_intents WHERE host_run_id=?",
                     (host_run_id,),
                 )
                 if intent is None or intent["sdk_run_id"] != sdk_run_id:
-                    raise ForegroundQueueError(
-                        "foreground_execution_start_intent_missing"
-                    )
-                receipt_id = _uuid(
-                    f"{id_prefix}:{host_run_id}:{idempotency_key}"
-                )
+                    raise ForegroundQueueError("foreground_execution_start_intent_missing")
+                receipt_id = _uuid(f"{id_prefix}:{host_run_id}:{idempotency_key}")
                 payload: dict[str, object] = {
                     "schema_version": 1,
                     id_column: receipt_id,
@@ -2914,7 +3005,17 @@ class ForegroundQueueStore:
         transition_hash = canonical_hash(payload)
         await db.execute(
             "INSERT INTO foreground_turn_transitions(transition_id,turn_id,subject,from_state,to_state,host_run_id,transition_hash,transition_json,recorded_at) VALUES (?,?,?,?,?,?,?,?,?)",
-            (transition_id, turn_id, subject, from_state, to_state, host_run_id, transition_hash, canonical_json(payload), recorded_at),
+            (
+                transition_id,
+                turn_id,
+                subject,
+                from_state,
+                to_state,
+                host_run_id,
+                transition_hash,
+                canonical_json(payload),
+                recorded_at,
+            ),
         )
         return transition_id, transition_hash
 
@@ -2956,7 +3057,22 @@ class ForegroundQueueStore:
         transition_hash = canonical_hash(payload)
         await db.execute(
             "INSERT INTO foreground_run_transitions(transition_id,host_run_id,subject,from_state,to_state,generation,owner_id,sdk_event_id,idempotency_key,causal_evidence_ref,causal_evidence_hash,transition_hash,transition_json,recorded_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (transition_id, host_run_id, subject, from_state, to_state, generation, owner_id, sdk_event_id, idempotency_key, causal_evidence_ref, causal_evidence_hash, transition_hash, canonical_json(payload), recorded_at),
+            (
+                transition_id,
+                host_run_id,
+                subject,
+                from_state,
+                to_state,
+                generation,
+                owner_id,
+                sdk_event_id,
+                idempotency_key,
+                causal_evidence_ref,
+                causal_evidence_hash,
+                transition_hash,
+                canonical_json(payload),
+                recorded_at,
+            ),
         )
         return transition_id, transition_hash
 
@@ -2989,9 +3105,30 @@ class ForegroundQueueStore:
         lease_hash = canonical_hash(payload)
         await db.execute(
             "INSERT INTO foreground_lease_receipts(lease_receipt_id,host_run_id,owner_id,generation,prior_generation,action,expires_at,idempotency_key,lease_hash,lease_json,recorded_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-            (lease_id, host_run_id, owner_id, generation, prior_generation, action, expires_at, idempotency_key, lease_hash, canonical_json(payload), recorded_at),
+            (
+                lease_id,
+                host_run_id,
+                owner_id,
+                generation,
+                prior_generation,
+                action,
+                expires_at,
+                idempotency_key,
+                lease_hash,
+                canonical_json(payload),
+                recorded_at,
+            ),
         )
-        return LeaseReceipt(lease_id, host_run_id, owner_id, generation, prior_generation, action, expires_at, lease_hash)
+        return LeaseReceipt(
+            lease_id,
+            host_run_id,
+            owner_id,
+            generation,
+            prior_generation,
+            action,
+            expires_at,
+            lease_hash,
+        )
 
     async def _insert_signal_tx(
         self,
@@ -3016,7 +3153,16 @@ class ForegroundQueueStore:
         signal_hash = canonical_hash(payload)
         await db.execute(
             "INSERT INTO foreground_signal_outbox(signal_id,control_id,host_run_id,generation,control_kind,signal_hash,signal_json,created_at) VALUES (?,?,?,?,?,?,?,?)",
-            (signal_id, control_id, host_run_id, generation, control_kind.value, signal_hash, canonical_json(payload), recorded_at),
+            (
+                signal_id,
+                control_id,
+                host_run_id,
+                generation,
+                control_kind.value,
+                signal_hash,
+                canonical_json(payload),
+                recorded_at,
+            ),
         )
         return signal_id
 
@@ -3045,7 +3191,9 @@ class ForegroundQueueStore:
                 recorded_at=now,
             )
 
-    async def _snapshot_tx(self, db: aiosqlite.Connection, host_run_id: str) -> ForegroundRunSnapshot:
+    async def _snapshot_tx(
+        self, db: aiosqlite.Connection, host_run_id: str
+    ) -> ForegroundRunSnapshot:
         row = await self._fetchone(
             db,
             "SELECT r.*,h.current_state,h.desired_control,h.sdk_run_id,h.owner_id,h.generation,h.lease_expires_at FROM foreground_runs r JOIN foreground_run_heads h ON h.host_run_id=r.host_run_id WHERE r.host_run_id=?",
@@ -3084,13 +3232,19 @@ class ForegroundQueueStore:
             turn_id=str(row["turn_id"]),
             task_scope_id=str(row["task_scope_id"]) if row["task_scope_id"] is not None else None,
             binding_set_revision=int(row["binding_set_revision"]),
-            binding_set_receipt_id=str(row["binding_set_receipt_id"]) if row["binding_set_receipt_id"] is not None else None,
-            binding_set_receipt_hash=str(row["binding_set_receipt_hash"]) if row["binding_set_receipt_hash"] is not None else None,
+            binding_set_receipt_id=str(row["binding_set_receipt_id"])
+            if row["binding_set_receipt_id"] is not None
+            else None,
+            binding_set_receipt_hash=str(row["binding_set_receipt_hash"])
+            if row["binding_set_receipt_hash"] is not None
+            else None,
             context_snapshot_id=str(row["context_snapshot_id"]),
             context_snapshot_revision=int(row["context_snapshot_revision"]),
             context_snapshot_hash=str(row["context_snapshot_hash"]),
             state=RunState(str(row["current_state"])),
-            desired_control=ControlKind(str(row["desired_control"])) if row["desired_control"] is not None else None,
+            desired_control=ControlKind(str(row["desired_control"]))
+            if row["desired_control"] is not None
+            else None,
             owner_id=str(row["owner_id"]),
             generation=int(row["generation"]),
             lease_expires_at=float(row["lease_expires_at"]),
@@ -3106,18 +3260,24 @@ class ForegroundQueueStore:
         )
 
     async def _head_tx(self, db: aiosqlite.Connection, host_run_id: str) -> aiosqlite.Row:
-        row = await self._fetchone(db, "SELECT * FROM foreground_run_heads WHERE host_run_id=?", (host_run_id,))
+        row = await self._fetchone(
+            db, "SELECT * FROM foreground_run_heads WHERE host_run_id=?", (host_run_id,)
+        )
         if row is None:
             raise ForegroundQueueError("foreground_run_not_found")
         return row
 
     async def _run_tx(self, db: aiosqlite.Connection, host_run_id: str) -> aiosqlite.Row:
-        row = await self._fetchone(db, "SELECT * FROM foreground_runs WHERE host_run_id=?", (host_run_id,))
+        row = await self._fetchone(
+            db, "SELECT * FROM foreground_runs WHERE host_run_id=?", (host_run_id,)
+        )
         if row is None:
             raise ForegroundQueueError("foreground_run_not_found")
         return row
 
-    async def _lease_by_key_tx(self, db: aiosqlite.Connection, host_run_id: str, key: str) -> aiosqlite.Row | None:
+    async def _lease_by_key_tx(
+        self, db: aiosqlite.Connection, host_run_id: str, key: str
+    ) -> aiosqlite.Row | None:
         return await self._fetchone(
             db,
             "SELECT * FROM foreground_lease_receipts WHERE host_run_id=? AND idempotency_key=?",
@@ -3177,7 +3337,9 @@ class ForegroundQueueStore:
         )
 
     @staticmethod
-    def _admission_receipt(run: aiosqlite.Row, head: aiosqlite.Row, *, recovered: bool) -> AdmissionReceipt:
+    def _admission_receipt(
+        run: aiosqlite.Row, head: aiosqlite.Row, *, recovered: bool
+    ) -> AdmissionReceipt:
         return AdmissionReceipt(
             str(run["admission_receipt_id"]),
             str(run["admission_receipt_hash"]),
@@ -3196,7 +3358,10 @@ class ForegroundQueueStore:
     @staticmethod
     def _binding_receipt(row: aiosqlite.Row) -> SdkRunBindingReceipt:
         return SdkRunBindingReceipt(
-            str(row["binding_id"]), str(row["host_run_id"]), str(row["sdk_run_id"]), str(row["binding_hash"])
+            str(row["binding_id"]),
+            str(row["host_run_id"]),
+            str(row["sdk_run_id"]),
+            str(row["binding_hash"]),
         )
 
     @staticmethod

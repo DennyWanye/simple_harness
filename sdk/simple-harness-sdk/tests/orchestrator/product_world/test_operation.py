@@ -6,6 +6,7 @@
 内容步骤写出文件 → 系统按已批准效果自动准备申请单、审阅员通过 → 人点"批准" → 真实的
 ``FilePublishConnector`` 发布到授权目录 → 系统读回核对、结果审阅通过 → 任务完成。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -40,42 +41,67 @@ def _confirm_completion(world: Any, mission_id: str) -> dict[str, Any]:
     完成标准选"内容哈希一致"（与前端默认一致）。"""
 
     workspace = _workspace(world, mission_id)
-    assert workspace["state"] == "CONFIRMATION_REQUIRED" and workspace["editable"] is True, workspace
+    assert workspace["state"] == "CONFIRMATION_REQUIRED" and workspace["editable"] is True, (
+        workspace
+    )
     actions = [c["id"] for c in workspace["criteria"] if c["statement"].startswith("action:")]
     content = [c["id"] for c in workspace["criteria"] if c["required"] and c["id"] not in actions]
     [obligation] = workspace["obligations"]
     milestone = next(m for m in workspace["milestones"] if m["id"] == "CONTENT_HASH_VERIFIED")
     ref = workspace["requirements_ref"]
-    return world.control.approve_operation_completion_spec({
-        "mission_id": mission_id, "command_id": "confirm-publish-completion",
-        "expected_requirements_ref": ref,
-        "proposal": {
-            "schema_version": 1, "mission_id": mission_id,
-            "requirements_ref": {"id": ref["id"], "revision": ref["revision"], "content_hash": ref["content_hash"]},
-            "mode": "REQUIRED_EFFECTS", "content_criterion_ids": content,
-            "effects": [{
-                "effect_key": "publish-weekly", "source_slot_key": "publish-weekly",
-                "obligation_id": obligation["id"], "criterion_ids": actions,
-                "required_milestone": milestone["id"],
-                "milestone_policy_ref": milestone["milestone_policy_ref"],
-                "evidence_policy_ref": milestone["evidence_policy_ref"],
-            }],
-        },
-    })
+    return world.control.approve_operation_completion_spec(
+        {
+            "mission_id": mission_id,
+            "command_id": "confirm-publish-completion",
+            "expected_requirements_ref": ref,
+            "proposal": {
+                "schema_version": 1,
+                "mission_id": mission_id,
+                "requirements_ref": {
+                    "id": ref["id"],
+                    "revision": ref["revision"],
+                    "content_hash": ref["content_hash"],
+                },
+                "mode": "REQUIRED_EFFECTS",
+                "content_criterion_ids": content,
+                "effects": [
+                    {
+                        "effect_key": "publish-weekly",
+                        "source_slot_key": "publish-weekly",
+                        "obligation_id": obligation["id"],
+                        "criterion_ids": actions,
+                        "required_milestone": milestone["id"],
+                        "milestone_policy_ref": milestone["milestone_policy_ref"],
+                        "evidence_policy_ref": milestone["evidence_policy_ref"],
+                    }
+                ],
+            },
+        }
+    )
 
 
 def test_a_publishing_mission_completes_on_the_product_deployment(tmp_path):
     async def case():
         published = tmp_path / "published"
         published.mkdir()
-        connector = FilePublishConnector(published, tmp_path / "root" / "connectors" / "file_publish")
+        connector = FilePublishConnector(
+            published, tmp_path / "root" / "connectors" / "file_publish"
+        )
         policy = DeploymentPolicy(enabled_connectors=("file_publish",), max_action_level="L2")
         provider = LayeredScriptedProvider()
-        async with product_world(tmp_path / "root", provider, connectors={"file_publish": connector},
-                                 deployment_policy=policy) as world:
-            created = world.create({"goal": "写一份周报 reports/weekly.md 并发布",
-                                    "success_criteria": ["file:" + TARGET, PUBLISH],
-                                    "idempotency_key": "operation-1"})
+        async with product_world(
+            tmp_path / "root",
+            provider,
+            connectors={"file_publish": connector},
+            deployment_policy=policy,
+        ) as world:
+            created = world.create(
+                {
+                    "goal": "写一份周报 reports/weekly.md 并发布",
+                    "success_criteria": ["file:" + TARGET, PUBLISH],
+                    "idempotency_key": "operation-1",
+                }
+            )
             mission_id = created["mission_id"]
 
             # 1～2. 自动模式不代签带 action: 的任务：确认页等着人
@@ -88,10 +114,15 @@ def test_a_publishing_mission_completes_on_the_product_deployment(tmp_path):
             approvals: list[dict[str, Any]] = []
             for _ in range(20):
                 await world.drain()
-                approvals = [a for a in world.control.approvals(mission_id) if a.get("state") == "PENDING"]
+                approvals = [
+                    a for a in world.control.approvals(mission_id) if a.get("state") == "PENDING"
+                ]
                 if approvals:
                     break
-            assert len(approvals) == 1, (world.store.get_mission(mission_id).status, world.store.list_actions(mission_id))
+            assert len(approvals) == 1, (
+                world.store.get_mission(mission_id).status,
+                world.store.list_actions(mission_id),
+            )
             assert not any(published.rglob("*.md"))  # 没批准之前什么都没发布
 
             # 5. 人点"批准"
@@ -106,22 +137,42 @@ def test_a_publishing_mission_completes_on_the_product_deployment(tmp_path):
             actions = world.store.list_actions(mission_id)
             assert len({a["action_id"] for a in actions}) == 1, actions
             action = actions[-1]
-            assert (action["connector"], action["operation"], action["target"], action["state"]) == (
-                "file_publish", "publish", TARGET, "SUCCEEDED"), action
+            assert (
+                action["connector"],
+                action["operation"],
+                action["target"],
+                action["state"],
+            ) == ("file_publish", "publish", TARGET, "SUCCEEDED"), action
             assert action["handoffs"] == 1 and action["reason_source"] == "system"
-            ledger = [json.loads(line) for line in (tmp_path / "root" / "connectors" / "file_publish" / "ledger.jsonl")
-                      .read_text(encoding="utf-8").splitlines() if line.strip()]
-            assert [entry["state"] for entry in ledger if entry.get("state") == "PREPARED"] == ["PREPARED"], ledger
+            ledger = [
+                json.loads(line)
+                for line in (tmp_path / "root" / "connectors" / "file_publish" / "ledger.jsonl")
+                .read_text(encoding="utf-8")
+                .splitlines()
+                if line.strip()
+            ]
+            assert [entry["state"] for entry in ledger if entry.get("state") == "PREPARED"] == [
+                "PREPARED"
+            ], ledger
             files = [p for p in published.rglob("*") if p.is_file()]
             # 连接器只新建、不覆盖：发布名带内容版本号，回执里记着它
-            assert [p.relative_to(published).as_posix() for p in files] == [action["receipt"]["service_ref"]]
+            assert [p.relative_to(published).as_posix() for p in files] == [
+                action["receipt"]["service_ref"]
+            ]
 
             # 发布出去的字节与工作区里审过的那份产物逐字一致
-            [artifact] = [a for a in world.store.list_mission_artifacts(mission_id) if a.path == TARGET]
+            [artifact] = [
+                a for a in world.store.list_mission_artifacts(mission_id) if a.path == TARGET
+            ]
             assert artifact.content_hash == action["params"]["content_hash"]
-            workspace_bytes = world.loop.assembled.workspaces.artifact_store.read(artifact.content_hash)
+            workspace_bytes = world.loop.assembled.workspaces.artifact_store.read(
+                artifact.content_hash
+            )
             assert files[0].read_bytes() == workspace_bytes
-            assert hashlib.sha256(workspace_bytes).hexdigest() == action["receipt"]["after"]["content_hash"]
+            assert (
+                hashlib.sha256(workspace_bytes).hexdigest()
+                == action["receipt"]["after"]["content_hash"]
+            )
 
     asyncio.run(case())
 
@@ -152,19 +203,31 @@ def test_a_fenced_publish_waits_instead_of_failing(tmp_path, monkeypatch):
     async def case():
         published = tmp_path / "published"
         published.mkdir()
-        connector = FilePublishConnector(published, tmp_path / "root" / "connectors" / "file_publish")
+        connector = FilePublishConnector(
+            published, tmp_path / "root" / "connectors" / "file_publish"
+        )
         policy = DeploymentPolicy(enabled_connectors=("file_publish",), max_action_level="L2")
-        async with product_world(tmp_path / "root", LayeredScriptedProvider(), connectors={"file_publish": connector},
-                                 deployment_policy=policy) as world:
-            mission_id = world.create({"goal": "写一份周报 reports/weekly.md 并发布",
-                                       "success_criteria": ["file:" + TARGET, PUBLISH],
-                                       "idempotency_key": "fenced-publish"})["mission_id"]
+        async with product_world(
+            tmp_path / "root",
+            LayeredScriptedProvider(),
+            connectors={"file_publish": connector},
+            deployment_policy=policy,
+        ) as world:
+            mission_id = world.create(
+                {
+                    "goal": "写一份周报 reports/weekly.md 并发布",
+                    "success_criteria": ["file:" + TARGET, PUBLISH],
+                    "idempotency_key": "fenced-publish",
+                }
+            )["mission_id"]
             await world.drain()
             _confirm_completion(world, mission_id)
             approvals: list[dict[str, Any]] = []
             for _ in range(20):
                 await world.drain()
-                approvals = [a for a in world.control.approvals(mission_id) if a.get("state") == "PENDING"]
+                approvals = [
+                    a for a in world.control.approvals(mission_id) if a.get("state") == "PENDING"
+                ]
                 if approvals:
                     break
             approved["yes"] = True
@@ -190,42 +253,74 @@ def test_the_confirmation_page_refuses_a_milestone_the_profile_cannot_reach(tmp_
     async def case():
         published = tmp_path / "published"
         published.mkdir()
-        connector = FilePublishConnector(published, tmp_path / "root" / "connectors" / "file_publish")
+        connector = FilePublishConnector(
+            published, tmp_path / "root" / "connectors" / "file_publish"
+        )
         policy = DeploymentPolicy(enabled_connectors=("file_publish",), max_action_level="L2")
-        async with product_world(tmp_path / "root", LayeredScriptedProvider(), connectors={"file_publish": connector},
-                                 deployment_policy=policy) as world:
-            mission_id = world.create({"goal": "写一份周报 reports/weekly.md 并发布",
-                                       "success_criteria": ["file:" + TARGET, PUBLISH],
-                                       "idempotency_key": "delivered"})["mission_id"]
+        async with product_world(
+            tmp_path / "root",
+            LayeredScriptedProvider(),
+            connectors={"file_publish": connector},
+            deployment_policy=policy,
+        ) as world:
+            mission_id = world.create(
+                {
+                    "goal": "写一份周报 reports/weekly.md 并发布",
+                    "success_criteria": ["file:" + TARGET, PUBLISH],
+                    "idempotency_key": "delivered",
+                }
+            )["mission_id"]
             await world.drain()
             workspace = _workspace(world, mission_id)
-            assert "DELIVERED" not in {m["id"] for m in workspace["milestones"]}  # the page never offers it
-            actions = [c["id"] for c in workspace["criteria"] if c["statement"].startswith("action:")]
-            content = [c["id"] for c in workspace["criteria"] if c["required"] and c["id"] not in actions]
+            assert "DELIVERED" not in {
+                m["id"] for m in workspace["milestones"]
+            }  # the page never offers it
+            actions = [
+                c["id"] for c in workspace["criteria"] if c["statement"].startswith("action:")
+            ]
+            content = [
+                c["id"] for c in workspace["criteria"] if c["required"] and c["id"] not in actions
+            ]
             [obligation] = workspace["obligations"]
             milestone = workspace["milestones"][0]
             ref = workspace["requirements_ref"]
             with pytest.raises(FacadeError) as refused:
-                world.control.approve_operation_completion_spec({
-                    "mission_id": mission_id, "command_id": "confirm-delivered",
-                    "expected_requirements_ref": ref,
-                    "proposal": {
-                        "schema_version": 1, "mission_id": mission_id,
-                        "requirements_ref": {"id": ref["id"], "revision": ref["revision"],
-                                             "content_hash": ref["content_hash"]},
-                        "mode": "REQUIRED_EFFECTS", "content_criterion_ids": content,
-                        "effects": [{
-                            "effect_key": "publish-weekly", "source_slot_key": "publish-weekly",
-                            "obligation_id": obligation["id"], "criterion_ids": actions,
-                            "required_milestone": "DELIVERED",
-                            "milestone_policy_ref": milestone["milestone_policy_ref"],
-                            "evidence_policy_ref": milestone["evidence_policy_ref"],
-                        }],
-                    },
-                })
+                world.control.approve_operation_completion_spec(
+                    {
+                        "mission_id": mission_id,
+                        "command_id": "confirm-delivered",
+                        "expected_requirements_ref": ref,
+                        "proposal": {
+                            "schema_version": 1,
+                            "mission_id": mission_id,
+                            "requirements_ref": {
+                                "id": ref["id"],
+                                "revision": ref["revision"],
+                                "content_hash": ref["content_hash"],
+                            },
+                            "mode": "REQUIRED_EFFECTS",
+                            "content_criterion_ids": content,
+                            "effects": [
+                                {
+                                    "effect_key": "publish-weekly",
+                                    "source_slot_key": "publish-weekly",
+                                    "obligation_id": obligation["id"],
+                                    "criterion_ids": actions,
+                                    "required_milestone": "DELIVERED",
+                                    "milestone_policy_ref": milestone["milestone_policy_ref"],
+                                    "evidence_policy_ref": milestone["evidence_policy_ref"],
+                                }
+                            ],
+                        },
+                    }
+                )
             assert refused.value.code == "OP_CAPABILITY_UNSUPPORTED"
-            assert OperationCompletionStore(world.store).get_spec_exact(
-                mission_id, ref["revision"], ref["content_hash"]) is None
+            assert (
+                OperationCompletionStore(world.store).get_spec_exact(
+                    mission_id, ref["revision"], ref["content_hash"]
+                )
+                is None
+            )
             assert str(world.store.get_mission(mission_id).status.value) == "CREATED"
 
     asyncio.run(case())
@@ -250,7 +345,9 @@ def _block_with_someone_elses_file(published: Any, mission_id: str, world: Any) 
 
     from agent_orchestrator.runtime.connectors_publish import _name_for
 
-    [action] = [a for a in world.store.list_actions(mission_id) if a["state"] == "AWAITING_APPROVAL"]
+    [action] = [
+        a for a in world.store.list_actions(mission_id) if a["state"] == "AWAITING_APPROVAL"
+    ]
     name = _name_for(action["idempotency_key"], PurePosixPath(TARGET))
     (published / "reports").mkdir(parents=True, exist_ok=True)
     (published / "reports" / name).write_text("别人放的", encoding="utf-8")
@@ -269,13 +366,23 @@ def test_a_publish_the_service_refuses_is_proven_unapplied_and_offered_again(tmp
     async def case():
         published = tmp_path / "published"
         published.mkdir()
-        connector = FilePublishConnector(published, tmp_path / "root" / "connectors" / "file_publish")
+        connector = FilePublishConnector(
+            published, tmp_path / "root" / "connectors" / "file_publish"
+        )
         policy = DeploymentPolicy(enabled_connectors=("file_publish",), max_action_level="L2")
-        async with product_world(tmp_path / "root", LayeredScriptedProvider(), connectors={"file_publish": connector},
-                                 deployment_policy=policy) as world:
-            mission_id = world.create({"goal": "写一份周报 reports/weekly.md 并发布",
-                                       "success_criteria": ["file:" + TARGET, PUBLISH],
-                                       "idempotency_key": f"refused-{refusals}"})["mission_id"]
+        async with product_world(
+            tmp_path / "root",
+            LayeredScriptedProvider(),
+            connectors={"file_publish": connector},
+            deployment_policy=policy,
+        ) as world:
+            mission_id = world.create(
+                {
+                    "goal": "写一份周报 reports/weekly.md 并发布",
+                    "success_criteria": ["file:" + TARGET, PUBLISH],
+                    "idempotency_key": f"refused-{refusals}",
+                }
+            )["mission_id"]
             await world.drain()
             _confirm_completion(world, mission_id)
             card = await _until_card(world, mission_id, 0)
@@ -285,13 +392,19 @@ def test_a_publish_the_service_refuses_is_proven_unapplied_and_offered_again(tmp
                 if attempt == 3:
                     break
                 card = await _until_card(world, mission_id, attempt)
-                [latest] = [a for a in world.store.list_actions(mission_id) if a["state"] == "AWAITING_APPROVAL"]
+                [latest] = [
+                    a
+                    for a in world.store.list_actions(mission_id)
+                    if a["state"] == "AWAITING_APPROVAL"
+                ]
                 assert latest["previous_attempt"]["outcome"] == "service_refused"
                 assert "already exists" in latest["previous_attempt"]["reason"]
                 assert card["summary"]["previous_attempt"] == latest["previous_attempt"]
             if refusals == 3:
                 mission = await world.run_until_settled(mission_id, rounds=20)
-                assert str(mission.status.value) == "FAILED" and mission.stop_reason == "action_failed"
+                assert (
+                    str(mission.status.value) == "FAILED" and mission.stop_reason == "action_failed"
+                )
                 detail = mission.final_report["detail"]
                 assert detail["reason"] == "publish_not_applied"
                 assert [item["outcome"] for item in detail["attempts"]] == ["service_refused"] * 3
@@ -299,10 +412,19 @@ def test_a_publish_the_service_refuses_is_proven_unapplied_and_offered_again(tmp
             else:
                 world.control.decide(card["request_id"], "approve")
                 mission = await world.run_until_settled(mission_id, rounds=20)
-                assert str(mission.status.value) == "COMPLETED", (mission.status, mission.final_report)
-                ours = [p for p in published.rglob("*.md") if p.read_text(encoding="utf-8") != "别人放的"]
+                assert str(mission.status.value) == "COMPLETED", (
+                    mission.status,
+                    mission.final_report,
+                )
+                ours = [
+                    p
+                    for p in published.rglob("*.md")
+                    if p.read_text(encoding="utf-8") != "别人放的"
+                ]
                 assert len(ours) == 1
-            others = [p for p in published.rglob("*.md") if p.read_text(encoding="utf-8") == "别人放的"]
+            others = [
+                p for p in published.rglob("*.md") if p.read_text(encoding="utf-8") == "别人放的"
+            ]
             assert len(others) == refusals  # someone else's files are never overwritten
 
     asyncio.run(case())
@@ -329,13 +451,23 @@ def test_a_link_that_succeeded_before_an_error_is_never_proven_unapplied(tmp_pat
     async def case():
         published = tmp_path / "published"
         published.mkdir()
-        connector = FilePublishConnector(published, tmp_path / "root" / "connectors" / "file_publish")
+        connector = FilePublishConnector(
+            published, tmp_path / "root" / "connectors" / "file_publish"
+        )
         policy = DeploymentPolicy(enabled_connectors=("file_publish",), max_action_level="L2")
-        async with product_world(tmp_path / "root", LayeredScriptedProvider(), connectors={"file_publish": connector},
-                                 deployment_policy=policy) as world:
-            mission_id = world.create({"goal": "写一份周报 reports/weekly.md 并发布",
-                                       "success_criteria": ["file:" + TARGET, PUBLISH],
-                                       "idempotency_key": "linked-then-error"})["mission_id"]
+        async with product_world(
+            tmp_path / "root",
+            LayeredScriptedProvider(),
+            connectors={"file_publish": connector},
+            deployment_policy=policy,
+        ) as world:
+            mission_id = world.create(
+                {
+                    "goal": "写一份周报 reports/weekly.md 并发布",
+                    "success_criteria": ["file:" + TARGET, PUBLISH],
+                    "idempotency_key": "linked-then-error",
+                }
+            )["mission_id"]
             await world.drain()
             _confirm_completion(world, mission_id)
             card = await _until_card(world, mission_id, 0)
@@ -343,13 +475,20 @@ def test_a_link_that_succeeded_before_an_error_is_never_proven_unapplied(tmp_pat
             for _ in range(10):
                 await world.drain(timeout=5)
             actions = world.store.list_actions(mission_id)
-            assert len(actions) == 1 and not _pending_cards(world, mission_id), actions  # no second card
-            assert not [e for e in world.store.list_events(mission_id) if e.type == "ActionScopedReconciled"
-                        and e.payload["outcome"] == "NOT_APPLIED_FINAL"]
+            assert len(actions) == 1 and not _pending_cards(world, mission_id), (
+                actions
+            )  # no second card
+            assert not [
+                e
+                for e in world.store.list_events(mission_id)
+                if e.type == "ActionScopedReconciled"
+                and e.payload["outcome"] == "NOT_APPLIED_FINAL"
+            ]
             assert len(list(published.rglob("*.md"))) == 1  # published exactly once
             # 阶段 G 收尾：对账每轮重写一遍没变的动作行（只改时间）是静默改动；内容没变不写
             # （改坏 G-28：写动作不看内容 → 变红）
             from agent_orchestrator.observability.business_replay import CONSISTENT, verify_mission
+
             report = verify_mission(world.store, mission_id)
             assert report["status"] == CONSISTENT, report["silent_changes"]
 
@@ -357,7 +496,9 @@ def test_a_link_that_succeeded_before_an_error_is_never_proven_unapplied(tmp_pat
 
 
 @pytest.mark.parametrize("stop", ["cancel", "planning_failed"])
-def test_a_cancelled_mission_names_its_unsettled_publish_and_says_when_it_is_known(tmp_path, monkeypatch, stop):
+def test_a_cancelled_mission_names_its_unsettled_publish_and_says_when_it_is_known(
+    tmp_path, monkeypatch, stop
+):
     """HTN 一致性补改 H-2：发布交出去了、结果不明（链接成功后才报错，等人裁定），这时人取消任务——
     最终报告如实列出这个结果不明的发布、并说系统会继续核对；之后人裁定"已生效"，系统经同一条
     通知路径再报一次"核对结果：已生效"，只报一次。
@@ -382,13 +523,23 @@ def test_a_cancelled_mission_names_its_unsettled_publish_and_says_when_it_is_kno
     async def case():
         published = tmp_path / "published"
         published.mkdir()
-        connector = FilePublishConnector(published, tmp_path / "root" / "connectors" / "file_publish")
+        connector = FilePublishConnector(
+            published, tmp_path / "root" / "connectors" / "file_publish"
+        )
         policy = DeploymentPolicy(enabled_connectors=("file_publish",), max_action_level="L2")
-        async with product_world(tmp_path / "root", LayeredScriptedProvider(), connectors={"file_publish": connector},
-                                 deployment_policy=policy) as world:
-            mission_id = world.create({"goal": "写一份周报 reports/weekly.md 并发布",
-                                       "success_criteria": ["file:" + TARGET, PUBLISH],
-                                       "idempotency_key": "cancel-unsettled"})["mission_id"]
+        async with product_world(
+            tmp_path / "root",
+            LayeredScriptedProvider(),
+            connectors={"file_publish": connector},
+            deployment_policy=policy,
+        ) as world:
+            mission_id = world.create(
+                {
+                    "goal": "写一份周报 reports/weekly.md 并发布",
+                    "success_criteria": ["file:" + TARGET, PUBLISH],
+                    "idempotency_key": "cancel-unsettled",
+                }
+            )["mission_id"]
             await world.drain()
             _confirm_completion(world, mission_id)
             card = await _until_card(world, mission_id, 0)
@@ -406,14 +557,20 @@ def test_a_cancelled_mission_names_its_unsettled_publish_and_says_when_it_is_kno
                 world.loop.commit.fail_planning(mission_id, reason="planning_exhausted", detail={})
             await world.drain()
             report = world.store.get_mission(mission_id).final_report
-            assert [(row["action_key"], row["operation"], row["target"], row["state"])
-                    for row in report.get("unresolved_actions") or ()] == [
-                (action["action_key"], action["operation"], action["target"], action["state"])]
+            assert [
+                (row["action_key"], row["operation"], row["target"], row["state"])
+                for row in report.get("unresolved_actions") or ()
+            ] == [(action["action_key"], action["operation"], action["target"], action["state"])]
             assert "继续核对" in str(report.get("unresolved_actions_note"))
-            assert not [e for e in world.store.list_events(mission_id) if e.type == ACTION_SETTLED_AFTER_STOP]
+            assert not [
+                e
+                for e in world.store.list_events(mission_id)
+                if e.type == ACTION_SETTLED_AFTER_STOP
+            ]
 
             # 扫描读一次出错（阻断核验 2026-10-04）：那一个任务的错按任务记下，主循环不停，下一轮照发
             import agent_orchestrator.runtime.operation_reconciliation as reconciliation
+
             real_unresolved = reconciliation.action_outcome_unresolved
             broken = {"left": 1}
 
@@ -424,11 +581,17 @@ def test_a_cancelled_mission_names_its_unsettled_publish_and_says_when_it_is_kno
                 return real_unresolved(store, row)
 
             monkeypatch.setattr(reconciliation, "action_outcome_unresolved", flaky)
-            world.control.resolve_unknown(action["action_key"], outcome="succeeded", basis="我去发布目录看过，周报在")
+            world.control.resolve_unknown(
+                action["action_key"], outcome="succeeded", basis="我去发布目录看过，周报在"
+            )
             for _ in range(3):
                 await world.drain()
             assert broken["left"] == 0
-            settles = [e for e in world.store.list_events(mission_id) if e.type == ACTION_SETTLED_AFTER_STOP]
+            settles = [
+                e
+                for e in world.store.list_events(mission_id)
+                if e.type == ACTION_SETTLED_AFTER_STOP
+            ]
             assert len(settles) == 1, settles
             [settled] = settles
             assert settled.payload["applied"] is True and settled.payload["state"] == "SUCCEEDED"
@@ -448,18 +611,28 @@ def test_an_unproven_failure_with_no_publisher_bound_lets_the_loop_go_idle(tmp_p
     async def case():
         published = tmp_path / "published"
         published.mkdir()
-        connector = FilePublishConnector(published, tmp_path / "root" / "connectors" / "file_publish")
+        connector = FilePublishConnector(
+            published, tmp_path / "root" / "connectors" / "file_publish"
+        )
 
         def down(key):  # type: ignore[no-untyped-def]
             raise ConnectorTransportError("down")
 
         connector.ledger_record = down  # type: ignore[method-assign]
         policy = DeploymentPolicy(enabled_connectors=("file_publish",), max_action_level="L2")
-        async with product_world(tmp_path / "root", LayeredScriptedProvider(), connectors={"file_publish": connector},
-                                 deployment_policy=policy) as world:
-            mission_id = world.create({"goal": "写一份周报 reports/weekly.md 并发布",
-                                       "success_criteria": ["file:" + TARGET, PUBLISH],
-                                       "idempotency_key": "no-publisher"})["mission_id"]
+        async with product_world(
+            tmp_path / "root",
+            LayeredScriptedProvider(),
+            connectors={"file_publish": connector},
+            deployment_policy=policy,
+        ) as world:
+            mission_id = world.create(
+                {
+                    "goal": "写一份周报 reports/weekly.md 并发布",
+                    "success_criteria": ["file:" + TARGET, PUBLISH],
+                    "idempotency_key": "no-publisher",
+                }
+            )["mission_id"]
             await world.drain()
             _confirm_completion(world, mission_id)
             card = await _until_card(world, mission_id, 0)
@@ -473,10 +646,14 @@ def test_an_unproven_failure_with_no_publisher_bound_lets_the_loop_go_idle(tmp_p
             # 阶段 G 收尾：对账读不到证明的每一轮（计数、到上限转人工）都留事件——用例直接改库
             # 之前，这个任务能由事件重建（改坏 G-29：计数不写事件 → 变红）
             from agent_orchestrator.observability.business_replay import CONSISTENT, verify_mission
+
             report = verify_mission(world.store, mission_id)
             assert report["status"] == CONSISTENT, report["silent_changes"]
-            assert [e.payload["marked_for_person"] for e in world.store.list_events(mission_id)
-                    if e.type == "ActionReconciliationUnavailable"][-1] is True
+            assert [
+                e.payload["marked_for_person"]
+                for e in world.store.list_events(mission_id)
+                if e.type == "ActionReconciliationUnavailable"
+            ][-1] is True
             action["reconcile_unavailable"], action["needs_human"] = 0, False
             world.store.put_action(action)
             world.loop._connectors = {}
@@ -484,4 +661,3 @@ def test_an_unproven_failure_with_no_publisher_bound_lets_the_loop_go_idle(tmp_p
             await asyncio.wait_for(world.loop.run(), timeout=10)  # returns: nothing to do is idle
 
     asyncio.run(case())
-

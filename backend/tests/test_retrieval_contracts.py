@@ -21,7 +21,9 @@ def test_contracts_are_frozen_slotted_and_json_safe():
     with pytest.raises(dataclasses.FrozenInstanceError):
         request.query = "changed"  # type: ignore[misc]
     candidate = RetrievalCandidate("id", "https://a.test", "https://a.test", "A")
-    response = SearchResponse("query", (candidate,), (ProviderAttempt("p", AttemptStatus.HIT, 1, 1),))
+    response = SearchResponse(
+        "query", (candidate,), (ProviderAttempt("p", AttemptStatus.HIT, 1, 1),)
+    )
     assert json.loads(json.dumps(response.to_dict()))["attempts"][0]["status"] == "hit"
 
 

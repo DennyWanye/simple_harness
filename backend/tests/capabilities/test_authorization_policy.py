@@ -60,14 +60,10 @@ def test_rule_matrix_has_unique_complete_keys() -> None:
 
 
 def test_auto_prepared_tool_issues_exact_grant_without_wait(tmp_path) -> None:
-    grant, request = _grant_and_request(
-        tmp_path, source="policy:auto", generation=4
-    )
+    grant, request = _grant_and_request(tmp_path, source="policy:auto", generation=4)
     decision = AuthorizationPolicy().evaluate(
         state=AuthorizationPolicyState("auto", 4, 100.0),
-        context=DecisionContext(
-            1, "permission", "react", "prepared_tool", "root-1"
-        ),
+        context=DecisionContext(1, "permission", "react", "prepared_tool", "root-1"),
         task_grant=grant,
         exact_request=request,
         actual_root_run_id="root-1",
@@ -83,9 +79,7 @@ def test_manual_confirmed_task_grant_suppresses_repeat_popup(tmp_path) -> None:
     grant, request = _grant_and_request(tmp_path, source="user", generation=0)
     decision = AuthorizationPolicy().evaluate(
         state=AuthorizationPolicyState("manual", 8, 100.0),
-        context=DecisionContext(
-            1, "permission", "react", "prepared_tool", "root-1"
-        ),
+        context=DecisionContext(1, "permission", "react", "prepared_tool", "root-1"),
         task_grant=grant,
         exact_request=request,
         actual_root_run_id="root-1",
@@ -100,9 +94,7 @@ def test_user_content_uac_and_unknown_rules_never_auto_allow() -> None:
     state = AuthorizationPolicyState("auto", 1, 100.0)
     content = policy.evaluate(
         state=state,
-        context=DecisionContext(
-            1, "clarification", "react", "user_content", "root-1"
-        ),
+        context=DecisionContext(1, "clarification", "react", "user_content", "root-1"),
         task_grant=None,
         exact_request=None,
         actual_root_run_id="root-1",
@@ -110,9 +102,7 @@ def test_user_content_uac_and_unknown_rules_never_auto_allow() -> None:
     )
     uac = policy.evaluate(
         state=state,
-        context=DecisionContext(
-            1, "workflow_hitl", "external", "windows_uac", "root-1"
-        ),
+        context=DecisionContext(1, "workflow_hitl", "external", "windows_uac", "root-1"),
         task_grant=None,
         exact_request=None,
         actual_root_run_id="root-1",
@@ -120,9 +110,7 @@ def test_user_content_uac_and_unknown_rules_never_auto_allow() -> None:
     )
     unknown = policy.evaluate(
         state=state,
-        context=DecisionContext(
-            1, "workflow_hitl", "workflow", "mystery", "root-1"
-        ),
+        context=DecisionContext(1, "workflow_hitl", "workflow", "mystery", "root-1"),
         task_grant=None,
         exact_request=None,
         actual_root_run_id="root-1",

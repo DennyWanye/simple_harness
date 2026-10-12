@@ -1824,7 +1824,10 @@ def test_startup_recovery_takes_over_once_the_previous_owner_lease_expires(tmp_p
         clock = {"now": 3.0}
         driver = Driver()
         value, uow, database = runtime(
-            tmp_path, driver=driver, owner="owner-2", clock=lambda: clock["now"],
+            tmp_path,
+            driver=driver,
+            owner="owner-2",
+            clock=lambda: clock["now"],
             lease_ttl_seconds=5.0,
         )
         uow.create_with_start_snapshot(
@@ -1846,8 +1849,11 @@ def test_startup_recovery_takes_over_once_the_previous_owner_lease_expires(tmp_p
         )
         # 旧进程（owner-1）认领后"崩溃"：租约留到 7.0 才过期
         uow.claim_runtime_activation(
-            run_id="run-recover", owner_id="owner-1", namespace="runtime.kernel",
-            now=2.0, lease_ttl_seconds=5.0,
+            run_id="run-recover",
+            owner_id="owner-1",
+            namespace="runtime.kernel",
+            now=2.0,
+            lease_ttl_seconds=5.0,
         )
         await value.start()
         await asyncio.sleep(0.2)

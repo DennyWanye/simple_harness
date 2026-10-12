@@ -235,9 +235,7 @@ class WorkflowReplay:
                     "fork_namespace_unsupported",
                     "v1 fork supports only the root checkpoint namespace",
                 )
-            engine_kind = await self._checkpoint_engine_kind(
-                run_id, namespace, checkpoint_id
-            )
+            engine_kind = await self._checkpoint_engine_kind(run_id, namespace, checkpoint_id)
             if engine_kind == NATIVE_ENGINE_KIND:
                 native_saver = (
                     self.saver
@@ -270,17 +268,19 @@ class WorkflowReplay:
                     else self.saver
                 )
                 item = await legacy_saver.aget_tuple(
-                {
-                    "configurable": {
-                        "thread_id": source["thread_id"],
-                        "checkpoint_ns": namespace,
-                        "checkpoint_id": checkpoint_id,
-                        "deskpet_run_id": run_id,
+                    {
+                        "configurable": {
+                            "thread_id": source["thread_id"],
+                            "checkpoint_ns": namespace,
+                            "checkpoint_id": checkpoint_id,
+                            "deskpet_run_id": run_id,
+                        }
                     }
-                }
                 )
                 if item is None:
-                    raise WorkflowReplayError("fork_checkpoint_not_found", "source checkpoint is missing")
+                    raise WorkflowReplayError(
+                        "fork_checkpoint_not_found", "source checkpoint is missing"
+                    )
                 if item.pending_writes:
                     raise WorkflowReplayError(
                         "fork_pending_writes_unsupported",
@@ -415,7 +415,8 @@ class WorkflowReplay:
         manifest = registration.manifest
         if int(manifest.state_schema_version) != expected["schema_version"]:
             raise WorkflowReplayError(
-                "fork_state_schema_mismatch", "source state schema does not match the workflow manifest"
+                "fork_state_schema_mismatch",
+                "source state schema does not match the workflow manifest",
             )
         for key, value in expected.items():
             if key in channel_values and channel_values[key] != value:
@@ -429,7 +430,8 @@ class WorkflowReplay:
         for key, value in patch.items():
             if key in _RESERVED_PATCH_KEYS:
                 raise WorkflowReplayError(
-                    "fork_reserved_identity_patch", f"state_patch cannot write runtime identity: {key}"
+                    "fork_reserved_identity_patch",
+                    f"state_patch cannot write runtime identity: {key}",
                 )
             if key.startswith("$") or "/" in key or "." in key:
                 raise WorkflowReplayError(

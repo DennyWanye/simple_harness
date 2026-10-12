@@ -37,8 +37,11 @@ def _quick(monkeypatch):
 
 
 def _open_plan_intents(loop: Any, mission_id: str) -> list[str]:
-    return sorted(item.subject_id for item in loop.store.list_intents(*OPEN_INTENT_STATES)
-                  if item.kind == "plan" and item.mission_id == mission_id)
+    return sorted(
+        item.subject_id
+        for item in loop.store.list_intents(*OPEN_INTENT_STATES)
+        if item.kind == "plan" and item.mission_id == mission_id
+    )
 
 
 def test_run_waits_for_an_inflight_planning_intent_however_slow_the_model_is(tmp_path) -> None:
@@ -49,10 +52,20 @@ def test_run_waits_for_an_inflight_planning_intent_however_slow_the_model_is(tmp
     provider.held.add("planner")
 
     async def case() -> dict[str, Any]:
-        async with product_world(tmp_path / "root", provider, max_concurrency=3, test_timeout_seconds=60,
-                                 max_planning_attempts=2) as world:
-            mission_id = world.create({"goal": "写一份 NOTES.md，列出三条要点", "idempotency_key": "p23e-run-exit-held",
-                                       "success_criteria": ["file:NOTES.md"]})["mission_id"]
+        async with product_world(
+            tmp_path / "root",
+            provider,
+            max_concurrency=3,
+            test_timeout_seconds=60,
+            max_planning_attempts=2,
+        ) as world:
+            mission_id = world.create(
+                {
+                    "goal": "写一份 NOTES.md，列出三条要点",
+                    "idempotency_key": "p23e-run-exit-held",
+                    "success_criteria": ["file:NOTES.md"],
+                }
+            )["mission_id"]
             loop = world.loop
             # the loop itself opens the first round, the deployment grants it between cycles
             running = asyncio.create_task(loop.run(max_cycles=120))
@@ -70,7 +83,10 @@ def test_run_waits_for_an_inflight_planning_intent_however_slow_the_model_is(tmp
             # the plan commits (proposal, its review, adoption) and the loop moves on to the
             # leaves; the planning rounds themselves are what this test is about
             for _ in range(500):
-                committed = any(item.type == "PlanRevisionCommitted" for item in loop.store.list_events(mission_id))
+                committed = any(
+                    item.type == "PlanRevisionCommitted"
+                    for item in loop.store.list_events(mission_id)
+                )
                 if (committed and not _open_plan_intents(loop, mission_id)) or running.done():
                     break
                 await asyncio.sleep(0.02)
@@ -90,7 +106,9 @@ def test_run_waits_for_an_inflight_planning_intent_however_slow_the_model_is(tmp
     outcome = asyncio.run(case())
     held = outcome["held"]
     assert held["open"] == [f"{outcome['mission_id']}:planner:1"], held
-    assert held["returned"] is False, f"run() returned while the planning intent was still in flight: {held}"
+    assert held["returned"] is False, (
+        f"run() returned while the planning intent was still in flight: {held}"
+    )
     # A waiting loop yields; the runtime's turn task reaches the provider and holds there —
     # a starved loop never lets it start.
     assert held["calls_started"] == 1, held

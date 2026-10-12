@@ -46,7 +46,9 @@ async def main() -> int:
                 print(f"[smoke] text ({len(text)} chars): {text!r}")
                 # Verdict heuristics
                 if text.startswith("[echo] "):
-                    print("[smoke] VERDICT: FAIL — fell back to echo (agent_engine missing or chat_stream raised)")
+                    print(
+                        "[smoke] VERDICT: FAIL — fell back to echo (agent_engine missing or chat_stream raised)"
+                    )
                     return 2
                 if not text.strip():
                     print("[smoke] VERDICT: FAIL — empty response")

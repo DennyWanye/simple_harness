@@ -81,11 +81,25 @@ class MemoryNativeStore:
 
     async def load_execution(self, *, run_id, thread_id, checkpoint_ns):
         return NativeExecution(
-            self.snapshot, dict(self.pending), {}, copy.deepcopy(self.route_selections),
+            self.snapshot,
+            dict(self.pending),
+            {},
+            copy.deepcopy(self.route_selections),
             tuple(sorted(self.pending_consumed)),
         )
 
-    async def commit_task_result(self, *, operation_id, expected_head, task, execution_info, patch, configurable, blob_refs=(), consumed_interrupt_ids=()):
+    async def commit_task_result(
+        self,
+        *,
+        operation_id,
+        expected_head,
+        task,
+        execution_info,
+        patch,
+        configurable,
+        blob_refs=(),
+        consumed_interrupt_ids=(),
+    ):
         del blob_refs
         self.calls.append(f"commit_task:{task.node_id}")
         self.pending.setdefault(task.task_id, patch)
@@ -94,7 +108,9 @@ class MemoryNativeStore:
             self.fail_after_task_commit = False
             raise RuntimeError("after_db_commit_before_return")
 
-    async def commit_route_selection(self, *, task_id, source, selected_route, next_frontier_payload_hash, **kwargs):
+    async def commit_route_selection(
+        self, *, task_id, source, selected_route, next_frontier_payload_hash, **kwargs
+    ):
         selection = {
             "source": source,
             "selected_route": selected_route,
@@ -108,7 +124,23 @@ class MemoryNativeStore:
             raise RuntimeError("after_route_commit_before_frontier")
         return copy.deepcopy(existing)
 
-    async def commit_frontier(self, *, operation_id, expected_head, state, frontier, completed_activations, join_firings, consumed_interrupt_ids, configurable, intents=(), blob_refs=(), terminal_status=None, terminal_error=None, recovery_action=None):
+    async def commit_frontier(
+        self,
+        *,
+        operation_id,
+        expected_head,
+        state,
+        frontier,
+        completed_activations,
+        join_firings,
+        consumed_interrupt_ids,
+        configurable,
+        intents=(),
+        blob_refs=(),
+        terminal_status=None,
+        terminal_error=None,
+        recovery_action=None,
+    ):
         del blob_refs
         self.calls.append("commit_frontier")
         self.committed_intents.append(copy.deepcopy(tuple(intents)))
@@ -238,9 +270,7 @@ async def test_native_linear_execution_identity_and_hook_order(tmp_path):
     store = MemoryNativeStore(calls)
     executable = compiled.bind(checkpointer=store)
     context = WorkflowContext(ports={"observer": Observer(calls), "progress": Progress(calls)})
-    result = await executable.ainvoke(
-        _state(), context, thread_id="thread-1", run_id="run-1"
-    )
+    result = await executable.ainvoke(_state(), context, thread_id="thread-1", run_id="run-1")
 
     assert result["values"] == {"first": True, "second": True}
     first_order = [
@@ -275,9 +305,7 @@ async def test_pending_task_result_is_reused_after_commit_return_crash(tmp_path)
     store.fail_after_task_commit = True
     executable = compiled.bind(checkpointer=store)
     with pytest.raises(RuntimeError, match="after_db_commit"):
-        await executable.ainvoke(
-            _state(), WorkflowContext(), thread_id="thread-1", run_id="run-1"
-        )
+        await executable.ainvoke(_state(), WorkflowContext(), thread_id="thread-1", run_id="run-1")
     result = await executable.ainvoke(
         _state(), WorkflowContext(), thread_id="thread-1", run_id="run-1"
     )
@@ -288,18 +316,20 @@ async def test_pending_task_result_is_reused_after_commit_return_crash(tmp_path)
 @pytest.mark.asyncio
 async def test_route_failure_materializes_no_completed_intent(tmp_path):
     async def normalize(state, context):
-        return StatePatch({
-            "values": {
-                "public_progress": {
-                    "stage_projection": {
-                        "stage_id": "normalize",
-                        "metrics": {},
-                        "completed_count": 1,
-                        "duration_ms": 10,
+        return StatePatch(
+            {
+                "values": {
+                    "public_progress": {
+                        "stage_projection": {
+                            "stage_id": "normalize",
+                            "metrics": {},
+                            "completed_count": 1,
+                            "duration_ms": 10,
+                        }
                     }
                 }
             }
-        })
+        )
 
     async def fail_route(state, context):
         raise InvalidStatePatch("route_failed", "route construction failed")
@@ -337,19 +367,21 @@ async def test_reducer_failure_materializes_no_completed_intent(tmp_path):
         return StatePatch({"values": {"started": True}})
 
     def stage_patch(stage_id):
-        return StatePatch({
-            "values": {
-                "writer": stage_id,
-                "public_progress": {
-                    "stage_projection": {
-                        "stage_id": stage_id,
-                        "metrics": {},
-                        "completed_count": 1,
-                        "duration_ms": 10,
-                    }
-                },
+        return StatePatch(
+            {
+                "values": {
+                    "writer": stage_id,
+                    "public_progress": {
+                        "stage_projection": {
+                            "stage_id": stage_id,
+                            "metrics": {},
+                            "completed_count": 1,
+                            "duration_ms": 10,
+                        }
+                    },
+                }
             }
-        })
+        )
 
     async def normalize(state, context):
         return stage_patch("normalize")
@@ -412,7 +444,11 @@ async def test_conditional_route_uses_reduced_state(tmp_path):
     async def selector(state, context):
         return state["values"]["route"]
 
-    nodes = [NodeDefinition("choose", choose), NodeDefinition("left", left, required=False), NodeDefinition("right", right)]
+    nodes = [
+        NodeDefinition("choose", choose),
+        NodeDefinition("left", left, required=False),
+        NodeDefinition("right", right),
+    ]
     compiled = compile_workflow(
         _definition(
             nodes,
@@ -455,9 +491,7 @@ async def test_checkpointed_conditional_route_is_reused_after_restart(tmp_path):
     executable = compiled.bind(checkpointer=store)
 
     with pytest.raises(WorkflowNodeError):
-        await executable.ainvoke(
-            _state(), WorkflowContext(), thread_id="thread-1", run_id="run-1"
-        )
+        await executable.ainvoke(_state(), WorkflowContext(), thread_id="thread-1", run_id="run-1")
     result = await executable.ainvoke(
         _state(), WorkflowContext(), thread_id="thread-1", run_id="run-1"
     )
@@ -480,20 +514,40 @@ async def test_static_frontier_join_fires_once_and_reducers_are_deterministic(tm
     async def join(state, context):
         return StatePatch({"values": {**state["values"], "joined": True}})
 
-    nodes = [NodeDefinition("start", start), NodeDefinition("left", left), NodeDefinition("right", right), NodeDefinition("join", join)]
+    nodes = [
+        NodeDefinition("start", start),
+        NodeDefinition("left", left),
+        NodeDefinition("right", right),
+        NodeDefinition("join", join),
+    ]
     channels = {
-        "values": ChannelSpec(JsonType.OBJECT, ReducerKind.SINGLE_WRITER, frozenset({"start", "join"})),
-        "parts": ChannelSpec(JsonType.OBJECT, ReducerKind.DICT_DISJOINT, frozenset({"left", "right"})),
+        "values": ChannelSpec(
+            JsonType.OBJECT, ReducerKind.SINGLE_WRITER, frozenset({"start", "join"})
+        ),
+        "parts": ChannelSpec(
+            JsonType.OBJECT, ReducerKind.DICT_DISJOINT, frozenset({"left", "right"})
+        ),
         "items": ChannelSpec(JsonType.ARRAY, ReducerKind.STABLE_LIST, frozenset({"left", "right"})),
     }
     compiled = compile_workflow(
-        _definition(nodes, [Edge("start", "left"), Edge("start", "right"), Edge(("left", "right"), "join"), Edge("join", END_NODE)], channels=channels),
+        _definition(
+            nodes,
+            [
+                Edge("start", "left"),
+                Edge("start", "right"),
+                Edge(("left", "right"), "join"),
+                Edge("join", END_NODE),
+            ],
+            channels=channels,
+        ),
         dependency_lock_path=_lock(tmp_path),
     )
     initial = _state()
     initial.update({"parts": {}, "items": []})
     store = MemoryNativeStore()
-    result = await compiled.bind(checkpointer=store).ainvoke(initial, WorkflowContext(), thread_id="thread-1", run_id="run-1")
+    result = await compiled.bind(checkpointer=store).ainvoke(
+        initial, WorkflowContext(), thread_id="thread-1", run_id="run-1"
+    )
     assert result["parts"] == {"left": 1, "right": 2}
     assert result["items"] == [{"id": "a"}, {"id": "b"}]
     assert result["values"]["joined"] is True
@@ -598,6 +652,7 @@ async def test_parallel_frontier_overlaps_with_a_hard_cap(tmp_path):
             await release.wait()
             active -= 1
             return StatePatch({"parts": {name: True}})
+
         return handler
 
     async def join(state, context):
@@ -610,18 +665,33 @@ async def test_parallel_frontier_overlaps_with_a_hard_cap(tmp_path):
         NodeDefinition("join", join),
     ]
     channels = {
-        "values": ChannelSpec(JsonType.OBJECT, ReducerKind.SINGLE_WRITER, frozenset({"start", "join"})),
-        "parts": ChannelSpec(JsonType.OBJECT, ReducerKind.DICT_DISJOINT, frozenset({"left", "right"})),
+        "values": ChannelSpec(
+            JsonType.OBJECT, ReducerKind.SINGLE_WRITER, frozenset({"start", "join"})
+        ),
+        "parts": ChannelSpec(
+            JsonType.OBJECT, ReducerKind.DICT_DISJOINT, frozenset({"left", "right"})
+        ),
     }
     compiled = compile_workflow(
-        _definition(nodes, [Edge("start", "left"), Edge("start", "right"), Edge(("left", "right"), "join"), Edge("join", END_NODE)], channels=channels),
+        _definition(
+            nodes,
+            [
+                Edge("start", "left"),
+                Edge("start", "right"),
+                Edge(("left", "right"), "join"),
+                Edge("join", END_NODE),
+            ],
+            channels=channels,
+        ),
         dependency_lock_path=_lock(tmp_path),
     )
     initial = _state()
     initial["parts"] = {}
     result = await compiled.bind(checkpointer=MemoryNativeStore()).ainvoke(
-        initial, WorkflowContext(ports={"native_execution_policy": NativeExecutionPolicy(2)}),
-        thread_id="thread-1", run_id="run-1",
+        initial,
+        WorkflowContext(ports={"native_execution_policy": NativeExecutionPolicy(2)}),
+        thread_id="thread-1",
+        run_id="run-1",
     )
     assert peak == 2
     assert result["parts"] == {"left": True, "right": True}
@@ -642,18 +712,32 @@ async def test_parallel_coordinator_prefers_permanent_over_retryable(tmp_path):
         _definition(
             [
                 NodeDefinition("start", start),
-                NodeDefinition("retry", retryable, retry_policy=RetryPolicy(max_attempts=2, retryable_codes=frozenset({"retryable_provider"})), dispatch=NodeDispatch.PARALLEL),
+                NodeDefinition(
+                    "retry",
+                    retryable,
+                    retry_policy=RetryPolicy(
+                        max_attempts=2, retryable_codes=frozenset({"retryable_provider"})
+                    ),
+                    dispatch=NodeDispatch.PARALLEL,
+                ),
                 NodeDefinition("permanent", permanent, dispatch=NodeDispatch.PARALLEL),
             ],
-            [Edge("start", "retry"), Edge("start", "permanent"), Edge("retry", END_NODE), Edge("permanent", END_NODE)],
+            [
+                Edge("start", "retry"),
+                Edge("start", "permanent"),
+                Edge("retry", END_NODE),
+                Edge("permanent", END_NODE),
+            ],
         ),
         dependency_lock_path=_lock(tmp_path),
     )
     store = MemoryNativeStore()
     with pytest.raises(WorkflowNodeError) as caught:
         await compiled.bind(checkpointer=store).ainvoke(
-            _state(), WorkflowContext(ports={"native_execution_policy": NativeExecutionPolicy(2)}),
-            thread_id="thread-1", run_id="run-1",
+            _state(),
+            WorkflowContext(ports={"native_execution_policy": NativeExecutionPolicy(2)}),
+            thread_id="thread-1",
+            run_id="run-1",
         )
     assert caught.value.code.value == "permanent"
     assert store.calls.count("commit_failure") == 1

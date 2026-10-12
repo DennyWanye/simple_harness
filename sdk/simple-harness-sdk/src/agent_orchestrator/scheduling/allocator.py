@@ -328,9 +328,7 @@ def _pressure_keep(
     attempts: Sequence[Attempt],
     exploration_slots: int,
 ) -> list[Task]:
-    """§18.5 "暂停低优先级任务" (D6-3 ②) with theory 05-10's exploration quota.
-
-    """
+    """§18.5 "暂停低优先级任务" (D6-3 ②) with theory 05-10's exploration quota."""
 
     tried = {attempt.task_id for attempt in attempts}
     kept: list[Task] = []

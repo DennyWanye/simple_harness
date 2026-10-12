@@ -160,8 +160,10 @@ class EvaluationAuthorizationService:
         command: EvaluationAuthorizationCommandV1,
     ) -> Mapping[str, object]:
         expires_at = (
-            self._clock() + timedelta(seconds=command.ttl_seconds)
-        ).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+            (self._clock() + timedelta(seconds=command.ttl_seconds))
+            .isoformat(timespec="milliseconds")
+            .replace("+00:00", "Z")
+        )
         return self._store.create_evaluation_authorization(
             owner,
             authorization_id=command.authorization_id,
@@ -204,9 +206,7 @@ class EvaluationPermitIssuer:
         self._preflight = preflight or StaticRiskPreflight()
         self._risk_policy = risk_policy or CapabilityRiskPolicy()
 
-    def issue(
-        self, owner: OwnerRef, request: EvaluationGateRequestV1
-    ) -> EvaluationGateOutcomeV1:
+    def issue(self, owner: OwnerRef, request: EvaluationGateRequestV1) -> EvaluationGateOutcomeV1:
         preflight = self._preflight.inspect(request.candidate)
         risk = self._risk_policy.assess(preflight, request.topology_diff)
         self._store.record_risk_assessment(
@@ -220,8 +220,7 @@ class EvaluationPermitIssuer:
                 "package_hash": preflight.package_hash,
                 "candidate_kind": preflight.candidate_kind,
                 "safe_auto_eligible": preflight.safe_auto_eligible,
-                "direct_os_effects_unverifiable":
-                    preflight.direct_os_effects_unverifiable,
+                "direct_os_effects_unverifiable": preflight.direct_os_effects_unverifiable,
                 "high_risk_signals": list(preflight.high_risk_signals),
                 "unknown_signals": list(preflight.unknown_signals),
                 "facts_hash": preflight.facts_hash,
@@ -239,8 +238,7 @@ class EvaluationPermitIssuer:
             ),
         )
         if risk.permit_mode == "safe_static" and (
-            request.candidate.candidate_kind != "instruction"
-            or not request.zero_tools
+            request.candidate.candidate_kind != "instruction" or not request.zero_tools
         ):
             return EvaluationGateOutcomeV1(
                 status="awaiting_eval_authorization",
@@ -259,9 +257,7 @@ class EvaluationPermitIssuer:
             )
         mode = risk.permit_mode
         authorization_id = (
-            None
-            if mode in {"safe_auto", "safe_static"}
-            else request.authorization_id
+            None if mode in {"safe_auto", "safe_static"} else request.authorization_id
         )
         facts = {
             "schema_version": 1,
@@ -273,9 +269,7 @@ class EvaluationPermitIssuer:
             "archive_hash": request.identity.archive_hash,
             "suite_hash": request.identity.suite_hash,
             "runner_policy_hash": request.identity.runner_policy_hash,
-            "issued_revocation_epoch": (
-                request.identity.issued_revocation_epoch
-            ),
+            "issued_revocation_epoch": (request.identity.issued_revocation_epoch),
             "preflight_ref": f"preflight:{preflight.preflight_hash}",
             "preflight_hash": preflight.preflight_hash,
             "risk_ref": request.identity.risk_ref,
@@ -419,8 +413,7 @@ class IndependentEvaluator:
         selected = tuple(by_id[case_id] for case_id in required)
         terminal = {"passed", "failed"}
         if any(
-            item.old_status not in terminal
-            or item.candidate_status not in terminal
+            item.old_status not in terminal or item.candidate_status not in terminal
             for item in selected
         ):
             return EvaluationVerdictV1(
@@ -428,15 +421,11 @@ class IndependentEvaluator:
                 "required_case_unknown_or_incomplete",
                 len(required),
                 sum(
-                    item.old_status in terminal
-                    and item.candidate_status in terminal
+                    item.old_status in terminal and item.candidate_status in terminal
                     for item in selected
                 ),
             )
-        if any(
-            item.baseline_regression or item.candidate_status == "failed"
-            for item in selected
-        ):
+        if any(item.baseline_regression or item.candidate_status == "failed" for item in selected):
             return EvaluationVerdictV1(
                 "failed", "baseline_regression_or_candidate_failure", len(required), len(selected)
             )

@@ -119,8 +119,12 @@ def goal(env: Env) -> Any:
 def context(env: Env, binding: Any = None, **options: Any) -> MethodProposalContext:
     capabilities = options.pop("capabilities", None) or env.capabilities()
     return build_context(
-        goal(env) if binding is None else binding, capabilities, env.registry,
-        catalog=env.catalog, **options)
+        goal(env) if binding is None else binding,
+        capabilities,
+        env.registry,
+        catalog=env.catalog,
+        **options,
+    )
 
 
 def legal_method(method_id: str = "synth.collect-then-deliver") -> Any:
@@ -155,12 +159,12 @@ def legal_method(method_id: str = "synth.collect-then-deliver") -> Any:
 
 def proposal(contract: Any, **extra: Any) -> MethodProposal:
     return MethodProposal.from_json(
-        {"method": contract.to_json(), "rationale": "it covers the root", **extra})
+        {"method": contract.to_json(), "rationale": "it covers the root", **extra}
+    )
 
 
 def admit(env: Env, submitted: MethodProposal) -> Any:
     return admit_proposal(submitted, registry=env.registry, policy=env.policy())
-
 
 
 # ======================================================================================
@@ -427,7 +431,9 @@ def test_every_terminal_status_a_proposal_may_reach_is_one_of_two() -> None:
 
 def test_a_model_that_declares_a_registry_status_is_refused_and_recorded() -> None:
     env = empty_library_env()
-    receipt = admit(env, proposal(legal_method(), registry_status=str(MethodRegistryStatus.ADMITTED)))
+    receipt = admit(
+        env, proposal(legal_method(), registry_status=str(MethodRegistryStatus.ADMITTED))
+    )
     assert receipt.verdict is AdmissionVerdict.REJECTED
     assert RejectionCode.MODEL_CLAIMED_STATUS in receipt.codes()
     assert receipt.registration is not None
@@ -578,8 +584,11 @@ def test_an_admitted_proposal_is_recorded_as_model_authored() -> None:
 def test_the_entry_takes_a_decoded_proposal_and_a_real_policy() -> None:
     env = empty_library_env()
     with pytest.raises(ContractError, match="decoded MethodProposal"):
-        admit_proposal("<method_proposal>{}</method_proposal>",  # type: ignore[arg-type]
-                       registry=env.registry, policy=env.policy())
+        admit_proposal(
+            "<method_proposal>{}</method_proposal>",  # type: ignore[arg-type]
+            registry=env.registry,
+            policy=env.policy(),
+        )
     with pytest.raises(ContractError, match="AdmissionPolicy"):
         admit_proposal(proposal(legal_method()), registry=env.registry, policy=object())  # type: ignore[arg-type]
     assert env.registry.method_refs() == ()
@@ -649,7 +658,9 @@ def test_the_context_carries_the_goal_type_ref_and_the_field_list_to_copy() -> N
     # every operator ref carries its content hash, as the prompt says to copy
     assert all(len(item["task_type_ref"]["content_hash"]) == 64 for item in package["operators"])
     # nothing that addressed a separate synthesiser role (its tag, its prompt, its re-ask)
-    assert not {"output_tag", "role_prompt_version", "schema_feedback", "review_feedback"} & set(package)
+    assert not {"output_tag", "role_prompt_version", "schema_feedback", "review_feedback"} & set(
+        package
+    )
 
 
 def test_a_proposed_method_wider_than_the_bound_is_refused() -> None:
@@ -664,11 +675,22 @@ def test_a_proposed_method_wider_than_the_bound_is_refused() -> None:
 
     def wide(count: int) -> Any:
         return method(
-            f"synth.wide-{count}", "synth.goal", parameter_schema="synth.goal.params",
-            steps=tuple(step(f"s{index}", "synth.collect", TaskForm.PRIMITIVE,
-                             {"subject": param("subject")}, capabilities=("synth.read",))
-                        for index in range(count)),
-            links=(("c-root", "s0", "c-done"),), finalizer="s0")
+            f"synth.wide-{count}",
+            "synth.goal",
+            parameter_schema="synth.goal.params",
+            steps=tuple(
+                step(
+                    f"s{index}",
+                    "synth.collect",
+                    TaskForm.PRIMITIVE,
+                    {"subject": param("subject")},
+                    capabilities=("synth.read",),
+                )
+                for index in range(count)
+            ),
+            links=(("c-root", "s0", "c-done"),),
+            finalizer="s0",
+        )
 
     policy = dataclasses.replace(env.policy(), max_steps=MAX_PROPOSED_METHOD_STEPS)
     refused = admit_proposal(proposal(wide(9)), registry=env.registry, policy=policy)

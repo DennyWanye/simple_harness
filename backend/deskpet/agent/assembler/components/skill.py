@@ -22,6 +22,7 @@ to the pre-WI-4.1 behavior.
 Output goes into the ``"skill"`` bucket (``skill_prelude`` on the bundle)
 which sits between ``frozen_system`` and ``memory_block``.
 """
+
 from __future__ import annotations
 
 import inspect
@@ -40,9 +41,7 @@ logger = logging.getLogger(__name__)
 # durable profiles. Auto-disclosing their old instructions would tell the
 # model to call a compatibility tool whose product route is hidden
 # (followup F-WF-1 decides whether those tools reopen).
-_PROFILE_OWNED_LEGACY_TOOL_NAMES = frozenset(
-    {"deepresearch", "ppt_create", "ppt_pro"}
-)
+_PROFILE_OWNED_LEGACY_TOOL_NAMES = frozenset({"deepresearch", "ppt_create", "ppt_pro"})
 
 
 # 粗略 char 截断预算用的 chars/token 比（仅用于反向算 max_chars 截断长度，
@@ -80,9 +79,7 @@ class SkillComponent:
         self._matcher = skill_matcher
         self._loader = skill_loader
         self._snapshot_resolver = (
-            skill_loader
-            if getattr(skill_loader, "manager_backed", False)
-            else None
+            skill_loader if getattr(skill_loader, "manager_backed", False) else None
         )
 
     def bind_snapshot_resolver(self, resolver: Any) -> None:
@@ -90,10 +87,7 @@ class SkillComponent:
 
         if resolver is None or not getattr(resolver, "manager_backed", False):
             raise RuntimeError("manager_skill_snapshot_resolver_required")
-        if (
-            self._snapshot_resolver is not None
-            and self._snapshot_resolver is not resolver
-        ):
+        if self._snapshot_resolver is not None and self._snapshot_resolver is not resolver:
             raise RuntimeError("manager_skill_snapshot_resolver_already_bound")
         self._snapshot_resolver = resolver
 
@@ -126,9 +120,7 @@ class SkillComponent:
                 maybe = registry.all()
                 skills = await maybe if hasattr(maybe, "__await__") else maybe
             elif hasattr(registry, "select"):
-                maybe = registry.select(
-                    ctx.task_type, prefer=list(ctx.policy.prefer)
-                )
+                maybe = registry.select(ctx.task_type, prefer=list(ctx.policy.prefer))
                 skills = await maybe if hasattr(maybe, "__await__") else maybe
             elif hasattr(registry, "all"):
                 maybe = registry.all()
@@ -250,12 +242,8 @@ class SkillComponent:
         for nm, sim in strong_matches:
             try:
                 resolver = self._snapshot_resolver or self._loader
-                if resolver is None or not hasattr(
-                    resolver, "resolve_instruction"
-                ):
-                    raise RuntimeError(
-                        "frozen_skill_resolver_not_injected"
-                    )
+                if resolver is None or not hasattr(resolver, "resolve_instruction"):
+                    raise RuntimeError("frozen_skill_resolver_not_injected")
                 scope = _frozen_scope_for_match(
                     nm,
                     skills,
@@ -276,11 +264,7 @@ class SkillComponent:
             # Skill authority. A regular Skill must bind its frozen scope even
             # when its body is deferred to Context OS page-in; otherwise the
             # body can arrive later without its allowed-tools narrowing.
-            if (
-                hasattr(scope, "to_dict")
-                and not is_knowledge
-                and context_os_on
-            ):
+            if hasattr(scope, "to_dict") and not is_knowledge and context_os_on:
                 activated_scopes.append(scope.to_dict())
             # Per-skill truncation
             max_chars = per_skill_max_tokens * _CHARS_PER_TOKEN
@@ -289,26 +273,31 @@ class SkillComponent:
             body_tokens = count_text_tokens(raw_body)
             overflow = used_tokens >= budget_tokens or used_tokens + body_tokens > budget_tokens
             if context_os_on:
-                page_fragments.append(ContextFragment(
-                    fragment_id=f"skill:{nm}", source=f"skill:{nm}", role="system",
-                    content=(f"[Skill {nm} available by page-in]" if overflow else raw_body),
-                    lifetime="task", placement="prefix", priority=70,
-                    trim_policy="page_in", reason="skill_auto_disclosure",
-                    meta={"page_in_kind": "skill", "page_in_source": nm,
-                          "page_in_content": authority_body, "overflow": overflow},
-                ))
+                page_fragments.append(
+                    ContextFragment(
+                        fragment_id=f"skill:{nm}",
+                        source=f"skill:{nm}",
+                        role="system",
+                        content=(f"[Skill {nm} available by page-in]" if overflow else raw_body),
+                        lifetime="task",
+                        placement="prefix",
+                        priority=70,
+                        trim_policy="page_in",
+                        reason="skill_auto_disclosure",
+                        meta={
+                            "page_in_kind": "skill",
+                            "page_in_source": nm,
+                            "page_in_content": authority_body,
+                            "overflow": overflow,
+                        },
+                    )
+                )
             if overflow:
                 continue
-            if (
-                hasattr(scope, "to_dict")
-                and not is_knowledge
-                and not context_os_on
-            ):
+            if hasattr(scope, "to_dict") and not is_knowledge and not context_os_on:
                 activated_scopes.append(scope.to_dict())
             heading = "知识片段（自动注入）" if is_knowledge else "技能正文（自动预载）"
-            body_sections.append(
-                f"### {nm} {heading}\n{raw_body}"
-            )
+            body_sections.append(f"### {nm} {heading}\n{raw_body}")
             used_tokens += body_tokens
             auto_loaded_count += 1
             if is_knowledge:
@@ -341,25 +330,38 @@ class SkillComponent:
         if context_os_on:
             fragments = []
             if desc_text:
-                fragments.append(ContextFragment(
-                    fragment_id="skill:catalog", source="skill:catalog", role="system",
-                    content=desc_text, lifetime="stable", placement="prefix", priority=85,
-                    trim_policy="never", protected=True, reason="skill_catalog",
-                    cache_scope="session",
-                ))
+                fragments.append(
+                    ContextFragment(
+                        fragment_id="skill:catalog",
+                        source="skill:catalog",
+                        role="system",
+                        content=desc_text,
+                        lifetime="stable",
+                        placement="prefix",
+                        priority=85,
+                        trim_policy="never",
+                        protected=True,
+                        reason="skill_catalog",
+                        cache_scope="session",
+                    )
+                )
             fragments.extend(page_fragments)
             return Slice(
-                component_name=self.name, fragments=fragments,
-                tokens=count_text_tokens(desc_text) + used_tokens, priority=85,
-                meta={"count": len(visible_skills), "auto_loaded_count": auto_loaded_count,
-                      "knowledge_loaded_count": knowledge_loaded_count,
-                      "page_in_count": sum(1 for f in page_fragments if f.meta.get("overflow")),
-                      "skill_invocation_scopes": activated_scopes,
-                      "active_skill_scope_ids": [
-                          str(item["scope_id"]) for item in activated_scopes
-                      ],
-                      "triggered": bool(page_fragments), "protected": knowledge_loaded_count > 0,
-                      "latency_ms": round(elapsed_ms, 2)},
+                component_name=self.name,
+                fragments=fragments,
+                tokens=count_text_tokens(desc_text) + used_tokens,
+                priority=85,
+                meta={
+                    "count": len(visible_skills),
+                    "auto_loaded_count": auto_loaded_count,
+                    "knowledge_loaded_count": knowledge_loaded_count,
+                    "page_in_count": sum(1 for f in page_fragments if f.meta.get("overflow")),
+                    "skill_invocation_scopes": activated_scopes,
+                    "active_skill_scope_ids": [str(item["scope_id"]) for item in activated_scopes],
+                    "triggered": bool(page_fragments),
+                    "protected": knowledge_loaded_count > 0,
+                    "latency_ms": round(elapsed_ms, 2),
+                },
             )
         return Slice(
             component_name=self.name,
@@ -373,9 +375,7 @@ class SkillComponent:
                 "knowledge_loaded_count": knowledge_loaded_count,
                 "triggered": auto_loaded_count > 0,
                 "skill_invocation_scopes": activated_scopes,
-                "active_skill_scope_ids": [
-                    str(item["scope_id"]) for item in activated_scopes
-                ],
+                "active_skill_scope_ids": [str(item["scope_id"]) for item in activated_scopes],
                 "protected": knowledge_loaded_count > 0,
                 "latency_ms": round(elapsed_ms, 2),
             },
@@ -385,6 +385,7 @@ class SkillComponent:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _skill_attr(s: Any, attr: str, default: Any = None) -> Any:
     if isinstance(s, dict):
@@ -401,11 +402,7 @@ def _frozen_scope_for_match(
     """Use discovery only for exact identity, never for instruction bytes."""
 
     item = next(
-        (
-            skill
-            for skill in skills
-            if str(_skill_attr(skill, "name", "")) == name
-        ),
+        (skill for skill in skills if str(_skill_attr(skill, "name", "")) == name),
         None,
     )
     if item is None:
@@ -413,12 +410,8 @@ def _frozen_scope_for_match(
     owner_key = str(_skill_attr(item, "owner_key", "") or "")
     pack_id = str(_skill_attr(item, "pack_id", "") or "")
     version = str(_skill_attr(item, "version", "") or "")
-    manifest_hash = str(
-        _skill_attr(item, "manifest_hash", "") or ""
-    )
-    content_hash = str(
-        _skill_attr(item, "content_hash", "") or ""
-    )
+    manifest_hash = str(_skill_attr(item, "manifest_hash", "") or "")
+    content_hash = str(_skill_attr(item, "content_hash", "") or "")
     scope_hash = str(_skill_attr(item, "scope_hash", "") or "")
     if all(
         (
@@ -443,9 +436,7 @@ def _frozen_scope_for_match(
         )
     # Compatibility is restricted to an explicitly injected no-Manager
     # resolver (the historical SkillLoader used by unit tests).
-    if not bool(
-        getattr(legacy_resolver, "legacy_no_manager_resolver", False)
-    ):
+    if not bool(getattr(legacy_resolver, "legacy_no_manager_resolver", False)):
         raise RuntimeError("managed_skill_identity_incomplete")
     resolve = getattr(legacy_resolver, "resolve_selection", None)
     if not callable(resolve):
@@ -471,11 +462,7 @@ def _is_profile_owned_compat_skill(name: str, skills: list[Any]) -> bool:
         if str(_skill_attr(skill, "name", "")) != name:
             continue
         allowed = _skill_attr(skill, "allowed_tools", ()) or ()
-        normalized = {
-            str(item).strip().casefold()
-            for item in allowed
-            if str(item).strip()
-        }
+        normalized = {str(item).strip().casefold() for item in allowed if str(item).strip()}
         if normalized & _PROFILE_OWNED_LEGACY_TOOL_NAMES:
             return True
     return False

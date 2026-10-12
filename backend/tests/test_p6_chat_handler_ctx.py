@@ -17,6 +17,7 @@ Cases:
   * 4.8c when a non-empty provider_chain is supplied, llm_for_summarize
     is the first provider in the chain.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -75,7 +76,9 @@ class TestChatPrep:
             {"role": "assistant", "content": "world"},
         ]
         out = await prepare_chat_messages_for_chain(
-            msgs, provider_chain=[provider], ctx_mgr=ctx,
+            msgs,
+            provider_chain=[provider],
+            ctx_mgr=ctx,
         )
         assert len(ctx.calls) == 1
         # Returned value matches what ctx returned (passthrough copy).
@@ -86,7 +89,9 @@ class TestChatPrep:
         """ctx is None → returns messages unchanged, no exception."""
         msgs = [{"role": "user", "content": "ping"}]
         out = await prepare_chat_messages_for_chain(
-            msgs, provider_chain=[_StubProvider("p1")], ctx_mgr=None,
+            msgs,
+            provider_chain=[_StubProvider("p1")],
+            ctx_mgr=None,
         )
         assert out is msgs  # identity passthrough — no copy needed
 
@@ -130,7 +135,9 @@ class TestChatPrep:
             {"role": "assistant", "content": "a"},
         ]
         out = await prepare_chat_messages_for_chain(
-            msgs, provider_chain=[_StubProvider("p1")], ctx_mgr=ctx,
+            msgs,
+            provider_chain=[_StubProvider("p1")],
+            ctx_mgr=ctx,
         )
         # ContextManager.prepare_chat_messages returns list(messages)
         # when no compaction is needed; identity not required.

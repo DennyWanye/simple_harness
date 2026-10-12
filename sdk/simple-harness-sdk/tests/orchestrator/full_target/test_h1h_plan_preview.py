@@ -36,6 +36,7 @@ def _adapter_context() -> AdapterContext:
         read_set=(ReadItem(ReadItemKind.TASK, "t-1", 1, "a" * 64),),
     )
 
+
 @pytest.mark.parametrize("fixture", ("wait", "no-change"))
 def test_state_free_decisions_stop_before_shape_or_operation_preview(
     monkeypatch, fixture: str

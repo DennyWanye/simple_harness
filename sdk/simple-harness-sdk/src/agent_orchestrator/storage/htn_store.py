@@ -180,21 +180,28 @@ class DirtyEntry:
     state: str
 
 
-
 def _observation_question(question: Mapping[str, Any] | None, proposition: str) -> str:
     """Canonical ``question_json`` of an observation, checked against its proposition key."""
     from ..contracts.semantic_base import VersionedRef
 
-    if (not isinstance(question, Mapping) or set(question) != {"predicate_ref", "arguments"}
-            or not isinstance(question["arguments"], Mapping)):
-        raise StoreConflict("an observation is stored with the question it answers (predicate_ref, arguments)")
+    if (
+        not isinstance(question, Mapping)
+        or set(question) != {"predicate_ref", "arguments"}
+        or not isinstance(question["arguments"], Mapping)
+    ):
+        raise StoreConflict(
+            "an observation is stored with the question it answers (predicate_ref, arguments)"
+        )
     predicate = VersionedRef.from_json(question["predicate_ref"]).to_json()
     arguments = {key: question["arguments"][key] for key in sorted(question["arguments"])}
     from ..knowledge.predicates import proposition_key_of
 
     if proposition_key_of(predicate, arguments) != proposition:
-        raise StoreConflict("the question does not compute back to the observation's proposition key")
+        raise StoreConflict(
+            "the question does not compute back to the observation's proposition key"
+        )
     return canonical_json({"predicate_ref": predicate, "arguments": arguments})
+
 
 class HtnStore:
     """Insert / get / list for the full-target tables, in contract objects."""
@@ -355,7 +362,10 @@ class HtnStore:
             raise StoreConflict(
                 f"method {reference.method_id}@{reference.version} has a different content hash"
             )
-        with original_source_mutation(self._store, writer="HtnStore.set_method_registration"), self._store.transaction() as connection:
+        with (
+            original_source_mutation(self._store, writer="HtnStore.set_method_registration"),
+            self._store.transaction() as connection,
+        ):
             try:
                 connection.execute(
                     "UPDATE method_contracts SET registry_status = ?, author = ?,"
@@ -1245,8 +1255,15 @@ class HtnStore:
             )
             from ..contracts.models import sha256_hex
             from .taskgraph_source_events import record_source_change
-            record_source_change(self._store, mission, kind="validity_witness",
-                source_id=witness.witness_id, revision=1, content_hash=sha256_hex(witness.to_json()))
+
+            record_source_change(
+                self._store,
+                mission,
+                kind="validity_witness",
+                source_id=witness.witness_id,
+                revision=1,
+                content_hash=sha256_hex(witness.to_json()),
+            )
         return witness
 
     def get_validity_witness(self, witness_id: str) -> ValidityWitness:
@@ -1276,7 +1293,11 @@ class HtnStore:
         return tuple(ValidityWitness.from_json(json.loads(row[0])) for row in rows)
 
     def insert_observation(
-        self, mission_id: str, observation: ObservationRecord, *, question: Mapping[str, Any] | None,
+        self,
+        mission_id: str,
+        observation: ObservationRecord,
+        *,
+        question: Mapping[str, Any] | None,
         scope_id: str = "mission",
     ) -> ObservationRecord:
         """The one write entry for an observation.
@@ -1296,7 +1317,9 @@ class HtnStore:
         asked = _observation_question(question, observation.proposition_key)
         with self._store.transaction():
             before, after = truth_change(
-                self.list_observations(mission, proposition_key=observation.proposition_key), observation)
+                self.list_observations(mission, proposition_key=observation.proposition_key),
+                observation,
+            )
             self._insert(
                 "INSERT INTO observations(observation_id,mission_id,proposition_key,polarity,scope_id,"
                 "source_kind,source_id,coverage,observer_id,observed_at_ms,recorded_at_ms,"
@@ -1323,12 +1346,22 @@ class HtnStore:
                 f"observation {observation.observation_id} already stored",
             )
             if before in (TruthValue.TRUE, TruthValue.FALSE) and after is not before:
-                self.bump_epoch(mission, identifier(scope_id, "scope_id"),
-                                bumped_by=f"observation:{observation.observation_id}")
+                self.bump_epoch(
+                    mission,
+                    identifier(scope_id, "scope_id"),
+                    bumped_by=f"observation:{observation.observation_id}",
+                )
             from ..contracts.models import sha256_hex
             from .taskgraph_source_events import record_source_change
-            record_source_change(self._store, mission, kind="observation",
-                source_id=observation.observation_id, revision=1, content_hash=sha256_hex(observation.to_json()))
+
+            record_source_change(
+                self._store,
+                mission,
+                kind="observation",
+                source_id=observation.observation_id,
+                revision=1,
+                content_hash=sha256_hex(observation.to_json()),
+            )
         return observation
 
     def observation_questions(self, mission_id: str) -> tuple[dict[str, Any], ...]:
@@ -1336,12 +1369,20 @@ class HtnStore:
         observation's), for the re-read."""
         rows = self._store.connection.execute(
             "SELECT proposition_key, scope_id, question_json FROM observations WHERE mission_id=?"
-            " ORDER BY observed_at_ms, observation_id", (identifier(mission_id, "mission_id"),)).fetchall()
+            " ORDER BY observed_at_ms, observation_id",
+            (identifier(mission_id, "mission_id"),),
+        ).fetchall()
         found: dict[str, dict[str, Any]] = {}
         for key, scope, raw in rows:
             if not raw:
-                raise StoreConflict(f"observation of {key} records no question; it cannot be read again")
-            found[str(key)] = {"proposition_key": str(key), "scope_id": str(scope), **json.loads(raw)}
+                raise StoreConflict(
+                    f"observation of {key} records no question; it cannot be read again"
+                )
+            found[str(key)] = {
+                "proposition_key": str(key),
+                "scope_id": str(scope),
+                **json.loads(raw),
+            }
         return tuple(found[key] for key in sorted(found))
 
     def get_observation(self, observation_id: str) -> ObservationRecord:
@@ -1391,9 +1432,17 @@ class HtnStore:
             )
             from ..contracts.models import sha256_hex
             from .taskgraph_source_events import record_source_change
-            record_source_change(self._store, mission, kind="validity_epoch", source_id=scope,
-                revision=epoch, content_hash=sha256_hex({"mission_id": mission, "scope_id": scope,
-                    "epoch": epoch, "bumped_by": actor}))
+
+            record_source_change(
+                self._store,
+                mission,
+                kind="validity_epoch",
+                source_id=scope,
+                revision=epoch,
+                content_hash=sha256_hex(
+                    {"mission_id": mission, "scope_id": scope, "epoch": epoch, "bumped_by": actor}
+                ),
+            )
         return epoch
 
     def epoch(self, mission_id: str, scope_id: str) -> int:
@@ -1462,12 +1511,16 @@ class HtnStore:
         subjects = {task_id}
         active = self.active_plan_revision(mission)
         if active is not None:
-            subjects |= {str(spec.occurrence_id)
-                         for spec in self.list_plan_memberships(mission, active.revision)
-                         if str(spec.task_id) == task_id}
-        subjects |= {str(item.effective_goal_occurrence_id)
-                     for item in self.list_method_instances(mission, state="ADOPTED")
-                     if str(item.goal_id) == task_id and item.effective_goal_occurrence_id}
+            subjects |= {
+                str(spec.occurrence_id)
+                for spec in self.list_plan_memberships(mission, active.revision)
+                if str(spec.task_id) == task_id
+            }
+        subjects |= {
+            str(item.effective_goal_occurrence_id)
+            for item in self.list_method_instances(mission, state="ADOPTED")
+            if str(item.goal_id) == task_id and item.effective_goal_occurrence_id
+        }
         marks = ",".join("?" * len(subjects))
         with self._store.transaction() as connection:
             cursor = connection.execute(

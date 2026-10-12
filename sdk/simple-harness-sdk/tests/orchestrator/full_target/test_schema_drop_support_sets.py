@@ -58,8 +58,8 @@ def test_published_migration_text_is_unchanged() -> None:
     assert "CREATE TABLE justification_sets" in texts[16]
     assert "failure_count INTEGER" in texts[16]
     assert "assurance_source_support_members_insert" in texts[26]
-    rebuilt = texts[39][texts[39].index(f"CREATE TRIGGER {TRIGGER}"):]
-    original = texts[38][texts[38].index(f"CREATE TRIGGER {TRIGGER}"):]
+    rebuilt = texts[39][texts[39].index(f"CREATE TRIGGER {TRIGGER}") :]
+    original = texts[38][texts[38].index(f"CREATE TRIGGER {TRIGGER}") :]
     assert rebuilt == original.replace(
         " OR NEW.failure_count IS NOT OLD.failure_count"
         " OR NEW.spent_tokens IS NOT OLD.spent_tokens"
@@ -87,13 +87,17 @@ def test_a_version_38_library_opens_and_keeps_its_duties(tmp_path, monkeypatch) 
 
     _gone(path)
     # 备份按"这次升到的最后一个迁移号"命名（D4-15），不写死号码
-    assert path.with_name(f"orchestrator.db.pre-schema-{schema.MIGRATIONS[-1].version}.backup").is_file()
+    assert path.with_name(
+        f"orchestrator.db.pre-schema-{schema.MIGRATIONS[-1].version}.backup"
+    ).is_file()
     connection = sqlite3.connect(path)
     try:
         assert connection.execute(
             "SELECT obligation_id,fuel_limit,fuel_used,fuel_remaining FROM obligations"
         ).fetchall() == [("o1", 3, 1, 2)]
-        assert max(row[0] for row in connection.execute(
-            "SELECT version FROM orch_schema_migrations")) == schema.MIGRATIONS[-1].version
+        assert (
+            max(row[0] for row in connection.execute("SELECT version FROM orch_schema_migrations"))
+            == schema.MIGRATIONS[-1].version
+        )
     finally:
         connection.close()

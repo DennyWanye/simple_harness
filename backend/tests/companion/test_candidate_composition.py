@@ -121,9 +121,7 @@ def _material_values(product):
     return product.package.candidate_content_hash, product.file_set_hash
 
 
-def _receipt(
-    facts: CandidateCompositionFactsV1, product=None
-) -> CandidateDraftReceiptV1:
+def _receipt(facts: CandidateCompositionFactsV1, product=None) -> CandidateDraftReceiptV1:
     product = product or _product()
     validated_draft_hash, file_set_hash = _material_values(product)
     return CandidateDraftReceiptV1.issue_from_host(
@@ -232,10 +230,7 @@ class FakeMaterialQuery:
 
 def _service(*facts: CandidateCompositionFactsV1):
     calls: list[str] = []
-    products = {
-        item.builder_launch_id: _product()
-        for item in facts
-    }
+    products = {item.builder_launch_id: _product() for item in facts}
     receipts = [_receipt(item, products[item.builder_launch_id]) for item in facts]
     query = FakeReceiptQuery(
         {(item.receipt_id, item.receipt_hash): item for item in receipts},
@@ -328,9 +323,7 @@ def test_new_evidence_reuses_exact_package_but_creates_new_attempt() -> None:
         ("effect_topology_hash", "candidate_receipt_effect_topology_hash_mismatch"),
     ],
 )
-def test_any_receipt_or_package_hash_drift_fails_before_store_commit(
-    field: str, code: str
-) -> None:
+def test_any_receipt_or_package_hash_drift_fails_before_store_commit(field: str, code: str) -> None:
     facts = _facts()
     service, store, _calls, receipts = _service(facts)
     original = receipts[0]
@@ -382,9 +375,7 @@ def test_missing_receipt_raw_receipt_and_commit_time_drift_all_fail_closed() -> 
     service._receipt_query.receipts[  # type: ignore[attr-defined]
         (receipts[0].receipt_id, receipts[0].receipt_hash)
     ] = {"receipt_id": receipts[0].receipt_id}
-    with pytest.raises(
-        CandidateCompositionError, match="candidate_draft_receipt_type_invalid"
-    ):
+    with pytest.raises(CandidateCompositionError, match="candidate_draft_receipt_type_invalid"):
         service.create_candidate_from_builder_receipt(request)
     assert store.commit_count == 0
 
@@ -409,9 +400,7 @@ def test_raw_request_or_raw_current_facts_are_never_accepted() -> None:
         )
 
     store.facts[facts.build_id] = {"build_id": facts.build_id}
-    with pytest.raises(
-        CandidateCompositionError, match="candidate_current_facts_type_invalid"
-    ):
+    with pytest.raises(CandidateCompositionError, match="candidate_current_facts_type_invalid"):
         service.create_candidate_from_builder_receipt(
             CandidateCompositionRequestV1(
                 build_id=facts.build_id,

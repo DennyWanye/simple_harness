@@ -63,7 +63,9 @@ def _loop(*, closeout: bool, actions=(), approvals=(), dead_end: bool = False):
         store=SimpleNamespace(
             list_tasks=lambda mission_id: [SimpleNamespace(status="READY")],
             list_actions=lambda mission_id: list(actions),
-            list_approvals=lambda mission_id, *states: [a for a in approvals if not states or a["state"] in states],
+            list_approvals=lambda mission_id, *states: [
+                a for a in approvals if not states or a["state"] in states
+            ],
         ),
         commit=SimpleNamespace(assured_closeout_pending=lambda mission_id: closeout),
         _awaiting_retry_decision=lambda mission_id, task: False,
@@ -77,7 +79,9 @@ def _loop(*, closeout: bool, actions=(), approvals=(), dead_end: bool = False):
         _taskgraph_notifications=None,
         _note=notes.append,
         _unrecovered=set(),  # 阶段 B：恢复失败的任务这一轮不判空闲（假编排器要带这张表）
-        _round_backing_off=lambda mission_id: False,  # 试用前第 5 步：出错等退避间隔的任务也不判空闲
+        _round_backing_off=lambda mission_id: (
+            False
+        ),  # 试用前第 5 步：出错等退避间隔的任务也不判空闲
         _handoff_ground_gone=lambda action_key: False,  # 阶段 C 核验：地基没了的交接拒绝不算等人
         _requirements_unconfirmed=lambda mission: False,  # 阶段 E：现行要求在等人确认
         _decomposition_paused=lambda mission: False,  # 推后第 3 批 H12：审阅积压时暂停新拆分
@@ -104,8 +108,10 @@ def test_a_judged_mission_whose_effect_can_never_converge_is_a_stall_candidate()
 
 
 def test_an_unknown_action_or_a_pending_approval_waits():
-    for state, reason in (("UNKNOWN", "OPERATION_RECONCILIATION"),
-                          ("AWAITING_APPROVAL", "APPROVAL_PENDING")):
+    for state, reason in (
+        ("UNKNOWN", "OPERATION_RECONCILIATION"),
+        ("AWAITING_APPROVAL", "APPROVAL_PENDING"),
+    ):
         fake, mission = _loop(closeout=False, actions=[{"state": state, "action_key": "a1"}])
         facts, _, _ = Orchestrator._idle_facts(fake, mission)
         assert idle_verdict(facts).reason_code == reason
@@ -122,12 +128,18 @@ def test_a_result_suspended_for_a_persons_review_waits_instead_of_stalling():
     # result suspended and a review approval requested — and the same cycle failed the
     # Mission "no dispatchable work" and cancelled the approval: only *action*
     # approvals counted as a person's pending approval.
-    fake, mission = _loop(closeout=False, actions=[{"state": "SUCCEEDED"}],
-                          approvals=[{"kind": "review", "state": "PENDING"}])
+    fake, mission = _loop(
+        closeout=False,
+        actions=[{"state": "SUCCEEDED"}],
+        approvals=[{"kind": "review", "state": "PENDING"}],
+    )
     facts, admissions, _ = Orchestrator._idle_facts(fake, mission)
     assert facts.approvals_pending and admissions is None
     assert idle_verdict(facts).reason_code == "APPROVAL_PENDING"
-    fake, mission = _loop(closeout=False, actions=[{"state": "SUCCEEDED"}],
-                          approvals=[{"kind": "review", "state": "GRANTED"}])
+    fake, mission = _loop(
+        closeout=False,
+        actions=[{"state": "SUCCEEDED"}],
+        approvals=[{"kind": "review", "state": "GRANTED"}],
+    )
     facts, _, _ = Orchestrator._idle_facts(fake, mission)
     assert not facts.approvals_pending  # a decided one is no longer a wait

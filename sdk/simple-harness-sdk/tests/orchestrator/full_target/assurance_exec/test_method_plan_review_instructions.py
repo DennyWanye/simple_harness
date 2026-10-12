@@ -6,13 +6,14 @@
 子目标自己的做法之后会单独规划、单独过同样的审阅；子目标做完先过独立的组合审阅，排在它后面
 的步骤在那之后才开工。说明里只补事实，怎么判仍由审阅员定。
 """
+
 from __future__ import annotations
 
 from agent_orchestrator.assurance.review_input import REVIEW_INSTRUCTIONS
 
 
 def test_the_instructions_state_how_a_sub_goal_step_is_planned_and_gated() -> None:
-    section = REVIEW_INSTRUCTIONS[REVIEW_INSTRUCTIONS.index("METHOD_PLAN"):]
+    section = REVIEW_INSTRUCTIONS[REVIEW_INSTRUCTIONS.index("METHOD_PLAN") :]
     for fact in ("form 为 compound", "单独规划", "组合审阅", "之后才开工"):
         assert fact in section, fact
     # still the reviewer's judgement: nothing here tells it what verdict to give a sub-goal

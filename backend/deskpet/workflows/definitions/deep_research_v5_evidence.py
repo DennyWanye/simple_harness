@@ -20,9 +20,7 @@ from .deep_research_v5_contracts import (
 )
 
 FamilyMatchLevel = Literal["exact", "strong", "weak", "none"]
-CoverageStatus = Literal[
-    "covered", "partially_covered", "uncovered", "not_applicable"
-]
+CoverageStatus = Literal["covered", "partially_covered", "uncovered", "not_applicable"]
 
 POLICY_ID = "EvidenceAdmissionPolicyV1"
 POLICY_VERSION = "1"
@@ -348,9 +346,7 @@ def match_source_family(
         ),
         "published_date": (left.published_date or "", right.published_date or ""),
     }
-    matched = [
-        name for name, (a, b) in comparisons.items() if a and b and a == b
-    ]
+    matched = [name for name, (a, b) in comparisons.items() if a and b and a == b]
     matched_set = set(matched)
     if {"document_number", "issuing_body"} <= matched_set:
         return SourceFamilyMatch(
@@ -437,7 +433,9 @@ def fold_source_families(
     passages: list[AdmittedPassage] = []
     for members in groups.values():
         member_ids = tuple(sorted(item.candidate_id for item in members))
-        family_id = "family-" + hashlib.sha256("|".join(member_ids).encode("utf-8")).hexdigest()[:20]
+        family_id = (
+            "family-" + hashlib.sha256("|".join(member_ids).encode("utf-8")).hexdigest()[:20]
+        )
         canonical = _canonical_candidate(members)
         member_urls = tuple(sorted({item.url for item in members}))
         family = EvidenceSourceFamily(
@@ -447,7 +445,9 @@ def fold_source_families(
             source_type=canonical.source_type,
             source_tier=canonical.source_tier,
             member_urls=member_urls,
-            original_document_url=(canonical.url if canonical.source_tier == "first_party" else None),
+            original_document_url=(
+                canonical.url if canonical.source_tier == "first_party" else None
+            ),
             page_quality="valid",
             content_hashes=tuple(sorted({item.effective_content_hash for item in members})),
         )
@@ -481,8 +481,7 @@ def _fetched_duplicate_rate(candidates: Sequence[EvidenceCandidate]) -> float:
 
 def classify_coverage(metrics: CoverageMetrics) -> CoverageStatus:
     quality_rates_ok = (
-        metrics.duplicate_rate <= MAX_DUPLICATE_RATE
-        and metrics.invalid_rate <= MAX_INVALID_RATE
+        metrics.duplicate_rate <= MAX_DUPLICATE_RATE and metrics.invalid_rate <= MAX_INVALID_RATE
     )
     first_party_ok = not metrics.first_party_required or metrics.first_party_satisfied
     if metrics.importance == "supporting":
@@ -524,7 +523,9 @@ def _coverage_gap_reasons(metrics: CoverageMetrics) -> tuple[str, ...]:
     reasons: list[str] = []
     if metrics.admitted_passages < (MIN_CORE_PASSAGES if metrics.importance == "core" else 1):
         reasons.append("insufficient_admitted_passages")
-    if metrics.strong_distinct_families < (MIN_CORE_FAMILIES if metrics.importance == "core" else 1):
+    if metrics.strong_distinct_families < (
+        MIN_CORE_FAMILIES if metrics.importance == "core" else 1
+    ):
         reasons.append("insufficient_strong_distinct_families")
     if metrics.importance == "core" and metrics.winning_relevance < MIN_WINNING_RELEVANCE:
         reasons.append("winning_relevance_below_threshold")
@@ -563,20 +564,15 @@ def evaluate_evidence(
             item for item in candidates if item.dimension_id == dimension.dimension_id
         ]
         dimension_passages = [
-            item
-            for item in admitted
-            if item.candidate.dimension_id == dimension.dimension_id
+            item for item in admitted if item.candidate.dimension_id == dimension.dimension_id
         ]
         family_ids = tuple(sorted({item.family_id for item in dimension_passages}))
         invalid_count = sum(
             1
             for decision in decisions
-            if decision.dimension_id == dimension.dimension_id
-            and decision.stage == "page_invalid"
+            if decision.dimension_id == dimension.dimension_id and decision.stage == "page_invalid"
         )
-        invalid_rate = (
-            invalid_count / len(dimension_candidates) if dimension_candidates else 0.0
-        )
+        invalid_rate = invalid_count / len(dimension_candidates) if dimension_candidates else 0.0
         duplicate_rate = _fetched_duplicate_rate(dimension_candidates)
         first_party = _first_party_satisfied(dimension, dimension_passages)
         winning_relevance = max(

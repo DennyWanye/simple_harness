@@ -160,10 +160,7 @@ def test_extractive_recovery_narrows_paraphrases_to_admitted_passages() -> None:
     )
     passages = {item["candidate_id"]: item["span_text"] for item in candidates}
     assert result["delivery_status"] == "completed"
-    assert all(
-        claim["text"] in passages[claim["source_ids"][0]]
-        for claim in recovered["claims"]
-    )
+    assert all(claim["text"] in passages[claim["source_ids"][0]] for claim in recovered["claims"])
     assert all(
         analysis["direct_answer"] in passages[analysis["winning_evidence_ids"][0]]
         for analysis in recovered["analyses"]
@@ -199,19 +196,14 @@ def test_atomic_repair_changes_only_one_dimension_and_never_sources() -> None:
         expected_dimension_id=dimension_id,
     )
     assert repaired["claims"][-1]["claim_id"] == "replacement-key"
-    assert all(
-        item["dimension_id"] != dimension_id
-        for item in repaired["claims"][:-1]
-    )
+    assert all(item["dimension_id"] != dimension_id for item in repaired["claims"][:-1])
     with pytest.raises(ReportDraftError, match="one dimension"):
         apply_atomic_repair(
             draft,
             {
                 "repair_action": "narrow_unsupported_claim",
                 "dimension_id": dimension_id,
-                "replacement_claims": [
-                    {**replacement, "dimension_id": "different-dimension"}
-                ],
+                "replacement_claims": [{**replacement, "dimension_id": "different-dimension"}],
             },
             allowed_action="narrow_unsupported_claim",
             expected_dimension_id=dimension_id,

@@ -472,8 +472,7 @@ def test_continuation_preparation_crash_replays_the_claimed_ref(
         assert tuple(stage) == ("preparing", _ref(continuation_id))
         with repository.database.transaction() as connection:
             connection.execute(
-                "UPDATE context_preparation_staging SET lease_expires_at=0 "
-                "WHERE identity_key=?",
+                "UPDATE context_preparation_staging SET lease_expires_at=0 WHERE identity_key=?",
                 (continuation_id,),
             )
         await runtime.close()
@@ -497,8 +496,7 @@ def test_continuation_preparation_crash_replays_the_claimed_ref(
             reopened_repository = reopened._ports.context_staging
             replay_query_id = context_query_id(ContextStageKind.CONTINUATION, continuation_id)
             replayed = reopened_repository.get(
-                "agent-memory-stage/v1/"
-                + replay_query_id.rsplit("/", 1)[-1]
+                "agent-memory-stage/v1/" + replay_query_id.rsplit("/", 1)[-1]
             )
             assert replayed is not None and replayed.state.value == "consumed"
             assert replayed.source_snapshot_ref == _ref(continuation_id)
@@ -539,10 +537,13 @@ def test_continuation_preparation_crash_replays_the_claimed_ref(
                 )
             assert memory.recalls == memory.releases == []
             assert len(context.requests) == requests_before_replay
-            assert reopened_repository.database.connection.execute(
-                "SELECT COUNT(*) FROM context_preparation_staging WHERE identity_key=?",
-                (continuation_id,),
-            ).fetchone()[0] == 1
+            assert (
+                reopened_repository.database.connection.execute(
+                    "SELECT COUNT(*) FROM context_preparation_staging WHERE identity_key=?",
+                    (continuation_id,),
+                ).fetchone()[0]
+                == 1
+            )
             reopened_fixture.provider.allow.set()
             await reopened.wait_idle(run_id)
 

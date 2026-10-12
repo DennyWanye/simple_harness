@@ -615,18 +615,28 @@ def _order_gate(context: _Context) -> _GateResult:
                 )
             )
             continue
-        if (constraint.release_condition is ReleaseCondition.SETTLED_TERMINAL
-                and context.settlements is not None):
+        if (
+            constraint.release_condition is ReleaseCondition.SETTLED_TERMINAL
+            and context.settlements is not None
+        ):
             fact = context.settlements.get(constraint.before)
             binding = context.plan.snapshot.binding_for_occurrence(constraint.before)
-            if (fact is None or fact.mission_id != str(context.plan.mission_id)
-                    or fact.plan_revision != int(context.plan.plan_revision)
-                    or fact.occurrence_id != str(constraint.before)
-                    or fact.contract_revision != int(binding.contract_revision)
-                    or fact.dispatch_generation != int(binding.dispatch_generation)
-                    or fact.outcome != str(outcome)):
-                problems.append(ReadinessDetail(code="order_settlement_pending", subject=str(constraint.before),
-                    message="the predecessor lacks complete original runtime, Operation and accounting settlement"))
+            if (
+                fact is None
+                or fact.mission_id != str(context.plan.mission_id)
+                or fact.plan_revision != int(context.plan.plan_revision)
+                or fact.occurrence_id != str(constraint.before)
+                or fact.contract_revision != int(binding.contract_revision)
+                or fact.dispatch_generation != int(binding.dispatch_generation)
+                or fact.outcome != str(outcome)
+            ):
+                problems.append(
+                    ReadinessDetail(
+                        code="order_settlement_pending",
+                        subject=str(constraint.before),
+                        message="the predecessor lacks complete original runtime, Operation and accounting settlement",
+                    )
+                )
                 continue
         if order_released(outcome, constraint.release_condition):
             continue
@@ -933,7 +943,10 @@ def _stale_gate(context: _Context) -> _GateResult:
     if binding is None:
         return None
     problems: list[ReadinessDetail] = []
-    planned, current = context.plan.planned_requirements_revision, context.plan.current_requirements_revision
+    planned, current = (
+        context.plan.planned_requirements_revision,
+        context.plan.current_requirements_revision,
+    )
     if planned and current and planned != current:
         problems.append(
             ReadinessDetail(
@@ -1018,18 +1031,35 @@ READINESS_PRECEDENCE: tuple[ReadinessReason, ...] = gate_precedence()
 
 def _current_method_owners(plan: ActivePlanView, binding: TaskSemanticBindingV1) -> tuple[Any, ...]:
     """Live memberships, including retained goals whose creation owner retired."""
-    occurrences = {spec.occurrence_id for spec in plan.snapshot.occurrences
-                   if spec.task_id == binding.task_id}
-    return tuple(sorted((draft for draft in plan.snapshot.method_instances
-        if plan.snapshot.is_adopted(draft.instance_id) and any(
-            (child.goal_occurrence_id or child.occurrence_id) in occurrences
-            for child in draft.child_bindings)), key=lambda draft: str(draft.instance_id)))
+    occurrences = {
+        spec.occurrence_id for spec in plan.snapshot.occurrences if spec.task_id == binding.task_id
+    }
+    return tuple(
+        sorted(
+            (
+                draft
+                for draft in plan.snapshot.method_instances
+                if plan.snapshot.is_adopted(draft.instance_id)
+                and any(
+                    (child.goal_occurrence_id or child.occurrence_id) in occurrences
+                    for child in draft.child_bindings
+                )
+            ),
+            key=lambda draft: str(draft.instance_id),
+        )
+    )
 
 
 def _method_read(plan: ActivePlanView, binding: TaskSemanticBindingV1) -> tuple[ReadItem, ...]:
-    return tuple(ReadItem(kind=ReadItemKind.METHOD, id=str(draft.instance_id),
-        semantic_revision=int(draft.plan_revision), content_hash=content_hash_of(draft.to_json()))
-        for draft in _current_method_owners(plan, binding))
+    return tuple(
+        ReadItem(
+            kind=ReadItemKind.METHOD,
+            id=str(draft.instance_id),
+            semantic_revision=int(draft.plan_revision),
+            content_hash=content_hash_of(draft.to_json()),
+        )
+        for draft in _current_method_owners(plan, binding)
+    )
 
 
 def _acceptance_reads(manifest: InputManifest | None) -> tuple[ReadItem, ...]:
@@ -1526,9 +1556,7 @@ def admit_for_dispatch(
             dispatch_generation=binding.dispatch_generation,
             input_binding_revision=binding.input_binding_revision,
             input_manifest_hash=manifest_hash,
-            method_instance_id=(
-                None if not owners else owners[0].instance_id
-            ),
+            method_instance_id=(None if not owners else owners[0].instance_id),
             requirement_refs=binding.requirement_refs,
             acceptance_ids=tuple(item.id for item in _acceptance_reads(manifest)),
             read_set=report.read_set,

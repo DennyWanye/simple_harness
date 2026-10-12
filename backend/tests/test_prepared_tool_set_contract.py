@@ -81,12 +81,8 @@ def test_schema_hash_mismatch_fails_closed() -> None:
 
 
 def test_selector_grammar_is_explicit() -> None:
-    assert selector_matches(
-        "source:mcp:*", name="mcp_x_read", toolset="mcp", source="mcp:x"
-    )
-    assert not selector_matches(
-        "source:plugin:*", name="mcp_x_read", toolset="mcp", source="mcp:x"
-    )
+    assert selector_matches("source:mcp:*", name="mcp_x_read", toolset="mcp", source="mcp:x")
+    assert not selector_matches("source:plugin:*", name="mcp_x_read", toolset="mcp", source="mcp:x")
     assert selector_matches(
         "source:capability:*",
         name="godot__detect",
@@ -122,9 +118,7 @@ def test_scope_store_pin_keeps_live_effect_alive_and_renews_ttl(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     now = [100.0]
-    monkeypatch.setattr(
-        "deskpet.tools.capabilities.time.monotonic", lambda: now[0]
-    )
+    monkeypatch.setattr("deskpet.tools.capabilities.time.monotonic", lambda: now[0])
     prepared = PreparedToolSet.create(
         scope_id="scope",
         revision=1,
@@ -142,23 +136,12 @@ def test_scope_store_pin_keeps_live_effect_alive_and_renews_ttl(
         ToolEligibilityContext("session-a", "request-a", "chat"),
     )
 
-    assert store.pin(
-        "scope", session_id="session-a", request_id="request-a"
-    )
+    assert store.pin("scope", session_id="session-a", request_id="request-a")
     now[0] = 106.0
-    assert store.get(
-        "scope", session_id="session-a", request_id="request-a"
-    )
-    assert store.unpin(
-        "scope", session_id="session-a", request_id="request-a"
-    )
+    assert store.get("scope", session_id="session-a", request_id="request-a")
+    assert store.unpin("scope", session_id="session-a", request_id="request-a")
 
     now[0] = 110.0
-    assert store.get(
-        "scope", session_id="session-a", request_id="request-a"
-    )
+    assert store.get("scope", session_id="session-a", request_id="request-a")
     now[0] = 112.0
-    assert (
-        store.get("scope", session_id="session-a", request_id="request-a")
-        is None
-    )
+    assert store.get("scope", session_id="session-a", request_id="request-a") is None

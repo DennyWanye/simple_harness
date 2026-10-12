@@ -21,9 +21,7 @@ def test_provider_content_blocks_become_body_free_attachment_refs() -> None:
             },
         ]
     )
-    messages = append_user_attachment_blocks(
-        [{"role": "user", "content": "inspect"}], blocks
-    )
+    messages = append_user_attachment_blocks([{"role": "user", "content": "inspect"}], blocks)
     refs, tokens = collect_attachment_budget(messages)
 
     assert messages[0]["content"][0] == {"type": "text", "text": "inspect"}
@@ -54,9 +52,7 @@ def test_input_text_attachment_is_preserved_and_budgeted() -> None:
         }
     ]
 
-    messages = append_user_attachment_blocks(
-        [{"role": "user", "content": "read it"}], blocks
-    )
+    messages = append_user_attachment_blocks([{"role": "user", "content": "read it"}], blocks)
     refs, tokens = collect_attachment_budget(messages)
 
     assert len(refs) == 1

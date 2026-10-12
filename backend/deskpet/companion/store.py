@@ -292,9 +292,7 @@ class CompanionStore:
             )
         return owner
 
-    def adopt_legacy_local_identity(
-        self, *, identity_namespace_hash: str
-    ) -> bool:
+    def adopt_legacy_local_identity(self, *, identity_namespace_hash: str) -> bool:
         """Replace Task-1's placeholder with this user-data domain UUID."""
 
         now = self._now()
@@ -454,8 +452,10 @@ class CompanionStore:
             raise ValueError("invalid_control_challenge_limits")
         now = self._now()
         expires_at = (
-            self._parse_timestamp(now) + timedelta(seconds=challenged_ttl_seconds)
-        ).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+            (self._parse_timestamp(now) + timedelta(seconds=challenged_ttl_seconds))
+            .isoformat(timespec="milliseconds")
+            .replace("+00:00", "Z")
+        )
         connection_id = str(uuid.uuid4())
         challenge = secrets.token_urlsafe(32)
         challenge_hash = hashlib.sha256(challenge.encode("utf-8")).hexdigest()
@@ -540,9 +540,7 @@ class CompanionStore:
             )
             return max(0, int(cursor.rowcount))
 
-    def get_profile_binding(
-        self, *, device_scope: str
-    ) -> Mapping[str, Any] | None:
+    def get_profile_binding(self, *, device_scope: str) -> Mapping[str, Any] | None:
         with self.read() as db:
             row = db.execute(
                 "SELECT * FROM profile_bindings WHERE device_scope=?",
@@ -550,9 +548,7 @@ class CompanionStore:
             ).fetchone()
             return dict(row) if row is not None else None
 
-    def resolve_active_profile(
-        self, *, identity_namespace_hash: str
-    ) -> OwnerRef | None:
+    def resolve_active_profile(self, *, identity_namespace_hash: str) -> OwnerRef | None:
         """Resolve an identity without reviving a tombstoned generation."""
 
         with self.read() as db:
@@ -606,9 +602,10 @@ class CompanionStore:
         }
         if not CompanionStore._same(lease, expected):
             raise CompanionLeaseError("control_lease_facts_mismatch")
-        if (
-            lease["status"] == "challenged" and lease["expires_at"] <= now
-        ) or lease["status"] in {"revoked", "expired"}:
+        if (lease["status"] == "challenged" and lease["expires_at"] <= now) or lease["status"] in {
+            "revoked",
+            "expired",
+        }:
             raise CompanionLeaseError("control_lease_expired")
         if lease["status"] == "active" and (
             lease["window_label"] != window_label or lease["scope"] != scope
@@ -815,8 +812,7 @@ class CompanionStore:
                 binding is None
                 or binding["status"] != "ready"
                 or binding["profile_id"] != expected_owner.profile_id
-                or int(binding["profile_generation"])
-                != expected_owner.profile_generation
+                or int(binding["profile_generation"]) != expected_owner.profile_generation
                 or int(binding["binding_epoch"]) != expected_binding_epoch
             ):
                 raise CompanionLeaseError("companion_identity_not_ready")
@@ -1025,9 +1021,7 @@ class CompanionStore:
                 ),
             ).fetchall()
         if tuple(str(row["event_id"]) for row in rows) != requested:
-            raise CompanionStateError(
-                "growth_evidence_missing_or_tombstoned"
-            )
+            raise CompanionStateError("growth_evidence_missing_or_tombstoned")
         evidence: list[GrowthEvidenceV1] = []
         for row in rows:
             payload = json.loads(str(row["payload_json"]))
@@ -1042,11 +1036,7 @@ class CompanionStore:
                 root_run_id=str(row["root_run_id"]),
                 reason_code=str(row["reason_code"]),
                 payload=payload,
-                retry_of=(
-                    None
-                    if row["retry_of"] is None
-                    else str(row["retry_of"])
-                ),
+                retry_of=(None if row["retry_of"] is None else str(row["retry_of"])),
                 event_hash=str(row["event_hash"]),
                 schema_version=int(row["schema_version"]),
             )
@@ -1126,17 +1116,12 @@ class CompanionStore:
             if row is None:
                 return None
             if str(row["source_message_hash"]) != source_message_hash:
-                raise CompanionConflictError(
-                    "preference_turn_source_message_conflict"
-                )
+                raise CompanionConflictError("preference_turn_source_message_conflict")
             payload = json.loads(str(row["decision_json"]))
-            if (
-                not isinstance(payload, dict)
-                or canonical_hash(payload) != str(row["decision_hash"])
+            if not isinstance(payload, dict) or canonical_hash(payload) != str(
+                row["decision_hash"]
             ):
-                raise CompanionStateError(
-                    "preference_turn_decision_receipt_corrupt"
-                )
+                raise CompanionStateError("preference_turn_decision_receipt_corrupt")
             return dict(row)
 
     def commit_preference_turn_decision_receipt(
@@ -1187,17 +1172,12 @@ class CompanionStore:
             ).fetchone()
             if row is not None:
                 if str(row["source_message_hash"]) != source_message_hash:
-                    raise CompanionConflictError(
-                        "preference_turn_source_message_conflict"
-                    )
+                    raise CompanionConflictError("preference_turn_source_message_conflict")
                 persisted = json.loads(str(row["decision_json"]))
-                if (
-                    not isinstance(persisted, dict)
-                    or canonical_hash(persisted) != str(row["decision_hash"])
+                if not isinstance(persisted, dict) or canonical_hash(persisted) != str(
+                    row["decision_hash"]
                 ):
-                    raise CompanionStateError(
-                        "preference_turn_decision_receipt_corrupt"
-                    )
+                    raise CompanionStateError("preference_turn_decision_receipt_corrupt")
                 return dict(row)
             db.execute(
                 """INSERT INTO preference_turn_decision_receipts(
@@ -1309,9 +1289,7 @@ class CompanionStore:
         if not isinstance(admission, ExplicitGrowthBuildAdmissionV1):
             raise TypeError("explicit_growth_build_admission_required")
         owner = admission.owner
-        expected_owner_key = (
-            f"companion:{owner.profile_id}:{owner.profile_generation}"
-        )
+        expected_owner_key = f"companion:{owner.profile_id}:{owner.profile_generation}"
         if admission.owner_key != expected_owner_key:
             raise CompanionOwnerError("explicit_build_owner_key_mismatch")
         proposal = admission.proposal
@@ -1325,9 +1303,7 @@ class CompanionStore:
         )
         target_fence_json = canonical_json(proposal.target_fence.to_dict())
         source_fence_hash = canonical_hash(
-            None
-            if proposal.source_fence is None
-            else proposal.source_fence.to_dict()
+            None if proposal.source_fence is None else proposal.source_fence.to_dict()
         )
         target_fence_hash = canonical_hash(proposal.target_fence.to_dict())
         evidence_ids = tuple(sorted(set(proposal.evidence_event_ids)))
@@ -1408,9 +1384,7 @@ class CompanionStore:
                     ),
                 )
             elif not self._same(target, target_expected):
-                raise CompanionConflictError(
-                    f"growth_target_conflict:{proposal.target.target_id}"
-                )
+                raise CompanionConflictError(f"growth_target_conflict:{proposal.target.target_id}")
             if proposal.candidate_mode.value == "genesis":
                 reservation = db.execute(
                     """SELECT * FROM growth_target_reservations
@@ -1457,10 +1431,8 @@ class CompanionStore:
                         ),
                     ).fetchone()
                     if (
-                        str(reservation["target_id"])
-                        != proposal.target.target_id
-                        or str(reservation["pack_id"])
-                        != proposal.target.pack_id
+                        str(reservation["target_id"]) != proposal.target.target_id
+                        or str(reservation["pack_id"]) != proposal.target.pack_id
                         or (
                             replay_build is None
                             and (
@@ -1505,9 +1477,7 @@ class CompanionStore:
             }
             if existing is not None:
                 if not self._same(existing, immutable):
-                    raise CompanionConflictError(
-                        f"candidate_build_conflict:{admission.build_id}"
-                    )
+                    raise CompanionConflictError(f"candidate_build_conflict:{admission.build_id}")
                 return dict(existing)
             db.execute(
                 """INSERT INTO candidate_builds(
@@ -1587,9 +1557,7 @@ class CompanionStore:
         source_ref = str(source_ref).strip()
         if not job_id or not decision_id or not source_ref or not reason_code:
             raise ValueError("reflection_decision_identity_required")
-        evidence_ids = tuple(
-            sorted({str(item).strip() for item in evidence_event_ids})
-        )
+        evidence_ids = tuple(sorted({str(item).strip() for item in evidence_event_ids}))
         if any(not item for item in evidence_ids):
             raise ValueError("reflection_evidence_id_invalid")
         evidence_hash = evidence_set_hash(evidence_ids)
@@ -1606,41 +1574,25 @@ class CompanionStore:
         if decision == "candidate":
             if (
                 typed_proposal is None
-                or typed_proposal.decision
-                is not GrowthProposalDecision.CANDIDATE
+                or typed_proposal.decision is not GrowthProposalDecision.CANDIDATE
             ):
-                raise CompanionStateError(
-                    "reflection_candidate_proposal_required"
-                )
+                raise CompanionStateError("reflection_candidate_proposal_required")
             if not proposal_ref:
                 raise ValueError("reflection_proposal_ref_required")
         elif (
             typed_proposal is not None
-            and typed_proposal.decision
-            is not GrowthProposalDecision.ABSTAIN
+            and typed_proposal.decision is not GrowthProposalDecision.ABSTAIN
         ):
-            raise CompanionStateError(
-                "reflection_non_candidate_proposal_invalid"
-            )
+            raise CompanionStateError("reflection_non_candidate_proposal_invalid")
         if typed_proposal is not None and (
             typed_proposal.evidence_event_ids != evidence_ids
             or typed_proposal.evidence_set_hash != evidence_hash
         ):
-            raise CompanionConflictError(
-                "reflection_proposal_evidence_mismatch"
-            )
+            raise CompanionConflictError("reflection_proposal_evidence_mismatch")
 
-        proposal_json = (
-            None
-            if typed_proposal is None
-            else canonical_json(typed_proposal.to_dict())
-        )
-        proposal_hash = (
-            None if typed_proposal is None else typed_proposal.proposal_hash
-        )
-        normalized_proposal_ref = (
-            None if proposal_ref is None else str(proposal_ref).strip()
-        )
+        proposal_json = None if typed_proposal is None else canonical_json(typed_proposal.to_dict())
+        proposal_hash = None if typed_proposal is None else typed_proposal.proposal_hash
+        normalized_proposal_ref = None if proposal_ref is None else str(proposal_ref).strip()
         if proposal_ref is not None and not normalized_proposal_ref:
             raise ValueError("reflection_proposal_ref_invalid")
         if decision == "candidate":
@@ -1660,15 +1612,11 @@ class CompanionStore:
                 }
             )
             if build_id is not None and str(build_id) != expected_build_id:
-                raise CompanionConflictError(
-                    "reflection_build_id_not_host_derived"
-                )
+                raise CompanionConflictError("reflection_build_id_not_host_derived")
             normalized_build_id = expected_build_id
         else:
             if build_id is not None:
-                raise CompanionStateError(
-                    "reflection_non_candidate_cannot_build"
-                )
+                raise CompanionStateError("reflection_non_candidate_cannot_build")
             normalized_build_id = None
 
         now = self._now()
@@ -1684,9 +1632,7 @@ class CompanionStore:
                 or str(job["kind"]) != "reflection"
                 or str(job["status"]) not in {"leased", "succeeded"}
             ):
-                raise CompanionStateError(
-                    "reflection_job_not_admissible"
-                )
+                raise CompanionStateError("reflection_job_not_admissible")
             if evidence_ids:
                 placeholders = ",".join("?" for _ in evidence_ids)
                 live = db.execute(
@@ -1701,9 +1647,7 @@ class CompanionStore:
                     ),
                 ).fetchall()
                 if {str(row["event_id"]) for row in live} != set(evidence_ids):
-                    raise CompanionStateError(
-                        "reflection_evidence_missing_or_tombstoned"
-                    )
+                    raise CompanionStateError("reflection_evidence_missing_or_tombstoned")
 
             existing = db.execute(
                 """SELECT * FROM reflection_decisions
@@ -1725,24 +1669,15 @@ class CompanionStore:
                 "schema_version": 1,
             }
             if existing:
-                if (
-                    len(existing) != 1
-                    or not self._same(existing[0], expected_decision)
-                ):
-                    raise CompanionConflictError(
-                        "reflection_decision_conflict"
-                    )
+                if len(existing) != 1 or not self._same(existing[0], expected_decision):
+                    raise CompanionConflictError("reflection_decision_conflict")
                 decision_row = dict(existing[0])
                 build_row = None
                 if normalized_build_id is not None:
-                    build_row = self._find_candidate_build(
-                        db, normalized_build_id, owner=owner
-                    )
+                    build_row = self._find_candidate_build(db, normalized_build_id, owner=owner)
                 return {
                     "decision": decision_row,
-                    "candidate_build": (
-                        None if build_row is None else dict(build_row)
-                    ),
+                    "candidate_build": (None if build_row is None else dict(build_row)),
                 }
 
             db.execute(
@@ -1812,9 +1747,7 @@ class CompanionStore:
                         ),
                     )
                 elif not self._same(target_row, target_expected):
-                    raise CompanionConflictError(
-                        f"growth_target_conflict:{target.target_id}"
-                    )
+                    raise CompanionConflictError(f"growth_target_conflict:{target.target_id}")
                 if typed_proposal.candidate_mode.value == "genesis":
                     reservation = db.execute(
                         """SELECT * FROM growth_target_reservations
@@ -1885,20 +1818,14 @@ class CompanionStore:
                         or str(reservation["status"]) != "held"
                         or reservation["candidate_id"] is not None
                     ):
-                        raise CompanionConflictError(
-                            f"growth_target_reserved:{target.target_id}"
-                        )
+                        raise CompanionConflictError(f"growth_target_reserved:{target.target_id}")
 
                 source_fence_json = (
                     None
                     if typed_proposal.source_fence is None
-                    else canonical_json(
-                        typed_proposal.source_fence.to_dict()
-                    )
+                    else canonical_json(typed_proposal.source_fence.to_dict())
                 )
-                target_fence_json = canonical_json(
-                    typed_proposal.target_fence.to_dict()
-                )
+                target_fence_json = canonical_json(typed_proposal.target_fence.to_dict())
                 builder_launch_id = "builder-launch:" + canonical_hash(
                     ["candidate-builder-launch-v1", normalized_build_id]
                 )
@@ -1949,9 +1876,7 @@ class CompanionStore:
                             else typed_proposal.source_fence.to_dict()
                         ),
                         target_fence_json,
-                        canonical_hash(
-                            typed_proposal.target_fence.to_dict()
-                        ),
+                        canonical_hash(typed_proposal.target_fence.to_dict()),
                         builder_launch_id,
                         child_run_id,
                         expected_child_start_hash,
@@ -1959,9 +1884,7 @@ class CompanionStore:
                         now,
                     ),
                 )
-                build_row = self._find_candidate_build(
-                    db, normalized_build_id, owner=owner
-                )
+                build_row = self._find_candidate_build(db, normalized_build_id, owner=owner)
             self._bump_detail(
                 db,
                 owner,
@@ -1990,16 +1913,12 @@ class CompanionStore:
             assert decision_row is not None
             return {
                 "decision": dict(decision_row),
-                "candidate_build": (
-                    None if build_row is None else dict(build_row)
-                ),
+                "candidate_build": (None if build_row is None else dict(build_row)),
             }
 
     @staticmethod
     def _candidate_build_owner(row: sqlite3.Row) -> OwnerRef:
-        return OwnerRef(
-            str(row["profile_id"]), int(row["profile_generation"])
-        )
+        return OwnerRef(str(row["profile_id"]), int(row["profile_generation"]))
 
     @staticmethod
     def _candidate_build_permit_matches(row: sqlite3.Row, permit: Any) -> bool:
@@ -2040,21 +1959,11 @@ class CompanionStore:
             expected_child_start_hash=str(row["expected_child_start_hash"]),
             task_workspace=str(row["task_workspace"] or ""),
             draft_receipt_expectation=expectation,
-            candidate_ref=(
-                str(row["candidate_ref"])
-                if row["candidate_ref"] is not None
-                else None
-            ),
+            candidate_ref=(str(row["candidate_ref"]) if row["candidate_ref"] is not None else None),
             candidate_hash=(
-                str(row["candidate_hash"])
-                if row["candidate_hash"] is not None
-                else None
+                str(row["candidate_hash"]) if row["candidate_hash"] is not None else None
             ),
-            last_error=(
-                str(row["last_error"])
-                if row["last_error"] is not None
-                else None
-            ),
+            last_error=(str(row["last_error"]) if row["last_error"] is not None else None),
         )
 
     def _find_candidate_build(
@@ -2081,9 +1990,7 @@ class CompanionStore:
             ).fetchall()
         if len(rows) != 1:
             raise CompanionStateError(
-                "candidate_build_missing"
-                if not rows
-                else "candidate_build_identity_ambiguous"
+                "candidate_build_missing" if not rows else "candidate_build_identity_ambiguous"
             )
         return rows[0]
 
@@ -2113,9 +2020,7 @@ class CompanionStore:
                 "build_id": str(row["build_id"]),
                 "status": str(row["status"]),
                 "candidate_ref": (
-                    str(row["candidate_ref"])
-                    if row["candidate_ref"] is not None
-                    else None
+                    str(row["candidate_ref"]) if row["candidate_ref"] is not None else None
                 ),
             }
 
@@ -2134,18 +2039,15 @@ class CompanionStore:
         from .candidate_build_coordinator import CandidateBuildStatus
 
         claim_owner = str(claim_owner).strip()
-        if (
-            not claim_owner
-            or claim_epoch < 1
-            or lease_seconds <= 0
-            or lease_seconds > 900
-        ):
+        if not claim_owner or claim_epoch < 1 or lease_seconds <= 0 or lease_seconds > 900:
             raise ValueError("candidate_build_claim_invalid")
         now = self._now()
         parsed_now = datetime.fromisoformat(now.replace("Z", "+00:00"))
-        expiry = (parsed_now + timedelta(seconds=lease_seconds)).isoformat(
-            timespec="milliseconds"
-        ).replace("+00:00", "Z")
+        expiry = (
+            (parsed_now + timedelta(seconds=lease_seconds))
+            .isoformat(timespec="milliseconds")
+            .replace("+00:00", "Z")
+        )
         with self._write() as db:
             row = self._find_candidate_build(db, build_id, owner=owner)
             build_owner = self._candidate_build_owner(row)
@@ -2181,16 +2083,10 @@ class CompanionStore:
             ):
                 return permit
             lease_expired = (
-                row["lease_expires_at"] is not None
-                and str(row["lease_expires_at"]) <= now
+                row["lease_expires_at"] is not None and str(row["lease_expires_at"]) <= now
             )
-            if (
-                claim_epoch != int(row["claim_epoch"]) + 1
-                or (
-                    row["claim_owner"] is not None
-                    and not lease_expired
-                    and int(row["claim_epoch"]) > 0
-                )
+            if claim_epoch != int(row["claim_epoch"]) + 1 or (
+                row["claim_owner"] is not None and not lease_expired and int(row["claim_epoch"]) > 0
             ):
                 raise CompanionLeaseError("candidate_build_claim_stale")
             evidence_ids = tuple(json.loads(str(row["evidence_set_json"])))
@@ -2310,9 +2206,7 @@ class CompanionStore:
         """
 
         normalized = str(claim_owner).strip()
-        normalized_build_id = (
-            None if build_id is None else str(build_id).strip()
-        )
+        normalized_build_id = None if build_id is None else str(build_id).strip()
         if (
             not normalized
             or (build_id is not None and not normalized_build_id)
@@ -2364,11 +2258,7 @@ class CompanionStore:
                 and row["build_permit_ref"] is not None
                 and row["build_permit_hash"] is not None
             )
-            claim_epoch = (
-                int(row["claim_epoch"])
-                if active_replay
-                else int(row["claim_epoch"]) + 1
-            )
+            claim_epoch = int(row["claim_epoch"]) if active_replay else int(row["claim_epoch"]) + 1
             return self.issue_for_claim(
                 build_id=str(row["build_id"]),
                 claim_owner=normalized,
@@ -2412,7 +2302,7 @@ class CompanionStore:
                 )
             )
             cursor = db.execute(
-                f"""UPDATE candidate_builds SET {','.join(assignments)}
+                f"""UPDATE candidate_builds SET {",".join(assignments)}
                     WHERE profile_id=? AND profile_generation=? AND build_id=?
                       AND status=? AND claim_epoch=?""",
                 tuple(params),
@@ -2422,9 +2312,7 @@ class CompanionStore:
             updated = self._find_candidate_build(db, permit.build_id)
             return self._candidate_build_state(updated)
 
-    def prepare_launch_pending(
-        self, permit: Any, *, task_workspace: str
-    ) -> Any:
+    def prepare_launch_pending(self, permit: Any, *, task_workspace: str) -> Any:
         workspace = str(task_workspace).strip()
         if not workspace:
             raise ValueError("candidate_build_workspace_required")
@@ -2512,16 +2400,11 @@ class CompanionStore:
                 or str(row["builder_child_run_id"]) != child_run_id
                 or str(row["expected_child_start_hash"]) != child_start_hash
             ):
-                raise CompanionConflictError(
-                    "candidate_builder_child_identity_mismatch"
-                )
+                raise CompanionConflictError("candidate_builder_child_identity_mismatch")
 
-    def ack_handoff_pending(
-        self, permit: Any, *, expectation: Any
-    ) -> Any:
+    def ack_handoff_pending(self, permit: Any, *, expectation: Any) -> Any:
         values = {
-            name: str(getattr(expectation, name))
-            for name in expectation.__dataclass_fields__
+            name: str(getattr(expectation, name)) for name in expectation.__dataclass_fields__
         }
         return self._candidate_build_transition(
             permit,
@@ -2594,9 +2477,7 @@ class CompanionStore:
         )
 
     @staticmethod
-    def _candidate_composition_from_db(
-        db: sqlite3.Connection, build_id: str
-    ) -> Any:
+    def _candidate_composition_from_db(db: sqlite3.Connection, build_id: str) -> Any:
         from .candidate_composition import CandidateCompositionFactsV1
         from .growth import CandidateBindingFenceV1, GrowthTargetIdentityV1
 
@@ -2606,9 +2487,7 @@ class CompanionStore:
         ).fetchall()
         if len(rows) != 1:
             raise CompanionStateError(
-                "candidate_build_missing"
-                if not rows
-                else "candidate_build_identity_ambiguous"
+                "candidate_build_missing" if not rows else "candidate_build_identity_ambiguous"
             )
         row = rows[0]
         if str(row["status"]) not in {"handoff_pending", "built"}:
@@ -2628,9 +2507,7 @@ class CompanionStore:
         target_fence = CandidateBindingFenceV1(**target_fence_raw)
         source_fence = None
         if row["source_fence_json"] not in {None, "", "null"}:
-            source_fence = CandidateBindingFenceV1(
-                **json.loads(str(row["source_fence_json"]))
-            )
+            source_fence = CandidateBindingFenceV1(**json.loads(str(row["source_fence_json"])))
         detail = db.execute(
             """SELECT detail_version FROM companion_detail_versions
                WHERE profile_id=? AND profile_generation=?""",
@@ -2698,15 +2575,9 @@ class CompanionStore:
             candidate_mode=str(row["candidate_mode"]),
             target_fence=target_fence,
             source_fence=source_fence,
-            reservation_version=(
-                None
-                if reservation_version is None
-                else int(reservation_version)
-            ),
+            reservation_version=(None if reservation_version is None else int(reservation_version)),
             reflection_job_id=(
-                None
-                if row["reflection_job_id"] is None
-                else str(row["reflection_job_id"])
+                None if row["reflection_job_id"] is None else str(row["reflection_job_id"])
             ),
             attempt_generation=attempt_generation,
         )
@@ -2732,9 +2603,7 @@ class CompanionStore:
 
         if not isinstance(commit, CandidateCompositionCommitV1):
             raise CandidateCompositionError("candidate_commit_type_invalid")
-        if not isinstance(
-            commit.validated_package_ref, ValidatedCapabilityPackageRefV1
-        ):
+        if not isinstance(commit.validated_package_ref, ValidatedCapabilityPackageRefV1):
             raise CandidateCompositionError("candidate_validated_ref_required")
         package = commit.package
         receipt = commit.receipt
@@ -2750,34 +2619,25 @@ class CompanionStore:
             raise CandidateCompositionError("candidate_commit_hash_mismatch")
 
         with self._write() as db:
-            current = self._candidate_composition_from_db(
-                db, commit.attempt.build_id or ""
-            )
+            current = self._candidate_composition_from_db(db, commit.attempt.build_id or "")
             if (
                 current.owner != commit.owner
                 or current.facts_revision != commit.facts_revision
                 or current.facts_hash != commit.facts_hash
             ):
                 raise CandidateCompositionError("candidate_current_facts_drift")
-            artifact = self.create_candidate(
-                commit.owner, commit.package, commit.attempt
-            )
+            artifact = self.create_candidate(commit.owner, commit.package, commit.attempt)
             row = self._find_candidate_build(db, current.build_id)
             expected_candidate_ref = str(artifact["candidate_id"])
             expected_candidate_hash = package.candidate_package_hash
             if str(row["status"]) == "built":
                 if (
                     str(row["candidate_ref"] or "") != expected_candidate_ref
-                    or str(row["candidate_hash"] or "")
-                    != expected_candidate_hash
-                    or str(row["draft_receipt_ref"] or "")
-                    != receipt.receipt_id
-                    or str(row["draft_receipt_hash"] or "")
-                    != receipt.receipt_hash
+                    or str(row["candidate_hash"] or "") != expected_candidate_hash
+                    or str(row["draft_receipt_ref"] or "") != receipt.receipt_id
+                    or str(row["draft_receipt_hash"] or "") != receipt.receipt_hash
                 ):
-                    raise CandidateCompositionError(
-                        "candidate_replay_package_drift"
-                    )
+                    raise CandidateCompositionError("candidate_replay_package_drift")
             else:
                 cursor = db.execute(
                     """UPDATE candidate_builds
@@ -2799,9 +2659,7 @@ class CompanionStore:
                     ),
                 )
                 if cursor.rowcount != 1:
-                    raise CandidateCompositionError(
-                        "candidate_build_commit_lost"
-                    )
+                    raise CandidateCompositionError("candidate_build_commit_lost")
             return CandidateCompositionCommitResultV1(
                 build_id=current.build_id,
                 candidate_id=expected_candidate_ref,
@@ -2877,32 +2735,19 @@ class CompanionStore:
                 or str(row["blob_cleanup_state"]) != "live"
                 or str(row["provenance_state"]) != "live"
             ):
-                raise CompanionStateError(
-                    "candidate_bundle_content_unavailable"
-                )
+                raise CompanionStateError("candidate_bundle_content_unavailable")
             if (
                 str(row["build_status"]) != "built"
                 or str(row["candidate_ref"]) != str(row["candidate_id"])
-                or str(row["candidate_hash"])
-                != str(row["candidate_package_hash"])
-                or str(row["builder_receipt_ref"])
-                != str(row["draft_receipt_ref"])
-                or str(row["builder_receipt_hash"])
-                != str(row["draft_receipt_hash"])
+                or str(row["candidate_hash"]) != str(row["candidate_package_hash"])
+                or str(row["builder_receipt_ref"]) != str(row["draft_receipt_ref"])
+                or str(row["builder_receipt_hash"]) != str(row["draft_receipt_hash"])
             ):
-                raise CompanionConflictError(
-                    "candidate_bundle_build_identity_mismatch"
-                )
-            raw_expectation = json.loads(
-                str(row["draft_receipt_expectation_json"] or "")
-            )
+                raise CompanionConflictError("candidate_bundle_build_identity_mismatch")
+            raw_expectation = json.loads(str(row["draft_receipt_expectation_json"] or ""))
             if not isinstance(raw_expectation, dict):
-                raise CompanionConflictError(
-                    "candidate_bundle_receipt_invalid"
-                )
-            receipt = CandidateDraftReceiptV1.from_authoritative_row(
-                raw_expectation
-            )
+                raise CompanionConflictError("candidate_bundle_receipt_invalid")
+            receipt = CandidateDraftReceiptV1.from_authoritative_row(raw_expectation)
             receipt_expected = {
                 "receipt_id": row["draft_receipt_ref"],
                 "receipt_hash": row["draft_receipt_hash"],
@@ -2920,9 +2765,7 @@ class CompanionStore:
             }
             for name, expected in receipt_expected.items():
                 if getattr(receipt, name) != expected:
-                    raise CompanionConflictError(
-                        f"candidate_bundle_receipt_{name}_mismatch"
-                    )
+                    raise CompanionConflictError(f"candidate_bundle_receipt_{name}_mismatch")
 
             blob_rows = db.execute(
                 """SELECT * FROM candidate_package_blobs
@@ -2947,13 +2790,9 @@ class CompanionStore:
                 ),
             ).fetchall()
             if not blob_rows or not file_rows:
-                raise CompanionStateError(
-                    "candidate_bundle_children_missing"
-                )
+                raise CompanionStateError("candidate_bundle_children_missing")
             blobs: list[CandidatePackageBlob] = []
-            blob_by_key: dict[
-                tuple[str, str], CandidatePackageBlob
-            ] = {}
+            blob_by_key: dict[tuple[str, str], CandidatePackageBlob] = {}
             for blob_row in blob_rows:
                 payload = bytes(blob_row["payload"])
                 blob = CandidatePackageBlob(
@@ -2969,9 +2808,7 @@ class CompanionStore:
                     or int(blob_row["size_bytes"]) != len(payload)
                     or blob.content_hash != _bytes_hash(payload)
                 ):
-                    raise CompanionConflictError(
-                        "candidate_bundle_blob_integrity_mismatch"
-                    )
+                    raise CompanionConflictError("candidate_bundle_blob_integrity_mismatch")
                 blob_by_key[key] = blob
                 blobs.append(blob)
             manifest_key = (
@@ -2982,26 +2819,10 @@ class CompanionStore:
             if (
                 manifest_key not in blob_by_key
                 or archive_key not in blob_by_key
-                or len(
-                    [
-                        key
-                        for key in blob_by_key
-                        if key[0] == "manifest"
-                    ]
-                )
-                != 1
-                or len(
-                    [
-                        key
-                        for key in blob_by_key
-                        if key[0] == "archive"
-                    ]
-                )
-                != 1
+                or len([key for key in blob_by_key if key[0] == "manifest"]) != 1
+                or len([key for key in blob_by_key if key[0] == "archive"]) != 1
             ):
-                raise CompanionConflictError(
-                    "candidate_bundle_root_blob_mismatch"
-                )
+                raise CompanionConflictError("candidate_bundle_root_blob_mismatch")
 
             files: list[CandidatePackageFile] = []
             for file_row in file_rows:
@@ -3022,9 +2843,7 @@ class CompanionStore:
                     or blob.content_hash != file.content_hash
                     or len(blob.payload) != file.size_bytes
                 ):
-                    raise CompanionConflictError(
-                        "candidate_bundle_file_blob_mismatch"
-                    )
+                    raise CompanionConflictError("candidate_bundle_file_blob_mismatch")
                 files.append(file)
             expected_blob_keys = {
                 manifest_key,
@@ -3032,39 +2851,26 @@ class CompanionStore:
                 *(("file", item.blob_id) for item in files),
             }
             if set(blob_by_key) != expected_blob_keys:
-                raise CompanionConflictError(
-                    "candidate_bundle_blob_set_mismatch"
-                )
+                raise CompanionConflictError("candidate_bundle_blob_set_mismatch")
 
             manifest_bytes = blob_by_key[manifest_key].payload
             archive_bytes = blob_by_key[archive_key].payload
-            if (
-                _bytes_hash(manifest_bytes)
-                != str(row["candidate_manifest_hash"])
-                or _bytes_hash(archive_bytes) != str(row["archive_hash"])
-            ):
-                raise CompanionConflictError(
-                    "candidate_bundle_root_hash_mismatch"
-                )
+            if _bytes_hash(manifest_bytes) != str(row["candidate_manifest_hash"]) or _bytes_hash(
+                archive_bytes
+            ) != str(row["archive_hash"]):
+                raise CompanionConflictError("candidate_bundle_root_hash_mismatch")
             try:
                 manifest = json.loads(manifest_bytes.decode("utf-8"))
-                with zipfile.ZipFile(
-                    io.BytesIO(archive_bytes)
-                ) as archive:
+                with zipfile.ZipFile(io.BytesIO(archive_bytes)) as archive:
                     archive_names = archive.namelist()
-                    archive_payloads = {
-                        name: archive.read(name)
-                        for name in archive_names
-                    }
+                    archive_payloads = {name: archive.read(name) for name in archive_names}
             except (
                 UnicodeDecodeError,
                 json.JSONDecodeError,
                 KeyError,
                 zipfile.BadZipFile,
             ) as exc:
-                raise CompanionConflictError(
-                    "candidate_bundle_archive_invalid"
-                ) from exc
+                raise CompanionConflictError("candidate_bundle_archive_invalid") from exc
             expected_names = [
                 "deskpet-pack.json",
                 *(item.relative_path for item in files),
@@ -3072,20 +2878,16 @@ class CompanionStore:
             if (
                 not isinstance(manifest, dict)
                 or str(manifest.get("id") or "") != str(row["pack_id"])
-                or str(manifest.get("version") or "")
-                != str(row["version"])
+                or str(manifest.get("version") or "") != str(row["version"])
                 or archive_names != expected_names
-                or archive_payloads["deskpet-pack.json"]
-                != manifest_bytes
+                or archive_payloads["deskpet-pack.json"] != manifest_bytes
                 or any(
                     archive_payloads[item.relative_path]
                     != blob_by_key[("file", item.blob_id)].payload
                     for item in files
                 )
             ):
-                raise CompanionConflictError(
-                    "candidate_bundle_archive_content_mismatch"
-                )
+                raise CompanionConflictError("candidate_bundle_archive_content_mismatch")
             declared_files = manifest.get("files")
             expected_declared = [
                 {
@@ -3095,9 +2897,7 @@ class CompanionStore:
                 for item in files
             ]
             if declared_files != expected_declared:
-                raise CompanionConflictError(
-                    "candidate_bundle_manifest_file_set_mismatch"
-                )
+                raise CompanionConflictError("candidate_bundle_manifest_file_set_mismatch")
 
             file_set_hash = canonical_hash(
                 {
@@ -3114,34 +2914,22 @@ class CompanionStore:
                 }
             )
             if file_set_hash != receipt.file_set_hash:
-                raise CompanionConflictError(
-                    "candidate_bundle_file_set_hash_mismatch"
-                )
+                raise CompanionConflictError("candidate_bundle_file_set_hash_mismatch")
             package_hash = canonical_hash(
                 {
                     "schema": "capability-candidate-package-v1",
                     "pack_id": row["pack_id"],
                     "version": row["version"],
-                    "candidate_content_hash": row[
-                        "candidate_content_hash"
-                    ],
-                    "candidate_manifest_hash": row[
-                        "candidate_manifest_hash"
-                    ],
+                    "candidate_content_hash": row["candidate_content_hash"],
+                    "candidate_manifest_hash": row["candidate_manifest_hash"],
                     "archive_hash": row["archive_hash"],
                     "file_set_hash": file_set_hash,
-                    "effect_topology_hash": row[
-                        "effect_topology_hash"
-                    ],
+                    "effect_topology_hash": row["effect_topology_hash"],
                 }
             )
             if package_hash != str(row["candidate_package_hash"]):
-                raise CompanionConflictError(
-                    "candidate_bundle_package_hash_mismatch"
-                )
-            owner_key = (
-                f"companion:{owner.profile_id}:{owner.profile_generation}"
-            )
+                raise CompanionConflictError("candidate_bundle_package_hash_mismatch")
+            owner_key = f"companion:{owner.profile_id}:{owner.profile_generation}"
             package_id = canonical_hash(
                 {
                     "schema": "candidate-package-id-v1",
@@ -3151,30 +2939,18 @@ class CompanionStore:
                 }
             )
             if package_id != str(row["package_id"]):
-                raise CompanionConflictError(
-                    "candidate_bundle_package_id_mismatch"
-                )
+                raise CompanionConflictError("candidate_bundle_package_id_mismatch")
             source_facts = json.loads(str(row["source_facts_json"]))
             target_facts = json.loads(str(row["target_facts_json"]))
-            if not isinstance(source_facts, dict) or not isinstance(
-                target_facts, dict
-            ):
-                raise CompanionConflictError(
-                    "candidate_bundle_facts_invalid"
-                )
+            if not isinstance(source_facts, dict) or not isinstance(target_facts, dict):
+                raise CompanionConflictError("candidate_bundle_facts_invalid")
             package = CandidatePackage(
                 package_id=package_id,
-                candidate_mode=CandidateMode(
-                    str(row["candidate_mode"])
-                ),
+                candidate_mode=CandidateMode(str(row["candidate_mode"])),
                 pack_id=str(row["pack_id"]),
                 version=str(row["version"]),
-                candidate_content_hash=str(
-                    row["candidate_content_hash"]
-                ),
-                candidate_manifest_hash=str(
-                    row["candidate_manifest_hash"]
-                ),
+                candidate_content_hash=str(row["candidate_content_hash"]),
+                candidate_manifest_hash=str(row["candidate_manifest_hash"]),
                 candidate_package_hash=package_hash,
                 archive_hash=str(row["archive_hash"]),
                 effect_topology_hash=str(row["effect_topology_hash"]),
@@ -3308,9 +3084,8 @@ class CompanionStore:
                         now,
                     ),
                 )
-            elif (
-                package_row["package_id"] != package.package_id
-                or not self._same(package_row, package_expected)
+            elif package_row["package_id"] != package.package_id or not self._same(
+                package_row, package_expected
             ):
                 raise CompanionConflictError(f"candidate_package_conflict:{package.package_id}")
 
@@ -3661,18 +3436,51 @@ class CompanionStore:
         reason_code: str,
     ) -> Mapping[str, Any]:
         allowed: dict[str, set[str]] = {
-            "proposed": {"preflight_failed", "evaluating", "awaiting_eval_authorization", "invalidated", "expired", "stale"},
+            "proposed": {
+                "preflight_failed",
+                "evaluating",
+                "awaiting_eval_authorization",
+                "invalidated",
+                "expired",
+                "stale",
+            },
             "awaiting_eval_authorization": {"evaluating", "invalidated", "expired", "stale"},
-            "evaluating": {"eligible", "awaiting_activation_confirmation", "invalidated", "expired", "stale"},
-            "eligible": {"activation_pending", "awaiting_activation_confirmation", "invalidated", "expired", "stale"},
-            "awaiting_activation_confirmation": {"activation_pending", "rejected", "stale", "invalidated", "expired"},
+            "evaluating": {
+                "eligible",
+                "awaiting_activation_confirmation",
+                "invalidated",
+                "expired",
+                "stale",
+            },
+            "eligible": {
+                "activation_pending",
+                "awaiting_activation_confirmation",
+                "invalidated",
+                "expired",
+                "stale",
+            },
+            "awaiting_activation_confirmation": {
+                "activation_pending",
+                "rejected",
+                "stale",
+                "invalidated",
+                "expired",
+            },
             "activation_pending": {"activating", "invalidated", "expired", "stale"},
-            "activating": {"active", "activation_failed", "activation_pending", "invalidated", "stale"},
+            "activating": {
+                "active",
+                "activation_failed",
+                "activation_pending",
+                "invalidated",
+                "stale",
+            },
             "active": {"rollback_pending", "quarantined"},
             "rollback_pending": {"rolled_back", "disabled"},
         }
         if next_status not in allowed.get(expected_status, set()):
-            raise CompanionStateError(f"candidate_transition_invalid:{expected_status}:{next_status}")
+            raise CompanionStateError(
+                f"candidate_transition_invalid:{expected_status}:{next_status}"
+            )
         now = self._now()
         with self._write() as db:
             self._require_owner(db, owner)
@@ -3726,7 +3534,13 @@ class CompanionStore:
                 db,
                 owner,
                 mutation_hash=canonical_hash(
-                    ["candidate_transition", candidate_id, expected_status, next_status, reason_code]
+                    [
+                        "candidate_transition",
+                        candidate_id,
+                        expected_status,
+                        next_status,
+                        reason_code,
+                    ]
                 ),
                 now=now,
             )
@@ -3768,10 +3582,7 @@ class CompanionStore:
             ).fetchone()
             if row is None:
                 raise CompanionStateError("candidate_missing")
-            if (
-                str(row["status"]) == "invalidated"
-                and str(row["reason_code"]) == reason_code
-            ):
+            if str(row["status"]) == "invalidated" and str(row["reason_code"]) == reason_code:
                 return {
                     **dict(row),
                     "applied": False,
@@ -3797,9 +3608,7 @@ class CompanionStore:
                 ),
             )
             if cursor.rowcount != 1:
-                raise CompanionConflictError(
-                    "candidate_evaluation_replan_transition_lost"
-                )
+                raise CompanionConflictError("candidate_evaluation_replan_transition_lost")
             if str(row["candidate_mode"]) == "genesis":
                 db.execute(
                     """UPDATE growth_target_reservations
@@ -3898,8 +3707,7 @@ class CompanionStore:
                 "binding_generation": receipt.binding_generation,
                 "owner_binding_set_stamp": receipt.owner_binding_set_stamp,
                 "process_projection_fingerprint": receipt.process_projection_fingerprint,
-                "target_user_owner_binding_set_stamp":
-                    receipt.target_user_owner_binding_set_stamp,
+                "target_user_owner_binding_set_stamp": receipt.target_user_owner_binding_set_stamp,
                 "fallback_owner_key": receipt.fallback_owner_key,
                 "fallback_scope": receipt.fallback_scope,
                 "fallback_scope_key": receipt.fallback_scope_key,
@@ -3908,10 +3716,8 @@ class CompanionStore:
                 "fallback_pack_id": receipt.fallback_pack_id,
                 "fallback_version": receipt.fallback_version,
                 "fallback_manifest_hash": receipt.fallback_manifest_hash,
-                "fallback_owner_binding_set_stamp":
-                    receipt.fallback_owner_binding_set_stamp,
-                "fallback_process_projection_fingerprint":
-                    receipt.fallback_process_projection_fingerprint,
+                "fallback_owner_binding_set_stamp": receipt.fallback_owner_binding_set_stamp,
+                "fallback_process_projection_fingerprint": receipt.fallback_process_projection_fingerprint,
                 "fallback_runtime_set_ref": receipt.fallback_runtime_set_ref,
                 "fallback_runtime_set_hash": receipt.fallback_runtime_set_hash,
                 "absence_proof_hash": receipt.absence_proof_hash,
@@ -4059,10 +3865,7 @@ class CompanionStore:
                 ),
             )
             settled_candidate_id = request["candidate_id"]
-            if (
-                settled_candidate_id is None
-                and action in {"rollback", "disable"}
-            ):
+            if settled_candidate_id is None and action in {"rollback", "disable"}:
                 lineage = db.execute(
                     """SELECT from_id FROM lineage_edges
                        WHERE profile_id=? AND profile_generation=?
@@ -4077,9 +3880,7 @@ class CompanionStore:
                     ),
                 ).fetchall()
                 if len(lineage) > 1:
-                    raise CompanionConflictError(
-                        "capability_mutation_candidate_lineage_conflict"
-                    )
+                    raise CompanionConflictError("capability_mutation_candidate_lineage_conflict")
                 if lineage:
                     settled_candidate_id = lineage[0]["from_id"]
             if action in {"install", "update"}:
@@ -4227,9 +4028,10 @@ class CompanionStore:
                 rollback_plan_json = canonical_json(dict(receipt.rollback_plan))
                 rollback_plan_hash = canonical_hash(dict(receipt.rollback_plan))
                 expires = (
-                    datetime.fromisoformat(now.replace("Z", "+00:00"))
-                    + timedelta(hours=24)
-                ).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+                    (datetime.fromisoformat(now.replace("Z", "+00:00")) + timedelta(hours=24))
+                    .isoformat(timespec="milliseconds")
+                    .replace("+00:00", "Z")
+                )
                 db.execute(
                     """INSERT INTO capability_activation_guards(
                          profile_id,profile_generation,guard_id,activation_request_id,candidate_id,
@@ -4385,22 +4187,12 @@ class CompanionStore:
             receipt = None
             if raw["receipt_result_hash"] is not None:
                 receipt = {
-                    "activation_request_id": raw[
-                        "activation_request_id"
-                    ],
-                    "manager_operation_id": raw[
-                        "receipt_manager_operation_id"
-                    ],
+                    "activation_request_id": raw["activation_request_id"],
+                    "manager_operation_id": raw["receipt_manager_operation_id"],
                     "result_hash": raw["receipt_result_hash"],
-                    "binding_generation": raw[
-                        "receipt_binding_generation"
-                    ],
-                    "owner_binding_set_stamp": raw[
-                        "receipt_owner_binding_set_stamp"
-                    ],
-                    "process_projection_fingerprint": raw[
-                        "receipt_process_projection_fingerprint"
-                    ],
+                    "binding_generation": raw["receipt_binding_generation"],
+                    "owner_binding_set_stamp": raw["receipt_owner_binding_set_stamp"],
+                    "process_projection_fingerprint": raw["receipt_process_projection_fingerprint"],
                     "settled_at": raw["receipt_settled_at"],
                     "reason_code": raw["receipt_reason_code"],
                 }
@@ -4414,16 +4206,12 @@ class CompanionStore:
                 "target_owner_key": raw["target_owner_key"],
                 "target_scope": raw["target_scope"],
                 "target_scope_key": raw["target_scope_key"],
-                "candidate_package_hash": raw[
-                    "candidate_package_hash"
-                ],
+                "candidate_package_hash": raw["candidate_package_hash"],
                 "target_manifest_hash": raw["target_manifest_hash"],
                 "archive_hash": raw["archive_hash"],
                 "report_id": raw["report_id"],
                 "evaluation_verdict": raw["verdict"],
-                "evaluation_results_root_hash": raw[
-                    "results_root_hash"
-                ],
+                "evaluation_results_root_hash": raw["results_root_hash"],
                 "risk_id": raw["risk_id"],
                 "risk": raw["risk"],
                 "risk_hash": raw["risk_hash"],
@@ -4519,9 +4307,7 @@ class CompanionStore:
                 ),
             ).fetchone()
             if candidate is None or candidate["status"] != "active":
-                raise CompanionStateError(
-                    "capability_guard_candidate_not_active"
-                )
+                raise CompanionStateError("capability_guard_candidate_not_active")
             plan = json.loads(str(guard["rollback_plan_json"]))
             action = str(plan.get("action", "rollback"))
             rollback_kind = plan.get("rollback_kind")
@@ -4717,9 +4503,7 @@ class CompanionStore:
                 now=now,
                 reason_code=incident.reason_code,
             )
-            self._bump_detail(
-                db, owner, mutation_hash=incident.dedupe_hash, now=now
-            )
+            self._bump_detail(db, owner, mutation_hash=incident.dedupe_hash, now=now)
             return dict(
                 db.execute(
                     """SELECT * FROM capability_guard_incidents
@@ -4848,9 +4632,11 @@ class CompanionStore:
             raise ValueError("job_max_attempts_invalid")
         now_dt = datetime.fromisoformat(self._now().replace("Z", "+00:00"))
         now = now_dt.isoformat(timespec="milliseconds").replace("+00:00", "Z")
-        expiry = (now_dt + timedelta(seconds=lease_seconds)).isoformat(
-            timespec="milliseconds"
-        ).replace("+00:00", "Z")
+        expiry = (
+            (now_dt + timedelta(seconds=lease_seconds))
+            .isoformat(timespec="milliseconds")
+            .replace("+00:00", "Z")
+        )
         with self._write() as db:
             self._require_owner(db, owner)
             params: list[Any] = [owner.profile_id, owner.profile_generation, now, now]
@@ -4954,7 +4740,7 @@ class CompanionStore:
                            lease_expires_at=NULL,next_retry_at=NULL,reason_code=?,updated_at=?
                          WHERE profile_id=? AND profile_generation=?
                            AND status='leased' AND lease_expires_at<=? AND attempt<?
-                           AND kind IN ({','.join('?' for _ in retryable_kinds)})""",
+                           AND kind IN ({",".join("?" for _ in retryable_kinds)})""",
                     retry_params,
                 ).rowcount
             failed = db.execute(
@@ -5000,9 +4786,11 @@ class CompanionStore:
             raise ValueError("job_budget_claim_invalid")
         now_dt = datetime.fromisoformat(self._now().replace("Z", "+00:00"))
         now = now_dt.isoformat(timespec="milliseconds").replace("+00:00", "Z")
-        expiry = (now_dt + timedelta(seconds=lease_seconds)).isoformat(
-            timespec="milliseconds"
-        ).replace("+00:00", "Z")
+        expiry = (
+            (now_dt + timedelta(seconds=lease_seconds))
+            .isoformat(timespec="milliseconds")
+            .replace("+00:00", "Z")
+        )
         with self._write() as db:
             self._require_owner(db, owner)
             totals = db.execute(
@@ -5102,9 +4890,9 @@ class CompanionStore:
             parsed_retry = retry_at
         if parsed_retry.tzinfo is None or parsed_retry.utcoffset() is None:
             raise ValueError("job_retry_at_must_be_timezone_aware")
-        retry_value = parsed_retry.astimezone(UTC).isoformat(
-            timespec="milliseconds"
-        ).replace("+00:00", "Z")
+        retry_value = (
+            parsed_retry.astimezone(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+        )
         now = self._now()
         with self._write() as db:
             self._require_owner(db, owner)
@@ -5142,16 +4930,14 @@ class CompanionStore:
         """Persist model-visible failure evidence before a fresh Run attempt."""
 
         if isinstance(retry_at, str):
-            parsed_retry = datetime.fromisoformat(
-                retry_at.replace("Z", "+00:00")
-            )
+            parsed_retry = datetime.fromisoformat(retry_at.replace("Z", "+00:00"))
         else:
             parsed_retry = retry_at
         if parsed_retry.tzinfo is None or parsed_retry.utcoffset() is None:
             raise ValueError("job_retry_at_must_be_timezone_aware")
-        retry_value = parsed_retry.astimezone(UTC).isoformat(
-            timespec="milliseconds"
-        ).replace("+00:00", "Z")
+        retry_value = (
+            parsed_retry.astimezone(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+        )
         detached_failure = json.loads(canonical_json(dict(failure_context)))
         now = self._now()
         with self._write() as db:
@@ -5310,21 +5096,13 @@ class CompanionStore:
             "capability_hash": capability_hash,
             "scope_hash": scope_hash,
         }
-        text_facts = {
-            key: value
-            for key, value in wait_facts.items()
-            if key != "decision_version"
-        }
+        text_facts = {key: value for key, value in wait_facts.items() if key != "decision_version"}
         if any(not str(value or "").strip() for value in text_facts.values()):
             raise ValueError("companion_job_wait_decision_identity_invalid")
         for field_name in ("args_hash", "capability_hash", "scope_hash"):
             value = str(wait_facts[field_name])
-            if len(value) != 64 or any(
-                character not in "0123456789abcdef" for character in value
-            ):
-                raise ValueError(
-                    f"companion_job_wait_{field_name}_invalid"
-                )
+            if len(value) != 64 or any(character not in "0123456789abcdef" for character in value):
+                raise ValueError(f"companion_job_wait_{field_name}_invalid")
         wait_fingerprint = canonical_hash(wait_facts)
         now = self._now()
         with self._write() as db:
@@ -5342,13 +5120,10 @@ class CompanionStore:
                 (owner.profile_id, owner.profile_generation, job_id),
             ).fetchone()
             if existing is not None:
-                if (
-                    str(existing["wait_fingerprint"]) != wait_fingerprint
-                    or str(existing["status"]) not in {"waiting", "settled"}
-                ):
-                    raise CompanionConflictError(
-                        f"job_execution_wait_conflict:{job_id}"
-                    )
+                if str(existing["wait_fingerprint"]) != wait_fingerprint or str(
+                    existing["status"]
+                ) not in {"waiting", "settled"}:
+                    raise CompanionConflictError(f"job_execution_wait_conflict:{job_id}")
                 return dict(existing)
             if (
                 job["status"] != "leased"
@@ -5457,13 +5232,8 @@ class CompanionStore:
             ).fetchone()
             if wait is None:
                 raise CompanionStateError("job_execution_wait_missing")
-            if (
-                wait["execution_run_id"] != execution_run_id
-                or wait["decision_id"] != decision_id
-            ):
-                raise CompanionConflictError(
-                    f"job_execution_wait_binding_conflict:{job_id}"
-                )
+            if wait["execution_run_id"] != execution_run_id or wait["decision_id"] != decision_id:
+                raise CompanionConflictError(f"job_execution_wait_binding_conflict:{job_id}")
             job = db.execute(
                 """SELECT * FROM jobs
                    WHERE profile_id=? AND profile_generation=? AND job_id=?""",
@@ -5486,14 +5256,10 @@ class CompanionStore:
                     int(job["budget_actual_ms"]),
                 )
                 if actual != expected:
-                    raise CompanionConflictError(
-                        f"job_settle_conflict:{job_id}"
-                    )
+                    raise CompanionConflictError(f"job_settle_conflict:{job_id}")
                 return dict(job)
             if job["status"] != "waiting_decision" or wait["status"] != "waiting":
-                raise CompanionStateError(
-                    f"job_execution_wait_not_settleable:{job_id}"
-                )
+                raise CompanionStateError(f"job_execution_wait_not_settleable:{job_id}")
             db.execute(
                 """UPDATE jobs SET status=?,result_ref=?,result_hash=?,
                      reason_code=?,budget_actual_tokens=?,budget_actual_ms=?,
@@ -5633,10 +5399,7 @@ class CompanionStore:
             ),
         ).fetchone()
         if existing is not None:
-            if (
-                existing["outbox_id"] != outbox_id
-                or existing["payload_hash"] != payload_hash
-            ):
+            if existing["outbox_id"] != outbox_id or existing["payload_hash"] != payload_hash:
                 raise CompanionConflictError(f"outbox_conflict:{outbox_id}")
             return
         db.execute(
@@ -5704,9 +5467,11 @@ class CompanionStore:
     ) -> LeaseClaim | None:
         now_dt = datetime.fromisoformat(self._now().replace("Z", "+00:00"))
         now = now_dt.isoformat(timespec="milliseconds").replace("+00:00", "Z")
-        expiry = (now_dt + timedelta(seconds=lease_seconds)).isoformat(
-            timespec="milliseconds"
-        ).replace("+00:00", "Z")
+        expiry = (
+            (now_dt + timedelta(seconds=lease_seconds))
+            .isoformat(timespec="milliseconds")
+            .replace("+00:00", "Z")
+        )
         with self._write() as db:
             self._require_owner(db, owner)
             params: list[Any] = [owner.profile_id, owner.profile_generation, now, now]
@@ -5898,16 +5663,12 @@ class CompanionStore:
             if existing is not None:
                 if (
                     str(existing["kind"]) != kind
-                    or json.loads(str(existing["source_refs_json"]))
-                    != list(source_refs)
+                    or json.loads(str(existing["source_refs_json"])) != list(source_refs)
                     or json.loads(str(existing["summary_json"])) != str(summary)
                     or json.loads(str(existing["detail_json"])) != detail
-                    or json.loads(str(existing["actions_json"]))
-                    != list(available_actions)
+                    or json.loads(str(existing["actions_json"])) != list(available_actions)
                 ):
-                    raise CompanionConflictError(
-                        f"notification_conflict:{notification_id}"
-                    )
+                    raise CompanionConflictError(f"notification_conflict:{notification_id}")
                 return self._decode_notification(existing)
             detail_version = self._bump_detail(
                 db,
@@ -6020,9 +5781,7 @@ class CompanionStore:
                 )
             else:
                 if str(existing["kind"]) != "growth_digest":
-                    raise CompanionConflictError(
-                        f"notification_conflict:{notification_id}"
-                    )
+                    raise CompanionConflictError(f"notification_conflict:{notification_id}")
                 detail = json.loads(str(existing["detail_json"]))
                 digest = detail.get("digest") if isinstance(detail, dict) else None
                 if (
@@ -6031,24 +5790,17 @@ class CompanionStore:
                     or digest.get("bucket_start") != bucket_start
                     or digest.get("bucket_end") != bucket_end
                 ):
-                    raise CompanionConflictError(
-                        f"digest_bucket_conflict:{notification_id}"
-                    )
+                    raise CompanionConflictError(f"digest_bucket_conflict:{notification_id}")
                 source_refs = [
-                    str(value)
-                    for value in json.loads(str(existing["source_refs_json"]))
+                    str(value) for value in json.loads(str(existing["source_refs_json"]))
                 ]
                 if source_ref in source_refs:
                     return self._decode_notification(existing)
                 if str(existing["status"]) != "pending":
-                    raise CompanionStateError(
-                        f"digest_bucket_already_finalized:{notification_id}"
-                    )
+                    raise CompanionStateError(f"digest_bucket_already_finalized:{notification_id}")
                 raw_items = detail.get("overview")
                 if not isinstance(raw_items, list):
-                    raise CompanionStateError(
-                        f"digest_bucket_items_invalid:{notification_id}"
-                    )
+                    raise CompanionStateError(f"digest_bucket_items_invalid:{notification_id}")
                 items = [dict(value) for value in raw_items]
                 items.append(normalized_item)
                 source_refs.append(source_ref)
@@ -6162,18 +5914,13 @@ class CompanionStore:
             for row in rows:
                 detail = json.loads(str(row["detail_json"]))
                 digest = detail.get("digest") if isinstance(detail, dict) else None
-                if (
-                    not isinstance(digest, dict)
-                    or str(digest.get("bucket_end") or "") > before
-                ):
+                if not isinstance(digest, dict) or str(digest.get("bucket_end") or "") > before:
                     continue
                 notification_id = str(row["notification_id"])
                 self._insert_outbox(
                     db,
                     owner,
-                    outbox_id=canonical_hash(
-                        ["notification_projection", notification_id]
-                    ),
+                    outbox_id=canonical_hash(["notification_projection", notification_id]),
                     event_kind="notification_projection",
                     event_id=notification_id,
                     sink_kind="session_projection",
@@ -6243,11 +5990,7 @@ class CompanionStore:
             if str(notification.get("status") or "") == "redacted":
                 continue
             detail = notification.get("detail")
-            decision = (
-                detail.get("decision")
-                if isinstance(detail, Mapping)
-                else None
-            )
+            decision = detail.get("decision") if isinstance(detail, Mapping) else None
             if (
                 isinstance(decision, Mapping)
                 and str(decision.get("kind") or "") == "activation"
@@ -6255,9 +5998,7 @@ class CompanionStore:
             ):
                 matches.append(dict(decision))
         if len(matches) > 1:
-            raise CompanionConflictError(
-                "activation_decision_challenge_not_unique"
-            )
+            raise CompanionConflictError("activation_decision_challenge_not_unique")
         return None if not matches else matches[0]
 
     def list_projectable_notifications(
@@ -6300,9 +6041,7 @@ class CompanionStore:
             if row is None:
                 raise CompanionStateError("notification_missing")
             if str(row["payload_hash"]) != str(expected_payload_hash):
-                raise CompanionConflictError(
-                    f"notification_payload_changed:{notification_id}"
-                )
+                raise CompanionConflictError(f"notification_payload_changed:{notification_id}")
             if str(row["status"]) not in {"redacted", "superseded"}:
                 db.execute(
                     """UPDATE notifications SET status='projected',updated_at=?
@@ -6433,10 +6172,7 @@ class CompanionStore:
         normalized = sorted(
             dependencies, key=lambda item: (item.dependency_kind, item.dependency_id)
         )
-        memory_scopes = {
-            str(scope["scope_ref"]): dict(scope)
-            for scope in owner_memory_read_scopes
-        }
+        memory_scopes = {str(scope["scope_ref"]): dict(scope) for scope in owner_memory_read_scopes}
         memory_dependencies = {
             item.dependency_id: item
             for item in normalized
@@ -6448,8 +6184,7 @@ class CompanionStore:
             dependency = memory_dependencies[scope_ref]
             if (
                 str(scope.get("profile_id")) != owner.profile_id
-                or int(scope.get("profile_generation", 0))
-                != owner.profile_generation
+                or int(scope.get("profile_generation", 0)) != owner.profile_generation
                 or str(scope.get("scope_hash")) != dependency.content_hash
                 or str(scope.get("scope_ref")) != scope_ref
             ):
@@ -6539,9 +6274,7 @@ class CompanionStore:
                         canonical_json(list(scope["session_ids"])),
                     )
                     if persisted is None or tuple(persisted) != expected:
-                        raise CompanionConflictError(
-                            "run_growth_snapshot_memory_scope_conflict"
-                        )
+                        raise CompanionConflictError("run_growth_snapshot_memory_scope_conflict")
                 return dict(row)
             if snapshot.snapshot_generation > 0:
                 prior = db.execute(
@@ -6830,37 +6563,28 @@ class CompanionStore:
         }
         missing_run = required_run - set(evaluation)
         if missing_run:
-            raise ValueError(
-                "evaluation_admission_fields_missing:"
-                + ",".join(sorted(missing_run))
-            )
+            raise ValueError("evaluation_admission_fields_missing:" + ",".join(sorted(missing_run)))
         candidate_mode = str(evaluation["candidate_mode"])
         baseline_kind = str(evaluation["baseline_kind"])
         if candidate_mode not in {"genesis", "update", "builtin_override"}:
             raise ValueError("evaluation_candidate_mode_invalid")
         if baseline_kind not in {"source_pack", "capability_absent_v1"}:
             raise ValueError("evaluation_baseline_kind_invalid")
-        if (
-            candidate_mode == "genesis"
-            and (
-                baseline_kind != "capability_absent_v1"
-                or not evaluation.get("absent_baseline_ref")
-                or not evaluation.get("absent_baseline_hash")
-            )
+        if candidate_mode == "genesis" and (
+            baseline_kind != "capability_absent_v1"
+            or not evaluation.get("absent_baseline_ref")
+            or not evaluation.get("absent_baseline_hash")
         ):
             raise ValueError("evaluation_absent_baseline_required")
-        if (
-            candidate_mode != "genesis"
-            and (
-                baseline_kind != "source_pack"
-                or not evaluation.get("source_owner_key")
-                or not evaluation.get("source_scope")
-                or not evaluation.get("source_scope_key")
-                or not evaluation.get("source_pack_id")
-                or not evaluation.get("source_version")
-                or not evaluation.get("source_manifest_hash")
-                or int(evaluation.get("source_binding_generation") or 0) < 1
-            )
+        if candidate_mode != "genesis" and (
+            baseline_kind != "source_pack"
+            or not evaluation.get("source_owner_key")
+            or not evaluation.get("source_scope")
+            or not evaluation.get("source_scope_key")
+            or not evaluation.get("source_pack_id")
+            or not evaluation.get("source_version")
+            or not evaluation.get("source_manifest_hash")
+            or int(evaluation.get("source_binding_generation") or 0) < 1
         ):
             raise ValueError("evaluation_source_baseline_required")
         if not case_inputs or not cases:
@@ -6892,10 +6616,7 @@ class CompanionStore:
             }
             missing = required_input - set(raw)
             if missing:
-                raise ValueError(
-                    "evaluation_input_fields_missing:"
-                    + ",".join(sorted(missing))
-                )
+                raise ValueError("evaluation_input_fields_missing:" + ",".join(sorted(missing)))
             input_id = str(raw["input_id"]).strip()
             case_id = str(raw["case_id"]).strip()
             source_kind = str(raw["source_kind"])
@@ -6910,28 +6631,17 @@ class CompanionStore:
                 raise ValueError("evaluation_input_source_kind_invalid")
             seen_input_ids.add(input_id)
             seen_case_ids.add(case_id)
-            envelope_blob = frozen_blob(
-                raw["input_envelope"], "evaluation_input_envelope"
-            )
+            envelope_blob = frozen_blob(raw["input_envelope"], "evaluation_input_envelope")
             fixture_blob = frozen_blob(
                 raw["read_tool_fixture"],
                 "evaluation_read_tool_fixture",
             )
-            adapter_map_json = canonical_json(
-                dict(raw["evaluation_tool_adapter_map"])
-            )
+            adapter_map_json = canonical_json(dict(raw["evaluation_tool_adapter_map"]))
             source_event_refs = tuple(
-                sorted(
-                    {
-                        str(item).strip()
-                        for item in raw.get("source_event_refs", ())
-                    }
-                )
+                sorted({str(item).strip() for item in raw.get("source_event_refs", ())})
             )
             if any(not item for item in source_event_refs):
-                raise ValueError(
-                    "evaluation_source_event_ref_invalid"
-                )
+                raise ValueError("evaluation_source_event_ref_invalid")
             frozen_facts = {
                 "schema": "evaluation-case-input-v1",
                 "input_id": input_id,
@@ -6943,15 +6653,11 @@ class CompanionStore:
                 "input_envelope_hash": _bytes_hash(envelope_blob),
                 "adapter_id": str(raw["adapter_id"]),
                 "adapter_version": str(raw["adapter_version"]),
-                "adapter_build_fingerprint": str(
-                    raw["adapter_build_fingerprint"]
-                ),
+                "adapter_build_fingerprint": str(raw["adapter_build_fingerprint"]),
                 "assertion_ref": str(raw["assertion_ref"]),
                 "assertion_hash": str(raw["assertion_hash"]),
                 "read_tool_fixture_root_hash": _bytes_hash(fixture_blob),
-                "evaluation_tool_adapter_map_hash": canonical_hash(
-                    json.loads(adapter_map_json)
-                ),
+                "evaluation_tool_adapter_map_hash": canonical_hash(json.loads(adapter_map_json)),
             }
             if any(
                 not str(frozen_facts[name]).strip()
@@ -6968,9 +6674,7 @@ class CompanionStore:
                 {
                     **frozen_facts,
                     "source_event_refs_json": (
-                        None
-                        if not source_event_refs
-                        else canonical_json(source_event_refs)
+                        None if not source_event_refs else canonical_json(source_event_refs)
                     ),
                     "input_envelope_blob": envelope_blob,
                     "input_hash": canonical_hash(frozen_facts),
@@ -6979,9 +6683,7 @@ class CompanionStore:
                 }
             )
 
-        input_by_case = {
-            str(item["case_id"]): item for item in normalized_inputs
-        }
+        input_by_case = {str(item["case_id"]): item for item in normalized_inputs}
         normalized_cases: list[dict[str, str]] = []
         variants_by_case: dict[str, set[str]] = {}
         for raw in cases:
@@ -6995,10 +6697,7 @@ class CompanionStore:
             }
             missing = required_case - set(raw)
             if missing:
-                raise ValueError(
-                    "evaluation_case_fields_missing:"
-                    + ",".join(sorted(missing))
-                )
+                raise ValueError("evaluation_case_fields_missing:" + ",".join(sorted(missing)))
             case_id = str(raw["case_id"]).strip()
             variant = str(raw["variant"])
             input_id = str(raw["input_id"]).strip()
@@ -7019,17 +6718,15 @@ class CompanionStore:
                     "variant": variant,
                     "input_id": input_id,
                     "input_hash": str(input_row["input_hash"]),
-                    "manifest_case_version": str(
-                        raw["manifest_case_version"]
-                    ),
+                    "manifest_case_version": str(raw["manifest_case_version"]),
                     "blind_label": str(raw["blind_label"]),
                     "expected_kind": str(raw["expected_kind"]),
                 }
             )
-        if any(
-            variants != {"old", "candidate"}
-            for variants in variants_by_case.values()
-        ) or set(variants_by_case) != seen_case_ids:
+        if (
+            any(variants != {"old", "candidate"} for variants in variants_by_case.values())
+            or set(variants_by_case) != seen_case_ids
+        ):
             raise ValueError("evaluation_case_variants_incomplete")
 
         evaluation_id = str(evaluation["evaluation_id"]).strip()
@@ -7063,12 +6760,9 @@ class CompanionStore:
                 != str(evaluation["candidate_package_hash"])
                 or str(candidate["candidate_manifest_hash"])
                 != str(evaluation["candidate_manifest_hash"])
-                or str(candidate["archive_hash"])
-                != str(evaluation["candidate_archive_hash"])
+                or str(candidate["archive_hash"]) != str(evaluation["candidate_archive_hash"])
             ):
-                raise CompanionConflictError(
-                    "evaluation_candidate_package_fence_mismatch"
-                )
+                raise CompanionConflictError("evaluation_candidate_package_fence_mismatch")
             existing = db.execute(
                 """SELECT * FROM evaluation_runs
                    WHERE profile_id=? AND profile_generation=?
@@ -7090,41 +6784,25 @@ class CompanionStore:
                 "suite_hash": str(evaluation["suite_hash"]),
                 "attempt_key": str(evaluation["attempt_key"]),
                 "baseline_kind": baseline_kind,
-                "old_snapshot_hash": str(
-                    evaluation["old_snapshot_hash"]
-                ),
-                "candidate_snapshot_hash": str(
-                    evaluation["candidate_snapshot_hash"]
-                ),
+                "old_snapshot_hash": str(evaluation["old_snapshot_hash"]),
+                "candidate_snapshot_hash": str(evaluation["candidate_snapshot_hash"]),
                 "source_owner_key": evaluation.get("source_owner_key"),
                 "source_scope": evaluation.get("source_scope"),
                 "source_scope_key": evaluation.get("source_scope_key"),
                 "source_pack_id": evaluation.get("source_pack_id"),
                 "source_version": evaluation.get("source_version"),
-                "source_manifest_hash": evaluation.get(
-                    "source_manifest_hash"
-                ),
-                "source_binding_generation": evaluation.get(
-                    "source_binding_generation"
-                ),
-                "absent_baseline_ref": evaluation.get(
-                    "absent_baseline_ref"
-                ),
-                "absent_baseline_hash": evaluation.get(
-                    "absent_baseline_hash"
-                ),
+                "source_manifest_hash": evaluation.get("source_manifest_hash"),
+                "source_binding_generation": evaluation.get("source_binding_generation"),
+                "absent_baseline_ref": evaluation.get("absent_baseline_ref"),
+                "absent_baseline_hash": evaluation.get("absent_baseline_hash"),
                 "runner_id": str(evaluation["runner_id"]),
-                "runner_policy_hash": str(
-                    evaluation["runner_policy_hash"]
-                ),
+                "runner_policy_hash": str(evaluation["runner_policy_hash"]),
                 "provider_id": str(evaluation["provider_id"]),
                 "model_id": str(evaluation["model_id"]),
             }
             if existing is not None:
                 if not self._same(existing, expected_run):
-                    raise CompanionConflictError(
-                        "evaluation_experiment_conflict"
-                    )
+                    raise CompanionConflictError("evaluation_experiment_conflict")
                 stored_inputs = db.execute(
                     """SELECT * FROM evaluation_case_inputs
                        WHERE profile_id=? AND profile_generation=?
@@ -7151,26 +6829,16 @@ class CompanionStore:
                         "source_kind": item["source_kind"],
                         "resource_ref": item["resource_ref"],
                         "resource_hash": item["resource_hash"],
-                        "source_event_refs_json": item[
-                            "source_event_refs_json"
-                        ],
-                        "input_envelope_blob": item[
-                            "input_envelope_blob"
-                        ],
+                        "source_event_refs_json": item["source_event_refs_json"],
+                        "input_envelope_blob": item["input_envelope_blob"],
                         "input_hash": item["input_hash"],
                         "adapter_id": item["adapter_id"],
                         "adapter_version": item["adapter_version"],
-                        "adapter_build_fingerprint": item[
-                            "adapter_build_fingerprint"
-                        ],
+                        "adapter_build_fingerprint": item["adapter_build_fingerprint"],
                         "assertion_ref": item["assertion_ref"],
                         "assertion_hash": item["assertion_hash"],
-                        "read_tool_fixture_blob": item[
-                            "read_tool_fixture_blob"
-                        ],
-                        "read_tool_fixture_root_hash": item[
-                            "read_tool_fixture_root_hash"
-                        ],
+                        "read_tool_fixture_blob": item["read_tool_fixture_blob"],
+                        "read_tool_fixture_root_hash": item["read_tool_fixture_root_hash"],
                         "evaluation_tool_adapter_map_json": item[
                             "evaluation_tool_adapter_map_json"
                         ],
@@ -7181,9 +6849,7 @@ class CompanionStore:
                     (str(item["case_id"]), str(item["variant"])): {
                         "input_id": item["input_id"],
                         "input_hash": item["input_hash"],
-                        "manifest_case_version": item[
-                            "manifest_case_version"
-                        ],
+                        "manifest_case_version": item["manifest_case_version"],
                         "blind_label": item["blind_label"],
                         "expected_kind": item["expected_kind"],
                     }
@@ -7193,9 +6859,7 @@ class CompanionStore:
                     len(stored_inputs) != len(expected_inputs)
                     or any(
                         str(row["input_id"]) not in expected_inputs
-                        or not self._same(
-                            row, expected_inputs[str(row["input_id"])]
-                        )
+                        or not self._same(row, expected_inputs[str(row["input_id"])])
                         for row in stored_inputs
                     )
                     or len(stored_cases) != len(expected_cases)
@@ -7217,18 +6881,14 @@ class CompanionStore:
                         for row in stored_cases
                     )
                 ):
-                    raise CompanionConflictError(
-                        "evaluation_experiment_case_conflict"
-                    )
+                    raise CompanionConflictError("evaluation_experiment_case_conflict")
                 return {
                     "evaluation": dict(existing),
                     "input_count": len(stored_inputs),
                     "case_count": len(stored_cases),
                 }
             if str(candidate["status"]) != "proposed":
-                raise CompanionStateError(
-                    "evaluation_candidate_not_proposed"
-                )
+                raise CompanionStateError("evaluation_candidate_not_proposed")
             db.execute(
                 """INSERT INTO evaluation_runs(
                      profile_id,profile_generation,evaluation_id,candidate_id,
@@ -7328,9 +6988,7 @@ class CompanionStore:
                 ),
             )
             if updated.rowcount != 1:
-                raise CompanionConflictError(
-                    "evaluation_candidate_admission_lost"
-                )
+                raise CompanionConflictError("evaluation_candidate_admission_lost")
             self._bump_detail(
                 db,
                 owner,
@@ -7340,10 +6998,7 @@ class CompanionStore:
                         evaluation_id,
                         candidate_id,
                         str(evaluation["suite_hash"]),
-                        sorted(
-                            item["input_hash"]
-                            for item in normalized_inputs
-                        ),
+                        sorted(item["input_hash"] for item in normalized_inputs),
                     ]
                 ),
                 now=now,
@@ -7384,9 +7039,7 @@ class CompanionStore:
         """Freeze a one-shot user authorization for evaluation only."""
 
         if actor != "user" or risk_ack != "no_os_sandbox":
-            raise CompanionStateError(
-                "evaluation_authorization_acknowledgement_invalid"
-            )
+            raise CompanionStateError("evaluation_authorization_acknowledgement_invalid")
         now = self._now()
         expected = {
             "nonce": nonce,
@@ -7414,13 +7067,10 @@ class CompanionStore:
                 ),
             ).fetchone()
             if existing is not None:
-                if (
-                    existing["authorization_id"] != authorization_id
-                    or not self._same(existing, expected)
+                if existing["authorization_id"] != authorization_id or not self._same(
+                    existing, expected
                 ):
-                    raise CompanionConflictError(
-                        "evaluation_authorization_conflict"
-                    )
+                    raise CompanionConflictError("evaluation_authorization_conflict")
                 return dict(existing)
             evaluation = db.execute(
                 """SELECT e.candidate_id,e.suite_hash,e.runner_policy_hash,
@@ -7451,9 +7101,7 @@ class CompanionStore:
                 or evaluation["status"] in {"invalidated", "expired", "stale"}
                 or expires_at <= now
             ):
-                raise CompanionStateError(
-                    "evaluation_authorization_fence_invalid"
-                )
+                raise CompanionStateError("evaluation_authorization_fence_invalid")
             db.execute(
                 """INSERT INTO evaluation_authorizations(
                      profile_id,profile_generation,authorization_id,nonce,
@@ -7537,9 +7185,7 @@ class CompanionStore:
                 ),
             ).fetchone()
             if existing is not None:
-                if existing["risk_id"] != risk_id or not self._same(
-                    existing, expected
-                ):
+                if existing["risk_id"] != risk_id or not self._same(existing, expected):
                     raise CompanionConflictError("risk_assessment_conflict")
                 return dict(existing)
             candidate = db.execute(
@@ -7559,8 +7205,7 @@ class CompanionStore:
             ).fetchone()
             if (
                 candidate is None
-                or candidate["candidate_package_hash"]
-                != candidate_package_hash
+                or candidate["candidate_package_hash"] != candidate_package_hash
                 or candidate["content_state"] != "live"
                 or candidate["status"] in {"invalidated", "expired", "stale"}
             ):
@@ -7589,9 +7234,7 @@ class CompanionStore:
             self._bump_detail(
                 db,
                 owner,
-                mutation_hash=canonical_hash(
-                    ["risk_assessment", risk_id, risk_hash]
-                ),
+                mutation_hash=canonical_hash(["risk_assessment", risk_id, risk_hash]),
                 now=now,
             )
             return dict(
@@ -7617,9 +7260,7 @@ class CompanionStore:
             "user_authorized",
         }:
             raise ValueError("evaluation_permit_mode_invalid")
-        if (
-            permit.mode in {"safe_auto", "safe_static"}
-        ) != (permit.authorization_id is None):
+        if (permit.mode in {"safe_auto", "safe_static"}) != (permit.authorization_id is None):
             raise CompanionStateError("evaluation_permit_authorization_mode_mismatch")
         permit_facts = {
             "schema_version": permit.schema_version,
@@ -7718,15 +7359,12 @@ class CompanionStore:
                 try:
                     preflight = json.loads(str(risk["static_preflight_json"]))
                 except json.JSONDecodeError as exc:
-                    raise CompanionStateError(
-                        "evaluation_permit_risk_invalid"
-                    ) from exc
+                    raise CompanionStateError("evaluation_permit_risk_invalid") from exc
                 safe_static_valid = (
                     isinstance(preflight, dict)
                     and preflight.get("candidate_kind") == "instruction"
                     and risk["risk"] != "low"
-                    and permit.runner_policy_hash
-                    == SAFE_STATIC_RUNNER_POLICY_HASH
+                    and permit.runner_policy_hash == SAFE_STATIC_RUNNER_POLICY_HASH
                 )
             if (
                 risk is None
@@ -7850,9 +7488,11 @@ class CompanionStore:
     ) -> Mapping[str, Any]:
         now_dt = datetime.fromisoformat(self._now().replace("Z", "+00:00"))
         now = now_dt.isoformat(timespec="milliseconds").replace("+00:00", "Z")
-        expiry = (now_dt + timedelta(seconds=lease_seconds)).isoformat(
-            timespec="milliseconds"
-        ).replace("+00:00", "Z")
+        expiry = (
+            (now_dt + timedelta(seconds=lease_seconds))
+            .isoformat(timespec="milliseconds")
+            .replace("+00:00", "Z")
+        )
         with self._write() as db:
             self._require_owner(db, owner)
             row = db.execute(
@@ -8284,9 +7924,7 @@ class CompanionStore:
                     or row["runtime_identity"] != runtime_identity
                     or row["outcome_hash"] != ack.start_receipt_hash
                 ):
-                    raise CompanionConflictError(
-                        "evaluation_start_ack_conflict"
-                    )
+                    raise CompanionConflictError("evaluation_start_ack_conflict")
                 return dict(row)
             if (
                 row["status"] != "claimed"
@@ -8341,13 +7979,8 @@ class CompanionStore:
     ) -> Mapping[str, Any]:
         """Atomically settle launch, result, and case terminal state."""
 
-        if (
-            completion.cleanup_receipt_hash is None
-            or completion.survivor_count != 0
-        ):
-            raise CompanionStateError(
-                "evaluation_completion_cleanup_not_proven"
-            )
+        if completion.cleanup_receipt_hash is None or completion.survivor_count != 0:
+            raise CompanionStateError("evaluation_completion_cleanup_not_proven")
         now = self._now()
         with self._write() as db:
             self._require_owner(db, owner)
@@ -8365,9 +7998,7 @@ class CompanionStore:
             ).fetchone()
             if existing is not None:
                 if existing["result_hash"] != completion.result_hash:
-                    raise CompanionConflictError(
-                        "evaluation_result_conflict"
-                    )
+                    raise CompanionConflictError("evaluation_result_conflict")
                 return dict(existing)
             row = db.execute(
                 """SELECT l.status AS launch_status,c.status AS case_status,
@@ -8397,9 +8028,7 @@ class CompanionStore:
                 or row["claim_owner"] != claim_owner
                 or int(row["claim_epoch"]) != claim_epoch
             ):
-                raise CompanionLeaseError(
-                    "evaluation_completion_fence_stale"
-                )
+                raise CompanionLeaseError("evaluation_completion_fence_stale")
             db.execute(
                 """INSERT INTO evaluation_results(
                      profile_id,profile_generation,evaluation_id,case_id,variant,
@@ -8494,9 +8123,7 @@ class CompanionStore:
             if survivor_count == 0 and cleanup_receipt_hash is not None
             else "cleanup_required"
         )
-        case_terminal = (
-            "inconclusive" if terminal == "aborted" else "cleanup_required"
-        )
+        case_terminal = "inconclusive" if terminal == "aborted" else "cleanup_required"
         now = self._now()
         with self._write() as db:
             self._require_owner(db, owner)
@@ -8649,13 +8276,9 @@ class CompanionStore:
         }
         if status not in allowed.get(expected_status, set()):
             raise CompanionStateError("evaluation_launch_transition_invalid")
-        if status == "not_started" and (
-            cleanup_receipt_hash is None or survivor_count != 0
-        ):
+        if status == "not_started" and (cleanup_receipt_hash is None or survivor_count != 0):
             raise CompanionStateError("evaluation_not_started_requires_zero_survivors")
-        if status in {"completed", "failed"} and (
-            outcome_ref is None or outcome_hash is None
-        ):
+        if status in {"completed", "failed"} and (outcome_ref is None or outcome_hash is None):
             raise CompanionStateError("evaluation_launch_outcome_required")
         now = self._now()
         with self._write() as db:
@@ -8975,9 +8598,7 @@ class CompanionStore:
                 ),
             ).fetchone()
             if candidate_facts is None:
-                raise CompanionStateError(
-                    "evaluation_report_risk_assessment_missing"
-                )
+                raise CompanionStateError("evaluation_report_risk_assessment_missing")
             result_items: list[dict[str, str]] = []
             for case_id, variant in required:
                 row = db.execute(
@@ -9069,12 +8690,8 @@ class CompanionStore:
                 )
             elif verdict == "failed" and failed_replan is not None:
                 replan = dict(failed_replan)
-                if str(replan.get("candidate_id") or "") != str(
-                    candidate_facts["candidate_id"]
-                ):
-                    raise CompanionConflictError(
-                        "evaluation_replan_candidate_mismatch"
-                    )
+                if str(replan.get("candidate_id") or "") != str(candidate_facts["candidate_id"]):
+                    raise CompanionConflictError("evaluation_replan_candidate_mismatch")
                 exhausted = bool(replan.get("exhausted", False))
                 invalidation_reason = (
                     "evaluation_failed_replan_exhausted"
@@ -9082,12 +8699,9 @@ class CompanionStore:
                     else "evaluation_failed_replan"
                 )
                 candidate_status = str(candidate_facts["candidate_status"])
-                candidate_reason = str(
-                    candidate_facts["candidate_reason_code"] or ""
-                )
+                candidate_reason = str(candidate_facts["candidate_reason_code"] or "")
                 exact_replay = (
-                    candidate_status == "invalidated"
-                    and candidate_reason == invalidation_reason
+                    candidate_status == "invalidated" and candidate_reason == invalidation_reason
                 )
                 applied = False
                 if candidate_status == "evaluating":
@@ -9105,9 +8719,7 @@ class CompanionStore:
                         ),
                     )
                     if cursor.rowcount != 1:
-                        raise CompanionConflictError(
-                            "candidate_evaluation_replan_transition_lost"
-                        )
+                        raise CompanionConflictError("candidate_evaluation_replan_transition_lost")
                     applied = True
                     if str(candidate_facts["candidate_mode"]) == "genesis":
                         db.execute(
@@ -9170,18 +8782,12 @@ class CompanionStore:
                             "evaluation_replan_job_payload_invalid",
                         ),
                         reason_code=str(job["reason_code"]),
-                        budget_reserved_tokens=int(
-                            job["budget_reserved_tokens"]
-                        ),
+                        budget_reserved_tokens=int(job["budget_reserved_tokens"]),
                         budget_reserved_ms=int(job["budget_reserved_ms"]),
                         now=now,
                     )
-            static_preflight = json.loads(
-                str(candidate_facts["static_preflight_json"])
-            )
-            topology_diff = json.loads(
-                str(candidate_facts["effect_topology_diff_json"])
-            )
+            static_preflight = json.loads(str(candidate_facts["static_preflight_json"]))
+            topology_diff = json.loads(str(candidate_facts["effect_topology_diff_json"]))
             self._insert_outbox(
                 db,
                 owner,
@@ -9198,56 +8804,32 @@ class CompanionStore:
                     "candidate_mode": str(candidate_facts["candidate_mode"]),
                     "pack_id": str(candidate_facts["pack_id"]),
                     "candidate_version": str(candidate_facts["version"]),
-                    "candidate_content_hash": str(
-                        candidate_facts["candidate_content_hash"]
-                    ),
+                    "candidate_content_hash": str(candidate_facts["candidate_content_hash"]),
                     "candidate_package_hash": candidate_package_hash,
-                    "candidate_manifest_hash": str(
-                        candidate_facts["candidate_manifest_hash"]
-                    ),
-                    "candidate_archive_hash": str(
-                        candidate_facts["archive_hash"]
-                    ),
+                    "candidate_manifest_hash": str(candidate_facts["candidate_manifest_hash"]),
+                    "candidate_archive_hash": str(candidate_facts["archive_hash"]),
                     "candidate_code_digest": None,
                     "risk_id": str(candidate_facts["risk_id"]),
-                    "risk_assessment_hash": str(
-                        candidate_facts["risk_hash"]
-                    ),
+                    "risk_assessment_hash": str(candidate_facts["risk_hash"]),
                     "risk_level": str(candidate_facts["risk"]),
                     "risk_preflight": static_preflight,
                     "risk_topology_diff": topology_diff,
                     "owner_key": str(candidate_facts["target_owner_key"]),
                     "scope": str(candidate_facts["target_scope"]),
                     "scope_key": str(candidate_facts["target_scope_key"]),
-                    "target_owner_key": str(
-                        candidate_facts["target_owner_key"]
-                    ),
+                    "target_owner_key": str(candidate_facts["target_owner_key"]),
                     "target_scope": str(candidate_facts["target_scope"]),
-                    "target_scope_key": str(
-                        candidate_facts["target_scope_key"]
-                    ),
-                    "target_expected_absent": bool(
-                        candidate_facts["target_expected_absent"]
-                    ),
+                    "target_scope_key": str(candidate_facts["target_scope_key"]),
+                    "target_expected_absent": bool(candidate_facts["target_expected_absent"]),
                     "expected_binding_generation": int(
-                        candidate_facts[
-                            "target_expected_binding_generation"
-                        ]
+                        candidate_facts["target_expected_binding_generation"]
                     ),
-                    "source_owner_key": candidate_facts[
-                        "source_owner_key"
-                    ],
+                    "source_owner_key": candidate_facts["source_owner_key"],
                     "source_scope": candidate_facts["source_scope"],
-                    "source_scope_key": candidate_facts[
-                        "source_scope_key"
-                    ],
+                    "source_scope_key": candidate_facts["source_scope_key"],
                     "source_version": candidate_facts["source_version"],
-                    "source_manifest_hash": candidate_facts[
-                        "source_manifest_hash"
-                    ],
-                    "source_binding_generation": candidate_facts[
-                        "source_binding_generation"
-                    ],
+                    "source_manifest_hash": candidate_facts["source_manifest_hash"],
+                    "source_binding_generation": candidate_facts["source_binding_generation"],
                     "dataset_hash": dataset_hash,
                     "suite_hash": suite_hash,
                     "results_root_hash": results_root_hash,
@@ -9311,9 +8893,7 @@ class CompanionStore:
                     "case_id": str(row["case_id"]),
                     "variant": str(row["variant"]),
                     "assertions": json.loads(str(row["assertions_json"])),
-                    "judge_result": json.loads(
-                        str(row["judge_result_json"])
-                    ),
+                    "judge_result": json.loads(str(row["judge_result_json"])),
                     "usage": json.loads(str(row["usage_json"])),
                     "result_hash": str(row["result_hash"]),
                     "reason_code": str(row["reason_code"]),
@@ -9395,17 +8975,13 @@ class CompanionStore:
                 ),
             ).fetchone()
             if facts is None or facts["verdict"] != "passed":
-                raise CompanionStateError(
-                    "activation_decision_evaluation_not_passed"
-                )
+                raise CompanionStateError("activation_decision_evaluation_not_passed")
             if facts["status"] not in {
                 "eligible",
                 "awaiting_activation_confirmation",
                 "activation_pending",
             }:
-                raise CompanionStateError(
-                    "activation_decision_candidate_not_decidable"
-                )
+                raise CompanionStateError("activation_decision_candidate_not_decidable")
             preflight = json.loads(str(facts["static_preflight_json"]))
             candidate_kind = str(preflight.get("candidate_kind") or "unknown")
             executable = candidate_kind in {"code", "hook", "local_runtime"}
@@ -9413,26 +8989,17 @@ class CompanionStore:
             risk = str(facts["risk"])
             if decision == "activate":
                 if risk != "low" and actor != "user":
-                    raise CompanionStateError(
-                        "activation_confirmation_user_required"
-                    )
+                    raise CompanionStateError("activation_confirmation_user_required")
                 if activation_package_hash != package_hash:
-                    raise CompanionConflictError(
-                        "activation_decision_package_hash_mismatch"
-                    )
+                    raise CompanionConflictError("activation_decision_package_hash_mismatch")
                 if executable and (
                     actor != "user"
                     or not activation_code_digest
-                    or activation_risk_ack
-                    != "persistent_local_code_no_os_sandbox"
+                    or activation_risk_ack != "persistent_local_code_no_os_sandbox"
                 ):
-                    raise CompanionStateError(
-                        "executable_activation_confirmation_incomplete"
-                    )
+                    raise CompanionStateError("executable_activation_confirmation_incomplete")
                 if not executable and activation_risk_ack != "none":
-                    raise CompanionStateError(
-                        "activation_risk_ack_not_applicable"
-                    )
+                    raise CompanionStateError("activation_risk_ack_not_applicable")
             decision_payload = {
                 "schema_version": 1,
                 "decision_id": decision_id,
@@ -9454,9 +9021,7 @@ class CompanionStore:
                 "target_owner_key": facts["target_owner_key"],
                 "target_scope": facts["target_scope"],
                 "target_scope_key": facts["target_scope_key"],
-                "target_expected_absent": bool(
-                    facts["target_expected_absent"]
-                ),
+                "target_expected_absent": bool(facts["target_expected_absent"]),
                 "target_expected_binding_generation": int(
                     facts["target_expected_binding_generation"]
                 ),
@@ -9482,9 +9047,7 @@ class CompanionStore:
                 "target_owner_key": facts["target_owner_key"],
                 "target_scope": facts["target_scope"],
                 "target_scope_key": facts["target_scope_key"],
-                "target_expected_absent": int(
-                    facts["target_expected_absent"]
-                ),
+                "target_expected_absent": int(facts["target_expected_absent"]),
                 "target_expected_binding_generation": int(
                     facts["target_expected_binding_generation"]
                 ),
@@ -9498,12 +9061,8 @@ class CompanionStore:
                 "schema_version": 1,
             }
             if existing is not None:
-                if existing["decision_id"] != decision_id or not self._same(
-                    existing, expected
-                ):
-                    raise CompanionConflictError(
-                        "activation_decision_conflict"
-                    )
+                if existing["decision_id"] != decision_id or not self._same(existing, expected):
+                    raise CompanionConflictError("activation_decision_conflict")
                 return dict(existing)
             db.execute(
                 """INSERT INTO growth_decisions(
@@ -9541,9 +9100,7 @@ class CompanionStore:
                     now,
                 ),
             )
-            next_status = (
-                "activation_pending" if decision == "activate" else "rejected"
-            )
+            next_status = "activation_pending" if decision == "activate" else "rejected"
             db.execute(
                 """UPDATE candidate_artifacts
                    SET status=?,reason_code=?,updated_at=?
@@ -9560,9 +9117,7 @@ class CompanionStore:
                     candidate_id,
                 ),
             )
-            self._bump_detail(
-                db, owner, mutation_hash=decision_hash, now=now
-            )
+            self._bump_detail(db, owner, mutation_hash=decision_hash, now=now)
             return dict(
                 db.execute(
                     """SELECT * FROM growth_decisions
@@ -9586,21 +9141,18 @@ class CompanionStore:
         now = self._now()
         action = request.action.value
         candidate_mode = request.candidate_mode.value if request.candidate_mode else None
-        persisted_candidate_id = (
-            request.candidate_id
-            if action in {"install", "update"}
-            else None
-        )
-        persisted_candidate_mode = (
-            candidate_mode if action in {"install", "update"} else None
-        )
+        persisted_candidate_id = request.candidate_id if action in {"install", "update"} else None
+        persisted_candidate_mode = candidate_mode if action in {"install", "update"} else None
         source_fence_json = (
-            canonical_json(dict(request.source_fence))
-            if request.source_fence is not None
-            else None
+            canonical_json(dict(request.source_fence)) if request.source_fence is not None else None
         )
         manager_key = canonical_hash(
-            ["companion_growth", owner.profile_id, owner.profile_generation, request.request_fingerprint]
+            [
+                "companion_growth",
+                owner.profile_id,
+                owner.profile_generation,
+                request.request_fingerprint,
+            ]
         )
         with self._write() as db:
             self._require_owner(db, owner)
@@ -9626,11 +9178,8 @@ class CompanionStore:
                     "candidate_package_hash": request.target_package_hash,
                     "archive_hash": request.target_archive_hash,
                     "source_fence_json": source_fence_json,
-                    "target_expected_absent": int(
-                        request.target_expected_absent
-                    ),
-                    "target_expected_binding_generation":
-                        request.target_expected_binding_generation,
+                    "target_expected_absent": int(request.target_expected_absent),
+                    "target_expected_binding_generation": request.target_expected_binding_generation,
                     "cause_ref": request.cause_ref,
                     "reason_code": request.reason_code,
                 }
@@ -9640,9 +9189,7 @@ class CompanionStore:
                 # backfill the missing lineage so an already-settled rollback
                 # can project the candidate terminal state as well.
                 replay_identity_expected = {
-                    key: value
-                    for key, value in replay_expected.items()
-                    if key != "reason_code"
+                    key: value for key, value in replay_expected.items() if key != "reason_code"
                 }
                 legacy_rollback_backfill = (
                     action in {"rollback", "disable"}
@@ -9668,8 +9215,7 @@ class CompanionStore:
                     if (
                         candidate is None
                         or candidate["candidate_mode"] != candidate_mode
-                        or candidate["status"]
-                        not in {"active", "rollback_pending", "rolled_back"}
+                        or candidate["status"] not in {"active", "rollback_pending", "rolled_back"}
                     ):
                         raise CompanionConflictError(
                             "capability_mutation_legacy_candidate_conflict"
@@ -9766,13 +9312,9 @@ class CompanionStore:
                 }:
                     raise CompanionStateError("mutation_candidate_not_eligible")
                 frozen_mode = str(candidate["candidate_mode"])
-                expected_action = (
-                    "update" if frozen_mode == "update" else "install"
-                )
+                expected_action = "update" if frozen_mode == "update" else "install"
                 if candidate_mode != frozen_mode or action != expected_action:
-                    raise CompanionConflictError(
-                        "mutation_candidate_mode_or_action_mismatch"
-                    )
+                    raise CompanionConflictError("mutation_candidate_mode_or_action_mismatch")
                 if (
                     request.pack_id != candidate["frozen_pack_id"]
                     or request.target_version != candidate["frozen_version"]
@@ -9784,9 +9326,7 @@ class CompanionStore:
                     or request.target_expected_binding_generation
                     != int(candidate["target_expected_binding_generation"])
                 ):
-                    raise CompanionConflictError(
-                        "mutation_candidate_fence_mismatch"
-                    )
+                    raise CompanionConflictError("mutation_candidate_fence_mismatch")
                 if request.source_fence is not None:
                     source_fence = dict(request.source_fence)
                     frozen_source = {
@@ -9795,16 +9335,10 @@ class CompanionStore:
                         "scope_key": candidate["source_scope_key"],
                         "version": candidate["source_version"],
                         "manifest_hash": candidate["source_manifest_hash"],
-                        "binding_generation":
-                            candidate["source_binding_generation"],
+                        "binding_generation": candidate["source_binding_generation"],
                     }
-                    if any(
-                        source_fence.get(key) != value
-                        for key, value in frozen_source.items()
-                    ):
-                        raise CompanionConflictError(
-                            "mutation_candidate_source_fence_mismatch"
-                        )
+                    if any(source_fence.get(key) != value for key, value in frozen_source.items()):
+                        raise CompanionConflictError("mutation_candidate_source_fence_mismatch")
                 report = db.execute(
                     """SELECT report_id FROM evaluation_reports
                        WHERE profile_id=? AND profile_generation=? AND verdict='passed'
@@ -9882,21 +9416,15 @@ class CompanionStore:
                     ),
                 ).fetchone()
                 if candidate is None or candidate["status"] != "active":
-                    raise CompanionStateError(
-                        "mutation_candidate_not_active"
-                    )
+                    raise CompanionStateError("mutation_candidate_not_active")
                 if (
                     candidate_mode != candidate["candidate_mode"]
-                    or request.target_owner_key
-                    != candidate["target_owner_key"]
+                    or request.target_owner_key != candidate["target_owner_key"]
                     or request.target_scope != candidate["target_scope"]
-                    or request.target_scope_key
-                    != candidate["target_scope_key"]
+                    or request.target_scope_key != candidate["target_scope_key"]
                     or request.pack_id != candidate["frozen_pack_id"]
                 ):
-                    raise CompanionConflictError(
-                        "mutation_candidate_rollback_fence_mismatch"
-                    )
+                    raise CompanionConflictError("mutation_candidate_rollback_fence_mismatch")
             try:
                 db.execute(
                     """INSERT INTO capability_activation_requests(
@@ -9955,9 +9483,7 @@ class CompanionStore:
                         ),
                     )
                     if updated.rowcount != 1:
-                        raise CompanionConflictError(
-                            "mutation_candidate_rollback_claim_lost"
-                        )
+                        raise CompanionConflictError("mutation_candidate_rollback_claim_lost")
             except sqlite3.IntegrityError as exc:
                 in_progress = db.execute(
                     """SELECT * FROM capability_activation_requests
@@ -9985,19 +9511,13 @@ class CompanionStore:
                     same_rollback_intent = (
                         action == "rollback"
                         and in_progress["action"] == "rollback"
-                        and in_progress["rollback_kind"]
-                        == request.rollback_kind
-                        and in_progress["target_version"]
-                        == request.target_version
-                        and in_progress["target_manifest_hash"]
-                        == request.target_manifest_hash
-                        and in_progress[
-                            "target_expected_binding_generation"
-                        ]
+                        and in_progress["rollback_kind"] == request.rollback_kind
+                        and in_progress["target_version"] == request.target_version
+                        and in_progress["target_manifest_hash"] == request.target_manifest_hash
+                        and in_progress["target_expected_binding_generation"]
                         == request.target_expected_binding_generation
                         and in_progress["cause_ref"] == request.cause_ref
-                        and in_progress["reason_code"]
-                        == request.reason_code
+                        and in_progress["reason_code"] == request.reason_code
                     )
                     if same_rollback_intent:
                         if request.candidate_id is not None:
@@ -10046,8 +9566,7 @@ class CompanionStore:
                                 ).fetchone()
                                 if (
                                     current_candidate is None
-                                    or current_candidate["status"]
-                                    != "rollback_pending"
+                                    or current_candidate["status"] != "rollback_pending"
                                 ):
                                     raise CompanionConflictError(
                                         "capability_mutation_adopted_candidate_state_conflict"
@@ -10060,9 +9579,7 @@ class CompanionStore:
                                 (
                                     owner.profile_id,
                                     owner.profile_generation,
-                                    in_progress[
-                                        "activation_request_id"
-                                    ],
+                                    in_progress["activation_request_id"],
                                 ),
                             ).fetchone()
                         )
@@ -10131,9 +9648,7 @@ class CompanionStore:
                 now=now,
                 reason_code=request.reason_code,
             )
-            self._bump_detail(
-                db, owner, mutation_hash=request.request_fingerprint, now=now
-            )
+            self._bump_detail(db, owner, mutation_hash=request.request_fingerprint, now=now)
             return dict(
                 db.execute(
                     """SELECT * FROM capability_activation_requests
@@ -10188,9 +9703,11 @@ class CompanionStore:
             raise ValueError("lease_seconds must be positive")
         now_dt = datetime.fromisoformat(self._now().replace("Z", "+00:00"))
         now = now_dt.isoformat(timespec="milliseconds").replace("+00:00", "Z")
-        expiry = (now_dt + timedelta(seconds=lease_seconds)).isoformat(
-            timespec="milliseconds"
-        ).replace("+00:00", "Z")
+        expiry = (
+            (now_dt + timedelta(seconds=lease_seconds))
+            .isoformat(timespec="milliseconds")
+            .replace("+00:00", "Z")
+        )
         with self._write() as db:
             self._require_owner(db, owner)
             row = db.execute(
@@ -10288,10 +9805,7 @@ class CompanionStore:
             ).fetchone()
             if row is None:
                 raise CompanionStateError("capability_mutation_request_missing")
-            if (
-                row["claim_owner"] != claim_owner
-                or int(row["claim_epoch"]) != claim_epoch
-            ):
+            if row["claim_owner"] != claim_owner or int(row["claim_epoch"]) != claim_epoch:
                 raise CompanionLeaseError("capability_mutation_claim_stale")
             if row["status"] == "staged":
                 if (
@@ -10299,9 +9813,7 @@ class CompanionStore:
                     or row["runtime_set_ref"] != runtime_set_ref
                     or row["runtime_set_hash"] != runtime_set_hash
                 ):
-                    raise CompanionConflictError(
-                        "capability_mutation_prepared_conflict"
-                    )
+                    raise CompanionConflictError("capability_mutation_prepared_conflict")
                 return dict(row)
             if row["status"] not in {"claimed", "staging"}:
                 raise CompanionStateError("capability_mutation_not_stageable")
@@ -10388,9 +9900,7 @@ class CompanionStore:
                     and int(current["claim_epoch"]) == claim_epoch
                 ):
                     return dict(current)
-                raise CompanionLeaseError(
-                    "capability_mutation_publish_claim_stale"
-                )
+                raise CompanionLeaseError("capability_mutation_publish_claim_stale")
             return dict(
                 db.execute(
                     """SELECT * FROM capability_activation_requests
@@ -10442,9 +9952,7 @@ class CompanionStore:
                 ),
             )
             if updated.rowcount != 1:
-                raise CompanionLeaseError(
-                    "capability_mutation_failure_claim_stale"
-                )
+                raise CompanionLeaseError("capability_mutation_failure_claim_stale")
             return dict(
                 db.execute(
                     """SELECT * FROM capability_activation_requests
@@ -10813,17 +10321,14 @@ class CompanionStore:
                     action = "rollback" if has_fallback else "disable"
                     rollback_kind = (
                         "remove_override"
-                        if has_fallback
-                        and receipt["candidate_mode"] == "builtin_override"
-                        else "same_owner_version" if has_fallback else None
-                    )
-                    target_version = (
-                        receipt["fallback_version"] if has_fallback else None
-                    )
-                    target_manifest_hash = (
-                        receipt["fallback_manifest_hash"]
+                        if has_fallback and receipt["candidate_mode"] == "builtin_override"
+                        else "same_owner_version"
                         if has_fallback
                         else None
+                    )
+                    target_version = receipt["fallback_version"] if has_fallback else None
+                    target_manifest_hash = (
+                        receipt["fallback_manifest_hash"] if has_fallback else None
                     )
                     source_fence = {
                         "owner_key": receipt["target_owner_key"],
@@ -10896,9 +10401,7 @@ class CompanionStore:
                             now,
                         ),
                     )
-                    audit_id = canonical_hash(
-                        ["forget_capability_mutation", request_id]
-                    )
+                    audit_id = canonical_hash(["forget_capability_mutation", request_id])
                     db.execute(
                         """INSERT INTO audit_events(
                              profile_id,profile_generation,audit_id,actor,action,
@@ -10927,9 +10430,7 @@ class CompanionStore:
                     self._insert_outbox(
                         db,
                         owner,
-                        outbox_id=canonical_hash(
-                            ["capability_mutation", request_id]
-                        ),
+                        outbox_id=canonical_hash(["capability_mutation", request_id]),
                         event_kind="capability_mutation",
                         event_id=request_id,
                         sink_kind="capability_platform",
@@ -11093,9 +10594,7 @@ class CompanionStore:
             self._insert_outbox(
                 db,
                 owner,
-                outbox_id=canonical_hash(
-                    ["growth_event_forgotten", forget_audit_id]
-                ),
+                outbox_id=canonical_hash(["growth_event_forgotten", forget_audit_id]),
                 event_kind="growth_event_forgotten",
                 event_id=forget_audit_id,
                 sink_kind="companion_notification",
@@ -11143,9 +10642,7 @@ class CompanionStore:
             raise ValueError("reminder_operation_invalid")
         if operation_kind == "create" and bool(occurrence_id) != bool(due_at):
             raise ValueError("reminder_occurrence_identity_incomplete")
-        if operation_kind == "cancel" and (
-            occurrence_id is not None or due_at is not None
-        ):
+        if operation_kind == "cancel" and (occurrence_id is not None or due_at is not None):
             raise ValueError("reminder_cancel_occurrence_invalid")
         now = self._now()
         args_json = canonical_json(dict(args))
@@ -11336,7 +10833,7 @@ class CompanionStore:
             params.append(int(limit))
             rows = db.execute(
                 f"""SELECT * FROM reminders
-                    WHERE {' AND '.join(predicates)}
+                    WHERE {" AND ".join(predicates)}
                     ORDER BY reminder_id
                     LIMIT ?""",
                 params,
@@ -11410,9 +10907,11 @@ class CompanionStore:
         if lease_seconds <= 0 or frequency_limit < 0:
             raise ValueError("reminder_occurrence_claim_invalid")
         now_dt = datetime.fromisoformat(due_at_or_before.replace("Z", "+00:00"))
-        expiry = (now_dt + timedelta(seconds=lease_seconds)).isoformat(
-            timespec="seconds"
-        ).replace("+00:00", "Z")
+        expiry = (
+            (now_dt + timedelta(seconds=lease_seconds))
+            .isoformat(timespec="seconds")
+            .replace("+00:00", "Z")
+        )
         now = self._now()
         with self._write() as db:
             self._require_owner(db, owner)
@@ -11553,9 +11052,7 @@ class CompanionStore:
                 ),
             )
             if cursor.rowcount != 1:
-                raise CompanionLeaseError(
-                    f"reminder_occurrence_lease_stale:{occurrence_id}"
-                )
+                raise CompanionLeaseError(f"reminder_occurrence_lease_stale:{occurrence_id}")
             return dict(
                 db.execute(
                     """SELECT * FROM reminder_occurrences
@@ -11590,9 +11087,7 @@ class CompanionStore:
                 or occurrence["claim_owner"] != claim_owner
                 or int(occurrence["claim_epoch"]) != claim_epoch
             ):
-                raise CompanionLeaseError(
-                    f"reminder_occurrence_lease_stale:{occurrence_id}"
-                )
+                raise CompanionLeaseError(f"reminder_occurrence_lease_stale:{occurrence_id}")
             draft_job_id: str | None = None
             if draft_payload is not None:
                 draft_job_id = canonical_hash(["reminder_draft", occurrence_id])
@@ -11637,9 +11132,7 @@ class CompanionStore:
                             (
                                 owner.profile_id,
                                 owner.profile_generation,
-                                canonical_hash(
-                                    ["reminder_draft_grant", occurrence_id, scope]
-                                ),
+                                canonical_hash(["reminder_draft_grant", occurrence_id, scope]),
                                 scope,
                                 f"reminder:{occurrence_id}",
                                 grant_expires_at,
@@ -11651,9 +11144,7 @@ class CompanionStore:
                     existing_job["kind"] != "delegated_task"
                     or existing_job["payload_hash"] != payload_hash
                 ):
-                    raise CompanionConflictError(
-                        f"reminder_draft_job_conflict:{occurrence_id}"
-                    )
+                    raise CompanionConflictError(f"reminder_draft_job_conflict:{occurrence_id}")
             payload = dict(delivery_payload)
             if draft_job_id is not None:
                 payload["draft_job_id"] = draft_job_id
@@ -11722,9 +11213,7 @@ class CompanionStore:
                 or occurrence["claim_owner"] != claim_owner
                 or int(occurrence["claim_epoch"]) != claim_epoch
             ):
-                raise CompanionLeaseError(
-                    f"reminder_occurrence_lease_stale:{occurrence_id}"
-                )
+                raise CompanionLeaseError(f"reminder_occurrence_lease_stale:{occurrence_id}")
             if (
                 outbox is None
                 or outbox["status"] != "claimed"
@@ -11804,18 +11293,12 @@ class CompanionStore:
                         ),
                     )
             delivery_payload = json.loads(str(outbox["payload_json"]))
-            reminder_text = str(
-                delivery_payload.get("text") or "提醒时间到了"
-            )
+            reminder_text = str(delivery_payload.get("text") or "提醒时间到了")
             draft_text = (
-                ""
-                if draft_payload is None
-                else str(draft_payload.get("text") or "").strip()
+                "" if draft_payload is None else str(draft_payload.get("text") or "").strip()
             )
             summary = (
-                reminder_text
-                if not draft_text
-                else f"{reminder_text}\n\n草稿：\n{draft_text}"
+                reminder_text if not draft_text else f"{reminder_text}\n\n草稿：\n{draft_text}"
             )
             notification_source_refs = tuple(
                 str(item) for item in source_message_refs if str(item)
@@ -11841,9 +11324,7 @@ class CompanionStore:
                             "due_at": str(occurrence["due_at"]),
                             "status": "delivered",
                             "draft": draft_text or None,
-                            "source_message_refs": list(
-                                notification_source_refs
-                            ),
+                            "source_message_refs": list(notification_source_refs),
                             "external_send_count": 0,
                         }
                     ]
@@ -11888,9 +11369,7 @@ class CompanionStore:
         result: list[Mapping[str, Any]] = []
         for row in rows:
             item = dict(row)
-            item["journal_payload"] = json.loads(
-                str(row["journal_payload_json"])
-            )
+            item["journal_payload"] = json.loads(str(row["journal_payload_json"]))
             result.append(item)
         return result
 
@@ -11919,19 +11398,11 @@ class CompanionStore:
                 or str(state["phase"]) != str(expected_phase)
                 or int(state["generation"]) != int(expected_generation)
             ):
-                raise CompanionConflictError(
-                    "growth_authority_cutover_step_state_stale"
-                )
+                raise CompanionConflictError("growth_authority_cutover_step_state_stale")
             if bool(state["roll_forward_required"]) != bool(marker_committed):
-                raise CompanionConflictError(
-                    "growth_authority_cutover_step_marker_stale"
-                )
-            if str(state["cutover_operation_id"] or "") != str(
-                cutover_operation_id
-            ):
-                raise CompanionConflictError(
-                    "growth_authority_cutover_operation_conflict"
-                )
+                raise CompanionConflictError("growth_authority_cutover_step_marker_stale")
+            if str(state["cutover_operation_id"] or "") != str(cutover_operation_id):
+                raise CompanionConflictError("growth_authority_cutover_operation_conflict")
             existing = db.execute(
                 """SELECT * FROM growth_authority_journal
                    WHERE authority_key='growth' AND cutover_operation_id=?
@@ -11947,9 +11418,7 @@ class CompanionStore:
             }
             if existing is not None:
                 if not self._same(existing, expected):
-                    raise CompanionConflictError(
-                        "growth_authority_cutover_step_replay_conflict"
-                    )
+                    raise CompanionConflictError("growth_authority_cutover_step_replay_conflict")
                 return dict(existing)
             event_seq = (
                 int(
@@ -12020,7 +11489,10 @@ class CompanionStore:
             if state is None:
                 raise CompanionStateError("growth_authority_state_missing")
             if state["phase"] != expected_phase:
-                if state["phase"] == next_phase and int(state["generation"]) == migration_generation:
+                if (
+                    state["phase"] == next_phase
+                    and int(state["generation"]) == migration_generation
+                ):
                     replay = db.execute(
                         """SELECT * FROM growth_authority_journal
                            WHERE authority_key='growth' AND generation=?
@@ -12035,21 +11507,15 @@ class CompanionStore:
                         or replay["journal_payload_json"] != canonical_json(payload)
                         or replay["reason_code"] != reason_code
                     ):
-                        raise CompanionConflictError(
-                            "growth_authority_transition_replay_conflict"
-                        )
+                        raise CompanionConflictError("growth_authority_transition_replay_conflict")
                     return dict(state)
                 raise CompanionConflictError("growth_authority_phase_conflict")
             existing_marker = bool(state["roll_forward_required"])
             current_generation = int(state["generation"])
             if migration_generation != current_generation + 1:
-                raise CompanionStateError(
-                    "growth_authority_generation_must_advance_once"
-                )
+                raise CompanionStateError("growth_authority_generation_must_advance_once")
             if existing_marker and not marker_committed:
-                raise CompanionStateError(
-                    "growth_authority_marker_cannot_be_cleared"
-                )
+                raise CompanionStateError("growth_authority_marker_cannot_be_cleared")
             if expected_phase == "legacy":
                 legal = next_phase == "preparing" and not marker_committed
             elif expected_phase == "preparing":
@@ -12064,9 +11530,7 @@ class CompanionStore:
                 else:
                     legal = False
             elif expected_phase == "companion":
-                legal = next_phase == "paused" and (
-                    existing_marker or marker_committed
-                )
+                legal = next_phase == "paused" and (existing_marker or marker_committed)
             elif expected_phase == "paused":
                 legal = (
                     next_phase == "companion"
@@ -12164,7 +11628,12 @@ class CompanionStore:
                     db,
                     owner,
                     outbox_id=canonical_hash(
-                        ["growth_authority_transition", owner.profile_id, owner.profile_generation, event_id]
+                        [
+                            "growth_authority_transition",
+                            owner.profile_id,
+                            owner.profile_generation,
+                            event_id,
+                        ]
                     ),
                     event_kind="growth_authority_transition",
                     event_id=event_id,

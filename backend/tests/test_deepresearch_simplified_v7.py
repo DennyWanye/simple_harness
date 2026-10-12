@@ -83,19 +83,26 @@ def _context(tmp_path: Path) -> WorkflowContext:
             "size_bytes": len(kwargs["report_md"].encode("utf-8")),
         }
 
-    return WorkflowContext(ports={
-        "llm": ResearchLLMPort(PromptLLM()),
-        "search": ResearchSearchPort(search),
-        "fetch": FetchPort(extract),
-        "artifact": ResearchArtifactPort(save),
-        "subagent_scheduler": DirectScheduler(),
-    })
+    return WorkflowContext(
+        ports={
+            "llm": ResearchLLMPort(PromptLLM()),
+            "search": ResearchSearchPort(search),
+            "fetch": FetchPort(extract),
+            "artifact": ResearchArtifactPort(save),
+            "subagent_scheduler": DirectScheduler(),
+        }
+    )
 
 
 def test_v7_definition_is_the_simplified_manager_graph() -> None:
     assert DEEP_RESEARCH_V7_DEFINITION.version == "v7"
     assert tuple(node.node_id for node in DEEP_RESEARCH_V7_DEFINITION.nodes) == (
-        "normalize", "plan", "search", "synth", "persist", "finalize",
+        "normalize",
+        "plan",
+        "search",
+        "synth",
+        "persist",
+        "finalize",
     )
     assert DEEP_RESEARCH_V7_DEFINITION.prompt_manifest["manager_pattern"] == "agents_as_tools"
     assert DEEP_RESEARCH_V7_DEFINITION.policy_manifest["child_attempts"] == 2
@@ -124,11 +131,44 @@ async def test_v7_handlers_decompose_collect_synthesize_and_deliver_once(
         return legacy.FanoutCollection(
             topic=kwargs["topic"],
             sub_questions=questions,
-            sub_reports=[(questions[0], _report(questions[0], 1)), (questions[1], _report(questions[1], 2))],
+            sub_reports=[
+                (questions[0], _report(questions[0], 1)),
+                (questions[1], _report(questions[1], 2)),
+            ],
             child_records=[
-                {"child_id": "dr-0", "question": questions[0], "status": "valid", "attempt": 1, "attempts": [], "diagnosis": "", "n_sources": 1, "n_domains": 1, "duration_ms": 1},
-                {"child_id": "dr-1", "question": questions[1], "status": "valid", "attempt": 2, "attempts": [], "diagnosis": "补证", "n_sources": 1, "n_domains": 1, "duration_ms": 2},
-                {"child_id": "dr-2", "question": questions[2], "status": "insufficient", "attempt": 2, "attempts": [], "diagnosis": "无公开证据", "n_sources": 0, "n_domains": 0, "duration_ms": 3},
+                {
+                    "child_id": "dr-0",
+                    "question": questions[0],
+                    "status": "valid",
+                    "attempt": 1,
+                    "attempts": [],
+                    "diagnosis": "",
+                    "n_sources": 1,
+                    "n_domains": 1,
+                    "duration_ms": 1,
+                },
+                {
+                    "child_id": "dr-1",
+                    "question": questions[1],
+                    "status": "valid",
+                    "attempt": 2,
+                    "attempts": [],
+                    "diagnosis": "补证",
+                    "n_sources": 1,
+                    "n_domains": 1,
+                    "duration_ms": 2,
+                },
+                {
+                    "child_id": "dr-2",
+                    "question": questions[2],
+                    "status": "insufficient",
+                    "attempt": 2,
+                    "attempts": [],
+                    "diagnosis": "无公开证据",
+                    "n_sources": 0,
+                    "n_domains": 0,
+                    "duration_ms": 3,
+                },
             ],
             errors=[],
             route={},

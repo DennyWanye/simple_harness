@@ -176,5 +176,3 @@ def install_native_root(
         # 不符就是隔离，读门说了算；这里只核对，不修。
         gate.require_execution()
         return ref
-
-

@@ -6,6 +6,7 @@
 的已通过步骤，连同新旧差异，一条请求交给规划器判；它判"不受影响"也是一种了结；终审等这件事问完再开；
 审阅员的审查包写明执行者用的版本与现行版本，现行版本的正文在它的证据里。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -45,13 +46,26 @@ def _events(world: Any, mission_id: str, event_type: str) -> list[Any]:
 
 
 def _source_requests(world: Any, mission_id: str) -> list[Any]:
-    return [e for e in _events(world, mission_id, REQUESTED) if str(e.payload["source_key"]).startswith("source:")]
+    return [
+        e
+        for e in _events(world, mission_id, REQUESTED)
+        if str(e.payload["source_key"]).startswith("source:")
+    ]
 
 
-def _supersede(world: Any, mission_id: str, expected: str, content: str = NEW, key: str = "1") -> dict[str, Any]:
-    proposal = world.control.supersede_source({
-        "mission_id": mission_id, "path": PATH, "content": content, "kind": "markdown",
-        "idempotency_key": "sup-spec-" + key, "expected_version_hash": expected})
+def _supersede(
+    world: Any, mission_id: str, expected: str, content: str = NEW, key: str = "1"
+) -> dict[str, Any]:
+    proposal = world.control.supersede_source(
+        {
+            "mission_id": mission_id,
+            "path": PATH,
+            "content": content,
+            "kind": "markdown",
+            "idempotency_key": "sup-spec-" + key,
+            "expected_version_hash": expected,
+        }
+    )
     world.control.decide(proposal["request_id"], "approve", nonce="approve-sup-" + key)
     return proposal
 
@@ -60,7 +74,9 @@ def _source_evidence(review: dict[str, Any]) -> list[str]:
     return [row["content"] for row in review["evidence"] if row["ref"]["kind"] == "source"]
 
 
-def test_a_source_replaced_under_an_accepted_step_is_put_to_the_planner_and_the_final_review_waits(tmp_path):
+def test_a_source_replaced_under_an_accepted_step_is_put_to_the_planner_and_the_final_review_waits(
+    tmp_path,
+):
     """一步拿着第 1 版资料在跑时资料换成第 2 版，这一步随后通过验收。
 
     - 跑着的时候不问（等它跑完）；跑完后**一条**请求交给规划器：这一步挂的是旧版、没有引用过、新旧差异；
@@ -75,17 +91,26 @@ def test_a_source_replaced_under_an_accepted_step_is_put_to_the_planner_and_the_
 
     def planner(request: Any):  # type: ignore[no-untyped-def]
         package = package_of(request)
-        sourced = [entry for entry in package.get("repair_requests") or ()
-                   if str(entry.get("source_key")).startswith("source:")]
+        sourced = [
+            entry
+            for entry in package.get("repair_requests") or ()
+            if str(entry.get("source_key")).startswith("source:")
+        ]
         if not sourced:
             return planner_reply(request)
         seen["requests"].append(sourced[0])
         if not seen["answered"]:
             return None  # 第一次被问到：测试先看一眼当时的状态
         step = sourced[0]["request"]["context"]["steps_on_old_version"][0]["task_id"]
-        subject = next(s["subject_key"] for s in package["planning_subjects"] if s["task_id"] == step)
-        return decision(subject, "NO_CHANGE", {"reason": "这一步写的是说明的结构，没有用到价格。"},
-                        "资料只改了价格，这一步的产出不涉及价格。")
+        subject = next(
+            s["subject_key"] for s in package["planning_subjects"] if s["task_id"] == step
+        )
+        return decision(
+            subject,
+            "NO_CHANGE",
+            {"reason": "这一步写的是说明的结构，没有用到价格。"},
+            "资料只改了价格，这一步的产出不涉及价格。",
+        )
 
     def reviewer(request: Any):  # type: ignore[no-untyped-def]
         seen["reviews"].append(review_input(request))
@@ -95,10 +120,22 @@ def test_a_source_replaced_under_an_accepted_step_is_put_to_the_planner_and_the_
         provider = LayeredScriptedProvider(planner=planner, reviewer=reviewer)
         provider.held.add("worker")
         async with product_world(tmp_path / "root", provider) as world:
-            mission_id = world.create({"goal": "按规格写一份说明", "success_criteria": ["file:notes/a.md"],
-                                       "idempotency_key": "source-change-1"})["mission_id"]
-            first = world.control.register_source({"mission_id": mission_id, "path": PATH, "content": OLD,
-                                                   "kind": "markdown", "idempotency_key": "reg-spec-1"})
+            mission_id = world.create(
+                {
+                    "goal": "按规格写一份说明",
+                    "success_criteria": ["file:notes/a.md"],
+                    "idempotency_key": "source-change-1",
+                }
+            )["mission_id"]
+            first = world.control.register_source(
+                {
+                    "mission_id": mission_id,
+                    "path": PATH,
+                    "content": OLD,
+                    "kind": "markdown",
+                    "idempotency_key": "reg-spec-1",
+                }
+            )
             for _ in range(20):
                 await world.drain(timeout=5)
                 if provider.entered.is_set():
@@ -107,7 +144,9 @@ def test_a_source_replaced_under_an_accepted_step_is_put_to_the_planner_and_the_
             proposal = _supersede(world, mission_id, first["version_hash"])
             await world.drain(timeout=5)
             # 拿着旧版的尝试还在跑：不问、也不记"没影响"
-            assert not _source_requests(world, mission_id) and not _events(world, mission_id, SOURCE_CHANGE_ASSESSED)
+            assert not _source_requests(world, mission_id) and not _events(
+                world, mission_id, SOURCE_CHANGE_ASSESSED
+            )
 
             provider.release.set()
             for _ in range(20):
@@ -124,18 +163,32 @@ def test_a_source_replaced_under_an_accepted_step_is_put_to_the_planner_and_the_
             assert (step["status"], step["cited"]) == ("ACCEPTED", False)
             assert asked.payload["request"]["trigger_refs"] == [step["result_id"]]
             assert (context["reason"], context["path"]) == ("source_superseded", PATH)
-            assert (context["old_version"], context["new_version"]) == (first["version_hash"], proposal["version_hash"])
-            assert "-价格：每月 18 元" in context["diff_excerpt"] and "+价格：每月 25 元" in context["diff_excerpt"]
+            assert (context["old_version"], context["new_version"]) == (
+                first["version_hash"],
+                proposal["version_hash"],
+            )
+            assert (
+                "-价格：每月 18 元" in context["diff_excerpt"]
+                and "+价格：每月 25 元" in context["diff_excerpt"]
+            )
             assert seen["requests"][0]["request"]["context"] == context  # 规划器看到的就是这些
             assert not _events(world, mission_id, SOURCE_CHANGE_ASSESSED)
             # 这时任务没有判完成，终审也没开：只有那一步的内容审查发生过
             assert str(world.store.get_mission(mission_id).status.value) == "ACTIVE"
             assert not _events(world, mission_id, "GoalResolutionCommitted")
             leaf_reviews = [r for r in seen["reviews"] if r and r["package"].get("source_versions")]
-            assert [r["package"]["purpose"] for r in seen["reviews"] if r] == ["METHOD_PLAN", "TASK_CONTENT"]
+            assert [r["package"]["purpose"] for r in seen["reviews"] if r] == [
+                "METHOD_PLAN",
+                "TASK_CONTENT",
+            ]
             [leaf] = leaf_reviews
-            assert leaf["package"]["source_versions"] == [{
-                "path": PATH, "used_version": first["version_hash"], "current_version": proposal["version_hash"]}]
+            assert leaf["package"]["source_versions"] == [
+                {
+                    "path": PATH,
+                    "used_version": first["version_hash"],
+                    "current_version": proposal["version_hash"],
+                }
+            ]
             assert _source_evidence(leaf) == [NEW]
 
             seen["answered"] = True
@@ -146,9 +199,15 @@ def test_a_source_replaced_under_an_accepted_step_is_put_to_the_planner_and_the_
                 if status in {"COMPLETED", "FAILED", "CANCELLED"}:
                     break
             assert status == "COMPLETED"
-            [addressed] = [e for e in _events(world, mission_id, ADDRESSED)
-                           if asked.payload["request_id"] in e.payload["repair_request_ids"]]
-            assert (addressed.payload["decision_type"], addressed.payload["status"]) == ("NO_CHANGE", "NO_STATE_CHANGE")
+            [addressed] = [
+                e
+                for e in _events(world, mission_id, ADDRESSED)
+                if asked.payload["request_id"] in e.payload["repair_request_ids"]
+            ]
+            assert (addressed.payload["decision_type"], addressed.payload["status"]) == (
+                "NO_CHANGE",
+                "NO_STATE_CHANGE",
+            )
             [resolved] = _events(world, mission_id, "GoalResolutionCommitted")
             assert addressed.seq < resolved.seq
             assert len(_source_requests(world, mission_id)) == 1
@@ -167,7 +226,11 @@ class _HoldLeafReview(LayeredScriptedProvider):
 
     async def invoke(self, request, *, cancel):  # type: ignore[no-untyped-def]
         review = review_input(request)
-        if review and review["package"]["purpose"] == "TASK_CONTENT" and not self.review_release.is_set():
+        if (
+            review
+            and review["package"]["purpose"] == "TASK_CONTENT"
+            and not self.review_release.is_set()
+        ):
             self.review_entered.set()
             await self.review_release.wait()
         return await super().invoke(request, cancel=cancel)
@@ -184,10 +247,22 @@ def test_a_review_in_flight_when_its_source_is_replaced_is_voided_with_the_reaso
         provider = _HoldLeafReview()
         provider.held.add("worker")
         async with product_world(tmp_path / "root", provider) as world:
-            mission_id = world.create({"goal": "按规格写一份说明", "success_criteria": ["file:notes/a.md"],
-                                       "idempotency_key": "source-change-2"})["mission_id"]
-            first = world.control.register_source({"mission_id": mission_id, "path": PATH, "content": OLD,
-                                                   "kind": "markdown", "idempotency_key": "reg-spec-1"})
+            mission_id = world.create(
+                {
+                    "goal": "按规格写一份说明",
+                    "success_criteria": ["file:notes/a.md"],
+                    "idempotency_key": "source-change-2",
+                }
+            )["mission_id"]
+            first = world.control.register_source(
+                {
+                    "mission_id": mission_id,
+                    "path": PATH,
+                    "content": OLD,
+                    "kind": "markdown",
+                    "idempotency_key": "reg-spec-1",
+                }
+            )
             for _ in range(30):
                 await world.drain(timeout=5)
                 if provider.entered.is_set():
@@ -207,7 +282,9 @@ def test_a_review_in_flight_when_its_source_is_replaced_is_voided_with_the_reaso
                     await world.drain(timeout=10)
                 except AssertionError:
                     pass
-                if _events(world, mission_id, "VerificationFailed") or _events(world, mission_id, "AcceptanceCommitted"):
+                if _events(world, mission_id, "VerificationFailed") or _events(
+                    world, mission_id, "AcceptanceCommitted"
+                ):
                     break
             [failed] = _events(world, mission_id, "VerificationFailed")
             [layer] = failed.payload["failures"]
@@ -216,14 +293,21 @@ def test_a_review_in_flight_when_its_source_is_replaced_is_voided_with_the_reaso
             [late] = _events(world, mission_id, "AssuranceReviewLateTurn")
             assert late.payload["reason"] == "REVIEW_SOURCE_REPLACED"
             # 作废是一次了结，不是空转：导入这件事没有重试过
-            assert [tuple(row) for row in world.store.connection.execute(
-                "SELECT state, rechecks FROM assurance_pending_work WHERE mission_id=? AND consumer='REVIEW' "
-                "AND work_key LIKE 'review-import:assurance-content:%'", (mission_id,))] == [("DONE", 0)]
+            assert [
+                tuple(row)
+                for row in world.store.connection.execute(
+                    "SELECT state, rechecks FROM assurance_pending_work WHERE mission_id=? AND consumer='REVIEW' "
+                    "AND work_key LIKE 'review-import:assurance-content:%'",
+                    (mission_id,),
+                )
+            ] == [("DONE", 0)]
 
     asyncio.run(case())
 
 
-def test_a_source_replaced_after_the_final_review_holds_the_closeout_until_the_planner_answers(tmp_path, monkeypatch):
+def test_a_source_replaced_after_the_final_review_holds_the_closeout_until_the_planner_answers(
+    tmp_path, monkeypatch
+):
     """终审已通过、任务还没正式完成时资料换了版本（Assurance 原计划 §7.2"最终事务重读"）。
 
     终审等资料变更问完才开；终审之后才换的，收尾同样等：收尾记"资料变更还没问完"，规划器被问到时
@@ -235,23 +319,40 @@ def test_a_source_replaced_after_the_final_review_holds_the_closeout_until_the_p
         ResolutionCommitsMixin as ResolutionCommits,
     )
 
-    seen: dict[str, Any] = {"asked_while": None, "world": None, "first": None, "mission": None, "replaced": False}
+    seen: dict[str, Any] = {
+        "asked_while": None,
+        "world": None,
+        "first": None,
+        "mission": None,
+        "replaced": False,
+    }
 
     def planner(request: Any):  # type: ignore[no-untyped-def]
         package = package_of(request)
-        sourced = [entry for entry in package.get("repair_requests") or ()
-                   if str(entry.get("source_key")).startswith("source:")]
+        sourced = [
+            entry
+            for entry in package.get("repair_requests") or ()
+            if str(entry.get("source_key")).startswith("source:")
+        ]
         if not sourced:
             return planner_reply(request)
         world = seen["world"]
         closeout = world.store.connection.execute(
-            "SELECT state, check_body_json FROM assurance_closeouts WHERE mission_id=?", (seen["mission"],)).fetchone()
-        seen["asked_while"] = (str(world.store.get_mission(seen["mission"]).status.value),
-                               None if closeout is None else closeout["state"],
-                               [] if closeout is None else decode(closeout["check_body_json"])["reasons"])
+            "SELECT state, check_body_json FROM assurance_closeouts WHERE mission_id=?",
+            (seen["mission"],),
+        ).fetchone()
+        seen["asked_while"] = (
+            str(world.store.get_mission(seen["mission"]).status.value),
+            None if closeout is None else closeout["state"],
+            [] if closeout is None else decode(closeout["check_body_json"])["reasons"],
+        )
         step = sourced[0]["request"]["context"]["steps_on_old_version"][0]["task_id"]
-        subject = next(s["subject_key"] for s in package["planning_subjects"] if s["task_id"] == step)
-        return decision(subject, "NO_CHANGE", {"reason": "这一步没有用到价格。"}, "资料只改了价格。")
+        subject = next(
+            s["subject_key"] for s in package["planning_subjects"] if s["task_id"] == step
+        )
+        return decision(
+            subject, "NO_CHANGE", {"reason": "这一步没有用到价格。"}, "资料只改了价格。"
+        )
 
     original = ResolutionCommits.commit_goal_resolution
 
@@ -268,12 +369,23 @@ def test_a_source_replaced_after_the_final_review_holds_the_closeout_until_the_p
     async def case():
         provider = LayeredScriptedProvider(planner=planner)
         async with product_world(tmp_path / "root", provider) as world:
-            mission_id = world.create({"goal": "按规格写一份说明", "success_criteria": ["file:notes/a.md"],
-                                       "idempotency_key": "source-change-late"})["mission_id"]
+            mission_id = world.create(
+                {
+                    "goal": "按规格写一份说明",
+                    "success_criteria": ["file:notes/a.md"],
+                    "idempotency_key": "source-change-late",
+                }
+            )["mission_id"]
             seen.update(world=world, mission=mission_id)
-            seen["first"] = world.control.register_source({
-                "mission_id": mission_id, "path": PATH, "content": OLD, "kind": "markdown",
-                "idempotency_key": "reg-spec-late"})
+            seen["first"] = world.control.register_source(
+                {
+                    "mission_id": mission_id,
+                    "path": PATH,
+                    "content": OLD,
+                    "kind": "markdown",
+                    "idempotency_key": "reg-spec-late",
+                }
+            )
             status = ""
             for _ in range(40):
                 await world.drain(timeout=20)
@@ -287,8 +399,11 @@ def test_a_source_replaced_after_the_final_review_holds_the_closeout_until_the_p
             assert closeout_state == "NOT_READY" and "SOURCE_CHANGE_OPEN" in reasons
             assert status == "COMPLETED"
             [asked] = _source_requests(world, mission_id)
-            [addressed] = [e for e in _events(world, mission_id, ADDRESSED)
-                           if asked.payload["request_id"] in e.payload["repair_request_ids"]]
+            [addressed] = [
+                e
+                for e in _events(world, mission_id, ADDRESSED)
+                if asked.payload["request_id"] in e.payload["repair_request_ids"]
+            ]
             [completed] = _events(world, mission_id, "MissionCompleted")
             [resolved] = _events(world, mission_id, "GoalResolutionCommitted")
             assert resolved.seq < asked.seq < addressed.seq < completed.seq

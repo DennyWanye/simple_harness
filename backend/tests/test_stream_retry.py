@@ -2,6 +2,7 @@
 """2026-06-06 真机抓的 relay 鲁棒性：中转 relay 经代理间歇掉流式连接（httpx
 ReadError）→ agent turn 立即崩。chat_with_fallback_stream 加重试：流在产出任何
 事件前掉链 → 干净重试整个流；已产出则不重试（避免前端 delta 重复）。"""
+
 from __future__ import annotations
 
 import pytest
@@ -10,6 +11,7 @@ from agent.tool_use_shim import OpenAICompatibleAgentLLM
 
 class _ReadError(Exception):
     """模拟 httpx.ReadError（name 含 'ReadError' → 被判 transient）。"""
+
     __name__ = "ReadError"
 
 
@@ -19,6 +21,7 @@ ReadError = type("ReadError", (Exception,), {})
 
 class _FlakyProvider:
     """前 N 次 chat_stream_with_tools 在产出前抛 ReadError，之后成功。"""
+
     def __init__(self, fail_times: int):
         self.fail_times = fail_times
         self.calls = 0
@@ -28,12 +31,19 @@ class _FlakyProvider:
         if self.calls <= self.fail_times:
             raise ReadError("connection dropped by proxy")
         yield {"type": "delta", "content": "hi"}
-        yield {"type": "final", "content": "hi", "tool_calls": [],
-               "stop_reason": "end_turn", "model": "m", "usage": {}}
+        yield {
+            "type": "final",
+            "content": "hi",
+            "tool_calls": [],
+            "stop_reason": "end_turn",
+            "model": "m",
+            "usage": {},
+        }
 
 
 class _MidStreamDropProvider:
     """已产出 delta 后掉链 → 不应重试（会重复）→ 抛。"""
+
     def __init__(self):
         self.calls = 0
 

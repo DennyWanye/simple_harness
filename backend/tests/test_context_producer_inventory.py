@@ -40,9 +40,7 @@ def test_tag_and_split_preserve_alignment_without_mutating_input() -> None:
     assert CONTEXT_MESSAGE_META_KEY not in original
     assert original["tool_calls"][0]["function"]["name"] == "read_file"
 
-    wire, aligned = split_wire_messages(
-        [tagged, {"role": "user", "content": "continue"}]
-    )
+    wire, aligned = split_wire_messages([tagged, {"role": "user", "content": "continue"}])
     assert CONTEXT_MESSAGE_META_KEY not in wire[0]
     assert aligned == [metadata, None]
 

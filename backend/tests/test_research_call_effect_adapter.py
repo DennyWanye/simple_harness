@@ -97,12 +97,8 @@ def _adapter(*, journal, blobs, llm_call, resolve, fault=None, signals=None):
         blobs=blobs,
         llm=ResearchLLMPortV2(llm_call),
         resolve_effect_context=resolve,
-        reserve_cost_micros=lambda _role, input_tokens, output_tokens: (
-            input_tokens + output_tokens
-        ),
-        actual_cost_micros=lambda result: (
-            (result.input_tokens or 0) + (result.output_tokens or 0)
-        ),
+        reserve_cost_micros=lambda _role, input_tokens, output_tokens: input_tokens + output_tokens,
+        actual_cost_micros=lambda result: (result.input_tokens or 0) + (result.output_tokens or 0),
         fault_injector=fault,
         control_signals=signals,
     )
@@ -143,15 +139,18 @@ async def test_v5_stage_ports_bind_native_identity_and_only_return_json_objects(
         seen["prompt"] = json.loads(prompt)
         seen["stable_call_id"] = stable_call_id
         return ResearchLLMResult(
-            '{"route":"persist","quality_score":88}', "test-model", 12, 8, 0,
-            "provider", "request-stage",
+            '{"route":"persist","quality_score":88}',
+            "test-model",
+            12,
+            8,
+            0,
+            "provider",
+            "request-stage",
         )
 
     llm_stage = DurableResearchLLMStagePort(
         blobs=blobs,
-        effect=_adapter(
-            journal=journal, blobs=blobs, llm_call=complete, resolve=resolve
-        ),
+        effect=_adapter(journal=journal, blobs=blobs, llm_call=complete, resolve=resolve),
     )
     result = await llm_stage.execute(
         stage="quality_audit", payload={"safe": True}, identity=identity
@@ -167,21 +166,22 @@ async def test_v5_modeling_prompt_forbids_cross_stage_payloads(tmp_path):
     _, _, identity, journal, blobs, _, resolve = await _runtime(tmp_path)
     seen: dict[str, object] = {}
 
-    async def complete(
-        prompt, *, max_output_tokens, stable_call_id, response_format=None
-    ):
+    async def complete(prompt, *, max_output_tokens, stable_call_id, response_format=None):
         seen.update(json.loads(prompt))
         seen["response_format"] = response_format
         return ResearchLLMResult(
-            '{"modeling_output":{}}', "test-model", 8, 4, 0,
-            "provider", "request-modeling",
+            '{"modeling_output":{}}',
+            "test-model",
+            8,
+            4,
+            0,
+            "provider",
+            "request-modeling",
         )
 
     stage = DurableResearchLLMStagePort(
         blobs=blobs,
-        effect=_adapter(
-            journal=journal, blobs=blobs, llm_call=complete, resolve=resolve
-        ),
+        effect=_adapter(journal=journal, blobs=blobs, llm_call=complete, resolve=resolve),
     )
     assert await stage.execute(
         stage="modeling", payload={"topic": "education"}, identity=identity
@@ -227,9 +227,7 @@ async def test_v5_report_synthesis_uses_strict_contract_schema(tmp_path):
     _, _, identity, journal, blobs, _, resolve = await _runtime(tmp_path)
     seen: dict[str, object] = {}
 
-    async def complete(
-        prompt, *, max_output_tokens, stable_call_id, response_format=None
-    ):
+    async def complete(prompt, *, max_output_tokens, stable_call_id, response_format=None):
         seen["prompt"] = json.loads(prompt)
         seen["response_format"] = response_format
         return ResearchLLMResult(
@@ -280,9 +278,7 @@ async def test_modeling_repair_uses_distinct_committed_effect_and_replays_withou
     database, _, identity, journal, blobs, _, resolve = await _runtime(tmp_path)
     calls: list[str] = []
 
-    async def complete(
-        prompt, *, max_output_tokens, stable_call_id, response_format=None
-    ):
+    async def complete(prompt, *, max_output_tokens, stable_call_id, response_format=None):
         payload = json.loads(prompt)
         calls.append(stable_call_id)
         assert response_format["type"] == "json_schema"
@@ -292,9 +288,7 @@ async def test_modeling_repair_uses_distinct_committed_effect_and_replays_withou
             else '{"modeling_output":{"subjects":["AI"],"expected_decision":"rank",'
             '"dimensions":[]}}'
         )
-        return ResearchLLMResult(
-            content, "test-model", 20, 8, 0, "provider", stable_call_id
-        )
+        return ResearchLLMResult(content, "test-model", 20, 8, 0, "provider", stable_call_id)
 
     stage = DurableResearchLLMStagePort(
         blobs=blobs,
@@ -321,9 +315,7 @@ async def test_modeling_repair_uses_distinct_committed_effect_and_replays_withou
     assert calls[0] != calls[1]
     async with aiosqlite.connect(database) as db:
         effects = await (
-            await db.execute(
-                "SELECT COUNT(*), COUNT(DISTINCT effect_id) FROM workflow_effects"
-            )
+            await db.execute("SELECT COUNT(*), COUNT(DISTINCT effect_id) FROM workflow_effects")
         ).fetchone()
         reservations = await (
             await db.execute(
@@ -344,13 +336,9 @@ async def test_success_is_blob_backed_committed_and_reused_without_transport(tmp
         calls += 1
         assert prompt == "durable prompt"
         assert (max_output_tokens, stable_call_id) == (64, "audit-1")
-        return ResearchLLMResult(
-            "durable answer", "model-a", 12, 5, 2, "provider", "request-1"
-        )
+        return ResearchLLMResult("durable answer", "model-a", 12, 5, 2, "provider", "request-1")
 
-    adapter = _adapter(
-        journal=journal, blobs=blobs, llm_call=complete, resolve=resolve
-    )
+    adapter = _adapter(journal=journal, blobs=blobs, llm_call=complete, resolve=resolve)
     payload_ref = await _payload(blobs, identity)
     kwargs = {
         "role": "quality_audit",
@@ -373,9 +361,7 @@ async def test_success_is_blob_backed_committed_and_reused_without_transport(tmp
     assert ledger.reservations[0].status == "committed"
     async with aiosqlite.connect(database) as db:
         row = await (
-            await db.execute(
-                "SELECT policy_json,outcome_json FROM workflow_effects"
-            )
+            await db.execute("SELECT policy_json,outcome_json FROM workflow_effects")
         ).fetchone()
     policy = json.loads(row[0])
     outcome = json.loads(row[1])["value"]
@@ -387,9 +373,12 @@ async def test_success_is_blob_backed_committed_and_reused_without_transport(tmp
         "input_tokens": 12,
         "output_tokens": 5,
     }
-    assert ResearchLLMResult.from_json(
-        json.loads((await blobs.get(outcome["result_ref"].split(":", 1)[1])).decode())
-    ) == first
+    assert (
+        ResearchLLMResult.from_json(
+            json.loads((await blobs.get(outcome["result_ref"].split(":", 1)[1])).decode())
+        )
+        == first
+    )
 
 
 @pytest.mark.asyncio
@@ -451,13 +440,9 @@ async def test_resolver_identity_or_fence_mismatch_hard_rejects_before_begin(tmp
         calls += 1
         raise AssertionError("transport must not run")
 
-    adapter = _adapter(
-        journal=journal, blobs=blobs, llm_call=complete, resolve=resolve
-    )
+    adapter = _adapter(journal=journal, blobs=blobs, llm_call=complete, resolve=resolve)
     payload_ref = await _payload(blobs, identity)
-    other = NodeExecutionIdentity(
-        **{**identity.__dict__, "checkpoint_id": "different-checkpoint"}
-    )
+    other = NodeExecutionIdentity(**{**identity.__dict__, "checkpoint_id": "different-checkpoint"})
     binding[0] = BoundResearchEffectContext(other, binding[0].effect_context)
 
     with pytest.raises(EffectStateConflict, match="checkpoint/task/attempt"):
@@ -484,9 +469,7 @@ async def test_invalid_payload_releases_reserved_budget_before_transport(tmp_pat
         calls += 1
         raise AssertionError("transport must not run")
 
-    adapter = _adapter(
-        journal=journal, blobs=blobs, llm_call=complete, resolve=resolve
-    )
+    adapter = _adapter(journal=journal, blobs=blobs, llm_call=complete, resolve=resolve)
     payload_ref = await _payload(blobs, identity, b'{"not_prompt":"value"}')
     with pytest.raises(ValueError, match="JSON with prompt"):
         await adapter(
@@ -518,9 +501,7 @@ async def test_transport_without_usage_is_held_and_never_retried(tmp_path):
         calls += 1
         raise TimeoutError("ambiguous provider timeout")
 
-    adapter = _adapter(
-        journal=journal, blobs=blobs, llm_call=complete, resolve=resolve
-    )
+    adapter = _adapter(journal=journal, blobs=blobs, llm_call=complete, resolve=resolve)
     payload_ref = await _payload(blobs, identity)
     kwargs = {
         "role": "quality_audit",
@@ -597,9 +578,7 @@ async def test_crash_before_transport_is_released_after_fenced_takeover(tmp_path
             node_id=identity.node_id,
         ),
     )
-    recovered = _adapter(
-        journal=journal, blobs=blobs, llm_call=complete, resolve=resolve
-    )
+    recovered = _adapter(journal=journal, blobs=blobs, llm_call=complete, resolve=resolve)
     with pytest.raises(ResearchEffectAdapterError, match="will not be sent again"):
         await recovered(**kwargs)
 
@@ -618,13 +597,9 @@ async def test_usage_unknown_result_persists_outcome_but_remains_held(tmp_path):
     database, _, identity, journal, blobs, _, resolve = await _runtime(tmp_path)
 
     async def complete(*_args, **_kwargs):
-        return ResearchLLMResult(
-            "answer", "model-unknown", None, None, None, "usage_unknown", None
-        )
+        return ResearchLLMResult("answer", "model-unknown", None, None, None, "usage_unknown", None)
 
-    adapter = _adapter(
-        journal=journal, blobs=blobs, llm_call=complete, resolve=resolve
-    )
+    adapter = _adapter(journal=journal, blobs=blobs, llm_call=complete, resolve=resolve)
     payload_ref = await _payload(blobs, identity)
     with pytest.raises(ResearchEffectAdapterError, match="unknown usage"):
         await adapter(
@@ -703,9 +678,7 @@ async def test_crash_after_response_blob_does_not_resend_after_owner_takeover(tm
             node_id=identity.node_id,
         ),
     )
-    recovered = _adapter(
-        journal=journal, blobs=blobs, llm_call=complete, resolve=resolve
-    )
+    recovered = _adapter(journal=journal, blobs=blobs, llm_call=complete, resolve=resolve)
     with pytest.raises(ResearchEffectAdapterError, match="will not be sent again"):
         await recovered(**kwargs)
 
@@ -721,9 +694,7 @@ async def test_crash_after_response_blob_does_not_resend_after_owner_takeover(tm
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("effect_name", ["search", "static_fetch", "playwright", "edge"])
-async def test_read_effect_cancel_before_dispatch_releases_without_transport(
-    tmp_path, effect_name
-):
+async def test_read_effect_cancel_before_dispatch_releases_without_transport(tmp_path, effect_name):
     database, _, identity, journal, blobs, _, resolve = await _runtime(tmp_path)
     hub = WorkflowControlSignalHub()
     hub.notify_cancel(identity.run_id, command_id="cancel-before")

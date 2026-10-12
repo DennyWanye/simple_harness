@@ -19,12 +19,22 @@ from deskpet.orchestration.runtime_profile import deepseek_thinking
 from deskpet.orchestration.service import OrchestrationService
 from deskpet.orchestration.settings import OrchestrationSettings, load_settings
 
-DEEPSEEK = ProviderSnapshot("deepseek", "https://api.deepseek.com/v1", "deepseek-v4.1-flash", "deepseek-v4.1-flash", "fixture")
-OTHER = ProviderSnapshot("luna", "https://example.test/v1", "gpt-5.6-luna", "gpt-5.6-luna", "fixture")
+DEEPSEEK = ProviderSnapshot(
+    "deepseek",
+    "https://api.deepseek.com/v1",
+    "deepseek-v4.1-flash",
+    "deepseek-v4.1-flash",
+    "fixture",
+)
+OTHER = ProviderSnapshot(
+    "luna", "https://example.test/v1", "gpt-5.6-luna", "gpt-5.6-luna", "fixture"
+)
 
 
 def test_thinking_pools_have_their_own_ids() -> None:
-    assert native_profile_id(262_144) == "deepseek-native-256k-v1"  # unchanged for existing Missions
+    assert (
+        native_profile_id(262_144) == "deepseek-native-256k-v1"
+    )  # unchanged for existing Missions
     assert native_profile_id(262_144, thinking=True) == "deepseek-native-256k-thinking-v1"
     assert native_profile_id(524_288, thinking=True) == "deepseek-native-512k-thinking-v1"
 
@@ -58,13 +68,20 @@ def test_only_deepseek_gets_an_explicit_switch_and_the_shared_provider_never_thi
     asyncio.run(exercise())
 
 
-def test_a_new_mission_takes_the_thinking_pool_only_when_the_setting_asks_and_the_pool_exists() -> None:
+def test_a_new_mission_takes_the_thinking_pool_only_when_the_setting_asks_and_the_pool_exists() -> (
+    None
+):
     def default_for(thinking: str, available: set[str]) -> str | None:
-        service = SimpleNamespace(settings=OrchestrationSettings(thinking=thinking), _runtime_options={"profiles": {}})
+        service = SimpleNamespace(
+            settings=OrchestrationSettings(thinking=thinking), _runtime_options={"profiles": {}}
+        )
         service._context_profiles = lambda: [{"profile_id": pid} for pid in available]  # type: ignore[attr-defined]
         return OrchestrationService._context_default(service)  # type: ignore[arg-type]
 
-    both = {native_profile_id(614_400), native_profile_id(614_400, thinking=True)}  # 2026-10-10 默认 600K
+    both = {
+        native_profile_id(614_400),
+        native_profile_id(614_400, thinking=True),
+    }  # 2026-10-10 默认 600K
     assert default_for("disabled", both) == native_profile_id(614_400)
     assert default_for("enabled", both) == native_profile_id(614_400, thinking=True)
     # No thinking pool assembled (not DeepSeek, no certified counter): the plain pool.
@@ -88,13 +105,20 @@ def test_new_missions_default_to_the_512k_window_and_256k_is_the_option() -> Non
 def test_the_thinking_provider_is_built_only_for_a_deepseek_deployment_with_a_client() -> None:
     async def exercise() -> None:
         async with httpx.AsyncClient() as client:
+
             def probe(snapshot, http_client):  # type: ignore[no-untyped-def]
-                service = SimpleNamespace(_snapshot=snapshot, _http_client=http_client, settings=OrchestrationSettings())
+                service = SimpleNamespace(
+                    _snapshot=snapshot, _http_client=http_client, settings=OrchestrationSettings()
+                )
                 return OrchestrationService._thinking_provider(service)  # type: ignore[arg-type]
 
             built = probe(DEEPSEEK, client)
             # The switch alone did not make a relay think (2026-09-24); the effort is always sent.
-            assert built is not None and built.thinking == "enabled" and built.reasoning_effort == "high"
+            assert (
+                built is not None
+                and built.thinking == "enabled"
+                and built.reasoning_effort == "high"
+            )
             assert probe(OTHER, client) is None
             assert probe(DEEPSEEK, None) is None
             assert probe(None, client) is None
@@ -102,7 +126,9 @@ def test_the_thinking_provider_is_built_only_for_a_deepseek_deployment_with_a_cl
     asyncio.run(exercise())
 
 
-def test_official_endpoint_is_exact_and_a_relay_gets_the_learned_upper_bound(tmp_path, monkeypatch) -> None:
+def test_official_endpoint_is_exact_and_a_relay_gets_the_learned_upper_bound(
+    tmp_path, monkeypatch
+) -> None:
     import pytest
     from deskpet.orchestration import runtime_profile
 
@@ -116,14 +142,26 @@ def test_official_endpoint_is_exact_and_a_relay_gets_the_learned_upper_bound(tmp
     tokenizer = runtime_profile.tokenizer_path()
     if tokenizer is None:
         pytest.skip("pinned DeepSeek tokenizer not installed")
-    relay = ProviderSnapshot("relay", "https://relay.example.test/v1", "deepseek-v4.1-flash", "deepseek-v4.1-flash", "fixture")
+    relay = ProviderSnapshot(
+        "relay",
+        "https://relay.example.test/v1",
+        "deepseek-v4.1-flash",
+        "deepseek-v4.1-flash",
+        "fixture",
+    )
     settings = OrchestrationSettings(deepseek_compatible_hosts="relay.example.test")
     official = runtime_profile.deepseek_counter_for(DEEPSEEK, settings, state_dir=tmp_path)
     assert official.count_mode == "EXACT" and not isinstance(official, RelayDeepSeekCounter)
     counter = runtime_profile.deepseek_counter_for(relay, settings, state_dir=tmp_path)
-    thinking_counter = runtime_profile.deepseek_counter_for(relay, settings, thinking="enabled", state_dir=tmp_path)
-    assert isinstance(counter, RelayDeepSeekCounter) and counter.count_mode == "CERTIFIED_UPPER_BOUND"
-    assert counter.margin is thinking_counter.margin and counter.margin.value == 160  # one margin per relay host
+    thinking_counter = runtime_profile.deepseek_counter_for(
+        relay, settings, thinking="enabled", state_dir=tmp_path
+    )
+    assert (
+        isinstance(counter, RelayDeepSeekCounter) and counter.count_mode == "CERTIFIED_UPPER_BOUND"
+    )
+    assert (
+        counter.margin is thinking_counter.margin and counter.margin.value == 160
+    )  # one margin per relay host
     counter.margin.observe(reported=500, counted=200, has_tools=True)
     assert (tmp_path / "relay-tool-margin" / "relay.example.test.json").is_file()
     wrapped = calibrated(object(), counter)
@@ -138,13 +176,21 @@ def test_declared_relay_echo_aliases_reach_every_pool_provider() -> None:
     import httpx
     from deskpet.orchestration.provider import provider_on_client
 
-    relay = ProviderSnapshot("relay", "https://relay.example.test/v1", "deepseek-v4.1-flash", "deepseek-v4.1-flash", "fixture",
-                             response_model_aliases=("deepseek-ai/DeepSeek-V4.1-Flash",))
+    relay = ProviderSnapshot(
+        "relay",
+        "https://relay.example.test/v1",
+        "deepseek-v4.1-flash",
+        "deepseek-v4.1-flash",
+        "fixture",
+        response_model_aliases=("deepseek-ai/DeepSeek-V4.1-Flash",),
+    )
     client = httpx.AsyncClient()
     try:
         for thinking in (None, "enabled", "disabled"):
             provider = provider_on_client(client, relay, thinking=thinking)
-            assert provider._response_model_aliases == frozenset({"deepseek-ai/DeepSeek-V4.1-Flash"})
+            assert provider._response_model_aliases == frozenset(
+                {"deepseek-ai/DeepSeek-V4.1-Flash"}
+            )
         assert provider_on_client(client, DEEPSEEK)._response_model_aliases == frozenset()
     finally:
         import asyncio

@@ -48,9 +48,7 @@ class HostCorrelationPolicy:
     def bind_ingress(
         self, *, run_id: str, session_id: str, request_id: str
     ) -> Token[tuple[str, Any] | None]:
-        context = self._context(
-            run_id=run_id, session_id=session_id, request_id=request_id
-        )
+        context = self._context(run_id=run_id, session_id=session_id, request_id=request_id)
         return self._current.set((session_id, context))
 
     def reset(self, token: Token[tuple[str, Any] | None]) -> None:
@@ -75,7 +73,9 @@ class HostSdkObservability:
         self.correlation = HostCorrelationPolicy()
         self._logger = logger or logging.getLogger("simple_harness.host_observability")
         self._lock = threading.Lock()
-        self._snapshot_sources: dict[str, Callable[[], Mapping[str, Any] | Awaitable[Mapping[str, Any]]]] = {}
+        self._snapshot_sources: dict[
+            str, Callable[[], Mapping[str, Any] | Awaitable[Mapping[str, Any]]]
+        ] = {}
         self._degraded_codes: set[str] = set()
 
         try:
@@ -135,7 +135,10 @@ class HostSdkObservability:
                 if inspect.isawaitable(value):
                     if inspect.iscoroutine(value):
                         value.close()
-                    snapshots[name] = {"health": "degraded", "error_code": "snapshot_requires_async_export"}
+                    snapshots[name] = {
+                        "health": "degraded",
+                        "error_code": "snapshot_requires_async_export",
+                    }
                     degraded.add(f"{name}_snapshot_requires_async_export")
                 else:
                     snapshots[name] = dict(value)

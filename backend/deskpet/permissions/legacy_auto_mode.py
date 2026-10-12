@@ -94,9 +94,7 @@ async def import_legacy_auto_mode_once(
 
     async with store.write_transaction() as db:
         tx = store.bind(db)
-        existing = await tx.get_legacy_authorization_import(
-            LEGACY_AUTO_MODE_SOURCE_KEY
-        )
+        existing = await tx.get_legacy_authorization_import(LEGACY_AUTO_MODE_SOURCE_KEY)
         if existing is not None:
             return LegacyAutoModeImportResult(
                 record=existing,

@@ -253,8 +253,12 @@ def index_of(
         # 一个端口上只有一版通过验收时，它就是现行授权的那一版（产品里由验收投影给出）
         seen: dict[tuple[str, str], set[str]] = {}
         for item in outputs:
-            seen.setdefault((str(item.producer_occurrence), item.output_port), set()).add(item.source_revision)
-        authorized = {key: next(iter(revisions)) for key, revisions in seen.items() if len(revisions) == 1}
+            seen.setdefault((str(item.producer_occurrence), item.output_port), set()).add(
+                item.source_revision
+            )
+        authorized = {
+            key: next(iter(revisions)) for key, revisions in seen.items() if len(revisions) == 1
+        }
     return AcceptedOutputsIndex(
         outputs=tuple(outputs),
         completed_producers=producers,
@@ -768,7 +772,9 @@ def test_a_key_on_a_port_that_is_not_a_map_is_refused() -> None:
 
 def test_a_map_port_may_not_declare_an_ordering() -> None:
     with pytest.raises(Exception):
-        port("by_region", cardinality=PortCardinality.MAP, ordering=PortOrdering.BY_PRODUCER_ORDINAL)
+        port(
+            "by_region", cardinality=PortCardinality.MAP, ordering=PortOrdering.BY_PRODUCER_ORDINAL
+        )
     with pytest.raises(Exception):
         port(
             "by_region",
@@ -855,7 +861,9 @@ def test_a_declaration_that_needs_a_converter_is_refused_by_name() -> None:
     )
     assert result.manifest is None
     assert ResolutionProblemKind.CONVERTER_NOT_DEPLOYED in result.kinds
-    [problem] = [p for p in result.problems if p.kind is ResolutionProblemKind.CONVERTER_NOT_DEPLOYED]
+    [problem] = [
+        p for p in result.problems if p.kind is ResolutionProblemKind.CONVERTER_NOT_DEPLOYED
+    ]
     assert "decl-report-v2-to-v1" in problem.detail
     assert "converter-report-downgrade" in problem.detail
     assert problem.requirement_ids == ("req-1",)
@@ -971,9 +979,7 @@ def two_revisions() -> AcceptedOutputsIndex:
 def test_follow_authorized_revision_takes_the_current_authorised_one() -> None:
     result = resolve(
         consumer_binding(port("report")),
-        [
-            requirement("req-1", producer="occ-a")
-        ],
+        [requirement("req-1", producer="occ-a")],
         two_revisions(),
         policy=default_policy(),
     )
@@ -984,9 +990,7 @@ def test_follow_authorized_revision_takes_the_current_authorised_one() -> None:
 def test_follow_authorized_revision_flags_reacceptance_when_the_revision_moved() -> None:
     result = resolve(
         consumer_binding(port("report")),
-        [
-            requirement("req-1", producer="occ-a")
-        ],
+        [requirement("req-1", producer="occ-a")],
         two_revisions(),
         policy=default_policy(),
     )
@@ -998,9 +1002,7 @@ def test_a_first_follow_binding_is_flagged_for_reacceptance() -> None:
 
     result = resolve(
         consumer_binding(port("report")),
-        [
-            requirement("req-1", producer="occ-a")
-        ],
+        [requirement("req-1", producer="occ-a")],
         two_revisions(),
     )
     assert result.ok
@@ -1948,6 +1950,3 @@ def test_the_module_imports_no_forbidden_layer() -> None:
 def test_the_module_imports_nothing_that_touches_the_filesystem() -> None:
     for name in module_imports():
         assert name.split(".")[0] not in {"os", "io", "pathlib", "shutil", "sqlite3"}, name
-
-
-

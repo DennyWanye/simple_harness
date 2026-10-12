@@ -14,6 +14,7 @@ resolved model info" Requirement 两个场景：
     tool_result_threshold = max(8000, window//25)）
   - v1（v2_enabled=false）：退回旧的绝对值 ContextConfig（Strangler-Fig）
 """
+
 from __future__ import annotations
 
 from agent.context_manager import ContextConfig

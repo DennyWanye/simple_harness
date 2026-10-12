@@ -88,16 +88,32 @@ class ObservationRow(NamedTuple):
     content_hash: str
 
 
-def observation(observation_id, key, polarity, *, source="src-1", authoritative=False,
-                observer="observer-1", scope=SCOPE, observed_at=NOW - 10, valid_until=None):
+def observation(
+    observation_id,
+    key,
+    polarity,
+    *,
+    source="src-1",
+    authoritative=False,
+    observer="observer-1",
+    scope=SCOPE,
+    observed_at=NOW - 10,
+    valid_until=None,
+):
     record = ObservationRecord(
-        observation_id=observation_id, proposition_key=key, polarity=polarity,
+        observation_id=observation_id,
+        proposition_key=key,
+        polarity=polarity,
         source_ref=TypedRef(kind=TypedRefKind.SOURCE, id=source, revision=1, content_hash=HASH),
-        observed_at_ms=observed_at, recorded_at_ms=observed_at,
-        coverage=QueryCompleteness.AUTHORITATIVE_WITH_SCOPE if authoritative else QueryCompleteness.BEST_EFFORT,
+        observed_at_ms=observed_at,
+        recorded_at_ms=observed_at,
+        coverage=QueryCompleteness.AUTHORITATIVE_WITH_SCOPE
+        if authoritative
+        else QueryCompleteness.BEST_EFFORT,
         coverage_scope=scope if authoritative else None,
         query_watermark_ms=observed_at if authoritative else None,
-        valid_until_ms=valid_until, observer_id=observer,
+        valid_until_ms=valid_until,
+        observer_id=observer,
     )
     return ObservationRow(record, scope, fingerprint(record.to_json()))
 
@@ -105,10 +121,16 @@ def observation(observation_id, key, polarity, *, source="src-1", authoritative=
 def candidate(row, **overrides):
     record = row.record
     fields = dict(
-        observation=record, scope_id=row.scope_id,
-        source_group=f"{record.source_ref.kind!s}:{record.source_ref.id}", origin=AnchorOrigin.OBSERVATION,
-        evidence_ref=EvidenceRef(kind=EvidenceRefKind.OBSERVATION, id=record.observation_id, revision=1,
-                                 content_hash=row.content_hash),
+        observation=record,
+        scope_id=row.scope_id,
+        source_group=f"{record.source_ref.kind!s}:{record.source_ref.id}",
+        origin=AnchorOrigin.OBSERVATION,
+        evidence_ref=EvidenceRef(
+            kind=EvidenceRefKind.OBSERVATION,
+            id=record.observation_id,
+            revision=1,
+            content_hash=row.content_hash,
+        ),
         observer_id=record.observer_id,
     )
     fields.update(overrides)
@@ -116,12 +138,17 @@ def candidate(row, **overrides):
 
 
 def rule(conclusion, *premises, version="rule-v1"):
-    return JustificationSet(conclusion=conclusion, premises=tuple(PropositionPremise(Atom(key=p)) for p in premises),
-                            rule_version=version)
+    return JustificationSet(
+        conclusion=conclusion,
+        premises=tuple(PropositionPremise(Atom(key=p)) for p in premises),
+        rule_version=version,
+    )
 
 
 def select(candidates, signatures, *, purpose=WitnessPurpose.ACCEPT, now=NOW, scope=SCOPE):
-    return AnchorSelector(scope_id=scope, purpose=purpose, as_of_ms=now, signatures=signatures).select(candidates)
+    return AnchorSelector(
+        scope_id=scope, purpose=purpose, as_of_ms=now, signatures=signatures
+    ).select(candidates)
 
 
 def review_input(acceptable=True, record_id="rec-1"):
@@ -129,12 +156,21 @@ def review_input(acceptable=True, record_id="rec-1"):
 
 
 def check_input(binding_id="cb-1", grade=Grade.PASS, not_after=None):
-    return CheckAnchorInput(AssuranceRef("check_binding", Pin(binding_id, 1, HASH)), grade, NOW - 5, not_after)
+    return CheckAnchorInput(
+        AssuranceRef("check_binding", Pin(binding_id, 1, HASH)), grade, NOW - 5, not_after
+    )
 
 
 def evaluate(**overrides):
-    fields = dict(mission_id=MISSION, scope_id=SCOPE, purpose="ACCEPT", now_ms=NOW, subject_hash=HASH,
-                  review=review_input(), checks=(check_input(),))
+    fields = dict(
+        mission_id=MISSION,
+        scope_id=SCOPE,
+        purpose="ACCEPT",
+        now_ms=NOW,
+        subject_hash=HASH,
+        review=review_input(),
+        checks=(check_input(),),
+    )
     fields.update(overrides)
     return evaluate_acceptance_support(**fields)
 
@@ -214,7 +250,9 @@ def test_cycle_without_anchor():
 
     support = compute_grounded_support(graph, select([candidate(only_e)], signatures))
     assert not support.supported.reached(Atom(A)) and not support.supported.reached(Atom(B))
-    support = compute_grounded_support(graph, select([candidate(only_e), candidate(real_a)], signatures))
+    support = compute_grounded_support(
+        graph, select([candidate(only_e), candidate(real_a)], signatures)
+    )
     assert support.usable(A) and support.usable(B)
     # Withdrawal: a fresh selection from the current sources; nothing from the
     # previous evaluation can seed the next one.
@@ -224,7 +262,9 @@ def test_cycle_without_anchor():
         compute_grounded_support(graph, support)  # type: ignore[arg-type]
     assert raised.value.code == "FRESH_ANCHOR_SELECTION_REQUIRED"
     with pytest.raises(ContractError):
-        Anchor(atom=Atom(A), anchor_id="hand-made", source_group="g", origin=AnchorOrigin.OBSERVATION)
+        Anchor(
+            atom=Atom(A), anchor_id="hand-made", source_group="g", origin=AnchorOrigin.OBSERVATION
+        )
 
 
 # --------------------------------------------------------------------------- V04
@@ -233,11 +273,18 @@ def test_alternate_support():
     A, B, C, K = (key_of(s) for s in (a, b, c, k))
     graph = SupportGraph((rule(K, A, B), rule(K, C, version="rule-c")))
     signatures = {A: a, B: b, C: c, K: k}
-    rows = {n: observation("obs-" + n, key, True, source="src-" + n) for n, key in (("a", A), ("b", B), ("c", C))}
+    rows = {
+        n: observation("obs-" + n, key, True, source="src-" + n)
+        for n, key in (("a", A), ("b", B), ("c", C))
+    }
 
-    full = compute_grounded_support(graph, select([candidate(r) for r in rows.values()], signatures))
+    full = compute_grounded_support(
+        graph, select([candidate(r) for r in rows.values()], signatures)
+    )
     assert full.usable(K) and full.clean.satisfies_independence(K, required=2)
-    without_a = compute_grounded_support(graph, select([candidate(rows["b"]), candidate(rows["c"])], signatures))
+    without_a = compute_grounded_support(
+        graph, select([candidate(rows["b"]), candidate(rows["c"])], signatures)
+    )
     assert without_a.usable(K)
     fired = [w for w in without_a.clean.witnesses_for(Atom(K)) if w.kind is WitnessKind.DERIVED]
     assert [w.rule_version for w in fired] == ["rule-c"]
@@ -255,16 +302,30 @@ def test_conflicted_paths():
     e_pos = observation("obs-e", E, True, source="src-e")
     k_neg = observation("obs-k-neg", K, False, authoritative=True, source="src-k")
 
-    conflicted = compute_grounded_support(graph, select([candidate(a_pos), candidate(a_neg)], signatures))
+    conflicted = compute_grounded_support(
+        graph, select([candidate(a_pos), candidate(a_neg)], signatures)
+    )
     assert conflicted.supported.truth_for(A) is TruthValue.CONFLICT
-    assert conflicted.supported.reached(Atom(K)) and not conflicted.usable(K)  # supported, never executable
+    assert conflicted.supported.reached(Atom(K)) and not conflicted.usable(
+        K
+    )  # supported, never executable
     assert not conflicted.clean.reached(Atom(K))
-    with_e = compute_grounded_support(graph, select([candidate(a_pos), candidate(a_neg), candidate(e_pos)], signatures))
+    with_e = compute_grounded_support(
+        graph, select([candidate(a_pos), candidate(a_neg), candidate(e_pos)], signatures)
+    )
     assert with_e.usable(K)
-    assert [w.rule_version for w in with_e.clean.witnesses_for(Atom(K)) if w.kind is WitnessKind.DERIVED] == ["rule-e"]
+    assert [
+        w.rule_version for w in with_e.clean.witnesses_for(Atom(K)) if w.kind is WitnessKind.DERIVED
+    ] == ["rule-e"]
     self_conflicted = compute_grounded_support(
-        graph, select([candidate(a_pos), candidate(a_neg), candidate(e_pos), candidate(k_neg)], signatures))
-    assert self_conflicted.supported.truth_for(K) is TruthValue.CONFLICT and not self_conflicted.usable(K)
+        graph,
+        select(
+            [candidate(a_pos), candidate(a_neg), candidate(e_pos), candidate(k_neg)], signatures
+        ),
+    )
+    assert self_conflicted.supported.truth_for(
+        K
+    ) is TruthValue.CONFLICT and not self_conflicted.usable(K)
     assert self_conflicted.supported.is_complete and self_conflicted.clean.is_complete
 
 
@@ -275,22 +336,35 @@ def test_independent_provenance_roots():
     graph = SupportGraph((rule(K, A),))
     copies = [observation(f"obs-copy-{i}", A, True, source="src-experiment-1") for i in range(10)]
     independent = observation("obs-independent", A, True, source="src-experiment-2")
-    support = compute_grounded_support(graph, select([candidate(row) for row in copies], {A: a, K: k}))
+    support = compute_grounded_support(
+        graph, select([candidate(row) for row in copies], {A: a, K: k})
+    )
     assert support.usable(K)
     assert len(support.clean.witnesses_for(Atom(A))) == 10  # ten witnesses ...
-    assert support.clean.independent_source_groups(A) == {"source:src-experiment-1"}  # ... one source
+    assert support.clean.independent_source_groups(A) == {
+        "source:src-experiment-1"
+    }  # ... one source
     assert not support.clean.satisfies_independence(A, required=2)
     # A copy with a different format/hash of the same source is still the same root.
-    reformatted = observation("obs-reformat", A, True, source="src-experiment-1", observed_at=NOW - 3)
+    reformatted = observation(
+        "obs-reformat", A, True, source="src-experiment-1", observed_at=NOW - 3
+    )
     assert reformatted.content_hash != copies[0].content_hash
-    support = compute_grounded_support(graph, select([candidate(copies[0]), candidate(reformatted)], {A: a, K: k}))
+    support = compute_grounded_support(
+        graph, select([candidate(copies[0]), candidate(reformatted)], {A: a, K: k})
+    )
     assert not support.clean.satisfies_independence(A, required=2)
-    support = compute_grounded_support(graph, select([candidate(copies[0]), candidate(independent)], {A: a, K: k}))
+    support = compute_grounded_support(
+        graph, select([candidate(copies[0]), candidate(independent)], {A: a, K: k})
+    )
     assert support.clean.satisfies_independence(A, required=2)
     assert not support.clean.satisfies_independence(A, required=3)
     # A derived conclusion inherits the union of its premises' sources: one rule
     # over A is one reason for K, however many roots A has (errs towards refusing).
-    assert support.clean.independent_source_groups(K) == {"source:src-experiment-1", "source:src-experiment-2"}
+    assert support.clean.independent_source_groups(K) == {
+        "source:src-experiment-1",
+        "source:src-experiment-2",
+    }
     assert not support.clean.satisfies_independence(K, required=2)
 
 
@@ -307,7 +381,9 @@ def test_bounded_restartable_evaluation():
     many = [key_of(base, f"m{i}") for i in range(10_002)]
     wide = SupportGraph(tuple(rule(many[i], many[i - 1]) for i in range(1, len(many))))
     with pytest.raises(AssuranceError) as raised:
-        compute_grounded_support(wide, select([candidate(observation("obs-m0", many[0], True))], {k: base for k in many}))
+        compute_grounded_support(
+            wide, select([candidate(observation("obs-m0", many[0], True))], {k: base for k in many})
+        )
     assert raised.value.code == "EVIDENCE_EVALUATION_INCOMPLETE"
     with pytest.raises(AssuranceError) as raised:
         evaluate(checks=tuple(check_input(f"cb-{i}") for i in range(257)))
@@ -315,10 +391,17 @@ def test_bounded_restartable_evaluation():
     # Expired / not-yet-valid anchors are rejected for ACCEPT and only readable
     # as history for CONTEXT; a check with a deadline bounds the certificate.
     stale = observation("obs-stale", keys[0], True, valid_until=NOW - 1)
-    assert select([candidate(stale)], {keys[0]: base}).reason_for("obs-stale") is AnchorRejection.EXPIRED
+    assert (
+        select([candidate(stale)], {keys[0]: base}).reason_for("obs-stale")
+        is AnchorRejection.EXPIRED
+    )
     from agent_orchestrator.contracts.evidence_state import TemporalUse
-    historical = select([candidate(stale, temporal_use=TemporalUse.HISTORICAL_AS_OF)], {keys[0]: base},
-                        purpose=WitnessPurpose.CONTEXT)
+
+    historical = select(
+        [candidate(stale, temporal_use=TemporalUse.HISTORICAL_AS_OF)],
+        {keys[0]: base},
+        purpose=WitnessPurpose.CONTEXT,
+    )
     assert [anchor.historical for anchor in historical.anchors] == [True]
     result = evaluate(checks=(check_input(not_after=NOW + 500),))
     assert result.usable and result.earliest_expiry_ms == NOW + 500
@@ -372,13 +455,24 @@ PRINCIPAL = Principal("exec-current-user")
 def _run(root, checks):
     async def body():
         async with product_world(root / "root", RoleScriptedProvider({}), auto=False) as product:
-            created = product.create({"goal": "assured v", "success_criteria": ["file:NOTES.md"],
-                                      "idempotency_key": "assured-v"})
+            created = product.create(
+                {
+                    "goal": "assured v",
+                    "success_criteria": ["file:NOTES.md"],
+                    "idempotency_key": "assured-v",
+                }
+            )
             assured = product.store.get_mission(created["mission_id"])
             assert AssuranceStore(product.store).lane(assured.id) == "ASSURANCE_1_1"
-            world = SimpleNamespace(store=product.store, commit=product.loop.commit, installed=product.deployment.assurance,
-                                    control=product.control, product=product)
+            world = SimpleNamespace(
+                store=product.store,
+                commit=product.loop.commit,
+                installed=product.deployment.assurance,
+                control=product.control,
+                product=product,
+            )
             await checks(world, assured)
+
     asyncio.run(body())
 
 
@@ -396,47 +490,96 @@ def _confirm_on_another_connection(world, mission_id):
 
     page = world.control.snapshot(mission_id)["snapshot"]["operation_workspace"]
     ref = page["requirements_ref"]
-    command = {"mission_id": mission_id, "command_id": "confirm-on-another-connection",
-               "expected_requirements_ref": ref,
-               "proposal": {"schema_version": 1, "mission_id": mission_id,
-                            "requirements_ref": {key: ref[key] for key in ("id", "revision", "content_hash")},
-                            "mode": "CONTENT_ONLY", "content_criterion_ids": [c["id"] for c in page["criteria"]],
-                            "effects": []}}
+    command = {
+        "mission_id": mission_id,
+        "command_id": "confirm-on-another-connection",
+        "expected_requirements_ref": ref,
+        "proposal": {
+            "schema_version": 1,
+            "mission_id": mission_id,
+            "requirements_ref": {key: ref[key] for key in ("id", "revision", "content_hash")},
+            "mode": "CONTENT_ONLY",
+            "content_criterion_ids": [c["id"] for c in page["criteria"]],
+            "effects": [],
+        },
+    }
     other = Store.open(world.store.path)
     try:
-        OperationCompletionApi(CommitService(other), tenant_id=TENANT,
-                               principal=world.product.deployment.principal).approve(command)
+        OperationCompletionApi(
+            CommitService(other), tenant_id=TENANT, principal=world.product.deployment.principal
+        ).approve(command)
     finally:
         other.close()
 
 
 def _certificate(epochs, **overrides):
     fields = dict(
-        mission_id=MISSION, consumer_kind="result", consumer_id="result-1", scope_id=SCOPE,
-        principal_id=PRINCIPAL.principal_id, purpose="ACCEPT", truth="TRUE", freshness="CURRENT",
-        availability="READABLE", decision="USABLE", coverage="COMPLETE", policy_ref=Pin("policy-1", 1, HASH),
-        read_set=(ReadItem("OBJECT", "object-1", HASH), ReadItem("QUERY_SET", "query-1", HASH),
-                  ReadItem("ACCESS", "acl-1", HASH), ReadItem("POLICY", "policy-1", HASH)),
-        clean_support_refs=(AssuranceRef("review", Pin("rec-1", 1, HASH)),), issued_at_ms=NOW,
-        not_after_ms=NOW + 1000, reasons=("fixture",), mission_epoch=epochs[0], environment_epoch=epochs[1],
-        clock_generation=epochs[2], root_incarnation_id="root-1",
+        mission_id=MISSION,
+        consumer_kind="result",
+        consumer_id="result-1",
+        scope_id=SCOPE,
+        principal_id=PRINCIPAL.principal_id,
+        purpose="ACCEPT",
+        truth="TRUE",
+        freshness="CURRENT",
+        availability="READABLE",
+        decision="USABLE",
+        coverage="COMPLETE",
+        policy_ref=Pin("policy-1", 1, HASH),
+        read_set=(
+            ReadItem("OBJECT", "object-1", HASH),
+            ReadItem("QUERY_SET", "query-1", HASH),
+            ReadItem("ACCESS", "acl-1", HASH),
+            ReadItem("POLICY", "policy-1", HASH),
+        ),
+        clean_support_refs=(AssuranceRef("review", Pin("rec-1", 1, HASH)),),
+        issued_at_ms=NOW,
+        not_after_ms=NOW + 1000,
+        reasons=("fixture",),
+        mission_epoch=epochs[0],
+        environment_epoch=epochs[1],
+        clock_generation=epochs[2],
+        root_incarnation_id="root-1",
     )
     fields.update(overrides)
     return UseCertificate(**fields)
 
 
 def _identity(**overrides):
-    fields = dict(mission_id=MISSION, consumer_kind="result", consumer_id="result-1", scope_id=SCOPE,
-                  principal_id=PRINCIPAL.principal_id, purpose="ACCEPT", root_incarnation_id="root-1")
+    fields = dict(
+        mission_id=MISSION,
+        consumer_kind="result",
+        consumer_id="result-1",
+        scope_id=SCOPE,
+        principal_id=PRINCIPAL.principal_id,
+        purpose="ACCEPT",
+        root_incarnation_id="root-1",
+    )
     fields.update(overrides)
     return UseIdentity(**fields)
 
 
-def _bind(certificate, identity=None, *, epochs=(7, 3, 1), clock_state="STABLE", now=NOW + 10,
-          access=ReadItem("ACCESS", "acl-1", HASH), policy=ReadItem("POLICY", "policy-1", HASH)):
-    check_certificate_binding(certificate, identity=identity or _identity(), mission_epoch=epochs[0],
-                              environment_epoch=epochs[1], clock_generation=epochs[2], clock_state=clock_state,
-                              now_ms=now, current_access=access, current_policy=policy)
+def _bind(
+    certificate,
+    identity=None,
+    *,
+    epochs=(7, 3, 1),
+    clock_state="STABLE",
+    now=NOW + 10,
+    access=ReadItem("ACCESS", "acl-1", HASH),
+    policy=ReadItem("POLICY", "policy-1", HASH),
+):
+    check_certificate_binding(
+        certificate,
+        identity=identity or _identity(),
+        mission_epoch=epochs[0],
+        environment_epoch=epochs[1],
+        clock_generation=epochs[2],
+        clock_state=clock_state,
+        now_ms=now,
+        current_access=access,
+        current_policy=policy,
+    )
 
 
 def _refused(call, code):
@@ -460,12 +603,20 @@ def test_complete_collection_not_topk(tmp_path):
             # The witness carries counts/digests of the set, never the private rows.
             assert not any(row in item.fingerprint for row in read.rows)
         # A bounded read refuses to call itself complete; it never returns a top-K subset as COMPLETE.
-        _refused(lambda: read_complete_evidence_snapshot(reader, scope_id="scope-v", maximum_rows=1),
-                 "EVIDENCE_EVALUATION_INCOMPLETE")
-        _refused(lambda: read_complete_evidence_snapshot(reader, scope_id="scope-v", maximum_bytes=64),
-                 "EVIDENCE_EVALUATION_INCOMPLETE")
-        _refused(lambda: read_complete_evidence_snapshot(reader, scope_id="scope-v", maximum_rows=100_000),
-                 "INTEGER_INVALID")  # the reader's own cap cannot be raised by a caller
+        _refused(
+            lambda: read_complete_evidence_snapshot(reader, scope_id="scope-v", maximum_rows=1),
+            "EVIDENCE_EVALUATION_INCOMPLETE",
+        )
+        _refused(
+            lambda: read_complete_evidence_snapshot(reader, scope_id="scope-v", maximum_bytes=64),
+            "EVIDENCE_EVALUATION_INCOMPLETE",
+        )
+        _refused(
+            lambda: read_complete_evidence_snapshot(
+                reader, scope_id="scope-v", maximum_rows=100_000
+            ),
+            "INTEGER_INVALID",
+        )  # the reader's own cap cannot be raised by a caller
         # Another writer's real change moves the mission epoch and the snapshot's witness.
         _confirm_on_another_connection(world, assured.id)
         again = read_complete_evidence_snapshot(reader, scope_id="scope-v")
@@ -483,18 +634,31 @@ def test_snapshot_reads_a_whole_request_manifest_row_over_256kb(tmp_path):
     from agent_orchestrator.assurance.codec import MAX_BYTES, canonical, fingerprint
 
     async def checks(world, assured):
-        body = {"messages": [{"role": "tool", "name": f"t{i}", "content": f"line {i}"} for i in range(4200)]}
-        row = {"manifest_hash": fingerprint(body), "origin_mission_id": assured.id,
-               "manifest_json": canonical(body), "created_at": 1.0}
-        assert len(canonical(row, limit=8 * 1024 * 1024).encode()) > MAX_BYTES  # over the old cap as a row
+        body = {
+            "messages": [
+                {"role": "tool", "name": f"t{i}", "content": f"line {i}"} for i in range(4200)
+            ]
+        }
+        row = {
+            "manifest_hash": fingerprint(body),
+            "origin_mission_id": assured.id,
+            "manifest_json": canonical(body),
+            "created_at": 1.0,
+        }
+        assert (
+            len(canonical(row, limit=8 * 1024 * 1024).encode()) > MAX_BYTES
+        )  # over the old cap as a row
         # 产品写入口记下这份很大的输入清单（任务的根任务名下）。
         from agent_orchestrator.testing.product_world import USER_GOAL_NAMES
 
         row["manifest_hash"] = HtnStore(world.store).insert_input_manifest(
-            assured.id, USER_GOAL_NAMES.task_prefix + assured.id, body)
+            assured.id, USER_GOAL_NAMES.task_prefix + assured.id, body
+        )
         reader = AssuranceReader(world.store, tenant_id=TENANT, mission_id=assured.id)
         complete = read_complete_evidence_snapshot(reader, scope_id="scope-v")
-        manifests = next(r for r in complete if json.loads(r.query_key)["query_kind"] == "input_manifests")
+        manifests = next(
+            r for r in complete if json.loads(r.query_key)["query_kind"] == "input_manifests"
+        )
         assert any(row["manifest_hash"] in encoded for encoded in manifests.rows)
         # Other records keep the 256 KB cap.
         with pytest.raises(AssuranceError) as raised:
@@ -514,17 +678,34 @@ def test_a_concurrent_source_change_is_an_insert_barrier(tmp_path):
         events_before = [e.type for e in world.store.list_events(assured.id)]
         _confirm_on_another_connection(world, assured.id)
         current = _epochs(world, assured.id)
-        assert current.mission == captured.mission + 1 and current.environment == captured.environment
-        changed = [e for e in world.store.list_events(assured.id) if e.type == "AssuranceEvidenceChanged"]
-        assert changed and changed[-1].payload["scope"] == "MISSION" and changed[-1].payload["epoch"] == current.mission
+        assert (
+            current.mission == captured.mission + 1 and current.environment == captured.environment
+        )
+        changed = [
+            e for e in world.store.list_events(assured.id) if e.type == "AssuranceEvidenceChanged"
+        ]
+        assert (
+            changed
+            and changed[-1].payload["scope"] == "MISSION"
+            and changed[-1].payload["epoch"] == current.mission
+        )
         assert changed[-1].payload["source_table"] == "operation_completion_specs"
         assert len(world.store.list_events(assured.id)) > len(events_before)
         with world.store.read_view() as connection:
-            _refused(lambda: require_epochs_locked(connection, assured.id, captured, now_ms=NOW), "RECHECK_REQUIRED")
-            require_epochs_locked(connection, assured.id, current, now_ms=int(world.store.now * 1000) + 1)
+            _refused(
+                lambda: require_epochs_locked(connection, assured.id, captured, now_ms=NOW),
+                "RECHECK_REQUIRED",
+            )
+            require_epochs_locked(
+                connection, assured.id, current, now_ms=int(world.store.now * 1000) + 1
+            )
         old = _certificate((captured.mission, captured.environment, captured.clock_generation))
-        _refused(lambda: _bind(old, epochs=(current.mission, current.environment, current.clock_generation)),
-                 "RECHECK_REQUIRED")
+        _refused(
+            lambda: _bind(
+                old, epochs=(current.mission, current.environment, current.clock_generation)
+            ),
+            "RECHECK_REQUIRED",
+        )
 
     _run(tmp_path, checks)
 
@@ -536,8 +717,14 @@ def test_authority_and_expiry():
     # ACL revoked / policy changed: the current witness is not in the read set.
     _refused(lambda: _bind(good, access=ReadItem("ACCESS", "acl-2", HASH)), "RECHECK_REQUIRED")
     _refused(lambda: _bind(good, policy=ReadItem("POLICY", "policy-2", HASH)), "RECHECK_REQUIRED")
-    _refused(lambda: _bind(good, access=ReadItem("POLICY", "policy-1", HASH), policy=ReadItem("ACCESS", "acl-1", HASH)),
-             "ACCESS_POLICY_WITNESS_REQUIRED")
+    _refused(
+        lambda: _bind(
+            good,
+            access=ReadItem("POLICY", "policy-1", HASH),
+            policy=ReadItem("ACCESS", "acl-1", HASH),
+        ),
+        "ACCESS_POLICY_WITNESS_REQUIRED",
+    )
     # TTL equal to now is expired; before issue is not yet valid; no timer refresh.
     _refused(lambda: _bind(good, now=NOW + 1000), "CERTIFICATE_EXPIRED")
     _refused(lambda: _bind(good, now=NOW - 1), "CERTIFICATE_EXPIRED")
@@ -551,16 +738,29 @@ def test_authority_and_expiry():
     # Historical facts stay readable as history; new use is blocked (selector level).
     base = signature("pred.h")
     stale = observation("obs-h", key_of(base), True, valid_until=NOW - 1)
-    assert select([candidate(stale)], {key_of(base): base}, purpose=WitnessPurpose.START).reason_for("obs-h") \
+    assert (
+        select([candidate(stale)], {key_of(base): base}, purpose=WitnessPurpose.START).reason_for(
+            "obs-h"
+        )
         is AnchorRejection.EXPIRED
-    assert select([candidate(stale, temporal_use=TemporalUse.HISTORICAL_AS_OF)], {key_of(base): base},
-                  purpose=WitnessPurpose.CONTEXT).admitted_ids() == {"obs-h"}
+    )
+    assert select(
+        [candidate(stale, temporal_use=TemporalUse.HISTORICAL_AS_OF)],
+        {key_of(base): base},
+        purpose=WitnessPurpose.CONTEXT,
+    ).admitted_ids() == {"obs-h"}
     # MAINTAIN 没有持续监测：签发方一律挡住（A26，``test_point_use_certificates`` 的 MAINTAIN 用例），
     # 选择器里那条到不了的分支已删（裁决 2026-10-07 建议 2）。
     # A non-USABLE certificate never binds, whatever the context.
-    _refused(lambda: _bind(_certificate((7, 3, 1), decision="BLOCKED", truth="FALSE")), "CERTIFICATE_NOT_USABLE")
+    _refused(
+        lambda: _bind(_certificate((7, 3, 1), decision="BLOCKED", truth="FALSE")),
+        "CERTIFICATE_NOT_USABLE",
+    )
     _refused(lambda: _certificate((7, 3, 1), truth="UNKNOWN"), "CERTIFICATE_NOT_USABLE")
-    _refused(lambda: _certificate((7, 3, 1), read_set=(ReadItem("OBJECT", "o", HASH),)), "READSET_INCOMPLETE")
+    _refused(
+        lambda: _certificate((7, 3, 1), read_set=(ReadItem("OBJECT", "o", HASH),)),
+        "READSET_INCOMPLETE",
+    )
 
 
 # --------------------------------------------------------------------------- V09
@@ -573,17 +773,42 @@ def test_all_consumers_share_validity(tmp_path):
         assert world.commit._assurance_validity is validity
         assert installed.api._validity is validity
         assert getattr(installed.review, "validity", validity) is validity
-        _refused(lambda: AssuranceValidity(world.commit, tenant_id=TENANT, principal_id=PRINCIPAL.principal_id,
-                                           cas=validity.cas, check_adapter=None, authority=validity.authority),
-                 "ASSURANCE_VALIDITY_ALREADY_BOUND")
+        _refused(
+            lambda: AssuranceValidity(
+                world.commit,
+                tenant_id=TENANT,
+                principal_id=PRINCIPAL.principal_id,
+                cas=validity.cas,
+                check_adapter=None,
+                authority=validity.authority,
+            ),
+            "ASSURANCE_VALIDITY_ALREADY_BOUND",
+        )
         # A stored summary cannot stand in for the current use: the read verb reports
         # NOT_APPLICABLE for criteria without a certificate.
-        page = installed.api.snapshot({"schema_version": 1, "request_id": "v09", "mission_id": assured.id,
-                                       "view": "CURRENT", "at_event_seq": None, "cursor": None, "limit": 100})
-        assert {item["current_use"] for item in page["items"] if item["kind"] == "CRITERION"} == {"NOT_APPLICABLE"}
-        assert world.store.connection.execute(
-            "SELECT COUNT(*) FROM assurance_use_certificates WHERE mission_id=?", (assured.id,)).fetchone()[0] == 0
-        _refused(lambda: validity.require_current_locked(None, now_ms=NOW), "READ_TRANSACTION_REQUIRED")
+        page = installed.api.snapshot(
+            {
+                "schema_version": 1,
+                "request_id": "v09",
+                "mission_id": assured.id,
+                "view": "CURRENT",
+                "at_event_seq": None,
+                "cursor": None,
+                "limit": 100,
+            }
+        )
+        assert {item["current_use"] for item in page["items"] if item["kind"] == "CRITERION"} == {
+            "NOT_APPLICABLE"
+        }
+        assert (
+            world.store.connection.execute(
+                "SELECT COUNT(*) FROM assurance_use_certificates WHERE mission_id=?", (assured.id,)
+            ).fetchone()[0]
+            == 0
+        )
+        _refused(
+            lambda: validity.require_current_locked(None, now_ms=NOW), "READ_TRANSACTION_REQUIRED"
+        )
         assert validity.candidate_for(assured.id, "no-such-record") is None
 
     _run(tmp_path, checks)
@@ -593,16 +818,25 @@ def test_all_consumers_share_validity(tmp_path):
 def test_read_certificate_context():
     good = _certificate((7, 3, 1))
     _bind(good)
-    for change in ({"mission_id": "mission-other"}, {"consumer_id": "result-2"}, {"consumer_kind": "artifact"},
-                   {"scope_id": "scope-other"}, {"purpose": "START"}, {"principal_id": "someone-else"},
-                   {"root_incarnation_id": "root-2"}):
+    for change in (
+        {"mission_id": "mission-other"},
+        {"consumer_id": "result-2"},
+        {"consumer_kind": "artifact"},
+        {"scope_id": "scope-other"},
+        {"purpose": "START"},
+        {"principal_id": "someone-else"},
+        {"root_incarnation_id": "root-2"},
+    ):
         _refused(lambda change=change: _bind(good, _identity(**change)), "CERTIFICATE_USE_IDENTITY")
     # The certificate's own hash/bytes are not authority: a re-encoded copy with a
     # longer expiry or another identity is a different, still-bound object.
     tampered = UseCertificate.from_json({**good.to_json(), "not_after_ms": NOW + 10_000})
     assert tampered != good
     _refused(lambda: _bind(tampered, now=NOW + 5000, epochs=(8, 3, 1)), "RECHECK_REQUIRED")
-    _refused(lambda: _bind(UseCertificate.from_json({**good.to_json(), "purpose": "PLAN"})), "CERTIFICATE_USE_IDENTITY")
+    _refused(
+        lambda: _bind(UseCertificate.from_json({**good.to_json(), "purpose": "PLAN"})),
+        "CERTIFICATE_USE_IDENTITY",
+    )
     with pytest.raises(AssuranceError):
         UseCertificate.from_json({**good.to_json(), "token": "param"})
     # Same context, fresh read: usable again.
@@ -614,25 +848,50 @@ def test_invalidation_racing_cache(tmp_path):
     async def checks(world, assured):
         seven = _epochs(world, assured.id)
         stale_projection = _certificate((seven.mission, seven.environment, seven.clock_generation))
-        _confirm_on_another_connection(world, assured.id)  # epoch 8 lands while "epoch 7" is being computed
+        _confirm_on_another_connection(
+            world, assured.id
+        )  # epoch 8 lands while "epoch 7" is being computed
         eight = _epochs(world, assured.id)
         assert eight.mission == seven.mission + 1
         with world.store.read_view() as connection:
-            _refused(lambda: require_epochs_locked(connection, assured.id, seven, now_ms=NOW), "RECHECK_REQUIRED")
-        _refused(lambda: _bind(stale_projection, epochs=(eight.mission, eight.environment, eight.clock_generation)),
-                 "RECHECK_REQUIRED")
+            _refused(
+                lambda: require_epochs_locked(connection, assured.id, seven, now_ms=NOW),
+                "RECHECK_REQUIRED",
+            )
+        _refused(
+            lambda: _bind(
+                stale_projection, epochs=(eight.mission, eight.environment, eight.clock_generation)
+            ),
+            "RECHECK_REQUIRED",
+        )
         # Nothing of the stale projection reached the current index …
-        assert world.store.connection.execute(
-            "SELECT COUNT(*) FROM assurance_use_certificates WHERE mission_id=?", (assured.id,)).fetchone()[0] == 0
+        assert (
+            world.store.connection.execute(
+                "SELECT COUNT(*) FROM assurance_use_certificates WHERE mission_id=?", (assured.id,)
+            ).fetchone()[0]
+            == 0
+        )
         # … and the epoch-8 change stays dirty for the consumers until they ingest it.
-        change = [e for e in world.store.list_events(assured.id) if e.type == "AssuranceEvidenceChanged"][-1]
+        change = [
+            e for e in world.store.list_events(assured.id) if e.type == "AssuranceEvidenceChanged"
+        ][-1]
         cursors = world.store.connection.execute(
-            "SELECT consumer,last_event_seq FROM assurance_event_cursors WHERE mission_id=?", (assured.id,)).fetchall()
+            "SELECT consumer,last_event_seq FROM assurance_event_cursors WHERE mission_id=?",
+            (assured.id,),
+        ).fetchall()
         assert cursors and all(row["last_event_seq"] < change.seq for row in cursors)
         # The historical diagnostic (before the change) is still readable as history through the read verb.
-        history = world.installed.api.snapshot({"schema_version": 1, "request_id": "v11", "mission_id": assured.id,
-                                                "view": "HISTORY", "at_event_seq": change.seq - 1, "cursor": None,
-                                                "limit": 100})
+        history = world.installed.api.snapshot(
+            {
+                "schema_version": 1,
+                "request_id": "v11",
+                "mission_id": assured.id,
+                "view": "HISTORY",
+                "at_event_seq": change.seq - 1,
+                "cursor": None,
+                "limit": 100,
+            }
+        )
         assert history["snapshot_seq"] == change.seq - 1
 
     _run(tmp_path, checks)
@@ -644,8 +903,9 @@ def test_root_quarantine_and_current_read_authority():
     读取；原生根上产物读取走使用证书签发方（推后第 2 批 A03）：本人读得到并留 DISCLOSE 证书，别的租户 /
     别的主体 / 权限过期按名拒绝、不留证书。离线备份与受管恢复已删（A″）。"""
     seam = SDK_ROOT / "scripts/assurance_seams/root-gate-seam.py"
-    completed = subprocess.run([sys.executable, str(seam)], capture_output=True, text=True, timeout=600,
-                               cwd=str(SDK_ROOT))
+    completed = subprocess.run(
+        [sys.executable, str(seam)], capture_output=True, text=True, timeout=600, cwd=str(SDK_ROOT)
+    )
     assert completed.returncode == 0, completed.stderr[-4000:]
     summary = json.loads(completed.stdout.strip().splitlines()[-1])
     report = json.loads(Path(summary["evidence"]).read_text())
@@ -661,31 +921,61 @@ def test_root_quarantine_and_current_read_authority():
 def test_bounded_restartable_replay(tmp_path):
     async def checks(world, assured):
         work = AssuranceWorkStore(world.store)
-        world.control.comment(assured.id, "看一下进度")  # a real durable event on the Mission moves its head
+        world.control.comment(
+            assured.id, "看一下进度"
+        )  # a real durable event on the Mission moves its head
         target = WorkTarget("work-v14", HASH)
         cursor = world.store.connection.execute(
             "SELECT row_version FROM assurance_event_cursors WHERE mission_id=? AND consumer='VALIDITY'",
-            (assured.id,)).fetchone()
+            (assured.id,),
+        ).fetchone()
         now = int(world.store.now * 1000)
-        head = work.ingest(assured.id, "VALIDITY", expected_version=cursor["row_version"],
-                           classify=lambda event, consumer: (target,), now_ms=now)
+        head = work.ingest(
+            assured.id,
+            "VALIDITY",
+            expected_version=cursor["row_version"],
+            classify=lambda event, consumer: (target,),
+            now_ms=now,
+        )
         pending = lambda: world.store.connection.execute(  # noqa: E731
             "SELECT work_key,target_epoch,row_version,state FROM assurance_pending_work "
-            "WHERE mission_id=? AND consumer='VALIDITY'", (assured.id,)).fetchall()
+            "WHERE mission_id=? AND consumer='VALIDITY'",
+            (assured.id,),
+        ).fetchall()
         first = [tuple(row) for row in pending()]
-        [(key, epoch, version, state)] = first  # one job however many change events the page carried
+        [(key, epoch, version, state)] = (
+            first  # one job however many change events the page carried
+        )
         assert (key, epoch, state) == ("work-v14", head, "PENDING")
         # Replaying the same change events with the stale cursor version is a conflict, not a second job.
         with pytest.raises(StoreConflict):
-            work.ingest(assured.id, "VALIDITY", expected_version=cursor["row_version"],
-                        classify=lambda event, consumer: (target,), now_ms=now)
-        assert work.ingest(assured.id, "VALIDITY", expected_version=cursor["row_version"] + 1,
-                           classify=lambda event, consumer: (target,), now_ms=now) == head
+            work.ingest(
+                assured.id,
+                "VALIDITY",
+                expected_version=cursor["row_version"],
+                classify=lambda event, consumer: (target,),
+                now_ms=now,
+            )
+        assert (
+            work.ingest(
+                assured.id,
+                "VALIDITY",
+                expected_version=cursor["row_version"] + 1,
+                classify=lambda event, consumer: (target,),
+                now_ms=now,
+            )
+            == head
+        )
         assert [tuple(row) for row in pending()] == first
         # A later event with the same target fingerprint moves the job, never duplicates it.
         world.control.comment(assured.id, "再看一下")
-        later = work.ingest(assured.id, "VALIDITY", expected_version=cursor["row_version"] + 1,
-                            classify=lambda event, consumer: (target,), now_ms=now)
+        later = work.ingest(
+            assured.id,
+            "VALIDITY",
+            expected_version=cursor["row_version"] + 1,
+            classify=lambda event, consumer: (target,),
+            now_ms=now,
+        )
         assert later > head
         assert [tuple(row) for row in pending()] == [("work-v14", later, version + 1, "PENDING")]
 

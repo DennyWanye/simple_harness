@@ -24,8 +24,7 @@ def resource_map():
     helper = next(
         node
         for node in tree.body
-        if isinstance(node, ast.FunctionDef)
-        and node.name == "_collect_startup_resources"
+        if isinstance(node, ast.FunctionDef) and node.name == "_collect_startup_resources"
     )
     wiring = [
         node
@@ -75,9 +74,7 @@ def test_host_startup_resource_inventory_has_no_unclassified_data(resource_map):
     non_startup = ("deskpet/capabilities/templates/", "deskpet/workflows/evaluation/")
     suffixes = {".json", ".jsonl", ".yaml", ".yml", ".sql", ".dsl", ".lark", ".toml"}
     required = {}
-    for path in tracked(
-        ["backend/deskpet", "backend/memory/migrations", "backend/verify"]
-    ):
+    for path in tracked(["backend/deskpet", "backend/memory/migrations", "backend/verify"]):
         relative = path.relative_to("backend").as_posix()
         if path.suffix not in suffixes or relative.startswith(non_startup):
             continue
@@ -88,17 +85,14 @@ def test_host_startup_resource_inventory_has_no_unclassified_data(resource_map):
         {
             "config.toml": REPO / "config.toml",
             "uv.lock": BACKEND / "uv.lock",
-            "resources/diagnostic-redaction.json": REPO
-            / "resources/diagnostic-redaction.json",
+            "resources/diagnostic-redaction.json": REPO / "resources/diagnostic-redaction.json",
         }
     )
     assert "deskpet/tool_catalog/real_tool_manifest.json" in required
     assert "deskpet/tool_catalog/schema_migrations.json" in required
     assert set(required) <= set(resource_map), sorted(set(required) - set(resource_map))
     for destination, source in required.items():
-        assert resource_map[destination].read_bytes() == source.read_bytes(), (
-            destination
-        )
+        assert resource_map[destination].read_bytes() == source.read_bytes(), destination
 
 
 @pytest.mark.parametrize(
@@ -120,10 +114,9 @@ def test_every_sdk_package_data_file_is_collected(resource_map, package, distrib
     for path in required:
         name = path.as_posix()
         assert name in resource_map, name
-        assert (
-            resource_map[name].read_bytes()
-            == Path(installed.locate_file(path)).read_bytes()
-        ), name
+        assert resource_map[name].read_bytes() == Path(installed.locate_file(path)).read_bytes(), (
+            name
+        )
 
 
 @pytest.fixture
@@ -162,15 +155,9 @@ def test_real_tool_catalog_and_migration_ledger_load_from_bundle(staged, monkeyp
 @pytest.mark.parametrize(
     "damage", ["missing_catalog", "missing_ledger", "changed_catalog", "changed_ledger"]
 )
-def test_real_tool_catalog_guards_reject_missing_or_changed_data(
-    staged, monkeypatch, damage
-):
+def test_real_tool_catalog_guards_reject_missing_or_changed_data(staged, monkeypatch, damage):
     manifest = bind_tool_catalog(monkeypatch, staged)
-    target = (
-        manifest._MANIFEST_PATH
-        if damage.endswith("catalog")
-        else manifest._MIGRATIONS_PATH
-    )
+    target = manifest._MANIFEST_PATH if damage.endswith("catalog") else manifest._MIGRATIONS_PATH
     if damage.startswith("missing"):
         target.unlink()
     else:
@@ -184,9 +171,7 @@ def test_real_tool_catalog_guards_reject_missing_or_changed_data(
         manifest.migrate_tool_schemas(manifest.load_tool_manifest())
 
 
-def test_sdk_fresh_schema_reads_bundled_sql_and_rejects_missing_source(
-    staged, monkeypatch
-):
+def test_sdk_fresh_schema_reads_bundled_sql_and_rejects_missing_source(staged, monkeypatch):
     from simple_harness.execution.sqlite import schema
 
     expected = schema.fresh_descriptor()
@@ -202,9 +187,9 @@ def test_sdk_fresh_schema_reads_bundled_sql_and_rejects_missing_source(
     with sqlite3.connect(":memory:") as connection:
         connection.executescript(actual.sql)
         assert (
-            connection.execute(
-                "SELECT count(*) FROM sqlite_master WHERE type='table'"
-            ).fetchone()[0]
+            connection.execute("SELECT count(*) FROM sqlite_master WHERE type='table'").fetchone()[
+                0
+            ]
             > 0
         )
     (root / "0005_fresh.sql").unlink()
@@ -230,18 +215,14 @@ def test_packaged_policy_and_evaluation_readers_use_shipped_data(staged, monkeyp
     PackagedEvaluationSuiteLoader(
         resource_root=staged / "deskpet/companion/eval_suites"
     ).validate_release()
-    monkeypatch.setattr(
-        schema_chain, "MIGRATIONS_DIR", staged / "deskpet/memory/migrations"
-    )
+    monkeypatch.setattr(schema_chain, "MIGRATIONS_DIR", staged / "deskpet/memory/migrations")
     assert schema_chain._discover() == schema_chain.DOMAIN_CHAIN
     for attribute, filename in (
         ("_SOURCES_PATH", "execution_build_sources.json"),
         ("_BUILD_PATH", "execution_build_manifest.json"),
         ("_EFFECT_PATH", "tool_effect_policy_manifest.json"),
     ):
-        monkeypatch.setattr(
-            build_identity, attribute, staged / "deskpet/tools" / filename
-        )
+        monkeypatch.setattr(build_identity, attribute, staged / "deskpet/tools" / filename)
     build_identity.load_core_handler_authorities.cache_clear()
     try:
         assert build_identity.load_core_handler_authorities()
@@ -277,9 +258,7 @@ def test_all_bundled_pack_semantic_outcomes_match_source(staged):
     assert outcome(pack)[0] == "rejected"
 
 
-@pytest.mark.parametrize(
-    "module", ["deskpet.capabilities.platform", "deskpet.mcp.manager"]
-)
+@pytest.mark.parametrize("module", ["deskpet.capabilities.platform", "deskpet.mcp.manager"])
 def test_ondemand_adapter_self_hash_keeps_real_source_and_pyz(module):
     from PyInstaller.building.build_main import (
         _get_module_collection_mode,
@@ -295,11 +274,7 @@ def test_ondemand_adapter_self_hash_keeps_real_source_and_pyz(module):
         and node.func.id == "Analysis"
     )
     modes = ast.literal_eval(
-        next(
-            item.value
-            for item in analysis.keywords
-            if item.arg == "module_collection_mode"
-        )
+        next(item.value for item in analysis.keywords if item.arg == "module_collection_mode")
     )
     mode = _get_module_collection_mode(modes, module)
     assert mode & _ModuleCollectionMode.PY

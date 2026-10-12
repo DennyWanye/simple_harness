@@ -91,15 +91,9 @@ async def test_actual_terminal_factory_discovers_without_wake_and_preserves_safe
         assert len(provider.requests) == 1
         with sqlite3.connect(state) as db:
             assert (
-                db.execute(
-                    "SELECT COUNT(*) FROM foreground_terminal_receipts"
-                ).fetchone()[0]
-                == 1
+                db.execute("SELECT COUNT(*) FROM foreground_terminal_receipts").fetchone()[0] == 1
             )
-            assert (
-                db.execute("SELECT COUNT(*) FROM memory_ingestion_outbox").fetchone()[0]
-                == 1
-            )
+            assert db.execute("SELECT COUNT(*) FROM memory_ingestion_outbox").fetchone()[0] == 1
         await drain(consumer)
         assert await consumer.store.inspect(sources[0].job_id) == record
     finally:
@@ -116,14 +110,11 @@ async def test_actual_main_factory_starts_and_terminal_wakes_lane(tmp_path):
     node = next(
         n
         for n in tree.body
-        if isinstance(n, ast.AsyncFunctionDef)
-        and n.name == "_activate_terminal_operation_audit"
+        if isinstance(n, ast.AsyncFunctionDef) and n.name == "_activate_terminal_operation_audit"
     )
     services = {}
     namespace = {
-        "service_context": SimpleNamespace(
-            get=services.get, register=services.__setitem__
-        ),
+        "service_context": SimpleNamespace(get=services.get, register=services.__setitem__),
         "_state_db_path": tmp_path / "state.db",
         "_sdk_runtime_stack": None,
     }
@@ -146,9 +137,7 @@ async def test_actual_main_factory_starts_and_terminal_wakes_lane(tmp_path):
         wake_count.append(True)
         consumer.wake()
 
-    _state, _, provider, runtime, stack, _ = await setup(
-        tmp_path, wake=wake, ready=ready
-    )
+    _state, _, provider, runtime, stack, _ = await setup(tmp_path, wake=wake, ready=ready)
     try:
         assert wake_count == [True]
         assert await namespace["_activate_terminal_operation_audit"]() is consumer
@@ -189,14 +178,11 @@ async def test_actual_main_storage_failure_does_not_block_foreground(tmp_path):
     node = next(
         n
         for n in ast.parse((Path(__file__).parents[2] / "main.py").read_text()).body
-        if isinstance(n, ast.AsyncFunctionDef)
-        and n.name == "_activate_terminal_operation_audit"
+        if isinstance(n, ast.AsyncFunctionDef) and n.name == "_activate_terminal_operation_audit"
     )
     services, warnings = {}, []
     namespace = {
-        "service_context": SimpleNamespace(
-            get=services.get, register=services.__setitem__
-        ),
+        "service_context": SimpleNamespace(get=services.get, register=services.__setitem__),
         "_state_db_path": tmp_path / "state.db",
         "_sdk_runtime_stack": None,
         "logger": SimpleNamespace(warning=warnings.append),

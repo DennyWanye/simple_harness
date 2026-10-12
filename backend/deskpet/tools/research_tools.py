@@ -29,6 +29,7 @@ Design constraints
 This module is **library-only** — no FastAPI / IPC glue. The SKILL.md
 side calls the orchestrator via the ToolRegistry façade.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -105,6 +106,7 @@ def _is_loopback_url(base_url: str) -> bool:
     大小写,也不误伤含 'localhost' 子串的远端域名。main.py 据此决定是否注入 rerank
     桥(本地 ollama 通常没有 gpt-4.1-mini)。"""
     import ipaddress
+
     try:
         host = (urllib.parse.urlparse(base_url).hostname or "").strip().lower()
     except (ValueError, TypeError):
@@ -123,13 +125,49 @@ def _is_loopback_url(base_url: str) -> bool:
 # 命中率(命中域名 gov.cn/cninfo/arxiv 天然 TIER_1,后续打分/精排自然favor)。
 # 顺序即优先级,命中第一条即用。keywords 用小写(中文不受 lower 影响,英文转小写匹配)。
 _SITE_RULES: tuple[tuple[tuple[str, ...], str], ...] = (
-    (("上市公司", "公告", "财报", "年报", "季报", "半年报", "业绩预告",
-      "招股", "招股书", "问询函", "巨潮"), "site:cninfo.com.cn"),
-    (("政策", "法规", "规定", "通知", "方案", "规划", "监管", "办法",
-      "意见", "部委", "工信部", "发改委", "国务院", "条例", "国标",
-      "国家标准", "技术规范", "标准化"), "site:gov.cn"),
-    (("论文", "arxiv", "preprint", "学术研究", "综述论文", "算法原理",
-      "sota", "paper"), "site:arxiv.org"),
+    (
+        (
+            "上市公司",
+            "公告",
+            "财报",
+            "年报",
+            "季报",
+            "半年报",
+            "业绩预告",
+            "招股",
+            "招股书",
+            "问询函",
+            "巨潮",
+        ),
+        "site:cninfo.com.cn",
+    ),
+    (
+        (
+            "政策",
+            "法规",
+            "规定",
+            "通知",
+            "方案",
+            "规划",
+            "监管",
+            "办法",
+            "意见",
+            "部委",
+            "工信部",
+            "发改委",
+            "国务院",
+            "条例",
+            "国标",
+            "国家标准",
+            "技术规范",
+            "标准化",
+        ),
+        "site:gov.cn",
+    ),
+    (
+        ("论文", "arxiv", "preprint", "学术研究", "综述论文", "算法原理", "sota", "paper"),
+        "site:arxiv.org",
+    ),
 )
 
 
@@ -151,8 +189,14 @@ _SOURCE_PACK_RULES: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
     (
         "ai_agent_harness",
         (
-            "ai agent", "agent harness", "agentic system", "agent framework",
-            "智能体", "智能体框架", "智能体工程", "代理框架",
+            "ai agent",
+            "agent harness",
+            "agentic system",
+            "agent framework",
+            "智能体",
+            "智能体框架",
+            "智能体工程",
+            "代理框架",
         ),
         (
             "AI agent harness best practices site:anthropic.com OR site:openai.com",
@@ -163,9 +207,18 @@ _SOURCE_PACK_RULES: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
     (
         "geopolitics_ukraine",
         (
-            "俄乌", "乌克兰", "俄乌战争", "俄乌局势", "俄军", "乌军",
-            "russia ukraine", "ukraine war", "russian invasion",
-            "ukraine front", "russian offensive", "isw",
+            "俄乌",
+            "乌克兰",
+            "俄乌战争",
+            "俄乌局势",
+            "俄军",
+            "乌军",
+            "russia ukraine",
+            "ukraine war",
+            "russian invasion",
+            "ukraine front",
+            "russian offensive",
+            "isw",
         ),
         (
             "Russia Ukraine latest situation ISW site:understandingwar.org",
@@ -176,8 +229,15 @@ _SOURCE_PACK_RULES: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
     (
         "gold_market",
         (
-            "金价", "黄金价格", "黄金走势", "黄金市场", "xau", "xau/usd",
-            "gold price", "gold market", "spot gold",
+            "金价",
+            "黄金价格",
+            "黄金走势",
+            "黄金市场",
+            "xau",
+            "xau/usd",
+            "gold price",
+            "gold market",
+            "spot gold",
         ),
         (
             "gold price benchmark latest site:lbma.org.uk",
@@ -240,7 +300,8 @@ def _research_raw() -> dict:
         raw: dict = {}
         try:
             import config as _cfg  # type: ignore[import-not-found]
-            obj = getattr(_cfg, "config", None)   # 若有发布的单例优先用
+
+            obj = getattr(_cfg, "config", None)  # 若有发布的单例优先用
             if obj is not None and hasattr(obj, "raw"):
                 raw = obj.raw.get("research") or {}
             else:
@@ -304,6 +365,7 @@ def _fanout_subrun_mode(outer: str) -> str:
 def _fanout_concurrency() -> int:
     try:
         import config as _cfg  # type: ignore[import-not-found]
+
         obj = getattr(_cfg, "config", None)
         if obj is None:
             obj = _cfg.load_config(_cfg.resolve_config_path())
@@ -362,7 +424,7 @@ def _js_render_timeout() -> float:
 
 # 单次 research 内 JS 渲染触发计数(护 deepresearch 300s 预算,见 plan WI-3 双闸②)。
 _JS_RENDER_MAX_PER_RUN = 4
-_JS_RENDER_MIN_SHELL_HTML = 20_000   # 原始 HTML > 此值 + trafilatura 短 = 疑 JS 空壳(双闸①)
+_JS_RENDER_MIN_SHELL_HTML = 20_000  # 原始 HTML > 此值 + trafilatura 短 = 疑 JS 空壳(双闸①)
 
 
 @dataclass(slots=True)
@@ -386,9 +448,9 @@ class _StandaloneJSRenderBudget:
             return True
 
 
-_standalone_js_budget: contextvars.ContextVar[
-    _StandaloneJSRenderBudget | None
-] = contextvars.ContextVar("deskpet_research_js_budget", default=None)
+_standalone_js_budget: contextvars.ContextVar[_StandaloneJSRenderBudget | None] = (
+    contextvars.ContextVar("deskpet_research_js_budget", default=None)
+)
 
 
 def _reset_js_render_budget() -> None:
@@ -417,9 +479,11 @@ async def _js_render_dispatch(url: str) -> str | None:
     try:
         if engine == "cdp-edge":
             from . import research_cdp_edge as _ce
+
             return await _ce.cdp_edge_render(url, timeout=timeout)
         if engine == "crawl4ai":
             from . import research_crawl4ai as _c4  # dev 档,懒 import
+
             r = await _c4.crawl4ai_extract(url, timeout=timeout)
             return (r or {}).get("html") if isinstance(r, dict) else None
         # webview: 三端主线,本期(Option C)未实现 → 降级(返 None 走 jina/原结果)
@@ -450,8 +514,12 @@ JSON ARRAY:"""
 
 
 async def _expand_queries(
-    llm_call: _LLMCall, topic: str, sub_questions: list[str], errors: list[str],
-    *, max_extra: int = 4,
+    llm_call: _LLMCall,
+    topic: str,
+    sub_questions: list[str],
+    errors: list[str],
+    *,
+    max_extra: int = 4,
 ) -> list[str]:
     """multi-query + HyDE: 一次 LLM 调用产出≤4 条额外搜索 query。
     best-effort,失败/解析空 → []。去掉与原子问题重复的。"""
@@ -510,7 +578,7 @@ def _parse_rerank_scores(raw: str) -> dict[int, float]:
     if not (0 <= lb < rb):
         return {}
     try:
-        arr = json.loads(raw[lb:rb + 1])
+        arr = json.loads(raw[lb : rb + 1])
     except json.JSONDecodeError:
         return {}
     out: dict[int, float] = {}
@@ -582,7 +650,8 @@ async def _llm_rerank(
         p.score = research_scoring.composite_score(
             authority=float(d.get("authority", 3.0)),
             recency=float(d.get("recency", 3.0)),
-            relevance=rel, depth=float(d.get("depth", 0.0)),
+            relevance=rel,
+            depth=float(d.get("depth", 0.0)),
             topic_velocity=velocity,
         )
     return True
@@ -605,8 +674,6 @@ def _relevance_score(text: str, *, keywords: Iterable[str]) -> float:
         return 0.0
     tl = text.lower()
     return (sum(1 for k in kws if k in tl) / float(len(kws))) * 10.0
-
-
 
 
 # ----------------------------------------------------------------------
@@ -886,15 +953,11 @@ class _LLMCallV2(Protocol):
 
 
 class _Searcher(Protocol):
-    async def __call__(
-        self, query: str, *, max_results: int
-    ) -> list[dict[str, Any]]: ...
+    async def __call__(self, query: str, *, max_results: int) -> list[dict[str, Any]]: ...
 
 
 class _Extractor(Protocol):
-    async def __call__(
-        self, url: str
-    ) -> dict[str, Any]: ...
+    async def __call__(self, url: str) -> dict[str, Any]: ...
 
 
 # ----------------------------------------------------------------------
@@ -903,7 +966,9 @@ class _Extractor(Protocol):
 
 
 async def default_search(
-    query: str, *, max_results: int = 5,
+    query: str,
+    *,
+    max_results: int = 5,
     client: httpx.AsyncClient | None = None,
 ) -> list[dict[str, Any]]:
     """DuckDuckGo HTML SERP → ``[{url, title, snippet}]``.
@@ -933,27 +998,37 @@ async def gateway_search_response(
     """
     from deskpet.retrieval.contracts import SearchRequest
     from deskpet.retrieval.runtime import get_default_gateway
-    return await get_default_gateway().search(SearchRequest(
-        query=query,
-        max_results=max_results,
-        mode="research",
-        run_id=run_id,
-    ))
+
+    return await get_default_gateway().search(
+        SearchRequest(
+            query=query,
+            max_results=max_results,
+            mode="research",
+            run_id=run_id,
+        )
+    )
 
 
 def direct_items_to_candidates(items: list[dict[str, Any]], *, source: str):
     """Normalize authoritative/direct-source rows into retrieval contracts."""
     from deskpet.retrieval.providers.base import candidates_from_rows
-    candidates = candidates_from_rows(source, [
-        {
-            "url": str(item.get("url") or item.get("link") or ""),
-            "title": str(item.get("title") or item.get("name") or ""),
-            "snippet": str(item.get("snippet") or item.get("summary") or item.get("text") or ""),
-            "published_at": item.get("published_at") or item.get("date"),
-        }
-        for item in items
-    ])
+
+    candidates = candidates_from_rows(
+        source,
+        [
+            {
+                "url": str(item.get("url") or item.get("link") or ""),
+                "title": str(item.get("title") or item.get("name") or ""),
+                "snippet": str(
+                    item.get("snippet") or item.get("summary") or item.get("text") or ""
+                ),
+                "published_at": item.get("published_at") or item.get("date"),
+            }
+            for item in items
+        ],
+    )
     from dataclasses import replace
+
     return [replace(item, source_kind="direct") for item in candidates]
 
 
@@ -1035,8 +1110,8 @@ def _clean_ddg_url(url: str) -> str:
 # 对裸中国用户连不上,只对有代理的用户有效 → 故【默认关】(opt-in),且超时缩到
 # 8s 快速失败,避免裸中国用户每个 JS 页白等。有代理可 [research].jina_reader=true 开。
 _JINA_READER_BASE = "https://r.jina.ai/"
-_JINA_MIN_CHARS = 300   # trafilatura 正文短于此 → 疑似 JS 空壳,试 Jina
-_JINA_TIMEOUT = 8.0     # 快速失败(国外服务,无代理直接连不上)
+_JINA_MIN_CHARS = 300  # trafilatura 正文短于此 → 疑似 JS 空壳,试 Jina
+_JINA_TIMEOUT = 8.0  # 快速失败(国外服务,无代理直接连不上)
 
 
 def _jina_enabled() -> bool:
@@ -1055,7 +1130,7 @@ def _parse_jina(body: str) -> dict[str, str]:
         title = m.group(1).strip()
     mc = body.find("Markdown Content:")
     if mc != -1:
-        text = body[mc + len("Markdown Content:"):].strip()
+        text = body[mc + len("Markdown Content:") :].strip()
     return {"title": title, "text": text.strip()}
 
 
@@ -1114,9 +1189,11 @@ async def default_extract(
     service = get_default_gateway().fetch_service
     owns_service = False
     if client is not None:
+
         class _InjectedClientTransport:
             def fetch(self, url: str, *, timeout: float):
                 return {"ok": False, "error": "injected_client"}
+
         service = FetchExtractService(
             transport=_InjectedClientTransport(),
             client=client,
@@ -1128,27 +1205,33 @@ async def default_extract(
         owns_service = True
     try:
         render_enabled = _js_render_enabled() and _js_render_engine() == "cdp-edge"
+
         class _LegacyRenderBudget:
             async def claim_cdp(self) -> bool:
                 return await _claim_js_render(fetch_port)
+
         render_budget = _LegacyRenderBudget() if render_enabled else None
-        document = await service.fetch(FetchRequest(
-            url=url,
-            timeout=_DEFAULT_TIMEOUT,
-            render_policy="auto" if render_enabled else "never",
-            request_budget=render_budget,
-            allow_jina=_jina_enabled(),
-        ))
+        document = await service.fetch(
+            FetchRequest(
+                url=url,
+                timeout=_DEFAULT_TIMEOUT,
+                render_policy="auto" if render_enabled else "never",
+                request_budget=render_budget,
+                allow_jina=_jina_enabled(),
+            )
+        )
         if not document.text:
             return {"ok": False, "error": "no text extracted", "url": url}
         return {
-            "ok": True, "url": document.canonical_url,
-            "title": document.title or url, "text": document.text,
-            "fetched_at": time.time(), "date": document.published_at or "",
+            "ok": True,
+            "url": document.canonical_url,
+            "title": document.title or url,
+            "text": document.text,
+            "fetched_at": time.time(),
+            "date": document.published_at or "",
             "ai_generated": "ai_disclosure" in document.quality_flags,
             "extractor": (
-                document.fetcher if document.fetcher in {"cdp-edge", "jina"}
-                else document.extractor
+                document.fetcher if document.fetcher in {"cdp-edge", "jina"} else document.extractor
             ),
             "fetcher": document.fetcher,
             "content_hash": document.content_hash,
@@ -1232,7 +1315,8 @@ def find_footnote_refs(text: str) -> list[int]:
 
 
 def cite_check(
-    report_md: str, citations: list[Citation],
+    report_md: str,
+    citations: list[Citation],
 ) -> dict[str, Any]:
     """Validate every ``[^n]`` in the report maps to a known citation.
 
@@ -1267,14 +1351,16 @@ def _merge_subreport_citations(sub_reports) -> tuple[list[Citation], dict[tuple[
             global_n = len(merged) + 1
             url_to_global[key] = global_n
             refmap[(report_idx, int(c.n))] = global_n
-            merged.append(Citation(
-                n=global_n,
-                url=c.url,
-                title=c.title,
-                snippet=c.snippet,
-                fetched_at=c.fetched_at,
-                authority=c.authority,
-            ))
+            merged.append(
+                Citation(
+                    n=global_n,
+                    url=c.url,
+                    title=c.title,
+                    snippet=c.snippet,
+                    fetched_at=c.fetched_at,
+                    authority=c.authority,
+                )
+            )
     return merged, refmap
 
 
@@ -1282,7 +1368,7 @@ def _strip_footnote_definitions(md: str) -> str:
     text = (md or "").strip()
     matches = list(re.finditer(r"(?m)^##\s+引用\s*$", text))
     if matches:
-        text = text[:matches[-1].start()].rstrip()
+        text = text[: matches[-1].start()].rstrip()
         text = re.sub(r"\n-{3,}\s*$", "", text).rstrip()
     text = re.sub(r"(?m)^\[\^\d+\]:[^\n]*(?:\n[ \t]+[^\n]*)*\n?", "", text)
     return text.strip()
@@ -1303,9 +1389,7 @@ def _finalize_report_md(
 ) -> tuple[str, list[Citation], dict[str, Any]]:
     cc = cite_check(report_md, citations)
     if not cc["ok"]:
-        errors.append(
-            f"cite_check failed: missing footnotes {cc['missing']}"
-        )
+        errors.append(f"cite_check failed: missing footnotes {cc['missing']}")
         # Append a warning + force unique footnote list. We keep the
         # report rather than dropping it — the caller can decide
         # whether to ask the LLM to retry.
@@ -1322,9 +1406,12 @@ def _finalize_report_md(
         citations = used_citations
 
     # Always append the citation list as Markdown footnotes
-    report_md = report_md.rstrip() + "\n\n---\n\n## 引用\n\n" + "\n".join(
-        c.as_footnote() for c in citations
-    ) + "\n"
+    report_md = (
+        report_md.rstrip()
+        + "\n\n---\n\n## 引用\n\n"
+        + "\n".join(c.as_footnote() for c in citations)
+        + "\n"
+    )
     return report_md, citations, cc
 
 
@@ -1340,9 +1427,7 @@ async def _fanout_synthesize(
     sections: list[str] = []
     for report_idx, (q, report) in enumerate(sub_reports):
         local_to_global = {
-            local_n: global_n
-            for (idx, local_n), global_n in refmap.items()
-            if idx == report_idx
+            local_n: global_n for (idx, local_n), global_n in refmap.items() if idx == report_idx
         }
         body = _strip_footnote_definitions(report.report_md)
         body = _rewrite_local_refs(body, local_to_global)
@@ -1351,13 +1436,15 @@ async def _fanout_synthesize(
     sub_report_block = "\n\n---\n\n".join(sections)
     citations_block = "\n".join(c.as_footnote() for c in merged) or "(none)"
     try:
-        report_md = await llm_call(_FANOUT_SYNTH_PROMPT.format(
-            topic=topic,
-            request_topic=request_topic,
-            user_request=user_request,
-            sub_reports=sub_report_block,
-            citations=citations_block,
-        ))
+        report_md = await llm_call(
+            _FANOUT_SYNTH_PROMPT.format(
+                topic=topic,
+                request_topic=request_topic,
+                user_request=user_request,
+                sub_reports=sub_report_block,
+                citations=citations_block,
+            )
+        )
     except Exception as exc:  # noqa: BLE001
         errors.append(f"fanout_synth_llm: {exc}")
         report_md = f"# {request_topic}\n\n" + sub_report_block
@@ -1422,7 +1509,7 @@ async def _diagnose_subreport_retry(
             )
         )
         lb, rb = raw.find("{"), raw.rfind("}")
-        payload = json.loads(raw[lb:rb + 1]) if 0 <= lb < rb else {}
+        payload = json.loads(raw[lb : rb + 1]) if 0 <= lb < rb else {}
         diagnosis = str(payload.get("diagnosis") or "").strip()
         continuation = str(payload.get("continuation") or "").strip()
         if diagnosis and continuation:
@@ -1445,7 +1532,9 @@ def _aggregate_fanout_route(
     agent_reach = dict(parent_agent_reach) if isinstance(parent_agent_reach, dict) else {}
     planned = [str(value) for value in agent_reach.get("planned_channels", [])]
     planned_urls = [str(value) for value in agent_reach.get("planned_urls", [])]
-    doctor = dict(agent_reach.get("doctor", {})) if isinstance(agent_reach.get("doctor"), dict) else {}
+    doctor = (
+        dict(agent_reach.get("doctor", {})) if isinstance(agent_reach.get("doctor"), dict) else {}
+    )
     hits = [dict(value) for value in agent_reach.get("hits", []) if isinstance(value, dict)]
     degraded = [dict(value) for value in agent_reach.get("degraded", []) if isinstance(value, dict)]
     for source_route in [aggregate_route, *channel_routes]:
@@ -1502,14 +1591,10 @@ async def collect_subagent_research(
     eff_subq = sub_questions[:cap]
     collected_errors: list[str] = []
     if len(eff_subq) < len(sub_questions):
-        collected_errors.append(
-            f"fanout_dropped_subquestions:{len(sub_questions) - len(eff_subq)}"
-        )
+        collected_errors.append(f"fanout_dropped_subquestions:{len(sub_questions) - len(eff_subq)}")
     requested_submode = str(subrun_mode or "").strip().lower()
     submode = (
-        requested_submode
-        if requested_submode in _DEPTH_PRESETS
-        else _fanout_subrun_mode(mode)
+        requested_submode if requested_submode in _DEPTH_PRESETS else _fanout_subrun_mode(mode)
     )
     waves = max(1, (len(eff_subq) + conc - 1) // conc)
     timeout = min(150.0, (_DEEPRESEARCH_TOOL_TIMEOUT - _FANOUT_OUTER_RESERVE) / waves)
@@ -1552,9 +1637,7 @@ async def collect_subagent_research(
                     current["reason_code"] = reason_code
             snapshot = [copy.deepcopy(snapshot_by_child[key]) for key in snapshot_by_child]
             try:
-                await asyncio.wait_for(
-                    progress_callback(snapshot), timeout=_CHILD_PROGRESS_TIMEOUT
-                )
+                await asyncio.wait_for(progress_callback(snapshot), timeout=_CHILD_PROGRESS_TIMEOUT)
             except asyncio.CancelledError:
                 raise
             except Exception as exc:  # progress must never change research results
@@ -1583,9 +1666,7 @@ async def collect_subagent_research(
                 attempt=attempt,
                 reason_code="",
             )
-            attempt_mode = (
-                "standard" if attempt > 1 and submode == "light" else submode
-            )
+            attempt_mode = "standard" if attempt > 1 and submode == "light" else submode
             _, d_urls, d_pass, d_rounds = _DEPTH_PRESETS[attempt_mode]
             research_topic = (
                 question
@@ -1651,7 +1732,10 @@ async def collect_subagent_research(
                 last_coverage = {
                     key: copy.deepcopy(coverage[key])
                     for key in (
-                        "n_sources", "n_domains", "rounds", "n_dropped_by_reason",
+                        "n_sources",
+                        "n_domains",
+                        "rounds",
+                        "n_dropped_by_reason",
                         "source_discovery",
                     )
                     if key in coverage
@@ -1662,12 +1746,14 @@ async def collect_subagent_research(
                 last_reason_code = reason_code
                 last_child_errors = [type(failure).__name__]
                 local_errors.append(f"fanout:{question!r}: {failure}")
-            attempts.append({
-                "attempt": attempt,
-                "status": status,
-                "reason_code": reason_code,
-                "n_sources": len(result.citations) if isinstance(result, ResearchReport) else 0,
-            })
+            attempts.append(
+                {
+                    "attempt": attempt,
+                    "status": status,
+                    "reason_code": reason_code,
+                    "n_sources": len(result.citations) if isinstance(result, ResearchReport) else 0,
+                }
+            )
             if status == "valid" and isinstance(result, ResearchReport):
                 accepted = result
                 local_errors.extend(result.errors or [])
@@ -1732,14 +1818,23 @@ async def collect_subagent_research(
             if isinstance(raw, asyncio.CancelledError):
                 raise raw
             collected_errors.append(f"fanout:{question!r}: {raw}")
-            child_records.append({
-                "child_id": f"dr-{i}", "question": question, "status": "insufficient",
-                "attempt": 0, "attempts": [], "diagnosis": "",
-                "reason_code": type(raw).__name__, "last_coverage": {},
-                "last_errors": [type(raw).__name__],
-                "failure_class": "fatal",
-                "n_sources": 0, "n_domains": 0, "duration_ms": 0,
-            })
+            child_records.append(
+                {
+                    "child_id": f"dr-{i}",
+                    "question": question,
+                    "status": "insufficient",
+                    "attempt": 0,
+                    "attempts": [],
+                    "diagnosis": "",
+                    "reason_code": type(raw).__name__,
+                    "last_coverage": {},
+                    "last_errors": [type(raw).__name__],
+                    "failure_class": "fatal",
+                    "n_sources": 0,
+                    "n_domains": 0,
+                    "duration_ms": 0,
+                }
+            )
             await _publish_snapshot(
                 i,
                 status="insufficient",
@@ -1875,12 +1970,14 @@ async def _research_subdirection(
             fetched_at=passage.citation.fetched_at,
             authority=passage.citation.authority,
         )
-        numbered.append(Passage(
-            citation=citation,
-            text=passage.text,
-            score=passage.score,
-            dims=dict(passage.dims or {}),
-        ))
+        numbered.append(
+            Passage(
+                citation=citation,
+                text=passage.text,
+                score=passage.score,
+                dims=dict(passage.dims or {}),
+            )
+        )
     if not numbered:
         errors.append("no usable passages")
         return ResearchReport(
@@ -1901,12 +1998,14 @@ async def _research_subdirection(
 
     citations = [passage.citation for passage in numbered]
     try:
-        report_md = await llm_call(_SYNTH_PROMPT.format(
-            user_request=original_request,
-            request_topic=request_topic,
-            n_passages=len(numbered),
-            passages=_format_passages_for_llm(numbered),
-        ))
+        report_md = await llm_call(
+            _SYNTH_PROMPT.format(
+                user_request=original_request,
+                request_topic=request_topic,
+                n_passages=len(numbered),
+                passages=_format_passages_for_llm(numbered),
+            )
+        )
     except Exception as exc:  # noqa: BLE001
         errors.append(f"focused_synth:{type(exc).__name__}: {exc}")
         report_md = _passages_only_fallback(request_topic, numbered)
@@ -2010,14 +2109,14 @@ def parse_sub_questions(raw: str, *, max_questions: int) -> list[str]:
     if text.startswith("```"):
         nl = text.find("\n")
         if nl != -1:
-            text = text[nl + 1:]
+            text = text[nl + 1 :]
         if text.endswith("```"):
             text = text[:-3]
         text = text.strip()
     lb, rb = text.find("["), text.rfind("]")
     if 0 <= lb < rb:
         try:
-            arr = json.loads(text[lb:rb + 1])
+            arr = json.loads(text[lb : rb + 1])
             if isinstance(arr, list):
                 cleaned = [str(x).strip() for x in arr if str(x).strip()]
                 # Dedup while preserving order
@@ -2031,10 +2130,7 @@ def parse_sub_questions(raw: str, *, max_questions: int) -> list[str]:
         except json.JSONDecodeError:
             pass
     # Fallback — lines that look like questions
-    lines = [
-        re.sub(r"^[-*\d.\s]+", "", ln).strip().strip("\"'")
-        for ln in text.splitlines()
-    ]
+    lines = [re.sub(r"^[-*\d.\s]+", "", ln).strip().strip("\"'") for ln in text.splitlines()]
     questions = [ln for ln in lines if ln and ("?" in ln or "？" in ln)]
     return questions[:max_questions]
 
@@ -2167,11 +2263,47 @@ def _topic_keywords(text: str, *, max_keywords: int = 8) -> list[str]:
     # Cheap CJK-aware tokenization: just keep word characters + CJK.
     raw = re.findall(r"[\w一-鿿]+", text.lower())
     stop = {
-        "the", "a", "an", "is", "are", "was", "were", "of", "and", "or",
-        "to", "in", "on", "for", "by", "with", "what", "how", "why",
-        "this", "that", "it", "its", "as", "be", "do", "does", "did",
-        "我", "的", "了", "是", "在", "有", "和", "也", "但", "什么", "怎么",
-        "哪些", "如何",
+        "the",
+        "a",
+        "an",
+        "is",
+        "are",
+        "was",
+        "were",
+        "of",
+        "and",
+        "or",
+        "to",
+        "in",
+        "on",
+        "for",
+        "by",
+        "with",
+        "what",
+        "how",
+        "why",
+        "this",
+        "that",
+        "it",
+        "its",
+        "as",
+        "be",
+        "do",
+        "does",
+        "did",
+        "我",
+        "的",
+        "了",
+        "是",
+        "在",
+        "有",
+        "和",
+        "也",
+        "但",
+        "什么",
+        "怎么",
+        "哪些",
+        "如何",
     }
     out: list[str] = []
     seen: set[str] = set()
@@ -2211,9 +2343,7 @@ def _format_passages_for_llm(passages: list[Passage]) -> str:
     for p in passages:
         c = p.citation
         tier = _tier_label(c.authority)
-        chunks.append(
-            f"({c.n}) [来源层级: {tier}] [{c.title}] {c.url}\n{p.text[:1800]}\n"
-        )
+        chunks.append(f"({c.n}) [来源层级: {tier}] [{c.title}] {c.url}\n{p.text[:1800]}\n")
     return "\n---\n".join(chunks)
 
 
@@ -2223,9 +2353,16 @@ def _passages_only_fallback(topic: str, passages: list[Passage]) -> str:
     Every passage automatically becomes a cited claim (the snippet IS
     the claim) so cite_check passes trivially.
     """
-    lines = [f"# {topic}", "", "## TL;DR", "",
-             f"（自动综合不可用 — 以下是 {len(passages)} 个高质量来源的摘要节选。请人工对照判断。）",
-             "", "## Key findings", ""]
+    lines = [
+        f"# {topic}",
+        "",
+        "## TL;DR",
+        "",
+        f"（自动综合不可用 — 以下是 {len(passages)} 个高质量来源的摘要节选。请人工对照判断。）",
+        "",
+        "## Key findings",
+        "",
+    ]
     for p in passages:
         c = p.citation
         lines.append(f"- {p.text[:400].strip()}…[^{c.n}]")
@@ -2383,9 +2520,7 @@ async def _handle_deepresearch(
     """
     topic = str(args.get("topic") or "").strip()
     if not topic:
-        return json.dumps(
-            {"ok": False, "error": "topic is required"}, ensure_ascii=False
-        )
+        return json.dumps({"ok": False, "error": "topic is required"}, ensure_ascii=False)
     user_request = str(args.get("user_request") or "").strip() or None
     context = legacy_execution_context(args, task_id, execution_context)
     sid = context.session_id
@@ -2431,12 +2566,14 @@ async def _handle_deepresearch(
             if saved:
                 await _update_deepresearch_index(saved, save_topic, report)
                 out["path"] = str(saved)
-                out["artifacts"] = [{
-                    "kind": "file",
-                    "path": str(saved),
-                    "mime": "text/markdown",
-                    "title": Path(saved).name,
-                }]
+                out["artifacts"] = [
+                    {
+                        "kind": "file",
+                        "path": str(saved),
+                        "mime": "text/markdown",
+                        "title": Path(saved).name,
+                    }
+                ]
         except Exception as exc:  # noqa: BLE001
             log.debug("research report save skipped: %s", exc)
 
@@ -2448,6 +2585,7 @@ def _save_report(topic: str, report: ResearchReport) -> Path | None:
     metadata header. Returns the path, or None if the dir is unavailable."""
     try:
         from paths import deepresearch_dir  # type: ignore[import-not-found]
+
         base = deepresearch_dir()
     except Exception:  # noqa: BLE001
         return None
@@ -2462,6 +2600,7 @@ def _save_report(topic: str, report: ResearchReport) -> Path | None:
     ts = int(time.time())
     try:
         from .office_paths import title_slug  # reuse FS-safe slug
+
         slug = title_slug(topic, max_grapheme=40)
     except Exception:  # noqa: BLE001
         slug = "report"
@@ -2538,23 +2677,17 @@ def _research_llm_result_from_provider_response(
     usage = payload.get("usage")
     usage = usage if isinstance(usage, dict) else {}
     input_tokens = _optional_usage_int(
-        usage.get("input_tokens")
-        if "input_tokens" in usage
-        else usage.get("prompt_tokens")
+        usage.get("input_tokens") if "input_tokens" in usage else usage.get("prompt_tokens")
     )
     output_tokens = _optional_usage_int(
-        usage.get("output_tokens")
-        if "output_tokens" in usage
-        else usage.get("completion_tokens")
+        usage.get("output_tokens") if "output_tokens" in usage else usage.get("completion_tokens")
     )
     details = usage.get("prompt_tokens_details")
     if not isinstance(details, dict):
         details = usage.get("input_tokens_details")
     details = details if isinstance(details, dict) else {}
     cache_tokens = _optional_usage_int(
-        details.get("cached_tokens")
-        if "cached_tokens" in details
-        else usage.get("cached_tokens")
+        details.get("cached_tokens") if "cached_tokens" in details else usage.get("cached_tokens")
     )
     usage_complete = input_tokens is not None and output_tokens is not None
     if not usage_complete:
@@ -2685,18 +2818,19 @@ async def _resolve_default_llm_call_v2() -> _LLMCallV2:
 
 
 def register_static_tools(registry) -> None:
-        registry.register(
-            "deepresearch",
-            "web",
-            _RESEARCH_SCHEMA,
-            _handle_deepresearch,
-            context_handler=bind_context_handler(_handle_deepresearch),
-            permission_category="read_file",
-            # deep 档要跑 多引擎降级搜索 + 二级抓取 + 反思补证轮 + LLM 精排,
-            # 慢网区(代理/必应跳转 cn.bing)单轮就逼近 180s。提到 300s(对齐
-            # code/os 重工具),给 deep 档完整跑完的余量,避免半途 tool_timeout
-            # 丢掉已抓到的一手源(真机 UI 测 TC-P2-03 deep 档 180s 超时实证)。
-            timeout_seconds=_DEEPRESEARCH_TOOL_TIMEOUT,
-        )
+    registry.register(
+        "deepresearch",
+        "web",
+        _RESEARCH_SCHEMA,
+        _handle_deepresearch,
+        context_handler=bind_context_handler(_handle_deepresearch),
+        permission_category="read_file",
+        # deep 档要跑 多引擎降级搜索 + 二级抓取 + 反思补证轮 + LLM 精排,
+        # 慢网区(代理/必应跳转 cn.bing)单轮就逼近 180s。提到 300s(对齐
+        # code/os 重工具),给 deep 档完整跑完的余量,避免半途 tool_timeout
+        # 丢掉已抓到的一手源(真机 UI 测 TC-P2-03 deep 档 180s 超时实证)。
+        timeout_seconds=_DEEPRESEARCH_TOOL_TIMEOUT,
+    )
+
 
 research_run = deepresearch  # deprecated alias: use deepresearch

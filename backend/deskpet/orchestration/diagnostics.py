@@ -46,11 +46,25 @@ def _pick(value: object, names: tuple[str, ...]) -> dict[str, Any]:
 
 
 #: 诊断包里预算去向每一行带的字段（不含 ``label``：它取自任务目标原文）。
-DUTY_FIELDS = ("obligation_id", "parent_obligation_id", "depth", "lifecycle", "attempts",
-               "failed_attempts", "settled_tokens", "unknown_usage_attempts")
+DUTY_FIELDS = (
+    "obligation_id",
+    "parent_obligation_id",
+    "depth",
+    "lifecycle",
+    "attempts",
+    "failed_attempts",
+    "settled_tokens",
+    "unknown_usage_attempts",
+)
 #: 每个义务下逐步骤的花费（TaskGraph 补全第六批），同样不含 ``label``。
-STEP_FIELDS = ("task_id", "branches", "attempts", "failed_attempts", "settled_tokens",
-               "unknown_usage_attempts")
+STEP_FIELDS = (
+    "task_id",
+    "branches",
+    "attempts",
+    "failed_attempts",
+    "settled_tokens",
+    "unknown_usage_attempts",
+)
 
 
 def _rows(value: object) -> list[Mapping[str, Any]]:
@@ -71,21 +85,29 @@ def _cost(value: object) -> dict[str, Any]:
     return {
         "success_path": _usage(cost.get("success_path")),
         "exploration": _usage(cost.get("exploration")),
-        "services": {role: _usage(services.get(role)) for role in ("planner", "judge")
-                     if role in services},
+        "services": {
+            role: _usage(services.get(role)) for role in ("planner", "judge") if role in services
+        },
         "unclassified": {
             **_usage(unclassified),
-            "subject_sha256": [_hash(item) for item in unclassified.get("subjects", ())
-                               if isinstance(item, str)],
+            "subject_sha256": [
+                _hash(item) for item in unclassified.get("subjects", ()) if isinstance(item, str)
+            ],
         },
         "total": _usage(cost.get("total")),
         "unknown_usage_rows": _safe_scalar(cost.get("unknown_usage_rows")),
         "ledger": {
-            **_pick(ledger, (
-                "settled_tokens", "usage_of_settled_subjects", "unsettled_usage_tokens",
-            )),
+            **_pick(
+                ledger,
+                (
+                    "settled_tokens",
+                    "usage_of_settled_subjects",
+                    "unsettled_usage_tokens",
+                ),
+            ),
             "mismatched_subject_sha256": [
-                _hash(item) for item in ledger.get("mismatched_subjects", ())
+                _hash(item)
+                for item in ledger.get("mismatched_subjects", ())
                 if isinstance(item, str)
             ],
         },
@@ -101,27 +123,65 @@ def _replay(mission: Mapping[str, Any]) -> dict[str, Any]:
     return {
         "version": _safe_scalar(mission.get("version")),
         "status": _safe_scalar(mission.get("status")),
-        "counts": {str(key): _safe_scalar(value) for key, value in _mapping(mission.get("counts")).items()},
-        "tables": {str(name): {"status": _safe_scalar(_mapping(item).get("status")),
-                               "rows": _safe_scalar(_mapping(item).get("rows")),
-                               "problems": len(list(_mapping(item).get("problems") or []))}
-                   for name, item in sorted(tables.items())},
+        "counts": {
+            str(key): _safe_scalar(value) for key, value in _mapping(mission.get("counts")).items()
+        },
+        "tables": {
+            str(name): {
+                "status": _safe_scalar(_mapping(item).get("status")),
+                "rows": _safe_scalar(_mapping(item).get("rows")),
+                "problems": len(list(_mapping(item).get("problems") or [])),
+            }
+            for name, item in sorted(tables.items())
+        },
     }
 
 
-_TIMELINE_CODES = frozenset({
-    "PASS", "FAIL", "ERROR", "NEEDS_HUMAN", "INCONCLUSIVE", "PENDING", "RUNNING",
-    "COMPLETED", "FAILED", "CANCELLED", "LOST", "TIMED_OUT", "SUBMITTED",
-    "success", "failure", "no_progress", "verified", "rejected", "budget_exhausted",
-    "verification_passed", "insufficient_evidence", "mission_criteria_unmet",
-})
-_TIMELINE_TYPES = frozenset({
-    "AttemptCreated", "AttemptStarted", "ResultSubmitted", "VerificationFailed",
-    "VerificationSuspended", "VerificationLayerRecorded", "AttemptLost", "AttemptTimedOut",
-    "OutcomeRecorded", "TaskFailed",
-    "TaskCancelled", "MissionFailed", "ActionFailed", "ActionOutcomeUnknown",
-    "ApprovalRejected",
-})
+_TIMELINE_CODES = frozenset(
+    {
+        "PASS",
+        "FAIL",
+        "ERROR",
+        "NEEDS_HUMAN",
+        "INCONCLUSIVE",
+        "PENDING",
+        "RUNNING",
+        "COMPLETED",
+        "FAILED",
+        "CANCELLED",
+        "LOST",
+        "TIMED_OUT",
+        "SUBMITTED",
+        "success",
+        "failure",
+        "no_progress",
+        "verified",
+        "rejected",
+        "budget_exhausted",
+        "verification_passed",
+        "insufficient_evidence",
+        "mission_criteria_unmet",
+    }
+)
+_TIMELINE_TYPES = frozenset(
+    {
+        "AttemptCreated",
+        "AttemptStarted",
+        "ResultSubmitted",
+        "VerificationFailed",
+        "VerificationSuspended",
+        "VerificationLayerRecorded",
+        "AttemptLost",
+        "AttemptTimedOut",
+        "OutcomeRecorded",
+        "TaskFailed",
+        "TaskCancelled",
+        "MissionFailed",
+        "ActionFailed",
+        "ActionOutcomeUnknown",
+        "ApprovalRejected",
+    }
+)
 
 
 def _timeline(value: object) -> list[dict[str, Any]]:
@@ -140,12 +200,14 @@ def _timeline(value: object) -> list[dict[str, Any]]:
             if isinstance(payload.get(key), (list, tuple)):
                 detail[f"{key}_count"] = len(payload[key])
         event_type = row.get("type")
-        lines.append({
-            **_pick(row, ("seq", "task_id", "attempt_id")),
-            "type": event_type if event_type in _TIMELINE_TYPES else None,
-            "type_sha256": _hash(event_type) if event_type not in _TIMELINE_TYPES else None,
-            "detail": detail,
-        })
+        lines.append(
+            {
+                **_pick(row, ("seq", "task_id", "attempt_id")),
+                "type": event_type if event_type in _TIMELINE_TYPES else None,
+                "type_sha256": _hash(event_type) if event_type not in _TIMELINE_TYPES else None,
+                "detail": detail,
+            }
+        )
     return lines
 
 
@@ -154,69 +216,124 @@ def _attribution(value: object, snapshot: Mapping[str, Any]) -> dict[str, Any]:
     knowledge = _mapping(source.get("knowledge_path"))
     context_versions = {
         row["id"]: _safe_scalar(row.get("context_version"))
-        for row in _rows(snapshot.get("attempts")) if isinstance(row.get("id"), str)
+        for row in _rows(snapshot.get("attempts"))
+        if isinstance(row.get("id"), str)
     }
     return {
         **_pick(source, ("version", "mission_id", "mission_status", "success_path")),
         # attribution-v2（第 2 批车道 H，T10）：根结论贡献链。行里全是编号与布尔，没有自由文本。
         "goal_chain": [
-            {**_pick(row, ("resolution_id", "goal_task_id", "obligation_id", "is_mission_root")),
-             "child_resolution_ids": [item for item in row.get("child_resolution_ids") or ()
-                                      if isinstance(item, str)],
-             "contributing_acceptances": {
-                 str(occurrence): [item for item in ids if isinstance(item, str)]
-                 for occurrence, ids in _mapping(row.get("contributing_acceptances")).items()
-                 if isinstance(ids, (list, tuple))}}
+            {
+                **_pick(row, ("resolution_id", "goal_task_id", "obligation_id", "is_mission_root")),
+                "child_resolution_ids": [
+                    item for item in row.get("child_resolution_ids") or () if isinstance(item, str)
+                ],
+                "contributing_acceptances": {
+                    str(occurrence): [item for item in ids if isinstance(item, str)]
+                    for occurrence, ids in _mapping(row.get("contributing_acceptances")).items()
+                    if isinstance(ids, (list, tuple))
+                },
+            }
             for row in _rows(source.get("goal_chain"))
         ],
         "final_products": [
-            {**_pick(row, ("content_hash", "artifact_id", "task_id", "result_id", "attempt_id",
-                           "acceptance_id",
-                           "agent_id", "role", "model", "runtime_profile_id", "prompt_version")),
-             "path_sha256": _hash(row.get("path")),
-             "verified_by": [_pick(layer, ("layer", "status", "verifier_version"))
-                             for layer in _rows(row.get("verified_by"))]}
+            {
+                **_pick(
+                    row,
+                    (
+                        "content_hash",
+                        "artifact_id",
+                        "task_id",
+                        "result_id",
+                        "attempt_id",
+                        "acceptance_id",
+                        "agent_id",
+                        "role",
+                        "model",
+                        "runtime_profile_id",
+                        "prompt_version",
+                    ),
+                ),
+                "path_sha256": _hash(row.get("path")),
+                "verified_by": [
+                    _pick(layer, ("layer", "status", "verifier_version"))
+                    for layer in _rows(row.get("verified_by"))
+                ],
+            }
             for row in _rows(source.get("final_products"))
         ],
         "path_tasks": [
-            {**_pick(row, ("task_id", "kind", "accepted_result_id")),
-             "artifacts": [_pick(artifact, ("artifact_id", "in_final_products"))
-                           for artifact in _rows(row.get("artifacts"))]}
+            {
+                **_pick(row, ("task_id", "kind", "accepted_result_id")),
+                "artifacts": [
+                    _pick(artifact, ("artifact_id", "in_final_products"))
+                    for artifact in _rows(row.get("artifacts"))
+                ],
+            }
             for row in _rows(source.get("path_tasks"))
         ],
         "knowledge_path": {
             "knowledge": [item for item in knowledge.get("knowledge", ()) if isinstance(item, str)],
-            "edges": [_pick(edge, ("knowledge", "supersedes", "result", "produced", "uses",
-                                   "version"))
-                      for edge in _rows(knowledge.get("edges"))],
+            "edges": [
+                _pick(edge, ("knowledge", "supersedes", "result", "produced", "uses", "version"))
+                for edge in _rows(knowledge.get("edges"))
+            ],
         },
         "attempts": [
-            {**_pick(row, ("attempt_id", "task_id", "agent_id", "role", "model",
-                           "runtime_profile_id", "prompt_version", "status", "on_success_path",
-                           "exploration_reason", "tool_calls")),
-             "context_version": context_versions.get(row.get("attempt_id")),
-             "work": _usage(row.get("work")), "verification": _usage(row.get("verification"))}
+            {
+                **_pick(
+                    row,
+                    (
+                        "attempt_id",
+                        "task_id",
+                        "agent_id",
+                        "role",
+                        "model",
+                        "runtime_profile_id",
+                        "prompt_version",
+                        "status",
+                        "on_success_path",
+                        "exploration_reason",
+                        "tool_calls",
+                    ),
+                ),
+                "context_version": context_versions.get(row.get("attempt_id")),
+                "work": _usage(row.get("work")),
+                "verification": _usage(row.get("verification")),
+            }
             for row in _rows(source.get("attempts"))
         ],
         "actions": [
-            {**_pick(row, ("receipt_hash",)), "action_key_sha256": _hash(row.get("action_key")),
-             "target_sha256": _hash(row.get("target")),
-             "decision_receipts": [_hash(item) for item in row.get("decision_receipts", ())
-                                   if isinstance(item, str)],
-             "approved_by_sha256": [_hash(item) for item in row.get("approved_by", ())
-                                    if isinstance(item, str)]}
+            {
+                **_pick(row, ("receipt_hash",)),
+                "action_key_sha256": _hash(row.get("action_key")),
+                "target_sha256": _hash(row.get("target")),
+                "decision_receipts": [
+                    _hash(item)
+                    for item in row.get("decision_receipts", ())
+                    if isinstance(item, str)
+                ],
+                "approved_by_sha256": [
+                    _hash(item) for item in row.get("approved_by", ()) if isinstance(item, str)
+                ],
+            }
             for row in _rows(source.get("actions"))
         ],
         "action_reservations": [
-            {**_pick(row, ("settled_tool_calls", "state")),
-             "subject_sha256": _hash(row.get("subject_id"))}
+            {
+                **_pick(row, ("settled_tool_calls", "state")),
+                "subject_sha256": _hash(row.get("subject_id")),
+            }
             for row in _rows(source.get("action_reservations"))
         ],
         "human": _pick(source.get("human"), ("wait_seconds", "decisions", "overrides")),
         "cost": _cost(source.get("cost")),
         "breaks": [
-            {**_pick(row, ("missing", "task_id")), "id_sha256": _hash(row.get("id")),
-             "error_sha256": _hash(row.get("error"))}
+            {
+                **_pick(row, ("missing", "task_id")),
+                "id_sha256": _hash(row.get("id")),
+                "error_sha256": _hash(row.get("error")),
+            }
             for row in _rows(source.get("breaks"))
         ],
     }
@@ -312,8 +429,16 @@ def _versions(manifest: Mapping[str, Any]) -> dict[str, Any]:
             "version_match": _safe_scalar(distributions.get("version_match")),
             "consistent": _safe_scalar(distributions.get("consistent")),
             "runtime_identity": {
-                **_pick(identity, ("mode", "verification", "source_verified",
-                                   "baseline_artifact_verified", "installed_wheel_verified")),
+                **_pick(
+                    identity,
+                    (
+                        "mode",
+                        "verification",
+                        "source_verified",
+                        "baseline_artifact_verified",
+                        "installed_wheel_verified",
+                    ),
+                ),
                 "source": _pick(source, ("commit", "inputs_sha256", "input_count")),
             },
         },
@@ -379,15 +504,27 @@ def build_diagnostics(
         "deployment_outcomes": deployment_outcomes(store),
         "verification": _verification(snapshot),
         "costs": {
-            "usage": _pick(snapshot.get("budget_usage"), (
-                "reserved_tokens", "settled_tokens", "attempts_created", "version",
-                "overrun_calls", "overrun_tokens")),
+            "usage": _pick(
+                snapshot.get("budget_usage"),
+                (
+                    "reserved_tokens",
+                    "settled_tokens",
+                    "attempts_created",
+                    "version",
+                    "overrun_calls",
+                    "overrun_tokens",
+                ),
+            ),
             "attribution": attribution_report.get("cost"),
             # 预算花在哪件事上（义务账，阶段 D/E；一致性补改 H-6）：只给编号、层级与数字，
             # 不带"这件事是什么"的原文——那是任务目标的话
-            "by_duty": [{**_pick(row, DUTY_FIELDS),
-                         "steps": [_pick(step, STEP_FIELDS) for step in _rows(row.get("steps"))]}
-                        for row in _rows(snapshot.get("budget_by_duty"))],
+            "by_duty": [
+                {
+                    **_pick(row, DUTY_FIELDS),
+                    "steps": [_pick(step, STEP_FIELDS) for step in _rows(row.get("steps"))],
+                }
+                for row in _rows(snapshot.get("budget_by_duty"))
+            ],
         },
         "input_references": _input_references(snapshot),
         "versions": _versions(versions),
@@ -404,7 +541,9 @@ def build_diagnostics(
                     "artifact bytes and provider responses",
                     "unrelated Mission history",
                 ],
-                "aggregate_only": ["deployment_outcomes: counts by outcome and a token total, no Mission content"],
+                "aggregate_only": [
+                    "deployment_outcomes: counts by outcome and a token total, no Mission content"
+                ],
             },
         },
     }
@@ -429,19 +568,29 @@ def taskgraph_history(store: Any, reads: Any, mission_id: str, scratch: Path) ->
 
     rows = store.connection.execute(
         "SELECT revision,source_kind,manifest_hash,parent_revision FROM taskgraph_revision_records "
-        "WHERE mission_id=? ORDER BY revision", (mission_id,)).fetchall()
+        "WHERE mission_id=? ORDER BY revision",
+        (mission_id,),
+    ).fetchall()
     if not rows:
         return {"status": "NOT_ENABLED"}
     latest = int(rows[-1][0])
     scratch.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=scratch) as directory:
         try:
-            built = replay_taskgraph(store, mission_id=mission_id, through_revision=latest,
-                                     target_path=Path(directory) / "replay.sqlite")
-            replay = {"status": built.status, "runtime_status": built.runtime_status,
-                      "through_revision": built.through_revision, "revision_count": built.revision_count,
-                      "coverage_start_revision": built.coverage_start_revision,
-                      "coverage_start_kind": built.coverage_start_kind}
+            built = replay_taskgraph(
+                store,
+                mission_id=mission_id,
+                through_revision=latest,
+                target_path=Path(directory) / "replay.sqlite",
+            )
+            replay = {
+                "status": built.status,
+                "runtime_status": built.runtime_status,
+                "through_revision": built.through_revision,
+                "revision_count": built.revision_count,
+                "coverage_start_revision": built.coverage_start_revision,
+                "coverage_start_kind": built.coverage_start_kind,
+            }
         except ContractError as error:
             replay = {"status": "REPLAY_FAILED", "error": str(error)[:300]}
     diffs = []
@@ -449,16 +598,33 @@ def taskgraph_history(store: Any, reads: Any, mission_id: str, scratch: Path) ->
     for before, after in pairs:
         try:
             diff = reads.diff(mission_id, before, after)
-            diffs.append({"from_revision": before, "to_revision": after, "changes": [
-                _pick(change, ("kind", "identity", "before_hash", "after_hash")) for change in diff.get("changes", ())]})
+            diffs.append(
+                {
+                    "from_revision": before,
+                    "to_revision": after,
+                    "changes": [
+                        _pick(change, ("kind", "identity", "before_hash", "after_hash"))
+                        for change in diff.get("changes", ())
+                    ],
+                }
+            )
         except Exception as error:  # noqa: BLE001 - one unreadable pair is reported, not fatal
-            diffs.append({"from_revision": before, "to_revision": after, "error": type(error).__name__})
+            diffs.append(
+                {"from_revision": before, "to_revision": after, "error": type(error).__name__}
+            )
     return {
         "status": "CHECKED",
         "replay": replay,
-        "revisions": [{"revision": int(row[0]), "source_kind": str(row[1]), "manifest_hash": str(row[2]),
-                       "parent_revision": row[3], "label": "历史，不可执行" if int(row[0]) != latest else "当前"}
-                      for row in rows],
+        "revisions": [
+            {
+                "revision": int(row[0]),
+                "source_kind": str(row[1]),
+                "manifest_hash": str(row[2]),
+                "parent_revision": row[3],
+                "label": "历史，不可执行" if int(row[0]) != latest else "当前",
+            }
+            for row in rows
+        ],
         "diffs": diffs,
         "omitted_diffs": max(0, len(rows) - 1 - len(pairs)),
     }
@@ -470,7 +636,9 @@ def export_support(directory: Path, report: Mapping[str, Any]) -> dict[str, Any]
     mission_id = report.get("mission_id")
     if not isinstance(mission_id, str) or not mission_id:
         raise ValueError("report mission_id is required")
-    serialized = json.dumps(report, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n"
+    serialized = (
+        json.dumps(report, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n"
+    )
     body = serialized.encode("utf-8")
     if len(body) > MAX_SUPPORT_BYTES:
         raise ValueError("support report exceeds 2 MiB")
@@ -491,4 +659,10 @@ def export_support(directory: Path, report: Mapping[str, Any]) -> dict[str, Any]
     }
 
 
-__all__ = ("DIAGNOSTICS_VERSION", "MAX_SUPPORT_BYTES", "build_diagnostics", "export_support", "taskgraph_history")
+__all__ = (
+    "DIAGNOSTICS_VERSION",
+    "MAX_SUPPORT_BYTES",
+    "build_diagnostics",
+    "export_support",
+    "taskgraph_history",
+)

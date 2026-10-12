@@ -26,13 +26,17 @@ class _Api:
     def __init__(self) -> None:
         self.calls: list[tuple[Any, ...]] = []
 
-    def execution_snapshot(self, mission_id: str, *, cursor: str | None = None, limit: int = 100) -> dict[str, Any]:
+    def execution_snapshot(
+        self, mission_id: str, *, cursor: str | None = None, limit: int = 100
+    ) -> dict[str, Any]:
         self.calls.append(("snapshot", mission_id, cursor, limit))
         if cursor == "stale":
             _fail("SNAPSHOT_CHANGED", "执行过程在翻页期间有变化，请重新读取第一页", retry="REQUERY")
         return {"mission_id": mission_id, "complete": True}
 
-    def execution_detail(self, mission_id: str, node_id: str, *, through_journal_seq: int | None = None) -> dict[str, Any]:
+    def execution_detail(
+        self, mission_id: str, node_id: str, *, through_journal_seq: int | None = None
+    ) -> dict[str, Any]:
         self.calls.append(("detail", mission_id, node_id, through_journal_seq))
         return {"mission_id": mission_id, "node": {"node_id": node_id}}
 
@@ -41,9 +45,14 @@ def _service(api: _Api, owned: set[str] = frozenset({M})) -> Any:  # type: ignor
     def mission(mission_id: str) -> None:
         if mission_id not in owned:
             raise OrchestrationRequestError("not_found", "任务不存在")
+
     orchestrator = SimpleNamespace(taskgraph_read_api=lambda **_: api)
-    return SimpleNamespace(_require=lambda: SimpleNamespace(_mission=mission), _orchestrator=orchestrator,
-                           tenant_id="t", _principal="p")
+    return SimpleNamespace(
+        _require=lambda: SimpleNamespace(_mission=mission),
+        _orchestrator=orchestrator,
+        tenant_id="t",
+        _principal="p",
+    )
 
 
 def test_execution_reads_forward_to_the_sdk_read_api():
@@ -51,17 +60,28 @@ def test_execution_reads_forward_to_the_sdk_read_api():
     service = _service(api)
     assert read_taskgraph(service, "execution_snapshot", {"mission_id": M})["complete"] is True
     read_taskgraph(service, "execution_snapshot", {"mission_id": M, "cursor": "c1", "limit": 50})
-    read_taskgraph(service, "execution_detail", {"mission_id": M, "node_id": "attempt:a", "through_journal_seq": 7})
-    assert api.calls == [("snapshot", M, None, 100), ("snapshot", M, "c1", 50), ("detail", M, "attempt:a", 7)]
+    read_taskgraph(
+        service,
+        "execution_detail",
+        {"mission_id": M, "node_id": "attempt:a", "through_journal_seq": 7},
+    )
+    assert api.calls == [
+        ("snapshot", M, None, 100),
+        ("snapshot", M, "c1", 50),
+        ("detail", M, "attempt:a", 7),
+    ]
 
 
-@pytest.mark.parametrize("operation,body", [
-    ("execution_snapshot", {"mission_id": M, "tenant_id": "other"}),
-    ("execution_snapshot", {"mission_id": M, "limit": -1}),
-    ("execution_snapshot", {"mission_id": M, "cursor": ""}),
-    ("execution_detail", {"mission_id": M}),
-    ("execution_detail", {"mission_id": M, "node_id": "n", "through_journal_seq": "7"}),
-])
+@pytest.mark.parametrize(
+    "operation,body",
+    [
+        ("execution_snapshot", {"mission_id": M, "tenant_id": "other"}),
+        ("execution_snapshot", {"mission_id": M, "limit": -1}),
+        ("execution_snapshot", {"mission_id": M, "cursor": ""}),
+        ("execution_detail", {"mission_id": M}),
+        ("execution_detail", {"mission_id": M, "node_id": "n", "through_journal_seq": "7"}),
+    ],
+)
 def test_bad_requests_never_reach_the_sdk(operation, body):
     api = _Api()
     with pytest.raises(OrchestrationRequestError) as caught:
@@ -76,11 +96,18 @@ def test_ownership_first_and_sdk_refusals_keep_their_code():
     assert foreign.value.code == "not_found" and api.calls == []
     with pytest.raises(TaskGraphRequestError) as stale:
         read_taskgraph(_service(api), "execution_snapshot", {"mission_id": M, "cursor": "stale"})
-    assert stale.value.wire["code"] == "SNAPSHOT_CHANGED" and stale.value.wire["retry_kind"] == "REQUERY"
+    assert (
+        stale.value.wire["code"] == "SNAPSHOT_CHANGED"
+        and stale.value.wire["retry_kind"] == "REQUERY"
+    )
 
 
 def test_the_host_no_longer_reads_sdk_tables_for_the_graph():
     root = Path(__file__).parents[2] / "deskpet" / "orchestration"
     assert not (root / "live_graph.py").exists()
     from deskpet.orchestration import handlers
-    assert "mission_live_graph" not in handlers._ACTIONS and "mission_planning_decisions" not in handlers._ACTIONS
+
+    assert (
+        "mission_live_graph" not in handlers._ACTIONS
+        and "mission_planning_decisions" not in handlers._ACTIONS
+    )

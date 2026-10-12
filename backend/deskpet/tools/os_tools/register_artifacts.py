@@ -8,6 +8,7 @@ creates files.  It validates every requested path against the trusted Run
 workspace and returns the standard ``artifacts`` envelope consumed by the
 registry receipt path and the frontend ArtifactCard projection.
 """
+
 from __future__ import annotations
 
 import hashlib

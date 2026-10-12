@@ -13,6 +13,7 @@ AgentLoop。
 运行：
     cd backend && python -m scripts.e2e_stage_a_ws
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -108,9 +109,7 @@ async def main() -> int:
                     )
                     _print("  -> sent allow")
                 elif t == "tool_use_event":
-                    tool_calls_seen.append(
-                        (payload.get("kind"), payload.get("tool_name"))
-                    )
+                    tool_calls_seen.append((payload.get("kind"), payload.get("tool_name")))
                     _print(
                         f"tool_use_event kind={payload.get('kind')}",
                         f"tool={payload.get('tool_name')}",

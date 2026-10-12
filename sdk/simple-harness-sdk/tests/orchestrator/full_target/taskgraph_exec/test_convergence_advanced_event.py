@@ -8,6 +8,7 @@
 ``test_convergence_wake_terminal_mission.waiting_convergence``），不再手插作业行、不再用放行一切的
 权限替身推进作业；作业由主循环自己推进到完成。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -34,7 +35,11 @@ def _quick(monkeypatch):
 
 
 def _advanced(store, mission_id):
-    return [event for event in store.list_events(mission_id) if event.type == "TaskGraphConvergenceAdvanced"]
+    return [
+        event
+        for event in store.list_events(mission_id)
+        if event.type == "TaskGraphConvergenceAdvanced"
+    ]
 
 
 def test_each_real_state_change_writes_one_advanced_event(tmp_path):
@@ -62,7 +67,11 @@ def test_each_real_state_change_writes_one_advanced_event(tmp_path):
             runner = asyncio.create_task(drive())
             try:
                 async with asyncio.timeout(60):
-                    while str(store.get_mission(mission_id).status.value) not in {"COMPLETED", "FAILED", "CANCELLED"}:
+                    while str(store.get_mission(mission_id).status.value) not in {
+                        "COMPLETED",
+                        "FAILED",
+                        "CANCELLED",
+                    }:
                         if runner.done():
                             runner.result()
                         await asyncio.sleep(0.05)
@@ -73,28 +82,49 @@ def test_each_real_state_change_writes_one_advanced_event(tmp_path):
                     await runner
             assert str(store.get_mission(mission_id).status.value) == "COMPLETED"
             job = store.connection.execute(
-                "SELECT state,row_version FROM taskgraph_convergence_jobs WHERE job_id=?", (job_id,)).fetchone()
-            events = [event for event in _advanced(store, mission_id) if event.payload["job_id"] == job_id]
+                "SELECT state,row_version FROM taskgraph_convergence_jobs WHERE job_id=?", (job_id,)
+            ).fetchone()
+            events = [
+                event for event in _advanced(store, mission_id) if event.payload["job_id"] == job_id
+            ]
             assert events, "the job's state changes wrote no event"
             for event in events:
                 payload = event.payload
-                assert event.id == derive_id("tg-convergence-advanced", job_id, str(payload["row_version"]))
+                assert event.id == derive_id(
+                    "tg-convergence-advanced", job_id, str(payload["row_version"])
+                )
                 assert event.actor_type == "system"
-                assert set(payload) == {"schema_version", "job_id", "decision_id", "from_state", "to_state",
-                                        "row_version"}
-                assert payload["schema_version"] == 1 and payload["from_state"] != payload["to_state"]
+                assert set(payload) == {
+                    "schema_version",
+                    "job_id",
+                    "decision_id",
+                    "from_state",
+                    "to_state",
+                    "row_version",
+                }
+                assert (
+                    payload["schema_version"] == 1 and payload["from_state"] != payload["to_state"]
+                )
             # one event per real change, chained end to end, ending where the job is now
-            assert [e.payload["from_state"] for e in events[1:]] == [e.payload["to_state"] for e in events[:-1]]
+            assert [e.payload["from_state"] for e in events[1:]] == [
+                e.payload["to_state"] for e in events[:-1]
+            ]
             assert len({e.payload["row_version"] for e in events}) == len(events)
             assert events[-1].payload["to_state"] == job["state"]
             assert len({e.trace_id for e in events}) == 1
             assert [(e.payload["from_state"], e.payload["to_state"]) for e in events] == [
-                ("FENCED", "WAITING"), ("WAITING", "READY"), ("READY", "APPLIED")]
+                ("FENCED", "WAITING"),
+                ("WAITING", "READY"),
+                ("READY", "APPLIED"),
+            ]
             # while it waited the job was re-checked without a state change: those re-checks
             # write nothing at all (阶段 G 收尾：只改版本号的空改动是静默改动), so the row
             # versions of the real changes are consecutive
             assert [e.payload["row_version"] for e in events] == list(
-                range(events[0].payload["row_version"], events[0].payload["row_version"] + len(events)))
+                range(
+                    events[0].payload["row_version"], events[0].payload["row_version"] + len(events)
+                )
+            )
 
     asyncio.run(case())
 

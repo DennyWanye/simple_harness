@@ -48,15 +48,11 @@ def test_representative_auxiliary_purposes_are_explicit() -> None:
     }
     for relative, purpose in expected.items():
         source = (BACKEND / relative).read_text(encoding="utf-8")
-        assert re.search(
-            rf'provider_purpose_scope\(\s*"{re.escape(purpose)}"', source
-        )
+        assert re.search(rf'provider_purpose_scope\(\s*"{re.escape(purpose)}"', source)
 
 
 def test_provider_dispatch_bottom_seams_auto_create_attempts() -> None:
-    provider = (BACKEND / "providers/openai_compatible.py").read_text(
-        encoding="utf-8"
-    )
+    provider = (BACKEND / "providers/openai_compatible.py").read_text(encoding="utf-8")
     registry = (BACKEND / "llm/registry.py").read_text(encoding="utf-8")
     router = (BACKEND / "router/hybrid_router.py").read_text(encoding="utf-8")
     assert provider.count("auto_context_attempt_call(") >= 2

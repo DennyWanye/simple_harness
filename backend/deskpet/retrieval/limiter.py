@@ -44,14 +44,11 @@ class ProviderLimiter:
         self.max_wait_s = max(0.001, float(max_wait_s))
         self._clock = clock
         self._slots = {
-            str(provider): asyncio.Semaphore(self.max_concurrency)
-            for provider in providers
+            str(provider): asyncio.Semaphore(self.max_concurrency) for provider in providers
         }
 
     def slot_for(self, provider: str) -> asyncio.Semaphore:
-        return self._slots.setdefault(
-            str(provider), asyncio.Semaphore(self.max_concurrency)
-        )
+        return self._slots.setdefault(str(provider), asyncio.Semaphore(self.max_concurrency))
 
     async def acquire(
         self,
@@ -76,6 +73,7 @@ class ProviderLimiter:
             await slot.acquire()
             return ProviderSlotLease(str(provider), slot)
         waiter = asyncio.create_task(slot.acquire())
+
         async def abandon() -> None:
             if waiter.done() and not waiter.cancelled():
                 try:

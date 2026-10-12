@@ -26,14 +26,35 @@ def launcher(monkeypatch, tmp_path):
 
 
 def test_cli_is_deepseek_only(launcher, tmp_path):
-    required = ["--binary", "binary", "--carrier-config", "config",
-                "--carrier-sha256", "a" * 64, "--dev-url", "http://localhost:15173",
-                "--python", "python", "--sdk-attestation", "sdk", "--tokenizer", "tokenizer",
-                "--resource-root", "resource", "--model-root", "model", "--run-dir", "run"]
+    required = [
+        "--binary",
+        "binary",
+        "--carrier-config",
+        "config",
+        "--carrier-sha256",
+        "a" * 64,
+        "--dev-url",
+        "http://localhost:15173",
+        "--python",
+        "python",
+        "--sdk-attestation",
+        "sdk",
+        "--tokenizer",
+        "tokenizer",
+        "--resource-root",
+        "resource",
+        "--model-root",
+        "model",
+        "--run-dir",
+        "run",
+    ]
     args = launcher.parse_args(required)
     assert not hasattr(args, "provider") and not hasattr(args, "local_profile")
-    for removed in (["--provider", "local"], ["--provider", "deepseek"],
-                    ["--local-profile", "profile"]):
+    for removed in (
+        ["--provider", "local"],
+        ["--provider", "deepseek"],
+        ["--local-profile", "profile"],
+    ):
         with pytest.raises(SystemExit):
             launcher.parse_args(required + removed)
     for name in ("read_local_credentials", "local_profile_identity", "LOCAL_CONTEXT"):

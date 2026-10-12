@@ -294,8 +294,16 @@ async def write_closure_receipt_tx(
         "INSERT INTO task_scope_closure_receipts(receipt_id,task_scope_id,sdk_run_id,host_run_id,"
         "closure_watermark,outcome,plan_id,reason_code,attempt_id,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
         (
-            receipt_id, task_scope_id, sdk_run_id, host_run_id, int(closure_watermark), outcome,
-            plan_id, reason_code, attempt_id, float(now),
+            receipt_id,
+            task_scope_id,
+            sdk_run_id,
+            host_run_id,
+            int(closure_watermark),
+            outcome,
+            plan_id,
+            reason_code,
+            attempt_id,
+            float(now),
         ),
     )
     from deskpet.task_scope.projection_sources import append_projection_source_tx
@@ -303,8 +311,16 @@ async def write_closure_receipt_tx(
     # STATUS projection must show `semantic_closure_pending`; bump the source.
     await append_projection_source_tx(db, task_scope_id, now=float(now))
     return ClosureReceipt(
-        receipt_id, task_scope_id, sdk_run_id, host_run_id, int(closure_watermark), outcome,
-        plan_id, reason_code, attempt_id, float(now),
+        receipt_id,
+        task_scope_id,
+        sdk_run_id,
+        host_run_id,
+        int(closure_watermark),
+        outcome,
+        plan_id,
+        reason_code,
+        attempt_id,
+        float(now),
     )
 
 
@@ -363,7 +379,9 @@ async def closure_receipt_for_plan_tx(
     return None if row is None else _receipt_from_row(row)
 
 
-async def pending_receipts_tx(db: aiosqlite.Connection, task_scope_id: str) -> tuple[ClosureReceipt, ...]:
+async def pending_receipts_tx(
+    db: aiosqlite.Connection, task_scope_id: str
+) -> tuple[ClosureReceipt, ...]:
     """Open ``pending`` receipts: watermark above the last closing receipt."""
 
     watermark = await last_closing_watermark_tx(db, task_scope_id)
@@ -377,12 +395,16 @@ async def pending_receipts_tx(db: aiosqlite.Connection, task_scope_id: str) -> t
     return tuple(_receipt_from_row(row) for row in rows)
 
 
-async def pending_receipts(store: CanonicalTaskScopeStore, task_scope_id: str) -> tuple[ClosureReceipt, ...]:
+async def pending_receipts(
+    store: CanonicalTaskScopeStore, task_scope_id: str
+) -> tuple[ClosureReceipt, ...]:
     async with store._connection() as db:
         return await pending_receipts_tx(db, task_scope_id)
 
 
-async def receipts_for_run_tx(db: aiosqlite.Connection, sdk_run_id: str) -> tuple[ClosureReceipt, ...]:
+async def receipts_for_run_tx(
+    db: aiosqlite.Connection, sdk_run_id: str
+) -> tuple[ClosureReceipt, ...]:
     cursor = await db.execute(
         "SELECT * FROM task_scope_closure_receipts WHERE sdk_run_id=? ORDER BY created_at, receipt_id",
         (sdk_run_id,),
@@ -513,7 +535,9 @@ async def _scope_observation_tx(
     }
 
 
-def _event_summary(item: MaterialEvent, payload: Mapping[str, Any], links: list[str]) -> dict[str, Any]:
+def _event_summary(
+    item: MaterialEvent, payload: Mapping[str, Any], links: list[str]
+) -> dict[str, Any]:
     summary: dict[str, Any] = {
         "event_kind": item.event_kind,
         "event_sequence": item.event_sequence,
@@ -522,13 +546,23 @@ def _event_summary(item: MaterialEvent, payload: Mapping[str, Any], links: list[
     }
     public = payload.get("public_payload") if item.event_kind.startswith("harness.") else payload
     if isinstance(public, Mapping):
-        for key in ("tool_name", "outcome", "effect_state", "error_code", "targets", "command_head", "exit_code"):
+        for key in (
+            "tool_name",
+            "outcome",
+            "effect_state",
+            "error_code",
+            "targets",
+            "command_head",
+            "exit_code",
+        ):
             if key in public:
                 summary[key] = public[key]
         if public.get("status") == "abandoned":
             summary["outcome"] = "unknown"
             summary["unknown_outcome"] = True
-            summary["note"] = "write operation with unknown result (effect not settled at Run terminal)"
+            summary["note"] = (
+                "write operation with unknown result (effect not settled at Run terminal)"
+            )
     return summary
 
 
@@ -643,15 +677,22 @@ class ClosureFallback:
                 return ClosureSettlement("clean")
             if coverage.pending_by_run:
                 own = await receipts_for_run_tx(db, sdk_run_id)
-                return ClosureSettlement("pending", own[-1].reason_code if own else None, own[-1] if own else None)
+                return ClosureSettlement(
+                    "pending", own[-1].reason_code if own else None, own[-1] if own else None
+                )
             dirty = coverage.dirty
             # Non-success settlement needs only an honest pending debt, never
             # a source-bearing model observation (sources may be withdrawn).
-            observation = (await _scope_observation_tx(db, scope, dirty)
-                           if state_value == "COMPLETED" else None)
+            observation = (
+                await _scope_observation_tx(db, scope, dirty)
+                if state_value == "COMPLETED"
+                else None
+            )
         watermark = dirty.event_watermark
 
-        async def pending(reason: str, *, attempt_id: str | None = None, extension: Any = None) -> ClosureSettlement:
+        async def pending(
+            reason: str, *, attempt_id: str | None = None, extension: Any = None
+        ) -> ClosureSettlement:
             receipt = await write_closure_receipt(
                 self._db_path,
                 task_scope_id=scope,
@@ -681,7 +722,9 @@ class ClosureFallback:
         plan_id = closure_plan_id(request_hash)
         members = tuple(
             (subject, sdk_run_id, ref)
-            for ref in dict.fromkeys(ref for event in observation["material_events"] for ref in event["evidence_refs"])
+            for ref in dict.fromkeys(
+                ref for event in observation["material_events"] for ref in event["evidence_refs"]
+            )
         )
         observation_body = {**observation, "staged_final_answer": answer}
 
@@ -701,27 +744,44 @@ class ClosureFallback:
                     Message(role=MessageRole.SYSTEM, content=CLOSURE_SYSTEM_INSTRUCTION),
                     Message(
                         role=MessageRole.USER,
-                        content="[closure observation]\n" + json.dumps(observation_body, ensure_ascii=False, indent=1),
+                        content="[closure observation]\n"
+                        + json.dumps(observation_body, ensure_ascii=False, indent=1),
                     ),
                 ),
-                tools=(ProviderToolSpec(CLOSURE_TOOL_NAME, TASK_SCOPE_UPDATE_DESCRIPTION, TASK_SCOPE_UPDATE_SCHEMA),),
+                tools=(
+                    ProviderToolSpec(
+                        CLOSURE_TOOL_NAME, TASK_SCOPE_UPDATE_DESCRIPTION, TASK_SCOPE_UPDATE_SCHEMA
+                    ),
+                ),
                 max_output_tokens=1200,
             )
 
         async def prepare_attempt(row):
             from types import SimpleNamespace
+
             prepared = await self._request_authority.prepare(
-                host_run_id=host_run_id, sdk_run_id=sdk_run_id, subject=subject,
-                owner_id=owner_id, generation=generation, scope=scope,
-                observation=observation, answer=answer, binding_record=facts.binding_record)
-            actual_members = tuple((subject, s["run_id"], s["evidence_id"])
-                                   for s in prepared["host"]["sources"])
+                host_run_id=host_run_id,
+                sdk_run_id=sdk_run_id,
+                subject=subject,
+                owner_id=owner_id,
+                generation=generation,
+                scope=scope,
+                observation=observation,
+                answer=answer,
+                binding_record=facts.binding_record,
+            )
+            actual_members = tuple(
+                (subject, s["run_id"], s["evidence_id"]) for s in prepared["host"]["sources"]
+            )
             request = build_request(SimpleNamespace(**row))
+
             async def observer(attempt, db):
                 await self._request_authority.bind_attempt(prepared, attempt, request, db=db)
+
             return actual_members, observer
 
         from deskpet.execution.closure_request_guard import ClosureSourceIncomplete
+
         try:
             outcome = await self._invoker.invoke(
                 purpose="closure",
@@ -731,41 +791,66 @@ class ClosureFallback:
                 task_scope_id=scope,
                 closure_watermark=watermark,
                 request_hash=request_hash,
-                evidence_set_key=evidence_set_key([event.event_id for event in dirty.material_events]),
+                evidence_set_key=evidence_set_key(
+                    [event.event_id for event in dirty.material_events]
+                ),
                 members=members,
                 binding_record=facts.binding_record,
                 build_request=build_request,
                 plan_id=plan_id,
                 deadline_seconds=self._deadline_seconds,
-                **({"prepare_attempt": prepare_attempt} if self._request_authority is not None else {}),
+                **(
+                    {"prepare_attempt": prepare_attempt}
+                    if self._request_authority is not None
+                    else {}
+                ),
             )
         except ClosureSourceIncomplete:
             return await pending("closure_source_incomplete")
         provider_calls = int(outcome.provider_calls)
         attempt_id = outcome.attempt_id
         if outcome.status == "lease_lost":
-            return ClosureSettlement("lease_lost", outcome.reason_code, None, provider_calls, attempt_id)
+            return ClosureSettlement(
+                "lease_lost", outcome.reason_code, None, provider_calls, attempt_id
+            )
         if outcome.status == "reused":
             return await self._derive_from_decision(
-                scope=scope, sdk_run_id=sdk_run_id, host_run_id=host_run_id, plan_id=plan_id,
-                attempt_id=attempt_id, watermark=watermark, provider_calls=provider_calls,
+                scope=scope,
+                sdk_run_id=sdk_run_id,
+                host_run_id=host_run_id,
+                plan_id=plan_id,
+                attempt_id=attempt_id,
+                watermark=watermark,
+                provider_calls=provider_calls,
             )
         if outcome.status != "succeeded":
-            return await pending(outcome.reason_code or f"closure_attempt_{outcome.status}", attempt_id=attempt_id)
+            return await pending(
+                outcome.reason_code or f"closure_attempt_{outcome.status}", attempt_id=attempt_id
+            )
 
         response = outcome.response
         assert response is not None and attempt_id is not None
 
         async def settle_success(db: aiosqlite.Connection) -> None:
-            await self._invoker.settle_succeeded_tx(db, attempt_id, response=response, plan_id=plan_id)
+            await self._invoker.settle_succeeded_tx(
+                db, attempt_id, response=response, plan_id=plan_id
+            )
             if self._request_authority is not None:
                 from deskpet.task_scope.mutation_disclosure import record_closure_result_tx
-                await record_closure_result_tx(db, db_path=self._db_path,
-                    attempt_id=attempt_id, plan_id=plan_id, response=response)
+
+                await record_closure_result_tx(
+                    db,
+                    db_path=self._db_path,
+                    attempt_id=attempt_id,
+                    plan_id=plan_id,
+                    response=response,
+                )
 
         arguments = _closure_arguments(response)
         if arguments is None:
-            return await pending("closure_model_declined", attempt_id=attempt_id, extension=settle_success)
+            return await pending(
+                "closure_model_declined", attempt_id=attempt_id, extension=settle_success
+            )
         from deskpet.sdk_adapters.task_scope_mutation import ClosureRejected
 
         try:
@@ -785,7 +870,9 @@ class ClosureFallback:
         except ClosureRejected as rejected:
             return await pending(rejected.code, attempt_id=attempt_id, extension=settle_success)
         receipt = applied.receipt
-        return ClosureSettlement(receipt.outcome, FALLBACK_CLOSURE_REASON_CODE, receipt, provider_calls, attempt_id)
+        return ClosureSettlement(
+            receipt.outcome, FALLBACK_CLOSURE_REASON_CODE, receipt, provider_calls, attempt_id
+        )
 
     async def _derive_from_decision(
         self,
@@ -813,15 +900,26 @@ class ClosureFallback:
                     "WHERE d.plan_id=? AND d.task_scope_id=?",
                     (plan_id, scope),
                 )
-                existing = await closure_receipt_for_plan_tx(db, task_scope_id=scope, plan_id=plan_id)
+                existing = await closure_receipt_for_plan_tx(
+                    db, task_scope_id=scope, plan_id=plan_id
+                )
                 if existing is not None:
                     await db.commit()
-                    return ClosureSettlement(existing.outcome, existing.reason_code, existing, provider_calls, attempt_id)
+                    return ClosureSettlement(
+                        existing.outcome, existing.reason_code, existing, provider_calls, attempt_id
+                    )
                 if decision is None:
                     receipt = await write_closure_receipt_tx(
-                        db, task_scope_id=scope, sdk_run_id=sdk_run_id, host_run_id=host_run_id,
-                        closure_watermark=watermark, outcome="pending", plan_id=None,
-                        reason_code="closure_attempt_unapplied", attempt_id=attempt_id, now=self._clock(),
+                        db,
+                        task_scope_id=scope,
+                        sdk_run_id=sdk_run_id,
+                        host_run_id=host_run_id,
+                        closure_watermark=watermark,
+                        outcome="pending",
+                        plan_id=None,
+                        reason_code="closure_attempt_unapplied",
+                        attempt_id=attempt_id,
+                        now=self._clock(),
                     )
                     status = "pending"
                     reason = "closure_attempt_unapplied"
@@ -830,9 +928,16 @@ class ClosureFallback:
                     reason = FALLBACK_CLOSURE_REASON_CODE
                     # F-1: the decision's own revision watermark, never the live head.
                     receipt = await write_closure_receipt_tx(
-                        db, task_scope_id=scope, sdk_run_id=sdk_run_id, host_run_id=host_run_id,
-                        closure_watermark=int(decision["event_watermark"]), outcome=status, plan_id=plan_id,
-                        reason_code=reason, attempt_id=attempt_id, now=self._clock(),
+                        db,
+                        task_scope_id=scope,
+                        sdk_run_id=sdk_run_id,
+                        host_run_id=host_run_id,
+                        closure_watermark=int(decision["event_watermark"]),
+                        outcome=status,
+                        plan_id=plan_id,
+                        reason_code=reason,
+                        attempt_id=attempt_id,
+                        now=self._clock(),
                     )
                 await db.commit()
             except Exception:
@@ -846,7 +951,11 @@ def _closure_arguments(response: Any) -> dict[str, Any] | None:
 
     from simple_harness import thaw_json
 
-    calls = [call for call in tuple(getattr(response, "tool_calls", ()) or ()) if call.name == CLOSURE_TOOL_NAME]
+    calls = [
+        call
+        for call in tuple(getattr(response, "tool_calls", ()) or ())
+        if call.name == CLOSURE_TOOL_NAME
+    ]
     if len(calls) != 1 or len(tuple(response.tool_calls)) != 1:
         return None
     arguments = thaw_json(calls[0].arguments)
@@ -906,10 +1015,16 @@ async def force_close_pending(
         await assert_human_memory_ingress_open_tx(db)
         try:
             committed = await program.append_evidence_tx(
-                db, envelope, receipt, primary_conversation_id=primary.primary_conversation_id, committed_at=clock()
+                db,
+                envelope,
+                receipt,
+                primary_conversation_id=primary.primary_conversation_id,
+                committed_at=clock(),
             )
             head = await store._fetchone(
-                db, "SELECT current_revision FROM task_scope_heads WHERE task_scope_id=?", (task_scope_id,)
+                db,
+                "SELECT current_revision FROM task_scope_heads WHERE task_scope_id=?",
+                (task_scope_id,),
             )
             await db.commit()
         except Exception:
@@ -934,7 +1049,9 @@ async def force_close_pending(
     captured: dict[str, ClosureReceipt] = {}
 
     async def commit_hook(hook_db: aiosqlite.Connection, _receipt: Any, _replayed: bool) -> None:
-        existing = await closure_receipt_for_plan_tx(hook_db, task_scope_id=task_scope_id, plan_id=plan.plan_id)
+        existing = await closure_receipt_for_plan_tx(
+            hook_db, task_scope_id=task_scope_id, plan_id=plan.plan_id
+        )
         if existing is not None:
             captured["receipt"] = existing
             return

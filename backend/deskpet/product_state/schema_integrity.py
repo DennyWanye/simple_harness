@@ -26,16 +26,12 @@ def semantic_schema(connection: sqlite3.Connection) -> dict[str, object]:
             escaped = str(name).replace("'", "''")
             tables[str(name)] = {
                 "columns": _rows(connection, f"PRAGMA table_xinfo('{escaped}')"),
-                "foreign_keys": _rows(
-                    connection, f"PRAGMA foreign_key_list('{escaped}')"
-                ),
+                "foreign_keys": _rows(connection, f"PRAGMA foreign_key_list('{escaped}')"),
                 "indexes": _rows(connection, f"PRAGMA index_list('{escaped}')"),
             }
         elif object_type == "index":
             escaped = str(name).replace("'", "''")
-            indexes[str(name)] = _rows(
-                connection, f"PRAGMA index_xinfo('{escaped}')"
-            )
+            indexes[str(name)] = _rows(connection, f"PRAGMA index_xinfo('{escaped}')")
     return {"objects": objects, "tables": tables, "indexes": indexes}
 
 

@@ -9,6 +9,7 @@ Covers:
 - health_check against mocked /models endpoints
 - Two integration tests (skip if endpoints offline / no api key)
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -67,10 +68,7 @@ async def test_stream_attempt_deadline_resets_after_each_model_event():
 
     provider._stream_one_attempt = progresses_longer_than_one_deadline
 
-    events = [
-        event
-        async for event in provider._stream_one_attempt_with_deadline({})
-    ]
+    events = [event async for event in provider._stream_one_attempt_with_deadline({})]
 
     assert [event["type"] for event in events] == [
         "reasoning",
@@ -221,7 +219,7 @@ async def test_chat_stream_skips_empty_and_missing_content_deltas():
             {
                 "choices": [{"index": 0, "delta": {"role": "assistant"}}],
             },
-            _delta(""),        # empty string — skip
+            _delta(""),  # empty string — skip
             _delta("abc"),
             "[DONE]",
         ]
@@ -437,9 +435,12 @@ async def test_chat_stream_captures_usage():
         model="m",
     )
     provider._test_transport = httpx.MockTransport(handler)
-    tokens = [t async for t in provider.chat_stream(
-        [{"role": "user", "content": "q"}],
-    )]
+    tokens = [
+        t
+        async for t in provider.chat_stream(
+            [{"role": "user", "content": "q"}],
+        )
+    ]
     assert tokens == ["hi"]
     assert provider.last_usage == {
         "prompt_tokens": 10,
@@ -513,8 +514,7 @@ async def test_integration_ollama_v1_roundtrip():
     model_ids = {
         str(row.get("id") or row.get("name") or row.get("model"))
         for row in model_rows
-        if isinstance(row, dict)
-        and (row.get("id") or row.get("name") or row.get("model"))
+        if isinstance(row, dict) and (row.get("id") or row.get("name") or row.get("model"))
     }
     if provider.model not in model_ids:
         pytest.skip(

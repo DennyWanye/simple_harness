@@ -11,6 +11,7 @@ Covers:
   * load_config keeps absolute db_path verbatim
   * billing.db_path follows memory.db_path's directory
 """
+
 from __future__ import annotations
 
 import os
@@ -39,6 +40,7 @@ def isolated_dirs(monkeypatch, tmp_path):
 
 # ---- resolve_config_path --------------------------------------------
 
+
 def test_resolve_config_path_env_override(isolated_dirs, monkeypatch, tmp_path):
     override = tmp_path / "custom-config.toml"
     override.write_text("# empty\n", encoding="utf-8")
@@ -63,9 +65,11 @@ def test_resolve_config_path_prefers_user_data(isolated_dirs, monkeypatch):
     _tmp, user_data = isolated_dirs
     user_data.mkdir(parents=True, exist_ok=True)
     user_cfg = user_data / "config.toml"
-    user_cfg.write_text("[memory]\ndb_path = \"\"\n", encoding="utf-8")
+    user_cfg.write_text('[memory]\ndb_path = ""\n', encoding="utf-8")
     # Provide a bundle default too; the user copy must still win.
-    monkeypatch.setattr(config_module, "_bundle_default_config_path", lambda: Path("/some/bundle/config.toml"))
+    monkeypatch.setattr(
+        config_module, "_bundle_default_config_path", lambda: Path("/some/bundle/config.toml")
+    )
     assert config_module.resolve_config_path() == user_cfg
 
 
@@ -76,7 +80,7 @@ def test_resolve_config_path_does_not_ambiently_recover_foreign_provider(
     _tmp, user_data = isolated_dirs
     user_data.mkdir(parents=True, exist_ok=True)
     user_cfg = user_data / "config.toml"
-    user_cfg.write_text("[memory]\ndb_path = \"\"\n", encoding="utf-8")
+    user_cfg.write_text('[memory]\ndb_path = ""\n', encoding="utf-8")
 
     def fail_if_called(_path):
         raise AssertionError("ambient endpoint recovery must not run")
@@ -88,6 +92,7 @@ def test_resolve_config_path_does_not_ambiently_recover_foreign_provider(
 
 
 # ---- seed_user_config_if_missing ------------------------------------
+
 
 def test_seed_copies_bundle_when_user_missing(isolated_dirs, monkeypatch, tmp_path):
     _tmp, user_data = isolated_dirs
@@ -122,6 +127,7 @@ def test_seed_returns_none_when_bundle_missing(isolated_dirs, monkeypatch):
 
 # ---- load_config db_path resolution ---------------------------------
 
+
 def test_load_config_empty_db_path_maps_to_user_data(isolated_dirs, tmp_path):
     _tmp, user_data = isolated_dirs
     cfg = tmp_path / "cfg.toml"
@@ -134,6 +140,7 @@ def test_load_config_empty_db_path_maps_to_user_data(isolated_dirs, tmp_path):
 
 # ---- orphaned LLM endpoint recovery ---------------------------------
 
+
 def _write_config(path: Path, body: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(body, encoding="utf-8")
@@ -143,7 +150,7 @@ def test_recover_merges_enabled_endpoints_from_appdata(tmp_path, monkeypatch, ca
     canonical = tmp_path / "portable" / "config.toml"
     _write_config(
         canonical,
-        "# keep me\n[memory]\ndb_path = \"./data/memory.db\"\n",
+        '# keep me\n[memory]\ndb_path = "./data/memory.db"\n',
     )
     appdata = tmp_path / "appdata" / "deskpet"
     _write_config(
@@ -169,9 +176,9 @@ enabled = true
 
     assert changed is True
     recovered = canonical.read_text(encoding="utf-8")
-    assert "[memory]\ndb_path = \"./data/memory.db\"" in recovered
+    assert '[memory]\ndb_path = "./data/memory.db"' in recovered
     assert 'id = "relay-cloud"' in recovered
-    assert 'enabled = true' in recovered
+    assert "enabled = true" in recovered
     assert canonical.with_suffix(".pre-recover-bak").is_file()
     assert "endpoints_recovered_from" in caplog.text
 
@@ -211,7 +218,7 @@ enabled = true
 
 def test_recover_idempotent(tmp_path, monkeypatch):
     canonical = tmp_path / "portable" / "config.toml"
-    _write_config(canonical, "[memory]\ndb_path = \"\"\n")
+    _write_config(canonical, '[memory]\ndb_path = ""\n')
     appdata = tmp_path / "appdata" / "deskpet"
     _write_config(
         appdata / "config.toml",
@@ -236,7 +243,7 @@ enabled = true
 
 def test_recover_ignores_all_disabled_source(tmp_path, monkeypatch):
     canonical = tmp_path / "portable" / "config.toml"
-    _write_config(canonical, "[memory]\ndb_path = \"\"\n")
+    _write_config(canonical, '[memory]\ndb_path = ""\n')
     appdata = tmp_path / "appdata" / "deskpet"
     _write_config(
         appdata / "config.toml",
@@ -259,7 +266,7 @@ enabled = false
 
 def test_recover_never_raises_on_garbage(tmp_path, monkeypatch):
     canonical = tmp_path / "portable" / "config.toml"
-    _write_config(canonical, "[memory]\ndb_path = \"\"\n")
+    _write_config(canonical, '[memory]\ndb_path = ""\n')
     appdata = tmp_path / "appdata" / "deskpet"
     _write_config(appdata / "config.toml", "[[llm.endpoints]\nnot toml")
     monkeypatch.setattr(
@@ -273,12 +280,7 @@ def test_recover_never_raises_on_garbage(tmp_path, monkeypatch):
 
 def test_recover_preserves_other_sections_verbatim(tmp_path, monkeypatch):
     canonical = tmp_path / "portable" / "config.toml"
-    memory_section = (
-        "# memory comment\n"
-        "[memory]\n"
-        "# path comment\n"
-        "db_path = \"./data/memory.db\"\n"
-    )
+    memory_section = '# memory comment\n[memory]\n# path comment\ndb_path = "./data/memory.db"\n'
     _write_config(canonical, memory_section)
     appdata = tmp_path / "appdata" / "deskpet"
     _write_config(
@@ -350,9 +352,7 @@ def test_recover_triggers_when_canonical_has_malformed_enabled(tmp_path, monkeyp
         '[[llm.endpoints]]\nid = "relay-cloud"\n'
         'base_url = "https://relay.example.com/v1"\nenabled = true\n',
     )
-    monkeypatch.setattr(
-        config_module.platformdirs, "user_data_dir", lambda *a, **k: str(appdata)
-    )
+    monkeypatch.setattr(config_module.platformdirs, "user_data_dir", lambda *a, **k: str(appdata))
     assert config_module._recover_orphaned_endpoints(canonical) is True
     assert 'id = "relay-cloud"' in canonical.read_text(encoding="utf-8")
 
@@ -375,9 +375,7 @@ def test_recover_skips_bad_source_then_recovers_from_next(tmp_path, monkeypatch)
     # 候选源1 = AppData：坏 TOML（应被跳过，不抛）
     appdata = tmp_path / "appdata" / "deskpet"
     _write_config(appdata / "config.toml", "[[llm.endpoints]\nnot toml")
-    monkeypatch.setattr(
-        config_module.platformdirs, "user_data_dir", lambda *a, **k: str(appdata)
-    )
+    monkeypatch.setattr(config_module.platformdirs, "user_data_dir", lambda *a, **k: str(appdata))
     # 候选源2 = install/backend/userdata：有效 endpoints
     _write_config(
         install / "backend" / "userdata" / "config.toml",

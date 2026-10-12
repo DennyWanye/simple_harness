@@ -279,9 +279,7 @@ class WorkflowRetentionManager:
         # intentionally retained for v1-v5 historical recovery.
         v6_components = await self._cleanup_v6_components(now, dry_run=dry_run)
         control_candidates = await self.research_repository.expired_control_candidates(now=now)
-        control = await self._cleanup_research_controls(
-            control_candidates, dry_run=dry_run
-        )
+        control = await self._cleanup_research_controls(control_candidates, dry_run=dry_run)
         reachability = await self.research_repository.lineage_reachability(now=now)
         plan = await self._build_research_aware_plan(now, reachability)
         research_plan = await self._build_research_cleanup_plan(now, plan, reachability)
@@ -290,7 +288,10 @@ class WorkflowRetentionManager:
             protected=tuple(
                 [
                     *(f"run:{item}" for item in sorted(reachability.protected_run_ids)),
-                    *(f"snapshot:{item}" for item in sorted(reachability.protected_snapshot_hashes)),
+                    *(
+                        f"snapshot:{item}"
+                        for item in sorted(reachability.protected_snapshot_hashes)
+                    ),
                     *(f"pin:{item}" for item in sorted(reachability.protected_pin_ids)),
                 ]
             ),
@@ -332,9 +333,7 @@ class WorkflowRetentionManager:
             warnings=tuple(sorted({*legacy.warnings, *component.warnings})),
         )
 
-    async def _cleanup_v6_components(
-        self, now: float, *, dry_run: bool
-    ) -> RetentionStageResult:
+    async def _cleanup_v6_components(self, now: float, *, dry_run: bool) -> RetentionStageResult:
         """Collect dead v6 continuation components in one SQLite transaction.
 
         The single-head row is the durable edge.  Reachability is deliberately
@@ -439,10 +438,7 @@ class WorkflowRetentionManager:
             return {"corrupt_component"}
         terminal_cutoff = now - self.policy.terminal_seconds
         for row in runs:
-            if (
-                str(row["workflow_name"]) != "deep_research"
-                or str(row["workflow_version"]) != "v6"
-            ):
+            if str(row["workflow_name"]) != "deep_research" or str(row["workflow_version"]) != "v6":
                 reasons.add("identity_mismatch")
             status = str(row["status"])
             if status not in {item.value for item in TERMINAL_RUN_STATUSES}:
@@ -586,9 +582,7 @@ class WorkflowRetentionManager:
                 )
                 if snapshot_value.get("snapshot_hash") != str(head["source_snapshot_hash"]):
                     return False
-                declared_closure = {
-                    str(ref)[7:] for ref in snapshot_value.get("closure_refs", ())
-                }
+                declared_closure = {str(ref)[7:] for ref in snapshot_value.get("closure_refs", ())}
                 if not declared_closure <= {str(row["sha256"]) for row in refs}:
                     return False
             except Exception:
@@ -867,12 +861,8 @@ class WorkflowRetentionManager:
                 f"DELETE FROM workflow_node_effects WHERE node_execution_id IN ({_placeholders(node_ids)})",
                 node_ids,
             )
-        await db.execute(
-            f"DELETE FROM workflow_effects WHERE run_id IN ({placeholders})", run_ids
-        )
-        await db.execute(
-            f"DELETE FROM workflow_nodes WHERE run_id IN ({placeholders})", run_ids
-        )
+        await db.execute(f"DELETE FROM workflow_effects WHERE run_id IN ({placeholders})", run_ids)
+        await db.execute(f"DELETE FROM workflow_nodes WHERE run_id IN ({placeholders})", run_ids)
         await self._fault("retention.v6.after_checkpoint_data")
 
         # head -> pins -> descendant-to-root lineage
@@ -985,9 +975,7 @@ class WorkflowRetentionManager:
                 evaluation_ids,
             )
         else:
-            await db.execute(
-                f"DELETE FROM eval_results WHERE run_id IN ({placeholders})", run_ids
-            )
+            await db.execute(f"DELETE FROM eval_results WHERE run_id IN ({placeholders})", run_ids)
         if trace_ids:
             await db.execute(
                 f"DELETE FROM trace_runs WHERE trace_id IN ({_placeholders(trace_ids)})",
@@ -1151,7 +1139,7 @@ class WorkflowRetentionManager:
                 retained_evaluation = await (
                     await db.execute(
                         f"""SELECT 1 FROM evaluations WHERE run_id=?
-                        {f'AND evaluation_id NOT IN ({_placeholders(expired_evaluations)})' if expired_evaluations else ''}
+                        {f"AND evaluation_id NOT IN ({_placeholders(expired_evaluations)})" if expired_evaluations else ""}
                         LIMIT 1""",
                         (run_id, *expired_evaluations),
                     )
@@ -1215,9 +1203,7 @@ class WorkflowRetentionManager:
         """Protect retained children and every ancestor before deleting run-owned data."""
 
         protected = set(reachability.protected_run_ids)
-        provisional = await self._build_plan(
-            now, extra_protected_run_ids=frozenset(protected)
-        )
+        provisional = await self._build_plan(now, extra_protected_run_ids=frozenset(protected))
         final = set(provisional.final_run_ids)
         db = await self._connect()
         try:
@@ -1251,9 +1237,7 @@ class WorkflowRetentionManager:
         # A recent terminal child is still a retention root even though the
         # repository's live-control reachability correctly treats it terminal.
         protected.update(
-            str(row["run_id"])
-            for row in lineage_rows
-            if str(row["run_id"]) not in final
+            str(row["run_id"]) for row in lineage_rows if str(row["run_id"]) not in final
         )
         protected.update(
             str(row["run_id"])
@@ -1270,9 +1254,7 @@ class WorkflowRetentionManager:
                 if parent not in protected:
                     protected.add(parent)
                     changed = True
-        return await self._build_plan(
-            now, extra_protected_run_ids=frozenset(protected)
-        )
+        return await self._build_plan(now, extra_protected_run_ids=frozenset(protected))
 
     async def _build_research_cleanup_plan(
         self,
@@ -1311,9 +1293,7 @@ class WorkflowRetentionManager:
             await db.close()
 
         lineage_candidates = {
-            str(row["operation_id"])
-            for row in lineage_rows
-            if str(row["run_id"]) in final
+            str(row["operation_id"]) for row in lineage_rows if str(row["run_id"]) in final
         }
         by_operation = {str(row["operation_id"]): row for row in lineage_rows}
 
@@ -1330,9 +1310,7 @@ class WorkflowRetentionManager:
                 current = str(parent)
             return result
 
-        lineage_order = tuple(
-            sorted(lineage_candidates, key=lambda item: (-depth(item), item))
-        )
+        lineage_order = tuple(sorted(lineage_candidates, key=lambda item: (-depth(item), item)))
         pin_candidates = {
             str(row["pin_id"])
             for row in pin_rows
@@ -1423,7 +1401,11 @@ class WorkflowRetentionManager:
             run = await (
                 await db.execute("SELECT status FROM workflow_runs WHERE run_id=?", (run_id,))
             ).fetchone()
-            if run is None or run_id in cleanup_run_ids or str(run["status"]) in TERMINAL_RUN_STATUSES:
+            if (
+                run is None
+                or run_id in cleanup_run_ids
+                or str(run["status"]) in TERMINAL_RUN_STATUSES
+            ):
                 dangling.add((owner_kind, owner_id))
         return tuple(sorted(dangling))
 
@@ -1464,7 +1446,10 @@ class WorkflowRetentionManager:
         self, plan: _CleanupPlan, *, dry_run: bool
     ) -> RetentionStageResult:
         items = tuple(
-            [*(f"delivery:{item}" for item in plan.delivery_ids), *(f"event:{item}" for item in plan.event_ids)]
+            [
+                *(f"delivery:{item}" for item in plan.delivery_ids),
+                *(f"event:{item}" for item in plan.event_ids),
+            ]
         )
         applied = 0
         if items and not dry_run:
@@ -1824,9 +1809,7 @@ class WorkflowRetentionManager:
         owner_groups["checkpoint"] = checkpoint_owner_ids
         owner_groups["workflow_checkpoint"] = checkpoint_owner_ids
         for owner_kind, owner_id in plan.dangling_ref_owners:
-            owner_groups[owner_kind] = tuple(
-                sorted({*owner_groups.get(owner_kind, ()), owner_id})
-            )
+            owner_groups[owner_kind] = tuple(sorted({*owner_groups.get(owner_kind, ()), owner_id}))
         return owner_groups
 
     async def _matching_ref_items(
@@ -1845,9 +1828,7 @@ class WorkflowRetentionManager:
                         (owner_kind, *owner_ids),
                     )
                 ).fetchall()
-                items.extend(
-                    f"ref:{owner_kind}:{row['owner_id']}:{row['sha256']}" for row in rows
-                )
+                items.extend(f"ref:{owner_kind}:{row['owner_id']}:{row['sha256']}" for row in rows)
             return tuple(sorted(items))
         finally:
             await db.close()
@@ -2021,9 +2002,7 @@ class WorkflowRetentionManager:
         except ValueError:
             return "[outside-blob-root]"
 
-    async def _reconcile_reservations(
-        self, now: float, *, dry_run: bool
-    ) -> RetentionStageResult:
+    async def _reconcile_reservations(self, now: float, *, dry_run: bool) -> RetentionStageResult:
         db = await self._connect()
         try:
             keys = await _column_values(

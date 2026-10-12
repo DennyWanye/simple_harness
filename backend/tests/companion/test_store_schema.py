@@ -25,10 +25,7 @@ def test_new_and_repeat_initialization_install_the_complete_schema(tmp_path) -> 
             )
         }
         assert REQUIRED_TABLES <= names
-        assert (
-            db.execute("PRAGMA user_version").fetchone()[0]
-            == COMPANION_SCHEMA_VERSION
-        )
+        assert db.execute("PRAGMA user_version").fetchone()[0] == COMPANION_SCHEMA_VERSION
         assert db.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
         state = db.execute(
             "SELECT phase,generation,roll_forward_required FROM growth_authority_state"
@@ -68,9 +65,7 @@ def test_v1_upgrade_preserves_growth_dependencies_and_adds_memory_scope(
 
     CompanionStore(path)
     with sqlite3.connect(path) as db:
-        assert db.execute("PRAGMA user_version").fetchone() == (
-            COMPANION_SCHEMA_VERSION,
-        )
+        assert db.execute("PRAGMA user_version").fetchone() == (COMPANION_SCHEMA_VERSION,)
         assert db.execute(
             """SELECT dependency_kind,dependency_id
                FROM run_growth_dependency_items"""
@@ -108,15 +103,11 @@ def test_v6_upgrade_rewrites_companion_action_lease_label_to_main(
         db.create_function(
             "deskpet_sha256",
             1,
-            lambda value: hashlib.sha256(
-                str(value).encode("utf-8")
-            ).hexdigest(),
+            lambda value: hashlib.sha256(str(value).encode("utf-8")).hexdigest(),
             deterministic=True,
         )
         for version in range(1, 7):
-            db.executescript(
-                MIGRATION_RESOURCES[version].read_text(encoding="utf-8")
-            )
+            db.executescript(MIGRATION_RESOURCES[version].read_text(encoding="utf-8"))
         db.execute("PRAGMA user_version=6")
         lease_sql = """INSERT INTO profile_control_leases(
              device_scope,connection_id,requested_window_label,requested_scope,
@@ -126,27 +117,83 @@ def test_v6_upgrade_rewrites_companion_action_lease_label_to_main(
            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)"""
         db.execute(
             lease_sql,
-            ("dev", "conn-action", "message-panel", "companion_action",
-             "message-panel", "companion_action", 1, "hash-a", 1,
-             "proc", "t0", "t9", None, "active", "test"),
+            (
+                "dev",
+                "conn-action",
+                "message-panel",
+                "companion_action",
+                "message-panel",
+                "companion_action",
+                1,
+                "hash-a",
+                1,
+                "proc",
+                "t0",
+                "t9",
+                None,
+                "active",
+                "test",
+            ),
         )
         db.execute(
             lease_sql,
-            ("dev", "conn-bind", "main", "identity_bind",
-             "main", "identity_bind", 2, "hash-b", 1,
-             "proc", "t0", "t9", None, "active", "test"),
+            (
+                "dev",
+                "conn-bind",
+                "main",
+                "identity_bind",
+                "main",
+                "identity_bind",
+                2,
+                "hash-b",
+                1,
+                "proc",
+                "t0",
+                "t9",
+                None,
+                "active",
+                "test",
+            ),
         )
         db.execute(
             lease_sql,
-            ("dev", "conn-challenged", "message-panel", "companion_action",
-             None, None, 3, "hash-c", 0,
-             "proc", "t0", "t9", None, "challenged", "test"),
+            (
+                "dev",
+                "conn-challenged",
+                "message-panel",
+                "companion_action",
+                None,
+                None,
+                3,
+                "hash-c",
+                0,
+                "proc",
+                "t0",
+                "t9",
+                None,
+                "challenged",
+                "test",
+            ),
         )
         db.execute(
             lease_sql,
-            ("dev", "conn-revoked", "message-panel", "companion_action",
-             "message-panel", "companion_action", 4, "hash-d", 1,
-             "proc", "t0", "t1", "t1", "revoked", "test"),
+            (
+                "dev",
+                "conn-revoked",
+                "message-panel",
+                "companion_action",
+                "message-panel",
+                "companion_action",
+                4,
+                "hash-d",
+                1,
+                "proc",
+                "t0",
+                "t1",
+                "t1",
+                "revoked",
+                "test",
+            ),
         )
         db.execute(
             """INSERT INTO profile_control_commands(
@@ -163,9 +210,7 @@ def test_v6_upgrade_rewrites_companion_action_lease_label_to_main(
     CompanionStore(path)
 
     with sqlite3.connect(path) as db:
-        assert db.execute("PRAGMA user_version").fetchone() == (
-            COMPANION_SCHEMA_VERSION,
-        )
+        assert db.execute("PRAGMA user_version").fetchone() == (COMPANION_SCHEMA_VERSION,)
         rows = {
             str(row[0]): (row[1], row[2], row[3])
             for row in db.execute(
@@ -260,12 +305,35 @@ def test_schema_does_not_duplicate_capability_or_tool_authority(tmp_path) -> Non
 
 
 @pytest.mark.parametrize(
-    ("mode", "source_owner", "source_scope", "source_version", "source_manifest", "source_gen",
-     "target_owner", "target_scope", "expected_absent", "expected_gen", "reservation"),
+    (
+        "mode",
+        "source_owner",
+        "source_scope",
+        "source_version",
+        "source_manifest",
+        "source_gen",
+        "target_owner",
+        "target_scope",
+        "expected_absent",
+        "expected_gen",
+        "reservation",
+    ),
     [
         ("genesis", "someone", None, None, None, None, "companion:p:1", "user", 1, 0, 1),
         ("update", "other", "user", "1", "m", 1, "companion:p:1", "user", 0, 1, None),
-        ("builtin_override", "builtin", "builtin", "1", "m", 1, "companion:p:1", "user", 0, 0, None),
+        (
+            "builtin_override",
+            "builtin",
+            "builtin",
+            "1",
+            "m",
+            1,
+            "companion:p:1",
+            "user",
+            0,
+            0,
+            None,
+        ),
     ],
 )
 def test_candidate_mode_check_rejects_mixed_source_target_fences(

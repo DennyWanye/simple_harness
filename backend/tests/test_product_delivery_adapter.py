@@ -1,4 +1,5 @@
 """Unit tests for ProductDeliveryAdapter."""
+
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -42,7 +43,7 @@ def delivery_adapter(mock_presenter, mock_adapter, mock_context, mock_state):
         presenter=mock_presenter,
         adapter=mock_adapter,
         context=mock_context,
-        state=mock_state
+        state=mock_state,
     )
 
 
@@ -63,9 +64,9 @@ async def test_handle_event_basic(delivery_adapter, mock_presenter):
             "correlation": {},
             "payload": {},
             "error": None,
-            "artifact_refs": []
+            "artifact_refs": [],
         },
-        "created_at": 1234567890.0
+        "created_at": 1234567890.0,
     }
     idempotency_key = "test_run:event:1"
 
@@ -91,9 +92,9 @@ async def test_handle_event_idempotency(delivery_adapter, mock_presenter):
             "correlation": {},
             "payload": {},
             "error": None,
-            "artifact_refs": []
+            "artifact_refs": [],
         },
-        "created_at": 1234567890.0
+        "created_at": 1234567890.0,
     }
     idempotency_key = "test_run:event:1"
 
@@ -122,9 +123,9 @@ async def test_handle_event_different_keys(delivery_adapter, mock_presenter):
             "correlation": {},
             "payload": {},
             "error": None,
-            "artifact_refs": []
+            "artifact_refs": [],
         },
-        "created_at": 1234567890.0
+        "created_at": 1234567890.0,
     }
     payload2 = {
         "event_id": "evt_002",
@@ -140,9 +141,9 @@ async def test_handle_event_different_keys(delivery_adapter, mock_presenter):
             "correlation": {},
             "payload": {"tool": "search"},
             "error": None,
-            "artifact_refs": []
+            "artifact_refs": [],
         },
-        "created_at": 1234567891.0
+        "created_at": 1234567891.0,
     }
 
     await delivery_adapter.handle_event(payload1, "test_run:event:1")
@@ -152,7 +153,9 @@ async def test_handle_event_different_keys(delivery_adapter, mock_presenter):
 
 
 @pytest.mark.asyncio
-async def test_handle_event_passes_context(delivery_adapter, mock_presenter, mock_adapter, mock_context, mock_state):
+async def test_handle_event_passes_context(
+    delivery_adapter, mock_presenter, mock_adapter, mock_context, mock_state
+):
     """Test that handle_event passes all required parameters to presenter."""
     payload = {
         "event_id": "evt_001",
@@ -168,9 +171,9 @@ async def test_handle_event_passes_context(delivery_adapter, mock_presenter, moc
             "correlation": {},
             "payload": {},
             "error": None,
-            "artifact_refs": []
+            "artifact_refs": [],
         },
-        "created_at": 1234567890.0
+        "created_at": 1234567890.0,
     }
     idempotency_key = "test_run:event:1"
 
@@ -210,9 +213,7 @@ async def test_projects_sdk_tool_call_and_result(delivery_adapter, mock_presente
 
 
 @pytest.mark.asyncio
-async def test_tool_call_projection_thaws_nested_sdk_arguments(
-    delivery_adapter, mock_presenter
-):
+async def test_tool_call_projection_thaws_nested_sdk_arguments(delivery_adapter, mock_presenter):
     import json
 
     from agent.agent_loop import ToolCallEvent
@@ -282,9 +283,7 @@ async def test_projects_public_narration_before_tool_with_stable_iteration(
 
 
 @pytest.mark.asyncio
-async def test_empty_public_narration_projects_safe_tool_fallback(
-    delivery_adapter, mock_presenter
-):
+async def test_empty_public_narration_projects_safe_tool_fallback(delivery_adapter, mock_presenter):
     from agent.agent_loop import AssistantMessageEvent, ToolCallEvent
     from simple_harness import CallId
     from simple_harness.tools import ToolCall
@@ -394,9 +393,7 @@ async def test_public_narration_creates_exclude_context_durable_summary():
     assert summary["projection_kind"] == "workflow_progress"
     assert summary["context_visibility"] == "exclude"
     frames = [item.args[0] for item in websocket.send_json.await_args_list]
-    reasoning_frames = [
-        frame for frame in frames if frame["type"] == "chat_v2_reasoning_summary"
-    ]
+    reasoning_frames = [frame for frame in frames if frame["type"] == "chat_v2_reasoning_summary"]
     assert reasoning_frames[0]["payload"]["text"] == "I will read the file."
     assert "reasoning_content" not in reasoning_frames[0]["payload"]
 
@@ -450,12 +447,8 @@ async def test_web_outcomes_round_trip_real_session_db_with_idempotent_public_pr
         context=context,
         state=PresentationState(),
     )
-    failed_call = ToolCall(
-        CallId("call-web-failed"), "web_search", {"query": "private"}
-    )
-    succeeded_call = ToolCall(
-        CallId("call-web-succeeded"), "web_search", {"query": "private"}
-    )
+    failed_call = ToolCall(CallId("call-web-failed"), "web_search", {"query": "private"})
+    succeeded_call = ToolCall(CallId("call-web-succeeded"), "web_search", {"query": "private"})
 
     await delivery.present_tool_call(failed_call)
     await delivery.present_tool_result(
@@ -476,9 +469,7 @@ async def test_web_outcomes_round_trip_real_session_db_with_idempotent_public_pr
     frames = [item.args[0] for item in websocket.send_json.await_args_list]
     requested = [f["payload"] for f in frames if f["type"] == "tool_call"]
     returned = [f["payload"] for f in frames if f["type"] == "tool_result"]
-    assert [p["call_id"] for p in requested] == [
-        "call-web-failed", "call-web-succeeded"
-    ]
+    assert [p["call_id"] for p in requested] == ["call-web-failed", "call-web-succeeded"]
     assert [p["call_id"] for p in returned] == [p["call_id"] for p in requested]
     assert all(p["run_id"] == context.run_id for p in requested + returned)
 
@@ -586,9 +577,9 @@ async def test_finish_cleanup(delivery_adapter):
             "correlation": {},
             "payload": {},
             "error": None,
-            "artifact_refs": []
+            "artifact_refs": [],
         },
-        "created_at": 1234567890.0
+        "created_at": 1234567890.0,
     }
     payload2 = {
         "event_id": "e2",
@@ -604,9 +595,9 @@ async def test_finish_cleanup(delivery_adapter):
             "correlation": {},
             "payload": {},
             "error": None,
-            "artifact_refs": []
+            "artifact_refs": [],
         },
-        "created_at": 1234567891.0
+        "created_at": 1234567891.0,
     }
 
     await delivery_adapter.handle_event(payload1, "key1")

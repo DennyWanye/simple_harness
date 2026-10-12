@@ -124,10 +124,7 @@ def skill_scope_candidates(
                 _find_scope_payloads(nested, depth + 1)
 
     for message in messages:
-        if (
-            message.get("role") != "tool"
-            or str(message.get("name") or "") != "skill_invoke"
-        ):
+        if message.get("role") != "tool" or str(message.get("name") or "") != "skill_invoke":
             continue
         content = message.get("content")
         if isinstance(content, Mapping):
@@ -201,9 +198,7 @@ def remount_skills(
 
     expected_hashes: dict[str, str] = {}
     page_in_store = getattr(prepared_context, "page_in_store", None)
-    prepared_scope = str(
-        getattr(getattr(prepared_context, "tool_set", None), "scope_id", "") or ""
-    )
+    prepared_scope = str(getattr(getattr(prepared_context, "tool_set", None), "scope_id", "") or "")
     for ref in tuple(getattr(prepared_context, "page_in_refs", ()) or ()):
         if getattr(ref, "kind", "") != "skill":
             continue
@@ -253,10 +248,7 @@ def remount_skills(
             continue
 
         expected_hash = expected_hashes.get(name)
-        if (
-            expected_hash
-            and hashlib.sha256(body.encode("utf-8")).hexdigest() != expected_hash
-        ):
+        if expected_hash and hashlib.sha256(body.encode("utf-8")).hexdigest() != expected_hash:
             logger.warning("skill_remount.stale sid=%s name=%s", session_id, name)
             continue
 
@@ -290,11 +282,7 @@ def remount_skills(
     ]
     insert_at = (
         max(
-            (
-                index
-                for index, message in enumerate(cleaned)
-                if message.get("role") == "system"
-            ),
+            (index for index, message in enumerate(cleaned) if message.get("role") == "system"),
             default=-1,
         )
         + 1

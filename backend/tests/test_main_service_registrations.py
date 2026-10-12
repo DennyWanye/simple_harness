@@ -92,14 +92,19 @@ def _loop_bound_names(tree: ast.AST) -> dict[str, list[str]]:
                 bound.setdefault(node.target.id, []).extend(values)
             continue
         # for key, value in <字面量 dict>.items()
-        if not (isinstance(node.target, ast.Tuple) and node.target.elts
-                and isinstance(node.target.elts[0], ast.Name)):
+        if not (
+            isinstance(node.target, ast.Tuple)
+            and node.target.elts
+            and isinstance(node.target.elts[0], ast.Name)
+        ):
             continue
         iterator = node.iter
-        if not (isinstance(iterator, ast.Call)
-                and isinstance(iterator.func, ast.Attribute)
-                and iterator.func.attr == "items"
-                and isinstance(iterator.func.value, ast.Name)):
+        if not (
+            isinstance(iterator, ast.Call)
+            and isinstance(iterator.func, ast.Attribute)
+            and iterator.func.attr == "items"
+            and isinstance(iterator.func.value, ast.Name)
+        ):
             continue
         values = bundles.get(iterator.func.value.id)
         if values is not None:
@@ -187,11 +192,13 @@ def test_registration_entrypoint_name_has_not_drifted() -> None:
     """context.py 若改了注册方法名/新增 set()，上面的 AST 匹配会静默失效。"""
     tree = ast.parse(CONTEXT_PY.read_text(encoding="utf-8"), filename=str(CONTEXT_PY))
     service_context = next(
-        node for node in ast.walk(tree)
+        node
+        for node in ast.walk(tree)
         if isinstance(node, ast.ClassDef) and node.name == "ServiceContext"
     )
     public_methods = {
-        node.name for node in service_context.body
+        node.name
+        for node in service_context.body
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
         and not node.name.startswith("_")
     }

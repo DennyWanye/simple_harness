@@ -81,12 +81,11 @@ def test_conditional_fanout_requires_all_three_conditions(
 
 def test_exact_fact_never_fans_out_even_with_budget_and_groups() -> None:
     decision = _decision(groups=4, lanes=4)
-    assert conditional_fanout_reason(
-        decision, intent_type="official_exact_fact"
-    ) == "exact_fact_fanout_forbidden"
-    assert not conditional_fanout_enabled(
-        decision, intent_type="official_exact_fact"
+    assert (
+        conditional_fanout_reason(decision, intent_type="official_exact_fact")
+        == "exact_fact_fanout_forbidden"
     )
+    assert not conditional_fanout_enabled(decision, intent_type="official_exact_fact")
 
 
 def test_route_groups_are_derived_from_frozen_work_dimensions() -> None:

@@ -85,8 +85,7 @@ def _product_database(tmp_path: Path) -> ProductStateDatabase:
     database = ProductStateDatabase(tmp_path / "sdk-product-state.db")
     database.initialize()
     database.connection.execute(
-        "UPDATE authorization_policy_state SET generation=?,updated_at=? "
-        "WHERE singleton_id=1",
+        "UPDATE authorization_policy_state SET generation=?,updated_at=? WHERE singleton_id=1",
         (POLICY_GENERATION, 1.0),
     )
     database.connection.commit()

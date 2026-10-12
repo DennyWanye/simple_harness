@@ -6,6 +6,7 @@ parks the Run in ``waiting`` behind a provider wait-blocker).  The Host answers
 through ``ProviderReconciliationPort`` with a retry-once policy and the foreground
 loop re-observes instead of exiting on ``BOUND_WAITING``.
 """
+
 import asyncio
 import logging
 import sqlite3
@@ -64,13 +65,19 @@ def host_head(state):
 
 
 def reconciliations(state):
-    return [r["observed_state"] for r in rows(
-        state, "SELECT observed_state FROM foreground_execution_reconciliations ORDER BY recorded_at, rowid")]
+    return [
+        r["observed_state"]
+        for r in rows(
+            state,
+            "SELECT observed_state FROM foreground_execution_reconciliations ORDER BY recorded_at, rowid",
+        )
+    ]
 
 
 def sdk_run_events(db):
     """(run.* kinds in order, provider transition (handoff_attempt, error_code) in order)."""
     import json
+
     kinds, attempts = [], []
     for r in rows(db, "SELECT kind, payload_json FROM run_events ORDER BY rowid"):
         if r["kind"].startswith("run."):
@@ -78,7 +85,9 @@ def sdk_run_events(db):
         elif r["kind"] == "audit.transition.v1":
             payload = json.loads(r["payload_json"])
             if payload.get("kind") == "provider":
-                attempts.append((int(payload["handoff_attempt"]), payload["details"].get("error_code")))
+                attempts.append(
+                    (int(payload["handoff_attempt"]), payload["details"].get("error_code"))
+                )
     return kinds, attempts
 
 
@@ -112,36 +121,65 @@ async def test_primary_provider_timeout_once_retries_same_request_and_completes(
         assert provider.requests[0].request_id == provider.requests[1].request_id
 
         db = sdk_db(tmp_path)
-        invocations = rows(db, "SELECT state, handoff_attempt, rehandoff_count FROM provider_invocations")
+        invocations = rows(
+            db, "SELECT state, handoff_attempt, rehandoff_count FROM provider_invocations"
+        )
         assert invocations == [{"state": "succeeded", "handoff_attempt": 2, "rehandoff_count": 1}]
         resolutions = rows(db, "SELECT outcome, evidence_ref FROM reconciliation_resolutions")
         assert len(resolutions) == 1 and resolutions[0]["outcome"] == "confirmed_not_started"
         assert resolutions[0]["evidence_ref"].startswith("product-policy:provider-retry-once:")
         blockers = rows(db, "SELECT resolution_id, wake_consumed FROM run_wait_blockers")
-        assert len(blockers) == 1 and blockers[0]["resolution_id"] is not None and blockers[0]["wake_consumed"] == 1
+        assert (
+            len(blockers) == 1
+            and blockers[0]["resolution_id"] is not None
+            and blockers[0]["wake_consumed"] == 1
+        )
         assert rows(db, "SELECT state FROM runs") == [{"state": "completed"}]
 
         assert host_head(state) == [{"current_state": "COMPLETED"}]
         assert reconciliations(state) == ["BOUND_WAITING", "BOUND_TERMINAL"]
-        transitions = rows(state, "SELECT from_state, to_state FROM foreground_run_transitions ORDER BY rowid")
-        assert (transitions[-1]["from_state"], transitions[-1]["to_state"]) == ("RUNNING", "COMPLETED")
+        transitions = rows(
+            state, "SELECT from_state, to_state FROM foreground_run_transitions ORDER BY rowid"
+        )
+        assert (transitions[-1]["from_state"], transitions[-1]["to_state"]) == (
+            "RUNNING",
+            "COMPLETED",
+        )
 
         history = await PrimaryHistoryStore(state, policy=runtime.history_policy).read(
-            subject=SUBJECT, primary_ref=primary, disclosure_context=history_disclosure(), before_sequence=2)
+            subject=SUBJECT,
+            primary_ref=primary,
+            disclosure_context=history_disclosure(),
+            before_sequence=2,
+        )
         assert history[-1]["terminal_state"] == "COMPLETED"
-        assert [m["content"] for m in history[-1]["messages"]] == ["First actual user turn", "Actual response 2"]
+        assert [m["content"] for m in history[-1]["messages"]] == [
+            "First actual user turn",
+            "Actual response 2",
+        ]
 
         sdk_events = [r.getMessage() for r in caplog.records if r.name.startswith("simple_harness")]
         host_events = [e for e, _ in audit.events]
         assert subsequence(sdk_events, ["reconcile.unknown_settled", "provider.invoked"])
-        assert subsequence(host_events, ["foreground.runtime.bound", "foreground.runtime.provider_reconciled"])
+        assert subsequence(
+            host_events, ["foreground.runtime.bound", "foreground.runtime.provider_reconciled"]
+        )
         assert "foreground.runtime.provider_unknown_exhausted" not in host_events
         # SDK durable ledger: provider attempt transitions (claimed a0 → handed_off a1 →
         # unknown a1 → re-claimed a1 → handed_off a2 → succeeded a2) and the Run
         # transitions waiting → recovered (wait drained) → completed, in order.
         run_kinds, attempts = sdk_run_events(db)
-        assert subsequence(run_kinds, ["run.activated", "run.waiting", "run.recovered", "run.completed"]), run_kinds
-        assert attempts == [(0, None), (1, None), (1, "provider_error_after_handoff"), (1, None), (2, None), (2, None)]
+        assert subsequence(
+            run_kinds, ["run.activated", "run.waiting", "run.recovered", "run.completed"]
+        ), run_kinds
+        assert attempts == [
+            (0, None),
+            (1, None),
+            (1, "provider_error_after_handoff"),
+            (1, None),
+            (2, None),
+            (2, None),
+        ]
     finally:
         await runtime.close()
         await stack.close()
@@ -155,8 +193,11 @@ async def test_primary_provider_timeout_recovers_after_restart(tmp_path):
     provider = TimeoutProvider(1)
 
     # First incarnation: policy answers STILL_UNKNOWN (pre-fix behaviour) → Run parks.
-    stuck = ProductProviderReconciliationAdapter(observer=lambda inv: ProviderReconciliationObservation(
-        ProviderReconciliationState.STILL_UNKNOWN, f"test:stuck:{inv.invocation_id}"))
+    stuck = ProductProviderReconciliationAdapter(
+        observer=lambda inv: ProviderReconciliationObservation(
+            ProviderReconciliationState.STILL_UNKNOWN, f"test:stuck:{inv.invocation_id}"
+        )
+    )
     runtime, stack, queue = await build(tmp_path, state, provider, provider_reconciliation=stuck)
     try:
         await service.enqueue_turn(QueueTurnRequest(None, "one", "First actual user turn"))
@@ -179,15 +220,22 @@ async def test_primary_provider_timeout_recovers_after_restart(tmp_path):
         assert resolutions == [{"outcome": "confirmed_not_started"}]
         assert await asyncio.wait_for(runtime._drive_once(), 15)
         assert runtime.last_error is None
-        observations = rows(state, "SELECT outcome FROM foreground_execution_start_observations ORDER BY rowid")
+        observations = rows(
+            state, "SELECT outcome FROM foreground_execution_start_observations ORDER BY rowid"
+        )
         assert {"outcome": "QUERY_FOUND"} in observations
         assert host_head(state) == [{"current_state": "COMPLETED"}]
         assert len(provider.requests) == 2
         assert provider.requests[0].request_id == provider.requests[1].request_id
-        assert rows(db, "SELECT state, handoff_attempt, rehandoff_count FROM provider_invocations") == [
-            {"state": "succeeded", "handoff_attempt": 2, "rehandoff_count": 1}]
+        assert rows(
+            db, "SELECT state, handoff_attempt, rehandoff_count FROM provider_invocations"
+        ) == [{"state": "succeeded", "handoff_attempt": 2, "rehandoff_count": 1}]
         history = await PrimaryHistoryStore(state, policy=runtime.history_policy).read(
-            subject=SUBJECT, primary_ref=primary, disclosure_context=history_disclosure(), before_sequence=2)
+            subject=SUBJECT,
+            primary_ref=primary,
+            disclosure_context=history_disclosure(),
+            before_sequence=2,
+        )
         assert history[-1]["terminal_state"] == "COMPLETED"
     finally:
         await runtime.close()
@@ -202,27 +250,46 @@ async def test_primary_provider_timeout_twice_settles_cancelled_not_stuck(tmp_pa
     provider = TimeoutProvider(2)
     audit = AuditSink()
     policy = ProductProviderRetryOnceReconciliation()
-    runtime, stack, queue = await build(tmp_path, state, provider, provider_reconciliation=policy, audit_sink=audit)
+    runtime, stack, queue = await build(
+        tmp_path, state, provider, provider_reconciliation=policy, audit_sink=audit
+    )
     try:
         await service.enqueue_turn(QueueTurnRequest(None, "one", "First actual user turn"))
         assert await asyncio.wait_for(runtime._drive_once(), 15)
         assert runtime.last_error is None
         assert len(provider.requests) == 2
         db = sdk_db(tmp_path)
-        assert rows(db, "SELECT state, handoff_attempt, rehandoff_count FROM provider_invocations") == [
-            {"state": "unknown", "handoff_attempt": 2, "rehandoff_count": 1}]
+        assert rows(
+            db, "SELECT state, handoff_attempt, rehandoff_count FROM provider_invocations"
+        ) == [{"state": "unknown", "handoff_attempt": 2, "rehandoff_count": 1}]
         assert rows(db, "SELECT state FROM runs") == [{"state": "cancelled"}]
         assert host_head(state) == [{"current_state": "CANCELLED"}]
         assert await queue.current_snapshot(SUBJECT) is None
         host_events = [e for e, _ in audit.events]
-        assert subsequence(host_events, [
-            "foreground.runtime.provider_reconciled", "foreground.runtime.provider_unknown_exhausted"])
+        assert subsequence(
+            host_events,
+            [
+                "foreground.runtime.provider_reconciled",
+                "foreground.runtime.provider_unknown_exhausted",
+            ],
+        )
         sdk_run_id = rows(db, "SELECT run_id FROM runs")[0]["run_id"]
         assert sdk_run_id in policy.exhausted_runs
         assert reconciliations(state) == ["BOUND_WAITING", "BOUND_TERMINAL"]
         run_kinds, attempts = sdk_run_events(db)
-        assert subsequence(run_kinds, ["run.waiting", "run.recovered", "run.waiting", "run.cancel_requested", "run.cancelled"]), run_kinds
-        assert [a for a, _ in attempts] == [0, 1, 1, 1, 2, 2] and attempts[-1][1] == "provider_error_after_handoff"
+        assert subsequence(
+            run_kinds,
+            [
+                "run.waiting",
+                "run.recovered",
+                "run.waiting",
+                "run.cancel_requested",
+                "run.cancelled",
+            ],
+        ), run_kinds
+        assert [a for a, _ in attempts] == [0, 1, 1, 1, 2, 2] and attempts[-1][
+            1
+        ] == "provider_error_after_handoff"
         # No third physical send: the SDK allows exactly one rehandoff.
         assert rows(db, "SELECT COUNT(*) AS n FROM reconciliation_resolutions") == [{"n": 1}]
     finally:
@@ -233,28 +300,46 @@ async def test_primary_provider_timeout_twice_settles_cancelled_not_stuck(tmp_pa
 def test_provider_unknown_retry_once_policy():
     """T4: the policy alone — first unknown re-authorizes once, second stays unknown."""
     from types import SimpleNamespace
+
     policy = ProviderUnknownRetryOncePolicy()
-    first = SimpleNamespace(invocation_id="a" * 64, run_id=SimpleNamespace(value="run-1"), handoff_attempt=1, rehandoff_count=0)
+    first = SimpleNamespace(
+        invocation_id="a" * 64,
+        run_id=SimpleNamespace(value="run-1"),
+        handoff_attempt=1,
+        rehandoff_count=0,
+    )
     observed = policy(first)
     assert observed.state is ProviderReconciliationState.CONFIRMED_NOT_STARTED
     assert observed.evidence_ref == f"product-policy:provider-retry-once:{'a' * 64}:a1"
     assert policy.exhausted_runs == set()
-    second = SimpleNamespace(invocation_id="a" * 64, run_id=SimpleNamespace(value="run-1"), handoff_attempt=2, rehandoff_count=1)
+    second = SimpleNamespace(
+        invocation_id="a" * 64,
+        run_id=SimpleNamespace(value="run-1"),
+        handoff_attempt=2,
+        rehandoff_count=1,
+    )
     observed = policy(second)
     assert observed.state is ProviderReconciliationState.STILL_UNKNOWN
     assert observed.evidence_ref.startswith("product-policy:provider-retry-exhausted:")
     assert policy.exhausted_runs == {"run-1"}
     # The adapter carries the same policy state and the default adapter stays fail-closed.
     adapter = ProductProviderRetryOnceReconciliation()
-    assert asyncio.run(adapter.observe(first)).state is ProviderReconciliationState.CONFIRMED_NOT_STARTED
+    assert (
+        asyncio.run(adapter.observe(first)).state
+        is ProviderReconciliationState.CONFIRMED_NOT_STARTED
+    )
     assert asyncio.run(adapter.observe(second)).state is ProviderReconciliationState.STILL_UNKNOWN
     assert adapter.exhausted_runs == {"run-1"}
-    assert asyncio.run(ProductProviderReconciliationAdapter().observe(first)).state is ProviderReconciliationState.STILL_UNKNOWN
+    assert (
+        asyncio.run(ProductProviderReconciliationAdapter().observe(first)).state
+        is ProviderReconciliationState.STILL_UNKNOWN
+    )
 
 
 def test_production_wiring_no_longer_uses_noop_reconciliation():
     """T4b: main.py wires the retry-once adapter and the runtime reconciliation step."""
     from pathlib import Path
+
     source = Path(__file__).resolve().parents[2].joinpath("main.py").read_text(encoding="utf-8")
     assert "_NoopReconciliation" not in source
     assert source.count("reconciliation=runtime_reconciliation,") == 2
@@ -334,7 +419,13 @@ class LedgerUnitOfWork:
         return self.records.get(invocation_id)
 
     def hand_off_provider_invocation(
-        self, invocation_id, *, expected_version, handed_off_at, execution_lease, workflow_lease=None
+        self,
+        invocation_id,
+        *,
+        expected_version,
+        handed_off_at,
+        execution_lease,
+        workflow_lease=None,
     ):
         record = self.records[invocation_id].hand_off(
             at=handed_off_at, expected_version=expected_version
@@ -368,7 +459,15 @@ class LedgerUnitOfWork:
 
     # --- reconciliation ----------------------------------------------------
     def record_provider_reconciliation(
-        self, record, *, outcome, response_json, usage_json, budget_charge, evidence_ref, now,
+        self,
+        record,
+        *,
+        outcome,
+        response_json,
+        usage_json,
+        budget_charge,
+        evidence_ref,
+        now,
         fault=None,
     ):
         key = (record.invocation_id, record.handoff_attempt)
@@ -475,10 +574,12 @@ def _concurrent_stack(*, timeout_provider, live_provider):
     policy = BudgetPolicy(hard_cap_micros=10_000_000, refuse_on_unknown=True)
     coordinator = ProviderInvocationCoordinator(
         uow=uow,
-        resolver=_Bindings({
-            "run-timeout": ProviderBinding(timeout_provider, _estimator(), policy),
-            "run-live": ProviderBinding(live_provider, _estimator(), policy),
-        }),
+        resolver=_Bindings(
+            {
+                "run-timeout": ProviderBinding(timeout_provider, _estimator(), policy),
+                "run-live": ProviderBinding(live_provider, _estimator(), policy),
+            }
+        ),
     )
     ports = SimpleNamespaceLike(provider=coordinator, react_checkpoint=uow)
     return uow, coordinator, ports
@@ -504,16 +605,22 @@ async def test_runtime_reconcile_keeps_other_runs_inflight_response(tmp_path):
     # Run A：provider 传输超时 → SDK 自己 settle UNKNOWN，Run 进 waiting。
     with pytest.raises(ProviderInvocationUnknownError):
         await coordinator.invoke(
-            RunId("run-timeout"), _request("request-a"),
-            cancel=CancelToken(), execution_lease=_lease("run-timeout"),
+            RunId("run-timeout"),
+            _request("request-a"),
+            cancel=CancelToken(),
+            execution_lease=_lease("run-timeout"),
         )
     assert len(timeout_provider.calls) == 1
 
     # Run B：同一个 coordinator 上的并发 Run，物理请求正在飞行（HANDED_OFF）。
-    live = asyncio.create_task(coordinator.invoke(
-        RunId("run-live"), _request("request-b"),
-        cancel=CancelToken(), execution_lease=_lease("run-live"),
-    ))
+    live = asyncio.create_task(
+        coordinator.invoke(
+            RunId("run-live"),
+            _request("request-b"),
+            cancel=CancelToken(),
+            execution_lease=_lease("run-live"),
+        )
+    )
     await asyncio.wait_for(live_provider.entered.wait(), 5)
     inflight = provider_invocations_in_flight(uow)
     assert len(inflight) == 1, "Run B 应有且只有一条在途 handoff"
@@ -533,7 +640,10 @@ async def test_runtime_reconcile_keeps_other_runs_inflight_response(tmp_path):
     assert live_provider.calls == ["request-b"]
     live_record = next(r for r in uow.records.values() if r.run_id.value == "run-live")
     assert (live_record.state, live_record.handoff_attempt, live_record.rehandoff_count) == (
-        ProviderInvocationState.SUCCEEDED, 1, 0)
+        ProviderInvocationState.SUCCEEDED,
+        1,
+        0,
+    )
     assert policy.exhausted_runs == set()
 
     # B 落地后闸门放行：Run A 按 retry-once 收尾——同一 request 重发一次并成功。
@@ -543,17 +653,23 @@ async def test_runtime_reconcile_keeps_other_runs_inflight_response(tmp_path):
     assert resolutions[0].outcome is ResolutionOutcome.CONFIRMED_NOT_STARTED
     assert resolutions[0].evidence_ref.startswith("product-policy:provider-retry-once:")
     assert resolutions[0].ledger_identity.startswith(
-        next(r.invocation_id for r in uow.records.values() if r.run_id.value == "run-timeout")[:8])
+        next(r.invocation_id for r in uow.records.values() if r.run_id.value == "run-timeout")[:8]
+    )
 
     retried = await coordinator.invoke(
-        RunId("run-timeout"), _request("request-a"),
-        cancel=CancelToken(), execution_lease=_lease("run-timeout"),
+        RunId("run-timeout"),
+        _request("request-a"),
+        cancel=CancelToken(),
+        execution_lease=_lease("run-timeout"),
     )
     assert retried.request_id.value == "request-a"
     assert timeout_provider.calls == ["request-a", "request-a"], "同一 request，恰好两次"
     timeout_record = next(r for r in uow.records.values() if r.run_id.value == "run-timeout")
-    assert (timeout_record.state, timeout_record.handoff_attempt, timeout_record.rehandoff_count) == (
-        ProviderInvocationState.SUCCEEDED, 2, 1)
+    assert (
+        timeout_record.state,
+        timeout_record.handoff_attempt,
+        timeout_record.rehandoff_count,
+    ) == (ProviderInvocationState.SUCCEEDED, 2, 1)
     # B 全程未被触碰。
     assert live_provider.calls == ["request-b"]
 
@@ -577,10 +693,14 @@ async def test_unscoped_reconcile_spares_inprocess_inflight_response(tmp_path):
     runtime_reconciliation = ProductRuntimeReconciliation(
         lambda: ports, ProductProviderRetryOnceReconciliation()
     )
-    live = asyncio.create_task(coordinator.invoke(
-        RunId("run-live"), _request("request-b"),
-        cancel=CancelToken(), execution_lease=_lease("run-live"),
-    ))
+    live = asyncio.create_task(
+        coordinator.invoke(
+            RunId("run-live"),
+            _request("request-b"),
+            cancel=CancelToken(),
+            execution_lease=_lease("run-live"),
+        )
+    )
     await asyncio.wait_for(live_provider.entered.wait(), 5)
     assert len(provider_invocations_in_flight(uow)) == 1
 
@@ -594,7 +714,10 @@ async def test_unscoped_reconcile_spares_inprocess_inflight_response(tmp_path):
     assert live_provider.calls == ["request-b"]
     live_record = next(r for r in uow.records.values() if r.run_id.value == "run-live")
     assert (live_record.state, live_record.handoff_attempt, live_record.rehandoff_count) == (
-        ProviderInvocationState.SUCCEEDED, 1, 0)
+        ProviderInvocationState.SUCCEEDED,
+        1,
+        0,
+    )
 
 
 @pytest.mark.asyncio
@@ -605,15 +728,23 @@ async def test_run_scoped_provider_reconciliation_never_authorizes_other_runs():
     inner = ProviderUnknownRetryOncePolicy()
     scoped = RunScopedProviderReconciliation(inner, SimpleNamespace(value="run-a"))
     assert scoped.target_run_id == "run-a"
-    other = SimpleNamespace(invocation_id="b" * 64, run_id=SimpleNamespace(value="run-b"),
-                            handoff_attempt=1, rehandoff_count=0)
+    other = SimpleNamespace(
+        invocation_id="b" * 64,
+        run_id=SimpleNamespace(value="run-b"),
+        handoff_attempt=1,
+        rehandoff_count=0,
+    )
     observed = await scoped.observe(other)
     assert observed.state is ProviderReconciliationState.STILL_UNKNOWN
     assert observed.evidence_ref == f"product-scope:other-run:{'b' * 64}"
     assert inner.exhausted_runs == set(), "非目标 Run 不得污染 exhausted_runs"
 
-    mine = SimpleNamespace(invocation_id="a" * 64, run_id=SimpleNamespace(value="run-a"),
-                           handoff_attempt=1, rehandoff_count=0)
+    mine = SimpleNamespace(
+        invocation_id="a" * 64,
+        run_id=SimpleNamespace(value="run-a"),
+        handoff_attempt=1,
+        rehandoff_count=0,
+    )
     assert (await scoped.observe(mine)).state is ProviderReconciliationState.CONFIRMED_NOT_STARTED
 
 
@@ -626,10 +757,13 @@ async def test_reconcile_for_run_fails_closed_without_a_readable_ledger():
         calls.append(provider_reconciliation)
         return 3
 
-    ports = SimpleNamespaceLike(provider=SimpleNamespaceLike(
-        reconcile_incomplete=reconcile_incomplete), react_checkpoint=object())
+    ports = SimpleNamespaceLike(
+        provider=SimpleNamespaceLike(reconcile_incomplete=reconcile_incomplete),
+        react_checkpoint=object(),
+    )
     runtime_reconciliation = ProductRuntimeReconciliation(
-        lambda: ports, ProductProviderRetryOnceReconciliation())
+        lambda: ports, ProductProviderRetryOnceReconciliation()
+    )
     assert await runtime_reconciliation.reconcile_for_run("run-a") == 0
     assert calls == [] and runtime_reconciliation.inflight_skips == 1
     # 启动路径不受闸门影响。

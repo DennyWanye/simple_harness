@@ -26,6 +26,7 @@ Workspace path resolution tries, in order:
 The directory is lazily created on first access so tests using tmp
 paths don't need to pre-mkdir.
 """
+
 from __future__ import annotations
 
 import json
@@ -105,6 +106,7 @@ def set_workspace_store(store: Any | None) -> None:
     _workspace_store = store
     try:
         import asyncio as _asyncio
+
         _workspace_loop = _asyncio.get_running_loop()
     except RuntimeError:
         _workspace_loop = None
@@ -121,6 +123,7 @@ def rebind_loop() -> bool:
     global _workspace_loop
     try:
         import asyncio as _asyncio
+
         _workspace_loop = _asyncio.get_running_loop()
         return True
     except RuntimeError:
@@ -128,7 +131,11 @@ def rebind_loop() -> bool:
 
 
 async def _record_workspace_action(
-    *, session_id: str, path: str, action: str, content: str | None,
+    *,
+    session_id: str,
+    path: str,
+    action: str,
+    content: str | None,
 ) -> None:
     """best-effort 记一次文件动作。store 未注入 / 出错 → 静默跳过，
     绝不影响 file 工具主路径。"""
@@ -158,9 +165,7 @@ def _workspace_root(override: str | Path | None = None) -> Path:
         base = (
             Path(configured_user_data)
             if configured_user_data
-            else Path(
-                platformdirs.user_data_dir(_APP_NAME, appauthor=False, roaming=True)
-            )
+            else Path(platformdirs.user_data_dir(_APP_NAME, appauthor=False, roaming=True))
         )
         root = (base / "workspace").resolve()
     root.mkdir(parents=True, exist_ok=True)
@@ -242,8 +247,7 @@ def _should_skip_glob_dir(path: Path, workspace: Path) -> bool:
     if path.name in _DEFAULT_GLOB_SKIP_DIR_NAMES:
         return True
     return any(
-        rel_norm == skip or rel_norm.startswith(f"{skip}/")
-        for skip in _DEFAULT_GLOB_SKIP_REL_PARTS
+        rel_norm == skip or rel_norm.startswith(f"{skip}/") for skip in _DEFAULT_GLOB_SKIP_REL_PARTS
     )
 
 
@@ -256,13 +260,14 @@ def _is_under_skipped_glob_dir(path: Path, workspace: Path) -> bool:
         return True
     rel_norm = rel.strip("/")
     return any(
-        rel_norm == skip or rel_norm.startswith(f"{skip}/")
-        for skip in _DEFAULT_GLOB_SKIP_REL_PARTS
+        rel_norm == skip or rel_norm.startswith(f"{skip}/") for skip in _DEFAULT_GLOB_SKIP_REL_PARTS
     )
 
 
 def _iter_glob_matches(
-    root: Path, pattern: str, workspace: Path,
+    root: Path,
+    pattern: str,
+    workspace: Path,
 ) -> tuple[list[Path], list[str]]:
     """Iterate glob matches while pruning heavyweight generated dirs."""
     skipped: set[str] = set()
@@ -293,9 +298,7 @@ def _iter_glob_matches(
             kept_dirnames.append(dirname)
         dirnames[:] = kept_dirnames
 
-        candidates: Iterator[Path] = (
-            current / name for name in [*kept_dirnames, *filenames]
-        )
+        candidates: Iterator[Path] = (current / name for name in [*kept_dirnames, *filenames])
         for candidate in candidates:
             rel = _workspace_rel(candidate, root)
             if rel is not None and candidate.match(pattern):
@@ -355,7 +358,9 @@ async def _handle_file_read(
     if not target.exists():
         return _err(f"file not found: {args.get('path')}", retriable=False, code="file_not_found")
     if not target.is_file():
-        return _err(f"not a regular file: {args.get('path')}", retriable=False, code="not_a_regular_file")
+        return _err(
+            f"not a regular file: {args.get('path')}", retriable=False, code="not_a_regular_file"
+        )
     try:
         with target.open("r", encoding="utf-8", errors="replace") as f:
             lines: list[str] = []
@@ -370,7 +375,10 @@ async def _handle_file_read(
     rel_path = str(target.relative_to(workspace)).replace("\\", "/")
     content = "".join(lines)
     await _record_workspace_action(
-        session_id=context.session_id, path=rel_path, action="read", content=content,
+        session_id=context.session_id,
+        path=rel_path,
+        action="read",
+        content=content,
     )
     return json.dumps(
         {
@@ -441,7 +449,10 @@ async def _handle_file_write(
         return _err(f"write failed: {exc}", retriable=True)
     rel_path = str(target.relative_to(workspace)).replace("\\", "/")
     await _record_workspace_action(
-        session_id=context.session_id, path=rel_path, action="write", content=content,
+        session_id=context.session_id,
+        path=rel_path,
+        action="write",
+        content=content,
     )
     return json.dumps(
         {
@@ -591,9 +602,7 @@ def _handle_file_grep(
                         break
     except OSError as exc:
         return _err(f"grep failed: {exc}", retriable=True)
-    return json.dumps(
-        {"matches": out, "count": len(out)}, ensure_ascii=False
-    )
+    return json.dumps({"matches": out, "count": len(out)}, ensure_ascii=False)
 
 
 # ---------------------------------------------------------------------
@@ -646,7 +655,9 @@ async def _handle_workspace_recall(
     context = legacy_execution_context(args, task_id, execution_context)
     try:
         rows = await store.recall(
-            query, session_id=context.session_id, limit=limit,
+            query,
+            session_id=context.session_id,
+            limit=limit,
         )
     except Exception as exc:  # noqa: BLE001
         return _err(f"workspace_recall failed: {exc}", retriable=True)
@@ -660,7 +671,8 @@ async def _handle_workspace_recall(
         for r in rows
     ]
     return json.dumps(
-        {"matches": matches, "count": len(matches)}, ensure_ascii=False,
+        {"matches": matches, "count": len(matches)},
+        ensure_ascii=False,
     )
 
 
@@ -669,24 +681,38 @@ async def _handle_workspace_recall(
 # ---------------------------------------------------------------------
 def register_static_tools(registry) -> None:
     registry.register(
-        "file_read", "file", _SCHEMA_READ, _handle_file_read,
+        "file_read",
+        "file",
+        _SCHEMA_READ,
+        _handle_file_read,
         context_handler=bind_context_handler(_handle_file_read),
     )
     registry.register(
-        "file_write", "file", _SCHEMA_WRITE, _handle_file_write,
+        "file_write",
+        "file",
+        _SCHEMA_WRITE,
+        _handle_file_write,
         context_handler=bind_context_handler(_handle_file_write),
         concurrency_safe=False,
     )
     registry.register(
-        "file_glob", "file", _SCHEMA_GLOB, _handle_file_glob,
+        "file_glob",
+        "file",
+        _SCHEMA_GLOB,
+        _handle_file_glob,
         context_handler=bind_context_handler(_handle_file_glob),
     )
     registry.register(
-        "file_grep", "file", _SCHEMA_GREP, _handle_file_grep,
+        "file_grep",
+        "file",
+        _SCHEMA_GREP,
+        _handle_file_grep,
         context_handler=bind_context_handler(_handle_file_grep),
     )
     registry.register(
-        "workspace_recall", "file", _SCHEMA_WORKSPACE_RECALL,
+        "workspace_recall",
+        "file",
+        _SCHEMA_WORKSPACE_RECALL,
         _handle_workspace_recall,
         context_handler=bind_context_handler(_handle_workspace_recall),
     )

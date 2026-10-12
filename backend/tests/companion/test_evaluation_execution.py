@@ -35,11 +35,7 @@ def _permit(*, mode: str = "safe_auto") -> EvaluationExecutionPermit:
         risk_hash="risk-hash-1",
         permit_hash="permit-hash-1",
         reason_code="evaluation_permitted",
-        authorization_id=(
-            "evaluation-authorization-1"
-            if mode == "user_authorized"
-            else None
-        ),
+        authorization_id=("evaluation-authorization-1" if mode == "user_authorized" else None),
     )
 
 
@@ -131,9 +127,7 @@ class _Store:
         self.trace.append("fence")
         return dict(self.fence)
 
-    def create_evaluation_case_launch(
-        self, _owner, launch, *, claim_owner
-    ):
+    def create_evaluation_case_launch(self, _owner, launch, *, claim_owner):
         self.trace.append("launch")
         assert claim_owner == self.fence["claim_owner"]
         self.launch = launch
@@ -154,9 +148,7 @@ class _Store:
         self.trace.append("abort")
         self.abort = kwargs
         self.fence["case_status"] = (
-            "inconclusive"
-            if kwargs["survivor_count"] == 0
-            else "cleanup_required"
+            "inconclusive" if kwargs["survivor_count"] == 0 else "cleanup_required"
         )
         return {"status": self.fence["case_status"]}
 
@@ -188,9 +180,7 @@ class _Port:
         self.alive = False
         self.receipt: ManagedProcessStartReceipt | None = None
 
-    async def start_and_ack(
-        self, *, runtime_instance_id, start_envelope, authorization_nonce
-    ):
+    async def start_and_ack(self, *, runtime_instance_id, start_envelope, authorization_nonce):
         self.trace.append("start")
         self.start_calls += 1
         assert self.barrier is None or self.barrier._readers == 1
@@ -203,12 +193,8 @@ class _Port:
             adapter_identity="managed-process-test-v1",
             job_identity="job-1" if self.outcome == "started" else None,
             pid=3210 if self.outcome == "started" else None,
-            process_create_time=123.5
-            if self.outcome == "started"
-            else None,
-            command_line_hash="command-hash-1"
-            if self.outcome == "started"
-            else None,
+            process_create_time=123.5 if self.outcome == "started" else None,
+            command_line_hash="command-hash-1" if self.outcome == "started" else None,
             reason_code=f"test_{self.outcome}",
         )
         return self.receipt
@@ -243,9 +229,7 @@ class _Port:
         del start_identity
         return self.receipt if self.alive else None
 
-    async def abort_unacknowledged(
-        self, *, runtime_instance_id, authorization_nonce
-    ):
+    async def abort_unacknowledged(self, *, runtime_instance_id, authorization_nonce):
         self.trace.append("abort_unacknowledged")
         assert runtime_instance_id and authorization_nonce
         self.alive = False
@@ -264,9 +248,7 @@ def _executor(store, port, barrier):
 async def test_no_process_is_started_before_evaluation_authorization() -> None:
     store = _Store(authorization_ready=False)
     port = _Port()
-    with pytest.raises(
-        CompanionStateError, match="evaluation_case_fence_closed"
-    ):
+    with pytest.raises(CompanionStateError, match="evaluation_case_fence_closed"):
         await _executor(store, port, RevocationBarrier()).execute_case(
             OwnerRef("alice", 1),
             _frozen(mode="user_authorized"),
@@ -290,9 +272,7 @@ async def test_unconsumed_exact_code_authorization_fails_inside_fence() -> None:
         }
     )
     port = _Port(barrier=barrier)
-    with pytest.raises(
-        EvaluationExecutionError, match="evaluation_execution_fence_stale"
-    ):
+    with pytest.raises(EvaluationExecutionError, match="evaluation_execution_fence_stale"):
         await _executor(store, port, barrier).execute_case(
             OwnerRef("alice", 1),
             _frozen(mode="user_authorized"),
@@ -314,9 +294,7 @@ async def test_missing_store_fence_api_fails_before_claim_or_process() -> None:
         EvaluationExecutionError,
         match="evaluation_store_execution_api_unavailable",
     ):
-        await _executor(
-            _IncompleteStore(), port, RevocationBarrier()
-        ).execute_case(
+        await _executor(_IncompleteStore(), port, RevocationBarrier()).execute_case(
             OwnerRef("alice", 1),
             _frozen(),
             claim_owner="worker-1",
@@ -420,9 +398,7 @@ async def test_redacted_input_fails_before_durable_or_physical_launch() -> None:
     store = _Store()
     store.fence["input_content_state"] = "redacted"
     port = _Port(barrier=barrier)
-    with pytest.raises(
-        EvaluationExecutionError, match="evaluation_input_redacted"
-    ):
+    with pytest.raises(EvaluationExecutionError, match="evaluation_input_redacted"):
         await _executor(store, port, barrier).execute_case(
             OwnerRef("alice", 1), _frozen(), claim_owner="worker-1"
         )

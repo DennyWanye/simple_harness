@@ -18,9 +18,7 @@ def test_build_host_exists():
 def test_build_host_implements_sdk_protocols():
     host = build_host()
     assert host is not None
-    assert host.metadata.capabilities == frozenset(
-        {"provider", "tool", "runtime", "workflow"}
-    )
+    assert host.metadata.capabilities == frozenset({"provider", "tool", "runtime", "workflow"})
 
 
 @pytest.mark.asyncio

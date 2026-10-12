@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 """Tests for POST /config/cloud endpoint."""
+
 from __future__ import annotations
 
 import main as main_module
@@ -29,9 +30,7 @@ def _snapshot_runtime_config():
 
 @pytest.mark.asyncio
 async def test_update_cloud_config_rejects_bad_secret():
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         resp = await client.post(
             "/config/cloud",
             json={
@@ -49,9 +48,7 @@ async def test_update_cloud_config_rejects_bad_secret():
 async def test_update_cloud_config_dev_mode_bypasses_auth(monkeypatch):
     monkeypatch.setattr(main_module, "DEV_MODE", True)
     # Provide an api_key so we don't hit the "no api_key configured" 400.
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         resp = await client.post(
             "/config/cloud",
             json={
@@ -66,9 +63,7 @@ async def test_update_cloud_config_dev_mode_bypasses_auth(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_update_cloud_config_validates_base_url():
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         resp = await client.post(
             "/config/cloud",
             json={
@@ -83,9 +78,7 @@ async def test_update_cloud_config_validates_base_url():
 
 @pytest.mark.asyncio
 async def test_update_cloud_config_validates_model_empty():
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         resp = await client.post(
             "/config/cloud",
             json={
@@ -100,9 +93,7 @@ async def test_update_cloud_config_validates_model_empty():
 
 @pytest.mark.asyncio
 async def test_update_cloud_config_success():
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         resp = await client.post(
             "/config/cloud",
             json={
@@ -128,7 +119,9 @@ async def test_update_cloud_config_promotes_validated_provider_for_runtime(monke
 
     class FakeRegistry:
         def __init__(self):
-            self.entries = [{"id": "relay-cloud"},]
+            self.entries = [
+                {"id": "relay-cloud"},
+            ]
             self.reordered = None
 
         def get_entry(self, provider_id):
@@ -145,9 +138,7 @@ async def test_update_cloud_config_promotes_validated_provider_for_runtime(monke
 
     registry = FakeRegistry()
     monkeypatch.setattr(main_module.service_context, "provider_registry", registry)
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         resp = await client.post(
             "/config/cloud",
             json={
@@ -164,9 +155,7 @@ async def test_update_cloud_config_promotes_validated_provider_for_runtime(monke
 @pytest.mark.asyncio
 async def test_update_cloud_config_keeps_old_key_when_omitted():
     """Second call without api_key should reuse the key from the first call."""
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         # First call: provide api_key
         await client.post(
             "/config/cloud",
@@ -193,9 +182,7 @@ async def test_update_cloud_config_keeps_old_key_when_omitted():
 
 @pytest.mark.asyncio
 async def test_update_cloud_config_with_strategy():
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         resp = await client.post(
             "/config/cloud",
             json={

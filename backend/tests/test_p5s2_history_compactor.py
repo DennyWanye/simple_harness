@@ -22,6 +22,7 @@ These are pure functions — the actual LLM call to generate the summary
 is delegated to a caller-provided coroutine ``summarize_fn`` and
 ``compact_messages`` is the orchestration wrapper.
 """
+
 from __future__ import annotations
 
 import pytest

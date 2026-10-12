@@ -6,6 +6,7 @@
 薄封装 TerminationGate（硬上限不重写）+ 加量化收敛判据 + 触顶止损报告。
 不新开循环——只在 agent_loop 收尾判定点提供「是否收敛 / 该不该止损 / 止损报告文本」。
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -21,7 +22,7 @@ class ConvergenceVerdict:
     converged: bool
     principal_resolved: bool
     stop_reason: str
-    report: str = ""               # 触顶未收敛时的诚实止损报告
+    report: str = ""  # 触顶未收敛时的诚实止损报告
     should_stop_loss: bool = False  # True → 不硬撑，产出 report 收尾
 
 
@@ -30,7 +31,7 @@ class ConvergenceController:
 
     def __init__(
         self,
-        termination_gate: Any,        # 复用 agent_loop 已构造的 self._gate
+        termination_gate: Any,  # 复用 agent_loop 已构造的 self._gate
         *,
         report_on_stop: bool = True,
     ) -> None:
@@ -61,23 +62,37 @@ class ConvergenceController:
 
         if converged:
             return ConvergenceVerdict(
-                converged=True, principal_resolved=True, stop_reason="success",
+                converged=True,
+                principal_resolved=True,
+                stop_reason="success",
             )
 
         # 未收敛 + 资源触顶 → 止损（不硬撑）
         if resource_capped:
-            report = self._build_report(principal_resolved, unverified_claims, summary) \
-                if self._report_on_stop else ""
-            logger.warning("convergence.stop_loss", reason=reason,
-                           principal_resolved=principal_resolved, unverified=unverified_claims)
+            report = (
+                self._build_report(principal_resolved, unverified_claims, summary)
+                if self._report_on_stop
+                else ""
+            )
+            logger.warning(
+                "convergence.stop_loss",
+                reason=reason,
+                principal_resolved=principal_resolved,
+                unverified=unverified_claims,
+            )
             return ConvergenceVerdict(
-                converged=False, principal_resolved=principal_resolved,
-                stop_reason=reason, report=report, should_stop_loss=True,
+                converged=False,
+                principal_resolved=principal_resolved,
+                stop_reason=reason,
+                report=report,
+                should_stop_loss=True,
             )
 
         # 未收敛但资源未触顶 → 继续（不止损）
         return ConvergenceVerdict(
-            converged=False, principal_resolved=principal_resolved, stop_reason="running",
+            converged=False,
+            principal_resolved=principal_resolved,
+            stop_reason="running",
         )
 
     def _build_report(self, principal_resolved: bool, unverified: int, summary: dict) -> str:

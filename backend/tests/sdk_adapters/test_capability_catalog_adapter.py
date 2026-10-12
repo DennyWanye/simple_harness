@@ -177,9 +177,7 @@ def test_unhealthy_mcp_and_model_disabled_skill_are_explicitly_excluded() -> Non
         skills=(_skill(enabled=False),),
     )
 
-    assert [item.canonical_id for item in projection.records] == [
-        "builtin:tool_search"
-    ]
+    assert [item.canonical_id for item in projection.records] == ["builtin:tool_search"]
     assert {(item.source_kind, item.reason_code) for item in projection.exclusions} == {
         ("mcp", "mcp_not_running"),
         ("skill", "skill_model_invocation_disabled"),
@@ -196,9 +194,7 @@ def test_running_mcp_without_incarnation_is_not_silently_admitted() -> None:
         mcp_server_states={"playwright": "running"},
     )
 
-    assert [item.reason_code for item in projection.exclusions] == [
-        "mcp_incarnation_unavailable"
-    ]
+    assert [item.reason_code for item in projection.exclusions] == ["mcp_incarnation_unavailable"]
 
 
 def test_catalog_rejects_inventory_drift_unknown_direct_and_oversized_kernel() -> None:
@@ -236,9 +232,10 @@ def test_schema_bytes_are_detached_from_live_source_objects() -> None:
     builtin_spec.input_schema["properties"]["query"]["type"] = "integer"
 
     assert projection.fingerprint == before
-    assert projection.to_json()["records"][0]["input_schema"]["properties"]["query"][
-        "type"
-    ] == "string"
+    assert (
+        projection.to_json()["records"][0]["input_schema"]["properties"]["query"]["type"]
+        == "string"
+    )
 
 
 def test_current_first_party_skill_and_workflow_sources_keep_exact_identities() -> None:
@@ -269,9 +266,7 @@ def test_current_first_party_skill_and_workflow_sources_keep_exact_identities() 
         builtin_inventory=(builtin_inventory,),
         direct_tool_names=("tool_search",),
         skills=(translate,),
-        workflows=build_product_workflow_registrations(
-            generation=9, transaction_owner=object()
-        ),
+        workflows=build_product_workflow_registrations(generation=9, transaction_owner=object()),
     )
 
     by_id = {item.canonical_id: item for item in projection.records}
@@ -341,6 +336,4 @@ def test_sdk_skill_namespace_accepts_records_from_distinct_pack_owners() -> None
         "translate-doc",
     ]
     assert {item.source for item in records} == {"product-skill-catalog"}
-    assert {item.source_revision for item in records} == {
-        "product-skill-catalog-v1"
-    }
+    assert {item.source_revision for item in records} == {"product-skill-catalog-v1"}

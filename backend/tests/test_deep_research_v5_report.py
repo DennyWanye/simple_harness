@@ -295,9 +295,7 @@ def test_decimal_round_half_up_is_used_at_point_zero_five() -> None:
 def test_exact_score_80_is_completed_when_all_core_dimensions_are_covered() -> None:
     _, brief, coverages, analyses, claims, sources = _load("SC-EDU")
     coverages = [
-        replace(item, first_party_satisfied=False)
-        if item.status != "not_applicable"
-        else item
+        replace(item, first_party_satisfied=False) if item.status != "not_applicable" else item
         for item in coverages
     ]
     sources = [
@@ -312,8 +310,17 @@ def test_exact_score_80_is_completed_when_all_core_dimensions_are_covered() -> N
     ]
     claims.extend(
         [
-            ReportClaim("edu-fc1", "edu-current", "未来执行仍可能变化。", "forecast", ("edu-e1",), ("edu-p1",)),
-            ReportClaim("edu-fc2", "edu-next", "未来成效仍可能变化。", "forecast", ("edu-e3",), ("edu-p3",)),
+            ReportClaim(
+                "edu-fc1",
+                "edu-current",
+                "未来执行仍可能变化。",
+                "forecast",
+                ("edu-e1",),
+                ("edu-p1",),
+            ),
+            ReportClaim(
+                "edu-fc2", "edu-next", "未来成效仍可能变化。", "forecast", ("edu-e3",), ("edu-p3",)
+            ),
         ]
     )
     result = _audit(brief, coverages, analyses, claims, sources, _run("SC-EDU")[2])
@@ -379,9 +386,7 @@ def test_diagnostic_leak_alone_forces_insufficient_delivery() -> None:
         ("dimension-mismatch", "citation_dimension_mismatch"),
     ],
 )
-def test_source_integrity_hard_failures_precede_high_score(
-    mutation: str, failure: str
-) -> None:
+def test_source_integrity_hard_failures_precede_high_score(mutation: str, failure: str) -> None:
     _, brief, coverages, analyses, claims, sources = _load("SC-EDU")
     if mutation == "official-replacement":
         sources[0] = replace(sources[0], secondary_replaces_available_official=True)
@@ -415,9 +420,7 @@ def test_forged_intent_token_metadata_cannot_raise_relevance() -> None:
 def test_renderer_does_not_claim_no_uncertainty_when_evidence_is_partial() -> None:
     _, brief, coverages, analyses, claims, sources = _load("SC-AI")
     claims = [
-        item
-        for item in claims
-        if item.kind not in {"uncertainty", "counterevidence", "forecast"}
+        item for item in claims if item.kind not in {"uncertainty", "counterevidence", "forecast"}
     ]
     markdown = render_report(
         brief=brief,
@@ -438,8 +441,7 @@ def test_analysis_inference_must_be_explicitly_marked_to_earn_reasoning_score() 
     lint = _run("SC-AI")[2]
     unmarked = _audit(brief, coverages, analyses, claims, sources, lint)
     claims = [
-        replace(item, is_inference=True) if item.claim_id == "ai-c8" else item
-        for item in claims
+        replace(item, is_inference=True) if item.claim_id == "ai-c8" else item for item in claims
     ]
     marked = _audit(brief, coverages, analyses, claims, sources, lint)
     assert unmarked.audit.synthesis_reasoning == 13.3
@@ -470,9 +472,7 @@ def test_renderer_enforces_three_to_seven_key_judgments(key_count: int) -> None:
     if key_count == 2:
         keys = keys[:2]
     else:
-        keys.extend(
-            replace(keys[0], claim_id=f"extra-key-{index}") for index in range(5)
-        )
+        keys.extend(replace(keys[0], claim_id=f"extra-key-{index}") for index in range(5))
     with pytest.raises(Exception, match="3 to 7 key judgments"):
         render_report(
             brief=brief,

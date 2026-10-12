@@ -326,13 +326,19 @@ def _mutated(**changes) -> dict:
         (_mutated(call_id="调用-1"), "tool_call_id_not_identifier"),
         (_mutated(call_id="c" * 256), "tool_call_id_not_identifier"),
         # json.loads 接受 NaN，SDK 的 JSON 契约不接受
-        (_mutated(arguments='{"outcome": "mutate", "score": NaN}'),
-         "tool_call_arguments_json_value_invalid"),
+        (
+            _mutated(arguments='{"outcome": "mutate", "score": NaN}'),
+            "tool_call_arguments_json_value_invalid",
+        ),
         # ProviderUsage 还会拒绝负数与「总数小于输入+输出」
-        (_mutated(usage={"prompt_tokens": 10, "completion_tokens": 10, "total_tokens": 5}),
-         "usage_values_rejected"),
-        (_mutated(usage={"prompt_tokens": -1, "completion_tokens": 1, "total_tokens": 1}),
-         "usage_values_rejected"),
+        (
+            _mutated(usage={"prompt_tokens": 10, "completion_tokens": 10, "total_tokens": 5}),
+            "usage_values_rejected",
+        ),
+        (
+            _mutated(usage={"prompt_tokens": -1, "completion_tokens": 1, "total_tokens": 1}),
+            "usage_values_rejected",
+        ),
     ],
 )
 def test_diagnostic_mirrors_the_sdk_constructor_checks(payload: dict, expected: str) -> None:
@@ -427,7 +433,9 @@ def test_unrepairable_arguments_raise_the_resampleable_protocol_error() -> None:
     "payload",
     [
         {"choices": []},
-        _payload(_GOOD_ARGUMENTS, usage={"prompt_tokens": "x", "completion_tokens": 1, "total_tokens": 2}),
+        _payload(
+            _GOOD_ARGUMENTS, usage={"prompt_tokens": "x", "completion_tokens": 1, "total_tokens": 2}
+        ),
         _payload({"outcome": "mutate"}, model=7),
     ],
 )

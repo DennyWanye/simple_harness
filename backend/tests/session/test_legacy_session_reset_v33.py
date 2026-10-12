@@ -86,8 +86,7 @@ async def _build_v32_fixture(tmp_path: Path) -> tuple[Path, Path, str]:
         )
         hash64 = "a" * 64
         db.execute(
-            "INSERT INTO execution_candidate_draft_receipts VALUES("
-            "?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO execution_candidate_draft_receipts VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 "keep-receipt",
                 "launch",
@@ -221,9 +220,7 @@ async def _build_v32_fixture(tmp_path: Path) -> tuple[Path, Path, str]:
 
 
 def test_reset_manifest_matches_v33_state_sql() -> None:
-    sql = (DEFAULT_MIGRATIONS_DIR / "025_legacy_session_reset_v33.sql").read_text(
-        encoding="utf-8"
-    )
+    sql = (DEFAULT_MIGRATIONS_DIR / "025_legacy_session_reset_v33.sql").read_text(encoding="utf-8")
     deleted = set(re.findall(r"DELETE FROM ([a-zA-Z0-9_]+)", sql))
     deleted.discard("sqlite_sequence")
     deleted.difference_update(RESET_MANIFEST["state.db"]["drop_tables"])
@@ -279,9 +276,7 @@ def test_selected_table_cleanup_rolls_back_trigger_and_rows_on_error(
             raise RuntimeError("injected_delete_failure")
         return original_quote(value)
 
-    monkeypatch.setattr(
-        project_session_reset, "_quote_identifier", fail_during_second_delete
-    )
+    monkeypatch.setattr(project_session_reset, "_quote_identifier", fail_during_second_delete)
     with pytest.raises(RuntimeError, match="injected_delete_failure"):
         _clear_selected_tables(path, select=lambda name: name.startswith("execution_"))
 
@@ -336,9 +331,9 @@ async def test_representative_legacy_versions_upgrade_to_empty_v33(
         ).fetchone()
         if facts_exists:
             assert db.execute("SELECT COUNT(*) FROM facts").fetchone()[0] == 0
-        assert db.execute(
-            "SELECT phase FROM legacy_session_reset_state"
-        ).fetchone()[0] == "completed"
+        assert (
+            db.execute("SELECT phase FROM legacy_session_reset_state").fetchone()[0] == "completed"
+        )
 
 
 @pytest.mark.asyncio
@@ -350,14 +345,11 @@ async def test_v32_upgrade_deletes_legacy_data_and_preserves_global_files(
 
     with sqlite3.connect(db_path) as db:
         assert db.execute("PRAGMA user_version").fetchone()[0] == 34
-        assert db.execute(
-            "SELECT phase FROM legacy_session_reset_state"
-        ).fetchone()[0] == "completed"
+        assert (
+            db.execute("SELECT phase FROM legacy_session_reset_state").fetchone()[0] == "completed"
+        )
         existing = {
-            row[0]
-            for row in db.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            )
+            row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")
         }
         for table in RESET_MANIFEST["state.db"]["empty_tables"]:
             assert table in existing
@@ -370,35 +362,42 @@ async def test_v32_upgrade_deletes_legacy_data_and_preserves_global_files(
 
     with sqlite3.connect(user_data / "data" / "workflow.db") as db:
         assert db.execute("SELECT COUNT(*) FROM workflow_start_requests").fetchone()[0] == 0
-        assert db.execute(
-            "SELECT COUNT(*) FROM capability_run_catalog_snapshots"
-        ).fetchone()[0] == 0
+        assert (
+            db.execute("SELECT COUNT(*) FROM capability_run_catalog_snapshots").fetchone()[0] == 0
+        )
         assert db.execute("SELECT COUNT(*) FROM capability_runtime_leases").fetchone()[0] == 0
         assert db.execute("SELECT COUNT(*) FROM workflow_schema_migrations").fetchone()[0] > 0
         assert db.execute(
             "SELECT generation,phase FROM execution_runtime_state WHERE singleton_id=1"
         ).fetchone() == (0, "legacy")
-        assert db.execute(
-            "SELECT receipt_id FROM execution_candidate_draft_receipts"
-        ).fetchone()[0] == "keep-receipt"
-        assert db.execute(
-            "SELECT receipt_id FROM execution_candidate_draft_materials"
-        ).fetchone()[0] == "keep-receipt"
+        assert (
+            db.execute("SELECT receipt_id FROM execution_candidate_draft_receipts").fetchone()[0]
+            == "keep-receipt"
+        )
+        assert (
+            db.execute("SELECT receipt_id FROM execution_candidate_draft_materials").fetchone()[0]
+            == "keep-receipt"
+        )
     with sqlite3.connect(user_data / "data" / "companion.db") as db:
         for table in RESET_MANIFEST["companion.db"]["delete_tables"]:
             assert db.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0] == 0
-        assert db.execute(
-            "SELECT candidate_package_hash FROM candidate_packages"
-        ).fetchone()[0] == "package"
-        assert db.execute(
-            "SELECT phase FROM growth_authority_state WHERE authority_key='growth'"
-        ).fetchone()[0] == "legacy"
+        assert (
+            db.execute("SELECT candidate_package_hash FROM candidate_packages").fetchone()[0]
+            == "package"
+        )
+        assert (
+            db.execute(
+                "SELECT phase FROM growth_authority_state WHERE authority_key='growth'"
+            ).fetchone()[0]
+            == "legacy"
+        )
     with sqlite3.connect(user_data / "data" / "sdk-product-state.db") as db:
         assert db.execute("SELECT COUNT(*) FROM authorization_sagas").fetchone()[0] == 0
         assert db.execute("SELECT COUNT(*) FROM capability_runtime_leases").fetchone()[0] == 0
-        assert db.execute(
-            "SELECT value FROM global_preferences WHERE key='model'"
-        ).fetchone()[0] == "keep"
+        assert (
+            db.execute("SELECT value FROM global_preferences WHERE key='model'").fetchone()[0]
+            == "keep"
+        )
         assert db.execute("SELECT id FROM capability_versions").fetchone()[0] == "keep-version"
     for name in RESET_MANIFEST["delete_databases"]:
         assert not (user_data / "data" / name).exists()
@@ -426,15 +425,20 @@ async def test_reset_runs_once_and_new_session_data_survives_restart(tmp_path: P
         )
     await initialize_state_db(db_path)
     with sqlite3.connect(db_path) as db:
-        assert db.execute(
-            "SELECT COUNT(*) FROM sessions WHERE id=?", (old_session_id,)
-        ).fetchone()[0] == 0
-        assert db.execute(
-            "SELECT COUNT(*) FROM sessions WHERE id=?", (new_session_id,)
-        ).fetchone()[0] == 1
-        assert db.execute(
-            "SELECT content FROM messages WHERE session_id=?", (new_session_id,)
-        ).fetchone()[0] == "new-message"
+        assert (
+            db.execute("SELECT COUNT(*) FROM sessions WHERE id=?", (old_session_id,)).fetchone()[0]
+            == 0
+        )
+        assert (
+            db.execute("SELECT COUNT(*) FROM sessions WHERE id=?", (new_session_id,)).fetchone()[0]
+            == 1
+        )
+        assert (
+            db.execute(
+                "SELECT content FROM messages WHERE session_id=?", (new_session_id,)
+            ).fetchone()[0]
+            == "new-message"
+        )
 
 
 @pytest.mark.asyncio
@@ -453,9 +457,7 @@ async def test_reset_runs_once_and_new_session_data_survives_restart(tmp_path: P
         "after_completion_commit",
     ),
 )
-async def test_reset_faults_fail_closed_then_resume(
-    tmp_path: Path, fault_stage: str
-) -> None:
+async def test_reset_faults_fail_closed_then_resume(tmp_path: Path, fault_stage: str) -> None:
     db_path, _, _ = await _build_v32_fixture(tmp_path)
     fired = False
 
@@ -469,9 +471,9 @@ async def test_reset_faults_fail_closed_then_resume(
         await initialize_state_db(db_path, fault_inject=crash)
     await initialize_state_db(db_path)
     with sqlite3.connect(db_path) as db:
-        assert db.execute(
-            "SELECT phase FROM legacy_session_reset_state"
-        ).fetchone()[0] == "completed"
+        assert (
+            db.execute("SELECT phase FROM legacy_session_reset_state").fetchone()[0] == "completed"
+        )
         assert db.execute("SELECT COUNT(*) FROM sessions").fetchone()[0] == 0
         for table in RESET_MANIFEST["state.db"]["empty_tables"]:
             assert db.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0] == 0
@@ -487,6 +489,7 @@ async def test_reset_faults_fail_closed_then_resume(
         db.execute("INSERT INTO sessions(id,created_at) VALUES(?,10)", (new_session_id,))
     await initialize_state_db(db_path)
     with sqlite3.connect(db_path) as db:
-        assert db.execute(
-            "SELECT COUNT(*) FROM sessions WHERE id=?", (new_session_id,)
-        ).fetchone()[0] == 1
+        assert (
+            db.execute("SELECT COUNT(*) FROM sessions WHERE id=?", (new_session_id,)).fetchone()[0]
+            == 1
+        )

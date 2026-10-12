@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 """P4-S20 Wave 3b: dual-format SkillLoader tests."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -27,13 +28,7 @@ def test_legacy_format_still_loads(tmp_path: Path) -> None:
     _write(
         builtin,
         "voice",
-        "---\n"
-        "name: voice\n"
-        "description: voice helper\n"
-        "version: 1.0\n"
-        "author: deskpet\n"
-        "---\n"
-        "body",
+        "---\nname: voice\ndescription: voice helper\nversion: 1.0\nauthor: deskpet\n---\nbody",
     )
     loader = SkillLoader([builtin, user], enable_watch=False)
     loader.reload()
@@ -85,8 +80,7 @@ def test_mixed_dirs_both_load(tmp_path: Path) -> None:
     _write(
         builtin,
         "legacy-skill",
-        "---\nname: legacy-skill\ndescription: legacy\n"
-        "version: 1.0\nauthor: deskpet\n---\nbody",
+        "---\nname: legacy-skill\ndescription: legacy\nversion: 1.0\nauthor: deskpet\n---\nbody",
     )
     _write(
         user,

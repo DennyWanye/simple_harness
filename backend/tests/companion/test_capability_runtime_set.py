@@ -45,18 +45,14 @@ class FakeLedger:
             raise RuntimeError("runtime_set_conflict")
         return existing
 
-    async def claim_runtime_instance(
-        self, prepared_set, instance, authorization
-    ):
+    async def claim_runtime_instance(self, prepared_set, instance, authorization):
         return f"claim:{prepared_set.operation_id}:{instance.entry_id}"
 
     async def record_start_result(self, prepared_set, instance, result):
         self.starts[(prepared_set.operation_id, instance.entry_id)] = result
 
     async def get_runtime_instance_start_result(self, prepared_set, instance):
-        return self.starts.get(
-            (prepared_set.operation_id, instance.entry_id)
-        )
+        return self.starts.get((prepared_set.operation_id, instance.entry_id))
 
     async def record_health_outcome(self, prepared_set, instance, outcome):
         self.health[(prepared_set.operation_id, instance.entry_id)] = outcome
@@ -96,13 +92,9 @@ class FakeAdapter:
             self.cancelled += 1
             raise
         if self.outcome == "not_started":
-            return RuntimeNotStarted(
-                authorization.operation_id, spec.entry_id, "not_started"
-            )
+            return RuntimeNotStarted(authorization.operation_id, spec.entry_id, "not_started")
         if self.outcome == "unknown":
-            return RuntimeStartUnknown(
-                authorization.operation_id, spec.entry_id, "unknown"
-            )
+            return RuntimeStartUnknown(authorization.operation_id, spec.entry_id, "unknown")
         self.starts += 1
         return RuntimeStartedAck(
             operation_id=authorization.operation_id,
@@ -202,17 +194,13 @@ async def test_prepare_start_ack_health_activate_are_separate_stages() -> None:
     assert adapter.starts == 0
     authorization = RuntimeLaunchAuthorization.issue(prepared, instance)
 
-    ack = await coordinator.start_prepared_runtime_instance(
-        prepared, instance, authorization
-    )
+    ack = await coordinator.start_prepared_runtime_instance(prepared, instance, authorization)
     assert isinstance(ack, RuntimeStartedAck)
     assert adapter.starts == 1
     assert adapter.healths == 0
     assert projection.calls == []
 
-    health = await coordinator.await_prepared_runtime_instance_health(
-        prepared, instance
-    )
+    health = await coordinator.await_prepared_runtime_instance_health(prepared, instance)
     assert health.healthy
     assert adapter.healths == 1
     assert projection.calls == []
@@ -242,9 +230,7 @@ async def test_launch_authorization_rejects_drifted_runtime_instance_id() -> Non
     )
 
     with pytest.raises(ValueError, match="runtime launch authorization is stale"):
-        await coordinator.start_prepared_runtime_instance(
-            prepared, instance, authorization
-        )
+        await coordinator.start_prepared_runtime_instance(prepared, instance, authorization)
     assert adapter.starts == 0
 
 
@@ -301,9 +287,7 @@ async def test_new_coordinator_recovers_start_result_from_durable_ledger() -> No
         projection=projection,
     )
 
-    outcome = await recovered.await_prepared_runtime_instance_health(
-        prepared, instance
-    )
+    outcome = await recovered.await_prepared_runtime_instance_health(prepared, instance)
 
     assert outcome.healthy is True
     assert adapter.healths == 1

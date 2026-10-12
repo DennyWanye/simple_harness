@@ -26,6 +26,7 @@ through the same large-result paging every settled tool result uses.
 F-Z1 遗留 3：``rglob`` 会跟随根内指向根外的目录符号链接，每条结果因此在
 这里按 ``within_root`` 复判一次，越根结果丢弃并计入 ``escaped_results``。
 """
+
 from __future__ import annotations
 
 import json
@@ -81,9 +82,7 @@ def glob_tool(
     escaped = 0
     if kind == "file":
         # 单文件目标：pattern 退化成对这一个文件名的匹配。
-        matches: list[Path] = (
-            [target] if glob_name_matches(target.name, pattern) else []
-        )
+        matches: list[Path] = [target] if glob_name_matches(target.name, pattern) else []
     else:
         try:
             # ``rglob("**/X")`` and ``glob("**/X", recursive=True)`` differ —

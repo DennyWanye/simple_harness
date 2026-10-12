@@ -23,6 +23,7 @@ Stages in order:
 If all three tiers fail to identify a task type, classifier falls back
 to ``chat`` (spec "Unknown task_type falls back to chat").
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -203,7 +204,7 @@ def _cosine(a: list[float], b: list[float]) -> float:
         nb += y * y
     if na == 0.0 or nb == 0.0:
         return 0.0
-    return dot / (na ** 0.5 * nb ** 0.5)
+    return dot / (na**0.5 * nb**0.5)
 
 
 # ---------------------------------------------------------------------------
@@ -250,8 +251,7 @@ class TaskClassifier:
         self._llm_model = llm_model
         self._llm_timeout_s = llm_timeout_s
         self._exemplars = _ExemplarPool(
-            exemplars_path
-            or Path(__file__).parent / "policies" / "exemplars.jsonl"
+            exemplars_path or Path(__file__).parent / "policies" / "exemplars.jsonl"
         )
 
     async def classify(self, user_message: str) -> ClassifierResult:
@@ -300,9 +300,7 @@ class TaskClassifier:
             rationale=rationale,
         )
 
-    async def _embed_tier(
-        self, user_message: str, start: float
-    ) -> ClassifierResult | None:
+    async def _embed_tier(self, user_message: str, start: float) -> ClassifierResult | None:
         exemplars = await self._exemplars.ensure_vectors(self._embedder)
         exemplars = [e for e in exemplars if e.vector is not None]
         if not exemplars:
@@ -346,9 +344,7 @@ class TaskClassifier:
         # Below threshold — let LLM tier take over.
         return None
 
-    async def _llm_tier(
-        self, user_message: str, start: float
-    ) -> ClassifierResult | None:
+    async def _llm_tier(self, user_message: str, start: float) -> ClassifierResult | None:
         prompt = _LLM_CLASSIFY_SYSTEM
         messages = [
             {"role": "system", "content": prompt},
@@ -368,9 +364,7 @@ class TaskClassifier:
                     timeout=self._llm_timeout_s,
                 )
         except TimeoutError:
-            logger.warning(
-                "classifier.llm_timeout", timeout_s=self._llm_timeout_s
-            )
+            logger.warning("classifier.llm_timeout", timeout_s=self._llm_timeout_s)
             return None
         except Exception as exc:
             logger.warning(

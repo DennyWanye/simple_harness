@@ -11,6 +11,7 @@ Tests (TDD, red before green):
   5. flag on + verify-fail path → injected system message contains 'task_replanning'.
   6. _REFLECTION_INSTRUCTION does NOT contain anti-sycophancy bait phrases.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -79,6 +80,7 @@ def test_parse_text_wrapped_json():
 # 2. Missing fields → safe defaults, no raise
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 def test_missing_confidence_defaults_to_0_5():
     """confidence 缺失 → 0.5（不误触发 2.4 evaluator）。"""
     d = {k: v for k, v in _FULL_DICT.items() if k != "confidence"}
@@ -110,6 +112,7 @@ def test_all_fields_missing_returns_safe_defaults():
 # 3. Total garbage → None
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 def test_garbage_input_returns_none():
     assert parse_reflection("totally not json at all!!!!") is None
     assert parse_reflection("") is None
@@ -124,6 +127,7 @@ def test_json_array_returns_none():
 # ──────────────────────────────────────────────────────────────────────────────
 # 4. flag off → agent_loop selfcheck does NOT inject reflection instruction
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def test_flag_off_selfcheck_no_reflection_marker():
     """structured_reflection=False (default) → selfcheck msg contains NO reflection marker."""
@@ -146,6 +150,7 @@ def test_flag_off_selfcheck_no_reflection_marker():
 # ──────────────────────────────────────────────────────────────────────────────
 # 5. flag on + verify-fail path → injected system message contains 'task_replanning'
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def _make_fake_verify_gate(unmatched_claims):
     """Build a minimal mock VerifyGate that fails with the given unmatched_claims."""
@@ -219,8 +224,7 @@ def test_flag_on_verify_fail_injects_reflection_instruction():
     # same code path the loop executes when verify-gate fails).
     v_outcome = verify_gate.check(assistant_text="我已生成 PPT", ledger=[])
     unmatched_lines = "\n".join(
-        f"  {i+1}. [unmatched_claim] {c.raw_text!r} — "
-        f"no receipt matched ({c.reason})"
+        f"  {i + 1}. [unmatched_claim] {c.raw_text!r} — no receipt matched ({c.reason})"
         for i, c in enumerate(v_outcome.unmatched_claims[:5])
     )
     base_rebound = (
@@ -259,6 +263,7 @@ async def _collect(agen):
 # ──────────────────────────────────────────────────────────────────────────────
 # 6. Anti-sycophancy guard: _REFLECTION_INSTRUCTION must NOT contain bait phrases
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def test_reflection_instruction_no_sycophancy_phrases():
     """Ensure _REFLECTION_INSTRUCTION has no 'just say it's done' escape hatches."""

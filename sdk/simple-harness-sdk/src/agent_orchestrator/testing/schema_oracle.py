@@ -9,6 +9,7 @@ Draft 2020-12 关键字，碰到没实现的关键字直接报错，不猜。生
 ``$ref`` 只认两种（推后第 3 批 U09，执行过程两份 Schema 用到）：``#/$defs/…`` 指同一份文件里的定义；
 ``<文件名>[#/指针]`` 指同目录 ``graph/schemas`` 里的另一份合同。
 """
+
 from __future__ import annotations
 
 import re
@@ -16,9 +17,30 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 _SUPPORTED = {
-    "$schema", "$id", "type", "const", "enum", "required", "properties", "additionalProperties",
-    "items", "minItems", "maxItems", "uniqueItems", "minLength", "maxLength", "minimum", "maximum",
-    "pattern", "anyOf", "allOf", "contains", "minContains", "maxContains", "$ref", "$defs",
+    "$schema",
+    "$id",
+    "type",
+    "const",
+    "enum",
+    "required",
+    "properties",
+    "additionalProperties",
+    "items",
+    "minItems",
+    "maxItems",
+    "uniqueItems",
+    "minLength",
+    "maxLength",
+    "minimum",
+    "maximum",
+    "pattern",
+    "anyOf",
+    "allOf",
+    "contains",
+    "minContains",
+    "maxContains",
+    "$ref",
+    "$defs",
 }
 
 
@@ -29,7 +51,7 @@ def _resolve(ref: str, root: Mapping[str, Any]) -> tuple[Mapping[str, Any], Mapp
     file_part, _, pointer = ref.partition("#")
     document = schemas.load_schema(file_part.removesuffix(".schema.json")) if file_part else root
     node: Any = document
-    for token in (pointer.strip("/").split("/") if pointer.strip("/") else ()):
+    for token in pointer.strip("/").split("/") if pointer.strip("/") else ():
         node = node[token.replace("~1", "/").replace("~0", "~")]
     return node, document
 
@@ -59,12 +81,15 @@ def _equal(left: Any, right: Any) -> bool:
     if isinstance(left, Mapping) and isinstance(right, Mapping):
         return set(left) == set(right) and all(_equal(left[k], right[k]) for k in left)
     if _is_type(left, "array") and _is_type(right, "array"):
-        return len(left) == len(right) and all(_equal(a, b) for a, b in zip(left, right, strict=True))
+        return len(left) == len(right) and all(
+            _equal(a, b) for a, b in zip(left, right, strict=True)
+        )
     return left == right
 
 
-def violations(schema: Mapping[str, Any], value: Any, path: str = "$",
-               root: Mapping[str, Any] | None = None) -> list[str]:
+def violations(
+    schema: Mapping[str, Any], value: Any, path: str = "$", root: Mapping[str, Any] | None = None
+) -> list[str]:
     """``value`` 违反 ``schema`` 的地方（空列表即合规）。``root`` 是 ``schema`` 所在的那份文件。"""
     unknown = set(schema) - _SUPPORTED
     if unknown:
@@ -114,13 +139,16 @@ def violations(schema: Mapping[str, Any], value: Any, path: str = "$",
         if "maxItems" in schema and len(value) > schema["maxItems"]:
             found.append(f"{path}: more than maxItems")
         if schema.get("uniqueItems") and any(
-                _equal(a, b) for i, a in enumerate(value) for b in value[i + 1:]):
+            _equal(a, b) for i, a in enumerate(value) for b in value[i + 1 :]
+        ):
             found.append(f"{path}: items are not unique")
         if "items" in schema:
             for index, item in enumerate(value):
                 found.extend(violations(schema["items"], item, f"{path}[{index}]", root))
         if "contains" in schema:
-            matching = sum(1 for item in value if not violations(schema["contains"], item, path, root))
+            matching = sum(
+                1 for item in value if not violations(schema["contains"], item, path, root)
+            )
             if matching < schema.get("minContains", 1):
                 found.append(f"{path}: contains fewer than minContains")
             if "maxContains" in schema and matching > schema["maxContains"]:

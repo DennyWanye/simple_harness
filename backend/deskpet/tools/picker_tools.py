@@ -21,6 +21,7 @@ WinForms dialogs work). A hidden top-most owner form keeps the dialog in
 front of the pet window. If the user cancels, the tool returns
 ``{"ok": false, "cancelled": true}`` — not an error.
 """
+
 from __future__ import annotations
 
 import json
@@ -104,9 +105,8 @@ def _build_script(kind: str, title: str, file_filter: str) -> str:
         dialog = _DIALOG_SAVE
     else:
         dialog = _DIALOG_FILE
-    dialog = (
-        dialog.replace("__TITLE__", _ps_escape(title))
-        .replace("__FILTER__", _ps_escape(file_filter))
+    dialog = dialog.replace("__TITLE__", _ps_escape(title)).replace(
+        "__FILTER__", _ps_escape(file_filter)
     )
     return _PS_TEMPLATE.replace("__DIALOG__", dialog)
 
@@ -135,7 +135,7 @@ def _run_dialog(kind: str, title: str, filter_key: str, timeout: float) -> dict[
     line = ""
     for raw in out.splitlines():
         if raw.strip().startswith(_SENTINEL):
-            line = raw.strip()[len(_SENTINEL):]
+            line = raw.strip()[len(_SENTINEL) :]
             break
     if not line:
         return {
@@ -152,7 +152,9 @@ def _run_dialog(kind: str, title: str, filter_key: str, timeout: float) -> dict[
 # ---------------------------------------------------------------------------
 # Tool handler
 # ---------------------------------------------------------------------------
-def office_pick(kind: str = "file", *, title: str = "", filter_key: str = "office") -> dict[str, Any]:
+def office_pick(
+    kind: str = "file", *, title: str = "", filter_key: str = "office"
+) -> dict[str, Any]:
     """Open a native picker. ``kind`` ∈ {file, save, dir}. Library entry
     point (tests call this directly with a patched subprocess)."""
     kind = (kind or "file").lower()
@@ -211,13 +213,14 @@ def _handle(args: dict[str, Any], task_id: str = "") -> str:
 
 
 def register_static_tools(registry) -> None:
-        registry.register(
-            "office_pick_file",
-            "office",
-            _SCHEMA,
-            _handle,
-            permission_category="read_file",
-            timeout_seconds=310.0,
-        )
+    registry.register(
+        "office_pick_file",
+        "office",
+        _SCHEMA,
+        _handle,
+        permission_category="read_file",
+        timeout_seconds=310.0,
+    )
+
 
 __all__ = ["office_pick", "register_static_tools"]

@@ -98,14 +98,10 @@ def request(
 
 @pytest.mark.asyncio
 async def test_legacy_is_the_only_writer_before_cutover() -> None:
-    store = FakeAuthorityStore(
-        GrowthAuthorityState(GrowthAuthorityPhase.LEGACY, generation=3)
-    )
+    store = FakeAuthorityStore(GrowthAuthorityState(GrowthAuthorityPhase.LEGACY, generation=3))
     legacy = RecordingAuthority("legacy")
     companion = RecordingAuthority("companion")
-    router = GrowthAuthorityRouter(
-        store=store, legacy=legacy, companion=companion
-    )
+    router = GrowthAuthorityRouter(store=store, legacy=legacy, companion=companion)
 
     state = await router.start()
     result = await router.dispatch(
@@ -119,16 +115,12 @@ async def test_legacy_is_the_only_writer_before_cutover() -> None:
 
 @pytest.mark.asyncio
 async def test_every_ingress_rejects_stale_authority_generation() -> None:
-    store = FakeAuthorityStore(
-        GrowthAuthorityState(GrowthAuthorityPhase.LEGACY, generation=9)
-    )
+    store = FakeAuthorityStore(GrowthAuthorityState(GrowthAuthorityPhase.LEGACY, generation=9))
     router = GrowthAuthorityRouter(store=store, legacy=RecordingAuthority("legacy"))
     await router.start()
 
     with pytest.raises(GrowthAuthorityGenerationMismatch) as exc:
-        await router.dispatch(
-            request(GrowthIngressKind.PREFERENCE_READ, authority_generation=8)
-        )
+        await router.dispatch(request(GrowthIngressKind.PREFERENCE_READ, authority_generation=8))
 
     assert exc.value.expected == 8
     assert exc.value.actual == 9
@@ -169,9 +161,7 @@ async def test_post_marker_restart_never_guesses_legacy() -> None:
     assert state.phase is GrowthAuthorityPhase.PREPARING
     assert store.transitions == []
     with pytest.raises(GrowthIngressUnavailable):
-        await router.dispatch(
-            request(GrowthIngressKind.PREFERENCE_WRITE, authority_generation=4)
-        )
+        await router.dispatch(request(GrowthIngressKind.PREFERENCE_WRITE, authority_generation=4))
     assert legacy.writes == []
 
 
@@ -192,16 +182,12 @@ async def test_companion_integrity_failure_pauses_growth_without_legacy_fallback
     assert state.phase is GrowthAuthorityPhase.PAUSED
     assert router.ordinary_chat_allowed
     assert legacy.writes == []
-    assert store.transitions[0]["journal"]["error_code"] == (
-        "companion_authority_adapter_missing"
-    )
+    assert store.transitions[0]["journal"]["error_code"] == ("companion_authority_adapter_missing")
 
 
 @pytest.mark.asyncio
 async def test_marker_commit_forbids_legacy_fallback() -> None:
-    store = FakeAuthorityStore(
-        GrowthAuthorityState(GrowthAuthorityPhase.LEGACY, generation=1)
-    )
+    store = FakeAuthorityStore(GrowthAuthorityState(GrowthAuthorityPhase.LEGACY, generation=1))
     router = GrowthAuthorityRouter(store=store, legacy=RecordingAuthority("legacy"))
     await router.start()
     preparing = await router.transition(
@@ -235,9 +221,7 @@ async def test_marker_commit_forbids_legacy_fallback() -> None:
 
 @pytest.mark.asyncio
 async def test_cannot_skip_durable_marker_state() -> None:
-    store = FakeAuthorityStore(
-        GrowthAuthorityState(GrowthAuthorityPhase.LEGACY, generation=1)
-    )
+    store = FakeAuthorityStore(GrowthAuthorityState(GrowthAuthorityPhase.LEGACY, generation=1))
     router = GrowthAuthorityRouter(store=store, legacy=RecordingAuthority("legacy"))
     await router.start()
     with pytest.raises(IllegalGrowthAuthorityTransition):
@@ -274,9 +258,7 @@ async def test_companion_switch_and_paused_recovery_require_preflight() -> None:
     )
     legacy = RecordingAuthority("legacy")
     companion = RecordingAuthority("companion")
-    router = GrowthAuthorityRouter(
-        store=store, legacy=legacy, companion=companion
-    )
+    router = GrowthAuthorityRouter(store=store, legacy=legacy, companion=companion)
     await router.start()
     active = await router.transition(
         GrowthAuthorityPhase.COMPANION,
@@ -284,9 +266,12 @@ async def test_companion_switch_and_paused_recovery_require_preflight() -> None:
         marker_committed=True,
         reason="cutover_complete",
     )
-    assert await router.dispatch(
-        request(GrowthIngressKind.CODIFY, authority_generation=active.generation)
-    ) == "companion:write"
+    assert (
+        await router.dispatch(
+            request(GrowthIngressKind.CODIFY, authority_generation=active.generation)
+        )
+        == "companion:write"
+    )
     assert legacy.writes == []
 
     paused = await router.transition(
@@ -319,9 +304,7 @@ async def test_companion_switch_and_paused_recovery_require_preflight() -> None:
 
 @pytest.mark.asyncio
 async def test_cutover_exclusive_gate_drains_legacy_writer_before_switch() -> None:
-    store = FakeAuthorityStore(
-        GrowthAuthorityState(GrowthAuthorityPhase.LEGACY, generation=1)
-    )
+    store = FakeAuthorityStore(GrowthAuthorityState(GrowthAuthorityPhase.LEGACY, generation=1))
     legacy = RecordingAuthority("legacy")
     legacy.block = True
     router = GrowthAuthorityRouter(
@@ -329,9 +312,7 @@ async def test_cutover_exclusive_gate_drains_legacy_writer_before_switch() -> No
     )
     await router.start()
     write_task = asyncio.create_task(
-        router.dispatch(
-            request(GrowthIngressKind.PREFERENCE_WRITE, authority_generation=1)
-        )
+        router.dispatch(request(GrowthIngressKind.PREFERENCE_WRITE, authority_generation=1))
     )
     await asyncio.wait_for(legacy.entered.wait(), timeout=1)
     transition_task = asyncio.create_task(
@@ -364,9 +345,7 @@ async def test_profile_delete_uses_same_exclusive_barrier_as_ingress() -> None:
             self.deleted.set()
             return owner, reason_code
 
-    store = DeletingStore(
-        GrowthAuthorityState(GrowthAuthorityPhase.LEGACY, generation=1)
-    )
+    store = DeletingStore(GrowthAuthorityState(GrowthAuthorityPhase.LEGACY, generation=1))
     legacy = RecordingAuthority("legacy")
     legacy.block = True
     router = GrowthAuthorityRouter(store=store, legacy=legacy)
@@ -486,9 +465,7 @@ class FakeReminderWriter:
         (GrowthIngressKind.REMINDER_WRITE, ("reminder-write", "x")),
     ],
 )
-async def test_legacy_adapter_maps_typed_ports(
-    kind: GrowthIngressKind, expected: object
-) -> None:
+async def test_legacy_adapter_maps_typed_ports(kind: GrowthIngressKind, expected: object) -> None:
     adapter = LegacyGrowthAuthorityAdapter(
         preference_reader=FakePreferenceReader(),
         preference_writer=FakePreferenceWriter(),

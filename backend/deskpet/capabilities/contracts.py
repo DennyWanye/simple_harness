@@ -80,19 +80,13 @@ def fingerprint_json(value: object) -> str:
     return hashlib.sha256(canonical_json(value).encode("utf-8")).hexdigest()
 
 
-EMPTY_OWNER_BINDING_SET_STAMP = fingerprint_json(
-    {"domain": "owner-binding-set-v1", "entries": []}
-)
-EMPTY_RECEIPT_SET_HASH = fingerprint_json(
-    {"domain": "manager-receipt-set-v1", "receipts": []}
-)
+EMPTY_OWNER_BINDING_SET_STAMP = fingerprint_json({"domain": "owner-binding-set-v1", "entries": []})
+EMPTY_RECEIPT_SET_HASH = fingerprint_json({"domain": "manager-receipt-set-v1", "receipts": []})
 
 
 def _required_text(value: object, field_name: str) -> str:
     if not isinstance(value, str) or not value.strip():
-        raise CapabilityContractError(
-            "invalid_text", f"{field_name} must be a non-empty string"
-        )
+        raise CapabilityContractError("invalid_text", f"{field_name} must be a non-empty string")
     return unicodedata.normalize("NFC", value.strip())
 
 
@@ -119,9 +113,7 @@ def _sha256(value: object, field_name: str) -> str:
 def _unique_text_tuple(values: Sequence[object], field_name: str) -> tuple[str, ...]:
     result = tuple(_required_text(value, field_name) for value in values)
     if len(result) != len(set(result)):
-        raise CapabilityContractError(
-            "duplicate_value", f"{field_name} cannot contain duplicates"
-        )
+        raise CapabilityContractError("duplicate_value", f"{field_name} cannot contain duplicates")
     return result
 
 
@@ -263,9 +255,7 @@ class CapabilityVersionDescriptor:
     health: CapabilityHealth = "unknown"
 
     def __post_init__(self) -> None:
-        object.__setattr__(
-            self, "capability_id", _logical_id(self.capability_id, "capability_id")
-        )
+        object.__setattr__(self, "capability_id", _logical_id(self.capability_id, "capability_id"))
         for field_name in ("display_name", "version", "source", "description"):
             object.__setattr__(
                 self, field_name, _required_text(getattr(self, field_name), field_name)
@@ -273,9 +263,7 @@ class CapabilityVersionDescriptor:
         if self.kind not in {"instruction", "function_tool", "mcp_tool", "pack"}:
             raise CapabilityContractError("invalid_kind", f"unknown kind: {self.kind}")
         if self.health not in {"unknown", "healthy", "degraded", "failed"}:
-            raise CapabilityContractError(
-                "invalid_health", f"unknown health: {self.health}"
-            )
+            raise CapabilityContractError("invalid_health", f"unknown health: {self.health}")
         for field_name in (
             "aliases",
             "logical_tool_ids",
@@ -302,9 +290,7 @@ class CapabilityVersionDescriptor:
                 "logical_tool_ids and provider_tool_names must have equal length",
             )
         object.__setattr__(self, "schema_hash", _sha256(self.schema_hash, "schema_hash"))
-        object.__setattr__(
-            self, "manifest_hash", _sha256(self.manifest_hash, "manifest_hash")
-        )
+        object.__setattr__(self, "manifest_hash", _sha256(self.manifest_hash, "manifest_hash"))
 
     @property
     def fingerprint(self) -> str:
@@ -345,13 +331,9 @@ class CapabilityBinding:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "binding_id", _required_text(self.binding_id, "binding_id"))
-        object.__setattr__(
-            self, "capability_id", _logical_id(self.capability_id, "capability_id")
-        )
+        object.__setattr__(self, "capability_id", _logical_id(self.capability_id, "capability_id"))
         object.__setattr__(self, "version", _required_text(self.version, "version"))
-        object.__setattr__(
-            self, "manifest_hash", _sha256(self.manifest_hash, "manifest_hash")
-        )
+        object.__setattr__(self, "manifest_hash", _sha256(self.manifest_hash, "manifest_hash"))
         if self.scope not in _SCOPE_PRECEDENCE:
             raise CapabilityContractError("invalid_scope", f"unknown scope: {self.scope}")
         object.__setattr__(self, "scope_key", _required_text(self.scope_key, "scope_key"))
@@ -374,10 +356,7 @@ class CapabilityBinding:
                 "invalid_management_policy",
                 "unknown binding management policy",
             )
-        if (
-            not isinstance(self.management_generation, int)
-            or self.management_generation < 0
-        ):
+        if not isinstance(self.management_generation, int) or self.management_generation < 0:
             raise CapabilityContractError(
                 "invalid_management_generation",
                 "management generation must be non-negative",
@@ -418,9 +397,7 @@ class CapabilityScope:
             if value is not None:
                 object.__setattr__(self, field_name, _required_text(value, field_name))
         object.__setattr__(self, "user_key", _required_text(self.user_key, "user_key"))
-        object.__setattr__(
-            self, "builtin_key", _required_text(self.builtin_key, "builtin_key")
-        )
+        object.__setattr__(self, "builtin_key", _required_text(self.builtin_key, "builtin_key"))
 
     @classmethod
     def for_run(
@@ -485,14 +462,10 @@ class OwnerScopeKey:
     scope_key: str
 
     def __post_init__(self) -> None:
-        object.__setattr__(
-            self, "owner_key", _required_text(self.owner_key, "owner_key")
-        )
+        object.__setattr__(self, "owner_key", _required_text(self.owner_key, "owner_key"))
         if self.scope not in _SCOPE_PRECEDENCE:
             raise CapabilityContractError("invalid_scope", f"unknown scope: {self.scope}")
-        object.__setattr__(
-            self, "scope_key", _required_text(self.scope_key, "scope_key")
-        )
+        object.__setattr__(self, "scope_key", _required_text(self.scope_key, "scope_key"))
 
     def to_dict(self) -> dict[str, str]:
         return {
@@ -590,9 +563,7 @@ class PlatformDetailToken:
             "exists": self.exists,
             "version": self.version,
             "owner_catalog_generation": self.owner_catalog_generation,
-            "committed_owner_binding_set_stamp": (
-                self.committed_owner_binding_set_stamp
-            ),
+            "committed_owner_binding_set_stamp": (self.committed_owner_binding_set_stamp),
             "manager_receipt_set_hash": self.manager_receipt_set_hash,
         }
 
@@ -604,9 +575,7 @@ class PlatformDetailTokenVector:
     def __post_init__(self) -> None:
         items = tuple(sorted(self.items, key=lambda item: item.key))
         if len({item.key for item in items}) != len(items):
-            raise CapabilityContractError(
-                "duplicate_detail_key", "detail token keys cannot repeat"
-            )
+            raise CapabilityContractError("duplicate_detail_key", "detail token keys cannot repeat")
         object.__setattr__(self, "items", items)
 
     @property
@@ -664,9 +633,7 @@ class RunCatalogEntryIdentity:
             raise CapabilityContractError(
                 "invalid_catalog_envelope", "catalog envelope must be an object"
             )
-        object.__setattr__(
-            self, "canonical_envelope", MappingProxyType(envelope)
-        )
+        object.__setattr__(self, "canonical_envelope", MappingProxyType(envelope))
 
     def to_dict(self) -> dict[str, JsonValue]:
         return {
@@ -683,9 +650,7 @@ class RunCatalogContentStamp:
     fingerprint: str = ""
 
     def __post_init__(self) -> None:
-        entries = tuple(
-            sorted(self.entries, key=lambda item: item.descriptor_fingerprint)
-        )
+        entries = tuple(sorted(self.entries, key=lambda item: item.descriptor_fingerprint))
         if len({item.descriptor_fingerprint for item in entries}) != len(entries):
             raise CapabilityContractError(
                 "duplicate_catalog_entry", "catalog entries cannot repeat"
@@ -720,9 +685,7 @@ class RunCatalogContentStamp:
                 "domain": "run-catalog-snapshot-ref-v2",
                 "request_scope_hash": self.request_scope_hash,
                 "run_catalog_content_stamp": self.fingerprint,
-                "descriptor_fingerprints": [
-                    item.descriptor_fingerprint for item in self.entries
-                ],
+                "descriptor_fingerprints": [item.descriptor_fingerprint for item in self.entries],
             }
         )
 
@@ -746,9 +709,7 @@ class ProcessCatalogStamp:
         object.__setattr__(
             self,
             "run_catalog_content_stamp",
-            _sha256(
-                self.run_catalog_content_stamp, "run_catalog_content_stamp"
-            ),
+            _sha256(self.run_catalog_content_stamp, "run_catalog_content_stamp"),
         )
         values = {
             "catalog_generation": self.catalog_generation,
@@ -794,8 +755,7 @@ class CapabilityDescriptor:
                 )
         object.__setattr__(self, "visible_bindings", bindings)
         fingerprints = tuple(
-            _sha256(value, "tool_spec_fingerprints")
-            for value in self.tool_spec_fingerprints
+            _sha256(value, "tool_spec_fingerprints") for value in self.tool_spec_fingerprints
         )
         if len(fingerprints) != len(set(fingerprints)):
             raise CapabilityContractError(
@@ -821,9 +781,7 @@ class CapabilityDescriptor:
         return fingerprint_json(
             {
                 "version": self.version.to_dict(),
-                "visible_bindings": [
-                    binding.to_dict() for binding in self.visible_bindings
-                ],
+                "visible_bindings": [binding.to_dict() for binding in self.visible_bindings],
                 "executable": self.executable,
                 "installed": self.installed,
                 "tool_spec_fingerprints": list(self.tool_spec_fingerprints),
@@ -854,9 +812,7 @@ class CapabilityCatalogSnapshot:
             raise CapabilityContractError(
                 "mixed_catalog_stamp", "every descriptor must share the snapshot stamp"
             )
-        descriptors = tuple(
-            sorted(descriptors, key=lambda item: item.version.capability_id)
-        )
+        descriptors = tuple(sorted(descriptors, key=lambda item: item.version.capability_id))
         object.__setattr__(self, "descriptors", descriptors)
         fingerprints = tuple(item.fingerprint for item in descriptors)
         object.__setattr__(self, "descriptor_fingerprints", fingerprints)
@@ -874,11 +830,7 @@ class CapabilityCatalogSnapshot:
 
     def get(self, capability_id: str) -> CapabilityDescriptor | None:
         return next(
-            (
-                item
-                for item in self.descriptors
-                if item.version.capability_id == capability_id
-            ),
+            (item for item in self.descriptors if item.version.capability_id == capability_id),
             None,
         )
 
@@ -925,9 +877,7 @@ class RegistryToolDescriptor:
                 self, field_name, _required_text(getattr(self, field_name), field_name)
             )
         object.__setattr__(self, "schema_hash", _sha256(self.schema_hash, "schema_hash"))
-        if bool(self.resource_scope_resolver_id) != bool(
-            self.resource_scope_resolver_version
-        ):
+        if bool(self.resource_scope_resolver_id) != bool(self.resource_scope_resolver_version):
             raise CapabilityContractError(
                 "invalid_resource_scope_resolver",
                 "resource scope resolver id and version must be provided together",
@@ -975,9 +925,7 @@ class RegistryToolDescriptor:
         }
         if self.resource_scope_resolver_id:
             payload["resource_scope_resolver_id"] = self.resource_scope_resolver_id
-            payload[
-                "resource_scope_resolver_version"
-            ] = self.resource_scope_resolver_version
+            payload["resource_scope_resolver_version"] = self.resource_scope_resolver_version
         if self.runtime_provenance_ref:
             payload["runtime_provenance_ref"] = self.runtime_provenance_ref
         expected = fingerprint_json(payload)
@@ -1004,9 +952,7 @@ class RegistryCatalogSnapshot:
             raise CapabilityCollisionError(
                 "registry_name_collision", "registry snapshot contains duplicate tool names"
             )
-        object.__setattr__(
-            self, "tools", tuple(sorted(tools, key=lambda item: item.provider_name))
-        )
+        object.__setattr__(self, "tools", tuple(sorted(tools, key=lambda item: item.provider_name)))
 
     @property
     def by_name(self) -> Mapping[str, RegistryToolDescriptor]:
@@ -1056,9 +1002,7 @@ class CapabilitySearchHit:
     descriptor_fingerprint: str
 
     def __post_init__(self) -> None:
-        object.__setattr__(
-            self, "capability_id", _logical_id(self.capability_id, "capability_id")
-        )
+        object.__setattr__(self, "capability_id", _logical_id(self.capability_id, "capability_id"))
         object.__setattr__(self, "version", _required_text(self.version, "version"))
         if not math.isfinite(float(self.score)):
             raise CapabilityContractError("invalid_score", "search score must be finite")
@@ -1084,9 +1028,7 @@ class CapabilitySearchReceipt:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "receipt_id", _sha256(self.receipt_id, "receipt_id"))
-        object.__setattr__(
-            self, "root_run_id", _required_text(self.root_run_id, "root_run_id")
-        )
+        object.__setattr__(self, "root_run_id", _required_text(self.root_run_id, "root_run_id"))
         object.__setattr__(
             self,
             "catalog_stamp_fingerprint",

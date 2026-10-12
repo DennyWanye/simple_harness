@@ -25,7 +25,9 @@ class SearchProvider(Protocol):
     capabilities: frozenset[str]
 
     async def is_available(self) -> bool: ...
-    async def search(self, request: SearchRequest, budget: SearchBudget, client: httpx.AsyncClient) -> list[RetrievalCandidate]: ...
+    async def search(
+        self, request: SearchRequest, budget: SearchBudget, client: httpx.AsyncClient
+    ) -> list[RetrievalCandidate]: ...
 
 
 def retry_after_seconds(response: httpx.Response, *, maximum: float = 3600.0) -> float | None:
@@ -72,10 +74,18 @@ def candidates_from_rows(provider: str, rows: list[dict[str, str]]) -> list[Retr
         if not url.startswith(("http://", "https://")) or not title:
             continue
         canonical = canonicalize_url(url)
-        out.append(RetrievalCandidate(
-            stable_id=stable_candidate_id(canonical), url=url, canonical_url=canonical,
-            title=title, snippet=str(row.get("snippet") or "").strip(),
-            published_at=row.get("published_at"), provider=provider,
-            providers=(provider,), provider_rank=rank, searched_at=searched_at,
-        ))
+        out.append(
+            RetrievalCandidate(
+                stable_id=stable_candidate_id(canonical),
+                url=url,
+                canonical_url=canonical,
+                title=title,
+                snippet=str(row.get("snippet") or "").strip(),
+                published_at=row.get("published_at"),
+                provider=provider,
+                providers=(provider,),
+                provider_rank=rank,
+                searched_at=searched_at,
+            )
+        )
     return out

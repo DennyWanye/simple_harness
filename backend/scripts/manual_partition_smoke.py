@@ -4,6 +4,7 @@
 """MR-V2-5/6/7 G3 Partition 端到端 boot smoke — 真注册 read + write 工具
 真触发 partition_dispatch 看 timestamp 验证读并行 + 写串行。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -48,7 +49,8 @@ async def main():
         ("write_2", write_handler, False),
     ]:
         spec = ToolSpec(
-            name=name, toolset="test",
+            name=name,
+            toolset="test",
             schema={"name": name, "description": name, "parameters": {}},
             handler=handler,
             concurrency_safe=safe,
@@ -60,6 +62,7 @@ async def main():
 
     # 触发 partition_dispatch — 顺序: read1, write1, read2, write2
     from collections import namedtuple
+
     ToolCall = namedtuple("ToolCall", ["name", "args", "task_id"])
     calls = [
         ToolCall("read_safe_1", {"idx": "1"}, "t"),
@@ -71,13 +74,13 @@ async def main():
     start = time.time()
     results = await reg.partition_dispatch(calls, session_id="smoke")
     elapsed = time.time() - start
-    print(f"    elapsed: {elapsed*1000:.0f}ms (理论：纯串行 600ms / 全并发 150ms)")
+    print(f"    elapsed: {elapsed * 1000:.0f}ms (理论：纯串行 600ms / 全并发 150ms)")
 
     # 打印全部 timestamps 看真实执行顺序
     print("\n[diag] 全部 timestamps（按真发生顺序）:")
     t0 = timestamps[0][2] if timestamps else 0
     for name, stage, ts in timestamps:
-        print(f"      +{int((ts-t0)*1000):>4}ms  {name:20} {stage}")
+        print(f"      +{int((ts - t0) * 1000):>4}ms  {name:20} {stage}")
 
     # 真验证：
     # 1. 顺序保持 (results[0]=read_1, [1]=write_1, [2]=read_2, [3]=write_2)
@@ -98,13 +101,17 @@ async def main():
     write1_end = next(ts for (n, s, ts) in timestamps if n == "write_1" and s == "end")
     write2_start = next(ts for (n, s, ts) in timestamps if n == "write_2" and s == "start")
     serial_gap = (write2_start - write1_end) * 1000
-    print(f"\n[4] write 串行验证: write_2 启动 - write_1 结束 = {serial_gap:.0f}ms (期望 ≥ -10ms 表示串行)")
-    assert write2_start >= write1_end - 0.01, "writes should serialize, but write_2 started before write_1 ended"
+    print(
+        f"\n[4] write 串行验证: write_2 启动 - write_1 结束 = {serial_gap:.0f}ms (期望 ≥ -10ms 表示串行)"
+    )
+    assert write2_start >= write1_end - 0.01, (
+        "writes should serialize, but write_2 started before write_1 ended"
+    )
     print("    [OK] write 真串行（write_2 在 write_1 后启动）")
 
     # 4. 总耗时合理：纯串行=600ms, 全并发=150ms, partition 应≈ read 并行(150) + write 串行(300) ≈ 300ms
-    print(f"\n[5] 总耗时合理性: {elapsed*1000:.0f}ms 应在 250-500ms 之间")
-    assert 200 < elapsed * 1000 < 600, f"elapsed {elapsed*1000}ms outside expected range"
+    print(f"\n[5] 总耗时合理性: {elapsed * 1000:.0f}ms 应在 250-500ms 之间")
+    assert 200 < elapsed * 1000 < 600, f"elapsed {elapsed * 1000}ms outside expected range"
     print("    [OK] 总耗时符合 partition 预期（不是纯串行也不是全并发）")
 
     print("\n" + "=" * 70)

@@ -42,11 +42,23 @@ from ..strict import canonical, digest, plain
 
 TRANSIENT_CODES = frozenset({"FILE_BUSY"})
 TERMINAL_CODES = frozenset(
-    {"RECALL_BINDING_INVALID", "RECALL_SOURCE_STALE", "RECALL_PREPARE_BLOCKED", "EMBEDDING_UNAVAILABLE",
-     "RECALL_AGGREGATE_MISMATCH", "CURSOR_EXPIRED", "CLOCK_ROLLBACK", "SESSION_NOT_ACTIVE"}
+    {
+        "RECALL_BINDING_INVALID",
+        "RECALL_SOURCE_STALE",
+        "RECALL_PREPARE_BLOCKED",
+        "EMBEDDING_UNAVAILABLE",
+        "RECALL_AGGREGATE_MISMATCH",
+        "CURSOR_EXPIRED",
+        "CLOCK_ROLLBACK",
+        "SESSION_NOT_ACTIVE",
+    }
 )
 
-QUERY_PART_LIMITS = {"CURRENT_INPUT": (1536, 512), "TASK_GOAL": (1024, 0), "LATEST_FEEDBACK": (768, 0)}
+QUERY_PART_LIMITS = {
+    "CURRENT_INPUT": (1536, 512),
+    "TASK_GOAL": (1024, 0),
+    "LATEST_FEEDBACK": (768, 0),
+}
 QUERY_RECIPE = "context-query-v1"
 MAX_CANDIDATE_BYTES = 2_097_152
 MAX_SCAN_PAGES = 256
@@ -149,13 +161,17 @@ class RecallSources:
 @dataclass(slots=True)
 class ContextRecallCoordinator:
     uow: Any
-    search_for: Callable[[store.SessionRow], tuple[SessionSearchService, Any, Any]]  # (service, guard, generation)
+    search_for: Callable[
+        [store.SessionRow], tuple[SessionSearchService, Any, Any]
+    ]  # (service, guard, generation)
     embedding: Any | None
     clock_ms: Callable[[], int]
     clock: Callable[[], float]
     fault: Callable[[str], None] | None = None
     embedding_deployment_ref: Pin | None = None
-    capture: Callable[[store.SessionRow, int], Any] | None = None  # (session, highwater) -> GroupSnapshot
+    capture: Callable[[store.SessionRow, int], Any] | None = (
+        None  # (session, highwater) -> GroupSnapshot
+    )
     _pages: dict[str, list[Mapping[str, Any]]] = field(default_factory=dict)
 
     # ---- request construction --------------------------------------------------------
@@ -167,7 +183,11 @@ class ContextRecallCoordinator:
         protected = sorted(set(sources.protected_group_ids) - set(mandatory))
         request = {
             "schema_version": 1,
-            "recall_key": recall_key_for(sources.access.root_incarnation, sources.session.session_id, sources.original_request_key),
+            "recall_key": recall_key_for(
+                sources.access.root_incarnation,
+                sources.session.session_id,
+                sources.original_request_key,
+            ),
             "original_request_key": sources.original_request_key,
             "agent_id": sources.session.agent_id,
             "session_id": sources.session.session_id,
@@ -190,7 +210,9 @@ class ContextRecallCoordinator:
             "query_text": query_text,
             "query_hash": hashlib.sha256(query_text.encode("utf-8")).hexdigest(),
             "query_parts": parts,
-            "embedding_resource_ref": None if sources.embedding_resource_ref is None else sources.embedding_resource_ref.to_json(),
+            "embedding_resource_ref": None
+            if sources.embedding_resource_ref is None
+            else sources.embedding_resource_ref.to_json(),
             "embedding_fingerprint": sources.embedding_fingerprint,
             "allow_lexical_degradation": sources.allow_lexical_degradation,
             "limits": dict(sources.limits),
@@ -232,19 +254,30 @@ class ContextRecallCoordinator:
                     "created_at_ms": int(value["created_at_ms"]),
                     "deadline_ms": int(value["deadline_ms"]),
                     "last_observed_at_ms": max(now, int(value["created_at_ms"])),
-                    "next_wake_at_ms": min(int(value["deadline_ms"]), max(now, int(value["created_at_ms"]))),
+                    "next_wake_at_ms": min(
+                        int(value["deadline_ms"]), max(now, int(value["created_at_ms"]))
+                    ),
                     "last_clock_receipt_ref": value["clock_receipt_ref"],
                     "terminal_error_code": None,
                 }
-                row = store.put_context_recall_locked(connection, request=value, checkpoint=checkpoint)
+                row = store.put_context_recall_locked(
+                    connection, request=value, checkpoint=checkpoint
+                )
             else:
                 row = existing
         self._fault_point("recall.after_c0")
-        return self.resume(row.recall_key, access, now_ms=self.clock_ms(), clock_receipt_ref=Pin.from_json(value["clock_receipt_ref"]))
+        return self.resume(
+            row.recall_key,
+            access,
+            now_ms=self.clock_ms(),
+            clock_receipt_ref=Pin.from_json(value["clock_receipt_ref"]),
+        )
 
     # ---- resume / drive ------------------------------------------------------------------
 
-    def resume(self, recall_key: str, access: SessionAccess, *, now_ms: int, clock_receipt_ref: Pin) -> Mapping[str, Any]:
+    def resume(
+        self, recall_key: str, access: SessionAccess, *, now_ms: int, clock_receipt_ref: Pin
+    ) -> Mapping[str, Any]:
         """Drive the row to a terminal phase. Every non-transient failure lands as BLOCKED/STALE
         on the row itself (with a named code); only ``FILE_BUSY`` escapes, to be retried."""
 
@@ -256,14 +289,29 @@ class ContextRecallCoordinator:
         if row.control_generation != access.control_generation and not row.terminal:
             # The Session was fenced (destroy / quarantine) after this recall was coordinated:
             # the row records STALE by name (J7) instead of failing every later pass.
-            row = self._block(row, ArpError("RECALL_SOURCE_STALE", "session generation advanced"), clock_receipt_ref=clock_receipt_ref, now_ms=max(now_ms, self.clock_ms()))
+            row = self._block(
+                row,
+                ArpError("RECALL_SOURCE_STALE", "session generation advanced"),
+                clock_receipt_ref=clock_receipt_ref,
+                now_ms=max(now_ms, self.clock_ms()),
+            )
         while not row.terminal:
             try:
-                row = self._step(row, access, now_ms=max(now_ms, self.clock_ms()), clock_receipt_ref=clock_receipt_ref)
+                row = self._step(
+                    row,
+                    access,
+                    now_ms=max(now_ms, self.clock_ms()),
+                    clock_receipt_ref=clock_receipt_ref,
+                )
             except ArpError as error:
                 if error.code in TRANSIENT_CODES:
                     raise
-                row = self._block(row, error, clock_receipt_ref=clock_receipt_ref, now_ms=max(now_ms, self.clock_ms()))
+                row = self._block(
+                    row,
+                    error,
+                    clock_receipt_ref=clock_receipt_ref,
+                    now_ms=max(now_ms, self.clock_ms()),
+                )
         if row.result is not None:
             return row.result
         raise ArpError(
@@ -272,7 +320,9 @@ class ContextRecallCoordinator:
             detail={"terminal_error_code": row.checkpoint.get("terminal_error_code")},
         )
 
-    def _block(self, row: store.ContextRecallRow, error: ArpError, *, clock_receipt_ref: Pin, now_ms: int) -> store.ContextRecallRow:
+    def _block(
+        self, row: store.ContextRecallRow, error: ArpError, *, clock_receipt_ref: Pin, now_ms: int
+    ) -> store.ContextRecallRow:
         """Record a named terminal failure; the original code and detail go to an audit receipt."""
 
         current = store.read_context_recall(self.uow.database.connection, row.recall_key) or row
@@ -280,14 +330,27 @@ class ContextRecallCoordinator:
             return current
         with self.uow.database.transaction() as txn:
             store.append_original_receipt_locked(
-                txn, run_id=current.agent_id, kind="recall_block", receipt_key=f"{current.recall_key}:{current.row_version}",
-                body={"phase": current.phase, "code": error.code, "field_path": error.field_path, "detail": plain(error.detail), "message": str(error)},
+                txn,
+                run_id=current.agent_id,
+                kind="recall_block",
+                receipt_key=f"{current.recall_key}:{current.row_version}",
+                body={
+                    "phase": current.phase,
+                    "code": error.code,
+                    "field_path": error.field_path,
+                    "detail": plain(error.detail),
+                    "message": str(error),
+                },
                 now=self.clock(),
             )
         point = dict(current.checkpoint)
         point["last_observed_at_ms"] = max(now_ms, int(point["last_observed_at_ms"]))
         point["last_clock_receipt_ref"] = clock_receipt_ref.to_json()
-        phase = "STALE" if error.code in ("RECALL_SOURCE_STALE", "CURSOR_STALE", "SESSION_NOT_ACTIVE") else "BLOCKED"
+        phase = (
+            "STALE"
+            if error.code in ("RECALL_SOURCE_STALE", "CURSOR_STALE", "SESSION_NOT_ACTIVE")
+            else "BLOCKED"
+        )
         code = error.code if error.code in TERMINAL_CODES else "RECALL_PREPARE_BLOCKED"
         return self._terminal(current, point, phase, code)
 
@@ -302,13 +365,24 @@ class ContextRecallCoordinator:
             return None
         return sum(1 for g in snapshot.groups if g.indexable)
 
-    def _step(self, row: store.ContextRecallRow, access: SessionAccess, *, now_ms: int, clock_receipt_ref: Pin) -> store.ContextRecallRow:
+    def _step(
+        self,
+        row: store.ContextRecallRow,
+        access: SessionAccess,
+        *,
+        now_ms: int,
+        clock_receipt_ref: Pin,
+    ) -> store.ContextRecallRow:
         request = row.request
         point = dict(row.checkpoint)
         point["last_observed_at_ms"] = max(now_ms, int(point["last_observed_at_ms"]))
         point["last_clock_receipt_ref"] = clock_receipt_ref.to_json()
         session = store.read_session(self.uow.database.connection, row.session_id)
-        if session is None or session.state != "ACTIVE" or session.generation != row.control_generation:
+        if (
+            session is None
+            or session.state != "ACTIVE"
+            or session.generation != row.control_generation
+        ):
             return self._terminal(row, point, "STALE", "RECALL_SOURCE_STALE")
         limits = request["limits"]
         # Deadline / page caps: only checked before starting more work.
@@ -336,22 +410,39 @@ class ContextRecallCoordinator:
                     embedding_fingerprint=generation.embedding_fingerprint,
                     chunker_fingerprint=generation.chunker_fingerprint,
                     view_policy_hash=generation.view_policy_hash,
-                    identity={"recall_key": row.recall_key, "query": request["query_hash"], "exclusions": request["exclusions_hash"]},
+                    identity={
+                        "recall_key": row.recall_key,
+                        "query": request["query_hash"],
+                        "exclusions": request["exclusions_hash"],
+                    },
                 )
-            point["index_snapshot_ref"] = Pin("index_snapshot", snapshot["snapshot_id"], int(snapshot["index_generation"]), digest(snapshot)).to_json()
+            point["index_snapshot_ref"] = Pin(
+                "index_snapshot",
+                snapshot["snapshot_id"],
+                int(snapshot["index_generation"]),
+                digest(snapshot),
+            ).to_json()
             point["snapshot_chunks"] = 0
-            if request["embedding_fingerprint"] is None or generation.embedding_fingerprint == NO_EMBEDDING_FINGERPRINT:
+            if (
+                request["embedding_fingerprint"] is None
+                or generation.embedding_fingerprint == NO_EMBEDDING_FINGERPRINT
+            ):
                 point["mode"] = "LEXICAL_ONLY"
                 point["phase"] = "SCANNING"
             else:
                 point["phase"] = "WAITING_EMBEDDING"
-                point["query_call_key"] = f"{row.recall_key}/query/{request['embedding_fingerprint']}"
+                point["query_call_key"] = (
+                    f"{row.recall_key}/query/{request['embedding_fingerprint']}"
+                )
             return self._cas(row, point)
         if point["phase"] == "WAITING_EMBEDDING":
             try:
                 receipt = self._embed_query(row, point, request)
             except ArpError as error:
-                if error.code != "EMBEDDING_UNAVAILABLE" or not request["allow_lexical_degradation"]:
+                if (
+                    error.code != "EMBEDDING_UNAVAILABLE"
+                    or not request["allow_lexical_degradation"]
+                ):
                     raise
                 receipt = {"status": "FAILED", "invocation_ref": None}
             if receipt["status"] == "SUCCEEDED":
@@ -374,8 +465,11 @@ class ContextRecallCoordinator:
             if len(pages) != len(point["page_refs"]):
                 pages[:] = self._reload_pages(service, point)
             return self._ready(row, point, access, snapshot, pages)
-        if (point["phase"] == "FETCHING_RESULTS" and point["cursor_token"] is not None
-                and int(point["result_pages_committed"]) >= MAX_RESULT_PAGES):
+        if (
+            point["phase"] == "FETCHING_RESULTS"
+            and point["cursor_token"] is not None
+            and int(point["result_pages_committed"]) >= MAX_RESULT_PAGES
+        ):
             # 2026-09-25 主流程优化条目 5: the frozen query still has RESULTS pages but the
             # recall's page budget is spent.  Stop here as SKIPPED/PARTIAL with the reason
             # recorded, instead of tripping the row's structural cap on the next commit
@@ -388,7 +482,13 @@ class ContextRecallCoordinator:
             if point["cursor_token"] is None:
                 vector, vector_ref = self._query_vector(row, point)
                 page, cursor = service.start_frozen(
-                    access, request, snapshot, query_vector=vector, query_vector_ref=vector_ref, mode=str(point["mode"]), query_id=row.query_id
+                    access,
+                    request,
+                    snapshot,
+                    query_vector=vector,
+                    query_vector_ref=vector_ref,
+                    mode=str(point["mode"]),
+                    query_id=row.query_id,
                 )
             else:
                 page, cursor = service.resume_frozen(access, str(point["cursor_token"]))
@@ -406,24 +506,36 @@ class ContextRecallCoordinator:
             point["next_wake_at_ms"] = min(row.deadline_ms, self.clock_ms())
             return self._cas(row, point)
         point["result_pages_committed"] = int(point["result_pages_committed"]) + 1
-        point["next_result_offset"] = min(512, int(page["receipt"]["page_offset"]) + int(page["receipt"]["returned_count"]))
+        point["next_result_offset"] = min(
+            512, int(page["receipt"]["page_offset"]) + int(page["receipt"]["returned_count"])
+        )
         point["phase"] = "FETCHING_RESULTS"
-        point["cursor_token"] = cursor  # None once the last RESULTS page is in: next step aggregates
+        point["cursor_token"] = (
+            cursor  # None once the last RESULTS page is in: next step aggregates
+        )
         point["next_wake_at_ms"] = min(row.deadline_ms, self.clock_ms())
         return self._cas(row, point)
 
-    def _reload_pages(self, service: SessionSearchService, point: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+    def _reload_pages(
+        self, service: SessionSearchService, point: Mapping[str, Any]
+    ) -> list[Mapping[str, Any]]:
         """After a restart the in-memory pages are gone: re-read them by their frozen refs."""
 
         pages = service.pages_for_query(str(point["query_id"]))
         refs = point["page_refs"]
-        if len(pages) != len(refs) or any(digest(p) != r["content_hash"] for p, r in zip(pages, refs)):
-            raise ArpError("RECALL_AGGREGATE_MISMATCH", "frozen pages differ from the checkpointed page refs")
+        if len(pages) != len(refs) or any(
+            digest(p) != r["content_hash"] for p, r in zip(pages, refs)
+        ):
+            raise ArpError(
+                "RECALL_AGGREGATE_MISMATCH", "frozen pages differ from the checkpointed page refs"
+            )
         return list(pages)
 
     # ---- embedding (C2) -----------------------------------------------------------------
 
-    def _embed_query(self, row: store.ContextRecallRow, point: Mapping[str, Any], request: Mapping[str, Any]) -> Mapping[str, Any]:
+    def _embed_query(
+        self, row: store.ContextRecallRow, point: Mapping[str, Any], request: Mapping[str, Any]
+    ) -> Mapping[str, Any]:
         call_key = str(point["query_call_key"])
         if self.embedding is None:
             existing = embedding_call.read_call(self.uow.database.connection, call_key)
@@ -437,32 +549,50 @@ class ContextRecallCoordinator:
             purpose="SESSION_QUERY",
             texts=[request["query_text"]],
             port=self.embedding,
-            deployment_ref=self.embedding_deployment_ref or Pin("deployment", "embedding:none", 0, NO_EMBEDDING_FINGERPRINT),
+            deployment_ref=self.embedding_deployment_ref
+            or Pin("deployment", "embedding:none", 0, NO_EMBEDDING_FINGERPRINT),
             clock=self.clock,
             clock_ms=self.clock_ms,
             fault=self.fault,
             fault_name="recall.before_embed",
         )
 
-    def _query_vector(self, row: store.ContextRecallRow, point: Mapping[str, Any]) -> tuple[Sequence[float] | None, Pin | None]:
+    def _query_vector(
+        self, row: store.ContextRecallRow, point: Mapping[str, Any]
+    ) -> tuple[Sequence[float] | None, Pin | None]:
         if point["mode"] != "HYBRID":
             return None, None
-        receipt = store.read_original_receipt(self.uow.database.connection, kind=EMBEDDING_CALL_KIND, receipt_key=str(point["query_call_key"]))
+        receipt = store.read_original_receipt(
+            self.uow.database.connection,
+            kind=EMBEDDING_CALL_KIND,
+            receipt_key=str(point["query_call_key"]),
+        )
         if receipt is None or receipt["status"] != "SUCCEEDED":
             raise ArpError("EMBEDDING_UNAVAILABLE", "hybrid mode without a persisted query vector")
         provider_ref = row.request["embedding_resource_ref"]
-        return receipt["output"][0], (Pin.from_json(provider_ref) if provider_ref else None)  # one input → one vector
+        return receipt["output"][0], (
+            Pin.from_json(provider_ref) if provider_ref else None
+        )  # one input → one vector
 
     # ---- transitions -----------------------------------------------------------------------
 
-    def _cas(self, row: store.ContextRecallRow, point: Mapping[str, Any], result: Mapping[str, Any] | None = None) -> store.ContextRecallRow:
+    def _cas(
+        self,
+        row: store.ContextRecallRow,
+        point: Mapping[str, Any],
+        result: Mapping[str, Any] | None = None,
+    ) -> store.ContextRecallRow:
         with self.uow.database.transaction() as connection:
             current = store.read_context_recall(connection, row.recall_key)
             if current is None or current.row_version != row.row_version:
                 raise ArpError("RECALL_BINDING_INVALID", "recall row advanced elsewhere")
-            return store.cas_context_recall_locked(connection, current, checkpoint=point, result=result)
+            return store.cas_context_recall_locked(
+                connection, current, checkpoint=point, result=result
+            )
 
-    def _terminal(self, row: store.ContextRecallRow, point: dict[str, Any], phase: str, code: str) -> store.ContextRecallRow:
+    def _terminal(
+        self, row: store.ContextRecallRow, point: dict[str, Any], phase: str, code: str
+    ) -> store.ContextRecallRow:
         point["phase"] = phase
         point["terminal_error_code"] = code
         point["cursor_token"] = None
@@ -496,13 +626,24 @@ class ContextRecallCoordinator:
             "completed_at_ms": int(point["last_observed_at_ms"]),
         }
 
-    def _skipped(self, row: store.ContextRecallRow, point: dict[str, Any], code: str, access: SessionAccess) -> store.ContextRecallRow:
+    def _skipped(
+        self, row: store.ContextRecallRow, point: dict[str, Any], code: str, access: SessionAccess
+    ) -> store.ContextRecallRow:
         result = self._base_result(row, point)
         result.update(outcome="SKIPPED", skip_code=code)
         if code in ("EMPTY_QUERY", "RECALL_DISABLED"):
-            result.update(status="NOT_REQUESTED", index_snapshot_ref=None, page_refs=[], page_chain_hash=digest([]), query_embedding_invocation_ref=None, search_query_id=None)
+            result.update(
+                status="NOT_REQUESTED",
+                index_snapshot_ref=None,
+                page_refs=[],
+                page_chain_hash=digest([]),
+                query_embedding_invocation_ref=None,
+                search_query_id=None,
+            )
         else:
-            result.update(status="PARTIAL", search_query_id=row.query_id if point.get("page_refs") else None)
+            result.update(
+                status="PARTIAL", search_query_id=row.query_id if point.get("page_refs") else None
+            )
             pages = self._pages.get(row.recall_key) or []
             if pages:
                 result["coverage"] = dict(pages[-1]["receipt"]["coverage"])
@@ -511,9 +652,18 @@ class ContextRecallCoordinator:
         point["next_wake_at_ms"] = min(row.deadline_ms, int(point["last_observed_at_ms"]))
         return self._cas(row, point, check("ContextRecallResult", result))
 
-    def _ready(self, row: store.ContextRecallRow, point: dict[str, Any], access: SessionAccess, snapshot: Mapping[str, Any], pages: Sequence[Mapping[str, Any]]) -> store.ContextRecallRow:
+    def _ready(
+        self,
+        row: store.ContextRecallRow,
+        point: dict[str, Any],
+        access: SessionAccess,
+        snapshot: Mapping[str, Any],
+        pages: Sequence[Mapping[str, Any]],
+    ) -> store.ContextRecallRow:
         request = row.request
-        items = aggregate_context_recall(request, snapshot, pages, control_generation=access.control_generation)
+        items = aggregate_context_recall(
+            request, snapshot, pages, control_generation=access.control_generation
+        )
         if len(canonical(items)) > MAX_CANDIDATE_BYTES:
             return self._skipped(row, point, "RECALL_AGGREGATE_LIMIT", access)
         last = pages[-1]["receipt"]
@@ -541,7 +691,11 @@ class ContextRecallCoordinator:
 
 
 def aggregate_context_recall(
-    request: Mapping[str, Any], snapshot: Mapping[str, Any], pages: Sequence[Mapping[str, Any]], *, control_generation: int
+    request: Mapping[str, Any],
+    snapshot: Mapping[str, Any],
+    pages: Sequence[Mapping[str, Any]],
+    *,
+    control_generation: int,
 ) -> tuple[Mapping[str, Any], ...]:
     """C5: the only aggregator; every page must belong to the same frozen query."""
 
@@ -561,19 +715,37 @@ def aggregate_context_recall(
         receipt = page["receipt"]
         coverage = receipt["coverage"]
         require(page["cursor_purpose"] == "CONTEXT_RECALL")
-        for key in ("session_id", "query_hash", "journal_highwater", "source_snapshot_hash", "policy_ref", "authority_readset_hash"):
+        for key in (
+            "session_id",
+            "query_hash",
+            "journal_highwater",
+            "source_snapshot_hash",
+            "policy_ref",
+            "authority_readset_hash",
+        ):
             require(receipt[key] == request[key])
         require(receipt["generation"] == control_generation)
         require(receipt["excluded_group_ids"] == exclusions)
         require(receipt["index_snapshot_id"] == snapshot["snapshot_id"])
-        require(receipt["index_generation"] == snapshot["index_generation"] and receipt["index_upper_commit"] == snapshot["upper_commit"])
+        require(
+            receipt["index_generation"] == snapshot["index_generation"]
+            and receipt["index_upper_commit"] == snapshot["upper_commit"]
+        )
         if index < len(pages) - 1:
             require(page["has_more"])
         if coverage["phase"] == "SCANNING":
             require(not seen_results and coverage["scanned_chunks"] >= last_scan)
             last_scan = coverage["scanned_chunks"]
         else:
-            current = (coverage["index_coverage"], coverage["mode"], coverage["snapshot_chunks"], coverage["expected_groups"], coverage["indexed_groups"], coverage["vector_ready_groups"], receipt["query_result_count"])
+            current = (
+                coverage["index_coverage"],
+                coverage["mode"],
+                coverage["snapshot_chunks"],
+                coverage["expected_groups"],
+                coverage["indexed_groups"],
+                coverage["vector_ready_groups"],
+                receipt["query_result_count"],
+            )
             if signature is not None:
                 require(signature == current)
             signature = current

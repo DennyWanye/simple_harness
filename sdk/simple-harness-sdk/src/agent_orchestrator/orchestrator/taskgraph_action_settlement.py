@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 """Settlement of original Action reservations without inventing Agent intents."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -20,8 +21,11 @@ def require_action_settlement(orchestrator: Any, subject_id: str, mission_id: st
         raise SourceUnavailable("taskgraph_action_settlement_transaction_required")
     # Join the actual reservation column written by begin_handoff, never parse
     # an opaque subject or choose an Action by connector, Task or latest version.
-    matches = [action for action in store.list_actions(mission_id)
-               if action.get("reservation_subject") == subject_id]
+    matches = [
+        action
+        for action in store.list_actions(mission_id)
+        if action.get("reservation_subject") == subject_id
+    ]
     if len(matches) != 1:
         raise SourceUnavailable("taskgraph_action_settlement_source_missing")
     action = matches[0]
@@ -31,7 +35,9 @@ def require_action_settlement(orchestrator: Any, subject_id: str, mission_id: st
     if len(links) != 1:
         raise SourceUnavailable("taskgraph_action_settlement_operation_ambiguous")
     if snapshot.operation_effects[links[0].operation_id] not in {
-            OperationEffect.APPLIED, OperationEffect.CONFIRMED_NOT_APPLIED}:
+        OperationEffect.APPLIED,
+        OperationEffect.CONFIRMED_NOT_APPLIED,
+    }:
         raise BudgetError("TASKGRAPH_ACTION_PHYSICAL_WORK_UNRESOLVED")
     if orchestrator.commit.ledger.has_unknown_usage(subject_id):
         raise BudgetError("TASKGRAPH_ACTION_ACCOUNTING_UNRESOLVED")
@@ -40,6 +46,7 @@ def require_action_settlement(orchestrator: Any, subject_id: str, mission_id: st
 def settle_resolved_actions(orchestrator: Any) -> bool:
     """Revisit actual held Action accounts after the original proof is imported."""
     from ..storage.taskgraph_store import NotBoundError, require_bound
+
     store = orchestrator.store
     progressed = False
     for mission in store.list_missions():
@@ -70,8 +77,9 @@ def _settle_mission_actions(orchestrator: Any, mission: Any, actions: list[dict[
                 if reservation is None or reservation["state"] == "SETTLED":
                     continue
                 require_action_settlement(orchestrator, subject, mission.id)
-                orchestrator.commit._settle_subject(subject, mission.id, task_id=None,
-                    tool_calls=int(current["handoffs"]))
+                orchestrator.commit._settle_subject(
+                    subject, mission.id, task_id=None, tool_calls=int(current["handoffs"])
+                )
                 progressed = True
         except (BudgetError, SourceUnavailable):
             # The original UNKNOWN/reservation records remain authoritative.

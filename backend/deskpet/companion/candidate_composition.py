@@ -82,9 +82,7 @@ class CandidateCompositionRequestV1:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "build_id", _required(self.build_id, "build_id"))
-        if not isinstance(
-            self.receipt_expectation, CandidateDraftReceiptExpectationV1
-        ):
+        if not isinstance(self.receipt_expectation, CandidateDraftReceiptExpectationV1):
             raise TypeError("candidate_draft_receipt_expectation_required")
 
 
@@ -135,8 +133,7 @@ class CandidateCompositionFactsV1:
         ):
             raise ValueError("candidate_composition_revision_invalid")
         if self.reservation_version is not None and (
-            isinstance(self.reservation_version, bool)
-            or self.reservation_version < 1
+            isinstance(self.reservation_version, bool) or self.reservation_version < 1
         ):
             raise ValueError("candidate_reservation_version_invalid")
         for name in (
@@ -158,10 +155,7 @@ class CandidateCompositionFactsV1:
         ):
             raise TypeError("candidate_source_fence_invalid")
         evidence = tuple(sorted(set(self.evidence_event_ids)))
-        if (
-            not evidence
-            or any(not isinstance(item, str) or not item.strip() for item in evidence)
-        ):
+        if not evidence or any(not isinstance(item, str) or not item.strip() for item in evidence):
             raise CandidateCompositionError("candidate_evidence_required")
         object.__setattr__(self, "evidence_event_ids", evidence)
         if self.target_fence.owner_key != self.owner_key:
@@ -194,9 +188,7 @@ class CandidateCompositionFactsV1:
             "target": self.target.to_dict(),
             "candidate_mode": CandidateMode(self.candidate_mode).value,
             "target_fence": self.target_fence.to_dict(),
-            "source_fence": (
-                None if self.source_fence is None else self.source_fence.to_dict()
-            ),
+            "source_fence": (None if self.source_fence is None else self.source_fence.to_dict()),
             "reservation_version": self.reservation_version,
             "reflection_job_id": self.reflection_job_id,
             "attempt_generation": self.attempt_generation,
@@ -313,22 +305,16 @@ class ExactCandidateBundleV1:
             "build_status",
             "proposal_ref",
         ):
-            object.__setattr__(
-                self, name, _required(getattr(self, name), name)
-            )
+            object.__setattr__(self, name, _required(getattr(self, name), name))
         for name in (
             "candidate_hash",
             "proposal_hash",
             "evidence_set_hash",
             "target_fence_hash",
         ):
-            object.__setattr__(
-                self, name, _digest(getattr(self, name), name)
-            )
+            object.__setattr__(self, name, _digest(getattr(self, name), name))
         if self.build_status != "built":
-            raise CandidateCompositionError(
-                "candidate_bundle_build_not_committed"
-            )
+            raise CandidateCompositionError("candidate_bundle_build_not_committed")
         expected = {
             "candidate_hash": self.package.candidate_package_hash,
             "proposal_ref": self.receipt.proposal_ref,
@@ -338,9 +324,7 @@ class ExactCandidateBundleV1:
         }
         for name, value in expected.items():
             if getattr(self, name) != value:
-                raise CandidateCompositionError(
-                    f"candidate_bundle_{name}_mismatch"
-                )
+                raise CandidateCompositionError(f"candidate_bundle_{name}_mismatch")
         receipt_package = (
             self.receipt.validated_draft_hash,
             self.receipt.manifest_hash,
@@ -354,9 +338,7 @@ class ExactCandidateBundleV1:
             self.package.effect_topology_hash,
         )
         if receipt_package != package_identity:
-            raise CandidateCompositionError(
-                "candidate_bundle_receipt_package_mismatch"
-            )
+            raise CandidateCompositionError("candidate_bundle_receipt_package_mismatch")
 
 
 class CandidateCompositionStorePort(Protocol):
@@ -385,9 +367,7 @@ class CandidateDraftMaterialV1:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "receipt_id", _required(self.receipt_id, "receipt_id"))
-        object.__setattr__(
-            self, "receipt_hash", _digest(self.receipt_hash, "receipt_hash")
-        )
+        object.__setattr__(self, "receipt_hash", _digest(self.receipt_hash, "receipt_hash"))
         if not isinstance(self.archive_bytes, bytes) or not self.archive_bytes:
             raise TypeError("candidate_draft_archive_required")
         for name in (
@@ -402,9 +382,7 @@ class CandidateDraftMaterialV1:
 class CandidateDraftMaterialQueryPort(Protocol):
     """Resolve existing validated staging bytes; never rerun the child/builder."""
 
-    def read_exact(
-        self, receipt: CandidateDraftReceiptV1
-    ) -> CandidateDraftMaterialV1: ...
+    def read_exact(self, receipt: CandidateDraftReceiptV1) -> CandidateDraftMaterialV1: ...
 
 
 class CandidateCompositionService:
@@ -433,9 +411,7 @@ class CandidateCompositionService:
         if not isinstance(receipt, CandidateDraftReceiptV1):
             raise CandidateCompositionError("candidate_draft_receipt_type_invalid")
 
-        facts = self._store.read_current_candidate_composition(
-            build_id=request.build_id
-        )
+        facts = self._store.read_current_candidate_composition(build_id=request.build_id)
         if not isinstance(facts, CandidateCompositionFactsV1):
             raise CandidateCompositionError("candidate_current_facts_type_invalid")
         self._verify_receipt_against_current_facts(receipt, facts)
@@ -502,9 +478,7 @@ class CandidateCompositionService:
         }
         for name, value in expected.items():
             if getattr(receipt, name) != value:
-                raise CandidateCompositionError(
-                    f"candidate_current_{name}_mismatch"
-                )
+                raise CandidateCompositionError(f"candidate_current_{name}_mismatch")
 
     @staticmethod
     def _package_from_material(
@@ -521,9 +495,7 @@ class CandidateCompositionService:
         }
         for name, value in expected.items():
             if getattr(receipt, name) != value:
-                raise CandidateCompositionError(
-                    f"candidate_receipt_{name}_mismatch"
-                )
+                raise CandidateCompositionError(f"candidate_receipt_{name}_mismatch")
         try:
             with zipfile.ZipFile(io.BytesIO(material.archive_bytes)) as archive:
                 infos = tuple(archive.infolist())
@@ -637,11 +609,7 @@ class CandidateCompositionService:
             candidate_package_hash=package_hash,
             archive_hash=receipt.archive_hash,
             effect_topology_hash=receipt.effect_topology_hash,
-            source_facts=(
-                {}
-                if facts.source_fence is None
-                else facts.source_fence.to_dict()
-            ),
+            source_facts=({} if facts.source_fence is None else facts.source_fence.to_dict()),
             target_facts=facts.target_fence.to_dict(),
             files=tuple(files),
             blobs=tuple(blobs),
@@ -690,9 +658,7 @@ class CandidateCompositionService:
             source_scope_key=None if source is None else source.scope_key,
             source_version=None if source is None else source.version,
             source_manifest_hash=None if source is None else source.manifest_hash,
-            source_binding_generation=(
-                None if source is None else source.binding_generation
-            ),
+            source_binding_generation=(None if source is None else source.binding_generation),
             reservation_version=facts.reservation_version,
             reflection_job_id=facts.reflection_job_id,
             build_id=facts.build_id,

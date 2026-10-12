@@ -54,7 +54,9 @@ def flaky_connector(connector: FilePublishConnector, faults: Faults) -> FilePubl
         if faults.drop_requests > 0:
             faults.drop_requests -= 1
             faults.log.append("request-dropped")
-            raise ConnectorTransportError("the connection dropped before the request reached the service")
+            raise ConnectorTransportError(
+                "the connection dropped before the request reached the service"
+            )
         receipt = real_execute(*args, **kwargs)
         faults.executed += 1
         if faults.remove_published:
@@ -117,10 +119,16 @@ class Publishing:
         return sorted(p for p in self.published.rglob("*") if p.is_file())
 
     def pending_approvals(self) -> list[dict[str, Any]]:
-        return [a for a in self.world.control.approvals(self.mission_id) if a.get("state") == "PENDING"]
+        return [
+            a for a in self.world.control.approvals(self.mission_id) if a.get("state") == "PENDING"
+        ]
 
     def events(self, event_type: str | None = None) -> list[Any]:
-        return [e for e in self.store.iter_events(self.mission_id) if event_type is None or e.type == event_type]
+        return [
+            e
+            for e in self.store.iter_events(self.mission_id)
+            if event_type is None or e.type == event_type
+        ]
 
     async def drain_until(self, done: Callable[[], bool], *, rounds: int = 20) -> bool:
         for _ in range(rounds):
@@ -167,8 +175,12 @@ def workspace(world: ProductWorld, mission_id: str) -> dict[str, Any]:
     return world.control.snapshot(mission_id)["snapshot"]["operation_workspace"]
 
 
-def confirm_completion(world: ProductWorld, mission_id: str, *, command_id: str = "confirm-publish-completion",
-                       ) -> dict[str, Any]:
+def confirm_completion(
+    world: ProductWorld,
+    mission_id: str,
+    *,
+    command_id: str = "confirm-publish-completion",
+) -> dict[str, Any]:
     """确认页做的事（与前端默认一致）：内容要求照单确认，``action:`` 要求作为必须完成的效果挂在根
     义务上，完成标准选"内容哈希一致"。"""
 
@@ -179,29 +191,50 @@ def confirm_completion(world: ProductWorld, mission_id: str, *, command_id: str 
     [obligation] = current["obligations"]
     milestone = next(m for m in current["milestones"] if m["id"] == "CONTENT_HASH_VERIFIED")
     ref = current["requirements_ref"]
-    return world.control.approve_operation_completion_spec({
-        "mission_id": mission_id, "command_id": command_id,
-        "expected_requirements_ref": ref,
-        "proposal": {
-            "schema_version": 1, "mission_id": mission_id,
-            "requirements_ref": {"id": ref["id"], "revision": ref["revision"], "content_hash": ref["content_hash"]},
-            "mode": "REQUIRED_EFFECTS", "content_criterion_ids": content,
-            "effects": [{
-                "effect_key": "publish-weekly", "source_slot_key": "publish-weekly",
-                "obligation_id": obligation["id"], "criterion_ids": actions,
-                "required_milestone": milestone["id"],
-                "milestone_policy_ref": milestone["milestone_policy_ref"],
-                "evidence_policy_ref": milestone["evidence_policy_ref"],
-            }],
-        },
-    })
+    return world.control.approve_operation_completion_spec(
+        {
+            "mission_id": mission_id,
+            "command_id": command_id,
+            "expected_requirements_ref": ref,
+            "proposal": {
+                "schema_version": 1,
+                "mission_id": mission_id,
+                "requirements_ref": {
+                    "id": ref["id"],
+                    "revision": ref["revision"],
+                    "content_hash": ref["content_hash"],
+                },
+                "mode": "REQUIRED_EFFECTS",
+                "content_criterion_ids": content,
+                "effects": [
+                    {
+                        "effect_key": "publish-weekly",
+                        "source_slot_key": "publish-weekly",
+                        "obligation_id": obligation["id"],
+                        "criterion_ids": actions,
+                        "required_milestone": milestone["id"],
+                        "milestone_policy_ref": milestone["milestone_policy_ref"],
+                        "evidence_policy_ref": milestone["evidence_policy_ref"],
+                    }
+                ],
+            },
+        }
+    )
 
 
 @asynccontextmanager
-async def publishing(tmp_path: Path, *, provider: Any = None, faults: Faults | None = None,
-                     criteria: tuple[str, ...] = ("file:" + TARGET, PUBLISH), confirm: bool = True,
-                     key: str = "publish-1", goal: str = GOAL, reopen: str | None = None,
-                     **config: Any) -> AsyncIterator[Publishing]:
+async def publishing(
+    tmp_path: Path,
+    *,
+    provider: Any = None,
+    faults: Faults | None = None,
+    criteria: tuple[str, ...] = ("file:" + TARGET, PUBLISH),
+    confirm: bool = True,
+    key: str = "publish-1",
+    goal: str = GOAL,
+    reopen: str | None = None,
+    **config: Any,
+) -> AsyncIterator[Publishing]:
     """一个带发布的任务：建好、（默认）确认页已经确认，主循环还没开跑内容步骤。
 
     ``reopen`` 给出已有任务号时不建任务：同一个库、同一套连接器与部署策略重新起一个编排服务
@@ -212,15 +245,23 @@ async def publishing(tmp_path: Path, *, provider: Any = None, faults: Faults | N
     ledger_dir = tmp_path / "root" / "connectors" / "file_publish"
     faults = faults if faults is not None else Faults()
     connector = flaky_connector(FilePublishConnector(published, ledger_dir), faults)
-    policy = config.pop("deployment_policy", None) or DeploymentPolicy(enabled_connectors=("file_publish",),
-                                                                       max_action_level="L2")
+    policy = config.pop("deployment_policy", None) or DeploymentPolicy(
+        enabled_connectors=("file_publish",), max_action_level="L2"
+    )
     provider = provider if provider is not None else LayeredScriptedProvider()
-    async with product_world(tmp_path / "root", provider, connectors={"file_publish": connector},
-                             deployment_policy=policy, **config) as world:
+    async with product_world(
+        tmp_path / "root",
+        provider,
+        connectors={"file_publish": connector},
+        deployment_policy=policy,
+        **config,
+    ) as world:
         if reopen is not None:
             yield Publishing(world, reopen, published, ledger_dir, faults)
             return
-        created = world.create({"goal": goal, "success_criteria": list(criteria), "idempotency_key": key})
+        created = world.create(
+            {"goal": goal, "success_criteria": list(criteria), "idempotency_key": key}
+        )
         mission_id = created["mission_id"]
         if confirm:
             # 自动模式不代签带 action: 的任务：确认页等着人（这一轮主循环只走到确认页）。
@@ -245,8 +286,22 @@ def run(coro: Any) -> Any:
     return asyncio.run(coro)
 
 
-__all__ = ("Faults", "GOAL", "PUBLISH", "Publishing", "TARGET", "confirm_completion", "flaky_connector", "plan_committed", "root_scope",
-           "publishing", "quick_waits", "run", "settle", "workspace")
+__all__ = (
+    "Faults",
+    "GOAL",
+    "PUBLISH",
+    "Publishing",
+    "TARGET",
+    "confirm_completion",
+    "flaky_connector",
+    "plan_committed",
+    "root_scope",
+    "publishing",
+    "quick_waits",
+    "run",
+    "settle",
+    "workspace",
+)
 
 
 @asynccontextmanager
@@ -271,10 +326,13 @@ def root_scope(case: Publishing) -> dict[str, Any]:
 
     rows = case.store.connection.execute(
         "SELECT plan_revision, occurrence_id FROM operation_completion_scopes "
-        "WHERE mission_id=? AND json_extract(document_json,'$.role')='AGGREGATE'", (case.mission_id,)).fetchall()
+        "WHERE mission_id=? AND json_extract(document_json,'$.role')='AGGREGATE'",
+        (case.mission_id,),
+    ).fetchall()
     assert len(rows) == 1, [tuple(r) for r in rows]
     stored = OperationCompletionStore(case.store).get_scope_exact(
-        case.mission_id, int(rows[0]["plan_revision"]), str(rows[0]["occurrence_id"]))
+        case.mission_id, int(rows[0]["plan_revision"]), str(rows[0]["occurrence_id"])
+    )
     assert stored is not None
     return stored
 

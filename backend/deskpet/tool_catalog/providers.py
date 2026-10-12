@@ -31,29 +31,74 @@ logger = logging.getLogger(__name__)
 
 _ENVIRONMENT_KEY = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,127}$")
 _PROVIDER_TOOLS = frozenset(
-    {"web_search", "web_fetch", "web_crawl", "web_extract_article", "web_read_sitemap", "scrapling_fetch", "gold_price_lookup", "run_browser_task", "generate_image"}
+    {
+        "web_search",
+        "web_fetch",
+        "web_crawl",
+        "web_extract_article",
+        "web_read_sitemap",
+        "scrapling_fetch",
+        "gold_price_lookup",
+        "run_browser_task",
+        "generate_image",
+    }
 )
 _CONTROL_TOOLS = frozenset(
-    {"agent", "agent_parallel", "await_subagents", "capability_build", "capability_repair", "external_action_wait", "project_directory_select", "spawn_subagents", "spawn_team", "tool_activate", "workspace_prepare"}
+    {
+        "agent",
+        "agent_parallel",
+        "await_subagents",
+        "capability_build",
+        "capability_repair",
+        "external_action_wait",
+        "project_directory_select",
+        "spawn_subagents",
+        "spawn_team",
+        "tool_activate",
+        "workspace_prepare",
+    }
 )
 _STAGED_TOOLS = frozenset(
-    {"desktop_create_file", "doc_create", "doc_edit", "edit_file", "excel_create", "file_write", "move_file", "pdf_export", "ppt_create", "register_artifacts", "write_file"}
+    {
+        "desktop_create_file",
+        "doc_create",
+        "doc_edit",
+        "edit_file",
+        "excel_create",
+        "file_write",
+        "move_file",
+        "pdf_export",
+        "ppt_create",
+        "register_artifacts",
+        "write_file",
+    }
 )
 _CONTEXT_TOOLS = frozenset({"context_page_in", "skill_invoke", "todo_write"})
 _ASYNC_TOOLS = frozenset(
     {
-        "app_discover", "app_launch", "download_file", "file_read", "file_write",
-        "gold_price_lookup", "process_list", "process_start", "process_stop",
-        "process_wait", "scrapling_fetch", "skill_invoke", "web_crawl",
-        "web_extract_article", "web_fetch", "web_read_sitemap", "web_search",
+        "app_discover",
+        "app_launch",
+        "download_file",
+        "file_read",
+        "file_write",
+        "gold_price_lookup",
+        "process_list",
+        "process_start",
+        "process_stop",
+        "process_wait",
+        "scrapling_fetch",
+        "skill_invoke",
+        "web_crawl",
+        "web_extract_article",
+        "web_fetch",
+        "web_read_sitemap",
+        "web_search",
         "workspace_recall",
     }
 )
 
 
-def _authoritative_execution_context(
-    base: Any, sdk_context: ToolContext
-) -> ToolExecutionContext:
+def _authoritative_execution_context(base: Any, sdk_context: ToolContext) -> ToolExecutionContext:
     """Attach the SDK call identity to an injected host workspace binding."""
 
     call_id = active_product_tool_call_id().value
@@ -80,9 +125,7 @@ def _authoritative_execution_context(
         effect_id=call_id,
         workspace=str(base.workspace) if getattr(base, "workspace", None) else None,
         write_scope_root=(
-            str(base.write_scope_root)
-            if getattr(base, "write_scope_root", None)
-            else None
+            str(base.write_scope_root) if getattr(base, "write_scope_root", None) else None
         ),
         owner_key=str(getattr(base, "owner_key", "") or ""),
         project_id=str(getattr(base, "project_id", "") or ""),
@@ -132,8 +175,7 @@ class ToolCatalogDependencies:
         }
         for provider_name, (provider, methods) in required_methods.items():
             absent = tuple(
-                method for method in methods
-                if not callable(getattr(provider, method, None))
+                method for method in methods if not callable(getattr(provider, method, None))
             )
             if absent:
                 raise TypeError(f"{provider_name} missing callable(s): {absent}")
@@ -246,7 +288,11 @@ def adapt_model_arguments(name: str, arguments: Mapping[str, JsonValue]) -> dict
             json.loads(value)
     if name in {"window_capture", "window_focus", "window_key"}:
         creation_time = adapted.get("creation_time")
-        if isinstance(creation_time, bool) or not isinstance(creation_time, (int, float)) or creation_time <= 0:
+        if (
+            isinstance(creation_time, bool)
+            or not isinstance(creation_time, (int, float))
+            or creation_time <= 0
+        ):
             raise ValueError("creation_time must be greater than zero")
     return adapted
 
@@ -287,10 +333,12 @@ def _dynamic_handlers(deps: ToolCatalogDependencies) -> dict[str, tuple[Callable
             task_id,
             execution_context=execution_context,
         )
+
     page_handler = build_context_page_in_handler(
         deps.context_page_store,
         execution_context_getter=deps.execution_context_getter,
     )
+
     class Capture:
         def __init__(self) -> None:
             self.handlers: dict[str, Callable[..., Any]] = {}
@@ -303,8 +351,7 @@ def _dynamic_handlers(deps: ToolCatalogDependencies) -> dict[str, tuple[Callable
     capture = Capture()
     register_capability_bridge_tools(capture, deps.capability_bridge_service)
     dynamic = {
-        name: (handler_schema[0], "keyword_context")
-        for name, handler_schema in delegates.items()
+        name: (handler_schema[0], "keyword_context") for name, handler_schema in delegates.items()
     }
     dynamic.update(
         {
@@ -349,11 +396,7 @@ def build_explicit_product_tool_catalog(
         else:
             handler = _StaticHandlerBinding(
                 str(item["handler_id"]),
-                (
-                    str(item["context_handler_id"])
-                    if item.get("context_handler_id")
-                    else None
-                ),
+                (str(item["context_handler_id"]) if item.get("context_handler_id") else None),
             )
             mode = "lazy"
 
@@ -362,17 +405,11 @@ def build_explicit_product_tool_catalog(
             old_context = _authoritative_execution_context(
                 dependencies.execution_context_getter(), context
             )
-            if (
-                _name not in PROJECTLESS_SAFE_TOOL_NAMES
-                and (
-                    old_context.workspace is None
-                    or old_context.write_scope_root is None
-                )
+            if _name not in PROJECTLESS_SAFE_TOOL_NAMES and (
+                old_context.workspace is None or old_context.write_scope_root is None
             ):
                 raise RuntimeError("project_workspace_binding_required")
-            if _name == "skill_invoke" and not isinstance(
-                old_context, ToolExecutionContext
-            ):
+            if _name == "skill_invoke" and not isinstance(old_context, ToolExecutionContext):
                 raise TypeError("skill_invoke requires authoritative ToolExecutionContext")
             call_id = active_product_tool_call_id().value
             resolved_handler, resolved_mode = (
@@ -394,31 +431,49 @@ def build_explicit_product_tool_catalog(
         # The frozen manifest describes the older bridge. Project the current
         # public discovery instructions without rewriting its archived bytes.
         if name == "tool_search":
-            schema = {**schema, "description": (
-                "Search deferred capabilities authorized for this request. "
-                "Returns ranked descriptors, not executable schemas. Copy a returned "
-                "capability_id into tool_describe, then use its exact activation "
-                "fields with tool_activate before calling the target tool."
-            ), "parameters": {**schema["parameters"], "properties": {
-                **schema["parameters"]["properties"],
-                "query": {**schema["parameters"]["properties"]["query"], "description": (
-                    "Space-separated keywords. Any token can match capability metadata "
-                    "or schema text; results are ranked by token occurrences."
-                )},
-                "toolset": {**schema["parameters"]["properties"]["toolset"], "description": (
-                    "Legacy compatibility field; the current SDK catalog ignores this filter."
-                )},
-            }}}
-        elif name == "tool_describe":
-            schema = {**schema, "description": schema["description"].replace(
-                "capability_search", "tool_search"), "parameters": {
-                **schema["parameters"], "properties": {
-                    **schema["parameters"]["properties"], "capability_id": {
-                        **schema["parameters"]["properties"]["capability_id"],
-                        "description": "Copy the complete capability_id returned by tool_search.",
+            schema = {
+                **schema,
+                "description": (
+                    "Search deferred capabilities authorized for this request. "
+                    "Returns ranked descriptors, not executable schemas. Copy a returned "
+                    "capability_id into tool_describe, then use its exact activation "
+                    "fields with tool_activate before calling the target tool."
+                ),
+                "parameters": {
+                    **schema["parameters"],
+                    "properties": {
+                        **schema["parameters"]["properties"],
+                        "query": {
+                            **schema["parameters"]["properties"]["query"],
+                            "description": (
+                                "Space-separated keywords. Any token can match capability metadata "
+                                "or schema text; results are ranked by token occurrences."
+                            ),
+                        },
+                        "toolset": {
+                            **schema["parameters"]["properties"]["toolset"],
+                            "description": (
+                                "Legacy compatibility field; the current SDK catalog ignores this filter."
+                            ),
+                        },
                     },
                 },
-            }}
+            }
+        elif name == "tool_describe":
+            schema = {
+                **schema,
+                "description": schema["description"].replace("capability_search", "tool_search"),
+                "parameters": {
+                    **schema["parameters"],
+                    "properties": {
+                        **schema["parameters"]["properties"],
+                        "capability_id": {
+                            **schema["parameters"]["properties"]["capability_id"],
+                            "description": "Copy the complete capability_id returned by tool_search.",
+                        },
+                    },
+                },
+            }
         migration = migration_by_name.get(name)
         registrations.append(
             ProductToolRegistration(

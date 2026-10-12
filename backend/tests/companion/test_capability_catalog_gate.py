@@ -133,13 +133,9 @@ async def test_sqlite_scope_authority_uses_durable_run_start_and_bound_catalog()
                                     "workspace": {"scope_hash": "b" * 64},
                                 }
                             ),
-                            "current_workspace_json": json.dumps(
-                                {"scope_hash": "d" * 64}
-                            ),
+                            "current_workspace_json": json.dumps({"scope_hash": "d" * 64}),
                             "run_catalog_content_stamp": "c" * 64,
-                            "request_scope_canonical_json": json.dumps(
-                                {"user_key": "owner-a"}
-                            ),
+                            "request_scope_canonical_json": json.dumps({"user_key": "owner-a"}),
                         }
                     ]
                 )
@@ -150,9 +146,7 @@ async def test_sqlite_scope_authority_uses_durable_run_start_and_bound_catalog()
         async def read_connection(self):
             yield Db()
 
-    facts = await SqliteCurrentExecutionScopeAuthority(
-        Store()
-    ).resolve_current_execution_scope(
+    facts = await SqliteCurrentExecutionScopeAuthority(Store()).resolve_current_execution_scope(
         run_id="run-1",
         owner_key="owner-a",
         profile_generation=3,
@@ -235,6 +229,7 @@ async def test_runtime_projection_opens_gate_only_after_matching_receipt() -> No
     platform.runtime_projection_commit = Commit()
     platform.publish_lock = asyncio.Lock()
     platform.catalog_gate = gate
+
     class Ledger:
         def __init__(self):
             self.calls = []
@@ -260,9 +255,7 @@ async def test_runtime_projection_opens_gate_only_after_matching_receipt() -> No
     receipt = await platform.activate_prepared_projection(prepared)
 
     assert receipt["manager_receipt_set_hash"] == "receipt-1"
-    assert ledger.calls == [
-        (prepared.operation_id, prepared.runtime_set_hash)
-    ]
+    assert ledger.calls == [(prepared.operation_id, prepared.runtime_set_hash)]
     assert gate.is_open(key)
 
 

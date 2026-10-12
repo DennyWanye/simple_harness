@@ -12,6 +12,7 @@ PRD §3 G5 + D1 末段 + D10 末段 + TG-2 T2-5b 守护的"flag-off 字节级一
 
 测试组对照 plans/.../01-TDD.md §B TG-12 T12-1/T12-2/T12-5。
 """
+
 from __future__ import annotations
 
 import json
@@ -57,8 +58,10 @@ async def test_t12_1_envelope_keys_with_provider_flag_off():
         return {"ok": True, "path": "/tmp/x.pptx"}
 
     registry.register(
-        "fake_t12b", "testing",
-        {"name": "fake_t12b", "description": "t", "parameters": {}}, _h,
+        "fake_t12b",
+        "testing",
+        {"name": "fake_t12b", "description": "t", "parameters": {}},
+        _h,
     )
     registry.set_tools_config_provider(lambda: _Cfg)
 
@@ -79,8 +82,10 @@ async def test_t12_2_no_provider_field_order_stable():
         return {"ok": True, "value": 42}
 
     registry.register(
-        "fake_t12c", "testing",
-        {"name": "fake_t12c", "description": "t", "parameters": {}}, _h,
+        "fake_t12c",
+        "testing",
+        {"name": "fake_t12c", "description": "t", "parameters": {}},
+        _h,
     )
     env = await registry.execute_tool("fake_t12c", {}, session_id="s")
     assert list(env.keys()) == ["ok", "result", "error"]
@@ -101,8 +106,10 @@ async def test_t12_5_provider_flag_on_adds_artifacts_in_stable_order():
         return {"ok": True, "path": "/tmp/x.pptx"}
 
     registry.register(
-        "fake_t12d", "testing",
-        {"name": "fake_t12d", "description": "t", "parameters": {}}, _h,
+        "fake_t12d",
+        "testing",
+        {"name": "fake_t12d", "description": "t", "parameters": {}},
+        _h,
     )
     registry.set_tools_config_provider(lambda: _Cfg)
 
@@ -137,8 +144,10 @@ async def test_t12_provider_exception_falls_back_byte_identical():
         return {"ok": True, "path": "/tmp/x.pptx"}
 
     registry.register(
-        "fake_t12_bad", "testing",
-        {"name": "fake_t12_bad", "description": "t", "parameters": {}}, _h,
+        "fake_t12_bad",
+        "testing",
+        {"name": "fake_t12_bad", "description": "t", "parameters": {}},
+        _h,
     )
     registry.set_tools_config_provider(_bad)
 

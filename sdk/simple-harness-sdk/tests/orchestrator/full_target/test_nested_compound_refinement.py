@@ -53,30 +53,66 @@ def _root_method(context: dict[str, Any], *, with_leaf: bool) -> dict[str, Any]:
     """根做法：一个复合子目标（``inner``，承接最后一条要求）；``with_leaf`` 时前面再加一个原子步骤
     （承接第一条要求），计划提交后就有可派发的工作（M3-r2 的形状，任务是 ACTIVE）。"""
     request = context["request"]
-    part = next(item for item in request["subgoal_types"] if item["task_type_ref"]["id"] == "sub-goal-1")
+    part = next(
+        item for item in request["subgoal_types"] if item["task_type_ref"]["id"] == "sub-goal-1"
+    )
     criteria = [item["id"] for item in request["criterion_evidence"]]
     identity = request["new_method_identity"]
-    steps = [{"local_id": "inner", "task_type_ref": part["task_type_ref"], "form": "compound",
-              "arguments": {"goal": {"op": "constant", "value": "写出 NOTES.md，列三条要点"}},
-              "required_capabilities": [], "obligation_relation": "refines_parent"}]
+    steps = [
+        {
+            "local_id": "inner",
+            "task_type_ref": part["task_type_ref"],
+            "form": "compound",
+            "arguments": {"goal": {"op": "constant", "value": "写出 NOTES.md，列三条要点"}},
+            "required_capabilities": [],
+            "obligation_relation": "refines_parent",
+        }
+    ]
     links = [("inner", criteria[-1])]
     if with_leaf:
-        leaf = next(item for item in request["operators"] if str(item["task_type_ref"]["id"]).endswith("prepare-delivery"))
-        steps.insert(0, {"local_id": "leaf", "task_type_ref": leaf["task_type_ref"], "form": "primitive",
-                         "arguments": {}, "required_capabilities": list(leaf["required_capabilities"]),
-                         "obligation_relation": "refines_parent"})
+        leaf = next(
+            item
+            for item in request["operators"]
+            if str(item["task_type_ref"]["id"]).endswith("prepare-delivery")
+        )
+        steps.insert(
+            0,
+            {
+                "local_id": "leaf",
+                "task_type_ref": leaf["task_type_ref"],
+                "form": "primitive",
+                "arguments": {},
+                "required_capabilities": list(leaf["required_capabilities"]),
+                "obligation_relation": "refines_parent",
+            },
+        )
         links.insert(0, ("leaf", criteria[0]))
     return {
-        "schema_version": 1, "method_id": identity["method_id"], "method_version": identity["method_version"],
+        "schema_version": 1,
+        "method_id": identity["method_id"],
+        "method_version": identity["method_version"],
         "goal_type_ref": request["goal_type_ref"],
         "parameter_schema_ref": request["goal_signature"]["parameter_schema_ref"],
         "output_schema_ref": request["goal_signature"]["output_schema_ref"],
-        "applicable_when": [], "exploration_assumptions": [], "steps": steps, "ordering": [],
-        "required_capabilities": [], "expected_effects": [],
+        "applicable_when": [],
+        "exploration_assumptions": [],
+        "steps": steps,
+        "ordering": [],
+        "required_capabilities": [],
+        "expected_effects": [],
         "composition": {
-            "criterion_links": [{"parent_criterion_id": criterion, "child_step": local, "child_criterion_id": criterion,
-                                 "evidence_requirement": f"{local} 完成 {criterion}"} for local, criterion in links],
-            "outputs": {}, "finalizer_step": "inner", "independent_review_required": True,
+            "criterion_links": [
+                {
+                    "parent_criterion_id": criterion,
+                    "child_step": local,
+                    "child_criterion_id": criterion,
+                    "evidence_requirement": f"{local} 完成 {criterion}",
+                }
+                for local, criterion in links
+            ],
+            "outputs": {},
+            "finalizer_step": "inner",
+            "independent_review_required": True,
         },
         "basis_refs": [],
     }
@@ -86,7 +122,9 @@ def _no_change(request: Any) -> str:
     """规划器看了这个没有做法的子目标，决定先不改（这一轮了结、计划不动）。"""
     package = package_of(request)
     contexts = package.get("method_proposal_contexts") or []
-    subject = contexts[0]["subject_key"] if contexts else package["planning_subjects"][0]["subject_key"]
+    subject = (
+        contexts[0]["subject_key"] if contexts else package["planning_subjects"][0]["subject_key"]
+    )
     return decision(subject, "NO_CHANGE", {"reason": "先不处理这个子目标。"}, "不改。")
 
 
@@ -101,21 +139,35 @@ class Nested(NamedTuple):
 
     def open_goal_requests(self) -> list[str]:
         """The requests' keys with the Mission id taken out (``open-goals:<revision>``)."""
-        return [str(event.payload.get("source_key")).replace(f"{self.mission_id}:", "")
-                for event in self.loop.store.list_events(self.mission_id)
-                if event.type == REQUESTED and str(event.payload.get("source_key", "")).startswith("open-goals:")]
+        return [
+            str(event.payload.get("source_key")).replace(f"{self.mission_id}:", "")
+            for event in self.loop.store.list_events(self.mission_id)
+            if event.type == REQUESTED
+            and str(event.payload.get("source_key", "")).startswith("open-goals:")
+        ]
 
     def events(self) -> list[str]:
         return [event.type for event in self.loop.store.list_events(self.mission_id)]
 
     def request_rounds(self) -> list[str]:
         """Planner rounds opened for a repair request (not the method-review service)."""
-        return [str(event.payload["service_id"]) for event in self.loop.store.list_events(self.mission_id)
-                if event.type == "PlanningServiceResumed" and event.payload.get("source_type") == REQUESTED]
+        return [
+            str(event.payload["service_id"])
+            for event in self.loop.store.list_events(self.mission_id)
+            if event.type == "PlanningServiceResumed"
+            and event.payload.get("source_type") == REQUESTED
+        ]
 
     def planner_intents(self) -> list[Any]:
-        return [item for item in self.loop.store.list_intents("PENDING", "CLAIMED", "AGENT_CREATED", "SUBMITTED")
-                if item.mission_id == self.mission_id and item.kind == "plan" and ":planner:" in item.intent_id]
+        return [
+            item
+            for item in self.loop.store.list_intents(
+                "PENDING", "CLAIMED", "AGENT_CREATED", "SUBMITTED"
+            )
+            if item.mission_id == self.mission_id
+            and item.kind == "plan"
+            and ":planner:" in item.intent_id
+        ]
 
     def ask_round(self) -> bool:
         """Record the generic request (if not yet on file), then open a Planner round."""
@@ -124,9 +176,16 @@ class Nested(NamedTuple):
 
 
 @asynccontextmanager
-async def nested(tmp_path: Any, *, key: str, with_leaf: bool = False,
-                 sub_goal: Callable[[Any], Any] | None = None, budget: dict[str, Any] | None = None,
-                 root: str = "root", **config: Any) -> AsyncIterator[Nested]:
+async def nested(
+    tmp_path: Any,
+    *,
+    key: str,
+    with_leaf: bool = False,
+    sub_goal: Callable[[Any], Any] | None = None,
+    budget: dict[str, Any] | None = None,
+    root: str = "root",
+    **config: Any,
+) -> AsyncIterator[Nested]:
     """计划第 1 版刚提交（根做法里有一个没有做法的复合子目标）。``sub_goal`` 是规划器对子目标那一轮
     的回答；``None`` 表示扣住那次调用（在途）。执行者一律扣住。"""
 
@@ -138,9 +197,17 @@ async def nested(tmp_path: Any, *, key: str, with_leaf: bool = False,
         package = package_of(request)
         contexts = package.get("method_proposal_contexts") or []
         if calls["n"] == 1:
-            return decision(contexts[0]["subject_key"], "PROPOSE_METHOD",
-                            {"method_proposal": {"method": _root_method(contexts[0], with_leaf=with_leaf),
-                                                 "rationale": "交给一个子目标。"}}, "交给一个子目标。")
+            return decision(
+                contexts[0]["subject_key"],
+                "PROPOSE_METHOD",
+                {
+                    "method_proposal": {
+                        "method": _root_method(contexts[0], with_leaf=with_leaf),
+                        "rationale": "交给一个子目标。",
+                    }
+                },
+                "交给一个子目标。",
+            )
         if calls["n"] == 2:
             if sub_goal is None:
                 holder["provider"].held.add("planner")
@@ -161,9 +228,15 @@ async def nested(tmp_path: Any, *, key: str, with_leaf: bool = False,
             semantics = HtnStore(world.store)
             await run_until(world, lambda: semantics.active_plan_revision(mission_id) is not None)
             network = world.loop._dispatch_for(mission_id).network(mission_id)
-            unrefined = [str(spec.task_id) for spec in network.occurrences
-                         if spec.form is TaskForm.COMPOUND and network.adopted_instance_for(spec.occurrence_id) is None]
-            assert len(unrefined) == 1, unrefined  # the shape of the defect, asserted rather than assumed
+            unrefined = [
+                str(spec.task_id)
+                for spec in network.occurrences
+                if spec.form is TaskForm.COMPOUND
+                and network.adopted_instance_for(spec.occurrence_id) is None
+            ]
+            assert len(unrefined) == 1, (
+                unrefined
+            )  # the shape of the defect, asserted rather than assumed
             yield Nested(world, mission_id, provider)
     finally:
         provider.release.set()
@@ -180,7 +253,12 @@ def test_an_unrefined_nested_compound_reopens_the_planner(tmp_path) -> None:
             # a plan whose only step is an unrefined compound commits nothing to dispatch
             assert world.loop.store.get_mission(world.mission_id).status is MissionStatus.PLANNING
             await run_until(world.world, lambda: world.provider.asked.count("planner") >= 3)
-            return world.open_goal_requests(), world.events(), world.planner_intents(), world.request_rounds()
+            return (
+                world.open_goal_requests(),
+                world.events(),
+                world.planner_intents(),
+                world.request_rounds(),
+            )
 
     requests, events, intents, rounds = asyncio.run(case())
     assert requests == ["open-goals:1"]
@@ -206,13 +284,25 @@ def test_the_same_revision_is_not_put_to_the_planner_twice(tmp_path) -> None:
     assert resumed == 1
 
     async def settled():
-        async with nested(tmp_path, key="p23d-nested-settled", sub_goal=_no_change, root="settled") as world:
+        async with nested(
+            tmp_path, key="p23d-nested-settled", sub_goal=_no_change, root="settled"
+        ) as world:
             loop = world.loop
-            await run_until(world.world, lambda: any(
-                event.type == "PlanningDecisionEvaluated" and event.payload.get("decision_type") == "NO_CHANGE"
-                for event in loop.store.list_events(world.mission_id)))
+            await run_until(
+                world.world,
+                lambda: any(
+                    event.type == "PlanningDecisionEvaluated"
+                    and event.payload.get("decision_type") == "NO_CHANGE"
+                    for event in loop.store.list_events(world.mission_id)
+                ),
+            )
             again = [world.ask_round(), world.ask_round()]
-            return again, world.open_goal_requests(), world.request_rounds(), world.planner_intents()
+            return (
+                again,
+                world.open_goal_requests(),
+                world.request_rounds(),
+                world.planner_intents(),
+            )
 
     again, requests, services, intents = asyncio.run(settled())
     assert again == [False, False]
@@ -230,10 +320,16 @@ def test_a_fully_refined_plan_asks_for_nothing(tmp_path) -> None:
         async with committed(tmp_path, key="p23d-nested-flat") as seed:
             mission = seed.loop.store.get_mission(seed.mission.id)
             recorded = collect_triggers(seed.loop, mission)
-            opened = [seed.loop._resume_planning_services(seed.loop.store.get_mission(seed.mission.id))
-                      for _ in range(2)]
-            requests = [event for event in seed.loop.store.list_events(seed.mission.id)
-                        if event.type == REQUESTED and str(event.payload.get("source_key", "")).startswith("open-goals:")]
+            opened = [
+                seed.loop._resume_planning_services(seed.loop.store.get_mission(seed.mission.id))
+                for _ in range(2)
+            ]
+            requests = [
+                event
+                for event in seed.loop.store.list_events(seed.mission.id)
+                if event.type == REQUESTED
+                and str(event.payload.get("source_key", "")).startswith("open-goals:")
+            ]
             return recorded, opened, requests
 
     recorded, opened, requests = asyncio.run(case())
@@ -257,13 +353,29 @@ def test_a_restarted_process_does_not_ask_the_same_revision_again(tmp_path) -> N
             async with product_world(tmp_path / "root", provider, **CONFIG) as second:
                 mission = second.store.get_mission(world.mission_id)
                 recorded_again = collect_triggers(second.loop, mission)
-                again = second.loop._resume_planning_services(second.store.get_mission(world.mission_id))
-                resumed = sum(1 for e in second.store.list_events(world.mission_id)
-                              if e.type == "PlanningServiceResumed" and e.payload.get("source_type") == REQUESTED)
-                requests = [str(e.payload.get("source_key")) for e in second.store.list_events(world.mission_id)
-                            if e.type == REQUESTED and str(e.payload.get("source_key", "")).startswith("open-goals:")]
-                return before, recorded_again, again, requests, resumed, \
-                    second.loop._next_planning_ordinal(world.mission_id)
+                again = second.loop._resume_planning_services(
+                    second.store.get_mission(world.mission_id)
+                )
+                resumed = sum(
+                    1
+                    for e in second.store.list_events(world.mission_id)
+                    if e.type == "PlanningServiceResumed"
+                    and e.payload.get("source_type") == REQUESTED
+                )
+                requests = [
+                    str(e.payload.get("source_key"))
+                    for e in second.store.list_events(world.mission_id)
+                    if e.type == REQUESTED
+                    and str(e.payload.get("source_key", "")).startswith("open-goals:")
+                ]
+                return (
+                    before,
+                    recorded_again,
+                    again,
+                    requests,
+                    resumed,
+                    second.loop._next_planning_ordinal(world.mission_id),
+                )
         finally:
             provider.release.set()
 
@@ -276,10 +388,14 @@ def test_a_restarted_process_does_not_ask_the_same_revision_again(tmp_path) -> N
     assert next_ordinal == 4
 
 
-@pytest.mark.parametrize(("with_leaf", "max_tokens", "reserve"), [(False, 20_400, 20_000), (True, 700_000, 500_000)],
-                         ids=["planning", "active"])
+@pytest.mark.parametrize(
+    ("with_leaf", "max_tokens", "reserve"),
+    [(False, 20_400, 20_000), (True, 700_000, 500_000)],
+    ids=["planning", "active"],
+)
 def test_a_refinement_round_that_cannot_be_funded_stops_the_mission_visibly(
-        tmp_path, with_leaf: bool, max_tokens: int, reserve: int) -> None:
+    tmp_path, with_leaf: bool, max_tokens: int, reserve: int
+) -> None:
     """Review P0-1 / verification P2-C: ``BudgetExhausted`` used to escape ``run()`` with a
     traceback.  The round for the unrefined sub-goal is reserved against the Mission account
     when it is opened; a Mission that cannot cover it is stopped visibly (``budget_exhausted``,
@@ -294,17 +410,37 @@ def test_a_refinement_round_that_cannot_be_funded_stops_the_mission_visibly(
     """
 
     async def case():
-        async with nested(tmp_path, key=f"p23d-nested-broke-{with_leaf}", with_leaf=with_leaf,
-                          sub_goal=_no_change, budget={"max_tokens": max_tokens, "max_attempts": 12},
-                          planner_reserve_tokens=reserve, critic_reserve_tokens=100) as world:
+        async with nested(
+            tmp_path,
+            key=f"p23d-nested-broke-{with_leaf}",
+            with_leaf=with_leaf,
+            sub_goal=_no_change,
+            budget={"max_tokens": max_tokens, "max_attempts": 12},
+            planner_reserve_tokens=reserve,
+            critic_reserve_tokens=100,
+        ) as world:
             loop = world.loop
-            await run_until(world.world, lambda: str(loop.store.get_mission(world.mission_id).status.value)
-                            in {"FAILED", "COMPLETED", "CANCELLED"})
+            await run_until(
+                world.world,
+                lambda: (
+                    str(loop.store.get_mission(world.mission_id).status.value)
+                    in {"FAILED", "COMPLETED", "CANCELLED"}
+                ),
+            )
             mission = loop.store.get_mission(world.mission_id)
-            attempts = [attempt for task in loop.store.list_tasks(world.mission_id)
-                        for attempt in loop.store.list_attempts(task.id)]
-            return (mission, world.open_goal_requests(), world.events(), world.request_rounds(),
-                    world.planner_intents(), attempts)
+            attempts = [
+                attempt
+                for task in loop.store.list_tasks(world.mission_id)
+                for attempt in loop.store.list_attempts(task.id)
+            ]
+            return (
+                mission,
+                world.open_goal_requests(),
+                world.events(),
+                world.request_rounds(),
+                world.planner_intents(),
+                attempts,
+            )
 
     mission, requests, events, rounds, intents, attempts = asyncio.run(case())
     assert requests == ["open-goals:1"]
@@ -316,8 +452,9 @@ def test_a_refinement_round_that_cannot_be_funded_stops_the_mission_visibly(
     assert "MissionFailed" in events
     if with_leaf:
         assert "planning_failure" not in mission.final_report, "it did not fail at planning"
-        assert attempts and all(str(attempt.status.value) == "CANCELLED" for attempt in attempts), \
+        assert attempts and all(str(attempt.status.value) == "CANCELLED" for attempt in attempts), (
             "the work it had open is stopped"
+        )
     else:
         assert mission.final_report["planning_failure"]["reason"] == "budget_exhausted"
         assert attempts == []

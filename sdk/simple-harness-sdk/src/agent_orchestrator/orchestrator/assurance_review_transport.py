@@ -522,7 +522,8 @@ def read_review_invocation_locked(
     # 回执的写者与对象由解析器核（第 2 批 A09）
     source = reader.read_exact_metadata(
         AssuranceRef.from_json(body["source_receipt_ref"]),
-        receipt_kind="AssuranceReviewInvocationEnsured", receipt_subject=intent_id,
+        receipt_kind="AssuranceReviewInvocationEnsured",
+        receipt_subject=intent_id,
     )
     source_row, receipt = decode(source.state_witness_json), decode(source.body_json)
     reservation_ref = AssuranceRef.from_json(body["reservation_fact_ref"])
@@ -613,7 +614,7 @@ def require_review_handoff(commit: CommitService, intent: Any, *, record: bool =
     DISCLOSE 证书落库（推后第 2 批 A03）。派发、建、交三处是前置门，同一个判定，只核不落。"""
     if intent.config.get("assurance_protocol") != "assurance-exec-v1.1":
         return
-    with (commit.store.transaction() if record else commit.store.read_view()):
+    with commit.store.transaction() if record else commit.store.read_view():
         mission = commit.store.get_mission(intent.mission_id)
         if mission is None or mission.status in TERMINAL_MISSION:
             raise AssuranceError("REVIEW_MISSION_TERMINAL")
@@ -749,8 +750,11 @@ def _require_format_repair(
     if body.get("error_code") == REVIEW_CALL_ABANDONED:
         # A call that never came back has no turn to cite (阶段 B 裁决第 6 类); it must
         # be a failed classification backed by its interruption record instead.
-        if classification != "TURN_FAILED" or body.get("turn_ref") is not None or commit.store.get_receipt(
-                "assurance-review-interrupted:" + intent.intent_id) is None:
+        if (
+            classification != "TURN_FAILED"
+            or body.get("turn_ref") is not None
+            or commit.store.get_receipt("assurance-review-interrupted:" + intent.intent_id) is None
+        ):
             raise AssuranceError("REVIEW_REPAIR_SOURCE_INVALID")
     else:
         turn_ref = AssuranceRef.from_json(body.get("turn_ref"), kinds={"agent_turn_receipt"})
@@ -853,7 +857,8 @@ def ensure_format_repair_invocation(
             message = decode(config["message"]["content"])
             code = text(original.get("error_code"))
             message["format_feedback"] = (
-                "Previous output failed strict ReviewReply v2 decoding: " + code
+                "Previous output failed strict ReviewReply v2 decoding: "
+                + code
                 + ("" if code not in _FORMAT_FEEDBACK else " — " + _FORMAT_FEEDBACK[code])
             )
             config["message"] = user_message_json(canonical(message))
@@ -861,7 +866,9 @@ def ensure_format_repair_invocation(
             code = text(original.get("error_code"))
             message = decode(config["message"]["content"])
             message["format_feedback"] = (
-                "Previous reply could not be imported (" + code + "): "
+                "Previous reply could not be imported ("
+                + code
+                + "): "
                 + _INTERPRETATION_FEEDBACK.get(code, "fix the reply and answer again.")
             )
             config["message"] = user_message_json(canonical(message))
@@ -885,5 +892,6 @@ def ensure_format_repair_invocation(
         require_current_locked=require_current,
         prior_failure=prior_failure,
         repair_reason={"TURN_FAILED": "TURN_RETRY", "SECOND_OPINION": "SECOND_OPINION"}.get(
-            classification, "FORMAT_REPAIR"),
+            classification, "FORMAT_REPAIR"
+        ),
     )

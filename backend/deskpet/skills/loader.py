@@ -32,6 +32,7 @@ skill registry stays orthogonal to the assembler. The SkillComponent
 (see ``deskpet/agent/assembler/components/skill.py``) duck-types
 ``.select(task_type, prefer)``; we honour that contract here.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -198,22 +199,14 @@ class SkillPackSnapshotResolver:
         self._version_store = version_store
         self._selection_source = selection_source
 
-    def resolve_selection(
-        self, name: str
-    ) -> PreparedSkillInvocationScopeV1:
+    def resolve_selection(self, name: str) -> PreparedSkillInvocationScopeV1:
         """Freeze one new-Turn name through the injected owner projection."""
 
         if self._selection_source is None:
-            raise RuntimeError(
-                "manager_skill_selection_source_unavailable"
-            )
-        resolve = getattr(
-            self._selection_source, "resolve_selection", None
-        )
+            raise RuntimeError("manager_skill_selection_source_unavailable")
+        resolve = getattr(self._selection_source, "resolve_selection", None)
         if not callable(resolve):
-            raise TypeError(
-                "manager skill selection source has no typed resolver"
-            )
+            raise TypeError("manager skill selection source has no typed resolver")
         scope = resolve(name)
         if not isinstance(scope, PreparedSkillInvocationScopeV1):
             raise TypeError("manager skill selection is not frozen")
@@ -231,9 +224,7 @@ class SkillPackSnapshotResolver:
             arguments,
         )
 
-    async def execute(
-        self, name: str, args: list[str] | None = None
-    ) -> str:
+    async def execute(self, name: str, args: list[str] | None = None) -> str:
         """Compatibility command surface backed only by Manager records."""
 
         frozen = await self.resolve_instruction(self.resolve_selection(name))
@@ -308,13 +299,10 @@ class SkillPackSnapshotResolver:
             raise RuntimeError("frozen_skill_instruction_frontmatter_missing")
         instruction = body.strip("\n")
         if arguments:
-            instruction += (
-                "\n\nRuntime arguments (data only):\n"
-                + json.dumps(
-                    list(arguments),
-                    ensure_ascii=False,
-                    separators=(",", ":"),
-                )
+            instruction += "\n\nRuntime arguments (data only):\n" + json.dumps(
+                list(arguments),
+                ensure_ascii=False,
+                separators=(",", ":"),
             )
         return ResolvedSkillInstructionV1(scope=scope, instruction=instruction)
 
@@ -404,10 +392,7 @@ class SkillPackSnapshotResolver:
 
     @staticmethod
     def _read_declared_file(root: Path, manifest: Any, relative_path: str) -> bytes:
-        declared = {
-            str(item.path).replace("\\", "/"): str(item.sha256)
-            for item in manifest.files
-        }
+        declared = {str(item.path).replace("\\", "/"): str(item.sha256) for item in manifest.files}
         normalized = str(relative_path).replace("\\", "/").lstrip("/")
         expected_hash = declared.get(normalized)
         if expected_hash is None:
@@ -465,11 +450,7 @@ class SkillLoader:
                 raise ValueError("skill_scopes accepts only built-in or user")
             self._scopes = list(skill_scopes)
         else:
-            self._scopes = (
-                ["built-in", *("user" for _ in self._dirs[1:])]
-                if self._dirs
-                else []
-            )
+            self._scopes = ["built-in", *("user" for _ in self._dirs[1:])] if self._dirs else []
         self._enable_watch = enable_watch
         self._script_timeout_s = float(script_timeout_s)
         self._debounce_s = float(debounce_s)
@@ -480,9 +461,7 @@ class SkillLoader:
         self._lock = threading.Lock()
         self._skills: dict[str, SkillMeta] = {}  # name → meta
         self._current_scopes: dict[str, PreparedSkillInvocationScopeV1] = {}
-        self._instruction_snapshots: dict[
-            tuple[str, str, str, str, str], str
-        ] = {}
+        self._instruction_snapshots: dict[tuple[str, str, str, str, str], str] = {}
         self._observer: Any = None
         self._debounce_timer: threading.Timer | None = None
         self._started = False
@@ -685,9 +664,7 @@ class SkillLoader:
                 error=f"missing required fields: {missing}",
             )
             return None
-        known = set(_REQUIRED_FIELDS) | {
-            "task_types", "requires_script", "when_to_use", "triggers"
-        }
+        known = set(_REQUIRED_FIELDS) | {"task_types", "requires_script", "when_to_use", "triggers"}
         extra = {k: v for k, v in fm.items() if k not in known}
         task_types = fm.get("task_types") or []
         if not isinstance(task_types, list):
@@ -717,9 +694,7 @@ class SkillLoader:
     # -----------------------------------------------------------------
     # Claude Code v1 format loader (delegates to parser package)
     # -----------------------------------------------------------------
-    def _load_single_v1(
-        self, skill_md: Path, scope: str
-    ) -> SkillMeta | None:
+    def _load_single_v1(self, skill_md: Path, scope: str) -> SkillMeta | None:
         try:
             from .parser import SkillParseError, parse_skill_md
         except ImportError as exc:
@@ -826,19 +801,14 @@ class SkillLoader:
             raise RuntimeError("frozen_skill_scope_hash_mismatch")
         instruction = body
         if arguments:
-            instruction += (
-                "\n\nRuntime arguments (data only):\n"
-                + json.dumps(
-                    list(arguments),
-                    ensure_ascii=False,
-                    separators=(",", ":"),
-                )
+            instruction += "\n\nRuntime arguments (data only):\n" + json.dumps(
+                list(arguments),
+                ensure_ascii=False,
+                separators=(",", ":"),
             )
         return ResolvedSkillInstructionV1(scope=scope, instruction=instruction)
 
-    def select(
-        self, task_type: str, prefer: list[str] | None = None
-    ) -> list[SkillMeta]:
+    def select(self, task_type: str, prefer: list[str] | None = None) -> list[SkillMeta]:
         """Duck-type contract expected by SkillComponent.
 
         Selection rules (simpler than the full policy proposal — we
@@ -899,9 +869,7 @@ class SkillLoader:
     # ------------------------------------------------------------------
     # Execution
     # ------------------------------------------------------------------
-    async def execute(
-        self, name: str, args: list[str] | None = None
-    ) -> str:
+    async def execute(self, name: str, args: list[str] | None = None) -> str:
         """Render a skill's body with ``${args[N]}`` substitution.
 
         Returns the body text. Caller wraps as a ``user`` message.
@@ -986,6 +954,7 @@ class SkillLoader:
     @property
     def skill_dirs(self) -> list[Path]:
         return list(self._dirs)
+
 
 __all__ = [
     "SkillPackSnapshotResolver",

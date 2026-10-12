@@ -94,7 +94,16 @@ def openai_chat_request_payload(
 
 _THINKING_FIELDS = frozenset({"thinking", "reasoning_effort"})
 _REQUEST_BODY_FIELDS = frozenset(
-    {"model", "messages", "tools", "tool_choice", "max_tokens", "temperature", "stream", "stream_options"}
+    {
+        "model",
+        "messages",
+        "tools",
+        "tool_choice",
+        "max_tokens",
+        "temperature",
+        "stream",
+        "stream_options",
+    }
 )
 
 _DIAGNOSTIC_FINISH_REASONS = frozenset(
@@ -219,8 +228,12 @@ class OpenAICompatibleProvider:
         # Names under which a relay echoes *this* model (e.g. a vendor-prefixed spelling).
         # The kernel trusts usage only when the echo equals the bound model name, so a
         # declared alias is normalised to it here; any other echo stays untrusted.
-        if isinstance(response_model_aliases, str) or not isinstance(response_model_aliases, Sequence) or any(
-            not isinstance(alias, str) or not alias.strip() for alias in response_model_aliases
+        if (
+            isinstance(response_model_aliases, str)
+            or not isinstance(response_model_aliases, Sequence)
+            or any(
+                not isinstance(alias, str) or not alias.strip() for alias in response_model_aliases
+            )
         ):
             raise TypeError("response_model_aliases must be a sequence of non-empty strings")
         self._response_model_aliases = frozenset(response_model_aliases)
@@ -230,8 +243,12 @@ class OpenAICompatibleProvider:
         # model not to think.  The mode is part of the target identity.
         if thinking is not None and thinking not in THINKING_MODES:
             raise ValueError(f"thinking must be one of {THINKING_MODES} or None")
-        if reasoning_effort is not None and (thinking != "enabled" or reasoning_effort not in REASONING_EFFORTS):
-            raise ValueError("reasoning_effort needs thinking='enabled' and one of " + str(REASONING_EFFORTS))
+        if reasoning_effort is not None and (
+            thinking != "enabled" or reasoning_effort not in REASONING_EFFORTS
+        ):
+            raise ValueError(
+                "reasoning_effort needs thinking='enabled' and one of " + str(REASONING_EFFORTS)
+            )
         self._thinking = thinking
         self._reasoning_effort = reasoning_effort
         private_http = False
@@ -433,7 +450,9 @@ class OpenAICompatibleProvider:
                     response.headers.get("content-type", "").split(";", 1)[0].strip()
                     != "text/event-stream"
                 ):
-                    raise ProviderProtocolError(public_message="invalid chat stream: not text/event-stream")
+                    raise ProviderProtocolError(
+                        public_message="invalid chat stream: not text/event-stream"
+                    )
                 async for line in response.aiter_lines():
                     accumulator.line(line)
                     if accumulator.done:
@@ -628,20 +647,28 @@ class OpenAICompatibleProvider:
             raise ProviderProtocolError(public_message="invalid chat response: no choices")
         choice = choices[0]
         if not isinstance(choice, Mapping):
-            raise ProviderProtocolError(public_message="invalid chat response: choice is not an object")
+            raise ProviderProtocolError(
+                public_message="invalid chat response: choice is not an object"
+            )
         raw_message = choice.get("message")
         if not isinstance(raw_message, Mapping):
-            raise ProviderProtocolError(public_message="invalid chat response: message is not an object")
+            raise ProviderProtocolError(
+                public_message="invalid chat response: message is not an object"
+            )
         content = raw_message.get("content")
         if content is None:
             content = ""
         if not isinstance(content, str):
-            raise ProviderProtocolError(public_message="invalid chat response: content is not a string")
+            raise ProviderProtocolError(
+                public_message="invalid chat response: content is not a string"
+            )
 
         tool_calls = self._parse_tool_calls(raw_message.get("tool_calls", []))
         reasoning = raw_message.get("reasoning_content")
         if reasoning is not None and not isinstance(reasoning, str):
-            raise ProviderProtocolError(public_message="invalid chat response: reasoning_content is not a string")
+            raise ProviderProtocolError(
+                public_message="invalid chat response: reasoning_content is not a string"
+            )
         usage = self._parse_usage(payload.get("usage"))
         model = payload.get("model")
         if model is None or model in self._response_model_aliases:
@@ -650,7 +677,9 @@ class OpenAICompatibleProvider:
         provider_request_id = response.headers.get("x-request-id") or payload.get("id")
         for field_value in (model, finish_reason, provider_request_id):
             if field_value is not None and not isinstance(field_value, str):
-                raise ProviderProtocolError(public_message="invalid chat response: model/finish_reason/id is not a string")
+                raise ProviderProtocolError(
+                    public_message="invalid chat response: model/finish_reason/id is not a string"
+                )
         return ProviderResponse(
             request_id=request.request_id,
             message=Message(role=MessageRole.ASSISTANT, content=content),
@@ -713,7 +742,9 @@ class OpenAICompatibleProvider:
         if raw_usage is None:
             return None
         if not isinstance(raw_usage, Mapping):
-            raise ProviderProtocolError(public_message="invalid chat response: usage is not an object")
+            raise ProviderProtocolError(
+                public_message="invalid chat response: usage is not an object"
+            )
         prompt = raw_usage.get("prompt_tokens")
         completion = raw_usage.get("completion_tokens")
         total = raw_usage.get("total_tokens")

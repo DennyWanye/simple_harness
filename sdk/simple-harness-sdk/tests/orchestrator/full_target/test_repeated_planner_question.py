@@ -10,6 +10,7 @@
 两条用例都在产品同形部署上由主循环真跑（``h1i_seed``）：规划器的提问经收集器登记，人经
 回答接口作答。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -27,7 +28,9 @@ from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider
 from h1i_seed import CONFIG, CRITERIA, GOAL, events, run_until
 from h1i_seed import planner as seed_planner
 
-_FIXTURE = Path(__file__).parent / "fixtures" / "planning_decision_v1" / "valid" / "request-human.json"
+_FIXTURE = (
+    Path(__file__).parent / "fixtures" / "planning_decision_v1" / "valid" / "request-human.json"
+)
 QUESTION = "公司官网的资料在哪里？"
 OTHER = "要不要把无法核实的规则单列？"
 ANSWER = "没有公司官网的资料，写明无法核实"
@@ -48,14 +51,21 @@ def _ask(request: Any, question: str) -> str:
 
 
 def _pending(loop: Any, mission_id: str) -> list[dict[str, Any]]:
-    return [row for row in PlanningHumanStore(loop.store).list(mission_id) if row["state"] == "PENDING"]
+    return [
+        row for row in PlanningHumanStore(loop.store).list(mission_id) if row["state"] == "PENDING"
+    ]
 
 
 def _answer(world: Any, mission: Any, row: dict[str, Any], text: str) -> None:
     answer_planning_question(
-        world.loop, tenant_id=mission.tenant_id, principal=world.deployment.principal,
-        decision_id=row["decision_id"], answer=text, expected_version=row["version"],
-        nonce="n-" + row["decision_id"])
+        world.loop,
+        tenant_id=mission.tenant_id,
+        principal=world.deployment.principal,
+        decision_id=row["decision_id"],
+        answer=text,
+        expected_version=row["version"],
+        nonce="n-" + row["decision_id"],
+    )
 
 
 def test_a_repeated_question_is_answered_from_the_previous_answer(tmp_path):
@@ -71,8 +81,13 @@ def test_a_repeated_question_is_answered_from_the_previous_answer(tmp_path):
     async def case():  # type: ignore[no-untyped-def]
         provider = LayeredScriptedProvider(planner=planner)
         async with product_world(tmp_path / "root", provider, **CONFIG) as world:
-            created = world.create({"goal": GOAL, "idempotency_key": "repeat-question",
-                                    "success_criteria": list(CRITERIA)})
+            created = world.create(
+                {
+                    "goal": GOAL,
+                    "idempotency_key": "repeat-question",
+                    "success_criteria": list(CRITERIA),
+                }
+            )
             loop = world.loop
             mission = loop.store.get_mission(created["mission_id"])
             await run_until(world, lambda: bool(_pending(loop, mission.id)))
@@ -81,10 +96,15 @@ def test_a_repeated_question_is_answered_from_the_previous_answer(tmp_path):
             _answer(world, mission, first, ANSWER)
 
             await run_until(world, lambda: not script and bool(_pending(loop, mission.id)))
-            rows = {row["decision_id"]: row for row in PlanningHumanStore(loop.store).list(mission.id)}
+            rows = {
+                row["decision_id"]: row for row in PlanningHumanStore(loop.store).list(mission.id)
+            }
             assert len(rows) == 3
-            reused = [e for e in events(loop, mission.id, "PlanningHumanAnswered")
-                      if e.payload.get("reused_from") == first["decision_id"]]
+            reused = [
+                e
+                for e in events(loop, mission.id, "PlanningHumanAnswered")
+                if e.payload.get("reused_from") == first["decision_id"]
+            ]
             assert len(reused) == 1
             second = rows[reused[0].payload["decision_id"]]
             # The same question again: answered from the previous answer, nobody is asked.
@@ -96,7 +116,9 @@ def test_a_repeated_question_is_answered_from_the_previous_answer(tmp_path):
             assert third["request"]["payload"]["question"] == OTHER
             # The planner sees both answers.
             shown = answered_questions_for_planner(loop.store, mission.id)
-            assert [(q["question"], q["answer"]["answer"]) for q in shown] == [(QUESTION, ANSWER)] * 2
+            assert [(q["question"], q["answer"]["answer"]) for q in shown] == [
+                (QUESTION, ANSWER)
+            ] * 2
             assert shown[0]["binding_current"] is True
 
     asyncio.run(case())
@@ -116,14 +138,21 @@ def test_an_answer_stays_visible_to_the_planner_after_the_binding_moved(tmp_path
         provider.held.add("worker")
         try:
             async with product_world(tmp_path / "root", provider, **CONFIG) as world:
-                created = world.create({"goal": GOAL, "idempotency_key": "answer-visible",
-                                        "success_criteria": list(CRITERIA)})
+                created = world.create(
+                    {
+                        "goal": GOAL,
+                        "idempotency_key": "answer-visible",
+                        "success_criteria": list(CRITERIA),
+                    }
+                )
                 loop = world.loop
                 mission = loop.store.get_mission(created["mission_id"])
                 await run_until(world, lambda: bool(_pending(loop, mission.id)))
                 [row] = _pending(loop, mission.id)
                 _answer(world, mission, row, "没有")
-                await run_until(world, provider.entered.is_set)  # the plan committed, its leaf dispatched
+                await run_until(
+                    world, provider.entered.is_set
+                )  # the plan committed, its leaf dispatched
                 assert events(loop, mission.id, "PlanRevisionCommitted")
                 questions = PlanningHumanStore(loop.store)
                 assert not questions.binding_current(questions.get(row["decision_id"]))

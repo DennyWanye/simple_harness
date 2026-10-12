@@ -12,6 +12,7 @@ Tests cover:
   * 4.3 G1 regression — ContextManager does not truncate fetch_tool_result
   * 4.4 check_budget gate (BLOCK aborts loop, WARN continues)
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -35,13 +36,13 @@ class _ScriptedLLM:
         self.call_count = 0
 
     async def chat_with_fallback(
-        self, messages: list[dict[str, Any]], **_: Any,
+        self,
+        messages: list[dict[str, Any]],
+        **_: Any,
     ) -> ChatResponse:
         self.call_count += 1
         if not self._responses:
-            raise AssertionError(
-                f"ScriptedLLM exhausted after {self.call_count} calls"
-            )
+            raise AssertionError(f"ScriptedLLM exhausted after {self.call_count} calls")
         return self._responses.pop(0)
 
 
@@ -138,10 +139,12 @@ class TestAgentLoopRecordToolResult:
         big_result = "X" * 6000
         envelope = {"ok": True, "result": big_result, "error": None}
         # Sequence: tool_use → end_turn
-        llm = _ScriptedLLM([
-            _make_tool_use(name="read_file", tool_id="c1"),
-            _make_end_turn(),
-        ])
+        llm = _ScriptedLLM(
+            [
+                _make_tool_use(name="read_file", tool_id="c1"),
+                _make_end_turn(),
+            ]
+        )
         tools = _ScriptedTools([envelope])
         loop = AgentLoop(
             llm_registry=llm,
@@ -168,10 +171,12 @@ class TestAgentLoopRecordToolResult:
         ctx = ContextManager()
         big_body = "FULL_BODY_" + ("A" * 6000)
         envelope = {"ok": True, "result": big_body, "error": None}
-        llm = _ScriptedLLM([
-            _make_tool_use(name="fetch_tool_result", tool_id="ftr1"),
-            _make_end_turn(),
-        ])
+        llm = _ScriptedLLM(
+            [
+                _make_tool_use(name="fetch_tool_result", tool_id="ftr1"),
+                _make_end_turn(),
+            ]
+        )
         tools = _ScriptedTools([envelope])
         loop = AgentLoop(
             llm_registry=llm,
@@ -190,7 +195,8 @@ class TestAgentLoopRecordToolResult:
         # Tool-result truncation runs after the external executor returns.
         # Pin the ContextManager contract directly here.
         out, ref = ctx.record_tool_result(
-            tool_name="fetch_tool_result", result=big_body,
+            tool_name="fetch_tool_result",
+            result=big_body,
         )
         assert ref is None
         assert out == big_body

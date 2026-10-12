@@ -19,6 +19,7 @@
 `page_reference_stale`）与可执行的下一步，offset 拒绝另外公布有效范围，而稳定
 **码**一个字符都没变（`primary_dependencies` 的重放比对因此原样成立）。
 """
+
 import json
 from types import SimpleNamespace
 
@@ -60,10 +61,16 @@ async def _call(scenario, reference_id, *, source_hash=None):
     async with aiosqlite.connect(scenario.path) as db:
         db.row_factory = aiosqlite.Row
         return await admitted_current_page(
-            db=db, stack=scenario.stack, run=scenario.run, sdk_run_id=RUN_ID,
+            db=db,
+            stack=scenario.stack,
+            run=scenario.run,
+            sdk_run_id=RUN_ID,
             page_effect=scenario.caller,
-            arguments={"reference_id": reference_id,
-                       "source_hash": source_hash or scenario.descriptor["content_hash"]})
+            arguments={
+                "reference_id": reference_id,
+                "source_hash": source_hash or scenario.descriptor["content_hash"],
+            },
+        )
 
 
 async def _rejected(scenario, reference_id, *, source_hash=None):
@@ -75,6 +82,7 @@ async def _rejected(scenario, reference_id, *, source_hash=None):
 # --------------------------------------------------------------------------
 # 1. 事故的确切形态：丢掉 offset 尾巴
 # --------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_a_reference_without_its_offset_tail_says_what_is_missing(tmp_path):
@@ -108,6 +116,7 @@ async def test_an_unparseable_offset_tail_takes_the_same_branch(tmp_path):
 # 2. 引用根本不认得：列出本请求现在真正可用的那几条
 # --------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_an_unknown_reference_lists_what_this_request_really_offers(tmp_path):
     scenario = _scenario(tmp_path, lines=520)
@@ -125,9 +134,11 @@ async def test_an_unknown_reference_lists_what_this_request_really_offers(tmp_pa
 async def test_the_listed_references_are_bounded(tmp_path):
     """可用引用再多，也只列前 ``MAX_LISTED_REFERENCES`` 条，且计数说出全量。"""
     scenario = _scenario(tmp_path, lines=520)
-    available = {"d%02d" % i: PREFIX + ("%02d" % i) * 32 + ":0"
-                 for i in range(MAX_LISTED_REFERENCES + 4)}
+    available = {
+        "d%02d" % i: PREFIX + ("%02d" % i) * 32 + ":0" for i in range(MAX_LISTED_REFERENCES + 4)
+    }
     from deskpet.execution.current_tool_pages import _listed_references
+
     listed = _listed_references(available)
     assert len(listed) == MAX_LISTED_REFERENCES == 3
     # 最新的在前：``verify_request`` 按消息顺序重建，尾部就是本请求最新那份分页结果。
@@ -138,6 +149,7 @@ async def test_the_listed_references_are_bounded(tmp_path):
 # --------------------------------------------------------------------------
 # 3. 引用形态合法但这条页已经不在了：给替代的最新页引用
 # --------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_a_stale_reference_carries_the_replacement_reference(tmp_path):
@@ -156,12 +168,15 @@ async def test_a_stale_reference_carries_the_replacement_reference(tmp_path):
 # 4. offset 越界：公布有效范围
 # --------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_an_out_of_range_offset_publishes_the_valid_range(tmp_path):
     scenario = _scenario(tmp_path, lines=520)
     content_bytes = len(scenario.content.encode("utf-8"))
-    for offset, reason in ((content_bytes + 1024, "offset_past_end"),
-                           (content_bytes, "offset_past_end")):
+    for offset, reason in (
+        (content_bytes + 1024, "offset_past_end"),
+        (content_bytes, "offset_past_end"),
+    ):
         code, detail = await _rejected(scenario, reference(scenario.descriptor, offset))
         assert code == "primary_page_offset_invalid"
         assert detail["reason"] == reason
@@ -186,6 +201,7 @@ async def test_an_out_of_range_offset_publishes_the_valid_range(tmp_path):
 # 5. 提示的纪律：不回显模型文本、不改变结果、有界、确定
 # --------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_the_detail_never_echoes_the_model_written_reference(tmp_path):
     """``detail`` 只放权威推导出的纯数据——模型写的字符串一个字都不许回显。"""
@@ -206,9 +222,15 @@ async def test_an_unreadable_authority_never_changes_the_outcome(tmp_path):
         def read_primary_effect_page_facts(self, *args, **kwargs):
             raise RuntimeError("authority unavailable")
 
-    blind = SimpleNamespace(path=scenario.path, rows=scenario.rows, stack=Blind(),
-                            descriptor=scenario.descriptor, content=scenario.content,
-                            caller=scenario.caller, run=scenario.run)
+    blind = SimpleNamespace(
+        path=scenario.path,
+        rows=scenario.rows,
+        stack=Blind(),
+        descriptor=scenario.descriptor,
+        content=scenario.content,
+        caller=scenario.caller,
+        run=scenario.run,
+    )
     code, detail = await _rejected(blind, PREFIX + INCIDENT_DIGEST)
     assert code == "primary_effect_page_reference"
     assert detail["reason"] == "page_reference_unknown"
@@ -226,7 +248,7 @@ async def test_reference_rejection_detail_is_deterministic_and_fits_the_public_m
         assert message.startswith(PRIMARY_PAGE_PUBLIC_MESSAGE)
         # 上游 ``_MAX_HANDLER_PUBLIC_MESSAGE`` 是 2048：超了就整条详情被丢掉。
         assert len(message) <= 2048
-        assert json.loads(message[len(PRIMARY_PAGE_PUBLIC_MESSAGE) + 1:]) == detail
+        assert json.loads(message[len(PRIMARY_PAGE_PUBLIC_MESSAGE) + 1 :]) == detail
         rendered.add(message)
     assert len(rendered) == 1
 
@@ -238,25 +260,39 @@ async def test_the_worst_case_offset_detail_still_fits_the_public_message(tmp_pa
     starts = page_starts(scenario.content)
     assert len(starts) > 16, "取样点必须走到「清单被截断」的分支"
     _, detail = await _rejected(
-        scenario, reference(scenario.descriptor, len(scenario.content.encode("utf-8")) + 1))
+        scenario, reference(scenario.descriptor, len(scenario.content.encode("utf-8")) + 1)
+    )
     message = _primary_page_message(detail)
     assert message.startswith(PRIMARY_PAGE_PUBLIC_MESSAGE) and len(message) <= 2048
-    assert json.loads(message[len(PRIMARY_PAGE_PUBLIC_MESSAGE) + 1:])["valid_offset_range"] == [
-        0, len(scenario.content.encode("utf-8")) - 1]
+    assert json.loads(message[len(PRIMARY_PAGE_PUBLIC_MESSAGE) + 1 :])["valid_offset_range"] == [
+        0,
+        len(scenario.content.encode("utf-8")) - 1,
+    ]
 
 
 # --------------------------------------------------------------------------
 # 6. 历史页引用（另一个前缀）：同一套原因词汇
 # --------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_a_history_page_reference_without_an_offset_tail_is_explained():
     """解析在碰任何权威面之前完成，所以这条分支不需要 db/stack。"""
-    for bad in (HISTORY_PREFIX + "a" * 64, HISTORY_PREFIX + "a" * 64 + ":x",
-                HISTORY_PREFIX + "short:0", "recall-item:m1:1"):
+    for bad in (
+        HISTORY_PREFIX + "a" * 64,
+        HISTORY_PREFIX + "a" * 64 + ":x",
+        HISTORY_PREFIX + "short:0",
+        "recall-item:m1:1",
+    ):
         with pytest.raises(PrimaryContextPageUnavailable) as excinfo:
-            await admitted_page(db=None, stack=None, run=None, sdk_run_id=None, start=None,
-                                arguments={"reference_id": bad, "source_hash": "0" * 64})
+            await admitted_page(
+                db=None,
+                stack=None,
+                run=None,
+                sdk_run_id=None,
+                start=None,
+                arguments={"reference_id": bad, "source_hash": "0" * 64},
+            )
         assert str(excinfo.value) == "primary_page_reference_invalid", bad
         detail = excinfo.value.detail
         assert detail["reason"] == "page_reference_unknown", bad
@@ -269,6 +305,7 @@ async def test_a_history_page_reference_without_an_offset_tail_is_explained():
 # 7. 临时引用表（第三条解析失败分支）：过期 / 召回片段 / 压根不是引用
 # --------------------------------------------------------------------------
 
+
 def _handler(store, runtime):
     return build_context_page_in_handler(store, execution_context_getter=lambda: runtime)
 
@@ -277,10 +314,17 @@ def _handler(store, runtime):
 async def test_an_expired_request_scoped_reference_says_so_and_offers_a_live_one():
     store = ContextPageInStore()
     runtime = SimpleNamespace(session_id="s1", request_id="r1", scope_id="p1")
-    live = store.put(kind="memory_l3", source="memory:42", content="live body",
-                     session_id="s1", request_id="r1", scope_id="p1")
-    result = json.loads(await _handler(store, runtime)(
-        {"reference_id": "a" * 32, "source_hash": "0" * 64}, "task"))
+    live = store.put(
+        kind="memory_l3",
+        source="memory:42",
+        content="live body",
+        session_id="s1",
+        request_id="r1",
+        scope_id="p1",
+    )
+    result = json.loads(
+        await _handler(store, runtime)({"reference_id": "a" * 32, "source_hash": "0" * 64}, "task")
+    )
     # 稳定码逐字不变，可重试性也不变。
     assert result["ok"] is False and result["error"] == "reference_stale"
     assert result["retriable"] is True
@@ -293,8 +337,11 @@ async def test_a_recall_fragment_ref_is_named_instead_of_being_called_stale():
     """工具说明点过名的那种误用（F07 的老形态）现在被直接说破。"""
     store = ContextPageInStore()
     runtime = SimpleNamespace(session_id="s1", request_id="r1", scope_id="p1")
-    result = json.loads(await _handler(store, runtime)(
-        {"reference_id": "recall-item:mem-7:1", "source_hash": "0" * 64}, "task"))
+    result = json.loads(
+        await _handler(store, runtime)(
+            {"reference_id": "recall-item:mem-7:1", "source_hash": "0" * 64}, "task"
+        )
+    )
     assert result["error"] == "reference_stale"
     assert result["detail"]["reason"] == "page_reference_unknown"
     assert "recall fragment ref" in result["detail"]["next_step"]
@@ -305,8 +352,11 @@ async def test_a_recall_fragment_ref_is_named_instead_of_being_called_stale():
 async def test_a_string_that_was_never_a_reference_says_where_references_come_from():
     store = ContextPageInStore()
     runtime = SimpleNamespace(session_id="s1", request_id="r1", scope_id="p1")
-    result = json.loads(await _handler(store, runtime)(
-        {"reference_id": "the checklist file", "source_hash": "0" * 64}, "task"))
+    result = json.loads(
+        await _handler(store, runtime)(
+            {"reference_id": "the checklist file", "source_hash": "0" * 64}, "task"
+        )
+    )
     assert result["detail"]["reason"] == "page_reference_unknown"
     assert "copied verbatim" in result["detail"]["next_step"]
 
@@ -315,18 +365,40 @@ async def test_a_string_that_was_never_a_reference_says_where_references_come_fr
 async def test_the_offered_references_never_cross_a_session_request_or_scope():
     """清单的过滤口径与 ``is_active`` 的准入判据完全相同。"""
     store = ContextPageInStore()
-    mine = store.put(kind="memory_l3", source="m", content="mine",
-                     session_id="s1", request_id="r1", scope_id="p1")
+    mine = store.put(
+        kind="memory_l3",
+        source="m",
+        content="mine",
+        session_id="s1",
+        request_id="r1",
+        scope_id="p1",
+    )
     for session, request, scope in (("s2", "r1", "p1"), ("s1", "r2", "p1"), ("s1", "r1", "p2")):
-        store.put(kind="memory_l3", source="m", content="theirs",
-                  session_id=session, request_id=request, scope_id=scope)
+        store.put(
+            kind="memory_l3",
+            source="m",
+            content="theirs",
+            session_id=session,
+            request_id=request,
+            scope_id=scope,
+        )
     runtime = SimpleNamespace(session_id="s1", request_id="r1", scope_id="p1")
-    result = json.loads(await _handler(store, runtime)(
-        {"reference_id": "b" * 32, "source_hash": "0" * 64}, "task"))
+    result = json.loads(
+        await _handler(store, runtime)({"reference_id": "b" * 32, "source_hash": "0" * 64}, "task")
+    )
     assert result["detail"]["available_reference_ids"] == [mine.reference_id]
     # 上界与主页面一侧同值；过期的条目在列之前就被清掉。
-    extra = [store.put(kind="memory_l3", source="m", content=str(i), session_id="s1",
-                       request_id="r1", scope_id="p1").reference_id for i in range(5)]
+    extra = [
+        store.put(
+            kind="memory_l3",
+            source="m",
+            content=str(i),
+            session_id="s1",
+            request_id="r1",
+            scope_id="p1",
+        ).reference_id
+        for i in range(5)
+    ]
     listed = store.live_reference_ids(session_id="s1", request_id="r1", scope_id="p1")
     assert len(listed) == MAX_LISTED_REFERENCES == 3
     # 同一口径：最新发布的在前，最旧的（``mine``）被挤出清单。
@@ -339,20 +411,33 @@ async def test_an_unchanged_envelope_is_still_produced_for_the_other_rejections(
     """只有"引用解析不了"这条分支多了 ``detail``，其余信封一个字节没动。"""
     store = ContextPageInStore()
     runtime = SimpleNamespace(session_id="s1", request_id="r1", scope_id="p1")
-    ref = store.put(kind="memory_l3", source="m", content="body",
-                    session_id="s1", request_id="r1", scope_id="p1")
-    forged = json.loads(await _handler(store, runtime)(
-        {"reference_id": ref.reference_id, "source_hash": "0" * 64}, "task"))
+    ref = store.put(
+        kind="memory_l3",
+        source="m",
+        content="body",
+        session_id="s1",
+        request_id="r1",
+        scope_id="p1",
+    )
+    forged = json.loads(
+        await _handler(store, runtime)(
+            {"reference_id": ref.reference_id, "source_hash": "0" * 64}, "task"
+        )
+    )
     assert forged == {"ok": False, "error": "reference_hash_mismatch", "retriable": False}
     runtime.request_id = "other"
-    denied = json.loads(await _handler(store, runtime)(
-        {"reference_id": ref.reference_id, "source_hash": ref.source_hash}, "task"))
+    denied = json.loads(
+        await _handler(store, runtime)(
+            {"reference_id": ref.reference_id, "source_hash": ref.source_hash}, "task"
+        )
+    )
     assert denied == {"ok": False, "error": "reference_scope_denied", "retriable": False}
 
 
 # --------------------------------------------------------------------------
 # 8. 事件 AH-2：同一轮里 write_file 的 tool_failed 已由事件 AH 通用化覆盖
 # --------------------------------------------------------------------------
+
 
 def test_the_same_turns_write_file_failure_is_already_attributable():
     """T17 的 ``write_file`` 拒因（``/ws`` 只读）现在到得了模型与日志。

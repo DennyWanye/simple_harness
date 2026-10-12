@@ -109,9 +109,7 @@ def test_project_bound_catalog_excludes_process_wide_filesystem_mcp() -> None:
         ],
     }
     inventory = (
-        ProductToolInventoryEntry(
-            "read_file", "async", "read_file", "builtin", "v1", "read-id"
-        ),
+        ProductToolInventoryEntry("read_file", "async", "read_file", "builtin", "v1", "read-id"),
         ProductToolInventoryEntry(
             "mcp_filesystem_read_text",
             "async",
@@ -128,9 +126,7 @@ def test_project_bound_catalog_excludes_process_wide_filesystem_mcp() -> None:
         workspace_resolution_kind="project_bound",
     )
 
-    assert [item.name for item in projected_inventory] == [
-        "read_file", "mcp_filesystem_read_text"
-    ]
+    assert [item.name for item in projected_inventory] == ["read_file", "mcp_filesystem_read_text"]
     assert projected_inventory[0].availability_reason is None
     assert projected_inventory[1].availability_reason == "workspace_unscoped"
     assert projected["tool_names"] == ["read_file"]
@@ -172,9 +168,7 @@ async def test_current_mcp_spec_and_handler_enter_sdk_registry() -> None:
         ),
     )
     assert result.value == {"text": "hello"}
-    assert legacy.calls == [
-        ("mcp_filesystem_read_text", {"path": "/tmp/input.txt"})
-    ]
+    assert legacy.calls == [("mcp_filesystem_read_text", {"path": "/tmp/input.txt"})]
 
 
 def test_activated_mcp_physical_identity_is_admitted_without_raw_schema_equality() -> None:
@@ -198,8 +192,7 @@ def test_activated_mcp_physical_identity_is_admitted_without_raw_schema_equality
         "generation": 1,
         "content_fingerprint": canonical_sha256(specs),
         "schema_fingerprints": {
-            item["name"]: canonical_sha256(item["input_schema"])
-            for item in specs
+            item["name"]: canonical_sha256(item["input_schema"]) for item in specs
         },
         "specs": specs,
     }
@@ -218,12 +211,8 @@ def test_activated_mcp_physical_identity_is_admitted_without_raw_schema_equality
     run_id = RunId("run-a")
     exposure = authorities.resolve_exposure(run_id)
     exposure.restore(run_id, None)
-    bridge = SdkRuntimeCapabilityBridgeAdapter(
-        authorities, lambda: authority.execution_context()
-    )
-    described = bridge.describe(
-        "mcp:filesystem:mcp_filesystem_read_text"
-    )
+    bridge = SdkRuntimeCapabilityBridgeAdapter(authorities, lambda: authority.execution_context())
+    described = bridge.describe("mcp:filesystem:mcp_filesystem_read_text")
     receipt = bridge.activate(
         "mcp:filesystem:mcp_filesystem_read_text",
         described["schema_hash"],

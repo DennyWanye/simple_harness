@@ -13,6 +13,7 @@
 
 这是秩序判断：只看引用还在不在、版本对不对，不看内容。
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
@@ -76,7 +77,8 @@ def _artifact_is_current(store: Store, mission_id: str, artifact_id: str) -> boo
     if artifact is None or artifact.mission_id != mission_id:
         return False
     return not any(
-        other.path == artifact.path and other.version > artifact.version
+        other.path == artifact.path
+        and other.version > artifact.version
         and other.verification_status == "VERIFIED"
         for other in store.list_mission_artifacts(mission_id)
     )
@@ -99,8 +101,11 @@ def knowledge_standing(store: Store, record: Any, *, _seen: frozenset[str] = fro
         if item["id"] in _seen:
             continue
         upstream = store.get_knowledge(item["id"])
-        if upstream is None or upstream.version != item["version"] or knowledge_standing(
-                store, upstream, _seen=_seen | {record.id}) != CURRENT:
+        if (
+            upstream is None
+            or upstream.version != item["version"]
+            or knowledge_standing(store, upstream, _seen=_seen | {record.id}) != CURRENT
+        ):
             return f"{STALE}:upstream_knowledge:{item['id']}"
     return CURRENT
 

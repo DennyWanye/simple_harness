@@ -180,16 +180,12 @@ def test_prepare_rejects_poisoned_task_execution_envelope_before_insert_and_reop
             call_ordinal=0,
             task_execution_envelope=envelope,
         )
-    assert database.connection.execute(
-        "SELECT COUNT(*) FROM execution_effects"
-    ).fetchone()[0] == 0
+    assert database.connection.execute("SELECT COUNT(*) FROM execution_effects").fetchone()[0] == 0
     database.close()
 
     reopened, recovered = _uow(path)
     assert recovered.read_effect(EffectId("effect-1")) is None
-    assert reopened.connection.execute(
-        "SELECT COUNT(*) FROM execution_effects"
-    ).fetchone()[0] == 0
+    assert reopened.connection.execute("SELECT COUNT(*) FROM execution_effects").fetchone()[0] == 0
     reopened.close()
 
 

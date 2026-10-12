@@ -183,9 +183,7 @@ async def test_lease_tracks_child_after_launcher_exits(tmp_path: Path) -> None:
             )
         )
         assert stopped["cleanup"]["remaining_pids"] == []
-        assert set(waited["descendant_pids"]).issubset(
-            set(stopped["cleanup"]["stopped_pids"])
-        )
+        assert set(waited["descendant_pids"]).issubset(set(stopped["cleanup"]["stopped_pids"]))
     finally:
         await service.reset_for_tests()
         set_process_tool_service(previous)

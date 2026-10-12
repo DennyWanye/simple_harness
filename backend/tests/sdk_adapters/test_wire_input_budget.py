@@ -211,9 +211,7 @@ def test_restored_tool_call_arguments_are_invisible_to_a_message_text_estimate()
     seen_by_the_planner = wire_message_tokens(
         [_ProductOpenAICompatibleProvider._message_payload(m) for m in durable]
     )
-    on_the_wire = _ProductOpenAICompatibleProvider._wire_messages(
-        durable, arguments_memo=memo
-    )
+    on_the_wire = _ProductOpenAICompatibleProvider._wire_messages(durable, arguments_memo=memo)
     really_sent = wire_message_tokens(on_the_wire)
 
     assert on_the_wire[0]["tool_calls"][0]["function"]["arguments"] != "{}"
@@ -241,10 +239,7 @@ def test_run_key_and_ordinal_come_from_the_request_id() -> None:
 def test_a_request_id_without_a_run_prefix_never_gets_a_carry() -> None:
     ledger = ObservedInputCarryLedger()
     ledger.record_wire("provider-turn:1", 10, model=MODEL)
-    assert (
-        ledger.observe_usage("provider-turn:1", input_tokens=90_000, output_tokens=1)
-        is None
-    )
+    assert ledger.observe_usage("provider-turn:1", input_tokens=90_000, output_tokens=1) is None
     assert ledger.carry_tokens("provider-turn:2", model=MODEL) == 0
 
 
@@ -645,9 +640,7 @@ def test_an_unknown_window_never_blocks_a_request() -> None:
 
     ledger = ObservedInputCarryLedger()
     ledger.record_wire("product-sdk-r:provider-turn:1", 10, model=MODEL)
-    ledger.observe_usage(
-        "product-sdk-r:provider-turn:1", input_tokens=900_000, output_tokens=1
-    )
+    ledger.observe_usage("product-sdk-r:provider-turn:1", input_tokens=900_000, output_tokens=1)
     assert (
         check_wire_input_budget(
             request_id="product-sdk-r:provider-turn:2",
@@ -687,9 +680,7 @@ def test_the_ledger_is_bounded_and_run_scoped() -> None:
     for index in range(4):
         request_id = f"product-sdk-{index}:provider-turn:1"
         ledger.record_wire(request_id, 100, model=MODEL)
-        ledger.observe_usage(
-            request_id, input_tokens=500, output_tokens=50, reasoning_tokens=50
-        )
+        ledger.observe_usage(request_id, input_tokens=500, output_tokens=50, reasoning_tokens=50)
     assert ledger.carry_tokens("product-sdk-0:provider-turn:2", model=MODEL) == 0
     assert ledger.carry_tokens("product-sdk-3:provider-turn:2", model=MODEL) == 450
 
@@ -720,9 +711,7 @@ def test_a_blocked_request_leaves_no_dangling_wire_record() -> None:
         )
     # 那条 wire 没有留下: 一个迟到的 usage 也配不上它。
     assert (
-        ledger.observe_usage(
-            "product-sdk-r:provider-turn:2", input_tokens=1, output_tokens=1
-        )
+        ledger.observe_usage("product-sdk-r:provider-turn:2", input_tokens=1, output_tokens=1)
         is None
     )
     # 上一轮的观测不受影响, 闸门下一次仍然按同一条线判。
@@ -904,7 +893,7 @@ def test_the_correction_and_the_trim_discount_compose_on_the_same_arithmetic() -
 
 
 def test_the_replayed_payload_reproduces_the_recorded_wire(
-    replayed: list[tuple[dict, dict]]
+    replayed: list[tuple[dict, dict]],
 ) -> None:
     """地基: 由字符类计数还原出的 payload, 其 wire 与夹具记的逐 token 相等。
 
@@ -916,7 +905,7 @@ def test_the_replayed_payload_reproduces_the_recorded_wire(
 
 
 def test_the_measured_floor_never_blocks_a_request_that_really_fitted(
-    replayed: list[tuple[dict, dict]]
+    replayed: list[tuple[dict, dict]],
 ) -> None:
     """0 误伤: 真实计费在预算内的请求, 一条都不能被这道终局闸门打死。"""
 
@@ -930,7 +919,7 @@ def test_the_measured_floor_never_blocks_a_request_that_really_fitted(
 
 
 def test_every_request_that_overflowed_the_physical_window_is_caught(
-    replayed: list[tuple[dict, dict]]
+    replayed: list[tuple[dict, dict]],
 ) -> None:
     """真正危险的那一类 —— 计费超过整个 32000 窗口 —— 一条都不漏。"""
 
@@ -958,9 +947,7 @@ def test_the_documented_misses_are_all_inside_the_physical_window(
         assert not replayed_by_id[sample["id"]]["fired"], sample["id"]
 
 
-def test_the_incident_run_is_stopped_at_ordinal_four_by_the_measured_floor(
-    pool: dict
-) -> None:
+def test_the_incident_run_is_stopped_at_ordinal_four_by_the_measured_floor(pool: dict) -> None:
     """76 708 那条 Run: 实测下界在 ordinal 4 就已经越过预算。
 
     同一条请求的装配期估算说「装得下」—— 这就是第 9 次静默超窗的全部机理。
@@ -1002,7 +989,7 @@ def test_the_discount_only_ever_lowers_the_floor(
 def test_the_floor_stays_below_the_real_billing_except_on_the_recorded_outliers(
     pool: dict, replayed: list[tuple[dict, dict]]
 ) -> None:
-    """"下界" 的字面意思: floor 反超真实计费的样本只能是夹具点名的那几条。
+    """ "下界" 的字面意思: floor 反超真实计费的样本只能是夹具点名的那几条。
 
     评审前的口径(carry 加整个 output)在 239 组里有 28 组反超; 改成只加
     reasoning、并在裁史时打折之后剩 6 组, 其中 3 组是 ordinal 1(carry=0,
@@ -1027,7 +1014,9 @@ def test_the_floor_stays_below_the_real_billing_except_on_the_recorded_outliers(
     # 说这道闸门反超真实计费时, 已经只可能是「上一轮的隐藏质量这一轮没有全部回来」,
     # 不再有文本估算自己造出来的那一类。
     assert with_a_carry == actual
-    assert all(int(s["provider_turn_ordinal"]) > 1 for s in _tagged(pool, "floor_above_the_real_billing"))
+    assert all(
+        int(s["provider_turn_ordinal"]) > 1 for s in _tagged(pool, "floor_above_the_real_billing")
+    )
 
 
 def test_no_scalar_ratio_can_satisfy_this_evidence(pool: dict) -> None:
@@ -1146,9 +1135,7 @@ def test_the_sample_verdicts_after_w_c_are_recorded(
         == recorded["misses_over_budget"]
     )
 
-    above = [
-        (s, f) for s, f in replayed if f["measured_input_floor"] > s["provider_input_tokens"]
-    ]
+    above = [(s, f) for s, f in replayed if f["measured_input_floor"] > s["provider_input_tokens"]]
     assert len(above) == recorded["floor_above_real_billing"]
     assert (
         max(f["measured_input_floor"] - s["provider_input_tokens"] for s, f in above)
@@ -1322,8 +1309,7 @@ async def test_a_run_with_no_hidden_mass_is_never_blocked(tmp_path, monkeypatch)
                         "finish_reason": "stop",
                     }
                 ],
-                "usage": {"prompt_tokens": 1_010, "completion_tokens": 20,
-                          "total_tokens": 1_030},
+                "usage": {"prompt_tokens": 1_010, "completion_tokens": 20, "total_tokens": 1_030},
             },
         )
 

@@ -8,6 +8,7 @@
 
 **改坏检验**：``_mission_round`` 不问 ``_round_due`` → 第二条在 1.2 秒里重试几十次，变红。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -20,15 +21,29 @@ from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider
 
 
 def test_the_retry_interval_starts_at_a_quarter_second_doubles_and_stops_growing_at_ten():
-    assert [round_fault_delay(n) for n in range(1, 9)] == [0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 10.0, 10.0]
+    assert [round_fault_delay(n) for n in range(1, 9)] == [
+        0.25,
+        0.5,
+        1.0,
+        2.0,
+        4.0,
+        8.0,
+        10.0,
+        10.0,
+    ]
 
 
 def test_a_failing_place_is_retried_on_the_backoff_not_every_cycle(tmp_path):
     async def case():
         async with product_world(tmp_path / "root", LayeredScriptedProvider()) as world:
             loop = world.loop
-            a = world.create({"goal": "写一份 NOTES.md", "success_criteria": ["file:NOTES.md"],
-                              "idempotency_key": "backoff-a"})["mission_id"]
+            a = world.create(
+                {
+                    "goal": "写一份 NOTES.md",
+                    "success_criteria": ["file:NOTES.md"],
+                    "idempotency_key": "backoff-a",
+                }
+            )["mission_id"]
             real = loop.commit.heal_mission
             calls: list[float] = []
 
@@ -45,7 +60,11 @@ def test_a_failing_place_is_retried_on_the_backoff_not_every_cycle(tmp_path):
             assert 2 <= len(calls) <= 4, calls
             gaps = [later - earlier for earlier, later in zip(calls, calls[1:])]
             assert all(gap >= 0.2 for gap in gaps), gaps
-            assert str(world.store.get_mission(a).status.value) not in {"FAILED", "CANCELLED", "COMPLETED"}
+            assert str(world.store.get_mission(a).status.value) not in {
+                "FAILED",
+                "CANCELLED",
+                "COMPLETED",
+            }
 
     asyncio.run(case())
 
@@ -60,7 +79,9 @@ def test_a_fault_past_its_stop_condition_no_longer_holds_the_run():
     from agent_orchestrator.orchestrator.event_handler import Orchestrator
 
     now = 1000.0
-    fake = SimpleNamespace(store=SimpleNamespace(now=now, get_mission=lambda _id: SimpleNamespace(status="CREATED")))
+    fake = SimpleNamespace(
+        store=SimpleNamespace(now=now, get_mission=lambda _id: SimpleNamespace(status="CREATED"))
+    )
     fake._round_faults = {("m1", "decide"): (3, now - 10.0, now + 2.0)}
     assert Orchestrator._round_backing_off(fake, "m1") is True
     fake._round_faults = {("m1", "decide"): (7, now - 200.0, now + 10.0)}

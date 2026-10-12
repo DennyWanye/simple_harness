@@ -13,6 +13,7 @@ Rationale (P2-1-S1 review follow-up):
     Dataclass defaults already cover *missing* keys — this test is strictly
     about *extra* keys in the user's config file.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -65,7 +66,8 @@ def test_factory_config_keeps_supervisor_disabled_by_default() -> None:
 
 def test_load_config_parses_llm_routing_with_local_and_cloud(tmp_path):
     cfg_path = tmp_path / "config.toml"
-    cfg_path.write_text(dedent("""
+    cfg_path.write_text(
+        dedent("""
         [llm]
         strategy = "local_first"
         daily_budget_cny = 10.0
@@ -81,7 +83,8 @@ def test_load_config_parses_llm_routing_with_local_and_cloud(tmp_path):
         base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
         api_key = "sk-test-not-real"
         temperature = 0.7
-    """).strip())
+    """).strip()
+    )
 
     cfg = load_config(cfg_path)
     assert cfg.llm.strategy == "local_first"
@@ -94,7 +97,8 @@ def test_load_config_parses_llm_routing_with_local_and_cloud(tmp_path):
 def test_load_config_llm_cloud_optional(tmp_path):
     """No [llm.cloud] section → cfg.llm.cloud is None, router runs local-only."""
     cfg_path = tmp_path / "config.toml"
-    cfg_path.write_text(dedent("""
+    cfg_path.write_text(
+        dedent("""
         [llm]
         strategy = "local_first"
 
@@ -102,7 +106,8 @@ def test_load_config_llm_cloud_optional(tmp_path):
         model = "gemma4:e4b"
         base_url = "http://localhost:11434/v1"
         api_key = "ollama"
-    """).strip())
+    """).strip()
+    )
 
     cfg = load_config(cfg_path)
     assert cfg.llm.cloud is None
@@ -122,13 +127,15 @@ def test_load_config_promotes_unified_llm_schema(tmp_path, caplog):
     import logging
 
     cfg_path = tmp_path / "config.toml"
-    cfg_path.write_text(dedent("""
+    cfg_path.write_text(
+        dedent("""
         [llm]
         model = "qwen2.5:7b"
         base_url = "http://localhost:11434/v1"
         api_key = "ollama"
         temperature = 0.5
-    """).strip())
+    """).strip()
+    )
 
     with caplog.at_level(logging.INFO):
         cfg = load_config(cfg_path)
@@ -158,10 +165,13 @@ def test_tts_config_model_dir_default() -> None:
 
 def test_load_config_tts_reads_model_dir(tmp_path: Path) -> None:
     cfg_path = tmp_path / "config.toml"
-    cfg_path.write_text(dedent("""
+    cfg_path.write_text(
+        dedent("""
         [tts]
         model_dir = "cosyvoice2-instruct"
-    """).strip(), encoding="utf-8")
+    """).strip(),
+        encoding="utf-8",
+    )
     cfg = load_config(cfg_path)
     assert cfg.tts.model_dir == "cosyvoice2-instruct"
 
@@ -173,10 +183,13 @@ def test_load_config_tts_legacy_model_dir_normalized(tmp_path, caplog):
     import logging
 
     cfg_path = tmp_path / "config.toml"
-    cfg_path.write_text(dedent("""
+    cfg_path.write_text(
+        dedent("""
         [tts]
         model_dir = "./assets/cosyvoice2"
-    """).strip(), encoding="utf-8")
+    """).strip(),
+        encoding="utf-8",
+    )
 
     with caplog.at_level(logging.WARNING):
         cfg = load_config(cfg_path)
@@ -190,10 +203,13 @@ def test_load_config_tts_legacy_bare_assets_prefix(tmp_path, caplog):
     import logging
 
     cfg_path = tmp_path / "config.toml"
-    cfg_path.write_text(dedent("""
+    cfg_path.write_text(
+        dedent("""
         [tts]
         model_dir = "assets/cosyvoice2"
-    """).strip(), encoding="utf-8")
+    """).strip(),
+        encoding="utf-8",
+    )
 
     with caplog.at_level(logging.WARNING):
         cfg = load_config(cfg_path)
@@ -206,10 +222,13 @@ def test_load_config_tts_non_legacy_value_unchanged(tmp_path, caplog):
     import logging
 
     cfg_path = tmp_path / "config.toml"
-    cfg_path.write_text(dedent("""
+    cfg_path.write_text(
+        dedent("""
         [tts]
         model_dir = "cosyvoice2"
-    """).strip(), encoding="utf-8")
+    """).strip(),
+        encoding="utf-8",
+    )
 
     with caplog.at_level(logging.WARNING):
         cfg = load_config(cfg_path)

@@ -4,6 +4,7 @@ Every case runs on the product deployment (h1i_seed / taskgraph_exec.production_
 the planning decisions come from real Planner rounds, questions are answered through the
 authenticated facade.  Only the model replies are scripted.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -40,13 +41,25 @@ def _events(loop, mission_id: str, event_type: str) -> list:
     return [event for event in loop.store.list_events(mission_id) if event.type == event_type]
 
 
-def test_v14_malformed_planning_reply_records_unreadable_without_secondary_failure(tmp_path) -> None:
+def test_v14_malformed_planning_reply_records_unreadable_without_secondary_failure(
+    tmp_path,
+) -> None:
     async def case() -> None:
-        async with seeded(tmp_path, key="v14-malformed-reply") as (loop, mission, _world, _root, dispatch, _product):
+        async with seeded(tmp_path, key="v14-malformed-reply") as (
+            loop,
+            mission,
+            _world,
+            _root,
+            dispatch,
+            _product,
+        ):
             opener = await loop._create_planner_intent(mission.id, ordinal=1)
             await loop._collect_plan_decision(
-                opener, object(), mission,
-                "<planning_decision>{not-json}</planning_decision>", dispatch,
+                opener,
+                object(),
+                mission,
+                "<planning_decision>{not-json}</planning_decision>",
+                dispatch,
             )
             stored = PlanningDecisionStore(loop.store).get_planning_decision_by_attempt(
                 opener.intent_id, 0
@@ -58,7 +71,11 @@ def test_v14_malformed_planning_reply_records_unreadable_without_secondary_failu
             assert evaluated.payload["status"] == str(PlanningDecisionStatus.UNREADABLE)
             assert evaluated.payload["canonical_hash"] is None
             # the rejection ledger records it as well (one decode refusal, both records)
-            assert _events(loop, mission.id, "PlanningRejected")[-1].payload["reason"] == "proposal_unreadable"
+            assert (
+                _events(loop, mission.id, "PlanningRejected")[-1].payload["reason"]
+                == "proposal_unreadable"
+            )
+
     asyncio.run(case())
 
 
@@ -75,28 +92,47 @@ def _no_change(request):  # type: ignore[no-untyped-def]
 
 
 def _question(subject_key: str, *, blocking: bool) -> dict:
-    return {"schema_version": 1, "decision_type": "REQUEST_HUMAN", "subject_key": subject_key,
-            "rationale": "需要用户确认。", "reason_refs": [], "assumptions": [], "uncertainties": [],
-            "alternatives": [], "replan_triggers": [],
-            "payload": {"question": "第二份文件要不要加上日期？", "options": [], "blocking": blocking}}
+    return {
+        "schema_version": 1,
+        "decision_type": "REQUEST_HUMAN",
+        "subject_key": subject_key,
+        "rationale": "需要用户确认。",
+        "reason_refs": [],
+        "assumptions": [],
+        "uncertainties": [],
+        "alternatives": [],
+        "replan_triggers": [],
+        "payload": {"question": "第二份文件要不要加上日期？", "options": [], "blocking": blocking},
+    }
 
 
 def _first_and_next(world):  # type: ignore[no-untyped-def]
     network = world.dispatch.network(world.mission.id)
-    first = next(b for b in network.task_bindings if str(b.form) == "primitive" and not b.input_ports)
-    following = next(b for b in network.task_bindings if str(b.form) == "primitive" and b.input_ports)
+    first = next(
+        b for b in network.task_bindings if str(b.form) == "primitive" and not b.input_ports
+    )
+    following = next(
+        b for b in network.task_bindings if str(b.form) == "primitive" and b.input_ports
+    )
     return str(first.task_id), str(following.task_id)
 
 
 @pytest.mark.parametrize("blocking", (False, True), ids=("nonblocking", "blocking"))
-def test_h4_a_question_is_durable_and_only_a_blocking_one_pauses_dispatch(tmp_path, blocking) -> None:
+def test_h4_a_question_is_durable_and_only_a_blocking_one_pauses_dispatch(
+    tmp_path, blocking
+) -> None:
     """A question is a durable row; a non-blocking one never stops dispatch, a blocking one
     holds every new plan and Worker until the person answers.  The answer is a CAS write:
     the same answer replays its receipt, a different one is refused."""
 
     async def case() -> None:
-        async with enabled_world(tmp_path, key=f"v14-human-{blocking}", planner=_no_change,
-                                 criteria=CHAIN_CRITERIA, hold_worker=True) as world:
+        async with enabled_world(
+            tmp_path,
+            key=f"v14-human-{blocking}",
+            planner=_no_change,
+            criteria=CHAIN_CRITERIA,
+            hold_worker=True,
+        ) as world:
             store, mission = world.store, world.mission
             await world.commit_seed()
             # The first step is handed off: its Worker's model call is out (held).
@@ -104,7 +140,9 @@ def test_h4_a_question_is_durable_and_only_a_blocking_one_pauses_dispatch(tmp_pa
             first, following = _first_and_next(world)
             intent = await world.open_planner_round()
             package = intent.config["planning_package"]
-            await world.answer(intent, _question(package["planning_subjects"][0]["subject_key"], blocking=blocking))
+            await world.answer(
+                intent, _question(package["planning_subjects"][0]["subject_key"], blocking=blocking)
+            )
             humans = PlanningHumanStore(store)
             [question] = humans.list(mission.id)
             assert question["state"] == "PENDING"
@@ -116,15 +154,21 @@ def test_h4_a_question_is_durable_and_only_a_blocking_one_pauses_dispatch(tmp_pa
             await world.until(lambda: store.get_task(first).status is TaskStatus.COMPLETED)
             if not blocking:
                 await world.until(lambda: store.list_attempts(following))
-                assert humans.get(question["decision_id"])["state"] == "PENDING"  # still open, still there
+                assert (
+                    humans.get(question["decision_id"])["state"] == "PENDING"
+                )  # still open, still there
                 return
             for _ in range(10):
                 await world.step()
             assert not store.list_attempts(following)  # no new Worker while the question blocks
 
             control = world.product.control
-            command = {"decision_id": question["decision_id"], "answer": "加上", "expected_version": question["version"],
-                       "nonce": "nonce-1"}
+            command = {
+                "decision_id": question["decision_id"],
+                "answer": "加上",
+                "expected_version": question["version"],
+                "nonce": "nonce-1",
+            }
             receipt = control.answer_planning_question(command)
             assert humans.pending(mission.id) is False
             assert control.answer_planning_question(command) == receipt
@@ -136,7 +180,8 @@ def test_h4_a_question_is_durable_and_only_a_blocking_one_pauses_dispatch(tmp_pa
 
 
 def test_h4_a_superseded_question_cannot_be_answered_and_a_repair_request_is_consumed_by_its_committed_decision(
-        tmp_path) -> None:
+    tmp_path,
+) -> None:
     """The first step fails its check; the repair round asks the person (non-blocking) — a
     question is no plan change, so the repair request stays.  The next round redoes the step
     with a successor: that committed decision on the request's own subject consumes it, and
@@ -144,40 +189,65 @@ def test_h4_a_superseded_question_cannot_be_answered_and_a_repair_request_is_con
     seen: dict = {}
 
     def no_claims(request):  # type: ignore[no-untyped-def]
-        body = json.loads(result_envelope(request)[len("<result_envelope>"):-len("</result_envelope>")])
+        body = json.loads(
+            result_envelope(request)[len("<result_envelope>") : -len("</result_envelope>")]
+        )
         body["claims"] = []
         return "<result_envelope>" + json.dumps(body, ensure_ascii=False) + "</result_envelope>"
 
     def planner(request):  # type: ignore[no-untyped-def]
         package = package_of(request)
-        repairs = [entry for entry in package.get("repair_requests") or ()
-                   if ((entry.get("request") or {}).get("context") or {}).get("event_type") != "GoalUnrefined"]
+        repairs = [
+            entry
+            for entry in package.get("repair_requests") or ()
+            if ((entry.get("request") or {}).get("context") or {}).get("event_type")
+            != "GoalUnrefined"
+        ]
         if not repairs:
             return _no_change(request)
-        subject = next(row for row in package["planning_subjects"] if row["task_id"] == seen["first"])
+        subject = next(
+            row for row in package["planning_subjects"] if row["task_id"] == seen["first"]
+        )
         seen.setdefault("repair_rounds", 0)
         seen["repair_rounds"] += 1
         if seen["repair_rounds"] == 1:
             return json_decision(_question(subject["subject_key"], blocking=False))
         world = seen["world"]
         old = world.dispatch.network(world.mission.id).binding_for_task(seen["first"])
-        task_type = next(s for s in world.dispatch.require_planning_world().catalog.task_types()
-                         if s.goal_signature == old.goal_signature)
+        task_type = next(
+            s
+            for s in world.dispatch.require_planning_world().catalog.task_types()
+            if s.goal_signature == old.goal_signature
+        )
 
         def visible(kind, identity):  # type: ignore[no-untyped-def]
-            return next(row for row in package["visible_refs"] if row["kind"] == kind and row["id"] == identity)
+            return next(
+                row
+                for row in package["visible_refs"]
+                if row["kind"] == kind and row["id"] == identity
+            )
 
-        return decision(subject["subject_key"], "REPAIR", {
-            "repair_kind": "PROPOSE_SUCCESSOR", "old_task_ref": visible("task", seen["first"]),
-            "obligation_ref": visible("obligation", str(old.obligation_id)),
-            "goal_type_ref": task_type.task_type_ref.to_json(),
-            "bindings": {"goal": "重写第一份文件，写明要点。"}}, "原步骤的结果没有说明要点，换一个后继步骤重做。")
+        return decision(
+            subject["subject_key"],
+            "REPAIR",
+            {
+                "repair_kind": "PROPOSE_SUCCESSOR",
+                "old_task_ref": visible("task", seen["first"]),
+                "obligation_ref": visible("obligation", str(old.obligation_id)),
+                "goal_type_ref": task_type.task_type_ref.to_json(),
+                "bindings": {"goal": "重写第一份文件，写明要点。"},
+            },
+            "原步骤的结果没有说明要点，换一个后继步骤重做。",
+        )
 
-    worker = scripted_worker(("workspace_write_file", {"path": "facts.md", "content": "facts"}), no_claims)
+    worker = scripted_worker(
+        ("workspace_write_file", {"path": "facts.md", "content": "facts"}), no_claims
+    )
 
     async def case() -> None:
-        async with enabled_world(tmp_path, key="v14-human-stale", planner=planner, worker=worker,
-                                 criteria=CHAIN_CRITERIA) as world:
+        async with enabled_world(
+            tmp_path, key="v14-human-stale", planner=planner, worker=worker, criteria=CHAIN_CRITERIA
+        ) as world:
             store, mission = world.store, world.mission
             seen["world"] = world
             await world.commit_seed()
@@ -190,14 +260,23 @@ def test_h4_a_superseded_question_cannot_be_answered_and_a_repair_request_is_con
             assert question["request"]["binding"]["plan_revision"] == 1
 
             await world.until(lambda: world.dispatch.network(mission.id).plan_revision == 2)
-            assert request["request_id"] not in {row["request_id"] for row in pending_requests(store, mission.id)}
+            assert request["request_id"] not in {
+                row["request_id"] for row in pending_requests(store, mission.id)
+            }
             addressed = _events(world.loop, mission.id, "PlanningRepairAddressed")
-            assert [row.payload["repair_request_ids"] for row in addressed] == [[request["request_id"]]]
+            assert [row.payload["repair_request_ids"] for row in addressed] == [
+                [request["request_id"]]
+            ]
             await world.until(lambda: humans.get(question["decision_id"])["state"] == "STALE")
             with pytest.raises(FacadeError, match="version changed"):
-                world.product.control.answer_planning_question({
-                    "decision_id": question["decision_id"], "answer": "加上",
-                    "expected_version": question["version"], "nonce": "nonce-stale"})
+                world.product.control.answer_planning_question(
+                    {
+                        "decision_id": question["decision_id"],
+                        "answer": "加上",
+                        "expected_version": question["version"],
+                        "nonce": "nonce-stale",
+                    }
+                )
 
     asyncio.run(case())
 

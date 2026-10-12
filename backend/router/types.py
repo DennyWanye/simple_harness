@@ -12,6 +12,7 @@ The signature below is the cross-slice contract — S3 / S7 / S8 all import
 these names verbatim. See:
   docs/superpowers/specs/2026-04-15-p2-1-finale-design.md §1.1, §2.2, §3
 """
+
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
@@ -26,6 +27,7 @@ class BudgetContext:
     - ``route``: which provider HybridRouter is about to call.
     - ``model``: the model id HybridRouter will request from that provider.
     """
+
     route: Literal["local", "cloud"]
     model: str
 
@@ -38,6 +40,7 @@ class BudgetDecision:
       Caller is responsible for deciding fallback (e.g., cloud→local).
     - ``reason``: human-readable; UI may surface as a toast when deny.
     """
+
     allow: bool
     reason: str | None = None
 

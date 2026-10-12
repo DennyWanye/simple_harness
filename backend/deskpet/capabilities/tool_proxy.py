@@ -102,18 +102,14 @@ class BrokeredPlanEnvelope:
             or not isinstance(payload.get("input_snapshot"), Mapping)
             or not isinstance(payload.get("plan_record"), Mapping)
         ):
-            raise EffectPlanValidationError(
-                "durable brokered plan envelope shape is invalid"
-            )
+            raise EffectPlanValidationError("durable brokered plan envelope shape is invalid")
         snapshot = InputBindingSnapshot.from_mapping(payload["input_snapshot"])
         record = BrokeredEffectPlanRecord.from_mapping(payload["plan_record"])
         if (
             record.input_snapshot_ref != snapshot.snapshot_ref
             or record.root_run_id != snapshot.root_run_id
         ):
-            raise EffectPlanValidationError(
-                "durable brokered plan envelope binding changed"
-            )
+            raise EffectPlanValidationError("durable brokered plan envelope binding changed")
         record.assert_integrity(snapshot)
         return cls(
             value=_thaw_json(payload["value"]),
@@ -183,9 +179,7 @@ class LocalToolProxy:
             workspace_roots=()
             if definition.execution_profile == "brokered-effect-v1"
             else tuple(workspace_roots),
-            temp_dir=""
-            if definition.execution_profile == "brokered-effect-v1"
-            else temp_dir,
+            temp_dir="" if definition.execution_profile == "brokered-effect-v1" else temp_dir,
         )
         try:
             runtime_result = await self.runtime.execute(
@@ -229,9 +223,7 @@ class LocalToolProxy:
                 "brokered-effect-v1 response must include effect_plan"
             )
         if snapshot is None:  # pragma: no cover - guarded before worker launch
-            return NormalizedToolOutcome.malformed(
-                "brokered-effect-v1 requires an input snapshot"
-            )
+            return NormalizedToolOutcome.malformed("brokered-effect-v1 requires an input snapshot")
         try:
             record = self.brokered_planner.validate_and_record(
                 response["effect_plan"],

@@ -36,9 +36,7 @@ class _Source:
         self.receipts = list(receipts)
 
     def list_provider_projection_receipts(self, *, after_sequence=0, limit=256):
-        return tuple(
-            item for item in self.receipts if item.sequence > after_sequence
-        )[:limit]
+        return tuple(item for item in self.receipts if item.sequence > after_sequence)[:limit]
 
 
 def _receipt(
@@ -98,16 +96,25 @@ def _context(_receipt: object) -> ProviderProjectionContextV1:
 
 @pytest.mark.asyncio
 async def test_pump_projects_every_terminal_attempt_but_only_trusted_usage(tmp_path) -> None:
-    source = _Source([
-        _receipt(1, "succeeded", usage={
-            "input_tokens": 10, "output_tokens": 2, "total_tokens": 12,
-            "cache_tokens": 3, "reasoning_tokens": 1,
-        }),
-        _receipt(2, "succeeded"),
-        _receipt(3, "failed", error_code="provider_protocol_error"),
-        _receipt(4, "cancelled", error_code="provider_cancelled"),
-        _receipt(5, "unknown", error_code="provider_cancelled_after_handoff"),
-    ])
+    source = _Source(
+        [
+            _receipt(
+                1,
+                "succeeded",
+                usage={
+                    "input_tokens": 10,
+                    "output_tokens": 2,
+                    "total_tokens": 12,
+                    "cache_tokens": 3,
+                    "reasoning_tokens": 1,
+                },
+            ),
+            _receipt(2, "succeeded"),
+            _receipt(3, "failed", error_code="provider_protocol_error"),
+            _receipt(4, "cancelled", error_code="provider_cancelled"),
+            _receipt(5, "unknown", error_code="provider_cancelled_after_handoff"),
+        ]
+    )
     db = SessionDB(tmp_path / "state.db")
     pump = SdkProviderProjectionPump(source, db, context_resolver=_context)
 
@@ -115,7 +122,11 @@ async def test_pump_projects_every_terminal_attempt_but_only_trusted_usage(tmp_p
     assert await pump.run_until_idle() == 0
     attempts = await db.list_sdk_provider_attempts("session-a")
     assert [item["state"] for item in attempts] == [
-        "succeeded", "succeeded", "failed", "cancelled", "unknown"
+        "succeeded",
+        "succeeded",
+        "failed",
+        "cancelled",
+        "unknown",
     ]
     assert attempts[2]["error_code"] == "provider_protocol_error"
     assert attempts[4]["error_code"] == "provider_cancelled_after_handoff"
@@ -123,9 +134,7 @@ async def test_pump_projects_every_terminal_attempt_but_only_trusted_usage(tmp_p
     assert len(history) == 1
     assert history[0]["prompt_tokens"] == 10
     assert history[0]["cached_tokens"] == 3
-    cursor = await db.get_sdk_provider_projection_cursor(
-        "sdk-provider-projection-v1"
-    )
+    cursor = await db.get_sdk_provider_projection_cursor("sdk-provider-projection-v1")
     assert cursor is not None and cursor["source_sequence"] == 5
     await db.close()
 
@@ -158,9 +167,7 @@ async def test_budget_only_unknown_receipt_advances_without_usage_measurement(
         receipt.created_at,
     )
     db = SessionDB(tmp_path / "state.db")
-    pump = SdkProviderProjectionPump(
-        _Source([receipt]), db, context_resolver=_context
-    )
+    pump = SdkProviderProjectionPump(_Source([receipt]), db, context_resolver=_context)
 
     assert await pump.run_until_idle() == 1
     attempts = await db.list_sdk_provider_attempts("session-a")
@@ -168,9 +175,7 @@ async def test_budget_only_unknown_receipt_advances_without_usage_measurement(
     assert attempts[0]["state"] == "unknown"
     assert attempts[0]["usage"] is None
     assert await db.list_context_usage_history("session-a") == []
-    cursor = await db.get_sdk_provider_projection_cursor(
-        "sdk-provider-projection-v1"
-    )
+    cursor = await db.get_sdk_provider_projection_cursor("sdk-provider-projection-v1")
     assert cursor is not None and cursor["source_sequence"] == 1
     await db.close()
 
@@ -179,13 +184,15 @@ async def test_budget_only_unknown_receipt_advances_without_usage_measurement(
 async def test_non_usage_terminal_receipt_does_not_broadcast_unchanged_usage(
     tmp_path,
 ) -> None:
-    source = _Source([
-        _receipt(
-            1,
-            "unknown",
-            error_code="provider_cancelled_after_handoff",
-        )
-    ])
+    source = _Source(
+        [
+            _receipt(
+                1,
+                "unknown",
+                error_code="provider_cancelled_after_handoff",
+            )
+        ]
+    )
     db = SessionDB(tmp_path / "state.db")
     notifications: list[str] = []
 
@@ -204,31 +211,35 @@ async def test_non_usage_terminal_receipt_does_not_broadcast_unchanged_usage(
     attempts = await db.list_sdk_provider_attempts("session-a")
     assert len(attempts) == 1
     assert attempts[0]["state"] == "unknown"
-    cursor = await db.get_sdk_provider_projection_cursor(
-        "sdk-provider-projection-v1"
-    )
+    cursor = await db.get_sdk_provider_projection_cursor("sdk-provider-projection-v1")
     assert cursor is not None and cursor["source_sequence"] == 1
     await db.close()
 
 
 @pytest.mark.asyncio
 async def test_pump_notifies_after_durable_projection_before_cursor_commit(tmp_path) -> None:
-    source = _Source([_receipt(1, "succeeded", usage={
-        "input_tokens": 10,
-        "output_tokens": 2,
-        "total_tokens": 12,
-        "cache_tokens": None,
-        "reasoning_tokens": None,
-    })])
+    source = _Source(
+        [
+            _receipt(
+                1,
+                "succeeded",
+                usage={
+                    "input_tokens": 10,
+                    "output_tokens": 2,
+                    "total_tokens": 12,
+                    "cache_tokens": None,
+                    "reasoning_tokens": None,
+                },
+            )
+        ]
+    )
     db = SessionDB(tmp_path / "state.db")
     notifications: list[tuple[str, int]] = []
 
     async def committed(context: ProviderProjectionContextV1) -> None:
         attempts = await db.list_sdk_provider_attempts(context.session_id)
         assert len(attempts) == 1
-        cursor = await db.get_sdk_provider_projection_cursor(
-            "sdk-provider-projection-v1"
-        )
+        cursor = await db.get_sdk_provider_projection_cursor("sdk-provider-projection-v1")
         assert cursor is None
         notifications.append((context.session_id, 1))
 
@@ -248,13 +259,21 @@ async def test_pump_notifies_after_durable_projection_before_cursor_commit(tmp_p
 
 @pytest.mark.asyncio
 async def test_callback_failure_keeps_receipt_for_idempotent_retry(tmp_path) -> None:
-    source = _Source([_receipt(1, "succeeded", usage={
-        "input_tokens": 10,
-        "output_tokens": 2,
-        "total_tokens": 12,
-        "cache_tokens": None,
-        "reasoning_tokens": None,
-    })])
+    source = _Source(
+        [
+            _receipt(
+                1,
+                "succeeded",
+                usage={
+                    "input_tokens": 10,
+                    "output_tokens": 2,
+                    "total_tokens": 12,
+                    "cache_tokens": None,
+                    "reasoning_tokens": None,
+                },
+            )
+        ]
+    )
     db = SessionDB(tmp_path / "state.db")
     calls = 0
 
@@ -264,21 +283,15 @@ async def test_callback_failure_keeps_receipt_for_idempotent_retry(tmp_path) -> 
         if calls == 1:
             raise RuntimeError("live delivery unavailable")
 
-    pump = SdkProviderProjectionPump(
-        source, db, context_resolver=_context, on_committed=flaky
-    )
+    pump = SdkProviderProjectionPump(source, db, context_resolver=_context, on_committed=flaky)
     with pytest.raises(RuntimeError, match="delivery unavailable"):
         await pump.run_once()
-    assert await db.get_sdk_provider_projection_cursor(
-        "sdk-provider-projection-v1"
-    ) is None
+    assert await db.get_sdk_provider_projection_cursor("sdk-provider-projection-v1") is None
     assert len(await db.list_sdk_provider_attempts("session-a")) == 1
 
     assert await pump.run_once() == 1
     assert calls == 2
-    cursor = await db.get_sdk_provider_projection_cursor(
-        "sdk-provider-projection-v1"
-    )
+    cursor = await db.get_sdk_provider_projection_cursor("sdk-provider-projection-v1")
     assert cursor is not None and cursor["source_sequence"] == 1
     assert len(await db.list_sdk_provider_attempts("session-a")) == 1
     await db.close()
@@ -286,13 +299,21 @@ async def test_callback_failure_keeps_receipt_for_idempotent_retry(tmp_path) -> 
 
 @pytest.mark.asyncio
 async def test_succeeded_usage_with_unreported_cache_remains_measured(tmp_path) -> None:
-    source = _Source([_receipt(1, "succeeded", usage={
-        "input_tokens": 13,
-        "output_tokens": 5,
-        "total_tokens": 18,
-        "cache_tokens": None,
-        "reasoning_tokens": 2,
-    })])
+    source = _Source(
+        [
+            _receipt(
+                1,
+                "succeeded",
+                usage={
+                    "input_tokens": 13,
+                    "output_tokens": 5,
+                    "total_tokens": 18,
+                    "cache_tokens": None,
+                    "reasoning_tokens": 2,
+                },
+            )
+        ]
+    )
     db = SessionDB(tmp_path / "state.db")
     await db.set_context_usage_binding_state(
         "session-a",
@@ -328,9 +349,7 @@ async def test_sp3_fault_after_outbox_read_leaves_session_and_cursor_untouched(t
     with pytest.raises(RuntimeError, match="fault-after-outbox"):
         await pump.run_once()
     assert await db.list_sdk_provider_attempts("session-a") == []
-    assert await db.get_sdk_provider_projection_cursor(
-        "sdk-provider-projection-v1"
-    ) is None
+    assert await db.get_sdk_provider_projection_cursor("sdk-provider-projection-v1") is None
 
     clean = SdkProviderProjectionPump(source, db, context_resolver=_context)
     assert await clean.run_once() == 1
@@ -338,12 +357,25 @@ async def test_sp3_fault_after_outbox_read_leaves_session_and_cursor_untouched(t
 
 
 @pytest.mark.asyncio
-async def test_sp3_fault_after_session_write_replays_without_duplicate_measurement(tmp_path) -> None:
+async def test_sp3_fault_after_session_write_replays_without_duplicate_measurement(
+    tmp_path,
+) -> None:
     db = SessionDB(tmp_path / "state.db")
-    source = _Source([_receipt(1, "succeeded", usage={
-        "input_tokens": 7, "output_tokens": 2, "total_tokens": 9,
-        "cache_tokens": 0, "reasoning_tokens": None,
-    })])
+    source = _Source(
+        [
+            _receipt(
+                1,
+                "succeeded",
+                usage={
+                    "input_tokens": 7,
+                    "output_tokens": 2,
+                    "total_tokens": 9,
+                    "cache_tokens": 0,
+                    "reasoning_tokens": None,
+                },
+            )
+        ]
+    )
 
     def fault(point: str, _receipt: object) -> None:
         if point == "provider_projection.session.after_write":
@@ -354,36 +386,43 @@ async def test_sp3_fault_after_session_write_replays_without_duplicate_measureme
         await broken.run_once()
     assert len(await db.list_sdk_provider_attempts("session-a")) == 1
     assert len(await db.list_context_usage_history("session-a")) == 1
-    assert await db.get_sdk_provider_projection_cursor(
-        "sdk-provider-projection-v1"
-    ) is None
+    assert await db.get_sdk_provider_projection_cursor("sdk-provider-projection-v1") is None
 
     restarted = SdkProviderProjectionPump(source, db, context_resolver=_context)
     assert await restarted.run_once() == 1
     assert len(await db.list_sdk_provider_attempts("session-a")) == 1
     assert len(await db.list_context_usage_history("session-a")) == 1
-    cursor = await db.get_sdk_provider_projection_cursor(
-        "sdk-provider-projection-v1"
-    )
+    cursor = await db.get_sdk_provider_projection_cursor("sdk-provider-projection-v1")
     assert cursor is not None and cursor["source_sequence"] == 1
     await db.close()
 
 
 @pytest.mark.asyncio
 async def test_unknown_receipt_can_reconcile_to_newer_succeeded_version(tmp_path) -> None:
-    source = _Source([
-        _receipt(
-            1, "unknown", error_code="provider_error_after_handoff",
-            invocation_id="inv-reconciled", invocation_version=3,
-        ),
-        _receipt(
-            2, "succeeded", invocation_id="inv-reconciled", invocation_version=4,
-            usage={
-                "input_tokens": 11, "output_tokens": 4, "total_tokens": 15,
-                "cache_tokens": 2, "reasoning_tokens": None,
-            },
-        ),
-    ])
+    source = _Source(
+        [
+            _receipt(
+                1,
+                "unknown",
+                error_code="provider_error_after_handoff",
+                invocation_id="inv-reconciled",
+                invocation_version=3,
+            ),
+            _receipt(
+                2,
+                "succeeded",
+                invocation_id="inv-reconciled",
+                invocation_version=4,
+                usage={
+                    "input_tokens": 11,
+                    "output_tokens": 4,
+                    "total_tokens": 15,
+                    "cache_tokens": 2,
+                    "reasoning_tokens": None,
+                },
+            ),
+        ]
+    )
     db = SessionDB(tmp_path / "state.db")
     pump = SdkProviderProjectionPump(source, db, context_resolver=_context)
     assert await pump.run_until_idle() == 2
@@ -403,15 +442,11 @@ async def test_missing_outbox_is_noop_and_hash_conflict_fails_closed(tmp_path) -
     assert await pump.run_once() == 0
 
     valid = _receipt(1, "failed")
-    source.receipts.append(
-        _Receipt(**{**valid.__dict__, "payload_hash": "0" * 64})
-    )
+    source.receipts.append(_Receipt(**{**valid.__dict__, "payload_hash": "0" * 64}))
     with pytest.raises(SnapshotContractConflict, match="hash mismatch"):
         await pump.run_once()
     assert await db.list_sdk_provider_attempts("session-a") == []
-    assert await db.get_sdk_provider_projection_cursor(
-        "sdk-provider-projection-v1"
-    ) is None
+    assert await db.get_sdk_provider_projection_cursor("sdk-provider-projection-v1") is None
     await db.close()
 
 

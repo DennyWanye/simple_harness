@@ -13,6 +13,7 @@
 
 要求 backend 在 8100 跑着。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -55,11 +56,13 @@ async def main() -> int:
 
         # 1. 列已安装（应该是空或仅 builtin 残余）
         before = await _send_recv(
-            ws, {"type": "skill_list_installed"},
+            ws,
+            {"type": "skill_list_installed"},
             {"skill_list_installed_response"},
         )
-        _print("before install — installed count:",
-               len(before.get("payload", {}).get("skills", [])))
+        _print(
+            "before install — installed count:", len(before.get("payload", {}).get("skills", []))
+        )
 
         # 2. 真实克隆
         _print("git clone:", TEST_URL)
@@ -98,7 +101,8 @@ async def main() -> int:
 
         # 4. 列已安装（应该多一个）
         after = await _send_recv(
-            ws, {"type": "skill_list_installed"},
+            ws,
+            {"type": "skill_list_installed"},
             {"skill_list_installed_response"},
         )
         names = [s.get("name") for s in after.get("payload", {}).get("skills", [])]

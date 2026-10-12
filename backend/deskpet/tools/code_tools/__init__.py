@@ -14,6 +14,7 @@ won't even know they exist outside Code mode.
   * web_search — DuckDuckGo HTML scrape
   * agent — spawn a nested AgentLoop with read-only tools
 """
+
 from __future__ import annotations
 
 from .clarify_tool import build_ask_clarification_tool

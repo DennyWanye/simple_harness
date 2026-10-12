@@ -13,6 +13,7 @@ Coverage:
 * WAL mode actually enabled (smoke check via PRAGMA)
 * per-team db isolation (two team_ids → two files)
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -107,9 +108,7 @@ async def test_claim_returns_oldest_first(store: TeamStore) -> None:
 async def test_concurrent_claim_atomicity(store: TeamStore) -> None:
     """10 coroutines race to claim the SAME single task — exactly 1 wins."""
     tid = await store.create_task("t1", "only one")
-    results = await asyncio.gather(
-        *[store.claim_task("t1", f"tm{i}") for i in range(10)]
-    )
+    results = await asyncio.gather(*[store.claim_task("t1", f"tm{i}") for i in range(10)])
     winners = [r for r in results if r is not None]
     losers = [r for r in results if r is None]
     assert len(winners) == 1, f"expected 1 winner, got {len(winners)}"
@@ -122,9 +121,7 @@ async def test_concurrent_claim_two_tasks_two_winners(store: TeamStore) -> None:
     """2 tasks + 5 claimers → exactly 2 winners; no duplicates."""
     a = await store.create_task("t1", "A")
     b = await store.create_task("t1", "B")
-    results = await asyncio.gather(
-        *[store.claim_task("t1", f"tm{i}") for i in range(5)]
-    )
+    results = await asyncio.gather(*[store.claim_task("t1", f"tm{i}") for i in range(5)])
     won = [r.task_id for r in results if r is not None]
     assert sorted(won) == sorted([a, b])
     assert len(set(won)) == 2  # unique

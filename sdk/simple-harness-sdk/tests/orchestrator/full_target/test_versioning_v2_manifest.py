@@ -293,8 +293,9 @@ def index_of(
         outputs=tuple(outputs),
         completed_producers=frozenset(completed or {item.producer_occurrence for item in outputs}),
         # 现行授权的那一版（产品里由验收投影给出）：这里每个端口只有一版
-        authorized_revisions={(item.producer_occurrence, item.output_port): item.source_revision
-                              for item in outputs},
+        authorized_revisions={
+            (item.producer_occurrence, item.output_port): item.source_revision for item in outputs
+        },
     )
 
 
@@ -760,13 +761,20 @@ LEGACY_SOURCE_DIGEST = "a7c2135fa1d72f75cbd7456f0d724ea884a081fcc02b9b5c7f2168b9
 
 
 def test_topological_is_byte_for_byte_unchanged() -> None:
-    assert hashlib.sha256(inspect.getsource(topological).encode()).hexdigest() == LEGACY_SOURCE_DIGEST
+    assert (
+        hashlib.sha256(inspect.getsource(topological).encode()).hexdigest() == LEGACY_SOURCE_DIGEST
+    )
 
 
 def test_the_all_ancestors_sweep_is_gone_and_the_manifest_path_is_exported() -> None:
     exported = set(versioning.__all__)
     assert "topological" in exported
-    assert not {"merge_accepted", "collect_upstream_inputs", "ancestors", "materialise_inputs"} & set(dir(versioning))
+    assert not {
+        "merge_accepted",
+        "collect_upstream_inputs",
+        "ancestors",
+        "materialise_inputs",
+    } & set(dir(versioning))
     assert {"resolve_input_manifest", "manifest_upstream_inputs", "materialise_v2"} <= exported
 
 

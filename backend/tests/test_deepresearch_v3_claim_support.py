@@ -38,7 +38,14 @@ def test_passage_selector_finds_relevant_fact_in_middle_of_long_document():
     suffix = "Unrelated appendix material. " * 120
     text = f"{prefix}\n\n{marker}\n\n{suffix}"
     passages = select_evidence_passages(
-        [{"text": text, "content_hash": "content", "url": "https://python.org/doc", "question": "Python 3.14 free threaded mode"}],
+        [
+            {
+                "text": text,
+                "content_hash": "content",
+                "url": "https://python.org/doc",
+                "question": "Python 3.14 free threaded mode",
+            }
+        ],
         topic="Python 3.14 free threaded mode",
         maximum=2,
     )
@@ -76,15 +83,17 @@ def test_technology_passage_selection_prefers_concrete_change_over_page_heading(
 def test_passage_selector_covers_distinct_sources_before_second_passage_from_one_source():
     documents = []
     for source in range(1, 4):
-        documents.append({
-            "text": (
-                f"AI agent source {source} documents a primary implementation capability and measured result.\n\n"
-                f"AI agent source {source} also documents a second implementation detail and compatibility result."
-            ),
-            "content_hash": f"content-{source}",
-            "url": f"https://source-{source}.example/research",
-            "question": "AI agent implementation result",
-        })
+        documents.append(
+            {
+                "text": (
+                    f"AI agent source {source} documents a primary implementation capability and measured result.\n\n"
+                    f"AI agent source {source} also documents a second implementation detail and compatibility result."
+                ),
+                "content_hash": f"content-{source}",
+                "url": f"https://source-{source}.example/research",
+                "question": "AI agent implementation result",
+            }
+        )
 
     passages = select_evidence_passages(
         documents,
@@ -133,15 +142,23 @@ def test_passage_selector_skips_page_chrome_and_publication_metadata_for_real_co
 def test_extractive_fallback_covers_sources_before_filling_body_with_more_claims():
     passages = []
     for source in range(1, 9):
-        passages.extend([
-            _passage(source, f"Source {source} establishes the first independently verifiable implementation fact."),
-            replace(
-                _passage(source, f"Source {source} documents a second independently verifiable compatibility fact."),
-                passage_id=f"passage-{source}-second",
-                start=100,
-                end=180,
-            ),
-        ])
+        passages.extend(
+            [
+                _passage(
+                    source,
+                    f"Source {source} establishes the first independently verifiable implementation fact.",
+                ),
+                replace(
+                    _passage(
+                        source,
+                        f"Source {source} documents a second independently verifiable compatibility fact.",
+                    ),
+                    passage_id=f"passage-{source}-second",
+                    start=100,
+                    end=180,
+                ),
+            ]
+        )
 
     claims = fallback_claims(passages, maximum=16)
 
@@ -184,12 +201,15 @@ def test_structured_synthesis_splits_compound_factual_claims_before_support():
         valid_citation_ids={1},
     )
     assert [value.text for value in claims] == [
-        "Version 3.14 is documented", "version 3.13 remains supported",
+        "Version 3.14 is documented",
+        "version 3.13 remains supported",
     ]
 
 
 def test_repair_is_extract_only_once_and_pruning_does_not_change_denominator():
-    claim = _claim(1, "Revenue reached $12 million in 2026; an unrelated product doubled in 2027.", 1)
+    claim = _claim(
+        1, "Revenue reached $12 million in 2026; an unrelated product doubled in 2027.", 1
+    )
     passage = _passage(1, "The audited report states that revenue reached $12 million in 2026.")
     published, decisions, repaired, discarded = repair_and_prune([claim], [passage])
     assert repaired == 1 and discarded == 0
@@ -201,7 +221,9 @@ def test_repair_is_extract_only_once_and_pruning_does_not_change_denominator():
         original_claims=[claim],
         published_claims=published,
         published_decisions=decisions,
-        citation_sources={1: {"url": "https://example.com/source", "canonical_url": "https://example.com/source"}},
+        citation_sources={
+            1: {"url": "https://example.com/source", "canonical_url": "https://example.com/source"}
+        },
         body_md=body,
     )
     assert decision.factual_claim_count_pre_repair == 1
@@ -223,9 +245,15 @@ def test_publish_gate_counts_only_unique_winning_sources_and_canonical_body():
         replace(claim, citation_ids=decisions[index].winning_source_citation_ids)
         for index, claim in enumerate(claims)
     ]
-    body = render_body(topic="gate", published_claims=[*narrowed, narrowed[0]], limitations=("bounded",))
+    body = render_body(
+        topic="gate", published_claims=[*narrowed, narrowed[0]], limitations=("bounded",)
+    )
     sources = {
-        index: {"url": passage.canonical_url, "canonical_url": passage.canonical_url, "title": f"S{index}"}
+        index: {
+            "url": passage.canonical_url,
+            "canonical_url": passage.canonical_url,
+            "title": f"S{index}",
+        }
         for index, passage in enumerate(passages, 1)
     }
     decision = make_publish_decision(
@@ -241,17 +269,25 @@ def test_publish_gate_counts_only_unique_winning_sources_and_canonical_body():
     assert decision.independent_domain_count == 4
     assert body.count(claims[0].text) == 1
     report = render_report(
-        topic="gate", body_md=body, decision=decision,
+        topic="gate",
+        body_md=body,
+        decision=decision,
         citations=[{"citation_id": index, **source} for index, source in sources.items()],
-        coverage={"support_rate": 1.0}, errors=(),
+        coverage={"support_rate": 1.0},
+        errors=(),
     )
     assert report["status"] == "completed"
     assert report["report_md"].count("## 基于来源的结论") == 1
 
 
 def test_publish_gate_does_not_double_count_duplicate_canonical_urls():
-    padding = "Primary-source detail remains independently checkable and sufficiently descriptive for publication. " * 3
-    claims = [_claim(index, f"Verified fact {index} in 2026. {padding}", index) for index in range(1, 9)]
+    padding = (
+        "Primary-source detail remains independently checkable and sufficiently descriptive for publication. "
+        * 3
+    )
+    claims = [
+        _claim(index, f"Verified fact {index} in 2026. {padding}", index) for index in range(1, 9)
+    ]
     passages = [
         _passage(index, claim.text, domain=f"domain{(index - 1) % 4}.example")
         for index, claim in enumerate(claims, 1)
@@ -282,8 +318,13 @@ def test_publish_gate_does_not_double_count_duplicate_canonical_urls():
 
 
 def test_publish_gate_allows_v4_to_override_minimum_citations_without_weakening_v3_default():
-    padding = "Primary-source context remains detailed, independently checkable, and suitable for publication. " * 3
-    claims = [_claim(index, f"Verified fact {index} in 2026. {padding}", index) for index in range(1, 9)]
+    padding = (
+        "Primary-source context remains detailed, independently checkable, and suitable for publication. "
+        * 3
+    )
+    claims = [
+        _claim(index, f"Verified fact {index} in 2026. {padding}", index) for index in range(1, 9)
+    ]
     passages = [
         _passage(index, claim.text, domain=f"domain{(index - 1) % 4}.example")
         for index, claim in enumerate(claims, 1)
@@ -325,9 +366,17 @@ def test_extractive_fallback_rejects_page_metadata_and_generic_slogans():
         _passage(1, "Computer Science > Artificial Intelligence"),
         _passage(2, "[Submitted on 14 Apr 2026]"),
         _passage(3, "A chatbot answers your questions."),
-        _passage(5, "The cited entry was submitted on 28 Sep 2025 and last revised on 26 Jun 2026."),
-        _passage(6, "NVIDIA AI tools was published on January 5, 2026 by Kari Briski 0 Comments Share This Article."),
-        _passage(7, "Skip to content Navigation Menu Sign in Appearance settings Platform AI CODE CREATION."),
+        _passage(
+            5, "The cited entry was submitted on 28 Sep 2025 and last revised on 26 Jun 2026."
+        ),
+        _passage(
+            6,
+            "NVIDIA AI tools was published on January 5, 2026 by Kari Briski 0 Comments Share This Article.",
+        ),
+        _passage(
+            7,
+            "Skip to content Navigation Menu Sign in Appearance settings Platform AI CODE CREATION.",
+        ),
         _passage(8, "LLM Research Papers: The 2026 List covers January to May."),
         _passage(9, "Direct agents from issue to merge"),
         _passage(10, "Guides, concepts, and product docs for Codex"),
@@ -344,13 +393,19 @@ def test_gate_failure_publishes_honest_no_results_without_citations():
     claim = _claim(1, "Unsupported version 9.9 was released in 2027.", 1)
     body = render_body(topic="failed", published_claims=(), limitations=())
     decision = make_publish_decision(
-        original_claims=[claim], published_claims=(), published_decisions=(),
-        citation_sources={1: {"url": "https://example.com"}}, body_md=body,
+        original_claims=[claim],
+        published_claims=(),
+        published_decisions=(),
+        citation_sources={1: {"url": "https://example.com"}},
+        body_md=body,
     )
     report = render_report(
-        topic="failed", body_md=body, decision=decision,
+        topic="failed",
+        body_md=body,
+        decision=decision,
         citations=({"citation_id": 1, "url": "https://example.com"},),
-        coverage={}, errors=(),
+        coverage={},
+        errors=(),
     )
     assert report["status"] == "no_results"
     assert report["citations"] == []

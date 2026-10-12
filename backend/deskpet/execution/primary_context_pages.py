@@ -3,6 +3,7 @@
 Only Host S1 and public SDK start/terminal/effect facts are authorities. Page
 references are deterministic locators, not grants or a second durable store.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -107,14 +108,19 @@ def _excerpt(text, offset=0, page_bytes=None):
     except UnicodeDecodeError as exc:
         raise PrimaryContextPageUnavailable("primary_page_offset_invalid") from exc
     size = PAGE_BYTES if page_bytes is None else int(page_bytes)
-    return raw[offset:offset + size].decode("utf-8", errors="ignore")
+    return raw[offset : offset + size].decode("utf-8", errors="ignore")
 
 
 def _descriptor(group, ordinal, run_id):
     text = group["messages"][ordinal]["content"]
-    return dict(run_id=run_id, evidence_id=group["source_ref"],
-        envelope_hash=group["source_hash"], message_ordinal=ordinal,
-        content_hash=_sha(text), content_bytes=len(text.encode("utf-8")))
+    return dict(
+        run_id=run_id,
+        evidence_id=group["source_ref"],
+        envelope_hash=group["source_hash"],
+        message_ordinal=ordinal,
+        content_hash=_sha(text),
+        content_bytes=len(text.encode("utf-8")),
+    )
 
 
 def _reference(descriptor, offset=0):
@@ -124,9 +130,14 @@ def _reference(descriptor, offset=0):
 def _rendered_tool_call(call):
     arguments = call["arguments"]
     if len(arguments.encode("utf-8")) > ARGUMENTS_SUMMARY_BYTES:
-        arguments = canonical_json(dict(kind="primary_tool_arguments_summary_v1",
-            excerpt=_excerpt(arguments, page_bytes=EXCERPT_BYTES), source_hash=_sha(arguments),
-            content_bytes=len(arguments.encode("utf-8"))))
+        arguments = canonical_json(
+            dict(
+                kind="primary_tool_arguments_summary_v1",
+                excerpt=_excerpt(arguments, page_bytes=EXCERPT_BYTES),
+                source_hash=_sha(arguments),
+                content_bytes=len(arguments.encode("utf-8")),
+            )
+        )
     return dict(call_id=call["call_id"], name=call["name"], arguments=arguments)
 
 
@@ -149,22 +160,46 @@ def project_history_group(group, *, run_id):
     for ordinal, message in enumerate(messages):
         content = message["content"]
         if message["role"] == "assistant" and (ordinal + 1) in tool_calls:
-            message = {**message, "tool_calls": [_rendered_tool_call(c) for c in tool_calls[ordinal + 1]]}
-        if (group["terminal_state"] == "COMPLETED"
-                and not group["source_ref"].startswith("primary-terminal:")
-                and message["role"] == "tool" and isinstance(content, str)
-                and len(content.encode("utf-8")) > DEFAULT_LARGE_RESULT_BYTES):
+            message = {
+                **message,
+                "tool_calls": [_rendered_tool_call(c) for c in tool_calls[ordinal + 1]],
+            }
+        if (
+            group["terminal_state"] == "COMPLETED"
+            and not group["source_ref"].startswith("primary-terminal:")
+            and message["role"] == "tool"
+            and isinstance(content, str)
+            and len(content.encode("utf-8")) > DEFAULT_LARGE_RESULT_BYTES
+        ):
             descriptor = _descriptor(group, ordinal, run_id)
             summarized = True
-            message = {**message, "content": canonical_json(dict(
-                kind="primary_tool_result_summary_v1", **descriptor,
-                excerpt=_excerpt(content, page_bytes=EXCERPT_BYTES), reference_id=_reference(descriptor),
-                source_hash=descriptor["content_hash"],
-                page_tool="context_page_in"))}
+            message = {
+                **message,
+                "content": canonical_json(
+                    dict(
+                        kind="primary_tool_result_summary_v1",
+                        **descriptor,
+                        excerpt=_excerpt(content, page_bytes=EXCERPT_BYTES),
+                        reference_id=_reference(descriptor),
+                        source_hash=descriptor["content_hash"],
+                        page_tool="context_page_in",
+                    )
+                ),
+            }
         projected.append(message)
-    message = {"role": "user", "content": HISTORY_PREFIX + canonical_json(dict(
-        kind="historical_causal_group", source_ref=group["source_ref"],
-        source_hash=group["source_hash"], messages=projected)) + HISTORY_SUFFIX}
+    message = {
+        "role": "user",
+        "content": HISTORY_PREFIX
+        + canonical_json(
+            dict(
+                kind="historical_causal_group",
+                source_ref=group["source_ref"],
+                source_hash=group["source_hash"],
+                messages=projected,
+            )
+        )
+        + HISTORY_SUFFIX,
+    }
     if summarized:
         # This discriminator originates in Host's immutable start, never in
         # user text. It selects verification; it does not itself grant access.
@@ -176,20 +211,32 @@ async def _source_group(db, stack, run, evidence_id, envelope_hash):
     from deskpet.execution.terminal_identity import read_primary_terminal_identity_tx
     from deskpet.memory.primary_visibility import read_evidence_pair
 
-    envelope, _ = await read_evidence_pair(db=db, subject=run["subject"],
-        primary_ref=run["primary_conversation_id"], evidence_id=evidence_id)
+    envelope, _ = await read_evidence_pair(
+        db=db,
+        subject=run["subject"],
+        primary_ref=run["primary_conversation_id"],
+        evidence_id=evidence_id,
+    )
     payload = envelope.to_json()["sanitized_payload"]
-    if (envelope.envelope_hash != envelope_hash or payload.get("kind") != "primary_run_terminal"
-            or payload.get("terminal_state") != "COMPLETED"
-            or payload.get("sdk_run_id") != envelope.run_id):
+    if (
+        envelope.envelope_hash != envelope_hash
+        or payload.get("kind") != "primary_run_terminal"
+        or payload.get("terminal_state") != "COMPLETED"
+        or payload.get("sdk_run_id") != envelope.run_id
+    ):
         raise PrimaryContextPageUnavailable("primary_page_source_mismatch")
-    identity = await read_primary_terminal_identity_tx(db, subject=run["subject"],
-        primary_ref=run["primary_conversation_id"], host_run_id=payload["host_run_id"],
-        sdk_run_id=envelope.run_id)
+    identity = await read_primary_terminal_identity_tx(
+        db,
+        subject=run["subject"],
+        primary_ref=run["primary_conversation_id"],
+        host_run_id=payload["host_run_id"],
+        sdk_run_id=envelope.run_id,
+    )
     if identity is None or identity.observation_evidence_id != evidence_id:
         raise PrimaryContextPageUnavailable("primary_page_terminal_missing")
-    terminal, messages = stack.read_settled_primary_run(envelope.run_id,
-        current_text=payload["messages"][0]["content"])
+    terminal, messages = stack.read_settled_primary_run(
+        envelope.run_id, current_text=payload["messages"][0]["content"]
+    )
     identity.verify_sdk_terminal(terminal)
     # 2026-09-08 HM-TO-A6：终态观察可能把超大的 tool_result 正文降级成内容寻址的
     # 省略标记（见 primary_history.bound_terminal_messages）。这里仍然逐条比对
@@ -197,12 +244,21 @@ async def _source_group(db, stack, run, evidence_id, envelope_hash):
     # 这一种差异——标记本身可复算，所以不放松任何完整性。
     if not transcript_matches(messages, payload["messages"]):
         raise PrimaryContextPageUnavailable("primary_page_transcript_mismatch")
-    group = dict(source_ref=evidence_id, source_hash=envelope_hash,
-                 terminal_state="COMPLETED", messages=payload["messages"])
+    group = dict(
+        source_ref=evidence_id,
+        source_hash=envelope_hash,
+        terminal_state="COMPLETED",
+        messages=payload["messages"],
+    )
     # F-K1: the same side-record join PrimaryHistoryStore.read performs, so the
     # start-snapshot projection is rebuilt from the actual source shape.
-    calls = await read_assistant_tool_calls_tx(db, sdk_run_id=envelope.run_id, evidence_id=evidence_id,
-                                               envelope_hash=envelope_hash, messages=payload["messages"])
+    calls = await read_assistant_tool_calls_tx(
+        db,
+        sdk_run_id=envelope.run_id,
+        evidence_id=evidence_id,
+        envelope_hash=envelope_hash,
+        messages=payload["messages"],
+    )
     if calls:
         group[TOOL_CALLS_KEY] = calls
     return group
@@ -216,8 +272,11 @@ async def admitted_page(*, db, stack, run, sdk_run_id, start, arguments, page_by
     """
     from deskpet.execution.primary_dependencies import parse_dependencies
 
-    if (not isinstance(arguments, Mapping) or set(arguments) != {"reference_id", "source_hash"}
-            or not all(isinstance(v, str) for v in arguments.values())):
+    if (
+        not isinstance(arguments, Mapping)
+        or set(arguments) != {"reference_id", "source_hash"}
+        or not all(isinstance(v, str) for v in arguments.values())
+    ):
         raise PrimaryContextPageUnavailable("primary_page_arguments_invalid")
     ref = arguments["reference_id"]
     try:
@@ -231,21 +290,29 @@ async def admitted_page(*, db, stack, run, sdk_run_id, start, arguments, page_by
         # 或把召回片段 ref 当成页引用）。稳定码一个字未改；详情是**静态**的形状说明
         # ——这里没有一份已重建好的请求投影可以据以列出"现在可用的引用"，重跑
         # ``verify_history_projections`` 只为了做提示不值得（见备忘"残余风险"）。
-        raise PrimaryContextPageUnavailable("primary_page_reference_invalid", dict(
-            reason="page_reference_unknown",
-            next_step='a page reference_id is "' + PREFIX + '<64-hex>:<byte offset>"; copy it '
-                      "verbatim (offset tail included) from a page reference published in THIS "
-                      "request, and never pass a recall fragment ref such as recall-item:<id>:1"))
+        raise PrimaryContextPageUnavailable(
+            "primary_page_reference_invalid",
+            dict(
+                reason="page_reference_unknown",
+                next_step='a page reference_id is "' + PREFIX + '<64-hex>:<byte offset>"; copy it '
+                "verbatim (offset tail included) from a page reference published in THIS "
+                "request, and never pass a recall fragment ref such as recall-item:<id>:1",
+            ),
+        )
     metadata = start.get("input", {}).get("context_metadata", {})
     if metadata.get("root_run_id") != run["host_run_id"]:
         raise PrimaryContextPageUnavailable("primary_page_run_mismatch")
     proof = parse_dependencies(metadata.get("visibility_dependencies"))
     found = []
-    verified = await verify_history_projections(db=db, stack=stack, run=run,
-        sdk_run_id=sdk_run_id, start=start, proof=proof)
+    verified = await verify_history_projections(
+        db=db, stack=stack, run=run, sdk_run_id=sdk_run_id, start=start, proof=proof
+    )
     for group in verified:
         for ordinal, source in enumerate(group["messages"]):
-            if source["role"] != "tool" or len(source["content"].encode("utf-8")) <= DEFAULT_LARGE_RESULT_BYTES:
+            if (
+                source["role"] != "tool"
+                or len(source["content"].encode("utf-8")) <= DEFAULT_LARGE_RESULT_BYTES
+            ):
                 continue
             descriptor = _descriptor(group, ordinal, sdk_run_id)
             if canonical_hash(descriptor) == digest:
@@ -254,19 +321,33 @@ async def admitted_page(*, db, stack, run, sdk_run_id, start, arguments, page_by
         # 事件 AF-2：引用形态合法但这条来源在本次请求的历史投影里已经不在了
         # （被裁掉、这轮走了原文，或引用来自另一个 Run）。换 offset 重试永远不会
         # 成功，所以拒绝必须说出"换一步走"。
-        raise PrimaryContextPageUnavailable("primary_page_not_admitted", dict(
-            reason="page_reference_stale", sources_matching_reference=len(found),
-            next_step="this history page is not admitted in this request; re-run the tool that "
-                      "produced the result, or copy a reference_id published in THIS request"))
+        raise PrimaryContextPageUnavailable(
+            "primary_page_not_admitted",
+            dict(
+                reason="page_reference_stale",
+                sources_matching_reference=len(found),
+                next_step="this history page is not admitted in this request; re-run the tool that "
+                "produced the result, or copy a reference_id published in THIS request",
+            ),
+        )
     descriptor, content = found[0]
     if arguments["source_hash"] != descriptor["content_hash"]:
         raise PrimaryContextPageUnavailable("primary_page_hash_mismatch")
     page = _excerpt(content, offset, page_bytes)
     end = offset + len(page.encode("utf-8"))
-    return dict(ok=True, kind="primary_tool_history_page_v1", reference_id=ref,
-        source=descriptor, source_hash=descriptor["content_hash"], offset=offset,
-        content=page, page_hash=_sha(page), next_reference_id=(
-            _reference(descriptor, end) if end < descriptor["content_bytes"] else None))
+    return dict(
+        ok=True,
+        kind="primary_tool_history_page_v1",
+        reference_id=ref,
+        source=descriptor,
+        source_hash=descriptor["content_hash"],
+        offset=offset,
+        content=page,
+        page_hash=_sha(page),
+        next_reference_id=(
+            _reference(descriptor, end) if end < descriptor["content_bytes"] else None
+        ),
+    )
 
 
 async def verify_history_projections(*, db, stack, run, sdk_run_id, start, proof):
@@ -280,18 +361,26 @@ async def verify_history_projections(*, db, stack, run, sdk_run_id, start, proof
         if not isinstance(marker, Mapping) or marker.get("source") != PROJECTION_SOURCE:
             continue
         content = message.get("content")
-        if (message.get("role") != "user" or not isinstance(content, str)
-                or not content.startswith(HISTORY_PREFIX) or not content.endswith(HISTORY_SUFFIX)):
+        if (
+            message.get("role") != "user"
+            or not isinstance(content, str)
+            or not content.startswith(HISTORY_PREFIX)
+            or not content.endswith(HISTORY_SUFFIX)
+        ):
             raise PrimaryContextPageUnavailable("primary_page_start_projection_mismatch")
         try:
-            quoted = json.loads(content[len(HISTORY_PREFIX):-len(HISTORY_SUFFIX)])
+            quoted = json.loads(content[len(HISTORY_PREFIX) : -len(HISTORY_SUFFIX)])
         except ValueError as exc:
             raise PrimaryContextPageUnavailable("primary_page_start_projection_mismatch") from exc
         if not isinstance(quoted, dict) or quoted.get("kind") != "historical_causal_group":
             raise PrimaryContextPageUnavailable("primary_page_start_projection_mismatch")
         summarized = False
         for item in quoted.get("messages", ()):
-            if not isinstance(item, Mapping) or item.get("role") != "tool" or not isinstance(item.get("content"), str):
+            if (
+                not isinstance(item, Mapping)
+                or item.get("role") != "tool"
+                or not isinstance(item.get("content"), str)
+            ):
                 continue
             try:
                 body = json.loads(item["content"])
@@ -301,13 +390,18 @@ async def verify_history_projections(*, db, stack, run, sdk_run_id, start, proof
                 summarized = True
         if not summarized:
             raise PrimaryContextPageUnavailable("primary_page_start_projection_mismatch")
-        binding = dict(evidence_id=quoted.get("source_ref"), envelope_hash=quoted.get("source_hash"))
+        binding = dict(
+            evidence_id=quoted.get("source_ref"), envelope_hash=quoted.get("source_hash")
+        )
         if binding not in proof["evidence"]:
             raise PrimaryContextPageUnavailable("primary_page_source_not_admitted")
         # Rebuild from the actual source, not a caller-provided descriptor.
-        group = await _source_group(db, stack, run, binding["evidence_id"], binding["envelope_hash"])
-        if project_history_group(group, run_id=sdk_run_id) != [{"role": "user", "content": content,
-                                                               "metadata": message["metadata"]}]:
+        group = await _source_group(
+            db, stack, run, binding["evidence_id"], binding["envelope_hash"]
+        )
+        if project_history_group(group, run_id=sdk_run_id) != [
+            {"role": "user", "content": content, "metadata": message["metadata"]}
+        ]:
             raise PrimaryContextPageUnavailable("primary_page_start_projection_mismatch")
         verified.append(group)
     return tuple(verified)
@@ -329,17 +423,25 @@ class PrimaryContextPageReader:
             raise PrimaryContextPageUnavailable("primary_page_tool_context_missing")
         sdk_run_id = context.run_id.value
         stack = self.stack_getter()
-        start, (effect,) = stack.read_primary_dependency_facts(sdk_run_id, (context.effect_id.value,))
-        if (effect is None or effect.run_id != context.run_id or effect.call_id != context.call_id
-                or effect.tool_name != "context_page_in"
-                or effect.task_execution_envelope != context.task_execution_envelope
-                or thaw_json(effect.arguments) != dict(arguments)):
+        start, (effect,) = stack.read_primary_dependency_facts(
+            sdk_run_id, (context.effect_id.value,)
+        )
+        if (
+            effect is None
+            or effect.run_id != context.run_id
+            or effect.call_id != context.call_id
+            or effect.tool_name != "context_page_in"
+            or effect.task_execution_envelope != context.task_execution_envelope
+            or thaw_json(effect.arguments) != dict(arguments)
+        ):
             raise PrimaryContextPageUnavailable("primary_page_tool_identity_mismatch")
         async with aiosqlite.connect(self.path) as db:
             db.row_factory = aiosqlite.Row
-            cursor = await db.execute("SELECT r.host_run_id,r.subject,r.primary_conversation_id "
+            cursor = await db.execute(
+                "SELECT r.host_run_id,r.subject,r.primary_conversation_id "
                 "FROM foreground_runs r JOIN foreground_run_sdk_bindings b USING(host_run_id) WHERE b.sdk_run_id=?",
-                (sdk_run_id,))
+                (sdk_run_id,),
+            )
             rows = await cursor.fetchall()
             await cursor.close()
             if len(rows) != 1:
@@ -347,27 +449,59 @@ class PrimaryContextPageReader:
             run = rows[0]
             from deskpet.execution.current_tool_pages import PREFIX as CURRENT_PREFIX
             from deskpet.execution.current_tool_pages import admitted_current_page
+
             if arguments["reference_id"].startswith(CURRENT_PREFIX):
-                result = await admitted_current_page(db=db, stack=stack, run=run,
-                    sdk_run_id=sdk_run_id, page_effect=effect, arguments=arguments)
+                result = await admitted_current_page(
+                    db=db,
+                    stack=stack,
+                    run=run,
+                    sdk_run_id=sdk_run_id,
+                    page_effect=effect,
+                    arguments=arguments,
+                )
                 from deskpet.execution.primary_dependencies import read_run_dependencies
+
                 # Includes the target's output dependencies, not merely the
                 # prefix before the target. The page must follow that source.
-                _, proof = await read_run_dependencies(db=db, stack=stack, sdk_run_id=sdk_run_id,
-                    before_effect_id=effect.effect_id.value)
+                _, proof = await read_run_dependencies(
+                    db=db,
+                    stack=stack,
+                    sdk_run_id=sdk_run_id,
+                    before_effect_id=effect.effect_id.value,
+                )
             else:
-                result = await admitted_page(db=db, stack=stack, run=run, sdk_run_id=sdk_run_id,
-                                             start=start, arguments=arguments)
+                result = await admitted_page(
+                    db=db,
+                    stack=stack,
+                    run=run,
+                    sdk_run_id=sdk_run_id,
+                    start=start,
+                    arguments=arguments,
+                )
                 source = result["source"]
-                proof = dependencies([dict(evidence_id=source["evidence_id"], envelope_hash=source["envelope_hash"])])
-            disclosure = await resolve_current_disclosure(db_path=self.path, subject=run["subject"],
-                run_id=sdk_run_id, request_id=context.request_id.value)
+                proof = dependencies(
+                    [dict(evidence_id=source["evidence_id"], envelope_hash=source["envelope_hash"])]
+                )
+            disclosure = await resolve_current_disclosure(
+                db_path=self.path,
+                subject=run["subject"],
+                run_id=sdk_run_id,
+                request_id=context.request_id.value,
+            )
             policy = self.policy_factory(run["subject"])
-            if not await policy.check_dependencies(db=db, primary_ref=run["primary_conversation_id"],
-                    dependencies=proof, disclosure_context=disclosure):
+            if not await policy.check_dependencies(
+                db=db,
+                primary_ref=run["primary_conversation_id"],
+                dependencies=proof,
+                disclosure_context=disclosure,
+            ):
                 raise PrimaryContextPageUnavailable("primary_page_source_not_visible")
-        current = await resolve_current_disclosure(db_path=self.path, subject=run["subject"],
-            run_id=sdk_run_id, request_id=context.request_id.value)
+        current = await resolve_current_disclosure(
+            db_path=self.path,
+            subject=run["subject"],
+            run_id=sdk_run_id,
+            request_id=context.request_id.value,
+        )
         if current != disclosure:
             raise PrimaryContextPageUnavailable("primary_page_disclosure_changed")
         return result

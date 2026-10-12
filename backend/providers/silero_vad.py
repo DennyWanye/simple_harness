@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 """silero-vad v5 — streaming voice activity detection on CPU."""
+
 from __future__ import annotations
 
 import structlog
@@ -49,6 +50,7 @@ class SileroVAD:
         # `collect_data_files("silero_vad")`. Model weights are the
         # same as the hub v5 release.
         from silero_vad import load_silero_vad
+
         self._model = load_silero_vad(onnx=False).eval()
         logger.info("silero-vad loaded")
 
@@ -70,9 +72,7 @@ class SileroVAD:
         chunk_ms = len(pcm_bytes) / 2 / 16000 * 1000
 
         # Copy to writable buffer (silero-vad tensor must be writable)
-        audio_tensor = (
-            torch.frombuffer(bytearray(pcm_bytes), dtype=torch.int16).float() / 32768.0
-        )
+        audio_tensor = torch.frombuffer(bytearray(pcm_bytes), dtype=torch.int16).float() / 32768.0
         prob = self._model(audio_tensor, 16000).item()
 
         # Debug: log VAD probability every ~30 chunks (~1s)
@@ -99,10 +99,12 @@ class SileroVAD:
                     silence_duration >= self.min_silence_ms
                     and speech_duration >= self.min_speech_ms
                 ):
-                    events.append({
-                        "event": "speech_end",
-                        "audio": bytes(self._audio_buffer),
-                    })
+                    events.append(
+                        {
+                            "event": "speech_end",
+                            "audio": bytes(self._audio_buffer),
+                        }
+                    )
                     self._is_speech = False
                     self._audio_buffer = bytearray()
                     self._silence_start_ms = 0

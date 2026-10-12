@@ -116,9 +116,7 @@ async def test_operation_phase_intents_are_strict_and_idempotent(tmp_path) -> No
     assert (await store.commit_phase("op-1", "planned")).phase == "planned"
     staged = await store.commit_phase("op-1", "staged", evidence={"path": "x"})
     assert staged.phase == "staged"
-    assert (
-        await store.commit_phase("op-1", "staged", evidence={"path": "x"})
-    ).phase == "staged"
+    assert (await store.commit_phase("op-1", "staged", evidence={"path": "x"})).phase == "staged"
     with pytest.raises(CapabilityStoreConflict) as caught:
         await store.commit_phase("op-1", "environment_ready")
     assert caught.value.code == "invalid_phase_transition"
@@ -180,9 +178,7 @@ async def test_publish_intent_blocks_snapshot_lease_until_reconciled(tmp_path) -
         )
     assert caught.value.code == "publish_reconciliation_required"
 
-    await store.advance_publish_intent(
-        "intent-1", phase="catalog_swapped", status="pending"
-    )
+    await store.advance_publish_intent("intent-1", phase="catalog_swapped", status="pending")
     await store.advance_publish_intent("intent-1", phase="bound", status="committed")
     await store.acquire_snapshot_lease(
         snapshot_ref=_hash("snapshot"),
@@ -190,9 +186,7 @@ async def test_publish_intent_blocks_snapshot_lease_until_reconciled(tmp_path) -
         root_run_id="root-1",
         entries=entries,
     )
-    assert await store.version_has_active_lease(
-        "godot", "1.0.0", record.descriptor.manifest_hash
-    )
+    assert await store.version_has_active_lease("godot", "1.0.0", record.descriptor.manifest_hash)
 
 
 @pytest.mark.asyncio
@@ -200,23 +194,15 @@ async def test_policy_and_task_grant_share_the_execution_database(tmp_path) -> N
     path = await initialize_capability_database(tmp_path / "workflow.db")
     store = CapabilityStore(path, clock=lambda: 101.0)
     state = await store.get_policy_state()
-    assert (state.mode, state.generation, state.provenance) == (
-        "auto", 0, "factory_default"
-    )
-    auto = await store.compare_and_set_policy_mode(
-        "manual", expected_generation=0
-    )
-    assert (auto.mode, auto.generation, auto.provenance) == (
-        "manual", 1, "user_explicit"
-    )
+    assert (state.mode, state.generation, state.provenance) == ("auto", 0, "factory_default")
+    auto = await store.compare_and_set_policy_mode("manual", expected_generation=0)
+    assert (auto.mode, auto.generation, auto.provenance) == ("manual", 1, "user_explicit")
 
     grant = TaskGrant(
         task_grant_id="grant-1",
         root_run_id="root-1",
         principal_id="user-1",
-        resource_selectors=(
-            ResourceSelector.filesystem(tmp_path / "workspace", "write"),
-        ),
+        resource_selectors=(ResourceSelector.filesystem(tmp_path / "workspace", "write"),),
         permission_categories=("filesystem_write",),
         effect_kinds=("staged_file",),
         source="user",

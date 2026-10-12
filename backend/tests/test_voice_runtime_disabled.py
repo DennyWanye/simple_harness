@@ -36,8 +36,7 @@ def test_disabled_runtime_does_not_import_heavy_voice_providers(monkeypatch) -> 
 
     def guarded_import(name, *args, **kwargs):
         if name.startswith("providers.") and any(
-            part in name
-            for part in ("silero_vad", "faster_whisper_asr", "edge_tts", "cosyvoice")
+            part in name for part in ("silero_vad", "faster_whisper_asr", "edge_tts", "cosyvoice")
         ):
             raise AssertionError(f"disabled voice imported {name}")
         return original_import(name, *args, **kwargs)

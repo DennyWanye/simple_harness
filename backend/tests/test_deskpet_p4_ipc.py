@@ -16,6 +16,7 @@ Cover the remaining message types with:
 Isolated from main.py — tests talk to ``p4_ipc.handle`` directly with a
 ``FakeWebSocket`` and an in-memory ``FakeServiceContext``.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -126,9 +127,7 @@ class TestDecisionsList:
             ]
         )
         sc = FakeServiceContext(context_assembler=ass)
-        await p4_ipc.handle(
-            ws, "s1", "decisions_list", {"limit": 10}, sc
-        )
+        await p4_ipc.handle(ws, "s1", "decisions_list", {"limit": 10}, sc)
         assert ass.last_n == 10
         m = ws.sent[0]
         assert m["type"] == "decisions_list_response"

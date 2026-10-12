@@ -9,6 +9,7 @@ no terminal receipt at all. These tests pin the whole ordering chain, in the
 same spirit as the S5b consistency tests: every layer is read from its real
 source (config.toml, main.py, provider.py, run_corpus_batch.py), never restated.
 """
+
 from __future__ import annotations
 
 import ast
@@ -169,13 +170,20 @@ def test_corpus_batch_rejects_a_deadline_that_races_the_driver(tmp_path, monkeyp
     case_file.write_text("C10-13\n")
     argv = [
         "run_corpus_batch.py",
-        "--host-root", str(HOST_ROOT),
-        "--memory-sdk-root", str(tmp_path),
-        "--installed-target", str(tmp_path),
-        "--evidence-root", str(tmp_path / ".local-test-evidence" / "x"),
-        "--case-file", str(case_file),
-        "--preflight-model", "none",
-        "--seconds", "900",
+        "--host-root",
+        str(HOST_ROOT),
+        "--memory-sdk-root",
+        str(tmp_path),
+        "--installed-target",
+        str(tmp_path),
+        "--evidence-root",
+        str(tmp_path / ".local-test-evidence" / "x"),
+        "--case-file",
+        str(case_file),
+        "--preflight-model",
+        "none",
+        "--seconds",
+        "900",
     ]
     monkeypatch.setattr("sys.argv", argv)
     with pytest.raises(SystemExit) as error:

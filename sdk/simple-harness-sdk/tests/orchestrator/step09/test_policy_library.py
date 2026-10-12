@@ -68,7 +68,9 @@ def test_a_library_is_seeded_once_and_the_timeline_folds_to_the_tables(tmp_path)
     store, commit, cfg, seed = _library(tmp_path, max_concurrency=1)
     assert seed["status"] == "ACTIVE" and seed["version_id"] == version_id(resolve_params(cfg))
     # another configuration does not replace the ACTIVE version
-    other = resolve_params(OrchestratorConfig(evidence_root=Path(tmp_path) / "e", max_concurrency=2))
+    other = resolve_params(
+        OrchestratorConfig(evidence_root=Path(tmp_path) / "e", max_concurrency=2)
+    )
     assert commit.seed_policy(other)["version_id"] == seed["version_id"]
     assert [v["version_id"] for v in store.list_policy_versions()] == [seed["version_id"]]
     assert [a["action"] for a in store.list_policy_activations()] == ["seed"]
@@ -79,7 +81,9 @@ def test_a_library_is_seeded_once_and_the_timeline_folds_to_the_tables(tmp_path)
 
 def test_a_changed_configuration_is_recorded_as_drift_and_replaces_nothing(tmp_path):
     store, commit, _cfg, seed = _library(tmp_path, max_concurrency=1)
-    other = resolve_params(OrchestratorConfig(evidence_root=Path(tmp_path) / "e", max_concurrency=2))
+    other = resolve_params(
+        OrchestratorConfig(evidence_root=Path(tmp_path) / "e", max_concurrency=2)
+    )
     differences = diff_params(seed["params"], other)
     assert differences == [{"key": "mission_concurrency", "a": 1, "b": 2}]
     commit.record_policy_drift(config_hash="h-2", differences=differences)

@@ -19,6 +19,7 @@
 数据类 ``replace(mission, status=...)`` 只在 ``next_mission`` 里出现（``test_only_the_final_writer_writes_completed``
 之外另由 grep 确认：全库没有第二处）。
 """
+
 from __future__ import annotations
 
 import ast
@@ -28,10 +29,17 @@ import agent_orchestrator
 
 SRC = Path(agent_orchestrator.__file__).resolve().parent
 TERMINAL = frozenset({"COMPLETED", "FAILED", "CANCELLED"})
-ENTRY_METHODS = frozenset({
-    "cancel_mission", "fail_mission", "fail_planning", "stop_task", "judge_mission",
-    "finalize_assured_mission", "request_assured_closeout",
-})
+ENTRY_METHODS = frozenset(
+    {
+        "cancel_mission",
+        "fail_mission",
+        "fail_planning",
+        "stop_task",
+        "judge_mission",
+        "finalize_assured_mission",
+        "request_assured_closeout",
+    }
+)
 MISSIONS_SQL = ("UPDATE missions", "INTO missions", "DELETE FROM missions")
 
 Site = tuple[str, str, str, str]  # (kind, file, enclosing function, detail)
@@ -44,8 +52,12 @@ def _terminal_status(call: ast.Call, enum: str) -> str | None:
     candidates = list(call.args[1:2]) + [kw.value for kw in call.keywords if kw.arg == "status"]
 
     def member(node: ast.AST) -> str | None:
-        if (isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name)
-                and node.value.id == enum and node.attr in TERMINAL):
+        if (
+            isinstance(node, ast.Attribute)
+            and isinstance(node.value, ast.Name)
+            and node.value.id == enum
+            and node.attr in TERMINAL
+        ):
             return node.attr
         return None
 
@@ -90,8 +102,12 @@ def terminal_write_sites(source: str, path: str = "<src>") -> list[Site]:
                         out.append(("task", path, where, status))
                 elif name == "update_mission":
                     out.append(("update_mission", path, where, ""))
-                elif name == "_cas" and child.args and isinstance(child.args[0], ast.Constant) \
-                        and child.args[0].value == "missions":
+                elif (
+                    name == "_cas"
+                    and child.args
+                    and isinstance(child.args[0], ast.Constant)
+                    and child.args[0].value == "missions"
+                ):
                     out.append(("sql", path, where, "_cas(missions)"))
                 elif name in ENTRY_METHODS:
                     out.append(("entry", path, where, name))
@@ -108,7 +124,9 @@ def terminal_write_sites(source: str, path: str = "<src>") -> list[Site]:
 def scan_sdk() -> list[Site]:
     found: list[Site] = []
     for file in sorted(SRC.rglob("*.py")):
-        found += terminal_write_sites(file.read_text(encoding="utf-8"), str(file.relative_to(SRC)).replace("\\", "/"))
+        found += terminal_write_sites(
+            file.read_text(encoding="utf-8"), str(file.relative_to(SRC)).replace("\\", "/")
+        )
     return found
 
 
@@ -116,78 +134,214 @@ def scan_sdk() -> list[Site]:
 #: 每条：(种类, 文件, 所在函数, 细节) → 为什么合法。
 WHITELIST: dict[Site, str] = {
     # ---- 任务状态写成终态（6 处）
-    ("mission", "orchestrator/assurance_final_writer.py", "finalize_assured_mission", "COMPLETED"):
-        "唯一完成写方：收尾行重评为 READY 后，同一事务里写 COMPLETED、完成事件、回执、通知请求（§7.1）",
-    ("mission", "orchestrator/commit_service.py", "CommitService.fail_planning", "FAILED"):
-        "规划失败 / 池用尽停任务；只由主循环 _commit_fail_planning（先准备台账）调用；保留 UNKNOWN 与 hold，写未决动作",
-    ("mission", "orchestrator/commit_service.py", "CommitService.cancel_mission", "CANCELLED"):
-        "取消：人（门面 / SDK API / 主循环）或命令行；级联停止开着的工作、保留 UNKNOWN 与 hold、写未决动作、发终态通知",
-    ("mission", "orchestrator/commit_service.py", "CommitService.fail_mission", "FAILED"):
-        "任务级停止（预算 / 运行环境 / 运维条件）；只由主循环 _commit_fail_mission（先准备台账）调用",
-    ("mission", "orchestrator/commit_service.py", "CommitService.judge_mission", "FAILED"):
-        "判定'要求未满足'写失败并了结开着的动作；'满足'这一支不写完成、只请求收尾（request_assured_closeout）",
-    ("mission", "orchestrator/commit_service.py", "CommitService.stop_task", "FAILED"):
-        "一步停止连带任务失败（人接管停止 / 步骤重试用尽）；经 _commit_stop_task 台账钩子或 takeover",
+    (
+        "mission",
+        "orchestrator/assurance_final_writer.py",
+        "finalize_assured_mission",
+        "COMPLETED",
+    ): "唯一完成写方：收尾行重评为 READY 后，同一事务里写 COMPLETED、完成事件、回执、通知请求（§7.1）",
+    (
+        "mission",
+        "orchestrator/commit_service.py",
+        "CommitService.fail_planning",
+        "FAILED",
+    ): "规划失败 / 池用尽停任务；只由主循环 _commit_fail_planning（先准备台账）调用；保留 UNKNOWN 与 hold，写未决动作",
+    (
+        "mission",
+        "orchestrator/commit_service.py",
+        "CommitService.cancel_mission",
+        "CANCELLED",
+    ): "取消：人（门面 / SDK API / 主循环）或命令行；级联停止开着的工作、保留 UNKNOWN 与 hold、写未决动作、发终态通知",
+    (
+        "mission",
+        "orchestrator/commit_service.py",
+        "CommitService.fail_mission",
+        "FAILED",
+    ): "任务级停止（预算 / 运行环境 / 运维条件）；只由主循环 _commit_fail_mission（先准备台账）调用",
+    (
+        "mission",
+        "orchestrator/commit_service.py",
+        "CommitService.judge_mission",
+        "FAILED",
+    ): "判定'要求未满足'写失败并了结开着的动作；'满足'这一支不写完成、只请求收尾（request_assured_closeout）",
+    (
+        "mission",
+        "orchestrator/commit_service.py",
+        "CommitService.stop_task",
+        "FAILED",
+    ): "一步停止连带任务失败（人接管停止 / 步骤重试用尽）；经 _commit_stop_task 台账钩子或 takeover",
     # ---- update_mission 的调用者（含非终态，列全以证明没有第二条写路径）
-    ("update_mission", "orchestrator/assurance_final_writer.py", "request_assured_closeout", ""):
-        "判定后把判定结果写进 final_report，状态仍 ACTIVE（非终态）",
-    ("update_mission", "orchestrator/assurance_final_writer.py", "finalize_assured_mission", ""):
-        "唯一完成写方落库",
-    ("update_mission", "orchestrator/commit_service.py", "CommitService.begin_planning", ""):
-        "CREATED→PLANNING（非终态）",
-    ("update_mission", "orchestrator/commit_service.py", "CommitService.fail_planning", ""):
-        "同上一组 fail_planning 落库",
-    ("update_mission", "orchestrator/commit_service.py", "CommitService.cancel_mission", ""):
-        "同上一组 cancel_mission 落库",
-    ("update_mission", "orchestrator/commit_service.py", "CommitService.fail_mission", ""):
-        "同上一组 fail_mission 落库",
-    ("update_mission", "orchestrator/commit_service.py", "CommitService.judge_mission", ""):
-        "同上一组 judge_mission 未满足落库",
-    ("update_mission", "orchestrator/commit_service.py", "CommitService.stop_task", ""):
-        "同上一组 stop_task 落库",
-    ("update_mission", "orchestrator/plan_commits.py", "PlanCommitsMixin._activate_for_work", ""):
-        "PLANNING→ACTIVE（非终态）",
-    ("update_mission", "orchestrator/requirements_amendment.py", "amend_requirements", ""):
-        "第 2 批车道 L（H19）：改要求时换任务目标文本，状态与停止原因不动（非终态）",
+    (
+        "update_mission",
+        "orchestrator/assurance_final_writer.py",
+        "request_assured_closeout",
+        "",
+    ): "判定后把判定结果写进 final_report，状态仍 ACTIVE（非终态）",
+    (
+        "update_mission",
+        "orchestrator/assurance_final_writer.py",
+        "finalize_assured_mission",
+        "",
+    ): "唯一完成写方落库",
+    (
+        "update_mission",
+        "orchestrator/commit_service.py",
+        "CommitService.begin_planning",
+        "",
+    ): "CREATED→PLANNING（非终态）",
+    (
+        "update_mission",
+        "orchestrator/commit_service.py",
+        "CommitService.fail_planning",
+        "",
+    ): "同上一组 fail_planning 落库",
+    (
+        "update_mission",
+        "orchestrator/commit_service.py",
+        "CommitService.cancel_mission",
+        "",
+    ): "同上一组 cancel_mission 落库",
+    (
+        "update_mission",
+        "orchestrator/commit_service.py",
+        "CommitService.fail_mission",
+        "",
+    ): "同上一组 fail_mission 落库",
+    (
+        "update_mission",
+        "orchestrator/commit_service.py",
+        "CommitService.judge_mission",
+        "",
+    ): "同上一组 judge_mission 未满足落库",
+    (
+        "update_mission",
+        "orchestrator/commit_service.py",
+        "CommitService.stop_task",
+        "",
+    ): "同上一组 stop_task 落库",
+    (
+        "update_mission",
+        "orchestrator/plan_commits.py",
+        "PlanCommitsMixin._activate_for_work",
+        "",
+    ): "PLANNING→ACTIVE（非终态）",
+    (
+        "update_mission",
+        "orchestrator/requirements_amendment.py",
+        "amend_requirements",
+        "",
+    ): "第 2 批车道 L（H19）：改要求时换任务目标文本，状态与停止原因不动（非终态）",
     # ---- 直接写 missions 表的 SQL（只有存储层自己）
-    ("sql", "storage/store.py", "Store.insert_mission", "INTO missions"):
-        "建任务：出生态 CREATED，不是终态",
-    ("sql", "storage/store.py", "Store.update_mission", "_cas(missions)"):
-        "版本比对写回：所有 update_mission 调用者（上一组）都经过它",
+    (
+        "sql",
+        "storage/store.py",
+        "Store.insert_mission",
+        "INTO missions",
+    ): "建任务：出生态 CREATED，不是终态",
+    (
+        "sql",
+        "storage/store.py",
+        "Store.update_mission",
+        "_cas(missions)",
+    ): "版本比对写回：所有 update_mission 调用者（上一组）都经过它",
     # ---- 步骤状态写成终态
-    ("task", "orchestrator/commit_service.py", "CommitService._cascade_stop", "CANCELLED"):
-        "任务终止（取消 / 失败 / 一步停止）时级联取消还开着的 READY / ACTIVE 步骤，开着的尝试一并关闭",
-    ("task", "orchestrator/commit_service.py", "CommitService._accept_result", "COMPLETED"):
-        "接受结果：没有效果的步骤直接完成；带效果的步骤只转 VERIFYING（条件表达式的另一支），等效果完成",
-    ("task", "orchestrator/commit_service.py", "CommitService.judge_mission", "CANCELLED"):
-        "判定时了结暂停着的 READY 路线（not_needed_paused）：任务不需要它了",
-    ("task", "orchestrator/commit_service.py", "CommitService.stop_task", "FAILED"):
-        "一步停止：步骤写失败，开着的尝试取消",
-    ("task", "orchestrator/operation_outcomes.py", "_accept_operation_outcome", "COMPLETED"):
-        "发布结果审阅通过、所属步骤完成范围齐备后，把 VERIFYING 的步骤写完成（原计划 L192 精确绑定）",
+    (
+        "task",
+        "orchestrator/commit_service.py",
+        "CommitService._cascade_stop",
+        "CANCELLED",
+    ): "任务终止（取消 / 失败 / 一步停止）时级联取消还开着的 READY / ACTIVE 步骤，开着的尝试一并关闭",
+    (
+        "task",
+        "orchestrator/commit_service.py",
+        "CommitService._accept_result",
+        "COMPLETED",
+    ): "接受结果：没有效果的步骤直接完成；带效果的步骤只转 VERIFYING（条件表达式的另一支），等效果完成",
+    (
+        "task",
+        "orchestrator/commit_service.py",
+        "CommitService.judge_mission",
+        "CANCELLED",
+    ): "判定时了结暂停着的 READY 路线（not_needed_paused）：任务不需要它了",
+    (
+        "task",
+        "orchestrator/commit_service.py",
+        "CommitService.stop_task",
+        "FAILED",
+    ): "一步停止：步骤写失败，开着的尝试取消",
+    (
+        "task",
+        "orchestrator/operation_outcomes.py",
+        "_accept_operation_outcome",
+        "COMPLETED",
+    ): "发布结果审阅通过、所属步骤完成范围齐备后，把 VERIFYING 的步骤写完成（原计划 L192 精确绑定）",
     # ---- 调终态写方的入口
-    ("entry", "__main__.py", "cmd_mission", "cancel_mission"):
-        "命令行取消（运维）：直接开库调 CommitService.cancel_mission",
-    ("entry", "api/facade.py", "MissionControlV1.cancel", "cancel_mission"):
-        "产品门面取消（人）：已终态幂等返回",
-    ("entry", "api/missions.py", "MissionApi.cancel", "cancel_mission"):
-        "SDK API 取消：先要求执行根",
-    ("entry", "orchestrator/event_handler.py", "Orchestrator._commit_cancel_mission", "cancel_mission"):
-        "主循环取消入口：先准备终态台账",
-    ("entry", "orchestrator/event_handler.py", "Orchestrator._commit_fail_mission", "fail_mission"):
-        "主循环任务级停止入口：先准备终态台账",
-    ("entry", "orchestrator/event_handler.py", "Orchestrator._commit_fail_planning", "fail_planning"):
-        "主循环规划失败入口：先准备终态台账",
-    ("entry", "orchestrator/event_handler.py", "Orchestrator._commit_stop_task", "stop_task"):
-        "主循环一步停止入口：先准备终态台账",
-    ("entry", "orchestrator/human_commits.py", "HumanCommitsMixin.takeover", "stop_task"):
-        "人接管停止一步（HumanOverride 先落库再 stop_task）",
-    ("entry", "orchestrator/event_handler.py", "Orchestrator._judge", "judge_mission"):
-        "主循环判定（纯内容任务）：判定只记'满足 / 不满足'，满足走收尾",
-    ("entry", "orchestrator/event_handler.py", "Orchestrator._judge_with_actions", "judge_mission"):
-        "主循环两段判定（带动作的任务）",
-    ("entry", "orchestrator/commit_service.py", "CommitService.judge_mission", "request_assured_closeout"):
-        "判定'满足'→请求收尾，不写完成",
+    (
+        "entry",
+        "__main__.py",
+        "cmd_mission",
+        "cancel_mission",
+    ): "命令行取消（运维）：直接开库调 CommitService.cancel_mission",
+    (
+        "entry",
+        "api/facade.py",
+        "MissionControlV1.cancel",
+        "cancel_mission",
+    ): "产品门面取消（人）：已终态幂等返回",
+    (
+        "entry",
+        "api/missions.py",
+        "MissionApi.cancel",
+        "cancel_mission",
+    ): "SDK API 取消：先要求执行根",
+    (
+        "entry",
+        "orchestrator/event_handler.py",
+        "Orchestrator._commit_cancel_mission",
+        "cancel_mission",
+    ): "主循环取消入口：先准备终态台账",
+    (
+        "entry",
+        "orchestrator/event_handler.py",
+        "Orchestrator._commit_fail_mission",
+        "fail_mission",
+    ): "主循环任务级停止入口：先准备终态台账",
+    (
+        "entry",
+        "orchestrator/event_handler.py",
+        "Orchestrator._commit_fail_planning",
+        "fail_planning",
+    ): "主循环规划失败入口：先准备终态台账",
+    (
+        "entry",
+        "orchestrator/event_handler.py",
+        "Orchestrator._commit_stop_task",
+        "stop_task",
+    ): "主循环一步停止入口：先准备终态台账",
+    (
+        "entry",
+        "orchestrator/human_commits.py",
+        "HumanCommitsMixin.takeover",
+        "stop_task",
+    ): "人接管停止一步（HumanOverride 先落库再 stop_task）",
+    (
+        "entry",
+        "orchestrator/event_handler.py",
+        "Orchestrator._judge",
+        "judge_mission",
+    ): "主循环判定（纯内容任务）：判定只记'满足 / 不满足'，满足走收尾",
+    (
+        "entry",
+        "orchestrator/event_handler.py",
+        "Orchestrator._judge_with_actions",
+        "judge_mission",
+    ): "主循环两段判定（带动作的任务）",
+    (
+        "entry",
+        "orchestrator/commit_service.py",
+        "CommitService.judge_mission",
+        "request_assured_closeout",
+    ): "判定'满足'→请求收尾，不写完成",
 }
 
 
@@ -203,7 +357,14 @@ def test_every_terminal_write_point_is_on_the_whitelist():
     assert all(reason.strip() for reason in WHITELIST.values())
     # 写 COMPLETED 的只有唯一完成写方；写终态的任务状态变更总共六处
     completed = [site for site in found if site[0] == "mission" and site[3] == "COMPLETED"]
-    assert completed == [("mission", "orchestrator/assurance_final_writer.py", "finalize_assured_mission", "COMPLETED")]
+    assert completed == [
+        (
+            "mission",
+            "orchestrator/assurance_final_writer.py",
+            "finalize_assured_mission",
+            "COMPLETED",
+        )
+    ]
     assert len([site for site in found if site[0] == "mission"]) == 6
 
 
@@ -242,4 +403,6 @@ def test_the_scan_catches_a_new_writer_in_every_written_form():
         ("entry", "<src>", "api", "cancel_mission"),
     ]
     # 非终态的状态变更不算写入点
-    assert terminal_write_sites("def go(m):\n    return next_mission(m, MissionStatus.ACTIVE)\n") == []
+    assert (
+        terminal_write_sites("def go(m):\n    return next_mission(m, MissionStatus.ACTIVE)\n") == []
+    )

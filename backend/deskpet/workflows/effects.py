@@ -170,7 +170,9 @@ class PreparedTarget:
             raise ValueError("prepared target paths and reservation key are required")
         if Path(self.final_path).parent != Path(self.staging_path).parent:
             raise ValueError("staging path must be in the final target directory")
-        if self.pre_exists and (self.pre_hash is None or self.pre_size is None or self.pre_mtime is None):
+        if self.pre_exists and (
+            self.pre_hash is None or self.pre_size is None or self.pre_mtime is None
+        ):
             raise ValueError("existing target preparation requires hash, size, and mtime")
         if not self.pre_exists and any(
             value is not None for value in (self.pre_hash, self.pre_size, self.pre_mtime)
@@ -291,20 +293,14 @@ class PreparedToolCall:
         ):
             value = getattr(self, field_name)
             if value and (
-                len(value) != 64
-                or any(character not in "0123456789abcdef" for character in value)
+                len(value) != 64 or any(character not in "0123456789abcdef" for character in value)
             ):
                 raise ValueError(f"{field_name} must be a lowercase SHA-256 digest")
         if self.retry_of_effect_id and (
             len(self.retry_of_effect_id) != 64
-            or any(
-                character not in "0123456789abcdef"
-                for character in self.retry_of_effect_id
-            )
+            or any(character not in "0123456789abcdef" for character in self.retry_of_effect_id)
         ):
-            raise ValueError(
-                "retry_of_effect_id must be a lowercase SHA-256 digest"
-            )
+            raise ValueError("retry_of_effect_id must be a lowercase SHA-256 digest")
         targets = tuple(self.prepared_targets)
         if len({item.reservation_key for item in targets}) != len(targets):
             raise ValueError("prepared call contains duplicate targets")
@@ -312,12 +308,8 @@ class PreparedToolCall:
 
         selectors = tuple(self.resource_selectors)
         if not all(isinstance(item, ResourceSelector) for item in selectors):
-            raise TypeError(
-                "prepared call resource_selectors must contain ResourceSelector"
-            )
-        selector_keys = {
-            (item.kind, item.canonical_value, item.access) for item in selectors
-        }
+            raise TypeError("prepared call resource_selectors must contain ResourceSelector")
+        selector_keys = {(item.kind, item.canonical_value, item.access) for item in selectors}
         if len(selector_keys) != len(selectors):
             raise ValueError("prepared call contains duplicate resource selectors")
         object.__setattr__(self, "final_params", _freeze_json(params))
@@ -426,8 +418,7 @@ class PreparedToolCall:
         from deskpet.types.task_grants import ResourceSelector
 
         data["resource_selectors"] = tuple(
-            ResourceSelector.from_dict(item)
-            for item in data.get("resource_selectors", ())
+            ResourceSelector.from_dict(item) for item in data.get("resource_selectors", ())
         )
         return cls(**data)
 
@@ -481,9 +472,7 @@ class NormalizedToolOutcome:
         return cls(ToolOutcomeState.SUCCESS, value=value)
 
     @classmethod
-    def failure(
-        cls, code: str, message: str, *, value: JsonValue = None
-    ) -> NormalizedToolOutcome:
+    def failure(cls, code: str, message: str, *, value: JsonValue = None) -> NormalizedToolOutcome:
         return cls(ToolOutcomeState.FAILURE, value=value, error={"code": code, "message": message})
 
     @classmethod
@@ -692,8 +681,16 @@ class StagedFileLifecycle:
     def reconcile(self, target: PreparedTarget, evidence: StagedFileEvidence) -> str:
         final = Path(target.final_path)
         staging = Path(target.staging_path)
-        final_matches = final.is_file() and final.stat().st_size == evidence.size and _file_sha256(final) == evidence.sha256
-        staging_matches = staging.is_file() and staging.stat().st_size == evidence.size and _file_sha256(staging) == evidence.sha256
+        final_matches = (
+            final.is_file()
+            and final.stat().st_size == evidence.size
+            and _file_sha256(final) == evidence.sha256
+        )
+        staging_matches = (
+            staging.is_file()
+            and staging.stat().st_size == evidence.size
+            and _file_sha256(staging) == evidence.sha256
+        )
         if final_matches:
             return "committed"
         if staging_matches:
@@ -812,7 +809,7 @@ class EffectJournal:
                 await db.execute(
                     f"""SELECT run_id,lease_owner,lease_epoch,run_version,
                     head_checkpoint_ns,head_checkpoint_id
-                    FROM workflow_runs WHERE {' AND '.join(clauses)}
+                    FROM workflow_runs WHERE {" AND ".join(clauses)}
                     ORDER BY updated_at DESC LIMIT 2""",
                     params,
                 )
@@ -956,7 +953,9 @@ class EffectJournal:
         if not ledger_kind:
             raise ValueError("ledger_kind is required")
         reserved = (input_reserved, output_reserved, cost_reserved_micros)
-        if any(isinstance(value, bool) or not isinstance(value, int) or value < 0 for value in reserved):
+        if any(
+            isinstance(value, bool) or not isinstance(value, int) or value < 0 for value in reserved
+        ):
             raise ValueError("budget reservations must be non-negative integers")
         if not any(reserved):
             raise ValueError("at least one budget reservation must be positive")
@@ -1154,9 +1153,7 @@ class EffectJournal:
         finally:
             await db.close()
 
-    async def load_v6_deadline(
-        self, run_id: str, deadline_id: str
-    ) -> dict[str, JsonValue] | None:
+    async def load_v6_deadline(self, run_id: str, deadline_id: str) -> dict[str, JsonValue] | None:
         db = await self._connect()
         try:
             row = await (
@@ -1167,10 +1164,12 @@ class EffectJournal:
             ).fetchone()
             if row is None:
                 return None
+
             def wall(value: object | None) -> str | None:
                 if value is None:
                     return None
                 return datetime.fromtimestamp(float(value), UTC).isoformat()
+
             return {
                 "schema_version": int(row["schema_version"]),
                 "deadline_id": str(row["deadline_id"]),
@@ -1270,9 +1269,7 @@ class EffectJournal:
         effect_id = hashlib.sha256(
             f"{fence.run_id}|{logical_effect_id}|{attempt_no}".encode()
         ).hexdigest()
-        fingerprint = hashlib.sha256(
-            f"{logical_effect_id}|{attempt_no}".encode()
-        ).hexdigest()
+        fingerprint = hashlib.sha256(f"{logical_effect_id}|{attempt_no}".encode()).hexdigest()
         db = await self._connect()
         try:
             await db.execute("BEGIN IMMEDIATE")
@@ -1312,9 +1309,7 @@ class EffectJournal:
                         else ()
                     ),
                     result_kind=(
-                        str(raw["result_kind"])
-                        if action is EffectAction.REUSE and raw
-                        else None
+                        str(raw["result_kind"]) if action is EffectAction.REUSE and raw else None
                     ),
                 )
             deadline = await (
@@ -1381,7 +1376,13 @@ class EffectJournal:
                     """INSERT INTO workflow_research_resource_budgets(
                     budget_id,run_id,policy_hash,resource_kind,hard_limit)
                     VALUES(?,?,?,?,?)""",
-                    (budget_id, fence.run_id, resource_policy_hash, resource_kind, resource_hard_limit),
+                    (
+                        budget_id,
+                        fence.run_id,
+                        resource_policy_hash,
+                        resource_kind,
+                        resource_hard_limit,
+                    ),
                 )
             elif (
                 str(budget["policy_hash"]) != resource_policy_hash
@@ -1421,10 +1422,20 @@ class EffectJournal:
                 lease_epoch,started_at,updated_at,logical_effect_id,attempt_no,
                 supersedes_effect_id) VALUES(?,?,?,?,?,?,?,'running',?,'[]',?,?,?,?,?,?)""",
                 (
-                    effect_id, fence.run_id, node_execution_id, fingerprint,
-                    prepared.effect_type, policy_json, prepared.args_hash,
-                    canonical_json(prepared.to_dict()), fence.lease_epoch, now, now,
-                    logical_effect_id, attempt_no, supersedes,
+                    effect_id,
+                    fence.run_id,
+                    node_execution_id,
+                    fingerprint,
+                    prepared.effect_type,
+                    policy_json,
+                    prepared.args_hash,
+                    canonical_json(prepared.to_dict()),
+                    fence.lease_epoch,
+                    now,
+                    now,
+                    logical_effect_id,
+                    attempt_no,
+                    supersedes,
                 ),
             )
             await db.execute(
@@ -1464,7 +1475,10 @@ class EffectJournal:
             if fault_injector is not None:
                 fault_injector("after_commit")
             return IdempotentReadAttempt(
-                EffectAction.EXECUTE, effect_id, logical_effect_id, attempt_no,
+                EffectAction.EXECUTE,
+                effect_id,
+                logical_effect_id,
+                attempt_no,
                 EffectStatus.RUNNING,
                 deadline_state=deadline_state,
                 deadline_lease=deadline_lease,
@@ -1511,17 +1525,28 @@ class EffectJournal:
                     (row["logical_effect_id"],),
                 )
             ).fetchone()
-            if row["status"] == "committed" and head is not None and head["canonical_effect_id"] == effect_id:
+            if (
+                row["status"] == "committed"
+                and head is not None
+                and head["canonical_effect_id"] == effect_id
+            ):
                 raw = json.loads(row["outcome_json"])
                 await db.commit()
                 return IdempotentReadAttempt(
-                    EffectAction.REUSE, effect_id, str(row["logical_effect_id"]),
-                    int(row["attempt_no"]), EffectStatus.COMMITTED,
+                    EffectAction.REUSE,
+                    effect_id,
+                    str(row["logical_effect_id"]),
+                    int(row["attempt_no"]),
+                    EffectStatus.COMMITTED,
                     str(raw["canonical_result_ref"]),
                     tuple(str(x) for x in raw["dependency_refs"]),
                     str(raw["result_kind"]),
                 )
-            if row["status"] != "running" or head is None or head["canonical_effect_id"] is not None:
+            if (
+                row["status"] != "running"
+                or head is None
+                or head["canonical_effect_id"] is not None
+            ):
                 raise EffectStateConflict("v6 read effect cannot become canonical")
             if (deadline_now_wall is None) != (deadline_now_monotonic_ns is None):
                 raise ValueError("v6 read deadline observations must be supplied together")
@@ -1620,9 +1645,14 @@ class EffectJournal:
             )
             await db.commit()
             return IdempotentReadAttempt(
-                EffectAction.REUSE, effect_id, str(row["logical_effect_id"]),
-                int(row["attempt_no"]), EffectStatus.COMMITTED,
-                canonical_result_ref, wire_refs, result_kind,
+                EffectAction.REUSE,
+                effect_id,
+                str(row["logical_effect_id"]),
+                int(row["attempt_no"]),
+                EffectStatus.COMMITTED,
+                canonical_result_ref,
+                wire_refs,
+                result_kind,
                 deadline_state=deadline_state,
                 deadline_lease=deadline_lease,
             )
@@ -1699,7 +1729,10 @@ class EffectJournal:
                     attempt_no,
                     EffectStatus.FAILED,
                 )
-            if int(head["latest_attempt_no"]) != attempt_no or head["canonical_effect_id"] is not None:
+            if (
+                int(head["latest_attempt_no"]) != attempt_no
+                or head["canonical_effect_id"] is not None
+            ):
                 raise EffectStateConflict("v6 read head no longer names the stale attempt")
             if str(row["status"]) not in {"running", "uncertain"}:
                 raise EffectStateConflict("v6 read attempt cannot be reconciled")
@@ -1769,9 +1802,7 @@ class EffectJournal:
         if result_kind not in {"official_search", "page_extraction"}:
             raise ValueError("unsupported v6 read result kind")
         digest = canonical_result_ref.removeprefix("sha256:")
-        if len(digest) != 64 or any(
-            character not in "0123456789abcdef" for character in digest
-        ):
+        if len(digest) != 64 or any(character not in "0123456789abcdef" for character in digest):
             raise ValueError("canonical_result_ref must be a wire SHA-256 ref")
         db = await self._connect()
         try:
@@ -1897,7 +1928,9 @@ class EffectJournal:
                             (existing["effect_id"],),
                         )
                     ).fetchone()
-                    ledger_kind, input_reserved, output_reserved, cost_reserved, _ = budget_reservation
+                    ledger_kind, input_reserved, output_reserved, cost_reserved, _ = (
+                        budget_reservation
+                    )
                     if reservation is None or (
                         reservation["run_id"] != fence.run_id
                         or reservation["ledger_kind"] != ledger_kind
@@ -1962,8 +1995,7 @@ class EffectJournal:
             reusable = None
             if (
                 budget_reservation is None
-                and
-                reuse_checkpoint is not None
+                and reuse_checkpoint is not None
                 and policy.kind is EffectKind.DETERMINISTIC_REUSABLE
                 and policy.reusable_across_branches
             ):
@@ -1975,9 +2007,7 @@ class EffectJournal:
                 )
                 return BeginEffectResult(EffectAction.REUSE, self._record(reusable))
 
-            effect_id = hashlib.sha256(
-                f"{fence.run_id}|{fingerprint}".encode()
-            ).hexdigest()
+            effect_id = hashlib.sha256(f"{fence.run_id}|{fingerprint}".encode()).hexdigest()
             now = self._clock()
             policy_json = canonical_json(
                 {
@@ -1999,21 +2029,15 @@ class EffectJournal:
                     )
                 ).fetchone()
                 if resource_budget is None:
-                    raise EffectStateConflict(
-                        f"v6 {resource_budget_kind} route budget is missing"
-                    )
-                resource_budget_denied = (
-                    int(resource_budget["reserved"])
-                    + int(resource_budget["consumed"])
-                    >= int(resource_budget["hard_limit"])
-                )
+                    raise EffectStateConflict(f"v6 {resource_budget_kind} route budget is missing")
+                resource_budget_denied = int(resource_budget["reserved"]) + int(
+                    resource_budget["consumed"]
+                ) >= int(resource_budget["hard_limit"])
             if budget_reservation is not None:
                 ledger_kind, input_reserved, output_reserved, cost_reserved, capability_key = (
                     budget_reservation
                 )
-                limits = await self._budget_limits_for_update(
-                    db, fence.run_id, capability_key
-                )
+                limits = await self._budget_limits_for_update(db, fence.run_id, capability_key)
                 charged = await self._charged_budget_for_update(db, fence.run_id, ledger_kind)
                 requested = (input_reserved, output_reserved, cost_reserved)
                 capability_budget_denied = any(
@@ -2244,9 +2268,7 @@ class EffectJournal:
                 effect_id,
             ),
         )
-        reservation_status = (
-            "committed" if target_status is EffectStatus.COMMITTED else "released"
-        )
+        reservation_status = "committed" if target_status is EffectStatus.COMMITTED else "released"
         await db.execute(
             """UPDATE workflow_target_reservations SET status=?,lease_expires_at=NULL,updated_at=?
             WHERE reservation_key IN (SELECT reservation_key FROM workflow_effect_targets WHERE effect_id=?)""",
@@ -2282,9 +2304,7 @@ class EffectJournal:
                 )
                 if cursor.rowcount != 1:
                     raise EffectStateConflict("upstream dispatch CAS lost")
-                reservation = await self._budget_reservation_for_update(
-                    db, fence.run_id, effect_id
-                )
+                reservation = await self._budget_reservation_for_update(db, fence.run_id, effect_id)
             await db.commit()
             return self._budget_reservation_record(reservation)
         except BaseException:
@@ -2391,9 +2411,7 @@ class EffectJournal:
                 ):
                     raise ValueError("artifact_refs must contain lowercase SHA-256 refs")
                 blob = await (
-                    await db.execute(
-                        "SELECT 1 FROM workflow_blobs WHERE sha256=?", (digest,)
-                    )
+                    await db.execute("SELECT 1 FROM workflow_blobs WHERE sha256=?", (digest,))
                 ).fetchone()
                 if blob is None:
                     raise StagingPreconditionFailed(
@@ -2513,7 +2531,9 @@ class EffectJournal:
 
         if outcome is None or outcome.state is ToolOutcomeState.MALFORMED:
             status = EffectStatus.UNCERTAIN
-            normalized = outcome or NormalizedToolOutcome.malformed("reconciliation produced no outcome")
+            normalized = outcome or NormalizedToolOutcome.malformed(
+                "reconciliation produced no outcome"
+            )
         elif outcome.state is ToolOutcomeState.SUCCESS and evidence_verified:
             status = EffectStatus.COMMITTED
             normalized = outcome
@@ -2522,7 +2542,9 @@ class EffectJournal:
             normalized = outcome
         else:
             status = EffectStatus.UNCERTAIN
-            normalized = NormalizedToolOutcome.malformed("success lacks verified reconciliation evidence")
+            normalized = NormalizedToolOutcome.malformed(
+                "success lacks verified reconciliation evidence"
+            )
         return await self._reconcile_write_tx(db, fence, effect_id, status, normalized)
 
     async def finalize_late(
@@ -2702,7 +2724,13 @@ class EffectJournal:
                 """INSERT OR IGNORE INTO workflow_checkpoint_effects(
                 thread_id,checkpoint_ns,checkpoint_id,effect_id,node_execution_id
                 ) VALUES(?,?,?,?,?)""",
-                (link.thread_id, link.checkpoint_ns, link.checkpoint_id, effect_id, node_execution_id),
+                (
+                    link.thread_id,
+                    link.checkpoint_ns,
+                    link.checkpoint_id,
+                    effect_id,
+                    node_execution_id,
+                ),
             )
             await db.commit()
         except BaseException:
@@ -2920,23 +2948,15 @@ class EffectJournal:
             input_reserved=int(row["input_reserved"]),
             output_reserved=int(row["output_reserved"]),
             cost_reserved_micros=int(row["cost_reserved_micros"]),
-            input_actual=(
-                None if row["input_actual"] is None else int(row["input_actual"])
-            ),
-            output_actual=(
-                None if row["output_actual"] is None else int(row["output_actual"])
-            ),
+            input_actual=(None if row["input_actual"] is None else int(row["input_actual"])),
+            output_actual=(None if row["output_actual"] is None else int(row["output_actual"])),
             cost_actual_micros=(
-                None
-                if row["cost_actual_micros"] is None
-                else int(row["cost_actual_micros"])
+                None if row["cost_actual_micros"] is None else int(row["cost_actual_micros"])
             ),
             status=str(row["status"]),
             dispatch_state=str(row["dispatch_state"]),
             upstream_started_at=(
-                None
-                if row["upstream_started_at"] is None
-                else float(row["upstream_started_at"])
+                None if row["upstream_started_at"] is None else float(row["upstream_started_at"])
             ),
             created_at=float(row["created_at"]),
             updated_at=float(row["updated_at"]),
@@ -2970,7 +2990,9 @@ class EffectJournal:
             )
         ).fetchall()
         if not rows or any(json.loads(row["target_json"])["status"] != "committed" for row in rows):
-            raise EffectStateConflict("staged file effect cannot commit before every target commits")
+            raise EffectStateConflict(
+                "staged file effect cannot commit before every target commits"
+            )
 
     @staticmethod
     async def _find_checkpoint_effect(

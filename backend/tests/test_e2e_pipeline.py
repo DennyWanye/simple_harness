@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 """End-to-end test: simulate a user speaking by streaming real audio to /ws/audio."""
+
 from __future__ import annotations
 
 import sys
@@ -42,6 +43,7 @@ async def generate_test_audio() -> bytes:
 
     # Decode MP3 → PCM via soundfile (libsndfile)
     import soundfile as sf
+
     audio_np, sr = sf.read(io.BytesIO(bytes(mp3_data)), dtype="float32")
     if audio_np.ndim > 1:
         audio_np = audio_np.mean(axis=1)  # mix to mono
@@ -51,6 +53,7 @@ async def generate_test_audio() -> bytes:
     if sr != 16000:
         import torch
         import torchaudio.functional as F
+
         t = torch.from_numpy(audio_np).unsqueeze(0)
         t = F.resample(t, sr, 16000)
         audio_np = t.squeeze().numpy()
@@ -92,7 +95,9 @@ async def stream_to_backend(pcm_bytes: bytes) -> None:
                         try:
                             print(f"[<-] {mtype}: {payload}")
                         except UnicodeEncodeError:
-                            print(f"[<-] {mtype}: <payload contains non-printable chars, len={len(str(payload))}>")
+                            print(
+                                f"[<-] {mtype}: <payload contains non-printable chars, len={len(str(payload))}>"
+                            )
                         if mtype == "tts_end":
                             done.set()
             except Exception as e:

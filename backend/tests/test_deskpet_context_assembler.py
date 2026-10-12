@@ -6,6 +6,7 @@
 Covers all "Scenario" acceptance criteria in
 ``openspec/changes/p4-poseidon-agent-harness/specs/context-assembler/spec.md``.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -243,8 +244,8 @@ async def test_classifier_lexical_floor_branches(tmp_path: Path):
     exemplars_path = tmp_path / "ex.jsonl"
     exemplars_path.write_text("", encoding="utf-8")
     classifier = TaskClassifier(
-        embedder=None,           # embed 层跳过
-        llm_registry=None,       # llm 层跳过 → 必落词法地板
+        embedder=None,  # embed 层跳过
+        llm_registry=None,  # llm 层跳过 → 必落词法地板
         exemplars_path=exemplars_path,
     )
     # 确定寒暄 → chat
@@ -305,12 +306,13 @@ async def test_fanout_is_parallel_not_serial():
 
     assert len(slices) == 5  # 4 + memory
     # Should be ~80ms, definitely < 250ms (would be 320ms if serial).
-    assert elapsed < 0.25, f"fanout took {elapsed*1000:.0f}ms — not parallel"
+    assert elapsed < 0.25, f"fanout took {elapsed * 1000:.0f}ms — not parallel"
 
 
 @pytest.mark.asyncio
 async def test_fanout_component_raise_is_soft():
     """Component raising an exception must not poison the fanout."""
+
     class Boom:
         name = "boom"
 
@@ -393,8 +395,16 @@ def test_budget_drops_low_priority_first():
     alloc = BudgetAllocator(context_window=1000, budget_ratio=0.1)  # budget=100
     slices = [
         Slice(component_name="memory", text_content="m", tokens=80, priority=100, bucket="dynamic"),
-        Slice(component_name="workspace", text_content="w" * 100, tokens=25, priority=40, bucket="dynamic"),
-        Slice(component_name="time", text_content="t" * 50, tokens=10, priority=10, bucket="dynamic"),
+        Slice(
+            component_name="workspace",
+            text_content="w" * 100,
+            tokens=25,
+            priority=40,
+            bucket="dynamic",
+        ),
+        Slice(
+            component_name="time", text_content="t" * 50, tokens=10, priority=10, bucket="dynamic"
+        ),
     ]
     result = alloc.allocate(slices)
     # total=115 > budget=100. Drop priority 10 first, then 40. Memory kept.
@@ -507,27 +517,21 @@ async def test_end_to_end_chat_turn(tmp_path: Path):
 async def test_tools_filtered_to_policy_whitelist(tmp_path: Path):
     """Spec 'Assembler feeds tool_schemas to LLM': 2 tools not 16."""
     # Force task_type to 'recall' so policy.tools = [memory_read, memory_search].
-    assembler = build_default_assembler(
-        embedder=FakeEmbedder(), llm_registry=FakeLLM("chat")
-    )
+    assembler = build_default_assembler(embedder=FakeEmbedder(), llm_registry=FakeLLM("chat"))
     bundle = await assembler.assemble(
         "还记得我之前说的红色袜子吗",  # rule hit → recall
         memory_manager=FakeMemoryManager(),
         tool_registry=FakeToolRegistry(),
     )
     assert bundle.task_type == "recall"
-    names = {
-        s.get("function", s).get("name") for s in bundle.tool_schemas
-    }
+    names = {s.get("function", s).get("name") for s in bundle.tool_schemas}
     assert names == {"memory_read", "memory_search"}
 
 
 @pytest.mark.asyncio
 async def test_assembler_unknown_task_type_falls_back_to_chat(tmp_path: Path):
     """Caller overrides with an unknown task_type → chat fallback."""
-    assembler = build_default_assembler(
-        embedder=FakeEmbedder(), llm_registry=FakeLLM("chat")
-    )
+    assembler = build_default_assembler(embedder=FakeEmbedder(), llm_registry=FakeLLM("chat"))
     bundle = await assembler.assemble(
         "hi",
         memory_manager=FakeMemoryManager(),
@@ -557,17 +561,13 @@ async def test_disabled_mode_emits_all_tools(tmp_path: Path):
 # ---------------------------------------------------------------------------
 @pytest.mark.asyncio
 async def test_feedback_records_used_tools(tmp_path: Path):
-    assembler = build_default_assembler(
-        embedder=FakeEmbedder(), llm_registry=FakeLLM("chat")
-    )
+    assembler = build_default_assembler(embedder=FakeEmbedder(), llm_registry=FakeLLM("chat"))
     bundle = await assembler.assemble(
         "你好",
         memory_manager=FakeMemoryManager(),
         tool_registry=FakeToolRegistry(),
     )
-    assembler.feedback(
-        bundle, used_tools=["memory_read"], final_response="好呀！"
-    )
+    assembler.feedback(bundle, used_tools=["memory_read"], final_response="好呀！")
     assert bundle.decisions.used_tools == ["memory_read"]
     assert bundle.decisions.final_response_len > 0
     # Ring buffer exposes the decision.
@@ -680,9 +680,7 @@ async def test_tool_component_respects_wildcard_and_named_lists():
     s = await tool.provide(ctx)
     assert len(s.tool_schemas) == 4
     # Named subset
-    ctx.policy = AssemblyPolicy(
-        task_type="chat", tools=["memory_read", "web_fetch"]
-    )
+    ctx.policy = AssemblyPolicy(task_type="chat", tools=["memory_read", "web_fetch"])
     s = await tool.provide(ctx)
     names = {sc["function"]["name"] for sc in s.tool_schemas}
     assert names == {"memory_read", "web_fetch"}
@@ -727,18 +725,22 @@ async def test_short_clarification_does_not_remove_model_visible_tools():
     )
     policy = AssemblyPolicy(task_type="chat", tools=["*"])
 
-    clarification = await ToolComponent().provide(ComponentContext(
-        task_type="chat",
-        policy=policy,
-        user_message="是一个脉冲步枪",
-        tool_registry=registry,
-    ))
-    explicit = await ToolComponent().provide(ComponentContext(
-        task_type="chat",
-        policy=policy,
-        user_message="请生成一张脉冲步枪图片",
-        tool_registry=registry,
-    ))
+    clarification = await ToolComponent().provide(
+        ComponentContext(
+            task_type="chat",
+            policy=policy,
+            user_message="是一个脉冲步枪",
+            tool_registry=registry,
+        )
+    )
+    explicit = await ToolComponent().provide(
+        ComponentContext(
+            task_type="chat",
+            policy=policy,
+            user_message="请生成一张脉冲步枪图片",
+            tool_registry=registry,
+        )
+    )
 
     assert [s["function"]["name"] for s in clarification.tool_schemas] == [
         "generate_image",
@@ -758,14 +760,14 @@ async def test_web_search_tool_component_grounds_actual_availability():
             {"type": "function", "function": {"name": "web_fetch"}},
         ]
     )
-    result = await ToolComponent().provide(ComponentContext(
-        task_type="web_search",
-        policy=AssemblyPolicy(
-            task_type="web_search", tools=["web_search", "web_fetch"]
-        ),
-        user_message="你能自己去查一下吗？中文网站里面应该都有",
-        tool_registry=registry,
-    ))
+    result = await ToolComponent().provide(
+        ComponentContext(
+            task_type="web_search",
+            policy=AssemblyPolicy(task_type="web_search", tools=["web_search", "web_fetch"]),
+            user_message="你能自己去查一下吗？中文网站里面应该都有",
+            tool_registry=registry,
+        )
+    )
 
     assert "可以调用 web_search 联网搜索" in result.text_content
     assert "不得声称自己没有联网" in result.text_content
@@ -793,9 +795,7 @@ async def test_prenarration_speaks_fixed_phrase():
     async def fake_tts(text: str):
         spoken.append(text)
 
-    pn = TTSPreNarrator(
-        tts_callable=fake_tts, rng=random.Random(42)
-    )
+    pn = TTSPreNarrator(tts_callable=fake_tts, rng=random.Random(42))
     task = pn.speak("chat")
     assert task is not None
     await task
@@ -827,9 +827,7 @@ def test_prenarration_disabled_no_op():
 async def test_assembler_p95_sanity(tmp_path: Path):
     """p95 over 10 runs should comfortably beat the 370ms spec target
     when using mock dependencies."""
-    assembler = build_default_assembler(
-        embedder=FakeEmbedder(), llm_registry=FakeLLM("chat")
-    )
+    assembler = build_default_assembler(embedder=FakeEmbedder(), llm_registry=FakeLLM("chat"))
     timings: list[float] = []
     for _ in range(10):
         start = time.monotonic()
@@ -852,12 +850,18 @@ async def test_assembler_p95_sanity(tmp_path: Path):
 # 记住 default_config，assemble() 兜底合并。守护：调用方不传 skills 也能拿到。
 # ---------------------------------------------------------------------------
 
+
 def test_build_default_assembler_threads_auto_disclosure_into_default_config():
     """工厂把 auto_disclosure_config 接成 assembler._default_config。"""
-    ad = {"enabled": True, "strong_threshold": 0.55,
-          "budget_tokens": 8000, "per_skill_max_tokens": 2000}
+    ad = {
+        "enabled": True,
+        "strong_threshold": 0.55,
+        "budget_tokens": 8000,
+        "per_skill_max_tokens": 2000,
+    }
     asm = build_default_assembler(
-        embedder=FakeEmbedder(), llm_registry=FakeLLM("chat"),
+        embedder=FakeEmbedder(),
+        llm_registry=FakeLLM("chat"),
         auto_disclosure_config=ad,
     )
     assert asm._default_config == {"skills": {"auto_disclosure": ad}}
@@ -887,8 +891,14 @@ async def test_assemble_merges_default_config_when_caller_omits_skills(tmp_path:
 
         async def provide(self, ctx):
             seen["config"] = dict(ctx.config or {})
-            return Slice(component_name="memory", text_content="", tokens=0,
-                         priority=70, bucket="frozen", meta={})
+            return Slice(
+                component_name="memory",
+                text_content="",
+                tokens=0,
+                priority=70,
+                bucket="frozen",
+                meta={},
+            )
 
     reg = ComponentRegistry()
     reg.register(_Probe())
@@ -900,8 +910,9 @@ async def test_assemble_merges_default_config_when_caller_omits_skills(tmp_path:
     )
     # Caller passes ONLY llm (mirrors voice_pipeline.py) — no skills key.
     await asm.assemble("你好", config={"llm": {"model": "m"}}, task_type_override="chat")
-    assert seen["config"].get("skills") == {"auto_disclosure": {"enabled": True}}, \
+    assert seen["config"].get("skills") == {"auto_disclosure": {"enabled": True}}, (
         f"default_config 的 skills 未兜底合并: {seen['config']}"
+    )
     assert seen["config"].get("llm") == {"model": "m"}, "调用方 llm 应保留"
 
 
@@ -922,8 +933,14 @@ async def test_assemble_deep_merges_partial_skills_keeps_default_auto_disclosure
 
         async def provide(self, ctx):
             seen["config"] = dict(ctx.config or {})
-            return Slice(component_name="memory", text_content="", tokens=0,
-                         priority=70, bucket="frozen", meta={})
+            return Slice(
+                component_name="memory",
+                text_content="",
+                tokens=0,
+                priority=70,
+                bucket="frozen",
+                meta={},
+            )
 
     reg = ComponentRegistry()
     reg.register(_Probe())
@@ -934,11 +951,11 @@ async def test_assemble_deep_merges_partial_skills_keeps_default_auto_disclosure
         default_config={"skills": {"auto_disclosure": {"enabled": True}}},
     )
     # Caller passes a DIFFERENT skills sub-key (codify) — must NOT wipe auto_disclosure.
-    await asm.assemble("你好", config={"skills": {"codify": {"x": 1}}},
-                       task_type_override="chat")
+    await asm.assemble("你好", config={"skills": {"codify": {"x": 1}}}, task_type_override="chat")
     merged_skills = seen["config"].get("skills") or {}
-    assert merged_skills.get("auto_disclosure") == {"enabled": True}, \
+    assert merged_skills.get("auto_disclosure") == {"enabled": True}, (
         f"深合并应保留 default 的 auto_disclosure: {merged_skills}"
+    )
     assert merged_skills.get("codify") == {"x": 1}, "调用方的 codify 子键应保留"
 
 
@@ -950,9 +967,7 @@ async def test_wi5_knowledge_enabled_runs_skill_component_for_chat():
     """真实 assemble() 路径：默认 chat policy.prefer 不含 skill → SkillComponent
     不运行；开 [skills].knowledge_enabled 后，本轮 prefer 追加 skill → SkillComponent
     对 chat 也 fan-out（否则触发式知识注入在最常见的闲聊路径永不生效）。"""
-    assembler = build_default_assembler(
-        embedder=FakeEmbedder(), llm_registry=FakeLLM("chat")
-    )
+    assembler = build_default_assembler(embedder=FakeEmbedder(), llm_registry=FakeLLM("chat"))
 
     # knowledge OFF（默认）→ chat 不跑 SkillComponent（字节级 BC）
     b_off = await assembler.assemble(

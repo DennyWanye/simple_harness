@@ -7,6 +7,7 @@ fix landed. Without the retry shim, this would fail with HTTP 400.
 
 Usage: python scripts/smoke_p4s24_stale_session.py <secret>
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -22,21 +23,22 @@ async def smoke(secret: str) -> int:
     # conn doesn't get evicted. The chat_v2 payload's session_id is
     # what selects the SessionDB rows.
     ws_sid = "p4s24-stale-test"
-    url = (
-        f"ws://127.0.0.1:8100/ws/control?secret={secret}"
-        f"&session_id={ws_sid}"
-    )
+    url = f"ws://127.0.0.1:8100/ws/control?secret={secret}&session_id={ws_sid}"
     saw_400 = False
     saw_retry = False
     print(f"-> connect on ws_sid={ws_sid}, target chat_sid={chat_sid} (stale rows)")
     async with websockets.connect(url, ping_interval=None) as ws:
-        await ws.send(json.dumps({
-            "type": "chat_v2",
-            "payload": {
-                "text": "用一句话告诉我现在几点。",
-                "session_id": chat_sid,
-            },
-        }))
+        await ws.send(
+            json.dumps(
+                {
+                    "type": "chat_v2",
+                    "payload": {
+                        "text": "用一句话告诉我现在几点。",
+                        "session_id": chat_sid,
+                    },
+                }
+            )
+        )
         while True:
             raw = await asyncio.wait_for(ws.recv(), timeout=180.0)
             try:
@@ -46,11 +48,15 @@ async def smoke(secret: str) -> int:
             t = msg.get("type", "")
             if t == "chat_v2_final":
                 text = msg["payload"].get("text", "")
-                print(f"<- chat_v2_final iterations={msg['payload'].get('iterations')} text={text[:60]!r}")
+                print(
+                    f"<- chat_v2_final iterations={msg['payload'].get('iterations')} text={text[:60]!r}"
+                )
                 break
             if t == "chat_v2_error":
                 detail = msg["payload"].get("detail", "")
-                print(f"<- chat_v2_error reason={msg['payload'].get('reason')} detail={detail[:200]}")
+                print(
+                    f"<- chat_v2_error reason={msg['payload'].get('reason')} detail={detail[:200]}"
+                )
                 if "HTTP 400" in detail or "reasoning_content" in detail:
                     saw_400 = True
                 break

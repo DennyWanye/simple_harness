@@ -269,8 +269,9 @@ class HumanCommitsMixin:
             )
             self._store.put_approval(request)
             self._store.set_result_verification(result_id, state="RUNNING", verdict=None)
-            self._record_review_adjudication(request, result_id, verdict=verdict, note=note,
-                                             principal=principal, receipt=receipt)
+            self._record_review_adjudication(
+                request, result_id, verdict=verdict, note=note, principal=principal, receipt=receipt
+            )
             self._emit(
                 "ApprovalGranted" if verdict == "pass" else "ApprovalRejected",
                 str(request["mission_id"]),
@@ -289,8 +290,14 @@ class HumanCommitsMixin:
             return request, receipt
 
     def _record_review_adjudication(
-        self, request: Mapping[str, Any], result_id: str, *, verdict: str, note: str,
-        principal: Principal, receipt: str,
+        self,
+        request: Mapping[str, Any],
+        result_id: str,
+        *,
+        verdict: str,
+        note: str,
+        principal: Principal,
+        receipt: str,
     ) -> None:
         """Assurance 1.1 (2026-09-30): the person's ruling on an INCONCLUSIVE official review.
 
@@ -312,8 +319,11 @@ class HumanCommitsMixin:
         rows = self._store.connection.execute(
             "SELECT package_id FROM assurance_review_bindings WHERE mission_id=? AND subject_hash=? "
             "AND requirements_revision=? AND json_extract(binding_json,'$.subject.purpose')='TASK_CONTENT'",
-            (mission_id, fingerprint(stored.envelope.to_json()),
-             frozen_requirements_revision(self._store, stored)),
+            (
+                mission_id,
+                fingerprint(stored.envelope.to_json()),
+                frozen_requirements_revision(self._store, stored),
+            ),
         ).fetchall()
         if len(rows) != 1:
             return
@@ -321,16 +331,31 @@ class HumanCommitsMixin:
         if record is None:
             return
         self.adjudicate_review_record(
-            mission_id, record, target_id=result_id, decision=verdict, note=note,
-            principal_id=principal.principal_id, decision_receipt_hash=receipt,
-            request_id=str(request["request_id"]), task_id=request.get("task_id"),
+            mission_id,
+            record,
+            target_id=result_id,
+            decision=verdict,
+            note=note,
+            principal_id=principal.principal_id,
+            decision_receipt_hash=receipt,
+            request_id=str(request["request_id"]),
+            task_id=request.get("task_id"),
             extra={"result_id": result_id},
         )
 
     def adjudicate_review_record(
-        self, mission_id: str, record: Any, *, target_id: str, decision: str, note: str,
-        principal_id: str, decision_receipt_hash: str, request_id: str,
-        task_id: str | None = None, extra: Mapping[str, Any] | None = None,
+        self,
+        mission_id: str,
+        record: Any,
+        *,
+        target_id: str,
+        decision: str,
+        note: str,
+        principal_id: str,
+        decision_receipt_hash: str,
+        request_id: str,
+        task_id: str | None = None,
+        extra: Mapping[str, Any] | None = None,
     ) -> str:
         """Write the person's ruling on one official review record (idempotent).
 
@@ -359,11 +384,22 @@ class HumanCommitsMixin:
                 raise ActionCommitError("this review already has a different recorded ruling")
             return receipt_id
         self._store.insert_receipt(
-            commit_id=receipt_id, kind="AssuranceReviewAdjudicated", subject_id=str(record.record_id),
-            base_version=0, proposal_hash=fingerprint(body), receipt=body,
+            commit_id=receipt_id,
+            kind="AssuranceReviewAdjudicated",
+            subject_id=str(record.record_id),
+            base_version=0,
+            proposal_hash=fingerprint(body),
+            receipt=body,
         )
-        self._emit("AssuranceReviewAdjudicated", mission_id, key=receipt_id,
-                   task_id=task_id, payload=body, actor_type="user", actor_id=principal_id)
+        self._emit(
+            "AssuranceReviewAdjudicated",
+            mission_id,
+            key=receipt_id,
+            task_id=task_id,
+            payload=body,
+            actor_type="user",
+            actor_id=principal_id,
+        )
         return receipt_id
 
     # ------------------------------------------------------------ arbitration (D7-8')

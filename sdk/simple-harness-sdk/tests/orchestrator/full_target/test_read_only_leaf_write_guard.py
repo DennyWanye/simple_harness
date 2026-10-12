@@ -21,7 +21,6 @@ the fallback for anything that bypasses the tool.
 这里只留网关、工具裁剪、提示词与快照计算的直接用例。
 """
 
-
 from __future__ import annotations
 
 import asyncio
@@ -90,9 +89,7 @@ def test_a_read_only_leaf_cannot_rewrite_an_existing_workspace_file(tmp_path) ->
     is spent on a ResultRejected."""
 
     seed = {"metrics/collector.py": SEED_COLLECTOR}
-    gateway, workspaces = _gateway(
-        tmp_path, existing=("metrics/collector.py",), seed=seed
-    )
+    gateway, workspaces = _gateway(tmp_path, existing=("metrics/collector.py",), seed=seed)
     result = _write(gateway, "run-1", COLLECTOR, NEW_COLLECTOR)
     assert result.error_code == "read_only_existing_file", result
     message = result.public_message or ""
@@ -157,9 +154,7 @@ def test_effective_tools_hides_patch_apply_tools_on_a_read_only_leaf() -> None:
     assert "workspace_write_file" in writing and "workspace_write_file" in reading
     assert "apply_patch" in writing and "workspace_apply_patch" in writing
     assert "apply_patch" not in reading and "workspace_apply_patch" not in reading
-    assert READ_ONLY_LEAF_HIDDEN_TOOLS == frozenset(
-        {"apply_patch", "workspace_apply_patch"}
-    )
+    assert READ_ONLY_LEAF_HIDDEN_TOOLS == frozenset({"apply_patch", "workspace_apply_patch"})
     assert writing == role
     assert set(writing) - set(reading) == READ_ONLY_LEAF_HIDDEN_TOOLS
 
@@ -184,9 +179,7 @@ def test_the_hierarchical_worker_prompt_forbids_rewriting_on_a_read_only_leaf() 
 def test_a_legacy_binding_without_read_only_existing_still_writes(tmp_path) -> None:
     """``read_only_existing`` defaults empty; DAG-mode binds never set it."""
 
-    gateway, workspaces = _gateway(
-        tmp_path, existing=(), seed={"a.md": "old\n"}
-    )
+    gateway, workspaces = _gateway(tmp_path, existing=(), seed={"a.md": "old\n"})
     result = _write(gateway, "run-1", "a.md", "new\n")
     assert result.error_code is None, result
     assert workspaces.get("attempt-1", writable=False).read_text("a.md") == "new\n"
@@ -218,9 +211,7 @@ def test_a_retry_workspace_may_rewrite_its_own_report_but_not_seed(tmp_path) -> 
     workspaces = WorkspaceManager(tmp_path / "ws")
     first = workspaces.create("attempt-1", seed={COLLECTOR: SEED_COLLECTOR})
     first.write_text(REPORT, "# round 1\n")
-    workspaces.create(
-        "attempt-2", seed={COLLECTOR: SEED_COLLECTOR}, previous=first.root
-    )
+    workspaces.create("attempt-2", seed={COLLECTOR: SEED_COLLECTOR}, previous=first.root)
     existing = read_only_existing_paths({COLLECTOR: SEED_COLLECTOR}, (), ())
     gateway = WorkspaceToolGateway(workspaces)
     gateway.bind(
@@ -256,9 +247,9 @@ def test_consecutive_read_only_existing_refusals_are_capped(tmp_path) -> None:
         _write(gateway, "run-1", COLLECTOR, NEW_COLLECTOR + f"# {index}\n").error_code
         for index in range(MAX_READ_ONLY_EXISTING_REJECTIONS + 1)
     ]
-    assert codes[: MAX_READ_ONLY_EXISTING_REJECTIONS - 1] == [
-        "read_only_existing_file"
-    ] * (MAX_READ_ONLY_EXISTING_REJECTIONS - 1)
+    assert codes[: MAX_READ_ONLY_EXISTING_REJECTIONS - 1] == ["read_only_existing_file"] * (
+        MAX_READ_ONLY_EXISTING_REJECTIONS - 1
+    )
     assert codes[MAX_READ_ONLY_EXISTING_REJECTIONS - 1] == "read_only_leaf_kept_writing"
     assert codes[-1] == "read_only_leaf_kept_writing"
     assert workspaces.get("attempt-1", writable=False).read_text(COLLECTOR) == SEED_COLLECTOR

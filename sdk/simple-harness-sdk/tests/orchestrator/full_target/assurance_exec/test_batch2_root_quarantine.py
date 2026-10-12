@@ -7,6 +7,7 @@
 抛出的错（如 ROOT_INSTALL_COMMAND_REQUIRED）又在启动 ``try`` 之外，整个编排起不来。现在：根进隔离，
 编排服务起来但只开非披露诊断与隔离只读分支，不装配、不派发；状态文件不自动写回。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -25,7 +26,9 @@ class NeverProvider:
 
 
 def _diagnostic(parts, loop):
-    return MissionControlV1(loop, tenant_id=TENANT, principal=parts.deployment.principal).assurance_root_diagnostic()
+    return MissionControlV1(
+        loop, tenant_id=TENANT, principal=parts.deployment.principal
+    ).assurance_root_diagnostic()
 
 
 async def _install(root):
@@ -47,7 +50,12 @@ async def _start_quarantined(root) -> dict:
         assert loop.hierarchical is None and loop._assembled is None
         assert parts.deployment.taskgraph is None and parts.deployment.assurance is None
         # 非披露：诊断里没有任务标题、路径、对象 id
-        assert set(report) <= {"state", "execution_allowed", "current_authentication_required", "blocking_code"}
+        assert set(report) <= {
+            "state",
+            "execution_allowed",
+            "current_authentication_required",
+            "blocking_code",
+        }
         return report
 
 

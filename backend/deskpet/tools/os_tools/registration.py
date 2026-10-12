@@ -7,6 +7,7 @@ Called once at backend startup from main.py — kept out of __init__.py
 so importing the package doesn't trigger registration as a side effect
 (prevents duplicate-register warnings during tests).
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -41,7 +42,9 @@ from .web_fetch import web_fetch
 from .write_file import write_file
 
 
-def _schema(name: str, description: str, properties: dict[str, Any], required: list[str]) -> dict[str, Any]:
+def _schema(
+    name: str, description: str, properties: dict[str, Any], required: list[str]
+) -> dict[str, Any]:
     return {
         "name": name,
         "description": description,

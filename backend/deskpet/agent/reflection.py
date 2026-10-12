@@ -9,6 +9,7 @@
   - **默认值**：str 字段缺失 → ""；confidence 缺失 → 0.5（不误触发 2.4 evaluator）
   - **防回归**：_REFLECTION_INSTRUCTION 禁止出现"改口说已完成"类表述
 """
+
 from __future__ import annotations
 
 import json
@@ -23,6 +24,7 @@ logger = logging.getLogger(__name__)
 # Schema
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 @dataclass
 class StructuredReflection:
     """LLM 在被 verify-gate/selfcheck 拦截后必须产出的 5 段结构化反思。
@@ -34,6 +36,7 @@ class StructuredReflection:
       next_action        — 下一步要调的具体工具+参数意图（驱动 WI-2.2 重试）
       confidence         — 0-1，自评新方案成功概率（<0.3 → 升级到 2.4 evaluator）
     """
+
     error_analysis: str = ""
     execution_critique: str = ""
     task_replanning: str = ""
@@ -123,6 +126,7 @@ def _extract_json(raw: str) -> dict | None:  # type: ignore[type-arg]
 # Public parser
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 def _emit_reflection_parse_failed(text_len: int) -> None:
     """Best-effort metric emit for reflection parse failure（R-T3 §15.4）。
 
@@ -130,6 +134,7 @@ def _emit_reflection_parse_failed(text_len: int) -> None:
     """
     try:
         from observability.metrics_sink import record as _metric  # noqa: PLC0415
+
         _metric("reflection_parse_failed", {"count": 1})
     except Exception:  # noqa: BLE001
         pass

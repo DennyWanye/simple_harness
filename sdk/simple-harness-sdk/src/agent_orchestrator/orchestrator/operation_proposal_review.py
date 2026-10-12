@@ -220,7 +220,9 @@ def _assert_frozen_payload_identity(
             raise ActionProposalReviewError("OP_REVIEW_PAYLOAD_STALE", name)
 
 
-def _published_artifact(store: Store, payloads: FrozenOperationPayloadInputs) -> dict[str, Any] | None:
+def _published_artifact(
+    store: Store, payloads: FrozenOperationPayloadInputs
+) -> dict[str, Any] | None:
     """The artifact the frozen parameters will publish, verified against the accepted
     inputs (2A upstream run: the reviewer twice judged "params ≠ candidate" because the
     package only named the acceptance, not that the published file belongs to it).
@@ -241,11 +243,19 @@ def _published_artifact(store: Store, payloads: FrozenOperationPayloadInputs) ->
         for accepted in acceptance.artifact_refs:
             if accepted.id == artifact_id:
                 if accepted.content_hash != params.get("content_hash"):
-                    raise ActionProposalReviewError("OP_REVIEW_PAYLOAD_STALE", "published artifact hash differs")
-                return {"artifact_id": artifact_id, "artifact_path": params.get("artifact_path"),
-                        "content_hash": accepted.content_hash, "accepted_by": str(ref.id),
-                        "in_accepted_inputs": True}
-    raise ActionProposalReviewError("OP_REVIEW_SOURCE_UNRESOLVED", "published artifact is not an accepted input")
+                    raise ActionProposalReviewError(
+                        "OP_REVIEW_PAYLOAD_STALE", "published artifact hash differs"
+                    )
+                return {
+                    "artifact_id": artifact_id,
+                    "artifact_path": params.get("artifact_path"),
+                    "content_hash": accepted.content_hash,
+                    "accepted_by": str(ref.id),
+                    "in_accepted_inputs": True,
+                }
+    raise ActionProposalReviewError(
+        "OP_REVIEW_SOURCE_UNRESOLVED", "published artifact is not an accepted input"
+    )
 
 
 def _checks(
@@ -400,8 +410,9 @@ def build_action_proposal_review(
         "raw_candidate_hash": content_hash_of(sources.raw_candidate_bytes.decode("utf-8")),
     }
     manifest_hash = content_hash_of(manifest)
-    checks = _checks(sources, payloads, input_hash=manifest_hash,
-                     published=_published_artifact(store, payloads))
+    checks = _checks(
+        sources, payloads, input_hash=manifest_hash, published=_published_artifact(store, payloads)
+    )
     package = ReviewPackage(
         package_id=ReviewPackageId(package_id),
         purpose=ReviewPurpose.ACTION_PROPOSAL,
@@ -587,9 +598,8 @@ def _assured_check_receipts(
     except Exception as error:  # noqa: BLE001 - an unreadable manifest is a refusal
         raise ActionProposalReviewError("OP_REVIEW_RECORD_MISSING", "assured manifest") from error
     grades = {item["criterion_id"]: item["effective_grade"] for item in manifest["criteria"]}
-    if (
-        manifest.get("effective_verdict") != "ACCEPT"
-        or set(grades) != set(ACTION_PROPOSAL_CRITERIA)
+    if manifest.get("effective_verdict") != "ACCEPT" or set(grades) != set(
+        ACTION_PROPOSAL_CRITERIA
     ):
         raise ActionProposalReviewError("OP_REVIEW_REJECTED", "assured manifest verdict")
     for criterion_id in ACTION_PROPOSAL_CRITERIA:
@@ -609,8 +619,11 @@ def _assured_check_receipts(
         if criterion_id in found or criterion_id not in ACTION_PROPOSAL_CRITERIA:
             raise ActionProposalReviewError("OP_REVIEW_CHECK_RECEIPT_STALE", str(criterion_id))
         found[criterion_id] = TypedRef(
-            kind=TypedRefKind.TOOL_RECEIPT, id=str(row[0]), revision=1,
-            content_hash=content_hash_of(receipt), produced_by=Provenance.TOOL,
+            kind=TypedRefKind.TOOL_RECEIPT,
+            id=str(row[0]),
+            revision=1,
+            content_hash=content_hash_of(receipt),
+            produced_by=Provenance.TOOL,
         )
     if set(found) != set(ACTION_PROPOSAL_CRITERIA):
         raise ActionProposalReviewError("OP_REVIEW_CHECK_RECEIPT_STALE", "check receipts missing")

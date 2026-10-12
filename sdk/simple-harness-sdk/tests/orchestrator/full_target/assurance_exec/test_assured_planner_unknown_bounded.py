@@ -20,7 +20,6 @@ as LOST (ordinary repair/retry), with its UNKNOWN charge and reservation kept.
 已删），这条性质由结构保证，不再需要替身去拦（偏离）。
 """
 
-
 from __future__ import annotations
 
 import asyncio
@@ -34,22 +33,41 @@ from agent_orchestrator.storage.assurance_store import AssuranceStore
 from agent_orchestrator.testing.product_world import product_world
 from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider
 
-BLOCKED = Liveness(exists=True, state="waiting", blocked=True, blocker={"kind": "provider"}, progress=1, settled=False)
+BLOCKED = Liveness(
+    exists=True,
+    state="waiting",
+    blocked=True,
+    blocker={"kind": "provider"},
+    progress=1,
+    settled=False,
+)
 
 
 def _intent(mission_id: str, *, kind: str, role: str, review: bool = False):  # type: ignore[no-untyped-def]
     config = {"role": role}
     if review:
         config["assurance_protocol"] = "assurance-exec-v1.1"
-    return SimpleNamespace(intent_id=f"intent-{kind}-{role}", replays=0, kind=kind, config=config,
-                           mission_id=mission_id, subject_id=f"{mission_id}:{role}:1", agent_id="agent-x",
-                           expected_turn_id="agent-x:input:1")
+    return SimpleNamespace(
+        intent_id=f"intent-{kind}-{role}",
+        replays=0,
+        kind=kind,
+        config=config,
+        mission_id=mission_id,
+        subject_id=f"{mission_id}:{role}:1",
+        agent_id="agent-x",
+        expected_turn_id="agent-x:input:1",
+    )
 
 
 def _create(world, key: str):  # type: ignore[no-untyped-def]
     """A user Mission the product way; its loop is never run, so no model is asked."""
-    created = world.create({"goal": "assured " + key, "idempotency_key": key,
-                            "success_criteria": ["the answer file is written", "it names the fixture"]})
+    created = world.create(
+        {
+            "goal": "assured " + key,
+            "idempotency_key": key,
+            "success_criteria": ["the answer file is written", "it names the fixture"],
+        }
+    )
     return world.store.get_mission(created["mission_id"])
 
 
@@ -61,7 +79,9 @@ def _create(world, key: str):  # type: ignore[no-untyped-def]
         ("critic", "critic", True, False),
     ],
 )
-def test_only_assured_planning_rounds_end_after_the_bound(tmp_path, monkeypatch, kind, role, review, ends) -> None:
+def test_only_assured_planning_rounds_end_after_the_bound(
+    tmp_path, monkeypatch, kind, role, review, ends
+) -> None:
     async def case() -> None:
         async with product_world(tmp_path / "root", LayeredScriptedProvider()) as world:
             orch = world.loop
@@ -69,7 +89,11 @@ def test_only_assured_planning_rounds_end_after_the_bound(tmp_path, monkeypatch,
             assert AssuranceStore(world.store).lane(mission.id) == "ASSURANCE_1_1"
             waits: list = []
             doors: list = []
-            monkeypatch.setattr(assurance_review_wait, "record_provider_wait", lambda _c, intent, _l: waits.append(intent.intent_id))
+            monkeypatch.setattr(
+                assurance_review_wait,
+                "record_provider_wait",
+                lambda _c, intent, _l: waits.append(intent.intent_id),
+            )
             monkeypatch.setattr(Orchestrator, "_service_blocker_limit", property(lambda self: 0.05))
 
             async def door(intent, mission, new_mode, *, detail):  # type: ignore[no-untyped-def]
@@ -87,7 +111,11 @@ def test_only_assured_planning_rounds_end_after_the_bound(tmp_path, monkeypatch,
             assert await orch._resolve_provider_blocked_service(intent, BLOCKED) == "give_up"
             assert len(waits) == 2  # the wait is recorded (idempotent in production)
             if ends:
-                assert len(doors) == 1 and doors[0]["rehandoffs"] == 0 and doors[0]["assurance_lane"] is True
+                assert (
+                    len(doors) == 1
+                    and doors[0]["rehandoffs"] == 0
+                    and doors[0]["assurance_lane"] is True
+                )
                 assert doors[0]["waited_seconds"] >= 0.05
             else:
                 assert doors == []
@@ -109,7 +137,9 @@ def test_an_assured_worker_attempt_ends_as_lost_after_the_bound(tmp_path, monkey
 
             monkeypatch.setattr(orch, "_give_up_blocked_assured_attempt", door)
             intent = _intent(mission.id, kind="attempt", role="worker")
-            assert await orch._resolve_provider_blocked_service(intent, BLOCKED) is None  # still waiting
+            assert (
+                await orch._resolve_provider_blocked_service(intent, BLOCKED) is None
+            )  # still waiting
             await asyncio.sleep(0.08)
             assert await orch._resolve_provider_blocked_service(intent, BLOCKED) == "give_up"
             [(intent_id, detail)] = ended

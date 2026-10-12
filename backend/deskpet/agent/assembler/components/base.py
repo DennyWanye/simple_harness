@@ -16,6 +16,7 @@ as a safety net, but silent degradation keeps the bundle whole.
 
 Spec: Requirement "Component Registry and Parallel Fan-out".
 """
+
 from __future__ import annotations
 
 import time

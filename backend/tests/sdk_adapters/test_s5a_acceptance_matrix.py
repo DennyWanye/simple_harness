@@ -91,18 +91,14 @@ class MatrixEnv:
             context=context,
             react_checkpoint=SimpleNamespace(
                 read_start_snapshot=lambda _rid: {
-                    "input": {
-                        "context_metadata": {"budget": {"context_window": 32768}}
-                    }
+                    "input": {"context_metadata": {"budget": {"context_window": 32768}}}
                 }
             ),
         )
         factory = SimpleNamespace(bind=lambda auth, **kw: self.service)
         route_service = ContextRouteToolService(
             service_factory_getter=lambda: factory,
-            binding_store_factory=lambda: WorkspaceBindingAuthorityStore(
-                self.db_path
-            ),
+            binding_store_factory=lambda: WorkspaceBindingAuthorityStore(self.db_path),
             binding_append_getter=lambda: None,
             ledger=self.ledger,
             tool_context_getter=lambda: __import__(
@@ -142,7 +138,9 @@ class MatrixEnv:
         from simple_harness.providers import CancelToken
 
         result = await (loop_factory or _loop)().run(
-            ReActRunInput(run, __import__("simple_harness").RequestId(f"req-{run_id}"), tool_exposure=exposure),
+            ReActRunInput(
+                run, __import__("simple_harness").RequestId(f"req-{run_id}"), tool_exposure=exposure
+            ),
             services=services,
             execution_lease=lease,
             run_fence=fence,
@@ -158,7 +156,6 @@ class MatrixEnv:
         )
 
 
-
 @pytest_asyncio.fixture()
 async def env(tmp_path: Path) -> MatrixEnv:
     db_path = tmp_path / "state.db"
@@ -167,9 +164,7 @@ async def env(tmp_path: Path) -> MatrixEnv:
     return MatrixEnv(tmp_path, service)
 
 
-async def _seed_scope(
-    env: MatrixEnv, tmp_path: Path, *, key: str, title: str, goal: str
-) -> str:
+async def _seed_scope(env: MatrixEnv, tmp_path: Path, *, key: str, title: str, goal: str) -> str:
     created = await env.service.create_task_scope(
         CreateTaskScopeRequest(key, title, goal, f"create-{key}")
     )
@@ -269,8 +264,7 @@ async def test_six_step_five_route_sequence_over_one_durable_state(
 
     decisions = _rows(
         env.db_path,
-        "SELECT sdk_run_id,route,origin FROM context_route_decisions "
-        "ORDER BY recorded_at",
+        "SELECT sdk_run_id,route,origin FROM context_route_decisions ORDER BY recorded_at",
     )
     routes = [(row[1], row[2]) for row in decisions]
     assert ("direct_standalone", "context_tool") in routes
@@ -284,15 +278,16 @@ async def test_six_step_five_route_sequence_over_one_durable_state(
 
 
 @pytest.mark.asyncio
-async def test_resume_never_mixes_in_scope_b_canary(
-    env: MatrixEnv, tmp_path: Path
-) -> None:
+async def test_resume_never_mixes_in_scope_b_canary(env: MatrixEnv, tmp_path: Path) -> None:
     canary = "CANARY-B-7f3a9d"
     scope_a = await _seed_scope(
         env, tmp_path, key="task-a", title="季度报告 A", goal="任务 A 补图表"
     )
     await _seed_scope(
-        env, tmp_path, key="task-b", title="季度报告 B",
+        env,
+        tmp_path,
+        key="task-b",
+        title="季度报告 B",
         goal=f"任务 B 的目标 {canary}",
     )
     run = await env.run(
@@ -309,14 +304,11 @@ async def test_resume_never_mixes_in_scope_b_canary(
         first_message="继续 A",
     )
     assert run.result.termination.route_state == "routed_task"
-    final_payload = "".join(
-        str(m.content) for m in run.provider.calls[-1].messages
-    )
+    final_payload = "".join(str(m.content) for m in run.provider.calls[-1].messages)
     # Search hit list may name B, but the resumed exact content must not
     # carry B's canary goal into the ResumePackage lane.
     route_result = next(
-        m for m in run.provider.calls[-1].messages
-        if "resume_package" in str(m.content)
+        m for m in run.provider.calls[-1].messages if "resume_package" in str(m.content)
     )
     assert canary not in str(route_result.content)
     checkpoint = dict(thaw_json(run.checkpoint.value.checkpoint))
@@ -325,9 +317,7 @@ async def test_resume_never_mixes_in_scope_b_canary(
 
 
 @pytest.mark.asyncio
-async def test_twenty_turn_large_tool_kill_replay_matrix(
-    env: MatrixEnv, tmp_path: Path
-) -> None:
+async def test_twenty_turn_large_tool_kill_replay_matrix(env: MatrixEnv, tmp_path: Path) -> None:
     """S5A-S5: 20+ provider turns, a 1MiB tool result, mid-run crash before
     the provider call, replay without duplicate invocations; per-turn snapshot
     receipts stay monotonic with three-hash equality; causal pairs survive."""
@@ -353,20 +343,14 @@ async def test_twenty_turn_large_tool_kill_replay_matrix(
         for index in range(5, 10)
     ] + [_answer("done after twenty turns")]
 
-    await _seed_scope(
-        env, tmp_path, key="task-a", title="季度报告 A", goal="任务 A"
-    )
+    await _seed_scope(env, tmp_path, key="task-a", title="季度报告 A", goal="任务 A")
 
     context = HarnessContext("做一个多步任务")
-    context.messages.append(
-        Message(role=MessageRole.ASSISTANT, content="先看看")
-    )
+    context.messages.append(Message(role=MessageRole.ASSISTANT, content="先看看"))
     from simple_harness.contracts import CallId
 
     context.messages.append(
-        Message(
-            role=MessageRole.TOOL, content=big, name="blob", call_id=CallId("call-big")
-        )
+        Message(role=MessageRole.TOOL, content=big, name="blob", call_id=CallId("call-big"))
     )
     context.revision += 2
 
@@ -375,9 +359,7 @@ async def test_twenty_turn_large_tool_kill_replay_matrix(
 
     def loop():
         return ReActLoop(
-            collaborator=AgentLoopCollaborator(
-                limits=TerminationLimits(30, 60, 300, 100000, 3)
-            ),
+            collaborator=AgentLoopCollaborator(limits=TerminationLimits(30, 60, 300, 100000, 3)),
             effects=EffectBatchExecutor(),
             clock=lambda: 1.0,
         )
@@ -466,9 +448,7 @@ async def test_route_payload_mutations_fail_closed(env: MatrixEnv) -> None:
         tool_context_getter=lambda: SimpleNamespace(
             run_id=RunId("run-mut"),
             effect_id=SimpleNamespace(value="effect-mut-1"),
-            task_execution_envelope=SimpleNamespace(
-                raw_call_id="raw-mut-1", turn_ordinal=1
-            ),
+            task_execution_envelope=SimpleNamespace(raw_call_id="raw-mut-1", turn_ordinal=1),
         ),
     )
     bad_route = await service.handle_context_route({"route": "root_takeover"})
@@ -533,22 +513,20 @@ async def test_cutover_v44_forward_migration_and_empty_presented_table(
 
     with sqlite3.connect(db) as conn:
         # S5b Task 2 起目标为 v46：前向链一次迁到当前目标（S5a 的 v45 事实仍成立）。
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == HUMAN_MEMORY_TARGET_SCHEMA_VERSION
+        assert (
+            conn.execute("PRAGMA user_version").fetchone()[0] == HUMAN_MEMORY_TARGET_SCHEMA_VERSION
+        )
         # Cutover receipt fact: the presented table exists and is EMPTY —
         # S5a never writes it.
         rows = conn.execute("SELECT COUNT(*) FROM occurrence_presented").fetchone()
         assert rows[0] == 0
         # Pre-v45 ledger data intact (append-only rollback guarantee).
-        chain = conn.execute(
-            "SELECT COUNT(*) FROM human_memory_migration_chain"
-        ).fetchone()
+        chain = conn.execute("SELECT COUNT(*) FROM human_memory_migration_chain").fetchone()
         assert chain[0] >= 6
 
 
 @pytest.mark.asyncio
-async def test_cutover_old_runtime_rejects_v45_userdata(
-    tmp_path: Path, monkeypatch
-) -> None:
+async def test_cutover_old_runtime_rejects_v45_userdata(tmp_path: Path, monkeypatch) -> None:
     from deskpet.memory.schema import (
         HumanMemoryProgramEpochError,
         initialize_human_memory_program_state_db,

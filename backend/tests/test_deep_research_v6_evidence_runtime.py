@@ -168,8 +168,7 @@ NO_SEED_SOURCE_RESOLVER = OfficialSourceResolver(
         policy_id="test-no-seed-official-source-registry",
         policy_version=1,
         entries=tuple(
-            replace(entry, seed_urls=())
-            for entry in DEFAULT_OFFICIAL_SOURCE_REGISTRY.entries
+            replace(entry, seed_urls=()) for entry in DEFAULT_OFFICIAL_SOURCE_REGISTRY.entries
         ),
     )
 )
@@ -239,9 +238,7 @@ async def test_archive_redirect_alias_keeps_registry_canonical_origin_without_pr
     archive = "https://www.stats.gov.cn/sj/tjgb/ndtjgb/"
     redirected_alias = "https://stats.gov.cn/sj/tjgb/ndtjgb/"
     target = "https://www.stats.gov.cn/sj/zxfb/202502/t20250228_1958817.html"
-    listing_html = (
-        '<a href="/sj/zxfb/202502/t20250228_1958817.html">2024年</a>'
-    )
+    listing_html = '<a href="/sj/zxfb/202502/t20250228_1958817.html">2024年</a>'
     redirected_document = replace(
         _document(
             archive,
@@ -288,13 +285,10 @@ async def test_archive_redirect_alias_keeps_registry_canonical_origin_without_pr
     assert result.fetch_count == 2
     assert [request.url for request in fetch.requests] == [archive, target]
     assert all(
-        not request.url.startswith("https://stats.gov.cn/sj/zxfb/")
-        for request in fetch.requests
+        not request.url.startswith("https://stats.gov.cn/sj/zxfb/") for request in fetch.requests
     )
     assert len(result.pages) == 1
-    assert await blobs.get(parse_blob_ref(result.pages[0].body_ref)) == (
-        b"Official 2024 bulletin."
-    )
+    assert await blobs.get(parse_blob_ref(result.pages[0].body_ref)) == (b"Official 2024 bulletin.")
 
 
 @pytest.mark.asyncio
@@ -304,8 +298,7 @@ async def test_official_search_archive_hit_follows_frozen_year_in_remaining_budg
     archive = "https://www.stats.gov.cn/sj/tjgb/ndtjgb/"
     target = "https://www.stats.gov.cn/sj/zxfb/202502/t20250228_1958817.html"
     listing_html = (
-        '<html><body><a href="/sj/zxfb/202502/t20250228_1958817.html">'
-        "2024年</a></body></html>"
+        '<html><body><a href="/sj/zxfb/202502/t20250228_1958817.html">2024年</a></body></html>'
     )
     fetch = FakeFetchService(
         {
@@ -352,9 +345,7 @@ async def test_direct_target_miss_escalates_to_bounded_official_search(
     archive = "https://www.stats.gov.cn/sj/tjgb/ndtjgb/qgndtjgb/"
     direct_target = "https://www.stats.gov.cn/sj/zxfb/missing-direct.html"
     search_target = "https://www.stats.gov.cn/bulletin/search-hit.html"
-    listing_html = (
-        '<html><body><a href="/sj/zxfb/missing-direct.html">2024</a></body></html>'
-    )
+    listing_html = '<html><body><a href="/sj/zxfb/missing-direct.html">2024</a></body></html>'
     fetch = FakeFetchService(
         {
             archive: _document(
@@ -379,15 +370,10 @@ async def test_direct_target_miss_escalates_to_bounded_official_search(
     identity = _identity("run-direct-miss-search")
     frozen_route = runtime.plan_route(spec, identity=identity)
 
-    result = await runtime.retrieve(
-        spec, identity=identity, route_decision=frozen_route
-    )
+    result = await runtime.retrieve(spec, identity=identity, route_decision=frozen_route)
 
     assert result.route_decision.to_json()["spec_hash"] == spec.spec_hash
-    assert (
-        result.route_decision.to_json()["route_id"]
-        == frozen_route.to_json()["route_id"]
-    )
+    assert result.route_decision.to_json()["route_id"] == frozen_route.to_json()["route_id"]
     assert result.route_decision.to_json()["initial_route"] == "official_source_search"
     assert 0 < result.search_count <= result.route_decision.to_json()["budget"]["query"]
     assert [request.url for request in fetch.requests] == [
@@ -459,9 +445,7 @@ async def test_frozen_dimensions_produce_site_directives_and_ref_only_pages(
     }
     assert not {"body", "url", "title"} & set(serialized)
     assert await blobs.get(parse_blob_ref(page.body_ref)) == body.encode("utf-8")
-    locator = json.loads(
-        (await blobs.get(parse_blob_ref(page.source_locator_ref))).decode("utf-8")
-    )
+    locator = json.loads((await blobs.get(parse_blob_ref(page.source_locator_ref))).decode("utf-8"))
     assert locator["canonical_url"] == url
     assert locator["final_url"] == url
     assert locator["verification_status"] == "verified"
@@ -512,9 +496,7 @@ async def test_retrieval_writes_durable_child_spans_without_raw_fields(
 
     tree = await traces.tree("trace-v6-timing")
     assert tree is not None
-    children = [
-        row for row in tree["spans"] if row["parent_span_id"] == parent.span_id
-    ]
+    children = [row for row in tree["spans"] if row["parent_span_id"] == parent.span_id]
     assert {row["name"] for row in children} == {"official_search", "page_fetch"}
     assert all(row["status"] == "ok" for row in children)
     serialized = json.dumps(children, ensure_ascii=False)
@@ -550,9 +532,7 @@ async def test_final_redirect_to_lookalike_domain_is_rejected_and_not_returned(
             continue
         if isinstance(value, dict) and "verification_status" in value:
             locator_payloads.append(value)
-    rejected = [
-        value for value in locator_payloads if value["verification_status"] == "rejected"
-    ]
+    rejected = [value for value in locator_payloads if value["verification_status"] == "rejected"]
     assert len(rejected) == 1
     assert rejected[0]["final_url"] == evil
     assert rejected[0]["final_url_hash"] == hashlib.sha256(evil.encode()).hexdigest()

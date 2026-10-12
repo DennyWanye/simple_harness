@@ -84,7 +84,11 @@ class DomainProfileV1:
         data = dict(value)
         data.pop("schema")
         expected = {
-            "id", "version", "external_check", *_TUPLE_FIELDS, *_MAPPING_FIELDS,
+            "id",
+            "version",
+            "external_check",
+            *_TUPLE_FIELDS,
+            *_MAPPING_FIELDS,
         }
         if set(data) != expected:
             raise ValueError(
@@ -171,15 +175,20 @@ DRONE_SIM_PROFILE = DomainProfileV1(
 #: A domain with no entry falls back to the code-domain ``WORKER_HIERARCHICAL``; an
 #: entry naming a version this build does not register is refused
 #: (:func:`~..runtime.role_templates.hierarchical_worker_for_domain`).
-HIERARCHICAL_WORKER_TEMPLATES: Mapping[str, str] = MappingProxyType({
-    DRONE_SIM_DOMAIN: "worker-drone-sim-hierarchical-v3",
-    APPWORLD_DOMAIN: "worker-appworld-hierarchical-v3",
-})
+HIERARCHICAL_WORKER_TEMPLATES: Mapping[str, str] = MappingProxyType(
+    {
+        DRONE_SIM_DOMAIN: "worker-drone-sim-hierarchical-v3",
+        APPWORLD_DOMAIN: "worker-appworld-hierarchical-v3",
+    }
+)
 
-DOMAINS: Mapping[str, DomainProfileV1] = MappingProxyType({
-    CODE_DOMAIN: CODE_PROFILE, APPWORLD_DOMAIN: APPWORLD_PROFILE,
-    DRONE_SIM_DOMAIN: DRONE_SIM_PROFILE,
-})
+DOMAINS: Mapping[str, DomainProfileV1] = MappingProxyType(
+    {
+        CODE_DOMAIN: CODE_PROFILE,
+        APPWORLD_DOMAIN: APPWORLD_PROFILE,
+        DRONE_SIM_DOMAIN: DRONE_SIM_PROFILE,
+    }
+)
 
 
 def resolve_domain(domain_id: str | None) -> DomainProfileV1:

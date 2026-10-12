@@ -40,8 +40,7 @@ from tests.sdk_adapters.test_s5a_milestone_route_loop import (  # noqa: F401
 pytestmark = pytest.mark.real_provider
 
 _RUNTIME_PATH = (
-    Path.home()
-    / "Library/Application Support/com.dennywanye.simpleharness/llm_runtime.json"
+    Path.home() / "Library/Application Support/com.dennywanye.simpleharness/llm_runtime.json"
 )
 _EVIDENCE_DIR = Path(__file__).resolve().parents[3] / ".local-test-evidence" / "s5a-real-provider"
 
@@ -90,7 +89,10 @@ class RealRelayProvider:
                     [getattr(block, "to_dict", lambda b=block: str(b))() for block in content],
                     ensure_ascii=False,
                 )
-            entry: dict = {"role": role if role in {"system", "user", "assistant", "tool"} else "user", "content": content}
+            entry: dict = {
+                "role": role if role in {"system", "user", "assistant", "tool"} else "user",
+                "content": content,
+            }
             if role == "tool":
                 entry["role"] = "user"
                 entry["content"] = f"[tool result for {message.name}]\n{content}"
@@ -148,9 +150,7 @@ class RealRelayProvider:
         )
         return ProviderResponse(
             request_id=request.request_id,
-            message=Message(
-                role=MessageRole.ASSISTANT, content=raw_message.get("content") or ""
-            ),
+            message=Message(role=MessageRole.ASSISTANT, content=raw_message.get("content") or ""),
             tool_calls=tool_calls,
             model=data.get("model"),
             finish_reason=choice.get("finish_reason"),
@@ -159,7 +159,8 @@ class RealRelayProvider:
 
 @pytest.mark.asyncio
 async def test_real_provider_resume_existing_same_run_continuation(
-    milestone, tmp_path  # noqa: F811
+    milestone,
+    tmp_path,  # noqa: F811
 ) -> None:
     runtime = _runtime()
     created = await milestone.service.create_task_scope(
@@ -202,15 +203,12 @@ async def test_real_provider_resume_existing_same_run_continuation(
     assert result.termination.route_state == "routed_task"
     decisions = _rows(
         milestone.db_path,
-        "SELECT route,origin,task_scope_id FROM context_route_decisions "
-        "WHERE sdk_run_id=?",
+        "SELECT route,origin,task_scope_id FROM context_route_decisions WHERE sdk_run_id=?",
         RUN.value,
     )
     assert ("resume_existing", "context_tool", scope_id) in decisions
 
-    head = await WorkspaceBindingAuthorityStore(
-        milestone.db_path
-    ).current_receipt(scope_id)
+    head = await WorkspaceBindingAuthorityStore(milestone.db_path).current_receipt(scope_id)
     from simple_harness.contracts import thaw_json
 
     checkpoint = dict(thaw_json(milestone.checkpoint.value.checkpoint))
@@ -331,7 +329,8 @@ async def test_real_provider_commits_direct_route_via_tool(milestone) -> None:  
 
 @pytest.mark.asyncio
 async def test_real_provider_continue_active_follows_durable_cursor(
-    milestone, tmp_path  # noqa: F811
+    milestone,
+    tmp_path,  # noqa: F811
 ) -> None:
     """AC-1 third real positive route: continue_active against the durable
     active cursor left by a prior resume decision."""
@@ -359,9 +358,7 @@ async def test_real_provider_continue_active_follows_durable_cursor(
     from simple_harness.execution.context_authority import ContextRouteReceipt
     from simple_harness.runtime.task_scope_protocol import TaskScopeRoute
 
-    head = await WorkspaceBindingAuthorityStore(
-        milestone.db_path
-    ).current_receipt(scope_id)
+    head = await WorkspaceBindingAuthorityStore(milestone.db_path).current_receipt(scope_id)
     prior = ContextRouteReceipt(
         receipt_id="prior-resume-receipt",
         run_id="run-prior",

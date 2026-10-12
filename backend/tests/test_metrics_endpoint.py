@@ -14,6 +14,7 @@ faster_whisper / silero in this worktree). The actual route body lives
 in main.py; keeping its logic thin (delegate to observability.metrics)
 means this contract test stays meaningful.
 """
+
 from __future__ import annotations
 
 import secrets as _secrets

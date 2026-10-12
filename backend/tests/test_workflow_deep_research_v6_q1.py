@@ -27,9 +27,17 @@ def test_q1_helpers_remain_importable_for_isolated_legacy_recovery() -> None:
 
 def test_production_v6_never_routes_through_q1_only_nodes() -> None:
     assert NODE_IDS == (
-        "compile_spec", "plan_route", "load_pages", "extract_candidate_bundles",
-        "admit_facts", "synthesize_inferences", "register_inferences",
-        "assess_answer", "render_claims", "integrity", "persist_manifest",
+        "compile_spec",
+        "plan_route",
+        "load_pages",
+        "extract_candidate_bundles",
+        "admit_facts",
+        "synthesize_inferences",
+        "register_inferences",
+        "assess_answer",
+        "render_claims",
+        "integrity",
+        "persist_manifest",
     )
     assert {"collect_pages", "extract_facts", "assess_render"}.isdisjoint(NODE_IDS)
 

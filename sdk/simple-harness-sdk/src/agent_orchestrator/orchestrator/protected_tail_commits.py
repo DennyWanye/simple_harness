@@ -257,9 +257,12 @@ def _assurance_critic_attempt(store: Any, subject_id: str) -> str | None:
     if match is None:
         return None
     connection = store.connection
-    if connection.execute(
-        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='assurance_review_bindings'"
-    ).fetchone() is None:
+    if (
+        connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='assurance_review_bindings'"
+        ).fetchone()
+        is None
+    ):
         return None
     row = connection.execute(
         "SELECT binding_json FROM assurance_review_bindings WHERE review_key=? AND mission_id=?",

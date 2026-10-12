@@ -55,7 +55,9 @@ class MissionChangePump:
 
     def start(self) -> None:
         if self._task is None:
-            self._task = asyncio.get_running_loop().create_task(self._loop(), name="mission-change-pump")
+            self._task = asyncio.get_running_loop().create_task(
+                self._loop(), name="mission-change-pump"
+            )
 
     async def stop(self) -> None:
         task, self._task = self._task, None
@@ -90,7 +92,11 @@ class MissionChangePump:
                 previous = self._seen.get(mission_id)
                 if previous == state:
                     continue
-                change: dict[str, Any] = {"mission_id": mission_id, "status": state[0], "last_seq": state[1]}
+                change: dict[str, Any] = {
+                    "mission_id": mission_id,
+                    "status": state[0],
+                    "last_seq": state[1],
+                }
                 if previous is None:  # first sight (fresh process): the UI pages what it needs
                     change.update(from_seq=state[1], events=[], truncated=True)
                 else:
@@ -105,18 +111,35 @@ class MissionChangePump:
         return changes
 
     @staticmethod
-    def _events(connection: sqlite3.Connection, mission_id: str, after: int, through: int) -> dict[str, Any]:
+    def _events(
+        connection: sqlite3.Connection, mission_id: str, after: int, through: int
+    ) -> dict[str, Any]:
         if through <= after:  # a status change alone
             return {"from_seq": after, "events": [], "truncated": False}
-        rows = connection.execute(_EVENTS, (mission_id, after, through, EVENTS_PER_PUSH + 1)).fetchall()
+        rows = connection.execute(
+            _EVENTS, (mission_id, after, through, EVENTS_PER_PUSH + 1)
+        ).fetchall()
         events = []
-        for seq, type_, created_at, task_id, attempt_id, actor_type, payload in rows[:EVENTS_PER_PUSH]:
+        for seq, type_, created_at, task_id, attempt_id, actor_type, payload in rows[
+            :EVENTS_PER_PUSH
+        ]:
             try:
                 body = json.loads(payload) if payload else {}
             except ValueError:
                 body = {}
-            events.append(project_event({"seq": seq, "type": type_, "created_at": created_at, "task_id": task_id,
-                                         "attempt_id": attempt_id, "actor_type": actor_type, "payload": body}))
+            events.append(
+                project_event(
+                    {
+                        "seq": seq,
+                        "type": type_,
+                        "created_at": created_at,
+                        "task_id": task_id,
+                        "attempt_id": attempt_id,
+                        "actor_type": actor_type,
+                        "payload": body,
+                    }
+                )
+            )
         return {"from_seq": after, "events": events, "truncated": len(rows) > EVENTS_PER_PUSH}
 
     async def _loop(self) -> None:

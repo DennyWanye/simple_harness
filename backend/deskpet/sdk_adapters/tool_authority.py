@@ -97,10 +97,7 @@ PROJECT_EFFECT_TOOL_NAMES: tuple[str, ...] = (
 # PROJECT_EFFECT structurally requires route/task-scope REQUIRED.
 SDK_TOOL_EXECUTION_POLICY_OVERRIDES: dict[str, tuple[str, str, str]] = {
     "context_route": ("context_control", "forbidden", "forbidden"),
-    **{
-        name: ("project_effect", "required", "required")
-        for name in PROJECT_EFFECT_TOOL_NAMES
-    },
+    **{name: ("project_effect", "required", "required") for name in PROJECT_EFFECT_TOOL_NAMES},
     # S5b Task 3 (design-freeze §1/§7): semantic closure is always exposed as a
     # direct kernel Tool; route/TaskScope REQUIRED makes an UNROUTED call a
     # model-visible ROUTE_BARRIER_NOT_OBSERVED rejection rather than a whole-Run
@@ -108,7 +105,6 @@ SDK_TOOL_EXECUTION_POLICY_OVERRIDES: dict[str, tuple[str, str, str]] = {
     "task_scope_update": ("non_project_effect", "required", "required"),
     "procedure_use": ("non_project_effect", "required", "required"),
 }
-
 
 
 # S5b design-freeze §1 + F-Z1: the read-class built-ins that read *inside* the
@@ -347,7 +343,9 @@ def frozen_tool_effect(name: str, inventory_item: object = None) -> tuple[str, b
     else:
         effect = EffectClass.UNKNOWN.value
     dangerous = bool(manifest[1]) if manifest is not None else False
-    raw_dangerous = _field(inventory_item, "manifest_dangerous", None) if inventory_item is not None else None
+    raw_dangerous = (
+        _field(inventory_item, "manifest_dangerous", None) if inventory_item is not None else None
+    )
     if isinstance(raw_dangerous, bool):
         dangerous = dangerous or raw_dangerous
     return effect, dangerous
@@ -409,12 +407,8 @@ class SdkRunToolAuthorityV1:
             workspace=self.task_work_context.workspace_root,
             write_scope_root=self.task_work_context.workspace_root,
             project_id=str(self.workspace_resolution.get("project_id") or ""),
-            project_revision=int(
-                self.workspace_resolution.get("project_revision") or 0
-            ),
-            project_identity=str(
-                self.workspace_resolution.get("project_identity") or ""
-            ),
+            project_revision=int(self.workspace_resolution.get("project_revision") or 0),
+            project_identity=str(self.workspace_resolution.get("project_identity") or ""),
             capability_hash=self.capability_hash,
             scope_hash=self.scope_hash,
             run_id=self.run_id,
@@ -426,6 +420,7 @@ class SdkRunToolAuthorityV1:
         )
 
         from deskpet.sdk_adapters.effect_gate import project_tool_execution_context
+
         return project_tool_execution_context(context)
 
     def assert_workspace_current(self) -> None:
@@ -546,9 +541,7 @@ class SdkRunToolAuthorityRegistry:
         self._resource_records = tuple(resource_records)
         self._workspace_identity_validator = workspace_identity_validator
         self._run_fault_sink = run_fault_sink
-        self._terminal_listeners: list[
-            Callable[[SdkRunToolAuthorityV1], None]
-        ] = []
+        self._terminal_listeners: list[Callable[[SdkRunToolAuthorityV1], None]] = []
 
     def bind_workspace_identity_validator(
         self, validator: Callable[[Mapping[str, Any]], None]
@@ -562,9 +555,7 @@ class SdkRunToolAuthorityRegistry:
             raise RuntimeError("workspace identity validator is already bound")
         self._workspace_identity_validator = validator
 
-    def add_terminal_listener(
-        self, listener: Callable[[SdkRunToolAuthorityV1], None]
-    ) -> None:
+    def add_terminal_listener(self, listener: Callable[[SdkRunToolAuthorityV1], None]) -> None:
         self._terminal_listeners.append(listener)
 
     def prepare_run(
@@ -591,9 +582,13 @@ class SdkRunToolAuthorityRegistry:
         root_run_id = _required(root_run_id, "root_run_id")
         if task_scope_id is not None:
             task_scope_id = _required(task_scope_id, "task_scope_id")
-        elif (workspace_root is not None or type(binding_version) is not int or binding_version != 0
-              or not isinstance(workspace_resolution, Mapping)
-              or workspace_resolution.get("kind") != "projectless"):
+        elif (
+            workspace_root is not None
+            or type(binding_version) is not int
+            or binding_version != 0
+            or not isinstance(workspace_resolution, Mapping)
+            or workspace_resolution.get("kind") != "projectless"
+        ):
             raise ValueError("unscoped primary Tool authority must be projectless")
         principal_id = _required(principal_id, "principal_id")
         if workspace_resolution is None:
@@ -635,9 +630,7 @@ class SdkRunToolAuthorityRegistry:
                 if self._workspace_identity_validator is None:
                     raise RuntimeError("workspace_identity_validator_unavailable")
             normalized_workspace_resolution["binding_version"] = binding_version
-        catalog_fingerprint = _required(
-            catalog.get("content_fingerprint"), "catalog_fingerprint"
-        )
+        catalog_fingerprint = _required(catalog.get("content_fingerprint"), "catalog_fingerprint")
         generation = int(catalog.get("generation", -1))
         if generation < 0:
             raise ValueError("catalog_generation must be non-negative")
@@ -646,8 +639,7 @@ class SdkRunToolAuthorityRegistry:
         if not isinstance(raw_specs, list) or not raw_specs:
             raise ValueError("frozen SDK catalog must contain complete specs")
         inventory_by_name = {
-            _required(_field(item, "name"), "inventory.name"): item
-            for item in inventory
+            _required(_field(item, "name"), "inventory.name"): item for item in inventory
         }
         names = tuple(_required(item.get("name"), "spec.name") for item in raw_specs)
         if len(names) != len(set(names)) or not set(names).issubset(inventory_by_name):
@@ -664,9 +656,7 @@ class SdkRunToolAuthorityRegistry:
         deferred = frozenset(str(item) for item in deferred_names)
         unknown_deferred = deferred - set(names)
         if unknown_deferred:
-            raise ValueError(
-                f"unknown deferred SDK capabilities: {sorted(unknown_deferred)!r}"
-            )
+            raise ValueError(f"unknown deferred SDK capabilities: {sorted(unknown_deferred)!r}")
         if disclosure_policy is None:
             disclosure_policy = (
                 SDK_EXPLICIT_DEFERRED_DISCLOSURE_POLICY
@@ -680,10 +670,7 @@ class SdkRunToolAuthorityRegistry:
             raise ValueError("unsupported SDK catalog disclosure policy")
         if disclosure_policy == SDK_FULL_CATALOG_DISCLOSURE_POLICY and deferred:
             raise ValueError("full-direct disclosure cannot contain deferred tools")
-        if (
-            disclosure_policy == SDK_EXPLICIT_DEFERRED_DISCLOSURE_POLICY
-            and not deferred
-        ):
+        if disclosure_policy == SDK_EXPLICIT_DEFERRED_DISCLOSURE_POLICY and not deferred:
             raise ValueError("explicit-deferred disclosure requires deferred tools")
         capabilities: list[PreparedToolCapability] = []
         deferred_refs: list[ToolCapabilityRef] = []
@@ -692,9 +679,7 @@ class SdkRunToolAuthorityRegistry:
         permissions: dict[str, str] = {}
         dispatch_kinds: dict[str, str] = {}
         catalog_schema_hashes = catalog.get("schema_fingerprints")
-        if catalog_schema_hashes is not None and not isinstance(
-            catalog_schema_hashes, Mapping
-        ):
+        if catalog_schema_hashes is not None and not isinstance(catalog_schema_hashes, Mapping):
             raise TypeError("catalog schema_fingerprints must be an object")
         for raw in raw_specs:
             name = str(raw["name"])
@@ -707,9 +692,7 @@ class SdkRunToolAuthorityRegistry:
                 _field(inventory_item, "permission_category"),
                 f"{name}.permission_category",
             )
-            dispatch = _required(
-                _field(inventory_item, "dispatch_kind"), f"{name}.dispatch_kind"
-            )
+            dispatch = _required(_field(inventory_item, "dispatch_kind"), f"{name}.dispatch_kind")
             source = _required(_field(inventory_item, "source"), f"{name}.source")
             version = _required(_field(inventory_item, "version"), f"{name}.version")
             execution_identity = _required(
@@ -744,10 +727,7 @@ class SdkRunToolAuthorityRegistry:
             if (
                 normalized_workspace_resolution["kind"] == "projectless"
                 and projectless_admission != "safe"
-                and not (
-                    task_scope_id is None
-                    and name in _PROJECTLESS_ROUTE_CAPABLE_TOOL_NAMES
-                )
+                and not (task_scope_id is None and name in _PROJECTLESS_ROUTE_CAPABLE_TOOL_NAMES)
             ):
                 raise RuntimeError("projectless_catalog_contains_project_tool")
             function_schema = {
@@ -756,9 +736,10 @@ class SdkRunToolAuthorityRegistry:
                 "parameters": dict(input_schema),
             }
             schema_hash = canonical_hash(dict(input_schema))
-            if catalog_schema_hashes is not None and str(
-                catalog_schema_hashes.get(name) or ""
-            ) != schema_hash:
+            if (
+                catalog_schema_hashes is not None
+                and str(catalog_schema_hashes.get(name) or "") != schema_hash
+            ):
                 raise ValueError(f"{name} schema fingerprint differs from catalog")
             ref = ToolCapabilityRef(
                 capability_id=f"{source}:{name}:{schema_hash[:16]}",
@@ -778,14 +759,10 @@ class SdkRunToolAuthorityRegistry:
             )
             if name in deferred:
                 deferred_refs.append(ref)
-                decisions.append(
-                    ToolSelectionDecision(name, "deferred", "frozen_run_scope")
-                )
+                decisions.append(ToolSelectionDecision(name, "deferred", "frozen_run_scope"))
             else:
                 capabilities.append(capability)
-                decisions.append(
-                    ToolSelectionDecision(name, "direct", "frozen_run_scope")
-                )
+                decisions.append(ToolSelectionDecision(name, "direct", "frozen_run_scope"))
             frozen_specs[name] = _FrozenCapabilitySpec(
                 name=name,
                 schema=function_schema,
@@ -838,14 +815,18 @@ class SdkRunToolAuthorityRegistry:
             policy_fingerprint=policy_fingerprint,
             decisions=decisions,
         )
-        work_context = (PrimaryRunWorkContext(session_id, root_run_id) if task_scope_id is None else TaskWorkContext(
-            session_id=session_id,
-            root_run_id=root_run_id,
-            task_scope_id=task_scope_id,
-            workspace_root=workspace_root,
-            workspace_source="existing" if workspace_root else "none",
-            binding_version=binding_version,
-        ))
+        work_context = (
+            PrimaryRunWorkContext(session_id, root_run_id)
+            if task_scope_id is None
+            else TaskWorkContext(
+                session_id=session_id,
+                root_run_id=root_run_id,
+                task_scope_id=task_scope_id,
+                workspace_root=workspace_root,
+                workspace_source="existing" if workspace_root else "none",
+                binding_version=binding_version,
+            )
+        )
         authority_fingerprint = _canonical_sha256(
             {
                 "disclosure_policy": disclosure_policy,
@@ -859,12 +840,8 @@ class SdkRunToolAuthorityRegistry:
                         "source": frozen_specs[name].source,
                         "version": frozen_specs[name].spec_version,
                         "execution_identity": frozen_specs[name].execution_identity,
-                        "permission_policy_version": (
-                            frozen_specs[name].permission_policy_version
-                        ),
-                        "projectless_admission": frozen_specs[
-                            name
-                        ].projectless_admission,
+                        "permission_policy_version": (frozen_specs[name].permission_policy_version),
+                        "projectless_admission": frozen_specs[name].projectless_admission,
                         "dangerous": frozen_specs[name].dangerous,
                     }
                     for name in names
@@ -915,9 +892,10 @@ class SdkRunToolAuthorityRegistry:
             return current
         eligibility = ToolEligibilityContext(session_id, request_id, "sdk-run")
         self.scope_store.open(prepared, eligibility)
-        if self.scope_store.pin(
-            prepared.scope_id, session_id=session_id, request_id=request_id
-        ) is None:
+        if (
+            self.scope_store.pin(prepared.scope_id, session_id=session_id, request_id=request_id)
+            is None
+        ):
             self.scope_store.purge(prepared.scope_id)
             raise RuntimeError("sdk_tool_scope_pin_failed")
         self._records[run_id] = record
@@ -925,23 +903,17 @@ class SdkRunToolAuthorityRegistry:
         for raw in raw_specs:
             name = str(raw["name"])
             frozen = frozen_specs[name]
-            source_namespace = (
-                frozen.source if frozen.source.startswith("mcp:") else "builtin"
-            )
+            source_namespace = frozen.source if frozen.source.startswith("mcp:") else "builtin"
             runtime_records.append(
                 ExecutableToolRecord(
                     capability_id=f"{source_namespace}:{name}",
                     namespace=source_namespace,
                     source=(
-                        frozen.source
-                        if frozen.source.startswith("mcp:")
-                        else "simple_harness"
+                        frozen.source if frozen.source.startswith("mcp:") else "simple_harness"
                     ),
                     source_revision=catalog_fingerprint,
                     exposure_mode=(
-                        ToolExposureMode.DEFERRED
-                        if name in deferred
-                        else ToolExposureMode.DIRECT
+                        ToolExposureMode.DEFERRED if name in deferred else ToolExposureMode.DIRECT
                     ),
                     provider_name=name,
                     description=str(raw["description"]),
@@ -1114,23 +1086,15 @@ class SdkRunToolAuthorityRegistry:
                     "source": source,
                     "spec_version": str(getattr(live_spec, "spec_version", "v1")),
                     "schema": dict(getattr(live_spec, "schema", {}) or {}),
-                    "runtime_provenance_ref": str(
-                        getattr(live_spec, "runtime_provenance_ref", "")
-                    ),
+                    "runtime_provenance_ref": str(getattr(live_spec, "runtime_provenance_ref", "")),
                     "fixture_epoch": int(getattr(live_spec, "fixture_epoch", 0)),
-                    "fixture_spec_hash": str(
-                        getattr(live_spec, "fixture_spec_hash", "")
-                    ),
-                    "stable_handler_id": str(
-                        getattr(live_spec, "stable_handler_id", "")
-                    ),
+                    "fixture_spec_hash": str(getattr(live_spec, "fixture_spec_hash", "")),
+                    "stable_handler_id": str(getattr(live_spec, "stable_handler_id", "")),
                 }
             )
             identity_matches = live_execution_identity == frozen.execution_identity
         else:
-            identity_matches = (
-                str(getattr(live_spec, "schema_hash", "")) == frozen.schema_hash
-            )
+            identity_matches = str(getattr(live_spec, "schema_hash", "")) == frozen.schema_hash
         admitted = identity_matches and (
             str(getattr(live_spec, "spec_version", "")) == frozen.spec_version
         )
@@ -1177,18 +1141,16 @@ class SdkRunToolAuthorityRegistry:
         if record_version not in {2, SDK_TOOL_AUTHORITY_RECORD_VERSION}:
             raise ValueError("sdk_tool_authority_record_version_unsupported")
         generation = int(_field(run_binding, "catalog_generation", -1))
-        fingerprint = _required(
-            _field(run_binding, "catalog_fingerprint"), "catalog_fingerprint"
-        )
+        fingerprint = _required(_field(run_binding, "catalog_fingerprint"), "catalog_fingerprint")
         if (
             int(run_start_record.get("catalog_generation", -1)) != generation
             or str(run_start_record.get("catalog_fingerprint") or "") != fingerprint
         ):
             raise RuntimeError("sdk_tool_authority_binding_mismatch")
         for identity_field in ("run_id", "session_id", "request_id"):
-            if _required(
-                run_start_record.get(identity_field), identity_field
-            ) != _required(_field(run_binding, identity_field), identity_field):
+            if _required(run_start_record.get(identity_field), identity_field) != _required(
+                _field(run_binding, identity_field), identity_field
+            ):
                 raise RuntimeError("sdk_tool_authority_binding_identity_mismatch")
         resolve = getattr(catalog_resolver, "resolve", None)
         if not callable(resolve):
@@ -1207,9 +1169,7 @@ class SdkRunToolAuthorityRegistry:
         specs = [
             {
                 "name": _required(_field(item, "name"), "snapshot.spec.name"),
-                "description": _required(
-                    _field(item, "description"), "snapshot.spec.description"
-                ),
+                "description": _required(_field(item, "description"), "snapshot.spec.description"),
                 "input_schema": thaw_json(_field(item, "parameters")),
             }
             for item in snapshot_specs
@@ -1218,8 +1178,7 @@ class SdkRunToolAuthorityRegistry:
         if not isinstance(raw_inventory, list) or not raw_inventory:
             raise ValueError("sdk_tool_authority_inventory_missing")
         inventory_names = {
-            _required(_field(item, "name"), "inventory.name")
-            for item in raw_inventory
+            _required(_field(item, "name"), "inventory.name") for item in raw_inventory
         }
         specs = [item for item in specs if item["name"] in inventory_names]
         if {item["name"] for item in specs} != inventory_names:
@@ -1227,13 +1186,10 @@ class SdkRunToolAuthorityRegistry:
         catalog = {
             "generation": generation,
             "content_fingerprint": fingerprint,
-            "policy_fingerprint": str(
-                run_start_record.get("policy_fingerprint") or ""
-            ),
+            "policy_fingerprint": str(run_start_record.get("policy_fingerprint") or ""),
             "specs": specs,
             "schema_fingerprints": {
-                item["name"]: canonical_hash(item["input_schema"])
-                for item in specs
+                item["name"]: canonical_hash(item["input_schema"]) for item in specs
             },
         }
         direct_names = run_start_record.get("direct_names")
@@ -1253,11 +1209,12 @@ class SdkRunToolAuthorityRegistry:
             run_id=_required(run_start_record.get("run_id"), "run_id"),
             session_id=_required(run_start_record.get("session_id"), "session_id"),
             request_id=_required(run_start_record.get("request_id"), "request_id"),
-            root_run_id=_required(
-                run_start_record.get("root_run_id"), "root_run_id"
+            root_run_id=_required(run_start_record.get("root_run_id"), "root_run_id"),
+            task_scope_id=(
+                None
+                if run_start_record["task_scope_id"] is None
+                else _required(run_start_record["task_scope_id"], "task_scope_id")
             ),
-            task_scope_id=(None if run_start_record["task_scope_id"] is None
-                           else _required(run_start_record["task_scope_id"], "task_scope_id")),
             workspace_root=(
                 str(run_start_record["workspace_root"])
                 if run_start_record.get("workspace_root") is not None
@@ -1265,9 +1222,7 @@ class SdkRunToolAuthorityRegistry:
             ),
             catalog=catalog,
             inventory=raw_inventory,
-            principal_id=_required(
-                run_start_record.get("principal_id"), "principal_id"
-            ),
+            principal_id=_required(run_start_record.get("principal_id"), "principal_id"),
             deferred_names=deferred,
             disclosure_policy=_required(
                 run_start_record.get("disclosure_policy"), "disclosure_policy"
@@ -1279,18 +1234,14 @@ class SdkRunToolAuthorityRegistry:
                 else {
                     "kind": "legacy",
                     "effective_root": run_start_record.get("workspace_root"),
-                    "binding_version": int(
-                        run_start_record.get("binding_version", 0)
-                    ),
+                    "binding_version": int(run_start_record.get("binding_version", 0)),
                 }
             ),
         )
         expected_capability_hash = _required(
             run_start_record.get("capability_hash"), "capability_hash"
         )
-        expected_scope_hash = _required(
-            run_start_record.get("scope_hash"), "scope_hash"
-        )
+        expected_scope_hash = _required(run_start_record.get("scope_hash"), "scope_hash")
         hashes_match = (
             restored.authority_fingerprint == expected_authority_fingerprint
             and restored.capability_hash == expected_capability_hash
@@ -1306,11 +1257,7 @@ class SdkRunToolAuthorityRegistry:
         if not hashes_match:
             self.mark_terminal(restored.run_id, "failed")
             raise RuntimeError("sdk_tool_authority_hash_mismatch")
-        return (
-            self.mark_waiting(restored.run_id)
-            if normalized_lease == "waiting"
-            else restored
-        )
+        return self.mark_waiting(restored.run_id) if normalized_lease == "waiting" else restored
 
     def restore_waiting_run(
         self,
@@ -1378,9 +1325,7 @@ class SdkRunToolAuthorityRegistry:
             "cancelled",
             "stopped",
         }:
-            raise ValueError(
-                "terminal_state must be completed, failed, cancelled, or stopped"
-            )
+            raise ValueError("terminal_state must be completed, failed, cancelled, or stopped")
         record = self.resolve(run_id)
         self._records.pop(record.run_id, None)
         self._runtime_exposures.pop(record.run_id, None)
@@ -1479,13 +1424,9 @@ class SdkCapabilityBridgeAdapter:
     def describe(self, capability_id: str) -> dict[str, Any]:
         return self._invoke("describe", capability_id)
 
-    def activate(
-        self, capability_id: str, schema_hash: str, describe_nonce: str
-    ) -> Any:
+    def activate(self, capability_id: str, schema_hash: str, describe_nonce: str) -> Any:
         context = self._context_getter()
-        proposal = self._invoke(
-            "activate", capability_id, schema_hash, describe_nonce
-        )
+        proposal = self._invoke("activate", capability_id, schema_hash, describe_nonce)
         store = self._authorities.scope_store
         current = store.get(
             context.scope_id,
@@ -1611,9 +1552,7 @@ class RunAvailabilityFacts:
             # workspace file tool this Run exposes is a candidate.
             family = (*WORKSPACE_READ_TOOL_NAMES, *WORKSPACE_WRITE_TOOL_NAMES)
         return tuple(
-            f"builtin:{item}"
-            for item in family
-            if item != name and item in self.exposed_tool_names
+            f"builtin:{item}" for item in family if item != name and item in self.exposed_tool_names
         )
 
 
@@ -1692,9 +1631,7 @@ def unavailable_capability_next_action(
         if not facts.routed:
             return _UNSCOPED_UNROUTED_ACTION
         return _UNSCOPED_UNREACHABLE_ACTION
-    return UNAVAILABLE_CAPABILITY_NEXT_ACTIONS.get(
-        reason, _DEFAULT_UNAVAILABLE_NEXT_ACTION
-    )
+    return UNAVAILABLE_CAPABILITY_NEXT_ACTIONS.get(reason, _DEFAULT_UNAVAILABLE_NEXT_ACTION)
 
 
 class SdkRuntimeCapabilityBridgeAdapter:
@@ -1832,7 +1769,13 @@ class SdkRuntimeCapabilityBridgeAdapter:
         unavailable_count = sum(1 for item in matches if "availability_reason" in item)
         if unavailable_count:
             result["unavailable_count"] = unavailable_count
-            reasons = sorted({str(item["availability_reason"]) for item in matches if "availability_reason" in item})
+            reasons = sorted(
+                {
+                    str(item["availability_reason"])
+                    for item in matches
+                    if "availability_reason" in item
+                }
+            )
             first = next(
                 str(item.get("capability_id") or "")
                 for item in matches
@@ -1842,9 +1785,7 @@ class SdkRuntimeCapabilityBridgeAdapter:
                 f"{unavailable_count} match(es) carry availability_reason "
                 f"({', '.join(reasons)}) and cannot be activated in this Run; "
                 "prefer matches without availability_reason. "
-                + unavailable_capability_next_action(
-                    reasons[0], capability_id=first, facts=facts
-                )
+                + unavailable_capability_next_action(reasons[0], capability_id=first, facts=facts)
             )
         return result
 
@@ -1874,9 +1815,7 @@ class SdkRuntimeCapabilityBridgeAdapter:
         value["schema_hash"] = value["capability_hash"]
         value["describe_nonce"] = value["nonce"]
         value["capability_id"] = descriptor["capability_id"]
-        reason = self._unavailable_with_route(run_id).get(
-            str(descriptor["capability_id"])
-        )
+        reason = self._unavailable_with_route(run_id).get(str(descriptor["capability_id"]))
         if reason is not None:
             # Descriptor-only in this Run: say so before the model wastes a
             # tool_activate turn (UI-B looped three times on exactly this).
@@ -1902,9 +1841,7 @@ class SdkRuntimeCapabilityBridgeAdapter:
         )
         return value
 
-    def activate(
-        self, capability_id: str, schema_hash: str, describe_nonce: str
-    ) -> Any:
+    def activate(self, capability_id: str, schema_hash: str, describe_nonce: str) -> Any:
         run_id, exposure = self._binding()
         unavailable = self._authorities.unavailable_reason(run_id, capability_id)
         if unavailable is not None:
@@ -1967,14 +1904,21 @@ def describe_call_zh(tool_name: str, arguments: Mapping[str, Any]) -> str:
         return f"把后台任务的资料 {_clip(args.get('path'), 60)} 换成新版本（提交后仍需你批准）"
     if tool_name == "mission_amend":
         changes = [c for c in args.get("changes") or () if isinstance(c, dict)]
-        count = {op: sum(1 for c in changes if c.get("op") == op) for op in ("add", "rewrite", "remove", "goal")}
+        count = {
+            op: sum(1 for c in changes if c.get("op") == op)
+            for op in ("add", "rewrite", "remove", "goal")
+        }
         goal = "、并换任务目标" if count["goal"] else ""
-        return (f"修改后台任务的要求：新增 {count['add']} 条、改写 {count['rewrite']} 条、"
-                f"删除 {count['remove']} 条{goal}")
+        return (
+            f"修改后台任务的要求：新增 {count['add']} 条、改写 {count['rewrite']} 条、"
+            f"删除 {count['remove']} 条{goal}"
+        )
     if tool_name == "method_library":
         if args.get("action") == "retire":
-            return (f"把全库做法 {_clip(args.get('entry_id'), 40)} 退役（理由：{_clip(args.get('reason'), 60)}），"
-                    "之后不再列给新任务")
+            return (
+                f"把全库做法 {_clip(args.get('entry_id'), 40)} 退役（理由：{_clip(args.get('reason'), 60)}），"
+                "之后不再列给新任务"
+            )
         return "查看全库做法"
     if tool_name == "write_file":
         return f"写入文件：{_clip(args.get('path'))}"
@@ -2040,9 +1984,7 @@ class SkillInstallPreflightRejected:
         )
 
 
-SkillInstallPreflightOutcome = (
-    SkillInstallPreflightReady | SkillInstallPreflightRejected
-)
+SkillInstallPreflightOutcome = SkillInstallPreflightReady | SkillInstallPreflightRejected
 
 
 class ProjectSkillInstallPreflightPort(Protocol):
@@ -2091,12 +2033,8 @@ class SdkPreparedAuthorizationPolicy:
             if identity[0] != authority.run_id
         }
 
-    def auto_skill_approval_for(
-        self, prepared: PreparedToolEffect
-    ) -> Mapping[str, Any] | None:
-        return self._auto_skill_approvals.get(
-            (prepared.run_id.value, prepared.effect_id.value)
-        )
+    def auto_skill_approval_for(self, prepared: PreparedToolEffect) -> Mapping[str, Any] | None:
+        return self._auto_skill_approvals.get((prepared.run_id.value, prepared.effect_id.value))
 
     def current_policy_generation(self) -> int:
         if self._policy_generation is None:
@@ -2112,8 +2050,12 @@ class SdkPreparedAuthorizationPolicy:
         self._policy_generation = value
 
     async def _stage_skill_preflight(
-        self, *, prepared: PreparedToolEffect, context: ToolExecutionContext,
-        call: PreparedToolCall, authority: SdkRunToolAuthorityV1,
+        self,
+        *,
+        prepared: PreparedToolEffect,
+        context: ToolExecutionContext,
+        call: PreparedToolCall,
+        authority: SdkRunToolAuthorityV1,
     ) -> SkillInstallPreflightReady | AuthorizationResult | None:
         if call.tool_name != "skill_install":
             return None
@@ -2123,12 +2065,15 @@ class SdkPreparedAuthorizationPolicy:
                 reason_code="skill_install_preflight_unavailable",
             )
         outcome = await self._skill_install_preflight.stage_authorization_preflight(
-            prepared=prepared, context=context, args_hash=call.args_hash,
+            prepared=prepared,
+            context=context,
+            args_hash=call.args_hash,
             principal_id=authority.principal_id,
         )
         if isinstance(outcome, SkillInstallPreflightRejected):
             return AuthorizationResult(
-                AuthorizationDecision.DENY, reason_code=outcome.code,
+                AuthorizationDecision.DENY,
+                reason_code=outcome.code,
                 public_message=outcome.sdk_public_message(),
                 receipt_ref=outcome.failure_receipt_ref,
             )
@@ -2182,9 +2127,7 @@ class SdkPreparedAuthorizationPolicy:
     ) -> PreparedToolCall:
         name = prepared.call.name
         spec = authority.specs.get(name)
-        if spec is None or not self._authorities.is_tool_exposed(
-            authority.run_id, name
-        ):
+        if spec is None or not self._authorities.is_tool_exposed(authority.run_id, name):
             raise RuntimeError("capability_denied")
         arguments = thaw_json(prepared.call.arguments)
         if not isinstance(arguments, Mapping):
@@ -2200,9 +2143,7 @@ class SdkPreparedAuthorizationPolicy:
         )
         return replace(
             provisional,
-            resource_selectors=self._resource_selectors(
-                prepared, args_hash=provisional.args_hash
-            ),
+            resource_selectors=self._resource_selectors(prepared, args_hash=provisional.args_hash),
         )
 
     async def decide(
@@ -2290,8 +2231,8 @@ class SdkPreparedAuthorizationPolicy:
                     reason_code=f"product_policy:{plan.action}",
                 )
             grant = plan.committed_task_grant
-            self._facts[(authority.run_id, prepared.effect_id.value)] = (
-                _PreparedAuthorizationFacts(authority, call, plan, grant)
+            self._facts[(authority.run_id, prepared.effect_id.value)] = _PreparedAuthorizationFacts(
+                authority, call, plan, grant
             )
             preflight_outcome = await self._stage_skill_preflight(
                 prepared=prepared, context=context, call=call, authority=authority
@@ -2299,11 +2240,15 @@ class SdkPreparedAuthorizationPolicy:
             if isinstance(preflight_outcome, AuthorizationResult):
                 return preflight_outcome
             preflight = preflight_outcome
-            nonce = request.nonce if request is not None else _canonical_sha256(
-                {
-                    "effect_id": prepared.effect_id.value,
-                    "grant_fingerprint": grant.fingerprint,
-                }
+            nonce = (
+                request.nonce
+                if request is not None
+                else _canonical_sha256(
+                    {
+                        "effect_id": prepared.effect_id.value,
+                        "grant_fingerprint": grant.fingerprint,
+                    }
+                )
             )
             return AuthorizationResult(
                 AuthorizationDecision.REQUIRE_USER,
@@ -2327,7 +2272,9 @@ class SdkPreparedAuthorizationPolicy:
                                 "skill_install_content_digest": preflight.content_digest,
                                 "skill_install_member_digest": preflight.member_digest,
                                 "skill_install_member_summary": list(preflight.member_summary),
-                                "skill_install_permission_summary": list(preflight.permission_summary),
+                                "skill_install_permission_summary": list(
+                                    preflight.permission_summary
+                                ),
                                 "skill_install_expires_at": preflight.expires_at,
                             }
                         ),
@@ -2353,8 +2300,8 @@ class SdkPreparedAuthorizationPolicy:
                 )
             return AuthorizationResult(decision, reason_code=f"product_policy:{plan.action}")
         grant = plan.committed_task_grant
-        self._facts[(authority.run_id, prepared.effect_id.value)] = (
-            _PreparedAuthorizationFacts(authority, call, plan, grant)
+        self._facts[(authority.run_id, prepared.effect_id.value)] = _PreparedAuthorizationFacts(
+            authority, call, plan, grant
         )
         return await self._allow_after_preflight(
             prepared, context=context, call=call, authority=authority, grant=grant
@@ -2426,8 +2373,7 @@ class SdkPreparedAuthorizationPolicy:
         return AuthorizationResult(
             AuthorizationDecision.ALLOW,
             receipt_ref=(
-                f"product-policy:{grant.source}:{grant.policy_generation}:"
-                f"{grant.fingerprint}"
+                f"product-policy:{grant.source}:{grant.policy_generation}:{grant.fingerprint}"
             ),
         )
 
@@ -2476,8 +2422,8 @@ class SdkPreparedAuthorizationPolicy:
             raise RuntimeError("restored plan grant differs")
         if grant.principal_id != authority.principal_id:
             raise RuntimeError("restored grant principal differs")
-        self._facts[(authority.run_id, prepared.effect_id.value)] = (
-            _PreparedAuthorizationFacts(authority, call, plan, grant)
+        self._facts[(authority.run_id, prepared.effect_id.value)] = _PreparedAuthorizationFacts(
+            authority, call, plan, grant
         )
 
     def grant_factory(

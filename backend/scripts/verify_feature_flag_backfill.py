@@ -9,6 +9,7 @@ the flags while preserving the user's other content + comments.
 
 Run from backend/:  .venv/Scripts/python.exe scripts/verify_feature_flag_backfill.py
 """
+
 from __future__ import annotations
 
 import os
@@ -45,8 +46,10 @@ def main() -> int:
     stale_raw = tomli.loads(stale_text)
     v2_before = stale_raw.get("memory", {}).get("v2", {})
     assert "curation_nudge" not in v2_before, "stale fixture still has the flag"
-    print(f"[setup] stale 存量 config has NO curation_nudge "
-          f"(memory.v2 keys before = {sorted(v2_before)})")
+    print(
+        f"[setup] stale 存量 config has NO curation_nudge "
+        f"(memory.v2 keys before = {sorted(v2_before)})"
+    )
 
     with tempfile.TemporaryDirectory() as td:
         user_dir = Path(td) / "deskpet"
@@ -57,6 +60,7 @@ def main() -> int:
         # Point the backend at our fake AppData + the real repo config as bundle.
         os.environ["DESKPET_USER_DATA_DIR"] = str(user_dir)
         import config as cfg
+
         cfg._bundle_default_config_path = lambda: REPO_CONFIG  # type: ignore[assignment]
 
         resolved = cfg.resolve_config_path()
@@ -93,8 +97,12 @@ def main() -> int:
         cfg.resolve_config_path()
         assert user_target.stat().st_mtime_ns == mtime, "2nd run rewrote the file"
 
-    print("\nRESULT: PASS — 存量 config upgraded; curation_nudge now live; "
-          "user values + comments preserved; idempotent." if ok else "\nRESULT: FAIL")
+    print(
+        "\nRESULT: PASS — 存量 config upgraded; curation_nudge now live; "
+        "user values + comments preserved; idempotent."
+        if ok
+        else "\nRESULT: FAIL"
+    )
     return 0 if ok else 1
 
 

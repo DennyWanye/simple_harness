@@ -67,16 +67,14 @@ class SdkRunBindingV1:
             "model_params": raw.get("model_params") or {},
             "context_window": int(raw.get("context_window", 0)),
             "catalog_generation": int(raw.get("catalog_generation", 0)),
-            "catalog_fingerprint": _text(
-                raw.get("catalog_fingerprint"), "catalog_fingerprint"
-            ),
-            "budget_fingerprint": _text(
-                raw.get("budget_fingerprint"), "budget_fingerprint"
-            ),
+            "catalog_fingerprint": _text(raw.get("catalog_fingerprint"), "catalog_fingerprint"),
+            "budget_fingerprint": _text(raw.get("budget_fingerprint"), "budget_fingerprint"),
             "lease_state": lease_state,
         }
         for field in (
-            "provider_config_revision", "binding_epoch", "context_window",
+            "provider_config_revision",
+            "binding_epoch",
+            "context_window",
             "catalog_generation",
         ):
             if record[field] < 0:
@@ -161,18 +159,14 @@ class SdkRunBindingRegistry:
             "cancelled",
             "stopped",
         }:
-            raise ValueError(
-                "terminal_state must be completed, failed, cancelled, or stopped"
-            )
+            raise ValueError("terminal_state must be completed, failed, cancelled, or stopped")
         binding = self._bindings.pop(str(run_id), None)
         if binding is None:
             raise KeyError(run_id)
         return binding
 
     @classmethod
-    def reconstruct(
-        cls, records: Iterable[Mapping[str, Any]]
-    ) -> SdkRunBindingRegistry:
+    def reconstruct(cls, records: Iterable[Mapping[str, Any]]) -> SdkRunBindingRegistry:
         registry = cls()
         for record in records:
             binding = SdkRunBindingV1.from_record(record)

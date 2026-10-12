@@ -22,6 +22,7 @@ Design notes
 * ``encode`` may be a sync CPU-bound call; ``match_async`` wraps it in
   ``asyncio.to_thread`` to avoid blocking the event loop (T2 requirement).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -241,9 +242,7 @@ class SkillMatcher:
                 continue
             skill_vec = self._cache.get(_skill_identity(skill))
             triggers = _skill_attr(skill, "triggers", None) or []
-            hit_trigger = any(
-                t and str(t).lower() in query_lower for t in triggers
-            )
+            hit_trigger = any(t and str(t).lower() in query_lower for t in triggers)
             # 保持原契约：没向量也没 trigger 命中的 skill 不进结果。
             if skill_vec is None and not hit_trigger:
                 continue
@@ -260,6 +259,7 @@ class SkillMatcher:
 # ---------------------------------------------------------------------------
 # Vector utilities
 # ---------------------------------------------------------------------------
+
 
 def _normalise(vec: list[float]) -> list[float]:
     """Return L2-normalised vector. Zero vector → zero vector (no division)."""

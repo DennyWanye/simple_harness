@@ -42,8 +42,16 @@ DEFAULT_MAX_BYTES = 16384
 SEARCH_SCHEMA: dict[str, JsonValue] = {
     "type": "object",
     "properties": {
-        "query": {"type": "string", "minLength": 1, "maxLength": 4096, "description": "关键词、标识符、seq N、或一句自然语言。"},
-        "cursor": {"type": "string", "description": "上一页返回的 next_cursor；有 cursor 时 query/limit/max_bytes 必须与原查询相同。"},
+        "query": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096,
+            "description": "关键词、标识符、seq N、或一句自然语言。",
+        },
+        "cursor": {
+            "type": "string",
+            "description": "上一页返回的 next_cursor；有 cursor 时 query/limit/max_bytes 必须与原查询相同。",
+        },
         "limit": {"type": "integer", "minimum": 1, "maximum": 32},
         "max_bytes": {"type": "integer", "minimum": 1024, "maximum": 65536},
     },
@@ -103,7 +111,9 @@ class ArpSessionHistoryTools:
 
     # ---- resolution -------------------------------------------------------------------------
 
-    def _resolve(self, context: ToolContext) -> tuple[SessionRetriever, store.SessionRow, str | None] | None:
+    def _resolve(
+        self, context: ToolContext
+    ) -> tuple[SessionRetriever, store.SessionRow, str | None] | None:
         runtime, retriever = self._runtime, self._retriever
         if runtime is None or retriever is None or context.call_id is None:
             return None
@@ -118,12 +128,19 @@ class ArpSessionHistoryTools:
 
     @staticmethod
     def _caller(session: store.SessionRow) -> Pin:
-        return Pin("principal", f"agent:{session.agent_id}", 0, digest({"agent": session.agent_id, "session": session.session_id}))
+        return Pin(
+            "principal",
+            f"agent:{session.agent_id}",
+            0,
+            digest({"agent": session.agent_id, "session": session.session_id}),
+        )
 
     @staticmethod
     def _failure(context: ToolContext, error: ArpError) -> ToolResult:
         return ToolResult.failed(
-            cast(CallId, context.call_id), f"session_history_{error.code.lower()}", f"{error.code}: {error}",
+            cast(CallId, context.call_id),
+            f"session_history_{error.code.lower()}",
+            f"{error.code}: {error}",
         )
 
     # ---- handlers ---------------------------------------------------------------------------
@@ -132,7 +149,9 @@ class ArpSessionHistoryTools:
         self.searches += 1
         resolved = self._resolve(context)
         if resolved is None:
-            return ToolResult.failed(cast(CallId, context.call_id), "session_history_unbound", "No Agent for this Run.")
+            return ToolResult.failed(
+                cast(CallId, context.call_id), "session_history_unbound", "No Agent for this Run."
+            )
         retriever, session, turn_id = resolved
         request = {
             "schema_version": 1,
@@ -142,7 +161,9 @@ class ArpSessionHistoryTools:
             "max_bytes": int(arguments.get("max_bytes", DEFAULT_MAX_BYTES)),
         }
         try:
-            access = retriever.access_for(session, purpose="MODEL_SEARCH", caller_ref=self._caller(session), turn_id=turn_id)
+            access = retriever.access_for(
+                session, purpose="MODEL_SEARCH", caller_ref=self._caller(session), turn_id=turn_id
+            )
             page = retriever.search(access, request)
             # RP-E4: a SCANNING page is a PROGRESS page (items=[], has_more=true).  Handed to
             # the model one per call, it reads as "nothing found" and the model re-searches from
@@ -171,7 +192,9 @@ class ArpSessionHistoryTools:
         self.reads += 1
         resolved = self._resolve(context)
         if resolved is None:
-            return ToolResult.failed(cast(CallId, context.call_id), "session_history_unbound", "No Agent for this Run.")
+            return ToolResult.failed(
+                cast(CallId, context.call_id), "session_history_unbound", "No Agent for this Run."
+            )
         retriever, session, turn_id = resolved
         seq_from = int(arguments.get("seq_from", 1))
         seq_to = arguments.get("seq_to")
@@ -186,7 +209,9 @@ class ArpSessionHistoryTools:
             "max_bytes": int(arguments.get("max_bytes", DEFAULT_MAX_BYTES)),
         }
         try:
-            access = retriever.access_for(session, purpose="MODEL_READ", caller_ref=self._caller(session), turn_id=turn_id)
+            access = retriever.access_for(
+                session, purpose="MODEL_READ", caller_ref=self._caller(session), turn_id=turn_id
+            )
             page = retriever.read(access, request)
         except ArpError as error:
             return self._failure(context, error)

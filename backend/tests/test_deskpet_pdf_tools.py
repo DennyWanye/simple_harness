@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 """TDD T3 — pdf_tools.py (pdf_export)."""
+
 from __future__ import annotations
 
 import subprocess

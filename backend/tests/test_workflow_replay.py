@@ -422,7 +422,9 @@ async def test_source_version_checkpoint_namespace_waiting_fanout_and_patch_reje
 
     db = await store._connect()
     try:
-        await db.execute("UPDATE workflow_runs SET status='waiting' WHERE run_id=?", (source["run_id"],))
+        await db.execute(
+            "UPDATE workflow_runs SET status='waiting' WHERE run_id=?", (source["run_id"],)
+        )
         await db.commit()
     finally:
         await db.close()

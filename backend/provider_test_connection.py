@@ -17,6 +17,7 @@ typed into the SettingsPanel form — it's not persisted on success. The
 UI is expected to invoke ``set_cloud_api_key`` (Tauri command) only
 after the test came back green.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -40,13 +41,15 @@ async def handle_provider_test_connection(ws: Any, payload: dict) -> None:
     model = (payload.get("model") or "").strip()
 
     if not (base_url and api_key and model):
-        await ws.send_json({
-            "type": "provider_test_connection_result",
-            "payload": {
-                "ok": False,
-                "error": "base_url / api_key / model all required",
-            },
-        })
+        await ws.send_json(
+            {
+                "type": "provider_test_connection_result",
+                "payload": {
+                    "ok": False,
+                    "error": "base_url / api_key / model all required",
+                },
+            }
+        )
         return
 
     tested_url = f"{base_url.rstrip('/')}/models"
@@ -64,18 +67,20 @@ async def handle_provider_test_connection(ws: Any, payload: dict) -> None:
         payload: dict = {"ok": bool(ok), "tested_url": tested_url}
         if not ok:
             payload["error"] = "health check failed (bad key, wrong URL, or unreachable)"
-        await ws.send_json({
-            "type": "provider_test_connection_result",
-            "payload": payload,
-        })
+        await ws.send_json(
+            {
+                "type": "provider_test_connection_result",
+                "payload": payload,
+            }
+        )
     except Exception as exc:
         # provider init or the GET /models both land here. Log + surface
         # the exception string so the UI can show something actionable
         # without exposing a stacktrace.
-        logger.warning(
-            "provider_test_failed", base_url=base_url, model=model, error=str(exc)
+        logger.warning("provider_test_failed", base_url=base_url, model=model, error=str(exc))
+        await ws.send_json(
+            {
+                "type": "provider_test_connection_result",
+                "payload": {"ok": False, "error": str(exc), "tested_url": tested_url},
+            }
         )
-        await ws.send_json({
-            "type": "provider_test_connection_result",
-            "payload": {"ok": False, "error": str(exc), "tested_url": tested_url},
-        })

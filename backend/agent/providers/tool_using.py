@@ -25,6 +25,7 @@ is streamed instead. The default callback denies everything — this is
 intentionally fail-closed so wiring up the frontend dialog is a
 deliberate step.
 """
+
 from __future__ import annotations
 
 import re
@@ -68,9 +69,7 @@ class ToolUsingAgent:
         self._inject = inject_system_prompt
         self._confirm: ConfirmCallback = confirm or _deny_all
 
-    def _maybe_prepend_system(
-        self, messages: list[dict[str, str]]
-    ) -> list[dict[str, str]]:
+    def _maybe_prepend_system(self, messages: list[dict[str, str]]) -> list[dict[str, str]]:
         if not self._inject:
             return messages
         hint = self._registry.prompt_hint()

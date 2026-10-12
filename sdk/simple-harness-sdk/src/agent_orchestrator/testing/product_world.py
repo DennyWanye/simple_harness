@@ -48,9 +48,13 @@ def user_goal_world(loop: Any, mission: Any) -> Any:
     from ..planning.htn.world import build_planning_world, capability_records
     from ..storage.htn_store import HtnStore
 
-    world = build_planning_world(mission.id, domains=(), semantics=HtnStore(loop.store),
-                                 predicates=workspace_predicates(),
-                                 observers=workspace_observers(loop.store, mission.id))
+    world = build_planning_world(
+        mission.id,
+        domains=(),
+        semantics=HtnStore(loop.store),
+        predicates=workspace_predicates(),
+        observers=workspace_observers(loop.store, mission.id),
+    )
     params_body = {"fields": [{"name": "goal", "type": "string", "required": True}]}
     params = VersionedRef("user.goal-parameters", 1, content_hash_of(params_body))
     outputs = VersionedRef("user.workspace-outputs", 1, content_hash_of({"fields": []}))
@@ -58,29 +62,68 @@ def user_goal_world(loop: Any, mission: Any) -> Any:
     world.schemas.register(ObjectSchema(outputs))
     # 类型与任务无关（阶段 C3）：用户原话与本任务的要求只在根绑定上（deployment.root.root_binding），
     # 一步负责哪些要求只来自上级做法的链接。同一部署上任意两个任务的类型目录逐字节相同。
-    signature = GoalSignature("user-goal", 1, params, outputs, "The user's goal; the root binding carries the user's own words and requirements.", ())
-    step = GoalSignature("prepare-delivery", 1, params, outputs, "One step of the user's goal; the plan's links say which requirements it answers for.", ())
-    continuation = GoalSignature("continue-delivery", 1, params, outputs,
-                                 "One step of the user's goal that continues from one or more accepted upstream deliveries (its delivery input port takes several, laid into the workspace in the order the plan lists them); the plan's links say which requirements it answers for.", ())
+    signature = GoalSignature(
+        "user-goal",
+        1,
+        params,
+        outputs,
+        "The user's goal; the root binding carries the user's own words and requirements.",
+        (),
+    )
+    step = GoalSignature(
+        "prepare-delivery",
+        1,
+        params,
+        outputs,
+        "One step of the user's goal; the plan's links say which requirements it answers for.",
+        (),
+    )
+    continuation = GoalSignature(
+        "continue-delivery",
+        1,
+        params,
+        outputs,
+        "One step of the user's goal that continues from one or more accepted upstream deliveries (its delivery input port takes several, laid into the workspace in the order the plan lists them); the plan's links say which requirements it answers for.",
+        (),
+    )
     ports = (PortSpec("delivery", outputs),)
     levels = {"user-goal": 0, "sub-goal-1": 1, "sub-goal-2": 2}
-    for name, form in (("user-goal", TaskForm.COMPOUND), ("sub-goal-1", TaskForm.COMPOUND),
-                       ("sub-goal-2", TaskForm.COMPOUND), ("prepare-delivery", TaskForm.PRIMITIVE),
-                       ("continue-delivery", TaskForm.PRIMITIVE)):
+    for name, form in (
+        ("user-goal", TaskForm.COMPOUND),
+        ("sub-goal-1", TaskForm.COMPOUND),
+        ("sub-goal-2", TaskForm.COMPOUND),
+        ("prepare-delivery", TaskForm.PRIMITIVE),
+        ("continue-delivery", TaskForm.PRIMITIVE),
+    ):
         goal_signature = step if form is TaskForm.PRIMITIVE else signature
         level = levels.get(name)
         if level:
             goal_signature = GoalSignature(
-                name, 1, params, outputs,
-                "A part of the user's goal; its goal parameter says what this part has to achieve.", ())
+                name,
+                1,
+                params,
+                outputs,
+                "A part of the user's goal; its goal parameter says what this part has to achieve.",
+                (),
+            )
         input_ports: tuple[Any, ...] = ()
         if name == "continue-delivery":
             goal_signature = continuation
             # 2026-10-09 第 4 条：与产品同形——输入端口接多个上游，集合、按做法里数组的先后
-            input_ports = (PortSpec("delivery", outputs, cardinality=PortCardinality.SET,
-                                    ordering=PortOrdering.EXPLICIT),)
-        body: dict[str, Any] = {"name": name, "form": str(form), "signature": goal_signature.to_json(),
-                                "ports": [p.to_json() for p in ports]}
+            input_ports = (
+                PortSpec(
+                    "delivery",
+                    outputs,
+                    cardinality=PortCardinality.SET,
+                    ordering=PortOrdering.EXPLICIT,
+                ),
+            )
+        body: dict[str, Any] = {
+            "name": name,
+            "form": str(form),
+            "signature": goal_signature.to_json(),
+            "ports": [p.to_json() for p in ports],
+        }
         if input_ports:
             body["input_ports"] = [p.to_json() for p in input_ports]
         if level:
@@ -90,18 +133,40 @@ def user_goal_world(loop: Any, mission: Any) -> Any:
         effect_identity = "desktop.attempt-workspace" if form is TaskForm.PRIMITIVE else None
         if effect_identity:
             body["effect_identity"] = effect_identity
-        world.catalog.register(TaskTypeSpec(
-            task_type_ref=VersionedRef(name, 1, content_hash_of(body)), form=form, goal_signature=goal_signature,
-            input_ports=input_ports, output_ports=ports, parameter_schema_ref=params, output_schema_ref=outputs,
-            operator_ref=(VersionedRef("user.workspace-worker", 1, content_hash_of({"capability": "workspace.prepare"}))
-                          if form is TaskForm.PRIMITIVE else None),
-            required_capabilities=("workspace.prepare",) if form is TaskForm.PRIMITIVE else (),
-            side_effect_kind=SideEffectKind.LOCAL_WRITE if form is TaskForm.PRIMITIVE else SideEffectKind.NONE,
-            reversible=True, domain="user", refinement_level=level, effect_identity=effect_identity,
-        ))
+        world.catalog.register(
+            TaskTypeSpec(
+                task_type_ref=VersionedRef(name, 1, content_hash_of(body)),
+                form=form,
+                goal_signature=goal_signature,
+                input_ports=input_ports,
+                output_ports=ports,
+                parameter_schema_ref=params,
+                output_schema_ref=outputs,
+                operator_ref=(
+                    VersionedRef(
+                        "user.workspace-worker",
+                        1,
+                        content_hash_of({"capability": "workspace.prepare"}),
+                    )
+                    if form is TaskForm.PRIMITIVE
+                    else None
+                ),
+                required_capabilities=("workspace.prepare",) if form is TaskForm.PRIMITIVE else (),
+                side_effect_kind=SideEffectKind.LOCAL_WRITE
+                if form is TaskForm.PRIMITIVE
+                else SideEffectKind.NONE,
+                reversible=True,
+                domain="user",
+                refinement_level=level,
+                effect_identity=effect_identity,
+            )
+        )
     offered = set(mission.allowed_tools)
-    world.records = capability_records(world.catalog, capability_layers={"workspace.prepare": None},
-        unauthorized=() if set(DEFAULT_TOOLS) <= offered else ("workspace.prepare",))
+    world.records = capability_records(
+        world.catalog,
+        capability_layers={"workspace.prepare": None},
+        unauthorized=() if set(DEFAULT_TOOLS) <= offered else ("workspace.prepare",),
+    )
     return world
 
 
@@ -121,8 +186,7 @@ class ProductWorld:
 
     def create(self, request: Mapping[str, Any]) -> dict[str, Any]:
         """Create a user Mission the product way (root and TaskGraph binding in one transaction)."""
-        body = {"budget": {"max_tokens": 8_000_000, "max_attempts": 12},
-                **dict(request)}
+        body = {"budget": {"max_tokens": 8_000_000, "max_attempts": 12}, **dict(request)}
         return self.deployment.create_mission(self.loop, self.control, body)
 
     async def drain(self, *, timeout: float = 30.0) -> bool:
@@ -135,21 +199,35 @@ class ProductWorld:
         await self.deployment.between_cycles(auto=self.auto)
         return True
 
-    async def run_until_settled(self, mission_id: str, *, rounds: int = 12, timeout: float = 30.0) -> Any:
+    async def run_until_settled(
+        self, mission_id: str, *, rounds: int = 12, timeout: float = 30.0
+    ) -> Any:
         mission = self.store.get_mission(mission_id)
         for _ in range(rounds):
             await self.drain(timeout=timeout)
             mission = self.store.get_mission(mission_id)
-            if str(getattr(mission.status, "value", mission.status)) in {"COMPLETED", "FAILED", "STOPPED", "CANCELLED"}:
+            if str(getattr(mission.status, "value", mission.status)) in {
+                "COMPLETED",
+                "FAILED",
+                "STOPPED",
+                "CANCELLED",
+            }:
                 break
         return mission
 
 
 @asynccontextmanager
 async def product_world(
-    root: Path, provider: Any, *, auto: bool = True, tenant_id: str = TENANT, principal: Any = None,
-    world_factory: Callable[[Any, Any], Any] = user_goal_world, names: RootNames = USER_GOAL_NAMES,
-    allowed_tools: tuple[str, ...] = DEFAULT_TOOLS, connectors: Mapping[str, Any] | None = None,
+    root: Path,
+    provider: Any,
+    *,
+    auto: bool = True,
+    tenant_id: str = TENANT,
+    principal: Any = None,
+    world_factory: Callable[[Any, Any], Any] = user_goal_world,
+    names: RootNames = USER_GOAL_NAMES,
+    allowed_tools: tuple[str, ...] = DEFAULT_TOOLS,
+    connectors: Mapping[str, Any] | None = None,
     root_parameters: Callable[[Any], dict[str, Any]] | None = None,
     model: str = "agent-model",
     **config: Any,
@@ -169,14 +247,25 @@ async def product_world(
     principal = principal or Principal("product-world-user")
     counter = FixtureWordCounter()
     cfg = OrchestratorConfig(evidence_root=Path(root), model=model, **config)
-    native = NativePools(tenant_id=tenant_id, principal_id=principal.principal_id, allowed_tools=allowed_tools,
-                         meter_factory=counter.meter_factory)
-    options = pool_options(cfg, native=native, provider=provider, counter=counter, provider_kind="fixtures")
+    native = NativePools(
+        tenant_id=tenant_id,
+        principal_id=principal.principal_id,
+        allowed_tools=allowed_tools,
+        meter_factory=counter.meter_factory,
+    )
+    options = pool_options(
+        cfg, native=native, provider=provider, counter=counter, provider_kind="fixtures"
+    )
     world_holder: dict[str, Any] = {}
     deployment = UserMissionDeployment(
-        tenant_id=tenant_id, principal=principal, world_factory=world_factory, names=names,
-        host_fingerprint="ab" * 32, notify=lambda payload: world_holder["world"].notices.append(dict(payload)),
-        **({} if root_parameters is None else {"root_parameters": root_parameters}))
+        tenant_id=tenant_id,
+        principal=principal,
+        world_factory=world_factory,
+        names=names,
+        host_fingerprint="ab" * 32,
+        notify=lambda payload: world_holder["world"].notices.append(dict(payload)),
+        **({} if root_parameters is None else {"root_parameters": root_parameters}),
+    )
 
     def assemble(orchestrator: Any) -> None:
         deployment.assemble(orchestrator)
@@ -184,14 +273,28 @@ async def product_world(
 
     if connectors is not None:
         options = {**options, "connectors": dict(connectors)}
-    async with Orchestrator(cfg, provider, owner="product-world", startup_assembly=assemble,
-                            assurance_root_setup=deployment.assurance_root_setup(), **options) as loop:
+    async with Orchestrator(
+        cfg,
+        provider,
+        owner="product-world",
+        startup_assembly=assemble,
+        assurance_root_setup=deployment.assurance_root_setup(),
+        **options,
+    ) as loop:
         control = MissionControlV1(loop, tenant_id=tenant_id, principal=principal)
         deployment.bind(loop, control)
-        world = ProductWorld(loop=loop, control=control, deployment=deployment, native=native,
-                             provider=provider, auto=auto)
+        world = ProductWorld(
+            loop=loop,
+            control=control,
+            deployment=deployment,
+            native=native,
+            provider=provider,
+            auto=auto,
+        )
         world_holder["world"] = world
-        loop.set_between_cycles(lambda: deployment.between_cycles(auto=world.auto), every_seconds=0.0)
+        loop.set_between_cycles(
+            lambda: deployment.between_cycles(auto=world.auto), every_seconds=0.0
+        )
         try:
             yield world
         finally:

@@ -84,7 +84,9 @@ def _execution_sources(store: Store, intent_id: str, profiles: Any):
     action = store.get_action(materialized["action_key"])
     link = PlanningAdmissionStore(store).get_operation_action_link(materialized["operation_id"])
     if action is None or link is None:
-        raise OperationOutcomeError("OP_OUTCOME_SOURCE_UNAVAILABLE", "materialized without action or link")
+        raise OperationOutcomeError(
+            "OP_OUTCOME_SOURCE_UNAVAILABLE", "materialized without action or link"
+        )
     if action["state"] != "SUCCEEDED":
         raise OperationOutcomeError("OP_OUTCOME_PENDING")
     if not action.get("receipt"):
@@ -132,7 +134,8 @@ def human_ruling_of(store: Store, action: Any) -> dict[str, Any] | None:
     if claim is None:
         return None
     overrides = [
-        item for item in store.list_overrides(str(action["mission_id"]))
+        item
+        for item in store.list_overrides(str(action["mission_id"]))
         if item.get("override_id") == claim.get("override_id")
     ]
     if (
@@ -142,22 +145,29 @@ def human_ruling_of(store: Store, action: Any) -> dict[str, Any] | None:
         or overrides[0].get("outcome") != "succeeded"
         or human_ruling_receipt(action, overrides[0]).to_json() != receipt.to_json()
     ):
-        raise OperationOutcomeError("OP_OUTCOME_SOURCE_UNAVAILABLE", "ruling receipt has no matching override")
+        raise OperationOutcomeError(
+            "OP_OUTCOME_SOURCE_UNAVAILABLE", "ruling receipt has no matching override"
+        )
     return dict(overrides[0])
 
 
 HUMAN_RULING_SOURCE = "HUMAN_RULING"
 
 
-def _ruling_observation(ruling: dict[str, Any], receipt: Receipt, *, milestone: str,
-                        handoffs: tuple[Any, ...]) -> ObservedOperationMilestone:
+def _ruling_observation(
+    ruling: dict[str, Any], receipt: Receipt, *, milestone: str, handoffs: tuple[Any, ...]
+) -> ObservedOperationMilestone:
     """人裁定"已生效"的观察事实：外部系统没有回话，连接器的解读器无从核对，事实就是这份裁定本身
     （谁、何时、依据）。不执行任何登记检查，也不假装执行过（``executed_check_ids`` 为空）；它够不够
     这项效果的要求，由结果审阅员判——和连接器回执走同一条审阅、验收路径。"""
     return ObservedOperationMilestone(
         milestone,
-        {"receipt": receipt.to_json(), "ruling": ruling, "milestone_source": HUMAN_RULING_SOURCE,
-         "executed_check_ids": []},
+        {
+            "receipt": receipt.to_json(),
+            "ruling": ruling,
+            "milestone_source": HUMAN_RULING_SOURCE,
+            "executed_check_ids": [],
+        },
         tuple(str(event.id) for event in handoffs),
     )
 
@@ -167,8 +177,9 @@ def _facts_differ(facts: Any, *, ruling: dict[str, Any] | None, resolved: Any) -
     or the frozen parameters the connector receipt was checked against)."""
     if ruling is not None:
         return facts.get("ruling") != ruling or facts.get("milestone_source") != HUMAN_RULING_SOURCE
-    return (facts.get("content_hash") != resolved.parameters.effective_params.get("content_hash")
-            or facts.get("bytes") != resolved.parameters.effective_params.get("size"))
+    return facts.get("content_hash") != resolved.parameters.effective_params.get(
+        "content_hash"
+    ) or facts.get("bytes") != resolved.parameters.effective_params.get("size")
 
 
 @dataclass(frozen=True, slots=True)
@@ -203,15 +214,21 @@ def prepare_operation_outcome_review(
         if (
             original is None
             or original["document"].task_ref.id != owner.task_ref.id
-            or int(original["document"].requirements_ref.revision) > int(owner.requirements_ref.revision)
+            or int(original["document"].requirements_ref.revision)
+            > int(owner.requirements_ref.revision)
             or owner.obligation_id != resolved.envelope.obligation_id
         ):
             raise OperationOutcomeError("OP_EFFECT_SCOPE_STALE", "executed owner differs")
         slot = spec.effect(resolved.effect_contract.effect_key)
-        policy_registry = (profiles.policy_registry(action["connector"], action["operation"])
-                           if callable(getattr(profiles, "policy_registry", None)) else profiles)
-        if (slot.milestone_policy_ref != policy_registry.milestone_policy_ref
-            or slot.evidence_policy_ref != policy_registry.evidence_policy_ref):
+        policy_registry = (
+            profiles.policy_registry(action["connector"], action["operation"])
+            if callable(getattr(profiles, "policy_registry", None))
+            else profiles
+        )
+        if (
+            slot.milestone_policy_ref != policy_registry.milestone_policy_ref
+            or slot.evidence_policy_ref != policy_registry.evidence_policy_ref
+        ):
             raise OperationOutcomeError("OP_OUTCOME_MILESTONE_UNVERIFIABLE", "policy differs")
         profile = require_connector_profile(
             profiles,
@@ -243,19 +260,27 @@ def prepare_operation_outcome_review(
             raise OperationOutcomeError("OP_OUTCOME_SOURCE_UNAVAILABLE", "producer missing")
         ruling = human_ruling_of(store, action)
     if ruling is not None:
-        observed = _ruling_observation(ruling, receipt, milestone=slot.required_milestone, handoffs=handoffs)
+        observed = _ruling_observation(
+            ruling, receipt, milestone=slot.required_milestone, handoffs=handoffs
+        )
     else:
-        observed = resolve_receipt_adapter(profile, connectors.get(action["connector"]), profiles=profiles).interpret(
+        observed = resolve_receipt_adapter(
+            profile, connectors.get(action["connector"]), profiles=profiles
+        ).interpret(
             receipt,
             action=action,
             parameters=resolved.parameters,
             handoff_events=handoffs,
             required_milestone=slot.required_milestone,
         )
-    if (observed.milestone != slot.required_milestone
-            or len(set(observed.covered_handoff_ids)) != len(handoffs)
-            or set(observed.covered_handoff_ids) != {str(event.id) for event in handoffs}):
-        raise OperationOutcomeError("OP_OUTCOME_MILESTONE_UNVERIFIABLE", "adapter milestone or coverage differs")
+    if (
+        observed.milestone != slot.required_milestone
+        or len(set(observed.covered_handoff_ids)) != len(handoffs)
+        or set(observed.covered_handoff_ids) != {str(event.id) for event in handoffs}
+    ):
+        raise OperationOutcomeError(
+            "OP_OUTCOME_MILESTONE_UNVERIFIABLE", "adapter milestone or coverage differs"
+        )
     observation = {
         "kind": "operation_outcome_observation",
         "mission_id": row["mission_id"],
@@ -270,7 +295,9 @@ def prepare_operation_outcome_review(
         "facts": dict(observed.source_facts),
     }
     source_hash = content_hash_of(observation)
-    source_ref = CompletionPinV1(id="op-observation-" + source_hash[:32], revision=1, content_hash=source_hash)
+    source_ref = CompletionPinV1(
+        id="op-observation-" + source_hash[:32], revision=1, content_hash=source_hash
+    )
     manifest = {
         "source_receipt_refs": [source_ref.to_json()],
         "covered_handoff_ids": sorted(observed.covered_handoff_ids),
@@ -420,7 +447,10 @@ def persist_operation_outcome_review(
     # 重审版清单另起一个登记号（登记按任务+步骤+登记号唯一；读取都按清单哈希）。
     retake = ":review-retake" if prepared.manifest.get("review_retake") else ""
     htn.insert_input_manifest(
-        binding.mission_id, owner.task_ref.id, prepared.manifest, request_id=binding.intent_id + retake
+        binding.mission_id,
+        owner.task_ref.id,
+        prepared.manifest,
+        request_id=binding.intent_id + retake,
     )
     try:
         existing_package = htn.get_review_package(str(prepared.package.package_id))
@@ -466,22 +496,39 @@ def validate_scoped_outcome_command(
     if row is None or row["review_package_id"] != str(command.package.package_id):
         raise OperationOutcomeError("OP_REVIEW_BINDING_MISMATCH")
     binding = row["document"]
-    source, materialized, action, resolved = _execution_sources(store, binding.intent_id, runtime.profiles)
-    profile = require_connector_profile(runtime.profiles, connector_id=action["connector"],
-        operation_name=action["operation"], expected_hash=resolved.parameters.connector_profile_hash)
+    source, materialized, action, resolved = _execution_sources(
+        store, binding.intent_id, runtime.profiles
+    )
+    profile = require_connector_profile(
+        runtime.profiles,
+        connector_id=action["connector"],
+        operation_name=action["operation"],
+        expected_hash=resolved.parameters.connector_profile_hash,
+    )
     frozen_identity = {
         "operation_id": materialized["operation_id"],
         "operation_occurrence_id": materialized["operation_occurrence_id"],
-        "action_key": action["action_key"], "action_version": action["version"],
-        "request_hash": source["request_hash"], "candidate_file_hash": source["candidate_file_hash"],
-        "parameters_content_hash": source["parameters_content_hash"], "params_hash": source["params_hash"],
-        "effect_contract_hash": source["effect_content_hash"], "link_hash": materialized["link_hash"],
-        "connector_profile_hash": profile.content_hash(), "namespace_hash": content_hash_of(dict(profile.namespace)),
-        "target_identity_hash": content_hash_of({"normalized_target_ref": action["target"],
-            "expected_target_version": resolved.parameters.expected_target_version}),
+        "action_key": action["action_key"],
+        "action_version": action["version"],
+        "request_hash": source["request_hash"],
+        "candidate_file_hash": source["candidate_file_hash"],
+        "parameters_content_hash": source["parameters_content_hash"],
+        "params_hash": source["params_hash"],
+        "effect_contract_hash": source["effect_content_hash"],
+        "link_hash": materialized["link_hash"],
+        "connector_profile_hash": profile.content_hash(),
+        "namespace_hash": content_hash_of(dict(profile.namespace)),
+        "target_identity_hash": content_hash_of(
+            {
+                "normalized_target_ref": action["target"],
+                "expected_target_version": resolved.parameters.expected_target_version,
+            }
+        ),
     }
     if any(getattr(binding, key) != value for key, value in frozen_identity.items()):
-        raise OperationOutcomeError("OP_OUTCOME_SOURCE_UNAVAILABLE", "frozen execution chain differs")
+        raise OperationOutcomeError(
+            "OP_OUTCOME_SOURCE_UNAVAILABLE", "frozen execution chain differs"
+        )
     owner, spec, requirements = _effect_owner(store, command.mission_id, binding.effect_key)
     slot = spec.effect(binding.effect_key)
     if (
@@ -524,43 +571,73 @@ def validate_scoped_outcome_command(
         events = {event.id: event for event in store.iter_events(command.mission_id)}
         original = receipt.get("runtime_event", {})
         event = events.get(original.get("id"))
-        handoffs = tuple(event for event in events.values() if event.type == "ActionHandedOff"
-            and event.payload.get("action_key") == action["action_key"])
+        handoffs = tuple(
+            event
+            for event in events.values()
+            if event.type == "ActionHandedOff"
+            and event.payload.get("action_key") == action["action_key"]
+        )
         facts = receipt.get("facts", {})
-        if (receipt.get("kind") != "operation_outcome_observation"
+        if (
+            receipt.get("kind") != "operation_outcome_observation"
             or receipt.get("mission_id") != command.mission_id
             or receipt.get("action_key") != action["action_key"]
             or receipt.get("receipt") != action["receipt"]
             or receipt.get("profile_hash") != profile.content_hash()
             or receipt.get("adapter") != dict(profile.receipt_adapter)
             or receipt.get("milestone") != binding.observed_milestone
-            or event is None or event.to_json() != original
+            or event is None
+            or event.to_json() != original
             or event.type not in {"ActionSucceeded", "ActionReconciled"}
             or event.payload.get("state") != "SUCCEEDED"
-            or event.payload.get("receipt_hash") != Receipt.from_json(action["receipt"]).receipt_hash
+            or event.payload.get("receipt_hash")
+            != Receipt.from_json(action["receipt"]).receipt_hash
             or receipt.get("handoffs") != [event.to_json() for event in handoffs]
             or tuple(sorted(event.id for event in handoffs)) != binding.covered_handoff_ids
             or len(handoffs) != action["handoffs"]
             or facts.get("receipt") != action["receipt"]
             or _facts_differ(facts, ruling=ruling, resolved=resolved)
-            or any(not set(c.required_evidence_policy.required_check_ids).issubset(
-                facts.get("executed_check_ids", ())) for c in criteria)):
-            raise OperationOutcomeError("OP_OUTCOME_SOURCE_UNAVAILABLE", "original runtime evidence differs")
-    manifest = {"source_receipt_refs": [ref.to_json() for ref in binding.source_receipt_refs],
+            or any(
+                not set(c.required_evidence_policy.required_check_ids).issubset(
+                    facts.get("executed_check_ids", ())
+                )
+                for c in criteria
+            )
+        ):
+            raise OperationOutcomeError(
+                "OP_OUTCOME_SOURCE_UNAVAILABLE", "original runtime evidence differs"
+            )
+    manifest = {
+        "source_receipt_refs": [ref.to_json() for ref in binding.source_receipt_refs],
         "covered_handoff_ids": list(binding.covered_handoff_ids),
-        "receipt_adapter": dict(profile.receipt_adapter), "milestone_policy_ref": slot.milestone_policy_ref.to_json()}
+        "receipt_adapter": dict(profile.receipt_adapter),
+        "milestone_policy_ref": slot.milestone_policy_ref.to_json(),
+    }
     producer = store.get_receipt(str(row["producer_receipt_id"]))
-    if (row["source_manifest_hash"] not in {content_hash_of(manifest),
-                                            content_hash_of({**manifest, "review_retake": 1})}
+    if (
+        row["source_manifest_hash"]
+        not in {content_hash_of(manifest), content_hash_of({**manifest, "review_retake": 1})}
         or command.package.binding.input_manifest_hash != row["source_manifest_hash"]
-        or command.package.binding.subject_ref != TypedRef(TypedRefKind.OPERATION,
-            binding.operation_id, 1, resolved.envelope.content_hash())
-        or command.package.candidate_refs != (TypedRef(TypedRefKind.TOOL_RECEIPT,
-            binding_id, 1, binding.content_hash(), produced_by=Provenance.TOOL),)
-        or producer is None or producer.get("kind") != "operation_outcome_review_prepared"
+        or command.package.binding.subject_ref
+        != TypedRef(
+            TypedRefKind.OPERATION, binding.operation_id, 1, resolved.envelope.content_hash()
+        )
+        or command.package.candidate_refs
+        != (
+            TypedRef(
+                TypedRefKind.TOOL_RECEIPT,
+                binding_id,
+                1,
+                binding.content_hash(),
+                produced_by=Provenance.TOOL,
+            ),
+        )
+        or producer is None
+        or producer.get("kind") != "operation_outcome_review_prepared"
         or producer.get("mission_id") != command.mission_id
         or producer.get("subject_id") != binding_id
-        or producer.get("binding_hash") != binding.content_hash()):
+        or producer.get("binding_hash") != binding.content_hash()
+    ):
         raise OperationOutcomeError("OP_REVIEW_BINDING_MISMATCH", "outcome producer differs")
     if any(
         item.subject_id in {command.task_id, binding.operation_id, binding_id}
@@ -706,9 +783,7 @@ def _accept_operation_outcome(commit: Any, mission_id: str, binding_id: str, can
             issued_by=issuer,
             source={"outcome_binding_id": binding_id},
         )
-        receipt = commit.accept_review(
-            command, ResolutionPrincipal(issuer)
-        )
+        receipt = commit.accept_review(command, ResolutionPrincipal(issuer))
         completion = read_occurrence_completion(store, mission_id, owner.occurrence_id)
         if (
             semantics.form is TaskForm.PRIMITIVE
@@ -762,11 +837,15 @@ def outcome_retake_due(store: Store, mission_id: str, bindings: Any) -> bool:
     if len(items) != 1:
         return False
     only = items[0]
-    if OperationCompletionStore(store).get_acceptance_scope_exact(mission_id, "acc-" + only["binding_id"]):
+    if OperationCompletionStore(store).get_acceptance_scope_exact(
+        mission_id, "acc-" + only["binding_id"]
+    ):
         return False
     if HtnStore(store).official_review_record(only["review_package_id"]) is not None:
         return False
-    return review_exhausted_by_interruption(store, outcome_review_key(mission_id, only["binding_id"]))
+    return review_exhausted_by_interruption(
+        store, outcome_review_key(mission_id, only["binding_id"])
+    )
 
 
 def outcome_exhaustion_is_final(store: Store, mission_id: str, review_key: str) -> bool:
@@ -778,7 +857,8 @@ def outcome_exhaustion_is_final(store: Store, mission_id: str, review_key: str) 
     completion = OperationCompletionStore(store)
     rows = store.connection.execute(
         "SELECT binding_id, intent_id FROM operation_outcome_review_bindings WHERE mission_id=?",
-        (mission_id,)).fetchall()
+        (mission_id,),
+    ).fetchall()
     intent = next((r[1] for r in rows if outcome_review_key(mission_id, r[0]) == review_key), None)
     if intent is None:
         return True
@@ -786,6 +866,10 @@ def outcome_exhaustion_is_final(store: Store, mission_id: str, review_key: str) 
     if len(siblings) == 1:
         return not outcome_retake_due(store, mission_id, siblings)
     # 重审已开：只有重审也用完才算到头（重审自己的记录会单独出现在用完列表里）。
-    exhausted = {r[0] for r in store.connection.execute(
-        "SELECT subject_id FROM commit_receipts WHERE kind='AssuranceReviewFormatExhausted'").fetchall()}
+    exhausted = {
+        r[0]
+        for r in store.connection.execute(
+            "SELECT subject_id FROM commit_receipts WHERE kind='AssuranceReviewFormatExhausted'"
+        ).fetchall()
+    }
     return all(outcome_review_key(mission_id, item["binding_id"]) in exhausted for item in siblings)

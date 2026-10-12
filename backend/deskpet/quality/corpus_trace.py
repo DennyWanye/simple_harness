@@ -1,4 +1,5 @@
 """Independent public SDK observations, including failed and nonterminal attempts."""
+
 import hashlib
 import json
 from collections.abc import Mapping
@@ -21,16 +22,33 @@ def wire(value):
 
 
 def digest(value):
-    return hashlib.sha256(json.dumps(wire(value), ensure_ascii=False, sort_keys=True,
-        separators=(",", ":"), allow_nan=False).encode()).hexdigest()
+    return hashlib.sha256(
+        json.dumps(
+            wire(value), ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False
+        ).encode()
+    ).hexdigest()
 
 
 def _provider_wire(invocation):
-    return {key: wire(getattr(invocation, key)) for key in (
-        "invocation_id", "request_id", "state", "request_fingerprint",
-        "request_json", "response_json", "usage_json", "error_code",
-        "claimed_at", "handed_off_at", "settled_at", "version",
-        "handoff_attempt", "rehandoff_count")}
+    return {
+        key: wire(getattr(invocation, key))
+        for key in (
+            "invocation_id",
+            "request_id",
+            "state",
+            "request_fingerprint",
+            "request_json",
+            "response_json",
+            "usage_json",
+            "error_code",
+            "claimed_at",
+            "handed_off_at",
+            "settled_at",
+            "version",
+            "handoff_attempt",
+            "rehandoff_count",
+        )
+    }
 
 
 def _read_providers(uow, run_id, retained):
@@ -82,12 +100,20 @@ def read_public_trace(uow, run_id):
     from simple_harness import RunId
     from simple_harness.execution.audit import audit_reference
 
-    result = dict(sdk_run_id=run_id, terminal=None, terminal_status="UNAVAILABLE",
-        providers=[], operation_audit=None, observation_errors={})
+    result = dict(
+        sdk_run_id=run_id,
+        terminal=None,
+        terminal_status="UNAVAILABLE",
+        providers=[],
+        operation_audit=None,
+        observation_errors={},
+    )
     try:
         terminal = uow.read_run_terminal_record(RunId(run_id))
-        result.update(terminal=wire(terminal),
-            terminal_status="NONTERMINAL" if terminal is None else "TERMINAL")
+        result.update(
+            terminal=wire(terminal),
+            terminal_status="NONTERMINAL" if terminal is None else "TERMINAL",
+        )
     except Exception as exc:
         result["observation_errors"]["terminal"] = type(exc).__name__
     try:
@@ -101,16 +127,22 @@ def read_public_trace(uow, run_id):
             raise ValueError("corpus_operation_trace_incomplete")
         if audit.coverage_gaps:
             raise ValueError("corpus_operation_audit_coverage_gap")
-        expected = {op.provider_invocation_id for op in audit.operations
-            if op.kind == "provider" and op.record_type == "head"}
-        observed = {audit_reference("provider", item["invocation_id"]) for item in result["providers"]}
+        expected = {
+            op.provider_invocation_id
+            for op in audit.operations
+            if op.kind == "provider" and op.record_type == "head"
+        }
+        observed = {
+            audit_reference("provider", item["invocation_id"]) for item in result["providers"]
+        }
         if expected != observed:
             raise ValueError("corpus_provider_audit_projection_incomplete")
     except Exception as exc:
         result["observation_errors"]["operation_audit"] = type(exc).__name__
     result["trace_status"] = "PARTIAL" if result["observation_errors"] else "COMPLETE"
     result["provider_observation_complete"] = not any(
-        key in result["observation_errors"] for key in ("providers", "operation_audit"))
+        key in result["observation_errors"] for key in ("providers", "operation_audit")
+    )
     return {**result, "trace_hash": digest(result)}
 
 
@@ -137,8 +169,9 @@ async def collect_bound_observations(*, stack, run_id, text, route_reader, queue
         result["observation_errors"]["route_audit"] = type(exc).__name__
     if "route_audit" in result:
         try:
-            _, effects = stack.read_primary_dependency_facts(run_id,
-                effect_ids=tuple(r["effect_id"] for r in result["route_audit"]))
+            _, effects = stack.read_primary_dependency_facts(
+                run_id, effect_ids=tuple(r["effect_id"] for r in result["route_audit"])
+            )
             result["route_effects"] = wire(effects)
             persist("route_effects", result["route_effects"])
         except Exception as exc:

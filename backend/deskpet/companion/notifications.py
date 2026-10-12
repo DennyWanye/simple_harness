@@ -86,8 +86,7 @@ class CompanionProjectionVisibilityPort:
                 continue
             if (
                 str(row.get("projection_owner_id") or "") != owner.profile_id
-                or int(row.get("projection_owner_generation") or 0)
-                != owner.profile_generation
+                or int(row.get("projection_owner_generation") or 0) != owner.profile_generation
             ):
                 continue
             event_id = str(row.get("projection_event_id") or "")
@@ -95,13 +94,10 @@ class CompanionProjectionVisibilityPort:
             if current is None or str(current.get("status")) == "superseded":
                 continue
             try:
-                current = await self._service.materialize_notification(
-                    frozen_identity, current
-                )
+                current = await self._service.materialize_notification(frozen_identity, current)
             except Exception as exc:
                 logger.warning(
-                    "companion_notification_materialize_failed "
-                    "notification_id=%s error=%s code=%s",
+                    "companion_notification_materialize_failed notification_id=%s error=%s code=%s",
                     event_id,
                     type(exc).__name__,
                     getattr(exc, "code", ""),
@@ -110,13 +106,10 @@ class CompanionProjectionVisibilityPort:
             notification = dict(current["notification"])
             redacted = str(current.get("status")) == "redacted"
             current_projection_hash = (
-                COMPANION_REDACTION_TOMBSTONE_HASH
-                if redacted
-                else str(current["payload_hash"])
+                COMPANION_REDACTION_TOMBSTONE_HASH if redacted else str(current["payload_hash"])
             )
             stale_projection = (
-                str(row.get("projection_payload_hash") or "")
-                != current_projection_hash
+                str(row.get("projection_payload_hash") or "") != current_projection_hash
             )
             if redacted or stale_projection:
                 notification = {
@@ -124,18 +117,14 @@ class CompanionProjectionVisibilityPort:
                     "kind": "companion_projection_tombstone",
                     "summary": "此成长记录已被遗忘。",
                     "detail_ref": None,
-                    "detail_version": str(
-                        notification.get("detail_version") or ""
-                    ),
+                    "detail_version": str(notification.get("detail_version") or ""),
                     "available_actions": [],
                 }
             if stale_projection:
                 self._service.wake_repair(
                     frozen_identity,
                     current,
-                    route_version=int(
-                        row.get("projection_route_version") or 0
-                    ),
+                    route_version=int(row.get("projection_route_version") or 0),
                 )
             events.append(
                 {
@@ -144,12 +133,8 @@ class CompanionProjectionVisibilityPort:
                     "profile_generation": owner.profile_generation,
                     "session_id": str(row.get("session_id") or ""),
                     "seq": int(current.get("sequence") or row.get("id") or 0),
-                    "route_version": int(
-                        row.get("projection_route_version") or 0
-                    ),
-                    "redaction_version": int(
-                        current.get("redaction_version") or 0
-                    ),
+                    "route_version": int(row.get("projection_route_version") or 0),
+                    "redaction_version": int(current.get("redaction_version") or 0),
                     "notification": notification,
                     **(
                         {"decision": dict(current["decision"])}
@@ -200,21 +185,15 @@ class CompanionNotificationService:
         current = dict(notification)
         envelope = dict(current["notification"])
         if self.detail_query is not None and str(current.get("status")) != "redacted":
-            envelope["detail_version"] = (
-                await self.detail_query.current_detail_version(
-                    frozen_identity=frozen_identity,
-                    notification=current,
-                )
+            envelope["detail_version"] = await self.detail_query.current_detail_version(
+                frozen_identity=frozen_identity,
+                notification=current,
             )
         else:
-            envelope["detail_version"] = str(
-                envelope.get("detail_version") or ""
-            )
+            envelope["detail_version"] = str(envelope.get("detail_version") or "")
         current["notification"] = envelope
         detail = current.get("detail")
-        if isinstance(detail, Mapping) and isinstance(
-            detail.get("decision"), Mapping
-        ):
+        if isinstance(detail, Mapping) and isinstance(detail.get("decision"), Mapping):
             decision = dict(detail["decision"])
             nonce = str(decision.get("nonce") or "")
             with self.store.read() as db:
@@ -229,9 +208,7 @@ class CompanionNotificationService:
                 ).fetchone()
             if consumed is not None:
                 decision["status"] = (
-                    "confirmed"
-                    if str(consumed["decision"]) == "activate"
-                    else "rejected"
+                    "confirmed" if str(consumed["decision"]) == "activate" else "rejected"
                 )
             elif self._parse_time(str(decision["expires_at"])) <= self._now():
                 decision["status"] = "expired"
@@ -261,9 +238,7 @@ class CompanionNotificationService:
         except Exception:
             return
         try:
-            asyncio.get_running_loop().create_task(
-                self.bind_and_drain(frozen_identity)
-            )
+            asyncio.get_running_loop().create_task(self.bind_and_drain(frozen_identity))
         except RuntimeError:
             pass
 
@@ -295,22 +270,18 @@ class CompanionNotificationService:
 
     async def drain(self, frozen_identity: Any, *, max_items: int = 1000) -> bool:
         owner = frozen_identity.owner
-        if not await self._drain_notification_sources(
-            owner, max_items=max_items
-        ):
+        if not await self._drain_notification_sources(owner, max_items=max_items):
             return False
         self.store.finalize_due_digest_notifications(
             owner,
             before=self._utc_text(self._now()),
         )
         for _ in range(max_items):
-            route_claim = (
-                await self.session_db.claim_companion_projection_route_outbox(
-                    self.claim_owner,
-                    self.lease_seconds,
-                    profile_id=owner.profile_id,
-                    profile_generation=owner.profile_generation,
-                )
+            route_claim = await self.session_db.claim_companion_projection_route_outbox(
+                self.claim_owner,
+                self.lease_seconds,
+                profile_id=owner.profile_id,
+                profile_generation=owner.profile_generation,
             )
             if route_claim is None:
                 break
@@ -347,8 +318,10 @@ class CompanionNotificationService:
                 projected = await self._project_claim(frozen_identity, claim)
             except Exception:
                 retry_at = (
-                    datetime.now(UTC) + timedelta(seconds=1)
-                ).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+                    (datetime.now(UTC) + timedelta(seconds=1))
+                    .isoformat(timespec="milliseconds")
+                    .replace("+00:00", "Z")
+                )
                 self.store.retry_outbox(
                     owner,
                     outbox_id=claim.item_id,
@@ -360,8 +333,10 @@ class CompanionNotificationService:
                 raise
             if not projected:
                 retry_at = (
-                    datetime.now(UTC) + timedelta(seconds=1)
-                ).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+                    (datetime.now(UTC) + timedelta(seconds=1))
+                    .isoformat(timespec="milliseconds")
+                    .replace("+00:00", "Z")
+                )
                 self.store.retry_outbox(
                     owner,
                     outbox_id=claim.item_id,
@@ -383,9 +358,7 @@ class CompanionNotificationService:
 
     @staticmethod
     def _utc_text(value: datetime) -> str:
-        return value.astimezone(UTC).isoformat(
-            timespec="milliseconds"
-        ).replace("+00:00", "Z")
+        return value.astimezone(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
     @staticmethod
     def _parse_time(value: str) -> datetime:
@@ -525,18 +498,10 @@ class CompanionNotificationService:
             action = str(payload.get("action") or "update")
             pack_id = str(payload.get("pack_id") or "capability")
             version = str(payload.get("version") or "")
-            changed = (
-                f"{pack_id}@{version}" if version else pack_id
-            )
+            changed = f"{pack_id}@{version}" if version else pack_id
             activated = action in {"install", "update"}
-            summary = (
-                f"已启用能力 {changed}"
-                if activated
-                else f"已完成能力{action}：{changed}"
-            )
-            refs = [
-                str(payload.get("activation_request_id") or event_id)
-            ]
+            summary = f"已启用能力 {changed}" if activated else f"已完成能力{action}：{changed}"
+            refs = [str(payload.get("activation_request_id") or event_id)]
             if payload.get("report_id"):
                 refs.append(str(payload["report_id"]))
             return _NotificationDraft(
@@ -555,11 +520,7 @@ class CompanionNotificationService:
                         }
                     ]
                 },
-                available_actions=(
-                    ("view_detail", "rollback")
-                    if activated
-                    else ("view_detail",)
-                ),
+                available_actions=(("view_detail", "rollback") if activated else ("view_detail",)),
                 important=True,
             )
         if event_kind == "evaluation_reported":
@@ -582,12 +543,8 @@ class CompanionNotificationService:
                             "id": event_id,
                             "verdict": verdict,
                             "why": reason,
-                            "results_root_hash": payload.get(
-                                "results_root_hash"
-                            ),
-                            "candidate_package_hash": payload.get(
-                                "candidate_package_hash"
-                            ),
+                            "results_root_hash": payload.get("results_root_hash"),
+                            "candidate_package_hash": payload.get("candidate_package_hash"),
                         }
                     ],
                     **({"decision": decision} if decision is not None else {}),
@@ -687,19 +644,13 @@ class CompanionNotificationService:
             "scope": str(row["target_scope"]),
             "scope_key": str(row["target_scope_key"]),
             "owner_key": str(row["target_owner_key"]),
-            "expected_binding_generation": int(
-                row["target_expected_binding_generation"]
-            ),
+            "expected_binding_generation": int(row["target_expected_binding_generation"]),
         }
         return {
             "kind": "activation",
             **challenge_facts,
             **(
-                {
-                    "candidate_code_digest": str(
-                        row["candidate_content_hash"]
-                    )
-                }
+                {"candidate_code_digest": str(row["candidate_content_hash"])}
                 if candidate_kind in {"code", "hook", "local_runtime"}
                 else {}
             ),
@@ -741,18 +692,11 @@ class CompanionNotificationService:
             projection_epoch=int(route_row["target_epoch"]),
             route_version=int(route_row["route_version"]),
         )
-        existing = await self.session_db.get_companion_projection(
-            trusted_owner, notification_id
-        )
+        existing = await self.session_db.get_companion_projection(trusted_owner, notification_id)
         redacted = str(current["status"]) == "redacted"
         if redacted:
-            old_hash = (
-                self.store.get_redaction_source_hash(owner, notification_id)
-                or (
-                    str(existing["projection_payload_hash"])
-                    if existing is not None
-                    else None
-                )
+            old_hash = self.store.get_redaction_source_hash(owner, notification_id) or (
+                str(existing["projection_payload_hash"]) if existing is not None else None
             )
             if not old_hash:
                 raise RuntimeError("projection_redaction_source_missing")
@@ -787,9 +731,7 @@ class CompanionNotificationService:
             )
 
         if existing is None:
-            result = await self.session_db.append_current_projection_if_absent(
-                projection, route
-            )
+            result = await self.session_db.append_current_projection_if_absent(projection, route)
         else:
             existing_hash = str(existing["projection_payload_hash"])
             if redacted and existing_hash != COMPANION_REDACTION_TOMBSTONE_HASH:
@@ -835,11 +777,7 @@ class CompanionNotificationService:
             )
         await self._emit(
             {
-                "type": (
-                    "companion_projection_retracted"
-                    if redacted
-                    else "companion_event"
-                ),
+                "type": ("companion_projection_retracted" if redacted else "companion_event"),
                 "payload": self._live_payload(current, route, redacted=redacted),
             }
         )
@@ -888,9 +826,7 @@ class CompanionNotificationService:
                         "kind": "companion_projection_tombstone",
                         "summary": "此成长记录已被遗忘。",
                         "detail_ref": None,
-                        "detail_version": str(
-                            current["notification"].get("detail_version") or ""
-                        ),
+                        "detail_version": str(current["notification"].get("detail_version") or ""),
                         "available_actions": [],
                     },
                     "tombstone": True,

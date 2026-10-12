@@ -24,9 +24,7 @@ class ProviderReasoningCapability:
     behavior: ReasoningBehavior
     request_style: ReasoningRequestStyle
     efforts: tuple[str, ...] = ()
-    preserve_reasoning: Literal["tool_loop", "all_turns", "not_required"] = (
-        "not_required"
-    )
+    preserve_reasoning: Literal["tool_loop", "all_turns", "not_required"] = "not_required"
 
 
 UNKNOWN_REASONING_CAPABILITY = ProviderReasoningCapability("unknown", "none")
@@ -88,9 +86,11 @@ def reasoning_wire_fields(
     if capability.behavior in {"unknown", "unsupported"}:
         return {}
 
-    raw_effort = str(
-        model_params.get("reasoning_effort") or model_params.get("effort") or ""
-    ).strip().lower()
+    raw_effort = (
+        str(model_params.get("reasoning_effort") or model_params.get("effort") or "")
+        .strip()
+        .lower()
+    )
     default_effort = "low" if mode == "fast" else "high"
     effort = raw_effort if raw_effort in capability.efforts else default_effort
     if effort not in capability.efforts:
@@ -98,9 +98,7 @@ def reasoning_wire_fields(
 
     fields: dict[str, object] = {}
     if capability.request_style == "thinking_object":
-        fields["thinking"] = {
-            "type": "disabled" if mode == "fast" else "enabled"
-        }
+        fields["thinking"] = {"type": "disabled" if mode == "fast" else "enabled"}
     elif capability.request_style == "effort_only" and capability.behavior == "always_on":
         # Fast on an always-thinking model means lower effort, never disabled.
         pass

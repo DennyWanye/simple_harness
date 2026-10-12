@@ -22,9 +22,7 @@ def _objects(path: Path, kind: str) -> set[str]:
     try:
         return {
             row[0]
-            for row in connection.execute(
-                "SELECT name FROM sqlite_master WHERE type=?", (kind,)
-            )
+            for row in connection.execute("SELECT name FROM sqlite_master WHERE type=?", (kind,))
         }
     finally:
         connection.close()
@@ -33,9 +31,7 @@ def _objects(path: Path, kind: str) -> set[str]:
 def test_a_new_library_has_no_criterion_assessments(tmp_path) -> None:
     Store.open(tmp_path / "orchestrator.db").close()
     assert TABLE not in _objects(tmp_path / "orchestrator.db", "table")
-    assert not {
-        name for name in _objects(tmp_path / "orchestrator.db", "trigger") if TABLE in name
-    }
+    assert not {name for name in _objects(tmp_path / "orchestrator.db", "trigger") if TABLE in name}
 
 
 def test_migration_26_text_still_puts_its_barrier_on_the_table() -> None:

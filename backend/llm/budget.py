@@ -16,6 +16,7 @@ Why a separate budget tracker from backend/billing/?
     doesn't understand Anthropic cache pricing, and coercing it would
     break the P3 cost-cap behaviors users already rely on.
 """
+
 from __future__ import annotations
 
 import datetime as _dt

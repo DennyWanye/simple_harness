@@ -12,6 +12,7 @@
 跑法：
     G:\\projects\\deskpet\\backend\\.venv\\Scripts\\python.exe scripts/manual_fake_completion_smoke.py
 """
+
 from __future__ import annotations
 
 import sys
@@ -30,8 +31,7 @@ from paths import user_data_dir
 
 metrics_path = Path(user_data_dir()) / "metrics.jsonl"
 before_lines = (
-    metrics_path.read_text(encoding="utf-8").splitlines()
-    if metrics_path.exists() else []
+    metrics_path.read_text(encoding="utf-8").splitlines() if metrics_path.exists() else []
 )
 print(f"\n[1] metrics.jsonl 路径: {metrics_path}")
 print(f"    前 总行数: {len(before_lines)}")
@@ -71,26 +71,26 @@ if outcome.passed or not outcome.unmatched_claims:
 # 4. 模拟 agent_loop 等价路径：emit verify_gate_nudge_injected
 from observability.metrics_sink import record as _verify_metric
 
-ok = _verify_metric("verify_gate_nudge_injected", {
-    "nudge_count": 1,
-    "count": len(outcome.unmatched_claims),
-    "ok": False,  # ephemeral_pass=False
-})
+ok = _verify_metric(
+    "verify_gate_nudge_injected",
+    {
+        "nudge_count": 1,
+        "count": len(outcome.unmatched_claims),
+        "ok": False,  # ephemeral_pass=False
+    },
+)
 print(f"\n[5] metric record 返回: {ok}")
 
 # 5. 看 metrics.jsonl 新增
 time.sleep(0.2)
-after_lines = (
-    metrics_path.read_text(encoding="utf-8").splitlines()
-    if metrics_path.exists() else []
-)
+after_lines = metrics_path.read_text(encoding="utf-8").splitlines() if metrics_path.exists() else []
 nudge_after = sum(1 for ln in after_lines if "verify_gate_nudge_injected" in ln)
 print("\n[6] metrics.jsonl 验证")
 print(f"    后 总行数: {len(after_lines)}")
 print(f"    后 verify_gate_nudge_injected 行数: {nudge_after}")
 print(f"    新增: {nudge_after - nudge_before}")
 
-new_lines = after_lines[len(before_lines):]
+new_lines = after_lines[len(before_lines) :]
 print(f"\n[7] 新增行（{len(new_lines)} 条）:")
 for ln in new_lines:
     print(f"    {ln}")

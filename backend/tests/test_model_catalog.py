@@ -7,6 +7,7 @@ The picker must not hardcode models; ``model_param_caps`` is the
 per-family differentiation the user asked for (gpt-5.x exposes
 reasoning_effort; claude opus/sonnet exposes thinking — they differ).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -28,8 +29,7 @@ def _isolated_model_overrides(monkeypatch, tmp_path):
 
 def test_openai_family_supports_effort() -> None:
     c = model_param_caps("gpt-5.5")
-    assert c == {"thinking": True, "fast": True,
-                 "context": True, "effort": True}
+    assert c == {"thinking": True, "fast": True, "context": True, "effort": True}
     assert model_param_caps("gpt-5.3-codex")["effort"] is True
 
 
@@ -51,8 +51,7 @@ def test_small_and_nonchat_models_minimal() -> None:
     mini = model_param_caps("gpt-5-mini")
     assert mini["thinking"] is False and mini["effort"] is False
     emb = model_param_caps("text-embedding-3-small")
-    assert emb == {"thinking": False, "fast": False,
-                   "context": False, "effort": False}
+    assert emb == {"thinking": False, "fast": False, "context": False, "effort": False}
     img = model_param_caps("gpt-image-2")
     assert img["context"] is False
 
@@ -103,7 +102,5 @@ def test_build_catalog_carries_context_window() -> None:
 def test_fetch_models_unreachable_returns_empty_never_raises() -> None:
     # Total/defensive: any failure → [] so caller falls back to the
     # registry's configured models list.
-    out = asyncio.run(
-        fetch_models("http://127.0.0.1:1/v1", "sk-x", timeout=0.2)
-    )
+    out = asyncio.run(fetch_models("http://127.0.0.1:1/v1", "sk-x", timeout=0.2))
     assert out == []

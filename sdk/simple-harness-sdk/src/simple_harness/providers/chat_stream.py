@@ -28,9 +28,7 @@ def _reject(reason: str) -> ProviderProtocolError:
 def _billed(usage: Any) -> bool:
     """A usage object that states a charge: any positive token count."""
 
-    return isinstance(usage, dict) and any(
-        type(v) is int and v > 0 for v in usage.values()
-    )
+    return isinstance(usage, dict) and any(type(v) is int and v > 0 for v in usage.values())
 
 
 def _placeholder(value: dict[str, Any]) -> bool:
@@ -50,7 +48,11 @@ def _placeholder(value: dict[str, Any]) -> bool:
         return True
     if not isinstance(delta, dict):
         return False
-    return not delta.get("content") and not delta.get("tool_calls") and not delta.get("reasoning_content")
+    return (
+        not delta.get("content")
+        and not delta.get("tool_calls")
+        and not delta.get("reasoning_content")
+    )
 
 
 class ChatStream:
@@ -215,7 +217,11 @@ class ChatStream:
                         "role": "assistant",
                         "content": self.content.getvalue(),
                         "tool_calls": [self.tools[i] for i in sorted(self.tools)],
-                        **({"reasoning_content": self.reasoning.getvalue()} if self.reasoning.tell() else {}),
+                        **(
+                            {"reasoning_content": self.reasoning.getvalue()}
+                            if self.reasoning.tell()
+                            else {}
+                        ),
                     },
                 }
             ],

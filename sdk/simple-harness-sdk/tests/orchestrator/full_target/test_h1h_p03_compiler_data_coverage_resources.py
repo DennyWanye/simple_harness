@@ -1,4 +1,5 @@
 """P03: production preview refuses DATA, coverage, and resource-invalid plans purely."""
+
 from __future__ import annotations
 
 import asyncio
@@ -56,7 +57,10 @@ def _data_multi_binding(inputs: Any):
         network,
         occurrences=(*network.occurrences, *producers),
         task_bindings=(
-            *(altered_root if item.task_id == root_binding.task_id else item for item in network.task_bindings),
+            *(
+                altered_root if item.task_id == root_binding.task_id else item
+                for item in network.task_bindings
+            ),
             *bindings,
         ),
         data_requirements=(*network.data_requirements, *requirements),

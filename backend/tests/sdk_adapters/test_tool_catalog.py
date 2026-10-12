@@ -9,9 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-EXPECTED_MANIFEST_SHA256 = (
-    "57900a1d4d7b24091b6e04cac4cd3b441e3ea15385134f262b10ed368ba4d02b"
-)
+EXPECTED_MANIFEST_SHA256 = "57900a1d4d7b24091b6e04cac4cd3b441e3ea15385134f262b10ed368ba4d02b"
 
 
 @pytest.mark.asyncio
@@ -42,9 +40,7 @@ async def test_real_catalog_unrelated_manifest_change_preserves_tool_execution_i
     product_catalog = build_explicit_product_tool_catalog(
         _catalog_dependencies(ContextPageInStore(), runtime_context)
     )
-    base_registry, base_inventory = build_product_tool_registry(
-        product_catalog.registrations
-    )
+    base_registry, base_inventory = build_product_tool_registry(product_catalog.registrations)
     changed_registrations = []
     for registration in product_catalog.registrations:
         metadata = {
@@ -54,9 +50,7 @@ async def test_real_catalog_unrelated_manifest_change_preserves_tool_execution_i
         if registration.name == "web_search":
             metadata["handler_id"] = "unrelated:web_search:v2"
         changed_registrations.append(replace(registration, metadata=metadata))
-    rebuilt_registry, rebuilt_inventory = build_product_tool_registry(
-        changed_registrations
-    )
+    rebuilt_registry, rebuilt_inventory = build_product_tool_registry(changed_registrations)
     base_by_name = {item.name: item for item in base_inventory}
     rebuilt_by_name = {item.name: item for item in rebuilt_inventory}
     assert (
@@ -90,8 +84,7 @@ async def test_real_catalog_unrelated_manifest_change_preserves_tool_execution_i
             "content_fingerprint": canonical_sha256(raw_specs),
             "specs": raw_specs,
             "schema_fingerprints": {
-                item["name"]: canonical_hash(item["input_schema"])
-                for item in raw_specs
+                item["name"]: canonical_hash(item["input_schema"]) for item in raw_specs
             },
         },
         inventory=base_inventory,
@@ -118,9 +111,7 @@ async def test_real_catalog_unrelated_manifest_change_preserves_tool_execution_i
         },
     )
 
-    await executor._prepared(
-        effect_id=EffectId("effect-stable"), call=call, context=context
-    )
+    await executor._prepared(effect_id=EffectId("effect-stable"), call=call, context=context)
     result = await rebuilt_registry.invoke(call, context)
 
     assert result.error_code is None
@@ -153,9 +144,7 @@ def test_schema_migrations_are_exact_closed_and_sdk_valid() -> None:
 
     assert len(records) == 66
     specialized = {
-        record.name
-        for record in records
-        if record.disposition != "closed_object_contract"
+        record.name for record in records if record.disposition != "closed_object_contract"
     }
     assert specialized == {
         "app_launch",
@@ -177,7 +166,7 @@ def test_schema_migrations_are_exact_closed_and_sdk_valid() -> None:
     assert len(migrated) == 71
     assert sum(len(record.closed_object_paths) for record in records) == 67
 
-    def assert_closed(node, path="$" ) -> None:
+    def assert_closed(node, path="$") -> None:
         if isinstance(node, dict):
             if node.get("type") == "object":
                 assert node.get("additionalProperties") is False, path
@@ -346,10 +335,17 @@ def _catalog_dependencies(page_store, execution_context):
             return None
 
     class CapabilityBridge:
-        def search(self, *_args, **_kwargs): return []
-        def describe(self, *_args, **_kwargs): return {}
-        def suggestions(self, *_args, **_kwargs): return []
-        def activate(self, *_args, **_kwargs): raise AssertionError("not invoked")
+        def search(self, *_args, **_kwargs):
+            return []
+
+        def describe(self, *_args, **_kwargs):
+            return {}
+
+        def suggestions(self, *_args, **_kwargs):
+            return []
+
+        def activate(self, *_args, **_kwargs):
+            raise AssertionError("not invoked")
 
     return ToolCatalogDependencies(
         todo_session_db=TodoStore(),
@@ -416,14 +412,19 @@ def test_each_of_60_static_handler_resolutions_is_import_pure() -> None:
 
     backend = Path(__file__).resolve().parents[2]
     dynamic = {
-        "agent", "agent_parallel", "await_subagents", "context_page_in",
-        "spawn_subagents", "spawn_team", "todo_write",
-        "tool_activate", "tool_describe", "tool_search", "web_search",
+        "agent",
+        "agent_parallel",
+        "await_subagents",
+        "context_page_in",
+        "spawn_subagents",
+        "spawn_team",
+        "todo_write",
+        "tool_activate",
+        "tool_describe",
+        "tool_search",
+        "web_search",
     }
-    descriptors = [
-        item for item in load_tool_manifest().tools
-        if str(item["name"]) not in dynamic
-    ]
+    descriptors = [item for item in load_tool_manifest().tools if str(item["name"]) not in dynamic]
     assert len(descriptors) == 60
     env = dict(os.environ)
     env["PYTHONPATH"] = str(backend)
@@ -557,16 +558,14 @@ def test_all_specialized_schema_adapters_preserve_handler_values_and_reject_inva
             adapt_model_arguments(tool_name, {field: "{"})
 
     for tool_name in ("window_capture", "window_focus", "window_key"):
-        assert adapt_model_arguments(tool_name, {"creation_time": 1.25})[
-            "creation_time"
-        ] == 1.25
+        assert adapt_model_arguments(tool_name, {"creation_time": 1.25})["creation_time"] == 1.25
         with pytest.raises(ValueError, match="greater than zero"):
             adapt_model_arguments(tool_name, {"creation_time": 0})
 
 
-
 def test_all_14_specialized_migrations_reach_equivalent_real_handlers(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import asyncio
     import importlib
@@ -613,15 +612,25 @@ def test_all_14_specialized_migrations_reach_equivalent_real_handlers(
     monkeypatch.setattr(
         app_tools,
         "discover_app",
-        lambda _query: [{
-            "source": "fixture", "executable": "/bin/echo",
-            "discovered": True, "launchable_probe": True,
-        }],
+        lambda _query: [
+            {
+                "source": "fixture",
+                "executable": "/bin/echo",
+                "discovered": True,
+                "launchable_probe": True,
+            }
+        ],
     )
+
     class ProcessProbe:
-        def __init__(self, _pid): pass
-        def create_time(self): return 10.0
-        def is_running(self): return True
+        def __init__(self, _pid):
+            pass
+
+        def create_time(self):
+            return 10.0
+
+        def is_running(self):
+            return True
 
     monkeypatch.setattr(app_tools.psutil, "Process", ProcessProbe)
     monkeypatch.setattr(
@@ -631,8 +640,11 @@ def test_all_14_specialized_migrations_reach_equivalent_real_handlers(
     )
 
     runtime_context = SimpleNamespace(
-        session_id="session-1", request_id="request-1", scope_id="scope-1",
-        workspace=str(tmp_path), write_scope_root=str(tmp_path),
+        session_id="session-1",
+        request_id="request-1",
+        scope_id="scope-1",
+        workspace=str(tmp_path),
+        write_scope_root=str(tmp_path),
     )
     registry, _ = build_product_tool_registry(
         build_explicit_product_tool_catalog(
@@ -640,15 +652,27 @@ def test_all_14_specialized_migrations_reach_equivalent_real_handlers(
         ).registrations
     )
     sdk_context = ToolContext(
-        RunId("run-1"), RequestId("request-1"), CancellationToken(),
-        {"session_id": "session-1", "scope_id": "scope-1",
-         "write_scope_root": str(tmp_path), "workspace": str(tmp_path)},
+        RunId("run-1"),
+        RequestId("request-1"),
+        CancellationToken(),
+        {
+            "session_id": "session-1",
+            "scope_id": "scope-1",
+            "write_scope_root": str(tmp_path),
+            "workspace": str(tmp_path),
+        },
     )
     legacy_context = ToolExecutionContext(
-        scope_id="scope-1", session_id="session-1", request_id="request-1",
-        root_run_id="run-1", run_id="run-1", call_id="legacy-call",
-        effect_id="legacy-call", workspace=str(tmp_path),
-        write_scope_root=str(tmp_path), owner_key="",
+        scope_id="scope-1",
+        session_id="session-1",
+        request_id="request-1",
+        root_run_id="run-1",
+        run_id="run-1",
+        call_id="legacy-call",
+        effect_id="legacy-call",
+        workspace=str(tmp_path),
+        write_scope_root=str(tmp_path),
+        owner_key="",
     )
     manifest = {str(item["name"]): item for item in load_tool_manifest().tools}
 
@@ -668,9 +692,7 @@ def test_all_14_specialized_migrations_reach_equivalent_real_handlers(
         ):
             result = value(arguments, legacy_context)
         elif "execution_context" in parameters:
-            result = value(
-                arguments, "legacy-call", execution_context=legacy_context
-            )
+            result = value(arguments, "legacy-call", execution_context=legacy_context)
         else:
             result = value(arguments, "legacy-call")
         if inspect.isawaitable(result):
@@ -683,9 +705,7 @@ def test_all_14_specialized_migrations_reach_equivalent_real_handlers(
         return result
 
     async def sdk(name: str, arguments: dict, index: int):
-        return await registry.invoke(
-            ToolCall(CallId(f"sdk-{index}"), name, arguments), sdk_context
-        )
+        return await registry.invoke(ToolCall(CallId(f"sdk-{index}"), name, arguments), sdk_context)
 
     async def case() -> None:
         environment = {"MIGRATION_EQ": "yes"}
@@ -694,9 +714,11 @@ def test_all_14_specialized_migrations_reach_equivalent_real_handlers(
         )
         app_new = await sdk(
             "app_launch",
-            {"app": "/bin/echo", "argv": [], "environment": [
-                {"key": "MIGRATION_EQ", "value": "yes"}
-            ]},
+            {
+                "app": "/bin/echo",
+                "argv": [],
+                "environment": [{"key": "MIGRATION_EQ", "value": "yes"}],
+            },
             1,
         )
         process_old = await direct(
@@ -704,9 +726,11 @@ def test_all_14_specialized_migrations_reach_equivalent_real_handlers(
         )
         process_new = await sdk(
             "process_start",
-            {"executable": "/bin/echo", "argv": [], "environment": [
-                {"key": "MIGRATION_EQ", "value": "yes"}
-            ]},
+            {
+                "executable": "/bin/echo",
+                "argv": [],
+                "environment": [{"key": "MIGRATION_EQ", "value": "yes"}],
+            },
             2,
         )
         assert app_old["ok"] and process_old["ok"]
@@ -715,38 +739,71 @@ def test_all_14_specialized_migrations_reach_equivalent_real_handlers(
 
         digest = "a" * 64
         cases = (
-            ("capability_build", {"objective": "build", "original_args": {"count": 2},
-                                  "catalog_generation": 1},
-             {"objective": "build", "original_args": [
-                 {"key": "count", "value_json": "2"}
-             ], "catalog_generation": 1}),
-            ("capability_repair", {"failure_receipt_ref": digest, "catalog_generation": 1},
-             {"failure_receipt_ref": digest, "catalog_generation": 1}),
-            ("doc_create", {"spec": {"title": "x"}},
-             {"spec": '{"title":"x"}'}),
-            ("doc_edit", {"file_path": str(tmp_path / "missing.docx"), "ops": []},
-             {"file_path": str(tmp_path / "missing.docx"), "ops": "[]"}),
-            ("download_file", {"url": "invalid://url", "destination": str(tmp_path / "download"),
-                               "max_bytes": 1024, "expected_sha256": digest},
-             {"url": "invalid://url", "destination": str(tmp_path / "download"),
-              "max_bytes": 1024, "expected_sha256": digest}),
-            ("excel_create", {"spec": {"sheets": []}},
-             {"spec": '{"sheets":[]}'}),
-            ("move_file", {"source": str(tmp_path / "missing"),
-                           "destination": str(tmp_path / "dest"),
-                           "expected_source_hash": digest},
-             {"source": str(tmp_path / "missing"),
-              "destination": str(tmp_path / "dest"),
-              "expected_source_hash": digest}),
-            ("ppt_create", {"outline": [], "dry_run": True},
-             {"outline": "[]", "dry_run": True}),
-            ("window_capture", {"pid": 1, "creation_time": 1.0, "hwnd": 1},
-             {"pid": 1, "creation_time": 1.0, "hwnd": 1}),
-            ("window_focus", {"pid": 1, "creation_time": 1.0, "hwnd": 1},
-             {"pid": 1, "creation_time": 1.0, "hwnd": 1}),
-            ("window_key", {"pid": 1, "creation_time": 1.0, "hwnd": 1,
-                            "keys": "ENTER"},
-             {"pid": 1, "creation_time": 1.0, "hwnd": 1, "keys": "ENTER"}),
+            (
+                "capability_build",
+                {"objective": "build", "original_args": {"count": 2}, "catalog_generation": 1},
+                {
+                    "objective": "build",
+                    "original_args": [{"key": "count", "value_json": "2"}],
+                    "catalog_generation": 1,
+                },
+            ),
+            (
+                "capability_repair",
+                {"failure_receipt_ref": digest, "catalog_generation": 1},
+                {"failure_receipt_ref": digest, "catalog_generation": 1},
+            ),
+            ("doc_create", {"spec": {"title": "x"}}, {"spec": '{"title":"x"}'}),
+            (
+                "doc_edit",
+                {"file_path": str(tmp_path / "missing.docx"), "ops": []},
+                {"file_path": str(tmp_path / "missing.docx"), "ops": "[]"},
+            ),
+            (
+                "download_file",
+                {
+                    "url": "invalid://url",
+                    "destination": str(tmp_path / "download"),
+                    "max_bytes": 1024,
+                    "expected_sha256": digest,
+                },
+                {
+                    "url": "invalid://url",
+                    "destination": str(tmp_path / "download"),
+                    "max_bytes": 1024,
+                    "expected_sha256": digest,
+                },
+            ),
+            ("excel_create", {"spec": {"sheets": []}}, {"spec": '{"sheets":[]}'}),
+            (
+                "move_file",
+                {
+                    "source": str(tmp_path / "missing"),
+                    "destination": str(tmp_path / "dest"),
+                    "expected_source_hash": digest,
+                },
+                {
+                    "source": str(tmp_path / "missing"),
+                    "destination": str(tmp_path / "dest"),
+                    "expected_source_hash": digest,
+                },
+            ),
+            ("ppt_create", {"outline": [], "dry_run": True}, {"outline": "[]", "dry_run": True}),
+            (
+                "window_capture",
+                {"pid": 1, "creation_time": 1.0, "hwnd": 1},
+                {"pid": 1, "creation_time": 1.0, "hwnd": 1},
+            ),
+            (
+                "window_focus",
+                {"pid": 1, "creation_time": 1.0, "hwnd": 1},
+                {"pid": 1, "creation_time": 1.0, "hwnd": 1},
+            ),
+            (
+                "window_key",
+                {"pid": 1, "creation_time": 1.0, "hwnd": 1, "keys": "ENTER"},
+                {"pid": 1, "creation_time": 1.0, "hwnd": 1, "keys": "ENTER"},
+            ),
         )
         assert len(cases) == 11
         for index, (name, old_arguments, new_arguments) in enumerate(cases, 3):
@@ -757,7 +814,9 @@ def test_all_14_specialized_migrations_reach_equivalent_real_handlers(
                 and (old_result.get("ok") is False or old_result.get("error"))
             )
             assert (new_result.outcome is ToolOutcome.SUCCEEDED) is old_ok, (
-                name, old_result, new_result
+                name,
+                old_result,
+                new_result,
             )
             if name == "ppt_create" and old_ok:
                 assert thaw_json(new_result.value)["slide_count"] == old_result["slide_count"]
@@ -789,8 +848,11 @@ def test_sdk_await_subagents_uses_typed_port_and_never_loads_old_harness() -> No
     dependencies = _catalog_dependencies(
         ContextPageInStore(),
         SimpleNamespace(
-            session_id="session-1", request_id="request-1", scope_id="scope-1",
-            workspace="/workspace", write_scope_root="/workspace",
+            session_id="session-1",
+            request_id="request-1",
+            scope_id="scope-1",
+            workspace="/workspace",
+            write_scope_root="/workspace",
         ),
     )
     # 收口第 4 项：await_subagents 的收回端口 = Host 委派服务。
@@ -943,9 +1005,7 @@ def test_six_dispatch_families_invoke_real_product_handlers(tmp_path: Path) -> N
     by_name = {item.name: item for item in inventory}
     assert len(by_name) == 71
     assert {
-        name
-        for name, item in by_name.items()
-        if item.projectless_admission == "safe"
+        name for name, item in by_name.items() if item.projectless_admission == "safe"
     } == PROJECTLESS_SAFE_TOOL_NAMES - HOST_COMPOSED_TOOL_NAMES
     assert all(
         item.projectless_admission == "requires_project"
@@ -1008,8 +1068,12 @@ def test_required_provider_failure_occurs_before_catalog_publish() -> None:
 
     with pytest.raises(RuntimeError, match="search_gateway"):
         ToolCatalogDependencies(
-            object(), lambda: None, object(), lambda: None,
-            object(), None,
+            object(),
+            lambda: None,
+            object(),
+            lambda: None,
+            object(),
+            None,
         )
 
 
@@ -1044,7 +1108,9 @@ def test_real_call_id_drives_idempotency_and_write_scope_fence(tmp_path: Path) -
     configure_project_group_transport(transport)
     try:
         runtime_context = SimpleNamespace(
-            session_id="session-1", request_id="request-1", scope_id="scope-1",
+            session_id="session-1",
+            request_id="request-1",
+            scope_id="scope-1",
             workspace=str(tmp_path / "allowed"),
             write_scope_root=str(tmp_path / "allowed"),
         )

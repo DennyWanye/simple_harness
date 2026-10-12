@@ -115,10 +115,6 @@ async def test_five_branch_thirteen_query_burst_is_bounded_and_recovers() -> Non
     assert all(provider.max_in_flight <= 1 for provider in providers)
     assert len(probe_pairs) == len(set(probe_pairs))
     assert all(
-        sum(attempt.is_rescue for attempt in response.attempts) <= 1
-        for response in responses
+        sum(attempt.is_rescue for attempt in response.attempts) <= 1 for response in responses
     )
-    assert all(
-        int(response.coverage()["rescue_executed"]) <= 1
-        for response in responses
-    )
+    assert all(int(response.coverage()["rescue_executed"]) <= 1 for response in responses)

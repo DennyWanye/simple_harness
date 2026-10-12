@@ -7,6 +7,7 @@ module does the reading — the store, the network, the registry, the evidence s
 the obligation ledger — and hands the rows over.  Every row is read here exactly once
 and is the row the model sees; there is no intermediate mapping to convert.
 """
+
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
@@ -36,7 +37,9 @@ from .obligation_accounts import account_of, obligation_accounts
 _PLANNING_REJECTIONS = frozenset({"PlanningRejected"})
 
 
-def accepted_steps(store: Any, mission_id: str, network: Any, htn: Any) -> list[tuple[Any, Any, bool]]:
+def accepted_steps(
+    store: Any, mission_id: str, network: Any, htn: Any
+) -> list[tuple[Any, Any, bool]]:
     """Each current acceptance with the step it was accepted for, and whether that step's
     completion rests on it under the current plan and requirements — the completion
     reading's answer, not a rule of its own.  The Planner package and the mission snapshot
@@ -49,7 +52,10 @@ def accepted_steps(store: Any, mission_id: str, network: Any, htn: Any) -> list[
         if occurrence_id not in counted:
             try:
                 counted[occurrence_id] = frozenset(
-                    read_occurrence_completion(store, mission_id, occurrence_id).preparation_acceptance_ids)
+                    read_occurrence_completion(
+                        store, mission_id, occurrence_id
+                    ).preparation_acceptance_ids
+                )
             except Exception:  # noqa: BLE001 - unreadable completion counts nothing
                 counted[occurrence_id] = frozenset()
         return counted[occurrence_id]
@@ -62,12 +68,19 @@ def accepted_steps(store: Any, mission_id: str, network: Any, htn: Any) -> list[
             continue
         for occurrence in network.occurrences:
             if occurrence.task_id == acceptance.task_id:
-                rows.append((acceptance, occurrence,
-                             str(acceptance.acceptance_id) in _counted(str(occurrence.occurrence_id))))
+                rows.append(
+                    (
+                        acceptance,
+                        occurrence,
+                        str(acceptance.acceptance_id) in _counted(str(occurrence.occurrence_id)),
+                    )
+                )
     return rows
 
 
-def sharing_candidate_rows(dispatch: Any, mission_id: str, network: Any, world: Any) -> list[dict[str, Any]]:
+def sharing_candidate_rows(
+    dispatch: Any, mission_id: str, network: Any, world: Any
+) -> list[dict[str, Any]]:
     """What a refining decision may name in ``reuse`` (TaskGraph 补全第三批): exactly the
     steps preview and commit accept — read by the same function — each with what the
     Planner needs to judge whether it is the step it means.  Order only; no ranking."""
@@ -81,17 +94,29 @@ def sharing_candidate_rows(dispatch: Any, mission_id: str, network: Any, world: 
     rows = []
     for entry in entries:
         binding = network.binding_for_occurrence(entry.occurrence_id)
-        rows.append({
-            "occurrence_id": str(entry.occurrence_id),
-            "task_type": str(entry.signature.goal_type_ref.id),
-            "goal": dict(binding.typed_parameters).get("goal"),
-            "criteria": sorted(occurrence_criteria(network, world.registry.definition, entry.occurrence_id)),
-            "writes": sorted(str(ref.object_id) for ref in binding.resource_writes),
-            "reads_from": sorted(str(item.producer_occurrence) for item in network.data_requirements
-                                 if item.consumer_occurrence == entry.occurrence_id),
-            "status": ("accepted_under_old_requirements" if entry.carried
-                       else "accepted" if entry.acceptance_ref is not None else "running"),
-        })
+        rows.append(
+            {
+                "occurrence_id": str(entry.occurrence_id),
+                "task_type": str(entry.signature.goal_type_ref.id),
+                "goal": dict(binding.typed_parameters).get("goal"),
+                "criteria": sorted(
+                    occurrence_criteria(network, world.registry.definition, entry.occurrence_id)
+                ),
+                "writes": sorted(str(ref.object_id) for ref in binding.resource_writes),
+                "reads_from": sorted(
+                    str(item.producer_occurrence)
+                    for item in network.data_requirements
+                    if item.consumer_occurrence == entry.occurrence_id
+                ),
+                "status": (
+                    "accepted_under_old_requirements"
+                    if entry.carried
+                    else "accepted"
+                    if entry.acceptance_ref is not None
+                    else "running"
+                ),
+            }
+        )
     return rows
 
 
@@ -128,10 +153,14 @@ def read_planner_package(
     # A decision names a method instance by its full reference quadruple; the digest is
     # the instance's own, stated here because no view row carries it.
     instance_refs = [
-        {"kind": "method_instance", "id": str(instance.instance_id),
-         "semantic_revision": max(1, int(instance.plan_revision)),
-         "content_hash": instance.parameters_digest()}
-        for instance in network.method_instances if instance.instance_id in adopted
+        {
+            "kind": "method_instance",
+            "id": str(instance.instance_id),
+            "semantic_revision": max(1, int(instance.plan_revision)),
+            "content_hash": instance.parameters_digest(),
+        }
+        for instance in network.method_instances
+        if instance.instance_id in adopted
     ]
 
     # goals / plans ------------------------------------------------------------------
@@ -141,17 +170,24 @@ def read_planner_package(
         task = store.get_task(str(occurrence.task_id))
         if task is not None and task.mission_id == mission.id:
             task_states[str(occurrence.occurrence_id)] = {
-                "task_status": str(task.status), "task_version": task.version,
-                "occurrence_outcome": str(outcomes[occurrence.occurrence_id])}
+                "task_status": str(task.status),
+                "task_version": task.version,
+                "occurrence_outcome": str(outcomes[occurrence.occurrence_id]),
+            }
     goals = goal_rows(network, task_states=task_states, under_repair=under_repair)
 
     # methods ------------------------------------------------------------------------
     choices = candidate_context(dispatch, mission.id, reports)
     methods, omitted_methods = method_rows(
-        world.registry, method_signatures(network, under_repair), mission_id=mission.id,
-        retired=dispatch.retired_methods(mission.id), reviews=reviews_by_method(store, mission.id),
-        reports=reports, schemas=world.schemas,
-        first=[candidate["method_id"] for choice in choices for candidate in choice["applicable"]])
+        world.registry,
+        method_signatures(network, under_repair),
+        mission_id=mission.id,
+        retired=dispatch.retired_methods(mission.id),
+        reviews=reviews_by_method(store, mission.id),
+        reports=reports,
+        schemas=world.schemas,
+        first=[candidate["method_id"] for choice in choices for candidate in choice["applicable"]],
+    )
 
     # facts --------------------------------------------------------------------------
     snapshot = world.snapshot()
@@ -164,8 +200,10 @@ def read_planner_package(
         return str(entry.availability), str(entry.truth(now_ms=now_ms))
 
     facts, omitted_facts = fact_rows(
-        htn.list_observations(mission.id), state_of=state_of,
-        read_item=SemanticReadSetChecker(store, htn, mission_id=mission.id).read_item)
+        htn.list_observations(mission.id),
+        state_of=state_of,
+        read_item=SemanticReadSetChecker(store, htn, mission_id=mission.id).read_item,
+    )
 
     # knowledge (第 2 批 K03) -----------------------------------------------------------
     # 黑板给规划器看的三层：现在仍然当前的已验证知识（与读工具、推送上下文、审查包同一个判定）、
@@ -175,8 +213,10 @@ def read_planner_package(
 
     current = current_knowledge(store, mission.id)
     knowledge, omitted_knowledge = knowledge_rows(
-        current, step_summaries(store, mission.id),
-        candidate_claims(store, mission.id, verified_ids={record.id for record in current}))
+        current,
+        step_summaries(store, mission.id),
+        candidate_claims(store, mission.id, verified_ids={record.id for record in current}),
+    )
 
     # obligations --------------------------------------------------------------------
     obligations = []
@@ -185,38 +225,65 @@ def read_planner_package(
     for duty in duties.list_obligations(mission.id):
         account = duties.account(mission.id, duty.obligation_id)
         totals = account_of(spent, duty.obligation_id)
-        obligations.append({
-            "parent": None if duty.parent_obligation_id is None else str(duty.parent_obligation_id),
-            "demand": {"obligation_id": str(duty.obligation_id), "admitted": account.has_admitted_demand,
-                       "lifecycle": str(account.lifecycle), "requiredness": str(duty.requiredness)},
-            "fuel": {"limit": account.fuel_limit, "used": account.fuel_used,
-                     "remaining": account.remaining_fuel},
-            "failures": [{"count": totals["failed_attempts"]}],
-            "attempts": totals["attempts"],
-            "budget": {"lineage_ref": duty.budget_lineage_ref, "spent_tokens": totals["settled_tokens"]},
-        })
-        duty_refs.append({"kind": "obligation", "id": str(duty.obligation_id), "semantic_revision": 1,
-                          "content_hash": content_hash_of(duty.to_json())})
+        obligations.append(
+            {
+                "parent": None
+                if duty.parent_obligation_id is None
+                else str(duty.parent_obligation_id),
+                "demand": {
+                    "obligation_id": str(duty.obligation_id),
+                    "admitted": account.has_admitted_demand,
+                    "lifecycle": str(account.lifecycle),
+                    "requiredness": str(duty.requiredness),
+                },
+                "fuel": {
+                    "limit": account.fuel_limit,
+                    "used": account.fuel_used,
+                    "remaining": account.remaining_fuel,
+                },
+                "failures": [{"count": totals["failed_attempts"]}],
+                "attempts": totals["attempts"],
+                "budget": {
+                    "lineage_ref": duty.budget_lineage_ref,
+                    "spent_tokens": totals["settled_tokens"],
+                },
+            }
+        )
+        duty_refs.append(
+            {
+                "kind": "obligation",
+                "id": str(duty.obligation_id),
+                "semantic_revision": 1,
+                "content_hash": content_hash_of(duty.to_json()),
+            }
+        )
 
     # accepted results ---------------------------------------------------------------
     outputs = htn.list_acceptance_outputs(mission.id)
     accepted = []
     for acceptance, occurrence, counts in accepted_steps(store, mission.id, network, htn):
-        ports = [row for row in outputs if row.get("acceptance_id") == str(acceptance.acceptance_id)]
-        accepted.append({
-            "acceptance_ref": {"kind": "acceptance", "id": str(acceptance.acceptance_id),
-                               "semantic_revision": 1,
-                               "content_hash": content_hash_of(acceptance.to_json())},
-            "producer_occurrence": str(occurrence.occurrence_id),
-            "ports": ports,
-            "artifacts": [item.to_json() for item in acceptance.artifact_refs],
-            "currentness": str(acceptance.validity),
-            # 阶段 E：这次验收是按第几版要求通过的；在现行计划与现行要求下还算不算数
-            "requirements_revision": int(acceptance.requirements_revision),
-            "counts_under_current": counts,
-            "support_revision": acceptance.contract_revision,
-            "permitted_uses": ["DATA"] if ports else [],
-        })
+        ports = [
+            row for row in outputs if row.get("acceptance_id") == str(acceptance.acceptance_id)
+        ]
+        accepted.append(
+            {
+                "acceptance_ref": {
+                    "kind": "acceptance",
+                    "id": str(acceptance.acceptance_id),
+                    "semantic_revision": 1,
+                    "content_hash": content_hash_of(acceptance.to_json()),
+                },
+                "producer_occurrence": str(occurrence.occurrence_id),
+                "ports": ports,
+                "artifacts": [item.to_json() for item in acceptance.artifact_refs],
+                "currentness": str(acceptance.validity),
+                # 阶段 E：这次验收是按第几版要求通过的；在现行计划与现行要求下还算不算数
+                "requirements_revision": int(acceptance.requirements_revision),
+                "counts_under_current": counts,
+                "support_revision": acceptance.contract_revision,
+                "permitted_uses": ["DATA"] if ports else [],
+            }
+        )
 
     # failures: an index.  The record of a step failure is in the pending repair request
     # about it (``repair_requests``), and only there.
@@ -224,21 +291,42 @@ def read_planner_package(
     failed: list[tuple[float, dict[str, Any]]] = []
     for event in store.list_events(mission.id, types=sorted(_PLANNING_REJECTIONS)):
         if event.type in _PLANNING_REJECTIONS:
-            refused.append((float(event.created_at), {
-                "source": "planning", "reason": str(event.payload.get("reason") or ""),
-                "attempt_review_ref": None, "repeat_count": 1, "last_seen": str(event.created_at),
-                "findings": [event.payload.get("detail")]}))
+            refused.append(
+                (
+                    float(event.created_at),
+                    {
+                        "source": "planning",
+                        "reason": str(event.payload.get("reason") or ""),
+                        "attempt_review_ref": None,
+                        "repeat_count": 1,
+                        "last_seen": str(event.created_at),
+                        "findings": [event.payload.get("detail")],
+                    },
+                )
+            )
     for task in store.list_tasks(mission.id):
         for attempt in store.list_attempts(task.id):
             if attempt.failure is None and not attempt.feedback:
                 continue
             outline = failure_outline(attempt.failure)
-            failed.append((float(attempt.created_at), {
-                "source": "attempt", "reason": str(attempt.status),
-                "attempt_review_ref": {"kind": "attempt", "id": attempt.id, "version": attempt.version,
-                                       "content_hash": content_hash_of(attempt.to_json())},
-                "repeat_count": 1, "last_seen": str(attempt.created_at),
-                "findings": [*attempt.feedback, *([outline] if outline else [])]}))
+            failed.append(
+                (
+                    float(attempt.created_at),
+                    {
+                        "source": "attempt",
+                        "reason": str(attempt.status),
+                        "attempt_review_ref": {
+                            "kind": "attempt",
+                            "id": attempt.id,
+                            "version": attempt.version,
+                            "content_hash": content_hash_of(attempt.to_json()),
+                        },
+                        "repeat_count": 1,
+                        "last_seen": str(attempt.created_at),
+                        "findings": [*attempt.feedback, *([outline] if outline else [])],
+                    },
+                )
+            )
 
     views = {
         "goals": goals,
@@ -249,14 +337,22 @@ def read_planner_package(
         "accepted_results": accepted,
         "failures": failure_index(attempts=failed, planning=refused),
         "capabilities": [
-            {"capability": row.capability_id, "registered": row.registered,
-             "configured": row.configured, "reachable": row.reachable, "healthy": row.healthy,
-             "authorized": row.authorized, "compatible": row.compatible}
-            for row in world.capabilities().records],
+            {
+                "capability": row.capability_id,
+                "registered": row.registered,
+                "configured": row.configured,
+                "reachable": row.reachable,
+                "healthy": row.healthy,
+                "authorized": row.authorized,
+                "compatible": row.compatible,
+            }
+            for row in world.capabilities().records
+        ],
         "planning_budgets": [dict(budget)],
         # 全库做法（阶段 C3）：目录只有编号与一句用途；读过的条目带原文，只当先例
-        "method_library": directory(store, mission, catalog_digest(world),
-                                    method_signatures(network, under_repair)),
+        "method_library": directory(
+            store, mission, catalog_digest(world), method_signatures(network, under_repair)
+        ),
         "library_reads": library_reads(store, mission.id),
         "knowledge": list(knowledge),
     }
@@ -281,28 +377,55 @@ def read_planner_package(
         # retry or to replace the method is the Planner's call, and replacing it needs a
         # method to replace it with — the desktop has no seed library to pick from.
         "method_proposal_contexts": [
-            {"subject_key": goal["subject_key"],
-             "request": dispatch.method_proposal_context(mission.id, goal["task_id"])}
+            {
+                "subject_key": goal["subject_key"],
+                "request": dispatch.method_proposal_context(mission.id, goal["task_id"]),
+            }
             for goal in goals
-            if goal["occurrence_id"] in open_goals or str(goal["occurrence_id"]) in repaired],
+            if goal["occurrence_id"] in open_goals or str(goal["occurrence_id"]) in repaired
+        ],
         "sharing_candidates": list(sharing),
-        "successor_types": ([task_type_row(spec, world.schemas) for spec in world.catalog.task_types()]
-                            if has_steps else []),
+        "successor_types": (
+            [task_type_row(spec, world.schemas) for spec in world.catalog.task_types()]
+            if has_steps
+            else []
+        ),
         "evidence_predicates": [
-            signature.to_json() for signature in world.predicates.signatures()
-            if observers is not None and observers.observer_for(signature.predicate_ref.id) is not None],
+            signature.to_json()
+            for signature in world.predicates.signatures()
+            if observers is not None
+            and observers.observer_for(signature.predicate_ref.id) is not None
+        ],
     }
     latest = htn.latest_requirements_revision(mission.id)
     return assemble_planner_package(
-        requirements=None if latest is None else {
+        requirements=None
+        if latest is None
+        else {
             "revision": int(latest.revision),
-            "criteria": [{"id": str(item.criterion_id), "revision": int(item.revision),
-                          "statement": str(item.statement)} for item in latest.criteria]},
-        package_version=package_version, mission=mission, network=network, views=views,
-        sections=sections, previous_feedback=previous_feedback,
+            "criteria": [
+                {
+                    "id": str(item.criterion_id),
+                    "revision": int(item.revision),
+                    "statement": str(item.statement),
+                }
+                for item in latest.criteria
+            ],
+        },
+        package_version=package_version,
+        mission=mission,
+        network=network,
+        views=views,
+        sections=sections,
+        previous_feedback=previous_feedback,
         authorities=[*_network_authorities(network), *duty_refs],
         extra_refs=list(instance_refs),
-        omitted={"methods": omitted_methods, "facts": omitted_facts, "knowledge": omitted_knowledge})
+        omitted={
+            "methods": omitted_methods,
+            "facts": omitted_facts,
+            "knowledge": omitted_knowledge,
+        },
+    )
 
 
 def answered_questions_for_planner(store: Any, mission_id: str) -> list[dict[str, Any]]:
@@ -316,9 +439,14 @@ def answered_questions_for_planner(store: Any, mission_id: str) -> list[dict[str
 
     questions = PlanningHumanStore(store)
     return [
-        {"subject_key": row["subject_key"], "question": row["request"]["payload"]["question"],
-         "answer": row["answer"], "binding_current": questions.binding_current(row)}
-        for row in questions.list(mission_id) if row["state"] == "ANSWERED"
+        {
+            "subject_key": row["subject_key"],
+            "question": row["request"]["payload"]["question"],
+            "answer": row["answer"],
+            "binding_current": questions.binding_current(row),
+        }
+        for row in questions.list(mission_id)
+        if row["state"] == "ANSWERED"
     ][-16:]
 
 
@@ -335,13 +463,27 @@ def abandoned_plan_changes_for_planner(store: Any, mission_id: str) -> list[dict
     rows = []
     for event in store.list_events(mission_id, types=["TaskGraphConvergenceAbandoned"]):
         result = event.payload.get("result") or {}
-        row = decisions.get_planning_decision(str(result["decision_id"])) if result.get("decision_id") else None
+        row = (
+            decisions.get_planning_decision(str(result["decision_id"]))
+            if result.get("decision_id")
+            else None
+        )
         decision = {} if row is None else json.loads(row["canonical_json"])
-        rows.append({"decision_id": result.get("decision_id"),
-                     "decision_type": decision.get("decision_type"), "subject_key": decision.get("subject_key"),
-                     "rationale": decision.get("rationale"), "plan_revision": result.get("source_revision"),
-                     "reason": event.payload.get("reason") or ""})
+        rows.append(
+            {
+                "decision_id": result.get("decision_id"),
+                "decision_type": decision.get("decision_type"),
+                "subject_key": decision.get("subject_key"),
+                "rationale": decision.get("rationale"),
+                "plan_revision": result.get("source_revision"),
+                "reason": event.payload.get("reason") or "",
+            }
+        )
     return rows[-8:]
 
 
-__all__ = ("abandoned_plan_changes_for_planner", "answered_questions_for_planner", "read_planner_package")
+__all__ = (
+    "abandoned_plan_changes_for_planner",
+    "answered_questions_for_planner",
+    "read_planner_package",
+)

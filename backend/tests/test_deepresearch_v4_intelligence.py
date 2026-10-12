@@ -29,25 +29,35 @@ AS_OF = date(2026, 7, 15)
 
 
 def test_entity_extraction_merges_vllm_release_features_and_names_jetson_paper() -> None:
-    vllm_passage = ({
-        "title": "v0.25.1",
-        "canonical_url": "https://github.com/vllm-project/vllm/releases",
-    },)
-    assert _entity_name(
-        "vLLM Transformers modeling backend gained FP8 MoE support.",
-        vllm_passage,
-        None,
-    ) == "vLLM"
+    vllm_passage = (
+        {
+            "title": "v0.25.1",
+            "canonical_url": "https://github.com/vllm-project/vllm/releases",
+        },
+    )
+    assert (
+        _entity_name(
+            "vLLM Transformers modeling backend gained FP8 MoE support.",
+            vllm_passage,
+            None,
+        )
+        == "vLLM"
+    )
 
-    jetson_passage = ({
-        "title": "Jetson-PI: Towards Onboard Real-Time Robot Control",
-        "canonical_url": "https://arxiv.org/abs/2607.12659v1",
-    },)
-    assert _entity_name(
-        "The cited method achieved 41x improvements in control frequency compared with naive PyTorch on NVIDIA Jetson Orin.",
-        jetson_passage,
-        None,
-    ) == "Jetson-PI"
+    jetson_passage = (
+        {
+            "title": "Jetson-PI: Towards Onboard Real-Time Robot Control",
+            "canonical_url": "https://arxiv.org/abs/2607.12659v1",
+        },
+    )
+    assert (
+        _entity_name(
+            "The cited method achieved 41x improvements in control frequency compared with naive PyTorch on NVIDIA Jetson Orin.",
+            jetson_passage,
+            None,
+        )
+        == "Jetson-PI"
+    )
 
 
 def test_frozen_intelligence_fixture_matches_classifier_and_taxonomy() -> None:
@@ -62,7 +72,10 @@ def test_frozen_intelligence_fixture_matches_classifier_and_taxonomy() -> None:
     topics = plan_technology_topics(case["topic"], profile)
     assert (profile.window_start, profile.window_end) == (case["window_start"], case["window_end"])
     assert [topic.topic_kind for topic in topics] == case["topic_kinds"]
-    assert all(classify_intent(topic, as_of_date=as_of).kind == "generic" for topic in fixture["generic_cases"])
+    assert all(
+        classify_intent(topic, as_of_date=as_of).kind == "generic"
+        for topic in fixture["generic_cases"]
+    )
 
 
 @pytest.mark.parametrize(
@@ -204,13 +217,15 @@ def test_broad_topic_rejects_ungrounded_non_version_planner_entities() -> None:
             "label": f"English bucket {index}",
             "entity": entity,
         }
-        for index, (kind, entity) in enumerate((
-            ("model_inference", "Edge LLM serving"),
-            ("agent", "Autonomous coding agents"),
-            ("multimodal", "Vision-language foundation models"),
-            ("training_inference_system", "Distributed optimization frameworks"),
-            ("open_infrastructure", "Open model collaboration hubs"),
-        ))
+        for index, (kind, entity) in enumerate(
+            (
+                ("model_inference", "Edge LLM serving"),
+                ("agent", "Autonomous coding agents"),
+                ("multimodal", "Vision-language foundation models"),
+                ("training_inference_system", "Distributed optimization frameworks"),
+                ("open_infrastructure", "Open model collaboration hubs"),
+            )
+        )
     )
 
     topics = plan_technology_topics(original, profile, proposed=proposed)
@@ -238,9 +253,7 @@ def test_explicit_user_version_remains_a_valid_research_anchor() -> None:
     topics = plan_technology_topics(
         original,
         profile,
-        proposed=(
-            {"topic_kind": "agent", "label": "Agents", "entity": "LangGraph v1.0"},
-        ),
+        proposed=({"topic_kind": "agent", "label": "Agents", "entity": "LangGraph v1.0"},),
     )
 
     assert topics[0].entity == "LangGraph v1.0"
@@ -326,10 +339,12 @@ def test_supported_claim_date_supplies_recency_when_page_metadata_is_missing() -
         finding_id="f-statement-date",
         claim_ids=("c1",),
         statement="gemini-omni-flash-preview entered public preview on June 30, 2026.",
-        winning_passages=({
-            "text": "gemini-omni-flash-preview entered public preview on June 30, 2026.",
-            "url": "https://ai.google.dev/gemini-api/docs/changelog",
-        },),
+        winning_passages=(
+            {
+                "text": "gemini-omni-flash-preview entered public preview on June 30, 2026.",
+                "url": "https://ai.google.dev/gemini-api/docs/changelog",
+            },
+        ),
         winning_citation_ids=(1,),
         as_of_date=AS_OF,
     )
@@ -342,7 +357,11 @@ def test_supported_claim_date_supplies_recency_when_page_metadata_is_missing() -
     (
         ("https://arxiv.org/abs/2604.12213", "A new routing method is evaluated.", "experimental"),
         ("https://github.com/google-research/timesfm", "TimesFM supports forecasting.", "emerging"),
-        ("https://www.anthropic.com/engineering/tool-use", "Tool use integrates IDE operations.", "emerging"),
+        (
+            "https://www.anthropic.com/engineering/tool-use",
+            "Tool use integrates IDE operations.",
+            "emerging",
+        ),
     ),
 )
 def test_maturity_uses_source_lifecycle_when_claim_text_omits_release_wording(
@@ -434,7 +453,11 @@ def test_technology_report_leads_with_window_rubric_top_items_and_winning_citati
             "schema_version": 3,
             "status": "completed",
             "citations": [
-                {"citation_id": index, "title": f"Primary {index}", "url": f"https://openai.com/{index}"}
+                {
+                    "citation_id": index,
+                    "title": f"Primary {index}",
+                    "url": f"https://openai.com/{index}",
+                }
                 for index in range(1, 6)
             ],
             "coverage": {"actual_requests": 2},
@@ -469,9 +492,18 @@ def test_same_entity_is_merged_and_vertical_or_navigation_content_is_excluded() 
         {"claim_id": "c1", "text": "HunyuanImage released a model inference update."},
         {"claim_id": "c2", "text": "HunyuanImage supports faster inference throughput."},
         {"claim_id": "c3", "text": "EHR healthcare model inference assists hospitals."},
-        {"claim_id": "c4", "text": "Example workflows and tasks teams can take on with ChatGPT or Codex"},
-        {"claim_id": "c5", "text": "Drug discovery molecule model inference supports pharma screening."},
-        {"claim_id": "c6", "text": "Banking insurance agent framework automates finance workflows."},
+        {
+            "claim_id": "c4",
+            "text": "Example workflows and tasks teams can take on with ChatGPT or Codex",
+        },
+        {
+            "claim_id": "c5",
+            "text": "Drug discovery molecule model inference supports pharma screening.",
+        },
+        {
+            "claim_id": "c6",
+            "text": "Banking insurance agent framework automates finance workflows.",
+        },
     ]
     decisions = [
         {
@@ -527,35 +559,51 @@ def test_statement_subject_beats_document_brand_and_event_only_rows_are_excluded
     profile = classify_intent(original, as_of_date=AS_OF)
     topics = plan_technology_topics(original, profile)
     agent_topic = next(topic for topic in topics if topic.topic_kind == "agent")
-    infrastructure_topic = next(topic for topic in topics if topic.topic_kind == "open_infrastructure")
+    infrastructure_topic = next(
+        topic for topic in topics if topic.topic_kind == "open_infrastructure"
+    )
     claims = (
         {"claim_id": "c1", "text": "Grok 4.1 Fast models can use agent tools."},
-        {"claim_id": "c2", "text": "CNCC 2026 open source AI infrastructure forum was held in July."},
+        {
+            "claim_id": "c2",
+            "text": "CNCC 2026 open source AI infrastructure forum was held in July.",
+        },
     )
-    decisions = tuple({
-        "claim_id": claim["claim_id"],
-        "supported": True,
-        "winning_passage_ids": [f"p{index}"],
-        "winning_source_citation_ids": [index],
-    } for index, claim in enumerate(claims, 1))
+    decisions = tuple(
+        {
+            "claim_id": claim["claim_id"],
+            "supported": True,
+            "winning_passage_ids": [f"p{index}"],
+            "winning_source_citation_ids": [index],
+        }
+        for index, claim in enumerate(claims, 1)
+    )
     passages = (
         {
-            "passage_id": "p1", "source_citation_id": 1,
-            "question_id": agent_topic.label, "text": claims[0]["text"],
+            "passage_id": "p1",
+            "source_citation_id": 1,
+            "question_id": agent_topic.label,
+            "text": claims[0]["text"],
         },
         {
-            "passage_id": "p2", "source_citation_id": 2,
-            "question_id": infrastructure_topic.label, "text": claims[1]["text"],
+            "passage_id": "p2",
+            "source_citation_id": 2,
+            "question_id": infrastructure_topic.label,
+            "text": claims[1]["text"],
         },
     )
     sources = (
         {
-            "citation_id": 1, "url": "https://docs.x.ai/developers/release-notes",
-            "title": "Release Notes | SpaceXAI Docs", "published_at": "2026-07-01",
+            "citation_id": 1,
+            "url": "https://docs.x.ai/developers/release-notes",
+            "title": "Release Notes | SpaceXAI Docs",
+            "published_at": "2026-07-01",
         },
         {
-            "citation_id": 2, "url": "https://example.org/cncc-forum",
-            "title": "CNCC forum", "published_at": "2026-07-02",
+            "citation_id": 2,
+            "url": "https://example.org/cncc-forum",
+            "title": "CNCC forum",
+            "published_at": "2026-07-02",
         },
     )
 
@@ -577,39 +625,76 @@ def test_concrete_subjects_merge_while_generic_headlines_are_not_findings() -> N
     profile = classify_intent(original, as_of_date=AS_OF)
     topics = plan_technology_topics(original, profile)
     agent_topic = next(topic for topic in topics if topic.topic_kind == "agent")
-    system_topic = next(topic for topic in topics if topic.topic_kind == "training_inference_system")
+    system_topic = next(
+        topic for topic in topics if topic.topic_kind == "training_inference_system"
+    )
     claims = (
         {"claim_id": "c1", "text": "Microsoft Agent Framework is an open-source SDK and runtime."},
-        {"claim_id": "c2", "text": "Microsoft Agent Framework unifies Semantic Kernel with AutoGen."},
-        {"claim_id": "c3", "text": "AI training builds a model by adjusting billions of parameters."},
+        {
+            "claim_id": "c2",
+            "text": "Microsoft Agent Framework unifies Semantic Kernel with AutoGen.",
+        },
+        {
+            "claim_id": "c3",
+            "text": "AI training builds a model by adjusting billions of parameters.",
+        },
         {"claim_id": "c4", "text": "Meet Gemma 4 12B: an encoder-free multimodal model."},
         {"claim_id": "c5", "text": "Gemma 4 12B can natively ingest audio and video."},
     )
-    decisions = tuple({
-        "claim_id": claim["claim_id"], "supported": True,
-        "winning_passage_ids": [f"p{index}"], "winning_source_citation_ids": [index],
-    } for index, claim in enumerate(claims, 1))
-    passages = tuple({
-        "passage_id": f"p{index}", "source_citation_id": index,
-        "question_id": agent_topic.label if index < 3 else system_topic.label if index == 3 else next(
-            topic.label for topic in topics if topic.topic_kind == "multimodal"
-        ),
-        "text": claim["text"],
-    } for index, claim in enumerate(claims, 1))
-    sources = tuple({
-        "citation_id": index,
-        "url": "https://devblogs.microsoft.com/foundry/agent-framework" if index < 3 else "https://example.org/training" if index == 3 else "https://developers.googleblog.com/gemma-4",
-        "title": "Introducing Microsoft Agent Framework: The Open-Source Engine" if index < 3 else "AI Training vs Inference" if index == 3 else "Gemma 4 12B: The Developer Guide",
-        "published_at": "2026-07-01",
-    } for index in range(1, 6))
+    decisions = tuple(
+        {
+            "claim_id": claim["claim_id"],
+            "supported": True,
+            "winning_passage_ids": [f"p{index}"],
+            "winning_source_citation_ids": [index],
+        }
+        for index, claim in enumerate(claims, 1)
+    )
+    passages = tuple(
+        {
+            "passage_id": f"p{index}",
+            "source_citation_id": index,
+            "question_id": agent_topic.label
+            if index < 3
+            else system_topic.label
+            if index == 3
+            else next(topic.label for topic in topics if topic.topic_kind == "multimodal"),
+            "text": claim["text"],
+        }
+        for index, claim in enumerate(claims, 1)
+    )
+    sources = tuple(
+        {
+            "citation_id": index,
+            "url": "https://devblogs.microsoft.com/foundry/agent-framework"
+            if index < 3
+            else "https://example.org/training"
+            if index == 3
+            else "https://developers.googleblog.com/gemma-4",
+            "title": "Introducing Microsoft Agent Framework: The Open-Source Engine"
+            if index < 3
+            else "AI Training vs Inference"
+            if index == 3
+            else "Gemma 4 12B: The Developer Guide",
+            "published_at": "2026-07-01",
+        }
+        for index in range(1, 6)
+    )
 
     findings = build_ranked_findings(
-        claims=claims, decisions=decisions, passages=passages, citation_sources=sources,
-        as_of_date=AS_OF, technology_topics=topics, user_topic=original,
+        claims=claims,
+        decisions=decisions,
+        passages=passages,
+        citation_sources=sources,
+        as_of_date=AS_OF,
+        technology_topics=topics,
+        user_topic=original,
     )
 
     assert {finding.entity for finding in findings} == {"Microsoft Agent Framework", "Gemma 4 12B"}
-    microsoft = next(finding for finding in findings if finding.entity == "Microsoft Agent Framework")
+    microsoft = next(
+        finding for finding in findings if finding.entity == "Microsoft Agent Framework"
+    )
     gemma = next(finding for finding in findings if finding.entity == "Gemma 4 12B")
     assert microsoft.claim_ids == ("c1", "c2")
     assert gemma.claim_ids == ("c4", "c5")
@@ -619,13 +704,27 @@ def test_concrete_subjects_merge_while_generic_headlines_are_not_findings() -> N
     ("statement", "topic_kind", "expected"),
     (
         ("OpenAI released GPT-5 with improved model inference.", "model_inference", "OpenAI GPT-5"),
-        ("NVIDIA introduced Dynamo for GPU inference serving.", "training_inference_system", "NVIDIA Dynamo"),
-        ("Google launched Gemini 3 with multimodal video support.", "multimodal", "Google Gemini 3"),
-        ("Microsoft released Agent Framework for agent tool calling.", "agent", "Microsoft Agent Framework"),
+        (
+            "NVIDIA introduced Dynamo for GPU inference serving.",
+            "training_inference_system",
+            "NVIDIA Dynamo",
+        ),
+        (
+            "Google launched Gemini 3 with multimodal video support.",
+            "multimodal",
+            "Google Gemini 3",
+        ),
+        (
+            "Microsoft released Agent Framework for agent tool calling.",
+            "agent",
+            "Microsoft Agent Framework",
+        ),
     ),
 )
 def test_vendor_release_subject_extracts_the_product(
-    statement: str, topic_kind: str, expected: str,
+    statement: str,
+    topic_kind: str,
+    expected: str,
 ) -> None:
     original = "latest valuable AI technology"
     profile = classify_intent(original, as_of_date=AS_OF)
@@ -633,18 +732,32 @@ def test_vendor_release_subject_extracts_the_product(
     topic = next(item for item in topics if item.topic_kind == topic_kind)
     findings = build_ranked_findings(
         claims=({"claim_id": "c1", "text": statement},),
-        decisions=({
-            "claim_id": "c1", "supported": True, "winning_passage_ids": ["p1"],
-            "winning_source_citation_ids": [1],
-        },),
-        passages=({
-            "passage_id": "p1", "source_citation_id": 1,
-            "question_id": topic.label, "text": statement,
-        },),
-        citation_sources=({
-            "citation_id": 1, "url": "https://example.org/release", "published_at": "2026-07-01",
-        },),
-        as_of_date=AS_OF, technology_topics=topics, user_topic=original,
+        decisions=(
+            {
+                "claim_id": "c1",
+                "supported": True,
+                "winning_passage_ids": ["p1"],
+                "winning_source_citation_ids": [1],
+            },
+        ),
+        passages=(
+            {
+                "passage_id": "p1",
+                "source_citation_id": 1,
+                "question_id": topic.label,
+                "text": statement,
+            },
+        ),
+        citation_sources=(
+            {
+                "citation_id": 1,
+                "url": "https://example.org/release",
+                "published_at": "2026-07-01",
+            },
+        ),
+        as_of_date=AS_OF,
+        technology_topics=topics,
+        user_topic=original,
     )
     assert [finding.entity for finding in findings] == [expected]
 
@@ -661,18 +774,40 @@ def test_possessive_project_change_is_attributed_to_project_and_date_only_rc_is_
     )
     findings = build_ranked_findings(
         claims=tuple({"claim_id": f"c{i}", "text": text} for i, text in enumerate(statements, 1)),
-        decisions=tuple({
-            "claim_id": f"c{i}", "supported": True,
-            "winning_passage_ids": [f"p{i}"], "winning_source_citation_ids": [i],
-        } for i in range(1, 3)),
-        passages=(
-            {"passage_id": "p1", "source_citation_id": 1, "question_id": system.label, "text": statements[0]},
-            {"passage_id": "p2", "source_citation_id": 2, "question_id": agent.label, "text": statements[1]},
+        decisions=tuple(
+            {
+                "claim_id": f"c{i}",
+                "supported": True,
+                "winning_passage_ids": [f"p{i}"],
+                "winning_source_citation_ids": [i],
+            }
+            for i in range(1, 3)
         ),
-        citation_sources=tuple({
-            "citation_id": i, "url": f"https://example.org/{i}", "published_at": "2026-07-10",
-        } for i in range(1, 3)),
-        as_of_date=AS_OF, technology_topics=topics, user_topic=original,
+        passages=(
+            {
+                "passage_id": "p1",
+                "source_citation_id": 1,
+                "question_id": system.label,
+                "text": statements[0],
+            },
+            {
+                "passage_id": "p2",
+                "source_citation_id": 2,
+                "question_id": agent.label,
+                "text": statements[1],
+            },
+        ),
+        citation_sources=tuple(
+            {
+                "citation_id": i,
+                "url": f"https://example.org/{i}",
+                "published_at": "2026-07-10",
+            }
+            for i in range(1, 3)
+        ),
+        as_of_date=AS_OF,
+        technology_topics=topics,
+        user_topic=original,
     )
 
     assert [finding.entity for finding in findings] == ["Torchtitan"]
@@ -693,24 +828,40 @@ def test_as_of_capability_snapshot_is_not_a_technology_change() -> None:
     statement = "Gemini 3.1 Pro featured a 1M-token context window as of February 2026."
     findings = build_ranked_findings(
         claims=({"claim_id": "c1", "text": statement},),
-        decisions=({
-            "claim_id": "c1", "supported": True,
-            "winning_passage_ids": ["p1"], "winning_source_citation_ids": [1],
-        },),
-        passages=({
-            "passage_id": "p1", "source_citation_id": 1,
-            "question_id": multimodal.label, "text": statement,
-        },),
-        citation_sources=({
-            "citation_id": 1, "url": "https://example.org/gemini", "published_at": "2026-02-10",
-        },),
-        as_of_date=AS_OF, technology_topics=topics, user_topic=original,
+        decisions=(
+            {
+                "claim_id": "c1",
+                "supported": True,
+                "winning_passage_ids": ["p1"],
+                "winning_source_citation_ids": [1],
+            },
+        ),
+        passages=(
+            {
+                "passage_id": "p1",
+                "source_citation_id": 1,
+                "question_id": multimodal.label,
+                "text": statement,
+            },
+        ),
+        citation_sources=(
+            {
+                "citation_id": 1,
+                "url": "https://example.org/gemini",
+                "published_at": "2026-02-10",
+            },
+        ),
+        as_of_date=AS_OF,
+        technology_topics=topics,
+        user_topic=original,
     )
 
     assert findings == ()
 
 
-def test_product_pair_and_mixed_chinese_subjects_are_specific_and_low_value_copy_is_removed() -> None:
+def test_product_pair_and_mixed_chinese_subjects_are_specific_and_low_value_copy_is_removed() -> (
+    None
+):
     original = "latest valuable AI technology"
     profile = classify_intent(original, as_of_date=AS_OF)
     topics = plan_technology_topics(original, profile)
@@ -718,33 +869,64 @@ def test_product_pair_and_mixed_chinese_subjects_are_specific_and_low_value_copy
     agent = next(item for item in topics if item.topic_kind == "agent")
     infrastructure = next(item for item in topics if item.topic_kind == "open_infrastructure")
     claims = (
-        {"claim_id": "c1", "text": "Llama 4 Scout and Llama 4 Maverick are open-weight natively multimodal models."},
-        {"claim_id": "c2", "text": "Llama 4 Scout and Llama 4 Maverick use a mixture-of-experts architecture."},
+        {
+            "claim_id": "c1",
+            "text": "Llama 4 Scout and Llama 4 Maverick are open-weight natively multimodal models.",
+        },
+        {
+            "claim_id": "c2",
+            "text": "Llama 4 Scout and Llama 4 Maverick use a mixture-of-experts architecture.",
+        },
         {"claim_id": "c3", "text": "方舟 Agent Plan was released on 2026-05-11."},
         {"claim_id": "c4", "text": "AFP 积分制，Medium 档（¥200）及以上赠送 7×24 在线智能伙伴。"},
-        {"claim_id": "c5", "text": "Google Open Source Blog provides the latest news from Google on open source releases, major projects, events, and outreach programs."},
+        {
+            "claim_id": "c5",
+            "text": "Google Open Source Blog provides the latest news from Google on open source releases, major projects, events, and outreach programs.",
+        },
     )
     question_by_index = {
-        1: multimodal.label, 2: multimodal.label, 3: agent.label,
-        4: agent.label, 5: infrastructure.label,
+        1: multimodal.label,
+        2: multimodal.label,
+        3: agent.label,
+        4: agent.label,
+        5: infrastructure.label,
     }
-    decisions = tuple({
-        "claim_id": claim["claim_id"], "supported": True,
-        "winning_passage_ids": [f"p{index}"], "winning_source_citation_ids": [index],
-    } for index, claim in enumerate(claims, 1))
-    passages = tuple({
-        "passage_id": f"p{index}", "source_citation_id": index,
-        "question_id": question_by_index[index], "text": claim["text"],
-    } for index, claim in enumerate(claims, 1))
-    sources = tuple({
-        "citation_id": index, "url": f"https://example{index}.org/release",
-        "title": "AI technology release", "published_at": "2026-07-01",
-    } for index in range(1, 6))
+    decisions = tuple(
+        {
+            "claim_id": claim["claim_id"],
+            "supported": True,
+            "winning_passage_ids": [f"p{index}"],
+            "winning_source_citation_ids": [index],
+        }
+        for index, claim in enumerate(claims, 1)
+    )
+    passages = tuple(
+        {
+            "passage_id": f"p{index}",
+            "source_citation_id": index,
+            "question_id": question_by_index[index],
+            "text": claim["text"],
+        }
+        for index, claim in enumerate(claims, 1)
+    )
+    sources = tuple(
+        {
+            "citation_id": index,
+            "url": f"https://example{index}.org/release",
+            "title": "AI technology release",
+            "published_at": "2026-07-01",
+        }
+        for index in range(1, 6)
+    )
 
     findings = build_ranked_findings(
-        claims=claims, decisions=decisions, passages=passages,
-        citation_sources=sources, as_of_date=AS_OF,
-        technology_topics=topics, user_topic=original,
+        claims=claims,
+        decisions=decisions,
+        passages=passages,
+        citation_sources=sources,
+        as_of_date=AS_OF,
+        technology_topics=topics,
+        user_topic=original,
     )
 
     assert {finding.entity for finding in findings} == {"Llama 4 Scout/Maverick"}
@@ -765,18 +947,32 @@ def test_metric_subject_is_product_and_rankings_or_definitions_are_not_changes()
     )
     findings = build_ranked_findings(
         claims=tuple({"claim_id": f"c{i}", "text": text} for i, text in enumerate(statements, 1)),
-        decisions=tuple({
-            "claim_id": f"c{i}", "supported": True,
-            "winning_passage_ids": [f"p{i}"], "winning_source_citation_ids": [i],
-        } for i in range(1, 5)),
-        passages=tuple({
-            "passage_id": f"p{i}", "source_citation_id": i,
-            "question_id": system.label, "text": text,
-        } for i, text in enumerate(statements, 1)),
-        citation_sources=tuple({
-            "citation_id": i, "url": f"https://example.org/{i}",
-            "published_at": "2026-07-10",
-        } for i in range(1, 5)),
+        decisions=tuple(
+            {
+                "claim_id": f"c{i}",
+                "supported": True,
+                "winning_passage_ids": [f"p{i}"],
+                "winning_source_citation_ids": [i],
+            }
+            for i in range(1, 5)
+        ),
+        passages=tuple(
+            {
+                "passage_id": f"p{i}",
+                "source_citation_id": i,
+                "question_id": system.label,
+                "text": text,
+            }
+            for i, text in enumerate(statements, 1)
+        ),
+        citation_sources=tuple(
+            {
+                "citation_id": i,
+                "url": f"https://example.org/{i}",
+                "published_at": "2026-07-10",
+            }
+            for i in range(1, 5)
+        ),
         as_of_date=AS_OF,
         technology_topics=topics,
         user_topic=original,
@@ -797,18 +993,32 @@ def test_metadata_and_ecosystem_statements_are_not_publishable_technology_change
     )
     findings = build_ranked_findings(
         claims=tuple({"claim_id": f"m{i}", "text": text} for i, text in enumerate(statements, 1)),
-        decisions=tuple({
-            "claim_id": f"m{i}", "supported": True,
-            "winning_passage_ids": [f"mp{i}"], "winning_source_citation_ids": [i],
-        } for i in range(1, 5)),
-        passages=tuple({
-            "passage_id": f"mp{i}", "source_citation_id": i,
-            "question_id": agent.label, "text": text,
-        } for i, text in enumerate(statements, 1)),
-        citation_sources=tuple({
-            "citation_id": i, "url": f"https://example.org/m{i}",
-            "published_at": "2026-07-10",
-        } for i in range(1, 5)),
+        decisions=tuple(
+            {
+                "claim_id": f"m{i}",
+                "supported": True,
+                "winning_passage_ids": [f"mp{i}"],
+                "winning_source_citation_ids": [i],
+            }
+            for i in range(1, 5)
+        ),
+        passages=tuple(
+            {
+                "passage_id": f"mp{i}",
+                "source_citation_id": i,
+                "question_id": agent.label,
+                "text": text,
+            }
+            for i, text in enumerate(statements, 1)
+        ),
+        citation_sources=tuple(
+            {
+                "citation_id": i,
+                "url": f"https://example.org/m{i}",
+                "published_at": "2026-07-10",
+            }
+            for i in range(1, 5)
+        ),
         as_of_date=AS_OF,
         technology_topics=topics,
         user_topic=original,
@@ -822,19 +1032,34 @@ def test_release_metadata_and_malformed_benchmark_fragments_do_not_displace_real
     topics = plan_technology_topics(original, profile)
     topic_by_kind = {item.topic_kind: item for item in topics}
     statements = (
-        ("agent", "MCP 2026-07-28 RC marked the release candidate revision of the Model Context Protocol on 2026-05-29."),
-        ("agent", "The Model Context Protocol team locked the release candidate for the 2026-07-28 specification on May 21, 2026."),
+        (
+            "agent",
+            "MCP 2026-07-28 RC marked the release candidate revision of the Model Context Protocol on 2026-05-29.",
+        ),
+        (
+            "agent",
+            "The Model Context Protocol team locked the release candidate for the 2026-07-28 specification on May 21, 2026.",
+        ),
         ("training_inference_system", "nvidia-smi dmon -s u captures GPU telemetry during a run."),
         ("multimodal", "1 Pro features a 1M-token context window."),
-        ("multimodal", "1 Pro: The April 2026 Benchmark Breakdown compared top frontier AI models across reasoning, coding, writing."),
+        (
+            "multimodal",
+            "1 Pro: The April 2026 Benchmark Breakdown compared top frontier AI models across reasoning, coding, writing.",
+        ),
         ("agent", "MCP 2026-07-28 RC was released as a release candidate on 2026-05-29."),
         ("open_infrastructure", "Kimi K2.5 is open-source."),
         ("open_infrastructure", "Kimi K2.5 is an open-source, native multimodal agentic model."),
         ("agent", "MCP uses a JSON-RPC-based protocol over Streamable HTTP."),
-        ("training_inference_system", "Capture GPU telemetry with nvidia-smi dmon -s u (or DCGM) during the run."),
+        (
+            "training_inference_system",
+            "Capture GPU telemetry with nvidia-smi dmon -s u (or DCGM) during the run.",
+        ),
         ("model_inference", "Llama-4 Maverick 120B is a Meta model."),
         ("training_inference_system", "Dynamo is the orchestration layer above inference engines."),
-        ("training_inference_system", "PyTorch 2.11 added differentiable collectives for distributed training."),
+        (
+            "training_inference_system",
+            "PyTorch 2.11 added differentiable collectives for distributed training.",
+        ),
     )
     claims = tuple(
         {"claim_id": f"c{index}", "text": statement}
@@ -842,19 +1067,32 @@ def test_release_metadata_and_malformed_benchmark_fragments_do_not_displace_real
     )
     findings = build_ranked_findings(
         claims=claims,
-        decisions=tuple({
-            "claim_id": f"c{index}", "supported": True,
-            "winning_passage_ids": [f"p{index}"],
-            "winning_source_citation_ids": [index],
-        } for index in range(1, len(statements) + 1)),
-        passages=tuple({
-            "passage_id": f"p{index}", "source_citation_id": index,
-            "question_id": topic_by_kind[kind].label, "text": statement,
-        } for index, (kind, statement) in enumerate(statements, 1)),
-        citation_sources=tuple({
-            "citation_id": index, "url": f"https://example.org/{index}",
-            "published_at": "2026-07-10",
-        } for index in range(1, len(statements) + 1)),
+        decisions=tuple(
+            {
+                "claim_id": f"c{index}",
+                "supported": True,
+                "winning_passage_ids": [f"p{index}"],
+                "winning_source_citation_ids": [index],
+            }
+            for index in range(1, len(statements) + 1)
+        ),
+        passages=tuple(
+            {
+                "passage_id": f"p{index}",
+                "source_citation_id": index,
+                "question_id": topic_by_kind[kind].label,
+                "text": statement,
+            }
+            for index, (kind, statement) in enumerate(statements, 1)
+        ),
+        citation_sources=tuple(
+            {
+                "citation_id": index,
+                "url": f"https://example.org/{index}",
+                "published_at": "2026-07-10",
+            }
+            for index in range(1, len(statements) + 1)
+        ),
         as_of_date=AS_OF,
         technology_topics=topics,
         user_topic=original,
@@ -870,22 +1108,34 @@ def test_official_release_context_keeps_supported_model_and_protocol_releases() 
     topic_by_kind = {item.topic_kind: item for item in topics}
     statements = (
         ("open_infrastructure", "Kimi K2.5 is an open-source, native multimodal agentic model."),
-        ("agent", "The Model Context Protocol release candidate 2026-07-28 revision was released on 2026-05-29."),
+        (
+            "agent",
+            "The Model Context Protocol release candidate 2026-07-28 revision was released on 2026-05-29.",
+        ),
     )
     findings = build_ranked_findings(
         claims=tuple(
             {"claim_id": f"official-{index}", "text": statement}
             for index, (_, statement) in enumerate(statements, 1)
         ),
-        decisions=tuple({
-            "claim_id": f"official-{index}", "supported": True,
-            "winning_passage_ids": [f"official-p{index}"],
-            "winning_source_citation_ids": [index],
-        } for index in range(1, 3)),
-        passages=tuple({
-            "passage_id": f"official-p{index}", "source_citation_id": index,
-            "question_id": topic_by_kind[kind].label, "text": statement,
-        } for index, (kind, statement) in enumerate(statements, 1)),
+        decisions=tuple(
+            {
+                "claim_id": f"official-{index}",
+                "supported": True,
+                "winning_passage_ids": [f"official-p{index}"],
+                "winning_source_citation_ids": [index],
+            }
+            for index in range(1, 3)
+        ),
+        passages=tuple(
+            {
+                "passage_id": f"official-p{index}",
+                "source_citation_id": index,
+                "question_id": topic_by_kind[kind].label,
+                "text": statement,
+            }
+            for index, (kind, statement) in enumerate(statements, 1)
+        ),
         citation_sources=(
             {
                 "citation_id": 1,
@@ -933,13 +1183,21 @@ def _gate_finding(
     )
 
 
-def test_entity_normalization_merges_vendor_version_and_sdk_variants_without_collapsing_names() -> None:
-    assert normalize_entity_key("OpenAI LangChain SDK v2.1") == normalize_entity_key("LangChain framework")
+def test_entity_normalization_merges_vendor_version_and_sdk_variants_without_collapsing_names() -> (
+    None
+):
+    assert normalize_entity_key("OpenAI LangChain SDK v2.1") == normalize_entity_key(
+        "LangChain framework"
+    )
     assert normalize_entity_key("Google HunyuanImage-2.0") == normalize_entity_key("Hunyuan Image")
     assert normalize_entity_key("open-webui") != normalize_entity_key("open-interpreter")
     assert normalize_entity_key("通义千问模型") != normalize_entity_key("腾讯混元模型")
-    assert normalize_entity_key("Microsoft Agent Framework v1") == normalize_entity_key("Agent Framework 1.0")
-    assert normalize_entity_key("OpenAI Agents SDK") != normalize_entity_key("Microsoft Agent Framework")
+    assert normalize_entity_key("Microsoft Agent Framework v1") == normalize_entity_key(
+        "Agent Framework 1.0"
+    )
+    assert normalize_entity_key("OpenAI Agents SDK") != normalize_entity_key(
+        "Microsoft Agent Framework"
+    )
 
 
 def test_finding_set_gate_rejects_each_indistinguishable_or_incomplete_shape() -> None:
@@ -962,10 +1220,7 @@ def test_finding_set_gate_rejects_each_indistinguishable_or_incomplete_shape() -
         tuple(_gate_finding(index, recency=0.0) for index in range(1, 6))
     )
     assert "technology_recent_coverage_insufficient" in finding_set_failure_codes(
-        tuple(
-            _gate_finding(index, recency=1.0 if index <= 2 else 0.0)
-            for index in range(1, 6)
-        )
+        tuple(_gate_finding(index, recency=1.0 if index <= 2 else 0.0) for index in range(1, 6))
     )
     assert "technology_maturity_unresolved" in finding_set_failure_codes(
         tuple(_gate_finding(index, maturity="unknown") for index in range(1, 6))
@@ -991,18 +1246,35 @@ def test_explicit_industry_application_keeps_relevant_vertical_evidence() -> Non
     profile = classify_intent(user_topic, as_of_date=AS_OF)
     topic = plan_technology_topics(user_topic, profile)[0]
     findings = build_ranked_findings(
-        claims=({"claim_id": "c1", "text": "MedRuntime released EHR model inference support for hospitals."},),
-        decisions=({
-            "claim_id": "c1", "supported": True, "winning_passage_ids": ["p1"],
-            "winning_source_citation_ids": [1],
-        },),
-        passages=({
-            "passage_id": "p1", "source_citation_id": 1, "question_id": topic.label,
-            "text": "MedRuntime released EHR model inference support for hospitals.",
-        },),
-        citation_sources=({
-            "citation_id": 1, "url": "https://example.org/med-runtime", "published_at": "2026-07-01",
-        },),
+        claims=(
+            {
+                "claim_id": "c1",
+                "text": "MedRuntime released EHR model inference support for hospitals.",
+            },
+        ),
+        decisions=(
+            {
+                "claim_id": "c1",
+                "supported": True,
+                "winning_passage_ids": ["p1"],
+                "winning_source_citation_ids": [1],
+            },
+        ),
+        passages=(
+            {
+                "passage_id": "p1",
+                "source_citation_id": 1,
+                "question_id": topic.label,
+                "text": "MedRuntime released EHR model inference support for hospitals.",
+            },
+        ),
+        citation_sources=(
+            {
+                "citation_id": 1,
+                "url": "https://example.org/med-runtime",
+                "published_at": "2026-07-01",
+            },
+        ),
         as_of_date=AS_OF,
         technology_topics=(topic,),
         user_topic=user_topic,
@@ -1058,7 +1330,11 @@ def test_professional_report_matches_structured_golden_and_has_differentiated_sc
                 "published_claims": ["debug"],
             },
             "citations": [
-                {"citation_id": index, "title": f"Source {index}", "url": f"https://source{index}.example"}
+                {
+                    "citation_id": index,
+                    "title": f"Source {index}",
+                    "url": f"https://source{index}.example",
+                }
                 for index in range(1, 6)
             ],
         },
@@ -1077,42 +1353,59 @@ def test_professional_report_matches_structured_golden_and_has_differentiated_sc
     assert all(f"| {score:.3f} |" in markdown for score in scores)
     assert markdown.count("- 核心变化：") == 5
     assert set(report) == {
-        "schema_version", "status", "reason_code", "topic", "report_md", "body_md",
-        "intent_profile", "public_findings", "citation_count", "report_hash",
+        "schema_version",
+        "status",
+        "reason_code",
+        "topic",
+        "report_md",
+        "body_md",
+        "intent_profile",
+        "public_findings",
+        "citation_count",
+        "report_hash",
     }
-    assert all("statement" not in item and "claim_ids" not in item for item in report["public_findings"])
+    assert all(
+        "statement" not in item and "claim_ids" not in item for item in report["public_findings"]
+    )
 
 
 def test_behavior_tree_acronym_uses_descriptive_source_title_as_entity() -> None:
     user_topic = "AI 最新最有价值的技术趋势"
     profile = classify_intent(user_topic, as_of_date=AS_OF)
     topic = next(
-        item for item in plan_technology_topics(user_topic, profile)
-        if item.topic_kind == "agent"
+        item for item in plan_technology_topics(user_topic, profile) if item.topic_kind == "agent"
     )
     findings = build_ranked_findings(
-        claims=({
-            "claim_id": "c-bt",
-            "text": "BT synthesis architecture enables coding agents to query MCP tools.",
-        },),
-        decisions=({
-            "claim_id": "c-bt",
-            "supported": True,
-            "winning_passage_ids": ["p-bt"],
-            "winning_source_citation_ids": [1],
-        },),
-        passages=({
-            "passage_id": "p-bt",
-            "source_citation_id": 1,
-            "question_id": topic.label,
-            "text": "BT synthesis architecture enables coding agents to query MCP tools.",
-        },),
-        citation_sources=({
-            "citation_id": 1,
-            "title": "Contract-Grounded Behavior Tree Synthesis via Coding Agents",
-            "url": "https://arxiv.org/abs/2607.12220v1",
-            "published_at": "2026-07-13",
-        },),
+        claims=(
+            {
+                "claim_id": "c-bt",
+                "text": "BT synthesis architecture enables coding agents to query MCP tools.",
+            },
+        ),
+        decisions=(
+            {
+                "claim_id": "c-bt",
+                "supported": True,
+                "winning_passage_ids": ["p-bt"],
+                "winning_source_citation_ids": [1],
+            },
+        ),
+        passages=(
+            {
+                "passage_id": "p-bt",
+                "source_citation_id": 1,
+                "question_id": topic.label,
+                "text": "BT synthesis architecture enables coding agents to query MCP tools.",
+            },
+        ),
+        citation_sources=(
+            {
+                "citation_id": 1,
+                "title": "Contract-Grounded Behavior Tree Synthesis via Coding Agents",
+                "url": "https://arxiv.org/abs/2607.12220v1",
+                "published_at": "2026-07-13",
+            },
+        ),
         as_of_date=AS_OF,
         technology_topics=(topic,),
         user_topic=user_topic,
@@ -1126,7 +1419,8 @@ def test_vllm_model_runner_v2_alias_is_merged_with_bare_v2_fragment() -> None:
     user_topic = "AI 最新最有价值的技术趋势"
     profile = classify_intent(user_topic, as_of_date=AS_OF)
     topic = next(
-        item for item in plan_technology_topics(user_topic, profile)
+        item
+        for item in plan_technology_topics(user_topic, profile)
         if item.topic_kind == "model_inference"
     )
     statements = (
@@ -1138,24 +1432,32 @@ def test_vllm_model_runner_v2_alias_is_merged_with_bare_v2_fragment() -> None:
             {"claim_id": f"c{index}", "text": statement}
             for index, statement in enumerate(statements, 1)
         ),
-        decisions=tuple({
-            "claim_id": f"c{index}",
-            "supported": True,
-            "winning_passage_ids": [f"p{index}"],
-            "winning_source_citation_ids": [1],
-        } for index in range(1, 3)),
-        passages=tuple({
-            "passage_id": f"p{index}",
-            "source_citation_id": 1,
-            "question_id": topic.label,
-            "text": statement,
-        } for index, statement in enumerate(statements, 1)),
-        citation_sources=({
-            "citation_id": 1,
-            "title": "v0.25.1",
-            "url": "https://github.com/vllm-project/vllm/releases",
-            "published_at": "2026-07-14",
-        },),
+        decisions=tuple(
+            {
+                "claim_id": f"c{index}",
+                "supported": True,
+                "winning_passage_ids": [f"p{index}"],
+                "winning_source_citation_ids": [1],
+            }
+            for index in range(1, 3)
+        ),
+        passages=tuple(
+            {
+                "passage_id": f"p{index}",
+                "source_citation_id": 1,
+                "question_id": topic.label,
+                "text": statement,
+            }
+            for index, statement in enumerate(statements, 1)
+        ),
+        citation_sources=(
+            {
+                "citation_id": 1,
+                "title": "v0.25.1",
+                "url": "https://github.com/vllm-project/vllm/releases",
+                "published_at": "2026-07-14",
+            },
+        ),
         as_of_date=AS_OF,
         technology_topics=(topic,),
         user_topic=user_topic,
@@ -1170,7 +1472,8 @@ def test_torchcomms_backend_claims_merge_under_backend_entity() -> None:
     user_topic = "AI 最新最有价值的技术趋势"
     profile = classify_intent(user_topic, as_of_date=AS_OF)
     topic = next(
-        item for item in plan_technology_topics(user_topic, profile)
+        item
+        for item in plan_technology_topics(user_topic, profile)
         if item.topic_kind == "training_inference_system"
     )
     statements = (
@@ -1182,21 +1485,32 @@ def test_torchcomms_backend_claims_merge_under_backend_entity() -> None:
             {"claim_id": f"c{index}", "text": statement}
             for index, statement in enumerate(statements, 1)
         ),
-        decisions=tuple({
-            "claim_id": f"c{index}", "supported": True,
-            "winning_passage_ids": [f"p{index}"],
-            "winning_source_citation_ids": [1],
-        } for index in range(1, 3)),
-        passages=tuple({
-            "passage_id": f"p{index}", "source_citation_id": 1,
-            "question_id": topic.label, "text": statement,
-        } for index, statement in enumerate(statements, 1)),
-        citation_sources=({
-            "citation_id": 1,
-            "title": "PyTorch 2.13.0 Release",
-            "url": "https://github.com/pytorch/pytorch/releases",
-            "published_at": "2026-07-08",
-        },),
+        decisions=tuple(
+            {
+                "claim_id": f"c{index}",
+                "supported": True,
+                "winning_passage_ids": [f"p{index}"],
+                "winning_source_citation_ids": [1],
+            }
+            for index in range(1, 3)
+        ),
+        passages=tuple(
+            {
+                "passage_id": f"p{index}",
+                "source_citation_id": 1,
+                "question_id": topic.label,
+                "text": statement,
+            }
+            for index, statement in enumerate(statements, 1)
+        ),
+        citation_sources=(
+            {
+                "citation_id": 1,
+                "title": "PyTorch 2.13.0 Release",
+                "url": "https://github.com/pytorch/pytorch/releases",
+                "published_at": "2026-07-08",
+            },
+        ),
         as_of_date=AS_OF,
         technology_topics=(topic,),
         user_topic=user_topic,

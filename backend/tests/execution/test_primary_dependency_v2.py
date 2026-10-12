@@ -1,4 +1,5 @@
 """Runtime codec/freeze contract, not a claim of registered short production."""
+
 from copy import deepcopy
 
 import pytest
@@ -6,18 +7,30 @@ from deskpet.execution.foreground_runtime import FrozenContextAuthority
 from deskpet.execution.primary_dependencies import dependencies, parse_dependencies
 from simple_harness import thaw_json
 
-SHORT = {"audit_id":"actual-audit-id", "chunk_ref":"actual-chunk-ref", "content_hash":"a"*64}
+SHORT = {"audit_id": "actual-audit-id", "chunk_ref": "actual-chunk-ref", "content_hash": "a" * 64}
 
 
 def test_v1_preserved_v2_exact_short_survives_deep_freeze_without_aliasing():
-    old = {"schema_version":1,"evidence":[],"recall":[]}
+    old = {"schema_version": 1, "evidence": [], "recall": []}
     assert parse_dependencies(old) == old
     proof = dependencies(short_horizon=[SHORT])
     expected = deepcopy(proof)
-    context = FrozenContextAuthority("host", "sdk", "owner", 1, "ref", "hash", "snapshot", (), "USER", (), visibility_dependencies=proof)
+    context = FrozenContextAuthority(
+        "host",
+        "sdk",
+        "owner",
+        1,
+        "ref",
+        "hash",
+        "snapshot",
+        (),
+        "USER",
+        (),
+        visibility_dependencies=proof,
+    )
     proof["short_horizon"][0]["audit_id"] = "mutated-caller"
     assert thaw_json(context.visibility_dependencies) == expected
-    empty_v2 = {**old, "schema_version":2, "short_horizon":[]}
+    empty_v2 = {**old, "schema_version": 2, "short_horizon": []}
     assert parse_dependencies(empty_v2) == empty_v2  # no silent v1 fallback
 
 
@@ -29,7 +42,9 @@ def test_closed_v2_never_discards_an_unrecognized_carrier(fault):
     elif fault == "v1_extra":
         proof["schema_version"] = 1
     elif fault == "typed":
-        proof["short_horizon"] = [{"result_id":"x","result_hash":"a"*64,"item_id":"i","item_hash":"b"*64}]
+        proof["short_horizon"] = [
+            {"result_id": "x", "result_hash": "a" * 64, "item_id": "i", "item_hash": "b" * 64}
+        ]
     elif fault == "hash":
         proof["short_horizon"][0]["content_hash"] = "bad"
     else:

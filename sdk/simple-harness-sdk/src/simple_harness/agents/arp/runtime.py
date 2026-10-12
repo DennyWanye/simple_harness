@@ -85,7 +85,9 @@ class ArpRuntime:
     def protocol(self) -> str:
         return PROTOCOL
 
-    def policy_for(self, session: store.SessionRow) -> tuple[store.PolicyAdoptionRow, store.PolicyObjectRow]:
+    def policy_for(
+        self, session: store.SessionRow
+    ) -> tuple[store.PolicyAdoptionRow, store.PolicyObjectRow]:
         """The Session's currently adopted policy (settings update = next request only); the
         frozen profile policy is only its first revision."""
 
@@ -93,7 +95,9 @@ class ArpRuntime:
         adoption = store.latest_adoption(connection, session.session_id)
         if adoption is None:
             raise ArpError("POLICY_CONFLICT", "session has no adopted context policy")
-        row = store.read_policy_object(connection, adoption.policy_ref.id, adoption.policy_ref.revision)
+        row = store.read_policy_object(
+            connection, adoption.policy_ref.id, adoption.policy_ref.revision
+        )
         if row is None or row.content_hash != adoption.policy_ref.content_hash:
             raise ArpError("POLICY_CONFLICT", "adopted policy object is missing or differs")
         return adoption, row
@@ -112,7 +116,9 @@ class ArpRuntime:
                 cursor_ttl_ms=int(policy.body["query_cursor_ttl_ms"]),
             )
             self._services[session.session_id] = service
-        service._ttl = int(policy.body["query_cursor_ttl_ms"])  # the adopted policy's TTL governs new cursors
+        service._ttl = int(
+            policy.body["query_cursor_ttl_ms"]
+        )  # the adopted policy's TTL governs new cursors
         return service, state.guard, state.generation
 
     def release_session(self, session_id: str) -> None:
@@ -140,15 +146,24 @@ class ArpRuntime:
         if self.sessions is not None:
             try:
                 draining = self.sessions.drive_draining(
-                    on_error=lambda session_id, error: health.fail("draining", error, item=session_id))
+                    on_error=lambda session_id, error: health.fail(
+                        "draining", error, item=session_id
+                    )
+                )
                 if draining:
                     health.ok("draining")
             except Exception as error:  # noqa: BLE001 - listing itself failed
                 health.fail("draining", error)
         probed = False
-        if self.catalogue is not None and self.bootstrap is not None and self.catalogue_caller is not None:
+        if (
+            self.catalogue is not None
+            and self.bootstrap is not None
+            and self.catalogue_caller is not None
+        ):
             try:
-                probed = refresh_builtin_health(self.catalogue, self.bootstrap.deployment_ref, caller=self.catalogue_caller)
+                probed = refresh_builtin_health(
+                    self.catalogue, self.bootstrap.deployment_ref, caller=self.catalogue_caller
+                )
                 health.ok("tool_probe")
             except Exception as error:  # noqa: BLE001
                 health.fail("tool_probe", error)
@@ -159,9 +174,13 @@ class ArpRuntime:
             if session is None:
                 continue
             access = self.context._access(session, row.turn_id)
-            clock = Pin("receipt", f"tick:{row.recall_key}", 0, digest({"tick": self.ports.clock_ms()}))
+            clock = Pin(
+                "receipt", f"tick:{row.recall_key}", 0, digest({"tick": self.ports.clock_ms()})
+            )
             try:
-                self.recall.resume(row.recall_key, access, now_ms=self.ports.clock_ms(), clock_receipt_ref=clock)
+                self.recall.resume(
+                    row.recall_key, access, now_ms=self.ports.clock_ms(), clock_receipt_ref=clock
+                )
             except ArpError as error:
                 if error.code == "FILE_BUSY":
                     deferred += 1  # another holder of the Session file; retried next tick
@@ -179,15 +198,24 @@ class ArpRuntime:
             resumed += 1
         if resumed or blocked:
             health.ok("recall")
-        return {"jobs": len(jobs), "draining": draining, "recalls": resumed, "blocked": blocked, "deferred": deferred,
-                "failed": failed, "health_probed": int(probed)}
+        return {
+            "jobs": len(jobs),
+            "draining": draining,
+            "recalls": resumed,
+            "blocked": blocked,
+            "deferred": deferred,
+            "failed": failed,
+            "health_probed": int(probed),
+        }
 
     def close(self) -> None:
         self.index.close()
         self._services.clear()
 
 
-def _freeze_profile(database: Database, ports: ArpPorts) -> tuple[store.ProfileRow, store.PolicyObjectRow]:
+def _freeze_profile(
+    database: Database, ports: ArpPorts
+) -> tuple[store.ProfileRow, store.PolicyObjectRow]:
     profile_json = ports.profile.to_json()
     activation = dict(ports.activation_receipt)
     with database.transaction() as connection:
@@ -219,7 +247,11 @@ def _admitted_ports(ports: AgentRuntimePorts) -> AgentRuntimePorts:
     recorded invocations and would otherwise meet the request's own, unresolved one — so a
     deployment that brings no admission gets the SDK's local one with a no-op fence.  The
     concurrency cap moves from the wire semaphore to that admission unchanged."""
-    if ports.provider_admission is not None or ports.local_provider_admission is not None or ports.provider_handoff_fence is not None:
+    if (
+        ports.provider_admission is not None
+        or ports.local_provider_admission is not None
+        or ports.provider_handoff_fence is not None
+    ):
         return ports
     return replace(ports, provider_handoff_fence=_standalone_fence)
 
@@ -232,13 +264,23 @@ def build_arp_runtime(
     if is_allow_all(ports.authorization):
         raise ArpError("AUTHORITY_SOURCE_MISSING", "ARP runtimes refuse AllowAll authorization")
     if not isinstance(arp.meter, MeterBinding):
-        raise ArpError("GENERIC_TOKEN_BOUND_UNCERTIFIED", "ARP runtimes need a certified MeterBinding")
+        raise ArpError(
+            "GENERIC_TOKEN_BOUND_UNCERTIFIED", "ARP runtimes need a certified MeterBinding"
+        )
     if arp.meter.tokenizer is not ports.tokenizer:
-        raise ArpError("TOKEN_SERIALIZER_CHANGED", "the meter binding must wrap the runtime's tokenizer")
-    if ports.default_max_output_tokens > int(arp.meter.model_limits["max_output_tokens"]) or ports.max_output_tokens_ceiling > int(arp.meter.model_limits["max_output_tokens"]):
-        raise ArpError("INVALID_OUTPUT_RESERVE", "output caps exceed the deployment's max_output_tokens")
+        raise ArpError(
+            "TOKEN_SERIALIZER_CHANGED", "the meter binding must wrap the runtime's tokenizer"
+        )
+    if ports.default_max_output_tokens > int(
+        arp.meter.model_limits["max_output_tokens"]
+    ) or ports.max_output_tokens_ceiling > int(arp.meter.model_limits["max_output_tokens"]):
+        raise ArpError(
+            "INVALID_OUTPUT_RESERVE", "output caps exceed the deployment's max_output_tokens"
+        )
     if arp.embedding is not None and arp.embedding_resource_ref is None:
-        raise ArpError("EMBEDDING_RESOURCE_MISSING", "an embedding port needs its approved deployment pin")
+        raise ArpError(
+            "EMBEDDING_RESOURCE_MISSING", "an embedding port needs its approved deployment pin"
+        )
     root = read_root(arp.root_dir)
     ports = _admitted_ports(ports)
     path = Path(ports.database_path)
@@ -264,13 +306,23 @@ def build_arp_runtime(
         return _DynamicExposure(base, holder)
 
     runtime = build_agent_runtime(
-        ports, owner_scope=owner_scope, context_factory=context_factory, wire_factory=wire_factory, session_tools_factory=session_tools_factory,
+        ports,
+        owner_scope=owner_scope,
+        context_factory=context_factory,
+        wire_factory=wire_factory,
+        session_tools_factory=session_tools_factory,
         exposure_reader=exposure_reader,
     )
     try:
         profile, policy = _freeze_profile(runtime.uow.database, arp)
         creation = NativeCreationService(
-            runtime, arp, root, profile, policy, agent_id_for=agent_id_for, start_input_for=start_input_for
+            runtime,
+            arp,
+            root,
+            profile,
+            policy,
+            agent_id_for=agent_id_for,
+            start_input_for=start_input_for,
         )
         tokenizer = ports.tokenizer
         index = SessionIndexCoordinator(
@@ -288,7 +340,13 @@ def build_arp_runtime(
         )
         context: ArpContextPort = holder["context"]
         state = ArpRuntime(
-            arp, root, profile, policy, creation, NativeMeterAdapter(arp.meter), index,
+            arp,
+            root,
+            profile,
+            policy,
+            creation,
+            NativeMeterAdapter(arp.meter),
+            index,
             ContextRecallCoordinator(
                 uow=runtime.uow,
                 search_for=lambda session: state.search_for(session),
@@ -302,28 +360,50 @@ def build_arp_runtime(
             context,
         )
         context.bind(state)
-        state.retriever = SessionRetriever(state, capture=lambda session, highwater: holder["context"]._capture(session, highwater))
+        state.retriever = SessionRetriever(
+            state, capture=lambda session, highwater: holder["context"]._capture(session, highwater)
+        )
         holder["tools"].attach(state.retriever)
         # Unified catalogue for this namespace: mount, builtin bootstrap, exposure/resolver.
-        scope = CatalogueScope(realm_id=root.root_id, owner_id=owner_scope, project_id=None, catalogue_owner_root_id=root.root_id)
+        scope = CatalogueScope(
+            realm_id=root.root_id,
+            owner_id=owner_scope,
+            project_id=None,
+            catalogue_owner_root_id=root.root_id,
+        )
         state.catalogue = CatalogueService(runtime.uow, scope, arp.clock_ms, ports.clock)
-        owner_contract = Pin("policy", f"{profile.profile_id}:owner-mode:{arp.profile.owner_mode}", profile.revision, profile.body_hash)
+        owner_contract = Pin(
+            "policy",
+            f"{profile.profile_id}:owner-mode:{arp.profile.owner_mode}",
+            profile.revision,
+            profile.body_hash,
+        )
         caller = runtime_caller(arp.profile.refs.activation_receipt_ref, owner_contract)
         state.catalogue.mount(mount_receipt_ref=caller.command_receipt_ref)
         from simple_harness import __version__ as sdk_version
 
         state.bootstrap = bootstrap_builtin_tools(
-            state.catalogue, specs=tuple(runtime._assembled.registry.specs), caller=caller, approval_ref=policy.approval_ref,
-            effect_classes=arp.extra.get("tool_effect_classes"), sdk_version=str(sdk_version),
+            state.catalogue,
+            specs=tuple(runtime._assembled.registry.specs),
+            caller=caller,
+            approval_ref=policy.approval_ref,
+            effect_classes=arp.extra.get("tool_effect_classes"),
+            sdk_version=str(sdk_version),
         )
         state.catalogue_caller = caller
         state.exposure = ToolExposureService(state.catalogue)
         state.resolver = CapabilityResolver(state.catalogue)
         state.skills = SkillImporter(
-            state.catalogue, root.directory / "bundles", state.bootstrap.instructions_capability_ref, state.bootstrap.instructions_schema_ref,
-            state.bootstrap.verification_policy_ref, arp.clock_ms,
+            state.catalogue,
+            root.directory / "bundles",
+            state.bootstrap.instructions_capability_ref,
+            state.bootstrap.instructions_schema_ref,
+            state.bootstrap.verification_policy_ref,
+            arp.clock_ms,
         )
-        state.lifecycle = SkillLifecycleService(state.catalogue, state.skills, arp.acceptance, arp.clock_ms)
+        state.lifecycle = SkillLifecycleService(
+            state.catalogue, state.skills, arp.acceptance, arp.clock_ms
+        )
         # BW09: an acceptance reader that needs the catalogue's dispatch links (the real
         # Assurance adapter) binds to the lifecycle service here; test doubles ignore it.
         bind = getattr(arp.acceptance, "bind_lifecycle", None)
@@ -336,12 +416,31 @@ def build_arp_runtime(
             body = policy.body
             candidates = [int(body["max_context_tokens"]), int(limits["input_limit_tokens"])]
             if limits.get("combined_limit_tokens") is not None:
-                candidates.append(int(limits["combined_limit_tokens"]) - int(limits["max_output_tokens"]))
-            return max(0, (min(candidates) - int(body["safety_reserve_tokens"]) - int(body["tool_headroom_tokens"])) // 2)
+                candidates.append(
+                    int(limits["combined_limit_tokens"]) - int(limits["max_output_tokens"])
+                )
+            return max(
+                0,
+                (
+                    min(candidates)
+                    - int(body["safety_reserve_tokens"])
+                    - int(body["tool_headroom_tokens"])
+                )
+                // 2,
+            )
 
         state.skill_use = SkillUseService(
-            state.catalogue, state.skills, runtime.uow, arp.clock_ms, ports.clock, policy.approval_ref, str(arp.profile.owner_mode), script_runner=arp.script_runner,
-            count=index.count, skill_capacity=skill_capacity, loaded_blocks=lambda session: skill_blocks_for(state, session, count=index.count),
+            state.catalogue,
+            state.skills,
+            runtime.uow,
+            arp.clock_ms,
+            ports.clock,
+            policy.approval_ref,
+            str(arp.profile.owner_mode),
+            script_runner=arp.script_runner,
+            count=index.count,
+            skill_capacity=skill_capacity,
+            loaded_blocks=lambda session: skill_blocks_for(state, session, count=index.count),
         )
         state.skill_use.trial_mission = state.lifecycle.trial_mission_for
         if arp.catalogue_authority is not None:
@@ -350,10 +449,19 @@ def build_arp_runtime(
             state.skill_use.authority = arp.catalogue_authority
             state.skill_use.trial_mission = arp.catalogue_authority.trial_mission_for
         state.sessions = SessionLifecycleService(
-            runtime=runtime, root=root, index=index, recall=state.recall, access_for=lambda session, turn_id: holder["context"]._access(session, turn_id),
-            capture=lambda session, highwater: holder["context"]._capture(session, highwater), release=state.release_session,
-            retention_policy_ref=arp.profile.refs.retention_policy_ref, authority_ref=policy.approval_ref, clock_ms=arp.clock_ms, clock=ports.clock,
-            owner_id=ports.owner_id, fault=arp.fault,
+            runtime=runtime,
+            root=root,
+            index=index,
+            recall=state.recall,
+            access_for=lambda session, turn_id: holder["context"]._access(session, turn_id),
+            capture=lambda session, highwater: holder["context"]._capture(session, highwater),
+            release=state.release_session,
+            retention_policy_ref=arp.profile.refs.retention_policy_ref,
+            authority_ref=policy.approval_ref,
+            clock_ms=arp.clock_ms,
+            clock=ports.clock,
+            owner_id=ports.owner_id,
+            fault=arp.fault,
         )
         index.handlers["PURGE"] = state.sessions.process_purge_job
         holder["exposure"] = state.exposure

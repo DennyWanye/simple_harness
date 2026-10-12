@@ -44,9 +44,7 @@ _EXTRACTIVE_TOKEN = re.compile(
 
 def _extractive_tokens(text: object) -> set[str]:
     return {
-        value.casefold()
-        for value in _EXTRACTIVE_TOKEN.findall(str(text or ""))
-        if value.strip()
+        value.casefold() for value in _EXTRACTIVE_TOKEN.findall(str(text or "")) if value.strip()
     }
 
 
@@ -88,14 +86,10 @@ def _claims(value: object) -> tuple[ReportClaim, ...]:
                 text=str(raw.get("text") or ""),
                 kind=str(raw.get("kind") or ""),  # type: ignore[arg-type]
                 source_ids=tuple(str(item) for item in raw.get("source_ids", [])),
-                supported_fact_refs=tuple(
-                    str(item) for item in raw.get("supported_fact_refs", [])
-                ),
+                supported_fact_refs=tuple(str(item) for item in raw.get("supported_fact_refs", [])),
                 intent_tokens=tuple(str(item) for item in raw.get("intent_tokens", [])),
                 is_inference=bool(raw.get("is_inference", False)),
-                metadata_pseudo_judgment=bool(
-                    raw.get("metadata_pseudo_judgment", False)
-                ),
+                metadata_pseudo_judgment=bool(raw.get("metadata_pseudo_judgment", False)),
             )
         )
     return tuple(result)
@@ -113,8 +107,7 @@ def _server_sources(
     official_families = {
         str(item.get("family_id") or "")
         for item in evidence_candidates
-        if bool(item.get("admitted", False))
-        and str(item.get("source_tier") or "") == "first_party"
+        if bool(item.get("admitted", False)) and str(item.get("source_tier") or "") == "first_party"
     }
     for raw in evidence_candidates:
         if not bool(raw.get("admitted", False)):
@@ -135,7 +128,8 @@ def _server_sources(
                 first_party=str(raw.get("source_tier") or "") == "first_party",
                 strong_family=True,
                 winning=True,
-                invalid_page=bool(raw.get("invalid_reason")) or bool(
+                invalid_page=bool(raw.get("invalid_reason"))
+                or bool(
                     flags
                     & {
                         "invalid",
@@ -151,9 +145,7 @@ def _server_sources(
                     }
                 ),
                 captcha="captcha" in flags,
-                aggregator_replacement=(
-                    str(raw.get("source_tier") or "") == "aggregator"
-                ),
+                aggregator_replacement=(str(raw.get("source_tier") or "") == "aggregator"),
                 secondary_replaces_available_official=(
                     bool(raw.get("secondary_replaces_available_official", False))
                     or (
@@ -252,9 +244,7 @@ def _validate_evidence_bounds(
                 )
             )
     unsupported = [
-        item.claim_id
-        for item in evaluate_support(support_claims, passages)
-        if not item.supported
+        item.claim_id for item in evaluate_support(support_claims, passages) if not item.supported
     ]
     if unsupported:
         raise ReportDraftError(
@@ -294,18 +284,14 @@ def build_extractively_grounded_draft(
     for dimension in brief.dimensions:
         coverage = coverage_by_id[dimension.dimension_id]
         allowed_ids = tuple(
-            dict.fromkeys(
-                (*coverage.winning_evidence_ids, *coverage.evidence_passage_ids)
-            )
+            dict.fromkeys((*coverage.winning_evidence_ids, *coverage.evidence_passage_ids))
         )
         entries: list[tuple[str, str]] = []
         for candidate_id in allowed_ids:
             raw = candidate_by_id.get(candidate_id)
             if raw is None or str(raw.get("dimension_id") or "") != dimension.dimension_id:
                 continue
-            for snippet in _extractive_snippets(
-                raw.get("span_text") or raw.get("body_text")
-            ):
+            for snippet in _extractive_snippets(raw.get("span_text") or raw.get("body_text")):
                 entries.append((candidate_id, snippet))
         if entries:
             entries_by_dimension[dimension.dimension_id] = entries
@@ -334,9 +320,7 @@ def build_extractively_grounded_draft(
         return min(narrowed, key=rank)
 
     raw_claims = _records(draft.get("claims"), "claims")
-    intent_vocabulary = _extractive_tokens(
-        " ".join((brief.user_question, *brief.subjects))
-    )
+    intent_vocabulary = _extractive_tokens(" ".join((brief.user_question, *brief.subjects)))
     transformed_claims: list[dict[str, JsonValue]] = []
     seen_claim_ids: set[str] = set()
     key_count = 0
@@ -356,12 +340,15 @@ def build_extractively_grounded_draft(
             continue
         if kind == "key_judgment" and key_count >= 7:
             continue
-        preferred_ids = [
-            *raw.get("source_ids", []),
-            *raw.get("supported_fact_refs", []),
-        ] if isinstance(raw.get("source_ids", []), list) and isinstance(
-            raw.get("supported_fact_refs", []), list
-        ) else []
+        preferred_ids = (
+            [
+                *raw.get("source_ids", []),
+                *raw.get("supported_fact_refs", []),
+            ]
+            if isinstance(raw.get("source_ids", []), list)
+            and isinstance(raw.get("supported_fact_refs", []), list)
+            else []
+        )
         selected = choose_entry(dimension_id, raw.get("text"), preferred_ids)
         if selected is None:
             continue
@@ -379,11 +366,11 @@ def build_extractively_grounded_draft(
             },
             key=lambda token: (-len(token), token),
         )[:6]
-        original_intent_tokens = [
-            str(item)
-            for item in intent_tokens
-            if isinstance(item, str) and item.strip()
-        ] if isinstance(intent_tokens, list) else []
+        original_intent_tokens = (
+            [str(item) for item in intent_tokens if isinstance(item, str) and item.strip()]
+            if isinstance(intent_tokens, list)
+            else []
+        )
         transformed_claims.append(
             {
                 "claim_id": claim_id,
@@ -402,9 +389,7 @@ def build_extractively_grounded_draft(
         if kind == "key_judgment":
             key_count += 1
     if not 3 <= key_count <= 7:
-        raise ReportDraftError(
-            "extractive recovery requires 3 to 7 evidence-backed key judgments"
-        )
+        raise ReportDraftError("extractive recovery requires 3 to 7 evidence-backed key judgments")
 
     raw_analysis_by_dimension = {
         str(item.get("dimension_id") or ""): item
@@ -428,14 +413,10 @@ def build_extractively_grounded_draft(
         candidate_id, snippet = selected
         dimension_claims = claims_by_dimension.get(dimension_id, [])
         fact_ids = [
-            str(item["claim_id"])
-            for item in dimension_claims
-            if not bool(item["is_inference"])
+            str(item["claim_id"]) for item in dimension_claims if not bool(item["is_inference"])
         ]
         inference_ids = [
-            str(item["claim_id"])
-            for item in dimension_claims
-            if bool(item["is_inference"])
+            str(item["claim_id"]) for item in dimension_claims if bool(item["is_inference"])
         ]
         limitation_ids = [
             str(item["claim_id"])
@@ -600,7 +581,10 @@ def apply_atomic_repair(
     ] + [copy.deepcopy(dict(item)) for item in replacement_claims]
     if repair.get("replacement_analysis") is not None:
         replacement = repair["replacement_analysis"]
-        if not isinstance(replacement, Mapping) or str(replacement.get("dimension_id") or "") != dimension_id:
+        if (
+            not isinstance(replacement, Mapping)
+            or str(replacement.get("dimension_id") or "") != dimension_id
+        ):
             raise ReportDraftError("replacement analysis must stay inside one dimension")
         updated["analyses"] = [
             copy.deepcopy(dict(item))
@@ -633,8 +617,7 @@ def select_repair_dimension(
     official_families = {
         str(item.get("family_id") or "")
         for item in evidence_candidates
-        if bool(item.get("admitted", False))
-        and str(item.get("source_tier") or "") == "first_party"
+        if bool(item.get("admitted", False)) and str(item.get("source_tier") or "") == "first_party"
     }
     defective_secondary_ids = {
         str(item.get("candidate_id") or "")
@@ -658,11 +641,15 @@ def select_repair_dimension(
                 for item in dimension_claims
                 if item.get("source_ids") and item.get("supported_fact_refs")
             }
-            if dimension_id not in analyses or not {
-                "current_state",
-                "driver_change",
-                "impact",
-            } <= supported_kinds:
+            if (
+                dimension_id not in analyses
+                or not {
+                    "current_state",
+                    "driver_change",
+                    "impact",
+                }
+                <= supported_kinds
+            ):
                 return dimension_id
         elif action == "replace_secondary_citation" and any(
             str(item.get("dimension_id") or "") == dimension_id
@@ -675,10 +662,7 @@ def select_repair_dimension(
             return dimension_id
         elif action == "narrow_unsupported_claim" and any(
             str(item.get("kind") or "") == "key_judgment"
-            and (
-                not item.get("source_ids")
-                or not item.get("supported_fact_refs")
-            )
+            and (not item.get("source_ids") or not item.get("supported_fact_refs"))
             for item in dimension_claims
         ):
             return dimension_id

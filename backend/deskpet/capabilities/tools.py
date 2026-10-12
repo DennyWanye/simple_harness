@@ -52,14 +52,10 @@ def _scope_for(context: ToolExecutionContext) -> CapabilityScope:
     )
 
 
-def _scope_key(
-    context: ToolExecutionContext, scope_kind: CapabilityScopeKind
-) -> str:
+def _scope_key(context: ToolExecutionContext, scope_kind: CapabilityScopeKind) -> str:
     key = _scope_for(context).key_for(scope_kind)
     if key is None:
-        raise ValueError(
-            f"{scope_kind} scope requires a committed project workspace"
-        )
+        raise ValueError(f"{scope_kind} scope requires a committed project workspace")
     return key
 
 
@@ -69,9 +65,7 @@ def _idempotency_key(
     args: Mapping[str, Any],
 ) -> str:
     stable = context.effect_id or context.call_id
-    payload = json.dumps(
-        dict(args), ensure_ascii=False, sort_keys=True, separators=(",", ":")
-    )
+    payload = json.dumps(dict(args), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
     return f"capability:{operation}:{context.root_run_id}:{stable}:{digest}"
 
@@ -90,9 +84,13 @@ def _control_resource_resolver(
         managed_root = getattr(layout, "root", None)
         if managed_root is None:
             raise RuntimeError("capability managed root is unavailable")
-        access = ("read",) if action in {"list", "search", "refresh"} else (
-            "read",
-            "write",
+        access = (
+            ("read",)
+            if action in {"list", "search", "refresh"}
+            else (
+                "read",
+                "write",
+            )
         )
         selectors: list[ResourceSelector] = [
             ResourceSelector(
@@ -131,19 +129,13 @@ def _control_resource_resolver(
                 uri = request.uri
                 parsed = urlsplit(uri)
                 if parsed.scheme in {"http", "https"} and parsed.hostname:
-                    selectors.append(
-                        ResourceSelector("package_source", uri, ("read",))
-                    )
+                    selectors.append(ResourceSelector("package_source", uri, ("read",)))
                 elif source_type in {"local", "builtin"}:
                     selectors.append(ResourceSelector.filesystem(uri, "read"))
                 else:
-                    selectors.append(
-                        ResourceSelector("package_source", uri, ("read",))
-                    )
+                    selectors.append(ResourceSelector("package_source", uri, ("read",)))
         if action in {"install", "update", "repair", "rollback", "uninstall"}:
-            pack_id = str(
-                args.get("expected_pack_id") or args.get("pack_id") or "*"
-            )
+            pack_id = str(args.get("expected_pack_id") or args.get("pack_id") or "*")
             selectors.append(
                 ResourceSelector(
                     "system_change",
@@ -159,9 +151,7 @@ def _control_resource_resolver(
 def _descriptor_payload(descriptor: CapabilityDescriptor) -> dict[str, Any]:
     payload = {
         "version": descriptor.version.to_dict(),
-        "visible_bindings": [
-            binding.to_dict() for binding in descriptor.visible_bindings
-        ],
+        "visible_bindings": [binding.to_dict() for binding in descriptor.visible_bindings],
         "executable": descriptor.executable,
         "installed": descriptor.installed,
         "tool_spec_fingerprints": list(descriptor.tool_spec_fingerprints),
@@ -263,17 +253,10 @@ class CapabilityToolService:
         fingerprints = (
             tuple(tool_spec_fingerprints)
             if tool_spec_fingerprints
-            else (
-                ()
-                if version is None
-                else tuple(version.expected_tool_fingerprints)
-            )
+            else (() if version is None else tuple(version.expected_tool_fingerprints))
         )
         command_id = context.command_id or (
-            "command:"
-            + hashlib.sha256(
-                f"{context.run_id}|{context.call_id}".encode()
-            ).hexdigest()
+            "command:" + hashlib.sha256(f"{context.run_id}|{context.call_id}".encode()).hexdigest()
         )
         receipt = CapabilityOperationReceipt(
             operation_id=operation_id,
@@ -289,26 +272,21 @@ class CapabilityToolService:
             published_binding_generation=int(binding.generation),
             affected_capability_ids=(binding.capability_id,),
             affected_version_refs=(
-                f"{binding.capability_id}@{binding.version}:"
-                f"{binding.manifest_hash}",
+                f"{binding.capability_id}@{binding.version}:{binding.manifest_hash}",
             ),
             affected_tool_spec_fingerprints=fingerprints,
             manifest_hashes=(binding.manifest_hash,),
         )
         return await self.manager.store.put_operation_receipt(receipt)
 
-    async def list_visible(
-        self, context: ToolExecutionContext | None
-    ) -> Mapping[str, Any]:
+    async def list_visible(self, context: ToolExecutionContext | None) -> Mapping[str, Any]:
         trusted = _require_context(context)
         snapshot = await self.hub.snapshot(_scope_for(trusted))
         return {
             "ok": True,
             "snapshot_ref": snapshot.snapshot_ref,
             "catalog_stamp": snapshot.stamp.to_dict(),
-            "capabilities": [
-                _descriptor_payload(item) for item in snapshot.descriptors
-            ],
+            "capabilities": [_descriptor_payload(item) for item in snapshot.descriptors],
         }
 
     async def search_visible(
@@ -322,9 +300,7 @@ class CapabilityToolService:
             query=str(args.get("query") or ""),
             limit=int(args.get("limit") or 10),
         )
-        by_id = {
-            item.version.capability_id: item for item in snapshot.descriptors
-        }
+        by_id = {item.version.capability_id: item for item in snapshot.descriptors}
         return {
             "ok": True,
             "snapshot_ref": result.snapshot_ref,
@@ -348,9 +324,7 @@ class CapabilityToolService:
             ],
         }
 
-    async def refresh(
-        self, context: ToolExecutionContext | None
-    ) -> Mapping[str, Any]:
+    async def refresh(self, context: ToolExecutionContext | None) -> Mapping[str, Any]:
         trusted = _require_context(context)
         snapshot = await self.hub.snapshot_and_acquire_lease(
             run_id=trusted.run_id,
@@ -388,34 +362,27 @@ class CapabilityToolService:
             source_type=str(args.get("source_type") or "local"),
             uri=str(args.get("uri") or ""),
             revision=str(args.get("revision") or "local"),
-            subdirectory=(
-                str(args["subdirectory"]) if args.get("subdirectory") else None
-            ),
+            subdirectory=(str(args["subdirectory"]) if args.get("subdirectory") else None),
         )
         kwargs = {
             "scope": scope_kind,
             "scope_key": _scope_key(
-                trusted, scope_kind  # type: ignore[arg-type]
+                trusted,
+                scope_kind,  # type: ignore[arg-type]
             ),
             "idempotency_key": _idempotency_key(kind, trusted, args),
             "root_run_id": trusted.root_run_id,
             "generated": bool(args.get("generated", False)),
             "expected_pack_id": (
-                str(args["expected_pack_id"])
-                if args.get("expected_pack_id")
-                else None
+                str(args["expected_pack_id"]) if args.get("expected_pack_id") else None
             ),
         }
         if kind == "repair":
             kwargs.update(
                 {
                     "parent_version": str(args.get("parent_version") or ""),
-                    "parent_manifest_hash": str(
-                        args.get("parent_manifest_hash") or ""
-                    ),
-                    "derived_from_receipt_ref": str(
-                        args.get("failure_receipt_ref") or ""
-                    ),
+                    "parent_manifest_hash": str(args.get("parent_manifest_hash") or ""),
+                    "derived_from_receipt_ref": str(args.get("failure_receipt_ref") or ""),
                 }
             )
             result = await self.manager.repair(request, **kwargs)
@@ -460,7 +427,8 @@ class CapabilityToolService:
             pack_id=str(args.get("pack_id") or ""),
             scope=scope_kind,  # type: ignore[arg-type]
             scope_key=_scope_key(
-                trusted, scope_kind  # type: ignore[arg-type]
+                trusted,
+                scope_kind,  # type: ignore[arg-type]
             ),
             idempotency_key=_idempotency_key("uninstall", trusted, args),
             root_run_id=trusted.root_run_id,
@@ -498,7 +466,8 @@ class CapabilityToolService:
             target_manifest_hash=str(args.get("target_manifest_hash") or ""),
             scope=scope_kind,  # type: ignore[arg-type]
             scope_key=_scope_key(
-                trusted, scope_kind  # type: ignore[arg-type]
+                trusted,
+                scope_kind,  # type: ignore[arg-type]
             ),
             idempotency_key=_idempotency_key("rollback", trusted, args),
             root_run_id=trusted.root_run_id,
@@ -532,17 +501,13 @@ _LIFECYCLE_SOURCE_PROPERTIES = {
     },
     "uri": {"type": "string"},
     "revision": {"type": "string", "default": "local"},
-    "subdirectory": {
-        "anyOf": [{"type": "string"}, {"type": "null"}]
-    },
+    "subdirectory": {"anyOf": [{"type": "string"}, {"type": "null"}]},
     "scope": {
         "type": "string",
         "enum": ["run", "project", "user"],
         "default": "run",
     },
-    "expected_pack_id": {
-        "anyOf": [{"type": "string"}, {"type": "null"}]
-    },
+    "expected_pack_id": {"anyOf": [{"type": "string"}, {"type": "null"}]},
     "generated": {"type": "boolean", "default": False},
 }
 
@@ -556,34 +521,26 @@ def register_capability_tools(registry: Any, service: CapabilityToolService) -> 
             "capability tools require prepared Harness execution",
         )
 
-    async def list_handler(
-        _args: dict[str, Any], context: ToolExecutionContext | None
-    ) -> str:
+    async def list_handler(_args: dict[str, Any], context: ToolExecutionContext | None) -> str:
         try:
             return _json(await service.list_visible(context))
         except Exception as exc:  # noqa: BLE001
             return _error(getattr(exc, "code", type(exc).__name__), str(exc))
 
-    async def search_handler(
-        args: dict[str, Any], context: ToolExecutionContext | None
-    ) -> str:
+    async def search_handler(args: dict[str, Any], context: ToolExecutionContext | None) -> str:
         try:
             return _json(await service.search_visible(args, context))
         except Exception as exc:  # noqa: BLE001
             return _error(getattr(exc, "code", type(exc).__name__), str(exc))
 
-    async def refresh_handler(
-        _args: dict[str, Any], context: ToolExecutionContext | None
-    ) -> str:
+    async def refresh_handler(_args: dict[str, Any], context: ToolExecutionContext | None) -> str:
         try:
             return _json(await service.refresh(context))
         except Exception as exc:  # noqa: BLE001
             return _error(getattr(exc, "code", type(exc).__name__), str(exc))
 
     def lifecycle_handler(kind: str):
-        async def invoke(
-            args: dict[str, Any], context: ToolExecutionContext | None
-        ) -> str:
+        async def invoke(args: dict[str, Any], context: ToolExecutionContext | None) -> str:
             try:
                 return _json(await service.install(args, context, kind=kind))
             except Exception as exc:  # noqa: BLE001
@@ -591,17 +548,13 @@ def register_capability_tools(registry: Any, service: CapabilityToolService) -> 
 
         return invoke
 
-    async def uninstall_handler(
-        args: dict[str, Any], context: ToolExecutionContext | None
-    ) -> str:
+    async def uninstall_handler(args: dict[str, Any], context: ToolExecutionContext | None) -> str:
         try:
             return _json(await service.uninstall(args, context))
         except Exception as exc:  # noqa: BLE001
             return _error(getattr(exc, "code", type(exc).__name__), str(exc))
 
-    async def rollback_handler(
-        args: dict[str, Any], context: ToolExecutionContext | None
-    ) -> str:
+    async def rollback_handler(args: dict[str, Any], context: ToolExecutionContext | None) -> str:
         try:
             return _json(await service.rollback(args, context))
         except Exception as exc:  # noqa: BLE001
@@ -654,7 +607,11 @@ def register_capability_tools(registry: Any, service: CapabilityToolService) -> 
     )
     lifecycle = (
         ("capability_install", "Install and atomically activate a capability pack.", "install"),
-        ("capability_update", "Install a new immutable version and atomically switch the binding.", "update"),
+        (
+            "capability_update",
+            "Install a new immutable version and atomically switch the binding.",
+            "update",
+        ),
     )
     for name, description, parameters, handler, permission, safe in registrations:
         action = {

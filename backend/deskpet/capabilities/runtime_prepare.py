@@ -100,10 +100,7 @@ class PreparedRuntimeSet:
                 field_name,
                 _required(getattr(self, field_name), field_name),
             )
-        if (
-            self.owner_runtime_activation_generation < 1
-            or self.launch_revocation_epoch < 0
-        ):
+        if self.owner_runtime_activation_generation < 1 or self.launch_revocation_epoch < 0:
             raise ValueError("runtime set generation/epoch is invalid")
         instances = tuple(sorted(self.instances, key=lambda item: item.ordinal))
         if tuple(item.ordinal for item in instances) != tuple(range(len(instances))):
@@ -190,9 +187,7 @@ class RuntimeLaunchAuthorization:
             operation_id=prepared_set.operation_id,
             runtime_set_hash=prepared_set.runtime_set_hash,
             entry_id=instance.entry_id,
-            runtime_instance_id=runtime_instance_id_for(
-                prepared_set, instance
-            ),
+            runtime_instance_id=runtime_instance_id_for(prepared_set, instance),
             launch_revocation_epoch=prepared_set.launch_revocation_epoch,
             nonce=nonce,
             _authority=_AUTHORITY_SENTINEL,
@@ -209,10 +204,8 @@ class RuntimeLaunchAuthorization:
             self.operation_id != prepared_set.operation_id
             or self.runtime_set_hash != prepared_set.runtime_set_hash
             or self.entry_id != instance.entry_id
-            or self.runtime_instance_id
-            != runtime_instance_id_for(prepared_set, instance)
-            or self.launch_revocation_epoch
-            != prepared_set.launch_revocation_epoch
+            or self.runtime_instance_id != runtime_instance_id_for(prepared_set, instance)
+            or self.launch_revocation_epoch != prepared_set.launch_revocation_epoch
         ):
             raise ValueError("runtime launch authorization is stale")
 
@@ -303,9 +296,7 @@ class RuntimeSetLedgerPort(Protocol):
         self, activation: OwnerRuntimeActivation
     ) -> OwnerRuntimeActivation: ...
 
-    async def create_runtime_set(
-        self, prepared_set: PreparedRuntimeSet
-    ) -> PreparedRuntimeSet: ...
+    async def create_runtime_set(self, prepared_set: PreparedRuntimeSet) -> PreparedRuntimeSet: ...
 
     async def claim_runtime_instance(
         self,
@@ -334,13 +325,9 @@ class RuntimeSetLedgerPort(Protocol):
         outcome: RuntimeHealthOutcome,
     ) -> None: ...
 
-    async def assert_set_health_passed(
-        self, operation_id: str, runtime_set_hash: str
-    ) -> None: ...
+    async def assert_set_health_passed(self, operation_id: str, runtime_set_hash: str) -> None: ...
 
-    async def mark_set_activated(
-        self, operation_id: str, runtime_set_hash: str
-    ) -> None: ...
+    async def mark_set_activated(self, operation_id: str, runtime_set_hash: str) -> None: ...
 
     async def mark_set_aborted(
         self, operation_id: str, runtime_set_hash: str, reason_code: str
@@ -377,9 +364,7 @@ class CapabilityRuntimeSetCoordinator:
         instances: Sequence[PreparedRuntimeInstanceSpec],
         launch_revocation_epoch: int,
     ) -> tuple[OwnerRuntimeActivation, PreparedRuntimeSet]:
-        generation = await self._ledger.next_owner_runtime_generation(
-            owner_key, scope, scope_key
-        )
+        generation = await self._ledger.next_owner_runtime_generation(owner_key, scope, scope_key)
         prepared = PreparedRuntimeSet(
             operation_id=operation_id,
             purpose="owner_rehydrate",
@@ -423,9 +408,7 @@ class CapabilityRuntimeSetCoordinator:
     ) -> RuntimeStartResult:
         authorization.validate(prepared_set, instance)
         adapter = self._adapter(instance)
-        await self._ledger.claim_runtime_instance(
-            prepared_set, instance, authorization
-        )
+        await self._ledger.claim_runtime_instance(prepared_set, instance, authorization)
         try:
             async with asyncio.timeout(ack_timeout_seconds):
                 result = await adapter.start_prepared(instance, authorization)
@@ -443,15 +426,9 @@ class CapabilityRuntimeSetCoordinator:
                 "start_cancelled_outcome_unknown",
                 authorization.runtime_instance_id,
             )
-            await asyncio.shield(
-                self._ledger.record_start_result(
-                    prepared_set, instance, unknown
-                )
-            )
+            await asyncio.shield(self._ledger.record_start_result(prepared_set, instance, unknown))
             raise
-        self._validate_start_result(
-            prepared_set, instance, authorization, result
-        )
+        self._validate_start_result(prepared_set, instance, authorization, result)
         await self._ledger.record_start_result(prepared_set, instance, result)
         return result
 
@@ -460,9 +437,7 @@ class CapabilityRuntimeSetCoordinator:
         prepared_set: PreparedRuntimeSet,
         instance: PreparedRuntimeInstanceSpec,
     ) -> RuntimeHealthOutcome:
-        start = await self._ledger.get_runtime_instance_start_result(
-            prepared_set, instance
-        )
+        start = await self._ledger.get_runtime_instance_start_result(prepared_set, instance)
         if not isinstance(start, RuntimeStartedAck):
             raise RuntimeError("runtime instance has no started ACK")
         outcome = await self._adapter(instance).await_health(instance, start)
@@ -474,9 +449,7 @@ class CapabilityRuntimeSetCoordinator:
         await self._ledger.record_health_outcome(prepared_set, instance, outcome)
         return outcome
 
-    async def activate_prepared_set(
-        self, prepared_set: PreparedRuntimeSet
-    ) -> Mapping[str, Any]:
+    async def activate_prepared_set(self, prepared_set: PreparedRuntimeSet) -> Mapping[str, Any]:
         await self._ledger.assert_set_health_passed(
             prepared_set.operation_id, prepared_set.runtime_set_hash
         )
@@ -490,9 +463,7 @@ class CapabilityRuntimeSetCoordinator:
         self, prepared_set: PreparedRuntimeSet, *, reason_code: str
     ) -> None:
         for instance in reversed(prepared_set.instances):
-            start = await self._ledger.get_runtime_instance_start_result(
-                prepared_set, instance
-            )
+            start = await self._ledger.get_runtime_instance_start_result(prepared_set, instance)
             await self._adapter(instance).abort(instance, start)
         await self._ledger.mark_set_aborted(
             prepared_set.operation_id,
@@ -507,28 +478,20 @@ class CapabilityRuntimeSetCoordinator:
         authorization: RuntimeLaunchAuthorization,
         result: RuntimeStartResult,
     ) -> None:
-        if (
-            result.operation_id != prepared_set.operation_id
-            or result.entry_id != instance.entry_id
-        ):
+        if result.operation_id != prepared_set.operation_id or result.entry_id != instance.entry_id:
             raise ValueError("runtime start result binding mismatch")
         if isinstance(result, RuntimeStartedAck):
             if (
                 result.runtime_set_hash != prepared_set.runtime_set_hash
-                or result.runtime_instance_id
-                != authorization.runtime_instance_id
+                or result.runtime_instance_id != authorization.runtime_instance_id
             ):
                 raise ValueError("runtime started ACK set identity mismatch")
 
-    def _adapter(
-        self, instance: PreparedRuntimeInstanceSpec
-    ) -> PreparedRuntimeAdapter:
+    def _adapter(self, instance: PreparedRuntimeInstanceSpec) -> PreparedRuntimeAdapter:
         try:
             adapter = self._adapters[instance.adapter_id]
         except KeyError as exc:
-            raise RuntimeError(
-                f"runtime adapter unavailable: {instance.adapter_id}"
-            ) from exc
+            raise RuntimeError(f"runtime adapter unavailable: {instance.adapter_id}") from exc
         if adapter.adapter_fingerprint != instance.adapter_fingerprint:
             raise RuntimeError("runtime adapter fingerprint drift")
         return adapter

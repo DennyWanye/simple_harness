@@ -85,15 +85,12 @@ class CapabilityMutationAuthorization:
             "target_scope_key": self.target_scope_key,
             "pack_id": self.pack_id,
             "manager_idempotency_key": self.manager_idempotency_key,
-            "target_expected_binding_generation":
-                self.target_expected_binding_generation,
+            "target_expected_binding_generation": self.target_expected_binding_generation,
             "claim_owner": self.claim_owner,
             "claim_epoch": self.claim_epoch,
             "revocation_epoch": self.revocation_epoch,
             "candidate_id": self.candidate_id,
-            "candidate_mode": (
-                None if self.candidate_mode is None else self.candidate_mode.value
-            ),
+            "candidate_mode": (None if self.candidate_mode is None else self.candidate_mode.value),
             "target_version": self.target_version,
             "target_manifest_hash": self.target_manifest_hash,
             "target_package_hash": self.target_package_hash,
@@ -132,9 +129,7 @@ class PreparedCapabilityMutation:
             raise ValueError("manager operation id is required")
         if (self.runtime_set_ref is None) != (self.runtime_set_hash is None):
             raise ValueError("runtime set ref/hash must be both present or absent")
-        if tuple(item.ordinal for item in self.instances) != tuple(
-            range(len(self.instances))
-        ):
+        if tuple(item.ordinal for item in self.instances) != tuple(range(len(self.instances))):
             raise ValueError("prepared runtime instances must use canonical ordinals")
         expected = canonical_hash(
             {
@@ -394,9 +389,7 @@ class ActivationDispatcher:
                     authorization, prepared, instance, start
                 )
                 if not healthy:
-                    raise ActivationDispatchError(
-                        "capability_runtime_health_failed"
-                    )
+                    raise ActivationDispatchError("capability_runtime_health_failed")
 
             async with self._barrier.shared() as lease:
                 self._revalidate_claim(
@@ -411,9 +404,7 @@ class ActivationDispatcher:
                     claim_epoch=authorization.claim_epoch,
                     reason_code="capability_mutation_publishing",
                 )
-                receipt = await self._platform.activate_mutation(
-                    authorization, prepared
-                )
+                receipt = await self._platform.activate_mutation(authorization, prepared)
             return self._store.settle_capability_mutation_receipt(owner, receipt)
         except ActivationDispatchError as exc:
             cleanup_ok = True
@@ -453,24 +444,17 @@ class ActivationDispatcher:
         if (
             row["claim_owner"] != authorization.claim_owner
             or int(row["claim_epoch"]) != authorization.claim_epoch
-            or str(row["request_fingerprint"])
-            != authorization.request_fingerprint
-            or str(row["manager_idempotency_key"])
-            != authorization.manager_idempotency_key
+            or str(row["request_fingerprint"]) != authorization.request_fingerprint
+            or str(row["manager_idempotency_key"]) != authorization.manager_idempotency_key
             or expected_revocation_epoch != authorization.revocation_epoch
-            or str(row["status"])
-            not in {"claimed", "staging", "staged", "publishing"}
+            or str(row["status"]) not in {"claimed", "staging", "staged", "publishing"}
         ):
             raise ActivationDispatchError("capability_mutation_fence_stale")
 
-    def _authorization(
-        self, row: Mapping[str, Any]
-    ) -> CapabilityMutationAuthorization:
+    def _authorization(self, row: Mapping[str, Any]) -> CapabilityMutationAuthorization:
         action = MutationAction(str(row["action"]))
         candidate_mode = (
-            None
-            if row["candidate_mode"] is None
-            else CandidateMode(str(row["candidate_mode"]))
+            None if row["candidate_mode"] is None else CandidateMode(str(row["candidate_mode"]))
         )
         source_fence_hash = (
             None
@@ -486,9 +470,7 @@ class ActivationDispatcher:
             target_scope_key=str(row["target_scope_key"]),
             pack_id=str(row["pack_id"]),
             manager_idempotency_key=str(row["manager_idempotency_key"]),
-            target_expected_binding_generation=int(
-                row["target_expected_binding_generation"]
-            ),
+            target_expected_binding_generation=int(row["target_expected_binding_generation"]),
             claim_owner=str(row["claim_owner"]),
             claim_epoch=int(row["claim_epoch"]),
             revocation_epoch=self._barrier.epoch,

@@ -52,7 +52,9 @@ def _upstream(replies: list[tuple[int, bytes]]):  # type: ignore[no-untyped-def]
 def _post(port: int) -> tuple[int, bytes, float]:
     started = time.time()
     conn = http.client.HTTPConnection("127.0.0.1", port, timeout=60)
-    conn.request("POST", "/v1/chat/completions", body=b"{}", headers={"Content-Type": "application/json"})
+    conn.request(
+        "POST", "/v1/chat/completions", body=b"{}", headers={"Content-Type": "application/json"}
+    )
     resp = conn.getresponse()
     return resp.status, resp.read(), time.time() - started
 
@@ -63,13 +65,16 @@ def test_exhausted_quota_429_is_returned_at_once_and_frees_the_slot(monkeypatch)
     refusal = '{"error":{"message":"积分不足，当前可用 0.006，本模型每次需要 0.007"}}'.encode()
     upstream, calls = _upstream([(429, refusal)])
     slots = gate.Slots()
-    proxy = _serve(gate.make_handler("batch", slots, ("http", "127.0.0.1", upstream.server_address[1])))
+    proxy = _serve(
+        gate.make_handler("batch", slots, ("http", "127.0.0.1", upstream.server_address[1]))
+    )
     try:
         status, body, took = _post(proxy.server_address[1])
         assert (status, body) == (429, refusal) and calls == [429] and took < 3
         assert slots.in_flight == {"dev": 0, "batch": 0}
     finally:
-        proxy.shutdown(); upstream.shutdown()
+        proxy.shutdown()
+        upstream.shutdown()
 
 
 def test_busy_429_is_still_retried(monkeypatch) -> None:
@@ -78,12 +83,15 @@ def test_busy_429_is_still_retried(monkeypatch) -> None:
     monkeypatch.setattr(gate.time, "sleep", lambda _s: None)
     ok = b'{"choices":[{"message":{"role":"assistant","content":"hi"}}]}'
     upstream, calls = _upstream([(429, "并发限制已达上限".encode()), (200, ok)])
-    proxy = _serve(gate.make_handler("dev", gate.Slots(), ("http", "127.0.0.1", upstream.server_address[1])))
+    proxy = _serve(
+        gate.make_handler("dev", gate.Slots(), ("http", "127.0.0.1", upstream.server_address[1]))
+    )
     try:
         status, body, _took = _post(proxy.server_address[1])
         assert (status, body) == (200, ok) and calls == [429, 200]
     finally:
-        proxy.shutdown(); upstream.shutdown()
+        proxy.shutdown()
+        upstream.shutdown()
 
 
 def test_quota_markers() -> None:

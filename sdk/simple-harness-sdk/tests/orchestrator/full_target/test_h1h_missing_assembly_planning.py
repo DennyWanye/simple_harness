@@ -8,6 +8,7 @@ HTN 补齐阶段 A′：任务经产品同形部署建出，第一轮规划真�
 原用例手工 ``create_service_intent`` 造"上一个进程留下的规划派发"（裁决①b2 不允许）；现在由真实的
 上一个进程留下。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -45,11 +46,19 @@ def test_missing_assembly_blocks_initial_retry_and_recovered_dispatch(tmp_path):
         provider.held.add("planner")
         try:
             async with product_world(root, provider) as world:
-                mission_id = world.create({"goal": "确认完成要求", "success_criteria": ["file:NOTES.md"],
-                                           "idempotency_key": "missing-assembly"})["mission_id"]
+                mission_id = world.create(
+                    {
+                        "goal": "确认完成要求",
+                        "success_criteria": ["file:NOTES.md"],
+                        "idempotency_key": "missing-assembly",
+                    }
+                )["mission_id"]
                 await run_until(world, provider.entered.is_set)
-                [intent] = [item for item in world.store.list_intents(*OPEN)
-                            if item.mission_id == mission_id and item.kind == "plan"]
+                [intent] = [
+                    item
+                    for item in world.store.list_intents(*OPEN)
+                    if item.mission_id == mission_id and item.kind == "plan"
+                ]
                 return mission_id, intent.intent_id, world.store.get_mission(mission_id).status
         finally:
             provider.release.set()
@@ -69,8 +78,14 @@ def test_missing_assembly_blocks_initial_retry_and_recovered_dispatch(tmp_path):
             assert NeverProvider.calls == 0
             events = loop.store.list_events(mission_id)
             assert any(event.type == "HierarchicalAssemblyMissing" for event in events)
-            assert not [event for event in events if event.type in {"PlanRevisionCommitted", "MissionFailed"}]
+            assert not [
+                event
+                for event in events
+                if event.type in {"PlanRevisionCommitted", "MissionFailed"}
+            ]
             assert loop.store.get_mission(mission_id).status is status
-            assert loop.store.get_intent(intent_id).state == intent.state  # 两轮之后在途派发仍没被动
+            assert (
+                loop.store.get_intent(intent_id).state == intent.state
+            )  # 两轮之后在途派发仍没被动
 
     asyncio.run(without_assembly())

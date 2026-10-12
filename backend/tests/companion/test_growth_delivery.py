@@ -48,9 +48,7 @@ async def test_terminal_sink_is_idempotent_and_stores_only_result_hash(tmp_path)
     await sink.deliver(_terminal(), target)
 
     with store.read() as db:
-        rows = db.execute(
-            "SELECT source_ref,payload_json FROM growth_events"
-        ).fetchall()
+        rows = db.execute("SELECT source_ref,payload_json FROM growth_events").fetchall()
     assert len(rows) == 1
     assert rows[0]["source_ref"] == "terminal:event-final"
     assert "not copied into growth evidence" not in rows[0]["payload_json"]

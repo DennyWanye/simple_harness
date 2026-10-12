@@ -66,9 +66,7 @@ def test_provider_restores_cooperative_task_cancellation() -> None:
             client=client,
             price_resolver=lambda provider, model: (1, 1, "price-v1"),
         )
-        adapter._delegate.invoke = AsyncMock(
-            side_effect=ProviderCancelledError()
-        )
+        adapter._delegate.invoke = AsyncMock(side_effect=ProviderCancelledError())
         try:
             with pytest.raises(asyncio.CancelledError):
                 await adapter.invoke(
@@ -89,11 +87,13 @@ def test_input_text_attachment_is_lowered_only_at_provider_wire_boundary() -> No
         MessageRole.USER,
         (
             ContentBlock.from_dict({"type": "text", "text": "read it"}),
-            ContentBlock.from_dict({
-                "type": "input_text",
-                "name": "fixture.txt",
-                "data": "FIRST LINE\nbody-canary",
-            }),
+            ContentBlock.from_dict(
+                {
+                    "type": "input_text",
+                    "name": "fixture.txt",
+                    "data": "FIRST LINE\nbody-canary",
+                }
+            ),
         ),
     )
 
@@ -154,14 +154,14 @@ async def test_tool_turn_without_public_content_does_not_make_second_provider_ca
     response = ProviderResponse(
         RequestId("run-one:provider-turn:1"),
         Message(MessageRole.ASSISTANT, ""),
-        tool_calls=(
-            ProviderToolCall(CallId("call-one"), "memory_search", {"query": "x"}),
-        ),
+        tool_calls=(ProviderToolCall(CallId("call-one"), "memory_search", {"query": "x"}),),
     )
     adapter._delegate.invoke = AsyncMock(return_value=response)
     try:
         actual = await adapter.invoke(
-            ProviderRequest(RequestId("run-one:provider-turn:1"), (Message(MessageRole.USER, "x"),)),
+            ProviderRequest(
+                RequestId("run-one:provider-turn:1"), (Message(MessageRole.USER, "x"),)
+            ),
             cancel=CancelToken(),
         )
     finally:
@@ -517,12 +517,10 @@ def test_provider_extracts_model_authored_virtual_public_progress() -> None:
             assert "deskpet_public_progress" not in schema.get("required", [])
             if len(payloads) == 2:
                 assistant = payload["messages"][1]
-                assert assistant["reasoning_content"] == (
-                    "PRIVATE-COT-MUST-NOT-APPEAR"
-                )
-                assert [
-                    item["function"]["name"] for item in assistant["tool_calls"]
-                ] == ["file_read"]
+                assert assistant["reasoning_content"] == ("PRIVATE-COT-MUST-NOT-APPEAR")
+                assert [item["function"]["name"] for item in assistant["tool_calls"]] == [
+                    "file_read"
+                ]
                 return httpx.Response(
                     200,
                     json={
@@ -605,9 +603,7 @@ def test_provider_extracts_model_authored_virtual_public_progress() -> None:
                             "Read a file.",
                             {
                                 "type": "object",
-                                "properties": {
-                                    "deskpet_public_progress": {"type": "string"}
-                                },
+                                "properties": {"deskpet_public_progress": {"type": "string"}},
                             },
                         ),
                     ),
@@ -639,14 +635,12 @@ def test_provider_extracts_model_authored_virtual_public_progress() -> None:
                     ),
                     tools=(
                         ProviderToolSpec(
-                                "file_read",
-                                "Read a file.",
-                                {
-                                    "type": "object",
-                                    "properties": {
-                                        "deskpet_public_progress": {"type": "string"}
-                                    },
-                                },
+                            "file_read",
+                            "Read a file.",
+                            {
+                                "type": "object",
+                                "properties": {"deskpet_public_progress": {"type": "string"}},
+                            },
                         ),
                     ),
                 ),
@@ -738,9 +732,7 @@ def test_provider_does_not_invent_summary_when_tool_content_and_progress_are_emp
             "Read a file.",
             {
                 "type": "object",
-                "properties": {
-                    "deskpet_public_progress": {"type": "string"}
-                },
+                "properties": {"deskpet_public_progress": {"type": "string"}},
             },
         )
         try:
@@ -1331,9 +1323,7 @@ def test_tool_adapter_has_exact_explicit_inventory_and_six_dispatch_shapes() -> 
     registry, inventory = build_product_tool_registry(registrations)
     assert tuple(item.name for item in inventory) == PRODUCT_TOOL_NAMES
     assert len(registry.specs) == len(PRODUCT_TOOL_NAMES)
-    context = ToolContext(
-        RunId("run-1"), RequestId("request-1"), CancellationToken()
-    )
+    context = ToolContext(RunId("run-1"), RequestId("request-1"), CancellationToken())
 
     async def case() -> None:
         for index in range(6):
@@ -1355,9 +1345,7 @@ def test_tool_adapter_contextvar_is_concurrent_and_fail_closed() -> None:
         async def handler(_arguments, _context):
             nonlocal entered
             run_id = active_product_tool_context().run_id.value
-            observed.setdefault(run_id, []).append(
-                active_product_tool_context().request_id.value
-            )
+            observed.setdefault(run_id, []).append(active_product_tool_context().request_id.value)
             entered += 1
             if entered == 2:
                 both_entered.set()
@@ -1375,9 +1363,7 @@ def test_tool_adapter_contextvar_is_concurrent_and_fail_closed() -> None:
             metadata={"source": "product", "version": "1"},
         )
 
-    registry, _ = build_product_tool_registry(
-        [registration(name) for name in PRODUCT_TOOL_NAMES]
-    )
+    registry, _ = build_product_tool_registry([registration(name) for name in PRODUCT_TOOL_NAMES])
 
     async def case() -> None:
         tasks = [
@@ -1425,9 +1411,7 @@ def test_tool_adapter_projects_through_registered_run_delivery() -> None:
             metadata={"source": "product", "version": "1"},
         )
 
-    registry, _ = build_product_tool_registry(
-        [registration(name) for name in PRODUCT_TOOL_NAMES]
-    )
+    registry, _ = build_product_tool_registry([registration(name) for name in PRODUCT_TOOL_NAMES])
     delivery = type(
         "Delivery",
         (),
@@ -1560,9 +1544,7 @@ def test_context_personal_and_capability_ports_are_projection_only_and_idempoten
         search=search,
         receipts=ProductCapabilityOperationReceipts(reopened, clock=lambda: 11.0),
     )
-    asyncio.run(
-        after_restart.search(query="ocr", operation_key="op-1", admission={})
-    )
+    asyncio.run(after_restart.search(query="ocr", operation_key="op-1", admission={}))
     assert physical == 1
     reopened.close()
 
@@ -1583,14 +1565,12 @@ def test_capability_handler_return_crash_reopens_without_second_physical_call(
     crashing = ProductCapabilityHostAdapter(
         search=search,
         receipts=ProductCapabilityOperationReceipts(database, clock=lambda: 10.0),
-        fault=lambda point: (_ for _ in ()).throw(RuntimeError("crash"))
-        if point == "handler_return"
-        else None,
+        fault=lambda point: (
+            (_ for _ in ()).throw(RuntimeError("crash")) if point == "handler_return" else None
+        ),
     )
     with pytest.raises(RuntimeError, match="crash"):
-        asyncio.run(
-            crashing.search(query="ocr", operation_key="op-crash", admission={})
-        )
+        asyncio.run(crashing.search(query="ocr", operation_key="op-crash", admission={}))
     assert physical == 1
     database.close()
 
@@ -1601,9 +1581,7 @@ def test_capability_handler_return_crash_reopens_without_second_physical_call(
         receipts=ProductCapabilityOperationReceipts(reopened, clock=lambda: 11.0),
     )
     with pytest.raises(RuntimeError, match="pending reconciliation"):
-        asyncio.run(
-            unresolved.search(query="ocr", operation_key="op-crash", admission={})
-        )
+        asyncio.run(unresolved.search(query="ocr", operation_key="op-crash", admission={}))
     assert physical == 1
 
     reconciled = ProductCapabilityHostAdapter(
@@ -1614,9 +1592,7 @@ def test_capability_handler_return_crash_reopens_without_second_physical_call(
             "matches": ["ocr"],
         },
     )
-    recovered = asyncio.run(
-        reconciled.search(query="ocr", operation_key="op-crash", admission={})
-    )
+    recovered = asyncio.run(reconciled.search(query="ocr", operation_key="op-crash", admission={}))
     assert recovered["matches"] == ["ocr"]
     assert physical == 1
     reopened.close()

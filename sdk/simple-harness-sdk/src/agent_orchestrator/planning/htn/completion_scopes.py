@@ -249,9 +249,7 @@ def compile_completion_scopes(
                     and (candidate, criterion_id) in local_at
                 ]
                 if len(candidates) > 1:
-                    raise _fail(
-                        f"local criterion {criterion_id!r} has ambiguous ancestor coverage"
-                    )
+                    raise _fail(f"local criterion {criterion_id!r} has ambiguous ancestor coverage")
                 if not candidates:
                     deferred.append((item, occurrence_id, criterion_id))
                     continue
@@ -292,8 +290,11 @@ def compile_completion_scopes(
                 # Multiple consumers may share one goal. They must trace this
                 # local criterion to the same approved root obligation, even if
                 # the immediate parent differs along the two decomposition paths.
-                source = ((source_occurrence, criterion_id) if criterion_id in content_keys
-                          else local_source[(source_occurrence, criterion_id)])
+                source = (
+                    (source_occurrence, criterion_id)
+                    if criterion_id in content_keys
+                    else local_source[(source_occurrence, criterion_id)]
+                )
                 previous = local_source.get(target)
                 if previous is not None and previous != source:
                     raise _fail(
@@ -316,7 +317,11 @@ def compile_completion_scopes(
     # 声明去审全部要求；多一条，同一条要求就同时归了两处。
     roots_set = set(roots)
     for occurrence_id in sorted(occurrences):
-        if occurrence_id in roots_set or not children[occurrence_id] or not handed_to[occurrence_id]:
+        if (
+            occurrence_id in roots_set
+            or not children[occurrence_id]
+            or not handed_to[occurrence_id]
+        ):
             continue
         missing = sorted(handed_to[occurrence_id] - handed_on[occurrence_id])
         if missing:
@@ -382,10 +387,7 @@ def compile_completion_scopes(
         binding = bindings.get(str(occurrence.task_id))
         if binding is None:
             raise _fail(f"occurrence {occurrence_id!r} has no Task semantic binding")
-        if (
-            binding.form is TaskForm.PRIMITIVE
-            and not reviewed_content[occurrence_id]
-        ):
+        if binding.form is TaskForm.PRIMITIVE and not reviewed_content[occurrence_id]:
             projection = _local_task_content_projection(binding)
             if projection is not None:
                 reviewed_content[occurrence_id].add(projection.criterion_id)
@@ -433,9 +435,7 @@ def compile_completion_scopes(
             )
         if required:
             if binding.form is TaskForm.PRIMITIVE and not content:
-                raise _fail(
-                    f"effect owner {occurrence_id!r} has no reviewable preparation output"
-                )
+                raise _fail(f"effect owner {occurrence_id!r} has no reviewable preparation output")
             role = (
                 CompletionScopeRole.AGGREGATE
                 if binding.form is TaskForm.COMPOUND

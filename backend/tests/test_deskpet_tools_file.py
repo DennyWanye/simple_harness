@@ -14,6 +14,7 @@ Focus areas:
 Each test points ``DESKPET_WORKSPACE_DIR`` at a fresh tmp directory so
 the production ``%APPDATA%\\deskpet\\workspace\\`` stays untouched.
 """
+
 from __future__ import annotations
 
 import json
@@ -46,9 +47,7 @@ def test_workspace_root_honors_bound_user_data_dir(
 # file_write / file_read round-trip
 # ---------------------------------------------------------------------
 def test_write_then_read_roundtrip(sandbox: Path):
-    wres = json.loads(
-        registry.dispatch("file_write", {"path": "a.txt", "content": "hi\n"})
-    )
+    wres = json.loads(registry.dispatch("file_write", {"path": "a.txt", "content": "hi\n"}))
     assert wres["bytes_written"] == 3
     rres = json.loads(registry.dispatch("file_read", {"path": "a.txt"}))
     assert rres["content"] == "hi\n"
@@ -56,11 +55,7 @@ def test_write_then_read_roundtrip(sandbox: Path):
 
 
 def test_write_creates_parent_dirs(sandbox: Path):
-    res = json.loads(
-        registry.dispatch(
-            "file_write", {"path": "nested/dir/b.txt", "content": "x"}
-        )
-    )
+    res = json.loads(registry.dispatch("file_write", {"path": "nested/dir/b.txt", "content": "x"}))
     assert res["bytes_written"] == 1
     assert (sandbox / "nested" / "dir" / "b.txt").is_file()
 
@@ -119,13 +114,9 @@ async def test_absolute_path_returned_by_workspace_prepare_can_write_inside_root
     assert target.read_text(encoding="utf-8") == "config_version=5\n"
 
 
-
-
 def test_append_mode_accumulates(sandbox: Path):
     registry.dispatch("file_write", {"path": "x.txt", "content": "1\n"})
-    registry.dispatch(
-        "file_write", {"path": "x.txt", "content": "2\n", "mode": "append"}
-    )
+    registry.dispatch("file_write", {"path": "x.txt", "content": "2\n", "mode": "append"})
     r = json.loads(registry.dispatch("file_read", {"path": "x.txt"}))
     assert r["content"] == "1\n2\n"
 
@@ -133,11 +124,7 @@ def test_append_mode_accumulates(sandbox: Path):
 def test_read_offset_and_limit(sandbox: Path):
     payload = "".join(f"line{i}\n" for i in range(10))
     registry.dispatch("file_write", {"path": "lines.txt", "content": payload})
-    r = json.loads(
-        registry.dispatch(
-            "file_read", {"path": "lines.txt", "offset": 3, "limit": 2}
-        )
-    )
+    r = json.loads(registry.dispatch("file_read", {"path": "lines.txt", "offset": 3, "limit": 2}))
     assert r["content"] == "line3\nline4\n"
     assert r["lines_read"] == 2
 
@@ -149,30 +136,18 @@ def test_read_missing_file(sandbox: Path):
 
 
 def test_write_rejects_non_string_content(sandbox: Path):
-    r = json.loads(
-        registry.dispatch("file_write", {"path": "a", "content": 123})
-    )
+    r = json.loads(registry.dispatch("file_write", {"path": "a", "content": 123}))
     assert r["error"] == "content must be a string"
 
 
 def test_write_rejects_invalid_mode(sandbox: Path):
-    r = json.loads(
-        registry.dispatch(
-            "file_write", {"path": "a", "content": "x", "mode": "zap"}
-        )
-    )
+    r = json.loads(registry.dispatch("file_write", {"path": "a", "content": "x", "mode": "zap"}))
     assert "invalid mode" in r["error"]
 
 
 # ---------------------------------------------------------------------
 # Path-escape defence (requirements: safe file workspace)
 # ---------------------------------------------------------------------
-
-
-
-
-
-
 
 
 def test_relative_dot_slash_is_allowed(sandbox: Path):
@@ -190,9 +165,7 @@ def test_glob_finds_files(sandbox: Path):
     (sandbox / "dir").mkdir()
     (sandbox / "dir" / "b.md").write_text("y")
     (sandbox / "c.txt").write_text("z")
-    r = json.loads(
-        registry.dispatch("file_glob", {"pattern": "**/*.md"})
-    )
+    r = json.loads(registry.dispatch("file_glob", {"pattern": "**/*.md"}))
     assert sorted(r["matches"]) == ["a.md", "dir/b.md"]
     assert r["count"] == 2
     assert r["skipped_dirs"] == []
@@ -207,9 +180,7 @@ def test_glob_skips_generated_and_heavy_dirs_by_default(sandbox: Path):
         hidden.mkdir()
         (hidden / "hidden.md").write_text("noise")
 
-    r = json.loads(
-        registry.dispatch("file_glob", {"pattern": "**/*.md"})
-    )
+    r = json.loads(registry.dispatch("file_glob", {"pattern": "**/*.md"}))
 
     assert r["matches"] == ["keep/a.md"]
     assert r["count"] == 1
@@ -223,9 +194,7 @@ def test_glob_skips_nested_backend_assets_relative_path(sandbox: Path):
     (sandbox / "backend" / "src").mkdir(parents=True)
     (sandbox / "backend" / "src" / "visible.md").write_text("ok")
 
-    r = json.loads(
-        registry.dispatch("file_glob", {"pattern": "**/*.md"})
-    )
+    r = json.loads(registry.dispatch("file_glob", {"pattern": "**/*.md"}))
 
     assert r["matches"] == ["backend/src/visible.md"]
     assert r["count"] == 1
@@ -237,11 +206,7 @@ def test_glob_allows_explicit_root_inside_default_skipped_dir(sandbox: Path):
     (sandbox / "node_modules" / "pkg").mkdir(parents=True)
     (sandbox / "node_modules" / "pkg" / "visible.md").write_text("ok")
 
-    r = json.loads(
-        registry.dispatch(
-            "file_glob", {"pattern": "**/*.md", "root": "node_modules"}
-        )
-    )
+    r = json.loads(registry.dispatch("file_glob", {"pattern": "**/*.md", "root": "node_modules"}))
 
     assert r["matches"] == ["node_modules/pkg/visible.md"]
     assert r["count"] == 1
@@ -254,9 +219,7 @@ def test_glob_root_parameter_preserves_recursive_pathlib_semantics(sandbox: Path
     (sandbox / "dir" / "nested" / "a.md").write_text("ok")
     (sandbox / "other.md").write_text("nope")
 
-    r = json.loads(
-        registry.dispatch("file_glob", {"pattern": "**/*.md", "root": "dir"})
-    )
+    r = json.loads(registry.dispatch("file_glob", {"pattern": "**/*.md", "root": "dir"}))
 
     assert r["matches"] == ["dir/nested/a.md"]
     assert r["count"] == 1
@@ -270,9 +233,7 @@ def test_glob_directory_prefixed_recursive_pattern_matches_from_workspace_root(
     (sandbox / "other" / "nested").mkdir(parents=True)
     (sandbox / "other" / "nested" / "a.md").write_text("nope")
 
-    r = json.loads(
-        registry.dispatch("file_glob", {"pattern": "dir/**/*.md"})
-    )
+    r = json.loads(registry.dispatch("file_glob", {"pattern": "dir/**/*.md"}))
 
     assert r["matches"] == ["dir/nested/a.md"]
     assert r["count"] == 1
@@ -290,11 +251,7 @@ def test_glob_non_recursive_pattern_stays_non_recursive(sandbox: Path):
 
 
 def test_glob_missing_root_returns_empty(sandbox: Path):
-    r = json.loads(
-        registry.dispatch(
-            "file_glob", {"pattern": "*", "root": "no-such-dir"}
-        )
-    )
+    r = json.loads(registry.dispatch("file_glob", {"pattern": "*", "root": "no-such-dir"}))
     assert r == {"matches": [], "count": 0}
 
 
@@ -302,14 +259,8 @@ def test_glob_missing_root_returns_empty(sandbox: Path):
 # file_grep
 # ---------------------------------------------------------------------
 def test_grep_returns_matching_lines(sandbox: Path):
-    (sandbox / "log.txt").write_text(
-        "info: starting\nerror: fatal\nwarn: mild\nerror: again\n"
-    )
-    r = json.loads(
-        registry.dispatch(
-            "file_grep", {"pattern": "error", "path": "log.txt"}
-        )
-    )
+    (sandbox / "log.txt").write_text("info: starting\nerror: fatal\nwarn: mild\nerror: again\n")
+    r = json.loads(registry.dispatch("file_grep", {"pattern": "error", "path": "log.txt"}))
     assert r["count"] == 2
     assert r["matches"][0]["line"] == 2
     assert "fatal" in r["matches"][0]["text"]
@@ -329,11 +280,7 @@ def test_grep_max_matches_caps_output(sandbox: Path):
 
 def test_grep_invalid_regex(sandbox: Path):
     (sandbox / "f.txt").write_text("hi")
-    r = json.loads(
-        registry.dispatch(
-            "file_grep", {"pattern": "[unterminated", "path": "f.txt"}
-        )
-    )
+    r = json.loads(registry.dispatch("file_grep", {"pattern": "[unterminated", "path": "f.txt"}))
     assert r["error"].startswith("invalid regex")
 
 

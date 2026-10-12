@@ -9,6 +9,7 @@ PRD/TDD 提到的全部新模块必须可被 import 且接口签名稳定。这�
 
 测试组对照 plans/2026-05-23-tool-last-mile-upgrade/01-TDD.md §B TG-0。
 """
+
 from __future__ import annotations
 
 import inspect
@@ -53,6 +54,7 @@ def test_t0_3_verify_gate_module_imports():
 def test_t0_4_registry_execute_tool_signature_compatible():
     """execute_tool 签名不破现有 caller（4 必需位置参数 + 默认值）。"""
     from deskpet.tools.registry import ToolRegistry
+
     sig = inspect.signature(ToolRegistry.execute_tool)
     params = list(sig.parameters.values())
     # Existing positional contract remains unchanged; Context OS adds one
@@ -71,6 +73,7 @@ def test_t0_4_registry_execute_tool_signature_compatible():
 def test_t0_5_config_tools_dataclass_chain():
     """AppConfig → ToolsConfig → ToolsLastMileConfig / ToolsVerifierConfig 链。"""
     from config import AppConfig, ToolsConfig, ToolsLastMileConfig, ToolsVerifierConfig
+
     cfg = AppConfig()
     assert isinstance(cfg.tools, ToolsConfig)
     assert isinstance(cfg.tools.last_mile, ToolsLastMileConfig)
@@ -82,6 +85,7 @@ def test_t0_6_receipt_hmac_sign_verify_roundtrip():
     from datetime import datetime, timezone
 
     from deskpet.tools.receipt import hmac_verify, make_receipt
+
     r = make_receipt(
         tool_name="x",
         args={"k": "v"},
@@ -97,6 +101,7 @@ def test_t0_6_receipt_hmac_sign_verify_roundtrip():
 
 def test_t0_7_verify_gate_off_mode_passes():
     from deskpet.agent.verify_gate import RegexExtractor, VerifyGate
+
     gate = VerifyGate(extractor=RegexExtractor(patterns=[]), mode="off")
     outcome = gate.check(assistant_text="anything", ledger=None)
     assert outcome.passed is True
@@ -105,5 +110,6 @@ def test_t0_7_verify_gate_off_mode_passes():
 def test_t0_8_verify_gate_invalid_mode_rejected():
     import pytest
     from deskpet.agent.verify_gate import RegexExtractor, VerifyGate
+
     with pytest.raises(ValueError, match="invalid mode"):
         VerifyGate(extractor=RegexExtractor(patterns=[]), mode="bananas")

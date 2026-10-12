@@ -12,6 +12,7 @@ client 构造点拦截：非本地 endpoint 且 key 不可用时抛友好的 LLM
 同时给 SDK 适配器 ``llm.openai_adapter.OpenAIAdapter`` 加同语义防御（不同入口、
 defense-in-depth），它抛类型化的 EmptyApiKeyError。
 """
+
 from __future__ import annotations
 
 import logging
@@ -23,6 +24,7 @@ from llm.provider_registry import EmptyApiKeyError, LLMProviderRegistry
 from providers.openai_compatible import OpenAICompatibleProvider
 
 # ───────── 生产聊天 provider：providers.openai_compatible ─────────
+
 
 @pytest.mark.parametrize(
     "api_key", ["", "   ", "ollama", "from-keychain", "from-env", "your-key-here"]
@@ -43,9 +45,7 @@ def test_openai_compatible_empty_or_placeholder_cloud_raises(api_key: str):
 @pytest.mark.asyncio
 async def test_openai_compatible_local_ollama_placeholder_allowed():
     """本地 ollama：key 占位（server 忽略）→ 不拦，正常构造 client。"""
-    p = OpenAICompatibleProvider(
-        base_url="http://localhost:11434/v1", api_key="ollama", model="m"
-    )
+    p = OpenAICompatibleProvider(base_url="http://localhost:11434/v1", api_key="ollama", model="m")
     client = p._client(p.timeout)  # 不应抛
     assert client is not None
     await client.aclose()
@@ -54,9 +54,7 @@ async def test_openai_compatible_local_ollama_placeholder_allowed():
 @pytest.mark.asyncio
 async def test_openai_compatible_empty_key_local_allowed():
     """本地 endpoint 即使 key 为空也放行（本地无需鉴权，不会拼出问题头给云端）。"""
-    p = OpenAICompatibleProvider(
-        base_url="http://127.0.0.1:11434/v1", api_key="", model="m"
-    )
+    p = OpenAICompatibleProvider(base_url="http://127.0.0.1:11434/v1", api_key="", model="m")
     client = p._client(p.timeout)
     assert client is not None
     await client.aclose()
@@ -74,6 +72,7 @@ async def test_openai_compatible_real_key_unaffected():
 
 
 # ───────── SDK 适配器 OpenAIAdapter：defense-in-depth ─────────
+
 
 def test_openai_adapter_placeholder_cloud_raises_empty_api_key_error():
     from llm.openai_adapter import OpenAIAdapter
@@ -98,6 +97,7 @@ def test_openai_adapter_real_key_unaffected():
 
 
 # ───────── provider_registry_ready 可观测（Phase 5） ─────────
+
 
 def test_registry_ready_log(tmp_path, caplog):
     config_path = tmp_path / "config.toml"

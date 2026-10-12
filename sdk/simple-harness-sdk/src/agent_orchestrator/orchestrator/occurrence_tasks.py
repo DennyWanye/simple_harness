@@ -206,7 +206,9 @@ class Materialisation:
             "available_tokens": self.available_tokens,
             "holds": (
                 self.pool_tokens is None
-                or all((item.task.budget.max_tokens or 0) <= self.pool_tokens for item in self.tasks)
+                or all(
+                    (item.task.budget.max_tokens or 0) <= self.pool_tokens for item in self.tasks
+                )
             ),
         }
 
@@ -255,8 +257,8 @@ def occurrence_criteria(
     declared: Mapping[str, tuple[str, ...]] = {}
     if requirements is not None:
         declared = {
-            item.criterion_id: tuple(item.required_evidence_policy.required_check_ids) + (
-                (item.statement,) if item.statement.startswith(("file:", "pytest:")) else ())
+            item.criterion_id: tuple(item.required_evidence_policy.required_check_ids)
+            + ((item.statement,) if item.statement.startswith(("file:", "pytest:")) else ())
             for item in requirements.criteria
         }
     # Desktop 2026-09-26: a leaf the adopted method links to some of the duty's
@@ -264,17 +266,30 @@ def occurrence_criteria(
     # step of a five-file plan had to write all five files to pass its checks.
     # 2026-09-29（plans/2026-09-28-system-operations）：操作要求（action:…）由系统在任务
     # 层面准备，不属于任何步骤——方法链接与回退两条路径都去掉，步骤只承担内容要求。
-    operations = set() if requirements is None else {
-        item.criterion_id for item in requirements.criteria if item.statement.startswith("action:")}
+    operations = (
+        set()
+        if requirements is None
+        else {
+            item.criterion_id
+            for item in requirements.criteria
+            if item.statement.startswith("action:")
+        }
+    )
     content_refs = tuple(ref for ref in binding.requirement_refs if ref not in operations)
     references = tuple(ref for ref in content_refs if ref in set(owned))
     if not references:
         # 2026-09-29 第 5 批（审阅）：没被方法链接的步骤兜底承担全部内容要求，但方法已把
         # "写出文件"（file:）交给别的步骤时不再兜给它——否则它要写出不归它的文件，反复失败。
-        statements = {} if requirements is None else {
-            item.criterion_id: item.statement for item in requirements.criteria}
-        content_refs = tuple(ref for ref in content_refs if not (
-            ref in claimed and statements.get(ref, "").startswith("file:")))
+        statements = (
+            {}
+            if requirements is None
+            else {item.criterion_id: item.statement for item in requirements.criteria}
+        )
+        content_refs = tuple(
+            ref
+            for ref in content_refs
+            if not (ref in claimed and statements.get(ref, "").startswith("file:"))
+        )
     for reference in references or content_refs:
         if reference not in criteria:
             criteria.append(reference)
@@ -519,10 +534,16 @@ def occurrence_task(
     goal = binding.goal_signature.statement or f"satisfy {binding.goal_signature.signature_id}"
     if owned_refs and primitive:
         # "整个任务"一句取用户原话（阶段 C3：桌面类型的说明是固定句，原话只在任务上）
-        goal = scoped_goal(mission.goal, criteria, [text for ref, text in owned if ref in owned_refs],
-                           others=_files_of(requirements, set(claimed) - set(owned_refs)))
+        goal = scoped_goal(
+            mission.goal,
+            criteria,
+            [text for ref, text in owned if ref in owned_refs],
+            others=_files_of(requirements, set(claimed) - set(owned_refs)),
+        )
     policy = occurrence_policy(
-        criteria, deployed, declared_policy,
+        criteria,
+        deployed,
+        declared_policy,
         read_only=read_only_leaf(binding) and not criterion_linked,
     )
     if primitive:
@@ -549,7 +570,9 @@ def occurrence_task(
             success_criteria=criteria,
             # Explicit file requirements are the concrete workspace outputs of
             # this occurrence. They grant no permission to execute an action.
-            outputs=tuple(dict.fromkeys(c[5:] for c in criteria if c.startswith("file:") and c[5:])),
+            outputs=tuple(
+                dict.fromkeys(c[5:] for c in criteria if c.startswith("file:") and c[5:])
+            ),
             verification_policy=policy,
             allowed_tools=mission.allowed_tools,
             budget=budget,
@@ -575,8 +598,9 @@ def occurrence_task(
     )
 
 
-def scoped_goal(goal: str, criteria: Sequence[str], requirements: Sequence[str],
-                others: Sequence[str] = ()) -> str:
+def scoped_goal(
+    goal: str, criteria: Sequence[str], requirements: Sequence[str], others: Sequence[str] = ()
+) -> str:
     """The goal a leaf with owned criteria is dispatched with: its share first.
 
     2026-10-09（库存题开发环境重跑）：原来一刀切写"整个任务的其他文件由其他步骤负责，不要创建"。
@@ -589,7 +613,9 @@ def scoped_goal(goal: str, criteria: Sequence[str], requirements: Sequence[str],
     lines += ["- " + text for text in dict.fromkeys(t.strip() for t in requirements) if text]
     taken = [path for path in dict.fromkeys(others) if path and path not in files]
     if taken:
-        lines.append("计划里其他步骤负责这些文件，本步骤不要创建或改写它们：" + "、".join(taken) + "。")
+        lines.append(
+            "计划里其他步骤负责这些文件，本步骤不要创建或改写它们：" + "、".join(taken) + "。"
+        )
     lines.append("完成本步骤要求所需的其他文件，由本步骤自己写。")
     lines.append("整个任务（供理解上下文）：" + goal)
     return "\n".join(lines)

@@ -49,13 +49,9 @@ def _version(
         source=f"fixture:{capability_id}@{version}",
         description=f"{capability_id} capability",
         aliases=(capability_id,),
-        logical_tool_ids=tuple(
-            name.removeprefix(f"{capability_id}__") for name in provider_names
-        ),
+        logical_tool_ids=tuple(name.removeprefix(f"{capability_id}__") for name in provider_names),
         provider_tool_names=provider_names,
-        permission_categories=(
-            ("filesystem_read",) if provider_names else ()
-        ),
+        permission_categories=(("filesystem_read",) if provider_names else ()),
         effect_kinds=(("read_only",) if provider_names else ()),
         schema_hash=_hash(f"schema:{capability_id}:{version}"),
         manifest_hash=_hash(f"manifest:{capability_id}:{version}"),
@@ -180,9 +176,7 @@ async def test_store_pack_is_executable_only_when_registry_fingerprints_match(
 
     hub = CapabilityHub(
         store=store,
-        registry_source=_RegistrySource(
-            RegistryCatalogSnapshot(3, (tool,))
-        ),
+        registry_source=_RegistrySource(RegistryCatalogSnapshot(3, (tool,))),
     )
     snapshot = await hub.snapshot_and_acquire_lease(
         run_id="run-1",
@@ -224,9 +218,7 @@ async def test_builtin_projection_does_not_create_store_version_lease(
     tool = _tool("read_file", source="builtin")
     hub = CapabilityHub(
         store=store,
-        registry_source=_RegistrySource(
-            RegistryCatalogSnapshot(1, (tool,))
-        ),
+        registry_source=_RegistrySource(RegistryCatalogSnapshot(1, (tool,))),
     )
 
     snapshot = await hub.snapshot_and_acquire_lease(
@@ -340,9 +332,7 @@ async def test_new_run_fails_closed_for_legacy_and_prior_revision_bindings(
     store = CapabilityStore(path)
     descriptor = _version("project_skill", "1.0.0")
     legacy_key = canonical_project_scope_key(tmp_path / "same-path")
-    revision_one_key = canonical_project_identity_scope_key(
-        "project-1", 1, "filesystem-1"
-    )
+    revision_one_key = canonical_project_identity_scope_key("project-1", 1, "filesystem-1")
     entries = tuple(
         CapabilityCatalogEntry(
             descriptor,
@@ -370,9 +360,7 @@ async def test_new_run_fails_closed_for_legacy_and_prior_revision_bindings(
         project_revision=1,
         project_identity="filesystem-1",
     )
-    assert (
-        await hub.snapshot(restarted_revision_one)
-    ).get("project_skill") is not None
+    assert (await hub.snapshot(restarted_revision_one)).get("project_skill") is not None
 
 
 @pytest.mark.asyncio
@@ -514,7 +502,9 @@ async def test_registry_source_excludes_tools_without_durable_build_identity() -
 
 
 @pytest.mark.asyncio
-async def test_registered_builtin_tool_is_executable_through_the_real_registry_source(tmp_path) -> None:
+async def test_registered_builtin_tool_is_executable_through_the_real_registry_source(
+    tmp_path,
+) -> None:
     # 2026-09-25 UI 全量点击：能力中心 127 个内置工具全部显示"降级"——预期指纹用的是
     # 描述符哈希，可执行判定比的是注册表的精确指纹，永远对不上。
     registry = ToolRegistry()
@@ -528,15 +518,20 @@ async def test_registered_builtin_tool_is_executable_through_the_real_registry_s
     registry.register(
         "fixture_echo",
         "fixture",
-        {"name": "fixture_echo", "description": "Echo a fixture",
-         "parameters": {"type": "object", "properties": {}}},
+        {
+            "name": "fixture_echo",
+            "description": "Echo a fixture",
+            "parameters": {"type": "object", "properties": {}},
+        },
         lambda _args: {"ok": True},
         permission_category="read_file",
         stable_handler_id=build.handler_id,
         execution_build_identity=build,
     )
     path = await initialize_capability_database(tmp_path / "workflow.db")
-    hub = CapabilityHub(store=CapabilityStore(path), registry_source=ToolRegistryCatalogSource(registry))
+    hub = CapabilityHub(
+        store=CapabilityStore(path), registry_source=ToolRegistryCatalogSource(registry)
+    )
     descriptor = (await hub.snapshot(CapabilityScope())).get("fixture_echo")
     assert descriptor is not None and descriptor.executable is True
     assert descriptor.version.health == "healthy"

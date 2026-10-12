@@ -30,6 +30,7 @@ State note: the authorization set is process-global (the backend is one
 process per user session). Tests call :func:`clear_authorizations` to
 isolate.
 """
+
 from __future__ import annotations
 
 import hashlib

@@ -266,9 +266,7 @@ def _reject_private_keys(value: object, path: str = "payload") -> None:
                 raise HumanMemoryProgramProtocolError(f"{path}_key_invalid")
             normalized = raw_key.strip().lower().replace("-", "_")
             if normalized in _FORBIDDEN_DURABLE_KEYS:
-                raise HumanMemoryProgramProtocolError(
-                    f"forbidden_durable_field:{path}.{raw_key}"
-                )
+                raise HumanMemoryProgramProtocolError(f"forbidden_durable_field:{path}.{raw_key}")
             _reject_private_keys(child, f"{path}.{raw_key}")
     elif isinstance(value, (list, tuple)):
         for index, child in enumerate(value):
@@ -276,9 +274,7 @@ def _reject_private_keys(value: object, path: str = "payload") -> None:
     elif isinstance(value, str) and any(
         pattern.search(value) for pattern in _CREDENTIAL_VALUE_PATTERNS
     ):
-        raise HumanMemoryProgramProtocolError(
-            f"credential_value_rejected:{path}"
-        )
+        raise HumanMemoryProgramProtocolError(f"credential_value_rejected:{path}")
 
 
 def _validate_provider_payload(payload: Mapping[str, object]) -> None:
@@ -296,9 +292,7 @@ def _validate_provider_payload(payload: Mapping[str, object]) -> None:
             _bounded_identifier(payload[name], name)
     usage = payload.get("usage")
     if usage is not None:
-        if not isinstance(usage, Mapping) or not set(usage).issubset(
-            _PROVIDER_USAGE_ALLOWED
-        ):
+        if not isinstance(usage, Mapping) or not set(usage).issubset(_PROVIDER_USAGE_ALLOWED):
             raise HumanMemoryProgramProtocolError("provider_usage_fields_rejected")
         if any(
             value is not None
@@ -394,12 +388,8 @@ def _validate_protocol_pair(
     if frozenset(receipt_json) != _RECEIPT_KEYS:
         raise HumanMemoryProgramProtocolError("evidence_receipt_fields_differ")
 
-    envelope_schema = _evidence_schema(
-        envelope_json.get("schema_version"), "evidence_envelope"
-    )
-    receipt_schema = _evidence_schema(
-        receipt_json.get("schema_version"), "evidence_receipt"
-    )
+    envelope_schema = _evidence_schema(envelope_json.get("schema_version"), "evidence_envelope")
+    receipt_schema = _evidence_schema(receipt_json.get("schema_version"), "evidence_receipt")
     if envelope_schema != receipt_schema:
         raise HumanMemoryProgramProtocolError("evidence_schema_binding_mismatch")
     envelope_bindings = {
@@ -458,8 +448,7 @@ def _validate_protocol_pair(
         or not reasons
         or not all(isinstance(reason, str) and reason for reason in reasons)
         or len(set(reasons)) != len(reasons)
-        or receipt.accepted
-        != ("evidence_sanitized_and_accepted" in reasons)
+        or receipt.accepted != ("evidence_sanitized_and_accepted" in reasons)
     ):
         raise HumanMemoryProgramProtocolError("receipt_reason_codes_invalid")
     if (
@@ -478,9 +467,7 @@ def _validate_protocol_pair(
     try:
         receipt.verify(envelope)
     except Exception as exc:  # noqa: BLE001
-        raise HumanMemoryProgramProtocolError(
-            "sanitization_receipt_verification_failed"
-        ) from exc
+        raise HumanMemoryProgramProtocolError("sanitization_receipt_verification_failed") from exc
     if not receipt.accepted:
         raise HumanMemoryProgramProtocolError("sanitization_receipt_not_accepted")
     if envelope_schema == 1:
@@ -512,9 +499,7 @@ def _validate_protocol_pair(
     if not isinstance(payload, Mapping):
         raise HumanMemoryProgramProtocolError("sanitized_payload_invalid")
     payload_dict = dict(payload)
-    if _sha256_json(payload_dict) != _digest(
-        envelope.sanitized_hash, "sanitized_hash"
-    ):
+    if _sha256_json(payload_dict) != _digest(envelope.sanitized_hash, "sanitized_hash"):
         raise HumanMemoryProgramProtocolError("sanitized_payload_hash_mismatch")
     _reject_private_keys(payload_dict)
     kind = _source_kind(envelope.source_kind)
@@ -659,9 +644,7 @@ class HumanMemoryProgramStore:
                 await db.commit()
             except aiosqlite.IntegrityError as exc:
                 await db.rollback()
-                raise HumanMemoryProgramConflict(
-                    HumanMemoryProgramConflict.code
-                ) from exc
+                raise HumanMemoryProgramConflict(HumanMemoryProgramConflict.code) from exc
             except Exception:
                 await db.rollback()
                 raise
@@ -684,9 +667,7 @@ class HumanMemoryProgramStore:
         and the ingress fence check; ``aiosqlite.Row`` factory is required.
         """
 
-        envelope_json, receipt_json, kind = _validate_protocol_pair(
-            envelope, receipt
-        )
+        envelope_json, receipt_json, kind = _validate_protocol_pair(envelope, receipt)
         payload_json = _canonical_json(envelope_json["sanitized_payload"])
         cursor = await db.execute(
             "SELECT evidence.*, receipt.receipt_sha256 AS "

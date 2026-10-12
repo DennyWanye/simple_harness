@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 """Original executor identity of a dispatch intent, without ID guessing."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -10,7 +11,9 @@ from ..storage.store import DispatchIntent, Store
 from .planning_operations import SourceUnavailable
 
 
-def read_dispatch_history(store: Store, runtime: Any, intent: DispatchIntent) -> tuple[DispatchIntent, ...]:
+def read_dispatch_history(
+    store: Store, runtime: Any, intent: DispatchIntent
+) -> tuple[DispatchIntent, ...]:
     """The executors this dispatch intent ever had, oldest first; the last is current.
 
     2026-10-03: a service intent is never handed to a second executor any more (its

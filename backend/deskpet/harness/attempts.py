@@ -34,9 +34,7 @@ class TaskGoalRecord:
     root_run_id: str
     task_scope_id: str
     objective_ref: str
-    status: Literal[
-        "active", "waiting_external", "completed", "blocked", "cancelled"
-    ] = "active"
+    status: Literal["active", "waiting_external", "completed", "blocked", "cancelled"] = "active"
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,9 +55,7 @@ class ProviderActionCall:
     raw_arguments_ref: str
     raw_arguments_hash: str
     parsed_arguments_hash: str | None
-    admission_state: Literal[
-        "admitted", "prepared", "rejected", "waiting_external", "settled"
-    ]
+    admission_state: Literal["admitted", "prepared", "rejected", "waiting_external", "settled"]
     prepared_call_ref: str | None = None
     command_boundary_ref: str | None = None
     terminal_outcome_ref: str | None = None
@@ -90,9 +86,7 @@ class AttemptFailureSet:
     report_refs: tuple[str, ...]
     primary_report_ref: str
     backfill_state: Literal["pending", "ready", "committed"] = "pending"
-    provider_resume_state: Literal[
-        "pending", "requested", "accepted"
-    ] = "pending"
+    provider_resume_state: Literal["pending", "requested", "accepted"] = "pending"
 
     @classmethod
     def from_reports(

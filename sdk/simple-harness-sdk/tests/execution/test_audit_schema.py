@@ -54,7 +54,9 @@ def test_old_empty_execution7_gets_explicit_audit_schema_and_reopens(tmp_path):
                 assert reader.schema_version == SCHEMA_VERSION
 
 
-@pytest.mark.parametrize("corruption", ["future", "noop_trigger", "extra_column", "partial", "descriptor_column"])
+@pytest.mark.parametrize(
+    "corruption", ["future", "noop_trigger", "extra_column", "partial", "descriptor_column"]
+)
 def test_invalid_audit_schema_rejected_without_file_change(tmp_path, corruption):
     path = tmp_path / "invalid.db"
     with Database.open(path) as database:

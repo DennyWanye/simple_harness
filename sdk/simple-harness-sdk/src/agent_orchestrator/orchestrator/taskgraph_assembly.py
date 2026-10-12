@@ -4,6 +4,7 @@
 All authoritative ports are mandatory. This installer does not create grants,
 APPLIED checks, baseline proofs or deployment acceptance, and enables no Mission.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -64,15 +65,26 @@ def install_taskgraph(orchestrator: Any, ports: TaskGraphDeploymentPorts) -> Ins
     hierarchy, commit, store = orchestrator._hierarchical, orchestrator.commit, orchestrator.store
     if hierarchy is None or hierarchy.store is not store or hierarchy.commit is not commit:
         raise ValueError("TaskGraph requires the original hierarchical runtime")
-    if (not isinstance(ports.principal, Principal) or not ports.tenant_id.strip()
-            or not isinstance(ports.graph_budget, GraphStructureBudget)):
-        raise ValueError("TaskGraph requires an authenticated tenant and installed structure budget")
-    if (orchestrator._taskgraph_dispatch_setup is not None or commit._taskgraph_dispatch is not None or commit._taskgraph_participant_factory is not None
-            or orchestrator._taskgraph_notifications is not None or orchestrator._taskgraph_read_apis
-            or orchestrator._taskgraph_operator is not None
-            or orchestrator._taskgraph_policy is not None
-            or hierarchy._taskgraph_settlement_reader is not None or hierarchy._taskgraph_history is not None
-            or hierarchy._taskgraph_preview is not None):
+    if (
+        not isinstance(ports.principal, Principal)
+        or not ports.tenant_id.strip()
+        or not isinstance(ports.graph_budget, GraphStructureBudget)
+    ):
+        raise ValueError(
+            "TaskGraph requires an authenticated tenant and installed structure budget"
+        )
+    if (
+        orchestrator._taskgraph_dispatch_setup is not None
+        or commit._taskgraph_dispatch is not None
+        or commit._taskgraph_participant_factory is not None
+        or orchestrator._taskgraph_notifications is not None
+        or orchestrator._taskgraph_read_apis
+        or orchestrator._taskgraph_operator is not None
+        or orchestrator._taskgraph_policy is not None
+        or hierarchy._taskgraph_settlement_reader is not None
+        or hierarchy._taskgraph_history is not None
+        or hierarchy._taskgraph_preview is not None
+    ):
         raise ValueError("TaskGraph runtime is already or partially installed")
     if not callable(ports.deployment_acceptance):
         raise ValueError("TaskGraph actual deployment acceptance reader is missing")
@@ -99,9 +111,13 @@ def install_taskgraph(orchestrator: Any, ports: TaskGraphDeploymentPorts) -> Ins
             # Only the local plan sources are compared here; the original runtime and
             # execution-policy importers are read where a decision consumes them.
             local = plan_sources.local.read(mission_id)
-            if (local.view.network != view.network or local.view.witnesses != view.witnesses
-                    or local.view.starts != view.starts or local.view.licences != view.licences
-                    or local.view.accepted != view.accepted):
+            if (
+                local.view.network != view.network
+                or local.view.witnesses != view.witnesses
+                or local.view.starts != view.starts
+                or local.view.licences != view.licences
+                or local.view.accepted != view.accepted
+            ):
                 raise SourceUnavailable("taskgraph_execution_sources_changed")
 
     def validate_current(mission_id: str) -> None:
@@ -109,15 +125,24 @@ def install_taskgraph(orchestrator: Any, ports: TaskGraphDeploymentPorts) -> Ins
             validate_read(ports.principal, mission_id)
             validate_sources(ports.principal, mission_id, dispatch_for(mission_id).read(mission_id))
 
-    def recheck_execution(original_store: Any, view: Any, admission: Any, manifest: Any,
-                          config: Any, inputs: Any, input_hash: str) -> None:
+    def recheck_execution(
+        original_store: Any,
+        view: Any,
+        admission: Any,
+        manifest: Any,
+        config: Any,
+        inputs: Any,
+        input_hash: str,
+    ) -> None:
         if original_store is not store:
             raise SourceUnavailable("taskgraph_execution_store_mismatch")
         execution = plan_sources.read_execution(str(view.network.mission_id), materializing=True)
         local = execution.local
         if local.view.network != view.network:
             raise SourceUnavailable("taskgraph_execution_sources_changed")
-        execution_imports.validate_attempt(store, str(admission.task_id), execution.execution_policy, config)
+        execution_imports.validate_attempt(
+            store, str(admission.task_id), execution.execution_policy, config
+        )
         execution_guard(store, view, admission, manifest, config, inputs, input_hash)
 
     def recheck_settlement(original_store: Any, subject_id: str, mission_id: str) -> None:
@@ -127,6 +152,7 @@ def install_taskgraph(orchestrator: Any, ports: TaskGraphDeploymentPorts) -> Ins
         try:
             if intent is None:
                 from .taskgraph_action_settlement import require_action_settlement
+
                 require_action_settlement(orchestrator, subject_id, mission_id)
                 return
             if intent.mission_id != mission_id:
@@ -139,54 +165,103 @@ def install_taskgraph(orchestrator: Any, ports: TaskGraphDeploymentPorts) -> Ins
 
     # Construct everything before changing runtime fields. A rejected constructor
     # leaves the original deployment with none of this assembly installed.
-    local_sources = TaskGraphLocalExecutionReader(TaskGraphSources(store, tenant_id=ports.tenant_id,
-        principal=ports.principal, history=history), dispatch_for)
+    local_sources = TaskGraphLocalExecutionReader(
+        TaskGraphSources(
+            store, tenant_id=ports.tenant_id, principal=ports.principal, history=history
+        ),
+        dispatch_for,
+    )
     runtime_imports = TaskGraphRuntimeImports(orchestrator)
     execution_guard = TaskGraphExecutionGuard(orchestrator)
     execution_imports = TaskGraphExecutionImports(orchestrator, runtime_imports=runtime_imports)
     plan_sources = TaskGraphPlanSourceReader(local_sources, imports=execution_imports)
-    dispatch = TaskGraphDispatchBinding(store, hierarchical=dispatch_for, history=history,
-        recheck_execution=recheck_execution, recheck_handoff=execution_imports.validate_handoff,
-        recheck_settlement=recheck_settlement)
-    operator_guard = TaskGraphOperatorGuard(store, tenant_id=ports.tenant_id,
-        principal=ports.principal, validate_read=validate_read)
-    jobs = TaskGraphConvergenceStore(store, authority=VerifiedConvergenceAuthority(orchestrator,
-        history=history, sources=plan_sources, operator=operator_guard))
-    preview = TaskGraphPreviewService(store, commit=commit, history=history, read_sources=plan_sources, convergence=jobs)
-    convergence = TaskGraphConvergence(jobs, runtime=TaskGraphRuntimeCommands(orchestrator,
-        jobs=jobs, history=history))
+    dispatch = TaskGraphDispatchBinding(
+        store,
+        hierarchical=dispatch_for,
+        history=history,
+        recheck_execution=recheck_execution,
+        recheck_handoff=execution_imports.validate_handoff,
+        recheck_settlement=recheck_settlement,
+    )
+    operator_guard = TaskGraphOperatorGuard(
+        store, tenant_id=ports.tenant_id, principal=ports.principal, validate_read=validate_read
+    )
+    jobs = TaskGraphConvergenceStore(
+        store,
+        authority=VerifiedConvergenceAuthority(
+            orchestrator, history=history, sources=plan_sources, operator=operator_guard
+        ),
+    )
+    preview = TaskGraphPreviewService(
+        store, commit=commit, history=history, read_sources=plan_sources, convergence=jobs
+    )
+    convergence = TaskGraphConvergence(
+        jobs, runtime=TaskGraphRuntimeCommands(orchestrator, jobs=jobs, history=history)
+    )
     settlement = TaskGraphSettlementReader(orchestrator, history=history)
-    notifications = TaskGraphNotifications(orchestrator, history=history,
-        convergence=convergence, validate_current=validate_current)
-    operator = TaskGraphOperatorService(operator_guard, jobs=jobs, notifications=notifications, sources=plan_sources)
+    notifications = TaskGraphNotifications(
+        orchestrator, history=history, convergence=convergence, validate_current=validate_current
+    )
+    operator = TaskGraphOperatorService(
+        operator_guard, jobs=jobs, notifications=notifications, sources=plan_sources
+    )
     from .taskgraph_execution_view import read_turn_journal
-    reads = TaskGraphReadApi(commit, tenant_id=ports.tenant_id, principal=ports.principal,
-        history=history, current_reader=lambda mission_id: dispatch_for(mission_id).read(mission_id),
+
+    reads = TaskGraphReadApi(
+        commit,
+        tenant_id=ports.tenant_id,
+        principal=ports.principal,
+        history=history,
+        current_reader=lambda mission_id: dispatch_for(mission_id).read(mission_id),
         epoch_reader=lambda mission_id: dispatch_for(mission_id).scope_epochs(mission_id),
-        resolution_reader=TaskGraphResolutionReader(history), source_validator=validate_read,
+        resolution_reader=TaskGraphResolutionReader(history),
+        source_validator=validate_read,
         seed_reader=lambda mission_id: local_sources.read(mission_id).structure,
         journal_reader=lambda intent: read_turn_journal(orchestrator, intent),
-        current_source_validator=validate_sources, graph_budget=ports.graph_budget,
-        convergence_diagnostics=TaskGraphFollowupStore(store).convergence_diagnostics)
-    policy_authority = StoreTaskGraphPolicyAuthority(orchestrator, tenant_id=ports.tenant_id,
-        principal=ports.principal, graph_budget=ports.graph_budget, validate_read=validate_read,
-        deployment_acceptance=ports.deployment_acceptance)
-    policy = TaskGraphPolicyService(store, tenant_id=ports.tenant_id, principal=ports.principal,
-        authority=policy_authority, validate_read=validate_read)
-    installed = InstalledTaskGraph(reads=reads, policy=policy, operator=operator, notifications=notifications,
-                                   dispatch=dispatch, convergence=convergence, local_sources=local_sources, preview=preview, execution_sources=plan_sources)
+        current_source_validator=validate_sources,
+        graph_budget=ports.graph_budget,
+        convergence_diagnostics=TaskGraphFollowupStore(store).convergence_diagnostics,
+    )
+    policy_authority = StoreTaskGraphPolicyAuthority(
+        orchestrator,
+        tenant_id=ports.tenant_id,
+        principal=ports.principal,
+        graph_budget=ports.graph_budget,
+        validate_read=validate_read,
+        deployment_acceptance=ports.deployment_acceptance,
+    )
+    policy = TaskGraphPolicyService(
+        store,
+        tenant_id=ports.tenant_id,
+        principal=ports.principal,
+        authority=policy_authority,
+        validate_read=validate_read,
+    )
+    installed = InstalledTaskGraph(
+        reads=reads,
+        policy=policy,
+        operator=operator,
+        notifications=notifications,
+        dispatch=dispatch,
+        convergence=convergence,
+        local_sources=local_sources,
+        preview=preview,
+        execution_sources=plan_sources,
+    )
     commit._taskgraph_dispatch = dispatch
     commit._taskgraph_participant_factory = preview.participant
     orchestrator._taskgraph_notifications = notifications
     orchestrator._taskgraph_read_apis = [reads]
     orchestrator._taskgraph_operator = operator
     orchestrator._taskgraph_policy = policy
+
     def attach_dispatch(dispatch: Any) -> None:
         if dispatch.store is not store or dispatch.commit is not commit:
             raise SourceUnavailable("taskgraph_mission_dispatcher_store_mismatch")
         dispatch._taskgraph_settlement_reader = settlement
         dispatch._taskgraph_history = history
         dispatch._taskgraph_preview = preview
+
     orchestrator._taskgraph_dispatch_setup = attach_dispatch
     attach_dispatch(hierarchy)
     for dispatch in orchestrator._mission_dispatches.values():

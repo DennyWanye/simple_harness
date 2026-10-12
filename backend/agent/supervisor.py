@@ -17,6 +17,7 @@ session crosses a stuck threshold. The supervisor:
 The supervisor is **strictly best-effort**: any failure path falls back
 to ``wait/green`` and logs. It must never throw out to the watchdog.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -43,16 +44,16 @@ VALID_SEVERITIES = ("green", "yellow", "red")
 class SupervisorAction:
     """Output of a supervisor LLM call."""
 
-    action: str = "wait"           # wait | nudge | ask_user | cancel (coerced)
-    severity: str = "green"        # green | yellow | red
-    diagnosis: str = ""            # ≤200 chars
+    action: str = "wait"  # wait | nudge | ask_user | cancel (coerced)
+    severity: str = "green"  # green | yellow | red
+    diagnosis: str = ""  # ≤200 chars
     hint_for_main_agent: str = ""  # ≤500 chars; only used when action=nudge
-    user_message: str = ""         # ≤120 chars; bubble text
+    user_message: str = ""  # ≤120 chars; bubble text
     suggested_buttons: list[str] = field(default_factory=list)  # ≤2 items
 
     # Audit: where did this come from
     alert_id: str = ""
-    raw_action: str = ""           # original LLM action before any coercion
+    raw_action: str = ""  # original LLM action before any coercion
 
     def is_actionable(self) -> bool:
         return self.action in ("nudge", "ask_user")
@@ -95,9 +96,7 @@ _SYSTEM_PROMPT = (
 )
 
 
-_JSON_FENCE_PATTERN = re.compile(
-    r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL | re.IGNORECASE
-)
+_JSON_FENCE_PATTERN = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL | re.IGNORECASE)
 # Thinking-mode models (deepseek-v4-pro, GLM-4.5, etc.) sometimes prefix
 # their JSON output with a ``<think>...</think>`` chain-of-thought block.
 # We strip those before parsing — same defensive cleanup the P4-S25 plan
@@ -220,8 +219,8 @@ class SupervisorAgent:
     def __init__(
         self,
         *,
-        provider: Any,                          # OpenAI-compatible provider
-        snapshot_builder: SnapshotBuilder,      # async (sid) -> snapshot dict
+        provider: Any,  # OpenAI-compatible provider
+        snapshot_builder: SnapshotBuilder,  # async (sid) -> snapshot dict
         nudge_queue_push: NudgeQueuePush | None = None,
         broadcast: AlertBroadcast | None = None,
         audit: HintAuditFn | None = None,
@@ -268,11 +267,15 @@ class SupervisorAgent:
             snap = snapshot if snapshot is not None else await self._build_snapshot(sid)
         except Exception as exc:  # noqa: BLE001
             logger.warning("supervisor_snapshot_failed sid=%s error=%s", sid, exc)
-            return SupervisorAction(action="wait", severity="green", diagnosis="snapshot_failed", alert_id=alert_id)
+            return SupervisorAction(
+                action="wait", severity="green", diagnosis="snapshot_failed", alert_id=alert_id
+            )
 
         if not snap:
             # No activity → nothing to diagnose
-            return SupervisorAction(action="wait", severity="green", diagnosis="empty_snapshot", alert_id=alert_id)
+            return SupervisorAction(
+                action="wait", severity="green", diagnosis="empty_snapshot", alert_id=alert_id
+            )
 
         # Call LLM
         action = await self._call_llm(snap, alert_id=alert_id)
@@ -285,7 +288,8 @@ class SupervisorAgent:
         if _trigger_reason == "max_iterations" and action.action in ("ask_user", "wait"):
             logger.info(
                 "supervisor_max_iter_rescue sid=%s original_action=%s",
-                sid, action.action,
+                sid,
+                action.action,
             )
             action = SupervisorAction(
                 action="nudge",
@@ -308,14 +312,18 @@ class SupervisorAgent:
             try:
                 await self._dispatch(sid, action)
             except Exception as exc:  # noqa: BLE001
-                logger.exception("supervisor_max_iter_rescue_dispatch_failed sid=%s err=%s", sid, exc)
+                logger.exception(
+                    "supervisor_max_iter_rescue_dispatch_failed sid=%s err=%s", sid, exc
+                )
             return action
 
         # Dispatch
         try:
             await self._dispatch(sid, action)
         except Exception as exc:  # noqa: BLE001
-            logger.exception("supervisor_dispatch_failed sid=%s action=%s error=%s", sid, action.action, exc)
+            logger.exception(
+                "supervisor_dispatch_failed sid=%s action=%s error=%s", sid, action.action, exc
+            )
         return action
 
     async def _call_llm(self, snapshot: dict[str, Any], *, alert_id: str) -> SupervisorAction:
@@ -326,7 +334,10 @@ class SupervisorAgent:
             user_payload = str(snapshot)
         messages = [
             {"role": "system", "content": _SYSTEM_PROMPT},
-            {"role": "user", "content": "请审视以下 session 状态快照并按 schema 输出 JSON：\n\n" + user_payload},
+            {
+                "role": "user",
+                "content": "请审视以下 session 状态快照并按 schema 输出 JSON：\n\n" + user_payload,
+            },
         ]
         try:
             # P5-S1 D fix: bumped max_tokens 512 → 2048. thinking-mode
@@ -345,7 +356,11 @@ class SupervisorAgent:
                 timeout=self._timeout,
             )
         except TimeoutError:
-            logger.warning("supervisor_llm_timeout after=%.1fs sid=%s", self._timeout, snapshot.get("session_id"))
+            logger.warning(
+                "supervisor_llm_timeout after=%.1fs sid=%s",
+                self._timeout,
+                snapshot.get("session_id"),
+            )
             # P5-S1 D fix: do NOT silently fall back to wait. The user
             # sees a stuck session and supervisor also failed; tell the
             # user explicitly so they can decide rather than left
@@ -362,9 +377,7 @@ class SupervisorAgent:
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001
-            logger.warning(
-                "supervisor_llm_failed sid=%s error=%s", snapshot.get("session_id"), exc
-            )
+            logger.warning("supervisor_llm_failed sid=%s error=%s", snapshot.get("session_id"), exc)
             # P5-S1 D fix: same as above — surface "supervisor saw it
             # but couldn't diagnose" instead of silent wait. Often the
             # main agent's failures are network/provider issues that
@@ -400,9 +413,9 @@ class SupervisorAgent:
         # will fail the same way, creating an infinite retry loop. Let
         # the session stop and show a clear error. Detect via diagnosis
         # prefix the supervisor sets when its own LLM call fails.
-        _supervisor_itself_down = (
-            action.diagnosis or ""
-        ).startswith(("supervisor_unavailable", "supervisor_timeout"))
+        _supervisor_itself_down = (action.diagnosis or "").startswith(
+            ("supervisor_unavailable", "supervisor_timeout")
+        )
         if (
             action.action == "ask_user"
             and self._auto_mode_check is not None
@@ -416,7 +429,8 @@ class SupervisorAgent:
                 logger.info(
                     "supervisor_ask_user_auto_continued sid=%s alert=%s "
                     "(auto_mode on; bypassing UI buttons)",
-                    sid, action.alert_id,
+                    sid,
+                    action.alert_id,
                 )
                 # Convert to nudge so hint flows into queue normally.
                 action.action = "nudge"
@@ -426,9 +440,7 @@ class SupervisorAgent:
                 # context to recover.
                 if not action.hint_for_main_agent:
                     action.hint_for_main_agent = (
-                        action.user_message
-                        or action.diagnosis
-                        or "继续按你判断的下一步推进任务。"
+                        action.user_message or action.diagnosis or "继续按你判断的下一步推进任务。"
                     )
                 # Clear suggested_buttons + rewrite user_message so the
                 # UI shows "已自动继续" notice instead of clickable buttons
@@ -444,7 +456,8 @@ class SupervisorAgent:
             logger.warning(
                 "supervisor_provider_outage_no_auto_followup sid=%s diagnosis=%s "
                 "(would have looped infinitely retrying same dead provider)",
-                sid, action.diagnosis,
+                sid,
+                action.diagnosis,
             )
 
         # 1. Audit BEFORE side effects so even a failed broadcast leaves a row
@@ -483,12 +496,14 @@ class SupervisorAgent:
                     await self._auto_followup(sid, "<<supervisor_followup>>")
                     logger.info(
                         "supervisor_auto_followup_scheduled sid=%s alert=%s",
-                        sid, action.alert_id,
+                        sid,
+                        action.alert_id,
                     )
                 except Exception as exc:  # noqa: BLE001
                     logger.warning(
                         "supervisor_auto_followup_failed sid=%s error=%s",
-                        sid, exc,
+                        sid,
+                        exc,
                     )
 
         # 3. Broadcast supervisor_alert
@@ -497,10 +512,7 @@ class SupervisorAgent:
         # "[auto-mode] 已自动继续：..." 气泡。用户已委托决策，根本没必要看。
         # 静默化：auto-mode bypass 后只 audit (前面已经做了)，不再 broadcast
         # 给 UI。失败 / 严重错误（severity=red）仍然 broadcast 保留可见性。
-        _silent_for_auto_mode = (
-            _auto_bypassed
-            and action.severity != "red"
-        )
+        _silent_for_auto_mode = _auto_bypassed and action.severity != "red"
         if self._broadcast is not None and not _silent_for_auto_mode:
             payload = {
                 "session_id": sid,
@@ -519,12 +531,16 @@ class SupervisorAgent:
             logger.info(
                 "supervisor_alert_silenced_auto_mode sid=%s alert=%s severity=%s "
                 "(auto-mode handled it; not broadcasting UI bubble)",
-                sid, action.alert_id, action.severity,
+                sid,
+                action.alert_id,
+                action.severity,
             )
 
 
 # Convenience factory used by main.py wiring (S2.2).
-def build_supervisor_hook(agent: SupervisorAgent) -> Callable[[str, dict[str, Any]], Awaitable[None]]:
+def build_supervisor_hook(
+    agent: SupervisorAgent,
+) -> Callable[[str, dict[str, Any]], Awaitable[None]]:
     """Wrap a SupervisorAgent in the WatchdogLoop hook signature.
 
     The watchdog passes ``(sid, snapshot)`` per-tick; we forward to

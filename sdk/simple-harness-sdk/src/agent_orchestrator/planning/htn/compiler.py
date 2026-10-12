@@ -1206,8 +1206,12 @@ def _merge(
     def retires(one: OccurrenceId, other: OccurrenceId) -> bool:
         if one in orphaned or other in orphaned:
             return True
-        return (one in retiring_members and other in retiring_members
-                and not any(one in held and other in held for held in surviving_members))
+        return (
+            one in retiring_members
+            and other in retiring_members
+            and not any(one in held and other in held for held in surviving_members)
+        )
+
     # P2.3j: the orphaned occurrences leave the network *with* the membership, not
     # only their edges.  Left in, they would still be counted as live work — the
     # commit side funds a revision against every occurrence the network names — and
@@ -1245,11 +1249,19 @@ def _merge(
     # 新做法点名共用已有步骤时，它声明的先后边、覆盖声明可能与网络里已有的完全相同（两端 / 被覆盖
     # 的都是共用步骤）：那是同一条，不是第二条。只折叠完全相同的；同两端而条件不同的仍由下面的
     # 校验拒绝。
-    kept_order = {constraint for constraint in current.order_constraints
-                  if not retires(constraint.before, constraint.after)}
-    order_constraints = tuple(constraint for constraint in order_constraints if constraint not in kept_order)
-    kept_coverage = {claim for claim in current.obligation_coverage
-                     if not any(covered in orphaned for covered in claim.covered_by)}
+    kept_order = {
+        constraint
+        for constraint in current.order_constraints
+        if not retires(constraint.before, constraint.after)
+    }
+    order_constraints = tuple(
+        constraint for constraint in order_constraints if constraint not in kept_order
+    )
+    kept_coverage = {
+        claim
+        for claim in current.obligation_coverage
+        if not any(covered in orphaned for covered in claim.covered_by)
+    }
     coverage = tuple(claim for claim in coverage if claim not in kept_coverage)
     try:
         return TaskNetworkSnapshot(
@@ -1509,7 +1521,8 @@ def build_read_set(
         observation_revisions=tuple(observation_reads),
         acceptance_revisions=tuple(acceptance_reads),
         obligation_revisions=tuple(
-            (obligation_items or {})[duty] for duty in dict.fromkeys(duties)
+            (obligation_items or {})[duty]
+            for duty in dict.fromkeys(duties)
             if duty in (obligation_items or {})
         ),
         scope_epochs=tuple(
@@ -1519,7 +1532,9 @@ def build_read_set(
     )
 
 
-def _write_targets(method: MethodContract, criterion_files: Mapping[str, str]) -> dict[str, list[str]]:
+def _write_targets(
+    method: MethodContract, criterion_files: Mapping[str, str]
+) -> dict[str, list[str]]:
     """Step name → the files the method makes that step answer for: every ``file:X``
     requirement its ``criterion_links`` hang on the step (the finalizer when no step is
     named).  A structural fact read off the method — not a guess about what a step writes."""

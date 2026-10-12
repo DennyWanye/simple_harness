@@ -6,6 +6,7 @@
 AgentLoop can only expose requested calls.  ReActDriver/Kernel executes and
 classifies the resulting outcome, including permanent and transient failures.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -20,9 +21,7 @@ class _ScriptedLLM:
         self._responses = list(responses)
         self.call_count = 0
 
-    async def chat_with_fallback(
-        self, messages: list[dict[str, Any]], **_: Any
-    ) -> ChatResponse:
+    async def chat_with_fallback(self, messages: list[dict[str, Any]], **_: Any) -> ChatResponse:
         self.call_count += 1
         if not self._responses:
             raise AssertionError("AgentLoop crossed the tool-batch pause point")
@@ -56,18 +55,16 @@ async def _run(*calls: ToolCall, max_iterations: int = 50):
     tools = _NoDispatchTools()
     events = [
         event
-        async for event in AgentLoop(
-            llm, tools, max_iterations=max_iterations
-        ).run([{"role": "user", "content": "go"}], session_id="s")
+        async for event in AgentLoop(llm, tools, max_iterations=max_iterations).run(
+            [{"role": "user", "content": "go"}], session_id="s"
+        )
     ]
     return llm, tools, events
 
 
 @pytest.mark.asyncio
 async def test_missing_argument_call_is_exposed_without_preclassification() -> None:
-    llm, tools, events = await _run(
-        ToolCall(id="c1", name="write_file", arguments={})
-    )
+    llm, tools, events = await _run(ToolCall(id="c1", name="write_file", arguments={}))
 
     assert llm.call_count == 1
     assert tools.calls == []
@@ -89,9 +86,7 @@ async def test_high_iteration_limit_does_not_cross_external_pause() -> None:
 
 @pytest.mark.asyncio
 async def test_transient_outcome_classification_is_not_guessed_by_agent_loop() -> None:
-    _, tools, events = await _run(
-        ToolCall(id="c1", name="web_search", arguments={"q": "deskpet"})
-    )
+    _, tools, events = await _run(ToolCall(id="c1", name="web_search", arguments={"q": "deskpet"}))
 
     assert tools.calls == []
     assert isinstance(events[-1], ToolBatchEvent)
@@ -99,9 +94,7 @@ async def test_transient_outcome_classification_is_not_guessed_by_agent_loop() -
 
 @pytest.mark.asyncio
 async def test_unknown_tool_is_still_an_external_batch_call() -> None:
-    _, tools, events = await _run(
-        ToolCall(id="c1", name="do_magic", arguments={})
-    )
+    _, tools, events = await _run(ToolCall(id="c1", name="do_magic", arguments={}))
 
     assert tools.calls == []
     assert events[-1].tool_calls[0].name == "do_magic"
@@ -109,10 +102,12 @@ async def test_unknown_tool_is_still_an_external_batch_call() -> None:
 
 @pytest.mark.asyncio
 async def test_only_first_requested_batch_is_returned() -> None:
-    llm = _ScriptedLLM([
-        _response(ToolCall(id="c1", name="read_file", arguments={"path": "a"})),
-        _response(ToolCall(id="c2", name="write_file", arguments={})),
-    ])
+    llm = _ScriptedLLM(
+        [
+            _response(ToolCall(id="c1", name="read_file", arguments={"path": "a"})),
+            _response(ToolCall(id="c2", name="write_file", arguments={})),
+        ]
+    )
     tools = _NoDispatchTools()
     events = [
         event

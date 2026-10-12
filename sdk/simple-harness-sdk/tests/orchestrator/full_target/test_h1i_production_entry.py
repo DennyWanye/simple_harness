@@ -46,9 +46,12 @@ from h1i_seed import CONFIG, CRITERIA, GOAL, plan_reply, seeded  # noqa: E402
 
 
 def test_the_package_states_its_version_as_the_integer_the_binding_stores() -> None:
-    assert Orchestrator._planning_decision_package_version(
-        {"package_version": PLANNING_DECISION_PACKAGE_VERSION}
-    ) == PLANNING_DECISION_PACKAGE_VERSION
+    assert (
+        Orchestrator._planning_decision_package_version(
+            {"package_version": PLANNING_DECISION_PACKAGE_VERSION}
+        )
+        == PLANNING_DECISION_PACKAGE_VERSION
+    )
     for malformed in ("planner-package-hierarchical-v8", True, 0, None):
         with pytest.raises(ContractError):
             Orchestrator._planning_decision_package_version({"package_version": malformed})
@@ -65,6 +68,7 @@ async def _open_planner_round(
     assert intent.kind == "plan"
     assert intent.mission_id == mission.id
     from agent_orchestrator.storage.planning_decision_store import PlanningDecisionStore
+
     frozen = PlanningDecisionStore(loop.store).get_mission_protocol(mission.id)
     assert frozen["package_version"] == PLANNING_DECISION_PACKAGE_VERSION
     assert intent.config["prompt_version"] == PLANNER_HIERARCHICAL.prompt_version
@@ -80,9 +84,19 @@ def _events(loop: Orchestrator, mission_id: str, event_type: str) -> list[Any]:
 
 def test_the_planning_request_is_the_package_and_nothing_appended(tmp_path: Path) -> None:
     async def case() -> None:
-        async with seeded(tmp_path, key="h1i-v10") as (loop, mission, _world, _root, dispatch, _product):
+        async with seeded(tmp_path, key="h1i-v10") as (
+            loop,
+            mission,
+            _world,
+            _root,
+            dispatch,
+            _product,
+        ):
             intent = await _open_planner_round(loop, mission, dispatch, ordinal=1)
-            assert intent.config["planning_package"]["package_version"] == PLANNING_DECISION_PACKAGE_VERSION
+            assert (
+                intent.config["planning_package"]["package_version"]
+                == PLANNING_DECISION_PACKAGE_VERSION
+            )
             # One prompt: the wire format is described in the role template only.  A second
             # block of instructions appended to the request used to live here.
             message = intent.config["message"]["content"]
@@ -109,7 +123,14 @@ def test_the_planning_request_is_the_package_and_nothing_appended(tmp_path: Path
 
 def test_format_retry_keeps_opener_package_and_request_identity(tmp_path: Path) -> None:
     async def case() -> None:
-        async with seeded(tmp_path, key="h1i-retry") as (loop, mission, _world, _root, dispatch, _product):
+        async with seeded(tmp_path, key="h1i-retry") as (
+            loop,
+            mission,
+            _world,
+            _root,
+            dispatch,
+            _product,
+        ):
             opener = await _open_planner_round(loop, mission, dispatch, ordinal=1)
 
             # This is the real collector's codec refusal.  It records UNREADABLE and
@@ -134,7 +155,7 @@ def test_format_retry_keeps_opener_package_and_request_identity(tmp_path: Path) 
             # 2026-09-30：包冻结；消息 = 原消息 + 上一次的字段路径反馈。
             original = opener.config["message"]["content"]
             assert retry.config["message"]["content"].startswith(original)
-            assert "previous_feedback" in retry.config["message"]["content"][len(original):]
+            assert "previous_feedback" in retry.config["message"]["content"][len(original) :]
             request = loop.store.connection.execute(
                 "SELECT request_id, intent_id, package_hash, base_plan_revision "
                 "FROM planning_requests WHERE request_id = ?",
@@ -165,7 +186,14 @@ def test_malformed_decision_retry_reuses_the_frozen_request_package(tmp_path: Pa
     """A schema rejection may open one retry without changing its request facts."""
 
     async def case() -> None:
-        async with seeded(tmp_path, key="h1i-retry-frozen-package") as (loop, mission, _world, _root, dispatch, _product):
+        async with seeded(tmp_path, key="h1i-retry-frozen-package") as (
+            loop,
+            mission,
+            _world,
+            _root,
+            dispatch,
+            _product,
+        ):
             opener = await _open_planner_round(loop, mission, dispatch, ordinal=1)
             request_before = loop.store.connection.execute(
                 "SELECT request_id, package_hash, base_plan_revision, visible_refs_digest "
@@ -182,9 +210,7 @@ def test_malformed_decision_retry_reuses_the_frozen_request_package(tmp_path: Pa
                 '"uncertainties":[],"alternatives":[],"replan_triggers":[]}'
                 "</planning_decision>"
             )
-            await loop._collect_plan_decision(
-                opener, object(), mission, malformed, dispatch
-            )
+            await loop._collect_plan_decision(opener, object(), mission, malformed, dispatch)
             request_after = loop.store.connection.execute(
                 "SELECT request_id, package_hash, base_plan_revision, visible_refs_digest, "
                 "intent_id "
@@ -195,9 +221,10 @@ def test_malformed_decision_retry_reuses_the_frozen_request_package(tmp_path: Pa
             assert tuple(request_after[:4]) == tuple(request_before)
             assert request_after[4] != opener.intent_id
             retry = loop.store.get_intent(request_after[4])
-            assert retry is not None and retry.config["planning_package"] == opener.config[
-                "planning_package"
-            ]
+            assert (
+                retry is not None
+                and retry.config["planning_package"] == opener.config["planning_package"]
+            )
 
     asyncio.run(case())
 
@@ -220,11 +247,16 @@ def test_commit_refusal_records_domain_code_and_not_commit_rejected(
     async def case() -> None:
         provider = LayeredScriptedProvider(planner=_planner)
         async with product_world(tmp_path / "root", provider, **CONFIG) as world:
-            created = world.create({"goal": GOAL, "idempotency_key": "h1i-refusal",
-                                    "success_criteria": list(CRITERIA)})
+            created = world.create(
+                {"goal": GOAL, "idempotency_key": "h1i-refusal", "success_criteria": list(CRITERIA)}
+            )
             await world.run_until_settled(created["mission_id"], rounds=6)
             rows = _events(world.loop, created["mission_id"], "PlanningDecisionEvaluated")
-            refused = [row for row in rows if row.payload["status"] == str(PlanningDecisionStatus.COMMIT_REJECTED)]
+            refused = [
+                row
+                for row in rows
+                if row.payload["status"] == str(PlanningDecisionStatus.COMMIT_REJECTED)
+            ]
             assert refused, [row.payload for row in rows]
             assert refused[0].payload["rejection_codes"] == ["INTERNAL_CONTRACT_ERROR"]
             assert not _events(world.loop, created["mission_id"], "PlanRevisionCommitted")
@@ -236,15 +268,20 @@ def test_real_collector_preview_commit_commits_one_plan_revision(tmp_path: Path)
     async def case() -> None:
         provider = LayeredScriptedProvider(planner=_planner)
         async with product_world(tmp_path / "root", provider, **CONFIG) as world:
-            created = world.create({"goal": GOAL, "idempotency_key": "h1i-commit",
-                                    "success_criteria": list(CRITERIA)})
+            created = world.create(
+                {"goal": GOAL, "idempotency_key": "h1i-commit", "success_criteria": list(CRITERIA)}
+            )
             mission = await world.run_until_settled(created["mission_id"], rounds=12)
-            evaluated = [row.payload["status"] for row in
-                         _events(world.loop, mission.id, "PlanningDecisionEvaluated")]
+            evaluated = [
+                row.payload["status"]
+                for row in _events(world.loop, mission.id, "PlanningDecisionEvaluated")
+            ]
             # The proposal registers the method (no plan change); after its independent
             # review the adopted method is committed as exactly one plan revision.
-            assert evaluated == [str(PlanningDecisionStatus.NO_STATE_CHANGE),
-                                 str(PlanningDecisionStatus.COMMITTED)], evaluated
+            assert evaluated == [
+                str(PlanningDecisionStatus.NO_STATE_CHANGE),
+                str(PlanningDecisionStatus.COMMITTED),
+            ], evaluated
             assert len(_events(world.loop, mission.id, "PlanRevisionCommitted")) == 1
             assert world.loop._dispatch_for(mission.id).network(mission.id).plan_revision == 1
 
@@ -261,7 +298,14 @@ def test_state_free_decision_context_has_no_uninitialised_operation_snapshot(
     """State-free decisions skip live operation reads and still assemble safely."""
 
     async def case() -> None:
-        async with seeded(tmp_path, key=f"h1i-state-free-{decision_type.lower()}") as (loop, mission, _world, _root, dispatch, _product):
+        async with seeded(tmp_path, key=f"h1i-state-free-{decision_type.lower()}") as (
+            loop,
+            mission,
+            _world,
+            _root,
+            dispatch,
+            _product,
+        ):
             opener = await _open_planner_round(loop, mission, dispatch, ordinal=1)
             PlanningAuthorizationApi(
                 loop.store,

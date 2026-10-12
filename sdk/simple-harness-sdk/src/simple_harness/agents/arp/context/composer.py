@@ -69,7 +69,11 @@ def recall_message(item: Mapping[str, Any], text: str) -> Message:
         MessageRole.USER,
         f'<recalled_history chunk="{item["chunk_id"]}" provenance="{item["provenance"]}" untrusted="true">\n'
         f"{body}\n</recalled_history>",
-        metadata={"derived": True, "recalled_chunk_id": item["chunk_id"], "rank_ordinal": int(item["rank_ordinal"])},
+        metadata={
+            "derived": True,
+            "recalled_chunk_id": item["chunk_id"],
+            "rank_ordinal": int(item["rank_ordinal"]),
+        },
     )
 
 
@@ -114,7 +118,10 @@ class ArpContextPort(JournalContextPort):
         if session is None:
             raise ArpError("SESSION_NOT_ACTIVE", "no live ARP session for this agent")
         if session.state != "ACTIVE":
-            raise ArpError("SESSION_DRAINING" if session.state == "DRAINING" else "SESSION_NOT_ACTIVE", session.state)
+            raise ArpError(
+                "SESSION_DRAINING" if session.state == "DRAINING" else "SESSION_NOT_ACTIVE",
+                session.state,
+            )
         return session
 
     def _capture(self, session: store.SessionRow, highwater: int) -> protocol_groups.GroupSnapshot:
@@ -136,11 +143,20 @@ class ArpContextPort(JournalContextPort):
             turn_ref=Pin("agent_turn", turn_id, 0, digest(turn_id)),
             root_incarnation=session.root_incarnation,
             purpose="CONTEXT_RECALL",
-            caller_ref=Pin("principal", "runtime:context-composer", 0, digest("runtime:context-composer")),
+            caller_ref=Pin(
+                "principal", "runtime:context-composer", 0, digest("runtime:context-composer")
+            ),
             authority_refs=(authority,),
-            authority_readset_hash=digest({"authority": authority.to_json(), "profile": session.profile_ref.to_json(), "session": session.pin.to_json()}),
+            authority_readset_hash=digest(
+                {
+                    "authority": authority.to_json(),
+                    "profile": session.profile_ref.to_json(),
+                    "session": session.pin.to_json(),
+                }
+            ),
             control_generation=session.generation,
-            expires_at_ms=arp.ports.clock_ms() + int(arp.policy_for(session)[1].body["query_cursor_ttl_ms"]),
+            expires_at_ms=arp.ports.clock_ms()
+            + int(arp.policy_for(session)[1].body["query_cursor_ttl_ms"]),
         )
 
     @staticmethod
@@ -158,7 +174,9 @@ class ArpContextPort(JournalContextPort):
             return ContextSnapshot(0, ())
         session = self._session(agent_id)
         snapshot = self._capture(session, highwater)
-        messages: list[Message] = [_message_of(r) for r in snapshot.instructions if r.visibility == "context"]
+        messages: list[Message] = [
+            _message_of(r) for r in snapshot.instructions if r.visibility == "context"
+        ]
         for group in snapshot.groups:
             if group.mandatory:
                 messages.extend(self._group_messages(group))
@@ -169,7 +187,9 @@ class ArpContextPort(JournalContextPort):
     def freeze(self, run_id: str, request: ProviderRequest) -> ProviderRequest:
         arp = self.arp
         if arp is None:
-            raise ArpError("STATE_COMBINATION_INVALID", "context port not bound to the runtime plane")
+            raise ArpError(
+                "STATE_COMBINATION_INVALID", "context port not bound to the runtime plane"
+            )
         request_key = request.request_id.value
         _, _, ordinal_text = request_key.rpartition(":provider-turn:")
         if not ordinal_text.isdigit():
@@ -216,7 +236,12 @@ class ArpContextPort(JournalContextPort):
         turn_ref = Pin("agent_turn", turn_id, 0, digest(turn_id))
         with self._uow.database.transaction() as txn:
             arp.index.enqueue_closed_groups_locked(
-                txn, session=session, snapshot=snapshot, generation=state.generation, authority_ref=arp.policy.approval_ref, turn_ref=turn_ref
+                txn,
+                session=session,
+                snapshot=snapshot,
+                generation=state.generation,
+                authority_ref=arp.policy.approval_ref,
+                turn_ref=turn_ref,
             )
         if not arp.index.background_embedding:
             # A heavy embedding model runs in the background pump, never inside a Turn:
@@ -239,23 +264,58 @@ class ArpContextPort(JournalContextPort):
         instructions = [r for r in snapshot.instructions if r.visibility == "context"]
         tool_tokens = self._fixed_tool_charge(request, instructions)
         skill_blocks = skill_blocks_for(arp, session, count=arp.index.count)
-        fixed = sum(self._count(r) for r in instructions) + tool_tokens + sum(b.tokens for b in skill_blocks)
+        fixed = (
+            sum(self._count(r) for r in instructions)
+            + tool_tokens
+            + sum(b.tokens for b in skill_blocks)
+        )
         rule_groups = [
-            Group(g.group_id, g.turn_id, g.seq_from, g.budget_charge, g.kind, g.mandatory, g.closed, g.call_ids, g.result_call_ids)
+            Group(
+                g.group_id,
+                g.turn_id,
+                g.seq_from,
+                g.budget_charge,
+                g.kind,
+                g.mandatory,
+                g.closed,
+                g.call_ids,
+                g.result_call_ids,
+            )
             for g in snapshot.groups
         ]
-        rule_turns = [Turn(t["turn_id"], bool(t["completed"]), frozenset(t["required_group_ids"])) for t in snapshot.body["turns"]]
+        rule_turns = [
+            Turn(t["turn_id"], bool(t["completed"]), frozenset(t["required_group_ids"]))
+            for t in snapshot.body["turns"]
+        ]
         # Mandatory + protected recent suffix are excluded from recall before the query starts.
-        pre = allocate(budget, fixed, rule_groups, (), turns=rule_turns, current_turn_id=turn_id, enumeration_complete=bool(snapshot.body["enumeration_complete"]))
+        pre = allocate(
+            budget,
+            fixed,
+            rule_groups,
+            (),
+            turns=rule_turns,
+            current_turn_id=turn_id,
+            enumeration_complete=bool(snapshot.body["enumeration_complete"]),
+        )
         protected = tuple(g.id for g in pre.recent if not g.mandatory)
         access = self._access(session, turn_id)
         clock_ref = self._clock_receipt(session, request_key)
         if existing_recall is not None:
             # C0 already happened for this request key (crash after C0, or a re-sent
             # prepare): continue the frozen request; never build a second one.
-            if existing_recall.session_id != session.session_id or int(existing_recall.request["journal_highwater"]) != highwater:
-                raise ArpError("RECALL_SOURCE_STALE", "request key re-sent against another journal state")
-            result = arp.recall.resume(existing_recall.recall_key, access, now_ms=arp.ports.clock_ms(), clock_receipt_ref=clock_ref)
+            if (
+                existing_recall.session_id != session.session_id
+                or int(existing_recall.request["journal_highwater"]) != highwater
+            ):
+                raise ArpError(
+                    "RECALL_SOURCE_STALE", "request key re-sent against another journal state"
+                )
+            result = arp.recall.resume(
+                existing_recall.recall_key,
+                access,
+                now_ms=arp.ports.clock_ms(),
+                clock_receipt_ref=clock_ref,
+            )
             recall_request = existing_recall.request
         else:
             query_parts = self._query_parts(snapshot, turn_id, highwater)
@@ -267,7 +327,12 @@ class ArpContextPort(JournalContextPort):
                 provider_request_ordinal=ordinal,
                 policy_ref=policy_row.pin,
                 adoption_revision=adoption_revision,
-                source_snapshot_ref=Pin("artifact", f"source-snapshot:{session.session_id}:{highwater}", highwater, snapshot.snapshot_hash),
+                source_snapshot_ref=Pin(
+                    "artifact",
+                    f"source-snapshot:{session.session_id}:{highwater}",
+                    highwater,
+                    snapshot.snapshot_hash,
+                ),
                 source_snapshot_hash=snapshot.snapshot_hash,
                 group_snapshot_ref=snapshot.pin,
                 journal_highwater=highwater,
@@ -277,13 +342,21 @@ class ArpContextPort(JournalContextPort):
                 protected_group_ids=protected,
                 query_parts=query_parts,
                 embedding_resource_ref=(
-                    None if arp.index.embedding is None
-                    else Pin("provider", f"embedding:{arp.index.embedding_fingerprint[:16]}", 1, digest(arp.index.embedding_resource_ref.to_json()))
+                    None
+                    if arp.index.embedding is None
+                    else Pin(
+                        "provider",
+                        f"embedding:{arp.index.embedding_fingerprint[:16]}",
+                        1,
+                        digest(arp.index.embedding_resource_ref.to_json()),
+                    )
                 ),
-                embedding_fingerprint=None if arp.index.embedding is None else arp.index.embedding_fingerprint,
+                embedding_fingerprint=None
+                if arp.index.embedding is None
+                else arp.index.embedding_fingerprint,
                 allow_lexical_degradation=bool(arp.ports.profile.allow_lexical_degradation),
                 limits=limits_for(policy),
-            clock_receipt_ref=clock_ref,
+                clock_receipt_ref=clock_ref,
             )
             recall_request = arp.recall.build_request(sources)
             result = arp.recall.start(access, recall_request)
@@ -296,18 +369,54 @@ class ArpContextPort(JournalContextPort):
                 text = service.chunk_text(generation, item["chunk_id"])
                 texts[item["chunk_id"]] = text
                 charge = count_message(self._tokenizer, recall_message(item, text))
-                candidates.append(Recall(item["chunk_id"], frozenset(item["source_group_ids"]), charge))
+                candidates.append(
+                    Recall(item["chunk_id"], frozenset(item["source_group_ids"]), charge)
+                )
         candidates = candidates[: int(policy["max_recall_items"])]
-        selection = allocate(budget, fixed, rule_groups, candidates, turns=rule_turns, current_turn_id=turn_id, enumeration_complete=bool(snapshot.body["enumeration_complete"]))
-        prepared = PreparedContext(highwater, turn_id, snapshot, session, selection, result, texts, budget, fixed, (), tool_snapshot, tool_witnesses, skill_blocks)
+        selection = allocate(
+            budget,
+            fixed,
+            rule_groups,
+            candidates,
+            turns=rule_turns,
+            current_turn_id=turn_id,
+            enumeration_complete=bool(snapshot.body["enumeration_complete"]),
+        )
+        prepared = PreparedContext(
+            highwater,
+            turn_id,
+            snapshot,
+            session,
+            selection,
+            result,
+            texts,
+            budget,
+            fixed,
+            (),
+            tool_snapshot,
+            tool_witnesses,
+            skill_blocks,
+        )
         wire, measurement = self._render_and_measure(prepared, request, instructions)
-        self._write_manifest(prepared, wire, measurement, request_key, ordinal, adoption_revision, tool_tokens, instructions, policy_row=policy_row)
+        self._write_manifest(
+            prepared,
+            wire,
+            measurement,
+            request_key,
+            ordinal,
+            adoption_revision,
+            tool_tokens,
+            instructions,
+            policy_row=policy_row,
+        )
         self.prepared.append(request_key)
         return wire
 
     # ---- rendering / metering ------------------------------------------------------------------
 
-    def _fixed_tool_charge(self, request: ProviderRequest, instructions: Sequence[AgentJournalRecord]) -> int:
+    def _fixed_tool_charge(
+        self, request: ProviderRequest, instructions: Sequence[AgentJournalRecord]
+    ) -> int:
         """The tool block's charge in the plan.  With an exact rendered-request counter the
         fixed part (instructions + tool schemas + the template's request framing and
         tool-calling preamble) is measured on that same counter — a skeleton request with no
@@ -323,8 +432,15 @@ class ArpContextPort(JournalContextPort):
         measured = self.arp.meter.count_wire(skeleton) - sum(self._count(r) for r in instructions)
         return max(heuristic, measured)
 
-    def _render(self, prepared: PreparedContext, request: ProviderRequest, instructions: Sequence[AgentJournalRecord]) -> ProviderRequest:
-        by_id = {item["chunk_id"]: item for item in prepared.recall_result.get("candidate_items", [])}
+    def _render(
+        self,
+        prepared: PreparedContext,
+        request: ProviderRequest,
+        instructions: Sequence[AgentJournalRecord],
+    ) -> ProviderRequest:
+        by_id = {
+            item["chunk_id"]: item for item in prepared.recall_result.get("candidate_items", [])
+        }
         messages: list[Message] = [_message_of(r) for r in instructions]
         messages.extend(skill_message(b) for b in prepared.skill_blocks)
         for recall in prepared.selection.recalled:
@@ -332,17 +448,27 @@ class ArpContextPort(JournalContextPort):
         for group in prepared.selection.recent:
             messages.extend(self._group_messages(prepared.snapshot.group(group.id)))
         restored, _ = restore_wire_messages(
-            tuple(messages), self._connection(), prepared.session.agent_id, replay_reasoning=self.replay_reasoning
+            tuple(messages),
+            self._connection(),
+            prepared.session.agent_id,
+            replay_reasoning=self.replay_reasoning,
         )
         return replace(request, messages=restored)
 
-    def _render_and_measure(self, prepared: PreparedContext, request: ProviderRequest, instructions: Sequence[AgentJournalRecord]):  # type: ignore[no-untyped-def]
+    def _render_and_measure(
+        self,
+        prepared: PreparedContext,
+        request: ProviderRequest,
+        instructions: Sequence[AgentJournalRecord],
+    ):  # type: ignore[no-untyped-def]
         arp = self.arp
         for _ in range(MAX_SHRINK_STEPS + 1):
             wire = self._render(prepared, request, instructions)
             try:
                 measurement = arp.meter.measure(
-                    wire, run_id=prepared.session.agent_id, max_input_budget=prepared.selection.input_budget,
+                    wire,
+                    run_id=prepared.session.agent_id,
+                    max_input_budget=prepared.selection.input_budget,
                     requested_output_tokens=int(request.max_output_tokens),
                 )
             except ArpError as error:
@@ -350,14 +476,29 @@ class ArpContextPort(JournalContextPort):
                     raise
                 shrunk = _shrink(prepared.selection)
                 if shrunk is None:
-                    raise ArpError("REQUIRED_CONTEXT_TOO_LARGE", "mandatory content alone exceeds the final budget") from error
+                    raise ArpError(
+                        "REQUIRED_CONTEXT_TOO_LARGE",
+                        "mandatory content alone exceeds the final budget",
+                    ) from error
                 prepared.selection = shrunk
                 continue
             prepared.messages = wire.messages
             return wire, measurement
         raise ArpError("CONTEXT_ASSEMBLY_LIMIT", "no fitting request within 256 reductions")
 
-    def _write_manifest(self, prepared: PreparedContext, wire: ProviderRequest, measurement: Any, request_key: str, ordinal: int, adoption_revision: int, tool_tokens: int, instructions: Sequence[AgentJournalRecord], *, policy_row: store.PolicyObjectRow | None = None) -> None:
+    def _write_manifest(
+        self,
+        prepared: PreparedContext,
+        wire: ProviderRequest,
+        measurement: Any,
+        request_key: str,
+        ordinal: int,
+        adoption_revision: int,
+        tool_tokens: int,
+        instructions: Sequence[AgentJournalRecord],
+        *,
+        policy_row: store.PolicyObjectRow | None = None,
+    ) -> None:
         arp = self.arp
         session = prepared.session
         policy_row = policy_row or arp.policy
@@ -366,29 +507,60 @@ class ArpContextPort(JournalContextPort):
         snapshot = prepared.snapshot
         result = prepared.recall_result
         context_id = "ctx-" + digest({"request": request_key, "session": session.session_id})[:32]
-        tool_snapshot_hash = digest([{"name": t.name, "description": t.description, "parameters": plain(t.parameters)} for t in wire.tools])
+        tool_snapshot_hash = digest(
+            [
+                {"name": t.name, "description": t.description, "parameters": plain(t.parameters)}
+                for t in wire.tools
+            ]
+        )
         sections: list[dict[str, Any]] = []
         if instructions:
             sections.append(
                 {
-                    "section": "A", "block_id": "instructions", "source_refs": [Pin("journal_record", r.record_id, r.seq, r.content_hash).to_json() for r in instructions],
-                    "view_ref": Pin("artifact", "view:instructions", 0, digest([[r.record_id, r.content_hash] for r in instructions])).to_json(),
-                    "trust": "CONTROL", "required": True, "budget_charge": sum(self._count(r) for r in instructions), "validity_witness_ref": None,
+                    "section": "A",
+                    "block_id": "instructions",
+                    "source_refs": [
+                        Pin("journal_record", r.record_id, r.seq, r.content_hash).to_json()
+                        for r in instructions
+                    ],
+                    "view_ref": Pin(
+                        "artifact",
+                        "view:instructions",
+                        0,
+                        digest([[r.record_id, r.content_hash] for r in instructions]),
+                    ).to_json(),
+                    "trust": "CONTROL",
+                    "required": True,
+                    "budget_charge": sum(self._count(r) for r in instructions),
+                    "validity_witness_ref": None,
                 }
             )
         if wire.tools:
             sections.append(
                 {
-                    "section": "E", "block_id": "tool-schemas", "source_refs": [Pin("receipt", f"tools:{session.agent_id}", 0, tool_snapshot_hash).to_json()],
+                    "section": "E",
+                    "block_id": "tool-schemas",
+                    "source_refs": [
+                        Pin("receipt", f"tools:{session.agent_id}", 0, tool_snapshot_hash).to_json()
+                    ],
                     "view_ref": Pin("artifact", "view:tools", 0, tool_snapshot_hash).to_json(),
-                    "trust": "CONTROL", "required": True, "budget_charge": tool_tokens, "validity_witness_ref": None,
+                    "trust": "CONTROL",
+                    "required": True,
+                    "budget_charge": tool_tokens,
+                    "validity_witness_ref": None,
                 }
             )
         for block in prepared.skill_blocks:
             sections.append(
                 {
-                    "section": "E", "block_id": block.block_id, "source_refs": [block.receipt_ref.to_json(), block.artifact_ref.to_json()],
-                    "view_ref": block.artifact_ref.to_json(), "trust": "SKILL_INSTRUCTIONS", "required": True, "budget_charge": block.tokens, "validity_witness_ref": None,
+                    "section": "E",
+                    "block_id": block.block_id,
+                    "source_refs": [block.receipt_ref.to_json(), block.artifact_ref.to_json()],
+                    "view_ref": block.artifact_ref.to_json(),
+                    "trust": "SKILL_INSTRUCTIONS",
+                    "required": True,
+                    "budget_charge": block.tokens,
+                    "validity_witness_ref": None,
                 }
             )
         by_id = {item["chunk_id"]: item for item in result.get("candidate_items", [])}
@@ -396,17 +568,28 @@ class ArpContextPort(JournalContextPort):
             item = by_id[recall.id]
             sections.append(
                 {
-                    "section": "F", "block_id": f"recall:{recall.id}", "source_refs": list(item["source_record_refs"]),
-                    "view_ref": item["view_ref"], "trust": item["provenance"], "required": False, "budget_charge": recall.tokens, "validity_witness_ref": None,
+                    "section": "F",
+                    "block_id": f"recall:{recall.id}",
+                    "source_refs": list(item["source_record_refs"]),
+                    "view_ref": item["view_ref"],
+                    "trust": item["provenance"],
+                    "required": False,
+                    "budget_charge": recall.tokens,
+                    "validity_witness_ref": None,
                 }
             )
         for group in selection.recent:
             view = snapshot.group(group.id)
             sections.append(
                 {
-                    "section": "G", "block_id": f"group:{group.id}", "source_refs": [p.to_json() for p in view.record_refs],
-                    "view_ref": Pin("artifact", f"view:{group.id}", 0, view.view_hash).to_json(), "trust": TRUST_OF_KIND[view.kind],
-                    "required": bool(view.mandatory), "budget_charge": group.tokens, "validity_witness_ref": None,
+                    "section": "G",
+                    "block_id": f"group:{group.id}",
+                    "source_refs": [p.to_json() for p in view.record_refs],
+                    "view_ref": Pin("artifact", f"view:{group.id}", 0, view.view_hash).to_json(),
+                    "trust": TRUST_OF_KIND[view.kind],
+                    "required": bool(view.mandatory),
+                    "budget_charge": group.tokens,
+                    "validity_witness_ref": None,
                 }
             )
         publication = store.active_index_publication(self._connection(), session.session_id)
@@ -418,7 +601,9 @@ class ArpContextPort(JournalContextPort):
             "adoption_revision": adoption_revision,
             "tool_snapshot": tool_snapshot_hash,
             "recall_result": digest(result),
-            "skill_blocks": [[b.block_id, b.artifact_ref.content_hash] for b in prepared.skill_blocks],
+            "skill_blocks": [
+                [b.block_id, b.artifact_ref.content_hash] for b in prepared.skill_blocks
+            ],
             **({} if sources_pin is None else {"mission_sources": sources_pin.content_hash}),
         }
         manifest = {
@@ -431,18 +616,25 @@ class ArpContextPort(JournalContextPort):
             "session_generation": session.generation,
             "profile_ref": session.profile_ref.to_json(),
             "model_limits": dict(arp.meter.binding.model_limits),
-            "owner_contract_ref": mission_sources.owner_contract_for(self._connection(), session).to_json(),
+            "owner_contract_ref": mission_sources.owner_contract_for(
+                self._connection(), session
+            ).to_json(),
             "journal_highwater": prepared.highwater,
             "sections": sections,
             "recent_group_ids": [g.id for g in selection.recent],
             "recent_complete_turn_count": selection.recent_complete_turns,
             "recalled_chunk_ids": [r.id for r in selection.recalled],
-            "retrieval_receipt_ref": Pin("retrieval", result["recall_key"], 0, digest(result)).to_json(),
+            "retrieval_receipt_ref": Pin(
+                "retrieval", result["recall_key"], 0, digest(result)
+            ).to_json(),
             "tool_snapshot_ref": (
-                Pin("tool_snapshot", f"{session.agent_id}:tools", 0, tool_snapshot_hash) if prepared.tool_snapshot is None
+                Pin("tool_snapshot", f"{session.agent_id}:tools", 0, tool_snapshot_hash)
+                if prepared.tool_snapshot is None
                 else ToolExposureService.snapshot_pin(prepared.tool_snapshot)
             ).to_json(),
-            "skill_refs": [p.to_json() for p in dict.fromkeys(b.skill_ref for b in prepared.skill_blocks)],
+            "skill_refs": [
+                p.to_json() for p in dict.fromkeys(b.skill_ref for b in prepared.skill_blocks)
+            ],
             "planned_request_hash": measurement.request_hash,
             "input_token_charge": measurement.wire_tokens,
             "effective_input_budget": selection.input_budget,
@@ -450,16 +642,22 @@ class ArpContextPort(JournalContextPort):
             "safety_reserve_tokens": int(policy["safety_reserve_tokens"]),
             "tool_headroom_tokens": int(policy["tool_headroom_tokens"]),
             "counter_mode": arp.meter.binding.count_mode,
-            "registry_epoch": 0 if prepared.tool_snapshot is None else int(prepared.tool_snapshot["registry_epoch"]),
-            "authority_refs": [policy_row.approval_ref.to_json()] + ([] if sources_pin is None else [sources_pin.to_json()]),
-            "source_read_set_ref": Pin("artifact", f"readset:{context_id}", 0, digest(read_set)).to_json(),
+            "registry_epoch": 0
+            if prepared.tool_snapshot is None
+            else int(prepared.tool_snapshot["registry_epoch"]),
+            "authority_refs": [policy_row.approval_ref.to_json()]
+            + ([] if sources_pin is None else [sources_pin.to_json()]),
+            "source_read_set_ref": Pin(
+                "artifact", f"readset:{context_id}", 0, digest(read_set)
+            ).to_json(),
             "creation_root_id": session.creation_root_id,
             "effective_context_policy_ref": policy_row.pin.to_json(),
             "token_receipt": dict(measurement.receipt),
             "prior_output_reserve_tokens": int(measurement.receipt["prior_output_reserve_tokens"]),
             "adoption_revision": adoption_revision,
             "index_generation_ref": None if publication is None else publication.pin.to_json(),
-            "N_count_complete": bool(snapshot.body["enumeration_complete"]) and selection.count_complete,
+            "N_count_complete": bool(snapshot.body["enumeration_complete"])
+            and selection.count_complete,
             "selected_turn_ids": list(selection.complete_turn_ids),
             "group_snapshot_ref": snapshot.pin.to_json(),
             "catalogue_witness_refs": [w.to_json() for w in prepared.tool_witnesses],
@@ -467,14 +665,23 @@ class ArpContextPort(JournalContextPort):
         value = check("ContextManifest", manifest)
         proof = Pin.from_json(measurement.receipt["proof_ref"])
         with self._uow.database.transaction() as txn:
-            row = store.put_context_locked(txn, manifest=value, original_request_key=request_key, catalog_epoch=int(manifest["registry_epoch"]), source_read_set=read_set, now_ms=arp.ports.clock_ms())
+            row = store.put_context_locked(
+                txn,
+                manifest=value,
+                original_request_key=request_key,
+                catalog_epoch=int(manifest["registry_epoch"]),
+                source_read_set=read_set,
+                now_ms=arp.ports.clock_ms(),
+            )
             store.append_runtime_event_locked(
                 txn,
                 run_id=session.agent_id,
                 event_type="RuntimeContextPrepared",
                 body={
                     "context_ref": row.pin.to_json(),
-                    "request_ref": Pin("invocation", request_key, ordinal, measurement.request_hash).to_json(),
+                    "request_ref": Pin(
+                        "invocation", request_key, ordinal, measurement.request_hash
+                    ).to_json(),
                     "session_ref": session.pin.to_json(),
                     "source_receipt_ref": proof.to_json(),
                 },
@@ -483,7 +690,9 @@ class ArpContextPort(JournalContextPort):
                 now=self._clock(),
             )
 
-    def replayed_request(self, request: ProviderRequest) -> tuple[store.ContextRequestRow, ProviderRequest] | None:
+    def replayed_request(
+        self, request: ProviderRequest
+    ) -> tuple[store.ContextRequestRow, ProviderRequest] | None:
         """Read-only: the frozen manifest of ``request`` and the wire request it really sent.
 
         For readers that must prove what a finished request showed the model (the Assurance
@@ -500,41 +709,62 @@ class ArpContextPort(JournalContextPort):
             raise ArpError("SESSION_IDENTITY_MISMATCH", "frozen context names no such session")
         return frozen, self._replay(frozen, session, request)
 
-    def _replay(self, frozen: store.ContextRequestRow, session: store.SessionRow, request: ProviderRequest) -> ProviderRequest:
+    def _replay(
+        self, frozen: store.ContextRequestRow, session: store.SessionRow, request: ProviderRequest
+    ) -> ProviderRequest:
         """Re-render the frozen manifest; the wire must reproduce the planned request hash."""
 
         arp = self.arp
         manifest = frozen.manifest
-        frozen_tools = read_tool_snapshot(self._connection(), str(manifest["tool_snapshot_ref"]["id"]))
+        frozen_tools = read_tool_snapshot(
+            self._connection(), str(manifest["tool_snapshot_ref"]["id"])
+        )
         if frozen_tools is not None:
             allowed = {str(t["model_name"]) for t in frozen_tools["tools"]}
             request = replace(request, tools=tuple(t for t in request.tools if t.name in allowed))
         snapshot = self._capture(session, int(manifest["journal_highwater"]))
         instructions = [r for r in snapshot.instructions if r.visibility == "context"]
         messages: list[Message] = [_message_of(r) for r in instructions]
-        messages.extend(skill_message(b) for b in replay_skill_blocks(arp, manifest, count=arp.index.count))
+        messages.extend(
+            skill_message(b) for b in replay_skill_blocks(arp, manifest, count=arp.index.count)
+        )
         if manifest["recalled_chunk_ids"]:  # the index is touched only when something was recalled
             generation = arp.index.state_for(session).generation.index_generation
             service = arp.search_for(session)[0]
-            recall_row = store.read_context_recall(self._connection(), str(manifest["retrieval_receipt_ref"]["id"]))
-            items = {} if recall_row is None or recall_row.result is None else {i["chunk_id"]: i for i in recall_row.result["candidate_items"]}
+            recall_row = store.read_context_recall(
+                self._connection(), str(manifest["retrieval_receipt_ref"]["id"])
+            )
+            items = (
+                {}
+                if recall_row is None or recall_row.result is None
+                else {i["chunk_id"]: i for i in recall_row.result["candidate_items"]}
+            )
             for chunk_id in manifest["recalled_chunk_ids"]:
-                messages.append(recall_message(items[chunk_id], service.chunk_text(generation, chunk_id)))
+                messages.append(
+                    recall_message(items[chunk_id], service.chunk_text(generation, chunk_id))
+                )
         for group_id in manifest["recent_group_ids"]:
             messages.extend(self._group_messages(snapshot.group(group_id)))
         restored, _ = restore_wire_messages(
-            tuple(messages), self._connection(), session.agent_id, replay_reasoning=self.replay_reasoning
+            tuple(messages),
+            self._connection(),
+            session.agent_id,
+            replay_reasoning=self.replay_reasoning,
         )
         wire = replace(request, messages=restored)
         from simple_harness.execution.provider_invocations import provider_request_fingerprint
 
         if provider_request_fingerprint(wire) != frozen.planned_request_hash:
-            raise ArpError("REQUEST_HASH_MISMATCH", "frozen manifest does not reproduce the wire request")
+            raise ArpError(
+                "REQUEST_HASH_MISMATCH", "frozen manifest does not reproduce the wire request"
+            )
         return wire
 
     # ---- tool exposure (§8) ----------------------------------------------------------------------
 
-    def _expose(self, session: store.SessionRow, request: ProviderRequest) -> tuple[ProviderRequest, Mapping[str, Any] | None, tuple[Pin, ...]]:
+    def _expose(
+        self, session: store.SessionRow, request: ProviderRequest
+    ) -> tuple[ProviderRequest, Mapping[str, Any] | None, tuple[Pin, ...]]:
         """Freeze which of the request's tools the model may see: only catalogue-admitted,
         currently usable tools survive; the rest are dropped from this request (their
         reasons stay on the snapshot service), never silently exposed."""
@@ -543,19 +773,28 @@ class ArpContextPort(JournalContextPort):
         exposure = getattr(arp, "exposure", None)
         if exposure is None or not request.tools:
             return request, None, ()
-        snapshot, exposed, _refused = exposure.prepare(session, [t.name for t in request.tools], authority_refs=[arp.policy.approval_ref])
+        snapshot, exposed, _refused = exposure.prepare(
+            session, [t.name for t in request.tools], authority_refs=[arp.policy.approval_ref]
+        )
         allowed = {str(t["model_name"]) for t in snapshot["tools"]}
         filtered = replace(request, tools=tuple(t for t in request.tools if t.name in allowed))
         return filtered, snapshot, tuple(e.activation.witness for e in exposed)
 
     # ---- query parts / clock receipt ------------------------------------------------------------
 
-    def _query_parts(self, snapshot: protocol_groups.GroupSnapshot, turn_id: str, highwater: int) -> dict[str, tuple[str, Pin]]:
+    def _query_parts(
+        self, snapshot: protocol_groups.GroupSnapshot, turn_id: str, highwater: int
+    ) -> dict[str, tuple[str, Pin]]:
         parts: dict[str, tuple[str, Pin]] = {}
-        anchor = next((g for g in snapshot.groups if g.kind == "USER_ANCHOR" and g.turn_id == turn_id), None)
+        anchor = next(
+            (g for g in snapshot.groups if g.kind == "USER_ANCHOR" and g.turn_id == turn_id), None
+        )
         if anchor is not None:
             record = anchor.records[0]
-            parts["CURRENT_INPUT"] = (_text_of(record), Pin("journal_record", record.record_id, record.seq, record.content_hash))
+            parts["CURRENT_INPUT"] = (
+                _text_of(record),
+                Pin("journal_record", record.record_id, record.seq, record.content_hash),
+            )
         feedback = None
         for group in snapshot.groups:
             if group.turn_id != turn_id or group.seq_to > highwater:
@@ -564,16 +803,32 @@ class ArpContextPort(JournalContextPort):
                 if record.kind in ("tool_result", "feedback") and record.visibility == "context":
                     feedback = record
         if feedback is not None:
-            parts["LATEST_FEEDBACK"] = (_text_of(feedback), Pin("journal_record", feedback.record_id, feedback.seq, feedback.content_hash))
+            parts["LATEST_FEEDBACK"] = (
+                _text_of(feedback),
+                Pin("journal_record", feedback.record_id, feedback.seq, feedback.content_hash),
+            )
         return parts
 
     def _clock_receipt(self, session: store.SessionRow, request_key: str) -> Pin:
         arp = self.arp
         observed = arp.ports.clock_ms()
         tick_id = f"prepare:{request_key}:{observed}"
-        body = {"kind": "context-recall-clock-v1", "request_key": request_key, "tick_id": tick_id, "observed_wall_ms": observed, "previous_highwater_ms": 0}
+        body = {
+            "kind": "context-recall-clock-v1",
+            "request_key": request_key,
+            "tick_id": tick_id,
+            "observed_wall_ms": observed,
+            "previous_highwater_ms": 0,
+        }
         with self._uow.database.transaction() as txn:
-            return store.append_original_receipt_locked(txn, run_id=session.agent_id, kind="recall_clock", receipt_key=tick_id, body=body, now=self._clock())
+            return store.append_original_receipt_locked(
+                txn,
+                run_id=session.agent_id,
+                kind="recall_clock",
+                receipt_key=tick_id,
+                body=body,
+                now=self._clock(),
+            )
 
 
 def request_output(request: ProviderRequest) -> int:
@@ -585,14 +840,18 @@ def _shrink(selection: Selection) -> Selection | None:
 
     if selection.recalled:
         dropped = selection.recalled[-1]
-        return replace(selection, recalled=selection.recalled[:-1], used=selection.used - dropped.tokens)
+        return replace(
+            selection, recalled=selection.recalled[:-1], used=selection.used - dropped.tokens
+        )
     optional = [g for g in selection.recent if not g.mandatory]
     if not optional:
         return None
     oldest = optional[0]
     remaining = tuple(g for g in selection.recent if g.id != oldest.id)
     complete = tuple(t for t in selection.complete_turn_ids if t != oldest.turn_id)
-    return replace(selection, recent=remaining, used=selection.used - oldest.tokens, complete_turn_ids=complete)
+    return replace(
+        selection, recent=remaining, used=selection.used - oldest.tokens, complete_turn_ids=complete
+    )
 
 
 class ArpContextRejected(ProviderRequestRejectedError):
@@ -605,7 +864,11 @@ class ArpContextRejected(ProviderRequestRejectedError):
     def __init__(self, error: ArpError) -> None:
         super().__init__(public_message=f"{error.code}: {error}", retryable=False)
         self.arp_code = error.code
-        self.detail = {"code": error.code, "field_path": error.field_path, "detail": plain(error.detail)}
+        self.detail = {
+            "code": error.code,
+            "field_path": error.field_path,
+            "detail": plain(error.detail),
+        }
 
 
 class ArpProviderWire(AgentProviderWire):
@@ -629,4 +892,10 @@ class ArpProviderWire(AgentProviderWire):
             ) from error
 
 
-__all__ = ("ArpContextPort", "ArpContextRejected", "ArpProviderWire", "PreparedContext", "recall_message")
+__all__ = (
+    "ArpContextPort",
+    "ArpContextRejected",
+    "ArpProviderWire",
+    "PreparedContext",
+    "recall_message",
+)

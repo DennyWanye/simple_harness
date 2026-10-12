@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 """TDD T4 — file_organize_tools.py."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -72,8 +73,6 @@ def test_t4_5_dedup(tmp_path: Path):
     groups = r["duplicate_groups"]
     assert len(groups) == 1
     assert set(groups[0]) == {"a.txt", "b.txt"}
-
-
 
 
 def test_t4_7_empty_dir(tmp_path: Path):

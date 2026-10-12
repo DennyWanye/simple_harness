@@ -105,13 +105,15 @@ def test_known_usage_protocol_error_has_only_allowlisted_metadata(
     [
         pytest.param("raw-arguments-secret", "shape", id="calls-shape"),
         pytest.param(["raw-arguments-secret"], "shape", id="call-shape"),
+        pytest.param([{"type": "raw-arguments-secret"}], "type", id="call-type"),
         pytest.param(
-            [{"type": "raw-arguments-secret"}], "type", id="call-type"
-        ),
-        pytest.param(
-            [{"type": "function", "id": "raw-arguments-secret\n", "function": {
-                "name": "probe", "arguments": "{}"
-            }}],
+            [
+                {
+                    "type": "function",
+                    "id": "raw-arguments-secret\n",
+                    "function": {"name": "probe", "arguments": "{}"},
+                }
+            ],
             "id",
             id="invalid-id",
         ),
@@ -121,37 +123,45 @@ def test_known_usage_protocol_error_has_only_allowlisted_metadata(
             id="function-shape",
         ),
         pytest.param(
-            [{"type": "function", "id": "call-ok", "function": {
-                "name": "", "arguments": "raw-arguments-secret"
-            }}],
+            [
+                {
+                    "type": "function",
+                    "id": "call-ok",
+                    "function": {"name": "", "arguments": "raw-arguments-secret"},
+                }
+            ],
             "name",
             id="missing-name",
         ),
         pytest.param(
-            [{"type": "function", "id": "call-ok", "function": {
-                "name": "   ", "arguments": "{}"
-            }}],
+            [{"type": "function", "id": "call-ok", "function": {"name": "   ", "arguments": "{}"}}],
             "name",
             id="blank-name",
         ),
         pytest.param(
-            [{"type": "function", "id": "call-ok", "function": {
-                "name": "probe", "arguments": '["raw-arguments-secret"]'
-            }}],
+            [
+                {
+                    "type": "function",
+                    "id": "call-ok",
+                    "function": {"name": "probe", "arguments": '["raw-arguments-secret"]'},
+                }
+            ],
             "arguments_non_object",
             id="json-array",
         ),
         pytest.param(
-            [{"type": "function", "id": "call-ok", "function": {
-                "name": "probe", "arguments": 42
-            }}],
+            [{"type": "function", "id": "call-ok", "function": {"name": "probe", "arguments": 42}}],
             "arguments_non_object",
             id="non-object",
         ),
         pytest.param(
-            [{"type": "function", "id": "call-ok", "function": {
-                "name": "probe", "arguments": '{"raw-arguments-secret": NaN}'
-            }}],
+            [
+                {
+                    "type": "function",
+                    "id": "call-ok",
+                    "function": {"name": "probe", "arguments": '{"raw-arguments-secret": NaN}'},
+                }
+            ],
             "normalization",
             id="invalid-normalization",
         ),
@@ -163,13 +173,22 @@ def test_known_usage_tool_parse_reason_is_bounded(tool_calls, reason):
 
         def transport(request):
             calls.append(request.url.path)
-            return httpx.Response(200, json={
-                "choices": [{
-                    "finish_reason": "tool_calls",
-                    "message": {"role": "assistant", "content": "", "tool_calls": tool_calls},
-                }],
-                "usage": VALID_USAGE,
-            })
+            return httpx.Response(
+                200,
+                json={
+                    "choices": [
+                        {
+                            "finish_reason": "tool_calls",
+                            "message": {
+                                "role": "assistant",
+                                "content": "",
+                                "tool_calls": tool_calls,
+                            },
+                        }
+                    ],
+                    "usage": VALID_USAGE,
+                },
+            )
 
         async with httpx.AsyncClient(transport=httpx.MockTransport(transport)) as client:
             provider = OpenAICompatibleProvider(
@@ -230,9 +249,9 @@ def test_invalid_usage_keeps_existing_protocol_error_without_metadata():
             ],
             "usage": {**VALID_USAGE, "prompt_tokens": True},
         }
-        async with httpx.AsyncClient(transport=httpx.MockTransport(
-            lambda _: httpx.Response(200, json=payload)
-        )) as client:
+        async with httpx.AsyncClient(
+            transport=httpx.MockTransport(lambda _: httpx.Response(200, json=payload))
+        ) as client:
             provider = OpenAICompatibleProvider(
                 client, "https://fixture.invalid/v1", "fixture", Secret("test-secret")
             )

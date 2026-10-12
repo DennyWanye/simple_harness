@@ -7,6 +7,7 @@ Python 边界 codec（``network_codec`` / ``execution_contracts`` / ``notificati
 一致由用例守住（``tests/orchestrator/full_target/test_taskgraph_schema_contracts.py``）。
 修订记录见同目录 ``README.md``。
 """
+
 from __future__ import annotations
 
 import json

@@ -1,4 +1,5 @@
 """Real SQLite/Harness ledger at the production preflight/transport boundary."""
+
 import asyncio
 import sqlite3
 
@@ -21,43 +22,71 @@ async def test_late_history_denial_is_failed_while_sent_ambiguity_stays_unknown(
     late_deny = mode != "sent_unknown"
     from simple_harness import RequestId, RunId
     from simple_harness.execution.provider_invocations import provider_invocation_id
+
     state = tmp_path / "state.db"
-    service = HumanMemoryHostServiceFactory(state,
-        await dispatch_startup_epoch(state, approved_fresh_lane=True)).bind(local_owner_auth())
+    service = HumanMemoryHostServiceFactory(
+        state, await dispatch_startup_epoch(state, approved_fresh_lane=True)
+    ).bind(local_owner_auth())
     await service.open_primary()
     await service.enqueue_turn(QueueTurnRequest(None, "outbound", "Current actual user"))
     with sqlite3.connect(state) as db:
         evidence_id = db.execute("SELECT evidence_id FROM foreground_turns").fetchone()[0]
     sends, requests = [], []
+
     def physical(request):
         sends.append(request)
         raise RuntimeError("ambiguous handoff after physical transport entry")
+
     client = httpx.AsyncClient(transport=httpx.MockTransport(physical))
-    provider = ProductProviderAdapter(Registry("secret"), provider_id="relay", client=client,
-        price_resolver=lambda *_: (1, 1, "price-v1"))
+    provider = ProductProviderAdapter(
+        Registry("secret"),
+        provider_id="relay",
+        client=client,
+        price_resolver=lambda *_: (1, 1, "price-v1"),
+    )
     runtime, stack, queue = await build(tmp_path, state, provider)
     if mode in {"missing_proof", "wrong_hash"}:
         from dataclasses import replace
 
         from simple_harness import thaw_json
+
         original_prepare = runtime._context.prepare
+
         async def prepare(**kwargs):
             actual = await original_prepare(**kwargs)
             proof = thaw_json(actual.visibility_dependencies)
             if mode == "wrong_hash":
                 proof["evidence"][0]["envelope_hash"] = "0" * 64
-            return replace(actual, visibility_dependencies=None if mode == "missing_proof" else proof)
+            return replace(
+                actual, visibility_dependencies=None if mode == "missing_proof" else proof
+            )
+
         runtime._context.prepare = prepare
+
     async def guard(request):
         current = await queue.current_snapshot(local_owner_auth().subject)
         requests.append((current.sdk_run_id, request.request_id.value))
         if mode == "late_suppression":
             manager = await runtime.history_memory.manager()
-            await manager.backend.suppress(SuppressionRequest("late-forget", local_owner_auth().subject,
-                SuppressionScopeKind.EVIDENCE, evidence_id, "user_forget", 20.0),
-                principal=runtime.history_memory.principal())
-        await check_runtime_dependencies(db_path=state, stack=stack, sdk_run_id=current.sdk_run_id,
-            request=request, policy_factory=lambda subject: runtime.history_policy)
+            await manager.backend.suppress(
+                SuppressionRequest(
+                    "late-forget",
+                    local_owner_auth().subject,
+                    SuppressionScopeKind.EVIDENCE,
+                    evidence_id,
+                    "user_forget",
+                    20.0,
+                ),
+                principal=runtime.history_memory.principal(),
+            )
+        await check_runtime_dependencies(
+            db_path=state,
+            stack=stack,
+            sdk_run_id=current.sdk_run_id,
+            request=request,
+            policy_factory=lambda subject: runtime.history_policy,
+        )
+
     provider._pre_invoke_guard = guard
     try:
         progressed = await asyncio.wait_for(runtime._drive_once(), 15)
@@ -69,7 +98,9 @@ async def test_late_history_denial_is_failed_while_sent_ambiguity_stays_unknown(
         assert len(requests) == (1 if late_deny else 2)
         assert len({item for item in requests}) == 1  # same SDK run + same request id
         sdk_run_id, request_id = requests[0]
-        record = stack._uow.read_provider_invocation(provider_invocation_id(RunId(sdk_run_id), RequestId(request_id)))
+        record = stack._uow.read_provider_invocation(
+            provider_invocation_id(RunId(sdk_run_id), RequestId(request_id))
+        )
         assert record.state.value == ("failed" if late_deny else "unknown")
         assert len(sends) == (0 if late_deny else 2)
         if late_deny:

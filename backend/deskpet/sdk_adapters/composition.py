@@ -32,9 +32,9 @@ from .runtime_paths import (
     verify_runtime_identity,
 )
 
-PortsFactory: TypeAlias = Callable[
-    [Database, SqliteExecutionUnitOfWork], RuntimePorts
-]
+PortsFactory: TypeAlias = Callable[[Database, SqliteExecutionUnitOfWork], RuntimePorts]
+
+
 @dataclass(frozen=True, slots=True)
 class ProductionRuntimeBuild:
     runtime: Runtime
@@ -46,9 +46,7 @@ class ProductionRuntimeBuild:
             raise TypeError("production runtime must be Runtime")
         if not isinstance(self.transaction_owner, SqliteExecutionUnitOfWork):
             raise TypeError("production transaction owner must be SQLite UoW")
-        object.__setattr__(
-            self, "workflow_registrations", tuple(self.workflow_registrations)
-        )
+        object.__setattr__(self, "workflow_registrations", tuple(self.workflow_registrations))
 
 
 RuntimeFactory: TypeAlias = Callable[[object], ProductionRuntimeBuild]
@@ -132,15 +130,11 @@ class WorkflowRuntimeBuild:
 
     def __post_init__(self) -> None:
         if not isinstance(self.transaction_owner, SqliteExecutionUnitOfWork):
-            raise TypeError(
-                "workflow transaction_owner must be SqliteExecutionUnitOfWork"
-            )
+            raise TypeError("workflow transaction_owner must be SqliteExecutionUnitOfWork")
         object.__setattr__(self, "registrations", tuple(self.registrations))
         resources = tuple(self.owned_resources)
         if any(not isinstance(item, OwnedResourceCloser) for item in resources):
-            raise TypeError(
-                "workflow owned_resources must contain OwnedResourceCloser"
-            )
+            raise TypeError("workflow owned_resources must contain OwnedResourceCloser")
         if len({item.name for item in resources}) != len(resources):
             raise ValueError("workflow owned resource names must be unique")
         object.__setattr__(self, "owned_resources", resources)
@@ -185,9 +179,7 @@ class SdkRuntimeBuildInputs:
             raise TypeError("workflow_factory must be callable")
         object.__setattr__(self, "profiles", MappingProxyType(profiles))
         object.__setattr__(self, "drivers", MappingProxyType(drivers))
-        object.__setattr__(
-            self, "workflow_registrations", tuple(self.workflow_registrations)
-        )
+        object.__setattr__(self, "workflow_registrations", tuple(self.workflow_registrations))
         resources = tuple(self.owned_resources)
         if any(not isinstance(item, OwnedResourceCloser) for item in resources):
             raise TypeError("owned_resources must contain OwnedResourceCloser")
@@ -247,9 +239,7 @@ class SdkRunTerminalEvidence:
     error_code: str | None = None
 
 
-DependencyLoader: TypeAlias = Callable[
-    [], SdkRuntimeBuildInputs | Awaitable[SdkRuntimeBuildInputs]
-]
+DependencyLoader: TypeAlias = Callable[[], SdkRuntimeBuildInputs | Awaitable[SdkRuntimeBuildInputs]]
 
 
 class ProductSdkRuntimeStack:
@@ -311,9 +301,7 @@ class ProductSdkRuntimeStack:
         uow: SqliteExecutionUnitOfWork,
     ) -> WorkflowRuntimeBuild:
         if dependencies.workflow_runner is not None or dependencies.workflow_registrations:
-            raise ValueError(
-                "prebuilt workflow bindings are forbidden; use workflow_factory"
-            )
+            raise ValueError("prebuilt workflow bindings are forbidden; use workflow_factory")
         factory = dependencies.workflow_factory
         if factory is None:
             return WorkflowRuntimeBuild(uow, None)
@@ -363,17 +351,22 @@ class ProductSdkRuntimeStack:
                 # Official schema9 migration before any execution handle opens.
                 # The retained same-directory backup is never overwritten.
                 from simple_harness import migrate_execution_to_v9, migrate_execution_to_v10
+
                 execution_path = self._paths.execution_database
                 if execution_path.exists():
                     self.schema_upgrade_receipt = migrate_execution_to_v9(
                         execution_path,
-                        backup_path=execution_path.with_name(execution_path.name + ".pre-schema-9.backup"),
+                        backup_path=execution_path.with_name(
+                            execution_path.name + ".pre-schema-9.backup"
+                        ),
                     )
                     # 2026-09-10: BaseAgent tables (schema 10) — explicit, backup-first,
                     # replay-safe; a fresh v10 library returns None.
                     self.schema10_upgrade_receipt = migrate_execution_to_v10(
                         execution_path,
-                        backup_path=execution_path.with_name(execution_path.name + ".pre-schema-10.backup"),
+                        backup_path=execution_path.with_name(
+                            execution_path.name + ".pre-schema-10.backup"
+                        ),
                     )
                 else:
                     self.schema_upgrade_receipt = None
@@ -382,36 +375,24 @@ class ProductSdkRuntimeStack:
                 owned_resources = dependencies.owned_resources
                 if dependencies.runtime_factory is not None:
                     if dependencies.workflow_factory is not None:
-                        raise ValueError(
-                            "production runtime factory owns workflow composition"
-                        )
-                    production = dependencies.runtime_factory(
-                        self._paths.execution_database
-                    )
+                        raise ValueError("production runtime factory owns workflow composition")
+                    production = dependencies.runtime_factory(self._paths.execution_database)
                     if not isinstance(production, ProductionRuntimeBuild):
-                        raise TypeError(
-                            "runtime_factory must return ProductionRuntimeBuild"
-                        )
+                        raise TypeError("runtime_factory must return ProductionRuntimeBuild")
                     runtime = production.runtime
                     uow = production.transaction_owner
                     workflow_registrations = production.workflow_registrations
                 else:
                     database = Database.open(self._paths.execution_database)
                     uow = SqliteExecutionUnitOfWork(database)
-                    workflow = await self._build_workflow_runtime(
-                        dependencies, database, uow
-                    )
+                    workflow = await self._build_workflow_runtime(dependencies, database, uow)
                     dependency_resources = owned_resources
                     # Transfer the factory-created resources before validation so
                     # even a cross-layer identity collision is cleaned up.
                     owned_resources = dependency_resources + workflow.owned_resources
-                    _validate_owned_resources(
-                        dependency_resources, workflow.owned_resources
-                    )
+                    _validate_owned_resources(dependency_resources, workflow.owned_resources)
                     if workflow.transaction_owner is not uow:
-                        raise ValueError(
-                            "workflow factory returned a foreign transaction owner"
-                        )
+                        raise ValueError("workflow factory returned a foreign transaction owner")
                     ports = dependencies.ports_factory(database, uow)
                     if not isinstance(ports, RuntimePorts):
                         raise TypeError("ports_factory must return RuntimePorts")
@@ -425,9 +406,7 @@ class ProductSdkRuntimeStack:
                     workflow_registrations = workflow.registrations
                 await runtime.start()
                 if self._close_requested:
-                    raise SdkRuntimeNotReady(
-                        "SDK Runtime close raced with startup publication"
-                    )
+                    raise SdkRuntimeNotReady("SDK Runtime close raced with startup publication")
                 generation = self._successful_generation + 1
                 ready = SdkRuntimeReady(
                     generation=generation,
@@ -457,8 +436,7 @@ class ProductSdkRuntimeStack:
                     await self._cleanup(runtime, owned_resources, database)
                 except BaseException as cleanup_error:
                     startup_error.add_note(
-                        "resource cleanup also failed: "
-                        f"{type(cleanup_error).__name__}"
+                        f"resource cleanup also failed: {type(cleanup_error).__name__}"
                     )
                 finally:
                     self._ready_publisher(None)
@@ -517,12 +495,10 @@ class ProductSdkRuntimeStack:
                 or authority.purpose != SKILL_INSTALL_VERIFICATION_PURPOSE
                 or authority.authority_ref != attempt_id
                 or authority.authority_hash != expected_authority_hash
-                or authority.generation
-                != int(getattr(expected_attempt, "attempt_generation", -1))
+                or authority.generation != int(getattr(expected_attempt, "attempt_generation", -1))
                 or str(run["execution_session_id"])
                 != str(getattr(expected_attempt, "verifier_session_id", ""))
-                or str(run["request_id"])
-                != str(getattr(expected_attempt, "request_id", ""))
+                or str(run["request_id"]) != str(getattr(expected_attempt, "request_id", ""))
                 or snapshot.turn_id != str(getattr(expected_attempt, "turn_id", ""))
             ):
                 return _corrupt_verification(expected_run_id, "start_authority_mismatch")
@@ -566,15 +542,15 @@ class ProductSdkRuntimeStack:
             }
             if any(int(value) != 0 for value in counts.values()):
                 return _corrupt_verification(expected_run_id, "verification_side_effects_present")
-            verification_terminal = (
-                payload.get("schema") == "skill-install-verification-final-v1"
-                and payload.get("status") in {"succeeded", "failed"}
-            )
+            verification_terminal = payload.get(
+                "schema"
+            ) == "skill-install-verification-final-v1" and payload.get("status") in {
+                "succeeded",
+                "failed",
+            }
             if verification_terminal:
                 if any(int(payload.get(name, -1)) != 0 for name in counts):
-                    return _corrupt_verification(
-                        expected_run_id, "terminal_zero_count_mismatch"
-                    )
+                    return _corrupt_verification(expected_run_id, "terminal_zero_count_mismatch")
             elif state is RunState.COMPLETED:
                 # Only the verification Driver can legitimately complete this
                 # Host-control Run. A completed root without its bounded final
@@ -582,9 +558,7 @@ class ProductSdkRuntimeStack:
                 # use the SDK's own structured failed/cancelled envelope before
                 # the Driver starts; the authoritative DB counts above prove
                 # that those terminal paths remained side-effect free.
-                return _corrupt_verification(
-                    expected_run_id, "terminal_contract_mismatch"
-                )
+                return _corrupt_verification(expected_run_id, "terminal_contract_mismatch")
             event_hash = hashlib.sha256(raw_payload.encode("utf-8")).hexdigest()
             evidence_payload = {
                 "schema": "skill-install-verification-evidence-v1",
@@ -613,9 +587,7 @@ class ProductSdkRuntimeStack:
                     None
                     if succeeded
                     else str(
-                        payload.get("reason_code")
-                        or payload.get("code")
-                        or "verification_failed"
+                        payload.get("reason_code") or payload.get("code") or "verification_failed"
                     )
                 ),
             )
@@ -746,22 +718,35 @@ class ProductSdkRuntimeStack:
             provider_request_fingerprint,
             provider_request_from_json,
         )
+
         self.require_ready()
         if self._uow is None:
             raise ValueError("current_input_provider_store_unavailable")
-        record = self._uow.read_provider_invocation(provider_invocation_id(RunId(run_id), request.request_id))
-        if (record is None or record.run_id.value != run_id or record.request_id != request.request_id
-                or record.request_json is None):
+        record = self._uow.read_provider_invocation(
+            provider_invocation_id(RunId(run_id), request.request_id)
+        )
+        if (
+            record is None
+            or record.run_id.value != run_id
+            or record.request_id != request.request_id
+            or record.request_json is None
+        ):
             raise ValueError("current_input_provider_request_unbound")
         actual = provider_request_from_json(record.request_id, thaw_json(record.request_json))
-        if not (record.request_fingerprint == provider_request_fingerprint(actual)
-                == provider_request_fingerprint(request)):
+        if not (
+            record.request_fingerprint
+            == provider_request_fingerprint(actual)
+            == provider_request_fingerprint(request)
+        ):
             raise ValueError("current_input_provider_request_mismatch")
 
     def read_provider_context_use(self, run_id: str, request_id: str):
         """Actual Harness handoff witness via the public RunClient."""
         from simple_harness import RequestId
-        return self.require_ready().client.read_provider_context_use(RunId(run_id), RequestId(request_id))
+
+        return self.require_ready().client.read_provider_context_use(
+            RunId(run_id), RequestId(request_id)
+        )
 
     def read_primary_tool_parent_use(self, context):
         """Resolve the actual parent from public projections/response, not an ID recipe.
@@ -772,13 +757,18 @@ class ProductSdkRuntimeStack:
         from simple_harness import EffectId, RequestId, thaw_json
         from simple_harness.execution.audit import audit_hash
         from simple_harness.execution.provider_invocations import provider_response_from_json
+
         self.require_ready()
         if self._uow is None or context.effect_id is None:
             raise ValueError("typed_use_tool_effect_missing")
         effect = self._uow.read_effect(EffectId(context.effect_id.value))
-        if (effect is None or effect.run_id != context.run_id
-                or effect.call_id != context.call_id or effect.tool_name != "context_route"
-                or effect.task_execution_envelope != context.task_execution_envelope):
+        if (
+            effect is None
+            or effect.run_id != context.run_id
+            or effect.call_id != context.call_id
+            or effect.tool_name != "context_route"
+            or effect.task_execution_envelope != context.task_execution_envelope
+        ):
             raise ValueError("typed_use_actual_tool_identity_differs")
         after, found, complete = 0, {}, False
         for _ in range(32):
@@ -794,9 +784,14 @@ class ProductSdkRuntimeStack:
                 invocation = self._uow.read_provider_invocation(receipt.invocation_id)
                 if invocation is None or invocation.run_id != context.run_id:
                     raise ValueError("typed_use_provider_projection_identity")
-                if invocation.version != receipt.invocation_version or invocation.state.value != "succeeded":
+                if (
+                    invocation.version != receipt.invocation_version
+                    or invocation.state.value != "succeeded"
+                ):
                     continue
-                view = self.read_provider_context_use(context.run_id.value, invocation.request_id.value)
+                view = self.read_provider_context_use(
+                    context.run_id.value, invocation.request_id.value
+                )
                 if view is None or view.provider_turn_ordinal != effect.turn_ordinal:
                     continue
                 if invocation.response_json is None:
@@ -805,8 +800,11 @@ class ProductSdkRuntimeStack:
                 if not 0 <= effect.call_ordinal < len(response.tool_calls):
                     raise ValueError("typed_use_parent_call_missing")
                 call = response.tool_calls[effect.call_ordinal]
-                if (call.call_id.value != effect.raw_call_id or call.name != effect.tool_name
-                        or thaw_json(call.arguments) != thaw_json(effect.arguments)):
+                if (
+                    call.call_id.value != effect.raw_call_id
+                    or call.name != effect.tool_name
+                    or thaw_json(call.arguments) != thaw_json(effect.arguments)
+                ):
                     raise ValueError("typed_use_parent_call_differs")
                 found[view.provider_request_id] = view
             if len(receipts) < 256:
@@ -819,6 +817,7 @@ class ProductSdkRuntimeStack:
     def read_primary_effect_page_facts(self, run_id: str, effect_id: str):
         """Exact current effect/parent through public SDK records and audit."""
         from deskpet.execution.current_tool_pages import read_effect_facts
+
         self.require_ready()
         if self._uow is None:
             raise SdkRuntimeNotReady("SDK Runtime transaction owner is unavailable")
@@ -827,13 +826,16 @@ class ProductSdkRuntimeStack:
     def read_primary_dependency_facts(self, run_id: str, effect_ids=()):
         """Public start and effect facts, never SDK-private history SQL."""
         from simple_harness import EffectId, thaw_json
+
         self.require_ready()
         if self._uow is None:
             raise SdkRuntimeNotReady("SDK Runtime transaction owner is unavailable")
         start = self._uow.read_start_snapshot(run_id)
         if start is None:
             raise RuntimeError("primary_dependencies_start_missing")
-        return thaw_json(start), tuple(self._uow.read_effect(EffectId(value)) for value in effect_ids)
+        return thaw_json(start), tuple(
+            self._uow.read_effect(EffectId(value)) for value in effect_ids
+        )
 
     def read_settled_primary_run(self, run_id: str, *, current_text: str):
         """Rebuild pre-S6 history from the real terminal and public Context."""
@@ -871,15 +873,23 @@ class ProductSdkRuntimeStack:
 
         return project_primary_transcript(messages, current_text=current_text)
 
-    async def read_primary_tool_causal_sources(self, *, db_path, host_run_id, run_id,
-                                             subject, current_text, messages):
+    async def read_primary_tool_causal_sources(
+        self, *, db_path, host_run_id, run_id, subject, current_text, messages
+    ):
         """Host identity index plus public SDK result authority; no new grant."""
-        sources, _ = await self.read_primary_tool_causality(db_path=db_path, host_run_id=host_run_id,
-            run_id=run_id, subject=subject, current_text=current_text, messages=messages)
+        sources, _ = await self.read_primary_tool_causality(
+            db_path=db_path,
+            host_run_id=host_run_id,
+            run_id=run_id,
+            subject=subject,
+            current_text=current_text,
+            messages=messages,
+        )
         return sources
 
-    async def read_primary_tool_causality(self, *, db_path, host_run_id, run_id,
-                                          subject, current_text, messages):
+    async def read_primary_tool_causality(
+        self, *, db_path, host_run_id, run_id, subject, current_text, messages
+    ):
         """``(tool_causal_sources, assistant_tool_calls)``; same verification as above.
 
         2026-09-08 HM-TO-A6 F-K1: the assistant's tool calls (name + arguments)
@@ -893,32 +903,45 @@ class ProductSdkRuntimeStack:
             read_tool_causality,
         )
         from deskpet.task_scope.protocol import canonical_hash, canonical_json
+
         self.require_ready()
         if self._uow is None:
             raise SdkRuntimeNotReady("SDK Runtime transaction owner is unavailable")
         async with aiosqlite.connect(f"file:{db_path}?mode=ro", uri=True) as db:
             db.row_factory = aiosqlite.Row
             await db.execute("BEGIN")
-            rows = await (await db.execute(
-                "SELECT i.* FROM primary_effect_identities i "
-                "JOIN foreground_runs r ON r.host_run_id=i.host_run_id "
-                "JOIN foreground_run_sdk_bindings b ON b.host_run_id=r.host_run_id AND b.sdk_run_id=i.sdk_run_id "
-                "WHERE i.host_run_id=? AND i.sdk_run_id=? AND r.subject=? ORDER BY i.sequence LIMIT 257",
-                (host_run_id, run_id, subject))).fetchall()
+            rows = await (
+                await db.execute(
+                    "SELECT i.* FROM primary_effect_identities i "
+                    "JOIN foreground_runs r ON r.host_run_id=i.host_run_id "
+                    "JOIN foreground_run_sdk_bindings b ON b.host_run_id=r.host_run_id AND b.sdk_run_id=i.sdk_run_id "
+                    "WHERE i.host_run_id=? AND i.sdk_run_id=? AND r.subject=? ORDER BY i.sequence LIMIT 257",
+                    (host_run_id, run_id, subject),
+                )
+            ).fetchall()
             if not rows or len(rows) > 256:
                 raise PrimaryToolCausalityUnavailable("primary_tool_host_identity_missing_or_limit")
             for row in rows:
-                body = dict(host_run_id=host_run_id, sdk_run_id=run_id,
-                            effect_id=row["effect_id"], tool_name=row["tool_name"])
-                if row["identity_json"] != canonical_json(body) or row["identity_hash"] != canonical_hash(body):
+                body = dict(
+                    host_run_id=host_run_id,
+                    sdk_run_id=run_id,
+                    effect_id=row["effect_id"],
+                    tool_name=row["tool_name"],
+                )
+                if row["identity_json"] != canonical_json(body) or row[
+                    "identity_hash"
+                ] != canonical_hash(body):
                     raise PrimaryToolCausalityUnavailable("primary_tool_host_identity_mismatch")
-        return read_tool_causality(self._uow, run_id, current_text=current_text,
-            transcript=messages, project=project_primary_transcript,
-            effect_ids=tuple(row["effect_id"] for row in rows))
+        return read_tool_causality(
+            self._uow,
+            run_id,
+            current_text=current_text,
+            transcript=messages,
+            project=project_primary_transcript,
+            effect_ids=tuple(row["effect_id"] for row in rows),
+        )
 
-    def read_run_terminal_evidence(
-        self, run_id: str
-    ) -> SdkRunTerminalEvidence | None:
+    def read_run_terminal_evidence(self, run_id: str) -> SdkRunTerminalEvidence | None:
         """Read one ordinary Run's exact terminal event under one DB snapshot."""
 
         self.require_ready()
@@ -939,8 +962,14 @@ class ProductSdkRuntimeStack:
             event_id=record.event_id, payload_hash=proof.event_payload_hash, state=proof.state
         ):
             raise SdkRuntimeNotReady("SDK public terminal metadata differs from its proof")
-        return SdkRunTerminalEvidence(expected, proof.state, record.event_id,
-                                      proof.event_payload_hash, proof.created_at, record.error_code)
+        return SdkRunTerminalEvidence(
+            expected,
+            proof.state,
+            record.event_id,
+            proof.event_payload_hash,
+            proof.created_at,
+            record.error_code,
+        )
 
     def recover_expired_authorization_terminal(self, run_id: str):
         """Explicit SDK-owned expiry repair for the exact bound foreground Run.
@@ -1015,11 +1044,7 @@ class ProductSdkRuntimeStack:
                 "SELECT user_id FROM execution_sessions WHERE session_id=?",
                 (execution_session_id,),
             ).fetchone()
-            user_id = (
-                str(owner_row["user_id"])
-                if owner_row is not None
-                else "harness-system"
-            )
+            user_id = str(owner_row["user_id"]) if owner_row is not None else "harness-system"
             existing = uow.read_run(run_id)
             if existing is not None and existing.state is RunState.FAILED:
                 # Re-run the SDK idempotency check so a reused identity with a
@@ -1170,9 +1195,7 @@ async def build_product_runtime(
 
 
 def _corrupt_verification(run_id: str, reason: str) -> SkillInstallVerificationEvidence:
-    return SkillInstallVerificationEvidence(
-        "corrupt", run_id, reason_code=reason
-    )
+    return SkillInstallVerificationEvidence("corrupt", run_id, reason_code=reason)
 
 
 __all__ = (
@@ -1194,18 +1217,25 @@ __all__ = (
 def project_primary_transcript(messages, *, current_text):
     """Whitelist public SDK Context messages; no provider/private block promotion."""
     from deskpet.task_scope.protocol import redact_credential_shapes
+
     def text_content(message):
         if isinstance(message.content, str):
             return message.content
-        return "".join(str(block.data.get("text", "")) for block in message.content
-                       if block.type in {"text", "input_text", "output_text"})
+        return "".join(
+            str(block.data.get("text", ""))
+            for block in message.content
+            if block.type in {"text", "input_text", "output_text"}
+        )
 
-    anchors = [i for i, message in enumerate(messages)
-               if message.role.value == "user" and text_content(message) == current_text]
+    anchors = [
+        i
+        for i, message in enumerate(messages)
+        if message.role.value == "user" and text_content(message) == current_text
+    ]
     if not anchors:
         raise RuntimeError("primary_history_current_turn_missing")
     public = []
-    for message in messages[anchors[-1]:]:
+    for message in messages[anchors[-1] :]:
         if message.role.value == "system":
             continue
         content = redact_credential_shapes(text_content(message))[0]
@@ -1214,13 +1244,17 @@ def project_primary_transcript(messages, *, current_text):
             for block in message.content:
                 if block.type != "artifact":
                     continue
-                data = {key: redact_credential_shapes(block.data[key])[0]
-                        for key in ("artifact_ref", "name", "mime_type", "uri")
-                        if isinstance(block.data.get(key), str)}
+                data = {
+                    key: redact_credential_shapes(block.data[key])[0]
+                    for key in ("artifact_ref", "name", "mime_type", "uri")
+                    if isinstance(block.data.get(key), str)
+                }
                 if data:
                     artifacts.append({"type": "artifact", "data": data})
             if artifacts:
-                content = ([{"type": "text", "data": {"text": content}}] if content else []) + artifacts
+                content = (
+                    [{"type": "text", "data": {"text": content}}] if content else []
+                ) + artifacts
         item = {"role": message.role.value, "content": content}
         if message.role.value == "tool":
             item["call_id"] = message.call_id.value

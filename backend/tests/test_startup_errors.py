@@ -12,6 +12,7 @@ Red phase: these tests describe the contract the upcoming
 3. `snapshot()` returns JSON-serialisable dicts suitable for
    /health and WS startup_status payloads.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -24,6 +25,7 @@ from observability.startup import (  # type: ignore[import-not-found]
 # ---------------------------------------------------------------------------
 # _classify
 # ---------------------------------------------------------------------------
+
 
 def test_classify_cuda_runtime_error_detected():
     exc = RuntimeError("CUDA driver is not available")
@@ -62,6 +64,7 @@ def test_classify_unknown_falls_through():
 # ---------------------------------------------------------------------------
 # StartupErrorRegistry
 # ---------------------------------------------------------------------------
+
 
 def test_registry_starts_empty():
     reg = StartupErrorRegistry()
@@ -119,6 +122,7 @@ def test_registry_clear_resets_state():
 
 def test_snapshot_is_json_serialisable():
     import json
+
     reg = StartupErrorRegistry()
     reg.record("asr_engine", RuntimeError("cuda driver not found"))
     # raises TypeError if not serialisable
@@ -129,6 +133,7 @@ def test_snapshot_is_json_serialisable():
 # ---------------------------------------------------------------------------
 # StartupError dataclass shape
 # ---------------------------------------------------------------------------
+
 
 def test_startup_error_fields():
     err = StartupError(

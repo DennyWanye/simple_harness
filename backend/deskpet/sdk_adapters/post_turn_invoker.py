@@ -46,7 +46,12 @@ from deskpet.memory.analysis_lineage import binding_model_config_hash
 from deskpet.task_scope.protocol import canonical_json
 
 PURPOSES: frozenset[str] = frozenset({"closure", "analysis"})
-NOT_SENT_ERROR_TYPES: tuple[str, ...] = ("ConnectError", "ConnectTimeout", "UnsupportedProtocol", "InvalidURL")
+NOT_SENT_ERROR_TYPES: tuple[str, ...] = (
+    "ConnectError",
+    "ConnectTimeout",
+    "UnsupportedProtocol",
+    "InvalidURL",
+)
 # Task 3 review F-3: the frozen SDK provider re-raises transport failures as
 # ``ProviderTransportError(private_cause=SecretRedactor.exception(exc)) from None``
 # and the redactor keeps only ``RuntimeError(str(exc))`` — the httpx type is
@@ -84,8 +89,6 @@ def _uuid(label: str) -> str:
     return str(uuid.uuid5(uuid.NAMESPACE_URL, f"simple-harness:{label}"))
 
 
-
-
 @dataclass(frozen=True, slots=True)
 class AttemptRow:
     attempt_id: str
@@ -111,12 +114,21 @@ class AttemptRow:
 
 def _row(row: Any) -> AttemptRow:
     return AttemptRow(
-        str(row["attempt_id"]), str(row["purpose"]), str(row["host_run_id"]), str(row["sdk_run_id"]),
-        int(row["generation"]), None if row["task_scope_id"] is None else str(row["task_scope_id"]),
+        str(row["attempt_id"]),
+        str(row["purpose"]),
+        str(row["host_run_id"]),
+        str(row["sdk_run_id"]),
+        int(row["generation"]),
+        None if row["task_scope_id"] is None else str(row["task_scope_id"]),
         None if row["closure_watermark"] is None else int(row["closure_watermark"]),
-        str(row["request_hash"]), int(row["attempt_ordinal"]), str(row["evidence_set_key"]),
-        str(row["status"]), None if row["unknown_class"] is None else str(row["unknown_class"]),
-        str(row["provider_id"]), str(row["model_id"]), str(row["model_config_hash"]),
+        str(row["request_hash"]),
+        int(row["attempt_ordinal"]),
+        str(row["evidence_set_key"]),
+        str(row["status"]),
+        None if row["unknown_class"] is None else str(row["unknown_class"]),
+        str(row["provider_id"]),
+        str(row["model_id"]),
+        str(row["model_config_hash"]),
         None if row["provider_request_id"] is None else str(row["provider_request_id"]),
         None if row["result_hash"] is None else str(row["result_hash"]),
         None if row["plan_id"] is None else str(row["plan_id"]),
@@ -140,7 +152,9 @@ class InvocationOutcome:
 
 
 class LeaseFence(Protocol):
-    async def reserve_attempt(self, row: Mapping[str, Any], members: Sequence[tuple[str, str, str]]) -> None: ...
+    async def reserve_attempt(
+        self, row: Mapping[str, Any], members: Sequence[tuple[str, str, str]]
+    ) -> None: ...
 
     async def revalidate(self) -> None: ...
 
@@ -149,7 +163,13 @@ class ForegroundLeaseFence:
     """Lease fence over ``ForegroundQueueStore`` for one (Run, owner, generation)."""
 
     def __init__(
-        self, store: ForegroundQueueStore, *, host_run_id: str, sdk_run_id: str, owner_id: str, generation: int
+        self,
+        store: ForegroundQueueStore,
+        *,
+        host_run_id: str,
+        sdk_run_id: str,
+        owner_id: str,
+        generation: int,
     ) -> None:
         self._store = store
         self.host_run_id = host_run_id
@@ -157,7 +177,9 @@ class ForegroundLeaseFence:
         self.owner_id = owner_id
         self.generation = int(generation)
 
-    async def reserve_attempt(self, row: Mapping[str, Any], members: Sequence[tuple[str, str, str]]) -> None:
+    async def reserve_attempt(
+        self, row: Mapping[str, Any], members: Sequence[tuple[str, str, str]]
+    ) -> None:
         await self._store.reserve_post_turn_attempt(
             host_run_id=self.host_run_id,
             sdk_run_id=self.sdk_run_id,
@@ -178,8 +200,14 @@ class ForegroundLeaseFence:
 
     async def reserve_attempt_with_input(self, row, members, observer):
         await self._store.reserve_post_turn_attempt(
-            host_run_id=self.host_run_id, sdk_run_id=self.sdk_run_id, owner_id=self.owner_id,
-            generation=self.generation, attempt=row, members=members, input_observer_tx=observer)
+            host_run_id=self.host_run_id,
+            sdk_run_id=self.sdk_run_id,
+            owner_id=self.owner_id,
+            generation=self.generation,
+            attempt=row,
+            members=members,
+            input_observer_tx=observer,
+        )
 
 
 class RunBoundInvoker:
@@ -206,7 +234,9 @@ class RunBoundInvoker:
     def transaction(self):  # type: ignore[no-untyped-def]
         return _Transaction(self._db_path)
 
-    async def _latest_attempt(self, db: aiosqlite.Connection, request_hash: str) -> AttemptRow | None:
+    async def _latest_attempt(
+        self, db: aiosqlite.Connection, request_hash: str
+    ) -> AttemptRow | None:
         cursor = await db.execute(
             "SELECT * FROM post_turn_invocation_attempts WHERE request_hash=? ORDER BY attempt_ordinal DESC LIMIT 1",
             (request_hash,),
@@ -237,7 +267,11 @@ class RunBoundInvoker:
         return _row(row), response
 
     async def _open_member_attempt(
-        self, db: aiosqlite.Connection, members: Sequence[tuple[str, str, str]], *, exclude: str | None
+        self,
+        db: aiosqlite.Connection,
+        members: Sequence[tuple[str, str, str]],
+        *,
+        exclude: str | None,
     ) -> AttemptRow | None:
         for subject, run_id, evidence_id in members:
             cursor = await db.execute(
@@ -267,7 +301,11 @@ class RunBoundInvoker:
             return int(cursor.rowcount)
 
     async def _settle_failed(
-        self, attempt_id: str, *, unknown_class: str | None, reason: str,
+        self,
+        attempt_id: str,
+        *,
+        unknown_class: str | None,
+        reason: str,
         expected_status: str = "handed_off",
     ) -> int:
         return await self._update(
@@ -327,8 +365,12 @@ class RunBoundInvoker:
     ) -> None:
         async with self.transaction() as db:
             await self.settle_succeeded_tx(
-                db, attempt_id, response=response, plan_id=plan_id,
-                result_hash=result_hash, result_envelope_json=result_envelope_json,
+                db,
+                attempt_id,
+                response=response,
+                plan_id=plan_id,
+                result_hash=result_hash,
+                result_envelope_json=result_envelope_json,
             )
 
     async def read_attempt(self, attempt_id: str) -> tuple[AttemptRow, str | None] | None:
@@ -380,38 +422,58 @@ class RunBoundInvoker:
         if latest is not None:
             if latest.status == "succeeded":
                 return InvocationOutcome("reused", latest.attempt_id, latest.attempt_ordinal)
-            if latest.status == "handed_off" or (latest.status == "unknown" and latest.unknown_class == "sent_unknown"):
+            if latest.status == "handed_off" or (
+                latest.status == "unknown" and latest.unknown_class == "sent_unknown"
+            ):
                 observed = await self._observe(latest)
                 if observed is not None:
                     return observed
                 return InvocationOutcome(
-                    "blocked", latest.attempt_id, latest.attempt_ordinal,
-                    reason_code=f"{purpose}_attempt_unknown", unknown_class=latest.unknown_class,
+                    "blocked",
+                    latest.attempt_id,
+                    latest.attempt_ordinal,
+                    reason_code=f"{purpose}_attempt_unknown",
+                    unknown_class=latest.unknown_class,
                 )
             if latest.status == "unknown" and latest.unknown_class == "sent_confirmed":
-                return InvocationOutcome("blocked", latest.attempt_id, latest.attempt_ordinal, reason_code=f"{purpose}_attempt_confirmed")
+                return InvocationOutcome(
+                    "blocked",
+                    latest.attempt_id,
+                    latest.attempt_ordinal,
+                    reason_code=f"{purpose}_attempt_confirmed",
+                )
             if latest.status == "reserved":
                 # A sender can hand off after the recovery read. Only winning
                 # the reserved CAS proves nothing was sent and permits retry.
                 moved = await self._settle_failed(
-                    latest.attempt_id, unknown_class="not_sent", reason="reserved_abandoned",
+                    latest.attempt_id,
+                    unknown_class="not_sent",
+                    reason="reserved_abandoned",
                     expected_status="reserved",
                 )
                 if moved != 1:
                     return InvocationOutcome(
-                        "blocked", latest.attempt_id, latest.attempt_ordinal,
+                        "blocked",
+                        latest.attempt_id,
+                        latest.attempt_ordinal,
                         reason_code=f"{purpose}_attempt_unknown",
                     )
             elif latest.status == "failed" and latest.unknown_class != "not_sent":
                 return InvocationOutcome(
-                    "blocked", latest.attempt_id, latest.attempt_ordinal, reason_code=f"{purpose}_attempt_failed"
+                    "blocked",
+                    latest.attempt_id,
+                    latest.attempt_ordinal,
+                    reason_code=f"{purpose}_attempt_failed",
                 )
         if open_member is not None:
             observed = await self._observe(open_member)
             if observed is None:
                 return InvocationOutcome(
-                    "blocked", open_member.attempt_id, open_member.attempt_ordinal,
-                    reason_code=f"{purpose}_attempt_unknown", unknown_class=open_member.unknown_class,
+                    "blocked",
+                    open_member.attempt_id,
+                    open_member.attempt_ordinal,
+                    reason_code=f"{purpose}_attempt_unknown",
+                    unknown_class=open_member.unknown_class,
                 )
             # The injected observer confirmed the in-flight member attempt: reuse
             # its response for this request (0 calls) — never resend.
@@ -426,7 +488,11 @@ class RunBoundInvoker:
         model_id = str(record.get("model_id") or "").strip()
         if not provider_id or not model_id:
             return InvocationOutcome(
-                "failed", None, None, reason_code="binding_unrebuildable:missing", unknown_class="not_sent"
+                "failed",
+                None,
+                None,
+                reason_code="binding_unrebuildable:missing",
+                unknown_class="not_sent",
             )
         adapter = None
         adapter_error: str | None = None
@@ -464,13 +530,34 @@ class RunBoundInvoker:
         self._fault("attempt-reserved")
         if adapter is None:
             await self._settle_failed(
-                attempt_id, unknown_class="not_sent", reason=str(adapter_error), expected_status="reserved",
+                attempt_id,
+                unknown_class="not_sent",
+                reason=str(adapter_error),
+                expected_status="reserved",
             )
-            return InvocationOutcome("failed", attempt_id, ordinal, reason_code=adapter_error, unknown_class="not_sent")
+            return InvocationOutcome(
+                "failed", attempt_id, ordinal, reason_code=adapter_error, unknown_class="not_sent"
+            )
         attempt = AttemptRow(
-            attempt_id, purpose, host_run_id, sdk_run_id, int(generation), task_scope_id, closure_watermark,
-            request_hash, ordinal, evidence_set_key, "reserved", None, provider_id, model_id,
-            str(row["model_config_hash"]), None, None, plan_id, None,
+            attempt_id,
+            purpose,
+            host_run_id,
+            sdk_run_id,
+            int(generation),
+            task_scope_id,
+            closure_watermark,
+            request_hash,
+            ordinal,
+            evidence_set_key,
+            "reserved",
+            None,
+            provider_id,
+            model_id,
+            str(row["model_config_hash"]),
+            None,
+            None,
+            plan_id,
+            None,
         )
         if reuse_response is not None:
             # Zero-call replay: the row still walks reserved → handed_off so the
@@ -483,11 +570,19 @@ class RunBoundInvoker:
             )
             if moved != 1:
                 return InvocationOutcome(
-                    "lease_lost", attempt_id, ordinal, reason_code="attempt_reserved_row_lost", provider_calls=0,
+                    "lease_lost",
+                    attempt_id,
+                    ordinal,
+                    reason_code="attempt_reserved_row_lost",
+                    provider_calls=0,
                 )
             return InvocationOutcome(
-                "succeeded", attempt_id, ordinal, response=reuse_response,
-                reason_code=f"reused:{reuse_source}", provider_calls=0,
+                "succeeded",
+                attempt_id,
+                ordinal,
+                response=reuse_response,
+                reason_code=f"reused:{reuse_source}",
+                provider_calls=0,
             )
         request = build_request(attempt)
         moved = await self._update(
@@ -500,7 +595,11 @@ class RunBoundInvoker:
             # (reserved → failed(not_sent) + its own attempt).  Calling the
             # Provider now would be a call no ledger row represents.
             return InvocationOutcome(
-                "lease_lost", attempt_id, ordinal, reason_code="attempt_reserved_row_lost", provider_calls=0,
+                "lease_lost",
+                attempt_id,
+                ordinal,
+                reason_code="attempt_reserved_row_lost",
+                provider_calls=0,
             )
         self._fault("attempt-handed-off")
         from simple_harness.providers import CancelToken
@@ -513,7 +612,11 @@ class RunBoundInvoker:
 
         try:
             coroutine = adapter.invoke(request, cancel=CancelToken())
-            response = await (asyncio.wait_for(coroutine, timeout=deadline_seconds) if deadline_seconds else coroutine)
+            response = await (
+                asyncio.wait_for(coroutine, timeout=deadline_seconds)
+                if deadline_seconds
+                else coroutine
+            )
         except asyncio.CancelledError:
             # Task 3 review F-6: the request may have been sent, so the ledger
             # settles ``unknown(sent_unknown)`` (never resent) — but task
@@ -524,44 +627,83 @@ class RunBoundInvoker:
         except ProviderCancelledError:
             await self._settle_unknown(attempt_id, reason=f"{purpose}_attempt_unknown")
             return InvocationOutcome(
-                "unknown", attempt_id, ordinal, reason_code=f"{purpose}_attempt_unknown",
-                unknown_class="sent_unknown", provider_calls=1,
+                "unknown",
+                attempt_id,
+                ordinal,
+                reason_code=f"{purpose}_attempt_unknown",
+                unknown_class="sent_unknown",
+                provider_calls=1,
             )
         except (TimeoutError, ProviderTimeoutError):
             await self._settle_unknown(attempt_id, reason=f"{purpose}_timeout")
             return InvocationOutcome(
-                "unknown", attempt_id, ordinal, reason_code=f"{purpose}_timeout",
-                unknown_class="sent_unknown", provider_calls=1,
+                "unknown",
+                attempt_id,
+                ordinal,
+                reason_code=f"{purpose}_timeout",
+                unknown_class="sent_unknown",
+                provider_calls=1,
             )
         except ProviderTransportError as exc:
             reason = _not_sent(exc)
             if reason is not None:
                 await self._settle_failed(attempt_id, unknown_class="not_sent", reason=reason)
-                return InvocationOutcome("failed", attempt_id, ordinal, reason_code=reason, unknown_class="not_sent", provider_calls=1)
+                return InvocationOutcome(
+                    "failed",
+                    attempt_id,
+                    ordinal,
+                    reason_code=reason,
+                    unknown_class="not_sent",
+                    provider_calls=1,
+                )
             await self._settle_unknown(attempt_id, reason=f"{purpose}_attempt_unknown")
             return InvocationOutcome(
-                "unknown", attempt_id, ordinal, reason_code=f"{purpose}_attempt_unknown",
-                unknown_class="sent_unknown", provider_calls=1,
+                "unknown",
+                attempt_id,
+                ordinal,
+                reason_code=f"{purpose}_attempt_unknown",
+                unknown_class="sent_unknown",
+                provider_calls=1,
             )
         except ProviderError as exc:
             from deskpet.execution.closure_request_guard import ClosurePhysicalRequestRejected
+
             if purpose == "closure" and isinstance(exc, ClosurePhysicalRequestRejected):
                 reason = "closure_request_disclosure_rejected"
                 await self._settle_failed(attempt_id, unknown_class="not_sent", reason=reason)
-                return InvocationOutcome("failed", attempt_id, ordinal, reason_code=reason,
-                                         unknown_class="not_sent", provider_calls=0)
+                return InvocationOutcome(
+                    "failed",
+                    attempt_id,
+                    ordinal,
+                    reason_code=reason,
+                    unknown_class="not_sent",
+                    provider_calls=0,
+                )
             reason = f"provider_{_error_code(exc)}"
             await self._settle_failed(attempt_id, unknown_class=None, reason=reason)
-            return InvocationOutcome("failed", attempt_id, ordinal, reason_code=reason, provider_calls=1)
+            return InvocationOutcome(
+                "failed", attempt_id, ordinal, reason_code=reason, provider_calls=1
+            )
         except Exception as exc:  # noqa: BLE001 - transport taxonomy
             reason = _not_sent(exc)
             if reason is not None:
                 await self._settle_failed(attempt_id, unknown_class="not_sent", reason=reason)
-                return InvocationOutcome("failed", attempt_id, ordinal, reason_code=reason, unknown_class="not_sent", provider_calls=1)
+                return InvocationOutcome(
+                    "failed",
+                    attempt_id,
+                    ordinal,
+                    reason_code=reason,
+                    unknown_class="not_sent",
+                    provider_calls=1,
+                )
             await self._settle_unknown(attempt_id, reason=f"{purpose}_attempt_unknown")
             return InvocationOutcome(
-                "unknown", attempt_id, ordinal, reason_code=f"{purpose}_attempt_unknown",
-                unknown_class="sent_unknown", provider_calls=1,
+                "unknown",
+                attempt_id,
+                ordinal,
+                reason_code=f"{purpose}_attempt_unknown",
+                unknown_class="sent_unknown",
+                provider_calls=1,
             )
         # Response received: the lease must still be ours before any apply.
         try:
@@ -570,11 +712,16 @@ class RunBoundInvoker:
             await self.settle_succeeded(attempt_id, response=response, plan_id=plan_id)
             # The response is a ledger fact the caller may persist (never apply).
             return InvocationOutcome(
-                "lease_lost", attempt_id, ordinal,
-                reason_code=str(getattr(exc, "code", type(exc).__name__)), provider_calls=1,
+                "lease_lost",
+                attempt_id,
+                ordinal,
+                reason_code=str(getattr(exc, "code", type(exc).__name__)),
+                provider_calls=1,
                 ledger_response=response,
             )
-        return InvocationOutcome("succeeded", attempt_id, ordinal, response=response, provider_calls=1)
+        return InvocationOutcome(
+            "succeeded", attempt_id, ordinal, response=response, provider_calls=1
+        )
 
     async def _observe(self, latest: AttemptRow) -> InvocationOutcome | None:
         """``sent_confirmed``: only an injected observer over a still-open ``handed_off`` row.
@@ -596,8 +743,12 @@ class RunBoundInvoker:
             (_response_hash(response), self._clock()),
         )
         return InvocationOutcome(
-            "succeeded", latest.attempt_id, latest.attempt_ordinal, response=response,
-            unknown_class="sent_confirmed", provider_calls=0,
+            "succeeded",
+            latest.attempt_id,
+            latest.attempt_ordinal,
+            response=response,
+            unknown_class="sent_confirmed",
+            provider_calls=0,
         )
 
     def _fault(self, point: str) -> None:
@@ -646,7 +797,9 @@ def durable_result_json(*, response: Any, envelope_json: Mapping[str, Any] | Non
         {
             "schema_version": DURABLE_RESULT_SCHEMA,
             "response": json.loads(canonical_json(provider_response_json(response))),
-            "envelope": None if envelope_json is None else json.loads(canonical_json(dict(envelope_json))),
+            "envelope": None
+            if envelope_json is None
+            else json.loads(canonical_json(dict(envelope_json))),
         }
     )
 

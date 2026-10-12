@@ -6,6 +6,7 @@
 lane_wait 分位 + metrics_sink 接线）；既有调度/进度回归在
 test_subagent_scheduler.py。BC：累计字段是纯增，旧瞬时字段不变。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -32,8 +33,13 @@ def test_peak_concurrent_reaches_cap():
 
         await asyncio.gather(
             *[
-                sched.run(kind="general", run_id=f"r{i}", task_id=f"t{i}",
-                          parent_sid="p", coro_factory=one)
+                sched.run(
+                    kind="general",
+                    run_id=f"r{i}",
+                    task_id=f"t{i}",
+                    parent_sid="p",
+                    coro_factory=one,
+                )
                 for i in range(8)
             ]
         )
@@ -57,8 +63,13 @@ def test_total_queued_counts_all_enqueues():
 
         await asyncio.gather(
             *[
-                sched.run(kind="general", run_id=f"r{i}", task_id=f"t{i}",
-                          parent_sid="p", coro_factory=one)
+                sched.run(
+                    kind="general",
+                    run_id=f"r{i}",
+                    task_id=f"t{i}",
+                    parent_sid="p",
+                    coro_factory=one,
+                )
                 for i in range(5)
             ]
         )
@@ -85,13 +96,13 @@ def test_total_rejected_on_queued_cancel():
             await asyncio.sleep(0.2)
 
         t_hog = asyncio.create_task(
-            sched.run(kind="general", run_id="hog", task_id="hog",
-                      parent_sid="p", coro_factory=hog)
+            sched.run(kind="general", run_id="hog", task_id="hog", parent_sid="p", coro_factory=hog)
         )
         await started.wait()
         t_victim = asyncio.create_task(
-            sched.run(kind="general", run_id="vic", task_id="vic",
-                      parent_sid="p", coro_factory=victim)
+            sched.run(
+                kind="general", run_id="vic", task_id="vic", parent_sid="p", coro_factory=victim
+            )
         )
         await asyncio.sleep(0.01)  # victim 跑到 queued 并在信号量 await
         t_victim.cancel()
@@ -118,8 +129,9 @@ def test_total_rejected_on_running_cancel():
             await asyncio.sleep(1.0)
 
         t = asyncio.create_task(
-            sched.run(kind="general", run_id="r1", task_id="t1",
-                      parent_sid="p", coro_factory=long_task)
+            sched.run(
+                kind="general", run_id="r1", task_id="t1", parent_sid="p", coro_factory=long_task
+            )
         )
         await running.wait()
         t.cancel()
@@ -140,8 +152,9 @@ def test_genuine_failure_not_counted_as_rejected():
         async def boom():
             raise ValueError("nope")
 
-        await sched.run(kind="general", run_id="r1", task_id="t1",
-                        parent_sid="p", coro_factory=boom)
+        await sched.run(
+            kind="general", run_id="r1", task_id="t1", parent_sid="p", coro_factory=boom
+        )
 
     with pytest.raises(ValueError):
         _run(body())
@@ -158,8 +171,13 @@ def test_lane_wait_percentiles_present():
 
         await asyncio.gather(
             *[
-                sched.run(kind="general", run_id=f"r{i}", task_id=f"t{i}",
-                          parent_sid="p", coro_factory=one)
+                sched.run(
+                    kind="general",
+                    run_id=f"r{i}",
+                    task_id=f"t{i}",
+                    parent_sid="p",
+                    coro_factory=one,
+                )
                 for i in range(6)
             ]
         )
@@ -186,8 +204,13 @@ def test_progress_event_carries_cumulative_fields():
 
         await asyncio.gather(
             *[
-                sched.run(kind="general", run_id=f"r{i}", task_id=f"t{i}",
-                          parent_sid="p", coro_factory=one)
+                sched.run(
+                    kind="general",
+                    run_id=f"r{i}",
+                    task_id=f"t{i}",
+                    parent_sid="p",
+                    coro_factory=one,
+                )
                 for i in range(3)
             ]
         )
@@ -222,8 +245,13 @@ def test_lane_wait_recorded_to_metrics_sink(monkeypatch):
 
         await asyncio.gather(
             *[
-                sched.run(kind="research", run_id=f"r{i}", task_id=f"t{i}",
-                          parent_sid="p", coro_factory=one)
+                sched.run(
+                    kind="research",
+                    run_id=f"r{i}",
+                    task_id=f"t{i}",
+                    parent_sid="p",
+                    coro_factory=one,
+                )
                 for i in range(3)
             ]
         )

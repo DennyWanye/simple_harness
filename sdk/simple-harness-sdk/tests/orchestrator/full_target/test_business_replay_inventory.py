@@ -3,6 +3,7 @@
 
 新表或新字段没有归类就失败；业务表必须标重建方式（只增源记录 / 由事件折叠）；只增源记录必须
 有库层不许改删守卫；非业务表必须写为什么不重建；未覆盖的折叠表不算覆盖。"""
+
 from __future__ import annotations
 
 import copy
@@ -49,7 +50,9 @@ def test_an_immutable_source_without_its_guard_fails(tmp_path):
     store = Store.open(tmp_path / "o.db")
     try:
         store.connection.execute("DROP TRIGGER review_records_immutable_update")
-        with pytest.raises(InventoryError, match="review_records is an immutable source without a UPDATE"):
+        with pytest.raises(
+            InventoryError, match="review_records is an immutable source without a UPDATE"
+        ):
             check_inventory(store)
     finally:
         store.close()
@@ -59,13 +62,18 @@ def test_an_immutable_source_without_its_guard_fails(tmp_path):
 def edited(monkeypatch):
     """Validate an edited copy of the inventory through the real loader."""
 
-    original = json.loads(business_replay.Path(business_replay.__file__)
-                          .with_name("business_replay_inventory.json").read_text("utf-8"))
+    original = json.loads(
+        business_replay.Path(business_replay.__file__)
+        .with_name("business_replay_inventory.json")
+        .read_text("utf-8")
+    )
 
     def load(change):
         raw = copy.deepcopy(original)
         change(raw["tables"])
-        monkeypatch.setattr(business_replay.Path, "read_text", lambda self, *a, **k: json.dumps(raw))
+        monkeypatch.setattr(
+            business_replay.Path, "read_text", lambda self, *a, **k: json.dumps(raw)
+        )
         business_replay.inventory.cache_clear()
         try:
             return business_replay.inventory()
@@ -88,9 +96,11 @@ def test_inventory_v2_rules(edited):
     def silent_exclusion(tables):
         tables["workspaces"]["note"] = " "
 
-    for change, message in ((no_rebuild, "missions: a business table says how it is rebuilt"),
-                            (unknown_rebuild, "missions: rebuild must be one of"),
-                            (silent_exclusion, "workspaces: a table outside business says why")):
+    for change, message in (
+        (no_rebuild, "missions: a business table says how it is rebuilt"),
+        (unknown_rebuild, "missions: rebuild must be one of"),
+        (silent_exclusion, "workspaces: a table outside business says why"),
+    ):
         with pytest.raises(InventoryError, match=message):
             edited(change)
 
@@ -103,7 +113,10 @@ def test_a_business_table_without_mission_id_must_name_its_owner(edited):
     def no_owner(tables):
         del tables["planning_decisions"]["owner"]
 
-    with pytest.raises(InventoryError, match="planning_decisions: a business table without mission_id names its owner"):
+    with pytest.raises(
+        InventoryError,
+        match="planning_decisions: a business table without mission_id names its owner",
+    ):
         edited(no_owner)
 
 
@@ -122,8 +135,12 @@ def test_deployment_identity_never_takes_an_unproven_replay(tmp_path):
 
     proven = original["upstream"]
     unproven = {k: v for k, v in proven.items() if k != "business_replay_receipt_sha256"}
-    for value in (unproven, {**proven, "business_replay": "NOT_RUN"}, {**proven, "business_replay": "PARTIAL"},
-                  {**proven, "business_replay_receipt_sha256": "not-a-digest"}):
+    for value in (
+        unproven,
+        {**proven, "business_replay": "NOT_RUN"},
+        {**proven, "business_replay": "PARTIAL"},
+        {**proven, "business_replay_receipt_sha256": "not-a-digest"},
+    ):
         edited = tmp_path / "manifest.json"
         edited.write_text(json.dumps({**original, "upstream": value}), encoding="utf-8")
         reader.manifest = edited
@@ -156,12 +173,19 @@ def test_only_the_store_opens_a_writable_connection():
     for path in sorted(package.rglob("*.py")):
         source = path.read_text(encoding="utf-8")
         for node in ast.walk(ast.parse(source)):
-            if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
-                    and node.func.attr == "connect" and isinstance(node.func.value, ast.Name)
-                    and node.func.value.id == "sqlite3"
-                    and "mode=ro" not in (ast.get_source_segment(source, node) or "")):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "connect"
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id == "sqlite3"
+                and "mode=ro" not in (ast.get_source_segment(source, node) or "")
+            ):
                 name = path.relative_to(package).as_posix()
                 writable[name] = writable.get(name, 0) + 1
-    assert set(writable) <= set(WRITABLE_CONNECTIONS), sorted(set(writable) - set(WRITABLE_CONNECTIONS))
+    assert set(writable) <= set(WRITABLE_CONNECTIONS), sorted(
+        set(writable) - set(WRITABLE_CONNECTIONS)
+    )
     assert set(WRITABLE_CONNECTIONS) <= set(writable), (  # 清单过时也失败
-        sorted(set(WRITABLE_CONNECTIONS) - set(writable)))
+        sorted(set(WRITABLE_CONNECTIONS) - set(writable))
+    )

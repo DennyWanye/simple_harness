@@ -23,6 +23,7 @@ Path policy: ``input_path`` must be authorized via ``office_pick_file``
 (or be a temp file just produced by another office tool, which is
 already temp-writable). Output defaults next to a temp file.
 """
+
 from __future__ import annotations
 
 import json
@@ -83,8 +84,7 @@ def pdf_export(
             "ok": False,
             "error": "soffice_missing",
             "message": (
-                "PDF 组件 (LibreOffice) 未找到，无法导出 PDF。"
-                "请确认安装包是否包含 LibreOffice。"
+                "PDF 组件 (LibreOffice) 未找到，无法导出 PDF。请确认安装包是否包含 LibreOffice。"
             ),
             "retriable": False,
         }
@@ -95,9 +95,13 @@ def pdf_export(
         try:
             proc = subprocess.run(
                 [
-                    soffice, "--headless", "--norestore",
-                    "--convert-to", "pdf",
-                    "--outdir", tmpdir,
+                    soffice,
+                    "--headless",
+                    "--norestore",
+                    "--convert-to",
+                    "pdf",
+                    "--outdir",
+                    tmpdir,
                     str(resolved),
                 ],
                 capture_output=True,
@@ -136,12 +140,14 @@ def pdf_export(
         "ok": True,
         "path": str(dest),
         "size_bytes": size,
-        "artifacts": [{
-            "kind": "file",
-            "path": str(dest),
-            "mime": "application/pdf",
-            "title": Path(str(dest)).name,
-        }],
+        "artifacts": [
+            {
+                "kind": "file",
+                "path": str(dest),
+                "mime": "application/pdf",
+                "title": Path(str(dest)).name,
+            }
+        ],
     }
 
 
@@ -160,7 +166,10 @@ _SCHEMA = {
     "parameters": {
         "type": "object",
         "properties": {
-            "input_path": {"type": "string", "description": "Absolute path of the source document."},
+            "input_path": {
+                "type": "string",
+                "description": "Absolute path of the source document.",
+            },
             "output_path": {
                 "type": "string",
                 "description": "Absolute .pdf path; omit to auto-create in temp.",
@@ -180,13 +189,14 @@ def _handle(args: dict[str, Any], task_id: str = "") -> str:
 
 
 def register_static_tools(registry) -> None:
-        registry.register(
-            "pdf_export",
-            "office",
-            _SCHEMA,
-            _handle,
-            permission_category="write_file",
-            timeout_seconds=100.0,
-        )
+    registry.register(
+        "pdf_export",
+        "office",
+        _SCHEMA,
+        _handle,
+        permission_category="write_file",
+        timeout_seconds=100.0,
+    )
+
 
 __all__ = ["pdf_export", "find_soffice", "register_static_tools"]

@@ -11,6 +11,7 @@ deterministic bug.
 
 Reference: openspec/changes/multi-provider-management/specs/agent-loop/spec.md
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -245,9 +246,7 @@ async def test_tool_catalog_stale_does_not_fall_to_next_provider() -> None:
 @pytest.mark.parametrize(
     "failure",
     [
-        ProviderDispatchUnknownError(
-            "provider_dispatch_unknown_after_handoff"
-        ),
+        ProviderDispatchUnknownError("provider_dispatch_unknown_after_handoff"),
         IdempotencyConflict(
             "provider_invocation_conflict",
             "invocation id already names a different dispatch",
@@ -409,10 +408,7 @@ async def test_provider_chain_fallback_ws_event_emitted() -> None:
     # a dedicated event class or a dict-like, depending on
     # implementation). We accept any AgentEvent-shaped object with
     # type == "provider_chain_fallback".
-    fb_events = [
-        e for e in events
-        if getattr(e, "type", None) == "provider_chain_fallback"
-    ]
+    fb_events = [e for e in events if getattr(e, "type", None) == "provider_chain_fallback"]
     assert len(fb_events) == 1, [getattr(e, "type", None) for e in events]
     fb = fb_events[0]
     # session_id from agent loop run() arg
@@ -445,6 +441,7 @@ class _LegacyLLM:
         **kwargs: Any,
     ) -> Any:
         from agent.tool_use_shim import _raw_to_response
+
         self.call_count += 1
         return _raw_to_response(self._response)
 
@@ -459,9 +456,7 @@ async def test_legacy_single_provider_callers_still_work() -> None:
     """
     llm = _LegacyLLM(_ok_response("legacy-path", "legacy"))
     loop = AgentLoop(llm_registry=llm, tool_registry=_NoopTools())
-    events = await _collect(
-        loop.run([{"role": "user", "content": "x"}], session_id="legacy-1")
-    )
+    events = await _collect(loop.run([{"role": "user", "content": "x"}], session_id="legacy-1"))
 
     assert llm.call_count == 1
     finals = [e for e in events if isinstance(e, FinalEvent)]

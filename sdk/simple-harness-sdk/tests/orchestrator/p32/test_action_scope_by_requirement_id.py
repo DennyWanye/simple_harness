@@ -31,7 +31,6 @@ def _contract(tmp_path, task_criteria):
     )
 
 
-
 def test_a_step_sees_only_its_own_operation_by_requirement_number(tmp_path):
     contract = _contract(tmp_path, ["c-user-1", "c-user-3"])
     assert [op["target"] for op in contract["operations"]] == ["wordfreq.py"]

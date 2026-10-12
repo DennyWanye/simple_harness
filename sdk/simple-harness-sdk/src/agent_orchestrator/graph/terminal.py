@@ -28,7 +28,10 @@ def finalizer_task_id(network: Any, semantics: Any, mission_id: str) -> str | No
         step = stored.contract.composition.finalizer_step
         if not step:
             continue
-        child = next((item for item in network.adopted_children(root) if str(item.slot_key) == str(step)), None)
+        child = next(
+            (item for item in network.adopted_children(root) if str(item.slot_key) == str(step)),
+            None,
+        )
         if child is None:
             return None
         return str(network.occurrence(child.occurrence_id).task_id)

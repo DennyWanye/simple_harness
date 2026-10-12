@@ -8,6 +8,7 @@
 - 非 code mode：project_root=None → 只走两层
 - v2_enabled=False：忽略 per-model，走 legacy 绝对值（Strangler-Fig）
 """
+
 from __future__ import annotations
 
 import pytest
@@ -57,7 +58,8 @@ def test_for_session_project_override_in_code_mode(isolated_user_data, tmp_path)
         encoding="utf-8",
     )
     ctx = ContextManager.for_session(
-        model="deepseek-v4-pro", project_root=project_root,
+        model="deepseek-v4-pro",
+        project_root=project_root,
     )
     assert ctx.config.model_info.context_window == 500_000
     assert ctx.config.model_info.source == "project"
@@ -68,7 +70,9 @@ def test_for_session_project_override_in_code_mode(isolated_user_data, tmp_path)
 def test_for_session_v2_disabled_uses_legacy(isolated_user_data):
     """v2_enabled=False → 忽略 per-model，走 legacy 绝对值。"""
     ctx = ContextManager.for_session(
-        model="deepseek-v4-pro", project_root=None, v2_enabled=False,
+        model="deepseek-v4-pro",
+        project_root=None,
+        v2_enabled=False,
     )
     assert ctx.config.v2_enabled is False
     assert ctx.config.tool_result_threshold == 16_000  # legacy 常量
@@ -81,7 +85,9 @@ def test_for_session_preserves_custom_ref_store(isolated_user_data):
 
     store = ToolResultRefStore()
     ctx = ContextManager.for_session(
-        model="deepseek-v4-pro", project_root=None, ref_store=store,
+        model="deepseek-v4-pro",
+        project_root=None,
+        ref_store=store,
     )
     assert ctx.ref_store is store
 

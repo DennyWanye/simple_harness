@@ -123,13 +123,19 @@ class SessionIndexCoordinator:
     def background_embedding(self) -> bool:
         """A heavy embedding model (a real one) is run by the background pump, off the event
         loop, never inline in a Turn's prepare; a light one (tests) keeps the inline path."""
-        return self.embedding is not None and bool(getattr(self.embedding, "prefers_background", False))
+        return self.embedding is not None and bool(
+            getattr(self.embedding, "prefers_background", False)
+        )
 
     # ---- partition / generation -----------------------------------------------------
 
     @property
     def embedding_fingerprint(self) -> str:
-        return NO_EMBEDDING_FINGERPRINT if self.embedding is None else digest(str(self.embedding.fingerprint))
+        return (
+            NO_EMBEDDING_FINGERPRINT
+            if self.embedding is None
+            else digest(str(self.embedding.fingerprint))
+        )
 
     @property
     def chunker(self) -> str:
@@ -219,10 +225,15 @@ class SessionIndexCoordinator:
                 "authority_ref": authority_ref.to_json(),
                 "deadline_ms": now_ms + DEFAULT_JOB_DEADLINE_MS,
                 "index_generation": generation.index_generation,
-                "group_ref": Pin("journal_group", group.group_id, group.seq_to, group.source_hash).to_json(),
-                "chunker_ref": Pin("policy", "chunker", 1, generation.chunker_fingerprint).to_json(),
+                "group_ref": Pin(
+                    "journal_group", group.group_id, group.seq_to, group.source_hash
+                ).to_json(),
+                "chunker_ref": Pin(
+                    "policy", "chunker", 1, generation.chunker_fingerprint
+                ).to_json(),
                 "embedding_deployment_ref": (
-                    self.embedding_resource_ref or Pin("deployment", "embedding:none", 0, NO_EMBEDDING_FINGERPRINT)
+                    self.embedding_resource_ref
+                    or Pin("deployment", "embedding:none", 0, NO_EMBEDDING_FINGERPRINT)
                 ).to_json(),
                 "view_policy_ref": Pin("policy", "view", 1, VIEW_POLICY_HASH).to_json(),
                 "source_highwater": group.seq_to,
@@ -244,7 +255,9 @@ class SessionIndexCoordinator:
 
     # ---- worker -------------------------------------------------------------------------
 
-    def process_due(self, *, limit: int = 8, session_id: str | None = None) -> tuple[Mapping[str, Any], ...]:
+    def process_due(
+        self, *, limit: int = 8, session_id: str | None = None
+    ) -> tuple[Mapping[str, Any], ...]:
         """Claim ≤limit due INDEX jobs (≤2 per Session, optionally one Session only) and process
         them one by one. A failing job is recorded on that job (BLOCKED, or handed back when the
         Session file is busy); it never escapes to the caller's Turn."""
@@ -252,7 +265,13 @@ class SessionIndexCoordinator:
         now_ms = self.clock_ms()
         with self.uow.database.transaction() as connection:
             claimed = store.claim_jobs_locked(
-                connection, owner_id=self.owner_id, now_ms=now_ms, lease_ms=LEASE_MS, limit=limit, per_session=2, session_id=session_id
+                connection,
+                owner_id=self.owner_id,
+                now_ms=now_ms,
+                lease_ms=LEASE_MS,
+                limit=limit,
+                per_session=2,
+                session_id=session_id,
             )
         results = []
         for job in claimed:
@@ -261,7 +280,13 @@ class SessionIndexCoordinator:
                 if handler is None:
                     # No consumer assembled for this kind: give the lease back untouched.
                     with self.uow.database.transaction() as connection:
-                        store.complete_job_locked(connection, job, state="PENDING", owner_id=self.owner_id, next_at_ms=now_ms + LEASE_MS)
+                        store.complete_job_locked(
+                            connection,
+                            job,
+                            state="PENDING",
+                            owner_id=self.owner_id,
+                            next_at_ms=now_ms + LEASE_MS,
+                        )
                     continue
                 results.append(handler(job))
                 continue
@@ -277,7 +302,13 @@ class SessionIndexCoordinator:
         now_ms = self.clock_ms()
         with self.uow.database.transaction() as connection:
             claimed = store.claim_jobs_locked(
-                connection, owner_id=self.owner_id, now_ms=now_ms, lease_ms=LEASE_MS, limit=limit, per_session=2, session_id=None
+                connection,
+                owner_id=self.owner_id,
+                now_ms=now_ms,
+                lease_ms=LEASE_MS,
+                limit=limit,
+                per_session=2,
+                session_id=None,
             )
         results = []
         for job in claimed:
@@ -285,14 +316,22 @@ class SessionIndexCoordinator:
                 handler = self.handlers.get(job.kind)
                 if handler is None:
                     with self.uow.database.transaction() as connection:
-                        store.complete_job_locked(connection, job, state="PENDING", owner_id=self.owner_id, next_at_ms=now_ms + LEASE_MS)
+                        store.complete_job_locked(
+                            connection,
+                            job,
+                            state="PENDING",
+                            owner_id=self.owner_id,
+                            next_at_ms=now_ms + LEASE_MS,
+                        )
                     continue
                 results.append(handler(job))
                 continue
             texts = self._job_texts(job)
             if texts:
                 try:
-                    self._prefetched[digest(texts)] = await asyncio.to_thread(self.embedding.embed, list(texts))
+                    self._prefetched[digest(texts)] = await asyncio.to_thread(
+                        self.embedding.embed, list(texts)
+                    )
                 except Exception:  # noqa: BLE001 - the recorded call below reports the failure
                     pass
             results.append(self._process_guarded(job, now_ms))
@@ -317,7 +356,9 @@ class SessionIndexCoordinator:
             return None
         return [str(c["text_view"]) for c in chunks] if chunks else None
 
-    def _chunks(self, job: store.JobRow, session: store.SessionRow, generation: GenerationRow) -> list[dict[str, Any]]:
+    def _chunks(
+        self, job: store.JobRow, session: store.SessionRow, generation: GenerationRow
+    ) -> list[dict[str, Any]]:
         connection = self.uow.database.connection
         payload = job.payload
         record_ids = [Pin.from_json(r).id for r in payload["source_refs"]]
@@ -333,9 +374,18 @@ class SessionIndexCoordinator:
                 overlap_tokens=int(self.policy["embedding_overlap_tokens"]),
                 count=self.count,
             ):
-                chunk_id = "chunk-" + digest(
-                    {"gen": generation.index_generation, "record": record.record_id, "start": start, "end": end, "source": source_hash}
-                )[:32]
+                chunk_id = (
+                    "chunk-"
+                    + digest(
+                        {
+                            "gen": generation.index_generation,
+                            "record": record.record_id,
+                            "start": start,
+                            "end": end,
+                            "source": source_hash,
+                        }
+                    )[:32]
+                )
                 chunks.append(
                     {
                         "chunk_id": chunk_id,
@@ -365,7 +415,13 @@ class SessionIndexCoordinator:
             if error.code == "FILE_BUSY":
                 with self.uow.database.transaction() as connection:
                     current = store.read_job(connection, job.job_id) or job
-                    store.complete_job_locked(connection, current, state="PENDING", owner_id=self.owner_id, next_at_ms=now_ms + LEASE_MS)
+                    store.complete_job_locked(
+                        connection,
+                        current,
+                        state="PENDING",
+                        owner_id=self.owner_id,
+                        next_at_ms=now_ms + LEASE_MS,
+                    )
                 return {"job_id": job.job_id, "state": "PENDING", "reason": "FILE_BUSY"}
             return self._block_job(job, f"{error.code}")
         except Exception as error:  # noqa: BLE001 - a poison job blocks itself, not other Turns
@@ -376,7 +432,9 @@ class SessionIndexCoordinator:
         if session is None:
             with self.uow.database.transaction() as connection:
                 current = store.read_job(connection, job.job_id) or job
-                store.complete_job_locked(connection, current, state="BLOCKED", owner_id=self.owner_id)
+                store.complete_job_locked(
+                    connection, current, state="BLOCKED", owner_id=self.owner_id
+                )
             return {"job_id": job.job_id, "state": "BLOCKED", "reason": reason}
         return self._finish(job, "BLOCKED", reason=reason[:256], session=session)
 
@@ -401,28 +459,51 @@ class SessionIndexCoordinator:
         # Chunks from the visible records only (the view policy); journal_only bodies
         # are never indexed as model-visible text.
         chunks = self._chunks(job, session, generation)
-        view_hash = digest([[r.record_id, r.content_hash] for r in records if r.visibility == "context"])
+        view_hash = digest(
+            [[r.record_id, r.content_hash] for r in records if r.visibility == "context"]
+        )
         vectors: dict[str, Sequence[float]] | None = None
         embedding_ref: Pin | None = None
         invocation_refs: list[Pin] = []
-        if self.embedding is not None and chunks and generation.embedding_fingerprint != NO_EMBEDDING_FINGERPRINT:
+        if (
+            self.embedding is not None
+            and chunks
+            and generation.embedding_fingerprint != NO_EMBEDDING_FINGERPRINT
+        ):
             texts = [str(c["text_view"]) for c in chunks]
-            deployment = self.embedding_resource_ref or Pin("deployment", "embedding:local", 1, self.embedding_fingerprint)
+            deployment = self.embedding_resource_ref or Pin(
+                "deployment", "embedding:local", 1, self.embedding_fingerprint
+            )
             receipt: Mapping[str, Any] | None = None
             for attempt in range(1, MAX_EMBED_ATTEMPTS + 1):
                 # J2: a call whose result was lost is recorded UNKNOWN and never re-issued under
                 # its own key; the next attempt gets its own ordinal (and its own intent).
                 call_key = f"{job.job_id}/{attempt}/{digest(texts)}"
                 receipt = embedding_call.perform_call(
-                    self.uow, run_id=session.agent_id, call_key=call_key, purpose="SESSION_INDEX", texts=texts, port=self._port_for(texts),
-                    deployment_ref=deployment, clock=self.clock, clock_ms=self.clock_ms, fault=self.fault, fault_name="index.before_embed",
+                    self.uow,
+                    run_id=session.agent_id,
+                    call_key=call_key,
+                    purpose="SESSION_INDEX",
+                    texts=texts,
+                    port=self._port_for(texts),
+                    deployment_ref=deployment,
+                    clock=self.clock,
+                    clock_ms=self.clock_ms,
+                    fault=self.fault,
+                    fault_name="index.before_embed",
                 )
                 invocation_refs.append(Pin.from_json(receipt["invocation_ref"]))
                 if receipt["status"] != "UNKNOWN":
                     break
             assert receipt is not None
             if receipt["status"] != "SUCCEEDED":
-                return self._finish(job, "BLOCKED", reason="EMBEDDING_UNAVAILABLE", session=session, invocations=invocation_refs)
+                return self._finish(
+                    job,
+                    "BLOCKED",
+                    reason="EMBEDDING_UNAVAILABLE",
+                    session=session,
+                    invocations=invocation_refs,
+                )
             output = receipt["output"]
             vectors = {str(c["chunk_id"]): output[i] for i, c in enumerate(chunks)}
             embedding_ref = embedding_call.receipt_pin(call_key, receipt)
@@ -431,7 +512,11 @@ class SessionIndexCoordinator:
         seq_to = max(r.seq for r in records)
         with state.guard.held():
             if state.partition.is_materialized(generation.index_generation, group_ref.id):
-                batch = {"kind": "partition-materialization-v1", "replayed": True, "group_id": group_ref.id}
+                batch = {
+                    "kind": "partition-materialization-v1",
+                    "replayed": True,
+                    "group_id": group_ref.id,
+                }
             else:
                 with state.partition.transaction() as pconn:
                     batch = dict(
@@ -442,7 +527,9 @@ class SessionIndexCoordinator:
                             source_hash=source_hash,
                             seq_from=seq_from,
                             seq_to=seq_to,
-                            closed_receipt_ref=Pin("receipt", f"{group_ref.id}:closed", 0, source_hash),
+                            closed_receipt_ref=Pin(
+                                "receipt", f"{group_ref.id}:closed", 0, source_hash
+                            ),
                             view_hash=view_hash,
                             chunks=chunks,
                             vectors=vectors,
@@ -451,7 +538,15 @@ class SessionIndexCoordinator:
                     )
         self._fault_point("index.before_ack")
         batch_ref = Pin("receipt", f"batch:{job.job_id}", 0, digest(batch))
-        return self._finish(job, "DONE", session=session, invocations=invocation_refs, result_refs=[batch_ref], generation=generation, source_highwater=seq_to)
+        return self._finish(
+            job,
+            "DONE",
+            session=session,
+            invocations=invocation_refs,
+            result_refs=[batch_ref],
+            generation=generation,
+            source_highwater=seq_to,
+        )
 
     def _fault_point(self, name: str) -> None:
         if self.fault is not None:
@@ -471,15 +566,34 @@ class SessionIndexCoordinator:
     ) -> Mapping[str, Any]:
         with self.uow.database.transaction() as connection:
             value, result_ref = finish_job_locked(
-                connection, job, state, session=session, owner_id=self.owner_id, clock=self.clock, clock_ms=self.clock_ms,
-                result_kind={"DONE": "INDEX_COMMITTED", "BLOCKED": "BLOCKED", "CANCELLED": "CANCELLED"}[state],
-                reason=reason, invocations=invocations, result_refs=result_refs,
+                connection,
+                job,
+                state,
+                session=session,
+                owner_id=self.owner_id,
+                clock=self.clock,
+                clock_ms=self.clock_ms,
+                result_kind={
+                    "DONE": "INDEX_COMMITTED",
+                    "BLOCKED": "BLOCKED",
+                    "CANCELLED": "CANCELLED",
+                }[state],
+                reason=reason,
+                invocations=invocations,
+                result_refs=result_refs,
             )
             if state == "DONE" and generation is not None:
                 self._publish_locked(connection, session, generation, source_highwater, result_ref)
         return value
 
-    def _publish_locked(self, connection: sqlite3.Connection, session: store.SessionRow, generation: GenerationRow, source_highwater: int, receipt: Pin) -> None:
+    def _publish_locked(
+        self,
+        connection: sqlite3.Connection,
+        session: store.SessionRow,
+        generation: GenerationRow,
+        source_highwater: int,
+        receipt: Pin,
+    ) -> None:
         state = self._states[session.session_id]
         active = store.active_index_publication(connection, session.session_id)
         if active is not None and active.index_generation == generation.index_generation:
@@ -489,7 +603,8 @@ class SessionIndexCoordinator:
             session_id=session.session_id,
             index_generation=generation.index_generation,
             partition_id=state.partition.partition_id,
-            generation_manifest_hash=generation.generation_manifest_hash or digest(generation.manifest()),
+            generation_manifest_hash=generation.generation_manifest_hash
+            or digest(generation.manifest()),
             source_highwater=source_highwater,
             publish_receipt_ref=receipt,
         )
@@ -497,7 +612,11 @@ class SessionIndexCoordinator:
             connection,
             run_id=session.agent_id,
             event_type="RuntimeIndexGenerationPublished",
-            body={"session_ref": session.pin.to_json(), "index_ref": publication.pin.to_json(), "source_receipt_ref": receipt.to_json()},
+            body={
+                "session_ref": session.pin.to_json(),
+                "index_ref": publication.pin.to_json(),
+                "source_receipt_ref": receipt.to_json(),
+            },
             source_receipt_ref=receipt,
             dedupe_key=f"{session.session_id}:publish:{generation.index_generation}",
             now=self.clock(),
@@ -524,7 +643,9 @@ def finish_job_locked(
 
     if state == "PENDING":
         current = store.read_job(connection, job.job_id) or job
-        after = store.complete_job_locked(connection, current, state="PENDING", owner_id=owner_id, next_at_ms=next_at_ms)
+        after = store.complete_job_locked(
+            connection, current, state="PENDING", owner_id=owner_id, next_at_ms=next_at_ms
+        )
         stub = {"job_id": job.job_id, "state": "PENDING", "reason": reason}
         return stub, Pin("receipt", f"job:{job.job_id}", after.row_version, digest(stub))
     result = {
@@ -543,8 +664,22 @@ def finish_job_locked(
     current = store.read_job(connection, job.job_id) or job
     # The JobResult body itself is kept as an original receipt so a BLOCKED reason
     # can be read back, not only its hash.
-    store.append_original_receipt_locked(connection, run_id=session.agent_id, kind="job_result", receipt_key=f"{job.job_id}:{job.row_version}", body=value, now=clock())
-    after = store.complete_job_locked(connection, current, state=state, owner_id=owner_id, result_receipt_ref=result_ref, next_at_ms=next_at_ms)
+    store.append_original_receipt_locked(
+        connection,
+        run_id=session.agent_id,
+        kind="job_result",
+        receipt_key=f"{job.job_id}:{job.row_version}",
+        body=value,
+        now=clock(),
+    )
+    after = store.complete_job_locked(
+        connection,
+        current,
+        state=state,
+        owner_id=owner_id,
+        result_receipt_ref=result_ref,
+        next_at_ms=next_at_ms,
+    )
     store.append_runtime_event_locked(
         connection,
         run_id=session.agent_id,
@@ -564,11 +699,14 @@ def finish_job_locked(
     return value, result_ref
 
 
-def _records_by_id(connection: sqlite3.Connection, agent_id: str, record_ids: Sequence[str]) -> tuple[AgentJournalRecord, ...]:
+def _records_by_id(
+    connection: sqlite3.Connection, agent_id: str, record_ids: Sequence[str]
+) -> tuple[AgentJournalRecord, ...]:
     if not record_ids:
         return ()
     rows = connection.execute(
-        "SELECT * FROM base_agent_session_journal_v1 WHERE agent_id=? AND record_id IN (%s) ORDER BY seq" % ",".join("?" * len(record_ids)),
+        "SELECT * FROM base_agent_session_journal_v1 WHERE agent_id=? AND record_id IN (%s) ORDER BY seq"
+        % ",".join("?" * len(record_ids)),
         (agent_id, *record_ids),
     ).fetchall()
     return tuple(history._record(row) for row in rows)

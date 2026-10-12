@@ -10,6 +10,7 @@ on Windows, XDG equivalents elsewhere (resolved by ``platformdirs``).
 Lightweight by design: we enumerate the top level only (no recursion)
 and cap at 20 entries. Anything deeper is the filesystem MCP's job (P4-S9).
 """
+
 from __future__ import annotations
 
 import os
@@ -51,9 +52,9 @@ class WorkspaceComponent:
             )
 
         try:
-            entries = sorted(
-                path.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True
-            )[:_MAX_ENTRIES]
+            entries = sorted(path.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True)[
+                :_MAX_ENTRIES
+            ]
         except OSError as exc:
             return Slice(
                 component_name=self.name,

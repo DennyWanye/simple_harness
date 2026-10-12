@@ -7,6 +7,7 @@
 are back in the model-visible catalog; the hide list stays as the switch for any future
 delegate Tool that is not wired yet.
 """
+
 from __future__ import annotations
 
 import inspect
@@ -23,15 +24,27 @@ DELEGATION = {"agent", "agent_parallel", "spawn_team", "spawn_subagents", "await
 
 
 def _spec(name: str):
-    return SimpleNamespace(name=name, description=name, input_schema={"type": "object", "properties": {}})
+    return SimpleNamespace(
+        name=name, description=name, input_schema={"type": "object", "properties": {}}
+    )
 
 
 def test_wired_delegation_tools_are_in_the_model_visible_catalog():
     assert UNWIRED_DELEGATION_TOOL_NAMES == frozenset()
-    adapter = SimpleNamespace(specs=[_spec(n) for n in ("read_file", "agent", "mission_start", "spawn_team",
-                                                         "await_subagents")])
+    adapter = SimpleNamespace(
+        specs=[
+            _spec(n)
+            for n in ("read_file", "agent", "mission_start", "spawn_team", "await_subagents")
+        ]
+    )
     catalog = main._freeze_sdk_catalog(adapter, 1)
-    assert catalog["tool_names"] == ["read_file", "agent", "mission_start", "spawn_team", "await_subagents"]
+    assert catalog["tool_names"] == [
+        "read_file",
+        "agent",
+        "mission_start",
+        "spawn_team",
+        "await_subagents",
+    ]
     # 委派不碰工作区：无项目的对话也能用（子运行只拿父目录里的只读工具）。
     assert DELEGATION <= PROJECTLESS_SAFE_TOOL_NAMES
 
@@ -69,4 +82,7 @@ def test_restart_recovery_and_projection_keep_delegated_children_out_of_the_chat
     assert "*waiting_runs_blocked_on_delegation(uow, exclude={" in factory
     assert 'delegation_uow["uow"] = uow' in factory
     # 工具对账：执行中不明的委派调用由委派服务按"父运行 + 调用 ID"推出子运行来判定。
-    assert "ProductReconciliationAdapter(\n        repository, observer=_delegation_observer\n    )" in source
+    assert (
+        "ProductReconciliationAdapter(\n        repository, observer=_delegation_observer\n    )"
+        in source
+    )

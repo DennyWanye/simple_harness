@@ -10,6 +10,7 @@ Design references:
   docs/superpowers/specs/2026-04-15-p2-1-design.md §4.4 / §3.3
   docs/superpowers/plans/2026-04-15-p2-1-s2-hybrid-router.md
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -112,8 +113,8 @@ class LLMUnavailableError(RuntimeError):
 
 class RoutingStrategy(str, enum.Enum):
     LOCAL_FIRST = "local_first"
-    CLOUD_FIRST = "cloud_first"      # P2-1-S2 unimplemented
-    COST_AWARE = "cost_aware"        # P2-1-S2 unimplemented
+    CLOUD_FIRST = "cloud_first"  # P2-1-S2 unimplemented
+    COST_AWARE = "cost_aware"  # P2-1-S2 unimplemented
     LATENCY_AWARE = "latency_aware"  # P2-1-S2 unimplemented
 
 
@@ -195,9 +196,7 @@ class HybridRouter:
             RoutingStrategy.LOCAL_FIRST,
             RoutingStrategy.CLOUD_FIRST,
         ):
-            raise NotImplementedError(
-                f"strategy {self._strategy} not implemented"
-            )
+            raise NotImplementedError(f"strategy {self._strategy} not implemented")
 
         if force_cloud:
             async for tok in self._stream_cloud(messages, temperature, max_tokens):
@@ -205,16 +204,12 @@ class HybridRouter:
             return
 
         if self._strategy == RoutingStrategy.LOCAL_FIRST:
-            async for tok in self._chat_stream_local_first(
-                messages, temperature, max_tokens
-            ):
+            async for tok in self._chat_stream_local_first(messages, temperature, max_tokens):
                 yield tok
             return
 
         # CLOUD_FIRST
-        async for tok in self._chat_stream_cloud_first(
-            messages, temperature, max_tokens
-        ):
+        async for tok in self._chat_stream_cloud_first(messages, temperature, max_tokens):
             yield tok
 
     async def _chat_stream_local_first(
@@ -268,9 +263,7 @@ class HybridRouter:
             cloud_state = self._cloud_state
             if cloud_state.circuit_state_now() != _CircuitState.OPEN:
                 model = getattr(self._cloud, "model", "unknown")
-                decision = await self._budget_hook(
-                    BudgetContext(route="cloud", model=model)
-                )
+                decision = await self._budget_hook(BudgetContext(route="cloud", model=model))
                 if not decision.allow:
                     cloud_budget_reason = decision.reason
                     logger.info(
@@ -289,16 +282,12 @@ class HybridRouter:
                             # Invalidate stale health cache from the
                             # failed first attempt so the retry re-probes.
                             cloud_state.invalidate_health_cache()
-                            await asyncio.sleep(
-                                _CLOUD_FIRST_RETRY_DELAY_SECONDS
-                            )
+                            await asyncio.sleep(_CLOUD_FIRST_RETRY_DELAY_SECONDS)
                             logger.info(
                                 "router_cloud_first_retrying",
                                 attempt=attempt + 1,
                             )
-                        if not await self._check_health(
-                            self._cloud, cloud_state
-                        ):
+                        if not await self._check_health(self._cloud, cloud_state):
                             continue
                         try:
                             async for tok in self._stream_with_ttft(
@@ -356,19 +345,16 @@ class HybridRouter:
         self, messages: list[dict[str, str]], temperature: float, max_tokens: int
     ) -> AsyncIterator[str]:
         if self._cloud is None:
-            raise LLMUnavailableError(
-                "cloud provider not configured and local unavailable"
-            )
+            raise LLMUnavailableError("cloud provider not configured and local unavailable")
         # P2-1-S8: gate cloud calls behind BudgetHook. Runs before circuit
         # breaker / health check so the ledger gets the final say even when
         # the cloud endpoint is otherwise ready to accept.
         model = getattr(self._cloud, "model", "unknown")
-        decision = await self._budget_hook(
-            BudgetContext(route="cloud", model=model)
-        )
+        decision = await self._budget_hook(BudgetContext(route="cloud", model=model))
         if not decision.allow:
             logger.info(
-                "router_cloud_budget_denied", reason=decision.reason,
+                "router_cloud_budget_denied",
+                reason=decision.reason,
             )
             raise LLMUnavailableError(
                 f"budget denied: {decision.reason}",
@@ -376,13 +362,9 @@ class HybridRouter:
             )
         cloud_state = self._cloud_state
         if cloud_state.circuit_state_now() == _CircuitState.OPEN:
-            raise LLMUnavailableError(
-                "cloud circuit breaker OPEN, retry in <30s"
-            )
+            raise LLMUnavailableError("cloud circuit breaker OPEN, retry in <30s")
         if not await self._check_health(self._cloud, cloud_state):
-            raise LLMUnavailableError(
-                "cloud provider health_check failed and local unavailable"
-            )
+            raise LLMUnavailableError("cloud provider health_check failed and local unavailable")
         try:
             async for tok in self._stream_with_ttft(
                 self._cloud,
@@ -451,8 +433,7 @@ class HybridRouter:
         """
         if strategy not in (RoutingStrategy.LOCAL_FIRST, RoutingStrategy.CLOUD_FIRST):
             raise NotImplementedError(
-                f"strategy {strategy.value} is not implemented; "
-                "supported: LOCAL_FIRST, CLOUD_FIRST"
+                f"strategy {strategy.value} is not implemented; supported: LOCAL_FIRST, CLOUD_FIRST"
             )
         old_strategy = self._strategy
         self._strategy = strategy

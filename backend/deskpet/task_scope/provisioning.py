@@ -61,10 +61,7 @@ class TaskScopeProvisionRequest:
         identifier(self.title, "title", 4096)
         identifier(self.idempotency_key, "idempotency_key", 512)
         if self.mode == "managed":
-            if (
-                self.provenance != "host_managed_policy"
-                or self.explicit_path is not None
-            ):
+            if self.provenance != "host_managed_policy" or self.explicit_path is not None:
                 raise TaskScopeProvisionError("managed_provenance_rejected")
         elif self.mode == "explicit":
             if self.provenance not in {
@@ -72,10 +69,7 @@ class TaskScopeProvisionRequest:
                 "trusted_project_picker",
             }:
                 raise TaskScopeProvisionError("explicit_provenance_rejected")
-            if (
-                not isinstance(self.explicit_path, str)
-                or not self.explicit_path.strip()
-            ):
+            if not isinstance(self.explicit_path, str) or not self.explicit_path.strip():
                 raise TaskScopeProvisionError("explicit_path_required")
         else:
             raise TaskScopeProvisionError("provision_mode_rejected")
@@ -132,9 +126,7 @@ class TaskScopeProvisioner:
             if app_data_root is not None
             else Path(db_path).parent / "task-scope-homes"
         )
-        self._home_directory = (
-            Path(home_directory) if home_directory is not None else Path.home()
-        )
+        self._home_directory = Path(home_directory) if home_directory is not None else Path.home()
 
     async def provision(
         self,
@@ -149,9 +141,7 @@ class TaskScopeProvisioner:
 
         row = await self._load_provision(resolved.provision_id)
         if row["state"] == "committed":
-            return await self._load_committed_receipt(
-                resolved.provision_id, verify=True
-            )
+            return await self._load_committed_receipt(resolved.provision_id, verify=True)
         if row["state"] == "failed_retryable":
             await self._transition(
                 resolved.provision_id,
@@ -223,13 +213,9 @@ class TaskScopeProvisioner:
             if proposed_root in {Path(proposed_root.anchor), Path.home().resolve()}:
                 raise TaskScopeProvisionError("explicit_path_too_broad")
             proposed_identity = _filesystem_identity(proposed_root)
-            if request.allow_project_metadata and os.access(
-                proposed_root, os.W_OK | os.X_OK
-            ):
+            if request.allow_project_metadata and os.access(proposed_root, os.W_OK | os.X_OK):
                 materialization_root = proposed_root
-                task_home = (
-                    proposed_root / ".simple-harness" / "task-scopes" / scope_component
-                )
+                task_home = proposed_root / ".simple-harness" / "task-scopes" / scope_component
                 _assert_no_existing_symlink(task_home)
                 location = "project"
             else:
@@ -247,13 +233,9 @@ class TaskScopeProvisioner:
             "idempotency_key": request.idempotency_key,
             "mode": request.mode,
             "provenance": request.provenance,
-            "explicit_path": (
-                str(proposed_root) if request.mode == "explicit" else None
-            ),
+            "explicit_path": (str(proposed_root) if request.mode == "explicit" else None),
             "allow_project_metadata": request.allow_project_metadata,
-            "managed_workspace_root": None
-            if managed_root is None
-            else str(managed_root),
+            "managed_workspace_root": None if managed_root is None else str(managed_root),
             "materialization_root": str(materialization_root),
             "task_home": str(task_home),
             "metadata_location": location,
@@ -263,9 +245,7 @@ class TaskScopeProvisioner:
             provision_id=provision_id,
             request_hash=canonical_hash(payload),
             managed_workspace_root=None if managed_root is None else str(managed_root),
-            proposed_workspace_root=None
-            if proposed_root is None
-            else str(proposed_root),
+            proposed_workspace_root=None if proposed_root is None else str(proposed_root),
             proposed_workspace_identity=proposed_identity,
             materialization_root=str(materialization_root),
             materialization_root_identity=_filesystem_identity(materialization_root),
@@ -304,8 +284,7 @@ class TaskScopeProvisioner:
                         or existing["task_scope_id"] != value.request.task_scope_id
                         or existing["idempotency_key"] != value.request.idempotency_key
                         or existing["task_home"] != value.task_home
-                        or existing["materialization_root"]
-                        != value.materialization_root
+                        or existing["materialization_root"] != value.materialization_root
                     ):
                         raise TaskScopeConflict("provision_idempotency_conflict")
                     if existing[
@@ -466,9 +445,7 @@ class TaskScopeProvisioner:
                     "proposed_workspace_root": row["proposed_workspace_root"],
                     "proposed_workspace_identity": row["proposed_workspace_identity"],
                     "materialization_root": row["materialization_root"],
-                    "materialization_root_identity": row[
-                        "materialization_root_identity"
-                    ],
+                    "materialization_root_identity": row["materialization_root_identity"],
                     "metadata_location": row["metadata_location"],
                     "committed_at": committed_at,
                 }
@@ -675,10 +652,7 @@ class TaskScopeProvisioner:
         if canonical_hash(payload) != row["receipt_hash"]:
             raise TaskScopeProvisionError("provision_receipt_hash_mismatch")
         _verify_stored_roots(row)
-        if (
-            _filesystem_identity(Path(str(row["task_home"])))
-            != row["task_home_identity"]
-        ):
+        if _filesystem_identity(Path(str(row["task_home"]))) != row["task_home_identity"]:
             raise TaskScopeProvisionError("task_home_identity_drift")
 
     @staticmethod
@@ -797,9 +771,7 @@ def _write_marker_at(directory_fd: int, value: dict[str, object]) -> None:
     flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
-    descriptor = os.open(
-        ".simple-harness-provision.json", flags, 0o600, dir_fd=directory_fd
-    )
+    descriptor = os.open(".simple-harness-provision.json", flags, 0o600, dir_fd=directory_fd)
     try:
         os.write(descriptor, payload)
         os.fsync(descriptor)
@@ -812,9 +784,7 @@ def _read_marker_at(directory_fd: int) -> dict[str, object] | None:
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
     try:
-        descriptor = os.open(
-            ".simple-harness-provision.json", flags, dir_fd=directory_fd
-        )
+        descriptor = os.open(".simple-harness-provision.json", flags, dir_fd=directory_fd)
     except FileNotFoundError:
         return None
     try:
@@ -875,9 +845,7 @@ def _entry_stat(parent_fd: int, name: str) -> os.stat_result | None:
         return None
 
 
-def _verify_marker_at(
-    directory_fd: int, expected: dict[str, object], *, missing_code: str
-) -> None:
+def _verify_marker_at(directory_fd: int, expected: dict[str, object], *, missing_code: str) -> None:
     actual = _read_marker_at(directory_fd)
     if actual is None:
         raise TaskScopeProvisionError(missing_code)
@@ -959,10 +927,7 @@ def _materialize_anchored(
         raise TaskScopeProvisionError("materialization_root_unavailable") from exc
     descriptors = [root_fd]
     try:
-        if (
-            _filesystem_identity_from_stat(os.fstat(root_fd))
-            != value.materialization_root_identity
-        ):
+        if _filesystem_identity_from_stat(os.fstat(root_fd)) != value.materialization_root_identity:
             raise TaskScopeProvisionError("provision_root_identity_drift")
         parent_fd = root_fd
         for component in target_parts[:-1]:
@@ -978,9 +943,7 @@ def _materialize_anchored(
                 parent_fd, target_name, conflict_code="task_home_not_real_directory"
             )
             try:
-                _verify_marker_at(
-                    target_fd, marker, missing_code="task_home_marker_missing"
-                )
+                _verify_marker_at(target_fd, marker, missing_code="task_home_marker_missing")
                 return _filesystem_identity_from_stat(os.fstat(target_fd))
             finally:
                 os.close(target_fd)
@@ -1014,9 +977,7 @@ def _materialize_anchored(
             parent_fd, target_name, conflict_code="task_home_not_real_directory"
         )
         try:
-            _verify_marker_at(
-                target_fd, marker, missing_code="task_home_marker_missing"
-            )
+            _verify_marker_at(target_fd, marker, missing_code="task_home_marker_missing")
             return _filesystem_identity_from_stat(os.fstat(target_fd))
         finally:
             os.close(target_fd)
@@ -1026,9 +987,7 @@ def _materialize_anchored(
 
 
 def _verify_resolved_roots(value: _ResolvedRequest) -> None:
-    _require_root_identity(
-        Path(value.materialization_root), value.materialization_root_identity
-    )
+    _require_root_identity(Path(value.materialization_root), value.materialization_root_identity)
     if value.proposed_workspace_identity is not None:
         assert value.proposed_workspace_root is not None
         _require_root_identity(

@@ -84,11 +84,15 @@ def _spec_with_field_set_behind_the_constructor(key: str, protocol_version: str)
 
 def _world(tmp_path, provider=None):
     """产品同形部署（不跑主循环时就是"经产品组装建任务"）。"""
-    return product_world(tmp_path / "root", provider if provider is not None else LayeredScriptedProvider())
+    return product_world(
+        tmp_path / "root", provider if provider is not None else LayeredScriptedProvider()
+    )
 
 
 def _create(world, key: str):
-    created = world.create({"goal": "写一份 NOTES.md", "success_criteria": ["file:NOTES.md"], "idempotency_key": key})
+    created = world.create(
+        {"goal": "写一份 NOTES.md", "success_criteria": ["file:NOTES.md"], "idempotency_key": key}
+    )
     return world.store.get_mission(created["mission_id"])
 
 
@@ -227,7 +231,10 @@ def test_creation_writes_one_binding_with_the_frozen_hash_and_survives_a_restart
 
     async def reopen() -> None:  # a restart reads the same binding
         async with _world(tmp_path) as world:
-            assert current_planning_protocol(world.store, mission_id)["protocol_version"] == PLANNING_DECISION_V1
+            assert (
+                current_planning_protocol(world.store, mission_id)["protocol_version"]
+                == PLANNING_DECISION_V1
+            )
 
     asyncio.run(reopen())
 
@@ -248,7 +255,12 @@ def test_binding_is_transactional_on_creation_failure(tmp_path) -> None:
             )
             with pytest.raises(Exception, match="disk full"):
                 _create(world, "rollback")
-            assert store.connection.execute("SELECT count(*) FROM mission_planning_protocols").fetchone()[0] == 0
+            assert (
+                store.connection.execute(
+                    "SELECT count(*) FROM mission_planning_protocols"
+                ).fetchone()[0]
+                == 0
+            )
             assert store.find_mission(TENANT, "rollback") is None
             assert store.list_missions() == []
             store.connection.execute("DROP TRIGGER fail_after_binding")
@@ -268,7 +280,9 @@ def test_replay_is_idempotent_and_keeps_exactly_one_binding_row(tmp_path) -> Non
             assert again.id == mission.id
             assert binding_rows(store, mission.id) == 1
             assert planning_protocol_for_mission(store, mission.id) == first
-            assert planning_protocol_replay_conflict(store, mission.id, PLANNING_DECISION_V1) is None
+            assert (
+                planning_protocol_replay_conflict(store, mission.id, PLANNING_DECISION_V1) is None
+            )
             # 提交层收到同一幂等键的同一份规格（门面补齐后的那份）也是重放。
             spec_hash = store.find_mission(TENANT, "idem")[1]
             assert isinstance(spec_hash, str) and len(spec_hash) == 64
@@ -283,7 +297,9 @@ def test_a_replay_against_a_tampered_binding_is_a_conflict(tmp_path) -> None:
             mission = _create(world, "tampered")
             lift_immutable_guards(world.store.connection, "mission_planning_protocols")
             world.store.connection.execute(  # ①b1: the stored binding bytes are damaged
-                "UPDATE mission_planning_protocols SET package_version = 7 WHERE mission_id = ?", (mission.id,))
+                "UPDATE mission_planning_protocols SET package_version = 7 WHERE mission_id = ?",
+                (mission.id,),
+            )
             with pytest.raises(FacadeError) as refused:
                 _create(world, "tampered")
             assert refused.value.code == "conflict"
@@ -302,7 +318,10 @@ def test_the_durable_binding_ignores_the_ambient_environment(tmp_path, monkeypat
     async def case() -> None:
         async with _world(tmp_path) as world:
             enabled = _create(world, "env-enabled")
-            assert planning_protocol_for_mission(world.store, enabled.id)["protocol_version"] == PLANNING_DECISION_V1
+            assert (
+                planning_protocol_for_mission(world.store, enabled.id)["protocol_version"]
+                == PLANNING_DECISION_V1
+            )
 
     asyncio.run(case())
 
@@ -332,13 +351,16 @@ def test_a_missing_or_stale_binding_is_named_unsupported(tmp_path) -> None:
             unbound = _create(world, "unbound")
             lift_immutable_guards(store.connection, "mission_planning_protocols")
             store.connection.execute(  # ①b1
-                "DELETE FROM mission_planning_protocols WHERE mission_id = ?", (unbound.id,))
+                "DELETE FROM mission_planning_protocols WHERE mission_id = ?", (unbound.id,)
+            )
             with pytest.raises(UnsupportedPlanningPackage, match="removed"):
                 current_planning_protocol(store, unbound.id)
             stale = _create(world, "stale")
             lift_immutable_guards(store.connection, "mission_planning_protocols")
             store.connection.execute(  # ①b1
-                "UPDATE mission_planning_protocols SET package_version = 7 WHERE mission_id = ?", (stale.id,))
+                "UPDATE mission_planning_protocols SET package_version = 7 WHERE mission_id = ?",
+                (stale.id,),
+            )
             with pytest.raises(UnsupportedPlanningPackage, match="package 7"):
                 current_planning_protocol(store, stale.id)
 
@@ -370,7 +392,10 @@ def test_the_loop_stops_an_old_contract_mission_and_leaves_the_others_alone(
             async with _world(tmp_path, provider) as world:
                 old = _create(world, "old-contract")
                 await _until(world, provider.entered.is_set)
-                assert any(event.type == "PlanningDeploymentBound" for event in world.store.list_events(old.id))
+                assert any(
+                    event.type == "PlanningDeploymentBound"
+                    for event in world.store.list_events(old.id)
+                )
                 return old.id
         finally:
             provider.release.set()
@@ -383,21 +408,32 @@ def test_the_loop_stops_an_old_contract_mission_and_leaves_the_others_alone(
                 old_id = _create(world, "old-contract").id
             if damage == "unbound":
                 lift_immutable_guards(store.connection, "mission_planning_protocols")
-                store.connection.execute("DELETE FROM mission_planning_protocols WHERE mission_id = ?", (old_id,))
+                store.connection.execute(
+                    "DELETE FROM mission_planning_protocols WHERE mission_id = ?", (old_id,)
+                )
             elif damage == "stale_package":
                 lift_immutable_guards(store.connection, "mission_planning_protocols")
                 store.connection.execute(
-                    "UPDATE mission_planning_protocols SET package_version = 7 WHERE mission_id = ?", (old_id,))
+                    "UPDATE mission_planning_protocols SET package_version = 7 WHERE mission_id = ?",
+                    (old_id,),
+                )
             healthy = _create(world, "healthy")
             await _until(world, lambda: store.get_mission(old_id).status is MissionStatus.FAILED)
             stopped = store.get_mission(old_id)
             failure = (stopped.final_report or {}).get("planning_failure") or {}
             assert failure.get("reason") == "unsupported_planning_package"
-            assert {"unbound": "removed", "stale_package": "package 7",
-                    "stale_deployment": "deployment"}[damage] in failure["error"]
+            assert {
+                "unbound": "removed",
+                "stale_package": "package 7",
+                "stale_deployment": "deployment",
+            }[damage] in failure["error"]
             # the other Mission is not touched by the stop: it plans on.
-            await _until(world, lambda: any(event.type == "PlanRevisionCommitted"
-                                            for event in store.list_events(healthy.id)))
+            await _until(
+                world,
+                lambda: any(
+                    event.type == "PlanRevisionCommitted" for event in store.list_events(healthy.id)
+                ),
+            )
             assert store.get_mission(healthy.id).status is not MissionStatus.FAILED
 
     old_id = None
@@ -409,10 +445,13 @@ def test_the_loop_stops_an_old_contract_mission_and_leaves_the_others_alone(
         try:
             row = store.connection.execute(
                 "SELECT seq, payload_json FROM events WHERE mission_id = ? AND type = 'PlanningDeploymentBound'",
-                (old_id,)).fetchone()
+                (old_id,),
+            ).fetchone()
             payload = {**json.loads(row["payload_json"]), "repair_enabled": True}
-            store.connection.execute("UPDATE events SET payload_json = ? WHERE seq = ?",
-                                     (json.dumps(payload, sort_keys=True), row["seq"]))
+            store.connection.execute(
+                "UPDATE events SET payload_json = ? WHERE seq = ?",
+                (json.dumps(payload, sort_keys=True), row["seq"]),
+            )
         finally:
             store.close()
     asyncio.run(case(old_id))

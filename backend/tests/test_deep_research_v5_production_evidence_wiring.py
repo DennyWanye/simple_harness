@@ -239,9 +239,18 @@ def test_exact_fact_relevance_preserves_year_anchor_and_vendor_domains_are_first
         body=("2023年中国总人口及人口结构由国家统计局发布。" * 8),
     )
     assert current > stale
-    assert classify_source(url="https://www.apple.com/iphone-17-pro/specs/", source_kind="web")[1] == "first_party"
-    assert classify_source(url="https://www.mi.com/prod/xiaomi-15-ultra", source_kind="web")[1] == "first_party"
-    assert classify_source(url="https://openai.com/index/model-release/", source_kind="web")[1] == "first_party"
+    assert (
+        classify_source(url="https://www.apple.com/iphone-17-pro/specs/", source_kind="web")[1]
+        == "first_party"
+    )
+    assert (
+        classify_source(url="https://www.mi.com/prod/xiaomi-15-ultra", source_kind="web")[1]
+        == "first_party"
+    )
+    assert (
+        classify_source(url="https://openai.com/index/model-release/", source_kind="web")[1]
+        == "first_party"
+    )
 
 
 @pytest.mark.parametrize(

@@ -45,6 +45,7 @@ shape so chat-handler can await without refactor later.
 Migration: ``_migrate_legacy_provider_config(path)`` is a free function so
 ``main.py`` lifespan can call it before constructing the registry.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -263,9 +264,7 @@ def _format_providers_section(entries: list[ProviderEntry]) -> str:
         out.append(f'base_url = "{_escape_toml_string(e.base_url)}"')
         # P5-S2 v2: models is the canonical array; emit empty list if unset
         # to keep schema explicit (loader expects array-of-string).
-        models_payload = (
-            "[" + ", ".join(f'"{_escape_toml_string(m)}"' for m in e.models) + "]"
-        )
+        models_payload = "[" + ", ".join(f'"{_escape_toml_string(m)}"' for m in e.models) + "]"
         out.append(f"models = {models_payload}")
         if e.default_model:
             out.append(f'default_model = "{_escape_toml_string(e.default_model)}"')
@@ -396,9 +395,7 @@ class LLMProviderRegistry:
                     models = [str(legacy_single)] if legacy_single else []
                 default_model_raw = raw.get("default_model")
                 default_model = (
-                    str(default_model_raw)
-                    if default_model_raw
-                    else (models[0] if models else None)
+                    str(default_model_raw) if default_model_raw else (models[0] if models else None)
                 )
                 self._entries.append(
                     ProviderEntry(
@@ -407,7 +404,9 @@ class LLMProviderRegistry:
                         base_url=str(raw["base_url"]),
                         models=models,
                         default_model=default_model,
-                        api_key_ref=str(raw.get("api_key_ref", f"{KEYCHAIN_REF_PREFIX}{raw['id']}")),
+                        api_key_ref=str(
+                            raw.get("api_key_ref", f"{KEYCHAIN_REF_PREFIX}{raw['id']}")
+                        ),
                         priority=int(raw.get("priority", 1)),
                         enabled=bool(raw.get("enabled", True)),
                         source=str(raw.get("source", "user")),
@@ -475,10 +474,7 @@ class LLMProviderRegistry:
 
     @staticmethod
     def _versioned_keychain_account(entry: ProviderEntry) -> str:
-        return (
-            f"{KEYCHAIN_ACCOUNT_PREFIX}{entry.id}."
-            f"{entry.incarnation_id}.{entry.config_revision}"
-        )
+        return f"{KEYCHAIN_ACCOUNT_PREFIX}{entry.id}.{entry.incarnation_id}.{entry.config_revision}"
 
     @classmethod
     def _keychain_save(cls, provider_id: str, api_key: str) -> None:
@@ -545,9 +541,7 @@ class LLMProviderRegistry:
             )
             for account in legacy_accounts:
                 try:
-                    legacy_value = keyring.get_password(
-                        LEGACY_KEYCHAIN_SERVICE, account
-                    )
+                    legacy_value = keyring.get_password(LEGACY_KEYCHAIN_SERVICE, account)
                 except Exception as exc:  # pragma: no cover - backend-specific
                     logger.warning(
                         "legacy keychain read failed for %s: %s",
@@ -617,9 +611,7 @@ class LLMProviderRegistry:
         if not _KEYRING_AVAILABLE or keyring is None:
             return
         try:
-            keyring.delete_password(
-                KEYCHAIN_SERVICE, cls._versioned_keychain_account(entry)
-            )
+            keyring.delete_password(KEYCHAIN_SERVICE, cls._versioned_keychain_account(entry))
         except Exception as exc:  # pragma: no cover - best-effort GC
             logger.debug("versioned keychain delete ignored: %s", exc)
 
@@ -669,9 +661,7 @@ class LLMProviderRegistry:
         )
         async with self._mutation_lock:
             if any(existing.id == provider_id for existing in self._entries):
-                raise ValueError(
-                    f"provider id {provider_id!r} already exists (must be unique)"
-                )
+                raise ValueError(f"provider id {provider_id!r} already exists (must be unique)")
             self._entries = [*self._entries, entry]
             self._ephemeral_api_keys[provider_id] = api_key
         logger.info("provider_registry: added process-only provider %s", provider_id)
@@ -732,9 +722,7 @@ class LLMProviderRegistry:
 
         async with self._mutation_lock:
             if any(e.id == provider_id for e in self._entries):
-                raise ValueError(
-                    f"provider id {provider_id!r} already exists (must be unique)"
-                )
+                raise ValueError(f"provider id {provider_id!r} already exists (must be unique)")
             candidate = [*copy.deepcopy(self._entries), entry]
             self._stage_versioned_secret(entry, str(api_key))
             try:
@@ -871,17 +859,17 @@ class LLMProviderRegistry:
                 elif k in ("name", "base_url"):
                     setattr(entry, k, str(v))
                 elif k == "models":
-                # P5-S2 v2: replace the models list. Filter empties.
+                    # P5-S2 v2: replace the models list. Filter empties.
                     if isinstance(v, list):
                         new_models = [str(m).strip() for m in v if str(m).strip()]
                         if new_models:
                             entry.models = new_models
-                        # Keep default_model if still in the new list; else
-                        # snap to the first entry.
+                            # Keep default_model if still in the new list; else
+                            # snap to the first entry.
                             if entry.default_model not in new_models:
                                 entry.default_model = new_models[0]
                 elif k == "model":
-                # Legacy single-model update — coerce to a 1-element list.
+                    # Legacy single-model update — coerce to a 1-element list.
                     if v:
                         entry.models = [str(v).strip()]
                         entry.default_model = entry.models[0]
@@ -996,9 +984,7 @@ class LLMProviderRegistry:
             else:
                 fields.setdefault("priority", 1)
             await self.add_provider(fields)
-            ordered = [
-                item.id for item in sorted(self._entries, key=lambda item: item.priority)
-            ]
+            ordered = [item.id for item in sorted(self._entries, key=lambda item: item.priority)]
             await self.reorder(ordered)
             current = self.get_entry(pid)
             assert current is not None
@@ -1114,9 +1100,7 @@ class LLMProviderRegistry:
         expected_binding_epoch: int,
     ) -> dict[str, Any]:
         async with self._mutation_lock:
-            source = await session_db.get_session_provider_binding_authority(
-                source_session_id
-            )
+            source = await session_db.get_session_provider_binding_authority(source_session_id)
             provider_id = source.get("provider_id")
             if provider_id:
                 entry = self.get_entry(str(provider_id))

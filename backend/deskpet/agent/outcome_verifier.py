@@ -18,6 +18,7 @@ status=skipped, reason="missing_X"，**不阻 end_turn**。
 **Scope 隔离**（PRD D7 + I3-4）：build/test 必须用 changed_files 限定 scope，
 禁止全仓库扫（节约资源 + 避免触碰用户其他正在改的代码）。
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -40,6 +41,7 @@ LOG_TAIL_LINES: int = 20
 @dataclass
 class VerifierOutcome:
     """单个 verifier 的结果（PRD §3.1 IDL）。"""
+
     verifier: str
     status: Literal["pass", "fail", "skipped", "timeout"]
     reason: str = ""
@@ -49,6 +51,7 @@ class VerifierOutcome:
 
 
 # ─── Helpers ─────────────────────────────────────────────────
+
 
 def _which(cmd: str) -> str | None:
     return shutil.which(cmd)
@@ -77,8 +80,10 @@ def _sha256_file(path: Path) -> str | None:
 
 # ─── 1. file_exists verifier ─────────────────────────────────
 
+
 class FileExistsVerifier:
     """T10-1/T10-2/T10-3: 验 receipt 声称的 path 真实存在 + size>0 + sha256 匹配。"""
+
     NAME = "file_exists"
 
     def verify(
@@ -130,8 +135,10 @@ class FileExistsVerifier:
 
 # ─── 2. git_diff verifier ────────────────────────────────────
 
+
 class GitDiffVerifier:
     """T10-4: 调过 file_write/patch 类工具 → git diff --stat 应有变更。"""
+
     NAME = "git_diff"
 
     def verify(
@@ -142,40 +149,52 @@ class GitDiffVerifier:
     ) -> VerifierOutcome:
         if _which("git") is None:
             return VerifierOutcome(
-                verifier=self.NAME, status="skipped", reason="missing_git",
+                verifier=self.NAME,
+                status="skipped",
+                reason="missing_git",
             )
         if not (Path(cwd) / ".git").exists():
             # also accept worktree (gitdir file)
             git_path = Path(cwd) / ".git"
-            if not (git_path.exists() or
-                    (Path(cwd).resolve() / ".git").exists()):
+            if not (git_path.exists() or (Path(cwd).resolve() / ".git").exists()):
                 return VerifierOutcome(
-                    verifier=self.NAME, status="skipped", reason="not_a_git_repo",
+                    verifier=self.NAME,
+                    status="skipped",
+                    reason="not_a_git_repo",
                 )
         try:
             args = ["git", "diff", "--stat"]
             if changed_files:
                 args.extend(["--"] + changed_files)
             result = subprocess.run(
-                args, cwd=cwd, capture_output=True, text=True,
-                timeout=VERIFIER_TIMEOUT_S, encoding="utf-8", errors="replace",
+                args,
+                cwd=cwd,
+                capture_output=True,
+                text=True,
+                timeout=VERIFIER_TIMEOUT_S,
+                encoding="utf-8",
+                errors="replace",
             )
         except subprocess.TimeoutExpired:
             return VerifierOutcome(
-                verifier=self.NAME, status="timeout",
+                verifier=self.NAME,
+                status="timeout",
                 reason=f"git diff exceeded {VERIFIER_TIMEOUT_S}s",
             )
         except OSError as exc:
             return VerifierOutcome(
-                verifier=self.NAME, status="skipped",
+                verifier=self.NAME,
+                status="skipped",
                 reason=f"git_exec_failed: {exc}",
             )
         out = (result.stdout or "").strip()
         # `git diff --stat` 输出空 = 无变更
         if not out:
             return VerifierOutcome(
-                verifier=self.NAME, status="fail",
-                reason="no_changes_detected", error_class="missing_file",
+                verifier=self.NAME,
+                status="fail",
+                reason="no_changes_detected",
+                error_class="missing_file",
                 log_tail=out,
             )
         return VerifierOutcome(verifier=self.NAME, status="pass", log_tail=out[:500])
@@ -183,8 +202,10 @@ class GitDiffVerifier:
 
 # ─── 3. build verifier (frontend / backend) ──────────────────
 
+
 class BuildVerifier:
     """T10-5: file-scoped build；缺 toolchain skip；失败回灌末 20 行。"""
+
     NAME = "build"
 
     def __init__(self, *, kind: Literal["frontend", "backend"] = "backend") -> None:
@@ -204,73 +225,99 @@ class BuildVerifier:
         # T10-8: which npm 缺则 skip
         if _which("npx") is None and _which("npm") is None:
             return VerifierOutcome(
-                verifier=self.NAME, status="skipped", reason="missing_npm",
+                verifier=self.NAME,
+                status="skipped",
+                reason="missing_npm",
             )
         if not (Path(cwd) / "node_modules").exists():
             return VerifierOutcome(
-                verifier=self.NAME, status="skipped", reason="missing_node_modules",
+                verifier=self.NAME,
+                status="skipped",
+                reason="missing_node_modules",
             )
         ts_files = [f for f in changed_files if f.endswith((".ts", ".tsx"))]
         if not ts_files:
             return VerifierOutcome(
-                verifier=self.NAME, status="skipped",
+                verifier=self.NAME,
+                status="skipped",
                 reason="no_typescript_files_changed",
             )
         try:
             result = subprocess.run(
                 ["npx", "tsc", "--noEmit", *ts_files],
-                cwd=cwd, capture_output=True, text=True,
-                timeout=VERIFIER_TIMEOUT_S, encoding="utf-8", errors="replace",
+                cwd=cwd,
+                capture_output=True,
+                text=True,
+                timeout=VERIFIER_TIMEOUT_S,
+                encoding="utf-8",
+                errors="replace",
             )
         except subprocess.TimeoutExpired:
             return VerifierOutcome(
-                verifier=self.NAME, status="timeout",
+                verifier=self.NAME,
+                status="timeout",
                 reason=f"tsc exceeded {VERIFIER_TIMEOUT_S}s",
             )
         if result.returncode == 0:
             return VerifierOutcome(verifier=self.NAME, status="pass")
         tail = _tail_lines((result.stdout or "") + (result.stderr or ""))
         return VerifierOutcome(
-            verifier=self.NAME, status="fail",
-            reason="tsc_failed", error_class="build_error", log_tail=tail,
+            verifier=self.NAME,
+            status="fail",
+            reason="tsc_failed",
+            error_class="build_error",
+            log_tail=tail,
         )
 
     def _verify_backend(self, changed_files: list[str], cwd: str) -> VerifierOutcome:
         python = _which("python") or _which("python3")
         if python is None:
             return VerifierOutcome(
-                verifier=self.NAME, status="skipped", reason="missing_python",
+                verifier=self.NAME,
+                status="skipped",
+                reason="missing_python",
             )
         py_files = [f for f in changed_files if f.endswith(".py")]
         if not py_files:
             return VerifierOutcome(
-                verifier=self.NAME, status="skipped",
+                verifier=self.NAME,
+                status="skipped",
                 reason="no_python_files_changed",
             )
         try:
             result = subprocess.run(
                 [python, "-m", "py_compile", *py_files],
-                cwd=cwd, capture_output=True, text=True,
-                timeout=VERIFIER_TIMEOUT_S, encoding="utf-8", errors="replace",
+                cwd=cwd,
+                capture_output=True,
+                text=True,
+                timeout=VERIFIER_TIMEOUT_S,
+                encoding="utf-8",
+                errors="replace",
             )
         except subprocess.TimeoutExpired:
             return VerifierOutcome(
-                verifier=self.NAME, status="timeout",
+                verifier=self.NAME,
+                status="timeout",
                 reason=f"py_compile exceeded {VERIFIER_TIMEOUT_S}s",
             )
         if result.returncode == 0:
             return VerifierOutcome(verifier=self.NAME, status="pass")
         tail = _tail_lines((result.stdout or "") + (result.stderr or ""))
         return VerifierOutcome(
-            verifier=self.NAME, status="fail",
-            reason="py_compile_failed", error_class="build_error", log_tail=tail,
+            verifier=self.NAME,
+            status="fail",
+            reason="py_compile_failed",
+            error_class="build_error",
+            log_tail=tail,
         )
 
 
 # ─── 4. test verifier ────────────────────────────────────────
 
+
 class TestVerifier:
     """T10-6: file-scoped pytest；缺 toolchain skip；失败回灌末 20 行。"""
+
     NAME = "test"
 
     def verify(
@@ -282,40 +329,56 @@ class TestVerifier:
         # T10-8: which pytest
         if _which("pytest") is None:
             return VerifierOutcome(
-                verifier=self.NAME, status="skipped", reason="missing_pytest",
+                verifier=self.NAME,
+                status="skipped",
+                reason="missing_pytest",
             )
-        test_files = [f for f in changed_files
-                      if f.endswith(".py") and ("test_" in f or f.endswith("_test.py"))]
+        test_files = [
+            f
+            for f in changed_files
+            if f.endswith(".py") and ("test_" in f or f.endswith("_test.py"))
+        ]
         if not test_files:
             return VerifierOutcome(
-                verifier=self.NAME, status="skipped",
+                verifier=self.NAME,
+                status="skipped",
                 reason="no_test_files_changed",
             )
         try:
             result = subprocess.run(
                 ["pytest", "-q", "--tb=short", *test_files],
-                cwd=cwd, capture_output=True, text=True,
-                timeout=VERIFIER_TIMEOUT_S, encoding="utf-8", errors="replace",
+                cwd=cwd,
+                capture_output=True,
+                text=True,
+                timeout=VERIFIER_TIMEOUT_S,
+                encoding="utf-8",
+                errors="replace",
             )
         except subprocess.TimeoutExpired:
             return VerifierOutcome(
-                verifier=self.NAME, status="timeout",
+                verifier=self.NAME,
+                status="timeout",
                 reason=f"pytest exceeded {VERIFIER_TIMEOUT_S}s",
             )
         if result.returncode == 0:
             return VerifierOutcome(verifier=self.NAME, status="pass")
         tail = _tail_lines((result.stdout or "") + (result.stderr or ""))
         return VerifierOutcome(
-            verifier=self.NAME, status="fail",
-            reason="pytest_failed", error_class="test_error", log_tail=tail,
+            verifier=self.NAME,
+            status="fail",
+            reason="pytest_failed",
+            error_class="test_error",
+            log_tail=tail,
         )
 
 
 # ─── Entry point ─────────────────────────────────────────────
 
+
 @dataclass
 class OutcomeReport:
     """Aggregate outcome of running multiple verifiers."""
+
     outcomes: list[VerifierOutcome] = field(default_factory=list)
 
     def has_failures(self) -> bool:
@@ -363,21 +426,15 @@ def run_outcome_verifiers(
     # 2. git_diff — 仅当有 changed_files 时（callers 应只在文件写工具
     # 出现后传入 changed_files）
     if changed_files:
-        report.outcomes.append(
-            GitDiffVerifier().verify(changed_files=changed_files, cwd=cwd)
-        )
+        report.outcomes.append(GitDiffVerifier().verify(changed_files=changed_files, cwd=cwd))
     # 3. build
     if run_build and changed_files:
         report.outcomes.append(
-            BuildVerifier(kind=build_kind).verify(
-                changed_files=changed_files, cwd=cwd
-            )
+            BuildVerifier(kind=build_kind).verify(changed_files=changed_files, cwd=cwd)
         )
     # 4. test
     if run_tests and changed_files:
-        report.outcomes.append(
-            TestVerifier().verify(changed_files=changed_files, cwd=cwd)
-        )
+        report.outcomes.append(TestVerifier().verify(changed_files=changed_files, cwd=cwd))
     return report
 
 

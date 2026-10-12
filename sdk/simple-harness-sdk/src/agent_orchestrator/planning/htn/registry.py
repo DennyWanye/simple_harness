@@ -395,7 +395,9 @@ class TaskTypeSpec:
             "effect_identity": self.effect_identity,
             "domain": self.domain,
             # written only when set: an unlevelled type keeps the exact body it had
-            **({} if self.refinement_level is None else {"refinement_level": self.refinement_level}),
+            **(
+                {} if self.refinement_level is None else {"refinement_level": self.refinement_level}
+            ),
         }
 
     @classmethod
@@ -805,7 +807,9 @@ class MethodRegistry:
         candidate._registrations = dict(self._registrations)
         candidate._receipts = dict(self._receipts)
         candidate._by_goal_type = {key: list(value) for key, value in self._by_goal_type.items()}
-        candidate._by_goal_type_id = {key: list(value) for key, value in self._by_goal_type_id.items()}
+        candidate._by_goal_type_id = {
+            key: list(value) for key, value in self._by_goal_type_id.items()
+        }
         return candidate
 
     # -- storage ------------------------------------------------------------------
@@ -833,7 +837,9 @@ class MethodRegistry:
         """Restore only records read by the system from its authoritative method store."""
         ref = contract.method_ref()
         if registration.method_ref != ref or registration.author is RegistryAuthor.MODEL:
-            raise ContractError("persisted registration does not describe the system-admitted method")
+            raise ContractError(
+                "persisted registration does not describe the system-admitted method"
+            )
         key = self._key(ref)
         if any(item[:2] == key[:2] and item != key for item in self._definitions):
             raise ContractError("stored method version conflicts with loaded definition")
@@ -1642,7 +1648,8 @@ def _check_structure(
     owner = policy.task_types.resolve(method.goal_type_ref)
     if owner is not None and owner.refinement_level is not None:
         handed_down = {
-            link.child_step: link for link in method.composition.criterion_links
+            link.child_step: link
+            for link in method.composition.criterion_links
             if link.child_step is not None
             and link.child_criterion_id is not None
             and link.child_criterion_id != link.parent_criterion_id
@@ -1675,9 +1682,17 @@ def _check_structure(
         # 写收尾步骤，且那一步的类型声明了这些端口——否则接这个子目标的后续步骤永远等不到数据。
         # 根目标（第 0 层）的端口没有人接，不在此列。
         if owner.refinement_level > 0 and owner.output_ports:
-            finalizer = next((item for item in method.steps
-                              if item.local_id == method.composition.finalizer_step), None)
-            published = None if finalizer is None else policy.task_types.resolve(finalizer.task_type_ref)
+            finalizer = next(
+                (
+                    item
+                    for item in method.steps
+                    if item.local_id == method.composition.finalizer_step
+                ),
+                None,
+            )
+            published = (
+                None if finalizer is None else policy.task_types.resolve(finalizer.task_type_ref)
+            )
             for port in owner.output_ports:
                 if finalizer is None:
                     refuse(

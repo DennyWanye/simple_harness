@@ -13,9 +13,7 @@ CONTEXT_VISIBILITY_EXCLUDE = "exclude"
 
 def _freeze_json(value: Any) -> Any:
     if isinstance(value, Mapping):
-        return MappingProxyType(
-            {str(key): _freeze_json(item) for key, item in value.items()}
-        )
+        return MappingProxyType({str(key): _freeze_json(item) for key, item in value.items()})
     if isinstance(value, (list, tuple)):
         return tuple(_freeze_json(item) for item in value)
     return value
@@ -88,11 +86,7 @@ class PublicActivityItem:
             raise ValueError("activity items are display-only")
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            key: value
-            for key, value in asdict(self).items()
-            if value is not None
-        }
+        return {key: value for key, value in asdict(self).items() if value is not None}
 
 
 @dataclass(frozen=True, slots=True)
@@ -166,8 +160,12 @@ class ProjectionManifestV1:
         )
         object.__setattr__(self, "diagnostics", tuple(self.diagnostics))
         object.__setattr__(self, "activity_items", tuple(self.activity_items))
-        object.__setattr__(self, "tool_public_views", tuple(_freeze_json(item) for item in self.tool_public_views))
-        object.__setattr__(self, "public_messages", tuple(_freeze_json(item) for item in self.public_messages))
+        object.__setattr__(
+            self, "tool_public_views", tuple(_freeze_json(item) for item in self.tool_public_views)
+        )
+        object.__setattr__(
+            self, "public_messages", tuple(_freeze_json(item) for item in self.public_messages)
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -198,8 +196,12 @@ class PublicRunSnapshotV3:
         )
         object.__setattr__(self, "diagnostics", tuple(self.diagnostics))
         object.__setattr__(self, "activity_items", tuple(self.activity_items))
-        object.__setattr__(self, "tool_public_views", tuple(_freeze_json(item) for item in self.tool_public_views))
-        object.__setattr__(self, "public_messages", tuple(_freeze_json(item) for item in self.public_messages))
+        object.__setattr__(
+            self, "tool_public_views", tuple(_freeze_json(item) for item in self.tool_public_views)
+        )
+        object.__setattr__(
+            self, "public_messages", tuple(_freeze_json(item) for item in self.public_messages)
+        )
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -234,9 +236,7 @@ class PublicDetailPageV1:
     def __post_init__(self) -> None:
         if self.context_visibility != CONTEXT_VISIBILITY_EXCLUDE:
             raise ValueError("public detail pages are display-only")
-        object.__setattr__(
-            self, "items", tuple(_freeze_json(item) for item in self.items)
-        )
+        object.__setattr__(self, "items", tuple(_freeze_json(item) for item in self.items))
 
     def to_dict(self) -> dict[str, Any]:
         return {

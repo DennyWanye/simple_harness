@@ -76,18 +76,12 @@ class BindingRootResolver:
             raise TaskExecutionAuthorityError(exc.code) from exc
         hashes = tuple(exact.root_identity_hashes)
         if len(hashes) == 0:
-            raise TaskExecutionAuthorityError(
-                "sdk_task_execution_root_authority_missing"
-            )
+            raise TaskExecutionAuthorityError("sdk_task_execution_root_authority_missing")
         if len(hashes) > 1:
-            raise TaskExecutionAuthorityError(
-                "sdk_task_execution_root_authority_ambiguous"
-            )
+            raise TaskExecutionAuthorityError("sdk_task_execution_root_authority_ambiguous")
         root = exact.appended_root
         if root is None or root.root_identity_hash != hashes[0]:
-            raise TaskExecutionAuthorityError(
-                "sdk_task_execution_root_authority_missing"
-            )
+            raise TaskExecutionAuthorityError("sdk_task_execution_root_authority_missing")
         return str(root.root_id), str(hashes[0])
 
 
@@ -135,13 +129,9 @@ class ProductTaskExecutionAuthority:
                 or receipt.binding_set_receipt_id is None
                 or receipt.binding_set_receipt_hash is None
             ):
-                raise TaskExecutionAuthorityError(
-                    "sdk_task_execution_route_authority_missing"
-                )
+                raise TaskExecutionAuthorityError("sdk_task_execution_route_authority_missing")
             if self._root_resolver is None:
-                raise TaskExecutionAuthorityError(
-                    "sdk_task_execution_root_authority_unavailable"
-                )
+                raise TaskExecutionAuthorityError("sdk_task_execution_root_authority_unavailable")
             root_id, root_identity_hash = await self._root_resolver(receipt)
             task_scope_id = receipt.task_scope_id
             binding_set_revision = receipt.binding_set_revision

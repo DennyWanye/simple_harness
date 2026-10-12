@@ -41,43 +41,77 @@ OWNER_CONTRACT = Pin("policy", "owner-native-pool", 1, HASH)
 
 
 def _intent(key: str) -> SimpleNamespace:
-    return SimpleNamespace(intent_id=f"intent-{key}", mission_id="mission-1", kind="attempt", creation_key=key, input_hash="a" * 64)
+    return SimpleNamespace(
+        intent_id=f"intent-{key}",
+        mission_id="mission-1",
+        kind="attempt",
+        creation_key=key,
+        input_hash="a" * 64,
+    )
 
 
 def _native(tokenizer: ExactWordTokenizer, *, authorization) -> NativePlaneAssembly:  # type: ignore[no-untyped-def]
     def arp_ports(execution_db: Path) -> ArpPorts:
         root = bootstrap_root(execution_db.parent / "arp-root", root_id="root-test")
-        return ArpPorts(root_dir=root.directory, profile=standalone_profile(), activation_receipt=activation_receipt(), meter=meter_binding(tokenizer))
+        return ArpPorts(
+            root_dir=root.directory,
+            profile=standalone_profile(),
+            activation_receipt=activation_receipt(),
+            meter=meter_binding(tokenizer),
+        )
 
     return NativePlaneAssembly(
         arp_ports=arp_ports,
         authorization=authorization,
-        caller_for=lambda intent: intent_caller(intent, principal_id="host:user", owner_contract_ref=OWNER_CONTRACT),
+        caller_for=lambda intent: intent_caller(
+            intent, principal_id="host:user", owner_contract_ref=OWNER_CONTRACT
+        ),
     )
 
 
 def test_a_native_pool_creates_only_from_intents(tmp_path) -> None:
     """2026-10-03: every pool is native (the legacy pool was removed), so only the native
     half of the old side-by-side case remains."""
+
     async def case() -> None:
         tokenizer = ExactWordTokenizer()
         provider = ScriptedProvider(["好的。"] * 4)
         profiles = {
-            "native": PoolProfile("native", provider, "agent-model", context_policy=ContextPolicy(), tokenizer=tokenizer, native_plane=_native(tokenizer, authorization=RecordingAuthorization())),
+            "native": PoolProfile(
+                "native",
+                provider,
+                "agent-model",
+                context_policy=ContextPolicy(),
+                tokenizer=tokenizer,
+                native_plane=_native(tokenizer, authorization=RecordingAuthorization()),
+            ),
         }
-        assembled = assemble_orchestrator_runtime(OrchestratorConfig(evidence_root=tmp_path / "root"), profiles=profiles, default_profile="native")
+        assembled = assemble_orchestrator_runtime(
+            OrchestratorConfig(evidence_root=tmp_path / "root"),
+            profiles=profiles,
+            default_profile="native",
+        )
         native = assembled.pool("native")
         assert native.runtime.arp.protocol == "ARP_V1_1_1" and native.bridge.native_plane is True
         async with native.runtime:
             with pytest.raises(ValueError):
                 await native.bridge.create(creation_key="k1", config_json=CONFIG.to_json())
-            agent_id, run_id, _ = await native.bridge.create(creation_key="k1", config_json=CONFIG.to_json(), intent=_intent("k1"))
+            agent_id, run_id, _ = await native.bridge.create(
+                creation_key="k1", config_json=CONFIG.to_json(), intent=_intent("k1")
+            )
             session = store.read_live_session(native.runtime.uow.database.connection, agent_id)
             assert session is not None and session.state == "ACTIVE" and run_id == agent_id
             # Replay of the same intent: the same Agent, no second session.
-            again, _, _ = await native.bridge.create(creation_key="k1", config_json=CONFIG.to_json(), intent=_intent("k1"))
+            again, _, _ = await native.bridge.create(
+                creation_key="k1", config_json=CONFIG.to_json(), intent=_intent("k1")
+            )
             assert again == agent_id
-            assert native.runtime.uow.database.connection.execute("SELECT COUNT(*) FROM arp_agent_sessions").fetchone()[0] == 1
+            assert (
+                native.runtime.uow.database.connection.execute(
+                    "SELECT COUNT(*) FROM arp_agent_sessions"
+                ).fetchone()[0]
+                == 1
+            )
             # The creation was recorded under the intent-derived caller, not a bootstrap principal.
             row = native.runtime.uow.database.connection.execute(
                 "SELECT original_receipt_ref_json, state FROM arp_creation_intents WHERE creation_key='k1'"
@@ -90,20 +124,43 @@ def test_a_native_pool_creates_only_from_intents(tmp_path) -> None:
 def test_allow_all_authorization_is_refused_for_a_native_pool(tmp_path) -> None:
     tokenizer = ExactWordTokenizer()
     provider = ScriptedProvider([])
-    profiles = {"native": PoolProfile("native", provider, "agent-model", context_policy=ContextPolicy(), tokenizer=tokenizer, native_plane=_native(tokenizer, authorization=AllowAllAuthorization()))}
+    profiles = {
+        "native": PoolProfile(
+            "native",
+            provider,
+            "agent-model",
+            context_policy=ContextPolicy(),
+            tokenizer=tokenizer,
+            native_plane=_native(tokenizer, authorization=AllowAllAuthorization()),
+        )
+    }
     with pytest.raises(ArpError) as refused:
-        assemble_orchestrator_runtime(OrchestratorConfig(evidence_root=tmp_path / "root"), profiles=profiles, default_profile="native")
+        assemble_orchestrator_runtime(
+            OrchestratorConfig(evidence_root=tmp_path / "root"),
+            profiles=profiles,
+            default_profile="native",
+        )
     assert refused.value.code == "AUTHORITY_SOURCE_MISSING"
 
 
 # ---- prior reserve reader (RP-E3b) ------------------------------------------------------------
 
 
-def _invocation(invocation_id: str, state: str, output: int | None, *, max_output: int | None = None) -> SimpleNamespace:
+def _invocation(
+    invocation_id: str, state: str, output: int | None, *, max_output: int | None = None
+) -> SimpleNamespace:
     # Real records expose ``usage_json`` as a read-only mapping (not a dict); the fake does too.
-    usage = None if output is None else MappingProxyType({"usage": MappingProxyType({"input_tokens": 3, "output_tokens": output})})
+    usage = (
+        None
+        if output is None
+        else MappingProxyType(
+            {"usage": MappingProxyType({"input_tokens": 3, "output_tokens": output})}
+        )
+    )
     request = None if max_output is None else MappingProxyType({"max_output_tokens": max_output})
-    return SimpleNamespace(invocation_id=invocation_id, state=state, usage_json=usage, request_json=request)
+    return SimpleNamespace(
+        invocation_id=invocation_id, state=state, usage_json=usage, request_json=request
+    )
 
 
 class _FakeUow:
@@ -127,16 +184,39 @@ def test_the_prior_reserve_is_the_recorded_output_of_the_run_and_never_a_guess()
     assert unbound.value.code == "PRIOR_RESERVE_UNAVAILABLE"
     reader.bind(SimpleNamespace(uow=_FakeUow([])))
     assert reader("run-1").tokens == 0 and reader("run-1").basis_ref is None
-    reader.bind(SimpleNamespace(uow=_FakeUow([_invocation("i1", "succeeded", 40), _invocation("i2", "claimed", None), _invocation("i3", "failed", 2)])))
+    reader.bind(
+        SimpleNamespace(
+            uow=_FakeUow(
+                [
+                    _invocation("i1", "succeeded", 40),
+                    _invocation("i2", "claimed", None),
+                    _invocation("i3", "failed", 2),
+                ]
+            )
+        )
+    )
     basis = reader("run-1")
-    assert basis.tokens == 42 and basis.basis_ref is not None and basis.basis_ref.id == "prior-output:run-1"
+    assert (
+        basis.tokens == 42
+        and basis.basis_ref is not None
+        and basis.basis_ref.id == "prior-output:run-1"
+    )
     same = reader("run-1")
     assert same.basis_ref == basis.basis_ref
     # An invocation whose usage is unresolved makes the reserve unavailable by name.
-    reader.bind(SimpleNamespace(uow=_FakeUow([_invocation("i1", "succeeded", 40), _invocation("i4", "handed_off", None)])))
+    reader.bind(
+        SimpleNamespace(
+            uow=_FakeUow(
+                [_invocation("i1", "succeeded", 40), _invocation("i4", "handed_off", None)]
+            )
+        )
+    )
     with pytest.raises(ArpError) as unresolved:
         reader("run-1")
-    assert unresolved.value.code == "PRIOR_RESERVE_UNAVAILABLE" and unresolved.value.detail["invocation_id"] == "i4"
+    assert (
+        unresolved.value.code == "PRIOR_RESERVE_UNAVAILABLE"
+        and unresolved.value.detail["invocation_id"] == "i4"
+    )
     reader.bind(SimpleNamespace(uow=_FakeUow([_invocation("i5", "succeeded", None)])))
     with pytest.raises(ArpError):
         reader("run-1")
@@ -148,25 +228,58 @@ def test_after_build_binds_the_reader_to_the_assembled_native_pool(tmp_path) -> 
     tokenizer = ExactWordTokenizer()
     reader = RunPriorReserve()
     base = _native(tokenizer, authorization=RecordingAuthorization())
-    native = NativePlaneAssembly(arp_ports=base.arp_ports, authorization=base.authorization, caller_for=base.caller_for, after_build=reader.bind)
-    profiles = {"native": PoolProfile("native", ScriptedProvider([]), "agent-model", context_policy=ContextPolicy(), tokenizer=tokenizer, native_plane=native)}
-    assembled = assemble_orchestrator_runtime(OrchestratorConfig(evidence_root=tmp_path / "root"), profiles=profiles, default_profile="native")
+    native = NativePlaneAssembly(
+        arp_ports=base.arp_ports,
+        authorization=base.authorization,
+        caller_for=base.caller_for,
+        after_build=reader.bind,
+    )
+    profiles = {
+        "native": PoolProfile(
+            "native",
+            ScriptedProvider([]),
+            "agent-model",
+            context_policy=ContextPolicy(),
+            tokenizer=tokenizer,
+            native_plane=native,
+        )
+    }
+    assembled = assemble_orchestrator_runtime(
+        OrchestratorConfig(evidence_root=tmp_path / "root"),
+        profiles=profiles,
+        default_profile="native",
+    )
     assert reader._uow is assembled.pool("native").runtime.uow
     assert reader("run-never").tokens == 0
 
 
-def test_a_definite_failure_without_usage_reserves_its_own_output_cap_instead_of_freezing_the_agent() -> None:
+def test_a_definite_failure_without_usage_reserves_its_own_output_cap_instead_of_freezing_the_agent() -> (
+    None
+):
     """RP-E4 (real model): one empty gateway reply (definite failure, no usage) made every
     later request of the Agent PRIOR_RESERVE_UNAVAILABLE.  A definite failure's output is
     bounded by the request's own max_output_tokens, so that bound is reserved — never less."""
     from agent_orchestrator.runtime.native_plane import RunPriorReserve
 
     reader = RunPriorReserve()
-    reader.bind(SimpleNamespace(uow=_FakeUow([_invocation("i1", "succeeded", 40), _invocation("i2", "failed", None, max_output=1024)])))
+    reader.bind(
+        SimpleNamespace(
+            uow=_FakeUow(
+                [
+                    _invocation("i1", "succeeded", 40),
+                    _invocation("i2", "failed", None, max_output=1024),
+                ]
+            )
+        )
+    )
     basis = reader("run-1")
     assert basis.tokens == 40 + 1024 and basis.basis_ref is not None
     # A failure whose request cap is unknown, and anything still uncertain, stays unavailable by name.
-    for rows in ([_invocation("i3", "failed", None)], [_invocation("i4", "unknown", None, max_output=64)], [_invocation("i5", "succeeded", None, max_output=64)]):
+    for rows in (
+        [_invocation("i3", "failed", None)],
+        [_invocation("i4", "unknown", None, max_output=64)],
+        [_invocation("i5", "succeeded", None, max_output=64)],
+    ):
         reader.bind(SimpleNamespace(uow=_FakeUow(rows)))
         with pytest.raises(ArpError) as unavailable:
             reader("run-1")

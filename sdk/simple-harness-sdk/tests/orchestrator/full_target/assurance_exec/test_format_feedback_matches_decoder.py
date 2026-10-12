@@ -18,8 +18,15 @@ def _reply(reason: str) -> dict:
     return {
         "schema_version": 5,
         "verdict": "ACCEPT",
-        "assessments": [{"criterion_id": "c-1", "verdict": "PASS", "evidence_ids": ["ev-1"],
-                         "reason": reason, "limitations": []}],
+        "assessments": [
+            {
+                "criterion_id": "c-1",
+                "verdict": "PASS",
+                "evidence_ids": ["ev-1"],
+                "reason": reason,
+                "limitations": [],
+            }
+        ],
         "findings": [],
     }
 
@@ -48,8 +55,12 @@ def _exhausted_store(payloads):
     from types import SimpleNamespace
 
     rows = [(json.dumps(p),) for p in payloads]
-    return SimpleNamespace(get_receipt=lambda receipt_id: None, connection=SimpleNamespace(
-        execute=lambda sql, params: SimpleNamespace(fetchall=lambda: list(rows))))
+    return SimpleNamespace(
+        get_receipt=lambda receipt_id: None,
+        connection=SimpleNamespace(
+            execute=lambda sql, params: SimpleNamespace(fetchall=lambda: list(rows))
+        ),
+    )
 
 
 def _orch(payloads):
@@ -59,7 +70,9 @@ def _orch(payloads):
 
     fake = SimpleNamespace(store=_exhausted_store(payloads))
     fake._exhausted_reviews = Orchestrator._exhausted_reviews.__get__(fake)
-    fake._operation_dead_end = Orchestrator._operation_dead_end.__get__(fake)  # 2026-10-06 车道 O：具名死路抽成一处
+    fake._operation_dead_end = Orchestrator._operation_dead_end.__get__(
+        fake
+    )  # 2026-10-06 车道 O：具名死路抽成一处
     fake._inconclusive_reviews = lambda mission_id: []
     fake._materialization_refusals = lambda mission_id: {}
     fake._outcome_source_refusals = lambda mission_id: {}
@@ -72,8 +85,12 @@ def test_a_stop_after_an_unreadable_final_review_says_so():
     content = {"review_key": "assurance-content:x", "reason": "R"}
     final = {"review_key": "assurance-mission-final:k", "reason": "REVIEW_TURN_RETRY_EXHAUSTED"}
     assert Orchestrator._reviews_without_verdict_detail(_orch([content, final]), "m1") == {
-        "final_review": {"reason": "REVIEW_TURN_RETRY_EXHAUSTED",
-                         "review_key": "assurance-mission-final:k", "interrupted": False}}
+        "final_review": {
+            "reason": "REVIEW_TURN_RETRY_EXHAUSTED",
+            "review_key": "assurance-mission-final:k",
+            "interrupted": False,
+        }
+    }
     assert Orchestrator._reviews_without_verdict_detail(_orch([content]), "m1") == {}
 
 
@@ -84,8 +101,12 @@ def test_an_operation_outcome_review_that_ran_out_is_not_a_legal_wait():
 
     from agent_orchestrator.orchestrator.event_handler import Orchestrator
 
-    outcome = {"review_key": "assurance-operation-outcome:a9", "reason": "REVIEW_TURN_RETRY_EXHAUSTED"}
+    outcome = {
+        "review_key": "assurance-operation-outcome:a9",
+        "reason": "REVIEW_TURN_RETRY_EXHAUSTED",
+    }
     fake = _orch([outcome])
     assert Orchestrator._has_pending_operation_completion(fake, SimpleNamespace(id="m1")) is False
     assert Orchestrator._reviews_without_verdict_detail(fake, "m1") == {
-        "operation_outcome_review": {**outcome, "interrupted": False}}
+        "operation_outcome_review": {**outcome, "interrupted": False}
+    }

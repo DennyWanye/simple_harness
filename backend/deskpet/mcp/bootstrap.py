@@ -23,6 +23,7 @@ TODO P4-S12: call ``create_and_start_from_config`` from ``main.py``'s
 lifespan hook AFTER the tool registry is assembled, and await
 ``mcp.stop()`` during shutdown.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -60,9 +61,7 @@ def _extract_mcp_config(app_config: Any) -> dict[str, Any]:
     return {}
 
 
-async def create_and_start_from_config(
-    app_config: Any, tool_registry: Any | None
-) -> MCPManager:
+async def create_and_start_from_config(app_config: Any, tool_registry: Any | None) -> MCPManager:
     """Build and ``start()`` an :class:`MCPManager` from a deskpet
     config object. Never raises — the manager internally tolerates
     individual server failures.

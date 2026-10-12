@@ -37,9 +37,7 @@ class BrokeredPreparedAction:
 
 
 def _canonical_json(value: Any) -> str:
-    return json.dumps(
-        value, ensure_ascii=False, sort_keys=True, separators=(",", ":")
-    )
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
 def _path_identity(path: Path) -> str:
@@ -96,9 +94,7 @@ class BrokeredEffectPlanner:
         if not task_grant_id:
             raise EffectPlanValidationError("task_grant_id is required")
         if self.resource_authorizer is None:
-            raise EffectPlanValidationError(
-                "a TaskGrant resource authorizer is required"
-            )
+            raise EffectPlanValidationError("a TaskGrant resource authorizer is required")
         plan = EffectPlan.parse(raw_plan, max_actions=self.max_actions)
         self._validate_resources(plan, snapshot, task_grant_id)
         plan_payload = plan.to_mapping()
@@ -159,12 +155,8 @@ class BrokeredEffectPlanner:
         expected_hash = _file_sha256(source)
         authorizer = self.resource_authorizer
         if authorizer is None:
-            raise EffectPlanValidationError(
-                "a TaskGrant resource authorizer is required"
-            )
-        if not authorizer(
-            str(source), str(destination), record.task_grant_id
-        ):
+            raise EffectPlanValidationError("a TaskGrant resource authorizer is required")
+        if not authorizer(str(source), str(destination), record.task_grant_id):
             raise EffectPlanValidationError("TaskGrant no longer covers the action")
         return BrokeredPreparedAction(
             tool_name="move_file",
@@ -216,9 +208,7 @@ class BrokeredEffectPlanner:
     ) -> None:
         authorizer = self.resource_authorizer
         if authorizer is None:
-            raise EffectPlanValidationError(
-                "a TaskGrant resource authorizer is required"
-            )
+            raise EffectPlanValidationError("a TaskGrant resource authorizer is required")
         roots = tuple(Path(root).resolve(strict=True) for root in snapshot.workspace_roots)
         sources = self._initial_sources(snapshot)
         occupancy: set[str] = {_path_identity(path) for path in sources["inputs"].values()}
@@ -257,9 +247,7 @@ class BrokeredEffectPlanner:
                 raise EffectPlanValidationError(f"action {index} is outside workspace scope")
             destination_id = _path_identity(destination)
             if destination_id == source_id:
-                raise EffectPlanValidationError(
-                    f"action {index} does not change the source path"
-                )
+                raise EffectPlanValidationError(f"action {index} does not change the source path")
             if destination_id != source_id and destination_id in occupancy:
                 raise EffectPlanValidationError(
                     f"action {index} destination collides with a current input"
@@ -267,23 +255,15 @@ class BrokeredEffectPlanner:
             # A file not represented in the immutable snapshot is an external
             # collision. A plan may free an input path in an earlier action;
             # that case is represented by virtual occupancy and is allowed.
-            initial_ids = {
-                _path_identity(path) for path in sources["inputs"].values()
-            }
+            initial_ids = {_path_identity(path) for path in sources["inputs"].values()}
             if (
                 destination_id != source_id
                 and destination.exists()
                 and destination_id not in initial_ids
             ):
-                raise EffectPlanValidationError(
-                    f"action {index} destination already exists"
-                )
-            if not authorizer(
-                str(source), str(destination), task_grant_id
-            ):
-                raise EffectPlanValidationError(
-                    f"TaskGrant does not cover action {index}"
-                )
+                raise EffectPlanValidationError(f"action {index} destination already exists")
+            if not authorizer(str(source), str(destination), task_grant_id):
+                raise EffectPlanValidationError(f"TaskGrant does not cover action {index}")
 
             occupancy.discard(source_id)
             occupancy.add(destination_id)

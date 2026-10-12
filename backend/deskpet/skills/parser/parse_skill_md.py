@@ -27,6 +27,7 @@ Inline shell injection (per spec §"Inline shell injection"):
                           replace with stdout. Errors inlined as
                           [command failed: <exit N>: <stderr>].
 """
+
 from __future__ import annotations
 
 import re
@@ -86,15 +87,13 @@ def _split_frontmatter(text: str) -> tuple[dict[str, Any], str]:
     if end < 0:
         raise SkillParseError("missing closing '---' delimiter")
     fm_text = rest[:end]
-    body = rest[end + len("\n---"):].lstrip("\n")
+    body = rest[end + len("\n---") :].lstrip("\n")
     try:
         fm = yaml.safe_load(fm_text) or {}
     except yaml.YAMLError as exc:
         raise SkillParseError(f"invalid YAML: {exc}") from exc
     if not isinstance(fm, dict):
-        raise SkillParseError(
-            f"frontmatter must be a mapping, got {type(fm).__name__}"
-        )
+        raise SkillParseError(f"frontmatter must be a mapping, got {type(fm).__name__}")
     return fm, body
 
 

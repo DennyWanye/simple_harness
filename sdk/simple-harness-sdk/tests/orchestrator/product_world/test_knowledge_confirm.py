@@ -6,6 +6,7 @@
 
 **改坏检验**：验收里不读审阅确认 → 第一条变红（没有知识）。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -34,8 +35,10 @@ def two_claims(request: Any) -> Any:
     reply = worker_reply(request)
     if isinstance(reply, tuple):
         return reply
-    body = json.loads(reply[len("<result_envelope>"):-len("</result_envelope>")])
-    body["claims"].append({"content": "这份笔记以后不用再改", "confidence": 0.5, "evidence": body["evidence"]})
+    body = json.loads(reply[len("<result_envelope>") : -len("</result_envelope>")])
+    body["claims"].append(
+        {"content": "这份笔记以后不用再改", "confidence": 0.5, "evidence": body["evidence"]}
+    )
     return "<result_envelope>" + json.dumps(body, ensure_ascii=False) + "</result_envelope>"
 
 
@@ -61,22 +64,33 @@ def confirming(pick: Any, *, verdict: str = "ACCEPT", grade: str = "PASS") -> An
 
 def first_claim_by_artifact(data: dict[str, Any]) -> list[dict[str, Any]]:
     listed = data["package"]["claims_to_confirm"]
-    return [{"claim_id": listed[0]["claim_id"], "confirmed": True,
-             "evidence_ids": labels(data, "artifact")[:1], "reason": "文件确实写出，内容与结论一致。"}]
+    return [
+        {
+            "claim_id": listed[0]["claim_id"],
+            "confirmed": True,
+            "evidence_ids": labels(data, "artifact")[:1],
+            "reason": "文件确实写出，内容与结论一致。",
+        }
+    ]
 
 
 async def _run(tmp_path, reviewer: Any, key: str) -> tuple[Any, str, Any]:
-    context = product_world(tmp_path / "root", LayeredScriptedProvider(worker=two_claims, reviewer=reviewer))
+    context = product_world(
+        tmp_path / "root", LayeredScriptedProvider(worker=two_claims, reviewer=reviewer)
+    )
     world = await context.__aenter__()
-    mission_id = world.create({"goal": "写一份 NOTES.md", "success_criteria": ["file:NOTES.md"],
-                               "idempotency_key": key})["mission_id"]
+    mission_id = world.create(
+        {"goal": "写一份 NOTES.md", "success_criteria": ["file:NOTES.md"], "idempotency_key": key}
+    )["mission_id"]
     mission = await world.run_until_settled(mission_id, rounds=20)
     return context, mission_id, (world, mission)
 
 
 def test_confirmed_claim_becomes_verified_knowledge(tmp_path):
     async def case():
-        context, mission_id, (world, mission) = await _run(tmp_path, confirming(first_claim_by_artifact), "kn-confirm")
+        context, mission_id, (world, mission) = await _run(
+            tmp_path, confirming(first_claim_by_artifact), "kn-confirm"
+        )
         try:
             assert mission.status.value == "COMPLETED", mission.final_report
             store = world.store
@@ -93,8 +107,12 @@ def test_confirmed_claim_becomes_verified_knowledge(tmp_path):
             assert set(artifact) == {"id", "version", "content_hash"}
             # 依据记在知识记录里；写知识不让本任务的验收证书"依据已变"
             events = list(store.list_events(mission_id))
-            assert not [e for e in events if e.type == "AssuranceCloseoutEvaluated"
-                        and "EVIDENCE_STALE" in e.payload.get("reasons", ())]
+            assert not [
+                e
+                for e in events
+                if e.type == "AssuranceCloseoutEvaluated"
+                and "EVIDENCE_STALE" in e.payload.get("reasons", ())
+            ]
             [event] = [e.payload for e in events if e.type == "KnowledgeCommitted"]
             assert event["basis"] == "review_confirmed" and event["support"] == support
         finally:
@@ -108,11 +126,19 @@ def test_confirmation_without_independent_evidence_not_upgraded(tmp_path):
 
     def only_the_result(data: dict[str, Any]) -> list[dict[str, Any]]:
         listed = data["package"]["claims_to_confirm"]
-        return [{"claim_id": listed[0]["claim_id"], "confirmed": True,
-                 "evidence_ids": labels(data, "result")[:1], "reason": "执行者自己是这么说的。"}]
+        return [
+            {
+                "claim_id": listed[0]["claim_id"],
+                "confirmed": True,
+                "evidence_ids": labels(data, "result")[:1],
+                "reason": "执行者自己是这么说的。",
+            }
+        ]
 
     async def case():
-        context, mission_id, (world, mission) = await _run(tmp_path, confirming(only_the_result), "kn-self")
+        context, mission_id, (world, mission) = await _run(
+            tmp_path, confirming(only_the_result), "kn-self"
+        )
         try:
             assert mission.status.value == "COMPLETED", mission.final_report
             assert world.store.list_knowledge(mission_id) == []
@@ -144,8 +170,11 @@ def test_confirmation_in_a_review_that_did_not_pass_is_not_knowledge(tmp_path):
         try:
             # 返工之后怎么走不是这条用例的事（脚本规划器不接修复轮）；只看那次确认没有入库
             assert calls["n"] >= 1 and world.store.list_knowledge(mission_id) == []
-            assert not [claim for claim in world.store.list_mission_claims(mission_id)
-                        if str(claim.status) == "VERIFIED"]
+            assert not [
+                claim
+                for claim in world.store.list_mission_claims(mission_id)
+                if str(claim.status) == "VERIFIED"
+            ]
         finally:
             await context.__aexit__(None, None, None)
 
@@ -157,15 +186,24 @@ def test_person_pass_on_inconclusive_upgrades_confirmed_claims(tmp_path):
 
     async def case():
         reviewer = confirming(first_claim_by_artifact, verdict="INCONCLUSIVE", grade="UNKNOWN")
-        context = product_world(tmp_path / "root", LayeredScriptedProvider(worker=two_claims, reviewer=reviewer))
+        context = product_world(
+            tmp_path / "root", LayeredScriptedProvider(worker=two_claims, reviewer=reviewer)
+        )
         world = await context.__aenter__()
         try:
-            mission_id = world.create({"goal": "写一份 NOTES.md", "success_criteria": ["file:NOTES.md"],
-                                       "idempotency_key": "kn-person"})["mission_id"]
+            mission_id = world.create(
+                {
+                    "goal": "写一份 NOTES.md",
+                    "success_criteria": ["file:NOTES.md"],
+                    "idempotency_key": "kn-person",
+                }
+            )["mission_id"]
             pending: list[dict[str, Any]] = []
             for _ in range(20):
                 await world.drain()
-                pending = [a for a in world.control.approvals(mission_id) if a.get("state") == "PENDING"]
+                pending = [
+                    a for a in world.control.approvals(mission_id) if a.get("state") == "PENDING"
+                ]
                 if pending:
                     break
             assert len(pending) == 1 and world.store.list_knowledge(mission_id) == []

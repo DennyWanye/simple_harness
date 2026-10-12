@@ -613,7 +613,11 @@ class Store:
             return Event(**{**event.to_json(), "seq": cursor.lastrowid})
 
     def list_events(
-        self, mission_id: str, *, after_seq: int = 0, limit: int = 10_000,
+        self,
+        mission_id: str,
+        *,
+        after_seq: int = 0,
+        limit: int = 10_000,
         types: Sequence[str] | None = None,
     ) -> list[Event]:
         """``types`` filters in SQL: a reader that wants a few kinds does not parse the
@@ -623,8 +627,11 @@ class Store:
 
         from .source_records import EVENT_TYPE
 
-        kinds = (f" AND type != '{EVENT_TYPE}'" if types is None
-                 else f" AND type IN ({','.join('?' * len(types))})")
+        kinds = (
+            f" AND type != '{EVENT_TYPE}'"
+            if types is None
+            else f" AND type IN ({','.join('?' * len(types))})"
+        )
         rows = self._connection.execute(
             f"SELECT * FROM events WHERE mission_id = ? AND seq > ?{kinds} ORDER BY seq LIMIT ?",  # noqa: S608
             (mission_id, after_seq, *(types or ()), limit),
@@ -639,7 +646,8 @@ class Store:
             from .source_records import EVENT_TYPE
 
             row = self._connection.execute(
-                "SELECT COUNT(*) FROM events WHERE mission_id = ? AND type != ?", (mission_id, EVENT_TYPE)
+                "SELECT COUNT(*) FROM events WHERE mission_id = ? AND type != ?",
+                (mission_id, EVENT_TYPE),
             ).fetchone()
         else:
             row = self._connection.execute(
@@ -955,10 +963,13 @@ class Store:
     def has_unverified_results(self, mission_id: str) -> bool:
         """这个任务有没有还在等审或正在审的结果（试用前第 5 步：积压只暂停它自己的规划轮）。"""
 
-        return self._connection.execute(
-            "SELECT 1 FROM results WHERE mission_id=? AND verification_state IN ('PENDING','RUNNING') LIMIT 1",
-            (mission_id,),
-        ).fetchone() is not None
+        return (
+            self._connection.execute(
+                "SELECT 1 FROM results WHERE mission_id=? AND verification_state IN ('PENDING','RUNNING') LIMIT 1",
+                (mission_id,),
+            ).fetchone()
+            is not None
+        )
 
     def list_results_by_verification(self, *states: str) -> list[StoredResult]:
         marks = ",".join("?" for _ in states)
@@ -970,7 +981,13 @@ class Store:
 
     # ----------------------------------------------------------- verifications
     def upsert_verification(
-        self, *, result_id: str, attempt_id: str, requirements_revision: int, layer: str, status: str,
+        self,
+        *,
+        result_id: str,
+        attempt_id: str,
+        requirements_revision: int,
+        layer: str,
+        status: str,
         detail: Mapping[str, Any],
     ) -> None:
         """One verification layer of one result as judged under one requirements revision
@@ -994,7 +1011,9 @@ class Store:
                 ),
             )
 
-    def list_verifications(self, result_id: str, *, requirements_revision: int | None) -> list[dict[str, Any]]:
+    def list_verifications(
+        self, result_id: str, *, requirements_revision: int | None
+    ) -> list[dict[str, Any]]:
         """The layers recorded for one result under one requirements revision; ``None`` lists
         every revision's layers (display only — a judgement reads one revision)."""
         if requirements_revision is None:
@@ -1010,8 +1029,13 @@ class Store:
                 (result_id, int(requirements_revision)),
             ).fetchall()
         return [
-            {"layer": row[0], "status": row[1], "detail": _loads(row[2]), "created_at": row[3],
-             "requirements_revision": row[4]}
+            {
+                "layer": row[0],
+                "status": row[1],
+                "detail": _loads(row[2]),
+                "created_at": row[3],
+                "requirements_revision": row[4],
+            }
             for row in rows
         ]
 
@@ -1075,8 +1099,12 @@ class Store:
                     record.created_at,
                     self.now,
                     # 第 2 批 K02：三列与 JSON 同一次写入；None 落成 NULL，不猜
-                    None if record.validity_interval is None else canonical_json(dict(record.validity_interval)),
-                    None if record.permitted_uses is None else canonical_json(list(record.permitted_uses)),
+                    None
+                    if record.validity_interval is None
+                    else canonical_json(dict(record.validity_interval)),
+                    None
+                    if record.permitted_uses is None
+                    else canonical_json(list(record.permitted_uses)),
                     record.assurance_level,
                 ),
             )
@@ -1261,9 +1289,13 @@ class Store:
             "SELECT call_key,subject_id,mission_id,tool,outcome FROM tool_calls WHERE call_key = ?",
             (call_key,),
         ).fetchone()
-        return None if row is None else dict(zip(
-            ("call_key", "subject_id", "mission_id", "tool", "outcome"), row, strict=True
-        ))
+        return (
+            None
+            if row is None
+            else dict(
+                zip(("call_key", "subject_id", "mission_id", "tool", "outcome"), row, strict=True)
+            )
+        )
 
     def count_search_calls(self, subject_id: str) -> int:
         """推后第 3 批 H08：这个主体真执行过的检索类工具调用数（``SEARCH_TOOL_NAMES``）。"""
@@ -1776,7 +1808,12 @@ class Store:
             "tasks": [task.to_json() for task in tasks],
             "attempts": [attempt.to_json() for attempt in attempts],
             "results": [
-                {**stored.to_json(), "verifications": self.list_verifications(stored.envelope.id, requirements_revision=None)}
+                {
+                    **stored.to_json(),
+                    "verifications": self.list_verifications(
+                        stored.envelope.id, requirements_revision=None
+                    ),
+                }
                 for stored in results
                 if stored is not None
             ],
@@ -1824,14 +1861,19 @@ class Store:
         usage = dict(row)
         # V34（核验 opt.179 建议）：超出准入上限的调用照记不拦（可多算不可少算）；把它们的数目与
         # 多出的 token 一起交给任务详情与审计视图，只显示、不拦。
-        overrun = self.connection.execute(
-            "SELECT COUNT(*), COALESCE(SUM(MAX(actual_tokens - total_upper, 0)), 0) "
-            "FROM provider_token_grants WHERE mission_id = ? AND state = 'OVERRUN'",
-            (mission_id,),
-        ).fetchone() if self.has_table("provider_token_grants") else (0, 0)
+        overrun = (
+            self.connection.execute(
+                "SELECT COUNT(*), COALESCE(SUM(MAX(actual_tokens - total_upper, 0)), 0) "
+                "FROM provider_token_grants WHERE mission_id = ? AND state = 'OVERRUN'",
+                (mission_id,),
+            ).fetchone()
+            if self.has_table("provider_token_grants")
+            else (0, 0)
+        )
         usage["overrun_calls"] = int(overrun[0])
         usage["overrun_tokens"] = int(overrun[1])
         return usage
+
 
 def _event_from_row(row: sqlite3.Row) -> Event:
     return Event(
@@ -1917,4 +1959,3 @@ def library_copy(library: Path, into: Path) -> Path:
         if source.is_file():
             shutil.copy2(source, into / (library.name + suffix))
     return into / library.name
-

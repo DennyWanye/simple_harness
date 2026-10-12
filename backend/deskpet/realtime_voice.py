@@ -49,8 +49,7 @@ REALTIME_VOICE_ENABLED = False
 REALTIME_PUBLIC_MODEL = "qwen3.5-omni-realtime"
 REALTIME_VOICE = "Tina"
 REALTIME_INSTRUCTIONS = (
-    "你是 Simple Harness 的实时语音助手。使用简洁、自然的中文回答，"
-    "允许用户随时打断。"
+    "你是 Simple Harness 的实时语音助手。使用简洁、自然的中文回答，允许用户随时打断。"
 )
 
 
@@ -67,10 +66,7 @@ class _MetadataDiagnosticSink:
         if stage in {"input_audio", "output_audio"}:
             totals = self._audio_totals.setdefault(event.correlation, {})
             totals[stage] = (event.frame_count, event.byte_count)
-            if (
-                event.frame_count != 1
-                and event.frame_count % self._AUDIO_PROGRESS_INTERVAL != 0
-            ):
+            if event.frame_count != 1 and event.frame_count % self._AUDIO_PROGRESS_INTERVAL != 0:
                 return
             logger.info(
                 "realtime_voice_audio_progress",

@@ -43,12 +43,18 @@ def test_s7_07_a_takeover_keeps_its_basis_and_never_revives_or_widens(tmp_path, 
     asked: list[str] = []
 
     def worker(request):
-        asked.append(json.dumps([str(getattr(m, "content", "")) for m in request.messages], ensure_ascii=False))
+        asked.append(
+            json.dumps(
+                [str(getattr(m, "content", "")) for m in request.messages], ensure_ascii=False
+            )
+        )
         return worker_reply(request)
 
     async def case():
         async with ledger_world(tmp_path, worker=worker) as w:
-            attempt = _running(w)  # the executor is working on the leaf right now (its model call held)
+            attempt = _running(
+                w
+            )  # the executor is working on the leaf right now (its model call held)
             budget = w.leaf.budget.max_attempts
             principal = w.product.deployment.principal.principal_id
             if action == "stop":
@@ -56,10 +62,14 @@ def test_s7_07_a_takeover_keeps_its_basis_and_never_revives_or_widens(tmp_path, 
                 assert record["action"] == "takeover_stop"
                 assert "no approval, tool, budget" in record["scope"]
                 final = w.mission
-                assert final.status is MissionStatus.FAILED and final.stop_reason == "human_override"
+                assert (
+                    final.status is MissionStatus.FAILED and final.stop_reason == "human_override"
+                )
                 assert final.final_report["detail"]["basis"] == "卡住 40 分钟没有进展"
                 assert w.store.get_attempt(attempt.id).status is AttemptStatus.CANCELLED
-                [event] = [e for e in w.store.list_events(w.mission_id) if e.type == "HumanOverride"]
+                [event] = [
+                    e for e in w.store.list_events(w.mission_id) if e.type == "HumanOverride"
+                ]
                 assert (event.actor_type, event.actor_id) == ("user", principal)
                 # a takeover never revives an ended task or Mission
                 for task in (w.leaf, w.root):
@@ -72,11 +82,15 @@ def test_s7_07_a_takeover_keeps_its_basis_and_never_revives_or_widens(tmp_path, 
             closed = w.store.get_attempt(attempt.id)
             assert closed.status is AttemptStatus.CANCELLED
             assert closed.failure["reason"] == "human_retry_with_note"
-            [comment] = [e for e in w.store.list_events(w.mission_id) if e.type == "HumanCommentAdded"]
+            [comment] = [
+                e for e in w.store.list_events(w.mission_id) if e.type == "HumanCommentAdded"
+            ]
             assert comment.payload["target_id"] == w.leaf.id and comment.payload["text"] == NOTE
             assert w.mission.status is MissionStatus.ACTIVE
             task = w.store.get_task(w.leaf.id)
-            assert task.status is TaskStatus.ACTIVE and task.budget.max_attempts == budget  # nothing widened
+            assert (
+                task.status is TaskStatus.ACTIVE and task.budget.max_attempts == budget
+            )  # nothing widened
             with pytest.raises(FacadeError):  # only stop / retry_with_note exist
                 w.control.takeover(w.leaf.id, "approve", basis="x")
             with pytest.raises(FacadeError):  # looks like a secret
@@ -103,7 +117,11 @@ def test_comments_are_kept_as_data_on_a_task_or_a_request(tmp_path):
             request = w.store.get_approval(action["approval_request_id"])
             assert [c["text"] for c in request["comments"]] == ["上线窗口在周四"]
             assert request["state"] == "PENDING"  # a comment decides nothing
-            texts = [e.payload["text"] for e in w.store.list_events(w.mission_id) if e.type == "HumanCommentAdded"]
+            texts = [
+                e.payload["text"]
+                for e in w.store.list_events(w.mission_id)
+                if e.type == "HumanCommentAdded"
+            ]
             assert texts == ["上线窗口在周四", "注意兼容旧客户端"]
             assert w.store.get_action(action["action_key"])["state"] == "AWAITING_APPROVAL"
 

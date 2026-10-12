@@ -22,7 +22,9 @@ from .test_native_plane_host import _service
 
 
 @pytest.mark.asyncio
-async def test_native_plane_deployment_offers_skill_tools_to_the_mission_worker(orchestration_root, principal):
+async def test_native_plane_deployment_offers_skill_tools_to_the_mission_worker(
+    orchestration_root, principal
+):
     service = _service(orchestration_root, principal)
     await service.start()
     try:
@@ -32,20 +34,29 @@ async def test_native_plane_deployment_offers_skill_tools_to_the_mission_worker(
         from types import SimpleNamespace
 
         from simple_harness.runtime.ports import AuthorizationRequest
+
         port = service._native.authorization
         for name in SKILL_TOOL_NAMES:
-            decision = await port.request_authorization(AuthorizationRequest(SimpleNamespace(name=name, arguments={}), run_id="r"))
+            decision = await port.request_authorization(
+                AuthorizationRequest(SimpleNamespace(name=name, arguments={}), run_id="r")
+            )
             assert decision.decision == "allow", name
 
         created = service.create_mission(notes_request("skills-1"))
         mission = service._orchestrator.store.get_mission(created["mission_id"])
         assert set(SKILL_TOOL_NAMES) <= set(mission.allowed_tools)
-        worker = effective_tools(mission_tools=mission.allowed_tools, task_tools=mission.allowed_tools,
-                                 role_tools=WORKER_HIERARCHICAL.tool_names, deployment=deployment)
+        worker = effective_tools(
+            mission_tools=mission.allowed_tools,
+            task_tools=mission.allowed_tools,
+            role_tools=WORKER_HIERARCHICAL.tool_names,
+            deployment=deployment,
+        )
         assert set(SKILL_TOOL_NAMES) <= set(worker)
         # the native pool the Mission runs on serves every one of them
         pool = service._orchestrator.assembled.pool(service.status()["default_context_profile_id"])
         assert pool.bridge.native_plane is True
-        pool.bridge.check_tools(AgentConfig(name="w", instructions="-", model_profile_ref="p", tool_names=worker))
+        pool.bridge.check_tools(
+            AgentConfig(name="w", instructions="-", model_profile_ref="p", tool_names=worker)
+        )
     finally:
         await service.close()

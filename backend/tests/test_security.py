@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 """Tests for S6 security primitives: sensitive-info redaction + tool confirmation."""
+
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
@@ -64,9 +65,7 @@ class _FakeStore:
         self.appended.append((session_id, role, content))
 
     async def clear(self, session_id):
-        self.appended = [
-            t for t in self.appended if t[0] != session_id
-        ]
+        self.appended = [t for t in self.appended if t[0] != session_id]
 
 
 @pytest.mark.asyncio
@@ -101,9 +100,7 @@ class _StubAgent:
     def __init__(self, text: str):
         self._text = text
 
-    async def chat_stream(
-        self, messages, *, session_id="default"
-    ) -> AsyncIterator[str]:
+    async def chat_stream(self, messages, *, session_id="default") -> AsyncIterator[str]:
         yield self._text
 
 
@@ -122,11 +119,13 @@ class _StubTool:
 async def test_high_risk_tool_denied_by_default():
     """Fail-closed: requires_confirmation=True + no callback → refused."""
     registry = ToolRegistry()
-    tool = _StubTool(ToolSpec(
-        name="delete_file",
-        description="removes a file",
-        requires_confirmation=True,
-    ))
+    tool = _StubTool(
+        ToolSpec(
+            name="delete_file",
+            description="removes a file",
+            requires_confirmation=True,
+        )
+    )
     registry.register(tool)
 
     agent = ToolUsingAgent(_StubAgent("please run <tool>delete_file</tool>"), registry)
@@ -140,11 +139,13 @@ async def test_high_risk_tool_denied_by_default():
 @pytest.mark.asyncio
 async def test_high_risk_tool_runs_when_confirm_approves():
     registry = ToolRegistry()
-    tool = _StubTool(ToolSpec(
-        name="open_url",
-        description="opens a URL",
-        requires_confirmation=True,
-    ))
+    tool = _StubTool(
+        ToolSpec(
+            name="open_url",
+            description="opens a URL",
+            requires_confirmation=True,
+        )
+    )
     registry.register(tool)
 
     async def approve(name, session_id):  # noqa: ARG001
@@ -189,11 +190,13 @@ async def test_low_risk_tool_bypasses_confirmation():
 @pytest.mark.asyncio
 async def test_sync_confirm_callback_also_works():
     registry = ToolRegistry()
-    tool = _StubTool(ToolSpec(
-        name="reboot",
-        description="reboots the machine",
-        requires_confirmation=True,
-    ))
+    tool = _StubTool(
+        ToolSpec(
+            name="reboot",
+            description="reboots the machine",
+            requires_confirmation=True,
+        )
+    )
     registry.register(tool)
 
     agent = ToolUsingAgent(

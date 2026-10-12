@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-""""交接后提供方结果不明"这一族用例的产品同形世界（HTN 补齐阶段 A′，2026-10-03）。
+""" "交接后提供方结果不明"这一族用例的产品同形世界（HTN 补齐阶段 A′，2026-10-03）。
 
 任务经产品那一份部署组装建出（执行图建任务时绑定、保证通道、原生执行池、提供方用量守卫），
 自动模式下部署职责在两轮之间代签完成映射与规划授权。替身只有一样：脚本化模型回复，外加
@@ -30,8 +30,12 @@ ALL_INTENTS = (*OPEN, "SETTLED", "FAILED")
 HELD = ("RESERVED", "HANDED_OFF", "UNKNOWN")
 LIMIT = 0.3  # seconds; ``stall_seconds`` below the 30 s ceiling, so it is the bound
 TERMINAL = {"COMPLETED", "FAILED", "CANCELLED", "STOPPED"}
-CONFIG: dict[str, Any] = {"max_concurrency": 1, "max_concurrent_model_calls": 1, "stall_seconds": LIMIT,
-                          "test_timeout_seconds": 60}
+CONFIG: dict[str, Any] = {
+    "max_concurrency": 1,
+    "max_concurrent_model_calls": 1,
+    "stall_seconds": LIMIT,
+    "test_timeout_seconds": 60,
+}
 CRITERIA = ("file:NOTES.md",)
 
 
@@ -44,7 +48,9 @@ def transport_loss(request: Any) -> None:
 def http_loss(status: int) -> Callable[[Any], None]:
     def fault(request: Any) -> None:
         del request
-        raise ProviderTransportError(public_message="scripted transport loss after handoff", status_code=status)
+        raise ProviderTransportError(
+            public_message="scripted transport loss after handoff", status_code=status
+        )
 
     return fault
 
@@ -59,8 +65,9 @@ class FaultyProvider(LayeredScriptedProvider):
     """脚本化提供方：``faults[role]`` 里排好的前几次调用按故障答（``None`` 表示这一次照常），
     用完之后照常给脚本化回复。``role_calls[role]`` 记每个角色被调了几次（含出错的）。"""
 
-    def __init__(self, faults: Mapping[str, list[Callable[[Any], Any] | None]] | None = None,
-                 **kwargs: Any) -> None:
+    def __init__(
+        self, faults: Mapping[str, list[Callable[[Any], Any] | None]] | None = None, **kwargs: Any
+    ) -> None:
         super().__init__(**kwargs)
         self.faults = {role: list(steps) for role, steps in (faults or {}).items()}
         self.role_calls: dict[str, int] = {}
@@ -83,8 +90,9 @@ def status(world: Any, mission_id: str) -> str:
     return str(getattr(mission.status, "value", mission.status))
 
 
-async def settle(world: Any, mission_id: str, *, seconds: float = 15.0,
-                 done: Callable[[], bool] | None = None) -> bool:
+async def settle(
+    world: Any, mission_id: str, *, seconds: float = 15.0, done: Callable[[], bool] | None = None
+) -> bool:
     """Run the loop (with the deployment's per-round duties) until the Mission is terminal
     (or ``done()``), then stop it the way the product's ``drain`` deadline does; False when
     the deadline came first."""
@@ -114,30 +122,44 @@ async def settle(world: Any, mission_id: str, *, seconds: float = 15.0,
 
 
 def events(world: Any, mission_id: str, kind: str | None = None) -> list[Any]:
-    return [item for item in world.store.list_events(mission_id) if kind is None or item.type == kind]
+    return [
+        item for item in world.store.list_events(mission_id) if kind is None or item.type == kind
+    ]
 
 
 def plan_intents(world: Any, mission_id: str, *states: str) -> list[Any]:
-    return [item for item in world.store.list_intents(*(states or ALL_INTENTS))
-            if item.mission_id == mission_id and item.kind == "plan" and ":planner:" in item.subject_id]
+    return [
+        item
+        for item in world.store.list_intents(*(states or ALL_INTENTS))
+        if item.mission_id == mission_id and item.kind == "plan" and ":planner:" in item.subject_id
+    ]
 
 
 def grants(world: Any) -> list[dict[str, Any]]:
-    return [dict(row) for row in world.store.connection.execute(
-        "SELECT subject_id, agent_id, state, total_upper, actual_tokens "
-        "FROM provider_token_grants ORDER BY created_at, invocation_id")]
+    return [
+        dict(row)
+        for row in world.store.connection.execute(
+            "SELECT subject_id, agent_id, state, total_upper, actual_tokens "
+            "FROM provider_token_grants ORDER BY created_at, invocation_id"
+        )
+    ]
 
 
 def conservation(world: Any, mission_id: str) -> dict[str, Any]:
     report = world.loop.commit.ledger.costs_report(mission_id)
-    account = next(item for item in report["accounts"] if item["account_id"] == mission_account(mission_id))
+    account = next(
+        item for item in report["accounts"] if item["account_id"] == mission_account(mission_id)
+    )
     remaining = int(account["remaining_tokens"] or 0)
     reserved = int(account["reserved_tokens"])
     settled = int(account["settled_tokens"])
     pool = int(account["limits"]["max_tokens"])
     return {
         "holds": remaining + reserved + settled == pool,
-        "remaining": remaining, "reserved": reserved, "settled": settled, "pool": pool,
+        "remaining": remaining,
+        "reserved": reserved,
+        "settled": settled,
+        "pool": pool,
         "held_reservations": list(report["held_reservations"]),
         "usage_fully_known": report.get("usage_fully_known"),
         "budget_conserved": report.get("budget_conserved"),
@@ -146,8 +168,11 @@ def conservation(world: Any, mission_id: str) -> dict[str, Any]:
 
 
 def create(world: Any, key: str, **budget: int) -> str:
-    body: dict[str, Any] = {"goal": "写一份 NOTES.md，列出三条要点", "idempotency_key": key,
-                            "success_criteria": list(CRITERIA)}
+    body: dict[str, Any] = {
+        "goal": "写一份 NOTES.md，列出三条要点",
+        "idempotency_key": key,
+        "success_criteria": list(CRITERIA),
+    }
     if budget:
         body["budget"] = {"max_tokens": 8_000_000, "max_attempts": 12, **budget}
     return str(world.create(body)["mission_id"])
@@ -183,8 +208,14 @@ def assert_terminal_ledger(world: Any, mission_id: str, *, unknown: bool) -> dic
     held = {item["subject_id"]: int(item["reserved_tokens"]) for item in books["held_reservations"]}
     if status(world, mission_id) == "COMPLETED":
         assert books["reserved"] == 0 and held == {}, books
-        known = sum(int(u["input_tokens"]) + int(u["output_tokens"]) for u in books["usage"] if not int(u["unknown"]))
-        assert books["settled"] >= known + sum(int(row["total_upper"]) for row in unknown_grants), books
+        known = sum(
+            int(u["input_tokens"]) + int(u["output_tokens"])
+            for u in books["usage"]
+            if not int(u["unknown"])
+        )
+        assert books["settled"] >= known + sum(int(row["total_upper"]) for row in unknown_grants), (
+            books
+        )
     else:
         assert set(held) == {row["subject_id"] for row in unknown_grants}, (held, unknown_grants)
         assert books["reserved"] == sum(held.values()), books
@@ -201,12 +232,34 @@ def invocations(world: Any, intent: Any) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for record in runtime.uow.list_provider_invocations(RunId(str(intent.agent_id))):
         payload = thaw_json(record.usage_json) if record.usage_json is not None else {}
-        rows.append({"state": str(record.state), "error_code": record.error_code,
-                     "usage": payload if isinstance(payload, dict) else {}})
+        rows.append(
+            {
+                "state": str(record.state),
+                "error_code": record.error_code,
+                "usage": payload if isinstance(payload, dict) else {},
+            }
+        )
     return rows
 
 
-__all__ = ("ALL_INTENTS", "CONFIG", "CRITERIA", "FaultyProvider", "HELD", "LIMIT", "OPEN", "assert_terminal_ledger",
-           "conservation", "create",
-           "events", "grants", "http_loss", "invocations", "plan_intents", "settle", "status", "transport_loss",
-           "unclassified")
+__all__ = (
+    "ALL_INTENTS",
+    "CONFIG",
+    "CRITERIA",
+    "FaultyProvider",
+    "HELD",
+    "LIMIT",
+    "OPEN",
+    "assert_terminal_ledger",
+    "conservation",
+    "create",
+    "events",
+    "grants",
+    "http_loss",
+    "invocations",
+    "plan_intents",
+    "settle",
+    "status",
+    "transport_loss",
+    "unclassified",
+)

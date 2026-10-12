@@ -33,11 +33,19 @@ async def _a_running_attempt(root) -> tuple[str, dict]:
     provider.held.add("worker")
     try:
         async with product_world(root, provider) as world:
-            mission_id = world.create({"goal": "写一份 NOTES.md", "success_criteria": ["file:NOTES.md"],
-                                       "idempotency_key": "g-1"})["mission_id"]
+            mission_id = world.create(
+                {
+                    "goal": "写一份 NOTES.md",
+                    "success_criteria": ["file:NOTES.md"],
+                    "idempotency_key": "g-1",
+                }
+            )["mission_id"]
             await run_until(world, provider.entered.is_set)
-            [attempt] = [attempt for task in world.store.list_tasks(mission_id)
-                         for attempt in world.store.list_attempts(task.id)]
+            [attempt] = [
+                attempt
+                for task in world.store.list_tasks(mission_id)
+                for attempt in world.store.list_attempts(task.id)
+            ]
             reservation = world.loop.commit.ledger.reservation(attempt.id)
             assert reservation is not None and reservation["state"] == "RESERVED"
             return attempt.id, reservation

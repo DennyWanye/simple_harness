@@ -160,13 +160,11 @@ async def test_missing_provider_key_becomes_stable_local_error() -> None:
 
 
 def test_backend_route_uses_sdk_authority_path_and_keeps_legacy_disabled() -> None:
-    source = (Path(__file__).resolve().parents[1] / "main.py").read_text(
-        encoding="utf-8"
-    )
+    source = (Path(__file__).resolve().parents[1] / "main.py").read_text(encoding="utf-8")
     assert '@app.websocket("/ws/realtime-voice")' in source
     assert '@app.websocket("/ws/audio")' in source
     assert "if not _voice_runtime.enabled:" in source
-    assert "Qwen" not in source[source.index('class _StarletteRealtimeSocket') :]
+    assert "Qwen" not in source[source.index("class _StarletteRealtimeSocket") :]
 
 
 def test_diagnostic_sink_samples_audio_and_summarizes_terminal(

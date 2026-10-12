@@ -89,9 +89,7 @@ _SECRET_PATTERNS = (
 
 
 class PublicRootProjectionSource(Protocol):
-    async def read_public_root(
-        self, *, session_id: str, root_run_id: str
-    ) -> Mapping[str, Any]: ...
+    async def read_public_root(self, *, session_id: str, root_run_id: str) -> Mapping[str, Any]: ...
 
 
 class PublicManifestService(Protocol):
@@ -104,9 +102,7 @@ class HarnessServiceProjectionSource:
 
     service: PublicManifestService
 
-    async def read_public_root(
-        self, *, session_id: str, root_run_id: str
-    ) -> Mapping[str, Any]:
+    async def read_public_root(self, *, session_id: str, root_run_id: str) -> Mapping[str, Any]:
         manifest = await self.service.create_manifest(
             session_id=session_id,
             root_run_id=root_run_id,
@@ -148,9 +144,9 @@ def _wire(value: Any) -> Any:
 
 
 def canonical_bytes(value: Mapping[str, Any]) -> bytes:
-    return (
-        json.dumps(_wire(value), ensure_ascii=False, sort_keys=True, indent=2) + "\n"
-    ).encode("utf-8")
+    return (json.dumps(_wire(value), ensure_ascii=False, sort_keys=True, indent=2) + "\n").encode(
+        "utf-8"
+    )
 
 
 def _safe_enum(value: Any, fallback: str = "unknown") -> str:
@@ -237,9 +233,7 @@ def _sanitize_fact_payload(
         if isinstance(payload.get(key), (int, float)):
             public[key] = payload[key]
     for key in ("evidence_refs", "parent_refs", "report_refs"):
-        refs = _references(
-            payload.get(key), aliases=aliases, fact_aliases=fact_aliases
-        )
+        refs = _references(payload.get(key), aliases=aliases, fact_aliases=fact_aliases)
         if refs:
             public[key] = refs
 
@@ -270,8 +264,7 @@ def _sanitize_facts(
     facts: Sequence[Mapping[str, Any]], aliases: _AliasBook
 ) -> tuple[list[dict[str, Any]], dict[str, str]]:
     fact_aliases = {
-        str(fact.get("stable_id")): f"fact-{index:04d}"
-        for index, fact in enumerate(facts, start=1)
+        str(fact.get("stable_id")): f"fact-{index:04d}" for index, fact in enumerate(facts, start=1)
     }
     result: list[dict[str, Any]] = []
     for index, fact in enumerate(facts, start=1):
@@ -293,13 +286,9 @@ def _sanitize_facts(
             "created_order": index,
         }
         if fact.get("workflow_event_id") is not None:
-            item["workflow_event_ref"] = aliases.alias(
-                fact.get("workflow_event_id"), "event"
-            )
+            item["workflow_event_ref"] = aliases.alias(fact.get("workflow_event_id"), "event")
         if fact.get("invocation_id") is not None:
-            item["invocation_ref"] = aliases.alias(
-                fact.get("invocation_id"), "invocation"
-            )
+            item["invocation_ref"] = aliases.alias(fact.get("invocation_id"), "invocation")
         if isinstance(fact.get("source_seq"), int):
             item["source_seq"] = fact["source_seq"]
         result.append(item)
@@ -363,9 +352,7 @@ def _sanitize_phases(
             "order": index,
         }
         for key in ("evidence_refs", "tool_refs", "child_refs", "workflow_steps"):
-            public[key] = _references(
-                phase.get(key), aliases=aliases, fact_aliases=fact_aliases
-            )
+            public[key] = _references(phase.get(key), aliases=aliases, fact_aliases=fact_aliases)
         public["items"] = _sanitize_phase_items(
             phase.get("items"),
             aliases=aliases,
@@ -445,19 +432,11 @@ def validate_fixture(fixture: Mapping[str, Any]) -> None:
         raise FixtureGenerationError("semantic projection duplicated a tool stable id")
     if len(set(logical_call_refs)) != EXPECTED_LOGICAL_TOOL_COUNT or "None" in logical_call_refs:
         raise FixtureGenerationError("provider-call/effect rows duplicated a logical tool")
-    phase_tool_refs = [
-        str(ref)
-        for phase in phases
-        for ref in phase.get("tool_refs", [])
-    ]
+    phase_tool_refs = [str(ref) for phase in phases for ref in phase.get("tool_refs", [])]
     if set(phase_tool_refs) != set(tool_stable_ids) or len(phase_tool_refs) != len(tool_stable_ids):
         raise FixtureGenerationError("phase tool refs do not match logical tool items")
 
-    fact_payloads = [
-        fact.get("public_payload", {})
-        for fact in facts
-        if isinstance(fact, Mapping)
-    ]
+    fact_payloads = [fact.get("public_payload", {}) for fact in facts if isinstance(fact, Mapping)]
     failed_child_refs = {
         payload.get("run_id") or payload.get("child_run_id")
         for payload in fact_payloads
@@ -477,7 +456,12 @@ def validate_fixture(fixture: Mapping[str, Any]) -> None:
     failure_sets = sum(
         fact.get("kind") == "failure_set" for fact in facts if isinstance(fact, Mapping)
     )
-    if (len(failed_child_refs), len(superseded_targets), failure_reports, failure_sets) != (1, 1, 1, 1):
+    if (len(failed_child_refs), len(superseded_targets), failure_reports, failure_sets) != (
+        1,
+        1,
+        1,
+        1,
+    ):
         raise FixtureGenerationError("approved oracle requires one complete recovery chain")
 
 

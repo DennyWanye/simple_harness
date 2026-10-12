@@ -642,9 +642,7 @@ class ConversationEvidenceMetadata:
                 "public_text_json_pointer",
             )
             _digest(self.public_text_hash, "public_text_hash")
-            _normalize_evidence_text(
-                "", cast(str, self.public_text_normalization_version)
-            )
+            _normalize_evidence_text("", cast(str, self.public_text_normalization_version))
             _identifier(self.evidence_item_authority_id, "evidence_item_authority_id")
             _digest(self.evidence_item_authority_hash, "evidence_item_authority_hash")
             privacy = PrivacyClass(cast(str, self.effective_privacy_class))
@@ -713,9 +711,7 @@ class ConversationEvidenceMetadata:
             "evidence_item_authority_id": self.evidence_item_authority_id,
             "evidence_item_authority_hash": self.evidence_item_authority_hash,
             "effective_privacy_class": (
-                None
-                if self.effective_privacy_class is None
-                else self.effective_privacy_class.value
+                None if self.effective_privacy_class is None else self.effective_privacy_class.value
             ),
             "information_attributes": (
                 None
@@ -842,9 +838,7 @@ class ConversationEvidenceMetadata:
                 if value["information_attributes"] is None
                 else tuple(
                     InformationAttribute(item)
-                    for item in _strings(
-                        value["information_attributes"], "information_attributes"
-                    )
+                    for item in _strings(value["information_attributes"], "information_attributes")
                 )
             ),
             classification_authority_ref=(
@@ -1340,9 +1334,7 @@ class ConversationEvidenceRegistration:
             raise ValueError("conversation metadata authority receipt differs")
         if metadata.has_authorized_public_text:
             if type(self.recall_item_authority) is not EvidenceItemAuthority:
-                raise ValueError(
-                    "authorized public_text requires exact EvidenceItemAuthority"
-                )
+                raise ValueError("authorized public_text requires exact EvidenceItemAuthority")
             expected_recall_binding = _derive_authorized_public_text_binding(
                 envelope,
                 admission,
@@ -1359,13 +1351,9 @@ class ConversationEvidenceRegistration:
                 metadata.classification_authority_ref,
             )
             if actual_recall_binding != expected_recall_binding:
-                raise ValueError(
-                    "conversation authorized public_text differs from item authority"
-                )
+                raise ValueError("conversation authorized public_text differs from item authority")
         elif self.recall_item_authority is not None:
-            raise ValueError(
-                "recall_item_authority requires authorized public_text metadata"
-            )
+            raise ValueError("recall_item_authority requires authorized public_text metadata")
         object.__setattr__(
             self,
             "registration_hash",
@@ -1390,9 +1378,7 @@ class ConversationEvidenceRegistration:
             "metadata": self.metadata.to_json(),
             "metadata_receipt": self.metadata_receipt.to_json(),
             "recall_item_authority": (
-                None
-                if self.recall_item_authority is None
-                else self.recall_item_authority.to_json()
+                None if self.recall_item_authority is None else self.recall_item_authority.to_json()
             ),
         }
 
@@ -1491,13 +1477,10 @@ class EvidenceItemAuthority:
             raise TypeError("required_information_attributes must be an array")
         try:
             attributes = tuple(
-                InformationAttribute(item)
-                for item in self.required_information_attributes
+                InformationAttribute(item) for item in self.required_information_attributes
             )
         except (TypeError, ValueError) as exc:
-            raise ValueError(
-                "required_information_attributes contains an unknown value"
-            ) from exc
+            raise ValueError("required_information_attributes contains an unknown value") from exc
         if len(attributes) > 32:
             raise ValueError("required_information_attributes exceeds the item limit")
         if len(set(attributes)) != len(attributes):
@@ -1578,17 +1561,11 @@ def _derive_authorized_public_text_binding(
         envelope.source_kind,
     ):
         raise ValueError("EvidenceItemAuthority differs from admitted evidence")
-    pointer = _rfc6901_absolute_pointer(
-        authority.item_json_pointer, "item_json_pointer"
-    )
-    public_text = _resolve_json_pointer(
-        _thaw_object(envelope.sanitized_payload), pointer
-    )
+    pointer = _rfc6901_absolute_pointer(authority.item_json_pointer, "item_json_pointer")
+    public_text = _resolve_json_pointer(_thaw_object(envelope.sanitized_payload), pointer)
     if not isinstance(public_text, str):
         raise ValueError("authorized public_text pointer must resolve to a string")
-    normalized = _normalize_evidence_text(
-        public_text, authority.normalization_version
-    )
+    normalized = _normalize_evidence_text(public_text, authority.normalization_version)
     return (
         pointer,
         _canonical_text_digest(normalized),
@@ -1950,9 +1927,7 @@ async def verify_evidence_span(
 
     admitted = await verifier.resolve_admitted_evidence(span)
     if type(admitted) is not AdmittedEvidenceAuthority:
-        raise TypeError(
-            "authority resolver must return exact AdmittedEvidenceAuthority"
-        )
+        raise TypeError("authority resolver must return exact AdmittedEvidenceAuthority")
     typed_receipt = None
     if span.typed_observation is not None:
         typed_receipt = await verifier.resolve_typed_observation(span.typed_observation)

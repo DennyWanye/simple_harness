@@ -17,6 +17,7 @@ HTN 补齐阶段 A′：跑在产品同形世界（:mod:`_assured_loop` / :mod:`
 * "组合审阅开不起来要说明原因"改为直接测记录函数：原用例靠补丁伪造产品内部失败；
 * "别的任务的请求不吞掉这个任务的"改为同一个库里真跑两个任务，不再手插旧格式事件。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -57,11 +58,15 @@ def _held(planner) -> LayeredScriptedProvider:
 
 
 def _decisions(world) -> list[tuple[str, str]]:
-    return [(str(event.payload.get("decision_type")), str(event.payload.get("status")))
-            for event in events_of(world, "PlanningDecisionEvaluated")]
+    return [
+        (str(event.payload.get("decision_type")), str(event.payload.get("status")))
+        for event in events_of(world, "PlanningDecisionEvaluated")
+    ]
 
 
-def test_a_goal_without_a_method_reaches_the_planner_as_a_generic_request_and_is_reviewed_on_its_share(tmp_path):
+def test_a_goal_without_a_method_reaches_the_planner_as_a_generic_request_and_is_reviewed_on_its_share(
+    tmp_path,
+):
     seen: dict[str, list[dict]] = {}
 
     async def case():
@@ -74,10 +79,21 @@ def test_a_goal_without_a_method_reaches_the_planner_as_a_generic_request_and_is
             assert request.payload["source_key"] == f"open-goals:{world.mission.id}:1"
             assert not events_of(world, "HierarchicalRefinementRequested")
             network = world.loop._new_mode(world.mission).network(world.mission.id)
-            part = next(spec for spec in network.occurrences
-                        if str(network.binding_for_occurrence(spec.occurrence_id).goal_signature.signature_id) == PART)
+            part = next(
+                spec
+                for spec in network.occurrences
+                if str(
+                    network.binding_for_occurrence(spec.occurrence_id).goal_signature.signature_id
+                )
+                == PART
+            )
             assert request.payload["request"]["context"]["open_goals"] == [
-                {"task_id": str(part.task_id), "occurrence_id": str(part.occurrence_id), "goal_type": PART}]
+                {
+                    "task_id": str(part.task_id),
+                    "occurrence_id": str(part.occurrence_id),
+                    "goal_type": PART,
+                }
+            ]
             # the request asks for work that does not exist yet; nothing accepted is in question
             assert request.payload["impact"]["new_work"] == [str(part.task_id)]
             assert request.payload["impact"]["revalidate"] == []
@@ -85,48 +101,79 @@ def test_a_goal_without_a_method_reaches_the_planner_as_a_generic_request_and_is
 
             # what the Planner was shown when it wrote the sub-goal's method
             [package] = seen[PART]
-            assert [row["source_key"] for row in package["repair_requests"]] == [f"open-goals:{world.mission.id}:1"]
-            [context] = [row["request"] for row in package["method_proposal_contexts"]
-                         if row["request"]["goal_type_ref"]["id"] == PART]
+            assert [row["source_key"] for row in package["repair_requests"]] == [
+                f"open-goals:{world.mission.id}:1"
+            ]
+            [context] = [
+                row["request"]
+                for row in package["method_proposal_contexts"]
+                if row["request"]["goal_type_ref"]["id"] == PART
+            ]
             assert context["criterion_evidence"] == [
                 {"id": "c-user-1", "evidence_requirement": STATEMENTS[0]},
-                {"id": "c-user-2", "evidence_requirement": STATEMENTS[1]}]
-            assert [(row["task_type_ref"]["id"], row["level"]) for row in context["subgoal_types"]] == [(DEEPER, 2)]
+                {"id": "c-user-2", "evidence_requirement": STATEMENTS[1]},
+            ]
+            assert [
+                (row["task_type_ref"]["id"], row["level"]) for row in context["subgoal_types"]
+            ] == [(DEEPER, 2)]
 
             # the independent review of that method is asked the same two requirements
-            packages = world.htn.list_review_packages(world.mission.id, purpose=ReviewPurpose.METHOD_PLAN)
-            shares = sorted([(item.criterion_id, item.statement) for item in row.criteria] for row in packages)
+            packages = world.htn.list_review_packages(
+                world.mission.id, purpose=ReviewPurpose.METHOD_PLAN
+            )
+            shares = sorted(
+                [(item.criterion_id, item.statement) for item in row.criteria] for row in packages
+            )
             assert [("c-user-1", STATEMENTS[0]), ("c-user-2", STATEMENTS[1])] in shares
             assert len(packages) == 2  # the root's method and the sub-goal's
 
-            assert _decisions(world) == [("PROPOSE_METHOD", "NO_STATE_CHANGE"), ("REFINE", "COMMITTED"),
-                                         ("PROPOSE_METHOD", "NO_STATE_CHANGE"), ("REFINE", "COMMITTED")]
-            addressed = [item for event in events_of(world, "PlanningRepairAddressed")
-                         for item in event.payload["repair_request_ids"]]
+            assert _decisions(world) == [
+                ("PROPOSE_METHOD", "NO_STATE_CHANGE"),
+                ("REFINE", "COMMITTED"),
+                ("PROPOSE_METHOD", "NO_STATE_CHANGE"),
+                ("REFINE", "COMMITTED"),
+            ]
+            addressed = [
+                item
+                for event in events_of(world, "PlanningRepairAddressed")
+                for item in event.payload["repair_request_ids"]
+            ]
             assert addressed == [request.payload["request_id"]]
             assert scopes(world) == {
                 "user-goal/root": ["c-user-1", "c-user-2", "c-user-3"],
                 "sub-goal-1/part": ["c-user-1", "c-user-2"],
-                "prepare-delivery/a": ["c-user-1"], "prepare-delivery/b": ["c-user-2"],
-                "prepare-delivery/tail": ["c-user-3"]}
+                "prepare-delivery/a": ["c-user-1"],
+                "prepare-delivery/b": ["c-user-2"],
+                "prepare-delivery/tail": ["c-user-3"],
+            }
         scripted.release.set()
+
     asyncio.run(case())
 
 
-def test_each_plan_revision_asks_once_and_three_levels_are_reached_through_the_same_request(tmp_path):
+def test_each_plan_revision_asks_once_and_three_levels_are_reached_through_the_same_request(
+    tmp_path,
+):
     async def case():
-        scripted = _held(by_goal_type({ROOT_TYPE: outer(), PART: inner_with_deeper(), DEEPER: deepest()}))
+        scripted = _held(
+            by_goal_type({ROOT_TYPE: outer(), PART: inner_with_deeper(), DEEPER: deepest()})
+        )
         async with assured_loop(tmp_path, scripted, success_criteria=STATEMENTS) as world:
             assert await run_until(world, lambda w: plan_revision(w) == 3)
             assert [event.payload["source_key"] for event in open_goal_requests(world)] == [
-                f"open-goals:{world.mission.id}:1", f"open-goals:{world.mission.id}:2"]
+                f"open-goals:{world.mission.id}:1",
+                f"open-goals:{world.mission.id}:2",
+            ]
             assert scopes(world)["sub-goal-2/deeper"] == ["c-user-1"]
             assert scopes(world)["prepare-delivery/only"] == ["c-user-1"]
         scripted.release.set()
+
     asyncio.run(case())
 
 
-def test_a_planner_that_leaves_the_goal_open_is_not_asked_again_for_the_same_plan_revision(tmp_path):
+def test_a_planner_that_leaves_the_goal_open_is_not_asked_again_for_the_same_plan_revision(
+    tmp_path,
+):
     tree = by_goal_type({ROOT_TYPE: outer()})
 
     def planner(request):
@@ -136,14 +183,20 @@ def test_a_planner_that_leaves_the_goal_open_is_not_asked_again_for_the_same_pla
     async def case():
         scripted = _held(planner)
         async with assured_loop(tmp_path, scripted, success_criteria=STATEMENTS) as world:
-            assert await run_until(world, lambda w: len(events_of(w, "PlanningDecisionEvaluated")) == 3)
+            assert await run_until(
+                world, lambda w: len(events_of(w, "PlanningDecisionEvaluated")) == 3
+            )
             await spin(world, 40)
             assert len(open_goal_requests(world)) == 1
-            assert _decisions(world) == [("PROPOSE_METHOD", "NO_STATE_CHANGE"), ("REFINE", "COMMITTED"),
-                                         ("NO_CHANGE", "NO_STATE_CHANGE")]
+            assert _decisions(world) == [
+                ("PROPOSE_METHOD", "NO_STATE_CHANGE"),
+                ("REFINE", "COMMITTED"),
+                ("NO_CHANGE", "NO_STATE_CHANGE"),
+            ]
             assert len(events_of(world, "PlanningDecisionEvaluated")) == 3
             assert plan_revision(world) == 1
         scripted.release.set()
+
     asyncio.run(case())
 
 
@@ -154,10 +207,19 @@ def test_a_proposed_method_must_cover_exactly_the_requirements_handed_to_its_goa
     idle_step = inner((("c-user-1", "a"), ("c-user-2", "a")))
 
     async def case():
-        scripted = _held(by_goal_type({ROOT_TYPE: outer(), PART: [missing, foreign, idle_step, inner()]}))
-        async with assured_loop(tmp_path, scripted, success_criteria=STATEMENTS, max_planning_attempts=5) as world:
-            assert await run_until(world, lambda w: len(events_of(w, "PlanningMethodProposed")) == 2)
-            refusals = [event.payload["detail"]["problems"] for event in events_of(world, "PlanningRejected")]
+        scripted = _held(
+            by_goal_type({ROOT_TYPE: outer(), PART: [missing, foreign, idle_step, inner()]})
+        )
+        async with assured_loop(
+            tmp_path, scripted, success_criteria=STATEMENTS, max_planning_attempts=5
+        ) as world:
+            assert await run_until(
+                world, lambda w: len(events_of(w, "PlanningMethodProposed")) == 2
+            )
+            refusals = [
+                event.payload["detail"]["problems"]
+                for event in events_of(world, "PlanningRejected")
+            ]
             assert len(refusals) == 3
             texts = [" ".join(item["detail"] for item in problems) for problems in refusals]
             assert "SUBGOAL_COVERAGE" in texts[0] and "c-user-2" in texts[0]
@@ -170,19 +232,22 @@ def test_a_proposed_method_must_cover_exactly_the_requirements_handed_to_its_goa
             assert sub_goal["subject_task_id"] != root["subject_task_id"]
             assert sub_goal["method_ref"]["version"] == 1
         scripted.release.set()
+
     asyncio.run(case())
 
 
 def test_a_request_about_an_older_plan_revision_is_retired_by_the_system():
-    """"第 N 版计划里这些目标没有做法"在计划到了别的版本之后就过时了：还开着的目标由新版本
+    """ "第 N 版计划里这些目标没有做法"在计划到了别的版本之后就过时了：还开着的目标由新版本
     自己的请求去说，不让两条请求指着同一个目标。别的请求不动。"""
     from agent_orchestrator.orchestrator.planning_repair_requests import (
         superseded_revision_requests,
     )
 
-    pending = [{"request_id": "r1", "source_key": "open-goals:m1:1"},
-               {"request_id": "r2", "source_key": "open-goals:m1:2"},
-               {"request_id": "r3", "source_key": "event:step-failed"}]
+    pending = [
+        {"request_id": "r1", "source_key": "open-goals:m1:1"},
+        {"request_id": "r2", "source_key": "open-goals:m1:2"},
+        {"request_id": "r3", "source_key": "event:step-failed"},
+    ]
     assert superseded_revision_requests(pending, "m1", 2) == ["r1"]
     assert superseded_revision_requests(pending, "m1", 3) == ["r1", "r2"]
     assert superseded_revision_requests(pending[2:], "m1", 3) == []
@@ -190,6 +255,7 @@ def test_a_request_about_an_older_plan_revision_is_retired_by_the_system():
 
 def test_the_first_plan_is_not_asked_for_through_a_request(tmp_path):
     """根目标在第一份计划之前没有做法是规划的起点，不是"计划里有目标没做法"。"""
+
     async def case():
         scripted = _held(by_goal_type({ROOT_TYPE: outer()}))
         async with assured_loop(tmp_path, scripted, success_criteria=STATEMENTS) as world:
@@ -198,12 +264,17 @@ def test_the_first_plan_is_not_asked_for_through_a_request(tmp_path):
             assert await run_until(world, lambda w: open_goal_requests(w))
             assert plan_revision(world) == 1
         scripted.release.set()
+
     asyncio.run(case())
 
 
 # ---------------------------------------------------------------- 带发布要求的任务（独立核验发现）
-PUBLISH_STATEMENTS = ("写出 notes/a.md，列三条要点", "file:README.md",
-                      "写出 notes/c.md，给出一个例子", "action:file_publish.publish:README.md")
+PUBLISH_STATEMENTS = (
+    "写出 notes/a.md，列三条要点",
+    "file:README.md",
+    "写出 notes/c.md，给出一个例子",
+    "action:file_publish.publish:README.md",
+)
 
 
 async def _publishing(tmp_path, planner):
@@ -224,14 +295,19 @@ def test_the_publish_source_rule_is_checked_on_the_goals_own_share_only(tmp_path
     good = inner((("c-user-1", "a"), ("c-user-3", "b")))
 
     async def case():
-        context, world = await _publishing(tmp_path, by_goal_type(
-            {ROOT_TYPE: outer(("c-user-1", "c-user-3"), ("c-user-2",)), PART: good}))
+        context, world = await _publishing(
+            tmp_path,
+            by_goal_type({ROOT_TYPE: outer(("c-user-1", "c-user-3"), ("c-user-2",)), PART: good}),
+        )
         try:
-            assert await run_until(world, lambda w: len(events_of(w, "PlanningMethodProposed")) == 2)
+            assert await run_until(
+                world, lambda w: len(events_of(w, "PlanningMethodProposed")) == 2
+            )
             assert not events_of(world, "PlanningRejected")
         finally:
             world.provider.release.set()
             await context.__aexit__(None, None, None)
+
     asyncio.run(case())
 
 
@@ -240,17 +316,25 @@ def test_the_publish_source_rule_still_holds_inside_the_goal_that_owns_the_file(
     twice = inner((("c-user-1", "a"), ("c-user-2", "a"), ("c-user-2", "b")))
 
     async def case():
-        context, world = await _publishing(tmp_path, by_goal_type(
-            {ROOT_TYPE: outer(("c-user-1", "c-user-2"), ("c-user-3",)), PART: twice}))
+        context, world = await _publishing(
+            tmp_path,
+            by_goal_type({ROOT_TYPE: outer(("c-user-1", "c-user-2"), ("c-user-3",)), PART: twice}),
+        )
         try:
             assert await run_until(world, lambda w: events_of(w, "PlanningRejected"))
-            [refusal] = [event.payload["detail"]["problems"] for event in events_of(world, "PlanningRejected")]
-            assert any("PUBLISH_SOURCE_AMBIGUOUS" in item["detail"] and "README.md" in item["detail"]
-                       for item in refusal), refusal
+            [refusal] = [
+                event.payload["detail"]["problems"]
+                for event in events_of(world, "PlanningRejected")
+            ]
+            assert any(
+                "PUBLISH_SOURCE_AMBIGUOUS" in item["detail"] and "README.md" in item["detail"]
+                for item in refusal
+            ), refusal
             assert len(events_of(world, "PlanningMethodProposed")) == 1  # only the root's
         finally:
             world.provider.release.set()
             await context.__aexit__(None, None, None)
+
     asyncio.run(case())
 
 
@@ -264,7 +348,9 @@ def test_a_sub_goal_whose_review_cannot_be_opened_says_why(tmp_path):
     async def case():
         scripted = _held(by_goal_type({ROOT_TYPE: outer()}))
         async with assured_loop(tmp_path, scripted, success_criteria=STATEMENTS) as world:
-            assembly = world.loop._composition_assembly(world.mission, world.loop._new_mode(world.mission))
+            assembly = world.loop._composition_assembly(
+                world.mission, world.loop._new_mode(world.mission)
+            )
             error = ContractError("Assurance COMPOSITION review unavailable: SOME_REASON")
             for _ in range(2):
                 assembly.on_deferred("occ-part", "task-part", PART, error)
@@ -275,6 +361,7 @@ def test_a_sub_goal_whose_review_cannot_be_opened_says_why(tmp_path):
             assembly.on_deferred("occ-part", "task-part", PART, ContractError("ANOTHER_REASON"))
             assert len(events_of(world, "CompositionReviewDeferred")) == 2
         scripted.release.set()
+
     asyncio.run(case())
 
 
@@ -287,13 +374,22 @@ def test_another_missions_request_in_the_same_store_does_not_swallow_this_one(tm
     async def case():
         scripted = _held(by_goal_type({ROOT_TYPE: outer()}))
         async with assured_loop(tmp_path, scripted, success_criteria=STATEMENTS) as world:
-            second = world.product.create({"goal": "再写一份报告", "idempotency_key": "second-mission",
-                                           "success_criteria": list(STATEMENTS)})["mission_id"]
+            second = world.product.create(
+                {
+                    "goal": "再写一份报告",
+                    "idempotency_key": "second-mission",
+                    "success_criteria": list(STATEMENTS),
+                }
+            )["mission_id"]
 
             def requests(mission_id):
-                return [event for event in world.store.list_events(mission_id)
-                        if event.type == "PlanningRepairRequested"
-                        and (event.payload.get("request") or {}).get("trigger_source") == "GOAL_UNREFINED"]
+                return [
+                    event
+                    for event in world.store.list_events(mission_id)
+                    if event.type == "PlanningRepairRequested"
+                    and (event.payload.get("request") or {}).get("trigger_source")
+                    == "GOAL_UNREFINED"
+                ]
 
             assert await run_until(world, lambda w: requests(w.mission.id) and requests(second))
             for mission_id in (world.mission.id, second):
@@ -301,4 +397,5 @@ def test_another_missions_request_in_the_same_store_does_not_swallow_this_one(tm
                 assert request.mission_id == mission_id
                 assert request.payload["source_key"] == f"open-goals:{mission_id}:1"
         scripted.release.set()
+
     asyncio.run(case())

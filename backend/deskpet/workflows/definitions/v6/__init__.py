@@ -17,6 +17,7 @@ DEFAULT_DEEP_RESEARCH_VERSION = "v6"
 def register_v6_workflows(registry: WorkflowRegistry) -> None:
     registry.register(DEEP_RESEARCH_V6)
 
+
 __all__ = [
     "DEEP_RESEARCH_V6",
     "DEEP_RESEARCH_V6_DEFINITION",

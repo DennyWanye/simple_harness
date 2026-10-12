@@ -26,7 +26,9 @@ class StubMeter:
     count_mode = "STUB"
 
 
-def stub_meter_factory(counter: Any, *, input_limit_tokens: int, max_output_tokens: int) -> StubMeter:
+def stub_meter_factory(
+    counter: Any, *, input_limit_tokens: int, max_output_tokens: int
+) -> StubMeter:
     del counter, input_limit_tokens, max_output_tokens
     return StubMeter()
 
@@ -36,8 +38,12 @@ def fake_models_dir(root: Path) -> Path:
 
     model = root / "models" / "bge-m3-int8"
     model.mkdir(parents=True, exist_ok=True)
-    for name, body in (("model.int8.onnx", b"onnx"), ("model.int8.onnx.data", b"data"),
-                       ("tokenizer.json", b'{"fixed": true}'), ("config.json", b'{"dim": 1024}')):
+    for name, body in (
+        ("model.int8.onnx", b"onnx"),
+        ("model.int8.onnx.data", b"data"),
+        ("tokenizer.json", b'{"fixed": true}'),
+        ("config.json", b'{"dim": 1024}'),
+    ):
         (model / name).write_bytes(body)
     return root / "models"
 
@@ -74,7 +80,8 @@ def identity(native: Any, options: dict[str, Any], scratch: Path) -> dict[str, A
                 root_markers[f"{directory.name}/{path.name}"] = json.loads(path.read_text())
         pools[profile_id] = {
             "runtime_profile": {
-                "model": profile.model, "provider_kind": profile.provider_kind,
+                "model": profile.model,
+                "provider_kind": profile.provider_kind,
                 "context_policy": _plain(profile.context_policy),
                 "default_max_output_tokens": profile.default_max_output_tokens,
                 "max_output_tokens_ceiling": profile.max_output_tokens_ceiling,
@@ -85,14 +92,18 @@ def identity(native: Any, options: dict[str, Any], scratch: Path) -> dict[str, A
             "activation_receipt": _plain(ports.activation_receipt),
             "embedding_resource_ref": _plain(ports.embedding_resource_ref),
             "catalogue_authority": None if ports.catalogue_authority is None else "shared",
-            "script_runner": None if ports.script_runner is None else type(ports.script_runner).__name__,
+            "script_runner": None
+            if ports.script_runner is None
+            else type(ports.script_runner).__name__,
             "files": marker,
             "root_markers": {k: _plain(v) for k, v in root_markers.items()},
         }
     caller = native.control_caller({"command_id": "pin-command", "x": 1})
     read_caller = native.control_caller({"x": 1})
     status = native.status()
-    status["profiles"] = [{k: v for k, v in row.items() if k != "background"} for row in status["profiles"]]
+    status["profiles"] = [
+        {k: v for k, v in row.items() if k != "background"} for row in status["profiles"]
+    ]
     return {
         "catalogue_owner": native.catalogue_owner_id,
         "owner_contract": _plain(native.owner_contract),
@@ -120,17 +131,33 @@ def build(tmp: Path, *, models: bool, snapshot: bool, counter_factory: Any) -> d
         async def invoke(self, request: Any, *, cancel: Any = None) -> Any:
             raise RuntimeError("not used")
 
-    native = build_native_pools(tenant_id=TENANT, principal_id=PRINCIPAL, allowed_tools=TOOLS,
-                                models_dir=fake_models_dir(tmp) if models else None,
-                                meter_factory=stub_meter_factory, clock_ms=lambda: 1)
+    native = build_native_pools(
+        tenant_id=TENANT,
+        principal_id=PRINCIPAL,
+        allowed_tools=TOOLS,
+        models_dir=fake_models_dir(tmp) if models else None,
+        meter_factory=stub_meter_factory,
+        clock_ms=lambda: 1,
+    )
     config = OrchestratorConfig(evidence_root=tmp / "root", model=MODEL)
     original = rp.deepseek_counter_for
-    rp.deepseek_counter_for = lambda snap, settings=None, **kw: counter_factory() if snap is not None else None
+    rp.deepseek_counter_for = lambda snap, settings=None, **kw: (
+        counter_factory() if snap is not None else None
+    )
     try:
-        snap = SimpleNamespace(requested_model=MODEL, base_url="https://api.deepseek.com") if snapshot else None
-        options = rp.source_runtime_options(config, Provider(), snap, native=native,
-                                            native_test_counter=None if snapshot else counter_factory(),
-                                            thinking_provider=Provider() if snapshot else None)
+        snap = (
+            SimpleNamespace(requested_model=MODEL, base_url="https://api.deepseek.com")
+            if snapshot
+            else None
+        )
+        options = rp.source_runtime_options(
+            config,
+            Provider(),
+            snap,
+            native=native,
+            native_test_counter=None if snapshot else counter_factory(),
+            thinking_provider=Provider() if snapshot else None,
+        )
     finally:
         rp.deepseek_counter_for = original
     return identity(native, options, tmp / "scratch")

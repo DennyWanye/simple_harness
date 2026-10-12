@@ -3,6 +3,7 @@
 Short real leases replace an eight-minute human wait. No synthetic terminal or
 permission receipt is written: the existing production fixture creates them.
 """
+
 import asyncio
 import sqlite3
 import time
@@ -22,10 +23,12 @@ TTL = 1.2
 
 async def setup(tmp_path, monkeypatch, *, wake=True):
     build = decisions.build
+
     async def short_lease(*args, **kwargs):
         runtime, stack, queue = await build(*args, **kwargs)
         runtime._lease_seconds = TTL
         return runtime, stack, queue
+
     monkeypatch.setattr(decisions, "build", short_lease)
     return await decisions.setup(tmp_path, wake=wake)
 
@@ -46,9 +49,12 @@ async def close(s):
 async def stop(s):
     current = await s["queue"].current_snapshot(s["auth"].subject)
     receipt = await s["queue"].request_control(
-        host_run_id=current.host_run_id, subject=s["auth"].subject,
-        generation=current.generation, control_kind=ControlKind.STOP,
-        reason="Explicit test stop", idempotency_key="lease-test-stop",
+        host_run_id=current.host_run_id,
+        subject=s["auth"].subject,
+        generation=current.generation,
+        control_kind=ControlKind.STOP,
+        reason="Explicit test stop",
+        idempotency_key="lease-test-stop",
     )
     await s["runtime"].after_control(subject=s["auth"].subject)
     await asyncio.wait_for(s["runtime"].drain(), 10)
@@ -88,7 +94,10 @@ async def test_multiple_real_waiting_windows_renew_unique_receipts_and_allow(tmp
         assert len(s["provider"].requests) == 7
         files = list(s["configured"].glob("task-*/fresh.txt"))
         assert len(files) == 1 and files[0].read_text() == "created in exact task root"
-        heartbeats = rows(s, "SELECT idempotency_key,expires_at FROM foreground_lease_receipts WHERE action='heartbeat' ORDER BY recorded_at")
+        heartbeats = rows(
+            s,
+            "SELECT idempotency_key,expires_at FROM foreground_lease_receipts WHERE action='heartbeat' ORDER BY recorded_at",
+        )
         assert len(heartbeats) >= 3 and len({x[0] for x in heartbeats}) == len(heartbeats)
         assert all(a[1] < b[1] for a, b in zip(heartbeats, heartbeats[1:]))
         assert rows(s, "SELECT COUNT(*) FROM foreground_runs") == [(1,)]
@@ -99,7 +108,9 @@ async def test_multiple_real_waiting_windows_renew_unique_receipts_and_allow(tmp
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mode", ["live_waiting", "expired_waiting", "expired_failed"])
-async def test_stop_converges_exact_original_sdk_terminal_after_lease_recovery(tmp_path, monkeypatch, mode):
+async def test_stop_converges_exact_original_sdk_terminal_after_lease_recovery(
+    tmp_path, monkeypatch, mode
+):
     s = await setup(tmp_path, monkeypatch, wake=False)
     try:
         old_item = (await decisions.pending(s))[0]
@@ -109,13 +120,17 @@ async def test_stop_converges_exact_original_sdk_terminal_after_lease_recovery(t
             await s["runtime"]._stop_lease_keeper()
             if mode == "expired_failed":
                 from simple_harness.providers import ProviderRequestRejectedError
+
                 async def fail_provider(request, *, cancel):
                     # A generic after-handoff exception is correctly UNKNOWN /
                     # WAITING. Use the public confirmed-rejection classification
                     # to construct this distinct, actual SDK FAILED control.
                     raise ProviderRequestRejectedError(public_message="controlled request rejected")
+
                 monkeypatch.setattr(s["provider"], "invoke", fail_provider)
-                response = await s["request"]("primary.decisions.respond", decisions.reply(s, old_item))
+                response = await s["request"](
+                    "primary.decisions.respond", decisions.reply(s, old_item)
+                )
                 assert response["payload"]["ok"]
                 # Authorization schedules the actual SDK continuation on the
                 # next loop turn; wait_idle before that handoff sees no driver.
@@ -124,8 +139,10 @@ async def test_stop_converges_exact_original_sdk_terminal_after_lease_recovery(t
                 assert s["runtime"]._ingress.query(s["current"].sdk_run_id).state.value == "failed"
             current = await s["queue"].current_snapshot(s["auth"].subject)
             await asyncio.sleep(max(0, current.lease_expires_at - time.time()) + 0.1)
+
         async def cannot_reprepare(**_):
             raise AssertionError("recovery must not reconstruct consumed history")
+
         monkeypatch.setattr(s["runtime"]._context, "prepare", cannot_reprepare)
         before_calls = len(s["provider"].requests)
         await stop(s)
@@ -150,10 +167,12 @@ async def test_delayed_old_heartbeat_cannot_renew_after_other_owner_reclaim(tmp_
     s = await setup(tmp_path, monkeypatch, wake=False)
     entered, release = asyncio.Event(), asyncio.Event()
     original = s["queue"].heartbeat
+
     async def delayed(**kwargs):
         entered.set()
         await release.wait()
         return await original(**kwargs)
+
     monkeypatch.setattr(s["queue"], "heartbeat", delayed)
     try:
         item = (await decisions.pending(s))[0]
@@ -161,8 +180,13 @@ async def test_delayed_old_heartbeat_cannot_renew_after_other_owner_reclaim(tmp_
         old = await s["queue"].current_snapshot(s["auth"].subject)
         await asyncio.sleep(max(0, old.lease_expires_at - time.time()) + 0.1)
         second = ForegroundQueueStore(s["state"])
-        reclaimed = await second.reclaim_expired(host_run_id=old.host_run_id, new_owner_id="other-owner",
-            expected_generation=old.generation, lease_seconds=10, idempotency_key="other-owner-reclaim")
+        reclaimed = await second.reclaim_expired(
+            host_run_id=old.host_run_id,
+            new_owner_id="other-owner",
+            expected_generation=old.generation,
+            lease_seconds=10,
+            idempotency_key="other-owner-reclaim",
+        )
         release.set()
         with pytest.raises(ForegroundQueueError, match="foreground_generation_stale"):
             await asyncio.wait_for(asyncio.shield(s["runtime"]._lease_task), 3)
@@ -180,15 +204,19 @@ async def test_delayed_old_heartbeat_cannot_renew_after_other_owner_reclaim(tmp_
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("failure", ["unavailable", "foreign_identity"])
-async def test_unknown_or_foreign_sdk_query_never_restarts_or_forges_terminal(tmp_path, monkeypatch, failure):
+async def test_unknown_or_foreign_sdk_query_never_restarts_or_forges_terminal(
+    tmp_path, monkeypatch, failure
+):
     s = await setup(tmp_path, monkeypatch, wake=False)
     try:
         await s["runtime"]._stop_lease_keeper()
         original = s["runtime"]._ingress.query
+
         def query(run_id):
             if failure == "unavailable":
                 raise TimeoutError("controlled query unavailable")
             return replace(original(run_id), run_id="other-sdk-run")
+
         monkeypatch.setattr(s["runtime"]._ingress, "query", query)
         await s["runtime"].after_control(subject=s["auth"].subject)
         await asyncio.wait_for(s["runtime"].drain(), 5)
@@ -209,20 +237,26 @@ async def test_keeper_cleanup_survives_snapshot_failure(tmp_path, monkeypatch, o
     snapshot = await s["queue"].current_snapshot(s["auth"].subject)
     original = s["queue"].current_snapshot
     reads = 0
+
     async def unavailable(_subject):
         nonlocal reads
         reads += 1
         raise RuntimeError("controlled cleanup read failure")
+
     async def work(*_):
         monkeypatch.setattr(s["queue"], "current_snapshot", unavailable)
         if outcome == "work_error":
             raise ValueError("controlled work failure")
         if outcome == "work_cancel":
             raise asyncio.CancelledError()
+
     monkeypatch.setattr(runtime, "_drive_claimed", work)
     try:
-        expected = {"work_error": ValueError, "work_cancel": asyncio.CancelledError,
-                    "success_then_read_error": RuntimeError}[outcome]
+        expected = {
+            "work_error": ValueError,
+            "work_cancel": asyncio.CancelledError,
+            "success_then_read_error": RuntimeError,
+        }[outcome]
         with pytest.raises(expected):
             await runtime._drive_with_lease(snapshot)
         assert reads == (1 if outcome == "success_then_read_error" else 0)
@@ -230,7 +264,10 @@ async def test_keeper_cleanup_survives_snapshot_failure(tmp_path, monkeypatch, o
         monkeypatch.setattr(s["queue"], "current_snapshot", original)
         count = rows(s, "SELECT COUNT(*) FROM foreground_lease_receipts WHERE action='heartbeat'")
         await asyncio.sleep(TTL / 2)
-        assert rows(s, "SELECT COUNT(*) FROM foreground_lease_receipts WHERE action='heartbeat'") == count
+        assert (
+            rows(s, "SELECT COUNT(*) FROM foreground_lease_receipts WHERE action='heartbeat'")
+            == count
+        )
     finally:
         monkeypatch.setattr(s["queue"], "current_snapshot", original)
         await close(s)

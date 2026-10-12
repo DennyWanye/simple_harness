@@ -99,13 +99,10 @@ def _capture_identity(pid: int) -> ProcessIdentity | None:
 
 def _matches_identity(process: psutil.Process, expected: ProcessIdentity) -> bool:
     try:
-        return (
-            abs(float(process.create_time()) - expected.creation_time) <= 0.01
-            and (
-                tuple(process.cmdline()) == expected.command_line
-                # 模型交回的是进程列表给它的、密钥已隐藏的那份（同一规则，结果确定）
-                or _redacted_argv(process.cmdline()) == _redacted_argv(expected.command_line)
-            )
+        return abs(float(process.create_time()) - expected.creation_time) <= 0.01 and (
+            tuple(process.cmdline()) == expected.command_line
+            # 模型交回的是进程列表给它的、密钥已隐藏的那份（同一规则，结果确定）
+            or _redacted_argv(process.cmdline()) == _redacted_argv(expected.command_line)
         )
     except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
         return False
@@ -320,8 +317,7 @@ class ProcessToolService:
         descendant_pids = [
             identity.pid
             for identity in lease.observed.values()
-            if identity.pid != lease.identity.pid
-            and _identity_is_still_running(identity)
+            if identity.pid != lease.identity.pid and _identity_is_still_running(identity)
         ]
         if not descendant_pids:
             await self._finalize_lease(lease)
@@ -335,9 +331,7 @@ class ProcessToolService:
             "stderr_log_ref": str(lease.stderr_log),
         }
 
-    async def stop_owned(
-        self, lease_id: str, *, root_run_id: str
-    ) -> dict[str, Any]:
+    async def stop_owned(self, lease_id: str, *, root_run_id: str) -> dict[str, Any]:
         lease = await self._owned_lease(lease_id, root_run_id)
         self._observe_lease(lease)
         result = await self._stop_identities(
@@ -351,9 +345,7 @@ class ProcessToolService:
     async def stop_explicit(self, identity: ProcessIdentity) -> dict[str, Any]:
         return await self._stop_identity(identity)
 
-    async def _owned_lease(
-        self, lease_id: str, root_run_id: str
-    ) -> ManagedProcessLease:
+    async def _owned_lease(self, lease_id: str, root_run_id: str) -> ManagedProcessLease:
         async with self._lock:
             lease = self._leases.get(lease_id)
         if lease is None:
@@ -454,9 +446,7 @@ class ProcessToolService:
             "pid": root_pid,
             "already_exited": False,
             "matched_pids": matched_pids,
-            "stopped_pids": [
-                pid for pid in matched_pids if pid not in set(remaining)
-            ],
+            "stopped_pids": [pid for pid in matched_pids if pid not in set(remaining)],
             "remaining_pids": remaining,
             "released_private_memory_bytes": max(0, before_memory - after_memory),
         }
@@ -520,10 +510,14 @@ _SECRET_VALUE = re.compile(
 # 一个参数里夹着的写法：``--token v`` / ``--token=v`` / ``API_KEY=v`` / ``X-Api-Key: v`` /
 # ``Authorization: token v`` / ``Bearer v`` / ``scheme://user:pass@host``
 _INLINE = (
-    re.compile(rf"(?i)(--?[A-Za-z0-9]*(?:[-_.][A-Za-z0-9]+)*?(?:^|[-_.]|\b)(?:{_SECRET_WORDS})(?:[-_.][A-Za-z0-9]+)*[ =]+)"
-               r"(?!\[REDACTED\])([^\s\"']+)"),
-    re.compile(rf"(?i)(\b[A-Za-z0-9]*(?:[-_.][A-Za-z0-9]+)*?(?:^|[-_.]|\b)(?:{_SECRET_WORDS})(?:[-_.][A-Za-z0-9]+)*\s*[:=]\s*"
-               r"(?:(?:bearer|token|basic)\s+)?+)(?!\[REDACTED\])([^\s\"']+)"),  # ?+：方案词不回吐成值
+    re.compile(
+        rf"(?i)(--?[A-Za-z0-9]*(?:[-_.][A-Za-z0-9]+)*?(?:^|[-_.]|\b)(?:{_SECRET_WORDS})(?:[-_.][A-Za-z0-9]+)*[ =]+)"
+        r"(?!\[REDACTED\])([^\s\"']+)"
+    ),
+    re.compile(
+        rf"(?i)(\b[A-Za-z0-9]*(?:[-_.][A-Za-z0-9]+)*?(?:^|[-_.]|\b)(?:{_SECRET_WORDS})(?:[-_.][A-Za-z0-9]+)*\s*[:=]\s*"
+        r"(?:(?:bearer|token|basic)\s+)?+)(?!\[REDACTED\])([^\s\"']+)"
+    ),  # ?+：方案词不回吐成值
     re.compile(r"(?i)(\bbearer\s+)(?!\[REDACTED\])([^\s\"']+)"),
     re.compile(r"([A-Za-z][A-Za-z0-9+.-]*://[^\s/:@]+:)(?!\[REDACTED\])([^\s/@]+)(?=@)"),
 )
@@ -575,9 +569,7 @@ async def process_list(
     max_entries = max(1, min(max_entries, 500))
     query = str(args.get("query", "")).casefold()
     rows: list[dict[str, Any]] = []
-    for process in psutil.process_iter(
-        attrs=["pid", "name", "exe", "cmdline", "create_time"]
-    ):
+    for process in psutil.process_iter(attrs=["pid", "name", "exe", "cmdline", "create_time"]):
         try:
             info = process.info
             command_line = _redacted_argv(info.get("cmdline") or [])
@@ -669,9 +661,7 @@ async def process_stop(
     root_run_id = context.root_run_id or context.run_id or task_id or "legacy"
     try:
         if isinstance(args.get("lease_id"), str) and args["lease_id"]:
-            result = await _PROCESS_SERVICE.stop_owned(
-                args["lease_id"], root_run_id=root_run_id
-            )
+            result = await _PROCESS_SERVICE.stop_owned(args["lease_id"], root_run_id=root_run_id)
         else:
             pid = args.get("pid")
             creation_time = args.get("creation_time")
@@ -733,9 +723,7 @@ def resolve_process_stop_resources(args: Mapping[str, Any]) -> tuple[dict[str, A
         or not isinstance(command_line, list)
         or not all(isinstance(part, str) for part in command_line)
     ):
-        raise ValueError(
-            "process stop requires lease_id or pid + creation_time + command_line"
-        )
+        raise ValueError("process stop requires lease_id or pid + creation_time + command_line")
     return (
         {
             "kind": "process_identity",

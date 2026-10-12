@@ -277,9 +277,7 @@ def test_runtime_owned_memory_closes_once_and_same_path_fails(tmp_path: Path) ->
     rejected = _Memory(path=path)
     with pytest.raises(ValueError, match="different resolved paths"):
         asyncio.run(
-            __import__("simple_harness").build_consumer_runtime(
-                _ports(path, rejected, owned=True)
-            )
+            __import__("simple_harness").build_consumer_runtime(_ports(path, rejected, owned=True))
         )
     assert rejected.close_count == 1
 

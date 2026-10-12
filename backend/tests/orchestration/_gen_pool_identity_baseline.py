@@ -2,6 +2,7 @@
 
 用法（backend 目录）：.venv/bin/python tests/orchestration/_gen_pool_identity_baseline.py <输出文件>
 """
+
 import json
 import sys
 import tempfile
@@ -15,6 +16,7 @@ from agent_orchestrator.testing.word_counter import FixtureWordCounter  # noqa: 
 out = {}
 for models, snapshot in P.VARIANTS:
     with tempfile.TemporaryDirectory() as d:
-        out[f"models={models},snapshot={snapshot}"] = P.build(Path(d), models=models, snapshot=snapshot,
-                                                              counter_factory=FixtureWordCounter)
+        out[f"models={models},snapshot={snapshot}"] = P.build(
+            Path(d), models=models, snapshot=snapshot, counter_factory=FixtureWordCounter
+        )
 Path(sys.argv[1]).write_text(json.dumps(out, ensure_ascii=False, indent=1, sort_keys=True) + "\n")

@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 """Exact-contract outcomes for TaskGraph ORDER and composition reads."""
+
 from __future__ import annotations
 
 from ..contracts.htn import OccurrenceId, TaskForm
@@ -10,8 +11,9 @@ from ..storage.htn_store import HtnStore
 from ..storage.store import Store
 
 
-def read_taskgraph_outcomes(store: Store, mission_id: str,
-                           network: TaskNetworkSnapshot) -> dict[OccurrenceId, OccurrenceOutcome]:
+def read_taskgraph_outcomes(
+    store: Store, mission_id: str, network: TaskNetworkSnapshot
+) -> dict[OccurrenceId, OccurrenceOutcome]:
     with store.read_view():
         semantics = HtnStore(store)
         requirements = semantics.latest_requirements_revision(mission_id)
@@ -20,11 +22,13 @@ def read_taskgraph_outcomes(store: Store, mission_id: str,
         return _completion_outcomes(store, mission_id, network)
 
 
-def _completion_outcomes(store: Store, mission_id: str,
-                         network: TaskNetworkSnapshot) -> dict[OccurrenceId, OccurrenceOutcome]:
+def _completion_outcomes(
+    store: Store, mission_id: str, network: TaskNetworkSnapshot
+) -> dict[OccurrenceId, OccurrenceOutcome]:
     from .completion_status import read_occurrence_completion
     from .operation_completion import OperationCompletionError
     from .taskgraph_terminal import read_terminal_outcome
+
     semantics = HtnStore(store)
     active = semantics.active_plan_revision(mission_id)
     outcomes = {}
@@ -33,9 +37,14 @@ def _completion_outcomes(store: Store, mission_id: str,
         status = None
         if active is not None:
             try:
-                status = read_occurrence_completion(store, mission_id, str(occurrence.occurrence_id))
+                status = read_occurrence_completion(
+                    store, mission_id, str(occurrence.occurrence_id)
+                )
             except OperationCompletionError as error:
-                if error.code not in {"OP_COMPLETION_SCOPE_UNRESOLVED", "OP_REQUIREMENT_MAPPING_MISSING"}:
+                if error.code not in {
+                    "OP_COMPLETION_SCOPE_UNRESOLVED",
+                    "OP_REQUIREMENT_MAPPING_MISSING",
+                }:
                     raise
         if status is not None and status.complete:
             # Exact original content review + EffectFulfillment + current scope.

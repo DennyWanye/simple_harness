@@ -105,10 +105,15 @@ def product_delegation_tool_catalog(
         delegate.__name__ = f"{name}_delegate"
         return delegate
 
-    return {name: (handler_for(name), dict(schema)) for name, schema in (
-        ("agent", agent), ("agent_parallel", parallel),
-        ("spawn_team", team), ("spawn_subagents", _SPAWN_SCHEMA),
-    )}
+    return {
+        name: (handler_for(name), dict(schema))
+        for name, schema in (
+            ("agent", agent),
+            ("agent_parallel", parallel),
+            ("spawn_team", team),
+            ("spawn_subagents", _SPAWN_SCHEMA),
+        )
+    }
 
 
 def build_await_subagents_tool(workflow_service_provider):
@@ -152,20 +157,12 @@ def build_await_subagents_tool(workflow_service_provider):
             RunRef(boundary.run_id, boundary.session_id),
             actor,
         )
-        requested = {
-            str(item)
-            for item in (args.get("run_ids") or ())
-            if str(item)
-        }
+        requested = {str(item) for item in (args.get("run_ids") or ()) if str(item)}
         child_ids = [
-            link.child_run_id
-            for link in links
-            if not requested or link.child_run_id in requested
+            link.child_run_id for link in links if not requested or link.child_run_id in requested
         ]
         if requested - set(child_ids):
-            raise RuntimeError(
-                "requested child does not belong to this parent"
-            )
+            raise RuntimeError("requested child does not belong to this parent")
         results = []
         for child_id in child_ids:
             while True:
@@ -234,9 +231,13 @@ def build_sdk_await_subagents_tool(
         )
         if inspect.isawaitable(result):
             result = await result
-        return result if isinstance(result, str) else json.dumps(
-            result,
-            ensure_ascii=False,
+        return (
+            result
+            if isinstance(result, str)
+            else json.dumps(
+                result,
+                ensure_ascii=False,
+            )
         )
 
     return _handler, dict(_AWAIT_SCHEMA)
@@ -257,9 +258,13 @@ def normalize_delegation(name: str, args: dict[str, Any]) -> tuple[str, Any, boo
         requested = [tool for item in tasks for tool in (item.get("tools") or ())] or None
     if not isinstance(prompts, list) or not prompts or not all(prompts):
         raise ValueError(f"{name} requires non-empty delegated tasks")
-    text = prompts[0] if name == "agent" else (
-        "Complete every delegated task and return results keyed by task index.\n"
-        + json.dumps(args, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    text = (
+        prompts[0]
+        if name == "agent"
+        else (
+            "Complete every delegated task and return results keyed by task index.\n"
+            + json.dumps(args, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        )
     )
     return text, requested, name == "spawn_subagents"
 
@@ -283,11 +288,15 @@ def build_subagent_batch_delegate(
         execution_context.capability_hash,
     )
     expected = (
-        request.run_id,
-        context.session_id,
-        context.root_run_id,
-        context.capability_hash,
-    ) if context is not None else ()
+        (
+            request.run_id,
+            context.session_id,
+            context.root_run_id,
+            context.capability_hash,
+        )
+        if context is not None
+        else ()
+    )
     if supplied != expected:
         raise AuthorizationError("actor_not_authorized", "subagent scope differs from parent")
     raw = args.get("subagents")
@@ -299,7 +308,8 @@ def build_subagent_batch_delegate(
             raise ValueError("each subagent requires a prompt")
         task = dict(item)
         requested = [
-            str(tool) for tool in (task.get("tools") or sorted(allowed_capabilities))
+            str(tool)
+            for tool in (task.get("tools") or sorted(allowed_capabilities))
             if str(tool) not in _FORBIDDEN
         ]
         if not set(requested) <= allowed_capabilities:
@@ -328,7 +338,11 @@ def build_subagent_batch_delegate(
 
 
 __all__ = [
-    "SdkSubagentJoinPort", "build_sdk_await_subagents_tool",
-    "build_subagent_batch_delegate", "normalize_delegation",
-    "product_delegation_tool_catalog", "_SPAWN_SCHEMA", "_AWAIT_SCHEMA",
+    "SdkSubagentJoinPort",
+    "build_sdk_await_subagents_tool",
+    "build_subagent_batch_delegate",
+    "normalize_delegation",
+    "product_delegation_tool_catalog",
+    "_SPAWN_SCHEMA",
+    "_AWAIT_SCHEMA",
 ]

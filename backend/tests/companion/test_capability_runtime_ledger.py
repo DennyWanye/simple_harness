@@ -105,21 +105,17 @@ async def test_store_ledger_recovers_start_and_activates_atomically(
         adapters={"fixture": adapter},
         projection=_Projection(ledger),
     )
-    activation, prepared = (
-        await coordinator.prepare_owner_runtime_activation(
-            owner_key="owner-a",
-            scope="user",
-            scope_key="profile-a",
-            owner_binding_set_stamp="a" * 64,
-            startup_or_profile_epoch=3,
-            operation_id="operation-1",
-            instances=(_spec(),),
-            launch_revocation_epoch=7,
-        )
+    activation, prepared = await coordinator.prepare_owner_runtime_activation(
+        owner_key="owner-a",
+        scope="user",
+        scope_key="profile-a",
+        owner_binding_set_stamp="a" * 64,
+        startup_or_profile_epoch=3,
+        operation_id="operation-1",
+        instances=(_spec(),),
+        launch_revocation_epoch=7,
     )
-    authorization = RuntimeLaunchAuthorization.issue(
-        prepared, prepared.instances[0]
-    )
+    authorization = RuntimeLaunchAuthorization.issue(prepared, prepared.instances[0])
     started = await coordinator.start_prepared_runtime_instance(
         prepared, prepared.instances[0], authorization
     )
@@ -130,20 +126,14 @@ async def test_store_ledger_recovers_start_and_activates_atomically(
         adapters={"fixture": adapter},
         projection=_Projection(recovered_ledger),
     )
-    recovered_start = (
-        await recovered_ledger.get_runtime_instance_start_result(
-            prepared, prepared.instances[0]
-        )
+    recovered_start = await recovered_ledger.get_runtime_instance_start_result(
+        prepared, prepared.instances[0]
     )
     assert recovered_start == started
 
-    health = await recovered.await_prepared_runtime_instance_health(
-        prepared, prepared.instances[0]
-    )
+    health = await recovered.await_prepared_runtime_instance_health(prepared, prepared.instances[0])
     assert health.healthy is True
-    assert await recovered.activate_prepared_set(prepared) == {
-        "activated": True
-    }
+    assert await recovered.activate_prepared_set(prepared) == {"activated": True}
 
     record = await store.get_runtime_set(prepared.operation_id)
     assert record is not None
@@ -159,12 +149,7 @@ async def test_store_ledger_recovers_start_and_activates_atomically(
             )
         ).fetchone()
     assert row["status"] == "published"
-    assert (
-        await recovered_ledger.next_owner_runtime_generation(
-            "owner-a", "user", "profile-a"
-        )
-        == 2
-    )
+    assert await recovered_ledger.next_owner_runtime_generation("owner-a", "user", "profile-a") == 2
     await uow.close()
 
 
@@ -214,22 +199,18 @@ async def test_store_ledger_abort_retires_set_and_owner_activation(
         adapters={"fixture": _Adapter()},
         projection=_Projection(ledger),
     )
-    activation, prepared = (
-        await coordinator.prepare_owner_runtime_activation(
-            owner_key="owner-a",
-            scope="user",
-            scope_key="profile-a",
-            owner_binding_set_stamp="a" * 64,
-            startup_or_profile_epoch=3,
-            operation_id="operation-abort",
-            instances=(_spec(),),
-            launch_revocation_epoch=7,
-        )
+    activation, prepared = await coordinator.prepare_owner_runtime_activation(
+        owner_key="owner-a",
+        scope="user",
+        scope_key="profile-a",
+        owner_binding_set_stamp="a" * 64,
+        startup_or_profile_epoch=3,
+        operation_id="operation-abort",
+        instances=(_spec(),),
+        launch_revocation_epoch=7,
     )
 
-    await coordinator.abort_prepared_set(
-        prepared, reason_code="startup_cancelled"
-    )
+    await coordinator.abort_prepared_set(prepared, reason_code="startup_cancelled")
 
     record = await store.get_runtime_set(prepared.operation_id)
     assert record is not None
@@ -283,21 +264,15 @@ async def test_store_ledger_persists_failed_health_until_exact_abort(
         RuntimeLaunchAuthorization.issue(prepared, instance),
     )
 
-    outcome = await coordinator.await_prepared_runtime_instance_health(
-        prepared, instance
-    )
+    outcome = await coordinator.await_prepared_runtime_instance_health(prepared, instance)
     assert outcome.healthy is False
     record = await store.get_runtime_set(prepared.operation_id)
     assert record is not None
     assert record.status == "cleanup_required"
     with pytest.raises(RuntimeError, match="runtime_set_not_healthy"):
-        await ledger.assert_set_health_passed(
-            prepared.operation_id, prepared.runtime_set_hash
-        )
+        await ledger.assert_set_health_passed(prepared.operation_id, prepared.runtime_set_hash)
 
-    await coordinator.abort_prepared_set(
-        prepared, reason_code="health_failed"
-    )
+    await coordinator.abort_prepared_set(prepared, reason_code="health_failed")
     record = await store.get_runtime_set(prepared.operation_id)
     assert record is not None
     assert record.status == "aborted"

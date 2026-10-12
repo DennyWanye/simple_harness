@@ -12,6 +12,7 @@ Key lookup order:
     2. keyring.get_password("deskpet", f"{provider}_api_key")
     3. None → adapter.available() returns False → registry hides provider
 """
+
 from __future__ import annotations
 
 import os

@@ -23,6 +23,7 @@ The ``huggingface_hub`` dependency is imported lazily so ``--dry-run``
 works without it (download path still requires it; install via
 ``pip install huggingface_hub``).
 """
+
 from __future__ import annotations
 
 import argparse
@@ -55,9 +56,7 @@ def _resolve_target_dir() -> Path:
     try:
         import platformdirs
     except ImportError:
-        sys.stderr.write(
-            "platformdirs not installed. Run `pip install platformdirs` first.\n"
-        )
+        sys.stderr.write("platformdirs not installed. Run `pip install platformdirs` first.\n")
         sys.exit(2)
     base = Path(platformdirs.user_data_dir("deskpet", appauthor=False, roaming=False))
     return (base / "models" / SUBDIR).resolve()
@@ -67,11 +66,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dry-run", action="store_true", help="Print target path and exit.")
     parser.add_argument(
-        "--force", action="store_true",
-        help="Re-download even if target dir already has files."
+        "--force", action="store_true", help="Re-download even if target dir already has files."
     )
     parser.add_argument(
-        "--mirror", choices=list(MIRRORS), default="default",
+        "--mirror",
+        choices=list(MIRRORS),
+        default="default",
         help="Use a specific HuggingFace mirror (hf-mirror = Chinese mirror).",
     )
     args = parser.parse_args()

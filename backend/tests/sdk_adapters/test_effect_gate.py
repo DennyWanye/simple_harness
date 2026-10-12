@@ -102,8 +102,11 @@ async def test_gate_envelope_missing_and_identity_mismatch(tmp_path) -> None:
     # 缺 TaskScope 六元组（SDK 允许 NON_PROJECT envelope，但 PROJECT_EFFECT 必须齐全）。
     stripped = replace(
         envelope,
-        task_scope_id=None, root_id=None, root_identity_hash=None,
-        binding_set_revision=None, binding_set_receipt_id=None,
+        task_scope_id=None,
+        root_id=None,
+        root_identity_hash=None,
+        binding_set_revision=None,
+        binding_set_receipt_id=None,
         binding_set_receipt_hash=None,
     )
     assert (
@@ -234,11 +237,21 @@ async def test_completed_scope_fresh_route_reports_lifecycle_without_writing(tmp
         MutateTaskScopeRequest(scope, "status", "complete", "finished-scope")
     )
     h.freeze_run(env, task_scope_id=scope, workspace_root=root)
-    provider = h.ScriptedProvider([
-        h.tool_call("context_route", {"route": "resume_existing", "task_scope_id": scope}, raw_id="route-finished"),
-        h.tool_call("write_file", {"path": "must-not-exist.txt", "content": "no"}, raw_id="write-finished"),
-        h.answer("The completed task cannot accept this write."),
-    ])
+    provider = h.ScriptedProvider(
+        [
+            h.tool_call(
+                "context_route",
+                {"route": "resume_existing", "task_scope_id": scope},
+                raw_id="route-finished",
+            ),
+            h.tool_call(
+                "write_file",
+                {"path": "must-not-exist.txt", "content": "no"},
+                raw_id="write-finished",
+            ),
+            h.answer("The completed task cannot accept this write."),
+        ]
+    )
     outcome = await h.run_capture(env, provider)
     assert outcome["exception"] is None
     route = json.loads(h.tool_messages(env, "context_route")[0])
@@ -333,7 +346,8 @@ async def test_binding_root_resolver_exactly_one_root(tmp_path) -> None:
     head = await env.binding_store.current_receipt(scope_a)
     resolver = BindingRootResolver(env.binding_store)
     assert await resolver(_receipt(scope_a, head)) == (
-        head.appended_root.root_id, head.root_identity_hashes[0]
+        head.appended_root.root_id,
+        head.root_identity_hashes[0],
     )
 
 
@@ -358,7 +372,8 @@ async def test_binding_root_resolver_multi_root_is_ambiguous_run_fault(tmp_path)
         binding_set_receipt_hash=head.parent_receipt_hash,
     )
     assert await resolver(_receipt(scope_a, exact)) == (
-        exact.appended_root.root_id, exact.root_identity_hashes[0]
+        exact.appended_root.root_id,
+        exact.root_identity_hashes[0],
     )
 
 
@@ -370,16 +385,22 @@ async def test_binding_root_resolver_zero_root_and_stale_receipt(tmp_path) -> No
 
     resolver = BindingRootResolver(_ZeroRootStore())  # type: ignore[arg-type]
     with pytest.raises(TaskExecutionAuthorityError) as missing:
-        await resolver(SimpleNamespace(
-            task_scope_id="s", binding_set_revision=1,
-            binding_set_receipt_id="r", binding_set_receipt_hash="a" * 64,
-        ))
+        await resolver(
+            SimpleNamespace(
+                task_scope_id="s",
+                binding_set_revision=1,
+                binding_set_receipt_id="r",
+                binding_set_receipt_hash="a" * 64,
+            )
+        )
     assert missing.value.code == "sdk_task_execution_root_authority_missing"
 
     env = await h.build_env(tmp_path)
     scope_a, _root = await h.make_bound_scope(env, "a", "root-a")
     head = await env.binding_store.current_receipt(scope_a)
-    stale = SimpleNamespace(**{**vars(_receipt(scope_a, head)), "binding_set_receipt_hash": "b" * 64})
+    stale = SimpleNamespace(
+        **{**vars(_receipt(scope_a, head)), "binding_set_receipt_hash": "b" * 64}
+    )
     with pytest.raises(TaskExecutionAuthorityError) as exact_stale:
         await BindingRootResolver(env.binding_store)(stale)
     assert exact_stale.value.code == "workspace_binding_exact_receipt_stale"
@@ -399,8 +420,11 @@ async def test_authority_records_run_fault_code_in_memo(tmp_path) -> None:
     memo = RunFaultMemo()
     authority = ProductTaskExecutionAuthority(root_resolver=None, fault_sink=memo)
     policy = ToolExecutionPolicy(
-        "builtin:write_file", "d" * 64, ToolEffectClass.PROJECT_EFFECT,
-        ToolRouteRequirement.REQUIRED, ToolTaskScopeRequirement.REQUIRED,
+        "builtin:write_file",
+        "d" * 64,
+        ToolEffectClass.PROJECT_EFFECT,
+        ToolRouteRequirement.REQUIRED,
+        ToolTaskScopeRequirement.REQUIRED,
     )
     request = TaskExecutionEnvelopeRequest(
         RunId("run-memo"), "call-1", "effect-1", "raw-1", 1, 0, "write_file", policy, None

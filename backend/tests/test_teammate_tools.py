@@ -12,6 +12,7 @@ Coverage:
 * schemas are properly shaped (name + parameters)
 * FORBIDDEN_TEAMMATE_TOOLS contains the recursion-guard set
 """
+
 from __future__ import annotations
 
 import json
@@ -160,9 +161,7 @@ async def test_update_invalid_status_envelope(store: TeamStore) -> None:
 async def test_update_unknown_task_id(store: TeamStore) -> None:
     tools = build_teammate_tools(store=store, team_id="t1", teammate_id="tm1")
     _schema, h = _by_name(tools, "team_task_update")
-    raw = await h(
-        {"task_id": "deadbeef", "status": "done", "result": "x"}, ""
-    )
+    raw = await h({"task_id": "deadbeef", "status": "done", "result": "x"}, "")
     payload = json.loads(raw)
     assert payload["ok"] is False
     assert "not found" in payload["error"]

@@ -8,6 +8,7 @@
 不兼容旧数据、旧路径直接删"规矩删除。当前栈上的过期授权冷恢复由
 ``test_foreground_permission_lease.py`` 的 expired_waiting / expired_failed 覆盖。
 """
+
 import sqlite3
 
 import pytest
@@ -15,23 +16,36 @@ from simple_harness.execution.audit import RunAuditUnavailable
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('failure', ['terminal_event_ambiguous', 'audit_source_invalid'])
+@pytest.mark.parametrize("failure", ["terminal_event_ambiguous", "audit_source_invalid"])
 async def test_observer_never_repairs_other_public_failures(tmp_path, monkeypatch, failure):
     """Dispatch guard negative; does not assert SDK source-level corruption proof."""
     from types import SimpleNamespace
 
     from deskpet.execution.foreground_runtime import SqliteSdkTerminalObserver
-    state = tmp_path/'host.db'
+
+    state = tmp_path / "host.db"
     with sqlite3.connect(state) as db:
-        db.execute('CREATE TABLE foreground_run_heads(host_run_id TEXT,current_state TEXT)')
+        db.execute("CREATE TABLE foreground_run_heads(host_run_id TEXT,current_state TEXT)")
         db.execute("INSERT INTO foreground_run_heads VALUES ('h','STOP_REQUESTED')")
-    async def idle(_): pass
+
+    async def idle(_):
+        pass
+
     repairs = []
-    def fail(_): raise RunAuditUnavailable(failure)
-    stack = SimpleNamespace(read_run_terminal_evidence=fail,
-                            recover_expired_authorization_terminal=lambda run: repairs.append(run))
-    ingress = SimpleNamespace(wait_idle=idle,query=lambda _:SimpleNamespace(state=SimpleNamespace(value='failed')))
+
+    def fail(_):
+        raise RunAuditUnavailable(failure)
+
+    stack = SimpleNamespace(
+        read_run_terminal_evidence=fail,
+        recover_expired_authorization_terminal=lambda run: repairs.append(run),
+    )
+    ingress = SimpleNamespace(
+        wait_idle=idle, query=lambda _: SimpleNamespace(state=SimpleNamespace(value="failed"))
+    )
     observer = SqliteSdkTerminalObserver(str(state), ingress, stack)
     with pytest.raises(RunAuditUnavailable, match=failure):
-        await observer.observe(host_run_id='h',sdk_run_id='s',subject='owner',owner_id='worker',generation=1)
+        await observer.observe(
+            host_run_id="h", sdk_run_id="s", subject="owner", owner_id="worker", generation=1
+        )
     assert repairs == []

@@ -11,6 +11,7 @@ References:
   - openspec/changes/deskpet-skill-platform/specs/permission-gate/spec.md
   - openspec/changes/deskpet-skill-platform/specs/tool-use/spec.md
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field

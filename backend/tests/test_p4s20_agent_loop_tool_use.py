@@ -7,6 +7,7 @@ Tool permission checks, physical execution, result normalization, and resume
 belong to ReActDriver/Kernel.  These tests deliberately provide registries
 whose execution entrypoints fail if AgentLoop calls them.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -22,9 +23,7 @@ class _ScriptedLLM:
         self._responses = list(responses)
         self.call_count = 0
 
-    async def chat_with_fallback(
-        self, messages: list[dict[str, Any]], **_: Any
-    ) -> ChatResponse:
+    async def chat_with_fallback(self, messages: list[dict[str, Any]], **_: Any) -> ChatResponse:
         self.call_count += 1
         if not self._responses:
             raise AssertionError("AgentLoop crossed the external pause point")
@@ -68,9 +67,9 @@ def _tool_response(*calls: ToolCall) -> ChatResponse:
 @pytest.mark.asyncio
 async def test_agent_loop_never_calls_execute_tool() -> None:
     registry = _V2Registry()
-    llm = _ScriptedLLM([
-        _tool_response(ToolCall(id="c1", name="todo_create", arguments={"text": "x"}))
-    ])
+    llm = _ScriptedLLM(
+        [_tool_response(ToolCall(id="c1", name="todo_create", arguments={"text": "x"}))]
+    )
     events = [
         event
         async for event in AgentLoop(llm, registry).run(
@@ -88,9 +87,9 @@ async def test_agent_loop_never_calls_execute_tool() -> None:
 @pytest.mark.asyncio
 async def test_agent_loop_does_not_own_permission_denial() -> None:
     registry = _V2Registry()
-    llm = _ScriptedLLM([
-        _tool_response(ToolCall(id="c1", name="os_run", arguments={"command": "echo ok"}))
-    ])
+    llm = _ScriptedLLM(
+        [_tool_response(ToolCall(id="c1", name="os_run", arguments={"command": "echo ok"}))]
+    )
     events = [
         event
         async for event in AgentLoop(llm, registry).run(
@@ -106,14 +105,9 @@ async def test_agent_loop_does_not_own_permission_denial() -> None:
 @pytest.mark.asyncio
 async def test_agent_loop_never_falls_back_to_legacy_dispatch() -> None:
     registry = _LegacyRegistry()
-    llm = _ScriptedLLM([
-        _tool_response(ToolCall(id="c1", name="echo", arguments={"x": 1}))
-    ])
+    llm = _ScriptedLLM([_tool_response(ToolCall(id="c1", name="echo", arguments={"x": 1}))])
     events = [
-        event
-        async for event in AgentLoop(llm, registry).run(
-            [{"role": "user", "content": "echo"}]
-        )
+        event async for event in AgentLoop(llm, registry).run([{"role": "user", "content": "echo"}])
     ]
 
     assert isinstance(events[-1], ToolBatchEvent)
@@ -123,15 +117,14 @@ async def test_agent_loop_never_falls_back_to_legacy_dispatch() -> None:
 @pytest.mark.asyncio
 async def test_agent_loop_returns_after_first_tool_batch() -> None:
     registry = _V2Registry()
-    llm = _ScriptedLLM([
-        _tool_response(ToolCall(id=f"c{i}", name="ping", arguments={}))
-        for i in range(20)
-    ])
+    llm = _ScriptedLLM(
+        [_tool_response(ToolCall(id=f"c{i}", name="ping", arguments={})) for i in range(20)]
+    )
     events = [
         event
-        async for event in AgentLoop(
-            llm, registry, max_iterations=3
-        ).run([{"role": "user", "content": "loop"}], session_id="s1")
+        async for event in AgentLoop(llm, registry, max_iterations=3).run(
+            [{"role": "user", "content": "loop"}], session_id="s1"
+        )
     ]
 
     assert isinstance(events[-1], ToolBatchEvent)

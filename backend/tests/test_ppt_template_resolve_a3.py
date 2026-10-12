@@ -7,6 +7,7 @@
 ``_resolve_template_path`` 现在只解析【直传 .pptx 路径】或【库内 stem】;
 大类名走预览图视觉选(见 test_ppt_template_picker.py)。
 """
+
 from __future__ import annotations
 
 from pathlib import Path

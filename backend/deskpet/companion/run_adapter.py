@@ -36,9 +36,7 @@ from .contracts import LeaseClaim, OwnerRef
 from .runtime import CompanionJobResult
 
 _PURPOSES = frozenset({"reflection", "evaluation", "delegated_task"})
-_DELEGATED_PREPARATION_SCOPES = frozenset(
-    {"read", "draft", "reversible_local"}
-)
+_DELEGATED_PREPARATION_SCOPES = frozenset({"read", "draft", "reversible_local"})
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _RESERVED_PAYLOAD_KEYS = frozenset(
     {
@@ -107,16 +105,12 @@ class DelegatedPreparationGrant:
             raise ValueError("delegated_preparation_grant_scope_forbidden")
         object.__setattr__(self, "scope", scope)
         object.__setattr__(self, "target", _required(self.target, "target"))
-        object.__setattr__(
-            self, "expires_at", _required(self.expires_at, "expires_at")
-        )
+        object.__setattr__(self, "expires_at", _required(self.expires_at, "expires_at"))
         if isinstance(self.version, bool) or self.version < 1:
             raise ValueError("delegated_preparation_grant_version_invalid")
 
     @classmethod
-    def from_mapping(
-        cls, value: Mapping[str, Any]
-    ) -> DelegatedPreparationGrant:
+    def from_mapping(cls, value: Mapping[str, Any]) -> DelegatedPreparationGrant:
         if set(value) != {
             "grant_id",
             "scope",
@@ -177,9 +171,7 @@ class ExternalDecisionWait:
             raise ValueError("delegated_external_decision_run_mismatch")
         return cls(
             execution_run_id=execution_run_id,
-            execution_session_id=_required(
-                execution_session_id, "execution_session_id"
-            ),
+            execution_session_id=_required(execution_session_id, "execution_session_id"),
             decision_id=_required(payload.get("decision_id"), "decision_id"),
             decision_nonce=_required(payload.get("nonce"), "decision_nonce"),
             decision_version=version,
@@ -188,9 +180,7 @@ class ExternalDecisionWait:
             effect_id=_required(payload.get("effect_id"), "effect_id"),
             tool_name=_required(payload.get("tool_name"), "tool_name"),
             args_hash=_required_hash(payload.get("args_hash"), "args_hash"),
-            capability_hash=_required_hash(
-                payload.get("capability_hash"), "capability_hash"
-            ),
+            capability_hash=_required_hash(payload.get("capability_hash"), "capability_hash"),
             scope_hash=_required_hash(payload.get("scope_hash"), "scope_hash"),
         )
 
@@ -245,9 +235,7 @@ class CompanionPreparedRunFacts:
             "job_id": self.job_id,
             "purpose": self.purpose,
             "evidence_ids": list(self.evidence_ids),
-            "delegated_grants": [
-                item.to_dict() for item in self.delegated_grants
-            ],
+            "delegated_grants": [item.to_dict() for item in self.delegated_grants],
             "persistence_required": self.persistence_required,
             "capture_growth": self.capture_growth,
         }
@@ -360,11 +348,7 @@ class BackgroundRunDurableResultV1:
 
 BackgroundRunResultPostprocessor: TypeAlias = Callable[
     [BackgroundRunCanonicalResultV1],
-    (
-        BackgroundRunDurableResultV1
-        | None
-        | Awaitable[BackgroundRunDurableResultV1 | None]
-    ),
+    (BackgroundRunDurableResultV1 | None | Awaitable[BackgroundRunDurableResultV1 | None]),
 ]
 BackgroundPreparedContextFactory: TypeAlias = Callable[
     [
@@ -400,10 +384,7 @@ def _validate_extended_prepared_context(
         if item.name == "terminal_commit_extensions":
             continue
         if getattr(extended, item.name) != getattr(base, item.name):
-            raise ValueError(
-                "companion_background_prepared_fact_override:"
-                + item.name
-            )
+            raise ValueError("companion_background_prepared_fact_override:" + item.name)
     base_extensions = base.terminal_commit_extensions
     extended_extensions = extended.terminal_commit_extensions
     if len(extended_extensions) < len(base_extensions) or any(
@@ -414,9 +395,7 @@ def _validate_extended_prepared_context(
             strict=True,
         )
     ):
-        raise ValueError(
-            "companion_background_terminal_extension_replaced"
-        )
+        raise ValueError("companion_background_terminal_extension_replaced")
     return extended
 
 
@@ -490,14 +469,10 @@ class BackgroundRunAdapter:
         self._result_postprocessor = result_postprocessor
         self._clock = clock or SystemClock()
         self._completed: dict[tuple[str, int, str, int], CompanionJobResult] = {}
-        self._inflight: dict[
-            tuple[str, int, str, int], asyncio.Task[CompanionJobResult]
-        ] = {}
+        self._inflight: dict[tuple[str, int, str, int], asyncio.Task[CompanionJobResult]] = {}
         self._lock = asyncio.Lock()
 
-    async def __call__(
-        self, owner: OwnerRef, claim: LeaseClaim
-    ) -> CompanionJobResult:
+    async def __call__(self, owner: OwnerRef, claim: LeaseClaim) -> CompanionJobResult:
         key = (
             owner.profile_id,
             owner.profile_generation,
@@ -532,16 +507,12 @@ class BackgroundRunAdapter:
             existing = self._completed.setdefault(key, result)
         return existing
 
-    async def _run(
-        self, owner: OwnerRef, claim: LeaseClaim
-    ) -> CompanionJobResult:
+    async def _run(self, owner: OwnerRef, claim: LeaseClaim) -> CompanionJobResult:
         row = self._store.get_job(owner, job_id=claim.item_id)
         payload = dict(claim.payload)
         purpose = str(payload.get("purpose") or row.get("kind") or "").strip()
         raw_evidence = payload.get("evidence_ids", ())
-        if isinstance(raw_evidence, (str, bytes)) or not isinstance(
-            raw_evidence, Sequence
-        ):
+        if isinstance(raw_evidence, (str, bytes)) or not isinstance(raw_evidence, Sequence):
             raise ValueError("companion_background_evidence_invalid")
         request_payload = payload.get("request_payload", {})
         if not isinstance(request_payload, Mapping):
@@ -549,13 +520,10 @@ class BackgroundRunAdapter:
         conflicting = _RESERVED_PAYLOAD_KEYS.intersection(request_payload)
         if conflicting:
             raise ValueError(
-                "companion_background_host_fact_override:"
-                + ",".join(sorted(conflicting))
+                "companion_background_host_fact_override:" + ",".join(sorted(conflicting))
             )
         raw_grants = payload.get("delegated_grants", ())
-        if isinstance(raw_grants, (str, bytes)) or not isinstance(
-            raw_grants, Sequence
-        ):
+        if isinstance(raw_grants, (str, bytes)) or not isinstance(raw_grants, Sequence):
             raise ValueError("delegated_preparation_grants_invalid")
         grants: list[DelegatedPreparationGrant] = []
         for raw_grant in raw_grants:
@@ -701,9 +669,7 @@ class BackgroundRunAdapter:
             usage = payload.get("usage", payload.get("provider_usage"))
             if isinstance(usage, Mapping):
                 raw_total = usage.get("total_tokens")
-                has_split_usage = (
-                    "prompt_tokens" in usage or "completion_tokens" in usage
-                )
+                has_split_usage = "prompt_tokens" in usage or "completion_tokens" in usage
                 if raw_total is None and has_split_usage:
                     raw_total = int(usage.get("prompt_tokens") or 0) + int(
                         usage.get("completion_tokens") or 0
@@ -712,9 +678,7 @@ class BackgroundRunAdapter:
                     usage_tokens = max(0, int(raw_total))
             if event.kind == "decision" and event.status is OutcomeStatus.WAITING:
                 if purpose != "delegated_task":
-                    raise RuntimeError(
-                        "companion_background_decision_requires_delegated_task"
-                    )
+                    raise RuntimeError("companion_background_decision_requires_delegated_task")
                 wait = ExternalDecisionWait.from_event(
                     execution_run_id=run_id,
                     execution_session_id=execution_session_id,
@@ -722,9 +686,7 @@ class BackgroundRunAdapter:
                 )
                 park = getattr(self._store, "park_job_waiting_decision", None)
                 if not callable(park):
-                    raise RuntimeError(
-                        "companion_job_waiting_decision_store_unavailable"
-                    )
+                    raise RuntimeError("companion_job_waiting_decision_store_unavailable")
                 row = park(
                     owner,
                     job_id=job_id,
@@ -756,15 +718,11 @@ class BackgroundRunAdapter:
                 return BackgroundRunCollection(
                     run_id=run_id,
                     status="waiting_decision",
-                    result_ref=(
-                        f"companion-wait:{job_id}:{run_id}:{wait.decision_id}"
-                    ),
+                    result_ref=(f"companion-wait:{job_id}:{run_id}:{wait.decision_id}"),
                     result_hash=_canonical_hash(wait_result),
                     reason_code="background_run_waiting_execution_decision",
                     budget_actual_tokens=0,
-                    budget_actual_ms=max(
-                        0, int((self._clock.monotonic() - started) * 1000)
-                    ),
+                    budget_actual_ms=max(0, int((self._clock.monotonic() - started) * 1000)),
                 )
             if event.status in {
                 OutcomeStatus.SUCCEEDED,
@@ -787,9 +745,7 @@ class BackgroundRunAdapter:
             "text": "".join(chunks),
             "payload": payload,
             "error": (
-                None
-                if terminal.candidate.error is None
-                else thaw_json(terminal.candidate.error)
+                None if terminal.candidate.error is None else thaw_json(terminal.candidate.error)
             ),
             "artifact_refs": list(terminal.artifact_refs),
         }
@@ -806,12 +762,8 @@ class BackgroundRunAdapter:
                 if succeeded
                 else f"background_run_{terminal.status.value}"
             ),
-            budget_actual_tokens=(
-                reserved_tokens if usage_missing else int(usage_tokens)
-            ),
-            budget_actual_ms=(
-                max(reserved_ms, elapsed_ms) if usage_missing else elapsed_ms
-            ),
+            budget_actual_tokens=(reserved_tokens if usage_missing else int(usage_tokens)),
+            budget_actual_ms=(max(reserved_ms, elapsed_ms) if usage_missing else elapsed_ms),
             failure_context=(
                 None
                 if succeeded
@@ -862,9 +814,7 @@ class BackgroundRunAdapter:
                     postprocess_result,
                     BackgroundRunDurableResultV1,
                 ):
-                    raise TypeError(
-                        "companion_background_durable_result_invalid"
-                    )
+                    raise TypeError("companion_background_durable_result_invalid")
                 collection = replace(
                     collection,
                     result_ref=postprocess_result.result_ref,

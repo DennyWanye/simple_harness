@@ -268,10 +268,14 @@ class WriteConflictPending(ContractError):
 
     def __init__(self, conflicts: Sequence[Mapping[str, Any]]) -> None:
         self.conflicts = tuple(dict(item) for item in conflicts)
-        super().__init__("WRITE_CONFLICT: " + "; ".join(
-            f"{item['path']} written by {' and '.join(str(step) for step in item['steps'])}"
-            + (f" (both reach {item['consumer']})" if item.get("consumer") else "")
-            for item in self.conflicts))
+        super().__init__(
+            "WRITE_CONFLICT: "
+            + "; ".join(
+                f"{item['path']} written by {' and '.join(str(step) for step in item['steps'])}"
+                + (f" (both reach {item['consumer']})" if item.get("consumer") else "")
+                for item in self.conflicts
+            )
+        )
 
 
 class PlanIntegrityError(GraphIntegrityError):
@@ -681,12 +685,17 @@ class HierarchicalDispatch:
     def for_commit(cls, commit: CommitService, mission_id: str) -> HierarchicalDispatch:
         """Use the installed graph readers for an enabled Mission's original commits."""
         from ..storage.taskgraph_store import require_bound
+
         require_bound(commit.store, mission_id)
         binding = commit._taskgraph_dispatch
         if binding is None:
             raise StoreError("TASKGRAPH_DISPATCH_ASSEMBLY_REQUIRED")
         dispatch = binding.dispatch_for(mission_id)
-        if not isinstance(dispatch, cls) or dispatch.store is not commit.store or dispatch.commit is not commit:
+        if (
+            not isinstance(dispatch, cls)
+            or dispatch.store is not commit.store
+            or dispatch.commit is not commit
+        ):
             raise StoreError("TASKGRAPH_DISPATCH_STORE_MISMATCH")
         return dispatch
 
@@ -699,10 +708,16 @@ class HierarchicalDispatch:
     def target_rules_policy(self) -> dict[str, Any]:
         """Freeze the installed rule or its original per-Task namespace strategy."""
         from ..artifacts.taskgraph_inputs import encode_target_rules
+
         if self.target_rules is not None:
             return {"kind": "FIXED", "rules": encode_target_rules(self.target_rules)}
-        return {"kind": "TASK_WORKSPACE_V1", "namespace_prefix": "workspace:",
-                "port_prefixes": {}, "preserve_source_namespace": False, "case_insensitive": False}
+        return {
+            "kind": "TASK_WORKSPACE_V1",
+            "namespace_prefix": "workspace:",
+            "port_prefixes": {},
+            "preserve_source_namespace": False,
+            "case_insensitive": False,
+        }
 
     def semantics(self) -> HtnStore:
         return HtnStore(self.store)
@@ -768,10 +783,13 @@ class HierarchicalDispatch:
         from ..graph.network_codec import decode
         from ..runtime.planning_operations import SourceUnavailable
         from ..storage.taskgraph_store import require_bound
+
         require_bound(self.store, mission_id)
         if self._taskgraph_history is None:
             raise SourceUnavailable("taskgraph_history_reader_unavailable")
-        frozen = decode(self._taskgraph_history.read_revision(mission_id, revision).record.document.to_json()).snapshot
+        frozen = decode(
+            self._taskgraph_history.read_revision(mission_id, revision).record.document.to_json()
+        ).snapshot
         current_bindings = []
         for original in frozen.task_bindings:
             current = semantics.task_semantics_of(mission_id, str(original.task_id))
@@ -881,14 +899,19 @@ class HierarchicalDispatch:
         latest = semantics.latest_requirements_revision(mission_id)
         if active is None or latest is None:
             return {}
-        return {"planned_requirements_revision": int(active.read_set.requirements_revision),
-                "current_requirements_revision": int(latest.revision)}
+        return {
+            "planned_requirements_revision": int(active.read_set.requirements_revision),
+            "current_requirements_revision": int(latest.revision),
+        }
 
     def requirements_changed(self, mission_id: str) -> bool:
         """The user amended the requirements and no plan for the new revision is committed."""
         found = self.requirements_revisions(mission_id)
-        return bool(found) and bool(found["planned_requirements_revision"]) and (
-            found["planned_requirements_revision"] != found["current_requirements_revision"])
+        return (
+            bool(found)
+            and bool(found["planned_requirements_revision"])
+            and (found["planned_requirements_revision"] != found["current_requirements_revision"])
+        )
 
     def scope_epochs(self, mission_id: str) -> dict[str, int]:
         """The live validity epoch of every scope this Mission's witnesses name.
@@ -902,6 +925,7 @@ class HierarchicalDispatch:
         # the complete current read token and input policy.
         from ..storage.taskgraph_store import require_bound
         from .taskgraph_epochs import current_scope_epochs
+
         require_bound(self.store, mission_id)
         return current_scope_epochs(self.store, mission_id)
 
@@ -949,6 +973,7 @@ class HierarchicalDispatch:
         outcomes = self.occurrence_outcomes(mission_id, network)
         if not callable(self._taskgraph_settlement_reader):
             from ..runtime.planning_operations import SourceUnavailable
+
             raise SourceUnavailable("taskgraph_settlement_reader_unavailable")
         settlements = self._taskgraph_settlement_reader(mission_id, network, outcomes)
         resolved = self.resolved_occurrences(mission_id, network)
@@ -1037,6 +1062,7 @@ class HierarchicalDispatch:
 
         from ..storage.taskgraph_store import require_bound
         from .taskgraph_outcomes import read_taskgraph_outcomes
+
         require_bound(self.store, mission_id)
         return read_taskgraph_outcomes(self.store, mission_id, network)
 
@@ -1050,9 +1076,13 @@ class HierarchicalDispatch:
             self.seed_network(mission_id)  # verify the original seed
             return frozenset()
         from .completion_status import read_occurrence_completion
-        return frozenset(spec.occurrence_id for spec in network.occurrences
-            if spec.form is TaskForm.COMPOUND and read_occurrence_completion(
-                self.store, mission_id, str(spec.occurrence_id)).complete)
+
+        return frozenset(
+            spec.occurrence_id
+            for spec in network.occurrences
+            if spec.form is TaskForm.COMPOUND
+            and read_occurrence_completion(self.store, mission_id, str(spec.occurrence_id)).complete
+        )
 
     def witnesses(
         self, mission_id: str, network: TaskNetworkSnapshot
@@ -1116,12 +1146,11 @@ class HierarchicalDispatch:
         # DATA consumer refused with ``WITNESS_MISSING`` whatever the deployment
         # had recorded.
         licences = (
-            self.input_witnesses(mission_id, str(spec.task_id))
-            if witnesses is None
-            else witnesses
+            self.input_witnesses(mission_id, str(spec.task_id)) if witnesses is None else witnesses
         )
-        policy = self.resolution_policy_for(mission_id, now_ms=now_ms,
-                                            consumer=spec.occurrence_id, network=network)
+        policy = self.resolution_policy_for(
+            mission_id, now_ms=now_ms, consumer=spec.occurrence_id, network=network
+        )
         result = resolve_input_manifest(
             binding,
             network,
@@ -1142,8 +1171,14 @@ class HierarchicalDispatch:
             policy=policy,
         )
 
-    def resolution_policy_for(self, mission_id: str, *, now_ms: int | None = None,
-                              consumer: Any = None, network: Any = None) -> Any:
+    def resolution_policy_for(
+        self,
+        mission_id: str,
+        *,
+        now_ms: int | None = None,
+        consumer: Any = None,
+        network: Any = None,
+    ) -> Any:
         """This deployment's resolution policy with the Mission's live epochs in it.
 
         I19 is a *comparison*, and the policy this class is constructed with does not
@@ -1170,7 +1205,9 @@ class HierarchicalDispatch:
             now_ms=int(self.store.now * 1000) if now_ms is None else int(now_ms),
         )
 
-    def _explicit_port_orders(self, mission_id: str, consumer: Any, network: Any = None) -> tuple[Any, ...]:
+    def _explicit_port_orders(
+        self, mission_id: str, consumer: Any, network: Any = None
+    ) -> tuple[Any, ...]:
         """The declared order of each EXPLICIT set input port of ``consumer``: the order the
         adopted method lists the upstream outputs in that port's argument array (TaskGraph §5.5
         "按显式 order 列表").  Read from the plan, decided by nobody here."""
@@ -1180,41 +1217,61 @@ class HierarchicalDispatch:
 
         network = self.network(mission_id) if network is None else network
         binding = network.binding_for_occurrence(consumer)
-        ports = [port for port in binding.input_ports
-                 if port.cardinality in ORDERED_CARDINALITIES and port.ordering is PortOrdering.EXPLICIT]
+        ports = [
+            port
+            for port in binding.input_ports
+            if port.cardinality in ORDERED_CARDINALITIES and port.ordering is PortOrdering.EXPLICIT
+        ]
         if not ports:
             return ()
         semantics = self.semantics()
         for instance in network.method_instances:
             if not network.is_adopted(instance.instance_id):
                 continue
-            mine = next((child for child in instance.child_bindings if child.occurrence_id == consumer), None)
+            mine = next(
+                (child for child in instance.child_bindings if child.occurrence_id == consumer),
+                None,
+            )
             if mine is None:
                 continue
-            entry = semantics.get_method(str(instance.method_ref.method_id), int(instance.method_ref.version))
+            entry = semantics.get_method(
+                str(instance.method_ref.method_id), int(instance.method_ref.version)
+            )
             contract = getattr(entry, "contract", entry)
             step = next((item for item in contract.steps if item.local_id == mine.slot_key), None)
             if step is None:
                 continue
-            slot_to_occurrence = {child.slot_key: child.occurrence_id for child in instance.child_bindings}
+            slot_to_occurrence = {
+                child.slot_key: child.occurrence_id for child in instance.child_bindings
+            }
             live = {item.requirement_id for item in network.data_requirements}
             orders = []
             for port in ports:
                 argument = step.arguments.get(port.port_key)
                 ids: list[str] = []
-                for node in (iter_values(argument) if argument is not None else ()):
-                    if (isinstance(node, OutputValue) and node.step != step.local_id
-                            and node.step in slot_to_occurrence):
+                for node in iter_values(argument) if argument is not None else ():
+                    if (
+                        isinstance(node, OutputValue)
+                        and node.step != step.local_id
+                        and node.step in slot_to_occurrence
+                    ):
                         derived = _derive_requirement_id(
-                            slot_to_occurrence[node.step], node.port, consumer, port.port_key)
+                            slot_to_occurrence[node.step], node.port, consumer, port.port_key
+                        )
                         if derived in live:  # an edge a repair replaced is no longer named
                             ids.append(derived)
                 # 规划器后来用修复操作改接/加接的边不在做法正文里：排在做法列出的之后，按网络
                 # 里的（固定）顺序；这是写明的约定，不是替规划器挑谁先谁后。
-                later = [item.requirement_id for item in network.data_requirements
-                         if item.consumer_occurrence == consumer and item.input_port == port.port_key
-                         and item.requirement_id not in ids]
-                orders.append(ExplicitPortOrder(port.port_key, tuple(dict.fromkeys([*ids, *later]))))
+                later = [
+                    item.requirement_id
+                    for item in network.data_requirements
+                    if item.consumer_occurrence == consumer
+                    and item.input_port == port.port_key
+                    and item.requirement_id not in ids
+                ]
+                orders.append(
+                    ExplicitPortOrder(port.port_key, tuple(dict.fromkeys([*ids, *later])))
+                )
             return tuple(orders)
         return ()
 
@@ -1279,8 +1336,9 @@ class HierarchicalDispatch:
         issued: list[ValidityWitness] = []
         recorded = tuple(self._recorded_outputs(mission_id, network))
         # 片 B：接在中间目标端口上的步骤，见证发给它实际读到的那份验收（收尾步骤的）。
-        delivered = self.goal_port_outputs(mission_id, network, recorded,
-                                           complete=self._complete_goals(mission_id, network))
+        delivered = self.goal_port_outputs(
+            mission_id, network, recorded, complete=self._complete_goals(mission_id, network)
+        )
         covered: set[tuple[str, str]] = set()
         for output in (*recorded, *delivered):
             consumers = {
@@ -1291,23 +1349,38 @@ class HierarchicalDispatch:
             }
             # 2026-10-11 第三批：接力文件的真实产出者那次验收也要给这个下游一份见证——与清单构造
             # 同一处枚举（``delivery_sources`` 读的就是这些验收），一个验收一份，不按文件数发。
-            sources = [(str(output.acceptance_id), int(output.support_revision)),
-                       *self._carried_acceptances(mission_id, str(output.acceptance_id))]
+            sources = [
+                (str(output.acceptance_id), int(output.support_revision)),
+                *self._carried_acceptances(mission_id, str(output.acceptance_id)),
+            ]
             for consumer in sorted(consumers):
                 for acceptance_id, support_revision in sources:
                     if (consumer, acceptance_id) in covered:
                         continue
                     covered.add((consumer, acceptance_id))
                     stored = self._issue_acceptance_witness(
-                        mission_id, consumer, acceptance_id, support_revision,
-                        epoch=epoch, scope_id=scope_id, now_ms=now_ms)
+                        mission_id,
+                        consumer,
+                        acceptance_id,
+                        support_revision,
+                        epoch=epoch,
+                        scope_id=scope_id,
+                        now_ms=now_ms,
+                    )
                     if stored is not None:
                         issued.append(stored)
         return tuple(issued)
 
     def _issue_acceptance_witness(
-        self, mission_id: str, consumer: str, acceptance_id: str, support_revision: int, *,
-        epoch: int, scope_id: str, now_ms: int,
+        self,
+        mission_id: str,
+        consumer: str,
+        acceptance_id: str,
+        support_revision: int,
+        *,
+        epoch: int,
+        scope_id: str,
+        now_ms: int,
     ) -> ValidityWitness | None:
         """One START licence for ``consumer`` over ``acceptance_id``, read now (I19)."""
 
@@ -1354,10 +1427,13 @@ class HierarchicalDispatch:
         except StoreError:
             return []
         if acceptance.mission_id != mission_id or not _is_continuation(
-                semantics.task_semantics_of(mission_id, str(acceptance.task_id))):
+            semantics.task_semantics_of(mission_id, str(acceptance.task_id))
+        ):
             return []
         try:
-            frozen = decode_frozen_manifest(semantics.get_input_manifest(acceptance.input_manifest_hash))
+            frozen = decode_frozen_manifest(
+                semantics.get_input_manifest(acceptance.input_manifest_hash)
+            )
         except (StoreError, ContractError):
             return []  # the resolution names this source as unavailable; nothing to license
         found: dict[str, int] = {}
@@ -1723,31 +1799,41 @@ class HierarchicalDispatch:
         if self.semantics().active_plan_revision(mission_id) is None:
             return AcceptedOutputsIndex(outputs=(), completed_producers=frozenset())
         from .completion_status import read_occurrence_completion
+
         statuses = {
-            spec.occurrence_id: read_occurrence_completion(self.store, mission_id, str(spec.occurrence_id))
+            spec.occurrence_id: read_occurrence_completion(
+                self.store, mission_id, str(spec.occurrence_id)
+            )
             for spec in network.occurrences
         }
         prepared = frozenset(key for key, value in statuses.items() if value.preparation_ready)
         allowed_acceptances = {
-            acceptance for value in statuses.values()
+            acceptance
+            for value in statuses.values()
             for acceptance in value.preparation_acceptance_ids
         }
         from ..storage.operation_completion_store import OperationCompletionStore
+
         completion_store = OperationCompletionStore(self.store)
         scoped_outputs = []
         for output in self._recorded_outputs(mission_id, network):
             state = statuses.get(output.producer_occurrence)
-            if (state is None or output.acceptance_id not in allowed_acceptances
-                    or output.acceptance_id not in state.preparation_acceptance_ids):
+            if (
+                state is None
+                or output.acceptance_id not in allowed_acceptances
+                or output.acceptance_id not in state.preparation_acceptance_ids
+            ):
                 continue
             row = completion_store.get_acceptance_scope_exact(mission_id, output.acceptance_id)
             if row is None:
                 continue
             contribution = row["document"]
-            if any(ref.id == output.artifact_id
-                   and str(ref.revision) == output.source_revision
-                   and ref.content_hash == output.content_hash
-                   for ref in contribution.output_artifact_refs):
+            if any(
+                ref.id == output.artifact_id
+                and str(ref.revision) == output.source_revision
+                and ref.content_hash == output.content_hash
+                for ref in contribution.output_artifact_refs
+            ):
                 scoped_outputs.append(output)
         # 片 B：完成的中间目标的端口对到它收尾步骤的产出；它也就成了"已完成的生产者"。
         done = frozenset(key for key, value in statuses.items() if value.complete)
@@ -1756,16 +1842,24 @@ class HierarchicalDispatch:
         # 两个计数中的版本就不填——跟随的输入会如实报"授权版本读不到"，不任选。
         seen: dict[tuple[Any, str], set[str]] = {}
         for output in (*scoped_outputs, *delivered):
-            seen.setdefault((output.producer_occurrence, output.output_port), set()).add(output.source_revision)
+            seen.setdefault((output.producer_occurrence, output.output_port), set()).add(
+                output.source_revision
+            )
         return AcceptedOutputsIndex(
             outputs=(*scoped_outputs, *delivered),
             completed_producers=prepared | {item.producer_occurrence for item in delivered},
-            authorized_revisions={key: next(iter(found)) for key, found in seen.items() if len(found) == 1},
+            authorized_revisions={
+                key: next(iter(found)) for key, found in seen.items() if len(found) == 1
+            },
         )
 
     def goal_port_outputs(
-        self, mission_id: str, network: TaskNetworkSnapshot, outputs: Sequence[Any],
-        *, complete: Collection[Any],
+        self,
+        mission_id: str,
+        network: TaskNetworkSnapshot,
+        outputs: Sequence[Any],
+        *,
+        complete: Collection[Any],
     ) -> tuple[Any, ...]:
         """片 B：完成的中间目标对外交付什么——它收尾步骤在同名端口上已验收的产出。
 
@@ -1787,25 +1881,41 @@ class HierarchicalDispatch:
             return ()
         by_place: dict[tuple[str, str], list[Any]] = {}
         for item in outputs:
-            by_place.setdefault((str(item.producer_occurrence), str(item.output_port)), []).append(item)
+            by_place.setdefault((str(item.producer_occurrence), str(item.output_port)), []).append(
+                item
+            )
         roots = {str(item) for item in network.root_occurrence_ids}
         goals: list[tuple[Any, str, tuple[str, ...]]] = []
         for spec in network.occurrences:
-            if (spec.form is not TaskForm.COMPOUND or str(spec.occurrence_id) in roots
-                    or spec.occurrence_id not in complete):
+            if (
+                spec.form is not TaskForm.COMPOUND
+                or str(spec.occurrence_id) in roots
+                or spec.occurrence_id not in complete
+            ):
                 continue
             adopted = network.adopted_instance_for(spec.occurrence_id)
-            ports = {str(port.port_key): port.schema_ref
-                     for port in network.binding_for_occurrence(spec.occurrence_id).output_ports}
+            ports = {
+                str(port.port_key): port.schema_ref
+                for port in network.binding_for_occurrence(spec.occurrence_id).output_ports
+            }
             if adopted is None or not ports:
                 continue
             try:
-                contract = self.semantics().get_method(
-                    str(adopted.method_ref.method_id), int(adopted.method_ref.version)).contract
+                contract = (
+                    self.semantics()
+                    .get_method(str(adopted.method_ref.method_id), int(adopted.method_ref.version))
+                    .contract
+                )
             except StoreError:
                 continue
-            finalizer = next((str(child.occurrence_id) for child in adopted.child_bindings
-                              if str(child.slot_key) == str(contract.composition.finalizer_step)), None)
+            finalizer = next(
+                (
+                    str(child.occurrence_id)
+                    for child in adopted.child_bindings
+                    if str(child.slot_key) == str(contract.composition.finalizer_step)
+                ),
+                None,
+            )
             if finalizer is not None:
                 goals.append((spec.occurrence_id, finalizer, ports))
         aliases: list[Any] = []
@@ -1816,21 +1926,34 @@ class HierarchicalDispatch:
                 for port, schema in ports.items():
                     if (str(goal), port) in by_place or (finalizer, port) not in by_place:
                         continue
-                    delivered = {str(item.port_key): item.schema_ref for item in
-                                 network.binding_for_occurrence(OccurrenceId(finalizer)).output_ports}
+                    delivered = {
+                        str(item.port_key): item.schema_ref
+                        for item in network.binding_for_occurrence(
+                            OccurrenceId(finalizer)
+                        ).output_ports
+                    }
                     if delivered.get(port) != schema:
                         try:
                             append_hierarchical_event(
-                                self.store, "GoalPortSchemaMismatch", mission_id,
+                                self.store,
+                                "GoalPortSchemaMismatch",
+                                mission_id,
                                 key=f"{mission_id}:{goal}:{port}:{int(network.plan_revision)}",
-                                payload={"goal_occurrence": str(goal), "port": port,
-                                         "finalizer_occurrence": finalizer,
-                                         "detail": "the goal's port and its finalizer step's port declare "
-                                                   "different formats; the goal delivers nothing on it"})
+                                payload={
+                                    "goal_occurrence": str(goal),
+                                    "port": port,
+                                    "finalizer_occurrence": finalizer,
+                                    "detail": "the goal's port and its finalizer step's port declare "
+                                    "different formats; the goal delivers nothing on it",
+                                },
+                            )
                         except StoreError:
                             pass  # read from a read-only view: the note is written by the next writable read
                         continue
-                    named = [replace(item, producer_occurrence=goal) for item in by_place[(finalizer, port)]]
+                    named = [
+                        replace(item, producer_occurrence=goal)
+                        for item in by_place[(finalizer, port)]
+                    ]
                     by_place[(str(goal), port)] = named
                     aliases.extend(named)
                     moved = True
@@ -1843,10 +1966,13 @@ class HierarchicalDispatch:
 
         roots = {str(item) for item in network.root_occurrence_ids}
         return frozenset(
-            spec.occurrence_id for spec in network.occurrences
-            if spec.form is TaskForm.COMPOUND and str(spec.occurrence_id) not in roots
+            spec.occurrence_id
+            for spec in network.occurrences
+            if spec.form is TaskForm.COMPOUND
+            and str(spec.occurrence_id) not in roots
             and network.binding_for_occurrence(spec.occurrence_id).output_ports
-            and read_occurrence_completion(self.store, mission_id, str(spec.occurrence_id)).complete)
+            and read_occurrence_completion(self.store, mission_id, str(spec.occurrence_id)).complete
+        )
 
     def declared_output_ports_for(
         self, mission_id: str, task_id: str, network: TaskNetworkSnapshot | None = None
@@ -1901,9 +2027,7 @@ class HierarchicalDispatch:
         )
         if occurrence is None:
             return ()
-        ports = output_ports_in_revision(
-            semantics, mission_id, revision, occurrence, str(task_id)
-        )
+        ports = output_ports_in_revision(semantics, mission_id, revision, occurrence, str(task_id))
         binding = semantics.task_semantics_of(mission_id, str(task_id))
         specs = {} if binding is None else {item.port_key: item for item in binding.output_ports}
         del network  # the rows are the authority here; the network is not rebuilt
@@ -2096,10 +2220,13 @@ class HierarchicalDispatch:
             read_current_effect,
             read_occurrence_completion,
         )
+
         for root in roots:
             scope = read_occurrence_completion(self.store, mission_id, str(root)).scope
             for effect_key in scope.required_effect_keys:
-                effect = read_current_effect(self.store, mission_id, scope.spec_hash, str(effect_key))
+                effect = read_current_effect(
+                    self.store, mission_id, scope.spec_hash, str(effect_key)
+                )
                 if str(effect["state"]) not in EFFECT_SETTLED_STATES:
                     return False
             spec = view.network.occurrence(root)
@@ -2125,8 +2252,11 @@ class HierarchicalDispatch:
         if not required:
             return False
         from .completion_status import read_occurrence_completion
-        return all(read_occurrence_completion(self.store, mission_id, str(root)).complete
-                   for root in view.network.root_occurrence_ids)
+
+        return all(
+            read_occurrence_completion(self.store, mission_id, str(root)).complete
+            for root in view.network.root_occurrence_ids
+        )
 
     # --------------------------------------------------------- the root acceptance gate
     def root_contributions(self, mission_id: str) -> dict[str, tuple[str, ...]]:
@@ -2245,7 +2375,9 @@ class HierarchicalDispatch:
         # support (a leaf's accepted contribution, an inner goal's resolution).
         from .completion_support import current_child_supports
 
-        contributions = current_child_supports(self.store, mission_id, network.adopted_children(root))
+        contributions = current_child_supports(
+            self.store, mission_id, network.adopted_children(root)
+        )
         return RootResolutionInputs(
             reason="",
             occurrence_id=str(root),
@@ -2373,11 +2505,16 @@ class HierarchicalDispatch:
         from .scoped_composition_review import root_content_projection
 
         try:
-            root_scope = read_occurrence_completion(self.store, mission_id, inputs.occurrence_id).scope
+            root_scope = read_occurrence_completion(
+                self.store, mission_id, inputs.occurrence_id
+            ).scope
             projection = root_content_projection(requirements, root_scope)
         except (ContractError, StoreError) as error:
             return self._refuse_root_resolution(
-                mission_id, inputs, command_id=command_id, reason="OP_COMPLETION_SCOPE_UNRESOLVED",
+                mission_id,
+                inputs,
+                command_id=command_id,
+                reason="OP_COMPLETION_SCOPE_UNRESOLVED",
                 detail="the root content projection could not be read: " + str(error),
             )
         # Handoff item 7: on the assured lane the licence is the current
@@ -2393,7 +2530,10 @@ class HierarchicalDispatch:
             candidate = validity.prepare_root_use(inputs.record, resolution_id=resolution_id)
         except AssuranceError as error:
             return self._refuse_root_resolution(
-                mission_id, inputs, command_id=command_id, reason=error.code,
+                mission_id,
+                inputs,
+                command_id=command_id,
+                reason=error.code,
                 detail="the current use certificate could not be prepared: " + str(error),
             )
         witness_id = candidate.certificate_id
@@ -2409,8 +2549,10 @@ class HierarchicalDispatch:
             input_manifest_hash=manifest_hash,
             artifact_refs=(),
             child_resolution_ids=tuple(
-                str(item.resolution_id) for item in self.semantics().list_goal_resolutions(mission_id)
-                if str(item.resolution_id) in {source_id for ids in inputs.contributions.values() for source_id in ids}
+                str(item.resolution_id)
+                for item in self.semantics().list_goal_resolutions(mission_id)
+                if str(item.resolution_id)
+                in {source_id for ids in inputs.contributions.values() for source_id in ids}
             ),
             # Review F4: every verdict is **read from the official review record**, and
             # a criterion the record did not judge is written ``UNKNOWN``.  Writing
@@ -2424,7 +2566,9 @@ class HierarchicalDispatch:
             # UNKNOWN and the AER §6.2 formula answers for it, instead of the trigger
             # answering on the reviewer's behalf.
             criteria=_root_criteria(
-                projection.criteria, inputs.record, effective_grades=effective_grades,
+                projection.criteria,
+                inputs.record,
+                effective_grades=effective_grades,
             ),
             review_receipt_id=str(inputs.record.record_id),
             verdict=ReviewVerdict.ACCEPT,
@@ -2479,7 +2623,9 @@ class HierarchicalDispatch:
                     selected_method_legal=inputs.method_instance_id is not None,
                     contributing_occurrence_ids=tuple(sorted(inputs.contributions)),
                     # 2026-09-30 真机第 6 局：两次判不下来、人裁决通过的最终审查同样算组合义务达成
-                    composition_obligation_passed=accepted_or_adjudicated(self.store, inputs.record),
+                    composition_obligation_passed=accepted_or_adjudicated(
+                        self.store, inputs.record
+                    ),
                 )
             ),
             is_mission_root=True,
@@ -2517,7 +2663,12 @@ class HierarchicalDispatch:
         )
 
     def _refuse_root_resolution(
-        self, mission_id: str, inputs: RootResolutionInputs, *, command_id: str, reason: str,
+        self,
+        mission_id: str,
+        inputs: RootResolutionInputs,
+        *,
+        command_id: str,
+        reason: str,
         detail: str,
     ) -> RootResolutionOutcome:
         self._append(
@@ -2630,27 +2781,50 @@ class HierarchicalDispatch:
                 )
 
                 latest = self.semantics().latest_requirements_revision(mission_id)
-                refused = (not counts and latest is not None
-                           and rejected(self.store, task.accepted_result_id, int(latest.revision)))
-                changed = (not counts and not refused and latest is not None
-                           and not kept(self.store, task.accepted_result_id, int(latest.revision)))
-                refusals.append(DispatchRefusal(
-                    task_id=task_id, occurrence_id=str(spec.occurrence_id),
-                    reason=ReadinessReason.NOT_SELECTED,
-                    detail_codes=("PREPARATION_ALREADY_ACCEPTED",) if counts
-                    else (CARRIED_RESULT_REJECTED,) if refused
-                    else (CARRIED_RESULT_NOT_KEPT,) if changed else (CARRIED_REVIEW_PENDING,),
-                    detail="accepted preparation is waiting for completion, not another Worker" if counts
-                    else ("this step's result was accepted under an earlier revision of the requirements and "
-                          "its review under the current ones ended without an acceptance; it is not re-run "
-                          "automatically — replace the step (PROPOSE_SUCCESSOR) or its method") if refused
-                    else ("this step's result was accepted under an earlier revision of the requirements and "
-                          "the step itself has changed since (its inputs or contract), so the old result "
-                          "cannot be kept — replace the step (PROPOSE_SUCCESSOR) or its method") if changed
-                    else ("this step's result was accepted under an earlier revision of the requirements; "
-                          "the reviewer is judging the same result under the current ones (after its "
-                          "inputs count) — no Worker runs"),
-                ))
+                refused = (
+                    not counts
+                    and latest is not None
+                    and rejected(self.store, task.accepted_result_id, int(latest.revision))
+                )
+                changed = (
+                    not counts
+                    and not refused
+                    and latest is not None
+                    and not kept(self.store, task.accepted_result_id, int(latest.revision))
+                )
+                refusals.append(
+                    DispatchRefusal(
+                        task_id=task_id,
+                        occurrence_id=str(spec.occurrence_id),
+                        reason=ReadinessReason.NOT_SELECTED,
+                        detail_codes=("PREPARATION_ALREADY_ACCEPTED",)
+                        if counts
+                        else (CARRIED_RESULT_REJECTED,)
+                        if refused
+                        else (CARRIED_RESULT_NOT_KEPT,)
+                        if changed
+                        else (CARRIED_REVIEW_PENDING,),
+                        detail="accepted preparation is waiting for completion, not another Worker"
+                        if counts
+                        else (
+                            "this step's result was accepted under an earlier revision of the requirements and "
+                            "its review under the current ones ended without an acceptance; it is not re-run "
+                            "automatically — replace the step (PROPOSE_SUCCESSOR) or its method"
+                        )
+                        if refused
+                        else (
+                            "this step's result was accepted under an earlier revision of the requirements and "
+                            "the step itself has changed since (its inputs or contract), so the old result "
+                            "cannot be kept — replace the step (PROPOSE_SUCCESSOR) or its method"
+                        )
+                        if changed
+                        else (
+                            "this step's result was accepted under an earlier revision of the requirements; "
+                            "the reviewer is judging the same result under the current ones (after its "
+                            "inputs count) — no Worker runs"
+                        ),
+                    )
+                )
                 continue
             report = view.reports[spec.occurrence_id]
             if not report.ready:
@@ -2706,9 +2880,15 @@ class HierarchicalDispatch:
         from .completion_status import read_occurrence_completion
 
         try:
-            return bool(read_occurrence_completion(self.store, mission_id, occurrence_id).preparation_acceptance_ids)
+            return bool(
+                read_occurrence_completion(
+                    self.store, mission_id, occurrence_id
+                ).preparation_acceptance_ids
+            )
         except (ContractError, StoreError):
-            return True  # unreadable completion is reported by its own path, not as "old requirements"
+            return (
+                True  # unreadable completion is reported by its own path, not as "old requirements"
+            )
 
     def record_withheld(self, mission_id: str, admissions: DispatchAdmissions) -> tuple[Event, ...]:
         """Record every structured refusal once per (occurrence, revision, reason).
@@ -2896,22 +3076,36 @@ class HierarchicalDispatch:
             mission_id=mission_id,
         )
         from dataclasses import replace
+
         # 2026-09-29 第十局：criterion_evidence 原先给每个编号配同一句总目标，模型看不出
         # c-user-3 是"跑测试"、c-user-6 是"写出 README.md"，只能按目标描述自己猜编号，
         # 把文件要求链到了错的步骤。有任务要求原文的编号换成它自己的原文。
         requirements = self.semantics().latest_requirements_revision(mission_id)
-        statements = {} if requirements is None else {
-            str(item.criterion_id): str(item.statement) for item in requirements.criteria}
+        statements = (
+            {}
+            if requirements is None
+            else {str(item.criterion_id): str(item.statement) for item in requirements.criteria}
+        )
         if statements:
-            request = replace(request, criterion_evidence=tuple(
-                {"id": item["id"],
-                 "evidence_requirement": (criterion_statement(statements[item["id"]])
-                                          if item["id"] in statements else item["evidence_requirement"])}
-                for item in request.criterion_evidence))
+            request = replace(
+                request,
+                criterion_evidence=tuple(
+                    {
+                        "id": item["id"],
+                        "evidence_requirement": (
+                            criterion_statement(statements[item["id"]])
+                            if item["id"] in statements
+                            else item["evidence_requirement"]
+                        ),
+                    }
+                    for item in request.criterion_evidence
+                ),
+            )
         # 片 B：中间目标的类型不声明判据，它负责的是上级做法分给它的要求（原编号、用户原话）。
         # 夜间 N6：读不出分给它的那一份时如实写进材料（criterion_share_unreadable），不当成"没有"。
         from .assurance_check_policy import goal_share
         from .operation_completion import OperationCompletionError
+
         listed = {item["id"] for item in request.criterion_evidence}
         unreadable: dict[str, str] | None = None
         try:
@@ -2920,14 +3114,23 @@ class HierarchicalDispatch:
             share, unreadable = (), {"code": str(error.code), "detail": str(error)}
         handed = [item for item in share if item in statements and item not in listed]
         if handed:
-            request = replace(request, criterion_evidence=tuple(request.criterion_evidence) + tuple(
-                {"id": item, "evidence_requirement": criterion_statement(statements[item])}
-                for item in handed))
+            request = replace(
+                request,
+                criterion_evidence=tuple(request.criterion_evidence)
+                + tuple(
+                    {"id": item, "evidence_requirement": criterion_statement(statements[item])}
+                    for item in handed
+                ),
+            )
         fresh_id = "proposed-" + content_hash_of({"goal_task_id": str(goal_task_id)})[:24]
-        occupied = [int(item.contract.method_version) for item in self.semantics().list_methods()
-                    if item.contract.method_id == fresh_id]
+        occupied = [
+            int(item.contract.method_version)
+            for item in self.semantics().list_methods()
+            if item.contract.method_id == fresh_id
+        ]
         document = replace(
-            request, new_method_identity=(fresh_id, max(occupied, default=0) + 1)).to_json()
+            request, new_method_identity=(fresh_id, max(occupied, default=0) + 1)
+        ).to_json()
         document["subgoal_types"] = self._subgoal_types(world, signature)
         if unreadable is not None:
             document["criterion_share_unreadable"] = unreadable
@@ -2943,16 +3146,27 @@ class HierarchicalDispatch:
 
         from ..planning.htn.planner_package import task_type_row
 
-        owner = next((spec for spec in world.catalog.task_types()
-                      if spec.goal_signature.signature_id == signature.signature_id
-                      and int(spec.goal_signature.version) == int(signature.version)), None)
+        owner = next(
+            (
+                spec
+                for spec in world.catalog.task_types()
+                if spec.goal_signature.signature_id == signature.signature_id
+                and int(spec.goal_signature.version) == int(signature.version)
+            ),
+            None,
+        )
         if owner is None or owner.refinement_level is None:
             return []
         rows = []
-        for spec in sorted(world.catalog.task_types(), key=lambda item: (item.refinement_level or 0,
-                                                                         item.task_type_ref.id)):
-            if (spec.form is not TaskForm.COMPOUND or spec.refinement_level is None
-                    or spec.refinement_level <= owner.refinement_level):
+        for spec in sorted(
+            world.catalog.task_types(),
+            key=lambda item: (item.refinement_level or 0, item.task_type_ref.id),
+        ):
+            if (
+                spec.form is not TaskForm.COMPOUND
+                or spec.refinement_level is None
+                or spec.refinement_level <= owner.refinement_level
+            ):
                 continue
             rows.append({**task_type_row(spec, world.schemas), "level": int(spec.refinement_level)})
         return rows
@@ -3015,7 +3229,9 @@ class HierarchicalDispatch:
                     if item in requests
                 ]
             rows.append(row)
-        return tuple(sorted(rows, key=lambda item: (item["occurrence_id"], item["retired_instance_id"])))
+        return tuple(
+            sorted(rows, key=lambda item: (item["occurrence_id"], item["retired_instance_id"]))
+        )
 
     def planner_round_in_flight(self, mission_id: str) -> bool:
         """An open ``plan`` intent that is a *Planner* round (not a review)."""
@@ -3054,6 +3270,7 @@ class HierarchicalDispatch:
         snapshot = world.snapshot()
         capabilities = world.capabilities()
         from .planning_repair_requests import repair_goal_occurrences
+
         repair_goals = set(repair_goal_occurrences(self.store, network))
         entries: list[Any] = []
         for spec in sorted(network.occurrences, key=lambda item: str(item.occurrence_id)):
@@ -3105,6 +3322,7 @@ class HierarchicalDispatch:
         """
         from ..planning.htn.repair_adapter import RepairEventAdapter
         from .repair_impact import read_repair_impact_indexes
+
         del all_items
         with self.store.read_view():
             network = self.network(mission_id)
@@ -3115,8 +3333,12 @@ class HierarchicalDispatch:
             for name in (*indexes, "new_work"):
                 impact_indexes.pop(name, None)
             result = RepairEventAdapter.dispatch(
-                event, actions=actions, mission_id=mission_id,
-                plan_revision=int(network.plan_revision), **indexes, **impact_indexes,
+                event,
+                actions=actions,
+                mission_id=mission_id,
+                plan_revision=int(network.plan_revision),
+                **indexes,
+                **impact_indexes,
             )
         append_hierarchical_event(
             self.store,
@@ -3153,11 +3375,15 @@ class HierarchicalDispatch:
                     method_version=int(reference.version),
                     method_content_hash=str(reference.content_hash),
                     report=entry.report,
-                    bindings=dict(network.binding_for_occurrence(entry.goal_occurrence_id).typed_parameters),
+                    bindings=dict(
+                        network.binding_for_occurrence(entry.goal_occurrence_id).typed_parameters
+                    ),
                 )
             )
         return {
-            str(spec.occurrence_id): filter_candidates(by_occurrence.get(str(spec.occurrence_id), ()))
+            str(spec.occurrence_id): filter_candidates(
+                by_occurrence.get(str(spec.occurrence_id), ())
+            )
             for spec in sorted(network.occurrences, key=lambda item: str(item.occurrence_id))
             if spec.form is TaskForm.COMPOUND
             and network.adopted_instance_for(spec.occurrence_id) is None
@@ -3318,9 +3544,13 @@ class HierarchicalDispatch:
         reread, read = self._reread_recorded(mission_id, now_ms=now_ms)
         # a proposition read again just now is not asked a second time in the same round
         looked = self._unknown_precondition_round(mission_id, now_ms=now_ms, skip=read)
-        return EvidenceRoundResult(outcomes=(*reread, *looked.outcomes), unobservable=looked.unobservable)
+        return EvidenceRoundResult(
+            outcomes=(*reread, *looked.outcomes), unobservable=looked.unobservable
+        )
 
-    def _reread_recorded(self, mission_id: str, *, now_ms: int | None) -> tuple[tuple[Any, ...], frozenset[str]]:
+    def _reread_recorded(
+        self, mission_id: str, *, now_ms: int | None
+    ) -> tuple[tuple[Any, ...], frozenset[str]]:
         """Read the recorded propositions again when the world has moved.
 
         A desktop Mission's world is its accepted artifacts and its reference material: a
@@ -3341,15 +3571,28 @@ class HierarchicalDispatch:
         if index is None:
             return (), frozenset()
         semantics = self.semantics()
-        mark = content_hash_of({
-            "acceptances": sorted(str(item.acceptance_id) for item in semantics.list_acceptances(mission_id)),
-            "sources": [list(row) for row in self.store.connection.execute(
-                "SELECT path, revision, version_hash, superseded_by, revoked FROM sources"
-                " WHERE mission_id=? ORDER BY path, revision, version_hash", (mission_id,))],
-        })
+        mark = content_hash_of(
+            {
+                "acceptances": sorted(
+                    str(item.acceptance_id) for item in semantics.list_acceptances(mission_id)
+                ),
+                "sources": [
+                    list(row)
+                    for row in self.store.connection.execute(
+                        "SELECT path, revision, version_hash, superseded_by, revoked FROM sources"
+                        " WHERE mission_id=? ORDER BY path, revision, version_hash",
+                        (mission_id,),
+                    )
+                ],
+            }
+        )
         done = f"EvidenceReread:{mission_id}:{mark}"
-        if self.store.connection.execute(
-                "SELECT 1 FROM events WHERE idempotency_key=?", (done,)).fetchone() is not None:
+        if (
+            self.store.connection.execute(
+                "SELECT 1 FROM events WHERE idempotency_key=?", (done,)
+            ).fetchone()
+            is not None
+        ):
             return (), frozenset()
         questions = semantics.observation_questions(mission_id)
         moment = int(self.store.now * 1000) if now_ms is None else int(now_ms)
@@ -3364,21 +3607,37 @@ class HierarchicalDispatch:
             if outcome.record is None:
                 continue  # could not look: nothing is written, the recorded reading stands
             before, after = truth_change(
-                semantics.list_observations(mission_id, proposition_key=question["proposition_key"]),
-                outcome.record)
+                semantics.list_observations(
+                    mission_id, proposition_key=question["proposition_key"]
+                ),
+                outcome.record,
+            )
             if after is before:
                 continue
-            written.append(record_observation(semantics, mission_id, outcome, scope_id=question["scope_id"]))
+            written.append(
+                record_observation(semantics, mission_id, outcome, scope_id=question["scope_id"])
+            )
         if not questions:
-            return (), frozenset()  # nothing was ever recorded: nothing to read again, and nothing to say
+            return (
+                (),
+                frozenset(),
+            )  # nothing was ever recorded: nothing to read again, and nothing to say
         append_hierarchical_event(
-            self.store, "EvidenceReread", mission_id, key=f"{mission_id}:{mark}",
-            payload={"mark": mark, "read": read,
-                     "changed": [str(item.record.proposition_key) for item in written]})
+            self.store,
+            "EvidenceReread",
+            mission_id,
+            key=f"{mission_id}:{mark}",
+            payload={
+                "mark": mark,
+                "read": read,
+                "changed": [str(item.record.proposition_key) for item in written],
+            },
+        )
         return tuple(written), frozenset(read)
 
-    def _unknown_precondition_round(self, mission_id: str, *, now_ms: int | None = None,
-                                    skip: Collection[str] = ()) -> Any:
+    def _unknown_precondition_round(
+        self, mission_id: str, *, now_ms: int | None = None, skip: Collection[str] = ()
+    ) -> Any:
         """Look at the UNKNOWN preconditions of every still-open goal, once.
 
         P2.3c part 2c.  Part 2b built the round (``planning.htn.evidence_round``) and
@@ -3475,8 +3734,9 @@ class HierarchicalDispatch:
             now_ms=moment,
         )
 
-    def _publish_source_steps(self, mission_id: str, method: Any,
-                              share: Collection[str] | None = None) -> list[str]:
+    def _publish_source_steps(
+        self, mission_id: str, method: Any, share: Collection[str] | None = None
+    ) -> list[str]:
         """Publish targets whose ``file:`` criterion is not linked to exactly one step.
 
         The Host puts ``file:X`` in front of every ``action:file_publish.publish:X``
@@ -3510,8 +3770,10 @@ class HierarchicalDispatch:
                 continue
             linked = sorted(steps.get(source_id, ()))
             if len(linked) != 1:
-                unclear.append(f"{parsed[2]} 链接到 {len(linked)} 个步骤"
-                               + (f"（{'、'.join(linked)}）" if linked else ""))
+                unclear.append(
+                    f"{parsed[2]} 链接到 {len(linked)} 个步骤"
+                    + (f"（{'、'.join(linked)}）" if linked else "")
+                )
         return unclear
 
     def _admission_policy(self, mission_id: str) -> Any:
@@ -3550,25 +3812,47 @@ class HierarchicalDispatch:
             policy = replace(policy, max_steps=MAX_PROPOSED_METHOD_STEPS)
         return policy
 
-    def solver_preview_lane(self, mission_id: str, proposal: PlanProposal, *,
-                            preview: Any, admission: Any, principal: PlanPrincipal,
-                            command_id: str, source: Mapping[str, Any]) -> Any:
+    def solver_preview_lane(
+        self,
+        mission_id: str,
+        proposal: PlanProposal,
+        *,
+        preview: Any,
+        admission: Any,
+        principal: PlanPrincipal,
+        command_id: str,
+        source: Mapping[str, Any],
+    ) -> Any:
         """Prepare H7's real compiler/Commit lane; solve outside any write transaction."""
         from ..contracts.models import sha256_hex
         from ..planning.plan_preview import CandidatePreview, _source_snapshot_payload
         from .planning_admission_commits import PlanningCommitAdmission
         from .planning_backend_commit import SolverPlanCommitLane
-        if not isinstance(preview, CandidatePreview) or not isinstance(admission, PlanningCommitAdmission):
+
+        if not isinstance(preview, CandidatePreview) or not isinstance(
+            admission, PlanningCommitAdmission
+        ):
             raise ContractError("solver commit requires the typed preview and H1-H admission")
         self.require_hierarchical(mission_id)
         network = self.network(mission_id)
-        if (sha256_hex(_source_snapshot_payload(network)) != preview.source_snapshot_hash
-                or int(proposal.expected_plan_revision) != int(network.plan_revision)):
-            raise ContractError("REQUEST_BINDING_STALE: solver preview no longer matches the active Plan")
-        command = self.build_command(mission_id, proposal, preview.compilation,
-            principal=principal, command_id=command_id,
-            source={**dict(source), "preview_compilation_hash": preview.compilation_hash,
-                    "preview_source_snapshot_hash": preview.source_snapshot_hash})
+        if sha256_hex(_source_snapshot_payload(network)) != preview.source_snapshot_hash or int(
+            proposal.expected_plan_revision
+        ) != int(network.plan_revision):
+            raise ContractError(
+                "REQUEST_BINDING_STALE: solver preview no longer matches the active Plan"
+            )
+        command = self.build_command(
+            mission_id,
+            proposal,
+            preview.compilation,
+            principal=principal,
+            command_id=command_id,
+            source={
+                **dict(source),
+                "preview_compilation_hash": preview.compilation_hash,
+                "preview_source_snapshot_hash": preview.source_snapshot_hash,
+            },
+        )
         return SolverPlanCommitLane(self.commit, command, principal, admission)
 
     def commit_preview_plan_proposal(
@@ -3625,8 +3909,12 @@ class HierarchicalDispatch:
             proposal,
             compilation,
             principal=principal,
-            command_id=(command_id if isinstance(admission, PlanningCommitAdmission)
-                        and admission.taskgraph_candidate is not None else f"{command_id}:preview"),
+            command_id=(
+                command_id
+                if isinstance(admission, PlanningCommitAdmission)
+                and admission.taskgraph_candidate is not None
+                else f"{command_id}:preview"
+            ),
             source={
                 **dict(source or {}),
                 "preview_compilation_hash": preview.compilation_hash,
@@ -3647,9 +3935,7 @@ class HierarchicalDispatch:
                 recompilable=False,
             )
             self._record_refusal(mission_id, proposal, (refusal,))
-            return PlanRoundOutcome(
-                proposal_id=proposal.proposal_id, refusals=(refusal,)
-            )
+            return PlanRoundOutcome(proposal_id=proposal.proposal_id, refusals=(refusal,))
         return PlanRoundOutcome(proposal_id=proposal.proposal_id, receipt=receipt)
 
     @staticmethod
@@ -3702,8 +3988,10 @@ class HierarchicalDispatch:
         policy: dict[str, Any] = {}
         from ..contracts.htn import GraphStructureBudget
         from .taskgraph_policy import read_installed_graph_policy
+
         policy["structure_budget"] = GraphStructureBudget.from_json(
-            read_installed_graph_policy(self.store, mission_id).to_json()["graph_structure_budget"])
+            read_installed_graph_policy(self.store, mission_id).to_json()["graph_structure_budget"]
+        )
         if compilation.delta.retired_instance_ids or compilation.superseded_occurrences:
             policy["running_work_policy"] = RunningWorkPolicy.REQUEST_STOP_THEN_RECONCILE
         if compilation.superseded_occurrences:
@@ -3718,7 +4006,9 @@ class HierarchicalDispatch:
             issued_by=principal.principal_id,
             scope_id=principal.scope_id,
             budget_requirement=compilation.budget_requirement,
-            seed_methods=tuple(getattr(self.require_planning_world(), "seed_methods", ())),  # see seed_method_keys
+            seed_methods=tuple(
+                getattr(self.require_planning_world(), "seed_methods", ())
+            ),  # see seed_method_keys
             source={
                 **dict(source or {}),
                 "proposal_id": proposal.proposal_id,
@@ -3747,15 +4037,24 @@ class HierarchicalDispatch:
             return []
         clashes = []
         for problem in result.problems:
-            if problem.kind not in (ResolutionProblemKind.TARGET_PATH_CONFLICT,
-                                    ResolutionProblemKind.DELIVERY_VERSION_CONFLICT):
+            if problem.kind not in (
+                ResolutionProblemKind.TARGET_PATH_CONFLICT,
+                ResolutionProblemKind.DELIVERY_VERSION_CONFLICT,
+            ):
                 continue
             artifacts = [self.store.get_artifact(artifact_id) for artifact_id in problem.candidates]
             paths = sorted({artifact.path for artifact in artifacts if artifact is not None})
             steps = list(problem.producers) or [
-                artifact.task_id for artifact in artifacts if artifact is not None]
-            clashes.append({"path": paths[0] if paths else "", "artifacts": list(problem.candidates),
-                            "steps": list(dict.fromkeys(steps)), "consumer": task_id})
+                artifact.task_id for artifact in artifacts if artifact is not None
+            ]
+            clashes.append(
+                {
+                    "path": paths[0] if paths else "",
+                    "artifacts": list(problem.candidates),
+                    "steps": list(dict.fromkeys(steps)),
+                    "consumer": task_id,
+                }
+            )
         if clashes:
             raise WriteConflictPending(clashes)
         if result.manifest is None or not result.manifest.is_frozen:
@@ -3765,13 +4064,19 @@ class HierarchicalDispatch:
             return []
         # 阶段 D（10-03）：开工前先查这一步直接上游牵涉的写入冲突（规则一：没有先后的两步把同一文件写成
         # 两样）。独立核验 opt.185 M1：这道检查原先在被删的叠加函数里，不能随它一起没了。
-        producers = tuple(dict.fromkeys(str(item.producer_task_ref) for item in result.manifest.bindings))
+        producers = tuple(
+            dict.fromkeys(str(item.producer_task_ref) for item in result.manifest.bindings)
+        )
         clashes = self.producer_write_conflicts(mission_id, network, touching=producers)
         if clashes:
             raise WriteConflictPending(clashes)
-        return manifest_upstream_inputs(result.manifest, self.target_rules_for(task_id), network=network)
+        return manifest_upstream_inputs(
+            result.manifest, self.target_rules_for(task_id), network=network
+        )
 
-    def write_conflicts(self, mission_id: str, *, touching: Sequence[str] | None = None) -> list[dict[str, Any]]:
+    def write_conflicts(
+        self, mission_id: str, *, touching: Sequence[str] | None = None
+    ) -> list[dict[str, Any]]:
         """Files the plan lets two versions of reach one place with nothing saying which (阶段 D；
         2026-10-09 四项修复第 4 条扩成两条规则).
 
@@ -3793,11 +4098,16 @@ class HierarchicalDispatch:
         found = self.producer_write_conflicts(mission_id, network, touching=touching)
         consumers: dict[str, set[str]] = {}
         for item in network.data_requirements:
-            consumers.setdefault(str(network.occurrence(item.consumer_occurrence).task_id), set()).add(
-                str(network.occurrence(item.producer_occurrence).task_id))
+            consumers.setdefault(
+                str(network.occurrence(item.consumer_occurrence).task_id), set()
+            ).add(str(network.occurrence(item.producer_occurrence).task_id))
+
         def note(conflicts: Sequence[Mapping[str, Any]]) -> None:
             for item in conflicts:
-                if not any(f["path"] == item["path"] and set(f["artifacts"]) == set(item["artifacts"]) for f in found):
+                if not any(
+                    f["path"] == item["path"] and set(f["artifacts"]) == set(item["artifacts"])
+                    for f in found
+                ):
                     found.append(dict(item))
 
         for consumer, producers in consumers.items():
@@ -3817,8 +4127,13 @@ class HierarchicalDispatch:
                 continue  # 那一步自己的别的物化问题，由它自己的派发报，不在这里替它停
         return found
 
-    def producer_write_conflicts(self, mission_id: str, network: TaskNetworkSnapshot, *,
-                                 touching: Sequence[str] | None = None) -> list[dict[str, Any]]:
+    def producer_write_conflicts(
+        self,
+        mission_id: str,
+        network: TaskNetworkSnapshot,
+        *,
+        touching: Sequence[str] | None = None,
+    ) -> list[dict[str, Any]]:
         """Rule one of :meth:`write_conflicts`, on its own so dispatch can ask it before a step
         starts without re-entering the per-consumer resolution (rule two)."""
         from ..graph.projection_validation import ordering_of
@@ -3830,15 +4145,21 @@ class HierarchicalDispatch:
                 occurrences.setdefault(str(spec.task_id), []).append(spec.occurrence_id)
         producers_by_acceptance: dict[str, str] = {}
         for row in semantics.list_acceptance_outputs(mission_id):
-            producers_by_acceptance.setdefault(str(row["acceptance_id"]), str(row["producer_task_ref"]))
+            producers_by_acceptance.setdefault(
+                str(row["acceptance_id"]), str(row["producer_task_ref"])
+            )
         holders: dict[str, list[tuple[str, Any]]] = {}
         for acceptance_id, task_id in sorted(producers_by_acceptance.items()):
             if task_id not in occurrences:
                 continue
             for ref in semantics.get_acceptance(acceptance_id).artifact_refs:
                 artifact = self.store.get_artifact(ref.id)
-                if (artifact is None or artifact.content_hash != ref.content_hash
-                        or is_operation_candidate_path(artifact.path) or artifact.path.startswith(".")):
+                if (
+                    artifact is None
+                    or artifact.content_hash != ref.content_hash
+                    or is_operation_candidate_path(artifact.path)
+                    or artifact.path.startswith(".")
+                ):
                     continue
                 holders.setdefault(artifact.path, []).append((task_id, artifact))
         ordered = None
@@ -3846,7 +4167,7 @@ class HierarchicalDispatch:
         for path in sorted(holders):
             entries = holders[path]
             for seat, (left, left_file) in enumerate(entries):
-                for right, right_file in entries[seat + 1:]:
+                for right, right_file in entries[seat + 1 :]:
                     if left == right or left_file.content_hash == right_file.content_hash:
                         continue
                     if touching is not None and not {left, right} & set(touching):
@@ -3854,8 +4175,13 @@ class HierarchicalDispatch:
                     ordered = ordered or ordering_of(network)
                     if any(ordered(a, b) for a in occurrences[left] for b in occurrences[right]):
                         continue
-                    found.append({"path": path, "steps": [left, right],
-                                  "artifacts": [left_file.id, right_file.id]})
+                    found.append(
+                        {
+                            "path": path,
+                            "steps": [left, right],
+                            "artifacts": [left_file.id, right_file.id],
+                        }
+                    )
         return found
 
     def delivery_sources(self, mission_id: str, manifest: InputManifest) -> DeliverySources:
@@ -3890,14 +4216,21 @@ class HierarchicalDispatch:
         unavailable: list[tuple[str, str]] = []
         direct: dict[str, tuple[str, int]] = {}
         for binding in manifest.bindings:
-            direct.setdefault(binding.acceptance_id, (str(binding.producer_task_ref), int(binding.support_revision)))
+            direct.setdefault(
+                binding.acceptance_id,
+                (str(binding.producer_task_ref), int(binding.support_revision)),
+            )
 
         def frozen_inputs_of(acceptance: Any) -> tuple[DeliveredFile, ...] | None:
             """The files the producer's accepted Attempt started from, as its manifest froze them."""
             try:
-                frozen = decode_frozen_manifest(semantics.get_input_manifest(acceptance.input_manifest_hash))
+                frozen = decode_frozen_manifest(
+                    semantics.get_input_manifest(acceptance.input_manifest_hash)
+                )
             except (StoreError, ContractError) as error:
-                unavailable.append((str(acceptance.acceptance_id), f"frozen inputs unreadable: {error}"))
+                unavailable.append(
+                    (str(acceptance.acceptance_id), f"frozen inputs unreadable: {error}")
+                )
                 return None
             rules = self.target_rules_for(str(acceptance.task_id))
             entries: list[DeliveredFile] = []
@@ -3905,11 +4238,27 @@ class HierarchicalDispatch:
                 path = rules.target_for(port).path
                 if is_operation_candidate_path(path):
                     continue
-                entries.append(DeliveredFile(port.producer_task_ref, port.acceptance_id,
-                                             int(port.support_revision), port.artifact_id, path, port.content_hash))
+                entries.append(
+                    DeliveredFile(
+                        port.producer_task_ref,
+                        port.acceptance_id,
+                        int(port.support_revision),
+                        port.artifact_id,
+                        path,
+                        port.content_hash,
+                    )
+                )
             for item in frozen.deliveries:
-                entries.append(DeliveredFile(item.producer_task_ref, item.acceptance_id, int(item.support_revision),
-                                             item.artifact_id, item.path, item.content_hash))
+                entries.append(
+                    DeliveredFile(
+                        item.producer_task_ref,
+                        item.acceptance_id,
+                        int(item.support_revision),
+                        item.artifact_id,
+                        item.path,
+                        item.content_hash,
+                    )
+                )
             return tuple(entries)
 
         for acceptance_id, (producer, support) in sorted(direct.items()):
@@ -3919,22 +4268,38 @@ class HierarchicalDispatch:
                 unavailable.append((acceptance_id, str(error)))
                 continue
             if acceptance.mission_id != mission_id or str(acceptance.task_id) != producer:
-                unavailable.append((acceptance_id, "the acceptance belongs to another Mission or task"))
+                unavailable.append(
+                    (acceptance_id, "the acceptance belongs to another Mission or task")
+                )
                 continue
             semantic = semantics.task_semantics_of(mission_id, producer)
             read_only = semantic is not None and read_only_leaf(semantic)
             for ref in acceptance.artifact_refs:
                 artifact = self.store.get_artifact(ref.id)
-                if (artifact is None or artifact.mission_id != mission_id or artifact.task_id != producer
-                        or artifact.content_hash != ref.content_hash):
-                    unavailable.append((acceptance_id, f"accepted artifact {ref.id} is missing or changed"))
+                if (
+                    artifact is None
+                    or artifact.mission_id != mission_id
+                    or artifact.task_id != producer
+                    or artifact.content_hash != ref.content_hash
+                ):
+                    unavailable.append(
+                        (acceptance_id, f"accepted artifact {ref.id} is missing or changed")
+                    )
                     continue
                 if is_operation_candidate_path(artifact.path) or artifact.path.startswith("."):
                     continue
                 if read_only and artifact.path not in seed:
                     continue
-                files.append(DeliveredFile(TaskRef(producer), acceptance_id, support,
-                                           artifact.id, artifact.path, artifact.content_hash))
+                files.append(
+                    DeliveredFile(
+                        TaskRef(producer),
+                        acceptance_id,
+                        support,
+                        artifact.id,
+                        artifact.path,
+                        artifact.content_hash,
+                    )
+                )
             frozen = frozen_inputs_of(acceptance)
             if frozen is None:
                 continue
@@ -3953,7 +4318,9 @@ class HierarchicalDispatch:
                 inner = frozen_inputs_of(origin)
                 if inner is not None:
                     received[item.acceptance_id] = frozenset(entry.version_key for entry in inner)
-        return DeliverySources(files=tuple(files), received=received, unavailable=tuple(unavailable))
+        return DeliverySources(
+            files=tuple(files), received=received, unavailable=tuple(unavailable)
+        )
 
     # ------------------------------------------------------------------------ plumbing
     def require_planning_world(self) -> PlanningWorld:
@@ -4053,7 +4420,8 @@ def _root_criteria(
             verdict=reviewed.get(str(item.criterion_id), CriterionVerdict.UNKNOWN),
             evidence_refs=tuple(
                 EvidenceRef.from_json(ref.to_json())
-                for outcome in record.criteria if outcome.criterion_id == item.criterion_id
+                for outcome in record.criteria
+                if outcome.criterion_id == item.criterion_id
                 for ref in outcome.evidence_refs
                 if str(ref.kind) in {str(kind) for kind in EvidenceRefKind}
             ),
@@ -4243,11 +4611,15 @@ def criterion_statement(statement: str) -> str:
     ``file:``/``action:`` 要求的原文后面附一句谁负责。
     """
     if statement.startswith("action:"):
-        return (statement + "（操作要求：内容全部通过后由系统执行，不属于任何步骤；不要为它单独设步骤，"
-                "也不要在任何步骤的 evidence_requirement 里要求发布结果、发布目录或落点路径）")
+        return (
+            statement + "（操作要求：内容全部通过后由系统执行，不属于任何步骤；不要为它单独设步骤，"
+            "也不要在任何步骤的 evidence_requirement 里要求发布结果、发布目录或落点路径）"
+        )
     if statement.startswith("file:"):
-        return (statement + "（在任务工作区写出这个文件即满足；发布由系统完成，evidence_requirement "
-                "不要写发布目录或落点路径）")
+        return (
+            statement + "（在任务工作区写出这个文件即满足；发布由系统完成，evidence_requirement "
+            "不要写发布目录或落点路径）"
+        )
     return statement
 
 

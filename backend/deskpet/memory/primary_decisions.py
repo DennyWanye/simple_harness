@@ -125,9 +125,7 @@ class PrimaryDecisions:
         }
 
     async def list(self, *, disclosure_context, **target):
-        ingress, sdk, session = await self._prepare(
-            target, disclosure_context=disclosure_context
-        )
+        ingress, sdk, session = await self._prepare(target, disclosure_context=disclosure_context)
         rows = ingress.list_open_authorizations(run_id=sdk, session_id=session)
         if len(rows) > 32:
             # Fail closed instead of silently omitting a decision. This bounds
@@ -151,8 +149,7 @@ class PrimaryDecisions:
                     "run_id": item.run_id,
                     "sdk_run_id": sdk,
                     "category": item.category,
-                    "summary": redact_credential_shapes(item.prompt[:2048])[0]
-                    or item.tool_name,
+                    "summary": redact_credential_shapes(item.prompt[:2048])[0] or item.tool_name,
                     "params": {
                         "tool_name": item.tool_name,
                         **_arguments_preview(item.params),
@@ -173,23 +170,17 @@ class PrimaryDecisions:
                 "truncated": False,
             }
 
-    async def respond(
-        self, *, decision_id, nonce, version, decision, disclosure_context, **target
-    ):
+    async def respond(self, *, decision_id, nonce, version, decision, disclosure_context, **target):
         identifier(decision_id, "decision_id", 512)
         identifier(nonce, "nonce", 4096)
         bounded_int(version, minimum=0, maximum=2**53 - 1)
         if decision not in ("allow", "deny"):
             raise PrimaryReadError("primary_decision_invalid")
-        ingress, sdk, _session = await self._prepare(
-            target, disclosure_context=disclosure_context
-        )
+        ingress, sdk, _session = await self._prepare(target, disclosure_context=disclosure_context)
         async with human_memory_request_boundary():
             if self._current(**target) != sdk:
                 raise PrimaryReadError("primary_decision_target_stale")
-            before = ingress.read_authorization_decision(
-                run_id=sdk, decision_id=decision_id
-            )
+            before = ingress.read_authorization_decision(run_id=sdk, decision_id=decision_id)
             if before is None or before.kind != "tool_authorization":
                 raise PrimaryReadError("primary_decision_not_found")
             if before.request.get("nonce") != nonce or (
@@ -205,15 +196,9 @@ class PrimaryDecisions:
                 expected_version=version,
                 decision=decision,
             )
-            if (
-                signal.run_id != sdk
-                or signal.delivery_id != decision_id
-                or not signal.accepted
-            ):
+            if signal.run_id != sdk or signal.delivery_id != decision_id or not signal.accepted:
                 raise PrimaryReadError("primary_decision_ack_mismatch")
-            after = ingress.read_authorization_decision(
-                run_id=sdk, decision_id=decision_id
-            )
+            after = ingress.read_authorization_decision(run_id=sdk, decision_id=decision_id)
             if after is None or after.state.value not in (
                 "allowed",
                 "denied",

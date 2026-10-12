@@ -29,16 +29,25 @@ async def test_a_new_mission_is_bound_in_its_creation_transaction(orchestration_
         created = service.create_mission(notes_mission("bound-at-creation"))
         mission_id = created["mission_id"]
         # no loop round has run and no planning grant exists yet
-        assert store.connection.execute(
-            "SELECT COUNT(*) FROM planning_lane_grants WHERE mission_id=?", (mission_id,)).fetchone()[0] == 0
+        assert (
+            store.connection.execute(
+                "SELECT COUNT(*) FROM planning_lane_grants WHERE mission_id=?", (mission_id,)
+            ).fetchone()[0]
+            == 0
+        )
         [(kernel, policy_json)] = store.connection.execute(
             "SELECT kernel_version, policy_json FROM taskgraph_policy_bindings WHERE mission_id=?",
-            (mission_id,)).fetchall()
+            (mission_id,),
+        ).fetchall()
         assert kernel == "taskgraph-exec-v2"
         assert "planning_delegation_ref" not in json.loads(policy_json)
         replay = service.create_mission(notes_mission("bound-at-creation"))
         assert replay["created"] is False and replay["mission_id"] == mission_id
-        assert store.connection.execute(
-            "SELECT COUNT(*) FROM taskgraph_policy_bindings WHERE mission_id=?", (mission_id,)).fetchone()[0] == 1
+        assert (
+            store.connection.execute(
+                "SELECT COUNT(*) FROM taskgraph_policy_bindings WHERE mission_id=?", (mission_id,)
+            ).fetchone()[0]
+            == 1
+        )
     finally:
         await service.close()

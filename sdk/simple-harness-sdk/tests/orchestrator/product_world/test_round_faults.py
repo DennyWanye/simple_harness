@@ -13,6 +13,7 @@
 **改坏检验**：边界里"记故障并跳过"改回原样抛出 → 第一条变红；分类表把历史完整性码改成重试
 → 第三条变红（不再当轮停）。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -37,17 +38,26 @@ def _status(store, mission_id: str) -> str:
 
 
 def _faults(store, mission_id: str) -> list:
-    return [event.payload for event in store.iter_events(mission_id) if event.type == "MissionRoundFault"]
+    return [
+        event.payload
+        for event in store.iter_events(mission_id)
+        if event.type == "MissionRoundFault"
+    ]
 
 
 def _block_tasks_of(store, mission_id: str) -> None:
     store.connection.execute(
         "CREATE TRIGGER test_round_fault BEFORE INSERT ON tasks WHEN NEW.mission_id="
-        f"'{mission_id}' BEGIN SELECT RAISE(ABORT,'TEST_STORE_FAULT'); END")
+        f"'{mission_id}' BEGIN SELECT RAISE(ABORT,'TEST_STORE_FAULT'); END"
+    )
 
 
 def _notes(key: str) -> dict:
-    return {"goal": "写一份 NOTES.md", "success_criteria": ["file:NOTES.md"], "idempotency_key": key}
+    return {
+        "goal": "写一份 NOTES.md",
+        "success_criteria": ["file:NOTES.md"],
+        "idempotency_key": key,
+    }
 
 
 def test_a_store_fault_in_one_mission_does_not_stop_the_others(tmp_path):
@@ -122,15 +132,24 @@ def test_a_damaged_plan_history_stops_only_its_own_mission(tmp_path):
             runner = asyncio.create_task(drive())
             try:
                 for _ in range(400):  # both plans committed and both workers are on their way
-                    if all(store.connection.execute(
-                            "SELECT 1 FROM taskgraph_revision_records WHERE mission_id=?", (m,)).fetchone()
-                           for m in (a, b)) and provider.asked.count("worker") >= 2:
+                    if (
+                        all(
+                            store.connection.execute(
+                                "SELECT 1 FROM taskgraph_revision_records WHERE mission_id=?", (m,)
+                            ).fetchone()
+                            for m in (a, b)
+                        )
+                        and provider.asked.count("worker") >= 2
+                    ):
                         break
                     await asyncio.sleep(0.05)
                 with store.transaction() as connection:
                     connection.execute("DROP TRIGGER taskgraph_revision_records_no_update")
-                    connection.execute("UPDATE taskgraph_revision_records SET manifest_hash=? "
-                                       "WHERE mission_id=? AND revision=1", ("f" * 64, a))
+                    connection.execute(
+                        "UPDATE taskgraph_revision_records SET manifest_hash=? "
+                        "WHERE mission_id=? AND revision=1",
+                        ("f" * 64, a),
+                    )
                 provider.release.set()
                 for _ in range(600):
                     if _status(store, a) in TERMINAL and _status(store, b) in TERMINAL:
@@ -145,7 +164,9 @@ def test_a_damaged_plan_history_stops_only_its_own_mission(tmp_path):
                 except Exception as error:  # noqa: BLE001 - asserted below, after the verdicts
                     crashed = error
             mission = store.get_mission(a)
-            assert str(mission.status.value) == "FAILED" and mission.stop_reason == "planning_failed"
+            assert (
+                str(mission.status.value) == "FAILED" and mission.stop_reason == "planning_failed"
+            )
             assert mission.final_report["detail"]["code"] == "TASKGRAPH_HISTORY_INTEGRITY"
             assert _status(store, b) == "COMPLETED"
             assert crashed is None, crashed
@@ -180,7 +201,8 @@ def test_an_ended_missions_failing_collection_is_recorded_once_not_every_round(t
                 world.loop.commit.cancel_mission(a)
                 store.connection.execute(
                     "CREATE TRIGGER test_after_stop BEFORE INSERT ON events WHEN NEW.mission_id="
-                    f"'{a}' AND NEW.type='IntentSettled' BEGIN SELECT RAISE(ABORT,'TEST_AFTER_STOP'); END")
+                    f"'{a}' AND NEW.type='IntentSettled' BEGIN SELECT RAISE(ABORT,'TEST_AFTER_STOP'); END"
+                )
                 provider.release.set()
                 for _ in range(100):
                     if _faults(store, a):
@@ -230,7 +252,9 @@ def test_a_fault_while_recovering_one_mission_does_not_stop_the_others(tmp_path)
             assert _status(store, b) == "COMPLETED"
             assert _status(store, a) not in TERMINAL and a in loop._unrecovered
             assert [fault["where"] for fault in _faults(store, a)] == ["recover"]
-            assert not store.list_tasks(a) or not [e for e in store.iter_events(a) if e.type == "AttemptCreated"]
+            assert not store.list_tasks(a) or not [
+                e for e in store.iter_events(a) if e.type == "AttemptCreated"
+            ]
             broken["on"] = False
             for _ in range(12):
                 await world.drain(timeout=20)
@@ -267,7 +291,9 @@ def test_a_startup_binding_that_refuses_one_intent_stops_only_its_mission(tmp_pa
                         ServiceTurnIdentityMismatch,
                     )
 
-                    raise ServiceTurnIdentityMismatch("SERVICE_TURN_IDENTITY_MISMATCH: turn differs from frozen intent")
+                    raise ServiceTurnIdentityMismatch(
+                        "SERVICE_TURN_IDENTITY_MISMATCH: turn differs from frozen intent"
+                    )
 
                 loop._bind_startup_intent = refuse  # type: ignore[method-assign]
                 loop._bind_startup_tools()  # what ``__aenter__`` runs: must not raise
@@ -282,7 +308,9 @@ def test_a_startup_binding_that_refuses_one_intent_stops_only_its_mission(tmp_pa
     asyncio.run(case())
 
 
-def test_an_ended_missions_collection_that_keeps_failing_is_closed_and_settled(tmp_path, monkeypatch):
+def test_an_ended_missions_collection_that_keeps_failing_is_closed_and_settled(
+    tmp_path, monkeypatch
+):
     """任务已结束、它那次回合的收尾一直出错：到上限后把这条调用关为失败（记明原因），``run()`` 能回到
     空闲；它的额度预留随后能按上限结清（宁可多算、不冻结），并记一条"按上限计入"的用量事件。此前这条
     调用永远开着。
@@ -322,17 +350,25 @@ def test_an_ended_missions_collection_that_keeps_failing_is_closed_and_settled(t
                 with contextlib.suppress(asyncio.CancelledError):
                     await runner
             closed = [fault for fault in _faults(store, a) if fault.get("closed_intent")]
-            assert len(closed) == 1 and closed[0]["reason"] == "round_fault_after_mission_end", _faults(store, a)
+            assert len(closed) == 1 and closed[0]["reason"] == "round_fault_after_mission_end", (
+                _faults(store, a)
+            )
             assert store.get_intent(closed[0]["closed_intent"]).state == "FAILED"
             accounting._settle_expired_ended_holds(loop)
             # 按上限结清的那条用量事实如实记下（阶段 B 欠的断言，HTN 补齐 F1）
-            counteds = [event for event in store.list_events(a) if event.type == "ReservationCountedAtUpperBound"]
+            counteds = [
+                event
+                for event in store.list_events(a)
+                if event.type == "ReservationCountedAtUpperBound"
+            ]
             assert len(counteds) == 1, counteds  # 改坏检验只认断言失败
             [counted] = counteds
             assert counted.payload["counted_tokens"] > 0
             assert not store.connection.execute(
                 "SELECT 1 FROM budget_reservations r JOIN dispatch_intents i ON i.subject_id=r.subject_id "
-                "WHERE i.mission_id=? AND r.state='RESERVED'", (a,)).fetchall()
+                "WHERE i.mission_id=? AND r.state='RESERVED'",
+                (a,),
+            ).fetchall()
 
     asyncio.run(case())
 
@@ -384,24 +420,41 @@ def test_a_fault_in_a_global_scan_is_one_missions_round_fault(tmp_path, monkeypa
 
     async def case():
         async with product_world(tmp_path / "root", LayeredScriptedProvider()) as world:
-            bad = world.create({"goal": "写一份 A.md", "success_criteria": ["file:A.md"],
-                                "idempotency_key": "scan-bad-" + place})["mission_id"]
-            good = world.create({"goal": "写一份 B.md", "success_criteria": ["file:B.md"],
-                                 "idempotency_key": "scan-good-" + place})["mission_id"]
+            bad = world.create(
+                {
+                    "goal": "写一份 A.md",
+                    "success_criteria": ["file:A.md"],
+                    "idempotency_key": "scan-bad-" + place,
+                }
+            )["mission_id"]
+            good = world.create(
+                {
+                    "goal": "写一份 B.md",
+                    "success_criteria": ["file:B.md"],
+                    "idempotency_key": "scan-good-" + place,
+                }
+            )["mission_id"]
             broken["mission"] = bad
             for _ in range(20):
                 await world.drain(timeout=20)  # run() must not raise
-                if str(world.store.get_mission(good).status.value) == "COMPLETED" and broken["hits"]:
+                if (
+                    str(world.store.get_mission(good).status.value) == "COMPLETED"
+                    and broken["hits"]
+                ):
                     break
             assert str(world.store.get_mission(good).status.value) == "COMPLETED"
             assert broken["hits"] >= 1
-            faults = [e.payload for e in world.store.list_events(bad) if e.type == "MissionRoundFault"]
+            faults = [
+                e.payload for e in world.store.list_events(bad) if e.type == "MissionRoundFault"
+            ]
             assert place in {fault["where"] for fault in faults}, faults
 
     asyncio.run(case())
 
 
-def test_a_failing_late_usage_import_is_one_round_fault_and_lands_once_next_round(tmp_path, monkeypatch):
+def test_a_failing_late_usage_import_is_one_round_fault_and_lands_once_next_round(
+    tmp_path, monkeypatch
+):
     """崩溃切点 K12（HTN 补齐阶段 G 第 4 批）：任务已取消、那次调用这才返回，导入它的迟到用量时
     写库出错一次。``run()`` 不抛；另一个任务照常完成；出事任务记一轮故障；下一轮导入恰好一次
     （事务回滚，没有半截行、没有重复事件）；全业务重放与两库对照一致。
@@ -455,14 +508,18 @@ def test_a_failing_late_usage_import_is_one_round_fault_and_lands_once_next_roun
                         break
                     await asyncio.sleep(0.05)
                 [(subject,)] = store.connection.execute(
-                    "SELECT subject_id FROM dispatch_intents WHERE mission_id=? AND kind='attempt'", (a,)).fetchall()
+                    "SELECT subject_id FROM dispatch_intents WHERE mission_id=? AND kind='attempt'",
+                    (a,),
+                ).fetchall()
                 provider.held.discard("worker")
                 b = world.create(_notes("late-import-b"))["mission_id"]
                 broken["subject"] = subject
                 provider.release.set()
                 for _ in range(600):
-                    if crashed or (_status(store, b) in TERMINAL
-                                   and world.loop.commit.ledger.reservation(subject)["state"] == "SETTLED"):
+                    if crashed or (
+                        _status(store, b) in TERMINAL
+                        and world.loop.commit.ledger.reservation(subject)["state"] == "SETTLED"
+                    ):
                         break
                     await asyncio.sleep(0.05)
             finally:
@@ -474,15 +531,34 @@ def test_a_failing_late_usage_import_is_one_round_fault_and_lands_once_next_roun
             faults = _faults(store, a)
             assert len(faults) == 1 and "disk I/O error" in faults[0]["summary"], faults
             assert world.loop.commit.ledger.reservation(subject)["state"] == "SETTLED"
-            refs = [row[0] for row in store.connection.execute(
-                "SELECT usage_ref FROM imported_usage WHERE subject_id=? AND unknown=0", (subject,))]
-            writes = [item["key"]["usage_ref"] for event in store.list_events(a, types=("RowsWritten",))
-                      for item in event.payload["changed"]
-                      if item["table"] == "imported_usage" and item["row"]["subject_id"] == subject]
+            refs = [
+                row[0]
+                for row in store.connection.execute(
+                    "SELECT usage_ref FROM imported_usage WHERE subject_id=? AND unknown=0",
+                    (subject,),
+                )
+            ]
+            writes = [
+                item["key"]["usage_ref"]
+                for event in store.list_events(a, types=("RowsWritten",))
+                for item in event.payload["changed"]
+                if item["table"] == "imported_usage" and item["row"]["subject_id"] == subject
+            ]
             assert refs and sorted(writes) == sorted(refs), (writes, refs)
-            assert len([e for e in store.list_events(a) if e.type == "BudgetReleased"
-                        and e.payload["subject_id"] == subject]) == 1
+            assert (
+                len(
+                    [
+                        e
+                        for e in store.list_events(a)
+                        if e.type == "BudgetReleased" and e.payload["subject_id"] == subject
+                    ]
+                )
+                == 1
+            )
             assert verify_mission(store, a)["status"] == CONSISTENT
-            assert verify_execution_ledgers(store, sorted(root.glob("execution*.db")))["status"] == CONSISTENT
+            assert (
+                verify_execution_ledgers(store, sorted(root.glob("execution*.db")))["status"]
+                == CONSISTENT
+            )
 
     asyncio.run(case())

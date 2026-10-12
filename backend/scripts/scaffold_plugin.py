@@ -16,6 +16,7 @@ Without ``--out``, defaults to ``./<name>``. After scaffolding, drop the
 plugin into ``%APPDATA%/deskpet/plugins/`` and DeskPet's PluginManager
 will pick it up on next discover().
 """
+
 from __future__ import annotations
 
 import argparse
@@ -111,21 +112,15 @@ def main(argv: list[str] | None = None) -> int:
         ),
         encoding="utf-8",
     )
-    (plugin_dir / "README.md").write_text(
-        README_TEMPLATE.format(name=name), encoding="utf-8"
-    )
+    (plugin_dir / "README.md").write_text(README_TEMPLATE.format(name=name), encoding="utf-8")
     skill_dir = plugin_dir / "skills" / "example"
     skill_dir.mkdir(parents=True)
     (skill_dir / "SKILL.md").write_text(SKILL_TEMPLATE, encoding="utf-8")
 
     print(f"created plugin scaffold at {plugin_dir}")
     print("Next steps:")
-    print(
-        f"  1. Edit {plugin_dir / 'skills' / 'example' / 'SKILL.md'} to write your skill"
-    )
-    print(
-        f"  2. Copy {plugin_dir} into %APPDATA%/deskpet/plugins/ to install"
-    )
+    print(f"  1. Edit {plugin_dir / 'skills' / 'example' / 'SKILL.md'} to write your skill")
+    print(f"  2. Copy {plugin_dir} into %APPDATA%/deskpet/plugins/ to install")
     return 0
 
 

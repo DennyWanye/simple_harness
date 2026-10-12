@@ -235,9 +235,7 @@ def test_bridge_activate_refuses_project_effect_without_task_route(
     run = _A6Run(route_state=route_state)
     described = run.bridge.describe(RUN_SHELL)
     with pytest.raises(RuntimeError, match=rf"^{PROJECT_EFFECT_ROUTE_REASON}$"):
-        run.bridge.activate(
-            RUN_SHELL, described["schema_hash"], described["describe_nonce"]
-        )
+        run.bridge.activate(RUN_SHELL, described["schema_hash"], described["describe_nonce"])
 
 
 @pytest.mark.asyncio
@@ -369,9 +367,7 @@ async def test_standalone_route_deny_semantics_unchanged() -> None:
     from simple_harness.tools.runtime_catalog import ToolEffectClass
 
     memo = RunFaultMemo()
-    authority = ProductTaskExecutionAuthority(
-        root_resolver=None, fault_sink=memo
-    )
+    authority = ProductTaskExecutionAuthority(root_resolver=None, fault_sink=memo)
     request = SimpleNamespace(
         run_id=RunId(RUN_ID),
         call_id="call-a6",
@@ -420,9 +416,7 @@ async def test_prepare_snapshot_publishes_this_turn_route_state(tmp_path) -> Non
         env,
         h.ScriptedProvider(
             [
-                h.tool_call(
-                    "context_route", {"route": "direct_standalone"}, raw_id="raw-route"
-                ),
+                h.tool_call("context_route", {"route": "direct_standalone"}, raw_id="raw-route"),
                 h.answer("ok"),
             ]
         ),

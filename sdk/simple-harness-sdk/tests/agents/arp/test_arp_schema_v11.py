@@ -37,7 +37,10 @@ def _rows(path: Path) -> list[tuple[int, str, str]]:
 def _tables(path: Path) -> set[str]:
     connection = sqlite3.connect(path)
     try:
-        return {str(r[0]) for r in connection.execute("SELECT name FROM sqlite_schema WHERE type='table'")}
+        return {
+            str(r[0])
+            for r in connection.execute("SELECT name FROM sqlite_schema WHERE type='table'")
+        }
     finally:
         connection.close()
 
@@ -51,7 +54,9 @@ def test_fresh_v10_then_arp_upgrade_is_accepted_and_idempotent(tmp_path: Path) -
     assert first.prior_descriptor_hash == schema.fresh_descriptor().checksum
     assert first.new_descriptor_hash == schema.arp_descriptor().checksum
     assert [r[0] for r in _rows(path)] == [10, 11]
-    assert {"arp_profiles", "arp_agent_sessions", "arp_context_recalls", "arp_jobs"} <= _tables(path)
+    assert {"arp_profiles", "arp_agent_sessions", "arp_context_recalls", "arp_jobs"} <= _tables(
+        path
+    )
     second = migrate_execution_to_v11(path)
     assert second.applied_now is False and second.new_descriptor_hash == first.new_descriptor_hash
     # The original runner opens the upgraded library and reads v11.
@@ -133,7 +138,9 @@ def test_partition_ddl_applies_on_a_fresh_file(tmp_path: Path) -> None:
     count = apply_ddl(connection, partition_ddl())
     connection.execute("COMMIT")
     assert count > 20
-    names = {str(r[0]) for r in connection.execute("SELECT name FROM sqlite_schema WHERE type='table'")}
+    names = {
+        str(r[0]) for r in connection.execute("SELECT name FROM sqlite_schema WHERE type='table'")
+    }
     assert {"session_partition", "index_generations", "session_chunks", "session_vectors"} <= names
     assert "session_words" in names and "session_trigrams" in names  # FTS5 virtual tables
     connection.close()

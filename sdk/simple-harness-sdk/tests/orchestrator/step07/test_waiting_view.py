@@ -30,17 +30,26 @@ def test_human_wait_is_the_union_of_the_open_request_spans(tmp_path):
             await asyncio.sleep(0.05)
             b = w.propose(candidate(target="b.md"))
             await asyncio.sleep(0.05)
-            w.service.decide_approval(a["approval_request_id"], principal=ALICE, decision="grant",
-                                      nonce="n-a", deployment=ENABLED)
+            w.service.decide_approval(
+                a["approval_request_id"],
+                principal=ALICE,
+                decision="grant",
+                nonce="n-a",
+                deployment=ENABLED,
+            )
             first = w.store.get_approval(a["approval_request_id"])
             second = w.store.get_approval(b["approval_request_id"])
             # a was open [created, closed]; b opened inside it and is still open
             assert first["created_at"] < second["created_at"] < first["closed_at"]
             now = second["created_at"] + 10.0
-            assert w.store.human_wait_seconds(w.mission_id, now) == pytest.approx(now - first["created_at"])
+            assert w.store.human_wait_seconds(w.mission_id, now) == pytest.approx(
+                now - first["created_at"]
+            )
             waiting = w.store.waiting_on(w.mission_id)
             assert [item["kind"] for item in waiting] == ["action"]
-            assert waiting[0]["subject"] == b["action_key"] and waiting[0]["subject"].endswith(":v1")
+            assert waiting[0]["subject"] == b["action_key"] and waiting[0]["subject"].endswith(
+                ":v1"
+            )
 
     asyncio.run(case())
 
@@ -49,7 +58,9 @@ def test_an_ending_mission_cancels_its_open_actions_but_not_what_was_handed_off(
     async def case():
         async with ledger_world(tmp_path) as w:
             open_action = w.propose(candidate(target="a.md"))
-            assert w.control.cancel(w.mission_id)["changed"] is True  # the person cancels the Mission
+            assert (
+                w.control.cancel(w.mission_id)["changed"] is True
+            )  # the person cancels the Mission
             assert w.store.get_action(open_action["action_key"])["state"] == "CANCELLED"
             request = w.store.get_approval(open_action["approval_request_id"])
             assert request["state"] == "CANCELLED" and request["closed_at"] is not None

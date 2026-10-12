@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 """Original Attempt transaction integration and future-handoff TaskGraph fences."""
+
 from __future__ import annotations
 
 import hashlib
@@ -46,19 +47,30 @@ def _mission_judge_tasks(store: Store, intent: DispatchIntent, view_id: str) -> 
     """
     prefix = f"{intent.mission_id}:judge:"
     ordinal = intent.subject_id.removeprefix(prefix)
-    is_judge = (intent.subject_id.startswith(prefix) and ordinal.isascii()
-                and ordinal.isdecimal() and int(ordinal) > 0)
+    is_judge = (
+        intent.subject_id.startswith(prefix)
+        and ordinal.isascii()
+        and ordinal.isdecimal()
+        and int(ordinal) > 0
+    )
     workspace = store.get_workspace(f"{view_id}-verify")
     rows = store.connection.execute(
         "SELECT task_id,attempt_id FROM events WHERE mission_id=? AND type='BudgetReserved' "
         "AND json_extract(payload_json,'$.subject_id')=? "
         "AND json_extract(payload_json,'$.kind')='critic'",
-        (intent.mission_id, intent.subject_id)).fetchall()
-    if (intent.kind != "critic" or not is_judge
-            or workspace is None or workspace["kind"] != "judge"
-            or workspace["mission_id"] != intent.mission_id or workspace["attempt_id"]
-            or workspace["state"] != "ACTIVE"
-            or len(rows) != 1 or tuple(rows[0]) != (None, None)):
+        (intent.mission_id, intent.subject_id),
+    ).fetchall()
+    if (
+        intent.kind != "critic"
+        or not is_judge
+        or workspace is None
+        or workspace["kind"] != "judge"
+        or workspace["mission_id"] != intent.mission_id
+        or workspace["attempt_id"]
+        or workspace["state"] != "ACTIVE"
+        or len(rows) != 1
+        or tuple(rows[0]) != (None, None)
+    ):
         raise StoreError("TASKGRAPH_SERVICE_ATTEMPT_IDENTITY_MISSING")
     task_ids: set[str] = set()
     for artifact_id in workspace["detail"].get("artifacts", []):
@@ -74,7 +86,8 @@ def require_taskgraph_unfenced(store: Store, mission_id: str, task_id: str) -> N
     found = store.connection.execute(
         "SELECT 1 FROM taskgraph_convergence_targets t JOIN taskgraph_convergence_jobs j ON j.job_id=t.job_id "
         "WHERE t.mission_id=? AND t.task_id=? AND j.state IN ('FENCED','WAITING','READY') LIMIT 1",
-        (mission_id, task_id)).fetchone()
+        (mission_id, task_id),
+    ).fetchone()
     if found is not None:
         raise StoreConflict("TASKGRAPH_TARGET_FENCED")
 
@@ -88,20 +101,32 @@ def require_taskgraph_attempt_handoff(store: Store, intent: DispatchIntent) -> N
     if attempt is None or attempt.mission_id != intent.mission_id:
         raise StoreError("TASKGRAPH_ATTEMPT_UNAVAILABLE")
     require_taskgraph_unfenced(store, intent.mission_id, attempt.task_id)
-    row = store.connection.execute("SELECT * FROM taskgraph_attempt_inputs WHERE attempt_id=?", (attempt.id,)).fetchone()
-    if (row is None or row["mission_id"] != intent.mission_id or row["task_id"] != attempt.task_id
-            or row["intent_id"] != intent.intent_id or row["creation_key"] != intent.creation_key
-            or row["input_id"] != intent.input_id or row["frozen_input_hash"] != intent.input_hash
-            or attempt.creation_key != intent.creation_key or attempt.input_id != intent.input_id
-            or attempt.input_hash != intent.input_hash):
+    row = store.connection.execute(
+        "SELECT * FROM taskgraph_attempt_inputs WHERE attempt_id=?", (attempt.id,)
+    ).fetchone()
+    if (
+        row is None
+        or row["mission_id"] != intent.mission_id
+        or row["task_id"] != attempt.task_id
+        or row["intent_id"] != intent.intent_id
+        or row["creation_key"] != intent.creation_key
+        or row["input_id"] != intent.input_id
+        or row["frozen_input_hash"] != intent.input_hash
+        or attempt.creation_key != intent.creation_key
+        or attempt.input_id != intent.input_id
+        or attempt.input_hash != intent.input_hash
+    ):
         raise StoreError("TASKGRAPH_FROZEN_ATTEMPT_IDENTITY_MISMATCH")
     # Global plan changes are irrelevant if this actual input/contract/generation
     # is preserved. Current execution permission still comes from the caller.
     binding = HtnStore(store).task_semantics_of(intent.mission_id, attempt.task_id)
-    if (binding is None or int(binding.contract_revision) != row["binding_revision"]
-            or binding.contract_hash != row["contract_hash"]
-            or int(binding.dispatch_generation) != row["dispatch_generation"]
-            or int(binding.input_binding_revision) != row["input_binding_revision"]):
+    if (
+        binding is None
+        or int(binding.contract_revision) != row["binding_revision"]
+        or binding.contract_hash != row["contract_hash"]
+        or int(binding.dispatch_generation) != row["dispatch_generation"]
+        or int(binding.input_binding_revision) != row["input_binding_revision"]
+    ):
         raise StoreConflict("TASKGRAPH_ATTEMPT_CONTROL_STALE")
     try:
         origin = AttemptInputBinding(**dict(row))
@@ -115,11 +140,18 @@ def require_taskgraph_attempt_handoff(store: Store, intent: DispatchIntent) -> N
         raise StoreError("TASKGRAPH_FROZEN_ORIGIN_PIN_MISMATCH") from error
     pin = next((row for row in pins if row.occurrence_id == origin.occurrence_id), None)
     if pin is None or (pin.task_id, pin.binding_revision, pin.binding_hash) != (
-            attempt.task_id, origin.binding_revision, binding.content_hash()):
+        attempt.task_id,
+        origin.binding_revision,
+        binding.content_hash(),
+    ):
         raise StoreError("TASKGRAPH_FROZEN_ORIGIN_PIN_MISMATCH")
-    manifest = store.connection.execute("SELECT manifest_json FROM input_manifests WHERE manifest_hash=?",
-                                        (row["manifest_hash"],)).fetchone()
-    if manifest is None or hashlib.sha256(str(manifest[0]).encode()).hexdigest() != row["manifest_hash"]:
+    manifest = store.connection.execute(
+        "SELECT manifest_json FROM input_manifests WHERE manifest_hash=?", (row["manifest_hash"],)
+    ).fetchone()
+    if (
+        manifest is None
+        or hashlib.sha256(str(manifest[0]).encode()).hexdigest() != row["manifest_hash"]
+    ):
         raise StoreError("TASKGRAPH_FROZEN_INPUT_UNAVAILABLE")
     document = json.loads(manifest[0])
     if canonical_json(document) != manifest[0]:
@@ -128,8 +160,12 @@ def require_taskgraph_attempt_handoff(store: Store, intent: DispatchIntent) -> N
         frozen = decode_frozen_manifest(document)
         if str(frozen.consumer_task_ref) != attempt.task_id:
             raise StoreError("TASKGRAPH_FROZEN_INPUT_CONSUMER_MISMATCH")
-        _intent_inputs(intent, frozen, source_revision=row["source_revision"],
-                       manifest_hash=row["manifest_hash"])
+        _intent_inputs(
+            intent,
+            frozen,
+            source_revision=row["source_revision"],
+            manifest_hash=row["manifest_hash"],
+        )
     except (ContractError, ArtifactConflict) as error:
         raise StoreError("TASKGRAPH_FROZEN_INPUT_CORRUPT") from error
 
@@ -145,9 +181,14 @@ def _frozen_binding(intent: DispatchIntent) -> Mapping[str, Any]:
     return frozen
 
 
-def _intent_inputs(intent: DispatchIntent, manifest: InputManifest, *,
-                   source_revision: int, manifest_hash: str,
-                   network: TaskNetworkSnapshot | None = None) -> tuple[UpstreamInput, ...]:
+def _intent_inputs(
+    intent: DispatchIntent,
+    manifest: InputManifest,
+    *,
+    source_revision: int,
+    manifest_hash: str,
+    network: TaskNetworkSnapshot | None = None,
+) -> tuple[UpstreamInput, ...]:
     """The intent's ``inputs`` must equal the frozen manifest's materialisation exactly.
 
     2026-10-11 第三批：the manifest lists every delivered file (port and delivery
@@ -155,13 +196,18 @@ def _intent_inputs(intent: DispatchIntent, manifest: InputManifest, *,
     reconcile — no closure, no "re-verified by the producer's latest result".
     """
     frozen = _frozen_binding(intent)
-    if (set(frozen) != {"version", "source_revision", "manifest_hash", "target_rules"}
-            or type(frozen["source_revision"]) is not int or frozen["source_revision"] != source_revision
-            or frozen["manifest_hash"] != manifest_hash):
+    if (
+        set(frozen) != {"version", "source_revision", "manifest_hash", "target_rules"}
+        or type(frozen["source_revision"]) is not int
+        or frozen["source_revision"] != source_revision
+        or frozen["manifest_hash"] != manifest_hash
+    ):
         raise StoreError("TASKGRAPH_DISPATCH_INPUT_IDENTITY_MISMATCH")
     rules = decode_target_rules(frozen["target_rules"])
     expected = tuple(manifest_upstream_inputs(manifest, rules, network=network))
-    if canonical_json(intent.config.get("inputs")) != canonical_json([item.to_json() for item in expected]):
+    if canonical_json(intent.config.get("inputs")) != canonical_json(
+        [item.to_json() for item in expected]
+    ):
         raise StoreError("TASKGRAPH_DISPATCH_INPUT_SET_MISMATCH")
     message = intent.config.get("message")
     if not isinstance(message, Mapping) or sha256_hex(message) != intent.input_hash:
@@ -174,13 +220,21 @@ def _require_materialization_receipt(store: Store, intent: DispatchIntent) -> No
     command_id = "taskgraph-materialization:" + intent.subject_id
     receipt = store.get_receipt(command_id)
     row = store.connection.execute(
-        "SELECT kind,subject_id,proposal_hash FROM commit_receipts WHERE commit_id=?", (command_id,)).fetchone()
-    if (receipt is None or row is None or row["kind"] != "TaskGraphAttemptMaterialized"
-            or row["subject_id"] != intent.subject_id or sha256_hex(receipt) != row["proposal_hash"]
-            or receipt.get("attempt_id") != intent.subject_id or receipt.get("mission_id") != intent.mission_id
-            or receipt.get("intent_id") != intent.intent_id or receipt.get("input_hash") != intent.input_hash
-            or canonical_json(receipt.get("binding")) != canonical_json(dict(frozen))
-            or canonical_json(receipt.get("inputs")) != canonical_json(intent.config.get("inputs"))):
+        "SELECT kind,subject_id,proposal_hash FROM commit_receipts WHERE commit_id=?", (command_id,)
+    ).fetchone()
+    if (
+        receipt is None
+        or row is None
+        or row["kind"] != "TaskGraphAttemptMaterialized"
+        or row["subject_id"] != intent.subject_id
+        or sha256_hex(receipt) != row["proposal_hash"]
+        or receipt.get("attempt_id") != intent.subject_id
+        or receipt.get("mission_id") != intent.mission_id
+        or receipt.get("intent_id") != intent.intent_id
+        or receipt.get("input_hash") != intent.input_hash
+        or canonical_json(receipt.get("binding")) != canonical_json(dict(frozen))
+        or canonical_json(receipt.get("inputs")) != canonical_json(intent.config.get("inputs"))
+    ):
         raise StoreError("TASKGRAPH_MATERIALIZATION_RECEIPT_MISMATCH")
 
 
@@ -191,9 +245,12 @@ class PreparedTaskGraphAttempt:
     target_rules_json: str
 
     def intent_binding(self) -> dict[str, Any]:
-        return {"version": FROZEN_INPUT_VERSION, "source_revision": int(self.admission.plan_revision),
-                "manifest_hash": sha256_hex(self.manifest.to_json()),
-                "target_rules": json.loads(self.target_rules_json)}
+        return {
+            "version": FROZEN_INPUT_VERSION,
+            "source_revision": int(self.admission.plan_revision),
+            "manifest_hash": sha256_hex(self.manifest.to_json()),
+            "target_rules": json.loads(self.target_rules_json),
+        }
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -205,15 +262,31 @@ class TaskGraphAttemptContext:
     upstream: tuple[UpstreamInput, ...]
 
 
-ExecutionRecheck = Callable[[Store, NetworkView, EligiblePrimitiveTask, InputManifest,
-                             Mapping[str, Any], Sequence[Mapping[str, Any]], str], None]
+ExecutionRecheck = Callable[
+    [
+        Store,
+        NetworkView,
+        EligiblePrimitiveTask,
+        InputManifest,
+        Mapping[str, Any],
+        Sequence[Mapping[str, Any]],
+        str,
+    ],
+    None,
+]
 
 
 class TaskGraphDispatchBinding:
-    def __init__(self, store: Store, *, hierarchical: Callable[[str], HierarchicalDispatch], history: TaskGraphStore,
-                 recheck_execution: ExecutionRecheck,
-                 recheck_handoff: Callable[[Store, DispatchIntent], None],
-                 recheck_settlement: Callable[[Store, str, str], None]) -> None:
+    def __init__(
+        self,
+        store: Store,
+        *,
+        hierarchical: Callable[[str], HierarchicalDispatch],
+        history: TaskGraphStore,
+        recheck_execution: ExecutionRecheck,
+        recheck_handoff: Callable[[Store, DispatchIntent], None],
+        recheck_settlement: Callable[[Store, str, str], None],
+    ) -> None:
         if not callable(hierarchical) or history.store is not store:
             raise ValueError("TaskGraph dispatch readers must share the original Store")
         self.store, self.dispatch_for, self.history = store, hierarchical, history
@@ -238,16 +311,28 @@ class TaskGraphDispatchBinding:
             self.recheck_handoff(self.store, intent)
             context = self.read_attempt(intent.mission_id, intent.subject_id)
             moment = int(self.store.now * 1000)
-            require_current_manifest_use(context.manifest, context.network,
-                accepted=self.dispatch_for(intent.mission_id).accepted_outputs(intent.mission_id, context.network),
-                policy=self.dispatch_for(intent.mission_id).resolution_policy_for(intent.mission_id, now_ms=moment),
-                witnesses=self.dispatch_for(intent.mission_id).input_witnesses(intent.mission_id, context.inputs.binding.task_id))
+            require_current_manifest_use(
+                context.manifest,
+                context.network,
+                accepted=self.dispatch_for(intent.mission_id).accepted_outputs(
+                    intent.mission_id, context.network
+                ),
+                policy=self.dispatch_for(intent.mission_id).resolution_policy_for(
+                    intent.mission_id, now_ms=moment
+                ),
+                witnesses=self.dispatch_for(intent.mission_id).input_witnesses(
+                    intent.mission_id, context.inputs.binding.task_id
+                ),
+            )
         else:
             # Original service producers carry explicit Task/goal/Attempt links.
             # Fencing their next request does not discard an already handed-off
             # reply or move its charge to another account.
-            task_ids = {intent.config[key] for key in ("task_id", "goal_task_id")
-                        if intent.config.get(key) is not None}
+            task_ids = {
+                intent.config[key]
+                for key in ("task_id", "goal_task_id")
+                if intent.config.get(key) is not None
+            }
             attempt_id = intent.config.get("attempt_id")
             if attempt_id is not None:
                 attempt = self.store.get_attempt(attempt_id)
@@ -261,6 +346,7 @@ class TaskGraphDispatchBinding:
                 task = self.store.get_task(task_id)
                 if task is None:
                     from ..contracts.htn import TaskForm
+
                     semantic = HtnStore(self.store).task_semantics_of(intent.mission_id, task_id)
                     if semantic is None or semantic.form is not TaskForm.COMPOUND:
                         raise StoreError("TASKGRAPH_SERVICE_TASK_IDENTITY_MISSING")
@@ -268,8 +354,14 @@ class TaskGraphDispatchBinding:
                     raise StoreError("TASKGRAPH_SERVICE_TASK_IDENTITY_MISSING")
                 require_taskgraph_unfenced(self.store, intent.mission_id, task_id)
 
-    def prepare(self, task_id: str, *, intent_config: Mapping[str, Any],
-                inputs: Sequence[Mapping[str, Any]], input_hash: str) -> PreparedTaskGraphAttempt:
+    def prepare(
+        self,
+        task_id: str,
+        *,
+        intent_config: Mapping[str, Any],
+        inputs: Sequence[Mapping[str, Any]],
+        input_hash: str,
+    ) -> PreparedTaskGraphAttempt:
         if not self.store.connection.in_transaction:
             raise StoreError("TASKGRAPH_DISPATCH_REQUIRES_ATTEMPT_TRANSACTION")
         task = self.store.get_task(task_id)
@@ -285,7 +377,12 @@ class TaskGraphDispatchBinding:
         occurrence = candidates[0]
         # NEXT-TG-1.0 §5.2: the resolution this read's report was judged against.
         result = view.resolutions.get(occurrence.occurrence_id)
-        if result is None or result.problems or result.manifest is None or not result.manifest.is_frozen:
+        if (
+            result is None
+            or result.problems
+            or result.manifest is None
+            or not result.manifest.is_frozen
+        ):
             raise StoreError("TASKGRAPH_INPUT_NOT_FROZEN")
         manifest = result.manifest
         rules = self.dispatch_for(task.mission_id).target_rules_for(task.id)
@@ -293,24 +390,49 @@ class TaskGraphDispatchBinding:
             raise StoreError("TARGET_RULES_UNAVAILABLE")
         # 第三批：清单（端口绑定 + 交付绑定）的物化结果就是这次尝试的全部输入，没有第二套叠加
         expected = tuple(manifest_upstream_inputs(manifest, rules, network=view.network))
-        if canonical_json([dict(item) for item in inputs]) != canonical_json([item.to_json() for item in expected]):
+        if canonical_json([dict(item) for item in inputs]) != canonical_json(
+            [item.to_json() for item in expected]
+        ):
             raise StoreConflict("TASKGRAPH_DISPATCH_INPUT_SET_MISMATCH")
         message = intent_config.get("message")
         if not isinstance(message, Mapping) or sha256_hex(message) != input_hash:
             raise StoreConflict("TASKGRAPH_DISPATCH_MESSAGE_HASH_MISMATCH")
-        admission = admit_for_dispatch(view.reports[occurrence.occurrence_id], view.views[occurrence.occurrence_id],
-                                       view.plan, manifest, now_ms=moment)
-        pin = next((item for item in record.pins.member_pins if item.occurrence_id == str(occurrence.occurrence_id)), None)
-        if pin is None or pin.task_id != task_id or pin.binding_revision != int(admission.contract_revision):
+        admission = admit_for_dispatch(
+            view.reports[occurrence.occurrence_id],
+            view.views[occurrence.occurrence_id],
+            view.plan,
+            manifest,
+            now_ms=moment,
+        )
+        pin = next(
+            (
+                item
+                for item in record.pins.member_pins
+                if item.occurrence_id == str(occurrence.occurrence_id)
+            ),
+            None,
+        )
+        if (
+            pin is None
+            or pin.task_id != task_id
+            or pin.binding_revision != int(admission.contract_revision)
+        ):
             raise StoreConflict("TASKGRAPH_DISPATCH_PIN_STALE")
         # Actual execution authority, current operation/running-work completeness,
         # current budgets/resources and the materialized request/manifest relationship
         # are rechecked by the original installed execution adapter, never plan grant.
-        self.recheck_execution(self.store, view, admission, manifest, intent_config, inputs, input_hash)
-        prepared = PreparedTaskGraphAttempt(admission=admission, manifest=manifest,
-                                            target_rules_json=canonical_json(encode_target_rules(rules)))
+        self.recheck_execution(
+            self.store, view, admission, manifest, intent_config, inputs, input_hash
+        )
+        prepared = PreparedTaskGraphAttempt(
+            admission=admission,
+            manifest=manifest,
+            target_rules_json=canonical_json(encode_target_rules(rules)),
+        )
         supplied = intent_config.get("taskgraph_inputs")
-        if supplied is not None and canonical_json(supplied) != canonical_json(prepared.intent_binding()):
+        if supplied is not None and canonical_json(supplied) != canonical_json(
+            prepared.intent_binding()
+        ):
             raise StoreConflict("TASKGRAPH_DISPATCH_INPUT_IDENTITY_MISMATCH")
         return prepared
 
@@ -327,41 +449,89 @@ class TaskGraphDispatchBinding:
             if intent is None or intent.intent_id != frozen.binding.intent_id:
                 raise StoreError("TASKGRAPH_DISPATCH_INTENT_UNAVAILABLE")
             _require_materialization_receipt(self.store, intent)
-            upstream = _intent_inputs(intent, manifest,
-                                      source_revision=frozen.binding.source_revision,
-                                      manifest_hash=frozen.binding.manifest_hash, network=network)
-            return TaskGraphAttemptContext(inputs=frozen, history=history, manifest=manifest,
-                                           network=network, upstream=upstream)
+            upstream = _intent_inputs(
+                intent,
+                manifest,
+                source_revision=frozen.binding.source_revision,
+                manifest_hash=frozen.binding.manifest_hash,
+                network=network,
+            )
+            return TaskGraphAttemptContext(
+                inputs=frozen,
+                history=history,
+                manifest=manifest,
+                network=network,
+                upstream=upstream,
+            )
 
-    def record(self, prepared: PreparedTaskGraphAttempt, attempt: Attempt, intent: DispatchIntent) -> None:
+    def record(
+        self, prepared: PreparedTaskGraphAttempt, attempt: Attempt, intent: DispatchIntent
+    ) -> None:
         admission = prepared.admission
-        if (str(admission.task_id) != attempt.task_id or str(admission.mission_id) != attempt.mission_id
-                or intent.subject_id != attempt.id):
+        if (
+            str(admission.task_id) != attempt.task_id
+            or str(admission.mission_id) != attempt.mission_id
+            or intent.subject_id != attempt.id
+        ):
             raise StoreConflict("TASKGRAPH_DISPATCH_ATTEMPT_MISMATCH")
-        digest = HtnStore(self.store).insert_input_manifest(attempt.mission_id, attempt.task_id,
-            prepared.manifest.to_json(), attempt_id=attempt.id,
-            input_binding_revision=int(admission.input_binding_revision))
-        bound = self.inputs.insert_attempt_inputs(attempt_id=attempt.id, occurrence_id=str(admission.occurrence_id),
-            source_revision=int(admission.plan_revision), binding_revision=int(admission.contract_revision),
-            manifest_hash=digest, created_at=self.store.now)
+        digest = HtnStore(self.store).insert_input_manifest(
+            attempt.mission_id,
+            attempt.task_id,
+            prepared.manifest.to_json(),
+            attempt_id=attempt.id,
+            input_binding_revision=int(admission.input_binding_revision),
+        )
+        bound = self.inputs.insert_attempt_inputs(
+            attempt_id=attempt.id,
+            occurrence_id=str(admission.occurrence_id),
+            source_revision=int(admission.plan_revision),
+            binding_revision=int(admission.contract_revision),
+            manifest_hash=digest,
+            created_at=self.store.now,
+        )
         # §10.1 auxiliary event, written in this dispatch transaction only; the Attempt is
         # the dispatch command's identity, so a retried dispatch reuses the same event.
         identity = derive_id("tg-dispatch-bound", attempt.id)
-        self.store.append_event(Event(
-            id=identity, type="TaskGraphDispatchBound", trace_id=intent.intent_id,
-            mission_id=attempt.mission_id, task_id=attempt.task_id, attempt_id=attempt.id,
-            actor_type="system", actor_id="taskgraph-dispatch",
-            payload={"schema_version": 1, "intent_id": intent.intent_id,
-                     "occurrence_id": bound.occurrence_id, "source_revision": bound.source_revision,
-                     "binding_revision": bound.binding_revision,
-                     "input_binding_revision": bound.input_binding_revision,
-                     "dispatch_generation": bound.dispatch_generation,
-                     "manifest_hash": bound.manifest_hash, "origin_hash": bound.origin_hash},
-            idempotency_key=identity, created_at=self.store.now))
-        receipt = {"version": FROZEN_INPUT_VERSION, "kind": "TaskGraphAttemptMaterialized", "attempt_id": attempt.id,
-                   "mission_id": attempt.mission_id, "intent_id": intent.intent_id,
-                   "input_hash": intent.input_hash, "binding": prepared.intent_binding(),
-                   "inputs": [dict(item) for item in intent.config["inputs"]]}
-        self.store.insert_receipt(commit_id="taskgraph-materialization:" + attempt.id,
-            kind="TaskGraphAttemptMaterialized", subject_id=attempt.id, base_version=attempt.version,
-            proposal_hash=sha256_hex(receipt), receipt=receipt)
+        self.store.append_event(
+            Event(
+                id=identity,
+                type="TaskGraphDispatchBound",
+                trace_id=intent.intent_id,
+                mission_id=attempt.mission_id,
+                task_id=attempt.task_id,
+                attempt_id=attempt.id,
+                actor_type="system",
+                actor_id="taskgraph-dispatch",
+                payload={
+                    "schema_version": 1,
+                    "intent_id": intent.intent_id,
+                    "occurrence_id": bound.occurrence_id,
+                    "source_revision": bound.source_revision,
+                    "binding_revision": bound.binding_revision,
+                    "input_binding_revision": bound.input_binding_revision,
+                    "dispatch_generation": bound.dispatch_generation,
+                    "manifest_hash": bound.manifest_hash,
+                    "origin_hash": bound.origin_hash,
+                },
+                idempotency_key=identity,
+                created_at=self.store.now,
+            )
+        )
+        receipt = {
+            "version": FROZEN_INPUT_VERSION,
+            "kind": "TaskGraphAttemptMaterialized",
+            "attempt_id": attempt.id,
+            "mission_id": attempt.mission_id,
+            "intent_id": intent.intent_id,
+            "input_hash": intent.input_hash,
+            "binding": prepared.intent_binding(),
+            "inputs": [dict(item) for item in intent.config["inputs"]],
+        }
+        self.store.insert_receipt(
+            commit_id="taskgraph-materialization:" + attempt.id,
+            kind="TaskGraphAttemptMaterialized",
+            subject_id=attempt.id,
+            base_version=attempt.version,
+            proposal_hash=sha256_hex(receipt),
+            receipt=receipt,
+        )

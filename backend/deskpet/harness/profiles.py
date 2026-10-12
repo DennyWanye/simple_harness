@@ -62,6 +62,7 @@ class ProfileSpec:
             raise ValueError("non-workflow profiles cannot own workflow metadata")
         if self.launch_policy == "legacy_recovery" and self.route_tag is not None:
             raise ValueError("legacy recovery profiles cannot be routed")
+
     def descriptor(self, *, generation: int) -> ExecutionProfileDescriptor:
         if self.launch_policy == "legacy_recovery":
             raise ValueError("legacy recovery profiles are not model-visible")
@@ -92,12 +93,9 @@ class ProfileRegistry:
         workflows = {
             key: spec
             for key, spec in by_key.items()
-            if spec.driver_kind == "workflow"
-            and spec.launch_policy != "legacy_recovery"
+            if spec.driver_kind == "workflow" and spec.launch_policy != "legacy_recovery"
         }
-        workflow_mapping = {
-            key: str(spec.workflow_key) for key, spec in workflows.items()
-        }
+        workflow_mapping = {key: str(spec.workflow_key) for key, spec in workflows.items()}
         if len(by_key) != len(specs) or len(by_route) != len(routed):
             raise ValueError("profile and route keys must be unique")
         if len(set(workflow_mapping.values())) != len(workflow_mapping):
@@ -154,9 +152,7 @@ class ProfileRegistry:
         except KeyError as exc:
             raise ValueError(f"profile is not registered: {profile_key}") from exc
         if launch_policy is not None and profile.launch_policy != launch_policy:
-            raise ValueError(
-                f"profile {profile_key} cannot launch through {launch_policy}"
-            )
+            raise ValueError(f"profile {profile_key} cannot launch through {launch_policy}")
         if available_capabilities is not None:
             missing = profile.capabilities - available_capabilities
             if missing:
@@ -170,4 +166,6 @@ class ProfileRegistry:
             return self._by_route[route_tag]
         except KeyError as exc:
             raise ValueError(f"route tag is not registered: {route_tag}") from exc
+
+
 __all__ = ["ProfileRegistry", "ProfileSpec"]

@@ -40,7 +40,11 @@ BREAKDOWN = (
 def _classify(relative: Path) -> str:
     parts = relative.parts
     first = parts[0] if parts else ""
-    if first.endswith(".arp-root") or first.startswith("execution-") or first.endswith(".skill-runs"):
+    if (
+        first.endswith(".arp-root")
+        or first.startswith("execution-")
+        or first.endswith(".skill-runs")
+    ):
         return "agent_sessions"
     if any("assurance" in part for part in parts):
         return "assurance"
@@ -93,7 +97,9 @@ class StorageUsage:
             "warn_bytes": self.warn_bytes,
             "over_warn": bool(self.over_warn),
             "measured": self._totals is not None,
-            "breakdown": [{"key": key, "label": label, "bytes": totals[key]} for key, label in BREAKDOWN],
+            "breakdown": [
+                {"key": key, "label": label, "bytes": totals[key]} for key, label in BREAKDOWN
+            ],
         }
 
     # ---- measurement ---------------------------------------------------------------
@@ -114,7 +120,9 @@ class StorageUsage:
         for it (throttled to one forced walk per 10 s)."""
 
         now = self._clock_ms()
-        forced = refresh and (self._forced_at_ms is None or now - self._forced_at_ms >= FORCED_REFRESH_MIN_MS)
+        forced = refresh and (
+            self._forced_at_ms is None or now - self._forced_at_ms >= FORCED_REFRESH_MIN_MS
+        )
         if forced:
             self._forced_at_ms = now
         if forced or self._stale(CACHE_TTL_MS):
@@ -126,7 +134,9 @@ class StorageUsage:
 
         if not self._stale(AUTO_REFRESH_MS) or (self._task is not None and not self._task.done()):
             return False
-        self._task = asyncio.get_running_loop().create_task(self._measure(), name="storage-usage-refresh")
+        self._task = asyncio.get_running_loop().create_task(
+            self._measure(), name="storage-usage-refresh"
+        )
         return True
 
 

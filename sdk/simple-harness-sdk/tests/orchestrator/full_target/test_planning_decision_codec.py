@@ -55,9 +55,7 @@ HASH_A = "a" * 64
 HASH_B = "b" * 64
 
 REJECTION = PlanningDecisionRejectionCode
-PROPOSAL_FIXTURE = (
-    Path(__file__).resolve().parent / "fixtures" / "htn" / "proposals" / "valid.json"
-)
+PROPOSAL_FIXTURE = Path(__file__).resolve().parent / "fixtures" / "htn" / "proposals" / "valid.json"
 PLANNING_DECISION_FIXTURE_ROOT = (
     Path(__file__).resolve().parent / "fixtures" / "planning_decision_v1" / "valid"
 )
@@ -294,7 +292,10 @@ def test_an_unknown_payload_key_is_dropped() -> None:
     raw.update(payload={"method_ref": _ref(), "bindings": {}, "bogus": 1})
     clean = _envelope()
     clean.update(payload={"method_ref": _ref(), "bindings": {}})
-    assert parse_planning_decision(_block(raw)).to_json() == parse_planning_decision(_block(clean)).to_json()
+    assert (
+        parse_planning_decision(_block(raw)).to_json()
+        == parse_planning_decision(_block(clean)).to_json()
+    )
 
 
 def test_the_system_field_keys_are_exactly_section_32() -> None:

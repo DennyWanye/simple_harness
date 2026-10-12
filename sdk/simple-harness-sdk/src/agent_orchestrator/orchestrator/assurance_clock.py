@@ -37,12 +37,15 @@ def observe_assurance_clock(commit: CommitService, *, now_ms: int) -> ClockState
             raise AssuranceError("ASSURANCE_ENVIRONMENT_UNINITIALIZED")
         stored = ClockState(row["clock_generation"], row["wall_high_ms"], row["clock_state"])
         seen = getattr(commit, "_assurance_clock_seen", None)
-        seen_high = seen.wall_high_ms if seen is not None and seen.generation == stored.generation else 0
+        seen_high = (
+            seen.wall_high_ms if seen is not None and seen.generation == stored.generation else 0
+        )
         previous = ClockState(stored.generation, max(stored.wall_high_ms, seen_high), stored.state)
         current = previous.observe(now_ms)
         commit._assurance_clock_seen = current
         if (current.generation, current.state) == (stored.generation, stored.state) and (
-                current.wall_high_ms - stored.wall_high_ms < CLOCK_PERSIST_STEP_MS):
+            current.wall_high_ms - stored.wall_high_ms < CLOCK_PERSIST_STEP_MS
+        ):
             return current
         receipt_id = "assurance-clock:" + uuid4().hex
         body = {
@@ -64,7 +67,8 @@ def observe_assurance_clock(commit: CommitService, *, now_ms: int) -> ClockState
             receipt=body,
         )
         AssuranceStore(store).observe_clock(
-            now_ms, receipt=AssuranceRef("commit_receipt", Pin(receipt_id, 0, receipt_hash)),
+            now_ms,
+            receipt=AssuranceRef("commit_receipt", Pin(receipt_id, 0, receipt_hash)),
             seen_high_ms=previous.wall_high_ms,
         )
         if current.state != previous.state:

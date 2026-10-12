@@ -52,9 +52,7 @@ COMPANION_REDACTION_TOMBSTONE = canonical_json(
         "available_actions": [],
     }
 )
-COMPANION_REDACTION_TOMBSTONE_HASH = canonical_hash(
-    json.loads(COMPANION_REDACTION_TOMBSTONE)
-)
+COMPANION_REDACTION_TOMBSTONE_HASH = canonical_hash(json.loads(COMPANION_REDACTION_TOMBSTONE))
 
 
 @dataclass(frozen=True, slots=True)
@@ -158,10 +156,7 @@ class OwnerMemoryReadScopeV1:
                 "as_of_message_id": self.as_of_message_id,
             }
         )
-        if (
-            self.session_set_hash != expected_session_hash
-            or self.scope_hash != expected_scope_hash
-        ):
+        if self.session_set_hash != expected_session_hash or self.scope_hash != expected_scope_hash:
             raise ValueError("owner memory read scope hash mismatch")
 
     @property
@@ -436,9 +431,7 @@ async def _execute_script(db: aiosqlite.Connection, sql: str) -> None:
 async def migrate_companion_message_projection(db: aiosqlite.Connection) -> None:
     """Rebuild ``messages`` from v20 to v21 inside the caller transaction."""
 
-    old_columns = [
-        str(row[1]) for row in await _fetchall(db, "PRAGMA table_info(messages)")
-    ]
+    old_columns = [str(row[1]) for row in await _fetchall(db, "PRAGMA table_info(messages)")]
     expected_columns = [
         "id",
         "session_id",
@@ -462,16 +455,11 @@ async def migrate_companion_message_projection(db: aiosqlite.Connection) -> None
         "task_scope_id",
     ]
     if old_columns != expected_columns:
-        raise RuntimeError(
-            f"companion_projection_unexpected_messages_columns:{old_columns!r}"
-        )
+        raise RuntimeError(f"companion_projection_unexpected_messages_columns:{old_columns!r}")
     old_count = int(await _scalar(db, "SELECT count(*) FROM messages") or 0)
     old_ids = await _fetchall(db, "SELECT id FROM messages ORDER BY id")
     old_sequence = int(
-        await _scalar(
-            db, "SELECT seq FROM sqlite_sequence WHERE name='messages'"
-        )
-        or 0
+        await _scalar(db, "SELECT seq FROM sqlite_sequence WHERE name='messages'") or 0
     )
     old_indexes = [
         (str(row[0]), str(row[1]))
@@ -551,10 +539,7 @@ async def migrate_companion_message_projection(db: aiosqlite.Connection) -> None
         "INSERT INTO sqlite_sequence(name,seq) VALUES ('messages',?)",
         (restored_sequence,),
     )
-    sequence = int(
-        await _scalar(db, "SELECT seq FROM sqlite_sequence WHERE name='messages'")
-        or 0
-    )
+    sequence = int(await _scalar(db, "SELECT seq FROM sqlite_sequence WHERE name='messages'") or 0)
     if sequence < old_sequence or sequence < max_id:
         raise RuntimeError("companion_projection_sequence_regressed")
     if vector_ids is not None:

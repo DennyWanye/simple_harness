@@ -46,7 +46,11 @@ def _with_network(inputs: PreviewInputs, network: Any) -> PreviewInputs:
 async def _capture_production_preview_inputs(
     tmp_path: Path, *, key: str
 ) -> tuple[Any, PreviewInputs, Any]:
-    async with reviewed(tmp_path, key=key) as ((loop, mission, _world, _root, dispatch, _product), opener, _provider):
+    async with reviewed(tmp_path, key=key) as (
+        (loop, mission, _world, _root, dispatch, _product),
+        opener,
+        _provider,
+    ):
         captured: dict[str, Any] = {}
         original = dispatch.preview_plan_proposal
 
@@ -182,7 +186,11 @@ def test_real_collector_persists_the_compiler_bound_code(
     from test_h1h_preview_purity import _tree_hash
 
     async def run() -> None:
-        async with reviewed(tmp_path, key="preview-bound-collector") as ((loop, mission, _world, _root, dispatch, _product), opener, provider):
+        async with reviewed(tmp_path, key="preview-bound-collector") as (
+            (loop, mission, _world, _root, dispatch, _product),
+            opener,
+            provider,
+        ):
             asked = len(provider.asked)
             gateway = len(loop.assembled.gateway.calls)
             original = dispatch.preview_plan_proposal
@@ -274,31 +282,43 @@ def test_plan_admission_keeps_exact_typed_preview_code(code: str) -> None:
 @pytest.mark.parametrize("missing", ("registry", "evidence"))
 def test_p04_missing_frozen_input_cannot_construct_preview(tmp_path, missing):
     from agent_orchestrator.contracts.models import ContractError
+
     async def run():
-        _, inputs, _ = await _capture_production_preview_inputs(tmp_path, key="p04-missing-" + missing)
+        _, inputs, _ = await _capture_production_preview_inputs(
+            tmp_path, key="p04-missing-" + missing
+        )
         with pytest.raises(ContractError, match="wrong frozen input type"):
             replace(inputs, **{missing: None})
+
     asyncio.run(run())
 
 
 def test_p04_absent_validator_returns_source_unavailable(tmp_path, monkeypatch):
     async def run():
-        proposal, inputs, dispatch = await _capture_production_preview_inputs(tmp_path, key="p04-no-validator")
+        proposal, inputs, dispatch = await _capture_production_preview_inputs(
+            tmp_path, key="p04-no-validator"
+        )
         # Dependency fault only: no fabricated validator, compiler or report.
         monkeypatch.setattr("agent_orchestrator.planning.plan_preview.validate_delta", None)
         result = dispatch.preview_plan_proposal(proposal, inputs=inputs)
         assert isinstance(result, PreviewUnavailable)
         assert result.reason == "SOURCE_UNAVAILABLE" and result.delta_report is None
+
     asyncio.run(run())
 
 
 def test_p04_real_partial_check_cannot_produce_valid_preview(tmp_path):
     async def run():
-        proposal, inputs, dispatch = await _capture_production_preview_inputs(tmp_path, key="p04-partial")
-        result = dispatch.preview_plan_proposal(proposal, inputs=_with_network(inputs, _cycle_network(inputs)))
+        proposal, inputs, dispatch = await _capture_production_preview_inputs(
+            tmp_path, key="p04-partial"
+        )
+        result = dispatch.preview_plan_proposal(
+            proposal, inputs=_with_network(inputs, _cycle_network(inputs))
+        )
         assert isinstance(result, PreviewUnavailable) and result.reason == "candidate_rejected"
         # The actual projection validator emits CYCLE plus PARTIAL_CHECK because
         # depth/resource checks cannot finish for the cyclic subgraph.
         assert "ORDER_CYCLE" in result.mapped_problems
         assert "INTERNAL_CONTRACT_ERROR" in result.mapped_problems
+
     asyncio.run(run())

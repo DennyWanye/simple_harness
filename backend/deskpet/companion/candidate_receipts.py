@@ -107,9 +107,7 @@ class CandidateFinalizeProofV1:
     def verify_receipt(self, receipt: CandidateDraftReceiptV1) -> None:
         for name in ("builder_launch_id", "child_run_id", "child_start_hash"):
             if getattr(self, name) != getattr(receipt, name):
-                raise GrowthBuildAdmissionError(
-                    f"candidate_finalize_proof_{name}_mismatch"
-                )
+                raise GrowthBuildAdmissionError(f"candidate_finalize_proof_{name}_mismatch")
 
 
 class CandidateFinalizeProofQueryPort(Protocol):
@@ -168,9 +166,7 @@ class CandidateDraftReceiptRepository:
         if not str(created_at or "").strip():
             raise ValueError("candidate_draft_receipt_created_at_required")
         if not self._finalize_query.verify_exact_in_uow(db, finalize_proof):
-            raise GrowthBuildAdmissionError(
-                "candidate_finalize_marker_missing_or_mismatch"
-            )
+            raise GrowthBuildAdmissionError("candidate_finalize_marker_missing_or_mismatch")
 
         values = tuple(getattr(receipt, name) for name in self._FIELDS)
         try:
@@ -191,9 +187,7 @@ class CandidateDraftReceiptRepository:
                 builder_launch_id=receipt.builder_launch_id,
             )
             if existing is None:
-                raise GrowthBuildAdmissionError(
-                    "candidate_draft_receipt_insert_conflict"
-                ) from exc
+                raise GrowthBuildAdmissionError("candidate_draft_receipt_insert_conflict") from exc
             expected = CandidateDraftReceiptExpectationV1(
                 **{name: getattr(receipt, name) for name in self._FIELDS}
             )
@@ -321,14 +315,10 @@ class SqliteCandidateDraftMaterialQuery:
             "effect_topology_hash": receipt.effect_topology_hash,
         }
         if any(str(row[name]) != value for name, value in expected.items()):
-            raise GrowthBuildAdmissionError(
-                "candidate_draft_material_receipt_mismatch"
-            )
+            raise GrowthBuildAdmissionError("candidate_draft_material_receipt_mismatch")
         archive_bytes = bytes(row["archive_blob"])
         if hashlib.sha256(archive_bytes).hexdigest() != receipt.archive_hash:
-            raise GrowthBuildAdmissionError(
-                "candidate_draft_material_archive_mismatch"
-            )
+            raise GrowthBuildAdmissionError("candidate_draft_material_archive_mismatch")
         return CandidateDraftMaterialV1(
             receipt_id=receipt.receipt_id,
             receipt_hash=receipt.receipt_hash,
@@ -356,14 +346,11 @@ class CandidateDraftReceiptTerminalExtension:
             raise ValueError("candidate_draft_receipt_created_at_required")
         if self.completion_lineage_id is not None:
             value = str(self.completion_lineage_id)
-            if len(value) != 64 or any(
-                char not in "0123456789abcdef" for char in value
-            ):
+            if len(value) != 64 or any(char not in "0123456789abcdef" for char in value):
                 raise ValueError("candidate_completion_lineage_id_invalid")
         if self.archive_bytes is not None and (
             not isinstance(self.archive_bytes, bytes)
-            or hashlib.sha256(self.archive_bytes).hexdigest()
-            != self.receipt.archive_hash
+            or hashlib.sha256(self.archive_bytes).hexdigest() != self.receipt.archive_hash
         ):
             raise ValueError("candidate_draft_material_archive_mismatch")
 
@@ -372,29 +359,21 @@ class CandidateDraftReceiptTerminalExtension:
         receipt: CandidateDraftReceiptV1,
     ) -> dict[str, str]:
         return {
-            name: str(getattr(receipt, name))
-            for name in CandidateDraftReceiptRepository._FIELDS
+            name: str(getattr(receipt, name)) for name in CandidateDraftReceiptRepository._FIELDS
         }
 
     def _verify_terminal_marker(self, *, record: object, terminal_event: object) -> None:
         if str(getattr(record, "run_id", "")) != self.receipt.child_run_id:
-            raise GrowthBuildAdmissionError(
-                "candidate_draft_receipt_child_run_mismatch"
-            )
+            raise GrowthBuildAdmissionError("candidate_draft_receipt_child_run_mismatch")
         event_key = str(getattr(terminal_event, "event_key", ""))
         if (
-            event_key
-            not in {"run:final", f"terminal:{self.receipt.child_run_id}"}
+            event_key not in {"run:final", f"terminal:{self.receipt.child_run_id}"}
             or str(getattr(terminal_event, "kind", "")) != "run.final"
         ):
-            raise GrowthBuildAdmissionError(
-                "candidate_draft_receipt_terminal_marker_invalid"
-            )
+            raise GrowthBuildAdmissionError("candidate_draft_receipt_terminal_marker_invalid")
         payload = getattr(terminal_event, "payload", None)
         if not isinstance(payload, Mapping):
-            raise GrowthBuildAdmissionError(
-                "candidate_draft_receipt_terminal_payload_invalid"
-            )
+            raise GrowthBuildAdmissionError("candidate_draft_receipt_terminal_payload_invalid")
         expected = {
             "builder_launch_id": self.receipt.builder_launch_id,
             "child_start_hash": self.receipt.child_start_hash,
@@ -413,13 +392,10 @@ class CandidateDraftReceiptTerminalExtension:
                     ) from exc
             if (
                 isinstance(completion, Mapping)
-                and str(completion.get("lineage_id") or "")
-                == self.completion_lineage_id
+                and str(completion.get("lineage_id") or "") == self.completion_lineage_id
             ):
                 return
-        raise GrowthBuildAdmissionError(
-            "candidate_draft_receipt_terminal_payload_mismatch"
-        )
+        raise GrowthBuildAdmissionError("candidate_draft_receipt_terminal_payload_mismatch")
 
     async def apply_terminal_commit(
         self,
@@ -437,13 +413,9 @@ class CandidateDraftReceiptTerminalExtension:
             created_at=str(self.created_at).strip(),
         )
         if self.archive_bytes is not None:
-            insert_material = getattr(
-                transaction, "insert_candidate_draft_material", None
-            )
+            insert_material = getattr(transaction, "insert_candidate_draft_material", None)
             if not callable(insert_material):
-                raise TypeError(
-                    "candidate material requires execution transaction support"
-                )
+                raise TypeError("candidate material requires execution transaction support")
             await insert_material(
                 receipt_id=self.receipt.receipt_id,
                 archive_bytes=self.archive_bytes,
@@ -473,13 +445,9 @@ class CandidateDraftReceiptTerminalExtension:
             raise TypeError("candidate receipt requires execution transaction support")
         await verify(self._receipt_values(self.receipt))
         if self.archive_bytes is not None:
-            verify_material = getattr(
-                transaction, "verify_candidate_draft_material", None
-            )
+            verify_material = getattr(transaction, "verify_candidate_draft_material", None)
             if not callable(verify_material):
-                raise TypeError(
-                    "candidate material requires execution transaction support"
-                )
+                raise TypeError("candidate material requires execution transaction support")
             await verify_material(
                 receipt_id=self.receipt.receipt_id,
                 validated_draft_hash=self.receipt.validated_draft_hash,
@@ -515,13 +483,9 @@ class CandidateDraftReceiptBuildOutput:
         admission = getattr(launch, "candidate_admission", None)
         permit = getattr(admission, "permit", None)
         if admission is None or permit is None:
-            raise GrowthBuildAdmissionError(
-                "candidate_build_admission_required"
-            )
+            raise GrowthBuildAdmissionError("candidate_build_admission_required")
         if str(getattr(record, "run_id", "")) != admission.child_run_id:
-            raise GrowthBuildAdmissionError(
-                "candidate_draft_receipt_child_run_mismatch"
-            )
+            raise GrowthBuildAdmissionError("candidate_draft_receipt_child_run_mismatch")
         receipt = CandidateDraftReceiptV1.issue_from_host(
             builder_launch_id=admission.builder_launch_id,
             child_run_id=admission.child_run_id,

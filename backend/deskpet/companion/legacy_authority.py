@@ -8,6 +8,7 @@ has one place to connect legacy preference, codifier, and reminder callbacks.
 It intentionally does not inspect feature flags or authority state; only
 ``GrowthAuthorityRouter`` may choose it.
 """
+
 from __future__ import annotations
 
 from typing import Protocol

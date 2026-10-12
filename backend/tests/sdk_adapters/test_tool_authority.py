@@ -73,7 +73,9 @@ class _Inventory:
     execution_identity: str = "execution-identity-v1"
     projectless_admission: str = "requires_project"
     availability_reason: str | None = None
-    effect_class: str | None = None  # S5b Task 6：inventory 冻结 EffectClass（None → manifest / unknown）
+    effect_class: str | None = (
+        None  # S5b Task 6：inventory 冻结 EffectClass（None → manifest / unknown）
+    )
 
 
 class _AuthorizationStore:
@@ -110,10 +112,7 @@ def _catalog() -> tuple[dict, tuple[_Inventory, ...]]:
     ]
     from deskpet.sdk_adapters.context_authority import canonical_sha256
 
-    schema_fingerprints = {
-        item["name"]: canonical_sha256(item["input_schema"])
-        for item in specs
-    }
+    schema_fingerprints = {item["name"]: canonical_sha256(item["input_schema"]) for item in specs}
     return (
         {
             "generation": 7,
@@ -156,18 +155,21 @@ def test_unavailable_descriptor_is_searchable_but_cannot_activate() -> None:
         **catalog,
         "descriptor_specs": list(catalog["specs"]),
         "specs": [catalog["specs"][0]],
-        "schema_fingerprints": {
-            "tool_search": catalog["schema_fingerprints"]["tool_search"]
-        },
+        "schema_fingerprints": {"tool_search": catalog["schema_fingerprints"]["tool_search"]},
     }
     inventory = (
         inventory[0],
         replace(inventory[1], availability_reason="workspace_unscoped"),
     )
     registry.prepare_run(
-        run_id="run-unavailable", session_id="session-a", request_id="request-a",
-        root_run_id="root-a", task_scope_id="task-a", workspace_root=None,
-        catalog=catalog, inventory=inventory,
+        run_id="run-unavailable",
+        session_id="session-a",
+        request_id="request-a",
+        root_run_id="root-a",
+        task_scope_id="task-a",
+        workspace_root=None,
+        catalog=catalog,
+        inventory=inventory,
     )
     run_id = RunId("run-unavailable")
     exposure = registry.resolve_exposure(run_id)
@@ -181,7 +183,8 @@ def test_unavailable_descriptor_is_searchable_but_cannot_activate() -> None:
     described = bridge.describe("builtin:read_file")
     with pytest.raises(RuntimeError, match="tool_unavailable:workspace_unscoped"):
         bridge.activate(
-            "builtin:read_file", described["schema_hash"],
+            "builtin:read_file",
+            described["schema_hash"],
             described["describe_nonce"],
         )
     assert [item.name for item in exposure.provider_specs(run_id)] == ["tool_search"]
@@ -220,11 +223,14 @@ def test_run_authority_writes_the_supplied_physical_scope_store() -> None:
     authority = _prepare(registry, "run-shared-store")
 
     assert registry.scope_store is physical_store
-    assert physical_store.get(
-        authority.prepared_tool_set.scope_id,
-        session_id=authority.session_id,
-        request_id=authority.request_id,
-    ) is not None
+    assert (
+        physical_store.get(
+            authority.prepared_tool_set.scope_id,
+            session_id=authority.session_id,
+            request_id=authority.request_id,
+        )
+        is not None
+    )
 
 
 def test_run_authority_freezes_and_persists_physical_policy_fingerprint() -> None:
@@ -252,9 +258,7 @@ def test_projectless_authority_accepts_only_explicit_safe_projection() -> None:
     safe_catalog = {
         **catalog,
         "specs": [catalog["specs"][0]],
-        "schema_fingerprints": {
-            "tool_search": catalog["schema_fingerprints"]["tool_search"]
-        },
+        "schema_fingerprints": {"tool_search": catalog["schema_fingerprints"]["tool_search"]},
     }
     safe_inventory = (
         _Inventory(
@@ -339,11 +343,7 @@ def _run_aware_executor_registry(
     catalog, _inventory = _catalog()
 
     def tool(raw):
-        schema = (
-            read_schema
-            if raw["name"] == "read_file" and read_schema
-            else raw["input_schema"]
-        )
+        schema = read_schema if raw["name"] == "read_file" and read_schema else raw["input_schema"]
 
         async def handler(arguments, context):
             return ToolResult.succeeded(
@@ -358,9 +358,7 @@ def _run_aware_executor_registry(
 
     registry = ProductToolsAdapter(
         tuple(tool(raw) for raw in catalog["specs"]),
-        execution_identities={
-            name: execution_identity for name in ("tool_search", "read_file")
-        },
+        execution_identities={name: execution_identity for name in ("tool_search", "read_file")},
     )
     registry.bind_run_authorities(authorities)
     executor = ProductEffectExecutor(
@@ -386,11 +384,14 @@ def test_run_authority_isolated_and_waiting_scope_survives_until_terminal():
 
     waiting = registry.mark_waiting("run-a")
     assert waiting.lease_state == "waiting"
-    assert registry.scope_store.get(
-        waiting.prepared_tool_set.scope_id,
-        session_id=waiting.session_id,
-        request_id=waiting.request_id,
-    ) is not None
+    assert (
+        registry.scope_store.get(
+            waiting.prepared_tool_set.scope_id,
+            session_id=waiting.session_id,
+            request_id=waiting.request_id,
+        )
+        is not None
+    )
     registry.mark_terminal("run-b", "completed")
     with pytest.raises(KeyError):
         registry.resolve("run-b")
@@ -408,9 +409,7 @@ def test_waiting_restart_uses_exact_durable_catalog_and_run_start_inventory(
     tmp_path: Path,
 ):
     old_specs = tuple(
-        ProviderToolSpec(
-            item["name"], item["description"], item["input_schema"]
-        )
+        ProviderToolSpec(item["name"], item["description"], item["input_schema"])
         for item in _catalog()[0]["specs"]
     )
     new_specs = (
@@ -496,9 +495,7 @@ def test_waiting_restart_fails_closed_when_exact_catalog_or_authority_differs(
         )
 
     specs = tuple(
-        ProviderToolSpec(
-            item["name"], item["description"], item["input_schema"]
-        )
+        ProviderToolSpec(item["name"], item["description"], item["input_schema"])
         for item in _catalog()[0]["specs"]
     )
     with Database.open(tmp_path / "authority-mismatch.db") as database:
@@ -564,9 +561,7 @@ def test_pre_change_v1_is_unmigratable_without_identity_but_v2_and_fresh_survive
     tmp_path: Path,
 ):
     specs = tuple(
-        ProviderToolSpec(
-            item["name"], item["description"], item["input_schema"]
-        )
+        ProviderToolSpec(item["name"], item["description"], item["input_schema"])
         for item in _catalog()[0]["specs"]
     )
     with Database.open(tmp_path / "mixed-authority-versions.db") as database:
@@ -660,10 +655,7 @@ def test_disclosure_policy_is_explicit_and_full_catalog_is_direct():
         "run-deferred",
         deferred_names=("read_file",),
     )
-    assert (
-        deferred.disclosure_policy
-        == SDK_EXPLICIT_DEFERRED_DISCLOSURE_POLICY
-    )
+    assert deferred.disclosure_policy == SDK_EXPLICIT_DEFERRED_DISCLOSURE_POLICY
     with pytest.raises(ValueError, match="full-direct"):
         SdkRunToolAuthorityRegistry().prepare_run(
             run_id="run-invalid",
@@ -708,9 +700,7 @@ async def test_restarted_old_generation_executes_only_with_compatible_handler(
     tmp_path: Path,
 ):
     specs = tuple(
-        ProviderToolSpec(
-            item["name"], item["description"], item["input_schema"]
-        )
+        ProviderToolSpec(item["name"], item["description"], item["input_schema"])
         for item in _catalog()[0]["specs"]
     )
     with Database.open(tmp_path / "old-executor.db") as database:
@@ -779,9 +769,7 @@ async def test_run_aware_executor_rejects_schema_or_handler_identity_drift(drift
             else None
         ),
         execution_identity=(
-            "execution-identity-handler-v2"
-            if drift == "handler"
-            else "execution-identity-v1"
+            "execution-identity-handler-v2" if drift == "handler" else "execution-identity-v1"
         ),
     )
     call = ToolCall(CallId(f"call-{drift}"), "read_file", {"path": "README.md"})
@@ -840,9 +828,12 @@ def test_real_capability_bridge_search_describe_activate_updates_exact_scope():
     activated = registry.resolve("run-a")
     assert activated.prepared_tool_set.has_direct("read_file")
     assert activated.prepared_tool_set.revision == 2
-    assert activated.capability_hash != _prepare(
-        SdkRunToolAuthorityRegistry(), "run-a", deferred_names=("read_file",)
-    ).capability_hash
+    assert (
+        activated.capability_hash
+        != _prepare(
+            SdkRunToolAuthorityRegistry(), "run-a", deferred_names=("read_file",)
+        ).capability_hash
+    )
 
 
 def test_sdk_runtime_catalog_activation_changes_next_projection_only_after_receipt():
@@ -857,9 +848,7 @@ def test_sdk_runtime_catalog_activation_changes_next_projection_only_after_recei
 
     bridge = SdkRuntimeCapabilityBridgeAdapter(registry, context)
     searched = bridge.search("read file")
-    assert [item["capability_id"] for item in searched["matches"]] == [
-        "builtin:read_file"
-    ]
+    assert [item["capability_id"] for item in searched["matches"]] == ["builtin:read_file"]
     described = bridge.describe("builtin:read_file")
     assert described["schema_hash"] == described["capability_hash"]
     assert "schema_hash" not in described["projection"]
@@ -886,9 +875,7 @@ def test_sdk_runtime_catalog_describe_exposes_one_unambiguous_activation_hash():
     def context():
         return registry.resolve("run-a").execution_context()
 
-    described = SdkRuntimeCapabilityBridgeAdapter(registry, context).describe(
-        "builtin:read_file"
-    )
+    described = SdkRuntimeCapabilityBridgeAdapter(registry, context).describe("builtin:read_file")
 
     assert described["capability_id"] == "builtin:read_file"
     assert described["schema_hash"] == described["capability_hash"]
@@ -908,9 +895,7 @@ async def test_runtime_activated_tool_is_admitted_by_product_authorization():
     exposure = authorities.resolve_exposure(run_id)
     exposure.restore(run_id, None)
     policy = SdkPreparedAuthorizationPolicy(
-        PreparedAuthorizationRuntime(
-            _AuthorizationStore("auto", 0), clock=lambda: 100.0
-        ),
+        PreparedAuthorizationRuntime(_AuthorizationStore("auto", 0), clock=lambda: 100.0),
         authorities,
         clock=lambda: 100.0,
     )
@@ -958,8 +943,7 @@ async def test_unambiguous_write_activation_survives_manual_authorization(
         },
     ]
     catalog["schema_fingerprints"] = {
-        item["name"]: canonical_sha256(item["input_schema"])
-        for item in catalog["specs"]
+        item["name"]: canonical_sha256(item["input_schema"]) for item in catalog["specs"]
     }
     catalog["content_fingerprint"] = canonical_sha256(catalog["specs"])
     authorities = SdkRunToolAuthorityRegistry()
@@ -992,9 +976,7 @@ async def test_unambiguous_write_activation_survives_manual_authorization(
         {"session_id": "session-a", "root_run_id": "root-run-write"},
     )
     policy = SdkPreparedAuthorizationPolicy(
-        PreparedAuthorizationRuntime(
-            _AuthorizationStore("manual", 3), clock=lambda: 100.0
-        ),
+        PreparedAuthorizationRuntime(_AuthorizationStore("manual", 3), clock=lambda: 100.0),
         authorities,
         clock=lambda: 100.0,
     )
@@ -1002,9 +984,7 @@ async def test_unambiguous_write_activation_survives_manual_authorization(
     with pytest.raises(RuntimeError, match="capability_denied"):
         await policy.decide(prepared, request=None)
 
-    bridge = SdkRuntimeCapabilityBridgeAdapter(
-        authorities, lambda: authority.execution_context()
-    )
+    bridge = SdkRuntimeCapabilityBridgeAdapter(authorities, lambda: authority.execution_context())
     described = bridge.describe("builtin:write_file")
     assert json.dumps(described, sort_keys=True).count('"schema_hash"') == 1
     receipt = bridge.activate(
@@ -1041,12 +1021,15 @@ async def test_unambiguous_write_activation_survives_manual_authorization(
         AuthorizationReceipt("sdk:decision", "a" * 64, "a" * 64),
     )
     grant = policy.facts_for(prepared).grant
-    assert grants.assert_active(
-        grant.task_grant_id,
-        version=grant.version,
-        policy_generation=grant.policy_generation,
-        now=100.0,
-    ).task_grant_id == grant.task_grant_id
+    assert (
+        grants.assert_active(
+            grant.task_grant_id,
+            version=grant.version,
+            policy_generation=grant.policy_generation,
+            now=100.0,
+        ).task_grant_id
+        == grant.task_grant_id
+    )
 
 
 @pytest.mark.asyncio
@@ -1055,12 +1038,8 @@ async def test_product_authorization_uses_exact_hashes_and_real_auto_grant(
 ):
     authorities = SdkRunToolAuthorityRegistry()
     authority = _prepare(authorities, "run-a")
-    runtime = PreparedAuthorizationRuntime(
-        _AuthorizationStore("auto", 0), clock=lambda: 100.0
-    )
-    policy = SdkPreparedAuthorizationPolicy(
-        runtime, authorities, clock=lambda: 100.0
-    )
+    runtime = PreparedAuthorizationRuntime(_AuthorizationStore("auto", 0), clock=lambda: 100.0)
+    policy = SdkPreparedAuthorizationPolicy(runtime, authorities, clock=lambda: 100.0)
     database = ProductStateDatabase(tmp_path / "product.db")
     database.initialize()
     repository = AuthorizationSagaRepository(database, owner_id="test-sdk")
@@ -1086,9 +1065,7 @@ async def test_product_authorization_uses_exact_hashes_and_real_auto_grant(
     assert stored is not None
     assert stored.identity.capability_hash == authority.capability_hash
     assert stored.identity.schema_hash == authority.specs["read_file"].schema_hash
-    assert stored.identity.schema_hash == (
-        _catalog()[0]["schema_fingerprints"]["read_file"]
-    )
+    assert stored.identity.schema_hash == (_catalog()[0]["schema_fingerprints"]["read_file"])
     assert stored.identity.scope_hash == authority.scope_hash
     assert "0" * 64 not in {
         stored.identity.capability_hash,
@@ -1103,9 +1080,7 @@ async def test_product_authorization_uses_exact_hashes_and_real_auto_grant(
 
     replay = await adapter.prepare(prepared)
     assert replay.decision.value == "allow"
-    rows = database.connection.execute(
-        "SELECT COUNT(*) FROM authorization_sagas"
-    ).fetchone()
+    rows = database.connection.execute("SELECT COUNT(*) FROM authorization_sagas").fetchone()
     assert int(rows[0]) == 1
     authorities.mark_terminal("run-a", "completed")
     with pytest.raises(RuntimeError, match="facts are unavailable"):
@@ -1148,8 +1123,7 @@ async def test_auto_policy_uses_distinct_immutable_grants_for_repeated_tool_effe
     assert first_result.decision is AuthorizationDecision.ALLOW
     assert second_result.decision is AuthorizationDecision.ALLOW
     assert (
-        policy.facts_for(first).grant.task_grant_id
-        != policy.facts_for(second).grant.task_grant_id
+        policy.facts_for(first).grant.task_grant_id != policy.facts_for(second).grant.task_grant_id
     )
 
 
@@ -1158,9 +1132,7 @@ async def test_manual_policy_prepares_user_grant_and_waits_for_sdk_decision():
     authorities = SdkRunToolAuthorityRegistry()
     _prepare(authorities, "run-a")
     policy = SdkPreparedAuthorizationPolicy(
-        PreparedAuthorizationRuntime(
-            _AuthorizationStore("manual", 3), clock=lambda: 100.0
-        ),
+        PreparedAuthorizationRuntime(_AuthorizationStore("manual", 3), clock=lambda: 100.0),
         authorities,
         clock=lambda: 100.0,
     )
@@ -1183,9 +1155,7 @@ async def test_manual_policy_uses_distinct_immutable_grants_per_effect():
     authorities = SdkRunToolAuthorityRegistry()
     _prepare(authorities, "run-a")
     policy = SdkPreparedAuthorizationPolicy(
-        PreparedAuthorizationRuntime(
-            _AuthorizationStore("manual", 3), clock=lambda: 100.0
-        ),
+        PreparedAuthorizationRuntime(_AuthorizationStore("manual", 3), clock=lambda: 100.0),
         authorities,
         clock=lambda: 100.0,
     )
@@ -1196,8 +1166,7 @@ async def test_manual_policy_uses_distinct_immutable_grants_per_effect():
     await policy.decide(second, request=None)
 
     assert (
-        policy.facts_for(first).grant.task_grant_id
-        != policy.facts_for(second).grant.task_grant_id
+        policy.facts_for(first).grant.task_grant_id != policy.facts_for(second).grant.task_grant_id
     )
 
 
@@ -1207,9 +1176,7 @@ async def test_authorization_fails_closed_for_deferred_or_cross_run_tool():
     _prepare(authorities, "run-a", deferred_names=("read_file",))
     _prepare(authorities, "run-b", session_id="session-b")
     policy = SdkPreparedAuthorizationPolicy(
-        PreparedAuthorizationRuntime(
-            _AuthorizationStore("auto", 0), clock=lambda: 100.0
-        ),
+        PreparedAuthorizationRuntime(_AuthorizationStore("auto", 0), clock=lambda: 100.0),
         authorities,
         clock=lambda: 100.0,
     )
@@ -1226,9 +1193,7 @@ async def test_same_effect_id_is_isolated_by_run_identity():
     _prepare(authorities, "run-a")
     _prepare(authorities, "run-b", session_id="session-b")
     policy = SdkPreparedAuthorizationPolicy(
-        PreparedAuthorizationRuntime(
-            _AuthorizationStore("auto", 0), clock=lambda: 100.0
-        ),
+        PreparedAuthorizationRuntime(_AuthorizationStore("auto", 0), clock=lambda: 100.0),
         authorities,
         clock=lambda: 100.0,
     )
@@ -1276,7 +1241,9 @@ def _catalog_for(specs: list[dict], inventory: tuple) -> dict:  # type: ignore[n
         "generation": 9,
         "content_fingerprint": canonical_sha256(specs),
         "specs": specs,
-        "schema_fingerprints": {item["name"]: canonical_sha256(item["input_schema"]) for item in specs},
+        "schema_fingerprints": {
+            item["name"]: canonical_sha256(item["input_schema"]) for item in specs
+        },
     }
 
 
@@ -1285,27 +1252,43 @@ def _write_specs() -> list[dict]:
     return [
         {"name": "write_file", "description": "Write a project file", "input_schema": schema},
         {"name": "purge_dir", "description": "Delete a directory tree", "input_schema": schema},
-        {"name": "run_shell", "description": "Run a shell command", "input_schema": {"type": "object", "properties": {"command": {"type": "string"}}, "required": ["command"]}},
+        {
+            "name": "run_shell",
+            "description": "Run a shell command",
+            "input_schema": {
+                "type": "object",
+                "properties": {"command": {"type": "string"}},
+                "required": ["command"],
+            },
+        },
     ]
 
 
 def _effect_for(run_id: str, name: str, *, effect_id: str) -> PreparedToolEffect:
     schema = {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}
     if name == "run_shell":
-        schema = {"type": "object", "properties": {"command": {"type": "string"}}, "required": ["command"]}
+        schema = {
+            "type": "object",
+            "properties": {"command": {"type": "string"}},
+            "required": ["command"],
+        }
         arguments = {"command": "rm -rf build"}
     else:
         arguments = {"path": "/tmp/project/x"}
     return PreparedToolEffect(
-        EffectId(effect_id), RunId(run_id), ToolCall(CallId(f"call-{effect_id}"), name, arguments),
-        ToolSpec(name, "spec", schema), {"session_id": "session-a", "root_run_id": f"root-{run_id}"},
+        EffectId(effect_id),
+        RunId(run_id),
+        ToolCall(CallId(f"call-{effect_id}"), name, arguments),
+        ToolSpec(name, "spec", schema),
+        {"session_id": "session-a", "root_run_id": f"root-{run_id}"},
     )
 
 
 async def _auto_policy(authorities: SdkRunToolAuthorityRegistry) -> SdkPreparedAuthorizationPolicy:
     return SdkPreparedAuthorizationPolicy(
         PreparedAuthorizationRuntime(_AuthorizationStore("auto", 0), clock=lambda: 100.0),
-        authorities, clock=lambda: 100.0,
+        authorities,
+        clock=lambda: 100.0,
     )
 
 
@@ -1324,13 +1307,21 @@ async def test_auto_mode_grants_confirm_only_without_prompt() -> None:
     )
     authorities = SdkRunToolAuthorityRegistry()
     authority = authorities.prepare_run(
-        run_id="run-auto", session_id="session-a", request_id="request-auto", root_run_id="root-run-auto",
-        task_scope_id="task-auto", workspace_root=None, catalog=_catalog_for(_write_specs(), inventory),
+        run_id="run-auto",
+        session_id="session-a",
+        request_id="request-auto",
+        root_run_id="root-run-auto",
+        task_scope_id="task-auto",
+        workspace_root=None,
+        catalog=_catalog_for(_write_specs(), inventory),
         inventory=inventory,
     )
     assert authority.specs["purge_dir"].effect_class == "destructive"
     assert authority.specs["write_file"].effect_class == "reversible_local"
-    assert authority.specs["run_shell"].effect_class == "unknown" and authority.specs["run_shell"].manifest_dangerous is True
+    assert (
+        authority.specs["run_shell"].effect_class == "unknown"
+        and authority.specs["run_shell"].manifest_dangerous is True
+    )
     assert confirm_only_tool_names(authority) == ("purge_dir", "run_shell")
     policy = await _auto_policy(authorities)
 
@@ -1338,27 +1329,52 @@ async def test_auto_mode_grants_confirm_only_without_prompt() -> None:
     original = policy._runtime.plan_prepared_call
 
     async def spy(**kwargs):  # type: ignore[no-untyped-def]
-        seen.append((kwargs["call"].tool_name, bool(kwargs.get("explicit_only", False)), bool(kwargs.get("confirmed", False))))
+        seen.append(
+            (
+                kwargs["call"].tool_name,
+                bool(kwargs.get("explicit_only", False)),
+                bool(kwargs.get("confirmed", False)),
+            )
+        )
         return await original(**kwargs)
 
     policy._runtime.plan_prepared_call = spy  # type: ignore[method-assign]
 
     # (a) DESTRUCTIVE → ALLOW，无 REQUIRE_USER；grant 来源 policy:auto。
-    destructive = await policy.decide(_effect_for("run-auto", "purge_dir", effect_id="effect-purge"), request=None)
+    destructive = await policy.decide(
+        _effect_for("run-auto", "purge_dir", effect_id="effect-purge"), request=None
+    )
     assert destructive.decision is AuthorizationDecision.ALLOW
     assert destructive.request is None
     facts = policy.facts_for(_effect_for("run-auto", "purge_dir", effect_id="effect-purge"))
     assert facts.grant.source == "policy:auto"
     # 第一次仍以 explicit_only 规划（保留冻结 EffectClass 事实），auto 下第二次以 explicit_only=False 授予。
-    assert [item for item in seen if item[0] == "purge_dir"] == [("purge_dir", True, False), ("purge_dir", False, False)]
+    assert [item for item in seen if item[0] == "purge_dir"] == [
+        ("purge_dir", True, False),
+        ("purge_dir", False, False),
+    ]
     # manifest dangerous（run_shell, EffectClass unknown）→ 同样 ALLOW。
-    shell = await policy.decide(_effect_for("run-auto", "run_shell", effect_id="effect-shell"), request=None)
+    shell = await policy.decide(
+        _effect_for("run-auto", "run_shell", effect_id="effect-shell"), request=None
+    )
     assert shell.decision is AuthorizationDecision.ALLOW
-    assert policy.facts_for(_effect_for("run-auto", "run_shell", effect_id="effect-shell")).grant.source == "policy:auto"
+    assert (
+        policy.facts_for(
+            _effect_for("run-auto", "run_shell", effect_id="effect-shell")
+        ).grant.source
+        == "policy:auto"
+    )
     # (b) write_file（reversible_local）→ ALLOW，既有 auto grant。
-    allowed = await policy.decide(_effect_for("run-auto", "write_file", effect_id="effect-write"), request=None)
+    allowed = await policy.decide(
+        _effect_for("run-auto", "write_file", effect_id="effect-write"), request=None
+    )
     assert allowed.decision is AuthorizationDecision.ALLOW
-    assert policy.facts_for(_effect_for("run-auto", "write_file", effect_id="effect-write")).grant.source == "policy:auto"
+    assert (
+        policy.facts_for(
+            _effect_for("run-auto", "write_file", effect_id="effect-write")
+        ).grant.source
+        == "policy:auto"
+    )
     assert [item for item in seen if item[0] == "write_file"] == [("write_file", False, False)]
 
 
@@ -1376,29 +1392,61 @@ def test_project_effect_tools_frozen_effect_class_and_confirm_only_subset() -> N
 
     by_name = {str(item["name"]): item for item in load_tool_manifest().tools}
     schema = {"type": "object", "properties": {"path": {"type": "string"}}}
-    specs = [{"name": name, "description": f"tool {name}", "input_schema": schema} for name in PROJECT_EFFECT_TOOL_NAMES]
+    specs = [
+        {"name": name, "description": f"tool {name}", "input_schema": schema}
+        for name in PROJECT_EFFECT_TOOL_NAMES
+    ]
     inventory = tuple(
-        _Inventory(name, str(by_name[name].get("dispatch_kind") or "handler"), str(by_name[name].get("permission_category") or "write_file"))
+        _Inventory(
+            name,
+            str(by_name[name].get("dispatch_kind") or "handler"),
+            str(by_name[name].get("permission_category") or "write_file"),
+        )
         for name in PROJECT_EFFECT_TOOL_NAMES
     )
     registry = SdkRunToolAuthorityRegistry()
     authority = registry.prepare_run(
-        run_id="run-frozen", session_id="s", request_id="r", root_run_id="root", task_scope_id="task",
-        workspace_root=None, catalog=_catalog_for(specs, inventory), inventory=inventory,
+        run_id="run-frozen",
+        session_id="s",
+        request_id="r",
+        root_run_id="root",
+        task_scope_id="task",
+        workspace_root=None,
+        catalog=_catalog_for(specs, inventory),
+        inventory=inventory,
     )
     decision = IrreversibleEffectPolicy().classify(
-        owner_key="sdk-runtime", run_kind="chat",
+        owner_key="sdk-runtime",
+        run_kind="chat",
         specs=[SimpleNamespace(**dict(by_name[name])) for name in PROJECT_EFFECT_TOOL_NAMES],
     )
     classified = {item.name: item.effect_class for item in decision.classifications}
     for name in PROJECT_EFFECT_TOOL_NAMES:
-        assert authority.specs[name].effect_class == classified[name] == str(by_name[name]["effect_class"]), name
-        assert frozen_tool_effect(name) == (classified[name], bool(by_name[name].get("dangerous", False)))
-    assert confirm_only_tool_names(authority) == ("file_organize", "move_file", "ppt_create", "process_start", "run_shell")
+        assert (
+            authority.specs[name].effect_class
+            == classified[name]
+            == str(by_name[name]["effect_class"])
+        ), name
+        assert frozen_tool_effect(name) == (
+            classified[name],
+            bool(by_name[name].get("dangerous", False)),
+        )
+    assert confirm_only_tool_names(authority) == (
+        "file_organize",
+        "move_file",
+        "ppt_create",
+        "process_start",
+        "run_shell",
+    )
     # 未知工具（不在 manifest、无 inventory EffectClass）→ unknown → confirm-only；inventory 显式 EffectClass 优先。
     assert frozen_tool_effect("mcp__fs__write_file") == ("unknown", False)
-    assert frozen_tool_effect("mcp__fs__write_file", _Inventory("mcp__fs__write_file", "async", "write_file", effect_class="reversible_local")) == ("reversible_local", False)
-    assert frozen_tool_effect("write_file", _Inventory("write_file", "async", "write_file", effect_class="bogus")) == ("unknown", False)
+    assert frozen_tool_effect(
+        "mcp__fs__write_file",
+        _Inventory("mcp__fs__write_file", "async", "write_file", effect_class="reversible_local"),
+    ) == ("reversible_local", False)
+    assert frozen_tool_effect(
+        "write_file", _Inventory("write_file", "async", "write_file", effect_class="bogus")
+    ) == ("unknown", False)
 
 
 def test_restored_run_keeps_frozen_effect_class_and_older_records_fall_back_to_manifest() -> None:
@@ -1411,34 +1459,76 @@ def test_restored_run_keeps_frozen_effect_class_and_older_records_fall_back_to_m
         _Inventory("read_file", "async", "read_file"),
     )
     specs = [
-        {"name": "write_file", "description": "w", "input_schema": {"type": "object", "properties": {"path": {"type": "string"}}}},
-        {"name": "read_file", "description": "r", "input_schema": {"type": "object", "properties": {"path": {"type": "string"}}}},
+        {
+            "name": "write_file",
+            "description": "w",
+            "input_schema": {"type": "object", "properties": {"path": {"type": "string"}}},
+        },
+        {
+            "name": "read_file",
+            "description": "r",
+            "input_schema": {"type": "object", "properties": {"path": {"type": "string"}}},
+        },
     ]
     catalog = _catalog_for(specs, inventory)
     registry = SdkRunToolAuthorityRegistry()
     authority = registry.prepare_run(
-        run_id="run-restore", session_id="s", request_id="r", root_run_id="root", task_scope_id="task",
-        workspace_root=None, catalog=catalog, inventory=inventory,
+        run_id="run-restore",
+        session_id="s",
+        request_id="r",
+        root_run_id="root",
+        task_scope_id="task",
+        workspace_root=None,
+        catalog=catalog,
+        inventory=inventory,
     )
     record = authority.run_start_record()
-    assert {item["name"]: item["effect_class"] for item in record["inventory"]} == {"write_file": "destructive", "read_file": "read_only"}
-    binding = _NS(run_id="run-restore", session_id="s", request_id="r", catalog_generation=9, catalog_fingerprint=catalog["content_fingerprint"])
+    assert {item["name"]: item["effect_class"] for item in record["inventory"]} == {
+        "write_file": "destructive",
+        "read_file": "read_only",
+    }
+    binding = _NS(
+        run_id="run-restore",
+        session_id="s",
+        request_id="r",
+        catalog_generation=9,
+        catalog_fingerprint=catalog["content_fingerprint"],
+    )
     snapshot = _NS(
-        generation=9, content_fingerprint=catalog["content_fingerprint"],
-        specs=tuple(_NS(name=item["name"], description=item["description"], parameters=item["input_schema"]) for item in specs),
+        generation=9,
+        content_fingerprint=catalog["content_fingerprint"],
+        specs=tuple(
+            _NS(name=item["name"], description=item["description"], parameters=item["input_schema"])
+            for item in specs
+        ),
     )
     resolver = _NS(resolve=lambda generation, fingerprint: snapshot)
     restored = SdkRunToolAuthorityRegistry().restore_run(
-        run_start_record=record, run_binding=binding, catalog_resolver=resolver, lease_state="waiting",
+        run_start_record=record,
+        run_binding=binding,
+        catalog_resolver=resolver,
+        lease_state="waiting",
     )
-    assert restored.specs["write_file"].effect_class == "destructive" and restored.specs["write_file"].confirm_only
+    assert (
+        restored.specs["write_file"].effect_class == "destructive"
+        and restored.specs["write_file"].confirm_only
+    )
     # 旧记录（无 effect_class 字段）→ manifest 回落（write_file reversible_local → 非 confirm-only）。
     legacy = dict(record)
-    legacy["inventory"] = [{k: v for k, v in item.items() if k not in {"effect_class", "manifest_dangerous"}} for item in record["inventory"]]
+    legacy["inventory"] = [
+        {k: v for k, v in item.items() if k not in {"effect_class", "manifest_dangerous"}}
+        for item in record["inventory"]
+    ]
     fallback = SdkRunToolAuthorityRegistry().restore_run(
-        run_start_record=legacy, run_binding=binding, catalog_resolver=resolver, lease_state="waiting",
+        run_start_record=legacy,
+        run_binding=binding,
+        catalog_resolver=resolver,
+        lease_state="waiting",
     )
-    assert fallback.specs["write_file"].effect_class == "reversible_local" and not fallback.specs["write_file"].confirm_only
+    assert (
+        fallback.specs["write_file"].effect_class == "reversible_local"
+        and not fallback.specs["write_file"].confirm_only
+    )
 
 
 def test_primary_tool_authority_restores_exact_projectless_context(tmp_path):
@@ -1447,23 +1537,44 @@ def test_primary_tool_authority_restores_exact_projectless_context(tmp_path):
     inventory = (replace(inventory[0], projectless_admission="safe"),)
     with Database.open(tmp_path / "primary-sdk.db") as database:
         uow = SqliteExecutionUnitOfWork(database)
-        snapshot = uow.put_tool_catalog_snapshot(tuple(
-            ProviderToolSpec(item["name"], item["description"], item["input_schema"])
-            for item in catalog["specs"]
-        ))
-        catalog.update(generation=snapshot.generation, content_fingerprint=snapshot.content_fingerprint)
+        snapshot = uow.put_tool_catalog_snapshot(
+            tuple(
+                ProviderToolSpec(item["name"], item["description"], item["input_schema"])
+                for item in catalog["specs"]
+            )
+        )
+        catalog.update(
+            generation=snapshot.generation, content_fingerprint=snapshot.content_fingerprint
+        )
         registry = SdkRunToolAuthorityRegistry()
         authority = registry.prepare_run(
-            run_id="primary-run", session_id="execution-session", request_id="request", root_run_id="host-run",
-            task_scope_id=None, workspace_root=None, binding_version=0,
-            workspace_resolution={"kind": "projectless", "effective_root": None, "binding_version": 0},
-            catalog=catalog, inventory=inventory,
+            run_id="primary-run",
+            session_id="execution-session",
+            request_id="request",
+            root_run_id="host-run",
+            task_scope_id=None,
+            workspace_root=None,
+            binding_version=0,
+            workspace_resolution={
+                "kind": "projectless",
+                "effective_root": None,
+                "binding_version": 0,
+            },
+            catalog=catalog,
+            inventory=inventory,
         )
-        binding = SimpleNamespace(run_id="primary-run", session_id="execution-session", request_id="request",
-                                  catalog_generation=snapshot.generation, catalog_fingerprint=snapshot.content_fingerprint)
+        binding = SimpleNamespace(
+            run_id="primary-run",
+            session_id="execution-session",
+            request_id="request",
+            catalog_generation=snapshot.generation,
+            catalog_fingerprint=snapshot.content_fingerprint,
+        )
         restored = SdkRunToolAuthorityRegistry().restore_run(
-            run_start_record=authority.run_start_record(), run_binding=binding,
-            catalog_resolver=DurableToolCatalogResolver(uow), lease_state="waiting",
+            run_start_record=authority.run_start_record(),
+            run_binding=binding,
+            catalog_resolver=DurableToolCatalogResolver(uow),
+            lease_state="waiting",
         )
         assert restored.task_work_context == authority.task_work_context
         assert restored.task_work_context.task_scope_id is None
@@ -1472,33 +1583,53 @@ def test_primary_tool_authority_restores_exact_projectless_context(tmp_path):
         assert restored.authority_fingerprint == authority.authority_fingerprint
 
 
-@pytest.mark.parametrize("overrides", [
-    {"workspace_root": "/tmp/project"},
-    {"binding_version": 1},
-    {"binding_version": False},
-    {"workspace_resolution": {"kind": "legacy"}},
-    {"workspace_resolution": {"kind": "project_bound", "effective_root": None}},
-])
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"workspace_root": "/tmp/project"},
+        {"binding_version": 1},
+        {"binding_version": False},
+        {"workspace_resolution": {"kind": "legacy"}},
+        {"workspace_resolution": {"kind": "project_bound", "effective_root": None}},
+    ],
+)
 def test_primary_tool_authority_cannot_smuggle_scope_or_workspace(overrides):
     catalog, inventory = _catalog()
-    values = dict(run_id="primary-run", session_id="execution-session", request_id="request", root_run_id="host-run",
-                  task_scope_id=None, workspace_root=None, binding_version=0,
-                  workspace_resolution={"kind": "projectless", "effective_root": None, "binding_version": 0},
-                  catalog=catalog, inventory=inventory)
+    values = dict(
+        run_id="primary-run",
+        session_id="execution-session",
+        request_id="request",
+        root_run_id="host-run",
+        task_scope_id=None,
+        workspace_root=None,
+        binding_version=0,
+        workspace_resolution={"kind": "projectless", "effective_root": None, "binding_version": 0},
+        catalog=catalog,
+        inventory=inventory,
+    )
     values.update(overrides)
     with pytest.raises(ValueError, match="unscoped primary"):
         SdkRunToolAuthorityRegistry().prepare_run(**values)
-
 
 
 def test_primary_tool_authority_rejects_project_effect_inventory():
     catalog, inventory = _catalog()
     with pytest.raises(RuntimeError, match="projectless_catalog_contains_project_tool"):
         SdkRunToolAuthorityRegistry().prepare_run(
-            run_id="primary-run", session_id="execution-session", request_id="request", root_run_id="host-run",
-            task_scope_id=None, workspace_root=None, binding_version=0,
-            workspace_resolution={"kind": "projectless", "effective_root": None, "binding_version": 0},
-            catalog=catalog, inventory=inventory,
+            run_id="primary-run",
+            session_id="execution-session",
+            request_id="request",
+            root_run_id="host-run",
+            task_scope_id=None,
+            workspace_root=None,
+            binding_version=0,
+            workspace_resolution={
+                "kind": "projectless",
+                "effective_root": None,
+                "binding_version": 0,
+            },
+            catalog=catalog,
+            inventory=inventory,
         )
 
 
@@ -1507,7 +1638,10 @@ def test_popup_text_says_in_chinese_what_is_being_allowed() -> None:
     from deskpet.sdk_adapters.tool_authority import describe_call_zh
 
     assert describe_call_zh("context_route", {"route": "create_new", "title": "周报"}) == (
-        "新建任务「周报」，并在工作区里为它新建一个任务目录")
-    assert describe_call_zh("write_file", {"path": "a/b.txt", "content": "x"}) == "写入文件：a/b.txt"
+        "新建任务「周报」，并在工作区里为它新建一个任务目录"
+    )
+    assert (
+        describe_call_zh("write_file", {"path": "a/b.txt", "content": "x"}) == "写入文件：a/b.txt"
+    )
     assert describe_call_zh("run_shell", {"command": "pytest -q"}) == "运行命令：pytest -q"
     assert describe_call_zh("mystery_tool", {}) == "使用工具 mystery_tool"

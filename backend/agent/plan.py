@@ -21,6 +21,7 @@ optional plan companion but never waits for plan confirmation.
 Outside the manual authorization path, short/simple requests retain the
 existing early exits.  Planning never chooses an execution Driver.
 """
+
 from __future__ import annotations
 
 import json
@@ -159,6 +160,7 @@ def _extract_json(raw: str) -> dict | None:
             pass
     return None
 
+
 # Don't bother planning short utterances.
 _PLAN_MIN_CHARS = 40
 
@@ -242,8 +244,7 @@ async def _maybe_extract_general_plan(
         {
             "role": "user",
             "content": (
-                f"项目根目录: {project_root or '(未设)'}\n\n"
-                f"用户请求:\n{user_message}{_ao_hint}"
+                f"项目根目录: {project_root or '(未设)'}\n\n用户请求:\n{user_message}{_ao_hint}"
             ),
         },
     ]

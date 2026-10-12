@@ -385,7 +385,8 @@ def owned_criteria(network: Any, semantics: Any) -> dict[str, list[tuple[str, st
             continue
         try:
             method = semantics.get_method(
-                str(draft.method_ref.method_id), int(draft.method_ref.version)).contract
+                str(draft.method_ref.method_id), int(draft.method_ref.version)
+            ).contract
         except StoreError:
             continue
         by_slot = {str(child.slot_key): str(child.occurrence_id) for child in draft.child_bindings}
@@ -394,7 +395,8 @@ def owned_criteria(network: Any, semantics: Any) -> dict[str, list[tuple[str, st
             bound = by_slot.get(link.child_step or "") if link.child_step else finalizer
             if bound is not None:
                 owned.setdefault(bound, []).append(
-                    (str(link.parent_criterion_id), str(link.evidence_requirement or "")))
+                    (str(link.parent_criterion_id), str(link.evidence_requirement or ""))
+                )
     return owned
 
 

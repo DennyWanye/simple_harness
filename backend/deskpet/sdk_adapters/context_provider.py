@@ -16,9 +16,7 @@ class ProductConversationContextProvider:
         self._repository = repository
 
     async def prepare_once(self, request: ConversationContextRequest) -> ConversationContextResult:
-        payload, item_count, byte_count = await self._repository.read(
-            request.source_snapshot_ref
-        )
+        payload, item_count, byte_count = await self._repository.read(request.source_snapshot_ref)
         actual_bytes = len(canonical_json(payload).encode("utf-8"))
         if actual_bytes != byte_count:
             raise RuntimeError("context_source_byte_count_conflict")

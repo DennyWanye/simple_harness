@@ -25,6 +25,7 @@ Returned entries are SAFE TO MUTATE — callers receive shallow copies
 so adjusting ``.model`` for the preferred_model case can't leak back
 into the registry.
 """
+
 from __future__ import annotations
 
 import copy
@@ -191,12 +192,8 @@ async def resolve_session_provider_route(
         root_run_id=None,
         provider_id=(str(getattr(first, "id", "")) if first else None),
         model=(str(getattr(first, "model", "")) if first else None),
-        incarnation_id=(
-            str(getattr(first, "incarnation_id", "") or "") if first else None
-        ),
-        config_revision=(
-            int(getattr(first, "config_revision", 0) or 0) if first else None
-        ),
+        incarnation_id=(str(getattr(first, "incarnation_id", "") or "") if first else None),
+        config_revision=(int(getattr(first, "config_revision", 0) or 0) if first else None),
         binding_epoch=epoch,
     )
 
@@ -350,9 +347,19 @@ class _ChainEntry:
     """
 
     __slots__ = (
-        "id", "name", "base_url", "model", "api_key_ref",
-        "priority", "enabled", "source", "code_params", "models",
-        "incarnation_id", "config_revision", "binding_epoch",
+        "id",
+        "name",
+        "base_url",
+        "model",
+        "api_key_ref",
+        "priority",
+        "enabled",
+        "source",
+        "code_params",
+        "models",
+        "incarnation_id",
+        "config_revision",
+        "binding_epoch",
     )
 
     def __init__(

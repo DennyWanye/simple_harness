@@ -60,9 +60,7 @@ def _decode(value, keys):
         if not isinstance(value, str) or not 1 <= len(value) <= 4096:
             raise ValueError()
         body = json.loads(
-            base64.b64decode(
-                value + "=" * (-len(value) % 4), altchars=b"-_", validate=True
-            )
+            base64.b64decode(value + "=" * (-len(value) % 4), altchars=b"-_", validate=True)
         )
         if (
             type(body) is not dict
@@ -113,9 +111,7 @@ class PrimaryReadModel:
     async def _snapshot(self, primary_ref=None):
         if primary_ref is not None:
             identifier(primary_ref, "primary_ref", 512)
-        async with aiosqlite.connect(
-            f"{self.path.resolve().as_uri()}?mode=ro", uri=True
-        ) as db:
+        async with aiosqlite.connect(f"{self.path.resolve().as_uri()}?mode=ro", uri=True) as db:
             db.row_factory = aiosqlite.Row
             await db.execute("BEGIN")
             rows = await _rows(
@@ -127,9 +123,7 @@ class PrimaryReadModel:
                 ),
                 (self.subject,),
             )
-            if len(rows) != 1 or (
-                primary_ref is not None and rows[0][0] != primary_ref
-            ):
+            if len(rows) != 1 or (primary_ref is not None and rows[0][0] != primary_ref):
                 raise PrimaryReadError("primary_not_found")
             await self._subject_visible()
             yield db, rows[0][0]
@@ -148,7 +142,9 @@ class PrimaryReadModel:
         ):
             rows = await _rows(db, f"SELECT COALESCE(MAX(rowid),0) FROM {table}")
             facts.append(list(rows[0]))
-        if await _rows(db, "SELECT 1 FROM sqlite_master WHERE type='table' AND name='prospective_occurrences'"):
+        if await _rows(
+            db, "SELECT 1 FROM sqlite_master WHERE type='table' AND name='prospective_occurrences'"
+        ):
             tail = await _rows(db, "SELECT COALESCE(MAX(rowid),0) FROM prospective_occurrences")
             facts.append(list(tail[0]))
         heads = await _rows(
@@ -235,14 +231,10 @@ class PrimaryReadModel:
                         raise PrimaryReadError("primary_runtime_binding_mismatch")
                     try:
                         if self.run_binding_reader is None:
-                            raise PrimaryReadError(
-                                "primary_runtime_binding_unavailable"
-                            )
+                            raise PrimaryReadError("primary_runtime_binding_unavailable")
                         from deskpet.sdk_adapters.run_bindings import SdkRunBindingV1
 
-                        resolved = await _resolved(
-                            self.run_binding_reader(head["sdk_run_id"])
-                        )
+                        resolved = await _resolved(self.run_binding_reader(head["sdk_run_id"]))
                         if isinstance(resolved, Mapping):
                             resolved = SdkRunBindingV1.from_record(resolved)
                         if (
@@ -264,9 +256,7 @@ class PrimaryReadModel:
             source_ids = [row[0] for row in queued[:100]]
             if active:
                 source_ids.append(active[0]["evidence_id"])
-            visible = await self._check_sources(
-                db, primary, source_ids, disclosure_context
-            )
+            visible = await self._check_sources(db, primary, source_ids, disclosure_context)
             count = sum(visible[row[0]] for row in queued[:100])
             if current is not None and not visible[active[0]["evidence_id"]]:
                 current = None
@@ -329,9 +319,7 @@ class PrimaryReadModel:
         else:
             text = ""
         if raw["role"] == "tool":
-            public = {
-                k: raw[k] for k in ("name", "call_id") if isinstance(raw.get(k), str)
-            }
+            public = {k: raw[k] for k in ("name", "call_id") if isinstance(raw.get(k), str)}
             if public:
                 text = canonical_json(public) + "\n" + text
         return raw["role"], redact_credential_shapes(text)[0]
@@ -364,6 +352,7 @@ class PrimaryReadModel:
         ]
         if turn["turn_state"] != "SETTLED":
             from deskpet.execution.admission_rejection import read_admission_rejection_tx
+
             await read_admission_rejection_tx(db, turn_id=turn["turn_id"], subject=self.subject)
             return messages
         rows = await _rows(
@@ -383,7 +372,10 @@ class PrimaryReadModel:
             from deskpet.execution.preparation_rejection import read_preparation_rejection_tx
 
             rejection = await read_preparation_rejection_tx(
-                db, host_run_id=turn["host_run_id"], subject=self.subject, primary_ref=primary,
+                db,
+                host_run_id=turn["host_run_id"],
+                subject=self.subject,
+                primary_ref=primary,
             )
             if rejection is not None:
                 # Only original USER evidence exists for this verified Host
@@ -422,11 +414,7 @@ class PrimaryReadModel:
                 "AND source_kind='runtime_event'"
             ),
             (
-                str(
-                    uuid.uuid5(
-                        uuid.NAMESPACE_URL, "primary-runtime:" + run["sdk_run_id"]
-                    )
-                ),
+                str(uuid.uuid5(uuid.NAMESPACE_URL, "primary-runtime:" + run["sdk_run_id"])),
                 self.subject,
                 primary,
                 run["sdk_run_id"],
@@ -441,10 +429,7 @@ class PrimaryReadModel:
             if not isinstance(body.get("visibility_dependencies"), Mapping):
                 return messages
             if (
-                any(
-                    body.get(k) != run[k]
-                    for k in ("host_run_id", "sdk_run_id", "terminal_state")
-                )
+                any(body.get(k) != run[k] for k in ("host_run_id", "sdk_run_id", "terminal_state"))
                 or body.get("turn_id") != turn["turn_id"]
             ):
                 raise PrimaryReadError("primary_terminal_corrupt")
@@ -466,9 +451,7 @@ class PrimaryReadModel:
             raise PrimaryReadError("primary_terminal_missing")
         if self.reader is None:
             raise PrimaryReadError("primary_history_reader_unavailable")
-        evidence, transcript = await _resolved(
-            self.reader(run["sdk_run_id"], current_text=text)
-        )
+        evidence, transcript = await _resolved(self.reader(run["sdk_run_id"], current_text=text))
         try:
             identity.verify_sdk_terminal(evidence)
         except RuntimeError as exc:
@@ -511,10 +494,7 @@ class PrimaryReadModel:
             return await _rows(
                 db,
                 select
-                + (
-                    "WHERE t.turn_id=? AND t.subject=? AND "
-                    "t.primary_conversation_id=? LIMIT 1"
-                ),
+                + ("WHERE t.turn_id=? AND t.subject=? AND t.primary_conversation_id=? LIMIT 1"),
                 (turn_ref, self.subject, primary),
             )
         return await _rows(
@@ -575,7 +555,9 @@ class PrimaryReadModel:
             # 才截断，否则分页会原地打转。
             for turn in turns:
                 pending = []
-                for message in reversed(await self._messages_with_notices(db, primary, turn, disclosure_context)):
+                for message in reversed(
+                    await self._messages_with_notices(db, primary, turn, disclosure_context)
+                ):
                     key = (turn["enqueue_sequence"], message[0])
                     if key >= before:
                         continue
@@ -627,9 +609,7 @@ class PrimaryReadModel:
                 "next_cursor": next_cursor,
             }
 
-    async def detail(
-        self, *, primary_ref, message_ref, disclosure_context, offset=0, limit=4096
-    ):
+    async def detail(self, *, primary_ref, message_ref, disclosure_context, offset=0, limit=4096):
         bounded_int(offset, minimum=0, maximum=2**63 - 1)
         bounded_int(limit, minimum=1, maximum=4096)
         decoded = _decode(message_ref, ("v", "p", "t", "i", "h"))
@@ -637,9 +617,7 @@ class PrimaryReadModel:
         async with self._snapshot(primary_ref) as (db, primary):
             if decoded["p"] != primary:
                 raise PrimaryReadError("primary_read_ref_invalid")
-            turns = await self._turns(
-                db, primary, before=2**63 - 1, limit=1, turn_ref=decoded["t"]
-            )
+            turns = await self._turns(db, primary, before=2**63 - 1, limit=1, turn_ref=decoded["t"])
             if not turns:
                 raise PrimaryReadError("primary_message_unavailable")
             turn = turns[0]
@@ -652,9 +630,7 @@ class PrimaryReadModel:
                 if offset > len(text):
                     raise PrimaryReadError("primary_read_request_invalid")
                 end = min(len(text), offset + limit)
-                visible = await self._check_sources(
-                    db, primary, message[4], disclosure_context
-                )
+                visible = await self._check_sources(db, primary, message[4], disclosure_context)
                 if not all(visible[source] for source in message[4]):
                     raise PrimaryReadError("primary_message_unavailable")
                 return {

@@ -33,29 +33,66 @@ from .deep_research_v6_integrity import (
 
 _HEX64 = re.compile(r"^[0-9a-f]{64}$")
 _MANIFEST_KEYS = {
-    "schema_version", "manifest_id", "workflow_name", "workflow_version", "run_id",
-    "answer_status", "spec_hash", "assessment_hash", "claim_policy_hash",
-    "quality_policy_hash", "continuation_snapshot_ref", "continuation_snapshot_hash",
-    "content_refs", "intent_specs", "cardinality", "engine_terminal",
+    "schema_version",
+    "manifest_id",
+    "workflow_name",
+    "workflow_version",
+    "run_id",
+    "answer_status",
+    "spec_hash",
+    "assessment_hash",
+    "claim_policy_hash",
+    "quality_policy_hash",
+    "continuation_snapshot_ref",
+    "continuation_snapshot_hash",
+    "content_refs",
+    "intent_specs",
+    "cardinality",
+    "engine_terminal",
 }
 _CONTENT_KEYS = {
-    "final_assistant_ref", "report_ref", "safe_summary_ref", "claim_batch_ref",
+    "final_assistant_ref",
+    "report_ref",
+    "safe_summary_ref",
+    "claim_batch_ref",
     "quality_audit_ref",
 }
 _CARDINALITY_KEYS = {
-    "final_assistant", "workflow_final_status", "report", "artifact", "run_terminal",
+    "final_assistant",
+    "workflow_final_status",
+    "report",
+    "artifact",
+    "run_terminal",
 }
 _ENGINE_KEYS = {"status", "error_code", "recovery_action"}
 _INTENT_KEYS = {"intent_id", "event_key", "event_type", "content_ref", "delivery_specs"}
 _DELIVERY_KEYS = {
-    "delivery_spec_id", "channel", "target_role", "required_durable",
-    "projection_kind", "context_visibility",
+    "delivery_spec_id",
+    "channel",
+    "target_role",
+    "required_durable",
+    "projection_kind",
+    "context_visibility",
 }
 _REQUEST_KEYS = {
-    "schema_version", "workflow_name", "workflow_version", "run_id", "manifest_ref",
-    "manifest_hash", "engine_status", "engine_error_code", "recovery_action",
+    "schema_version",
+    "workflow_name",
+    "workflow_version",
+    "run_id",
+    "manifest_ref",
+    "manifest_hash",
+    "engine_status",
+    "engine_error_code",
+    "recovery_action",
 }
-_PROJECTION_KEYS = {"schema_version", "manifest_ref", "manifest_hash", "answer_status", "blob_refs", "intents"}
+_PROJECTION_KEYS = {
+    "schema_version",
+    "manifest_ref",
+    "manifest_hash",
+    "answer_status",
+    "blob_refs",
+    "intents",
+}
 
 
 def _invalid(code: str, message: str) -> NoReturn:
@@ -94,38 +131,78 @@ def _nullable_ref(value: object, name: str) -> str | None:
 
 
 def _intent_id(run_id: str, event_key: str, event_type: str, content_ref: str | None) -> str:
-    return hashlib.sha256(f"{run_id}|{event_key}|{event_type}|{content_ref or ''}".encode()).hexdigest()
+    return hashlib.sha256(
+        f"{run_id}|{event_key}|{event_type}|{content_ref or ''}".encode()
+    ).hexdigest()
 
 
 def _delivery_spec(intent_id: str, **values: JsonValue) -> dict[str, JsonValue]:
     payload = copy.deepcopy(values)
-    digest = hashlib.sha256(
-        (intent_id + "|" + canonical_json(payload)).encode("utf-8")
-    ).hexdigest()
+    digest = hashlib.sha256((intent_id + "|" + canonical_json(payload)).encode("utf-8")).hexdigest()
     return {"delivery_spec_id": digest, **payload}
 
 
 def _physical_specs(intent_id: str, event_key: str) -> list[dict[str, JsonValue]]:
     if event_key == "answer:final":
         rows = (
-            {"channel": "session_message", "target_role": "original_session", "required_durable": True, "projection_kind": "final_assistant", "context_visibility": "conversation"},
-            {"channel": "websocket", "target_role": "current_epoch", "required_durable": False, "projection_kind": "final_assistant", "context_visibility": "conversation"},
+            {
+                "channel": "session_message",
+                "target_role": "original_session",
+                "required_durable": True,
+                "projection_kind": "final_assistant",
+                "context_visibility": "conversation",
+            },
+            {
+                "channel": "websocket",
+                "target_role": "current_epoch",
+                "required_durable": False,
+                "projection_kind": "final_assistant",
+                "context_visibility": "conversation",
+            },
         )
     elif event_key == "run:terminal":
         rows = (
-            {"channel": "session_message", "target_role": "original_session", "required_durable": True, "projection_kind": "workflow_final_status", "context_visibility": "exclude"},
-            {"channel": "websocket", "target_role": "current_epoch", "required_durable": False, "projection_kind": "workflow_final_status", "context_visibility": "exclude"},
+            {
+                "channel": "session_message",
+                "target_role": "original_session",
+                "required_durable": True,
+                "projection_kind": "workflow_final_status",
+                "context_visibility": "exclude",
+            },
+            {
+                "channel": "websocket",
+                "target_role": "current_epoch",
+                "required_durable": False,
+                "projection_kind": "workflow_final_status",
+                "context_visibility": "exclude",
+            },
         )
     else:
         rows = (
-            {"channel": "artifact", "target_role": "original_session", "required_durable": True, "projection_kind": "artifact_card", "context_visibility": "exclude"},
-            {"channel": "websocket", "target_role": "current_epoch", "required_durable": False, "projection_kind": "artifact_card", "context_visibility": "exclude"},
+            {
+                "channel": "artifact",
+                "target_role": "original_session",
+                "required_durable": True,
+                "projection_kind": "artifact_card",
+                "context_visibility": "exclude",
+            },
+            {
+                "channel": "websocket",
+                "target_role": "current_epoch",
+                "required_durable": False,
+                "projection_kind": "artifact_card",
+                "context_visibility": "exclude",
+            },
         )
     return [_delivery_spec(intent_id, **row) for row in rows]
 
 
 def build_intent_specs(
-    *, run_id: str, final_assistant_ref: str, report_ref: str | None, artifact_required: bool,
+    *,
+    run_id: str,
+    final_assistant_ref: str,
+    report_ref: str | None,
+    artifact_required: bool,
 ) -> list[dict[str, JsonValue]]:
     rows: list[tuple[str, str, str | None]] = [
         ("answer:final", "workflow.final_assistant", final_assistant_ref),
@@ -138,25 +215,29 @@ def build_intent_specs(
     result = []
     for event_key, event_type, content_ref in sorted(rows):
         intent_id = _intent_id(run_id, event_key, event_type, content_ref)
-        result.append({
-            "intent_id": intent_id,
-            "event_key": event_key,
-            "event_type": event_type,
-            "content_ref": content_ref,
-            "delivery_specs": _physical_specs(intent_id, event_key),
-        })
+        result.append(
+            {
+                "intent_id": intent_id,
+                "event_key": event_key,
+                "event_type": event_type,
+                "content_ref": content_ref,
+                "delivery_specs": _physical_specs(intent_id, event_key),
+            }
+        )
     return result
 
 
 def manifest_identity_seed(value: Mapping[str, Any]) -> str:
-    return sha256_json({
-        "workflow_name": value["workflow_name"],
-        "workflow_version": value["workflow_version"],
-        "run_id": value["run_id"],
-        "answer_status": value["answer_status"],
-        "spec_hash": value["spec_hash"],
-        "assessment_hash": value["assessment_hash"],
-    })
+    return sha256_json(
+        {
+            "workflow_name": value["workflow_name"],
+            "workflow_version": value["workflow_version"],
+            "run_id": value["run_id"],
+            "answer_status": value["answer_status"],
+            "spec_hash": value["spec_hash"],
+            "assessment_hash": value["assessment_hash"],
+        }
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -166,12 +247,21 @@ class TerminalDeliveryManifestV1:
     def __post_init__(self) -> None:
         raw = _exact(self.value, _MANIFEST_KEYS, "TerminalDeliveryManifestV1", versioned=True)
         if raw["workflow_name"] != "deep_research" or raw["workflow_version"] != "v6":
-            _invalid("invalid_v6_terminal_manifest", "manifest workflow identity must be deep_research/v6")
+            _invalid(
+                "invalid_v6_terminal_manifest",
+                "manifest workflow identity must be deep_research/v6",
+            )
         run_id = _text(raw["run_id"], "run_id")
         status = raw["answer_status"]
         if status not in {"completed", "partial", "insufficient_evidence"}:
             _invalid("invalid_v6_terminal_manifest", "answer_status is invalid")
-        for name in ("spec_hash", "assessment_hash", "claim_policy_hash", "quality_policy_hash", "continuation_snapshot_hash"):
+        for name in (
+            "spec_hash",
+            "assessment_hash",
+            "claim_policy_hash",
+            "quality_policy_hash",
+            "continuation_snapshot_hash",
+        ):
             _hash(raw[name], name)
         parse_blob_ref(_text(raw["continuation_snapshot_ref"], "continuation_snapshot_ref"))
         content = _exact(raw["content_refs"], _CONTENT_KEYS, "content_refs")
@@ -183,21 +273,45 @@ class TerminalDeliveryManifestV1:
         if final_ref is None or claim_ref is None or quality_ref is None:
             _invalid("invalid_v6_terminal_manifest", "final/claim/quality refs are required")
         cardinality = _exact(raw["cardinality"], _CARDINALITY_KEYS, "cardinality")
-        if any(isinstance(value, bool) or not isinstance(value, int) or value < 0 for value in cardinality.values()):
-            _invalid("invalid_v6_terminal_manifest", "cardinality values must be non-negative integers")
+        if any(
+            isinstance(value, bool) or not isinstance(value, int) or value < 0
+            for value in cardinality.values()
+        ):
+            _invalid(
+                "invalid_v6_terminal_manifest", "cardinality values must be non-negative integers"
+            )
         if status == "insufficient_evidence":
-            expected = {"final_assistant": 1, "workflow_final_status": 1, "report": 0, "artifact": 0, "run_terminal": 1}
+            expected = {
+                "final_assistant": 1,
+                "workflow_final_status": 1,
+                "report": 0,
+                "artifact": 0,
+                "run_terminal": 1,
+            }
             if report_ref is not None or safe_ref != final_ref or cardinality != expected:
-                _invalid("invalid_v6_terminal_manifest", "insufficient cardinality/content mismatch")
+                _invalid(
+                    "invalid_v6_terminal_manifest", "insufficient cardinality/content mismatch"
+                )
         else:
             if report_ref is None or safe_ref is not None:
-                _invalid("invalid_v6_terminal_manifest", "completed/partial report content mismatch")
-            expected_base = {"final_assistant": 1, "workflow_final_status": 1, "report": 1, "run_terminal": 1}
-            if any(cardinality[key] != value for key, value in expected_base.items()) or cardinality["artifact"] not in {0, 1}:
+                _invalid(
+                    "invalid_v6_terminal_manifest", "completed/partial report content mismatch"
+                )
+            expected_base = {
+                "final_assistant": 1,
+                "workflow_final_status": 1,
+                "report": 1,
+                "run_terminal": 1,
+            }
+            if any(
+                cardinality[key] != value for key, value in expected_base.items()
+            ) or cardinality["artifact"] not in {0, 1}:
                 _invalid("invalid_v6_terminal_manifest", "completed/partial cardinality mismatch")
         engine = _exact(raw["engine_terminal"], _ENGINE_KEYS, "engine_terminal")
         if engine != {"status": "completed", "error_code": None, "recovery_action": None}:
-            _invalid("invalid_v6_terminal_manifest", "answer manifest requires completed engine tuple")
+            _invalid(
+                "invalid_v6_terminal_manifest", "answer manifest requires completed engine tuple"
+            )
         intents_raw = raw["intent_specs"]
         if not isinstance(intents_raw, list):
             _invalid("invalid_v6_terminal_manifest", "intent_specs must be an array")
@@ -221,7 +335,9 @@ class TerminalDeliveryManifestV1:
                 _invalid("invalid_v6_terminal_manifest", "intent_id mismatch")
             specs = item["delivery_specs"]
             if not isinstance(specs, list) or len(specs) != 2:
-                _invalid("invalid_v6_terminal_manifest", "each v6 intent requires two delivery specs")
+                _invalid(
+                    "invalid_v6_terminal_manifest", "each v6 intent requires two delivery specs"
+                )
             for spec in specs:
                 parsed = _exact(spec, _DELIVERY_KEYS, "delivery_spec")
                 spec_id = parsed.pop("delivery_spec_id")
@@ -268,7 +384,11 @@ class TerminalCommitRequestV1:
         digest = _hash(raw["manifest_hash"], "manifest_hash")
         if parse_blob_ref(_text(raw["manifest_ref"], "manifest_ref")) != digest:
             _invalid("invalid_v6_terminal_commit", "manifest ref/hash mismatch")
-        if raw["engine_status"] != "completed" or raw["engine_error_code"] is not None or raw["recovery_action"] is not None:
+        if (
+            raw["engine_status"] != "completed"
+            or raw["engine_error_code"] is not None
+            or raw["recovery_action"] is not None
+        ):
             _invalid("invalid_v6_terminal_commit", "answer commit requires completed engine tuple")
         object.__setattr__(self, "value", raw)
 
@@ -291,7 +411,9 @@ class PersistedTerminalBundle:
     blob_refs: tuple[str, ...]
 
 
-async def _put_json(blobs: RegisteredBlobStore, identity: NodeExecutionIdentity, value: JsonValue) -> str:
+async def _put_json(
+    blobs: RegisteredBlobStore, identity: NodeExecutionIdentity, value: JsonValue
+) -> str:
     data = canonical_json(value).encode("utf-8")
     ref = await blobs.put(data, identity, media_type="application/json")
     return format_blob_ref(ref.sha256)
@@ -336,7 +458,10 @@ async def persist_q1_terminal_bundle(
     if not isinstance(spec, Mapping) or spec.get("spec_hash") != spec_hash:
         _invalid("invalid_v6_terminal_content", "research_spec/spec_hash mismatch")
     answer_result = values.get("answer_result")
-    if not isinstance(answer_result, Mapping) or answer_result.get("answer_status") != answer_status:
+    if (
+        not isinstance(answer_result, Mapping)
+        or answer_result.get("answer_status") != answer_status
+    ):
         _invalid("invalid_v6_terminal_content", "answer_result/status mismatch")
 
     spec_ref = _text(values.get("spec_ref"), "spec_ref")
@@ -349,7 +474,9 @@ async def persist_q1_terminal_bundle(
     final_ref = await _put_text(blobs, identity, final_assistant)
     report_ref = await _put_text(blobs, identity, str(report)) if report is not None else None
     raw_batch_refs = values.get("fact_batch_refs")
-    if not isinstance(raw_batch_refs, list) or any(not isinstance(ref, str) for ref in raw_batch_refs):
+    if not isinstance(raw_batch_refs, list) or any(
+        not isinstance(ref, str) for ref in raw_batch_refs
+    ):
         _invalid("invalid_v6_terminal_content", "fact_batch_refs must be an array of refs")
     fact_batch_refs = [str(ref) for ref in raw_batch_refs]
     for ref in fact_batch_refs:
@@ -366,7 +493,9 @@ async def persist_q1_terminal_bundle(
     ):
         _invalid("invalid_v6_terminal_content", "assessment ref/hash/evidence identity mismatch")
     raw_provenance = values.get("provenance_refs")
-    if not isinstance(raw_provenance, list) or any(not isinstance(ref, str) for ref in raw_provenance):
+    if not isinstance(raw_provenance, list) or any(
+        not isinstance(ref, str) for ref in raw_provenance
+    ):
         _invalid("invalid_v6_terminal_content", "provenance_refs must be an array of refs")
     provenance_refs = sorted(set(str(ref) for ref in raw_provenance))
     if provenance_refs != list(raw_provenance):
@@ -374,15 +503,24 @@ async def persist_q1_terminal_bundle(
     for ref in provenance_refs:
         await _assert_current_run_owner(blobs, parse_blob_ref(ref), identity.run_id)
 
-    claim_policy: dict[str, JsonValue] = {"schema_version": 1, "policy_id": "deep-research-v6-claim-q1-v1"}
-    quality_policy: dict[str, JsonValue] = {"schema_version": 1, "policy_id": "deep-research-v6-quality-q1-v1"}
+    claim_policy: dict[str, JsonValue] = {
+        "schema_version": 1,
+        "policy_id": "deep-research-v6-claim-q1-v1",
+    }
+    quality_policy: dict[str, JsonValue] = {
+        "schema_version": 1,
+        "policy_id": "deep-research-v6-quality-q1-v1",
+    }
     claim_policy_hash = sha256_json(claim_policy)
     quality_policy_hash = sha256_json(quality_policy)
     claim_policy_ref = await _put_json(blobs, identity, claim_policy)
     quality_policy_ref = await _put_json(blobs, identity, quality_policy)
     evidence_policy_refs = values.get("evidence_policy_refs")
     if not isinstance(evidence_policy_refs, Mapping) or set(evidence_policy_refs) != {
-        "compiler", "route", "admission", "assessment"
+        "compiler",
+        "route",
+        "admission",
+        "assessment",
     }:
         _invalid("invalid_v6_terminal_content", "evidence policy refs are incomplete")
     for ref in evidence_policy_refs.values():
@@ -404,7 +542,9 @@ async def persist_q1_terminal_bundle(
             _invalid("invalid_v6_terminal_content", f"claim {index} must be an object")
         integrity_claims.append(
             ClaimRecordV1.create(
-                requirement_id=_text(claim.get("requirement_id"), f"claims[{index}].requirement_id"),
+                requirement_id=_text(
+                    claim.get("requirement_id"), f"claims[{index}].requirement_id"
+                ),
                 item_or_cell_id=_text(
                     claim.get("requirement_id"), f"claims[{index}].requirement_id"
                 ),
@@ -413,9 +553,7 @@ async def persist_q1_terminal_bundle(
                     claim.get("normalized_proposition"),
                     f"claims[{index}].normalized_proposition",
                 ),
-                binding_ids=(
-                    _text(claim.get("binding_id"), f"claims[{index}].binding_id"),
-                ),
+                binding_ids=(_text(claim.get("binding_id"), f"claims[{index}].binding_id"),),
                 inference_ref=None,
                 support_status=_text(
                     claim.get("support_status"), f"claims[{index}].support_status"
@@ -461,17 +599,30 @@ async def persist_q1_terminal_bundle(
         "claim": claim_policy_ref,
         "quality": quality_policy_ref,
     }
-    closure_refs = sorted({
-        spec_ref, *fact_batch_refs, assessment_ref, claim_batch_ref, *provenance_refs,
-        *[str(value) for value in policy_refs.values()],
-    })
+    closure_refs = sorted(
+        {
+            spec_ref,
+            *fact_batch_refs,
+            assessment_ref,
+            claim_batch_ref,
+            *provenance_refs,
+            *[str(value) for value in policy_refs.values()],
+        }
+    )
     snapshot_base: dict[str, JsonValue] = {
-        "schema_version": 1, "run_id": str(state["run_id"]),
-        "workflow_name": "deep_research", "workflow_version": "v6",
-        "spec_ref": spec_ref, "spec_hash": spec_hash, "fact_batch_refs": fact_batch_refs,
-        "evidence_head_hash": evidence_head_hash, "assessment_ref": assessment_ref,
-        "assessment_hash": assessment_hash, "claim_batch_ref": claim_batch_ref,
-        "provenance_refs": provenance_refs, "policy_refs": policy_refs,
+        "schema_version": 1,
+        "run_id": str(state["run_id"]),
+        "workflow_name": "deep_research",
+        "workflow_version": "v6",
+        "spec_ref": spec_ref,
+        "spec_hash": spec_hash,
+        "fact_batch_refs": fact_batch_refs,
+        "evidence_head_hash": evidence_head_hash,
+        "assessment_ref": assessment_ref,
+        "assessment_hash": assessment_hash,
+        "claim_batch_ref": claim_batch_ref,
+        "provenance_refs": provenance_refs,
+        "policy_refs": policy_refs,
         "closure_refs": closure_refs,
     }
     snapshot_hash = sha256_json(snapshot_base)
@@ -491,19 +642,29 @@ async def persist_q1_terminal_bundle(
     }
     artifact = bool(artifact_required and answer_status != "insufficient_evidence")
     cardinality: dict[str, JsonValue] = {
-        "final_assistant": 1, "workflow_final_status": 1,
+        "final_assistant": 1,
+        "workflow_final_status": 1,
         "report": 0 if answer_status == "insufficient_evidence" else 1,
-        "artifact": 1 if artifact else 0, "run_terminal": 1,
+        "artifact": 1 if artifact else 0,
+        "run_terminal": 1,
     }
     manifest = TerminalDeliveryManifestV1.create(
-        workflow_name="deep_research", workflow_version="v6", run_id=str(state["run_id"]),
-        answer_status=str(answer_status), spec_hash=spec_hash, assessment_hash=assessment_hash,
-        claim_policy_hash=claim_policy_hash, quality_policy_hash=quality_policy_hash,
-        continuation_snapshot_ref=snapshot_ref, continuation_snapshot_hash=snapshot_hash,
+        workflow_name="deep_research",
+        workflow_version="v6",
+        run_id=str(state["run_id"]),
+        answer_status=str(answer_status),
+        spec_hash=spec_hash,
+        assessment_hash=assessment_hash,
+        claim_policy_hash=claim_policy_hash,
+        quality_policy_hash=quality_policy_hash,
+        continuation_snapshot_ref=snapshot_ref,
+        continuation_snapshot_hash=snapshot_hash,
         content_refs=content_refs,
         intent_specs=build_intent_specs(
-            run_id=str(state["run_id"]), final_assistant_ref=final_ref,
-            report_ref=report_ref, artifact_required=artifact,
+            run_id=str(state["run_id"]),
+            final_assistant_ref=final_ref,
+            report_ref=report_ref,
+            artifact_required=artifact,
         ),
         cardinality=cardinality,
         engine_terminal={"status": "completed", "error_code": None, "recovery_action": None},
@@ -511,12 +672,22 @@ async def persist_q1_terminal_bundle(
     manifest_ref = await _put_json(blobs, identity, manifest.to_json())
     if manifest_ref != manifest.manifest_ref:
         _invalid("invalid_v6_terminal_manifest", "registered manifest digest mismatch")
-    all_refs = sorted({manifest_ref, snapshot_ref, *closure_refs, *[str(value) for value in content_refs.values() if value is not None]})
+    all_refs = sorted(
+        {
+            manifest_ref,
+            snapshot_ref,
+            *closure_refs,
+            *[str(value) for value in content_refs.values() if value is not None],
+        }
+    )
     return PersistedTerminalBundle(manifest_ref, manifest.manifest_hash, tuple(all_refs))
 
 
 def build_terminal_commit_request(
-    *, state: Mapping[str, JsonValue], engine_status: str, engine_error_code: str | None,
+    *,
+    state: Mapping[str, JsonValue],
+    engine_status: str,
+    engine_error_code: str | None,
     recovery_action: str | None,
 ) -> TerminalCommitRequestV1:
     values = state.get("values")
@@ -554,8 +725,9 @@ async def _read_json(blobs: RegisteredBlobStore, wire_ref: str) -> dict[str, Any
 async def _assert_current_run_owner(blobs: RegisteredBlobStore, digest: str, run_id: str) -> None:
     db = await aiosqlite.connect(blobs.database)
     try:
-        row = await (await db.execute(
-            """SELECT 1 FROM workflow_blob_refs r
+        row = await (
+            await db.execute(
+                """SELECT 1 FROM workflow_blob_refs r
             WHERE r.sha256=? AND (
               (r.owner_kind='run_staging' AND r.owner_id=?) OR
               (r.owner_kind='pending_task' AND r.owner_id LIKE ?) OR
@@ -568,8 +740,9 @@ async def _assert_current_run_owner(blobs: RegisteredBlobStore, digest: str, run
                 WHERE e.effect_id=r.owner_id AND e.run_id=?
               ))
             ) LIMIT 1""",
-            (digest, run_id, f"{run_id}:%", run_id, run_id),
-        )).fetchone()
+                (digest, run_id, f"{run_id}:%", run_id, run_id),
+            )
+        ).fetchone()
     finally:
         await db.close()
     if row is None:
@@ -579,10 +752,14 @@ async def _assert_current_run_owner(blobs: RegisteredBlobStore, digest: str, run
 def _terminal_public(answer_status: str, manifest_ref: str) -> dict[str, JsonValue]:
     actions: list[dict[str, JsonValue]] = []
     if answer_status in {"partial", "insufficient_evidence"}:
-        actions.append({"action_id": "continue_research", "enabled": True, "reason_code": "evidence_gap"})
+        actions.append(
+            {"action_id": "continue_research", "enabled": True, "reason_code": "evidence_gap"}
+        )
     value: dict[str, JsonValue] = {
-        "schema_version": 1, "answer_status": answer_status,
-        "manifest_ref": manifest_ref, "action_matrix": actions,
+        "schema_version": 1,
+        "answer_status": answer_status,
+        "manifest_ref": manifest_ref,
+        "action_matrix": actions,
     }
     if len(canonical_json(value).encode("utf-8")) > 4096:
         _invalid("invalid_v6_terminal_projection", "terminal public exceeds 4096 bytes")
@@ -590,7 +767,8 @@ def _terminal_public(answer_status: str, manifest_ref: str) -> dict[str, JsonVal
 
 
 async def project_v6_terminal_commit(
-    request_value: Mapping[str, JsonValue], context: WorkflowContext,
+    request_value: Mapping[str, JsonValue],
+    context: WorkflowContext,
 ) -> dict[str, JsonValue]:
     request = TerminalCommitRequestV1.from_json(request_value)
     raw = request.to_json()
@@ -599,7 +777,10 @@ async def project_v6_terminal_commit(
         _invalid("invalid_v6_terminal_commit", "v6 terminal commit requires RegisteredBlobStore")
     manifest_value = await _read_json(blobs, str(raw["manifest_ref"]))
     manifest = TerminalDeliveryManifestV1.from_json(manifest_value)
-    if manifest.manifest_hash != raw["manifest_hash"] or manifest.manifest_ref != raw["manifest_ref"]:
+    if (
+        manifest.manifest_hash != raw["manifest_hash"]
+        or manifest.manifest_ref != raw["manifest_ref"]
+    ):
         _invalid("invalid_v6_terminal_commit", "request does not identify loaded manifest")
     value = manifest.to_json()
     if value["run_id"] != raw["run_id"] or value["engine_terminal"] != {
@@ -615,20 +796,28 @@ async def project_v6_terminal_commit(
     quality = await _read_json(blobs, str(content["quality_audit_ref"]))
     if claim_batch.get("status") != "valid":
         _invalid("invalid_v6_terminal_commit", "claim batch is not valid")
-    if quality.get("hard_gate_status") != "passed" or quality.get("answer_status") != value["answer_status"]:
+    if (
+        quality.get("hard_gate_status") != "passed"
+        or quality.get("answer_status") != value["answer_status"]
+    ):
         _invalid("invalid_v6_terminal_commit", "quality audit does not admit answer status")
     snapshot = await _read_json(blobs, str(value["continuation_snapshot_ref"]))
     snapshot_without_identity = dict(snapshot)
     snapshot_id = snapshot_without_identity.pop("snapshot_id", None)
     snapshot_hash = snapshot_without_identity.pop("snapshot_hash", None)
     expected_snapshot_hash = sha256_json(snapshot_without_identity)
-    if snapshot_hash != expected_snapshot_hash or snapshot_id != "rcs_" + expected_snapshot_hash[:24] or snapshot_hash != value["continuation_snapshot_hash"]:
+    if (
+        snapshot_hash != expected_snapshot_hash
+        or snapshot_id != "rcs_" + expected_snapshot_hash[:24]
+        or snapshot_hash != value["continuation_snapshot_hash"]
+    ):
         _invalid("invalid_v6_terminal_commit", "continuation snapshot identity mismatch")
     closure = snapshot.get("closure_refs")
     if not isinstance(closure, list) or closure != sorted(set(closure)):
         _invalid("invalid_v6_terminal_commit", "snapshot closure_refs are not canonical")
     expected_closure = {
-        str(snapshot.get("spec_ref")), str(snapshot.get("assessment_ref")),
+        str(snapshot.get("spec_ref")),
+        str(snapshot.get("assessment_ref")),
         str(snapshot.get("claim_batch_ref")),
         *[str(item) for item in snapshot.get("fact_batch_refs", [])],
         *[str(item) for item in snapshot.get("provenance_refs", [])],
@@ -636,11 +825,14 @@ async def project_v6_terminal_commit(
     }
     if set(closure) != expected_closure:
         _invalid("invalid_v6_terminal_commit", "snapshot closure is not exact")
-    blob_refs = sorted({
-        str(raw["manifest_ref"]), str(value["continuation_snapshot_ref"]),
-        *[str(item) for item in closure],
-        *[str(item) for item in content.values() if item is not None],
-    })
+    blob_refs = sorted(
+        {
+            str(raw["manifest_ref"]),
+            str(value["continuation_snapshot_ref"]),
+            *[str(item) for item in closure],
+            *[str(item) for item in content.values() if item is not None],
+        }
+    )
     for wire_ref in blob_refs:
         digest = parse_blob_ref(wire_ref)
         await _assert_current_run_owner(blobs, digest, str(raw["run_id"]))
@@ -652,32 +844,51 @@ async def project_v6_terminal_commit(
         assert isinstance(intent, dict)
         if intent["event_key"] == "run:terminal":
             payload: dict[str, JsonValue] = {
-                "schema_version": 1, "kind": "final", "status": "completed",
-                "error": None, "recovery_action": None,
+                "schema_version": 1,
+                "kind": "final",
+                "status": "completed",
+                "error": None,
+                "recovery_action": None,
                 "manifest_ref": str(raw["manifest_ref"]),
-                "answer_status": str(value["answer_status"]), "public": public,
+                "answer_status": str(value["answer_status"]),
+                "public": public,
                 "card": {
-                    "run_id": str(raw["run_id"]), "status": "completed", "error": None,
-                    "recovery_action": None, "manifest_ref": str(raw["manifest_ref"]),
+                    "run_id": str(raw["run_id"]),
+                    "status": "completed",
+                    "error": None,
+                    "recovery_action": None,
+                    "manifest_ref": str(raw["manifest_ref"]),
                     "answer_status": str(value["answer_status"]),
                 },
             }
             if len(canonical_json(payload).encode("utf-8")) > 8192:
-                _invalid("invalid_v6_terminal_projection", "workflow final payload exceeds 8192 bytes")
+                _invalid(
+                    "invalid_v6_terminal_projection", "workflow final payload exceeds 8192 bytes"
+                )
         else:
             payload = {
-                "schema_version": 1, "manifest_ref": str(raw["manifest_ref"]),
-                "intent_id": str(intent["intent_id"]), "content_ref": str(intent["content_ref"]),
+                "schema_version": 1,
+                "manifest_ref": str(raw["manifest_ref"]),
+                "intent_id": str(intent["intent_id"]),
+                "content_ref": str(intent["content_ref"]),
             }
-        intents.append({
-            "intent_id": str(intent["intent_id"]), "event_key": str(intent["event_key"]),
-            "event_type": str(intent["event_type"]), "content_ref": intent["content_ref"],
-            "delivery_specs": copy.deepcopy(intent["delivery_specs"]), "payload": payload,
-        })
+        intents.append(
+            {
+                "intent_id": str(intent["intent_id"]),
+                "event_key": str(intent["event_key"]),
+                "event_type": str(intent["event_type"]),
+                "content_ref": intent["content_ref"],
+                "delivery_specs": copy.deepcopy(intent["delivery_specs"]),
+                "payload": payload,
+            }
+        )
     projection: dict[str, JsonValue] = {
-        "schema_version": 1, "manifest_ref": str(raw["manifest_ref"]),
-        "manifest_hash": str(raw["manifest_hash"]), "answer_status": str(value["answer_status"]),
-        "blob_refs": blob_refs, "intents": intents,
+        "schema_version": 1,
+        "manifest_ref": str(raw["manifest_ref"]),
+        "manifest_hash": str(raw["manifest_hash"]),
+        "answer_status": str(value["answer_status"]),
+        "blob_refs": blob_refs,
+        "intents": intents,
     }
     _exact(projection, _PROJECTION_KEYS, "TerminalCommitProjectionV1", versioned=True)
     validate_json_value(projection)
@@ -685,7 +896,11 @@ async def project_v6_terminal_commit(
 
 
 __all__ = [
-    "PersistedTerminalBundle", "TerminalCommitRequestV1", "TerminalDeliveryManifestV1",
-    "build_intent_specs", "build_terminal_commit_request", "persist_q1_terminal_bundle",
+    "PersistedTerminalBundle",
+    "TerminalCommitRequestV1",
+    "TerminalDeliveryManifestV1",
+    "build_intent_specs",
+    "build_terminal_commit_request",
+    "persist_q1_terminal_bundle",
     "project_v6_terminal_commit",
 ]

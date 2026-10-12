@@ -29,9 +29,7 @@ def _safe_instruction() -> CandidateRiskInputV1:
 
 def test_manifest_proven_readonly_instruction_is_safe_auto() -> None:
     preflight = StaticRiskPreflight().inspect(_safe_instruction())
-    assessment = CapabilityRiskPolicy().assess(
-        preflight, EffectTopologyDiffV1()
-    )
+    assessment = CapabilityRiskPolicy().assess(preflight, EffectTopologyDiffV1())
 
     assert preflight.safe_auto_eligible
     assert assessment.risk == "low"
@@ -54,9 +52,7 @@ def test_unknown_or_undeclared_tool_fails_closed() -> None:
         ),
     )
     preflight = StaticRiskPreflight().inspect(candidate)
-    assessment = CapabilityRiskPolicy().assess(
-        preflight, EffectTopologyDiffV1()
-    )
+    assessment = CapabilityRiskPolicy().assess(preflight, EffectTopologyDiffV1())
 
     assert not preflight.safe_auto_eligible
     assert assessment.risk == "unknown"

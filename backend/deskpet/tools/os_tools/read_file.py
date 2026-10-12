@@ -18,6 +18,7 @@ agent 实际调的是这里的 ``read_file`` (os_tools 的)。导致
 工作记忆失效。Fix：在这里也调 file_tools.set_workspace_store 注入的
 同一个 store，hook 同样的 record_action。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -111,7 +112,7 @@ def read_file(
         return _err(
             "path required",
             "read_file 的 path 字段必填，必须是要读取文件的路径字符串。"
-            "例如 {\"path\": \"README.md\"}。可选 offset / limit 控制读取行范围。",
+            '例如 {"path": "README.md"}。可选 offset / limit 控制读取行范围。',
         )
     # 相对路径按**本 Run 绑定的工作区根**解析、``~`` 展开；理由见 _scope_paths。
     from ._scope_paths import normalize_model_path
@@ -189,7 +190,9 @@ def read_file(
     # Stage 2 round 2 fix：通知 workspace_store（content_summary 由
     # WorkspaceMemoryStore 自己截断）。
     _notify_workspace(
-        session_id=str(session_id), path=path, content=content,
+        session_id=str(session_id),
+        path=path,
+        content=content,
     )
     return json.dumps(
         {

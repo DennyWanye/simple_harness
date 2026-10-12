@@ -10,6 +10,7 @@
   4. default_timeout_seconds — ToolSpec 未配 timeout 时兜底
   5. strict_unknown_toolset — typo 时 fail-fast / warn 切换
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -25,6 +26,7 @@ import pytest
 @dataclass
 class _ToolsCfgStub:
     """Minimal cfg.tools 替身 — 字段名与 backend/config.py:ToolsConfig 对齐."""
+
     disabled_toolsets: list[str] = field(default_factory=list)
     disabled_toolsets_schema_only: list[str] = field(default_factory=list)
     dangerous_tools_allowlist: list[str] = field(default_factory=list)
@@ -46,7 +48,8 @@ def _make_registry_with_tools():
     ]
     for name, toolset, dangerous, perm in schemas:
         spec = ToolSpec(
-            name=name, toolset=toolset,
+            name=name,
+            toolset=toolset,
             schema={"name": name, "description": name, "parameters": {}},
             handler=lambda a, t, n=name: json.dumps({"ok": True, "tool": n}),
             dangerous=dangerous,
@@ -79,7 +82,10 @@ async def test_disabled_toolsets_blocks_execute_tool():
     reg.set_tools_config_provider(lambda: cfg)
 
     res = await reg.execute_tool(
-        "computer_screenshot", params={}, session_id="t", task_id="t",
+        "computer_screenshot",
+        params={},
+        session_id="t",
+        task_id="t",
     )
     assert res["ok"] is False
     assert "disabled_toolsets" in res["error"]
@@ -106,7 +112,10 @@ async def test_schema_only_disabled_allows_execute_tool():
     reg.set_tools_config_provider(lambda: cfg)
 
     res = await reg.execute_tool(
-        "computer_screenshot", params={}, session_id="t", task_id="t",
+        "computer_screenshot",
+        params={},
+        session_id="t",
+        task_id="t",
     )
     # 工具被允许调（结果是 ok=True 因为 handler return ok）
     assert res["ok"] is True
@@ -163,7 +172,8 @@ async def test_default_timeout_seconds_applied_when_spec_unset():
     # 用一个 spec 默认 timeout=60；cfg 设 default=0.05 (50ms) 应该不影响
     # 因为 spec.timeout_seconds=60 显式 > 0.05
     spec = ToolSpec(
-        name="slow", toolset="test",
+        name="slow",
+        toolset="test",
         schema={"name": "slow", "description": "x", "parameters": {}},
         handler=_slow_handler,
         timeout_seconds=60.0,  # 显式配 — 不被 cfg 覆盖
@@ -185,6 +195,7 @@ async def test_default_timeout_seconds_applied_when_spec_unset():
 def test_tools_config_has_all_5_v3_fields():
     """WI-T5.1 v3：backend/config.py:ToolsConfig 必须有 5 新字段."""
     from config import ToolsConfig
+
     cfg = ToolsConfig()
     # 5 字段必须存在 + 默认值正确
     assert cfg.disabled_toolsets == []
@@ -192,5 +203,3 @@ def test_tools_config_has_all_5_v3_fields():
     assert cfg.dangerous_tools_allowlist == []
     assert cfg.default_timeout_seconds == 60.0
     assert not hasattr(cfg, "strict_unknown_toolset")  # 2026-09-28 无读取方，已删
-
-

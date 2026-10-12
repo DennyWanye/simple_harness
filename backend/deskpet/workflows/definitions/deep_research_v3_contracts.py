@@ -24,10 +24,16 @@ class BranchBudgetState:
     deadline_at: float = 0.0
 
     def __post_init__(self) -> None:
-        if any(value < 0 for value in (
-            self.query_remaining, self.url_remaining, self.fetch_remaining,
-            self.llm_remaining, self.engine_retry_limit,
-        )):
+        if any(
+            value < 0
+            for value in (
+                self.query_remaining,
+                self.url_remaining,
+                self.fetch_remaining,
+                self.llm_remaining,
+                self.engine_retry_limit,
+            )
+        ):
             raise ValueError("branch budgets must be non-negative")
 
     def to_json(self) -> dict[str, JsonValue]:
@@ -247,7 +253,16 @@ def canonical_url(value: str) -> str:
 
 
 __all__ = [
-    "BRANCH_IDS", "BRANCH_STAGES", "AtomicClaim", "BranchBudgetState",
-    "BranchWorkItem", "ClaimKind", "EvidencePassage", "PublishDecision",
-    "SupportDecision", "branch_patch", "canonical_url", "no_op_patch",
+    "BRANCH_IDS",
+    "BRANCH_STAGES",
+    "AtomicClaim",
+    "BranchBudgetState",
+    "BranchWorkItem",
+    "ClaimKind",
+    "EvidencePassage",
+    "PublishDecision",
+    "SupportDecision",
+    "branch_patch",
+    "canonical_url",
+    "no_op_patch",
 ]

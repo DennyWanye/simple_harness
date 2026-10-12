@@ -163,6 +163,7 @@ async def test_startup_registers_runtime_but_disables_legacy_tool_starter(monkey
             return {"run_id": "ppt-run"}
 
     launcher = Launcher()
+
     class _NoopLock:
         async def __aenter__(self):
             return self
@@ -201,11 +202,7 @@ async def test_ppt_context_uses_frozen_run_provider_plan(monkeypatch) -> None:
     captured = {}
     entry = SimpleNamespace(id="local-ollama", enabled=False)
     record = SimpleNamespace(
-        spec=SimpleNamespace(
-            context=SimpleNamespace(
-                provider_plan={"providers": ["local-ollama"]}
-            )
-        )
+        spec=SimpleNamespace(context=SimpleNamespace(provider_plan={"providers": ["local-ollama"]}))
     )
 
     class ExecutionUow:
@@ -290,9 +287,7 @@ def test_startup_flags_do_not_disable_durable_workflow(
     monkeypatch.setattr(
         main.service_context,
         "get",
-        lambda name: SimpleNamespace(launcher=Launcher())
-        if name == "workflow_service"
-        else None,
+        lambda name: SimpleNamespace(launcher=Launcher()) if name == "workflow_service" else None,
     )
     monkeypatch.setattr(
         main.config,

@@ -45,18 +45,31 @@ def test_the_action_proposal_review_carries_the_approved_completion_spec(tmp_pat
             spec_id, spec_hash = str(scope["spec_id"]), str(scope["spec_hash"])
             rows = case.store.connection.execute(
                 "SELECT binding_json FROM assurance_review_bindings WHERE mission_id=?",
-                (case.mission_id,)).fetchall()
-            proposals = [json.loads(row[0]) for row in rows
-                         if json.loads(row[0])["subject"]["purpose"] == "ACTION_PROPOSAL"]
+                (case.mission_id,),
+            ).fetchall()
+            proposals = [
+                json.loads(row[0])
+                for row in rows
+                if json.loads(row[0])["subject"]["purpose"] == "ACTION_PROPOSAL"
+            ]
             assert proposals, "no ACTION_PROPOSAL review was prepared"
             for binding in proposals:
-                specs = [entry["ref"] for entry in binding["evidence_catalogue"]
-                         if entry["ref"]["kind"] == "completion_spec"]
-                assert specs == [{"kind": "completion_spec",
-                                  "pin": {"id": spec_id, "revision": 0, "content_hash": spec_hash}}]
+                specs = [
+                    entry["ref"]
+                    for entry in binding["evidence_catalogue"]
+                    if entry["ref"]["kind"] == "completion_spec"
+                ]
+                assert specs == [
+                    {
+                        "kind": "completion_spec",
+                        "pin": {"id": spec_id, "revision": 0, "content_hash": spec_hash},
+                    }
+                ]
             # 引用经 OCC 读者精确读回：正文就是那一份已批准的规格。
             reader = AssuranceReader(case.store, tenant_id=TENANT, mission_id=case.mission_id)
-            resolved = reader.read_exact_metadata(AssuranceRef("completion_spec", Pin(spec_id, 0, spec_hash)))
+            resolved = reader.read_exact_metadata(
+                AssuranceRef("completion_spec", Pin(spec_id, 0, spec_hash))
+            )
             assert fingerprint(json.loads(resolved.body_json)) == spec_hash
             assert resolved.issuer == "operation_completion_specs"
 

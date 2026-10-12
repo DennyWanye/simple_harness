@@ -22,4 +22,10 @@ def register_v2_workflows(registry: WorkflowRegistry) -> None:
     registry.register(DEEP_RESEARCH_V2)
 
 
-__all__ = ["DEFAULT_DEEP_RESEARCH_VERSION", "DEEP_RESEARCH_V2", "DEEP_RESEARCH_V2_DEFINITION", "deep_research_initial_state", "register_v2_workflows"]
+__all__ = [
+    "DEFAULT_DEEP_RESEARCH_VERSION",
+    "DEEP_RESEARCH_V2",
+    "DEEP_RESEARCH_V2_DEFINITION",
+    "deep_research_initial_state",
+    "register_v2_workflows",
+]

@@ -9,6 +9,7 @@ Permission category: ``write_file``.
 P5-S2 Phase 0: error responses now include ``ok: false`` + ``hint``
 + ``examples``. Legacy ``error`` strings preserved.
 """
+
 from __future__ import annotations
 
 import difflib
@@ -66,9 +67,7 @@ def _whitespace_fallback(
         return None
 
     file_lines = text.split("\n")
-    matches = [
-        idx for idx, line in enumerate(file_lines) if line.strip() == target
-    ]
+    matches = [idx for idx, line in enumerate(file_lines) if line.strip() == target]
     if len(matches) != 1:
         return None
 
@@ -123,9 +122,7 @@ def _did_you_mean_error(path: str, old: str, file_lines: list[str]) -> str:
         "未精确命中；见 did_you_mean 最相近行",
         path=path,
         matched_by="none",
-        did_you_mean=[
-            {"line": file_lines.index(cand) + 1, "text": cand} for cand in cands
-        ],
+        did_you_mean=[{"line": file_lines.index(cand) + 1, "text": cand} for cand in cands],
     )
 
 
@@ -160,7 +157,7 @@ def edit_file(
         return _err(
             "path required",
             "edit_file 的 path 字段必填，必须是已存在文件的路径。"
-            "例如 {\"path\": \"main.py\", \"old_string\": \"a\", \"new_string\": \"b\"}。",
+            '例如 {"path": "main.py", "old_string": "a", "new_string": "b"}。',
         )
     if not isinstance(old, str) or not old:
         return _err(
@@ -266,8 +263,7 @@ def edit_file(
     except OSError as exc:
         return _err(
             f"OSError: {exc}",
-            f"写回 {path} 时操作系统报错。"
-            "常见原因：权限不足、磁盘已满、文件被其它进程占用。",
+            f"写回 {path} 时操作系统报错。常见原因：权限不足、磁盘已满、文件被其它进程占用。",
             path=path,
         )
 

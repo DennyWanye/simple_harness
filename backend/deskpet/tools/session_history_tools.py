@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 """Exact, session-bound page-in tool for Context OS coverage references."""
+
 from __future__ import annotations
 
 import inspect
@@ -243,9 +244,8 @@ def build_run_details_inspect_handler(
         final_response = ""
         for row in rows:
             event_id = str(row.get("workflow_event_id") or "")
-            if (
-                row.get("projection_kind") == "workflow_progress"
-                and event_id.startswith("reasoning-summary:")
+            if row.get("projection_kind") == "workflow_progress" and event_id.startswith(
+                "reasoning-summary:"
             ):
                 summaries.append(
                     {
@@ -275,11 +275,7 @@ def build_run_details_inspect_handler(
                             raw_arguments = json.loads(raw_arguments)
                         except (TypeError, ValueError, json.JSONDecodeError):
                             raw_arguments = {}
-                    arguments = (
-                        dict(raw_arguments)
-                        if isinstance(raw_arguments, Mapping)
-                        else {}
-                    )
+                    arguments = dict(raw_arguments) if isinstance(raw_arguments, Mapping) else {}
                     if call_id:
                         call_names[call_id] = name
                     tool_events.append(
@@ -287,9 +283,7 @@ def build_run_details_inspect_handler(
                             "kind": "call",
                             "call_id": call_id,
                             "tool_name": name,
-                            "arguments": project_public_tool_arguments(
-                                name, arguments
-                            ),
+                            "arguments": project_public_tool_arguments(name, arguments),
                             "created_at": row.get("created_at"),
                         }
                     )

@@ -33,9 +33,7 @@ async def test_close_timeout_cancels_children_and_leaves_no_companion_tasks(
         identity_namespace_hash="identity",
     )
     identity = IdentityReadyGate()
-    identity.bind(
-        FrozenOwnerIdentity(owner, "companion:shutdown:1", binding_epoch=1)
-    )
+    identity.bind(FrozenOwnerIdentity(owner, "companion:shutdown:1", binding_epoch=1))
     store.enqueue_job(
         owner,
         job_id="blocked",
@@ -72,8 +70,7 @@ async def test_close_timeout_cancels_children_and_leaves_no_companion_tasks(
     assert not [
         task.get_name()
         for task in asyncio.all_tasks()
-        if task is not asyncio.current_task()
-        and task.get_name().startswith("companion-")
+        if task is not asyncio.current_task() and task.get_name().startswith("companion-")
     ]
 
 
@@ -108,20 +105,17 @@ async def test_identity_unready_and_kill_switch_do_not_start_scheduler(
 
 def test_main_shutdown_order_closes_active_runtime_then_execution_uow() -> None:
     source = (Path(__file__).parents[2] / "main.py").read_text(encoding="utf-8")
-    runtime_close = source.index(
-        "await _companion_runtime_service.close(timeout=5.0)"
-    )
+    runtime_close = source.index("await _companion_runtime_service.close(timeout=5.0)")
     sdk_close = source.index("await _sdk_runtime_stack.close()")
     # Since ab36b6a52 the workflow service owns launcher + execution UoW
     # shutdown (WorkflowService.close joins the launcher, then the runner,
     # then releases its owned UoW); main.py closes that one owner.
-    workflow_close = source.index(
-        "await asyncio.wait_for(_workflow_service.close(), timeout=5.0)"
-    )
+    workflow_close = source.index("await asyncio.wait_for(_workflow_service.close(), timeout=5.0)")
     assert runtime_close < sdk_close < workflow_close
     coordinator_block = source[
-        source.index("profile_coordinator = ProfileBindingCoordinator(") :
-        source.index("_companion_runtime = companion_runtime")
+        source.index("profile_coordinator = ProfileBindingCoordinator(") : source.index(
+            "_companion_runtime = companion_runtime"
+        )
     ]
     assert "runtime=companion_runtime" in coordinator_block
     assert "runtime_start_enabled=True" in coordinator_block

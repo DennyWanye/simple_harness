@@ -33,7 +33,11 @@ def test_a01_authenticated_grant_binds_request_and_real_refine_commit_principal(
             return original(self, command, principal, **kwargs)
 
         monkeypatch.setattr(CommitService, "commit_planning_revision", observe_commit)
-        async with reviewed(tmp_path, key="h1h-a01") as ((loop, mission, _world, _root, dispatch, product), intent, _provider):
+        async with reviewed(tmp_path, key="h1h-a01") as (
+            (loop, mission, _world, _root, dispatch, product),
+            intent,
+            _provider,
+        ):
             issuer = product.deployment.principal
             request = PlanningDecisionStore(loop.store).get_planning_request(intent.intent_id)
             binding = PlanningAdmissionStore(loop.store).get_request_binding(intent.intent_id)

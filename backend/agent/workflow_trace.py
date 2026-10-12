@@ -230,9 +230,7 @@ class HarnessTraceSession:
         error: Any = None,
     ) -> None:
         try:
-            await self.store.finish_span(
-                span_id, status, output_ref=output_ref, error=error
-            )
+            await self.store.finish_span(span_id, status, output_ref=output_ref, error=error)
         except Exception as exc:  # noqa: BLE001
             raise TraceInstrumentationError(str(exc)) from exc
 

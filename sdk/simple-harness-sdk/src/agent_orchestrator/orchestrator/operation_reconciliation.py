@@ -42,12 +42,21 @@ class OperationReconciliationCommitsMixin:
             # Protocol interpretation is trusted adapter code, never caller proof fields.
             registered.verify(evidence, action=action, resolved=resolved, handoff_events=events)
             return self._store_scoped_observation(
-                action, data, dict(evidence.receipts),
+                action,
+                data,
+                dict(evidence.receipts),
                 runtime.profiles.resolve_connector_operation(
-                    action["connector"], action["operation"]).implementation_ref.to_json())
+                    action["connector"], action["operation"]
+                ).implementation_ref.to_json(),
+            )
 
-    def _store_scoped_observation(self, action: dict[str, Any], data: dict[str, Any],
-                                  raw_receipts: dict[str, Any], implementation_ref: Any) -> dict[str, Any]:
+    def _store_scoped_observation(
+        self,
+        action: dict[str, Any],
+        data: dict[str, Any],
+        raw_receipts: dict[str, Any],
+        implementation_ref: Any,
+    ) -> dict[str, Any]:
         """Write one validated observation onto the action, in the caller's transaction."""
         action_key = str(action["action_key"])
         receipt = {
@@ -71,9 +80,7 @@ class OperationReconciliationCommitsMixin:
         if action["state"] not in ("UNKNOWN", "FAILED") and not lapsed:
             raise ReconciliationProofError("action is not available for reconciliation")
         if lapsed:
-            action = self._resolve_action(
-                action, "UNKNOWN", error="lease_lapsed_without_outcome"
-            )
+            action = self._resolve_action(action, "UNKNOWN", error="lease_lapsed_without_outcome")
         self._store.insert_receipt(
             commit_id=receipt_id,
             kind=receipt["kind"],
@@ -113,8 +120,9 @@ class OperationReconciliationCommitsMixin:
         )
         return action
 
-    def record_human_nonapplication(self, action_key: str, *, override: dict[str, Any],
-                                    principal_id: str) -> dict[str, Any]:
+    def record_human_nonapplication(
+        self, action_key: str, *, override: dict[str, Any], principal_id: str
+    ) -> dict[str, Any]:
         """A person ruled an operation-linked action not applied: the ruling is the proof
         (阶段 B 裁决第 3 类), stored like any scoped proof so the operation gate opens.
         Called in the override's own transaction; no adapter is asked."""
@@ -132,26 +140,45 @@ class OperationReconciliationCommitsMixin:
         override_id = str(override["override_id"])
         ref = TypedRef(TypedRefKind.TOOL_RECEIPT, override_id, 1, content_hash_of(override))
         envelope = resolved.envelope
-        observation = ScopedReconciliationObservationV1.from_json({
-            "schema_version": 1, "action_key": action["action_key"], "action_version": action["version"],
-            "operation_id": str(envelope.operation_id),
-            "operation_occurrence_id": str(envelope.operation_occurrence_id),
-            "request_hash": str(envelope.request_hash), "params_hash": action["params_hash"],
-            "idempotency_key": action["idempotency_key"],
-            "connector_profile_hash": profile.content_hash(), "namespace": dict(profile.namespace),
-            "normalized_target_ref": action["target"],
-            "covered_handoff_ids": sorted(event.id for event in events),
-            "queried_at_ms": int(self._store.now * 1000),
-            "observation_receipt_ref": ref.to_json(), "observation_origin": "HUMAN_RULING",
-            "query_scope": {"namespace": dict(profile.namespace), "request_identity": action["idempotency_key"],
-                            "consistency_kind": "AUTHORITATIVE", "high_watermark": None},
-            "outcome": "NOT_APPLIED_FINAL",
-            "proof": {"kind": "HUMAN_RULED_NOT_APPLIED", "proof_id": override_id,
-                      "basis_receipt_refs": [ref.to_json()], "ruling_principal_id": str(principal_id),
-                      "override_receipt_ref": ref.to_json()},
-        })
-        evidence = ReconciliationEvidence(observation=observation, receipts={ref.id: dict(override)})
-        data = validate_evidence(evidence, action=action, resolved=resolved, profile=profile, events=events)
+        observation = ScopedReconciliationObservationV1.from_json(
+            {
+                "schema_version": 1,
+                "action_key": action["action_key"],
+                "action_version": action["version"],
+                "operation_id": str(envelope.operation_id),
+                "operation_occurrence_id": str(envelope.operation_occurrence_id),
+                "request_hash": str(envelope.request_hash),
+                "params_hash": action["params_hash"],
+                "idempotency_key": action["idempotency_key"],
+                "connector_profile_hash": profile.content_hash(),
+                "namespace": dict(profile.namespace),
+                "normalized_target_ref": action["target"],
+                "covered_handoff_ids": sorted(event.id for event in events),
+                "queried_at_ms": int(self._store.now * 1000),
+                "observation_receipt_ref": ref.to_json(),
+                "observation_origin": "HUMAN_RULING",
+                "query_scope": {
+                    "namespace": dict(profile.namespace),
+                    "request_identity": action["idempotency_key"],
+                    "consistency_kind": "AUTHORITATIVE",
+                    "high_watermark": None,
+                },
+                "outcome": "NOT_APPLIED_FINAL",
+                "proof": {
+                    "kind": "HUMAN_RULED_NOT_APPLIED",
+                    "proof_id": override_id,
+                    "basis_receipt_refs": [ref.to_json()],
+                    "ruling_principal_id": str(principal_id),
+                    "override_receipt_ref": ref.to_json(),
+                },
+            }
+        )
+        evidence = ReconciliationEvidence(
+            observation=observation, receipts={ref.id: dict(override)}
+        )
+        data = validate_evidence(
+            evidence, action=action, resolved=resolved, profile=profile, events=events
+        )
         return self._store_scoped_observation(action, data, {ref.id: dict(override)}, None)
 
     def record_reconciliation_unavailable(self, action_key: str) -> dict[str, Any]:
@@ -168,15 +195,25 @@ class OperationReconciliationCommitsMixin:
             fields: dict[str, Any] = {"reconcile_unavailable": count}
             marked = count >= NON_MODEL_FAILURE_CAP
             if marked:
-                fields.update(needs_human=True, reconcile="STILL_UNKNOWN",
-                              reconcile_note="proof_unavailable_after_retries")
+                fields.update(
+                    needs_human=True,
+                    reconcile="STILL_UNKNOWN",
+                    reconcile_note="proof_unavailable_after_retries",
+                )
             updated = self._update_action(action_key, **fields)
             # 每一轮读不到证明都是这个动作的事实（到上限转人工更是）：留事件，不静默改动作行
             # （阶段 G 收尾大语料）
-            self._emit("ActionReconciliationUnavailable", str(action["mission_id"]),
-                       key=f"{action_key}:{count}",
-                       payload={"action_id": str(action["action_id"]), "action_key": action_key,
-                                "count": count, "marked_for_person": marked})
+            self._emit(
+                "ActionReconciliationUnavailable",
+                str(action["mission_id"]),
+                key=f"{action_key}:{count}",
+                payload={
+                    "action_id": str(action["action_id"]),
+                    "action_key": action_key,
+                    "count": count,
+                    "marked_for_person": marked,
+                },
+            )
             return updated
 
     def finish_proven_nonapplication(

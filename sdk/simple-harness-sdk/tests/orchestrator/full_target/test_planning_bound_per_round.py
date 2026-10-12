@@ -23,9 +23,11 @@ from agent_orchestrator.orchestrator.event_handler import (
 
 
 def _count(*events: tuple[str, dict]) -> int:
-    store = SimpleNamespace(list_events=lambda mission_id: [
-        SimpleNamespace(type=kind, payload=payload) for kind, payload in events
-    ])
+    store = SimpleNamespace(
+        list_events=lambda mission_id: [
+            SimpleNamespace(type=kind, payload=payload) for kind, payload in events
+        ]
+    )
     return Orchestrator._planning_attempts(SimpleNamespace(store=store), "m1")
 
 
@@ -36,12 +38,16 @@ def test_refusals_before_the_first_commit_count_as_before() -> None:
 
 
 def test_a_committed_decision_starts_the_next_question_at_zero() -> None:
-    assert _count(
-        ("PlanningRejected", {}), ("PlanningRejected", {}),
-        ("PlanningDecisionEvaluated", {"status": "COMMITTED"}),
-        ("PlanningRejected", {}),
-        ("PlanningDecisionEvaluated", {"status": "REJECTED"}),
-    ) == 1
+    assert (
+        _count(
+            ("PlanningRejected", {}),
+            ("PlanningRejected", {}),
+            ("PlanningDecisionEvaluated", {"status": "COMMITTED"}),
+            ("PlanningRejected", {}),
+            ("PlanningDecisionEvaluated", {"status": "REJECTED"}),
+        )
+        == 1
+    )
 
 
 def test_a_severity_in_another_case_is_that_severity() -> None:
@@ -52,14 +58,19 @@ def test_a_severity_in_another_case_is_that_severity() -> None:
 
 # 2026-09-28 真机：12 轮规划里 5 轮是模型服务端报错与重启打断（规划器没被听到），
 # 与答错一样扣次数，任务因"规划次数用完"失败。
-_NO_REPLY = ("PlanningRejected", {"reason": "proposal_unreadable", "detail": {"error": "x", "turn_failed": True}})
+_NO_REPLY = (
+    "PlanningRejected",
+    {"reason": "proposal_unreadable", "detail": {"error": "x", "turn_failed": True}},
+)
 _WRONG = ("PlanningRejected", {"reason": "proposal_not_grounded", "detail": {"error": "x"}})
 
 
 def _forgiven(*events: tuple[str, dict]) -> bool:
-    store = SimpleNamespace(list_events=lambda mission_id: [
-        SimpleNamespace(type=kind, payload=payload) for kind, payload in events
-    ])
+    store = SimpleNamespace(
+        list_events=lambda mission_id: [
+            SimpleNamespace(type=kind, payload=payload) for kind, payload in events
+        ]
+    )
     return Orchestrator._planner_turn_failure_forgiven(SimpleNamespace(store=store), "m1")
 
 
@@ -84,14 +95,21 @@ def test_the_grace_restarts_with_each_committed_decision() -> None:
 
 
 def test_only_a_turn_failure_is_marked() -> None:
-    assert planning_failure_detail(PlannerTurnFailed("planner turn failed: {}"), {"error": "e"}) == {
-        "error": "e", "turn_failed": True}
+    assert planning_failure_detail(
+        PlannerTurnFailed("planner turn failed: {}"), {"error": "e"}
+    ) == {"error": "e", "turn_failed": True}
     assert planning_failure_detail(ContractError("bad block"), {"error": "e"}) == {"error": "e"}
 
 
-def _reject(detail: dict, *, prior: list[tuple[str, dict]], format_retry_left: int = 0,
-            ladder_spent: bool = False, status: object = None,
-            owed: bool = True) -> list[tuple[str, object]]:
+def _reject(
+    detail: dict,
+    *,
+    prior: list[tuple[str, dict]],
+    format_retry_left: int = 0,
+    ladder_spent: bool = False,
+    status: object = None,
+    owed: bool = True,
+) -> list[tuple[str, object]]:
     import asyncio
 
     from agent_orchestrator.orchestrator.plan_commits import (
@@ -110,15 +128,20 @@ def _reject(detail: dict, *, prior: list[tuple[str, dict]], format_retry_left: i
         list_events=lambda mission_id: [SimpleNamespace(type=k, payload=p) for k, p in events],
     )
     fake._note = lambda text: None
-    fake.commit = SimpleNamespace(record_planning_rejected=lambda mission_id, **kw: events.append(
-        ("PlanningRejected", {"reason": kw["reason"], "detail": dict(kw["detail"])})))
+    fake.commit = SimpleNamespace(
+        record_planning_rejected=lambda mission_id, **kw: events.append(
+            ("PlanningRejected", {"reason": kw["reason"], "detail": dict(kw["detail"])})
+        )
+    )
     fake._after_handoff_zero_streak = {}
     fake._planning_format_retry_remaining = lambda **kw: format_retry_left
     fake._planning_ladder_spent = lambda mission_id: ladder_spent
     fake._planning_still_owed = lambda current: owed
     fake._planning_attempts = lambda mission_id: Orchestrator._planning_attempts(fake, mission_id)
     fake._next_planning_ordinal = lambda mission_id: 9
-    fake._planner_turn_failure_forgiven = lambda mission_id: Orchestrator._planner_turn_failure_forgiven(fake, mission_id)
+    fake._planner_turn_failure_forgiven = lambda mission_id: (
+        Orchestrator._planner_turn_failure_forgiven(fake, mission_id)
+    )
 
     async def reopen(mission_id, *, ordinal, phase):
         calls.append(("reopen", phase))
@@ -131,8 +154,12 @@ def _reject(detail: dict, *, prior: list[tuple[str, dict]], format_retry_left: i
     fake._try_planner_intent = first_plan
     fake._stop_planning_round = lambda mission_id, **kw: calls.append(("stop", kw["reason"]))
     fake._commit_fail_planning = lambda mission_id, **kw: calls.append(("fail", kw["reason"]))
-    intent = SimpleNamespace(mission_id="m1", config={"ordinal": 5, "planning_decision_attempt_ordinal": 1})
-    asyncio.run(Orchestrator._planning_rejected(fake, intent, reason="proposal_unreadable", detail=detail))
+    intent = SimpleNamespace(
+        mission_id="m1", config={"ordinal": 5, "planning_decision_attempt_ordinal": 1}
+    )
+    asyncio.run(
+        Orchestrator._planning_rejected(fake, intent, reason="proposal_unreadable", detail=detail)
+    )
     return calls
 
 
@@ -149,23 +176,35 @@ def test_no_reply_on_the_format_retry_asks_again_instead_of_ending_the_round() -
     # 没拿到回复不占同一请求的格式重问名额（2026-10-09 第 2 条）：下一问是新一轮
     assert _reject(no_reply, prior=[], format_retry_left=1) == [("reopen", "planning_ladder")]
     # 真正读不懂的第一次回答才用这个请求的格式重问
-    assert _reject({"error": "bad block", "rejection_codes": ["MALFORMED_DECISION"], "request_attempt_ordinal": 0},
-                   prior=[], format_retry_left=1) == [("reopen", "planning_format_retry")]
+    assert _reject(
+        {
+            "error": "bad block",
+            "rejection_codes": ["MALFORMED_DECISION"],
+            "request_attempt_ordinal": 0,
+        },
+        prior=[],
+        format_retry_left=1,
+    ) == [("reopen", "planning_format_retry")]
     assert _reject({"error": "bad block"}, prior=[]) == [("reopen", "planning_ladder")]
     # 分层任务首次规划也走同一个入口
     assert _reject({"error": "bad block"}, prior=[], status=MissionStatus.PLANNING) == [
-        ("reopen", "planning_ladder")]
+        ("reopen", "planning_ladder")
+    ]
     # 答错次数用完：已有计划且还欠着规划 → planning_attempts_exhausted；
     # 还在首次规划 → 以最后一次被拒的原因停；什么都不欠 → 带着现有计划继续
     assert _reject({"error": "bad block"}, prior=[], ladder_spent=True) == [
-        ("stop", "planning_attempts_exhausted")]
-    assert _reject({"error": "bad block"}, prior=[], ladder_spent=True,
-                   status=MissionStatus.PLANNING) == [("fail", "proposal_unreadable")]
+        ("stop", "planning_attempts_exhausted")
+    ]
+    assert _reject(
+        {"error": "bad block"}, prior=[], ladder_spent=True, status=MissionStatus.PLANNING
+    ) == [("fail", "proposal_unreadable")]
     assert _reject({"error": "bad block"}, prior=[], ladder_spent=True, owed=False) == []
     spent = [_NO_REPLY] * PLANNER_TURN_FAILURE_GRACE
     # 宽限用完：模型服务按不可用处理，连"全新请求"的格式重试也不再开（审阅 2026-09-28）
     assert _reject(no_reply, prior=spent) == [("stop", "planner_turn_failures_exhausted")]
-    assert _reject(no_reply, prior=spent, format_retry_left=1) == [("stop", "planner_turn_failures_exhausted")]
+    assert _reject(no_reply, prior=spent, format_retry_left=1) == [
+        ("stop", "planner_turn_failures_exhausted")
+    ]
 
 
 def test_an_unknown_blocker_code_is_other_with_the_model_words_kept() -> None:
@@ -174,17 +213,31 @@ def test_an_unknown_blocker_code_is_other_with_the_model_words_kept() -> None:
     item = BlockedItemV1.from_json({"code": "RUNTIME_UNAVAILABLE", "detail": "上次执行结果丢失"})
     assert item.code is BlockerCode.OTHER
     assert item.detail == "原因（模型原话）：RUNTIME_UNAVAILABLE；上次执行结果丢失"
-    assert BlockedItemV1.from_json({"code": "RUNTIME_UNAVAILABLE"}).detail == "原因（模型原话）：RUNTIME_UNAVAILABLE"
-    assert BlockedItemV1.from_json({"code": "capability_missing"}).code is BlockerCode.CAPABILITY_MISSING
+    assert (
+        BlockedItemV1.from_json({"code": "RUNTIME_UNAVAILABLE"}).detail
+        == "原因（模型原话）：RUNTIME_UNAVAILABLE"
+    )
+    assert (
+        BlockedItemV1.from_json({"code": "capability_missing"}).code
+        is BlockerCode.CAPABILITY_MISSING
+    )
     with pytest.raises(ContractError):
         BlockedItemV1.from_json({"code": 7})
     with pytest.raises(ContractError):
         BlockedItemV1.from_json({"code": "OTHER"})  # OTHER 本身仍须说明
 
 
-_EXHAUSTED = ("PlanningRejected", {"reason": "proposal_unreadable", "detail": {
-    "error": "上一轮有一次模型调用因输出上限（32768 个 token，其中思考 32768 个）停止，没有给出最终结果。",
-    "output_exhausted": True, "format_retry_remaining": 1}})
+_EXHAUSTED = (
+    "PlanningRejected",
+    {
+        "reason": "proposal_unreadable",
+        "detail": {
+            "error": "上一轮有一次模型调用因输出上限（32768 个 token，其中思考 32768 个）停止，没有给出最终结果。",
+            "output_exhausted": True,
+            "format_retry_remaining": 1,
+        },
+    },
+)
 
 
 def test_a_planner_turn_that_spent_its_output_on_thinking_counts_and_gets_no_format_retry() -> None:
@@ -194,13 +247,27 @@ def test_a_planner_turn_that_spent_its_output_on_thinking_counts_and_gets_no_for
     **Mutation**: drop ``output_exhausted`` from the ``format_retry`` condition → red."""
     assert _count(_EXHAUSTED, _EXHAUSTED) == 2
     assert _forgiven(_EXHAUSTED) is False
-    assert _reject(_EXHAUSTED[1]["detail"], prior=[], format_retry_left=1) == [("reopen", "planning_ladder")]
-    assert _reject(_EXHAUSTED[1]["detail"], prior=[], ladder_spent=True) == [("stop", "planning_attempts_exhausted")]
+    assert _reject(_EXHAUSTED[1]["detail"], prior=[], format_retry_left=1) == [
+        ("reopen", "planning_ladder")
+    ]
+    assert _reject(_EXHAUSTED[1]["detail"], prior=[], ladder_spent=True) == [
+        ("stop", "planning_attempts_exhausted")
+    ]
 
 
 def _unreadable(code: str, attempt: int, **extra: object) -> tuple[str, dict]:
-    return ("PlanningRejected", {"reason": "proposal_unreadable", "detail": {
-        "error": "x", "rejection_codes": [code], "request_attempt_ordinal": attempt, **extra}})
+    return (
+        "PlanningRejected",
+        {
+            "reason": "proposal_unreadable",
+            "detail": {
+                "error": "x",
+                "rejection_codes": [code],
+                "request_attempt_ordinal": attempt,
+                **extra,
+            },
+        },
+    )
 
 
 def test_the_first_unreadable_answer_of_a_request_is_a_free_reask_the_second_counts() -> None:
@@ -213,4 +280,7 @@ def test_the_first_unreadable_answer_of_a_request_is_a_free_reask_the_second_cou
     assert _count(_unreadable("DECISION_BLOCK_MISSING", 0), _WRONG) == 1
     assert _count(_unreadable("PARAMETER_INVALID", 0)) == 1  # 内容不成立：不是免扣的码
     assert _count(_unreadable("DECISION_BLOCK_MISSING", 0, output_exhausted=True)) == 1
-    assert _count(("PlanningRejected", {"reason": "proposal_unreadable", "detail": {"error": "x"}})) == 1  # 没带码：照算
+    assert (
+        _count(("PlanningRejected", {"reason": "proposal_unreadable", "detail": {"error": "x"}}))
+        == 1
+    )  # 没带码：照算

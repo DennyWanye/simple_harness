@@ -79,10 +79,7 @@ def _normalize_refs(
     allow_tree: bool,
 ) -> tuple[str, ...]:
     result = tuple(
-        dict.fromkeys(
-            _normalized_ref(workspace, value, allow_tree=allow_tree)
-            for value in values
-        )
+        dict.fromkeys(_normalized_ref(workspace, value, allow_tree=allow_tree) for value in values)
     )
     return tuple(sorted(result))
 
@@ -111,9 +108,7 @@ def _workspace_digest(
                 continue
             path = base / name
             relative = path.relative_to(workspace).as_posix()
-            if _is_ignored(relative) or any(
-                _matches_ref(relative, ref) for ref in mutable_refs
-            ):
+            if _is_ignored(relative) or any(_matches_ref(relative, ref) for ref in mutable_refs):
                 continue
             if path.is_symlink():
                 digest.update(relative.encode("utf-8"))
@@ -126,9 +121,7 @@ def _workspace_digest(
         for name in sorted(files):
             path = base / name
             relative = path.relative_to(workspace).as_posix()
-            if _is_ignored(relative) or any(
-                _matches_ref(relative, ref) for ref in mutable_refs
-            ):
+            if _is_ignored(relative) or any(_matches_ref(relative, ref) for ref in mutable_refs):
                 continue
             digest.update(relative.encode("utf-8"))
             digest.update(b"\0")
@@ -297,9 +290,7 @@ class TaskOutputContractV1:
             elif output.is_symlink() or not output.is_file():
                 invalid_outputs.append(ref)
         retained_scratch = [
-            ref
-            for ref in self.scratch_refs
-            if (workspace / ref.rstrip("/")).exists()
+            ref for ref in self.scratch_refs if (workspace / ref.rstrip("/")).exists()
         ]
         current_digest = _workspace_digest(
             workspace,

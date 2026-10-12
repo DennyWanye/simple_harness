@@ -14,8 +14,19 @@ def _batch() -> EvidenceFactBatchV1:
     policy_refs = {
         key: "sha256:" + format(index + 1, "064x")
         for index, key in enumerate(
-            ("compiler", "route", "extraction", "llm_extract", "llm_repair",
-             "llm_inference", "admission", "inference", "assessment", "claim", "quality")
+            (
+                "compiler",
+                "route",
+                "extraction",
+                "llm_extract",
+                "llm_repair",
+                "llm_inference",
+                "admission",
+                "inference",
+                "assessment",
+                "claim",
+                "quality",
+            )
         )
     }
     return EvidenceFactBatchV1.create(

@@ -85,9 +85,7 @@ def _span() -> EvidenceSpanRef:
 
 
 def _applicability() -> ProcedureApplicabilityContext:
-    return ProcedureApplicabilityContext(
-        "tool.publish", "macos", "1.2.3", "e" * 64
-    )
+    return ProcedureApplicabilityContext("tool.publish", "macos", "1.2.3", "e" * 64)
 
 
 def _procedure_intent(**changes: object) -> ProcedureObservationIntent:
@@ -161,9 +159,10 @@ def test_procedure_authority_is_ref_only_exact_once_and_round_trips_strictly() -
         )
     )
     assert applicability.fingerprint == expected
-    assert asyncio.run(
-        verify_procedure_observation_authority(reference, port, current_time=10.0)
-    ) is authority
+    assert (
+        asyncio.run(verify_procedure_observation_authority(reference, port, current_time=10.0))
+        is authority
+    )
     assert port.calls == 1
     assert ProcedureObservationIntent.from_json(intent.to_json()) == intent
     assert ProcedureObservationAuthority.from_json(authority.to_json()) == authority
@@ -181,9 +180,7 @@ def test_procedure_authority_is_ref_only_exact_once_and_round_trips_strictly() -
     "current_time, message",
     ((9.999, "not yet valid"), (20.0, "expired"), (21.0, "expired")),
 )
-def test_procedure_authority_time_window_is_half_open(
-    current_time: float, message: str
-) -> None:
+def test_procedure_authority_time_window_is_half_open(current_time: float, message: str) -> None:
     _, authority, reference = _procedure_authority()
     with pytest.raises(ValueError, match=message):
         asyncio.run(
@@ -347,9 +344,10 @@ def test_prospective_authority_is_ref_only_exact_once_and_round_trips_strictly()
     port = _ProspectiveAuthorityPort(authority)
     assert PROSPECTIVE_SIGNAL_AUTHORITY_SCHEMA_VERSION == 1
     assert prospective_trigger_hash(intent.trigger) == intent.trigger_hash
-    assert asyncio.run(
-        verify_prospective_signal_authority(reference, port, current_time=10.0)
-    ) is authority
+    assert (
+        asyncio.run(verify_prospective_signal_authority(reference, port, current_time=10.0))
+        is authority
+    )
     assert port.calls == 1
     assert ProspectiveSignalIntent.from_json(intent.to_json()) == intent
     assert ProspectiveSignalAuthority.from_json(authority.to_json()) == authority
@@ -475,22 +473,41 @@ def test_lifecycle_authority_contracts_are_public() -> None:
 
 def test_rescheduled_time_authority_persisted_roundtrip_and_exact_rejections(tmp_path) -> None:
     import json
+
     intent = _prospective_intent(transition_from=ProspectiveLifecycleState.RESCHEDULED)
-    authority = issue_prospective_signal_authority(intent, authority_id="rescheduled-time-1",
-        issued_at=100.0, expires_at=120.0, nonce="rescheduled-time-nonce", issuer_ref="host:prospective-time/v1")
+    authority = issue_prospective_signal_authority(
+        intent,
+        authority_id="rescheduled-time-1",
+        issued_at=100.0,
+        expires_at=120.0,
+        nonce="rescheduled-time-nonce",
+        issuer_ref="host:prospective-time/v1",
+    )
     reference = ProspectiveSignalAuthorityRef.from_authority(authority)
     path = tmp_path / "authority.json"
-    path.write_text(json.dumps({"authority": authority.to_json(), "reference": reference.to_json()}))
+    path.write_text(
+        json.dumps({"authority": authority.to_json(), "reference": reference.to_json()})
+    )
     saved = json.loads(path.read_text())
     restored = ProspectiveSignalAuthority.from_json(saved["authority"])
     restored_ref = ProspectiveSignalAuthorityRef.from_json(saved["reference"])
     assert restored == authority
     assert restored_ref == reference
     assert restored.intent.transition_from is ProspectiveLifecycleState.RESCHEDULED
-    assert asyncio.run(verify_prospective_signal_authority(restored_ref,
-        _ProspectiveAuthorityPort(restored), current_time=101.0)) == authority
-    for state in (ProspectiveLifecycleState.TRIGGERED, ProspectiveLifecycleState.COMPLETED,
-                  ProspectiveLifecycleState.CANCELLED, ProspectiveLifecycleState.EXPIRED):
+    assert (
+        asyncio.run(
+            verify_prospective_signal_authority(
+                restored_ref, _ProspectiveAuthorityPort(restored), current_time=101.0
+            )
+        )
+        == authority
+    )
+    for state in (
+        ProspectiveLifecycleState.TRIGGERED,
+        ProspectiveLifecycleState.COMPLETED,
+        ProspectiveLifecycleState.CANCELLED,
+        ProspectiveLifecycleState.EXPIRED,
+    ):
         with pytest.raises(ValueError, match="time_due must bind"):
             replace(intent, transition_from=state)
     with pytest.raises(ValueError, match="time_due must bind"):
@@ -498,7 +515,7 @@ def test_rescheduled_time_authority_persisted_roundtrip_and_exact_rejections(tmp
     with pytest.raises(ValueError, match="observed_at precedes"):
         replace(intent, observed_at=99.0)
     with pytest.raises(ValueError, match="cannot carry acknowledgement outbox"):
-        replace(intent, outbox_id="not-a-timer", outbox_payload_hash="0"*64)
+        replace(intent, outbox_id="not-a-timer", outbox_payload_hash="0" * 64)
     changed = authority.to_json()
     changed["intent"]["transition_from"] = "pending"
     with pytest.raises(ValueError):

@@ -18,8 +18,12 @@ DROPPED = {
     "budget_accounts": {"reserved_cost_micros", "settled_cost_micros", "unpriced_settlements"},
     "budget_reservations": {"reserved_cost_micros", "settled_cost_micros", "unpriced"},
     "imported_usage": {"cost_micros", "unpriced"},
-    "provider_token_grants": {"price_json", "price_digest", "cost_upper_micros",
-                              "actual_cost_micros"},
+    "provider_token_grants": {
+        "price_json",
+        "price_digest",
+        "cost_upper_micros",
+        "actual_cost_micros",
+    },
     "obligations": {"spent_cost_micros"},
 }
 TRIGGER = "assurance_source_obligations_update"
@@ -60,17 +64,13 @@ def test_published_migration_text_is_unchanged() -> None:
     assert "unpriced_settlements" in texts[1] and "cost_upper_micros" in texts[13]
     assert "spent_cost_micros" in texts[16]
     assert "OR NEW.spent_cost_micros IS NOT OLD.spent_cost_micros" in texts[26]
-    rebuilt = texts[38][texts[38].index(f"CREATE TRIGGER {TRIGGER}"):]
-    original = texts[26][texts[26].index(f"CREATE TRIGGER {TRIGGER}"):]
+    rebuilt = texts[38][texts[38].index(f"CREATE TRIGGER {TRIGGER}") :]
+    original = texts[26][texts[26].index(f"CREATE TRIGGER {TRIGGER}") :]
     original = original[: original.index("\n END;\n") + len("\n END;\n")]
-    assert rebuilt == original.replace(
-        " OR NEW.spent_cost_micros IS NOT OLD.spent_cost_micros", ""
-    )
+    assert rebuilt == original.replace(" OR NEW.spent_cost_micros IS NOT OLD.spent_cost_micros", "")
 
 
-def test_a_version_37_library_opens_and_loses_exactly_those_columns(
-    tmp_path, monkeypatch
-) -> None:
+def test_a_version_37_library_opens_and_loses_exactly_those_columns(tmp_path, monkeypatch) -> None:
     path = tmp_path / "orchestrator.db"
     with monkeypatch.context() as patch:
         patch.setattr(schema, "MIGRATIONS", schema.MIGRATIONS[:37])
@@ -110,7 +110,9 @@ def test_a_version_37_library_opens_and_loses_exactly_those_columns(
         assert connection.execute(
             "SELECT usage_ref,input_tokens,output_tokens,unknown FROM imported_usage"
         ).fetchall() == [("u1", 3, 4, 0)]
-        assert max(row[0] for row in connection.execute(
-            "SELECT version FROM orch_schema_migrations")) == 38
+        assert (
+            max(row[0] for row in connection.execute("SELECT version FROM orch_schema_migrations"))
+            == 38
+        )
     finally:
         connection.close()

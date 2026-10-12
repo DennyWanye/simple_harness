@@ -45,23 +45,33 @@ TRIGGER_EVENTS = frozenset({"AssuranceEvidenceChanged"})
 
 @cache
 def _inventory() -> Mapping[str, Any]:
-    return json.loads(resources.files("agent_orchestrator.observability")
-                      .joinpath("business_replay_inventory.json").read_text("utf-8"))["tables"]
+    return json.loads(
+        resources.files("agent_orchestrator.observability")
+        .joinpath("business_replay_inventory.json")
+        .read_text("utf-8")
+    )["tables"]
 
 
 @cache
 def named_tables() -> tuple[str, ...]:
     """Immutable business sources and the receipt log: their rows are named."""
 
-    return tuple(sorted(name for name, entry in _inventory().items()
-                        if entry.get("rebuild") == "immutable_source" or entry.get("named") is True))
+    return tuple(
+        sorted(
+            name
+            for name, entry in _inventory().items()
+            if entry.get("rebuild") == "immutable_source" or entry.get("named") is True
+        )
+    )
 
 
 @cache
 def folded_tables() -> tuple[str, ...]:
     """Tables that change (business and global): every change is logged with the whole row."""
 
-    return tuple(sorted(name for name, entry in _inventory().items() if entry.get("rebuild") == "fold"))
+    return tuple(
+        sorted(name for name, entry in _inventory().items() if entry.get("rebuild") == "fold")
+    )
 
 
 def owner_rule(table: str) -> Mapping[str, str] | None:
@@ -78,10 +88,12 @@ def replay_scope_digest() -> str:
         return resources.files(package).joinpath(name).read_bytes()
 
     parts = [
-        hashlib.sha256(read("agent_orchestrator.observability",
-                            "business_replay_inventory.json")).hexdigest(),
-        hashlib.sha256(read("agent_orchestrator.graph",
-                            "network_codec_manifest_v5.json")).hexdigest(),
+        hashlib.sha256(
+            read("agent_orchestrator.observability", "business_replay_inventory.json")
+        ).hexdigest(),
+        hashlib.sha256(
+            read("agent_orchestrator.graph", "network_codec_manifest_v5.json")
+        ).hexdigest(),
     ]
     return hashlib.sha256(":".join(parts).encode("ascii")).hexdigest()
 
@@ -98,8 +110,10 @@ def _columns(connection: sqlite3.Connection, table: str) -> list[str]:
 def install(connection: sqlite3.Connection) -> None:
     """Per-connection temporary bookkeeping; nothing is written to the main database."""
 
-    live = {row[0] for row in connection.execute(
-        "SELECT name FROM main.sqlite_master WHERE type='table'")}
+    live = {
+        row[0]
+        for row in connection.execute("SELECT name FROM main.sqlite_master WHERE type='table'")
+    }
     ignored = ",".join(f"'{kind}'" for kind in sorted({EVENT_TYPE, *TRIGGER_EVENTS}))
     script = [
         "CREATE TEMP TABLE IF NOT EXISTS rows_named(tbl TEXT NOT NULL, rid INTEGER NOT NULL)",
@@ -114,7 +128,8 @@ def install(connection: sqlite3.Connection) -> None:
         if table in live:
             script.append(
                 f"CREATE TEMP TRIGGER IF NOT EXISTS rows_named_{table} AFTER INSERT ON main.{table}"
-                f" BEGIN INSERT INTO temp.rows_named VALUES ('{table}', NEW.rowid); END")
+                f" BEGIN INSERT INTO temp.rows_named VALUES ('{table}', NEW.rowid); END"
+            )
     for table in folded_tables():
         if table not in live:
             continue
@@ -126,10 +141,13 @@ def install(connection: sqlite3.Connection) -> None:
 
         touched = f"SELECT 1 FROM temp.rows_touched WHERE tbl='{table}' AND key={{}}"
         old_image = ",".join(f"OLD.{column}" for column in columns)
+
         # 触发器里不用 OR IGNORE：外层语句（如 upsert）的冲突策略会盖过触发器里的，写成"不存在才插"
         def mark(alias: str, existed: int) -> str:
-            return (f"INSERT INTO temp.rows_touched SELECT '{table}', {key(alias)}, {existed}"
-                    f" WHERE NOT EXISTS ({touched.format(key(alias))});")
+            return (
+                f"INSERT INTO temp.rows_touched SELECT '{table}', {key(alias)}, {existed}"
+                f" WHERE NOT EXISTS ({touched.format(key(alias))});"
+            )
 
         script += [
             f"CREATE TEMP TABLE IF NOT EXISTS shadow_{table} AS SELECT * FROM main.{table} WHERE 0",
@@ -137,12 +155,16 @@ def install(connection: sqlite3.Connection) -> None:
             f" BEGIN {mark('NEW', 0)} END",
         ]
         for operation in ("UPDATE", "DELETE"):
-            body = (f"INSERT INTO temp.shadow_{table} SELECT {old_image}"
-                    f" WHERE NOT EXISTS ({touched.format(key('OLD'))}); {mark('OLD', 1)}")
+            body = (
+                f"INSERT INTO temp.shadow_{table} SELECT {old_image}"
+                f" WHERE NOT EXISTS ({touched.format(key('OLD'))}); {mark('OLD', 1)}"
+            )
             if operation == "UPDATE":
                 body += f" {mark('NEW', 0)}"
-            script.append(f"CREATE TEMP TRIGGER IF NOT EXISTS rows_{operation.lower()}_{table}"
-                          f" AFTER {operation} ON main.{table} BEGIN {body} END")
+            script.append(
+                f"CREATE TEMP TRIGGER IF NOT EXISTS rows_{operation.lower()}_{table}"
+                f" AFTER {operation} ON main.{table} BEGIN {body} END"
+            )
     connection.executescript(";\n".join(script) + ";")
 
 
@@ -198,7 +220,8 @@ def owner_of(connection: sqlite3.Connection, table: str, content: Mapping[str, A
     if "table" not in rule:  # the column itself names the Mission (``origin_mission_id``)
         return None if value is None else str(value)
     found = connection.execute(
-        f"SELECT mission_id FROM main.{rule['table']} WHERE {rule['key']}=?", (value,)).fetchone()
+        f"SELECT mission_id FROM main.{rule['table']} WHERE {rule['key']}=?", (value,)
+    ).fetchone()
     return None if found is None else str(found[0])
 
 
@@ -226,9 +249,11 @@ def record_written_rows(store: Store, connection: sqlite3.Connection) -> None:
     fallback = next(iter(tx_events)) if len(tx_events) == 1 else DEPLOYMENT_TIMELINE
     named: dict[str, list[dict[str, Any]]] = {}
     for table, rid in connection.execute(
-            "SELECT tbl, rid FROM temp.rows_named ORDER BY rowid").fetchall():
+        "SELECT tbl, rid FROM temp.rows_named ORDER BY rowid"
+    ).fetchall():
         row = connection.execute(
-            f"SELECT rowid, * FROM main.{table} WHERE rowid=?", (rid,)).fetchone()
+            f"SELECT rowid, * FROM main.{table} WHERE rowid=?", (rid,)
+        ).fetchone()
         if row is None:  # inserted and removed in the same transaction: nothing stands to name
             continue
         key, digest = row_identity(connection, table, row)
@@ -241,14 +266,22 @@ def record_written_rows(store: Store, connection: sqlite3.Connection) -> None:
         named.setdefault(owner, []).append({"table": table, "key": key, "content_hash": digest})
     changed: dict[str, list[dict[str, Any]]] = {}
     for table, key_json, existed in connection.execute(
-            "SELECT tbl, key, existed FROM temp.rows_touched ORDER BY rowid").fetchall():
+        "SELECT tbl, key, existed FROM temp.rows_touched ORDER BY rowid"
+    ).fetchall():
         keys = primary_key(connection, table)
         columns = _columns(connection, table)
         values = json.loads(key_json)
         where = " AND ".join(f"{name} IS ?" for name in keys)
-        before_row = connection.execute(
-            f"SELECT * FROM temp.shadow_{table} WHERE {where}", values).fetchone() if existed else None
-        after_row = connection.execute(f"SELECT * FROM main.{table} WHERE {where}", values).fetchone()
+        before_row = (
+            connection.execute(
+                f"SELECT * FROM temp.shadow_{table} WHERE {where}", values
+            ).fetchone()
+            if existed
+            else None
+        )
+        after_row = connection.execute(
+            f"SELECT * FROM main.{table} WHERE {where}", values
+        ).fetchone()
         before = None if before_row is None else content_of(before_row, columns)
         after = None if after_row is None else content_of(after_row, columns)
         before_hash = None if before is None else content_hash(before)
@@ -258,26 +291,61 @@ def record_written_rows(store: Store, connection: sqlite3.Connection) -> None:
         owner = owner_of(connection, table, after or before or {})
         if owner is None:
             raise StoreError(f"ROWS_WRITTEN_OWNER_UNKNOWN: {table} {key_json}")
-        changed.setdefault(owner, []).append({
-            "table": table, "key": dict(zip(keys, values, strict=True)),
-            "before": before_hash, "after": after_hash, "row": after})
+        changed.setdefault(owner, []).append(
+            {
+                "table": table,
+                "key": dict(zip(keys, values, strict=True)),
+                "before": before_hash,
+                "after": after_hash,
+                "row": after,
+            }
+        )
     begin(connection)
     seq = int(connection.execute("SELECT coalesce(max(seq), 0) FROM events").fetchone()[0])
     for mission_id in sorted(set(named) | set(changed)):
         # 全局表的改动由某个任务的动作或部署命令引起：本事务里任何一条领域事件都算它的信号
-        signals = (set().union(*tx_events.values()) if mission_id == DEPLOYMENT_TIMELINE and tx_events
-                   else tx_events.get(mission_id, ()))
-        payload = {"named": named.get(mission_id, []), "changed": changed.get(mission_id, []),
-                   "with_events": sorted(signals)}
+        signals = (
+            set().union(*tx_events.values())
+            if mission_id == DEPLOYMENT_TIMELINE and tx_events
+            else tx_events.get(mission_id, ())
+        )
+        payload = {
+            "named": named.get(mission_id, []),
+            "changed": changed.get(mission_id, []),
+            "with_events": sorted(signals),
+        }
         digest = content_hash({"mission_id": mission_id, **payload})
         identity = f"rows-written:{mission_id}:{seq}:{digest}"
         connection.execute(
             "INSERT INTO events(event_id,idempotency_key,type,trace_id,mission_id,task_id,"
             "attempt_id,actor_type,actor_id,payload_json,created_at,schema_version)"
             " VALUES (?,?,?,?,?,NULL,NULL,'system','rows-written-v1',?,?,1)",
-            (identity, identity, EVENT_TYPE, identity, mission_id, canonical_json(payload), store.now))
+            (
+                identity,
+                identity,
+                EVENT_TYPE,
+                identity,
+                mission_id,
+                canonical_json(payload),
+                store.now,
+            ),
+        )
 
 
-__all__ = ("DEPLOYMENT_TIMELINE", "EVENT_TYPE", "TRIGGER_EVENTS", "begin", "content_hash",
-           "content_of", "folded_tables", "install", "named_tables", "owner_of", "owner_rule",
-           "primary_key", "record_written_rows", "replay_scope_digest", "row_identity")
+__all__ = (
+    "DEPLOYMENT_TIMELINE",
+    "EVENT_TYPE",
+    "TRIGGER_EVENTS",
+    "begin",
+    "content_hash",
+    "content_of",
+    "folded_tables",
+    "install",
+    "named_tables",
+    "owner_of",
+    "owner_rule",
+    "primary_key",
+    "record_written_rows",
+    "replay_scope_digest",
+    "row_identity",
+)

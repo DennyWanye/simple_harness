@@ -65,7 +65,9 @@ class SearchBudgetAllocator:
             cdp_slots,
             hydrate_slots,
         )
-        if any(isinstance(value, bool) or not isinstance(value, int) or value < 0 for value in values):
+        if any(
+            isinstance(value, bool) or not isinstance(value, int) or value < 0 for value in values
+        ):
             raise ValueError("search budget slots must be non-negative integers")
         self.deadline = float(deadline)
         self._remaining = {
@@ -102,9 +104,7 @@ class SearchBudgetAllocator:
             raise ValueError("min_results must be a non-negative integer")
         async with self._lock:
             if query_key in self._query_keys:
-                raise SearchBudgetCoverageError(
-                    f"duplicate query budget key: {query_key}"
-                )
+                raise SearchBudgetCoverageError(f"duplicate query budget key: {query_key}")
             if (
                 self.remaining_s <= 0
                 or self._remaining["query"] < 1
@@ -112,9 +112,7 @@ class SearchBudgetAllocator:
             ):
                 return None
             lease_id = uuid.uuid4().hex
-            lease = QueryBudgetLease(
-                self, lease_id, dimension_id, query_key, self.deadline, core
-            )
+            lease = QueryBudgetLease(self, lease_id, dimension_id, query_key, self.deadline, core)
             self._remaining["query"] -= 1
             self._remaining["result"] -= min_results
             self._reserved_results[lease_id] = min_results
@@ -151,9 +149,7 @@ class SearchBudgetAllocator:
                 or self._remaining["query"] < len(items)
                 or self._remaining["result"] < required_results
             ):
-                raise SearchBudgetCoverageError(
-                    "parent budget cannot reserve every core dimension"
-                )
+                raise SearchBudgetCoverageError("parent budget cannot reserve every core dimension")
             leases: list[QueryBudgetLease] = []
             for dimension_id, query_key in items:
                 lease_id = uuid.uuid4().hex
@@ -184,9 +180,7 @@ class SearchBudgetAllocator:
         self._committed_results[lease.lease_id] += accepted
         return accepted
 
-    async def commit_cache_hit(
-        self, lease: QueryBudgetLease, result_count: int
-    ) -> int:
+    async def commit_cache_hit(self, lease: QueryBudgetLease, result_count: int) -> int:
         async with self._lock:
             self._assert_lease(lease)
             self._query_committed.add(lease.lease_id)
@@ -289,9 +283,7 @@ class SearchBudgetAllocator:
             for public in attempts:
                 upstream_called = bool(getattr(public, "upstream_called", False))
                 attempt_id = getattr(public, "budget_attempt_id", None)
-                allocator_attempt = (
-                    self._attempts.get(str(attempt_id)) if attempt_id else None
-                )
+                allocator_attempt = self._attempts.get(str(attempt_id)) if attempt_id else None
                 allocator_started = bool(
                     allocator_attempt is not None
                     and allocator_attempt.lease_id == lease.lease_id
@@ -303,9 +295,7 @@ class SearchBudgetAllocator:
                     )
                 if allocator_attempt is not None:
                     if allocator_attempt.attempt_id in seen:
-                        raise SearchBudgetCoverageError(
-                            "allocator attempt appears more than once"
-                        )
+                        raise SearchBudgetCoverageError("allocator attempt appears more than once")
                     seen.add(allocator_attempt.attempt_id)
             expected = {
                 attempt.attempt_id

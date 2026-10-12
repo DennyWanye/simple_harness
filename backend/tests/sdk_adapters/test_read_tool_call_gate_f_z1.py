@@ -279,8 +279,6 @@ async def _audit(db_path: Path) -> list[tuple[str, str]]:
     return [(row[1], row[2]) for row in await workspace_read_audit_rows(db_path)]
 
 
-
-
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "route",
@@ -306,12 +304,6 @@ async def test_read_inside_the_bound_root_is_admitted_after_every_task_route(
     root, code = await env.gate.bound_root(RUN.value)
     assert code is None
     assert Path(str(root)).resolve() == env.workspace.resolve()
-
-
-
-
-
-
 
 
 @pytest.mark.asyncio
@@ -377,9 +369,7 @@ async def test_execution_scope_never_fabricates_a_root_for_an_unverified_call(
     env = await _build(tmp_path)
     context = _context()
     with pytest.raises(RuntimeError, match="workspace_read_root_unverified"):
-        async with env.gate.execution_scope(
-            context, "read_file", call_id=CallId("call-1")
-        ):
+        async with env.gate.execution_scope(context, "read_file", call_id=CallId("call-1")):
             pass
 
 

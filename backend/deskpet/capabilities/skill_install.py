@@ -48,9 +48,9 @@ from .store import (
 logger = logging.getLogger(__name__)
 
 
-
 #: Closed install intents a new request for the same content may reopen.
 _REOPENABLE_INTENT_STATES = frozenset({"stage_failed", "denied", "expired"})
+
 
 class ProjectSkillInstallError(RuntimeError):
     def __init__(self, code: str, message: str, *, retryable: bool = False) -> None:
@@ -68,15 +68,18 @@ class SkillInstallProjectAuthority:
     principal_id: str
 
     def __post_init__(self) -> None:
-        if not all(
-            str(value).strip()
-            for value in (
-                self.project_id,
-                self.project_identity,
-                self.project_scope_key,
-                self.principal_id,
+        if (
+            not all(
+                str(value).strip()
+                for value in (
+                    self.project_id,
+                    self.project_identity,
+                    self.project_scope_key,
+                    self.principal_id,
+                )
             )
-        ) or self.project_revision < 0:
+            or self.project_revision < 0
+        ):
             raise ValueError("complete trusted Project authority is required")
 
     @property
@@ -148,9 +151,12 @@ class AuthorizedSkillInstallReceipt:
         settings = (self.ui_decision_event_ref, self.window_receipt_hash)
         if self.channel == "chat":
             required_chat = (
-                self.run_id, self.call_id, self.effect_id,
+                self.run_id,
+                self.call_id,
+                self.effect_id,
                 self.decision_host_receipt_hash,
-                self.handoff_sdk_receipt_hash, self.handoff_host_receipt_hash,
+                self.handoff_sdk_receipt_hash,
+                self.handoff_host_receipt_hash,
             )
             if (
                 any(value is None for value in required_chat)
@@ -195,10 +201,12 @@ class AuthorizedSkillInstallReceipt:
             "window_receipt_hash": self.window_receipt_hash,
         }
         if self.approval_kind == "auto":
-            payload.update({
-                "approval_kind": "auto",
-                "provenance_version": self.provenance_version,
-            })
+            payload.update(
+                {
+                    "approval_kind": "auto",
+                    "provenance_version": self.provenance_version,
+                }
+            )
         return payload
 
 
@@ -329,9 +337,7 @@ class ManagerGlobalSkillRuntimeVerifier:
         payload: dict[str, JsonValue] = {
             "schema": "global-skill-runtime-publication-verification-v2",
             "owner_scope_key": intent.install_scope_key,
-            "manager_receipt_hash": str(
-                manager_receipt.get("manager_receipt_hash") or ""
-            ),
+            "manager_receipt_hash": str(manager_receipt.get("manager_receipt_hash") or ""),
             "members": verified,
         }
         return {**payload, "verification_hash": fingerprint_json(payload)}
@@ -387,9 +393,12 @@ class AuthorizedPreflightReceiptResolver:
             and record.decision_host_receipt_hash is not None
         )
         required = (
-            record.bound_decision_nonce, record.decision_host_receipt_hash,
-            record.effect_sdk_receipt_hash, record.effect_host_receipt_hash,
-            record.handoff_sdk_receipt_hash, record.handoff_host_receipt_hash,
+            record.bound_decision_nonce,
+            record.decision_host_receipt_hash,
+            record.effect_sdk_receipt_hash,
+            record.effect_host_receipt_hash,
+            record.handoff_sdk_receipt_hash,
+            record.handoff_host_receipt_hash,
             *(() if is_auto else (record.decision_sdk_receipt_hash,)),
         )
         if any(value is None for value in required):
@@ -399,7 +408,8 @@ class AuthorizedPreflightReceiptResolver:
             )
         if is_auto:
             nonce, host_hash = auto_skill_approval_receipt(
-                identity, intent_id=intent.intent_id,
+                identity,
+                intent_id=intent.intent_id,
                 content_digest=intent.member_set_stamp,
                 member_set_stamp=intent.member_set_stamp,
                 expires_at=intent.expires_at,
@@ -413,18 +423,19 @@ class AuthorizedPreflightReceiptResolver:
                     "Auto Skill approval provenance differs from the install intent",
                 )
         return AuthorizedSkillInstallReceipt(
-            channel="chat", intent_id=intent.intent_id,
+            channel="chat",
+            intent_id=intent.intent_id,
             content_digest=intent.member_set_stamp,
             project_scope_key=intent.project_scope_key,
             principal_id=intent.principal_id,
             decision_nonce=str(record.bound_decision_nonce),
             decision_version=int(record.bound_decision_version or 0),
-            expires_at=intent.expires_at, approved=True,
-            run_id=identity.run_id, call_id=identity.call_id,
+            expires_at=intent.expires_at,
+            approved=True,
+            run_id=identity.run_id,
+            call_id=identity.call_id,
             effect_id=identity.effect_id,
-            decision_sdk_receipt_hash=(
-                None if is_auto else str(record.decision_sdk_receipt_hash)
-            ),
+            decision_sdk_receipt_hash=(None if is_auto else str(record.decision_sdk_receipt_hash)),
             decision_host_receipt_hash=str(record.decision_host_receipt_hash),
             handoff_sdk_receipt_hash=str(record.handoff_sdk_receipt_hash),
             handoff_host_receipt_hash=str(record.handoff_host_receipt_hash),
@@ -476,9 +487,7 @@ class GlobalSkillInstallService:
         for pending in await self.store.pending_skill_install_intents():
             if pending.status not in {"publishing", "unknown"}:
                 continue
-            operation = await self.store.get_operation(
-                self._manager_operation_id(pending)
-            )
+            operation = await self.store.get_operation(self._manager_operation_id(pending))
             if operation is None or operation.status not in {"failed", "cancelled"}:
                 continue
             error = {
@@ -544,9 +553,7 @@ class GlobalSkillInstallService:
             "url": url,
             "requested_ref": requested_ref,
             **({"requested_subpath": requested_subpath} if requested_subpath else {}),
-            (
-                "owner_scope_key" if is_global else "project_scope_key"
-            ): owner_scope_key,
+            ("owner_scope_key" if is_global else "project_scope_key"): owner_scope_key,
         }
         intent_id = f"skill-install:{fingerprint_json(identity)}"
         if not is_global:
@@ -560,9 +567,7 @@ class GlobalSkillInstallService:
             try:
                 normalized_url = normalize_github_repo_url(url)[0]
             except CapabilitySourceError:
-                normalized_url = "invalid-input:" + fingerprint_json(
-                    {"url": str(url).strip()}
-                )
+                normalized_url = "invalid-input:" + fingerprint_json({"url": str(url).strip()})
             failure_identity = {
                 "schema": "global-skill-stage-failure-v1",
                 "owner_scope_key": owner_scope_key,
@@ -570,33 +575,28 @@ class GlobalSkillInstallService:
                 "requested_ref": str(requested_ref).strip(),
                 **({"requested_subpath": requested_subpath} if requested_subpath else {}),
                 "visible_skill_names": list(normalized_names),
-                "input_digest": fingerprint_json({
-                    "normalized_url": normalized_url,
-                    "requested_ref": str(requested_ref).strip(),
-                    **({"requested_subpath": requested_subpath} if requested_subpath else {}),
-                    "visible_skill_names": list(normalized_names),
-                }),
+                "input_digest": fingerprint_json(
+                    {
+                        "normalized_url": normalized_url,
+                        "requested_ref": str(requested_ref).strip(),
+                        **({"requested_subpath": requested_subpath} if requested_subpath else {}),
+                        "visible_skill_names": list(normalized_names),
+                    }
+                ),
             }
-            intent_id = "skill-install-global-failure:" + fingerprint_json(
-                failure_identity
-            )
+            intent_id = "skill-install-global-failure:" + fingerprint_json(failure_identity)
             existing_failure = await self.store.get_skill_install_intent(intent_id)
             if existing_failure is not None and existing_failure.status == "stage_failed":
                 failure_error = dict(existing_failure.error or {})
                 if (
                     str(retry_command_id or "").strip()
-                    and failure_error.get("retry_command_id")
-                    == str(retry_command_id).strip()
+                    and failure_error.get("retry_command_id") == str(retry_command_id).strip()
                     and int(failure_error.get("attempt_generation") or 0)
                     == int(retry_attempt_generation or 0) + 1
                 ):
-                    success_intent_id = str(
-                        failure_error.get("success_intent_id") or ""
-                    ).strip()
+                    success_intent_id = str(failure_error.get("success_intent_id") or "").strip()
                     if success_intent_id:
-                        success = await self.store.get_skill_install_intent(
-                            success_intent_id
-                        )
+                        success = await self.store.get_skill_install_intent(success_intent_id)
                         if success is not None:
                             return await self._outcome_for_existing(success)
                     return await self._outcome_for_existing(existing_failure)
@@ -623,13 +623,9 @@ class GlobalSkillInstallService:
                     raise
                 if not claimed:
                     claimed_error = dict(retry_claim.error or {})
-                    success_intent_id = str(
-                        claimed_error.get("success_intent_id") or ""
-                    ).strip()
+                    success_intent_id = str(claimed_error.get("success_intent_id") or "").strip()
                     if success_intent_id:
-                        success = await self.store.get_skill_install_intent(
-                            success_intent_id
-                        )
+                        success = await self.store.get_skill_install_intent(success_intent_id)
                         if success is not None:
                             return await self._outcome_for_existing(success)
                     return await self._outcome_for_existing(retry_claim)
@@ -646,13 +642,15 @@ class GlobalSkillInstallService:
                 attempt_generation = int(
                     dict(retry_claim.error or {}).get("attempt_generation") or 1
                 )
-                receipt = fingerprint_json({
-                    "schema": "global-skill-stage-retry-failure-v1",
-                    "intent_id": retry_claim.intent_id,
-                    "attempt_generation": attempt_generation,
-                    "retry_command_id": str(retry_command_id),
-                    "code": exc.code,
-                })
+                receipt = fingerprint_json(
+                    {
+                        "schema": "global-skill-stage-retry-failure-v1",
+                        "intent_id": retry_claim.intent_id,
+                        "attempt_generation": attempt_generation,
+                        "retry_command_id": str(retry_command_id),
+                        "code": exc.code,
+                    }
+                )
                 settled = await self.store.settle_skill_install_retry(
                     retry_claim.intent_id,
                     expected_state_version=retry_claim.state_version,
@@ -693,7 +691,8 @@ class GlobalSkillInstallService:
             generation = 0
             while True:
                 intent_id = "skill-install-global:" + fingerprint_json(
-                    content_identity if generation == 0
+                    content_identity
+                    if generation == 0
                     else {**content_identity, "reopened_generation": generation}
                 )
                 existing = await self.store.get_skill_install_intent(intent_id)
@@ -714,20 +713,20 @@ class GlobalSkillInstallService:
                         error={"retryable": False},
                     )
                 return await self._outcome_for_existing(existing)
-            prior_effect = await self.store.get_skill_install_intent_for_effect(
-                effect_id, call_id
-            )
+            prior_effect = await self.store.get_skill_install_intent_for_effect(effect_id, call_id)
             if prior_effect is not None and prior_effect.intent_id != intent_id:
                 if prior_effect.status not in _REOPENABLE_INTENT_STATES:
                     raise ProjectSkillInstallError(
                         "skill_install_intent_conflict",
                         "A non-terminal install already owns this request identity",
                     )
-                retry_suffix = fingerprint_json({
-                    "schema": "global-skill-install-retry-v2",
-                    "failed_intent_id": prior_effect.intent_id,
-                    "resolved_intent_id": intent_id,
-                })
+                retry_suffix = fingerprint_json(
+                    {
+                        "schema": "global-skill-install-retry-v2",
+                        "failed_intent_id": prior_effect.intent_id,
+                        "resolved_intent_id": intent_id,
+                    }
+                )
                 effect_id = f"{effect_id}:resolved:{retry_suffix}"
                 call_id = f"{call_id}:resolved:{retry_suffix}"
         stage = self._stage_path(intent_id)
@@ -773,9 +772,14 @@ class GlobalSkillInstallService:
                     )
                 )
             now = float(self.clock())
-            nonce = fingerprint_json({**identity, "batch_digest": batch.batch_digest,
-                                      # a reopened generation needs its own confirmation
-                                      **({"intent_id": intent_id} if is_global else {})})
+            nonce = fingerprint_json(
+                {
+                    **identity,
+                    "batch_digest": batch.batch_digest,
+                    # a reopened generation needs its own confirmation
+                    **({"intent_id": intent_id} if is_global else {}),
+                }
+            )
             intent = CapabilitySkillInstallIntent(
                 intent_id=intent_id,
                 effect_id=effect_id,
@@ -788,7 +792,8 @@ class GlobalSkillInstallService:
                 source={
                     "schema": (
                         "global-skill-install-source-v2"
-                        if is_global else "project-skill-install-source-v1"
+                        if is_global
+                        else "project-skill-install-source-v1"
                     ),
                     "normalized_url": batch.evidence.normalized_url,
                     "requested_ref": batch.evidence.requested_ref,
@@ -877,9 +882,7 @@ class GlobalSkillInstallService:
                 if arguments.get("retry_attempt_generation") is not None
                 else None
             ),
-            retry_command_id=(
-                str(arguments.get("retry_command_id") or "") or None
-            ),
+            retry_command_id=(str(arguments.get("retry_command_id") or "") or None),
         )
 
     async def confirm_authorized(
@@ -888,14 +891,13 @@ class GlobalSkillInstallService:
         await self.reconcile_expired()
         intent = await self.store.get_skill_install_intent(receipt.intent_id)
         if intent is None:
-            raise ProjectSkillInstallError("skill_install_intent_not_found", "Install intent not found")
-        self._verify_receipt(intent, receipt, allow_sdk_nonce_bind=True)
-        if (
-            intent.status == "awaiting_confirmation"
-            and (
-                intent.confirmation_nonce != receipt.decision_nonce
-                or intent.confirmation_version != receipt.decision_version
+            raise ProjectSkillInstallError(
+                "skill_install_intent_not_found", "Install intent not found"
             )
+        self._verify_receipt(intent, receipt, allow_sdk_nonce_bind=True)
+        if intent.status == "awaiting_confirmation" and (
+            intent.confirmation_nonce != receipt.decision_nonce
+            or intent.confirmation_version != receipt.decision_version
         ):
             intent = await self.store.bind_skill_install_confirmation(
                 intent.intent_id,
@@ -907,8 +909,11 @@ class GlobalSkillInstallService:
         if not receipt.approved:
             return await self.cancel_authorized(receipt)
         if intent.status == "succeeded":
-            return {"status": "succeeded", "intent_id": intent.intent_id,
-                    "verification_ref": intent.verification_ref or ""}
+            return {
+                "status": "succeeded",
+                "intent_id": intent.intent_id,
+                "verification_ref": intent.verification_ref or "",
+            }
         # The operation identity is the complete immutable install domain.  A
         # member set can legitimately be identical for two users or commits;
         # neither is an idempotent replay of the other.
@@ -942,15 +947,15 @@ class GlobalSkillInstallService:
                 intent.intent_id,
                 expected_state_version=intent.state_version,
                 status="published_pending_runtime_verification",
-                settlement_ref=str(manager_receipt.get("manager_receipt_hash") or receipt.receipt_hash),
+                settlement_ref=str(
+                    manager_receipt.get("manager_receipt_hash") or receipt.receipt_hash
+                ),
             )
         verification = await self.runtime_verifier.verify_skill_install(
             intent=pending, manager_receipt=manager_receipt, members=members
         )
         if intent.install_scope == "user":
-            activate = getattr(
-                self.batch_publisher, "activate_skill_install_batch", None
-            )
+            activate = getattr(self.batch_publisher, "activate_skill_install_batch", None)
             if activate is None:
                 raise ProjectSkillInstallError(
                     "global_skill_activation_fence_unavailable",
@@ -969,9 +974,8 @@ class GlobalSkillInstallService:
             verified_intent = await self._require_intent(pending.intent_id)
             if verified_intent.status == "succeeded":
                 succeeded = verified_intent
-                verification_ref = (
-                    verified_intent.verification_ref
-                    or fingerprint_json(dict(verification))
+                verification_ref = verified_intent.verification_ref or fingerprint_json(
+                    dict(verification)
                 )
             else:
                 verification_ref = fingerprint_json(dict(verification))
@@ -995,11 +999,7 @@ class GlobalSkillInstallService:
             "intent_id": succeeded.intent_id,
             "manager_receipt": dict(manager_receipt),
             "verification": dict(verification),
-            **(
-                {"activation": dict(activation)}
-                if intent.install_scope == "user"
-                else {}
-            ),
+            **({"activation": dict(activation)} if intent.install_scope == "user" else {}),
             "verification_ref": verification_ref,
         }
 
@@ -1067,10 +1067,7 @@ class GlobalSkillInstallService:
                     attempt = await self.store.get_current_skill_install_verification_attempt(
                         intent.intent_id
                     )
-                    if (
-                        attempt is not None
-                        and attempt.status in {"terminal_failed", "unknown"}
-                    ):
+                    if attempt is not None and attempt.status in {"terminal_failed", "unknown"}:
                         if superseded_once:
                             raise ProjectSkillInstallError(
                                 "skill_install_runtime_verification_retry_exhausted",
@@ -1090,25 +1087,17 @@ class GlobalSkillInstallService:
                         if attempt is not None
                         else self._manager_operation_id(intent)
                     )
-                    evidence = await self.store.get_phase_evidence(
-                        operation_id, "batch_committed"
-                    )
+                    evidence = await self.store.get_phase_evidence(operation_id, "batch_committed")
                     if evidence is not None:
                         manager_receipt = {
                             **dict(evidence),
                             "operation_id": operation_id,
-                            "manager_receipt_hash": str(
-                                evidence.get("manager_receipt_hash") or ""
-                            ),
-                            "committed_set_stamp": str(
-                                evidence.get("committed_set_stamp") or ""
-                            ),
+                            "manager_receipt_hash": str(evidence.get("manager_receipt_hash") or ""),
+                            "committed_set_stamp": str(evidence.get("committed_set_stamp") or ""),
                         }
                         if attempt is not None and (
-                            manager_receipt["manager_receipt_hash"]
-                            != attempt.manager_receipt_hash
-                            or manager_receipt["committed_set_stamp"]
-                            != attempt.committed_set_stamp
+                            manager_receipt["manager_receipt_hash"] != attempt.manager_receipt_hash
+                            or manager_receipt["committed_set_stamp"] != attempt.committed_set_stamp
                         ):
                             raise ProjectSkillInstallError(
                                 "skill_install_manager_receipt_mismatch",
@@ -1158,14 +1147,12 @@ class GlobalSkillInstallService:
                                 "Global Skill binding activation was not proven",
                             )
                     await self._remove_stage(intent.intent_id)
-                    outcomes.append({
-                        **dict(result),
-                        **(
-                            {"activation": dict(activation)}
-                            if activation is not None
-                            else {}
-                        ),
-                    })
+                    outcomes.append(
+                        {
+                            **dict(result),
+                            **({"activation": dict(activation)} if activation is not None else {}),
+                        }
+                    )
                     logger.info(
                         "skill_install_runtime_verification_recovered intent_id=%s",
                         intent.intent_id,
@@ -1195,20 +1182,17 @@ class GlobalSkillInstallService:
         # therefore marks the intent succeeded) but before the user-global
         # binding CAS. Reconcile that narrow window from the committed Manager
         # receipt. Existing active bindings are idempotent in the Manager.
-        list_succeeded = getattr(
-            self.store, "list_succeeded_global_skill_install_intents", None
-        )
+        list_succeeded = getattr(self.store, "list_succeeded_global_skill_install_intents", None)
         if callable(list_succeeded):
             for intent in await list_succeeded():
                 operation_id = self._manager_operation_id(intent)
-                if await self.store.get_phase_evidence(
-                    operation_id, "global_activation"
-                ) is not None:
+                if (
+                    await self.store.get_phase_evidence(operation_id, "global_activation")
+                    is not None
+                ):
                     continue
                 try:
-                    evidence = await self.store.get_phase_evidence(
-                        operation_id, "batch_committed"
-                    )
+                    evidence = await self.store.get_phase_evidence(operation_id, "batch_committed")
                     if evidence is None:
                         raise ProjectSkillInstallError(
                             "skill_install_manager_receipt_missing",
@@ -1229,12 +1213,14 @@ class GlobalSkillInstallService:
                             "global_skill_activation_unproven",
                             "Recovered global Skill binding activation was not proven",
                         )
-                    outcomes.append({
-                        "status": "succeeded",
-                        "intent_id": intent.intent_id,
-                        "activation": dict(activation),
-                        "recovered_after_attestation": True,
-                    })
+                    outcomes.append(
+                        {
+                            "status": "succeeded",
+                            "intent_id": intent.intent_id,
+                            "activation": dict(activation),
+                            "recovered_after_attestation": True,
+                        }
+                    )
                     logger.info(
                         "global_skill_activation_recovered intent_id=%s",
                         intent.intent_id,
@@ -1268,32 +1254,45 @@ class GlobalSkillInstallService:
         now = float(self.clock())
         receipt = fingerprint_json({"intent_id": intent_id, "code": code, "identity": identity})
         intent = CapabilitySkillInstallIntent(
-            intent_id=intent_id, effect_id=values["effect_id"], call_id=values["call_id"],
-            root_run_id=values["root_run_id"], run_id=values["run_id"], channel=values["channel"],
+            intent_id=intent_id,
+            effect_id=values["effect_id"],
+            call_id=values["call_id"],
+            root_run_id=values["root_run_id"],
+            run_id=values["run_id"],
+            channel=values["channel"],
             project_scope_key=authority.owner_scope_key,
             principal_id=authority.principal_id,
-            source={"requested_url": str(
-                        identity.get("normalized_url") or identity.get("url") or ""
-                    ), "resolution_status": "failed",
-                    "schema": (
-                        "global-skill-install-source-v2"
-                        if isinstance(authority, GlobalSkillInstallAuthority)
-                        else "project-skill-install-source-v1"
-                    ),
-                    **(
-                        {"global_owner_key": authority.owner_scope_key}
-                        if isinstance(authority, GlobalSkillInstallAuthority)
-                        else {
-                            "project_id": authority.project_id,
-                            "project_revision": authority.project_revision,
-                            "project_identity": authority.project_identity,
-                        }
-                    )},
-            exact_commit=f"unresolved:{fingerprint_json(identity)}", archive_hash=fingerprint_json({"code": code}),
-            raw_tree_hash=fingerprint_json({"unresolved": True}), member_set_stamp=fingerprint_json([]),
-            permission_set_hash=fingerprint_json([]), confirmation_nonce=fingerprint_json(identity),
-            confirmation_version=1, expires_at=now, status="staging", state_version=1,
-            settlement_ref=None, cleanup_ref=None, verification_ref=None,
+            source={
+                "requested_url": str(identity.get("normalized_url") or identity.get("url") or ""),
+                "resolution_status": "failed",
+                "schema": (
+                    "global-skill-install-source-v2"
+                    if isinstance(authority, GlobalSkillInstallAuthority)
+                    else "project-skill-install-source-v1"
+                ),
+                **(
+                    {"global_owner_key": authority.owner_scope_key}
+                    if isinstance(authority, GlobalSkillInstallAuthority)
+                    else {
+                        "project_id": authority.project_id,
+                        "project_revision": authority.project_revision,
+                        "project_identity": authority.project_identity,
+                    }
+                ),
+            },
+            exact_commit=f"unresolved:{fingerprint_json(identity)}",
+            archive_hash=fingerprint_json({"code": code}),
+            raw_tree_hash=fingerprint_json({"unresolved": True}),
+            member_set_stamp=fingerprint_json([]),
+            permission_set_hash=fingerprint_json([]),
+            confirmation_nonce=fingerprint_json(identity),
+            confirmation_version=1,
+            expires_at=now,
+            status="staging",
+            state_version=1,
+            settlement_ref=None,
+            cleanup_ref=None,
+            verification_ref=None,
             error={
                 "code": code,
                 "message": message,
@@ -1301,21 +1300,31 @@ class GlobalSkillInstallService:
                 "attempt_generation": 1,
                 "retry_state": "available" if self._retryable(code) else "blocked",
             },
-            created_at=now, updated_at=now,
+            created_at=now,
+            updated_at=now,
         )
         await self.store.create_skill_install_intent(intent, ())
         pending = await self.store.cas_skill_install_intent(
-            intent_id, expected_state_version=1, status="stage_failed_cleanup_pending",
-            settlement_ref=receipt, error=intent.error,
+            intent_id,
+            expected_state_version=1,
+            status="stage_failed_cleanup_pending",
+            settlement_ref=receipt,
+            error=intent.error,
         )
         await self._remove_stage(intent_id)
         await self.store.cas_skill_install_intent(
-            intent_id, expected_state_version=pending.state_version, status="stage_failed",
-            cleanup_ref=f"cleanup:{intent_id}", error=intent.error,
+            intent_id,
+            expected_state_version=pending.state_version,
+            status="stage_failed",
+            cleanup_ref=f"cleanup:{intent_id}",
+            error=intent.error,
         )
         return SkillInstallPreflightRejected(
-            failure_receipt_ref=receipt, code=code, public_message=message[:500],
-            retryable=self._retryable(code), correlation_id=fingerprint_json({"intent_id": intent_id}),
+            failure_receipt_ref=receipt,
+            code=code,
+            public_message=message[:500],
+            retryable=self._retryable(code),
+            correlation_id=fingerprint_json({"intent_id": intent_id}),
             attempt_generation=1,
             allowed_actions=(
                 ("retry", "change_source", "cancel")
@@ -1333,9 +1342,8 @@ class GlobalSkillInstallService:
         retry_state = str(error.get("retry_state") or "")
         if retry_state == "claimed":
             return SkillInstallPreflightRejected(
-                failure_receipt_ref=intent.settlement_ref or fingerprint_json(
-                    {"intent_id": intent.intent_id}
-                ),
+                failure_receipt_ref=intent.settlement_ref
+                or fingerprint_json({"intent_id": intent.intent_id}),
                 code="skill_install_retry_in_progress",
                 public_message="The requested Skill installation retry is still in progress.",
                 retryable=False,
@@ -1344,27 +1352,37 @@ class GlobalSkillInstallService:
                 allowed_actions=("cancel",),
             )
         return SkillInstallPreflightRejected(
-            failure_receipt_ref=intent.settlement_ref or fingerprint_json({"intent_id": intent.intent_id}),
+            failure_receipt_ref=intent.settlement_ref
+            or fingerprint_json({"intent_id": intent.intent_id}),
             code=str(error.get("code") or f"skill_install_{intent.status}"),
             public_message=str(error.get("message") or "Skill installation cannot continue."),
             retryable=retryable,
             correlation_id=fingerprint_json({"intent_id": intent.intent_id}),
             attempt_generation=int(error.get("attempt_generation") or 1),
             allowed_actions=(
-                ("retry", "change_source", "cancel")
-                if retryable
-                else ("change_source", "cancel")
+                ("retry", "change_source", "cancel") if retryable else ("change_source", "cancel")
             ),
         )
 
     def _ready(self, intent, members):
         return SkillInstallPreflightReady(
-            intent_id=intent.intent_id, artifact_ref=f"skill-install-artifact:{intent.intent_id}",
-            content_digest=intent.member_set_stamp, member_digest=intent.member_set_stamp,
-            member_summary=tuple({"name": member.normalized_name, "pack_id": member.pack_id,
-                                  "version": member.version} for member in members),
-            permission_summary=tuple(sorted({tool for member in members
-                                             for tool in member.member.get("allowed_tools", [])})),
+            intent_id=intent.intent_id,
+            artifact_ref=f"skill-install-artifact:{intent.intent_id}",
+            content_digest=intent.member_set_stamp,
+            member_digest=intent.member_set_stamp,
+            member_summary=tuple(
+                {
+                    "name": member.normalized_name,
+                    "pack_id": member.pack_id,
+                    "version": member.version,
+                }
+                for member in members
+            ),
+            permission_summary=tuple(
+                sorted(
+                    {tool for member in members for tool in member.member.get("allowed_tools", [])}
+                )
+            ),
             expires_at=intent.expires_at,
         )
 
@@ -1375,12 +1393,16 @@ class GlobalSkillInstallService:
             "scope": intent.project_scope_key == receipt.project_scope_key,
             "principal": intent.principal_id == receipt.principal_id,
             "nonce": allow_sdk_nonce_bind or intent.confirmation_nonce == receipt.decision_nonce,
-            "version": allow_sdk_nonce_bind or intent.confirmation_version == receipt.decision_version,
-            "expiry": intent.expires_at == receipt.expires_at and float(self.clock()) < intent.expires_at,
+            "version": allow_sdk_nonce_bind
+            or intent.confirmation_version == receipt.decision_version,
+            "expiry": intent.expires_at == receipt.expires_at
+            and float(self.clock()) < intent.expires_at,
             "channel": intent.channel == receipt.channel,
         }
         if not all(expected.values()):
-            raise ProjectSkillInstallError("skill_install_receipt_mismatch", "Authorization receipt differs")
+            raise ProjectSkillInstallError(
+                "skill_install_receipt_mismatch", "Authorization receipt differs"
+            )
 
     async def _require_intent(self, intent_id):
         intent = await self.store.get_skill_install_intent(intent_id)
@@ -1397,17 +1419,22 @@ class GlobalSkillInstallService:
         try:
             target.relative_to(self.staging_root)
         except ValueError as exc:
-            raise ProjectSkillInstallError("unsafe_cleanup_target", "Invalid staging reference") from exc
+            raise ProjectSkillInstallError(
+                "unsafe_cleanup_target", "Invalid staging reference"
+            ) from exc
         if target.exists():
             shutil.rmtree(target)
 
     @staticmethod
     def _manifest(archive: bytes) -> Mapping[str, Any]:
         from io import BytesIO
+
         with zipfile.ZipFile(BytesIO(archive)) as package:
             value = json.loads(package.read("deskpet-pack.json"))
         if not isinstance(value, dict):
-            raise ProjectSkillInstallError("skill_pack_manifest_invalid", "Pack manifest is invalid")
+            raise ProjectSkillInstallError(
+                "skill_pack_manifest_invalid", "Pack manifest is invalid"
+            )
         return value
 
     @staticmethod

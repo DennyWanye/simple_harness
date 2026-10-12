@@ -140,9 +140,7 @@ def test_growth_event_insert_or_verify_and_detail_version(owner_store) -> None:
 def test_owner_generation_is_enforced_in_sql_scope(owner_store) -> None:
     store, owner, _ = owner_store
     store.record_growth_event(event(owner, "event-1"))
-    store.create_profile(
-        profile_id="alice", generation=2, identity_namespace_hash="relay:alice-v2"
-    )
+    store.create_profile(profile_id="alice", generation=2, identity_namespace_hash="relay:alice-v2")
     stale = GrowthEvent(
         **{
             **asdict(event(owner, "stale")),
@@ -434,9 +432,12 @@ def test_action_discriminated_mutation_request_reserves_target_atomically(owner_
     with store.read() as db:
         assert db.execute("SELECT count(*) FROM capability_activation_requests").fetchone()[0] == 1
         assert db.execute("SELECT count(*) FROM audit_events").fetchone()[0] == 1
-        assert db.execute(
-            "SELECT count(*) FROM outbox WHERE event_kind='capability_mutation'"
-        ).fetchone()[0] == 1
+        assert (
+            db.execute(
+                "SELECT count(*) FROM outbox WHERE event_kind='capability_mutation'"
+            ).fetchone()[0]
+            == 1
+        )
 
 
 def test_same_rollback_intent_adopts_legacy_pending_request(owner_store) -> None:
@@ -468,6 +469,4 @@ def test_same_rollback_intent_adopts_legacy_pending_request(owner_store) -> None
 
     assert adopted["activation_request_id"] == first["activation_request_id"]
     with store.read() as db:
-        assert db.execute(
-            "SELECT count(*) FROM capability_activation_requests"
-        ).fetchone()[0] == 1
+        assert db.execute("SELECT count(*) FROM capability_activation_requests").fetchone()[0] == 1

@@ -41,6 +41,7 @@ layout is ours. By default this stays offline; only slides with
 ``image_prompt`` trigger synchronous ``image_tools.generate_images`` calls,
 and failures degrade to placeholders.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -145,11 +146,19 @@ def _ppt_pro_cfg() -> SimpleNamespace:
             "pro_research_timeout_s",
             _cfg_float(raw, "research_timeout_s", default_research_timeout_s),
         ),
-        confirm_timeout_s=_cfg_float(raw, "pro_confirm_timeout_s", _cfg_float(raw, "confirm_timeout_s", 1800.0)),
-        image_probe_timeout_s=_cfg_float(raw, "pro_image_probe_timeout_s", _cfg_float(raw, "image_probe_timeout_s", 8.0)),
-        render_timeout_s=_cfg_float(raw, "pro_render_timeout_s", _cfg_float(raw, "render_timeout_s", 0.0)),
+        confirm_timeout_s=_cfg_float(
+            raw, "pro_confirm_timeout_s", _cfg_float(raw, "confirm_timeout_s", 1800.0)
+        ),
+        image_probe_timeout_s=_cfg_float(
+            raw, "pro_image_probe_timeout_s", _cfg_float(raw, "image_probe_timeout_s", 8.0)
+        ),
+        render_timeout_s=_cfg_float(
+            raw, "pro_render_timeout_s", _cfg_float(raw, "render_timeout_s", 0.0)
+        ),
         save_research=_cfg_bool(raw, "pro_save_research", _cfg_bool(raw, "save_research", True)),
-        outline_history=_cfg_bool(raw, "pro_outline_history", _cfg_bool(raw, "outline_history", True)),
+        outline_history=_cfg_bool(
+            raw, "pro_outline_history", _cfg_bool(raw, "outline_history", True)
+        ),
         allow_no_research_outline=_cfg_bool(
             raw,
             "pro_allow_no_research_outline",
@@ -193,6 +202,7 @@ def _get_ppt_renderer():
     global ppt_render
     if ppt_render is None:
         from . import ppt_render as _mod  # noqa: PLW0603
+
         ppt_render = _mod
     return ppt_render
 
@@ -223,12 +233,14 @@ def _maybe_render_preview(result: dict[str, Any]) -> None:
             pngs = renderer.render_pptx_to_pngs(str(pptx), str(out_dir))
         artifacts = result.setdefault("artifacts", [])
         for idx, png in enumerate(pngs, start=1):
-            artifacts.append({
-                "kind": "image",
-                "path": png,
-                "mime": "image/png",
-                "title": f"预览 第{idx}页",
-            })
+            artifacts.append(
+                {
+                    "kind": "image",
+                    "path": png,
+                    "mime": "image/png",
+                    "title": f"预览 第{idx}页",
+                }
+            )
     except Exception as exc:  # noqa: BLE001
         log.warning("ppt preview render failed: %s", exc, exc_info=True)
 
@@ -246,17 +258,28 @@ try:  # pragma: no cover — import probe
     from pptx.enum.shapes import MSO_SHAPE, PP_PLACEHOLDER
     from pptx.enum.text import MSO_ANCHOR, MSO_AUTO_SIZE, PP_ALIGN
     from pptx.util import Emu, Inches, Pt
+
     _HAS_PPTX = True
 except ImportError:  # pragma: no cover
     _Presentation = None  # type: ignore
-    Inches = Pt = Emu = RGBColor = MSO_SHAPE = PP_PLACEHOLDER = PP_ALIGN = MSO_ANCHOR = MSO_FILL_TYPE = MSO_AUTO_SIZE = None  # type: ignore
+    Inches = Pt = Emu = RGBColor = MSO_SHAPE = PP_PLACEHOLDER = PP_ALIGN = MSO_ANCHOR = (
+        MSO_FILL_TYPE
+    ) = MSO_AUTO_SIZE = None  # type: ignore
     CategoryChartData = XL_CHART_TYPE = XL_LEGEND_POSITION = None  # type: ignore
     _HAS_PPTX = False
 
 
 VALID_LAYOUTS = (
-    "title", "section", "bullet", "two_column", "image", "image_full",
-    "quote", "toc", "chart", "table",
+    "title",
+    "section",
+    "bullet",
+    "two_column",
+    "image",
+    "image_full",
+    "quote",
+    "toc",
+    "chart",
+    "table",
 )
 VALID_THEMES = ("minimal", "dark", "playful")
 FULL_PAGE_IMAGE_SIZE = "1792x1024"
@@ -281,7 +304,10 @@ class FullPageLayoutError(ValueError):
 
     _MESSAGES = {
         "text_overflow": ("页面文字过多，无法在安全字号内完整排版。", "精简本页文字后重试。"),
-        "cjk_font_unavailable": ("未找到能完整显示本页中文的字体。", "安装微软雅黑或其他完整中文字体后重试。"),
+        "cjk_font_unavailable": (
+            "未找到能完整显示本页中文的字体。",
+            "安装微软雅黑或其他完整中文字体后重试。",
+        ),
         "layout_unavailable": ("没有可容纳本页内容的安全构图。", "调整本页内容结构后重试。"),
     }
 
@@ -322,33 +348,63 @@ class FullPageLayoutSpec:
 
 FULL_PAGE_LAYOUT_SPECS: dict[str, FullPageLayoutSpec] = {
     "cover_band": FullPageLayoutSpec(
-        "cover_band", (42, 690, 1750, 974), (92, 720, 1700, 944), "left",
+        "cover_band",
+        (42, 690, 1750, 974),
+        (92, 720, 1700, 944),
+        "left",
         "Keep the lower 31% calm, dark, and low-detail for a wide title band.",
-        min_title_font=34, max_title_font=64, min_body_font=18, max_body_font=25,
+        min_title_font=34,
+        max_title_font=64,
+        min_body_font=18,
+        max_body_font=25,
     ),
     "text_left": FullPageLayoutSpec(
-        "text_left", (42, 42, 850, 966), (94, 82, 802, 924), "left",
+        "text_left",
+        (42, 42, 850, 966),
+        (94, 82, 802, 924),
+        "left",
         "Place the main subject on the right 48%; keep the left 48% calm and low-detail for text.",
     ),
     "text_right": FullPageLayoutSpec(
-        "text_right", (942, 42, 1750, 966), (990, 82, 1698, 924), "left",
+        "text_right",
+        (942, 42, 1750, 966),
+        (990, 82, 1698, 924),
+        "left",
         "Place the main subject on the left 48%; keep the right 48% calm and low-detail for text.",
     ),
     "visual_top": FullPageLayoutSpec(
-        "visual_top", (42, 628, 1750, 974), (94, 658, 1698, 940), "left",
+        "visual_top",
+        (42, 628, 1750, 974),
+        (94, 658, 1698, 940),
+        "left",
         "Keep the lower 37% calm and low-detail; concentrate the visual subject in the upper 60%.",
-        min_title_font=28, max_title_font=48, min_body_font=18, max_body_font=26,
+        min_title_font=28,
+        max_title_font=48,
+        min_body_font=18,
+        max_body_font=26,
     ),
     "floating_card": FullPageLayoutSpec(
-        "floating_card", (966, 142, 1746, 866), (1014, 184, 1698, 824), "left",
+        "floating_card",
+        (966, 142, 1746, 866),
+        (1014, 184, 1698, 824),
+        "left",
         "Keep a calm low-detail pocket in the right-center for a floating text card; place the subject left.",
-        min_title_font=28, max_title_font=48, min_body_font=18, max_body_font=28,
+        min_title_font=28,
+        max_title_font=48,
+        min_body_font=18,
+        max_body_font=28,
         panel_alpha=224,
     ),
     "quote_center": FullPageLayoutSpec(
-        "quote_center", (236, 186, 1556, 822), (302, 238, 1490, 770), "center",
+        "quote_center",
+        (236, 186, 1556, 822),
+        (302, 238, 1490, 770),
+        "center",
         "Use a cinematic full-width scene with a calm, dark, low-detail center for a large centered quote.",
-        min_title_font=34, max_title_font=64, min_body_font=20, max_body_font=32,
+        min_title_font=34,
+        max_title_font=64,
+        min_body_font=20,
+        max_body_font=32,
         panel_alpha=188,
     ),
 }
@@ -362,6 +418,8 @@ def _resolve_ppt_image_model() -> str:
         return str(image_tools._image_model())  # type: ignore[attr-defined]
     except Exception:  # noqa: BLE001
         return "doubao-seedream-4.0"
+
+
 # 模板源已迁到外部大库 resources/PPT_Template(见 ppt_template_picker)。
 # 不再有 git 跟踪的 bundled 模板目录。
 
@@ -433,7 +491,8 @@ class SlideOutline:
             ),
             font_scale=(
                 float(self.font_scale)
-                if isinstance(self.font_scale, (int, float)) and 0.5 <= float(self.font_scale) <= 1.5
+                if isinstance(self.font_scale, (int, float))
+                and 0.5 <= float(self.font_scale) <= 1.5
                 else 1.0
             ),
             caption=(self.caption or "").strip(),
@@ -472,11 +531,11 @@ _THEMES: dict[str, Theme] = {
     "minimal": Theme(
         name="minimal",
         background_rgb=(255, 255, 255),
-        dark_bg_rgb=(8, 20, 38),       # deep navy
-        surface_rgb=(244, 248, 250),   # cool off-white
+        dark_bg_rgb=(8, 20, 38),  # deep navy
+        surface_rgb=(244, 248, 250),  # cool off-white
         primary_rgb=(11, 30, 48),
         secondary_rgb=(16, 123, 136),  # teal
-        accent_rgb=(245, 158, 11),     # amber highlight
+        accent_rgb=(245, 158, 11),  # amber highlight
         highlight_rgb=(20, 184, 166),
         text_rgb=(15, 23, 42),
         muted_text_rgb=(84, 98, 113),
@@ -504,7 +563,7 @@ _THEMES: dict[str, Theme] = {
     "playful": Theme(
         name="playful",
         background_rgb=(255, 255, 255),
-        dark_bg_rgb=(49, 46, 129),     # confident indigo
+        dark_bg_rgb=(49, 46, 129),  # confident indigo
         surface_rgb=(248, 250, 252),
         primary_rgb=(30, 41, 59),
         secondary_rgb=(20, 184, 166),
@@ -553,15 +612,15 @@ def parse_outline(raw: Any) -> list[SlideOutline]:
         if text.startswith("```"):
             nl = text.find("\n")
             if nl != -1:
-                text = text[nl + 1:]
+                text = text[nl + 1 :]
             if text.endswith("```"):
                 text = text[:-3]
             text = text.strip()
         # Try to extract first JSON array / object
         lb_arr, rb_arr = text.find("["), text.rfind("]")
         lb_obj, rb_obj = text.find("{"), text.rfind("}")
-        slice_arr = text[lb_arr:rb_arr + 1] if 0 <= lb_arr < rb_arr else None
-        slice_obj = text[lb_obj:rb_obj + 1] if 0 <= lb_obj < rb_obj else None
+        slice_arr = text[lb_arr : rb_arr + 1] if 0 <= lb_arr < rb_arr else None
+        slice_obj = text[lb_obj : rb_obj + 1] if 0 <= lb_obj < rb_obj else None
         for candidate in (slice_arr, slice_obj, text):
             if not candidate:
                 continue
@@ -581,10 +640,9 @@ def parse_outline(raw: Any) -> list[SlideOutline]:
         if not isinstance(item, dict):
             continue
         try:
-            so = SlideOutline(**{
-                k: v for k, v in item.items()
-                if k in SlideOutline.__dataclass_fields__
-            })
+            so = SlideOutline(
+                **{k: v for k, v in item.items() if k in SlideOutline.__dataclass_fields__}
+            )
         except (TypeError, ValueError):
             continue
         out.append(so.normalize())
@@ -763,7 +821,9 @@ def _build_outline_prompt(
         if image_mode and not editable_required
         else "优先使用 title、section、bullet、two_column 等可编辑布局；每页仍必须有 image_prompt 供后续可选生图。"
     )
-    research_block = research_md.strip() or "调研报告为空：必须明确标注待核验，不得伪造来源、数据或引用。"
+    research_block = (
+        research_md.strip() or "调研报告为空：必须明确标注待核验，不得伪造来源、数据或引用。"
+    )
     editable_schema_hint = (
         "\nEDITABLE MODE RULES: use native PowerPoint objects, not flattened "
         "full-page images. Available layouts include title, section, bullet, "
@@ -798,8 +858,8 @@ def _build_outline_prompt(
         "\n调研报告：\n"
         f"{research_block}\n"
         "\nJSON 示例：\n"
-        "[{\"layout\":\"image_full\",\"title\":\"标题\",\"bullets\":[\"要点一\",\"要点二\",\"要点三\"],"
-        "\"image_prompt\":\"cinematic scene, negative space, no text, no watermark, no logo\"}]\n"
+        '[{"layout":"image_full","title":"标题","bullets":["要点一","要点二","要点三"],'
+        '"image_prompt":"cinematic scene, negative space, no text, no watermark, no logo"}]\n'
     )
 
 
@@ -846,7 +906,8 @@ def _fallback_minimal_outline(
             subtitle="基于当前可用信息生成的初稿",
             image_prompt=(
                 f"cinematic keynote cover about {topic}, negative space, no text, no watermark, no logo"
-                if image_mode else None
+                if image_mode
+                else None
             ),
         )
     ]
@@ -868,7 +929,8 @@ def _fallback_minimal_outline(
                 ],
                 image_prompt=(
                     f"cinematic editorial visual about {topic}, negative space, no text, no watermark, no logo"
-                    if image_mode else None
+                    if image_mode
+                    else None
                 ),
             )
         )
@@ -881,7 +943,10 @@ def _fallback_minimal_outline(
 
 
 def render_markdown_fallback(
-    outline: Sequence[SlideOutline], *, title: str = "", author: str = "",
+    outline: Sequence[SlideOutline],
+    *,
+    title: str = "",
+    author: str = "",
 ) -> str:
     """Render a slide outline as a Markdown document for the
     no-python-pptx fallback path. Used by callers as the safe ``markdown_fallback``
@@ -928,7 +993,7 @@ def render_markdown_fallback(
 
 
 # 16:9 default canvas. EMU = English Metric Units; 914400 = 1 inch.
-_SLIDE_WIDTH = 9144000   # 10 inches
+_SLIDE_WIDTH = 9144000  # 10 inches
 _SLIDE_HEIGHT = 5143500  # 5.625 inches → 16:9
 
 
@@ -937,7 +1002,9 @@ def _rgb(triple: tuple[int, int, int]):
 
 
 def _fill_slide_bg(
-    slide, theme: Theme, color: tuple[int, int, int] | None = None,
+    slide,
+    theme: Theme,
+    color: tuple[int, int, int] | None = None,
 ) -> None:
     bg = slide.background
     fill = bg.fill
@@ -957,7 +1024,7 @@ def _shorten(text: str, max_chars: int) -> str:
     text = str(text or "").strip()
     if len(text) <= max_chars:
         return text
-    return text[:max(max_chars - 3, 1)].rstrip() + "..."
+    return text[: max(max_chars - 3, 1)].rstrip() + "..."
 
 
 def _fit_font_size(text: str, width: int, height: int, desired: int, minimum: int = 10) -> int:
@@ -1119,18 +1186,25 @@ def _add_title_block(slide, title: str, subtitle: str, theme: Theme) -> None:
     if len(title) > 34:
         title_size = 26
     _add_text(
-        slide, title,
-        left=Inches(0.62), top=Inches(0.30),
-        width=Inches(7.0), height=Inches(0.90),
-        font_size=title_size, bold=True,
+        slide,
+        title,
+        left=Inches(0.62),
+        top=Inches(0.30),
+        width=Inches(7.0),
+        height=Inches(0.90),
+        font_size=title_size,
+        bold=True,
         color=theme.primary_rgb,
         font_name=theme.font_heading,
     )
     if subtitle:
         _add_text(
-            slide, subtitle,
-            left=Inches(0.64), top=Inches(0.95),
-            width=Inches(7.7), height=Inches(0.36),
+            slide,
+            subtitle,
+            left=Inches(0.64),
+            top=Inches(0.95),
+            width=Inches(7.7),
+            height=Inches(0.36),
             font_size=12,
             color=theme.muted_text_rgb,
             font_name=theme.font_body,
@@ -1140,15 +1214,21 @@ def _add_title_block(slide, title: str, subtitle: str, theme: Theme) -> None:
 def _add_corner_motif(slide, theme: Theme, *, dark: bool = False) -> None:
     base = theme.secondary_rgb if dark else theme.surface_rgb
     _add_shape(
-        slide, MSO_SHAPE.ROUNDED_RECTANGLE,
-        left=Inches(7.78), top=Inches(0.34),
-        width=Inches(1.45), height=Inches(0.82),
+        slide,
+        MSO_SHAPE.ROUNDED_RECTANGLE,
+        left=Inches(7.78),
+        top=Inches(0.34),
+        width=Inches(1.45),
+        height=Inches(0.82),
         fill=base,
     )
     _add_shape(
-        slide, MSO_SHAPE.OVAL,
-        left=Inches(8.92), top=Inches(0.70),
-        width=Inches(0.34), height=Inches(0.34),
+        slide,
+        MSO_SHAPE.OVAL,
+        left=Inches(8.92),
+        top=Inches(0.70),
+        width=Inches(0.34),
+        height=Inches(0.34),
         fill=theme.accent_rgb,
     )
 
@@ -1165,28 +1245,37 @@ def _add_icon_badge(
     text_color: tuple[int, int, int] | None = None,
 ):
     _add_shape(
-        slide, MSO_SHAPE.OVAL,
-        left=left, top=top, width=size, height=size,
+        slide,
+        MSO_SHAPE.OVAL,
+        left=left,
+        top=top,
+        width=size,
+        height=size,
         fill=fill or theme.secondary_rgb,
     )
     return _add_text(
-        slide, label,
-        left=left, top=top + Inches(0.01),
-        width=size, height=size,
-        font_size=10, bold=True,
+        slide,
+        label,
+        left=left,
+        top=top + Inches(0.01),
+        width=size,
+        height=size,
+        font_size=10,
+        bold=True,
         color=text_color or (255, 255, 255),
         font_name="Calibri",
-        align="center", anchor="middle",
+        align="center",
+        anchor="middle",
         margin=0.0,
     )
 
 
-_NUMBER_RE = re.compile(
-    r"(?<![\w.^])(\d+(?:\.\d+)?\s?(?:%|x|X|倍|万|亿|年|小时|分钟|人|页)?)"
-)
+_NUMBER_RE = re.compile(r"(?<![\w.^])(\d+(?:\.\d+)?\s?(?:%|x|X|倍|万|亿|年|小时|分钟|人|页)?)")
 
 
-def _extract_callouts(items: Sequence[str], limit: int = 2) -> tuple[list[tuple[str, str]], list[str]]:
+def _extract_callouts(
+    items: Sequence[str], limit: int = 2
+) -> tuple[list[tuple[str, str]], list[str]]:
     callouts: list[tuple[str, str]] = []
     remaining: list[str] = []
     for item in items:
@@ -1194,9 +1283,9 @@ def _extract_callouts(items: Sequence[str], limit: int = 2) -> tuple[list[tuple[
         match = _NUMBER_RE.search(text)
         if match and len(callouts) < limit:
             value = match.group(1).replace(" ", "")
-            label = (text[:match.start()] + text[match.end():]).strip(" :-：，,。")
-            count_prefix = text[:match.start()]
-            count_suffix = text[match.end():]
+            label = (text[: match.start()] + text[match.end() :]).strip(" :-：，,。")
+            count_prefix = text[: match.start()]
+            count_suffix = text[match.end() :]
             is_parenthetical_count = (
                 re.search(r"[(（]\s*$", count_prefix) is not None
                 and re.match(
@@ -1234,30 +1323,44 @@ def _add_callout_card(
     theme: Theme,
 ):
     _add_shape(
-        slide, MSO_SHAPE.ROUNDED_RECTANGLE,
-        left=left, top=top, width=width, height=height,
+        slide,
+        MSO_SHAPE.ROUNDED_RECTANGLE,
+        left=left,
+        top=top,
+        width=width,
+        height=height,
         fill=theme.primary_rgb,
     )
     _add_shape(
-        slide, MSO_SHAPE.OVAL,
-        left=left + width - Inches(0.58), top=top + Inches(0.18),
-        width=Inches(0.32), height=Inches(0.32),
+        slide,
+        MSO_SHAPE.OVAL,
+        left=left + width - Inches(0.58),
+        top=top + Inches(0.18),
+        width=Inches(0.32),
+        height=Inches(0.32),
         fill=theme.accent_rgb,
     )
     _add_text(
-        slide, value,
-        left=left + Inches(0.28), top=top + Inches(0.12),
-        width=width - Inches(0.55), height=Inches(0.62),
-        font_size=34, bold=True,
+        slide,
+        value,
+        left=left + Inches(0.28),
+        top=top + Inches(0.12),
+        width=width - Inches(0.55),
+        height=Inches(0.62),
+        font_size=34,
+        bold=True,
         color=theme.dark_text_rgb,
         font_name="Calibri",
         anchor="middle",
         margin=0.0,
     )
     _add_text(
-        slide, label,
-        left=left + Inches(0.32), top=top + Inches(0.78),
-        width=width - Inches(0.64), height=height - Inches(0.86),
+        slide,
+        label,
+        left=left + Inches(0.32),
+        top=top + Inches(0.78),
+        width=width - Inches(0.64),
+        height=height - Inches(0.86),
         font_size=12,
         color=theme.dark_muted_text_rgb,
         font_name=theme.font_body,
@@ -1279,21 +1382,31 @@ def _add_item_card(
     badge: str,
 ):
     _add_shape(
-        slide, MSO_SHAPE.ROUNDED_RECTANGLE,
-        left=left, top=top, width=width, height=height,
+        slide,
+        MSO_SHAPE.ROUNDED_RECTANGLE,
+        left=left,
+        top=top,
+        width=width,
+        height=height,
         fill=theme.surface_rgb,
         line=(226, 232, 240),
     )
     if height <= Inches(1.25):
         _add_icon_badge(
-            slide, badge,
-            left=left + Inches(0.18), top=top + Inches(0.18),
-            size=Inches(0.34), theme=theme,
+            slide,
+            badge,
+            left=left + Inches(0.18),
+            top=top + Inches(0.18),
+            size=Inches(0.34),
+            theme=theme,
         )
         _add_text(
-            slide, body,
-            left=left + Inches(0.68), top=top + Inches(0.12),
-            width=width - Inches(0.90), height=height - Inches(0.24),
+            slide,
+            body,
+            left=left + Inches(0.68),
+            top=top + Inches(0.12),
+            width=width - Inches(0.90),
+            height=height - Inches(0.24),
             font_size=10 if len(body) > 44 else 12,
             color=theme.text_rgb,
             font_name=theme.font_body,
@@ -1301,22 +1414,32 @@ def _add_item_card(
         )
         return
     _add_icon_badge(
-        slide, badge,
-        left=left + Inches(0.22), top=top + Inches(0.22),
-        size=Inches(0.42), theme=theme,
+        slide,
+        badge,
+        left=left + Inches(0.22),
+        top=top + Inches(0.22),
+        size=Inches(0.42),
+        theme=theme,
     )
     _add_text(
-        slide, title,
-        left=left + Inches(0.78), top=top + Inches(0.20),
-        width=width - Inches(1.0), height=Inches(0.34),
-        font_size=16, bold=True,
+        slide,
+        title,
+        left=left + Inches(0.78),
+        top=top + Inches(0.20),
+        width=width - Inches(1.0),
+        height=Inches(0.34),
+        font_size=16,
+        bold=True,
         color=theme.primary_rgb,
         font_name=theme.font_heading,
     )
     _add_text(
-        slide, body,
-        left=left + Inches(0.28), top=top + Inches(0.76),
-        width=width - Inches(0.56), height=height - Inches(0.88),
+        slide,
+        body,
+        left=left + Inches(0.28),
+        top=top + Inches(0.76),
+        width=width - Inches(0.56),
+        height=height - Inches(0.88),
         font_size=14,
         color=theme.text_rgb,
         font_name=theme.font_body,
@@ -1327,8 +1450,10 @@ def _add_accent_bar(slide, theme: Theme, *, top: int = 0) -> None:
     """Decorative left-edge accent bar for non-title slides."""
     bar = slide.shapes.add_shape(
         MSO_SHAPE.RECTANGLE,
-        Inches(0), Emu(top),
-        Inches(0.18), Emu(_SLIDE_HEIGHT - top),
+        Inches(0),
+        Emu(top),
+        Inches(0.18),
+        Emu(_SLIDE_HEIGHT - top),
     )
     bar.line.fill.background()
     bar.fill.solid()
@@ -1343,26 +1468,36 @@ def _render_title(slide, outline: SlideOutline, theme: Theme) -> None:
     # Big horizontal accent bar at top-third
     accent = slide.shapes.add_shape(
         MSO_SHAPE.RECTANGLE,
-        Inches(0), Inches(2.2),
-        Inches(10), Inches(0.08),
+        Inches(0),
+        Inches(2.2),
+        Inches(10),
+        Inches(0.08),
     )
     accent.line.fill.background()
     accent.fill.solid()
     accent.fill.fore_color.rgb = _rgb(theme.accent_rgb)
     _add_text(
-        slide, outline.title or "(无标题)",
-        left=Inches(0.6), top=Inches(1.3),
-        width=Inches(8.8), height=Inches(0.9),
-        font_size=44, bold=True,
+        slide,
+        outline.title or "(无标题)",
+        left=Inches(0.6),
+        top=Inches(1.3),
+        width=Inches(8.8),
+        height=Inches(0.9),
+        font_size=44,
+        bold=True,
         color=theme.primary_rgb,
         font_name=theme.font_heading,
-        align="left", anchor="top",
+        align="left",
+        anchor="top",
     )
     if outline.subtitle:
         _add_text(
-            slide, outline.subtitle,
-            left=Inches(0.6), top=Inches(2.4),
-            width=Inches(8.8), height=Inches(0.6),
+            slide,
+            outline.subtitle,
+            left=Inches(0.6),
+            top=Inches(2.4),
+            width=Inches(8.8),
+            height=Inches(0.6),
             font_size=20,
             color=theme.muted_text_rgb,
             font_name=theme.font_body,
@@ -1374,19 +1509,27 @@ def _render_section(slide, outline: SlideOutline, theme: Theme) -> None:
     _fill_slide_bg(slide, theme)
     # Centered large title
     _add_text(
-        slide, outline.title or "(章节)",
-        left=Inches(0.5), top=Inches(2.0),
-        width=Inches(9), height=Inches(1.0),
-        font_size=40, bold=True,
+        slide,
+        outline.title or "(章节)",
+        left=Inches(0.5),
+        top=Inches(2.0),
+        width=Inches(9),
+        height=Inches(1.0),
+        font_size=40,
+        bold=True,
         color=theme.accent_rgb,
         font_name=theme.font_heading,
-        align="center", anchor="middle",
+        align="center",
+        anchor="middle",
     )
     if outline.subtitle:
         _add_text(
-            slide, outline.subtitle,
-            left=Inches(0.5), top=Inches(3.0),
-            width=Inches(9), height=Inches(0.6),
+            slide,
+            outline.subtitle,
+            left=Inches(0.5),
+            top=Inches(3.0),
+            width=Inches(9),
+            height=Inches(0.6),
             font_size=18,
             color=theme.muted_text_rgb,
             font_name=theme.font_body,
@@ -1398,26 +1541,36 @@ def _render_bullet(slide, outline: SlideOutline, theme: Theme) -> None:
     _fill_slide_bg(slide, theme)
     _add_accent_bar(slide, theme)
     _add_text(
-        slide, outline.title or "(无标题)",
-        left=Inches(0.6), top=Inches(0.4),
-        width=Inches(8.8), height=Inches(0.7),
-        font_size=28, bold=True,
+        slide,
+        outline.title or "(无标题)",
+        left=Inches(0.6),
+        top=Inches(0.4),
+        width=Inches(8.8),
+        height=Inches(0.7),
+        font_size=28,
+        bold=True,
         color=theme.primary_rgb,
         font_name=theme.font_heading,
     )
     if outline.subtitle:
         _add_text(
-            slide, outline.subtitle,
-            left=Inches(0.6), top=Inches(1.05),
-            width=Inches(8.8), height=Inches(0.4),
+            slide,
+            outline.subtitle,
+            left=Inches(0.6),
+            top=Inches(1.05),
+            width=Inches(8.8),
+            height=Inches(0.4),
             font_size=14,
             color=theme.muted_text_rgb,
             font_name=theme.font_body,
         )
     _add_bullet_text(
-        slide, outline.bullets,
-        left=Inches(0.7), top=Inches(1.6),
-        width=Inches(8.6), height=Inches(3.8),
+        slide,
+        outline.bullets,
+        left=Inches(0.7),
+        top=Inches(1.6),
+        width=Inches(8.6),
+        height=Inches(3.8),
         font_size=18,
         color=theme.text_rgb,
         font_name=theme.font_body,
@@ -1429,10 +1582,14 @@ def _render_two_column(slide, outline: SlideOutline, theme: Theme) -> None:
     _fill_slide_bg(slide, theme)
     _add_accent_bar(slide, theme)
     _add_text(
-        slide, outline.title or "(对比)",
-        left=Inches(0.6), top=Inches(0.4),
-        width=Inches(8.8), height=Inches(0.7),
-        font_size=28, bold=True,
+        slide,
+        outline.title or "(对比)",
+        left=Inches(0.6),
+        top=Inches(0.4),
+        width=Inches(8.8),
+        height=Inches(0.7),
+        font_size=28,
+        bold=True,
         color=theme.primary_rgb,
         font_name=theme.font_heading,
     )
@@ -1442,17 +1599,24 @@ def _render_two_column(slide, outline: SlideOutline, theme: Theme) -> None:
     col_h = Inches(3.8)
     # Left column header
     _add_text(
-        slide, outline.left_title or "左",
-        left=Inches(0.6), top=col_top,
-        width=col_w, height=Inches(0.5),
-        font_size=18, bold=True,
+        slide,
+        outline.left_title or "左",
+        left=Inches(0.6),
+        top=col_top,
+        width=col_w,
+        height=Inches(0.5),
+        font_size=18,
+        bold=True,
         color=theme.accent_rgb,
         font_name=theme.font_heading,
     )
     _add_bullet_text(
-        slide, outline.left,
-        left=Inches(0.6), top=Inches(2.0),
-        width=col_w, height=col_h,
+        slide,
+        outline.left,
+        left=Inches(0.6),
+        top=Inches(2.0),
+        width=col_w,
+        height=col_h,
         font_size=16,
         color=theme.text_rgb,
         font_name=theme.font_body,
@@ -1460,17 +1624,24 @@ def _render_two_column(slide, outline: SlideOutline, theme: Theme) -> None:
     )
     # Right column header
     _add_text(
-        slide, outline.right_title or "右",
-        left=Inches(5.2), top=col_top,
-        width=col_w, height=Inches(0.5),
-        font_size=18, bold=True,
+        slide,
+        outline.right_title or "右",
+        left=Inches(5.2),
+        top=col_top,
+        width=col_w,
+        height=Inches(0.5),
+        font_size=18,
+        bold=True,
         color=theme.accent_rgb,
         font_name=theme.font_heading,
     )
     _add_bullet_text(
-        slide, outline.right,
-        left=Inches(5.2), top=Inches(2.0),
-        width=col_w, height=col_h,
+        slide,
+        outline.right,
+        left=Inches(5.2),
+        top=Inches(2.0),
+        width=col_w,
+        height=col_h,
         font_size=16,
         color=theme.text_rgb,
         font_name=theme.font_body,
@@ -1482,10 +1653,14 @@ def _render_image(slide, outline: SlideOutline, theme: Theme) -> None:
     _fill_slide_bg(slide, theme)
     _add_accent_bar(slide, theme)
     _add_text(
-        slide, outline.title or "",
-        left=Inches(0.6), top=Inches(0.4),
-        width=Inches(8.8), height=Inches(0.7),
-        font_size=24, bold=True,
+        slide,
+        outline.title or "",
+        left=Inches(0.6),
+        top=Inches(0.4),
+        width=Inches(8.8),
+        height=Inches(0.7),
+        font_size=24,
+        bold=True,
         color=theme.primary_rgb,
         font_name=theme.font_heading,
     )
@@ -1494,14 +1669,18 @@ def _render_image(slide, outline: SlideOutline, theme: Theme) -> None:
         try:
             slide.shapes.add_picture(
                 img,
-                Inches(2.0), Inches(1.3),
+                Inches(2.0),
+                Inches(1.3),
                 width=Inches(6.0),
             )
             if outline.caption:
                 _add_text(
-                    slide, outline.caption,
-                    left=Inches(0.6), top=Inches(4.8),
-                    width=Inches(8.8), height=Inches(0.4),
+                    slide,
+                    outline.caption,
+                    left=Inches(0.6),
+                    top=Inches(4.8),
+                    width=Inches(8.8),
+                    height=Inches(0.4),
                     font_size=12,
                     color=theme.muted_text_rgb,
                     font_name=theme.font_body,
@@ -1511,13 +1690,16 @@ def _render_image(slide, outline: SlideOutline, theme: Theme) -> None:
         except Exception as exc:  # noqa: BLE001
             log.debug("image insert failed (%s); falling back to bullet", exc)
     # Fallback to bullet layout with caption + warning marker
-    fallback_bullets = (
-        [f"[image missing: {img}]"] if img else []
-    ) + ([outline.caption] if outline.caption else [])
+    fallback_bullets = ([f"[image missing: {img}]"] if img else []) + (
+        [outline.caption] if outline.caption else []
+    )
     _add_bullet_text(
-        slide, fallback_bullets or ["(图片缺失)"],
-        left=Inches(0.7), top=Inches(1.6),
-        width=Inches(8.6), height=Inches(3.5),
+        slide,
+        fallback_bullets or ["(图片缺失)"],
+        left=Inches(0.7),
+        top=Inches(1.6),
+        width=Inches(8.6),
+        height=Inches(3.5),
         font_size=18,
         color=theme.muted_text_rgb,
         font_name=theme.font_body,
@@ -1530,17 +1712,24 @@ def _render_quote(slide, outline: SlideOutline, theme: Theme) -> None:
     quote_text = outline.quote or outline.title or "(无引述)"
     # Big left quote mark
     _add_text(
-        slide, "“",
-        left=Inches(0.6), top=Inches(0.7),
-        width=Inches(1.2), height=Inches(1.5),
-        font_size=110, bold=True,
+        slide,
+        "“",
+        left=Inches(0.6),
+        top=Inches(0.7),
+        width=Inches(1.2),
+        height=Inches(1.5),
+        font_size=110,
+        bold=True,
         color=theme.accent_rgb,
         font_name=theme.font_heading,
     )
     _add_text(
-        slide, quote_text,
-        left=Inches(1.4), top=Inches(1.4),
-        width=Inches(7.8), height=Inches(2.8),
+        slide,
+        quote_text,
+        left=Inches(1.4),
+        top=Inches(1.4),
+        width=Inches(7.8),
+        height=Inches(2.8),
         font_size=24,
         color=theme.text_rgb,
         font_name=theme.font_body,
@@ -1548,9 +1737,12 @@ def _render_quote(slide, outline: SlideOutline, theme: Theme) -> None:
     )
     if outline.cite:
         _add_text(
-            slide, f"— {outline.cite}",
-            left=Inches(1.4), top=Inches(4.4),
-            width=Inches(7.8), height=Inches(0.5),
+            slide,
+            f"— {outline.cite}",
+            left=Inches(1.4),
+            top=Inches(4.4),
+            width=Inches(7.8),
+            height=Inches(0.5),
             font_size=14,
             color=theme.muted_text_rgb,
             font_name=theme.font_body,
@@ -1561,16 +1753,23 @@ def _render_toc(slide, outline: SlideOutline, theme: Theme) -> None:
     _fill_slide_bg(slide, theme)
     _add_accent_bar(slide, theme)
     _add_text(
-        slide, outline.title or "目录",
-        left=Inches(0.6), top=Inches(0.4),
-        width=Inches(8.8), height=Inches(0.7),
-        font_size=32, bold=True,
+        slide,
+        outline.title or "目录",
+        left=Inches(0.6),
+        top=Inches(0.4),
+        width=Inches(8.8),
+        height=Inches(0.7),
+        font_size=32,
+        bold=True,
         color=theme.primary_rgb,
         font_name=theme.font_heading,
     )
     # Numbered list rendered manually for visual weight
     tb = slide.shapes.add_textbox(
-        Inches(0.7), Inches(1.5), Inches(8.6), Inches(3.8),
+        Inches(0.7),
+        Inches(1.5),
+        Inches(8.6),
+        Inches(3.8),
     )
     tf = tb.text_frame
     tf.word_wrap = True
@@ -1623,10 +1822,14 @@ def _render_chart(slide, outline: SlideOutline, theme: Theme) -> None:
     _fill_slide_bg(slide, theme)
     _add_accent_bar(slide, theme)
     _add_text(
-        slide, outline.title or "(图表)",
-        left=Inches(0.6), top=Inches(0.4),
-        width=Inches(8.8), height=Inches(0.7),
-        font_size=28, bold=True,
+        slide,
+        outline.title or "(图表)",
+        left=Inches(0.6),
+        top=Inches(0.4),
+        width=Inches(8.8),
+        height=Inches(0.7),
+        font_size=28,
+        bold=True,
         color=theme.primary_rgb,
         font_name=theme.font_heading,
     )
@@ -1636,11 +1839,16 @@ def _render_chart(slide, outline: SlideOutline, theme: Theme) -> None:
     series = [s for s in (spec.get("series") or []) if isinstance(s, dict)]
     if not categories or not series:
         _add_bullet_text(
-            slide, outline.bullets or ["（图表数据缺失，已降级为要点）"],
-            left=Inches(0.7), top=Inches(1.6),
-            width=Inches(8.6), height=Inches(3.8),
-            font_size=18, color=theme.text_rgb,
-            font_name=theme.font_body, accent_color=theme.accent_rgb,
+            slide,
+            outline.bullets or ["（图表数据缺失，已降级为要点）"],
+            left=Inches(0.7),
+            top=Inches(1.6),
+            width=Inches(8.6),
+            height=Inches(3.8),
+            font_size=18,
+            color=theme.text_rgb,
+            font_name=theme.font_body,
+            accent_color=theme.accent_rgb,
         )
         return
 
@@ -1668,7 +1876,10 @@ def _render_chart(slide, outline: SlideOutline, theme: Theme) -> None:
     try:
         gframe = slide.shapes.add_chart(
             xl_type,
-            Inches(0.8), Inches(1.5), Inches(8.4), Inches(3.5),
+            Inches(0.8),
+            Inches(1.5),
+            Inches(8.4),
+            Inches(3.5),
             chart_data,
         )
         chart = gframe.chart
@@ -1679,58 +1890,84 @@ def _render_chart(slide, outline: SlideOutline, theme: Theme) -> None:
     except Exception as exc:  # noqa: BLE001 — degrade rather than abort
         log.warning("chart render failed, degrading to bullets: %s", exc)
         _add_bullet_text(
-            slide, outline.bullets or [f"{s.get('name')}" for s in series],
-            left=Inches(0.7), top=Inches(1.6),
-            width=Inches(8.6), height=Inches(3.8),
-            font_size=18, color=theme.text_rgb,
-            font_name=theme.font_body, accent_color=theme.accent_rgb,
+            slide,
+            outline.bullets or [f"{s.get('name')}" for s in series],
+            left=Inches(0.7),
+            top=Inches(1.6),
+            width=Inches(8.6),
+            height=Inches(3.8),
+            font_size=18,
+            color=theme.text_rgb,
+            font_name=theme.font_body,
+            accent_color=theme.accent_rgb,
         )
 
 
 def _render_title_v2(slide, outline: SlideOutline, theme: Theme) -> None:
     _fill_slide_bg(slide, theme, theme.dark_bg_rgb)
     _add_shape(
-        slide, MSO_SHAPE.ROUNDED_RECTANGLE,
-        left=Inches(6.95), top=Inches(0.58),
-        width=Inches(2.25), height=Inches(1.28),
+        slide,
+        MSO_SHAPE.ROUNDED_RECTANGLE,
+        left=Inches(6.95),
+        top=Inches(0.58),
+        width=Inches(2.25),
+        height=Inches(1.28),
         fill=theme.secondary_rgb,
     )
     _add_shape(
-        slide, MSO_SHAPE.OVAL,
-        left=Inches(7.82), top=Inches(3.62),
-        width=Inches(1.15), height=Inches(1.15),
+        slide,
+        MSO_SHAPE.OVAL,
+        left=Inches(7.82),
+        top=Inches(3.62),
+        width=Inches(1.15),
+        height=Inches(1.15),
         fill=theme.accent_rgb,
     )
     _add_shape(
-        slide, MSO_SHAPE.ROUNDED_RECTANGLE,
-        left=Inches(0.66), top=Inches(0.72),
-        width=Inches(1.20), height=Inches(0.34),
+        slide,
+        MSO_SHAPE.ROUNDED_RECTANGLE,
+        left=Inches(0.66),
+        top=Inches(0.72),
+        width=Inches(1.20),
+        height=Inches(0.34),
         fill=theme.highlight_rgb,
     )
     _add_text(
-        slide, outline.title or "(鏃犳爣棰?",
-        left=Inches(0.62), top=Inches(1.32),
-        width=Inches(6.8), height=Inches(1.38),
-        font_size=44, bold=True,
+        slide,
+        outline.title or "(鏃犳爣棰?",
+        left=Inches(0.62),
+        top=Inches(1.32),
+        width=Inches(6.8),
+        height=Inches(1.38),
+        font_size=44,
+        bold=True,
         color=theme.dark_text_rgb,
         font_name=theme.font_heading,
-        align="left", anchor="top",
+        align="left",
+        anchor="top",
     )
     if outline.subtitle:
         _add_text(
-            slide, outline.subtitle,
-            left=Inches(0.66), top=Inches(2.92),
-            width=Inches(6.6), height=Inches(0.56),
+            slide,
+            outline.subtitle,
+            left=Inches(0.66),
+            top=Inches(2.92),
+            width=Inches(6.6),
+            height=Inches(0.56),
             font_size=19,
             color=theme.dark_muted_text_rgb,
             font_name=theme.font_body,
             align="left",
         )
     _add_text(
-        slide, "Simple Harness",
-        left=Inches(0.66), top=Inches(4.82),
-        width=Inches(1.6), height=Inches(0.28),
-        font_size=11, bold=True,
+        slide,
+        "Simple Harness",
+        left=Inches(0.66),
+        top=Inches(4.82),
+        width=Inches(1.6),
+        height=Inches(0.28),
+        font_size=11,
+        bold=True,
         color=theme.dark_muted_text_rgb,
         font_name="Calibri",
     )
@@ -1740,34 +1977,47 @@ def _render_section_v2(slide, outline: SlideOutline, theme: Theme) -> None:
     _fill_slide_bg(slide, theme)
     _add_corner_motif(slide, theme)
     _add_shape(
-        slide, MSO_SHAPE.ROUNDED_RECTANGLE,
-        left=Inches(0.80), top=Inches(1.28),
-        width=Inches(8.40), height=Inches(3.10),
+        slide,
+        MSO_SHAPE.ROUNDED_RECTANGLE,
+        left=Inches(0.80),
+        top=Inches(1.28),
+        width=Inches(8.40),
+        height=Inches(3.10),
         fill=theme.surface_rgb,
         line=(226, 232, 240),
     )
     _add_icon_badge(
-        slide, "S",
-        left=Inches(1.22), top=Inches(1.70),
+        slide,
+        "S",
+        left=Inches(1.22),
+        top=Inches(1.70),
         size=Inches(0.62),
         theme=theme,
         fill=theme.accent_rgb,
         text_color=theme.dark_text_rgb,
     )
     _add_text(
-        slide, outline.title or "(绔犺妭)",
-        left=Inches(1.16), top=Inches(2.34),
-        width=Inches(7.75), height=Inches(0.88),
-        font_size=38, bold=True,
+        slide,
+        outline.title or "(绔犺妭)",
+        left=Inches(1.16),
+        top=Inches(2.34),
+        width=Inches(7.75),
+        height=Inches(0.88),
+        font_size=38,
+        bold=True,
         color=theme.primary_rgb,
         font_name=theme.font_heading,
-        align="center", anchor="middle",
+        align="center",
+        anchor="middle",
     )
     if outline.subtitle:
         _add_text(
-            slide, outline.subtitle,
-            left=Inches(1.30), top=Inches(3.22),
-            width=Inches(7.40), height=Inches(0.42),
+            slide,
+            outline.subtitle,
+            left=Inches(1.30),
+            top=Inches(3.22),
+            width=Inches(7.40),
+            height=Inches(0.42),
             font_size=15,
             color=theme.muted_text_rgb,
             font_name=theme.font_body,
@@ -1781,8 +2031,7 @@ def _render_bullet_v2(slide, outline: SlideOutline, theme: Theme) -> None:
     _add_corner_motif(slide, theme)
     items = list(outline.bullets or [])
     dense_prose = bool(items) and (
-        max(len(str(item)) for item in items) > 120
-        or sum(len(str(item)) for item in items) > 480
+        max(len(str(item)) for item in items) > 120 or sum(len(str(item)) for item in items) > 480
     )
     if dense_prose:
         # Long, contract-relevant prose must remain intact and editable. A
@@ -1807,18 +2056,27 @@ def _render_bullet_v2(slide, outline: SlideOutline, theme: Theme) -> None:
         card_h = Inches(1.46) if len(callouts) > 1 else Inches(1.78)
         for idx, (value, label) in enumerate(callouts):
             _add_callout_card(
-                slide, value, label,
-                left=Inches(0.68), top=Inches(1.55 + idx * 1.66),
-                width=Inches(3.12), height=card_h,
+                slide,
+                value,
+                label,
+                left=Inches(0.68),
+                top=Inches(1.55 + idx * 1.66),
+                width=Inches(3.12),
+                height=card_h,
                 theme=theme,
             )
         items = rest or [b for b in outline.bullets if b]
         for idx, item in enumerate(items[:4]):
             _add_item_card(
-                slide, f"要点 {idx + 1}", item,
-                left=Inches(4.10), top=Inches(1.50 + idx * 0.92),
-                width=Inches(5.18), height=Inches(0.78),
-                theme=theme, badge=str(idx + 1),
+                slide,
+                f"要点 {idx + 1}",
+                item,
+                left=Inches(4.10),
+                top=Inches(1.50 + idx * 0.92),
+                width=Inches(5.18),
+                height=Inches(0.78),
+                theme=theme,
+                badge=str(idx + 1),
             )
         return
 
@@ -1831,11 +2089,15 @@ def _render_bullet_v2(slide, outline: SlideOutline, theme: Theme) -> None:
     for idx, item in enumerate(items[:6]):
         row, col = divmod(idx, 2)
         _add_item_card(
-            slide, f"要点 {idx + 1}", item,
+            slide,
+            f"要点 {idx + 1}",
+            item,
             left=Inches(0.70 + col * 4.62),
             top=start_top + row * (card_h + Inches(0.22)),
-            width=card_w, height=card_h,
-            theme=theme, badge=str(idx + 1),
+            width=card_w,
+            height=card_h,
+            theme=theme,
+            badge=str(idx + 1),
         )
 
 
@@ -1849,41 +2111,55 @@ def _render_two_column_v2(slide, outline: SlideOutline, theme: Theme) -> None:
         split_at = max(1, (len(outline.bullets) + 1) // 2)
         left_items = list(outline.bullets[:split_at])
         right_items = list(outline.bullets[split_at:])
-    for col, (x, heading, items, badge) in enumerate((
-        (Inches(0.70), outline.left_title or "方案 A", left_items, "A"),
-        (Inches(5.18), outline.right_title or "方案 B", right_items, "B"),
-    )):
+    for col, (x, heading, items, badge) in enumerate(
+        (
+            (Inches(0.70), outline.left_title or "方案 A", left_items, "A"),
+            (Inches(5.18), outline.right_title or "方案 B", right_items, "B"),
+        )
+    ):
         fill = theme.primary_rgb if col == 0 else theme.surface_rgb
         text_color = theme.dark_text_rgb if col == 0 else theme.text_rgb
         body_color = theme.dark_muted_text_rgb if col == 0 else theme.text_rgb
         _add_shape(
-            slide, MSO_SHAPE.ROUNDED_RECTANGLE,
-            left=x, top=Inches(1.42),
-            width=Inches(4.12), height=Inches(3.65),
+            slide,
+            MSO_SHAPE.ROUNDED_RECTANGLE,
+            left=x,
+            top=Inches(1.42),
+            width=Inches(4.12),
+            height=Inches(3.65),
             fill=fill,
             line=None if col == 0 else (226, 232, 240),
         )
         _add_icon_badge(
-            slide, badge,
-            left=x + Inches(0.30), top=Inches(1.74),
+            slide,
+            badge,
+            left=x + Inches(0.30),
+            top=Inches(1.74),
             size=Inches(0.50),
             theme=theme,
             fill=theme.accent_rgb if col == 0 else theme.secondary_rgb,
             text_color=theme.dark_text_rgb,
         )
         _add_text(
-            slide, heading,
-            left=x + Inches(0.92), top=Inches(1.74),
-            width=Inches(2.85), height=Inches(0.46),
-            font_size=21, bold=True,
+            slide,
+            heading,
+            left=x + Inches(0.92),
+            top=Inches(1.74),
+            width=Inches(2.85),
+            height=Inches(0.46),
+            font_size=21,
+            bold=True,
             color=text_color,
             font_name=theme.font_heading,
         )
         body = "\n".join(f"- {item}" for item in items[:5])
         _add_text(
-            slide, body,
-            left=x + Inches(0.36), top=Inches(2.52),
-            width=Inches(3.42), height=Inches(2.08),
+            slide,
+            body,
+            left=x + Inches(0.36),
+            top=Inches(2.52),
+            width=Inches(3.42),
+            height=Inches(2.08),
             font_size=15,
             color=body_color,
             font_name=theme.font_body,
@@ -1898,15 +2174,21 @@ def _render_image_v2(slide, outline: SlideOutline, theme: Theme) -> None:
     frame_left, frame_top = Inches(0.72), Inches(1.42)
     frame_w, frame_h = Inches(5.64), Inches(3.46)
     _add_shape(
-        slide, MSO_SHAPE.ROUNDED_RECTANGLE,
-        left=frame_left, top=frame_top, width=frame_w, height=frame_h,
-        fill=theme.surface_rgb, line=(226, 232, 240),
+        slide,
+        MSO_SHAPE.ROUNDED_RECTANGLE,
+        left=frame_left,
+        top=frame_top,
+        width=frame_w,
+        height=frame_h,
+        fill=theme.surface_rgb,
+        line=(226, 232, 240),
     )
     if img and Path(img).is_file():
         try:
             slide.shapes.add_picture(
                 img,
-                frame_left + Inches(0.14), frame_top + Inches(0.14),
+                frame_left + Inches(0.14),
+                frame_top + Inches(0.14),
                 width=frame_w - Inches(0.28),
             )
         except Exception as exc:  # noqa: BLE001
@@ -1914,23 +2196,33 @@ def _render_image_v2(slide, outline: SlideOutline, theme: Theme) -> None:
             img = None
     if not img or not Path(str(img)).is_file():
         _add_icon_badge(
-            slide, "IMG",
-            left=frame_left + Inches(2.44), top=frame_top + Inches(1.20),
-            size=Inches(0.72), theme=theme, fill=theme.secondary_rgb,
+            slide,
+            "IMG",
+            left=frame_left + Inches(2.44),
+            top=frame_top + Inches(1.20),
+            size=Inches(0.72),
+            theme=theme,
+            fill=theme.secondary_rgb,
         )
         _add_text(
-            slide, f"image missing: {img}" if img else "image placeholder",
-            left=frame_left + Inches(0.46), top=frame_top + Inches(2.05),
-            width=frame_w - Inches(0.92), height=Inches(0.36),
+            slide,
+            f"image missing: {img}" if img else "image placeholder",
+            left=frame_left + Inches(0.46),
+            top=frame_top + Inches(2.05),
+            width=frame_w - Inches(0.92),
+            height=Inches(0.36),
             font_size=12,
             color=theme.muted_text_rgb,
             font_name=theme.font_body,
             align="center",
         )
     _add_shape(
-        slide, MSO_SHAPE.ROUNDED_RECTANGLE,
-        left=Inches(6.62), top=Inches(1.42),
-        width=Inches(2.72), height=Inches(3.46),
+        slide,
+        MSO_SHAPE.ROUNDED_RECTANGLE,
+        left=Inches(6.62),
+        top=Inches(1.42),
+        width=Inches(2.72),
+        height=Inches(3.46),
         fill=theme.primary_rgb,
     )
     if outline.bullets:
@@ -1948,13 +2240,18 @@ def _render_image_v2(slide, outline: SlideOutline, theme: Theme) -> None:
         )
     else:
         _add_text(
-            slide, outline.caption or "视觉说明",
-            left=Inches(6.96), top=Inches(2.06),
-            width=Inches(2.06), height=Inches(1.32),
-            font_size=17, bold=True,
+            slide,
+            outline.caption or "视觉说明",
+            left=Inches(6.96),
+            top=Inches(2.06),
+            width=Inches(2.06),
+            height=Inches(1.32),
+            font_size=17,
+            bold=True,
             color=theme.dark_text_rgb,
             font_name=theme.font_heading,
-            align="left", anchor="middle",
+            align="left",
+            anchor="middle",
         )
 
 
@@ -1973,8 +2270,9 @@ def _place_cover(slide, img: str, *, left: int, top: int, width: int, height: in
     铺(可能轻微拉伸,但有兜底)。从不抛异常。
     """
     try:
-        pic = slide.shapes.add_picture(img, Emu(left), Emu(top),
-                                       width=Emu(width), height=Emu(height))
+        pic = slide.shapes.add_picture(
+            img, Emu(left), Emu(top), width=Emu(width), height=Emu(height)
+        )
         try:
             from PIL import Image  # type: ignore
 
@@ -2003,94 +2301,147 @@ def _place_cover(slide, img: str, *, left: int, top: int, width: int, height: in
 
 
 def _fullbleed_picture(slide, img: str) -> bool:
-    return _place_cover(slide, img, left=0, top=0,
-                        width=_SLIDE_WIDTH, height=_SLIDE_HEIGHT)
+    return _place_cover(slide, img, left=0, top=0, width=_SLIDE_WIDTH, height=_SLIDE_HEIGHT)
 
 
 def _side_picture(slide, img: str, *, left_emu: int, width_emu: int) -> bool:
-    return _place_cover(slide, img, left=left_emu, top=0,
-                        width=width_emu, height=_SLIDE_HEIGHT)
+    return _place_cover(slide, img, left=left_emu, top=0, width=width_emu, height=_SLIDE_HEIGHT)
 
 
-def _panel_text(slide, outline: SlideOutline, theme: Theme, *,
-                px: float, pw: float, title_pt: int = 26) -> None:
+def _panel_text(
+    slide, outline: SlideOutline, theme: Theme, *, px: float, pw: float, title_pt: int = 26
+) -> None:
     """深色面板内: accent 竖条 + 标题 + 要点/caption。px/pw 为英寸。
     字号 × outline.font_scale(视觉评审 shrink_text 动作)。"""
     fs = outline.font_scale or 1.0
     _add_shape(
-        slide, MSO_SHAPE.RECTANGLE,
-        left=Inches(px), top=Inches(0.7),
-        width=Inches(0.06), height=Inches(0.62),
-        fill=theme.accent_rgb, line=None,
+        slide,
+        MSO_SHAPE.RECTANGLE,
+        left=Inches(px),
+        top=Inches(0.7),
+        width=Inches(0.06),
+        height=Inches(0.62),
+        fill=theme.accent_rgb,
+        line=None,
     )
     _add_text(
-        slide, outline.title or "",
-        left=Inches(px + 0.2), top=Inches(0.62),
-        width=Inches(pw - 0.4), height=Inches(0.92),
-        font_size=max(14, int(title_pt * fs)), bold=True,
-        color=theme.dark_text_rgb, font_name=theme.font_heading,
-        align="left", anchor="middle",
+        slide,
+        outline.title or "",
+        left=Inches(px + 0.2),
+        top=Inches(0.62),
+        width=Inches(pw - 0.4),
+        height=Inches(0.92),
+        font_size=max(14, int(title_pt * fs)),
+        bold=True,
+        color=theme.dark_text_rgb,
+        font_name=theme.font_heading,
+        align="left",
+        anchor="middle",
     )
     bullets = [b for b in (outline.bullets or []) if str(b).strip()]
     if bullets:
         _add_bullet_text(
-            slide, bullets,
-            left=Inches(px + 0.2), top=Inches(1.78),
-            width=Inches(pw - 0.5), height=Inches(3.2),
-            font_size=max(10, int(15 * fs)), color=theme.dark_text_rgb,
-            font_name=theme.font_body, accent_color=theme.accent_rgb,
+            slide,
+            bullets,
+            left=Inches(px + 0.2),
+            top=Inches(1.78),
+            width=Inches(pw - 0.5),
+            height=Inches(3.2),
+            font_size=max(10, int(15 * fs)),
+            color=theme.dark_text_rgb,
+            font_name=theme.font_body,
+            accent_color=theme.accent_rgb,
         )
     elif outline.caption:
         _add_text(
-            slide, outline.caption,
-            left=Inches(px + 0.2), top=Inches(1.78),
-            width=Inches(pw - 0.5), height=Inches(2.6),
-            font_size=max(11, int(16 * fs)), color=theme.dark_muted_text_rgb,
-            font_name=theme.font_body, align="left",
+            slide,
+            outline.caption,
+            left=Inches(px + 0.2),
+            top=Inches(1.78),
+            width=Inches(pw - 0.5),
+            height=Inches(2.6),
+            font_size=max(11, int(16 * fs)),
+            color=theme.dark_muted_text_rgb,
+            font_name=theme.font_body,
+            align="left",
         )
 
 
 def _render_var_cover(slide, outline: SlideOutline, theme: Theme) -> None:
     """A 全幅封面/转场: 全幅图 + 底部暗带(标题 + caption)。"""
     band_top = Emu(int(_SLIDE_HEIGHT * 0.76))
-    _add_shape(slide, MSO_SHAPE.RECTANGLE, left=Emu(0), top=band_top,
-               width=Emu(_SLIDE_WIDTH), height=Emu(int(_SLIDE_HEIGHT * 0.24)),
-               fill=theme.dark_bg_rgb, line=None)
-    _add_text(slide, outline.title or "", left=Inches(0.62),
-              top=band_top + Inches(0.2), width=Inches(8.76), height=Inches(0.6),
-              font_size=30, bold=True, color=theme.dark_text_rgb,
-              font_name=theme.font_heading, align="left")
+    _add_shape(
+        slide,
+        MSO_SHAPE.RECTANGLE,
+        left=Emu(0),
+        top=band_top,
+        width=Emu(_SLIDE_WIDTH),
+        height=Emu(int(_SLIDE_HEIGHT * 0.24)),
+        fill=theme.dark_bg_rgb,
+        line=None,
+    )
+    _add_text(
+        slide,
+        outline.title or "",
+        left=Inches(0.62),
+        top=band_top + Inches(0.2),
+        width=Inches(8.76),
+        height=Inches(0.6),
+        font_size=30,
+        bold=True,
+        color=theme.dark_text_rgb,
+        font_name=theme.font_heading,
+        align="left",
+    )
     sub = outline.caption or outline.subtitle
     if sub:
-        _add_text(slide, sub, left=Inches(0.64), top=band_top + Inches(0.92),
-                  width=Inches(8.72), height=Inches(0.36), font_size=14,
-                  color=theme.dark_muted_text_rgb, font_name=theme.font_body,
-                  align="left")
+        _add_text(
+            slide,
+            sub,
+            left=Inches(0.64),
+            top=band_top + Inches(0.92),
+            width=Inches(8.72),
+            height=Inches(0.36),
+            font_size=14,
+            color=theme.dark_muted_text_rgb,
+            font_name=theme.font_body,
+            align="left",
+        )
 
 
-def _render_var_split(slide, outline: SlideOutline, theme: Theme, *,
-                      image_right: bool) -> None:
+def _render_var_split(slide, outline: SlideOutline, theme: Theme, *, image_right: bool) -> None:
     """B 图一侧 + 文字面板另一侧(左右交替防呆板)。"""
     panel_w = int(_SLIDE_WIDTH * 0.46)
     img = outline.image_path
     if image_right:
         # 面板在左,图在右
         if img and Path(img).is_file():
-            _side_picture(slide, img, left_emu=panel_w,
-                          width_emu=_SLIDE_WIDTH - panel_w)
-        _add_shape(slide, MSO_SHAPE.RECTANGLE, left=Emu(0), top=Emu(0),
-                   width=Emu(panel_w), height=Emu(_SLIDE_HEIGHT),
-                   fill=theme.dark_bg_rgb, line=None)
+            _side_picture(slide, img, left_emu=panel_w, width_emu=_SLIDE_WIDTH - panel_w)
+        _add_shape(
+            slide,
+            MSO_SHAPE.RECTANGLE,
+            left=Emu(0),
+            top=Emu(0),
+            width=Emu(panel_w),
+            height=Emu(_SLIDE_HEIGHT),
+            fill=theme.dark_bg_rgb,
+            line=None,
+        )
         _panel_text(slide, outline, theme, px=0.62, pw=4.0)
     else:
         # 图在左,面板在右
         if img and Path(img).is_file():
-            _side_picture(slide, img, left_emu=0,
-                          width_emu=_SLIDE_WIDTH - panel_w)
-        _add_shape(slide, MSO_SHAPE.RECTANGLE,
-                   left=Emu(_SLIDE_WIDTH - panel_w), top=Emu(0),
-                   width=Emu(panel_w), height=Emu(_SLIDE_HEIGHT),
-                   fill=theme.dark_bg_rgb, line=None)
+            _side_picture(slide, img, left_emu=0, width_emu=_SLIDE_WIDTH - panel_w)
+        _add_shape(
+            slide,
+            MSO_SHAPE.RECTANGLE,
+            left=Emu(_SLIDE_WIDTH - panel_w),
+            top=Emu(0),
+            width=Emu(panel_w),
+            height=Emu(_SLIDE_HEIGHT),
+            fill=theme.dark_bg_rgb,
+            line=None,
+        )
         _panel_text(slide, outline, theme, px=6.2, pw=3.6)
 
 
@@ -2100,19 +2451,43 @@ def _render_var_top(slide, outline: SlideOutline, theme: Theme) -> None:
     img_h = int(_SLIDE_HEIGHT * 0.6)
     if img and Path(img).is_file():
         _place_cover(slide, img, left=0, top=0, width=_SLIDE_WIDTH, height=img_h)
-    _add_shape(slide, MSO_SHAPE.RECTANGLE, left=Emu(0), top=Emu(img_h),
-               width=Emu(_SLIDE_WIDTH), height=Emu(_SLIDE_HEIGHT - img_h),
-               fill=theme.background_rgb, line=None)
-    _add_text(slide, outline.title or "", left=Inches(0.62),
-              top=Emu(img_h) + Inches(0.16), width=Inches(8.76), height=Inches(0.5),
-              font_size=24, bold=True, color=theme.primary_rgb,
-              font_name=theme.font_heading, align="left")
+    _add_shape(
+        slide,
+        MSO_SHAPE.RECTANGLE,
+        left=Emu(0),
+        top=Emu(img_h),
+        width=Emu(_SLIDE_WIDTH),
+        height=Emu(_SLIDE_HEIGHT - img_h),
+        fill=theme.background_rgb,
+        line=None,
+    )
+    _add_text(
+        slide,
+        outline.title or "",
+        left=Inches(0.62),
+        top=Emu(img_h) + Inches(0.16),
+        width=Inches(8.76),
+        height=Inches(0.5),
+        font_size=24,
+        bold=True,
+        color=theme.primary_rgb,
+        font_name=theme.font_heading,
+        align="left",
+    )
     bullets = [b for b in (outline.bullets or []) if str(b).strip()]
     if bullets:
-        _add_bullet_text(slide, bullets, left=Inches(0.66),
-                         top=Emu(img_h) + Inches(0.82), width=Inches(8.7),
-                         height=Inches(1.4), font_size=14, color=theme.text_rgb,
-                         font_name=theme.font_body, accent_color=theme.accent_rgb)
+        _add_bullet_text(
+            slide,
+            bullets,
+            left=Inches(0.66),
+            top=Emu(img_h) + Inches(0.82),
+            width=Inches(8.7),
+            height=Inches(1.4),
+            font_size=14,
+            color=theme.text_rgb,
+            font_name=theme.font_body,
+            accent_color=theme.accent_rgb,
+        )
 
 
 def _render_var_card(slide, outline: SlideOutline, theme: Theme) -> None:
@@ -2122,8 +2497,16 @@ def _render_var_card(slide, outline: SlideOutline, theme: Theme) -> None:
         _fullbleed_picture(slide, img)
     # 右下角深色卡片(半透明,留出大片氛围图,底图微透更精致)
     cx, cy, cw, ch = 5.2, 1.0, 4.4, 3.7
-    _card = _add_shape(slide, MSO_SHAPE.ROUNDED_RECTANGLE, left=Inches(cx), top=Inches(cy),
-                       width=Inches(cw), height=Inches(ch), fill=(10, 16, 28), line=None)
+    _card = _add_shape(
+        slide,
+        MSO_SHAPE.ROUNDED_RECTANGLE,
+        left=Inches(cx),
+        top=Inches(cy),
+        width=Inches(cw),
+        height=Inches(ch),
+        fill=(10, 16, 28),
+        line=None,
+    )
     _set_fill_alpha(_card, 82)
     _panel_text(slide, outline, theme, px=cx + 0.3, pw=cw - 0.5, title_pt=23)
 
@@ -2134,20 +2517,46 @@ def _render_var_quote(slide, outline: SlideOutline, theme: Theme) -> None:
     if img and Path(img).is_file():
         _fullbleed_picture(slide, img)
     # 半透明压暗整页(alpha 55%)提升可读,但底图仍透出来(不死黑)
-    _ov = _add_shape(slide, MSO_SHAPE.RECTANGLE, left=Emu(0), top=Emu(0),
-                     width=Emu(_SLIDE_WIDTH), height=Emu(_SLIDE_HEIGHT),
-                     fill=(8, 12, 22), line=None)
+    _ov = _add_shape(
+        slide,
+        MSO_SHAPE.RECTANGLE,
+        left=Emu(0),
+        top=Emu(0),
+        width=Emu(_SLIDE_WIDTH),
+        height=Emu(_SLIDE_HEIGHT),
+        fill=(8, 12, 22),
+        line=None,
+    )
     _set_fill_alpha(_ov, 58)
     text = outline.quote or outline.title or ""
-    _add_text(slide, f"“{text}”" if text else "", left=Inches(1.2),
-              top=Inches(2.0), width=Inches(7.6), height=Inches(1.6),
-              font_size=34, bold=True, color=theme.dark_text_rgb,
-              font_name=theme.font_heading, align="center", anchor="middle")
+    _add_text(
+        slide,
+        f"“{text}”" if text else "",
+        left=Inches(1.2),
+        top=Inches(2.0),
+        width=Inches(7.6),
+        height=Inches(1.6),
+        font_size=34,
+        bold=True,
+        color=theme.dark_text_rgb,
+        font_name=theme.font_heading,
+        align="center",
+        anchor="middle",
+    )
     sub = outline.cite or outline.caption or outline.subtitle
     if sub:
-        _add_text(slide, sub, left=Inches(1.2), top=Inches(3.7), width=Inches(7.6),
-                  height=Inches(0.5), font_size=15, color=theme.dark_muted_text_rgb,
-                  font_name=theme.font_body, align="center")
+        _add_text(
+            slide,
+            sub,
+            left=Inches(1.2),
+            top=Inches(3.7),
+            width=Inches(7.6),
+            height=Inches(0.5),
+            font_size=15,
+            color=theme.dark_muted_text_rgb,
+            font_name=theme.font_body,
+            align="center",
+        )
 
 
 def _resolve_image_variant(outline: SlideOutline) -> str:
@@ -2192,14 +2601,21 @@ def _render_image_full_v2(slide, outline: SlideOutline, theme: Theme) -> None:
     _add_title_block(slide, outline.title or "", outline.subtitle, theme)
     _add_corner_motif(slide, theme)
     _add_icon_badge(
-        slide, "IMG",
-        left=Inches(4.64), top=Inches(2.22),
-        size=Inches(0.72), theme=theme, fill=theme.secondary_rgb,
+        slide,
+        "IMG",
+        left=Inches(4.64),
+        top=Inches(2.22),
+        size=Inches(0.72),
+        theme=theme,
+        fill=theme.secondary_rgb,
     )
     _add_text(
-        slide, f"image missing: {img}" if img else "image placeholder",
-        left=Inches(2.12), top=Inches(3.04),
-        width=Inches(5.76), height=Inches(0.42),
+        slide,
+        f"image missing: {img}" if img else "image placeholder",
+        left=Inches(2.12),
+        top=Inches(3.04),
+        width=Inches(5.76),
+        height=Inches(0.42),
         font_size=13,
         color=theme.muted_text_rgb,
         font_name=theme.font_body,
@@ -2207,9 +2623,12 @@ def _render_image_full_v2(slide, outline: SlideOutline, theme: Theme) -> None:
     )
     if outline.caption:
         _add_text(
-            slide, outline.caption,
-            left=Inches(2.12), top=Inches(3.54),
-            width=Inches(5.76), height=Inches(0.38),
+            slide,
+            outline.caption,
+            left=Inches(2.12),
+            top=Inches(3.54),
+            width=Inches(5.76),
+            height=Inches(0.38),
             font_size=12,
             color=theme.muted_text_rgb,
             font_name=theme.font_body,
@@ -2221,24 +2640,34 @@ def _render_quote_v2(slide, outline: SlideOutline, theme: Theme) -> None:
     _fill_slide_bg(slide, theme)
     _add_corner_motif(slide, theme)
     _add_shape(
-        slide, MSO_SHAPE.ROUNDED_RECTANGLE,
-        left=Inches(0.78), top=Inches(1.02),
-        width=Inches(8.44), height=Inches(3.58),
+        slide,
+        MSO_SHAPE.ROUNDED_RECTANGLE,
+        left=Inches(0.78),
+        top=Inches(1.02),
+        width=Inches(8.44),
+        height=Inches(3.58),
         fill=theme.surface_rgb,
         line=(226, 232, 240),
     )
     _add_text(
-        slide, "\"",
-        left=Inches(1.06), top=Inches(0.90),
-        width=Inches(0.92), height=Inches(1.10),
-        font_size=92, bold=True,
+        slide,
+        '"',
+        left=Inches(1.06),
+        top=Inches(0.90),
+        width=Inches(0.92),
+        height=Inches(1.10),
+        font_size=92,
+        bold=True,
         color=theme.accent_rgb,
         font_name="Calibri",
     )
     _add_text(
-        slide, outline.quote or outline.title or "(鏃犲紩杩?",
-        left=Inches(1.78), top=Inches(1.64),
-        width=Inches(6.96), height=Inches(1.44),
+        slide,
+        outline.quote or outline.title or "(鏃犲紩杩?",
+        left=Inches(1.78),
+        top=Inches(1.64),
+        width=Inches(6.96),
+        height=Inches(1.44),
         font_size=24,
         color=theme.text_rgb,
         font_name=theme.font_body,
@@ -2246,9 +2675,12 @@ def _render_quote_v2(slide, outline: SlideOutline, theme: Theme) -> None:
     )
     if outline.cite:
         _add_text(
-            slide, outline.cite,
-            left=Inches(1.84), top=Inches(3.50),
-            width=Inches(6.7), height=Inches(0.32),
+            slide,
+            outline.cite,
+            left=Inches(1.84),
+            top=Inches(3.50),
+            width=Inches(6.7),
+            height=Inches(0.32),
             font_size=12,
             color=theme.muted_text_rgb,
             font_name=theme.font_body,
@@ -2270,11 +2702,15 @@ def _render_toc_v2(slide, outline: SlideOutline, theme: Theme) -> None:
     for idx, item in enumerate(items[:6]):
         row, col = divmod(idx, columns)
         _add_item_card(
-            slide, f"{idx + 1:02d}", item,
+            slide,
+            f"{idx + 1:02d}",
+            item,
             left=Inches(0.54 + col * col_step),
             top=Inches(1.48) + row * (card_h + Inches(0.22)),
-            width=card_w, height=card_h,
-            theme=theme, badge=f"{idx + 1}",
+            width=card_w,
+            height=card_h,
+            theme=theme,
+            badge=f"{idx + 1}",
         )
 
 
@@ -2299,21 +2735,17 @@ def _render_chart_v2(slide, outline: SlideOutline, theme: Theme) -> None:
     variant = str(outline.image_variant or "").strip().lower()
     variant_requested = variant in IMAGE_VARIANTS
     bullet_chars = sum(len(str(item).strip()) for item in (outline.bullets or []))
-    dense_side_notes = (
-        variant != "top"
-        and len(outline.bullets or []) >= 4
-        and bullet_chars >= 120
-    )
+    dense_side_notes = variant != "top" and len(outline.bullets or []) >= 4 and bullet_chars >= 120
     if values:
         top_value = max(values)
         _add_callout_card(
-            slide, f"{top_value:g}", "峰值指标",
+            slide,
+            f"{top_value:g}",
+            "峰值指标",
             left=Inches(0.72),
             top=Inches(1.52 if (variant_requested or dense_side_notes) else 1.72),
             width=Inches(2.54),
-            height=Inches(
-                1.28 if dense_side_notes else (1.36 if variant_requested else 1.76)
-            ),
+            height=Inches(1.28 if dense_side_notes else (1.36 if variant_requested else 1.76)),
             theme=theme,
         )
     ctype = str(spec.get("type") or "bar").lower()
@@ -2341,7 +2773,10 @@ def _render_chart_v2(slide, outline: SlideOutline, theme: Theme) -> None:
         chart_height = Inches(2.82 if variant == "top" else 3.28)
         gframe = slide.shapes.add_chart(
             xl_type,
-            chart_left, chart_top, chart_width, chart_height,
+            chart_left,
+            chart_top,
+            chart_width,
+            chart_height,
             chart_data,
         )
         chart = gframe.chart
@@ -2421,9 +2856,7 @@ def _render_table_v2(slide, outline: SlideOutline, theme: Theme) -> None:
             fill = cell.fill
             fill.solid()
             is_header = has_header and row_index == 0
-            fill.fore_color.rgb = RGBColor(
-                *(theme.primary_rgb if is_header else theme.surface_rgb)
-            )
+            fill.fore_color.rgb = RGBColor(*(theme.primary_rgb if is_header else theme.surface_rgb))
             for paragraph in cell.text_frame.paragraphs:
                 paragraph.alignment = PP_ALIGN.CENTER
                 for run in paragraph.runs:
@@ -2444,32 +2877,46 @@ def _render_conclusion_v2(slide, outline: SlideOutline, theme: Theme) -> None:
     )
     if dense_prose:
         _add_shape(
-            slide, MSO_SHAPE.ROUNDED_RECTANGLE,
-            left=Inches(7.18), top=Inches(0.42),
-            width=Inches(1.74), height=Inches(0.78),
+            slide,
+            MSO_SHAPE.ROUNDED_RECTANGLE,
+            left=Inches(7.18),
+            top=Inches(0.42),
+            width=Inches(1.74),
+            height=Inches(0.78),
             fill=theme.secondary_rgb,
         )
         # Keep decoration fully outside the prose box.
         _add_shape(
-            slide, MSO_SHAPE.OVAL,
-            left=Inches(0.18), top=Inches(4.58),
-            width=Inches(0.50), height=Inches(0.50),
+            slide,
+            MSO_SHAPE.OVAL,
+            left=Inches(0.18),
+            top=Inches(4.58),
+            width=Inches(0.50),
+            height=Inches(0.50),
             fill=theme.accent_rgb,
         )
         _add_text(
-            slide, outline.title or "Conclusion",
-            left=Inches(0.86), top=Inches(0.58),
-            width=Inches(7.70), height=Inches(0.80),
-            font_size=32, bold=True,
+            slide,
+            outline.title or "Conclusion",
+            left=Inches(0.86),
+            top=Inches(0.58),
+            width=Inches(7.70),
+            height=Inches(0.80),
+            font_size=32,
+            bold=True,
             color=theme.dark_text_rgb,
             font_name=theme.font_heading,
-            align="center", anchor="middle",
+            align="center",
+            anchor="middle",
         )
         if outline.subtitle:
             _add_text(
-                slide, outline.subtitle,
-                left=Inches(1.10), top=Inches(1.34),
-                width=Inches(7.80), height=Inches(0.34),
+                slide,
+                outline.subtitle,
+                left=Inches(1.10),
+                top=Inches(1.34),
+                width=Inches(7.80),
+                height=Inches(0.34),
                 font_size=14,
                 color=theme.dark_muted_text_rgb,
                 font_name=theme.font_body,
@@ -2489,31 +2936,45 @@ def _render_conclusion_v2(slide, outline: SlideOutline, theme: Theme) -> None:
         )
         return
     _add_shape(
-        slide, MSO_SHAPE.ROUNDED_RECTANGLE,
-        left=Inches(7.18), top=Inches(0.62),
-        width=Inches(1.74), height=Inches(1.04),
+        slide,
+        MSO_SHAPE.ROUNDED_RECTANGLE,
+        left=Inches(7.18),
+        top=Inches(0.62),
+        width=Inches(1.74),
+        height=Inches(1.04),
         fill=theme.secondary_rgb,
     )
     _add_shape(
-        slide, MSO_SHAPE.OVAL,
-        left=Inches(0.82), top=Inches(4.12),
-        width=Inches(0.64), height=Inches(0.64),
+        slide,
+        MSO_SHAPE.OVAL,
+        left=Inches(0.82),
+        top=Inches(4.12),
+        width=Inches(0.64),
+        height=Inches(0.64),
         fill=theme.accent_rgb,
     )
     _add_text(
-        slide, outline.title or "Conclusion",
-        left=Inches(0.86), top=Inches(1.30),
-        width=Inches(7.70), height=Inches(1.05),
-        font_size=42, bold=True,
+        slide,
+        outline.title or "Conclusion",
+        left=Inches(0.86),
+        top=Inches(1.30),
+        width=Inches(7.70),
+        height=Inches(1.05),
+        font_size=42,
+        bold=True,
         color=theme.dark_text_rgb,
         font_name=theme.font_heading,
-        align="center", anchor="middle",
+        align="center",
+        anchor="middle",
     )
     if outline.subtitle:
         _add_text(
-            slide, outline.subtitle,
-            left=Inches(1.34), top=Inches(2.44),
-            width=Inches(6.72), height=Inches(0.46),
+            slide,
+            outline.subtitle,
+            left=Inches(1.34),
+            top=Inches(2.44),
+            width=Inches(6.72),
+            height=Inches(0.46),
             font_size=17,
             color=theme.dark_muted_text_rgb,
             font_name=theme.font_body,
@@ -2528,10 +2989,12 @@ def _render_conclusion_v2(slide, outline: SlideOutline, theme: Theme) -> None:
     for idx, item in enumerate(bullets):
         row, column = divmod(idx, columns)
         _add_text(
-            slide, item,
+            slide,
+            item,
             left=Inches(1.45 + column * item_width),
             top=Inches(3.18 + row * (item_height + 0.12)),
-            width=Inches(item_width - 0.18), height=Inches(item_height),
+            width=Inches(item_width - 0.18),
+            height=Inches(item_height),
             font_size=font_size,
             color=theme.dark_muted_text_rgb,
             font_name=theme.font_body,
@@ -2562,14 +3025,22 @@ def _is_conclusion_slide(slide: SlideOutline, index: int, total: int) -> bool:
 
 
 def _add_footer(
-    slide, theme: Theme, page_number: int, total: int, *, dark: bool = False,
+    slide,
+    theme: Theme,
+    page_number: int,
+    total: int,
+    *,
+    dark: bool = False,
 ) -> None:
     """Small page marker, without decorative bars."""
     color = theme.dark_muted_text_rgb if dark else theme.muted_text_rgb
     _add_text(
-        slide, f"{page_number} / {total}",
-        left=Inches(8.4), top=Inches(5.25),
-        width=Inches(1.0), height=Inches(0.3),
+        slide,
+        f"{page_number} / {total}",
+        left=Inches(8.4),
+        top=Inches(5.25),
+        width=Inches(1.0),
+        height=Inches(0.3),
         font_size=10,
         color=color,
         font_name=theme.font_body,
@@ -2721,7 +3192,11 @@ def _font_cmap(path: str) -> frozenset[int]:
                         glyph = (code + delta) & 0xFFFF
                     else:
                         glyph_pos = range_offset_pos + range_offset + (code - start) * 2
-                        glyph = struct.unpack_from(">H", data, glyph_pos)[0] if glyph_pos + 2 <= len(data) else 0
+                        glyph = (
+                            struct.unpack_from(">H", data, glyph_pos)[0]
+                            if glyph_pos + 2 <= len(data)
+                            else 0
+                        )
                         if glyph:
                             glyph = (glyph + delta) & 0xFFFF
                     if glyph:
@@ -2849,7 +3324,9 @@ def _fit_full_page_copy(slide: Mapping[str, Any], layout: str) -> dict[str, Any]
             title_font = _full_page_font(title_size, bold=True, text=all_text)
             title_lines = _wrap_full_page_text(draw, title, title_font, width)
             subtitle_lines = _wrap_full_page_text(draw, subtitle, subtitle_font, width)
-            entry_lines = [_wrap_full_page_text(draw, entry, body_font, entry_width) for entry in entries]
+            entry_lines = [
+                _wrap_full_page_text(draw, entry, body_font, entry_width) for entry in entries
+            ]
             cite_lines = _wrap_full_page_text(draw, cite, cite_font, width)
             title_lh = max(36, int(title_size * 1.18))
             subtitle_lh = max(28, int(subtitle_size * 1.22))
@@ -2857,7 +3334,9 @@ def _fit_full_page_copy(slide: Mapping[str, Any], layout: str) -> dict[str, Any]
             cite_lh = max(22, int(cite_size * 1.25))
             needed = len(title_lines) * title_lh
             needed += (12 + len(subtitle_lines) * subtitle_lh) if subtitle_lines else 0
-            needed += (20 + sum(len(lines) * body_lh + 10 for lines in entry_lines)) if entry_lines else 0
+            needed += (
+                (20 + sum(len(lines) * body_lh + 10 for lines in entry_lines)) if entry_lines else 0
+            )
             needed += (14 + len(cite_lines) * cite_lh) if cite_lines else 0
             if needed <= height:
                 return {
@@ -2884,7 +3363,7 @@ def preflight_full_page_copy(slide: Mapping[str, Any], layout: str) -> None:
 
 
 def _layout_candidates(slide: SlideOutline, index: int) -> list[str]:
-    rotation = list(FULL_PAGE_LAYOUTS[index % len(FULL_PAGE_LAYOUTS):]) + list(
+    rotation = list(FULL_PAGE_LAYOUTS[index % len(FULL_PAGE_LAYOUTS) :]) + list(
         FULL_PAGE_LAYOUTS[: index % len(FULL_PAGE_LAYOUTS)]
     )
     preferred: list[str] = []
@@ -2934,8 +3413,16 @@ def plan_full_page_layouts(
             raise last_error or FullPageLayoutError("layout_unavailable")
         slide.full_page_layout = chosen
 
-    if strict_coverage and len(planned) >= 6 and len({slide.full_page_layout for slide in planned}) < 5:
-        missing = [layout for layout in FULL_PAGE_LAYOUTS if layout not in {s.full_page_layout for s in planned}]
+    if (
+        strict_coverage
+        and len(planned) >= 6
+        and len({slide.full_page_layout for slide in planned}) < 5
+    ):
+        missing = [
+            layout
+            for layout in FULL_PAGE_LAYOUTS
+            if layout not in {s.full_page_layout for s in planned}
+        ]
         for candidate in missing:
             for index in range(1, len(planned) - 1):
                 if index in locked:
@@ -3013,7 +3500,9 @@ def _compose_full_page_image(
     )
     text_x, cursor_y, text_right, _text_bottom = spec.text_box
 
-    def draw_line(line: str, y: int, font: Any, fill: tuple[int, int, int, int], *, indent: int = 0) -> None:
+    def draw_line(
+        line: str, y: int, font: Any, fill: tuple[int, int, int, int], *, indent: int = 0
+    ) -> None:
         x = text_x + indent
         if spec.align == "center":
             line_width = draw.textlength(line, font=font)
@@ -3035,7 +3524,9 @@ def _compose_full_page_image(
             continue
         indent = 0 if spec.align == "center" else 30
         if spec.align != "center":
-            draw.ellipse((text_x, cursor_y + 9, text_x + 11, cursor_y + 20), fill=(52, 211, 245, 255))
+            draw.ellipse(
+                (text_x, cursor_y + 9, text_x + 11, cursor_y + 20), fill=(52, 211, 245, 255)
+            )
         for line in lines:
             draw_line(line, cursor_y, fit["body_font"], (236, 242, 247, 255), indent=indent)
             cursor_y += fit["body_lh"]
@@ -3139,6 +3630,7 @@ def _autofill_image_prompts(slides: list[SlideOutline]) -> None:
         # 最小)。split 侧栏≈方 → 1024x1024;其余(全幅/上图/封面)→ 横版
         # 1536x1024。prompt 追加版式负空间指令 + 禁字后缀。同尺寸分一组批量。
         from collections import OrderedDict
+
         groups: OrderedDict[str, list[tuple[int, str]]] = OrderedDict()
         for idx, prompt in pending:
             variant = _resolve_image_variant(slides[idx])
@@ -3198,11 +3690,7 @@ def _image_prompt_payload(slide: SlideOutline) -> tuple[str, str]:
 def _autofill_with_connectivity_gate(slides: list[SlideOutline]) -> tuple[bool, int]:
     """Generate image prompts with a first-image connectivity gate."""
     _assign_image_layouts(slides)
-    pending = [
-        (idx, so)
-        for idx, so in enumerate(slides)
-        if so.image_prompt and not so.image_path
-    ]
+    pending = [(idx, so) for idx, so in enumerate(slides) if so.image_prompt and not so.image_path]
     if not pending:
         return True, 0
 
@@ -3283,8 +3771,7 @@ def _disk_preflight(*, image_mode: bool, pages: int) -> str | None:
     except Exception:  # noqa: BLE001
         drive = str(base)
     return (
-        f"磁盘空间不足：{drive} 仅剩 {free_mb}MB，生成这份 PPT 约需 "
-        f"{need_mb}MB，请清理磁盘后重试。"
+        f"磁盘空间不足：{drive} 仅剩 {free_mb}MB，生成这份 PPT 约需 {need_mb}MB，请清理磁盘后重试。"
     )
 
 
@@ -3313,11 +3800,7 @@ def _render_pro(
         log.warning("ppt_pro disk preflight blocked render: %s", disk_err)
         return {"ok": False, "error": disk_err}
 
-    if (
-        image_mode
-        and not images_prepared
-        and not probe_image_reachable(timeout_s=probe_timeout_s)
-    ):
+    if image_mode and not images_prepared and not probe_image_reachable(timeout_s=probe_timeout_s):
         if editable_required:
             notify("AI 配图暂时不可用，将继续生成可编辑的原生 PowerPoint。")
         else:
@@ -3358,10 +3841,12 @@ def _render_pro(
             title=title,
             author=author,
             output_path=output_path,
-            template=tpl,            # 直传 .pptx 路径或 None(→fromscratch)，绝不传大类名
+            template=tpl,  # 直传 .pptx 路径或 None(→fromscratch)，绝不传大类名
             skip_image_gen=True,
         )
-        log.info("ppt_pro render done(template) ok=%s path=%s", result.get("ok"), result.get("path"))
+        log.info(
+            "ppt_pro render done(template) ok=%s path=%s", result.get("ok"), result.get("path")
+        )
         return result
     log.info("ppt_pro render path=fromscratch(惊艳)")
     result = ppt_create(
@@ -3435,9 +3920,7 @@ def _resolve_template_path(template: str | None) -> str | None:
         roots += _user_template_roots()
         for root in roots:
             try:
-                hit = next(
-                    (p for p in root.rglob(f"{name}.pptx") if p.is_file()), None
-                )
+                hit = next((p for p in root.rglob(f"{name}.pptx") if p.is_file()), None)
                 if hit is not None:
                     return str(hit.resolve())
             except Exception:  # noqa: BLE001
@@ -3447,9 +3930,7 @@ def _resolve_template_path(template: str | None) -> str | None:
     return None
 
 
-def _resolve_template_for_render(
-    template: str | None, *, topic: str = ""
-) -> str | None:
+def _resolve_template_for_render(template: str | None, *, topic: str = "") -> str | None:
     """把 ``template``(大类名 / .pptx 路径 / 库内 stem)解析成具体 .pptx 路径。
 
     大类名 → 预览图视觉选一套;否则按路径/stem 解析。从不抛异常。
@@ -3487,9 +3968,7 @@ def _pick_template_layout(prs, deskpet_layout: str):
         "toc": (["title and content", "标题和内容", "目录", "内容与标题"], 1),
         "chart": (["title and content", "标题和内容", "图表", "内容与标题"], 1),
     }
-    keywords, fallback_idx = mapping.get(
-        deskpet_layout, (["title and content", "标题和内容"], 1)
-    )
+    keywords, fallback_idx = mapping.get(deskpet_layout, (["title and content", "标题和内容"], 1))
 
     layouts = list(prs.slide_layouts)
     if not layouts:
@@ -3673,24 +4152,26 @@ def _analyze_design_page(slide, slide_w: int = 0, slide_h: int = 0) -> dict[str,
         for shape in _iter_design_text_shapes(slide.shapes):
             try:
                 text_len = _shape_text_len(shape)
-                records.append({
-                    "shape": shape,
-                    "max_pt": _shape_text_max_pt(shape),
-                    "text_len": text_len,
-                    "key": _shape_reading_key(shape),
-                    "in_canvas": (
-                        _shape_mostly_in_canvas(shape, slide_w, slide_h)
-                        if slide_w and slide_h else True
-                    ),
-                })
+                records.append(
+                    {
+                        "shape": shape,
+                        "max_pt": _shape_text_max_pt(shape),
+                        "text_len": text_len,
+                        "key": _shape_reading_key(shape),
+                        "in_canvas": (
+                            _shape_mostly_in_canvas(shape, slide_w, slide_h)
+                            if slide_w and slide_h
+                            else True
+                        ),
+                    }
+                )
             except Exception:  # noqa: BLE001
                 continue
 
         # 出血/越界形状不当 title/subtitle(塞中文必裁切);它们若是 >60pt
         # 大字会自然落入 decor 被清空。
         title_candidates = [
-            item for item in records
-            if item["text_len"] <= 60 and item.get("in_canvas", True)
+            item for item in records if item["text_len"] <= 60 and item.get("in_canvas", True)
         ]
         title_item = max(title_candidates, key=lambda item: item["max_pt"], default=None)
         title_shape = title_item["shape"] if title_item else None
@@ -3700,10 +4181,7 @@ def _analyze_design_page(slide, slide_w: int = 0, slide_h: int = 0) -> dict[str,
         # 的另一层(如封面背景大字 + 前景手写体)，把 subtitle 填进去会和中文
         # 标题重叠混乱 —— 它们归 decor，填充后清空。
         subtitle_item = max(
-            (
-                item for item in remaining
-                if item["max_pt"] <= 60 and item.get("in_canvas", True)
-            ),
+            (item for item in remaining if item["max_pt"] <= 60 and item.get("in_canvas", True)),
             key=lambda item: item["max_pt"],
             default=None,
         )
@@ -3726,19 +4204,11 @@ def _analyze_design_page(slide, slide_w: int = 0, slide_h: int = 0) -> dict[str,
                 continue
             decor.append(item["shape"])
         bodies = sorted(
-            (
-                item["shape"]
-                for item in records
-                if item["max_pt"] <= 32 and item["text_len"] >= 25
-            ),
+            (item["shape"] for item in records if item["max_pt"] <= 32 and item["text_len"] >= 25),
             key=_shape_reading_key,
         )
         labels = sorted(
-            (
-                item["shape"]
-                for item in records
-                if item["max_pt"] <= 32 and item["text_len"] < 25
-            ),
+            (item["shape"] for item in records if item["max_pt"] <= 32 and item["text_len"] < 25),
             key=_shape_reading_key,
         )
         title_pt = float(title_item["max_pt"]) if title_item else 0.0
@@ -3868,7 +4338,9 @@ def _clear_design_body_slots(info: dict[str, Any], *, keep: Sequence[Any] = ()) 
 
 
 def _best_design_content_page(
-    pages: Sequence[dict[str, Any]], used: set[int], wanted: int,
+    pages: Sequence[dict[str, Any]],
+    used: set[int],
+    wanted: int,
 ) -> dict[str, Any] | None:
     candidates = [page for page in pages if page["index"] not in used]
     if not candidates:
@@ -3905,9 +4377,9 @@ def _page_quality_score(info: dict[str, Any]) -> float:
             try:
                 w, h = int(title.width), int(title.height)
                 if w >= h:
-                    score += 3.0           # 横排标题 = 好
+                    score += 3.0  # 横排标题 = 好
                 else:
-                    score -= 5.0           # 竖排/窄高标题 = 中文必裁,重罚
+                    score -= 5.0  # 竖排/窄高标题 = 中文必裁,重罚
             except Exception:  # noqa: BLE001
                 pass
         # 正文槽适量(1~4)最佳;过多 = 图标网格类,易乱
@@ -3942,10 +4414,7 @@ def _select_design_page(
         )
 
     if so.layout == "two_column":
-        two_slot_pages = [
-            page for page in content_pages
-            if page["info"]["n_body"] >= 2
-        ]
+        two_slot_pages = [page for page in content_pages if page["info"]["n_body"] >= 2]
         return (
             _first_unused_page(two_slot_pages, used)
             or _best_design_content_page(content_pages, used, 2)
@@ -3954,9 +4423,8 @@ def _select_design_page(
 
     if so.layout in {"bullet", "toc", "chart", "image", "image_full"}:
         wanted = len(so.bullets) or (1 if so.caption else 0) or 1
-        return (
-            _best_design_content_page(content_pages, used, wanted)
-            or _first_unused_page(pages, used)
+        return _best_design_content_page(content_pages, used, wanted) or _first_unused_page(
+            pages, used
         )
 
     return _first_unused_page(pages, used)
@@ -4042,11 +4510,31 @@ import re as _re_ppt
 
 # 残留占位文 = 模板自带的示例/提示文字,填充后没被覆盖会穿帮。中英都覆盖。
 _PLACEHOLDER_PATTERNS = (
-    "输入标题", "输入内容", "请输入", "在此输入", "点击输入", "点击此处",
-    "标题内容", "您的内容", "替换文字", "此处添加", "添加标题", "添加文字",
-    "输入文本", "输入您的", "输入相关", "请替换", "示例文字", "正文内容",
-    "presentations are communication", "click to edit", "lorem ipsum",
-    "your text here", "add text", "sample text", "ipsum lorem",
+    "输入标题",
+    "输入内容",
+    "请输入",
+    "在此输入",
+    "点击输入",
+    "点击此处",
+    "标题内容",
+    "您的内容",
+    "替换文字",
+    "此处添加",
+    "添加标题",
+    "添加文字",
+    "输入文本",
+    "输入您的",
+    "输入相关",
+    "请替换",
+    "示例文字",
+    "正文内容",
+    "presentations are communication",
+    "click to edit",
+    "lorem ipsum",
+    "your text here",
+    "add text",
+    "sample text",
+    "ipsum lorem",
 )
 
 
@@ -4107,8 +4595,7 @@ def _is_english_semantic_label(text: str) -> bool:
         return False
     if not re.search(r"[A-Za-z]{3,}", t):  # 没有英文单词(纯数字/符号)
         return False
-    DECOR_NUMS = {"one", "two", "three", "four", "five", "six",
-                  "seven", "eight", "nine", "ten"}
+    DECOR_NUMS = {"one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"}
     if t.lower() in DECOR_NUMS:
         return False
     return True
@@ -4126,13 +4613,13 @@ def _fill_design_bullets(info: dict[str, Any], bullets: Sequence[str]) -> None:
         for shape, bullet in zip(bodies, clean):
             _set_text_keep_style(shape, [bullet])
             _enable_text_autofit(shape)
-        for shape in bodies[len(clean):]:
+        for shape in bodies[len(clean) :]:
             _set_text_keep_style(shape, [])
         return
     for shape, bullet in zip(bodies[:-1], clean[: max(len(bodies) - 1, 0)]):
         _set_text_keep_style(shape, [bullet])
         _enable_text_autofit(shape)
-    _set_text_keep_style(bodies[-1], clean[len(bodies) - 1:])
+    _set_text_keep_style(bodies[-1], clean[len(bodies) - 1 :])
     _enable_text_autofit(bodies[-1])
 
 
@@ -4349,8 +4836,7 @@ def _fill_design_page(slide, so: SlideOutline, info: dict[str, Any]) -> None:
     # 槽后必撞(用户实测「目录大数字与文字重叠」的根因)。不重叠的保留。
     _filled = [s for s in [title_shape, subtitle_shape, _divider_target] if s is not None]
     _filled += [b for b in bodies if b is not None]
-    _DECOR_WORDS = {"one", "two", "three", "four", "five", "six",
-                    "seven", "eight", "nine", "ten"}
+    _DECOR_WORDS = {"one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"}
     _candidates = list(info.get("decor_nums", []))
     for shape in info.get("labels", []):
         try:
@@ -4437,7 +4923,12 @@ def _drop_slide_id(prs, sld_id) -> None:
 
 
 def _render_with_design_pages(
-    slides: list[SlideOutline], template_path: str, *, title: str, author: str, out_path: Path,
+    slides: list[SlideOutline],
+    template_path: str,
+    *,
+    title: str,
+    author: str,
+    out_path: Path,
     banned_pages: dict[int, set[int]] | None = None,
 ) -> dict[str, Any] | None:
     """banned_pages: {outline 页序 i: 禁用的设计页 index 集合} —— 视觉评审
@@ -4448,8 +4939,13 @@ def _render_with_design_pages(
             return None
 
         pages = [
-            {"index": idx, "slide": slide, "info": _analyze_design_page(
-                slide, int(prs.slide_width or 0), int(prs.slide_height or 0))}
+            {
+                "index": idx,
+                "slide": slide,
+                "info": _analyze_design_page(
+                    slide, int(prs.slide_width or 0), int(prs.slide_height or 0)
+                ),
+            }
             for idx, slide in enumerate(prs.slides)
         ]
         # 按规整度给每页打分,选页时优先挑高分页(避开竖排标题/图标网格
@@ -4457,8 +4953,7 @@ def _render_with_design_pages(
         for page in pages:
             page["score"] = _page_quality_score(page["info"])
         section_pages = sorted(
-            [p for p in pages[1:]
-             if p["info"]["title_pt"] >= 80 and p["info"]["n_body"] <= 1],
+            [p for p in pages[1:] if p["info"]["title_pt"] >= 80 and p["info"]["n_body"] <= 1],
             key=lambda p: (-p["score"], p["index"]),
         )
         content_pages = sorted(
@@ -4516,12 +5011,14 @@ def _render_with_design_pages(
             "slide_count": len(selected),
             "theme": "template-design",
             "page_map": page_map,
-            "artifacts": [{
-                "kind": "file",
-                "path": str(out_path),
-                "mime": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-                "title": Path(str(out_path)).name,
-            }],
+            "artifacts": [
+                {
+                    "kind": "file",
+                    "path": str(out_path),
+                    "mime": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                    "title": Path(str(out_path)).name,
+                }
+            ],
         }
     except Exception as exc:  # noqa: BLE001
         log.warning("template design render failed: %s", exc, exc_info=True)
@@ -4529,7 +5026,12 @@ def _render_with_design_pages(
 
 
 def _render_with_template(
-    slides: list[SlideOutline], template_path: str, *, title: str, author: str, out_path: Path,
+    slides: list[SlideOutline],
+    template_path: str,
+    *,
+    title: str,
+    author: str,
+    out_path: Path,
 ) -> dict[str, Any] | None:
     try:
         prs = _Presentation(template_path)
@@ -4555,7 +5057,9 @@ def _render_with_template(
             slide = prs.slides.add_slide(layout)
 
             title_ph = _template_placeholders(
-                slide, PP_PLACEHOLDER.TITLE, PP_PLACEHOLDER.CENTER_TITLE,
+                slide,
+                PP_PLACEHOLDER.TITLE,
+                PP_PLACEHOLDER.CENTER_TITLE,
             )
             if title_ph:
                 _set_placeholder_text(title_ph[0], so.title)
@@ -4596,7 +5100,8 @@ def _render_with_template(
                     except Exception as exc:  # noqa: BLE001
                         log.debug("template picture insert failed: %s", exc)
                 caption_targets = [
-                    ph for ph in body_ph
+                    ph
+                    for ph in body_ph
                     if ph not in picture_ph and ph not in title_ph and ph not in subtitle_ph
                 ]
                 if caption_targets and so.caption:
@@ -4621,12 +5126,14 @@ def _render_with_template(
             "path": str(out_path),
             "slide_count": len(slides),
             "theme": "template",
-            "artifacts": [{
-                "kind": "file",
-                "path": str(out_path),
-                "mime": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-                "title": Path(str(out_path)).name,
-            }],
+            "artifacts": [
+                {
+                    "kind": "file",
+                    "path": str(out_path),
+                    "mime": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                    "title": Path(str(out_path)).name,
+                }
+            ],
         }
     except Exception as exc:  # noqa: BLE001
         log.warning("template render failed: %s", exc, exc_info=True)
@@ -4685,7 +5192,9 @@ def ppt_create(
             "ok": False,
             "error": "outline parse failed or empty",
             "markdown_fallback": render_markdown_fallback(
-                slides, title=title, author=author,
+                slides,
+                title=title,
+                author=author,
             ),
         }
 
@@ -4698,11 +5207,13 @@ def ppt_create(
             "ok": True,
             "dry_run": True,
             "slide_count": len(slides),
-            "artifacts": [{
-                "kind": "text",
-                "title": (title or "outline") + " (preview)",
-                "preview": md,
-            }],
+            "artifacts": [
+                {
+                    "kind": "text",
+                    "title": (title or "outline") + " (preview)",
+                    "preview": md,
+                }
+            ],
         }
 
     if not _HAS_PPTX:
@@ -4710,7 +5221,9 @@ def ppt_create(
             "ok": False,
             "error": "python-pptx not installed; install with `pip install python-pptx`",
             "markdown_fallback": render_markdown_fallback(
-                slides, title=title, author=author,
+                slides,
+                title=title,
+                author=author,
             ),
         }
 
@@ -4720,9 +5233,7 @@ def ppt_create(
     # - 显式 template= 永远优先(用户明确要模板)。
     # - 否则若有 image_full 页带 image_prompt → 用户要 AI 整页铺图,不让
     #   env 默认模板(DESKPET_PPT_DEFAULT_TEMPLATE)劫持。
-    wants_fullbleed = any(
-        so.layout == "image_full" and so.image_prompt for so in slides
-    )
+    wants_fullbleed = any(so.layout == "image_full" and so.image_prompt for so in slides)
     chosen_template = (
         None
         if force_fromscratch
@@ -4732,9 +5243,7 @@ def ppt_create(
     # 丰富内容+定制视觉) ②image_full/image 页 → 全幅铺图/插图。两者都不沾
     # 才跳过生图省钱($0.15/张)。
     has_prompts = any(so.image_prompt for so in slides)
-    has_img_layout = any(
-        so.layout in {"image_full", "image"} and so.image_prompt for so in slides
-    )
+    has_img_layout = any(so.layout in {"image_full", "image"} and so.image_prompt for so in slides)
     if not skip_image_gen and has_prompts and (chosen_template or has_img_layout):
         _autofill_image_prompts(slides)
     else:
@@ -4747,19 +5256,31 @@ def ppt_create(
         resolved = _resolve_template_for_render(chosen_template, topic=topic)
         if resolved:
             result = _render_with_design_pages(
-                slides, resolved, title=title, author=author, out_path=out_path,
+                slides,
+                resolved,
+                title=title,
+                author=author,
+                out_path=out_path,
             )
             if result is not None:
                 log.debug("ppt template rendered with design pages: %s", resolved)
                 # 视觉评估闭环(模板版): 看每页 → 缩字号/换设计页 → 重渲染
                 _visual_review_loop_template(
-                    slides, resolved, out_path,
-                    title=title, author=author, result=result,
+                    slides,
+                    resolved,
+                    out_path,
+                    title=title,
+                    author=author,
+                    result=result,
                 )
                 _maybe_render_preview(result)
                 return result
             result = _render_with_template(
-                slides, resolved, title=title, author=author, out_path=out_path,
+                slides,
+                resolved,
+                title=title,
+                author=author,
+                out_path=out_path,
             )
             if result is not None:
                 log.debug("ppt template rendered with layouts: %s", resolved)
@@ -4767,18 +5288,28 @@ def ppt_create(
                 return result
             log.warning("template render failed, falling back to from-scratch engine")
         else:
-            log.warning("template not found: %s - falling back to from-scratch engine", chosen_template)
+            log.warning(
+                "template not found: %s - falling back to from-scratch engine", chosen_template
+            )
 
     theme_obj = get_theme(theme)
 
     try:
         result = _render_fromscratch(
-            slides, theme_obj, out_path, title=title, author=author,
+            slides,
+            theme_obj,
+            out_path,
+            title=title,
+            author=author,
         )
         # 视觉评估闭环(问题1): 桌宠「亲眼看」每页渲染图 → 评审 → 自动修
         # (换版式/缩字号) → 重渲染。仅 AI 图文 deck(有 image_full 页)走。
         _visual_review_loop(
-            slides, theme_obj, out_path, title=title, author=author,
+            slides,
+            theme_obj,
+            out_path,
+            title=title,
+            author=author,
             result=result,
         )
         _maybe_render_preview(result)
@@ -4789,7 +5320,9 @@ def ppt_create(
             "ok": False,
             "error": f"render failed: {exc}",
             "markdown_fallback": render_markdown_fallback(
-                slides, title=title, author=author,
+                slides,
+                title=title,
+                author=author,
             ),
         }
 
@@ -4872,12 +5405,14 @@ def _render_full_page_images(
         "theme": "full_page_images",
         "render_mode": "full_page_images",
         "page_images": page_images,
-        "artifacts": [{
-            "kind": "file",
-            "path": str(out_path),
-            "mime": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-            "title": out_path.name,
-        }],
+        "artifacts": [
+            {
+                "kind": "file",
+                "path": str(out_path),
+                "mime": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                "title": out_path.name,
+            }
+        ],
     }
 
 
@@ -4902,10 +5437,7 @@ def _render_fromscratch(
             _render_conclusion_v2(slide, so, theme_obj)
         else:
             variant = str(so.image_variant or "").strip().lower()
-            if (
-                variant in IMAGE_VARIANTS
-                and so.layout not in {"title", "table", "chart", "toc"}
-            ):
+            if variant in IMAGE_VARIANTS and so.layout not in {"title", "table", "chart", "toc"}:
                 if variant == "split_left":
                     _render_var_split(slide, so, theme_obj, image_right=False)
                 elif variant == "split_right":
@@ -4949,12 +5481,14 @@ def _render_fromscratch(
         "path": str(out_path),
         "slide_count": total,
         "theme": theme_obj.name,
-        "artifacts": [{
-            "kind": "file",
-            "path": str(out_path),
-            "mime": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-            "title": Path(str(out_path)).name,
-        }],
+        "artifacts": [
+            {
+                "kind": "file",
+                "path": str(out_path),
+                "mime": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                "title": Path(str(out_path)).name,
+            }
+        ],
     }
 
 
@@ -4967,7 +5501,8 @@ def _ppt_visual_review_enabled() -> bool:
 
 
 def _apply_review_actions(
-    slides: list[SlideOutline], reviews: list[dict[str, Any]],
+    slides: list[SlideOutline],
+    reviews: list[dict[str, Any]],
 ) -> bool:
     """把视觉评审动作应用到 slides。返回是否有实际改动(需要重渲染)。"""
     changed = False
@@ -4983,7 +5518,10 @@ def _apply_review_actions(
                 if v in IMAGE_VARIANTS and v != so.image_variant:
                     log.info(
                         "visual_review fix page=%d variant %s→%s issues=%s",
-                        idx + 1, so.image_variant, v, r.get("issues"),
+                        idx + 1,
+                        so.image_variant,
+                        v,
+                        r.get("issues"),
                     )
                     so.image_variant = v
                     changed = True
@@ -4991,7 +5529,8 @@ def _apply_review_actions(
                 if so.font_scale > 0.72:
                     log.info(
                         "visual_review fix page=%d shrink_text issues=%s",
-                        idx + 1, r.get("issues"),
+                        idx + 1,
+                        r.get("issues"),
                     )
                     so.font_scale = round(so.font_scale * 0.85, 2)
                     changed = True
@@ -5045,12 +5584,14 @@ def _visual_review_loop(
             if not reviews:
                 break
             n_bad = sum(1 for r in reviews if not r.get("ok", True))
-            rounds_meta.append({
-                "round": rnd,
-                "pages": len(reviews),
-                "issues": n_bad,
-                "detail": [r for r in reviews if not r.get("ok", True)],
-            })
+            rounds_meta.append(
+                {
+                    "round": rnd,
+                    "pages": len(reviews),
+                    "issues": n_bad,
+                    "detail": [r for r in reviews if not r.get("ok", True)],
+                }
+            )
             if n_bad == 0:
                 break
             if not _apply_review_actions(slides, reviews):
@@ -5087,7 +5628,8 @@ def _apply_review_actions_template(
                 if so.font_scale > 0.72:
                     log.info(
                         "visual_review(template) fix page=%d shrink_text issues=%s",
-                        idx + 1, r.get("issues"),
+                        idx + 1,
+                        r.get("issues"),
                     )
                     so.font_scale = round(so.font_scale * 0.85, 2)
                     changed = True
@@ -5095,7 +5637,9 @@ def _apply_review_actions_template(
                 if idx < len(page_map):
                     log.info(
                         "visual_review(template) fix page=%d change_page(ban %d) issues=%s",
-                        idx + 1, page_map[idx], r.get("issues"),
+                        idx + 1,
+                        page_map[idx],
+                        r.get("issues"),
                     )
                     banned_pages.setdefault(idx, set()).add(page_map[idx])
                     changed = True
@@ -5148,20 +5692,26 @@ def _visual_review_loop_template(
             if not reviews:
                 break
             n_bad = sum(1 for r in reviews if not r.get("ok", True))
-            rounds_meta.append({
-                "round": rnd,
-                "pages": len(reviews),
-                "issues": n_bad,
-                "detail": [r for r in reviews if not r.get("ok", True)],
-            })
+            rounds_meta.append(
+                {
+                    "round": rnd,
+                    "pages": len(reviews),
+                    "issues": n_bad,
+                    "detail": [r for r in reviews if not r.get("ok", True)],
+                }
+            )
             if n_bad == 0:
                 break
             page_map = list(result.get("page_map") or [])
             if not _apply_review_actions_template(slides, reviews, page_map, banned_pages):
                 break
             new_result = _render_with_design_pages(
-                slides, template_path, title=title, author=author,
-                out_path=out_path, banned_pages=banned_pages,
+                slides,
+                template_path,
+                title=title,
+                author=author,
+                out_path=out_path,
+                banned_pages=banned_pages,
             )
             if not new_result:
                 break
@@ -5291,10 +5841,7 @@ def _build_template_description() -> str:
     except Exception:  # noqa: BLE001
         cats = []
     if not cats:
-        return (
-            "Optional .pptx absolute path. 当前模板库不可用,要模板填充请传"
-            "一个 .pptx 绝对路径。"
-        )
+        return "Optional .pptx absolute path. 当前模板库不可用,要模板填充请传一个 .pptx 绝对路径。"
     lines = []
     for cat in cats:
         key = cat.get("key", "")
@@ -5373,11 +5920,7 @@ def _handle_ppt_create(
     outline = args.get("outline")
 
     context = legacy_execution_context(args, task_id, execution_context)
-    worker = (
-        legacy_host_service(args, "_image_worker")
-        if execution_context is None
-        else None
-    )
+    worker = legacy_host_service(args, "_image_worker") if execution_context is None else None
     sid = context.session_id
     n_imgs = _count_image_prompt_pages(outline)
     can_async = (
@@ -5389,12 +5932,11 @@ def _handle_ppt_create(
     )
 
     if can_async:
+
         async def _bg_job() -> None:
             loop = asyncio.get_running_loop()
             try:
-                result = await loop.run_in_executor(
-                    None, lambda: ppt_create(outline, **kwargs)
-                )
+                result = await loop.run_in_executor(None, lambda: ppt_create(outline, **kwargs))
             except Exception as exc:  # noqa: BLE001
                 result = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
             try:
@@ -5503,9 +6045,7 @@ def _coerce_ppt_pro_args(args: dict[str, Any]) -> dict[str, Any]:
     if theme not in VALID_THEMES:
         theme = "minimal"
     full_page_images = bool(args.get("full_page_images", False))
-    editable_required = bool(
-        args.get("editable_required", not full_page_images)
-    )
+    editable_required = bool(args.get("editable_required", not full_page_images))
     return {
         "topic": topic,
         "pages": pages,
@@ -5513,9 +6053,7 @@ def _coerce_ppt_pro_args(args: dict[str, Any]) -> dict[str, Any]:
         "theme": theme,
         "image_mode": bool(args.get("image_mode", True)),
         "editable_required": editable_required,
-        "full_page_images": (
-            False if editable_required else full_page_images
-        ),
+        "full_page_images": (False if editable_required else full_page_images),
         "title": str(args.get("title") or topic),
         "author": str(args.get("author") or "Simple Harness"),
         "output_path": str(args["output_path"]) if args.get("output_path") else None,
@@ -5552,6 +6090,7 @@ async def _submit_ppt_pro(
             "error": f"{type(exc).__name__}: {exc}",
             "call_id": context.call_id or task_id,
         }
+
 
 _PPT_PRO_SCHEMA = {
     "name": "ppt_pro",
@@ -5602,30 +6141,30 @@ _PPT_PRO_SCHEMA = {
 
 
 def register_static_tools(registry) -> None:
-        registry.register(
-            "ppt_create",
-            "ppt",
-            _build_ppt_schema(),
-            _handle_ppt_create,
-            context_handler=bind_context_handler(_handle_ppt_create),
-            permission_category="write_file",
-            # 纯文本/模板填充约 1~3s;但带 image_prompt 的整页生图(B-2)会
-            # 在 _autofill_image_prompts 里串行调 AI 出图(每张 70~190s,
-            # 偶发等满 300s),N 页 deck 可达数分钟。给足预算避免 registry
-            # 在生图跑完前杀掉 handler。注:同步阻塞 UX 由后续异步化改善。
-            timeout_seconds=1200.0,
-            concurrency_safe=False,  # G3: writes .pptx to disk
-        )
-        if not _ppt_pro_cfg().enabled:
-            return
-        registry.register(
-            "ppt_pro",
-            "ppt",
-            _PPT_PRO_SCHEMA,
-            _submit_ppt_pro,
-            context_handler=bind_context_handler(_submit_ppt_pro),
-            permission_category="write_file",
-            timeout_seconds=60.0,
-            concurrency_safe=False,
-            completion_semantics="accepted_async",
-        )
+    registry.register(
+        "ppt_create",
+        "ppt",
+        _build_ppt_schema(),
+        _handle_ppt_create,
+        context_handler=bind_context_handler(_handle_ppt_create),
+        permission_category="write_file",
+        # 纯文本/模板填充约 1~3s;但带 image_prompt 的整页生图(B-2)会
+        # 在 _autofill_image_prompts 里串行调 AI 出图(每张 70~190s,
+        # 偶发等满 300s),N 页 deck 可达数分钟。给足预算避免 registry
+        # 在生图跑完前杀掉 handler。注:同步阻塞 UX 由后续异步化改善。
+        timeout_seconds=1200.0,
+        concurrency_safe=False,  # G3: writes .pptx to disk
+    )
+    if not _ppt_pro_cfg().enabled:
+        return
+    registry.register(
+        "ppt_pro",
+        "ppt",
+        _PPT_PRO_SCHEMA,
+        _submit_ppt_pro,
+        context_handler=bind_context_handler(_submit_ppt_pro),
+        permission_category="write_file",
+        timeout_seconds=60.0,
+        concurrency_safe=False,
+        completion_semantics="accepted_async",
+    )

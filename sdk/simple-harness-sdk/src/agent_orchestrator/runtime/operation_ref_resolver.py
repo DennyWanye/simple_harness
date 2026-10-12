@@ -164,8 +164,11 @@ class OperationReferenceResolver:
             or review.verdict is not ReviewVerdict.ACCEPT
         ):
             raise OperationReferenceUnavailable("official_review_missing")
-        envelopes = [item for item in htn.list_operation_bindings(str(intent["mission_id"]))
-                     if str(item.operation_occurrence_id) == str(link["operation_occurrence_id"])]
+        envelopes = [
+            item
+            for item in htn.list_operation_bindings(str(intent["mission_id"]))
+            if str(item.operation_occurrence_id) == str(link["operation_occurrence_id"])
+        ]
         if len(envelopes) != 1:
             raise OperationReferenceUnavailable("operation_binding_missing")
         envelope = envelopes[0]

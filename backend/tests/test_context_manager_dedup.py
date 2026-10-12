@@ -14,6 +14,7 @@ reads" Requirement 3 个场景：
 dedup 逻辑挂在 ContextManager（`_read_path_seen: dict[str,int]`），
 agent loop append tool message 后调用 `dedup_file_reads`。
 """
+
 from __future__ import annotations
 
 from agent.context_manager import ContextManager
@@ -75,8 +76,7 @@ def test_reread_supersedes_earlier_copy():
 
     # 旧那条被替换成 superseded marker
     assert msgs[idx_v1]["content"] == (
-        "<file App.jsx was re-read at iteration 12; "
-        "superseded — see the later read>"
+        "<file App.jsx was re-read at iteration 12; superseded — see the later read>"
     )
     # 新那条保留完整 body
     assert msgs[idx_v2]["content"] == body_v2
@@ -145,7 +145,11 @@ def test_write_exec_tools_not_deduplicated():
         msgs.append(_tool_msg(cid, tool, f"output-{i}"))
         idx = len(msgs) - 1
         ctx.dedup_file_reads(
-            msgs, tool_name=tool, tool_args=args, new_index=idx, iteration=i,
+            msgs,
+            tool_name=tool,
+            tool_args=args,
+            new_index=idx,
+            iteration=i,
         )
 
     # 没有任何 tool message 被替换成 superseded marker
@@ -163,15 +167,21 @@ def test_mcp_filesystem_read_is_read_class():
     msgs.append(_tool_msg("a", "mcp_filesystem_read_text_file", "mcp-v1"))
     i1 = len(msgs) - 1
     ctx.dedup_file_reads(
-        msgs, tool_name="mcp_filesystem_read_text_file",
-        tool_args={"path": "/p/f.txt"}, new_index=i1, iteration=1,
+        msgs,
+        tool_name="mcp_filesystem_read_text_file",
+        tool_args={"path": "/p/f.txt"},
+        new_index=i1,
+        iteration=1,
     )
     msgs.append({"role": "assistant", "content": "", "tool_calls": [{"id": "b"}]})
     msgs.append(_tool_msg("b", "mcp_filesystem_read_text_file", "mcp-v2"))
     i2 = len(msgs) - 1
     ctx.dedup_file_reads(
-        msgs, tool_name="mcp_filesystem_read_text_file",
-        tool_args={"path": "/p/f.txt"}, new_index=i2, iteration=6,
+        msgs,
+        tool_name="mcp_filesystem_read_text_file",
+        tool_args={"path": "/p/f.txt"},
+        new_index=i2,
+        iteration=6,
     )
     assert "superseded" in msgs[i1]["content"]
     assert msgs[i2]["content"] == "mcp-v2"
@@ -186,7 +196,11 @@ def test_no_path_arg_is_noop():
     idx = len(msgs) - 1
     # 不抛
     ctx.dedup_file_reads(
-        msgs, tool_name="read_file", tool_args={}, new_index=idx, iteration=1,
+        msgs,
+        tool_name="read_file",
+        tool_args={},
+        new_index=idx,
+        iteration=1,
     )
     assert msgs[idx]["content"] == "body"
 
@@ -200,8 +214,11 @@ def test_dedup_returns_superseded_count():
     msgs.append(_tool_msg("a", "read_file", "v1"))
     i1 = len(msgs) - 1
     n0 = ctx.dedup_file_reads(
-        msgs, tool_name="read_file",
-        tool_args={"path": "/p/f.py"}, new_index=i1, iteration=1,
+        msgs,
+        tool_name="read_file",
+        tool_args={"path": "/p/f.py"},
+        new_index=i1,
+        iteration=1,
     )
     assert n0 == 0  # 第一次读，没东西可 supersede
 
@@ -209,7 +226,10 @@ def test_dedup_returns_superseded_count():
     msgs.append(_tool_msg("b", "read_file", "v2"))
     i2 = len(msgs) - 1
     n1 = ctx.dedup_file_reads(
-        msgs, tool_name="read_file",
-        tool_args={"path": "/p/f.py"}, new_index=i2, iteration=5,
+        msgs,
+        tool_name="read_file",
+        tool_args={"path": "/p/f.py"},
+        new_index=i2,
+        iteration=5,
     )
     assert n1 == 1  # 替换了 1 条旧 body

@@ -6,6 +6,7 @@ This module is deliberately app-private.  It is the only path from user chosen
 folders to a trusted workspace value; UI paths and legacy Run metadata are not
 accepted as workspace authorities.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -232,20 +233,27 @@ class ProjectBindingService:
         return await asyncio.to_thread(resolve_registration, selected_path, mode)  # type: ignore[arg-type]
 
     async def _require_upgrade_complete(self, db: aiosqlite.Connection) -> None:
-        row = await (await db.execute(
-            "SELECT phase FROM legacy_session_reset_state "
-            "WHERE singleton=1 AND policy_version=1"
-        )).fetchone()
+        row = await (
+            await db.execute(
+                "SELECT phase FROM legacy_session_reset_state "
+                "WHERE singleton=1 AND policy_version=1"
+            )
+        ).fetchone()
         if row is None or str(row[0]) != "completed":
             raise ProjectSessionError("upgrade_incomplete")
 
     @staticmethod
     def _project_from_row(row: Any) -> ProjectRecord:
         return ProjectRecord(
-            project_id=str(row[0]), display_name=str(row[1]), canonical_root=str(row[2]),
-            root_kind=str(row[3]), filesystem_identity=str(row[4]),
-            project_revision=int(row[5]), created_at=float(row[6]),
-            updated_at=float(row[7]), last_opened_at=float(row[8]),
+            project_id=str(row[0]),
+            display_name=str(row[1]),
+            canonical_root=str(row[2]),
+            root_kind=str(row[3]),
+            filesystem_identity=str(row[4]),
+            project_revision=int(row[5]),
+            created_at=float(row[6]),
+            updated_at=float(row[7]),
+            last_opened_at=float(row[8]),
         )
 
     async def register_project(
@@ -261,11 +269,14 @@ class ProjectBindingService:
                 await db.execute("PRAGMA foreign_keys=ON")
                 await db.execute("BEGIN IMMEDIATE")
                 await self._require_upgrade_complete(db)
-                row = await (await db.execute(
-                    "SELECT project_id,display_name,canonical_root,root_kind,filesystem_identity,"
-                    "project_revision,created_at,updated_at,last_opened_at FROM projects "
-                    "WHERE filesystem_identity=?", (preview.filesystem_identity,)
-                )).fetchone()
+                row = await (
+                    await db.execute(
+                        "SELECT project_id,display_name,canonical_root,root_kind,filesystem_identity,"
+                        "project_revision,created_at,updated_at,last_opened_at FROM projects "
+                        "WHERE filesystem_identity=?",
+                        (preview.filesystem_identity,),
+                    )
+                ).fetchone()
                 created = row is None
                 if row is None:
                     project_id = str(uuid.uuid4())
@@ -273,22 +284,41 @@ class ProjectBindingService:
                         "INSERT INTO projects(project_id,display_name,canonical_root,root_kind,"
                         "filesystem_identity,project_revision,created_at,updated_at,last_opened_at) "
                         "VALUES(?,?,?,?,?,1,?,?,?)",
-                        (project_id, clean_name, preview.canonical_root, preview.root_kind,
-                         preview.filesystem_identity, now, now, now),
+                        (
+                            project_id,
+                            clean_name,
+                            preview.canonical_root,
+                            preview.root_kind,
+                            preview.filesystem_identity,
+                            now,
+                            now,
+                            now,
+                        ),
                     )
-                    row = (project_id, clean_name, preview.canonical_root, preview.root_kind,
-                           preview.filesystem_identity, 1, now, now, now)
+                    row = (
+                        project_id,
+                        clean_name,
+                        preview.canonical_root,
+                        preview.root_kind,
+                        preview.filesystem_identity,
+                        1,
+                        now,
+                        now,
+                        now,
+                    )
                 await db.commit()
                 return self._project_from_row(row), created
 
     async def get_project(self, project_id: str) -> ProjectRecord:
         async with aiosqlite.connect(self._db_path) as db:
             await self._require_upgrade_complete(db)
-            row = await (await db.execute(
-                "SELECT project_id,display_name,canonical_root,root_kind,filesystem_identity,"
-                "project_revision,created_at,updated_at,last_opened_at FROM projects WHERE project_id=?",
-                (str(project_id),),
-            )).fetchone()
+            row = await (
+                await db.execute(
+                    "SELECT project_id,display_name,canonical_root,root_kind,filesystem_identity,"
+                    "project_revision,created_at,updated_at,last_opened_at FROM projects WHERE project_id=?",
+                    (str(project_id),),
+                )
+            ).fetchone()
         if row is None:
             raise ProjectSessionError("project_not_found")
         return self._project_from_row(row)
@@ -299,51 +329,72 @@ class ProjectBindingService:
             raise ProjectSessionError("session_not_found")
         async with aiosqlite.connect(self._db_path) as db:
             await self._require_upgrade_complete(db)
-            exists = await (await db.execute("SELECT 1 FROM sessions WHERE id=?", (sid,))).fetchone()
+            exists = await (
+                await db.execute("SELECT 1 FROM sessions WHERE id=?", (sid,))
+            ).fetchone()
             if exists is None:
                 raise ProjectSessionError("session_not_found")
-            row = await (await db.execute(
-                "SELECT b.project_id,b.execution_kind,b.execution_root,b.execution_identity,"
-                "b.handoff_json,b.binding_version,p.display_name,p.canonical_root,"
-                "p.filesystem_identity,p.project_revision FROM session_project_bindings b "
-                "JOIN projects p ON p.project_id=b.project_id WHERE b.session_id=?", (sid,)
-            )).fetchone()
+            row = await (
+                await db.execute(
+                    "SELECT b.project_id,b.execution_kind,b.execution_root,b.execution_identity,"
+                    "b.handoff_json,b.binding_version,p.display_name,p.canonical_root,"
+                    "p.filesystem_identity,p.project_revision FROM session_project_bindings b "
+                    "JOIN projects p ON p.project_id=b.project_id WHERE b.session_id=?",
+                    (sid,),
+                )
+            ).fetchone()
         if row is None:
             return ProjectlessWorkspace(kind="projectless", session_id=sid)
         project_id, execution_kind = str(row[0]), str(row[1])
         project_root = str(row[7])
         effective_root = project_root if execution_kind == "project_root" else str(row[2])
-        expected_execution_identity = str(row[8]) if execution_kind == "project_root" else str(row[3])
+        expected_execution_identity = (
+            str(row[8]) if execution_kind == "project_root" else str(row[3])
+        )
         try:
             actual = _filesystem_identity(_strict_directory(effective_root))
         except ProjectSessionError:
             return ProjectMissingWorkspace(
-                kind="missing", session_id=sid, project_id=project_id,
-                project_name=str(row[6]), project_root=project_root,
-                execution_kind=execution_kind, effective_root=effective_root,
-                project_revision=int(row[9]), binding_version=int(row[5]),
+                kind="missing",
+                session_id=sid,
+                project_id=project_id,
+                project_name=str(row[6]),
+                project_root=project_root,
+                execution_kind=execution_kind,
+                effective_root=effective_root,
+                project_revision=int(row[9]),
+                binding_version=int(row[5]),
                 error_code="workspace_unavailable",
             )
         if actual != expected_execution_identity:
             return ProjectMissingWorkspace(
-                kind="missing", session_id=sid, project_id=project_id,
-                project_name=str(row[6]), project_root=project_root,
-                execution_kind=execution_kind, effective_root=effective_root,
-                project_revision=int(row[9]), binding_version=int(row[5]),
+                kind="missing",
+                session_id=sid,
+                project_id=project_id,
+                project_name=str(row[6]),
+                project_root=project_root,
+                execution_kind=execution_kind,
+                effective_root=effective_root,
+                project_revision=int(row[9]),
+                binding_version=int(row[5]),
                 error_code="workspace_binding_stale",
             )
         return ProjectBoundWorkspace(
-            kind="project", session_id=sid, project_id=project_id,
-            project_name=str(row[6]), project_root=project_root,
-            execution_kind=execution_kind, effective_root=effective_root,
-            project_identity=str(row[8]), execution_identity=expected_execution_identity,
-            project_revision=int(row[9]), binding_version=int(row[5]),
+            kind="project",
+            session_id=sid,
+            project_id=project_id,
+            project_name=str(row[6]),
+            project_root=project_root,
+            execution_kind=execution_kind,
+            effective_root=effective_root,
+            project_identity=str(row[8]),
+            execution_identity=expected_execution_identity,
+            project_revision=int(row[9]),
+            binding_version=int(row[5]),
             handoff=json.loads(row[4]) if row[4] else None,
         )
 
-    async def claim_handoff(
-        self, session_id: str, first_run_id: str
-    ) -> dict[str, Any] | None:
+    async def claim_handoff(self, session_id: str, first_run_id: str) -> dict[str, Any] | None:
         """Return a bounded handoff only to the target Session's first Run."""
 
         sid = str(session_id or "").strip()
@@ -353,17 +404,21 @@ class ProjectBindingService:
         async with self._write_lock:
             async with aiosqlite.connect(self._db_path) as db:
                 await db.execute("BEGIN IMMEDIATE")
-                row = await (await db.execute(
-                    "SELECT handoff_json FROM session_project_bindings WHERE session_id=?",
-                    (sid,),
-                )).fetchone()
+                row = await (
+                    await db.execute(
+                        "SELECT handoff_json FROM session_project_bindings WHERE session_id=?",
+                        (sid,),
+                    )
+                ).fetchone()
                 if row is None or not row[0]:
                     await db.rollback()
                     return None
-                existing = await (await db.execute(
-                    "SELECT first_run_id FROM session_handoff_consumptions WHERE session_id=?",
-                    (sid,),
-                )).fetchone()
+                existing = await (
+                    await db.execute(
+                        "SELECT first_run_id FROM session_handoff_consumptions WHERE session_id=?",
+                        (sid,),
+                    )
+                ).fetchone()
                 if existing is None:
                     await db.execute(
                         "INSERT INTO session_handoff_consumptions(session_id,first_run_id,consumed_at) "
@@ -376,9 +431,7 @@ class ProjectBindingService:
                 await db.commit()
                 return json.loads(str(row[0]))
 
-    async def admit_run(
-        self, resolution: Mapping[str, Any], run_id: str
-    ) -> None:
+    async def admit_run(self, resolution: Mapping[str, Any], run_id: str) -> None:
         """CAS one verified Project revision into the active-Run fence."""
 
         if str(resolution.get("kind")) != "project_bound":
@@ -387,13 +440,15 @@ class ProjectBindingService:
         async with self._write_lock:
             async with aiosqlite.connect(self._db_path) as db:
                 await db.execute("BEGIN IMMEDIATE")
-                row = await (await db.execute(
-                    "SELECT b.project_id,p.project_revision,p.canonical_root,p.filesystem_identity,"
-                    "b.execution_kind,b.execution_root,b.execution_identity "
-                    "FROM session_project_bindings b "
-                    "JOIN projects p ON p.project_id=b.project_id WHERE b.session_id=?",
-                    (str(resolution["session_id"]),),
-                )).fetchone()
+                row = await (
+                    await db.execute(
+                        "SELECT b.project_id,p.project_revision,p.canonical_root,p.filesystem_identity,"
+                        "b.execution_kind,b.execution_root,b.execution_identity "
+                        "FROM session_project_bindings b "
+                        "JOIN projects p ON p.project_id=b.project_id WHERE b.session_id=?",
+                        (str(resolution["session_id"]),),
+                    )
+                ).fetchone()
                 if row is None:
                     raise ProjectSessionError("workspace_binding_stale")
                 if (
@@ -402,20 +457,20 @@ class ProjectBindingService:
                     or str(row[2]) != str(resolution["project_root"])
                     or str(row[3]) != str(resolution["project_identity"])
                     or str(row[4]) != str(resolution["execution_kind"])
-                    or (
-                        str(row[2]) if str(row[4]) == "project_root" else str(row[5])
-                    ) != str(resolution["effective_root"])
-                    or (
-                        str(row[3]) if str(row[4]) == "project_root" else str(row[6])
-                    ) != str(resolution["execution_identity"])
+                    or (str(row[2]) if str(row[4]) == "project_root" else str(row[5]))
+                    != str(resolution["effective_root"])
+                    or (str(row[3]) if str(row[4]) == "project_root" else str(row[6]))
+                    != str(resolution["execution_identity"])
                 ):
                     raise ProjectSessionError("workspace_binding_stale")
                 self.validate_workspace_identity(resolution)
-                existing = await (await db.execute(
-                    "SELECT session_id,project_id,project_revision,state "
-                    "FROM project_run_admissions WHERE run_id=?",
-                    (str(run_id),),
-                )).fetchone()
+                existing = await (
+                    await db.execute(
+                        "SELECT session_id,project_id,project_revision,state "
+                        "FROM project_run_admissions WHERE run_id=?",
+                        (str(run_id),),
+                    )
+                ).fetchone()
                 expected = (
                     str(resolution["session_id"]),
                     str(resolution["project_id"]),
@@ -461,33 +516,37 @@ class ProjectBindingService:
             async with aiosqlite.connect(self._db_path) as db:
                 claim_tables = {
                     str(row[0])
-                    for row in await (await db.execute(
-                        "SELECT name FROM sqlite_master WHERE type='table' AND name IN "
-                        "('project_run_admissions','session_handoff_consumptions')"
-                    )).fetchall()
+                    for row in await (
+                        await db.execute(
+                            "SELECT name FROM sqlite_master WHERE type='table' AND name IN "
+                            "('project_run_admissions','session_handoff_consumptions')"
+                        )
+                    ).fetchall()
                 }
-                if claim_tables != {
-                    "project_run_admissions", "session_handoff_consumptions"
-                }:
+                if claim_tables != {"project_run_admissions", "session_handoff_consumptions"}:
                     return {"admissions_removed": 0, "handoffs_removed": 0}
                 admissions = [
                     str(row[0])
-                    for row in await (await db.execute(
-                        "SELECT run_id FROM project_run_admissions WHERE state='active'"
-                    )).fetchall()
+                    for row in await (
+                        await db.execute(
+                            "SELECT run_id FROM project_run_admissions WHERE state='active'"
+                        )
+                    ).fetchall()
                 ]
                 handoffs = [
                     (str(row[0]), str(row[1]))
-                    for row in await (await db.execute(
-                        "SELECT session_id,first_run_id FROM session_handoff_consumptions"
-                    )).fetchall()
+                    for row in await (
+                        await db.execute(
+                            "SELECT session_id,first_run_id FROM session_handoff_consumptions"
+                        )
+                    ).fetchall()
                 ]
             orphan_admissions = [
-                run_id for run_id in admissions
-                if not await has_durable_run_start(run_id)
+                run_id for run_id in admissions if not await has_durable_run_start(run_id)
             ]
             orphan_handoffs = [
-                (session_id, run_id) for session_id, run_id in handoffs
+                (session_id, run_id)
+                for session_id, run_id in handoffs
                 if not await has_durable_run_start(run_id)
             ]
             async with aiosqlite.connect(self._db_path) as db:
@@ -513,10 +572,12 @@ class ProjectBindingService:
         """Return durable deletion fences for startup Run-cancel replay."""
 
         async with aiosqlite.connect(self._db_path) as db:
-            rows = await (await db.execute(
-                "SELECT session_id FROM session_delivery_state "
-                "WHERE deleted_at IS NOT NULL ORDER BY session_id"
-            )).fetchall()
+            rows = await (
+                await db.execute(
+                    "SELECT session_id FROM session_delivery_state "
+                    "WHERE deleted_at IS NOT NULL ORDER BY session_id"
+                )
+            ).fetchall()
         return tuple(str(row[0]) for row in rows)
 
     async def reconcile_deleted_session_runs(
@@ -554,11 +615,9 @@ class ProjectBindingService:
             )
         except (KeyError, ProjectSessionError) as exc:
             raise RuntimeError("workspace_unavailable") from exc
-        if (
-            project_identity != str(resolution.get("project_identity") or "")
-            or execution_identity
-            != str(resolution.get("execution_identity") or "")
-        ):
+        if project_identity != str(
+            resolution.get("project_identity") or ""
+        ) or execution_identity != str(resolution.get("execution_identity") or ""):
             raise RuntimeError("workspace_binding_stale")
 
     async def relocate_project(
@@ -571,32 +630,40 @@ class ProjectBindingService:
             async with aiosqlite.connect(self._db_path) as db:
                 await db.execute("BEGIN IMMEDIATE")
                 await self._require_upgrade_complete(db)
-                admitted = await (await db.execute(
-                    "SELECT 1 FROM project_run_admissions "
-                    "WHERE project_id=? AND state='active' LIMIT 1",
-                    (project_id,),
-                )).fetchone()
+                admitted = await (
+                    await db.execute(
+                        "SELECT 1 FROM project_run_admissions "
+                        "WHERE project_id=? AND state='active' LIMIT 1",
+                        (project_id,),
+                    )
+                ).fetchone()
                 if admitted is not None:
                     raise ProjectSessionError("project_runs_active")
                 for run_table in ("execution_runs", "workflow_runs"):
-                    exists = await (await db.execute(
-                        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
-                        (run_table,),
-                    )).fetchone()
+                    exists = await (
+                        await db.execute(
+                            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+                            (run_table,),
+                        )
+                    ).fetchone()
                     if exists is None:
                         continue
-                    active = await (await db.execute(
-                        f"SELECT 1 FROM session_project_bindings b "
-                        f"JOIN {run_table} r ON r.session_id=b.session_id "
-                        "WHERE b.project_id=? AND r.status IN "
-                        "('created','queued','running','waiting','cancel_requested') LIMIT 1",
-                        (project_id,),
-                    )).fetchone()
+                    active = await (
+                        await db.execute(
+                            f"SELECT 1 FROM session_project_bindings b "
+                            f"JOIN {run_table} r ON r.session_id=b.session_id "
+                            "WHERE b.project_id=? AND r.status IN "
+                            "('created','queued','running','waiting','cancel_requested') LIMIT 1",
+                            (project_id,),
+                        )
+                    ).fetchone()
                     if active is not None:
                         raise ProjectSessionError("project_runs_active")
-                row = await (await db.execute(
-                    "SELECT filesystem_identity FROM projects WHERE project_id=?", (project_id,)
-                )).fetchone()
+                row = await (
+                    await db.execute(
+                        "SELECT filesystem_identity FROM projects WHERE project_id=?", (project_id,)
+                    )
+                ).fetchone()
                 if row is None:
                     raise ProjectSessionError("project_not_found")
                 if str(row[0]) != candidate_identity:
@@ -618,19 +685,35 @@ class ProjectBindingService:
 
         def _git_status() -> dict[str, Any]:
             if descriptor["availability"] != "available":
-                return {"available": False, "branch": None, "dirty": None,
-                        "error_code": "workspace_unavailable"}
+                return {
+                    "available": False,
+                    "branch": None,
+                    "dirty": None,
+                    "error_code": "workspace_unavailable",
+                }
             try:
                 completed = subprocess.run(
                     ["git", "-C", record.canonical_root, "status", "--porcelain=v1", "--branch"],
-                    check=False, capture_output=True, text=True, timeout=2.0, shell=False,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=2.0,
+                    shell=False,
                 )
             except (OSError, subprocess.TimeoutExpired):
-                return {"available": False, "branch": None, "dirty": None,
-                        "error_code": "git_status_unavailable"}
+                return {
+                    "available": False,
+                    "branch": None,
+                    "dirty": None,
+                    "error_code": "git_status_unavailable",
+                }
             if completed.returncode != 0:
-                return {"available": False, "branch": None, "dirty": None,
-                        "error_code": "not_git_repository"}
+                return {
+                    "available": False,
+                    "branch": None,
+                    "dirty": None,
+                    "error_code": "not_git_repository",
+                }
             lines = completed.stdout.splitlines()
             branch = lines[0][3:].split("...")[0] if lines and lines[0].startswith("## ") else None
             return {"available": True, "branch": branch, "dirty": len(lines) > 1}
@@ -639,9 +722,11 @@ class ProjectBindingService:
 
     async def catalog_revision(self, db: aiosqlite.Connection | None = None) -> int:
         if db is not None:
-            row = await (await db.execute(
-                "SELECT catalog_revision FROM project_session_catalog_state WHERE singleton=1"
-            )).fetchone()
+            row = await (
+                await db.execute(
+                    "SELECT catalog_revision FROM project_session_catalog_state WHERE singleton=1"
+                )
+            ).fetchone()
             return int(row[0])
         async with aiosqlite.connect(self._db_path) as connection:
             return await self.catalog_revision(connection)
@@ -651,7 +736,10 @@ class ProjectBindingService:
         return min(MAX_PAGE_SIZE, max(1, int(value or DEFAULT_PAGE_SIZE)))
 
     async def list_project_page(
-        self, *, cursor: str | None = None, limit: int | None = None,
+        self,
+        *,
+        cursor: str | None = None,
+        limit: int | None = None,
         pinned_project_id: str | None = None,
         pinned_session_id: str | None = None,
     ) -> dict[str, Any]:
@@ -666,61 +754,98 @@ class ProjectBindingService:
             where = "WHERE NOT EXISTS (SELECT 1 FROM project_origins po WHERE po.project_id=projects.project_id AND po.project_origin='automatic_session_workspace')"
             if decoded:
                 where += " AND (last_opened_at < ? OR (last_opened_at = ? AND project_id > ?))"
-                params.extend([decoded["last_opened_at"], decoded["last_opened_at"], decoded["project_id"]])
-            rows = await (await db.execute(
-                "SELECT project_id,display_name,canonical_root,root_kind,filesystem_identity,"
-                "project_revision,created_at,updated_at,last_opened_at FROM projects " + where +
-                " ORDER BY last_opened_at DESC,project_id ASC LIMIT ?", (*params, size + 1)
-            )).fetchall()
+                params.extend(
+                    [decoded["last_opened_at"], decoded["last_opened_at"], decoded["project_id"]]
+                )
+            rows = await (
+                await db.execute(
+                    "SELECT project_id,display_name,canonical_root,root_kind,filesystem_identity,"
+                    "project_revision,created_at,updated_at,last_opened_at FROM projects "
+                    + where
+                    + " ORDER BY last_opened_at DESC,project_id ASC LIMIT ?",
+                    (*params, size + 1),
+                )
+            ).fetchall()
             pinned_row = None
             if not pinned_project_id and pinned_session_id:
-                binding_row = await (await db.execute(
-                    "SELECT project_id FROM session_project_bindings WHERE session_id=?",
-                    (pinned_session_id,),
-                )).fetchone()
+                binding_row = await (
+                    await db.execute(
+                        "SELECT project_id FROM session_project_bindings WHERE session_id=?",
+                        (pinned_session_id,),
+                    )
+                ).fetchone()
                 pinned_project_id = str(binding_row[0]) if binding_row else None
             if pinned_project_id:
-                pinned_row = await (await db.execute(
-                    "SELECT project_id,display_name,canonical_root,root_kind,filesystem_identity,"
-                    "project_revision,created_at,updated_at,last_opened_at FROM projects WHERE project_id=? "
-                    "AND NOT EXISTS (SELECT 1 FROM project_origins po WHERE po.project_id=projects.project_id AND po.project_origin='automatic_session_workspace')",
-                    (pinned_project_id,),
-                )).fetchone()
+                pinned_row = await (
+                    await db.execute(
+                        "SELECT project_id,display_name,canonical_root,root_kind,filesystem_identity,"
+                        "project_revision,created_at,updated_at,last_opened_at FROM projects WHERE project_id=? "
+                        "AND NOT EXISTS (SELECT 1 FROM project_origins po WHERE po.project_id=projects.project_id AND po.project_origin='automatic_session_workspace')",
+                        (pinned_project_id,),
+                    )
+                ).fetchone()
         page_rows, has_more = rows[:size], len(rows) > size
         records = [self._project_from_row(row) for row in page_rows]
         next_cursor = None
         if has_more and records:
             tail = records[-1]
-            next_cursor = _encode_cursor({"schema_version": CATALOG_SCHEMA_VERSION,
-                "catalog_revision": revision, "last_opened_at": tail.last_opened_at,
-                "project_id": tail.project_id})
-        return {"schema_version": CATALOG_SCHEMA_VERSION, "catalog_revision": revision,
-                "items": [self.project_descriptor(r) for r in records], "next_cursor": next_cursor,
-                "pinned": self.project_descriptor(self._project_from_row(pinned_row)) if pinned_row else None}
+            next_cursor = _encode_cursor(
+                {
+                    "schema_version": CATALOG_SCHEMA_VERSION,
+                    "catalog_revision": revision,
+                    "last_opened_at": tail.last_opened_at,
+                    "project_id": tail.project_id,
+                }
+            )
+        return {
+            "schema_version": CATALOG_SCHEMA_VERSION,
+            "catalog_revision": revision,
+            "items": [self.project_descriptor(r) for r in records],
+            "next_cursor": next_cursor,
+            "pinned": self.project_descriptor(self._project_from_row(pinned_row))
+            if pinned_row
+            else None,
+        }
 
     def project_descriptor(self, record: ProjectRecord) -> dict[str, Any]:
         available = False
         try:
-            available = _filesystem_identity(_strict_directory(record.canonical_root)) == record.filesystem_identity
+            available = (
+                _filesystem_identity(_strict_directory(record.canonical_root))
+                == record.filesystem_identity
+            )
         except ProjectSessionError:
             pass
-        return {"project_id": record.project_id, "display_name": record.display_name,
-                "project_root": record.canonical_root, "root_kind": record.root_kind,
-                "project_revision": record.project_revision,
-                "availability": "available" if available else "missing",
-                "created_at": record.created_at, "updated_at": record.updated_at,
-                "last_opened_at": record.last_opened_at}
+        return {
+            "project_id": record.project_id,
+            "display_name": record.display_name,
+            "project_root": record.canonical_root,
+            "root_kind": record.root_kind,
+            "project_revision": record.project_revision,
+            "availability": "available" if available else "missing",
+            "created_at": record.created_at,
+            "updated_at": record.updated_at,
+            "last_opened_at": record.last_opened_at,
+        }
 
     async def list_session_page(
-        self, *, scope_kind: Literal["project", "projectless"], project_id: str | None = None,
-        cursor: str | None = None, limit: int | None = None,
+        self,
+        *,
+        scope_kind: Literal["project", "projectless"],
+        project_id: str | None = None,
+        cursor: str | None = None,
+        limit: int | None = None,
         pinned_session_id: str | None = None,
     ) -> dict[str, Any]:
-        if scope_kind not in ("project", "projectless") or (scope_kind == "project" and not project_id):
+        if scope_kind not in ("project", "projectless") or (
+            scope_kind == "project" and not project_id
+        ):
             raise ProjectSessionError("invalid_request")
         size = self._page_limit(limit)
         decoded = _decode_cursor(cursor) if cursor else None
-        if decoded and (decoded.get("scope_kind") != scope_kind or decoded.get("project_id") != project_id):
+        if decoded and (
+            decoded.get("scope_kind") != scope_kind or decoded.get("project_id") != project_id
+        ):
             raise ProjectSessionError("cursor_invalid")
         async with aiosqlite.connect(self._db_path) as db:
             db.row_factory = sqlite3.Row
@@ -728,15 +853,23 @@ class ProjectBindingService:
             revision = await self.catalog_revision(db)
             if decoded and int(decoded.get("catalog_revision", -1)) != revision:
                 raise ProjectSessionError("stale_cursor")
-            scope_sql = ("b.project_id=? AND po.project_origin IS NULL" if scope_kind == "project" else
-                         "(b.session_id IS NULL OR po.project_origin='automatic_session_workspace')")
+            scope_sql = (
+                "b.project_id=? AND po.project_origin IS NULL"
+                if scope_kind == "project"
+                else "(b.session_id IS NULL OR po.project_origin='automatic_session_workspace')"
+            )
             params: list[Any] = [project_id] if scope_kind == "project" else []
             cursor_sql = ""
             if decoded:
-                cursor_sql = " AND (COALESCE(ma.last_message_at,s.created_at) < ? OR " \
+                cursor_sql = (
+                    " AND (COALESCE(ma.last_message_at,s.created_at) < ? OR "
                     "(COALESCE(ma.last_message_at,s.created_at)=? AND s.id>?))"
-                params.extend([decoded["activity_at"], decoded["activity_at"], decoded["session_id"]])
-            base_projection = """
+                )
+                params.extend(
+                    [decoded["activity_at"], decoded["activity_at"], decoded["session_id"]]
+                )
+            base_projection = (
+                """
               SELECT s.id session_id,s.created_at,b.project_id,b.execution_kind,b.execution_root,
                      b.source_session_id,p.canonical_root,p.filesystem_identity,po.project_origin,
                      b.execution_identity,t.title,ma.turn_count,ma.last_message_at,ma.preview
@@ -752,49 +885,90 @@ class ProjectBindingService:
                 LEFT JOIN session_creation_receipts r ON r.session_id=s.id
                 LEFT JOIN session_delivery_state d ON d.session_id=s.id
                 LEFT JOIN companion_session_owners o ON o.session_id=s.id
-               WHERE """ + scope_sql + " AND d.deleted_at IS NULL AND (o.status IS NULL OR o.status='active') " \
+               WHERE """
+                + scope_sql
+                + " AND d.deleted_at IS NULL AND (o.status IS NULL OR o.status='active') "
                 "AND (r.lifecycle='active' OR o.status='active' OR (r.request_id IS NULL AND ma.turn_count>0))"
-            rows = await (await db.execute(base_projection + cursor_sql +
-                " ORDER BY COALESCE(ma.last_message_at,s.created_at) DESC,s.id ASC LIMIT ?", (*params, size + 1)
-            )).fetchall()
+            )
+            rows = await (
+                await db.execute(
+                    base_projection
+                    + cursor_sql
+                    + " ORDER BY COALESCE(ma.last_message_at,s.created_at) DESC,s.id ASC LIMIT ?",
+                    (*params, size + 1),
+                )
+            ).fetchall()
             pinned = None
             if pinned_session_id:
-                pinned = await (await db.execute(
-                    base_projection + " AND s.id=? LIMIT 1",
-                    (*([project_id] if scope_kind == "project" else []), pinned_session_id),
-                )).fetchone()
+                pinned = await (
+                    await db.execute(
+                        base_projection + " AND s.id=? LIMIT 1",
+                        (*([project_id] if scope_kind == "project" else []), pinned_session_id),
+                    )
+                ).fetchone()
         items = [self._session_descriptor(row) for row in rows[:size]]
         next_cursor = None
         if len(rows) > size and items:
             tail = items[-1]
-            next_cursor = _encode_cursor({"schema_version": CATALOG_SCHEMA_VERSION,
-                "catalog_revision": revision, "scope_kind": scope_kind, "project_id": project_id,
-                "activity_at": tail["activity_at"], "session_id": tail["session_id"]})
-        return {"schema_version": CATALOG_SCHEMA_VERSION, "catalog_revision": revision,
-                "scope": {"kind": scope_kind, "project_id": project_id}, "items": items,
-                "next_cursor": next_cursor, "pinned": self._session_descriptor(pinned) if pinned else None}
+            next_cursor = _encode_cursor(
+                {
+                    "schema_version": CATALOG_SCHEMA_VERSION,
+                    "catalog_revision": revision,
+                    "scope_kind": scope_kind,
+                    "project_id": project_id,
+                    "activity_at": tail["activity_at"],
+                    "session_id": tail["session_id"],
+                }
+            )
+        return {
+            "schema_version": CATALOG_SCHEMA_VERSION,
+            "catalog_revision": revision,
+            "scope": {"kind": scope_kind, "project_id": project_id},
+            "items": items,
+            "next_cursor": next_cursor,
+            "pinned": self._session_descriptor(pinned) if pinned else None,
+        }
 
     @staticmethod
     def _session_descriptor(row: sqlite3.Row) -> dict[str, Any]:
         execution_kind = row["execution_kind"]
-        execution_root = (row["canonical_root"] if execution_kind == "project_root" else row["execution_root"])
+        execution_root = (
+            row["canonical_root"] if execution_kind == "project_root" else row["execution_root"]
+        )
         availability = "projectless"
         if row["project_id"]:
             try:
-                expected = row["filesystem_identity"] if execution_kind == "project_root" else row["execution_identity"]
-                availability = "available" if _filesystem_identity(_strict_directory(execution_root)) == expected else "missing"
+                expected = (
+                    row["filesystem_identity"]
+                    if execution_kind == "project_root"
+                    else row["execution_identity"]
+                )
+                availability = (
+                    "available"
+                    if _filesystem_identity(_strict_directory(execution_root)) == expected
+                    else "missing"
+                )
             except ProjectSessionError:
                 availability = "missing"
         preview = str(row["preview"] or "")[:60]
         automatic = row["project_origin"] == "automatic_session_workspace"
-        return {"session_id": str(row["session_id"]), "project_id": None if automatic else row["project_id"],
-                "session_kind": "projectless" if automatic or not row["project_id"] else "project",
-                "workspace_kind": "automatic" if automatic else ("selected" if row["project_id"] else "none"),
-                "execution_kind": execution_kind, "execution_root": execution_root,
-                "source_session_id": row["source_session_id"], "title": str(row["title"] or ""),
-                "preview": preview, "turn_count": int(row["turn_count"] or 0),
-                "activity_at": float(row["last_message_at"] or row["created_at"]),
-                "created_at": float(row["created_at"]), "availability": availability}
+        return {
+            "session_id": str(row["session_id"]),
+            "project_id": None if automatic else row["project_id"],
+            "session_kind": "projectless" if automatic or not row["project_id"] else "project",
+            "workspace_kind": "automatic"
+            if automatic
+            else ("selected" if row["project_id"] else "none"),
+            "execution_kind": execution_kind,
+            "execution_root": execution_root,
+            "source_session_id": row["source_session_id"],
+            "title": str(row["title"] or ""),
+            "preview": preview,
+            "turn_count": int(row["turn_count"] or 0),
+            "activity_at": float(row["last_message_at"] or row["created_at"]),
+            "created_at": float(row["created_at"]),
+            "availability": availability,
+        }
 
 
 class SessionCreationService:
@@ -805,7 +979,9 @@ class SessionCreationService:
     """
 
     def __init__(
-        self, binding_service: ProjectBindingService, *,
+        self,
+        binding_service: ProjectBindingService,
+        *,
         provider_mutation_lock: asyncio.Lock | None = None,
         session_db: Any = None,
         owner_identity_resolver: Callable[[], Any] | None = None,
@@ -834,7 +1010,11 @@ class SessionCreationService:
 
     @staticmethod
     def _owned_workspace_is_safe_to_remove(
-        *, leaf: Path, marker: Path, allocation_id: str, session_id: str,
+        *,
+        leaf: Path,
+        marker: Path,
+        allocation_id: str,
+        session_id: str,
         directory_identity: str | None,
     ) -> bool:
         """Prove that an allocation still owns an otherwise-empty leaf.
@@ -867,11 +1047,13 @@ class SessionCreationService:
 
         async with self._bindings._write_lock:
             async with aiosqlite.connect(self._bindings._db_path) as db:
-                row = await (await db.execute(
-                    "SELECT allocation_id,session_id,directory_path,owned_marker,"
-                    "directory_identity,state FROM workspace_allocations WHERE request_id=?",
-                    (request_id,),
-                )).fetchone()
+                row = await (
+                    await db.execute(
+                        "SELECT allocation_id,session_id,directory_path,owned_marker,"
+                        "directory_identity,state FROM workspace_allocations WHERE request_id=?",
+                        (request_id,),
+                    )
+                ).fetchone()
                 if row is None:
                     return "missing"
                 allocation_id, sid = str(row[0]), str(row[1])
@@ -882,13 +1064,15 @@ class SessionCreationService:
 
                 # A committed aggregate is authoritative even if a crash left
                 # the marker behind before post-commit cleanup.
-                aggregate = await (await db.execute(
-                    "SELECT p.project_id,p.canonical_root,p.filesystem_identity "
-                    "FROM session_project_bindings b JOIN projects p ON p.project_id=b.project_id "
-                    "JOIN project_origins o ON o.project_id=p.project_id "
-                    "WHERE b.session_id=? AND o.project_origin='automatic_session_workspace'",
-                    (sid,),
-                )).fetchone()
+                aggregate = await (
+                    await db.execute(
+                        "SELECT p.project_id,p.canonical_root,p.filesystem_identity "
+                        "FROM session_project_bindings b JOIN projects p ON p.project_id=b.project_id "
+                        "JOIN project_origins o ON o.project_id=p.project_id "
+                        "WHERE b.session_id=? AND o.project_origin='automatic_session_workspace'",
+                        (sid,),
+                    )
+                ).fetchone()
                 now = time.time()
                 if (
                     aggregate is not None
@@ -911,8 +1095,11 @@ class SessionCreationService:
                     return "completed"
 
                 safe = self._owned_workspace_is_safe_to_remove(
-                    leaf=leaf, marker=marker, allocation_id=allocation_id,
-                    session_id=sid, directory_identity=identity,
+                    leaf=leaf,
+                    marker=marker,
+                    allocation_id=allocation_id,
+                    session_id=sid,
+                    directory_identity=identity,
                 )
                 next_state = "reserved" if safe else "compensation_required"
                 error = "workspace_compensated" if safe else "workspace_compensation_unsafe"
@@ -936,11 +1123,13 @@ class SessionCreationService:
         """Startup recovery entry point for every unfinished allocation."""
 
         async with aiosqlite.connect(self._bindings._db_path) as db:
-            rows = await (await db.execute(
-                "SELECT request_id FROM workspace_allocations "
-                "WHERE state IN ('directory_created','compensation_required') "
-                "ORDER BY created_at,allocation_id"
-            )).fetchall()
+            rows = await (
+                await db.execute(
+                    "SELECT request_id FROM workspace_allocations "
+                    "WHERE state IN ('directory_created','compensation_required') "
+                    "ORDER BY created_at,allocation_id"
+                )
+            ).fetchall()
         counts = {"completed": 0, "reserved": 0, "compensation_required": 0}
         for (request_id,) in rows:
             state = await self._reconcile_workspace_allocation(str(request_id))
@@ -958,25 +1147,43 @@ class SessionCreationService:
         documents = _strict_directory(self._documents_root)
         if _filesystem_identity(documents) != self._documents_identity:
             raise ProjectSessionError("host_documents_identity_mismatch")
-        sid = str(session_id or uuid.uuid5(uuid.NAMESPACE_URL, f"simple-harness-session:{request_id}"))
-        allocation_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"simple-harness-workspace:{request_id}"))
-        display_seed = re.sub(r"[^\w.-]+", "-", "Session", flags=re.UNICODE).strip("-.") or "Session"
+        sid = str(
+            session_id or uuid.uuid5(uuid.NAMESPACE_URL, f"simple-harness-session:{request_id}")
+        )
+        allocation_id = str(
+            uuid.uuid5(uuid.NAMESPACE_URL, f"simple-harness-workspace:{request_id}")
+        )
+        display_seed = (
+            re.sub(r"[^\w.-]+", "-", "Session", flags=re.UNICODE).strip("-.") or "Session"
+        )
         leaf = documents / "SimpleHarnessProjects" / f"{display_seed}-{sid[:8]}"
         marker = leaf / ".simple-harness-workspace.json"
         now = time.time()
         async with self._bindings._write_lock:
             async with aiosqlite.connect(self._bindings._db_path) as db:
                 await db.execute("BEGIN IMMEDIATE")
-                row = await (await db.execute(
-                    "SELECT intent_hash,session_id,directory_path,directory_identity,state "
-                    "FROM workspace_allocations WHERE request_id=?", (request_id,)
-                )).fetchone()
+                row = await (
+                    await db.execute(
+                        "SELECT intent_hash,session_id,directory_path,directory_identity,state "
+                        "FROM workspace_allocations WHERE request_id=?",
+                        (request_id,),
+                    )
+                ).fetchone()
                 if row is None:
                     await db.execute(
                         "INSERT INTO workspace_allocations(allocation_id,request_id,intent_hash,session_id,"
                         "directory_path,owned_marker,state,created_at,updated_at) "
                         "VALUES(?,?,?,?,?,?,'reserved',?,?)",
-                        (allocation_id, request_id, intent_hash, sid, os.fspath(leaf), os.fspath(marker), now, now),
+                        (
+                            allocation_id,
+                            request_id,
+                            intent_hash,
+                            sid,
+                            os.fspath(leaf),
+                            os.fspath(marker),
+                            now,
+                            now,
+                        ),
                     )
                     state = "reserved"
                     identity = None
@@ -990,10 +1197,13 @@ class SessionCreationService:
             state = await self._reconcile_workspace_allocation(request_id)
             if state == "completed":
                 async with aiosqlite.connect(self._bindings._db_path) as db:
-                    completed = await (await db.execute(
-                        "SELECT session_id,directory_path,directory_identity FROM workspace_allocations "
-                        "WHERE request_id=? AND state='completed'", (request_id,)
-                    )).fetchone()
+                    completed = await (
+                        await db.execute(
+                            "SELECT session_id,directory_path,directory_identity FROM workspace_allocations "
+                            "WHERE request_id=? AND state='completed'",
+                            (request_id,),
+                        )
+                    ).fetchone()
                 if completed is None:
                     raise ProjectSessionError("workspace_allocation_stale")
                 return str(completed[0]), str(completed[1]), str(completed[2])
@@ -1016,7 +1226,10 @@ class SessionCreationService:
             try:
                 leaf.parent.mkdir(parents=True, exist_ok=True)
                 leaf.mkdir(exist_ok=False)
-                marker.write_text(_canonical_json({"allocation_id": allocation_id, "session_id": sid}), encoding="utf-8")
+                marker.write_text(
+                    _canonical_json({"allocation_id": allocation_id, "session_id": sid}),
+                    encoding="utf-8",
+                )
             except FileExistsError as exc:
                 try:
                     marker_value = json.loads(marker.read_text(encoding="utf-8"))
@@ -1065,7 +1278,9 @@ class SessionCreationService:
             return False
         request = f"automatic-workspace-migration:{sid}"
         intent_hash = hashlib.sha256(
-            _canonical_json({"schema_version": 1, "session_id": sid, "kind": "legacy_projectless"}).encode("utf-8")
+            _canonical_json(
+                {"schema_version": 1, "session_id": sid, "kind": "legacy_projectless"}
+            ).encode("utf-8")
         ).hexdigest()
         _, root, identity = await self._prepare_automatic_workspace(
             request_id=request, intent_hash=intent_hash, session_id=sid
@@ -1076,12 +1291,16 @@ class SessionCreationService:
             async with aiosqlite.connect(self._bindings._db_path) as db:
                 await db.execute("PRAGMA foreign_keys=ON")
                 await db.execute("BEGIN IMMEDIATE")
-                exists = await (await db.execute("SELECT 1 FROM sessions WHERE id=?", (sid,))).fetchone()
+                exists = await (
+                    await db.execute("SELECT 1 FROM sessions WHERE id=?", (sid,))
+                ).fetchone()
                 if exists is None:
                     raise ProjectSessionError("session_not_found")
-                binding = await (await db.execute(
-                    "SELECT project_id FROM session_project_bindings WHERE session_id=?", (sid,)
-                )).fetchone()
+                binding = await (
+                    await db.execute(
+                        "SELECT project_id FROM session_project_bindings WHERE session_id=?", (sid,)
+                    )
+                ).fetchone()
                 if binding is not None:
                     await db.rollback()
                     return False
@@ -1096,7 +1315,8 @@ class SessionCreationService:
                 )
                 await db.execute(
                     "INSERT INTO session_project_bindings(session_id,project_id,execution_kind,binding_version,created_at) "
-                    "VALUES(?,?,'project_root',1,?)", (sid, project_id, now),
+                    "VALUES(?,?,'project_root',1,?)",
+                    (sid, project_id, now),
                 )
                 cursor = await db.execute(
                     "UPDATE workspace_allocations SET project_id=?,state='completed',updated_at=?,completed_at=? "
@@ -1113,13 +1333,18 @@ class SessionCreationService:
         return True
 
     async def _build_handoff(self, db: aiosqlite.Connection, source_sid: str) -> dict[str, Any]:
-        exists = await (await db.execute("SELECT 1 FROM sessions WHERE id=?", (source_sid,))).fetchone()
+        exists = await (
+            await db.execute("SELECT 1 FROM sessions WHERE id=?", (source_sid,))
+        ).fetchone()
         if exists is None:
             raise ProjectSessionError("session_not_found")
-        rows = await (await db.execute(
-            "SELECT id,role,content FROM messages WHERE session_id=? AND role IN ('user','assistant') "
-            "AND content<>'' ORDER BY id DESC LIMIT ?", (source_sid, MAX_HANDOFF_MESSAGES)
-        )).fetchall()
+        rows = await (
+            await db.execute(
+                "SELECT id,role,content FROM messages WHERE session_id=? AND role IN ('user','assistant') "
+                "AND content<>'' ORDER BY id DESC LIMIT ?",
+                (source_sid, MAX_HANDOFF_MESSAGES),
+            )
+        ).fetchall()
         rows = list(reversed(rows))
         remaining = MAX_HANDOFF_CHARS
         excerpts: list[dict[str, Any]] = []
@@ -1129,14 +1354,24 @@ class SessionCreationService:
                 break
             excerpts.append({"message_id": int(message_id), "role": str(role), "excerpt": text})
             remaining -= len(text)
-        last_user = next((item["excerpt"] for item in reversed(excerpts) if item["role"] == "user"), "")
+        last_user = next(
+            (item["excerpt"] for item in reversed(excerpts) if item["role"] == "user"), ""
+        )
         high_water = int(rows[-1][0]) if rows else 0
-        return {"schema_version": 1, "source_session_id": source_sid,
-                "source_high_water": high_water, "last_user_goal": last_user[:1000],
-                "conversation_excerpts": excerpts, "truncated": remaining == 0}
+        return {
+            "schema_version": 1,
+            "source_session_id": source_sid,
+            "source_high_water": high_water,
+            "last_user_goal": last_user[:1000],
+            "conversation_excerpts": excerpts,
+            "truncated": remaining == 0,
+        }
 
     async def create_conversation_session(
-        self, *, request_id: str, project_id: str | None = None,
+        self,
+        *,
+        request_id: str,
+        project_id: str | None = None,
         source_session_id: str | None = None,
         execution_kind: Literal["project_root", "explicit"] = "project_root",
         execution_root: str | None = None,
@@ -1155,9 +1390,7 @@ class SessionCreationService:
         )
 
         try:
-            await assert_not_primary_authority(
-                self._bindings._db_path, source_session_id
-            )
+            await assert_not_primary_authority(self._bindings._db_path, source_session_id)
         except PrimaryAuthorityImmutableError as exc:
             raise ProjectSessionError(exc.code) from exc
         requested_execution_root = (
@@ -1172,17 +1405,17 @@ class SessionCreationService:
             "execution_kind": execution_kind,
             "execution_root": requested_execution_root,
         }
-        intent_hash = hashlib.sha256(
-            _canonical_json(intent).encode("utf-8")
-        ).hexdigest()
+        intent_hash = hashlib.sha256(_canonical_json(intent).encode("utf-8")).hexdigest()
         # Lost-ACK replay must not touch a path that may have moved since the
         # original commit, nor depend on a later owner binding epoch.
         async with aiosqlite.connect(self._bindings._db_path) as replay_db:
-            receipt = await (await replay_db.execute(
-                "SELECT intent_hash,result_json,lifecycle FROM session_creation_receipts "
-                "WHERE request_id=?",
-                (request,),
-            )).fetchone()
+            receipt = await (
+                await replay_db.execute(
+                    "SELECT intent_hash,result_json,lifecycle FROM session_creation_receipts "
+                    "WHERE request_id=?",
+                    (request,),
+                )
+            ).fetchone()
         if receipt is not None:
             if str(receipt[0]) != intent_hash:
                 raise ProjectSessionError("request_id_conflict")
@@ -1207,9 +1440,7 @@ class SessionCreationService:
                 request_id=request, intent_hash=intent_hash
             )
         frozen_owner = (
-            self._owner_identity_resolver()
-            if self._owner_identity_resolver is not None
-            else None
+            self._owner_identity_resolver() if self._owner_identity_resolver is not None else None
         )
         owner_snapshot = None
         if frozen_owner is not None:
@@ -1230,65 +1461,93 @@ class SessionCreationService:
             await db.execute("BEGIN IMMEDIATE")
             try:
                 try:
-                    await assert_not_primary_authority_tx(
-                        db, (source_session_id,)
-                    )
+                    await assert_not_primary_authority_tx(db, (source_session_id,))
                 except PrimaryAuthorityImmutableError as exc:
                     raise ProjectSessionError(exc.code) from exc
                 await self._bindings._require_upgrade_complete(db)
-                receipt = await (await db.execute(
-                    "SELECT intent_hash,result_json,lifecycle FROM session_creation_receipts WHERE request_id=?",
-                    (request,),
-                )).fetchone()
+                receipt = await (
+                    await db.execute(
+                        "SELECT intent_hash,result_json,lifecycle FROM session_creation_receipts WHERE request_id=?",
+                        (request,),
+                    )
+                ).fetchone()
                 if receipt is not None:
                     if str(receipt[0]) != intent_hash:
                         raise ProjectSessionError("request_id_conflict")
                     if str(receipt[2]) == "deleted":
                         raise ProjectSessionError("session_deleted")
-                    result = json.loads(receipt[1]); result["replayed"] = True
+                    result = json.loads(receipt[1])
+                    result["replayed"] = True
                     await db.rollback()
                     return result
                 project = None
                 if project_id:
-                    row = await (await db.execute(
-                        "SELECT project_id,display_name,canonical_root,root_kind,filesystem_identity,"
-                        "project_revision,created_at,updated_at,last_opened_at FROM projects WHERE project_id=?",
-                        (project_id,),
-                    )).fetchone()
+                    row = await (
+                        await db.execute(
+                            "SELECT project_id,display_name,canonical_root,root_kind,filesystem_identity,"
+                            "project_revision,created_at,updated_at,last_opened_at FROM projects WHERE project_id=?",
+                            (project_id,),
+                        )
+                    ).fetchone()
                     if row is None:
                         raise ProjectSessionError("project_not_found")
                     project = self._bindings._project_from_row(row)
                 elif automatic_workspace is not None:
                     sid, automatic_root, automatic_identity = automatic_workspace
-                    automatic_project_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"simple-harness-project:{request}"))
+                    automatic_project_id = str(
+                        uuid.uuid5(uuid.NAMESPACE_URL, f"simple-harness-project:{request}")
+                    )
                     now = time.time()
                     await db.execute(
                         "INSERT INTO projects(project_id,display_name,canonical_root,root_kind,filesystem_identity,"
                         "project_revision,created_at,updated_at,last_opened_at) "
                         "VALUES(?,?,?,?,?,1,?,?,?)",
-                        (automatic_project_id, f"Session {sid[:8]}", automatic_root, "folder", automatic_identity, now, now, now),
+                        (
+                            automatic_project_id,
+                            f"Session {sid[:8]}",
+                            automatic_root,
+                            "folder",
+                            automatic_identity,
+                            now,
+                            now,
+                            now,
+                        ),
                     )
                     await db.execute(
                         "INSERT INTO project_origins(project_id,project_origin) VALUES(?,'automatic_session_workspace')",
                         (automatic_project_id,),
                     )
                     project = ProjectRecord(
-                        automatic_project_id, f"Session {sid[:8]}", automatic_root, "folder",
-                        automatic_identity, 1, now, now, now,
+                        automatic_project_id,
+                        f"Session {sid[:8]}",
+                        automatic_root,
+                        "folder",
+                        automatic_identity,
+                        1,
+                        now,
+                        now,
+                        now,
                     )
                     project_id = automatic_project_id
-                sid = automatic_workspace[0] if automatic_workspace is not None else str(uuid.uuid4())
+                sid = (
+                    automatic_workspace[0] if automatic_workspace is not None else str(uuid.uuid4())
+                )
                 try:
-                    await assert_not_primary_authority_tx(
-                        db, (source_session_id, sid)
-                    )
+                    await assert_not_primary_authority_tx(db, (source_session_id, sid))
                 except PrimaryAuthorityImmutableError as exc:
                     raise ProjectSessionError(exc.code) from exc
-                handoff = await self._build_handoff(db, source_session_id) if source_session_id else None
+                handoff = (
+                    await self._build_handoff(db, source_session_id) if source_session_id else None
+                )
                 now = time.time()
-                await db.execute("INSERT INTO sessions(id,created_at,metadata) VALUES(?,?,?)",
-                                 (sid, now, _canonical_json({"origin": "project_session_v1"})))
-                await db.execute("INSERT INTO session_catalog_entries(session_id,product_kind,created_at) VALUES(?, 'conversation', ?)", (sid, now))
+                await db.execute(
+                    "INSERT INTO sessions(id,created_at,metadata) VALUES(?,?,?)",
+                    (sid, now, _canonical_json({"origin": "project_session_v1"})),
+                )
+                await db.execute(
+                    "INSERT INTO session_catalog_entries(session_id,product_kind,created_at) VALUES(?, 'conversation', ?)",
+                    (sid, now),
+                )
                 await db.execute(
                     "INSERT INTO session_delivery_state(session_id,epoch,deleted_at,reason) VALUES(?,0,NULL,NULL)",
                     (sid,),
@@ -1323,14 +1582,16 @@ class SessionCreationService:
                             now,
                         ),
                     )
-                    route_row = await (await db.execute(
-                        "SELECT route_version FROM companion_projection_routes "
-                        "WHERE profile_id=? AND profile_generation=?",
-                        (
-                            owner_snapshot["profile_id"],
-                            owner_snapshot["profile_generation"],
-                        ),
-                    )).fetchone()
+                    route_row = await (
+                        await db.execute(
+                            "SELECT route_version FROM companion_projection_routes "
+                            "WHERE profile_id=? AND profile_generation=?",
+                            (
+                                owner_snapshot["profile_id"],
+                                owner_snapshot["profile_generation"],
+                            ),
+                        )
+                    ).fetchone()
                     route_version = int(route_row[0]) + 1 if route_row else 1
                     await db.execute(
                         "INSERT INTO companion_projection_routes(profile_id,profile_generation,binding_epoch,"
@@ -1366,26 +1627,49 @@ class SessionCreationService:
                         "INSERT INTO session_project_bindings(session_id,project_id,execution_kind,"
                         "execution_root,execution_identity,source_session_id,handoff_json,binding_version,created_at) "
                         "VALUES(?,?,?,?,?,?,?,1,?)",
-                        (sid, project.project_id, execution_kind, explicit_path, explicit_identity,
-                         source_session_id, _canonical_json(handoff) if handoff else None, now),
+                        (
+                            sid,
+                            project.project_id,
+                            execution_kind,
+                            explicit_path,
+                            explicit_identity,
+                            source_session_id,
+                            _canonical_json(handoff) if handoff else None,
+                            now,
+                        ),
                     )
                 is_automatic = automatic_workspace is not None
-                descriptor = {"session_id": sid, "project_id": None if is_automatic else project_id,
+                descriptor = {
+                    "session_id": sid,
+                    "project_id": None if is_automatic else project_id,
                     "session_kind": "projectless" if is_automatic or not project_id else "project",
-                    "workspace_kind": "automatic" if is_automatic else ("selected" if project_id else "none"),
+                    "workspace_kind": "automatic"
+                    if is_automatic
+                    else ("selected" if project_id else "none"),
                     "execution_kind": execution_kind if project_id else None,
-                    "execution_root": (project.canonical_root if project and execution_kind == "project_root" else explicit_path),
-                    "source_session_id": source_session_id, "title": "", "preview": "",
-                    "turn_count": 0, "activity_at": now, "created_at": now,
-                    "availability": "available" if project_id else "projectless"}
+                    "execution_root": (
+                        project.canonical_root
+                        if project and execution_kind == "project_root"
+                        else explicit_path
+                    ),
+                    "source_session_id": source_session_id,
+                    "title": "",
+                    "preview": "",
+                    "turn_count": 0,
+                    "activity_at": now,
+                    "created_at": now,
+                    "availability": "available" if project_id else "projectless",
+                }
                 result = {"session": descriptor, "replayed": False}
                 provider_row = None
                 if source_session_id:
-                    provider_row = await (await db.execute(
-                        "SELECT provider_id,preferred_model,model_params,provider_incarnation_id,"
-                        "provider_config_revision FROM code_session_provider WHERE base_session_id=?",
-                        (source_session_id,),
-                    )).fetchone()
+                    provider_row = await (
+                        await db.execute(
+                            "SELECT provider_id,preferred_model,model_params,provider_incarnation_id,"
+                            "provider_config_revision FROM code_session_provider WHERE base_session_id=?",
+                            (source_session_id,),
+                        )
+                    ).fetchone()
                 frozen_provider = tuple(provider_row) if provider_row is not None else (None,) * 5
                 if (
                     provider_row is not None
@@ -1408,21 +1692,27 @@ class SessionCreationService:
                 )
                 if self._session_db is not None:
                     await self._session_db.advance_context_usage_binding_state_tx(
-                        db, session_id=sid, binding_epoch=1,
-                        provider_id=frozen_provider[0], model_id=frozen_provider[1],
+                        db,
+                        session_id=sid,
+                        binding_epoch=1,
+                        provider_id=frozen_provider[0],
+                        model_id=frozen_provider[1],
                     )
                 await self._fault("after_binding_provider")
                 if source_session_id:
-                    owner_row = await (await db.execute(
-                        "SELECT owner_kind,profile_id,profile_generation,binding_epoch "
-                        "FROM companion_session_owners WHERE session_id=? AND status='active'",
-                        (source_session_id,),
-                    )).fetchone()
+                    owner_row = await (
+                        await db.execute(
+                            "SELECT owner_kind,profile_id,profile_generation,binding_epoch "
+                            "FROM companion_session_owners WHERE session_id=? AND status='active'",
+                            (source_session_id,),
+                        )
+                    ).fetchone()
                     if owner_snapshot is None and owner_row is not None:
                         await db.execute(
                             "INSERT INTO companion_session_owners(session_id,owner_kind,profile_id,profile_generation,"
                             "binding_epoch,status,scope_version,created_at,updated_at) "
-                            "VALUES(?,?,?,?,?,'active',1,?,?)", (sid, *tuple(owner_row), now, now),
+                            "VALUES(?,?,?,?,?,'active',1,?,?)",
+                            (sid, *tuple(owner_row), now, now),
                         )
                         await db.execute(
                             "INSERT INTO companion_owner_scope_versions(profile_id,profile_generation,scope_version,updated_at) "
@@ -1433,7 +1723,8 @@ class SessionCreationService:
                 await self._fault("before_receipt")
                 await db.execute(
                     "INSERT INTO session_creation_receipts(request_id,intent_hash,session_id,result_json,lifecycle,created_at) "
-                    "VALUES(?,?,?,?, 'active', ?)", (request, intent_hash, sid, _canonical_json(result), now)
+                    "VALUES(?,?,?,?, 'active', ?)",
+                    (request, intent_hash, sid, _canonical_json(result), now),
                 )
                 await self._fault("after_receipt")
                 await self._fault("before_commit")
@@ -1447,7 +1738,9 @@ class SessionCreationService:
                 await self._fault("after_commit")
                 if automatic_workspace is not None:
                     try:
-                        (Path(automatic_workspace[1]) / ".simple-harness-workspace.json").unlink(missing_ok=True)
+                        (Path(automatic_workspace[1]) / ".simple-harness-workspace.json").unlink(
+                            missing_ok=True
+                        )
                     except OSError:
                         pass
                 return result
@@ -1481,13 +1774,17 @@ class SessionCreationService:
                 except PrimaryAuthorityImmutableError as exc:
                     await db.rollback()
                     raise ProjectSessionError(exc.code) from exc
-                exists = await (await db.execute("SELECT 1 FROM sessions WHERE id=?", (sid,))).fetchone()
+                exists = await (
+                    await db.execute("SELECT 1 FROM sessions WHERE id=?", (sid,))
+                ).fetchone()
                 if exists is None:
                     raise ProjectSessionError("session_not_found")
-                deleted = await (await db.execute(
-                    "SELECT deleted_at FROM session_delivery_state WHERE session_id=?",
-                    (sid,),
-                )).fetchone()
+                deleted = await (
+                    await db.execute(
+                        "SELECT deleted_at FROM session_delivery_state WHERE session_id=?",
+                        (sid,),
+                    )
+                ).fetchone()
                 if deleted is not None and deleted[0] is not None:
                     await db.rollback()
                     return
@@ -1504,16 +1801,27 @@ class SessionCreationService:
                     (sid, now),
                 )
                 if self._session_db is not None:
-                    epoch_row = await (await db.execute(
-                        "SELECT epoch FROM session_delivery_state WHERE session_id=?", (sid,)
-                    )).fetchone()
+                    epoch_row = await (
+                        await db.execute(
+                            "SELECT epoch FROM session_delivery_state WHERE session_id=?", (sid,)
+                        )
+                    ).fetchone()
                     await self._session_db._tombstone_companion_route(
-                        db, session_id=sid, new_epoch=int(epoch_row[0]),
-                        reason="deleted", now=now,
+                        db,
+                        session_id=sid,
+                        new_epoch=int(epoch_row[0]),
+                        reason="deleted",
+                        now=now,
                     )
                 else:
-                    await db.execute("UPDATE companion_session_owners SET status='tombstoned',updated_at=? WHERE session_id=? AND status='active'", (now, sid))
-                await db.execute("UPDATE session_creation_receipts SET lifecycle='deleted',deleted_at=? WHERE session_id=? AND lifecycle='active'", (now, sid))
+                    await db.execute(
+                        "UPDATE companion_session_owners SET status='tombstoned',updated_at=? WHERE session_id=? AND status='active'",
+                        (now, sid),
+                    )
+                await db.execute(
+                    "UPDATE session_creation_receipts SET lifecycle='deleted',deleted_at=? WHERE session_id=? AND lifecycle='active'",
+                    (now, sid),
+                )
                 await self._fault("after_delete_tombstones")
                 await self._fault("before_delete_commit")
                 await db.commit()
@@ -1521,8 +1829,16 @@ class SessionCreationService:
 
 
 __all__ = [
-    "ProjectBindingService", "SessionCreationService", "ProjectSessionError",
-    "ProjectRecord", "SessionProjectBinding", "RegistrationPreview",
-    "ProjectBoundWorkspace", "ProjectlessWorkspace", "ProjectMissingWorkspace",
-    "ProjectWorkspaceResolution", "WorkspaceResolution", "resolve_registration",
+    "ProjectBindingService",
+    "SessionCreationService",
+    "ProjectSessionError",
+    "ProjectRecord",
+    "SessionProjectBinding",
+    "RegistrationPreview",
+    "ProjectBoundWorkspace",
+    "ProjectlessWorkspace",
+    "ProjectMissingWorkspace",
+    "ProjectWorkspaceResolution",
+    "WorkspaceResolution",
+    "resolve_registration",
 ]

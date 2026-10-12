@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 """错误码表（TaskGraph 原计划 §12；HTN 补齐阶段 A 第 4 条）：枚举全集、未知码拒绝、先后顺序。"""
+
 from __future__ import annotations
 
 import pytest
@@ -36,20 +37,43 @@ def test_an_unregistered_code_is_refused(code):
 
 def test_codes_are_reported_in_category_order_stable_within_a_category():
     """**Mutation**: return the discovery order from ``ordered`` → red."""
-    found = [P.BUDGET_INSUFFICIENT, P.DATA_UNBOUND, P.PARAMETER_INVALID, P.ORDER_CYCLE,
-             P.REQUEST_BINDING_STALE, P.DATA_UNBOUND, P.UNKNOWN_FIELD]
-    assert ordered(found) == (P.UNKNOWN_FIELD, P.REQUEST_BINDING_STALE, P.PARAMETER_INVALID,
-                              P.DATA_UNBOUND, P.ORDER_CYCLE, P.BUDGET_INSUFFICIENT)
-    assert [classify(c).category for c in ordered(found)] == sorted(classify(c).category for c in ordered(found))
+    found = [
+        P.BUDGET_INSUFFICIENT,
+        P.DATA_UNBOUND,
+        P.PARAMETER_INVALID,
+        P.ORDER_CYCLE,
+        P.REQUEST_BINDING_STALE,
+        P.DATA_UNBOUND,
+        P.UNKNOWN_FIELD,
+    ]
+    assert ordered(found) == (
+        P.UNKNOWN_FIELD,
+        P.REQUEST_BINDING_STALE,
+        P.PARAMETER_INVALID,
+        P.DATA_UNBOUND,
+        P.ORDER_CYCLE,
+        P.BUDGET_INSUFFICIENT,
+    )
+    assert [classify(c).category for c in ordered(found)] == sorted(
+        classify(c).category for c in ordered(found)
+    )
     assert list(ErrorCategory) == sorted(ErrorCategory)
 
 
 def test_a_stored_refusal_with_an_unknown_code_is_refused_not_relabelled():
     """**Mutation**: map an unknown stored code back to ``MALFORMED_DECISION`` → red."""
-    budgets = {"same_request_format_retries_remaining": 0, "planning_rounds_remaining": 1,
-               "root_review_repairs_remaining": 1, "repeated_failure_before_escalation_remaining": None}
-    row = {"decision_id": "pd-1", "status": "REJECTED", "rejection_codes": ["REQUEST_COMPENSATION_GONE"],
-           "detail": {}}
+    budgets = {
+        "same_request_format_retries_remaining": 0,
+        "planning_rounds_remaining": 1,
+        "root_review_repairs_remaining": 1,
+        "repeated_failure_before_escalation_remaining": None,
+    }
+    row = {
+        "decision_id": "pd-1",
+        "status": "REJECTED",
+        "rejection_codes": ["REQUEST_COMPENSATION_GONE"],
+        "detail": {},
+    }
     with pytest.raises(ContractError, match="ERROR_CODE_UNREGISTERED"):
         feedback_from_decision(row, budgets=budgets)
     row["rejection_codes"] = ["BUDGET_INSUFFICIENT", "UNKNOWN_FIELD"]
@@ -63,16 +87,28 @@ def test_a_stored_refusal_with_an_unknown_code_is_refused_not_relabelled():
 def test_every_sharing_refusal_code_maps_to_exactly_one_planner_code():
     """**Mutation**: drop a row from ``SHARING_PLANNER_CODE`` → red."""
     assert set(SHARING_PLANNER_CODE) == set(SharingRefusalCode)
-    coverage = {SharingRefusalCode.TASKGRAPH_INDEPENDENT_WORK_STILL_REQUIRED,
-                SharingRefusalCode.TASKGRAPH_RETAINED_PRODUCER_DEMAND_MISSING}
+    coverage = {
+        SharingRefusalCode.TASKGRAPH_INDEPENDENT_WORK_STILL_REQUIRED,
+        SharingRefusalCode.TASKGRAPH_RETAINED_PRODUCER_DEMAND_MISSING,
+    }
     # 第 1 批评估：刚失效 / 未决属 §12 的"请求过期 / 需收敛"，不是规划器答错，不扣次数
     stale = {SharingRefusalCode.TASKGRAPH_SHARE_ACTIVE_START_NOT_CURRENT}
-    unsettled = {SharingRefusalCode.TASKGRAPH_SHARE_ACTIVE_ORDER_UNMET,
-                 SharingRefusalCode.TASKGRAPH_SHARE_ACTIVE_ORDER_UNSETTLED}
+    unsettled = {
+        SharingRefusalCode.TASKGRAPH_SHARE_ACTIVE_ORDER_UNMET,
+        SharingRefusalCode.TASKGRAPH_SHARE_ACTIVE_ORDER_UNSETTLED,
+    }
     from agent_orchestrator.contracts.error_table import refusal_charges_planner
+
     for code in SharingRefusalCode:
-        expected = (P.COVERAGE_GAP if code in coverage else P.REQUEST_BINDING_STALE if code in stale
-                    else P.RUNNING_WORK_NOT_RECONCILED if code in unsettled else P.REUSE_NOT_ALLOWED)
+        expected = (
+            P.COVERAGE_GAP
+            if code in coverage
+            else P.REQUEST_BINDING_STALE
+            if code in stale
+            else P.RUNNING_WORK_NOT_RECONCILED
+            if code in unsettled
+            else P.REUSE_NOT_ALLOWED
+        )
         assert SHARING_PLANNER_CODE[code] is expected, code
         assert refusal_charges_planner([str(expected)]) is (code not in stale), code
         refused = SharingRefused(code)
@@ -103,7 +139,9 @@ def test_every_sharing_raise_site_uses_the_typed_refusal():
         assert not any(code in SharingRefusalCode.__members__ for code in plain), plain
         typed = re.findall(r"raise SharingRefused\(SharingRefusalCode\.([A-Z_]+)\)", text)
         assert all(code in SharingRefusalCode.__members__ for code in typed), typed
-    assert "TASKGRAPH_INDEPENDENT_DEMAND_SOURCE_INVALID" in Path(sharing.__file__).read_text(encoding="utf-8")
+    assert "TASKGRAPH_INDEPENDENT_DEMAND_SOURCE_INVALID" in Path(sharing.__file__).read_text(
+        encoding="utf-8"
+    )
 
 
 def test_the_main_loop_judges_a_sharing_refusal_by_type_not_by_text():
@@ -117,8 +155,14 @@ def test_the_main_loop_judges_a_sharing_refusal_by_type_not_by_text():
     gap = SharingRefused(SharingRefusalCode.TASKGRAPH_INDEPENDENT_WORK_STILL_REQUIRED)
     assert handler._sharing_refusal_codes(gap) == [str(P.COVERAGE_GAP)]
     # 同样的文字、普通类型：不是规划器被拒
-    assert handler._sharing_refusal_codes(ContractError("TASKGRAPH_SHARED_PRODUCER_BINDING_CHANGED")) is None
-    assert handler._sharing_refusal_codes(RuntimeError("TASKGRAPH_REUSE_ACCEPTANCE_NOT_CURRENT")) is None
+    assert (
+        handler._sharing_refusal_codes(ContractError("TASKGRAPH_SHARED_PRODUCER_BINDING_CHANGED"))
+        is None
+    )
+    assert (
+        handler._sharing_refusal_codes(RuntimeError("TASKGRAPH_REUSE_ACCEPTANCE_NOT_CURRENT"))
+        is None
+    )
     text = Path(handler.__file__).read_text(encoding="utf-8")
     assert "except SharingRefused as error:" in text
     assert 'startswith(("TASKGRAPH_SHARED_"' not in text
@@ -153,7 +197,9 @@ def test_every_code_the_read_api_emits_is_registered():
 
     text = Path(api.__file__).read_text(encoding="utf-8")
     emitted = set(re.findall(r'_fail\("([A-Z_]+)"', text))
-    assert emitted and emitted <= set(TaskGraphBoundaryCode.__members__), emitted - set(TaskGraphBoundaryCode.__members__)
+    assert emitted and emitted <= set(TaskGraphBoundaryCode.__members__), emitted - set(
+        TaskGraphBoundaryCode.__members__
+    )
 
 
 def test_read_api_fail_refuses_an_unregistered_code():
@@ -175,8 +221,19 @@ def test_only_the_codecs_unreadable_codes_allow_one_free_same_request_reask():
     from agent_orchestrator.contracts.error_table import refusal_free_reask
 
     free = {code for code, entry in PLANNING_ERRORS.items() if entry.free_reask}
-    assert free == {P.DECISION_BLOCK_MISSING, P.MULTIPLE_DECISIONS, P.MIXED_PROTOCOL_BLOCKS,
-                    P.MALFORMED_DECISION, P.UNKNOWN_FIELD, P.MODEL_SET_SYSTEM_FIELD, P.DECISION_TYPE_UNKNOWN}
-    assert refusal_free_reask(["MALFORMED_DECISION"]) and refusal_free_reask([P.DECISION_BLOCK_MISSING])
+    assert free == {
+        P.DECISION_BLOCK_MISSING,
+        P.MULTIPLE_DECISIONS,
+        P.MIXED_PROTOCOL_BLOCKS,
+        P.MALFORMED_DECISION,
+        P.UNKNOWN_FIELD,
+        P.MODEL_SET_SYSTEM_FIELD,
+        P.DECISION_TYPE_UNKNOWN,
+    }
+    assert refusal_free_reask(["MALFORMED_DECISION"]) and refusal_free_reask(
+        [P.DECISION_BLOCK_MISSING]
+    )
     assert not refusal_free_reask([]) and not refusal_free_reask(["PARAMETER_INVALID"])
-    assert not refusal_free_reask(["MALFORMED_DECISION", "COVERAGE_GAP"]) and not refusal_free_reask(["NOPE"])
+    assert not refusal_free_reask(
+        ["MALFORMED_DECISION", "COVERAGE_GAP"]
+    ) and not refusal_free_reask(["NOPE"])

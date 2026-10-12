@@ -67,18 +67,12 @@ def test_file_and_download_scopes_are_canonical_and_durable(tmp_path: Path) -> N
         },
         tmp_path,
     )
-    assert [
-        (selector.kind, selector.access) for selector in move.resource_selectors
-    ] == [
+    assert [(selector.kind, selector.access) for selector in move.resource_selectors] == [
         ("filesystem", ("move_source", "read")),
         ("filesystem", ("move_destination", "write")),
     ]
-    assert move.resource_selectors[0].canonical_value == canonical_filesystem_path(
-        source
-    )
-    assert move.resource_selectors[1].canonical_value == canonical_filesystem_path(
-        destination
-    )
+    assert move.resource_selectors[0].canonical_value == canonical_filesystem_path(source)
+    assert move.resource_selectors[1].canonical_value == canonical_filesystem_path(destination)
     assert PreparedToolCall.from_dict(move.to_dict()) == move
 
     download = _prepared(
@@ -95,9 +89,7 @@ def test_file_and_download_scopes_are_canonical_and_durable(tmp_path: Path) -> N
     assert download.resource_selectors[0].kind == "network_origin"
     assert download.resource_selectors[0].canonical_value == "https://example.com"
     assert download.resource_selectors[0].access == ("connect", "read")
-    assert download.resource_selectors[1].canonical_value == canonical_filesystem_path(
-        destination
-    )
+    assert download.resource_selectors[1].canonical_value == canonical_filesystem_path(destination)
 
 
 def test_shell_scope_names_real_shell_cwd_and_opaque_system_change(
@@ -115,9 +107,7 @@ def test_shell_scope_names_real_shell_cwd_and_opaque_system_change(
 
     selectors = {selector.kind: selector for selector in prepared.resource_selectors}
     assert selectors["process_executable"].access == ("execute",)
-    assert selectors["filesystem"].canonical_value == canonical_filesystem_path(
-        tmp_path
-    )
+    assert selectors["filesystem"].canonical_value == canonical_filesystem_path(tmp_path)
     assert selectors["filesystem"].access == ("working_directory",)
     assert selectors["system_change"].canonical_value == "opaque_shell"
     assert selectors["system_change"].access == ("execute",)
@@ -173,9 +163,7 @@ def test_shell_scope_defaults_to_trusted_workspace(tmp_path: Path) -> None:
         tmp_path,
     )
 
-    filesystem = next(
-        item for item in prepared.resource_selectors if item.kind == "filesystem"
-    )
+    filesystem = next(item for item in prepared.resource_selectors if item.kind == "filesystem")
     assert filesystem.canonical_value == canonical_filesystem_path(tmp_path)
 
 
@@ -192,9 +180,7 @@ def test_shell_scope_resolves_relative_cwd_from_workspace(tmp_path: Path) -> Non
         tmp_path,
     )
 
-    filesystem = next(
-        item for item in prepared.resource_selectors if item.kind == "filesystem"
-    )
+    filesystem = next(item for item in prepared.resource_selectors if item.kind == "filesystem")
     assert filesystem.canonical_value == canonical_filesystem_path(nested)
 
 
@@ -217,9 +203,7 @@ def test_process_and_application_scopes_bind_executable_identity(
     executable = next(
         item for item in process.resource_selectors if item.kind == "process_executable"
     )
-    assert executable.canonical_value == os.path.normcase(
-        str(Path(sys.executable).resolve())
-    )
+    assert executable.canonical_value == os.path.normcase(str(Path(sys.executable).resolve()))
 
     application = _prepared(
         registry,
@@ -281,9 +265,7 @@ def test_resource_resolver_identity_is_part_of_tool_spec_fingerprint() -> None:
         resource_scope_resolver_version="v2",
     )
 
-    assert tool_spec_fingerprint(first.get("probe")) != tool_spec_fingerprint(
-        second.get("probe")
-    )
+    assert tool_spec_fingerprint(first.get("probe")) != tool_spec_fingerprint(second.get("probe"))
 
 
 def test_builtin_write_catalog_has_exact_resources_and_no_gaps(
@@ -323,12 +305,8 @@ def test_builtin_write_catalog_has_exact_resources_and_no_gaps(
         tmp_path,
     )
     assert prepared.effect_type == "opaque_manual"
-    assert prepared.resource_selectors == (
-        prepared.resource_selectors[0],
-    )
-    assert prepared.resource_selectors[0].canonical_value == (
-        canonical_filesystem_path(output)
-    )
+    assert prepared.resource_selectors == (prepared.resource_selectors[0],)
+    assert prepared.resource_selectors[0].canonical_value == (canonical_filesystem_path(output))
     exact = PreparedAuthorizationRuntime(object()).build_exact_request(
         call=prepared,
         context=_context(tmp_path),
@@ -348,9 +326,7 @@ def test_builtin_write_catalog_has_exact_resources_and_no_gaps(
         tmp_path,
         call_id="call-2",
     )
-    assert [
-        (item.kind, item.access) for item in pdf.resource_selectors
-    ] == [
+    assert [(item.kind, item.access) for item in pdf.resource_selectors] == [
         ("filesystem", ("read",)),
         ("filesystem", ("write",)),
     ]

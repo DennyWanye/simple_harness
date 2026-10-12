@@ -33,6 +33,7 @@ The manager is **independent** of ``deskpet.agent.*`` — it only imports
 the ``ToolRegistry`` contract. Integration into the agent bootstrap
 lives in :mod:`deskpet.mcp.bootstrap`.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -104,9 +105,7 @@ class _McpExecutionBuildMaterial:
         self.sources_manifest_hash = sources_manifest_hash
         self.artifacts = artifacts
 
-    def for_tool(
-        self, *, server_name: str, tool_name: str
-    ) -> ExecutionBuildIdentity:
+    def for_tool(self, *, server_name: str, tool_name: str) -> ExecutionBuildIdentity:
         handler_id = f"mcp.{server_name}.{tool_name}.v1"
         return ExecutionBuildIdentity(
             provider=self.provider,
@@ -141,9 +140,7 @@ def _expand_path(value: str) -> str:
     udir = str(_ud())
     # 1. DeskPet-specific token wins over OS env so portable mode is
     #    consistent regardless of how the user spelled their path.
-    out = value.replace("%DESKPET_USERDATA%", udir).replace(
-        "$DESKPET_USERDATA", udir
-    )
+    out = value.replace("%DESKPET_USERDATA%", udir).replace("$DESKPET_USERDATA", udir)
     # 2. Legacy %APPDATA%/deskpet → udir rewrite, before generic
     #    expandvars so we don't double-expand to the OS roaming dir.
     for legacy in ("%APPDATA%/deskpet", "%APPDATA%\\deskpet"):
@@ -186,11 +183,7 @@ def _prepare_server_config(entry: Mapping[str, Any]) -> dict[str, Any]:
         if flag_index + 1 >= len(args):
             args.append(origin)
         else:
-            existing = [
-                item.strip()
-                for item in args[flag_index + 1].split(";")
-                if item.strip()
-            ]
+            existing = [item.strip() for item in args[flag_index + 1].split(";") if item.strip()]
             if origin not in existing:
                 existing.append(origin)
             args[flag_index + 1] = ";".join(existing)
@@ -338,9 +331,7 @@ class MCPManager:
                 # Kick off reconnect in the background — don't block
                 # other servers.
                 runtime.state = "reconnecting"
-                runtime.reconnect_task = asyncio.create_task(
-                    self._reconnect_loop(runtime)
-                )
+                runtime.reconnect_task = asyncio.create_task(self._reconnect_loop(runtime))
 
     async def stop(self) -> None:
         """Tear down every server. Idempotent."""
@@ -412,9 +403,7 @@ class MCPManager:
         name = str(server_name or "").strip()
         if not name:
             raise ValueError("MCP server_name is required")
-        canonical_config = {
-            str(key): value for key, value in sorted(dict(config).items())
-        }
+        canonical_config = {str(key): value for key, value in sorted(dict(config).items())}
         return PreparedRuntimeInstanceSpec(
             entry_id=f"runtime:mcp:{name}",
             runtime_kind="mcp",
@@ -469,10 +458,7 @@ class MCPManager:
                 "state": runtime.state,
                 "retriable": True,
             }
-        if (
-            expected_incarnation is not None
-            and runtime.incarnation != expected_incarnation
-        ):
+        if expected_incarnation is not None and runtime.incarnation != expected_incarnation:
             return {
                 "error": "mcp_incarnation_stale",
                 "server": server_name,
@@ -494,9 +480,7 @@ class MCPManager:
                 }
 
         try:
-            result = await runtime.session.call_tool(
-                tool_name, args or {}
-            )
+            result = await runtime.session.call_tool(tool_name, args or {})
         except Exception as exc:  # noqa: BLE001
             # Session presumably dead — kick off reconnect but don't
             # block this call on it.
@@ -524,9 +508,7 @@ class MCPManager:
             return {"error": "mcp_list_resources_failed", "detail": repr(exc)}
         return _safe_model_dump(result)
 
-    async def read_resource(
-        self, server_name: str, uri: str
-    ) -> dict[str, Any]:
+    async def read_resource(self, server_name: str, uri: str) -> dict[str, Any]:
         runtime = self._servers.get(server_name)
         if runtime is None or runtime.session is None:
             return {"error": "unknown_mcp_server", "server": server_name}
@@ -675,9 +657,7 @@ class MCPManager:
                 try:
                     res = close_fn()
                     if asyncio.iscoroutine(res):
-                        await asyncio.wait_for(
-                            res, timeout=_SESSION_CLOSE_TIMEOUT_S
-                        )
+                        await asyncio.wait_for(res, timeout=_SESSION_CLOSE_TIMEOUT_S)
                 except Exception as exc:  # noqa: BLE001
                     logger.debug(
                         "mcp_session_close_noop_error",
@@ -737,9 +717,7 @@ class MCPManager:
         loop = self._loop
         if loop is not None and loop.is_running():
             loop.call_soon_threadsafe(
-                lambda: self._mark_disconnected(
-                    runtime, reason="catalog_stale"
-                )
+                lambda: self._mark_disconnected(runtime, reason="catalog_stale")
             )
             return
         logger.warning(
@@ -747,9 +725,7 @@ class MCPManager:
             server=runtime.name,
         )
 
-    def _mark_disconnected(
-        self, runtime: _ServerRuntime, *, reason: str
-    ) -> None:
+    def _mark_disconnected(self, runtime: _ServerRuntime, *, reason: str) -> None:
         """Flip a running server into reconnect mode and schedule
         the backoff loop. Safe to call multiple times — the loop
         guards against duplicate schedules via ``reconnect_task``.
@@ -765,9 +741,7 @@ class MCPManager:
         # Drop tools immediately so the agent doesn't try dead ones.
         self._drop_tools(runtime)
         if runtime.reconnect_task is None or runtime.reconnect_task.done():
-            runtime.reconnect_task = asyncio.create_task(
-                self._reconnect_loop(runtime)
-            )
+            runtime.reconnect_task = asyncio.create_task(self._reconnect_loop(runtime))
 
     async def _reconnect_loop(self, runtime: _ServerRuntime) -> None:
         """Exponential backoff 1→2→4→8→16s, max 5 attempts.
@@ -831,9 +805,7 @@ class MCPManager:
 # ---------------------------------------------------------------------
 
 
-async def _open_transport(
-    exit_stack: AsyncExitStack, config: dict[str, Any]
-) -> tuple[Any, Any]:
+async def _open_transport(exit_stack: AsyncExitStack, config: dict[str, Any]) -> tuple[Any, Any]:
     """Return ``(read, write)`` streams bound to the exit stack.
 
     The returned streams are valid until the exit stack closes. The
@@ -860,9 +832,7 @@ async def _open_transport(
 
         url = _expand_path(str(config.get("url", "")))
         headers = config.get("headers") or None
-        streams = await exit_stack.enter_async_context(
-            sse_client(url, headers=headers)
-        )
+        streams = await exit_stack.enter_async_context(sse_client(url, headers=headers))
         return streams[0], streams[1]
 
     if transport == "streamable_http":
@@ -870,9 +840,7 @@ async def _open_transport(
 
         url = _expand_path(str(config.get("url", "")))
         headers = config.get("headers") or None
-        streams = await exit_stack.enter_async_context(
-            streamablehttp_client(url, headers=headers)
-        )
+        streams = await exit_stack.enter_async_context(streamablehttp_client(url, headers=headers))
         # streamablehttp_client yields (read, write, get_session_id)
         return streams[0], streams[1]
 
@@ -900,8 +868,7 @@ def _sha256_tree(root: Path) -> str:
         (
             path
             for path in root.rglob("*")
-            if path.is_file()
-            and "node_modules" not in path.relative_to(root).parts
+            if path.is_file() and "node_modules" not in path.relative_to(root).parts
         ),
         key=lambda path: path.relative_to(root).as_posix(),
     )
@@ -940,24 +907,15 @@ def _resolve_npx_package_artifacts(
     if parsed is None:
         return ()
     package_name, requested = parsed
-    configured_cache = (
-        os.environ.get("npm_config_cache")
-        or os.environ.get("NPM_CONFIG_CACHE")
-    )
+    configured_cache = os.environ.get("npm_config_cache") or os.environ.get("NPM_CONFIG_CACHE")
     if configured_cache:
         cache_root = Path(configured_cache)
     else:
         local_app_data = os.environ.get("LOCALAPPDATA")
-        cache_root = (
-            Path(local_app_data) / "npm-cache"
-            if local_app_data
-            else Path.home() / ".npm"
-        )
+        cache_root = Path(local_app_data) / "npm-cache" if local_app_data else Path.home() / ".npm"
     package_relative = Path(*package_name.split("/"))
     candidates = list(
-        cache_root.glob(
-            f"_npx/*/node_modules/{package_relative.as_posix()}/package.json"
-        )
+        cache_root.glob(f"_npx/*/node_modules/{package_relative.as_posix()}/package.json")
     )
     matching: list[tuple[float, Path, Mapping[str, Any]]] = []
     for package_json in candidates:
@@ -966,11 +924,7 @@ def _resolve_npx_package_artifacts(
             if str(metadata.get("name") or "") != package_name:
                 continue
             version = str(metadata.get("version") or "")
-            if (
-                requested
-                and requested not in {"latest", "next"}
-                and requested != version
-            ):
+            if requested and requested not in {"latest", "next"} and requested != version:
                 continue
             matching.append((package_json.stat().st_mtime, package_json, metadata))
         except (OSError, ValueError, TypeError):
@@ -980,11 +934,7 @@ def _resolve_npx_package_artifacts(
     _, package_json, metadata = max(matching, key=lambda item: item[0])
     package_root = package_json.parent
     npx_root = next(
-        (
-            parent
-            for parent in package_root.parents
-            if parent.parent.name == "_npx"
-        ),
+        (parent for parent in package_root.parents if parent.parent.name == "_npx"),
         None,
     )
     artifacts: list[tuple[str, str]] = [
@@ -1025,9 +975,7 @@ def _resolve_mcp_execution_build_material(
     if command_path:
         resolved = Path(command_path).resolve(strict=False)
         if resolved.is_file():
-            artifacts.append(
-                (f"server-launcher:{resolved.name}", _sha256_file(resolved))
-            )
+            artifacts.append((f"server-launcher:{resolved.name}", _sha256_file(resolved)))
     command_name = Path(command).name.lower()
     if command_name in {"npx", "npx.cmd", "npx.exe"}:
         package_artifacts = _resolve_npx_package_artifacts(args)
@@ -1050,10 +998,7 @@ def _resolve_mcp_execution_build_material(
         {
             "provider": "mcp-stdio",
             "sources_manifest_hash": sources_manifest_hash,
-            "artifacts": [
-                {"path": path, "sha256": digest}
-                for path, digest in frozen_artifacts
-            ],
+            "artifacts": [{"path": path, "sha256": digest} for path, digest in frozen_artifacts],
         }
     )
     return _McpExecutionBuildMaterial(
@@ -1116,19 +1061,13 @@ def _make_tool_handler(
     return _handler
 
 
-def _make_check_fn(
-    manager: MCPManager, server_name: str
-) -> Callable[[], bool]:
+def _make_check_fn(manager: MCPManager, server_name: str) -> Callable[[], bool]:
     """Gate: tool only usable while session is running (§spec
     Requirement "Tool Gating by MCP Connection State")."""
 
     def _ready() -> bool:
         runtime = manager._servers.get(server_name)  # noqa: SLF001
-        return (
-            runtime is not None
-            and runtime.state == "running"
-            and runtime.session is not None
-        )
+        return runtime is not None and runtime.state == "running" and runtime.session is not None
 
     return _ready
 
@@ -1159,8 +1098,7 @@ def _register_mcp_tool(
     if fixture_hash and e2e_hooks is not None:
         visibility_scope = "session"
         visible_when = lambda context, _name=qualified, _hooks=e2e_hooks: (
-            context is not None
-            and _hooks.visible(session_id=context.session_id, tool=_name)
+            context is not None and _hooks.visible(session_id=context.session_id, tool=_name)
         )
     build_identity = build_material.for_tool(
         server_name=runtime.name,
@@ -1183,9 +1121,7 @@ def _register_mcp_tool(
         visibility_scope=visibility_scope,
         fixture_epoch=int(annotations.get("fixture_epoch", 0) or 0),
         fixture_spec_hash=fixture_hash,
-        fixture_spec_version=str(
-            annotations.get("fixture_spec_version", "") or ""
-        ),
+        fixture_spec_version=str(annotations.get("fixture_spec_version", "") or ""),
         fixture_remote_name=_tool_name(tool),
         stable_handler_id=build_identity.handler_id,
         execution_build_identity=build_identity,
@@ -1218,9 +1154,7 @@ def _safe_model_dump(value: Any) -> Any:
 # ---------------------------------------------------------------------
 
 
-async def create_and_start(
-    config: dict[str, Any], registry: Any
-) -> MCPManager:
+async def create_and_start(config: dict[str, Any], registry: Any) -> MCPManager:
     """Build + start an :class:`MCPManager` in one call."""
     mgr = MCPManager(config, registry)
     await mgr.start()

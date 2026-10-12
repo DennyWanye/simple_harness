@@ -91,9 +91,7 @@ async def test_durable_control_port_observes_settles_consumes_and_recovers_watch
     hub = WorkflowControlSignalHub(repository, poll_interval=0.005)
     port = DurableV5ControlPort(repository, signal_hub=hub, clock=clock)
 
-    observed = await port.poll(
-        run_id="run-v5", checkpoint_ns="", checkpoint_id="head"
-    )
+    observed = await port.poll(run_id="run-v5", checkpoint_ns="", checkpoint_id="head")
     assert observed is not None and observed.status == "observed"
     settled = await port.settle(
         observed.command_id,
@@ -127,12 +125,8 @@ async def test_durable_control_port_observes_settles_consumes_and_recovers_watch
     )
     clock.value = 1_031.0
     recovered_hub = WorkflowControlSignalHub(repository, poll_interval=0.005)
-    recovered_port = DurableV5ControlPort(
-        repository, signal_hub=recovered_hub, clock=clock
-    )
-    command = await recovered_port.poll(
-        run_id="watchdog", checkpoint_ns="", checkpoint_id="head"
-    )
+    recovered_port = DurableV5ControlPort(repository, signal_hub=recovered_hub, clock=clock)
+    command = await recovered_port.poll(run_id="watchdog", checkpoint_ns="", checkpoint_id="head")
     assert command is not None and command.action == "cancel_settle"
     assert command.payload["_watchdog"]["reason"] == "settle_deadline_exceeded"
     assert await recovered_hub.cancelled("watchdog")

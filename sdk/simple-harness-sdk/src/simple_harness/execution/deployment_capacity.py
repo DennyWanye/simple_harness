@@ -221,7 +221,8 @@ class CapacityProvider:
             handle.handoff()
             waits = self.deployment_capacity._response_waits
             waits[handle.ticket.epoch] = (
-                request.request_id.value, time.monotonic() + self.deployment_capacity.call_seconds
+                request.request_id.value,
+                time.monotonic() + self.deployment_capacity.call_seconds,
             )
             try:
                 async with asyncio.timeout(self.deployment_capacity.call_seconds):

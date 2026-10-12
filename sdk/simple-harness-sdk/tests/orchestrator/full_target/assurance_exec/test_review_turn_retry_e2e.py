@@ -39,14 +39,22 @@ def _content_invocations(case):
     return case.store.connection.execute(
         "SELECT ordinal, json_extract(invocation_json,'$.reason') AS reason, dispatch_intent_id "
         "FROM assurance_review_invocations WHERE mission_id=? AND review_key LIKE 'assurance-content:%' "
-        "ORDER BY ordinal", (case.mission_id,)).fetchall()
+        "ORDER BY ordinal",
+        (case.mission_id,),
+    ).fetchall()
 
 
 def _content_classes(case):
-    rows = [json.loads(row[0]) for row in case.store.connection.execute(
-        "SELECT receipt_json FROM commit_receipts WHERE kind IN "
-        "('AssuranceReviewClassified','AssuranceReviewFormatRejected') ORDER BY rowid").fetchall()]
-    return [row for row in rows if str(row.get("review_key", "")).startswith("assurance-content:")] or rows
+    rows = [
+        json.loads(row[0])
+        for row in case.store.connection.execute(
+            "SELECT receipt_json FROM commit_receipts WHERE kind IN "
+            "('AssuranceReviewClassified','AssuranceReviewFormatRejected') ORDER BY rowid"
+        ).fetchall()
+    ]
+    return [
+        row for row in rows if str(row.get("review_key", "")).startswith("assurance-content:")
+    ] or rows
 
 
 def _assert_retried_then_imported(case, provider):
@@ -54,14 +62,20 @@ def _assert_retried_then_imported(case, provider):
     rows = _content_invocations(case)
     assert [(r["ordinal"], r["reason"]) for r in rows] == [(1, "INITIAL"), (2, "TURN_RETRY")]
     failed = [c for c in _content_classes(case) if c["classification"] == "TURN_FAILED"]
-    assert [(c["invocation_ordinal"], c["error_code"]) for c in failed] == [(1, "REVIEW_TURN_NOT_COMMITTED")]
+    assert [(c["invocation_ordinal"], c["error_code"]) for c in failed] == [
+        (1, "REVIEW_TURN_NOT_COMMITTED")
+    ]
     # 第二次原样重发冻结的请求：审查输入里的 format_feedback 仍是空的（格式修复才会填）。
     first, second = (case.store.get_intent(r["dispatch_intent_id"]) for r in rows)
     assert first.intent_id != second.intent_id
     assert first.config["message"] == second.config["message"]
     assert decode(second.config["message"]["content"])["format_feedback"] == ""
-    assert case.store.connection.execute(
-        "SELECT count(*) FROM commit_receipts WHERE kind='AssuranceReviewFormatExhausted'").fetchone()[0] == 0
+    assert (
+        case.store.connection.execute(
+            "SELECT count(*) FROM commit_receipts WHERE kind='AssuranceReviewFormatExhausted'"
+        ).fetchone()[0]
+        == 0
+    )
     return first
 
 
@@ -93,9 +107,14 @@ def test_two_interrupted_calls_exhaust_the_review_and_the_step_is_redone_without
             assert str(mission.status.value) == "COMPLETED", mission.final_report
             assert provider.review_calls["TASK_CONTENT"] == 3
             rows = _content_invocations(case)  # 两个尝试各一个审阅：第一个用了 2 次，第二个 1 次
-            assert sorted((r["ordinal"], r["reason"]) for r in rows) == [(1, "INITIAL"), (1, "INITIAL"), (2, "TURN_RETRY")]
+            assert sorted((r["ordinal"], r["reason"]) for r in rows) == [
+                (1, "INITIAL"),
+                (1, "INITIAL"),
+                (2, "TURN_RETRY"),
+            ]
             [exhausted] = case.store.connection.execute(
-                "SELECT receipt_json FROM commit_receipts WHERE kind='AssuranceReviewFormatExhausted'").fetchall()
+                "SELECT receipt_json FROM commit_receipts WHERE kind='AssuranceReviewFormatExhausted'"
+            ).fetchall()
             assert json.loads(exhausted[0])["reason"] == "REVIEW_TURN_RETRY_EXHAUSTED"
             assert not provider.repair_packages  # 没有交给规划器
             released = [e.payload for e in case.events("AttemptChargeReleased")]
@@ -119,22 +138,42 @@ def test_a_second_call_failed_by_the_reviewers_own_doing_goes_to_the_person(tmp_
 
     async def run() -> None:
         async with reviewed_mission(tmp_path, provider) as case:
-            await case.run_until(lambda: any(a.get("kind") == "review" for a in case.pending_approvals()))
-            assert provider.review_calls["TASK_CONTENT"] == 6  # 两次审阅调用，每次 3 次模型调用；没有第三次
+            await case.run_until(
+                lambda: any(a.get("kind") == "review" for a in case.pending_approvals())
+            )
+            assert (
+                provider.review_calls["TASK_CONTENT"] == 6
+            )  # 两次审阅调用，每次 3 次模型调用；没有第三次
             rows = _content_invocations(case)
-            assert [(r["ordinal"], r["reason"]) for r in rows] == [(1, "INITIAL"), (2, "TURN_RETRY")]
+            assert [(r["ordinal"], r["reason"]) for r in rows] == [
+                (1, "INITIAL"),
+                (2, "TURN_RETRY"),
+            ]
             failed = [c for c in _content_classes(case) if c["classification"] == "TURN_FAILED"]
             assert [c["invocation_ordinal"] for c in failed] == [1, 2]
-            assert case.store.connection.execute(
-                "SELECT count(*) FROM commit_receipts WHERE kind='AssuranceReviewFormatExhausted'").fetchone()[0] == 0
+            assert (
+                case.store.connection.execute(
+                    "SELECT count(*) FROM commit_receipts WHERE kind='AssuranceReviewFormatExhausted'"
+                ).fetchone()[0]
+                == 0
+            )
             assert not provider.repair_packages  # 没有交给规划器
-            records = [json.loads(row[0]) for row in case.store.connection.execute(
-                "SELECT record_json FROM review_records WHERE official=1").fetchall()]
-            [record] = [r for r in records if r.get("purpose") == "TASK_CONTENT"]  # 另一份是做法审阅
+            records = [
+                json.loads(row[0])
+                for row in case.store.connection.execute(
+                    "SELECT record_json FROM review_records WHERE official=1"
+                ).fetchall()
+            ]
+            [record] = [
+                r for r in records if r.get("purpose") == "TASK_CONTENT"
+            ]  # 另一份是做法审阅
             assert record["verdict"] == "INCONCLUSIVE"
             # 2026-10-10：标记带上第二次调用的缘由（第一次为什么没用上），人裁决时看得懂两次各自的原因
-            assert all(item["limitations"][0] == "REVIEW_NO_USABLE_REPLY:REVIEW_TURN_NOT_COMMITTED;FIRST_CALL=TURN_RETRY"
-                       for item in record["criteria"])
+            assert all(
+                item["limitations"][0]
+                == "REVIEW_NO_USABLE_REPLY:REVIEW_TURN_NOT_COMMITTED;FIRST_CALL=TURN_RETRY"
+                for item in record["criteria"]
+            )
             [approval] = [a for a in case.pending_approvals() if a.get("kind") == "review"]
             case.world.control.decide(approval["request_id"], "review_pass")
             mission = await case.settle()
@@ -162,22 +201,51 @@ def test_provider_server_error_first_turn_is_retried_once_and_imported(tmp_path)
             assert any(first.subject_id in json.dumps(item) for item in counted), counted
 
             commit, store = case.world.loop.commit, case.store
-            usage = [tuple(r) for r in store.connection.execute(
-                "SELECT usage_ref, subject_id, input_tokens, output_tokens, unknown FROM imported_usage "
-                "WHERE mission_id=? ORDER BY usage_ref", (case.mission_id,))]
-            records = store.connection.execute("SELECT count(*) FROM review_records WHERE official=1").fetchone()[0]
-            lifecycle = (str(case.mission().status), sorted((t.id, str(t.status)) for t in store.list_tasks(case.mission_id)))
+            usage = [
+                tuple(r)
+                for r in store.connection.execute(
+                    "SELECT usage_ref, subject_id, input_tokens, output_tokens, unknown FROM imported_usage "
+                    "WHERE mission_id=? ORDER BY usage_ref",
+                    (case.mission_id,),
+                )
+            ]
+            records = store.connection.execute(
+                "SELECT count(*) FROM review_records WHERE official=1"
+            ).fetchone()[0]
+            lifecycle = (
+                str(case.mission().status),
+                sorted((t.id, str(t.status)) for t in store.list_tasks(case.mission_id)),
+            )
             # 同一批用量事实迟到 / 重复导入：一条都不重记；离线补账扫描也不复活任何东西。
             for usage_ref, subject, tokens_in, tokens_out, unknown in usage:
-                assert commit.import_usage(subject, case.mission_id, (
-                    UsageFact(usage_ref, tokens_in, tokens_out, unknown=bool(unknown)),)) == 0
+                assert (
+                    commit.import_usage(
+                        subject,
+                        case.mission_id,
+                        (UsageFact(usage_ref, tokens_in, tokens_out, unknown=bool(unknown)),),
+                    )
+                    == 0
+                )
             for _ in range(2):
                 import_late_accounting(case.world.loop)
-            assert [tuple(r) for r in store.connection.execute(
-                "SELECT usage_ref, subject_id, input_tokens, output_tokens, unknown FROM imported_usage "
-                "WHERE mission_id=? ORDER BY usage_ref", (case.mission_id,))] == usage
-            assert store.connection.execute("SELECT count(*) FROM review_records WHERE official=1").fetchone()[0] == records
-            assert (str(case.mission().status), sorted((t.id, str(t.status)) for t in store.list_tasks(case.mission_id))) == lifecycle
+            assert [
+                tuple(r)
+                for r in store.connection.execute(
+                    "SELECT usage_ref, subject_id, input_tokens, output_tokens, unknown FROM imported_usage "
+                    "WHERE mission_id=? ORDER BY usage_ref",
+                    (case.mission_id,),
+                )
+            ] == usage
+            assert (
+                store.connection.execute(
+                    "SELECT count(*) FROM review_records WHERE official=1"
+                ).fetchone()[0]
+                == records
+            )
+            assert (
+                str(case.mission().status),
+                sorted((t.id, str(t.status)) for t in store.list_tasks(case.mission_id)),
+            ) == lifecycle
 
     asyncio.run(run())
 
@@ -186,8 +254,13 @@ def test_an_interrupted_review_is_redone_by_the_system_and_its_hold_is_counted(t
     """2026-09-28 真机：审阅员那次调用在交接之后断了，结果不明。原调用不能当作没发生：它的预留按
     上限计入；这一步由系统原样重做（不交给规划器，规划器一次修复都没被问到）。"""
 
-    provider = ReviewScript(failures={"TASK_CONTENT": [
-        ProviderTransportError(public_message="scripted transport loss after handoff")]})
+    provider = ReviewScript(
+        failures={
+            "TASK_CONTENT": [
+                ProviderTransportError(public_message="scripted transport loss after handoff")
+            ]
+        }
+    )
 
     async def run() -> None:
         async with reviewed_mission(tmp_path, provider, stall_seconds=3.0) as case:

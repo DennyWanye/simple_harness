@@ -121,9 +121,7 @@ class _Snapshots:
         from deskpet.tools.prepared_snapshot import dump_context_os_snapshot
 
         context_ref = context_os_snapshot_ref(prepared, eligibility)
-        self.contexts[context_ref] = dump_context_os_snapshot(
-            prepared, eligibility
-        )
+        self.contexts[context_ref] = dump_context_os_snapshot(prepared, eligibility)
         intent_ref = exposure_intent_ref(exposure)
         assert fingerprint_json(exposure_intent_payload(exposure)) == intent_ref
         self.exposures[intent_ref] = exposure
@@ -165,16 +163,14 @@ async def _fixture(
         scope=scope,
     )
     exposure = ToolExposureIntent(direct_selectors=("*",))
-    eligibility = ToolEligibilityContext(
-        "session-1", "request-1", "chat"
+    eligibility = ToolEligibilityContext("session-1", "request-1", "chat")
+    old_tool_set = (
+        ToolCapabilityResolver(registry)
+        .resolve_draft(exposure, eligibility=eligibility)
+        .finalize(scope_id="scope-1")
     )
-    old_tool_set = ToolCapabilityResolver(registry).resolve_draft(
-        exposure, eligibility=eligibility
-    ).finalize(scope_id="scope-1")
     snapshots = _Snapshots()
-    old_tool_ref, exposure_ref = snapshots.put_initial(
-        old_tool_set, eligibility, exposure
-    )
+    old_tool_ref, exposure_ref = snapshots.put_initial(old_tool_set, eligibility, exposure)
     old_call = registry.prepare_call(
         "godot__check",
         {},
@@ -201,9 +197,7 @@ async def _fixture(
     new_spec = candidate.catalog_snapshot().specs[0]
     registry.compare_and_swap_catalog(
         expected_revision=before.revision,
-        expected_fingerprints={
-            "godot__check": tool_spec_fingerprint(before.specs[0])
-        },
+        expected_fingerprints={"godot__check": tool_spec_fingerprint(before.specs[0])},
         replacements=(new_spec,),
     )
     successor = await store.set_binding(
@@ -226,12 +220,8 @@ async def _fixture(
         old_stamp=old_catalog.stamp,
         published_binding_generation=successor.generation,
         affected_capability_ids=("godot",),
-        affected_version_refs=(
-            f"godot@2.0.0:{v2.descriptor.manifest_hash}",
-        ),
-        affected_tool_spec_fingerprints=(
-            tool_spec_fingerprint(new_spec),
-        ),
+        affected_version_refs=(f"godot@2.0.0:{v2.descriptor.manifest_hash}",),
+        affected_tool_spec_fingerprints=(tool_spec_fingerprint(new_spec),),
         manifest_hashes=(v2.descriptor.manifest_hash,),
     )
     await store.put_operation_receipt(receipt)
@@ -309,9 +299,7 @@ async def _fixture(
             previous_version=staged_intent.expected_continuation_version - 1,
             new_version=staged_intent.expected_continuation_version,
             refresh_pending_intent_id=staged_intent.intent_id,
-            outer_effect_state=(
-                "settled" if tool_source else "deferred_pending"
-            ),
+            outer_effect_state=("settled" if tool_source else "deferred_pending"),
             provider_outcome_staged=tool_source,
             child_terminal_acked=not tool_source,
             provider_backfill_blocked=True,
@@ -320,21 +308,15 @@ async def _fixture(
     staging = CapabilityRefreshStagingService(store)
     if stage_refresh:
         if source_kind == "tool_effect":
-            await staging.settle_control_effect_and_stage_refresh(
-                intent, stage_source
-            )
+            await staging.settle_control_effect_and_stage_refresh(intent, stage_source)
         else:
-            await staging.ack_child_terminal_and_stage_refresh(
-                intent, stage_source
-            )
+            await staging.ack_child_terminal_and_stage_refresh(intent, stage_source)
 
     service = CapabilityRefreshService(
         store=store,
         hub=hub,
         snapshots=snapshots,
-        rebuilder=RegistryExposureToolSetRebuilder(
-            ToolCapabilityResolver(registry)
-        ),
+        rebuilder=RegistryExposureToolSetRebuilder(ToolCapabilityResolver(registry)),
     )
     return {
         "store": store,
@@ -372,9 +354,7 @@ async def _commit_continuation(db, prepared):
         ),
     )
     if cursor.rowcount != 1:
-        raise CapabilityStoreConflict(
-            "continuation_version_conflict", "fake continuation changed"
-        )
+        raise CapabilityStoreConflict("continuation_version_conflict", "fake continuation changed")
     return CapabilityContinuationCommitEvidence(
         root_run_id=commit.root_run_id,
         run_id=commit.run_id,
@@ -384,9 +364,7 @@ async def _commit_continuation(db, prepared):
         new_catalog_snapshot_ref=commit.new_catalog_snapshot_ref,
         new_tool_set_snapshot_ref=commit.new_tool_set_snapshot_ref,
         new_stamp_fingerprint=commit.new_stamp.fingerprint,
-        context_os_fingerprint=fingerprint_json(
-            commit.to_dict()["new_context_os"]
-        ),
+        context_os_fingerprint=fingerprint_json(commit.to_dict()["new_context_os"]),
         driver_runtime_cleared=True,
     )
 
@@ -416,9 +394,7 @@ async def test_same_run_refresh_swaps_snapshots_in_one_transaction(
     assert intent.commit_hash == prepared.commit.fingerprint
     async with fixture["store"].read_connection() as db:
         row = await (
-            await db.execute(
-                "SELECT * FROM fake_continuation WHERE run_id='run-1'"
-            )
+            await db.execute("SELECT * FROM fake_continuation WHERE run_id='run-1'")
         ).fetchone()
     assert int(row["version"]) == 6
     assert row["refresh_pending"] is None
@@ -438,9 +414,7 @@ async def test_same_run_refresh_swaps_snapshots_in_one_transaction(
         fixture["registry"].resolve_prepared_spec(fixture["old_call"])
 
     async with fixture["store"].write_transaction() as db:
-        committed = await fixture["store"].bind(db).commit_refresh_intent(
-            prepared.commit
-        )
+        committed = await fixture["store"].bind(db).commit_refresh_intent(prepared.commit)
         assert committed.commit_hash == prepared.commit.fingerprint
     conflicting = replace(
         prepared.commit,
@@ -461,30 +435,22 @@ async def test_sqlite_refresh_snapshots_roundtrip_and_reject_forged_refs(
     snapshots = SqliteCapabilityRefreshSnapshotRepository(store)
     registry = ToolRegistry()
     _register(registry, "1.0.0")
-    eligibility = ToolEligibilityContext(
-        "session-1", "request-1", "chat"
-    )
+    eligibility = ToolEligibilityContext("session-1", "request-1", "chat")
     exposure = ToolExposureIntent(direct_selectors=("*",))
-    prepared = ToolCapabilityResolver(registry).resolve_draft(
-        exposure, eligibility=eligibility
-    ).finalize(scope_id="scope-1")
+    prepared = (
+        ToolCapabilityResolver(registry)
+        .resolve_draft(exposure, eligibility=eligibility)
+        .finalize(scope_id="scope-1")
+    )
     context_ref = context_os_snapshot_ref(prepared, eligibility)
     intent_ref = exposure_intent_ref(exposure)
 
     from deskpet.tools.prepared_snapshot import dump_context_os_snapshot
 
     context_payload = dump_context_os_snapshot(prepared, eligibility)
-    assert (
-        await snapshots.put_context_os(context_ref, context_payload)
-        == context_ref
-    )
-    assert (
-        await snapshots.put_exposure_intent(intent_ref, exposure)
-        == intent_ref
-    )
-    restored, restored_eligibility = await snapshots.load_context_os(
-        context_ref
-    )
+    assert await snapshots.put_context_os(context_ref, context_payload) == context_ref
+    assert await snapshots.put_exposure_intent(intent_ref, exposure) == intent_ref
+    restored, restored_eligibility = await snapshots.load_context_os(context_ref)
     assert restored == prepared
     assert restored_eligibility == eligibility
     assert await snapshots.load_exposure_intent(intent_ref) == exposure
@@ -514,9 +480,7 @@ async def test_refresh_crash_rolls_back_continuation_lease_and_nonce(
     assert intent is not None and intent.status == "pending"
     async with fixture["store"].read_connection() as db:
         row = await (
-            await db.execute(
-                "SELECT * FROM fake_continuation WHERE run_id='run-1'"
-            )
+            await db.execute("SELECT * FROM fake_continuation WHERE run_id='run-1'")
         ).fetchone()
     assert int(row["version"]) == 5
     assert str(row["refresh_pending"]) == "refresh-intent"
@@ -537,9 +501,7 @@ async def test_refresh_crash_rolls_back_continuation_lease_and_nonce(
         commit_continuation=_commit_continuation,
     )
     assert recovered.commit.run_id == "run-1"
-    assert (await fixture["store"].get_refresh_intent("refresh-intent")).status == (
-        "committed"
-    )
+    assert (await fixture["store"].get_refresh_intent("refresh-intent")).status == ("committed")
 
 
 @pytest.mark.asyncio
@@ -559,9 +521,9 @@ async def test_brokered_reference_can_keep_old_snapshot_after_refresh(
         fixture["v1"].descriptor.manifest_hash,
     )
     assert fixture["registry"].resolve_prepared_spec(fixture["old_call"])
-    assert await fixture["hub"].release_lease(
-        prepared.commit.old_catalog_snapshot_ref, "run-1"
-    ) == 1
+    assert (
+        await fixture["hub"].release_lease(prepared.commit.old_catalog_snapshot_ref, "run-1") == 1
+    )
     with pytest.raises(PreparedToolCallStale):
         fixture["registry"].resolve_prepared_spec(fixture["old_call"])
 
@@ -590,9 +552,7 @@ async def test_child_terminal_staging_keeps_outer_effect_deferred(
     fixture = await _fixture(tmp_path, source_kind="child_terminal")
     async with fixture["store"].read_connection() as db:
         row = await (
-            await db.execute(
-                "SELECT * FROM fake_continuation WHERE run_id='run-1'"
-            )
+            await db.execute("SELECT * FROM fake_continuation WHERE run_id='run-1'")
         ).fetchone()
     assert int(row["version"]) == 5
     assert str(row["refresh_pending"]) == "refresh-intent"
@@ -613,25 +573,19 @@ async def test_source_staging_crash_rolls_back_marker_and_effect_settlement(
         raise _Crash()
 
     with pytest.raises(_Crash):
-        await fixture[
-            "staging"
-        ].settle_control_effect_and_stage_refresh(
+        await fixture["staging"].settle_control_effect_and_stage_refresh(
             fixture["intent"], crash_after_source
         )
     assert await fixture["store"].get_refresh_intent("refresh-intent") is None
     async with fixture["store"].read_connection() as db:
         row = await (
-            await db.execute(
-                "SELECT * FROM fake_continuation WHERE run_id='run-1'"
-            )
+            await db.execute("SELECT * FROM fake_continuation WHERE run_id='run-1'")
         ).fetchone()
     assert int(row["version"]) == 4
     assert row["refresh_pending"] is None
     assert str(row["outer_effect_state"]) == "claimed"
 
-    staged = await fixture[
-        "staging"
-    ].settle_control_effect_and_stage_refresh(
+    staged = await fixture["staging"].settle_control_effect_and_stage_refresh(
         fixture["intent"], fixture["stage_source"]
     )
     assert staged.status == "pending"

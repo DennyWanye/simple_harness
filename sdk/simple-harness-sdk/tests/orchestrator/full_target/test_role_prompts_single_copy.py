@@ -11,6 +11,7 @@
 * 规划包版本与提示词版本只有当前这一对是合法配对；
 * 规划器提出的做法经解码后直接交给注册协议，不再绕一圈文本。
 """
+
 from __future__ import annotations
 
 import importlib.util
@@ -28,30 +29,48 @@ def test_there_is_no_method_synthesizer_role() -> None:
     assert [name for name in dir(templates) if name.startswith("METHOD_SYNTHESIZER")] == []
     assert importlib.util.find_spec("agent_orchestrator.planning.htn.synthesis") is None
     named = sorted(
-        str(path.relative_to(SRC)) for path in SRC.rglob("*.py")
+        str(path.relative_to(SRC))
+        for path in SRC.rglob("*.py")
         if "method_synthesizer" in path.read_text(encoding="utf-8")
-        or "method-synthesizer" in path.read_text(encoding="utf-8"))
+        or "method-synthesizer" in path.read_text(encoding="utf-8")
+    )
     assert named == [], named
 
 
 def test_each_hierarchical_role_registers_exactly_one_prompt() -> None:
-    planner = {version for version in templates.TEMPLATE_VERSIONS["planner"]
-               if version.startswith("planner-hierarchical-")}
+    planner = {
+        version
+        for version in templates.TEMPLATE_VERSIONS["planner"]
+        if version.startswith("planner-hierarchical-")
+    }
     assert planner == {templates.PLANNER_HIERARCHICAL.prompt_version}
-    assert templates.PLANNING_DECISION_PROMPT_VERSION == templates.PLANNER_HIERARCHICAL.prompt_version
-    worker = {version for version in templates.TEMPLATE_VERSIONS["worker"]
-              if version.startswith("worker-hierarchical-")}
+    assert (
+        templates.PLANNING_DECISION_PROMPT_VERSION == templates.PLANNER_HIERARCHICAL.prompt_version
+    )
+    worker = {
+        version
+        for version in templates.TEMPLATE_VERSIONS["worker"]
+        if version.startswith("worker-hierarchical-")
+    }
     assert worker == {templates.WORKER_HIERARCHICAL.prompt_version}
     # 终审不再有角色模板：只走保证通道（A′ 第 4 步删旧审阅路径）
     assert "root_reviewer" not in templates.TEMPLATE_VERSIONS
 
 
 def test_no_historical_prompt_names_are_left() -> None:
-    stale = [name for name in dir(templates) if re.fullmatch(
-        r"(PLANNER_HIERARCHICAL|WORKER_HIERARCHICAL|ROOT_REVIEWER)_V\d+(_VERSION)?", name)]
+    stale = [
+        name
+        for name in dir(templates)
+        if re.fullmatch(
+            r"(PLANNER_HIERARCHICAL|WORKER_HIERARCHICAL|ROOT_REVIEWER)_V\d+(_VERSION)?", name
+        )
+    ]
     assert stale == []
-    for gone in ("HIERARCHICAL_PLANNER_VERSIONS", "HIERARCHICAL_PLANNER_VERSIONS_BY_PACKAGE",
-                 "hierarchical_planner_versions"):
+    for gone in (
+        "HIERARCHICAL_PLANNER_VERSIONS",
+        "HIERARCHICAL_PLANNER_VERSIONS_BY_PACKAGE",
+        "hierarchical_planner_versions",
+    ):
         assert not hasattr(templates, gone), gone
     assert set(templates.__all__) <= set(dir(templates))
 
@@ -68,9 +87,13 @@ def test_only_the_current_package_and_prompt_pair() -> None:
 
 def test_the_hierarchical_workers_of_other_domains_still_register() -> None:
     """领域自己的分层执行者（AppWorld、无人机模拟）不在这次收口范围里，照常登记。"""
-    assert templates.HIERARCHICAL_WORKER_VERSIONS == frozenset({
-        templates.WORKER_HIERARCHICAL.prompt_version,
-        "worker-appworld-hierarchical-v3", "worker-drone-sim-hierarchical-v3"})
+    assert templates.HIERARCHICAL_WORKER_VERSIONS == frozenset(
+        {
+            templates.WORKER_HIERARCHICAL.prompt_version,
+            "worker-appworld-hierarchical-v3",
+            "worker-drone-sim-hierarchical-v3",
+        }
+    )
 
 
 def test_a_proposed_method_is_admitted_from_the_decoded_proposal() -> None:
@@ -80,15 +103,22 @@ def test_a_proposed_method_is_admitted_from_the_decoded_proposal() -> None:
     assert not hasattr(method_proposals, "MethodSynthesizer")
     assert not hasattr(method_proposals, "SynthesisRequest")
     with pytest.raises(Exception, match="MethodProposal"):
-        method_proposals.admit_proposal("<method_proposal>{}</method_proposal>",  # type: ignore[arg-type]
-                                        registry=None, policy=None)  # type: ignore[arg-type]
+        method_proposals.admit_proposal(
+            "<method_proposal>{}</method_proposal>",  # type: ignore[arg-type]
+            registry=None,
+            policy=None,
+        )  # type: ignore[arg-type]
 
 
 def test_nothing_is_appended_to_a_planning_request_as_a_second_prompt() -> None:
     """规划请求末尾曾经挂着一段英文"协议提醒"——讲旧协议字段、第 7 版包、第 10 版提示词，
     等于第二份提示词。删掉；其中仍然成立的两条写法在唯一的那份提示词里。"""
-    handler = (SRC / "agent_orchestrator" / "orchestrator" / "event_handler.py").read_text(encoding="utf-8")
+    handler = (SRC / "agent_orchestrator" / "orchestrator" / "event_handler.py").read_text(
+        encoding="utf-8"
+    )
     assert "PROTOCOL REMINDER" not in handler
     prompt = templates.PLANNER_HIERARCHICAL.instructions
     assert "attempt_review_ref.id" in prompt and "不是整个引用对象" in prompt
-    assert "resumable_if（数组，取 evidence_updated、human_resolved、plan_revision_changed）" in prompt
+    assert (
+        "resumable_if（数组，取 evidence_updated、human_resolved、plan_revision_changed）" in prompt
+    )

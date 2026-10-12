@@ -98,7 +98,9 @@ def test_benchmark_accepts_ui_deepresearch_directive_around_fixed_query(tmp_path
             "provider_attempt_count": 1,
         },
     }
-    db.execute("INSERT INTO workflow_runs VALUES (?,?,?,?,?)", ("run-ui", "completed", "v3", 10.0, 12.0))
+    db.execute(
+        "INSERT INTO workflow_runs VALUES (?,?,?,?,?)", ("run-ui", "completed", "v3", 10.0, 12.0)
+    )
     db.execute(
         "INSERT INTO workflow_events VALUES (?,?,?,?)",
         ("run-ui", "workflow.report", 1, json.dumps({"payload": {"report": report}})),

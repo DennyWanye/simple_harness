@@ -32,9 +32,7 @@ def test_control_ws_rejects_without_secret():
 
 def test_control_ws_accepts_with_secret():
     client = TestClient(app)
-    with client.websocket_connect(
-        "/ws/control", headers={"X-Shared-Secret": SHARED_SECRET}
-    ) as ws:
+    with client.websocket_connect("/ws/control", headers={"X-Shared-Secret": SHARED_SECRET}) as ws:
         _drain_startup_status(ws)
         ws.send_json({"type": "ping"})
         data = ws.receive_json()
@@ -43,9 +41,7 @@ def test_control_ws_accepts_with_secret():
 
 def test_control_ws_accepts_with_secret_query_param():
     client = TestClient(app)
-    with client.websocket_connect(
-        f"/ws/control?secret={SHARED_SECRET}"
-    ) as ws:
+    with client.websocket_connect(f"/ws/control?secret={SHARED_SECRET}") as ws:
         _drain_startup_status(ws)
         ws.send_json({"type": "ping"})
         data = ws.receive_json()
@@ -59,9 +55,7 @@ def test_control_ws_accepts_with_secret_query_param():
 )
 def test_control_ws_echo_chat():
     client = TestClient(app)
-    with client.websocket_connect(
-        "/ws/control", headers={"X-Shared-Secret": SHARED_SECRET}
-    ) as ws:
+    with client.websocket_connect("/ws/control", headers={"X-Shared-Secret": SHARED_SECRET}) as ws:
         _drain_startup_status(ws)
         ws.send_json({"type": "chat", "payload": {"text": "hello"}})
         data = ws.receive_json()

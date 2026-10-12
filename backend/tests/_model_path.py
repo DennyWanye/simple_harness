@@ -15,6 +15,7 @@ models/bge-m3-int8`。2026-06-02 实际踩到：用户把 DeskPet 用户数据�
 
 候选顺序：env override → app 自身 paths 解析 → 已知绝对位置（含 F: 迁移位置）。
 """
+
 from __future__ import annotations
 
 import os
@@ -45,9 +46,7 @@ def _is_complete_model(d: Path) -> bool:
 def _candidates() -> list[Path]:
     cands: list[Path] = []
     # 1. 显式 env override（CI / 开发者可一行覆盖）。
-    env = os.environ.get("DESKPET_BGE_M3_DIR") or os.environ.get(
-        "DESKPET_MODEL_ROOT"
-    )
+    env = os.environ.get("DESKPET_BGE_M3_DIR") or os.environ.get("DESKPET_MODEL_ROOT")
     if env:
         p = Path(env)
         cands.append(p if p.name == _SUBDIR else p / _SUBDIR)

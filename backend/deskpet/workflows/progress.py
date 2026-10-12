@@ -48,7 +48,9 @@ class PublicWorkflowStage:
     label: str
 
 
-def _stages(total: int, values: Sequence[tuple[str, int, str]]) -> Mapping[str, PublicWorkflowStage]:
+def _stages(
+    total: int, values: Sequence[tuple[str, int, str]]
+) -> Mapping[str, PublicWorkflowStage]:
     return MappingProxyType(
         {
             node_id: PublicWorkflowStage(node_id, ordinal, total, label)
@@ -131,12 +133,18 @@ _WORKFLOW_LABELS = MappingProxyType(
 )
 
 _V2_STAGE_VALUES = (
-    ("normalize", 1, "理解任务"), ("plan", 2, "规划调研"),
-    ("expand", 3, "扩展查询"), ("search", 4, "搜索资料"),
-    ("direct", 5, "补充一手来源"), ("fetch", 6, "抓取正文"),
-    ("score", 7, "筛选证据"), ("gap", 8, "检查证据缺口"),
-    ("rerank", 9, "全局整理证据"), ("synth", 10, "撰写报告"),
-    ("cite", 11, "核验论断与引用"), ("persist", 12, "保存报告"),
+    ("normalize", 1, "理解任务"),
+    ("plan", 2, "规划调研"),
+    ("expand", 3, "扩展查询"),
+    ("search", 4, "搜索资料"),
+    ("direct", 5, "补充一手来源"),
+    ("fetch", 6, "抓取正文"),
+    ("score", 7, "筛选证据"),
+    ("gap", 8, "检查证据缺口"),
+    ("rerank", 9, "全局整理证据"),
+    ("synth", 10, "撰写报告"),
+    ("cite", 11, "核验论断与引用"),
+    ("persist", 12, "保存报告"),
     ("finalize", 13, "准备交付"),
 )
 DEEP_RESEARCH_V2_STAGES = _stages(13, _V2_STAGE_VALUES)
@@ -174,35 +182,69 @@ DEEP_RESEARCH_V5_STAGES = _stages(
         )
     ),
 )
-DEEP_RESEARCH_TERMINAL_METRIC_KEYS = frozenset({
-    "actual_requests", "hits", "empty", "timeouts", "cooldown_skips",
-    "busy_skips", "queue_timeouts", "probes", "rescue_considered_count",
-    "rescue_executed_count", "candidates",
-})
-DEEP_RESEARCH_SKIPPED_STAGE_IDS = frozenset({
-    "fetch", "score", "gap", "rerank", "synth", "cite", "persist",
-})
+DEEP_RESEARCH_TERMINAL_METRIC_KEYS = frozenset(
+    {
+        "actual_requests",
+        "hits",
+        "empty",
+        "timeouts",
+        "cooldown_skips",
+        "busy_skips",
+        "queue_timeouts",
+        "probes",
+        "rescue_considered_count",
+        "rescue_executed_count",
+        "candidates",
+    }
+)
+DEEP_RESEARCH_SKIPPED_STAGE_IDS = frozenset(
+    {
+        "fetch",
+        "score",
+        "gap",
+        "rerank",
+        "synth",
+        "cite",
+        "persist",
+    }
+)
 DEEP_RESEARCH_RETRY_ACTION_IDS = frozenset({"retry_from_start"})
 _DEEP_RESEARCH_METRIC_KEYS = MappingProxyType(
     {
         "normalize": frozenset({"mode"}),
         "plan": frozenset({"question_count", "active_branch_count"}),
         "expand": frozenset({"query_count"}),
-        "search": frozenset({
-            "providers", "providers_attempted", "providers_hit", "candidates", "kept",
-            *DEEP_RESEARCH_TERMINAL_METRIC_KEYS,
-        }),
+        "search": frozenset(
+            {
+                "providers",
+                "providers_attempted",
+                "providers_hit",
+                "candidates",
+                "kept",
+                *DEEP_RESEARCH_TERMINAL_METRIC_KEYS,
+            }
+        ),
         "direct": frozenset({"direct_sources", "candidates"}),
         "fetch": frozenset({"attempted", "succeeded", "dropped"}),
         "score": frozenset({"passages", "kept"}),
         "gap": frozenset({"iteration", "followup_count", "new_evidence"}),
         "rerank": frozenset({"passages", "domains"}),
         "synth": frozenset({"sections", "claim_count"}),
-        "cite": frozenset({
-            "citations", "domains", "supported", "unsupported", "support_rate",
-            "factual_claims_pre_repair", "supported_factual", "published", "discarded",
-            "repaired", "body_bytes",
-        }),
+        "cite": frozenset(
+            {
+                "citations",
+                "domains",
+                "supported",
+                "unsupported",
+                "support_rate",
+                "factual_claims_pre_repair",
+                "supported_factual",
+                "published",
+                "discarded",
+                "repaired",
+                "body_bytes",
+            }
+        ),
         "persist": frozenset({"artifact_count", "report_bytes", "status"}),
         "finalize": frozenset({"citations", "status", "published", "discarded", "repaired"}),
     }
@@ -226,22 +268,61 @@ _STAGE_ACTIONS = MappingProxyType(
     }
 )
 
-_RESULT_CODES = frozenset({
-    "stage_ok", "stage_degraded", "success", "partial", "degraded", "completed",
-    "insufficient_evidence", "no_results",
-})
-_DIAGNOSTIC_CODES = frozenset({
-    "cooldown", "half_open_busy", "queue_timeout", "timeout", "blocked", "captcha", "rate_limit",
-    "http_error", "invalid_response", "parse_error", "other", "budget_exhausted", "provider_degraded",
-    "partial_results", "evidence_missing", "low_quality_evidence", "missing_exact_token",
-    "insufficient_support", "claim_unsupported", "claim_pruned", "deterministic_repair",
-    "insufficient_evidence", "artifact_missing", "no_results", "degraded",
-    "deadline_exhausted", "search_port_unavailable", "provider_failure",
-    "direct_failure", "fetch_failure", "blob_unavailable", "low_quality_source",
-    "low_quality_content", "search_degraded", "support_rate_below_threshold",
-    "published_factual_below_threshold", "citation_count_below_threshold",
-    "domain_count_below_threshold", "body_bytes_below_threshold",
-})
+_RESULT_CODES = frozenset(
+    {
+        "stage_ok",
+        "stage_degraded",
+        "success",
+        "partial",
+        "degraded",
+        "completed",
+        "insufficient_evidence",
+        "no_results",
+    }
+)
+_DIAGNOSTIC_CODES = frozenset(
+    {
+        "cooldown",
+        "half_open_busy",
+        "queue_timeout",
+        "timeout",
+        "blocked",
+        "captcha",
+        "rate_limit",
+        "http_error",
+        "invalid_response",
+        "parse_error",
+        "other",
+        "budget_exhausted",
+        "provider_degraded",
+        "partial_results",
+        "evidence_missing",
+        "low_quality_evidence",
+        "missing_exact_token",
+        "insufficient_support",
+        "claim_unsupported",
+        "claim_pruned",
+        "deterministic_repair",
+        "insufficient_evidence",
+        "artifact_missing",
+        "no_results",
+        "degraded",
+        "deadline_exhausted",
+        "search_port_unavailable",
+        "provider_failure",
+        "direct_failure",
+        "fetch_failure",
+        "blob_unavailable",
+        "low_quality_source",
+        "low_quality_content",
+        "search_degraded",
+        "support_rate_below_threshold",
+        "published_factual_below_threshold",
+        "citation_count_below_threshold",
+        "domain_count_below_threshold",
+        "body_bytes_below_threshold",
+    }
+)
 DEEP_RESEARCH_DIAGNOSTIC_CODES = _DIAGNOSTIC_CODES
 
 
@@ -280,8 +361,15 @@ def _stage_result(stage_id: str, metrics: Mapping[str, JsonValue]) -> str:
         if any(
             key in metrics
             for key in (
-                "actual_requests", "hits", "empty", "timeouts", "cooldown_skips",
-                "busy_skips", "queue_timeouts", "probes", "rescue_considered_count",
+                "actual_requests",
+                "hits",
+                "empty",
+                "timeouts",
+                "cooldown_skips",
+                "busy_skips",
+                "queue_timeouts",
+                "probes",
+                "rescue_considered_count",
                 "rescue_executed_count",
             )
         ):
@@ -327,38 +415,100 @@ class ProgressPayloadError(ValueError):
         self.code = code
 
 
-_V5_PROJECTION_KEYS = frozenset({
-    "stage_id", "public_stage_id", "action", "result", "discarded",
-    "remaining_gap", "next_step", "dimension_counts",
-    "dimension_status_changes", "source_counts", "active_gap",
-    "elapsed_seconds", "soft_checkpoint", "lease_reason", "quality_score",
-    "hard_failures", "predicted_delivery", "token_budget_ratio",
-    "control_action", "control_status", "parent_operation",
-    "failed_dimensions", "rejection_reasons",
-})
-_V5_PAYLOAD_META_KEYS = frozenset({
-    "schema_version", "capability", "kind", "workflow_name", "workflow_version",
-    "workflow_label", "stage_instance_id", "stage", "ordinal", "total",
-    "status", "summary", "text", "visibility",
-})
-_V5_RESULTS = frozenset({
-    "started", "waiting", "failed", "cancelled", "completed",
-    "insufficient_evidence",
-})
-_V5_ACTIONS = frozenset({
-    "normalize_request", "model_dimensions", "plan_queries", "expand_queries",
-    "search_sources", "find_first_party_sources", "fetch_sources", "score_evidence",
-    "evaluate_gaps", "research_gap", "commit_gap_result", "rerank_evidence",
-    "synthesize_report", "audit_quality", "repair_report", "commit_repair",
-    "persist_report", "finalize_delivery", "finalize_insufficient",
-})
+_V5_PROJECTION_KEYS = frozenset(
+    {
+        "stage_id",
+        "public_stage_id",
+        "action",
+        "result",
+        "discarded",
+        "remaining_gap",
+        "next_step",
+        "dimension_counts",
+        "dimension_status_changes",
+        "source_counts",
+        "active_gap",
+        "elapsed_seconds",
+        "soft_checkpoint",
+        "lease_reason",
+        "quality_score",
+        "hard_failures",
+        "predicted_delivery",
+        "token_budget_ratio",
+        "control_action",
+        "control_status",
+        "parent_operation",
+        "failed_dimensions",
+        "rejection_reasons",
+    }
+)
+_V5_PAYLOAD_META_KEYS = frozenset(
+    {
+        "schema_version",
+        "capability",
+        "kind",
+        "workflow_name",
+        "workflow_version",
+        "workflow_label",
+        "stage_instance_id",
+        "stage",
+        "ordinal",
+        "total",
+        "status",
+        "summary",
+        "text",
+        "visibility",
+    }
+)
+_V5_RESULTS = frozenset(
+    {
+        "started",
+        "waiting",
+        "failed",
+        "cancelled",
+        "completed",
+        "insufficient_evidence",
+    }
+)
+_V5_ACTIONS = frozenset(
+    {
+        "normalize_request",
+        "model_dimensions",
+        "plan_queries",
+        "expand_queries",
+        "search_sources",
+        "find_first_party_sources",
+        "fetch_sources",
+        "score_evidence",
+        "evaluate_gaps",
+        "research_gap",
+        "commit_gap_result",
+        "rerank_evidence",
+        "synthesize_report",
+        "audit_quality",
+        "repair_report",
+        "commit_repair",
+        "persist_report",
+        "finalize_delivery",
+        "finalize_insufficient",
+    }
+)
 _V5_NEXT_STEPS = frozenset({"none", *_V5_ACTIONS})
-_V5_LEASE_REASONS = frozenset({
-    "none", "before_soft_or_lease_checkpoint", "lease_renewed_measurable_gain",
-    "lease_not_renewed_no_gain", "automatic_cap", "running",
-    "generate_now_settling", "cancelled", "plateau_settling",
-    "lease_no_gain_settling", "automatic_cap_settling",
-})
+_V5_LEASE_REASONS = frozenset(
+    {
+        "none",
+        "before_soft_or_lease_checkpoint",
+        "lease_renewed_measurable_gain",
+        "lease_not_renewed_no_gain",
+        "automatic_cap",
+        "running",
+        "generate_now_settling",
+        "cancelled",
+        "plateau_settling",
+        "lease_no_gain_settling",
+        "automatic_cap_settling",
+    }
+)
 
 
 def _validate_v5_payload(payload: Mapping[str, Any]) -> None:
@@ -427,9 +577,7 @@ def _validate_v5_payload(payload: Mapping[str, Any]) -> None:
             raise ProgressPayloadError("workflow_progress_v5_count")
     for key in ("discarded", "remaining_gap", "quality_score", "token_budget_ratio"):
         value = payload.get(key)
-        if value != "none" and (
-            isinstance(value, bool) or not isinstance(value, int) or value < 0
-        ):
+        if value != "none" and (isinstance(value, bool) or not isinstance(value, int) or value < 0):
             raise ProgressPayloadError("workflow_progress_v5_count")
     if any(
         isinstance(payload.get(key), int) and int(payload[key]) > 100
@@ -437,21 +585,44 @@ def _validate_v5_payload(payload: Mapping[str, Any]) -> None:
     ):
         raise ProgressPayloadError("workflow_progress_v5_count")
     dimensions = payload.get("dimension_counts")
-    if not isinstance(dimensions, Mapping) or set(dimensions) != {
-        "total", "core_total", "covered", "partially_covered", "uncovered",
-        "not_applicable", "core_covered", "core_partially_covered", "core_uncovered",
-    } or any(isinstance(value, bool) or not isinstance(value, int) or value < 0 for value in dimensions.values()):
+    if (
+        not isinstance(dimensions, Mapping)
+        or set(dimensions)
+        != {
+            "total",
+            "core_total",
+            "covered",
+            "partially_covered",
+            "uncovered",
+            "not_applicable",
+            "core_covered",
+            "core_partially_covered",
+            "core_uncovered",
+        }
+        or any(
+            isinstance(value, bool) or not isinstance(value, int) or value < 0
+            for value in dimensions.values()
+        )
+    ):
         raise ProgressPayloadError("workflow_progress_v5_dimensions")
     changes = payload.get("dimension_status_changes")
-    if not isinstance(changes, Mapping) or set(changes) != {"improved", "regressed", "unchanged"} or any(
-        value != "none" and (isinstance(value, bool) or not isinstance(value, int) or value < 0)
-        for value in changes.values()
+    if (
+        not isinstance(changes, Mapping)
+        or set(changes) != {"improved", "regressed", "unchanged"}
+        or any(
+            value != "none" and (isinstance(value, bool) or not isinstance(value, int) or value < 0)
+            for value in changes.values()
+        )
     ):
         raise ProgressPayloadError("workflow_progress_v5_dimension_changes")
     sources = payload.get("source_counts")
-    if not isinstance(sources, Mapping) or set(sources) != {"valid", "first_party"} or any(
-        isinstance(value, bool) or not isinstance(value, int) or value < 0
-        for value in sources.values()
+    if (
+        not isinstance(sources, Mapping)
+        or set(sources) != {"valid", "first_party"}
+        or any(
+            isinstance(value, bool) or not isinstance(value, int) or value < 0
+            for value in sources.values()
+        )
     ):
         raise ProgressPayloadError("workflow_progress_v5_sources")
     gap = payload.get("active_gap")
@@ -467,19 +638,26 @@ def _validate_v5_payload(payload: Mapping[str, Any]) -> None:
         raise ProgressPayloadError("workflow_progress_v5_gap")
     hard = payload.get("hard_failures")
     if not isinstance(hard, list) or any(
-        value not in {
-            "completed_core_uncovered", "unsupported_key_claim",
-            "invalid_or_captcha_citation", "secondary_replaces_available_official",
-            "citation_dimension_mismatch", "internal_diagnostics_leak",
+        value
+        not in {
+            "completed_core_uncovered",
+            "unsupported_key_claim",
+            "invalid_or_captcha_citation",
+            "secondary_replaces_available_official",
+            "citation_dimension_mismatch",
+            "internal_diagnostics_leak",
         }
         for value in hard
     ):
         raise ProgressPayloadError("workflow_progress_v5_quality")
     failed_dimensions = payload.get("failed_dimensions")
     safe_gap_codes = {
-        "insufficient_admitted_passages", "insufficient_strong_distinct_families",
-        "winning_relevance_below_threshold", "duplicate_rate_above_threshold",
-        "invalid_rate_above_threshold", "first_party_requirement_unsatisfied",
+        "insufficient_admitted_passages",
+        "insufficient_strong_distinct_families",
+        "winning_relevance_below_threshold",
+        "duplicate_rate_above_threshold",
+        "invalid_rate_above_threshold",
+        "first_party_requirement_unsatisfied",
         "evidence_gap",
     }
     if not isinstance(failed_dimensions, list) or len(failed_dimensions) > 8:
@@ -499,8 +677,11 @@ def _validate_v5_payload(payload: Mapping[str, Any]) -> None:
             raise ProgressPayloadError("workflow_progress_v5_failures")
     rejection_reasons = payload.get("rejection_reasons")
     safe_rejections = {
-        "invalid_page", "body_too_short", "body_span_missing",
-        "dimension_relevance_below_threshold", "other_rejected",
+        "invalid_page",
+        "body_too_short",
+        "body_span_missing",
+        "dimension_relevance_below_threshold",
+        "other_rejected",
     }
     if not isinstance(rejection_reasons, list) or len(rejection_reasons) > 5:
         raise ProgressPayloadError("workflow_progress_v5_rejections")
@@ -515,7 +696,10 @@ def _validate_v5_payload(payload: Mapping[str, Any]) -> None:
         ):
             raise ProgressPayloadError("workflow_progress_v5_rejections")
     if payload.get("predicted_delivery") not in {
-        "pending", "completed", "partial", "insufficient_evidence"
+        "pending",
+        "completed",
+        "partial",
+        "insufficient_evidence",
     }:
         raise ProgressPayloadError("workflow_progress_v5_delivery")
     if payload.get("soft_checkpoint") not in {"none", "before", "reached"}:
@@ -523,9 +707,20 @@ def _validate_v5_payload(payload: Mapping[str, Any]) -> None:
     if payload.get("lease_reason") not in _V5_LEASE_REASONS:
         raise ProgressPayloadError("workflow_progress_v5_lease")
     if payload.get("control_action") not in {
-        "none", "generate_now", "continue_research", "retry_from_start", "cancel_settle"
+        "none",
+        "generate_now",
+        "continue_research",
+        "retry_from_start",
+        "cancel_settle",
     } or payload.get("control_status") not in {
-        "none", "open", "accepted", "observed", "settled", "consumed", "rejected", "expired"
+        "none",
+        "open",
+        "accepted",
+        "observed",
+        "settled",
+        "consumed",
+        "rejected",
+        "expired",
     }:
         raise ProgressPayloadError("workflow_progress_v5_control")
     parent = payload.get("parent_operation")
@@ -549,21 +744,23 @@ def validated_v2_stage_text(payload: Mapping[str, Any]) -> str:
 
     kind = payload.get("kind")
     status = payload.get("status")
-    if payload.get("schema_version") != 2 or not _is_deep_research_stage_contract(
-        str(payload.get("workflow_name") or ""), str(payload.get("workflow_version") or "")
-    ) or (
-        (kind == "stage" and status != "completed")
-        or (kind == "progress" and status not in _TRANSITIONS)
-        or kind not in {"stage", "progress"}
+    if (
+        payload.get("schema_version") != 2
+        or not _is_deep_research_stage_contract(
+            str(payload.get("workflow_name") or ""), str(payload.get("workflow_version") or "")
+        )
+        or (
+            (kind == "stage" and status != "completed")
+            or (kind == "progress" and status not in _TRANSITIONS)
+            or kind not in {"stage", "progress"}
+        )
     ):
         raise ProgressPayloadError("workflow_stage_payload_not_completed_v2")
     if str(payload.get("stage_id") or "") not in DEEP_RESEARCH_V2_STAGES:
         raise ProgressPayloadError("workflow_stage_payload_unknown_stage")
     text = payload.get("text")
     summary = payload.get("summary")
-    if not isinstance(text, str) or not text.strip() or (
-        kind == "stage" and text != summary
-    ):
+    if not isinstance(text, str) or not text.strip() or (kind == "stage" and text != summary):
         raise ProgressPayloadError("workflow_stage_payload_text_mismatch")
     return text
 
@@ -669,7 +866,9 @@ def _v5_payload(
 class WorkflowProgressReporter:
     """Persist and deliver fixed, user-safe workflow progress events."""
 
-    def __init__(self, service: Any, targets: Sequence[tuple[str, str]], notify_dispatcher: Any = None) -> None:
+    def __init__(
+        self, service: Any, targets: Sequence[tuple[str, str]], notify_dispatcher: Any = None
+    ) -> None:
         self._service = service
         self._targets = tuple((str(channel), str(target)) for channel, target in targets)
         self._notify_dispatcher = notify_dispatcher
@@ -690,9 +889,7 @@ class WorkflowProgressReporter:
         """Purely build one v2 stage intent; persistence belongs to commit_frontier."""
 
         if _is_deep_research_v5(identity.workflow_name, identity.workflow_version):
-            payload = _v5_payload(
-                identity, frozen_projection, kind="stage", status="completed"
-            )
+            payload = _v5_payload(identity, frozen_projection, kind="stage", status="completed")
             stable = _v5_stage_instance(identity)
             if payload is None or stable is None:
                 logger.warning(
@@ -728,21 +925,24 @@ class WorkflowProgressReporter:
             return None
         metrics = {str(key): copy.deepcopy(value) for key, value in raw_metrics.items()}
         duration_ms = max(0, int(frozen_projection.get("duration_ms") or 0))
-        completed_count = max(0, min(stage.total, int(frozen_projection.get("completed_count") or 0)))
+        completed_count = max(
+            0, min(stage.total, int(frozen_projection.get("completed_count") or 0))
+        )
         degraded = bool(frozen_projection.get("degraded", False))
         action = _STAGE_ACTIONS[stage_id]
         result = _stage_result(stage_id, metrics)
         raw_result_code = str(frozen_projection.get("result_code") or "")
-        result_code = raw_result_code if raw_result_code in _RESULT_CODES else (
-            "stage_degraded" if degraded else "stage_ok"
+        result_code = (
+            raw_result_code
+            if raw_result_code in _RESULT_CODES
+            else ("stage_degraded" if degraded else "stage_ok")
         )
         raw_diagnostics = frozen_projection.get("diagnostic_codes", [])
         diagnostics = []
         if isinstance(raw_diagnostics, Sequence) and not isinstance(raw_diagnostics, (str, bytes)):
-            diagnostics = sorted({
-                str(value) for value in raw_diagnostics
-                if str(value) in _DIAGNOSTIC_CODES
-            })
+            diagnostics = sorted(
+                {str(value) for value in raw_diagnostics if str(value) in _DIAGNOSTIC_CODES}
+            )
         summary = f"{stage.label}已完成：{result}"
         if diagnostics:
             summary += "（存在降级或限制）"
@@ -782,8 +982,7 @@ class WorkflowProgressReporter:
             "channel": "progress",
             "payload": payload,
             "deliveries": [
-                {"channel": channel, "target_id": target_id}
-                for channel, target_id in self._targets
+                {"channel": channel, "target_id": target_id} for channel, target_id in self._targets
             ],
         }
 
@@ -891,8 +1090,10 @@ class WorkflowProgressReporter:
                     deliveries=self._targets,
                 )
             event = await self._service.outbox.ensure_event(
-                run_id=identity.run_id, event_key=event_key,
-                event_type="workflow.progress", payload=payload,
+                run_id=identity.run_id,
+                event_key=event_key,
+                event_type="workflow.progress",
+                payload=payload,
                 deliveries=self._targets,
             )
             event_id = str(event["event_id"])
@@ -952,15 +1153,17 @@ class WorkflowProgressReporter:
             if not 0 <= n_sources <= 10_000:
                 return None
             reason_code = str(raw.get("reason_code") or "").strip()[:128]
-            normalized.append({
-                "child_id": child_id,
-                "question": question,
-                "status": status,
-                "attempt": attempt,
-                "max_attempts": max_attempts,
-                "n_sources": n_sources,
-                "reason_code": reason_code,
-            })
+            normalized.append(
+                {
+                    "child_id": child_id,
+                    "question": question,
+                    "status": status,
+                    "attempt": attempt,
+                    "max_attempts": max_attempts,
+                    "n_sources": n_sources,
+                    "reason_code": reason_code,
+                }
+            )
             seen.add(child_id)
         normalized.sort(key=lambda item: int(str(item["child_id"]).split("-", 1)[1]))
         snapshot_json = json.dumps(
@@ -992,8 +1195,10 @@ class WorkflowProgressReporter:
                     deliveries=self._targets,
                 )
             event = await self._service.outbox.ensure_event(
-                run_id=identity.run_id, event_key=event_key,
-                event_type="workflow.progress", payload=payload,
+                run_id=identity.run_id,
+                event_key=event_key,
+                event_type="workflow.progress",
+                payload=payload,
                 deliveries=self._targets,
             )
             event_id = str(event["event_id"])

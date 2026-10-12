@@ -102,9 +102,7 @@ CODE_COMPLEX_V1_DEFINITION = WorkflowDefinition(
     ),
     channels={
         "values": _single(JsonType.OBJECT, _VALUE_WRITERS),
-        "loop_counters": _single(
-            JsonType.OBJECT, frozenset({"intake", "llm_proposal", "audit"})
-        ),
+        "loop_counters": _single(JsonType.OBJECT, frozenset({"intake", "llm_proposal", "audit"})),
         "budgets": _single(JsonType.OBJECT, frozenset({"intake"})),
     },
     edges=(
@@ -215,7 +213,9 @@ def initial_state(
     values: dict[str, JsonValue] = {
         "request": request,
         "messages": [dict(value) for value in (messages or [{"role": "user", "content": request}])],
-        "plan_steps": [dict(value) if isinstance(value, Mapping) else str(value) for value in plan_steps],
+        "plan_steps": [
+            dict(value) if isinstance(value, Mapping) else str(value) for value in plan_steps
+        ],
         "clarification_required": clarification_required,
         "clarification_question": clarification_question,
         "approval_required": approval_required,

@@ -215,9 +215,7 @@ class ActivationGuardMonitor:
                     or current.binding_generation != receipt.binding_generation
                     or not current.owner_binding_set_stamp
                 ):
-                    return GuardMonitorOutcomeV1(
-                        "rejected", "guard_binding_superseded"
-                    )
+                    return GuardMonitorOutcomeV1("rejected", "guard_binding_superseded")
                 self._store.record_capability_guard_incident(owner, incident)
                 fence.keep_closed_for_recovery(incident_id=incident_id)
         return GuardMonitorOutcomeV1(

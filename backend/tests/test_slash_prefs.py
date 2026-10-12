@@ -13,6 +13,7 @@
   list  → {"type":"prefs_list","entries":[{text,label,kind,ts}],"count":N}
   clear → {"type":"prefs_cleared","removed":N,"kind":<str|null>}
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -29,6 +30,7 @@ def _fake_embed_factory():
             h = abs(hash(t))
             out.append([float(((h >> (i * 4)) & 0xF) + 1) for i in range(8)])
         return out
+
     return _embed
 
 
@@ -42,10 +44,14 @@ async def _make_pref(tmp_path: Path) -> PreferenceMemory:
 
 # ---- flag off ----------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_prefs_flag_off_none():
     res = await dispatch_slash_command(
-        "prefs", "", "sid", session_pref_memory=None,
+        "prefs",
+        "",
+        "sid",
+        session_pref_memory=None,
     )
     assert res["type"] == "error"
     assert "features.preference_memory" in res["message"]
@@ -59,11 +65,15 @@ def test_handle_prefs_none_direct():
 
 # ---- list --------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_prefs_list(tmp_path: Path):
     pref = await _make_pref(tmp_path)
     res = await dispatch_slash_command(
-        "prefs", "", "sid", session_pref_memory=pref,
+        "prefs",
+        "",
+        "sid",
+        session_pref_memory=pref,
     )
     assert res["type"] == "prefs_list"
     assert res["count"] == 3
@@ -79,7 +89,10 @@ async def test_prefs_list(tmp_path: Path):
 async def test_prefs_list_empty(tmp_path: Path):
     pref = PreferenceMemory(tmp_path / "pref.json", _fake_embed_factory())
     res = await dispatch_slash_command(
-        "prefs", "", "sid", session_pref_memory=pref,
+        "prefs",
+        "",
+        "sid",
+        session_pref_memory=pref,
     )
     assert res["type"] == "prefs_list"
     assert res["count"] == 0
@@ -88,11 +101,15 @@ async def test_prefs_list_empty(tmp_path: Path):
 
 # ---- clear (全清) -------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_prefs_clear_all(tmp_path: Path):
     pref = await _make_pref(tmp_path)
     res = await dispatch_slash_command(
-        "prefs", "clear", "sid", session_pref_memory=pref,
+        "prefs",
+        "clear",
+        "sid",
+        session_pref_memory=pref,
     )
     assert res["type"] == "prefs_cleared"
     assert res["removed"] == 3
@@ -103,11 +120,15 @@ async def test_prefs_clear_all(tmp_path: Path):
 
 # ---- clear by kind ------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_prefs_clear_intent(tmp_path: Path):
     pref = await _make_pref(tmp_path)
     res = await dispatch_slash_command(
-        "prefs", "clear intent", "sid", session_pref_memory=pref,
+        "prefs",
+        "clear intent",
+        "sid",
+        session_pref_memory=pref,
     )
     assert res["type"] == "prefs_cleared"
     assert res["removed"] == 2  # 两条 intent
@@ -122,7 +143,10 @@ async def test_prefs_clear_intent(tmp_path: Path):
 async def test_prefs_clear_plan(tmp_path: Path):
     pref = await _make_pref(tmp_path)
     res = await dispatch_slash_command(
-        "prefs", "clear plan", "sid", session_pref_memory=pref,
+        "prefs",
+        "clear plan",
+        "sid",
+        session_pref_memory=pref,
     )
     assert res["type"] == "prefs_cleared"
     assert res["removed"] == 1
@@ -133,7 +157,10 @@ async def test_prefs_clear_plan(tmp_path: Path):
 async def test_prefs_clear_unknown_kind(tmp_path: Path):
     pref = await _make_pref(tmp_path)
     res = await dispatch_slash_command(
-        "prefs", "clear bogus", "sid", session_pref_memory=pref,
+        "prefs",
+        "clear bogus",
+        "sid",
+        session_pref_memory=pref,
     )
     assert res["type"] == "error"
     assert "bogus" in res["message"]
@@ -143,7 +170,10 @@ async def test_prefs_clear_unknown_kind(tmp_path: Path):
 async def test_prefs_unknown_subcommand(tmp_path: Path):
     pref = await _make_pref(tmp_path)
     res = await dispatch_slash_command(
-        "prefs", "wat", "sid", session_pref_memory=pref,
+        "prefs",
+        "wat",
+        "sid",
+        session_pref_memory=pref,
     )
     assert res["type"] == "error"
 
@@ -168,9 +198,7 @@ async def test_prefs_production_proxy_uses_async_authority_methods():
             raise AssertionError("sync write bypassed authority")
 
     routed = _RoutedPreferences()
-    listed = await dispatch_slash_command(
-        "prefs", "", "sid", session_pref_memory=routed
-    )
+    listed = await dispatch_slash_command("prefs", "", "sid", session_pref_memory=routed)
     cleared = await dispatch_slash_command(
         "prefs", "clear intent", "sid", session_pref_memory=routed
     )
@@ -184,6 +212,7 @@ async def test_prefs_production_proxy_uses_async_authority_methods():
 
 
 # ---- /help 含 prefs -----------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_help_lists_prefs():

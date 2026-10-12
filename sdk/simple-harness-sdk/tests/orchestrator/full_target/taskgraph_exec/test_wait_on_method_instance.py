@@ -10,6 +10,7 @@
 产品同形部署上的真实编排器与执行图；"正在跑"是执行者的模型调用还没回来（被扣住），"跑完"
 是它回来后经验收完成；只有模型回复是脚本。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -17,7 +18,10 @@ import sys
 from pathlib import Path
 
 _TESTS = Path(__file__).resolve().parents[3]
-for _extra in (_TESTS / "orchestrator" / "full_target", _TESTS / "orchestrator" / "full_target" / "taskgraph_exec"):
+for _extra in (
+    _TESTS / "orchestrator" / "full_target",
+    _TESTS / "orchestrator" / "full_target" / "taskgraph_exec",
+):
     if str(_extra) not in sys.path:
         sys.path.insert(0, str(_extra))
 
@@ -41,20 +45,33 @@ async def _wait_on_instance(world, *, running: bool, forged: bool = False):  # t
         # The Worker came back and the step was accepted: nothing under the method runs.
         await world.until(lambda: loop.store.get_task(leaf).status is TaskStatus.COMPLETED)
     network = world.dispatch.network(mission.id)
-    instance = next(i for i in network.method_instances if i.instance_id in set(network.adopted_instance_ids))
+    instance = next(
+        i for i in network.method_instances if i.instance_id in set(network.adopted_instance_ids)
+    )
     intent = await world.open_planner_round()
     package = intent.config["planning_package"]
-    visible = next(r for r in package["visible_refs"]
-                   if r["kind"] == "method_instance" and r["id"] == str(instance.instance_id))
+    visible = next(
+        r
+        for r in package["visible_refs"]
+        if r["kind"] == "method_instance" and r["id"] == str(instance.instance_id)
+    )
     if forged:
         visible = {**visible, "content_hash": "0" * 64}
-    await world.answer(intent, {
-        "schema_version": 1, "decision_type": "WAIT",
-        "subject_key": package["planning_subjects"][0]["subject_key"],
-        "rationale": "The step under this method is still running; wait for it.",
-        "reason_refs": [], "assumptions": [], "uncertainties": [], "alternatives": [],
-        "replan_triggers": [],
-        "payload": {"wait_for": [visible], "reason": "a step of this method is running"}})
+    await world.answer(
+        intent,
+        {
+            "schema_version": 1,
+            "decision_type": "WAIT",
+            "subject_key": package["planning_subjects"][0]["subject_key"],
+            "rationale": "The step under this method is still running; wait for it.",
+            "reason_refs": [],
+            "assumptions": [],
+            "uncertainties": [],
+            "alternatives": [],
+            "replan_triggers": [],
+            "payload": {"wait_for": [visible], "reason": "a step of this method is running"},
+        },
+    )
     return visible, leaf
 
 
@@ -76,6 +93,7 @@ def test_a_wait_on_a_method_instance_waits_for_its_running_steps(tmp_path):
             await world.until(lambda: _events(loop, mission.id, "PlanningWaitWoken"))
             assert loop.store.get_task(leaf_id).status is TaskStatus.COMPLETED
             assert len(_events(loop, mission.id, "PlanningWaitWoken")) == 1
+
     asyncio.run(case())
 
 
@@ -89,6 +107,7 @@ def test_a_wait_on_a_method_instance_with_nothing_running_is_refused_in_plain_wo
             assert evaluated["status"] == "REJECTED"
             assert evaluated["rejection_codes"] == ["PARAMETER_INVALID"]
             assert "no step under it is running" in evaluated["detail"]["reason"]
+
     asyncio.run(case())
 
 
@@ -103,4 +122,5 @@ def test_a_wait_on_a_method_instance_with_a_forged_digest_is_refused(tmp_path):
             evaluated = _events(loop, mission.id, "PlanningDecisionEvaluated")[-1].payload
             assert evaluated["status"] == "REJECTED"
             assert evaluated["rejection_codes"] == ["REF_OUTSIDE_CONTEXT"]
+
     asyncio.run(case())

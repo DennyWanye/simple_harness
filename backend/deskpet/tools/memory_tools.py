@@ -37,19 +37,22 @@ async def _handle(args: dict[str, Any], task_id: str) -> str:  # noqa: ARG001
 
 
 async def _memory_write_handle(
-    args: dict[str, Any], task_id: str  # noqa: ARG001
+    args: dict[str, Any],
+    task_id: str,  # noqa: ARG001
 ) -> str:
     return _unavailable("memory_write")
 
 
 async def _memory_read_handle(
-    args: dict[str, Any], task_id: str  # noqa: ARG001
+    args: dict[str, Any],
+    task_id: str,  # noqa: ARG001
 ) -> str:
     return _unavailable("memory_read")
 
 
 async def _memory_search_handle(
-    args: dict[str, Any], task_id: str  # noqa: ARG001
+    args: dict[str, Any],
+    task_id: str,  # noqa: ARG001
 ) -> str:
     return _unavailable("memory_search")
 

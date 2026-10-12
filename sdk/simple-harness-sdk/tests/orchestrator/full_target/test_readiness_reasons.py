@@ -728,23 +728,40 @@ def test_a_cancelled_predecessor_whose_real_work_is_not_settled_does_not_release
     cancelled = {OCC_A: OccurrenceOutcome.CANCELLED}
 
     def report(settlements):  # type: ignore[no-untyped-def]
-        return evaluate_readiness(consumer_view(), plan, cancelled, evidence_of(), input_ok(),
-                                  now_ms=NOW_MS, settlements=settlements)
+        return evaluate_readiness(
+            consumer_view(),
+            plan,
+            cancelled,
+            evidence_of(),
+            input_ok(),
+            now_ms=NOW_MS,
+            settlements=settlements,
+        )
 
     waiting = report({})
     assert waiting.reason is ReadinessReason.WAITING_ORDER
     assert "order_settlement_pending" in waiting.detail_codes
     binding = plan.snapshot.binding_for_occurrence(OCC_A)
     settled = SettledTerminalOccurrence(
-        mission_id=str(plan.mission_id), plan_revision=int(plan.plan_revision), occurrence_id=str(OCC_A),
-        contract_revision=int(binding.contract_revision), dispatch_generation=int(binding.dispatch_generation),
-        outcome=str(OccurrenceOutcome.CANCELLED), source_digest="0" * 64)
+        mission_id=str(plan.mission_id),
+        plan_revision=int(plan.plan_revision),
+        occurrence_id=str(OCC_A),
+        contract_revision=int(binding.contract_revision),
+        dispatch_generation=int(binding.dispatch_generation),
+        outcome=str(OccurrenceOutcome.CANCELLED),
+        source_digest="0" * 64,
+    )
     assert report({OCC_A: settled}).reason is not ReadinessReason.WAITING_ORDER
     # a fact taken under another dispatch generation proves nothing about this one
     stale = SettledTerminalOccurrence(
-        mission_id=settled.mission_id, plan_revision=settled.plan_revision, occurrence_id=settled.occurrence_id,
-        contract_revision=settled.contract_revision, dispatch_generation=settled.dispatch_generation + 1,
-        outcome=settled.outcome, source_digest=settled.source_digest)
+        mission_id=settled.mission_id,
+        plan_revision=settled.plan_revision,
+        occurrence_id=settled.occurrence_id,
+        contract_revision=settled.contract_revision,
+        dispatch_generation=settled.dispatch_generation + 1,
+        outcome=settled.outcome,
+        source_digest=settled.source_digest,
+    )
     assert report({OCC_A: stale}).reason is ReadinessReason.WAITING_ORDER
 
 

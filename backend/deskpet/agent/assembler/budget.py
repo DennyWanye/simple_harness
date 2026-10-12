@@ -20,6 +20,7 @@ Trimming strategy:
 Output: the same slice list but each slice's ``text_content`` and
 ``tokens`` are updated to reflect the trim.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -88,9 +89,7 @@ class BudgetAllocator:
             )
 
         # Sort a copy: trim low-priority first.
-        trim_order = sorted(
-            range(len(slices)), key=lambda i: slices[i].priority
-        )
+        trim_order = sorted(range(len(slices)), key=lambda i: slices[i].priority)
         cut: list[str] = []
         working = list(slices)
 
@@ -169,6 +168,7 @@ _TRIM_MARKER = "\n[…trimmed by budget]"
 def _count_tokens(text: str) -> int:
     """统一 token 计数(与 compressor/token_budget 同口径,CJK-aware,优化 #1+#3)。"""
     from deskpet.agent.tokens import count_text_tokens
+
     return count_text_tokens(text)
 
 

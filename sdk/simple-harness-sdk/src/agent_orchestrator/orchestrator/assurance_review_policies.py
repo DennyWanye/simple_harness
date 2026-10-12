@@ -64,7 +64,9 @@ def context_policy_body(orchestrator: Any, profile_id: str) -> dict[str, Any]:
     }
 
 
-def register_policy_locked(store: Any, *, mission_id: str, kind: str, body: Mapping[str, Any]) -> Pin:
+def register_policy_locked(
+    store: Any, *, mission_id: str, kind: str, body: Mapping[str, Any]
+) -> Pin:
     """登记一份政策正文（幂等），返回绑定要钉的精确引用。同编号异正文：库被改坏，拒绝。"""
     if kind not in _PREFIX:
         raise AssuranceError("POLICY_KIND_UNSUPPORTED", str(kind))
@@ -76,47 +78,77 @@ def register_policy_locked(store: Any, *, mission_id: str, kind: str, body: Mapp
             "SELECT kind, receipt_json FROM commit_receipts WHERE commit_id=?", (commit_id,)
         ).fetchone()
         if row is None:
-            store.insert_receipt(commit_id=commit_id, kind=kind, subject_id=mission_id, base_version=0,
-                                 proposal_hash=content_hash, receipt=receipt)
+            store.insert_receipt(
+                commit_id=commit_id,
+                kind=kind,
+                subject_id=mission_id,
+                base_version=0,
+                proposal_hash=content_hash,
+                receipt=receipt,
+            )
         elif row[0] != kind or fingerprint(decode(row[1])) != content_hash:
             raise AssuranceError("IMMUTABLE_IDENTITY_CONFLICT", commit_id)
     return Pin(commit_id, 0, content_hash)
 
 
-def read_registered_policy(store: Any, *, tenant_id: str, mission_id: str, pin: Pin, kind: str) -> dict[str, Any]:
+def read_registered_policy(
+    store: Any, *, tenant_id: str, mission_id: str, pin: Pin, kind: str
+) -> dict[str, Any]:
     """登记读者：按钉住精确取回那一版政策正文（原回执精确读者：哈希、归属任务、写者种类）。"""
     if kind not in _PREFIX:
         raise AssuranceError("POLICY_KIND_UNSUPPORTED", str(kind))
     reader = AssuranceReader(store, tenant_id=tenant_id, mission_id=mission_id)
-    resolved = reader.read_exact_metadata(AssuranceRef("commit_receipt", pin), receipt_kind=kind,
-                                          receipt_subject=mission_id)
+    resolved = reader.read_exact_metadata(
+        AssuranceRef("commit_receipt", pin), receipt_kind=kind, receipt_subject=mission_id
+    )
     policy = decode(resolved.body_json).get("policy")
     if not isinstance(policy, dict):
         raise AssuranceError("REF_BODY_INVALID", pin.id)
     return policy
 
 
-def register_review_policies(orchestrator: Any, mission_id: str, profile_id: str) -> tuple[Pin, Pin]:
+def register_review_policies(
+    orchestrator: Any, mission_id: str, profile_id: str
+) -> tuple[Pin, Pin]:
     """审阅构建之前登记两种政策（短事务），返回（审阅员政策钉住，上下文政策钉住）。"""
     store = orchestrator.store
     with store.transaction():
-        reviewer = register_policy_locked(store, mission_id=mission_id, kind=REVIEWER_POLICY_KIND,
-                                          body=reviewer_policy_body())
-        context = register_policy_locked(store, mission_id=mission_id, kind=CONTEXT_POLICY_KIND,
-                                         body=context_policy_body(orchestrator, profile_id))
+        reviewer = register_policy_locked(
+            store, mission_id=mission_id, kind=REVIEWER_POLICY_KIND, body=reviewer_policy_body()
+        )
+        context = register_policy_locked(
+            store,
+            mission_id=mission_id,
+            kind=CONTEXT_POLICY_KIND,
+            body=context_policy_body(orchestrator, profile_id),
+        )
     return reviewer, context
 
 
 def require_registered_policies_locked(
-    orchestrator: Any, *, tenant_id: str, binding: Mapping[str, Any], profile_id: str,
+    orchestrator: Any,
+    *,
+    tenant_id: str,
+    binding: Mapping[str, Any],
+    profile_id: str,
     agent_config: Mapping[str, Any],
 ) -> None:
     """交接门：按绑定钉住读登记正文，要求它就是当前部署的政策，且这次请求的指令与工具不超出它。"""
     store, mission_id = orchestrator.store, str(binding["mission_id"])
-    reviewer = read_registered_policy(store, tenant_id=tenant_id, mission_id=mission_id,
-                                      pin=Pin.from_json(binding["reviewer_policy_ref"]), kind=REVIEWER_POLICY_KIND)
-    context = read_registered_policy(store, tenant_id=tenant_id, mission_id=mission_id,
-                                     pin=Pin.from_json(binding["context_policy_ref"]), kind=CONTEXT_POLICY_KIND)
+    reviewer = read_registered_policy(
+        store,
+        tenant_id=tenant_id,
+        mission_id=mission_id,
+        pin=Pin.from_json(binding["reviewer_policy_ref"]),
+        kind=REVIEWER_POLICY_KIND,
+    )
+    context = read_registered_policy(
+        store,
+        tenant_id=tenant_id,
+        mission_id=mission_id,
+        pin=Pin.from_json(binding["context_policy_ref"]),
+        kind=CONTEXT_POLICY_KIND,
+    )
     if (
         reviewer != reviewer_policy_body()
         or context != context_policy_body(orchestrator, profile_id)

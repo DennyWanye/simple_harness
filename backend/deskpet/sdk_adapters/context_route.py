@@ -80,13 +80,17 @@ CONTEXT_ROUTE_SCHEMA: dict[str, Any] = {
         "query": {"type": "string", "maxLength": _MAX_TEXT},
         "task_scope_id": {"type": "string", "maxLength": 128},
         "reuse_workspace_of": {
-            "type": ["string", "null"], "minLength": 1, "maxLength": 128,
+            "type": ["string", "null"],
+            "minLength": 1,
+            "maxLength": 128,
             "description": "Only create_new: bind the new active task to the completed task's existing workspace under a new binding grant to its one verified root, never reopening it. Copy its exact task_scope_id from public search/resume, and its source_hash into expected_source_hash. Otherwise omit both fields or set both to JSON null; never a placeholder, whitespace or an invented hash.",
         },
         "title": {"type": "string", "maxLength": 256},
         "goal": {"type": "string", "maxLength": _MAX_TEXT},
         "expected_source_hash": {
-            "type": ["string", "null"], "minLength": 64, "maxLength": 64,
+            "type": ["string", "null"],
+            "minLength": 64,
+            "maxLength": 64,
             "description": "The exact source_hash published beside that task_scope_id by public task search/resume, for resume_existing or create_new workspace reuse.",
         },
     },
@@ -123,9 +127,7 @@ _NAMED_TASK_ROUTE_RULE = (
 )
 
 
-def _named_task_route_hint(
-    candidates: list[dict[str, Any]], active_scope: str | None
-) -> str:
+def _named_task_route_hint(candidates: list[dict[str, Any]], active_scope: str | None) -> str:
     """The one route rule a hit list has to carry, plus this Run's own facts."""
 
     if active_scope is None:
@@ -172,12 +174,14 @@ async def read_current_turn_text(db_path: Any, sdk_run_id: str) -> str:
 
     async with aiosqlite.connect(f"file:{db_path}?mode=ro", uri=True) as db:
         db.row_factory = aiosqlite.Row
-        rows = await (await db.execute(
-            "SELECT t.turn_json FROM foreground_run_heads h "
-            "JOIN foreground_turns t ON t.turn_id=h.turn_id AND t.subject=h.subject "
-            f"WHERE h.sdk_run_id=? AND h.current_state IN ({LIVE_CLAIM_PLACEHOLDERS}) LIMIT 2",
-            (sdk_run_id, *LIVE_CLAIM_STATES),
-        )).fetchall()
+        rows = await (
+            await db.execute(
+                "SELECT t.turn_json FROM foreground_run_heads h "
+                "JOIN foreground_turns t ON t.turn_id=h.turn_id AND t.subject=h.subject "
+                f"WHERE h.sdk_run_id=? AND h.current_state IN ({LIVE_CLAIM_PLACEHOLDERS}) LIMIT 2",
+                (sdk_run_id, *LIVE_CLAIM_STATES),
+            )
+        ).fetchall()
     if len(rows) != 1:
         return ""
     text = json.loads(rows[0]["turn_json"]).get("payload", {}).get("text")
@@ -221,15 +225,20 @@ class _ContestedProbe:
             return {}
         return {
             "contested_probe": self.status,
-            **({"contested_probe_query_sources": list(self.query_sources)}
-               if self.query_sources else {}),
+            **(
+                {"contested_probe_query_sources": list(self.query_sources)}
+                if self.query_sources
+                else {}
+            ),
             # The SDK's own lane degradations for the probe read. The model
             # never sees them on a non-memory route; the audit must, or a
             # silently degraded probe is indistinguishable from a clear one.
-            **({"contested_probe_degradation_codes": list(self.degradation_codes)}
-               if self.degradation_codes else {}),
-            **({"contested_probe_admitted": self.admitted}
-               if self.admitted is not None else {}),
+            **(
+                {"contested_probe_degradation_codes": list(self.degradation_codes)}
+                if self.degradation_codes
+                else {}
+            ),
+            **({"contested_probe_admitted": self.admitted} if self.admitted is not None else {}),
         }
 
 
@@ -247,11 +256,14 @@ def _conflict_digest(notice: Mapping[str, Any]) -> dict[str, Any]:
     return {
         "reason": notice["reason"],
         "conflict_status": notice["conflict_status"],
-        "groups": [{
-            "conflict_group_id": group["conflict_group_id"],
-            "memory_type": group["memory_type"],
-            "revisions": [candidate["revision"] for candidate in group["candidates"]],
-        } for group in notice["groups"]],
+        "groups": [
+            {
+                "conflict_group_id": group["conflict_group_id"],
+                "memory_type": group["memory_type"],
+                "revisions": [candidate["revision"] for candidate in group["candidates"]],
+            }
+            for group in notice["groups"]
+        ],
     }
 
 
@@ -377,7 +389,8 @@ class ContextRouteToolService:
         # without its tool-invocation audit row. Standalone routes carry no scope
         # and get nothing (there is no closure to compose).
         turn_ref = (
-            "" if task_scope_id is None
+            ""
+            if task_scope_id is None
             else await self._current_turn_evidence_ref(run_id, task_scope_id)
         )
         receipt = ContextRouteReceipt(
@@ -408,8 +421,12 @@ class ContextRouteToolService:
             provider_turn_ordinal=turn_ordinal,
             origin="context_tool",
             idempotency_key=effect_id,
-            **({"require_unbound_run": True} if route is TaskScopeRoute.CREATE_NEW
-               and proposal.get("reuse_workspace_of") is not None else {}),
+            **(
+                {"require_unbound_run": True}
+                if route is TaskScopeRoute.CREATE_NEW
+                and proposal.get("reuse_workspace_of") is not None
+                else {}
+            ),
         )
         result: dict[str, Any] = {"context_route_receipt": receipt.to_json()}
         if extras:
@@ -425,16 +442,23 @@ class ContextRouteToolService:
             verdict="accepted",
             decision_id=f"route-decision:{run_id}:{effect_id}",
             detail={
-                "route": route.value, "task_scope_id": task_scope_id,
+                "route": route.value,
+                "task_scope_id": task_scope_id,
                 **({"typed_carrier": dict(typed_carrier)} if typed_carrier is not None else {}),
                 # What the model actually received. Event V made this necessary
                 # on non-memory routes too: those build no typed carrier, so
                 # before this the contested values delivered in ``extras`` were
                 # covered by no hash at all.
-                **({"public_result_hash": canonical_sha256(result)}
-                   if typed_carrier is not None or contested.notice is not None else {}),
-                **({"recall_conflict": _conflict_digest(recall_conflict)}
-                   if recall_conflict is not None else {}),
+                **(
+                    {"public_result_hash": canonical_sha256(result)}
+                    if typed_carrier is not None or contested.notice is not None
+                    else {}
+                ),
+                **(
+                    {"recall_conflict": _conflict_digest(recall_conflict)}
+                    if recall_conflict is not None
+                    else {}
+                ),
                 # Every route that ran the guard says so, clear included: "no
                 # notice" and "never asked" are different facts and the AC is
                 # about the asking.
@@ -519,29 +543,39 @@ class ContextRouteToolService:
         except _CompositionUnavailable as exc:
             return _error(exc.code)
         proposal = {
-            key: value
-            for key, value in dict(arguments).items()
-            if key != "deskpet_public_progress"
+            key: value for key, value in dict(arguments).items() if key != "deskpet_public_progress"
         }
         route_value = str(proposal.get("route") or "")
         if route_value not in ROUTES:
             return await self._reject(
-                run_id, raw_call_id, effect_id, proposal,
+                run_id,
+                raw_call_id,
+                effect_id,
+                proposal,
                 "context_route_route_invalid",
             )
         if proposal.get("reuse_workspace_of") is not None and route_value != "create_new":
-            return await self._reject(run_id, raw_call_id, effect_id, proposal,
-                                      "context_route_workspace_reuse_requires_create_new",
-                                      message=_WORKSPACE_REUSE_OMIT)
-        if proposal.get("expected_source_hash") is not None and not (
-            route_value == "resume_existing" or (
-                route_value == "create_new" and proposal.get("reuse_workspace_of") is not None
+            return await self._reject(
+                run_id,
+                raw_call_id,
+                effect_id,
+                proposal,
+                "context_route_workspace_reuse_requires_create_new",
+                message=_WORKSPACE_REUSE_OMIT,
             )
+        if proposal.get("expected_source_hash") is not None and not (
+            route_value == "resume_existing"
+            or (route_value == "create_new" and proposal.get("reuse_workspace_of") is not None)
         ):
-            return await self._reject(run_id, raw_call_id, effect_id, proposal,
+            return await self._reject(
+                run_id,
+                raw_call_id,
+                effect_id,
+                proposal,
                 "context_route_source_hash_not_applicable",
                 message="expected_source_hash requires resume_existing or exact create_new workspace reuse. "
-                        "Otherwise omit expected_source_hash or set it to JSON null; never fabricate a hash.")
+                "Otherwise omit expected_source_hash or set it to JSON null; never fabricate a hash.",
+            )
         contested = _NO_PROBE
         try:
             if route_value == "direct_standalone":
@@ -556,21 +590,34 @@ class ContextRouteToolService:
                 )
             if route_value == "continue_active":
                 return await self._continue_active(
-                    run_id, raw_call_id, effect_id, turn_ordinal, proposal,
+                    run_id,
+                    raw_call_id,
+                    effect_id,
+                    turn_ordinal,
+                    proposal,
                     contested=contested,
                 )
             if route_value == "resume_existing":
                 return await self._resume_existing(
-                    run_id, raw_call_id, effect_id, turn_ordinal, proposal,
+                    run_id,
+                    raw_call_id,
+                    effect_id,
+                    turn_ordinal,
+                    proposal,
                     contested=contested,
                 )
             return await self._create_new(
-                run_id, raw_call_id, effect_id, turn_ordinal, proposal,
+                run_id,
+                raw_call_id,
+                effect_id,
+                turn_ordinal,
+                proposal,
                 contested=contested,
             )
         except _CompositionUnavailable as exc:
-            return await self._reject(run_id, raw_call_id, effect_id, proposal, exc.code,
-                                      contested=contested)
+            return await self._reject(
+                run_id, raw_call_id, effect_id, proposal, exc.code, contested=contested
+            )
         except Exception as exc:  # noqa: BLE001 - stable fail-closed surface
             code = str(getattr(exc, "code", "") or "context_route_adjudication_failed")
             # MM-D3: ``task_scope_conflict`` used to carry only the raw
@@ -581,10 +628,18 @@ class ContextRouteToolService:
             if code == "task_scope_conflict":
                 scope_detail = await self._run_scope_conflict_detail(run_id, proposal)
             return await self._reject(
-                run_id, raw_call_id, effect_id, proposal, code,
-                contested=contested, **scope_detail,
-                message=(_WORKSPACE_REUSE_NEW_RUN if code == "context_route_workspace_reuse_requires_new_run"
-                         else str(exc)[:512]),
+                run_id,
+                raw_call_id,
+                effect_id,
+                proposal,
+                code,
+                contested=contested,
+                **scope_detail,
+                message=(
+                    _WORKSPACE_REUSE_NEW_RUN
+                    if code == "context_route_workspace_reuse_requires_new_run"
+                    else str(exc)[:512]
+                ),
             )
 
     async def _run_scope_conflict_detail(
@@ -647,8 +702,9 @@ class ContextRouteToolService:
         # told the value is contested, and told the model nothing. The error
         # code stays exactly what it was; the notice rides the error extras.
         notice = contested.notice
-        payload = _error(code, **detail,
-                         **({"conflict_notice": dict(notice)} if notice is not None else {}))
+        payload = _error(
+            code, **detail, **({"conflict_notice": dict(notice)} if notice is not None else {})
+        )
         await self._record(
             run_id=run_id,
             raw_call_id=raw_call_id,
@@ -657,16 +713,22 @@ class ContextRouteToolService:
             verdict="rejected",
             decision_id=None,
             detail={
-                "code": code, **detail, **contested.audit(),
-                **({"recall_conflict": _conflict_digest(notice),
-                    # The rejection body is what the model receives, contested
-                    # values included; cover it like a committed result.
-                    "public_result_hash": canonical_sha256(payload)}
-                   if notice is not None else {}),
+                "code": code,
+                **detail,
+                **contested.audit(),
+                **(
+                    {
+                        "recall_conflict": _conflict_digest(notice),
+                        # The rejection body is what the model receives, contested
+                        # values included; cover it like a committed result.
+                        "public_result_hash": canonical_sha256(payload),
+                    }
+                    if notice is not None
+                    else {}
+                ),
             },
         )
         return payload
-
 
     # 2026-09-10：``memory_standalone`` 路由（类型化召回）随认知记忆 SDK 移除。
 
@@ -679,7 +741,8 @@ class ContextRouteToolService:
 
         try:
             decision = await self._ledger.latest_route_decision_for_run(
-                run_id, task_only=True,
+                run_id,
+                task_only=True,
             )
         except Exception:  # noqa: BLE001 - advisory hint only, never a route verdict
             _LOG.warning("context_route_procedure_hint_scope_unavailable run_id=%s", run_id)
@@ -702,7 +765,10 @@ class ContextRouteToolService:
         active = await self._ledger.latest_task_route_decision()
         if active is None or not active.get("task_scope_id"):
             return await self._reject(
-                run_id, raw_call_id, effect_id, proposal,
+                run_id,
+                raw_call_id,
+                effect_id,
+                proposal,
                 "context_route_no_active_task_scope",
                 contested=contested,
             )
@@ -710,7 +776,10 @@ class ContextRouteToolService:
         proposed = proposal.get("task_scope_id")
         if proposed is not None and str(proposed) != active_scope:
             return await self._reject(
-                run_id, raw_call_id, effect_id, proposal,
+                run_id,
+                raw_call_id,
+                effect_id,
+                proposal,
                 "context_route_active_scope_mismatch",
                 contested=contested,
                 active_task_scope_id=active_scope,
@@ -742,7 +811,10 @@ class ContextRouteToolService:
         if not scope:
             # Search hits never authorize; an exact ID is mandatory here.
             return await self._reject(
-                run_id, raw_call_id, effect_id, proposal,
+                run_id,
+                raw_call_id,
+                effect_id,
+                proposal,
                 "context_route_exact_task_scope_required",
                 contested=contested,
                 guidance="Call task_scope_search first, confirm one candidate, "
@@ -750,13 +822,15 @@ class ContextRouteToolService:
             )
         pinned = proposal.get("expected_source_hash")
         if pinned is not None and (
-            len(str(pinned)) != 64
-            or any(ch not in "0123456789abcdef" for ch in str(pinned))
+            len(str(pinned)) != 64 or any(ch not in "0123456789abcdef" for ch in str(pinned))
         ):
             # A miscopied pin is the most common LLM payload slip: reject with
             # explicit guidance instead of surfacing a misleading stale error.
             return await self._reject(
-                run_id, raw_call_id, effect_id, proposal,
+                run_id,
+                raw_call_id,
+                effect_id,
+                proposal,
                 "context_route_expected_source_hash_malformed",
                 contested=contested,
                 guidance="expected_source_hash is optional; omit it, or copy "
@@ -788,13 +862,22 @@ class ContextRouteToolService:
             )
         ):
             return await self._reject(
-                run_id, raw_call_id, effect_id, proposal,
+                run_id,
+                raw_call_id,
+                effect_id,
+                proposal,
                 "context_route_binding_lineage_stale",
                 contested=contested,
             )
         if self._scope_disclosure_reader is None:
-            return await self._reject(run_id, raw_call_id, effect_id, proposal,
-                                      "scope_disclosure_reader_missing", contested=contested)
+            return await self._reject(
+                run_id,
+                raw_call_id,
+                effect_id,
+                proposal,
+                "scope_disclosure_reader_missing",
+                contested=contested,
+            )
         resume_package = await self._scope_disclosure_reader(run_id, resume_package, effect_id)
         return await self._commit_receipt(
             run_id=run_id,
@@ -826,7 +909,10 @@ class ContextRouteToolService:
         title = str(proposal.get("title") or "").strip()
         if not title:
             return await self._reject(
-                run_id, raw_call_id, effect_id, proposal,
+                run_id,
+                raw_call_id,
+                effect_id,
+                proposal,
                 "context_route_title_required",
                 contested=contested,
             )
@@ -842,16 +928,30 @@ class ContextRouteToolService:
             bound = await self._ledger.latest_route_decision_for_run(run_id, task_only=True)
             envelope = self._tool_context_getter().task_execution_envelope
             if bound is not None or envelope.task_scope_id is not None:
-                return await self._reject(run_id, raw_call_id, effect_id, proposal,
+                return await self._reject(
+                    run_id,
+                    raw_call_id,
+                    effect_id,
+                    proposal,
                     "context_route_workspace_reuse_requires_new_run",
-                    contested=contested, message=_WORKSPACE_REUSE_NEW_RUN)
+                    contested=contested,
+                    message=_WORKSPACE_REUSE_NEW_RUN,
+                )
             from deskpet.sdk_adapters.workspace_continuation import resolve_workspace_continuation
+
             continuation = await resolve_workspace_continuation(
-                service=service, binding_store=self._binding_store_factory(),
-                disclosure_reader=self._scope_disclosure_reader, run_id=run_id,
-                effect_id=effect_id, proposal=proposal)
-        producer_dependencies = (None if self._producer_dependencies_reader is None
-            else await self._producer_dependencies_reader(run_id))
+                service=service,
+                binding_store=self._binding_store_factory(),
+                disclosure_reader=self._scope_disclosure_reader,
+                run_id=run_id,
+                effect_id=effect_id,
+                proposal=proposal,
+            )
+        producer_dependencies = (
+            None
+            if self._producer_dependencies_reader is None
+            else await self._producer_dependencies_reader(run_id)
+        )
         created = await service.create_task_scope(
             CreateTaskScopeRequest(
                 fixture_key=f"chat:{canonical_sha256({'title': title})[:16]}",
@@ -864,7 +964,10 @@ class ContextRouteToolService:
         binding_append = self._binding_append_getter()
         if binding_append is None:
             return await self._reject(
-                run_id, raw_call_id, effect_id, proposal,
+                run_id,
+                raw_call_id,
+                effect_id,
+                proposal,
                 "context_route_binding_authority_unavailable",
                 contested=contested,
                 task_scope_id=scope,
@@ -873,37 +976,55 @@ class ContextRouteToolService:
         root = store.configured_root()
         if not root:
             return await self._reject(
-                run_id, raw_call_id, effect_id, proposal,
+                run_id,
+                raw_call_id,
+                effect_id,
+                proposal,
                 "context_route_workspace_root_not_configured",
                 contested=contested,
                 task_scope_id=scope,
             )
         # Normal creation gets its own stable direct child. Explicit reuse
         # selects the exact verified old root; model text never supplies a path.
-        task_root = (Path(root.canonical_path) / f"task-{scope}" if continuation is None
-                     else Path(continuation.root.canonical_path))
-        outcome = await service.append_binding(AppendBindingRequest(
-            scope_ref=scope,
-            root=str(task_root),
-            idempotency_key=f"context-route:{run_id}:{effect_id}",
-            expected_filesystem_identity_hash=(None if continuation is None else
-                continuation.root.filesystem_identity.identity_hash),
-        ))
-        if (str(outcome.get("status", "")) == "authorization_required"
-                and self._user_confirmation_reader is not None
-                and self._user_confirmation_reader(run_id, effect_id)):
+        task_root = (
+            Path(root.canonical_path) / f"task-{scope}"
+            if continuation is None
+            else Path(continuation.root.canonical_path)
+        )
+        outcome = await service.append_binding(
+            AppendBindingRequest(
+                scope_ref=scope,
+                root=str(task_root),
+                idempotency_key=f"context-route:{run_id}:{effect_id}",
+                expected_filesystem_identity_hash=(
+                    None
+                    if continuation is None
+                    else continuation.root.filesystem_identity.identity_hash
+                ),
+            )
+        )
+        if (
+            str(outcome.get("status", "")) == "authorization_required"
+            and self._user_confirmation_reader is not None
+            and self._user_confirmation_reader(run_id, effect_id)
+        ):
             # 2026-09-25 UI 全量点击：manual 模式下这次 context_route 调用本身已由人
             # 逐次确认（弹窗写明"新建任务并在工作区建任务目录"），这次确认就是目录
             # 绑定的人工决定。以前让工具先失败、再弹第二张绑定卡：卡片被弹窗遮住，
             # 模型重试又弹一次，每次多建一个任务目录，最后整次运行失败。
-            outcome = await service.decide_manual_binding(DecideManualBindingRequest(
-                challenge_ref=str(outcome["challenge_ref"]),
-                decision="allow",
-                idempotency_key=f"context-route:{run_id}:{effect_id}",
-            ))
+            outcome = await service.decide_manual_binding(
+                DecideManualBindingRequest(
+                    challenge_ref=str(outcome["challenge_ref"]),
+                    decision="allow",
+                    idempotency_key=f"context-route:{run_id}:{effect_id}",
+                )
+            )
         if str(outcome.get("status", "")) == "authorization_required":
             return await self._reject(
-                run_id, raw_call_id, effect_id, proposal,
+                run_id,
+                raw_call_id,
+                effect_id,
+                proposal,
                 "context_route_binding_authorization_required",
                 contested=contested,
                 task_scope_id=scope,
@@ -921,8 +1042,11 @@ class ContextRouteToolService:
             task_scope_id=scope,
             binding=binding,
             contested=contested,
-            extras={"created": dict(created), "producer_dependencies": producer_dependencies,
-                    **({} if continuation is None else {"workspace_source": dict(continuation.source)})},
+            extras={
+                "created": dict(created),
+                "producer_dependencies": producer_dependencies,
+                **({} if continuation is None else {"workspace_source": dict(continuation.source)}),
+            },
         )
 
     # -- task_scope_search ------------------------------------------------
@@ -944,11 +1068,7 @@ class ContextRouteToolService:
                 SearchTaskScopesRequest(
                     query=query,
                     max_candidates=int(raw_max) if raw_max is not None else 8,
-                    cursor=(
-                        str(arguments["cursor"])
-                        if arguments.get("cursor")
-                        else None
-                    ),
+                    cursor=(str(arguments["cursor"]) if arguments.get("cursor") else None),
                     effect_id=effect_id,
                     sdk_run_id=run_id,
                 )
@@ -957,6 +1077,7 @@ class ContextRouteToolService:
             code = str(getattr(exc, "code", "") or "task_scope_search_failed")
             return _error(code)
         from deskpet.memory.human_memory_service import OpenTaskScopeRequest
+
         if self._scope_disclosure_reader is None:
             return _error("scope_disclosure_reader_missing")
         # MM-D3: which hit is *this Run's* active task is a Host fact the model
@@ -967,13 +1088,26 @@ class ContextRouteToolService:
         candidates = []
         for item in result["candidates"]:
             scope_id = item["scope_ref"]
-            opened = await service.open_task_scope(OpenTaskScopeRequest(scope_ref=scope_id,
-                expected_source_hash=item["source_hash"], effect_id=effect_id, sdk_run_id=run_id))
-            package = await self._scope_disclosure_reader(run_id, opened["resume_package"], effect_id)
-            candidates.append({"task_scope_id": scope_id, "source_id": package["source_id"],
-                "source_hash": package["source_hash"],
-                "is_active": active_scope is not None and str(scope_id) == active_scope,
-                "scope_disclosure": package})
+            opened = await service.open_task_scope(
+                OpenTaskScopeRequest(
+                    scope_ref=scope_id,
+                    expected_source_hash=item["source_hash"],
+                    effect_id=effect_id,
+                    sdk_run_id=run_id,
+                )
+            )
+            package = await self._scope_disclosure_reader(
+                run_id, opened["resume_package"], effect_id
+            )
+            candidates.append(
+                {
+                    "task_scope_id": scope_id,
+                    "source_id": package["source_id"],
+                    "source_hash": package["source_hash"],
+                    "is_active": active_scope is not None and str(scope_id) == active_scope,
+                    "scope_disclosure": package,
+                }
+            )
         payload: dict[str, Any] = {
             "candidates": candidates,
             "next_cursor": result.get("next_cursor"),

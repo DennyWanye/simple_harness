@@ -13,6 +13,7 @@
 
 所有测试使用 FakeLLMRegistry（来自 test_deskpet_agent_loop 的模式）+ 真实 AgentLoop。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -37,6 +38,7 @@ from deskpet.tools.receipt import ToolReceipt
 from llm.types import ChatResponse, ChatUsage, ToolCall
 
 # ─── helpers ────────────────────────────────────────────────────────────────
+
 
 def _make_receipt(tool_name: str, ok: bool = True) -> ToolReceipt:
     return ToolReceipt(
@@ -144,6 +146,7 @@ async def _collect(agen) -> list[Any]:
 
 # ─── Test 1: verify fail → reflection rebound → 2nd LLM真调工具 → pass ──────
 
+
 @pytest.mark.asyncio
 async def test_verify_fail_replans_to_external_tool_batch():
     """Verify rebound reaches ppt_create and pauses for external execution."""
@@ -155,18 +158,22 @@ async def test_verify_fail_replans_to_external_tool_batch():
     # Round 2: LLM calls ppt_create tool
     # Round 3: LLM calls ppt_create result processing → end_turn again
     # Round 4: Final end_turn with claim
-    tool_registry = FakeToolRegistry(handlers={
-        "ppt_create": lambda args: {"path": "/tmp/out.pptx"},
-    })
+    tool_registry = FakeToolRegistry(
+        handlers={
+            "ppt_create": lambda args: {"path": "/tmp/out.pptx"},
+        }
+    )
 
-    llm = FakeLLMRegistry([
-        # iteration 1: LLM says done but didn't call tool → verify blocks
-        _final_resp("我已生成 PPT 文件，请查收。"),
-        # iteration 2 (after nudge): LLM calls ppt_create
-        _tool_resp("ppt_create", {"title": "test"}),
-        # iteration 3: after tool result, LLM says done again
-        _final_resp("我已生成 PPT 文件，请查收。"),
-    ])
+    llm = FakeLLMRegistry(
+        [
+            # iteration 1: LLM says done but didn't call tool → verify blocks
+            _final_resp("我已生成 PPT 文件，请查收。"),
+            # iteration 2 (after nudge): LLM calls ppt_create
+            _tool_resp("ppt_create", {"title": "test"}),
+            # iteration 3: after tool result, LLM says done again
+            _final_resp("我已生成 PPT 文件，请查收。"),
+        ]
+    )
 
     loop = AgentLoop(
         llm_registry=llm,
@@ -178,10 +185,12 @@ async def test_verify_fail_replans_to_external_tool_batch():
         structured_reflection=True,
     )
 
-    events = await _collect(loop.run(
-        [{"role": "user", "content": "帮我生成PPT"}],
-        session_id="sid-1",
-    ))
+    events = await _collect(
+        loop.run(
+            [{"role": "user", "content": "帮我生成PPT"}],
+            session_id="sid-1",
+        )
+    )
 
     batch = next(e for e in events if isinstance(e, ToolBatchEvent))
     assert [call.name for call in batch.tool_calls] == ["ppt_create"]
@@ -227,10 +236,12 @@ async def test_rebound_contains_reflection_instruction():
         structured_reflection=True,
     )
 
-    events = await _collect(loop.run(
-        [{"role": "user", "content": "帮我生成PPT"}],
-        session_id="sid-rebound",
-    ))
+    events = await _collect(
+        loop.run(
+            [{"role": "user", "content": "帮我生成PPT"}],
+            session_id="sid-rebound",
+        )
+    )
 
     # After 1st verify fail, the 2nd LLM call messages should contain reflection instruction
     assert len(captured_messages) >= 2, "Should have at least 2 LLM calls"
@@ -244,6 +255,7 @@ async def test_rebound_contains_reflection_instruction():
 
 
 # ─── Test 2: difflib stagnation → escalate ephemeral, skip 2nd nudge ─────────
+
 
 @pytest.mark.asyncio
 async def test_stagnant_replanning_escalates_to_ephemeral():
@@ -266,13 +278,15 @@ async def test_stagnant_replanning_escalates_to_ephemeral():
     )
 
     # LLM produces nearly identical task_replanning in both nudge rounds
-    stagnant_reflection = json.dumps({
-        "error_analysis": "工具没调",
-        "execution_critique": "惯性复述",
-        "task_replanning": "调用 ppt_create 工具生成 PPT 文件到 /tmp/out.pptx",
-        "next_action": "ppt_create",
-        "confidence": 0.5,
-    })
+    stagnant_reflection = json.dumps(
+        {
+            "error_analysis": "工具没调",
+            "execution_critique": "惯性复述",
+            "task_replanning": "调用 ppt_create 工具生成 PPT 文件到 /tmp/out.pptx",
+            "next_action": "ppt_create",
+            "confidence": 0.5,
+        }
+    )
     # Both rounds produce the same replanning (ratio > 0.85)
 
     class StagnantLLM:
@@ -280,9 +294,7 @@ async def test_stagnant_replanning_escalates_to_ephemeral():
 
         async def chat_with_fallback(self, messages, tools=None, model=None, **kw):
             self.calls += 1
-            return _final_resp(
-                f"```json\n{stagnant_reflection}\n```\n我已生成 PPT 文件，请查收。"
-            )
+            return _final_resp(f"```json\n{stagnant_reflection}\n```\n我已生成 PPT 文件，请查收。")
 
     llm = StagnantLLM()
     tool_registry = FakeToolRegistry()
@@ -297,10 +309,12 @@ async def test_stagnant_replanning_escalates_to_ephemeral():
         structured_reflection=True,
     )
 
-    events = await _collect(loop.run(
-        [{"role": "user", "content": "帮我生成PPT"}],
-        session_id="sid-stagnant",
-    ))
+    events = await _collect(
+        loop.run(
+            [{"role": "user", "content": "帮我生成PPT"}],
+            session_id="sid-stagnant",
+        )
+    )
 
     # Ephemeral should have been called (stagnation detected → escalated)
     assert len(ephemeral_calls) >= 1, "Ephemeral should be called on stagnation"
@@ -312,6 +326,7 @@ async def test_stagnant_replanning_escalates_to_ephemeral():
 
 
 # ─── Test 3: ephemeral callable=None → 2nd fail conservative fail (BC) ───────
+
 
 @pytest.mark.asyncio
 async def test_ephemeral_none_conservative_fail():
@@ -342,25 +357,27 @@ async def test_ephemeral_none_conservative_fail():
         structured_reflection=False,
     )
 
-    events = await _collect(loop.run(
-        [{"role": "user", "content": "帮我生成PPT"}],
-        session_id="sid-no-ephemeral",
-    ))
+    events = await _collect(
+        loop.run(
+            [{"role": "user", "content": "帮我生成PPT"}],
+            session_id="sid-no-ephemeral",
+        )
+    )
 
     error_events = [e for e in events if isinstance(e, ErrorEvent)]
     verify_exhausted = [e for e in error_events if e.reason == "verify_exhausted"]
-    assert verify_exhausted, (
-        f"ephemeral=None should emit verify_exhausted. Errors: {error_events}"
-    )
+    assert verify_exhausted, f"ephemeral=None should emit verify_exhausted. Errors: {error_events}"
 
 
 # ─── Test 4: ephemeral returns pass → rescue, log ephemeral_rescued ──────────
+
 
 @pytest.mark.asyncio
 async def test_ephemeral_rescue_pass_logs_rescued(caplog):
     """ephemeral callable returns True → verify passes via rescue,
     loop logs 'ephemeral_rescued'."""
     import logging
+
     caplog.set_level(logging.INFO)
 
     receipt_store = FakeReceiptStore()
@@ -396,10 +413,12 @@ async def test_ephemeral_rescue_pass_logs_rescued(caplog):
         structured_reflection=False,
     )
 
-    events = await _collect(loop.run(
-        [{"role": "user", "content": "帮我生成PPT"}],
-        session_id="sid-rescued",
-    ))
+    events = await _collect(
+        loop.run(
+            [{"role": "user", "content": "帮我生成PPT"}],
+            session_id="sid-rescued",
+        )
+    )
 
     # Should NOT emit verify_exhausted (ephemeral rescued)
     error_events = [e for e in events if isinstance(e, ErrorEvent)]
@@ -415,6 +434,7 @@ async def test_ephemeral_rescue_pass_logs_rescued(caplog):
 
 
 # ─── Test 5: 三层全失败 → verify_exhausted + auto_resume_trigger ──────────────
+
 
 @pytest.mark.asyncio
 async def test_all_layers_fail_emit_verify_exhausted():
@@ -449,16 +469,16 @@ async def test_all_layers_fail_emit_verify_exhausted():
         structured_reflection=False,
     )
 
-    events = await _collect(loop.run(
-        [{"role": "user", "content": "帮我生成PPT"}],
-        session_id="sid-exhausted",
-    ))
+    events = await _collect(
+        loop.run(
+            [{"role": "user", "content": "帮我生成PPT"}],
+            session_id="sid-exhausted",
+        )
+    )
 
     error_events = [e for e in events if isinstance(e, ErrorEvent)]
     verify_exhausted = [e for e in error_events if e.reason == "verify_exhausted"]
-    assert verify_exhausted, (
-        f"All layers fail → must emit verify_exhausted. Errors: {error_events}"
-    )
+    assert verify_exhausted, f"All layers fail → must emit verify_exhausted. Errors: {error_events}"
     # auto_resume should handle verify_exhausted
     assert is_auto_resume_trigger("verify_exhausted"), (
         "verify_exhausted must be in _AUTO_RESUME_TRIGGER_REASONS"
@@ -466,6 +486,7 @@ async def test_all_layers_fail_emit_verify_exhausted():
 
 
 # ─── Test 6: §7 dead-loop upper bound ────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_dead_loop_upper_bound():
@@ -508,19 +529,19 @@ async def test_dead_loop_upper_bound():
         structured_reflection=False,
     )
 
-    events = await _collect(loop.run(
-        [{"role": "user", "content": "帮我生成PPT"}],
-        session_id="sid-deadloop",
-    ))
+    events = await _collect(
+        loop.run(
+            [{"role": "user", "content": "帮我生成PPT"}],
+            session_id="sid-deadloop",
+        )
+    )
 
     # Must terminate gracefully
     error_events = [e for e in events if isinstance(e, ErrorEvent)]
     assert error_events, "Should emit at least one ErrorEvent (graceful degrade)"
 
     # LLM calls must be bounded (< max_iterations + safety margin)
-    assert llm_call_count[0] <= MAX_ITERATIONS + 3, (
-        f"Too many LLM calls: {llm_call_count[0]}"
-    )
+    assert llm_call_count[0] <= MAX_ITERATIONS + 3, f"Too many LLM calls: {llm_call_count[0]}"
 
     # At least one terminal event (verify_exhausted or max_iterations)
     terminal_reasons = {e.reason for e in error_events}
@@ -531,6 +552,7 @@ async def test_dead_loop_upper_bound():
 
 # ─── Test 7: make_ephemeral_verifier unit test ───────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_make_ephemeral_verifier_returns_pass():
     """make_ephemeral_verifier(llm_call) wraps LLM call that returns pass verdict."""
@@ -539,11 +561,13 @@ async def test_make_ephemeral_verifier_returns_pass():
         return '{"verdict": "pass", "reason": "claim is covered by ppt_create tool call"}'
 
     verifier = make_ephemeral_verifier(llm_pass)
-    result = await verifier({
-        "ledger_size": 1,
-        "failed_claims": [{"raw_text": "已生成 PPT", "reason": "no_receipt"}],
-        "assistant_text": "我已生成 PPT 文件",
-    })
+    result = await verifier(
+        {
+            "ledger_size": 1,
+            "failed_claims": [{"raw_text": "已生成 PPT", "reason": "no_receipt"}],
+            "assistant_text": "我已生成 PPT 文件",
+        }
+    )
     assert result is True
 
 
@@ -555,11 +579,13 @@ async def test_make_ephemeral_verifier_returns_fail():
         return '{"verdict": "fail", "reason": "no matching tool call found"}'
 
     verifier = make_ephemeral_verifier(llm_fail)
-    result = await verifier({
-        "ledger_size": 0,
-        "failed_claims": [{"raw_text": "已生成 PPT", "reason": "no_receipt"}],
-        "assistant_text": "我已生成 PPT 文件",
-    })
+    result = await verifier(
+        {
+            "ledger_size": 0,
+            "failed_claims": [{"raw_text": "已生成 PPT", "reason": "no_receipt"}],
+            "assistant_text": "我已生成 PPT 文件",
+        }
+    )
     assert result is False
 
 
@@ -571,11 +597,13 @@ async def test_make_ephemeral_verifier_llm_error_returns_false():
         raise RuntimeError("LLM failed")
 
     verifier = make_ephemeral_verifier(llm_error)
-    result = await verifier({
-        "ledger_size": 0,
-        "failed_claims": [],
-        "assistant_text": "x",
-    })
+    result = await verifier(
+        {
+            "ledger_size": 0,
+            "failed_claims": [],
+            "assistant_text": "x",
+        }
+    )
     assert result is False
 
 
@@ -587,15 +615,18 @@ async def test_make_ephemeral_verifier_garbled_json_returns_false():
         return "I am not JSON at all"
 
     verifier = make_ephemeral_verifier(llm_garbled)
-    result = await verifier({
-        "ledger_size": 1,
-        "failed_claims": [],
-        "assistant_text": "x",
-    })
+    result = await verifier(
+        {
+            "ledger_size": 1,
+            "failed_claims": [],
+            "assistant_text": "x",
+        }
+    )
     assert result is False
 
 
 # ─── Test 8: auto_resume trigger for verify_exhausted ────────────────────────
+
 
 def test_auto_resume_trigger_verify_exhausted():
     """verify_exhausted must be in auto_resume trigger set."""

@@ -11,7 +11,16 @@ from deskpet.retrieval.ranking import (
 
 
 def _row(url, title, provider, rank):
-    return RetrievalCandidate("id", url, url, title, "query evidence", provider=provider, providers=(provider,), provider_rank=rank)
+    return RetrievalCandidate(
+        "id",
+        url,
+        url,
+        title,
+        "query evidence",
+        provider=provider,
+        providers=(provider,),
+        provider_rank=rank,
+    )
 
 
 def test_canonicalization_removes_tracking_normalizes_host_and_path():
@@ -38,7 +47,9 @@ def test_ranking_is_stable_independent_of_completion_order():
         _row("https://a.test", "query A", "duckduckgo", 1),
     ]
     forward = [(item.canonical_url, item.score) for item in rank_candidates("query", rows)]
-    reverse = [(item.canonical_url, item.score) for item in rank_candidates("query", list(reversed(rows)))]
+    reverse = [
+        (item.canonical_url, item.score) for item in rank_candidates("query", list(reversed(rows)))
+    ]
     assert forward == reverse
 
 

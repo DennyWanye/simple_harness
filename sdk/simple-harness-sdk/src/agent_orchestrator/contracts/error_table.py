@@ -73,7 +73,9 @@ class SharingRefusalCode(StrEnum):
     TASKGRAPH_SHARED_DATA_DECLARATION_DIFFERS = "TASKGRAPH_SHARED_DATA_DECLARATION_DIFFERS"
     TASKGRAPH_SHARED_DATA_POLICY_DIFFERS = "TASKGRAPH_SHARED_DATA_POLICY_DIFFERS"
     TASKGRAPH_REUSE_ACCEPTANCE_NOT_CURRENT = "TASKGRAPH_REUSE_ACCEPTANCE_NOT_CURRENT"
-    TASKGRAPH_ACCEPTED_PRODUCER_REQUIRES_EXACT_REUSE = "TASKGRAPH_ACCEPTED_PRODUCER_REQUIRES_EXACT_REUSE"
+    TASKGRAPH_ACCEPTED_PRODUCER_REQUIRES_EXACT_REUSE = (
+        "TASKGRAPH_ACCEPTED_PRODUCER_REQUIRES_EXACT_REUSE"
+    )
     TASKGRAPH_SHARED_PRODUCER_BINDING_CHANGED = "TASKGRAPH_SHARED_PRODUCER_BINDING_CHANGED"
     TASKGRAPH_INDEPENDENT_WORK_STILL_REQUIRED = "TASKGRAPH_INDEPENDENT_WORK_STILL_REQUIRED"
     TASKGRAPH_RETAINED_PRODUCER_DEMAND_MISSING = "TASKGRAPH_RETAINED_PRODUCER_DEMAND_MISSING"
@@ -83,7 +85,9 @@ class SharingRefusalCode(StrEnum):
     TASKGRAPH_SHARE_ACTIVE_START_NOT_CURRENT = "TASKGRAPH_SHARE_ACTIVE_START_NOT_CURRENT"
     TASKGRAPH_SHARE_ACTIVE_CONSUMER_MISSING = "TASKGRAPH_SHARE_ACTIVE_CONSUMER_MISSING"
     TASKGRAPH_SHARE_ACTIVE_METHOD_SOURCE_MISSING = "TASKGRAPH_SHARE_ACTIVE_METHOD_SOURCE_MISSING"
-    TASKGRAPH_SHARE_ACTIVE_CONSUMER_PRECONDITION_UNMET = "TASKGRAPH_SHARE_ACTIVE_CONSUMER_PRECONDITION_UNMET"
+    TASKGRAPH_SHARE_ACTIVE_CONSUMER_PRECONDITION_UNMET = (
+        "TASKGRAPH_SHARE_ACTIVE_CONSUMER_PRECONDITION_UNMET"
+    )
     TASKGRAPH_SHARE_ACTIVE_ORDER_UNMET = "TASKGRAPH_SHARE_ACTIVE_ORDER_UNMET"
     TASKGRAPH_SHARE_ACTIVE_ORDER_SOURCE_MISSING = "TASKGRAPH_SHARE_ACTIVE_ORDER_SOURCE_MISSING"
     TASKGRAPH_SHARE_ACTIVE_ORDER_BINDING_CHANGED = "TASKGRAPH_SHARE_ACTIVE_ORDER_BINDING_CHANGED"
@@ -170,15 +174,20 @@ class ErrorEntry:
 
 
 def _e(category: ErrorCategory, *, free_reask: bool = False) -> ErrorEntry:
-    return ErrorEntry(category, charges_planner=category is not ErrorCategory.REQUEST_STALE,
-                      free_reask=free_reask)
+    return ErrorEntry(
+        category, charges_planner=category is not ErrorCategory.REQUEST_STALE, free_reask=free_reask
+    )
 
 
 def refusal_charges_planner(codes: object) -> bool:
     """Whether a planning refusal with these problem codes counts against the Planner.
     Only a refusal made *entirely* of registered request-stale codes does not."""
 
-    names = [str(code) for code in codes or ()] if isinstance(codes, (list, tuple, set, frozenset)) else []
+    names = (
+        [str(code) for code in codes or ()]
+        if isinstance(codes, (list, tuple, set, frozenset))
+        else []
+    )
     if not names:
         return True
     for name in names:
@@ -192,7 +201,11 @@ def refusal_charges_planner(codes: object) -> bool:
 def refusal_free_reask(codes: object) -> bool:
     """这次拒绝是否属于"同一请求可免扣重问一次"：码非空、全部登记、全部标了 free_reask。"""
 
-    names = [str(code) for code in codes or ()] if isinstance(codes, (list, tuple, set, frozenset)) else []
+    names = (
+        [str(code) for code in codes or ()]
+        if isinstance(codes, (list, tuple, set, frozenset))
+        else []
+    )
     if not names:
         return False
     return all(name in P.__members__ and _PLANNING[P(name)].free_reask for name in names)
@@ -269,9 +282,11 @@ _TASKGRAPH: dict[T, ErrorEntry] = {
 
 # 交接拒绝原因（2026-10-03 阶段 B 裁决第 5 类）：只登记"暂时性"这一列——暂时的拒绝让动作
 # 留在可交接状态、下一轮再试；没登记的一律不是暂时的，交接被拒就按"动作失败"停任务。
-_HANDOFF_TRANSIENT: frozenset[str] = frozenset({
-    "taskgraph_target_fenced",  # 改做法的围栏还没解除：随围栏的决定提交或被拒而结束
-})
+_HANDOFF_TRANSIENT: frozenset[str] = frozenset(
+    {
+        "taskgraph_target_fenced",  # 改做法的围栏还没解除：随围栏的决定提交或被拒而结束
+    }
+)
 
 
 #: 交接前核对发现这一步的有效性见证过期（纪元动了、所依据的验收不再当前）：同样不是动作
@@ -283,7 +298,8 @@ def handoff_refusal_transient(reason: object) -> bool:
     """A handoff refusal that ends by itself (the caller waits instead of stopping)."""
 
     return isinstance(reason, str) and (
-        reason in _HANDOFF_TRANSIENT or reason.startswith(HANDOFF_VALIDITY_STALE))
+        reason in _HANDOFF_TRANSIENT or reason.startswith(HANDOFF_VALIDITY_STALE)
+    )
 
 
 # 一轮故障（TaskGraph 补全第一批，原计划 §12）：一个任务这一轮的工作冲出异常时，主循环只按
@@ -364,6 +380,7 @@ SCHEDULING_ERRORS: Mapping[SchedulingStopCode, ErrorEntry] = MappingProxyType(_S
 RECOVERY_ERRORS: Mapping[RecoveryBoundaryCode, ErrorEntry] = MappingProxyType(_RECOVERY)
 ROUND_FAULTS: Mapping[RoundFaultCode, RoundFaultHandling] = MappingProxyType(_ROUND_FAULT)
 
+
 def classify(code: object) -> ErrorEntry:
     """登记过的跨边界码的归类；没登记的码一律拒绝（§12 fail-closed）。"""
 
@@ -372,9 +389,12 @@ def classify(code: object) -> ErrorEntry:
     if isinstance(code, T) or (isinstance(code, str) and code in T.__members__):
         return _TASKGRAPH[T(str(code))]
     if isinstance(code, SchedulingStopCode) or (
-            isinstance(code, str) and code in {c.value for c in SchedulingStopCode}):
+        isinstance(code, str) and code in {c.value for c in SchedulingStopCode}
+    ):
         return _SCHEDULING[SchedulingStopCode(str(code))]
-    if isinstance(code, RecoveryBoundaryCode) or (isinstance(code, str) and code in RecoveryBoundaryCode.__members__):
+    if isinstance(code, RecoveryBoundaryCode) or (
+        isinstance(code, str) and code in RecoveryBoundaryCode.__members__
+    ):
         return _RECOVERY[RecoveryBoundaryCode(str(code))]
     raise ContractError(f"ERROR_CODE_UNREGISTERED: {code!r}")
 

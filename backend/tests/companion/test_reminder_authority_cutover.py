@@ -125,14 +125,18 @@ def test_restart_reconciler_is_idempotent_after_durable_cutover() -> None:
         authority_selector=object(),
     )
 
-    assert first == second == {
-        "authority_phase": "companion",
-        "handlers": [
-            "reminder_cancel",
-            "reminder_create",
-            "reminder_list",
-        ],
-    }
+    assert (
+        first
+        == second
+        == {
+            "authority_phase": "companion",
+            "handlers": [
+                "reminder_cancel",
+                "reminder_create",
+                "reminder_list",
+            ],
+        }
+    )
     assert registry.catalog_snapshot().revision == revision
 
 
@@ -192,9 +196,7 @@ def test_durable_restore_rejects_non_builtin_replacement_before_mutation() -> No
     after = registry.catalog_snapshot()
     assert registry.authority_phase == "legacy"
     assert after.revision == before.revision
-    assert {spec.name for spec in after.specs} == {
-        spec.name for spec in before.specs
-    }
+    assert {spec.name for spec in after.specs} == {spec.name for spec in before.specs}
 
 
 def test_cutover_is_atomic_to_concurrent_catalog_readers() -> None:
@@ -212,9 +214,7 @@ def test_cutover_is_atomic_to_concurrent_catalog_readers() -> None:
 
     observations: list[tuple[bool, bool]] = []
     with ThreadPoolExecutor(max_workers=2) as pool:
-        reader = pool.submit(
-            lambda: [observe() for _ in range(500)]
-        )
+        reader = pool.submit(lambda: [observe() for _ in range(500)])
         _cutover(registry)
         observations.extend(reader.result())
     observations.extend([observe()])
@@ -226,11 +226,7 @@ def test_cutover_is_atomic_to_concurrent_catalog_readers() -> None:
 def test_incomplete_legacy_phase_fails_without_any_catalog_mutation() -> None:
     registry = _complete_legacy_registry()
     before = registry.catalog_snapshot()
-    victim = next(
-        spec.name
-        for spec in before.specs
-        if spec.stable_handler_id
-    )
+    victim = next(spec.name for spec in before.specs if spec.stable_handler_id)
     assert registry.unregister(victim)
     incomplete = registry.catalog_snapshot()
 
@@ -243,11 +239,7 @@ def test_incomplete_legacy_phase_fails_without_any_catalog_mutation() -> None:
     after = registry.catalog_snapshot()
     assert registry.authority_phase == "legacy"
     assert after.revision == incomplete.revision
-    assert {
-        spec.name for spec in after.specs
-    } == {
-        spec.name for spec in incomplete.specs
-    }
+    assert {spec.name for spec in after.specs} == {spec.name for spec in incomplete.specs}
     assert "list_reminders" in {spec.name for spec in after.specs}
     assert {
         "reminder_create",

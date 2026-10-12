@@ -219,7 +219,8 @@ class BuiltinOperationProfiles(ConnectorProfileRegistry):
         re-checks it only because the deployment may have changed since confirmation."""
         if effect.required_milestone not in self.supported_milestones:
             raise OperationMaterializationInputError(
-                "OP_CAPABILITY_UNSUPPORTED", "the required milestone is not supported by this profile"
+                "OP_CAPABILITY_UNSUPPORTED",
+                "the required milestone is not supported by this profile",
             )
         if effect.evidence_policy_ref != self.evidence_policy_ref:
             raise OperationMaterializationInputError(
@@ -258,26 +259,43 @@ class DeploymentOperationProfiles:
         self.registries = tuple(registries)
 
     def policy_registry(self, connector_id: str, operation_name: str) -> Any:
-        matches = [registry for registry in self.registries
-                   if registry.resolve_connector_operation(connector_id, operation_name) is not None]
+        matches = [
+            registry
+            for registry in self.registries
+            if registry.resolve_connector_operation(connector_id, operation_name) is not None
+        ]
         if len(matches) != 1:
-            raise OperationMaterializationInputError("OP_PROFILE_UNAVAILABLE", "ambiguous or absent registration")
+            raise OperationMaterializationInputError(
+                "OP_PROFILE_UNAVAILABLE", "ambiguous or absent registration"
+            )
         return matches[0]
 
-    def resolve_connector_operation(self, connector_id: str, operation_name: str) -> ConnectorProfileRegistration:
-        registration = self.policy_registry(connector_id, operation_name).resolve_connector_operation(
-            connector_id, operation_name)
+    def resolve_connector_operation(
+        self, connector_id: str, operation_name: str
+    ) -> ConnectorProfileRegistration:
+        registration = self.policy_registry(
+            connector_id, operation_name
+        ).resolve_connector_operation(connector_id, operation_name)
         if not isinstance(registration, ConnectorProfileRegistration):
             raise OperationMaterializationInputError("OP_PROFILE_UNAVAILABLE")
         return registration
 
-    def policy_for(self, sources: PreparedOperationIntentSources) -> DeploymentOperationPolicyInputs:
-        matches = [registry for registry in self.registries
-                   if registry.milestone_policy_ref == sources.effect.milestone_policy_ref
-                   and registry.evidence_policy_ref == sources.effect.evidence_policy_ref]
+    def policy_for(
+        self, sources: PreparedOperationIntentSources
+    ) -> DeploymentOperationPolicyInputs:
+        matches = [
+            registry
+            for registry in self.registries
+            if registry.milestone_policy_ref == sources.effect.milestone_policy_ref
+            and registry.evidence_policy_ref == sources.effect.evidence_policy_ref
+        ]
         if len(matches) != 1:
-            raise OperationMaterializationInputError("OP_CAPABILITY_UNSUPPORTED", "no unique approved policy")
+            raise OperationMaterializationInputError(
+                "OP_CAPABILITY_UNSUPPORTED", "no unique approved policy"
+            )
         policy = matches[0].policy_for(sources)
         if not isinstance(policy, DeploymentOperationPolicyInputs):
-            raise OperationMaterializationInputError("OP_CAPABILITY_UNSUPPORTED", "untyped deployment policy")
+            raise OperationMaterializationInputError(
+                "OP_CAPABILITY_UNSUPPORTED", "untyped deployment policy"
+            )
         return policy

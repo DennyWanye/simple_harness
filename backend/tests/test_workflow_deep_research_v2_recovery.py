@@ -29,18 +29,32 @@ class CrashAfterPendingStore(InMemoryNativeCheckpointStore):
 async def test_v2_restart_reuses_healthy_pending_branch():
     calls: dict[str, int] = {}
 
-    async def llm(prompt): return "{}"
+    async def llm(prompt):
+        return "{}"
+
     async def search(query, *, max_results):
         calls[query] = calls.get(query, 0) + 1
         digest = hashlib.sha256(query.encode()).hexdigest()[:8]
         return [{"url": f"https://example.com/{digest}", "title": query, "snippet": query}]
-    async def fetch(url): return {"url": url, "title": "source", "text": f"Evidence from {url} in 2026 supports the result."}
 
-    context = WorkflowContext(ports={
-        "llm": ResearchLLMPort(llm), "search": ResearchSearchPort(search), "fetch": FetchPort(fetch),
-        "native_execution_policy": NativeExecutionPolicy(3),
-    })
-    state = initial_state(topic="topic", run_id="run", research_config={"sub_questions": ["a", "b"]})
+    async def fetch(url):
+        return {
+            "url": url,
+            "title": "source",
+            "text": f"Evidence from {url} in 2026 supports the result.",
+        }
+
+    context = WorkflowContext(
+        ports={
+            "llm": ResearchLLMPort(llm),
+            "search": ResearchSearchPort(search),
+            "fetch": FetchPort(fetch),
+            "native_execution_policy": NativeExecutionPolicy(3),
+        }
+    )
+    state = initial_state(
+        topic="topic", run_id="run", research_config={"sub_questions": ["a", "b"]}
+    )
     store = CrashAfterPendingStore()
     executable = DEEP_RESEARCH_V2.bind(checkpointer=store)
     with pytest.raises(RuntimeError, match="crash-after-pending"):

@@ -53,17 +53,17 @@ def contradictions(claim: Claim, existing: Sequence[Claim]) -> list[Contradictio
         if other.status not in CONFLICTABLE or other.source_task == claim.source_task:
             continue
         if other.id in claim.contradicts:
-            found.append(Contradiction(
-                claim, other, other.key or claim.key or f"claim:{other.id}", "explicit"
-            ))
+            found.append(
+                Contradiction(
+                    claim, other, other.key or claim.key or f"claim:{other.id}", "explicit"
+                )
+            )
         elif claim.key is not None and other.key == claim.key and other.stance != claim.stance:
             found.append(Contradiction(claim, other, claim.key, "stance"))
     return found
 
 
-def find_contradiction(
-    claim: Claim, existing: Sequence[Claim]
-) -> Contradiction | None:
+def find_contradiction(claim: Claim, existing: Sequence[Claim]) -> Contradiction | None:
     """The first existing claim ``claim`` contradicts."""
 
     found = contradictions(claim, existing)

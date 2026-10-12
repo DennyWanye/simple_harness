@@ -23,7 +23,9 @@ from agent_orchestrator.testing.product_world import product_world
 def _created(evidence: Path, key: str) -> str:
     async def case() -> str:
         async with product_world(evidence, RoleScriptedProvider({})) as world:
-            return world.create({"goal": "x", "success_criteria": ["file:a.py"], "idempotency_key": key})["mission_id"]
+            return world.create(
+                {"goal": "x", "success_criteria": ["file:a.py"], "idempotency_key": key}
+            )["mission_id"]
 
     return asyncio.run(case())
 
@@ -56,7 +58,9 @@ def test_replay_answers_with_a_usage_error_or_a_complete_report(tmp_path, capsys
     mission_id = _created(evidence, "r")
     code = main(["replay", "--evidence-dir", str(evidence), "--attribution", mission_id])
     report = json.loads(capsys.readouterr().out)
-    consistent = report["mission"]["status"] == "CONSISTENT" and report["library"]["status"] == "CONSISTENT"
+    consistent = (
+        report["mission"]["status"] == "CONSISTENT" and report["library"]["status"] == "CONSISTENT"
+    )
     assert code == (EXIT_OK if consistent else EXIT_FAILED)
     assert report["library"]["status"] == "CONSISTENT"
     assert "INCONSISTENT" not in {item["status"] for item in report["mission"]["tables"].values()}
@@ -67,8 +71,10 @@ def test_replay_answers_with_a_usage_error_or_a_complete_report(tmp_path, capsys
     # 库里一条源记录被改坏：重放报不一致、退出 1（改坏检验 G-16：遇到不一致仍退出 0 → 变红）
     library = sqlite3.connect(evidence / "orchestrator.db")
     lift_immutable_guards(library, "task_semantics")
-    library.execute("UPDATE task_semantics SET binding_json = binding_json || ' ' WHERE mission_id = ?",
-                    (mission_id,))
+    library.execute(
+        "UPDATE task_semantics SET binding_json = binding_json || ' ' WHERE mission_id = ?",
+        (mission_id,),
+    )
     library.commit()
     library.close()
     assert main(["replay", "--evidence-dir", str(evidence), mission_id]) == EXIT_FAILED

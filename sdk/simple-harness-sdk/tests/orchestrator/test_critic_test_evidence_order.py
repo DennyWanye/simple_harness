@@ -288,7 +288,9 @@ def test_critic_rejection_preserves_actual_completed_test_evidence(tmp_path):
 
     async def critic(output):
         assert "1 passed" in output
-        return CriticVerdict("FAIL", ({"severity": "blocker", "detail": "content rejected"},), (), {})
+        return CriticVerdict(
+            "FAIL", ({"severity": "blocker", "detail": "content rejected"},), (), {}
+        )
 
     verdict = _verify(case, critic)
     assert not verdict.passed and verdict.short_circuited_at == "critic_review"

@@ -22,6 +22,7 @@ Covered behaviours (the three the spec asks for + a few siblings):
 The flag is driven through ``DESKPET_CONFIG`` pointing at a tmp
 config.toml, exactly like the production resolution order.
 """
+
 from __future__ import annotations
 
 import json
@@ -51,15 +52,11 @@ def _dispatch(name: str, args: dict[str, object]) -> str:
 
 def _manifest_screen_tools() -> dict[str, dict[str, object]]:
     manifest_path = (
-        Path(cu.__file__).resolve().parents[1]
-        / "tool_catalog"
-        / "real_tool_manifest.json"
+        Path(cu.__file__).resolve().parents[1] / "tool_catalog" / "real_tool_manifest.json"
     )
     payload = json.loads(manifest_path.read_text(encoding="utf-8"))
     return {
-        item["name"]: item
-        for item in payload["tools"]
-        if str(item["name"]).startswith("screen_")
+        item["name"]: item for item in payload["tools"] if str(item["name"]).startswith("screen_")
     }
 
 
@@ -178,9 +175,7 @@ def fake_backends(monkeypatch: pytest.MonkeyPatch):
 # Flag OFF — disabled envelope, no backend touched
 # ---------------------------------------------------------------------
 @pytest.mark.parametrize("flag", [False])
-def test_all_tools_disabled_when_flag_off(
-    flag, tmp_path, monkeypatch, workspace, fake_backends
-):
+def test_all_tools_disabled_when_flag_off(flag, tmp_path, monkeypatch, workspace, fake_backends):
     _write_config(tmp_path, monkeypatch, flag)
 
     for name, args in [
@@ -200,9 +195,7 @@ def test_all_tools_disabled_when_flag_off(
     assert fake_backends.calls == []
 
 
-def test_enabled_by_default_when_no_config_file(
-    monkeypatch, workspace, fake_backends
-):
+def test_enabled_by_default_when_no_config_file(monkeypatch, workspace, fake_backends):
     # DESKPET_CONFIG points nowhere; <repo>/config.toml in the worktree
     # has computer_use_enabled absent ⇒ disabled. Use a bogus path to be
     # deterministic regardless of the worktree's real config.toml.
@@ -214,9 +207,7 @@ def test_enabled_by_default_when_no_config_file(
 # ---------------------------------------------------------------------
 # Flag ON — screen_capture happy path
 # ---------------------------------------------------------------------
-def test_screen_capture_returns_ok_shape(
-    tmp_path, monkeypatch, workspace, fake_backends
-):
+def test_screen_capture_returns_ok_shape(tmp_path, monkeypatch, workspace, fake_backends):
     _write_config(tmp_path, monkeypatch, True)
     out = json.loads(_dispatch("screen_capture", {}))
 
@@ -235,21 +226,15 @@ def test_screen_capture_named_target_forced_png_and_sandboxed(
     tmp_path, monkeypatch, workspace, fake_backends
 ):
     _write_config(tmp_path, monkeypatch, True)
-    out = json.loads(
-        _dispatch("screen_capture", {"name": "shots/login"})
-    )
+    out = json.loads(_dispatch("screen_capture", {"name": "shots/login"}))
     assert out["ok"] is True
     assert out["path"] == "shots/login.png"
     assert (workspace / "shots" / "login.png").is_file()
 
 
-def test_screen_capture_rejects_escape(
-    tmp_path, monkeypatch, workspace, fake_backends
-):
+def test_screen_capture_rejects_escape(tmp_path, monkeypatch, workspace, fake_backends):
     _write_config(tmp_path, monkeypatch, True)
-    out = json.loads(
-        _dispatch("screen_capture", {"name": "../escape.png"})
-    )
+    out = json.loads(_dispatch("screen_capture", {"name": "../escape.png"}))
     assert out["ok"] is False
     assert "escape" in out["error"]
 
@@ -257,15 +242,9 @@ def test_screen_capture_rejects_escape(
 # ---------------------------------------------------------------------
 # Flag ON — screen_click coordinate clamping
 # ---------------------------------------------------------------------
-def test_screen_click_clamps_out_of_bounds(
-    tmp_path, monkeypatch, workspace, fake_backends
-):
+def test_screen_click_clamps_out_of_bounds(tmp_path, monkeypatch, workspace, fake_backends):
     _write_config(tmp_path, monkeypatch, True)
-    out = json.loads(
-        _dispatch(
-            "screen_click", {"x": 999999, "y": -50, "button": "left"}
-        )
-    )
+    out = json.loads(_dispatch("screen_click", {"x": 999999, "y": -50, "button": "left"}))
     assert out["ok"] is True
     assert out["clamped"] is True
     assert out["requested_x"] == 999999 and out["requested_y"] == -50
@@ -275,28 +254,18 @@ def test_screen_click_clamps_out_of_bounds(
     assert ("click", 1919, 0, 1, "left") in fake_backends.calls
 
 
-def test_screen_click_in_bounds_not_clamped(
-    tmp_path, monkeypatch, workspace, fake_backends
-):
+def test_screen_click_in_bounds_not_clamped(tmp_path, monkeypatch, workspace, fake_backends):
     _write_config(tmp_path, monkeypatch, True)
-    out = json.loads(
-        _dispatch(
-            "screen_click", {"x": 400, "y": 300, "double": True}
-        )
-    )
+    out = json.loads(_dispatch("screen_click", {"x": 400, "y": 300, "double": True}))
     assert out["ok"] is True
     assert out["clamped"] is False
     assert out["double"] is True
     assert ("click", 400, 300, 2, "left") in fake_backends.calls
 
 
-def test_screen_click_bad_coords(
-    tmp_path, monkeypatch, workspace, fake_backends
-):
+def test_screen_click_bad_coords(tmp_path, monkeypatch, workspace, fake_backends):
     _write_config(tmp_path, monkeypatch, True)
-    out = json.loads(
-        _dispatch("screen_click", {"x": "abc", "y": 1})
-    )
+    out = json.loads(_dispatch("screen_click", {"x": "abc", "y": 1}))
     assert out["ok"] is False
     assert "integers" in out["error"]
 
@@ -306,21 +275,15 @@ def test_screen_click_bad_coords(
 # ---------------------------------------------------------------------
 def test_screen_type(tmp_path, monkeypatch, workspace, fake_backends):
     _write_config(tmp_path, monkeypatch, True)
-    out = json.loads(
-        _dispatch("screen_type", {"text": "hello"})
-    )
+    out = json.loads(_dispatch("screen_type", {"text": "hello"}))
     assert out["ok"] is True
     assert out["typed_chars"] == 5
     assert ("typewrite", "hello", 0.0) in fake_backends.calls
 
 
-def test_screen_key_combo_parsed(
-    tmp_path, monkeypatch, workspace, fake_backends
-):
+def test_screen_key_combo_parsed(tmp_path, monkeypatch, workspace, fake_backends):
     _write_config(tmp_path, monkeypatch, True)
-    out = json.loads(
-        _dispatch("screen_key", {"keys": "Ctrl+S"})
-    )
+    out = json.loads(_dispatch("screen_key", {"keys": "Ctrl+S"}))
     assert out["ok"] is True
     assert out["keys"] == ["ctrl", "s"]
     assert ("hotkey", ("ctrl", "s")) in fake_backends.calls
@@ -333,13 +296,9 @@ def test_screen_key_single(tmp_path, monkeypatch, workspace, fake_backends):
     assert ("press", "enter") in fake_backends.calls
 
 
-def test_screen_scroll_magnitude_capped(
-    tmp_path, monkeypatch, workspace, fake_backends
-):
+def test_screen_scroll_magnitude_capped(tmp_path, monkeypatch, workspace, fake_backends):
     _write_config(tmp_path, monkeypatch, True)
-    out = json.loads(
-        _dispatch("screen_scroll", {"amount": 10_000_000})
-    )
+    out = json.loads(_dispatch("screen_scroll", {"amount": 10_000_000}))
     assert out["ok"] is True
     assert out["capped"] is True
     assert out["amount"] == cu._MAX_SCROLL
@@ -347,6 +306,7 @@ def test_screen_scroll_magnitude_capped(
 
 
 # --- 误路由根治回归 (2026-06-14): disabled 时从 LLM schema 隐藏 ---
+
 
 def test_computer_use_tools_visible_from_default_product_schema():
     """Completed screen tools are visible to the general agent by default."""
@@ -370,17 +330,12 @@ def test_computer_use_specs_declare_exact_desktop_and_capture_scope(
         workspace=str(workspace),
     )
     selectors = cu._screen_capture_resources({}, context)
-    assert {
-        (item.kind, item.access)
-        for item in selectors
-    } == {
+    assert {(item.kind, item.access) for item in selectors} == {
         ("desktop_target", ("observe", "read")),
         ("desktop_target", ("observe", "read")),
         ("filesystem", ("write",)),
     }
-    assert _manifest_screen_tools()["screen_capture"]["effect_policy"]["kind"] == (
-        "opaque_manual"
-    )
+    assert _manifest_screen_tools()["screen_capture"]["effect_policy"]["kind"] == ("opaque_manual")
 
     assert [
         item.to_dict()

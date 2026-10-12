@@ -14,8 +14,7 @@ from __future__ import annotations
 _SCHEMA = {
     "name": "agent",
     "description": (
-        "Delegate one focused, self-contained task to a child run and return "
-        "its final result."
+        "Delegate one focused, self-contained task to a child run and return its final result."
     ),
     "parameters": {
         "type": "object",

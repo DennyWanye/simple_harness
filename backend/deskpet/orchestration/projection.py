@@ -82,14 +82,29 @@ def _pick(raw: Any, fields: Sequence[str]) -> dict[str, Any]:
 
 
 def _rows(value: Any) -> list[Mapping[str, Any]]:
-    return [row for row in value if isinstance(row, Mapping)] if isinstance(value, (list, tuple)) else []
+    return (
+        [row for row in value if isinstance(row, Mapping)]
+        if isinstance(value, (list, tuple))
+        else []
+    )
 
 
 def _source_approval(raw: Mapping[str, Any]) -> dict[str, Any]:
     if raw.get("kind") == "source_change":
-        return {"source_change": _pick(raw.get("binding"), (
-            "operation", "path", "expected_version_hash", "version_hash", "old_revision", "kind", "reason",
-        ))}
+        return {
+            "source_change": _pick(
+                raw.get("binding"),
+                (
+                    "operation",
+                    "path",
+                    "expected_version_hash",
+                    "version_hash",
+                    "old_revision",
+                    "kind",
+                    "reason",
+                ),
+            )
+        }
     return {}
 
 
@@ -100,8 +115,22 @@ def _sources(snapshot: Mapping[str, Any]) -> list[dict[str, Any]]:
     carries reference material shows its sources and their register/supersede/revoke
     state here.
     """
-    return [_pick(s, ("path", "version_hash", "kind", "trust", "registered_at", "superseded_by",
-                      "revoked", "revision")) for s in _rows(snapshot.get("sources"))]
+    return [
+        _pick(
+            s,
+            (
+                "path",
+                "version_hash",
+                "kind",
+                "trust",
+                "registered_at",
+                "superseded_by",
+                "revoked",
+                "revision",
+            ),
+        )
+        for s in _rows(snapshot.get("sources"))
+    ]
 
 
 def ui_state(
@@ -190,7 +219,9 @@ def _layer(raw: Mapping[str, Any]) -> dict[str, Any]:
     return {
         "layer": raw.get("layer"),
         "status": raw.get("status"),  # PASS / FAIL / ERROR / NOT_REQUIRED / … as recorded
-        "summary": model_text(summary, SUMMARY_LIMIT) if name in MODEL_LAYERS else _system_text(summary),
+        "summary": model_text(summary, SUMMARY_LIMIT)
+        if name in MODEL_LAYERS
+        else _system_text(summary),
         "undeployed": bool(detail.get("undeployed")),
     }
 
@@ -198,10 +229,14 @@ def _layer(raw: Mapping[str, Any]) -> dict[str, Any]:
 def _final_rejection(raw: Mapping[str, Any], attempt: Mapping[str, Any]) -> dict[str, Any] | None:
     """Live acceptance failures are separate from the frozen verification layers."""
     envelope = raw.get("envelope") or {}
-    if (raw.get("verification_state") != "DONE" or raw.get("verdict") != "FAIL"
-            or not envelope.get("attempt_id") or attempt.get("id") != envelope.get("attempt_id")
-            or attempt.get("task_id") != envelope.get("task_id")
-            or attempt.get("mission_id") != envelope.get("mission_id")):
+    if (
+        raw.get("verification_state") != "DONE"
+        or raw.get("verdict") != "FAIL"
+        or not envelope.get("attempt_id")
+        or attempt.get("id") != envelope.get("attempt_id")
+        or attempt.get("task_id") != envelope.get("task_id")
+        or attempt.get("mission_id") != envelope.get("mission_id")
+    ):
         return None
     failure = attempt.get("failure")
     if not isinstance(failure, Mapping) or failure.get("reason") != "verification_failed":
@@ -212,14 +247,19 @@ def _final_rejection(raw: Mapping[str, Any], attempt: Mapping[str, Any]) -> dict
             continue
         reason = detail.get("reason")
         if not isinstance(reason, str) or reason not in {
-            "stale_source", "source_unavailable", "used_knowledge_stale",
+            "stale_source",
+            "source_unavailable",
+            "used_knowledge_stale",
         }:
             continue
         return {
             "reason": reason,
             "source_issues": [
-                {key: value[:SUMMARY_LIMIT] for key in ("code", "reason", "path", "version")
-                 if isinstance((value := issue.get(key)), str)}
+                {
+                    key: value[:SUMMARY_LIMIT]
+                    for key in ("code", "reason", "path", "version")
+                    if isinstance((value := issue.get(key)), str)
+                }
                 for issue in _rows(detail.get("source_current_issues"))[:20]
             ],
         }
@@ -300,7 +340,11 @@ def _approval_summary(value: Any) -> dict[str, Any]:
 
     if isinstance(value, Mapping) and value.get("connector") and value.get("operation"):
         params = value.get("params") if isinstance(value.get("params"), Mapping) else {}
-        previous = value.get("previous_attempt") if isinstance(value.get("previous_attempt"), Mapping) else None
+        previous = (
+            value.get("previous_attempt")
+            if isinstance(value.get("previous_attempt"), Mapping)
+            else None
+        )
         return {
             "connector": _short(value.get("connector"), 80),
             "operation": _short(value.get("operation"), 80),
@@ -310,15 +354,25 @@ def _approval_summary(value: Any) -> dict[str, Any]:
             "reason_source": "system" if value.get("reason_source") == "system" else "model",
             # 2026-10-03 真机：系统重交的卡片要写明上次为何没生效（阶段 B 裁决第 1、3 类）；结局与原因
             # 都是系统登记的固定码，不是模型写的话。
-            **({"previous_attempt": {"attempt": previous.get("attempt"),
-                                     "outcome": _short(previous.get("outcome"), 80),
-                                     "reason": _short(previous.get("reason"), 300)}} if previous else {}),
+            **(
+                {
+                    "previous_attempt": {
+                        "attempt": previous.get("attempt"),
+                        "outcome": _short(previous.get("outcome"), 80),
+                        "reason": _short(previous.get("reason"), 300),
+                    }
+                }
+                if previous
+                else {}
+            ),
         }
     if isinstance(value, Mapping) and isinstance(value.get("layers"), Sequence):
         parts = []
         for layer in value["layers"]:
             if isinstance(layer, Mapping):
-                parts.append(f"{layer.get('layer')}: {layer.get('status')} — {_short(layer.get('summary'), 160)}")
+                parts.append(
+                    f"{layer.get('layer')}: {layer.get('status')} — {_short(layer.get('summary'), 160)}"
+                )
         return model_text("；".join(parts), 600)
     return model_text(value, 600)
 
@@ -358,7 +412,9 @@ def project_approval(raw: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
-def _snapshot_approval(raw: Mapping[str, Any], actions: Mapping[str, Mapping[str, Any]]) -> dict[str, Any]:
+def _snapshot_approval(
+    raw: Mapping[str, Any], actions: Mapping[str, Mapping[str, Any]]
+) -> dict[str, Any]:
     bound = actions.get(str(raw.get("subject_key"))) if raw.get("kind") == "action" else None
     return {
         "request_id": raw.get("request_id"),
@@ -407,7 +463,9 @@ def project_events(page: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
-def project_detail(view: Mapping[str, Any], *, blocked: Sequence[Mapping[str, Any]] = ()) -> dict[str, Any]:
+def project_detail(
+    view: Mapping[str, Any], *, blocked: Sequence[Mapping[str, Any]] = ()
+) -> dict[str, Any]:
     snapshot = dict(view.get("snapshot") or {})
     attempts_by_id = {a.get("id"): a for a in _rows(snapshot.get("attempts")) if a.get("id")}
     attempts = [_attempt(a) for a in snapshot.get("attempts") or ()]
@@ -415,35 +473,47 @@ def project_detail(view: Mapping[str, Any], *, blocked: Sequence[Mapping[str, An
     latest_actions: dict[str, Mapping[str, Any]] = {}
     for action in raw_actions:  # the latest version of each action key
         key = str(action.get("action_key"))
-        if key not in latest_actions or int(action.get("version") or 0) >= int(latest_actions[key].get("version") or 0):
+        if key not in latest_actions or int(action.get("version") or 0) >= int(
+            latest_actions[key].get("version") or 0
+        ):
             latest_actions[key] = action
     policy = dict(snapshot.get("mission_policy") or {})
     budget_usage = snapshot.get("budget_usage")
     ledger = budget_usage if isinstance(budget_usage, Mapping) else {}
     approvals = [_snapshot_approval(a, latest_actions) for a in snapshot.get("approvals") or ()]
     waiting_on = [dict(w) for w in snapshot.get("waiting_on") or ()]
-    questions = [{"decision_id": row.get("decision_id"), "version": row.get("version"),
-                  "state": row.get("state"),
-                  "question": (row.get("request") or {}).get("payload", {}).get("question"),
-                  "options": (row.get("request") or {}).get("payload", {}).get("options", []),
-                  "blocking": (row.get("request") or {}).get("payload", {}).get("blocking", False),
-                  "answer": (row.get("answer") or {}).get("answer")}
-                 for row in _rows(snapshot.get("planning_questions"))]
+    questions = [
+        {
+            "decision_id": row.get("decision_id"),
+            "version": row.get("version"),
+            "state": row.get("state"),
+            "question": (row.get("request") or {}).get("payload", {}).get("question"),
+            "options": (row.get("request") or {}).get("payload", {}).get("options", []),
+            "blocking": (row.get("request") or {}).get("payload", {}).get("blocking", False),
+            "answer": (row.get("answer") or {}).get("answer"),
+        }
+        for row in _rows(snapshot.get("planning_questions"))
+    ]
     planning_authorizations = _rows(snapshot.get("planning_authorization_requests"))
     raw_mission = dict(snapshot.get("mission") or {})
     state = ui_state(
         raw_mission.get("status"),
         attempt_statuses=(a["status"] for a in attempts),
         task_statuses=(t.get("status") for t in snapshot.get("tasks") or ()),
-        waiting=bool(waiting_on) or bool(planning_authorizations) or any(a.get("state") == "PENDING" for a in approvals) or any(q["state"] == "PENDING" and q["blocking"] for q in questions),
+        waiting=bool(waiting_on)
+        or bool(planning_authorizations)
+        or any(a.get("state") == "PENDING" for a in approvals)
+        or any(q["state"] == "PENDING" and q["blocking"] for q in questions),
         blocked=bool(blocked),
     )
     return {
         "mission": _mission(raw_mission, state),
         "tasks": [_task(t) for t in snapshot.get("tasks") or ()],
         "attempts": attempts,
-        "results": [_result(r, attempts_by_id.get((r.get("envelope") or {}).get("attempt_id"), {}))
-                    for r in snapshot.get("results") or ()],
+        "results": [
+            _result(r, attempts_by_id.get((r.get("envelope") or {}).get("attempt_id"), {}))
+            for r in snapshot.get("results") or ()
+        ],
         "artifacts": [_artifact(a) for a in snapshot.get("artifacts") or ()],
         "actions": [_action(a) for a in latest_actions.values()],
         "approvals": approvals,
@@ -453,7 +523,9 @@ def project_detail(view: Mapping[str, Any], *, blocked: Sequence[Mapping[str, An
         # 阶段 E：预算去向（逐义务，含下级与被换掉的做法）与还没细化的目标——SDK 读时推出，原样透传
         "budget_by_duty": [dict(row) for row in snapshot.get("budget_by_duty") or ()],
         "unrefined_goals": [dict(row) for row in snapshot.get("unrefined_goals") or ()],
-        "steps_no_longer_counting": [dict(row) for row in snapshot.get("steps_no_longer_counting") or ()],
+        "steps_no_longer_counting": [
+            dict(row) for row in snapshot.get("steps_no_longer_counting") or ()
+        ],
         "waiting_on": waiting_on,
         "blocked": [dict(b) for b in blocked],
         "disputes": [dict(d) for d in snapshot.get("disputes") or ()],
@@ -520,9 +592,14 @@ MISSION_REPLIES = {
     "mission_approval_list": "host-mission-approval-list-v1",
     "mission_notices": "host-mission-notices-v1",
 }
-CONTRACT_VERBS = frozenset(ASSURANCE_REPLIES) | frozenset(TASKGRAPH_REPLIES) | frozenset(MISSION_REPLIES)
+CONTRACT_VERBS = (
+    frozenset(ASSURANCE_REPLIES) | frozenset(TASKGRAPH_REPLIES) | frozenset(MISSION_REPLIES)
+)
 #: 回执种类 → (回复里的字段名, 合同名)
-ERROR_WIRES = {"assurance": ("assurance_error", ASSURANCE_ERROR), "taskgraph": ("taskgraph_error", TASKGRAPH_ERROR)}
+ERROR_WIRES = {
+    "assurance": ("assurance_error", ASSURANCE_ERROR),
+    "taskgraph": ("taskgraph_error", TASKGRAPH_ERROR),
+}
 
 
 class ProtocolError(Exception):

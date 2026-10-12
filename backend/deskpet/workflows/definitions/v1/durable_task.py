@@ -54,9 +54,7 @@ def initial_state(
     request: str,
     run_id: str,
     session_ref: TaskSessionRefV1 | Mapping[str, object],
-    capability_snapshot: Sequence[
-        CapabilitySnapshotV1 | Mapping[str, object]
-    ],
+    capability_snapshot: Sequence[CapabilitySnapshotV1 | Mapping[str, object]],
     thread_id: str | None = None,
     session_id: str = "",
     messages: Sequence[Mapping[str, JsonValue]] | None = None,

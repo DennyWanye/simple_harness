@@ -12,6 +12,7 @@ Tests cover:
     ``skip_truncation_for_tools={"fetch_tool_result"}`` G1 core fix
   * High-level prepare_chat_messages orchestration
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -193,9 +194,7 @@ def test_check_budget_uses_config_thresholds():
     from llm.model_info import resolve
 
     info = resolve("_default", None)  # 32_000-token window, stable
-    cfg = ContextConfig(
-        model_info=info, budget_warn_pct=0.5, budget_block_pct=0.95
-    )
+    cfg = ContextConfig(model_info=info, budget_warn_pct=0.5, budget_block_pct=0.95)
     ctx = ContextManager(config=cfg)
 
     # ~76_800 chars → ~19,200 tokens → ratio ≈ 0.6 on the 32k window
@@ -204,8 +203,7 @@ def test_check_budget_uses_config_thresholds():
 
     result = ctx.check_budget(msgs, model="deepseek-v4-pro")
     assert result.verdict == BudgetCheck.WARN, (
-        f"expected WARN at ratio {result.ratio:.2f}, "
-        f"got {result.verdict.value}"
+        f"expected WARN at ratio {result.ratio:.2f}, got {result.verdict.value}"
     )
 
 
@@ -317,7 +315,8 @@ def test_record_tool_result_skips_fetch_tool_result():
     big = "c" * 6000
 
     content, ref_id = ctx.record_tool_result(
-        tool_name="fetch_tool_result", result=big,
+        tool_name="fetch_tool_result",
+        result=big,
     )
 
     # Returned unchanged, no ref created.
@@ -339,7 +338,8 @@ def test_record_tool_result_custom_skip_list():
 
     # Sanity: a different tool name still gets truncated
     content2, ref_id2 = ctx.record_tool_result(
-        tool_name="some_other_tool", result=big,
+        tool_name="some_other_tool",
+        result=big,
     )
     assert ref_id2 is not None
     assert content2 != big
@@ -370,7 +370,9 @@ def test_prepare_chat_messages_with_compaction():
 
     result = asyncio.run(
         ctx.prepare_chat_messages(
-            msgs, model="deepseek-v4-pro", llm_for_summarize=fake,
+            msgs,
+            model="deepseek-v4-pro",
+            llm_for_summarize=fake,
         )
     )
 
@@ -386,7 +388,9 @@ def test_prepare_chat_messages_no_summarize_fn_skips_compact():
 
     result = asyncio.run(
         ctx.prepare_chat_messages(
-            msgs, model="deepseek-v4-pro", llm_for_summarize=None,
+            msgs,
+            model="deepseek-v4-pro",
+            llm_for_summarize=None,
         )
     )
 

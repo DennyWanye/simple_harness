@@ -19,9 +19,7 @@ class ResearchLLMPort(Protocol):
 
 @runtime_checkable
 class ResearchSearchPort(Protocol):
-    async def search(
-        self, query: str, *, operation_key: str
-    ) -> list[dict[str, JsonValue]]: ...
+    async def search(self, query: str, *, operation_key: str) -> list[dict[str, JsonValue]]: ...
 
 
 @runtime_checkable

@@ -46,11 +46,20 @@ def in_product_world(tmp_path, keys: tuple[str, ...], body: Callable[..., Any]) 
         async with product_world(tmp_path / "root", LayeredScriptedProvider()) as product:
             missions = []
             for key in keys:
-                created = product.create({"goal": "写一份 NOTES.md", "idempotency_key": key,
-                                          "success_criteria": ["file:NOTES.md"]})
+                created = product.create(
+                    {
+                        "goal": "写一份 NOTES.md",
+                        "idempotency_key": key,
+                        "success_criteria": ["file:NOTES.md"],
+                    }
+                )
                 missions.append(product.store.get_mission(created["mission_id"]))
-            world = SimpleNamespace(store=product.store, semantics=HtnStore(product.store), principal=PRINCIPAL,
-                                    mission=missions[0])
+            world = SimpleNamespace(
+                store=product.store,
+                semantics=HtnStore(product.store),
+                principal=PRINCIPAL,
+                mission=missions[0],
+            )
             return body(world, *missions)
 
     return asyncio.run(case())

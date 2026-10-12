@@ -16,6 +16,7 @@ Design notes:
 - ring buffer caps recent_events at 5 to keep memory bounded; signature
   window keeps last-seen-tool-call counts for repeat detection.
 """
+
 from __future__ import annotations
 
 import asyncio

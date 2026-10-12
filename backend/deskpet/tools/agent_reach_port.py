@@ -21,7 +21,9 @@ _UPSTREAM_LOCK = threading.RLock()
 _MAX_CHANNELS = 24
 _MAX_BACKENDS = 8
 _AUTH_RE = re.compile(r"(?i)(authorization\s*[\"']?\s*[:=]\s*)Bearer\s+[A-Za-z0-9._~+/-]{8,}")
-_SECRET_RE = re.compile(r"(?i)(authorization|cookie|token|api[_-]?key|password)\s*[\"']?\s*[:=]\s*[\"']?[^\s,;\"']+")
+_SECRET_RE = re.compile(
+    r"(?i)(authorization|cookie|token|api[_-]?key|password)\s*[\"']?\s*[:=]\s*[\"']?[^\s,;\"']+"
+)
 _BEARER_RE = re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/-]{8,}")
 _QUERY_SECRET_RE = re.compile(r"(?i)([?&](?:token|api[_-]?key|password|secret)=)[^&#\s]+")
 
@@ -114,7 +116,9 @@ class AgentReachPort:
                             _safe_message(value, limit=80)
                             for value in list(getattr(channel, "backends", []))[:_MAX_BACKENDS]
                         ],
-                        "active_backend": _safe_message(active, limit=80) if active is not None else None,
+                        "active_backend": _safe_message(active, limit=80)
+                        if active is not None
+                        else None,
                     }
                 except Exception:  # noqa: BLE001 - one channel cannot break doctor
                     fallback = _safe_message(getattr(channel, "name", "unknown"), limit=50)
@@ -155,14 +159,22 @@ class AgentReachPort:
         target = (url or "").strip()
         if not _public_http_url(target):
             return AgentReachEvidence(
-                False, "web", None, "error", reason_code="invalid_url",
+                False,
+                "web",
+                None,
+                "error",
+                reason_code="invalid_url",
                 message="URL must be an absolute public http(s) URL.",
             )
         try:
             from agent_reach.channels import get_channel
         except Exception:
             return AgentReachEvidence(
-                False, "web", None, "off", reason_code="not_installed",
+                False,
+                "web",
+                None,
+                "off",
+                reason_code="not_installed",
                 message="Agent-Reach package is not installed.",
             )
 
@@ -177,7 +189,10 @@ class AgentReachPort:
                 active_backend = (health.get("web") or {}).get("active_backend")
             if executor is None or not callable(getattr(executor, "read", None)):
                 return AgentReachEvidence(
-                    False, requested_name, None, "off",
+                    False,
+                    requested_name,
+                    None,
+                    "off",
                     reason_code="no_read_backend",
                     message="No Agent-Reach read backend is available.",
                 )
@@ -185,8 +200,11 @@ class AgentReachPort:
                 text = str(executor.read(target) or "").strip()
             except Exception as exc:  # noqa: BLE001
                 return AgentReachEvidence(
-                    False, requested_name, str(active_backend) if active_backend else None,
-                    "degraded", reason_code="read_failed",
+                    False,
+                    requested_name,
+                    str(active_backend) if active_backend else None,
+                    "degraded",
+                    reason_code="read_failed",
                     message=_safe_message(type(exc).__name__),
                 )
             resolved_backend = (
@@ -196,8 +214,11 @@ class AgentReachPort:
             )
         if not text:
             return AgentReachEvidence(
-                False, requested_name, str(active_backend) if active_backend else None,
-                "empty", reason_code="empty",
+                False,
+                requested_name,
+                str(active_backend) if active_backend else None,
+                "empty",
+                reason_code="empty",
                 message="Agent-Reach backend returned no readable text.",
             )
         bounded = text[: max(1, min(int(max_chars), _MAX_TEXT_CHARS))]
@@ -214,7 +235,9 @@ class AgentReachPort:
             message="Agent-Reach channel read completed.",
         )
 
-    async def read_url_async(self, url: str, *, max_chars: int = _MAX_TEXT_CHARS) -> AgentReachEvidence:
+    async def read_url_async(
+        self, url: str, *, max_chars: int = _MAX_TEXT_CHARS
+    ) -> AgentReachEvidence:
         return await asyncio.to_thread(self.read_url, url, max_chars=max_chars)
 
 

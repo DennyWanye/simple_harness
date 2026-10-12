@@ -6,6 +6,7 @@
 Provider turns and completion gates stay here. Tool requests cross a typed
 ``ToolBatchEvent`` boundary; Harness alone executes them and resumes the run.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -84,9 +85,7 @@ def _planned_generation_reserve(
 
     initial_budget = getattr(prepared_context, "request_budget", None)
     return int(
-        getattr(initial_budget, "generation_reserve", 0)
-        or llm_kwargs.get("max_tokens", 0)
-        or 0
+        getattr(initial_budget, "generation_reserve", 0) or llm_kwargs.get("max_tokens", 0) or 0
     )
 
 
@@ -158,9 +157,7 @@ def _context_fragment_id(message: dict[str, Any] | None) -> str | None:
     return str(fragment_id) if fragment_id else None
 
 
-def _latest_context_anchor(
-    messages: list[dict[str, Any]], *, fallback: str
-) -> str:
+def _latest_context_anchor(messages: list[dict[str, Any]], *, fallback: str) -> str:
     for message in reversed(messages):
         fragment_id = _context_fragment_id(message)
         if fragment_id:
@@ -201,9 +198,7 @@ def _append_loop_control(
     anchor_after: str,
     fragment_id: str,
     protected: bool = False,
-    trim_policy: Literal[
-        "never", "truncate", "drop", "summarize", "page_in"
-    ] = "drop",
+    trim_policy: Literal["never", "truncate", "drop", "summarize", "page_in"] = "drop",
 ) -> dict[str, Any]:
     if metadata_enabled:
         return append_control(
@@ -243,9 +238,8 @@ def _tag_run_input_messages(
             }
         causal_group_id = (
             open_group
-            if role == "assistant" or (
-                role == "tool" and str(message.get("tool_call_id")) in open_tool_ids
-            )
+            if role == "assistant"
+            or (role == "tool" and str(message.get("tool_call_id")) in open_tool_ids)
             else None
         )
         if role == "system":
@@ -275,21 +269,13 @@ def _tag_run_input_messages(
 
 
 def _context_message_signature(message: Mapping[str, Any]) -> str:
-    wire = {
-        key: value
-        for key, value in message.items()
-        if key != CONTEXT_MESSAGE_META_KEY
-    }
+    wire = {key: value for key, value in message.items() if key != CONTEXT_MESSAGE_META_KEY}
     metadata = message.get(CONTEXT_MESSAGE_META_KEY)
     identity = {
         "wire": wire,
-        "fragment_id": (
-            metadata.get("fragment_id") if isinstance(metadata, Mapping) else None
-        ),
+        "fragment_id": (metadata.get("fragment_id") if isinstance(metadata, Mapping) else None),
         "causal_group_id": (
-            metadata.get("causal_group_id")
-            if isinstance(metadata, Mapping)
-            else None
+            metadata.get("causal_group_id") if isinstance(metadata, Mapping) else None
         ),
     }
     return json.dumps(identity, ensure_ascii=False, sort_keys=True, default=str)
@@ -374,17 +360,12 @@ def _remount_context_after_compaction(
         # A partial tool group is more dangerous than a duplicate: remove the
         # surviving fragment, then restore the original group atomically.
         restored = [
-            message
-            for message in restored
-            if _context_message_signature(message) not in signatures
+            message for message in restored if _context_message_signature(message) not in signatures
         ]
         insert_at = len(restored)
         while insert_at > 0:
             metadata = restored[insert_at - 1].get(CONTEXT_MESSAGE_META_KEY)
-            if not (
-                isinstance(metadata, Mapping)
-                and metadata.get("placement") == "control"
-            ):
+            if not (isinstance(metadata, Mapping) and metadata.get("placement") == "control"):
                 break
             insert_at -= 1
         restored[insert_at:insert_at] = group
@@ -420,9 +401,7 @@ def _async_handoff_details(result: str) -> dict[str, str] | None:
     if not isinstance(payload, dict):
         return None
     accepted_event_id = str(
-        payload.get("accepted_event_id")
-        or envelope.get("accepted_event_id")
-        or ""
+        payload.get("accepted_event_id") or envelope.get("accepted_event_id") or ""
     )
     if (
         payload.get("ok") is False
@@ -435,9 +414,7 @@ def _async_handoff_details(result: str) -> dict[str, str] | None:
     return {
         "event_id": accepted_event_id,
         "run_id": str(payload.get("run_id") or envelope.get("run_id") or ""),
-        "request_id": str(
-            payload.get("request_id") or envelope.get("request_id") or ""
-        ),
+        "request_id": str(payload.get("request_id") or envelope.get("request_id") or ""),
         "turn_id": str(payload.get("turn_id") or envelope.get("turn_id") or ""),
     }
 
@@ -508,8 +485,7 @@ def _tool_completion_semantics(tools: Any, name: str) -> str:
             return semantics
     all_specs = getattr(tools, "all_specs", None)
     if callable(all_specs):
-        spec = next((item for item in all_specs()
-                     if getattr(item, "name", None) == name), None)
+        spec = next((item for item in all_specs() if getattr(item, "name", None) == name), None)
         semantics = getattr(spec, "completion_semantics", None)
         if semantics in {"sync", "accepted_async"}:
             return semantics
@@ -517,23 +493,30 @@ def _tool_completion_semantics(tools: Any, name: str) -> str:
 
 
 async def _suppress_repeated_tool_batch(
-    loop: Any, calls: list[ToolCall], messages: list[dict[str, Any]], *,
-    session_id: str, task_id: str, iteration: int, metadata_enabled: bool,
+    loop: Any,
+    calls: list[ToolCall],
+    messages: list[dict[str, Any]],
+    *,
+    session_id: str,
+    task_id: str,
+    iteration: int,
+    metadata_enabled: bool,
 ) -> bool:
     if loop.activity_store is None:
         return False
     from agent.session_activity import args_hash
+
     activity = await loop.activity_store.get(session_id)
     signatures = {} if activity is None else dict(activity.tool_signature_window)
-    repeated = next((
-        (call.name, int(signatures.get(
-            f"{call.name}:{args_hash(call.arguments)}", 0
-        )) + 1)
-        for call in calls
-        if int(signatures.get(
-            f"{call.name}:{args_hash(call.arguments)}", 0
-        )) >= loop._signature_repeat_threshold - 1
-    ), None)
+    repeated = next(
+        (
+            (call.name, int(signatures.get(f"{call.name}:{args_hash(call.arguments)}", 0)) + 1)
+            for call in calls
+            if int(signatures.get(f"{call.name}:{args_hash(call.arguments)}", 0))
+            >= loop._signature_repeat_threshold - 1
+        ),
+        None,
+    )
     if repeated is None:
         return False
     name, count = repeated
@@ -542,9 +525,7 @@ async def _suppress_repeated_tool_batch(
     )
     _append_loop_control(
         messages,
-        {"role": "system", "content": _REPEAT_NUDGE_MSG.format(
-            name=name, count=count
-        )},
+        {"role": "system", "content": _REPEAT_NUDGE_MSG.format(name=name, count=count)},
         metadata_enabled=metadata_enabled,
         source="agent_loop.signature_repeat_nudge",
         anchor_after=anchor,
@@ -554,25 +535,39 @@ async def _suppress_repeated_tool_batch(
 
 
 def _append_tool_batch_message(
-    response: ChatResponse, messages: list[dict[str, Any]], *,
-    task_id: str, iteration: int, metadata_enabled: bool,
+    response: ChatResponse,
+    messages: list[dict[str, Any]],
+    *,
+    task_id: str,
+    iteration: int,
+    metadata_enabled: bool,
 ) -> str:
     assistant: dict[str, Any] = {
-        "role": "assistant", "content": response.content or "",
-        "tool_calls": [{
-            "id": call.id, "type": "function",
-            "function": {"name": call.name, "arguments": json.dumps(
-                call.arguments, ensure_ascii=False
-            )},
-        } for call in response.tool_calls],
+        "role": "assistant",
+        "content": response.content or "",
+        "tool_calls": [
+            {
+                "id": call.id,
+                "type": "function",
+                "function": {
+                    "name": call.name,
+                    "arguments": json.dumps(call.arguments, ensure_ascii=False),
+                },
+            }
+            for call in response.tool_calls
+        ],
     }
     if response.reasoning_content:
         assistant["reasoning_content"] = response.reasoning_content
     group_id = f"agent-loop:{task_id}:iteration:{iteration}:tool-group"
     _append_loop_transcript(
-        messages, assistant, metadata_enabled=metadata_enabled,
-        source="agent_loop.assistant_tool_group", role="assistant",
-        fragment_id=f"{group_id}:assistant", causal_group_id=group_id,
+        messages,
+        assistant,
+        metadata_enabled=metadata_enabled,
+        source="agent_loop.assistant_tool_group",
+        role="assistant",
+        fragment_id=f"{group_id}:assistant",
+        causal_group_id=group_id,
     )
     return group_id
 
@@ -661,6 +656,7 @@ _SELFCHECK_TIER3 = (
     "  3. 用 todo_write 之前已经做过的，不要重复写\n"
     "如果你违反这条规则继续 tool_call，下一轮 supervisor 会强制中断你。"
 )
+
 
 def _build_selfcheck_message(iteration: int, max_iter: int, tools_used: int) -> str:
     """Choose the right self-check tier based on iteration count.
@@ -858,6 +854,7 @@ class AssistantDeltaEvent(AgentEvent):
     reasoning; the frontend can render reasoning in a faded panel and
     content in the main bubble.
     """
+
     content: str = ""
     kind: str = "content"  # "content" | "reasoning"
     invocation_id: str | None = None
@@ -1064,10 +1061,10 @@ class ContextCompactedEvent(AgentEvent):
     前端在圈圈 gauge 附近浮一条 toast「已压缩,省 N token」(N = tokens_in -
     tokens_out)。flag OFF 时本事件**永不构造**(零开销,字节级 BC)。"""
 
-    reduction: float = 0.0   # 节省比 0~1（middle 段 reduction_ratio）
-    tokens_in: int = 0       # 压缩前 middle 段 token
-    tokens_out: int = 0      # 压缩后摘要 token
-    model: str = ""          # 摘要所用模型（可选）
+    reduction: float = 0.0  # 节省比 0~1（middle 段 reduction_ratio）
+    tokens_in: int = 0  # 压缩前 middle 段 token
+    tokens_out: int = 0  # 压缩后摘要 token
+    model: str = ""  # 摘要所用模型（可选）
     source_event_id: str = ""  # durable producer identity
     based_on_sample_id: str = ""  # exact measured sample compacted
     occurred_at: float = 0.0  # producer time for observability; not lineage authority
@@ -1112,6 +1109,7 @@ class _ToolRegistryProto(Protocol):
 
 # ───────────────────── agent loop ─────────────────────
 
+
 def _host_validated_terminal_event(
     loop: Any,
     response: ChatResponse,
@@ -1122,13 +1120,15 @@ def _host_validated_terminal_event(
     """Finish a trusted zero-tool background Run after its host validation."""
     loop._gate.record_final_answer()
     if loop._tracer:
-        loop._tracer.record({
-            "kind": "end",
-            "iter": iteration,
-            "reason": response.stop_reason or "end_turn",
-            "gate_summary": loop._gate.summary(),
-            "host_validated_zero_tool_terminal": True,
-        })
+        loop._tracer.record(
+            {
+                "kind": "end",
+                "iter": iteration,
+                "reason": response.stop_reason or "end_turn",
+                "gate_summary": loop._gate.summary(),
+                "host_validated_zero_tool_terminal": True,
+            }
+        )
     return FinalEvent(
         type="final",
         task_id=task_id,
@@ -1205,19 +1205,14 @@ async def _review_final_response_quality(
         if usage is not None:
             totals["input"] += int(getattr(usage, "input_tokens", 0) or 0)
             totals["output"] += int(getattr(usage, "output_tokens", 0) or 0)
-            totals["cache_read"] += int(
-                getattr(usage, "cache_read_tokens", 0) or 0
-            )
-            totals["cache_write"] += int(
-                getattr(usage, "cache_write_tokens", 0) or 0
-            )
+            totals["cache_read"] += int(getattr(usage, "cache_read_tokens", 0) or 0)
+            totals["cache_write"] += int(getattr(usage, "cache_write_tokens", 0) or 0)
         decision = gate.resolve(
             original_response=final_content,
             review_response=str(getattr(quality_response, "content", "") or ""),
         )
         logger.info(
-            "response_quality_checked sid=%s checked=%s revised=%s "
-            "missing=%d reason=%s",
+            "response_quality_checked sid=%s checked=%s revised=%s missing=%d reason=%s",
             session_id,
             decision.checked,
             decision.revised,
@@ -1227,8 +1222,7 @@ async def _review_final_response_quality(
         return decision.text
     except Exception as exc:  # noqa: BLE001
         logger.warning(
-            "response_quality_check_failed sid=%s err=%s "
-            "— preserving original response",
+            "response_quality_check_failed sid=%s err=%s — preserving original response",
             session_id,
             str(exc)[:200],
         )
@@ -1253,13 +1247,13 @@ class AgentLoop(ToolContextPersistenceMixin):
         termination_gate: TerminationGate | None = None,
         context_manager: ContextManager | None = None,
         # WI-T2.6 last-mile P0-3: VerifyGate end_turn 守门 + ReceiptStore 拿 ledger
-        verify_gate: Any | None = None,        # deskpet.agent.verify_gate.VerifyGate
-        receipt_store: Any | None = None,      # deskpet.tools.receipt_store.ReceiptStore
-        max_verify_nudges: int = 2,               # PRD D6: 3 次失败强退
+        verify_gate: Any | None = None,  # deskpet.agent.verify_gate.VerifyGate
+        receipt_store: Any | None = None,  # deskpet.tools.receipt_store.ReceiptStore
+        max_verify_nudges: int = 2,  # PRD D6: 3 次失败强退
         # WI-B3 Companion+Code v1: /goal command 末轮 LLM-judged rebound.
         # 两个都 None (默认) → BC，跳过整段 goal-check 块。
         session_goal_store: Any | None = None,  # deskpet.agent.goal_store.SessionGoalStore
-        goal_checker: Any | None = None,        # deskpet.agent.goal_checker.GoalChecker
+        goal_checker: Any | None = None,  # deskpet.agent.goal_checker.GoalChecker
         # WI-2.1 structured reflection: when True, _REFLECTION_INSTRUCTION is
         # appended to verify-gate rebound + selfcheck tier2/tier3 system msgs.
         # Default False = BC (flag off → byte-identical behaviour to pre-WI-2.1).
@@ -1286,7 +1280,7 @@ class AgentLoop(ToolContextPersistenceMixin):
         # skill body re-inline.  Both default None → BC (no remount, zero overhead).
         # When non-None and compaction fires, _remount_skills() is called to re-insert
         # the bodies of skills used this run as a single role=system block.
-        skill_loader: Any | None = None,   # deskpet.skills.loader.SkillLoader
+        skill_loader: Any | None = None,  # deskpet.skills.loader.SkillLoader
         skill_matcher: Any | None = None,  # deskpet.skills.skill_matcher.SkillMatcher
         # WI-4b pre-flush: 压缩真正摘掉中段前,把"当前任务态"写进 L1 文件记忆,
         # 跨 session 记住任务(frozen-snapshot → 只对下个 session 生效)。None (默认)
@@ -1307,12 +1301,13 @@ class AgentLoop(ToolContextPersistenceMixin):
         provider_workload_router: Any | None = None,
         # ─── 七步问题处理流水线 IN-LOOP 三闸（plans/2026-06-24-problem-pipeline）。
         # 全 None/False → 跳过所有 pipeline 分支（kill-switch 回退到今天的链路，BC）。
-        evidence_gate: Any | None = None,           # deskpet.agent.evidence_gate.EvidenceGate
-        self_check_gate: Any | None = None,         # deskpet.agent.self_check_gate.SelfCheckGate（build_agent 内构造后传）
-        convergence_report_on_stop: bool = False,      # Step7：True → __init__ 末尾用 self._gate 自建 ConvergenceController
-        pipeline_problem_type: str | None = None,   # Step1 产出的 problem_type（喂 Step6 选档）
-        pipeline_needs_investigation: bool = False,    # IntentCard.needs_investigation（喂 Step2）
-        pipeline_observability: bool = False,          # 发 chat_v2_evidence_gate / _selfcheck / _convergence 事件
+        evidence_gate: Any | None = None,  # deskpet.agent.evidence_gate.EvidenceGate
+        self_check_gate: Any
+        | None = None,  # deskpet.agent.self_check_gate.SelfCheckGate（build_agent 内构造后传）
+        convergence_report_on_stop: bool = False,  # Step7：True → __init__ 末尾用 self._gate 自建 ConvergenceController
+        pipeline_problem_type: str | None = None,  # Step1 产出的 problem_type（喂 Step6 选档）
+        pipeline_needs_investigation: bool = False,  # IntentCard.needs_investigation（喂 Step2）
+        pipeline_observability: bool = False,  # 发 chat_v2_evidence_gate / _selfcheck / _convergence 事件
         response_quality_gate: Any | None = None,
     ) -> None:
         self.llm = llm_registry
@@ -1415,9 +1410,7 @@ class AgentLoop(ToolContextPersistenceMixin):
         # ctx.record_tool_result (which honours skip_truncation_for_tools
         # — the G1 fix). The legacy ``_ctx is None`` branch is gone.
         self._ctx: ContextManager = (
-            context_manager
-            if context_manager is not None
-            else ContextManager()
+            context_manager if context_manager is not None else ContextManager()
         )
 
         # ─── 七步问题处理流水线 IN-LOOP 三闸赋值（plans/2026-06-24-problem-pipeline）。
@@ -1428,7 +1421,7 @@ class AgentLoop(ToolContextPersistenceMixin):
         self._pipeline_needs_investigation = bool(pipeline_needs_investigation)
         self._pipeline_observability = bool(pipeline_observability)
         self._response_quality_gate = response_quality_gate
-        self._evidence_nudges_used = 0   # Step2 nudge 计数
+        self._evidence_nudges_used = 0  # Step2 nudge 计数
         # ⚠️ R1（round-2）：弃用绝对长度切片基线 → 改布尔累积标志（对 compaction 免疫）。
         # run() 开头重设；本 run dispatch 出取证工具 → 置 True。
         self._evidence_gathered = False
@@ -1437,12 +1430,16 @@ class AgentLoop(ToolContextPersistenceMixin):
         self._convergence_controller = None
         if convergence_report_on_stop:
             from deskpet.agent.convergence_controller import ConvergenceController  # noqa: PLC0415
+
             self._convergence_controller = ConvergenceController(
-                self._gate, report_on_stop=True,
+                self._gate,
+                report_on_stop=True,
             )
 
     @staticmethod
-    def _provider_attempt_identity(provider: Any, fallback_model: str = "") -> tuple[str, str, str, str]:
+    def _provider_attempt_identity(
+        provider: Any, fallback_model: str = ""
+    ) -> tuple[str, str, str, str]:
         provider_id = str(
             getattr(provider, "provider_id", "")
             or getattr(provider, "id", "")
@@ -1479,8 +1476,8 @@ class AgentLoop(ToolContextPersistenceMixin):
             estimate_selected_attempt_budget,
         )
 
-        provider_id, model_id, adapter_id, adapter_version = (
-            self._provider_attempt_identity(provider, fallback_model)
+        provider_id, model_id, adapter_id, adapter_version = self._provider_attempt_identity(
+            provider, fallback_model
         )
         initial_budget = getattr(prepared_context, "request_budget", None)
         actual_budget = estimate_selected_attempt_budget(
@@ -1488,12 +1485,8 @@ class AgentLoop(ToolContextPersistenceMixin):
             model_id=model_id,
             messages=messages,
             tools=tools,
-            generation_reserve=int(
-                getattr(initial_budget, "generation_reserve", 0) or 0
-            ),
-            attachment_tokens=int(
-                getattr(prepared_context, "attachment_tokens", 0) or 0
-            ),
+            generation_reserve=int(getattr(initial_budget, "generation_reserve", 0) or 0),
+            attachment_tokens=int(getattr(prepared_context, "attachment_tokens", 0) or 0),
         )
         report = build_prepared_attempt_report(
             session_id=session_id,
@@ -1557,9 +1550,7 @@ class AgentLoop(ToolContextPersistenceMixin):
             raise
         return ProviderAttemptOptions(
             cache_boundary=getattr(prepared_context, "stable_prefix_boundary", None),
-            cache_fingerprint=getattr(
-                prepared_context, "stable_prefix_fingerprint", None
-            ),
+            cache_fingerprint=getattr(prepared_context, "stable_prefix_fingerprint", None),
             purpose=purpose,
             session_id=session_id,
             request_id=request_id,
@@ -1571,29 +1562,46 @@ class AgentLoop(ToolContextPersistenceMixin):
         *,
         invoke: Callable[[], Awaitable[Any]],
         provider: Any,
-        session_id: str, request_id: str,
-        attempt_id: str, purpose: str,
-        messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None,
+        session_id: str,
+        request_id: str,
+        attempt_id: str,
+        purpose: str,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None,
         fallback_model: str,
-        prepared_context: Any, current_tool_set: Any,
+        prepared_context: Any,
+        current_tool_set: Any,
         compression: Mapping[str, Any] | None = None,
     ) -> Any:
         options = await self._begin_context_attempt(
-            provider=provider, session_id=session_id,
-            request_id=request_id, attempt_id=attempt_id,
-            purpose=purpose, messages=messages, tools=tools,
+            provider=provider,
+            session_id=session_id,
+            request_id=request_id,
+            attempt_id=attempt_id,
+            purpose=purpose,
+            messages=messages,
+            tools=tools,
             fallback_model=fallback_model,
-            prepared_context=prepared_context, current_tool_set=current_tool_set,
+            prepared_context=prepared_context,
+            current_tool_set=current_tool_set,
             compression=compression,
         )
         raw_invoke = invoke
         invoke = lambda: _coordinate_agent_provider_call(
-            self, provider, request_id, attempt_id, purpose,
-            messages, tools, fallback_model, raw_invoke,
+            self,
+            provider,
+            request_id,
+            attempt_id,
+            purpose,
+            messages,
+            tools,
+            fallback_model,
+            raw_invoke,
         )
         if options is None:
             return await invoke()
         from agent.context_report import finish_current_attempt
+
         with context_attempt_scope(options):
             try:
                 result = await invoke()
@@ -1614,25 +1622,41 @@ class AgentLoop(ToolContextPersistenceMixin):
         *,
         iterator: Callable[[], AsyncIterator[Any]],
         provider: Any,
-        session_id: str, request_id: str,
-        attempt_id: str, purpose: str,
-        messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None,
+        session_id: str,
+        request_id: str,
+        attempt_id: str,
+        purpose: str,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None,
         fallback_model: str,
-        prepared_context: Any, current_tool_set: Any,
+        prepared_context: Any,
+        current_tool_set: Any,
         compression: Mapping[str, Any] | None = None,
     ) -> AsyncIterator[Any]:
         options = await self._begin_context_attempt(
-            provider=provider, session_id=session_id,
-            request_id=request_id, attempt_id=attempt_id,
-            purpose=purpose, messages=messages, tools=tools,
+            provider=provider,
+            session_id=session_id,
+            request_id=request_id,
+            attempt_id=attempt_id,
+            purpose=purpose,
+            messages=messages,
+            tools=tools,
             fallback_model=fallback_model,
-            prepared_context=prepared_context, current_tool_set=current_tool_set,
+            prepared_context=prepared_context,
+            current_tool_set=current_tool_set,
             compression=compression,
         )
         raw_iterator = iterator
         iterator = lambda: _coordinate_agent_provider_stream(
-            self, provider, request_id, attempt_id, purpose,
-            messages, tools, fallback_model, raw_iterator,
+            self,
+            provider,
+            request_id,
+            attempt_id,
+            purpose,
+            messages,
+            tools,
+            fallback_model,
+            raw_iterator,
         )
         if options is None:
             async for item in iterator():
@@ -1759,22 +1783,26 @@ class AgentLoop(ToolContextPersistenceMixin):
                     terminal_event_seen = True
                 yield event
         except asyncio.CancelledError as exc:
-            terminal_status = (
-                SpanStatus.OK if terminal_event_seen else SpanStatus.CANCELLED
+            terminal_status = SpanStatus.OK if terminal_event_seen else SpanStatus.CANCELLED
+            terminal_error = (
+                None
+                if terminal_event_seen
+                else {
+                    "type": type(exc).__name__,
+                    "reason": "consumer_cancelled_before_terminal",
+                }
             )
-            terminal_error = None if terminal_event_seen else {
-                "type": type(exc).__name__,
-                "reason": "consumer_cancelled_before_terminal",
-            }
             raise
         except GeneratorExit as exc:
-            terminal_status = (
-                SpanStatus.OK if terminal_event_seen else SpanStatus.CANCELLED
+            terminal_status = SpanStatus.OK if terminal_event_seen else SpanStatus.CANCELLED
+            terminal_error = (
+                None
+                if terminal_event_seen
+                else {
+                    "type": type(exc).__name__,
+                    "reason": "consumer_closed_before_terminal",
+                }
             )
-            terminal_error = None if terminal_event_seen else {
-                "type": type(exc).__name__,
-                "reason": "consumer_closed_before_terminal",
-            }
             raise
         except BaseException as exc:
             terminal_status = SpanStatus.ERROR
@@ -1817,12 +1845,18 @@ class AgentLoop(ToolContextPersistenceMixin):
         """Drive ReAct; ``stream`` emits deltas when the registry supports
         ``chat_with_fallback_stream`` and otherwise preserves non-streaming.
         """
-        host_validated_zero_tool_terminal = bool(llm_kwargs.pop("host_validated_zero_tool_terminal", False))
+        host_validated_zero_tool_terminal = bool(
+            llm_kwargs.pop("host_validated_zero_tool_terminal", False)
+        )
         if (launch_operation_id is None) != (provider_launch_snapshot is None):
             raise ValueError("launch operation id and snapshot must be paired")
-        launch_call_kwargs = {} if launch_operation_id is None else dict(
-            launch_operation_id=launch_operation_id,
-            provider_launch_snapshot=provider_launch_snapshot,
+        launch_call_kwargs = (
+            {}
+            if launch_operation_id is None
+            else dict(
+                launch_operation_id=launch_operation_id,
+                provider_launch_snapshot=provider_launch_snapshot,
+            )
         )
         scoped_evidence = llm_kwargs.pop("_scoped_evidence", None)
         external_feedback = dict(llm_kwargs.pop("_external_tool_feedback", {}) or {})
@@ -1831,9 +1865,7 @@ class AgentLoop(ToolContextPersistenceMixin):
         working_messages: list[dict[str, Any]] = list(messages)
         context_metadata_enabled = prepared_context is not None
         if context_metadata_enabled:
-            working_messages = _tag_run_input_messages(
-                working_messages, task_id=tid
-            )
+            working_messages = _tag_run_input_messages(working_messages, task_id=tid)
         # ⚠️ R1（round-2，plans/2026-06-24-...）：Step2 取证布尔累积标志，对 compaction 免疫
         # （compaction 整体替换 working_messages 不会改这个已置位的布尔）。run() 开头重设 +
         # 快照 history 注入的旧 tool name → 本 run 只认「新 dispatch 且不在 history 快照里」的取证。
@@ -1841,9 +1873,7 @@ class AgentLoop(ToolContextPersistenceMixin):
         self._evidence_nudges_used = int(external_feedback.get("evidence_nudges_used", 0))
         self._history_tool_names = set(self._collect_tool_names(working_messages))
         current_tool_set = (
-            getattr(prepared_context, "tool_set", None)
-            if prepared_context is not None
-            else None
+            getattr(prepared_context, "tool_set", None) if prepared_context is not None else None
         )
         if current_tool_set is not None:
             tool_schemas = list(current_tool_set.logical_schemas())
@@ -1885,17 +1915,12 @@ class AgentLoop(ToolContextPersistenceMixin):
                 task_id=tid,
                 iteration=0,
                 reason="no_provider_configured",
-                detail=(
-                    "未配置任何 LLM provider。"
-                    "请打开设置 → LLM Providers → 添加"
-                ),
+                detail=("未配置任何 LLM provider。请打开设置 → LLM Providers → 添加"),
             )
             return
         # Detect streaming capability lazily — agent loop tests use a
         # mock registry that may only define chat_with_fallback.
-        stream_capable = stream and callable(
-            getattr(self.llm, "chat_with_fallback_stream", None)
-        )
+        stream_capable = stream and callable(getattr(self.llm, "chat_with_fallback_stream", None))
 
         # Context OS plans one common transcript against the smallest usable
         # provider window before the first transport attempt. This keeps
@@ -1912,9 +1937,7 @@ class AgentLoop(ToolContextPersistenceMixin):
                 or llm_kwargs.get("max_tokens", 0)
                 or 0
             )
-            attachment_tokens = int(
-                getattr(prepared_context, "attachment_tokens", 0) or 0
-            )
+            attachment_tokens = int(getattr(prepared_context, "attachment_tokens", 0) or 0)
             candidate_budgets = [
                 estimate_selected_attempt_budget(
                     provider=provider,
@@ -1931,9 +1954,7 @@ class AgentLoop(ToolContextPersistenceMixin):
                 key=lambda item: item.effective_input_budget,
             )
             try:
-                replan_for_budget = getattr(
-                    prepared_context, "replan_for_budget", None
-                )
+                replan_for_budget = getattr(prepared_context, "replan_for_budget", None)
                 used_common_replan = callable(replan_for_budget)
                 if callable(replan_for_budget):
                     replanned = await asyncio.wait_for(
@@ -1944,18 +1965,11 @@ class AgentLoop(ToolContextPersistenceMixin):
                         ),
                         timeout=10.0,
                     )
-                    prepared_context = getattr(
-                        replanned, "prepared_context", replanned
-                    )
-                    if tuple(
-                        getattr(prepared_context, "coverage_compaction_jobs", ())
-                        or ()
-                    ):
+                    prepared_context = getattr(replanned, "prepared_context", replanned)
+                    if tuple(getattr(prepared_context, "coverage_compaction_jobs", ()) or ()):
                         if self.compressor is None:
                             raise RuntimeError("coverage_compaction_owner_unavailable")
-                        chain_cycle_id = (
-                            f"{context_request_id or tid}:chain-safe:1"
-                        )
+                        chain_cycle_id = f"{context_request_id or tid}:chain-safe:1"
                         resolution = self._resolve_compression_model(
                             provider_chain,
                             requested_model=self._requested_compression_model(),
@@ -1968,9 +1982,7 @@ class AgentLoop(ToolContextPersistenceMixin):
                                 list(prepared_context.messages), task_id=tid
                             ),
                             prepared_context=prepared_context,
-                            current_tool_set=getattr(
-                                prepared_context, "tool_set", None
-                            ),
+                            current_tool_set=getattr(prepared_context, "tool_set", None),
                         )
                         await self._execute_coverage_compaction_jobs(
                             cycle_id=chain_cycle_id,
@@ -1995,9 +2007,7 @@ class AgentLoop(ToolContextPersistenceMixin):
                             session_id,
                             context_request_id or tid,
                         )
-                        prepared_context = getattr(
-                            replanned, "prepared_context", replanned
-                        )
+                        prepared_context = getattr(replanned, "prepared_context", replanned)
                     working_messages = _tag_run_input_messages(
                         list(prepared_context.messages), task_id=tid
                     )
@@ -2007,9 +2017,7 @@ class AgentLoop(ToolContextPersistenceMixin):
                 final_budgets = [
                     estimate_selected_attempt_budget(
                         provider=provider,
-                        model_id=str(
-                            getattr(provider, "model", "") or use_model or ""
-                        ),
+                        model_id=str(getattr(provider, "model", "") or use_model or ""),
                         messages=working_messages,
                         tools=tool_schemas or None,
                         generation_reserve=reserve,
@@ -2031,8 +2039,7 @@ class AgentLoop(ToolContextPersistenceMixin):
                 final_budget_fits = all(item.fits for item in final_budgets)
                 if coverage_still_pending or not final_budget_fits:
                     logger.warning(
-                        "provider_chain_common_budget_detail sid=%s tools=%d "
-                        "budgets=%s",
+                        "provider_chain_common_budget_detail sid=%s tools=%d budgets=%s",
                         session_id,
                         len(tool_schemas or ()),
                         [
@@ -2047,20 +2054,15 @@ class AgentLoop(ToolContextPersistenceMixin):
                         ],
                     )
                     if coverage_still_pending or self.compressor is None:
-                        raise RuntimeError(
-                            "provider_chain_context_budget_exceeded"
-                        )
+                        raise RuntimeError("provider_chain_context_budget_exceeded")
                     # Replanning has already exhausted the lossless options.
                     # Let the normal in-loop compactor make exactly one lossy,
                     # goal-preserving rescue attempt before any provider send.
                     _chain_budget_rescue_pending = True
-                self._history_tool_names = set(
-                    self._collect_tool_names(working_messages)
-                )
+                self._history_tool_names = set(self._collect_tool_names(working_messages))
             except Exception as exc:  # noqa: BLE001 - recoverable BLOCK
                 logger.warning(
-                    "provider_context_budget_blocked sid=%s request_id=%s "
-                    "error_type=%s error=%r",
+                    "provider_context_budget_blocked sid=%s request_id=%s error_type=%s error=%r",
                     session_id,
                     context_request_id or tid,
                     type(exc).__name__,
@@ -2112,9 +2114,7 @@ class AgentLoop(ToolContextPersistenceMixin):
                 _pending = _pg_fn(session_id) if callable(_pg_fn) else None
                 if _pending:
                     _anchor_lines.append(f"[当前子目标] {_pending[0]}")
-                _anchor_lines.append(
-                    "请确保接下来的动作仍服务于上述目标，不要被中间步骤带偏。"
-                )
+                _anchor_lines.append("请确保接下来的动作仍服务于上述目标，不要被中间步骤带偏。")
                 _append_loop_control(
                     working_messages,
                     {"role": "system", "content": "\n".join(_anchor_lines)},
@@ -2128,9 +2128,7 @@ class AgentLoop(ToolContextPersistenceMixin):
                     protected=True,
                     trim_policy="never",
                 )
-                logger.info(
-                    "wi4a_goal_anchor_always_on sid=%s tid=%s", session_id, tid
-                )
+                logger.info("wi4a_goal_anchor_always_on sid=%s tid=%s", session_id, tid)
 
         # WI-4.0 compaction: warn-once latch so we don't spam the log every
         # iteration when the compressor fires (long multi-tool tasks may cross
@@ -2173,9 +2171,7 @@ class AgentLoop(ToolContextPersistenceMixin):
                 if self.compressor is None:
                     raise RuntimeError("coverage_compaction_owner_unavailable")
                 _compaction_cycle_index += 1
-                initial_cycle_id = (
-                    f"{context_request_id or tid}:coverage:{_compaction_cycle_index}"
-                )
+                initial_cycle_id = f"{context_request_id or tid}:coverage:{_compaction_cycle_index}"
                 initial_resolution = self._resolve_compression_model(
                     provider_chain,
                     requested_model=self._requested_compression_model(),
@@ -2193,9 +2189,7 @@ class AgentLoop(ToolContextPersistenceMixin):
                     prepared_context=prepared_context,
                     resolution=initial_resolution,
                 )
-                replan = getattr(
-                    prepared_context, "replan_after_compaction", None
-                )
+                replan = getattr(prepared_context, "replan_after_compaction", None)
                 if not callable(replan):
                     raise RuntimeError("coverage_replan_unavailable")
                 logger.info(
@@ -2209,9 +2203,7 @@ class AgentLoop(ToolContextPersistenceMixin):
                     session_id,
                     context_request_id or tid,
                 )
-                replanned_context = getattr(
-                    replanned, "prepared_context", replanned
-                )
+                replanned_context = getattr(replanned, "prepared_context", replanned)
                 coverage = getattr(replanned_context, "coverage_report", None)
                 if (
                     coverage is None
@@ -2220,23 +2212,17 @@ class AgentLoop(ToolContextPersistenceMixin):
                     or tuple(getattr(coverage, "overlaps", ()) or ())
                     or tuple(getattr(coverage, "stale_segment_ids", ()) or ())
                     or tuple(getattr(coverage, "broken_causal_groups", ()) or ())
-                    or tuple(
-                        getattr(replanned_context, "coverage_compaction_jobs", ())
-                        or ()
-                    )
+                    or tuple(getattr(replanned_context, "coverage_compaction_jobs", ()) or ())
                 ):
                     raise RuntimeError("session_history_coverage_invalid")
                 request_budget = getattr(replanned_context, "request_budget", None)
-                if request_budget is None or not bool(
-                    getattr(request_budget, "fits", False)
-                ):
+                if request_budget is None or not bool(getattr(request_budget, "fits", False)):
                     raise RuntimeError("context_budget_exceeded_after_coverage")
                 replanned_tool_set = getattr(replanned_context, "tool_set", None)
                 if current_tool_set is not None and (
                     replanned_tool_set is None
                     or replanned_tool_set.scope_id != current_tool_set.scope_id
-                    or replanned_tool_set.schema_fingerprint
-                    != current_tool_set.schema_fingerprint
+                    or replanned_tool_set.schema_fingerprint != current_tool_set.schema_fingerprint
                 ):
                     raise RuntimeError("coverage_replan_changed_tool_set")
                 prepared_context = replanned_context
@@ -2246,9 +2232,7 @@ class AgentLoop(ToolContextPersistenceMixin):
                 current_tool_set = replanned_tool_set
                 if current_tool_set is not None:
                     tool_schemas = list(current_tool_set.logical_schemas())
-                self._history_tool_names = set(
-                    self._collect_tool_names(working_messages)
-                )
+                self._history_tool_names = set(self._collect_tool_names(working_messages))
             except Exception as coverage_exc:  # noqa: BLE001 - fail closed
                 logger.warning(
                     "coverage_compaction_blocked sid=%s request_id=%s error=%s",
@@ -2269,9 +2253,7 @@ class AgentLoop(ToolContextPersistenceMixin):
         for iteration in range(iteration_offset + 1, self.max_iterations + 1):
             if current_tool_set is not None:
                 _scope_store = getattr(self.tools, "capability_scope_store", None)
-                if _scope_store is None or not hasattr(
-                    self.tools, "validate_prepared_tool_set"
-                ):
+                if _scope_store is None or not hasattr(self.tools, "validate_prepared_tool_set"):
                     yield ErrorEvent(
                         type="error",
                         task_id=tid,
@@ -2280,12 +2262,10 @@ class AgentLoop(ToolContextPersistenceMixin):
                         detail="Context OS requires a capability-aware registry",
                     )
                     return
-                _record = (
-                    _scope_store.get(
-                        current_tool_set.scope_id,
-                        session_id=session_id,
-                        request_id=context_request_id or tid,
-                    )
+                _record = _scope_store.get(
+                    current_tool_set.scope_id,
+                    session_id=session_id,
+                    request_id=context_request_id or tid,
                 )
                 if _record is None:
                     yield ErrorEvent(
@@ -2335,19 +2315,20 @@ class AgentLoop(ToolContextPersistenceMixin):
             ):
                 _force_finish_next = True
                 logger.info(
-                    "context_os_final_iteration_force_finish "
-                    "sid=%s tid=%s iter=%d tools_used=%d",
+                    "context_os_final_iteration_force_finish sid=%s tid=%s iter=%d tools_used=%d",
                     session_id,
                     tid,
                     iteration,
                     tools_used_count,
                 )
             if self._tracer:
-                self._tracer.record({
-                    "kind": "iter_start",
-                    "iter": iteration,
-                    "msg_count": len(working_messages),
-                })
+                self._tracer.record(
+                    {
+                        "kind": "iter_start",
+                        "iter": iteration,
+                        "msg_count": len(working_messages),
+                    }
+                )
             # P6 Phase 6 — TerminationGate.allows_call() is always run.
             # Checks hard limits (turns, wall-clock, cost) BEFORE we burn
             # another LLM call. The gate is the single source of truth
@@ -2371,17 +2352,21 @@ class AgentLoop(ToolContextPersistenceMixin):
                     if _reason is not None:
                         _cap_summary["reason"] = _reason.value
                     _verdict = self._convergence_controller.evaluate(
-                        principal_resolved=False,           # 触顶即未收敛
+                        principal_resolved=False,  # 触顶即未收敛
                         unverified_claims=0,
                         gate_summary=_cap_summary,
                     )
                     if self._pipeline_observability:
-                        yield self._pipeline_event("chat_v2_convergence", iteration, {
-                            "converged": _verdict.converged,
-                            "principal_resolved": _verdict.principal_resolved,
-                            "stop_reason": _verdict.stop_reason,
-                            "report": _verdict.report,
-                        })
+                        yield self._pipeline_event(
+                            "chat_v2_convergence",
+                            iteration,
+                            {
+                                "converged": _verdict.converged,
+                                "principal_resolved": _verdict.principal_resolved,
+                                "stop_reason": _verdict.stop_reason,
+                                "report": _verdict.report,
+                            },
+                        )
                     if _verdict.should_stop_loss and _verdict.report:
                         self._gate.record_final_answer()
                         yield FinalEvent(
@@ -2414,6 +2399,7 @@ class AgentLoop(ToolContextPersistenceMixin):
                 from agent.token_budget import (
                     BudgetCheck as _BudgetCheck,
                 )
+
                 # Use the FIRST provider's model as the context-window
                 # reference (chain mode). In single-provider mode fall
                 # back to default_model.
@@ -2429,15 +2415,19 @@ class AgentLoop(ToolContextPersistenceMixin):
                 # prompt (real 113%) reads as ~16% and never BLOCKs. Default
                 # floor 0 on iter-0 → BC. Mirrors the compaction trigger.
                 _budget = self._ctx.check_budget(
-                    working_messages, model=_resolved_model,
+                    working_messages,
+                    model=_resolved_model,
                     real_prompt_tokens_floor=_last_real_prompt_tokens,
                 )
                 if _budget.verdict is _BudgetCheck.BLOCK:
                     logger.error(
                         "p5s2_token_budget_block sid=%s tid=%s iter=%d "
                         "tokens=%d window=%d ratio=%.2f",
-                        session_id, tid, iteration,
-                        _budget.estimated_tokens, _budget.context_window,
+                        session_id,
+                        tid,
+                        iteration,
+                        _budget.estimated_tokens,
+                        _budget.context_window,
                         _budget.ratio,
                     )
                     if self.compressor is not None and (
@@ -2449,9 +2439,7 @@ class AgentLoop(ToolContextPersistenceMixin):
                         _budget_block_pending = True
                     else:
                         # Legacy/OFF behavior remains byte-for-byte identical.
-                        self._gate.record_error(
-                            TerminationReason.CONTEXT_BUDGET_BLOCK
-                        )
+                        self._gate.record_error(TerminationReason.CONTEXT_BUDGET_BLOCK)
                         yield ErrorEvent(
                             type="error",
                             task_id=tid,
@@ -2464,8 +2452,11 @@ class AgentLoop(ToolContextPersistenceMixin):
                     logger.warning(
                         "p5s2_token_budget_warn sid=%s tid=%s iter=%d "
                         "tokens=%d window=%d ratio=%.2f",
-                        session_id, tid, iteration,
-                        _budget.estimated_tokens, _budget.context_window,
+                        session_id,
+                        tid,
+                        iteration,
+                        _budget.estimated_tokens,
+                        _budget.context_window,
                         _budget.ratio,
                     )
                     _budget_warn_emitted = True
@@ -2501,21 +2492,14 @@ class AgentLoop(ToolContextPersistenceMixin):
                         _ctx_cfg_for_compression, "model_info", None
                     )
                     _for_context = getattr(self.compressor, "for_context", None)
-                    if (
-                        callable(_for_context)
-                        and _model_info_for_compression is not None
-                    ):
+                    if callable(_for_context) and _model_info_for_compression is not None:
                         _active_compressor = _for_context(
-                            context_window=int(
-                                _model_info_for_compression.context_window
-                            ),
+                            context_window=int(_model_info_for_compression.context_window),
                             threshold_percent=min(
                                 float(_model_info_for_compression.compact_at_pct),
                                 0.70,
                             ),
-                            effective_pct=float(
-                                _model_info_for_compression.effective_pct
-                            ),
+                            effective_pct=float(_model_info_for_compression.effective_pct),
                         )
                 except Exception:  # noqa: BLE001 -- legacy fake/BC compressor
                     _active_compressor = self.compressor
@@ -2535,6 +2519,7 @@ class AgentLoop(ToolContextPersistenceMixin):
                 # allocator 截断、不延迟,是最可靠的触发信号(复用统一计数,优化 #1+#3)。
                 try:
                     from deskpet.agent.tokens import count_messages_tokens as _cmt
+
                     _wm_tokens = _cmt(working_messages)
                     if _wm_tokens > _ctoken_est:
                         _ctoken_est = _wm_tokens
@@ -2554,9 +2539,7 @@ class AgentLoop(ToolContextPersistenceMixin):
                     else:
                         _ctx_compact_at = getattr(_ctx_cfg, "compact_at_tokens", None)
                     if _ctx_compact_at is not None:
-                        _ctx_should_compress = (
-                            _ctoken_est >= int(_ctx_compact_at) > 0
-                        )
+                        _ctx_should_compress = _ctoken_est >= int(_ctx_compact_at) > 0
                 except Exception:  # noqa: BLE001
                     _ctx_should_compress = False
                 if (
@@ -2572,14 +2555,11 @@ class AgentLoop(ToolContextPersistenceMixin):
                                 _gt = _gt_fn(session_id)
                         _compression_resolution = None
                         _compaction_cycle_id = None
-                        _requested_compression_model = (
-                            self._requested_compression_model()
-                        )
+                        _requested_compression_model = self._requested_compression_model()
                         if context_metadata_enabled:
                             _compaction_cycle_index += 1
                             _compaction_cycle_id = (
-                                f"{context_request_id or tid}:compaction:"
-                                f"{_compaction_cycle_index}"
+                                f"{context_request_id or tid}:compaction:{_compaction_cycle_index}"
                             )
                             await self._flush_context_snapshot(
                                 cycle_id=_compaction_cycle_id,
@@ -2596,6 +2576,7 @@ class AgentLoop(ToolContextPersistenceMixin):
                             from deskpet.context_os_e2e_hooks import (
                                 consume_context_os_e2e_fault as _consume_ctx_fault,
                             )
+
                             if _consume_ctx_fault("compactor_model_error"):
                                 raise RuntimeError("compactor_model_error")
                             await self._execute_coverage_compaction_jobs(
@@ -2623,20 +2604,23 @@ class AgentLoop(ToolContextPersistenceMixin):
                                 if _last_user:
                                     _flush_parts.append(f"最近请求: {_last_user}")
                                 if _flush_parts:
-                                    _flush_body = (
-                                        "[任务态快照/task-state] " + "; ".join(_flush_parts)
+                                    _flush_body = "[任务态快照/task-state] " + "; ".join(
+                                        _flush_parts
                                     )
                                     await self.file_memory.append(
                                         "memory", _flush_body, salience=0.6
                                     )
                                     logger.info(
                                         "wi4b_preflush_l1 sid=%s tid=%s chars=%d",
-                                        session_id, tid, len(_flush_body),
+                                        session_id,
+                                        tid,
+                                        len(_flush_body),
                                     )
                             except Exception as _pf_exc:  # noqa: BLE001
                                 logger.debug(
                                     "wi4b_preflush_failed sid=%s err=%s",
-                                    session_id, str(_pf_exc)[:120],
+                                    session_id,
+                                    str(_pf_exc)[:120],
                                 )
                         _compress_kwargs: dict[str, Any] = {"goal_text": _gt}
                         if _compression_resolution is not None:
@@ -2648,9 +2632,7 @@ class AgentLoop(ToolContextPersistenceMixin):
                             )
                         if self._provider_workload_context_factory is not None:
                             _compress_kwargs["workload_context"] = (
-                                self._provider_workload_context_factory(
-                                    "agent.context_compaction"
-                                )
+                                self._provider_workload_context_factory("agent.context_compaction")
                             )
                         _context_remount = (
                             _capture_context_remount(working_messages)
@@ -2661,6 +2643,7 @@ class AgentLoop(ToolContextPersistenceMixin):
                             from deskpet.context_os_e2e_hooks import (
                                 consume_context_os_e2e_fault as _consume_ctx_fault,
                             )
+
                             if _consume_ctx_fault("compactor_model_error"):
                                 raise RuntimeError("compactor_model_error")
                         _cresult = await _active_compressor.compress(
@@ -2713,9 +2696,10 @@ class AgentLoop(ToolContextPersistenceMixin):
                             )
                             if not _compaction_warn_logged:
                                 logger.info(
-                                    "p1_4_compaction_fired sid=%s tid=%s iter=%d "
-                                    "reduction=%s",
-                                    session_id, tid, iteration,
+                                    "p1_4_compaction_fired sid=%s tid=%s iter=%d reduction=%s",
+                                    session_id,
+                                    tid,
+                                    iteration,
                                     getattr(_cresult, "reduction_ratio", "?"),
                                 )
                                 _compaction_warn_logged = True
@@ -2725,31 +2709,29 @@ class AgentLoop(ToolContextPersistenceMixin):
                             if self.ctx_observability:
                                 _ctx_in = int(getattr(_cresult, "input_tokens", 0) or 0)
                                 _ctx_out = int(getattr(_cresult, "output_tokens", 0) or 0)
-                                _ctx_ratio = float(
-                                    getattr(_cresult, "reduction_ratio", 0.0) or 0.0
-                                )
+                                _ctx_ratio = float(getattr(_cresult, "reduction_ratio", 0.0) or 0.0)
                                 try:
                                     from observability.metrics_sink import (
                                         record as _ctx_metric,
                                     )
-                                    _ctx_metric("context_compacted", {
-                                        "ratio": round(_ctx_ratio, 3),
-                                        "model": getattr(self.compressor, "model", "")
-                                        or "",
-                                        "count": _ctx_in - _ctx_out,
-                                    })
+
+                                    _ctx_metric(
+                                        "context_compacted",
+                                        {
+                                            "ratio": round(_ctx_ratio, 3),
+                                            "model": getattr(self.compressor, "model", "") or "",
+                                            "count": _ctx_in - _ctx_out,
+                                        },
+                                    )
                                 except Exception:  # noqa: BLE001
                                     pass
                                 _actual_compaction_model = (
                                     _resolved_candidate.model_id
                                     if _resolved_candidate is not None
-                                    else str(
-                                        getattr(self.compressor, "model", "") or ""
-                                    )
+                                    else str(getattr(self.compressor, "model", "") or "")
                                 )
                                 _compaction_source_event_id = (
-                                    f"context-compaction:{session_id}:"
-                                    f"{tid}:{iteration}"
+                                    f"context-compaction:{session_id}:{tid}:{iteration}"
                                 )
                                 yield ContextCompactedEvent(
                                     task_id=tid,
@@ -2758,9 +2740,7 @@ class AgentLoop(ToolContextPersistenceMixin):
                                     tokens_in=_ctx_in,
                                     tokens_out=_ctx_out,
                                     model=_actual_compaction_model,
-                                    source_event_id=(
-                                        _compaction_source_event_id
-                                    ),
+                                    source_event_id=(_compaction_source_event_id),
                                     based_on_sample_id=str(
                                         getattr(
                                             self,
@@ -2774,11 +2754,10 @@ class AgentLoop(ToolContextPersistenceMixin):
                                 from deskpet.agent.context_usage import (
                                     context_usage_sample_id,
                                 )
-                                self._context_usage_basis_sample_id = (
-                                    context_usage_sample_id(
-                                        session_id,
-                                        _compaction_source_event_id,
-                                    )
+
+                                self._context_usage_basis_sample_id = context_usage_sample_id(
+                                    session_id,
+                                    _compaction_source_event_id,
                                 )
                     except Exception as _cmp_exc:  # noqa: BLE001
                         # Compaction is advisory — never abort the loop on it.
@@ -2788,7 +2767,9 @@ class AgentLoop(ToolContextPersistenceMixin):
                         }
                         logger.debug(
                             "p1_4_compaction_failed sid=%s iter=%d err=%s",
-                            session_id, iteration, str(_cmp_exc)[:200],
+                            session_id,
+                            iteration,
+                            str(_cmp_exc)[:200],
                         )
 
             if _budget_block_pending:
@@ -2804,9 +2785,7 @@ class AgentLoop(ToolContextPersistenceMixin):
                     _still_blocked = True
                     _block_detail = f"context re-budget failed: {_post_exc}"
                 if _still_blocked:
-                    self._gate.record_error(
-                        TerminationReason.CONTEXT_BUDGET_BLOCK
-                    )
+                    self._gate.record_error(TerminationReason.CONTEXT_BUDGET_BLOCK)
                     yield ErrorEvent(
                         type="error",
                         task_id=tid,
@@ -2841,6 +2820,7 @@ class AgentLoop(ToolContextPersistenceMixin):
                 # (zero overhead on normal tier1 path; flag off = BC).
                 if self.structured_reflection and iteration >= _SELFCHECK_TIER2_AT:
                     from deskpet.agent.reflection import _REFLECTION_INSTRUCTION
+
                     msg = msg + _REFLECTION_INSTRUCTION
                 _append_loop_control(
                     working_messages,
@@ -2851,25 +2831,27 @@ class AgentLoop(ToolContextPersistenceMixin):
                         working_messages,
                         fallback=f"agent-loop:{tid}:iteration:{iteration}:start",
                     ),
-                    fragment_id=(
-                        f"agent-loop:{tid}:iteration:{iteration}:self-check"
-                    ),
+                    fragment_id=(f"agent-loop:{tid}:iteration:{iteration}:self-check"),
                 )
                 tier = (
-                    3 if iteration >= _SELFCHECK_TIER3_AT
-                    else 2 if iteration >= _SELFCHECK_TIER2_AT
+                    3
+                    if iteration >= _SELFCHECK_TIER3_AT
+                    else 2
+                    if iteration >= _SELFCHECK_TIER2_AT
                     else 1
                 )
                 logger.info(
                     "p5s2_selfcheck_injected sid=%s tid=%s iter=%d budget=%d "
                     "tier=%d tools_used=%d structured_reflection=%s",
-                    session_id, tid, iteration, budget_left, tier, tools_used,
+                    session_id,
+                    tid,
+                    iteration,
+                    budget_left,
+                    tier,
+                    tools_used,
                     self.structured_reflection,
                 )
-                if (
-                    self.force_finish_via_tool_choice
-                    and iteration >= _SELFCHECK_TIER3_AT
-                ):
+                if self.force_finish_via_tool_choice and iteration >= _SELFCHECK_TIER3_AT:
                     _force_finish_next = True
 
             if (
@@ -2886,33 +2868,27 @@ class AgentLoop(ToolContextPersistenceMixin):
                     for t in todos:
                         content = (t.get("content") or "")[:80]
                         status = (t.get("status") or "").lower()
-                        mark = {"completed": "✓", "in_progress": "🔄"}.get(
-                            status, "⏳"
-                        )
+                        mark = {"completed": "✓", "in_progress": "🔄"}.get(status, "⏳")
                         lines.append(f"  {mark} {content}")
                     _append_loop_control(
                         working_messages,
                         {
                             "role": "system",
-                            "content": _TODO_SYNC_MSG.format(
-                                body="\n".join(lines)
-                            ),
+                            "content": _TODO_SYNC_MSG.format(body="\n".join(lines)),
                         },
                         metadata_enabled=context_metadata_enabled,
                         source="agent_loop.todo_sync",
                         anchor_after=_latest_context_anchor(
                             working_messages,
-                            fallback=(
-                                f"agent-loop:{tid}:iteration:{iteration}:start"
-                            ),
+                            fallback=(f"agent-loop:{tid}:iteration:{iteration}:start"),
                         ),
-                        fragment_id=(
-                            f"agent-loop:{tid}:iteration:{iteration}:todo-sync"
-                        ),
+                        fragment_id=(f"agent-loop:{tid}:iteration:{iteration}:todo-sync"),
                     )
                     logger.info(
                         "wi4_todo_sync sid=%s iter=%d n=%d",
-                        session_id, iteration, len(todos),
+                        session_id,
+                        iteration,
+                        len(todos),
                     )
 
             # WI-4a: 周期性 [目标锚定] 注入已删除 —— 改由循环前的 always-on 单点注入
@@ -2934,9 +2910,7 @@ class AgentLoop(ToolContextPersistenceMixin):
                     last_exc: Exception | None = None
                     for idx, prov in enumerate(provider_chain):  # type: ignore[arg-type]
                         try:
-                            _attempt_tools = (
-                                None if _force_finish_next else (tool_schemas or None)
-                            )
+                            _attempt_tools = None if _force_finish_next else (tool_schemas or None)
                             _attempt_purpose = (
                                 "force_finish" if _force_finish_next else "agent_response"
                             )
@@ -2978,15 +2952,11 @@ class AgentLoop(ToolContextPersistenceMixin):
                             )
                         except (LLMProviderError, RuntimeError) as exc:
                             _authority_error = _non_fallback_provider_error(exc)
-                            if _should_raise_provider_runtime_error(
-                                exc, _authority_error
-                            ):
+                            if _should_raise_provider_runtime_error(exc, _authority_error):
                                 raise
                             if _authority_error is not None:
                                 if _authority_error == "tool_catalog_stale":
-                                    _invalidate_stale_mcp_catalog(
-                                        self.tools, current_tool_set
-                                    )
+                                    _invalidate_stale_mcp_catalog(self.tools, current_tool_set)
                                 yield ErrorEvent(
                                     type="error",
                                     task_id=tid,
@@ -3003,15 +2973,15 @@ class AgentLoop(ToolContextPersistenceMixin):
                             next_idx = idx + 1
                             if next_idx < len(provider_chain):  # type: ignore[arg-type]
                                 next_prov = provider_chain[next_idx]  # type: ignore[index]
-                                next_id = getattr(
-                                    next_prov, "id", f"provider_{next_idx}"
-                                )
+                                next_id = getattr(next_prov, "id", f"provider_{next_idx}")
                                 reason = str(exc) or type(exc).__name__
                                 logger.warning(
-                                    "provider_chain_fallback from=%s to=%s "
-                                    "reason=%s sid=%s tid=%s",
-                                    prov_id, next_id, reason[:200],
-                                    session_id, tid,
+                                    "provider_chain_fallback from=%s to=%s reason=%s sid=%s tid=%s",
+                                    prov_id,
+                                    next_id,
+                                    reason[:200],
+                                    session_id,
+                                    tid,
                                 )
                                 yield ProviderChainFallbackEvent(
                                     type="provider_chain_fallback",
@@ -3024,9 +2994,10 @@ class AgentLoop(ToolContextPersistenceMixin):
                                 )
                             else:
                                 logger.warning(
-                                    "provider_chain_last_provider_failed "
-                                    "id=%s reason=%s sid=%s",
-                                    prov_id, str(exc)[:200], session_id,
+                                    "provider_chain_last_provider_failed id=%s reason=%s sid=%s",
+                                    prov_id,
+                                    str(exc)[:200],
+                                    session_id,
                                 )
                             continue
                         else:
@@ -3037,9 +3008,9 @@ class AgentLoop(ToolContextPersistenceMixin):
                         # All providers in the chain raised.
                         tried = len(provider_chain)  # type: ignore[arg-type]
                         last_text = str(last_exc) if last_exc else "unknown"
-                        if isinstance(last_exc, RuntimeError) and str(
-                            last_exc
-                        ).startswith("provider_context_budget_exceeded"):
+                        if isinstance(last_exc, RuntimeError) and str(last_exc).startswith(
+                            "provider_context_budget_exceeded"
+                        ):
                             yield ErrorEvent(
                                 type="error",
                                 task_id=tid,
@@ -3051,17 +3022,13 @@ class AgentLoop(ToolContextPersistenceMixin):
                         # P6 Phase 6 — record terminal error reason on the
                         # gate so callers reading summary() see the real
                         # cause (otherwise the gate would stay "running").
-                        self._gate.record_error(
-                            TerminationReason.ALL_PROVIDERS_FAILED
-                        )
+                        self._gate.record_error(TerminationReason.ALL_PROVIDERS_FAILED)
                         yield ErrorEvent(
                             type="error",
                             task_id=tid,
                             iteration=iteration,
                             reason="all_providers_failed",
-                            detail=(
-                                f"tried {tried}, last_error: {last_text}"
-                            ),
+                            detail=(f"tried {tried}, last_error: {last_text}"),
                             # 把最后一个 provider 的结构化 error_class 透传给前端，
                             # 让 chain 全失败路径也能 surface 友好分类（如
                             # empty_api_key→"请重新登录" / relay 402→充值），而不是
@@ -3077,19 +3044,14 @@ class AgentLoop(ToolContextPersistenceMixin):
                     delta_count = 0
                     stream_failed_with: Exception | None = None
                     call_llm_kwargs = (
-                        {**llm_kwargs, "tool_choice": "none"}
-                        if _force_finish_next else llm_kwargs
+                        {**llm_kwargs, "tool_choice": "none"} if _force_finish_next else llm_kwargs
                     )
                     call_llm_kwargs = {**launch_call_kwargs, **call_llm_kwargs}
-                    _attempt_tools = (
-                        None if _force_finish_next else (tool_schemas or None)
-                    )
+                    _attempt_tools = None if _force_finish_next else (tool_schemas or None)
                     _attempt_provider = getattr(
                         self.llm, "_provider", getattr(self.llm, "_active_provider", self.llm)
                     )
-                    _attempt_purpose = (
-                        "force_finish" if _force_finish_next else "agent_response"
-                    )
+                    _attempt_purpose = "force_finish" if _force_finish_next else "agent_response"
                     try:
                         async for ev in self._iterate_context_attempt(
                             provider=_attempt_provider,
@@ -3171,8 +3133,8 @@ class AgentLoop(ToolContextPersistenceMixin):
                         # retries.
                         stream_failed_with = stream_exc
                         logger.warning(
-                            "agent_loop_stream_failed_falling_back "
-                            "error=%s", str(stream_exc)[:200],
+                            "agent_loop_stream_failed_falling_back error=%s",
+                            str(stream_exc)[:200],
                         )
 
                     needs_nonstream_fallback = (
@@ -3184,7 +3146,10 @@ class AgentLoop(ToolContextPersistenceMixin):
                             and not final_dict.get("tool_calls")
                         )
                     )
-                    if launch_call_kwargs and not provider_launch_snapshot.supports_idempotent_launch:
+                    if (
+                        launch_call_kwargs
+                        and not provider_launch_snapshot.supports_idempotent_launch
+                    ):
                         needs_nonstream_fallback = False
                         if stream_failed_with is not None:
                             raise stream_failed_with
@@ -3192,8 +3157,8 @@ class AgentLoop(ToolContextPersistenceMixin):
                         if stream_failed_with is None:
                             # Empty-stream case (the relay didn't actually stream).
                             logger.warning(
-                                "agent_loop_stream_fallback_to_nonstream "
-                                "delta_count=%d", delta_count,
+                                "agent_loop_stream_fallback_to_nonstream delta_count=%d",
+                                delta_count,
                             )
                         response = await self._run_context_attempt(
                             provider=_attempt_provider,
@@ -3231,22 +3196,18 @@ class AgentLoop(ToolContextPersistenceMixin):
                         # Convert to ChatResponse to share the rest of the
                         # iteration code with the non-streaming path.
                         from agent.tool_use_shim import _raw_to_response
+
                         response = _raw_to_response(final_dict)
                 else:
                     call_llm_kwargs = (
-                        {**llm_kwargs, "tool_choice": "none"}
-                        if _force_finish_next else llm_kwargs
+                        {**llm_kwargs, "tool_choice": "none"} if _force_finish_next else llm_kwargs
                     )
                     call_llm_kwargs = {**launch_call_kwargs, **call_llm_kwargs}
-                    _attempt_tools = (
-                        None if _force_finish_next else (tool_schemas or None)
-                    )
+                    _attempt_tools = None if _force_finish_next else (tool_schemas or None)
                     _attempt_provider = getattr(
                         self.llm, "_provider", getattr(self.llm, "_active_provider", self.llm)
                     )
-                    _attempt_purpose = (
-                        "force_finish" if _force_finish_next else "agent_response"
-                    )
+                    _attempt_purpose = "force_finish" if _force_finish_next else "agent_response"
                     response = await self._run_context_attempt(
                         provider=_attempt_provider,
                         session_id=session_id,
@@ -3326,21 +3287,22 @@ class AgentLoop(ToolContextPersistenceMixin):
             if response.usage.input_tokens > _last_real_prompt_tokens:
                 _last_real_prompt_tokens = response.usage.input_tokens
             if self._tracer:
-                self._tracer.record({
-                    "kind": "llm_out",
-                    "iter": iteration,
-                    "stop_reason": response.stop_reason,
-                    "content_preview": (response.content or "")[:200],
-                    "tool_calls": [
-                        {"name": tc.name, "args": tc.arguments}
-                        for tc in response.tool_calls
-                    ],
-                    "usage": (
-                        response.usage.model_dump()
-                        if hasattr(response.usage, "model_dump")
-                        else {}
-                    ),
-                })
+                self._tracer.record(
+                    {
+                        "kind": "llm_out",
+                        "iter": iteration,
+                        "stop_reason": response.stop_reason,
+                        "content_preview": (response.content or "")[:200],
+                        "tool_calls": [
+                            {"name": tc.name, "args": tc.arguments} for tc in response.tool_calls
+                        ],
+                        "usage": (
+                            response.usage.model_dump()
+                            if hasattr(response.usage, "model_dump")
+                            else {}
+                        ),
+                    }
+                )
 
             # P6 Phase 6 — record the turn (advances turns_used and
             # optionally adds to cost_usd if the response carries a
@@ -3355,13 +3317,8 @@ class AgentLoop(ToolContextPersistenceMixin):
                     _cost_delta = float(_maybe_cost)
             self._gate.record_turn(cost_delta_usd=_cost_delta)
 
-            if (
-                not (response.content or "").strip()
-                and not response.tool_calls
-            ):
-                has_hidden_reasoning = bool(
-                    (response.reasoning_content or "").strip()
-                )
+            if not (response.content or "").strip() and not response.tool_calls:
+                has_hidden_reasoning = bool((response.reasoning_content or "").strip())
                 empty_reason = (
                     "model_reasoning_only_response"
                     if has_hidden_reasoning
@@ -3401,10 +3358,7 @@ class AgentLoop(ToolContextPersistenceMixin):
                     metadata_enabled=context_metadata_enabled,
                     source="agent_loop.reasoning_only.trigger",
                     role="assistant",
-                    fragment_id=(
-                        f"agent-loop:{tid}:iteration:{iteration}:"
-                        "reasoning-only-trigger"
-                    ),
+                    fragment_id=(f"agent-loop:{tid}:iteration:{iteration}:reasoning-only-trigger"),
                 )
                 _append_loop_control(
                     working_messages,
@@ -3414,11 +3368,7 @@ class AgentLoop(ToolContextPersistenceMixin):
                             f"Recovery attempt {reasoning_only_nudges_used} of "
                             f"{max_reasoning_only_nudges}. "
                             "Your previous turn contained "
-                            + (
-                                "only internal reasoning"
-                                if has_hidden_reasoning
-                                else "no output"
-                            )
+                            + ("only internal reasoning" if has_hidden_reasoning else "no output")
                             + " and no user-visible answer or tool call. "
                             "Do not end a turn this way. If your reasoning "
                             "selected an available tool, emit the actual "
@@ -3433,19 +3383,14 @@ class AgentLoop(ToolContextPersistenceMixin):
                         or _latest_context_anchor(
                             working_messages,
                             fallback=(
-                                f"agent-loop:{tid}:iteration:{iteration}:"
-                                "reasoning-only-trigger"
+                                f"agent-loop:{tid}:iteration:{iteration}:reasoning-only-trigger"
                             ),
                         )
                     ),
-                    fragment_id=(
-                        f"agent-loop:{tid}:iteration:{iteration}:"
-                        "reasoning-only-nudge"
-                    ),
+                    fragment_id=(f"agent-loop:{tid}:iteration:{iteration}:reasoning-only-nudge"),
                 )
                 logger.info(
-                    "model_non_actionable_response_retried "
-                    "sid=%s tid=%s iteration=%d reason=%s",
+                    "model_non_actionable_response_retried sid=%s tid=%s iteration=%d reason=%s",
                     session_id,
                     tid,
                     iteration,
@@ -3486,21 +3431,20 @@ class AgentLoop(ToolContextPersistenceMixin):
                 # run would silently end as a FinalEvent, hiding the failure.
                 if _verify_final_done and _force_finish_next:
                     if self._tracer:
-                        self._tracer.record({
-                            "kind": "end",
-                            "iter": iteration,
-                            "reason": "verify_exhausted",
-                            "gate_summary": self._gate.summary(),
-                        })
+                        self._tracer.record(
+                            {
+                                "kind": "end",
+                                "iter": iteration,
+                                "reason": "verify_exhausted",
+                                "gate_summary": self._gate.summary(),
+                            }
+                        )
                     yield ErrorEvent(
                         type="error",
                         task_id=tid,
                         iteration=iteration,
                         reason="verify_exhausted",
-                        detail=(
-                            response.content
-                            or "verify-gate: all retries exhausted"
-                        ),
+                        detail=(response.content or "verify-gate: all retries exhausted"),
                     )
                     return
                 # ─── Step2 EvidenceGate（取证门控，核心闸①，plans/2026-06-24-...）。
@@ -3525,9 +3469,13 @@ class AgentLoop(ToolContextPersistenceMixin):
                     )
                     if self._pipeline_observability:
                         yield self._pipeline_event(
-                            "chat_v2_evidence_gate", iteration,
-                            {"blocked": _ev_dec.blocked, "reason": _ev_dec.reason,
-                             "nudge_count": _ev_dec.nudge_count},
+                            "chat_v2_evidence_gate",
+                            iteration,
+                            {
+                                "blocked": _ev_dec.blocked,
+                                "reason": _ev_dec.reason,
+                                "nudge_count": _ev_dec.nudge_count,
+                            },
                         )
                     if _ev_dec.blocked:
                         self._evidence_nudges_used = _ev_dec.nudge_count
@@ -3543,13 +3491,11 @@ class AgentLoop(ToolContextPersistenceMixin):
                                 source="agent_loop.evidence_gate.trigger",
                                 role="assistant",
                                 fragment_id=(
-                                    f"agent-loop:{tid}:iteration:{iteration}:"
-                                    "evidence-trigger"
+                                    f"agent-loop:{tid}:iteration:{iteration}:evidence-trigger"
                                 ),
                             )
                             _evidence_anchor = (
-                                _context_fragment_id(_evidence_reply)
-                                or _evidence_anchor
+                                _context_fragment_id(_evidence_reply) or _evidence_anchor
                             )
                         _append_loop_control(
                             working_messages,
@@ -3564,7 +3510,8 @@ class AgentLoop(ToolContextPersistenceMixin):
                         )
                         logger.info(
                             "evidence_gate_nudge_injected sid=%s nudge=%d",
-                            session_id, _ev_dec.nudge_count,
+                            session_id,
+                            _ev_dec.nudge_count,
                         )
                         continue
 
@@ -3578,8 +3525,7 @@ class AgentLoop(ToolContextPersistenceMixin):
                 # the LLM digs in.
                 if (
                     iteration < _SELFCHECK_TIER3_AT
-                    and
-                    self.completion_probe is not None
+                    and self.completion_probe is not None
                     and self.max_completion_nudges > 0
                     and completion_nudges_used < self.max_completion_nudges
                 ):
@@ -3594,24 +3540,26 @@ class AgentLoop(ToolContextPersistenceMixin):
                     except Exception as exc:  # noqa: BLE001
                         logger.warning(
                             "p5s2_completion_probe_failed sid=%s err=%s",
-                            session_id, str(exc)[:200],
+                            session_id,
+                            str(exc)[:200],
                         )
                         incomplete = []
                     if incomplete:
                         if self._tracer:
-                            self._tracer.record({
-                                "kind": "gate",
-                                "iter": iteration,
-                                "which": "completion",
-                                "passed": False,
-                                "reason": "incomplete_todos",
-                            })
+                            self._tracer.record(
+                                {
+                                    "kind": "gate",
+                                    "iter": iteration,
+                                    "which": "completion",
+                                    "passed": False,
+                                    "reason": "incomplete_todos",
+                                }
+                            )
                         completion_nudges_used += 1
                         # Build the rebound system message. Keep it brief
                         # — long prompts crowd the context window.
                         bullet_list = "\n".join(
-                            f"  - {(t.get('content') or '').strip()[:120]}"
-                            for t in incomplete[:8]
+                            f"  - {(t.get('content') or '').strip()[:120]}" for t in incomplete[:8]
                         )
                         rebound = (
                             f"你声明已完成（stop_reason={response.stop_reason or 'end_turn'}），"
@@ -3640,13 +3588,11 @@ class AgentLoop(ToolContextPersistenceMixin):
                                 source="agent_loop.completion_probe.trigger",
                                 role="assistant",
                                 fragment_id=(
-                                    f"agent-loop:{tid}:iteration:{iteration}:"
-                                    "completion-trigger"
+                                    f"agent-loop:{tid}:iteration:{iteration}:completion-trigger"
                                 ),
                             )
                             _completion_anchor = (
-                                _context_fragment_id(_completion_reply)
-                                or _completion_anchor
+                                _context_fragment_id(_completion_reply) or _completion_anchor
                             )
                         _append_loop_control(
                             working_messages,
@@ -3660,8 +3606,7 @@ class AgentLoop(ToolContextPersistenceMixin):
                             ),
                         )
                         logger.info(
-                            "p5s2_completion_nudge_injected "
-                            "sid=%s nudge=%d/%d incomplete=%d",
+                            "p5s2_completion_nudge_injected sid=%s nudge=%d/%d incomplete=%d",
                             session_id,
                             completion_nudges_used,
                             self.max_completion_nudges,
@@ -3671,13 +3616,15 @@ class AgentLoop(ToolContextPersistenceMixin):
                         # next LLM call sees the nudge.
                         continue
                     if self._tracer:
-                        self._tracer.record({
-                            "kind": "gate",
-                            "iter": iteration,
-                            "which": "completion",
-                            "passed": True,
-                            "reason": "",
-                        })
+                        self._tracer.record(
+                            {
+                                "kind": "gate",
+                                "iter": iteration,
+                                "which": "completion",
+                                "passed": True,
+                                "reason": "",
+                            }
+                        )
 
                 # ─── Step6 SelfCheckGate（整合 verify_gate + reflection + 异体评分，
                 # plans/2026-06-24-...）。pipeline on 时走编排；off 时落到下方 elif 原 verify_gate 块（BC）。
@@ -3690,7 +3637,8 @@ class AgentLoop(ToolContextPersistenceMixin):
                 ):
                     _ledger = (
                         self.receipt_store.load_session(session_id)
-                        if self.receipt_store is not None else []
+                        if self.receipt_store is not None
+                        else []
                     )
                     if scoped_evidence is not None:
                         _ledger = list(scoped_evidence.records)
@@ -3705,28 +3653,30 @@ class AgentLoop(ToolContextPersistenceMixin):
                             ledger=_ledger,
                             goal_text=self._extract_goal_text(working_messages),
                             failure_count=verify_nudges_used,
-                            produced_artifacts=[
-                                getattr(r, "tool_name", "?") for r in _ledger
-                            ],
+                            produced_artifacts=[getattr(r, "tool_name", "?") for r in _ledger],
                             objective_evidence=[
                                 f"receipt ok: tool={getattr(r, 'tool_name', '?')}"
-                                for r in _ledger if getattr(r, "ok", True)
+                                for r in _ledger
+                                if getattr(r, "ok", True)
                             ],
                             workload_context=(
-                                self._provider_workload_context_factory(
-                                    "agent.external_evaluator"
-                                )
+                                self._provider_workload_context_factory("agent.external_evaluator")
                                 if self._provider_workload_context_factory is not None
                                 else None
                             ),
                         ),
                     )
                     if self._pipeline_observability:
-                        yield self._pipeline_event("chat_v2_selfcheck", iteration, {
-                            "passed": _sc.passed, "mode": _sc.mode,
-                            "heterogeneous": _sc.heterogeneous,
-                            "claims_unverified": _sc.claims_unverified,
-                        })
+                        yield self._pipeline_event(
+                            "chat_v2_selfcheck",
+                            iteration,
+                            {
+                                "passed": _sc.passed,
+                                "mode": _sc.mode,
+                                "heterogeneous": _sc.heterogeneous,
+                                "claims_unverified": _sc.claims_unverified,
+                            },
+                        )
                     if not _sc.passed and verify_nudges_used < self.max_verify_nudges:
                         verify_nudges_used += 1
                         _self_check_anchor = _latest_context_anchor(
@@ -3741,20 +3691,21 @@ class AgentLoop(ToolContextPersistenceMixin):
                                 source="agent_loop.self_check_gate.trigger",
                                 role="assistant",
                                 fragment_id=(
-                                    f"agent-loop:{tid}:iteration:{iteration}:"
-                                    "self-check-trigger"
+                                    f"agent-loop:{tid}:iteration:{iteration}:self-check-trigger"
                                 ),
                             )
                             _self_check_anchor = (
-                                _context_fragment_id(_self_check_reply)
-                                or _self_check_anchor
+                                _context_fragment_id(_self_check_reply) or _self_check_anchor
                             )
                         _append_loop_control(
                             working_messages,
-                            {"role": "system", "content": (
-                                "<自检> 自检未通过：声明与凭据不符。"
-                                + _sc.reflection_instruction
-                            )},
+                            {
+                                "role": "system",
+                                "content": (
+                                    "<自检> 自检未通过：声明与凭据不符。"
+                                    + _sc.reflection_instruction
+                                ),
+                            },
                             metadata_enabled=context_metadata_enabled,
                             source="agent_loop.self_check_nudge",
                             anchor_after=_self_check_anchor,
@@ -3765,7 +3716,9 @@ class AgentLoop(ToolContextPersistenceMixin):
                         )
                         logger.info(
                             "self_check_nudge_injected sid=%s mode=%s nudge=%d",
-                            session_id, _sc.mode, verify_nudges_used,
+                            session_id,
+                            _sc.mode,
+                            verify_nudges_used,
                         )
                         continue
                     # ─── 耗尽分支（MINOR①：复用 verify-exhausted 终态，勿静默放过）。
@@ -3779,44 +3732,51 @@ class AgentLoop(ToolContextPersistenceMixin):
                         _force_finish_queued = True
                         _append_loop_control(
                             working_messages,
-                            {"role": "system", "content": (
-                                "自检多次未通过（声明与凭据不符），本轮必须 end_turn："
-                                "向用户如实总结做了什么、哪些未能验证、建议下一步。不要再调用任何工具。"
-                            )},
+                            {
+                                "role": "system",
+                                "content": (
+                                    "自检多次未通过（声明与凭据不符），本轮必须 end_turn："
+                                    "向用户如实总结做了什么、哪些未能验证、建议下一步。不要再调用任何工具。"
+                                ),
+                            },
                             metadata_enabled=context_metadata_enabled,
                             source="agent_loop.self_check_exhausted",
                             anchor_after=_latest_context_anchor(
                                 working_messages,
-                                fallback=(
-                                    f"agent-loop:{tid}:iteration:{iteration}:response"
-                                ),
+                                fallback=(f"agent-loop:{tid}:iteration:{iteration}:response"),
                             ),
                             fragment_id=(
-                                f"agent-loop:{tid}:iteration:{iteration}:"
-                                "self-check-exhausted"
+                                f"agent-loop:{tid}:iteration:{iteration}:self-check-exhausted"
                             ),
                             protected=True,
                         )
                         logger.warning(
                             "self_check_exhausted sid=%s nudge=%d/%d → force_finish",
-                            session_id, verify_nudges_used, self.max_verify_nudges,
+                            session_id,
+                            verify_nudges_used,
+                            self.max_verify_nudges,
                         )
                         continue
                     # force_finish_via_tool_choice=False 时无强制总结轮 → 直发 verify_exhausted 终态。
                     if not _sc.passed and verify_nudges_used >= self.max_verify_nudges:
                         if self._tracer:
-                            self._tracer.record({
-                                "kind": "end", "iter": iteration,
-                                "reason": "verify_exhausted",
-                                "gate_summary": self._gate.summary(),
-                            })
+                            self._tracer.record(
+                                {
+                                    "kind": "end",
+                                    "iter": iteration,
+                                    "reason": "verify_exhausted",
+                                    "gate_summary": self._gate.summary(),
+                                }
+                            )
                         yield ErrorEvent(
-                            type="error", task_id=tid, iteration=iteration,
+                            type="error",
+                            task_id=tid,
+                            iteration=iteration,
                             reason="verify_exhausted",
                             detail=(
                                 response.content
                                 or f"self-check: all retries exhausted after "
-                                   f"{verify_nudges_used} nudge(s)"
+                                f"{verify_nudges_used} nudge(s)"
                             ),
                         )
                         return
@@ -3830,8 +3790,7 @@ class AgentLoop(ToolContextPersistenceMixin):
                 # ⚠️ pipeline on 时上方 SelfCheckGate if 已处理 → 此 elif 跳过；off 时走原块（BC）。
                 elif (
                     iteration < _SELFCHECK_TIER3_AT
-                    and
-                    self.verify_gate is not None
+                    and self.verify_gate is not None
                     and getattr(self.verify_gate, "mode", "off") != "off"
                     and verify_nudges_used < self.max_verify_nudges
                     and response.content
@@ -3841,7 +3800,8 @@ class AgentLoop(ToolContextPersistenceMixin):
                         # ReceiptStore.load_session 内强制 hmac_verify）
                         ledger = (
                             self.receipt_store.load_session(session_id)
-                            if self.receipt_store is not None else []
+                            if self.receipt_store is not None
+                            else []
                         )
                         # WI-2.3: thread goal_text into verify_gate.check so
                         # GoalAlignment is populated when an active goal exists.
@@ -3849,9 +3809,7 @@ class AgentLoop(ToolContextPersistenceMixin):
                         # to pre-WI-2.3 (check ignores None goal_text).
                         _vg_goal_text: str | None = None
                         if self.session_goal_store is not None:
-                            _gt_fn = getattr(
-                                self.session_goal_store, "get_goal_text", None
-                            )
+                            _gt_fn = getattr(self.session_goal_store, "get_goal_text", None)
                             if callable(_gt_fn):
                                 _vg_goal_text = _gt_fn(session_id)
                         v_outcome = await traced_call(
@@ -3863,26 +3821,36 @@ class AgentLoop(ToolContextPersistenceMixin):
                                 assistant_text=response.content,
                                 ledger=ledger,
                                 goal_text=_vg_goal_text,
-                                **({"scoped_evidence": scoped_evidence} if scoped_evidence is not None else {}),
+                                **(
+                                    {"scoped_evidence": scoped_evidence}
+                                    if scoped_evidence is not None
+                                    else {}
+                                ),
                             ),
                         )
                     except Exception as exc:  # noqa: BLE001
                         logger.warning(
                             "verify_gate.check failed (sid=%s): %s — passing through",
-                            session_id, exc,
+                            session_id,
+                            exc,
                         )
                         v_outcome = None
 
-                    if (v_outcome is not None and not v_outcome.passed
-                            and v_outcome.unmatched_claims):
+                    if (
+                        v_outcome is not None
+                        and not v_outcome.passed
+                        and v_outcome.unmatched_claims
+                    ):
                         if self._tracer:
-                            self._tracer.record({
-                                "kind": "gate",
-                                "iter": iteration,
-                                "which": "verify",
-                                "passed": False,
-                                "reason": "unmatched_claims",
-                            })
+                            self._tracer.record(
+                                {
+                                    "kind": "gate",
+                                    "iter": iteration,
+                                    "which": "verify",
+                                    "passed": False,
+                                    "reason": "unmatched_claims",
+                                }
+                            )
                         verify_nudges_used += 1
 
                         # WI-2.2: stagnation detection — if 2nd+ rebound and
@@ -3896,6 +3864,7 @@ class AgentLoop(ToolContextPersistenceMixin):
                                 import difflib as _difflib
 
                                 from deskpet.agent.reflection import parse_reflection
+
                                 _refl = parse_reflection(response.content or "")
                                 _cur_replan = str(_refl.task_replanning) if _refl else ""
                                 if (
@@ -3903,13 +3872,15 @@ class AgentLoop(ToolContextPersistenceMixin):
                                     and _cur_replan
                                     and _difflib.SequenceMatcher(
                                         None, _prev_task_replanning, _cur_replan
-                                    ).ratio() > 0.85
+                                    ).ratio()
+                                    > 0.85
                                 ):
                                     _stagnant = True
                                     logger.info(
                                         "verify_replan_stagnant sid=%s nudge=%d "
                                         "ratio=%.2f — escalating to ephemeral",
-                                        session_id, verify_nudges_used,
+                                        session_id,
+                                        verify_nudges_used,
                                         _difflib.SequenceMatcher(
                                             None, _prev_task_replanning, _cur_replan
                                         ).ratio(),
@@ -3918,9 +3889,13 @@ class AgentLoop(ToolContextPersistenceMixin):
                                         from observability.metrics_sink import (
                                             record as _vg_metric,
                                         )
-                                        _vg_metric("verify_replan_stagnant", {
-                                            "nudge_count": int(verify_nudges_used),
-                                        })
+
+                                        _vg_metric(
+                                            "verify_replan_stagnant",
+                                            {
+                                                "nudge_count": int(verify_nudges_used),
+                                            },
+                                        )
                                     except Exception:  # noqa: BLE001
                                         pass
                                 if _refl:
@@ -3932,19 +3907,17 @@ class AgentLoop(ToolContextPersistenceMixin):
                         ephemeral_pass = False
                         if _stagnant or verify_nudges_used >= self.max_verify_nudges:
                             try:
-                                ephemeral_pass = await (
-                                    self.verify_gate.consult_ephemeral_subagent(
-                                        ledger=ledger,
-                                        failed_claims=v_outcome.unmatched_claims,
-                                        assistant_text=response.content,
-                                        workload_context=(
-                                            self._provider_workload_context_factory(
-                                                "agent.verify_ephemeral"
-                                            )
-                                            if self._provider_workload_context_factory is not None
-                                            else None
-                                        ),
-                                    )
+                                ephemeral_pass = await self.verify_gate.consult_ephemeral_subagent(
+                                    ledger=ledger,
+                                    failed_claims=v_outcome.unmatched_claims,
+                                    assistant_text=response.content,
+                                    workload_context=(
+                                        self._provider_workload_context_factory(
+                                            "agent.verify_ephemeral"
+                                        )
+                                        if self._provider_workload_context_factory is not None
+                                        else None
+                                    ),
                                 )
                             except Exception as exc:  # noqa: BLE001
                                 logger.warning("ephemeral consult failed: %s", exc)
@@ -3954,9 +3927,9 @@ class AgentLoop(ToolContextPersistenceMixin):
                                 from observability.metrics_sink import (  # noqa: PLC0415
                                     record as _eph_metric,
                                 )
+
                                 _eph_metric(
-                                    "ephemeral_rescued"
-                                    if ephemeral_pass else "ephemeral_pass",
+                                    "ephemeral_rescued" if ephemeral_pass else "ephemeral_pass",
                                     {
                                         "nudge_count": int(verify_nudges_used),
                                         "ok": bool(ephemeral_pass),
@@ -3972,25 +3945,27 @@ class AgentLoop(ToolContextPersistenceMixin):
                             # AND ephemeral failed.
                             if _stagnant or verify_nudges_used >= self.max_verify_nudges:
                                 logger.warning(
-                                    "verify_exhausted sid=%s nudge=%d/%d "
-                                    "stagnant=%s",
-                                    session_id, verify_nudges_used,
-                                    self.max_verify_nudges, _stagnant,
+                                    "verify_exhausted sid=%s nudge=%d/%d stagnant=%s",
+                                    session_id,
+                                    verify_nudges_used,
+                                    self.max_verify_nudges,
+                                    _stagnant,
                                 )
                                 try:
                                     from observability.metrics_sink import (
                                         record as _vg_metric,
                                     )
-                                    _vg_metric("verify_exhausted", {
-                                        "nudge_count": int(verify_nudges_used),
-                                        "stagnant": bool(_stagnant),
-                                    })
+
+                                    _vg_metric(
+                                        "verify_exhausted",
+                                        {
+                                            "nudge_count": int(verify_nudges_used),
+                                            "stagnant": bool(_stagnant),
+                                        },
+                                    )
                                 except Exception:  # noqa: BLE001
                                     pass
-                                if (
-                                    self.force_finish_via_tool_choice
-                                    and not _verify_final_done
-                                ):
+                                if self.force_finish_via_tool_choice and not _verify_final_done:
                                     _verify_final_done = True
                                     _force_finish_queued = True
                                     _append_loop_control(
@@ -4008,8 +3983,7 @@ class AgentLoop(ToolContextPersistenceMixin):
                                         anchor_after=_latest_context_anchor(
                                             working_messages,
                                             fallback=(
-                                                f"agent-loop:{tid}:iteration:"
-                                                f"{iteration}:response"
+                                                f"agent-loop:{tid}:iteration:{iteration}:response"
                                             ),
                                         ),
                                         fragment_id=(
@@ -4020,12 +3994,14 @@ class AgentLoop(ToolContextPersistenceMixin):
                                     )
                                     continue
                                 if self._tracer:
-                                    self._tracer.record({
-                                        "kind": "end",
-                                        "iter": iteration,
-                                        "reason": "verify_exhausted",
-                                        "gate_summary": self._gate.summary(),
-                                    })
+                                    self._tracer.record(
+                                        {
+                                            "kind": "end",
+                                            "iter": iteration,
+                                            "reason": "verify_exhausted",
+                                            "gate_summary": self._gate.summary(),
+                                        }
+                                    )
                                 yield ErrorEvent(
                                     type="error",
                                     task_id=tid,
@@ -4041,7 +4017,7 @@ class AgentLoop(ToolContextPersistenceMixin):
 
                             # Still have nudges: inject rebound + 回灌 D8 schema
                             unmatched_lines = "\n".join(
-                                f"  {i+1}. [unmatched_claim] {c.raw_text!r} — "
+                                f"  {i + 1}. [unmatched_claim] {c.raw_text!r} — "
                                 f"no receipt matched ({c.reason})"
                                 for i, c in enumerate(v_outcome.unmatched_claims[:5])
                             )
@@ -4060,10 +4036,10 @@ class AgentLoop(ToolContextPersistenceMixin):
                                 and not v_outcome.goal_alignment.aligned
                             ):
                                 ga = v_outcome.goal_alignment
-                                _evidence_str = "\n".join(
-                                    f"  - {e}"
-                                    for e in ga.objective_evidence[:5]
-                                ) or "  (无客观证据)"
+                                _evidence_str = (
+                                    "\n".join(f"  - {e}" for e in ga.objective_evidence[:5])
+                                    or "  (无客观证据)"
+                                )
                                 rebound = (
                                     rebound
                                     + f"\n原始目标: {ga.goal_text}\n"
@@ -4076,12 +4052,11 @@ class AgentLoop(ToolContextPersistenceMixin):
                             # Flag off (default) → rebound string unchanged (BC).
                             if self.structured_reflection:
                                 from deskpet.agent.reflection import _REFLECTION_INSTRUCTION
+
                                 rebound = rebound + _REFLECTION_INSTRUCTION
                             _verify_anchor = _latest_context_anchor(
                                 working_messages,
-                                fallback=(
-                                    f"agent-loop:{tid}:iteration:{iteration}:response"
-                                ),
+                                fallback=(f"agent-loop:{tid}:iteration:{iteration}:response"),
                             )
                             if response.content:
                                 _verify_reply = _append_loop_transcript(
@@ -4094,13 +4069,11 @@ class AgentLoop(ToolContextPersistenceMixin):
                                     source="agent_loop.verify_gate.trigger",
                                     role="assistant",
                                     fragment_id=(
-                                        f"agent-loop:{tid}:iteration:{iteration}:"
-                                        "verify-trigger"
+                                        f"agent-loop:{tid}:iteration:{iteration}:verify-trigger"
                                     ),
                                 )
                                 _verify_anchor = (
-                                    _context_fragment_id(_verify_reply)
-                                    or _verify_anchor
+                                    _context_fragment_id(_verify_reply) or _verify_anchor
                                 )
                             _append_loop_control(
                                 working_messages,
@@ -4116,7 +4089,8 @@ class AgentLoop(ToolContextPersistenceMixin):
                             logger.info(
                                 "verify_gate_nudge_injected sid=%s nudge=%d/%d "
                                 "unmatched=%d ephemeral_pass=%s",
-                                session_id, verify_nudges_used,
+                                session_id,
+                                verify_nudges_used,
                                 self.max_verify_nudges,
                                 len(v_outcome.unmatched_claims),
                                 ephemeral_pass,
@@ -4128,26 +4102,33 @@ class AgentLoop(ToolContextPersistenceMixin):
                                 from observability.metrics_sink import (
                                     record as _verify_metric,
                                 )
-                                _verify_metric("verify_gate_nudge_injected", {
-                                    "nudge_count": int(verify_nudges_used),
-                                    "count": int(len(v_outcome.unmatched_claims)),
-                                    "ok": bool(ephemeral_pass),
-                                })
+
+                                _verify_metric(
+                                    "verify_gate_nudge_injected",
+                                    {
+                                        "nudge_count": int(verify_nudges_used),
+                                        "count": int(len(v_outcome.unmatched_claims)),
+                                        "ok": bool(ephemeral_pass),
+                                    },
+                                )
                             except Exception:  # noqa: BLE001 — metric 失败不阻 dispatch
                                 pass
                             continue
                         else:
                             logger.info(
-                                "verify_gate.ephemeral_rescued sid=%s", session_id,
+                                "verify_gate.ephemeral_rescued sid=%s",
+                                session_id,
                             )
                     elif self._tracer and v_outcome is not None:
-                        self._tracer.record({
-                            "kind": "gate",
-                            "iter": iteration,
-                            "which": "verify",
-                            "passed": True,
-                            "reason": "",
-                        })
+                        self._tracer.record(
+                            {
+                                "kind": "gate",
+                                "iter": iteration,
+                                "which": "verify",
+                                "passed": True,
+                                "reason": "",
+                            }
+                        )
 
                 # WI-B3 Companion+Code v1 — /goal end_turn rebound. Same
                 # safe-fail pattern as completion_probe / verify_gate:
@@ -4159,8 +4140,7 @@ class AgentLoop(ToolContextPersistenceMixin):
                 # skip the block entirely (BC).
                 if (
                     iteration < _SELFCHECK_TIER3_AT
-                    and
-                    self.session_goal_store is not None
+                    and self.session_goal_store is not None
                     and self.goal_checker is not None
                 ):
                     _goal = self.session_goal_store.get(session_id)
@@ -4192,7 +4172,8 @@ class AgentLoop(ToolContextPersistenceMixin):
                         except Exception as exc:  # noqa: BLE001 — safe-fail
                             logger.warning(
                                 "goal_checker raised (sid=%s): %s — skipping check",
-                                session_id, exc,
+                                session_id,
+                                exc,
                             )
                             # R-T3 §15.4: 兜底也用 skipped 语义（check() 内已 safe-fail，
                             # 这里只作双重防护）。不默认 done=True。
@@ -4202,10 +4183,14 @@ class AgentLoop(ToolContextPersistenceMixin):
                             from observability.metrics_sink import (  # noqa: PLC0415
                                 record as _goal_metric,
                             )
-                            _goal_metric("goal_checker_invoked", {
-                                "ok": bool(_done),
-                                "count": int(_goal.iterations_used),
-                            })
+
+                            _goal_metric(
+                                "goal_checker_invoked",
+                                {
+                                    "ok": bool(_done),
+                                    "count": int(_goal.iterations_used),
+                                },
+                            )
                         except Exception:  # noqa: BLE001 — metric 失败不阻
                             pass
                         # R-T3 §15.4: goal_check=skipped → checker 降级，
@@ -4221,19 +4206,22 @@ class AgentLoop(ToolContextPersistenceMixin):
                             # 不 continue，让正常 FinalEvent 流程继续
                         elif not _done:
                             if self._tracer:
-                                self._tracer.record({
-                                    "kind": "gate",
-                                    "iter": iteration,
-                                    "which": "goal",
-                                    "passed": False,
-                                    "reason": str(_hint or "")[:200],
-                                })
+                                self._tracer.record(
+                                    {
+                                        "kind": "gate",
+                                        "iter": iteration,
+                                        "which": "goal",
+                                        "passed": False,
+                                        "reason": str(_hint or "")[:200],
+                                    }
+                                )
                             self.session_goal_store.increment_iteration(session_id)
                             # T1：落库 iterations_used，重启不归零。safe-fail
                             # 内置于 persist_iteration；getattr 兜底旧 store。
                             _pit = getattr(
                                 self.session_goal_store,
-                                "persist_iteration", None,
+                                "persist_iteration",
+                                None,
                             )
                             if _pit is not None:
                                 await _pit(session_id)
@@ -4243,9 +4231,7 @@ class AgentLoop(ToolContextPersistenceMixin):
                             # verify_gate rebound shape.
                             _goal_anchor = _latest_context_anchor(
                                 working_messages,
-                                fallback=(
-                                    f"agent-loop:{tid}:iteration:{iteration}:response"
-                                ),
+                                fallback=(f"agent-loop:{tid}:iteration:{iteration}:response"),
                             )
                             if response.content:
                                 _goal_reply = _append_loop_transcript(
@@ -4258,14 +4244,10 @@ class AgentLoop(ToolContextPersistenceMixin):
                                     source="agent_loop.goal_checker.trigger",
                                     role="assistant",
                                     fragment_id=(
-                                        f"agent-loop:{tid}:iteration:{iteration}:"
-                                        "goal-trigger"
+                                        f"agent-loop:{tid}:iteration:{iteration}:goal-trigger"
                                     ),
                                 )
-                                _goal_anchor = (
-                                    _context_fragment_id(_goal_reply)
-                                    or _goal_anchor
-                                )
+                                _goal_anchor = _context_fragment_id(_goal_reply) or _goal_anchor
                             _append_loop_control(
                                 working_messages,
                                 {
@@ -4285,8 +4267,7 @@ class AgentLoop(ToolContextPersistenceMixin):
                                 ),
                             )
                             logger.info(
-                                "goal_checker_nudge_injected sid=%s "
-                                "iter=%d/%d",
+                                "goal_checker_nudge_injected sid=%s iter=%d/%d",
                                 session_id,
                                 _goal.iterations_used,
                                 _goal.max_iterations,
@@ -4294,20 +4275,23 @@ class AgentLoop(ToolContextPersistenceMixin):
                             continue
                         else:
                             if self._tracer:
-                                self._tracer.record({
-                                    "kind": "gate",
-                                    "iter": iteration,
-                                    "which": "goal",
-                                    "passed": True,
-                                    "reason": "",
-                                })
+                                self._tracer.record(
+                                    {
+                                        "kind": "gate",
+                                        "iter": iteration,
+                                        "which": "goal",
+                                        "passed": True,
+                                        "reason": "",
+                                    }
+                                )
                             self.session_goal_store.mark_done(session_id)
                             # 落库 done 终态（与 increment 落库对称）：否则
                             # load_persisted 只召回 status='active'，已完成目标
                             # 重启会复活成 active。getattr 兜底旧 store。
                             _pd = getattr(
                                 self.session_goal_store,
-                                "persist_done", None,
+                                "persist_done",
+                                None,
                             )
                             if _pd is not None:
                                 await _pd(session_id)
@@ -4332,17 +4316,17 @@ class AgentLoop(ToolContextPersistenceMixin):
                         from deskpet.agent.external_evaluator import (  # noqa: PLC0415
                             is_high_consequence_goal as _is_hcg,
                         )
+
                         _eval_ledger = (
                             self.receipt_store.load_session(session_id)
-                            if self.receipt_store is not None else []
+                            if self.receipt_store is not None
+                            else []
                         )
                         # Extract goal_text from session_goal_store if wired,
                         # else fall back to first user message text.
                         _eval_goal_text = ""
                         if self.session_goal_store is not None:
-                            _gt_fn = getattr(
-                                self.session_goal_store, "get_goal_text", None
-                            )
+                            _gt_fn = getattr(self.session_goal_store, "get_goal_text", None)
                             if callable(_gt_fn):
                                 _eval_goal_text = _gt_fn(session_id) or ""
                         if not _eval_goal_text:
@@ -4360,12 +4344,12 @@ class AgentLoop(ToolContextPersistenceMixin):
                                 invoke=lambda: self.external_evaluator.evaluate(
                                     original_goal=_eval_goal_text,
                                     produced_artifacts=[
-                                        getattr(r, "tool_name", "unknown")
-                                        for r in _eval_ledger
+                                        getattr(r, "tool_name", "unknown") for r in _eval_ledger
                                     ],
                                     objective_evidence=[
                                         f"receipt ok: tool={getattr(r, 'tool_name', '?')}"
-                                        for r in _eval_ledger if getattr(r, "ok", True)
+                                        for r in _eval_ledger
+                                        if getattr(r, "ok", True)
                                     ],
                                     conversation_summary=str(response.content or "")[:512],
                                     workload_context=(
@@ -4392,10 +4376,14 @@ class AgentLoop(ToolContextPersistenceMixin):
                                     from observability.metrics_sink import (  # noqa: PLC0415
                                         record as _eval_metric,
                                     )
-                                    _eval_metric("evaluator_revise_triggered", {
-                                        "quality_score": _ev_result["quality_score"],
-                                        "issues_count": len(_ev_result.get("issues", [])),
-                                    })
+
+                                    _eval_metric(
+                                        "evaluator_revise_triggered",
+                                        {
+                                            "quality_score": _ev_result["quality_score"],
+                                            "issues_count": len(_ev_result.get("issues", [])),
+                                        },
+                                    )
                                 except Exception:  # noqa: BLE001 — metric 失败不阻
                                     pass
                                 yield ErrorEvent(
@@ -4413,34 +4401,54 @@ class AgentLoop(ToolContextPersistenceMixin):
                     except Exception as exc:  # noqa: BLE001 — safe-fail
                         logger.warning(
                             "external_evaluator gate failed (sid=%s): %s — passing through",
-                            session_id, exc,
+                            session_id,
+                            exc,
                         )
-                _final_content = await _review_final_response_quality(self, response, user_request=loop_user_request, session_id=session_id, request_id=context_request_id or tid, iteration=iteration, model=use_model or "", prepared_context=prepared_context, current_tool_set=current_tool_set, totals=totals)
+                _final_content = await _review_final_response_quality(
+                    self,
+                    response,
+                    user_request=loop_user_request,
+                    session_id=session_id,
+                    request_id=context_request_id or tid,
+                    iteration=iteration,
+                    model=use_model or "",
+                    prepared_context=prepared_context,
+                    current_tool_set=current_tool_set,
+                    totals=totals,
+                )
                 # ─── Step7 收敛标记（自然收尾路径，仅观测；止损在循环顶部 2d-① 处理）。
                 # plans/2026-06-24-...：模型自己 end_turn 正常收尾时 gate 尚未 terminate
                 # （reason="running"），此处只发 converged 观测事件，**不触发止损**（止损只在触顶分支）。
                 if self._convergence_controller is not None and self._pipeline_observability:
                     _v = self._convergence_controller.evaluate(
-                        principal_resolved=True, unverified_claims=0,
+                        principal_resolved=True,
+                        unverified_claims=0,
                         gate_summary=self._gate.summary(),
                     )
-                    yield self._pipeline_event("chat_v2_convergence", iteration, {
-                        "converged": _v.converged,
-                        "principal_resolved": _v.principal_resolved,
-                        "stop_reason": _v.stop_reason, "report": "",
-                    })
+                    yield self._pipeline_event(
+                        "chat_v2_convergence",
+                        iteration,
+                        {
+                            "converged": _v.converged,
+                            "principal_resolved": _v.principal_resolved,
+                            "stop_reason": _v.stop_reason,
+                            "report": "",
+                        },
+                    )
 
                 # P6 Phase 6 — gate records the natural terminal state
                 # before we emit the FinalEvent so consumers reading
                 # gate.summary() after a run see SUCCESS / matching reason.
                 self._gate.record_final_answer()
                 if self._tracer:
-                    self._tracer.record({
-                        "kind": "end",
-                        "iter": iteration,
-                        "reason": response.stop_reason or "end_turn",
-                        "gate_summary": self._gate.summary(),
-                    })
+                    self._tracer.record(
+                        {
+                            "kind": "end",
+                            "iter": iteration,
+                            "reason": response.stop_reason or "end_turn",
+                            "gate_summary": self._gate.summary(),
+                        }
+                    )
 
                 # WI-OH-4: 记忆 self-curation nudge — 在 FinalEvent 之后周期性
                 # fire-and-forget 触发（curator None → BC，跳过整段；非 None 时
@@ -4465,13 +4473,15 @@ class AgentLoop(ToolContextPersistenceMixin):
                 _inject_loop_user_request(
                     tool_call, tool_schemas, loop_user_request=loop_user_request
                 )
-            if is_sentinel_run and any(
-                call.name == "deepresearch" for call in response.tool_calls
-            ):
+            if is_sentinel_run and any(call.name == "deepresearch" for call in response.tool_calls):
                 yield FinalEvent(
-                    type="final", task_id=tid, iteration=iteration,
-                    content=("Auto-resume sentinel cannot start deepresearch. "
-                             "Please explicitly send a research request."),
+                    type="final",
+                    task_id=tid,
+                    iteration=iteration,
+                    content=(
+                        "Auto-resume sentinel cannot start deepresearch. "
+                        "Please explicitly send a research request."
+                    ),
                     total_input_tokens=totals["input"],
                     total_output_tokens=totals["output"],
                     total_cache_read_tokens=totals["cache_read"],
@@ -4479,23 +4489,33 @@ class AgentLoop(ToolContextPersistenceMixin):
                 )
                 return
             if await _suppress_repeated_tool_batch(
-                self, response.tool_calls, working_messages,
-                session_id=session_id, task_id=tid, iteration=iteration,
+                self,
+                response.tool_calls,
+                working_messages,
+                session_id=session_id,
+                task_id=tid,
+                iteration=iteration,
                 metadata_enabled=context_metadata_enabled,
             ):
                 continue
             group_id = _append_tool_batch_message(
-                response, working_messages, task_id=tid, iteration=iteration,
+                response,
+                working_messages,
+                task_id=tid,
+                iteration=iteration,
                 metadata_enabled=context_metadata_enabled,
             )
-            exclusive_call = next((
-                call for call in response.tool_calls
-                if (
-                    _tool_completion_semantics(self.tools, call.name)
-                    == "accepted_async"
-                    or call.name == "tool_activate"
-                )
-            ), None)
+            exclusive_call = next(
+                (
+                    call
+                    for call in response.tool_calls
+                    if (
+                        _tool_completion_semantics(self.tools, call.name) == "accepted_async"
+                        or call.name == "tool_activate"
+                    )
+                ),
+                None,
+            )
             selected_calls = list(response.tool_calls)
             if exclusive_call is not None and len(response.tool_calls) != 1:
                 # accepted_async and tool_activate hand control to another
@@ -4511,32 +4531,39 @@ class AgentLoop(ToolContextPersistenceMixin):
                 for call in response.tool_calls:
                     if call.id == exclusive_call.id:
                         continue
-                    rejection = json.dumps({
-                        "ok": False,
-                        "error": "deferred_by_exclusive_tool",
-                        "executed": False,
-                        "exclusive_tool_call_id": exclusive_call.id,
-                        "exclusive_tool_name": exclusive_call.name,
-                        "hint": (
-                            "This sibling call was not executed. Retry it only "
-                            "if it is still needed after the exclusive result."
-                        ),
-                    }, ensure_ascii=False)
+                    rejection = json.dumps(
+                        {
+                            "ok": False,
+                            "error": "deferred_by_exclusive_tool",
+                            "executed": False,
+                            "exclusive_tool_call_id": exclusive_call.id,
+                            "exclusive_tool_name": exclusive_call.name,
+                            "hint": (
+                                "This sibling call was not executed. Retry it only "
+                                "if it is still needed after the exclusive result."
+                            ),
+                        },
+                        ensure_ascii=False,
+                    )
                     _append_loop_transcript(
                         working_messages,
-                        {"role": "tool", "tool_call_id": call.id,
-                         "name": call.name, "content": rejection},
+                        {
+                            "role": "tool",
+                            "tool_call_id": call.id,
+                            "name": call.name,
+                            "content": rejection,
+                        },
                         metadata_enabled=context_metadata_enabled,
-                        source="agent_loop.tool_result", role="tool",
+                        source="agent_loop.tool_result",
+                        role="tool",
                         fragment_id=f"{group_id}:tool:{call.id}",
                         causal_group_id=group_id,
                     )
             yield ToolBatchEvent(
-                task_id=tid, iteration=iteration,
+                task_id=tid,
+                iteration=iteration,
                 tool_calls=tuple(selected_calls),
-                canonical_messages=tuple(
-                    copy.deepcopy(message) for message in working_messages
-                ),
+                canonical_messages=tuple(copy.deepcopy(message) for message in working_messages),
                 feedback_state={
                     "iteration": iteration,
                     "evidence_gathered": self._evidence_gathered,
@@ -4559,17 +4586,21 @@ class AgentLoop(ToolContextPersistenceMixin):
             _cap_summary = dict(self._gate.summary())
             _cap_summary["reason"] = TerminationReason.HARD_MAX_TURNS.value
             _verdict = self._convergence_controller.evaluate(
-                principal_resolved=False,   # 跑满 range 必是每轮都在调工具没收尾 → 未收敛
+                principal_resolved=False,  # 跑满 range 必是每轮都在调工具没收尾 → 未收敛
                 unverified_claims=0,
                 gate_summary=_cap_summary,
             )
             if self._pipeline_observability:
-                yield self._pipeline_event("chat_v2_convergence", self.max_iterations, {
-                    "converged": _verdict.converged,
-                    "principal_resolved": _verdict.principal_resolved,
-                    "stop_reason": _verdict.stop_reason,
-                    "report": _verdict.report,
-                })
+                yield self._pipeline_event(
+                    "chat_v2_convergence",
+                    self.max_iterations,
+                    {
+                        "converged": _verdict.converged,
+                        "principal_resolved": _verdict.principal_resolved,
+                        "stop_reason": _verdict.stop_reason,
+                        "report": _verdict.report,
+                    },
+                )
             if _verdict.should_stop_loss and _verdict.report:
                 self._gate.record_final_answer()
                 yield FinalEvent(
@@ -4661,21 +4692,11 @@ class AgentLoop(ToolContextPersistenceMixin):
         return {
             "direct_names": [str(cap.ref.name) for cap in direct],
             "activated_names": [str(cap.ref.name) for cap in activated],
-            "schema_hashes": {
-                str(cap.ref.name): str(cap.ref.schema_hash) for cap in all_caps
-            },
-            "persisted_tool_scope_revision": int(
-                getattr(current_tool_set, "revision", 0) or 0
-            ),
-            "registry_revision": int(
-                getattr(current_tool_set, "registry_revision", 0) or 0
-            ),
-            "policy_fingerprint": str(
-                getattr(current_tool_set, "policy_fingerprint", "") or ""
-            ),
-            "schema_fingerprint": str(
-                getattr(current_tool_set, "schema_fingerprint", "") or ""
-            ),
+            "schema_hashes": {str(cap.ref.name): str(cap.ref.schema_hash) for cap in all_caps},
+            "persisted_tool_scope_revision": int(getattr(current_tool_set, "revision", 0) or 0),
+            "registry_revision": int(getattr(current_tool_set, "registry_revision", 0) or 0),
+            "policy_fingerprint": str(getattr(current_tool_set, "policy_fingerprint", "") or ""),
+            "schema_fingerprint": str(getattr(current_tool_set, "schema_fingerprint", "") or ""),
             "adapter_state": "canonical",
         }
 
@@ -4694,6 +4715,7 @@ class AgentLoop(ToolContextPersistenceMixin):
         if self.context_projector is None or self.context_snapshot_store is None:
             return None
         from deskpet.context_os_e2e_hooks import consume_context_os_e2e_fault
+
         if consume_context_os_e2e_fault("snapshot_cas_timeout"):
             raise TimeoutError("snapshot_cas_timeout")
         last_user = next(
@@ -4726,9 +4748,7 @@ class AgentLoop(ToolContextPersistenceMixin):
             stored = await self.context_snapshot_store.get(
                 snapshot.session_id, snapshot.task_scope_id
             )
-            expected_revision = (
-                int(stored.handle.row_revision) if stored is not None else 0
-            )
+            expected_revision = int(stored.handle.row_revision) if stored is not None else 0
         tool_summary = self._prepared_toolset_summary(current_tool_set)
 
         async def _write(projection: Any, expected: int) -> Any:
@@ -4779,9 +4799,7 @@ class AgentLoop(ToolContextPersistenceMixin):
         prepared_context: Any,
         resolution: Any,
     ) -> None:
-        jobs = tuple(
-            getattr(prepared_context, "coverage_compaction_jobs", ()) or ()
-        )
+        jobs = tuple(getattr(prepared_context, "coverage_compaction_jobs", ()) or ())
         if not jobs:
             return
         if self.context_segment_store is None or resolution is None:
@@ -4833,9 +4851,7 @@ class AgentLoop(ToolContextPersistenceMixin):
                     proof=proof,
                     provider_id=str(candidate.provider_id),
                     model_id=str(candidate.model_id),
-                    token_estimates={
-                        "deskpet-conservative-v1": max(1, len(summary) // 3)
-                    },
+                    token_estimates={"deskpet-conservative-v1": max(1, len(summary) // 3)},
                 ),
                 timeout=10.0,
             )
@@ -4914,9 +4930,7 @@ class AgentLoop(ToolContextPersistenceMixin):
                         sum(1 for d in decisions if getattr(d, "should_remember", False)),
                     )
                 except Exception as exc:  # noqa: BLE001 — never escape bg task
-                    logger.debug(
-                        "oh4_curation_nudge_failed sid=%s: %s", session_id, exc
-                    )
+                    logger.debug("oh4_curation_nudge_failed sid=%s: %s", session_id, exc)
 
             task = asyncio.create_task(_run_curation())
             if (
@@ -4928,9 +4942,7 @@ class AgentLoop(ToolContextPersistenceMixin):
                     task,
                 )
         except Exception as exc:  # noqa: BLE001 — scheduling must not break turn
-            logger.debug(
-                "oh4_curation_schedule_failed sid=%s: %s", session_id, exc
-            )
+            logger.debug("oh4_curation_schedule_failed sid=%s: %s", session_id, exc)
 
     # ------------------------------------------------------------------
     # WI-4.2 — post-compaction skill body remount
@@ -4957,7 +4969,9 @@ class AgentLoop(ToolContextPersistenceMixin):
             target=self._frozen_skill_remounts,
         )
 
-    def _remount_skills(self, messages: list[dict], session_id: str, *, prepared_context: Any = None) -> list[dict]:
+    def _remount_skills(
+        self, messages: list[dict], session_id: str, *, prepared_context: Any = None
+    ) -> list[dict]:
         return remount_skills(self, messages, session_id, prepared_context=prepared_context)
 
 

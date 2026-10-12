@@ -39,7 +39,89 @@ logger = logging.getLogger(__name__)
 _MAX_TRACKED_RUNS = 64
 
 PRODUCT_TOOL_NAMES: tuple[str, ...] = tuple(
-    ["agent", "agent_parallel", "agent_reach_doctor", "agent_reach_read", "app_discover", "app_launch", "await_subagents", "capability_build", "capability_repair", "context_page_in", "desktop_create_file", "doc_create", "doc_edit", "doc_read", "download_file", "edit_file", "excel_create", "external_action_wait", "fetch_tool_result", "file_glob", "file_grep", "file_organize", "file_read", "file_write", "generate_image", "glob", "gold_price_lookup", "grep", "image_ocr", "list_directory", "context_route", "mission_start", "mission_amend", "method_library", "mission_status", "mission_list", "mission_source_update", "move_file", "office_pick_file", "pdf_export", "ppt_create", "process_list", "process_start", "process_stop", "process_wait", "project_directory_select", "project_group_send", "read_file", "register_artifacts", "run_browser_task", "run_shell", "scrapling_fetch", "screen_capture", "screen_click", "screen_key", "screen_move", "screen_scroll", "screen_type", "skill_invoke", "spawn_subagents", "spawn_team", "skill_install", "task_scope_search", "task_scope_update", "todo_complete", "todo_write", "tool_activate", "tool_describe", "tool_search", "web_crawl", "web_extract_article", "web_fetch", "web_read_sitemap", "web_search", "window_capture", "window_focus", "window_key", "window_list", "workspace_prepare", "workspace_recall", "write_file"]
+    [
+        "agent",
+        "agent_parallel",
+        "agent_reach_doctor",
+        "agent_reach_read",
+        "app_discover",
+        "app_launch",
+        "await_subagents",
+        "capability_build",
+        "capability_repair",
+        "context_page_in",
+        "desktop_create_file",
+        "doc_create",
+        "doc_edit",
+        "doc_read",
+        "download_file",
+        "edit_file",
+        "excel_create",
+        "external_action_wait",
+        "fetch_tool_result",
+        "file_glob",
+        "file_grep",
+        "file_organize",
+        "file_read",
+        "file_write",
+        "generate_image",
+        "glob",
+        "gold_price_lookup",
+        "grep",
+        "image_ocr",
+        "list_directory",
+        "context_route",
+        "mission_start",
+        "mission_amend",
+        "method_library",
+        "mission_status",
+        "mission_list",
+        "mission_source_update",
+        "move_file",
+        "office_pick_file",
+        "pdf_export",
+        "ppt_create",
+        "process_list",
+        "process_start",
+        "process_stop",
+        "process_wait",
+        "project_directory_select",
+        "project_group_send",
+        "read_file",
+        "register_artifacts",
+        "run_browser_task",
+        "run_shell",
+        "scrapling_fetch",
+        "screen_capture",
+        "screen_click",
+        "screen_key",
+        "screen_move",
+        "screen_scroll",
+        "screen_type",
+        "skill_invoke",
+        "spawn_subagents",
+        "spawn_team",
+        "skill_install",
+        "task_scope_search",
+        "task_scope_update",
+        "todo_complete",
+        "todo_write",
+        "tool_activate",
+        "tool_describe",
+        "tool_search",
+        "web_crawl",
+        "web_extract_article",
+        "web_fetch",
+        "web_read_sitemap",
+        "web_search",
+        "window_capture",
+        "window_focus",
+        "window_key",
+        "window_list",
+        "workspace_prepare",
+        "workspace_recall",
+        "write_file",
+    ]
 )
 
 # Host-composed administrative tools are registered only after their durable
@@ -47,8 +129,18 @@ PRODUCT_TOOL_NAMES: tuple[str, ...] = tuple(
 # built without them for conformance and recovery, while production wiring is
 # still checked against PRODUCT_TOOL_NAMES once the registration is appended.
 HOST_COMPOSED_TOOL_NAMES = frozenset(
-    {"skill_install", "context_route", "task_scope_search", "task_scope_update", "mission_start",
-     "mission_status", "mission_amend", "method_library", "mission_list", "mission_source_update"}
+    {
+        "skill_install",
+        "context_route",
+        "task_scope_search",
+        "task_scope_update",
+        "mission_start",
+        "mission_status",
+        "mission_amend",
+        "method_library",
+        "mission_list",
+        "mission_source_update",
+    }
 )
 
 DispatchKind = Literal["sync", "async", "context", "staged", "control", "provider"]
@@ -110,9 +202,7 @@ class ProductToolRegistration:
     def __post_init__(self) -> None:
         if self.name not in PRODUCT_TOOL_NAMES:
             raise ValueError(f"unknown product Tool identity: {self.name}")
-        if self.dispatch_kind not in {
-            "sync", "async", "context", "staged", "control", "provider"
-        }:
+        if self.dispatch_kind not in {"sync", "async", "context", "staged", "control", "provider"}:
             raise ValueError("unsupported product Tool dispatch kind")
         if not self.permission_category.strip():
             raise ValueError("permission_category is required")
@@ -143,8 +233,8 @@ class ProductToolInventoryEntry:
 _current_call_id: contextvars.ContextVar[CallId | None] = contextvars.ContextVar(
     "product_sdk_tool_call_id", default=None
 )
-_current_tool_context: contextvars.ContextVar[ToolContext | None] = (
-    contextvars.ContextVar("product_sdk_tool_context", default=None)
+_current_tool_context: contextvars.ContextVar[ToolContext | None] = contextvars.ContextVar(
+    "product_sdk_tool_context", default=None
 )
 _validation_run_id: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "product_sdk_tool_validation_run_id", default=None
@@ -262,16 +352,11 @@ class ProductToolsAdapter(ToolRegistry):
         except MalformedToolArgumentsError as exc:
             tool = self.get(call.name)
             _record_invalid_arguments(str(call.call_id), str(exc))
-            logger.warning(
-                "tool_arguments.invalid tool=%s", call.name
-            )
+            logger.warning("tool_arguments.invalid tool=%s", call.name)
             return tool
 
     def bind_run_authorities(self, authorities: object) -> None:
-        if (
-            self._run_authorities is not None
-            and self._run_authorities is not authorities
-        ):
+        if self._run_authorities is not None and self._run_authorities is not authorities:
             raise RuntimeError("product Tool authority registry is already bound")
         already_bound = self._run_authorities is authorities
         self._run_authorities = authorities
@@ -347,9 +432,7 @@ class ProductToolsAdapter(ToolRegistry):
             current = super().get(name)
         except (KeyError, RuntimeError):
             raise SdkToolExecutorCatalogUnavailable(name) from None
-        current_schema_hash = _canonical_sha256(
-            thaw_json(current.spec.input_schema)
-        )
+        current_schema_hash = _canonical_sha256(thaw_json(current.spec.input_schema))
         if (
             self._execution_identities.get(name) != frozen.execution_identity
             or current_schema_hash != frozen.schema_hash
@@ -408,8 +491,7 @@ class ProductToolsAdapter(ToolRegistry):
             authority = resolve(context.run_id)
             if (
                 str(getattr(authority, "run_id", "")) != context.run_id.value
-                or str(getattr(authority, "request_id", ""))
-                != context.request_id.value
+                or str(getattr(authority, "request_id", "")) != context.request_id.value
             ):
                 raise RuntimeError("sdk_tool_context_identity_mismatch")
         # 事件 X：记住 call → Run 归属，Run 终态时才知道该归还哪些本地认领。
@@ -574,7 +656,11 @@ class ProductEffectExecutor(EffectExecutor):
         )
 
     async def _commit_evidence(
-        self, context: ToolContext, call: ToolCall, execution: EffectExecution, scope: tuple[str, str]
+        self,
+        context: ToolContext,
+        call: ToolCall,
+        execution: EffectExecution,
+        scope: tuple[str, str],
     ) -> None:
         from deskpet.execution.evidence_ingress import ToolInvocationFact
         from deskpet.sdk_adapters.effect_gate import classify_objective_event
@@ -637,11 +723,17 @@ class ProductEffectExecutor(EffectExecutor):
             if refusal is not None:
                 logger.warning(
                     "tool.denied",
-                    extra={"tool": call.name, "reason": "protected_path_requires_user", "path": "protected_paths"},
+                    extra={
+                        "tool": call.name,
+                        "reason": "protected_path_requires_user",
+                        "path": "protected_paths",
+                    },
                 )
                 return EffectExecution(
                     effect=None,
-                    result=ToolResult.rejected(call.call_id, "protected_path_requires_user", refusal),
+                    result=ToolResult.rejected(
+                        call.call_id, "protected_path_requires_user", refusal
+                    ),
                 )
         from deskpet.permissions.protected_paths import dispatch_clearance
 
@@ -667,9 +759,7 @@ class ProductEffectExecutor(EffectExecutor):
             call = kwargs.get("call")
             if not isinstance(call, ToolCall):
                 raise TypeError("ProductEffectExecutor requires ToolCall")
-            rejection = await self._effect_gate.verify(
-                context, call.name, call_id=call.call_id
-            )
+            rejection = await self._effect_gate.verify(context, call.name, call_id=call.call_id)
             if rejection is not None:
                 logger.warning(
                     "tool.denied",
@@ -734,9 +824,7 @@ class ProductEffectExecutor(EffectExecutor):
                     context, call.name, call_id=call.call_id
                 )
             try:
-                await self._reserve_evidence(
-                    context, call, evidence_scope, pre_commit=pre_commit
-                )
+                await self._reserve_evidence(context, call, evidence_scope, pre_commit=pre_commit)
             except EffectGateRejected as rejected:
                 await self._effect_gate.memoize_rejection(context, rejected.result)
                 logger.warning(
@@ -752,8 +840,13 @@ class ProductEffectExecutor(EffectExecutor):
         origin_token = _foreground_invocation_origin.set(origin)
         try:
             from contextlib import AsyncExitStack, nullcontext
+
             binding_scope = getattr(self._effect_gate, "execution_scope", None)
-            scope = binding_scope(context, kwargs["call"].name) if gated and callable(binding_scope) else nullcontext()
+            scope = (
+                binding_scope(context, kwargs["call"].name)
+                if gated and callable(binding_scope)
+                else nullcontext()
+            )
             read_scope = getattr(self._read_gate, "execution_scope", None)
             async with AsyncExitStack() as stack:
                 await stack.enter_async_context(scope)
@@ -932,9 +1025,7 @@ def _result(raw: Any) -> ToolResult:
             code = str(error.get("code") or code)
             message = str(error.get("message") or "")
         declared_code = value.get("error_code")
-        if isinstance(declared_code, str) and _SAFE_HANDLER_ERROR_CODE.fullmatch(
-            declared_code
-        ):
+        if isinstance(declared_code, str) and _SAFE_HANDLER_ERROR_CODE.fullmatch(declared_code):
             code = declared_code
             declared_message = value.get("public_message")
             if isinstance(declared_message, str) and declared_message.strip():
@@ -944,9 +1035,7 @@ def _result(raw: Any) -> ToolResult:
             # 去路径**的原因，而不是那句谁也无法据以自纠的 "Tool execution failed."。
             reason = _failure_reason(value)
             message = (
-                f"Tool execution failed ({reason})."
-                if reason != "-"
-                else NO_REASON_FAILURE_MESSAGE
+                f"Tool execution failed ({reason})." if reason != "-" else NO_REASON_FAILURE_MESSAGE
             )
         return ToolResult.failed(call_id, code, message[:_MAX_HANDLER_PUBLIC_MESSAGE])
     return ToolResult.succeeded(call_id, value)
@@ -1019,9 +1108,7 @@ def _take_invalid_arguments(call_id: str) -> str | None:
     return _invalid_arguments.pop(str(call_id), None)
 
 
-def _missing_required_arguments(
-    arguments: Mapping[str, Any], required: Sequence[str]
-) -> list[str]:
+def _missing_required_arguments(arguments: Mapping[str, Any], required: Sequence[str]) -> list[str]:
     """缺失或显式 ``None`` 才算缺参。
 
     空字符串**不算**：``write_file`` 的 ``content`` 是必填，而写一个空文件是合法
@@ -1029,11 +1116,7 @@ def _missing_required_arguments(
     ``tool_search`` 的空 query 无意义）留在它们的处理器里判断。
     """
 
-    return [
-        name
-        for name in required
-        if name not in arguments or arguments[name] is None
-    ]
+    return [name for name in required if name not in arguments or arguments[name] is None]
 
 
 # HM-TO-A6 incident B（2026-09-08 native run product-sdk-cba43a68… turn 7）：
@@ -1065,18 +1148,11 @@ def _argument_shape(schema: Any) -> str:
         parts.append("one of " + "|".join(shown))
     if kind == "array":
         items = schema.get("items")
-        item_kind = (
-            str(items.get("type") or "object")
-            if isinstance(items, Mapping)
-            else "object"
-        )
+        item_kind = str(items.get("type") or "object") if isinstance(items, Mapping) else "object"
         parts.append(f"of {item_kind}")
         required_items = items.get("required") if isinstance(items, Mapping) else None
         if isinstance(required_items, (list, tuple)) and required_items:
-            parts.append(
-                "each item requires "
-                + ", ".join(str(item) for item in required_items)
-            )
+            parts.append("each item requires " + ", ".join(str(item) for item in required_items))
     for key, label in (
         ("minimum", "min"),
         ("minItems", "min items"),
@@ -1088,9 +1164,7 @@ def _argument_shape(schema: Any) -> str:
     return ", ".join(parts)
 
 
-def _expected_arguments_hint(
-    input_schema: Mapping[str, Any], missing: Sequence[str]
-) -> str:
+def _expected_arguments_hint(input_schema: Mapping[str, Any], missing: Sequence[str]) -> str:
     """``Expected: name (shape); …`` for exactly the arguments that were missing."""
 
     properties = input_schema.get("properties")
@@ -1129,15 +1203,12 @@ def _sdk_tool(registration: ProductToolRegistration) -> FunctionTool:
                 (
                     f"{registration.name} rejected: missing required "
                     f"argument(s) {names}. Call {registration.name} again with "
-                    f"{names} filled in."
-                    + (f" {expected}" if expected else "")
+                    f"{names} filled in." + (f" {expected}" if expected else "")
                 ),
             )
         if invalid is not None:
             # 其余 schema 违规（类型、枚举、范围、多余属性、嵌套必填）统一走这条。
-            logger.warning(
-                "product_tool.invalid_arguments tool=%s", registration.name
-            )
+            logger.warning("product_tool.invalid_arguments tool=%s", registration.name)
             return ToolResult.failed(
                 call_id,
                 INVALID_ARGUMENTS_ERROR_CODE,
@@ -1187,11 +1258,7 @@ def _sdk_tool(registration: ProductToolRegistration) -> FunctionTool:
     # Host 侧另留一份同样的清单，只为在拒绝时能指名道姓说缺了哪个参数。
     declared_required = input_schema.get("required")
     host_required: tuple[str, ...] = (
-        tuple(
-            str(item)
-            for item in declared_required
-            if str(item) != "deskpet_public_progress"
-        )
+        tuple(str(item) for item in declared_required if str(item) != "deskpet_public_progress")
         if isinstance(declared_required, (list, tuple))
         else ()
     )
@@ -1281,9 +1348,7 @@ def extend_product_registry_with_mcp(
                 "source": source,
                 "spec_version": str(getattr(legacy, "spec_version", "v1")),
                 "schema": dict(schema),
-                "runtime_provenance_ref": str(
-                    getattr(legacy, "runtime_provenance_ref", "")
-                ),
+                "runtime_provenance_ref": str(getattr(legacy, "runtime_provenance_ref", "")),
                 "fixture_epoch": int(getattr(legacy, "fixture_epoch", 0)),
                 "fixture_spec_hash": str(getattr(legacy, "fixture_spec_hash", "")),
                 "stable_handler_id": str(getattr(legacy, "stable_handler_id", "")),
@@ -1329,9 +1394,7 @@ def extend_product_registry_with_mcp(
             ProductToolInventoryEntry(
                 name=name,
                 dispatch_kind="async",
-                permission_category=str(
-                    getattr(legacy, "permission_category", "read_file")
-                ),
+                permission_category=str(getattr(legacy, "permission_category", "read_file")),
                 source=source,
                 version=str(getattr(legacy, "spec_version", "v1")),
                 execution_identity=identity,
@@ -1380,9 +1443,7 @@ def filter_sdk_catalog_for_workspace(
         )
         allowed = {item.name for item in selected_inventory if item.executable_eligible}
         selected_specs = tuple(
-            item
-            for item in catalog.get("specs", ())
-            if str(item.get("name")) in allowed
+            item for item in catalog.get("specs", ()) if str(item.get("name")) in allowed
         )
         if {str(item.get("name")) for item in selected_specs} != allowed:
             raise RuntimeError("project_tool_projection_incomplete")
@@ -1396,9 +1457,7 @@ def filter_sdk_catalog_for_workspace(
         selected["schema_token_count"] = tool_schema_tokens(selected_specs)
         schema_fingerprints = catalog.get("schema_fingerprints")
         if isinstance(schema_fingerprints, Mapping):
-            selected["schema_fingerprints"] = {
-                name: schema_fingerprints[name] for name in allowed
-            }
+            selected["schema_fingerprints"] = {name: schema_fingerprints[name] for name in allowed}
         return selected, selected_inventory
     if kind == "missing":
         raise RuntimeError("workspace_unavailable")
@@ -1420,8 +1479,10 @@ def filter_sdk_catalog_for_workspace(
             item,
             availability_reason=(
                 item.availability_reason
-                if (item.projectless_admission == "safe"
-                    or (primary_route_capable and item.name in exempt))
+                if (
+                    item.projectless_admission == "safe"
+                    or (primary_route_capable and item.name in exempt)
+                )
                 else item.availability_reason or "workspace_unscoped"
             ),
         )
@@ -1439,9 +1500,7 @@ def filter_sdk_catalog_for_workspace(
     selected["tool_names"] = sorted(allowed)
     schema_fingerprints = catalog.get("schema_fingerprints")
     if isinstance(schema_fingerprints, Mapping):
-        selected["schema_fingerprints"] = {
-            name: schema_fingerprints[name] for name in allowed
-        }
+        selected["schema_fingerprints"] = {name: schema_fingerprints[name] for name in allowed}
     return selected, selected_inventory
 
 

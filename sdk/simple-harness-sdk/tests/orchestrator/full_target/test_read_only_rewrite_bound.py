@@ -30,7 +30,6 @@ that name, not ``budget_exhausted``.
 ``install_hierarchical(planning=)``）早已没有用例，只剩辅助代码，删除；这里只留规则本身的两条（纯函数）。
 """
 
-
 from __future__ import annotations
 
 import hashlib

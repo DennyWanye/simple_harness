@@ -47,8 +47,14 @@ def test_transport_category_is_durable_without_private_data_or_retry():
             raise httpx.ReadError("private response with secret-credential", request=http_request)
 
         async with httpx.AsyncClient(transport=httpx.MockTransport(broken)) as client:
-            provider = OpenAICompatibleProvider(client, "https://example.test/v1", "exact-model",
-                Secret("secret-credential"), provider_id="fake", pricing_key="pricing")
+            provider = OpenAICompatibleProvider(
+                client,
+                "https://example.test/v1",
+                "exact-model",
+                Secret("secret-credential"),
+                provider_id="fake",
+                pricing_key="pricing",
+            )
             wrapped, _ = meter(provider)
             with pytest.raises(UnknownProviderUsage):
                 await wrapped.invoke(request("first"), cancel=CancelToken())

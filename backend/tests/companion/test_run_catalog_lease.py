@@ -17,34 +17,48 @@ from deskpet.capabilities.run_catalog import (
 
 def test_user_global_pack_projection_requires_exact_owner_and_scope() -> None:
     scope_key = "user:v2:" + "9" * 64
-    lease = SimpleNamespace(lease_entries=(
-        {
-            "entry_kind": "pack", "pack_id": "global-proof", "version": "1",
-            "manifest_hash": "a" * 64,
-            "selected_binding": {
-                "scope": "user", "scope_key": scope_key, "owner_key": "principal-a",
+    lease = SimpleNamespace(
+        lease_entries=(
+            {
+                "entry_kind": "pack",
+                "pack_id": "global-proof",
+                "version": "1",
+                "manifest_hash": "a" * 64,
+                "selected_binding": {
+                    "scope": "user",
+                    "scope_key": scope_key,
+                    "owner_key": "principal-a",
+                },
             },
-        },
-        {
-            "entry_kind": "pack", "pack_id": "project-only", "version": "1",
-            "manifest_hash": "b" * 64,
-            "selected_binding": {
-                "scope": "project", "scope_key": "project:v2:x",
-                "owner_key": "principal-a",
+            {
+                "entry_kind": "pack",
+                "pack_id": "project-only",
+                "version": "1",
+                "manifest_hash": "b" * 64,
+                "selected_binding": {
+                    "scope": "project",
+                    "scope_key": "project:v2:x",
+                    "owner_key": "principal-a",
+                },
             },
-        },
-    ))
+        )
+    )
     entries = PreparedRunCatalogLease.user_global_pack_entries(
         lease, owner_key="principal-a", user_scope_key=scope_key
     )
     assert [entry["pack_id"] for entry in entries] == ["global-proof"]
-    assert PreparedRunCatalogLease.user_global_pack_entries(
-        lease, owner_key="principal-b", user_scope_key=scope_key
-    ) == ()
+    assert (
+        PreparedRunCatalogLease.user_global_pack_entries(
+            lease, owner_key="principal-b", user_scope_key=scope_key
+        )
+        == ()
+    )
     with pytest.raises(ValueError, match="validated user-global"):
         PreparedRunCatalogLease.user_global_pack_entries(
             lease, owner_key="principal-a", user_scope_key="default"
         )
+
+
 from deskpet.capabilities.store import CapabilityStore
 from deskpet.execution.contracts import fingerprint_json
 from deskpet.tools.build_identity import ExecutionBuildIdentity
@@ -108,9 +122,7 @@ def test_capture_reports_all_selected_tools_missing_build_identity() -> None:
     prepared = (
         ToolCapabilityResolver(registry)
         .resolve_draft(
-            ToolExposureIntent(
-                required_direct_names=("missing_b", "missing_a")
-            ),
+            ToolExposureIntent(required_direct_names=("missing_b", "missing_a")),
             eligibility=ToolEligibilityContext(
                 session_id="session-missing",
                 request_id="request-missing",
@@ -186,8 +198,7 @@ async def test_run_catalog_lease_binds_and_releases_in_execution_transactions(
     with pytest.raises(TypeError):
         exact_tools[0]["name"] = "tampered"
     assert (
-        fingerprint_json(lease.prepared_tool_set_envelope)
-        == lease.prepared_tool_set_capture_hash
+        fingerprint_json(lease.prepared_tool_set_envelope) == lease.prepared_tool_set_capture_hash
     )
     assert len(lease.lease_entries) == lease.expected_entry_count
     with pytest.raises(TypeError):
@@ -215,12 +226,10 @@ async def test_run_catalog_lease_binds_and_releases_in_execution_transactions(
     await platform.require_run_catalog_ready("run-1")
 
     async with store.write_transaction() as db:
-        terminal_receipt = (
-            await lease.terminal_commit_extension.apply_terminal_commit(
-                uow.bind(db),
-                record=SimpleNamespace(ref=SimpleNamespace(run_id="run-1")),
-                terminal_event=SimpleNamespace(),
-            )
+        terminal_receipt = await lease.terminal_commit_extension.apply_terminal_commit(
+            uow.bind(db),
+            record=SimpleNamespace(ref=SimpleNamespace(run_id="run-1")),
+            terminal_event=SimpleNamespace(),
         )
     await lease.after_terminal_cleanup.cleanup_after_terminal(
         SimpleNamespace(ref=SimpleNamespace(run_id="run-1")),
@@ -402,9 +411,7 @@ async def test_candidate_to_single_capture_rejects_registry_or_mcp_exact_change(
         process_instance_id=f"process-{tool_name}",
     )
 
-    with pytest.raises(
-        RuntimeError, match="prepared_tool_set_registry_revision_stale"
-    ):
+    with pytest.raises(RuntimeError, match="prepared_tool_set_registry_revision_stale"):
         await platform.prepare_run_catalog_lease(
             scope=CapabilityScope.for_run("run-race", user_key="owner-race"),
             owner_key="owner-race",
@@ -419,9 +426,7 @@ async def test_candidate_to_single_capture_rejects_registry_or_mcp_exact_change(
 
     async with store.read_connection() as db:
         row = await (
-            await db.execute(
-                "SELECT COUNT(*) FROM capability_run_catalog_snapshots"
-            )
+            await db.execute("SELECT COUNT(*) FROM capability_run_catalog_snapshots")
         ).fetchone()
     assert row[0] == 0
     await uow.close()
@@ -503,9 +508,9 @@ def test_single_capture_never_mixes_registry_snapshot_with_live_spec(
     )
 
     assert racing_registry.live_get_calls == 0
-    assert captured.envelope["exact_tools"][0][
-        "tool_spec_fingerprint"
-    ] == tool_spec_fingerprint(old_spec)
+    assert captured.envelope["exact_tools"][0]["tool_spec_fingerprint"] == tool_spec_fingerprint(
+        old_spec
+    )
 
 
 @pytest.mark.asyncio
@@ -537,14 +542,9 @@ async def test_platform_installs_all_first_party_skill_packs_without_scripts(
         assert len(roots) == 17
         assert len(initialized.first_party_installs) == 17
         assert all(
-            result.operation.status == "succeeded"
-            for result in initialized.first_party_installs
+            result.operation.status == "succeeded" for result in initialized.first_party_installs
         )
-        assert not any(
-            candidate
-            for path in roots
-            for candidate in path.rglob("script.py")
-        )
+        assert not any(candidate for path in roots for candidate in path.rglob("script.py"))
     finally:
         await platform.shutdown()
         await uow.close()

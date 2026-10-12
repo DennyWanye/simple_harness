@@ -29,8 +29,13 @@ SMALL = dict(
     input_limit=72,
     max_output=16,
     policy_overrides=dict(
-        max_context_tokens=72, output_reserve_tokens=16, safety_reserve_tokens=2, tool_headroom_tokens=2,
-        recent_min_tokens=12, recall_max_tokens=24, fixed_soft_max_tokens=32,
+        max_context_tokens=72,
+        output_reserve_tokens=16,
+        safety_reserve_tokens=2,
+        tool_headroom_tokens=2,
+        recent_min_tokens=12,
+        recall_max_tokens=24,
+        fixed_soft_max_tokens=32,
     ),
 )
 
@@ -41,7 +46,11 @@ class FramedWordTokenizer(arp_fixture.ExactWordTokenizer):
     fingerprint = "test-exact-words-framed:v1"
 
     def count_request_tokens(self, request) -> int:  # type: ignore[no-untyped-def]
-        return sum(count_message(self, m) for m in request.messages) + count_tools(self, tuple(request.tools)) + FRAMING
+        return (
+            sum(count_message(self, m) for m in request.messages)
+            + count_tools(self, tuple(request.tools))
+            + FRAMING
+        )
 
 
 async def _turn(agent, text: str, input_id: str):  # type: ignore[no-untyped-def]
@@ -49,7 +58,9 @@ async def _turn(agent, text: str, input_id: str):  # type: ignore[no-untyped-def
     return await agent.wait_turn(receipt.turn_id, timeout=10)
 
 
-def test_an_exact_counter_charges_the_fixed_part_so_recall_survives_the_final_measurement(tmp_path, monkeypatch) -> None:
+def test_an_exact_counter_charges_the_fixed_part_so_recall_survives_the_final_measurement(
+    tmp_path, monkeypatch
+) -> None:
     monkeypatch.setattr(arp_fixture, "ExactWordTokenizer", FramedWordTokenizer)
 
     async def case() -> None:
@@ -60,14 +71,18 @@ def test_an_exact_counter_charges_the_fixed_part_so_recall_survives_the_final_me
             assert (await _turn(agent, SECRET, "i0")).state is AgentTurnState.COMMITTED
             for i, filler in enumerate(FILLERS, 1):
                 assert (await _turn(agent, filler, f"i{i}")).state is AgentTurnState.COMMITTED
-            assert (await _turn(agent, "请问工程暗号 是什么？", "ask")).state is AgentTurnState.COMMITTED
+            assert (
+                await _turn(agent, "请问工程暗号 是什么？", "ask")
+            ).state is AgentTurnState.COMMITTED
             connection = runtime.uow.database.connection
             key = connection.execute(
                 "SELECT original_request_key FROM arp_context_requests ORDER BY created_at_ms DESC, provider_request_ordinal DESC LIMIT 1"
             ).fetchone()[0]
             body = store.read_context_by_request_key(connection, str(key)).manifest
             assert body["recalled_chunk_ids"], "the early secret must survive the final measurement"
-            texts = [m.content for m in provider.requests[-1].messages if isinstance(m.content, str)]
+            texts = [
+                m.content for m in provider.requests[-1].messages if isinstance(m.content, str)
+            ]
             assert any("recalled_history" in t and "蓝鲸七号" in t for t in texts)
             # The frozen manifest's fixed charge is the exact one: the planned total equals the measured wire.
             assert int(body["input_token_charge"]) <= int(body["effective_input_budget"])

@@ -13,6 +13,7 @@ Coverage:
   * read_all / summary aggregation
   * I/O failure is swallowed (returns False, no raise)
 """
+
 from __future__ import annotations
 
 import json
@@ -48,12 +49,14 @@ def test_sanitize_keeps_whitelisted_scalars() -> None:
 
 def test_sanitize_drops_non_whitelisted_keys() -> None:
     # The primary privacy wall — these key names are not on the list.
-    out = sanitize_detail({
-        "user_message": "short but secret",
-        "prompt": "x",
-        "api_key": "sk-xyz",
-        "error_class": "kept",
-    })
+    out = sanitize_detail(
+        {
+            "user_message": "short but secret",
+            "prompt": "x",
+            "api_key": "sk-xyz",
+            "error_class": "kept",
+        }
+    )
     assert out == {"error_class": "kept"}
 
 
@@ -71,11 +74,13 @@ def test_sanitize_keeps_boundary_length_string() -> None:
 
 
 def test_sanitize_drops_containers() -> None:
-    out = sanitize_detail({
-        "count": {"a": 1},        # whitelisted key but container value
-        "ratio": [1, 2, 3],       # whitelisted key but container value
-        "skill_name": "kept",
-    })
+    out = sanitize_detail(
+        {
+            "count": {"a": 1},  # whitelisted key but container value
+            "ratio": [1, 2, 3],  # whitelisted key but container value
+            "skill_name": "kept",
+        }
+    )
     assert out == {"skill_name": "kept"}
 
 
@@ -237,18 +242,21 @@ def test_no_conversation_content_can_leak(sink: MetricsSink) -> None:
     whitelist makes ``user_message`` / ``api_key`` structurally
     impossible to persist, regardless of value length."""
     conversation = "用户说：我的银行卡密码是 123456"  # SHORT — length cap won't help
-    sink.record("llm_call_ok", {
-        "user_message": conversation,    # key not whitelisted → dropped
-        "api_key": "sk-secret-xyz",      # key not whitelisted → dropped
-        "prompt": "我的密码是 abc",       # key not whitelisted → dropped
-        "error_class": "none",           # whitelisted → kept
-    })
+    sink.record(
+        "llm_call_ok",
+        {
+            "user_message": conversation,  # key not whitelisted → dropped
+            "api_key": "sk-secret-xyz",  # key not whitelisted → dropped
+            "prompt": "我的密码是 abc",  # key not whitelisted → dropped
+            "error_class": "none",  # whitelisted → kept
+        },
+    )
     raw = sink.path.read_text(encoding="utf-8")
     assert "银行卡密码" not in raw
     assert "123456" not in raw
-    assert "sk-secret-xyz" not in raw   # key whitelist blocks it — short or not
+    assert "sk-secret-xyz" not in raw  # key whitelist blocks it — short or not
     assert "我的密码" not in raw
-    assert "error_class" in raw         # the one legit field survives
+    assert "error_class" in raw  # the one legit field survives
 
 
 def test_secrets_blocked_by_key_not_length(sink: MetricsSink) -> None:

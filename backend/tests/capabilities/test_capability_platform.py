@@ -80,10 +80,7 @@ async def _platform(
     runtime: LocalToolRuntime | None = None,
 ) -> tuple[CapabilityPlatform, CapabilityStore, ToolRegistry]:
     # Keep immutable pack paths below the legacy Windows MAX_PATH boundary.
-    short_root = (
-        tmp_path.parent
-        / f"cp-{hashlib.sha256(tmp_path.name.encode()).hexdigest()[:10]}"
-    )
+    short_root = tmp_path.parent / f"cp-{hashlib.sha256(tmp_path.name.encode()).hexdigest()[:10]}"
     short_root.mkdir(parents=True, exist_ok=True)
     database = await initialize_capability_database(short_root / "workflow.db")
     store = CapabilityStore(database)
@@ -123,9 +120,7 @@ def _context(workspace: Path) -> ToolExecutionContext:
 async def test_platform_installs_missing_godot_detector_idempotently_and_invokes_it(
     tmp_path: Path,
 ) -> None:
-    platform, store, registry = await _platform(
-        tmp_path, pack_root=GODOT_PACK
-    )
+    platform, store, registry = await _platform(tmp_path, pack_root=GODOT_PACK)
 
     first = await platform.initialize()
     revision = registry.catalog_snapshot().revision
@@ -155,20 +150,10 @@ async def test_platform_installs_missing_godot_detector_idempotently_and_invokes
         encoding="utf-8",
     )
     fake_godot.chmod(0o755)
-    spec = next(
-        item
-        for item in registry.catalog_snapshot().specs
-        if item.name == "godot__detect"
-    )
+    spec = next(item for item in registry.catalog_snapshot().specs if item.name == "godot__detect")
     assert spec.execution_build_identity is not None
-    assert (
-        spec.execution_build_identity.handler_id
-        == "capability.godot.detect.v1"
-    )
-    assert (
-        spec.execution_build_identity.provider
-        == "deskpet-capability-pack"
-    )
+    assert spec.execution_build_identity.handler_id == "capability.godot.detect.v1"
+    assert spec.execution_build_identity.provider == "deskpet-capability-pack"
     context = _context(tmp_path)
     prepared = registry.prepare_call(
         "godot__detect",
@@ -177,13 +162,8 @@ async def test_platform_installs_missing_godot_detector_idempotently_and_invokes
         context.call_id,
         execution_context=context,
     )
-    assert [
-        selector.kind for selector in prepared.resource_selectors
-    ] == ["process_executable"]
-    assert (
-        prepared.resource_selectors[0].canonical_value
-        == str(fake_godot.resolve())
-    )
+    assert [selector.kind for selector in prepared.resource_selectors] == ["process_executable"]
+    assert prepared.resource_selectors[0].canonical_value == str(fake_godot.resolve())
     assert spec.context_handler is not None
     outcome = await spec.context_handler(
         {"preferred_executable": str(fake_godot)},
@@ -242,9 +222,10 @@ async def test_platform_migrates_exact_legacy_tool_fingerprints_on_rehydrate(
     assert len(initialized.rehydrated_publications) == 1
     migrated = (await store.list_active_versions())[0]
     assert migrated.expected_tool_fingerprints == current
-    assert {
-        spec.name for spec in restarted_registry.catalog_snapshot().specs
-    } == {"godot__detect", "godot__project_check"}
+    assert {spec.name for spec in restarted_registry.catalog_snapshot().specs} == {
+        "godot__detect",
+        "godot__project_check",
+    }
     assert await restarted.shutdown() == ()
 
 
@@ -264,10 +245,7 @@ async def test_platform_migrates_exact_pre_authority_fingerprints_on_rehydrate(
     )
     record = (await store.list_active_versions())[0]
     current = tuple(tool_spec_fingerprint(spec) for spec in specs)
-    legacy = tuple(
-        legacy_tool_spec_fingerprint_pre_authority_v2(spec)
-        for spec in specs
-    )
+    legacy = tuple(legacy_tool_spec_fingerprint_pre_authority_v2(spec) for spec in specs)
     assert current == record.expected_tool_fingerprints
     assert legacy != current
     assert await store.migrate_version_tool_fingerprint_schema(
@@ -294,9 +272,10 @@ async def test_platform_migrates_exact_pre_authority_fingerprints_on_rehydrate(
     assert len(initialized.rehydrated_publications) == 1
     migrated = (await store.list_active_versions())[0]
     assert migrated.expected_tool_fingerprints == current
-    assert {
-        spec.name for spec in restarted_registry.catalog_snapshot().specs
-    } == {"godot__detect", "godot__project_check"}
+    assert {spec.name for spec in restarted_registry.catalog_snapshot().specs} == {
+        "godot__detect",
+        "godot__project_check",
+    }
     assert await restarted.shutdown() == ()
 
 
@@ -336,7 +315,9 @@ async def test_platform_rejects_unknown_fingerprint_drift_on_rehydrate(
     assert failure.code == "installed_tool_fingerprint_mismatch"
     assert failure.record.descriptor.capability_id == record.descriptor.capability_id
     assert not {spec.name for spec in restarted.registry.catalog_snapshot().specs} & {
-        "godot__detect", "godot__project_check"}
+        "godot__detect",
+        "godot__project_check",
+    }
     await restarted.shutdown()
 
 
@@ -410,9 +391,7 @@ async def test_healthcheck_crash_is_isolated_and_never_published(
     )
     _replace_declared_hash(pack, "tools/godot/main.py")
     runtime = LocalToolRuntime(monitor_interval_seconds=0.01)
-    platform, _store, registry = await _platform(
-        tmp_path, pack_root=pack, runtime=runtime
-    )
+    platform, _store, registry = await _platform(tmp_path, pack_root=pack, runtime=runtime)
 
     # 试用前 2026-10-08 用户定：坏包按名跳过、不发布，平台其余照常启动（原来整个平台失败）。
     initialized = await platform.initialize()
@@ -521,9 +500,7 @@ async def test_configured_pack_is_discoverable_before_integrity_checked_install(
         user_data_root=tmp_path / "userdata",
         environment=TEST_ENVIRONMENT,
         configured_sources={
-            "godot-catalog": PackSourceRequest(
-                "local", str(GODOT_PACK), "catalog-v1"
-            )
+            "godot-catalog": PackSourceRequest("local", str(GODOT_PACK), "catalog-v1")
         },
         first_party_pack_roots=(),
         register_control_surface=False,
@@ -569,12 +546,18 @@ async def test_a_skipped_instruction_pack_is_listed_unavailable_until_its_direct
         command_finder=lambda _name: None,
     )
     await restarted.initialize()
-    assert [f.record.descriptor.capability_id for f in restarted.manager.rehydrate_failures] == ["skill-web-read"]
+    assert [f.record.descriptor.capability_id for f in restarted.manager.rehydrate_failures] == [
+        "skill-web-read"
+    ]
     service = CapabilityCenterService(store=store, manager=restarted.manager, hub=restarted.hub)
-    shown = {item["capability_id"]: item for item in await service.list_capabilities()}["skill-web-read"]
+    shown = {item["capability_id"]: item for item in await service.list_capabilities()}[
+        "skill-web-read"
+    ]
     assert shown["health"] == "unavailable" and "已跳过" in shown["health_summary"]
 
     moved.rename(record.install_path)  # 目录回来了
-    shown = {item["capability_id"]: item for item in await service.list_capabilities()}["skill-web-read"]
+    shown = {item["capability_id"]: item for item in await service.list_capabilities()}[
+        "skill-web-read"
+    ]
     assert shown["health"] != "unavailable"
     await restarted.shutdown()

@@ -13,6 +13,7 @@ Returns:
 Failure (5xx, 4xx, network error) is surfaced as ``{"skills": [],
 "error": "..."}`` so the UI can show a graceful empty state.
 """
+
 from __future__ import annotations
 
 import time
@@ -40,16 +41,10 @@ class RegistryClient:
 
     async def fetch(self, *, force: bool = False) -> dict[str, Any]:
         now = time.time()
-        if (
-            not force
-            and self._cache is not None
-            and now - self._cache_at < self.cache_ttl_s
-        ):
+        if not force and self._cache is not None and now - self._cache_at < self.cache_ttl_s:
             return self._cache
         try:
-            async with httpx.AsyncClient(
-                timeout=20.0, transport=self._transport
-            ) as client:
+            async with httpx.AsyncClient(timeout=20.0, transport=self._transport) as client:
                 r = await client.get(self.url)
             if r.status_code != 200:
                 return {

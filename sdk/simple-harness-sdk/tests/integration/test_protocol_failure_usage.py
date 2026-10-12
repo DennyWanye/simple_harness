@@ -51,9 +51,12 @@ class HalfJsonFirstAttempt(LayeredScriptedProvider):
     """第一次尝试的执行者调用走真实 HTTP 适配器，拿到半截 JSON 的工具参数；其余照脚本。"""
 
     def __init__(self, client: httpx.AsyncClient) -> None:
-        super().__init__(planner=lambda request: retry_same_method(request) or planner_reply(request))
-        self.http = OpenAICompatibleProvider(client, "https://protocol.invalid/v1", "agent-model",
-                                             Secret("fixture-only"))
+        super().__init__(
+            planner=lambda request: retry_same_method(request) or planner_reply(request)
+        )
+        self.http = OpenAICompatibleProvider(
+            client, "https://protocol.invalid/v1", "agent-model", Secret("fixture-only")
+        )
 
     async def invoke(self, request, *, cancel):  # type: ignore[no-untyped-def]
         attempt = str(package_of(request).get("attempt", {}).get("attempt_id", ""))
@@ -71,7 +74,9 @@ class HalfJsonFirstAttempt(LayeredScriptedProvider):
         pytest.param({**VALID_USAGE, "total_tokens": 149}, False, id="inconsistent-total"),
     ],
 )
-def test_protocol_failure_keeps_only_valid_usage_without_resampling_or_tools(tmp_path, usage, known):
+def test_protocol_failure_keeps_only_valid_usage_without_resampling_or_tools(
+    tmp_path, usage, known
+):
     async def case():
         posted = []
 
@@ -81,13 +86,25 @@ def test_protocol_failure_keeps_only_valid_usage_without_resampling_or_tools(tmp
             payload = {
                 "id": f"bad-tool-response-{len(posted)}",
                 "model": "agent-model",
-                "choices": [{
-                    "finish_reason": "tool_calls",
-                    "message": {"role": "assistant", "content": "", "tool_calls": [{
-                        "id": "unparseable-call", "type": "function",
-                        "function": {"name": "workspace_write_file", "arguments": '{"path": "never'},
-                    }]},
-                }],
+                "choices": [
+                    {
+                        "finish_reason": "tool_calls",
+                        "message": {
+                            "role": "assistant",
+                            "content": "",
+                            "tool_calls": [
+                                {
+                                    "id": "unparseable-call",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "workspace_write_file",
+                                        "arguments": '{"path": "never',
+                                    },
+                                }
+                            ],
+                        },
+                    }
+                ],
             }
             if usage is not None:
                 payload["usage"] = usage
@@ -97,21 +114,44 @@ def test_protocol_failure_keeps_only_valid_usage_without_resampling_or_tools(tmp
         async with httpx.AsyncClient(transport=httpx.MockTransport(transport)) as client:
             provider = HalfJsonFirstAttempt(client)
             async with product_world(root, provider, max_concurrent_model_calls=1) as world:
-                mission_id = world.create({"goal": "写一份 NOTES.md", "success_criteria": ["file:NOTES.md"],
-                                           "idempotency_key": "protocol-" + str(known)})["mission_id"]
+                mission_id = world.create(
+                    {
+                        "goal": "写一份 NOTES.md",
+                        "success_criteria": ["file:NOTES.md"],
+                        "idempotency_key": "protocol-" + str(known),
+                    }
+                )["mission_id"]
                 store = world.store
 
                 async def drive():
-                    while str(store.get_mission(mission_id).status.value) not in {"COMPLETED", "FAILED"}:
+                    while str(store.get_mission(mission_id).status.value) not in {
+                        "COMPLETED",
+                        "FAILED",
+                    }:
                         await world.drain(timeout=10)
-                await asyncio.wait_for(drive(), 60)
-                assert str(store.get_mission(mission_id).status.value) == "COMPLETED", world.loop.progress_log[-8:]
 
-                first = next(a for a in (store.get_attempt(row[0]) for row in store.connection.execute(
-                    "SELECT attempt_id FROM attempts WHERE mission_id=?", (mission_id,)))
-                    if a.id.endswith(":attempt-1"))
-                rows = [dict(row) for row in store.connection.execute(
-                    "SELECT * FROM provider_token_grants WHERE subject_id=? ORDER BY created_at", (first.id,))]
+                await asyncio.wait_for(drive(), 60)
+                assert str(store.get_mission(mission_id).status.value) == "COMPLETED", (
+                    world.loop.progress_log[-8:]
+                )
+
+                first = next(
+                    a
+                    for a in (
+                        store.get_attempt(row[0])
+                        for row in store.connection.execute(
+                            "SELECT attempt_id FROM attempts WHERE mission_id=?", (mission_id,)
+                        )
+                    )
+                    if a.id.endswith(":attempt-1")
+                )
+                rows = [
+                    dict(row)
+                    for row in store.connection.execute(
+                        "SELECT * FROM provider_token_grants WHERE subject_id=? ORDER BY created_at",
+                        (first.id,),
+                    )
+                ]
                 samples = 1 + (world.loop._config.empty_response_retries if known else 0)
                 # 真实 HTTP 适配器被调到了；有效用量时按"失手"再采样，否则不再采样
                 assert len(posted) == len(rows) == samples, (posted, rows)
@@ -120,8 +160,9 @@ def test_protocol_failure_keeps_only_valid_usage_without_resampling_or_tools(tmp
                 effects = 0
                 for database in root.glob("execution*.db"):
                     with sqlite3.connect(database.resolve().as_uri() + "?mode=ro", uri=True) as db:
-                        effects += db.execute("SELECT COUNT(*) FROM execution_effects WHERE run_id=?",
-                                              (agent_id,)).fetchone()[0]
+                        effects += db.execute(
+                            "SELECT COUNT(*) FROM execution_effects WHERE run_id=?", (agent_id,)
+                        ).fetchone()[0]
                 assert effects == 0
                 assert first.failure["error"]["error_code"] == "provider_protocol_error"
                 if known:
@@ -133,8 +174,11 @@ def test_protocol_failure_keeps_only_valid_usage_without_resampling_or_tools(tmp
                     assert row["state"] == "UNKNOWN" and row["actual_tokens"] is None
                     assert world.loop.commit.ledger.has_unknown_usage(first.id)
                 # 失败不扣次数，同一做法再试一次做完
-                released = [event.payload for event in store.list_events(mission_id)
-                            if event.type == "AttemptChargeReleased" and event.attempt_id == first.id]
+                released = [
+                    event.payload
+                    for event in store.list_events(mission_id)
+                    if event.type == "AttemptChargeReleased" and event.attempt_id == first.id
+                ]
                 assert released and released[0]["failure_class"] in {"INFRA", "INTERRUPTED"}
 
     asyncio.run(case())

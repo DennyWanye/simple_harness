@@ -1,4 +1,5 @@
 """Exercise the real Host factory and its exact Host-control delegate."""
+
 import pytest
 from deskpet.sdk_adapters.skill_install_verification import (
     SKILL_INSTALL_VERIFICATION_PURPOSE,
@@ -26,14 +27,21 @@ from tests.sdk_adapters.test_skill_install_verification_router import (
 async def test_sdk_selector_keeps_host_verification_checks_and_never_falls_back():
     attempt = _attempt()
     ordinary, verifier = _Driver("react"), _Driver("verifier")
-    control = ProductRootDriverRouter(react_driver=ordinary,
+    control = ProductRootDriverRouter(
+        react_driver=ordinary,
         attempt_resolver=SkillInstallVerificationAttemptResolver(_Store(attempt)),
-        verification_driver_factory=lambda _: verifier)
+        verification_driver_factory=lambda _: verifier,
+    )
     router = StartModeDriverRouter(ordinary, control)
-    correct = HostControlAuthorityV1(SKILL_INSTALL_VERIFICATION_PURPOSE,
-        attempt.attempt_id, skill_install_verification_authority_hash(attempt), attempt.attempt_generation)
-    wrong = HostControlAuthorityV1(SKILL_INSTALL_VERIFICATION_PURPOSE,
-        attempt.attempt_id, "d" * 64, attempt.attempt_generation)
+    correct = HostControlAuthorityV1(
+        SKILL_INSTALL_VERIFICATION_PURPOSE,
+        attempt.attempt_id,
+        skill_install_verification_authority_hash(attempt),
+        attempt.attempt_generation,
+    )
+    wrong = HostControlAuthorityV1(
+        SKILL_INSTALL_VERIFICATION_PURPOSE, attempt.attempt_id, "d" * 64, attempt.attempt_generation
+    )
     result = await router.start(_invocation(authority=correct), context=None, cancel=None)
     assert result.payload == {"route": "verifier"}
     rejected = await router.start(_invocation(authority=wrong), context=None, cancel=None)
@@ -55,6 +63,7 @@ def test_harness_lock_and_manifest_match_current_candidate():
         SDK_WHEEL_SHA256,
         sdk_wheel_path,
     )
+
     wheel = sdk_wheel_path()
     lock = tomllib.loads((wheel.parent.parent / "uv.lock").read_text())
     package = next(p for p in lock["package"] if p["name"] == "simple-harness-sdk")

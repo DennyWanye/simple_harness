@@ -48,17 +48,24 @@ class RecordingCommitPort:
         return self.receipt
 
 
-@pytest.mark.parametrize(("external", "expected"), (
-    ("UNSOLVABLE_PROVEN", BackendStatus.UNSOLVABLE_PROVEN),
-    ("SEARCH_LIMIT_REACHED", BackendStatus.SEARCH_LIMIT_REACHED),
-    ("TIMEOUT", BackendStatus.TIMEOUT),
-    ("UNSUPPORTED_FEATURE", BackendStatus.UNSUPPORTED_FEATURE),
-    ("SOLVER_UNAVAILABLE", BackendStatus.BACKEND_UNAVAILABLE),
-    ("TOOL_ERROR", BackendStatus.TOOL_ERROR),
-))
+@pytest.mark.parametrize(
+    ("external", "expected"),
+    (
+        ("UNSOLVABLE_PROVEN", BackendStatus.UNSOLVABLE_PROVEN),
+        ("SEARCH_LIMIT_REACHED", BackendStatus.SEARCH_LIMIT_REACHED),
+        ("TIMEOUT", BackendStatus.TIMEOUT),
+        ("UNSUPPORTED_FEATURE", BackendStatus.UNSUPPORTED_FEATURE),
+        ("SOLVER_UNAVAILABLE", BackendStatus.BACKEND_UNAVAILABLE),
+        ("TOOL_ERROR", BackendStatus.TOOL_ERROR),
+    ),
+)
 def test_panda_non_solved_statuses_keep_their_meaning(external, expected):
-    current = PlanningProblemSnapshot.build("mission", 1, {"domain_text": "domain", "problem_text": "problem"})
-    toolchain = SimpleNamespace(solve=lambda *a, **kw: SimpleNamespace(status=external, witness=None, detail=""))
+    current = PlanningProblemSnapshot.build(
+        "mission", 1, {"domain_text": "domain", "problem_text": "problem"}
+    )
+    toolchain = SimpleNamespace(
+        solve=lambda *a, **kw: SimpleNamespace(status=external, witness=None, detail="")
+    )
     result = PandaPlanningBackend(toolchain).solve(current, PlanningLimits(1, None, 4096))
     assert result.status is expected
     assert result.witness is None
@@ -66,8 +73,11 @@ def test_panda_non_solved_statuses_keep_their_meaning(external, expected):
 
 def test_snapshot_mutation_cannot_reach_the_commit_port():
     current = snapshot()
-    result = PlanningBackendResult(BackendStatus.SOLVED, current.digest,
-        witness=CandidatePlanWitness.build(current, ("move(a)",), "panda"))
+    result = PlanningBackendResult(
+        BackendStatus.SOLVED,
+        current.digest,
+        witness=CandidatePlanWitness.build(current, ("move(a)",), "panda"),
+    )
     current.problem["goals"].append("unapproved-goal")
     port = RecordingCommitPort()
     with pytest.raises(ContractError, match="changed after freezing"):
@@ -78,8 +88,9 @@ def test_snapshot_mutation_cannot_reach_the_commit_port():
 def test_tampered_witness_hash_cannot_validate():
     current = snapshot()
     witness = CandidatePlanWitness.build(current, ("move(a)",), "panda")
-    result = PlanningBackendResult(BackendStatus.SOLVED, current.digest,
-                                   witness=replace(witness, steps=("unapproved(a)",)))
+    result = PlanningBackendResult(
+        BackendStatus.SOLVED, current.digest, witness=replace(witness, steps=("unapproved(a)",))
+    )
     assert PlanningBackendBridge().validate(result) is False
 
 
@@ -92,11 +103,17 @@ def test_non_solved_with_valid_witness_cannot_validate():
 
 def test_panda_rejects_unsupported_expansion_limit_before_tool_call():
     calls = []
+
     def solve(*args, **kwargs):
         calls.append(True)
         return SimpleNamespace(status="TIMEOUT", witness=None, detail="")
-    current = PlanningProblemSnapshot.build("mission", 1, {"domain_text": "domain", "problem_text": "problem"})
-    result = PandaPlanningBackend(SimpleNamespace(solve=solve)).solve(current, PlanningLimits(1, 100, 4096))
+
+    current = PlanningProblemSnapshot.build(
+        "mission", 1, {"domain_text": "domain", "problem_text": "problem"}
+    )
+    result = PandaPlanningBackend(SimpleNamespace(solve=solve)).solve(
+        current, PlanningLimits(1, 100, 4096)
+    )
     assert result.status is BackendStatus.UNSUPPORTED_FEATURE
     assert calls == []
 

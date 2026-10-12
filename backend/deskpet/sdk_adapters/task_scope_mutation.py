@@ -66,13 +66,27 @@ HOST_TASK_SCOPE_UPDATE_AUTHORITY_REF = "host:task-scope-update:v1"
 MODEL_CLOSURE_REASON_CODE = "model_closure"
 
 _MUTATION_KINDS: tuple[str, ...] = (
-    "goal.set", "goal.revise", "scope.include", "scope.exclude",
-    "decision.record", "decision.supersede", "plan.step.add",
-    "plan.step.revise", "plan.step.cancel", "plan.reorder", "task.pause",
-    "task.block", "task.resume", "task.complete", "resume.update",
-    "checkpoint.request", "relation.add",
+    "goal.set",
+    "goal.revise",
+    "scope.include",
+    "scope.exclude",
+    "decision.record",
+    "decision.supersede",
+    "plan.step.add",
+    "plan.step.revise",
+    "plan.step.cancel",
+    "plan.reorder",
+    "task.pause",
+    "task.block",
+    "task.resume",
+    "task.complete",
+    "resume.update",
+    "checkpoint.request",
+    "relation.add",
 )
-_STATUS_KINDS: frozenset[str] = frozenset({"task.pause", "task.block", "task.resume", "task.complete"})
+_STATUS_KINDS: frozenset[str] = frozenset(
+    {"task.pause", "task.block", "task.resume", "task.complete"}
+)
 _COMPLETE_STATUSES: frozenset[str] = frozenset({"complete", "completed"})
 # design-freeze §7: {draft,active,in_progress} --status.update--> {active,in_progress,paused,blocked}
 _PAUSABLE_FROM: frozenset[str] = frozenset({"draft", "active", "in_progress", "open"})
@@ -316,7 +330,9 @@ class TaskScopeUpdateService:
                 else "task_scope_update_payload_invalid"
             )
             await self._audit(run_id, code, payload)
-            return ToolResult.rejected(call_id, code, f"task_scope_update rejected: {code} {str(exc)[:128]}")
+            return ToolResult.rejected(
+                call_id, code, f"task_scope_update rejected: {code} {str(exc)[:128]}"
+            )
         except ClosureRejected as rejected:
             repeats = await self._audit(run_id, rejected.code, payload)
             detail = dict(rejected.detail)
@@ -454,7 +470,9 @@ class TaskScopeUpdateService:
             )
             if head is None or str(head["subject"]) != subject:
                 raise ClosureRejected("task_scope_update_scope_unbound")
-            derived_plan_id = plan_id or derive_plan_id(str(payload["idempotency_key"]), task_scope_id)
+            derived_plan_id = plan_id or derive_plan_id(
+                str(payload["idempotency_key"]), task_scope_id
+            )
             applied_before = await self._store._fetchone(
                 db,
                 "SELECT 1 FROM task_scope_mutation_attempts WHERE plan_id=? AND result='applied'",
@@ -499,7 +517,12 @@ class TaskScopeUpdateService:
             _check_transitions(status, payload)
         outside = sorted(
             {ref for ref in payload["evidence_refs"] if ref not in content_hash_by_id}
-            | {ref for op in payload["operations"] for ref in op["evidence_refs"] if ref not in content_hash_by_id}
+            | {
+                ref
+                for op in payload["operations"]
+                for ref in op["evidence_refs"]
+                if ref not in content_hash_by_id
+            }
         )
         if outside:
             # HM-TO-A6 incident U: echoing only the offending refs told the model
@@ -518,7 +541,10 @@ class TaskScopeUpdateService:
 
         def refs(ids: Sequence[str]) -> tuple[EvidenceRef, ...]:
             unique = list(dict.fromkeys(ids))
-            return tuple(EvidenceRef(ref, content_hash_by_id[ref], ordinal) for ordinal, ref in enumerate(unique, 1))
+            return tuple(
+                EvidenceRef(ref, content_hash_by_id[ref], ordinal)
+                for ordinal, ref in enumerate(unique, 1)
+            )
 
         try:
             plan = TaskScopeMutationPlan(
@@ -545,7 +571,9 @@ class TaskScopeUpdateService:
                 idempotency_key=str(payload["idempotency_key"]),
             )
         except (TypeError, ValueError) as exc:
-            raise ClosureRejected("task_scope_update_payload_invalid", message=str(exc)[:256]) from exc
+            raise ClosureRejected(
+                "task_scope_update_payload_invalid", message=str(exc)[:256]
+            ) from exc
 
         captured: dict[str, Any] = {}
 
@@ -555,7 +583,9 @@ class TaskScopeUpdateService:
             # Task 3 review F-1: an idempotent replay returns the receipt written with
             # the decision — never a second receipt at the *current* head watermark
             # (which would silently cover material events that landed in between).
-            existing = await closure_receipt_for_plan_tx(hook_db, task_scope_id=task_scope_id, plan_id=derived_plan_id)
+            existing = await closure_receipt_for_plan_tx(
+                hook_db, task_scope_id=task_scope_id, plan_id=derived_plan_id
+            )
             if existing is not None:
                 captured["receipt"] = existing
                 captured["replayed"] = replayed
@@ -663,9 +693,7 @@ async def _turn_evidence_rows_tx(
     return list(rows)
 
 
-async def read_current_turn_evidence_ref(
-    db_path: Any, sdk_run_id: str, task_scope_id: str
-) -> str:
+async def read_current_turn_evidence_ref(db_path: Any, sdk_run_id: str, task_scope_id: str) -> str:
     """This turn's own admitted user evidence id, or ``""`` when unresolvable.
 
     HM-TO-A6 事件 AL (2026-09-09, 第 13 次整跑 T17).  The admissible ids used to
@@ -880,22 +908,38 @@ def _validate_shape(arguments: Mapping[str, Any]) -> dict[str, Any]:
         raise ClosureRejected("task_scope_update_payload_invalid", field="idempotency_key")
     closure_reason = arguments.get("closure_reason")
     if closure_reason is not None and (
-        not isinstance(closure_reason, str) or not closure_reason.strip() or len(closure_reason.encode("utf-8")) > 4096
+        not isinstance(closure_reason, str)
+        or not closure_reason.strip()
+        or len(closure_reason.encode("utf-8")) > 4096
     ):
         raise ClosureRejected("task_scope_update_payload_invalid", field="closure_reason")
     if outcome == "no_mutation" and closure_reason is None:
-        raise ClosureRejected("task_scope_update_payload_invalid", field="closure_reason", message="no_mutation requires closure_reason")
+        raise ClosureRejected(
+            "task_scope_update_payload_invalid",
+            field="closure_reason",
+            message="no_mutation requires closure_reason",
+        )
     operations_raw = arguments.get("operations", [])
     if operations_raw is None:
         operations_raw = []
     if not isinstance(operations_raw, (list, tuple)) or len(operations_raw) > _MAX_OPERATIONS:
         raise ClosureRejected("task_scope_update_payload_invalid", field="operations")
     if (outcome == "mutate") != bool(operations_raw):
-        raise ClosureRejected("task_scope_update_payload_invalid", field="operations", message="mutate requires operations; no_mutation forbids them")
+        raise ClosureRejected(
+            "task_scope_update_payload_invalid",
+            field="operations",
+            message="mutate requires operations; no_mutation forbids them",
+        )
     operations: list[dict[str, Any]] = []
     seen: set[str] = set()
     for raw in operations_raw:
-        if not isinstance(raw, Mapping) or set(raw) != {"operation_id", "kind", "value", "reason_code", "evidence_refs"}:
+        if not isinstance(raw, Mapping) or set(raw) != {
+            "operation_id",
+            "kind",
+            "value",
+            "reason_code",
+            "evidence_refs",
+        }:
             raise ClosureRejected("task_scope_update_payload_invalid", field="operations")
         operation_id = raw.get("operation_id")
         if not isinstance(operation_id, str) or not operation_id.strip() or operation_id in seen:
@@ -916,19 +960,25 @@ def _validate_shape(arguments: Mapping[str, Any]) -> dict[str, Any]:
                 "kind": kind,
                 "value": value,
                 "reason_code": reason,
-                "evidence_refs": _string_list(raw.get("evidence_refs"), "operations.evidence_refs", required=True),
+                "evidence_refs": _string_list(
+                    raw.get("evidence_refs"), "operations.evidence_refs", required=True
+                ),
             }
         )
     for name in ("outcome", "base_revision", "idempotency_key"):
         try:
             identifier(str(arguments[name]), name, 512)
         except TaskScopeProtocolError as exc:
-            raise ClosureRejected("task_scope_update_payload_invalid", field=name, message=str(exc)[:128]) from exc
+            raise ClosureRejected(
+                "task_scope_update_payload_invalid", field=name, message=str(exc)[:128]
+            ) from exc
     return {
         "outcome": outcome,
         "base_revision": int(base_revision),
         "closure_reason": closure_reason,
-        "evidence_refs": _string_list(arguments.get("evidence_refs"), "evidence_refs", required=True),
+        "evidence_refs": _string_list(
+            arguments.get("evidence_refs"), "evidence_refs", required=True
+        ),
         "idempotency_key": key,
         "operations": operations,
     }

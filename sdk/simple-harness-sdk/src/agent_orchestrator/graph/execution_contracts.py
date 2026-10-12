@@ -262,7 +262,14 @@ class PreviewBindingV1:
         )
 
 
-__all__ = ["GraphSourceRead", "PreviewBindingV1", "CompleteRead", "SourceUnavailable", "GraphReadToken", "PlanEffectSet"]
+__all__ = [
+    "GraphSourceRead",
+    "PreviewBindingV1",
+    "CompleteRead",
+    "SourceUnavailable",
+    "GraphReadToken",
+    "PlanEffectSet",
+]
 
 
 # A complete empty source remains distinct from a failed source. Reuse H1's
@@ -297,15 +304,24 @@ class GraphReadToken:
         _integer(self.plan_revision, "plan_revision")
         _hash(self.manifest_hash, "manifest_hash")
         _integer(self.through_seq, "through_seq")
-        epochs = tuple((_text(scope, "scope_id"), _integer(epoch, "epoch")) for scope, epoch in self.validity_epochs)
+        epochs = tuple(
+            (_text(scope, "scope_id"), _integer(epoch, "epoch"))
+            for scope, epoch in self.validity_epochs
+        )
         if len(epochs) > 256 or len({scope for scope, _ in epochs}) != len(epochs):
             _fail("validity_epochs", "exceeds bound or has duplicate scopes")
         object.__setattr__(self, "validity_epochs", tuple(sorted(epochs)))
 
     def to_json(self) -> dict[str, Any]:
-        return {"mission_id": self.mission_id, "plan_revision": self.plan_revision,
-                "manifest_hash": self.manifest_hash, "through_seq": self.through_seq,
-                "validity_epochs": [{"scope_id": scope, "epoch": epoch} for scope, epoch in self.validity_epochs]}
+        return {
+            "mission_id": self.mission_id,
+            "plan_revision": self.plan_revision,
+            "manifest_hash": self.manifest_hash,
+            "through_seq": self.through_seq,
+            "validity_epochs": [
+                {"scope_id": scope, "epoch": epoch} for scope, epoch in self.validity_epochs
+            ],
+        }
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -322,12 +338,19 @@ class PlanEffectSet:
             object.__setattr__(self, name, _ids(getattr(self, name), name))
         if self.coverage not in {"COMPLETE", "CONSERVATIVE"}:
             _fail("coverage", "unknown effect coverage")
-        if set(self.retained) & set(self.retiring) or set(self.shared_retained) - set(self.retained):
+        if set(self.retained) & set(self.retiring) or set(self.shared_retained) - set(
+            self.retained
+        ):
             _fail("effects", "retained and retiring sets contradict")
         if set(self.newly_materialized) & (set(self.retained) | set(self.retiring)):
             _fail("effects", "new and existing identities overlap")
 
     def to_json(self) -> dict[str, Any]:
-        return {"retained": list(self.retained), "revalidate": list(self.revalidate),
-                "retiring": list(self.retiring), "newly_materialized": list(self.newly_materialized),
-                "shared_retained": list(self.shared_retained), "coverage": self.coverage}
+        return {
+            "retained": list(self.retained),
+            "revalidate": list(self.revalidate),
+            "retiring": list(self.retiring),
+            "newly_materialized": list(self.newly_materialized),
+            "shared_retained": list(self.shared_retained),
+            "coverage": self.coverage,
+        }

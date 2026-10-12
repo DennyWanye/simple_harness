@@ -77,11 +77,7 @@ def project_capability_descriptor(
         "unknown": "unknown",
     }[version.health]
     actions: list[str] = []
-    if (
-        descriptor.installed
-        and version.kind == "pack"
-        and scope != "builtin"
-    ):
+    if descriptor.installed and version.kind == "pack" and scope != "builtin":
         actions.append("uninstall")
     return {
         "capability_id": version.capability_id,
@@ -103,10 +99,7 @@ def project_capability_descriptor(
 
 
 def project_capability_snapshot(snapshot: Any) -> list[dict[str, Any]]:
-    return [
-        project_capability_descriptor(descriptor)
-        for descriptor in snapshot.descriptors
-    ]
+    return [project_capability_descriptor(descriptor) for descriptor in snapshot.descriptors]
 
 
 def project_pack_manifest(manifest: PackManifest) -> dict[str, Any]:
@@ -117,13 +110,9 @@ def project_pack_manifest(manifest: PackManifest) -> dict[str, Any]:
         "manifest_hash": manifest.manifest_hash,
         "compatibility": {
             "deskpet": _safe_text(manifest.compatibility.deskpet, limit=120),
-            "os": [
-                _safe_text(item, limit=80)
-                for item in manifest.compatibility.os
-            ],
+            "os": [_safe_text(item, limit=80) for item in manifest.compatibility.os],
             "architectures": [
-                _safe_text(item, limit=80)
-                for item in manifest.compatibility.architectures
+                _safe_text(item, limit=80) for item in manifest.compatibility.architectures
             ],
             "python": _safe_text(
                 manifest.compatibility.python,
@@ -131,10 +120,7 @@ def project_pack_manifest(manifest: PackManifest) -> dict[str, Any]:
             ),
         },
         "entries": {
-            "skills": [
-                {"path": _safe_text(item.path, limit=240)}
-                for item in manifest.skills
-            ],
+            "skills": [{"path": _safe_text(item.path, limit=240)} for item in manifest.skills],
             "tools": [
                 {
                     "id": _safe_text(item.id, limit=120),
@@ -147,10 +133,7 @@ def project_pack_manifest(manifest: PackManifest) -> dict[str, Any]:
                         item.execution_profile,
                         limit=120,
                     ),
-                    "input_views": [
-                        _safe_text(view, limit=120)
-                        for view in item.input_views
-                    ],
+                    "input_views": [_safe_text(view, limit=120) for view in item.input_views],
                     "entry": _safe_text(item.entry, limit=240),
                     "schema": _safe_text(item.schema, limit=240),
                     "healthcheck": _safe_text(
@@ -171,16 +154,11 @@ def project_pack_manifest(manifest: PackManifest) -> dict[str, Any]:
                 for item in manifest.mcp_servers
             ],
         },
-        "permissions": [
-            _safe_text(item, limit=120) for item in manifest.permissions
-        ],
-        "effects": [
-            _safe_text(item, limit=120) for item in manifest.effects
-        ],
+        "permissions": [_safe_text(item, limit=120) for item in manifest.permissions],
+        "effects": [_safe_text(item, limit=120) for item in manifest.effects],
         "dependencies": {
             "python": [
-                _safe_text(item.requirement, limit=240)
-                for item in manifest.dependencies.python
+                _safe_text(item.requirement, limit=240) for item in manifest.dependencies.python
             ],
             "commands": [
                 {
@@ -209,11 +187,7 @@ def project_pack_manifest(manifest: PackManifest) -> dict[str, Any]:
 def _timestamp(value: float | None) -> str | None:
     if value is None:
         return None
-    return (
-        dt.datetime.fromtimestamp(float(value), tz=dt.UTC)
-        .isoformat()
-        .replace("+00:00", "Z")
-    )
+    return dt.datetime.fromtimestamp(float(value), tz=dt.UTC).isoformat().replace("+00:00", "Z")
 
 
 def project_capability_operation(
@@ -229,9 +203,12 @@ def project_capability_operation(
 ) -> dict[str, Any]:
     error = dict(operation.error or {})
     error_code = _safe_text(error.get("code") or "", limit=120) or None
-    error_message = _safe_text(
-        error.get("message") or error.get("error") or "",
-    ) or None
+    error_message = (
+        _safe_text(
+            error.get("message") or error.get("error") or "",
+        )
+        or None
+    )
     available_actions: list[str] = []
     if cancellable and operation.status == "running":
         available_actions.append("cancel")

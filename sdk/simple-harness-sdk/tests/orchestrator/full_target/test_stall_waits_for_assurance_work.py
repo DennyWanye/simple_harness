@@ -15,18 +15,29 @@ from types import SimpleNamespace
 from agent_orchestrator.orchestrator.event_handler import Orchestrator
 
 
-def _pending(*rows: tuple[str, str, str | None], cursor: int | None = None, last_seq: int = 0,
-             event_type: str = "AssuranceReviewClassified") -> bool:
+def _pending(
+    *rows: tuple[str, str, str | None],
+    cursor: int | None = None,
+    last_seq: int = 0,
+    event_type: str = "AssuranceReviewClassified",
+) -> bool:
     connection = sqlite3.connect(":memory:")
-    connection.execute("CREATE TABLE assurance_pending_work(mission_id, consumer, work_key, state, wait_reason)")
+    connection.execute(
+        "CREATE TABLE assurance_pending_work(mission_id, consumer, work_key, state, wait_reason)"
+    )
     connection.execute("CREATE TABLE assurance_event_cursors(mission_id, consumer, last_event_seq)")
     connection.execute("CREATE TABLE events(mission_id, seq, type)")
     connection.execute("INSERT INTO events VALUES ('m1', ?, ?)", (last_seq, event_type))
     if cursor is not None:
-        connection.execute("INSERT INTO assurance_event_cursors VALUES ('m1', 'REVIEW', ?)", (cursor,))
+        connection.execute(
+            "INSERT INTO assurance_event_cursors VALUES ('m1', 'REVIEW', ?)", (cursor,)
+        )
     connection.executemany(
         "INSERT INTO assurance_pending_work VALUES (?,?,?,?,?)",
-        [(mission, "REVIEW", f"w{i}", state, reason) for i, (mission, state, reason) in enumerate(rows)],
+        [
+            (mission, "REVIEW", f"w{i}", state, reason)
+            for i, (mission, state, reason) in enumerate(rows)
+        ],
     )
     fake = SimpleNamespace(store=SimpleNamespace(connection=connection))
     return Orchestrator._has_pending_assurance_work(fake, "m1")

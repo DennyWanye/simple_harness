@@ -161,7 +161,9 @@ def planning_protocol_replay_conflict(
     valid_pair = hierarchical_planner_pairing_is_valid(
         str(stored["prompt_version"]), int(stored["package_version"])
     )
-    valid_hash = stored.get("binding_hash") == sha256(canonical_json(frozen).encode("utf-8")).hexdigest()
+    valid_hash = (
+        stored.get("binding_hash") == sha256(canonical_json(frozen).encode("utf-8")).hexdigest()
+    )
     if stored.get("protocol_version") != checked or not valid_pair or not valid_hash:
         return (
             f"mission {mission_id} is durably bound to protocol"

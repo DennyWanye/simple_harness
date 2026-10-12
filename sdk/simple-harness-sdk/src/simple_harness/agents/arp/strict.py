@@ -94,7 +94,9 @@ def parse_strict(raw: bytes, *, max_bytes: int = DEFAULT_MAX_BYTES) -> Any:
         raise ArpError("DOCUMENT_TOO_LARGE")
     try:
         value = json.loads(
-            bytes(raw).decode("utf-8"), object_pairs_hook=_no_duplicates, parse_constant=_bad_constant
+            bytes(raw).decode("utf-8"),
+            object_pairs_hook=_no_duplicates,
+            parse_constant=_bad_constant,
         )
     except ArpError:
         raise

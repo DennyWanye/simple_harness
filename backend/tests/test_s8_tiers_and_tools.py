@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 """Tests for S8: 4-tier VRAM classifier + clipboard tool."""
+
 from __future__ import annotations
 
 from unittest.mock import patch
@@ -59,12 +60,8 @@ def test_minimal_tier_falls_back_to_cloud_tts():
 async def test_clipboard_tool_returns_payload_from_platform_impl(monkeypatch):
     """We don't actually touch the OS clipboard — patch the helper."""
     tool = ReadClipboardTool()
-    monkeypatch.setattr(
-        "tools.clipboard._read_clipboard_windows", lambda: "hello from clip"
-    )
-    monkeypatch.setattr(
-        "tools.clipboard._read_clipboard_tk", lambda: "hello from clip"
-    )
+    monkeypatch.setattr("tools.clipboard._read_clipboard_windows", lambda: "hello from clip")
+    monkeypatch.setattr("tools.clipboard._read_clipboard_tk", lambda: "hello from clip")
     out = await tool.invoke()
     assert out == "hello from clip"
 

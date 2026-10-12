@@ -61,14 +61,21 @@ def test_occ02_scope_reader_rechecks_current_exact_sources(tmp_path, fault: str)
             assert active is not None
             # 冻结出来的范围与计划、确认的映射、任务合同逐项对得上。
             approved = case.store.connection.execute(
-                "SELECT spec_hash FROM operation_completion_specs WHERE mission_id=?", (case.mission_id,)).fetchone()
+                "SELECT spec_hash FROM operation_completion_specs WHERE mission_id=?",
+                (case.mission_id,),
+            ).fetchone()
             assert scope.spec_hash == approved["spec_hash"]
-            assert (scope.plan_ref.revision, scope.plan_ref.snapshot_hash) == (active.revision, active.snapshot_hash)
+            assert (scope.plan_ref.revision, scope.plan_ref.snapshot_hash) == (
+                active.revision,
+                active.snapshot_hash,
+            )
             assert scope.required_effect_keys == scope.owned_effect_keys == ("publish-weekly",)
             binding = htn.task_semantics_of(case.mission_id, scope.task_ref.id)
             assert binding is not None
             assert (scope.task_ref.revision, scope.task_ref.content_hash) == (
-                binding.contract_revision, binding.contract_hash)
+                binding.contract_revision,
+                binding.contract_hash,
+            )
             before = case.store.connection.total_changes
             reader = OperationCompletionReader(case.store)
             assert reader.read_scope(case.mission_id, scope.plan_ref, scope.occurrence_id) == scope
@@ -84,14 +91,19 @@ def test_occ02_scope_reader_rechecks_current_exact_sources(tmp_path, fault: str)
             with pytest.raises(OperationCompletionError) as refused:
                 reader.read_scope(case.mission_id, pin, occurrence_id)
             assert refused.value.code == (
-                "OP_COMPLETION_SCOPE_UNRESOLVED" if fault == "missing_scope" else "OP_EFFECT_SCOPE_STALE")
+                "OP_COMPLETION_SCOPE_UNRESOLVED"
+                if fault == "missing_scope"
+                else "OP_EFFECT_SCOPE_STALE"
+            )
             assert case.store.connection.total_changes == before
 
     asyncio.run(run())
 
 
 @pytest.mark.parametrize("fault", ("completion_plan_before_scopes", "completion_plan_after_scope"))
-def test_occ09_scope_fault_rolls_back_plan_receipt_membership_scope_and_event(tmp_path, fault: str) -> None:
+def test_occ09_scope_fault_rolls_back_plan_receipt_membership_scope_and_event(
+    tmp_path, fault: str
+) -> None:
     """崩溃点在计划提交事务里：崩了什么都不留（崩溃现状是逃出本轮主循环，见迁移裁决 B4）；进程重启后照常提交第一版计划。"""
 
     state: dict[str, str] = {}

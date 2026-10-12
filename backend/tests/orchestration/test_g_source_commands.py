@@ -15,21 +15,32 @@ from ._support import notes_provider, notes_request
 
 
 def batch(key="g-batch"):
-    return {"mission": notes_request(key),
-            "sources": [{"path": "sources/A.md", "content": "# 标题\r\n\r\n原文。\r\n",
-                         "kind": "text/markdown"}]}
+    return {
+        "mission": notes_request(key),
+        "sources": [
+            {"path": "sources/A.md", "content": "# 标题\r\n\r\n原文。\r\n", "kind": "text/markdown"}
+        ],
+    }
 
 
 async def opened(root, principal):
-    service = OrchestrationService(root, OrchestrationSettings(), principal=principal,
-                                   provider=notes_provider(), drive=False, native_test_counter=FixtureWordCounter())
+    service = OrchestrationService(
+        root,
+        OrchestrationSettings(),
+        principal=principal,
+        provider=notes_provider(),
+        drive=False,
+        native_test_counter=FixtureWordCounter(),
+    )
     await service.start()
     assert service.status()["state"] == "available", service.status()
     return service
 
 
 @pytest.mark.asyncio
-async def test_atomic_batch_through_real_handler_reopens_with_same_sources(orchestration_root, principal):
+async def test_atomic_batch_through_real_handler_reopens_with_same_sources(
+    orchestration_root, principal
+):
     service = await opened(orchestration_root, principal)
     try:
         reply = await handle(service, "mission_create_with_sources", batch(), request_id="ipc-1")
@@ -71,26 +82,51 @@ async def test_register_and_reject_revoke_preserve_original_source(orchestration
         created = await handle(service, "mission_create_with_sources", batch())
         assert created["payload"]["ok"], created
         mid = created["payload"]["data"]["mission_id"]
-        registered = await handle(service, "mission_source_register", {
-            "mission_id": mid, "path": "sources/B.md", "content": "新资料。", "kind": "text/plain",
-            "idempotency_key": "register-B"})
+        registered = await handle(
+            service,
+            "mission_source_register",
+            {
+                "mission_id": mid,
+                "path": "sources/B.md",
+                "content": "新资料。",
+                "kind": "text/plain",
+                "idempotency_key": "register-B",
+            },
+        )
         assert registered["payload"]["ok"], registered
-        source = next(s for s in service.mission_detail(mid)["sources"] if s["path"] == "sources/B.md")
-        request = {"mission_id": mid, "path": source["path"], "expected_version_hash": source["version_hash"],
-                   "reason": "申请撤销", "idempotency_key": "revoke-B"}
-        forged = await handle(service, "mission_source_revoke", {**request, "principal_id": "forged"})
+        source = next(
+            s for s in service.mission_detail(mid)["sources"] if s["path"] == "sources/B.md"
+        )
+        request = {
+            "mission_id": mid,
+            "path": source["path"],
+            "expected_version_hash": source["version_hash"],
+            "reason": "申请撤销",
+            "idempotency_key": "revoke-B",
+        }
+        forged = await handle(
+            service, "mission_source_revoke", {**request, "principal_id": "forged"}
+        )
         assert forged["payload"]["ok"] is False
         assert service.approvals(mid) == []
         pending = await handle(service, "mission_source_revoke", request)
         assert pending["payload"]["ok"], pending
         approval = service.approvals(mid)[0]
-        empty_reason = await handle(service, "mission_approval_decide", {
-            "approval_id": approval["request_id"], "decision": "reject"})
+        empty_reason = await handle(
+            service,
+            "mission_approval_decide",
+            {"approval_id": approval["request_id"], "decision": "reject"},
+        )
         assert empty_reason["payload"]["ok"] is False
-        rejected = await handle(service, "mission_approval_decide", {
-            "approval_id": approval["request_id"], "decision": "reject", "reason": "保留该资料"})
+        rejected = await handle(
+            service,
+            "mission_approval_decide",
+            {"approval_id": approval["request_id"], "decision": "reject", "reason": "保留该资料"},
+        )
         assert rejected["payload"]["ok"], rejected
-        after = next(s for s in service.mission_detail(mid)["sources"] if s["path"] == source["path"])
+        after = next(
+            s for s in service.mission_detail(mid)["sources"] if s["path"] == source["path"]
+        )
         assert after == source
     finally:
         await service.close()
@@ -98,15 +134,22 @@ async def test_register_and_reject_revoke_preserve_original_source(orchestration
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("operation", ["supersede", "revoke"])
-async def test_source_change_uses_existing_approval_and_fixed_principal(orchestration_root, principal, operation):
+async def test_source_change_uses_existing_approval_and_fixed_principal(
+    orchestration_root, principal, operation
+):
     service = await opened(orchestration_root, principal)
     try:
         reply = await handle(service, "mission_create_with_sources", batch())
         assert reply["payload"]["ok"], reply
         mid = reply["payload"]["data"]["mission_id"]
         old = service.mission_detail(mid)["sources"][0]
-        command = {"mission_id": mid, "path": old["path"], "expected_version_hash": old["version_hash"],
-                   "idempotency_key": "change", "reason": "用户撤销"}
+        command = {
+            "mission_id": mid,
+            "path": old["path"],
+            "expected_version_hash": old["version_hash"],
+            "idempotency_key": "change",
+            "reason": "用户撤销",
+        }
         if operation == "supersede":
             command.pop("reason")
             command.update(content="新版本。", kind="text/plain")
@@ -115,8 +158,11 @@ async def test_source_change_uses_existing_approval_and_fixed_principal(orchestr
         pending = service.approvals(mid)
         assert len(pending) == 1 and pending[0]["kind"] == "source_change"
         assert pending[0]["source_change"]["expected_version_hash"] == old["version_hash"]
-        decided = await handle(service, "mission_approval_decide", {
-            "approval_id": pending[0]["request_id"], "decision": "approve"})
+        decided = await handle(
+            service,
+            "mission_approval_decide",
+            {"approval_id": pending[0]["request_id"], "decision": "approve"},
+        )
         assert decided["payload"]["ok"], decided
         detail = service.mission_detail(mid)
         assert detail["approvals"][0]["granted_by"] == [principal.principal_id]

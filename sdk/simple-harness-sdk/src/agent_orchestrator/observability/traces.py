@@ -70,16 +70,22 @@ def contribution_chain(resolutions: Mapping[str, Mapping[str, Any]]) -> Contribu
             breaks.append({"missing": "resolution_commit", "id": resolution_id})
             return
         contributions = payload.get("contributing_acceptances") or {}
-        listed = {str(occurrence): [str(item) for item in contributions[occurrence]]
-                  for occurrence in sorted(contributions)}
-        chain.append({
-            "resolution_id": resolution_id,
-            "goal_task_id": payload.get("goal_task_id"),
-            "obligation_id": payload.get("obligation_id"),
-            "is_mission_root": bool(payload.get("is_mission_root")),
-            "child_resolution_ids": [str(item) for item in payload.get("child_resolution_ids") or ()],
-            "contributing_acceptances": listed,
-        })
+        listed = {
+            str(occurrence): [str(item) for item in contributions[occurrence]]
+            for occurrence in sorted(contributions)
+        }
+        chain.append(
+            {
+                "resolution_id": resolution_id,
+                "goal_task_id": payload.get("goal_task_id"),
+                "obligation_id": payload.get("obligation_id"),
+                "is_mission_root": bool(payload.get("is_mission_root")),
+                "child_resolution_ids": [
+                    str(item) for item in payload.get("child_resolution_ids") or ()
+                ],
+                "contributing_acceptances": listed,
+            }
+        )
         for ids in listed.values():
             for acceptance_id in ids:
                 if acceptance_id not in acceptances:
@@ -177,7 +183,9 @@ def attribution(store: Store, mission_id: str) -> dict[str, Any]:  # noqa: C901 
                         "status": v["status"],
                         "verifier_version": (v.get("detail") or {}).get("verifier_version"),
                     }
-                    for v in store.list_verifications(producer.accepted_result_id, requirements_revision=None)
+                    for v in store.list_verifications(
+                        producer.accepted_result_id, requirements_revision=None
+                    )
                     if v["status"] in {"PASS", "NEEDS_HUMAN"}
                 ]
             )
@@ -199,7 +207,9 @@ def attribution(store: Store, mission_id: str) -> dict[str, Any]:  # noqa: C901 
                         "agent_id": None if attempt is None else attempt.agent_id,
                         "role": None if attempt is None else attempt.role,
                         "model": None if attempt is None else attempt.model,
-                        "runtime_profile_id": None if attempt is None else attempt.runtime_profile_id,
+                        "runtime_profile_id": None
+                        if attempt is None
+                        else attempt.runtime_profile_id,
                         "prompt_version": None if attempt is None else attempt.prompt_version,
                         "verified_by": layers,
                     }
@@ -222,8 +232,9 @@ def attribution(store: Store, mission_id: str) -> dict[str, Any]:  # noqa: C901 
 
     # -- the knowledge path
     knowledge = (
-        lineage(store, mission_id,
-                terminal_task_id=(mission.final_report or {}).get("terminal_task_id"))
+        lineage(
+            store, mission_id, terminal_task_id=(mission.final_report or {}).get("terminal_task_id")
+        )
         if success
         else {"knowledge": [], "attempts": [], "edges": []}
     )
@@ -450,7 +461,8 @@ def failure_timeline(store: Store, mission_id: str) -> list[dict[str, Any]]:
     mission = store.get_mission(mission_id)
     mission_failed = mission is not None and str(mission.status) == "FAILED"
     failed = {
-        task.id for task in store.list_tasks(mission_id)
+        task.id
+        for task in store.list_tasks(mission_id)
         if str(task.status) in {"FAILED", "CANCELLED"}
         or (mission_failed and str(task.status) not in {"COMPLETED", "FAILED", "CANCELLED"})
     }
@@ -466,8 +478,15 @@ def failure_timeline(store: Store, mission_id: str) -> list[dict[str, Any]]:
             continue
         payload = dict(event.payload)
         payload.pop("final_report", None)
-        lines.append({"seq": event.seq, "type": kind, "task_id": event.task_id,
-                      "attempt_id": event.attempt_id, "detail": payload})
+        lines.append(
+            {
+                "seq": event.seq,
+                "type": kind,
+                "task_id": event.task_id,
+                "attempt_id": event.attempt_id,
+                "detail": payload,
+            }
+        )
     return lines
 
 

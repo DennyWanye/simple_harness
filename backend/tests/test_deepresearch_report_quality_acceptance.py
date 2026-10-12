@@ -193,14 +193,26 @@ def test_cli_writes_only_safe_structured_output(
     ("mutation", "failed_check"),
     [
         (lambda text: text.replace("总分 0.78", "总分 0.91"), "score_diversity"),
-        (lambda text: text.replace("近期性 1.0", "近期性 0.0").replace("近期性 0.8", "近期性 0.0").replace("近期性 0.6", "近期性 0.0").replace("近期性 0.3", "近期性 0.0"), "recency_signal"),
+        (
+            lambda text: (
+                text.replace("近期性 1.0", "近期性 0.0")
+                .replace("近期性 0.8", "近期性 0.0")
+                .replace("近期性 0.6", "近期性 0.0")
+                .replace("近期性 0.3", "近期性 0.0")
+            ),
+            "recency_signal",
+        ),
         (lambda text: text.replace("- 引用：[3]", "- 引用：缺少引用"), "finding_citations"),
     ],
 )
 def test_quality_dimensions_fail_closed(mutation, failed_check: str) -> None:
     report = mutation(_professional_report())
     if failed_check == "score_diversity":
-        report = report.replace("总分 0.66", "总分 0.91").replace("总分 0.52", "总分 0.91").replace("总分 0.41", "总分 0.91")
+        report = (
+            report.replace("总分 0.66", "总分 0.91")
+            .replace("总分 0.52", "总分 0.91")
+            .replace("总分 0.41", "总分 0.91")
+        )
     result = evaluate_report(report)
     assert result["passed"] is False
     assert result["checks"][failed_check] is False

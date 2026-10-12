@@ -14,9 +14,24 @@ from typing import Any
 LISTED = "LISTED"
 RETIRED = "RETIRED"
 CLEARED_EVENT = "MethodLibraryCleared"
-_COLUMNS = ("entry_id", "owner", "goal_type_id", "catalog_digest", "method_id", "method_version",
-            "method_hash", "purpose", "source_mission_id", "root_review_record_id", "based_on",
-            "state", "retired_by", "retired_reason", "retired_at", "promoted_at")
+_COLUMNS = (
+    "entry_id",
+    "owner",
+    "goal_type_id",
+    "catalog_digest",
+    "method_id",
+    "method_version",
+    "method_hash",
+    "purpose",
+    "source_mission_id",
+    "root_review_record_id",
+    "based_on",
+    "state",
+    "retired_by",
+    "retired_reason",
+    "retired_at",
+    "promoted_at",
+)
 
 
 class MethodLibraryStore:
@@ -25,7 +40,8 @@ class MethodLibraryStore:
 
     def _rows(self, where: str, args: Sequence[Any], tail: str = "") -> list[dict[str, Any]]:
         rows = self.store.connection.execute(
-            f"SELECT {','.join(_COLUMNS)} FROM method_library {where} {tail}", tuple(args)).fetchall()
+            f"SELECT {','.join(_COLUMNS)} FROM method_library {where} {tail}", tuple(args)
+        ).fetchall()
         return [dict(zip(_COLUMNS, row, strict=True)) for row in rows]
 
     def insert(self, entry: Mapping[str, Any]) -> None:
@@ -34,25 +50,41 @@ class MethodLibraryStore:
                 "INSERT INTO method_library(entry_id,owner,goal_type_id,catalog_digest,method_id,"
                 "method_version,method_hash,purpose,source_mission_id,root_review_record_id,based_on,"
                 "state,promoted_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                (entry["entry_id"], entry["owner"], entry["goal_type_id"], entry["catalog_digest"],
-                 entry["method_id"], int(entry["method_version"]), entry["method_hash"], entry["purpose"],
-                 entry["source_mission_id"], entry["root_review_record_id"], entry.get("based_on"),
-                 LISTED, self.store.now))
+                (
+                    entry["entry_id"],
+                    entry["owner"],
+                    entry["goal_type_id"],
+                    entry["catalog_digest"],
+                    entry["method_id"],
+                    int(entry["method_version"]),
+                    entry["method_hash"],
+                    entry["purpose"],
+                    entry["source_mission_id"],
+                    entry["root_review_record_id"],
+                    entry.get("based_on"),
+                    LISTED,
+                    self.store.now,
+                ),
+            )
 
     def get(self, entry_id: str) -> dict[str, Any] | None:
         rows = self._rows("WHERE entry_id=?", (entry_id,))
         return rows[0] if rows else None
 
     def find(self, owner: str, method_id: str, method_version: int) -> dict[str, Any] | None:
-        rows = self._rows("WHERE owner=? AND method_id=? AND method_version=?",
-                          (owner, method_id, int(method_version)))
+        rows = self._rows(
+            "WHERE owner=? AND method_id=? AND method_version=?",
+            (owner, method_id, int(method_version)),
+        )
         return rows[0] if rows else None
 
     def listed(self, owner: str, digest: str, goal_type_id: str) -> list[dict[str, Any]]:
         """The entries one goal type's directory is cut from, newest first."""
         return self._rows(
             "WHERE owner=? AND goal_type_id=? AND catalog_digest=? AND state=?",
-            (owner, goal_type_id, digest, LISTED), "ORDER BY promoted_at DESC, entry_id")
+            (owner, goal_type_id, digest, LISTED),
+            "ORDER BY promoted_at DESC, entry_id",
+        )
 
     def all(self) -> list[dict[str, Any]]:
         return self._rows("", (), "ORDER BY promoted_at DESC, entry_id")
@@ -63,27 +95,52 @@ class MethodLibraryStore:
             changed = connection.execute(
                 "UPDATE method_library SET state=?,retired_by=?,retired_reason=?,retired_at=?"
                 " WHERE entry_id=? AND state=?",
-                (RETIRED, by, reason, self.store.now, entry_id, LISTED)).rowcount
+                (RETIRED, by, reason, self.store.now, entry_id, LISTED),
+            ).rowcount
         return bool(changed)
 
-    def add_attribution(self, entry_id: str, *, source_ref: str, source_kind: str, mission_id: str,
-                        method_id: str, method_version: int, method_hash: str, reason: str) -> bool:
+    def add_attribution(
+        self,
+        entry_id: str,
+        *,
+        source_ref: str,
+        source_kind: str,
+        mission_id: str,
+        method_id: str,
+        method_version: int,
+        method_hash: str,
+        reason: str,
+    ) -> bool:
         """One blame, once per source; False when that source already said so."""
         with self.store.transaction() as connection:
             changed = connection.execute(
                 "INSERT OR IGNORE INTO method_library_attributions(entry_id,source_ref,source_kind,"
                 "mission_id,method_id,method_version,method_hash,reason,recorded_at)"
                 " VALUES (?,?,?,?,?,?,?,?,?)",
-                (entry_id, source_ref, source_kind, mission_id, method_id, int(method_version),
-                 method_hash, reason, self.store.now)).rowcount
+                (
+                    entry_id,
+                    source_ref,
+                    source_kind,
+                    mission_id,
+                    method_id,
+                    int(method_version),
+                    method_hash,
+                    reason,
+                    self.store.now,
+                ),
+            ).rowcount
         return bool(changed)
 
     def attributions(self, entry_id: str) -> list[dict[str, Any]]:
         rows = self.store.connection.execute(
             "SELECT source_ref,source_kind,mission_id,reason FROM method_library_attributions"
-            " WHERE entry_id=? ORDER BY recorded_at, source_ref", (entry_id,)).fetchall()
-        return [{"source_ref": row[0], "source_kind": row[1], "mission_id": row[2], "reason": row[3]}
-                for row in rows]
+            " WHERE entry_id=? ORDER BY recorded_at, source_ref",
+            (entry_id,),
+        ).fetchall()
+        return [
+            {"source_ref": row[0], "source_kind": row[1], "mission_id": row[2], "reason": row[3]}
+            for row in rows
+        ]
 
     def clear(self) -> dict[str, int]:
         """Empty both tables (a development diagnostic); the method definitions are untouched.
@@ -100,10 +157,21 @@ class MethodLibraryStore:
             counts = {"entries": int(entries), "attributions": int(blamed)}
             seq = int(connection.execute("SELECT coalesce(max(seq), 0) FROM events").fetchone()[0])
             key = f"{CLEARED_EVENT}:{seq}"
-            self.store.append_event(Event(
-                id=ids.event_id(key), type=CLEARED_EVENT, trace_id=ids.trace_id(DEPLOYMENT_TIMELINE),
-                mission_id=DEPLOYMENT_TIMELINE, task_id=None, attempt_id=None, actor_type="system",
-                actor_id="method-library", payload=counts, idempotency_key=key, created_at=self.store.now))
+            self.store.append_event(
+                Event(
+                    id=ids.event_id(key),
+                    type=CLEARED_EVENT,
+                    trace_id=ids.trace_id(DEPLOYMENT_TIMELINE),
+                    mission_id=DEPLOYMENT_TIMELINE,
+                    task_id=None,
+                    attempt_id=None,
+                    actor_type="system",
+                    actor_id="method-library",
+                    payload=counts,
+                    idempotency_key=key,
+                    created_at=self.store.now,
+                )
+            )
         return counts
 
 

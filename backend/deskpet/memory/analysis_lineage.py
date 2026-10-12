@@ -34,13 +34,17 @@ def binding_model_config_hash(record: Mapping[str, Any], *, endpoint_identity: s
             "provider_incarnation_id": str(record.get("provider_incarnation_id") or ""),
             "provider_config_revision": int(record.get("provider_config_revision") or 0),
             "model_id": str(record.get("model_id") or ""),
-            "model_params": json.loads(json.dumps(record.get("model_params") or {}, sort_keys=True, default=str)),
+            "model_params": json.loads(
+                json.dumps(record.get("model_params") or {}, sort_keys=True, default=str)
+            ),
             "endpoint_identity": endpoint_identity,
         }
     )
 
 
-def analysis_lineage_payload(record: Mapping[str, Any], *, endpoint_identity: str | None) -> dict[str, Any]:
+def analysis_lineage_payload(
+    record: Mapping[str, Any], *, endpoint_identity: str | None
+) -> dict[str, Any]:
     """Durable outbox ``analysis_lineage_json``: the ``AnalysisLineage`` triple + the binding it came from.
 
     ``AnalysisLineage.from_json`` reads only ``schema_version``/``provider_id``/

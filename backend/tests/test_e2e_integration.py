@@ -17,6 +17,7 @@ Coverage goals (R20):
 5. Tool registry confirmation gate rejects high-risk tools by default.
 6. Unknown message type returns a structured error, not a crash.
 """
+
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
@@ -67,9 +68,7 @@ def fake_llm_agent(monkeypatch):
     fake = FakeLLM()
     memory = service_context.get("memory_store")
     registry = service_context.get("tool_router")
-    new_agent = ToolUsingAgent(
-        base=SimpleLLMAgent(fake, memory=memory), registry=registry
-    )
+    new_agent = ToolUsingAgent(base=SimpleLLMAgent(fake, memory=memory), registry=registry)
 
     old_agent = service_context.get("agent_engine")
     service_context.register("agent_engine", new_agent)
@@ -111,9 +110,7 @@ def test_full_chat_roundtrip_uses_fake_llm(fake_llm_agent):
 def test_unknown_message_type_returns_error(fake_llm_agent):
     """Defensive path — junk type doesn't crash the socket."""
     client = TestClient(app)
-    with client.websocket_connect(
-        "/ws/control", headers={"X-Shared-Secret": SHARED_SECRET}
-    ) as ws:
+    with client.websocket_connect("/ws/control", headers={"X-Shared-Secret": SHARED_SECRET}) as ws:
         ws.receive_json()  # P3-S2: drain startup_status
         ws.send_json({"type": "nonsense_xyz"})
         msg = ws.receive_json()
@@ -152,6 +149,7 @@ def test_audio_ws_reports_legacy_voice_disabled():
 
 def test_interrupt_dispatched_when_pipeline_present(fake_llm_agent):
     """Control-channel interrupt must reach the registered audio pipeline."""
+
     # Manually plant a fake pipeline for the session so we don't need
     # to spin up /ws/audio (which would require a live VAD/ASR/TTS).
     class _FakePipeline:
@@ -202,17 +200,13 @@ def test_redacting_memory_store_is_active(fake_llm_agent):
     """
     session = "e2e_redact"
     client = TestClient(app)
-    with client.websocket_connect(
-        f"/ws/control?secret={SHARED_SECRET}&session_id={session}"
-    ) as ws:
+    with client.websocket_connect(f"/ws/control?secret={SHARED_SECRET}&session_id={session}") as ws:
         ws.receive_json()  # P3-S2: drain startup_status
         # Turn 1: send a fake API key. The agent just echoes.
         ws.send_json(
             {
                 "type": "chat",
-                "payload": {
-                    "text": "my token is sk-ant-api03-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
-                },
+                "payload": {"text": "my token is sk-ant-api03-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"},
             }
         )
         ws.receive_json()
@@ -259,9 +253,7 @@ def test_tool_registry_denies_high_risk_by_default():
         async def chat_stream(self, messages, *, session_id="default"):  # noqa: ARG002
             yield "sure <tool>delete_all</tool>"
 
-    agent = ToolUsingAgent(
-        base=_EmittingAgent(), registry=registry, inject_system_prompt=False
-    )
+    agent = ToolUsingAgent(base=_EmittingAgent(), registry=registry, inject_system_prompt=False)
 
     async def run():
         out = ""
@@ -283,9 +275,7 @@ def test_control_connection_tracked_and_released(fake_llm_agent):
     pipeline finds its lip-sync sink."""
     session = "e2e_track"
     client = TestClient(app)
-    with client.websocket_connect(
-        f"/ws/control?secret={SHARED_SECRET}&session_id={session}"
-    ) as ws:
+    with client.websocket_connect(f"/ws/control?secret={SHARED_SECRET}&session_id={session}") as ws:
         ws.receive_json()  # P3-S2: drain startup_status
         ws.send_json({"type": "ping"})
         ws.receive_json()

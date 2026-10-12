@@ -48,11 +48,18 @@ def _outer():
     primitive ``revert`` gated on ORDER."""
 
     return method(
-        "plan.assessed", "plan.goal", parameter_schema="plan.goal.params",
+        "plan.assessed",
+        "plan.goal",
+        parameter_schema="plan.goal.params",
         steps=(
             step("assess", "plan.subgoal", TaskForm.COMPOUND, {"subject": param("subject")}),
-            step("revert", "plan.act", TaskForm.PRIMITIVE, {"subject": param("subject")},
-                 capabilities=("plan.read",)),
+            step(
+                "revert",
+                "plan.act",
+                TaskForm.PRIMITIVE,
+                {"subject": param("subject")},
+                capabilities=("plan.read",),
+            ),
         ),
         ordering=(("assess", "revert"),),
         links=(("c-root", "assess", "c-sub"),),
@@ -64,20 +71,44 @@ def _inner():
     """The sub-goal's own method: its local ``c-sub`` → the leaf's ``c-leaf-verified``."""
 
     return method(
-        "plan.assess-by-reading", "plan.subgoal", parameter_schema="plan.subgoal.params",
-        steps=(step("leaf", "plan.leaf", TaskForm.PRIMITIVE, {"subject": param("subject")},
-                    capabilities=("plan.read",)),),
+        "plan.assess-by-reading",
+        "plan.subgoal",
+        parameter_schema="plan.subgoal.params",
+        steps=(
+            step(
+                "leaf",
+                "plan.leaf",
+                TaskForm.PRIMITIVE,
+                {"subject": param("subject")},
+                capabilities=("plan.read",),
+            ),
+        ),
         links=(("c-sub", "leaf", "c-leaf-verified"),),
         finalizer="leaf",
     )
 
 
 def _refine(env, network, binding, contract, *, occurrence=None):
-    report = assess_method(binding, contract, env.snapshot(), env.capabilities(), registry=env.predicates)
-    extra = {} if occurrence is None else {"goal_occurrence_id": occurrence, "plan_revision": network.plan_revision}
-    draft = ground_method(binding, contract, {}, report, catalog=env.catalog, schemas=env.schemas, **extra)
-    return compile_refinement_bundle(draft, network, method=contract, catalog=env.catalog, schemas=env.schemas,
-                                     registry=env.registry, requirements_revision=1).network
+    report = assess_method(
+        binding, contract, env.snapshot(), env.capabilities(), registry=env.predicates
+    )
+    extra = (
+        {}
+        if occurrence is None
+        else {"goal_occurrence_id": occurrence, "plan_revision": network.plan_revision}
+    )
+    draft = ground_method(
+        binding, contract, {}, report, catalog=env.catalog, schemas=env.schemas, **extra
+    )
+    return compile_refinement_bundle(
+        draft,
+        network,
+        method=contract,
+        catalog=env.catalog,
+        schemas=env.schemas,
+        registry=env.registry,
+        requirements_revision=1,
+    ).network
 
 
 def _signature(network, occurrence) -> str:
@@ -87,44 +118,89 @@ def _signature(network, occurrence) -> str:
 def _content_only_root_spec() -> OperationCompletionRequirementsV1:
     """The approved requirements: content only, the root criterion ``c-root`` alone."""
 
-    return OperationCompletionRequirementsV1.from_json({
-        "schema_version": 1, "mission_id": MISSION,
-        "requirements_ref": {"id": f"req-{MISSION}-1", "revision": 1, "content_hash": "a" * 64},
-        "mode": CompletionMode.CONTENT_ONLY, "content_criterion_ids": ["c-root"], "effects": [],
-    })
+    return OperationCompletionRequirementsV1.from_json(
+        {
+            "schema_version": 1,
+            "mission_id": MISSION,
+            "requirements_ref": {"id": f"req-{MISSION}-1", "revision": 1, "content_hash": "a" * 64},
+            "mode": CompletionMode.CONTENT_ONLY,
+            "content_criterion_ids": ["c-root"],
+            "effects": [],
+        }
+    )
 
 
 def test_oc2_nested_local_chain_is_not_rewritten_as_root_requirement() -> None:
     env = _env(MISSION)
-    env.register_type("plan.subgoal", form=TaskForm.COMPOUND, parameters=(("subject", "string"),),
-                      criteria=("c-sub",), domain="plan")
-    env.register_type("plan.act", parameters=(("subject", "string"),), outputs=(("verdict", "plan.verdict"),),
-                      capabilities=("plan.read",), criteria=("c-done",), domain="plan")
+    env.register_type(
+        "plan.subgoal",
+        form=TaskForm.COMPOUND,
+        parameters=(("subject", "string"),),
+        criteria=("c-sub",),
+        domain="plan",
+    )
+    env.register_type(
+        "plan.act",
+        parameters=(("subject", "string"),),
+        outputs=(("verdict", "plan.verdict"),),
+        capabilities=("plan.read",),
+        criteria=("c-done",),
+        domain="plan",
+    )
     outer, inner = _outer(), _inner()
     for contract in (outer, inner):
         assert env.admit(contract).admitted
-    root = task_binding(env, "plan.goal", task_id=ROOT_TASK, obligation=ROOT_DUTY, parameters={"subject": "alpha"})
+    root = task_binding(
+        env, "plan.goal", task_id=ROOT_TASK, obligation=ROOT_DUTY, parameters={"subject": "alpha"}
+    )
     first = _refine(env, root_network(env, root), root, outer)
-    assess = next(item for item in first.occurrences if _signature(first, item.occurrence_id) == "plan.subgoal")
-    plan = _refine(env, first, first.binding_for_occurrence(assess.occurrence_id), inner,
-                   occurrence=assess.occurrence_id)
+    assess = next(
+        item
+        for item in first.occurrences
+        if _signature(first, item.occurrence_id) == "plan.subgoal"
+    )
+    plan = _refine(
+        env,
+        first,
+        first.binding_for_occurrence(assess.occurrence_id),
+        inner,
+        occurrence=assess.occurrence_id,
+    )
     assert plan.plan_revision == 2
 
     root_occurrence = plan.root_occurrence_ids[0]
-    inner_occurrence = next(item for item in plan.occurrences if _signature(plan, item.occurrence_id) == "plan.subgoal")
-    leaf_occurrence = next(item for item in plan.occurrences if _signature(plan, item.occurrence_id) == "plan.leaf")
+    inner_occurrence = next(
+        item for item in plan.occurrences if _signature(plan, item.occurrence_id) == "plan.subgoal"
+    )
+    leaf_occurrence = next(
+        item for item in plan.occurrences if _signature(plan, item.occurrence_id) == "plan.leaf"
+    )
     # The two methods' criterion links, landed on their occurrences.
     carried = (
-        CarriedCriterion(parent_task_id=ROOT_TASK, parent_criterion_id="c-root",
-                         occurrence_id=inner_occurrence.occurrence_id, task_id=str(inner_occurrence.task_id),
-                         leaf_criterion_id="c-sub", evidence_requirement="the assessment carries the root"),
-        CarriedCriterion(parent_task_id=str(inner_occurrence.task_id), parent_criterion_id="c-sub",
-                         occurrence_id=leaf_occurrence.occurrence_id, task_id=str(leaf_occurrence.task_id),
-                         leaf_criterion_id="c-leaf-verified", evidence_requirement="the leaf verified the subject"),
+        CarriedCriterion(
+            parent_task_id=ROOT_TASK,
+            parent_criterion_id="c-root",
+            occurrence_id=inner_occurrence.occurrence_id,
+            task_id=str(inner_occurrence.task_id),
+            leaf_criterion_id="c-sub",
+            evidence_requirement="the assessment carries the root",
+        ),
+        CarriedCriterion(
+            parent_task_id=str(inner_occurrence.task_id),
+            parent_criterion_id="c-sub",
+            occurrence_id=leaf_occurrence.occurrence_id,
+            task_id=str(leaf_occurrence.task_id),
+            leaf_criterion_id="c-leaf-verified",
+            evidence_requirement="the leaf verified the subject",
+        ),
     )
     pin = PlanRevisionPinV1(revision=plan.plan_revision, snapshot_hash=_plan_identity(plan))
-    scopes = {scope.occurrence_id: scope
-              for scope in compile_completion_scopes(_content_only_root_spec(), plan, carried, plan_ref=pin)}
+    scopes = {
+        scope.occurrence_id: scope
+        for scope in compile_completion_scopes(
+            _content_only_root_spec(), plan, carried, plan_ref=pin
+        )
+    }
 
     assert scopes[str(root_occurrence)].content_criterion_ids == ("c-root",)
     assert scopes[str(inner_occurrence.occurrence_id)].content_criterion_ids == ("c-sub",)
@@ -132,6 +208,8 @@ def test_oc2_nested_local_chain_is_not_rewritten_as_root_requirement() -> None:
     # The local chain stays local: only the sub-goal owes ``c-sub``, only the leaf owes
     # ``c-leaf-verified``, and neither is promoted onto the root.
     assert [key for key, scope in scopes.items() if "c-sub" in scope.content_criterion_ids] == [
-        str(inner_occurrence.occurrence_id)]
-    assert [key for key, scope in scopes.items() if "c-leaf-verified" in scope.content_criterion_ids] == [
-        str(leaf_occurrence.occurrence_id)]
+        str(inner_occurrence.occurrence_id)
+    ]
+    assert [
+        key for key, scope in scopes.items() if "c-leaf-verified" in scope.content_criterion_ids
+    ] == [str(leaf_occurrence.occurrence_id)]

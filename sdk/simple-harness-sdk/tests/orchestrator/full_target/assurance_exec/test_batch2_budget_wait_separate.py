@@ -8,6 +8,7 @@ MANUAL_REQUIRED，要新事件才能重开。原计划 §9 第 5 步：BUDGET_WA
 WAITING + next_due / reason。现在：预算不够 → ``wait(reason=BUDGET_WAIT)``，退避有自己的上限（60 秒），
 不动 ``rechecks``；``recheck`` 拒收 ``BUDGET_WAIT``。
 """
+
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -28,7 +29,9 @@ NOW = 1_000_000
 
 
 def _claim(tries: int = 1) -> SimpleNamespace:
-    return SimpleNamespace(mission_id="m-1", consumer="REVIEW", work_key="review:m-1:r1", tries=tries)
+    return SimpleNamespace(
+        mission_id="m-1", consumer="REVIEW", work_key="review:m-1:r1", tries=tries
+    )
 
 
 def _tick(calls: list, *, settle_ms: int | None = NOW) -> SimpleNamespace:
@@ -41,9 +44,16 @@ def _tick(calls: list, *, settle_ms: int | None = NOW) -> SimpleNamespace:
 
 def test_a05_a_budget_error_waits_under_its_own_reason_and_never_rechecks():
     calls: list = []
-    AssuranceTick._settle_failure(_tick(calls), _claim(tries=1), BudgetError("mission budget exhausted"))
-    assert calls == [("wait", "review:m-1:r1", {
-        "now_ms": NOW, "reason": BUDGET_WAIT, "not_before_ms": NOW + budget_wait_delay_ms(1)})]
+    AssuranceTick._settle_failure(
+        _tick(calls), _claim(tries=1), BudgetError("mission budget exhausted")
+    )
+    assert calls == [
+        (
+            "wait",
+            "review:m-1:r1",
+            {"now_ms": NOW, "reason": BUDGET_WAIT, "not_before_ms": NOW + budget_wait_delay_ms(1)},
+        )
+    ]
 
 
 def test_a05_rechecks_keep_their_own_reasons():
@@ -53,7 +63,10 @@ def test_a05_rechecks_keep_their_own_reasons():
     AssuranceTick._settle_failure(tick, _claim(), TimeoutError())
     AssuranceTick._settle_failure(tick, _claim(), ContractError("NETWORK_DOCUMENT_INVALID"))
     assert [(kind, kw["reason"]) for kind, _key, kw in calls] == [
-        ("recheck", "SOURCE_UNAVAILABLE"), ("recheck", "RECHECK_REQUIRED"), ("recheck", "MISSION_DATA_UNREADABLE")]
+        ("recheck", "SOURCE_UNAVAILABLE"),
+        ("recheck", "RECHECK_REQUIRED"),
+        ("recheck", "MISSION_DATA_UNREADABLE"),
+    ]
 
 
 def test_a05_an_unstable_clock_moves_nothing():

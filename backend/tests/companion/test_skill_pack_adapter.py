@@ -27,10 +27,22 @@ ENV = PackEnvironment(
     python_version="3.11",
 )
 EXPECTED_SKILLS = {
-    "deep-research", "doc-edit", "excel-generate", "file-organize",
-    "pdf-export", "ppt-generate", "ppt-tips", "recall-yesterday",
-    "run-deskpet", "screenshot-ocr", "source-check", "summarize-day",
-    "translate-doc", "verify-deskpet", "weather-report", "web-read",
+    "deep-research",
+    "doc-edit",
+    "excel-generate",
+    "file-organize",
+    "pdf-export",
+    "ppt-generate",
+    "ppt-tips",
+    "recall-yesterday",
+    "run-deskpet",
+    "screenshot-ocr",
+    "source-check",
+    "summarize-day",
+    "translate-doc",
+    "verify-deskpet",
+    "weather-report",
+    "web-read",
     "windows-path-debug",
 }
 # 2026-08-09 刷新：本 golden 停在 `0fcffcf` 之前，17 条里有 11 条陈旧。
@@ -58,23 +70,74 @@ EXPECTED_SKILLS = {
 # ⚠️ 刷新前务必先确认 pack 的 manifest 与文件字节自洽——否则等于把一次真实的
 # 内容漂移洗白成"预期值"，这条 golden 就白设了。
 EXPECTED_IDENTITIES = {
-    "deep-research": ("e28da8dd2dfb25f7d08e42b0c391cad1736e8d2ee2b1317bf0e73f0ce3959ea6", "f8d66c4075cd0e280a9ae3f606dd4608072a32fedd0fb6e4b49df3865fc87a2e"),
-    "doc-edit": ("587163cbb2e9ebb1d56b59e77fbc9f3e5c471b452efdb75a6dc4b32f016709f1", "7dcd9a134e5cab267a82d46e83082ea7ea25408f5cbda6fa01ac149cf246bdee"),
-    "excel-generate": ("a6ad4054c7e2da1b0c3e9ad860908d7754c97f3d3140ace735627402a9c5e125", "e48681682e28ece259abec1b0d8b2166cf3c545eb6020ef8f16056bc5ddeffd4"),
-    "file-organize": ("6d55fd86025ef1b7686d7374744f50519af2e79e08891cf8c68c99584058b33d", "358da032713fabbfb7ac859106d9c4c5c881b756baa49e87ac8920fa3b8224b0"),
-    "pdf-export": ("6eb1aad80c80e86a6fcdf43bc7da152667d2b8d06d7028cadb6990eae2d2a669", "9ef96ee041864bb6e897dd429203d3b0147b3ba288539319696a607b10e51563"),
-    "ppt-generate": ("743f8da5d2bd2bc749fb228d51fa3f80390991d20c2dc3a37a34ab99e24194fa", "1c098280314a101b90f90227b8a37e2ebf69a94de02f3f7ba10462d543650d8d"),
-    "ppt-tips": ("94b70fb13d466393425b9aa7b92cb6a7e3fd3df05d00bfc12a9f2143e7d20d7b", "8820771a49d623ba29018106e329898f49dd0657b84852c1073e9b9e3efb58b2"),
-    "recall-yesterday": ("244847fb26364d965f0c52fbbdd10fb4974449fc90d0834fecb1d3872904f6b5", "0da6adbacfaf61a0b21df01e9c371562ae0387aba6f5e381e75f58014b220637"),
-    "run-deskpet": ("572c8bc221f14c93b1dc3bbd004be2c9a7cd80b51e0cd110d8367ccbce6e7038", "2a789ff646f189421bdae03b88e53de0ef4fe257f433e811b27cccb471162b2e"),
-    "screenshot-ocr": ("4fd64f9e19da9913488983afaf52025f3f097403bb0167d453655648705e2809", "0f77af2560233962827e315c115b2b636c68a91b0a7aaaf04795bb7053473255"),
-    "source-check": ("2f88bf09ec7eae26bce949ad1009ae142f7a5dc3d923a94ae05378d5099593fc", "cbad6c32fbbcbac747b982b59e21f4c1dfc1551947450a80900aac32f75037cc"),
-    "summarize-day": ("226811b0bac61ddef5663d46f39f8ee795fc5a2710b82f8196b96d94c9f8138e", "80f4f15a9eed81a034f875c25a816579e69f4bb851fe855dca3aedc93c419340"),
-    "translate-doc": ("fe364ff884bb213aebb73bde9a29033f42ac3a85ce09b85d664b5d065f6b5d64", "bd2bb330f2992c91a79ad24a24bbcc105b82075124e00a3922b79838df489e35"),
-    "verify-deskpet": ("c327f8188bfa833ffec906575e4da5b7db4b53ce6769d823800748ad32994de9", "db0ab801f184d6f5c9bf6211470dcfdfcca29bc2138201d5dc6ac477d0fb9b88"),
-    "weather-report": ("6da299da0a0200ca3e501cf1495fdfcbd7109cdd9f9274997517b7cf0298b986", "ab1561167cc282e051332aa3ac7704127c53aaefbc5068ba34c7e09381ef2ff7"),
-    "web-read": ("e2441eb26082bd1178b7304578a176262f5af8f9180465b86604d24f8fe672ee", "a49a8e2b5af9381ee3af2b9d2b5db9486cf7cb933c67941f21c5fdb34026e1b3"),
-    "windows-path-debug": ("f5342ddd6750ef6af89f6901b48a14b56166caa5b1d4a2839d94c9779bc7791b", "ef3ef2c5d51aac257e4d835aa3fc5e4d19bb98bf01731230e61340c0c7ecbe8a"),
+    "deep-research": (
+        "e28da8dd2dfb25f7d08e42b0c391cad1736e8d2ee2b1317bf0e73f0ce3959ea6",
+        "f8d66c4075cd0e280a9ae3f606dd4608072a32fedd0fb6e4b49df3865fc87a2e",
+    ),
+    "doc-edit": (
+        "587163cbb2e9ebb1d56b59e77fbc9f3e5c471b452efdb75a6dc4b32f016709f1",
+        "7dcd9a134e5cab267a82d46e83082ea7ea25408f5cbda6fa01ac149cf246bdee",
+    ),
+    "excel-generate": (
+        "a6ad4054c7e2da1b0c3e9ad860908d7754c97f3d3140ace735627402a9c5e125",
+        "e48681682e28ece259abec1b0d8b2166cf3c545eb6020ef8f16056bc5ddeffd4",
+    ),
+    "file-organize": (
+        "6d55fd86025ef1b7686d7374744f50519af2e79e08891cf8c68c99584058b33d",
+        "358da032713fabbfb7ac859106d9c4c5c881b756baa49e87ac8920fa3b8224b0",
+    ),
+    "pdf-export": (
+        "6eb1aad80c80e86a6fcdf43bc7da152667d2b8d06d7028cadb6990eae2d2a669",
+        "9ef96ee041864bb6e897dd429203d3b0147b3ba288539319696a607b10e51563",
+    ),
+    "ppt-generate": (
+        "743f8da5d2bd2bc749fb228d51fa3f80390991d20c2dc3a37a34ab99e24194fa",
+        "1c098280314a101b90f90227b8a37e2ebf69a94de02f3f7ba10462d543650d8d",
+    ),
+    "ppt-tips": (
+        "94b70fb13d466393425b9aa7b92cb6a7e3fd3df05d00bfc12a9f2143e7d20d7b",
+        "8820771a49d623ba29018106e329898f49dd0657b84852c1073e9b9e3efb58b2",
+    ),
+    "recall-yesterday": (
+        "244847fb26364d965f0c52fbbdd10fb4974449fc90d0834fecb1d3872904f6b5",
+        "0da6adbacfaf61a0b21df01e9c371562ae0387aba6f5e381e75f58014b220637",
+    ),
+    "run-deskpet": (
+        "572c8bc221f14c93b1dc3bbd004be2c9a7cd80b51e0cd110d8367ccbce6e7038",
+        "2a789ff646f189421bdae03b88e53de0ef4fe257f433e811b27cccb471162b2e",
+    ),
+    "screenshot-ocr": (
+        "4fd64f9e19da9913488983afaf52025f3f097403bb0167d453655648705e2809",
+        "0f77af2560233962827e315c115b2b636c68a91b0a7aaaf04795bb7053473255",
+    ),
+    "source-check": (
+        "2f88bf09ec7eae26bce949ad1009ae142f7a5dc3d923a94ae05378d5099593fc",
+        "cbad6c32fbbcbac747b982b59e21f4c1dfc1551947450a80900aac32f75037cc",
+    ),
+    "summarize-day": (
+        "226811b0bac61ddef5663d46f39f8ee795fc5a2710b82f8196b96d94c9f8138e",
+        "80f4f15a9eed81a034f875c25a816579e69f4bb851fe855dca3aedc93c419340",
+    ),
+    "translate-doc": (
+        "fe364ff884bb213aebb73bde9a29033f42ac3a85ce09b85d664b5d065f6b5d64",
+        "bd2bb330f2992c91a79ad24a24bbcc105b82075124e00a3922b79838df489e35",
+    ),
+    "verify-deskpet": (
+        "c327f8188bfa833ffec906575e4da5b7db4b53ce6769d823800748ad32994de9",
+        "db0ab801f184d6f5c9bf6211470dcfdfcca29bc2138201d5dc6ac477d0fb9b88",
+    ),
+    "weather-report": (
+        "6da299da0a0200ca3e501cf1495fdfcbd7109cdd9f9274997517b7cf0298b986",
+        "ab1561167cc282e051332aa3ac7704127c53aaefbc5068ba34c7e09381ef2ff7",
+    ),
+    "web-read": (
+        "e2441eb26082bd1178b7304578a176262f5af8f9180465b86604d24f8fe672ee",
+        "a49a8e2b5af9381ee3af2b9d2b5db9486cf7cb933c67941f21c5fdb34026e1b3",
+    ),
+    "windows-path-debug": (
+        "f5342ddd6750ef6af89f6901b48a14b56166caa5b1d4a2839d94c9779bc7791b",
+        "ef3ef2c5d51aac257e4d835aa3fc5e4d19bb98bf01731230e61340c0c7ecbe8a",
+    ),
 }
 
 
@@ -87,8 +150,7 @@ def test_shipped_skill_inventory_is_exact_and_hash_validated() -> None:
     assert all(item.pack_id == f"skill-{item.skill_id}" for item in inventory)
     assert all(len(item.content_hash) == len(item.manifest_hash) == 64 for item in inventory)
     assert {
-        item.skill_id: (item.manifest_hash, item.content_hash)
-        for item in inventory
+        item.skill_id: (item.manifest_hash, item.content_hash) for item in inventory
     } == EXPECTED_IDENTITIES
     summarize = next(item for item in inventory if item.skill_id == "summarize-day")
     assert summarize.allowed_tools == ("memory_recall",)
@@ -160,13 +222,10 @@ def test_v2_schema_validates_offline_without_external_refs() -> None:
     )
     schema = json.loads(schema_path.read_text("utf-8"))
     assert not any(
-        isinstance(value, str) and "deskpet-pack-v1" in value
-        for value in _walk_json(schema)
+        isinstance(value, str) and "deskpet-pack-v1" in value for value in _walk_json(schema)
     )
     validator = jsonschema.Draft202012Validator(schema)
-    for manifest_path in (
-        first_party_capability_pack_roots()[0].glob("skill-*/deskpet-pack.json")
-    ):
+    for manifest_path in first_party_capability_pack_roots()[0].glob("skill-*/deskpet-pack.json"):
         validator.validate(json.loads(manifest_path.read_text("utf-8")))
 
 
@@ -182,14 +241,10 @@ def _walk_json(value):
         yield value
 
 
-def test_dev_and_frozen_inventory_have_identical_hashes(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_dev_and_frozen_inventory_have_identical_hashes(monkeypatch, tmp_path: Path) -> None:
     import paths
 
-    dev = inventory_first_party_skill_packs(
-        first_party_capability_pack_roots(), environment=ENV
-    )
+    dev = inventory_first_party_skill_packs(first_party_capability_pack_roots(), environment=ENV)
     frozen_root = tmp_path / "capability-packs"
     frozen_root.mkdir()
     for source in first_party_capability_pack_roots()[0].glob("skill-*"):
@@ -199,9 +254,7 @@ def test_dev_and_frozen_inventory_have_identical_hashes(
     frozen = inventory_first_party_skill_packs(
         paths.first_party_capability_pack_roots(), environment=ENV
     )
-    assert [
-        (item.skill_id, item.manifest_hash, item.content_hash) for item in dev
-    ] == [
+    assert [(item.skill_id, item.manifest_hash, item.content_hash) for item in dev] == [
         (item.skill_id, item.manifest_hash, item.content_hash) for item in frozen
     ]
 
@@ -209,25 +262,20 @@ def test_dev_and_frozen_inventory_have_identical_hashes(
 def test_skill_body_canonical_tool_refs_are_declared() -> None:
     tool_manifest = json.loads(
         (
-            Path(__file__).parents[2]
-            / "deskpet"
-            / "tools"
-            / "tool_effect_policy_manifest.json"
+            Path(__file__).parents[2] / "deskpet" / "tools" / "tool_effect_policy_manifest.json"
         ).read_text("utf-8")
     )
-    known = {
-        str(item["tool_name"]) for item in tool_manifest["handlers"]
-    }
+    known = {str(item["tool_name"]) for item in tool_manifest["handlers"]}
     known.add("mcp_call")
     projection = ManagedSkillDiscoveryProjection(
-        inventory_first_party_skill_packs(
-            first_party_capability_pack_roots(), environment=ENV
-        )
+        inventory_first_party_skill_packs(first_party_capability_pack_roots(), environment=ENV)
     )
     for meta in projection.all():
         refs = {
             match.group(1)
-            for match in re.finditer(r"`([A-Za-z][A-Za-z0-9_-]{0,63})`", projection.read_body(meta.name))
+            for match in re.finditer(
+                r"`([A-Za-z][A-Za-z0-9_-]{0,63})`", projection.read_body(meta.name)
+            )
             if match.group(1) in known
         }
         assert refs <= set(meta.allowed_tools), (meta.name, refs - set(meta.allowed_tools))

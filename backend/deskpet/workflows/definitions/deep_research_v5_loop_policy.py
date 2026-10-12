@@ -81,9 +81,7 @@ class ProgressSnapshot:
             or not isinstance(self.first_party_satisfied, int)
             or self.first_party_satisfied < 0
         ):
-            raise ContractValidationError(
-                "first_party_satisfied must be a non-negative integer"
-            )
+            raise ContractValidationError("first_party_satisfied must be a non-negative integer")
         _number(self.quality_score, "quality_score")
 
     def to_json(self) -> dict[str, float | int]:
@@ -100,9 +98,7 @@ class ProgressSnapshot:
             raise ContractValidationError("invalid progress snapshot fields")
         return cls(
             coverage_points=_number(value["coverage_points"], "coverage_points"),
-            first_party_satisfied=_integer(
-                value["first_party_satisfied"], "first_party_satisfied"
-            ),
+            first_party_satisfied=_integer(value["first_party_satisfied"], "first_party_satisfied"),
             quality_score=_number(value["quality_score"], "quality_score"),
         )
 
@@ -115,11 +111,7 @@ class ProgressGain:
 
     @property
     def measurable(self) -> bool:
-        return (
-            self.coverage_gain > 0
-            or self.first_party_gain > 0
-            or self.quality_gain > 0
-        )
+        return self.coverage_gain > 0 or self.first_party_gain > 0 or self.quality_gain > 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -172,8 +164,12 @@ class LoopPolicyState:
         if self.plateau_round_limit < 1:
             raise ContractValidationError("plateau_round_limit must be positive")
         allowed_modes = {
-            "running", "generate_now_settling", "cancelled", "plateau_settling",
-            "lease_no_gain_settling", "automatic_cap_settling",
+            "running",
+            "generate_now_settling",
+            "cancelled",
+            "plateau_settling",
+            "lease_no_gain_settling",
+            "automatic_cap_settling",
         }
         if self.control_mode not in allowed_modes:
             raise ContractValidationError("invalid control mode")
@@ -191,25 +187,30 @@ class LoopPolicyState:
             raise ContractValidationError("control identity must be complete")
         _text(self.control_action_id, "control_action_id", optional=True)
         _text(self.control_idempotency_key, "control_idempotency_key", optional=True)
-        if self.control_mode in {"generate_now_settling", "cancelled"} and self.control_action_id is None:
+        if (
+            self.control_mode in {"generate_now_settling", "cancelled"}
+            and self.control_action_id is None
+        ):
             raise ContractValidationError("explicit control mode requires control identity")
-        if self.control_mode not in {"generate_now_settling", "cancelled"} and self.control_action_id is not None:
+        if (
+            self.control_mode not in {"generate_now_settling", "cancelled"}
+            and self.control_action_id is not None
+        ):
             raise ContractValidationError("implicit control mode cannot own control identity")
         if not all(isinstance(item, str) and item for item in self.query_strategy_operations):
             raise ContractValidationError("invalid query strategy operation")
-        if len(set(self.query_strategy_operations)) != len(
-            self.query_strategy_operations
-        ):
+        if len(set(self.query_strategy_operations)) != len(self.query_strategy_operations):
             raise ContractValidationError("query strategy operations must be unique")
-        if any(
-            operation_id != self.operation_id
-            for operation_id in self.query_strategy_operations
-        ) or len(self.query_strategy_operations) > 1:
-            raise ContractValidationError(
-                "query strategy claim must belong to this operation"
+        if (
+            any(
+                operation_id != self.operation_id for operation_id in self.query_strategy_operations
             )
+            or len(self.query_strategy_operations) > 1
+        ):
+            raise ContractValidationError("query strategy claim must belong to this operation")
         if not all(
-            isinstance(claim, tuple) and len(claim) == 2
+            isinstance(claim, tuple)
+            and len(claim) == 2
             and all(isinstance(part, str) and part for part in claim)
             for claim in self.continued_children
         ):
@@ -221,9 +222,7 @@ class LoopPolicyState:
         if len(set(parents)) != len(parents) or len(set(children)) != len(children):
             raise ContractValidationError("continue child claims must be one-to-one")
         if any(parent != self.operation_id for parent in parents) or len(parents) > 1:
-            raise ContractValidationError(
-                "continue child claim must belong to this operation"
-            )
+            raise ContractValidationError("continue child claim must belong to this operation")
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -253,14 +252,27 @@ class LoopPolicyState:
     @classmethod
     def from_json(cls, value: Mapping[str, Any]) -> LoopPolicyState:
         expected = {
-            "schema_version", "operation_id", "wall_clock_anchor",
-            "accumulated_active_seconds", "soft_checkpoint_seconds", "lease_seconds",
-            "automatic_cap_seconds", "plateau_round_limit", "settle_target_seconds",
-            "next_review_active_seconds", "lease_count", "no_gain_rounds",
-            "lease_baseline", "current_progress", "control_mode",
-            "prohibit_new_upstream", "settle_deadline_active_seconds",
-            "control_action_id", "control_idempotency_key",
-            "query_strategy_operations", "continued_children",
+            "schema_version",
+            "operation_id",
+            "wall_clock_anchor",
+            "accumulated_active_seconds",
+            "soft_checkpoint_seconds",
+            "lease_seconds",
+            "automatic_cap_seconds",
+            "plateau_round_limit",
+            "settle_target_seconds",
+            "next_review_active_seconds",
+            "lease_count",
+            "no_gain_rounds",
+            "lease_baseline",
+            "current_progress",
+            "control_mode",
+            "prohibit_new_upstream",
+            "settle_deadline_active_seconds",
+            "control_action_id",
+            "control_idempotency_key",
+            "query_strategy_operations",
+            "continued_children",
         }
         if set(value) != expected or value.get("schema_version") != 1:
             raise ContractValidationError("invalid loop policy state fields")
@@ -287,15 +299,11 @@ class LoopPolicyState:
                 value["soft_checkpoint_seconds"], "soft_checkpoint_seconds"
             ),
             lease_seconds=_number(value["lease_seconds"], "lease_seconds"),
-            automatic_cap_seconds=_number(
-                value["automatic_cap_seconds"], "automatic_cap_seconds"
-            ),
+            automatic_cap_seconds=_number(value["automatic_cap_seconds"], "automatic_cap_seconds"),
             plateau_round_limit=_integer(
                 value["plateau_round_limit"], "plateau_round_limit", minimum=1
             ),
-            settle_target_seconds=_number(
-                value["settle_target_seconds"], "settle_target_seconds"
-            ),
+            settle_target_seconds=_number(value["settle_target_seconds"], "settle_target_seconds"),
             next_review_active_seconds=_number(
                 value["next_review_active_seconds"], "next_review_active_seconds"
             ),
@@ -304,9 +312,7 @@ class LoopPolicyState:
             lease_baseline=ProgressSnapshot.from_json(value["lease_baseline"]),
             current_progress=ProgressSnapshot.from_json(value["current_progress"]),
             control_mode=str(_text(value["control_mode"], "control_mode")),  # type: ignore[arg-type]
-            prohibit_new_upstream=_boolean(
-                value["prohibit_new_upstream"], "prohibit_new_upstream"
-            ),
+            prohibit_new_upstream=_boolean(value["prohibit_new_upstream"], "prohibit_new_upstream"),
             settle_deadline_active_seconds=(
                 None
                 if value["settle_deadline_active_seconds"] is None
@@ -426,9 +432,7 @@ def measurable_progress_gain(
 ) -> ProgressGain:
     return ProgressGain(
         coverage_gain=max(0.0, after.coverage_points - before.coverage_points),
-        first_party_gain=max(
-            0, after.first_party_satisfied - before.first_party_satisfied
-        ),
+        first_party_gain=max(0, after.first_party_satisfied - before.first_party_satisfied),
         quality_gain=max(0.0, after.quality_score - before.quality_score),
     )
 
@@ -652,9 +656,7 @@ def claim_query_strategy(
     if not operation_id:
         raise ContractValidationError("operation_id is required")
     if operation_id != state.operation_id:
-        raise ContractValidationError(
-            "query strategy claim must match state operation_id"
-        )
+        raise ContractValidationError("query strategy claim must match state operation_id")
     if operation_id in state.query_strategy_operations:
         return state, False
     return replace(
@@ -672,9 +674,7 @@ def claim_continue_child(
     if not parent_operation_id or not child_operation_id:
         raise ContractValidationError("continue operation identities are required")
     if parent_operation_id != state.operation_id:
-        raise ContractValidationError(
-            "continue parent must match state operation_id"
-        )
+        raise ContractValidationError("continue parent must match state operation_id")
     if parent_operation_id == child_operation_id:
         raise ContractValidationError("continue child must be a new operation")
     existing = dict(state.continued_children)

@@ -54,11 +54,15 @@ class ExtractedScalarEvidence:
 
 _PATTERNS: Final[dict[str, tuple[re.Pattern[str], ...]]] = {
     "year_end_total_population": (
-        re.compile(rf"(?:[12][0-9]{{3}}年)?年末全国人口[^。；;\n]{{0,20}}?{_NUMBER_RE}\s*{_UNIT_RE}"),
+        re.compile(
+            rf"(?:[12][0-9]{{3}}年)?年末全国人口[^。；;\n]{{0,20}}?{_NUMBER_RE}\s*{_UNIT_RE}"
+        ),
         re.compile(rf"(?:[12][0-9]{{3}}年)?年末总人口[^。；;\n]{{0,20}}?{_NUMBER_RE}\s*{_UNIT_RE}"),
     ),
     "births_during_period": (
-        re.compile(rf"(?:[12][0-9]{{3}}年)?全年出生人口[^。；;\n]{{0,20}}?{_NUMBER_RE}\s*{_UNIT_RE}"),
+        re.compile(
+            rf"(?:[12][0-9]{{3}}年)?全年出生人口[^。；;\n]{{0,20}}?{_NUMBER_RE}\s*{_UNIT_RE}"
+        ),
         re.compile(rf"(?:[12][0-9]{{3}}年)?出生人口[^。；;\n]{{0,20}}?{_NUMBER_RE}\s*{_UNIT_RE}"),
     ),
 }

@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 """Phase-2 中文一手源直连适配器测试 (research_sources)。"""
+
 from __future__ import annotations
 
 import json
@@ -26,6 +27,7 @@ def _assert_direct_contract(item: dict, source: str) -> None:
 
 
 # --- 意图路由 ---
+
 
 def test_direct_source_for(monkeypatch):
     monkeypatch.setattr(rs, "_research_raw", lambda: {})
@@ -109,16 +111,15 @@ def test_openstd_keyword():
     assert rs._openstd_keyword("钠离子电池") == "钠离子电池"
     # 长子问题压成核心技术词(剥填充词 + 砍脚手架词)
     assert rs._openstd_keyword("钠离子电池有哪些国家标准 GB/T 标准号") == "钠离子电池"
-    assert rs._openstd_keyword(
-        "围绕钠离子电池 GB/T 标准仍存在哪些争议或空白") == "钠离子电池"
+    assert rs._openstd_keyword("围绕钠离子电池 GB/T 标准仍存在哪些争议或空白") == "钠离子电池"
     # 句首"中国/截至目前"等填充词被循环剥离
-    assert rs._openstd_keyword(
-        "截至目前中国钠离子电池国家标准的制定进展") == "钠离子电池"
+    assert rs._openstd_keyword("截至目前中国钠离子电池国家标准的制定进展") == "钠离子电池"
     # 无技术词(纯脚手架)→ 空 → openstd_search 跳过
     assert rs._openstd_keyword("这些 GB/T 标准由哪些主管部门管理") == ""
 
 
 # --- cninfo: mock httpx 验证 query→PDF→passage 流程 ---
+
 
 @pytest.mark.asyncio
 async def test_cninfo_search_builds_passages(monkeypatch):
@@ -139,10 +140,17 @@ async def test_cninfo_search_builds_passages(monkeypatch):
             pass
 
         async def post(self, url, **kw):
-            return _Resp(json_data={"announcements": [
-                {"secName": "<em>宁德时代</em>", "announcementTitle": "2025年<em>年度报告</em>",
-                 "adjunctUrl": "finalpage/2026-03-10/123.PDF"},
-            ]})
+            return _Resp(
+                json_data={
+                    "announcements": [
+                        {
+                            "secName": "<em>宁德时代</em>",
+                            "announcementTitle": "2025年<em>年度报告</em>",
+                            "adjunctUrl": "finalpage/2026-03-10/123.PDF",
+                        },
+                    ]
+                }
+            )
 
         async def get(self, url, **kw):
             return _Resp(content=b"%PDF-1.4 fake")  # pdf 抽取会失败→退化元数据
@@ -168,7 +176,7 @@ def test_rank_cninfo_anns_summary_first():
         {"announcementTitle": "关于召开股东大会的公告"},
     ]
     ranked = rs._rank_cninfo_anns(anns)
-    assert "摘要" in ranked[0]["announcementTitle"]   # 摘要置顶
+    assert "摘要" in ranked[0]["announcementTitle"]  # 摘要置顶
     titles = [a["announcementTitle"] for a in ranked]
     assert titles == ["2024年年度报告摘要", "2024年年度报告", "关于召开股东大会的公告"]
 
@@ -180,16 +188,18 @@ async def test_cninfo_search_empty_keyword():
 
 # --- SEC EDGAR(美股一手源)---
 
+
 def test_extract_us_ticker():
     assert rs._extract_us_ticker("特斯拉2024年年度报告的营收和净利润") == "TSLA"
     assert rs._extract_us_ticker("苹果公司财报") == "AAPL"
-    assert rs._extract_us_ticker("分析 NVDA 的年报") == "NVDA"   # 显式 ticker
-    assert rs._extract_us_ticker("宁德时代2024年财报") == ""      # A股,无美股别名
+    assert rs._extract_us_ticker("分析 NVDA 的年报") == "NVDA"  # 显式 ticker
+    assert rs._extract_us_ticker("宁德时代2024年财报") == ""  # A股,无美股别名
     assert rs._extract_us_ticker("今天天气如何") == ""
 
 
 def test_low_quality_filter():
     from deskpet.tools import research_scoring as rsc
+
     # 精确域名列表
     assert rsc.is_low_quality("https://www.hanyuguoxue.com/cidian/ci-xxx") is True
     assert rsc.is_low_quality("https://zidian.qianp.com/zi/特") is True
@@ -210,7 +220,7 @@ def test_low_quality_filter():
 @pytest.mark.asyncio
 async def test_edgar_search_builds_passage(monkeypatch):
     """mock SEC: ticker→CIK + companyconcept → 结构化财务 passage。"""
-    rs._EDGAR_TICKERS_CACHE = None   # 清进程缓存
+    rs._EDGAR_TICKERS_CACHE = None  # 清进程缓存
     rs._EDGAR_TITLES_CACHE = []
 
     class _Resp:
@@ -225,10 +235,15 @@ async def test_edgar_search_builds_passage(monkeypatch):
             return self._j
 
     def _concept_units(val):
-        return {"entityName": "Tesla, Inc.", "units": {"USD": [
-            {"form": "10-K", "fp": "FY", "fy": 2024, "end": "2024-12-31", "val": val},
-            {"form": "10-K", "fp": "FY", "fy": 2023, "end": "2023-12-31", "val": val - 1},
-        ]}}
+        return {
+            "entityName": "Tesla, Inc.",
+            "units": {
+                "USD": [
+                    {"form": "10-K", "fp": "FY", "fy": 2024, "end": "2024-12-31", "val": val},
+                    {"form": "10-K", "fp": "FY", "fy": 2023, "end": "2023-12-31", "val": val - 1},
+                ]
+            },
+        }
 
     class _FakeClient:
         def __init__(self, *a, **k):
@@ -258,7 +273,7 @@ async def test_edgar_search_builds_passage(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_edgar_search_unresolved_returns_empty():
-    rs._EDGAR_TICKERS_CACHE = {"TSLA": "0001318605"}   # 缓存已在,跳过网络
+    rs._EDGAR_TICKERS_CACHE = {"TSLA": "0001318605"}  # 缓存已在,跳过网络
     rs._EDGAR_TITLES_CACHE = []
     # A股公司名,无美股 ticker → 解析不到 → []
     assert await rs.edgar_search("宁德时代年报", client=object()) == []
@@ -281,6 +296,7 @@ async def test_cninfo_search_network_fail(monkeypatch):
 
 
 # --- 新直连源 fetcher 契约 ---
+
 
 @pytest.mark.asyncio
 async def test_baidu_baike_search_contract_from_fixture():
@@ -421,9 +437,7 @@ async def test_arxiv_search_contract_from_fixture():
     assert len(out) == 1
     _assert_direct_contract(out[0], "arxiv")
     assert "arxiv.org" in out[0]["url"]
-    assert captured_query["search_query"] == (
-        'all:"sodium" AND all:"ion" AND all:"battery"'
-    )
+    assert captured_query["search_query"] == ('all:"sodium" AND all:"ion" AND all:"battery"')
     assert captured_query["sortBy"] == "submittedDate"
     assert captured_query["sortOrder"] == "descending"
 

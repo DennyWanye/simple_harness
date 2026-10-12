@@ -56,9 +56,7 @@ async def test_failure_class_threshold_open_and_probe_backoff_matrix(
     now["value"] = 2
     probe = await health.acquire_permit("p", allow_probe=True)
     assert probe.probe_owner
-    assert await health.complete_probe(
-        "p", probe, "failure", failure_class=failure_class
-    )
+    assert await health.complete_probe("p", probe, "failure", failure_class=failure_class)
     backed_off = await health.snapshot("p")
     assert backed_off.state == "open"
     assert backed_off.generation == 2
@@ -139,9 +137,7 @@ async def test_probe_failure_advances_generation_and_bounds_sequential_retries()
     now["value"] = 2
     owner = await health.acquire_permit("p", allow_probe=True)
     assert owner.probe_owner
-    assert await health.complete_probe(
-        "p", owner, "failure", failure_class="timeout"
-    )
+    assert await health.complete_probe("p", owner, "failure", failure_class="timeout")
     reopened = await health.snapshot("p")
     assert reopened.generation == 2
     assert reopened.eligible_at == 6
@@ -210,7 +206,9 @@ async def test_all_open_eligible_owner_probes_and_emits_safe_request_diagnostics
     gateway = SearchGateway(config=config, providers=[provider], client=client)
     try:
         first = await gateway.search(SearchRequest("first", request_id="request-1", run_id="run-1"))
-        second = await gateway.search(SearchRequest("second", request_id="request-2", run_id="run-1"))
+        second = await gateway.search(
+            SearchRequest("second", request_id="request-2", run_id="run-1")
+        )
     finally:
         await gateway.shutdown()
         await client.aclose()
@@ -389,9 +387,7 @@ async def test_closed_empty_plus_open_provider_runs_one_bounded_rescue(
         provider_queue_max_wait_s=0.2,
     )
     client = httpx.AsyncClient()
-    gateway = SearchGateway(
-        config=config, providers=[empty, recoverable], client=client
-    )
+    gateway = SearchGateway(config=config, providers=[empty, recoverable], client=client)
     try:
         response = await gateway.search(SearchRequest("empty-aware-rescue"))
         final_snapshot = await gateway.health.snapshot(recoverable.name)
@@ -445,9 +441,7 @@ async def test_concurrent_rescue_loser_does_not_call_closed_provider_again() -> 
         provider_queue_max_wait_s=0.2,
     )
     client = httpx.AsyncClient()
-    gateway = SearchGateway(
-        config=config, providers=[empty, recoverable], client=client
-    )
+    gateway = SearchGateway(config=config, providers=[empty, recoverable], client=client)
     # Establish one open provider before both requests observe it.
     await gateway.health.record_failure(recoverable.name, "blocked")
     await asyncio.sleep(0.011)
@@ -499,9 +493,7 @@ async def test_rescue_candidate_after_deadline_is_not_called() -> None:
     client = httpx.AsyncClient()
     gateway = SearchGateway(config=config, providers=[empty, blocked], client=client)
     try:
-        response = await gateway.search(
-            SearchRequest("rescue-deadline", total_timeout_s=0.05)
-        )
+        response = await gateway.search(SearchRequest("rescue-deadline", total_timeout_s=0.05))
     finally:
         await gateway.shutdown()
         await client.aclose()
@@ -571,9 +563,7 @@ async def test_ten_sequential_requests_obey_probe_interval_call_upper_bound() ->
     gateway = SearchGateway(config=config, providers=[provider], client=client)
     try:
         responses = [
-            await gateway.search(
-                SearchRequest(f"bounded-{index}", total_timeout_s=0.05)
-            )
+            await gateway.search(SearchRequest(f"bounded-{index}", total_timeout_s=0.05))
             for index in range(10)
         ]
     finally:
@@ -582,10 +572,7 @@ async def test_ten_sequential_requests_obey_probe_interval_call_upper_bound() ->
 
     assert provider.calls == 1
     assert responses[0].attempts[0].status is AttemptStatus.BLOCKED
-    assert all(
-        response.attempts[0].status is AttemptStatus.COOLDOWN
-        for response in responses[1:]
-    )
+    assert all(response.attempts[0].status is AttemptStatus.COOLDOWN for response in responses[1:])
 
 
 class _HitProvider:
@@ -689,9 +676,7 @@ async def test_probe_failure_rotates_earliest_candidate_instead_of_starving_peer
         clock=lambda: now["value"],
     )
     providers = [_HitProvider("baidu"), _HitProvider("duckduckgo")]
-    config = replace(
-        SearchGatewayConfig(), providers=[provider.name for provider in providers]
-    )
+    config = replace(SearchGatewayConfig(), providers=[provider.name for provider in providers])
     client = httpx.AsyncClient()
     gateway = SearchGateway(config=config, providers=providers, client=client)
     gateway.health = health
@@ -699,20 +684,14 @@ async def test_probe_failure_rotates_earliest_candidate_instead_of_starving_peer
         await health.record_failure("baidu", "blocked")
         now["value"] = 1
         await health.record_failure("duckduckgo", "blocked")
-        assert await gateway._all_open_probe_candidate(
-            ["baidu", "duckduckgo"]
-        ) == "baidu"
+        assert await gateway._all_open_probe_candidate(["baidu", "duckduckgo"]) == "baidu"
 
         now["value"] = 5
         first = await health.acquire_permit("baidu", allow_probe=True)
         assert first.probe_owner
-        assert await health.complete_probe(
-            "baidu", first, "failure", failure_class="blocked"
-        )
+        assert await health.complete_probe("baidu", first, "failure", failure_class="blocked")
 
-        assert await gateway._all_open_probe_candidate(
-            ["baidu", "duckduckgo"]
-        ) == "duckduckgo"
+        assert await gateway._all_open_probe_candidate(["baidu", "duckduckgo"]) == "duckduckgo"
     finally:
         await gateway.shutdown()
         await client.aclose()

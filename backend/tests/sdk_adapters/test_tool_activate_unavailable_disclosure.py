@@ -89,7 +89,9 @@ def _catalog() -> tuple[dict[str, Any], tuple[ProductToolInventoryEntry, ...]]:
         "specs": specs,
     }
 
-    def entry(name: str, source: str = "builtin", *, dispatch: str = "async") -> ProductToolInventoryEntry:
+    def entry(
+        name: str, source: str = "builtin", *, dispatch: str = "async"
+    ) -> ProductToolInventoryEntry:
         return ProductToolInventoryEntry(
             name,
             dispatch,
@@ -228,9 +230,7 @@ def test_bridge_activate_raises_tool_unavailable_for_projected_filesystem_mcp() 
     described = run.bridge.describe(MCP_CAPABILITY)
     assert described["schema_hash"] == described["capability_hash"]
     with pytest.raises(RuntimeError, match=r"^tool_unavailable:workspace_unscoped$"):
-        run.bridge.activate(
-            MCP_CAPABILITY, described["schema_hash"], described["describe_nonce"]
-        )
+        run.bridge.activate(MCP_CAPABILITY, described["schema_hash"], described["describe_nonce"])
 
 
 @pytest.mark.asyncio
@@ -632,10 +632,16 @@ async def test_nested_schema_violation_is_model_visible_not_run_fatal() -> None:
     )
     token = _current_call_id.set(CallId("call-nested-ok"))
     try:
-        ok = await tools.invoke(good, ToolContext(
-            RunId(RUN_ID), RequestId("request-ui-b"), CancellationToken(), {},
-            call_id=CallId("call-nested-ok"),
-        ))
+        ok = await tools.invoke(
+            good,
+            ToolContext(
+                RunId(RUN_ID),
+                RequestId("request-ui-b"),
+                CancellationToken(),
+                {},
+                call_id=CallId("call-nested-ok"),
+            ),
+        )
     finally:
         _current_call_id.reset(token)
     assert ok.outcome is ToolOutcome.SUCCEEDED
@@ -680,9 +686,9 @@ async def test_wrong_types_out_of_range_and_unknown_properties_are_not_run_fatal
 
     for idx, args in enumerate(
         (
-            {"query": "x", "limit": 20},          # 越界
-            {"query": 123},                        # 类型错
-            {"query": "x", "bogus": 1},            # 多余属性
+            {"query": "x", "limit": 20},  # 越界
+            {"query": 123},  # 类型错
+            {"query": "x", "bogus": 1},  # 多余属性
         )
     ):
         call_id = CallId(f"call-bad-{idx}")
@@ -691,7 +697,10 @@ async def test_wrong_types_out_of_range_and_unknown_properties_are_not_run_fatal
             result = await tools.invoke(
                 ToolCall(call_id=call_id, name="tool_search", arguments=args),
                 ToolContext(
-                    RunId(RUN_ID), RequestId("request-ui-b"), CancellationToken(), {},
+                    RunId(RUN_ID),
+                    RequestId("request-ui-b"),
+                    CancellationToken(),
+                    {},
                     call_id=call_id,
                 ),
             )
@@ -801,7 +810,10 @@ async def test_delegation_boundary_rejection_is_stable_and_actionable() -> None:
             result = await tool.handler(
                 args,
                 ToolContext(
-                    RunId(RUN_ID), RequestId("request-ui-b"), CancellationToken(), {},
+                    RunId(RUN_ID),
+                    RequestId("request-ui-b"),
+                    CancellationToken(),
+                    {},
                     call_id=call_id,
                 ),
             )

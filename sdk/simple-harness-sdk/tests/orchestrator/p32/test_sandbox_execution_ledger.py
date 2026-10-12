@@ -9,6 +9,7 @@
 
 **改坏检验**：``reclaim_recorded_executions`` 里去掉 ``identity_matches`` 核对 → 第 3 条红（陌生进程被杀）。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -82,16 +83,23 @@ def test_execute_records_identity_at_start_and_outcome_at_finish(workspace, tmp_
     executor = ProcessOnlyExecutor(exec_root=tmp_path / "exec")
     ledger = _Ledger()
     executor.ledger = ledger
-    receipt = asyncio.run(executor.execute(
-        [sys.executable, "-c", "import os; print(os.getpid())"], cwd=str(workspace),
-        spec=SandboxSpec(cpu_seconds=10, wall_seconds=20)))
+    receipt = asyncio.run(
+        executor.execute(
+            [sys.executable, "-c", "import os; print(os.getpid())"],
+            cwd=str(workspace),
+            spec=SandboxSpec(cpu_seconds=10, wall_seconds=20),
+        )
+    )
     assert receipt.exit_code == 0
     [record] = ledger.started
     assert record["execution_id"] == receipt.execution_id and record["kind"] == "process_only"
     assert record["root_pid"] == int(receipt.output.strip())
     # start_new_session=True：子进程自成进程组与会话
     assert record["process_group"] == record["root_pid"] == record["session_id"]
-    assert isinstance(record["process_started_at"], str) and len(record["process_started_at"].split()) == 5
+    assert (
+        isinstance(record["process_started_at"], str)
+        and len(record["process_started_at"].split()) == 5
+    )
     assert record["command"][0] == sys.executable and record["cwd"] == str(workspace.resolve())
     assert Path(record["scratch"]).name == receipt.execution_id
     assert ledger.finished == [(receipt.execution_id, "exited")]
@@ -102,9 +110,17 @@ def test_a_ledger_that_cannot_record_stops_the_run_and_leaves_no_child(workspace
     executor.ledger = _Ledger(fail=True)
     marker = workspace / "pid"
     with pytest.raises(SandboxUnavailable, match="ledger"):
-        asyncio.run(executor.execute(
-            [sys.executable, "-c", f"import os,time; open({str(marker)!r},'w').write(str(os.getpid())); time.sleep(30)"],
-            cwd=str(workspace), spec=SandboxSpec(cpu_seconds=10, wall_seconds=20)))
+        asyncio.run(
+            executor.execute(
+                [
+                    sys.executable,
+                    "-c",
+                    f"import os,time; open({str(marker)!r},'w').write(str(os.getpid())); time.sleep(30)",
+                ],
+                cwd=str(workspace),
+                spec=SandboxSpec(cpu_seconds=10, wall_seconds=20),
+            )
+        )
     deadline = time.monotonic() + 3
     while not marker.exists() and time.monotonic() < deadline:
         time.sleep(0.05)
@@ -113,9 +129,14 @@ def test_a_ledger_that_cannot_record_stops_the_run_and_leaves_no_child(workspace
 
 
 def _orphan(tmp_path, name: str) -> subprocess.Popen:
-    return subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"], cwd=str(tmp_path),
-                            start_new_session=True, stdin=subprocess.DEVNULL,
-                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return subprocess.Popen(
+        [sys.executable, "-c", "import time; time.sleep(60)"],
+        cwd=str(tmp_path),
+        start_new_session=True,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
 
 
 def _row(execution_id: str, pid: int, identity: dict) -> dict:
@@ -136,13 +157,30 @@ def test_reclaim_kills_only_the_process_whose_recorded_identity_still_matches(tm
         dead_pid = probe.pid
         rows = [
             _row("e-matched", matched.pid, real),
-            _row("e-stranger", stranger.pid, {**process_identity(stranger.pid), "process_started_at": "Thu Jan  1 00:00:00 1970"}),
-            _row("e-gone", dead_pid, {"process_group": dead_pid, "session_id": dead_pid, "process_started_at": "x"}),
+            _row(
+                "e-stranger",
+                stranger.pid,
+                {
+                    **process_identity(stranger.pid),
+                    "process_started_at": "Thu Jan  1 00:00:00 1970",
+                },
+            ),
+            _row(
+                "e-gone",
+                dead_pid,
+                {"process_group": dead_pid, "session_id": dead_pid, "process_started_at": "x"},
+            ),
         ]
         reports = {r["execution_id"]: r for r in reclaim_recorded_executions(rows)}
-        assert reports["e-matched"]["outcome"] == "reclaimed" and matched.pid in reports["e-matched"]["pids"]
+        assert (
+            reports["e-matched"]["outcome"] == "reclaimed"
+            and matched.pid in reports["e-matched"]["pids"]
+        )
         assert _wait_dead(matched.pid)
-        assert reports["e-stranger"]["outcome"] == "identity_mismatch" and reports["e-stranger"]["pids"] == []
+        assert (
+            reports["e-stranger"]["outcome"] == "identity_mismatch"
+            and reports["e-stranger"]["pids"] == []
+        )
         assert _alive(stranger.pid)  # 一个不碰
         assert reports["e-gone"]["outcome"] == "gone"
         assert gone.returncode == 0
@@ -160,9 +198,19 @@ def test_store_ledger_writes_identity_and_reads_owner_from_the_exec_copy_name(tm
     try:
         ledger = StoreSandboxLedger(store)
         cwd = tmp_path / f"attempt-9{EXEC_COPY_MARK}deadbeef"
-        ledger.record_start({"execution_id": "e1", "kind": "process_only", "root_pid": 123, "process_group": 123,
-                             "session_id": 123, "process_started_at": "Mon Oct  6 10:00:00 2026",
-                             "command": ["python", "-c", "pass"], "cwd": str(cwd), "scratch": str(tmp_path / "s")})
+        ledger.record_start(
+            {
+                "execution_id": "e1",
+                "kind": "process_only",
+                "root_pid": 123,
+                "process_group": 123,
+                "session_id": 123,
+                "process_started_at": "Mon Oct  6 10:00:00 2026",
+                "command": ["python", "-c", "pass"],
+                "cwd": str(cwd),
+                "scratch": str(tmp_path / "s"),
+            }
+        )
         [row] = RecoveryStore(store).open_sandbox_executions()
         assert row["execution_id"] == "e1" and row["command"] == ["python", "-c", "pass"]
         assert row["process_started_at"] == "Mon Oct  6 10:00:00 2026" and row["cwd"] == str(cwd)
@@ -170,7 +218,9 @@ def test_store_ledger_writes_identity_and_reads_owner_from_the_exec_copy_name(tm
         assert row["attempt_id"] is None and row["mission_id"] is None
         ledger.record_finish("e1", "exited")
         assert RecoveryStore(store).open_sandbox_executions() == []
-        outcome = store.connection.execute("SELECT outcome FROM sandbox_executions WHERE execution_id='e1'").fetchone()[0]
+        outcome = store.connection.execute(
+            "SELECT outcome FROM sandbox_executions WHERE execution_id='e1'"
+        ).fetchone()[0]
         assert outcome == "exited"
     finally:
         store.close()

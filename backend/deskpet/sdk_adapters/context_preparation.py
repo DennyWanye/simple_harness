@@ -71,9 +71,7 @@ def trusted_project_task_snapshot(
             "project_id": str(workspace_resolution["project_id"]),
             "project_name": str(workspace_resolution["project_name"]),
             "project_root": str(workspace_resolution["project_root"]),
-            "effective_execution_root": str(
-                workspace_resolution["effective_root"]
-            ),
+            "effective_execution_root": str(workspace_resolution["effective_root"]),
             "execution_kind": str(workspace_resolution["execution_kind"]),
             "project_revision": int(workspace_resolution["project_revision"]),
             "binding_version": int(workspace_resolution["binding_version"]),
@@ -91,9 +89,7 @@ def trusted_project_task_snapshot(
     else:
         raise ValueError("trusted project/task snapshot requires an available binding")
     if local_page_url is not None:
-        snapshot["local_page_url"] = normalize_trusted_local_page_url(
-            local_page_url
-        )
+        snapshot["local_page_url"] = normalize_trusted_local_page_url(local_page_url)
     return snapshot
 
 
@@ -237,12 +233,16 @@ class SdkContextPreparationService:
         memory_items: list[Mapping[str, Any]] = []
         if self._sources.memory is not None:
             raw_memory = await _resolve(self._sources.memory(session_id, text))
-            if isinstance(raw_memory, Sequence) and not isinstance(raw_memory, (str, bytes, bytearray)):
+            if isinstance(raw_memory, Sequence) and not isinstance(
+                raw_memory, (str, bytes, bytearray)
+            ):
                 memory_items = [item for item in raw_memory if isinstance(item, Mapping)]
         skill_items: list[Mapping[str, Any]] = []
         if self._sources.skills is not None:
             raw_skills = await _resolve(self._sources.skills(text))
-            if isinstance(raw_skills, Sequence) and not isinstance(raw_skills, (str, bytes, bytearray)):
+            if isinstance(raw_skills, Sequence) and not isinstance(
+                raw_skills, (str, bytes, bytearray)
+            ):
                 skill_items = [item for item in raw_skills if isinstance(item, Mapping)]
         project: Mapping[str, Any] = dict(project_task_snapshot or {})
         if not project and self._sources.project is not None:
@@ -266,8 +266,7 @@ class SdkContextPreparationService:
             ),
             "availability": "estimated" if public_attachments else "unavailable",
             "ref": ", ".join(
-                f"{kind} × {count}"
-                for kind, count in sorted(attachment_kinds.items())
+                f"{kind} × {count}" for kind, count in sorted(attachment_kinds.items())
             ),
         }
         if persona:
@@ -290,11 +289,13 @@ class SdkContextPreparationService:
                     sort_keys=True,
                     separators=(",", ":"),
                 )
-            messages.append({
-                "role": "user",
-                "content": "Untrusted recalled memory data:\n" + memory_content,
-                "metadata": {"source": "memory", "trust": "untrusted_data"},
-            })
+            messages.append(
+                {
+                    "role": "user",
+                    "content": "Untrusted recalled memory data:\n" + memory_content,
+                    "metadata": {"source": "memory", "trust": "untrusted_data"},
+                }
+            )
         sections["memory"] = {
             "label": "Memory",
             "count": len(memory_texts),
@@ -311,11 +312,7 @@ class SdkContextPreparationService:
             "estimated_tokens": sum(_text_tokens(item) for item in skill_texts),
             "availability": "estimated" if self._sources.skills is not None else "unavailable",
         }
-        rules = tuple(
-            str(item).strip()
-            for item in project_rule_instructions
-            if str(item).strip()
-        )
+        rules = tuple(str(item).strip() for item in project_rule_instructions if str(item).strip())
         for instruction in rules:
             messages.append({"role": "system", "content": instruction})
         sections["project_rules"] = {
@@ -325,20 +322,21 @@ class SdkContextPreparationService:
             "availability": "estimated" if rules else "unavailable",
         }
         if project:
-            messages.append({
-                "role": "system",
-                "content": "Project/task snapshot (data only):\n" + json.dumps(
-                    dict(project), ensure_ascii=False, sort_keys=True, separators=(",", ":")
-                ),
-            })
+            messages.append(
+                {
+                    "role": "system",
+                    "content": "Project/task snapshot (data only):\n"
+                    + json.dumps(
+                        dict(project), ensure_ascii=False, sort_keys=True, separators=(",", ":")
+                    ),
+                }
+            )
         sections["project"] = {
             "label": "Project / task",
             "count": 1 if project else 0,
             "estimated_tokens": _text_tokens(json.dumps(dict(project), ensure_ascii=False)),
             "availability": (
-                "estimated"
-                if project or self._sources.project is not None
-                else "unavailable"
+                "estimated" if project or self._sources.project is not None else "unavailable"
             ),
         }
         messages.extend(history)
@@ -361,7 +359,9 @@ class SdkContextPreparationService:
             "estimated_tokens": max(0, catalog_tokens),
             "availability": "estimated",
         }
-        estimated_prompt = sum(int(item.get("estimated_tokens") or 0) for item in sections.values()) + _text_tokens(text)
+        estimated_prompt = sum(
+            int(item.get("estimated_tokens") or 0) for item in sections.values()
+        ) + _text_tokens(text)
         context_window = int(provider_binding.get("context_window") or 0)
         budget = {
             "estimated_prompt_tokens": estimated_prompt,

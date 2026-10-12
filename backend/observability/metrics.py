@@ -13,6 +13,7 @@ Two concerns live here:
    creating its own Histogram would double-register on the default
    registry).
 """
+
 from __future__ import annotations
 
 import time
@@ -39,7 +40,16 @@ _default_logger = structlog.get_logger()
 # prometheus_client auto-appends +Inf; the trailing float("inf") here is
 # redundant-but-harmless and kept for readability of the bucket list.
 _TTFT_BUCKETS = (
-    0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 3.0, 5.0, 10.0, float("inf"),
+    0.05,
+    0.1,
+    0.2,
+    0.5,
+    1.0,
+    2.0,
+    3.0,
+    5.0,
+    10.0,
+    float("inf"),
 )
 
 # NOTE: cardinality risk if `model` ever becomes user-supplied. Today

@@ -110,7 +110,9 @@ def test_prepared_report_contains_hashes_and_decisions_not_sensitive_bodies() ->
         attempt_id="a",
         purpose="agent_response",
         messages=[{"role": "user", "content": "TOP-SECRET-BODY"}],
-        tools=[{"type": "function", "function": {"name": "read", "parameters": {"type": "object"}}}],
+        tools=[
+            {"type": "function", "function": {"name": "read", "parameters": {"type": "object"}}}
+        ],
         prepared_context=_Prepared(),
         compression={
             "requested_model": "follow_session",
@@ -142,12 +144,8 @@ def test_matching_terminal_usage_cannot_overwrite_terminal_attempt() -> None:
         )
     ):
         mark_current_attempt_sent()
-        finish_current_attempt(
-            "succeeded", usage={"prompt_tokens": 11, "completion_tokens": 3}
-        )
-        finish_current_attempt(
-            "failed", usage={"prompt_tokens": 999, "completion_tokens": 999}
-        )
+        finish_current_attempt("succeeded", usage={"prompt_tokens": 11, "completion_tokens": 3})
+        finish_current_attempt("failed", usage={"prompt_tokens": 999, "completion_tokens": 999})
     saved = store.list_for_session("s")[0]
     assert saved.state == "succeeded"
     assert saved.actual_input_tokens == 11
@@ -193,9 +191,7 @@ async def test_agent_loop_attempt_wrapper_records_real_lifecycle_and_usage() -> 
 
     async def invoke():
         mark_current_attempt_sent()
-        return SimpleNamespace(
-            usage=SimpleNamespace(input_tokens=17, output_tokens=4)
-        )
+        return SimpleNamespace(usage=SimpleNamespace(input_tokens=17, output_tokens=4))
 
     prepared = SimpleNamespace(
         tool_set=None,
@@ -230,9 +226,7 @@ async def test_agent_loop_attempt_wrapper_records_real_lifecycle_and_usage() -> 
 async def test_snapshot_cas_failure_blocks_provider_send() -> None:
     import asyncio
 
-    capability = SimpleNamespace(
-        ref=SimpleNamespace(name="read", schema_hash="schema-read")
-    )
+    capability = SimpleNamespace(ref=SimpleNamespace(name="read", schema_hash="schema-read"))
     tool_set = SimpleNamespace(
         scope_id="scope-1",
         revision=2,

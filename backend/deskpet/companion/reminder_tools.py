@@ -44,6 +44,7 @@ def _reminder_resource_scope(
 
     return resolve
 
+
 REMINDER_CREATE_SCHEMA: dict[str, Any] = {
     "name": REMINDER_CREATE_TOOL_NAME,
     "description": "Create a durable reminder for the current user.",
@@ -287,9 +288,7 @@ def register_companion_reminder_tools(
             handler,
             context_handler=context_handler,
             permission_category=(
-                "read_file"
-                if effect_class is EffectClass.READ_ONLY
-                else "write_file"
+                "read_file" if effect_class is EffectClass.READ_ONLY else "write_file"
             ),
             source="builtin",
             dangerous=False,

@@ -15,7 +15,9 @@ from deskpet.orchestration.storage_usage import (
 
 def _fill(root):
     (root / "execution-native-256k.db.arp-root" / "sessions" / "session-1").mkdir(parents=True)
-    (root / "execution-native-256k.db.arp-root" / "sessions" / "session-1" / "index.sqlite3").write_bytes(b"a" * 300)
+    (
+        root / "execution-native-256k.db.arp-root" / "sessions" / "session-1" / "index.sqlite3"
+    ).write_bytes(b"a" * 300)
     (root / "execution-native-256k.db").write_bytes(b"b" * 200)
     (root / "orchestrator.db").write_bytes(b"c" * 100)
     (root / "workspaces" / "m1" / ".assurance").mkdir(parents=True)
@@ -27,7 +29,11 @@ def test_measure_classifies_and_sums(tmp_path):
     _fill(tmp_path)
     totals = measure(tmp_path)
     assert totals == {"agent_sessions": 500, "assurance": 50, "orchestration": 125}
-    assert measure(tmp_path / "missing") == {"agent_sessions": 0, "assurance": 0, "orchestration": 0}
+    assert measure(tmp_path / "missing") == {
+        "agent_sessions": 0,
+        "assurance": 0,
+        "orchestration": 0,
+    }
 
 
 @pytest.mark.asyncio
@@ -51,5 +57,7 @@ async def test_get_caches_throttles_and_warns(tmp_path):
     assert (await usage.get(refresh=True))["bytes"] == 1575
     assert usage.schedule_if_stale() is False  # just measured
     # nothing was deleted by any of this
-    assert (tmp_path / "execution-native-256k.db.arp-root" / "sessions" / "session-1" / "index.sqlite3").exists()
+    assert (
+        tmp_path / "execution-native-256k.db.arp-root" / "sessions" / "session-1" / "index.sqlite3"
+    ).exists()
     await asyncio.sleep(0)

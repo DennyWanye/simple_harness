@@ -9,6 +9,7 @@ instead of finalizing — up to ``max_completion_nudges`` times. Then it
 gives up and finalizes anyway so we can't infinite-loop on a stubborn
 LLM.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -81,10 +82,12 @@ async def test_no_probe_means_no_rebound() -> None:
 async def test_probe_rebounds_when_todos_pending() -> None:
     """LLM says end_turn, probe reports incomplete todos → loop appends
     a system nudge and re-iterates instead of finalizing."""
-    llm = _ScriptedLLM([
-        _resp("I'm done.", stop="end_turn"),         # turn 1: tries to finalize
-        _resp("Done for real this time.", stop="end_turn"),  # turn 2: finalizes after rebound
-    ])
+    llm = _ScriptedLLM(
+        [
+            _resp("I'm done.", stop="end_turn"),  # turn 1: tries to finalize
+            _resp("Done for real this time.", stop="end_turn"),  # turn 2: finalizes after rebound
+        ]
+    )
 
     probe_calls: list[str] = []
     incomplete_payload = [
@@ -113,7 +116,9 @@ async def test_probe_rebounds_when_todos_pending() -> None:
     assert probe_calls == ["sess-X", "sess-X"]
     # Second LLM call's prompt must contain the rebound system message
     second_msgs = llm.calls[1]
-    rebound = next((m for m in second_msgs if m["role"] == "system" and "todos" in m["content"]), None)
+    rebound = next(
+        (m for m in second_msgs if m["role"] == "system" and "todos" in m["content"]), None
+    )
     assert rebound is not None, f"expected rebound system msg in second call: {second_msgs!r}"
     assert "wire VPN tunnel" in rebound["content"]
     assert "2 项未完成" in rebound["content"]

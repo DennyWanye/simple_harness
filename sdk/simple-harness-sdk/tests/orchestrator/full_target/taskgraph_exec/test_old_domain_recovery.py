@@ -13,6 +13,7 @@
 **改坏检验**：去掉 ``_bind_startup_tools`` / ``recover`` 里的 ``_domain_unreadable`` 跳过
 → 本条失败。
 """
+
 import asyncio
 import json
 import subprocess
@@ -26,25 +27,45 @@ from production_fixture import product_loop, root_of
 
 
 def test_an_old_profile_mission_mid_turn_does_not_stop_startup(tmp_path):
-    child = subprocess.run([sys.executable, str(Path(__file__).with_name('crash_seed.py')),
-        str(tmp_path), 'after_executor'], capture_output=True, text=True, timeout=60, check=False)
+    child = subprocess.run(
+        [
+            sys.executable,
+            str(Path(__file__).with_name("crash_seed.py")),
+            str(tmp_path),
+            "after_executor",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
     assert child.returncode == 84, (child.returncode, child.stdout, child.stderr)
-    source = json.loads((tmp_path / 'recovery-source.json').read_text())
-    store = Store.open(root_of(tmp_path) / 'orchestrator.db')
+    source = json.loads((tmp_path / "recovery-source.json").read_text())
+    store = Store.open(root_of(tmp_path) / "orchestrator.db")
     try:
         row = store.connection.execute(
-            'SELECT json FROM mission_domains WHERE mission_id=?', (source['mission_id'],)).fetchone()
+            "SELECT json FROM mission_domains WHERE mission_id=?", (source["mission_id"],)
+        ).fetchone()
         body = json.loads(row[0])
         # A Mission frozen by an older build: its domain profile has the retired shape.
-        body.update(schema=1, planner_floor=[], synthesis_default_policy=[],
-                    conflict_template={'policy': [], 'decides_with': 'code_test', 'probe': None})
+        body.update(
+            schema=1,
+            planner_floor=[],
+            synthesis_default_policy=[],
+            conflict_template={"policy": [], "decides_with": "code_test", "probe": None},
+        )
         with store.transaction():
             lift_immutable_guards(store.connection, "mission_domains")
-            store.connection.execute('UPDATE mission_domains SET json=? WHERE mission_id=?',
-                                     (json.dumps(body, sort_keys=True), source['mission_id']))
-        assert store.connection.execute(
-            "SELECT COUNT(*) FROM dispatch_intents WHERE state IN ('AGENT_CREATED','SUBMITTED')"
-        ).fetchone()[0] >= 1
+            store.connection.execute(
+                "UPDATE mission_domains SET json=? WHERE mission_id=?",
+                (json.dumps(body, sort_keys=True), source["mission_id"]),
+            )
+        assert (
+            store.connection.execute(
+                "SELECT COUNT(*) FROM dispatch_intents WHERE state IN ('AGENT_CREATED','SUBMITTED')"
+            ).fetchone()[0]
+            >= 1
+        )
     finally:
         store.close()
 
@@ -55,10 +76,14 @@ def test_an_old_profile_mission_mid_turn_does_not_stop_startup(tmp_path):
             loop = product.loop
             await loop.recover()
             await loop._cycle()
-            mission = loop.store.get_mission(source['mission_id'])
+            mission = loop.store.get_mission(source["mission_id"])
             assert loop.recovery_isolated(mission.id)
-            assert "mission_domains" in loop.recovery_status()["isolated_missions"][mission.id]["tables"]
+            assert (
+                "mission_domains"
+                in loop.recovery_status()["isolated_missions"][mission.id]["tables"]
+            )
             assert loop.recovery_status()["state"] == "READY"
             assert mission.status is not MissionStatus.FAILED  # 隔离不是判停：库里原样，可取消
             assert provider.calls == 0
+
     asyncio.run(recover())

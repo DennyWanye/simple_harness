@@ -269,7 +269,10 @@ def process_identity(pid: int) -> dict[str, Any] | None:
     try:
         completed = subprocess.run(
             [PS, "-p", str(int(pid)), "-o", "lstart=,command="],
-            capture_output=True, text=True, timeout=5, check=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
         )
     except (OSError, subprocess.SubprocessError) as error:
         raise SandboxUnavailable("process identity query unavailable") from error
@@ -298,7 +301,9 @@ def identity_matches(recorded: Mapping[str, Any], current: Mapping[str, Any]) ->
     """落库的身份与此刻同一个进程号上的进程是不是同一个：启动时间必须一样，进程组/会话有记就要
     一样。命令行只作记录（沙箱里的程序可以改自己的 argv），不参与判定。"""
 
-    if str(recorded.get("process_started_at") or "") != str(current.get("process_started_at") or ""):
+    if str(recorded.get("process_started_at") or "") != str(
+        current.get("process_started_at") or ""
+    ):
         return False
     for key in ("process_group", "session_id"):
         if recorded.get(key) is not None and int(recorded[key]) != int(current[key]):
@@ -324,16 +329,34 @@ def reclaim_recorded_executions(
         try:
             current = process_identity(pid)
         except SandboxUnavailable as error:
-            reports.append({"execution_id": execution_id, "outcome": "unverifiable",
-                            "root_pid": pid, "reason": str(error), "pids": []})
+            reports.append(
+                {
+                    "execution_id": execution_id,
+                    "outcome": "unverifiable",
+                    "root_pid": pid,
+                    "reason": str(error),
+                    "pids": [],
+                }
+            )
             continue
         if current is None:
-            reports.append({"execution_id": execution_id, "outcome": "gone", "root_pid": pid, "pids": []})
+            reports.append(
+                {"execution_id": execution_id, "outcome": "gone", "root_pid": pid, "pids": []}
+            )
             continue
         if not identity_matches(row, current):
-            reports.append({"execution_id": execution_id, "outcome": "identity_mismatch", "root_pid": pid,
-                            "recorded": {k: row.get(k) for k in ("process_group", "session_id", "process_started_at")},
-                            "current": current, "pids": []})
+            reports.append(
+                {
+                    "execution_id": execution_id,
+                    "outcome": "identity_mismatch",
+                    "root_pid": pid,
+                    "recorded": {
+                        k: row.get(k) for k in ("process_group", "session_id", "process_started_at")
+                    },
+                    "current": current,
+                    "pids": [],
+                }
+            )
             continue
         group = current["process_group"]
         signalled: set[int] = set()
@@ -352,8 +375,14 @@ def reclaim_recorded_executions(
                 break
         after = process_identity(pid)
         alive = after is not None and identity_matches(row, after)
-        reports.append({"execution_id": execution_id, "outcome": "residual" if alive else "reclaimed",
-                        "root_pid": pid, "pids": sorted(signalled)})
+        reports.append(
+            {
+                "execution_id": execution_id,
+                "outcome": "residual" if alive else "reclaimed",
+                "root_pid": pid,
+                "pids": sorted(signalled),
+            }
+        )
     return reports
 
 
@@ -500,12 +529,19 @@ class _Executor:
             return False
         try:
             identity = process_identity(pid) or {}
-            self.ledger.record_start({
-                "execution_id": run.execution_id, "kind": self.kind, "root_pid": pid,
-                "process_group": identity.get("process_group"), "session_id": identity.get("session_id"),
-                "process_started_at": identity.get("process_started_at"), "command": list(command),
-                "cwd": str(run.cwd), "scratch": str(run.scratch),
-            })
+            self.ledger.record_start(
+                {
+                    "execution_id": run.execution_id,
+                    "kind": self.kind,
+                    "root_pid": pid,
+                    "process_group": identity.get("process_group"),
+                    "session_id": identity.get("session_id"),
+                    "process_started_at": identity.get("process_started_at"),
+                    "command": list(command),
+                    "cwd": str(run.cwd),
+                    "scratch": str(run.scratch),
+                }
+            )
         except Exception as error:  # noqa: BLE001 - the ledger is what makes the run recoverable
             self._reap(run, root_alive=True)
             raise SandboxUnavailable("sandbox execution ledger unavailable") from error

@@ -16,6 +16,7 @@
 
 正式记录是唯一依据：闸门直接读审阅包与正式记录表，不读事件。
 """
+
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
@@ -53,17 +54,22 @@ class MethodReview:
 
 
 def _same_method(subject: Any, method_ref: Any) -> bool:
-    return (str(subject.id) == str(method_ref.method_id)
-            and int(subject.revision) == int(method_ref.version)
-            and str(subject.content_hash) == str(method_ref.content_hash))
+    return (
+        str(subject.id) == str(method_ref.method_id)
+        and int(subject.revision) == int(method_ref.version)
+        and str(subject.content_hash) == str(method_ref.content_hash)
+    )
 
 
 def review_of(store: Any, mission_id: str, method_ref: Any) -> MethodReview:
     """The latest METHOD_PLAN review this Mission opened for exactly this method."""
 
     htn = HtnStore(store)
-    packages = [package for package in htn.list_review_packages(mission_id, purpose=ReviewPurpose.METHOD_PLAN)
-                if _same_method(package.binding.subject_ref, method_ref)]
+    packages = [
+        package
+        for package in htn.list_review_packages(mission_id, purpose=ReviewPurpose.METHOD_PLAN)
+        if _same_method(package.binding.subject_ref, method_ref)
+    ]
     if not packages:
         return MethodReview("NONE")
     package = packages[-1]
@@ -85,14 +91,19 @@ def findings_of(record: Any) -> list[dict[str, Any]]:
     """Every criterion the reviewer did not pass, in the reviewer's own words."""
 
     return [
-        {"criterion_id": str(item.criterion_id), "verdict": str(item.verdict),
-         "limitations": list(item.limitations)}
-        for item in record.criteria if str(item.verdict) != "PASS"
+        {
+            "criterion_id": str(item.criterion_id),
+            "verdict": str(item.verdict),
+            "limitations": list(item.limitations),
+        }
+        for item in record.criteria
+        if str(item.verdict) != "PASS"
     ][:16]
 
 
-def adoption_refusal(store: Any, mission_id: str, reference: Any,
-                     seeded: set[tuple[str, int, str]]) -> dict[str, Any] | None:
+def adoption_refusal(
+    store: Any, mission_id: str, reference: Any, seeded: set[tuple[str, int, str]]
+) -> dict[str, Any] | None:
     """Whether adopting this one method now would be refused: ``None`` when it would not, else
     the refusal row.  The one rule the plan-commit gate and the planner's candidate list share
     (HTN 补齐 F1 偏差单 2): a seed of the deployment, or a method this Mission's own method
@@ -115,8 +126,9 @@ def seed_keys(seeds: Iterable[Any]) -> set[tuple[str, int, str]]:
     return {(item.method_id, int(item.version), item.content_hash) for item in seeds}
 
 
-def unreviewed_adopted_methods(store: Any, mission_id: str, drafts: Iterable[Any],
-                               seeds: Iterable[Any] = ()) -> list[dict[str, Any]]:
+def unreviewed_adopted_methods(
+    store: Any, mission_id: str, drafts: Iterable[Any], seeds: Iterable[Any] = ()
+) -> list[dict[str, Any]]:
     """Of the method instances a plan commit adopts: the ones the gate refuses.
 
     A method is adopted in a Mission only on a passed (or person-passed) official
@@ -128,8 +140,11 @@ def unreviewed_adopted_methods(store: Any, mission_id: str, drafts: Iterable[Any
     """
 
     seeded = seed_keys(seeds)
-    return [row for draft in drafts
-            if (row := adoption_refusal(store, mission_id, draft.method_ref, seeded)) is not None]
+    return [
+        row
+        for draft in drafts
+        if (row := adoption_refusal(store, mission_id, draft.method_ref, seeded)) is not None
+    ]
 
 
 def _proposals(store: Any, mission_id: str) -> tuple[list[Any], dict[str, Any]]:
@@ -173,8 +188,11 @@ def reviews_by_method(store: Any, mission_id: str) -> dict[tuple[str, int, str],
             out[key] = {"outcome": PENDING}
             continue
         payload = conclusion.payload
-        out[key] = {name: payload[name] for name in ("outcome", "verdict", "findings", "human_ruling", "reason")
-                    if payload.get(name) not in (None, [], "")}
+        out[key] = {
+            name: payload[name]
+            for name in ("outcome", "verdict", "findings", "human_ruling", "reason")
+            if payload.get(name) not in (None, [], "")
+        }
     return out
 
 
@@ -191,15 +209,21 @@ def _no_verdict_reason(orch: Any, mission_id: str, review_key: str) -> str | Non
                 # 阶段 B 裁决第 6 类：如实说出审阅调用没回来，不说成审阅员判不了
                 calls = orch.store.connection.execute(
                     "SELECT COUNT(*) FROM assurance_review_invocations WHERE mission_id=? AND review_key=?",
-                    (mission_id, review_key)).fetchone()[0]
-                return (f"the review call got no reply {int(calls)} time(s) (interrupted by a restart, "
-                        "or it never came back before its deadline); no verdict was given")
+                    (mission_id, review_key),
+                ).fetchone()[0]
+                return (
+                    f"the review call got no reply {int(calls)} time(s) (interrupted by a restart, "
+                    "or it never came back before its deadline); no verdict was given"
+                )
             return item["reason"] or "the review's retries ran out without a readable verdict"
     rows = orch.store.connection.execute(
         "SELECT dispatch_intent_id FROM assurance_review_invocations WHERE mission_id=? AND review_key=?",
-        (mission_id, review_key)).fetchall()
+        (mission_id, review_key),
+    ).fetchall()
     intents = [orch.store.get_intent(str(row[0])) for row in rows]
-    if not intents or any(intent is None or intent.state not in {"SETTLED", "FAILED"} for intent in intents):
+    if not intents or any(
+        intent is None or intent.state not in {"SETTLED", "FAILED"} for intent in intents
+    ):
         return None
     if orch._has_pending_assurance_work(mission_id):
         return None
@@ -235,48 +259,78 @@ def advance(orch: Any, mission: Any) -> bool:
         if review.state == AWAITING_PERSON:
             subject_task = str(payload.get("subject_task_id") or "")
             if orch._ask_person_to_adjudicate(
-                    mission, review.record, target_id=subject_task, subject_key=subject_task,
-                    decision_id="adjudicate-method:" + str(review.record.record_id),
-                    intro="新做法「" + str(reference.method_id) + "」的审阅两位审阅员都判不下来，"
-                          "需要你裁决这个做法能不能用。",
-                    extra={"package_id": review.package_id, "method_ref": reference.to_json()}):
+                mission,
+                review.record,
+                target_id=subject_task,
+                subject_key=subject_task,
+                decision_id="adjudicate-method:" + str(review.record.record_id),
+                intro="新做法「" + str(reference.method_id) + "」的审阅两位审阅员都判不下来，"
+                "需要你裁决这个做法能不能用。",
+                extra={"package_id": review.package_id, "method_ref": reference.to_json()},
+            ):
                 progressed = True
             review = review_of(orch.store, mission.id, reference)
-            if review.state == AWAITING_PERSON and not _ruling_question_stale(orch.store, review.record):
+            if review.state == AWAITING_PERSON and not _ruling_question_stale(
+                orch.store, review.record
+            ):
                 continue
         conclusion: dict[str, Any]
         if review.state == AWAITING_PERSON:
             # 裁决题在回答前过期（计划、要求或管理纪元变了）：这道题不会再有答案，如实报
             # "没有结论"，接下来怎么办由规划器定。不重发——那是替规划器决定"还要问"。
-            conclusion = {"outcome": NO_VERDICT, "verdict": str(review.record.verdict),
-                          "record_id": str(review.record.record_id),
-                          "findings": findings_of(review.record),
-                          "reason": "the question asking the person to rule on this review went stale "
-                                    "before it was answered (the plan, the requirements or the "
-                                    "management epoch changed); no ruling was given"}
+            conclusion = {
+                "outcome": NO_VERDICT,
+                "verdict": str(review.record.verdict),
+                "record_id": str(review.record.record_id),
+                "findings": findings_of(review.record),
+                "reason": "the question asking the person to rule on this review went stale "
+                "before it was answered (the plan, the requirements or the "
+                "management epoch changed); no ruling was given",
+            }
         elif review.record is None:
             reason = _no_verdict_reason(orch, mission.id, str(payload["assurance_review_key"]))
             if reason is None:
                 continue
-            conclusion = {"outcome": NO_VERDICT, "verdict": None, "record_id": None,
-                          "findings": [], "reason": reason}
+            conclusion = {
+                "outcome": NO_VERDICT,
+                "verdict": None,
+                "record_id": None,
+                "findings": [],
+                "reason": reason,
+            }
         else:
-            conclusion = {"outcome": review.state, "verdict": str(review.record.verdict),
-                          "record_id": str(review.record.record_id),
-                          "findings": [] if review.record.verdict is ReviewVerdict.ACCEPT
-                          else findings_of(review.record)}
+            conclusion = {
+                "outcome": review.state,
+                "verdict": str(review.record.verdict),
+                "record_id": str(review.record.record_id),
+                "findings": []
+                if review.record.verdict is ReviewVerdict.ACCEPT
+                else findings_of(review.record),
+            }
             if review.ruling is not None:
-                conclusion["human_ruling"] = {"decision": review.ruling.get("decision"),
-                                              "principal_id": review.ruling.get("principal_id")}
+                conclusion["human_ruling"] = {
+                    "decision": review.ruling.get("decision"),
+                    "principal_id": review.ruling.get("principal_id"),
+                }
         with orch.store.transaction():
             append_hierarchical_event(
-                orch.store, REVIEWED, mission.id, key=decision_id,
-                payload={"decision_id": decision_id, "method_ref": reference.to_json(),
-                         "subject_task_id": payload.get("subject_task_id"),
-                         "review_key": payload["assurance_review_key"],
-                         "package_id": review.package_id, **conclusion})
-        orch._note(f"mission {mission.id}: method review of {reference.method_id}@{int(reference.version)} "
-                   f"concluded {conclusion['outcome']}")
+                orch.store,
+                REVIEWED,
+                mission.id,
+                key=decision_id,
+                payload={
+                    "decision_id": decision_id,
+                    "method_ref": reference.to_json(),
+                    "subject_task_id": payload.get("subject_task_id"),
+                    "review_key": payload["assurance_review_key"],
+                    "package_id": review.package_id,
+                    **conclusion,
+                },
+            )
+        orch._note(
+            f"mission {mission.id}: method review of {reference.method_id}@{int(reference.version)} "
+            f"concluded {conclusion['outcome']}"
+        )
         progressed = True
     return progressed
 

@@ -42,8 +42,7 @@ class CapabilityToolSpecFactory(Protocol):
         *,
         install_root: Path,
         operation_id: str,
-    ) -> Sequence[ToolSpec] | Awaitable[Sequence[ToolSpec]]:
-        ...
+    ) -> Sequence[ToolSpec] | Awaitable[Sequence[ToolSpec]]: ...
 
 
 def capability_registry_source(
@@ -108,9 +107,7 @@ class ToolRegistryCapabilityPublisher:
         registry: ToolRegistry,
         spec_factory: CapabilityToolSpecFactory,
         environment: PackEnvironment | None = None,
-        stop_binding: (
-            Callable[[CapabilityBinding], Any] | None
-        ) = None,
+        stop_binding: (Callable[[CapabilityBinding], Any] | None) = None,
     ) -> None:
         self.registry = registry
         self.spec_factory = spec_factory
@@ -123,9 +120,7 @@ class ToolRegistryCapabilityPublisher:
         pack_id: str,
     ) -> tuple[ToolSpec, ...]:
         prefix = f"capability:{pack_id}:"
-        return tuple(
-            spec for spec in snapshot_specs if spec.source.startswith(prefix)
-        )
+        return tuple(spec for spec in snapshot_specs if spec.source.startswith(prefix))
 
     async def _prepare(
         self,
@@ -149,13 +144,9 @@ class ToolRegistryCapabilityPublisher:
                 )
             )
         )
-        expected_names = tuple(
-            tool.provider_name for tool in manifest.tools
-        )
+        expected_names = tuple(tool.provider_name for tool in manifest.tools)
         actual_names = tuple(spec.name for spec in built)
-        if len(actual_names) != len(set(actual_names)) or set(actual_names) != set(
-            expected_names
-        ):
+        if len(actual_names) != len(set(actual_names)) or set(actual_names) != set(expected_names):
             raise CapabilityManagerError(
                 "candidate_tool_mismatch",
                 "spec factory must return exactly one spec per manifest tool",
@@ -183,19 +174,14 @@ class ToolRegistryCapabilityPublisher:
                     f"{name} must use spec_version {spec_version}",
                 )
             if len(spec.schema_hash) != 64 or any(
-                character not in "0123456789abcdef"
-                for character in spec.schema_hash
+                character not in "0123456789abcdef" for character in spec.schema_hash
             ):
                 raise CapabilityManagerError(
                     "candidate_schema_hash_missing",
                     f"{name} has no immutable schema hash",
                 )
-            if (
-                len(spec.runtime_provenance_ref) != 64
-                or any(
-                    character not in "0123456789abcdef"
-                    for character in spec.runtime_provenance_ref
-                )
+            if len(spec.runtime_provenance_ref) != 64 or any(
+                character not in "0123456789abcdef" for character in spec.runtime_provenance_ref
             ):
                 raise CapabilityManagerError(
                     "candidate_runtime_provenance_missing",
@@ -207,11 +193,7 @@ class ToolRegistryCapabilityPublisher:
         old_names = {spec.name for spec in old_specs}
         for spec in built:
             current = next(
-                (
-                    item
-                    for item in snapshot.specs
-                    if item.name == spec.name
-                ),
+                (item for item in snapshot.specs if item.name == spec.name),
                 None,
             )
             if current is not None and spec.name not in old_names:
@@ -221,21 +203,15 @@ class ToolRegistryCapabilityPublisher:
                 )
 
         old_projection = tuple(
-            _serialized_spec(spec)
-            for spec in sorted(old_specs, key=lambda item: item.name)
+            _serialized_spec(spec) for spec in sorted(old_specs, key=lambda item: item.name)
         )
         new_projection = tuple(
-            _serialized_spec(spec)
-            for spec in sorted(built, key=lambda item: item.name)
+            _serialized_spec(spec) for spec in sorted(built, key=lambda item: item.name)
         )
-        fingerprints_by_name = {
-            spec.name: tool_spec_fingerprint(spec) for spec in built
-        }
+        fingerprints_by_name = {spec.name: tool_spec_fingerprint(spec) for spec in built}
         return CapabilityCandidate(
             expected_registry_revision=snapshot.revision,
-            tool_spec_fingerprints=tuple(
-                fingerprints_by_name[name] for name in expected_names
-            ),
+            tool_spec_fingerprints=tuple(fingerprints_by_name[name] for name in expected_names),
             old_specs=old_projection,
             new_specs=new_projection,
             publisher_state={
@@ -270,11 +246,9 @@ class ToolRegistryCapabilityPublisher:
             environment=self.environment,
         )
         if (
-            validation.descriptor.capability_id
-            != record.descriptor.capability_id
+            validation.descriptor.capability_id != record.descriptor.capability_id
             or validation.descriptor.version != record.descriptor.version
-            or validation.descriptor.manifest_hash
-            != record.descriptor.manifest_hash
+            or validation.descriptor.manifest_hash != record.descriptor.manifest_hash
         ):
             raise CapabilityManagerError(
                 "installed_version_integrity_mismatch",
@@ -297,10 +271,7 @@ class ToolRegistryCapabilityPublisher:
             record,
             operation_id=operation_id,
         )
-        if (
-            candidate.tool_spec_fingerprints
-            != record.expected_tool_fingerprints
-        ):
+        if candidate.tool_spec_fingerprints != record.expected_tool_fingerprints:
             raise CapabilityManagerError(
                 "installed_tool_fingerprint_mismatch",
                 "rollback candidate differs from the recorded ToolSpecs",
@@ -324,32 +295,21 @@ class ToolRegistryCapabilityPublisher:
             record,
             operation_id=operation_id,
         )
-        if (
-            candidate.tool_spec_fingerprints
-            == record.expected_tool_fingerprints
-        ):
+        if candidate.tool_spec_fingerprints == record.expected_tool_fingerprints:
             return candidate, None
         specs = candidate.runtime_payload
-        if not isinstance(specs, Sequence) or not all(
-            isinstance(spec, ToolSpec) for spec in specs
-        ):
+        if not isinstance(specs, Sequence) or not all(isinstance(spec, ToolSpec) for spec in specs):
             raise CapabilityManagerError(
                 "installed_tool_fingerprint_mismatch",
                 "rollback candidate differs from the recorded ToolSpecs",
             )
-        legacy_fingerprints = tuple(
-            legacy_tool_spec_fingerprint_v1(spec) for spec in specs
-        )
+        legacy_fingerprints = tuple(legacy_tool_spec_fingerprint_v1(spec) for spec in specs)
         if legacy_fingerprints == record.expected_tool_fingerprints:
             return candidate, "legacy_v1"
         pre_authority_fingerprints = tuple(
-            legacy_tool_spec_fingerprint_pre_authority_v2(spec)
-            for spec in specs
+            legacy_tool_spec_fingerprint_pre_authority_v2(spec) for spec in specs
         )
-        if (
-            pre_authority_fingerprints
-            == record.expected_tool_fingerprints
-        ):
+        if pre_authority_fingerprints == record.expected_tool_fingerprints:
             return candidate, "pre_authority_v2"
         raise CapabilityManagerError(
             "installed_tool_fingerprint_mismatch",
@@ -379,8 +339,7 @@ class ToolRegistryCapabilityPublisher:
             binding.capability_id,
         )
         old_fingerprints = tuple(
-            tool_spec_fingerprint(spec)
-            for spec in sorted(old_specs, key=lambda item: item.name)
+            tool_spec_fingerprint(spec) for spec in sorted(old_specs, key=lambda item: item.name)
         )
         if set(old_fingerprints) != set(record.expected_tool_fingerprints):
             raise CapabilityManagerError(
@@ -391,8 +350,7 @@ class ToolRegistryCapabilityPublisher:
             expected_registry_revision=snapshot.revision,
             tool_spec_fingerprints=(),
             old_specs=tuple(
-                _serialized_spec(spec)
-                for spec in sorted(old_specs, key=lambda item: item.name)
+                _serialized_spec(spec) for spec in sorted(old_specs, key=lambda item: item.name)
             ),
             new_specs=(),
             publisher_state={
@@ -440,10 +398,7 @@ class ToolRegistryCapabilityPublisher:
                 str(exc),
             ) from exc
 
-        live = {
-            spec.name: tool_spec_fingerprint(spec)
-            for spec in snapshot.specs
-        }
+        live = {spec.name: tool_spec_fingerprint(spec) for spec in snapshot.specs}
         if any(live.get(name) != fingerprint for name, fingerprint in new_specs.items()):
             raise CapabilityManagerError(
                 "registry_publish_verification_failed",
@@ -477,19 +432,12 @@ class ToolRegistryCapabilityPublisher:
                 evidence={"code": exc.code, "message": str(exc)},
             )
         snapshot = self.registry.catalog_snapshot()
-        live = {
-            spec.name: tool_spec_fingerprint(spec)
-            for spec in snapshot.specs
-        }
+        live = {spec.name: tool_spec_fingerprint(spec) for spec in snapshot.specs}
         names = set(old_specs) | set(new_specs)
 
         def matches(target: Mapping[str, str]) -> bool:
             return all(
-                (
-                    live.get(name) == target[name]
-                    if name in target
-                    else name not in live
-                )
+                (live.get(name) == target[name] if name in target else name not in live)
                 for name in names
             )
 

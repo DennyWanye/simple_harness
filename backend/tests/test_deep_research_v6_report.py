@@ -80,9 +80,26 @@ def test_comparison_golden_snapshot_distinguishes_fact_inference_and_preference(
     )
     bindings = ("bind_compare",)
     claims = (
-        _claim(requirement["requirement_id"], cell_id, "fact", "ChatGPT supports tool calling.", bindings),
-        _claim(requirement["requirement_id"], cell_id, "inference", "This makes ChatGPT suitable for agent workflows."),
-        _claim(requirement["requirement_id"], cell_id, "preference", "Prefer ChatGPT when tool integration is the priority.", bindings),
+        _claim(
+            requirement["requirement_id"],
+            cell_id,
+            "fact",
+            "ChatGPT supports tool calling.",
+            bindings,
+        ),
+        _claim(
+            requirement["requirement_id"],
+            cell_id,
+            "inference",
+            "This makes ChatGPT suitable for agent workflows.",
+        ),
+        _claim(
+            requirement["requirement_id"],
+            cell_id,
+            "preference",
+            "Prefer ChatGPT when tool integration is the priority.",
+            bindings,
+        ),
     )
     assessment = _assessment(
         spec,
@@ -99,9 +116,11 @@ def test_comparison_golden_snapshot_distinguishes_fact_inference_and_preference(
     )
 
     assert rendered.answer_status == "completed"
-    assert rendered.final_assistant == f"""## Answer
+    assert (
+        rendered.final_assistant
+        == f"""## Answer
 
-### {subject['label']} × {criterion['label']}
+### {subject["label"]} × {criterion["label"]}
 
 #### Facts
 - ChatGPT supports tool calling. ([Primary source](https://example.test/{claims[0].claim_id}))
@@ -111,6 +130,7 @@ def test_comparison_golden_snapshot_distinguishes_fact_inference_and_preference(
 
 #### Preference judgments
 - Prefer ChatGPT when tool integration is the priority. ([Primary source](https://example.test/{claims[2].claim_id}))"""
+    )
     assert rendered.claims == tuple(sorted(claims, key=lambda claim: claim.claim_id))
 
 
@@ -183,7 +203,9 @@ def test_top_n_golden_snapshot_uses_assessment_ranking_and_never_pads_partial_it
     )
 
     assert rendered.answer_status == "partial"
-    assert rendered.final_assistant == """## Answer
+    assert (
+        rendered.final_assistant
+        == """## Answer
 
 ### Ranked results
 
@@ -194,6 +216,7 @@ def test_top_n_golden_snapshot_uses_assessment_ranking_and_never_pads_partial_it
 - Beta: score 80; one advantage and one disadvantage are supported.
 
 Partial result: 2 eligible items were found for a target of 3; no empty slots were added."""
+    )
     assert "3." not in rendered.final_assistant
 
 
@@ -206,9 +229,21 @@ def test_policy_golden_snapshot_separates_document_facts_from_registered_impact_
     requirement_id = spec.requirements[0]["requirement_id"]
     entries = (
         ("issuer", "policy_fact", "fact", "The Ministry issued the policy.", "bind_issuer"),
-        ("document", "policy_fact", "fact", "The document is named AI Action Plan.", "bind_document"),
+        (
+            "document",
+            "policy_fact",
+            "fact",
+            "The document is named AI Action Plan.",
+            "bind_document",
+        ),
         ("date", "policy_fact", "fact", "The publication date is 2026-07-01.", "bind_date"),
-        ("commitment", "policy_fact", "fact", "The plan commits to annual safety evaluations.", "bind_commitment"),
+        (
+            "commitment",
+            "policy_fact",
+            "fact",
+            "The plan commits to annual safety evaluations.",
+            "bind_commitment",
+        ),
         ("impact", "impact_inference", "inference", "Compliance costs are likely to rise.", None),
     )
     facts = tuple(
@@ -248,7 +283,9 @@ def test_policy_golden_snapshot_separates_document_facts_from_registered_impact_
     )
 
     assert rendered.answer_status == "completed"
-    assert rendered.final_assistant == """## Answer
+    assert (
+        rendered.final_assistant
+        == """## Answer
 
 ### Policy facts
 
@@ -266,6 +303,7 @@ def test_policy_golden_snapshot_separates_document_facts_from_registered_impact_
 
 ### Impact inferences
 - Compliance costs are likely to rise."""
+    )
 
 
 def test_open_research_snapshot_shows_all_four_required_sections() -> None:
@@ -316,7 +354,9 @@ def test_open_research_snapshot_shows_all_four_required_sections() -> None:
         claims=claims,
     )
 
-    assert rendered.final_assistant == """## Answer
+    assert (
+        rendered.final_assistant
+        == """## Answer
 
 ### Conclusion
 - AI changes task composition more than job counts.
@@ -329,6 +369,7 @@ def test_open_research_snapshot_shows_all_four_required_sections() -> None:
 
 ### Uncertainty
 - Adoption speed varies by market."""
+    )
 
 
 def test_unsupported_claims_are_invisible_and_citations_reject_non_http_urls() -> None:
@@ -338,7 +379,9 @@ def test_unsupported_claims_are_invisible_and_citations_reject_non_http_urls() -
         as_of_date="2026-07-18",
     )
     requirement_id = spec.requirements[0]["requirement_id"]
-    supported = _claim(requirement_id, "claim_conclusion", "fact", "Supported conclusion.", ("bind_ok",))
+    supported = _claim(
+        requirement_id, "claim_conclusion", "fact", "Supported conclusion.", ("bind_ok",)
+    )
     unsupported = _claim(
         requirement_id,
         "claim_conclusion",
@@ -400,9 +443,14 @@ def test_renderer_is_deterministic_for_shuffled_claim_input() -> None:
         tuple(_result(requirement_id, f"claim_{index}", (f"bind_{index}",)) for index in (1, 2)),
     )
 
-    first = render_typed_report(spec=spec, assessment=assessment, admitted_facts=facts, claims=claims)
-    second = render_typed_report(spec=spec, assessment=assessment, admitted_facts=facts, claims=tuple(reversed(claims)))
+    first = render_typed_report(
+        spec=spec, assessment=assessment, admitted_facts=facts, claims=claims
+    )
+    second = render_typed_report(
+        spec=spec, assessment=assessment, admitted_facts=facts, claims=tuple(reversed(claims))
+    )
 
-    assert hashlib.sha256(first.final_assistant.encode()).hexdigest() == hashlib.sha256(
-        second.final_assistant.encode()
-    ).hexdigest()
+    assert (
+        hashlib.sha256(first.final_assistant.encode()).hexdigest()
+        == hashlib.sha256(second.final_assistant.encode()).hexdigest()
+    )

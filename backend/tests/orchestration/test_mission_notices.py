@@ -9,6 +9,7 @@
 
 **改坏检验**：启动时不补回（删 ``catch_up`` 调用；第 2 批 U04 起按序号续读）→ 第三段变红。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -54,7 +55,10 @@ async def test_a_finished_mission_reaches_the_main_conversation_until_the_person
         listed = await handle(service, "mission_notices", {})
         assert [row["notice_id"] for row in listed["payload"]["data"]] == [notice["notice_id"]]
         missing = await handle(service, "mission_notice_ack", {"notice_id": "no-such-notice"})
-        assert missing["payload"]["ok"] is False and missing["payload"]["error_code"] == "notice_not_found"
+        assert (
+            missing["payload"]["ok"] is False
+            and missing["payload"]["error_code"] == "notice_not_found"
+        )
         first = await handle(service, "mission_notice_ack", {"notice_id": notice["notice_id"]})
         assert first["payload"]["ok"] is True, first
         again = await handle(service, "mission_notice_ack", {"notice_id": notice["notice_id"]})
@@ -95,15 +99,34 @@ def _host_with(final_report: dict, events: list[tuple[str, str, dict]], notices:
 
     connection = sqlite3.connect(":memory:")
     connection.execute("CREATE TABLE events (event_id TEXT, type TEXT, payload_json TEXT)")
-    connection.executemany("INSERT INTO events VALUES (?,?,?)",
-                           [(eid, kind, json.dumps(payload)) for eid, kind, payload in events])
-    mission = SimpleNamespace(status=SimpleNamespace(value="CANCELLED"), goal="写周报并发布",
-                              stop_reason="CANCELLED", final_report=final_report)
+    connection.executemany(
+        "INSERT INTO events VALUES (?,?,?)",
+        [(eid, kind, json.dumps(payload)) for eid, kind, payload in events],
+    )
+    mission = SimpleNamespace(
+        status=SimpleNamespace(value="CANCELLED"),
+        goal="写周报并发布",
+        stop_reason="CANCELLED",
+        final_report=final_report,
+    )
     host = SimpleNamespace(
-        _notices=SimpleNamespace(catch_up=lambda _store: 0, pending=lambda: [
-            {"notice_id": nid, "mission_id": "m1", "state_version": 3, "notified_at": float(n), "acked_at": None}
-            for n, nid in enumerate(notices)]),
-        _orchestrator=SimpleNamespace(store=SimpleNamespace(get_mission=lambda _id: mission, connection=connection)))
+        _notices=SimpleNamespace(
+            catch_up=lambda _store: 0,
+            pending=lambda: [
+                {
+                    "notice_id": nid,
+                    "mission_id": "m1",
+                    "state_version": 3,
+                    "notified_at": float(n),
+                    "acked_at": None,
+                }
+                for n, nid in enumerate(notices)
+            ],
+        ),
+        _orchestrator=SimpleNamespace(
+            store=SimpleNamespace(get_mission=lambda _id: mission, connection=connection)
+        ),
+    )
     host.pending_notices = lambda *_: OrchestrationService.pending_notices(host)
     return host, OrchestrationService
 
@@ -116,23 +139,49 @@ def test_a_stopped_mission_with_unsettled_actions_and_their_later_result_are_bot
     """
     from agent_orchestrator.orchestrator.event_handler import ACTION_SETTLED_AFTER_STOP
 
-    report = {"unresolved_actions": [{"action_key": "a:v1", "operation": "publish", "target": "reports/weekly.md",
-                                      "state": "UNKNOWN"}]}
-    host, service_class = _host_with(report, [
-        ("e-cancel", "MissionCancelled", {}),
-        ("e-settled", ACTION_SETTLED_AFTER_STOP, {"operation": "publish", "target": "reports/weekly.md",
-                                                  "state": "SUCCEEDED", "applied": True}),
-    ], ["e-cancel", "e-settled"])
+    report = {
+        "unresolved_actions": [
+            {
+                "action_key": "a:v1",
+                "operation": "publish",
+                "target": "reports/weekly.md",
+                "state": "UNKNOWN",
+            }
+        ]
+    }
+    host, service_class = _host_with(
+        report,
+        [
+            ("e-cancel", "MissionCancelled", {}),
+            (
+                "e-settled",
+                ACTION_SETTLED_AFTER_STOP,
+                {
+                    "operation": "publish",
+                    "target": "reports/weekly.md",
+                    "state": "SUCCEEDED",
+                    "applied": True,
+                },
+            ),
+        ],
+        ["e-cancel", "e-settled"],
+    )
     stopped, settled = host.pending_notices()
     assert stopped["unresolved_actions"] == 1 and "action_settled" not in stopped
-    assert settled["action_settled"] == {"operation": "publish", "target": "reports/weekly.md", "applied": True}
+    assert settled["action_settled"] == {
+        "operation": "publish",
+        "target": "reports/weekly.md",
+        "applied": True,
+    }
     text = service_class.notice_context_text(host)
     assert "unresolved_actions=1 (outcome unknown; the system keeps checking)" in text
     assert "action_checked=publish reports/weekly.md result=applied" in text
 
 
-@pytest.mark.parametrize("content", ['{"notices": [', '{"notices": [{"no_id": 1}]}', '[]'])
-def test_an_unreadable_notices_file_starts_empty_instead_of_taking_orchestration_down(tmp_path, content):
+@pytest.mark.parametrize("content", ['{"notices": [', '{"notices": [{"no_id": 1}]}', "[]"])
+def test_an_unreadable_notices_file_starts_empty_instead_of_taking_orchestration_down(
+    tmp_path, content
+):
     """试用前全量回归（2026-10-07）：通知文件读坏时构造抛错，编排服务整个不注册。
 
     **改坏检验**：构造里只接 ``FileNotFoundError`` → 三种坏文件全红。"""

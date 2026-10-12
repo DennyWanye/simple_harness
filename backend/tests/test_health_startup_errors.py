@@ -8,6 +8,7 @@ Uses FastAPI TestClient to drive the live app. The module-level
 / `clear` API to simulate an ASR load failure without needing to
 monkey-patch heavy ML deps (torch, ctranslate2).
 """
+
 from __future__ import annotations
 
 import main
@@ -32,6 +33,7 @@ def client():
 # ---------------------------------------------------------------------------
 # /health
 # ---------------------------------------------------------------------------
+
 
 def test_health_ok_when_no_startup_errors(client):
     resp = client.get("/health")
@@ -60,8 +62,7 @@ def test_health_preserves_existing_fields(client):
     """Regression: secret_hint / strategy / cloud_configured must stay."""
     resp = client.get("/health")
     body = resp.json()
-    for key in ("status", "secret_hint", "strategy", "cloud_configured",
-                "startup_errors", "voice"):
+    for key in ("status", "secret_hint", "strategy", "cloud_configured", "startup_errors", "voice"):
         assert key in body
     assert body["voice"] == {
         "enabled": False,
@@ -75,10 +76,9 @@ def test_health_preserves_existing_fields(client):
 # WS /ws/control first-frame
 # ---------------------------------------------------------------------------
 
+
 def test_ws_control_first_frame_is_startup_status_clean(client):
-    with client.websocket_connect(
-        f"/ws/control?secret={main.SHARED_SECRET}&session_id=t1"
-    ) as ws:
+    with client.websocket_connect(f"/ws/control?secret={main.SHARED_SECRET}&session_id=t1") as ws:
         first = ws.receive_json()
         assert first["type"] == "startup_status"
         assert first["degraded"] is False
@@ -90,9 +90,7 @@ def test_ws_control_first_frame_carries_degraded_errors(client):
         "asr_engine",
         RuntimeError("CUDA driver is not available"),
     )
-    with client.websocket_connect(
-        f"/ws/control?secret={main.SHARED_SECRET}&session_id=t2"
-    ) as ws:
+    with client.websocket_connect(f"/ws/control?secret={main.SHARED_SECRET}&session_id=t2") as ws:
         first = ws.receive_json()
         assert first["type"] == "startup_status"
         assert first["degraded"] is True

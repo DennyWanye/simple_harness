@@ -17,6 +17,7 @@ the model itself emitted broken JSON, the proxy chopped the stream, or our
 parser dropped fragments. This test pins down the diagnostic emit so we can
 attribute future bugs at log-grep time, not gdb time.
 """
+
 from __future__ import annotations
 
 import json
@@ -85,9 +86,7 @@ def _tool_call_delta(idx: int, *, call_id: str = "", name: str = "", args: str =
 
 
 @pytest.mark.asyncio
-async def test_tool_call_args_logged_with_length_and_parse_status(
-    caplog, structlog_to_stdlib
-):
+async def test_tool_call_args_logged_with_length_and_parse_status(caplog, structlog_to_stdlib):
     """A truncated tool_call args buffer must surface in the dump log line.
 
     Scenario: SSE drips a single tool_call whose ``arguments`` field is
@@ -128,10 +127,12 @@ async def test_tool_call_args_logged_with_length_and_parse_status(
         events = []
         async for ev in provider.chat_stream_with_tools(
             [{"role": "user", "content": "hi"}],
-            tools=[{
-                "type": "function",
-                "function": {"name": "write_file", "parameters": {}},
-            }],
+            tools=[
+                {
+                    "type": "function",
+                    "function": {"name": "write_file", "parameters": {}},
+                }
+            ],
         ):
             events.append(ev)
 
@@ -141,10 +142,7 @@ async def test_tool_call_args_logged_with_length_and_parse_status(
 
     # Find the dump line. structlog routes through stdlib so caplog.text
     # contains the rendered key=value form.
-    dump_lines = [
-        rec for rec in caplog.records
-        if "p5s2_tool_call_args_dump" in rec.getMessage()
-    ]
+    dump_lines = [rec for rec in caplog.records if "p5s2_tool_call_args_dump" in rec.getMessage()]
     assert dump_lines, (
         "expected at least one p5s2_tool_call_args_dump log entry; "
         f"saw messages: {[r.getMessage() for r in caplog.records]}"
@@ -193,10 +191,12 @@ async def test_stream_stops_after_tool_batch_overflow_sentinel():
     events = []
     async for event in provider.chat_stream_with_tools(
         [{"role": "user", "content": "hi"}],
-        tools=[{
-            "type": "function",
-            "function": {"name": "tool_search", "parameters": {}},
-        }],
+        tools=[
+            {
+                "type": "function",
+                "function": {"name": "tool_search", "parameters": {}},
+            }
+        ],
     ):
         events.append(event)
 
@@ -247,13 +247,15 @@ async def test_stream_preserves_explicit_length_finish_reason_with_tool_call():
         event
         async for event in provider.chat_stream_with_tools(
             [{"role": "user", "content": "build"}],
-            tools=[{
-                "type": "function",
-                "function": {
-                    "name": "tool_activate",
-                    "parameters": {},
-                },
-            }],
+            tools=[
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "tool_activate",
+                        "parameters": {},
+                    },
+                }
+            ],
         )
     ]
 
@@ -282,11 +284,13 @@ async def test_explicit_truncation_reason_is_not_overridden_by_tool_call(
             {
                 "id": "chatcmpl-test",
                 "object": "chat.completion.chunk",
-                "choices": [{
-                    "index": 0,
-                    "delta": {},
-                    "finish_reason": finish_reason,
-                }],
+                "choices": [
+                    {
+                        "index": 0,
+                        "delta": {},
+                        "finish_reason": finish_reason,
+                    }
+                ],
             },
             "[DONE]",
         ]
@@ -306,10 +310,12 @@ async def test_explicit_truncation_reason_is_not_overridden_by_tool_call(
     events = []
     async for event in provider.chat_stream_with_tools(
         [{"role": "user", "content": "make slides"}],
-        tools=[{
-            "type": "function",
-            "function": {"name": "tool_activate", "parameters": {}},
-        }],
+        tools=[
+            {
+                "type": "function",
+                "function": {"name": "tool_activate", "parameters": {}},
+            }
+        ],
     ):
         events.append(event)
 

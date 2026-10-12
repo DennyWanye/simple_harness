@@ -38,7 +38,11 @@ def _frozen_host_identity() -> dict[str, Any] | None:
         return None
     for field, length in (("host_commit", 40), ("tracked_inputs_sha256", 64)):
         value = payload.get(field)
-        if not isinstance(value, str) or len(value) != length or any(c not in "0123456789abcdef" for c in value):
+        if (
+            not isinstance(value, str)
+            or len(value) != length
+            or any(c not in "0123456789abcdef" for c in value)
+        ):
             return None
     if type(payload.get("host_dirty")) is not bool:
         return None
@@ -46,7 +50,11 @@ def _frozen_host_identity() -> dict[str, Any] | None:
     if type(count) is not int or count < 1:
         return None
     roots = payload.get("input_roots")
-    if not isinstance(roots, list) or not roots or any(not isinstance(root, str) or not root for root in roots):
+    if (
+        not isinstance(roots, list)
+        or not roots
+        or any(not isinstance(root, str) or not root for root in roots)
+    ):
         return None
     return payload
 
@@ -120,11 +128,18 @@ def distributions() -> dict[str, Any]:
         identity = runtime_identity_report()
         identity_valid = True
     except RuntimeError as exc:
-        identity = {"verification": "refused", "source_verified": False,
-                    "installed_wheel_verified": False, "error": str(exc)}
+        identity = {
+            "verification": "refused",
+            "source_verified": False,
+            "installed_wheel_verified": False,
+            "error": str(exc),
+        }
         identity_valid = False
     return {
-        "simple_harness": {"module_file": simple_harness.__file__, "version": simple_harness.__version__},
+        "simple_harness": {
+            "module_file": simple_harness.__file__,
+            "version": simple_harness.__version__,
+        },
         "agent_orchestrator": {
             "module_file": agent_orchestrator.__file__,
             "version": agent_orchestrator.__version__,
@@ -144,11 +159,20 @@ def _domain_features() -> dict[str, Any]:
 
     return {
         "default": CODE_DOMAIN,
-        "items": [{"id": domain.id, "version": domain.version,
-                   "allowed_input_kinds": list(domain.allowed_input_kinds),
-                   "source_roots": list(domain.source_roots)} for domain in DOMAINS.values()],
-        "source_commands": [verb for verb in ("register", "supersede", "revoke")
-                            if callable(getattr(MissionControlV1, f"{verb}_source", None))],
+        "items": [
+            {
+                "id": domain.id,
+                "version": domain.version,
+                "allowed_input_kinds": list(domain.allowed_input_kinds),
+                "source_roots": list(domain.source_roots),
+            }
+            for domain in DOMAINS.values()
+        ],
+        "source_commands": [
+            verb
+            for verb in ("register", "supersede", "revoke")
+            if callable(getattr(MissionControlV1, f"{verb}_source", None))
+        ],
         "atomic_source_create": callable(getattr(MissionControlV1, "create_with_sources", None)),
     }
 
@@ -187,7 +211,9 @@ def build_manifest(
 
 def write_manifest(root: Path, manifest: Mapping[str, Any]) -> Path:
     path = Path(root) / MANIFEST_NAME
-    path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    path.write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
     return path
 
 

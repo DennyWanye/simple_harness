@@ -46,23 +46,64 @@ from .research_core import FetchPort, ResearchLLMPort, ResearchSearchPort
 
 PUBLIC_STAGE_IDS = v3.PUBLIC_STAGE_IDS
 _FAILURE_METRIC_KEYS = (
-    "actual_requests", "hits", "empty", "timeouts", "cooldown_skips",
-    "busy_skips", "queue_timeouts", "probes", "rescue_considered_count",
-    "rescue_executed_count", "candidates",
+    "actual_requests",
+    "hits",
+    "empty",
+    "timeouts",
+    "cooldown_skips",
+    "busy_skips",
+    "queue_timeouts",
+    "probes",
+    "rescue_considered_count",
+    "rescue_executed_count",
+    "candidates",
 )
 _SKIPPED_AFTER_NO_RESULTS = ("fetch", "score", "gap", "rerank", "synth", "cite", "persist")
-_RESCUE_STATUSES = frozenset({
-    "not_needed", "hit", "empty", "failed", "ineligible", "deadline_exhausted", "lost_race",
-})
-_PUBLIC_ERROR_CODES = frozenset({
-    "", "http_error", "invalid_response", "parse_error", "other", "queue_timeout",
-    "timeout", "blocked", "captcha", "rate_limit",
-})
-_ATTEMPT_STATUSES = frozenset({
-    "hit", "empty", "validated_empty", "timeout", "blocked", "captcha", "rate_limit",
-    "error", "cooldown", "cooldown_skip", "busy", "half_open_busy", "queue_timeout",
-    "unavailable", "budget_skip", "cache_hit",
-})
+_RESCUE_STATUSES = frozenset(
+    {
+        "not_needed",
+        "hit",
+        "empty",
+        "failed",
+        "ineligible",
+        "deadline_exhausted",
+        "lost_race",
+    }
+)
+_PUBLIC_ERROR_CODES = frozenset(
+    {
+        "",
+        "http_error",
+        "invalid_response",
+        "parse_error",
+        "other",
+        "queue_timeout",
+        "timeout",
+        "blocked",
+        "captcha",
+        "rate_limit",
+    }
+)
+_ATTEMPT_STATUSES = frozenset(
+    {
+        "hit",
+        "empty",
+        "validated_empty",
+        "timeout",
+        "blocked",
+        "captcha",
+        "rate_limit",
+        "error",
+        "cooldown",
+        "cooldown_skip",
+        "busy",
+        "half_open_busy",
+        "queue_timeout",
+        "unavailable",
+        "budget_skip",
+        "cache_hit",
+    }
+)
 
 
 def _values(state: Mapping[str, Any]) -> dict[str, JsonValue]:
@@ -123,7 +164,9 @@ def _work_item(state: WorkflowState, branch_id: str) -> tuple[BranchWorkItem, Br
     return item, budget
 
 
-def _previous_budget(state: WorkflowState, branch_id: str, stage: str, fallback: BranchBudgetState) -> BranchBudgetState:
+def _previous_budget(
+    state: WorkflowState, branch_id: str, stage: str, fallback: BranchBudgetState
+) -> BranchBudgetState:
     previous_stage = {"search": "expand", "direct": "search"}.get(stage)
     channel = state.get(f"branch_{previous_stage}") if previous_stage else None
     raw = channel.get(branch_id) if isinstance(channel, Mapping) else None
@@ -196,7 +239,12 @@ def _safe_observation(branch_id: str, observation: Mapping[str, Any]) -> dict[st
 
 
 def _event(branch_id: str, stage: str, code: str) -> dict[str, JsonValue]:
-    return {"id": f"{branch_id}:{stage}:{code}", "branch_id": branch_id, "stage": stage, "error_code": code}
+    return {
+        "id": f"{branch_id}:{stage}:{code}",
+        "branch_id": branch_id,
+        "stage": stage,
+        "error_code": code,
+    }
 
 
 def _is_navigation_row(row: Mapping[str, Any]) -> bool:
@@ -257,7 +305,9 @@ async def normalize_handler(state: WorkflowState, context: WorkflowContext) -> S
     research_config["prefer_technology_changes"] = True
     research_config["minimum_publish_citations"] = 6
     values["research_config"] = research_config
-    profile = classify_intent(str(values.get("topic") or ""), as_of_date=_as_of_date(state, context))
+    profile = classify_intent(
+        str(values.get("topic") or ""), as_of_date=_as_of_date(state, context)
+    )
     values["intent_profile"] = profile.to_json()
     return StatePatch({"values": values})
 
@@ -267,7 +317,11 @@ def _parse_topic_proposal(raw: str) -> tuple[dict[str, str], ...]:
     if payload.startswith("```") and payload.endswith("```"):
         payload = "\n".join(payload.splitlines()[1:-1]).strip()
     parsed = json.loads(payload)
-    if not isinstance(parsed, Mapping) or set(parsed) != {"topics"} or not isinstance(parsed["topics"], list):
+    if (
+        not isinstance(parsed, Mapping)
+        or set(parsed) != {"topics"}
+        or not isinstance(parsed["topics"], list)
+    ):
         raise ValueError("invalid technology topic proposal")
     result: list[dict[str, str]] = []
     for item in parsed["topics"]:
@@ -280,8 +334,10 @@ def _parse_topic_proposal(raw: str) -> tuple[dict[str, str], ...]:
 async def plan_handler(state: WorkflowState, context: WorkflowContext) -> StatePatch:
     values = _values(state)
     raw_profile = values.get("intent_profile")
-    profile = IntentProfile.from_json(raw_profile) if isinstance(raw_profile, Mapping) else classify_intent(
-        str(values.get("topic") or ""), as_of_date=_as_of_date(state, context)
+    profile = (
+        IntentProfile.from_json(raw_profile)
+        if isinstance(raw_profile, Mapping)
+        else classify_intent(str(values.get("topic") or ""), as_of_date=_as_of_date(state, context))
     )
     if profile.kind == "generic":
         return await v3.plan_handler(state, context)
@@ -294,7 +350,7 @@ async def plan_handler(state: WorkflowState, context: WorkflowContext) -> StateP
                 llm.complete(
                     "Select 3 to 5 technology buckets from this fixed allowlist: "
                     "model_inference, agent, multimodal, training_inference_system, open_infrastructure. "
-                    "Return strict JSON only: {\"topics\":[{\"topic_kind\":\"...\",\"label\":\"...\",\"entity\":\"...\"}]}. "
+                    'Return strict JSON only: {"topics":[{"topic_kind":"...","label":"...","entity":"..."}]}. '
                     "For entity, name one concrete model, protocol, framework, runtime, or project that is "
                     "currently representative of that bucket. Never return a generic category such as "
                     "LLM inference, AI agents, multimodal AI, AI systems, or open AI infrastructure. "
@@ -304,7 +360,9 @@ async def plan_handler(state: WorkflowState, context: WorkflowContext) -> StateP
                     "Do not add regulation, business cases, or industry applications unless explicitly requested. "
                     f"Topic: {values.get('topic', '')}"
                 ),
-                timeout=max(0.1, min(30.0, float(_config(values).get("plan_timeout_seconds", 20.0)))),
+                timeout=max(
+                    0.1, min(30.0, float(_config(values).get("plan_timeout_seconds", 20.0)))
+                ),
             )
             proposed = _parse_topic_proposal(raw)
         except Exception:
@@ -318,7 +376,9 @@ async def plan_handler(state: WorkflowState, context: WorkflowContext) -> StateP
     runtime_s = max(60.0, min(300.0, float(config.get("technology_runtime_timeout_s", 300.0))))
     configured_deadline = float(config.get("deadline_at") or 0.0)
     hard_deadline = time.time() + runtime_s
-    config["deadline_at"] = min(configured_deadline, hard_deadline) if configured_deadline > 0 else hard_deadline
+    config["deadline_at"] = (
+        min(configured_deadline, hard_deadline) if configured_deadline > 0 else hard_deadline
+    )
     config["technology_runtime_timeout_s"] = runtime_s
     config.setdefault("technology_fetch_timeout_s", 8.0)
     config.setdefault("technology_pdf_timeout_s", 4.0)
@@ -338,7 +398,9 @@ async def plan_handler(state: WorkflowState, context: WorkflowContext) -> StateP
         if index < len(topics):
             topic = topics[index]
             topic_map[branch_id] = topic.to_json()
-            raw_item = raw_work_items.get(branch_id) if isinstance(raw_work_items, Mapping) else None
+            raw_item = (
+                raw_work_items.get(branch_id) if isinstance(raw_work_items, Mapping) else None
+            )
             item = copy.deepcopy(dict(raw_item)) if isinstance(raw_item, Mapping) else {}
             item.update(
                 {
@@ -350,7 +412,9 @@ async def plan_handler(state: WorkflowState, context: WorkflowContext) -> StateP
             )
             aligned_work_items[branch_id] = item
         else:
-            raw_item = raw_work_items.get(branch_id) if isinstance(raw_work_items, Mapping) else None
+            raw_item = (
+                raw_work_items.get(branch_id) if isinstance(raw_work_items, Mapping) else None
+            )
             item = copy.deepcopy(dict(raw_item)) if isinstance(raw_item, Mapping) else {}
             item.update(
                 {
@@ -379,13 +443,21 @@ async def _technology_expand(branch_id: str, state: WorkflowState) -> StatePatch
         return StatePatch({"branch_expand": {branch_id: no_op_patch(item, "expand", budget)}})
     if budget.deadline_at and time.time() >= budget.deadline_at:
         error = _event(branch_id, "expand", "deadline_exhausted")
-        return StatePatch({
-            "branch_expand": {branch_id: branch_patch(
-                work_item=item, stage="expand", result=[], errors=[error],
-                budget_before=budget, budget_after=budget,
-            )},
-            "branch_events": [error],
-        })
+        return StatePatch(
+            {
+                "branch_expand": {
+                    branch_id: branch_patch(
+                        work_item=item,
+                        stage="expand",
+                        result=[],
+                        errors=[error],
+                        budget_before=budget,
+                        budget_after=budget,
+                    )
+                },
+                "branch_events": [error],
+            }
+        )
     topic = _branch_topic(_values(state), branch_id)
     if topic is None:
         raise ValueError(f"missing technology topic for {branch_id}")
@@ -416,27 +488,45 @@ async def _technology_expand(branch_id: str, state: WorkflowState) -> StatePatch
             deduped.setdefault(str(spec["query"]).casefold(), dict(spec))
     result = [deduped[key] for key in sorted(deduped)][: budget.query_remaining]
     return StatePatch(
-        {"branch_expand": {branch_id: branch_patch(
-            work_item=item, stage="expand", result=result, errors=[],
-            budget_before=budget, budget_after=budget,
-        )}}
+        {
+            "branch_expand": {
+                branch_id: branch_patch(
+                    work_item=item,
+                    stage="expand",
+                    result=result,
+                    errors=[],
+                    budget_before=budget,
+                    budget_after=budget,
+                )
+            }
+        }
     )
 
 
-async def _technology_direct(branch_id: str, state: WorkflowState, context: WorkflowContext) -> StatePatch:
+async def _technology_direct(
+    branch_id: str, state: WorkflowState, context: WorkflowContext
+) -> StatePatch:
     item, initial = _work_item(state, branch_id)
     budget = _previous_budget(state, branch_id, "direct", initial)
     if not item.active:
         return StatePatch({"branch_direct": {branch_id: no_op_patch(item, "direct", budget)}})
     if budget.deadline_at and time.time() >= budget.deadline_at:
         error = _event(branch_id, "direct", "deadline_exhausted")
-        return StatePatch({
-            "branch_direct": {branch_id: branch_patch(
-                work_item=item, stage="direct", result=[], errors=[error],
-                budget_before=budget, budget_after=budget,
-            )},
-            "branch_events": [error],
-        })
+        return StatePatch(
+            {
+                "branch_direct": {
+                    branch_id: branch_patch(
+                        work_item=item,
+                        stage="direct",
+                        result=[],
+                        errors=[error],
+                        budget_before=budget,
+                        budget_after=budget,
+                    )
+                },
+                "branch_events": [error],
+            }
+        )
     topic = _branch_topic(_values(state), branch_id)
     if topic is None:
         raise ValueError(f"missing technology topic for {branch_id}")
@@ -459,7 +549,9 @@ async def _technology_direct(branch_id: str, state: WorkflowState, context: Work
                     if seed.query_kind == "scholarly"
                     else seed.render(entity=topic.entity)
                 )
-                remaining = max(0.0, budget.deadline_at - time.time()) if budget.deadline_at else 12.0
+                remaining = (
+                    max(0.0, budget.deadline_at - time.time()) if budget.deadline_at else 12.0
+                )
                 timeout = min(
                     max(0.05, float(config.get("technology_direct_timeout_s", 12.0))),
                     remaining,
@@ -467,7 +559,9 @@ async def _technology_direct(branch_id: str, state: WorkflowState, context: Work
                 if timeout <= 0:
                     errors.append(_event(branch_id, "direct", "deadline_exhausted"))
                     break
-                outcome = await asyncio.wait_for(port.direct(query, seed.direct_source), timeout=timeout)
+                outcome = await asyncio.wait_for(
+                    port.direct(query, seed.direct_source), timeout=timeout
+                )
             except TimeoutError:
                 errors.append(_event(branch_id, "direct", "timeout"))
                 continue
@@ -501,7 +595,8 @@ async def _technology_direct(branch_id: str, state: WorkflowState, context: Work
     profile = _values(state).get("intent_profile")
     if isinstance(profile, Mapping):
         rows = [
-            row for row in rows
+            row
+            for row in rows
             if isinstance(row, Mapping) and _direct_candidate_in_window(row, profile)
         ]
     keyed = {
@@ -512,41 +607,59 @@ async def _technology_direct(branch_id: str, state: WorkflowState, context: Work
     result = [keyed[key] for key in sorted(keyed)][: budget.url_remaining]
     after = budget.consume(query_remaining=executed, url_remaining=len(result))
     payload: dict[str, JsonValue] = {
-        "branch_direct": {branch_id: branch_patch(
-            work_item=item, stage="direct", result=result, errors=errors,
-            budget_before=budget, budget_after=after,
-        )}
+        "branch_direct": {
+            branch_id: branch_patch(
+                work_item=item,
+                stage="direct",
+                result=result,
+                errors=errors,
+                budget_before=budget,
+                budget_after=after,
+            )
+        }
     }
     if not direct_enabled:
-        payload["branch_events"] = [{
-            "id": f"{branch_id}:direct:disabled",
-            "kind": "source_seed_observation",
-            "branch_id": branch_id,
-            "stage": "direct",
-            "channel": "direct",
-            "status": "skipped",
-            "reason_code": "direct_sources_disabled",
-            "seed_count": sum(seed.channel == "direct" for seed in topic.source_seeds),
-        }]
+        payload["branch_events"] = [
+            {
+                "id": f"{branch_id}:direct:disabled",
+                "kind": "source_seed_observation",
+                "branch_id": branch_id,
+                "stage": "direct",
+                "channel": "direct",
+                "status": "skipped",
+                "reason_code": "direct_sources_disabled",
+                "seed_count": sum(seed.channel == "direct" for seed in topic.source_seeds),
+            }
+        ]
     elif errors:
         payload["branch_events"] = errors
     return StatePatch(payload)
 
 
-async def _technology_search(branch_id: str, state: WorkflowState, context: WorkflowContext) -> StatePatch:
+async def _technology_search(
+    branch_id: str, state: WorkflowState, context: WorkflowContext
+) -> StatePatch:
     item, initial = _work_item(state, branch_id)
     budget = _previous_budget(state, branch_id, "search", initial)
     if not item.active:
         return StatePatch({"branch_search": {branch_id: no_op_patch(item, "search", budget)}})
     if budget.deadline_at and time.time() >= budget.deadline_at:
         error = _event(branch_id, "search", "deadline_exhausted")
-        return StatePatch({
-            "branch_search": {branch_id: branch_patch(
-                work_item=item, stage="search", result=[], errors=[error],
-                budget_before=budget, budget_after=budget,
-            )},
-            "branch_events": [error],
-        })
+        return StatePatch(
+            {
+                "branch_search": {
+                    branch_id: branch_patch(
+                        work_item=item,
+                        stage="search",
+                        result=[],
+                        errors=[error],
+                        budget_before=budget,
+                        budget_after=budget,
+                    )
+                },
+                "branch_events": [error],
+            }
+        )
     expand_channel = state.get("branch_expand")
     previous = expand_channel.get(branch_id) if isinstance(expand_channel, Mapping) else None
     specs = list(previous.get("result", [])) if isinstance(previous, Mapping) else []
@@ -562,17 +675,18 @@ async def _technology_search(branch_id: str, state: WorkflowState, context: Work
             question = str(spec.get("question") or query) if isinstance(spec, Mapping) else query
             allowed_domains = tuple(
                 str(value).casefold().strip(".")
-                for value in (
-                    spec.get("allowed_domains", [])
-                    if isinstance(spec, Mapping)
-                    else []
-                )
+                for value in (spec.get("allowed_domains", []) if isinstance(spec, Mapping) else [])
                 if str(value).strip()
             )
             try:
-                remaining = max(0.0, budget.deadline_at - time.time()) if budget.deadline_at else 20.0
+                remaining = (
+                    max(0.0, budget.deadline_at - time.time()) if budget.deadline_at else 20.0
+                )
                 timeout = min(
-                    max(0.05, float(_config(_values(state)).get("technology_search_timeout_s", 20.0))),
+                    max(
+                        0.05,
+                        float(_config(_values(state)).get("technology_search_timeout_s", 20.0)),
+                    ),
                     remaining,
                 )
                 if timeout <= 0:
@@ -595,7 +709,11 @@ async def _technology_search(branch_id: str, state: WorkflowState, context: Work
                 telemetry.append(_safe_observation(branch_id, observation))
                 if observation.get("degraded"):
                     errors.append(
-                        _event(branch_id, "search", str(observation.get("reason_code") or "search_degraded"))
+                        _event(
+                            branch_id,
+                            "search",
+                            str(observation.get("reason_code") or "search_degraded"),
+                        )
                     )
             for row in outcome:
                 if not isinstance(row, Mapping) or not row.get("url"):
@@ -605,8 +723,7 @@ async def _technology_search(branch_id: str, state: WorkflowState, context: Work
                 url = _normalized_fetch_url(str(row["url"]))
                 host = canonical_host(url)
                 if allowed_domains and not any(
-                    host == domain or host.endswith(f".{domain}")
-                    for domain in allowed_domains
+                    host == domain or host.endswith(f".{domain}") for domain in allowed_domains
                 ):
                     continue
                 rows.append(
@@ -626,17 +743,21 @@ async def _technology_search(branch_id: str, state: WorkflowState, context: Work
         if isinstance(row, Mapping)
     }
     result = [keyed[key] for key in sorted(keyed)][: budget.url_remaining]
-    consumed = min(len(specs), budget.query_remaining) if isinstance(port, ResearchSearchPort) else 0
+    consumed = (
+        min(len(specs), budget.query_remaining) if isinstance(port, ResearchSearchPort) else 0
+    )
     after = budget.consume(query_remaining=consumed, url_remaining=len(result))
     payload: dict[str, JsonValue] = {
-        "branch_search": {branch_id: branch_patch(
-            work_item=item,
-            stage="search",
-            result=result,
-            errors=errors,
-            budget_before=budget,
-            budget_after=after,
-        )}
+        "branch_search": {
+            branch_id: branch_patch(
+                work_item=item,
+                stage="search",
+                result=result,
+                errors=errors,
+                budget_before=budget,
+                budget_after=after,
+            )
+        }
     }
     if errors or telemetry:
         payload["branch_events"] = [*errors, *telemetry]
@@ -655,30 +776,43 @@ def _technology_fetch_limit(values: Mapping[str, Any], branch_id: str) -> int:
 
 _FETCH_TOPIC_HINTS = {
     "model_inference": (
-        "inference", "serving", "latency", "throughput", "kv cache", "quantization", "deployment",
+        "inference",
+        "serving",
+        "latency",
+        "throughput",
+        "kv cache",
+        "quantization",
+        "deployment",
     ),
     "agent": ("agent", "tool use", "tool calling", "mcp", "multi-agent"),
     "multimodal": ("multimodal", "vision language", "image", "video", "audio"),
     "training_inference_system": (
-        "training", "inference", "serving", "runtime", "gpu", "reinforcement learning",
+        "training",
+        "inference",
+        "serving",
+        "runtime",
+        "gpu",
+        "reinforcement learning",
     ),
     "open_infrastructure": (
-        "open source", "open-source", "framework", "runtime", "library", "repository", "github",
+        "open source",
+        "open-source",
+        "framework",
+        "runtime",
+        "library",
+        "repository",
+        "github",
     ),
 }
 
 
-def _fetch_candidate_relevance(
-    row: Mapping[str, Any], topic: TechnologyTopic | None
-) -> int:
+def _fetch_candidate_relevance(row: Mapping[str, Any], topic: TechnologyTopic | None) -> int:
     if topic is None:
         return 1
     # ``question`` is branch metadata, not source content.  Counting it made
     # every direct result look relevant and allowed unrelated papers to win on
     # authority alone (for example an EHR paper in the inference branch).
-    text = " ".join(
-        str(row.get(key) or "") for key in ("title", "snippet", "url")
-    ).casefold()
+    text = " ".join(str(row.get(key) or "") for key in ("title", "snippet", "url")).casefold()
     entity = " ".join(topic.entity.casefold().split())
     relevance = 5 if len(entity) >= 5 and entity in text else 0
     hints = _FETCH_TOPIC_HINTS.get(topic.topic_kind, ())
@@ -765,7 +899,13 @@ def _fetch_candidate_rank(
     published = _candidate_published_date(row)
     recency = published.toordinal() if published is not None else 0
     is_pdf = int(str(row.get("url") or "").casefold().split("?", 1)[0].endswith(".pdf"))
-    return authority, relevance, recency, -is_pdf, str(row.get("canonical_url") or row.get("url") or "")
+    return (
+        authority,
+        relevance,
+        recency,
+        -is_pdf,
+        str(row.get("canonical_url") or row.get("url") or ""),
+    )
 
 
 def _select_technology_fetch_candidates(
@@ -790,14 +930,18 @@ def _select_technology_fetch_candidates(
         ):
             continue
         candidate = copy.deepcopy(dict(raw))
-        url = _normalized_fetch_url(str(candidate.get("url") or candidate.get("canonical_url") or ""))
+        url = _normalized_fetch_url(
+            str(candidate.get("url") or candidate.get("canonical_url") or "")
+        )
         if not url:
             continue
         candidate["url"] = url
         candidate["canonical_url"] = canonical_url(url)
         key = str(candidate["canonical_url"])
         existing = deduplicated.get(key)
-        if existing is None or _fetch_candidate_rank(candidate, topic) > _fetch_candidate_rank(existing, topic):
+        if existing is None or _fetch_candidate_rank(candidate, topic) > _fetch_candidate_rank(
+            existing, topic
+        ):
             deduplicated[key] = candidate
 
     ranked = sorted(
@@ -847,7 +991,9 @@ def _select_technology_fetch_candidates(
     return selected
 
 
-async def _technology_fetch(branch_id: str, state: WorkflowState, context: WorkflowContext) -> StatePatch:
+async def _technology_fetch(
+    branch_id: str, state: WorkflowState, context: WorkflowContext
+) -> StatePatch:
     values = _values(state)
     item, _ = _work_item(state, branch_id)
     if not item.active:
@@ -881,10 +1027,14 @@ async def _technology_fetch(branch_id: str, state: WorkflowState, context: Workf
     if isinstance(original_fetch, FetchPort):
         config = _config(values)
         page_timeout = max(0.05, min(12.0, float(config.get("technology_fetch_timeout_s", 8.0))))
-        pdf_timeout = max(0.05, min(page_timeout, float(config.get("technology_pdf_timeout_s", 4.0))))
+        pdf_timeout = max(
+            0.05, min(page_timeout, float(config.get("technology_pdf_timeout_s", 4.0)))
+        )
 
         async def bounded_extract(url: str) -> dict[str, Any]:
-            timeout = pdf_timeout if url.casefold().split("?", 1)[0].endswith(".pdf") else page_timeout
+            timeout = (
+                pdf_timeout if url.casefold().split("?", 1)[0].endswith(".pdf") else page_timeout
+            )
             if _github_releases_api_url(url) is not None:
                 try:
                     release_document = await _fetch_github_releases(url, timeout_s=timeout)
@@ -961,9 +1111,13 @@ async def _technology_fetch(branch_id: str, state: WorkflowState, context: Workf
     return StatePatch(data)
 
 
-async def branch_handler(stage: str, branch_id: str, state: WorkflowState, context: WorkflowContext) -> StatePatch:
+async def branch_handler(
+    stage: str, branch_id: str, state: WorkflowState, context: WorkflowContext
+) -> StatePatch:
     profile = _values(state).get("intent_profile")
-    is_technology = isinstance(profile, Mapping) and profile.get("kind") == "technology_intelligence"
+    is_technology = (
+        isinstance(profile, Mapping) and profile.get("kind") == "technology_intelligence"
+    )
     if not is_technology:
         return await v3.branch_handler(stage, branch_id, state, context)
     if stage == "expand":
@@ -980,6 +1134,7 @@ async def branch_handler(stage: str, branch_id: str, state: WorkflowState, conte
 def make_branch_handler(stage: str, branch_id: str):
     async def handler(state: WorkflowState, context: WorkflowContext) -> StatePatch:
         return await branch_handler(stage, branch_id, state, context)
+
     handler.__name__ = f"v4_{stage}_{branch_id}_handler"
     handler.__qualname__ = handler.__name__
     return handler
@@ -996,7 +1151,11 @@ def _search_metrics(state: WorkflowState) -> dict[str, int]:
             value = raw.get(key)
             if isinstance(value, int) and not isinstance(value, bool):
                 totals[key] += max(0, value)
-        if not raw.get("rescue_considered_count") and raw.get("rescue_status") not in {None, "", "not_needed"}:
+        if not raw.get("rescue_considered_count") and raw.get("rescue_status") not in {
+            None,
+            "",
+            "not_needed",
+        }:
             totals["rescue_considered_count"] += 1
         if not raw.get("rescue_executed_count") and raw.get("rescue_upstream_called") is True:
             totals["rescue_executed_count"] += 1
@@ -1007,7 +1166,9 @@ def _search_metrics(state: WorkflowState) -> dict[str, int]:
         for row in payload.get("result", [])
         if isinstance(row, Mapping)
     ]
-    totals["candidates"] = len({str(row.get("canonical_url") or row.get("url") or "") for row in search_rows})
+    totals["candidates"] = len(
+        {str(row.get("canonical_url") or row.get("url") or "") for row in search_rows}
+    )
     return totals
 
 
@@ -1039,6 +1200,7 @@ async def join_handler(stage: str, state: WorkflowState, context: WorkflowContex
 def make_join_handler(stage: str):
     async def handler(state: WorkflowState, context: WorkflowContext) -> StatePatch:
         return await join_handler(stage, state, context)
+
     handler.__name__ = f"v4_{stage}_join_handler"
     handler.__qualname__ = handler.__name__
     return handler
@@ -1049,7 +1211,12 @@ async def gap_handler(state: WorkflowState, context: WorkflowContext) -> StatePa
     profile = values.get("intent_profile")
     config = _config(values)
     deadline = float(config.get("deadline_at") or 0.0)
-    if isinstance(profile, Mapping) and profile.get("kind") == "technology_intelligence" and deadline and time.time() >= deadline:
+    if (
+        isinstance(profile, Mapping)
+        and profile.get("kind") == "technology_intelligence"
+        and deadline
+        and time.time() >= deadline
+    ):
         delegated = copy.deepcopy(state)
         delegated_values = _values(delegated)
         delegated_config = _config(delegated_values)
@@ -1149,8 +1316,7 @@ def _fallback_localized_change(finding: TechnologyFinding) -> str:
         and "marked the stable release" in source
     ):
         return (
-            f"{finding.entity} 已标记 2026-07-28 修订候选版，"
-            "并将 2025-11-25 修订版标记为稳定版。"
+            f"{finding.entity} 已标记 2026-07-28 修订候选版，并将 2025-11-25 修订版标记为稳定版。"
         )
     if (
         "model context protocol" in source
@@ -1168,19 +1334,13 @@ def _fallback_localized_change(finding: TechnologyFinding) -> str:
             "并加入 LLaVA-OneVision-2 模型。"
         )
     if "linearcrossentropyloss" in source and "peak gpu memory" in source:
-        return (
-            f"{finding.entity} 在大词表语言模型训练中，"
-            "将峰值 GPU 内存最多降低 4x。"
-        )
+        return f"{finding.entity} 在大词表语言模型训练中，将峰值 GPU 内存最多降低 4x。"
     if (
         finding.entity.casefold() == "jetson-pi"
         and "control frequency" in source
         and "jetson orin" in source
     ):
-        return (
-            "Jetson-PI 在 NVIDIA Jetson Orin 上，"
-            "相较朴素 PyTorch 将控制频率提高 41x。"
-        )
+        return "Jetson-PI 在 NVIDIA Jetson Orin 上，相较朴素 PyTorch 将控制频率提高 41x。"
     if "reduce-scatter" in source and "all-gather" in source:
         return (
             f"{finding.entity} 使用专用进程组重叠 reduce-scatter 与 all-gather 通信，"
@@ -1199,11 +1359,7 @@ def _fallback_localized_change(finding: TechnologyFinding) -> str:
         return f"{finding.entity} 已成为所有稠密模型的默认运行路径。"
     if "unibrowse" in source and "exploration degree" in source and "low-signal" in source:
         return f"{finding.entity} 引入探索度指标，用于在强化学习中过滤低信号实例。"
-    if (
-        "language agents" in source
-        and "degrade sharply" in source
-        and "+19 points" in source
-    ):
+    if "language agents" in source and "degrade sharply" in source and "+19 points" in source:
         return (
             f"{finding.entity} 的长链推理会明显退化；在最难问题上，"
             "较弱模型的协议遵循度最多可恢复 +19 points。"
@@ -1221,13 +1377,8 @@ def _fallback_localized_change(finding: TechnologyFinding) -> str:
             f"{finding.entity} 为 Interactions API 新增开发者日志支持，"
             "使相关调用过程能够被记录和检查。"
         )
-    if (
-        "logs for supported interactions api calls" in source
-        and "ai studio dashboard" in source
-    ):
-        return (
-            f"{finding.entity} 的 Interactions API 调用日志现在可在 AI Studio 仪表盘中查看。"
-        )
+    if "logs for supported interactions api calls" in source and "ai studio dashboard" in source:
+        return f"{finding.entity} 的 Interactions API 调用日志现在可在 AI Studio 仪表盘中查看。"
     if re.search(r"released(?:\s+.{1,100}?)?\s+in public preview", source):
         return f"{finding.entity} 已进入公开预览阶段，可用于受限范围的技术验证。"
     if "was released for gemini api and vertex ai" in source:
@@ -1244,18 +1395,12 @@ def _fallback_localized_change(finding: TechnologyFinding) -> str:
         return f"{finding.entity} 采用结构化认识论工作记忆来组织来源事实与推理状态。"
     if re.search(r"open-source,?\s+native multimodal agentic model", source):
         return f"{finding.entity} 同时具备开源、原生多模态与智能体模型属性。"
-    if (
-        "graph_trainer" in source
-        and "cpu activation-offloading pass" in source
-    ):
+    if "graph_trainer" in source and "cpu activation-offloading pass" in source:
         return f"{finding.entity} 的 graph_trainer 新增基于图执行的 CPU 激活卸载处理流程。"
     if "pytorch monarch" in source and "amd gpus" in source and "rocm" in source:
         return f"{finding.entity} 已扩展到 AMD GPU 的 ROCm 平台，可用于异构训练系统验证。"
     if "new communications backend for pytorch distributed" in source:
-        return (
-            f"{finding.entity} 成为 PyTorch Distributed 的新通信后端，"
-            "面向大规模集群训练通信。"
-        )
+        return f"{finding.entity} 成为 PyTorch Distributed 的新通信后端，面向大规模集群训练通信。"
     if "gemma 4" in source and "unified flashattention across all layers" in source:
         return f"{finding.entity} 的所有模型层均统一采用 Unified FlashAttention 机制。"
     if "supervised fine-tuning" in source and re.search(r"\btrain(?:s|ed|ing)?\b", source):
@@ -1287,7 +1432,11 @@ def _parse_localized_changes(raw: str, findings: Sequence[TechnologyFinding]) ->
     if payload.startswith("```") and payload.endswith("```"):
         payload = "\n".join(payload.splitlines()[1:-1]).strip()
     parsed = json.loads(payload)
-    if not isinstance(parsed, Mapping) or set(parsed) != {"items"} or not isinstance(parsed["items"], list):
+    if (
+        not isinstance(parsed, Mapping)
+        or set(parsed) != {"items"}
+        or not isinstance(parsed["items"], list)
+    ):
         raise ValueError("invalid localized finding payload")
     finding_by_id = {finding.finding_id: finding for finding in findings}
     expected_ids = set(finding_by_id)
@@ -1309,9 +1458,7 @@ def _parse_localized_changes(raw: str, findings: Sequence[TechnologyFinding]) ->
         normalize_number = lambda value: re.sub(r"\s+", "", value).casefold()
         source_numbers = {
             normalize_number(value)
-            for value in _ALL_NUMBER_TOKEN_RE.findall(
-                f"{finding.entity} {finding.statement}"
-            )
+            for value in _ALL_NUMBER_TOKEN_RE.findall(f"{finding.entity} {finding.statement}")
         }
         localized_numbers = {
             normalize_number(value) for value in _ALL_NUMBER_TOKEN_RE.findall(localized)
@@ -1326,8 +1473,7 @@ def _parse_localized_changes(raw: str, findings: Sequence[TechnologyFinding]) ->
             )
         }
         localized_entities = {
-            token.casefold()
-            for token in re.findall(r"[A-Za-z][A-Za-z0-9_.-]*", localized)
+            token.casefold() for token in re.findall(r"[A-Za-z][A-Za-z0-9_.-]*", localized)
         }
         if not localized_entities.issubset(source_entities):
             raise ValueError("localized finding introduced an entity")
@@ -1357,14 +1503,18 @@ async def _localize_findings(
             raw = await asyncio.wait_for(
                 llm.complete(
                     "Translate the supported technology changes into professional Chinese. "
-                    "Return strict JSON only: {\"items\":[{\"finding_id\":\"...\","
-                    "\"core_change_zh\":\"one concrete Chinese sentence\"}]}. "
+                    'Return strict JSON only: {"items":[{"finding_id":"...",'
+                    '"core_change_zh":"one concrete Chinese sentence"}]}. '
                     "Preserve entity names and exact numbers; do not add facts, dates, comparisons, advice, URLs, "
                     "or claims absent from statement. Every input item must appear exactly once.\n"
                     + json.dumps(
                         {
                             "items": [
-                                {"finding_id": finding.finding_id, "entity": finding.entity, "statement": finding.statement}
+                                {
+                                    "finding_id": finding.finding_id,
+                                    "entity": finding.entity,
+                                    "statement": finding.statement,
+                                }
                                 for finding in findings
                             ]
                         },
@@ -1385,9 +1535,7 @@ async def _localize_findings(
                 parsed = json.loads(payload)
                 items = parsed.get("items", []) if isinstance(parsed, Mapping) else []
                 by_id = {
-                    str(item.get("finding_id")): item
-                    for item in items
-                    if isinstance(item, Mapping)
+                    str(item.get("finding_id")): item for item in items if isinstance(item, Mapping)
                 }
                 for finding in findings:
                     item = by_id.get(finding.finding_id)
@@ -1404,11 +1552,7 @@ async def _localize_findings(
                         continue
             except Exception:
                 localized = {}
-        missing = tuple(
-            finding
-            for finding in findings
-            if finding.finding_id not in localized
-        )
+        missing = tuple(finding for finding in findings if finding.finding_id not in localized)
         remaining = timeout_s - (time.monotonic() - localization_started)
         if missing and remaining > 0.1:
             try:
@@ -1443,7 +1587,8 @@ async def _localize_findings(
     return tuple(
         replace(
             finding,
-            localized_statement=localized.get(finding.finding_id) or _fallback_localized_change(finding),
+            localized_statement=localized.get(finding.finding_id)
+            or _fallback_localized_change(finding),
         )
         for finding in findings
     )
@@ -1483,9 +1628,9 @@ async def cite_handler(state: WorkflowState, context: WorkflowContext) -> StateP
         if not isinstance(raw_source, Mapping):
             continue
         source = copy.deepcopy(dict(raw_source))
-        evidence = evidence_by_hash.get(str(source.get("content_hash") or "")) or evidence_by_url.get(
-            str(source.get("canonical_url") or source.get("url") or "")
-        )
+        evidence = evidence_by_hash.get(
+            str(source.get("content_hash") or "")
+        ) or evidence_by_url.get(str(source.get("canonical_url") or source.get("url") or ""))
         if isinstance(evidence, Mapping):
             for key in ("published_at", "date", "source_kind", "provider"):
                 if evidence.get(key) not in (None, "", []):
@@ -1499,7 +1644,9 @@ async def cite_handler(state: WorkflowState, context: WorkflowContext) -> StateP
     findings = build_ranked_findings(
         claims=[item for item in quality.get("published_claims", []) if isinstance(item, Mapping)],
         decisions=[item for item in quality.get("decisions", []) if isinstance(item, Mapping)],
-        passages=[item for item in values.get("evidence_passages", []) if isinstance(item, Mapping)],
+        passages=[
+            item for item in values.get("evidence_passages", []) if isinstance(item, Mapping)
+        ],
         citation_sources=citation_sources,
         as_of_date=as_of,
         technology_topics=topics,
@@ -1511,14 +1658,19 @@ async def cite_handler(state: WorkflowState, context: WorkflowContext) -> StateP
         window_start = None
     if window_start is not None:
         findings = tuple(
-            finding for finding in findings
+            finding
+            for finding in findings
             if not finding.published_at
-            or (published := _candidate_published_date({"published_at": finding.published_at})) is None
+            or (published := _candidate_published_date({"published_at": finding.published_at}))
+            is None
             or published >= window_start
         )
         findings = tuple(
-            finding for finding in findings
-            if not (statement_dates := supported_statement_dates(finding.statement, as_of_date=as_of))
+            finding
+            for finding in findings
+            if not (
+                statement_dates := supported_statement_dates(finding.statement, as_of_date=as_of)
+            )
             or any(published >= window_start for published in statement_dates)
         )
     # Keep a bounded reserve before localization.  Search result ranking can
@@ -1539,8 +1691,10 @@ async def cite_handler(state: WorkflowState, context: WorkflowContext) -> StateP
     # to the concrete remainder so one vague candidate cannot poison the whole
     # otherwise professional report.
     findings = tuple(
-        finding for finding in findings
-        if "technology_core_changes_generic" not in finding_set_failure_codes(
+        finding
+        for finding in findings
+        if "technology_core_changes_generic"
+        not in finding_set_failure_codes(
             (finding,), minimum_count=0, maximum_count=8, minimum_topic_kinds=0
         )
     )
@@ -1625,7 +1779,11 @@ async def post_direct_route(state: WorkflowState, context: WorkflowContext) -> s
 async def post_cite_route(state: WorkflowState, context: WorkflowContext) -> str:
     del context
     report = _values(state).get("report_payload")
-    return "success" if isinstance(report, Mapping) and report.get("status") == "completed" else "insufficient_evidence"
+    return (
+        "success"
+        if isinstance(report, Mapping) and report.get("status") == "completed"
+        else "insufficient_evidence"
+    )
 
 
 async def research_continue_handler(state: WorkflowState, context: WorkflowContext) -> StatePatch:
@@ -1665,7 +1823,9 @@ async def no_results_finalize(state: WorkflowState, context: WorkflowContext) ->
     return StatePatch({"values": values})
 
 
-async def insufficient_evidence_finalize(state: WorkflowState, context: WorkflowContext) -> StatePatch:
+async def insufficient_evidence_finalize(
+    state: WorkflowState, context: WorkflowContext
+) -> StatePatch:
     del context
     values = _values(state)
     values.update(
@@ -1692,9 +1852,22 @@ async def insufficient_evidence_finalize(state: WorkflowState, context: Workflow
 
 
 __all__ = [
-    "PUBLIC_STAGE_IDS", "branch_handler", "cite_handler", "finalize_handler",
-    "gap_handler", "insufficient_evidence_finalize", "join_handler", "make_branch_handler",
-    "make_join_handler", "no_results_finalize", "normalize_handler", "persist_handler",
-    "plan_handler", "post_cite_route", "post_direct_route", "research_continue_handler",
-    "rerank_handler", "synth_handler",
+    "PUBLIC_STAGE_IDS",
+    "branch_handler",
+    "cite_handler",
+    "finalize_handler",
+    "gap_handler",
+    "insufficient_evidence_finalize",
+    "join_handler",
+    "make_branch_handler",
+    "make_join_handler",
+    "no_results_finalize",
+    "normalize_handler",
+    "persist_handler",
+    "plan_handler",
+    "post_cite_route",
+    "post_direct_route",
+    "research_continue_handler",
+    "rerank_handler",
+    "synth_handler",
 ]

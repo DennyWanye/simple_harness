@@ -20,6 +20,7 @@ LLM 只挑一个**大类**,引擎把该类预览图拼成网格(contact sheet),�
 设计约束:**从不抛异常**。库不存在/无预览/vision 不可用/解析失败 → 随机
 回退该类一套;该类为空 → 返回 None(上层回落 from-scratch 引擎)。
 """
+
 from __future__ import annotations
 
 import logging
@@ -200,7 +201,7 @@ def _build_contact_sheets(
         n_sheets = (len(pairs) + per_sheet - 1) // per_sheet
         cache_dir = Path(tempfile.gettempdir()) / "deskpet-ppt-montage"
         cache_dir.mkdir(parents=True, exist_ok=True)
-        sig = "_".join(str(i) for i, _ in pairs[:per_sheet * n_sheets])
+        sig = "_".join(str(i) for i, _ in pairs[: per_sheet * n_sheets])
         sig = str(abs(hash((cols, rows, cell_w, cell_h, sig))))
         font = _load_font(26)
 
@@ -215,7 +216,7 @@ def _build_contact_sheets(
                 continue
             sheet = Image.new("RGB", (sheet_w, sheet_h), (245, 245, 247))
             draw = ImageDraw.Draw(sheet)
-            chunk = pairs[s * per_sheet:(s + 1) * per_sheet]
+            chunk = pairs[s * per_sheet : (s + 1) * per_sheet]
             for idx, (pid, ppath) in enumerate(chunk):
                 r, c = divmod(idx, cols)
                 x0, y0 = c * cell_w, r * cell_h
@@ -231,8 +232,9 @@ def _build_contact_sheets(
                     pass
                 # id 角标(实心底 + 文字),保证可读
                 label = str(pid)
-                draw.rectangle([x0 + 2, y0 + 2, x0 + 2 + 14 * len(label) + 8, y0 + 30],
-                               fill=(20, 20, 22))
+                draw.rectangle(
+                    [x0 + 2, y0 + 2, x0 + 2 + 14 * len(label) + 8, y0 + 30], fill=(20, 20, 22)
+                )
                 if font is not None:
                     draw.text((x0 + 8, y0 + 4), label, fill=(255, 255, 255), font=font)
                 else:
@@ -327,7 +329,10 @@ def pick_template_by_preview(
             chosen = rnd.sample(pairs_all, capacity)
             log.info(
                 "pick_template: %d candidates > capacity %d, sampled %d (dropped %d)",
-                len(pairs_all), capacity, capacity, len(pairs_all) - capacity,
+                len(pairs_all),
+                capacity,
+                capacity,
+                len(pairs_all) - capacity,
             )
 
         # id(1-based) → pptx 映射
@@ -340,21 +345,25 @@ def pick_template_by_preview(
 
         from .ppt_visual_review import vision_chat
 
-        content: list[dict[str, Any]] = [{
-            "type": "text",
-            "text": (
-                f"下面是 {len(id_pairs)} 套 PPT 模板的预览缩略图,每张左上角有【编号】。"
-                f"请按演示主题《{topic or '通用商务汇报'}》挑选风格/配色/版式最契合的"
-                f"【一套】,只返回 JSON:{{\"id\": 编号}},不要任何其它文字。"
-            ),
-        }]
+        content: list[dict[str, Any]] = [
+            {
+                "type": "text",
+                "text": (
+                    f"下面是 {len(id_pairs)} 套 PPT 模板的预览缩略图,每张左上角有【编号】。"
+                    f"请按演示主题《{topic or '通用商务汇报'}》挑选风格/配色/版式最契合的"
+                    f'【一套】,只返回 JSON:{{"id": 编号}},不要任何其它文字。'
+                ),
+            }
+        ]
         for sp in sheets:
             b64 = _b64_of(sp)
             if b64:
-                content.append({
-                    "type": "image_url",
-                    "image_url": {"url": f"data:image/jpeg;base64,{b64}"},
-                })
+                content.append(
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": f"data:image/jpeg;base64,{b64}"},
+                    }
+                )
         if len(content) <= 1:  # 没拼出任何图
             return rnd.choice([p for p, _ in chosen])
 

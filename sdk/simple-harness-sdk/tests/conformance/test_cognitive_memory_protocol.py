@@ -287,9 +287,7 @@ def test_span_safe_path_resolves_admitted_evidence_and_checks_utf8() -> None:
     assert verified is admitted.item_authority
     assert verifier.admitted_resolve_count == 1
     assert verified.required_privacy_class is PrivacyClass.PERSONAL
-    assert verified.required_information_attributes == (
-        InformationAttribute.PREFERENCE,
-    )
+    assert verified.required_information_attributes == (InformationAttribute.PREFERENCE,)
     assert EvidenceSpanRef.from_json(span.to_json()) == span
 
     second = _span(envelope, receipt, span_id="span-2", quote="3.12")
@@ -386,11 +384,7 @@ def test_evidence_item_classification_v3_is_required_canonical_and_hash_bound() 
         InformationAttribute.PREFERENCE,
     )
     assert first.authority_hash == second.authority_hash
-    assert (
-        first.to_json()["schema_version"]
-        == EVIDENCE_ITEM_AUTHORITY_SCHEMA_VERSION
-        == 3
-    )
+    assert first.to_json()["schema_version"] == EVIDENCE_ITEM_AUTHORITY_SCHEMA_VERSION == 3
     assert not hasattr(EvidenceItemAuthority, "from_json")
 
     object.__setattr__(authority, "required_privacy_class", PrivacyClass.RESTRICTED)
@@ -398,9 +392,7 @@ def test_evidence_item_classification_v3_is_required_canonical_and_hash_bound() 
         asyncio.run(
             verify_evidence_span(
                 span,
-                _EvidenceVerifier(
-                    AdmittedEvidenceAuthority(envelope, receipt, authority)
-                ),
+                _EvidenceVerifier(AdmittedEvidenceAuthority(envelope, receipt, authority)),
             )
         )
 
@@ -573,16 +565,17 @@ def test_external_typed_observation_requires_exact_external_provenance_and_recei
         receipt,
         _item_authority(external_span),
     )
-    assert asyncio.run(
-        verify_evidence_span(
-            external_span,
-            _EvidenceVerifier(admitted, authority_receipt),
-        )
-    ) is admitted.item_authority
-    with pytest.raises(ValueError, match="not registered"):
+    assert (
         asyncio.run(
-            verify_evidence_span(external_span, _EvidenceVerifier(admitted))
+            verify_evidence_span(
+                external_span,
+                _EvidenceVerifier(admitted, authority_receipt),
+            )
         )
+        is admitted.item_authority
+    )
+    with pytest.raises(ValueError, match="not registered"):
+        asyncio.run(verify_evidence_span(external_span, _EvidenceVerifier(admitted)))
 
     for actor_role, provenance in (
         (EvidenceActorRole.USER, EvidenceProvenance.AUTHENTICATED_USER),
@@ -699,10 +692,7 @@ def test_conversation_metadata_is_post_ingestion_authority_registration() -> Non
     )
     assert metadata.effective_privacy_class is PrivacyClass.PERSONAL
     assert metadata.information_attributes == (InformationAttribute.PREFERENCE,)
-    assert (
-        metadata.classification_authority_ref
-        == "host-classification-policy-1"
-    )
+    assert metadata.classification_authority_ref == "host-classification-policy-1"
     assert ConversationEvidenceMetadata.from_json(metadata.to_json()) == metadata
     assert (
         ConversationEvidenceMetadataReceipt.from_json(registration.metadata_receipt.to_json())

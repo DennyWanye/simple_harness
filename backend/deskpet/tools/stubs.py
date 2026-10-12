@@ -15,6 +15,7 @@ Stubs grouped by owning slice:
 * delegate                         — T3.3 v3 直接删（无真 caller）
 * mcp_call                         — T3.3 v3 直接删（无真 caller）
 """
+
 from __future__ import annotations
 
 import json
@@ -37,7 +38,11 @@ def _stub_handler(slice_name: str):
 
 
 def _maybe_register(
-    registry, name: str, toolset: str, schema: dict[str, Any], slice_name: str,
+    registry,
+    name: str,
+    toolset: str,
+    schema: dict[str, Any],
+    slice_name: str,
 ) -> None:
     """WI-T4.1 v3 守卫注册：name 已存在 → 跳过（真实现优先）.
 
@@ -48,7 +53,10 @@ def _maybe_register(
     if registry.has(name):
         return  # 已有显式产品实现时不覆盖
     registry.register(
-        name, toolset, schema, _stub_handler(slice_name),
+        name,
+        toolset,
+        schema,
+        _stub_handler(slice_name),
         replace_allowed=True,  # 显式 opt-in: 真实现 import 时合法覆盖本 stub
     )
 
@@ -82,10 +90,7 @@ _MEMORY_WRITE_SCHEMA: dict[str, Any] = {
 }
 _MEMORY_READ_SCHEMA: dict[str, Any] = {
     "name": "memory_read",
-    "description": (
-        "Read a specific memory record by id. "
-        "(Pending T3.1 → FactsStore.get_by_id.)"
-    ),
+    "description": ("Read a specific memory record by id. (Pending T3.1 → FactsStore.get_by_id.)"),
     "parameters": {
         "type": "object",
         "properties": {
@@ -109,6 +114,7 @@ _MEMORY_SEARCH_SCHEMA: dict[str, Any] = {
         "required": ["query"],
     },
 }
+
 
 def register_static_tools(registry) -> None:
     _maybe_register(registry, "memory_write", "memory", _MEMORY_WRITE_SCHEMA, "T3.1")

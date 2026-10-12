@@ -20,6 +20,7 @@ The orchestrator closes the supervisor → main-agent loop:
 7. User new message resets the attempt counter (handled by main.py at
    chat handler entry, not by orchestrator itself).
 """
+
 from __future__ import annotations
 
 import pytest
@@ -151,7 +152,9 @@ async def test_circuit_open_triggers_supervisor():
     orch = _make_orch(supervisor=sup, dispatcher=disp, activity_store=store)
 
     snapshot = {"session_id": sid, "tool": "write_file", "error": "circuit_open"}
-    result = await orch.handle_failure(sid, "circuit_open", snapshot, [{"role": "user", "content": "x"}])
+    result = await orch.handle_failure(
+        sid, "circuit_open", snapshot, [{"role": "user", "content": "x"}]
+    )
 
     assert sup.calls and sup.calls[0][0] == sid
     assert sup.calls[0][1].get("error") == "circuit_open"
@@ -166,7 +169,11 @@ async def test_permanent_error_triggers_supervisor():
     disp = _RecordingDispatcher()
     orch = _make_orch(supervisor=sup, dispatcher=disp, activity_store=store)
 
-    snapshot = {"session_id": sid, "tool": "write_file", "detail": "missing required parameter: path"}
+    snapshot = {
+        "session_id": sid,
+        "tool": "write_file",
+        "detail": "missing required parameter: path",
+    }
     result = await orch.handle_failure(sid, "permanent_tool_error", snapshot, [])
     assert sup.calls
     assert result.action == "spawned"
@@ -233,8 +240,11 @@ async def test_max_attempts_caps_resume():
     disp = _RecordingDispatcher()
     emitter = _RecordingEmitter()
     orch = _make_orch(
-        supervisor=sup, dispatcher=disp, activity_store=store,
-        max_attempts=2, emitter=emitter,
+        supervisor=sup,
+        dispatcher=disp,
+        activity_store=store,
+        max_attempts=2,
+        emitter=emitter,
     )
 
     # 1st attempt — spawn
@@ -246,7 +256,9 @@ async def test_max_attempts_caps_resume():
     # 3rd attempt — exhausted, no supervisor call, no dispatch
     sup.calls.clear()
     disp.calls.clear()
-    r3 = await orch.handle_failure(sid, "max_iterations", {"session_id": sid, "detail": "still broken"}, [])
+    r3 = await orch.handle_failure(
+        sid, "max_iterations", {"session_id": sid, "detail": "still broken"}, []
+    )
     assert r3.action == "exhausted"
     assert sup.calls == []
     assert disp.calls == []
@@ -283,7 +295,10 @@ async def test_emits_auto_resume_started_ws_event():
     disp = _RecordingDispatcher()
     emitter = _RecordingEmitter()
     orch = _make_orch(
-        supervisor=sup, dispatcher=disp, activity_store=store, emitter=emitter,
+        supervisor=sup,
+        dispatcher=disp,
+        activity_store=store,
+        emitter=emitter,
     )
 
     await orch.handle_failure(sid, "max_iterations", {"session_id": sid}, [])
@@ -309,7 +324,10 @@ async def test_emits_auto_resume_succeeded_when_final():
     disp = _RecordingDispatcher()
     emitter = _RecordingEmitter()
     orch = _make_orch(
-        supervisor=sup, dispatcher=disp, activity_store=store, emitter=emitter,
+        supervisor=sup,
+        dispatcher=disp,
+        activity_store=store,
+        emitter=emitter,
     )
 
     await orch.handle_failure(sid, "max_iterations", {"session_id": sid}, [])
@@ -327,8 +345,11 @@ async def test_emits_auto_resume_exhausted_after_max_attempts():
     disp = _RecordingDispatcher()
     emitter = _RecordingEmitter()
     orch = _make_orch(
-        supervisor=sup, dispatcher=disp, activity_store=store,
-        max_attempts=1, emitter=emitter,
+        supervisor=sup,
+        dispatcher=disp,
+        activity_store=store,
+        max_attempts=1,
+        emitter=emitter,
     )
 
     # 1st spawn — attempts go to 1
@@ -336,8 +357,10 @@ async def test_emits_auto_resume_exhausted_after_max_attempts():
     # 2nd attempt — exhausted (max_attempts=1)
     emitter.events.clear()
     await orch.handle_failure(
-        sid, "permanent_tool_error",
-        {"session_id": sid, "detail": "boom"}, [],
+        sid,
+        "permanent_tool_error",
+        {"session_id": sid, "detail": "boom"},
+        [],
     )
 
     exhausted = [ev for ev in emitter.events if ev[0] == "auto_resume_exhausted"]
@@ -359,7 +382,10 @@ async def test_audit_recorded_on_spawn():
     disp = _RecordingDispatcher()
     audit = _RecordingAudit()
     orch = _make_orch(
-        supervisor=sup, dispatcher=disp, activity_store=store, audit=audit,
+        supervisor=sup,
+        dispatcher=disp,
+        activity_store=store,
+        audit=audit,
     )
 
     await orch.handle_failure(sid, "max_iterations", {"session_id": sid}, [])

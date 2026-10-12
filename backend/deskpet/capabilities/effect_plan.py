@@ -42,9 +42,7 @@ class EffectPlan:
     actions: tuple[RenameFileAction, ...]
 
     @classmethod
-    def parse(
-        cls, value: Any, *, max_actions: int = 256
-    ) -> EffectPlan:
+    def parse(cls, value: Any, *, max_actions: int = 256) -> EffectPlan:
         if not isinstance(value, Mapping):
             raise EffectPlanValidationError("effect_plan must be an object")
         if set(value) != {"actions"}:
@@ -55,18 +53,14 @@ class EffectPlan:
         if not raw_actions:
             raise EffectPlanValidationError("effect_plan.actions must not be empty")
         if len(raw_actions) > max_actions:
-            raise EffectPlanValidationError(
-                f"effect_plan exceeds the {max_actions} action limit"
-            )
+            raise EffectPlanValidationError(f"effect_plan exceeds the {max_actions} action limit")
 
         actions: list[RenameFileAction] = []
         for index, raw in enumerate(raw_actions):
             if not isinstance(raw, Mapping):
                 raise EffectPlanValidationError(f"action {index} must be an object")
             if set(raw) != {"kind", "source_ref", "target_name"}:
-                raise EffectPlanValidationError(
-                    f"action {index} has unsupported or missing fields"
-                )
+                raise EffectPlanValidationError(f"action {index} has unsupported or missing fields")
             if raw["kind"] != "rename_file":
                 raise EffectPlanValidationError(
                     f"action {index} kind {raw['kind']!r} is not host-mappable"
@@ -103,9 +97,7 @@ class EffectPlan:
                 f"action {index} target_name has unsafe whitespace or NUL"
             )
         if "/" in value or "\\" in value or ":" in value:
-            raise EffectPlanValidationError(
-                f"action {index} target_name must not contain a path"
-            )
+            raise EffectPlanValidationError(f"action {index} target_name must not contain a path")
 
     def to_mapping(self) -> dict[str, Any]:
         return {"actions": [action.to_mapping() for action in self.actions]}
@@ -146,18 +138,14 @@ class BrokeredEffectPlanRecord:
             raise ValueError("brokered plan status is invalid")
         completed = self.action_receipt_refs[: self.next_action_index]
         future = self.action_receipt_refs[self.next_action_index + 1 :]
-        if any(item is None for item in completed) or any(
-            item is not None for item in future
-        ):
+        if any(item is None for item in completed) or any(item is not None for item in future):
             raise ValueError("brokered plan receipt frontier is invalid")
         if self.status == "validated" and (
             self.next_action_index != 0
             or any(item is not None for item in self.action_receipt_refs)
         ):
             raise ValueError("validated brokered plan cannot contain receipts")
-        if self.status == "running" and not (
-            0 < self.next_action_index < len(self.actions)
-        ):
+        if self.status == "running" and not (0 < self.next_action_index < len(self.actions)):
             raise ValueError("running brokered plan needs a partial receipt frontier")
         if self.status == "succeeded" and (
             self.next_action_index != len(self.actions)
@@ -187,9 +175,7 @@ class BrokeredEffectPlanRecord:
             self.input_snapshot_ref != snapshot.snapshot_ref
             or self.root_run_id != snapshot.root_run_id
         ):
-            raise EffectPlanValidationError(
-                "brokered plan input snapshot binding changed"
-            )
+            raise EffectPlanValidationError("brokered plan input snapshot binding changed")
         payload = {
             "plan": {"actions": [dict(action) for action in self.actions]},
             "snapshot_fingerprint": snapshot.fingerprint,
@@ -206,18 +192,13 @@ class BrokeredEffectPlanRecord:
             ).encode("utf-8")
         ).hexdigest()
         expected_ref = (
-            f"brokered-plan:{self.root_run_id}:{self.parent_call_id}:"
-            f"{expected_hash[:24]}"
+            f"brokered-plan:{self.root_run_id}:{self.parent_call_id}:{expected_hash[:24]}"
         )
         if self.plan_hash != expected_hash or self.plan_ref != expected_ref:
-            raise EffectPlanValidationError(
-                "brokered plan identity fingerprint changed"
-            )
+            raise EffectPlanValidationError("brokered plan identity fingerprint changed")
 
     @classmethod
-    def from_mapping(
-        cls, value: Mapping[str, Any]
-    ) -> BrokeredEffectPlanRecord:
+    def from_mapping(cls, value: Mapping[str, Any]) -> BrokeredEffectPlanRecord:
         expected = {
             "plan_ref",
             "root_run_id",
@@ -242,9 +223,7 @@ class BrokeredEffectPlanRecord:
             or not all(isinstance(item, Mapping) for item in actions)
             or not isinstance(receipts, (list, tuple))
         ):
-            raise EffectPlanValidationError(
-                "durable brokered plan record shape is invalid"
-            )
+            raise EffectPlanValidationError("durable brokered plan record shape is invalid")
         # Re-parse actions on restore so a modified continuation cannot add a
         # host operation that the original strict planner never accepted.
         parsed = EffectPlan.parse({"actions": [dict(item) for item in actions]})
@@ -259,9 +238,7 @@ class BrokeredEffectPlanRecord:
             input_snapshot_ref=str(value["input_snapshot_ref"]),
             plan_hash=str(value["plan_hash"]),
             actions=tuple(action.to_mapping() for action in parsed.actions),
-            action_receipt_refs=tuple(
-                None if item is None else str(item) for item in receipts
-            ),
+            action_receipt_refs=tuple(None if item is None else str(item) for item in receipts),
             next_action_index=int(value["next_action_index"]),
             status=str(value["status"]),  # type: ignore[arg-type]
         )
@@ -299,8 +276,7 @@ class BrokeredCommandBoundary:
         if self.plan_ref != self.plan_record.plan_ref:
             raise ValueError("brokered boundary plan_ref mismatch")
         if (
-            self.input_snapshot.snapshot_ref
-            != self.plan_record.input_snapshot_ref
+            self.input_snapshot.snapshot_ref != self.plan_record.input_snapshot_ref
             or self.input_snapshot.root_run_id != self.plan_record.root_run_id
         ):
             raise ValueError("brokered boundary input snapshot mismatch")
@@ -313,9 +289,13 @@ class BrokeredCommandBoundary:
             raise ValueError("brokered inner call and context must be paired")
         if has_inner != (self.current_inner_call_ref is not None):
             raise ValueError("brokered inner call ref must match its payload")
-        if has_inner and str(
-            self.current_inner_call.get("stable_call_id")  # type: ignore[union-attr]
-        ) != self.current_inner_call_ref:
+        if (
+            has_inner
+            and str(
+                self.current_inner_call.get("stable_call_id")  # type: ignore[union-attr]
+            )
+            != self.current_inner_call_ref
+        ):
             raise ValueError("brokered inner call identity changed")
         if self.status == "running_actions" and not has_inner:
             raise ValueError("running brokered boundary needs an inner call")
@@ -333,9 +313,7 @@ class BrokeredCommandBoundary:
             except (TypeError, ValueError) as exc:
                 raise ValueError("brokered aggregate data must be JSON-safe") from exc
         object.__setattr__(self, "artifacts", tuple(copy.deepcopy(self.artifacts)))
-        object.__setattr__(
-            self, "observations", tuple(copy.deepcopy(self.observations))
-        )
+        object.__setattr__(self, "observations", tuple(copy.deepcopy(self.observations)))
         object.__setattr__(
             self,
             "parent_outcome_metadata",
@@ -367,9 +345,7 @@ class BrokeredCommandBoundary:
             "value": copy.deepcopy(self.value),
             "artifacts": copy.deepcopy(list(self.artifacts)),
             "observations": copy.deepcopy(list(self.observations)),
-            "parent_outcome_metadata": copy.deepcopy(
-                dict(self.parent_outcome_metadata)
-            ),
+            "parent_outcome_metadata": copy.deepcopy(dict(self.parent_outcome_metadata)),
             "current_inner_call": (
                 None
                 if self.current_inner_call is None
@@ -413,9 +389,7 @@ class BrokeredCommandBoundary:
             or value.get("current_inner_context") is not None
             and not isinstance(value.get("current_inner_context"), Mapping)
         ):
-            raise EffectPlanValidationError(
-                "durable brokered command boundary shape is invalid"
-            )
+            raise EffectPlanValidationError("durable brokered command boundary shape is invalid")
         return cls(
             parent_index=int(value["parent_index"]),
             parent_prepared_call_ref=str(value["parent_prepared_call_ref"]),
@@ -427,25 +401,17 @@ class BrokeredCommandBoundary:
                 else str(value["current_inner_call_ref"])
             ),
             aggregate_value_ref=(
-                None
-                if value["aggregate_value_ref"] is None
-                else str(value["aggregate_value_ref"])
+                None if value["aggregate_value_ref"] is None else str(value["aggregate_value_ref"])
             ),
             status=str(value["status"]),  # type: ignore[arg-type]
-            input_snapshot=InputBindingSnapshot.from_mapping(
-                value["input_snapshot"]
-            ),
-            plan_record=BrokeredEffectPlanRecord.from_mapping(
-                value["plan_record"]
-            ),
+            input_snapshot=InputBindingSnapshot.from_mapping(value["input_snapshot"]),
+            plan_record=BrokeredEffectPlanRecord.from_mapping(value["plan_record"]),
             value=copy.deepcopy(value["value"]),
             artifacts=tuple(copy.deepcopy(value["artifacts"])),
             observations=tuple(copy.deepcopy(value["observations"])),
             parent_outcome_metadata=dict(value["parent_outcome_metadata"]),
             current_inner_call=(
-                None
-                if value["current_inner_call"] is None
-                else dict(value["current_inner_call"])
+                None if value["current_inner_call"] is None else dict(value["current_inner_call"])
             ),
             current_inner_context=(
                 None

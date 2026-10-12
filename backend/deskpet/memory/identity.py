@@ -43,9 +43,7 @@ class ProductMemoryIdentityResolver:
             await db.execute("PRAGMA foreign_keys=ON")
             await db.execute("BEGIN IMMEDIATE")
             deployment_row = await (
-                await db.execute(
-                    "SELECT instance_id FROM state_db_identity WHERE singleton=1"
-                )
+                await db.execute("SELECT instance_id FROM state_db_identity WHERE singleton=1")
             ).fetchone()
             if deployment_row is None:
                 raise MemoryIdentityUnavailable("state_db_identity_unavailable")

@@ -69,7 +69,10 @@ LOAD_SCHEMA: dict[str, JsonValue] = {
 }
 EXECUTE_SCHEMA: dict[str, JsonValue] = {
     "type": "object",
-    "properties": {"skill_ref": cast(JsonValue, _PIN), "arguments": {"type": "object", "description": "按该技能 input schema 的 JSON 对象。"}},
+    "properties": {
+        "skill_ref": cast(JsonValue, _PIN),
+        "arguments": {"type": "object", "description": "按该技能 input schema 的 JSON 对象。"},
+    },
     "required": ["skill_ref", "arguments"],
     "additionalProperties": False,
 }
@@ -88,19 +91,35 @@ class ArpSkillTools:
     def function_tools(self) -> tuple[FunctionTool, ...]:
         return (
             FunctionTool(
-                ToolSpec(SKILL_DISCOVER_TOOL_NAME, "分页列出本目录里的技能摘要（名称、描述、状态、当前是否可用）；不含文件内容。", cast(Mapping[str, FrozenJsonValue], DISCOVER_SCHEMA)),
+                ToolSpec(
+                    SKILL_DISCOVER_TOOL_NAME,
+                    "分页列出本目录里的技能摘要（名称、描述、状态、当前是否可用）；不含文件内容。",
+                    cast(Mapping[str, FrozenJsonValue], DISCOVER_SCHEMA),
+                ),
                 cast(ToolHandler, self._skill_discover),
             ),
             FunctionTool(
-                ToolSpec(TOOL_DISCOVER_TOOL_NAME, "分页列出本目录里的工具摘要；发现不等于曝光，只有本请求 schema 里出现的工具才能调用。", cast(Mapping[str, FrozenJsonValue], DISCOVER_SCHEMA)),
+                ToolSpec(
+                    TOOL_DISCOVER_TOOL_NAME,
+                    "分页列出本目录里的工具摘要；发现不等于曝光，只有本请求 schema 里出现的工具才能调用。",
+                    cast(Mapping[str, FrozenJsonValue], DISCOVER_SCHEMA),
+                ),
                 cast(ToolHandler, self._tool_discover),
             ),
             FunctionTool(
-                ToolSpec(SKILL_LOAD_TOOL_NAME, "装载一个已准入技能的说明文件到下一次请求的上下文（只读，不执行任何脚本）。返回 SkillUse 回执。", cast(Mapping[str, FrozenJsonValue], LOAD_SCHEMA)),
+                ToolSpec(
+                    SKILL_LOAD_TOOL_NAME,
+                    "装载一个已准入技能的说明文件到下一次请求的上下文（只读，不执行任何脚本）。返回 SkillUse 回执。",
+                    cast(Mapping[str, FrozenJsonValue], LOAD_SCHEMA),
+                ),
                 cast(ToolHandler, self._skill_load),
             ),
             FunctionTool(
-                ToolSpec(SKILL_EXECUTE_TOOL_NAME, "执行一个已准入技能：INSTRUCTIONS 返回说明正文；SCRIPT 经批准的执行器运行并按输出 schema 校验；WORKFLOW 未部署时具名拒绝。", cast(Mapping[str, FrozenJsonValue], EXECUTE_SCHEMA)),
+                ToolSpec(
+                    SKILL_EXECUTE_TOOL_NAME,
+                    "执行一个已准入技能：INSTRUCTIONS 返回说明正文；SCRIPT 经批准的执行器运行并按输出 schema 校验；WORKFLOW 未部署时具名拒绝。",
+                    cast(Mapping[str, FrozenJsonValue], EXECUTE_SCHEMA),
+                ),
                 cast(ToolHandler, self._skill_execute),
             ),
         )
@@ -124,11 +143,15 @@ class ArpSkillTools:
 
     @staticmethod
     def _failure(context: ToolContext, error: ArpError) -> ToolResult:
-        return ToolResult.failed(cast(CallId, context.call_id), f"skill_{error.code.lower()}", f"{error.code}: {error}")
+        return ToolResult.failed(
+            cast(CallId, context.call_id), f"skill_{error.code.lower()}", f"{error.code}: {error}"
+        )
 
     @staticmethod
     def _unbound(context: ToolContext) -> ToolResult:
-        return ToolResult.failed(cast(CallId, context.call_id), "skill_unbound", "No Agent for this Run.")
+        return ToolResult.failed(
+            cast(CallId, context.call_id), "skill_unbound", "No Agent for this Run."
+        )
 
     # ---- handlers ---------------------------------------------------------------------------
 
@@ -138,7 +161,12 @@ class ArpSkillTools:
         if resolved is None:
             return self._unbound(context)
         arp, session = resolved
-        command = {"namespace_id": arp.catalogue.namespace_id, "kind": kind, "cursor": arguments.get("cursor"), "limit": int(arguments.get("limit", DEFAULT_PAGE))}
+        command = {
+            "namespace_id": arp.catalogue.namespace_id,
+            "kind": kind,
+            "cursor": arguments.get("cursor"),
+            "limit": int(arguments.get("limit", DEFAULT_PAGE)),
+        }
         try:
             page = arp.catalogue.page(command, access_view="MODEL")
         except ArpError as error:
@@ -147,9 +175,13 @@ class ArpSkillTools:
         # NEXT-TG-1.0 §11: a Skill in TRIAL is usable by its own evaluation Mission — say so
         # to that Mission's Agents (load/execute re-check it at the call).
         for item in value.get("items", []):
-            if (item.get("kind") == "SKILL" and item.get("state") == "TRIAL" and not item.get("current_usable")
-                    and item.get("reason_codes") == ["STATE_TRIAL"]
-                    and arp.skill_use.trial_session(Pin.from_json(item["definition_ref"]), session)):
+            if (
+                item.get("kind") == "SKILL"
+                and item.get("state") == "TRIAL"
+                and not item.get("current_usable")
+                and item.get("reason_codes") == ["STATE_TRIAL"]
+                and arp.skill_use.trial_session(Pin.from_json(item["definition_ref"]), session)
+            ):
                 item["current_usable"], item["reason_codes"] = True, []
         return ToolResult.succeeded(cast(CallId, context.call_id), cast(JsonValue, value))
 
@@ -166,7 +198,11 @@ class ArpSkillTools:
             return self._unbound(context)
         arp, session = resolved
         try:
-            use = arp.skill_use.load(session, call_id=cast(CallId, context.call_id).value, request={"skill_ref": arguments.get("skill_ref")})
+            use = arp.skill_use.load(
+                session,
+                call_id=cast(CallId, context.call_id).value,
+                request={"skill_ref": arguments.get("skill_ref")},
+            )
         except ArpError as error:
             return self._failure(context, error)
         return ToolResult.succeeded(cast(CallId, context.call_id), cast(JsonValue, _json(use)))
@@ -179,16 +215,27 @@ class ArpSkillTools:
         arp, session = resolved
         call_id = cast(CallId, context.call_id)
         try:
-            view = await arp.skill_use.execute_async(session, call_id=call_id.value, request={"skill_ref": arguments.get("skill_ref"), "arguments": arguments.get("arguments", {})})
+            view = await arp.skill_use.execute_async(
+                session,
+                call_id=call_id.value,
+                request={
+                    "skill_ref": arguments.get("skill_ref"),
+                    "arguments": arguments.get("arguments", {}),
+                },
+            )
         except ArpError as error:
             return self._failure(context, error)
         value = cast(JsonValue, _json(view))
         if view["status"] == "SUCCEEDED":
             return ToolResult.succeeded(call_id, value)
         if view["status"] == "UNKNOWN":
-            return ToolResult(call_id=call_id, outcome=ToolOutcome.UNKNOWN, value=cast(FrozenJsonValue, value))
+            return ToolResult(
+                call_id=call_id, outcome=ToolOutcome.UNKNOWN, value=cast(FrozenJsonValue, value)
+            )
         code = str(view["error_code"] or "SKILL_OUTPUT_INVALID")
-        return ToolResult.failed(call_id, f"skill_{code.lower()}", f"{code}: {view['inline_text'] or view['status']}")
+        return ToolResult.failed(
+            call_id, f"skill_{code.lower()}", f"{code}: {view['inline_text'] or view['status']}"
+        )
 
 
 class ArpModelTools:
@@ -221,4 +268,11 @@ def _json(value: Mapping[str, Any]) -> Any:
     return json.loads(json.dumps(plain(value)))
 
 
-__all__ = ("SKILL_DISCOVER_TOOL_NAME", "SKILL_EXECUTE_TOOL_NAME", "SKILL_LOAD_TOOL_NAME", "TOOL_DISCOVER_TOOL_NAME", "ArpModelTools", "ArpSkillTools")
+__all__ = (
+    "SKILL_DISCOVER_TOOL_NAME",
+    "SKILL_EXECUTE_TOOL_NAME",
+    "SKILL_LOAD_TOOL_NAME",
+    "TOOL_DISCOVER_TOOL_NAME",
+    "ArpModelTools",
+    "ArpSkillTools",
+)

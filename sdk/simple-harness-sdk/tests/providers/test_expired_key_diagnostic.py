@@ -1,4 +1,5 @@
 """Expired-key relay diagnostics preserve status without response disclosure."""
+
 import asyncio
 
 import httpx
@@ -19,15 +20,19 @@ from simple_harness.providers import (
 def test_expired_key_is_typed_and_generic_forbidden_stays_rejected(nested):
     async def exercise():
         calls = []
+
         def transport(request):
             calls.append(request.url.path)
-            error = {"code": "API_KEY_EXPIRED" if len(calls) == 1 else "FORBIDDEN",
-                     "message": "private-upstream-message private-api-key"}
+            error = {
+                "code": "API_KEY_EXPIRED" if len(calls) == 1 else "FORBIDDEN",
+                "message": "private-upstream-message private-api-key",
+            }
             return httpx.Response(403, json={"error": error} if nested else error)
 
         async with httpx.AsyncClient(transport=httpx.MockTransport(transport)) as client:
-            provider = OpenAICompatibleProvider(client, "https://fixture.invalid/v1",
-                                                "fixture", Secret("private-api-key"))
+            provider = OpenAICompatibleProvider(
+                client, "https://fixture.invalid/v1", "fixture", Secret("private-api-key")
+            )
             request = ProviderRequest(RequestId("expired-key"), (Message(MessageRole.USER, "OK"),))
             with pytest.raises(ProviderAuthenticationError) as caught:
                 await provider.invoke(request, cancel=CancelToken())

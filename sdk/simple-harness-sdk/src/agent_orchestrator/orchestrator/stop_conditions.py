@@ -101,8 +101,11 @@ def knowledge_streak(events: Iterable[Any]) -> int:
     fresh = 0
     for event in events:
         kind = event.type
-        if (kind == ROUND_EVENT and event.payload.get("status") == "COMMITTED"
-                and event.payload.get("decision_origin") != SYSTEM_RETRY_ORIGIN):
+        if (
+            kind == ROUND_EVENT
+            and event.payload.get("status") == "COMMITTED"
+            and event.payload.get("decision_origin") != SYSTEM_RETRY_ORIGIN
+        ):
             if open_round:
                 streak = 0 if fresh else streak + 1
             open_round, fresh = True, 0
@@ -124,7 +127,9 @@ def result_content_hash(artifact_hashes: Sequence[str], summary: str) -> str:
 AMENDMENT_EVENT = "RequirementsAmended"
 
 
-def result_hashes(store: Any, mission_id: str, *, events: Iterable[Any] = ()) -> list[tuple[int, str, bool]]:
+def result_hashes(
+    store: Any, mission_id: str, *, events: Iterable[Any] = ()
+) -> list[tuple[int, str, bool]]:
     """任务里每份已提交结果的 ``(交到时生效的要求版本, 内容哈希, 判过且没通过)``，按收到的先后。
 
     要求版本只按顺序算（第 1 版起，每个改要求事件之后换成它写的版本号），不读内容：
@@ -132,8 +137,11 @@ def result_hashes(store: Any, mission_id: str, *, events: Iterable[Any] = ()) ->
     用户改要求后被重做的步骤、因改要求落在核查中途而被搁置重做的结果，交出同样的内容是在回答
     新问题或补一次程序，不是打转，所以只有"判过且没通过"的结果才作为后来者的比较基准。
     """
-    landed = sorted((float(event.created_at), int(event.payload.get("requirements_revision") or 0))
-                    for event in events if event.type == AMENDMENT_EVENT)
+    landed = sorted(
+        (float(event.created_at), int(event.payload.get("requirements_revision") or 0))
+        for event in events
+        if event.type == AMENDMENT_EVENT
+    )
 
     def revision_at(moment: float) -> int:
         current = 1
@@ -154,11 +162,22 @@ def result_hashes(store: Any, mission_id: str, *, events: Iterable[Any] = ()) ->
                 if artifact is not None:
                     hashes.append(artifact.content_hash)
             received = float(stored.received_at)
-            judged_not_passed = (getattr(stored, "verification_state", None) == "DONE"
-                                 and getattr(stored, "verdict", None) != "PASS")
-            rows.append((received, revision_at(received),
-                         result_content_hash(hashes, stored.envelope.summary), bool(judged_not_passed)))
-    return [(revision, digest, judged) for _, revision, digest, judged in sorted(rows, key=lambda item: item[0])]
+            judged_not_passed = (
+                getattr(stored, "verification_state", None) == "DONE"
+                and getattr(stored, "verdict", None) != "PASS"
+            )
+            rows.append(
+                (
+                    received,
+                    revision_at(received),
+                    result_content_hash(hashes, stored.envelope.summary),
+                    bool(judged_not_passed),
+                )
+            )
+    return [
+        (revision, digest, judged)
+        for _, revision, digest, judged in sorted(rows, key=lambda item: item[0])
+    ]
 
 
 def duplicate_count(hashes: Sequence[Any]) -> tuple[int, int]:
@@ -179,21 +198,34 @@ def duplicate_count(hashes: Sequence[Any]) -> tuple[int, int]:
     return duplicates, len(hashes)
 
 
-def reached_stop_conditions(mission: Any, deployment: Any, *, streak: int,
-                            hashes: Sequence[str]) -> list[dict[str, Any]]:
+def reached_stop_conditions(
+    mission: Any, deployment: Any, *, streak: int, hashes: Sequence[str]
+) -> list[dict[str, Any]]:
     """达到或超过上限的条件，每条带它的计数与上限（给规划器与停机报告的事实）。"""
     limits = parse_stop_conditions(mission.stop_conditions, deployment)
     reached: list[dict[str, Any]] = []
     rounds = limits.get(NO_NEW_KNOWLEDGE)
     if rounds is not None and streak >= rounds:
-        reached.append({"condition": NO_NEW_KNOWLEDGE, "rounds_without_new_knowledge": int(streak),
-                        "limit": int(rounds)})
+        reached.append(
+            {
+                "condition": NO_NEW_KNOWLEDGE,
+                "rounds_without_new_knowledge": int(streak),
+                "limit": int(rounds),
+            }
+        )
     rate = limits.get(RESULT_DUPLICATION)
     if rate is not None:
         duplicates, total = duplicate_count(hashes)
         if total >= int(deployment.result_duplication_min_results) and duplicates / total >= rate:
-            reached.append({"condition": RESULT_DUPLICATION, "duplicate_results": duplicates,
-                            "results": total, "rate": round(duplicates / total, 4), "limit": float(rate)})
+            reached.append(
+                {
+                    "condition": RESULT_DUPLICATION,
+                    "duplicate_results": duplicates,
+                    "results": total,
+                    "rate": round(duplicates / total, 4),
+                    "limit": float(rate),
+                }
+            )
     return reached
 
 
@@ -204,8 +236,12 @@ def stop_condition_key(mission_id: str, name: str, plan_revision: int) -> str:
 def stop_condition_asks(events: Iterable[Any], name: str) -> int:
     """这个任务为这个条件问过规划器几次（跨计划版本累计；只数事件）。"""
     prefix = f"{STOP_PREFIX}{name}:"
-    return sum(1 for event in events if event.type == "PlanningRepairRequested"
-               and str(event.payload.get("source_key", "")).startswith(prefix))
+    return sum(
+        1
+        for event in events
+        if event.type == "PlanningRepairRequested"
+        and str(event.payload.get("source_key", "")).startswith(prefix)
+    )
 
 
 def stop_request_state(events: Iterable[Any], source_key: str) -> Mapping[str, Any] | None:
@@ -213,7 +249,10 @@ def stop_request_state(events: Iterable[Any], source_key: str) -> Mapping[str, A
     request_id = None
     handled: set[str] = set()
     for event in events:
-        if event.type == "PlanningRepairRequested" and event.payload.get("source_key") == source_key:
+        if (
+            event.type == "PlanningRepairRequested"
+            and event.payload.get("source_key") == source_key
+        ):
             request_id = str(event.payload["request_id"])
         elif event.type == "PlanningRepairAddressed":
             handled.update(str(item) for item in event.payload.get("repair_request_ids", ()))

@@ -1007,23 +1007,32 @@ class OperationCompletionStore:
         if old.occurrence_id != current.occurrence_id or old.mission_id != current.mission_id:
             return False
         ignored = {"plan_ref"} | (self._REQUIREMENT_KEYS if across_requirements else set())
-        if ({key: value for key, value in old.to_json().items() if key not in ignored}
-                != {key: value for key, value in current.to_json().items() if key not in ignored}):
+        if {key: value for key, value in old.to_json().items() if key not in ignored} != {
+            key: value for key, value in current.to_json().items() if key not in ignored
+        }:
             return False
-        if across_requirements and int(current.requirements_ref.revision) <= int(old.requirements_ref.revision):
+        if across_requirements and int(current.requirements_ref.revision) <= int(
+            old.requirements_ref.revision
+        ):
             return False
         row = self.get_scope_exact(old.mission_id, old.plan_ref.revision, old.occurrence_id)
         if row is None or row["document"] != old:
             return False
         htn = HtnStore(self._store)
         receipt = htn.get_commit_receipt(row["plan_receipt_id"])
-        if (receipt.mission_id != old.mission_id or receipt.new_plan_revision != old.plan_ref.revision
-                or receipt.output_identity.get("snapshot_hash") != old.plan_ref.snapshot_hash):
+        if (
+            receipt.mission_id != old.mission_id
+            or receipt.new_plan_revision != old.plan_ref.revision
+            or receipt.output_identity.get("snapshot_hash") != old.plan_ref.snapshot_hash
+        ):
             return False
 
         def data_at(revision: int) -> list[str]:
-            return sorted(canonical_json(item.to_json()) for item in htn.list_data_requirements(
-                old.mission_id, revision) if str(item.consumer_occurrence) == old.occurrence_id)
+            return sorted(
+                canonical_json(item.to_json())
+                for item in htn.list_data_requirements(old.mission_id, revision)
+                if str(item.consumer_occurrence) == old.occurrence_id
+            )
 
         return data_at(old.plan_ref.revision) == data_at(current.plan_ref.revision)
 

@@ -25,6 +25,7 @@ Message construction order (see ``ContextBundle.build_messages``)::
 
 Spec: openspec/changes/p4-poseidon-agent-harness/specs/context-assembler/spec.md
 """
+
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -124,9 +125,7 @@ class ContextFragment:
     source: str
     role: Literal["system", "user", "assistant", "tool"]
     content: str | list[dict[str, Any]]
-    lifetime: Literal[
-        "platform", "stable", "task", "retrieved", "history", "current"
-    ]
+    lifetime: Literal["platform", "stable", "task", "retrieved", "history", "current"]
     placement: Literal["prefix", "transcript", "control"]
     priority: int
     trim_policy: Literal["never", "truncate", "drop", "summarize", "page_in"]
@@ -244,9 +243,7 @@ class AssemblyPolicy:
 
     task_type: str
     must: list[str] = field(default_factory=lambda: ["memory"])
-    prefer: list[str] = field(
-        default_factory=lambda: ["persona", "time", "workspace"]
-    )
+    prefer: list[str] = field(default_factory=lambda: ["persona", "time", "workspace"])
     tools: list[str] = field(default_factory=lambda: ["*"])
     # Context OS ON-only policy.  ``tools`` remains the exact legacy truth for
     # the global rollback path and must never be reconstructed from this field.
@@ -315,9 +312,7 @@ class AssemblyDecisions:
             }
             for name, t in self.components.items()
         }
-        token_breakdown = {
-            name: t.tokens for name, t in self.components.items() if t.tokens
-        }
+        token_breakdown = {name: t.tokens for name, t in self.components.items() if t.tokens}
         return {
             "task_type": self.task_type,
             "classifier_path": self.classifier_path,
@@ -395,21 +390,15 @@ class ContextBundle:
         """
         messages: list[dict[str, Any]] = []
 
-        frozen = "\n\n".join(
-            chunk for chunk in (base_system, self.frozen_system) if chunk
-        )
+        frozen = "\n\n".join(chunk for chunk in (base_system, self.frozen_system) if chunk)
         if frozen:
             messages.append({"role": "system", "content": frozen})
 
         if self.skill_prelude:
-            messages.append(
-                {"role": "system", "content": self.skill_prelude}
-            )
+            messages.append({"role": "system", "content": self.skill_prelude})
 
         if self.memory_block:
-            messages.append(
-                {"role": "system", "content": self.memory_block}
-            )
+            messages.append({"role": "system", "content": self.memory_block})
 
         if history:
             messages.extend(history)

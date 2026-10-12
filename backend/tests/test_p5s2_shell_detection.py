@@ -8,6 +8,7 @@ cmd, plus the WSL-bash safety net (don't accidentally invoke the WSL
 launcher when no distro is installed) and the self-healing property
 (picks change automatically when filesystem state changes between calls).
 """
+
 from __future__ import annotations
 
 import os
@@ -237,7 +238,6 @@ def test_busybox_utf8_via_stdin_workaround(monkeypatch) -> None:
     # � is the Unicode replacement char emitted on encoding loss;
     # a working UTF-8 path will return the original Chinese text.
     assert "�" not in (out.get("stdout") or ""), (
-        "busybox -c args got mangled — stdin workaround broken? "
-        f"stdout={out.get('stdout')!r}"
+        f"busybox -c args got mangled — stdin workaround broken? stdout={out.get('stdout')!r}"
     )
     assert "你好世界" in (out.get("stdout") or ""), out

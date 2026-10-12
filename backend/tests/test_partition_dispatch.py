@@ -13,6 +13,7 @@ Coverage:
   * partition: unknown tool name treated as safe (no batch drag)
   * partition: tuple / dict / object input shapes all accepted
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -77,7 +78,10 @@ def test_toolspec_default_concurrency_safe_true(reg: ToolRegistry) -> None:
 def test_register_concurrency_safe_false_propagates(reg: ToolRegistry) -> None:
     """register(..., concurrency_safe=False) → ToolSpec.concurrency_safe=False."""
     reg.register(
-        "write_a", "test", _schema("write_a"), _make_handler(name="write_a"),
+        "write_a",
+        "test",
+        _schema("write_a"),
+        _make_handler(name="write_a"),
         concurrency_safe=False,
     )
     spec = reg.get("write_a")
@@ -118,7 +122,9 @@ def test_partition_all_safe_runs_concurrently(reg: ToolRegistry) -> None:
     # Concurrency assertion: all 4 started within 200ms of each other
     starts = sorted(t for _, t in log)
     assert len(starts) == 4
-    assert (starts[-1] - starts[0]) < 0.2, f"safe batch did not run concurrently (spread={starts[-1]-starts[0]:.3f}s)"
+    assert (starts[-1] - starts[0]) < 0.2, (
+        f"safe batch did not run concurrently (spread={starts[-1] - starts[0]:.3f}s)"
+    )
     # Total wall well under 4 * 100ms (allow generous slack for executor)
     assert elapsed < 0.35, f"safe batch took {elapsed:.3f}s — should be ~0.1s concurrent"
     # All envelopes ok
@@ -133,7 +139,9 @@ def test_partition_all_unsafe_runs_serially(reg: ToolRegistry) -> None:
     log: list[tuple[str, float]] = []
     for n in ("w1", "w2", "w3"):
         reg.register(
-            n, "test", _schema(n),
+            n,
+            "test",
+            _schema(n),
             _make_handler(name=n, sleep_s=0.08, started_log=log),
             concurrency_safe=False,
         )
@@ -152,7 +160,7 @@ def test_partition_all_unsafe_runs_serially(reg: ToolRegistry) -> None:
     # Each subsequent start happens AFTER previous handler had time to enter sleep
     for i in range(1, len(starts)):
         assert starts[i] - starts[i - 1] >= 0.05, (
-            f"unsafe batch started call {i} only {starts[i]-starts[i-1]:.3f}s after call {i-1} — not serial"
+            f"unsafe batch started call {i} only {starts[i] - starts[i - 1]:.3f}s after call {i - 1} — not serial"
         )
     # Result order matches input order
     payloads = [json.loads(r["result"]) for r in results]
@@ -164,19 +172,25 @@ def test_partition_mixed_preserves_input_order(reg: ToolRegistry) -> None:
     not to the safe-first/unsafe-second internal split order."""
     reg.register("s1", "test", _schema("s1"), _make_handler(name="s1"))
     reg.register(
-        "u1", "test", _schema("u1"), _make_handler(name="u1"),
+        "u1",
+        "test",
+        _schema("u1"),
+        _make_handler(name="u1"),
         concurrency_safe=False,
     )
     reg.register("s2", "test", _schema("s2"), _make_handler(name="s2"))
     reg.register(
-        "u2", "test", _schema("u2"), _make_handler(name="u2"),
+        "u2",
+        "test",
+        _schema("u2"),
+        _make_handler(name="u2"),
         concurrency_safe=False,
     )
     calls = [
-        ToolCall("u1", {"k": "first"}, ""),    # unsafe first
-        ToolCall("s1", {"k": "second"}, ""),   # safe second
-        ToolCall("u2", {"k": "third"}, ""),    # unsafe third
-        ToolCall("s2", {"k": "fourth"}, ""),   # safe fourth
+        ToolCall("u1", {"k": "first"}, ""),  # unsafe first
+        ToolCall("s1", {"k": "second"}, ""),  # safe second
+        ToolCall("u2", {"k": "third"}, ""),  # unsafe third
+        ToolCall("s2", {"k": "fourth"}, ""),  # safe fourth
     ]
     results = asyncio.run(reg.partition_dispatch(calls, session_id="s"))
     assert len(results) == 4
@@ -206,10 +220,10 @@ def test_partition_accepts_tuple_dict_object_inputs(reg: ToolRegistry) -> None:
             self.task_id = task_id
 
     calls = [
-        ToolCall("t1", {"v": 1}, "id1"),              # namedtuple
-        ("t2", {"v": 2}, "id2"),                       # bare tuple
+        ToolCall("t1", {"v": 1}, "id1"),  # namedtuple
+        ("t2", {"v": 2}, "id2"),  # bare tuple
         {"name": "t3", "args": {"v": 3}, "task_id": "id3"},  # dict
-        _Obj("t4", {"v": 4}, "id4"),                   # generic object
+        _Obj("t4", {"v": 4}, "id4"),  # generic object
     ]
     results = asyncio.run(reg.partition_dispatch(calls, session_id="s"))
     payloads = [json.loads(r["result"]) for r in results]
@@ -244,9 +258,13 @@ def test_partition_unsafe_failure_does_not_block_remaining_unsafe(
     def _boom(args: dict[str, Any], task_id: str) -> str:
         raise RuntimeError("intentional")
 
-    reg.register("ok_w", "test", _schema("ok_w"), _make_handler(name="ok_w"), concurrency_safe=False)
+    reg.register(
+        "ok_w", "test", _schema("ok_w"), _make_handler(name="ok_w"), concurrency_safe=False
+    )
     reg.register("boom_w", "test", _schema("boom_w"), _boom, concurrency_safe=False)
-    reg.register("after_w", "test", _schema("after_w"), _make_handler(name="after_w"), concurrency_safe=False)
+    reg.register(
+        "after_w", "test", _schema("after_w"), _make_handler(name="after_w"), concurrency_safe=False
+    )
 
     calls = [
         ToolCall("ok_w", {}, ""),
@@ -283,8 +301,14 @@ def test_real_write_tools_marked_unsafe() -> None:
         "memory_write",
         "memory_forget",
         # Optional / env-gated tools — checked only if present:
-        "excel_create", "ppt_create", "doc_create", "doc_edit",
-        "file_organize", "write_file", "edit_file", "run_shell",
+        "excel_create",
+        "ppt_create",
+        "doc_create",
+        "doc_edit",
+        "file_organize",
+        "write_file",
+        "edit_file",
+        "run_shell",
         "desktop_create_file",
     ]
     checked = 0
@@ -299,6 +323,5 @@ def test_real_write_tools_marked_unsafe() -> None:
     # Hard lower bound: at least core writes must always be present.
     # file_write / memory_write / memory_forget are unconditional.
     assert checked >= 3, (
-        f"expected ≥3 known write tools in registry, only checked {checked} "
-        f"({expected_unsafe!r})"
+        f"expected ≥3 known write tools in registry, only checked {checked} ({expected_unsafe!r})"
     )

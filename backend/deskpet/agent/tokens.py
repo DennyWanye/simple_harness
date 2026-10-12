@@ -15,6 +15,7 @@
 故:**启发式做可靠基线(零依赖/离线/确定性/防爆窗)**,tiktoken 作**可选精度增强**——
 仅当显式 ``DESKPET_TIKTOKEN=1`` 且 tiktoken 装好 + BPE 可加载时启用,任何失败静默回落启发式。
 """
+
 from __future__ import annotations
 
 import os
@@ -24,7 +25,7 @@ from typing import Any
 # CJK 字符(汉字/假名/全角符号)在主流 BPE 里 ≈1 token/字,而裸 char/4 会低估 ~4 倍。
 _CJK_RE = re.compile(r"[　-ヿ㐀-䶿一-鿿豈-﫿＀-￯]")
 
-_PER_MSG_OVERHEAD = 4   # role tag + wire 分隔符的每条消息开销
+_PER_MSG_OVERHEAD = 4  # role tag + wire 分隔符的每条消息开销
 
 # ── 可选 tiktoken(默认关) ────────────────────────────────────────────
 _TIKTOKEN_ENC: Any = None
@@ -42,6 +43,7 @@ def _tiktoken_encoder() -> Any:
         return None
     try:
         import tiktoken  # type: ignore
+
         _TIKTOKEN_ENC = tiktoken.get_encoding("o200k_base")  # gpt-4o/5 系
     except Exception:  # noqa: BLE001 — 没装/BPE 下不动(中国被墙)→ 回落启发式
         _TIKTOKEN_ENC = None
@@ -91,8 +93,13 @@ def _msg_text_chars(m: dict[str, Any]) -> int:
             args = tc.get("args") or tc.get("arguments")
             if args is not None:
                 chars += _weighted_chars(args if isinstance(args, str) else str(args))
-            chars += len(str(tc.get("name") or tc.get("function", {}).get("name", "")
-                            if isinstance(tc.get("function"), dict) else tc.get("name") or ""))
+            chars += len(
+                str(
+                    tc.get("name") or tc.get("function", {}).get("name", "")
+                    if isinstance(tc.get("function"), dict)
+                    else tc.get("name") or ""
+                )
+            )
     return chars
 
 

@@ -29,7 +29,9 @@ class Counter:
 
 def test_the_slot_count_is_capacity_not_the_frozen_request_identity():
     one = ProviderBudgetGuard(_Commit(), owner="o", estimator=Counter(1), max_slots=1)
-    two = ProviderBudgetGuard(_Commit(), owner="o", estimator=Counter(1), max_slots=2, profile_slots={"default": 2})
+    two = ProviderBudgetGuard(
+        _Commit(), owner="o", estimator=Counter(1), max_slots=2, profile_slots={"default": 2}
+    )
     assert one.fingerprint == two.fingerprint and two.accepts(one.fingerprint)
     # v4 accounts tokens only; it is the one identity accepted (no earlier version is)
     assert two.fingerprint.startswith("provider-budget-admission-v4:")

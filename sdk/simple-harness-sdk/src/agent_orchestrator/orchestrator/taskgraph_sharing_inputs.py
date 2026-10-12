@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 """Bind shared work to its real frozen DATA versions before offering it to compile."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -14,8 +15,9 @@ from ..storage.htn_store import HtnStore
 from ..storage.taskgraph_attempt_inputs import TaskGraphAttemptInputStore
 
 
-def read_shared_inputs(reader: Any, local: Any, entry: SharedGoalEntry,
-                       acceptance: Any | None) -> SharedInputProof | None:
+def read_shared_inputs(
+    reader: Any, local: Any, entry: SharedGoalEntry, acceptance: Any | None
+) -> SharedInputProof | None:
     """None means known ineligible for sharing; missing original rows raise.
 
     Grounding only knows the prospective method's DATA declaration. This reader
@@ -33,17 +35,24 @@ def read_shared_inputs(reader: Any, local: Any, entry: SharedGoalEntry,
             raise SourceUnavailable("taskgraph_shared_acceptance_manifest_changed")
         frozen.append((str(acceptance.acceptance_id), decode_frozen_manifest(raw)))
     else:
-        attempts = [item for item in store.list_attempts(str(entry.task_id))
-                    if item.status not in TERMINAL_ATTEMPT]
+        attempts = [
+            item
+            for item in store.list_attempts(str(entry.task_id))
+            if item.status not in TERMINAL_ATTEMPT
+        ]
         if not attempts:
             return None
-        inputs = TaskGraphAttemptInputStore(store, revision_reader=reader.sources.history.read_revision)
+        inputs = TaskGraphAttemptInputStore(
+            store, revision_reader=reader.sources.history.read_revision
+        )
         for attempt in attempts:
             origin = inputs.get_attempt_inputs(str(network.mission_id), attempt.id)
-            if (origin.binding.occurrence_id != str(entry.occurrence_id)
-                    or origin.binding.binding_revision != int(binding.contract_revision)
-                    or origin.binding.input_binding_revision != int(binding.input_binding_revision)
-                    or origin.binding.dispatch_generation != int(binding.dispatch_generation)):
+            if (
+                origin.binding.occurrence_id != str(entry.occurrence_id)
+                or origin.binding.binding_revision != int(binding.contract_revision)
+                or origin.binding.input_binding_revision != int(binding.input_binding_revision)
+                or origin.binding.dispatch_generation != int(binding.dispatch_generation)
+            ):
                 return None
             frozen.append((attempt.id, decode_frozen_manifest(origin.manifest)))
     digests = set()
@@ -52,25 +61,37 @@ def read_shared_inputs(reader: Any, local: Any, entry: SharedGoalEntry,
         if manifest.consumer_task_ref != entry.task_id:
             raise SourceUnavailable("taskgraph_shared_input_consumer_changed")
         try:
-            require_current_manifest_use(manifest, network, accepted=local.accepted_outputs.value,
+            require_current_manifest_use(
+                manifest,
+                network,
+                accepted=local.accepted_outputs.value,
                 policy=local.source_input_policy.value,
-                witnesses=local.view.licences.get(str(entry.task_id), {}))
+                witnesses=local.view.licences.get(str(entry.task_id), {}),
+            )
         except ContractError:
             return None  # exact inputs exist but no longer have current use permission
         # Witness renewal changes permission evidence, not the frozen input's
         # source/Acceptance/schema/version identity. Keep the other fields exact.
         # 2026-10-11 第三批：交付绑定也在摘要里——端口相同、交付文件不同的两次尝试不是同一份输入。
         rows = {
-            "bindings": [{key: value for key, value in item.to_json().items()
-                          if key != "witness_id"} for item in manifest.bindings],
-            "deliveries": [{key: value for key, value in item.to_json().items()
-                            if key != "witness_id"} for item in manifest.deliveries],
+            "bindings": [
+                {key: value for key, value in item.to_json().items() if key != "witness_id"}
+                for item in manifest.bindings
+            ],
+            "deliveries": [
+                {key: value for key, value in item.to_json().items() if key != "witness_id"}
+                for item in manifest.deliveries
+            ],
         }
         digests.add(sha256_hex(rows))
         origins.append((identity, sha256_hex(manifest.to_json())))
     if len(digests) != 1:
         return None
-    return SharedInputProof(occurrence_id=str(entry.occurrence_id),
-        contract_revision=int(binding.contract_revision), input_binding_revision=int(binding.input_binding_revision),
-        dispatch_generation=int(binding.dispatch_generation), semantic_inputs_hash=next(iter(digests)),
-        origins=tuple(sorted(origins)))
+    return SharedInputProof(
+        occurrence_id=str(entry.occurrence_id),
+        contract_revision=int(binding.contract_revision),
+        input_binding_revision=int(binding.input_binding_revision),
+        dispatch_generation=int(binding.dispatch_generation),
+        semantic_inputs_hash=next(iter(digests)),
+        origins=tuple(sorted(origins)),
+    )

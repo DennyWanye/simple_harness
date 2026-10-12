@@ -126,9 +126,7 @@ async def test_search_ranks_exact_alias_and_token_matches() -> None:
     assert exact.hits[0].match_kind == "exact"
     assert alias.hits[0].match_kind == "alias"
     assert token.hits[0].match_kind == "token"
-    assert {result.hits[0].capability_id for result in (exact, alias, token)} == {
-        "godot_builder"
-    }
+    assert {result.hits[0].capability_id for result in (exact, alias, token)} == {"godot_builder"}
 
 
 @pytest.mark.asyncio

@@ -57,6 +57,7 @@ Conventions mirrored from the existing tool layer
   falling back to the ``[code_e2e]`` config section, then to the the relay
   defaults. No API key is ever hardcoded.
 """
+
 from __future__ import annotations
 
 import importlib.util
@@ -170,9 +171,7 @@ def _user_data_dir() -> Path:
     override = os.environ.get("DESKPET_USER_DATA_DIR")
     if override:
         return Path(override)
-    return Path(
-        platformdirs.user_data_dir(_APP_NAME, appauthor=False, roaming=True)
-    )
+    return Path(platformdirs.user_data_dir(_APP_NAME, appauthor=False, roaming=True))
 
 
 def _resolve_creds() -> dict[str, str]:
@@ -217,11 +216,7 @@ def _resolve_creds() -> dict[str, str]:
         logger.warning("browser_use: llm_runtime.json read failed: %s", exc)
 
     if not api_key:
-        api_key = (
-            os.environ.get("DESKPET_CLOUD_API_KEY")
-            or os.environ.get("OPENAI_API_KEY")
-            or ""
-        )
+        api_key = os.environ.get("DESKPET_CLOUD_API_KEY") or os.environ.get("OPENAI_API_KEY") or ""
 
     return {"base_url": base_url, "model": model, "api_key": api_key}
 
@@ -328,8 +323,7 @@ def _prune_old_jobs() -> None:
         stale = [
             jid
             for jid, s in _jobs.items()
-            if s.get("status") in {"done", "error"}
-            and now - s.get("updated_at", now) > _JOB_TTL_S
+            if s.get("status") in {"done", "error"} and now - s.get("updated_at", now) > _JOB_TTL_S
         ]
         for jid in stale:
             _jobs.pop(jid, None)
@@ -357,9 +351,7 @@ def _build_task_prompt(task: str, start_url: str, allow_external: bool) -> str:
         else "You are an automated END-TO-END TEST agent."
     )
     where = (
-        f" Start by opening {start_url}."
-        if start_url
-        else " Open the local dev server yourself."
+        f" Start by opening {start_url}." if start_url else " Open the local dev server yourself."
     )
     return f"{guard}{where}\n\nTask: {task}"
 
@@ -412,9 +404,7 @@ def _run_browser_job(
         agent = Agent(task=prompt, llm=llm, max_actions_per_step=4)
 
         async def _drive() -> Any:
-            return await asyncio.wait_for(
-                agent.run(max_steps=_MAX_STEPS), timeout=timeout_s
-            )
+            return await asyncio.wait_for(agent.run(max_steps=_MAX_STEPS), timeout=timeout_s)
 
         result = asyncio.run(_drive())
 
@@ -470,10 +460,7 @@ _SCHEMA: dict[str, Any] = {
             },
             "task": {
                 "type": "string",
-                "description": (
-                    "Natural-language E2E instruction. Required for "
-                    "action='start'."
-                ),
+                "description": ("Natural-language E2E instruction. Required for action='start'."),
             },
             "start_url": {
                 "type": "string",
@@ -640,8 +627,7 @@ def _handle_run_browser_task(args: dict[str, Any], task_id: str) -> str:
             "status": "running",
             "job_id": job_id,
             "hint": (
-                "Long-running. Poll with "
-                f"run_browser_task(action='result', job_id='{job_id}')."
+                f"Long-running. Poll with run_browser_task(action='result', job_id='{job_id}')."
             ),
         },
         ensure_ascii=False,
@@ -692,8 +678,12 @@ def _browser_task_resources(
 # other capability; there is no Code-mode-only registration path.
 def register_static_tools(registry) -> None:
     registry.register(
-        "run_browser_task", "e2e", _SCHEMA, _handle_run_browser_task,
-        permission_category="network", dangerous=True,
+        "run_browser_task",
+        "e2e",
+        _SCHEMA,
+        _handle_run_browser_task,
+        permission_category="network",
+        dangerous=True,
         visible_when=_is_catalog_visible,
         visibility_scope="global",
         resource_scope_resolver=_browser_task_resources,

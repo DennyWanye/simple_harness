@@ -23,6 +23,7 @@ def required_text(value: Any, name: str) -> str:
         raise ContractError(f"{name} must be non-empty text")
     return value
 
+
 _CONTRACT_TEXT = ("task_id", "kind", "goal", "rationale")
 _CONTRACT_LIST = ("success_criteria", "verification_policy", "outputs")
 

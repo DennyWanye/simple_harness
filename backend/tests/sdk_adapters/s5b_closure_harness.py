@@ -79,7 +79,9 @@ class Env(SimpleNamespace):
     pass
 
 
-async def bound_run(tmp_path: Path, run_id: str, *, owner: str = "owner-1", claim_key: str = "claim-1") -> Env:
+async def bound_run(
+    tmp_path: Path, run_id: str, *, owner: str = "owner-1", claim_key: str = "claim-1"
+) -> Env:
     """One foreground Run bound to SCOPE (real queue + real state.db)."""
 
     queue_db, primary_id, clock = await fq._ready(tmp_path / "queue")
@@ -87,40 +89,73 @@ async def bound_run(tmp_path: Path, run_id: str, *, owner: str = "owner-1", clai
     await fq._enqueue(store, primary_id, 1)
     admission = await fq._claim_and_bind(store, owner=owner, claim_key=claim_key, sdk_run_id=run_id)
     await store.record_sdk_started(
-        host_run_id=admission.host_run_id, sdk_run_id=run_id, owner_id=admission.owner_id,
-        generation=admission.generation, sdk_event_id=f"sdk-start:{run_id}",
+        host_run_id=admission.host_run_id,
+        sdk_run_id=run_id,
+        owner_id=admission.owner_id,
+        generation=admission.generation,
+        sdk_event_id=f"sdk-start:{run_id}",
         idempotency_key=f"sdk-start:{run_id}",
     )
     return Env(
-        db_path=queue_db, store=store, clock=clock, admission=admission, run_id=run_id,
-        primary_id=primary_id, ingress=ExecutionEvidenceIngress(queue_db),
+        db_path=queue_db,
+        store=store,
+        clock=clock,
+        admission=admission,
+        run_id=run_id,
+        primary_id=primary_id,
+        ingress=ExecutionEvidenceIngress(queue_db),
     )
 
 
-async def next_run(env: Env, run_id: str, *, owner: str = "owner-1", claim_key: str = "claim-2", index: int = 2) -> Env:
+async def next_run(
+    env: Env, run_id: str, *, owner: str = "owner-1", claim_key: str = "claim-2", index: int = 2
+) -> Env:
     """Enqueue + claim + bind a second Run on the same SCOPE after the first settled."""
 
     await fq._enqueue(env.store, env.primary_id, index)
-    admission = await fq._claim_and_bind(env.store, owner=owner, claim_key=claim_key, sdk_run_id=run_id)
+    admission = await fq._claim_and_bind(
+        env.store, owner=owner, claim_key=claim_key, sdk_run_id=run_id
+    )
     await env.store.record_sdk_started(
-        host_run_id=admission.host_run_id, sdk_run_id=run_id, owner_id=admission.owner_id,
-        generation=admission.generation, sdk_event_id=f"sdk-start:{run_id}",
+        host_run_id=admission.host_run_id,
+        sdk_run_id=run_id,
+        owner_id=admission.owner_id,
+        generation=admission.generation,
+        sdk_event_id=f"sdk-start:{run_id}",
         idempotency_key=f"sdk-start:{run_id}",
     )
     return Env(
-        db_path=env.db_path, store=env.store, clock=env.clock, admission=admission, run_id=run_id,
-        primary_id=env.primary_id, ingress=env.ingress,
+        db_path=env.db_path,
+        store=env.store,
+        clock=env.clock,
+        admission=admission,
+        run_id=run_id,
+        primary_id=env.primary_id,
+        ingress=env.ingress,
     )
 
 
-def write_fact(run_id: str, effect_id: str, *, path: str = "a.txt", state: str = "succeeded") -> ToolInvocationFact:
+def write_fact(
+    run_id: str, effect_id: str, *, path: str = "a.txt", state: str = "succeeded"
+) -> ToolInvocationFact:
     return ToolInvocationFact(
-        run_id=run_id, effect_id=effect_id, call_id=f"call:{effect_id}", tool_name="write_file",
-        effect_state=state, outcome=state, error_code=None,
+        run_id=run_id,
+        effect_id=effect_id,
+        call_id=f"call:{effect_id}",
+        tool_name="write_file",
+        effect_state=state,
+        outcome=state,
+        error_code=None,
         objective=ObjectiveEventSpec(
             event_kind="host.file",
-            payload={"tool_name": "write_file", "effect_id": effect_id, "call_id": f"call:{effect_id}",
-                     "outcome": state, "error_code": None, "targets": [path]},
+            payload={
+                "tool_name": "write_file",
+                "effect_id": effect_id,
+                "call_id": f"call:{effect_id}",
+                "outcome": state,
+                "error_code": None,
+                "targets": [path],
+            },
         ),
     )
 
@@ -128,7 +163,9 @@ def write_fact(run_id: str, effect_id: str, *, path: str = "a.txt", state: str =
 async def material_write(env: Env, effect_id: str, *, path: str = "a.txt") -> None:
     """One settled write_file → host.file + evidence 行 + harness.tool_invocation（material）。"""
 
-    await env.ingress.commit_fact(task_scope_id=SCOPE, subject=SUBJECT, fact=write_fact(env.run_id, effect_id, path=path))
+    await env.ingress.commit_fact(
+        task_scope_id=SCOPE, subject=SUBJECT, fact=write_fact(env.run_id, effect_id, path=path)
+    )
 
 
 def scope_evidence_ids(db_path: Path, scope: str = SCOPE) -> list[str]:
@@ -144,7 +181,9 @@ def scope_evidence_ids(db_path: Path, scope: str = SCOPE) -> list[str]:
 
 def head(db_path: Path, scope: str = SCOPE) -> tuple[int, int]:
     [(revision, watermark)] = rows(
-        db_path, "SELECT current_revision,event_watermark FROM task_scope_heads WHERE task_scope_id=?", scope
+        db_path,
+        "SELECT current_revision,event_watermark FROM task_scope_heads WHERE task_scope_id=?",
+        scope,
     )
     return int(revision), int(watermark)
 
@@ -189,7 +228,9 @@ def plain_answer(text: str = "no tool call") -> ProviderResponse:
     )
 
 
-def mutate_arguments(evidence_ids: list[str], *, base_revision: int, idempotency_key: str = "closure-1") -> dict[str, Any]:
+def mutate_arguments(
+    evidence_ids: list[str], *, base_revision: int, idempotency_key: str = "closure-1"
+) -> dict[str, Any]:
     return {
         "outcome": "mutate",
         "base_revision": base_revision,
@@ -207,7 +248,13 @@ def mutate_arguments(evidence_ids: list[str], *, base_revision: int, idempotency
     }
 
 
-def no_mutation_arguments(evidence_ids: list[str], *, base_revision: int, idempotency_key: str = "closure-nm", closure_reason: str | None = "model_no_change") -> dict[str, Any]:
+def no_mutation_arguments(
+    evidence_ids: list[str],
+    *,
+    base_revision: int,
+    idempotency_key: str = "closure-nm",
+    closure_reason: str | None = "model_no_change",
+) -> dict[str, Any]:
     arguments: dict[str, Any] = {
         "outcome": "no_mutation",
         "base_revision": base_revision,
@@ -225,7 +272,9 @@ class FakeAdapter:
     def __init__(self, script: list[Any]) -> None:
         self.script = list(script)
         self.calls: list[Any] = []
-        self.target = SimpleNamespace(provider_id="provider-1", model="model-1", endpoint_identity="e" * 64)
+        self.target = SimpleNamespace(
+            provider_id="provider-1", model="model-1", endpoint_identity="e" * 64
+        )
 
     async def invoke(self, request, *, cancel):  # type: ignore[no-untyped-def]
         self.calls.append(request)
@@ -242,8 +291,15 @@ class FakeAdapter:
 class FakeRunFacts:
     """SDK runtime stack stand-in: terminal evidence + reserved facts + closure run facts."""
 
-    def __init__(self, run_id: str, *, state: str = "completed", last_answer: str | None = LAST_ANSWER,
-                 binding: dict[str, Any] | None = BINDING_RECORD, facts: dict[str, object] | None = None) -> None:
+    def __init__(
+        self,
+        run_id: str,
+        *,
+        state: str = "completed",
+        last_answer: str | None = LAST_ANSWER,
+        binding: dict[str, Any] | None = BINDING_RECORD,
+        facts: dict[str, object] | None = None,
+    ) -> None:
         self.run_id = run_id
         self.state = state
         self.last_answer = last_answer
@@ -252,8 +308,12 @@ class FakeRunFacts:
 
     def read_run_terminal_evidence(self, r: str):  # type: ignore[no-untyped-def]
         return SimpleNamespace(
-            run_id=r, state=self.state, event_id=f"sdk-terminal:{r}", event_hash="7" * 64,
-            occurred_at=9.0, error_code=None,
+            run_id=r,
+            state=self.state,
+            event_id=f"sdk-terminal:{r}",
+            event_hash="7" * 64,
+            occurred_at=9.0,
+            error_code=None,
         )
 
     async def read_reserved_fact(self, reservation):  # type: ignore[no-untyped-def]
@@ -276,48 +336,92 @@ class _SdkIngress:
 
 
 async def observe_terminal(env: Env, facts: FakeRunFacts):  # type: ignore[no-untyped-def]
-    return await SqliteSdkTerminalObserver(str(env.db_path), _SdkIngress(facts.state), facts).observe(
-        host_run_id=env.admission.host_run_id, sdk_run_id=env.run_id, subject=SUBJECT,
-        owner_id=env.admission.owner_id, generation=env.admission.generation,
+    return await SqliteSdkTerminalObserver(
+        str(env.db_path), _SdkIngress(facts.state), facts
+    ).observe(
+        host_run_id=env.admission.host_run_id,
+        sdk_run_id=env.run_id,
+        subject=SUBJECT,
+        owner_id=env.admission.owner_id,
+        generation=env.admission.generation,
     )
 
 
-def build_fallback(env: Env, facts: FakeRunFacts, adapter: FakeAdapter, *, fault=None, owner_id: str | None = None,
-                   generation: int | None = None, clock=None) -> tuple[ClosureFallback, RunBoundInvoker]:
+def build_fallback(
+    env: Env,
+    facts: FakeRunFacts,
+    adapter: FakeAdapter,
+    *,
+    fault=None,
+    owner_id: str | None = None,
+    generation: int | None = None,
+    clock=None,
+) -> tuple[ClosureFallback, RunBoundInvoker]:
     owner = owner_id or env.admission.owner_id
     gen = generation or env.admission.generation
     fence = ForegroundLeaseFence(
-        env.store, host_run_id=env.admission.host_run_id, sdk_run_id=env.run_id, owner_id=owner, generation=gen,
+        env.store,
+        host_run_id=env.admission.host_run_id,
+        sdk_run_id=env.run_id,
+        owner_id=owner,
+        generation=gen,
     )
     invoker = RunBoundInvoker(
-        env.db_path, fence=fence, adapter_factory=lambda record: adapter, clock=clock or env.clock, fault_inject=fault,
+        env.db_path,
+        fence=fence,
+        adapter_factory=lambda record: adapter,
+        clock=clock or env.clock,
+        fault_inject=fault,
     )
     service = TaskScopeUpdateService(
-        env.db_path, tool_context_getter=lambda: None, route_ledger=None, clock=clock or env.clock, fault_inject=fault,
+        env.db_path,
+        tool_context_getter=lambda: None,
+        route_ledger=None,
+        clock=clock or env.clock,
+        fault_inject=fault,
     )
     fallback = ClosureFallback(
-        env.db_path, invoker=invoker, service=service, run_facts_reader=facts, clock=clock or env.clock, fault_inject=fault,
+        env.db_path,
+        invoker=invoker,
+        service=service,
+        run_facts_reader=facts,
+        clock=clock or env.clock,
+        fault_inject=fault,
     )
     return fallback, invoker
 
 
-async def settle(env: Env, fallback: ClosureFallback, *, terminal_state: str = "COMPLETED", owner_id: str | None = None,
-                 generation: int | None = None):  # type: ignore[no-untyped-def]
+async def settle(
+    env: Env,
+    fallback: ClosureFallback,
+    *,
+    terminal_state: str = "COMPLETED",
+    owner_id: str | None = None,
+    generation: int | None = None,
+):  # type: ignore[no-untyped-def]
     from deskpet.execution import RunState
 
     return await fallback.settle(
-        host_run_id=env.admission.host_run_id, sdk_run_id=env.run_id,
-        owner_id=owner_id or env.admission.owner_id, generation=generation or env.admission.generation,
+        host_run_id=env.admission.host_run_id,
+        sdk_run_id=env.run_id,
+        owner_id=owner_id or env.admission.owner_id,
+        generation=generation or env.admission.generation,
         terminal_state=RunState(terminal_state),
     )
 
 
-async def record_terminal(env: Env, observed, *, owner_id: str | None = None, generation: int | None = None):  # type: ignore[no-untyped-def]
+async def record_terminal(
+    env: Env, observed, *, owner_id: str | None = None, generation: int | None = None
+):  # type: ignore[no-untyped-def]
     return await env.store.record_sdk_terminal(
-        host_run_id=env.admission.host_run_id, sdk_run_id=env.run_id,
-        owner_id=owner_id or env.admission.owner_id, generation=generation or env.admission.generation,
-        terminal_state=observed.terminal_state, sdk_event_id=observed.sdk_event_id,
-        sdk_event_hash=observed.sdk_event_hash, idempotency_key=f"runtime-terminal:{env.admission.host_run_id}",
+        host_run_id=env.admission.host_run_id,
+        sdk_run_id=env.run_id,
+        owner_id=owner_id or env.admission.owner_id,
+        generation=generation or env.admission.generation,
+        terminal_state=observed.terminal_state,
+        sdk_event_id=observed.sdk_event_id,
+        sdk_event_hash=observed.sdk_event_hash,
+        idempotency_key=f"runtime-terminal:{env.admission.host_run_id}",
     )
 
 

@@ -5,6 +5,7 @@
 
 **改坏检验**：删掉注入调用 → 装上了也不触发 → 变红。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -43,8 +44,13 @@ def test_goal_conclusion_point_fires(tmp_path):
     async def case():
         async with product_world(tmp_path / "root", LayeredScriptedProvider()) as world:
             world.loop.arm_fault("before_goal_resolution", kind="goal")
-            mission_id = world.create({"goal": "写一份笔记", "idempotency_key": "fault-k06",
-                                       "success_criteria": ["file:notes/a.md"]})["mission_id"]
+            mission_id = world.create(
+                {
+                    "goal": "写一份笔记",
+                    "idempotency_key": "fault-k06",
+                    "success_criteria": ["file:notes/a.md"],
+                }
+            )["mission_id"]
             await _drive(world, "before_goal_resolution:goal")
             assert "before_goal_resolution:goal" in world.store.fired
 
@@ -58,19 +64,31 @@ def test_operation_points_fire(tmp_path, point):
     async def case():
         published = tmp_path / "published"
         published.mkdir()
-        connector = FilePublishConnector(published, tmp_path / "root" / "connectors" / "file_publish")
+        connector = FilePublishConnector(
+            published, tmp_path / "root" / "connectors" / "file_publish"
+        )
         policy = DeploymentPolicy(enabled_connectors=("file_publish",), max_action_level="L2")
-        async with product_world(tmp_path / "root", LayeredScriptedProvider(),
-                                 connectors={"file_publish": connector}, deployment_policy=policy) as world:
-            mission_id = world.create({"goal": "写一份周报 reports/weekly.md 并发布",
-                                       "success_criteria": ["file:" + TARGET, PUBLISH],
-                                       "idempotency_key": "fault-" + point})["mission_id"]
+        async with product_world(
+            tmp_path / "root",
+            LayeredScriptedProvider(),
+            connectors={"file_publish": connector},
+            deployment_policy=policy,
+        ) as world:
+            mission_id = world.create(
+                {
+                    "goal": "写一份周报 reports/weekly.md 并发布",
+                    "success_criteria": ["file:" + TARGET, PUBLISH],
+                    "idempotency_key": "fault-" + point,
+                }
+            )["mission_id"]
             await world.drain()
             _confirm_completion(world, mission_id)
             approvals: list[dict[str, Any]] = []
             for _ in range(20):
                 await world.drain()
-                approvals = [a for a in world.control.approvals(mission_id) if a.get("state") == "PENDING"]
+                approvals = [
+                    a for a in world.control.approvals(mission_id) if a.get("state") == "PENDING"
+                ]
                 if approvals:
                     break
             world.loop.arm_fault(point, kind="action")

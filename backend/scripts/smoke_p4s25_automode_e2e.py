@@ -10,6 +10,7 @@ Pass criteria:
 - chat_v2_final arrives (LLM response completes)
 - NO permission_request event seen during the run
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -29,13 +30,17 @@ async def smoke(secret: str) -> int:
     print(f"-> connect {url}")
     async with websockets.connect(url, ping_interval=None) as ws:
         # Send a chat that strongly hints at a shell command.
-        await ws.send(json.dumps({
-            "type": "chat_v2",
-            "payload": {
-                "text": "请用 run_shell 工具执行: echo p4s25-automode-test",
-                "session_id": sid,
-            },
-        }))
+        await ws.send(
+            json.dumps(
+                {
+                    "type": "chat_v2",
+                    "payload": {
+                        "text": "请用 run_shell 工具执行: echo p4s25-automode-test",
+                        "session_id": sid,
+                    },
+                }
+            )
+        )
         try:
             for _ in range(200):
                 raw = await asyncio.wait_for(ws.recv(), timeout=180.0)

@@ -68,7 +68,9 @@ def _coverage(
     family: str = "",
 ) -> DimensionCoverage:
     winning = (f"evidence-{dimension_id}",) if status == "covered" else ()
-    passages = winning if winning else (() if status == "not_applicable" else (f"passage-{dimension_id}",))
+    passages = (
+        winning if winning else (() if status == "not_applicable" else (f"passage-{dimension_id}",))
+    )
     return DimensionCoverage(
         dimension_id,
         status,  # type: ignore[arg-type]
@@ -108,11 +110,14 @@ def test_active_duration_projects_monotonic_segment_and_survives_restart() -> No
     segment_start = clock.monotonic
     clock.advance(125.0)
 
-    assert projected_active_seconds(
-        state,
-        segment_started_monotonic=segment_start,
-        now_monotonic=clock.monotonic,
-    ) == 125.0
+    assert (
+        projected_active_seconds(
+            state,
+            segment_started_monotonic=segment_start,
+            now_monotonic=clock.monotonic,
+        )
+        == 125.0
+    )
     checkpointed = checkpoint_active_duration(
         state,
         segment_started_monotonic=segment_start,
@@ -125,18 +130,19 @@ def test_active_duration_projects_monotonic_segment_and_survives_restart() -> No
     assert not any("monotonic" in key for key in payload)
 
     restored = LoopPolicyState.from_json(payload)
-    assert projected_active_seconds(
-        restored,
-        segment_started_monotonic=5.0,
-        now_monotonic=15.0,
-    ) == 135.0
+    assert (
+        projected_active_seconds(
+            restored,
+            segment_started_monotonic=5.0,
+            now_monotonic=15.0,
+        )
+        == 135.0
+    )
 
 
 def test_active_duration_rejects_monotonic_clock_rollback() -> None:
     with pytest.raises(ContractValidationError, match="cannot run backwards"):
-        projected_active_seconds(
-            _initial(), segment_started_monotonic=10.0, now_monotonic=9.0
-        )
+        projected_active_seconds(_initial(), segment_started_monotonic=10.0, now_monotonic=9.0)
 
 
 @pytest.mark.parametrize(
@@ -178,9 +184,7 @@ def test_sc_lease_boundary_and_no_gain_settles() -> None:
 
 def test_lease_uses_fresh_baseline_for_each_extension() -> None:
     first = ProgressSnapshot(0.5, 0, 0.0)
-    state, _ = evaluate_time_gate(
-        replace(_initial(), current_progress=first), active_seconds=300.0
-    )
+    state, _ = evaluate_time_gate(replace(_initial(), current_progress=first), active_seconds=300.0)
     second = ProgressSnapshot(0.5, 1, 0.0)
     state, decision = evaluate_time_gate(
         replace(state, current_progress=second), active_seconds=420.0
@@ -222,12 +226,8 @@ def test_sc_plateau_stops_after_two_consecutive_no_gain_rounds() -> None:
 
 
 def test_measurable_round_resets_plateau_counter() -> None:
-    state = record_progress_round(
-        _initial(), ProgressSnapshot(0.0, 0, 0.0), active_seconds=10.0
-    )
-    state = record_progress_round(
-        state, ProgressSnapshot(0.5, 0, 0.0), active_seconds=20.0
-    )
+    state = record_progress_round(_initial(), ProgressSnapshot(0.0, 0, 0.0), active_seconds=10.0)
+    state = record_progress_round(state, ProgressSnapshot(0.5, 0, 0.0), active_seconds=20.0)
     assert state.control_mode == "running"
     assert state.no_gain_rounds == 0
 
@@ -265,9 +265,12 @@ def test_sc_now_enters_idempotent_30_second_convergence() -> None:
     assert decision.reason == "generate_now_settling"
     assert decision.start_new_upstream is False
     assert decision.allow_inflight_completion is True
-    assert request_generate_now(
-        state, action_id="action-now", idempotency_key="key-now", active_seconds=130.0
-    ) is state
+    assert (
+        request_generate_now(
+            state, action_id="action-now", idempotency_key="key-now", active_seconds=130.0
+        )
+        is state
+    )
     with pytest.raises(ContractValidationError, match="already exists"):
         request_generate_now(
             state, action_id="action-other", idempotency_key="key-other", active_seconds=130.0
@@ -297,9 +300,12 @@ def test_cancel_disables_even_inflight_completion_and_is_idempotent() -> None:
     assert decision.start_new_upstream is False
     assert decision.allow_inflight_completion is False
     assert decision.checkpoint_required is True
-    assert request_cancel(
-        state, action_id="action-cancel", idempotency_key="key-cancel", active_seconds=200.0
-    ) is state
+    assert (
+        request_cancel(
+            state, action_id="action-cancel", idempotency_key="key-cancel", active_seconds=200.0
+        )
+        is state
+    )
 
 
 def test_gap_work_only_targets_partial_or_uncovered_and_deduplicates() -> None:
@@ -318,9 +324,7 @@ def test_gap_work_only_targets_partial_or_uncovered_and_deduplicates() -> None:
         GapWorkCandidate("missing-new", "missing", "fp-3", "family-3"),
         GapWorkCandidate("na-work", "na", "fp-na"),
     )
-    selected = select_gap_work(
-        coverages, candidates, executed_fingerprints=("FP-OLD",)
-    )
+    selected = select_gap_work(coverages, candidates, executed_fingerprints=("FP-OLD",))
     assert [item.item_id for item in selected] == ["partial-1", "missing-new"]
 
 
@@ -347,9 +351,7 @@ def test_query_strategy_is_claimed_once_per_durable_operation() -> None:
         claim_query_strategy(restored, operation_id="operation-2")
 
     child, accepted = claim_query_strategy(
-        initial_loop_state(
-            "operation-2", wall_clock_anchor=VirtualClock().wall_iso
-        ),
+        initial_loop_state("operation-2", wall_clock_anchor=VirtualClock().wall_iso),
         operation_id="operation-2",
     )
     assert accepted is True
@@ -368,13 +370,9 @@ def test_continue_creates_at_most_one_distinct_child_operation() -> None:
     assert duplicate.accepted is False
     assert duplicate.child_operation_id == "child-1"
     with pytest.raises(ContractValidationError, match="state operation_id"):
-        claim_continue_child(
-            restored, parent_operation_id="parent-2", child_operation_id="child-1"
-        )
+        claim_continue_child(restored, parent_operation_id="parent-2", child_operation_id="child-1")
     with pytest.raises(ContractValidationError, match="state operation_id"):
-        claim_continue_child(
-            restored, parent_operation_id="same", child_operation_id="same"
-        )
+        claim_continue_child(restored, parent_operation_id="same", child_operation_id="same")
 
 
 def test_restored_state_rejects_foreign_operation_claims() -> None:

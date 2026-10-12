@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 """TDD — picker_tools.py (office_pick_file native dialog)."""
+
 from __future__ import annotations
 
 import subprocess

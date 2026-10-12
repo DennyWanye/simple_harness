@@ -47,11 +47,13 @@ class PlanningLanePolicy:
 
     @property
     def policy_hash(self) -> str:
-        return _hash({
-            "policy_version": self.policy_version,
-            "allowed_decisions": list(self.allowed_decisions),
-            "ttl_ms": self.ttl_ms,
-        })
+        return _hash(
+            {
+                "policy_version": self.policy_version,
+                "allowed_decisions": list(self.allowed_decisions),
+                "ttl_ms": self.ttl_ms,
+            }
+        )
 
 
 def planning_policy_for_mission(store: Any, mission_id: str) -> PlanningLanePolicy:
@@ -93,15 +95,23 @@ class PlanningAuthorizationSnapshot:
 
     def to_json(self) -> dict[str, Any]:
         return {
-            "request_id": self.request_id, "mission_id": self.mission_id,
-            "tenant_id": self.tenant_id, "scope_id": self.scope_id,
-            "planner_principal_id": self.planner_principal_id, "grant_id": self.grant_id,
-            "grant_revision": self.grant_revision, "grant_hash": self.grant_hash,
-            "issuer_id": self.issuer_id, "issuer_command_id": self.issuer_command_id,
+            "request_id": self.request_id,
+            "mission_id": self.mission_id,
+            "tenant_id": self.tenant_id,
+            "scope_id": self.scope_id,
+            "planner_principal_id": self.planner_principal_id,
+            "grant_id": self.grant_id,
+            "grant_revision": self.grant_revision,
+            "grant_hash": self.grant_hash,
+            "issuer_id": self.issuer_id,
+            "issuer_command_id": self.issuer_command_id,
             "issuer_receipt_hash": self.issuer_receipt_hash,
-            "allowed_decisions": list(self.allowed_decisions), "policy_hash": self.policy_hash,
-            "not_before_ms": self.not_before_ms, "expires_at_ms": self.expires_at_ms,
-            "active": self.active, "checked_at_ms": self.checked_at_ms,
+            "allowed_decisions": list(self.allowed_decisions),
+            "policy_hash": self.policy_hash,
+            "not_before_ms": self.not_before_ms,
+            "expires_at_ms": self.expires_at_ms,
+            "active": self.active,
+            "checked_at_ms": self.checked_at_ms,
         }
 
 
@@ -121,6 +131,7 @@ class StorePlanningAuthorityReader:
         if hasattr(self.planning, "get_planning_request"):
             return self.planning.get_planning_request(request_id)
         from ..storage.planning_decision_store import PlanningDecisionStore
+
         return PlanningDecisionStore(self.store).get_planning_request(request_id)
 
     def get_mission(self, mission_id: str) -> Any:
@@ -177,7 +188,8 @@ def _read_planning_authorization(
     binding = read.get_request_binding(request_id)
     if binding is None:
         return SourceUnavailable(
-            "request_authority_binding", "request has no authority binding",
+            "request_authority_binding",
+            "request has no authority binding",
             reason_code="AUTHORIZATION_REQUIRED",
         )
     tenant_id = str(getattr(mission, "tenant_id", ""))
@@ -199,32 +211,41 @@ def _read_planning_authorization(
     grant = read.get_grant(str(binding.get("grant_id")))
     if grant is None:
         return SourceUnavailable("planning_lane_grant", "bound grant lineage is unavailable")
-    if int(grant.get("revision", -1)) != int(
-        binding.get("grant_revision", -2)
-    ) or str(grant.get("grant_hash")) != str(binding.get("grant_hash")):
+    if int(grant.get("revision", -1)) != int(binding.get("grant_revision", -2)) or str(
+        grant.get("grant_hash")
+    ) != str(binding.get("grant_hash")):
         return SourceUnavailable(
             "planning_lane_grant",
             "bound grant revision is no longer current",
             reason_code="REQUEST_BINDING_STALE",
         )
-    if str(grant.get("policy_hash")) != policy.policy_hash or str(
-        binding.get("policy_hash")
-    ) != policy.policy_hash:
+    if (
+        str(grant.get("policy_hash")) != policy.policy_hash
+        or str(binding.get("policy_hash")) != policy.policy_hash
+    ):
         return SourceUnavailable(
             "planning_lane_policy",
             "planning policy identity changed",
             reason_code="REQUEST_BINDING_STALE",
         )
     return PlanningAuthorizationSnapshot(
-        request_id=str(request_id), mission_id=mission_id, tenant_id=tenant_id,
-        scope_id=str(grant["scope_id"]), planner_principal_id=str(grant["planner_principal_id"]),
-        grant_id=str(grant["grant_id"]), grant_revision=int(grant["revision"]),
-        grant_hash=str(grant["grant_hash"]), issuer_id=str(grant["issuer_id"]),
+        request_id=str(request_id),
+        mission_id=mission_id,
+        tenant_id=tenant_id,
+        scope_id=str(grant["scope_id"]),
+        planner_principal_id=str(grant["planner_principal_id"]),
+        grant_id=str(grant["grant_id"]),
+        grant_revision=int(grant["revision"]),
+        grant_hash=str(grant["grant_hash"]),
+        issuer_id=str(grant["issuer_id"]),
         issuer_command_id=str(grant["issuer_command_id"]),
         issuer_receipt_hash=str(grant["issuer_receipt_hash"]),
-        allowed_decisions=tuple(grant["allowed_decisions"]), policy_hash=str(grant["policy_hash"]),
-        not_before_ms=int(grant["not_before_ms"]), expires_at_ms=int(grant["expires_at_ms"]),
-        active=bool(grant["active"]), checked_at_ms=int(now_ms),
+        allowed_decisions=tuple(grant["allowed_decisions"]),
+        policy_hash=str(grant["policy_hash"]),
+        not_before_ms=int(grant["not_before_ms"]),
+        expires_at_ms=int(grant["expires_at_ms"]),
+        active=bool(grant["active"]),
+        checked_at_ms=int(now_ms),
     )
 
 
@@ -246,8 +267,13 @@ def check_planning_authorization(
 
 
 __all__ = (
-    "PLANNING_DECISIONS", "PLANNING_POLICY_VERSION", "PlanningAuthorityReader",
-    "PlanningAuthorizationSnapshot", "PlanningLanePolicy", "SourceUnavailable",
-    "StorePlanningAuthorityReader", "build_planning_authorization",
+    "PLANNING_DECISIONS",
+    "PLANNING_POLICY_VERSION",
+    "PlanningAuthorityReader",
+    "PlanningAuthorizationSnapshot",
+    "PlanningLanePolicy",
+    "SourceUnavailable",
+    "StorePlanningAuthorityReader",
+    "build_planning_authorization",
     "check_planning_authorization",
 )

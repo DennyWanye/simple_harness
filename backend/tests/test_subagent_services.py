@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: BUSL-1.1
 """TG-0.4 — context.py 子代理服务槽注册。"""
+
 from __future__ import annotations
 
 import pytest

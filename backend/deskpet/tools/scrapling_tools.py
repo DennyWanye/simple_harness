@@ -8,6 +8,7 @@ path often returns a blocked page, huge app shell, or no useful text.
 Imports stay inside handlers so a missing optional dependency never
 breaks backend startup.
 """
+
 from __future__ import annotations
 
 import json
@@ -45,6 +46,7 @@ def _browser_headers() -> dict[str, str]:
 def _scrapling_get_html(url: str, *, timeout: float) -> dict[str, Any]:
     """Legacy compatibility facade over the raw Scrapling transport."""
     from deskpet.retrieval.transports.scrapling import ScraplingTransport
+
     return ScraplingTransport().fetch(url, timeout=timeout)
 
 
@@ -63,7 +65,7 @@ def _parse_number(raw: str | None) -> float | None:
 def _extract_investing_last(html: str) -> float | None:
     patterns = (
         r'data-test=["\']instrument-price-last["\'][^>]*>\s*([^<]+)',
-        r'instrument-price-last[^>]*>\s*([^<]+)',
+        r"instrument-price-last[^>]*>\s*([^<]+)",
         r'"last"\s*:\s*"?([0-9][0-9,]*(?:\.[0-9]+)?)',
         r'"lastPrice"\s*:\s*"?([0-9][0-9,]*(?:\.[0-9]+)?)',
     )
@@ -103,16 +105,24 @@ async def _handle_scrapling_fetch(args: dict[str, Any], task_id: str) -> str:
     if not url.startswith(("http://", "https://")):
         return _json({"ok": False, "error": "url must be absolute http(s)"})
     timeout = float(args.get("timeout", 20) or 20)
-    max_chars = int(args.get("max_chars", _MAX_SCRAPLING_CONTENT_CHARS) or _MAX_SCRAPLING_CONTENT_CHARS)
+    max_chars = int(
+        args.get("max_chars", _MAX_SCRAPLING_CONTENT_CHARS) or _MAX_SCRAPLING_CONTENT_CHARS
+    )
     from deskpet.retrieval.contracts import FetchRequest
     from deskpet.retrieval.fetch_extract import FetchExtractError
     from deskpet.retrieval.runtime import get_default_gateway
+
     service = get_default_gateway().fetch_service
     try:
-        fetched = await service.fetch_raw(FetchRequest(
-            url=url, timeout=timeout, extract=False, include_html=True,
-            max_chars=_MAX_SCRAPLING_CONTENT_CHARS,
-        ))
+        fetched = await service.fetch_raw(
+            FetchRequest(
+                url=url,
+                timeout=timeout,
+                extract=False,
+                include_html=True,
+                max_chars=_MAX_SCRAPLING_CONTENT_CHARS,
+            )
+        )
     except FetchExtractError as exc:
         return _json({"ok": False, "error": exc.code, "retriable": exc.retriable})
     html = str(fetched.get("content") or "")
@@ -157,9 +167,12 @@ async def _handle_gold_price_lookup(args: dict[str, Any], task_id: str) -> str:
     timeout = float(args.get("timeout", 20) or 20)
     from deskpet.retrieval.contracts import FetchRequest
     from deskpet.retrieval.runtime import get_default_gateway
+
     service = get_default_gateway().fetch_service
     try:
-        xau_page = await service.fetch_raw(FetchRequest(_INVESTING_XAU_USD, timeout=timeout, extract=False, include_html=True))
+        xau_page = await service.fetch_raw(
+            FetchRequest(_INVESTING_XAU_USD, timeout=timeout, extract=False, include_html=True)
+        )
     except Exception as exc:  # noqa: BLE001
         return _json({"ok": False, "error": str(exc), "source": _INVESTING_XAU_USD})
     xau_usd = _extract_investing_last(str(xau_page.get("content") or ""))
@@ -176,7 +189,9 @@ async def _handle_gold_price_lookup(args: dict[str, Any], task_id: str) -> str:
 
     usd_cny: float | None = None
     try:
-        cny_page = await service.fetch_raw(FetchRequest(_INVESTING_USD_CNY, timeout=timeout, extract=False, include_html=True))
+        cny_page = await service.fetch_raw(
+            FetchRequest(_INVESTING_USD_CNY, timeout=timeout, extract=False, include_html=True)
+        )
         usd_cny = _extract_investing_last(str(cny_page.get("content") or ""))
     except Exception as exc:  # noqa: BLE001
         cny_page = {"error": str(exc)}
@@ -203,12 +218,18 @@ async def _handle_gold_price_lookup(args: dict[str, Any], task_id: str) -> str:
 
 def register_static_tools(registry) -> None:
     registry.register(
-        "scrapling_fetch", "web", _SCRAPLING_FETCH_SCHEMA,
-        _handle_scrapling_fetch, permission_category="network",
+        "scrapling_fetch",
+        "web",
+        _SCRAPLING_FETCH_SCHEMA,
+        _handle_scrapling_fetch,
+        permission_category="network",
         timeout_seconds=60.0,
     )
     registry.register(
-        "gold_price_lookup", "web", _GOLD_PRICE_SCHEMA,
-        _handle_gold_price_lookup, permission_category="network",
+        "gold_price_lookup",
+        "web",
+        _GOLD_PRICE_SCHEMA,
+        _handle_gold_price_lookup,
+        permission_category="network",
         timeout_seconds=60.0,
     )

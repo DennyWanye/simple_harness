@@ -587,8 +587,11 @@ def test_payload_defs_are_complete_and_match_the_codec_required_fields() -> None
         "proposeMethodPayload": ["method_proposal"],
         "readMethodLibraryPayload": ["entries"],
     }
-    optional = {"repairReplaceMethodPayload": ["method_at_fault", "reuse"], "refinePayload": ["reuse"],
-                "repairRefineDeeperPayload": ["reuse"]}
+    optional = {
+        "repairReplaceMethodPayload": ["method_at_fault", "reuse"],
+        "refinePayload": ["reuse"],
+        "repairRefineDeeperPayload": ["reuse"],
+    }
     for name, required in expected.items():
         assert defs[name]["required"] == required, name
         assert sorted(defs[name]["properties"]) == sorted(required + optional.get(name, [])), name
@@ -739,9 +742,7 @@ def test_repair_payload_defs_are_discriminated_per_repair_kind() -> None:
 
 def test_method_instance_refs_are_pinned_to_their_kind() -> None:
     defs = _load_schema()["$defs"]
-    for name, field in (
-        ("repairReplaceMethodPayload", "rejected_method_instance"),
-    ):
+    for name, field in (("repairReplaceMethodPayload", "rejected_method_instance"),):
         node = defs[name]["properties"][field]
         kinds = [
             branch["properties"]["kind"]["const"]

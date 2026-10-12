@@ -17,6 +17,7 @@
 * 没有人裁定、回执也空的"成功"动作：结果审阅不无限推迟，判定已记也不算合法等待，卡死检测具名停下。
 * 收尾行上的状态词必须是 ``BLOCKED_UNKNOWN``、理由 ``EFFECT_UNKNOWN``、点名那项效果（原计划的字面要求）。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -52,9 +53,17 @@ def _quick(monkeypatch):
 # ------------------------------------------------------------------ 四档策略（纯函数）
 def _decide(**overrides: Any) -> dict[str, Any]:
     consumer = object.__new__(AssuranceCloseoutConsumer)  # 只用 _drain_decision，不碰库
-    consumer.store = SimpleNamespace(get_intent=lambda _intent_id: None)  # 开着的调用都不是"等不到的原调用"
-    facts: dict[str, Any] = {"reasons": [], "unknown": [], "open_operations": [], "open_intents": [],
-                             "open_reservations": [], "usage_fully_known": True}
+    consumer.store = SimpleNamespace(
+        get_intent=lambda _intent_id: None
+    )  # 开着的调用都不是"等不到的原调用"
+    facts: dict[str, Any] = {
+        "reasons": [],
+        "unknown": [],
+        "open_operations": [],
+        "open_intents": [],
+        "open_reservations": [],
+        "usage_fully_known": True,
+    }
     facts.update(overrides)
     return consumer._drain_decision("mission-x", **facts)
 
@@ -67,13 +76,16 @@ def test_the_default_success_policy_blocks_on_an_unknown_effect():
     **改坏检验**：去掉 ``_drain_decision`` 里 ``elif unknown`` 这一档 → 效果不明被当成就绪 → 变红。"""
     assert _decide() == {"state": "READY", "reasons": []}
     assert _decide(reasons=["ROOT_RESOLUTION_NOT_ACCEPT"]) == {
-        "state": "NOT_READY", "reasons": ["ROOT_RESOLUTION_NOT_ACCEPT"]}
+        "state": "NOT_READY",
+        "reasons": ["ROOT_RESOLUTION_NOT_ACCEPT"],
+    }
     blocked = _decide(unknown=["publish-weekly"])
     assert (blocked["state"], blocked["reasons"]) == ("BLOCKED_UNKNOWN", ["EFFECT_UNKNOWN"])
     assert "usage_counted_at_upper_bound" not in blocked
     # 效果不明优先于"预留未结 / 用量不明"，不会被按上限结清
-    with_money = _decide(unknown=["publish-weekly"], open_reservations=["m:assurance:k:1"],
-                         usage_fully_known=False)
+    with_money = _decide(
+        unknown=["publish-weekly"], open_reservations=["m:assurance:k:1"], usage_fully_known=False
+    )
     assert (with_money["state"], with_money["reasons"]) == ("BLOCKED_UNKNOWN", ["EFFECT_UNKNOWN"])
     assert "usage_counted_at_upper_bound" not in with_money
     # 依据失效比效果不明更靠前
@@ -96,9 +108,17 @@ def test_a_root_short_only_of_an_unknown_effect_is_blocked_unknown_not_scope_unm
     assert only_unknown(ready, {"publish-weekly": "RECONCILIATION_REQUIRED"})
     assert only_unknown(ready, {"a": "ACCEPTED", "b": "RECONCILIATION_REQUIRED"})
     # 内容没好：范围未满足，不是效果不明
-    assert not only_unknown(SimpleNamespace(content_ready=False), {"publish-weekly": "RECONCILIATION_REQUIRED"})
+    assert not only_unknown(
+        SimpleNamespace(content_ready=False), {"publish-weekly": "RECONCILIATION_REQUIRED"}
+    )
     # 效果在等审阅 / 申请单 / 执行：不是"结果不明"
-    for state in ("AWAITING_OUTCOME_REVIEW", "AWAITING_INTENT", "EXECUTING", "AWAITING_APPROVAL", "SCOPE_STALE"):
+    for state in (
+        "AWAITING_OUTCOME_REVIEW",
+        "AWAITING_INTENT",
+        "EXECUTING",
+        "AWAITING_APPROVAL",
+        "SCOPE_STALE",
+    ):
         assert not only_unknown(ready, {"publish-weekly": state}), state
         assert not only_unknown(ready, {"a": "RECONCILIATION_REQUIRED", "b": state}), state
     # 没有必需效果、或全部已验收：没有不明可言
@@ -114,22 +134,35 @@ def _confirm_completion(world: Any, mission_id: str) -> dict[str, Any]:
     [obligation] = workspace["obligations"]
     milestone = next(m for m in workspace["milestones"] if m["id"] == "CONTENT_HASH_VERIFIED")
     ref = workspace["requirements_ref"]
-    return world.control.approve_operation_completion_spec({
-        "mission_id": mission_id, "command_id": "confirm-publish-completion",
-        "expected_requirements_ref": ref,
-        "proposal": {
-            "schema_version": 1, "mission_id": mission_id,
-            "requirements_ref": {"id": ref["id"], "revision": ref["revision"], "content_hash": ref["content_hash"]},
-            "mode": "REQUIRED_EFFECTS", "content_criterion_ids": content,
-            "effects": [{
-                "effect_key": "publish-weekly", "source_slot_key": "publish-weekly",
-                "obligation_id": obligation["id"], "criterion_ids": actions,
-                "required_milestone": milestone["id"],
-                "milestone_policy_ref": milestone["milestone_policy_ref"],
-                "evidence_policy_ref": milestone["evidence_policy_ref"],
-            }],
-        },
-    })
+    return world.control.approve_operation_completion_spec(
+        {
+            "mission_id": mission_id,
+            "command_id": "confirm-publish-completion",
+            "expected_requirements_ref": ref,
+            "proposal": {
+                "schema_version": 1,
+                "mission_id": mission_id,
+                "requirements_ref": {
+                    "id": ref["id"],
+                    "revision": ref["revision"],
+                    "content_hash": ref["content_hash"],
+                },
+                "mode": "REQUIRED_EFFECTS",
+                "content_criterion_ids": content,
+                "effects": [
+                    {
+                        "effect_key": "publish-weekly",
+                        "source_slot_key": "publish-weekly",
+                        "obligation_id": obligation["id"],
+                        "criterion_ids": actions,
+                        "required_milestone": milestone["id"],
+                        "milestone_policy_ref": milestone["milestone_policy_ref"],
+                        "evidence_policy_ref": milestone["evidence_policy_ref"],
+                    }
+                ],
+            },
+        }
+    )
 
 
 def _lose_the_first_reply(monkeypatch: Any) -> None:
@@ -155,17 +188,28 @@ def _events(world: Any, mission_id: str, kind: str) -> list[Any]:
 
 def _closeout(world: Any, mission_id: str) -> tuple[str | None, list[str], list[str]]:
     row = world.store.connection.execute(
-        "SELECT state, check_body_json FROM assurance_closeouts WHERE mission_id=?", (mission_id,)).fetchone()
+        "SELECT state, check_body_json FROM assurance_closeouts WHERE mission_id=?", (mission_id,)
+    ).fetchone()
     if row is None:
         return None, [], []
     body = decode(row["check_body_json"])
-    return str(row["state"]), list(body.get("reasons") or []), list(body.get("pending_effect_keys") or [])
+    return (
+        str(row["state"]),
+        list(body.get("reasons") or []),
+        list(body.get("pending_effect_keys") or []),
+    )
 
 
-async def _publish_with_an_unknown_result(world: Any, published: Any, key: str) -> tuple[str, dict[str, Any]]:
-    mission_id = world.create({"goal": "写一份周报 reports/weekly.md 并发布",
-                               "success_criteria": ["file:" + TARGET, PUBLISH],
-                               "idempotency_key": key})["mission_id"]
+async def _publish_with_an_unknown_result(
+    world: Any, published: Any, key: str
+) -> tuple[str, dict[str, Any]]:
+    mission_id = world.create(
+        {
+            "goal": "写一份周报 reports/weekly.md 并发布",
+            "success_criteria": ["file:" + TARGET, PUBLISH],
+            "idempotency_key": key,
+        }
+    )["mission_id"]
     await world.drain()
     _confirm_completion(world, mission_id)
     card = None
@@ -190,7 +234,8 @@ async def _publish_with_an_unknown_result(world: Any, published: Any, key: str) 
 def _rounds_and_intents(world: Any, mission_id: str) -> tuple[int, int]:
     """这个任务的尝试数（回合）与系统操作意图数。"""
     attempts = world.store.connection.execute(
-        "SELECT COUNT(*) FROM attempts WHERE mission_id=?", (mission_id,)).fetchone()[0]
+        "SELECT COUNT(*) FROM attempts WHERE mission_id=?", (mission_id,)
+    ).fetchone()[0]
     return int(attempts), len(OperationIntentStore(world.store).for_mission(mission_id))
 
 
@@ -204,7 +249,9 @@ def _assert_held_open(world: Any, mission_id: str) -> None:
     assert not _events(world, mission_id, "AssuranceStatusNotificationRequested")
     assert not [n for n in world.notices if n.get("mission_id") == mission_id]
     # 每一次收尾评估都明说"没就绪"，没有一次把它评成就绪
-    states = {e.payload.get("state") for e in _events(world, mission_id, "AssuranceCloseoutEvaluated")}
+    states = {
+        e.payload.get("state") for e in _events(world, mission_id, "AssuranceCloseoutEvaluated")
+    }
     assert states and not states & {"READY", "FINALIZED"}, states
 
 
@@ -221,39 +268,67 @@ def test_an_unknown_publish_result_holds_the_mission_open(tmp_path, monkeypatch)
     async def case():
         published = tmp_path / "published"
         published.mkdir()
-        connector = FilePublishConnector(published, tmp_path / "root" / "connectors" / "file_publish")
+        connector = FilePublishConnector(
+            published, tmp_path / "root" / "connectors" / "file_publish"
+        )
         policy = DeploymentPolicy(enabled_connectors=("file_publish",), max_action_level="L2")
-        async with product_world(tmp_path / "root", LayeredScriptedProvider(), connectors={"file_publish": connector},
-                                 deployment_policy=policy) as world:
-            mission_id, action = await _publish_with_an_unknown_result(world, published, "unknown-holds")
+        async with product_world(
+            tmp_path / "root",
+            LayeredScriptedProvider(),
+            connectors={"file_publish": connector},
+            deployment_policy=policy,
+        ) as world:
+            mission_id, action = await _publish_with_an_unknown_result(
+                world, published, "unknown-holds"
+            )
             before = _rounds_and_intents(world, mission_id)
-            assert before[0] >= 1 and before[1] == 1, before  # 结果不明：只有原来那一份申请单，没有重交
+            assert before[0] >= 1 and before[1] == 1, (
+                before
+            )  # 结果不明：只有原来那一份申请单，没有重交
             for _ in range(5):  # 结果不明期间再空转几轮：一样不完成
                 await world.drain(timeout=5)
             _assert_held_open(world, mission_id)
             # 夜间 N3-22：空转期间不开新回合、不出新意图（效果在途时不判定、不重交）
             assert _rounds_and_intents(world, mission_id) == before
             # 终审开了、根结论成了、判定记了（原计划 §7.2：根结论先于效果收敛）；收尾点名这项效果
-            assert [k for k in world.store.connection.execute(
-                "SELECT review_key FROM assurance_review_bindings WHERE mission_id=?", (mission_id,))
-                if str(k[0]).startswith("assurance-mission-final:")]
+            assert [
+                k
+                for k in world.store.connection.execute(
+                    "SELECT review_key FROM assurance_review_bindings WHERE mission_id=?",
+                    (mission_id,),
+                )
+                if str(k[0]).startswith("assurance-mission-final:")
+            ]
             [resolution] = HtnStore(world.store).list_goal_resolutions(mission_id)
             assert str(resolution.verdict) == "ACCEPT" and str(resolution.validity) == "CURRENT"
             # 根结论只复述内容判据；效果判据由结果审阅判、收尾核对，不在根结论里
             assert [c.criterion_id for c in resolution.criteria] == ["c-user-1"]
             judgment = recorded_judgment(world.store.get_mission(mission_id))
             assert judgment is not None and judgment["met"] is True
-            [publish] = [j for j in world.store.get_mission(mission_id).final_report["success_criteria"]
-                         if j["criterion"] == PUBLISH]
+            [publish] = [
+                j
+                for j in world.store.get_mission(mission_id).final_report["success_criteria"]
+                if j["criterion"] == PUBLISH
+            ]
             # 判定记的是判定时的动作状态：效果在途（已批准 / 已交接）时不判定，所以只能是结果不明（夜间 N3-22）
             assert publish["judge"] == "assurance_closeout" and publish["met"] is True
             assert publish["action_state"] == "UNKNOWN"
-            assert _closeout(world, mission_id) == ("BLOCKED_UNKNOWN", ["EFFECT_UNKNOWN"], ["publish-weekly"])
+            assert _closeout(world, mission_id) == (
+                "BLOCKED_UNKNOWN",
+                ["EFFECT_UNKNOWN"],
+                ["publish-weekly"],
+            )
             # 终审包只判内容判据，效果状态作为事实在包里
-            [package] = HtnStore(world.store).list_review_packages(mission_id, purpose=ReviewPurpose.MISSION_FINAL)
+            [package] = HtnStore(world.store).list_review_packages(
+                mission_id, purpose=ReviewPurpose.MISSION_FINAL
+            )
             assert [c.criterion_id for c in package.criteria] == ["c-user-1"]
-            [fact] = [dict(row) for row in package.effect_facts]  # 切包时的状态快照（事实，不是判据）
-            assert (fact["effect_key"], fact["complete"]) == ("publish-weekly", False) and fact["state"]
+            [fact] = [
+                dict(row) for row in package.effect_facts
+            ]  # 切包时的状态快照（事实，不是判据）
+            assert (fact["effect_key"], fact["complete"]) == ("publish-weekly", False) and fact[
+                "state"
+            ]
             [still] = world.store.list_actions(mission_id)
             assert still["action_key"] == action["action_key"] and still["state"] == "UNKNOWN"
             assert len(list(published.rglob("*.md"))) == 1  # 没有再发一次
@@ -261,7 +336,9 @@ def test_an_unknown_publish_result_holds_the_mission_open(tmp_path, monkeypatch)
     asyncio.run(case())
 
 
-def test_a_person_ruling_the_unknown_publish_applied_lets_the_mission_complete(tmp_path, monkeypatch):
+def test_a_person_ruling_the_unknown_publish_applied_lets_the_mission_complete(
+    tmp_path, monkeypatch
+):
     """结果核对出来（人去发布目录看过，裁定"已生效"）之后，任务才完成：只完成一次、收尾行定稿、Host 收到
     恰好一条完成通知（通知的事件就是那条"任务完成"）。
 
@@ -275,17 +352,30 @@ def test_a_person_ruling_the_unknown_publish_applied_lets_the_mission_complete(t
     async def case():
         published = tmp_path / "published"
         published.mkdir()
-        connector = FilePublishConnector(published, tmp_path / "root" / "connectors" / "file_publish")
+        connector = FilePublishConnector(
+            published, tmp_path / "root" / "connectors" / "file_publish"
+        )
         policy = DeploymentPolicy(enabled_connectors=("file_publish",), max_action_level="L2")
-        async with product_world(tmp_path / "root", LayeredScriptedProvider(), connectors={"file_publish": connector},
-                                 deployment_policy=policy) as world:
-            mission_id, action = await _publish_with_an_unknown_result(world, published, "unknown-ruled")
+        async with product_world(
+            tmp_path / "root",
+            LayeredScriptedProvider(),
+            connectors={"file_publish": connector},
+            deployment_policy=policy,
+        ) as world:
+            mission_id, action = await _publish_with_an_unknown_result(
+                world, published, "unknown-ruled"
+            )
             _assert_held_open(world, mission_id)
-            ruled = world.control.resolve_unknown(action["action_key"], outcome="succeeded", basis="我去发布目录看过，周报在")
+            ruled = world.control.resolve_unknown(
+                action["action_key"], outcome="succeeded", basis="我去发布目录看过，周报在"
+            )
             assert ruled["state"] == "SUCCEEDED"
             mission = await world.run_until_settled(mission_id, rounds=20)
             deferred = [e.payload for e in _events(world, mission_id, "OperationOutcomeDeferred")]
-            assert str(mission.status.value) == "COMPLETED", (mission.status, deferred[-1:] or mission.final_report)
+            assert str(mission.status.value) == "COMPLETED", (
+                mission.status,
+                deferred[-1:] or mission.final_report,
+            )
             [completed] = _events(world, mission_id, "MissionCompleted")
             assert _closeout(world, mission_id) == ("FINALIZED", [], [])
             notices = [n for n in world.notices if n.get("mission_id") == mission_id]
@@ -297,11 +387,15 @@ def test_a_person_ruling_the_unknown_publish_applied_lets_the_mission_complete(t
             after = settled["receipt"]["after"]
             assert settled["state"] == "SUCCEEDED" and not settled["needs_human"]
             assert (after["kind"], after["override_id"], after["basis"]) == (
-                "human_ruling", override["override_id"], "我去发布目录看过，周报在")
+                "human_ruling",
+                override["override_id"],
+                "我去发布目录看过，周报在",
+            )
             # 结果审阅读到的观察事实就是这份裁定：来源写明是人裁定、没有执行过任何登记检查；验收走同一条路
             [intent] = OperationIntentStore(world.store).for_mission(mission_id)
             [binding] = OperationCompletionStore(world.store).list_outcome_bindings_for_intent(
-                mission_id, intent["intent_id"])
+                mission_id, intent["intent_id"]
+            )
             observation = world.store.get_receipt(binding["document"].source_receipt_refs[0].id)
             facts = observation["facts"]
             assert observation["receipt"] == settled["receipt"]
@@ -309,8 +403,11 @@ def test_a_person_ruling_the_unknown_publish_applied_lets_the_mission_complete(t
             assert facts["ruling"]["override_id"] == override["override_id"]
             [accepted] = _events(world, mission_id, "OperationOutcomeAccepted")
             assert accepted.payload["outcome_binding_id"] == binding["binding_id"]
-            assert not [e for e in _events(world, mission_id, "OperationOutcomeDeferred")
-                        if e.payload.get("reason") == "OP_OUTCOME_SOURCE_UNAVAILABLE"]
+            assert not [
+                e
+                for e in _events(world, mission_id, "OperationOutcomeDeferred")
+                if e.payload.get("reason") == "OP_OUTCOME_SOURCE_UNAVAILABLE"
+            ]
 
     asyncio.run(case())
 
@@ -322,21 +419,28 @@ def _no_change_planner(asked: list[dict[str, Any]]):
 
     def planner(request: Any) -> Any:
         package = package_of(request)
-        mine = [entry for entry in package.get("repair_requests") or ()
-                if entry["request"].get("trigger_source") == "NO_DISPATCHABLE_WORK"]
+        mine = [
+            entry
+            for entry in package.get("repair_requests") or ()
+            if entry["request"].get("trigger_source") == "NO_DISPATCHABLE_WORK"
+        ]
         if not mine:
             return planner_reply(request)
         asked.append(mine[0])
         refs = set(mine[0]["request"]["trigger_refs"])
-        subject = next((s["subject_key"] for s in package["planning_subjects"] if s["task_id"] in refs),
-                       package["planning_subjects"][0]["subject_key"])
+        subject = next(
+            (s["subject_key"] for s in package["planning_subjects"] if s["task_id"] in refs),
+            package["planning_subjects"][0]["subject_key"],
+        )
         return decision(subject, "NO_CHANGE", {"reason": "这件事要用户来定。"}, "不改计划。")
 
     return planner
 
 
 @pytest.mark.replay_audit_exempt("用例直接改动作行（成功却没有回执）造'回执读不出来'的局面")
-def test_a_succeeded_action_without_a_receipt_is_a_named_stop_not_an_endless_deferral(tmp_path, monkeypatch):
+def test_a_succeeded_action_without_a_receipt_is_a_named_stop_not_an_endless_deferral(
+    tmp_path, monkeypatch
+):
     """没有人裁定、回执也空的"成功"动作（写方出错或库被改过）：结果审阅不能每轮 ``OperationOutcomeDeferred``
     "等一等"地无限推迟——读不出回执是具名的来源缺失（``OP_OUTCOME_SOURCE_UNAVAILABLE``），不算合法等待，
     卡死检测接手，具名停下（``no_dispatchable_work``），停机报告里 ``outcome_source_unavailable`` 点名那份申请单；
@@ -350,23 +454,49 @@ def test_a_succeeded_action_without_a_receipt_is_a_named_stop_not_an_endless_def
     async def case():
         published = tmp_path / "published"
         published.mkdir()
-        connector = FilePublishConnector(published, tmp_path / "root" / "connectors" / "file_publish")
+        connector = FilePublishConnector(
+            published, tmp_path / "root" / "connectors" / "file_publish"
+        )
         policy = DeploymentPolicy(enabled_connectors=("file_publish",), max_action_level="L2")
         provider = LayeredScriptedProvider(planner=_no_change_planner(asked))
-        async with product_world(tmp_path / "root", provider, connectors={"file_publish": connector},
-                                 deployment_policy=policy) as world:
-            mission_id, action = await _publish_with_an_unknown_result(world, published, "unknown-no-receipt")
+        async with product_world(
+            tmp_path / "root",
+            provider,
+            connectors={"file_publish": connector},
+            deployment_policy=policy,
+        ) as world:
+            mission_id, action = await _publish_with_an_unknown_result(
+                world, published, "unknown-no-receipt"
+            )
             _assert_held_open(world, mission_id)
             with world.store.transaction():  # 一个出错的写方：成功了，回执却没写
-                world.store.put_action({**world.store.get_action(action["action_key"]),
-                                        "state": "SUCCEEDED", "receipt": None, "needs_human": False})
+                world.store.put_action(
+                    {
+                        **world.store.get_action(action["action_key"]),
+                        "state": "SUCCEEDED",
+                        "receipt": None,
+                        "needs_human": False,
+                    }
+                )
             mission = await world.run_until_settled(mission_id, rounds=40)
-            reasons = {e.payload.get("reason") for e in _events(world, mission_id, "OperationOutcomeDeferred")}
-            assert "OP_OUTCOME_SOURCE_UNAVAILABLE" in reasons and "OP_OUTCOME_PENDING" not in reasons, reasons
-            assert str(mission.status.value) == "FAILED", (mission.status, reasons, mission.final_report)
+            reasons = {
+                e.payload.get("reason")
+                for e in _events(world, mission_id, "OperationOutcomeDeferred")
+            }
+            assert (
+                "OP_OUTCOME_SOURCE_UNAVAILABLE" in reasons and "OP_OUTCOME_PENDING" not in reasons
+            ), reasons
+            assert str(mission.status.value) == "FAILED", (
+                mission.status,
+                reasons,
+                mission.final_report,
+            )
             detail = mission.final_report["detail"]
             [row] = detail["outcome_source_unavailable"]
-            assert (row["reason"], row["effect_key"]) == ("OP_OUTCOME_SOURCE_UNAVAILABLE", "publish-weekly")
+            assert (row["reason"], row["effect_key"]) == (
+                "OP_OUTCOME_SOURCE_UNAVAILABLE",
+                "publish-weekly",
+            )
             # 规划器这次问不成：它那边读操作台账，一个"成功却没有匹配回执"的动作读不出来（planning_operations
             # ``success_without_matching_receipt``），按现有规则"读不了时问不成、照旧判停"——停机报告如实写明没问过。
             assert asked == [] and detail["planner_asked"] is None, (asked, detail)
@@ -389,19 +519,35 @@ def test_the_closeout_row_names_the_unknown_effect_as_blocked_unknown(tmp_path, 
     async def case():
         published = tmp_path / "published"
         published.mkdir()
-        connector = FilePublishConnector(published, tmp_path / "root" / "connectors" / "file_publish")
+        connector = FilePublishConnector(
+            published, tmp_path / "root" / "connectors" / "file_publish"
+        )
         policy = DeploymentPolicy(enabled_connectors=("file_publish",), max_action_level="L2")
-        async with product_world(tmp_path / "root", LayeredScriptedProvider(), connectors={"file_publish": connector},
-                                 deployment_policy=policy) as world:
-            mission_id, _action = await _publish_with_an_unknown_result(world, published, "unknown-named")
+        async with product_world(
+            tmp_path / "root",
+            LayeredScriptedProvider(),
+            connectors={"file_publish": connector},
+            deployment_policy=policy,
+        ) as world:
+            mission_id, _action = await _publish_with_an_unknown_result(
+                world, published, "unknown-named"
+            )
             for _ in range(5):
                 await world.drain(timeout=5)
-            evaluations = [(e.payload.get("state"), e.payload.get("reasons"))
-                           for e in _events(world, mission_id, "AssuranceCloseoutEvaluated")]
+            evaluations = [
+                (e.payload.get("state"), e.payload.get("reasons"))
+                for e in _events(world, mission_id, "AssuranceCloseoutEvaluated")
+            ]
             state, reasons, unknown = _closeout(world, mission_id)
-            assert (state, reasons, unknown) == ("BLOCKED_UNKNOWN", ["EFFECT_UNKNOWN"], ["publish-weekly"]), evaluations
+            assert (state, reasons, unknown) == (
+                "BLOCKED_UNKNOWN",
+                ["EFFECT_UNKNOWN"],
+                ["publish-weekly"],
+            ), evaluations
             assert str(world.store.get_mission(mission_id).status.value) == "ACTIVE"
             assert not _events(world, mission_id, "MissionCompleted")
-            assert "BLOCKED_UNKNOWN" in {s for s, _ in evaluations} and not {s for s, _ in evaluations} & {"READY", "FINALIZED"}
+            assert "BLOCKED_UNKNOWN" in {s for s, _ in evaluations} and not {
+                s for s, _ in evaluations
+            } & {"READY", "FINALIZED"}
 
     asyncio.run(case())

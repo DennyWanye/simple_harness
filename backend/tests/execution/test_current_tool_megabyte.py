@@ -3,6 +3,7 @@
 The controlled tool writes/reads an isolated real file. This is component HTTP
 evidence, not a native test or a claim about the standard write_file output.
 """
+
 import importlib
 import inspect
 import json
@@ -19,7 +20,9 @@ from tests.execution.test_current_tool_pages import (
 # 2026-09-10 删记忆 SDK：4096 档原本靠记忆 SDK 的 64 KiB 内联上限触发 wrap-up；
 # ``inline_evidence_limit()`` 恒为 None 后这一档不再走到那条收尾路径。
 @pytest.mark.parametrize("context_window", [8192, 32768])
-async def test_actual_megabyte_result_pages_without_resending_full_body(tmp_path, monkeypatch, context_window):
+async def test_actual_megabyte_result_pages_without_resending_full_body(
+    tmp_path, monkeypatch, context_window
+):
     module = importlib.import_module("deskpet.tools.os_tools.write_file")
     original_write = module.write_file
     sizes, wire_sizes = [], []
@@ -48,6 +51,7 @@ async def test_actual_megabyte_result_pages_without_resending_full_body(tmp_path
             assert ("λ" * 4096).encode() not in request.content
             result = handler(request)
             return await result if inspect.isawaitable(result) else result
+
         return original_transport(record)
 
     monkeypatch.setattr(httpx, "MockTransport", transport)
@@ -90,7 +94,9 @@ async def test_actual_megabyte_result_pages_without_resending_full_body(tmp_path
     if budget_stop:
         from deskpet.sdk_adapters import context_authority
         from deskpet.sdk_adapters.context_partitions import ContextBudgetExceeded
+
         actual_plan = context_authority._plan_turn_messages
+
         def record_budget(*args, **kwargs):
             # Incident Z: the same seam now sees the wrap-up instead of the
             # raise.  Record both, so a regression back to the fail-closed
@@ -101,14 +107,24 @@ async def test_actual_megabyte_result_pages_without_resending_full_body(tmp_path
                 budget_rejections.append({"code": str(error), "wire_count": len(wire_sizes)})
                 raise
             if facts.get("wrap_up_injected"):
-                budget_rejections.append({"code": "sdk_context_budget_wrap_up",
-                                          "wire_count": len(wire_sizes),
-                                          "open_group_items_dropped":
-                                              facts.get("open_group_items_dropped", 0)})
+                budget_rejections.append(
+                    {
+                        "code": "sdk_context_budget_wrap_up",
+                        "wire_count": len(wire_sizes),
+                        "open_group_items_dropped": facts.get("open_group_items_dropped", 0),
+                    }
+                )
             return messages, facts
+
         monkeypatch.setattr(context_authority, "_plan_turn_messages", record_budget)
-    await run_pages(tmp_path, monkeypatch, mode="allow", provider_context_window=context_window,
-                    write_chunks=chunks, expected_budget_stop=budget_stop)
+    await run_pages(
+        tmp_path,
+        monkeypatch,
+        mode="allow",
+        provider_context_window=context_window,
+        write_chunks=chunks,
+        expected_budget_stop=budget_stop,
+    )
     if budget_stop:
         # Wrapped up before the write batch was ever requested: no megabyte result.
         assert sizes == []
@@ -119,7 +135,9 @@ async def test_actual_megabyte_result_pages_without_resending_full_body(tmp_path
         # main 上第 1 轮那次劝告会把额度用光，第 2 轮只能 raise，整轮丢失；事故
         # ``product-sdk-015ad2fe…`` 就是这么死的（turn 13 劝告 -> turn 19 raise）。
         assert [entry["code"] for entry in budget_rejections] == [
-            "sdk_context_budget_wrap_up", "sdk_context_budget_wrap_up"], budget_rejections
+            "sdk_context_budget_wrap_up",
+            "sdk_context_budget_wrap_up",
+        ], budget_rejections
         assert [entry["wire_count"] for entry in budget_rejections] == [0, 1]
         assert budget_rejections[0]["open_group_items_dropped"] == 0
         assert budget_rejections[1]["open_group_items_dropped"] > 0
@@ -127,10 +145,17 @@ async def test_actual_megabyte_result_pages_without_resending_full_body(tmp_path
         assert len(sizes) == 2 and all(size > 1024 * 1024 for size in sizes)
         assert len(wire_sizes) == 8
     assert max(wire_sizes) < 256 * 1024
-    (tmp_path / "megabyte-metrics.json").write_text(json.dumps({
-        "file_bytes": sizes, "physical_request_bytes": wire_sizes,
-        "provider_context_window": context_window, "native": False,
-        "input_variant": "small_calls" if chunks is not None else "large_calls",
-        "budget_rejections": budget_rejections,
-        "outcome": "safe_budget_refusal" if budget_rejections else "paged_and_completed",
-    }, indent=2))
+    (tmp_path / "megabyte-metrics.json").write_text(
+        json.dumps(
+            {
+                "file_bytes": sizes,
+                "physical_request_bytes": wire_sizes,
+                "provider_context_window": context_window,
+                "native": False,
+                "input_variant": "small_calls" if chunks is not None else "large_calls",
+                "budget_rejections": budget_rejections,
+                "outcome": "safe_budget_refusal" if budget_rejections else "paged_and_completed",
+            },
+            indent=2,
+        )
+    )

@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 """全业务事件重放 v3（HTN 补齐阶段 G）：在产品同形世界里跑完的任务上核"能由事件重建"。"""
+
 from __future__ import annotations
 
 import asyncio
@@ -35,12 +36,17 @@ def _quick(monkeypatch):
 
 
 def _mission(world: Any, key: str, criteria: list[str]) -> str:
-    return world.create({"goal": "写笔记", "idempotency_key": key, "success_criteria": criteria})["mission_id"]
+    return world.create({"goal": "写笔记", "idempotency_key": key, "success_criteria": criteria})[
+        "mission_id"
+    ]
 
 
 def _sources(report: dict[str, Any]) -> dict[str, str]:
-    return {name: item["status"] for name, item in report["tables"].items()
-            if item["rebuild"] == "immutable_source"}
+    return {
+        name: item["status"]
+        for name, item in report["tables"].items()
+        if item["rebuild"] == "immutable_source"
+    }
 
 
 def test_a_completed_mission_rebuilds_its_source_tables(tmp_path):
@@ -58,20 +64,28 @@ def test_a_completed_mission_rebuilds_its_source_tables(tmp_path):
             assert sources and set(sources.values()) == {CONSISTENT}, report
             # 会被改的表由整行变化折叠出来：整个任务一致、没有静默改动（偏差裁决 1）
             assert report["status"] == CONSISTENT and report["silent_changes"] == [], {
-                name: item["problems"][:3] for name, item in report["tables"].items() if item["problems"]}
+                name: item["problems"][:3]
+                for name, item in report["tables"].items()
+                if item["problems"]
+            }
             assert report["tables"]["acceptances"]["rows"] >= 1
-        shutil.copy(tmp_path / "root" / "orchestrator.db", tmp_path / "copy.db")  # closed: WAL folded in
+        shutil.copy(
+            tmp_path / "root" / "orchestrator.db", tmp_path / "copy.db"
+        )  # closed: WAL folded in
         copy = Store.open(tmp_path / "copy.db")
         try:
             copy.connection.execute("PRAGMA foreign_keys = OFF")  # 副本里故意造坏，不经业务路径
             copy.connection.execute("DROP TRIGGER review_records_immutable_delete")
             copy.connection.execute("DROP TRIGGER acceptances_immutable_update")
             [record] = copy.connection.execute(
-                "SELECT rowid FROM review_records WHERE mission_id=? LIMIT 1", (mission_id,)).fetchall()
+                "SELECT rowid FROM review_records WHERE mission_id=? LIMIT 1", (mission_id,)
+            ).fetchall()
             copy.connection.execute("DELETE FROM review_records WHERE rowid=?", (record[0],))
             copy.connection.execute(
                 "UPDATE acceptances SET acceptance_json = acceptance_json || ' ' WHERE rowid ="
-                " (SELECT min(rowid) FROM acceptances WHERE mission_id=?)", (mission_id,))
+                " (SELECT min(rowid) FROM acceptances WHERE mission_id=?)",
+                (mission_id,),
+            )
             tampered = verify_mission(copy, mission_id)
             # 两库对照（裁决 G-7）：原库每条用量回执在执行库里恰好一条、用量一致；副本里把一条
             # 用量多算 1 → 报"不一致"。**改坏检验**（G-24）：已知用量不比数 → 变红。
@@ -79,8 +93,11 @@ def test_a_completed_mission_rebuilds_its_source_tables(tmp_path):
             original_ledgers = verify_execution_ledgers(copy, executions)
             [ref] = copy.connection.execute(
                 "SELECT usage_ref FROM imported_usage WHERE mission_id=? AND unknown=0 LIMIT 1",
-                (mission_id,)).fetchone()
-            copy.connection.execute("UPDATE imported_usage SET input_tokens=input_tokens+1 WHERE usage_ref=?", (ref,))
+                (mission_id,),
+            ).fetchone()
+            copy.connection.execute(
+                "UPDATE imported_usage SET input_tokens=input_tokens+1 WHERE usage_ref=?", (ref,)
+            )
             ledgers = verify_execution_ledgers(copy, executions)
         finally:
             copy.close()
@@ -88,12 +105,15 @@ def test_a_completed_mission_rebuilds_its_source_tables(tmp_path):
         assert any("missing" in item for item in tampered["tables"]["review_records"]["problems"])
         assert tampered["tables"]["acceptances"]["status"] == INCONSISTENT
         assert tampered["status"] == INCONSISTENT
-        assert original_ledgers["status"] == CONSISTENT and original_ledgers["calls"] >= 1, original_ledgers
+        assert original_ledgers["status"] == CONSISTENT and original_ledgers["calls"] >= 1, (
+            original_ledgers
+        )
         assert ledgers["status"] == INCONSISTENT and ledgers["mismatched"] == [ref], ledgers
         # 审计插件读关好的库：原库全库一致、没有不一致的表；改过的副本判不一致
         original = audit_database(tmp_path / "root" / "orchestrator.db")
         assert original["library"] == CONSISTENT and not any(
-            item.endswith(INCONSISTENT) for item in original["tables_not_consistent"]), original
+            item.endswith(INCONSISTENT) for item in original["tables_not_consistent"]
+        ), original
         assert audit_database(tmp_path / "copy.db")["status"] == INCONSISTENT
 
     asyncio.run(case())
@@ -126,7 +146,9 @@ def test_global_change_wakes_only_unfinished_missions(tmp_path):
         provider = LayeredScriptedProvider()
         async with product_world(tmp_path / "root", provider) as world:
             ended = _mission(world, "replay-ended", ["file:a.md"])
-            assert str((await world.run_until_settled(ended, rounds=30)).status.value) == "COMPLETED"
+            assert (
+                str((await world.run_until_settled(ended, rounds=30)).status.value) == "COMPLETED"
+            )
             provider.held.add("worker")
             running = _mission(world, "replay-running", ["file:b.md"])
             for _ in range(6):
@@ -134,12 +156,21 @@ def test_global_change_wakes_only_unfinished_missions(tmp_path):
             assert str(world.store.get_mission(running).status.value) == "ACTIVE"
 
             def changes(mission_id: str) -> int:
-                return len([e for e in world.store.list_events(mission_id)
-                            if e.type == "AssuranceEvidenceChanged" and e.payload.get("scope") == "GLOBAL"])
+                return len(
+                    [
+                        e
+                        for e in world.store.list_events(mission_id)
+                        if e.type == "AssuranceEvidenceChanged"
+                        and e.payload.get("scope") == "GLOBAL"
+                    ]
+                )
 
             def epoch() -> int:
-                return int(world.store.connection.execute(
-                    "SELECT epoch FROM assurance_environment_state WHERE singleton=1").fetchone()[0])
+                return int(
+                    world.store.connection.execute(
+                        "SELECT epoch FROM assurance_environment_state WHERE singleton=1"
+                    ).fetchone()[0]
+                )
 
             before = {ended: changes(ended), running: changes(running)}, epoch()
             htn = HtnStore(world.store)
@@ -148,7 +179,9 @@ def test_global_change_wakes_only_unfinished_missions(tmp_path):
             from agent_orchestrator.storage.assurance_changes import original_source_mutation
 
             with world.store.transaction(), original_source_mutation(world.store, writer="test"):
-                htn.register_method(contract, replace(stored.registration, method_ref=contract.method_ref()))
+                htn.register_method(
+                    contract, replace(stored.registration, method_ref=contract.method_ref())
+                )
             assert changes(ended) == before[0][ended]
             assert changes(running) == before[0][running] + 1
             assert epoch() == before[1] + 1
@@ -168,8 +201,10 @@ def test_immutable_sources_refuse_update_and_delete(tmp_path, table):
             rowid = connection.execute(f"SELECT min(rowid) FROM {table}").fetchone()[0]
             assert rowid is not None
             column = connection.execute(f"PRAGMA table_info({table})").fetchall()[-1][1]
-            for statement in (f"UPDATE {table} SET {column}={column} WHERE rowid=?",
-                              f"DELETE FROM {table} WHERE rowid=?"):
+            for statement in (
+                f"UPDATE {table} SET {column}={column} WHERE rowid=?",
+                f"DELETE FROM {table} WHERE rowid=?",
+            ):
                 with pytest.raises(sqlite3.IntegrityError, match="immutable"):
                     connection.execute(statement, (rowid,))
 
@@ -191,20 +226,30 @@ def test_every_immutable_row_and_receipt_is_named_in_its_own_transaction(tmp_pat
             # 回执账单独核（不靠全库检查用的那份表单）：每条回执恰好被点名一次、哈希对得上
             names: dict[tuple[str, str, str], int] = {}
             for (payload,) in world.store.connection.execute(
-                    "SELECT payload_json FROM events WHERE type='RowsWritten'"):
+                "SELECT payload_json FROM events WHERE type='RowsWritten'"
+            ):
                 for item in json.loads(payload)["named"]:
-                    marker = (item["table"], json.dumps(item["key"], sort_keys=True), item["content_hash"])
+                    marker = (
+                        item["table"],
+                        json.dumps(item["key"], sort_keys=True),
+                        item["content_hash"],
+                    )
                     names[marker] = names.get(marker, 0) + 1
-            receipts = world.store.connection.execute("SELECT rowid, * FROM commit_receipts").fetchall()
+            receipts = world.store.connection.execute(
+                "SELECT rowid, * FROM commit_receipts"
+            ).fetchall()
             assert receipts
             for row in receipts:
                 key, digest = row_identity(world.store.connection, "commit_receipts", row)
-                assert names.get(("commit_receipts", json.dumps(key, sort_keys=True), digest)) == 1, key
+                assert (
+                    names.get(("commit_receipts", json.dumps(key, sort_keys=True), digest)) == 1
+                ), key
 
     asyncio.run(case())
 
 
 # ----------------------------------------------------------------- 整行变化机制（偏差裁决 1）
+
 
 async def _finished(world: Any, key: str) -> str:
     mission_id = _mission(world, key, ["file:a.md"])
@@ -220,16 +265,33 @@ def _touch(world: Any, mission_id: str, sql: str, args: tuple[Any, ...], note: s
     with world.store.transaction() as connection:
         connection.execute(sql, args)
         identity = f"test-touch:{mission_id}:{note}"
-        world.store.append_event(Event(
-            id=identity, type="TestTouched", trace_id=identity, mission_id=mission_id, task_id=None,
-            attempt_id=None, actor_type="system", actor_id="test", payload={"note": note},
-            idempotency_key=identity, created_at=world.store.now))
+        world.store.append_event(
+            Event(
+                id=identity,
+                type="TestTouched",
+                trace_id=identity,
+                mission_id=mission_id,
+                task_id=None,
+                attempt_id=None,
+                actor_type="system",
+                actor_id="test",
+                payload={"note": note},
+                idempotency_key=identity,
+                created_at=world.store.now,
+            )
+        )
 
 
 def _changes(world: Any, mission_id: str, table: str, after_seq: int = 0) -> list[dict[str, Any]]:
-    return [item for (payload,) in world.store.connection.execute(
-        "SELECT payload_json FROM events WHERE type='RowsWritten' AND mission_id=? AND seq>?",
-        (mission_id, after_seq)) for item in json.loads(payload)["changed"] if item["table"] == table]
+    return [
+        item
+        for (payload,) in world.store.connection.execute(
+            "SELECT payload_json FROM events WHERE type='RowsWritten' AND mission_id=? AND seq>?",
+            (mission_id, after_seq),
+        )
+        for item in json.loads(payload)["changed"]
+        if item["table"] == table
+    ]
 
 
 def _last_seq(world: Any) -> int:
@@ -246,18 +308,30 @@ def test_a_row_changed_back_and_forth_is_logged_every_time(tmp_path):
             mission_id = await _finished(world, "rows-back-and-forth")
             mark = _last_seq(world)
             [original] = world.store.connection.execute(
-                "SELECT updated_at FROM missions WHERE mission_id=?", (mission_id,)).fetchone()
+                "SELECT updated_at FROM missions WHERE mission_id=?", (mission_id,)
+            ).fetchone()
             try:
                 for step, value in enumerate((original + 1, original, original + 1, original)):
-                    _touch(world, mission_id, "UPDATE missions SET updated_at=? WHERE mission_id=?",
-                           (value, mission_id), f"flip-{step}")
+                    _touch(
+                        world,
+                        mission_id,
+                        "UPDATE missions SET updated_at=? WHERE mission_id=?",
+                        (value, mission_id),
+                        f"flip-{step}",
+                    )
             except sqlite3.IntegrityError as error:
-                raise AssertionError(f"a repeated change was refused as a duplicate: {error}") from error
+                raise AssertionError(
+                    f"a repeated change was refused as a duplicate: {error}"
+                ) from error
             changes = _changes(world, mission_id, "missions", mark)
             assert len(changes) == 4
-            assert [item["before"] for item in changes[1:]] == [item["after"] for item in changes[:-1]]
+            assert [item["before"] for item in changes[1:]] == [
+                item["after"] for item in changes[:-1]
+            ]
             report = verify_mission(world.store, mission_id)
-            assert report["tables"]["missions"]["status"] == CONSISTENT, report["tables"]["missions"]
+            assert report["tables"]["missions"]["status"] == CONSISTENT, report["tables"][
+                "missions"
+            ]
 
     asyncio.run(case())
 
@@ -271,24 +345,46 @@ def test_rows_inserted_and_removed_in_one_transaction_leave_no_trace(tmp_path):
         async with product_world(tmp_path / "root", LayeredScriptedProvider()) as world:
             mission_id = await _finished(world, "rows-insert-remove")
             mark = _last_seq(world)
-            row = ("probe-approval", "probe", mission_id, "probe-subject", "pending", 1, "{}", 1.0, 1.0)
+            row = (
+                "probe-approval",
+                "probe",
+                mission_id,
+                "probe-subject",
+                "pending",
+                1,
+                "{}",
+                1.0,
+                1.0,
+            )
             insert = "INSERT INTO approvals VALUES (?,?,?,?,?,?,?,?,?)"
             with world.store.transaction() as connection:
                 connection.execute(insert, row)
                 connection.execute("DELETE FROM approvals WHERE request_id='probe-approval'")
                 connection.execute("SAVEPOINT probe")
-                connection.execute("UPDATE missions SET updated_at=updated_at+1 WHERE mission_id=?", (mission_id,))
+                connection.execute(
+                    "UPDATE missions SET updated_at=updated_at+1 WHERE mission_id=?", (mission_id,)
+                )
                 connection.execute("ROLLBACK TO probe")
                 connection.execute("RELEASE probe")
             assert _changes(world, mission_id, "approvals", mark) == []
             assert _changes(world, mission_id, "missions", mark) == []
             _touch(world, mission_id, insert, row, "insert")
-            _touch(world, mission_id, "DELETE FROM approvals WHERE request_id='probe-approval'", (), "delete")
+            _touch(
+                world,
+                mission_id,
+                "DELETE FROM approvals WHERE request_id='probe-approval'",
+                (),
+                "delete",
+            )
             changes = _changes(world, mission_id, "approvals", mark)
             assert [(item["before"] is None, item["after"] is None) for item in changes] == [
-                (True, False), (False, True)]
+                (True, False),
+                (False, True),
+            ]
             report = verify_mission(world.store, mission_id)
-            assert report["tables"]["approvals"]["status"] == CONSISTENT, report["tables"]["approvals"]
+            assert report["tables"]["approvals"]["status"] == CONSISTENT, report["tables"][
+                "approvals"
+            ]
 
     asyncio.run(case())
 
@@ -302,11 +398,21 @@ def test_an_idempotent_replay_adds_no_row_events(tmp_path):
         async with product_world(tmp_path / "root", LayeredScriptedProvider()) as world:
             mission_id = await _finished(world, "rows-idempotent")
             mark = _last_seq(world)
-            again = world.create({"goal": "写笔记", "idempotency_key": "rows-idempotent",
-                                  "success_criteria": ["file:a.md"]})
+            again = world.create(
+                {
+                    "goal": "写笔记",
+                    "idempotency_key": "rows-idempotent",
+                    "success_criteria": ["file:a.md"],
+                }
+            )
             assert again["mission_id"] == mission_id
-            _touch(world, mission_id, "UPDATE missions SET updated_at=updated_at WHERE mission_id=?",
-                   (mission_id,), "no-op")
+            _touch(
+                world,
+                mission_id,
+                "UPDATE missions SET updated_at=updated_at WHERE mission_id=?",
+                (mission_id,),
+                "no-op",
+            )
             assert _changes(world, mission_id, "missions", mark) == []
             assert verify_mission(world.store, mission_id)["status"] == CONSISTENT
 
@@ -323,13 +429,22 @@ def test_an_out_of_band_write_breaks_the_chain(tmp_path):
         async with product_world(tmp_path / "root", LayeredScriptedProvider()) as world:
             mission_id = await _finished(world, "rows-out-of-band")
             outside = sqlite3.connect(tmp_path / "root" / "orchestrator.db")
-            outside.execute("UPDATE missions SET updated_at=updated_at+7 WHERE mission_id=?", (mission_id,))
+            outside.execute(
+                "UPDATE missions SET updated_at=updated_at+7 WHERE mission_id=?", (mission_id,)
+            )
             outside.commit()
             outside.close()
-            _touch(world, mission_id, "UPDATE missions SET updated_at=updated_at+1 WHERE mission_id=?",
-                   (mission_id,), "after-outside")
+            _touch(
+                world,
+                mission_id,
+                "UPDATE missions SET updated_at=updated_at+1 WHERE mission_id=?",
+                (mission_id,),
+                "after-outside",
+            )
             table = verify_mission(world.store, mission_id)["tables"]["missions"]
-            assert table["status"] == INCONSISTENT and any("does not chain" in p for p in table["problems"]), table
+            assert table["status"] == INCONSISTENT and any(
+                "does not chain" in p for p in table["problems"]
+            ), table
 
     asyncio.run(case())
 
@@ -344,13 +459,19 @@ def test_a_silent_change_is_reported(tmp_path):
         async with product_world(tmp_path / "root", LayeredScriptedProvider()) as world:
             mission_id = await _finished(world, "rows-silent")
             with world.store.transaction() as connection:  # 记账表：放行
-                connection.execute("UPDATE budget_accounts SET updated_at=updated_at+1 WHERE mission_id=?",
-                                   (mission_id,))
+                connection.execute(
+                    "UPDATE budget_accounts SET updated_at=updated_at+1 WHERE mission_id=?",
+                    (mission_id,),
+                )
             assert verify_mission(world.store, mission_id)["silent_changes"] == []
             with world.store.transaction() as connection:  # 任务表：不放行
-                connection.execute("UPDATE missions SET updated_at=updated_at+1 WHERE mission_id=?", (mission_id,))
+                connection.execute(
+                    "UPDATE missions SET updated_at=updated_at+1 WHERE mission_id=?", (mission_id,)
+                )
             report = verify_mission(world.store, mission_id)
-            assert report["silent_changes"] and report["tables"]["missions"]["status"] == INCONSISTENT, report
+            assert (
+                report["silent_changes"] and report["tables"]["missions"]["status"] == INCONSISTENT
+            ), report
 
     asyncio.run(case())
 
@@ -365,8 +486,10 @@ def test_bookkeeping_alone_is_not_progress(tmp_path):
             mission_id = await _finished(world, "rows-watermark")
             before = world.loop._durable_watermark()
             with world.store.transaction() as connection:
-                connection.execute("UPDATE budget_accounts SET updated_at=updated_at+1 WHERE mission_id=?",
-                                   (mission_id,))
+                connection.execute(
+                    "UPDATE budget_accounts SET updated_at=updated_at+1 WHERE mission_id=?",
+                    (mission_id,),
+                )
             assert _changes(world, mission_id, "budget_accounts")  # it was logged
             assert world.loop._durable_watermark() == before
 
@@ -390,18 +513,26 @@ def test_rows_are_owned_by_their_declared_mission_while_other_missions_are_live(
             second = _mission(world, "rows-owner-b", ["file:b.md"])
             for _ in range(6):
                 await world.drain(timeout=20)
-            assert {str(world.store.get_mission(m).status.value) for m in (first, second)} == {"ACTIVE"}
+            assert {str(world.store.get_mission(m).status.value) for m in (first, second)} == {
+                "ACTIVE"
+            }
             owners: dict[str, str] = {}
             for mission_id, payload in world.store.connection.execute(
-                    "SELECT mission_id, payload_json FROM events WHERE type='RowsWritten'"):
+                "SELECT mission_id, payload_json FROM events WHERE type='RowsWritten'"
+            ):
                 for item in json.loads(payload)["named"]:
                     if item["table"] == "commit_receipts":
                         owners[item["key"]["commit_id"]] = mission_id
-            mutations = [commit_id for (commit_id,) in world.store.connection.execute(
-                "SELECT commit_id FROM commit_receipts WHERE kind='AssuranceSourceMutation'")]
+            mutations = [
+                commit_id
+                for (commit_id,) in world.store.connection.execute(
+                    "SELECT commit_id FROM commit_receipts WHERE kind='AssuranceSourceMutation'"
+                )
+            ]
             assert mutations
-            assert all(owners[commit_id] in {first, second} for commit_id in mutations), (
-                {commit_id: owners.get(commit_id) for commit_id in mutations})
+            assert all(owners[commit_id] in {first, second} for commit_id in mutations), {
+                commit_id: owners.get(commit_id) for commit_id in mutations
+            }
             for mission_id in (first, second):
                 assert verify_mission(world.store, mission_id)["status"] == CONSISTENT
 
@@ -432,10 +563,16 @@ def test_a_root_review_cut_that_fails_halfway_leaves_no_unclaimed_package(tmp_pa
             mission_id = _mission(world, "rows-root-cut", ["file:a.md"])
             mission = await world.run_until_settled(mission_id, rounds=30)
             assert broke and str(mission.status.value) == "COMPLETED", mission.final_report
-            finals = {str(package.package_id) for package in HtnStore(world.store).list_review_packages(mission_id)
-                      if str(package.purpose) == "MISSION_FINAL"}
-            cuts = {event.payload["package_id"] for event in world.store.list_events(mission_id)
-                    if event.type == root_review.ROOT_REVIEW_CUT}
+            finals = {
+                str(package.package_id)
+                for package in HtnStore(world.store).list_review_packages(mission_id)
+                if str(package.purpose) == "MISSION_FINAL"
+            }
+            cuts = {
+                event.payload["package_id"]
+                for event in world.store.list_events(mission_id)
+                if event.type == root_review.ROOT_REVIEW_CUT
+            }
             assert finals and finals <= cuts, (finals, cuts)
             assert verify_mission(world.store, mission_id)["status"] == CONSISTENT
 
@@ -451,8 +588,13 @@ def test_the_snapshot_event_count_agrees_with_walking_every_event_page(tmp_path)
 
     async def case():
         async with product_world(tmp_path / "root", LayeredScriptedProvider()) as world:
-            mission_id = world.create({"goal": "写 notes.md", "idempotency_key": "count-pages",
-                                       "success_criteria": ["file:notes.md"]})["mission_id"]
+            mission_id = world.create(
+                {
+                    "goal": "写 notes.md",
+                    "idempotency_key": "count-pages",
+                    "success_criteria": ["file:notes.md"],
+                }
+            )["mission_id"]
             await world.run_until_settled(mission_id, rounds=30)
             assert world.store.count_events(mission_id, EVENT_TYPE) > 0  # 真有记账事件可漏
             walked, after = 0, 0

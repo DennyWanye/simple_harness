@@ -87,10 +87,7 @@ async def _fixture(
         "claim": CLAIM_POLICY_V1,
         "quality": QUALITY_POLICY_V1,
     }
-    policy_refs = {
-        key: await _put_json(blobs, seed, value)
-        for key, value in policy_values.items()
-    }
+    policy_refs = {key: await _put_json(blobs, seed, value) for key, value in policy_values.items()}
     requirement_id = str(spec.requirements[0]["requirement_id"])
     fact = AdmittedResearchFactV1.create(
         run_id=run_id,
@@ -161,7 +158,12 @@ async def _fixture(
     )
     assessment_ref = await _put_json(blobs, seed, assessment.to_json())
     refs = {
-        spec_ref, batch_ref, fact_ref, assessment_ref, *policy_refs.values(), *provenance,
+        spec_ref,
+        batch_ref,
+        fact_ref,
+        assessment_ref,
+        *policy_refs.values(),
+        *provenance,
     }
     state = {
         "schema_version": 1,
@@ -184,8 +186,7 @@ async def _fixture(
             "stage": "answer_assessed",
         },
         "blob_refs": [
-            {"id": parse_blob_ref(ref), "sha256": parse_blob_ref(ref)}
-            for ref in sorted(refs)
+            {"id": parse_blob_ref(ref), "sha256": parse_blob_ref(ref)} for ref in sorted(refs)
         ],
         "artifact_refs": [],
         "receipt_refs": [],
@@ -197,7 +198,9 @@ async def _fixture(
 
 
 @pytest.mark.asyncio
-async def test_generic_terminal_handlers_persist_ref_only_exact_snapshot_and_manifest(tmp_path) -> None:
+async def test_generic_terminal_handlers_persist_ref_only_exact_snapshot_and_manifest(
+    tmp_path,
+) -> None:
     state, blobs, spec, assessment = await _fixture(tmp_path)
     run_id = str(state["run_id"])
     for node_id, handler in (
@@ -215,18 +218,23 @@ async def test_generic_terminal_handlers_persist_ref_only_exact_snapshot_and_man
     render = __import__("json").loads(
         (await blobs.get(parse_blob_ref(str(values["render_bundle_ref"])))).decode("utf-8")
     )
-    final_text = (
-        await blobs.get(parse_blob_ref(str(render["final_assistant_ref"])))
-    ).decode("utf-8")
+    final_text = (await blobs.get(parse_blob_ref(str(render["final_assistant_ref"])))).decode(
+        "utf-8"
+    )
     assert final_text == (
         "## Answer\n\n"
         "- year-end national population: 140828 "
-        "[unit=ten_thousand_persons; time=2024; scope=\"China\"; "
+        '[unit=ten_thousand_persons; time=2024; scope="China"; '
         "definition=year-end national population]"
     )
     forbidden_inline = {
-        "claims", "final_assistant", "report_markdown", "research_spec",
-        "answer_result", "integrity_assessment", "integrity_fact_batches",
+        "claims",
+        "final_assistant",
+        "report_markdown",
+        "research_spec",
+        "answer_result",
+        "integrity_assessment",
+        "integrity_fact_batches",
     }
     assert forbidden_inline.isdisjoint(values)
     snapshot_ref = str(values["continuation_snapshot_ref"])
@@ -246,13 +254,12 @@ async def test_generic_terminal_handlers_persist_ref_only_exact_snapshot_and_man
     assert base.pop("snapshot_id") == "rcs_" + base["snapshot_hash"][:24]
     snapshot_hash = base.pop("snapshot_hash")
     from deskpet.workflows.definitions.deep_research_v6_contracts import sha256_json
+
     assert snapshot_hash == sha256_json(base)
 
     manifest_ref = str(values["terminal_manifest_ref"])
     manifest = TerminalDeliveryManifestV1.from_json(
-        __import__("json").loads(
-            (await blobs.get(parse_blob_ref(manifest_ref))).decode("utf-8")
-        )
+        __import__("json").loads((await blobs.get(parse_blob_ref(manifest_ref))).decode("utf-8"))
     )
     assert manifest.manifest_ref == manifest_ref
     assert manifest.value["continuation_snapshot_ref"] == snapshot_ref
@@ -266,9 +273,7 @@ async def test_generic_terminal_handlers_persist_ref_only_exact_snapshot_and_man
     )
     projection = await project_v6_terminal_commit(
         request.to_json(),
-        WorkflowContext(
-            ports={"blob": blobs}, identity=_identity(run_id, "terminal-projector")
-        ),
+        WorkflowContext(ports={"blob": blobs}, identity=_identity(run_id, "terminal-projector")),
     )
     assert projection["manifest_ref"] == manifest_ref
     assert projection["answer_status"] == "completed"
@@ -292,25 +297,16 @@ async def test_zh_exact_terminal_renders_user_facing_statistic_without_internal_
     run_id = str(state["run_id"])
     patch = await render_claims_handler(
         state,
-        WorkflowContext(
-            ports={"blob": blobs}, identity=_identity(run_id, "render_claims")
-        ),
+        WorkflowContext(ports={"blob": blobs}, identity=_identity(run_id, "render_claims")),
     )
     state.update(patch.to_dict())
     render = __import__("json").loads(
-        (
-            await blobs.get(
-                parse_blob_ref(str(state["values"]["render_bundle_ref"]))
-            )
-        ).decode("utf-8")
+        (await blobs.get(parse_blob_ref(str(state["values"]["render_bundle_ref"])))).decode("utf-8")
     )
-    final_text = (
-        await blobs.get(parse_blob_ref(str(render["final_assistant_ref"])))
-    ).decode("utf-8")
-    assert final_text == (
-        "## 结论\n\n"
-        "- 年末总人口：140828 万人（时间：2024年末；范围：全国）"
+    final_text = (await blobs.get(parse_blob_ref(str(render["final_assistant_ref"])))).decode(
+        "utf-8"
     )
+    assert final_text == ("## 结论\n\n- 年末总人口：140828 万人（时间：2024年末；范围：全国）")
     assert all(
         marker not in final_text
         for marker in (
@@ -324,7 +320,9 @@ async def test_zh_exact_terminal_renders_user_facing_statistic_without_internal_
 
 
 @pytest.mark.asyncio
-async def test_persist_manifest_rejects_arbitrary_same_run_blob_in_batch_provenance(tmp_path) -> None:
+async def test_persist_manifest_rejects_arbitrary_same_run_blob_in_batch_provenance(
+    tmp_path,
+) -> None:
     state, blobs, _, _ = await _fixture(tmp_path, extra_provenance=True)
     run_id = str(state["run_id"])
     for node_id, handler in (
@@ -339,27 +337,42 @@ async def test_persist_manifest_rejects_arbitrary_same_run_blob_in_batch_provena
     with pytest.raises(ValueError, match="exact transitive closure"):
         await persist_manifest_handler(
             state,
-            WorkflowContext(
-                ports={"blob": blobs}, identity=_identity(run_id, "persist_manifest")
-            ),
+            WorkflowContext(ports={"blob": blobs}, identity=_identity(run_id, "persist_manifest")),
         )
 
 
 def test_snapshot_builder_is_identity_stable_and_assessment_input_is_hash_bound() -> None:
     class Inputs:
         spec = type("Spec", (), {"spec_hash": "a" * 64})()
-        assessment = type("Assessment", (), {
-            "evidence_head_hash": "b" * 64,
-            "assessment_hash": "c" * 64,
-            "assessment_input_hash": "d" * 64,
-        })()
+        assessment = type(
+            "Assessment",
+            (),
+            {
+                "evidence_head_hash": "b" * 64,
+                "assessment_hash": "c" * 64,
+                "assessment_input_hash": "d" * 64,
+            },
+        )()
         batch_refs = ("sha256:" + "1" * 64,)
         policy_refs = {
             key: "sha256:" + format(index + 2, "064x")
-            for index, key in enumerate(sorted({
-                "compiler", "route", "extraction", "llm_extract", "llm_repair",
-                "llm_inference", "admission", "inference", "assessment", "claim", "quality",
-            }))
+            for index, key in enumerate(
+                sorted(
+                    {
+                        "compiler",
+                        "route",
+                        "extraction",
+                        "llm_extract",
+                        "llm_repair",
+                        "llm_inference",
+                        "admission",
+                        "inference",
+                        "assessment",
+                        "claim",
+                        "quality",
+                    }
+                )
+            )
         }
 
     kwargs = dict(

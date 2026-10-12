@@ -91,11 +91,26 @@ async def test_diagnostics_are_selected_only_redacted_read_only_and_stably_expor
         assert report["replay"]["version"] == "business-replay-v3"
         assert report["replay"]["tables"]["missions"]["rows"] == 1
         assert report["metrics"]["version"] == "metrics-v2"
-        assert report["metrics"].keys() >= {"health", "cost", "human", "verification", "role_mix",
-                                            "search", "knowledge", "outcome"}  # 推后第 3 批 U05
+        assert report["metrics"].keys() >= {
+            "health",
+            "cost",
+            "human",
+            "verification",
+            "role_mix",
+            "search",
+            "knowledge",
+            "outcome",
+        }  # 推后第 3 批 U05
         assert report["metrics"]["verification"].keys() >= {"false_positive_rate", "backlog"}
-        assert set(report["deployment_outcomes"]) == {"missions_ended", "completed", "failed", "cancelled",
-                                                      "success_rate", "tokens_of_ended", "cost_per_success"}
+        assert set(report["deployment_outcomes"]) == {
+            "missions_ended",
+            "completed",
+            "failed",
+            "cancelled",
+            "success_rate",
+            "tokens_of_ended",
+            "cost_per_success",
+        }
         assert set(report["metrics"]["cost"]) == {"tokens_by_role", "tokens_by_profile"}
         assert report["scope"]["selected_only"] is True
         assert foreign["mission_id"] not in rendered
@@ -112,10 +127,17 @@ async def test_diagnostics_are_selected_only_redacted_read_only_and_stably_expor
         duties = report["costs"]["by_duty"]
         expected = view["snapshot"]["budget_by_duty"]
         assert duties and duties[0]["depth"] == 0
-        assert duties == [{**{name: row[name] for name in DUTY_FIELDS},
-                           "steps": [{name: step[name] for name in STEP_FIELDS} for step in row["steps"]]}
-                          for row in expected]  # 逐步骤的花费随义务行带出（TaskGraph 补全第六批）
-        assert all("label" not in row and all("label" not in step for step in row["steps"]) for row in duties)
+        assert duties == [
+            {
+                **{name: row[name] for name in DUTY_FIELDS},
+                "steps": [{name: step[name] for name in STEP_FIELDS} for step in row["steps"]],
+            }
+            for row in expected
+        ]  # 逐步骤的花费随义务行带出（TaskGraph 补全第六批）
+        assert all(
+            "label" not in row and all("label" not in step for step in row["steps"])
+            for row in duties
+        )
 
         first = export_support(orchestration_root / "support", report)
         second = export_support(orchestration_root / "support", report)
@@ -133,8 +155,11 @@ async def test_diagnostics_projects_sdk_payloads_and_actual_runtime_identity_wit
     orchestration_root, principal, monkeypatch
 ):
     service = OrchestrationService(
-        orchestration_root, OrchestrationSettings(),
-        provider=notes_provider(), principal=principal, drive=False,
+        orchestration_root,
+        OrchestrationSettings(),
+        provider=notes_provider(),
+        principal=principal,
+        drive=False,
         native_test_counter=FixtureWordCounter(),
     )
     await service.start()
@@ -154,40 +179,73 @@ async def test_diagnostics_projects_sdk_payloads_and_actual_runtime_identity_wit
         def replay_with_source_key(store, selected_id):
             result = original_verify(store, selected_id)
             result["tables"]["sources"]["problems"] = [
-                f"row {source_key} is not named", f"{raw_detail} {source_path}"]
+                f"row {source_key} is not named",
+                f"{raw_detail} {source_path}",
+            ]
             return result
 
         def attribution_with_raw_paths(store, selected_id):
             result = original_attribution(store, selected_id)
-            result["attempts"] = [{
-                "attempt_id": "attempt-1", "task_id": "task-1", "agent_id": "agent-1",
-                "role": "Worker", "model": "deepseek-flash", "runtime_profile_id": "context-256k",
-                "prompt_version": "worker-v1", "status": "COMPLETED",
-                "on_success_path": False,
-                "exploration_reason": "mission_not_completed", "tool_calls": 2,
-                "work": {"tokens": 12, "rows": 1},
-                "verification": {"tokens": 3, "rows": 1},
-                "raw": raw_detail,
-            }]
-            result["final_products"] = [{
-                "path": product_path, "content_hash": "b" * 64,
-                "artifact_id": "artifact-1", "task_id": "task-1", "result_id": "result-1",
-                "attempt_id": "attempt-1", "agent_id": "agent-1", "role": "Worker",
-                "model": "deepseek-flash", "runtime_profile_id": "context-256k",
-                "prompt_version": "worker-v1",
-                "verified_by": [{"layer": "rule_check", "status": "PASS",
-                                 "verifier_version": "rule-v1", "raw": raw_detail}],
-                "raw": raw_detail,
-            }]
-            result["actions"] = [{
-                "action_key": f"action:{action_target}", "target": action_target,
-                "receipt_hash": "c" * 64, "decision_receipts": ["receipt-1"],
-                "approved_by": ["principal-1"], "raw": raw_detail,
-            }]
-            result["breaks"] = [{
-                "missing": "integrated_tree", "error": product_path,
-                "task_id": "task-1", "raw": raw_detail,
-            }]
+            result["attempts"] = [
+                {
+                    "attempt_id": "attempt-1",
+                    "task_id": "task-1",
+                    "agent_id": "agent-1",
+                    "role": "Worker",
+                    "model": "deepseek-flash",
+                    "runtime_profile_id": "context-256k",
+                    "prompt_version": "worker-v1",
+                    "status": "COMPLETED",
+                    "on_success_path": False,
+                    "exploration_reason": "mission_not_completed",
+                    "tool_calls": 2,
+                    "work": {"tokens": 12, "rows": 1},
+                    "verification": {"tokens": 3, "rows": 1},
+                    "raw": raw_detail,
+                }
+            ]
+            result["final_products"] = [
+                {
+                    "path": product_path,
+                    "content_hash": "b" * 64,
+                    "artifact_id": "artifact-1",
+                    "task_id": "task-1",
+                    "result_id": "result-1",
+                    "attempt_id": "attempt-1",
+                    "agent_id": "agent-1",
+                    "role": "Worker",
+                    "model": "deepseek-flash",
+                    "runtime_profile_id": "context-256k",
+                    "prompt_version": "worker-v1",
+                    "verified_by": [
+                        {
+                            "layer": "rule_check",
+                            "status": "PASS",
+                            "verifier_version": "rule-v1",
+                            "raw": raw_detail,
+                        }
+                    ],
+                    "raw": raw_detail,
+                }
+            ]
+            result["actions"] = [
+                {
+                    "action_key": f"action:{action_target}",
+                    "target": action_target,
+                    "receipt_hash": "c" * 64,
+                    "decision_receipts": ["receipt-1"],
+                    "approved_by": ["principal-1"],
+                    "raw": raw_detail,
+                }
+            ]
+            result["breaks"] = [
+                {
+                    "missing": "integrated_tree",
+                    "error": product_path,
+                    "task_id": "task-1",
+                    "raw": raw_detail,
+                }
+            ]
             result["cost"] = {
                 **result["cost"],
                 "unclassified": {**result["cost"]["unclassified"], "subjects": [action_target]},
@@ -197,27 +255,47 @@ async def test_diagnostics_projects_sdk_payloads_and_actual_runtime_identity_wit
 
         monkeypatch.setattr(diagnostics, "verify_mission", replay_with_source_key)
         monkeypatch.setattr(diagnostics, "attribution", attribution_with_raw_paths)
-        monkeypatch.setattr(diagnostics, "failure_timeline", lambda _store, _mission_id: [{
-            "seq": 7, "type": "OutcomeRecorded", "task_id": "task-1",
-            "attempt_id": "attempt-1", "detail": {
-                "outcome": "failure", "result_id": "result-1", "summary": raw_detail,
-                "failures": [{"reason": raw_detail, "source": source_path}],
-                "proposed_tasks": [{"goal": "RAW-GOAL-CANARY"}],
-                "journal": raw_detail, "binary_base64": "RAW-BINARY-CANARY",
-            },
-        }])
+        monkeypatch.setattr(
+            diagnostics,
+            "failure_timeline",
+            lambda _store, _mission_id: [
+                {
+                    "seq": 7,
+                    "type": "OutcomeRecorded",
+                    "task_id": "task-1",
+                    "attempt_id": "attempt-1",
+                    "detail": {
+                        "outcome": "failure",
+                        "result_id": "result-1",
+                        "summary": raw_detail,
+                        "failures": [{"reason": raw_detail, "source": source_path}],
+                        "proposed_tasks": [{"goal": "RAW-GOAL-CANARY"}],
+                        "journal": raw_detail,
+                        "binary_base64": "RAW-BINARY-CANARY",
+                    },
+                }
+            ],
+        )
 
         manifest = {
-            **service._manifest, "schema": secret, "host_dirty": True,
+            **service._manifest,
+            "schema": secret,
+            "host_dirty": True,
             "distributions": {
                 **service._manifest["distributions"],
                 "runtime_identity": {
-                    "mode": "editable-source", "verification": "source-snapshot-at-startup",
-                    "source_verified": True, "baseline_artifact_verified": True,
+                    "mode": "editable-source",
+                    "verification": "source-snapshot-at-startup",
+                    "source_verified": True,
+                    "baseline_artifact_verified": True,
                     "installed_wheel_verified": False,
-                    "source": {"root": source_path, "commit": "d" * 40,
-                               "inputs_sha256": "e" * 64, "input_count": 23,
-                               "module_origins": {"agent_orchestrator": product_path}},
+                    "source": {
+                        "root": source_path,
+                        "commit": "d" * 40,
+                        "inputs_sha256": "e" * 64,
+                        "input_count": 23,
+                        "module_origins": {"agent_orchestrator": product_path},
+                    },
                 },
             },
         }
@@ -229,56 +307,101 @@ async def test_diagnostics_projects_sdk_payloads_and_actual_runtime_identity_wit
                 **view,
                 "snapshot": {
                     **view["snapshot"],
-                    "attempts": [*view["snapshot"]["attempts"], {
-                        "id": "attempt-1", "status": "COMPLETED",
-                        "context_version": "context-v1", "raw": raw_detail,
-                    }],
-                    "results": [*view["snapshot"]["results"], {
-                        "envelope": {"id": "result-1", "summary": raw_detail},
-                        "verification_state": "DONE", "verdict": "PASS",
-                        "verifications": [{
-                            "layer": "rule_check", "status": "PASS",
-                            "detail": {"verifier_version": "rule-v1", "quote": raw_detail},
-                        }],
-                    }],
-                    "sources": [*view["snapshot"]["sources"], {
-                        "mission_id": mission_id, "path": source_path, "version_hash": "a" * 64,
-                        "superseded_by": None, "revoked": False,
-                    }],
-                    "artifacts": [*view["snapshot"]["artifacts"], {
-                        "id": "artifact-1", "task_id": "task-1", "attempt_id": "attempt-1",
-                        "content_hash": "b" * 64, "size_bytes": 8,
-                        "path": product_path, "binary_base64": "RAW-BINARY-CANARY",
-                    }],
+                    "attempts": [
+                        *view["snapshot"]["attempts"],
+                        {
+                            "id": "attempt-1",
+                            "status": "COMPLETED",
+                            "context_version": "context-v1",
+                            "raw": raw_detail,
+                        },
+                    ],
+                    "results": [
+                        *view["snapshot"]["results"],
+                        {
+                            "envelope": {"id": "result-1", "summary": raw_detail},
+                            "verification_state": "DONE",
+                            "verdict": "PASS",
+                            "verifications": [
+                                {
+                                    "layer": "rule_check",
+                                    "status": "PASS",
+                                    "detail": {"verifier_version": "rule-v1", "quote": raw_detail},
+                                }
+                            ],
+                        },
+                    ],
+                    "sources": [
+                        *view["snapshot"]["sources"],
+                        {
+                            "mission_id": mission_id,
+                            "path": source_path,
+                            "version_hash": "a" * 64,
+                            "superseded_by": None,
+                            "revoked": False,
+                        },
+                    ],
+                    "artifacts": [
+                        *view["snapshot"]["artifacts"],
+                        {
+                            "id": "artifact-1",
+                            "task_id": "task-1",
+                            "attempt_id": "attempt-1",
+                            "content_hash": "b" * 64,
+                            "size_bytes": 8,
+                            "path": product_path,
+                            "binary_base64": "RAW-BINARY-CANARY",
+                        },
+                    ],
                 },
             }
             report = build_diagnostics(
-                service._orchestrator, mission_id=mission_id, snapshot_view=view,
-                versions=manifest, extra_secrets=(secret,),
+                service._orchestrator,
+                mission_id=mission_id,
+                snapshot_view=view,
+                versions=manifest,
+                extra_secrets=(secret,),
             )
             assert store.snapshot(mission_id) == before
 
         rendered = json.dumps(report, ensure_ascii=False, sort_keys=True)
-        for canary in (source_path, product_path, action_target, raw_detail,
-                       "RAW-GOAL-CANARY", "RAW-BINARY-CANARY", secret):
+        for canary in (
+            source_path,
+            product_path,
+            action_target,
+            raw_detail,
+            "RAW-GOAL-CANARY",
+            "RAW-BINARY-CANARY",
+            secret,
+        ):
             assert canary not in rendered
         assert "<redacted:configured_secret>" in rendered
         assert report["failure_timeline"][0]["detail"] == {
-            "payload_sha256": sha256_hex({
-                "outcome": "failure", "result_id": "result-1", "summary": raw_detail,
-                "failures": [{"reason": raw_detail, "source": source_path}],
-                "proposed_tasks": [{"goal": "RAW-GOAL-CANARY"}],
-                "journal": raw_detail, "binary_base64": "RAW-BINARY-CANARY",
-            }),
-            "outcome": "failure", "outcome_sha256": None, "result_id": "result-1",
-            "failures_count": 1, "proposed_tasks_count": 1,
+            "payload_sha256": sha256_hex(
+                {
+                    "outcome": "failure",
+                    "result_id": "result-1",
+                    "summary": raw_detail,
+                    "failures": [{"reason": raw_detail, "source": source_path}],
+                    "proposed_tasks": [{"goal": "RAW-GOAL-CANARY"}],
+                    "journal": raw_detail,
+                    "binary_base64": "RAW-BINARY-CANARY",
+                }
+            ),
+            "outcome": "failure",
+            "outcome_sha256": None,
+            "result_id": "result-1",
+            "failures_count": 1,
+            "proposed_tasks_count": 1,
         }
         assert report["replay"]["tables"]["sources"]["problems"] == 2  # 只给条数，不带行键
         assert source_key not in rendered
         product = report["attribution"]["final_products"][0]
         assert product["path_sha256"] == sha256_hex(product_path)
         assert (product["role"], product["model"], product["content_hash"]) == (
-            "Worker", "deepseek-flash", "b" * 64,
+            "Worker",
+            "deepseek-flash",
+            "b" * 64,
         )
         assert report["attribution"]["actions"][0]["target_sha256"] == sha256_hex(action_target)
         assert report["attribution"]["attempts"][0]["context_version"] == "context-v1"
@@ -290,15 +413,19 @@ async def test_diagnostics_projects_sdk_payloads_and_actual_runtime_identity_wit
         ]
         runtime = report["versions"]["sdk"]["runtime_identity"]
         assert runtime == {
-            "mode": "editable-source", "verification": "source-snapshot-at-startup",
-            "source_verified": True, "baseline_artifact_verified": True,
+            "mode": "editable-source",
+            "verification": "source-snapshot-at-startup",
+            "source_verified": True,
+            "baseline_artifact_verified": True,
             "installed_wheel_verified": False,
             "source": {"commit": "d" * 40, "inputs_sha256": "e" * 64, "input_count": 23},
         }
         assert report["versions"]["host_dirty"] is True
         assert report["versions"]["manifest_schema"] == "<redacted:configured_secret>"
         receipt = export_support(orchestration_root / "support", report)
-        assert secret not in (orchestration_root / "support" / f"{receipt['sha256']}.json").read_text()
+        assert (
+            secret not in (orchestration_root / "support" / f"{receipt['sha256']}.json").read_text()
+        )
     finally:
         await service.close()
 

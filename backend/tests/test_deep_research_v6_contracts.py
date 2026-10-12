@@ -23,9 +23,30 @@ def _common(kind: str, key: str) -> dict:
         "label": key,
         "importance": "optional",
         "subject_ids": ["geo.cn"],
-        "scope": {"schema_version": 1, "jurisdiction": "CN", "geography_ids": ["CN"], "population_definition": None, "qualifiers": []},
-        "time_scope": {"schema_version": 1, "kind": "timeless", "start": None, "end": None, "as_of": None, "label": None},
-        "source_constraint": {"schema_version": 1, "first_party": "not_required", "authority_roles": [], "preferred_authority_ids": [], "eligible_source_types": ["official_statistic"], "minimum_source_families": 1, "secondary_evidence": "context_only"},
+        "scope": {
+            "schema_version": 1,
+            "jurisdiction": "CN",
+            "geography_ids": ["CN"],
+            "population_definition": None,
+            "qualifiers": [],
+        },
+        "time_scope": {
+            "schema_version": 1,
+            "kind": "timeless",
+            "start": None,
+            "end": None,
+            "as_of": None,
+            "label": None,
+        },
+        "source_constraint": {
+            "schema_version": 1,
+            "first_party": "not_required",
+            "authority_roles": [],
+            "preferred_authority_ids": [],
+            "eligible_source_types": ["official_statistic"],
+            "minimum_source_families": 1,
+            "secondary_evidence": "context_only",
+        },
     }
 
 
@@ -56,18 +77,67 @@ def test_blob_ref_roundtrip_is_strict() -> None:
 
 def test_all_requirement_union_members_roundtrip() -> None:
     matrix = _common("matrix", "matrix.example") | {
-        "axes": [{"axis_id": "subject", "role": "subject", "label": "Subject", "members": [{"member_id": "cn", "label": "China", "subject_id": "geo.cn", "value_schema": None}]}],
+        "axes": [
+            {
+                "axis_id": "subject",
+                "role": "subject",
+                "label": "Subject",
+                "members": [
+                    {
+                        "member_id": "cn",
+                        "label": "China",
+                        "subject_id": "geo.cn",
+                        "value_schema": None,
+                    }
+                ],
+            }
+        ],
         "cell_policy": {"minimum_admitted_bindings": 1, "allow_inference": False},
         "required_cells": {"mode": "cartesian_product", "excluded": []},
         "coverage": {"minimum_ratio_ppm": 1_000_000},
     }
     collection = _common("collection", "collection.example") | {
-        "item_schema": {"entity_type": "country", "unique_key": ["name"], "fields": [{"field_key": "name", "label": "Name", "value_type": "string", "required": True, "unit": None, "minimum_admitted_bindings": 1}]},
-        "selection": {"mode": "top_n", "minimum_items": 3, "maximum_items": 3, "as_of": "2024-12-31", "ranking_rule": {"metric_key": "name", "direction": "ascending", "tie_breakers": ["name"], "missing_metric": "ineligible"}},
-        "dedupe": {"normalizer": "nfkc_casefold_v1", "collision_policy": "merge_equal_identity_else_conflict"},
+        "item_schema": {
+            "entity_type": "country",
+            "unique_key": ["name"],
+            "fields": [
+                {
+                    "field_key": "name",
+                    "label": "Name",
+                    "value_type": "string",
+                    "required": True,
+                    "unit": None,
+                    "minimum_admitted_bindings": 1,
+                }
+            ],
+        },
+        "selection": {
+            "mode": "top_n",
+            "minimum_items": 3,
+            "maximum_items": 3,
+            "as_of": "2024-12-31",
+            "ranking_rule": {
+                "metric_key": "name",
+                "direction": "ascending",
+                "tie_breakers": ["name"],
+                "missing_metric": "ineligible",
+            },
+        },
+        "dedupe": {
+            "normalizer": "nfkc_casefold_v1",
+            "collision_policy": "merge_equal_identity_else_conflict",
+        },
     }
     claim_set = _common("claim_set", "claims.example") | {
-        "claim_kinds": [{"claim_kind": "conclusion", "minimum_claims": 1, "maximum_claims": 3, "minimum_admitted_bindings": 1, "support_rule": "admitted_binding"}],
+        "claim_kinds": [
+            {
+                "claim_kind": "conclusion",
+                "minimum_claims": 1,
+                "maximum_claims": 3,
+                "minimum_admitted_bindings": 1,
+                "support_rule": "admitted_binding",
+            }
+        ],
         "topic_facets": [{"facet_id": "main", "label": "Main", "minimum_claims": 1}],
         "coverage_mode": "all_minima",
         "contradiction_policy": "surface",

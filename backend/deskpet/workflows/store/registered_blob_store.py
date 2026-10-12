@@ -143,9 +143,7 @@ class RegisteredBlobStore:
                     )
                 ).fetchone()
                 if owned is None:
-                    raise ValueError(
-                        "effect dependency has no current-run provisional owner"
-                    )
+                    raise ValueError("effect dependency has no current-run provisional owner")
                 await db.execute(
                     """INSERT OR IGNORE INTO workflow_blob_refs(
                     sha256,owner_kind,owner_id,created_at

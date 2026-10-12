@@ -72,8 +72,7 @@ class RuntimeProfile:
 
     def __post_init__(self) -> None:
         if self.max_concurrent_model_calls is not None and (
-            type(self.max_concurrent_model_calls) is not int
-            or self.max_concurrent_model_calls < 1
+            type(self.max_concurrent_model_calls) is not int or self.max_concurrent_model_calls < 1
         ):
             raise ValueError("profile model concurrency must be a positive integer")
         if not self.profile_id or not self.model:
@@ -98,18 +97,22 @@ class RuntimeProfile:
         if not isinstance(self.context_policy, ContextPolicy):
             raise TypeError("context_policy must use ContextPolicy")
         tokenizer = self.tokenizer if self.tokenizer is not None else UpperBoundTokenizer()
-        if (not callable(getattr(tokenizer, "count_text", None))
-                or not isinstance(getattr(tokenizer, "fingerprint", None), str)
-                or not tokenizer.fingerprint):
+        if (
+            not callable(getattr(tokenizer, "count_text", None))
+            or not isinstance(getattr(tokenizer, "fingerprint", None), str)
+            or not tokenizer.fingerprint
+        ):
             raise TypeError("tokenizer must implement count_text and a nonempty fingerprint")
         object.__setattr__(self, "tokenizer", tokenizer)
         from .tool_gateway import LARGE_READ_PAGE_BYTES, read_tool_schemas
 
         snapshot: dict[str, Any] = {
-            "schema": 1, "model": self.model,
+            "schema": 1,
+            "model": self.model,
             "policy": self.context_policy.to_json(),
             "tokenizer_fingerprint": tokenizer.fingerprint,
-            "read_page_bytes": LARGE_READ_PAGE_BYTES, "read_max_chars": 8192,
+            "read_page_bytes": LARGE_READ_PAGE_BYTES,
+            "read_max_chars": 8192,
             "tool_schema_hash": sha256(
                 canonical_json(cast(JsonValue, read_tool_schemas(large=True))).encode("utf-8")
             ).hexdigest(),
@@ -123,8 +126,10 @@ class RuntimeProfile:
         if self._context_json is None:
             return None
         snapshot = json.loads(self._context_json)
-        if (self.tokenizer is None
-                or self.tokenizer.fingerprint != snapshot["tokenizer_fingerprint"]):
+        if (
+            self.tokenizer is None
+            or self.tokenizer.fingerprint != snapshot["tokenizer_fingerprint"]
+        ):
             raise ValueError("context identity changed: tokenizer fingerprint")
         return snapshot
 

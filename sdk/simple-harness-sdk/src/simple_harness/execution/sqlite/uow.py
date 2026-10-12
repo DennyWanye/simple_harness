@@ -1655,7 +1655,6 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
 
     # ---- Slice 4: derived indexes (FTS, vectors, index jobs) ----------------------
 
-
     def read_agent_delegation(self, delegation_id: str) -> AgentDelegationRecord | None:
         from .base_agent import delegations
 
@@ -7648,9 +7647,11 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
             (run_id.value,),
         ).fetchall()
         return tuple(
-            (str(row["state"]),
-             None if row["handed_off_at"] is None else float(row["handed_off_at"]),
-             None if row["settled_at"] is None else float(row["settled_at"]))
+            (
+                str(row["state"]),
+                None if row["handed_off_at"] is None else float(row["handed_off_at"]),
+                None if row["settled_at"] is None else float(row["settled_at"]),
+            )
             for row in rows
         )
 

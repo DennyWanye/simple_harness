@@ -23,11 +23,19 @@ from agent_orchestrator.verification.deterministic_checks import code_test
 
 def _task(criteria: tuple[str, ...]) -> Task:
     return Task(
-        id="task-1", mission_id="mission-1", parent_task_ids=(), dependency_ids=(),
-        goal="写一份 NOTES.md", rationale="test", success_criteria=criteria,
+        id="task-1",
+        mission_id="mission-1",
+        parent_task_ids=(),
+        dependency_ids=(),
+        goal="写一份 NOTES.md",
+        rationale="test",
+        success_criteria=criteria,
         verification_policy=("format_check", "rule_check", "code_test", "critic_review"),
-        allowed_tools=("workspace_write_file",), budget=Budget(max_tokens=1000, max_attempts=1),
-        priority=1.0, status=TaskStatus.ACTIVE, version=1,
+        allowed_tools=("workspace_write_file",),
+        budget=Budget(max_tokens=1000, max_attempts=1),
+        priority=1.0,
+        status=TaskStatus.ACTIVE,
+        version=1,
     )
 
 
@@ -35,7 +43,9 @@ def test_default_run_that_collects_no_tests_is_not_a_failure(tmp_path):
     workspace = Workspace(tmp_path / "verify", "task-1:attempt-1", True)
     workspace.root.mkdir()
     workspace.write_text("NOTES.md", "- 一\n- 二\n- 三\n")
-    layer = asyncio.run(code_test(_task(("file:NOTES.md",)), verification_copy=workspace, timeout=120))
+    layer = asyncio.run(
+        code_test(_task(("file:NOTES.md",)), verification_copy=workspace, timeout=120)
+    )
     assert layer.status == "PASS", layer
     [run] = layer.detail["runs"]
     assert run["target"] is None and run["returncode"] == 5 and run["no_tests_collected"] is True
@@ -64,7 +74,9 @@ def test_named_target_that_collects_no_tests_still_fails(tmp_path):
     workspace.root.mkdir()
     (workspace.root / "tests").mkdir()
     workspace.write_text("tests/__init__.py", "")
-    layer = asyncio.run(code_test(_task(("pytest:tests",)), verification_copy=workspace, timeout=120))
+    layer = asyncio.run(
+        code_test(_task(("pytest:tests",)), verification_copy=workspace, timeout=120)
+    )
     assert layer.status == "FAIL", layer
     [run] = layer.detail["runs"]
     assert run["target"] == "tests" and run["returncode"] == 5 and "no_tests_collected" not in run
@@ -73,27 +85,54 @@ def test_named_target_that_collects_no_tests_still_fails(tmp_path):
 
 def _facts(*, flagged: bool, scope: bool = True) -> dict:
     run = {
-        "target": None, "returncode": 5, "timed_out": False, "passed": flagged,
-        "stdout": "no tests ran in 0.01s", "command": ["python", "-c", "..."],
-        "receipt": {"execution_id": "exec-1", "kind": "process", "isolated": True,
-                    "environment_digest": "e" * 64, "effective_limits": {}, "exit_code": 5,
-                    "truncated": False, "timed_out": False, "limit_exceeded": False,
-                    "tree_killed": True, "status": "ok", "residual_pids": []},
+        "target": None,
+        "returncode": 5,
+        "timed_out": False,
+        "passed": flagged,
+        "stdout": "no tests ran in 0.01s",
+        "command": ["python", "-c", "..."],
+        "receipt": {
+            "execution_id": "exec-1",
+            "kind": "process",
+            "isolated": True,
+            "environment_digest": "e" * 64,
+            "effective_limits": {},
+            "exit_code": 5,
+            "truncated": False,
+            "timed_out": False,
+            "limit_exceeded": False,
+            "tree_killed": True,
+            "status": "ok",
+            "residual_pids": [],
+        },
     }
     if flagged:
         run["no_tests_collected"] = True
     detail = {"runs": [run]}
     if scope:
-        detail["observation_scope"] = {"schema": "pytest-observation-v2", "workspace_hash": "a" * 64}
-    return {"layer": "code_test", "status": "PASS" if flagged else "FAIL", "summary": "", "detail": detail}
+        detail["observation_scope"] = {
+            "schema": "pytest-observation-v2",
+            "workspace_hash": "a" * 64,
+        }
+    return {
+        "layer": "code_test",
+        "status": "PASS" if flagged else "FAIL",
+        "summary": "",
+        "detail": detail,
+    }
 
 
 def test_executor_facts_grade_the_vacuous_run_pass_only_when_bound():
     state, grade, document = executor_run_facts(_facts(flagged=True), layer="code_test")
     assert (state, grade) == ("SUCCEEDED", Grade.PASS)
-    assert "NOT APPLICABLE, counts as satisfied" in document["reason"] and "INCONCLUSIVE" in document["reason"]
+    assert (
+        "NOT APPLICABLE, counts as satisfied" in document["reason"]
+        and "INCONCLUSIVE" in document["reason"]
+    )
     assert document["runs"][0]["no_tests_collected"] is True
-    state, grade, document = executor_run_facts(_facts(flagged=True, scope=False), layer="code_test")
+    state, grade, document = executor_run_facts(
+        _facts(flagged=True, scope=False), layer="code_test"
+    )
     assert (state, grade) == ("SUCCEEDED", Grade.UNKNOWN)
     assert "not bound" in document["reason"]
 

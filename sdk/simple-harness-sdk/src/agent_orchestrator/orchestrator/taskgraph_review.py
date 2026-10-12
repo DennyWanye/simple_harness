@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 """A leaf review consumes its actual Attempt's immutable contract and inputs."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -21,8 +22,9 @@ class TaskGraphReviewOrigin:
     ports: tuple[tuple[str, VersionedRef], ...]
 
 
-def read_review_origin(commit: Any, mission_id: str, task_id: str,
-                       result_id: str) -> TaskGraphReviewOrigin:
+def read_review_origin(
+    commit: Any, mission_id: str, task_id: str, result_id: str
+) -> TaskGraphReviewOrigin:
     store = commit.store
     with store.read_view():
         # The result remains historical evidence while convergence owns this
@@ -34,16 +36,22 @@ def read_review_origin(commit: Any, mission_id: str, task_id: str,
         if result.envelope.mission_id and result.envelope.mission_id != mission_id:
             raise ContractError("TASKGRAPH_REVIEW_RESULT_MISSION_MISMATCH")
         context = commit.taskgraph_attempt_context(mission_id, result.envelope.attempt_id)
-        if not isinstance(context, TaskGraphAttemptContext) or context.inputs.binding.task_id != task_id:
+        if (
+            not isinstance(context, TaskGraphAttemptContext)
+            or context.inputs.binding.task_id != task_id
+        ):
             raise ContractError("TASKGRAPH_REVIEW_ATTEMPT_MISMATCH")
         frozen = context.inputs.binding
         semantics = HtnStore(store)
         semantic = semantics.get_task_semantics(task_id, frozen.binding_revision)
         current = semantics.task_semantics_of(mission_id, task_id)
-        if (current is None or current.contract_revision != semantic.contract_revision
-                or current.contract_hash != frozen.contract_hash
-                or int(current.dispatch_generation) != frozen.dispatch_generation
-                or int(current.input_binding_revision) != frozen.input_binding_revision):
+        if (
+            current is None
+            or current.contract_revision != semantic.contract_revision
+            or current.contract_hash != frozen.contract_hash
+            or int(current.dispatch_generation) != frozen.dispatch_generation
+            or int(current.input_binding_revision) != frozen.input_binding_revision
+        ):
             raise ContractError("TASKGRAPH_REVIEW_ATTEMPT_SUPERSEDED")
         occurrence = OccurrenceId(frozen.occurrence_id)
         network = context.network
@@ -55,7 +63,9 @@ def read_review_origin(commit: Any, mission_id: str, task_id: str,
         for draft in network.method_instances:
             if draft.instance_id not in adopted:
                 continue
-            method = semantics.get_method(str(draft.method_ref.method_id), int(draft.method_ref.version)).contract
+            method = semantics.get_method(
+                str(draft.method_ref.method_id), int(draft.method_ref.version)
+            ).contract
             if method.method_ref() != draft.method_ref:
                 raise ContractError("TASKGRAPH_REVIEW_METHOD_HASH_MISMATCH")
             slots = {child.slot_key: child.occurrence_id for child in draft.child_bindings}
@@ -66,13 +76,21 @@ def read_review_origin(commit: Any, mission_id: str, task_id: str,
                 if bound is None or bound not in task_of:
                     raise ContractError("TASKGRAPH_REVIEW_CRITERION_SOURCE_INCOMPLETE")
                 if bound == occurrence:
-                    carried.append(CarriedCriterion(
-                        parent_task_id=str(draft.goal_id),
-                        parent_criterion_id=str(link.parent_criterion_id),
-                        occurrence_id=bound, task_id=task_id,
-                        leaf_criterion_id=str(link.child_criterion_id or link.parent_criterion_id),
-                        evidence_requirement=str(link.evidence_requirement)))
-        return TaskGraphReviewOrigin(context=context, semantic=semantic, carried=tuple(carried),
-                                    ports=tuple(sorted(declared_output_ports(
-                                        network, occurrence,
-                                        own_ports=True).items())))
+                    carried.append(
+                        CarriedCriterion(
+                            parent_task_id=str(draft.goal_id),
+                            parent_criterion_id=str(link.parent_criterion_id),
+                            occurrence_id=bound,
+                            task_id=task_id,
+                            leaf_criterion_id=str(
+                                link.child_criterion_id or link.parent_criterion_id
+                            ),
+                            evidence_requirement=str(link.evidence_requirement),
+                        )
+                    )
+        return TaskGraphReviewOrigin(
+            context=context,
+            semantic=semantic,
+            carried=tuple(carried),
+            ports=tuple(sorted(declared_output_ports(network, occurrence, own_ports=True).items())),
+        )

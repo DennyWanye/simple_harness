@@ -107,25 +107,33 @@ def _rewrite_status(store: Any, task_id: str, status: TaskStatus) -> None:
     document = json.loads(row[0])
     assert "status" in document
     document["status"] = str(status)
-    store.connection.execute("UPDATE tasks SET status=?, json=? WHERE task_id=?",
-                             (str(status), json.dumps(document), task_id))
+    store.connection.execute(
+        "UPDATE tasks SET status=?, json=? WHERE task_id=?",
+        (str(status), json.dumps(document), task_id),
+    )
     store.connection.commit()
     assert store.get_task(task_id).status is status
 
 
-def _damage_binding(store: Any, mission_id: str, task_id: str, *, to_mission: str | None = None) -> None:
+def _damage_binding(
+    store: Any, mission_id: str, task_id: str, *, to_mission: str | None = None
+) -> None:
     """①b1: one stored task meaning loses its identity bytes (a damaged disk does not honour
     foreign keys either, so they are off for this one write)."""
     connection = store.connection
     connection.execute("PRAGMA foreign_keys=OFF")
     if to_mission is None:
         lift_immutable_guards(connection, "task_semantics")
-        connection.execute("UPDATE task_semantics SET task_id=? WHERE mission_id=? AND task_id=?",
-                           (task_id + "-damaged", mission_id, task_id))
+        connection.execute(
+            "UPDATE task_semantics SET task_id=? WHERE mission_id=? AND task_id=?",
+            (task_id + "-damaged", mission_id, task_id),
+        )
     else:
         lift_immutable_guards(connection, "task_semantics")
-        connection.execute("UPDATE task_semantics SET mission_id=? WHERE mission_id=? AND task_id=?",
-                           (to_mission, mission_id, task_id))
+        connection.execute(
+            "UPDATE task_semantics SET mission_id=? WHERE mission_id=? AND task_id=?",
+            (to_mission, mission_id, task_id),
+        )
     connection.commit()
     connection.execute("PRAGMA foreign_keys=ON")
 
@@ -133,8 +141,9 @@ def _damage_binding(store: Any, mission_id: str, task_id: str, *, to_mission: st
 @asynccontextmanager
 async def committed(tmp_path: Path, *, key: str) -> AsyncIterator[ProductionWorld]:
     """Plan revision 1 (write → continue) just committed; the write step's executor is held."""
-    async with enabled_world(tmp_path, key=key, planner=chain_planner, criteria=CHAIN_CRITERIA,
-                             hold_worker=True) as world:
+    async with enabled_world(
+        tmp_path, key=key, planner=chain_planner, criteria=CHAIN_CRITERIA, hold_worker=True
+    ) as world:
         await world.commit_seed()
         yield world
 
@@ -151,10 +160,20 @@ def test_a_reply_claiming_an_authority_field_is_refused_at_the_boundary() -> Non
     from scripted_plans import plan_revision_proposal_step, scripted_plan_proposal
 
     text = plan_revision_proposal_step(
-        proposal_id="prop-1", expected_plan_revision=0, read_set=[],
-        operations=[{"op": "refine", "goal_id": "task-root", "obligation_id": "obl-root",
-                     "method_ref": {"id": "m", "version": 1, "content_hash": "a" * 64}, "bindings": {}}],
-        extras={"registry_status": "ADMITTED"})
+        proposal_id="prop-1",
+        expected_plan_revision=0,
+        read_set=[],
+        operations=[
+            {
+                "op": "refine",
+                "goal_id": "task-root",
+                "obligation_id": "obl-root",
+                "method_ref": {"id": "m", "version": 1, "content_hash": "a" * 64},
+                "bindings": {},
+            }
+        ],
+        extras={"registry_status": "ADMITTED"},
+    )
     with pytest.raises(ContractError) as caught:
         scripted_plan_proposal(text, mission_id="mission-stub")
     assert "registry_status" in str(caught.value)
@@ -179,8 +198,13 @@ def test_the_seed_holds_only_the_unrefined_root(tmp_path) -> None:
     async def case() -> Any:
         try:
             async with product_world(tmp_path / "root", provider) as world:
-                mission_id = world.create({"goal": "写一份 NOTES.md", "success_criteria": ["file:NOTES.md"],
-                                           "idempotency_key": "p23b-seed"})["mission_id"]
+                mission_id = world.create(
+                    {
+                        "goal": "写一份 NOTES.md",
+                        "success_criteria": ["file:NOTES.md"],
+                        "idempotency_key": "p23b-seed",
+                    }
+                )["mission_id"]
                 await run_until(world, provider.entered.is_set)
                 dispatch = world.loop._dispatch_for(mission_id)
                 seed = dispatch.network(mission_id)
@@ -192,7 +216,9 @@ def test_the_seed_holds_only_the_unrefined_root(tmp_path) -> None:
     assert int(seed.plan_revision) == 0
     [root] = seed.occurrences
     assert list(seed.root_occurrence_ids) == [root.occurrence_id]
-    assert view.planning_frontier.by_reason[ReadinessReason.NEEDS_REFINEMENT] == (root.occurrence_id,)
+    assert view.planning_frontier.by_reason[ReadinessReason.NEEDS_REFINEMENT] == (
+        root.occurrence_id,
+    )
     assert phases[root.occurrence_id] is CompoundPhase.PLANNING_READY
 
 
@@ -235,9 +261,14 @@ def test_the_committed_plan_is_the_read_and_the_display_row_is_not(tmp_path) -> 
 
             # the compound gate
             intercepted = dispatch.intercept_worker_dispatch(mission_id, root_task)
-            assert intercepted is not None and intercepted.reason == str(ReadinessReason.NEEDS_REFINEMENT)
+            assert intercepted is not None and intercepted.reason == str(
+                ReadinessReason.NEEDS_REFINEMENT
+            )
             [recorded] = _events(store, mission_id, DISPATCH_INTERCEPTED)
-            assert recorded.payload["reason"] == "NEEDS_REFINEMENT" and recorded.payload["form"] == "compound"
+            assert (
+                recorded.payload["reason"] == "NEEDS_REFINEMENT"
+                and recorded.payload["form"] == "compound"
+            )
             assert dispatch.intercept_worker_dispatch(mission_id, str(follow.task_id)) is None
             with pytest.raises(GraphIntegrityError):
                 dispatch.intercept_worker_dispatch(mission_id, "task-nowhere")
@@ -249,10 +280,23 @@ def test_the_committed_plan_is_the_read_and_the_display_row_is_not(tmp_path) -> 
             assert changed and changed[-1].payload["phase"] == "waiting_children"
             view = dispatch.read(mission_id)
             with pytest.raises(ContractError):
-                next_compound_phase(write, view.network, view.reports[write.occurrence_id],
-                                    child_outcomes={}, resolved=False)
-            assert next_compound_phase(root, view.network, view.reports[root.occurrence_id],
-                                       child_outcomes={}, resolved=True) is CompoundPhase.RESOLUTION_COMMITTED
+                next_compound_phase(
+                    write,
+                    view.network,
+                    view.reports[write.occurrence_id],
+                    child_outcomes={},
+                    resolved=False,
+                )
+            assert (
+                next_compound_phase(
+                    root,
+                    view.network,
+                    view.reports[root.occurrence_id],
+                    child_outcomes={},
+                    resolved=True,
+                )
+                is CompoundPhase.RESOLUTION_COMMITTED
+            )
 
             # the inputs
             assert dispatch.attempt_inputs(mission_id, str(write.task_id)) == []
@@ -262,9 +306,13 @@ def test_the_committed_plan_is_the_read_and_the_display_row_is_not(tmp_path) -> 
 
             # the projection is the read: the display row's bytes change no answer
             def answers() -> tuple[Any, ...]:
-                return (dispatch.ready_occurrences(mission_id), dispatch.running_occurrences(mission_id),
-                        dispatch.root_review_ready(mission_id), dispatch.terminal(mission_id),
-                        dispatch.advance_compound_phases(mission_id))
+                return (
+                    dispatch.ready_occurrences(mission_id),
+                    dispatch.running_occurrences(mission_id),
+                    dispatch.root_review_ready(mission_id),
+                    dispatch.terminal(mission_id),
+                    dispatch.advance_compound_phases(mission_id),
+                )
 
             before = answers()
             assert root.occurrence_id not in before[0], "a compound is never ready"
@@ -276,14 +324,18 @@ def test_the_committed_plan_is_the_read_and_the_display_row_is_not(tmp_path) -> 
             assert store.list_attempts(root_task) == []
             views = {str(item.task_id): item for item in dispatch.occurrences(mission_id)}
             assert views[root_task].legacy_status == "ACTIVE"
-            assert dispatch.read(mission_id).reports[root.occurrence_id].reason is ReadinessReason.NEEDS_REFINEMENT
+            assert (
+                dispatch.read(mission_id).reports[root.occurrence_id].reason
+                is ReadinessReason.NEEDS_REFINEMENT
+            )
             for spec in (root, write, follow):
                 _rewrite_status(store, str(spec.task_id), TaskStatus.COMPLETED)
             assert dispatch.terminal(mission_id) is False
             assert dispatch.root_review_ready(mission_id) is False
             outcomes = dispatch.read(mission_id).outcomes
-            assert outcomes[follow.occurrence_id] is not OccurrenceOutcome.ACCEPTED, \
+            assert outcomes[follow.occurrence_id] is not OccurrenceOutcome.ACCEPTED, (
                 "a completed row without an acceptance is not accepted"
+            )
 
     asyncio.run(case())
 
@@ -300,7 +352,8 @@ def test_accepting_only_one_child_does_not_unlock_the_root_review(tmp_path) -> N
 
         async def invoke(self, request, *, cancel):  # type: ignore[no-untyped-def]
             if role_of(request) == "worker" and "NOTES.md" in json.dumps(
-                    package_of(request).get("task_contract", {}).get("outputs") or []):
+                package_of(request).get("task_contract", {}).get("outputs") or []
+            ):
                 self.second.set()
                 await self.go.wait()
             return await super().invoke(request, cancel=cancel)
@@ -309,8 +362,9 @@ def test_accepting_only_one_child_does_not_unlock_the_root_review(tmp_path) -> N
 
     async def case() -> Any:
         try:
-            async with enabled_world(tmp_path, key="p23b-one-child", provider=provider,
-                                     criteria=CHAIN_CRITERIA) as world:
+            async with enabled_world(
+                tmp_path, key="p23b-one-child", provider=provider, criteria=CHAIN_CRITERIA
+            ) as world:
                 await run_until(world.product, provider.second.is_set, timeout=60)
                 steps = _steps(world)
                 outcomes = world.dispatch.read(world.mission.id).outcomes
@@ -329,7 +383,9 @@ def test_accepting_only_one_child_does_not_unlock_the_root_review(tmp_path) -> N
 # ======================================================================================
 
 
-def test_a_mission_whose_root_meaning_does_not_read_back_stops_through_the_planner_branch(tmp_path) -> None:
+def test_a_mission_whose_root_meaning_does_not_read_back_stops_through_the_planner_branch(
+    tmp_path,
+) -> None:
     """建任务之后、第一轮规划之前，根目标那一行语义被改坏（①b1，读不出这个任务的任何根）：
     规划分支以 ``root_not_identified`` 停下这一个任务；损坏不是规划器答错，不再问它。"""
 
@@ -337,8 +393,13 @@ def test_a_mission_whose_root_meaning_does_not_read_back_stops_through_the_plann
 
     async def case() -> Any:
         async with product_world(tmp_path / "root", provider) as world:
-            mission_id = world.create({"goal": "写一份 NOTES.md", "success_criteria": ["file:NOTES.md"],
-                                       "idempotency_key": "orch-damaged"})["mission_id"]
+            mission_id = world.create(
+                {
+                    "goal": "写一份 NOTES.md",
+                    "success_criteria": ["file:NOTES.md"],
+                    "idempotency_key": "orch-damaged",
+                }
+            )["mission_id"]
             root_task = str(HtnStore(world.store).list_task_semantics(mission_id)[0].task_id)
             # 先让重启恢复走完（它在这一刻看到的库与历史一致）；损坏发生在恢复之后、第一轮规划之前。
             # 恢复时就对不上的任务由恢复协议隔离，见 test_recovery_coordinator.py。
@@ -368,7 +429,9 @@ def test_a_planner_turn_that_did_not_commit_is_a_planning_rejection(tmp_path) ->
     def planner(request: Any) -> Any:
         if not state["failed"]:
             state["failed"] = True
-            raise ProviderServerError(public_message="upstream 503", retryable=False, status_code=503)
+            raise ProviderServerError(
+                public_message="upstream 503", retryable=False, status_code=503
+            )
         from agent_orchestrator.testing.scripted_replies import planner_reply
 
         return planner_reply(request)
@@ -379,9 +442,18 @@ def test_a_planner_turn_that_did_not_commit_is_a_planning_rejection(tmp_path) ->
     async def case() -> Any:
         try:
             async with product_world(tmp_path / "root", provider) as world:
-                mission_id = world.create({"goal": "写一份 NOTES.md", "success_criteria": ["file:NOTES.md"],
-                                           "idempotency_key": "orch-nocommit"})["mission_id"]
-                await run_until(world, lambda: bool(_events(world.store, mission_id, "PlanningRejected")), timeout=60)
+                mission_id = world.create(
+                    {
+                        "goal": "写一份 NOTES.md",
+                        "success_criteria": ["file:NOTES.md"],
+                        "idempotency_key": "orch-nocommit",
+                    }
+                )["mission_id"]
+                await run_until(
+                    world,
+                    lambda: bool(_events(world.store, mission_id, "PlanningRejected")),
+                    timeout=60,
+                )
                 return _events(world.store, mission_id, "PlanningRejected")
         finally:
             provider.release.set()
@@ -403,7 +475,12 @@ def test_a_damaged_plan_stops_one_mission_and_is_read_as_corruption(tmp_path, en
 
     async def case() -> Any:
         async with committed(tmp_path, key=f"orch-{entry}") as world:
-            loop, store, dispatch, mission_id = world.loop, world.store, world.dispatch, world.mission.id
+            loop, store, dispatch, mission_id = (
+                world.loop,
+                world.store,
+                world.dispatch,
+                world.mission.id,
+            )
             follow_task = str(_steps(world)["continue"].task_id)
             _damage_binding(store, mission_id, follow_task)
             with pytest.raises(GraphIntegrityError):

@@ -10,6 +10,7 @@
 
 **改坏检验**：历史切面退回只按激活哈希找要求 → 改后的切面缺新准则 → 本条失败。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -29,9 +30,17 @@ def _quick(monkeypatch):
 
 
 def _history_criteria(world, mission_id: str, at_seq: int) -> set[str]:
-    page = world.control.assurance_snapshot({
-        "schema_version": 1, "request_id": "r-hist", "mission_id": mission_id,
-        "view": "HISTORY", "at_event_seq": at_seq, "cursor": None, "limit": 100})
+    page = world.control.assurance_snapshot(
+        {
+            "schema_version": 1,
+            "request_id": "r-hist",
+            "mission_id": mission_id,
+            "view": "HISTORY",
+            "at_event_seq": at_seq,
+            "cursor": None,
+            "limit": 100,
+        }
+    )
     assert page["snapshot_seq"] == at_seq
     return {item["id"] for item in page["items"] if item["kind"] == "CRITERION"}
 
@@ -41,15 +50,25 @@ def test_a_history_slice_shows_the_criteria_of_the_requirements_in_force_at_that
         provider = LayeredScriptedProvider(planner=planner_reply)
         provider.held.add("worker")
         async with product_world(tmp_path / "root", provider) as world:
-            mission_id = world.create({"goal": "写三份文件", "idempotency_key": "r2-a22",
-                                       "success_criteria": ["file:a.md", "file:b.md", "file:c.md"]})["mission_id"]
+            mission_id = world.create(
+                {
+                    "goal": "写三份文件",
+                    "idempotency_key": "r2-a22",
+                    "success_criteria": ["file:a.md", "file:b.md", "file:c.md"],
+                }
+            )["mission_id"]
             await until_first_plan(world, mission_id)
             htn = HtnStore(world.store)
             first = {c.criterion_id for c in htn.get_requirements_revision(mission_id, 1).criteria}
             before = world.store.last_event_seq(mission_id)
             assert _history_criteria(world, mission_id, before) == first
 
-            amend(world, mission_id, [{"op": "add", "statement": "file:d.md"}], command_id="r2-a22-amend")
+            amend(
+                world,
+                mission_id,
+                [{"op": "add", "statement": "file:d.md"}],
+                command_id="r2-a22-amend",
+            )
             second = {c.criterion_id for c in htn.get_requirements_revision(mission_id, 2).criteria}
             assert second > first
             after = world.store.last_event_seq(mission_id)

@@ -14,6 +14,7 @@ Covers spec `permission-gate`:
   - Deny patterns from config (config-deny)
   - User cannot override config-deny
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -108,9 +109,7 @@ async def test_allow_session_cached(gate: PermissionGate) -> None:
 
     async def responder(req):
         calls["n"] += 1
-        return PermissionResponse(
-            request_id=req.request_id, decision="allow_session"
-        )
+        return PermissionResponse(request_id=req.request_id, decision="allow_session")
 
     gate.set_responder(responder)
     await gate.check("shell", {"command": "git status"}, "sA")
@@ -127,9 +126,7 @@ async def test_session_cache_isolated(gate: PermissionGate) -> None:
 
     async def responder(req):
         calls["n"] += 1
-        return PermissionResponse(
-            request_id=req.request_id, decision="allow_session"
-        )
+        return PermissionResponse(request_id=req.request_id, decision="allow_session")
 
     gate.set_responder(responder)
     await gate.check("shell", {"command": "echo a"}, "sA")
@@ -169,9 +166,7 @@ async def test_config_deny_overrides_session_cache(
     """Even if user said 'allow_session' once, deny pattern still rejects."""
 
     async def responder(req):
-        return PermissionResponse(
-            request_id=req.request_id, decision="allow_session"
-        )
+        return PermissionResponse(request_id=req.request_id, decision="allow_session")
 
     gate.set_responder(responder)
     # Cache an allow for shell

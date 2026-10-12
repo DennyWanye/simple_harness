@@ -29,9 +29,7 @@ def home_ws(tmp_path: Path, monkeypatch) -> tuple[Path, Path]:
 
 def test_tilde_path_inside_workspace_resolves(home_ws) -> None:
     _, ws = home_ws
-    got = _resolve_within_workspace(
-        "~/SimpleHarnessWorkSpace/demo-project/README.md", ws
-    )
+    got = _resolve_within_workspace("~/SimpleHarnessWorkSpace/demo-project/README.md", ws)
     assert got is not None
     assert got == (ws / "README.md").resolve()
 
@@ -40,10 +38,6 @@ def test_relative_and_absolute_forms_still_resolve(home_ws) -> None:
     _, ws = home_ws
     for form in ("README.md", "./README.md", str(ws / "README.md")):
         assert _resolve_within_workspace(form, ws) == (ws / "README.md").resolve()
-
-
-
-
 
 
 def test_no_bogus_tilde_segment_is_ever_produced(home_ws) -> None:

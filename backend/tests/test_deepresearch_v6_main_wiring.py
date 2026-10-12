@@ -124,7 +124,10 @@ def test_main_keeps_v6_and_defaults_new_roots_to_simplified_v7() -> None:
     registration = source.index('"deep_research",\n            "v6",')
     registration_end = source.index("from agent.tool_use_shim", registration)
     assert "new_runs_enabled=True" in source[registration:registration_end]
-    assert '"v7",\n            state_factory=_deep_v7_state_factory' in source[registration:registration_end]
+    assert (
+        '"v7",\n            state_factory=_deep_v7_state_factory'
+        in source[registration:registration_end]
+    )
     assert "context_factory=_deep_v7_context_factory" in source[registration:registration_end]
 
     # R6 removed the product-specific production starter. New roots are routed
@@ -166,9 +169,7 @@ async def test_production_websocket_broadcast_is_typed_and_deduplicated() -> Non
     assert empty.reason_code == "websocket_best_effort"
 
     ws = _RecordingWebSocket()
-    result = await broadcast_websocket_best_effort(
-        {"type": "workflow_final"}, [ws, ws]
-    )
+    result = await broadcast_websocket_best_effort({"type": "workflow_final"}, [ws, ws])
     assert result.disposition is DeliveryDisposition.DELIVERED
     assert ws.envelopes == [{"type": "workflow_final"}]
 
@@ -184,9 +185,7 @@ async def test_production_websocket_broadcast_is_typed_and_deduplicated() -> Non
 async def test_production_websocket_broadcast_returns_retryable_failure(
     ws: _RecordingWebSocket, reason: str
 ) -> None:
-    result = await broadcast_websocket_best_effort(
-        {"type": "workflow_event"}, [ws], timeout_s=0.01
-    )
+    result = await broadcast_websocket_best_effort({"type": "workflow_event"}, [ws], timeout_s=0.01)
     assert result.disposition is DeliveryDisposition.RETRYABLE_FAILURE
     assert result.reason_code == reason
 
@@ -211,13 +210,23 @@ class _OfficialFetch:
             raise AssertionError(f"unexpected production fetch URL: {request.url}")
         digest = hashlib.sha256(body.encode("utf-8")).hexdigest()
         return EvidenceDocument(
-            stable_id="doc-" + digest[:12], url=request.url,
-            canonical_url=final_url, title="国家统计局公报", text=body,
-            published_at=None, provider="fake", providers=("fake",),
-            provider_rank=0, score=1.0,
-            searched_at="2026-07-18T00:00:00+00:00", source_kind="web",
-            content_hash=digest, fetcher="fake", extractor="fake",
-            fetched_at="2026-07-18T00:00:01+00:00", html=html,
+            stable_id="doc-" + digest[:12],
+            url=request.url,
+            canonical_url=final_url,
+            title="国家统计局公报",
+            text=body,
+            published_at=None,
+            provider="fake",
+            providers=("fake",),
+            provider_rank=0,
+            score=1.0,
+            searched_at="2026-07-18T00:00:00+00:00",
+            source_kind="web",
+            content_hash=digest,
+            fetcher="fake",
+            extractor="fake",
+            fetched_at="2026-07-18T00:00:01+00:00",
+            html=html,
         )
 
 
@@ -229,7 +238,9 @@ class _OfficialGateway:
     async def search(self, request: SearchRequest) -> SearchResponse:
         self.search_calls += 1
         return SearchResponse(
-            query=request.query, results=(), request_id=request.request_id,
+            query=request.query,
+            results=(),
+            request_id=request.request_id,
             run_id=request.run_id,
         )
 
@@ -415,19 +426,24 @@ async def _controlled_v6_runtime(
     service = await build_workflow_service(tmp_path, activate=False)
     capability = {
         "research_io_budget": {
-            "max_input_tokens": 100, "max_output_tokens": 0,
+            "max_input_tokens": 100,
+            "max_output_tokens": 0,
             "max_cost_micros": 0,
         },
         "research_llm_budget": {
-            "max_input_tokens": 100_000, "max_output_tokens": 100_000,
+            "max_input_tokens": 100_000,
+            "max_output_tokens": 100_000,
             "max_cost_micros": 10_000_000,
         },
     }
     if existing_run_id is None:
         run_id = await service.runner.start(
-            session_id="controlled-v6-session", request_id="controlled-v6-request",
-            turn_id="controlled-v6-turn", workflow_name="deep_research",
-            workflow_version="v6", capability_snapshot=capability,
+            session_id="controlled-v6-session",
+            request_id="controlled-v6-request",
+            turn_id="controlled-v6-turn",
+            workflow_name="deep_research",
+            workflow_version="v6",
+            capability_snapshot=capability,
         )
         await service.run_store.bind_session_refs(
             run_id, (("delivery", "controlled-v6-session", 0),)
@@ -438,9 +454,7 @@ async def _controlled_v6_runtime(
     await service.research_repository.ensure_snapshot_lineage(
         run_id=run_id,
         operation_id=f"research:{run_id}",
-        budget_lease_id=hashlib.sha256(
-            f"controlled-v6-budget|{run_id}".encode()
-        ).hexdigest(),
+        budget_lease_id=hashlib.sha256(f"controlled-v6-budget|{run_id}".encode()).hexdigest(),
     )
     # Use the production blob root so a fresh service instance can recover the
     # content-addressed terminal closure after process restart.
@@ -455,27 +469,34 @@ async def _controlled_v6_runtime(
             EffectExecutionContext(
                 journal=journal,
                 fence=RunFence(
-                    identity.run_id, str(row["lease_owner"]),
-                    int(row["lease_epoch"]), int(row["run_version"]),
+                    identity.run_id,
+                    str(row["lease_owner"]),
+                    int(row["lease_epoch"]),
+                    int(row["run_version"]),
                 ),
                 node_execution_id=f"controlled-{identity.checkpoint_id}-{identity.task_id}",
-                workflow_name="deep_research", workflow_version="v6",
+                workflow_name="deep_research",
+                workflow_version="v6",
                 node_id=identity.node_id,
             ),
         )
 
-    signals = WorkflowControlSignalHub(
-        service.research_repository, poll_interval=0.005
-    )
+    signals = WorkflowControlSignalHub(service.research_repository, poll_interval=0.005)
     context = build_deep_research_v6_context(
-        blobs=blobs, journal=journal, resolve_effect_context=resolve,
-        search_gateway=gateway, llm_call=llm_call,
-        control_signals=signals, request_id="controlled-v6-request",
-        turn_id="controlled-v6-turn", max_parallel_tasks=3,
+        blobs=blobs,
+        journal=journal,
+        resolve_effect_context=resolve,
+        search_gateway=gateway,
+        llm_call=llm_call,
+        control_signals=signals,
+        request_id="controlled-v6-request",
+        turn_id="controlled-v6-turn",
+        max_parallel_tasks=3,
     )
     state = initial_state(
         topic=topic,
-        run_id=run_id, session_id="controlled-v6-session",
+        run_id=run_id,
+        session_id="controlled-v6-session",
     )
     return service, run_id, state, context
 
@@ -488,22 +509,25 @@ async def test_production_v6_composition_executes_bootstrap_registry_runner(tmp_
     assert ("deep_research", "v6") in service.runner.registry.versions()
     capability = {
         "research_io_budget": {
-            "max_input_tokens": 100, "max_output_tokens": 0,
+            "max_input_tokens": 100,
+            "max_output_tokens": 0,
             "max_cost_micros": 0,
         },
         "research_llm_budget": {
-            "max_input_tokens": 100_000, "max_output_tokens": 100_000,
+            "max_input_tokens": 100_000,
+            "max_output_tokens": 100_000,
             "max_cost_micros": 10_000_000,
         },
     }
     run_id = await service.runner.start(
-        session_id="bootstrap-v6-session", request_id="bootstrap-v6-request",
-        turn_id="bootstrap-v6-turn", workflow_name="deep_research",
-        workflow_version="v6", capability_snapshot=capability,
+        session_id="bootstrap-v6-session",
+        request_id="bootstrap-v6-request",
+        turn_id="bootstrap-v6-turn",
+        workflow_name="deep_research",
+        workflow_version="v6",
+        capability_snapshot=capability,
     )
-    await service.run_store.bind_session_refs(
-        run_id, (("delivery", "bootstrap-v6-session", 0),)
-    )
+    await service.run_store.bind_session_refs(run_id, (("delivery", "bootstrap-v6-session", 0),))
     database = service.run_store.path
     blobs = RegisteredBlobStore(tmp_path / "production-v6-blobs", database)
     journal = EffectJournal(database)
@@ -514,20 +538,27 @@ async def test_production_v6_composition_executes_bootstrap_registry_runner(tmp_
         context = EffectExecutionContext(
             journal=journal,
             fence=RunFence(
-                identity.run_id, str(row["lease_owner"]), int(row["lease_epoch"]),
+                identity.run_id,
+                str(row["lease_owner"]),
+                int(row["lease_epoch"]),
                 int(row["run_version"]),
             ),
             node_execution_id=f"bootstrap-{identity.checkpoint_id}-{identity.task_id}",
-            workflow_name="deep_research", workflow_version="v6",
+            workflow_name="deep_research",
+            workflow_version="v6",
             node_id=identity.node_id,
         )
         return BoundResearchEffectContext(identity, context)
 
     gateway = _OfficialGateway()
     context = build_deep_research_v6_context(
-        blobs=blobs, journal=journal, resolve_effect_context=resolve,
-        search_gateway=gateway, llm_call=_forbidden_llm,
-        request_id="bootstrap-v6-request", turn_id="bootstrap-v6-turn",
+        blobs=blobs,
+        journal=journal,
+        resolve_effect_context=resolve,
+        search_gateway=gateway,
+        llm_call=_forbidden_llm,
+        request_id="bootstrap-v6-request",
+        turn_id="bootstrap-v6-turn",
         max_parallel_tasks=3,
     )
     assert isinstance(context.ports["retrieval"], DeepResearchV6ProductionRetrievalPort)
@@ -536,39 +567,50 @@ async def test_production_v6_composition_executes_bootstrap_registry_runner(tmp_
         isinstance(context.ports[name], DurableV6ResearchLLMStagePort)
         for name in ("llm_extract", "llm_inference", "llm_repair")
     )
-    expected_profiles = build_v6_research_llm_profiles({
-        role: research_response_format_hash(value)
-        for role, value in V6_RESEARCH_RESPONSE_FORMATS.items()
-    })
+    expected_profiles = build_v6_research_llm_profiles(
+        {
+            role: research_response_format_hash(value)
+            for role, value in V6_RESEARCH_RESPONSE_FORMATS.items()
+        }
+    )
     assert {
-        context.ports[name].profile_ref
-        for name in ("llm_extract", "llm_inference", "llm_repair")
+        context.ports[name].profile_ref for name in ("llm_extract", "llm_inference", "llm_repair")
     } == {profile.profile_ref for profile in expected_profiles.values()}
 
     state = initial_state(
         topic="2024年中国总人口和出生人口分别是多少？优先国家统计局。",
-        run_id=run_id, session_id="bootstrap-v6-session",
+        run_id=run_id,
+        session_id="bootstrap-v6-session",
     )
     result = await service.runner.run(run_id, state, context)
     assert result.error is None, await service.runner.history(run_id)
     assert result.output["values"]["terminal_manifest_ref"].startswith("sha256:")
     assert gateway.search_calls == 0
     assert [request.url for request in gateway.fetch_service.requests] == [
-        gateway.fetch_service.archive, gateway.fetch_service.target,
+        gateway.fetch_service.archive,
+        gateway.fetch_service.target,
     ]
-    route = json.loads((await blobs.get(
-        result.output["values"]["route_decision_ref"].removeprefix("sha256:")
-    )).decode("utf-8"))
+    route = json.loads(
+        (
+            await blobs.get(result.output["values"]["route_decision_ref"].removeprefix("sha256:"))
+        ).decode("utf-8")
+    )
     assert route["budget"]["llm"] == 0
     for profile in expected_profiles.values():
         assert json.loads((await blobs.get(profile.profile_hash)).decode("utf-8")) == {
-            key: value for key, value in profile.to_json().items()
+            key: value
+            for key, value in profile.to_json().items()
             if key not in {"profile_id", "profile_hash"}
         }
     async with aiosqlite.connect(database) as db:
-        effect_types = [row[0] for row in await (await db.execute(
-            "SELECT effect_type FROM workflow_effects WHERE run_id=?", (run_id,)
-        )).fetchall()]
+        effect_types = [
+            row[0]
+            for row in await (
+                await db.execute(
+                    "SELECT effect_type FROM workflow_effects WHERE run_id=?", (run_id,)
+                )
+            ).fetchall()
+        ]
     assert "deep_research_v6_page_fetch" in effect_types
     assert "research_llm" not in effect_types
 
@@ -596,9 +638,7 @@ async def test_real_launcher_persists_v6_automatic_deadline_before_actionable_br
         await service.research_repository.ensure_snapshot_lineage(
             run_id=run_id,
             operation_id=f"research:{run_id}",
-            budget_lease_id=hashlib.sha256(
-                f"launcher-v6-budget|{run_id}".encode()
-            ).hexdigest(),
+            budget_lease_id=hashlib.sha256(f"launcher-v6-budget|{run_id}".encode()).hexdigest(),
         )
 
         async def resolve(identity):
@@ -614,18 +654,14 @@ async def test_real_launcher_persists_v6_automatic_deadline_before_actionable_br
                         int(current["lease_epoch"]),
                         int(current["run_version"]),
                     ),
-                    node_execution_id=(
-                        f"launcher-{identity.checkpoint_id}-{identity.task_id}"
-                    ),
+                    node_execution_id=(f"launcher-{identity.checkpoint_id}-{identity.task_id}"),
                     workflow_name="deep_research",
                     workflow_version="v6",
                     node_id=identity.node_id,
                 ),
             )
 
-        signals = WorkflowControlSignalHub(
-            service.research_repository, poll_interval=0.005
-        )
+        signals = WorkflowControlSignalHub(service.research_repository, poll_interval=0.005)
         context = build_deep_research_v6_context(
             blobs=blobs,
             journal=journal,
@@ -671,9 +707,7 @@ async def test_real_launcher_persists_v6_automatic_deadline_before_actionable_br
         session_id="launcher-v6-session",
         request_id="launcher-v6-request",
         turn_id="launcher-v6-turn",
-        start_payload={
-            "topic": "What were China's year-end total population in 2024?"
-        },
+        start_payload={"topic": "What were China's year-end total population in 2024?"},
         capability_snapshot={
             "research_io_budget": {
                 "max_input_tokens": 100,
@@ -742,9 +776,7 @@ async def test_restart_recovers_persisted_route_policy_v1_without_schema_version
 
     route_ref = str(result.output["values"]["route_policy_ref"])
     route_policy = json.loads(
-        (await context.ports["blob"].get(route_ref.removeprefix("sha256:"))).decode(
-            "utf-8"
-        )
+        (await context.ports["blob"].get(route_ref.removeprefix("sha256:"))).decode("utf-8")
     )
     assert route_policy["policy_id"] == "deep-research-v6-official-retrieval-v1"
     assert "schema_version" not in route_policy
@@ -774,9 +806,7 @@ async def test_real_runner_preserves_failed_page_result_as_honest_insufficient(
     gateway = _FailingTargetOfficialGateway()
     service, run_id, state, context = await _controlled_v6_runtime(tmp_path, gateway)
 
-    result = await asyncio.wait_for(
-        service.runner.run(run_id, state, context), timeout=30
-    )
+    result = await asyncio.wait_for(service.runner.run(run_id, state, context), timeout=30)
 
     assert result.error is None, await service.runner.history(run_id)
     assert result.output["values"]["answer_status"] == "insufficient_evidence"
@@ -865,9 +895,7 @@ async def test_real_runner_generate_now_preserves_inflight_canonical_page_outcom
     raw = await context.ports["blob"].get(str(refs[0]).removeprefix("sha256:"))
     page = json.loads(raw.decode("utf-8"))
     assert page["outcome"] == "succeeded"
-    command = await service.research_repository.get_control(
-        str(accepted["command"]["command_id"])
-    )
+    command = await service.research_repository.get_control(str(accepted["command"]["command_id"]))
     assert command is not None and command["status"] == "consumed"
 
 
@@ -1000,9 +1028,7 @@ async def test_real_runner_generate_now_fences_inflight_semantic_page_group_loop
 
     blobs = context.ports["blob"]
     route_ref = str(result.output["values"]["route_decision_ref"])
-    route = json.loads(
-        (await blobs.get(route_ref.removeprefix("sha256:"))).decode("utf-8")
-    )
+    route = json.loads((await blobs.get(route_ref.removeprefix("sha256:"))).decode("utf-8"))
     assert len(route["work_groups"]) == 2
     fact_batch_ref = str(result.output["values"]["fact_batch_refs"][0])
     fact_batch = json.loads(
@@ -1010,15 +1036,11 @@ async def test_real_runner_generate_now_fences_inflight_semantic_page_group_loop
     )
     assert len(fact_batch["candidate_slot_results"]) == 1
     producer_ref = fact_batch["candidate_slot_results"][0]["producer_outcome_ref"]
-    producer = json.loads(
-        (await blobs.get(producer_ref.removeprefix("sha256:"))).decode("utf-8")
-    )
+    producer = json.loads((await blobs.get(producer_ref.removeprefix("sha256:"))).decode("utf-8"))
     assert producer["status"] == "malformed"
     assert producer["bundle_ref"] is None
     outcome_ref = producer["llm_effect_outcome_ref"]
-    outcome = json.loads(
-        (await blobs.get(outcome_ref.removeprefix("sha256:"))).decode("utf-8")
-    )
+    outcome = json.loads((await blobs.get(outcome_ref.removeprefix("sha256:"))).decode("utf-8"))
     assert outcome["status"] == "malformed"
     assert outcome["raw_result_ref"] is not None
 
@@ -1038,9 +1060,7 @@ async def test_real_runner_recovers_durable_accepted_generate_now_after_process_
     old_service, run_id, old_state, old_context = await _controlled_v6_runtime(
         tmp_path, old_gateway
     )
-    old_run_task = asyncio.create_task(
-        old_service.runner.run(run_id, old_state, old_context)
-    )
+    old_run_task = asyncio.create_task(old_service.runner.run(run_id, old_state, old_context))
     await asyncio.wait_for(old_gateway.fetch_service.started.wait(), timeout=10)
     running = await old_service.run_store.get_run(run_id)
     assert running is not None
@@ -1056,13 +1076,15 @@ async def test_real_runner_recovers_durable_accepted_generate_now_after_process_
     assert before_command is not None and before_command["status"] == "accepted"
     database = Path(old_service.run_store.path)
     async with aiosqlite.connect(database) as db:
-        before_deadline = await (await db.execute(
-            """SELECT deadline_id,run_id,logical_scope,policy_hash,budget_ms,
+        before_deadline = await (
+            await db.execute(
+                """SELECT deadline_id,run_id,logical_scope,policy_hash,budget_ms,
             created_at,wall_not_after,parent_deadline_id
             FROM workflow_research_deadlines
             WHERE run_id=? AND logical_scope='run:automatic'""",
-            (run_id,),
-        )).fetchone()
+                (run_id,),
+            )
+        ).fetchone()
     assert before_deadline is not None
 
     # Simulate abrupt process loss: parent cancellation propagates, no old
@@ -1073,10 +1095,9 @@ async def test_real_runner_recovers_durable_accepted_generate_now_after_process_
         await old_run_task
     still_accepted = await old_service.research_repository.get_control(command_id)
     assert still_accepted is not None and still_accepted["status"] == "accepted"
-    assert (
-        still_accepted["accepted_at"], still_accepted["settle_deadline"]
-    ) == (
-        before_command["accepted_at"], before_command["settle_deadline"]
+    assert (still_accepted["accepted_at"], still_accepted["settle_deadline"]) == (
+        before_command["accepted_at"],
+        before_command["settle_deadline"],
     )
     async with aiosqlite.connect(database) as db:
         await db.execute(
@@ -1104,23 +1125,23 @@ async def test_real_runner_recovers_durable_accepted_generate_now_after_process_
 
     after_command = await new_service.research_repository.get_control(command_id)
     assert after_command is not None and after_command["status"] == "consumed"
-    assert (
-        after_command["accepted_at"], after_command["settle_deadline"]
-    ) == (
-        before_command["accepted_at"], before_command["settle_deadline"]
+    assert (after_command["accepted_at"], after_command["settle_deadline"]) == (
+        before_command["accepted_at"],
+        before_command["settle_deadline"],
     )
     assert all(
-        after_command[name] is not None
-        for name in ("observed_at", "settled_at", "consumed_at")
+        after_command[name] is not None for name in ("observed_at", "settled_at", "consumed_at")
     )
     async with aiosqlite.connect(database) as db:
-        after_deadline = await (await db.execute(
-            """SELECT deadline_id,run_id,logical_scope,policy_hash,budget_ms,
+        after_deadline = await (
+            await db.execute(
+                """SELECT deadline_id,run_id,logical_scope,policy_hash,budget_ms,
             created_at,wall_not_after,parent_deadline_id
             FROM workflow_research_deadlines
             WHERE run_id=? AND logical_scope='run:automatic'""",
-            (run_id,),
-        )).fetchone()
+                (run_id,),
+            )
+        ).fetchone()
     assert after_deadline == before_deadline
 
 

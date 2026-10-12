@@ -11,6 +11,7 @@ Validates end-to-end plugin lifecycle:
 
 Hermetic: uses tempdir for plugins_dir.
 """
+
 from __future__ import annotations
 
 import shutil
@@ -37,9 +38,16 @@ def main() -> int:
 
     # 1. Scaffold a plugin
     proc = subprocess.run(
-        [sys.executable, "-m", "scripts.scaffold_plugin", "demo-plugin",
-         "--out", str(plugins_dir),
-         "--description", "demo plugin for e2e"],
+        [
+            sys.executable,
+            "-m",
+            "scripts.scaffold_plugin",
+            "demo-plugin",
+            "--out",
+            str(plugins_dir),
+            "--description",
+            "demo plugin for e2e",
+        ],
         cwd=Path(__file__).resolve().parent.parent,
         capture_output=True,
         text=True,
@@ -69,8 +77,7 @@ def main() -> int:
     meta = parse_skill_md(skills[0])
     _print(
         "skill parsed:",
-        f"name={meta.name}, description={meta.description!r}, "
-        f"source={meta.source}",
+        f"name={meta.name}, description={meta.description!r}, source={meta.source}",
     )
     assert meta.name == "example"
     assert meta.description == "Example skill shipped with this plugin"

@@ -29,7 +29,9 @@ from deskpet.sdk_adapters.runtime_paths import (
 SDK_VERSION = "0.13.0.dev20260925+opt.186"
 SDK_WHEEL_FILENAME = "simple_harness_sdk-0.13.0.dev20260925+opt.186-py3-none-any.whl"
 SDK_WHEEL_SHA256 = "7924062c04bbc71f34156c1e0b9852a10cf240cf4faf655d2c82c8e6ff5cb76a"
-SDK_CANDIDATE_MANIFEST_FILENAME = "simple_harness_sdk-0.13.0.dev20260925+opt.186.candidate-manifest.json"
+SDK_CANDIDATE_MANIFEST_FILENAME = (
+    "simple_harness_sdk-0.13.0.dev20260925+opt.186.candidate-manifest.json"
+)
 SDK_CANDIDATE_MANIFEST_SHA256 = "5401e8712788c03251d1f477845a517a21f211fb424e4c7cc6fd84dad17c064a"
 SDK_SOURCE_COMMIT = "9b91f9d857a58d2bd64de6d5a43b36a03baa1bbd"
 SDK_CI_RUN_ID = None
@@ -149,20 +151,30 @@ def runtime_identity_report() -> dict[str, object]:
     """
     mode = os.environ.get(SDK_RUNTIME_MODE_ENV, "wheel")
     if mode == "wheel" and SDK_SOURCE_ATTESTATION_ENV not in os.environ:
-        return {"mode": "wheel", "source_verified": False,
-                "installed_wheel_verified": False, "verification": "version-only"}
+        return {
+            "mode": "wheel",
+            "source_verified": False,
+            "installed_wheel_verified": False,
+            "verification": "version-only",
+        }
     identity = verify_runtime_identity(build_runtime_identity())
     if not isinstance(identity, SdkSourceIdentity):
         raise RuntimeError("SDK source identity was not selected")  # noqa: TRY004 - configuration failure
     return {
-        "mode": "editable-source", "source_verified": True,
-        "baseline_artifact_verified": True, "installed_wheel_verified": False,
+        "mode": "editable-source",
+        "source_verified": True,
+        "baseline_artifact_verified": True,
+        "installed_wheel_verified": False,
         "verification": "source-snapshot-at-startup",
         "source": {
-            "root": str(identity.root), "commit": identity.commit,
-            "inputs_sha256": identity.inputs_sha256, "input_count": len(identity.inputs),
-            "module_origins": {name: str(identity.root / "src" / name / "__init__.py")
-                               for name in ("simple_harness", "agent_orchestrator")},
+            "root": str(identity.root),
+            "commit": identity.commit,
+            "inputs_sha256": identity.inputs_sha256,
+            "input_count": len(identity.inputs),
+            "module_origins": {
+                name: str(identity.root / "src" / name / "__init__.py")
+                for name in ("simple_harness", "agent_orchestrator")
+            },
         },
     }
 
@@ -195,8 +207,7 @@ def verify_service_candidate() -> None:
     if (
         manifest.get("schema") != "simple-harness-service-candidate-manifest-v2"
         or manifest.get("source", {}).get("commit") != SDK_SERVICE_SOURCE_COMMIT
-        or manifest.get("authority", {}).get("root_sha256")
-        != SDK_SERVICE_AUTHORITY_ROOT_SHA256
+        or manifest.get("authority", {}).get("root_sha256") != SDK_SERVICE_AUTHORITY_ROOT_SHA256
         or service.get("version") != SDK_SERVICE_VERSION
         or service.get("wheel") != SDK_SERVICE_WHEEL_FILENAME
         or service.get("sha256") != SDK_SERVICE_WHEEL_SHA256

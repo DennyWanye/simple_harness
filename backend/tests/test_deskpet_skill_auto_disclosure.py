@@ -14,6 +14,7 @@ Covers:
   T8 — SkillMatcher caches skill embeddings; query embedding recomputed per call.
   T9 — SkillMatcher.match with embedder=None returns [].
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -32,6 +33,7 @@ from deskpet.skills.skill_matcher import SkillMatcher
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_meta(
     name: str,
@@ -102,6 +104,7 @@ def _unit_vec(idx: int, dim: int = 3) -> list[float]:
 # T6 — loader.read_body(name) returns raw body, no arg substitution
 # ---------------------------------------------------------------------------
 
+
 def test_read_body_returns_raw_body_no_substitution(tmp_path: Path) -> None:
     """read_body should return the unsubstituted body text."""
     body_text = "Do ${args[0]} with ${args[1]} items."
@@ -135,6 +138,7 @@ def test_read_body_strips_frontmatter(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 # T7 — SkillMatcher.match returns sorted (name, sim) list
 # ---------------------------------------------------------------------------
+
 
 def test_skill_matcher_match_sorted_by_similarity() -> None:
     """match() should return (name, sim) pairs sorted descending."""
@@ -182,6 +186,7 @@ def test_skill_matcher_match_empty_skills() -> None:
 # T8 — embedder=None → match returns []
 # ---------------------------------------------------------------------------
 
+
 def test_skill_matcher_none_embedder_returns_empty() -> None:
     matcher = SkillMatcher(None)
     skills = [_make_meta("foo", "bar")]
@@ -206,6 +211,7 @@ def test_skill_matcher_none_embedder_no_crash() -> None:
 # 旧单测只用 SYNC mock 所以全绿，掩盖了这条生产死链。本组用 async embedder
 # 复现生产契约，确保 match_async 能惰性异步建缓存 + 产出真相似度。
 # ---------------------------------------------------------------------------
+
 
 def _make_async_embedder(vectors: dict[str, list[float]]) -> Any:
     """Production-shaped ASYNC embedder: async embed(list[str]) -> list[list[float]]."""
@@ -241,8 +247,8 @@ async def test_skill_matcher_async_embedder_lazy_builds_and_matches() -> None:
     """
     vectors = {
         "query": [1.0, 0.0, 0.0],
-        "strong skill": [1.0, 0.0, 0.0],   # cos=1.0
-        "weak skill": [0.0, 1.0, 0.0],     # cos=0.0
+        "strong skill": [1.0, 0.0, 0.0],  # cos=1.0
+        "weak skill": [0.0, 1.0, 0.0],  # cos=0.0
     }
     embedder = _make_async_embedder(vectors)
     skills = [
@@ -267,8 +273,9 @@ async def test_skill_matcher_async_encode_only_embedder() -> None:
 
     class _EncodeOnly:
         async def encode(self, texts: list[str]):
-            return [[1.0, 0.0, 0.0] if "q" in t or "match me" in t else [0.0, 1.0, 0.0]
-                    for t in texts]
+            return [
+                [1.0, 0.0, 0.0] if "q" in t or "match me" in t else [0.0, 1.0, 0.0] for t in texts
+            ]
 
     matcher = SkillMatcher(_EncodeOnly())
     skills = [_make_meta("hit", "match me please")]
@@ -280,6 +287,7 @@ async def test_skill_matcher_async_encode_only_embedder() -> None:
 # ---------------------------------------------------------------------------
 # T1 — SkillComponent 3-tier: strong body in prelude, weak desc-only
 # ---------------------------------------------------------------------------
+
 
 def _make_ctx(
     skills: list[SkillMeta],
@@ -316,8 +324,15 @@ def _make_ctx(
 async def test_strong_match_body_in_prelude(tmp_path: Path) -> None:
     """When sim >= threshold, skill body must appear in prelude."""
     # Write real skill files so read_body works
-    _make_skill_dir(tmp_path, "strong-skill", "strong skill description", "## Strong Body\nThis is strong body content.")
-    _make_skill_dir(tmp_path, "weak-skill", "weak skill description", "## Weak Body\nThis is weak body content.")
+    _make_skill_dir(
+        tmp_path,
+        "strong-skill",
+        "strong skill description",
+        "## Strong Body\nThis is strong body content.",
+    )
+    _make_skill_dir(
+        tmp_path, "weak-skill", "weak skill description", "## Weak Body\nThis is weak body content."
+    )
 
     loader = SkillLoader([tmp_path], enable_watch=False)
     loader.reload()
@@ -348,7 +363,9 @@ async def test_strong_match_body_in_prelude(tmp_path: Path) -> None:
     result: Slice = await component.provide(ctx)
     assert result.text_content
     # Strong body should be inlined
-    assert "Strong Body" in result.text_content or "strong body content" in result.text_content.lower()
+    assert (
+        "Strong Body" in result.text_content or "strong body content" in result.text_content.lower()
+    )
     # Weak body should NOT be inlined
     assert "weak body content" not in result.text_content.lower()
     # Both names should appear (desc list always present)
@@ -403,9 +420,7 @@ async def test_default_threshold_rejects_ambiguous_short_query_match(
     assert meta is not None
 
     matcher = MagicMock()
-    matcher.match_async = AsyncMock(
-        return_value=[("recall-yesterday", 0.55)]
-    )
+    matcher.match_async = AsyncMock(return_value=[("recall-yesterday", 0.55)])
     component = SkillComponent(skill_matcher=matcher, skill_loader=loader)
     result = await component.provide(
         _make_ctx(
@@ -422,6 +437,7 @@ async def test_default_threshold_rejects_ambiguous_short_query_match(
 # T2 — over-budget: high usage_count retained, low usage_count dropped
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_overbudget_high_usage_retained(tmp_path: Path) -> None:
     """When total body tokens exceed budget, drop lowest usage_count first."""
@@ -429,7 +445,7 @@ async def test_overbudget_high_usage_retained(tmp_path: Path) -> None:
     # WI-1B-1：token 计数收敛到 CJK-aware count_text_tokens（ASCII×8/7 安全偏上），
     # 500 ASCII ≈ 142 tokens（旧裸 len//4 是 125）。budget 取 150：容一不容二。
     body_high = "x" * 500  # ~142 tokens (count_text_tokens)
-    body_low = "y" * 500   # ~142 tokens
+    body_low = "y" * 500  # ~142 tokens
 
     _make_skill_dir(tmp_path, "high-use", "alpha skill description", body_high)
     _make_skill_dir(tmp_path, "low-use", "beta skill description", body_low)
@@ -477,6 +493,7 @@ async def test_overbudget_high_usage_retained(tmp_path: Path) -> None:
 # T3 — embedder=None → degrade to desc list (no crash)
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_embedder_none_degrades_to_desc_list(tmp_path: Path) -> None:
     """embedder=None: no crash, returns desc list only."""
@@ -506,6 +523,7 @@ async def test_embedder_none_degrades_to_desc_list(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 # T4 — disable_model_invocation skill → not auto-loaded
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_disable_model_invocation_not_auto_loaded(tmp_path: Path) -> None:
@@ -544,6 +562,7 @@ async def test_disable_model_invocation_not_auto_loaded(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 # T5 — flag off → desc-list-only (byte regression vs current)
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_flag_off_desc_list_only(tmp_path: Path) -> None:
@@ -601,6 +620,7 @@ async def test_flag_off_no_matcher_needed(tmp_path: Path) -> None:
 # T-extra: prelude format — "以下技能正文已预载" annotation present when body loaded
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_prelude_annotation_present_when_body_loaded(tmp_path: Path) -> None:
     """When body is auto-loaded, prelude should contain an annotation."""
@@ -635,6 +655,7 @@ async def test_prelude_annotation_present_when_body_loaded(tmp_path: Path) -> No
 # T-extra: desc_list priority=85 (not cut), body segment priority lower
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_desc_list_always_present_even_when_no_body_loaded(tmp_path: Path) -> None:
     """Desc list (priority=85) must always appear regardless of body loading."""
@@ -664,12 +685,11 @@ async def test_desc_list_always_present_even_when_no_body_loaded(tmp_path: Path)
 # ③ log 的 top_sim 打 strong_matches[0]（空时 0.0）掩盖真实 ranked 分数。
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_auto_on_uses_full_skill_set_not_select(tmp_path: Path) -> None:
     """auto ON 时组件必须用 registry.all() 全集，不被 select() 过滤。"""
-    _make_skill_dir(
-        tmp_path, "research-skill", "deep research helper", "## Research body content."
-    )
+    _make_skill_dir(tmp_path, "research-skill", "deep research helper", "## Research body content.")
     loader = SkillLoader([tmp_path], enable_watch=False)
     loader.reload()
     research = loader.get("research-skill")
@@ -752,6 +772,7 @@ def test_build_sync_with_async_embedder_skips_cleanly() -> None:
 # BGE-M3 int8 对短中文 query 区分度不够(实测 on-target 0.45~0.55 vs
 # off-target 0.53+)——显式 triggers 命中直接强匹配,embedding 兜 paraphrase。
 # ---------------------------------------------------------------------------
+
 
 def test_loader_parses_triggers_legacy(tmp_path: Path) -> None:
     """legacy 格式 frontmatter 的 triggers + when_to_use 提升为一等字段。"""
@@ -864,6 +885,7 @@ async def test_log_top_sim_reports_ranked_not_strong(
 # T-extra: meta contains auto_loaded_count when bodies are loaded
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_meta_auto_loaded_count(tmp_path: Path) -> None:
     """Slice meta should report auto_loaded_count."""
@@ -882,7 +904,9 @@ async def test_meta_auto_loaded_count(tmp_path: Path) -> None:
     matcher.build([meta])
 
     component = SkillComponent(skill_matcher=matcher, skill_loader=loader)
-    ctx = _make_ctx([meta], user_message="query", auto_disclosure_enabled=True, strong_threshold=0.55)
+    ctx = _make_ctx(
+        [meta], user_message="query", auto_disclosure_enabled=True, strong_threshold=0.55
+    )
     result = await component.provide(ctx)
     assert "auto_loaded_count" in result.meta
     assert result.meta["auto_loaded_count"] >= 1

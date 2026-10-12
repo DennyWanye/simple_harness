@@ -18,6 +18,7 @@ These tests pin the additive merge contract:
   * excluded sections ([llm], api_key, …) are NEVER touched
   * the merge is idempotent and degrades gracefully (no tomlkit / no bundle)
 """
+
 from __future__ import annotations
 
 import sys
@@ -135,8 +136,7 @@ def test_unrevisioned_legacy_value_is_not_promoted_by_factory_migrator(fake_dirs
     user_dir, bundle_src = fake_dirs
     user_target = user_dir / "config.toml"
     user_target.write_text(
-        OLD_USER_TOML
-        + '\n[workflows]\ndeep_research_version = "v3"\n',
+        OLD_USER_TOML + '\n[workflows]\ndeep_research_version = "v3"\n',
         encoding="utf-8",
     )
     bundle_src.write_text(
@@ -158,8 +158,7 @@ def test_explicit_legacy_v2_choice_is_not_promoted(fake_dirs):
     user_dir, bundle_src = fake_dirs
     user_target = user_dir / "config.toml"
     user_target.write_text(
-        OLD_USER_TOML
-        + '\n[workflows]\ndeep_research_version = "v2"\n',
+        OLD_USER_TOML + '\n[workflows]\ndeep_research_version = "v2"\n',
         encoding="utf-8",
     )
     bundle_src.write_text(
@@ -188,7 +187,7 @@ def test_historical_v4_factory_pair_is_not_migrated_by_v6_migrator(fake_dirs):
         BUNDLE_TOML
         + '\n[workflows]\ndeep_research_version = "v5"\n'
         + "deep_research_default_revision = 5\n"
-        + '\n[research_v5]\nsoft_checkpoint_seconds = 300\nlease_seconds = 120\n',
+        + "\n[research_v5]\nsoft_checkpoint_seconds = 300\nlease_seconds = 120\n",
         encoding="utf-8",
     )
     assert cfg._merge_missing_feature_flags(user_target, bundle_src) is True

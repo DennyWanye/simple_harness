@@ -58,8 +58,7 @@ def load_tool_manifest() -> ProductToolManifest:
     actual = canonical_hash(raw)
     if embedded != MANIFEST_SHA256 or actual != MANIFEST_SHA256:
         raise RuntimeError(
-            "real Tool manifest hash mismatch: "
-            f"embedded={embedded!r}, actual={actual!r}"
+            f"real Tool manifest hash mismatch: embedded={embedded!r}, actual={actual!r}"
         )
     tools = tuple(raw.get("tools") or ())
     names = tuple(str(item.get("name") or "") for item in tools)

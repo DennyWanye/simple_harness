@@ -135,9 +135,7 @@ class ResearchLLMEffectProfile:
             raise ValueError("opaque research LLM profiles must have max_attempts=1")
         expected_repairs = 0 if self.role == "evidence_structured_repair" else 1
         if self.max_repair_rounds != expected_repairs:
-            raise ValueError(
-                f"{self.role} requires max_repair_rounds={expected_repairs}"
-            )
+            raise ValueError(f"{self.role} requires max_repair_rounds={expected_repairs}")
         if self.late_result_policy != "commit_or_hold_no_resend":
             raise ValueError("v6 research LLM late results must never be resent")
 
@@ -161,9 +159,7 @@ class ResearchLLMEffectProfile:
 
     @property
     def profile_hash(self) -> str:
-        return hashlib.sha256(
-            canonical_json(self._identity_payload()).encode("utf-8")
-        ).hexdigest()
+        return hashlib.sha256(canonical_json(self._identity_payload()).encode("utf-8")).hexdigest()
 
     @property
     def profile_id(self) -> str:
@@ -244,8 +240,11 @@ _CANDIDATE_PAYLOAD_SCHEMA: dict[str, JsonValue] = {
         _strict_object(
             {
                 "item_or_cell_id": {"type": "null"},
-                "value": {}, "canonical_unit": {}, "time_scope": {},
-                "scope": {}, "definition": {},
+                "value": {},
+                "canonical_unit": {},
+                "time_scope": {},
+                "scope": {},
+                "definition": {},
             }
         ),
         _strict_object(
@@ -253,8 +252,11 @@ _CANDIDATE_PAYLOAD_SCHEMA: dict[str, JsonValue] = {
                 "cell_id": {"type": "string"},
                 "axis_member_ids": _STRING_ARRAY_SCHEMA,
                 "field_key": {"type": "string"},
-                "value": {}, "canonical_unit": {}, "time_scope": {},
-                "scope": {}, "definition": {},
+                "value": {},
+                "canonical_unit": {},
+                "time_scope": {},
+                "scope": {},
+                "definition": {},
             }
         ),
         _strict_object(
@@ -262,11 +264,17 @@ _CANDIDATE_PAYLOAD_SCHEMA: dict[str, JsonValue] = {
                 "item_id": {"type": "string"},
                 "unique_key_values": {"type": "array", "minItems": 1, "items": {}},
                 "field_key": {"type": "string"},
-                "value": {}, "canonical_unit": {}, "as_of": {},
+                "value": {},
+                "canonical_unit": {},
+                "as_of": {},
                 "rank_inputs": {
                     "type": "array",
                     "items": _strict_object(
-                        {"field_key": {"type": "string"}, "value": {}, "missing": {"type": "boolean"}}
+                        {
+                            "field_key": {"type": "string"},
+                            "value": {},
+                            "missing": {"type": "boolean"},
+                        }
                     ),
                 },
             }
@@ -275,8 +283,11 @@ _CANDIDATE_PAYLOAD_SCHEMA: dict[str, JsonValue] = {
             {
                 "claim_instance_id": {"type": "string"},
                 "facet_key": {"type": "string"},
-                "value": {}, "canonical_unit": {}, "time_scope": {},
-                "scope": {}, "definition": {},
+                "value": {},
+                "canonical_unit": {},
+                "time_scope": {},
+                "scope": {},
+                "definition": {},
             }
         ),
     ]
@@ -321,7 +332,17 @@ _INFERENCE_PROPOSAL_SCHEMA = _strict_object(
         "schema_version": {"const": 1},
         "proposal_id": {"type": "string", "pattern": "^inp_[0-9a-f]{24}$"},
         "requirement_id": {"type": "string", "minLength": 1},
-        "inference_kind": {"enum": ["impact", "comparison", "preference", "conclusion", "limitation", "counterevidence", "uncertainty"]},
+        "inference_kind": {
+            "enum": [
+                "impact",
+                "comparison",
+                "preference",
+                "conclusion",
+                "limitation",
+                "counterevidence",
+                "uncertainty",
+            ]
+        },
         "item_or_cell_id": {"type": ["string", "null"]},
         "facet_ids": _STRING_ARRAY_SCHEMA,
         "normalized_proposition": {"type": "string", "minLength": 1},
@@ -369,9 +390,7 @@ V6_RESEARCH_RESPONSE_FORMATS: dict[str, dict[str, JsonValue]] = {
             "strict": True,
             "schema": _strict_object(
                 {
-                    "result_kind": {
-                        "enum": ["candidate_bundle", "inference_bundle"]
-                    },
+                    "result_kind": {"enum": ["candidate_bundle", "inference_bundle"]},
                     "candidate_bundle": {
                         "anyOf": [
                             _EVIDENCE_CANDIDATE_BUNDLE_SCHEMA,
@@ -402,9 +421,12 @@ def build_v6_research_llm_profiles(
             "v6 research LLM response hashes must cover extract, inference, and repair"
         )
     profiles: dict[str, ResearchLLMEffectProfile] = {}
-    for role, (policy_id, tool_spec, schema_hash, max_repairs) in (
-        _V6_RESEARCH_LLM_PROFILE_IDENTITIES.items()
-    ):
+    for role, (
+        policy_id,
+        tool_spec,
+        schema_hash,
+        max_repairs,
+    ) in _V6_RESEARCH_LLM_PROFILE_IDENTITIES.items():
         profiles[role] = ResearchLLMEffectProfile(
             workflow_version="v6",
             role=role,
@@ -780,9 +802,7 @@ class DurableV5ControlPort:
         )
         cancelled = isinstance(marker, Mapping) or watchdog
         if cancelled and self.signal_hub is not None:
-            self.signal_hub.notify_cancel(
-                str(row["run_id"]), command_id=str(row["command_id"])
-            )
+            self.signal_hub.notify_cancel(str(row["run_id"]), command_id=str(row["command_id"]))
         action = "cancel_settle" if cancelled else str(row["action"])
         cancel_key = marker.get("idempotency_key") if isinstance(marker, Mapping) else None
         idempotency_key = str(cancel_key or row["idempotency_key"])
@@ -852,13 +872,20 @@ class DurableV5ControlPort:
             raise ResearchEffectAdapterError("control disappeared before settle")
         if row["status"] == "accepted":
             row = await self.repository.transition_control(
-                str(command_id), expected_status="accepted", new_status="observed",
-                checkpoint_ns=checkpoint_ns, checkpoint_id=checkpoint_id,
+                str(command_id),
+                expected_status="accepted",
+                new_status="observed",
+                checkpoint_ns=checkpoint_ns,
+                checkpoint_id=checkpoint_id,
             )
         if row["status"] == "observed":
             row = await self.repository.transition_control(
-                str(command_id), expected_status="observed", new_status="settled",
-                checkpoint_ns=checkpoint_ns, checkpoint_id=checkpoint_id, result=result,
+                str(command_id),
+                expected_status="observed",
+                new_status="settled",
+                checkpoint_ns=checkpoint_ns,
+                checkpoint_id=checkpoint_id,
+                result=result,
             )
         return self._project(row)
 
@@ -871,8 +898,12 @@ class DurableV5ControlPort:
         result: Mapping[str, object],
     ) -> ResearchControlCommand:
         row = await self.repository.transition_control(
-            str(command_id), expected_status="settled", new_status="consumed",
-            checkpoint_ns=checkpoint_ns, checkpoint_id=checkpoint_id, result=result,
+            str(command_id),
+            expected_status="settled",
+            new_status="consumed",
+            checkpoint_ns=checkpoint_ns,
+            checkpoint_id=checkpoint_id,
+            result=result,
         )
         return self._project(row)
 
@@ -894,7 +925,7 @@ class DurableResearchSnapshotPort:
         raw = str(value)
         for prefix in ("sha256:", "blob:"):
             if raw.startswith(prefix):
-                raw = raw[len(prefix):]
+                raw = raw[len(prefix) :]
                 break
         if len(raw) != 64 or any(ch not in "0123456789abcdef" for ch in raw):
             raise ValueError("snapshot passage refs must be lowercase SHA-256 digests")
@@ -911,8 +942,7 @@ class DurableResearchSnapshotPort:
         continue_until: str,
     ) -> Mapping[str, JsonValue]:
         coverages = tuple(
-            DimensionCoverage.from_json(item)
-            for item in values.get("dimension_coverages", [])
+            DimensionCoverage.from_json(item) for item in values.get("dimension_coverages", [])
         )
         raw_refs = values.get("passage_blob_refs", [])
         if not isinstance(raw_refs, list):
@@ -1084,9 +1114,7 @@ class DurableResearchCallEffectAdapter:
                 raise ValueError("a v6 LLM profile requires its frozen response_format")
             actual_hash = research_response_format_hash(response_format)
             if actual_hash != profile.response_format_hash:
-                raise ValueError(
-                    "v6 LLM response_format does not match the profile hash"
-                )
+                raise ValueError("v6 LLM response_format does not match the profile hash")
             self.response_format = copy.deepcopy(dict(response_format))
         self.profile = profile
 
@@ -1097,9 +1125,7 @@ class DurableResearchCallEffectAdapter:
         if inspect.isawaitable(result):
             await result
 
-    async def _context(
-        self, identity: NodeExecutionIdentity
-    ) -> EffectExecutionContext:
+    async def _context(self, identity: NodeExecutionIdentity) -> EffectExecutionContext:
         resolved = self.resolve_effect_context(identity)
         if inspect.isawaitable(resolved):
             resolved = await resolved
@@ -1130,7 +1156,11 @@ class DurableResearchCallEffectAdapter:
             )
         if context.journal is not self.journal:
             raise EffectStateConflict("research effect context uses a different journal")
-        if not context.fence.owner or context.fence.lease_epoch < 1 or context.fence.run_version < 1:
+        if (
+            not context.fence.owner
+            or context.fence.lease_epoch < 1
+            or context.fence.run_version < 1
+        ):
             raise EffectStateConflict("research effect context has an incomplete run fence")
         return context
 
@@ -1146,17 +1176,11 @@ class DurableResearchCallEffectAdapter:
     ) -> PreparedToolCall:
         tool_name = profile.tool_name if profile is not None else "research_llm_v2"
         tool_spec_version = (
-            profile.tool_spec_version
-            if profile is not None
-            else "deep-research-v5-llm-v1"
+            profile.tool_spec_version if profile is not None else "deep-research-v5-llm-v1"
         )
-        schema_hash = (
-            profile.schema_hash if profile is not None else "research-llm-result-v1"
-        )
+        schema_hash = profile.schema_hash if profile is not None else "research-llm-result-v1"
         permission_policy_version = (
-            profile.permission_policy_version
-            if profile is not None
-            else "research-readonly-v1"
+            profile.permission_policy_version if profile is not None else "research-readonly-v1"
         )
         effect_type = profile.effect_type if profile is not None else "research_llm"
         return PreparedToolCall.prepare(
@@ -1216,6 +1240,7 @@ class DurableResearchCallEffectAdapter:
             prompt_ref=prompt_ref,
             profile_ref=(self.profile.profile_ref if self.profile is not None else None),
         )
+
     async def _settle_unknown(
         self,
         context: EffectExecutionContext,
@@ -1254,9 +1279,7 @@ class DurableResearchCallEffectAdapter:
         try:
             cost = self.actual_cost_micros(result)
             if isinstance(cost, bool) or not isinstance(cost, int) or cost < 0:
-                raise ValueError(
-                    "actual_cost_micros must return a non-negative integer"
-                )
+                raise ValueError("actual_cost_micros must return a non-negative integer")
         except BaseException:
             await self.journal.commit_or_hold(context.fence, effect_id, outcome)
             raise
@@ -1310,9 +1333,7 @@ class DurableResearchCallEffectAdapter:
             raise ValueError(f"unsupported research LLM role: {role}")
         if self.profile is not None:
             if execution_identity.workflow_version != self.profile.workflow_version:
-                raise ValueError(
-                    "research LLM profile version does not match execution identity"
-                )
+                raise ValueError("research LLM profile version does not match execution identity")
             if role != self.profile.role:
                 raise ValueError("research LLM role does not match the bound profile")
         if (
@@ -1326,21 +1347,15 @@ class DurableResearchCallEffectAdapter:
         if self.profile is not None:
             if not isinstance(logical_effect_id, str) or not logical_effect_id:
                 raise ValueError("v6 research LLM requires its frozen logical_effect_id")
-            expected_stable_call_id = hashlib.sha256(
-                logical_effect_id.encode("utf-8")
-            ).hexdigest()
+            expected_stable_call_id = hashlib.sha256(logical_effect_id.encode("utf-8")).hexdigest()
             if stable_call_id != expected_stable_call_id:
-                raise ValueError(
-                    "v6 stable_call_id must be SHA-256(logical_effect_id)"
-                )
+                raise ValueError("v6 stable_call_id must be SHA-256(logical_effect_id)")
         elif logical_effect_id is not None:
             raise ValueError("legacy research LLM calls cannot override logical identity")
         context = await self._context(execution_identity)
         payload_digest = _blob_digest(payload_ref)
         response_format = (
-            self.response_format
-            if self.profile is not None
-            else _response_format_for_role(role)
+            self.response_format if self.profile is not None else _response_format_for_role(role)
         )
         prepared = self._prepared(
             role=role,
@@ -1360,9 +1375,7 @@ class DurableResearchCallEffectAdapter:
             or input_reserved < 1
         ):
             raise ValueError("reserve_input_tokens must return a positive integer")
-        cost_reserved = self.reserve_cost_micros(
-            role, input_reserved, max_output_tokens
-        )
+        cost_reserved = self.reserve_cost_micros(role, input_reserved, max_output_tokens)
         if (
             isinstance(cost_reserved, bool)
             or not isinstance(cost_reserved, int)
@@ -1385,11 +1398,7 @@ class DurableResearchCallEffectAdapter:
                 )
             ),
             prepared=prepared,
-            policy=(
-                self.profile.effect_policy
-                if self.profile is not None
-                else self._POLICY
-            ),
+            policy=(self.profile.effect_policy if self.profile is not None else self._POLICY),
             ledger_kind="llm",
             input_reserved=input_reserved,
             output_reserved=max_output_tokens,
@@ -1473,16 +1482,13 @@ class DurableResearchCallEffectAdapter:
             await self._settle_unknown(
                 context,
                 effect_id,
-                NormalizedToolOutcome.failure(
-                    "research_payload_invalid", str(exc)
-                ),
+                NormalizedToolOutcome.failure("research_payload_invalid", str(exc)),
                 artifact_refs=effect_input_refs_tuple,
             )
             raise
 
-        if (
-            self.control_signals is not None
-            and await self.control_signals.cancelled(context.fence.run_id)
+        if self.control_signals is not None and await self.control_signals.cancelled(
+            context.fence.run_id
         ):
             await self._settle_unknown(
                 context,
@@ -1493,9 +1499,7 @@ class DurableResearchCallEffectAdapter:
                 ),
                 artifact_refs=effect_input_refs_tuple,
             )
-            raise ResearchEffectCancelled(
-                "research effect cancelled before provider transport"
-            )
+            raise ResearchEffectCancelled("research effect cancelled before provider transport")
 
         if self.deadline_observer is not None:
             allowed = self.deadline_observer(execution_identity)
@@ -1518,9 +1522,7 @@ class DurableResearchCallEffectAdapter:
                     effect_id=effect_id,
                     result_ref=None,
                     prompt_ref=f"sha256:{payload_digest}",
-                    profile_ref=(
-                        self.profile.profile_ref if self.profile is not None else None
-                    ),
+                    profile_ref=(self.profile.profile_ref if self.profile is not None else None),
                     status="deadline",
                 )
 
@@ -1535,25 +1537,17 @@ class DurableResearchCallEffectAdapter:
                 purpose="workflow.research.llm",
                 messages=[{"role": "user", "content": prompt}],
                 tools=None,
-                fallback_model=(
-                    self.profile.profile_ref if self.profile is not None else ""
-                ),
+                fallback_model=(self.profile.profile_ref if self.profile is not None else ""),
                 invoke=lambda: self.llm.complete(
                     prompt,
                     max_output_tokens=max_output_tokens,
                     stable_call_id=stable_call_id,
-                    **(
-                        {"response_format": response_format}
-                        if response_format is not None
-                        else {}
-                    ),
+                    **({"response_format": response_format} if response_format is not None else {}),
                 ),
             )
         )
         cancel_task = (
-            asyncio.create_task(
-                self.control_signals.wait_cancelled(context.fence.run_id)
-            )
+            asyncio.create_task(self.control_signals.wait_cancelled(context.fence.run_id))
             if self.control_signals is not None
             else None
         )
@@ -1726,9 +1720,7 @@ class DurableResearchReadEffectAdapter:
             raise EffectStateConflict("research read effect context identity mismatch")
         return context
 
-    async def _reused(
-        self, outcome: NormalizedToolOutcome | None
-    ) -> Mapping[str, JsonValue]:
+    async def _reused(self, outcome: NormalizedToolOutcome | None) -> Mapping[str, JsonValue]:
         if outcome is None or outcome.state is not ToolOutcomeState.SUCCESS:
             raise ResearchEffectAdapterError("research read has no committed success outcome")
         value = outcome.value
@@ -1790,13 +1782,9 @@ class DurableResearchReadEffectAdapter:
                 context.fence,
                 effect_id,
                 begun.effect.outcome
-                or NormalizedToolOutcome.malformed(
-                    "cancelled research read is not restarted"
-                ),
+                or NormalizedToolOutcome.malformed("cancelled research read is not restarted"),
             )
-            raise ResearchEffectAdapterError(
-                "cancelled research read will not be restarted"
-            )
+            raise ResearchEffectAdapterError("cancelled research read will not be restarted")
         if begun.action is not EffectAction.EXECUTE:
             raise ResearchEffectAdapterError(
                 f"research read is {begun.action.value}; transport is blocked"
@@ -1816,9 +1804,7 @@ class DurableResearchReadEffectAdapter:
         transport_task = asyncio.create_task(
             self.transport(copy.deepcopy(dict(payload)), execution_identity)
         )
-        cancel_task = asyncio.create_task(
-            self.control_signals.wait_cancelled(context.fence.run_id)
-        )
+        cancel_task = asyncio.create_task(self.control_signals.wait_cancelled(context.fence.run_id))
         try:
             done, _ = await asyncio.wait(
                 {transport_task, cancel_task}, return_when=asyncio.FIRST_COMPLETED
@@ -1838,9 +1824,7 @@ class DurableResearchReadEffectAdapter:
                         await transport_task
 
                 asyncio.create_task(_drain())
-                raise ResearchEffectCancelled(
-                    f"research {effect_name} cancelled after dispatch"
-                )
+                raise ResearchEffectCancelled(f"research {effect_name} cancelled after dispatch")
             result = await transport_task
             if not isinstance(result, Mapping):
                 raise TypeError("research read transport must return an object")
@@ -1923,7 +1907,9 @@ class DurableResearchLLMStagePort:
         ),
     }
 
-    def __init__(self, *, blobs: RegisteredBlobStore, effect: DurableResearchCallEffectAdapter) -> None:
+    def __init__(
+        self, *, blobs: RegisteredBlobStore, effect: DurableResearchCallEffectAdapter
+    ) -> None:
         self.blobs = blobs
         self.effect = effect
 
@@ -1978,9 +1964,7 @@ class DurableResearchLLMStagePort:
                 }
             }
         elif stage == "report_synthesis":
-            prompt_payload["json_schema"] = copy.deepcopy(
-                REPORT_SYNTHESIS_OUTPUT_SCHEMA
-            )
+            prompt_payload["json_schema"] = copy.deepcopy(REPORT_SYNTHESIS_OUTPUT_SCHEMA)
         encoded = canonical_json({"prompt": canonical_json(prompt_payload)}).encode("utf-8")
         ref = await self.blobs.put(
             encoded,
@@ -2001,9 +1985,7 @@ class DurableResearchLLMStagePort:
         try:
             decoded = json.loads(result.content)
         except json.JSONDecodeError as exc:
-            raise ResearchStageOutputError(
-                f"v5 {stage} returned non-JSON content"
-            ) from exc
+            raise ResearchStageOutputError(f"v5 {stage} returned non-JSON content") from exc
         if not isinstance(decoded, Mapping):
             raise ResearchStageOutputError(f"v5 {stage} returned no JSON object")
         return copy.deepcopy(dict(decoded))
@@ -2042,9 +2024,7 @@ class DurableV6ResearchLLMStagePort:
         identity: NodeExecutionIdentity,
     ) -> str:
         group = payload.get("work_group")
-        if not isinstance(group, Mapping) or not isinstance(
-            group.get("work_group_id"), str
-        ):
+        if not isinstance(group, Mapping) or not isinstance(group.get("work_group_id"), str):
             raise ValueError("v6 LLM payload requires work_group_id")
         work_group_id = str(group["work_group_id"])
         repair_round = payload.get("repair_round", 0)
@@ -2103,9 +2083,7 @@ class DurableV6ResearchLLMStagePort:
             identity,
             media_type="application/vnd.deskpet.research-llm-prompt+json",
         )
-        logical_effect_id = self.logical_effect_id(
-            stage=stage, payload=payload, identity=identity
-        )
+        logical_effect_id = self.logical_effect_id(stage=stage, payload=payload, identity=identity)
         stable_call_id = hashlib.sha256(logical_effect_id.encode("utf-8")).hexdigest()
         envelope = await self.effect.complete_with_effect(
             role=stage,

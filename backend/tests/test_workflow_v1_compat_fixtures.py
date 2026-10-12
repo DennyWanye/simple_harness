@@ -109,9 +109,7 @@ def _ports() -> ResearchPorts:
 
 
 def _context(ports: ResearchPorts) -> WorkflowContext:
-    return WorkflowContext(
-        ports={"llm": ports.llm, "search": ports.search, "fetch": ports.fetch}
-    )
+    return WorkflowContext(ports={"llm": ports.llm, "search": ports.search, "fetch": ports.fetch})
 
 
 def _config() -> dict[str, object]:
@@ -162,9 +160,7 @@ def test_deep_research_v1_manifest_fixture_accepts_lock_line_endings(
     lock_path = tmp_path / f"uv-{line_ending}.lock"
     lock_path.write_bytes(_line_ending_variants(UV_LOCK.read_bytes())[line_ending])
 
-    compiled = compile_workflow(
-        DEEP_RESEARCH_V1_DEFINITION, dependency_lock_path=lock_path
-    )
+    compiled = compile_workflow(DEEP_RESEARCH_V1_DEFINITION, dependency_lock_path=lock_path)
     actual = compiled.manifest.to_dict()
     expected = fixture["line_ending_variants"][line_ending]
 
@@ -211,10 +207,7 @@ async def test_deep_research_v1_checkpoint_fixture_matches_live_serialization(
 
     assert fixture["fixture_schema_version"] == 1
     assert fixture["workflow"] == {"name": "deep_research", "version": "v1"}
-    assert (
-        manifest_hash(DEEP_RESEARCH_V1.manifest)
-        in fixture["compatible_manifest_hashes"]
-    )
+    assert manifest_hash(DEEP_RESEARCH_V1.manifest) in fixture["compatible_manifest_hashes"]
     assert store.captures == fixture["checkpoints"]
     assert result == fixture["checkpoints"][-1]["snapshot"]["state"]
     assert [item["stage"] for item in fixture["checkpoints"]] == [

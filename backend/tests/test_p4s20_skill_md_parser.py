@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 """P4-S20 Wave 3a: Claude Code SKILL.md v1 parser tests."""
+
 from __future__ import annotations
 
 import os
@@ -96,7 +97,7 @@ def test_allowed_tools_string_format(tmp_path: Path) -> None:
     p = _write_skill(
         tmp_path,
         "shellguy",
-        "---\ndescription: t\nallowed-tools: \"Read Write Bash(git *)\"\n---\nb",
+        '---\ndescription: t\nallowed-tools: "Read Write Bash(git *)"\n---\nb',
     )
     meta = parse_skill_md(p)
     assert meta.allowed_tools == ["Read", "Write", "Bash(git *)"]
@@ -120,25 +121,23 @@ def test_unknown_fields_preserved(tmp_path: Path) -> None:
 
 def test_render_substitutes_skill_dir(tmp_path: Path) -> None:
     body = "Read ${CLAUDE_SKILL_DIR}/template.md please"
-    out = render_body(
-        body, skill_dir=tmp_path, session_id="s1", args=[]
-    )
+    out = render_body(body, skill_dir=tmp_path, session_id="s1", args=[])
     assert str(tmp_path) in out
     assert "${CLAUDE_SKILL_DIR}" not in out
 
 
 def test_render_substitutes_session_id(tmp_path: Path) -> None:
     body = "session=${CLAUDE_SESSION_ID}"
-    out = render_body(
-        body, skill_dir=tmp_path, session_id="ABC", args=[]
-    )
+    out = render_body(body, skill_dir=tmp_path, session_id="ABC", args=[])
     assert out == "session=ABC"
 
 
 def test_render_substitutes_arguments(tmp_path: Path) -> None:
     body = "First arg: $0, all: $ARGUMENTS, second: $1"
     out = render_body(
-        body, skill_dir=tmp_path, session_id="s1",
+        body,
+        skill_dir=tmp_path,
+        session_id="s1",
         args=["hello world", "second"],
     )
     assert "hello world" in out
@@ -150,7 +149,9 @@ def test_render_substitutes_arguments(tmp_path: Path) -> None:
 def test_render_quoted_argument_preserved(tmp_path: Path) -> None:
     body = "$0 then $1"
     out = render_body(
-        body, skill_dir=tmp_path, session_id="s1",
+        body,
+        skill_dir=tmp_path,
+        session_id="s1",
         args=["hello world", "second"],
     )
     assert out == "hello world then second"
@@ -159,7 +160,9 @@ def test_render_quoted_argument_preserved(tmp_path: Path) -> None:
 def test_render_arguments_indexed(tmp_path: Path) -> None:
     body = "[$ARGUMENTS[0]] - [$ARGUMENTS[1]]"
     out = render_body(
-        body, skill_dir=tmp_path, session_id="s1",
+        body,
+        skill_dir=tmp_path,
+        session_id="s1",
         args=["alpha", "beta"],
     )
     assert "alpha" in out
@@ -176,16 +179,12 @@ def test_render_inline_shell_basic(tmp_path: Path) -> None:
         body = "Today: !`cmd /c echo hi`"
     else:
         body = "Today: !`echo hi`"
-    out = render_body(
-        body, skill_dir=tmp_path, session_id="s1", args=[]
-    )
+    out = render_body(body, skill_dir=tmp_path, session_id="s1", args=[])
     assert "hi" in out
     assert "!`" not in out
 
 
 def test_render_inline_shell_failure_inlined(tmp_path: Path) -> None:
     body = "x: !`this_command_does_not_exist_xyz`"
-    out = render_body(
-        body, skill_dir=tmp_path, session_id="s1", args=[]
-    )
+    out = render_body(body, skill_dir=tmp_path, session_id="s1", args=[])
     assert "[command failed:" in out

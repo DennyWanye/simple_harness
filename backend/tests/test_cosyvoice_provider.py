@@ -8,6 +8,7 @@ Real-weights synthesis is covered manually via ``scripts/tts_smoke.py``
 when a developer has the env set up; it's gated behind pragma: no cover
 in the provider.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -41,9 +42,7 @@ async def test_partial_weights_still_falls_back(tmp_path: Path):
 
 
 @pytest.mark.asyncio
-async def test_stream_yields_at_least_one_chunk_via_fallback(
-    tmp_path: Path, monkeypatch
-):
+async def test_stream_yields_at_least_one_chunk_via_fallback(tmp_path: Path, monkeypatch):
     """synthesize_stream must delegate to the fallback and yield bytes."""
     provider = CosyVoice2Provider(model_dir=str(tmp_path))
     await provider.load()

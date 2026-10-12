@@ -785,7 +785,15 @@ class CriterionOutcome:
 _CLAIM_TO_CONFIRM_KEYS = ("claim_id", "content", "content_sha256", "evidence")
 _METHOD_TO_JUDGE_KEYS = ("method_ref", "goal", "based_on", "method")
 _SUMMARY_TO_CONFIRM_KEYS = ("result_ref", "summary", "summary_sha256")
-_RELATED_ENTRY_KEYS = ("kind", "id", "version", "content_sha256", "content", "status", "source_task")
+_RELATED_ENTRY_KEYS = (
+    "kind",
+    "id",
+    "version",
+    "content_sha256",
+    "content",
+    "status",
+    "source_task",
+)
 _SOURCE_VERSION_KEYS = ("path", "used_version", "current_version")
 _EFFECT_FACT_KEYS = ("effect_key", "state", "complete")
 
@@ -799,7 +807,12 @@ def _package_rows(value: object, name: str, keys: tuple[str, ...]) -> tuple[Mapp
     for item in value:
         if not isinstance(item, Mapping) or tuple(sorted(item)) != tuple(sorted(keys)):
             raise ContractError(f"{name} rows must carry exactly {list(keys)}")
-        rows.append({key: (list(item[key]) if isinstance(item[key], (list, tuple)) else item[key]) for key in keys})
+        rows.append(
+            {
+                key: (list(item[key]) if isinstance(item[key], (list, tuple)) else item[key])
+                for key in keys
+            }
+        )
     ids = [(row.get("kind"), row[keys[0] if keys[0] != "kind" else "id"]) for row in rows]
     if len(set(ids)) != len(ids):
         raise ContractError(f"{name} must not repeat an entry")
@@ -865,19 +878,37 @@ class ReviewPackage:
             "package_id",
             ReviewPackageId(identifier(self.package_id, "package.package_id")),
         )
-        object.__setattr__(self, "claims_to_confirm", _package_rows(
-            self.claims_to_confirm, "package.claims_to_confirm", _CLAIM_TO_CONFIRM_KEYS))
-        object.__setattr__(self, "related_entries", _package_rows(
-            self.related_entries, "package.related_entries", _RELATED_ENTRY_KEYS))
-        object.__setattr__(self, "methods_to_judge", _package_rows(
-            self.methods_to_judge, "package.methods_to_judge", _METHOD_TO_JUDGE_KEYS))
-        object.__setattr__(self, "source_versions", _package_rows(
-            self.source_versions, "package.source_versions", _SOURCE_VERSION_KEYS))
-        object.__setattr__(self, "effect_facts", _package_rows(
-            self.effect_facts, "package.effect_facts", _EFFECT_FACT_KEYS))
+        object.__setattr__(
+            self,
+            "claims_to_confirm",
+            _package_rows(
+                self.claims_to_confirm, "package.claims_to_confirm", _CLAIM_TO_CONFIRM_KEYS
+            ),
+        )
+        object.__setattr__(
+            self,
+            "related_entries",
+            _package_rows(self.related_entries, "package.related_entries", _RELATED_ENTRY_KEYS),
+        )
+        object.__setattr__(
+            self,
+            "methods_to_judge",
+            _package_rows(self.methods_to_judge, "package.methods_to_judge", _METHOD_TO_JUDGE_KEYS),
+        )
+        object.__setattr__(
+            self,
+            "source_versions",
+            _package_rows(self.source_versions, "package.source_versions", _SOURCE_VERSION_KEYS),
+        )
+        object.__setattr__(
+            self,
+            "effect_facts",
+            _package_rows(self.effect_facts, "package.effect_facts", _EFFECT_FACT_KEYS),
+        )
         if self.summary_to_confirm is not None:
-            [row] = _package_rows([self.summary_to_confirm], "package.summary_to_confirm",
-                                  _SUMMARY_TO_CONFIRM_KEYS)
+            [row] = _package_rows(
+                [self.summary_to_confirm], "package.summary_to_confirm", _SUMMARY_TO_CONFIRM_KEYS
+            )
             object.__setattr__(self, "summary_to_confirm", row)
         if any(row["kind"] not in {"dispute", "used_knowledge"} for row in self.related_entries):
             raise ContractError("package.related_entries kind must be dispute or used_knowledge")
@@ -997,18 +1028,36 @@ class ReviewPackage:
             "review_budget_ref": self.review_budget_ref,
             # The two sections exist only on a step's content review; a package without
             # them keeps the bytes (and so the hash) it always had.
-            **({"claims_to_confirm": [dict(row) for row in self.claims_to_confirm]}
-               if self.claims_to_confirm else {}),
-            **({"related_entries": [dict(row) for row in self.related_entries]}
-               if self.related_entries else {}),
-            **({"methods_to_judge": [dict(row) for row in self.methods_to_judge]}
-               if self.methods_to_judge else {}),
-            **({"summary_to_confirm": dict(self.summary_to_confirm)}
-               if self.summary_to_confirm is not None else {}),
-            **({"source_versions": [dict(row) for row in self.source_versions]}
-               if self.source_versions else {}),
-            **({"effect_facts": [dict(row) for row in self.effect_facts]}
-               if self.effect_facts else {}),
+            **(
+                {"claims_to_confirm": [dict(row) for row in self.claims_to_confirm]}
+                if self.claims_to_confirm
+                else {}
+            ),
+            **(
+                {"related_entries": [dict(row) for row in self.related_entries]}
+                if self.related_entries
+                else {}
+            ),
+            **(
+                {"methods_to_judge": [dict(row) for row in self.methods_to_judge]}
+                if self.methods_to_judge
+                else {}
+            ),
+            **(
+                {"summary_to_confirm": dict(self.summary_to_confirm)}
+                if self.summary_to_confirm is not None
+                else {}
+            ),
+            **(
+                {"source_versions": [dict(row) for row in self.source_versions]}
+                if self.source_versions
+                else {}
+            ),
+            **(
+                {"effect_facts": [dict(row) for row in self.effect_facts]}
+                if self.effect_facts
+                else {}
+            ),
         }
 
     def content_hash(self) -> str:
@@ -1958,9 +2007,7 @@ class CandidatePolicy:
             self, "reserve_tokens", index(self.reserve_tokens, "policy.reserve_tokens")
         )
         if self.synthesis_allowed and self.max_candidates < 2:
-            raise ContractError(
-                "synthesis compares candidates, so it needs at least two of them"
-            )
+            raise ContractError("synthesis compares candidates, so it needs at least two of them")
         if self.synthesis_allowed and self.reserve_tokens <= 0:
             raise ContractError(
                 "synthesis must reserve a positive tail budget, or the final "

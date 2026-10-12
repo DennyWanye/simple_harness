@@ -8,6 +8,7 @@
 
 **改坏检验**（改坏清单 F1-16）：离线重建取最新修订而不是指定修订 → 对照物①抓到。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -47,9 +48,17 @@ def test_random_sequence_keeps_the_invariants(tmp_path, seed):
     except InvariantBroken as error:
         out = EVIDENCE / datetime.date.today().isoformat() / "random-sequences"
         out.mkdir(parents=True, exist_ok=True)
-        record = {"seed": seed, "steps": STEPS, "actions": actions, "smallest": None, "error": str(error)}
+        record = {
+            "seed": seed,
+            "steps": STEPS,
+            "actions": actions,
+            "smallest": None,
+            "error": str(error),
+        }
         target = out / f"seed-{seed}.json"
-        target.write_text(json.dumps(record, ensure_ascii=False, indent=1))  # 先留下错误，缩小可能很久
+        target.write_text(
+            json.dumps(record, ensure_ascii=False, indent=1)
+        )  # 先留下错误，缩小可能很久
         record["smallest"] = shrink(seed, actions)
         target.write_text(json.dumps(record, ensure_ascii=False, indent=1))
         raise AssertionError(str(error)) from error  # 改坏检验只认断言失败

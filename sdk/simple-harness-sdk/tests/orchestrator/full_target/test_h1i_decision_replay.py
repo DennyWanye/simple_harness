@@ -40,7 +40,14 @@ def _receipt(loop: Orchestrator, mission_id: str, intent_id: str) -> tuple[Any, 
 
 def test_committed_refine_replays_after_grant_revocation_without_new_mutation(tmp_path) -> None:
     async def case() -> None:
-        async with committed(tmp_path, key="h1i-committed-replay") as (loop, mission, _world, _root, dispatch, product):
+        async with committed(tmp_path, key="h1i-committed-replay") as (
+            loop,
+            mission,
+            _world,
+            _root,
+            dispatch,
+            product,
+        ):
             opener, raw = committing_round(loop, mission.id)
             before = _receipt(loop, mission.id, opener.intent_id)
             assert before[0]["status"] == str(PlanningDecisionStatus.COMMITTED)
@@ -70,7 +77,14 @@ def test_committed_refine_rejects_different_raw_at_same_ordinal_without_rewritin
     tmp_path,
 ) -> None:
     async def case() -> None:
-        async with committed(tmp_path, key="h1i-committed-replay-conflict") as (loop, mission, _world, _root, dispatch, _product):
+        async with committed(tmp_path, key="h1i-committed-replay-conflict") as (
+            loop,
+            mission,
+            _world,
+            _root,
+            dispatch,
+            _product,
+        ):
             opener, raw = committing_round(loop, mission.id)
             before = _receipt(loop, mission.id, opener.intent_id)
             assert before[0]["status"] == str(PlanningDecisionStatus.COMMITTED)

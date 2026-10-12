@@ -66,10 +66,14 @@ def freeze_attempt_execution(
             raise ContractError("attempt execution: seed must be text")
         data = text.encode("utf-8")
         files[path] = {"content_hash": artifact_store.put_bytes(data), "kind": "seed"}
-    actual = frozenset((str(item.get("artifact_id")), str(item.get("path")), str(item.get("content_hash")))
-                       for item in inputs)
+    actual = frozenset(
+        (str(item.get("artifact_id")), str(item.get("path")), str(item.get("content_hash")))
+        for item in inputs
+    )
     if actual != validated_input_identities or len(actual) != len(inputs):
-        raise ContractError("attempt execution: validated input identities differ from actual inputs")
+        raise ContractError(
+            "attempt execution: validated input identities differ from actual inputs"
+        )
     mounted_paths: set[str] = set()
     for item in inputs:
         artifact = store.get_artifact(item.get("artifact_id", ""))
@@ -77,7 +81,8 @@ def freeze_attempt_execution(
             artifact is None
             or artifact.mission_id != mission.id
             or artifact.content_hash != item.get("content_hash")
-            or (artifact.id, str(item.get("path")), artifact.content_hash) not in validated_input_identities
+            or (artifact.id, str(item.get("path")), artifact.content_hash)
+            not in validated_input_identities
         ):
             raise ContractError("attempt execution: frozen input identity mismatch")
         mounted = _path(item["path"])

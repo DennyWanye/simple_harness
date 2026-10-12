@@ -58,16 +58,30 @@ _DEFINITION_ADAPTER = {
     "births_during_period": "births_during_period",
 }
 _LOCATOR_KEYS = {
-    "schema_version", "locator_id", "canonical_url", "final_url",
-    "canonical_url_hash", "final_url_hash", "authority_id",
-    "verification_status", "verification_policy_hash", "redirect_chain_hashes",
+    "schema_version",
+    "locator_id",
+    "canonical_url",
+    "final_url",
+    "canonical_url_hash",
+    "final_url_hash",
+    "authority_id",
+    "verification_status",
+    "verification_policy_hash",
+    "redirect_chain_hashes",
 }
 _EVIDENCE_BLOB_KEYS = {
-    "schema_version", "requirement_id", "page_id", "source_locator_ref",
-    "page_ref", "evidence",
+    "schema_version",
+    "requirement_id",
+    "page_id",
+    "source_locator_ref",
+    "page_ref",
+    "evidence",
 }
 _PAGE_RESULT_KEYS = {
-    "schema_version", "page_id", "page_ref", "page_ref_blob",
+    "schema_version",
+    "page_id",
+    "page_ref",
+    "page_ref_blob",
     "evidence_refs",
 }
 
@@ -78,9 +92,10 @@ class V6FetchedPagePort(Protocol):
         *,
         spec: Mapping[str, JsonValue],
         identity: object | None,
-    ) -> Sequence[V6FetchedPageRefPayloadV1 | Mapping[str, JsonValue]] | Awaitable[
+    ) -> (
         Sequence[V6FetchedPageRefPayloadV1 | Mapping[str, JsonValue]]
-    ]: ...
+        | Awaitable[Sequence[V6FetchedPageRefPayloadV1 | Mapping[str, JsonValue]]]
+    ): ...
 
 
 def _required_text(value: object, name: str) -> str:
@@ -110,9 +125,7 @@ def _runtime(
     return blobs, identity
 
 
-async def _assert_current_run_owner(
-    blobs: RegisteredBlobStore, digest: str, run_id: str
-) -> None:
+async def _assert_current_run_owner(blobs: RegisteredBlobStore, digest: str, run_id: str) -> None:
     db = await aiosqlite.connect(blobs.database)
     try:
         row = await (
@@ -247,9 +260,7 @@ def _request_from_requirement(requirement: Mapping[str, Any]) -> ScalarEvidenceR
     return ScalarEvidenceRequest(
         requirement_id=_required_text(requirement.get("requirement_id"), "requirement_id"),
         definition=extractor_definition,
-        canonical_unit=_required_text(
-            canonical_unit.get("unit_id"), "canonical_unit.unit_id"
-        ),
+        canonical_unit=_required_text(canonical_unit.get("unit_id"), "canonical_unit.unit_id"),
         time_label=time_label,
     )
 
@@ -299,9 +310,7 @@ async def _load_locator(
         raise ValueError("source locator identity/authority mismatch")
     base = dict(locator)
     locator_id = base.pop("locator_id")
-    expected_id = "locator_" + hashlib.sha256(
-        canonical_json(base).encode("utf-8")
-    ).hexdigest()[:24]
+    expected_id = "locator_" + hashlib.sha256(canonical_json(base).encode("utf-8")).hexdigest()[:24]
     if locator_id != expected_id:
         raise ValueError("source locator id is not canonical")
     return locator
@@ -387,11 +396,7 @@ async def collect_pages_handler(state: WorkflowState, context: WorkflowContext) 
                     for item in loaded
                 ]
             )
-    page_refs = {
-        ref
-        for page in pages
-        for ref in (page.body_ref, page.source_locator_ref)
-    }
+    page_refs = {ref for page in pages for ref in (page.body_ref, page.source_locator_ref)}
     for ref in sorted(page_refs):
         await _read_blob(blobs, identity, ref)
     values["fetched_page_refs"] = [page.to_json() for page in pages]
@@ -548,9 +553,7 @@ async def assess_render_handler(state: WorkflowState, context: WorkflowContext) 
             or batch.previous_head_hash != expected_head
         ):
             raise ValueError("evidence fact batch chain identity mismatch")
-        page_result = await _read_canonical_json(
-            blobs, identity, batch.page_result_ref
-        )
+        page_result = await _read_canonical_json(blobs, identity, batch.page_result_ref)
         if set(page_result) != _PAGE_RESULT_KEYS or page_result.get("schema_version") != 1:
             raise ValueError("Q1 page result keys/version differ")
         if not isinstance(page_result.get("page_ref"), Mapping) or not isinstance(
@@ -579,9 +582,7 @@ async def assess_render_handler(state: WorkflowState, context: WorkflowContext) 
         if set(batch.provenance_refs) != expected_provenance:
             raise ValueError("fact batch provenance closure mismatch")
         locator_data = await _load_locator(page, blobs, identity)
-        citation_url = _required_text(
-            locator_data.get("canonical_url"), "locator.canonical_url"
-        )
+        citation_url = _required_text(locator_data.get("canonical_url"), "locator.canonical_url")
         authority_id = _required_text(locator_data.get("authority_id"), "locator.authority_id")
         citations[page.page_id] = CitationView(title=authority_id, url=citation_url)
         page_binding_ids: set[str] = set()
@@ -630,9 +631,7 @@ async def assess_render_handler(state: WorkflowState, context: WorkflowContext) 
         for result_item in assessment.requirement_results
         if result_item["support_status"] == "supported"
     }
-    render_evidence = tuple(
-        item for item in evidence if item.requirement_id in supported_ids
-    )
+    render_evidence = tuple(item for item in evidence if item.requirement_id in supported_ids)
     result = assess_and_render_exact_facts(
         requests=requests,
         evidence=render_evidence,
@@ -669,7 +668,9 @@ async def assess_render_handler(state: WorkflowState, context: WorkflowContext) 
         claims=integrity_claims,
         requested_answer_status=result.answer_status,
         claim_policy_hash=hashlib.sha256(canonical_json(claim_policy).encode("utf-8")).hexdigest(),
-        quality_policy_hash=hashlib.sha256(canonical_json(quality_policy).encode("utf-8")).hexdigest(),
+        quality_policy_hash=hashlib.sha256(
+            canonical_json(quality_policy).encode("utf-8")
+        ).hexdigest(),
         soft_scores={
             "readability": 1_000_000,
             "source_diversity": 0,
@@ -683,22 +684,16 @@ async def assess_render_handler(state: WorkflowState, context: WorkflowContext) 
         # terminal bundle still records the derived failed audit for diagnosis.
         result = ExactFactReportResult(
             answer_status="insufficient_evidence",
-            final_assistant=(
-                "证据完整性校验未通过，因此本次不能可靠给出这些数值。"
-            ),
+            final_assistant=("证据完整性校验未通过，因此本次不能可靠给出这些数值。"),
             report_markdown=None,
             claims=(),
-            missing_requirement_ids=tuple(
-                request.requirement_id for request in requests
-            ),
+            missing_requirement_ids=tuple(request.requirement_id for request in requests),
         )
     policy_refs = {
         "compiler": await _put_json(
             blobs, identity, COMPILER_POLICY, media_type="application/json"
         ),
-        "route": await _put_json(
-            blobs, identity, Q1_ROUTE_POLICY, media_type="application/json"
-        ),
+        "route": await _put_json(blobs, identity, Q1_ROUTE_POLICY, media_type="application/json"),
         "admission": await _put_json(
             blobs, identity, Q1_ADMISSION_POLICY, media_type="application/json"
         ),
@@ -737,6 +732,9 @@ async def assess_render_handler(state: WorkflowState, context: WorkflowContext) 
 
 
 __all__ = [
-    "V6FetchedPagePort", "assess_render_handler", "collect_pages_handler",
-    "compile_spec_handler", "extract_facts_handler",
+    "V6FetchedPagePort",
+    "assess_render_handler",
+    "collect_pages_handler",
+    "compile_spec_handler",
+    "extract_facts_handler",
 ]

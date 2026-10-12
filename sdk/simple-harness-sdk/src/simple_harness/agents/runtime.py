@@ -189,9 +189,7 @@ def assemble_runtime(
         ports.provider,
         database,
         request_guard=guard,
-        max_concurrent=(
-            ports.max_concurrent_model_calls if admission is None else None
-        ),
+        max_concurrent=(ports.max_concurrent_model_calls if admission is None else None),
         requests_prepared=admission is not None,
     )
     provider_adapter = _ConsumerProviderAdapter(wire, ports.model)
@@ -441,7 +439,9 @@ class AgentRuntime:
         merged = []
         for row in book.snapshot():
             mine = own[row.loop]
-            merged.append(row if row.consecutive_failures or mine.consecutive_failures == 0 else mine)
+            merged.append(
+                row if row.consecutive_failures or mine.consecutive_failures == 0 else mine
+            )
         return tuple(merged)
 
     async def shutdown(self) -> None:
@@ -613,7 +613,11 @@ class AgentRuntime:
         for index, config in enumerate(configs):
             agents.append(
                 # ``caller`` only travels when given (legacy consumers wrap ``create`` without it).
-                await self.create(config, creation_key=f"{batch_key}:{index}", **({} if caller is None else {"caller": caller}))
+                await self.create(
+                    config,
+                    creation_key=f"{batch_key}:{index}",
+                    **({} if caller is None else {"caller": caller}),
+                )
             )
         self.uow.commit_agent_batch(
             batch_id=record.batch_id,
@@ -793,14 +797,17 @@ def build_agent_runtime(
     """
 
     from .tools.delegate import AgentDelegateTool, AgentDelegationReconciliation
+
     delegate = AgentDelegateTool(clock=ports.clock)
     # The native plane brings its own history tools; a bare runtime has none (the old
     # Journal-wide window search was removed on 2026-10-03).
     session_tools = None if session_tools_factory is None else session_tools_factory()
     assembled = assemble_runtime(
         ports,
-        extra_tools=(delegate.function_tool(),
-                     *(() if session_tools is None else session_tools.function_tools())),
+        extra_tools=(
+            delegate.function_tool(),
+            *(() if session_tools is None else session_tools.function_tools()),
+        ),
         delegation_counter=lambda turn_id: delegate.runtime.uow.count_agent_delegations(turn_id),
         delegation_reconciliation=AgentDelegationReconciliation,
         context_factory=context_factory,

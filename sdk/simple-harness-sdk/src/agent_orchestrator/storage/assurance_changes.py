@@ -79,9 +79,11 @@ def original_source_mutation(store: Store, *, writer: str) -> Iterator[None]:
         present = connection.execute(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='assurance_mission_bindings'"
         ).fetchone()
-        enabled = None if present is None else connection.execute(
-            "SELECT 1 FROM assurance_mission_bindings LIMIT 1"
-        ).fetchone()
+        enabled = (
+            None
+            if present is None
+            else connection.execute("SELECT 1 FROM assurance_mission_bindings LIMIT 1").fetchone()
+        )
         if enabled is None or store._assurance_change_context is not None:
             yield
             return
@@ -112,10 +114,14 @@ def original_source_mutation(store: Store, *, writer: str) -> Iterator[None]:
             ]
             # 全局变动只唤醒没结束的任务（迁移 41，HTN 补齐阶段 G）：没有没结束的绑定任务时，
             # 唤醒列表为空是正常的；有却没唤醒事件才是错
-            if not wake_event_ids and connection.execute(
-                "SELECT 1 FROM assurance_mission_bindings b JOIN missions m USING(mission_id) "
-                "WHERE m.status NOT IN ('COMPLETED','FAILED','CANCELLED') LIMIT 1"
-            ).fetchone() is not None:
+            if (
+                not wake_event_ids
+                and connection.execute(
+                    "SELECT 1 FROM assurance_mission_bindings b JOIN missions m USING(mission_id) "
+                    "WHERE m.status NOT IN ('COMPLETED','FAILED','CANCELLED') LIMIT 1"
+                ).fetchone()
+                is not None
+            ):
                 raise AssuranceError("SOURCE_MUTATION_EVENT_MISSING")
             body = {
                 "schema_version": 1,

@@ -201,9 +201,7 @@ def _binding_set_receipt(
         parent_receipt_id=None if parent is None else parent.receipt_id,
         parent_receipt_hash=None if parent is None else parent.receipt_hash,
         previous_root_set_digest=(
-            EMPTY_WORKSPACE_BINDING_ROOT_SET_DIGEST
-            if parent is None
-            else parent.root_set_digest
+            EMPTY_WORKSPACE_BINDING_ROOT_SET_DIGEST if parent is None else parent.root_set_digest
         ),
         root_set_digest=workspace_binding_root_set_digest(root_hashes),
         root_identity_hashes=root_hashes,
@@ -242,9 +240,7 @@ def test_exact_decoders_roundtrip_and_reject_extra_fields() -> None:
     request = _mode_request()
     snapshot = _mode_snapshot(request)
     grant = _grant(proposal)
-    binding_set = _binding_set_receipt(
-        proposal, grant, parent=None, receipt_id="binding-set-1"
-    )
+    binding_set = _binding_set_receipt(proposal, grant, parent=None, receipt_id="binding-set-1")
     pairs = (
         (FilesystemIdentity, proposal.root.filesystem_identity),
         (CanonicalWorkspaceRoot, proposal.root),
@@ -358,9 +354,7 @@ def test_grant_and_binding_set_receipt_close_exact_append_lineage() -> None:
     )
     grant = replace(_grant(proposal), grant_id="grant-2", host_grant_ref="host-grant-2")
     grant.verify_proposal(proposal)
-    receipt = _binding_set_receipt(
-        proposal, grant, parent=parent, receipt_id="binding-set-2"
-    )
+    receipt = _binding_set_receipt(proposal, grant, parent=parent, receipt_id="binding-set-2")
     receipt.verify_parent_and_grant(parent, grant)
     with pytest.raises(ValueError, match="advance base revision"):
         replace(receipt, binding_set_revision=5)
@@ -389,9 +383,7 @@ def test_grant_and_binding_set_receipt_close_exact_append_lineage() -> None:
 def test_genesis_append_requires_base_zero_and_no_parent_receipt() -> None:
     proposal = _proposal(base_binding_set_revision=0)
     grant = _grant(proposal)
-    receipt = _binding_set_receipt(
-        proposal, grant, parent=None, receipt_id="binding-set-1"
-    )
+    receipt = _binding_set_receipt(proposal, grant, parent=None, receipt_id="binding-set-1")
     receipt.verify_parent_and_grant(None, grant)
     assert WorkspaceBindingSetReceipt.from_json(receipt.to_json()) == receipt
     with pytest.raises(ValueError, match="must not claim a parent"):

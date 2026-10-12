@@ -15,8 +15,10 @@ from agent_orchestrator.orchestrator.event_handler import Orchestrator
 
 
 def _in_flight(*roles):
-    intents = [SimpleNamespace(kind="plan", mission_id="m1", config={"role": role} if role else {})
-               for role in roles]
+    intents = [
+        SimpleNamespace(kind="plan", mission_id="m1", config={"role": role} if role else {})
+        for role in roles
+    ]
     fake = SimpleNamespace(store=SimpleNamespace(list_intents=lambda *states: intents))
     return Orchestrator._planner_intents_in_flight(fake, "m1")
 
@@ -45,7 +47,12 @@ def test_a_deferred_planner_round_survives_a_restart(tmp_path):
     second.bind(store)
     assert dict(second) == {"m1": (100.0, 2)}
     version = store.connection.execute(
-        "SELECT version FROM scheduler_state WHERE key='deferred_planning'").fetchone()[0]
+        "SELECT version FROM scheduler_state WHERE key='deferred_planning'"
+    ).fetchone()[0]
     second["m1"] = (100.0, 2)  # re-setting the same wait writes nothing
-    assert store.connection.execute(
-        "SELECT version FROM scheduler_state WHERE key='deferred_planning'").fetchone()[0] == version
+    assert (
+        store.connection.execute(
+            "SELECT version FROM scheduler_state WHERE key='deferred_planning'"
+        ).fetchone()[0]
+        == version
+    )

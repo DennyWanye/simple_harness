@@ -9,6 +9,7 @@
 之后任务照常完成。
 
 **改坏检验**（PLN-01）：有做法在审时照样开规划轮 → 规划器在扣住期间又被问到 → 变红。"""
+
 from __future__ import annotations
 
 import asyncio
@@ -29,13 +30,22 @@ def test_no_planner_round_opens_while_a_proposed_method_is_out_for_review(tmp_pa
     import agent_orchestrator.orchestrator.method_plan_reviews as method_reviews
 
     advance, held = method_reviews.advance, {"on": True}
-    monkeypatch.setattr(method_reviews, "advance",
-                        lambda orch, mission: False if held["on"] else advance(orch, mission))
+    monkeypatch.setattr(
+        method_reviews,
+        "advance",
+        lambda orch, mission: False if held["on"] else advance(orch, mission),
+    )
+
     async def case():
         provider = LayeredScriptedProvider()
         async with product_world(tmp_path / "root", provider) as world:
-            mission_id = world.create({"goal": "写 a.md 和 b.md", "idempotency_key": "gate-review",
-                                       "success_criteria": ["file:a.md", "file:b.md"]})["mission_id"]
+            mission_id = world.create(
+                {
+                    "goal": "写 a.md 和 b.md",
+                    "idempotency_key": "gate-review",
+                    "success_criteria": ["file:a.md", "file:b.md"],
+                }
+            )["mission_id"]
             for _ in range(4):
                 await world.drain(timeout=10)
             assert method_reviews.awaiting(world.store, mission_id)  # 做法提了，结论没入库
@@ -48,8 +58,13 @@ def test_no_planner_round_opens_while_a_proposed_method_is_out_for_review(tmp_pa
             )
 
             with world.store.transaction():
-                append_hierarchical_event(world.store, "PlanningEvidenceRecorded", mission_id, key="gate-test",
-                                          payload={"decision_id": "gate-test"})
+                append_hierarchical_event(
+                    world.store,
+                    "PlanningEvidenceRecorded",
+                    mission_id,
+                    key="gate-test",
+                    payload={"decision_id": "gate-test"},
+                )
             for _ in range(6):
                 await world.drain(timeout=10)
             assert provider.asked.count("planner") == asked  # 扣住期间没有再开规划轮

@@ -16,6 +16,7 @@ Exit codes:
     0: all assertions passed
     1: registry setup failed or (with live call) prompt-cache assertion failed
 """
+
 from __future__ import annotations
 
 import argparse
@@ -85,7 +86,9 @@ async def _run_prompt_cache_check(registry: LLMRegistry) -> int:
     # Prompt caching requires ≥1024 input tokens on most Anthropic models —
     # our "say hi" prompt is too small to trigger a cache write. We check
     # the call succeeded and print the values for visual inspection.
-    print("[info] cache_read > 0 requires prompt >=1024 tokens; two short 'say hi' prompts are below threshold.")
+    print(
+        "[info] cache_read > 0 requires prompt >=1024 tokens; two short 'say hi' prompts are below threshold."
+    )
     return 0
 
 

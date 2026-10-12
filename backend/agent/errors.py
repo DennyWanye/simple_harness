@@ -30,6 +30,7 @@ Keyword tables are exposed as module constants
 :data:`HALLUCINATION_KEYWORDS`) so new error patterns can be added in
 one place without touching :func:`classify` logic.
 """
+
 from __future__ import annotations
 
 from typing import Type, Union
@@ -62,53 +63,59 @@ class HallucinationError(Exception):
 
 # ─────────────── keyword tables (extend here, not in classify) ───────────────
 
-PERMANENT_KEYWORDS: frozenset[str] = frozenset({
-    # Schema / args mistakes — same args = same failure.
-    "missing required parameter",
-    "missing_required_parameters",
-    "schema_invalid",
-    "invalid_argument",
-    # P5-S2 Phase 3: malformed JSON in tool_call.arguments. The dispatch
-    # short-circuit ALREADY hands the LLM a structured hint to regenerate,
-    # but if the LLM keeps emitting the same broken JSON the loop should
-    # break out rather than waste turns. Same-args = same-parse-error.
-    "tool_call_args_malformed_json",
-    # Domain-level guards.
-    "would_overwrite",
-    "file_not_found",
-    "permission_denied",
-    "permission denied",
-    "circuit_open",
-    "not_unique",
-    "not_a_dir",
-    "not a directory",
-    "binary_file",
-    "encoding_error",
-})
+PERMANENT_KEYWORDS: frozenset[str] = frozenset(
+    {
+        # Schema / args mistakes — same args = same failure.
+        "missing required parameter",
+        "missing_required_parameters",
+        "schema_invalid",
+        "invalid_argument",
+        # P5-S2 Phase 3: malformed JSON in tool_call.arguments. The dispatch
+        # short-circuit ALREADY hands the LLM a structured hint to regenerate,
+        # but if the LLM keeps emitting the same broken JSON the loop should
+        # break out rather than waste turns. Same-args = same-parse-error.
+        "tool_call_args_malformed_json",
+        # Domain-level guards.
+        "would_overwrite",
+        "file_not_found",
+        "permission_denied",
+        "permission denied",
+        "circuit_open",
+        "not_unique",
+        "not_a_dir",
+        "not a directory",
+        "binary_file",
+        "encoding_error",
+    }
+)
 
-TRANSIENT_KEYWORDS: frozenset[str] = frozenset({
-    # Network / IO.
-    "timeout",
-    "tool_timeout",
-    "ReadTimeout",
-    "Server disconnected",
-    "server disconnected",
-    "connection_reset",
-    "connection reset",
-    "connectionreset",
-    # Upstream HTTP 5xx / rate limit.
-    "503",
-    "502",
-    "504",
-    "rate_limit",
-    "rate limit",
-})
+TRANSIENT_KEYWORDS: frozenset[str] = frozenset(
+    {
+        # Network / IO.
+        "timeout",
+        "tool_timeout",
+        "ReadTimeout",
+        "Server disconnected",
+        "server disconnected",
+        "connection_reset",
+        "connection reset",
+        "connectionreset",
+        # Upstream HTTP 5xx / rate limit.
+        "503",
+        "502",
+        "504",
+        "rate_limit",
+        "rate limit",
+    }
+)
 
-HALLUCINATION_KEYWORDS: frozenset[str] = frozenset({
-    "tool_not_found",
-    "unknown_tool",
-    "unknown tool",
-})
+HALLUCINATION_KEYWORDS: frozenset[str] = frozenset(
+    {
+        "tool_not_found",
+        "unknown_tool",
+        "unknown tool",
+    }
+)
 
 
 # ─────────────── classifier ───────────────

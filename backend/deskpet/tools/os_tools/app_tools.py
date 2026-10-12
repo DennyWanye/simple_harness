@@ -127,9 +127,7 @@ async def app_launch(
         return _error("invalid_arguments", "argv must be an array of strings")
     try:
         candidates = discover_app(query)
-        launchable = next(
-            (item for item in candidates if item["launchable_probe"]), None
-        )
+        launchable = next((item for item in candidates if item["launchable_probe"]), None)
         if launchable is None:
             return _error("app_not_launchable", "no launchable application candidate found")
         context = legacy_execution_context(args, task_id, execution_context)
@@ -168,9 +166,7 @@ def resolve_app_launch_resources(args: Mapping[str, Any]) -> tuple[dict[str, Any
     query = args.get("app") or args.get("executable")
     if not isinstance(query, str) or not query:
         raise ValueError("app or executable is required")
-    candidate = next(
-        (item for item in discover_app(query) if item["launchable_probe"]), None
-    )
+    candidate = next((item for item in discover_app(query) if item["launchable_probe"]), None)
     if candidate is None:
         raise ValueError("no launchable application candidate found")
     return (

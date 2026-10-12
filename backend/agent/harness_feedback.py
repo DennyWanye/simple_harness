@@ -1,4 +1,5 @@
 """Compatibility observations for AgentLoop outcomes executed by Harness."""
+
 from __future__ import annotations
 
 import base64
@@ -11,9 +12,7 @@ from typing import Any
 from deskpet.workflows.effects import ToolOutcomeState
 
 _VISUAL_CAPTURE_TOOLS = frozenset({"screen_capture", "window_capture"})
-_SUPPORTED_IMAGE_MIME = frozenset(
-    {"image/gif", "image/jpeg", "image/png", "image/webp"}
-)
+_SUPPORTED_IMAGE_MIME = frozenset({"image/gif", "image/jpeg", "image/png", "image/webp"})
 _MAX_TOOL_IMAGE_BYTES = 10 * 1024 * 1024
 
 
@@ -48,9 +47,7 @@ def _extract_visual_attachment(
         "mime": mime,
         "sha256": digest,
     }
-    bounded = json.dumps(
-        payload, ensure_ascii=False, sort_keys=True, default=str
-    )
+    bounded = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
     blocks = [
         {
             "type": "text",
@@ -81,7 +78,7 @@ def preflight_external_tool_batch(loop: Any, calls: tuple[Any, ...]) -> str:
     for call in calls:
         allowed, reason = gate.allows_tool(call.name)
         if not allowed:
-            return f'{reason.value if reason is not None else "unknown"}: tool {call.name} blocked'
+            return f"{reason.value if reason is not None else 'unknown'}: tool {call.name} blocked"
     return ""
 
 
@@ -104,10 +101,7 @@ def prepare_external_tool_feedback(
             call.stable_call_id: (call, outcome)
             for call, outcome in zip(boundary.pending_calls, boundary.outcomes)
         }
-        raw = {
-            str(item["provider_call_id"]): dict(item)
-            for item in boundary.raw_failures
-        }
+        raw = {str(item["provider_call_id"]): dict(item) for item in boundary.raw_failures}
         call_order = boundary.provider_call_order or tuple(prepared)
         for provider_call_id in call_order:
             if provider_call_id in prepared:
@@ -122,9 +116,7 @@ def prepare_external_tool_feedback(
                 ok = False
                 name = str(failure["raw_tool_name"])
                 raw_args = failure.get("raw_arguments")
-                args = dict(raw_args) if isinstance(raw_args, Mapping) else {
-                    "_raw": raw_args
-                }
+                args = dict(raw_args) if isinstance(raw_args, Mapping) else {"_raw": raw_args}
             history.append(
                 {
                     "command_id": boundary.command_id,
@@ -138,7 +130,11 @@ def prepare_external_tool_feedback(
                 evidence_gate = getattr(loop, "_evidence_gate", None)
                 if evidence_gate is not None and evidence_gate.is_investigative(call.tool_name):
                     feedback["evidence_gathered"] = True
-                skill_name = call.final_params.get("skill_name") if call.tool_name == "skill_invoke" else None
+                skill_name = (
+                    call.final_params.get("skill_name")
+                    if call.tool_name == "skill_invoke"
+                    else None
+                )
                 if skill_name:
                     skills = list(feedback.get("skills_used_order") or ())
                     if str(skill_name) not in skills:

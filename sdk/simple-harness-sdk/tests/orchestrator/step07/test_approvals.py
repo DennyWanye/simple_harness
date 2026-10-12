@@ -39,21 +39,36 @@ def test_a_mission_naming_a_disabled_connector_or_event_operation_is_refused_up_
 
     async def case():
         enabled = DeploymentPolicy(enabled_connectors=("test_config",))
-        async with product_world(tmp_path / "on", LayeredScriptedProvider(), connectors={"test_config": service},
-                                 deployment_policy=enabled) as world:
+        async with product_world(
+            tmp_path / "on",
+            LayeredScriptedProvider(),
+            connectors={"test_config": service},
+            deployment_policy=enabled,
+        ) as world:
             for key, criteria in (
-                ("s7-a", ("file:CHANGE.md", "action:payment.pay:acct-1")),  # not enabled, not registered
-                ("s7-b", ("action:test_config.set",)),  # not action:<connector>.<operation>:<target>
+                (
+                    "s7-a",
+                    ("file:CHANGE.md", "action:payment.pay:acct-1"),
+                ),  # not enabled, not registered
+                (
+                    "s7-b",
+                    ("action:test_config.set",),
+                ),  # not action:<connector>.<operation>:<target>
             ):
                 with pytest.raises(FacadeError) as refused:
                     world.create(_request(key, criteria))
                 assert refused.value.code == "invalid_request", refused.value
             assert world.control.missions() == []  # nothing was written
-            accepted = world.create(_request("s7-ok", ("file:CHANGE.md", SET_NEW_UI)))  # the same shape, enabled
+            accepted = world.create(
+                _request("s7-ok", ("file:CHANGE.md", SET_NEW_UI))
+            )  # the same shape, enabled
             assert accepted["created"] is True
-        async with product_world(tmp_path / "off", LayeredScriptedProvider(),
-                                 connectors={"test_config": service}) as world:
-            with pytest.raises(FacadeError) as switched_off:  # the deployment switch is off by default
+        async with product_world(
+            tmp_path / "off", LayeredScriptedProvider(), connectors={"test_config": service}
+        ) as world:
+            with pytest.raises(
+                FacadeError
+            ) as switched_off:  # the deployment switch is off by default
                 world.create(_request("s7-c", ("file:CHANGE.md", SET_NEW_UI)))
             assert switched_off.value.code == "invalid_request"
             assert world.control.missions() == []

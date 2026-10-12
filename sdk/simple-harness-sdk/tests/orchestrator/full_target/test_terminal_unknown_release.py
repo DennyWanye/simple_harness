@@ -83,11 +83,26 @@ def _unreadable(request: Any) -> str:
 
 # path → (status, stop reason, unknown usage on the books, scripted faults, planner, config, budget)
 PATHS = {
-    "planning_failed": ("FAILED", "planning_failed", False, {}, _unreadable, {"max_planning_attempts": 1}, {}),
+    "planning_failed": (
+        "FAILED",
+        "planning_failed",
+        False,
+        {},
+        _unreadable,
+        {"max_planning_attempts": 1},
+        {},
+    ),
     "budget_exhausted": ("FAILED", "budget_exhausted", False, {}, None, {}, {"max_tokens": 30_000}),
     # 2026-10-10 决定：没被听到的回合共用 6 次宽限，第 7 次才计次 → 7 次掉线用掉 1 格梯子
-    "runtime_unavailable": ("FAILED", "runtime_unavailable", True, {"planner": [transport_loss] * 7}, None,
-                            {"max_planning_attempts": 1}, {}),
+    "runtime_unavailable": (
+        "FAILED",
+        "runtime_unavailable",
+        True,
+        {"planner": [transport_loss] * 7},
+        None,
+        {"max_planning_attempts": 1},
+        {},
+    ),
 }
 
 
@@ -106,7 +121,11 @@ def test_a_terminal_path_keeps_the_books(tmp_path, path) -> None:
                 "stop_reason": final.stop_reason,
                 "report": dict(final.final_report or {}),
                 "types": [item.type for item in events(world, mission_id)],
-                "open": [item.subject_id for item in world.store.list_intents(*OPEN) if item.mission_id == mission_id],
+                "open": [
+                    item.subject_id
+                    for item in world.store.list_intents(*OPEN)
+                    if item.mission_id == mission_id
+                ],
                 "ledger": assert_terminal_ledger(world, mission_id, unknown=unknown),
             }
 
@@ -146,7 +165,7 @@ def test_cancel_mission_writes_usage_flags_on_a_hierarchical_report(tmp_path) ->
 
 
 def test_only_the_final_writer_writes_completed() -> None:
-    """"完成"只有一个写方（Assurance 原计划 §7.1）：全包里把任务状态写成 COMPLETED 的只有收尾的
+    """ "完成"只有一个写方（Assurance 原计划 §7.1）：全包里把任务状态写成 COMPLETED 的只有收尾的
     唯一完成写方；判定只记"要求已满足"并请求收尾。
 
     **改坏检验**：判定里再加一条直接写完成的路（FIN-01）→ 变红。"""
@@ -159,6 +178,8 @@ def test_only_the_final_writer_writes_completed() -> None:
     writers = sorted(
         str(path.relative_to(root))
         for path in root.rglob("*.py")
-        for _ in re.finditer(r"next_mission\(\s*[^()]*?MissionStatus\.COMPLETED", path.read_text(encoding="utf-8"))
+        for _ in re.finditer(
+            r"next_mission\(\s*[^()]*?MissionStatus\.COMPLETED", path.read_text(encoding="utf-8")
+        )
     )
     assert writers == ["orchestrator/assurance_final_writer.py"]

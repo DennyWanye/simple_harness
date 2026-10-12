@@ -76,10 +76,7 @@ class _ReceiptCrashStore:
         return getattr(self._store, name)
 
     def record_growth_authority_cutover_step(self, **kwargs):
-        if (
-            kwargs["substep_phase"] == self._crash_step
-            and not self.crashed
-        ):
+        if kwargs["substep_phase"] == self._crash_step and not self.crashed:
             self.crashed = True
             raise _Crash(self._crash_step)
         return self._store.record_growth_authority_cutover_step(**kwargs)
@@ -99,9 +96,7 @@ class _LegacyReceiptStore:
         for original in rows:
             row = dict(original)
             payload = dict(row["journal_payload"])
-            if row["substep_phase"] in (
-                DEFAULT_PRE_MARKER_STEPS + DEFAULT_POST_MARKER_STEPS
-            ):
+            if row["substep_phase"] in (DEFAULT_PRE_MARKER_STEPS + DEFAULT_POST_MARKER_STEPS):
                 payload.pop("result_hash", None)
                 if self._corrupt_reason:
                     row["reason_code"] = "authority_transition"
@@ -126,9 +121,7 @@ class _DurableEffectExecutor:
                 "result_hash": f"durable-result:{step}",
             }
             self._applied[step] = proof
-            self._physical_counts[step] = (
-                self._physical_counts.get(step, 0) + 1
-            )
+            self._physical_counts[step] = self._physical_counts.get(step, 0) + 1
         elif proof["receipt_hash"] != authorization.expected_step_hash:
             raise RuntimeError(f"durable effect drifted:{step}")
         return proof
@@ -222,42 +215,25 @@ async def test_cutover_keeps_pointer_preparing_until_every_receipt_matches(
     tmp_path,
 ) -> None:
     executor = _Executor()
-    store, legacy, companion, router, coordinator = await _roots(
-        tmp_path, executor
-    )
+    store, legacy, companion, router, coordinator = await _roots(tmp_path, executor)
 
     state = await coordinator.execute(_plan())
 
     assert state.phase is GrowthAuthorityPhase.COMPANION
-    assert executor.calls == list(
-        DEFAULT_PRE_MARKER_STEPS + DEFAULT_POST_MARKER_STEPS
+    assert executor.calls == list(DEFAULT_PRE_MARKER_STEPS + DEFAULT_POST_MARKER_STEPS)
+    assert all(phase is GrowthAuthorityPhase.PREPARING for _, phase, _ in executor.states)
+    assert all(
+        marker is False for step, _, marker in executor.states if step in DEFAULT_PRE_MARKER_STEPS
     )
     assert all(
-        phase is GrowthAuthorityPhase.PREPARING
-        for _, phase, _ in executor.states
+        marker is True for step, _, marker in executor.states if step in DEFAULT_POST_MARKER_STEPS
     )
-    assert all(
-        marker is False
-        for step, _, marker in executor.states
-        if step in DEFAULT_PRE_MARKER_STEPS
-    )
-    assert all(
-        marker is True
-        for step, _, marker in executor.states
-        if step in DEFAULT_POST_MARKER_STEPS
-    )
-    result = await router.dispatch(
-        _request(GrowthIngressKind.PREFERENCE_WRITE, state.generation)
-    )
+    result = await router.dispatch(_request(GrowthIngressKind.PREFERENCE_WRITE, state.generation))
     assert result == "companion:write"
     assert legacy.calls == []
-    rows = store.list_growth_authority_cutover_journal(
-        cutover_operation_id="cutover-1"
-    )
+    rows = store.list_growth_authority_cutover_journal(cutover_operation_id="cutover-1")
     step_rows = {
-        row["substep_phase"]: row
-        for row in rows
-        if row["substep_phase"] in _plan().step_hashes
+        row["substep_phase"]: row for row in rows if row["substep_phase"] in _plan().step_hashes
     }
     assert set(step_rows) == set(_plan().step_hashes)
     assert all(
@@ -280,12 +256,15 @@ async def test_pre_marker_failure_returns_to_legacy_and_chat_stays_available(
     assert router.current.phase is GrowthAuthorityPhase.LEGACY
     assert router.current.roll_forward_required is False
     assert router.ordinary_chat_allowed is True
-    assert await router.dispatch(
-        _request(
-            GrowthIngressKind.REMINDER_WRITE,
-            router.current.generation,
+    assert (
+        await router.dispatch(
+            _request(
+                GrowthIngressKind.REMINDER_WRITE,
+                router.current.generation,
+            )
         )
-    ) == "legacy:write"
+        == "legacy:write"
+    )
     assert len(legacy.calls) == 1
 
 
@@ -319,21 +298,21 @@ async def test_every_pre_marker_step_failure_has_one_legacy_writer_and_recovers(
     failed_step,
 ) -> None:
     executor = _Executor(fail_at=failed_step)
-    store, legacy, companion, router, coordinator = await _roots(
-        tmp_path, executor
-    )
+    store, legacy, companion, router, coordinator = await _roots(tmp_path, executor)
 
-    assert await router.dispatch(
-        _request(GrowthIngressKind.REMINDER_WRITE, router.current.generation)
-    ) == "legacy:write"
+    assert (
+        await router.dispatch(_request(GrowthIngressKind.REMINDER_WRITE, router.current.generation))
+        == "legacy:write"
+    )
     with pytest.raises(RuntimeError, match=failed_step):
         await coordinator.execute(_plan())
 
     assert router.current.phase is GrowthAuthorityPhase.LEGACY
     assert router.current.roll_forward_required is False
-    assert await router.dispatch(
-        _request(GrowthIngressKind.REMINDER_WRITE, router.current.generation)
-    ) == "legacy:write"
+    assert (
+        await router.dispatch(_request(GrowthIngressKind.REMINDER_WRITE, router.current.generation))
+        == "legacy:write"
+    )
     assert len(legacy.calls) == 2
     assert companion.calls == []
 
@@ -350,9 +329,10 @@ async def test_every_pre_marker_step_failure_has_one_legacy_writer_and_recovers(
         DEFAULT_PRE_MARKER_STEPS[failed_index:] + DEFAULT_POST_MARKER_STEPS
     )
     assert final.phase is GrowthAuthorityPhase.COMPANION
-    assert await router.dispatch(
-        _request(GrowthIngressKind.REMINDER_WRITE, final.generation)
-    ) == "companion:write"
+    assert (
+        await router.dispatch(_request(GrowthIngressKind.REMINDER_WRITE, final.generation))
+        == "companion:write"
+    )
     assert len(legacy.calls) == 2
     assert len(companion.calls) == 1
 
@@ -364,13 +344,12 @@ async def test_every_post_marker_step_failure_has_no_fallback_writer_and_recover
     failed_step,
 ) -> None:
     executor = _Executor(fail_at=failed_step)
-    store, legacy, companion, router, coordinator = await _roots(
-        tmp_path, executor
-    )
+    store, legacy, companion, router, coordinator = await _roots(tmp_path, executor)
 
-    assert await router.dispatch(
-        _request(GrowthIngressKind.CODIFY, router.current.generation)
-    ) == "legacy:write"
+    assert (
+        await router.dispatch(_request(GrowthIngressKind.CODIFY, router.current.generation))
+        == "legacy:write"
+    )
     with pytest.raises(RuntimeError, match=failed_step):
         await coordinator.execute(_plan())
 
@@ -378,9 +357,7 @@ async def test_every_post_marker_step_failure_has_no_fallback_writer_and_recover
     assert router.current.roll_forward_required is True
     before = (len(legacy.calls), len(companion.calls))
     with pytest.raises(GrowthWritesPaused):
-        await router.dispatch(
-            _request(GrowthIngressKind.CODIFY, router.current.generation)
-        )
+        await router.dispatch(_request(GrowthIngressKind.CODIFY, router.current.generation))
     assert (len(legacy.calls), len(companion.calls)) == before == (1, 0)
 
     recovery = _Executor()
@@ -394,9 +371,10 @@ async def test_every_post_marker_step_failure_has_no_fallback_writer_and_recover
     failed_index = DEFAULT_POST_MARKER_STEPS.index(failed_step)
     assert recovery.calls == list(DEFAULT_POST_MARKER_STEPS[failed_index:])
     assert final.phase is GrowthAuthorityPhase.COMPANION
-    assert await router.dispatch(
-        _request(GrowthIngressKind.CODIFY, final.generation)
-    ) == "companion:write"
+    assert (
+        await router.dispatch(_request(GrowthIngressKind.CODIFY, final.generation))
+        == "companion:write"
+    )
     assert len(legacy.calls) == 1
     assert len(companion.calls) == 1
 
@@ -433,9 +411,10 @@ async def test_callback_applied_before_receipt_crash_replays_without_double_writ
         crashing_executor,
         wrap,
     )
-    assert await router.dispatch(
-        _request(GrowthIngressKind.CODIFY, router.current.generation)
-    ) == "legacy:write"
+    assert (
+        await router.dispatch(_request(GrowthIngressKind.CODIFY, router.current.generation))
+        == "legacy:write"
+    )
 
     with pytest.raises(_Crash):
         await coordinator.execute(_plan())
@@ -445,9 +424,7 @@ async def test_callback_applied_before_receipt_crash_replays_without_double_writ
     assert physical_counts[receipt_crash_step] == 1
     assert receipt_crash_step not in {
         row["substep_phase"]
-        for row in store.list_growth_authority_cutover_journal(
-            cutover_operation_id="cutover-1"
-        )
+        for row in store.list_growth_authority_cutover_journal(cutover_operation_id="cutover-1")
     }
 
     recovered_router = GrowthAuthorityRouter(
@@ -459,9 +436,12 @@ async def test_callback_applied_before_receipt_crash_replays_without_double_writ
     before = (len(legacy.calls), len(companion.calls))
     if receipt_crash_step in DEFAULT_PRE_MARKER_STEPS:
         assert recovered.phase is GrowthAuthorityPhase.LEGACY
-        assert await recovered_router.dispatch(
-            _request(GrowthIngressKind.CODIFY, recovered.generation)
-        ) == "legacy:write"
+        assert (
+            await recovered_router.dispatch(
+                _request(GrowthIngressKind.CODIFY, recovered.generation)
+            )
+            == "legacy:write"
+        )
         assert (len(legacy.calls), len(companion.calls)) == (before[0] + 1, 0)
     else:
         assert recovered.phase is GrowthAuthorityPhase.PREPARING
@@ -486,20 +466,17 @@ async def test_callback_applied_before_receipt_crash_replays_without_double_writ
     assert final.phase is GrowthAuthorityPhase.COMPANION
     assert invocation_counts[receipt_crash_step] == 2
     assert physical_counts[receipt_crash_step] == 1
-    assert set(physical_counts) == set(
-        DEFAULT_PRE_MARKER_STEPS + DEFAULT_POST_MARKER_STEPS
-    )
+    assert set(physical_counts) == set(DEFAULT_PRE_MARKER_STEPS + DEFAULT_POST_MARKER_STEPS)
     assert set(physical_counts.values()) == {1}
-    assert await recovered_router.dispatch(
-        _request(GrowthIngressKind.CODIFY, final.generation)
-    ) == "companion:write"
+    assert (
+        await recovered_router.dispatch(_request(GrowthIngressKind.CODIFY, final.generation))
+        == "companion:write"
+    )
     assert len(companion.calls) == 1
 
     step_rows = [
         row
-        for row in store.list_growth_authority_cutover_journal(
-            cutover_operation_id="cutover-1"
-        )
+        for row in store.list_growth_authority_cutover_journal(cutover_operation_id="cutover-1")
         if row["substep_phase"] in _plan().step_hashes
     ]
     assert len(step_rows) == len(_plan().step_hashes)
@@ -510,9 +487,7 @@ async def test_callback_applied_before_receipt_crash_replays_without_double_writ
 @pytest.mark.asyncio
 async def test_cold_restart_after_marker_only_rolls_forward(tmp_path) -> None:
     crashing = _Executor(crash_at="owner_projection_reconcile")
-    store, legacy, companion, router, coordinator = await _roots(
-        tmp_path, crashing
-    )
+    store, legacy, companion, router, coordinator = await _roots(tmp_path, crashing)
     with pytest.raises(_Crash):
         await coordinator.execute(_plan())
     assert router.current.phase is GrowthAuthorityPhase.PREPARING
@@ -534,9 +509,7 @@ async def test_cold_restart_after_marker_only_rolls_forward(tmp_path) -> None:
     ).execute(_plan())
 
     assert final.phase is GrowthAuthorityPhase.COMPANION
-    assert recovery.calls == list(
-        DEFAULT_POST_MARKER_STEPS[1:]
-    )
+    assert recovery.calls == list(DEFAULT_POST_MARKER_STEPS[1:])
     assert legacy.calls == []
 
 
@@ -545,9 +518,7 @@ async def test_cold_restart_accepts_strict_legacy_committed_step_receipts(
     tmp_path,
 ) -> None:
     crashing = _Executor(crash_at="handler_switch")
-    store, legacy, companion, router, coordinator = await _roots(
-        tmp_path, crashing
-    )
+    store, legacy, companion, router, coordinator = await _roots(tmp_path, crashing)
     with pytest.raises(_Crash):
         await coordinator.execute(_plan())
 
@@ -584,9 +555,7 @@ async def test_legacy_cutover_receipt_without_exact_commit_reason_fails_closed(
     tmp_path,
 ) -> None:
     crashing = _Executor(crash_at="handler_switch")
-    store, legacy, companion, _, coordinator = await _roots(
-        tmp_path, crashing
-    )
+    store, legacy, companion, _, coordinator = await _roots(tmp_path, crashing)
     with pytest.raises(_Crash):
         await coordinator.execute(_plan())
 
@@ -632,11 +601,7 @@ async def test_companion_adapter_routes_each_typed_ingress_once() -> None:
     )
     for kind in GrowthIngressKind:
         request = _request(kind, 1)
-        result = (
-            await adapter.write(request)
-            if kind.is_write
-            else await adapter.read(request)
-        )
+        result = await adapter.write(request) if kind.is_write else await adapter.read(request)
         assert result == kind.value
     assert calls == list(GrowthIngressKind)
 
@@ -655,9 +620,7 @@ def test_cutover_plan_rejects_relay_owned_legacy_import() -> None:
             new_owner_binding_set_stamp="new",
             step_hashes={
                 step: f"hash:{step}"
-                for step in (
-                    DEFAULT_PRE_MARKER_STEPS + DEFAULT_POST_MARKER_STEPS
-                )
+                for step in (DEFAULT_PRE_MARKER_STEPS + DEFAULT_POST_MARKER_STEPS)
             },
             source_owner_policy="active_relay",
         )

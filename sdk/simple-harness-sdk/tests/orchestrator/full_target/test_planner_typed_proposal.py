@@ -118,9 +118,7 @@ def test_the_mission_is_supplied_by_the_caller_not_the_block():
 
     assert str(_parse().mission_id) == MISSION
     assert "mission_id" not in json.loads(
-        _block()
-        .removeprefix("<plan_revision_proposal>")
-        .removesuffix("</plan_revision_proposal>")
+        _block().removeprefix("<plan_revision_proposal>").removesuffix("</plan_revision_proposal>")
     )
 
 

@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 """P4-S20 Wave 2b: OpenAICompatibleProvider.chat_with_tools + shim tests."""
+
 from __future__ import annotations
 
 import json
@@ -26,6 +27,7 @@ def _mock_handler(captured: list, response_body: dict):
     branch picks up content / tool_calls from this shape, exactly as
     the relay and other non-conforming proxies emit them.
     """
+
     def _h(request: httpx.Request) -> httpx.Response:
         captured.append(json.loads(request.content))
         sse = f"data: {json.dumps(response_body)}\n\ndata: [DONE]\n\n"
@@ -57,9 +59,7 @@ async def test_chat_with_tools_parses_tool_calls() -> None:
                             "type": "function",
                             "function": {
                                 "name": "desktop_create_file",
-                                "arguments": json.dumps(
-                                    {"name": "todo.txt", "content": "hi"}
-                                ),
+                                "arguments": json.dumps({"name": "todo.txt", "content": "hi"}),
                             },
                         }
                     ],
@@ -68,12 +68,8 @@ async def test_chat_with_tools_parses_tool_calls() -> None:
         ],
         "usage": {"prompt_tokens": 30, "completion_tokens": 10},
     }
-    p = OpenAICompatibleProvider(
-        base_url="https://stub", api_key="k", model="gpt-test"
-    )
-    p._test_transport = httpx.MockTransport(
-        _mock_handler(captured, body)
-    )
+    p = OpenAICompatibleProvider(base_url="https://stub", api_key="k", model="gpt-test")
+    p._test_transport = httpx.MockTransport(_mock_handler(captured, body))
 
     out = await p.chat_with_tools(
         [{"role": "user", "content": "create todo"}],
@@ -110,12 +106,8 @@ async def test_chat_with_tools_normal_text() -> None:
         "usage": {"prompt_tokens": 5, "completion_tokens": 5},
     }
     captured: list[dict] = []
-    p = OpenAICompatibleProvider(
-        base_url="https://stub", api_key="k", model="gpt-test"
-    )
-    p._test_transport = httpx.MockTransport(
-        _mock_handler(captured, body)
-    )
+    p = OpenAICompatibleProvider(base_url="https://stub", api_key="k", model="gpt-test")
+    p._test_transport = httpx.MockTransport(_mock_handler(captured, body))
     out = await p.chat_with_tools([{"role": "user", "content": "hi"}])
     assert out["content"] == "hello"
     assert out["stop_reason"] == "end_turn"
@@ -146,9 +138,7 @@ async def test_shim_returns_chatresponse() -> None:
         ],
         "usage": {"prompt_tokens": 10, "completion_tokens": 0},
     }
-    p = OpenAICompatibleProvider(
-        base_url="https://stub", api_key="k", model="gpt-test"
-    )
+    p = OpenAICompatibleProvider(base_url="https://stub", api_key="k", model="gpt-test")
     p._test_transport = httpx.MockTransport(_mock_handler([], body))
     shim = OpenAICompatibleAgentLLM(provider=p)
     resp = await shim.chat_with_fallback(
@@ -260,7 +250,5 @@ async def test_relay_double_encoded_sse_recovers() -> None:
     p._test_transport = httpx.MockTransport(_h)
     out = await p.chat_with_tools([{"role": "user", "content": "ping"}])
     assert out["content"] == "hello", f"content lost: {out!r}"
-    assert "thinking" in (out.get("reasoning_content") or ""), (
-        f"reasoning lost: {out!r}"
-    )
+    assert "thinking" in (out.get("reasoning_content") or ""), f"reasoning lost: {out!r}"
     assert out["stop_reason"] == "end_turn"

@@ -7,6 +7,7 @@
 调用点懒执行。调用方可以注入 ``conn_factory`` 方便单测；生产侧默认按
 SessionDB 使用的 ``state.db`` 位置打开短连接。
 """
+
 from __future__ import annotations
 
 import asyncio

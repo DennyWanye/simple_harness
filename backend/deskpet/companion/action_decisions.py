@@ -45,9 +45,7 @@ class TrustedCompanionControlIdentity:
             raise ValueError("trusted_companion_control_identity_invalid")
 
     @classmethod
-    def from_frozen(
-        cls, identity: FrozenOwnerIdentity
-    ) -> TrustedCompanionControlIdentity:
+    def from_frozen(cls, identity: FrozenOwnerIdentity) -> TrustedCompanionControlIdentity:
         return cls(
             owner=identity.owner,
             owner_key=identity.owner_key,
@@ -79,9 +77,7 @@ class RecoveredCompanionDecision:
 
 
 class ExecutionDecisionRecoveryPort(Protocol):
-    async def recover_companion_decision(
-        self, decision_id: str
-    ) -> RecoveredCompanionDecision: ...
+    async def recover_companion_decision(self, decision_id: str) -> RecoveredCompanionDecision: ...
 
 
 class KernelDecisionSignalPort(Protocol):
@@ -99,18 +95,14 @@ class SqliteExecutionDecisionRecovery:
     def __init__(self, path: str | Path) -> None:
         self._path = str(path)
 
-    async def recover_companion_decision(
-        self, decision_id: str
-    ) -> RecoveredCompanionDecision:
+    async def recover_companion_decision(self, decision_id: str) -> RecoveredCompanionDecision:
         normalized = str(decision_id or "").strip()
         if not normalized:
             raise CompanionActionDecisionRejected("decision_id_required")
         if self._path == ":memory:":
             raise ValueError("execution_recovery_requires_durable_db")
         uri = Path(self._path).resolve().as_uri() + "?mode=ro"
-        db = sqlite3.connect(
-            uri, isolation_level=None, timeout=5.0, uri=True
-        )
+        db = sqlite3.connect(uri, isolation_level=None, timeout=5.0, uri=True)
         db.row_factory = sqlite3.Row
         try:
             row = db.execute(
@@ -136,9 +128,7 @@ class SqliteExecutionDecisionRecovery:
             status=str(row["status"]),
             nonce=str(row["nonce"]),
             decision_version=int(row["decision_version"]),
-            expires_at=(
-                None if row["expires_at"] is None else float(row["expires_at"])
-            ),
+            expires_at=(None if row["expires_at"] is None else float(row["expires_at"])),
             domain_kind=row["domain_kind"],
             domain_id=row["domain_id"],
             call_id=row["call_id"],
@@ -194,14 +184,9 @@ class CompanionActionDecisionService:
         recovered = await self._execution.recover_companion_decision(decision_id)
         if recovered.status != DecisionStatus.OPEN.value:
             raise CompanionActionDecisionRejected("decision_not_open")
-        if (
-            recovered.expires_at is not None
-            and recovered.expires_at <= float(self._wall_time())
-        ):
+        if recovered.expires_at is not None and recovered.expires_at <= float(self._wall_time()):
             raise CompanionActionDecisionRejected("decision_expired")
-        binding = self._read_active_binding(
-            control_identity.owner, run_id=recovered.run_id
-        )
+        binding = self._read_active_binding(control_identity.owner, run_id=recovered.run_id)
         if binding is None:
             raise CompanionActionDecisionRejected("companion_run_binding_stale")
         if (
@@ -240,9 +225,7 @@ class CompanionActionDecisionService:
         )
         return await self._kernel_client.signal_decision(ref, actor, signal)
 
-    def _read_active_binding(
-        self, owner: OwnerRef, *, run_id: str
-    ) -> dict[str, Any] | None:
+    def _read_active_binding(self, owner: OwnerRef, *, run_id: str) -> dict[str, Any] | None:
         with self._companion_store.read() as db:
             row = db.execute(
                 """SELECT * FROM companion_run_bindings

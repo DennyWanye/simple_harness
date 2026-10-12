@@ -9,6 +9,7 @@ retry decision or the planner's repair round, both through the production collec
 No Attempt is created and no outcome is recorded by hand; a direct ``create_attempt`` is
 only ever a refused probe at the real entry (adjudication ①a).
 """
+
 import asyncio
 import json
 from collections.abc import AsyncIterator
@@ -41,7 +42,9 @@ def _quick(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _leaf(loop: Any, mission: Any) -> str:
-    [task] = [task for task in loop.store.list_tasks(mission.id) if task.id != root_task(mission.id)]
+    [task] = [
+        task for task in loop.store.list_tasks(mission.id) if task.id != root_task(mission.id)
+    ]
     return task.id
 
 
@@ -51,11 +54,18 @@ def _probe_retry_attempt(loop: Any, task_id: str, retry_of: str) -> CommitReject
 
     before = loop.store.connection.total_changes
     with pytest.raises(CommitRejected) as refused:
-        loop.commit.create_attempt(task_id, role="worker", model="fixture-worker",
-            prompt_version="fixture-worker-v1", context_version="h4-runtime-v1",
+        loop.commit.create_attempt(
+            task_id,
+            role="worker",
+            model="fixture-worker",
+            prompt_version="fixture-worker-v1",
+            context_version="h4-runtime-v1",
             reservation=Reservation(tokens=1000),
             intent_config={"message": "an unauthorised retry"},
-            input_hash="e" * 64, inputs=(), retry_of=retry_of)
+            input_hash="e" * 64,
+            inputs=(),
+            retry_of=retry_of,
+        )
     assert loop.store.connection.total_changes == before
     return refused.value
 
@@ -70,7 +80,9 @@ async def _timed_out_and_retried(tmp_path: Any, key: str) -> AsyncIterator[tuple
     async with committed(tmp_path, key=key, stall_seconds=0.5, provider_call_seconds=0.5) as seed:
         task_id = _leaf(seed.loop, seed.mission)
         try:
-            await run_until(seed.product, lambda: len(seed.loop.store.list_attempts(task_id)) >= 2, timeout=30)
+            await run_until(
+                seed.product, lambda: len(seed.loop.store.list_attempts(task_id)) >= 2, timeout=30
+            )
         except TimeoutError:
             raise AssertionError("the held call was never timed out and retried") from None
         yield seed, task_id
@@ -83,11 +95,17 @@ def test_timeout_opens_repair_and_committed_retry_is_single_use(tmp_path):
             first, second = loop.store.list_attempts(task_id)[:2]
             assert str(first.status) in {"TIMED_OUT", "AttemptStatus.TIMED_OUT"}, first.status
             assert events(loop, mission.id, "AttemptTimedOut")
-            requested = [e for e in events(loop, mission.id, "PlanningRepairRequested")
-                         if first.id in json.dumps(e.payload)]
+            requested = [
+                e
+                for e in events(loop, mission.id, "PlanningRepairRequested")
+                if first.id in json.dumps(e.payload)
+            ]
             assert len(requested) == 1
-            [repair] = [e.payload for e in events(loop, mission.id, "PlanningDecisionEvaluated")
-                        if e.payload.get("decision_type") == "REPAIR"]
+            [repair] = [
+                e.payload
+                for e in events(loop, mission.id, "PlanningDecisionEvaluated")
+                if e.payload.get("decision_type") == "REPAIR"
+            ]
             assert repair["status"] == "COMMITTED"
             assert not pending_requests(loop.store, mission.id)
             second_intent = loop.store.get_intent_for_subject(second.id)
@@ -111,21 +129,29 @@ def test_a_failed_attempt_with_an_unknown_charge_can_still_be_retried(tmp_path):
             loop, mission = seed.loop, seed.mission
             first, second = loop.store.list_attempts(task_id)[:2]
             assert loop.commit.ledger.has_unknown_usage(first.id)
-            [repair] = [e.payload for e in events(loop, mission.id, "PlanningDecisionEvaluated")
-                        if e.payload.get("decision_type") == "REPAIR"]
+            [repair] = [
+                e.payload
+                for e in events(loop, mission.id, "PlanningDecisionEvaluated")
+                if e.payload.get("decision_type") == "REPAIR"
+            ]
             assert repair["status"] == "COMMITTED"
             assert second.retry_of == first.id
             # 这里的"未知"来自一次还挂在线路上的调用（HANDED_OFF）：执行图收敛仍把它算作没安静
             from agent_orchestrator.orchestrator.taskgraph_runtime_imports import (
                 TaskGraphRuntimeImports,
             )
-            facts = TaskGraphRuntimeImports(loop).read_subject(loop.store.get_intent_for_subject(first.id))
+
+            facts = TaskGraphRuntimeImports(loop).read_subject(
+                loop.store.get_intent_for_subject(first.id)
+            )
             assert facts.physical_settled is False and facts.accounting_complete is False
 
     asyncio.run(case())
 
 
-def test_an_ended_attempts_unknown_charge_is_counted_at_the_upper_bound_after_the_bound(tmp_path, monkeypatch):
+def test_an_ended_attempts_unknown_charge_is_counted_at_the_upper_bound_after_the_bound(
+    tmp_path, monkeypatch
+):
     """2026-10-10（docopt 局）：任务还在跑，第一次尝试早已结束、用量未知，预留永远结不了：
     三个整轮之后按上限计（与"任务结束后"同一条规则），事件原因写"尝试已结束、用量未知"；
     还在跑的第二次尝试不碰。
@@ -142,14 +168,23 @@ def test_an_ended_attempts_unknown_charge_is_counted_at_the_upper_bound_after_th
             assert str(loop.store.get_mission(mission.id).status.value) == "ACTIVE"
             assert not accounting._settle_expired_ended_holds(loop)  # 三个整轮还没过：不动
             from agent_orchestrator.runtime.taskgraph_local_work import read_local_work
-            assert first.id in read_local_work(loop.store, mission.id).blocking_subjects(frozenset({task_id}))
+
+            assert first.id in read_local_work(loop.store, mission.id).blocking_subjects(
+                frozenset({task_id})
+            )
             monkeypatch.setattr(accounting, "ENDED_MISSION_RECHECK_SECONDS", 0.0)
             assert accounting._settle_expired_ended_holds(loop)
             assert loop.commit.ledger.reservation(first.id)["state"] == "SETTLED"
             # 账关了，这次尝试不再拦住执行图收敛（docopt 局卡住的正是这一点）
-            assert first.id not in read_local_work(loop.store, mission.id).blocking_subjects(frozenset({task_id}))
-            counted = [e.payload for e in events(loop, mission.id, "ReservationCountedAtUpperBound")]
-            assert [(c["subject_id"], c["reason"]) for c in counted] == [(first.id, "attempt_ended_usage_unknown")]
+            assert first.id not in read_local_work(loop.store, mission.id).blocking_subjects(
+                frozenset({task_id})
+            )
+            counted = [
+                e.payload for e in events(loop, mission.id, "ReservationCountedAtUpperBound")
+            ]
+            assert [(c["subject_id"], c["reason"]) for c in counted] == [
+                (first.id, "attempt_ended_usage_unknown")
+            ]
             assert loop.commit.ledger.reservation(second.id)["state"] != "SETTLED"  # 在跑的那次不碰
 
     asyncio.run(case())
@@ -179,50 +214,78 @@ def test_runtime_wakes_fence_stale_planner_and_repeated_source_transitions(tmp_p
         if state["asked"] == 1:
             return "bad JSON"  # one refused planner reply in the failure index
         package = package_of(request)
-        runtime = [entry for entry in package.get("repair_requests") or ()
-                   if entry["request"]["trigger_source"] == "RUNTIME_UNAVAILABLE"]
+        runtime = [
+            entry
+            for entry in package.get("repair_requests") or ()
+            if entry["request"]["trigger_source"] == "RUNTIME_UNAVAILABLE"
+        ]
         if not runtime:
             return seed_planner(request)
         subject = next(s for s in package["planning_subjects"] if s["task_id"] == state["task_id"])
-        body = {"schema_version": 1, "decision_type": "REPAIR", "subject_key": subject["subject_key"],
-                "rationale": "Recover the recorded failed execution.", "reason_refs": [], "assumptions": [],
-                "uncertainties": [], "alternatives": [], "replan_triggers": [],
-                "payload": {"repair_kind": "DECLARE_RUNTIME_BLOCKED",
-                            "repair_request_id": runtime[0]["request_id"],
-                            "blockers": [{"code": "OTHER", "detail": "Recorded executor is unavailable."}],
-                            "resumable_if": ["plan_revision_changed"]}}
+        body = {
+            "schema_version": 1,
+            "decision_type": "REPAIR",
+            "subject_key": subject["subject_key"],
+            "rationale": "Recover the recorded failed execution.",
+            "reason_refs": [],
+            "assumptions": [],
+            "uncertainties": [],
+            "alternatives": [],
+            "replan_triggers": [],
+            "payload": {
+                "repair_kind": "DECLARE_RUNTIME_BLOCKED",
+                "repair_request_id": runtime[0]["request_id"],
+                "blockers": [{"code": "OTHER", "detail": "Recorded executor is unavailable."}],
+                "resumable_if": ["plan_revision_changed"],
+            },
+        }
         return "<planning_decision>" + json.dumps(body) + "</planning_decision>"
 
     async def case():
         provider = LayeredScriptedProvider(planner=planner)
-        async with committed(tmp_path, key="h4-runtime-live", provider=provider,
-                             max_planning_attempts=6) as seed:
+        async with committed(
+            tmp_path, key="h4-runtime-live", provider=provider, max_planning_attempts=6
+        ) as seed:
             loop, mission, product, dispatch = seed.loop, seed.mission, seed.product, seed.dispatch
             task_id = state["task_id"] = _leaf(loop, mission)
             [first] = loop.store.list_attempts(task_id)
             first_intent = loop.store.get_intent_for_subject(first.id)
             profile = loop.profile_of(first_intent)
-            await loop._give_up_blocked_assured_attempt(first_intent, detail={"waited_seconds": 600})
+            await loop._give_up_blocked_assured_attempt(
+                first_intent, detail={"waited_seconds": 600}
+            )
             assert loop.store.get_attempt(first.id).failure["reason"] == "provider_outcome_unknown"
             # The hung call finally returns; its turn was already given up, its answer is
             # history.  The executor is held again for whatever runs next.
             resume(product, hold=("worker",))
-            await run_until(product, lambda: pending_block(loop.store, mission.id) is not None, timeout=30)
-            [declared] = [e.payload for e in events(loop, mission.id, "PlanningDecisionEvaluated")
-                          if e.payload.get("decision_type") == "REPAIR"]
+            await run_until(
+                product, lambda: pending_block(loop.store, mission.id) is not None, timeout=30
+            )
+            [declared] = [
+                e.payload
+                for e in events(loop, mission.id, "PlanningDecisionEvaluated")
+                if e.payload.get("decision_type") == "REPAIR"
+            ]
             assert declared["status"] == "NO_STATE_CHANGE", declared
             assert not wake_blocks(loop)
             assert "runtime block" in str(_probe_retry_attempt(loop, task_id, first.id))
 
             def unavailable():
-                loop.commit.record_profile_failure(profile, error={"reason": "unavailable"},
-                    threshold=1, cooldown_seconds=3600, mission_ids=(mission.id,))
+                loop.commit.record_profile_failure(
+                    profile,
+                    error={"reason": "unavailable"},
+                    threshold=1,
+                    cooldown_seconds=3600,
+                    mission_ids=(mission.id,),
+                )
 
             unavailable()
             assert wake_blocks(loop)
             loop.commit.record_profile_success(profile)
             assert wake_blocks(loop)
-            resumed = await loop._create_planner_intent(mission.id, ordinal=loop._next_planning_ordinal(mission.id))
+            resumed = await loop._create_planner_intent(
+                mission.id, ordinal=loop._next_planning_ordinal(mission.id)
+            )
             assert resume_source_current(loop, resumed, mission)
             assert not blocks_intent(loop.store, resumed)
             unavailable()
@@ -244,34 +307,67 @@ def test_runtime_wakes_fence_stale_planner_and_repeated_source_transitions(tmp_p
 
             # The planner retries the recorded failure: the block is lifted and the next
             # Attempt is the loop's own, under the committed retry.
-            retry = await loop._create_planner_intent(mission.id, ordinal=loop._next_planning_ordinal(mission.id))
+            retry = await loop._create_planner_intent(
+                mission.id, ordinal=loop._next_planning_ordinal(mission.id)
+            )
             package = retry.config["planning_package"]
             network = dispatch.network(mission.id)
-            occurrence = next(spec.occurrence_id for spec in network.occurrences if str(spec.task_id) == task_id)
-            instance = next(item for item in network.method_instances
-                            if any((c.goal_occurrence_id or c.occurrence_id) == occurrence for c in item.child_bindings))
-            ref = next(r for r in package["visible_refs"]
-                       if r["kind"] == "method_instance" and r["id"] == str(instance.instance_id))
+            occurrence = next(
+                spec.occurrence_id for spec in network.occurrences if str(spec.task_id) == task_id
+            )
+            instance = next(
+                item
+                for item in network.method_instances
+                if any(
+                    (c.goal_occurrence_id or c.occurrence_id) == occurrence
+                    for c in item.child_bindings
+                )
+            )
+            ref = next(
+                r
+                for r in package["visible_refs"]
+                if r["kind"] == "method_instance" and r["id"] == str(instance.instance_id)
+            )
             subject = next(s for s in package["planning_subjects"] if s["task_id"] == task_id)
-            body = {"schema_version": 1, "decision_type": "REPAIR", "subject_key": subject["subject_key"],
-                    "rationale": "Retry the recorded failure.", "reason_refs": [], "assumptions": [],
-                    "uncertainties": [], "alternatives": [], "replan_triggers": [],
-                    "payload": {"repair_kind": "RETRY_SAME_METHOD", "failed_attempt_id": first.id,
-                                "method_instance_ref": ref}}
+            body = {
+                "schema_version": 1,
+                "decision_type": "REPAIR",
+                "subject_key": subject["subject_key"],
+                "rationale": "Retry the recorded failure.",
+                "reason_refs": [],
+                "assumptions": [],
+                "uncertainties": [],
+                "alternatives": [],
+                "replan_triggers": [],
+                "payload": {
+                    "repair_kind": "RETRY_SAME_METHOD",
+                    "failed_attempt_id": first.id,
+                    "method_instance_ref": ref,
+                },
+            }
             from agent_orchestrator.api.planning_authorization import PlanningAuthorizationApi
 
-            PlanningAuthorizationApi(loop.store, tenant_id=mission.tenant_id,
-                                     principal=product.deployment.principal).issue(
-                mission.id, command_id="grant-" + retry.intent_id, request_id=retry.intent_id)
-            await loop._collect_plan_decision(retry, object(), mission,
-                                              "<planning_decision>" + json.dumps(body) + "</planning_decision>",
-                                              dispatch)
-            retried = [e.payload for e in events(loop, mission.id, "PlanningDecisionEvaluated")
-                       if e.payload.get("request_id") == retry.intent_id]
+            PlanningAuthorizationApi(
+                loop.store, tenant_id=mission.tenant_id, principal=product.deployment.principal
+            ).issue(mission.id, command_id="grant-" + retry.intent_id, request_id=retry.intent_id)
+            await loop._collect_plan_decision(
+                retry,
+                object(),
+                mission,
+                "<planning_decision>" + json.dumps(body) + "</planning_decision>",
+                dispatch,
+            )
+            retried = [
+                e.payload
+                for e in events(loop, mission.id, "PlanningDecisionEvaluated")
+                if e.payload.get("request_id") == retry.intent_id
+            ]
             assert retried[-1]["status"] == "COMMITTED", retried
             assert pending_block(loop.store, mission.id) is None
             provider.held.update({"worker", "planner"})
-            await run_until(product, lambda: len(loop.store.list_attempts(task_id)) >= 2, timeout=30)
+            await run_until(
+                product, lambda: len(loop.store.list_attempts(task_id)) >= 2, timeout=30
+            )
             second = loop.store.list_attempts(task_id)[1]
             assert second.retry_of == first.id
 
@@ -286,7 +382,9 @@ def _rework_first_result() -> Any:
         assert package is not None
         if (package.get("package") or {}).get("purpose") == "TASK_CONTENT" and not seen["rework"]:
             seen["rework"] = True
-            return review_reply(package, verdict="REWORK", grade="FAIL", reason="要点太笼统，请写具体。")
+            return review_reply(
+                package, verdict="REWORK", grade="FAIL", reason="要点太笼统，请写具体。"
+            )
         return review_reply(package)
 
     return reviewer
@@ -299,16 +397,29 @@ def _refused_repair(request: Any) -> str:
     package = package_of(request)
     if not package.get("repair_requests"):
         return seed_planner(request)
-    body = {"schema_version": 1, "decision_type": "NO_CHANGE", "subject_key": "subject-not-in-this-request",
-            "rationale": "nothing to change", "reason_refs": [], "assumptions": [], "uncertainties": [],
-            "alternatives": [], "replan_triggers": [], "payload": {"reason": "nothing to change"}}
+    body = {
+        "schema_version": 1,
+        "decision_type": "NO_CHANGE",
+        "subject_key": "subject-not-in-this-request",
+        "rationale": "nothing to change",
+        "reason_refs": [],
+        "assumptions": [],
+        "uncertainties": [],
+        "alternatives": [],
+        "replan_triggers": [],
+        "payload": {"reason": "nothing to change"},
+    }
     return "<planning_decision>" + json.dumps(body) + "</planning_decision>"
 
 
 def _planner_rounds(loop: Any, mission_id: str) -> set[str]:
-    return {item.intent_id for item in loop.store.list_intents(
-        "PENDING", "CLAIMED", "AGENT_CREATED", "SUBMITTED", "SETTLED", "FAILED")
-        if item.mission_id == mission_id and ":planner:" in item.intent_id}
+    return {
+        item.intent_id
+        for item in loop.store.list_intents(
+            "PENDING", "CLAIMED", "AGENT_CREATED", "SUBMITTED", "SETTLED", "FAILED"
+        )
+        if item.mission_id == mission_id and ":planner:" in item.intent_id
+    }
 
 
 def test_a_refused_repair_round_opens_the_next_round_instead_of_idling(tmp_path):
@@ -325,7 +436,9 @@ def test_a_refused_repair_round_opens_the_next_round_instead_of_idling(tmp_path)
                 holder["provider"].held.add("planner")  # 交出这份被拒回复后就不再答
             return reply
 
-        provider = LayeredScriptedProvider(planner=planner, reviewer=_rework_first_result(), worker=worker_reply)
+        provider = LayeredScriptedProvider(
+            planner=planner, reviewer=_rework_first_result(), worker=worker_reply
+        )
         holder["provider"] = provider
         async with committed(tmp_path, key="h4-refused-repair", provider=provider) as seed:
             loop, mission, product = seed.loop, seed.mission, seed.product
@@ -335,39 +448,60 @@ def test_a_refused_repair_round_opens_the_next_round_instead_of_idling(tmp_path)
             released.set()  # the executor answers; its result is sent back by the reviewer
 
             def refusal() -> dict[str, Any] | None:
-                return next((e.payload for e in events(loop, mission.id, "PlanningRejected")
-                             if e.payload.get("ordinal")), None)
+                return next(
+                    (
+                        e.payload
+                        for e in events(loop, mission.id, "PlanningRejected")
+                        if e.payload.get("ordinal")
+                    ),
+                    None,
+                )
 
             # 规划器交出被拒回复后就停住，只看系统有没有开下一轮
             await run_until(product, lambda: refusal() is not None, timeout=30)
             refused = refusal()
-            assert refused["reason"] == "proposal_not_grounded", refused  # 读得懂、准入拒绝（不是格式错）
+            assert refused["reason"] == "proposal_not_grounded", (
+                refused
+            )  # 读得懂、准入拒绝（不是格式错）
             following = f"{mission.id}:planner:{int(refused['ordinal']) + 1}"
-            await run_until(product, lambda: any(r.endswith(following) for r in _planner_rounds(loop, mission.id)),
-                            timeout=30)
-            assert loop.store.get_mission(mission.id).status.value == "ACTIVE"  # the next round, not silence
+            await run_until(
+                product,
+                lambda: any(r.endswith(following) for r in _planner_rounds(loop, mission.id)),
+                timeout=30,
+            )
+            assert (
+                loop.store.get_mission(mission.id).status.value == "ACTIVE"
+            )  # the next round, not silence
             # 规划器停住期间只开这一轮，不多开（opt.169 评估建议 3）
             beyond = f"{mission.id}:planner:{int(refused['ordinal']) + 2}"
             for _ in range(3):
                 await product.drain(timeout=2)
             assert not any(r.endswith(beyond) for r in _planner_rounds(loop, mission.id)), sorted(
-                _planner_rounds(loop, mission.id))
+                _planner_rounds(loop, mission.id)
+            )
 
     asyncio.run(case())
 
 
 def test_a_spent_repair_ladder_ends_the_mission_by_name(tmp_path):
     async def case():
-        provider = LayeredScriptedProvider(planner=_refused_repair, reviewer=_rework_first_result(),
-                                           worker=worker_reply)
+        provider = LayeredScriptedProvider(
+            planner=_refused_repair, reviewer=_rework_first_result(), worker=worker_reply
+        )
         async with committed(tmp_path, key="h4-spent-repair", provider=provider) as seed:
             loop, mission, product = seed.loop, seed.mission, seed.product
             provider.held.discard("worker")
             released = provider.release
             provider.release = asyncio.Event()
             released.set()
-            await run_until(product, lambda: loop.store.get_mission(mission.id).status.value
-                            in {"FAILED", "COMPLETED", "CANCELLED"}, timeout=60)
+            await run_until(
+                product,
+                lambda: (
+                    loop.store.get_mission(mission.id).status.value
+                    in {"FAILED", "COMPLETED", "CANCELLED"}
+                ),
+                timeout=60,
+            )
             final = loop.store.get_mission(mission.id)
             assert final.status.value == "FAILED", final.status
             assert final.final_report["stop_reason"] == "planning_failed", final.final_report
@@ -392,8 +526,16 @@ def test_a_step_that_reports_blocked_goes_back_to_the_planner(tmp_path):
         envelope = {
             "task_id": contract.get("task_id", ""),
             "attempt_id": package.get("attempt", {}).get("attempt_id", ""),
-            "outcome": "blocked", "summary": summary, "claims": [], "evidence": [], "artifacts": [],
-            "outputs": {}, "proposed_tasks": [], "used_knowledge": [], "risks": [], "cost": {},
+            "outcome": "blocked",
+            "summary": summary,
+            "claims": [],
+            "evidence": [],
+            "artifacts": [],
+            "outputs": {},
+            "proposed_tasks": [],
+            "used_knowledge": [],
+            "risks": [],
+            "cost": {},
         }
         return "<result_envelope>" + json.dumps(envelope, ensure_ascii=False) + "</result_envelope>"
 
@@ -407,16 +549,20 @@ def test_a_step_that_reports_blocked_goes_back_to_the_planner(tmp_path):
             released.set()  # the executor answers: blocked
 
             def reported() -> list[Any]:
-                return [entry for entry in pending_requests(loop.store, mission.id)
-                        if entry["request"]["trigger_source"] == "WORKER_REJECT"]
+                return [
+                    entry
+                    for entry in pending_requests(loop.store, mission.id)
+                    if entry["request"]["trigger_source"] == "WORKER_REJECT"
+                ]
 
             await run_until(product, lambda: bool(reported()), timeout=30)
             requests = reported()
             assert len(requests) == 1
             request = requests[0]["request"]
             assert summary in json.dumps(request, ensure_ascii=False)
-            assert not collect_triggers(loop, loop.store.get_mission(mission.id)), \
+            assert not collect_triggers(loop, loop.store.get_mission(mission.id)), (
                 "the same report opens one request only"
+            )
 
     asyncio.run(case())
 
@@ -438,6 +584,7 @@ def test_a_long_call_that_comes_back_is_not_a_stall_the_moment_it_settles(tmp_pa
             def done() -> bool:
                 [first, *_] = loop.store.list_attempts(task_id)
                 return str(first.status).split(".")[-1] not in {"PENDING", "CLAIMED", "RUNNING"}
+
             try:
                 await run_until(seed.product, done, timeout=30)
             except TimeoutError:
@@ -456,21 +603,28 @@ def test_a_model_call_still_on_the_wire_is_not_a_stall_until_its_own_bound(tmp_p
 
     async def case():
         from dataclasses import replace
+
         # stall 0.5 秒，但调用上限保持默认（900 秒）：被扣住的调用一直在线路上，不超时
         async with committed(tmp_path, key="h4-call-on-the-wire", stall_seconds=0.5) as seed:
             loop, mission = seed.loop, seed.mission
             task_id = _leaf(loop, mission)
             with pytest.raises(TimeoutError):
-                await run_until(seed.product, lambda: len(loop.store.list_attempts(task_id)) >= 2, timeout=3)
+                await run_until(
+                    seed.product, lambda: len(loop.store.list_attempts(task_id)) >= 2, timeout=3
+                )
             [only] = loop.store.list_attempts(task_id)
             assert str(only.status) in {"RUNNING", "AttemptStatus.RUNNING"}, only.status
             assert not events(loop, mission.id, "AttemptTimedOut")
             # 同一次调用超过它自己的上限还没回来：按卡死处理，超时并重试
             loop._config = replace(loop._config, provider_call_seconds=0.5)
             try:
-                await run_until(seed.product, lambda: len(loop.store.list_attempts(task_id)) >= 2, timeout=30)
+                await run_until(
+                    seed.product, lambda: len(loop.store.list_attempts(task_id)) >= 2, timeout=30
+                )
             except TimeoutError:
-                raise AssertionError("a call past its own bound was never treated as a stall") from None
+                raise AssertionError(
+                    "a call past its own bound was never treated as a stall"
+                ) from None
             first = loop.store.list_attempts(task_id)[0]
             assert str(first.status) in {"TIMED_OUT", "AttemptStatus.TIMED_OUT"}, first.status
             assert events(loop, mission.id, "AttemptTimedOut")

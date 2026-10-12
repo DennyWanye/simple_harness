@@ -41,7 +41,10 @@ class UsageProvider(ScriptedProvider):
     async def invoke(self, request, *, cancel):  # type: ignore[no-untyped-def]
         response = await super().invoke(request, cancel=cancel)
         n = len(self.requests)
-        return replace(response, usage=ProviderUsage(input_tokens=10 * n, output_tokens=7 * n, total_tokens=17 * n))
+        return replace(
+            response,
+            usage=ProviderUsage(input_tokens=10 * n, output_tokens=7 * n, total_tokens=17 * n),
+        )
 
 
 def _build(tmp_path, provider=None):  # type: ignore[no-untyped-def]
@@ -49,18 +52,41 @@ def _build(tmp_path, provider=None):  # type: ignore[no-untyped-def]
     tokenizer = ExactWordTokenizer()
     reader = RunPriorReserve()
     limits = model_limits(
-        model=MODEL, tokenizer=tokenizer, input_limit_tokens=8192, max_output_tokens=1024, provider_id="scripted-test",
-        input_limit_scope="WIRE_PLUS_PRIOR", requires_prior_output_reserve=True,
+        model=MODEL,
+        tokenizer=tokenizer,
+        input_limit_tokens=8192,
+        max_output_tokens=1024,
+        provider_id="scripted-test",
+        input_limit_scope="WIRE_PLUS_PRIOR",
+        requires_prior_output_reserve=True,
     )
     meter = MeterBinding(
-        tokenizer=tokenizer, model_limits=limits, prior_reserve=reader,
-        certification_ref=Pin("receipt", "meter-certification:test-exact-words", 0, digest({"rule": "one token per word"})),
+        tokenizer=tokenizer,
+        model_limits=limits,
+        prior_reserve=reader,
+        certification_ref=Pin(
+            "receipt",
+            "meter-certification:test-exact-words",
+            0,
+            digest({"rule": "one token per word"}),
+        ),
     )
     ports = AgentRuntimePorts(
-        provider=provider or UsageProvider(["one", "two"]), authorization=RecordingAuthorization(), database_path=str(tmp_path / "runtime.db"),
-        model=MODEL, owner_id="arp-test-owner", tokenizer=tokenizer, default_max_output_tokens=256, max_output_tokens_ceiling=1024,
+        provider=provider or UsageProvider(["one", "two"]),
+        authorization=RecordingAuthorization(),
+        database_path=str(tmp_path / "runtime.db"),
+        model=MODEL,
+        owner_id="arp-test-owner",
+        tokenizer=tokenizer,
+        default_max_output_tokens=256,
+        max_output_tokens_ceiling=1024,
     )
-    arp = ArpPorts(root_dir=root.directory, profile=standalone_profile(), activation_receipt=activation_receipt(), meter=meter)
+    arp = ArpPorts(
+        root_dir=root.directory,
+        profile=standalone_profile(),
+        activation_receipt=activation_receipt(),
+        meter=meter,
+    )
     runtime = build_arp_runtime(ports, arp)
     reader.bind(runtime)
     return runtime, reader
@@ -72,21 +98,35 @@ def test_standalone_runtime_freezes_context_before_handoff_and_sums_prior_output
     async def scenario():  # type: ignore[no-untyped-def]
         async with runtime:
             agent = await runtime.create(CONFIG, creation_key="a0", caller=trusted_caller())
-            first = await agent.wait_turn((await agent.submit("hello", input_id="t1")).turn_id, timeout=10)
+            first = await agent.wait_turn(
+                (await agent.submit("hello", input_id="t1")).turn_id, timeout=10
+            )
             assert first.state is AgentTurnState.COMMITTED, first.error
-            second = await agent.wait_turn((await agent.submit("again", input_id="t2")).turn_id, timeout=10)
+            second = await agent.wait_turn(
+                (await agent.submit("again", input_id="t2")).turn_id, timeout=10
+            )
             assert second.state is AgentTurnState.COMMITTED, second.error
             conn = runtime.uow.database.connection
-            invocations = conn.execute("SELECT state, handed_off_at FROM provider_invocations ORDER BY handed_off_at").fetchall()
-            requests = conn.execute("SELECT created_at_ms FROM arp_context_requests ORDER BY created_at_ms").fetchall()
-            assert [row[0] for row in invocations] == ["succeeded", "succeeded"] and len(requests) == 2
+            invocations = conn.execute(
+                "SELECT state, handed_off_at FROM provider_invocations ORDER BY handed_off_at"
+            ).fetchall()
+            requests = conn.execute(
+                "SELECT created_at_ms FROM arp_context_requests ORDER BY created_at_ms"
+            ).fetchall()
+            assert [row[0] for row in invocations] == ["succeeded", "succeeded"] and len(
+                requests
+            ) == 2
             # Each context request was frozen no later than its invocation's physical handoff.
             for (created_ms,), (_, handed_off_at) in zip(requests, invocations):
                 assert created_ms <= int(handed_off_at * 1000) + 1
             # The prior reserve after two calls is their recorded output, by name — the second
             # request was metered with the first call's 7 while its own call was still ``claimed``.
             basis = reader(str(agent.run_id))
-            assert basis.tokens == 7 + 14 and basis.basis_ref is not None and basis.basis_ref.id == f"prior-output:{agent.run_id}"
+            assert (
+                basis.tokens == 7 + 14
+                and basis.basis_ref is not None
+                and basis.basis_ref.id == f"prior-output:{agent.run_id}"
+            )
 
     asyncio.run(scenario())
 
@@ -97,7 +137,12 @@ class EmptyThenUsage(UsageProvider):
     async def invoke(self, request, *, cancel):  # type: ignore[no-untyped-def]
         if not self.requests:
             self.requests.append(request)
-            return ProviderResponse(request.request_id, Message(MessageRole.ASSISTANT, ""), model=MODEL, finish_reason="stop")
+            return ProviderResponse(
+                request.request_id,
+                Message(MessageRole.ASSISTANT, ""),
+                model=MODEL,
+                finish_reason="stop",
+            )
         return await super().invoke(request, cancel=cancel)
 
 
@@ -109,12 +154,21 @@ def test_one_empty_reply_does_not_freeze_the_agent(tmp_path) -> None:
     async def scenario():  # type: ignore[no-untyped-def]
         async with runtime:
             agent = await runtime.create(CONFIG, creation_key="a0", caller=trusted_caller())
-            first = await agent.wait_turn((await agent.submit("hello", input_id="t1")).turn_id, timeout=10)
-            assert first.state is AgentTurnState.FAILED and first.error["error_code"] == "provider_empty_response"
-            second = await agent.wait_turn((await agent.submit("again", input_id="t2")).turn_id, timeout=10)
+            first = await agent.wait_turn(
+                (await agent.submit("hello", input_id="t1")).turn_id, timeout=10
+            )
+            assert (
+                first.state is AgentTurnState.FAILED
+                and first.error["error_code"] == "provider_empty_response"
+            )
+            second = await agent.wait_turn(
+                (await agent.submit("again", input_id="t2")).turn_id, timeout=10
+            )
             assert second.state is AgentTurnState.COMMITTED, second.error
             conn = runtime.uow.database.connection
-            key = conn.execute("SELECT original_request_key FROM arp_context_requests ORDER BY created_at_ms DESC LIMIT 1").fetchone()[0]
+            key = conn.execute(
+                "SELECT original_request_key FROM arp_context_requests ORDER BY created_at_ms DESC LIMIT 1"
+            ).fetchone()[0]
             manifest = store.read_context_by_request_key(conn, str(key)).manifest
             # The failed call's own output cap (the runtime default, 256) is reserved by name.
             assert manifest["prior_output_reserve_tokens"] == 256

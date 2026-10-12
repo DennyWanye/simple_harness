@@ -34,6 +34,7 @@ Spec shape::
 Failure philosophy: a bad spec returns ``{"ok": false, "error": ...}`` —
 never raises out of the handler. openpyxl missing → same.
 """
+
 from __future__ import annotations
 
 import json
@@ -106,9 +107,7 @@ def _autofit_columns(ws, rows: list[list[Any]]) -> None:
                 text = str(r[c])
                 width = sum(2 if ord(ch) > 0x2E7F else 1 for ch in text)
                 longest = max(longest, width)
-        ws.column_dimensions[get_column_letter(c + 1)].width = min(
-            max(longest + 2, 8), 60
-        )
+        ws.column_dimensions[get_column_letter(c + 1)].width = min(max(longest + 2, 8), 60)
 
 
 def _apply_conditional_format(ws, cf: dict[str, Any]) -> None:
@@ -120,9 +119,13 @@ def _apply_conditional_format(ws, cf: dict[str, Any]) -> None:
         ws.conditional_formatting.add(
             rng,
             ColorScaleRule(
-                start_type="min", start_color="FFF8696B",
-                mid_type="percentile", mid_value=50, mid_color="FFFFEB84",
-                end_type="max", end_color="FF63BE7B",
+                start_type="min",
+                start_color="FFF8696B",
+                mid_type="percentile",
+                mid_value=50,
+                mid_color="FFFFEB84",
+                end_type="max",
+                end_color="FF63BE7B",
             ),
         )
     elif rule == "data_bar":
@@ -383,7 +386,11 @@ def excel_create(
 
     spec_dict = _coerce_spec(spec)
     if spec_dict is None:
-        return {"ok": False, "error": "spec must be a dict or JSON object string", "retriable": False}
+        return {
+            "ok": False,
+            "error": "spec must be a dict or JSON object string",
+            "retriable": False,
+        }
 
     sheets = spec_dict.get("sheets")
     if not isinstance(sheets, list) or not sheets:
@@ -391,7 +398,9 @@ def excel_create(
 
     try:
         out_path = office_paths.resolve_for_write(
-            output_path, default_prefix="deskpet-excel", default_suffix=".xlsx",
+            output_path,
+            default_prefix="deskpet-excel",
+            default_suffix=".xlsx",
             default_kind="Excel",
         )
     except office_paths.PathError as exc:
@@ -413,12 +422,14 @@ def excel_create(
         "ok": True,
         "path": str(out_path),
         "sheet_count": len(sheets),
-        "artifacts": [{
-            "kind": "file",
-            "path": str(out_path),
-            "mime": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            "title": Path(str(out_path)).name,
-        }],
+        "artifacts": [
+            {
+                "kind": "file",
+                "path": str(out_path),
+                "mime": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "title": Path(str(out_path)).name,
+            }
+        ],
     }
 
 
@@ -477,14 +488,15 @@ def _handle(args: dict[str, Any], task_id: str = "") -> str:
 
 
 def register_static_tools(registry) -> None:
-        registry.register(
-            "excel_create",
-            "office",
-            _SCHEMA,
-            _handle,
-            permission_category="write_file",
-            timeout_seconds=30.0,
-            concurrency_safe=False,  # G3: writes .xlsx to disk
-        )
+    registry.register(
+        "excel_create",
+        "office",
+        _SCHEMA,
+        _handle,
+        permission_category="write_file",
+        timeout_seconds=30.0,
+        concurrency_safe=False,  # G3: writes .xlsx to disk
+    )
+
 
 __all__ = ["excel_create", "register_static_tools"]

@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 """CDP Edge JS 渲染适配器测试。"""
+
 from __future__ import annotations
 
 import os
@@ -58,13 +59,14 @@ async def test_cdp_edge_render_handles_launch_failure(monkeypatch):
 async def test_cdp_edge_render_eval_timeout_returns_none(monkeypatch):
     """浏览器在、但渲染(navigate/eval)超时 → 返 None 不抛,且不杀常驻浏览器(可复用)。"""
     import asyncio as _asyncio
+
     _reset_state(monkeypatch)
 
     async def _slow_render(url, timeout):
-        raise TimeoutError()   # 模拟渲染中超时
+        raise TimeoutError()  # 模拟渲染中超时
 
     monkeypatch.setattr(cdp, "_render_once", _slow_render)
-    monkeypatch.setattr(cdp, "_browser_running", lambda: True)   # 浏览器仍活
+    monkeypatch.setattr(cdp, "_browser_running", lambda: True)  # 浏览器仍活
     reset_called = {"n": 0}
 
     async def _spy_reset(*a, **k):
@@ -72,7 +74,7 @@ async def test_cdp_edge_render_eval_timeout_returns_none(monkeypatch):
 
     monkeypatch.setattr(cdp, "_reset_browser_state", _spy_reset)
     assert await cdp.cdp_edge_render("http://x", timeout=1.0) is None
-    assert reset_called["n"] == 0   # 单次渲染失败不该重置(杀)常驻浏览器
+    assert reset_called["n"] == 0  # 单次渲染失败不该重置(杀)常驻浏览器
 
 
 @pytest.mark.live

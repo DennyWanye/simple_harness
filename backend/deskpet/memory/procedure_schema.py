@@ -1,4 +1,5 @@
 """Explicit additive v53 Procedure use and observation journals."""
+
 from __future__ import annotations
 
 import hashlib
@@ -17,7 +18,12 @@ from deskpet.memory.s5c_terminal_schema import (
 
 MIGRATION = "procedure/045_procedure_uses_v53.sql"
 SCHEMA_VERSION = 53
-TABLES = ("procedure_uses", "procedure_use_reservations", "procedure_use_effects", "procedure_observation_journal")
+TABLES = (
+    "procedure_uses",
+    "procedure_use_reservations",
+    "procedure_use_effects",
+    "procedure_observation_journal",
+)
 
 
 def _sql():
@@ -33,31 +39,51 @@ def validate_procedure_state_db(path, *, _expected_user_version=SCHEMA_VERSION):
     try:
         with sqlite3.connect(":memory:") as expected:
             expected.executescript(sql)
-            objects = expected.execute("SELECT name,sql FROM sqlite_master WHERE sql IS NOT NULL").fetchall()
+            objects = expected.execute(
+                "SELECT name,sql FROM sqlite_master WHERE sql IS NOT NULL"
+            ).fetchall()
         with sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True) as db:
             db.execute("BEGIN")
-            if db.execute("SELECT schema_version,migration_sha256 FROM human_memory_migration_chain "
-                    "WHERE migration_id=?", (MIGRATION,)).fetchone() != (
-                        53, hashlib.sha256(sql.encode()).hexdigest()):
+            if db.execute(
+                "SELECT schema_version,migration_sha256 FROM human_memory_migration_chain "
+                "WHERE migration_id=?",
+                (MIGRATION,),
+            ).fetchone() != (53, hashlib.sha256(sql.encode()).hexdigest()):
                 raise ValueError("migration identity")
-            if db.execute("SELECT 1 FROM schema_migrations WHERE version=?", (MIGRATION,)).fetchone() is None:
+            if (
+                db.execute(
+                    "SELECT 1 FROM schema_migrations WHERE version=?", (MIGRATION,)
+                ).fetchone()
+                is None
+            ):
                 raise ValueError("migration marker")
             for name, ddl in objects:
-                if db.execute("SELECT sql FROM sqlite_master WHERE name=?", (name,)).fetchone() != (ddl,):
+                if db.execute("SELECT sql FROM sqlite_master WHERE name=?", (name,)).fetchone() != (
+                    ddl,
+                ):
                     raise ValueError("schema object")
             for table in TABLES:
                 rows = db.execute(f'PRAGMA table_info("{table}")').fetchall()
-                columns = [dict(cid=r[0], name=r[1], type=r[2], notnull=r[3], default=r[4], pk=r[5]) for r in rows]
-                if db.execute("SELECT taxonomy,columns_json FROM human_memory_recovery_table_registry "
-                        "WHERE table_name=?", (table,)).fetchone() != (
-                            "A", json.dumps(columns, sort_keys=True, separators=(",", ":"))):
+                columns = [
+                    dict(cid=r[0], name=r[1], type=r[2], notnull=r[3], default=r[4], pk=r[5])
+                    for r in rows
+                ]
+                if db.execute(
+                    "SELECT taxonomy,columns_json FROM human_memory_recovery_table_registry "
+                    "WHERE table_name=?",
+                    (table,),
+                ).fetchone() != ("A", json.dumps(columns, sort_keys=True, separators=(",", ":"))):
                     raise ValueError("recovery registration")
                 for operation in ("insert", "update", "delete"):
                     name = f"hm_recovery_fence_{table}_{operation}"
-                    ddl = (f'CREATE TRIGGER "{name}" BEFORE {operation.upper()} ON "{table}" '
-                           "WHEN (SELECT state FROM human_memory_recovery_fence WHERE singleton=1)<>'OPEN' "
-                           "BEGIN SELECT RAISE(ABORT,'human_memory_ingress_fenced'); END")
-                    if db.execute("SELECT sql FROM sqlite_master WHERE name=?", (name,)).fetchone() != (ddl,):
+                    ddl = (
+                        f'CREATE TRIGGER "{name}" BEFORE {operation.upper()} ON "{table}" '
+                        "WHEN (SELECT state FROM human_memory_recovery_fence WHERE singleton=1)<>'OPEN' "
+                        "BEGIN SELECT RAISE(ABORT,'human_memory_ingress_fenced'); END"
+                    )
+                    if db.execute(
+                        "SELECT sql FROM sqlite_master WHERE name=?", (name,)
+                    ).fetchone() != (ddl,):
                         raise ValueError("recovery fence")
                 if db.execute(f'PRAGMA foreign_key_check("{table}")').fetchone() is not None:
                     raise ValueError("foreign key")
@@ -74,7 +100,9 @@ async def initialize_procedure_state_db(path, *, fault_inject=None):
         # database, never re-interpreted as this step.
         validator = schema_chain.domain_validator(version)
         if validator is None:
-            raise schema.HumanMemoryProgramEpochError("human_memory_program_future_database_unsupported")
+            raise schema.HumanMemoryProgramEpochError(
+                "human_memory_program_future_database_unsupported"
+            )
         validator(path)
         return
     await initialize_s5c_terminal_state_db(path)
@@ -93,15 +121,21 @@ async def initialize_procedure_state_db(path, *, fault_inject=None):
                     raise schema.HumanMemoryProgramEpochError("procedure_schema_base_differs")
                 validate_s5c_terminal_state_db(path)
                 await migrator._assert_effect_closure_cutover_preconditions(db)
-                async with db.execute("SELECT state FROM human_memory_recovery_fence WHERE singleton=1") as cursor:
+                async with db.execute(
+                    "SELECT state FROM human_memory_recovery_fence WHERE singleton=1"
+                ) as cursor:
                     if await cursor.fetchone() != ("OPEN",):
-                        raise schema.HumanMemoryProgramEpochError("procedure_migration_recovery_fenced")
+                        raise schema.HumanMemoryProgramEpochError(
+                            "procedure_migration_recovery_fenced"
+                        )
                 sql = _sql()
                 await migrator._execute_transactional_script(db, sql)
                 await migrator._register_recovery_tables(db, tuple((name, "A") for name in TABLES))
                 now = time.time()
-                await db.execute("INSERT INTO human_memory_migration_chain VALUES (?,?,?,?)",
-                    (MIGRATION, 53, hashlib.sha256(sql.encode()).hexdigest(), now))
+                await db.execute(
+                    "INSERT INTO human_memory_migration_chain VALUES (?,?,?,?)",
+                    (MIGRATION, 53, hashlib.sha256(sql.encode()).hexdigest(), now),
+                )
                 await db.execute("INSERT INTO schema_migrations VALUES (?,?)", (MIGRATION, now))
                 await db.execute("PRAGMA user_version=53")
                 if fault_inject:

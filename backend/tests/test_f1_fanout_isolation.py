@@ -14,6 +14,7 @@ BGE-M3 冷加载）就让整批超时，所有组件（连 trivial 的 time/pers
 
 本文件自包含（不依赖其它 test 的 fixtures），钉死新行为。
 """
+
 from __future__ import annotations
 
 import asyncio

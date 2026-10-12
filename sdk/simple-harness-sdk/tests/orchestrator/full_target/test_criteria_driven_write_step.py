@@ -125,8 +125,7 @@ def _bind_tests(method: dict[str, Any], *, require: bool) -> dict[str, Any]:
     for link in body["composition"]["criterion_links"]:
         if link["parent_criterion_id"] in {"c-test-passes", "c-contract-tests-pass"}:
             link["evidence_requirement"] = (
-                "tests covering the user contract were added or turned from red "
-                "to green and pass"
+                "tests covering the user contract were added or turned from red to green and pass"
             )
     return body
 
@@ -204,7 +203,9 @@ def _admit(env, body: dict[str, Any]):
     )
 
 
-def test_a_method_whose_criteria_mention_added_tests_is_not_refused_for_lacking_a_tests_port() -> None:
+def test_a_method_whose_criteria_mention_added_tests_is_not_refused_for_lacking_a_tests_port() -> (
+    None
+):
     """片 0 第 3 步（2026-10-01）：判据里出现"新增测试"之类的词，不再由程序强制要求测试端口。
 
     此前注册检查在判据文字里找关键词（"新增测试""contract test"……），找到就要求做法里有

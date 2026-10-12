@@ -193,9 +193,7 @@ class WireInputBudgetExceeded(ProviderRequestRejectedError):
         # 事件 W-c 又多一个真正的**分数** ``wire_ratio_observed``: 它是比值,
         # 收敛成 int 就只剩 0 与 1, 回执里什么也说明不了, 所以 float 原样保留。
         self.diagnostics: dict[str, object] = {
-            key: value
-            if isinstance(value, (str, float))
-            else int(value)  # type: ignore[arg-type]
+            key: value if isinstance(value, (str, float)) else int(value)  # type: ignore[arg-type]
             for key, value in diagnostics.items()
         }
 
@@ -661,9 +659,7 @@ def reasoning_relay_order(
         if isinstance(message, Mapping) and str(message.get("role") or "") == "user":
             last_user = index
     carriers = [
-        index
-        for index, message in enumerate(rows)
-        if message_reasoning_tokens(message) > 0
+        index for index, message in enumerate(rows) if message_reasoning_tokens(message) > 0
     ]
     mode = str(preserve or "").strip().lower()
     if mode == _PRESERVE_ALL_TURNS:
@@ -846,13 +842,9 @@ def check_wire_input_budget(
         "reasoning_relay_tokens": wire_reasoning,
         "reasoning_relay_dropped": max(0, int(relay.dropped_tokens)),
         "reasoning_relay_dropped_messages": max(0, int(relay.dropped_messages)),
-        "reasoning_relay_contract_dropped_messages": max(
-            0, int(relay.contract_dropped_messages)
-        ),
+        "reasoning_relay_contract_dropped_messages": max(0, int(relay.contract_dropped_messages)),
         # 事件 W-b: carry 的「新增质量」那一项按哪一档取的数。
-        "carry_basis": (
-            CARRY_BASIS_NO_OBSERVATION if observed is None else observed.carry_basis
-        ),
+        "carry_basis": (CARRY_BASIS_NO_OBSERVATION if observed is None else observed.carry_basis),
     }
     book.record_wire(
         request_id,

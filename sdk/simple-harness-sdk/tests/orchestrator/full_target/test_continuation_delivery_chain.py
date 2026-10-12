@@ -13,6 +13,7 @@
    candidate contract (its Task declares no file outputs), so it invented a format
    outside ``actions/`` and the operation workspace found no candidate.
 """
+
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -35,7 +36,9 @@ def _port(key):
 
 
 def _artifact(task, path, digest, artifact_id):
-    return SimpleNamespace(id=artifact_id, mission_id=M, task_id=task, path=path, content_hash=digest)
+    return SimpleNamespace(
+        id=artifact_id, mission_id=M, task_id=task, path=path, content_hash=digest
+    )
 
 
 def test_the_operation_candidate_port_brings_the_candidate_contract(monkeypatch):
@@ -43,7 +46,10 @@ def test_the_operation_candidate_port_brings_the_candidate_contract(monkeypatch)
     import agent_orchestrator.storage.htn_store as htn
     from agent_orchestrator.orchestrator import event_handler as eh
 
-    ports = {"with": (_port("delivery"), _port(OPERATION_CANDIDATE_PORT)), "without": (_port("delivery"),)}
+    ports = {
+        "with": (_port("delivery"), _port(OPERATION_CANDIDATE_PORT)),
+        "without": (_port("delivery"),),
+    }
 
     class _Htn:
         def __init__(self, store):
@@ -54,8 +60,9 @@ def test_the_operation_candidate_port_brings_the_candidate_contract(monkeypatch)
 
     monkeypatch.setattr(htn, "HtnStore", _Htn)
     # 一步负责几个操作就声明几个申请单文件（2026-09-28），此处任务没有操作要求：照旧一个
-    fake = SimpleNamespace(store=SimpleNamespace(
-        get_mission=lambda mission_id: SimpleNamespace(success_criteria=())))
+    fake = SimpleNamespace(
+        store=SimpleNamespace(get_mission=lambda mission_id: SimpleNamespace(success_criteria=()))
+    )
     mission = SimpleNamespace(id=M)
     outputs = eh.Orchestrator._action_candidate_outputs
 
@@ -66,7 +73,9 @@ def test_the_operation_candidate_port_brings_the_candidate_contract(monkeypatch)
     assert outputs(fake, mission, task("without")) == ()
     declared = ("actions/mine.json",)
     assert outputs(fake, mission, task("with", declared)) == declared
-    assert OPERATION_CANDIDATE_FILE.startswith("actions/") and OPERATION_CANDIDATE_FILE.endswith(".json")
+    assert OPERATION_CANDIDATE_FILE.startswith("actions/") and OPERATION_CANDIDATE_FILE.endswith(
+        ".json"
+    )
 
 
 def test_the_published_artifact_is_verified_against_the_accepted_inputs(monkeypatch):
@@ -89,9 +98,16 @@ def test_the_published_artifact_is_verified_against_the_accepted_inputs(monkeypa
     monkeypatch.setattr(htn, "HtnStore", _Htn)
 
     def payloads(artifact_id, digest):
-        return SimpleNamespace(parameters=SimpleNamespace(
-            effective_params={"artifact_id": artifact_id, "artifact_path": "NOTES.md", "content_hash": digest},
-            accepted_input_refs=(SimpleNamespace(id="acc-1"),)))
+        return SimpleNamespace(
+            parameters=SimpleNamespace(
+                effective_params={
+                    "artifact_id": artifact_id,
+                    "artifact_path": "NOTES.md",
+                    "content_hash": digest,
+                },
+                accepted_input_refs=(SimpleNamespace(id="acc-1"),),
+            )
+        )
 
     fact = review._published_artifact(None, payloads("artifact-notes", "5" * 64))
     assert fact["in_accepted_inputs"] is True and fact["accepted_by"] == "acc-1"
@@ -99,9 +115,15 @@ def test_the_published_artifact_is_verified_against_the_accepted_inputs(monkeypa
         review._published_artifact(None, payloads("artifact-stranger", "5" * 64))
     with pytest.raises(review.ActionProposalReviewError, match="hash differs"):
         review._published_artifact(None, payloads("artifact-notes", "6" * 64))
-    assert review._published_artifact(None, SimpleNamespace(parameters=SimpleNamespace(
-        effective_params={}, accepted_input_refs=()))) is None
-
+    assert (
+        review._published_artifact(
+            None,
+            SimpleNamespace(
+                parameters=SimpleNamespace(effective_params={}, accepted_input_refs=())
+            ),
+        )
+        is None
+    )
 
 
 def test_the_mission_judge_view_keeps_tool_authority_while_its_mission_is_live():
@@ -115,10 +137,15 @@ def test_the_mission_judge_view_keeps_tool_authority_while_its_mission_is_live()
     from agent_orchestrator.contracts.models import MissionStatus
     from agent_orchestrator.orchestrator.event_handler import Orchestrator
 
-    missions = {"mission-live": SimpleNamespace(status=MissionStatus.ACTIVE),
-                "mission-done": SimpleNamespace(status=MissionStatus.COMPLETED)}
-    store = SimpleNamespace(read_view=contextlib.nullcontext, get_attempt=lambda attempt_id: None,
-                            get_mission=missions.get)
+    missions = {
+        "mission-live": SimpleNamespace(status=MissionStatus.ACTIVE),
+        "mission-done": SimpleNamespace(status=MissionStatus.COMPLETED),
+    }
+    store = SimpleNamespace(
+        read_view=contextlib.nullcontext,
+        get_attempt=lambda attempt_id: None,
+        get_mission=missions.get,
+    )
     fake = SimpleNamespace(store=store)
     refusal = Orchestrator._tool_execution_refusal
     assert refusal(fake, "mission-live-judge-owner-1") is None
@@ -130,9 +157,14 @@ def test_the_mission_judge_view_keeps_tool_authority_while_its_mission_is_live()
 
 
 def _acceptance(task, acceptance_id, refs, manifest_hash="m" * 64):
-    return SimpleNamespace(acceptance_id=acceptance_id, mission_id=M, task_id=task, input_manifest_hash=manifest_hash,
-                           artifact_refs=tuple(SimpleNamespace(id=i, content_hash=h) for i, h in refs),
-                           validity="CURRENT")
+    return SimpleNamespace(
+        acceptance_id=acceptance_id,
+        mission_id=M,
+        task_id=task,
+        input_manifest_hash=manifest_hash,
+        artifact_refs=tuple(SimpleNamespace(id=i, content_hash=h) for i, h in refs),
+        validity="CURRENT",
+    )
 
 
 def _sources_world(monkeypatch, *, read_only_module=False):
@@ -151,17 +183,42 @@ def _sources_world(monkeypatch, *, read_only_module=False):
         "a-hidden": _artifact("t-tests", ".cache/x", "7" * 64, "a-hidden"),
     }
     acceptances = {
-        "acc-module": _acceptance("t-module", "acc-module", [("a-module", "1" * 64), ("a-notes", "6" * 64)], "e" * 64),
-        "acc-tests": _acceptance("t-tests", "acc-tests", [("a-tests", "2" * 64), ("a-readme", "3" * 64),
-                                                           ("a-mod2", "4" * 64), ("a-act", "5" * 64),
-                                                           ("a-hidden", "7" * 64)], "f" * 64),
+        "acc-module": _acceptance(
+            "t-module", "acc-module", [("a-module", "1" * 64), ("a-notes", "6" * 64)], "e" * 64
+        ),
+        "acc-tests": _acceptance(
+            "t-tests",
+            "acc-tests",
+            [
+                ("a-tests", "2" * 64),
+                ("a-readme", "3" * 64),
+                ("a-mod2", "4" * 64),
+                ("a-act", "5" * 64),
+                ("a-hidden", "7" * 64),
+            ],
+            "f" * 64,
+        ),
     }
     # t-tests 的冻结清单：端口文件 slugify.py（来自 acc-module），无交付；t-module 的清单为空
     from test_delivery_bindings import _port as _bound_port
-    tests_manifest = InputManifest(consumer_task_ref=TaskRef("t-tests"), bindings=(
-        _bound_port("t-module", "acc-module", "a-module", "slugify.py", "1" * 64, consumer=TaskRef("t-tests")),))
-    manifests = {"f" * 64: tests_manifest.to_json(),
-                 "e" * 64: InputManifest(consumer_task_ref=TaskRef("t-module")).to_json()}
+
+    tests_manifest = InputManifest(
+        consumer_task_ref=TaskRef("t-tests"),
+        bindings=(
+            _bound_port(
+                "t-module",
+                "acc-module",
+                "a-module",
+                "slugify.py",
+                "1" * 64,
+                consumer=TaskRef("t-tests"),
+            ),
+        ),
+    )
+    manifests = {
+        "f" * 64: tests_manifest.to_json(),
+        "e" * 64: InputManifest(consumer_task_ref=TaskRef("t-module")).to_json(),
+    }
     kinds = {"t-tests": (_port("delivery"),), "t-module": ()}
 
     class _Htn:
@@ -172,10 +229,17 @@ def _sources_world(monkeypatch, *, read_only_module=False):
             inputs = kinds.get(task_id)
             if inputs is None:
                 return None
-            return SimpleNamespace(input_ports=inputs, output_ports=(_port("delivery"),),
-                                   side_effect_kind=(SideEffectKind.EXTERNAL_READ
-                                                     if read_only_module and task_id == "t-module" else None),
-                                   capability_requirements=(), resource_writes=())
+            return SimpleNamespace(
+                input_ports=inputs,
+                output_ports=(_port("delivery"),),
+                side_effect_kind=(
+                    SideEffectKind.EXTERNAL_READ
+                    if read_only_module and task_id == "t-module"
+                    else None
+                ),
+                capability_requirements=(),
+                resource_writes=(),
+            )
 
         def get_acceptance(self, acceptance_id):
             return acceptances[acceptance_id]
@@ -184,10 +248,17 @@ def _sources_world(monkeypatch, *, read_only_module=False):
             return manifests[digest]
 
     monkeypatch.setattr(hd, "HtnStore", _Htn)
-    store = SimpleNamespace(get_artifact=artifacts.get,
-                            get_mission=lambda mission_id: SimpleNamespace(final_report={"workspace_seed": {"slugify.py": "x"}}))
-    fake = SimpleNamespace(store=store, semantics=lambda: hd.HtnStore(store),
-                           target_rules_for=lambda task_id: hd.TargetRules(namespace=f"workspace:{task_id}"))
+    store = SimpleNamespace(
+        get_artifact=artifacts.get,
+        get_mission=lambda mission_id: SimpleNamespace(
+            final_report={"workspace_seed": {"slugify.py": "x"}}
+        ),
+    )
+    fake = SimpleNamespace(
+        store=store,
+        semantics=lambda: hd.HtnStore(store),
+        target_rules_for=lambda task_id: hd.TargetRules(namespace=f"workspace:{task_id}"),
+    )
     return fake, artifacts, tests_manifest
 
 
@@ -202,18 +273,39 @@ def test_delivery_sources_hand_on_every_accepted_file_and_what_a_continuation_re
     from test_delivery_bindings import _port as _bound_port
 
     fake, artifacts, _ = _sources_world(monkeypatch)
-    consumer = InputManifest(consumer_task_ref=TaskRef("t-notes"), bindings=(
-        _bound_port("t-tests", "acc-tests", "a-readme", "README.md", "3" * 64, consumer=TaskRef("t-notes")),))
+    consumer = InputManifest(
+        consumer_task_ref=TaskRef("t-notes"),
+        bindings=(
+            _bound_port(
+                "t-tests",
+                "acc-tests",
+                "a-readme",
+                "README.md",
+                "3" * 64,
+                consumer=TaskRef("t-notes"),
+            ),
+        ),
+    )
     sources = hd.HierarchicalDispatch.delivery_sources(fake, M, consumer)
     assert sources.unavailable == ()
-    assert sorted((str(f.producer_task_ref), f.path, f.acceptance_id, str(f.carried_from) if f.carried_from else None)
-                  for f in sources.files) == [
+    assert sorted(
+        (
+            str(f.producer_task_ref),
+            f.path,
+            f.acceptance_id,
+            str(f.carried_from) if f.carried_from else None,
+        )
+        for f in sources.files
+    ) == [
         ("t-module", "slugify.py", "acc-module", "t-tests"),
         ("t-tests", "README.md", "acc-tests", None),
         ("t-tests", "test_slugify.py", "acc-tests", None),
-        ("t-tests", "wordfreq.py", "acc-tests", None)]
-    assert sources.received == {"acc-tests": frozenset({("t-module", "slugify.py", "1" * 64)}),
-                                "acc-module": frozenset()}
+        ("t-tests", "wordfreq.py", "acc-tests", None),
+    ]
+    assert sources.received == {
+        "acc-tests": frozenset({("t-module", "slugify.py", "1" * 64)}),
+        "acc-module": frozenset(),
+    }
 
 
 def test_a_read_only_producer_hands_on_only_its_copies_of_original_workspace_files(monkeypatch):
@@ -225,8 +317,19 @@ def test_a_read_only_producer_hands_on_only_its_copies_of_original_workspace_fil
     from test_delivery_bindings import _port as _bound_port
 
     fake, _, _ = _sources_world(monkeypatch, read_only_module=True)
-    consumer = InputManifest(consumer_task_ref=TaskRef("t-next"), bindings=(
-        _bound_port("t-module", "acc-module", "a-module", "slugify.py", "1" * 64, consumer=TaskRef("t-next")),))
+    consumer = InputManifest(
+        consumer_task_ref=TaskRef("t-next"),
+        bindings=(
+            _bound_port(
+                "t-module",
+                "acc-module",
+                "a-module",
+                "slugify.py",
+                "1" * 64,
+                consumer=TaskRef("t-next"),
+            ),
+        ),
+    )
     sources = hd.HierarchicalDispatch.delivery_sources(fake, M, consumer)
     assert [f.path for f in sources.files] == ["slugify.py"]  # notes.md 不在原工作区，不交
 
@@ -239,7 +342,20 @@ def test_an_unreadable_source_is_named_not_skipped(monkeypatch):
 
     fake, artifacts, _ = _sources_world(monkeypatch)
     del artifacts["a-mod2"]
-    consumer = InputManifest(consumer_task_ref=TaskRef("t-notes"), bindings=(
-        _bound_port("t-tests", "acc-tests", "a-readme", "README.md", "3" * 64, consumer=TaskRef("t-notes")),))
+    consumer = InputManifest(
+        consumer_task_ref=TaskRef("t-notes"),
+        bindings=(
+            _bound_port(
+                "t-tests",
+                "acc-tests",
+                "a-readme",
+                "README.md",
+                "3" * 64,
+                consumer=TaskRef("t-notes"),
+            ),
+        ),
+    )
     sources = hd.HierarchicalDispatch.delivery_sources(fake, M, consumer)
-    assert [(acceptance, "a-mod2" in detail) for acceptance, detail in sources.unavailable] == [("acc-tests", True)]
+    assert [(acceptance, "a-mod2" in detail) for acceptance, detail in sources.unavailable] == [
+        ("acc-tests", True)
+    ]

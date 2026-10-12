@@ -1,6 +1,7 @@
 """Probe gpt-5.5 with the EXACT pre-analysis json_schema (strict) vs json_object,
 direct connect, to find what makes the app's pre-analysis hang. Read-only diagnosis.
 """
+
 from __future__ import annotations
 
 import os
@@ -29,11 +30,17 @@ def run(label: str, model: str, rf, stream: bool, trust_env: bool) -> None:
     if rf is not None:
         body["response_format"] = rf
     try:
-        with httpx.Client(timeout=httpx.Timeout(connect=8, read=120, write=8, pool=8),
-                          trust_env=trust_env) as cli:
-            r = cli.post(f"{BASE}/chat/completions",
-                         headers={"Authorization": f"Bearer {get_key()}", "Content-Type": "application/json"},
-                         json=body)
+        with httpx.Client(
+            timeout=httpx.Timeout(connect=8, read=120, write=8, pool=8), trust_env=trust_env
+        ) as cli:
+            r = cli.post(
+                f"{BASE}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {get_key()}",
+                    "Content-Type": "application/json",
+                },
+                json=body,
+            )
             dt = (time.time() - t0) * 1000
             try:
                 txt = r.json()["choices"][0]["message"]["content"][:80]

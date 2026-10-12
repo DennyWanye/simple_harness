@@ -39,15 +39,36 @@ STATE_SCHEMA_VERSION = 6
 CONTRACT_SCHEMA_VERSION = 1
 
 _CONTINUATION_SNAPSHOT_KEYS = {
-    "schema_version", "snapshot_id", "snapshot_hash", "run_id", "workflow_name",
-    "workflow_version", "spec_ref", "spec_hash", "fact_batch_refs",
-    "evidence_head_hash", "assessment_ref", "assessment_hash",
-    "assessment_input_hash", "claim_batch_ref", "provenance_refs", "policy_refs",
+    "schema_version",
+    "snapshot_id",
+    "snapshot_hash",
+    "run_id",
+    "workflow_name",
+    "workflow_version",
+    "spec_ref",
+    "spec_hash",
+    "fact_batch_refs",
+    "evidence_head_hash",
+    "assessment_ref",
+    "assessment_hash",
+    "assessment_input_hash",
+    "claim_batch_ref",
+    "provenance_refs",
+    "policy_refs",
     "closure_refs",
 }
 _CONTINUATION_POLICY_KEYS = {
-    "compiler", "route", "extraction", "llm_extract", "llm_repair",
-    "llm_inference", "admission", "inference", "assessment", "claim", "quality",
+    "compiler",
+    "route",
+    "extraction",
+    "llm_extract",
+    "llm_repair",
+    "llm_inference",
+    "admission",
+    "inference",
+    "assessment",
+    "claim",
+    "quality",
 }
 
 
@@ -64,7 +85,9 @@ def decode_continuation_snapshot(value: object) -> dict[str, JsonValue]:
     ):
         raise ValueError("v6 continuation snapshot identity differs")
     for name in (
-        "spec_ref", "assessment_ref", "claim_batch_ref",
+        "spec_ref",
+        "assessment_ref",
+        "claim_batch_ref",
     ):
         parse_blob_ref(str(raw[name]))
     for name in ("spec_hash", "evidence_head_hash", "assessment_hash", "assessment_input_hash"):
@@ -88,7 +111,9 @@ def decode_continuation_snapshot(value: object) -> dict[str, JsonValue]:
     for ref in policies.values():
         parse_blob_ref(str(ref))
     expected_closure = {
-        str(raw["spec_ref"]), str(raw["assessment_ref"]), str(raw["claim_batch_ref"]),
+        str(raw["spec_ref"]),
+        str(raw["assessment_ref"]),
+        str(raw["claim_batch_ref"]),
         *[str(ref) for ref in raw["fact_batch_refs"]],
         *[str(ref) for ref in raw["provenance_refs"]],
         *[str(ref) for ref in policies.values()],
@@ -119,6 +144,7 @@ def build_continuation_start_payload(
         "parent_run_id": str(parent_run_id),
         "source_snapshot_hash": digest,
     }
+
 
 NODE_IDS = (
     "compile_spec",
@@ -168,7 +194,11 @@ DEEP_RESEARCH_V6_DEFINITION = WorkflowDefinition(
     prompt_manifest={
         "contract_schema_version": CONTRACT_SCHEMA_VERSION,
         "intent_types": [
-            "official_exact_fact", "comparison", "top_n", "policy", "open_research",
+            "official_exact_fact",
+            "comparison",
+            "top_n",
+            "policy",
+            "open_research",
         ],
         "llm_roles": [
             "evidence_candidate_extract",
@@ -179,8 +209,14 @@ DEEP_RESEARCH_V6_DEFINITION = WorkflowDefinition(
     policy_manifest={
         "implementation": "deep-research-v6-registered-evidence-graph-v1",
         "external_ports": [
-            "blob", "retrieval", "semantic", "llm_extract", "llm_inference",
-            "llm_repair", "deadline", "native_execution_policy",
+            "blob",
+            "retrieval",
+            "semantic",
+            "llm_extract",
+            "llm_inference",
+            "llm_repair",
+            "deadline",
+            "native_execution_policy",
         ],
         "ingress": ["topic", "session_id", "answer_locale"],
         "evidence_frontiers": ["facts", "inferences"],
@@ -218,56 +254,58 @@ def initial_state(
         raise ValueError("continuation snapshot hydration is required")
 
     values: dict[str, JsonValue] = {
-            "topic": topic,
-            "answer_locale": answer_locale,
-            "contract_schema_version": CONTRACT_SCHEMA_VERSION,
-            "stage": "pending",
-            "spec_ref": None,
-            "spec_hash": None,
-            "route_policy_ref": None,
-            "route_policy_hash": None,
-            "route_decision_ref": None,
-            "route_id": None,
-            "page_result_refs": [],
-            "candidate_slot_results": [],
-            "fact_batch_refs": [],
-            "evidence_head_hash": GENESIS_EVIDENCE_HEAD,
-            "inference_slot_results": [],
-            "assessment_ref": None,
-            "assessment_hash": None,
-            "assessment_input_hash": None,
-            "claim_batch_ref": None,
-            "quality_audit_ref": None,
-            "answer_status": None,
-            "final_assistant_ref": None,
-            "report_ref": None,
-            "safe_summary_ref": None,
-            "policy_refs": {},
-            "terminal_manifest_ref": None,
-            "terminal_manifest_hash": None,
-            "continuation_parent_run_id": None,
-            "source_snapshot_hash": None,
-            "inherited_fact_batch_count": 0,
-            "inherited_provenance_refs": [],
-        }
+        "topic": topic,
+        "answer_locale": answer_locale,
+        "contract_schema_version": CONTRACT_SCHEMA_VERSION,
+        "stage": "pending",
+        "spec_ref": None,
+        "spec_hash": None,
+        "route_policy_ref": None,
+        "route_policy_hash": None,
+        "route_decision_ref": None,
+        "route_id": None,
+        "page_result_refs": [],
+        "candidate_slot_results": [],
+        "fact_batch_refs": [],
+        "evidence_head_hash": GENESIS_EVIDENCE_HEAD,
+        "inference_slot_results": [],
+        "assessment_ref": None,
+        "assessment_hash": None,
+        "assessment_input_hash": None,
+        "claim_batch_ref": None,
+        "quality_audit_ref": None,
+        "answer_status": None,
+        "final_assistant_ref": None,
+        "report_ref": None,
+        "safe_summary_ref": None,
+        "policy_refs": {},
+        "terminal_manifest_ref": None,
+        "terminal_manifest_hash": None,
+        "continuation_parent_run_id": None,
+        "source_snapshot_hash": None,
+        "inherited_fact_batch_count": 0,
+        "inherited_provenance_refs": [],
+    }
     inherited_refs: list[str] = []
     if continuation is not None:
-        values.update({
-            "stage": "continuation_hydrated",
-            "spec_ref": continuation["spec_ref"],
-            "spec_hash": continuation["spec_hash"],
-            "fact_batch_refs": copy.deepcopy(continuation["fact_batch_refs"]),
-            "evidence_head_hash": continuation["evidence_head_hash"],
-            "assessment_ref": continuation["assessment_ref"],
-            "assessment_hash": continuation["assessment_hash"],
-            "assessment_input_hash": continuation["assessment_input_hash"],
-            "claim_batch_ref": continuation["claim_batch_ref"],
-            "policy_refs": copy.deepcopy(continuation["policy_refs"]),
-            "continuation_parent_run_id": parent_run_id,
-            "source_snapshot_hash": source_snapshot_hash,
-            "inherited_fact_batch_count": len(continuation["fact_batch_refs"]),
-            "inherited_provenance_refs": copy.deepcopy(continuation["provenance_refs"]),
-        })
+        values.update(
+            {
+                "stage": "continuation_hydrated",
+                "spec_ref": continuation["spec_ref"],
+                "spec_hash": continuation["spec_hash"],
+                "fact_batch_refs": copy.deepcopy(continuation["fact_batch_refs"]),
+                "evidence_head_hash": continuation["evidence_head_hash"],
+                "assessment_ref": continuation["assessment_ref"],
+                "assessment_hash": continuation["assessment_hash"],
+                "assessment_input_hash": continuation["assessment_input_hash"],
+                "claim_batch_ref": continuation["claim_batch_ref"],
+                "policy_refs": copy.deepcopy(continuation["policy_refs"]),
+                "continuation_parent_run_id": parent_run_id,
+                "source_snapshot_hash": source_snapshot_hash,
+                "inherited_fact_batch_count": len(continuation["fact_batch_refs"]),
+                "inherited_provenance_refs": copy.deepcopy(continuation["provenance_refs"]),
+            }
+        )
         inherited_refs = [str(ref) for ref in continuation["closure_refs"]]
 
     return {
@@ -281,10 +319,7 @@ def initial_state(
         "active_step_id": None,
         "status": "pending",
         "values": values,
-        "blob_refs": [
-            {"id": ref[7:], "sha256": ref[7:]}
-            for ref in inherited_refs
-        ],
+        "blob_refs": [{"id": ref[7:], "sha256": ref[7:]} for ref in inherited_refs],
         "artifact_refs": [],
         "receipt_refs": [],
         "loop_counters": {},
@@ -294,7 +329,14 @@ def initial_state(
 
 
 __all__ = [
-    "CONTRACT_SCHEMA_VERSION", "DEEP_RESEARCH_V6", "DEEP_RESEARCH_V6_DEFINITION",
-    "NODE_IDS", "STATE_SCHEMA_VERSION", "WORKFLOW_NAME", "WORKFLOW_VERSION",
-    "build_continuation_start_payload", "decode_continuation_snapshot", "initial_state",
+    "CONTRACT_SCHEMA_VERSION",
+    "DEEP_RESEARCH_V6",
+    "DEEP_RESEARCH_V6_DEFINITION",
+    "NODE_IDS",
+    "STATE_SCHEMA_VERSION",
+    "WORKFLOW_NAME",
+    "WORKFLOW_VERSION",
+    "build_continuation_start_payload",
+    "decode_continuation_snapshot",
+    "initial_state",
 ]

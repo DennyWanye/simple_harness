@@ -45,11 +45,7 @@ class CatalogGateKey:
             self.owner_key == other.owner_key
             and self.scope == other.scope
             and self.scope_key == other.scope_key
-            and (
-                self.pack_id == other.pack_id
-                or self.pack_id == "*"
-                or other.pack_id == "*"
-            )
+            and (self.pack_id == other.pack_id or self.pack_id == "*" or other.pack_id == "*")
         )
 
 
@@ -88,9 +84,7 @@ class CapabilityCatalogGate:
         return values
 
     @staticmethod
-    def _any_conflict(
-        left: Iterable[CatalogGateKey], right: Iterable[CatalogGateKey]
-    ) -> bool:
+    def _any_conflict(left: Iterable[CatalogGateKey], right: Iterable[CatalogGateKey]) -> bool:
         return any(a.conflicts(b) for a in left for b in right)
 
     def closed_reason(self, key: CatalogGateKey) -> str | None:
@@ -200,9 +194,7 @@ class CapabilityCatalogGate:
             self._generation += 1
             self._condition.notify_all()
 
-    async def recover_closed(
-        self, keys: Iterable[CatalogGateKey], *, reason: str
-    ) -> None:
+    async def recover_closed(self, keys: Iterable[CatalogGateKey], *, reason: str) -> None:
         values = self._keys(keys)
         async with self._condition:
             for key in values:

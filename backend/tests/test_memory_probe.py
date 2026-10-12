@@ -15,6 +15,7 @@
    `file:line`/类型名与数字（无载荷）；
 4. **快照文件有界**：`<snapshot_dir>/turn-<n>.snap` 只保留最近 keep 份。
 """
+
 from __future__ import annotations
 
 import re
@@ -166,9 +167,10 @@ def test_probe_explicitly_off(value, tmp_path, emitted, restore_tracemalloc):
 
 def test_probe_off_does_not_start_tracemalloc(tmp_path, emitted):
     was_tracing = tracemalloc.is_tracing()
-    assert build_memory_probe(
-        snapshot_dir=tmp_path, emit=emitted.append, env={ENV_ENABLED: "0"}
-    ) is None
+    assert (
+        build_memory_probe(snapshot_dir=tmp_path, emit=emitted.append, env={ENV_ENABLED: "0"})
+        is None
+    )
     assert tracemalloc.is_tracing() is was_tracing
 
 
@@ -183,9 +185,7 @@ def test_probe_off_starts_no_sampling_thread(tmp_path, emitted, restore_tracemal
 # 2. X3-F4：环境变量默认值（更便宜的一套）
 # --------------------------------------------------------------------------
 def test_env_defaults_are_the_cheap_ones(tmp_path, emitted):
-    probe = build_memory_probe(
-        snapshot_dir=tmp_path, emit=emitted.append, env={ENV_ENABLED: "1"}
-    )
+    probe = build_memory_probe(snapshot_dir=tmp_path, emit=emitted.append, env={ENV_ENABLED: "1"})
     assert probe is not None
     assert (DEFAULT_FRAMES, DEFAULT_EVERY, DEFAULT_CENSUS) == (5, 3, False)
     assert probe.frames == 5
@@ -225,9 +225,7 @@ def test_bad_numbers_fall_back_to_defaults(value, tmp_path, emitted):
 # --------------------------------------------------------------------------
 # 3. X3-F4 核心回归：监听器不许阻塞事件循环
 # --------------------------------------------------------------------------
-def test_listener_returns_in_milliseconds_with_a_large_heap(
-    tmp_path, emitted, restore_tracemalloc
-):
+def test_listener_returns_in_milliseconds_with_a_large_heap(tmp_path, emitted, restore_tracemalloc):
     """X3-F4：第 12 次整跑就死在这里 —— 终态钩子在事件循环上做了全量采样。
 
     先在 tracemalloc 追踪下堆出 30 万个对象（旧实现在这个规模上 `filter_traces`
@@ -286,9 +284,7 @@ def test_sampling_runs_on_the_background_thread(tmp_path, emitted, restore_trace
     assert _of(emitted, PROBE_EVENT)[0]["thread"] == "memory-probe-sampler"
 
 
-def test_requests_are_coalesced_and_skips_are_counted(
-    tmp_path, emitted, restore_tracemalloc
-):
+def test_requests_are_coalesced_and_skips_are_counted(tmp_path, emitted, restore_tracemalloc):
     """采样在飞时来的终态被丢弃（不排队），并打 `memory.probe.skipped`。"""
 
     gate = threading.Event()
@@ -334,9 +330,7 @@ def test_requests_are_coalesced_and_skips_are_counted(
 # --------------------------------------------------------------------------
 # 4. 行的形状：每终态 RSS 行 + 每 N 个终态一条全量行
 # --------------------------------------------------------------------------
-def test_rss_line_every_terminal_full_sample_every_n(
-    tmp_path, emitted, restore_tracemalloc
-):
+def test_rss_line_every_terminal_full_sample_every_n(tmp_path, emitted, restore_tracemalloc):
     registry, probe = _install(
         {ENV_ENABLED: "1", ENV_EVERY: "3", ENV_FRAMES: "5"}, tmp_path, emitted
     )
@@ -374,9 +368,7 @@ def test_rss_line_every_terminal_full_sample_every_n(
 
 
 def test_rss_line_has_expected_keys(tmp_path, emitted, restore_tracemalloc):
-    registry, probe = _install(
-        {ENV_ENABLED: "1", ENV_EVERY: "100"}, tmp_path, emitted
-    )
+    registry, probe = _install({ENV_ENABLED: "1", ENV_EVERY: "100"}, tmp_path, emitted)
     assert probe is not None
     try:
         registry.fire("run-a")
@@ -482,9 +474,7 @@ def test_emit_failure_never_reaches_the_caller(tmp_path, restore_tracemalloc):
     def emit(fields):
         raise RuntimeError("sink is down")
 
-    registry, probe = _install(
-        {ENV_ENABLED: "1", ENV_EVERY: "1"}, tmp_path, [], emit=emit
-    )
+    registry, probe = _install({ENV_ENABLED: "1", ENV_EVERY: "1"}, tmp_path, [], emit=emit)
     assert probe is not None
     try:
         registry.fire("run-a")  # 不许抛
@@ -535,15 +525,11 @@ def test_stop_joins_the_sampling_thread(tmp_path, emitted, restore_tracemalloc):
     registry.fire("run-a")
     probe.wait_idle(timeout=30)
     probe.stop()
-    assert not [
-        thread for thread in threading.enumerate() if thread.name == "memory-probe-sampler"
-    ]
+    assert not [thread for thread in threading.enumerate() if thread.name == "memory-probe-sampler"]
     assert probe.started is False
 
 
 def test_shorten_location_is_stable_and_relative():
     assert shorten_location("/a/b/backend/deskpet/x.py", 12) == "deskpet/x.py:12"
-    assert (
-        shorten_location("/v/lib/python3.12/site-packages/pkg/y.py", 7) == "pkg/y.py:7"
-    )
+    assert shorten_location("/v/lib/python3.12/site-packages/pkg/y.py", 7) == "pkg/y.py:7"
     assert shorten_location("/one/two/three/four/z.py", 3) == "three/four/z.py:3"

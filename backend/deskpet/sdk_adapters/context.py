@@ -33,16 +33,10 @@ class ProductContextAdapter:
                 raise ValueError("prepared message role is invalid")
             if isinstance(content, str):
                 projected_content: JsonValue = content
-            elif isinstance(content, list) and all(
-                isinstance(block, Mapping) for block in content
-            ):
-                projected_content = [
-                    ContentBlock.from_dict(block).to_dict() for block in content
-                ]
+            elif isinstance(content, list) and all(isinstance(block, Mapping) for block in content):
+                projected_content = [ContentBlock.from_dict(block).to_dict() for block in content]
             else:
-                raise TypeError(
-                    "prepared message content must be text or structured blocks"
-                )
+                raise TypeError("prepared message content must be text or structured blocks")
             projected_message: dict[str, JsonValue] = {
                 "role": role,
                 "content": projected_content,

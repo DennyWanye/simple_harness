@@ -19,6 +19,7 @@
 
 删掉的（产品走不到或已被别处覆盖）写在 ``test_provider_accounting_restart.py`` 文件头的清单里。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -73,9 +74,16 @@ class Relay(Scripted):
             response = replace(response, usage=ProviderUsage(0, 0, 0))
         if first and self.fault == "missing" and self.first_attempt_calls == 1:
             response = replace(response, usage=None)
-        if first and self.fault == "empty" and self.first_attempt_calls == 1:  # 日卡网关：空回复、无用量
-            response = replace(response, message=Message(MessageRole.ASSISTANT, ""), tool_calls=(),
-                               usage=None, finish_reason="stop")
+        if (
+            first and self.fault == "empty" and self.first_attempt_calls == 1
+        ):  # 日卡网关：空回复、无用量
+            response = replace(
+                response,
+                message=Message(MessageRole.ASSISTANT, ""),
+                tool_calls=(),
+                usage=None,
+                finish_reason="stop",
+            )
         return response
 
 
@@ -88,13 +96,19 @@ def test_a_charge_nobody_can_state_is_held_at_its_bound_and_counted_at_closeout(
         provider = Relay(fault)
         root = tmp_path / "root"
         async with product_world(root, provider, **QUICK) as world:
-            mission_id = world.create({"goal": "写一份 NOTES.md", "success_criteria": ["file:NOTES.md"],
-                                       "idempotency_key": "unknown-" + fault})["mission_id"]
+            mission_id = world.create(
+                {
+                    "goal": "写一份 NOTES.md",
+                    "success_criteria": ["file:NOTES.md"],
+                    "idempotency_key": "unknown-" + fault,
+                }
+            )["mission_id"]
             store = world.store
 
             async def drive():
                 while status(store, mission_id) not in {"COMPLETED", "FAILED", "CANCELLED"}:
                     await world.drain(timeout=10)
+
             await asyncio.wait_for(drive(), 60)
             assert status(store, mission_id) == "COMPLETED", world.loop.progress_log[-10:]
 
@@ -104,10 +118,14 @@ def test_a_charge_nobody_can_state_is_held_at_its_bound_and_counted_at_closeout(
             unknown = [row for row in first_grants if row["actual_tokens"] is None]
             # 说不清的那次：UNKNOWN，额度按上限算，调用已在线路上结束、不再占槽位
             assert unknown and all(row["state"] == "UNKNOWN" for row in unknown), first_grants
-            assert {(row["invocation_id"], row["handoff_ordinal"]) for row in unknown} <= wire_terminal(store)
+            assert {
+                (row["invocation_id"], row["handoff_ordinal"]) for row in unknown
+            } <= wire_terminal(store)
             # 它只交出过一次：没有重发、没有猜
             calls = physical_calls(root)
-            assert all(calls[row["invocation_id"]][1] == row["handoff_ordinal"] == 1 for row in unknown), calls
+            assert all(
+                calls[row["invocation_id"]][1] == row["handoff_ordinal"] == 1 for row in unknown
+            ), calls
             # 账上：这次尝试的用量是"未知"，不是 0；整局用量不算"全部已知"
             assert world.loop.commit.ledger.has_unknown_usage(first.id)
             # 2026-10-10（docopt 局）：未知用量是记账的事，不是执行还在跑——调用已在线路上结束，
@@ -116,38 +134,73 @@ def test_a_charge_nobody_can_state_is_held_at_its_bound_and_counted_at_closeout(
             from agent_orchestrator.orchestrator.taskgraph_runtime_imports import (
                 TaskGraphRuntimeImports,
             )
-            facts = TaskGraphRuntimeImports(world.loop).read_subject(store.get_intent_for_subject(first.id))
+
+            facts = TaskGraphRuntimeImports(world.loop).read_subject(
+                store.get_intent_for_subject(first.id)
+            )
             # "broken"（连接中断）那一例 SDK 的回合记录停在 running：回合没结束，物理上就还不算安静
-            assert facts.physical_settled is (fault != "broken") and facts.accounting_complete is False, (
-                [(e.get("phase"), [(i["state"]) for i in e.get("provider_invocations", [])], [(f["state"]) for f in e.get("effects", [])])
-                 for e in facts.document["executors"]], [(g["state"]) for g in facts.document["provider_grants"]])
+            assert (
+                facts.physical_settled is (fault != "broken") and facts.accounting_complete is False
+            ), (
+                [
+                    (
+                        e.get("phase"),
+                        [(i["state"]) for i in e.get("provider_invocations", [])],
+                        [(f["state"]) for f in e.get("effects", [])],
+                    )
+                    for e in facts.document["executors"]
+                ],
+                [(g["state"]) for g in facts.document["provider_grants"]],
+            )
             assert world.loop.commit.ledger.usage_flags(mission_id) == {
-                "usage_fully_known": False, "budget_conserved": True}
+                "usage_fully_known": False,
+                "budget_conserved": True,
+            }
             # 收尾按上限计入：计的是整笔预留（不小于这几次调用的上限之和），一次
-            [counted] = [event.payload for event in events(store, mission_id, "ReservationCountedAtUpperBound")
-                         if event.payload["subject_id"] == first.id]
+            [counted] = [
+                event.payload
+                for event in events(store, mission_id, "ReservationCountedAtUpperBound")
+                if event.payload["subject_id"] == first.id
+            ]
             reservation = world.loop.commit.ledger.reservation(first.id)
             assert reservation["state"] == "SETTLED"
-            assert counted["counted_tokens"] == reservation["settled_tokens"] >= sum(
-                row["total_upper"] for row in unknown)
+            assert (
+                counted["counted_tokens"]
+                == reservation["settled_tokens"]
+                >= sum(row["total_upper"] for row in unknown)
+            )
             assert counted["reason"] == "unknown_usage"
             # 从没有因为"用量没结清"停摆
-            assert not [event for event in store.list_events(mission_id) if event.type == "TaskPaused"]
+            assert not [
+                event for event in store.list_events(mission_id) if event.type == "TaskPaused"
+            ]
 
             if fault in {"empty", "rejected", "broken"}:
                 # 调用失败：尝试不扣次数，换一次新尝试做完；被占着的预留上时间线，只记一次
-                [released] = [event.payload for event in events(store, mission_id, "AttemptChargeReleased")
-                              if event.attempt_id == first.id]
+                [released] = [
+                    event.payload
+                    for event in events(store, mission_id, "AttemptChargeReleased")
+                    if event.attempt_id == first.id
+                ]
                 assert released["failure_class"] in NON_MODEL
-                [held] = [event.payload for event in events(store, mission_id, "ReservationHeld")
-                          if event.payload["subject_id"] == first.id]
-                assert held["reason"] == "unknown_usage" and held["reserved_tokens"] == counted["counted_tokens"]
-                second = next(attempt for key, attempt in tried.items() if key.endswith(":attempt-2"))
+                [held] = [
+                    event.payload
+                    for event in events(store, mission_id, "ReservationHeld")
+                    if event.payload["subject_id"] == first.id
+                ]
+                assert (
+                    held["reason"] == "unknown_usage"
+                    and held["reserved_tokens"] == counted["counted_tokens"]
+                )
+                second = next(
+                    attempt for key, attempt in tried.items() if key.endswith(":attempt-2")
+                )
                 assert str(second.status.value) == "COMPLETED" and second.retry_of == first.id
                 # 首审尾款：失败尝试的那份单独释放，没有转给审阅
                 [tail] = store.connection.execute(
                     "SELECT state FROM budget_tail_holds WHERE subject_id=?",
-                    ("tail:first-critic:" + first.id,)).fetchall()
+                    ("tail:first-critic:" + first.id,),
+                ).fetchall()
                 assert tail[0] == "RELEASED"
             else:
                 assert list(tried) == [first.id] and str(first.status.value) == "COMPLETED"
@@ -190,26 +243,38 @@ def test_a_call_whose_usage_exceeds_its_admitted_bound_is_recorded_and_the_step_
         provider = Overrun()
         root = tmp_path / "root"
         async with product_world(root, provider, **QUICK) as world:
-            mission_id = world.create({"goal": "写一份 NOTES.md", "success_criteria": ["file:NOTES.md"],
-                                       "idempotency_key": "overrun-goes-on"})["mission_id"]
+            mission_id = world.create(
+                {
+                    "goal": "写一份 NOTES.md",
+                    "success_criteria": ["file:NOTES.md"],
+                    "idempotency_key": "overrun-goes-on",
+                }
+            )["mission_id"]
             store = world.store
 
             async def drive():
                 while status(store, mission_id) not in {"COMPLETED", "FAILED", "CANCELLED"}:
                     await world.drain(timeout=10)
+
             await asyncio.wait_for(drive(), 60)
             assert status(store, mission_id) == "COMPLETED", world.loop.progress_log[-10:]
             assert not events(store, mission_id, "TaskFailed")
             worker_calls = provider.asked.count("worker")
             assert worker_calls >= 2, "超出之后的调用照常交出去"
-            [attempt] = [a for a in attempts(store, mission_id).values()
-                         if any(g["state"] == "OVERRUN" for g in grants(store, a.id))]
+            [attempt] = [
+                a
+                for a in attempts(store, mission_id).values()
+                if any(g["state"] == "OVERRUN" for g in grants(store, a.id))
+            ]
             rows = grants(store, attempt.id)
             assert len(rows) == worker_calls and all(g["state"] == "OVERRUN" for g in rows)
             for granted in rows:  # 每一次都照实记：实际数、超出了上限
                 assert (granted["actual_tokens"], granted["actual_output_tokens"]) == (9100, 9000)
                 assert granted["actual_output_tokens"] > granted["output_ceiling"]
-            assert world.loop.commit.ledger.reservation(attempt.id)["settled_tokens"] == 9100 * worker_calls
+            assert (
+                world.loop.commit.ledger.reservation(attempt.id)["settled_tokens"]
+                == 9100 * worker_calls
+            )
 
     asyncio.run(case())
 
@@ -225,13 +290,20 @@ def test_an_admission_refusal_that_is_not_an_interruption_stops_the_step(tmp_pat
         root = tmp_path / "root"
         config = dict(QUICK, attempt_reserve_tokens=9_000)
         async with product_world(root, provider, **config) as world:
-            mission_id = world.create({"goal": "写一份 NOTES.md", "success_criteria": ["file:NOTES.md"],
-                                       "idempotency_key": "refused-budget", **TIGHT})["mission_id"]
+            mission_id = world.create(
+                {
+                    "goal": "写一份 NOTES.md",
+                    "success_criteria": ["file:NOTES.md"],
+                    "idempotency_key": "refused-budget",
+                    **TIGHT,
+                }
+            )["mission_id"]
             store = world.store
 
             async def drive():
                 while status(store, mission_id) not in {"COMPLETED", "FAILED", "CANCELLED"}:
                     await world.drain(timeout=10)
+
             await asyncio.wait_for(drive(), 60)
             assert status(store, mission_id) == "FAILED", world.loop.progress_log[-10:]
             [attempt] = attempts(store, mission_id).values()
@@ -241,10 +313,16 @@ def test_an_admission_refusal_that_is_not_an_interruption_stops_the_step(tmp_pat
             calls = physical_calls(root)
             [granted] = grants(store, attempt.id)
             assert failed["stop_reason"] == "budget_exhausted"
-            assert admission["reason_code"] == "budget_exhausted" and admission["dimension"] == "tokens"
+            assert (
+                admission["reason_code"] == "budget_exhausted"
+                and admission["dimension"] == "tokens"
+            )
             # 被拒的那次：没交出去（交出次数 0），也没有授权行；挡住它的是按上限算的零用量那次
-            refused = [state for invocation, state in calls.items() if invocation != granted["invocation_id"]
-                       and state[1] == 0]
+            refused = [
+                state
+                for invocation, state in calls.items()
+                if invocation != granted["invocation_id"] and state[1] == 0
+            ]
             assert refused, calls
             assert granted["state"] == "UNKNOWN" and granted["actual_tokens"] is None
             assert admission["request_tokens"] + granted["total_upper"] > 9_000
@@ -268,8 +346,13 @@ def test_a_call_queued_for_the_only_slot_is_unbilled_and_a_cancel_never_hands_it
         provider = HeldStep("a.md")
         root = tmp_path / "root"
         async with product_world(root, provider, **QUICK) as world:
-            mission_id = world.create({"goal": "写两份文件", "success_criteria": ["file:a.md", "file:b.md"],
-                                       "idempotency_key": "queued-cancel"})["mission_id"]
+            mission_id = world.create(
+                {
+                    "goal": "写两份文件",
+                    "success_criteria": ["file:a.md", "file:b.md"],
+                    "idempotency_key": "queued-cancel",
+                }
+            )["mission_id"]
             store = world.store
             stop = asyncio.Event()
 
@@ -285,8 +368,10 @@ def test_a_call_queued_for_the_only_slot_is_unbilled_and_a_cancel_never_hands_it
 
                 def queued():
                     for row in store.connection.execute(
-                            "SELECT subject_id, agent_id, expected_turn_id FROM dispatch_intents"
-                            " WHERE mission_id=? AND kind='attempt' AND agent_id IS NOT NULL", (mission_id,)):
+                        "SELECT subject_id, agent_id, expected_turn_id FROM dispatch_intents"
+                        " WHERE mission_id=? AND kind='attempt' AND agent_id IS NOT NULL",
+                        (mission_id,),
+                    ):
                         for pool in pools:
                             guard = pool.bridge.runtime.ports.provider_admission
                             if guard.waiting_for_slot(agent_id=row[1], turn_id=row[2]):
@@ -300,23 +385,40 @@ def test_a_call_queued_for_the_only_slot_is_unbilled_and_a_cancel_never_hands_it
                 pool, (waiter, agent_id, turn_id) = queued()
                 live = await pool.bridge.liveness(agent_id=agent_id, turn_id=turn_id)
                 assert live.alive and live.blocked
-                assert live.blocker["kind"] == "provider_slot_wait" and live.blocker["billable"] is False
+                assert (
+                    live.blocker["kind"] == "provider_slot_wait"
+                    and live.blocker["billable"] is False
+                )
                 assert str(store.get_attempt(waiter).status.value) == "RUNNING"
                 # b 已经跑完的调用：照实结账；排队的这次：没有授权行、从没交出去
                 earlier = grants(store, waiter)
-                assert all(row["state"] == "SETTLED" and row["actual_tokens"] is not None
-                           for row in earlier), earlier
+                assert all(
+                    row["state"] == "SETTLED" and row["actual_tokens"] is not None
+                    for row in earlier
+                ), earlier
                 granted = {row["invocation_id"] for row in grants(store)}
-                pending = {invocation for invocation, (state, handoffs) in physical_calls(root).items()
-                           if invocation not in granted}
-                assert pending and all(physical_calls(root)[i][1] == 0 for i in pending), physical_calls(root)
+                pending = {
+                    invocation
+                    for invocation, (state, handoffs) in physical_calls(root).items()
+                    if invocation not in granted
+                }
+                assert pending and all(physical_calls(root)[i][1] == 0 for i in pending), (
+                    physical_calls(root)
+                )
 
                 world.control.cancel(mission_id)
                 provider.let_go.set()
                 for _ in range(500):  # 取消落地，a 那次返回后照实结账
-                    finished = [row for row in grants(store)
-                                if row["subject_id"].startswith("task-") and row["subject_id"] != waiter]
-                    if status(store, mission_id) == "CANCELLED" and finished and finished[0]["state"] == "SETTLED":
+                    finished = [
+                        row
+                        for row in grants(store)
+                        if row["subject_id"].startswith("task-") and row["subject_id"] != waiter
+                    ]
+                    if (
+                        status(store, mission_id) == "CANCELLED"
+                        and finished
+                        and finished[0]["state"] == "SETTLED"
+                    ):
                         break
                     await asyncio.sleep(0.02)
             finally:
@@ -328,19 +430,33 @@ def test_a_call_queued_for_the_only_slot_is_unbilled_and_a_cancel_never_hands_it
             # 到达提供方的执行者调用 = a 那一次 + b 排队前已跑完的那几次；排队的那次没到提供方
             assert provider.asked.count("worker") == 1 + len(earlier) and provider.stuck_calls == 1
             assert grants(store, waiter) == earlier  # 取消后排队的那次也没拿到授权，已结的不变
-            assert all(handoffs == 0 for invocation, (state, handoffs) in physical_calls(root).items()
-                       if invocation not in {row["invocation_id"] for row in grants(store)}), physical_calls(root)
-            [running] = [row for row in grants(store)
-                         if row["subject_id"].startswith("task-") and row["subject_id"] != waiter]
+            assert all(
+                handoffs == 0
+                for invocation, (state, handoffs) in physical_calls(root).items()
+                if invocation not in {row["invocation_id"] for row in grants(store)}
+            ), physical_calls(root)
+            [running] = [
+                row
+                for row in grants(store)
+                if row["subject_id"].startswith("task-") and row["subject_id"] != waiter
+            ]
             assert running["state"] == "SETTLED" and running["actual_tokens"] == 150
             assert not store.list_mission_claims(mission_id)
-            assert {row[0] for row in store.connection.execute(
-                "SELECT state FROM budget_tail_holds WHERE mission_id=?", (mission_id,))} == {"RELEASED"}
+            assert {
+                row[0]
+                for row in store.connection.execute(
+                    "SELECT state FROM budget_tail_holds WHERE mission_id=?", (mission_id,)
+                )
+            } == {"RELEASED"}
             for _ in range(5):
                 await world.drain(timeout=0.5)
-            holds = dict(store.connection.execute(
-                "SELECT r.subject_id, r.state FROM budget_reservations r JOIN dispatch_intents i"
-                " ON i.subject_id=r.subject_id WHERE i.mission_id=? AND i.kind='attempt'", (mission_id,)).fetchall())
+            holds = dict(
+                store.connection.execute(
+                    "SELECT r.subject_id, r.state FROM budget_reservations r JOIN dispatch_intents i"
+                    " ON i.subject_id=r.subject_id WHERE i.mission_id=? AND i.kind='attempt'",
+                    (mission_id,),
+                ).fetchall()
+            )
             assert holds and set(holds.values()) == {"SETTLED"}, holds
 
     asyncio.run(case())
@@ -354,8 +470,13 @@ def test_a_hold_left_by_an_ended_mission_is_counted_at_its_bound_after_three_ful
     async def case():
         provider = Relay("broken")
         async with product_world(tmp_path / "root", provider, **QUICK) as world:
-            mission_id = world.create({"goal": "写一份 NOTES.md", "success_criteria": ["file:NOTES.md"],
-                                       "idempotency_key": "ended-hold"})["mission_id"]
+            mission_id = world.create(
+                {
+                    "goal": "写一份 NOTES.md",
+                    "success_criteria": ["file:NOTES.md"],
+                    "idempotency_key": "ended-hold",
+                }
+            )["mission_id"]
             store = world.store
             for _ in range(200):
                 await world.drain(timeout=2)
@@ -377,9 +498,21 @@ def test_a_hold_left_by_an_ended_mission_is_counted_at_its_bound_after_three_ful
             await world.drain(timeout=2)
             reservation = world.loop.commit.ledger.reservation(subject)
             assert reservation["state"] == "SETTLED"
-            [counted] = [event.payload for event in events(store, mission_id, "ReservationCountedAtUpperBound")]
-            assert counted["subject_id"] == subject and counted["reason"] == "mission_ended_usage_unknown"
-            assert counted["counted_tokens"] == reservation["settled_tokens"] >= held["reserved_tokens"]
-            assert world.loop.commit.ledger.has_unknown_usage(subject)  # the fact itself stays unknown
+            [counted] = [
+                event.payload
+                for event in events(store, mission_id, "ReservationCountedAtUpperBound")
+            ]
+            assert (
+                counted["subject_id"] == subject
+                and counted["reason"] == "mission_ended_usage_unknown"
+            )
+            assert (
+                counted["counted_tokens"]
+                == reservation["settled_tokens"]
+                >= held["reserved_tokens"]
+            )
+            assert world.loop.commit.ledger.has_unknown_usage(
+                subject
+            )  # the fact itself stays unknown
 
     asyncio.run(case())

@@ -53,7 +53,9 @@ class ScopedTaskCheckPolicy:
 
 
 def read_task_check_policy_projection(
-    store: Store, mission_id: str, task_id: str,
+    store: Store,
+    mission_id: str,
+    task_id: str,
 ) -> ScopedTaskCheckPolicy:
     """Original scoped criteria before review, with declared checks, never fake results.
 
@@ -71,28 +73,34 @@ def read_task_check_policy_projection(
         binding = htn.task_semantics_of(mission_id, task_id)
         if task is None or task.mission_id != mission_id or active is None or binding is None:
             raise OperationCompletionError("OP_COMPLETION_SCOPE_UNRESOLVED", "Task unavailable")
-        members = [m for m in htn.list_plan_memberships(mission_id, active.revision)
-                   if str(m.task_id) == task_id]
+        members = [
+            m
+            for m in htn.list_plan_memberships(mission_id, active.revision)
+            if str(m.task_id) == task_id
+        ]
         if len(members) != 1:
             raise OperationCompletionError("OP_COMPLETION_SCOPE_UNRESOLVED", "ambiguous occurrence")
-        scope = OperationCompletionReader(store).read_scope(mission_id,
+        scope = OperationCompletionReader(store).read_scope(
+            mission_id,
             PlanRevisionPinV1(revision=active.revision, snapshot_hash=active.snapshot_hash),
-            str(members[0].occurrence_id))
+            str(members[0].occurrence_id),
+        )
         if scope.content_hash() != prompt_scope["scope_hash"]:
             raise OperationCompletionError("OP_EFFECT_SCOPE_STALE", "scope changed")
         carried = carried_criteria_for(htn, mission_id, active.revision, members[0].occurrence_id)
         local = _scoped_local_criteria(binding, scope, (), carried)
         requirements = htn.get_requirements_revision(mission_id, scope.requirements_ref.revision)
-        spec = OperationCompletionReader(store).read_requirements(mission_id,
-            TypedRef(kind=TypedRefKind.REQUIREMENTS, **scope.requirements_ref.to_json()))
-        root_catalogue = {item.criterion_id:item for item in requirements.criteria}
+        spec = OperationCompletionReader(store).read_requirements(
+            mission_id, TypedRef(kind=TypedRefKind.REQUIREMENTS, **scope.requirements_ref.to_json())
+        )
+        root_catalogue = {item.criterion_id: item for item in requirements.criteria}
         criteria = []
         for key in scope.content_criterion_ids:
             if key in spec.content_criterion_ids:
                 criteria.append(root_catalogue[key])
             else:
                 criteria.append(local_check_criterion(local[key], tuple(task.verification_policy)))
-        return ScopedTaskCheckPolicy(requirements,scope,tuple(criteria))
+        return ScopedTaskCheckPolicy(requirements, scope, tuple(criteria))
 
 
 def local_check_criterion(criterion: Criterion, verification_policy: tuple[str, ...]) -> Criterion:
@@ -110,59 +118,86 @@ def local_check_criterion(criterion: Criterion, verification_policy: tuple[str, 
     checks = tuple(layer for layer in verification_policy if layer not in REVIEW_LAYERS)
     policy = replace(criterion.required_evidence_policy, required_check_ids=checks)
     if not checks and len(checks) != len(verification_policy):
-        return replace(criterion, evaluation_kind=EvaluationKind.SEMANTIC, required_evidence_policy=policy)
+        return replace(
+            criterion, evaluation_kind=EvaluationKind.SEMANTIC, required_evidence_policy=policy
+        )
     return replace(criterion, required_evidence_policy=policy)
 
 
 def _scoped_local_criteria(binding, scope, layers, carried):
     from .leaf_acceptance import LEAF_LOCAL_CRITERION, criteria_for, local_content_criterion
+
     local = {c.criterion_id: c for c in criteria_for(binding, layers, carried=carried)}
     # The frozen compiler may give an effect-only leaf a local preparation
     # criterion. It is grounded in required output ports, never in effect success.
     if LEAF_LOCAL_CRITERION in scope.content_criterion_ids and LEAF_LOCAL_CRITERION not in local:
         from ..planning.htn.completion_scopes import _local_task_content_projection
+
         if _local_task_content_projection(binding) is None:
-            raise OperationCompletionError("OP_COMPLETION_SCOPE_UNRESOLVED", "no required preparation output")
+            raise OperationCompletionError(
+                "OP_COMPLETION_SCOPE_UNRESOLVED", "no required preparation output"
+            )
         local[LEAF_LOCAL_CRITERION] = local_content_criterion(binding, layers)
     return local
 
 
-def task_content_prompt_scope(store: Store, mission_id: str, task_id: str,
-                              *, attempt_id: str | None = None) -> dict:
+def task_content_prompt_scope(
+    store: Store, mission_id: str, task_id: str, *, attempt_id: str | None = None
+) -> dict:
     """Resolve local review criteria before the Critic runs, without claiming PASS."""
     from .accepted_outputs import carried_criteria_for
+
     with store.read_view():
         htn = HtnStore(store)
         active = htn.active_plan_revision(mission_id)
         binding = htn.task_semantics_of(mission_id, task_id)
         if active is None or binding is None or binding.form is not TaskForm.PRIMITIVE:
-            raise OperationCompletionError("OP_COMPLETION_SCOPE_UNRESOLVED", "planned primitive required")
-        members = [m for m in htn.list_plan_memberships(mission_id, active.revision)
-                   if str(m.task_id) == task_id]
+            raise OperationCompletionError(
+                "OP_COMPLETION_SCOPE_UNRESOLVED", "planned primitive required"
+            )
+        members = [
+            m
+            for m in htn.list_plan_memberships(mission_id, active.revision)
+            if str(m.task_id) == task_id
+        ]
         if len(members) != 1:
             raise OperationCompletionError("OP_COMPLETION_SCOPE_UNRESOLVED", "ambiguous occurrence")
-        scope = OperationCompletionReader(store).read_scope(mission_id,
+        scope = OperationCompletionReader(store).read_scope(
+            mission_id,
             PlanRevisionPinV1(revision=active.revision, snapshot_hash=active.snapshot_hash),
-            str(members[0].occurrence_id))
+            str(members[0].occurrence_id),
+        )
         if attempt_id is not None:
             from .completion_inputs import load_completion_result_inputs
+
             result = store.find_result_for_attempt(attempt_id)
             frozen = None if result is None else load_completion_result_inputs(store, result)
             if frozen is None or frozen.scope != scope or result.envelope.task_id != task_id:
-                raise OperationCompletionError("OP_CONTENT_REVIEW_UNAVAILABLE", "original review inputs differ")
+                raise OperationCompletionError(
+                    "OP_CONTENT_REVIEW_UNAVAILABLE", "original review inputs differ"
+                )
         carried = carried_criteria_for(htn, mission_id, active.revision, members[0].occurrence_id)
         local = _scoped_local_criteria(binding, scope, (), carried)
         requirements = htn.get_requirements_revision(mission_id, scope.requirements_ref.revision)
         catalogue = {c.criterion_id: c for c in requirements.criteria}
         allowed = tuple(scope.content_criterion_ids)
         if not allowed or set(allowed) - set(local):
-            raise OperationCompletionError("OP_COMPLETION_SCOPE_UNRESOLVED", "local criteria differ")
-        return {"purpose": "TASK_CONTENT", "scope_id": scope.scope_id,
-                "scope_hash": scope.content_hash(), "task_ref": scope.task_ref.to_json(),
-                "plan_revision": active.revision, "requirements_ref": scope.requirements_ref.to_json(),
-                "criteria": [{"criterion_id": key, "statement": catalogue.get(key, local[key]).statement}
-                             for key in allowed],
-                "pending_effect_keys": list(scope.required_effect_keys)}
+            raise OperationCompletionError(
+                "OP_COMPLETION_SCOPE_UNRESOLVED", "local criteria differ"
+            )
+        return {
+            "purpose": "TASK_CONTENT",
+            "scope_id": scope.scope_id,
+            "scope_hash": scope.content_hash(),
+            "task_ref": scope.task_ref.to_json(),
+            "plan_revision": active.revision,
+            "requirements_ref": scope.requirements_ref.to_json(),
+            "criteria": [
+                {"criterion_id": key, "statement": catalogue.get(key, local[key]).statement}
+                for key in allowed
+            ],
+            "pending_effect_keys": list(scope.required_effect_keys),
+        }
 
 
 def read_task_content_projection(
@@ -217,8 +252,11 @@ def read_task_content_projection(
             raise OperationCompletionError(
                 "OP_CONTENT_REVIEW_UNAVAILABLE", "result Attempt differs"
             )
-        layers = layer_outcomes(store.list_verifications(
-            result_id, requirements_revision=int(scope.requirements_ref.revision)))
+        layers = layer_outcomes(
+            store.list_verifications(
+                result_id, requirements_revision=int(scope.requirements_ref.revision)
+            )
+        )
         # D7-8' sixth layer (2026-09-30, 审阅判不下来交给人): a Critic that could not
         # decide (NEEDS_HUMAN) counts as passed only under a recorded human_review PASS
         # of this same result; the person's ruling is the recorded ground, never a
@@ -262,7 +300,9 @@ def read_task_content_projection(
         # CRITERIA_NOT_MATCHED (Host native run arp.15, 2026-09-24).  This reader's
         # own guards above (verified result, recorded Critic PASS, scope) still hold.
         approved = read_task_check_policy_projection(store, mission_id, task_id)
-        if {item.criterion_id for item in approved.criteria} != {item.criterion_id for item in criteria}:
+        if {item.criterion_id for item in approved.criteria} != {
+            item.criterion_id for item in criteria
+        }:
             raise OperationCompletionError("OP_COMPLETION_SCOPE_UNRESOLVED", "review scope differs")
         criteria = tuple(approved.criteria)
         passed_checks = {item.layer for item in layers if item.passed}
@@ -311,34 +351,73 @@ def read_task_content_candidate(
     with store.read_view():
         projected = read_task_check_policy_projection(store, mission_id, task_id)
         result = store.get_result(result_id)
-        if result is None or result.envelope.mission_id != mission_id or result.envelope.task_id != task_id:
-            raise OperationCompletionError("OP_CONTENT_REVIEW_UNAVAILABLE", "candidate result unavailable")
+        if (
+            result is None
+            or result.envelope.mission_id != mission_id
+            or result.envelope.task_id != task_id
+        ):
+            raise OperationCompletionError(
+                "OP_CONTENT_REVIEW_UNAVAILABLE", "candidate result unavailable"
+            )
         attempt = store.get_attempt(result.envelope.attempt_id)
         # 第四批：已验收的结果按现行（更新的）要求重审，冻结输入照旧、范围取现行的
         accepted = result.verification_state == "DONE" and result.verdict == "PASS"
         frozen = load_completion_result_inputs(
-            store, result,
-            requirements_revision=int(projected.scope.requirements_ref.revision) if accepted else None)
-        if (attempt is None or attempt.task_id != task_id or not attempt.agent_id
-            or frozen is None or frozen.scope != projected.scope):
-            raise OperationCompletionError("OP_CONTENT_REVIEW_UNAVAILABLE", "candidate differs from frozen Attempt scope")
-        spec = OperationCompletionReader(store).read_requirements(mission_id,
-            TypedRef(kind=TypedRefKind.REQUIREMENTS, **projected.scope.requirements_ref.to_json()))
+            store,
+            result,
+            requirements_revision=int(projected.scope.requirements_ref.revision)
+            if accepted
+            else None,
+        )
+        if (
+            attempt is None
+            or attempt.task_id != task_id
+            or not attempt.agent_id
+            or frozen is None
+            or frozen.scope != projected.scope
+        ):
+            raise OperationCompletionError(
+                "OP_CONTENT_REVIEW_UNAVAILABLE", "candidate differs from frozen Attempt scope"
+            )
+        spec = OperationCompletionReader(store).read_requirements(
+            mission_id,
+            TypedRef(kind=TypedRefKind.REQUIREMENTS, **projected.scope.requirements_ref.to_json()),
+        )
         if not projected.criteria:
-            raise OperationCompletionError("OP_COMPLETION_SCOPE_UNRESOLVED", "candidate criteria unavailable")
+            raise OperationCompletionError(
+                "OP_COMPLETION_SCOPE_UNRESOLVED", "candidate criteria unavailable"
+            )
         expression: SuccessExpression = CriterionExpr(projected.criteria[0].criterion_id)
         if len(projected.criteria) > 1:
-            expression = AllExpr(tuple(CriterionExpr(item.criterion_id) for item in projected.criteria))
+            expression = AllExpr(
+                tuple(CriterionExpr(item.criterion_id) for item in projected.criteria)
+            )
         artifacts = []
         for artifact_id in result.artifacts:
             artifact = store.get_artifact(artifact_id)
-            if (artifact is None or artifact.mission_id != mission_id or artifact.task_id != task_id
-                or artifact.attempt_id != attempt.id):
-                raise OperationCompletionError("OP_CONTENT_REVIEW_UNAVAILABLE", "candidate artifact identity differs")
-            artifacts.append(CompletionPinV1(id=artifact.id, revision=artifact.version,
-                                             content_hash=artifact.content_hash))
-        return ScopedTaskContent(projected.requirements, spec, projected.scope,
-            projected.criteria, expression, tuple(artifacts), attempt.agent_id)
+            if (
+                artifact is None
+                or artifact.mission_id != mission_id
+                or artifact.task_id != task_id
+                or artifact.attempt_id != attempt.id
+            ):
+                raise OperationCompletionError(
+                    "OP_CONTENT_REVIEW_UNAVAILABLE", "candidate artifact identity differs"
+                )
+            artifacts.append(
+                CompletionPinV1(
+                    id=artifact.id, revision=artifact.version, content_hash=artifact.content_hash
+                )
+            )
+        return ScopedTaskContent(
+            projected.requirements,
+            spec,
+            projected.scope,
+            projected.criteria,
+            expression,
+            tuple(artifacts),
+            attempt.agent_id,
+        )
 
 
 def validate_scoped_command(store: Store, command: object) -> ScopedTaskContent:
@@ -364,7 +443,8 @@ def validate_scoped_command(store: Store, command: object) -> ScopedTaskContent:
     projection = read_task_content_projection(store, command.mission_id, command.task_id, result_id)
     result = store.get_result(result_id)
     frozen = load_completion_result_inputs(
-        store, result, requirements_revision=int(command.requirements.revision))
+        store, result, requirements_revision=int(command.requirements.revision)
+    )
     if frozen is None or command.package.binding.input_manifest_hash != frozen.frozen.manifest_hash:
         raise ResolutionCommitRejected(
             "OP_CONTENT_REVIEW_UNAVAILABLE", "review input differs from the original Attempt"
@@ -454,7 +534,9 @@ def validate_scoped_command(store: Store, command: object) -> ScopedTaskContent:
         raise ResolutionCommitRejected(
             "OP_CONTENT_REVIEW_UNAVAILABLE", "review is not the official Assurance record"
         )
-    for row in store.list_verifications(result_id, requirements_revision=int(command.requirements.revision)):
+    for row in store.list_verifications(
+        result_id, requirements_revision=int(command.requirements.revision)
+    ):
         if row["layer"] != "critic_review" or row["status"] not in {"PASS", "FAIL"}:
             continue
         named = dict(row.get("detail") or {}).get("official_review_record_id")

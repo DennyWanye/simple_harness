@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 """P5-S4: NudgeQueue tests."""
+
 from __future__ import annotations
 
 import asyncio
@@ -89,10 +90,12 @@ def test_format_single_hint():
 
 
 def test_format_multiple_hints():
-    s = format_hints_for_injection([
-        Hint(text="one"),
-        Hint(text="two"),
-    ])
+    s = format_hints_for_injection(
+        [
+            Hint(text="one"),
+            Hint(text="two"),
+        ]
+    )
     assert s.startswith("[Supervisor]")
     assert "- one" in s
     assert "- two" in s

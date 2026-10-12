@@ -12,34 +12,60 @@ from tests.companion.test_window_control_credentials import _credential, _ingres
 
 
 async def _bind(private, ingress, binding):
-    challenge = ingress.open_challenge(requested_window_label="main", requested_scope="identity_bind")
+    challenge = ingress.open_challenge(
+        requested_window_label="main", requested_scope="identity_bind"
+    )
     snapshot = {"mode": "local", "user_id": None}
-    credential = _credential(private, challenge, window_label="main", scope="identity_bind",
-                             command_kind="companion_profile_bind", binding_epoch=challenge.binding_epoch,
-                             body={"auth_snapshot": snapshot}, nonce=challenge.connection_id)
-    result = await ingress.execute({"type": "companion_profile_bind", "auth_snapshot": snapshot,
-                                    "credential": asdict(credential)}, challenge=challenge)
+    credential = _credential(
+        private,
+        challenge,
+        window_label="main",
+        scope="identity_bind",
+        command_kind="companion_profile_bind",
+        binding_epoch=challenge.binding_epoch,
+        body={"auth_snapshot": snapshot},
+        nonce=challenge.connection_id,
+    )
+    result = await ingress.execute(
+        {
+            "type": "companion_profile_bind",
+            "auth_snapshot": snapshot,
+            "credential": asdict(credential),
+        },
+        challenge=challenge,
+    )
     binding.bound(ingress, challenge)
-    return challenge.advance(request_seq=int(result["payload"]["next_request_seq"]),
-                             binding_epoch=int(result["payload"]["binding_epoch"]))
+    return challenge.advance(
+        request_seq=int(result["payload"]["next_request_seq"]),
+        binding_epoch=int(result["payload"]["binding_epoch"]),
+    )
 
 
 @pytest.mark.asyncio
 async def test_signed_connection_reuse_and_reconnect_preserve_primary(tmp_path):
     private, store, gate, ingress = _ingress(tmp_path)
     path = tmp_path / "state.db"
-    factory = HumanMemoryHostServiceFactory(path, await dispatch_startup_epoch(path, approved_fresh_lane=True))
+    factory = HumanMemoryHostServiceFactory(
+        path, await dispatch_startup_epoch(path, approved_fresh_lane=True)
+    )
     binding = HumanMemoryControlBinding()
     with pytest.raises(HumanMemoryHostServiceError, match="connection_unbound"):
         binding.authenticate(ingress, None)
     challenge = await _bind(private, ingress, binding)
     auth = binding.authenticate(ingress, challenge)
-    request = {"type": "human_memory_request", "request_id": "open", "operation": "primary.open", "request": {}}
+    request = {
+        "type": "human_memory_request",
+        "request_id": "open",
+        "operation": "primary.open",
+        "request": {},
+    }
     first = await handle_human_memory_command(request, factory=factory, auth=auth)
     assert first["payload"]["ok"]
     # No new signature, credential or sequence required for subsequent reads.
     assert binding.authenticate(ingress, challenge) == auth
-    second = await handle_human_memory_command(request, factory=factory, auth=binding.authenticate(ingress, challenge))
+    second = await handle_human_memory_command(
+        request, factory=factory, auth=binding.authenticate(ingress, challenge)
+    )
     assert second == first
     with pytest.raises(HumanMemoryHostServiceError, match="connection_unbound"):
         HumanMemoryControlBinding().authenticate(ingress, challenge)
@@ -47,8 +73,9 @@ async def test_signed_connection_reuse_and_reconnect_preserve_primary(tmp_path):
     next_challenge = await _bind(private, ingress, replacement)
     with pytest.raises(HumanMemoryHostServiceError, match="connection_stale"):
         binding.authenticate(ingress, challenge)
-    reopened = await handle_human_memory_command(request, factory=factory,
-                                                auth=replacement.authenticate(ingress, next_challenge))
+    reopened = await handle_human_memory_command(
+        request, factory=factory, auth=replacement.authenticate(ingress, next_challenge)
+    )
     assert reopened == first
     gate.unbind(expected_binding_epoch=gate.freeze().binding_epoch)
     with pytest.raises(HumanMemoryHostServiceError, match="connection_stale"):
@@ -82,7 +109,9 @@ async def test_inflight_scope_write_rechecks_lease_after_signed_reconnect(tmp_pa
     binding = HumanMemoryControlBinding()
     challenge = await _bind(private, ingress, binding)
     path = tmp_path / "state.db"
-    factory = HumanMemoryHostServiceFactory(path, await dispatch_startup_epoch(path, approved_fresh_lane=True))
+    factory = HumanMemoryHostServiceFactory(
+        path, await dispatch_startup_epoch(path, approved_fresh_lane=True)
+    )
     auth = binding.authenticate(ingress, challenge)
     service = factory.bind(auth)
     entered, release = asyncio.Event(), asyncio.Event()
@@ -103,9 +132,14 @@ async def test_inflight_scope_write_rechecks_lease_after_signed_reconnect(tmp_pa
         # Same connection scope installed by the production /ws/control branch.
         with binding.request_scope(ingress, challenge):
             return await handle_human_memory_command(
-                {"type": "human_memory_request", "request_id": "inflight-old", "operation": "task_scope.create",
-                 "request": {"title": "old connection", "goal": "must not commit"}},
-                factory=Bound(), auth=auth,
+                {
+                    "type": "human_memory_request",
+                    "request_id": "inflight-old",
+                    "operation": "task_scope.create",
+                    "request": {"title": "old connection", "goal": "must not commit"},
+                },
+                factory=Bound(),
+                auth=auth,
             )
 
     pending = asyncio.create_task(dispatch())

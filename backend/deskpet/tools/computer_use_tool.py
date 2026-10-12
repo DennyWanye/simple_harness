@@ -40,6 +40,7 @@ Error contract matches the registry: every handler returns a JSON
 **string**. Success ⇒ ``{"ok": true, ...}``; failure ⇒
 ``{"ok": false, "error": ..., "hint": ...}``.
 """
+
 from __future__ import annotations
 
 import base64
@@ -187,9 +188,7 @@ def _workspace_root() -> Path:
     if override:
         root = Path(override).resolve()
     else:
-        base = Path(
-            platformdirs.user_data_dir(_APP_NAME, appauthor=False, roaming=True)
-        )
+        base = Path(platformdirs.user_data_dir(_APP_NAME, appauthor=False, roaming=True))
         root = (base / "workspace").resolve()
     root.mkdir(parents=True, exist_ok=True)
     return root
@@ -670,6 +669,7 @@ _TOOLSET = "computer_use"
 # flag ON(code_e2e 真测)时 requires_env=[] → 正常可见可用。
 _CU_HIDE_ENV: list[str] = [] if _computer_use_enabled() else ["__DESKPET_COMPUTER_USE_DISABLED__"]
 
+
 def register_static_tools(registry) -> None:
     registrations = (
         ("screen_capture", _SCHEMA_CAPTURE, _handle_screen_capture, "read_file", False),
@@ -686,9 +686,7 @@ def register_static_tools(registry) -> None:
             "requires_env": _CU_HIDE_ENV,
             "concurrency_safe": False,
             "resource_scope_resolver": (
-                _screen_capture_resources
-                if name == "screen_capture"
-                else _screen_input_resources
+                _screen_capture_resources if name == "screen_capture" else _screen_input_resources
             ),
             "resource_scope_resolver_id": (
                 "builtin:screen_capture:primary-screen"

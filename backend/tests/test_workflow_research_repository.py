@@ -159,9 +159,11 @@ async def test_generate_now_full_state_machine_is_cas_safe_and_restart_idempoten
     assert accepted["status"] == "accepted"
     assert accepted["accepted_at"] == 1_000.0
     assert accepted["settle_deadline"] == 1_030.0
-    assert (await repo.accept_generate_now(
-        opened["command_id"], brief_checkpoint_ns="", brief_checkpoint_id="brief-1"
-    ))["status"] == "accepted"
+    assert (
+        await repo.accept_generate_now(
+            opened["command_id"], brief_checkpoint_ns="", brief_checkpoint_id="brief-1"
+        )
+    )["status"] == "accepted"
 
     observed = await repo.transition_control(
         opened["command_id"],
@@ -173,13 +175,15 @@ async def test_generate_now_full_state_machine_is_cas_safe_and_restart_idempoten
     assert observed["status"] == "observed"
     restarted = ResearchWorkflowRepository(path, clock=clock)
     assert (await restarted.active_control("run-1"))["status"] == "observed"
-    assert (await restarted.transition_control(
-        opened["command_id"],
-        expected_status="accepted",
-        new_status="observed",
-        checkpoint_ns="",
-        checkpoint_id="head-2",
-    ))["status"] == "observed"
+    assert (
+        await restarted.transition_control(
+            opened["command_id"],
+            expected_status="accepted",
+            new_status="observed",
+            checkpoint_ns="",
+            checkpoint_id="head-2",
+        )
+    )["status"] == "observed"
     settled = await restarted.transition_control(
         opened["command_id"],
         expected_status="observed",
@@ -242,8 +246,11 @@ async def test_observe_requires_current_head_and_deadline_candidates_are_read_on
     await _install_head(path, "run-1")
     repo = ResearchWorkflowRepository(path, clock=clock)
     command, _ = await repo.open_control(
-        run_id="run-1", idempotency_key="now", action="generate_now",
-        expected_run_version=7, expected_head_checkpoint_ns="",
+        run_id="run-1",
+        idempotency_key="now",
+        action="generate_now",
+        expected_run_version=7,
+        expected_head_checkpoint_ns="",
         expected_head_checkpoint_id="head-2",
     )
     await repo.accept_generate_now(
@@ -255,8 +262,11 @@ async def test_observe_requires_current_head_and_deadline_candidates_are_read_on
     assert (await repo.get_control(command["command_id"]))["status"] == "accepted"
     with pytest.raises(ResearchRepositoryError, match="durable run head"):
         await repo.transition_control(
-            command["command_id"], expected_status="accepted", new_status="observed",
-            checkpoint_ns="", checkpoint_id="stale-head",
+            command["command_id"],
+            expected_status="accepted",
+            new_status="observed",
+            checkpoint_ns="",
+            checkpoint_id="stale-head",
         )
 
 
@@ -269,14 +279,20 @@ async def test_control_rejects_parallel_active_commands_and_changed_replay(tmp_p
     await _install_head(path, "run-1")
     repo = ResearchWorkflowRepository(path, clock=clock)
     command, _ = await repo.open_control(
-        run_id="run-1", idempotency_key="first", action="generate_now",
-        expected_run_version=7, expected_head_checkpoint_ns="",
+        run_id="run-1",
+        idempotency_key="first",
+        action="generate_now",
+        expected_run_version=7,
+        expected_head_checkpoint_ns="",
         expected_head_checkpoint_id="head-2",
     )
     with pytest.raises(ResearchRepositoryError, match="active control"):
         await repo.open_control(
-            run_id="run-1", idempotency_key="second", action="generate_now",
-            expected_run_version=7, expected_head_checkpoint_ns="",
+            run_id="run-1",
+            idempotency_key="second",
+            action="generate_now",
+            expected_run_version=7,
+            expected_head_checkpoint_ns="",
             expected_head_checkpoint_id="head-2",
         )
     await repo.accept_generate_now(
@@ -297,8 +313,11 @@ async def test_cancel_settle_is_an_idempotent_marker_on_the_single_generate_fenc
     await _install_head(path, "run-1")
     repo = ResearchWorkflowRepository(path, clock=clock)
     command, _ = await repo.open_control(
-        run_id="run-1", idempotency_key="generate", action="generate_now",
-        expected_run_version=7, expected_head_checkpoint_ns="",
+        run_id="run-1",
+        idempotency_key="generate",
+        action="generate_now",
+        expected_run_version=7,
+        expected_head_checkpoint_ns="",
         expected_head_checkpoint_id="head-2",
     )
     await repo.accept_generate_now(
@@ -358,17 +377,24 @@ async def test_snapshot_manifest_is_content_addressed_parent_pinned_and_idempote
     manifest = _manifest("parent")
     manifest_ref = await _register_snapshot_blobs(path, manifest)
     expected = hashlib.sha256(
-        json.dumps(manifest, ensure_ascii=True, allow_nan=False, sort_keys=True, separators=(",", ":")).encode()
+        json.dumps(
+            manifest, ensure_ascii=True, allow_nan=False, sort_keys=True, separators=(",", ":")
+        ).encode()
     ).hexdigest()
     snapshot_hash, created = await repo.persist_snapshot_manifest(
-        run_id="parent", operation_id="operation-parent", manifest=manifest,
-        manifest_ref=manifest_ref, continue_until=2_000.0,
+        run_id="parent",
+        operation_id="operation-parent",
+        manifest=manifest,
+        manifest_ref=manifest_ref,
+        continue_until=2_000.0,
     )
     assert created and snapshot_hash == expected
     replay_hash, created = await repo.persist_snapshot_manifest(
-        run_id="parent", operation_id="operation-parent",
+        run_id="parent",
+        operation_id="operation-parent",
         manifest={"snapshot_hash": expected, **manifest},
-        manifest_ref=manifest_ref, continue_until=2_000.0,
+        manifest_ref=manifest_ref,
+        continue_until=2_000.0,
     )
     assert replay_hash == expected and not created
     arbitrary_ref = "b" * 64
@@ -382,14 +408,19 @@ async def test_snapshot_manifest_is_content_addressed_parent_pinned_and_idempote
         await db.commit()
     with pytest.raises(ResearchRepositoryError, match="exact canonical snapshot manifest"):
         await repo.persist_snapshot_manifest(
-            run_id="parent", operation_id="operation-parent", manifest=manifest,
-            manifest_ref=arbitrary_ref, continue_until=2_000.0,
+            run_id="parent",
+            operation_id="operation-parent",
+            manifest=manifest,
+            manifest_ref=arbitrary_ref,
+            continue_until=2_000.0,
         )
     with pytest.raises(ResearchRepositoryError, match="not canonical"):
         await repo.persist_snapshot_manifest(
-            run_id="parent", operation_id="operation-parent",
+            run_id="parent",
+            operation_id="operation-parent",
             manifest={"snapshot_hash": "0" * 64, **manifest},
-            manifest_ref=manifest_ref, continue_until=2_000.0,
+            manifest_ref=manifest_ref,
+            continue_until=2_000.0,
         )
     async with aiosqlite.connect(path) as db:
         pin = await (
@@ -414,8 +445,11 @@ async def test_snapshot_rejects_unregistered_manifest_or_passage_blob(tmp_path):
     repo = ResearchWorkflowRepository(path, clock=clock)
     with pytest.raises(ResearchRepositoryError, match="not registered"):
         await repo.persist_snapshot_manifest(
-            run_id="parent", operation_id="operation-parent", manifest=manifest,
-            manifest_ref=hashlib.sha256(encoded).hexdigest(), continue_until=2_000.0,
+            run_id="parent",
+            operation_id="operation-parent",
+            manifest=manifest,
+            manifest_ref=hashlib.sha256(encoded).hexdigest(),
+            continue_until=2_000.0,
         )
 
 
@@ -443,8 +477,11 @@ async def test_create_child_is_one_transaction_restart_idempotent_and_parent_imm
     manifest = _manifest("parent")
     manifest_ref = await _register_snapshot_blobs(path, manifest)
     snapshot_hash, _ = await repo.persist_snapshot_manifest(
-        run_id="parent", operation_id="operation-parent", manifest=manifest,
-        manifest_ref=manifest_ref, continue_until=2_000.0,
+        run_id="parent",
+        operation_id="operation-parent",
+        manifest=manifest,
+        manifest_ref=manifest_ref,
+        continue_until=2_000.0,
     )
     async with aiosqlite.connect(path) as db:
         parent_before = await (
@@ -486,9 +523,7 @@ async def test_create_child_is_one_transaction_restart_idempotent_and_parent_imm
             await db.execute("SELECT * FROM workflow_runs WHERE run_id='child'")
         ).fetchone()
         pin = await (
-            await db.execute(
-                "SELECT * FROM workflow_research_snapshot_pins WHERE run_id='child'"
-            )
+            await db.execute("SELECT * FROM workflow_research_snapshot_pins WHERE run_id='child'")
         ).fetchone()
         operation = await (
             await db.execute(
@@ -528,17 +563,26 @@ async def test_child_creation_failure_rolls_back_run_pin_lineage_and_payload(tmp
     manifest = _manifest("parent")
     manifest_ref = await _register_snapshot_blobs(path, manifest)
     snapshot_hash, _ = await repo.persist_snapshot_manifest(
-        run_id="parent", operation_id="operation-parent", manifest=manifest,
-        manifest_ref=manifest_ref, continue_until=2_000.0,
+        run_id="parent",
+        operation_id="operation-parent",
+        manifest=manifest,
+        manifest_ref=manifest_ref,
+        continue_until=2_000.0,
     )
     with pytest.raises(aiosqlite.IntegrityError):
         await store.create_child_from_snapshot(
-            parent_run_id="parent", parent_operation_id="operation-parent",
-            snapshot_hash=snapshot_hash, child_run_id="child",
-            child_operation_id="operation-child", child_trace_id="trace:child",
-            child_thread_id="thread:child", child_request_key="continue:child",
-            child_request_id="request:child", child_turn_id="turn:child",
-            budget_lease_id="budget-child", start_payload={"snapshot_hash": snapshot_hash},
+            parent_run_id="parent",
+            parent_operation_id="operation-parent",
+            snapshot_hash=snapshot_hash,
+            child_run_id="child",
+            child_operation_id="operation-child",
+            child_trace_id="trace:child",
+            child_thread_id="thread:child",
+            child_request_key="continue:child",
+            child_request_id="request:child",
+            child_turn_id="turn:child",
+            budget_lease_id="budget-child",
+            start_payload={"snapshot_hash": snapshot_hash},
         )
     async with aiosqlite.connect(path) as db:
         counts = []
@@ -548,7 +592,9 @@ async def test_child_creation_failure_rolls_back_run_pin_lineage_and_payload(tmp
             ).fetchone()
             counts.append(row[0])
         pin_count = await (
-            await db.execute("SELECT COUNT(*) FROM workflow_research_snapshot_pins WHERE run_id='child'")
+            await db.execute(
+                "SELECT COUNT(*) FROM workflow_research_snapshot_pins WHERE run_id='child'"
+            )
         ).fetchone()
     assert counts == [0, 0, 0]
     assert pin_count == (0,)
@@ -556,7 +602,9 @@ async def test_child_creation_failure_rolls_back_run_pin_lineage_and_payload(tmp
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("blocked_by", ("delivery", "expiry", "pin"))
-async def test_child_requires_continuable_final_unexpired_snapshot_and_parent_pin(tmp_path, blocked_by):
+async def test_child_requires_continuable_final_unexpired_snapshot_and_parent_pin(
+    tmp_path, blocked_by
+):
     path = tmp_path / f"{blocked_by}.db"
     clock = FakeClock()
     store = WorkflowRunStore(path, clock=clock)
@@ -570,26 +618,33 @@ async def test_child_requires_continuable_final_unexpired_snapshot_and_parent_pi
     manifest = _manifest("parent")
     manifest_ref = await _register_snapshot_blobs(path, manifest)
     snapshot_hash, _ = await repo.persist_snapshot_manifest(
-        run_id="parent", operation_id="operation-parent", manifest=manifest,
-        manifest_ref=manifest_ref, continue_until=2_000.0,
+        run_id="parent",
+        operation_id="operation-parent",
+        manifest=manifest,
+        manifest_ref=manifest_ref,
+        continue_until=2_000.0,
     )
     if blocked_by == "expiry":
         clock.value = 2_001.0
     elif blocked_by == "pin":
         async with aiosqlite.connect(path) as db:
-            await db.execute(
-                "DELETE FROM workflow_research_snapshot_pins WHERE run_id='parent'"
-            )
+            await db.execute("DELETE FROM workflow_research_snapshot_pins WHERE run_id='parent'")
             await db.commit()
     match = "delivery is not continuable" if blocked_by == "delivery" else "missing or expired"
     with pytest.raises(ResearchRepositoryError, match=match):
         await repo.create_child_from_snapshot(
-            parent_run_id="parent", parent_operation_id="operation-parent",
-            snapshot_hash=snapshot_hash, child_run_id="child",
-            child_operation_id="operation-child", child_trace_id="trace:child",
-            child_thread_id="thread:child", child_request_key="continue:child",
-            child_request_id="request:child", child_turn_id="turn:child",
-            budget_lease_id="budget-child", start_payload={"snapshot_hash": snapshot_hash},
+            parent_run_id="parent",
+            parent_operation_id="operation-parent",
+            snapshot_hash=snapshot_hash,
+            child_run_id="child",
+            child_operation_id="operation-child",
+            child_trace_id="trace:child",
+            child_thread_id="thread:child",
+            child_request_key="continue:child",
+            child_request_id="request:child",
+            child_turn_id="turn:child",
+            budget_lease_id="budget-child",
+            start_payload={"snapshot_hash": snapshot_hash},
         )
 
 
@@ -608,16 +663,25 @@ async def test_lineage_reachability_recomputes_child_ancestors_and_snapshot_pins
     manifest = _manifest("parent")
     manifest_ref = await _register_snapshot_blobs(path, manifest)
     snapshot_hash, _ = await repo.persist_snapshot_manifest(
-        run_id="parent", operation_id="operation-parent", manifest=manifest,
-        manifest_ref=manifest_ref, continue_until=1_010.0,
+        run_id="parent",
+        operation_id="operation-parent",
+        manifest=manifest,
+        manifest_ref=manifest_ref,
+        continue_until=1_010.0,
     )
     await repo.create_child_from_snapshot(
-        parent_run_id="parent", parent_operation_id="operation-parent",
-        snapshot_hash=snapshot_hash, child_run_id="child",
-        child_operation_id="operation-child", child_trace_id="trace:child",
-        child_thread_id="thread:child", child_request_key="continue:child",
-        child_request_id="request:child", child_turn_id="turn:child",
-        budget_lease_id="budget-child", start_payload={"snapshot_hash": snapshot_hash},
+        parent_run_id="parent",
+        parent_operation_id="operation-parent",
+        snapshot_hash=snapshot_hash,
+        child_run_id="child",
+        child_operation_id="operation-child",
+        child_trace_id="trace:child",
+        child_thread_id="thread:child",
+        child_request_key="continue:child",
+        child_request_id="request:child",
+        child_turn_id="turn:child",
+        budget_lease_id="budget-child",
+        start_payload={"snapshot_hash": snapshot_hash},
     )
     clock.value = 2_000.0
     reachable = await repo.lineage_reachability()

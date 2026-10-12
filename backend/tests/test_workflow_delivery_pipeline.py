@@ -35,7 +35,7 @@ def test_failed_v4_terminal_projects_only_strict_public_fields() -> None:
                 "terminal_public": _terminal_public(),
                 "delivery_intents": [],
                 "topic": "secret topic must not project",
-            }
+            },
         },
         run_id="run-v4",
         status="failed",

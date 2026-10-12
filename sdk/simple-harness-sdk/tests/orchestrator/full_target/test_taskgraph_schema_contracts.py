@@ -12,6 +12,7 @@
 **改坏检验**：收敛视图 Schema 去掉 ``blocked_notifications`` → 正样本在 Schema 侧不合规 → 变红；
 视图 codec 放过未知字段 → 加未知字段的负样本 Schema 拒、codec 收 → 变红。
 """
+
 from __future__ import annotations
 
 import json
@@ -35,8 +36,13 @@ from agent_orchestrator.graph.view_contracts import (
 from agent_orchestrator.testing.schema_oracle import conforms, violations
 
 EXAMPLES = Path(__file__).parents[1] / "acceptance_assets" / "taskgraph_schema_examples.json"
-VIEWS = ("taskgraph-view-v1", "taskgraph-explanation-v1", "taskgraph-convergence-view-v2",
-         "taskgraph-execution-view-v1", "taskgraph-execution-detail-v1")
+VIEWS = (
+    "taskgraph-view-v1",
+    "taskgraph-explanation-v1",
+    "taskgraph-convergence-view-v2",
+    "taskgraph-execution-view-v1",
+    "taskgraph-execution-detail-v1",
+)
 CODECS: dict[str, Any] = {
     "followup-v1": FollowupV1.from_json,
     "taskgraph-error-v1": TaskGraphErrorV1.from_json,
@@ -81,7 +87,7 @@ def _mutants(value: Any, path: str = "$") -> list[tuple[str, Any]]:
     elif isinstance(value, list):
         for index, item in enumerate(value):
             for desc, child in _mutants(item, f"{path}[{index}]"):
-                out.append((desc, [*value[:index], child, *value[index + 1:]]))
+                out.append((desc, [*value[:index], child, *value[index + 1 :]]))
         put("array replaced by object", {})
     elif isinstance(value, bool):
         put("bool replaced by string", "yes")
@@ -119,7 +125,14 @@ def test_the_eight_schemas_ship_with_the_sdk_and_name_themselves():
     assert convergence["properties"]["schema_version"] == {"const": 2}
     assert "blocked_notifications" in convergence["required"]
     item = convergence["properties"]["blocked_notifications"]["items"]
-    assert set(item["required"]) == {"message_id", "row_version", "kind", "subject_key", "error_code", "attempts"}
+    assert set(item["required"]) == {
+        "message_id",
+        "row_version",
+        "kind",
+        "subject_key",
+        "error_code",
+        "attempts",
+    }
     with pytest.raises(KeyError):
         schemas.load_schema("taskgraph-convergence-view-v1")
 
@@ -157,6 +170,9 @@ def test_what_the_schema_rejects_the_codec_rejects(name):
 def test_view_codecs_and_schemas_agree_on_every_mutant(name):
     schema = schemas.load_schema(name)
     sample = _examples()[name]
-    disagreements = [desc for desc, mutant in _mutants(sample)
-                     if conforms(schema, mutant) != _codec_accepts(name, mutant)]
+    disagreements = [
+        desc
+        for desc, mutant in _mutants(sample)
+        if conforms(schema, mutant) != _codec_accepts(name, mutant)
+    ]
     assert disagreements == [], f"{name}: {disagreements}"

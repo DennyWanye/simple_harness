@@ -50,8 +50,10 @@ def _quick(monkeypatch):
 def _signature() -> PredicateSignature:
     return PredicateSignature(
         predicate_ref=VersionedRef("demo.flag", 1, "a" * 64),
-        parameters=(PredicateParameter("x", "integer", required=False),
-                    PredicateParameter("y", "boolean", required=False)),
+        parameters=(
+            PredicateParameter("x", "integer", required=False),
+            PredicateParameter("y", "boolean", required=False),
+        ),
     )
 
 
@@ -93,10 +95,21 @@ def test_a12_packaged_schema_copies_are_byte_identical():
 
 
 def test_a12_packaged_schema_matches_the_plan_contract_in_the_host_repo():
-    plan = PACKAGE.parents[3] / "plans" / "Assurance" / "specs" / "1.1" / "contracts" / "common.schema.json"
+    plan = (
+        PACKAGE.parents[3]
+        / "plans"
+        / "Assurance"
+        / "specs"
+        / "1.1"
+        / "contracts"
+        / "common.schema.json"
+    )
     if not plan.exists():
         pytest.skip("SDK 单独检出时没有 Host 仓库里的原计划合同")
-    assert hashlib.sha256(SCHEMA.read_bytes()).hexdigest() == hashlib.sha256(plan.read_bytes()).hexdigest()
+    assert (
+        hashlib.sha256(SCHEMA.read_bytes()).hexdigest()
+        == hashlib.sha256(plan.read_bytes()).hexdigest()
+    )
 
 
 # ---------------------------------------------------------------- A23 反向依赖索引
@@ -117,12 +130,19 @@ def test_a14_check_specs_are_written_at_creation_and_only_read_on_use(tmp_path):
     async def case():
         async with product_world(tmp_path / "root", LayeredScriptedProvider()) as world:
             store = world.store
-            assert store.connection.execute(
-                "SELECT 1 FROM sqlite_master WHERE name='assurance_dependency_index'"
-            ).fetchone() is None
-            mission_id = world.create({"goal": "写一份 NOTES.md，列出三条要点。",
-                                       "success_criteria": ["file:NOTES.md"],
-                                       "idempotency_key": "q1-a14"})["mission_id"]
+            assert (
+                store.connection.execute(
+                    "SELECT 1 FROM sqlite_master WHERE name='assurance_dependency_index'"
+                ).fetchone()
+                is None
+            )
+            mission_id = world.create(
+                {
+                    "goal": "写一份 NOTES.md，列出三条要点。",
+                    "success_criteria": ["file:NOTES.md"],
+                    "idempotency_key": "q1-a14",
+                }
+            )["mission_id"]
             # 建任务即写定：还没跑任何检查，三层登记都已在
             rows = store.connection.execute(
                 "SELECT type FROM events WHERE mission_id=? AND type='AssuranceCheckSpecRegistered'",
@@ -136,13 +156,20 @@ def test_a14_check_specs_are_written_at_creation_and_only_read_on_use(tmp_path):
             done = await world.run_until_settled(mission_id, timeout=60)
             assert str(done.status.value) == "COMPLETED", done.final_report
             # 跑完也没有再登记
-            assert store.connection.execute(
-                "SELECT COUNT(*) FROM events WHERE mission_id=? AND type='AssuranceCheckSpecRegistered'",
-                (mission_id,),
-            ).fetchone()[0] == 3
+            assert (
+                store.connection.execute(
+                    "SELECT COUNT(*) FROM events WHERE mission_id=? AND type='AssuranceCheckSpecRegistered'",
+                    (mission_id,),
+                ).fetchone()[0]
+                == 3
+            )
             # 证书照发，read_set 完整存在证书里
-            assert store.connection.execute(
-                "SELECT COUNT(*) FROM assurance_use_certificates WHERE mission_id=?", (mission_id,)
-            ).fetchone()[0] > 0
+            assert (
+                store.connection.execute(
+                    "SELECT COUNT(*) FROM assurance_use_certificates WHERE mission_id=?",
+                    (mission_id,),
+                ).fetchone()[0]
+                > 0
+            )
 
     asyncio.run(case())

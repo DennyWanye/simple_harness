@@ -107,8 +107,7 @@ def safe_attributes(attributes: Mapping[str, object] | None = None) -> Mapping[s
 
 def thaw_attributes(attributes: Mapping[str, SafeValue]) -> dict[str, object]:
     return {
-        key: list(value) if isinstance(value, tuple) else value
-        for key, value in attributes.items()
+        key: list(value) if isinstance(value, tuple) else value for key, value in attributes.items()
     }
 
 

@@ -58,7 +58,12 @@ def owner_mode_of(connection: sqlite3.Connection, session: store.SessionRow) -> 
 
 def owner_contract_for(connection: sqlite3.Connection, session: store.SessionRow) -> Pin:
     mode = owner_mode_of(connection, session)
-    return Pin("policy", f"{session.profile_id}:owner-mode:{mode}", session.profile_revision, session.profile_hash)
+    return Pin(
+        "policy",
+        f"{session.profile_id}:owner-mode:{mode}",
+        session.profile_revision,
+        session.profile_hash,
+    )
 
 
 def _checked(sources: Any, caller: TrustedCaller) -> dict[str, Any]:
@@ -66,11 +71,19 @@ def _checked(sources: Any, caller: TrustedCaller) -> dict[str, Any]:
         raise ArpError("SOURCE_UNAVAILABLE", "the Mission source reader returned no source set")
     value = dict(sources)
     if value.get("schema") != SCHEMA or value.get("source_kind") not in SOURCE_KINDS:
-        raise ArpError("UNION_MISMATCH", "Mission sources are not a known role-typed source set",
-                       detail={"schema": value.get("schema"), "source_kind": value.get("source_kind")})
+        raise ArpError(
+            "UNION_MISMATCH",
+            "Mission sources are not a known role-typed source set",
+            detail={"schema": value.get("schema"), "source_kind": value.get("source_kind")},
+        )
     intent_id = value.get("intent_id")
-    if not isinstance(intent_id, str) or caller.command_receipt_ref.id != f"dispatch-intent:{intent_id}":
-        raise ArpError("REF_IDENTITY_MISMATCH", "Mission sources name another dispatch intent than the caller")
+    if (
+        not isinstance(intent_id, str)
+        or caller.command_receipt_ref.id != f"dispatch-intent:{intent_id}"
+    ):
+        raise ArpError(
+            "REF_IDENTITY_MISMATCH", "Mission sources name another dispatch intent than the caller"
+        )
     if not isinstance(value.get("mission_id"), str) or not value["mission_id"]:
         raise ArpError("SOURCE_UNAVAILABLE", "Mission sources carry no Mission")
     return value
@@ -81,7 +94,11 @@ def read_record(connection: sqlite3.Connection, session_id: str) -> Mapping[str,
 
 
 def record_for_creation(
-    port: MissionSourcePort | None, connection: sqlite3.Connection, *, caller: TrustedCaller, role: str
+    port: MissionSourcePort | None,
+    connection: sqlite3.Connection,
+    *,
+    caller: TrustedCaller,
+    role: str,
 ) -> dict[str, Any]:
     """The source record a MISSION-mode creation binds, or a named refusal."""
 
@@ -90,8 +107,10 @@ def record_for_creation(
     if role == "child":
         principal = caller.principal_ref.id
         if not principal.startswith("agent:"):
-            raise ArpError("AUTHORITY_SOURCE_MISSING", "a delegated child needs its parent Agent as caller")
-        parent_agent_id = principal[len("agent:"):]
+            raise ArpError(
+                "AUTHORITY_SOURCE_MISSING", "a delegated child needs its parent Agent as caller"
+            )
+        parent_agent_id = principal[len("agent:") :]
         parent = store.read_live_session(connection, parent_agent_id)
         inherited = None if parent is None else read_record(connection, parent.session_id)
         if inherited is None:
@@ -103,18 +122,29 @@ def record_for_creation(
             "role": role,
             "sources": sources,
             "sources_hash": digest(sources),
-            "delegated_from": {"parent_agent_id": parent_agent_id, "delegation_receipt_ref": caller.command_receipt_ref.to_json()},
+            "delegated_from": {
+                "parent_agent_id": parent_agent_id,
+                "delegation_receipt_ref": caller.command_receipt_ref.to_json(),
+            },
         }
     sources = _checked(port.bind(caller=caller, role=role), caller)
     port.require_current(sources)
-    return {"schema_version": 1, "role": role, "sources": sources, "sources_hash": digest(sources), "delegated_from": None}
+    return {
+        "schema_version": 1,
+        "role": role,
+        "sources": sources,
+        "sources_hash": digest(sources),
+        "delegated_from": None,
+    }
 
 
 def record_pin(session_id: str, record: Mapping[str, Any]) -> Pin:
     return Pin("authority", f"{RECEIPT_KIND}:{session_id}", 0, digest(dict(record)))
 
 
-def require_current(port: MissionSourcePort | None, connection: sqlite3.Connection, session: store.SessionRow) -> Pin | None:
+def require_current(
+    port: MissionSourcePort | None, connection: sqlite3.Connection, session: store.SessionRow
+) -> Pin | None:
     """Before a new request is frozen: a MISSION Session's recorded sources must be current.
 
     Returns the pin the manifest carries, or ``None`` for a Session created under a

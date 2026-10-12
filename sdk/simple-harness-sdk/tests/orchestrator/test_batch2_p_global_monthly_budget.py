@@ -13,6 +13,7 @@
   与新任务建立时随之改（夜间 N3-24：调大配额重启即生效，在跑的任务不用等新任务建立）；
 * "是不是全局账户"只有一种判法（:func:`is_global_account`），全局预算用完的停止仍写 scope=global。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -43,8 +44,13 @@ def _local(year: int, month: int, day: int, hour: int = 12, minute: int = 0) -> 
 
 def _reserve(world: Any, mission_id: str, subject: str, tokens: int) -> None:
     with world.store.transaction():
-        world.loop.commit.ledger.reserve(account_id=mission_account(mission_id), subject_id=subject, tokens=tokens,
-                                         counts_attempt=False, mission_id=mission_id)
+        world.loop.commit.ledger.reserve(
+            account_id=mission_account(mission_id),
+            subject_id=subject,
+            tokens=tokens,
+            counts_attempt=False,
+            mission_id=mission_id,
+        )
 
 
 def _parent(world: Any, mission_id: str) -> str | None:
@@ -81,9 +87,15 @@ def test_missions_of_one_month_share_one_pool_and_a_new_month_starts_full(tmp_pa
             _reserve(world, first, "p-oct-1:a", 8_000_000)
             with pytest.raises(BudgetExhausted) as refused:
                 _reserve(world, second, "p-oct-2:a", 8_000_000)
-            assert refused.value.account_id == october and is_global_account(refused.value.account_id)
+            assert refused.value.account_id == october and is_global_account(
+                refused.value.account_id
+            )
             pool = commit.global_account()
-            assert pool is not None and pool.account_id == october and pool.remaining_tokens() == 4_000_000
+            assert (
+                pool is not None
+                and pool.account_id == october
+                and pool.remaining_tokens() == 4_000_000
+            )
 
             # ② 跨月：新任务挂到 11 月的新账户，额度是满的
             clock[0] = _local(2026, 11, 1, 0, 5)
@@ -104,7 +116,10 @@ def test_missions_of_one_month_share_one_pool_and_a_new_month_starts_full(tmp_pa
                 assert commit.ledger.account("budget:global:2026-11").reserved_tokens == 8_000_000
                 # 夜间（N3c 发现）：费用报告的全局一栏读这个任务建立当月的总账，不是库里第一个全局账户
                 assert commit.ledger.costs_report(second)["global"]["account_id"] == october
-                assert commit.ledger.costs_report(third)["global"]["account_id"] == "budget:global:2026-11"
+                assert (
+                    commit.ledger.costs_report(third)["global"]["account_id"]
+                    == "budget:global:2026-11"
+                )
 
     asyncio.run(case())
 
@@ -137,12 +152,24 @@ def test_a_changed_monthly_quota_reaches_every_global_pool_on_start(tmp_path: Pa
             assert pool is not None and pool.account_id == "budget:global:2026-10"
             assert pool.limits.max_tokens == 30_000_000  # 没有新任务建立，启动时已跟上
             with world.store.transaction():
-                assert commit.ledger.account("budget:global:2026-09").limits.max_tokens == 30_000_000
-                assert pool.reserved_tokens == commit.ledger.account("budget:global:2026-10").reserved_tokens == 12_000_000
-            _reserve(world, second, "p-q-2:b", 3_000_000)  # 原任务接着花（在它自己 800 万的任务上限内）
+                assert (
+                    commit.ledger.account("budget:global:2026-09").limits.max_tokens == 30_000_000
+                )
+                assert (
+                    pool.reserved_tokens
+                    == commit.ledger.account("budget:global:2026-10").reserved_tokens
+                    == 12_000_000
+                )
+            _reserve(
+                world, second, "p-q-2:b", 3_000_000
+            )  # 原任务接着花（在它自己 800 万的任务上限内）
             assert commit.global_account().remaining_tokens() == 30_000_000 - 15_000_000
-            assert world.store.connection.execute("SELECT COUNT(*) FROM missions").fetchone()[0] == 3  # 没建新任务
-        async with _world(tmp_path / "root", 12_000_000) as world:  # 调小也在启动时跟上：余额为负，后续预留被拒
+            assert (
+                world.store.connection.execute("SELECT COUNT(*) FROM missions").fetchone()[0] == 3
+            )  # 没建新任务
+        async with _world(
+            tmp_path / "root", 12_000_000
+        ) as world:  # 调小也在启动时跟上：余额为负，后续预留被拒
             world.store._clock = lambda: october
             pool = world.loop.commit.global_account()
             assert pool is not None and pool.limits.max_tokens == 12_000_000
@@ -153,7 +180,9 @@ def test_a_changed_monthly_quota_reaches_every_global_pool_on_start(tmp_path: Pa
     asyncio.run(case())
 
 
-def test_a_new_mission_still_brings_this_months_pool_to_the_configured_quota(tmp_path: Path) -> None:
+def test_a_new_mission_still_brings_this_months_pool_to_the_configured_quota(
+    tmp_path: Path,
+) -> None:
     """建任务那处同步保留（与启动同步调同一个小函数）：账上上限与配置不一致时，新任务建立把它拉回。"""
 
     at = _local(2026, 10, 20)
@@ -163,7 +192,9 @@ def test_a_new_mission_still_brings_this_months_pool_to_the_configured_quota(tmp
             world.store._clock = lambda: at
             create(world, "p-n-1", max_tokens=8_000_000)
             with world.store.transaction():  # 模拟账上上限与配置不一致
-                world.loop.commit.ledger.set_limits("budget:global:2026-10", Budget(max_tokens=12_000_000))
+                world.loop.commit.ledger.set_limits(
+                    "budget:global:2026-10", Budget(max_tokens=12_000_000)
+                )
             create(world, "p-n-2", max_tokens=8_000_000)
             assert world.loop.commit.global_account().limits.max_tokens == 30_000_000
 
@@ -177,7 +208,9 @@ def _quick(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(event_handler, "WAIT_BACKOFF_MAX", 0.05)
 
 
-def test_a_spent_monthly_pool_stops_a_new_mission_with_the_global_scope(tmp_path: Path, _quick: None) -> None:
+def test_a_spent_monthly_pool_stops_a_new_mission_with_the_global_scope(
+    tmp_path: Path, _quick: None
+) -> None:
     """③ 本月总账已经用到只剩 1000 token（别的任务用掉的），新任务第一轮规划就停，停止详情写 scope=global。"""
 
     quota = 10_000_000
@@ -187,14 +220,25 @@ def test_a_spent_monthly_pool_stops_a_new_mission_with_the_global_scope(tmp_path
             store = world.store
             month = global_account_id(store.now)
             with store.transaction():
-                world.loop.commit.ledger.open_account(account_id=month, scope="global", parent_id=None,
-                                                      mission_id="global", limits=Budget(max_tokens=quota))
-                store.connection.execute("UPDATE budget_accounts SET settled_tokens=? WHERE account_id=?",
-                                         (quota - 1_000, month))
+                world.loop.commit.ledger.open_account(
+                    account_id=month,
+                    scope="global",
+                    parent_id=None,
+                    mission_id="global",
+                    limits=Budget(max_tokens=quota),
+                )
+                store.connection.execute(
+                    "UPDATE budget_accounts SET settled_tokens=? WHERE account_id=?",
+                    (quota - 1_000, month),
+                )
             mission_id = create(world, "p-global-spent", max_tokens=8_000_000)
             assert await settle(world, mission_id, seconds=15)
             final = store.get_mission(mission_id)
-            return {"month": month, "stop": final.stop_reason, "report": dict(final.final_report or {})}
+            return {
+                "month": month,
+                "stop": final.stop_reason,
+                "report": dict(final.final_report or {}),
+            }
 
     outcome = asyncio.run(case())
     assert outcome["stop"] == "budget_exhausted", outcome["report"]

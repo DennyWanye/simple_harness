@@ -73,9 +73,13 @@ async def test_v6_generate_now_clamps_at_t895_and_duplicate_keeps_window(tmp_pat
     clock = _Clock(1_795.0)
     repo = ResearchWorkflowRepository(path, clock=clock)
     opened, created = await repo.open_control(
-        run_id="run-v6", idempotency_key="generate", action="generate_now",
-        expected_run_version=7, expected_head_checkpoint_ns="",
-        expected_head_checkpoint_id="head", payload={},
+        run_id="run-v6",
+        idempotency_key="generate",
+        action="generate_now",
+        expected_run_version=7,
+        expected_head_checkpoint_ns="",
+        expected_head_checkpoint_id="head",
+        payload={},
     )
     assert created is True
     accepted = await repo.accept_generate_now(
@@ -97,9 +101,13 @@ async def test_v6_generate_now_rejects_at_t900_wall_guard(tmp_path) -> None:
     await _seed(path, "run-v6", wall_not_after=1_800.0)
     repo = ResearchWorkflowRepository(path, clock=_Clock(1_800.0))
     opened, _ = await repo.open_control(
-        run_id="run-v6", idempotency_key="late", action="generate_now",
-        expected_run_version=7, expected_head_checkpoint_ns="",
-        expected_head_checkpoint_id="head", payload={},
+        run_id="run-v6",
+        idempotency_key="late",
+        action="generate_now",
+        expected_run_version=7,
+        expected_head_checkpoint_ns="",
+        expected_head_checkpoint_id="head",
+        payload={},
     )
     rejected = await repo.accept_generate_now(
         opened["command_id"], brief_checkpoint_ns="", brief_checkpoint_id="head"
@@ -113,23 +121,23 @@ async def test_v6_generate_now_missing_deadline_is_terminally_rejected(tmp_path)
     path = tmp_path / "workflow.db"
     await _seed(path, "run-v6", wall_not_after=1_800.0)
     async with aiosqlite.connect(path) as db:
-        await db.execute(
-            "DELETE FROM workflow_research_deadlines WHERE run_id='run-v6'"
-        )
+        await db.execute("DELETE FROM workflow_research_deadlines WHERE run_id='run-v6'")
         await db.commit()
     repo = ResearchWorkflowRepository(path, clock=_Clock(1_100.0))
     opened, _ = await repo.open_control(
-        run_id="run-v6", idempotency_key="missing", action="generate_now",
-        expected_run_version=7, expected_head_checkpoint_ns="",
-        expected_head_checkpoint_id="head", payload={},
+        run_id="run-v6",
+        idempotency_key="missing",
+        action="generate_now",
+        expected_run_version=7,
+        expected_head_checkpoint_ns="",
+        expected_head_checkpoint_id="head",
+        payload={},
     )
     rejected = await repo.accept_generate_now(
         opened["command_id"], brief_checkpoint_ns="", brief_checkpoint_id="head"
     )
     assert rejected["status"] == "rejected"
-    assert rejected["payload"]["_result"] == {
-        "reason": "automatic_deadline_missing"
-    }
+    assert rejected["payload"]["_result"] == {"reason": "automatic_deadline_missing"}
     assert await repo.active_control("run-v6") is None
 
 
@@ -139,26 +147,43 @@ async def test_v6_reuses_accepted_observed_settled_consumed_journal(tmp_path) ->
     await _seed(path, "run-v6", wall_not_after=1_800.0)
     repo = ResearchWorkflowRepository(path, clock=_Clock(1_100.0))
     opened, _ = await repo.open_control(
-        run_id="run-v6", idempotency_key="journal", action="generate_now",
-        expected_run_version=7, expected_head_checkpoint_ns="",
-        expected_head_checkpoint_id="head", payload={},
+        run_id="run-v6",
+        idempotency_key="journal",
+        action="generate_now",
+        expected_run_version=7,
+        expected_head_checkpoint_ns="",
+        expected_head_checkpoint_id="head",
+        payload={},
     )
     accepted = await repo.accept_generate_now(
         opened["command_id"], brief_checkpoint_ns="", brief_checkpoint_id="head"
     )
     observed = await repo.transition_control(
-        opened["command_id"], expected_status="accepted", new_status="observed",
-        checkpoint_ns="", checkpoint_id="head",
+        opened["command_id"],
+        expected_status="accepted",
+        new_status="observed",
+        checkpoint_ns="",
+        checkpoint_id="head",
     )
     settled = await repo.transition_control(
-        opened["command_id"], expected_status="observed", new_status="settled",
-        checkpoint_ns="", checkpoint_id="head", result={"answer_status": "partial"},
+        opened["command_id"],
+        expected_status="observed",
+        new_status="settled",
+        checkpoint_ns="",
+        checkpoint_id="head",
+        result={"answer_status": "partial"},
     )
     consumed = await repo.transition_control(
-        opened["command_id"], expected_status="settled", new_status="consumed",
-        checkpoint_ns="", checkpoint_id="head",
+        opened["command_id"],
+        expected_status="settled",
+        new_status="consumed",
+        checkpoint_ns="",
+        checkpoint_id="head",
     )
     assert [accepted["status"], observed["status"], settled["status"], consumed["status"]] == [
-        "accepted", "observed", "settled", "consumed"
+        "accepted",
+        "observed",
+        "settled",
+        "consumed",
     ]
     assert consumed["payload"]["_result"] == {"answer_status": "partial"}

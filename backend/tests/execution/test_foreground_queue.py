@@ -27,11 +27,7 @@ from deskpet.task_scope.protocol import canonical_hash
 from deskpet.task_scope.store import CanonicalTaskScopeStore
 
 MIGRATION = (
-    Path(__file__).parents[2]
-    / "deskpet"
-    / "memory"
-    / "migrations"
-    / "033_foreground_queue_v41.sql"
+    Path(__file__).parents[2] / "deskpet" / "memory" / "migrations" / "033_foreground_queue_v41.sql"
 )
 SUBJECT = "actor-1"
 SCOPE = "scope-1"
@@ -131,9 +127,7 @@ async def _ready(tmp_path: Path, evidence_count: int = 3) -> tuple[Path, str, Cl
     return db_path, primary.primary_conversation_id, clock
 
 
-async def _enqueue(
-    store: ForegroundQueueStore, primary_id: str, index: int
-):
+async def _enqueue(store: ForegroundQueueStore, primary_id: str, index: int):
     return await store.enqueue_turn(
         subject=SUBJECT,
         primary_conversation_id=primary_id,
@@ -351,9 +345,7 @@ async def test_sdk_terminal_observer_imports_exact_sdk_event_before_settlement(
 
         def query(self, run_id: str):  # type: ignore[no-untyped-def]
             assert run_id == "sdk-run-observed"
-            return type(
-                "Run", (), {"state": type("State", (), {"value": "completed"})()}
-            )()
+            return type("Run", (), {"state": type("State", (), {"value": "completed"})()})()
 
     class _Stack:
         def read_run_terminal_evidence(self, run_id: str):  # type: ignore[no-untyped-def]
@@ -369,7 +361,9 @@ async def test_sdk_terminal_observer_imports_exact_sdk_event_before_settlement(
             )()
 
     observed = await SqliteSdkTerminalObserver(
-        str(db_path), _Ingress(), _Stack()  # type: ignore[arg-type]
+        str(db_path),
+        _Ingress(),
+        _Stack(),  # type: ignore[arg-type]
     ).observe(
         host_run_id=admission.host_run_id,
         sdk_run_id="sdk-run-observed",
@@ -592,9 +586,7 @@ async def test_control_priority_sdk_terminal_and_atomic_next_admission(tmp_path:
             sdk_event_hash=terminal_hash,
             idempotency_key="terminal-1",
         )
-    _assert_code(
-        unauthenticated_terminal, "foreground_terminal_sdk_evidence_missing"
-    )
+    _assert_code(unauthenticated_terminal, "foreground_terminal_sdk_evidence_missing")
     snapshot_before_evidence = await store.current_snapshot(SUBJECT)
     assert snapshot_before_evidence is not None
     assert snapshot_before_evidence.state is RunState.CANCEL_REQUESTED
@@ -735,24 +727,22 @@ async def test_terminal_waits_for_contiguous_gate_and_settles_once(
     assert terminal_receipts[0] == terminal_receipts[1]
     assert await store.current_snapshot(SUBJECT) is None
     with sqlite3.connect(db_path) as db:
-        assert db.execute(
-            "SELECT COUNT(*) FROM foreground_terminal_receipts"
-        ).fetchone()[0] == 1
+        assert db.execute("SELECT COUNT(*) FROM foreground_terminal_receipts").fetchone()[0] == 1
         terminal_json = json.loads(
-            db.execute(
-                "SELECT receipt_json FROM foreground_terminal_receipts"
-            ).fetchone()[0]
+            db.execute("SELECT receipt_json FROM foreground_terminal_receipts").fetchone()[0]
         )
         gate_id = db.execute(
-            "SELECT gate_receipt_id FROM task_scope_terminal_gate_receipts "
-            "WHERE run_id='sdk-run-1'"
+            "SELECT gate_receipt_id FROM task_scope_terminal_gate_receipts WHERE run_id='sdk-run-1'"
         ).fetchone()[0]
         assert terminal_json["terminal_gate_receipt_id"] == gate_id
         assert terminal_json["terminal_source_sequence"] == 3
         assert terminal_json["terminal_gate_durable_source_sequence"] == 3
-        assert db.execute(
-            "SELECT COUNT(*) FROM foreground_turn_heads WHERE current_state='SETTLED'"
-        ).fetchone()[0] == 1
+        assert (
+            db.execute(
+                "SELECT COUNT(*) FROM foreground_turn_heads WHERE current_state='SETTLED'"
+            ).fetchone()[0]
+            == 1
+        )
     next_draft = await _draft(store, key="prepare-next-gap")
     next_admission = await store.claim_next(
         subject=SUBJECT,
@@ -944,7 +934,9 @@ async def test_pause_resume_reclaim_and_stale_generation_fences(tmp_path: Path) 
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("fault_point,committed", [("claim.before_commit", False), ("claim.after_commit", True)])
+@pytest.mark.parametrize(
+    "fault_point,committed", [("claim.before_commit", False), ("claim.after_commit", True)]
+)
 async def test_claim_transaction_fault_is_rollback_or_exact_recovery(
     tmp_path: Path, fault_point: str, committed: bool
 ) -> None:
@@ -997,9 +989,7 @@ async def test_terminal_transaction_fault_never_partially_settles(
         terminal_state=RunState.COMPLETED,
     )
     terminal_hash = terminal_evidence.evidence_hash
-    faulted = ForegroundQueueStore(
-        db_path, clock=clock, fault_hook=OneShotFault(fault_point)
-    )
+    faulted = ForegroundQueueStore(db_path, clock=clock, fault_hook=OneShotFault(fault_point))
     with pytest.raises(RuntimeError, match=fault_point):
         await faulted.record_sdk_terminal(
             host_run_id=admission.host_run_id,
@@ -1012,12 +1002,10 @@ async def test_terminal_transaction_fault_never_partially_settles(
             idempotency_key="terminal-1",
         )
     with sqlite3.connect(db_path) as db:
-        terminal_count = db.execute(
-            "SELECT COUNT(*) FROM foreground_terminal_receipts"
-        ).fetchone()[0]
-        turn_state = db.execute(
-            "SELECT current_state FROM foreground_turn_heads"
-        ).fetchone()[0]
+        terminal_count = db.execute("SELECT COUNT(*) FROM foreground_terminal_receipts").fetchone()[
+            0
+        ]
+        turn_state = db.execute("SELECT current_state FROM foreground_turn_heads").fetchone()[0]
     assert terminal_count == int(committed)
     assert turn_state == ("SETTLED" if committed else "CLAIMED")
     receipt = await plain.record_sdk_terminal(
@@ -1032,12 +1020,10 @@ async def test_terminal_transaction_fault_never_partially_settles(
     )
     assert receipt.terminal_state is RunState.COMPLETED
     with sqlite3.connect(db_path) as db:
-        assert db.execute(
-            "SELECT COUNT(*) FROM foreground_terminal_receipts"
-        ).fetchone()[0] == 1
-        assert db.execute(
-            "SELECT current_state FROM foreground_turn_heads"
-        ).fetchone()[0] == "SETTLED"
+        assert db.execute("SELECT COUNT(*) FROM foreground_terminal_receipts").fetchone()[0] == 1
+        assert (
+            db.execute("SELECT current_state FROM foreground_turn_heads").fetchone()[0] == "SETTLED"
+        )
 
 
 @pytest.mark.asyncio
@@ -1105,9 +1091,10 @@ async def test_two_schedulers_claim_exact_draft_and_generation_fences_read_model
     assert claimed.admission_receipt_id == admission.admission_receipt_id
     assert claimed.admission_receipt_hash == admission.admission_receipt_hash
     with sqlite3.connect(db_path) as db:
-        assert db.execute(
-            "SELECT COUNT(*) FROM foreground_run_preparation_bindings"
-        ).fetchone()[0] == 1
+        assert (
+            db.execute("SELECT COUNT(*) FROM foreground_run_preparation_bindings").fetchone()[0]
+            == 1
+        )
 
     clock.now = admission.lease_expires_at + 1
     reclaimed = await first.reclaim_expired(
@@ -1148,9 +1135,7 @@ async def test_preparation_draft_fault_is_inert_and_exactly_replayable(
     await _enqueue(plain, primary_id, 1)
     candidate = await plain.read_next_preparation_candidate(SUBJECT)
     assert candidate is not None
-    faulted = ForegroundQueueStore(
-        db_path, clock=clock, fault_hook=OneShotFault(fault_point)
-    )
+    faulted = ForegroundQueueStore(db_path, clock=clock, fault_hook=OneShotFault(fault_point))
     with pytest.raises(RuntimeError, match=fault_point):
         await faulted.prepare_candidate(
             subject=SUBJECT,
@@ -1159,9 +1144,9 @@ async def test_preparation_draft_fault_is_inert_and_exactly_replayable(
             idempotency_key="faulted-draft",
         )
     with sqlite3.connect(db_path) as db:
-        assert db.execute(
-            "SELECT COUNT(*) FROM foreground_preparation_drafts"
-        ).fetchone()[0] == int(committed)
+        assert db.execute("SELECT COUNT(*) FROM foreground_preparation_drafts").fetchone()[
+            0
+        ] == int(committed)
         assert db.execute("SELECT COUNT(*) FROM foreground_runs").fetchone()[0] == 0
     recovered = await plain.prepare_candidate(
         subject=SUBJECT,
@@ -1171,9 +1156,7 @@ async def test_preparation_draft_fault_is_inert_and_exactly_replayable(
     )
     assert recovered.candidate_hash == candidate.candidate_hash
     with sqlite3.connect(db_path) as db:
-        assert db.execute(
-            "SELECT COUNT(*) FROM foreground_preparation_drafts"
-        ).fetchone()[0] == 1
+        assert db.execute("SELECT COUNT(*) FROM foreground_preparation_drafts").fetchone()[0] == 1
         assert db.execute("SELECT COUNT(*) FROM foreground_runs").fetchone()[0] == 0
 
 
@@ -1253,9 +1236,7 @@ async def test_execution_lifecycle_receipts_are_immutable_and_restart_reusable(
             sdk_event_id="sdk-started-before-observation",
             idempotency_key="execution-running-before-observation",
         )
-    _assert_code(
-        unobserved_start, "foreground_execution_start_observation_missing"
-    )
+    _assert_code(unobserved_start, "foreground_execution_start_observation_missing")
     observation = await store.record_start_observation(
         host_run_id=admission.host_run_id,
         sdk_run_id="sdk-deterministic-run",
@@ -1445,15 +1426,11 @@ async def test_execution_audit_boundary_faults_are_rollback_or_exact_replay(
     if phase in {"start_observation", "reconciliation"}:
         await record_intent(plain)
     fault_point = f"{phase}.{boundary}"
-    faulted = ForegroundQueueStore(
-        db_path, clock=clock, fault_hook=OneShotFault(fault_point)
-    )
+    faulted = ForegroundQueueStore(db_path, clock=clock, fault_hook=OneShotFault(fault_point))
     with pytest.raises(RuntimeError, match=fault_point):
         await invoke(faulted)
     with sqlite3.connect(db_path) as db:
-        assert db.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0] == int(
-            committed
-        )
+        assert db.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0] == int(committed)
     recovered = await invoke(plain)
     assert recovered.phase == phase.replace("execution_", "")
     with sqlite3.connect(db_path) as db:
@@ -1578,7 +1555,10 @@ async def test_sdk_terminal_observer_writes_stable_run_fault_code_on_failed(
             )()
 
     observed = await SqliteSdkTerminalObserver(
-        str(db_path), _Ingress(), _Stack(), run_fault_memo=memo  # type: ignore[arg-type]
+        str(db_path),
+        _Ingress(),
+        _Stack(),
+        run_fault_memo=memo,  # type: ignore[arg-type]
     ).observe(
         host_run_id=admission.host_run_id,
         sdk_run_id="sdk-run-faulted",
@@ -1648,7 +1628,10 @@ async def test_sdk_terminal_observer_writes_stable_run_fault_code_on_failed(
             )()
 
     plain = await SqliteSdkTerminalObserver(
-        str(db_path), _PlainIngress(), _PlainStack(), run_fault_memo=memo_less  # type: ignore[arg-type]
+        str(db_path),
+        _PlainIngress(),
+        _PlainStack(),
+        run_fault_memo=memo_less,  # type: ignore[arg-type]
     ).observe(
         host_run_id=second.host_run_id,
         sdk_run_id="sdk-run-plain",

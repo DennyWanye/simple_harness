@@ -53,7 +53,11 @@ async def test_a_later_settings_change_is_shown_as_drift_not_applied(orchestrati
     first seed; a later edit is displayed as drift and the ACTIVE version still governs."""
 
     first = OrchestrationService(
-        orchestration_root, OrchestrationSettings(max_concurrency=1), provider=notes_provider(), principal=principal, drive=False,
+        orchestration_root,
+        OrchestrationSettings(max_concurrency=1),
+        provider=notes_provider(),
+        principal=principal,
+        drive=False,
         native_test_counter=FixtureWordCounter(),
     )
     await first.start()
@@ -61,7 +65,11 @@ async def test_a_later_settings_change_is_shown_as_drift_not_applied(orchestrati
     await first.close()
 
     second = OrchestrationService(
-        orchestration_root, OrchestrationSettings(max_concurrency=2), provider=notes_provider(), principal=principal, drive=False,
+        orchestration_root,
+        OrchestrationSettings(max_concurrency=2),
+        provider=notes_provider(),
+        principal=principal,
+        drive=False,
         native_test_counter=FixtureWordCounter(),
     )
     await second.start()

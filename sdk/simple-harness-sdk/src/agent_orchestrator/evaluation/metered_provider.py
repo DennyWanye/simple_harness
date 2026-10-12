@@ -311,16 +311,18 @@ class MeteredProvider:
             if not handoff[0]:
                 # Admission is auditable even when an Agent catches a local refusal.
                 # Keep it separate from physical observations/call ordinals.
-                self.admission_denials.append({
-                    "request_id": request.request_id.value,
-                    "status": "denied_before_handoff",
-                    "reason": type(error).__name__,
-                    "physical_calls": 0,
-                    "input_tokens": 0,
-                    "output_tokens": 0,
-                    "total_tokens": 0,
-                    "seconds": time.monotonic() - started,
-                })
+                self.admission_denials.append(
+                    {
+                        "request_id": request.request_id.value,
+                        "status": "denied_before_handoff",
+                        "reason": type(error).__name__,
+                        "physical_calls": 0,
+                        "input_tokens": 0,
+                        "output_tokens": 0,
+                        "total_tokens": 0,
+                        "seconds": time.monotonic() - started,
+                    }
+                )
                 self._publish()
                 if isinstance(error, ExperimentBudgetExhausted) and not isinstance(
                     error, RunWindowDenied

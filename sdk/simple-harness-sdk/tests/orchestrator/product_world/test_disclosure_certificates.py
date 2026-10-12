@@ -8,6 +8,7 @@
 **改坏检验**（记录见车道 Q2 记录）：签发方不核时钟 / 原生下载不问签发方 / 交接不签 / 取证读不签 /
 读黑板不签 → 对应用例变红。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -45,13 +46,16 @@ def _quick(monkeypatch):
 def _disclosures(store: Any, mission_id: str, consumer_kind: str) -> list[Any]:
     return store.connection.execute(
         "SELECT * FROM assurance_use_certificates WHERE mission_id=? AND purpose='DISCLOSE' "
-        "AND consumer_kind=? ORDER BY rowid", (mission_id, consumer_kind)).fetchall()
+        "AND consumer_kind=? ORDER BY rowid",
+        (mission_id, consumer_kind),
+    ).fetchall()
 
 
 def _evidence(store: Any, certificate_id: str) -> list[dict[str, Any]]:
     [row] = store.connection.execute(
         "SELECT receipt_json FROM commit_receipts WHERE kind='AssuranceUseCertified' AND subject_id=?",
-        (certificate_id,)).fetchall()
+        (certificate_id,),
+    ).fetchall()
     return json.loads(row[0])["evidence"]
 
 
@@ -67,12 +71,19 @@ def _roll_back_clock(store: Any) -> None:
         store.connection.execute(
             "UPDATE assurance_environment_state SET clock_state='ROLLBACK', "
             "clock_generation=clock_generation+1, wall_high_ms=MAX(wall_high_ms, ?), "
-            "row_version=row_version+1 WHERE singleton=1", (int(store.now * 1000) + 10 ** 9,))
+            "row_version=row_version+1 WHERE singleton=1",
+            (int(store.now * 1000) + 10**9,),
+        )
 
 
 async def _complete(world: Any, key: str) -> str:
-    mission_id = world.create({"goal": "写两份笔记", "idempotency_key": key,
-                               "success_criteria": ["file:notes/a.md", "file:notes/b.md"]})["mission_id"]
+    mission_id = world.create(
+        {
+            "goal": "写两份笔记",
+            "idempotency_key": key,
+            "success_criteria": ["file:notes/a.md", "file:notes/b.md"],
+        }
+    )["mission_id"]
     mission = await world.run_until_settled(mission_id, rounds=40)
     assert str(mission.status.value) == "COMPLETED", mission.final_report
     return mission_id
@@ -89,22 +100,38 @@ def test_review_disclosure_and_native_download_carry_a_certificate_on_the_defaul
             store = world.store
             mission_id = await _complete(world, "disclose-default")
 
-            sent = [row[0] for row in store.connection.execute(
-                "SELECT dispatch_intent_id FROM assurance_review_invocations WHERE mission_id=?", (mission_id,))]
+            sent = [
+                row[0]
+                for row in store.connection.execute(
+                    "SELECT dispatch_intent_id FROM assurance_review_invocations WHERE mission_id=?",
+                    (mission_id,),
+                )
+            ]
             assert sent
-            certified = {row["consumer_id"]: row for row in _disclosures(store, mission_id, REVIEW_INTENT_CONSUMER)}
+            certified = {
+                row["consumer_id"]: row
+                for row in _disclosures(store, mission_id, REVIEW_INTENT_CONSUMER)
+            }
             for intent_id in sent:
                 assert intent_id in certified, intent_id
                 assert {"review_package"} <= _object_kinds(certified[intent_id])
 
-            [artifact, *_] = [row for row in store.connection.execute(
-                "SELECT artifact_id, content_hash FROM artifacts WHERE mission_id=?", (mission_id,))]
+            [artifact, *_] = [
+                row
+                for row in store.connection.execute(
+                    "SELECT artifact_id, content_hash FROM artifacts WHERE mission_id=?",
+                    (mission_id,),
+                )
+            ]
             read = world.control.artifact_read(artifact["artifact_id"])
             assert read["content_hash"] == artifact["content_hash"] and read["content"]
             [native] = _disclosures(store, mission_id, NATIVE_READ_CONSUMER)
             assert "artifact" in _object_kinds(native)
             [claim] = _evidence(store, native["certificate_id"])
-            assert claim["kind"] == "exact" and json.loads(claim["id"])["pin"]["id"] == artifact["artifact_id"]
+            assert (
+                claim["kind"] == "exact"
+                and json.loads(claim["id"])["pin"]["id"] == artifact["artifact_id"]
+            )
 
             live = live_usable_certificates(store.connection, mission_id, limit=4096)
             assert "DISCLOSE" in POINT_PURPOSES
@@ -123,10 +150,16 @@ def test_native_download_is_refused_without_a_trusted_clock_or_for_another_calle
         async with product_world(tmp_path / "root", LayeredScriptedProvider()) as world:
             store = world.store
             mission_id = await _complete(world, "disclose-native-refused")
-            [artifact_id, *_] = [row[0] for row in store.connection.execute(
-                "SELECT artifact_id FROM artifacts WHERE mission_id=?", (mission_id,))]
+            [artifact_id, *_] = [
+                row[0]
+                for row in store.connection.execute(
+                    "SELECT artifact_id FROM artifacts WHERE mission_id=?", (mission_id,)
+                )
+            ]
 
-            stranger = MissionControlV1(world.loop, tenant_id=TENANT, principal=Principal("someone-else"))
+            stranger = MissionControlV1(
+                world.loop, tenant_id=TENANT, principal=Principal("someone-else")
+            )
             with pytest.raises(FacadeError) as other:
                 stranger.artifact_read(artifact_id)
             assert other.value.code == "USE_EVIDENCE_NOT_CURRENT"
@@ -144,7 +177,9 @@ def test_native_download_is_refused_without_a_trusted_clock_or_for_another_calle
 
 # --------------------------------------------------------------------- 审阅员自己取
 def _tool_results(request: Any) -> list[str]:
-    return [str(message.content) for message in request.messages if "tool" in str(message.role).lower()]
+    return [
+        str(message.content) for message in request.messages if "tool" in str(message.role).lower()
+    ]
 
 
 def test_a_reviewer_reading_evidence_goes_through_the_same_issuer(tmp_path):
@@ -168,7 +203,9 @@ def test_a_reviewer_reading_evidence_goes_through_the_same_issuer(tmp_path):
         return review_reply(data)
 
     async def case():
-        async with product_world(tmp_path / "root", LayeredScriptedProvider(reviewer=reviewer)) as world:
+        async with product_world(
+            tmp_path / "root", LayeredScriptedProvider(reviewer=reviewer)
+        ) as world:
             store = world.store
             mission_id = await _complete(world, "disclose-evidence-read")
             assert read and read[0]["content"] is not None, read
@@ -190,17 +227,26 @@ def test_a_reviewer_reading_the_blackboard_is_a_disclosure(tmp_path, monkeypatch
     state: dict[str, Any] = {"methods": []}
 
     async def case():
-        async with product_world(tmp_path / "root", _scenario_provider(state),
-                                 allowed_tools=DEFAULT_TOOLS + KNOWLEDGE_TOOLS) as world:
+        async with product_world(
+            tmp_path / "root",
+            _scenario_provider(state),
+            allowed_tools=DEFAULT_TOOLS + KNOWLEDGE_TOOLS,
+        ) as world:
             store = world.store
             mission_id = await _run(world, "disclose-blackboard")
             current, _ = _knowledge(store, mission_id)
-            [review_key] = [row[0] for row in store.connection.execute(
-                "SELECT review_key FROM assurance_review_bindings WHERE mission_id=? "
-                "AND json_extract(binding_json,'$.subject.purpose')='TASK_CONTENT' ORDER BY rowid LIMIT 1",
-                (mission_id,))]
+            [review_key] = [
+                row[0]
+                for row in store.connection.execute(
+                    "SELECT review_key FROM assurance_review_bindings WHERE mission_id=? "
+                    "AND json_extract(binding_json,'$.subject.purpose')='TASK_CONTENT' ORDER BY rowid LIMIT 1",
+                    (mission_id,),
+                )
+            ]
             handover = world.loop._knowledge_handover(
-                mission_id, {"attempt_id": None, "call_id": "review-run:call-1", "review_key": review_key})
+                mission_id,
+                {"attempt_id": None, "call_id": "review-run:call-1", "review_key": review_key},
+            )
             claim = EvidenceClaim.knowledge(current.id, current.version)
             assert handover(claim) == ()
             [row] = _disclosures(store, mission_id, TOOL_CALL_CONSUMER)
@@ -209,7 +255,9 @@ def test_a_reviewer_reading_the_blackboard_is_a_disclosure(tmp_path, monkeypatch
 
             with monkeypatch.context() as patch:
                 patch.setattr(standing, "acceptance_is_current", lambda *args: (False, "test_gone"))
-                assert handover(claim) == (f"knowledge:{current.id}@{current.version}:STALE:test_gone",)
+                assert handover(claim) == (
+                    f"knowledge:{current.id}@{current.version}:STALE:test_gone",
+                )
             _roll_back_clock(store)
             assert handover(claim) == ("TIME_DISCONTINUITY",)
             assert len(_disclosures(store, mission_id, TOOL_CALL_CONSUMER)) == 1

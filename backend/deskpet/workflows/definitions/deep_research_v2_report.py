@@ -10,7 +10,8 @@ from ..contracts import JsonValue, canonical_json
 
 
 def render_report(
-    *, topic: str,
+    *,
+    topic: str,
     supported_findings: Sequence[str],
     inferences: Sequence[str],
     limitations: Sequence[str],

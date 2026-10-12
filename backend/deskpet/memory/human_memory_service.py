@@ -161,9 +161,7 @@ class SearchTaskScopesRequest:
     def __post_init__(self) -> None:
         identifier(self.query, "query", 65_536)
         _validate_access_refs(self.effect_id, self.sdk_run_id)
-        if isinstance(self.max_candidates, bool) or not isinstance(
-            self.max_candidates, int
-        ):
+        if isinstance(self.max_candidates, bool) or not isinstance(self.max_candidates, int):
             raise TypeError("max_candidates must be an integer")
         if not 1 <= self.max_candidates <= 100:
             raise ValueError("max_candidates must be between 1 and 100")
@@ -223,7 +221,11 @@ class AppendBindingRequest:
 
         if self.expected_filesystem_identity_hash is not None:
             value = self.expected_filesystem_identity_hash
-            if not isinstance(value, str) or len(value) != 64 or any(c not in "0123456789abcdef" for c in value):
+            if (
+                not isinstance(value, str)
+                or len(value) != 64
+                or any(c not in "0123456789abcdef" for c in value)
+            ):
                 raise ValueError("expected_filesystem_identity_hash must be lowercase SHA-256")
 
 
@@ -265,8 +267,10 @@ class ExactControlRunRequest:
 
         try:
             identifier(self.expected_run_ref, "expected_run_ref", 512)
-            if (type(self.expected_generation) is not int
-                    or not 1 <= self.expected_generation <= 2**63 - 1):
+            if (
+                type(self.expected_generation) is not int
+                or not 1 <= self.expected_generation <= 2**63 - 1
+            ):
                 raise ValueError("invalid generation")
             if self.control not in {"pause", "stop", "cancel"}:
                 raise ValueError("invalid control")
@@ -494,9 +498,7 @@ class HumanMemoryHostService:
         display_invalidation: object | None = None,
     ) -> None:
         if startup.composition_mode is not StartupCompositionMode.HUMAN:
-            raise HumanMemoryHostServiceError(
-                "human_memory_program_legacy_database_unsupported"
-            )
+            raise HumanMemoryHostServiceError("human_memory_program_legacy_database_unsupported")
         self._db_path = Path(db_path)
         self._auth = auth
         self._startup = startup
@@ -519,8 +521,11 @@ class HumanMemoryHostService:
             run_binding_reader=run_binding_reader,
         )
         from deskpet.memory.primary_decisions import PrimaryDecisions
+
         self._primary_decisions = PrimaryDecisions(
-            self._db_path, subject=auth.subject, read_model=self._primary_read,
+            self._db_path,
+            subject=auth.subject,
+            read_model=self._primary_read,
             ingress_getter=decision_ingress_getter,
         )
         self._evidence_group_ref_cache: dict[
@@ -542,22 +547,35 @@ class HumanMemoryHostService:
     def _history_disclosure(self, request_id: str) -> DisclosureContext:
         identifier(request_id, "request_id", 512)
         return DisclosureContext(
-            run_id=request_id, subject=self._auth.subject,
-            recipient=DeliveryRecipient.USER_SELF, recipient_id=self._auth.subject,
-            intended_audience=IntendedAudience.USER_SELF, purpose=DisclosurePurpose.USER_REVIEW,
-            source=DisclosureSource.AUTHENTICATED_HOST, trust=DisclosureTrust.TRUSTED_AUTHORITY,
-            generation=DisclosureGeneration.CURRENT, authority_ref=self._auth.authority_ref,
+            run_id=request_id,
+            subject=self._auth.subject,
+            recipient=DeliveryRecipient.USER_SELF,
+            recipient_id=self._auth.subject,
+            intended_audience=IntendedAudience.USER_SELF,
+            purpose=DisclosurePurpose.USER_REVIEW,
+            source=DisclosureSource.AUTHENTICATED_HOST,
+            trust=DisclosureTrust.TRUSTED_AUTHORITY,
+            generation=DisclosureGeneration.CURRENT,
+            authority_ref=self._auth.authority_ref,
             reason_codes=(DisclosureReasonCode.MINIMUM_NECESSARY,),
         )
 
     async def read_primary_state(self, *, request_id: str) -> Mapping[str, object]:
-        return await self._primary_read.state(disclosure_context=self._history_disclosure(request_id))
+        return await self._primary_read.state(
+            disclosure_context=self._history_disclosure(request_id)
+        )
 
     async def read_primary_messages(self, *, request_id: str, **request) -> Mapping[str, object]:
-        return await self._primary_read.page(disclosure_context=self._history_disclosure(request_id), **request)
+        return await self._primary_read.page(
+            disclosure_context=self._history_disclosure(request_id), **request
+        )
 
-    async def read_primary_message_detail(self, *, request_id: str, **request) -> Mapping[str, object]:
-        return await self._primary_read.detail(disclosure_context=self._history_disclosure(request_id), **request)
+    async def read_primary_message_detail(
+        self, *, request_id: str, **request
+    ) -> Mapping[str, object]:
+        return await self._primary_read.detail(
+            disclosure_context=self._history_disclosure(request_id), **request
+        )
 
     async def list_primary_decisions(self, *, request_id: str, **request):
         return await self._primary_decisions.list(
@@ -566,8 +584,13 @@ class HumanMemoryHostService:
 
     def _primary_workspace_bindings(self):
         from deskpet.memory.primary_workspace_bindings import PrimaryWorkspaceBindings
-        return PrimaryWorkspaceBindings(self._db_path, subject=self._auth.subject,
-            authority=self._binding_append, decide=self.decide_manual_binding)
+
+        return PrimaryWorkspaceBindings(
+            self._db_path,
+            subject=self._auth.subject,
+            authority=self._binding_append,
+            decide=self.decide_manual_binding,
+        )
 
     async def list_primary_bindings(self, **request):
         return await self._primary_workspace_bindings().pending(**request)
@@ -604,9 +627,7 @@ class HumanMemoryHostService:
     # 2026-09-10：认知记忆控制面（list / graph / forget）与认知记忆审计
     # （primary.audit.*）随记忆 SDK 一并移除。
 
-    async def create_task_scope(
-        self, request: CreateTaskScopeRequest
-    ) -> Mapping[str, object]:
+    async def create_task_scope(self, request: CreateTaskScopeRequest) -> Mapping[str, object]:
         scope_ref = str(
             uuid.uuid5(
                 uuid.NAMESPACE_URL,
@@ -633,9 +654,7 @@ class HumanMemoryHostService:
     ) -> Mapping[str, object]:
         await self._assert_owned_scope(request.scope_ref)
         if self._deterministic_event_seed is None:
-            raise HumanMemoryHostServiceError(
-                "human_memory_bulk_seed_authority_unavailable"
-            )
+            raise HumanMemoryHostServiceError("human_memory_bulk_seed_authority_unavailable")
         return await self._deterministic_event_seed.append_deterministic_events(
             subject=self._auth.subject,
             task_scope_id=request.scope_ref,
@@ -644,9 +663,7 @@ class HumanMemoryHostService:
             idempotency_key=request.idempotency_key,
         )
 
-    async def save_checkpoint(
-        self, request: SaveCheckpointRequest
-    ) -> Mapping[str, object]:
+    async def save_checkpoint(self, request: SaveCheckpointRequest) -> Mapping[str, object]:
         await self._assert_owned_scope(request.scope_ref)
         checkpoint_id = str(
             uuid.uuid5(
@@ -675,9 +692,7 @@ class HumanMemoryHostService:
             "event_watermark": receipt.event_watermark,
         }
 
-    async def mutate_task_scope(
-        self, request: MutateTaskScopeRequest
-    ) -> Mapping[str, object]:
+    async def mutate_task_scope(self, request: MutateTaskScopeRequest) -> Mapping[str, object]:
         await self._assert_owned_scope(request.scope_ref)
         status_kind = {
             ("status", "active"): TaskScopeMutationKind.TASK_RESUME,
@@ -688,9 +703,7 @@ class HumanMemoryHostService:
         try:
             kind = status_kind or TaskScopeMutationKind(request.kind)
         except ValueError as exc:
-            raise HumanMemoryHostServiceError(
-                "task_scope_mutation_kind_rejected"
-            ) from exc
+            raise HumanMemoryHostServiceError("task_scope_mutation_kind_rejected") from exc
         plan_id = str(
             uuid.uuid5(
                 uuid.NAMESPACE_URL,
@@ -728,9 +741,7 @@ class HumanMemoryHostService:
                 or operations[0].kind is not kind
                 or operations[0].value != request.value
             ):
-                raise HumanMemoryHostServiceError(
-                    "task_scope_mutation_idempotency_conflict"
-                )
+                raise HumanMemoryHostServiceError("task_scope_mutation_idempotency_conflict")
             receipt = await self._scopes.apply_mutation_plan(plan)
             return self._mutation_result(receipt)
         run_id = str(
@@ -750,9 +761,7 @@ class HumanMemoryHostService:
             source_ref=f"host-mutation:{request.idempotency_key}",
             run_id=run_id,
         )
-        evidence_ref = EvidenceRef(
-            committed.evidence_id, committed.envelope_sha256, 1
-        )
+        evidence_ref = EvidenceRef(committed.evidence_id, committed.envelope_sha256, 1)
         disclosure = self._disclosure(run_id)
         plan = TaskScopeMutationPlan(
             plan_id=plan_id,
@@ -796,16 +805,15 @@ class HumanMemoryHostService:
             "event_ref": receipt.event_id,
         }
 
-    async def append_binding(
-        self, request: AppendBindingRequest
-    ) -> Mapping[str, object]:
+    async def append_binding(self, request: AppendBindingRequest) -> Mapping[str, object]:
         await self._assert_owned_scope(request.scope_ref)
         if self._binding_append is None:
-            raise HumanMemoryHostServiceError(
-                "human_memory_binding_authority_unavailable"
-            )
-        expected = ({} if request.expected_filesystem_identity_hash is None else
-                    {"expected_filesystem_identity_hash": request.expected_filesystem_identity_hash})
+            raise HumanMemoryHostServiceError("human_memory_binding_authority_unavailable")
+        expected = (
+            {}
+            if request.expected_filesystem_identity_hash is None
+            else {"expected_filesystem_identity_hash": request.expected_filesystem_identity_hash}
+        )
         committed = await self._append_host_evidence(
             payload={
                 **expected,
@@ -828,16 +836,15 @@ class HumanMemoryHostService:
             **expected,
         )
 
-    async def propose_manual_binding(
-        self, request: AppendBindingRequest
-    ) -> Mapping[str, object]:
+    async def propose_manual_binding(self, request: AppendBindingRequest) -> Mapping[str, object]:
         await self._assert_owned_scope(request.scope_ref)
         if self._binding_append is None:
-            raise HumanMemoryHostServiceError(
-                "human_memory_binding_authority_unavailable"
-            )
-        expected = ({} if request.expected_filesystem_identity_hash is None else
-                    {"expected_filesystem_identity_hash": request.expected_filesystem_identity_hash})
+            raise HumanMemoryHostServiceError("human_memory_binding_authority_unavailable")
+        expected = (
+            {}
+            if request.expected_filesystem_identity_hash is None
+            else {"expected_filesystem_identity_hash": request.expected_filesystem_identity_hash}
+        )
         committed = await self._append_host_evidence(
             payload={
                 **expected,
@@ -864,9 +871,7 @@ class HumanMemoryHostService:
         self, request: DecideManualBindingRequest
     ) -> Mapping[str, object]:
         if self._binding_append is None:
-            raise HumanMemoryHostServiceError(
-                "human_memory_binding_authority_unavailable"
-            )
+            raise HumanMemoryHostServiceError("human_memory_binding_authority_unavailable")
         committed = await self._append_host_evidence(
             payload={
                 "schema_version": 1,
@@ -895,9 +900,7 @@ class HumanMemoryHostService:
         else:
             current = await self._foreground.current_snapshot(self._auth.subject)
             if current is None:
-                raise HumanMemoryHostServiceError(
-                    "human_memory_foreground_run_not_found"
-                )
+                raise HumanMemoryHostServiceError("human_memory_foreground_run_not_found")
             run_ref, generation = current.host_run_id, current.generation
         receipt = await self._foreground.request_control(
             host_run_id=run_ref,
@@ -959,16 +962,12 @@ class HumanMemoryHostService:
 
     async def recovery_manifest(self) -> Mapping[str, object]:
         if self._recovery is None:
-            raise HumanMemoryHostServiceError(
-                "human_memory_recovery_authority_unavailable"
-            )
+            raise HumanMemoryHostServiceError("human_memory_recovery_authority_unavailable")
         return await self._recovery.manifest(subject=self._auth.subject)
 
     async def emergency_export(self) -> Mapping[str, object]:
         if self._recovery is None:
-            raise HumanMemoryHostServiceError(
-                "human_memory_recovery_authority_unavailable"
-            )
+            raise HumanMemoryHostServiceError("human_memory_recovery_authority_unavailable")
         return await self._recovery.emergency_export(subject=self._auth.subject)
 
     async def _wake_committed(self, operation: str, receipt_ref: str) -> None:
@@ -976,9 +975,7 @@ class HumanMemoryHostService:
         # queue/signal rows remain the recovery source if this hint fails.
         try:
             async with asyncio.timeout(SCHEDULER_WAKE_TIMEOUT_SECONDS):
-                await getattr(self._scheduler_wake, operation)(
-                    subject=self._auth.subject
-                )
+                await getattr(self._scheduler_wake, operation)(subject=self._auth.subject)
         except Exception:
             logger.warning(
                 "human_memory_scheduler_wake_deferred",
@@ -1031,16 +1028,17 @@ class HumanMemoryHostService:
 
     async def configure_disclosure(self, *, request_id, expected_ref, selection):
         from deskpet.memory.trusted_disclosure import TrustedDisclosureStore
+
         return await TrustedDisclosureStore(self._db_path).configure(
-            auth=self._auth, request_id=request_id, expected_ref=expected_ref, selection=selection)
+            auth=self._auth, request_id=request_id, expected_ref=expected_ref, selection=selection
+        )
 
     async def current_disclosure_configuration(self):
         from deskpet.memory.trusted_disclosure import TrustedDisclosureStore
+
         return await TrustedDisclosureStore(self._db_path).current(auth=self._auth)
 
-    async def search_task_scopes(
-        self, request: SearchTaskScopesRequest
-    ) -> Mapping[str, object]:
+    async def search_task_scopes(self, request: SearchTaskScopesRequest) -> Mapping[str, object]:
         allowed = await self._owned_scope_ids()
         result = await self._search.search(
             subject=self._auth.subject,
@@ -1069,9 +1067,7 @@ class HumanMemoryHostService:
             "receipt_hash": result.receipt_hash,
         }
 
-    async def open_task_scope(
-        self, request: OpenTaskScopeRequest
-    ) -> Mapping[str, object]:
+    async def open_task_scope(self, request: OpenTaskScopeRequest) -> Mapping[str, object]:
         allowed = await self._owned_scope_ids()
         result = await self._search.open_exact(
             subject=self._auth.subject,
@@ -1108,9 +1104,7 @@ class HumanMemoryHostService:
             "binding_summary": self._binding_summary(result.task_scope_id),
         }
 
-    async def list_task_scopes(
-        self, request: ListTaskScopesRequest
-    ) -> Mapping[str, object]:
+    async def list_task_scopes(self, request: ListTaskScopesRequest) -> Mapping[str, object]:
         """Active/recent owned scopes as search-shaped candidates: no archive
         content, no authority; keyset order (head updated_at desc, scope id asc)."""
         subject = self._auth.subject
@@ -1122,8 +1116,12 @@ class HumanMemoryHostService:
                 raise HumanMemoryHostServiceError("human_memory_evidence_cursor_invalid")
             updated = cursor.get("updated_at")
             scope = cursor.get("scope_ref")
-            if (isinstance(updated, bool) or not isinstance(updated, (int, float))
-                    or not isinstance(scope, str) or not scope):
+            if (
+                isinstance(updated, bool)
+                or not isinstance(updated, (int, float))
+                or not isinstance(scope, str)
+                or not scope
+            ):
                 raise HumanMemoryHostServiceError("human_memory_evidence_cursor_invalid")
             after_updated, after_scope = float(updated), scope
         sql = (
@@ -1153,43 +1151,53 @@ class HumanMemoryHostService:
         for row in rows:
             state = json.loads(str(row["state_json"]))
             goal = "" if state.get("goal") is None else str(state["goal"])
-            items.append({
-                "scope_ref": str(row["task_scope_id"]),
-                "source_ref": str(row["source_id"]),
-                "source_hash": str(row["source_hash"]),
-                "title": str(row["title"])[:2048],
-                "goal": goal[:4096],
-                "project": str(row["project"])[:2048],
-                "status": str(state.get("status", "unknown"))[:256],
-                "snippet": "",
-                "rank": 0.0,
-                "updated_at": float(row["updated_at"]),
-                "canonical_revision": int(row["current_revision"]),
-                "event_watermark": int(row["event_watermark"]),
-                "binding_summary": self._binding_summary(str(row["task_scope_id"])),
-            })
+            items.append(
+                {
+                    "scope_ref": str(row["task_scope_id"]),
+                    "source_ref": str(row["source_id"]),
+                    "source_hash": str(row["source_hash"]),
+                    "title": str(row["title"])[:2048],
+                    "goal": goal[:4096],
+                    "project": str(row["project"])[:2048],
+                    "status": str(state.get("status", "unknown"))[:256],
+                    "snippet": "",
+                    "rank": 0.0,
+                    "updated_at": float(row["updated_at"]),
+                    "canonical_revision": int(row["current_revision"]),
+                    "event_watermark": int(row["event_watermark"]),
+                    "binding_summary": self._binding_summary(str(row["task_scope_id"])),
+                }
+            )
         next_cursor = None
         if has_more and items:
             last = items[-1]
-            next_cursor = self._encode_cursor({
-                "kind": "task_scope_list",
-                "subject": subject,
-                "updated_at": last["updated_at"],
-                "scope_ref": last["scope_ref"],
-            })
+            next_cursor = self._encode_cursor(
+                {
+                    "kind": "task_scope_list",
+                    "subject": subject,
+                    "updated_at": last["updated_at"],
+                    "scope_ref": last["scope_ref"],
+                }
+            )
         result = {
             "items": items,
             "next_cursor": next_cursor,
-            "receipt_hash": canonical_hash({
-                "schema_version": 1,
-                "operation": "list",
-                "subject": subject,
-                "items": [
-                    {"scope_ref": i["scope_ref"], "source_ref": i["source_ref"], "source_hash": i["source_hash"]}
-                    for i in items
-                ],
-                "next_cursor": next_cursor,
-            }),
+            "receipt_hash": canonical_hash(
+                {
+                    "schema_version": 1,
+                    "operation": "list",
+                    "subject": subject,
+                    "items": [
+                        {
+                            "scope_ref": i["scope_ref"],
+                            "source_ref": i["source_ref"],
+                            "source_hash": i["source_hash"],
+                        }
+                        for i in items
+                    ],
+                    "next_cursor": next_cursor,
+                }
+            ),
         }
         self._assert_public_bound(result)
         return result
@@ -1241,15 +1249,17 @@ class HumanMemoryHostService:
                     state = "drifted"
                 else:
                     state = "active"
-            summaries.append({
-                "root_ref": str(root["root_id"])[:512],
-                "root_path": str(root["canonical_path"])[:4096],
-                "root_digest": str(root["root_identity_hash"]),
-                "mode": str(root["source"]),
-                "revision": int(root["first_binding_set_revision"]),
-                "receipt_hash": str(root["receipt_hash"]),
-                "state": state,
-            })
+            summaries.append(
+                {
+                    "root_ref": str(root["root_id"])[:512],
+                    "root_path": str(root["canonical_path"])[:4096],
+                    "root_digest": str(root["root_identity_hash"]),
+                    "mode": str(root["source"]),
+                    "revision": int(root["first_binding_set_revision"]),
+                    "receipt_hash": str(root["receipt_hash"]),
+                    "state": state,
+                }
+            )
         modes = {item["mode"] for item in summaries}
         states = [item["state"] for item in summaries]
         return {
@@ -1259,14 +1269,19 @@ class HumanMemoryHostService:
             "receipt_hash": str(head["current_receipt_hash"]),
             "root_set_digest": str(head["root_set_digest"]),
             "mode": next(iter(modes)) if len(modes) == 1 else ("mixed" if modes else "unknown"),
-            "state": ("missing" if "missing" in states else "drifted" if "drifted" in states
-                      else "active" if states else "unknown"),
+            "state": (
+                "missing"
+                if "missing" in states
+                else "drifted"
+                if "drifted" in states
+                else "active"
+                if states
+                else "unknown"
+            ),
             "roots": summaries,
         }
 
-    async def read_view(
-        self, request: ReadTaskScopeViewRequest
-    ) -> Mapping[str, object]:
+    async def read_view(self, request: ReadTaskScopeViewRequest) -> Mapping[str, object]:
         await self._assert_owned_scope(request.scope_ref)
         view = await self._projections.read_materialized_view(
             request.kind, task_scope_id=request.scope_ref
@@ -1337,23 +1352,17 @@ class HumanMemoryHostService:
         self._assert_public_bound(result)
         return result
 
-    async def read_evidence_page(
-        self, request: ReadEvidencePageRequest
-    ) -> Mapping[str, object]:
+    async def read_evidence_page(self, request: ReadEvidencePageRequest) -> Mapping[str, object]:
         await self._assert_current_source(
             request.scope_ref, request.source_ref, request.source_hash
         )
-        group = self._load_group(
-            request.source_ref, request.group_ref, request.group_hash
-        )
+        group = self._load_group(request.source_ref, request.group_ref, request.group_hash)
         cache_key = (request.source_ref, request.group_ref, request.group_hash)
         cached_refs = self._evidence_group_ref_cache.get(cache_key)
         if cached_refs is None:
             leaf_refs = self._collect_group_leaf_refs(request.source_ref, group)
             if len(self._evidence_group_ref_cache) >= 64:
-                self._evidence_group_ref_cache.pop(
-                    next(iter(self._evidence_group_ref_cache))
-                )
+                self._evidence_group_ref_cache.pop(next(iter(self._evidence_group_ref_cache)))
             self._evidence_group_ref_cache[cache_key] = tuple(leaf_refs)
         else:
             leaf_refs = [dict(item) for item in cached_refs]
@@ -1371,9 +1380,7 @@ class HumanMemoryHostService:
                 cursor.get("group_ref") != request.group_ref
                 or cursor.get("group_hash") != request.group_hash
             ):
-                raise HumanMemoryHostServiceError(
-                    "human_memory_evidence_cursor_binding_mismatch"
-                )
+                raise HumanMemoryHostServiceError("human_memory_evidence_cursor_binding_mismatch")
             leaf_index = self._cursor_int(cursor, "leaf_index", minimum=0)
             event_offset = self._cursor_int(cursor, "event_offset", minimum=0)
             chunk_index = self._cursor_int(cursor, "chunk_index", minimum=0)
@@ -1430,9 +1437,7 @@ class HumanMemoryHostService:
         content = canonical_json({"schema_version": 1, "events": events})
         content_bytes = content.encode("utf-8")
         if len(content_bytes) > 32 * 1024:
-            raise HumanMemoryHostServiceError(
-                "task_scope_projection_public_page_too_large"
-            )
+            raise HumanMemoryHostServiceError("task_scope_projection_public_page_too_large")
         content_hash = hashlib.sha256(content_bytes).hexdigest()
         return {
             "page_id": f"sha256:{content_hash}",
@@ -1452,9 +1457,7 @@ class HumanMemoryHostService:
             raw = base64.urlsafe_b64decode(token.encode("ascii"))
             envelope = json.loads(raw)
         except (ValueError, UnicodeError, json.JSONDecodeError) as exc:
-            raise HumanMemoryHostServiceError(
-                "human_memory_evidence_cursor_invalid"
-            ) from exc
+            raise HumanMemoryHostServiceError("human_memory_evidence_cursor_invalid") from exc
         if not isinstance(envelope, Mapping) or set(envelope) != {"payload", "sha256"}:
             raise HumanMemoryHostServiceError("human_memory_evidence_cursor_invalid")
         payload = envelope["payload"]
@@ -1467,9 +1470,7 @@ class HumanMemoryHostService:
         return dict(payload)
 
     @staticmethod
-    def _cursor_int(
-        payload: Mapping[str, object], name: str, *, minimum: int
-    ) -> int:
+    def _cursor_int(payload: Mapping[str, object], name: str, *, minimum: int) -> int:
         value = payload.get(name)
         if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
             raise HumanMemoryHostServiceError("human_memory_evidence_cursor_invalid")
@@ -1485,9 +1486,7 @@ class HumanMemoryHostService:
             or cursor.get("source_ref") != request.source_ref
             or cursor.get("source_hash") != request.source_hash
         ):
-            raise HumanMemoryHostServiceError(
-                "human_memory_evidence_cursor_binding_mismatch"
-            )
+            raise HumanMemoryHostServiceError("human_memory_evidence_cursor_binding_mismatch")
 
     async def _assert_current_source(
         self, scope_ref: str, source_ref: str, source_hash: str
@@ -1509,9 +1508,7 @@ class HumanMemoryHostService:
         content = bytes(row["content"])
         content_hash = hashlib.sha256(content).hexdigest()
         if content_hash != row["content_sha256"] or len(content) > 32 * 1024:
-            raise HumanMemoryHostServiceError(
-                "human_memory_evidence_group_integrity_failed"
-            )
+            raise HumanMemoryHostServiceError("human_memory_evidence_group_integrity_failed")
         try:
             group = json.loads(content)
         except (UnicodeError, json.JSONDecodeError) as exc:
@@ -1519,9 +1516,7 @@ class HumanMemoryHostService:
                 "human_memory_evidence_group_integrity_failed"
             ) from exc
         if not isinstance(group, Mapping):
-            raise HumanMemoryHostServiceError(
-                "human_memory_evidence_group_integrity_failed"
-            )
+            raise HumanMemoryHostServiceError("human_memory_evidence_group_integrity_failed")
         logical_group = group.get("logical_group")
         first = group.get("first_event_sequence")
         last = group.get("last_event_sequence")
@@ -1543,9 +1538,7 @@ class HumanMemoryHostService:
             or count > 500
             or not isinstance(group.get("leaves_root"), Mapping)
         ):
-            raise HumanMemoryHostServiceError(
-                "human_memory_evidence_group_integrity_failed"
-            )
+            raise HumanMemoryHostServiceError("human_memory_evidence_group_integrity_failed")
         return {
             "group_ref": str(row["block_id"]),
             "group_hash": content_hash,
@@ -1555,9 +1548,7 @@ class HumanMemoryHostService:
             "event_count": count,
         }
 
-    def _load_group(
-        self, source_ref: str, group_ref: str, group_hash: str
-    ) -> dict[str, object]:
+    def _load_group(self, source_ref: str, group_ref: str, group_hash: str) -> dict[str, object]:
         with sqlite3.connect(f"file:{self._db_path.resolve()}?mode=ro", uri=True) as db:
             db.row_factory = sqlite3.Row
             row = db.execute(
@@ -1567,9 +1558,7 @@ class HumanMemoryHostService:
                 (group_ref, source_ref),
             ).fetchone()
         if row is None or str(row["content_sha256"]) != group_hash:
-            raise HumanMemoryHostServiceError(
-                "human_memory_evidence_group_binding_mismatch"
-            )
+            raise HumanMemoryHostServiceError("human_memory_evidence_group_binding_mismatch")
         self._group_descriptor(row)
         try:
             group = json.loads(bytes(row["content"]))
@@ -1578,9 +1567,7 @@ class HumanMemoryHostService:
                 "human_memory_evidence_group_integrity_failed"
             ) from exc
         if not isinstance(group, dict):
-            raise HumanMemoryHostServiceError(
-                "human_memory_evidence_group_integrity_failed"
-            )
+            raise HumanMemoryHostServiceError("human_memory_evidence_group_integrity_failed")
         return group
 
     def _collect_group_leaf_refs(
@@ -1588,48 +1575,34 @@ class HumanMemoryHostService:
     ) -> list[dict[str, object]]:
         root = group.get("leaves_root")
         if not isinstance(root, Mapping):
-            raise HumanMemoryHostServiceError(
-                "human_memory_evidence_group_integrity_failed"
-            )
+            raise HumanMemoryHostServiceError("human_memory_evidence_group_integrity_failed")
         refs: list[dict[str, object]] = []
         visiting: set[str] = set()
 
         def visit(raw_ref: Mapping[str, object], depth: int) -> None:
             if depth > 64:
-                raise HumanMemoryHostServiceError(
-                    "human_memory_evidence_index_depth_rejected"
-                )
+                raise HumanMemoryHostServiceError("human_memory_evidence_index_depth_rejected")
             row, content = self._read_exact_block(source_ref, raw_ref)
             block_id = str(row["block_id"])
             if block_id in visiting:
-                raise HumanMemoryHostServiceError(
-                    "human_memory_evidence_index_cycle_rejected"
-                )
+                raise HumanMemoryHostServiceError("human_memory_evidence_index_cycle_rejected")
             kind = str(row["block_kind"])
             if kind == "leaf":
                 refs.append(self._block_ref(row))
                 return
             if kind != "index":
-                raise HumanMemoryHostServiceError(
-                    "human_memory_evidence_index_kind_rejected"
-                )
+                raise HumanMemoryHostServiceError("human_memory_evidence_index_kind_rejected")
             try:
                 index = json.loads(content)
             except (UnicodeError, json.JSONDecodeError) as exc:
-                raise HumanMemoryHostServiceError(
-                    "human_memory_evidence_index_invalid"
-                ) from exc
+                raise HumanMemoryHostServiceError("human_memory_evidence_index_invalid") from exc
             children = index.get("children") if isinstance(index, Mapping) else None
             if not isinstance(children, list):
-                raise HumanMemoryHostServiceError(
-                    "human_memory_evidence_index_invalid"
-                )
+                raise HumanMemoryHostServiceError("human_memory_evidence_index_invalid")
             visiting.add(block_id)
             for child in children:
                 if not isinstance(child, Mapping):
-                    raise HumanMemoryHostServiceError(
-                        "human_memory_evidence_index_invalid"
-                    )
+                    raise HumanMemoryHostServiceError("human_memory_evidence_index_invalid")
                 visit(child, depth + 1)
             visiting.remove(block_id)
 
@@ -1668,9 +1641,7 @@ class HumanMemoryHostService:
             or len(content) != byte_length
             or hashlib.sha256(content).hexdigest() != content_hash
         ):
-            raise HumanMemoryHostServiceError(
-                "human_memory_evidence_block_integrity_failed"
-            )
+            raise HumanMemoryHostServiceError("human_memory_evidence_block_integrity_failed")
         return row, content
 
     @staticmethod
@@ -1693,9 +1664,7 @@ class HumanMemoryHostService:
             cursor.get("block_ref") != ref["block_id"]
             or cursor.get("block_hash") != ref["content_sha256"]
         ):
-            raise HumanMemoryHostServiceError(
-                "human_memory_evidence_cursor_block_mismatch"
-            )
+            raise HumanMemoryHostServiceError("human_memory_evidence_cursor_block_mismatch")
 
     def _read_dag_page(
         self,
@@ -1728,15 +1697,11 @@ class HumanMemoryHostService:
                     event_index = payload.get("event_index")
                     if isinstance(event_index, int) and not isinstance(event_index, bool):
                         event["event_index"] = event_index
-                candidate = canonical_json(
-                    {"schema_version": 1, "events": [*selected, event]}
-                )
+                candidate = canonical_json({"schema_version": 1, "events": [*selected, event]})
                 if selected and len(candidate.encode("utf-8")) > 20 * 1024:
                     break
                 if len(candidate.encode("utf-8")) > 20 * 1024:
-                    raise HumanMemoryHostServiceError(
-                        "human_memory_evidence_leaf_event_too_large"
-                    )
+                    raise HumanMemoryHostServiceError("human_memory_evidence_leaf_event_too_large")
                 selected.append(event)
             page = self._event_page(selected)
             next_event = event_offset + len(selected)
@@ -1785,9 +1750,7 @@ class HumanMemoryHostService:
         if total != leaf.get("byte_length") or event_hasher.hexdigest() != leaf.get(
             "content_sha256"
         ):
-            raise HumanMemoryHostServiceError(
-                "human_memory_evidence_event_chunks_invalid"
-            )
+            raise HumanMemoryHostServiceError("human_memory_evidence_event_chunks_invalid")
         if not response:
             raise HumanMemoryHostServiceError("human_memory_evidence_cursor_invalid")
         event_length = int(leaf["byte_length"])
@@ -1818,9 +1781,7 @@ class HumanMemoryHostService:
     @staticmethod
     def _assert_public_bound(value: Mapping[str, object]) -> None:
         if len(canonical_json(dict(value)).encode("utf-8")) > 32 * 1024:
-            raise HumanMemoryHostServiceError(
-                "task_scope_projection_public_response_too_large"
-            )
+            raise HumanMemoryHostServiceError("task_scope_projection_public_response_too_large")
 
     async def drop_rebuildable(self, scope_ref: str) -> Mapping[str, object]:
         await self._assert_owned_scope(scope_ref)
@@ -1883,11 +1844,14 @@ class HumanMemoryHostService:
         import aiosqlite
 
         from deskpet.execution.admission_rejection import read_admission_rejection_tx
+
         rejections = {}
         async with aiosqlite.connect(self._db_path) as db:
             db.row_factory = aiosqlite.Row
             for row in rows:
-                rejection = await read_admission_rejection_tx(db, turn_id=row["turn_id"], subject=self._auth.subject)
+                rejection = await read_admission_rejection_tx(
+                    db, turn_id=row["turn_id"], subject=self._auth.subject
+                )
                 if rejection is not None:
                     rejections[row["turn_id"]] = rejection
         turns = []
@@ -1898,8 +1862,14 @@ class HumanMemoryHostService:
                 {
                     "turn_ref": str(row["turn_id"]),
                     "enqueue_sequence": int(row["enqueue_sequence"]),
-                    "state": "REJECTED" if row["turn_id"] in rejections else str(row["current_state"]),
-                    **({"rejection_reason": rejections[row["turn_id"]]["reason"]} if row["turn_id"] in rejections else {}),
+                    "state": "REJECTED"
+                    if row["turn_id"] in rejections
+                    else str(row["current_state"]),
+                    **(
+                        {"rejection_reason": rejections[row["turn_id"]]["reason"]}
+                        if row["turn_id"] in rejections
+                        else {}
+                    ),
                     "delivery_key": payload.get("delivery_key"),
                 }
             )
@@ -1914,17 +1884,12 @@ class HumanMemoryHostService:
             db.row_factory = sqlite3.Row
             available = {
                 str(row[0])
-                for row in db.execute(
-                    "SELECT name FROM sqlite_master WHERE type='table'"
-                )
+                for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")
             }
             for spec in _RAW_SET_ALLOWLIST:
                 if spec.table not in available:
                     continue
-                columns = [
-                    str(row[1])
-                    for row in db.execute(f'PRAGMA table_info("{spec.table}")')
-                ]
+                columns = [str(row[1]) for row in db.execute(f'PRAGMA table_info("{spec.table}")')]
                 if "subject" in columns:
                     rows = db.execute(
                         f'SELECT * FROM "{spec.table}" WHERE subject=?',
@@ -1936,8 +1901,7 @@ class HumanMemoryHostService:
                     else:
                         placeholders = ",".join("?" for _ in owned_scopes)
                         rows = db.execute(
-                            f'SELECT * FROM "{spec.table}" '
-                            f"WHERE task_scope_id IN ({placeholders})",
+                            f'SELECT * FROM "{spec.table}" WHERE task_scope_id IN ({placeholders})',
                             tuple(owned_scopes),
                         ).fetchall()
                 else:
@@ -1960,9 +1924,7 @@ class HumanMemoryHostService:
                     "row_count": len(canonical_rows),
                     "content_sha256": digest.hexdigest(),
                 }
-        manifest_hash = hashlib.sha256(
-            canonical_json(raw_sets).encode("utf-8")
-        ).hexdigest()
+        manifest_hash = hashlib.sha256(canonical_json(raw_sets).encode("utf-8")).hexdigest()
         return {
             "schema_version": 1,
             "format_epoch": self._startup.composition_mode.value,
@@ -1974,8 +1936,7 @@ class HumanMemoryHostService:
     async def _owned_scope_ids(self) -> tuple[str, ...]:
         with sqlite3.connect(f"file:{self._db_path.resolve()}?mode=ro", uri=True) as db:
             rows = db.execute(
-                "SELECT task_scope_id FROM task_scopes WHERE subject=? "
-                "ORDER BY task_scope_id",
+                "SELECT task_scope_id FROM task_scopes WHERE subject=? ORDER BY task_scope_id",
                 (self._auth.subject,),
             ).fetchall()
         return tuple(str(row[0]) for row in rows)
@@ -2058,8 +2019,7 @@ def build_foreground_turn_evidence(
     evidence_id = str(
         uuid.uuid5(
             uuid.NAMESPACE_URL,
-            "simple-harness:foreground-evidence:"
-            f"{subject}:{delivery_key}",
+            f"simple-harness:foreground-evidence:{subject}:{delivery_key}",
         )
     )
     disclosure = DisclosureContext(

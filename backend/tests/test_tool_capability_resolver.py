@@ -221,9 +221,7 @@ def test_capability_pack_tools_are_request_scoped_deferred_tools() -> None:
     )
 
     draft = ToolCapabilityResolver(registry).resolve_draft(
-        ToolExposureIntent(
-            discoverable_selectors=("source:capability:*",)
-        ),
+        ToolExposureIntent(discoverable_selectors=("source:capability:*",)),
         eligibility=ToolEligibilityContext("s", "r", "chat"),
     )
 
@@ -349,10 +347,14 @@ async def test_mcp_execution_does_not_leak_host_session_context() -> None:
         handler=lambda args, _task_id: received.append(args) or "ok",
     )
     eligibility = ToolEligibilityContext("s", "r", "chat")
-    prepared = ToolCapabilityResolver(registry).resolve_draft(
-        ToolExposureIntent(direct_selectors=("mcp_fixture_call",)),
-        eligibility=eligibility,
-    ).finalize(scope_id="scope")
+    prepared = (
+        ToolCapabilityResolver(registry)
+        .resolve_draft(
+            ToolExposureIntent(direct_selectors=("mcp_fixture_call",)),
+            eligibility=eligibility,
+        )
+        .finalize(scope_id="scope")
+    )
     scopes = ToolCapabilityScopeStore()
     scopes.open(prepared, eligibility)
     registry.set_capability_scope_store(scopes)
@@ -383,16 +385,16 @@ async def test_policy_read_failure_blocks_execution_without_calling_handler() ->
     registry.set_tools_config_provider(lambda: _ToolsConfig())
     _register(registry, "read", handler=handler)
     eligibility = ToolEligibilityContext("s", "r", "chat")
-    prepared = ToolCapabilityResolver(registry).resolve_draft(
-        ToolExposureIntent(direct_selectors=("read",)), eligibility=eligibility
-    ).finalize(scope_id="scope")
+    prepared = (
+        ToolCapabilityResolver(registry)
+        .resolve_draft(ToolExposureIntent(direct_selectors=("read",)), eligibility=eligibility)
+        .finalize(scope_id="scope")
+    )
     scopes = ToolCapabilityScopeStore()
     scopes.open(prepared, eligibility)
     registry.set_capability_scope_store(scopes)
     registry.set_context_os_enabled_provider(lambda: True)
-    registry.set_tools_config_provider(
-        lambda: (_ for _ in ()).throw(RuntimeError("unavailable"))
-    )
+    registry.set_tools_config_provider(lambda: (_ for _ in ()).throw(RuntimeError("unavailable")))
     result = await registry.execute_tool(
         "read",
         {},

@@ -45,16 +45,16 @@ def test_local_identity_survives_restart(tmp_path) -> None:
     assert first == second
     assert first.profile_id == "legacy_local_profile"
     assert first.identity_kind == "local"
-    raw = json.loads(
-        (tmp_path / "companion-local-identity.json").read_text(encoding="utf-8")
-    )
+    raw = json.loads((tmp_path / "companion-local-identity.json").read_text(encoding="utf-8"))
     assert raw["schema_version"] == 1
 
 
 def test_local_identity_rejects_symlink(tmp_path) -> None:
     target = tmp_path / "target.json"
     target.write_text(
-        json.dumps({"schema_version": 1, "local_identity_id": "9bb58825-8198-41a2-a158-ff0a23661656"}),
+        json.dumps(
+            {"schema_version": 1, "local_identity_id": "9bb58825-8198-41a2-a158-ff0a23661656"}
+        ),
         encoding="utf-8",
     )
     target.chmod(0o600)
@@ -67,7 +67,9 @@ def test_local_identity_rejects_symlink(tmp_path) -> None:
 def test_local_identity_rejects_non_private_mode(tmp_path) -> None:
     identity = tmp_path / "companion-local-identity.json"
     identity.write_text(
-        json.dumps({"schema_version": 1, "local_identity_id": "9bb58825-8198-41a2-a158-ff0a23661656"}),
+        json.dumps(
+            {"schema_version": 1, "local_identity_id": "9bb58825-8198-41a2-a158-ff0a23661656"}
+        ),
         encoding="utf-8",
     )
     identity.chmod(0o640)
@@ -180,8 +182,7 @@ preference_promotion_independent_context_threshold = 4
     assert config.companion.growth.preference_promotion_independent_context_threshold == 4
 
     path.write_text(
-        "[companion.growth]\n"
-        "preference_promotion_independent_context_threshold = 1\n",
+        "[companion.growth]\npreference_promotion_independent_context_threshold = 1\n",
         encoding="utf-8",
     )
     with pytest.raises(ConfigError, match="COMPANION-GROWTH-CONFIG-1"):
@@ -213,14 +214,8 @@ async def test_profile_switch_ack_waits_for_projection_and_orders_a_b_a() -> Non
                 or previous["profile_id"] != profile_id
                 or previous["profile_generation"] != profile_generation
             )
-            epoch = (
-                1
-                if previous is None
-                else previous["binding_epoch"] + (1 if changed else 0)
-            )
-            assert expected_binding_epoch == (
-                1 if previous is None else previous["binding_epoch"]
-            )
+            epoch = 1 if previous is None else previous["binding_epoch"] + (1 if changed else 0)
+            assert expected_binding_epoch == (1 if previous is None else previous["binding_epoch"])
             self.binding = {
                 "profile_id": profile_id,
                 "profile_generation": profile_generation,
@@ -229,9 +224,7 @@ async def test_profile_switch_ack_waits_for_projection_and_orders_a_b_a() -> Non
             }
             return {"binding_epoch": epoch, "changed_owner": changed}
 
-        def mark_profile_binding_ready(
-            self, *, owner, expected_binding_epoch, **_kwargs
-        ):
+        def mark_profile_binding_ready(self, *, owner, expected_binding_epoch, **_kwargs):
             assert owner.profile_id == self.binding["profile_id"]
             assert expected_binding_epoch == self.binding["binding_epoch"]
             self.binding["status"] = "ready"
@@ -254,9 +247,7 @@ async def test_profile_switch_ack_waits_for_projection_and_orders_a_b_a() -> Non
 
     store = Store()
     gate = IdentityReadyGate()
-    coordinator = ProfileBindingCoordinator(
-        store=store, gate=gate, projection=Projection()
-    )
+    coordinator = ProfileBindingCoordinator(store=store, gate=gate, projection=Projection())
     await coordinator.bind(
         identity=HumanIdentity("a", "ha", "relay"),
         profile_generation=1,
@@ -399,9 +390,7 @@ async def test_same_process_same_owner_rebind_does_not_pause_runtime() -> None:
         def get_profile_binding(self, *, device_scope):
             return None if self.binding is None else dict(self.binding)
 
-        def bind_profile_with_control_command(
-            self, *, profile_id, profile_generation, **_kwargs
-        ):
+        def bind_profile_with_control_command(self, *, profile_id, profile_generation, **_kwargs):
             changed = self.binding is None
             self.binding = {
                 "profile_id": profile_id,

@@ -11,6 +11,7 @@ Strategy: local_first
   30s 后 HALF_OPEN，成功一次回 CLOSED
 - health_check 结果有 30s TTL 缓存
 """
+
 from __future__ import annotations
 
 import httpx
@@ -83,8 +84,14 @@ def test_health_cache_returns_within_ttl(monkeypatch):
 
 class _FakeProvider:
     """Minimal LLMProvider stub for router tests."""
-    def __init__(self, *, health: bool = True, chat_chunks: list[str] | None = None,
-                 chat_raises: Exception | None = None):
+
+    def __init__(
+        self,
+        *,
+        health: bool = True,
+        chat_chunks: list[str] | None = None,
+        chat_raises: Exception | None = None,
+    ):
         self._health = health
         self._chat_chunks = chat_chunks or []
         self._chat_raises = chat_raises
@@ -117,20 +124,24 @@ async def test_hybrid_router_selected_provider_has_attempt_and_off_path_has_none
     store = ContextAttemptStore()
     set_context_attempt_store(store)
     with provider_purpose_scope("agent_response", session_id="voice-s"):
-        assert await _collect_attempt_stream(
-            router.chat_stream(
-                [{"role": "user", "content": "hello"}], max_tokens=64
+        assert (
+            await _collect_attempt_stream(
+                router.chat_stream([{"role": "user", "content": "hello"}], max_tokens=64)
             )
-        ) == "ok"
+            == "ok"
+        )
     report = store.list_for_session("voice-s")[0]
     assert report.purpose == "agent_response"
     assert report.provider_id == "_FakeProvider"
     assert report.state == "succeeded"
 
     set_context_attempt_store(None)
-    assert await _collect_attempt_stream(
-        router.chat_stream([{"role": "user", "content": "again"}], max_tokens=64)
-    ) == "ok"
+    assert (
+        await _collect_attempt_stream(
+            router.chat_stream([{"role": "user", "content": "again"}], max_tokens=64)
+        )
+        == "ok"
+    )
     assert len(store.list_for_session("voice-s")) == 1
 
 
@@ -180,6 +191,7 @@ async def test_router_health_uses_cache_within_ttl(monkeypatch):
 # Task 5 — chat_stream routing logic
 # ---------------------------------------------------------------------------
 
+
 async def _collect(agen):
     return [x async for x in agen]
 
@@ -209,8 +221,7 @@ async def test_chat_force_cloud_skips_local_entirely():
     local = _FakeProvider(health=True, chat_chunks=["local"])
     cloud = _FakeProvider(health=True, chat_chunks=["cloud"])
     router = HybridRouter(local=local, cloud=cloud)
-    out = await _collect(router.chat_stream(
-        [{"role": "user", "content": "x"}], force_cloud=True))
+    out = await _collect(router.chat_stream([{"role": "user", "content": "x"}], force_cloud=True))
     assert out == ["cloud"]
     assert local.chat_calls == 0
 
@@ -219,8 +230,7 @@ async def test_chat_force_cloud_skips_local_entirely():
 async def test_chat_force_cloud_raises_when_cloud_unconfigured():
     router = HybridRouter(local=_FakeProvider(health=True), cloud=None)
     with pytest.raises(LLMUnavailableError):
-        await _collect(router.chat_stream(
-            [{"role": "user", "content": "x"}], force_cloud=True))
+        await _collect(router.chat_stream([{"role": "user", "content": "x"}], force_cloud=True))
 
 
 @pytest.mark.asyncio
@@ -291,9 +301,7 @@ async def test_budget_denies_cloud_when_local_unavailable_raises():
         budget_hook=deny_cloud,
     )
     with pytest.raises(LLMUnavailableError) as ei:
-        await _collect(
-            router.chat_stream([{"role": "user", "content": "q"}])
-        )
+        await _collect(router.chat_stream([{"role": "user", "content": "q"}]))
     assert "budget" in str(ei.value).lower()
     # P2-1-S8 review: budget_reason travels on the exception (not on a
     # racy instance attribute) so main.py can attach it to the UI payload.
@@ -313,9 +321,7 @@ async def test_budget_allow_goes_through_to_cloud():
         cloud=cloud,
         budget_hook=allow,
     )
-    out = await _collect(
-        router.chat_stream([{"role": "user", "content": "q"}])
-    )
+    out = await _collect(router.chat_stream([{"role": "user", "content": "q"}]))
     assert out == ["from", " cloud"]
 
 
@@ -335,9 +341,7 @@ async def test_budget_hook_not_called_for_local_only_path():
         cloud=_FakeProvider(health=True, chat_chunks=["cloud"]),
         budget_hook=trace,
     )
-    out = await _collect(
-        router.chat_stream([{"role": "user", "content": "q"}])
-    )
+    out = await _collect(router.chat_stream([{"role": "user", "content": "q"}]))
     assert out == ["local"]
     assert calls == []
 
@@ -355,15 +359,12 @@ async def test_budget_denial_with_force_cloud_raises():
         budget_hook=deny,
     )
     with pytest.raises(LLMUnavailableError):
-        await _collect(
-            router.chat_stream(
-                [{"role": "user", "content": "q"}], force_cloud=True
-            )
-        )
+        await _collect(router.chat_stream([{"role": "user", "content": "q"}], force_cloud=True))
 
 
 class _FlakeyProvider:
     """Fails first N chat calls, then yields then_chunks."""
+
     def __init__(self, *, fail_first_n: int, then_chunks: list[str]):
         self._fail = fail_first_n
         self._chunks = then_chunks
@@ -385,6 +386,7 @@ class _FlakeyProvider:
 # Task 7 — integration test with real OpenAICompatibleProvider + MockTransport
 # ---------------------------------------------------------------------------
 
+
 def _sse_done() -> bytes:
     return b'data: {"choices":[{"delta":{"content":"ok"}}]}\n\ndata: [DONE]\n\n'
 
@@ -403,8 +405,16 @@ class _SlowProvider:
     only happens if the provider's own generator advances it. Bumping the
     clock in the test body after awaiting `_collect` is too late.
     """
-    def __init__(self, *, clock: list[float], latency_s: float, chunks: list[str],
-                 model: str = "fake-slow", health: bool = True):
+
+    def __init__(
+        self,
+        *,
+        clock: list[float],
+        latency_s: float,
+        chunks: list[str],
+        model: str = "fake-slow",
+        health: bool = True,
+    ):
         self._clock = clock
         self._latency = latency_s
         self._chunks = chunks
@@ -429,8 +439,7 @@ async def test_ttft_recorded_for_local_path(monkeypatch):
     fake_now = [1000.0]
     monkeypatch.setattr("router.hybrid_router._now", lambda: fake_now[0])
 
-    local = _SlowProvider(clock=fake_now, latency_s=0.25,
-                          chunks=["hi"], model="fake-local-ttft")
+    local = _SlowProvider(clock=fake_now, latency_s=0.25, chunks=["hi"], model="fake-local-ttft")
     router = HybridRouter(local=local, cloud=None)
 
     hist = llm_ttft_seconds.labels(provider="local", model="fake-local-ttft")
@@ -452,8 +461,7 @@ async def test_ttft_recorded_for_cloud_path(monkeypatch):
     monkeypatch.setattr("router.hybrid_router._now", lambda: fake_now[0])
 
     local = _FakeProvider(health=False)
-    cloud = _SlowProvider(clock=fake_now, latency_s=0.4,
-                          chunks=["c1"], model="fake-cloud-ttft")
+    cloud = _SlowProvider(clock=fake_now, latency_s=0.4, chunks=["c1"], model="fake-cloud-ttft")
     router = HybridRouter(local=local, cloud=cloud)
 
     hist = llm_ttft_seconds.labels(provider="cloud", model="fake-cloud-ttft")
@@ -534,22 +542,26 @@ async def test_router_with_real_providers_routes_to_local_when_healthy():
             local_calls["models"] += 1
             return httpx.Response(200, json={"data": [{"id": "gemma4:e4b"}]})
         local_calls["chat"] += 1
-        return httpx.Response(200, content=_sse_done(),
-                              headers={"content-type": "text/event-stream"})
+        return httpx.Response(
+            200, content=_sse_done(), headers={"content-type": "text/event-stream"}
+        )
 
     def cloud_handler(req):
         if req.url.path.endswith("/models"):
             cloud_calls["models"] += 1
             return httpx.Response(200, json={"data": [{"id": "qwen3.6-plus"}]})
         cloud_calls["chat"] += 1
-        return httpx.Response(200, content=_sse_done(),
-                              headers={"content-type": "text/event-stream"})
+        return httpx.Response(
+            200, content=_sse_done(), headers={"content-type": "text/event-stream"}
+        )
 
     local = OpenAICompatibleProvider(
-        base_url="http://local.invalid/v1", api_key="sk-local", model="gemma4:e4b")
+        base_url="http://local.invalid/v1", api_key="sk-local", model="gemma4:e4b"
+    )
     local._test_transport = httpx.MockTransport(local_handler)
     cloud = OpenAICompatibleProvider(
-        base_url="http://cloud.invalid/v1", api_key="sk", model="qwen3.6-plus")
+        base_url="http://cloud.invalid/v1", api_key="sk", model="qwen3.6-plus"
+    )
     cloud._test_transport = httpx.MockTransport(cloud_handler)
 
     router = HybridRouter(local=local, cloud=cloud)

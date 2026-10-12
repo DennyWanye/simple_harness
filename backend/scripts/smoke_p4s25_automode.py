@@ -9,6 +9,7 @@
 4. Send permission_auto_mode_set enabled=false
 5. Confirm file flips to {"enabled": false}
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -23,17 +24,19 @@ async def smoke(secret: str) -> int:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     sid = "p4s25-automode-test"
     url = f"ws://127.0.0.1:8100/ws/control?secret={secret}&session_id={sid}"
-    persist_path = os.path.join(
-        os.environ["APPDATA"], "deskpet", "permissions_auto_mode.json"
-    )
+    persist_path = os.path.join(os.environ["APPDATA"], "deskpet", "permissions_auto_mode.json")
 
     print(f"-> persist file: {persist_path}")
     async with websockets.connect(url, ping_interval=None) as ws:
         # Toggle ON
-        await ws.send(json.dumps({
-            "type": "permission_auto_mode_set",
-            "payload": {"enabled": True},
-        }))
+        await ws.send(
+            json.dumps(
+                {
+                    "type": "permission_auto_mode_set",
+                    "payload": {"enabled": True},
+                }
+            )
+        )
         for _ in range(20):
             raw = await asyncio.wait_for(ws.recv(), timeout=10.0)
             msg = json.loads(raw)
@@ -49,10 +52,14 @@ async def smoke(secret: str) -> int:
         assert data["enabled"] is True, f"expected enabled=True, got {data}"
 
         # Toggle OFF
-        await ws.send(json.dumps({
-            "type": "permission_auto_mode_set",
-            "payload": {"enabled": False},
-        }))
+        await ws.send(
+            json.dumps(
+                {
+                    "type": "permission_auto_mode_set",
+                    "payload": {"enabled": False},
+                }
+            )
+        )
         for _ in range(20):
             raw = await asyncio.wait_for(ws.recv(), timeout=10.0)
             msg = json.loads(raw)
@@ -65,10 +72,14 @@ async def smoke(secret: str) -> int:
         assert data["enabled"] is False, f"expected enabled=False, got {data}"
 
         # Toggle back ON for the user (since they want it on)
-        await ws.send(json.dumps({
-            "type": "permission_auto_mode_set",
-            "payload": {"enabled": True},
-        }))
+        await ws.send(
+            json.dumps(
+                {
+                    "type": "permission_auto_mode_set",
+                    "payload": {"enabled": True},
+                }
+            )
+        )
         for _ in range(20):
             raw = await asyncio.wait_for(ws.recv(), timeout=10.0)
             msg = json.loads(raw)

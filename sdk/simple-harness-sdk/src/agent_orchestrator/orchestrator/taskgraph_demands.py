@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 """Read independent demand provenance from the original obligation event ledger."""
+
 from __future__ import annotations
 
 import json
@@ -28,14 +29,21 @@ class IndependentDemand:
     principal_id: str
 
     def to_json(self) -> dict[str, Any]:
-        return {"obligation_id": self.obligation_id, "requester_kind": self.requester_kind,
-            "event_id": self.event_id, "event_seq": self.event_seq, "event_hash": self.event_hash,
-            "requester": json.loads(self.requester_json), "evidence": json.loads(self.evidence_json),
-            "principal_id": self.principal_id}
+        return {
+            "obligation_id": self.obligation_id,
+            "requester_kind": self.requester_kind,
+            "event_id": self.event_id,
+            "event_seq": self.event_seq,
+            "event_hash": self.event_hash,
+            "requester": json.loads(self.requester_json),
+            "evidence": json.loads(self.evidence_json),
+            "principal_id": self.principal_id,
+        }
 
 
-def read_independent_demands(store: Store, mission_id: str,
-                             accounts: tuple[ObligationAccountView, ...]) -> tuple[IndependentDemand, ...]:
+def read_independent_demands(
+    store: Store, mission_id: str, accounts: tuple[ObligationAccountView, ...]
+) -> tuple[IndependentDemand, ...]:
     """A demand bit is neither a consumer identity nor a new execution permission.
 
     Validate the complete original flip history against current accounts. Only an
@@ -50,9 +58,11 @@ def read_independent_demands(store: Store, mission_id: str,
             raise SourceUnavailable("taskgraph_demand_account_set_incomplete")
         active: dict[str, tuple[Any, dict[str, Any]]] = {}
         latest: dict[str, bool] = {}
-        for row in db.execute("SELECT seq,event_id FROM events WHERE mission_id=? "
-                              "AND type IN ('ObligationDemandAdmitted','ObligationDemandWithdrawn') ORDER BY seq",
-                              (mission_id,)):
+        for row in db.execute(
+            "SELECT seq,event_id FROM events WHERE mission_id=? "
+            "AND type IN ('ObligationDemandAdmitted','ObligationDemandWithdrawn') ORDER BY seq",
+            (mission_id,),
+        ):
             events = store.list_events(mission_id, after_seq=int(row["seq"]) - 1, limit=1)
             if len(events) != 1 or events[0].id != row["event_id"]:
                 raise SourceUnavailable("taskgraph_demand_event_unavailable")
@@ -61,10 +71,16 @@ def read_independent_demands(store: Store, mission_id: str,
             obligation_id = payload.get("obligation_id")
             requester, evidence = payload.get("requester"), payload.get("evidence")
             principal = payload.get("principal")
-            if (not isinstance(obligation_id, str) or obligation_id not in current or not isinstance(requester, dict)
-                    or requester.get("kind") not in REQUESTER_KINDS
-                    or not isinstance(evidence, dict) or not evidence
-                    or not isinstance(principal, str) or not principal.strip()):
+            if (
+                not isinstance(obligation_id, str)
+                or obligation_id not in current
+                or not isinstance(requester, dict)
+                or requester.get("kind") not in REQUESTER_KINDS
+                or not isinstance(evidence, dict)
+                or not evidence
+                or not isinstance(principal, str)
+                or not principal.strip()
+            ):
                 raise SourceUnavailable("taskgraph_demand_event_identity_invalid")
             admitted = event.type == "ObligationDemandAdmitted"
             if payload.get("has_admitted_demand") is not admitted:
@@ -88,14 +104,24 @@ def read_independent_demands(store: Store, mission_id: str,
             requester = payload["requester"]
             if requester["kind"] not in {"authorization", "mission_root"}:
                 continue
-            out.append(IndependentDemand(obligation_id=identity, requester_kind=requester["kind"],
-                event_id=event.id, event_seq=event.seq, event_hash=sha256_hex(event.to_json()),
-                requester_json=canonical_json(requester), evidence_json=canonical_json(payload["evidence"]),
-                principal_id=payload["principal"]))
+            out.append(
+                IndependentDemand(
+                    obligation_id=identity,
+                    requester_kind=requester["kind"],
+                    event_id=event.id,
+                    event_seq=event.seq,
+                    event_hash=sha256_hex(event.to_json()),
+                    requester_json=canonical_json(requester),
+                    evidence_json=canonical_json(payload["evidence"]),
+                    principal_id=payload["principal"],
+                )
+            )
         return tuple(out)
 
 
-def independently_required_occurrences(document: Any, demands: tuple[IndependentDemand, ...]) -> frozenset[str]:
+def independently_required_occurrences(
+    document: Any, demands: tuple[IndependentDemand, ...]
+) -> frozenset[str]:
     """Resolve an original request to its exact work, never all same-duty children.
 
     Mission-root identity comes from the explicit immutable roots. Independent
@@ -109,8 +135,12 @@ def independently_required_occurrences(document: Any, demands: tuple[Independent
     required = set()
     for demand in demands:
         if demand.requester_kind == "mission_root":
-            roots = {str(identity) for identity in network.root_occurrence_ids
-                     if str(network.binding_for_occurrence(identity).obligation_id) == demand.obligation_id}
+            roots = {
+                str(identity)
+                for identity in network.root_occurrence_ids
+                if str(network.binding_for_occurrence(identity).obligation_id)
+                == demand.obligation_id
+            }
             if not roots:
                 raise SourceUnavailable("taskgraph_root_demand_identity_missing")
             required.update(roots)
@@ -118,8 +148,12 @@ def independently_required_occurrences(document: Any, demands: tuple[Independent
         requester = json.loads(demand.requester_json)
         occurrence, task = requester.get("occurrence_id"), requester.get("task_id")
         member = members.get(occurrence) if isinstance(occurrence, str) else None
-        if (member is None or not isinstance(task, str) or str(member.task_id) != task
-                or str(member.obligation_id) != demand.obligation_id):
+        if (
+            member is None
+            or not isinstance(task, str)
+            or str(member.task_id) != task
+            or str(member.obligation_id) != demand.obligation_id
+        ):
             raise SourceUnavailable("taskgraph_independent_demand_work_identity_missing")
         required.add(occurrence)
     return frozenset(required)

@@ -192,8 +192,10 @@ def validate_evidence_request(
         signature = signatures[0]
         if not _observer_available(key, observers):
             raise ContractError(f"no observer is installed for evidence predicate {key!r}")
-        if key not in predicate_grants and name not in predicate_grants and (
-            signature.authority_scope is None or signature.authority_scope not in scope_grants
+        if (
+            key not in predicate_grants
+            and name not in predicate_grants
+            and (signature.authority_scope is None or signature.authority_scope not in scope_grants)
         ):
             raise ContractError(f"evidence predicate {key!r} is outside the caller authority")
     return request

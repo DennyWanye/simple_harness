@@ -9,6 +9,7 @@ that passes host validation, without consulting cache or the responder. When
 mode off), the gate also fires a TTS notification asking the user to
 look at the screen — best-effort, never blocks the popup flow.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -28,9 +29,7 @@ async def test_auto_mode_allows_shell_without_responder():
     gate.auto_mode = True
     # Note: no responder set, no cache pre-populated, no deny pattern
     # match. If auto_mode didn't short-circuit we'd get a timeout-deny.
-    decision = await gate.check(
-        "shell", {"command": "rm -rf /"}, session_id="test"
-    )
+    decision = await gate.check("shell", {"command": "rm -rf /"}, session_id="test")
     assert decision.allow is True
     assert decision.source == "auto-mode"
 
@@ -38,13 +37,13 @@ async def test_auto_mode_allows_shell_without_responder():
 @pytest.mark.asyncio
 async def test_auto_mode_does_not_bypass_deny_patterns():
     """Auto removes approval waits, not host validation and policy guards."""
-    gate = PermissionGate(config=PermissionGateConfig(
-        shell_deny_patterns=["rm -rf"],
-    ))
-    gate.auto_mode = True
-    decision = await gate.check(
-        "shell", {"command": "rm -rf /etc"}, session_id="test"
+    gate = PermissionGate(
+        config=PermissionGateConfig(
+            shell_deny_patterns=["rm -rf"],
+        )
     )
+    gate.auto_mode = True
+    decision = await gate.check("shell", {"command": "rm -rf /etc"}, session_id="test")
     assert decision.allow is False
     assert decision.source == "config-deny"
     assert decision.pattern == "rm -rf"
@@ -57,9 +56,7 @@ async def test_auto_mode_off_default_falls_through_to_existing_layers():
     gate = PermissionGate()
     assert gate.auto_mode is False
     # default-allow categories still allow without responder
-    decision = await gate.check(
-        "read_file", {"path": "C:/temp/foo.txt"}, session_id="test"
-    )
+    decision = await gate.check("read_file", {"path": "C:/temp/foo.txt"}, session_id="test")
     assert decision.allow is True
     assert decision.source == "default-allow"
 
@@ -95,9 +92,7 @@ class _ImmediateAllowResponder:
 
     async def __call__(self, request):
         self.received_count += 1
-        return PermissionResponse(
-            request_id=request.request_id, decision="allow"
-        )
+        return PermissionResponse(request_id=request.request_id, decision="allow")
 
 
 @pytest.mark.asyncio
@@ -109,9 +104,7 @@ async def test_voice_source_triggers_tts_prompt():
     gate.current_source = "voice"
     # Use a non-default-allow category so it actually goes through
     # the prompt path. shell is the obvious choice.
-    decision = await gate.check(
-        "shell", {"command": "echo hi"}, session_id="test"
-    )
+    decision = await gate.check("shell", {"command": "echo hi"}, session_id="test")
     assert decision.allow is True
     # Give the TTS task a moment to run (it's fired with create_task)
     await asyncio.sleep(0.05)
@@ -126,9 +119,7 @@ async def test_text_source_does_not_trigger_tts_prompt():
     gate.set_tts_engine(tts)
     gate.set_responder(_ImmediateAllowResponder())
     # current_source is None or "text" (default)
-    await gate.check(
-        "shell", {"command": "echo hi"}, session_id="test"
-    )
+    await gate.check("shell", {"command": "echo hi"}, session_id="test")
     await asyncio.sleep(0.05)
     assert tts.calls == []
 
@@ -140,9 +131,7 @@ async def test_voice_source_with_no_tts_engine_still_works():
     gate.set_responder(_ImmediateAllowResponder())
     gate.current_source = "voice"
     # No set_tts_engine called.
-    decision = await gate.check(
-        "shell", {"command": "echo"}, session_id="test"
-    )
+    decision = await gate.check("shell", {"command": "echo"}, session_id="test")
     assert decision.allow is True
 
 
@@ -158,7 +147,5 @@ async def test_tts_failure_does_not_block_permission():
     gate.set_tts_engine(_FailingTTS())
     gate.set_responder(_ImmediateAllowResponder())
     gate.current_source = "voice"
-    decision = await gate.check(
-        "shell", {"command": "echo"}, session_id="test"
-    )
+    decision = await gate.check("shell", {"command": "echo"}, session_id="test")
     assert decision.allow is True

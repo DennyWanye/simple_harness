@@ -58,7 +58,7 @@ def _never_claims(request: Any) -> Any:
     reply = worker_reply(request)
     if isinstance(reply, tuple):
         return reply
-    body = json.loads(reply[len("<result_envelope>"):-len("</result_envelope>")])
+    body = json.loads(reply[len("<result_envelope>") : -len("</result_envelope>")])
     body["outputs"] = {}
     return "<result_envelope>" + json.dumps(body, ensure_ascii=False) + "</result_envelope>"
 
@@ -67,25 +67,40 @@ WORKERS = {"unclaimed": _never_claims, "undeclared": broken_result}
 
 
 @pytest.mark.parametrize("variant", sorted(WORKERS))
-def test_an_unclaimed_declared_port_is_refused_as_a_result_and_the_loop_survives(tmp_path, variant) -> None:
+def test_an_unclaimed_declared_port_is_refused_as_a_result_and_the_loop_survives(
+    tmp_path, variant
+) -> None:
     provider = LayeredScriptedProvider(worker=WORKERS[variant])
 
     async def case() -> dict[str, Any]:
         async with product_world(tmp_path / "root", provider, **CONFIG) as world:
-            mission_id = world.create({"goal": "写一份 NOTES.md", "idempotency_key": f"port-{variant}",
-                                       "success_criteria": ["file:NOTES.md"]})["mission_id"]
+            mission_id = world.create(
+                {
+                    "goal": "写一份 NOTES.md",
+                    "idempotency_key": f"port-{variant}",
+                    "success_criteria": ["file:NOTES.md"],
+                }
+            )["mission_id"]
             store = world.store
 
             def refused() -> list[Any]:
-                return [event for event in store.list_events(mission_id) if event.type == "ResultRejected"]
+                return [
+                    event
+                    for event in store.list_events(mission_id)
+                    if event.type == "ResultRejected"
+                ]
 
             await run_until(world, lambda: bool(refused()), timeout=60)
             events = list(store.list_events(mission_id))
             return {
-                "rejected": [dict(event.payload) | {"task_id": event.task_id} for event in refused()],
+                "rejected": [
+                    dict(event.payload) | {"task_id": event.task_id} for event in refused()
+                ],
                 "submitted": [event for event in events if event.type == "ResultSubmitted"],
                 "acceptances": store.connection.execute(
-                    "SELECT COUNT(*) FROM acceptance_commit_receipts WHERE mission_id=?", (mission_id,)).fetchone()[0],
+                    "SELECT COUNT(*) FROM acceptance_commit_receipts WHERE mission_id=?",
+                    (mission_id,),
+                ).fetchone()[0],
             }
 
     outcome = asyncio.run(case())

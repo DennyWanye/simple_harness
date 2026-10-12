@@ -17,6 +17,7 @@
   - chitchat 且歧义低 → IntentCard.short_circuit=True，编排器整条流水线短路（裸 ReAct，0 次 LLM）。
   - LLM 调用失败 / 超时 / 畸形 JSON → safe-fail：返回保守 IntentCard（contradiction=None、不澄清、不阻塞），降级裸 ReAct。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -39,8 +40,13 @@ logger = structlog.get_logger(__name__)
 
 # ─── problem_type 取值（03 §3 Step1+3）。注意与 classifier 8 类 task_type 的映射见下。
 _PROBLEM_TYPES = (
-    "chitchat", "factual_qa", "debug", "research",
-    "creation", "multi_task", "ambiguous",
+    "chitchat",
+    "factual_qa",
+    "debug",
+    "research",
+    "creation",
+    "multi_task",
+    "ambiguous",
 )
 
 # 触发主要矛盾分析（同一次调用里填 contradiction 段）的 problem_type。
@@ -81,8 +87,9 @@ class Contradiction:
 @dataclass
 class ContradictionMap:
     """Step3 产物（决策4 后由 analyze 同一次调用产出，作为 IntentCard.contradiction）。"""
+
     contradictions: list[Contradiction] = field(default_factory=list)
-    principal: int = 0                 # principal contradiction id
+    principal: int = 0  # principal contradiction id
     principal_aspect: str = ""
     attack_order: list[int] = field(default_factory=list)
     rationale: str = ""
@@ -92,6 +99,7 @@ class ContradictionMap:
 class IntentCard:
     """Step1+3 合并产物。short_circuit / needs_clarification 是编排器的两个出口信号；
     contradiction 仅复杂问题填（决策4：同一次调用产出）。"""
+
     restated_intent: str = ""
     problem_type: str = "factual_qa"
     ambiguity_score: float = 0.0
@@ -105,9 +113,9 @@ class IntentCard:
     # Companion 成长入口的唯一语义信号。这里只决定是否把已提交消息升级为
     # 反思/显式能力构建证据；不选择 Driver，也不授予任何工具或副作用权限。
     growth_signal_kind: str = "none"
-    contradiction: ContradictionMap | None = None   # ← 决策4：复杂问题才填，简单/闲聊=None
+    contradiction: ContradictionMap | None = None  # ← 决策4：复杂问题才填，简单/闲聊=None
     # 编排器出口信号（派生字段，非 LLM 直出）
-    short_circuit: bool = False       # chitchat + 低歧义 → 整条流水线短路
+    short_circuit: bool = False  # chitchat + 低歧义 → 整条流水线短路
     needs_clarification: bool = False  # ambiguity_score ≥ 阈值 → 暂停等用户答
 
 
@@ -127,7 +135,9 @@ _PRE_ANALYSIS_SCHEMA: dict = {
                 "problem_type": {"type": "string", "enum": list(_PROBLEM_TYPES)},
                 "ambiguity_score": {"type": "number"},
                 "clarifying_questions": {
-                    "type": "array", "maxItems": 2, "items": {"type": "string"},
+                    "type": "array",
+                    "maxItems": 2,
+                    "items": {"type": "string"},
                 },
                 "needs_investigation": {"type": "boolean"},
                 "needs_decomposition": {"type": "boolean"},
@@ -156,13 +166,15 @@ _PRE_ANALYSIS_SCHEMA: dict = {
                     ),
                 },
                 "contradiction": {
-                    "type": ["object", "null"],          # ← 简单/闲聊问题回 null
+                    "type": ["object", "null"],  # ← 简单/闲聊问题回 null
                     "additionalProperties": False,
                     "properties": {
                         "contradictions": {
-                            "type": "array", "minItems": 1,
+                            "type": "array",
+                            "minItems": 1,
                             "items": {
-                                "type": "object", "additionalProperties": False,
+                                "type": "object",
+                                "additionalProperties": False,
                                 "properties": {
                                     "id": {"type": "integer"},
                                     "desc": {"type": "string"},
@@ -177,14 +189,25 @@ _PRE_ANALYSIS_SCHEMA: dict = {
                         "attack_order": {"type": "array", "items": {"type": "integer"}},
                         "rationale": {"type": "string"},
                     },
-                    "required": ["contradictions", "principal", "principal_aspect",
-                                 "attack_order", "rationale"],
+                    "required": [
+                        "contradictions",
+                        "principal",
+                        "principal_aspect",
+                        "attack_order",
+                        "rationale",
+                    ],
                 },
             },
             "required": [
-                "restated_intent", "problem_type", "ambiguity_score",
-                "clarifying_questions", "needs_investigation", "needs_decomposition",
-                "requires_action_plan", "growth_signal_kind", "contradiction",
+                "restated_intent",
+                "problem_type",
+                "ambiguity_score",
+                "clarifying_questions",
+                "needs_investigation",
+                "needs_decomposition",
+                "requires_action_plan",
+                "growth_signal_kind",
+                "contradiction",
             ],
         },
     },
@@ -223,10 +246,10 @@ class IntentTriage:
         llm_call: Callable[[str], Awaitable[str]] | None = None,
         *,
         clarify_threshold: float = 0.7,
-        timeout_s: float = 30.0,   # 真机修正(2026-06-24 E2E)：主 LLM gpt-5.5 是 thinking 模型，
-                                    # structured 预分析常 5-15s 思考再出 JSON；原 6s 必超时 → 每次 safe-fail
-                                    # 退化裸 ReAct，Step1+3 形同虚设。放宽到 30s 让合并预分析真完成。可经
-                                    # config.features.problem_pipeline.analysis_timeout_s 调（决策3：模型可换更快的）。
+        timeout_s: float = 30.0,  # 真机修正(2026-06-24 E2E)：主 LLM gpt-5.5 是 thinking 模型，
+        # structured 预分析常 5-15s 思考再出 JSON；原 6s 必超时 → 每次 safe-fail
+        # 退化裸 ReAct，Step1+3 形同虚设。放宽到 30s 让合并预分析真完成。可经
+        # config.features.problem_pipeline.analysis_timeout_s 调（决策3：模型可换更快的）。
     ) -> None:
         self._llm_call = llm_call
         self._clarify_threshold = clarify_threshold
@@ -287,10 +310,7 @@ class IntentTriage:
             )
 
         # Y-light：prompt 不再带 [系统初判类型] hint，让 deepseek 裸判，不被坏 classifier 的 task_type 带偏（BUG-C）。
-        prompt = (
-            f"{_PRE_ANALYSIS_SYSTEM}\n\n"
-            f"[用户消息]\n{user_message}"
-        )
+        prompt = f"{_PRE_ANALYSIS_SYSTEM}\n\n[用户消息]\n{user_message}"
         try:
             call = (
                 invoke_explicit(
@@ -327,17 +347,17 @@ class IntentTriage:
         if card.problem_type == "chitchat":
             card.needs_investigation = False
         # 出口信号派生
-        card.needs_clarification = (
-            card.ambiguity_score >= self._clarify_threshold
-            and bool(card.clarifying_questions)
+        card.needs_clarification = card.ambiguity_score >= self._clarify_threshold and bool(
+            card.clarifying_questions
         )
         card.short_circuit = (
-            card.problem_type == "chitchat"
-            and card.ambiguity_score < self._clarify_threshold
+            card.problem_type == "chitchat" and card.ambiguity_score < self._clarify_threshold
         )
         logger.info(
-            "intent_triage.done", problem_type=card.problem_type,
-            ambiguity=card.ambiguity_score, clarify=card.needs_clarification,
+            "intent_triage.done",
+            problem_type=card.problem_type,
+            ambiguity=card.ambiguity_score,
+            clarify=card.needs_clarification,
             short_circuit=card.short_circuit,
             has_contradiction=card.contradiction is not None,
         )
@@ -369,7 +389,7 @@ class IntentTriage:
             needs_decomposition=(derived_pt in ("multi_task", "creation")),
             requires_action_plan=requires_action_plan,
             growth_signal_kind="none",
-            contradiction=None,   # safe-fail 不填矛盾段，编排器跳过 <主要矛盾> 注入
+            contradiction=None,  # safe-fail 不填矛盾段，编排器跳过 <主要矛盾> 注入
         )
 
     def _parse(self, raw: str, *, fallback_pt: str, user_message: str) -> IntentCard | None:
@@ -390,9 +410,7 @@ class IntentTriage:
         # contradiction 段：仅复杂问题或需分解才解析（与 schema 触发条件一致）
         cmap = None
         raw_contra = obj.get("contradiction")
-        if isinstance(raw_contra, dict) and (
-            pt in _CONTRADICTION_TRIGGER_TYPES or needs_decomp
-        ):
+        if isinstance(raw_contra, dict) and (pt in _CONTRADICTION_TRIGGER_TYPES or needs_decomp):
             cmap = _parse_contradiction(raw_contra)
         return IntentCard(
             restated_intent=str(obj.get("restated_intent") or user_message[:80]),
@@ -436,7 +454,11 @@ def intent_to_system_message(card: IntentCard) -> str:
 def contradiction_to_system_message(cmap: ContradictionMap) -> str:
     """注入 <主要矛盾> system 提示（决策4：从 IntentCard.contradiction 读取）。"""
     principal = next((c for c in cmap.contradictions if c.id == cmap.principal), None)
-    desc = principal.desc if principal else (cmap.contradictions[0].desc if cmap.contradictions else "")
+    desc = (
+        principal.desc
+        if principal
+        else (cmap.contradictions[0].desc if cmap.contradictions else "")
+    )
     return (
         "<主要矛盾>\n"
         f"本次主攻：{desc}\n"
@@ -481,8 +503,11 @@ def _parse_contradiction(obj: dict) -> ContradictionMap | None:
         contradictions=cons,
         principal=_safe_int(obj.get("principal", cons[0].id), cons[0].id),
         principal_aspect=str(obj.get("principal_aspect", "")),
-        attack_order=[_safe_int(x) for x in (obj.get("attack_order") or [])
-                      if isinstance(x, (int, float, str))],
+        attack_order=[
+            _safe_int(x)
+            for x in (obj.get("attack_order") or [])
+            if isinstance(x, (int, float, str))
+        ],
         rationale=str(obj.get("rationale", "")),
     )
 
@@ -537,6 +562,10 @@ def _extract_json(raw: str) -> dict | None:
 
 
 __all__ = [
-    "Contradiction", "ContradictionMap", "IntentCard", "IntentTriage",
-    "intent_to_system_message", "contradiction_to_system_message",
+    "Contradiction",
+    "ContradictionMap",
+    "IntentCard",
+    "IntentTriage",
+    "intent_to_system_message",
+    "contradiction_to_system_message",
 ]

@@ -122,9 +122,7 @@ async def test_grep_on_a_file_path_is_admitted_and_searches_that_one_file(
 
     context = _context()
     assert (
-        await env.gate.verify(
-            context, "grep", call_id=CallId("call-1"), arguments=arguments
-        )
+        await env.gate.verify(context, "grep", call_id=CallId("call-1"), arguments=arguments)
         is None
     )
 
@@ -133,9 +131,7 @@ async def test_grep_on_a_file_path_is_admitted_and_searches_that_one_file(
         projected = project_read_execution_context(_base_context())
         # 投影的是**包含该路径的那个根**（F-Z1b 多根），不是 roots[0]。
         assert Path(str(projected.workspace)).resolve() == env.workspace.resolve()
-        out = json.loads(
-            grep_tool(dict(arguments), "task", execution_context=projected)
-        )
+        out = json.loads(grep_tool(dict(arguments), "task", execution_context=projected))
 
     # 事件 AH 里这里是 {"error": "path is not a directory: ..."}。
     assert "error" not in out
@@ -156,16 +152,12 @@ async def test_glob_on_a_file_path_matches_that_one_file(tmp_path: Path) -> None
 
     context = _context("call-glob")
     assert (
-        await env.gate.verify(
-            context, "glob", call_id=CallId("call-glob"), arguments=arguments
-        )
+        await env.gate.verify(context, "glob", call_id=CallId("call-glob"), arguments=arguments)
         is None
     )
     async with env.gate.execution_scope(context, "glob", call_id=CallId("call-glob")):
         projected = project_read_execution_context(_base_context("call-glob"))
-        out = json.loads(
-            glob_tool(dict(arguments), "task", execution_context=projected)
-        )
+        out = json.loads(glob_tool(dict(arguments), "task", execution_context=projected))
     assert out["target_kind"] == "file"
     assert out["files"] == [str(target)]
 
@@ -190,9 +182,7 @@ async def test_grep_on_a_directory_path_still_walks_the_tree(tmp_path: Path) -> 
     arguments = {"path": str(env.workspace), "pattern": ANCHOR}
     context = _context("call-dir")
     assert (
-        await env.gate.verify(
-            context, "grep", call_id=CallId("call-dir"), arguments=arguments
-        )
+        await env.gate.verify(context, "grep", call_id=CallId("call-dir"), arguments=arguments)
         is None
     )
     out = json.loads(grep_tool(dict(arguments)))
@@ -203,8 +193,6 @@ async def test_grep_on_a_directory_path_still_walks_the_tree(tmp_path: Path) -> 
 # --------------------------------------------------------------------------
 # 3. 根外：闸门先拒，handler 不被调用
 # --------------------------------------------------------------------------
-
-
 
 
 # --------------------------------------------------------------------------
@@ -256,16 +244,12 @@ async def test_symlinks_pointing_out_of_the_root_never_reach_the_results(
     assert globbed["escaped_results"] >= 1
 
     # ② 目录链接 + 显式穿越 pattern
-    through = json.loads(
-        glob_tool({"path": str(env.workspace), "pattern": "escape/*.md"})
-    )
+    through = json.loads(glob_tool({"path": str(env.workspace), "pattern": "escape/*.md"}))
     assert through["files"] == []
     assert through["escaped_results"] >= 1
 
     filtered = json.loads(
-        grep_tool(
-            {"path": str(env.workspace), "pattern": ANCHOR, "glob": "escape/*.md"}
-        )
+        grep_tool({"path": str(env.workspace), "pattern": ANCHOR, "glob": "escape/*.md"})
     )
     assert filtered["files"] == []
     assert filtered["escaped_results"] >= 1

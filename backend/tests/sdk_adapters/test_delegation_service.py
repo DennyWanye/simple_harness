@@ -7,6 +7,7 @@
 回答取子运行最后一条 assistant 消息；等待超时/父运行结束会取消没结束的子运行；
 对账按"父运行 + 调用 ID"推出子运行。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -31,8 +32,15 @@ PARENT = "product-sdk-parent"
 
 def _spec(name, effect="read_only", confirm=False):
     return SimpleNamespace(
-        name=name, effect_class=effect, confirm_only=confirm, schema_hash=f"h-{name}",
-        schema={"name": name, "description": f"{name} tool", "parameters": {"type": "object", "properties": {}}},
+        name=name,
+        effect_class=effect,
+        confirm_only=confirm,
+        schema_hash=f"h-{name}",
+        schema={
+            "name": name,
+            "description": f"{name} tool",
+            "parameters": {"type": "object", "properties": {}},
+        },
     )
 
 
@@ -58,12 +66,26 @@ class Authorities:
         self.listeners = []
         work = SimpleNamespace(task_scope_id=None, workspace_root=None, binding_version=0)
         self.parent = SimpleNamespace(
-            run_id=PARENT, session_id="s1", root_run_id="host-root-1", principal_id="sdk-runtime",
-            specs=SPECS, dispatch_kinds={name: "standard" for name in SPECS},
-            task_work_context=work, catalog_generation=3, catalog_fingerprint="f" * 64,
-            workspace_resolution={"kind": "projectless", "effective_root": None, "binding_version": 0},
-            run_start_record=lambda: {"inventory": [{"name": name, "effect_class": spec.effect_class}
-                                                    for name, spec in SPECS.items()]},
+            run_id=PARENT,
+            session_id="s1",
+            root_run_id="host-root-1",
+            principal_id="sdk-runtime",
+            specs=SPECS,
+            dispatch_kinds={name: "standard" for name in SPECS},
+            task_work_context=work,
+            catalog_generation=3,
+            catalog_fingerprint="f" * 64,
+            workspace_resolution={
+                "kind": "projectless",
+                "effective_root": None,
+                "binding_version": 0,
+            },
+            run_start_record=lambda: {
+                "inventory": [
+                    {"name": name, "effect_class": spec.effect_class}
+                    for name, spec in SPECS.items()
+                ]
+            },
         )
 
     def add_terminal_listener(self, listener):
@@ -75,8 +97,11 @@ class Authorities:
         return self.prepared[run_id]
 
     def prepare_run(self, **raw):
-        record = SimpleNamespace(**raw, run_start_record=lambda: {"kind": "child", "run_id": raw["run_id"]},
-                                 task_work_context=self.parent.task_work_context)
+        record = SimpleNamespace(
+            **raw,
+            run_start_record=lambda: {"kind": "child", "run_id": raw["run_id"]},
+            task_work_context=self.parent.task_work_context,
+        )
         self.prepared[raw["run_id"]] = record
         return record
 
@@ -92,9 +117,17 @@ class Bindings:
         self.created = {}
         self.terminal = []
         parent = SimpleNamespace(
-            session_id="s1", snapshot_id="snap-1", provider_id="p", provider_incarnation_id="i",
-            provider_config_revision=1, binding_epoch=2, model_id="m", model_params={}, context_window=64000,
-            catalog_generation=3, catalog_fingerprint="f" * 64,
+            session_id="s1",
+            snapshot_id="snap-1",
+            provider_id="p",
+            provider_incarnation_id="i",
+            provider_config_revision=1,
+            binding_epoch=2,
+            model_id="m",
+            model_params={},
+            context_window=64000,
+            catalog_generation=3,
+            catalog_fingerprint="f" * 64,
         )
         self.registry = SimpleNamespace(resolve=lambda run_id: parent if run_id == PARENT else None)
 
@@ -111,11 +144,18 @@ class Uow:
     def __init__(self):
         self.runs = {PARENT: SimpleNamespace(run_id=PARENT, parent_run_id=None, state="running")}
         self.tickets = []
-        self.snapshots = {PARENT: StartSnapshot(
-            profile_key="agent.general", driver_kind="react", turn_id="t1", tool_catalog_generation=3,
-            input={"context_metadata": {"session_id": "s1", "effective_ceiling": 50000}},
-            policy_fingerprint="p" * 64, tool_catalog_fingerprint="f" * 64, provider_budget_fingerprint="x" * 64,
-        ).to_json()}
+        self.snapshots = {
+            PARENT: StartSnapshot(
+                profile_key="agent.general",
+                driver_kind="react",
+                turn_id="t1",
+                tool_catalog_generation=3,
+                input={"context_metadata": {"session_id": "s1", "effective_ceiling": 50000}},
+                policy_fingerprint="p" * 64,
+                tool_catalog_fingerprint="f" * 64,
+                provider_budget_fingerprint="x" * 64,
+            ).to_json()
+        }
 
     def read_run(self, run_id):
         return self.runs.get(run_id)
@@ -151,7 +191,8 @@ class Runtime:
             async def launch(self, request):
                 runtime.launches.append(request)
                 runtime.uow.runs[request.child_run_id] = SimpleNamespace(
-                    run_id=request.child_run_id, parent_run_id=PARENT, state="running")
+                    run_id=request.child_run_id, parent_run_id=PARENT, state="running"
+                )
                 runtime.uow.snapshots[request.child_run_id] = thaw_json(request.start_snapshot)
 
         class Client:
@@ -174,7 +215,10 @@ class ContextPort:
         text = self.answers.get(run_id.value)
         messages = [Message(MessageRole.USER, "task")]
         if text:
-            messages += [Message(MessageRole.ASSISTANT, "draft"), Message(MessageRole.ASSISTANT, text)]
+            messages += [
+                Message(MessageRole.ASSISTANT, "draft"),
+                Message(MessageRole.ASSISTANT, text),
+            ]
         return SimpleNamespace(messages=messages)
 
 
@@ -184,12 +228,24 @@ def _service(wait_seconds=5.0, stall_seconds=120.0):
     authorities, bindings, context = Authorities(), Bindings(), ContextPort()
     woken: list[str] = []
     service = ProductDelegationService(
-        uow_getter=lambda: uow, runtime_getter=lambda: runtime, tool_authorities=authorities,
-        binding_resolver=bindings, context_port_getter=lambda: context, wait_seconds=wait_seconds,
-        on_parent_woken=woken.append, stall_seconds=stall_seconds,
+        uow_getter=lambda: uow,
+        runtime_getter=lambda: runtime,
+        tool_authorities=authorities,
+        binding_resolver=bindings,
+        context_port_getter=lambda: context,
+        wait_seconds=wait_seconds,
+        on_parent_woken=woken.append,
+        stall_seconds=stall_seconds,
     )
-    return SimpleNamespace(service=service, uow=uow, runtime=runtime, authorities=authorities,
-                           bindings=bindings, context=context, woken=woken)
+    return SimpleNamespace(
+        service=service,
+        uow=uow,
+        runtime=runtime,
+        authorities=authorities,
+        bindings=bindings,
+        context=context,
+        woken=woken,
+    )
 
 
 def _ctx(call_id="call-1", run_id=PARENT):
@@ -204,11 +260,20 @@ async def _finish_later(env, answers, delay=0.05):
 
 
 def test_task_shapes_and_limits():
-    assert [t.prompt for t in delegated_tasks("agent", {"description": "d", "prompt": "查一下"})] == ["查一下"]
+    assert [
+        t.prompt for t in delegated_tasks("agent", {"description": "d", "prompt": "查一下"})
+    ] == ["查一下"]
     assert len(delegated_tasks("spawn_team", {"task_descriptions": ["a", "b"]})) == 2
-    assert [t.task_id for t in delegated_tasks("spawn_subagents", {"subagents": [{"prompt": "x", "task_id": "k"}]})] == ["k"]
+    assert [
+        t.task_id
+        for t in delegated_tasks(
+            "spawn_subagents", {"subagents": [{"prompt": "x", "task_id": "k"}]}
+        )
+    ] == ["k"]
     with pytest.raises(DelegationRefused):
-        delegated_tasks("agent_parallel", {"subagents": [{"prompt": "x"}] * (MAX_CHILDREN_PER_PARENT + 1)})
+        delegated_tasks(
+            "agent_parallel", {"subagents": [{"prompt": "x"}] * (MAX_CHILDREN_PER_PARENT + 1)}
+        )
     with pytest.raises(DelegationRefused):
         delegated_tasks("agent", {"description": "d", "prompt": "  "})
 
@@ -217,8 +282,16 @@ def test_child_tools_are_the_read_only_subset_without_delegation():
     parent = Authorities().parent
     assert child_tool_names(parent, None) == ("file_read", "web_fetch", "web_search")
     assert child_tool_names(parent, ["web_search"]) == ("web_search",)
-    for forbidden in ("agent", "await_subagents", "write_file", "shell_exec", "tool_search", "todo_write",
-                      "download_file", "no_such"):
+    for forbidden in (
+        "agent",
+        "await_subagents",
+        "write_file",
+        "shell_exec",
+        "tool_search",
+        "todo_write",
+        "download_file",
+        "no_such",
+    ):
         with pytest.raises(DelegationRefused) as refused:
             child_tool_names(parent, [forbidden])
         assert refused.value.code == "delegation_tool_not_available"
@@ -229,11 +302,24 @@ async def test_agent_launches_detached_child_and_returns_its_last_answer():
     env = _service()
     child_id = delegated_child_run_id(PARENT, "call-1", 0)
     finisher = asyncio.create_task(_finish_later(env, {child_id: "结论：三条"}))
-    result = await env.service.delegate("agent", {"description": "d", "prompt": "查三条", "tools": ["web_search"]},
-                                        execution_context=_ctx())
+    result = await env.service.delegate(
+        "agent",
+        {"description": "d", "prompt": "查三条", "tools": ["web_search"]},
+        execution_context=_ctx(),
+    )
     await finisher
-    assert result == {"ok": True, "results": [{"task_id": "d", "run_id": child_id, "status": "completed",
-                                               "value": "结论：三条", "error": None}]}
+    assert result == {
+        "ok": True,
+        "results": [
+            {
+                "task_id": "d",
+                "run_id": child_id,
+                "status": "completed",
+                "value": "结论：三条",
+                "error": None,
+            }
+        ],
+    }
     [request] = env.runtime.launches
     assert request.attachment_policy.value == "detached"
     assert [t.ticket_id for t in env.uow.tickets] == [f"{child_id}:ticket"]
@@ -247,7 +333,9 @@ async def test_agent_launches_detached_child_and_returns_its_last_answer():
     assert metadata["root_run_id"] == "host-root-1" and metadata["effective_ceiling"] == 0
     assert is_delegated_child_start(env.uow.snapshots[child_id])
     assert not is_delegated_child_start(env.uow.snapshots[PARENT])
-    assert [spec["name"] for spec in env.authorities.prepared[child_id].catalog["specs"]] == ["web_search"]
+    assert [spec["name"] for spec in env.authorities.prepared[child_id].catalog["specs"]] == [
+        "web_search"
+    ]
     await asyncio.sleep(0.3)
     # 监视器在子运行结束后释放子运行的授权与模型绑定。
     assert (child_id, "completed") in env.authorities.terminal
@@ -259,9 +347,13 @@ async def test_replay_of_the_same_call_does_not_launch_again():
     env = _service()
     child_id = delegated_child_run_id(PARENT, "call-1", 0)
     finisher = asyncio.create_task(_finish_later(env, {child_id: "ok"}))
-    first = await env.service.delegate("agent", {"description": "d", "prompt": "p"}, execution_context=_ctx())
+    first = await env.service.delegate(
+        "agent", {"description": "d", "prompt": "p"}, execution_context=_ctx()
+    )
     await finisher
-    second = await env.service.delegate("agent", {"description": "d", "prompt": "p"}, execution_context=_ctx())
+    second = await env.service.delegate(
+        "agent", {"description": "d", "prompt": "p"}, execution_context=_ctx()
+    )
     assert len(env.runtime.launches) == 1 and len(env.uow.tickets) == 1
     assert first["results"][0]["value"] == second["results"][0]["value"] == "ok"
 
@@ -270,21 +362,30 @@ async def test_replay_of_the_same_call_does_not_launch_again():
 async def test_spawn_then_await_collects_results_and_foreign_children_are_refused():
     env = _service()
     spawned = await env.service.delegate(
-        "spawn_subagents", {"subagents": [{"prompt": "a"}, {"prompt": "b"}]}, execution_context=_ctx())
+        "spawn_subagents",
+        {"subagents": [{"prompt": "a"}, {"prompt": "b"}]},
+        execution_context=_ctx(),
+    )
     ids = spawned["run_ids"]
     assert len(ids) == 2 and len(env.runtime.launches) == 2
     await _finish_later(env, {ids[0]: "A", ids[1]: "B"}, delay=0)
     joined = await env.service.await_subagents(arguments={}, context=_ctx())
     assert [r["value"] for r in joined["results"]] == ["A", "B"]
-    env.uow.runs["other-child"] = SimpleNamespace(run_id="other-child", parent_run_id="other-parent", state="completed")
-    refused = await env.service.await_subagents(arguments={"run_ids": ["other-child"]}, context=_ctx())
+    env.uow.runs["other-child"] = SimpleNamespace(
+        run_id="other-child", parent_run_id="other-parent", state="completed"
+    )
+    refused = await env.service.await_subagents(
+        arguments={"run_ids": ["other-child"]}, context=_ctx()
+    )
     assert refused["ok"] is False and refused["error_code"] == "delegation_child_not_owned"
 
 
 @pytest.mark.asyncio
 async def test_wait_timeout_cancels_unfinished_children():
     env = _service(wait_seconds=0.3)
-    result = await env.service.delegate("agent", {"description": "d", "prompt": "p"}, execution_context=_ctx())
+    result = await env.service.delegate(
+        "agent", {"description": "d", "prompt": "p"}, execution_context=_ctx()
+    )
     child_id = delegated_child_run_id(PARENT, "call-1", 0)
     assert result["results"][0]["status"] == "running" and result["results"][0]["error"]
     assert env.runtime.cancelled == [child_id]
@@ -293,7 +394,9 @@ async def test_wait_timeout_cancels_unfinished_children():
 @pytest.mark.asyncio
 async def test_parent_end_cancels_unfinished_spawned_children():
     env = _service()
-    spawned = await env.service.delegate("spawn_subagents", {"subagents": [{"prompt": "a"}]}, execution_context=_ctx())
+    spawned = await env.service.delegate(
+        "spawn_subagents", {"subagents": [{"prompt": "a"}]}, execution_context=_ctx()
+    )
     env.uow.runs[PARENT].state = "completed"
     env.authorities.mark_terminal(PARENT, "completed")
     await asyncio.sleep(0.05)
@@ -305,10 +408,15 @@ async def test_app_shutdown_keeps_children_running():
     """关闭应用：Host 释放父运行授权、正在等待的调用被中断，但父运行没有结束 → 子运行不取消。"""
 
     env = _service()
-    await env.service.delegate("spawn_subagents", {"subagents": [{"prompt": "a"}]}, execution_context=_ctx("c1"))
+    await env.service.delegate(
+        "spawn_subagents", {"subagents": [{"prompt": "a"}]}, execution_context=_ctx("c1")
+    )
     env.authorities.mark_terminal(PARENT, "failed")
     call = asyncio.create_task(
-        env.service.delegate("agent", {"description": "d", "prompt": "p"}, execution_context=_ctx("c2")))
+        env.service.delegate(
+            "agent", {"description": "d", "prompt": "p"}, execution_context=_ctx("c2")
+        )
+    )
     await asyncio.sleep(0.1)
     call.cancel()
     with pytest.raises(asyncio.CancelledError):
@@ -320,7 +428,10 @@ async def test_app_shutdown_keeps_children_running():
 async def test_user_stop_cancels_the_children_of_the_interrupted_call():
     env = _service()
     call = asyncio.create_task(
-        env.service.delegate("agent", {"description": "d", "prompt": "p"}, execution_context=_ctx("c2")))
+        env.service.delegate(
+            "agent", {"description": "d", "prompt": "p"}, execution_context=_ctx("c2")
+        )
+    )
     await asyncio.sleep(0.1)
     env.uow.runs[PARENT].state = "cancel_requested"
     call.cancel()
@@ -332,8 +443,11 @@ async def test_user_stop_cancels_the_children_of_the_interrupted_call():
 @pytest.mark.asyncio
 async def test_refusals_launch_nothing():
     env = _service()
-    refused = await env.service.delegate("agent", {"description": "d", "prompt": "p", "tools": ["write_file"]},
-                                         execution_context=_ctx())
+    refused = await env.service.delegate(
+        "agent",
+        {"description": "d", "prompt": "p", "tools": ["write_file"]},
+        execution_context=_ctx(),
+    )
     assert refused["ok"] is False and refused["error_code"] == "delegation_tool_not_available"
     assert env.runtime.launches == [] and env.bindings.created == {}
 
@@ -341,10 +455,14 @@ async def test_refusals_launch_nothing():
 @pytest.mark.asyncio
 async def test_child_limit_per_parent():
     env = _service()
-    await env.service.delegate("spawn_subagents", {"subagents": [{"prompt": str(i)} for i in range(6)]},
-                               execution_context=_ctx("call-1"))
-    refused = await env.service.delegate("spawn_subagents", {"subagents": [{"prompt": "x"}] * 3},
-                                         execution_context=_ctx("call-2"))
+    await env.service.delegate(
+        "spawn_subagents",
+        {"subagents": [{"prompt": str(i)} for i in range(6)]},
+        execution_context=_ctx("call-1"),
+    )
+    refused = await env.service.delegate(
+        "spawn_subagents", {"subagents": [{"prompt": "x"}] * 3}, execution_context=_ctx("call-2")
+    )
     assert refused["error_code"] == "delegation_child_limit" and len(env.runtime.launches) == 6
 
 
@@ -355,8 +473,12 @@ async def test_reconciliation_derives_children_from_the_call():
     env = _service()
     from simple_harness import CallId, RunId
 
-    effect = SimpleNamespace(tool_name="agent", run_id=RunId(PARENT), call_id=CallId("call-9"),
-                             arguments={"description": "d", "prompt": "p"})
+    effect = SimpleNamespace(
+        tool_name="agent",
+        run_id=RunId(PARENT),
+        call_id=CallId("call-9"),
+        arguments={"description": "d", "prompt": "p"},
+    )
     assert (await env.service.observe(SimpleNamespace(tool_name="web_search"))) is None
     # 子运行还没启动就被打断：判"已完成、失败"，让模型重新调用（从不判"确认未开始"——
     # 重启后重新授权会撞 Host 授权记录的身份冲突）。
@@ -382,18 +504,39 @@ def test_child_usage_is_recorded_but_never_counts_as_chat_context_usage():
 
     async def launch():
         env = _service(wait_seconds=0.1)
-        await env.service.delegate("spawn_subagents", {"subagents": [{"prompt": "a"}]}, execution_context=_ctx())
+        await env.service.delegate(
+            "spawn_subagents", {"subagents": [{"prompt": "a"}]}, execution_context=_ctx()
+        )
         return env
 
     env = asyncio.run(launch())
     [child_id] = [run_id for run_id in env.uow.snapshots if run_id != PARENT]
-    context = ProviderProjectionContextV1.from_value(env.uow.snapshots[child_id]["input"]["context_metadata"])
-    envelope = ProviderProjectionEnvelopeV1.from_value({
-        "invocation_id": "inv-1", "settlement_version": 1, "settled_at": 1.0, "state": "succeeded",
-        "provider_id": "p", "model_id": "m", "usage": {"input_tokens": 10, "output_tokens": 2, "total_tokens": 12},
-        **{key: getattr(context, key) for key in ("session_id", "root_run_id", "request_id", "snapshot_id",
-                                                  "binding_epoch", "context_window", "effective_ceiling")},
-    })
+    context = ProviderProjectionContextV1.from_value(
+        env.uow.snapshots[child_id]["input"]["context_metadata"]
+    )
+    envelope = ProviderProjectionEnvelopeV1.from_value(
+        {
+            "invocation_id": "inv-1",
+            "settlement_version": 1,
+            "settled_at": 1.0,
+            "state": "succeeded",
+            "provider_id": "p",
+            "model_id": "m",
+            "usage": {"input_tokens": 10, "output_tokens": 2, "total_tokens": 12},
+            **{
+                key: getattr(context, key)
+                for key in (
+                    "session_id",
+                    "root_run_id",
+                    "request_id",
+                    "snapshot_id",
+                    "binding_epoch",
+                    "context_window",
+                    "effective_ceiling",
+                )
+            },
+        }
+    )
     assert envelope.to_record()["usage"]["total_tokens"] == 12
     assert envelope.has_trusted_usage is False
 
@@ -406,8 +549,12 @@ async def test_interrupted_await_settles_from_the_named_children():
     env = _service()
     child_id = "delegate-x"
     env.uow.runs[child_id] = SimpleNamespace(run_id=child_id, parent_run_id=PARENT, state="running")
-    effect = SimpleNamespace(tool_name="await_subagents", run_id=RunId(PARENT), call_id=CallId("w1"),
-                             arguments={"run_ids": [child_id]})
+    effect = SimpleNamespace(
+        tool_name="await_subagents",
+        run_id=RunId(PARENT),
+        call_id=CallId("w1"),
+        arguments={"run_ids": [child_id]},
+    )
     assert (await env.service.observe(effect)).state is ReconciliationState.STILL_UNKNOWN
     env.uow.runs[child_id].state = "completed"
     env.context.answers[child_id] = "收回"
@@ -420,8 +567,10 @@ async def test_interrupted_await_settles_from_the_named_children():
 async def test_whole_batch_is_checked_before_any_child_starts():
     env = _service()
     refused = await env.service.delegate(
-        "agent_parallel", {"subagents": [{"prompt": "a"}, {"prompt": "b", "tools": ["todo_write"]}]},
-        execution_context=_ctx())
+        "agent_parallel",
+        {"subagents": [{"prompt": "a"}, {"prompt": "b", "tools": ["todo_write"]}]},
+        execution_context=_ctx(),
+    )
     assert refused["error_code"] == "delegation_tool_not_available"
     assert env.runtime.launches == [] and env.uow.tickets == []
 
@@ -429,7 +578,9 @@ async def test_whole_batch_is_checked_before_any_child_starts():
 @pytest.mark.asyncio
 async def test_watcher_retries_a_failed_read_and_still_releases_the_child():
     env = _service()
-    await env.service.delegate("spawn_subagents", {"subagents": [{"prompt": "a"}]}, execution_context=_ctx())
+    await env.service.delegate(
+        "spawn_subagents", {"subagents": [{"prompt": "a"}]}, execution_context=_ctx()
+    )
     child_id = delegated_child_run_id(PARENT, "call-1", 0)
     real_read, failures = env.uow.read_run, []
 
@@ -456,8 +607,9 @@ async def test_after_restart_replaying_the_call_reattaches_and_waits():
     env.uow.runs[child_id] = SimpleNamespace(run_id=child_id, parent_run_id=PARENT, state="running")
     env.service.adopt_recovered(child_id, PARENT)
     finisher = asyncio.create_task(_finish_later(env, {child_id: "重启后的结论"}, delay=0.2))
-    result = await env.service.delegate("agent", {"description": "d", "prompt": "p"},
-                                        execution_context=_ctx("call-7"))
+    result = await env.service.delegate(
+        "agent", {"description": "d", "prompt": "p"}, execution_context=_ctx("call-7")
+    )
     await finisher
     assert env.runtime.launches == [] and env.uow.tickets == []
     assert result["results"][0]["value"] == "重启后的结论"
@@ -466,8 +618,12 @@ async def test_after_restart_replaying_the_call_reattaches_and_waits():
 def _unknown_agent_call(call_id):
     from simple_harness import CallId, RunId
 
-    return SimpleNamespace(tool_name="agent", run_id=RunId(PARENT), call_id=CallId(call_id),
-                           arguments={"description": "d", "prompt": "p"})
+    return SimpleNamespace(
+        tool_name="agent",
+        run_id=RunId(PARENT),
+        call_id=CallId(call_id),
+        arguments={"description": "d", "prompt": "p"},
+    )
 
 
 @pytest.mark.asyncio
@@ -528,8 +684,10 @@ def test_waiting_parents_held_by_a_delegate_call_join_the_restart_recovery_list(
         INSERT INTO execution_effects VALUES ('held', 'agent', 'unknown'), ('running', 'agent', 'unknown'),
                                              ('other', 'web_fetch', 'unknown'), ('done', 'agent', 'succeeded');
     """)
-    uow = SimpleNamespace(database=SimpleNamespace(connection=connection),
-                          read_run=lambda run_id: SimpleNamespace(run_id=run_id))
+    uow = SimpleNamespace(
+        database=SimpleNamespace(connection=connection),
+        read_run=lambda run_id: SimpleNamespace(run_id=run_id),
+    )
     assert [r.run_id for r in waiting_runs_blocked_on_delegation(uow)] == ["held"]
     assert waiting_runs_blocked_on_delegation(uow, exclude={"held"}) == ()
 
@@ -546,7 +704,9 @@ async def test_a_child_stuck_waiting_is_reconciled_once_then_cancelled():
         env.uow.runs[child_id].state = "waiting"
 
     parker = asyncio.create_task(park())
-    result = await env.service.delegate("agent", {"description": "d", "prompt": "p"}, execution_context=_ctx())
+    result = await env.service.delegate(
+        "agent", {"description": "d", "prompt": "p"}, execution_context=_ctx()
+    )
     await parker
     assert env.runtime.reconciled == 1
     assert env.runtime.cancelled == [child_id]

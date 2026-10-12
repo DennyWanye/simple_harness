@@ -220,13 +220,19 @@ class ActionExecutor:
         already waiting for a person."""
         from .operation_reconciliation import action_outcome_unresolved
 
-        return (action.get("state") == "FAILED" and not action.get("needs_human")
-                and action_outcome_unresolved(self._commit.store, action))
+        return (
+            action.get("state") == "FAILED"
+            and not action.get("needs_human")
+            and action_outcome_unresolved(self._commit.store, action)
+        )
 
-    async def reconcile_one(self, action_key: str, *, allow_rehandoff: bool = False) -> dict[str, Any] | None:
+    async def reconcile_one(
+        self, action_key: str, *, allow_rehandoff: bool = False
+    ) -> dict[str, Any] | None:
         """Observe one exact Action; TaskGraph convergence never re-sends it."""
         self._require_execution_root()
         from ..orchestrator.action_commits import ActionCommitError
+
         store = self._commit.store
         if store.connection.in_transaction:
             raise ActionCommitError("action reconciliation cannot run inside a Store transaction")
@@ -234,17 +240,31 @@ class ActionExecutor:
         if action is None:
             raise ActionCommitError("action reconciliation source is unavailable")
         failed = action["state"] == "FAILED"
-        if action["state"] not in {"UNKNOWN", "HANDED_OFF"} and not (failed and self._failed_unproven(action)):
+        if action["state"] not in {"UNKNOWN", "HANDED_OFF"} and not (
+            failed and self._failed_unproven(action)
+        ):
             return action
+
         def require_current() -> None:
             current = store.get_action(action_key)
-            fields = ("mission_id", "action_id", "version", "params_hash", "idempotency_key", "handoffs")
+            fields = (
+                "mission_id",
+                "action_id",
+                "version",
+                "params_hash",
+                "idempotency_key",
+                "handoffs",
+            )
             if current is None or any(current.get(field) != action.get(field) for field in fields):
                 raise ActionCommitError("action changed during reconciliation")
+
         key = str(action["action_key"])
         if key in self._inflight:
             return None
-        if action["state"] == "HANDED_OFF" and float(action.get("lease_expires_at") or 0) > store.now:
+        if (
+            action["state"] == "HANDED_OFF"
+            and float(action.get("lease_expires_at") or 0) > store.now
+        ):
             return None  # a live hand-off may still be on its way
         runtime = getattr(self._commit, "_operation_materialization_runtime", None)
         if runtime is not None:
@@ -261,7 +281,9 @@ class ActionExecutor:
         else:
             try:
                 found = await asyncio.wait_for(
-                    asyncio.to_thread(self._external_call, connector.lookup, str(action["idempotency_key"])),
+                    asyncio.to_thread(
+                        self._external_call, connector.lookup, str(action["idempotency_key"])
+                    ),
                     timeout=self._timeout,
                 )
             except Exception:  # noqa: BLE001 - the service cannot answer: still unknown
@@ -273,9 +295,7 @@ class ActionExecutor:
         # timeout and an expired local lease cannot establish nonapplication.
         from ..storage.planning_admission_store import PlanningAdmissionStore
 
-        link = PlanningAdmissionStore(self._commit.store).get_operation_action_link_for_action(
-            key
-        )
+        link = PlanningAdmissionStore(self._commit.store).get_operation_action_link_for_action(key)
         runtime = getattr(self._commit, "_operation_materialization_runtime", None)
         if link is not None and verdict != "COMPLETED":
             verdict = "STILL_UNKNOWN"
@@ -301,8 +321,11 @@ class ActionExecutor:
                     with store.transaction():
                         require_current()
                         updated = self._commit.record_scoped_reconciliation(
-                            key, evidence=evidence, adapter=adapter,
-                            service_authority=runtime.service_authority)
+                            key,
+                            evidence=evidence,
+                            adapter=adapter,
+                            service_authority=runtime.service_authority,
+                        )
                 except Exception:  # unavailable/incomplete protocol evidence stays unresolved
                     if failed:
                         return self._commit.record_reconciliation_unavailable(key)
@@ -313,7 +336,8 @@ class ActionExecutor:
                     # A scoped proof does not authorize a send. The normal current
                     # authority/approval/budget/cap gates still execute below.
                     if (
-                        allow_rehandoff and updated["state"] == "UNKNOWN"
+                        allow_rehandoff
+                        and updated["state"] == "UNKNOWN"
                         and updated.get("reconcile") == "CONFIRMED_NOT_STARTED"
                     ):
                         updated = await self._rehandoff_scoped(key, runtime)
@@ -326,7 +350,8 @@ class ActionExecutor:
             require_current()
             updated = self._commit.record_reconciliation(key, verdict=verdict, receipt=receipt)
         if (
-            allow_rehandoff and updated["state"] == "UNKNOWN"
+            allow_rehandoff
+            and updated["state"] == "UNKNOWN"
             and updated.get("reconcile") == "CONFIRMED_NOT_STARTED"
         ):
             again = await self.hand_off(key, rehandoff=True)

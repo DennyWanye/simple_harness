@@ -10,6 +10,7 @@ automatically. Refuses to overwrite an existing file unless
 P5-S2 Phase 0: error responses now include ``ok: false`` + ``hint``
 + ``examples``. Legacy ``error`` strings preserved for back-compat.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -125,8 +126,8 @@ def write_file(
     if "content" not in args:
         return _err(
             "content required",
-            "write_file 的 content 字段必填。如要写空文件请显式传 content=\"\"。"
-            "例如 {\"path\": \"./hello.txt\", \"content\": \"hi\"}。",
+            'write_file 的 content 字段必填。如要写空文件请显式传 content=""。'
+            '例如 {"path": "./hello.txt", "content": "hi"}。',
         )
     content = args.get("content", "")
     if not isinstance(content, str):
@@ -197,7 +198,9 @@ def write_file(
 
     # Stage 2 round 2 fix：通知 workspace_store
     _notify_workspace(
-        session_id=context.session_id, path=path, content=content,
+        session_id=context.session_id,
+        path=path,
+        content=content,
     )
     return json.dumps(
         {

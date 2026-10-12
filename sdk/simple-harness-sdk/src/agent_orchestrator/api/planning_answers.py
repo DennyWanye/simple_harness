@@ -36,8 +36,14 @@ def answer_planning_question(
 ) -> dict[str, Any]:
     store = orchestrator.store
     humans = PlanningHumanStore(store)
-    plain = dict(decision_id=decision_id, tenant_id=tenant_id, principal=principal,
-                 answer=answer, expected_version=expected_version, nonce=nonce)
+    plain = dict(
+        decision_id=decision_id,
+        tenant_id=tenant_id,
+        principal=principal,
+        answer=answer,
+        expected_version=expected_version,
+        nonce=nonce,
+    )
     row = humans.get(decision_id)
     if not attach_as_source or row is None:
         return humans.answer(**plain)  # an unknown question is refused by the store itself
@@ -48,12 +54,18 @@ def answer_planning_question(
     if not domain.source_roots:
         raise ContractError("this Mission does not accept source material")
     path = answer_source_path(domain.source_roots[0], decision_id)
-    orchestrator.validate_source_storage(mission_id)  # reads only; refuses before anything is written
+    orchestrator.validate_source_storage(
+        mission_id
+    )  # reads only; refuses before anything is written
     with store.transaction():
         receipt = humans.answer(**plain, attached_source_path=path)
         source = orchestrator.commit.register_source(
-            mission_id=mission_id, tenant_id=tenant_id, principal=principal, path=path,
-            content=answer, kind=ANSWER_SOURCE_KIND,
+            mission_id=mission_id,
+            tenant_id=tenant_id,
+            principal=principal,
+            path=path,
+            content=answer,
+            kind=ANSWER_SOURCE_KIND,
             idempotency_key=f"planning-answer:{decision_id}",
         )
     return {**receipt, "source": {"path": source["path"], "version_hash": source["version_hash"]}}

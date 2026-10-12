@@ -62,6 +62,7 @@ def _is_local_base_url(base_url: str) -> bool:
 def _record_tool_choice_none_unsupported(provider: str, model: str) -> None:
     try:
         from observability.metrics_sink import record
+
         record(
             "tool_choice_none_unsupported",
             {"provider": provider, "model": model},
@@ -187,25 +188,22 @@ class OpenAICompatibleProvider:
             # model is split between GPU and CPU memory.  The relay budget is
             # intentionally tighter because its keep-alive frames reset the
             # read timer; a local server has no such guarantee.
-            read_timeout_s = (
-                600.0 if _is_local_base_url(self.base_url) else 120.0
-            )
+            read_timeout_s = 600.0 if _is_local_base_url(self.base_url) else 120.0
             self.timeout: float | httpx.Timeout = httpx.Timeout(
-                connect=10.0, read=read_timeout_s, write=10.0, pool=5.0,
+                connect=10.0,
+                read=read_timeout_s,
+                write=10.0,
+                pool=5.0,
             )
             # Per-read timeouts do not stop a dead relay stream that emits
             # keep-alives forever. Bound the interval between meaningful
             # model events as well. Do not cap the total stream duration:
             # reasoning-heavy GLM-5.x calls can legitimately keep producing
             # reasoning deltas for longer than three minutes.
-            self._stream_attempt_timeout_s = (
-                900.0 if _is_local_base_url(self.base_url) else 180.0
-            )
+            self._stream_attempt_timeout_s = 900.0 if _is_local_base_url(self.base_url) else 180.0
         else:
             self.timeout = timeout
-            self._stream_attempt_timeout_s = (
-                900.0 if _is_local_base_url(self.base_url) else 180.0
-            )
+            self._stream_attempt_timeout_s = 900.0 if _is_local_base_url(self.base_url) else 180.0
         # P2-1-S8: last completed stream's usage block from the OpenAI SSE
         # protocol (populated only when the server emits one — OpenAI/DashScope
         # always do when stream_options.include_usage=True; Ollama today does
@@ -227,12 +225,12 @@ class OpenAICompatibleProvider:
         if snapshot is None:
             return {}, "resilient"
         provider_id = str(
-            getattr(self, "provider_id", "")
-            or getattr(self, "id", "")
-            or type(self).__name__
+            getattr(self, "provider_id", "") or getattr(self, "id", "") or type(self).__name__
         )
         if (provider_id, self.adapter_id, self.adapter_version) != (
-            snapshot.provider_id, snapshot.adapter_id, snapshot.adapter_version
+            snapshot.provider_id,
+            snapshot.adapter_id,
+            snapshot.adapter_version,
         ):
             raise ValueError("provider launch identity mismatch")
         if not snapshot.supports_idempotent_launch:
@@ -263,9 +261,7 @@ class OpenAICompatibleProvider:
             except Exception:  # noqa: BLE001
                 body = None
         error = body.get("error") if isinstance(body, dict) else None
-        upstream_code = (
-            str(error.get("code") or "") if isinstance(error, dict) else ""
-        )
+        upstream_code = str(error.get("code") or "") if isinstance(error, dict) else ""
         if upstream_code in {"tool_catalog_stale", "tool_policy_unavailable"}:
             return upstream_code
         if not self._is_relay:
@@ -281,7 +277,9 @@ class OpenAICompatibleProvider:
         # 空 key 护栏：唯一的出站 client 构造点。非本地 endpoint 且 key 不可用
         # （空/占位符）时不构造 client、不发请求，抛友好错误，避免拼出非法的
         # "Authorization: Bearer " 头崩在 httpx 传输层（LocalProtocolError）。
-        if (self.api_key or "").strip().lower() in _UNUSABLE_API_KEYS and not _is_local_base_url(self.base_url):
+        if (self.api_key or "").strip().lower() in _UNUSABLE_API_KEYS and not _is_local_base_url(
+            self.base_url
+        ):
             raise LLMProviderError(
                 "未检测到可用的 LLM API Key（可能未登录或登录已失效）。"
                 "请重新登录，或在 设置 → LLM Providers 配置 API Key 后重试。",
@@ -297,6 +295,7 @@ class OpenAICompatibleProvider:
         headers.update(extra_headers_for(self.base_url))
         headers.update(self.extra_headers)
         from deskpet.context_os_e2e_hooks import trusted_provider_headers
+
         headers.update(trusted_provider_headers(self.base_url))
         # P5-S2 F1 (2026-05-12) — the relay integration guide root cause for
         # "succeeds then next request ConnectError" (docs/中转站建议.md
@@ -333,10 +332,7 @@ class OpenAICompatibleProvider:
         if handoff is not None:
             transport = DispatchAwareAsyncTransport(
                 transport,
-                adapter_identity=(
-                    f"{self.adapter_id}:{self.adapter_version}:"
-                    f"{self.base_url}"
-                ),
+                adapter_identity=(f"{self.adapter_id}:{self.adapter_version}:{self.base_url}"),
             )
         return httpx.AsyncClient(
             timeout=timeout,
@@ -378,9 +374,7 @@ class OpenAICompatibleProvider:
         )
         messages, _ = split_wire_messages(messages)
         _attempt_options = current_provider_attempt_options()
-        _cache_boundary = (
-            _attempt_options.cache_boundary if _attempt_options is not None else None
-        )
+        _cache_boundary = _attempt_options.cache_boundary if _attempt_options is not None else None
         # P2-1-S8: reset per-call so stale data from the previous stream
         # never leaks into billing when the current stream carries no usage.
         self.last_usage = None
@@ -402,9 +396,7 @@ class OpenAICompatibleProvider:
             and any(m.get("role") == "system" for m in messages)
             and _is_anthropic_endpoint(self.base_url)
         ):
-            payload["messages"] = _stamp_cache_control(
-                messages, boundary_index=_cache_boundary
-            )
+            payload["messages"] = _stamp_cache_control(messages, boundary_index=_cache_boundary)
         mark_current_attempt_sent()
         async with self._client(timeout=self.timeout) as client:
             async with client.stream(
@@ -430,7 +422,7 @@ class OpenAICompatibleProvider:
                 async for line in response.aiter_lines():
                     if not line or not line.startswith("data:"):
                         continue
-                    data_str = line[len("data:"):].strip()
+                    data_str = line[len("data:") :].strip()
                     if not data_str:
                         continue
                     if data_str == "[DONE]":
@@ -438,9 +430,7 @@ class OpenAICompatibleProvider:
                     try:
                         data = json.loads(data_str)
                     except json.JSONDecodeError:
-                        logger.warning(
-                            "openai_compat_bad_sse_frame", raw=data_str
-                        )
+                        logger.warning("openai_compat_bad_sse_frame", raw=data_str)
                         continue
                     if not _dumped_server_id:
                         logger.debug(
@@ -677,9 +667,7 @@ class OpenAICompatibleProvider:
         # 一次是幂等的，且保证此方法被直接调用时同样有前缀稳定保证。
         messages, _ = split_wire_messages(messages)
         _attempt_options = current_provider_attempt_options()
-        _cache_boundary = (
-            _attempt_options.cache_boundary if _attempt_options is not None else None
-        )
+        _cache_boundary = _attempt_options.cache_boundary if _attempt_options is not None else None
         messages = _stabilize_prefix(messages)
 
         # 临时调试：打印实际发送的消息
@@ -720,9 +708,7 @@ class OpenAICompatibleProvider:
             and any(m.get("role") == "system" for m in messages)
             and _is_anthropic_endpoint(self.base_url)
         ):
-            payload["messages"] = _stamp_cache_control(
-                messages, boundary_index=_cache_boundary
-            )
+            payload["messages"] = _stamp_cache_control(messages, boundary_index=_cache_boundary)
         # P4-S22 fix: wrap httpx errors so AgentLoop's existing
         # `except LLMProviderError` catches them and emits a clean
         # ErrorEvent instead of the bare ConnectError bubbling all the
@@ -760,9 +746,7 @@ class OpenAICompatibleProvider:
                 and any(m.get("role") == "system" for m in _wire_msgs)
                 and _is_anthropic_endpoint(self.base_url)
             ):
-                _wire_msgs = _stamp_cache_control(
-                    _wire_msgs, boundary_index=_cache_boundary
-                )
+                _wire_msgs = _stamp_cache_control(_wire_msgs, boundary_index=_cache_boundary)
             transient = (
                 httpx.RemoteProtocolError,
                 httpx.ConnectTimeout,
@@ -783,11 +767,7 @@ class OpenAICompatibleProvider:
             # a request whose first outcome is merely unknown.  Legacy /
             # auxiliary calls outside that scope retain their transient
             # retries.
-            backoffs = (
-                (0.0,)
-                if current_dispatch_handoff() is not None
-                else (0.0, 1.0, 3.0)
-            )
+            backoffs = (0.0,) if current_dispatch_handoff() is not None else (0.0, 1.0, 3.0)
             for attempt, delay in enumerate(backoffs):
                 if delay:
                     await _asyncio.sleep(delay)
@@ -839,18 +819,15 @@ class OpenAICompatibleProvider:
                 exc.response.status_code == 400
                 and "reasoning_content" in body_snippet
                 and any(
-                    m.get("role") == "assistant"
-                    and not m.get("reasoning_content")
+                    m.get("role") == "assistant" and not m.get("reasoning_content")
                     for m in messages
                 )
             )
             if should_retry:
                 stripped = [
-                    m for m in messages
-                    if not (
-                        m.get("role") == "assistant"
-                        and not m.get("reasoning_content")
-                    )
+                    m
+                    for m in messages
+                    if not (m.get("role") == "assistant" and not m.get("reasoning_content"))
                 ]
                 logger.warning(
                     "p4s24_reasoning_400_retry",
@@ -874,10 +851,7 @@ class OpenAICompatibleProvider:
                             exc2.response.status_code, body2, exc2.response
                         ),
                     ) from exc2
-            elif (
-                "tool_choice" in payload
-                and _is_tool_choice_400(exc, body_snippet)
-            ):
+            elif "tool_choice" in payload and _is_tool_choice_400(exc, body_snippet):
                 payload = dict(payload)
                 payload.pop("tool_choice", None)
                 _record_tool_choice_none_unsupported(self.base_url, self.model)
@@ -930,7 +904,8 @@ class OpenAICompatibleProvider:
             _phase = (
                 "pre-handshake"
                 if isinstance(exc, (httpx.ConnectTimeout, httpx.ConnectError))
-                else "read-timeout" if isinstance(exc, httpx.ReadTimeout)
+                else "read-timeout"
+                if isinstance(exc, httpx.ReadTimeout)
                 else "transient-other"
             )
             _advice = {
@@ -942,9 +917,7 @@ class OpenAICompatibleProvider:
                 "read-timeout": (
                     f"等待 {self.base_url} 返回数据超时。模型生成可能过慢或上游排队。"
                 ),
-                "transient-other": (
-                    f"连接 {self.base_url} 时遇到 {_human_type}。"
-                ),
+                "transient-other": (f"连接 {self.base_url} 时遇到 {_human_type}。"),
             }.get(_phase, f"连接 {self.base_url} 失败：{_human_type}")
             raise LLMProviderError(
                 f"LLM 调用失败 [{_phase}]: {_advice} 原始错误: {_human_msg}"
@@ -952,9 +925,7 @@ class OpenAICompatibleProvider:
         except httpx.HTTPError as exc:
             # Catch-all for any other transport / parsing httpx error.
             human = str(exc) or type(exc).__name__
-            raise LLMProviderError(
-                f"LLM 调用失败 ({human})。"
-            ) from exc
+            raise LLMProviderError(f"LLM 调用失败 ({human})。") from exc
         choices = data.get("choices") or []
         if not choices:
             return {
@@ -975,18 +946,12 @@ class OpenAICompatibleProvider:
         # in the thinking mode must be passed back to the API"). Most
         # OpenAI-compat servers either omit the field or use the
         # canonical name; some non-conforming proxies use `reasoning`.
-        reasoning_content = (
-            msg.get("reasoning_content")
-            or msg.get("reasoning")
-            or ""
-        )
+        reasoning_content = msg.get("reasoning_content") or msg.get("reasoning") or ""
         # Diagnostic: echo what we extracted + what's actually in the
         # outgoing request so multi-turn round-trip bugs are visible
         # in logs without needing a proxy / packet capture. INFO level
         # so it shows up in the default tauri-dev log.
-        _has_assistant_history = any(
-            m.get("role") == "assistant" for m in messages
-        )
+        _has_assistant_history = any(m.get("role") == "assistant" for m in messages)
         logger.info(
             "p4s24_reasoning_extract",
             url=f"{self.base_url}/chat/completions",
@@ -995,8 +960,7 @@ class OpenAICompatibleProvider:
             outgoing_history_size=len(messages),
             outgoing_has_assistant=_has_assistant_history,
             outgoing_assistant_has_reasoning=any(
-                m.get("role") == "assistant" and m.get("reasoning_content")
-                for m in messages
+                m.get("role") == "assistant" and m.get("reasoning_content") for m in messages
             ),
         )
         # OpenAI returns finish_reason="tool_calls" when tools were called.
@@ -1011,11 +975,7 @@ class OpenAICompatibleProvider:
             fn = tc.get("function") or {}
             args_raw = fn.get("arguments", "{}")
             try:
-                args = (
-                    json.loads(args_raw)
-                    if isinstance(args_raw, str)
-                    else dict(args_raw or {})
-                )
+                args = json.loads(args_raw) if isinstance(args_raw, str) else dict(args_raw or {})
             except (json.JSONDecodeError, TypeError):
                 args = {}
             tcs.append(
@@ -1125,6 +1085,7 @@ class OpenAICompatibleProvider:
         blank screen until the whole response lands.
         """
         import asyncio as _asyncio
+
         launch_headers, launch_retry_mode = self._launch_request_parts(
             launch_operation_id,
             provider_launch_snapshot,
@@ -1143,13 +1104,13 @@ class OpenAICompatibleProvider:
         # _stamp_cache_control / 非流 fallback）都建立在这个稳定副本上。
         messages, _ = split_wire_messages(messages)
         _attempt_options = current_provider_attempt_options()
-        _cache_boundary = (
-            _attempt_options.cache_boundary if _attempt_options is not None else None
-        )
+        _cache_boundary = _attempt_options.cache_boundary if _attempt_options is not None else None
         messages = _stabilize_prefix(messages)
 
         # 临时调试：打印实际发送的消息
-        logger.info(f"[DEBUG_PERSONA] STREAM Sending to model={self.model}, base_url={self.base_url}")
+        logger.info(
+            f"[DEBUG_PERSONA] STREAM Sending to model={self.model}, base_url={self.base_url}"
+        )
         for idx, msg in enumerate(messages):
             role = msg.get("role", "?")
             content = msg.get("content", "")
@@ -1185,9 +1146,7 @@ class OpenAICompatibleProvider:
             and any(m.get("role") == "system" for m in messages)
             and _is_anthropic_endpoint(self.base_url)
         ):
-            payload["messages"] = _stamp_cache_control(
-                messages, boundary_index=_cache_boundary
-            )
+            payload["messages"] = _stamp_cache_control(messages, boundary_index=_cache_boundary)
 
         if retry_mode == "at_most_once":
             try:
@@ -1238,11 +1197,7 @@ class OpenAICompatibleProvider:
         # closed socket fails fast, so worst-case isn't 60×3 — it's
         # 60s on the first attempt + a few seconds for each subsequent
         # quick-fail.
-        backoffs = (
-            (0.0,)
-            if current_dispatch_handoff() is not None
-            else (0.0, 1.0, 3.0)
-        )
+        backoffs = (0.0,) if current_dispatch_handoff() is not None else (0.0, 1.0, 3.0)
         last_exc: Exception | None = None
         # Used messages — may swap to a stripped version if we hit the
         # reasoning_content 400 mid-stream (rare, but old sessions still
@@ -1278,17 +1233,14 @@ class OpenAICompatibleProvider:
                     and "reasoning_content" in body
                     and not stripped_already
                     and any(
-                        m.get("role") == "assistant"
-                        and not m.get("reasoning_content")
+                        m.get("role") == "assistant" and not m.get("reasoning_content")
                         for m in used_messages
                     )
                 ):
                     used_messages = [
-                        m for m in used_messages
-                        if not (
-                            m.get("role") == "assistant"
-                            and not m.get("reasoning_content")
-                        )
+                        m
+                        for m in used_messages
+                        if not (m.get("role") == "assistant" and not m.get("reasoning_content"))
                     ]
                     used_payload = {**payload, "messages": used_messages}
                     if used_messages and any(m.get("role") == "system" for m in used_messages):
@@ -1344,11 +1296,11 @@ class OpenAICompatibleProvider:
                 #   transient-other : write/pool timeouts, rare.
                 _phase = (
                     "pre-handshake"
-                    if isinstance(
-                        exc, (httpx.ConnectTimeout, httpx.ConnectError)
-                    )
-                    else "mid-stream-drop" if isinstance(exc, httpx.RemoteProtocolError)
-                    else "read-timeout" if isinstance(exc, httpx.ReadTimeout)
+                    if isinstance(exc, (httpx.ConnectTimeout, httpx.ConnectError))
+                    else "mid-stream-drop"
+                    if isinstance(exc, httpx.RemoteProtocolError)
+                    else "read-timeout"
+                    if isinstance(exc, httpx.ReadTimeout)
                     else "transient-other"
                 )
                 _msg = (str(exc) or type(exc).__name__).replace("\n", " ")[:300]
@@ -1370,11 +1322,11 @@ class OpenAICompatibleProvider:
         _human_msg = (str(last_exc) or _human_type).replace("\n", " ")[:300]
         _phase = (
             "pre-handshake"
-            if isinstance(
-                last_exc, (httpx.ConnectTimeout, httpx.ConnectError)
-            )
-            else "mid-stream-drop" if isinstance(last_exc, httpx.RemoteProtocolError)
-            else "read-timeout" if isinstance(last_exc, httpx.ReadTimeout)
+            if isinstance(last_exc, (httpx.ConnectTimeout, httpx.ConnectError))
+            else "mid-stream-drop"
+            if isinstance(last_exc, httpx.RemoteProtocolError)
+            else "read-timeout"
+            if isinstance(last_exc, httpx.ReadTimeout)
             else "transient-other"
         )
         # P5-S2 D1: stream → non-stream same-provider fallback.
@@ -1389,7 +1341,8 @@ class OpenAICompatibleProvider:
             try:
                 logger.warning(
                     "p5s2_stream_fallback_to_nonstream phase=%s base_url=%s",
-                    _phase, self.base_url,
+                    _phase,
+                    self.base_url,
                 )
                 # Use the REAL non-stream path (_legacy_chat_with_tools_nonstream).
                 # chat_with_tools is actually stream-as-transport internally
@@ -1443,9 +1396,7 @@ class OpenAICompatibleProvider:
                 f"等待 {self.base_url} 返回数据超时（连续 {len(backoffs)} 次）。"
                 "模型生成可能过慢或上游排队。可降级到更快的模型或增加 timeout。"
             ),
-            "transient-other": (
-                f"连接 {self.base_url} 时遇到 {_human_type}。"
-            ),
+            "transient-other": (f"连接 {self.base_url} 时遇到 {_human_type}。"),
         }.get(_phase, f"连接 {self.base_url} 失败：{_human_type}")
         raise LLMProviderError(
             f"LLM 调用失败 [{_phase}]: {_advice} 原始错误: {_human_msg}"
@@ -1484,8 +1435,7 @@ class OpenAICompatibleProvider:
                 yield event
         except TimeoutError as exc:
             raise httpx.ReadTimeout(
-                "SSE stream made no model progress within "
-                f"({self._stream_attempt_timeout_s:.0f}s)"
+                f"SSE stream made no model progress within ({self._stream_attempt_timeout_s:.0f}s)"
             ) from exc
         finally:
             close = getattr(stream, "aclose", None)
@@ -1506,6 +1456,7 @@ class OpenAICompatibleProvider:
         # new logical provider attempt.
         mark_current_attempt_sent()
         import json as _json
+
         # Accumulators for assembling the final event.
         full_content = ""
         full_reasoning = ""
@@ -1567,11 +1518,7 @@ class OpenAICompatibleProvider:
                         c0 = choices[0] if choices else {}
                         msg = c0.get("message") or {}
                         full_content = msg.get("content") or ""
-                        full_reasoning = (
-                            msg.get("reasoning_content")
-                            or msg.get("reasoning")
-                            or ""
-                        )
+                        full_reasoning = msg.get("reasoning_content") or msg.get("reasoning") or ""
                         for j, tc in enumerate(msg.get("tool_calls") or []):
                             fn = tc.get("function") or {}
                             tool_buffers[j] = {
@@ -1581,8 +1528,10 @@ class OpenAICompatibleProvider:
                             }
                         finish_reason = c0.get("finish_reason") or "stop"
                         final_stop = (
-                            "tool_use" if finish_reason == "tool_calls"
-                            else "end_turn" if finish_reason == "stop"
+                            "tool_use"
+                            if finish_reason == "tool_calls"
+                            else "end_turn"
+                            if finish_reason == "stop"
                             else finish_reason
                         )
                         final_model = data.get("model") or final_model
@@ -1627,7 +1576,7 @@ class OpenAICompatibleProvider:
                     raw_lines.append(line)  # capture even empty lines
                     if not line or not line.startswith("data:"):
                         continue
-                    data_str = line[len("data:"):].strip()
+                    data_str = line[len("data:") :].strip()
                     if not data_str or data_str == "[DONE]":
                         if data_str == "[DONE]":
                             break
@@ -1681,9 +1630,7 @@ class OpenAICompatibleProvider:
                     for tcd in delta.get("tool_calls") or []:
                         idx = tcd.get("index", 0) or 0
                         is_new_tool_call = idx not in tool_buffers
-                        buf = tool_buffers.setdefault(
-                            idx, {"id": "", "name": "", "args_buf": ""}
-                        )
+                        buf = tool_buffers.setdefault(idx, {"id": "", "name": "", "args_buf": ""})
                         if tcd.get("id"):
                             buf["id"] = tcd["id"]
                         fn = tcd.get("function") or {}
@@ -1693,23 +1640,22 @@ class OpenAICompatibleProvider:
                             buf["args_buf"] += fn["arguments"]
                         if (
                             is_new_tool_call
-                            and len(tool_buffers)
-                            > _MAX_PROVIDER_TOOL_CALLS_BEFORE_REPLAN
+                            and len(tool_buffers) > _MAX_PROVIDER_TOOL_CALLS_BEFORE_REPLAN
                         ):
                             tool_batch_overflow = True
                             logger.warning(
                                 "provider_stream_tool_batch_overflow",
                                 retained_tool_calls=len(tool_buffers),
-                                replan_threshold=(
-                                    _MAX_PROVIDER_TOOL_CALLS_BEFORE_REPLAN
-                                ),
+                                replan_threshold=(_MAX_PROVIDER_TOOL_CALLS_BEFORE_REPLAN),
                                 sse_lines=sse_lines,
                             )
                             break
                     if finish_reason:
                         final_stop = (
-                            "tool_use" if finish_reason == "tool_calls"
-                            else "end_turn" if finish_reason == "stop"
+                            "tool_use"
+                            if finish_reason == "tool_calls"
+                            else "end_turn"
+                            if finish_reason == "stop"
                             else finish_reason
                         )
                     if tool_batch_overflow:
@@ -1728,10 +1674,7 @@ class OpenAICompatibleProvider:
         # body and manually split it into SSE events on `\n\n` block
         # boundaries (the SSE spec separator), then parse each event.
         empty_response = (
-            sse_lines != -1
-            and not full_content
-            and not full_reasoning
-            and not tool_buffers
+            sse_lines != -1 and not full_content and not full_reasoning and not tool_buffers
         )
         if empty_response:
             joined = "\n".join(raw_lines)
@@ -1751,11 +1694,7 @@ class OpenAICompatibleProvider:
             # backslash-n escape, NOT a real newline byte). aiter_lines
             # therefore yields ONE line and our split-on-newline parser
             # finds zero events. Detect and unwrap.
-            if (
-                joined.startswith('"')
-                and joined.endswith('"')
-                and "\\n" in joined
-            ):
+            if joined.startswith('"') and joined.endswith('"') and "\\n" in joined:
                 try:
                     joined = _json.loads(joined)
                     logger.info(
@@ -1772,7 +1711,7 @@ class OpenAICompatibleProvider:
                 for ev_line in event.splitlines():
                     if not ev_line.startswith("data:"):
                         continue
-                    payload_str = ev_line[len("data:"):].strip()
+                    payload_str = ev_line[len("data:") :].strip()
                     if not payload_str or payload_str == "[DONE]":
                         continue
                     try:
@@ -1805,9 +1744,7 @@ class OpenAICompatibleProvider:
                         recovered_chunks += 1
                     for tcd in delta.get("tool_calls") or msg.get("tool_calls") or []:
                         idx = tcd.get("index", 0) or 0
-                        buf = tool_buffers.setdefault(
-                            idx, {"id": "", "name": "", "args_buf": ""}
-                        )
+                        buf = tool_buffers.setdefault(idx, {"id": "", "name": "", "args_buf": ""})
                         if tcd.get("id"):
                             buf["id"] = tcd["id"]
                         fn = tcd.get("function") or {}
@@ -1818,9 +1755,7 @@ class OpenAICompatibleProvider:
                     fr = c0.get("finish_reason")
                     if fr:
                         final_stop = (
-                            "tool_use" if fr == "tool_calls"
-                            else "end_turn" if fr == "stop"
-                            else fr
+                            "tool_use" if fr == "tool_calls" else "end_turn" if fr == "stop" else fr
                         )
             if recovered_chunks or tool_buffers:
                 # Emit a single delta so callers waiting for stream
@@ -1919,10 +1854,12 @@ class OpenAICompatibleProvider:
                     #   pseudo-escape apostrophes.
                     repair_candidates: list[tuple[str, str]] = []
                     if "\\'" in args_buf:
-                        repair_candidates.append((
-                            "stripped_backslash_apostrophe",
-                            args_buf.replace("\\'", "'"),
-                        ))
+                        repair_candidates.append(
+                            (
+                                "stripped_backslash_apostrophe",
+                                args_buf.replace("\\'", "'"),
+                            )
+                        )
                     # Repair 2 (broad, regex): drop any invalid ``\X``
                     #   escape (X not in legal JSON escape set
                     #   ``"\/ bfnrtu``). This catches \', \;, \ , \., etc.
@@ -1930,20 +1867,25 @@ class OpenAICompatibleProvider:
                     #   \uXXXX, …) intact because the regex's negated
                     #   class excludes the legal followers.
                     import re as _re
+
                     _invalid_esc = _re.compile(r'\\([^"\\/bfnrtu])')
                     if _invalid_esc.search(args_buf):
-                        repair_candidates.append((
-                            "stripped_invalid_escapes",
-                            _invalid_esc.sub(r"\1", args_buf),
-                        ))
+                        repair_candidates.append(
+                            (
+                                "stripped_invalid_escapes",
+                                _invalid_esc.sub(r"\1", args_buf),
+                            )
+                        )
                     # Repair 3 (last resort): permissive parse with
                     #   strict=False — accepts unescaped control chars
                     #   (tabs, newlines) inside strings. Doesn't fix
                     #   bad escapes but does handle raw \n in content.
-                    repair_candidates.append((
-                        "strict_false",
-                        args_buf,  # decoder will use strict=False
-                    ))
+                    repair_candidates.append(
+                        (
+                            "strict_false",
+                            args_buf,  # decoder will use strict=False
+                        )
+                    )
                     for _label, _cand in repair_candidates:
                         try:
                             if _label == "strict_false":
@@ -2084,9 +2026,7 @@ class OpenAICompatibleProvider:
 # ──────────────────────────────────────────────────────────────────────
 
 
-def _cache_breakpoint_order(
-    messages: list[dict], *, has_tools: bool
-) -> list[str]:
+def _cache_breakpoint_order(messages: list[dict], *, has_tools: bool) -> list[str]:
     """返回这批 messages 的 4-breakpoint 逻辑断点序（纯函数，给单测）。
 
     design.md D4 规定的稳定→易变装配顺序：
@@ -2116,8 +2056,7 @@ def _cache_breakpoint_order(
     # 第二条 system 消息（ContextAssembler 产出独立 system block）。
     sys_msgs = [m for m in (messages or []) if m.get("role") == "system"]
     has_memory = len(sys_msgs) >= 2 or any(
-        isinstance(m.get("content"), str)
-        and "<memory_block>" in m.get("content", "")
+        isinstance(m.get("content"), str) and "<memory_block>" in m.get("content", "")
         for m in sys_msgs
     )
     if has_memory:
@@ -2208,9 +2147,7 @@ def _log_cache_hit_rate(usage: dict | None, *, where: str) -> None:
                 hit_rate="unknown",
             )
             return
-        rate = (
-            round(cached / prompt, 4) if prompt and prompt > 0 else 0.0
-        )
+        rate = round(cached / prompt, 4) if prompt and prompt > 0 else 0.0
         logger.info(
             "p4s25_prompt_cache_hit",
             where=where,
@@ -2235,9 +2172,7 @@ def _is_anthropic_endpoint(base_url: str) -> bool:
     return "anthropic.com" in u or "claude" in u
 
 
-def _stamp_cache_control(
-    messages: list[dict], *, boundary_index: int | None = None
-) -> list[dict]:
+def _stamp_cache_control(messages: list[dict], *, boundary_index: int | None = None) -> list[dict]:
     """Copy messages and mark the explicit or legacy system breakpoint.
 
     ``boundary_index`` is a zero-based inclusive stable-prefix boundary.  The

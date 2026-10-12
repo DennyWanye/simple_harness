@@ -4,6 +4,7 @@
 ``test_h4_retry_runtime_entry.py::test_runtime_wakes_fence_stale_planner_and_repeated_source_transitions``
 在产品同形世界里经真实入口入库覆盖。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -124,11 +125,17 @@ def test_event_handler_runtime_trigger_persists_h4_audit(tmp_path) -> None:
             loop, mission = seed.loop, seed.mission
             for _ in range(2):
                 loop._dispatch_h4_repair_trigger(
-                    mission, event_type="RuntimeUnavailable", trigger_ref=mission.id,
+                    mission,
+                    event_type="RuntimeUnavailable",
+                    trigger_ref=mission.id,
                     detail={"reason": "provider_outcome_unknown"},
                 )
             rows = events(loop, mission.id, "PlanningRepairRequested")
-            runtime = [row for row in rows if row.payload["request"]["trigger_source"] == "RUNTIME_UNAVAILABLE"]
+            runtime = [
+                row
+                for row in rows
+                if row.payload["request"]["trigger_source"] == "RUNTIME_UNAVAILABLE"
+            ]
             assert len(runtime) == 1, [row.payload for row in rows]
             assert "decision" not in runtime[0].payload
             assert not events(loop, mission.id, "RepairDecisionDispatched")

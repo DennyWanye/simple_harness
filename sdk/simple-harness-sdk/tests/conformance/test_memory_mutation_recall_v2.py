@@ -406,16 +406,29 @@ def test_mutation_v5_target_union_no_mutation_and_order_independent_dag() -> Non
     assert MemoryMutationPlan.from_json(no_mutation.to_json()) == no_mutation
     with pytest.raises(ValueError, match="no_mutation"):
         MemoryMutationPlan(
-            "bad", "run-1", "turn-1", "user-1", 4,
+            "bad",
+            "run-1",
+            "turn-1",
+            "user-1",
+            4,
             MemoryMutationPlanOutcome.NO_MUTATION,
-            (create,), _disclosure(), (_ref(),), "bad-idem",
+            (create,),
+            _disclosure(),
+            (_ref(),),
+            "bad-idem",
         )
     with pytest.raises(ValueError, match="unknown"):
         MemoryMutationPlan(
-            "bad", "run-1", "turn-1", "user-1", 4,
+            "bad",
+            "run-1",
+            "turn-1",
+            "user-1",
+            4,
             MemoryMutationPlanOutcome.MUTATE,
             (_semantic_operation("x", depends_on=("missing",)),),
-            _disclosure(), (_ref(),), "bad-idem",
+            _disclosure(),
+            (_ref(),),
+            "bad-idem",
         )
 
     suppress = replace(
@@ -429,7 +442,11 @@ def test_mutation_v5_target_union_no_mutation_and_order_independent_dag() -> Non
     assert MemoryMutationOperation.from_json(suppress.to_json()) == suppress
     with pytest.raises(ValueError, match="cycle"):
         MemoryMutationPlan(
-            "cycle", "run-1", "turn-1", "user-1", 4,
+            "cycle",
+            "run-1",
+            "turn-1",
+            "user-1",
+            4,
             MemoryMutationPlanOutcome.MUTATE,
             (
                 replace(
@@ -445,7 +462,9 @@ def test_mutation_v5_target_union_no_mutation_and_order_independent_dag() -> Non
                     depends_on_operation_ids=("a",),
                 ),
             ),
-            _disclosure(), (_ref(),), "cycle-idem",
+            _disclosure(),
+            (_ref(),),
+            "cycle-idem",
         )
     with pytest.raises(ValueError, match="unique"):
         replace(create, depends_on_operation_ids=("x", "x"))
@@ -617,9 +636,7 @@ def test_mutation_v5_semantic_relation_dependency_and_endpoint_matrix_fail_close
     ).payload
     assert isinstance(relation_wire, SemanticRelationMemoryPayload)
     with pytest.raises(ValueError, match="fields differ"):
-        SemanticRelationMemoryPayload.from_json(
-            {**relation_wire.to_json(), "qualifiers": []}
-        )
+        SemanticRelationMemoryPayload.from_json({**relation_wire.to_json(), "qualifiers": []})
 
 
 def test_mutation_v5_validation_diagnostic_is_bounded_and_credential_safe() -> None:
@@ -641,19 +658,18 @@ def test_mutation_v5_validation_diagnostic_is_bounded_and_credential_safe() -> N
     with pytest.raises(ValueError, match="differs from reason_code"):
         MemoryMutationValidationDiagnostic.from_json(tampered_diagnostic)
 
-    v4 = deepcopy(_relation_operation(
-        source=ExistingMemoryTarget("memory-claim", 1),
-        target=ExistingMemoryTarget("memory-procedure", 1),
-        depends_on=(),
-    ).to_json())
+    v4 = deepcopy(
+        _relation_operation(
+            source=ExistingMemoryTarget("memory-claim", 1),
+            target=ExistingMemoryTarget("memory-procedure", 1),
+            depends_on=(),
+        ).to_json()
+    )
     unsupported = parse_memory_mutation_plan(
         {"schema_version": 4, "operations": [v4], "credential": secret}
     )
     assert isinstance(unsupported, MemoryMutationValidationDiagnostic)
-    assert (
-        unsupported.reason_code
-        is MemoryMutationValidationReasonCode.UNSUPPORTED_SCHEMA_VERSION
-    )
+    assert unsupported.reason_code is MemoryMutationValidationReasonCode.UNSUPPORTED_SCHEMA_VERSION
     assert secret not in str(unsupported.to_json())
 
 
@@ -682,17 +698,13 @@ def test_mutation_v5_relation_admission_diagnostics_are_stable() -> None:
         wire["operations"] = [operation.to_json() for operation in operations]
         return wire
 
-    def assert_reason(
-        wire: dict[str, object], reason: MemoryMutationValidationReasonCode
-    ) -> None:
+    def assert_reason(wire: dict[str, object], reason: MemoryMutationValidationReasonCode) -> None:
         result = parse_memory_mutation_plan(wire)
         assert isinstance(result, MemoryMutationValidationDiagnostic)
         assert result.reason_code is reason
         assert len(result.message.encode("utf-8")) <= 256
 
-    missing_dependency = replace(
-        relation, depends_on_operation_ids=("create-claim",)
-    )
+    missing_dependency = replace(relation, depends_on_operation_ids=("create-claim",))
     assert_reason(
         wire_with_operations(claim, procedure, missing_dependency),
         MemoryMutationValidationReasonCode.RELATION_ENDPOINT_DEPENDENCY_REQUIRED,
@@ -726,9 +738,7 @@ def test_mutation_v5_relation_admission_diagnostics_are_stable() -> None:
 
     unknown_kind_wire = cast(dict[str, object], deepcopy(base_wire))
     unknown_operations = cast(list[dict[str, object]], unknown_kind_wire["operations"])
-    unknown_relation_payload = cast(
-        dict[str, object], unknown_operations[-1]["payload"]
-    )
+    unknown_relation_payload = cast(dict[str, object], unknown_operations[-1]["payload"])
     unknown_relation_payload["relation_kind"] = "supports"
     assert_reason(
         unknown_kind_wire,
@@ -787,9 +797,7 @@ def test_mutation_v5_relation_admission_diagnostics_are_stable() -> None:
         MemoryMutationValidationReasonCode.EVIDENCE_REF_REQUIRED,
     )
 
-    assert {
-        item.value for item in MemoryMutationValidationReasonCode
-    } >= {
+    assert {item.value for item in MemoryMutationValidationReasonCode} >= {
         "invalid_memory_mutation_plan_wire",
         "relation_endpoint_dependency_required",
         "invalid_dependency_order",
@@ -814,12 +822,15 @@ def test_mutation_epistemic_status_requires_exact_evidence_provenance() -> None:
     )
     with pytest.raises(ValueError, match="explicit_user"):
         replace(explicit, evidence_spans=(model_span,))
-    assert replace(
-        explicit,
-        epistemic_status=EpistemicStatus.LLM_INFERENCE,
-        verification_state=VerificationState.UNVERIFIED,
-        evidence_spans=(model_span,),
-    ).epistemic_status is EpistemicStatus.LLM_INFERENCE
+    assert (
+        replace(
+            explicit,
+            epistemic_status=EpistemicStatus.LLM_INFERENCE,
+            verification_state=VerificationState.UNVERIFIED,
+            evidence_spans=(model_span,),
+        ).epistemic_status
+        is EpistemicStatus.LLM_INFERENCE
+    )
     with pytest.raises(ValueError, match="llm_inference"):
         replace(
             explicit,
@@ -907,9 +918,16 @@ def test_mutation_plan_rejects_invalid_created_by_producer_and_uncovered_span() 
         )
     with pytest.raises(ValueError, match="producer must be a create"):
         MemoryMutationPlan(
-            "bad-producer", "run-1", "turn-1", "user-1", 4,
-            MemoryMutationPlanOutcome.MUTATE, (producer_not_create, consumer),
-            _disclosure(), (_ref(),), "bad-producer-idem",
+            "bad-producer",
+            "run-1",
+            "turn-1",
+            "user-1",
+            4,
+            MemoryMutationPlanOutcome.MUTATE,
+            (producer_not_create, consumer),
+            _disclosure(),
+            (_ref(),),
+            "bad-producer-idem",
         )
 
     episode_create = replace(
@@ -917,8 +935,15 @@ def test_mutation_plan_rejects_invalid_created_by_producer_and_uncovered_span() 
         operation_id="episode-create",
         memory_type=LongTermMemoryType.EPISODE,
         payload=EpisodeMemoryPayload(
-            "decision", ("user:self",), ("ship",), ("test",), ("green",),
-            ("released",), 10.0, 11.0, "thread-1",
+            "decision",
+            ("user:self",),
+            ("ship",),
+            ("test",),
+            ("green",),
+            ("released",),
+            10.0,
+            11.0,
+            "thread-1",
         ),
         lifecycle_state=EpisodeLifecycleState.ACTIVE,
     )
@@ -929,17 +954,30 @@ def test_mutation_plan_rejects_invalid_created_by_producer_and_uncovered_span() 
     )
     with pytest.raises(ValueError, match="same memory_type"):
         MemoryMutationPlan(
-            "bad-type", "run-1", "turn-1", "user-1", 4,
+            "bad-type",
+            "run-1",
+            "turn-1",
+            "user-1",
+            4,
             MemoryMutationPlanOutcome.MUTATE,
-            (episode_create, wrong_type_consumer), _disclosure(), (_ref(),),
+            (episode_create, wrong_type_consumer),
+            _disclosure(),
+            (_ref(),),
             "bad-type-idem",
         )
 
     with pytest.raises(ValueError, match="cover every evidence span"):
         MemoryMutationPlan(
-            "bad-evidence", "run-1", "turn-1", "user-1", 4,
-            MemoryMutationPlanOutcome.MUTATE, (create,), _disclosure(),
-            (EvidenceRef("evidence-1", "f" * 64, 1),), "bad-evidence-idem",
+            "bad-evidence",
+            "run-1",
+            "turn-1",
+            "user-1",
+            4,
+            MemoryMutationPlanOutcome.MUTATE,
+            (create,),
+            _disclosure(),
+            (EvidenceRef("evidence-1", "f" * 64, 1),),
+            "bad-evidence-idem",
         )
 
 
@@ -1445,8 +1483,14 @@ def test_memory_mutation_apply_result_has_strict_confirmation_matrix() -> None:
         (
             LongTermMemoryType.EPISODE,
             EpisodeMemoryPayload(
-                "runtime decision", ("user:self",), ("upgrade",), ("choose 3.12",),
-                ("selected",), ("future tasks use 3.12",), 10.0, 11.0,
+                "runtime decision",
+                ("user:self",),
+                ("upgrade",),
+                ("choose 3.12",),
+                ("selected",),
+                ("future tasks use 3.12",),
+                10.0,
+                11.0,
                 "episode-thread-1",
             ),
             EpisodeLifecycleState.ACTIVE,
@@ -1454,7 +1498,9 @@ def test_memory_mutation_apply_result_has_strict_confirmation_matrix() -> None:
         (
             LongTermMemoryType.PROCEDURE,
             ProcedureMemoryPayload(
-                "release checklist", ("software release",), ("test", "publish"),
+                "release checklist",
+                ("software release",),
+                ("test", "publish"),
                 ProcedureRiskLevel.HIGH,
             ),
             ProcedureLifecycleState.DRAFT,
@@ -2038,9 +2084,16 @@ def test_strict_atomic_apply_receipt_binds_entire_canonical_plan() -> None:
         depends_on=("create",),
     )
     plan = MemoryMutationPlan(
-        "atomic-plan", "run-1", "turn-1", "user-1", 4,
-        MemoryMutationPlanOutcome.MUTATE, (revise, create), _disclosure(),
-        (_ref(),), "atomic-plan-idem",
+        "atomic-plan",
+        "run-1",
+        "turn-1",
+        "user-1",
+        4,
+        MemoryMutationPlanOutcome.MUTATE,
+        (revise, create),
+        _disclosure(),
+        (_ref(),),
+        "atomic-plan-idem",
     )
     assert plan.apply_mode is MemoryMutationApplyMode.STRICT_ATOMIC
     assert tuple(MemoryMutationApplyMode) == (MemoryMutationApplyMode.STRICT_ATOMIC,)
@@ -2061,11 +2114,7 @@ def test_strict_atomic_apply_receipt_binds_entire_canonical_plan() -> None:
     assert MemoryMutationApplyReceipt.from_json(receipt.to_json()) == receipt
     ref = MemoryMutationApplyReceiptRef(receipt.receipt_id, receipt.receipt_hash)
     assert (
-        asyncio.run(
-            verify_memory_mutation_apply_receipt(
-                plan, ref, _ApplyAuthority(receipt)
-            )
-        )
+        asyncio.run(verify_memory_mutation_apply_receipt(plan, ref, _ApplyAuthority(receipt)))
         == receipt
     )
 
@@ -2075,21 +2124,15 @@ def test_strict_atomic_apply_receipt_binds_entire_canonical_plan() -> None:
     wrong_revision = replace(receipt, committed_revision=plan.base_revision + 2)
     with pytest.raises(ValueError, match="base-to-committed"):
         wrong_revision.validate_plan(plan)
-    partial_ref = MemoryMutationApplyReceiptRef(
-        partial.receipt_id, partial.receipt_hash
-    )
+    partial_ref = MemoryMutationApplyReceiptRef(partial.receipt_id, partial.receipt_hash)
     with pytest.raises(ValueError, match="all canonical operations"):
         asyncio.run(
-            verify_memory_mutation_apply_receipt(
-                plan, partial_ref, _ApplyAuthority(partial)
-            )
+            verify_memory_mutation_apply_receipt(plan, partial_ref, _ApplyAuthority(partial))
         )
 
 
 def test_apply_receipt_rejects_protected_plan_without_action_authority() -> None:
-    authorized_plan, operation, _intent, _authority, _reference = (
-        _authorized_revise_plan()
-    )
+    authorized_plan, operation, _intent, _authority, _reference = _authorized_revise_plan()
     unauthorized_plan = replace(
         authorized_plan,
         operations=(replace(operation, action_authority_ref=None),),

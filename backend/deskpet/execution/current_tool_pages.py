@@ -1,4 +1,5 @@
 """Current Run pages: settled public effects, never fabricated terminal S1."""
+
 from __future__ import annotations
 
 import json
@@ -24,7 +25,9 @@ MARKER = "primary_settled_effect_v1"
 # These values contain executable context/recall attestations. Retain their
 # complete public carriers under the original budget; never turn them into an
 # empty typed attestation or a generic content summary.
-CONTROL_TOOLS = frozenset({"context_route", "context_page_in", "task_scope_search", "task_scope_update"})
+CONTROL_TOOLS = frozenset(
+    {"context_route", "context_page_in", "task_scope_search", "task_scope_update"}
+)
 # HM-AC-6 same-Run accumulation bound. History trimming only bounds *history*:
 # the current Run's own settled tool results all live in the single open causal
 # group, which is never trimmed, so 25 provider turns of small results grow the
@@ -135,9 +138,11 @@ REFERENCE_UNAVAILABLE_CODE = "primary_page_reference_unavailable"
 # Run 时按这张表比对，理由与 ``legacy_summary`` 完全一致（review M1）：一次纯粹
 # 的措辞升级不得把还在飞的 Run 判成 ``primary_page_rejection_mismatch``。
 # 只允许"新码 → 它取代的那个旧码"这一个方向，且表是冻结的。
-REJECTION_CODE_ALIASES = MappingProxyType({
-    REFERENCE_UNAVAILABLE_CODE: "primary_effect_page_not_admitted",
-})
+REJECTION_CODE_ALIASES = MappingProxyType(
+    {
+        REFERENCE_UNAVAILABLE_CODE: "primary_effect_page_not_admitted",
+    }
+)
 
 
 def rejection_code_matches(recorded, derived):
@@ -161,7 +166,7 @@ def page_starts(content, page_size=None):
     starts, offset = [], 0
     while offset < len(raw):
         starts.append(offset)
-        step = len(raw[offset:offset + size].decode("utf-8", errors="ignore").encode("utf-8"))
+        step = len(raw[offset : offset + size].decode("utf-8", errors="ignore").encode("utf-8"))
         if step <= 0:  # 防御：起点在码点边界上时不可能发生，但绝不允许死循环
             break
         offset += step
@@ -195,15 +200,17 @@ STUBBABLE_CONTROL_TOOLS = CONTROL_TOOLS - frozenset({"context_route"})
 # Deterministic, frozen, payload-free: how the model re-obtains an equivalent
 # and *current* attestation for the family whose body was elided.  Not derived
 # from the elided body, so it can never leak it back in.
-CONTROL_REFETCH_HINTS = MappingProxyType({
-    # Deliberately does not claim the matching primary_settled_effect_v1 summary
-    # is still in this request: whether the source body travels paged is decided
-    # by a different bound on a different turn, and the Host cannot promise it.
-    "context_page_in": "elided; re-page it with a reference_id and source_hash "
-                       "from a primary_settled_effect_v1 summary",
-    "task_scope_search": "elided; call task_scope_search again with the same arguments",
-    "task_scope_update": "elided; call task_scope_update again for a current scope receipt",
-})
+CONTROL_REFETCH_HINTS = MappingProxyType(
+    {
+        # Deliberately does not claim the matching primary_settled_effect_v1 summary
+        # is still in this request: whether the source body travels paged is decided
+        # by a different bound on a different turn, and the Host cannot promise it.
+        "context_page_in": "elided; re-page it with a reference_id and source_hash "
+        "from a primary_settled_effect_v1 summary",
+        "task_scope_search": "elided; call task_scope_search again with the same arguments",
+        "task_scope_update": "elided; call task_scope_update again for a current scope receipt",
+    }
+)
 # HM-TO-A6 attempt 8 (native evidence, provider turn 9 of
 # ``product-sdk-28e8fd37…``): 12 same-Run tool results, 41 078 B, of which
 # CONTROL carriers are 33 022 B (80.4 %) — task_scope_search 12 389 B (one
@@ -233,21 +240,32 @@ def read_effect_facts(uow, run_id, effect_id):
         provider_request_from_json,
         provider_response_from_json,
     )
+
     effect = uow.read_effect(EffectId(effect_id))
     _require(effect is not None and effect.run_id.value == run_id, "effect_missing")
     snapshot = uow.read_run_operation_audit(RunId(run_id), limit=4096)
     _require(snapshot.run_id == run_id and not snapshot.truncated, "audit_incomplete")
     heads = [op for op in snapshot.operations if op.record_type == "head"]
-    matches = [op for op in heads if op.kind == "effect"
-               and op.effect_id == audit_reference("effect", effect_id)]
+    matches = [
+        op
+        for op in heads
+        if op.kind == "effect" and op.effect_id == audit_reference("effect", effect_id)
+    ]
     _require(len(matches) == 1, "effect_head_ambiguous")
     head = matches[0]
-    _require(head.source_version == effect.version and head.state == effect.state.value
-             and head.request_hash == effect.request_hash
-             and head.call_id == audit_reference("call", effect.call_id.value)
-             and head.call_ordinal == effect.call_ordinal, "effect_head_mismatch")
-    parents = [op for op in heads if op.kind == "provider"
-               and op.provider_invocation_id == head.provider_invocation_id]
+    _require(
+        head.source_version == effect.version
+        and head.state == effect.state.value
+        and head.request_hash == effect.request_hash
+        and head.call_id == audit_reference("call", effect.call_id.value)
+        and head.call_ordinal == effect.call_ordinal,
+        "effect_head_mismatch",
+    )
+    parents = [
+        op
+        for op in heads
+        if op.kind == "provider" and op.provider_invocation_id == head.provider_invocation_id
+    ]
     _require(len(parents) == 1, "parent_ambiguous")
     parent = parents[0]
     found, after = {}, 0
@@ -256,10 +274,14 @@ def read_effect_facts(uow, run_id, effect_id):
         for receipt in receipts:
             _require(receipt.sequence > after, "projection_order")
             after = receipt.sequence
-            if (receipt.run_id != run_id or
-                    audit_reference("provider", receipt.invocation_id) != head.provider_invocation_id):
+            if (
+                receipt.run_id != run_id
+                or audit_reference("provider", receipt.invocation_id) != head.provider_invocation_id
+            ):
                 continue
-            _require(audit_hash(thaw_json(receipt.payload)) == receipt.payload_hash, "projection_hash")
+            _require(
+                audit_hash(thaw_json(receipt.payload)) == receipt.payload_hash, "projection_hash"
+            )
             invocation = uow.read_provider_invocation(receipt.invocation_id)
             _require(invocation is not None and invocation.run_id.value == run_id, "parent_missing")
             if receipt.invocation_version == invocation.version:
@@ -270,26 +292,46 @@ def read_effect_facts(uow, run_id, effect_id):
         raise PrimaryContextPageUnavailable("primary_effect_page_projection_limit")
     _require(len(found) == 1, "parent_unverifiable")
     invocation = next(iter(found.values()))
-    _require(invocation.state.value == parent.state == "succeeded"
-             and invocation.version == parent.source_version
-             and invocation.response_json is not None and invocation.request_json is not None
-             and parent.request_id == audit_reference("request", invocation.request_id.value), "parent_not_settled")
+    _require(
+        invocation.state.value == parent.state == "succeeded"
+        and invocation.version == parent.source_version
+        and invocation.response_json is not None
+        and invocation.request_json is not None
+        and parent.request_id == audit_reference("request", invocation.request_id.value),
+        "parent_not_settled",
+    )
     response_json = thaw_json(invocation.response_json)
     _require(audit_hash(response_json) == parent.result_hash, "parent_result_hash")
     response = provider_response_from_json(response_json)
     _require(0 <= effect.call_ordinal < len(response.tool_calls), "parent_call_missing")
     call = response.tool_calls[effect.call_ordinal]
-    _require(call.call_id.value == effect.raw_call_id and call.name == effect.tool_name
-             and thaw_json(call.arguments) == thaw_json(effect.arguments), "parent_call_mismatch")
+    _require(
+        call.call_id.value == effect.raw_call_id
+        and call.name == effect.tool_name
+        and thaw_json(call.arguments) == thaw_json(effect.arguments),
+        "parent_call_mismatch",
+    )
     request = provider_request_from_json(invocation.request_id, thaw_json(invocation.request_json))
-    _require(provider_request_fingerprint(request) == invocation.request_fingerprint, "parent_request_hash")
+    _require(
+        provider_request_fingerprint(request) == invocation.request_fingerprint,
+        "parent_request_hash",
+    )
     if effect.result is not None:
         result = effect.result
-        raw = dict(call_id=result.call_id.value, outcome=result.outcome.value,
-                   value=thaw_json(result.value), error_code=result.error_code,
-                   public_message=result.public_message, retryable=result.retryable)
-        _require(result.call_id == effect.call_id and audit_hash(raw) == head.result_hash
-                 and audit_hash(effect.evidence_ref) == head.evidence_ref_hash, "result_hash")
+        raw = dict(
+            call_id=result.call_id.value,
+            outcome=result.outcome.value,
+            value=thaw_json(result.value),
+            error_code=result.error_code,
+            public_message=result.public_message,
+            retryable=result.retryable,
+        )
+        _require(
+            result.call_id == effect.call_id
+            and audit_hash(raw) == head.result_hash
+            and audit_hash(effect.evidence_ref) == head.evidence_ref_hash,
+            "result_hash",
+        )
     return effect, head, invocation, request
 
 
@@ -306,22 +348,43 @@ def source_content(facts, *, min_bytes=DEFAULT_LARGE_RESULT_BYTES):
     """
     from simple_harness import thaw_json
     from simple_harness.execution.audit import audit_hash
+
     effect, head, parent, _ = facts
-    _require(effect.terminal and effect.state.value == "succeeded" and effect.result is not None
-             and effect.result.outcome.value == "succeeded" and effect.evidence_ref
-             and effect.tool_name not in CONTROL_TOOLS, "source_not_pageable")
+    _require(
+        effect.terminal
+        and effect.state.value == "succeeded"
+        and effect.result is not None
+        and effect.result.outcome.value == "succeeded"
+        and effect.evidence_ref
+        and effect.tool_name not in CONTROL_TOOLS,
+        "source_not_pageable",
+    )
     result = effect.result
     # Exactly the SDK's public tool message fields, with the same existing Host
     # transcript redaction. Private/internal result fields never enter a page.
-    content = redact_credential_shapes(canonical_json(dict(outcome=result.outcome.value,
-        value=thaw_json(result.value), error_code=result.error_code,
-        public_message=result.public_message)))[0]
+    content = redact_credential_shapes(
+        canonical_json(
+            dict(
+                outcome=result.outcome.value,
+                value=thaw_json(result.value),
+                error_code=result.error_code,
+                public_message=result.public_message,
+            )
+        )
+    )[0]
     _require(len(content.encode()) > int(min_bytes), "source_not_large")
-    descriptor = dict(run_id=effect.run_id.value, effect_id=effect.effect_id.value,
-        effect_version=effect.version, result_hash=head.result_hash,
-        provider_invocation_id=parent.invocation_id, provider_response_hash=audit_hash(thaw_json(parent.response_json)),
-        tool_name=effect.tool_name, raw_call_id=effect.raw_call_id,
-        content_hash=_sha(content), content_bytes=len(content.encode()))
+    descriptor = dict(
+        run_id=effect.run_id.value,
+        effect_id=effect.effect_id.value,
+        effect_version=effect.version,
+        result_hash=head.result_hash,
+        provider_invocation_id=parent.invocation_id,
+        provider_response_hash=audit_hash(thaw_json(parent.response_json)),
+        tool_name=effect.tool_name,
+        raw_call_id=effect.raw_call_id,
+        content_hash=_sha(content),
+        content_bytes=len(content.encode()),
+    )
     return descriptor, content
 
 
@@ -460,26 +523,36 @@ def summary(descriptor, content):
     它就是全部页起点，模型一次就能读完，不必先撞一次拒绝。大正文不印清单，
     页起点由拒绝详情或每页的 ``next_reference_id`` 给。
     """
-    return _wire_summary(descriptor, content, page_size=PAGE_SIZE,
-                         offset_limit=DESCRIPTOR_OFFSET_LIMIT, stats=True)
+    return _wire_summary(
+        descriptor, content, page_size=PAGE_SIZE, offset_limit=DESCRIPTOR_OFFSET_LIMIT, stats=True
+    )
 
 
 def _wire_summary(descriptor, content, *, page_size, offset_limit, stats):
     """``summary`` 与它的只读兼容形态共用的唯一渲染器（参数化的只有形状，不是权威）。"""
     starts = page_starts(content, page_size)
-    wire = dict(kind=MARKER,
-        source=dict(effect_id=descriptor["effect_id"], tool_name=descriptor["tool_name"],
-                    content_bytes=descriptor["content_bytes"]),
+    wire = dict(
+        kind=MARKER,
+        source=dict(
+            effect_id=descriptor["effect_id"],
+            tool_name=descriptor["tool_name"],
+            content_bytes=descriptor["content_bytes"],
+        ),
         excerpt=_descriptor_excerpt(content) if stats else _summary_excerpt(content),
         # 读完整份正文需要的 ``context_page_in`` 次数，精确值。
-        page_count=len(starts), page_size=page_size,
-        reference_id=reference(descriptor), source_hash=descriptor["content_hash"],
-        page_tool="context_page_in")
+        page_count=len(starts),
+        page_size=page_size,
+        reference_id=reference(descriptor),
+        source_hash=descriptor["content_hash"],
+        page_tool="context_page_in",
+    )
     if stats:
         text_stats = _text_stats(content)
         if text_stats is not None:
             wire["text_stats"] = text_stats
-    if len(starts) <= offset_limit and starts != list(range(0, len(content.encode("utf-8")), page_size)):
+    if len(starts) <= offset_limit and starts != list(
+        range(0, len(content.encode("utf-8")), page_size)
+    ):
         # 只在清单**带信息**时才印：单字节正文的页起点就是 page_size 的整数倍，
         # 已经被 page_size + page_count 完全决定，再印一遍是白花字节（F-E3 的
         # 每条描述符 token 上限没有余量）。真正需要它的恰好是事件 AF 的形态——
@@ -500,8 +573,13 @@ def legacy_af_summary(descriptor, content):
     接受它不放宽任何权限：两种形态都是同一对重新推导出的 ``(descriptor, content)``
     的确定函数，``canonical_hash(descriptor)`` 这个准入键在两种形态下完全相同。
     """
-    return _wire_summary(descriptor, content, page_size=LEGACY_PAGE_SIZE,
-                         offset_limit=LEGACY_DESCRIPTOR_OFFSET_LIMIT, stats=False)
+    return _wire_summary(
+        descriptor,
+        content,
+        page_size=LEGACY_PAGE_SIZE,
+        offset_limit=LEGACY_DESCRIPTOR_OFFSET_LIMIT,
+        stats=False,
+    )
 
 
 def legacy_bounded_summary(descriptor, content):
@@ -516,13 +594,21 @@ def legacy_bounded_summary(descriptor, content):
     的确定函数，比对仍是对权威的逐字节相等，且 ``canonical_hash(descriptor)``
     这个准入键在两种形态下完全相同。
     """
-    return canonical_json(dict(kind=MARKER,
-        source=dict(effect_id=descriptor["effect_id"], tool_name=descriptor["tool_name"],
-                    content_bytes=descriptor["content_bytes"]),
-        excerpt=_summary_excerpt(content),
-        pages=-(-int(descriptor["content_bytes"]) // LEGACY_PAGE_SIZE),
-        reference_id=reference(descriptor), source_hash=descriptor["content_hash"],
-        page_tool="context_page_in"))
+    return canonical_json(
+        dict(
+            kind=MARKER,
+            source=dict(
+                effect_id=descriptor["effect_id"],
+                tool_name=descriptor["tool_name"],
+                content_bytes=descriptor["content_bytes"],
+            ),
+            excerpt=_summary_excerpt(content),
+            pages=-(-int(descriptor["content_bytes"]) // LEGACY_PAGE_SIZE),
+            reference_id=reference(descriptor),
+            source_hash=descriptor["content_hash"],
+            page_tool="context_page_in",
+        )
+    )
 
 
 def legacy_summary(descriptor, content):
@@ -548,10 +634,16 @@ def legacy_summary(descriptor, content):
     exact byte equality against authority, and both yield the same
     ``canonical_hash(descriptor)`` admission key.
     """
-    return canonical_json(dict(kind=MARKER, source=descriptor,
-        excerpt=_excerpt(content, page_bytes=EXCERPT_BYTES),
-        reference_id=reference(descriptor), source_hash=descriptor["content_hash"],
-        page_tool="context_page_in"))
+    return canonical_json(
+        dict(
+            kind=MARKER,
+            source=descriptor,
+            excerpt=_excerpt(content, page_bytes=EXCERPT_BYTES),
+            reference_id=reference(descriptor),
+            source_hash=descriptor["content_hash"],
+            page_tool="context_page_in",
+        )
+    )
 
 
 def worth_paging(body_bytes, content_bytes, *, margin=True):
@@ -592,30 +684,54 @@ def control_stub_content(facts, *, min_bytes=0):
     re-derives the identical notice.
     """
     from simple_harness import thaw_json
+
     effect, head, _parent, _ = facts
-    _require(effect.terminal and effect.state.value == "succeeded" and effect.result is not None
-             and effect.result.outcome.value == "succeeded"
-             and effect.tool_name in STUBBABLE_CONTROL_TOOLS, "control_not_stubbable")
+    _require(
+        effect.terminal
+        and effect.state.value == "succeeded"
+        and effect.result is not None
+        and effect.result.outcome.value == "succeeded"
+        and effect.tool_name in STUBBABLE_CONTROL_TOOLS,
+        "control_not_stubbable",
+    )
     result = effect.result
     # The same public projection ``source_content`` uses, with the same Host
     # transcript redaction, so the transcript equality check below compares the
     # same bytes for both families.
-    content = redact_credential_shapes(canonical_json(dict(outcome=result.outcome.value,
-        value=thaw_json(result.value), error_code=result.error_code,
-        public_message=result.public_message)))[0]
+    content = redact_credential_shapes(
+        canonical_json(
+            dict(
+                outcome=result.outcome.value,
+                value=thaw_json(result.value),
+                error_code=result.error_code,
+                public_message=result.public_message,
+            )
+        )
+    )[0]
     _require(len(content.encode()) > int(min_bytes), "control_not_large")
-    descriptor = dict(run_id=effect.run_id.value, effect_id=effect.effect_id.value,
-        effect_version=effect.version, result_hash=head.result_hash,
-        tool_name=effect.tool_name, raw_call_id=effect.raw_call_id,
-        content_hash=_sha(content), content_bytes=len(content.encode()))
+    descriptor = dict(
+        run_id=effect.run_id.value,
+        effect_id=effect.effect_id.value,
+        effect_version=effect.version,
+        result_hash=head.result_hash,
+        tool_name=effect.tool_name,
+        raw_call_id=effect.raw_call_id,
+        content_hash=_sha(content),
+        content_bytes=len(content.encode()),
+    )
     return descriptor, content
 
 
 def control_stub(descriptor):
     """The elision notice's exact bytes: fixed shape, fixed small cost."""
-    return canonical_json(dict(kind=CONTROL_MARKER, source=descriptor,
-        reason="same_run_control_result_bound",
-        refetch=CONTROL_REFETCH_HINTS[descriptor["tool_name"]]))
+    return canonical_json(
+        dict(
+            kind=CONTROL_MARKER,
+            source=descriptor,
+            reason="same_run_control_result_bound",
+            refetch=CONTROL_REFETCH_HINTS[descriptor["tool_name"]],
+        )
+    )
 
 
 def verify_control_stubs(stack, run_id, messages):
@@ -640,14 +756,20 @@ def verify_control_stubs(stack, run_id, messages):
         metadata = message.metadata
         if not isinstance(metadata, Mapping) or metadata.get("source") != CONTROL_MARKER:
             continue
-        _require(message.role.value == "tool" and isinstance(message.content, str), "control_stub_shape")
+        _require(
+            message.role.value == "tool" and isinstance(message.content, str), "control_stub_shape"
+        )
         claimed = json.loads(message.content).get("source", {})
         _require(claimed.get("run_id") == run_id, "control_stub_foreign_source")
         descriptor, _ = control_stub_content(
-            stack.read_primary_effect_page_facts(run_id, claimed.get("effect_id")))
-        _require(message.content == control_stub(descriptor)
-                 and message.name == descriptor["tool_name"]
-                 and message.call_id.value == descriptor["raw_call_id"], "control_stub_mismatch")
+            stack.read_primary_effect_page_facts(run_id, claimed.get("effect_id"))
+        )
+        _require(
+            message.content == control_stub(descriptor)
+            and message.name == descriptor["tool_name"]
+            and message.call_id.value == descriptor["raw_call_id"],
+            "control_stub_mismatch",
+        )
         stubs += 1
     return stubs
 
@@ -677,15 +799,24 @@ def verify_request(stack, run_id, messages):
         # an effect belonging to another Run, and the assertion below re-states
         # it against authority instead of against model-visible text.
         descriptor, content = source_content(
-            stack.read_primary_effect_page_facts(run_id, claimed.get("effect_id")
-                                                 if isinstance(claimed, Mapping) else None), min_bytes=0)
+            stack.read_primary_effect_page_facts(
+                run_id, claimed.get("effect_id") if isinstance(claimed, Mapping) else None
+            ),
+            min_bytes=0,
+        )
         _require(descriptor["run_id"] == run_id, "foreign_source")
-        _require(message.content in (summary(descriptor, content),
-                                     legacy_af_summary(descriptor, content),
-                                     legacy_bounded_summary(descriptor, content),
-                                     legacy_summary(descriptor, content))
-                 and message.name == descriptor["tool_name"]
-                 and message.call_id.value == descriptor["raw_call_id"], "summary_mismatch")
+        _require(
+            message.content
+            in (
+                summary(descriptor, content),
+                legacy_af_summary(descriptor, content),
+                legacy_bounded_summary(descriptor, content),
+                legacy_summary(descriptor, content),
+            )
+            and message.name == descriptor["tool_name"]
+            and message.call_id.value == descriptor["raw_call_id"],
+            "summary_mismatch",
+        )
         found[canonical_hash(descriptor)] = descriptor, content
     return found
 
@@ -716,15 +847,19 @@ async def _admitted_next_offset(*, db, stack, sdk_run_id, digest, content, befor
     权威事实就跳过。提示读不出来时退回 0（"从头翻"），永远不把整次调用变成别的错。
     """
     from simple_harness import thaw_json
-    rows = await (await db.execute(
-        "SELECT effect_id FROM primary_effect_identities WHERE sdk_run_id=? AND tool_name='context_page_in' "
-        "AND sequence<? ORDER BY sequence DESC LIMIT ?",
-        (sdk_run_id, before_sequence, MAX_SCANNED_PAGE_EFFECTS))).fetchall()
+
+    rows = await (
+        await db.execute(
+            "SELECT effect_id FROM primary_effect_identities WHERE sdk_run_id=? AND tool_name='context_page_in' "
+            "AND sequence<? ORDER BY sequence DESC LIMIT ?",
+            (sdk_run_id, before_sequence, MAX_SCANNED_PAGE_EFFECTS),
+        )
+    ).fetchall()
     highest = None
     for row in rows:
         try:
             prior = stack.read_primary_effect_page_facts(sdk_run_id, row["effect_id"])[0]
-            if (prior.result is None or prior.result.outcome.value != "succeeded"):
+            if prior.result is None or prior.result.outcome.value != "succeeded":
                 continue
             prior_args = thaw_json(prior.arguments)
             prior_ref = prior_args.get("reference_id") if isinstance(prior_args, Mapping) else None
@@ -754,19 +889,29 @@ async def _reject_bad_offset(*, db, stack, sdk_run_id, digest, content, offset, 
     if reason is None:
         return
     starts = page_starts(content)
-    detail = dict(reason=reason, requested_offset=offset, page_size=PAGE_SIZE,
-                  page_count=len(starts), content_bytes=len(content.encode("utf-8")),
-                  valid_offsets=_listed_offsets(starts),
-                  offsets_listed=len(_listed_offsets(starts)),
-                  # 事件 AF-2：把"有效范围"写死在详情里。``valid_offsets`` 是可执行
-                  # 的**子集**（页链上的起点），这一对才是受理口径的完整边界：任何
-                  # 落在码点边界上的 offset 都在 ``[0, content_bytes)`` 内被受理。
-                  valid_offset_range=[0, max(len(content.encode("utf-8")) - 1, 0)],
-                  next_step="offset is a BYTE offset into the source body and must be one of "
-                            "valid_offsets; retry context_page_in with retry_reference_id")
-    next_offset = await _admitted_next_offset(db=db, stack=stack, sdk_run_id=sdk_run_id,
-                                              digest=digest, content=content,
-                                              before_sequence=before_sequence)
+    detail = dict(
+        reason=reason,
+        requested_offset=offset,
+        page_size=PAGE_SIZE,
+        page_count=len(starts),
+        content_bytes=len(content.encode("utf-8")),
+        valid_offsets=_listed_offsets(starts),
+        offsets_listed=len(_listed_offsets(starts)),
+        # 事件 AF-2：把"有效范围"写死在详情里。``valid_offsets`` 是可执行
+        # 的**子集**（页链上的起点），这一对才是受理口径的完整边界：任何
+        # 落在码点边界上的 offset 都在 ``[0, content_bytes)`` 内被受理。
+        valid_offset_range=[0, max(len(content.encode("utf-8")) - 1, 0)],
+        next_step="offset is a BYTE offset into the source body and must be one of "
+        "valid_offsets; retry context_page_in with retry_reference_id",
+    )
+    next_offset = await _admitted_next_offset(
+        db=db,
+        stack=stack,
+        sdk_run_id=sdk_run_id,
+        digest=digest,
+        content=content,
+        before_sequence=before_sequence,
+    )
     detail["next_offset"] = next_offset
     if next_offset is not None:
         detail["retry_reference_id"] = PREFIX + digest + ":" + str(next_offset)
@@ -784,7 +929,8 @@ def _request_references(stack, sdk_run_id, page_effect):
     """
     try:
         _, _, _, parent_request = stack.read_primary_effect_page_facts(
-            sdk_run_id, page_effect.effect_id.value)
+            sdk_run_id, page_effect.effect_id.value
+        )
         found = verify_request(stack, sdk_run_id, parent_request.messages)
     except Exception:  # noqa: BLE001 — 提示永远不得改变这次调用的结果
         return {}
@@ -815,26 +961,37 @@ def _unresolvable_reference_detail(ref, *, stack, sdk_run_id, page_effect):
     绝不回显模型写的文本——与 ``PrimaryContextPageUnavailable.detail`` 的口径一致。
     """
     available = _request_references(stack, sdk_run_id, page_effect)
-    detail = dict(available_reference_ids=_listed_references(available),
-                  references_available=len(available))
+    detail = dict(
+        available_reference_ids=_listed_references(available), references_available=len(available)
+    )
     digest = ref.removeprefix(PREFIX).split(":")[0] if ref.startswith(PREFIX) else None
     if digest in available:
         # 摘要认得这条来源，缺的只是 offset 尾巴——给一条可以直接复制去重试的引用。
         detail["reason"] = "page_reference_missing_offset"
         detail["retry_reference_id"] = available[digest]
-        detail["next_step"] = ('a reference_id ends with ":<byte offset>"; this one does not '
-                               "parse. Retry context_page_in with retry_reference_id")
+        detail["next_step"] = (
+            'a reference_id ends with ":<byte offset>"; this one does not '
+            "parse. Retry context_page_in with retry_reference_id"
+        )
         return detail
     detail["reason"] = "page_reference_unknown"
-    detail["next_step"] = ("reference_id must be copied verbatim (offset tail included) from a "
-                           "primary_settled_effect_v1 summary in THIS request; retry with one of "
-                           "available_reference_ids, or re-run the tool that produced the result")
+    detail["next_step"] = (
+        "reference_id must be copied verbatim (offset tail included) from a "
+        "primary_settled_effect_v1 summary in THIS request; retry with one of "
+        "available_reference_ids, or re-run the tool that produced the result"
+    )
     return detail
 
 
-async def admitted_current_page(*, db, stack, run, sdk_run_id, page_effect, arguments, page_bytes=None):
-    _require(isinstance(arguments, Mapping) and set(arguments) == {"reference_id", "source_hash"}
-             and all(isinstance(v, str) for v in arguments.values()), "arguments")
+async def admitted_current_page(
+    *, db, stack, run, sdk_run_id, page_effect, arguments, page_bytes=None
+):
+    _require(
+        isinstance(arguments, Mapping)
+        and set(arguments) == {"reference_id", "source_hash"}
+        and all(isinstance(v, str) for v in arguments.values()),
+        "arguments",
+    )
     ref = arguments["reference_id"]
     # 事件 AF-2：稳定码 ``primary_effect_page_reference`` 一个字未改（两条旧分支
     # ——``split``/``int`` 抛 ValueError 与 ``_require(..., "reference")``——本来就
@@ -846,10 +1003,15 @@ async def admitted_current_page(*, db, stack, run, sdk_run_id, page_effect, argu
     except ValueError:
         parsed = False
     if not parsed:
-        raise PrimaryContextPageUnavailable("primary_effect_page_reference",
-            _unresolvable_reference_detail(ref, stack=stack, sdk_run_id=sdk_run_id,
-                                           page_effect=page_effect))
-    actual, _, _, parent_request = stack.read_primary_effect_page_facts(sdk_run_id, page_effect.effect_id.value)
+        raise PrimaryContextPageUnavailable(
+            "primary_effect_page_reference",
+            _unresolvable_reference_detail(
+                ref, stack=stack, sdk_run_id=sdk_run_id, page_effect=page_effect
+            ),
+        )
+    actual, _, _, parent_request = stack.read_primary_effect_page_facts(
+        sdk_run_id, page_effect.effect_id.value
+    )
     _require(actual == page_effect and actual.tool_name == "context_page_in", "caller_mismatch")
     found = verify_request(stack, sdk_run_id, parent_request.messages)
     if digest not in found:
@@ -860,37 +1022,69 @@ async def admitted_current_page(*, db, stack, run, sdk_run_id, page_effect, argu
         # 这样"换一步走"是可执行的，而不只是一句劝告。
         # ``found`` 已经是权威重建的结果，直接投影，不再重跑一遍 ``verify_request``。
         available = {d: reference(descriptor) for d, (descriptor, _) in found.items()}
-        raise PrimaryContextPageUnavailable(REFERENCE_UNAVAILABLE_CODE, dict(
-            reason="page_reference_stale",
-            available_reference_ids=_listed_references(available),
-            references_available=len(available),
-            next_step="this reference is not available in this request; re-run the tool that "
-                      "produced the result, or copy reference_id/source_hash from a "
-                      "primary_settled_effect_v1 summary present in THIS request"))
+        raise PrimaryContextPageUnavailable(
+            REFERENCE_UNAVAILABLE_CODE,
+            dict(
+                reason="page_reference_stale",
+                available_reference_ids=_listed_references(available),
+                references_available=len(available),
+                next_step="this reference is not available in this request; re-run the tool that "
+                "produced the result, or copy reference_id/source_hash from a "
+                "primary_settled_effect_v1 summary present in THIS request",
+            ),
+        )
     descriptor, content = found[digest]
     _require(arguments["source_hash"] == descriptor["content_hash"], "hash_mismatch")
     # Immutable Host identities supply ordering, not result authority. The
     # source must precede this page; prefix dependency checks include its output.
-    rows = await (await db.execute("SELECT * FROM primary_effect_identities WHERE sdk_run_id=? AND effect_id IN (?,?)",
-        (sdk_run_id, descriptor["effect_id"], page_effect.effect_id.value))).fetchall()
+    rows = await (
+        await db.execute(
+            "SELECT * FROM primary_effect_identities WHERE sdk_run_id=? AND effect_id IN (?,?)",
+            (sdk_run_id, descriptor["effect_id"], page_effect.effect_id.value),
+        )
+    ).fetchall()
     _require(len(rows) == 2, "order_missing")
     order = {}
     for row in rows:
-        identity = dict(host_run_id=run["host_run_id"], sdk_run_id=sdk_run_id,
-                        effect_id=row["effect_id"], tool_name=row["tool_name"])
-        _require(row["identity_json"] == canonical_json(identity) and row["identity_hash"] == canonical_hash(identity), "order_binding")
+        identity = dict(
+            host_run_id=run["host_run_id"],
+            sdk_run_id=sdk_run_id,
+            effect_id=row["effect_id"],
+            tool_name=row["tool_name"],
+        )
+        _require(
+            row["identity_json"] == canonical_json(identity)
+            and row["identity_hash"] == canonical_hash(identity),
+            "order_binding",
+        )
         order[row["effect_id"]] = row["sequence"]
-    _require(order[descriptor["effect_id"]] < order[page_effect.effect_id.value], "source_not_prior")
-    await _reject_bad_offset(db=db, stack=stack, sdk_run_id=sdk_run_id, digest=digest,
-                             content=content, offset=offset,
-                             before_sequence=order[page_effect.effect_id.value])
+    _require(
+        order[descriptor["effect_id"]] < order[page_effect.effect_id.value], "source_not_prior"
+    )
+    await _reject_bad_offset(
+        db=db,
+        stack=stack,
+        sdk_run_id=sdk_run_id,
+        digest=digest,
+        content=content,
+        offset=offset,
+        before_sequence=order[page_effect.effect_id.value],
+    )
     # ``page_bytes`` 只在重放旧 Run 时被显式传成 ``LEGACY_PAGE_SIZE``（事件 AG）；
     # 准入、顺序、hash 校验全部在它之前完成，且完全不看它。
     page = _excerpt(content, offset, page_bytes)
     end = offset + len(page.encode())
-    return dict(ok=True, kind="primary_current_tool_page_v1", reference_id=ref, source=descriptor,
-        source_hash=descriptor["content_hash"], offset=offset, content=page, page_hash=_sha(page),
-        next_reference_id=reference(descriptor, end) if end < descriptor["content_bytes"] else None)
+    return dict(
+        ok=True,
+        kind="primary_current_tool_page_v1",
+        reference_id=ref,
+        source=descriptor,
+        source_hash=descriptor["content_hash"],
+        offset=offset,
+        content=page,
+        page_hash=_sha(page),
+        next_reference_id=reference(descriptor, end) if end < descriptor["content_bytes"] else None,
+    )
 
 
 def _settled_tool_tokens(messages):
@@ -900,9 +1094,12 @@ def _settled_tool_tokens(messages):
     history arrives as quoted ``role=user`` groups (``project_history_group``).
     """
     from deskpet.sdk_adapters.context_partitions import text_tokens
-    return sum(text_tokens(m.content) for m in messages
-               if m.role.value == "tool" and isinstance(m.content, str)
-               and m.name not in CONTROL_TOOLS)
+
+    return sum(
+        text_tokens(m.content)
+        for m in messages
+        if m.role.value == "tool" and isinstance(m.content, str) and m.name not in CONTROL_TOOLS
+    )
 
 
 def _control_tool_tokens(messages):
@@ -914,9 +1111,12 @@ def _control_tool_tokens(messages):
     already fills it (at which point the loop simply runs out of candidates).
     """
     from deskpet.sdk_adapters.context_partitions import text_tokens
-    return sum(text_tokens(m.content) for m in messages
-               if m.role.value == "tool" and isinstance(m.content, str)
-               and m.name in CONTROL_TOOLS)
+
+    return sum(
+        text_tokens(m.content)
+        for m in messages
+        if m.role.value == "tool" and isinstance(m.content, str) and m.name in CONTROL_TOOLS
+    )
 
 
 def control_result_allowance(metadata, *, provider_turn_ordinal=0):
@@ -943,6 +1143,7 @@ def control_result_allowance(metadata, *, provider_turn_ordinal=0):
         effective_input_budget,
         window_tokens_for,
     )
+
     mapping = metadata if isinstance(metadata, Mapping) else {}
     model_id = _resolve_model_id(mapping)
     window = window_tokens_for(_resolve_window_tokens(mapping), model_id)
@@ -966,6 +1167,7 @@ def current_tool_allowance(metadata, *, provider_turn_ordinal=0):
         effective_input_budget,
         window_tokens_for,
     )
+
     mapping = metadata if isinstance(metadata, Mapping) else {}
     model_id = _resolve_model_id(mapping)
     # Same window resolution as _plan_turn_messages, so the two bounds cannot
@@ -1000,12 +1202,25 @@ class CurrentToolProjector:
         ``force_all``: the model must be able to read what it just got.
         """
 
-        large = [m for m in messages if m.role.value == "tool"
-                 and isinstance(m.content, str) and len(m.content.encode()) > DEFAULT_LARGE_RESULT_BYTES]
-        settled = [m for m in messages if m.role.value == "tool"
-                   and isinstance(m.content, str) and m.name not in CONTROL_TOOLS]
-        controls = [m for m in messages if m.role.value == "tool"
-                    and isinstance(m.content, str) and m.name in STUBBABLE_CONTROL_TOOLS]
+        large = [
+            m
+            for m in messages
+            if m.role.value == "tool"
+            and isinstance(m.content, str)
+            and len(m.content.encode()) > DEFAULT_LARGE_RESULT_BYTES
+        ]
+        settled = [
+            m
+            for m in messages
+            if m.role.value == "tool" and isinstance(m.content, str) and m.name not in CONTROL_TOOLS
+        ]
+        controls = [
+            m
+            for m in messages
+            if m.role.value == "tool"
+            and isinstance(m.content, str)
+            and m.name in STUBBABLE_CONTROL_TOOLS
+        ]
         if not large and not settled and not controls:
             return None
         pageable = [m for m in large if m.name not in CONTROL_TOOLS]
@@ -1013,9 +1228,14 @@ class CurrentToolProjector:
         run_id = request.run_id.value
         async with aiosqlite.connect(self.path) as db:
             db.row_factory = aiosqlite.Row
-            rows = await (await db.execute("SELECT r.host_run_id,r.subject FROM foreground_runs r "
-                "JOIN foreground_run_sdk_bindings b USING(host_run_id) "
-                "WHERE b.sdk_run_id=?", (run_id,))).fetchall()
+            rows = await (
+                await db.execute(
+                    "SELECT r.host_run_id,r.subject FROM foreground_runs r "
+                    "JOIN foreground_run_sdk_bindings b USING(host_run_id) "
+                    "WHERE b.sdk_run_id=?",
+                    (run_id,),
+                )
+            ).fetchall()
         start, _ = stack.read_primary_dependency_facts(run_id)
         admission = start.get("input", {})
         metadata = admission.get("context_metadata", {})
@@ -1039,10 +1259,20 @@ class CurrentToolProjector:
             # this turn's request bytes stay exactly what they were before.
             return None
         try:
-            return await self._project(messages, stack=stack, run_id=run_id, rows=rows,
-                admission=admission, metadata=metadata, pageable=pageable,
-                over_bound=over_bound, allowance=allowance, force_all=force_all,
-                control_over_bound=control_over_bound, control_allowance=control_allowance)
+            return await self._project(
+                messages,
+                stack=stack,
+                run_id=run_id,
+                rows=rows,
+                admission=admission,
+                metadata=metadata,
+                pageable=pageable,
+                over_bound=over_bound,
+                allowance=allowance,
+                force_all=force_all,
+                control_over_bound=control_over_bound,
+                control_allowance=control_allowance,
+            )
         except (PrimaryContextPageUnavailable, PrimaryToolCausalityUnavailable):
             if large:
                 # A >16 KiB result must never travel raw: this turn already
@@ -1055,29 +1285,62 @@ class CurrentToolProjector:
             # _plan_turn_messages still fails closed on a genuine overflow.
             return None
 
-    async def _project(self, messages, *, stack, run_id, rows, admission, metadata,
-                       pageable, over_bound, allowance, force_all=False,
-                       control_over_bound=False, control_allowance=0):
+    async def _project(
+        self,
+        messages,
+        *,
+        stack,
+        run_id,
+        rows,
+        admission,
+        metadata,
+        pageable,
+        over_bound,
+        allowance,
+        force_all=False,
+        control_over_bound=False,
+        control_allowance=0,
+    ):
         from simple_harness.contracts.messages import Message
 
         from deskpet.sdk_adapters.composition import project_primary_transcript
         from deskpet.sdk_adapters.context_partitions import text_tokens
 
-        _require(len(rows) == 1 and metadata.get("root_run_id") == rows[0]["host_run_id"], "host_run_missing")
+        _require(
+            len(rows) == 1 and metadata.get("root_run_id") == rows[0]["host_run_id"],
+            "host_run_missing",
+        )
         run = rows[0]
         current_text = admission.get("input", {}).get("text")
-        admitted_users = [m.get("content") for m in admission.get("messages", ()) if m.get("role") == "user"]
-        _require(isinstance(current_text, str) and current_text and admitted_users
-                 and admitted_users[-1] == current_text
-                 and admission.get("turn", {}).get("text") == current_text, "current_input_missing")
+        admitted_users = [
+            m.get("content") for m in admission.get("messages", ()) if m.get("role") == "user"
+        ]
+        _require(
+            isinstance(current_text, str)
+            and current_text
+            and admitted_users
+            and admitted_users[-1] == current_text
+            and admission.get("turn", {}).get("text") == current_text,
+            "current_input_missing",
+        )
         if not pageable and not over_bound and not control_over_bound and not force_all:
             return messages  # real primary control carriers keep complete bytes
         transcript = project_primary_transcript(messages, current_text=current_text)
-        sources = await stack.read_primary_tool_causal_sources(db_path=self.path, host_run_id=run["host_run_id"],
-            run_id=run_id, subject=run["subject"], current_text=current_text, messages=transcript)
+        sources = await stack.read_primary_tool_causal_sources(
+            db_path=self.path,
+            host_run_id=run["host_run_id"],
+            run_id=run_id,
+            subject=run["subject"],
+            current_text=current_text,
+            messages=transcript,
+        )
         # The public causal reader verifies the complete suffix before ordinal
         # mapping. A repeated raw call ID alone never selects an effect.
-        anchors = [i for i, m in enumerate(messages) if m.role.value == "user" and m.content == current_text]
+        anchors = [
+            i
+            for i, m in enumerate(messages)
+            if m.role.value == "user" and m.content == current_text
+        ]
         anchor = anchors[-1]
         indices = [i for i in range(anchor, len(messages)) if messages[i].role.value != "system"]
         output = list(messages)
@@ -1086,11 +1349,17 @@ class CurrentToolProjector:
             """Swap one settled body for its content-addressed page summary."""
             message = messages[index]
             descriptor, content = source_content(
-                stack.read_primary_effect_page_facts(run_id, source["effect_id"]), min_bytes=min_bytes)
-            _require(transcript[source["item_ordinal"] - 1]["content"] == content, "transcript_mismatch")
+                stack.read_primary_effect_page_facts(run_id, source["effect_id"]),
+                min_bytes=min_bytes,
+            )
+            _require(
+                transcript[source["item_ordinal"] - 1]["content"] == content, "transcript_mismatch"
+            )
             body = summary(descriptor, content)
             saved = text_tokens(content) - text_tokens(body)
-            if saved <= 0 or not worth_paging(len(body.encode()), len(content.encode()), margin=margin):
+            if saved <= 0 or not worth_paging(
+                len(body.encode()), len(content.encode()), margin=margin
+            ):
                 # F-E3: not merely "not smaller" — not smaller *by a margin*.
                 # Paging a body into a summary of comparable size trades readable
                 # content for no budget, so the body stays.  Under ``force_all``
@@ -1104,21 +1373,34 @@ class CurrentToolProjector:
                 # a positive token saving as well makes that impossible: the
                 # accumulation loop is now monotone by construction.
                 return 0
-            output[index] = Message(message.role, body, name=message.name,
-                call_id=message.call_id, metadata={"source": MARKER})
+            output[index] = Message(
+                message.role,
+                body,
+                name=message.name,
+                call_id=message.call_id,
+                metadata={"source": MARKER},
+            )
             return saved
 
         def elide(index, source):
             """Swap one settled CONTROL body for its public elision notice."""
             message = messages[index]
             descriptor, content = control_stub_content(
-                stack.read_primary_effect_page_facts(run_id, source["effect_id"]))
-            _require(transcript[source["item_ordinal"] - 1]["content"] == content, "transcript_mismatch")
+                stack.read_primary_effect_page_facts(run_id, source["effect_id"])
+            )
+            _require(
+                transcript[source["item_ordinal"] - 1]["content"] == content, "transcript_mismatch"
+            )
             body = control_stub(descriptor)
             if len(body.encode()) >= len(content.encode()):
                 return 0  # a body smaller than its own notice saves nothing
-            output[index] = Message(message.role, body, name=message.name,
-                call_id=message.call_id, metadata={"source": CONTROL_MARKER})
+            output[index] = Message(
+                message.role,
+                body,
+                name=message.name,
+                call_id=message.call_id,
+                metadata={"source": CONTROL_MARKER},
+            )
             return text_tokens(content) - text_tokens(body)
 
         bounded, control = [], []
@@ -1149,10 +1431,15 @@ class CurrentToolProjector:
         # has no public body to page, so that half of the rule is not a policy
         # choice and stays.
         newest = max((source["provider_turn_ordinal"] for _, source in bounded), default=0)
-        candidates = sorted(((index, source) for index, source in bounded
-                             if (force_all or source["provider_turn_ordinal"] < newest)
-                             and source["state"] == "succeeded"),
-                            key=lambda item: item[0])
+        candidates = sorted(
+            (
+                (index, source)
+                for index, source in bounded
+                if (force_all or source["provider_turn_ordinal"] < newest)
+                and source["state"] == "succeeded"
+            ),
+            key=lambda item: item[0],
+        )
         carried = _settled_tool_tokens(output)
         for index, source in candidates:
             if carried <= allowance and not force_all:
@@ -1183,10 +1470,14 @@ class CurrentToolProjector:
         # one turn-1 ``task_scope_search`` would have ``newest == 1`` forever
         # and never elide anything, not even under ``force_all``.
         newest_turn = max((source["provider_turn_ordinal"] for source in sources), default=0)
-        control_candidates = sorted(((index, source) for index, source in control
-                                     if source["provider_turn_ordinal"] < newest_turn
-                                     and source["state"] == "succeeded"),
-                                    key=lambda item: item[0])
+        control_candidates = sorted(
+            (
+                (index, source)
+                for index, source in control
+                if source["provider_turn_ordinal"] < newest_turn and source["state"] == "succeeded"
+            ),
+            key=lambda item: item[0],
+        )
         carried_control = _control_tool_tokens(output)
         for index, source in control_candidates:
             if carried_control <= control_allowance and not force_all:

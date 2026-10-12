@@ -51,9 +51,7 @@ class EvidenceSelection:
 
 @runtime_checkable
 class EvidenceResolver(Protocol):
-    async def lookup_completion_evidence(
-        self, context: EvidenceContext
-    ) -> EvidenceSelection: ...
+    async def lookup_completion_evidence(self, context: EvidenceContext) -> EvidenceSelection: ...
 
 
 UNKNOWN_EVIDENCE = EvidenceSelection(status="unknown")

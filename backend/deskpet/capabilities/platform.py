@@ -203,13 +203,10 @@ class SqliteExecutionScopeAuthority:
             ).fetchall()
         context = json.loads(str(row["run_context_json"]))
         workspace = dict(context.get("workspace") or {})
-        scope_payload = json.loads(
-            str(row["request_scope_canonical_json"])
-        )
+        scope_payload = json.loads(str(row["request_scope_canonical_json"]))
         if (
             str(context.get("owner_key") or "") != owner_key
-            or int(context.get("profile_generation") or 0)
-            != profile_generation
+            or int(context.get("profile_generation") or 0) != profile_generation
             or int(context.get("binding_epoch") or 0) != binding_epoch
         ):
             raise RuntimeError("execution_scope_start_identity_mismatch")
@@ -223,16 +220,10 @@ class SqliteExecutionScopeAuthority:
             binding_epoch=binding_epoch,
             capability_hash=capability_hash,
             scope_hash=scope_hash,
-            owner_binding_set_stamp=str(
-                row["run_catalog_content_stamp"]
-            ),
+            owner_binding_set_stamp=str(row["run_catalog_content_stamp"]),
             scope="user",
             scope_key=str(scope_payload.get("user_key") or ""),
-            pack_ids=tuple(
-                str(item["pack_id"])
-                for item in entries
-                if item["pack_id"] is not None
-            ),
+            pack_ids=tuple(str(item["pack_id"]) for item in entries if item["pack_id"] is not None),
         )
 
 
@@ -303,6 +294,7 @@ class _PlatformExecutionScopeLease:
         self._publish_lock.release()
         await self._barrier_context.__aexit__(None, None, None)
 
+
 _CONTROL_TOOL_NAMES = frozenset(
     {
         "capability_list",
@@ -362,9 +354,7 @@ def _strict_parameters(path: Path) -> dict[str, Any]:
             "tool_schema_unreadable", f"cannot read strict tool schema {path}: {exc}"
         ) from exc
     if not isinstance(value, dict):
-        raise CapabilityManagerError(
-            "tool_schema_invalid", f"{path} must contain one JSON object"
-        )
+        raise CapabilityManagerError("tool_schema_invalid", f"{path} must contain one JSON object")
     unknown = sorted(set(value) - _STRICT_SCHEMA_KEYS)
     if unknown:
         raise CapabilityManagerError(
@@ -372,13 +362,10 @@ def _strict_parameters(path: Path) -> dict[str, Any]:
             f"{path} has unsupported top-level fields: {', '.join(unknown)}",
         )
     if value.get("type") != "object":
-        raise CapabilityManagerError(
-            "tool_schema_invalid", f"{path} must declare type=object"
-        )
+        raise CapabilityManagerError("tool_schema_invalid", f"{path} must declare type=object")
     properties = value.get("properties", {})
     if not isinstance(properties, dict) or not all(
-        isinstance(name, str) and isinstance(schema, dict)
-        for name, schema in properties.items()
+        isinstance(name, str) and isinstance(schema, dict) for name, schema in properties.items()
     ):
         raise CapabilityManagerError(
             "tool_schema_invalid", f"{path}.properties must map names to schemas"
@@ -441,9 +428,7 @@ def _local_outcome_parser(raw: Any) -> NormalizedToolOutcome:
         # marker before provider backfill and aggregates the real action
         # receipts into the parent's one visible outcome.
         return NormalizedToolOutcome.success(raw.to_durable_envelope())
-    return NormalizedToolOutcome.malformed(
-        "local capability handler returned an unsupported value"
-    )
+    return NormalizedToolOutcome.malformed("local capability handler returned an unsupported value")
 
 
 def _legacy_unavailable(_args: dict[str, Any], _task_id: str) -> str:
@@ -460,9 +445,7 @@ def _legacy_unavailable(_args: dict[str, Any], _task_id: str) -> str:
     )
 
 
-def _input_requests(
-    tool: ToolEntry, args: Mapping[str, Any]
-) -> tuple[InputViewRequest, ...]:
+def _input_requests(tool: ToolEntry, args: Mapping[str, Any]) -> tuple[InputViewRequest, ...]:
     requests: list[InputViewRequest] = []
     for name in tool.input_views:
         if name not in args:
@@ -471,9 +454,7 @@ def _input_requests(
         if isinstance(raw, Mapping):
             extra = set(raw) - {"resource", "kind", "view_kind", "opaque_ref"}
             if extra or "resource" not in raw:
-                raise ValueError(
-                    f"input view {name!r} must contain resource/kind/view_kind only"
-                )
+                raise ValueError(f"input view {name!r} must contain resource/kind/view_kind only")
             resource = raw["resource"]
             kind = str(raw.get("kind") or "file")
             view_kind = str(raw.get("view_kind") or "metadata")
@@ -486,9 +467,7 @@ def _input_requests(
         if kind not in {"file", "directory", "artifact", "value"}:
             raise ValueError(f"input view {name!r} has unsupported kind {kind!r}")
         if view_kind not in {"identity", "metadata", "text", "bytes"}:
-            raise ValueError(
-                f"input view {name!r} has unsupported view_kind {view_kind!r}"
-            )
+            raise ValueError(f"input view {name!r} has unsupported view_kind {view_kind!r}")
         requests.append(
             InputViewRequest(
                 opaque_ref=opaque_ref,
@@ -539,12 +518,12 @@ def _resource_scope_resolver(
             if isinstance(raw, Mapping):
                 kind = str(raw.get("kind") or "file")
                 resource = raw.get("resource")
-            if kind in {"file", "directory", "artifact"} and isinstance(
-                resource, str
-            ) and resource.strip():
-                selectors.append(
-                    ResourceSelector.filesystem(resource, *filesystem_access)
-                )
+            if (
+                kind in {"file", "directory", "artifact"}
+                and isinstance(resource, str)
+                and resource.strip()
+            ):
+                selectors.append(ResourceSelector.filesystem(resource, *filesystem_access))
 
         for name in sorted(properties):
             value = args.get(name)
@@ -569,11 +548,7 @@ def _resource_scope_resolver(
                     "ws": 80,
                     "wss": 443,
                 }[parsed.scheme.casefold()]
-                suffix = (
-                    ""
-                    if parsed.port in {None, default_port}
-                    else f":{parsed.port}"
-                )
+                suffix = "" if parsed.port in {None, default_port} else f":{parsed.port}"
                 selectors.append(
                     ResourceSelector.network(
                         f"{parsed.scheme.casefold()}://{host}{suffix}",
@@ -589,20 +564,13 @@ def _resource_scope_resolver(
                         process_access,
                     )
                 )
-            elif (
-                lowered in {"path", "source", "destination"}
-                or lowered.endswith("_path")
-            ):
-                selectors.append(
-                    ResourceSelector.filesystem(value, *filesystem_access)
-                )
+            elif lowered in {"path", "source", "destination"} or lowered.endswith("_path"):
+                selectors.append(ResourceSelector.filesystem(value, *filesystem_access))
 
         if tool.execution_profile == "brokered-effect-v1":
             managed_root = context.write_scope_root or context.workspace
             if not managed_root:
-                raise ValueError(
-                    f"{tool.provider_name} requires a trusted workspace root"
-                )
+                raise ValueError(f"{tool.provider_name} requires a trusted workspace root")
             selectors.append(
                 ResourceSelector(
                     "capability_managed_root",
@@ -662,9 +630,7 @@ class LocalCapabilityToolSpecFactory:
         self.timeout_seconds = float(timeout_seconds)
         self.brokered_authority_resolver = brokered_authority_resolver
 
-    async def _authority(
-        self, context: ToolExecutionContext
-    ) -> BrokeredInvocationAuthority | None:
+    async def _authority(self, context: ToolExecutionContext) -> BrokeredInvocationAuthority | None:
         resolver = self.brokered_authority_resolver
         if resolver is None:
             return None
@@ -672,9 +638,7 @@ class LocalCapabilityToolSpecFactory:
         if inspect.isawaitable(value):
             value = await value
         if not isinstance(value, BrokeredInvocationAuthority):
-            raise TypeError(
-                "brokered authority resolver must return BrokeredInvocationAuthority"
-            )
+            raise TypeError("brokered authority resolver must return BrokeredInvocationAuthority")
         return value
 
     def build_specs(
@@ -687,12 +651,8 @@ class LocalCapabilityToolSpecFactory:
         del operation_id
         manifest = validation.manifest
         root = windows_extended_path(install_root).resolve(strict=True)
-        source = capability_registry_source(
-            manifest.id, manifest.version, manifest.manifest_hash
-        )
-        spec_version = capability_spec_version(
-            manifest.version, manifest.manifest_hash
-        )
+        source = capability_registry_source(manifest.id, manifest.version, manifest.manifest_hash)
+        spec_version = capability_spec_version(manifest.version, manifest.manifest_hash)
         permission_category = _permission_category(manifest.permissions)
         effect_kind = _effect_kind(manifest.effects)
         dangerous = effect_kind in {
@@ -748,11 +708,8 @@ class LocalCapabilityToolSpecFactory:
                 sorted(
                     (
                         (
-                            "deskpet-adapter:"
-                            "backend/deskpet/capabilities/platform.py",
-                            hashlib.sha256(
-                                Path(__file__).read_bytes()
-                            ).hexdigest(),
+                            "deskpet-adapter:backend/deskpet/capabilities/platform.py",
+                            hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
                         ),
                         (
                             f"pack:{tool.entry}",
@@ -783,8 +740,7 @@ class LocalCapabilityToolSpecFactory:
                         "provider": "deskpet-capability-pack",
                         "sources_manifest_hash": sources_manifest_hash,
                         "artifacts": [
-                            {"path": path, "sha256": digest}
-                            for path, digest in build_artifacts
+                            {"path": path, "sha256": digest} for path, digest in build_artifacts
                         ],
                     }
                 ),
@@ -808,17 +764,13 @@ class LocalCapabilityToolSpecFactory:
                 try:
                     requests = _input_requests(declared_tool, args)
                 except (TypeError, ValueError) as exc:
-                    return NormalizedToolOutcome.failure(
-                        "input_view_invalid", str(exc)
-                    )
+                    return NormalizedToolOutcome.failure("input_view_invalid", str(exc))
                 authority: BrokeredInvocationAuthority | None = None
                 if declared_tool.execution_profile == "brokered-effect-v1":
                     try:
                         authority = await self._authority(context)
                     except (TypeError, ValueError) as exc:
-                        return NormalizedToolOutcome.failure(
-                            "brokered_authority_invalid", str(exc)
-                        )
+                        return NormalizedToolOutcome.failure("brokered_authority_invalid", str(exc))
                     if authority is None:
                         return NormalizedToolOutcome.failure(
                             "brokered_authority_unavailable",
@@ -845,24 +797,16 @@ class LocalCapabilityToolSpecFactory:
                     effect_id=context.effect_id,
                     parent_call_id=context.call_id,
                     provider_call_id=context.call_id,
-                    task_grant_id=(
-                        "" if authority is None else authority.task_grant_id
-                    ),
-                    catalog_stamp=(
-                        {} if authority is None else authority.catalog_stamp
-                    ),
+                    task_grant_id=("" if authority is None else authority.task_grant_id),
+                    catalog_stamp=({} if authority is None else authority.catalog_stamp),
                 )
 
             policy = EffectPolicy(
-                policy_id=(
-                    f"capability:{manifest.id}:{tool.id}:{effect_kind.value}"
-                ),
+                policy_id=(f"capability:{manifest.id}:{tool.id}:{effect_kind.value}"),
                 version="v1",
                 kind=effect_kind,
                 max_attempts=1,
-                reusable_across_branches=(
-                    effect_kind is EffectKind.DETERMINISTIC_REUSABLE
-                ),
+                reusable_across_branches=(effect_kind is EffectKind.DETERMINISTIC_REUSABLE),
             )
             resource_scope_resolver = _resource_scope_resolver(
                 pack_id=manifest.id,
@@ -885,8 +829,7 @@ class LocalCapabilityToolSpecFactory:
                 dangerous=dangerous,
                 resource_scope_resolver=resource_scope_resolver,
                 resource_scope_resolver_id=(
-                    f"capability:{manifest.id}:{tool.id}:"
-                    f"{manifest.manifest_hash}"
+                    f"capability:{manifest.id}:{tool.id}:{manifest.manifest_hash}"
                 ),
                 resource_scope_resolver_version="deskpet-resource-scope-v1",
                 timeout_seconds=self.timeout_seconds,
@@ -920,10 +863,7 @@ class LocalCapabilityToolSpecFactory:
 
 
 def _default_command_finder(name: str) -> str | None:
-    environment_name = (
-        re.sub(r"[^A-Za-z0-9]+", "_", name).strip("_").upper()
-        + "_EXECUTABLE"
-    )
+    environment_name = re.sub(r"[^A-Za-z0-9]+", "_", name).strip("_").upper() + "_EXECUTABLE"
     configured = os.environ.get(environment_name)
     if configured:
         path = Path(configured).expanduser()
@@ -1001,9 +941,7 @@ class ManagedEnvironmentPreparer:
         start-ACK protocol.
         """
 
-        windows_extended_path(environment_root).mkdir(
-            parents=True, exist_ok=True
-        )
+        windows_extended_path(environment_root).mkdir(parents=True, exist_ok=True)
         command_dependencies: list[dict[str, JsonValue]] = []
         for dependency in validation.manifest.dependencies.commands:
             detector = self._has_detector(validation, dependency.name)
@@ -1017,11 +955,7 @@ class ManagedEnvironmentPreparer:
                     "status": (
                         "planned"
                         if resolved is not None
-                        else (
-                            "missing_nonblocking_detector"
-                            if detector
-                            else "missing"
-                        )
+                        else ("missing_nonblocking_detector" if detector else "missing")
                     ),
                 }
             )
@@ -1108,9 +1042,7 @@ class ManagedEnvironmentPreparer:
                         "kind": "command-version-v1",
                         "required_version": dependency.version,
                         "timeout_seconds": self.command_probe_timeout_seconds,
-                        "nonblocking_detector": self._has_detector(
-                            validation, dependency.name
-                        ),
+                        "nonblocking_detector": self._has_detector(validation, dependency.name),
                     },
                     ordinal=ordinal,
                 )
@@ -1127,9 +1059,7 @@ class ManagedEnvironmentPreparer:
             argv = [self.python_executable, entry_path]
             instances.append(
                 PreparedRuntimeInstanceSpec(
-                    entry_id=(
-                        f"tool-health:{fingerprint_json([tool.entry, tool.healthcheck])}"
-                    ),
+                    entry_id=(f"tool-health:{fingerprint_json([tool.entry, tool.healthcheck])}"),
                     runtime_kind="tool_health",
                     adapter_id="managed-process-job-v1",
                     adapter_fingerprint=adapter_fingerprint,
@@ -1210,9 +1140,7 @@ class ManagedEnvironmentPreparer:
         }
         if resolved is None:
             evidence["status"] = (
-                "missing_nonblocking_detector"
-                if nonblocking_detector
-                else "missing"
+                "missing_nonblocking_detector" if nonblocking_detector else "missing"
             )
             return evidence
         process_kwargs: dict[str, Any] = {}
@@ -1258,11 +1186,7 @@ class ManagedEnvironmentPreparer:
         satisfies = _version_satisfies(actual, dependency.version)
         status = "available"
         if process.returncode != 0 or satisfies is False:
-            status = (
-                "incompatible_nonblocking_detector"
-                if nonblocking_detector
-                else "incompatible"
-            )
+            status = "incompatible_nonblocking_detector" if nonblocking_detector else "incompatible"
         evidence.update(
             {
                 "status": status,
@@ -1310,9 +1234,7 @@ class ManagedEnvironmentPreparer:
             "exit_code": result.exit_code,
             "lease_id": result.lease_id,
             "cleanup_remaining_pids": (
-                []
-                if result.cleanup is None
-                else list(result.cleanup.remaining_pids)
+                [] if result.cleanup is None else list(result.cleanup.remaining_pids)
             ),
         }
         if result.response is not None and result.status == "success":
@@ -1330,15 +1252,11 @@ class ManagedEnvironmentPreparer:
         environment_root: Path,
         operation_id: str,
     ) -> Mapping[str, JsonValue]:
-        windows_extended_path(environment_root).mkdir(
-            parents=True, exist_ok=True
-        )
+        windows_extended_path(environment_root).mkdir(parents=True, exist_ok=True)
         command_evidence: list[dict[str, JsonValue]] = []
         for dependency in validation.manifest.dependencies.commands:
             detector = self._has_detector(validation, dependency.name)
-            evidence = await self._probe_command(
-                dependency, nonblocking_detector=detector
-            )
+            evidence = await self._probe_command(dependency, nonblocking_detector=detector)
             command_evidence.append(evidence)
             if evidence["status"] not in {
                 "available",
@@ -1562,10 +1480,7 @@ class PreparedCapabilityLifecycleMutation:
         if self.runtime_set is not None:
             if self.runtime_set.operation_id != self.manager_operation_id:
                 raise ValueError("runtime set operation identity mismatch")
-            if (
-                self.runtime_set.launch_revocation_epoch
-                != self.request.launch_revocation_epoch
-            ):
+            if self.runtime_set.launch_revocation_epoch != self.request.launch_revocation_epoch:
                 raise ValueError("runtime set revocation epoch mismatch")
 
 
@@ -1630,23 +1545,17 @@ class CapabilityPlatform:
         self.publish_lock = asyncio.Lock()
         self.catalog_gate = catalog_gate or CapabilityCatalogGate()
         self.identity_gate = identity_gate
-        self.revocation_barrier = (
-            revocation_barrier or get_process_revocation_barrier()
-        )
+        self.revocation_barrier = revocation_barrier or get_process_revocation_barrier()
         self.execution_scope_authority = execution_scope_authority
         self.runtime_projection_commit = runtime_projection_commit
         self.run_catalog_lease_preparer = run_catalog_lease_preparer
         self.lifecycle_static_port = lifecycle_static_port
         self.snapshot_lease_ready_gate = SnapshotLeaseReadyGate()
-        self._prepared_child_catalog_leases: dict[
-            str, PreparedRunCatalogLease
-        ] = {}
+        self._prepared_child_catalog_leases: dict[str, PreparedRunCatalogLease] = {}
         self.runtime_set_ledger = runtime_set_ledger
         self.runtime = runtime or LocalToolRuntime()
         self.input_resolver = input_resolver or InputViewResolver()
-        self.brokered_planner = BrokeredEffectPlanner(
-            resource_authorizer=resource_authorizer
-        )
+        self.brokered_planner = BrokeredEffectPlanner(resource_authorizer=resource_authorizer)
         self.proxy = LocalToolProxy(
             runtime=self.runtime,
             input_resolver=self.input_resolver,
@@ -1696,9 +1605,7 @@ class CapabilityPlatform:
             if plugin_manager is not None
             else StaticCapabilityEntrySource()
         )
-        configured_source = ConfiguredCapabilityCatalogSource(
-            configured_sources
-        )
+        configured_source = ConfiguredCapabilityCatalogSource(configured_sources)
         self.hub = CapabilityHub(
             store=store,
             registry_source=self.registry_source,
@@ -1912,12 +1819,8 @@ class CapabilityPlatform:
         if preparer is None:
             raise RuntimeError("run_catalog_lease_preparer_unavailable")
         async with self.publish_lock:
-            async with self.catalog_gate.read(
-                self.hub._gate_keys(scope, owner_key)
-            ):
-                snapshot, entries = await self.hub._snapshot_locked(
-                    scope, owner_key=owner_key
-                )
+            async with self.catalog_gate.read(self.hub._gate_keys(scope, owner_key)):
+                snapshot, entries = await self.hub._snapshot_locked(scope, owner_key=owner_key)
                 return await preparer.prepare_captured_run_catalog(
                     snapshot=snapshot,
                     selected_entries=entries,
@@ -1973,15 +1876,9 @@ class CapabilityPlatform:
                 raise RuntimeError("global_skill_verification_authority_mismatch")
 
         async with self.publish_lock:
-            async with self.catalog_gate.read(
-                self.hub._gate_keys(scope, owner_key)
-            ):
-                current, selected = await self.hub._snapshot_locked(
-                    scope, owner_key=owner_key
-                )
-                overlay_ids = {
-                    entry.version.capability_id for entry in entries_to_add
-                }
+            async with self.catalog_gate.read(self.hub._gate_keys(scope, owner_key)):
+                current, selected = await self.hub._snapshot_locked(scope, owner_key=owner_key)
+                overlay_ids = {entry.version.capability_id for entry in entries_to_add}
                 descriptors = [
                     descriptor
                     for descriptor in current.descriptors
@@ -2004,11 +1901,14 @@ class CapabilityPlatform:
                     descriptors=tuple(descriptors),
                     created_at=current.created_at,
                 )
-                overlay_selected = tuple(
-                    entry
-                    for entry in selected
-                    if entry.version.capability_id not in overlay_ids
-                ) + entries_to_add
+                overlay_selected = (
+                    tuple(
+                        entry
+                        for entry in selected
+                        if entry.version.capability_id not in overlay_ids
+                    )
+                    + entries_to_add
+                )
                 return await preparer.prepare_captured_run_catalog(
                     snapshot=overlay_snapshot,
                     selected_entries=overlay_selected,
@@ -2104,27 +2004,16 @@ class CapabilityPlatform:
                 )
             ).fetchall()
 
-        scope_payload = json.loads(
-            str(source["request_scope_canonical_json"])
-        )
+        scope_payload = json.loads(str(source["request_scope_canonical_json"]))
         vector = json.loads(str(source["catalog_generation_vector_json"]))
-        envelope = json.loads(
-            str(source["prepared_tool_set_envelope_json"])
-        )
-        if not all(
-            isinstance(value, Mapping)
-            for value in (scope_payload, vector, envelope)
-        ):
+        envelope = json.loads(str(source["prepared_tool_set_envelope_json"]))
+        if not all(isinstance(value, Mapping) for value in (scope_payload, vector, envelope)):
             raise RuntimeError("child_catalog_source_corrupt")
         entries = tuple(
             RunCatalogEntryIdentity(
                 entry_kind=str(row["entry_kind"]),
-                descriptor_fingerprint=str(
-                    row["descriptor_fingerprint"]
-                ),
-                canonical_envelope=json.loads(
-                    str(row["descriptor_envelope_json"])
-                ),
+                descriptor_fingerprint=str(row["descriptor_fingerprint"]),
+                canonical_envelope=json.loads(str(row["descriptor_envelope_json"])),
             )
             for row in entry_rows
         )
@@ -2150,17 +2039,14 @@ class CapabilityPlatform:
         tool_fingerprints = {
             str(value)
             for row in entry_rows
-            for value in json.loads(
-                str(row["tool_spec_fingerprints_json"])
-            )
+            for value in json.loads(str(row["tool_spec_fingerprints_json"]))
         }
         exact_tools = envelope.get("exact_tools", ())
         if isinstance(exact_tools, (list, tuple)):
             tool_fingerprints.update(
                 str(item["tool_spec_fingerprint"])
                 for item in exact_tools
-                if isinstance(item, Mapping)
-                and item.get("tool_spec_fingerprint")
+                if isinstance(item, Mapping) and item.get("tool_spec_fingerprint")
             )
         return (
             content,
@@ -2206,23 +2092,21 @@ class CapabilityPlatform:
             intent_id = ""
             try:
                 async with self.store.write_transaction() as db:
-                    projection = (
-                        await self.store.prepare_run_catalog_projection_in_tx(
-                            db,
-                            content=content,
-                            process_stamp=process,
-                            snapshot_ref=source_snapshot_ref,
-                            request_owner_key=owner_key,
-                            catalog_generation_vector=generation_vector,
-                            run_id=child_run_id,
-                            root_run_id=root_run_id,
-                            request_id=request_id,
-                            turn_id=turn_id,
-                            owner_operation_id=owner_operation_id,
-                            lease_owner_kind="run_start",
-                            prepared_tool_set_envelope=prepared_envelope,
-                            prepared_tool_set_hash=prepared_hash,
-                        )
+                    projection = await self.store.prepare_run_catalog_projection_in_tx(
+                        db,
+                        content=content,
+                        process_stamp=process,
+                        snapshot_ref=source_snapshot_ref,
+                        request_owner_key=owner_key,
+                        catalog_generation_vector=generation_vector,
+                        run_id=child_run_id,
+                        root_run_id=root_run_id,
+                        request_id=request_id,
+                        turn_id=turn_id,
+                        owner_operation_id=owner_operation_id,
+                        lease_owner_kind="run_start",
+                        prepared_tool_set_envelope=prepared_envelope,
+                        prepared_tool_set_hash=prepared_hash,
                     )
                     intent = projection.intent
                     intent_id = intent.lease_intent_id
@@ -2266,12 +2150,8 @@ class CapabilityPlatform:
             prepared_tool_set_capture_hash=prepared_hash,
             prepared_tool_set_envelope=prepared_envelope,
             lease_entries=tuple(item.to_dict() for item in content.entries),
-            projection_receipt_id=(
-                projection.projection_receipt.projection_receipt_id
-            ),
-            projection_receipt_hash=(
-                projection.projection_receipt.projection_receipt_hash
-            ),
+            projection_receipt_id=(projection.projection_receipt.projection_receipt_id),
+            projection_receipt_hash=(projection.projection_receipt.projection_receipt_hash),
             process_instance_id=process.process_instance_id,
             _store=self.store,
             _hub=self.hub,
@@ -2286,18 +2166,10 @@ class CapabilityPlatform:
     ) -> PreparedRunCatalogLease | None:
         """Rehydrate a child pin, validate its bound start, then open ReadyGate."""
 
-        intent_id = str(
-            getattr(start_snapshot, "capability_lease_intent_ref", "") or ""
-        )
-        intent_hash = str(
-            getattr(start_snapshot, "capability_lease_intent_hash", "") or ""
-        )
-        capability_snapshot = json.loads(
-            str(start_snapshot.capability_snapshot_json)
-        )
-        snapshot_ref = str(
-            capability_snapshot.get("catalog_snapshot_ref") or ""
-        )
+        intent_id = str(getattr(start_snapshot, "capability_lease_intent_ref", "") or "")
+        intent_hash = str(getattr(start_snapshot, "capability_lease_intent_hash", "") or "")
+        capability_snapshot = json.loads(str(start_snapshot.capability_snapshot_json))
+        snapshot_ref = str(capability_snapshot.get("catalog_snapshot_ref") or "")
         if not intent_id:
             if snapshot_ref:
                 raise RuntimeError("child_catalog_lease_intent_missing")
@@ -2315,9 +2187,7 @@ class CapabilityPlatform:
             != str(capability_snapshot.get("run_catalog_content_stamp") or "")
         ):
             raise RuntimeError("child_catalog_projection_not_bound")
-        lease = self._prepared_child_catalog_leases.get(
-            start_snapshot.run_id
-        )
+        lease = self._prepared_child_catalog_leases.get(start_snapshot.run_id)
         pin = None if lease is None else lease._pin
         if pin is None or not pin.installed:
             (
@@ -2356,16 +2226,12 @@ class CapabilityPlatform:
                     prepared_envelope.get("external_ref") or prepared_hash
                 ),
                 run_id=start_snapshot.run_id,
-                root_run_id=json.loads(
-                    start_snapshot.run_context_json
-                )["root_run_id"],
+                root_run_id=json.loads(start_snapshot.run_context_json)["root_run_id"],
                 entry_set_hash=content.entry_set_hash,
                 expected_entry_count=len(content.entries),
                 prepared_tool_set_capture_hash=prepared_hash,
                 prepared_tool_set_envelope=prepared_envelope,
-                lease_entries=tuple(
-                    item.to_dict() for item in content.entries
-                ),
+                lease_entries=tuple(item.to_dict() for item in content.entries),
                 projection_receipt_id=state.projection_receipt_id,
                 projection_receipt_hash=state.projection_receipt_hash,
                 process_instance_id=state.process_instance_id,
@@ -2442,16 +2308,13 @@ class CapabilityPlatform:
             or adopted.start_fingerprint != identity["start_fingerprint"]
         ):
             raise RuntimeError("sdk_root_catalog_adoption_receipt_mismatch")
-        state = await self.store.read_snapshot_projection_state(
-            identity["lease_intent_id"]
-        )
+        state = await self.store.read_snapshot_projection_state(identity["lease_intent_id"])
         if (
             state is None
             or state.lease_intent_hash != identity["lease_intent_hash"]
             or state.intent_status != "bound"
             or state.start_fingerprint != identity["start_fingerprint"]
-            or state.run_catalog_content_stamp
-            != identity["run_catalog_content_stamp"]
+            or state.run_catalog_content_stamp != identity["run_catalog_content_stamp"]
         ):
             raise RuntimeError("sdk_root_catalog_projection_not_bound")
         lease = prepared_lease
@@ -2459,8 +2322,7 @@ class CapabilityPlatform:
             lease.lease_intent_id != identity["lease_intent_id"]
             or lease.lease_intent_hash != identity["lease_intent_hash"]
             or lease.snapshot_ref != identity["capability_snapshot_ref"]
-            or lease.run_catalog_content_stamp
-            != identity["run_catalog_content_stamp"]
+            or lease.run_catalog_content_stamp != identity["run_catalog_content_stamp"]
             or lease.run_id != identity["run_id"]
             or lease.root_run_id != identity["root_run_id"]
         ):
@@ -2567,18 +2429,10 @@ class CapabilityPlatform:
             "*",
         )
         async with self.publish_lock:
-            async with self.catalog_gate.writer(
-                (key,), reason="owner_runtime_activation"
-            ) as token:
-                receipt = dict(
-                    await commit.activate_owner_runtime_projection(prepared_set)
-                )
-                committed_stamp = str(
-                    receipt.get("committed_owner_binding_set_stamp") or ""
-                )
-                receipt_hash = str(
-                    receipt.get("manager_receipt_set_hash") or ""
-                )
+            async with self.catalog_gate.writer((key,), reason="owner_runtime_activation") as token:
+                receipt = dict(await commit.activate_owner_runtime_projection(prepared_set))
+                committed_stamp = str(receipt.get("committed_owner_binding_set_stamp") or "")
+                receipt_hash = str(receipt.get("manager_receipt_set_hash") or "")
                 if committed_stamp != prepared_set.owner_binding_set_stamp:
                     raise RuntimeError("owner_runtime_binding_stamp_mismatch")
                 if not receipt_hash:
@@ -2606,9 +2460,7 @@ class CapabilityPlatform:
         return self.runtime_sets
 
     async def prepare_owner_runtime_activation(self, **kwargs: Any):
-        return await self._runtime_coordinator().prepare_owner_runtime_activation(
-            **kwargs
-        )
+        return await self._runtime_coordinator().prepare_owner_runtime_activation(**kwargs)
 
     async def start_prepared_runtime_instance(
         self,
@@ -2636,9 +2488,7 @@ class CapabilityPlatform:
     async def abort_prepared_set(
         self, prepared_set: PreparedRuntimeSet, *, reason_code: str
     ) -> None:
-        await self._runtime_coordinator().abort_prepared_set(
-            prepared_set, reason_code=reason_code
-        )
+        await self._runtime_coordinator().abort_prepared_set(prepared_set, reason_code=reason_code)
 
     async def prepare_lifecycle_mutation_static(
         self,
@@ -2692,9 +2542,7 @@ class CapabilityPlatform:
         port = self.lifecycle_static_port
         if port is None:
             return False
-        return bool(
-            await port.abort_static(prepared, reason_code=reason_code)
-        )
+        return bool(await port.abort_static(prepared, reason_code=reason_code))
 
     def _register_control_tools(self) -> bool:
         snapshot = self.registry.catalog_snapshot()
@@ -2732,11 +2580,7 @@ class CapabilityPlatform:
                 raise RuntimeError("capability platform is closed")
             await self.manager.initialize()
             recovered = await self.manager.recover()
-            registered = (
-                self._register_control_tools()
-                if self._register_control_surface
-                else False
-            )
+            registered = self._register_control_tools() if self._register_control_surface else False
             rehydrated = await self.manager.rehydrate_active_bindings()
             # A process crash can occur after a global candidate swaps the
             # process registry but before its durable binding transaction.
@@ -2746,9 +2590,7 @@ class CapabilityPlatform:
             installed: list[CapabilityInstallResult] = []
             for pack_root in self.first_party_pack_roots:
                 try:
-                    validation = load_and_validate_pack(
-                        pack_root, environment=self.environment
-                    )
+                    validation = load_and_validate_pack(pack_root, environment=self.environment)
                 except PackCompatibilityError as exc:
                     # 平台不兼容的 first-party pack（如 windows-only 的
                     # godot）在别的平台上属正常情况：跳过并留日志，绝不

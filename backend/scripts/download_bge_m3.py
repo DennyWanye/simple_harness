@@ -33,6 +33,7 @@ The ``huggingface_hub`` dependency is NOT in the backend runtime deps
 (installing it pulls tqdm + lots of transient bits). It is imported
 lazily here so ``--dry-run`` works with just the stdlib + platformdirs.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -71,9 +72,7 @@ def _resolve_target_dir() -> Path:
         )
         raise SystemExit(2)
 
-    local_base = Path(
-        platformdirs.user_data_dir("deskpet", appauthor=False, roaming=False)
-    )
+    local_base = Path(platformdirs.user_data_dir("deskpet", appauthor=False, roaming=False))
     return (local_base / "models" / SUBDIR).resolve()
 
 

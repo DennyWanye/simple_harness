@@ -2,6 +2,7 @@
 
 Tests the complete chain: main.py → _execute_sdk_run → SDK Runtime → DeliveryDispatcher → _DeliverySink → ProductDeliveryAdapter
 """
+
 import asyncio
 import json
 import sys
@@ -9,6 +10,7 @@ from pathlib import Path
 
 # Add backend to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
+
 
 async def test_sdk_execution():
     """Test SDK execution flow manually."""
@@ -61,7 +63,7 @@ async def test_sdk_execution():
         presenter=presenter,
         adapter=adapter,
         context=context,
-        state=state
+        state=state,
     )
 
     print(f"   ✓ Adapter created for run_id={run_id}")
@@ -87,9 +89,9 @@ async def test_sdk_execution():
             "correlation": {},
             "payload": {},
             "error": None,
-            "artifact_refs": []
+            "artifact_refs": [],
         },
-        "created_at": 1234567890.0
+        "created_at": 1234567890.0,
     }
 
     idempotency_key = f"{run_id}:event:1"
@@ -100,6 +102,7 @@ async def test_sdk_execution():
     except Exception as exc:
         print(f"   ✗ Event handling failed: {exc}")
         import traceback
+
         traceback.print_exc()
         return False
 
@@ -120,6 +123,7 @@ async def test_sdk_execution():
     except Exception as exc:
         print(f"   ✗ Finish failed: {exc}")
         import traceback
+
         traceback.print_exc()
         return False
 
@@ -132,6 +136,7 @@ async def test_sdk_execution():
     print("=" * 60)
 
     return True
+
 
 if __name__ == "__main__":
     result = asyncio.run(test_sdk_execution())

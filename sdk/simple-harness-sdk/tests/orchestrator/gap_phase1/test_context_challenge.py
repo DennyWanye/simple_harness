@@ -55,9 +55,7 @@ def test_current_head_middle_tail_join_has_a_structured_independently_scored_ans
     assert "Cite the three selected records in head, middle, tail order." in challenge.request_text
 
 
-@pytest.mark.parametrize(
-    ("difficulty", "target_input_tokens"), (("N1", 210_000), ("N3", 450_000))
-)
+@pytest.mark.parametrize(("difficulty", "target_input_tokens"), (("N1", 210_000), ("N3", 450_000)))
 def test_tokenizer_driven_fitting_reaches_n1_and_n3_window_scale_without_quadratic_growth(
     difficulty, target_input_tokens
 ):

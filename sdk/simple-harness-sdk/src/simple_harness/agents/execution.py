@@ -549,7 +549,9 @@ class AgentExecutionDriver:
                         attempt += 1
                         if not resample:
                             output_cap = min(output_cap * 2, self._max_output_tokens_ceiling)
-                            escalations.append({"attempt": attempt, "max_output_tokens": output_cap})
+                            escalations.append(
+                                {"attempt": attempt, "max_output_tokens": output_cap}
+                            )
                         # Re-check the durable cancel intent, the in-process token and the
                         # turn deadline before spending another provider call (review E1).
                         if token.cancelled or (
@@ -588,7 +590,8 @@ class AgentExecutionDriver:
                     error_payload: dict[str, JsonValue] = {
                         "error_code": code,
                         "source_kind": (
-                            "provider_admission" if code == "provider_admission_denied"
+                            "provider_admission"
+                            if code == "provider_admission_denied"
                             else "tool_parse"
                         ),
                         "error_type": type(error).__name__,

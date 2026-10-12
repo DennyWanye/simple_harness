@@ -31,9 +31,7 @@ class _ToolRegistry:
             }
         ]
 
-    async def execute_tool(
-        self, name, args, task_id, session_id="default", **kwargs
-    ):
+    async def execute_tool(self, name, args, task_id, session_id="default", **kwargs):
         return '{"ok": true, "result": "found"}'
 
 
@@ -97,11 +95,14 @@ async def test_tool_batch_carries_canonical_assistant_causal_group() -> None:
     llm = _ToolThenFinalLLM()
     loop = AgentLoop(llm, _ToolRegistry(), max_iterations=3)
 
-    events = [event async for event in loop.run(
-        [{"role": "user", "content": "look it up"}],
-        task_id="task-causal",
-        prepared_context=SimpleNamespace(tool_set=None),
-    )]
+    events = [
+        event
+        async for event in loop.run(
+            [{"role": "user", "content": "look it up"}],
+            task_id="task-causal",
+            prepared_context=SimpleNamespace(tool_set=None),
+        )
+    ]
 
     batch = next(event for event in events if isinstance(event, ToolBatchEvent))
     canonical = list(batch.canonical_messages)
@@ -240,10 +241,13 @@ async def test_context_os_off_keeps_canonical_batch_append_shape() -> None:
     llm = _ToolThenFinalLLM()
     loop = AgentLoop(llm, _ToolRegistry(), max_iterations=3)
 
-    events = [event async for event in loop.run(
-        [{"role": "user", "content": "look it up"}],
-        task_id="task-off",
-    )]
+    events = [
+        event
+        async for event in loop.run(
+            [{"role": "user", "content": "look it up"}],
+            task_id="task-off",
+        )
+    ]
 
     batch = next(event for event in events if isinstance(event, ToolBatchEvent))
     assert list(batch.canonical_messages) == [
@@ -260,9 +264,7 @@ async def test_context_os_off_keeps_canonical_batch_append_shape() -> None:
             ],
         },
     ]
-    assert all(
-        CONTEXT_MESSAGE_META_KEY not in message for message in batch.canonical_messages
-    )
+    assert all(CONTEXT_MESSAGE_META_KEY not in message for message in batch.canonical_messages)
     assert len(llm.calls) == 1
 
 

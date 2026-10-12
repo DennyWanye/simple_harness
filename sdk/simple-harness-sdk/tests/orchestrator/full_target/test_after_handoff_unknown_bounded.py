@@ -63,8 +63,9 @@ def _wrapped(status_code: int):
     def fault(request: Any) -> None:
         del request
         try:
-            raise ProviderTransportError(public_message="scripted transport loss after handoff",
-                                         status_code=status_code)
+            raise ProviderTransportError(
+                public_message="scripted transport loss after handoff", status_code=status_code
+            )
         except ProviderTransportError as error:
             raise _ProviderAdapterError("physical call failed; usage unknown") from error
 
@@ -92,8 +93,12 @@ def test_consecutive_after_handoff_unknowns_stop_when_the_ladder_is_spent(tmp_pa
         from agent_orchestrator.orchestrator.event_handler import PLANNER_TURN_FAILURE_GRACE
 
         assert PLANNER_TURN_FAILURE_GRACE == 6
-        provider = FaultyProvider({"planner": [unclassified, http_loss(418), _wrapped(503), *([transport_loss] * 6)]})
-        async with product_world(tmp_path / "root", provider, **{**CONFIG, "max_planning_attempts": 3}) as world:
+        provider = FaultyProvider(
+            {"planner": [unclassified, http_loss(418), _wrapped(503), *([transport_loss] * 6)]}
+        )
+        async with product_world(
+            tmp_path / "root", provider, **{**CONFIG, "max_planning_attempts": 3}
+        ) as world:
             mission_id = create(world, "p23p-ladder-stop")
             assert await settle(world, mission_id, seconds=15)
             final = world.store.get_mission(mission_id)
@@ -103,11 +108,17 @@ def test_consecutive_after_handoff_unknowns_stop_when_the_ladder_is_spent(tmp_pa
                 "stop_reason": final.stop_reason,
                 "report": dict(final.final_report or {}),
                 "types": [item.type for item in events(world, mission_id)],
-                "rejected": [item.payload["reason"] for item in events(world, mission_id, "PlanningRejected")],
+                "rejected": [
+                    item.payload["reason"] for item in events(world, mission_id, "PlanningRejected")
+                ],
                 "rounds": [item.subject_id.rpartition(":")[2] for item in rounds],
                 "diagnostics": [invocations(world, item) for item in rounds],
                 "planner_calls": provider.role_calls["planner"],
-                "open": [item.subject_id for item in world.store.list_intents(*OPEN) if item.mission_id == mission_id],
+                "open": [
+                    item.subject_id
+                    for item in world.store.list_intents(*OPEN)
+                    if item.mission_id == mission_id
+                ],
                 "ledger": assert_terminal_ledger(world, mission_id, unknown=True),
             }
 
@@ -117,27 +128,41 @@ def test_consecutive_after_handoff_unknowns_stop_when_the_ladder_is_spent(tmp_pa
     assert outcome["report"]["planning_failure"]["reason"] == "provider_outcome_unknown"
     assert "MissionFailed" in outcome["types"]
     assert outcome["rejected"] == ["provider_outcome_unknown"] * 9
-    assert outcome["planner_calls"] == 9 and outcome["rounds"] == [str(n) for n in range(1, 10)], outcome["rounds"]
+    assert outcome["planner_calls"] == 9 and outcome["rounds"] == [str(n) for n in range(1, 10)], (
+        outcome["rounds"]
+    )
     assert outcome["open"] == []
     assert len(outcome["ledger"]["held_reservations"]) == 9
     # the runtime_unavailable report: usage is not fully known, the budget is conserved
-    assert outcome["report"]["usage_fully_known"] is False and outcome["report"]["budget_conserved"] is True
+    assert (
+        outcome["report"]["usage_fully_known"] is False
+        and outcome["report"]["budget_conserved"] is True
+    )
 
     seen = []
     for calls in outcome["diagnostics"]:
         [call] = calls
-        assert call["state"] == "unknown" and call["error_code"] == "provider_error_after_handoff", call
+        assert (
+            call["state"] == "unknown" and call["error_code"] == "provider_error_after_handoff"
+        ), call
         usage = call["usage"]
-        seen.append((usage.get("error_class"), usage.get("http_status"), usage.get("wrapper_class")))
+        seen.append(
+            (usage.get("error_class"), usage.get("http_status"), usage.get("wrapper_class"))
+        )
         dumped = str(usage)
         assert "scripted transport loss" not in dumped and "scripted unclassified" not in dumped
         assert "Authorization" not in dumped and "api_key" not in dumped
-    assert seen[:3] == [("UnknownAfterHandoff", None, None), ("ProviderTransportError", 418, None),
-                        ("ProviderTransportError", 503, "_ProviderAdapterError")], seen
+    assert seen[:3] == [
+        ("UnknownAfterHandoff", None, None),
+        ("ProviderTransportError", 418, None),
+        ("ProviderTransportError", 503, "_ProviderAdapterError"),
+    ], seen
     assert len(seen) == 9 and all(item[0] == "ProviderTransportError" for item in seen[3:]), seen
 
 
-def test_a_worker_step_whose_calls_keep_ending_unknown_stops_as_runtime_unavailable(tmp_path) -> None:
+def test_a_worker_step_whose_calls_keep_ending_unknown_stops_as_runtime_unavailable(
+    tmp_path,
+) -> None:
     """Worker attempts are never re-handed off.  They also must not sit until 1800 s: each
     attempt blocked on an unknown outcome ends LOST after the bound, the step is done
     again, and when the step's non-model failures reach their cap the Mission stops as
@@ -149,17 +174,29 @@ def test_a_worker_step_whose_calls_keep_ending_unknown_stops_as_runtime_unavaila
             mission_id = create(world, "p23p-worker")
             assert await settle(world, mission_id, seconds=30)
             final = world.store.get_mission(mission_id)
-            attempts = [item for item in world.store.list_intents("SETTLED", "FAILED", *OPEN)
-                        if item.mission_id == mission_id and item.kind == "attempt"]
+            attempts = [
+                item
+                for item in world.store.list_intents("SETTLED", "FAILED", *OPEN)
+                if item.mission_id == mission_id and item.kind == "attempt"
+            ]
             return {
                 "status": status(world, mission_id),
                 "stop_reason": final.stop_reason,
                 "report": dict(final.final_report or {}),
                 "types": [item.type for item in events(world, mission_id)],
-                "lost": [item.payload.get("reason") for item in events(world, mission_id, "AttemptLost")],
-                "attempts": [(item.state, [call["state"] for call in invocations(world, item)]) for item in attempts],
+                "lost": [
+                    item.payload.get("reason") for item in events(world, mission_id, "AttemptLost")
+                ],
+                "attempts": [
+                    (item.state, [call["state"] for call in invocations(world, item)])
+                    for item in attempts
+                ],
                 "worker_calls": provider.role_calls["worker"],
-                "open": [item.subject_id for item in world.store.list_intents(*OPEN) if item.mission_id == mission_id],
+                "open": [
+                    item.subject_id
+                    for item in world.store.list_intents(*OPEN)
+                    if item.mission_id == mission_id
+                ],
                 "ledger": assert_terminal_ledger(world, mission_id, unknown=True),
             }
 

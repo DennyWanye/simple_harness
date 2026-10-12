@@ -47,9 +47,16 @@ class BlockingRunner:
 
 def _execute(runner, tmp_path):  # type: ignore[no-untyped-def]
     async def case() -> tuple[dict, int]:
-        runtime = build(tmp_path, ScriptedProvider(["好的。"]), acceptance=AcceptingAssurance(), script_runner=runner)
+        runtime = build(
+            tmp_path,
+            ScriptedProvider(["好的。"]),
+            acceptance=AcceptingAssurance(),
+            script_runner=runner,
+        )
         async with runtime:
-            revision = import_skill(runtime, _script_bundle(runtime), command="i1", fmt="NATIVE").revision
+            revision = import_skill(
+                runtime, _script_bundle(runtime), command="i1", fmt="NATIVE"
+            ).revision
             admit_skill(runtime, revision, command="c1")
             agent = await _agent(runtime)
             execute = _tools(runtime)[SKILL_EXECUTE_TOOL_NAME]
@@ -63,7 +70,9 @@ def _execute(runner, tmp_path):  # type: ignore[no-untyped-def]
                     await asyncio.sleep(0.005)
 
             task = asyncio.create_task(ticker())
-            result = await execute.invoke({"skill_ref": revision.pin.to_json(), "arguments": {"n": 1}}, _context(agent, 1))
+            result = await execute.invoke(
+                {"skill_ref": revision.pin.to_json(), "arguments": {"n": 1}}, _context(agent, 1)
+            )
             stop.set()
             await task
             assert result.outcome.value == "succeeded", result

@@ -59,7 +59,13 @@ def _hash(text):
 
 def _attach(e, world):
     world.store._clock = lambda: e.now[0]  # 库的时钟注入点：测试拨时间，模拟时间流逝
-    e.world, e.store, e.commit, e.api, e.host = world, world.store, world.loop.commit, world.control, world.loop
+    e.world, e.store, e.commit, e.api, e.host = (
+        world,
+        world.store,
+        world.loop.commit,
+        world.control,
+        world.loop,
+    )
     e.cas = world.loop.assembled.workspaces.artifact_store
 
 
@@ -71,8 +77,14 @@ def env(tmp_path):
 
     def reopen(**config):
         stack.close()
-        _attach(e, stack.enter_context(opened(root, deployment_policy=config.pop("deployment_policy", DEPLOYMENT),
-                                              **config)))
+        _attach(
+            e,
+            stack.enter_context(
+                opened(
+                    root, deployment_policy=config.pop("deployment_policy", DEPLOYMENT), **config
+                )
+            ),
+        )
 
     e.reopen = reopen
     _attach(e, stack.enter_context(opened(root, deployment_policy=DEPLOYMENT)))
@@ -307,17 +319,13 @@ def test_invalidated_source_approval_can_be_rejected_without_touching_sources(
             assert e.store.get_approval(pending["request_id"])["state"] == "EXPIRED"
     before = e.store.list_sources(e.mission.id)
     source_events = [
-        event
-        for event in e.store.iter_events(e.mission.id)
-        if event.type.startswith("Source")
+        event for event in e.store.iter_events(e.mission.id) if event.type.startswith("Source")
     ]
     result = e.api.decide(pending["request_id"], "reject", reason="已失效", nonce="dismiss")
     assert result["request_state"] == "REJECTED"
     assert e.store.list_sources(e.mission.id) == before
     assert [
-        event
-        for event in e.store.iter_events(e.mission.id)
-        if event.type.startswith("Source")
+        event for event in e.store.iter_events(e.mission.id) if event.type.startswith("Source")
     ] == source_events
     assert [d["decision"] for d in e.store.list_decisions(pending["request_id"])] == ["reject"]
     after = e.store.snapshot(e.mission.id)
@@ -489,7 +497,8 @@ def test_approval_event_failure_rolls_back_source_decision_and_grant(env):
     # 写来源更替事件时库写入出错（数据库触发器让真实事务里的那次写失败）
     e.store.connection.execute(
         "CREATE TEMP TRIGGER fail_source_event BEFORE INSERT ON events WHEN NEW.type = 'SourceSuperseded' "
-        "BEGIN SELECT RAISE(ABORT, 'injected source event failure'); END")
+        "BEGIN SELECT RAISE(ABORT, 'injected source event failure'); END"
+    )
     with pytest.raises((FacadeError, sqlite3.Error), match="injected source event"):
         _approve(e, pending)
     e.store.connection.execute("DROP TRIGGER fail_source_event")
@@ -548,8 +557,12 @@ def test_facade_rechecks_physical_storage_on_new_commands_and_pending_approval(e
     before = e.store.snapshot(e.mission.id)
     # 重启后部署换了一个落在工作区里的真实发布目录
     unsafe = FilePublishConnector(e.root / "workspaces" / "published", e.tmp_path / "ledger")
-    e.reopen(deployment_policy=DeploymentPolicy(approval_ttl_seconds=10, enabled_connectors=("file_publish",)),
-             connectors={"file_publish": unsafe})
+    e.reopen(
+        deployment_policy=DeploymentPolicy(
+            approval_ttl_seconds=10, enabled_connectors=("file_publish",)
+        ),
+        connectors={"file_publish": unsafe},
+    )
     with pytest.raises(FacadeError, match="source_publish_root_overlap"):
         _register(e, path="sources/another.md", idempotency_key="another")
     with pytest.raises(FacadeError, match="source_publish_root_overlap"):

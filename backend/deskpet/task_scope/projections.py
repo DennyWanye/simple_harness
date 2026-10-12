@@ -95,16 +95,13 @@ class TaskScopeProjectionStore:
                     db, source_id=source_id, task_scope_id=task_scope_id
                 )
                 outbox_cursor = await db.execute(
-                    "SELECT outbox_id FROM task_scope_projection_source_outbox "
-                    "WHERE source_id=?",
+                    "SELECT outbox_id FROM task_scope_projection_source_outbox WHERE source_id=?",
                     (source.source_id,),
                 )
                 outbox = await outbox_cursor.fetchone()
                 await outbox_cursor.close()
                 if outbox is None:
-                    raise ProjectionIntegrityError(
-                        "task_scope_projection_source_outbox_missing"
-                    )
+                    raise ProjectionIntegrityError("task_scope_projection_source_outbox_missing")
                 if await is_human_memory_work_item_parked_tx(
                     db,
                     worker_kind="projection-source",
@@ -112,9 +109,7 @@ class TaskScopeProjectionStore:
                     primary_key="outbox_id",
                     item_pk=str(outbox["outbox_id"]),
                 ):
-                    raise ProjectionIntegrityError(
-                        "human_memory_projection_work_item_parked"
-                    )
+                    raise ProjectionIntegrityError("human_memory_projection_work_item_parked")
                 model = await self._load_model_tx(db, source)
                 rendered = await self._render_tx(db, source, model)
                 projection_root = canonical_hash(
@@ -203,16 +198,11 @@ class TaskScopeProjectionStore:
             "view_kind": kind,
             "content_sha256": str(row["content_sha256"]),
             "byte_length": len(content_bytes),
-            "root_block_id": (
-                None if row["root_block_id"] is None else str(row["root_block_id"])
-            ),
+            "root_block_id": (None if row["root_block_id"] is None else str(row["root_block_id"])),
             "block_count": int(row["block_count"]),
         }
         receipt_hash = canonical_hash(receipt)
-        if (
-            receipt_hash != row["receipt_hash"]
-            or canonical_json(receipt) != row["receipt_json"]
-        ):
+        if receipt_hash != row["receipt_hash"] or canonical_json(receipt) != row["receipt_json"]:
             raise ProjectionIntegrityError("task_scope_projection_receipt_mismatch")
         return TaskScopeReadView(
             task_scope_id=source.task_scope_id,
@@ -221,9 +211,7 @@ class TaskScopeProjectionStore:
             view_kind=kind,
             content=content_bytes.decode("utf-8"),
             content_sha256=str(row["content_sha256"]),
-            root_block_id=(
-                None if row["root_block_id"] is None else str(row["root_block_id"])
-            ),
+            root_block_id=(None if row["root_block_id"] is None else str(row["root_block_id"])),
             block_count=int(row["block_count"]),
             receipt_hash=receipt_hash,
         )
@@ -273,9 +261,7 @@ class TaskScopeProjectionStore:
         groups.sort(key=lambda item: int(str(item["logical_group"])))
         return tuple(groups)
 
-    async def read_evidence_group(
-        self, group_block_id: str
-    ) -> tuple[dict[str, Any], ...]:
+    async def read_evidence_group(self, group_block_id: str) -> tuple[dict[str, Any], ...]:
         """Recover one logical page and verify its complete block DAG."""
 
         async with self._connection() as db:
@@ -293,7 +279,9 @@ class TaskScopeProjectionStore:
                 group = json.loads(_verified_content(group_row))
                 leaves_root = group["leaves_root"]
             except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
-                raise ProjectionIntegrityError("task_scope_projection_group_manifest_invalid") from exc
+                raise ProjectionIntegrityError(
+                    "task_scope_projection_group_manifest_invalid"
+                ) from exc
             source_id = str(group_row["source_id"])
             leaf_refs = await self._collect_leaf_refs_tx(
                 db,
@@ -341,8 +329,12 @@ class TaskScopeProjectionStore:
                 try:
                     event = json.loads(bytes(assembled))
                 except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-                    raise ProjectionIntegrityError("task_scope_projection_event_chunks_invalid") from exc
-                if not isinstance(event, dict) or event.get("event_sequence") != leaf.get("event_sequence"):
+                    raise ProjectionIntegrityError(
+                        "task_scope_projection_event_chunks_invalid"
+                    ) from exc
+                if not isinstance(event, dict) or event.get("event_sequence") != leaf.get(
+                    "event_sequence"
+                ):
                     raise ProjectionIntegrityError("task_scope_projection_event_chunks_invalid")
                 events.append(event)
             sequences = [event.get("event_sequence") for event in events]
@@ -472,11 +464,11 @@ class TaskScopeProjectionStore:
                 row = None
         checkpoint_id = None if row is None else str(row["checkpoint_id"])
         checkpoint_hash = None if row is None else str(row["checkpoint_hash"])
-        expected = {} if row is None else json.loads(str(row["checkpoint_json"])).get("metadata", {})
-        fields = sorted(set(expected) | set(live_probe))
-        changed = tuple(
-            field for field in fields if expected.get(field) != live_probe.get(field)
+        expected = (
+            {} if row is None else json.loads(str(row["checkpoint_json"])).get("metadata", {})
         )
+        fields = sorted(set(expected) | set(live_probe))
+        changed = tuple(field for field in fields if expected.get(field) != live_probe.get(field))
         payload = {
             "schema_version": 1,
             "task_scope_id": source.task_scope_id,
@@ -643,7 +635,9 @@ class TaskScopeProjectionStore:
                     "schema_version": 1,
                     "task_scope_id": source.task_scope_id,
                     "decisions": [
-                        item for item in operations if str(item.get("kind", "")).startswith("decision.")
+                        item
+                        for item in operations
+                        if str(item.get("kind", "")).startswith("decision.")
                     ],
                 }
             ),
@@ -663,9 +657,13 @@ class TaskScopeProjectionStore:
             ),
             "EVIDENCE": "",
         }
-        evidence_root, evidence_count, groups, archive_ref, groups_root = await self._store_evidence_tree_tx(
-            db, source, events, model
-        )
+        (
+            evidence_root,
+            evidence_count,
+            groups,
+            archive_ref,
+            groups_root,
+        ) = await self._store_evidence_tree_tx(db, source, events, model)
         contents["EVIDENCE"] = canonical_json(
             {
                 "schema_version": 1,
@@ -757,7 +755,11 @@ class TaskScopeProjectionStore:
                     pending.append(event)
                     continue
                 if pending:
-                    leaf_refs.append(await self._store_json_block_tx(db, source, "leaf", {"schema_version": 1, "events": pending}))
+                    leaf_refs.append(
+                        await self._store_json_block_tx(
+                            db, source, "leaf", {"schema_version": 1, "events": pending}
+                        )
+                    )
                     total += 1
                     pending = []
                 event_bytes = canonical_json(event).encode("utf-8")
@@ -766,7 +768,14 @@ class TaskScopeProjectionStore:
                 else:
                     chunks: list[ReadBlockRef] = []
                     for offset in range(0, len(event_bytes), TARGET_BLOCK_BYTES):
-                        chunks.append(await self._store_block_tx(db, source, "chunk", event_bytes[offset : offset + TARGET_BLOCK_BYTES]))
+                        chunks.append(
+                            await self._store_block_tx(
+                                db,
+                                source,
+                                "chunk",
+                                event_bytes[offset : offset + TARGET_BLOCK_BYTES],
+                            )
+                        )
                         total += 1
                     descriptor = {
                         "schema_version": 1,
@@ -775,12 +784,20 @@ class TaskScopeProjectionStore:
                         "content_sha256": hashlib.sha256(event_bytes).hexdigest(),
                         "chunks": [_ref_json(ref) for ref in chunks],
                     }
-                    leaf_refs.append(await self._store_json_block_tx(db, source, "leaf", descriptor))
+                    leaf_refs.append(
+                        await self._store_json_block_tx(db, source, "leaf", descriptor)
+                    )
                     total += 1
             if pending:
-                leaf_refs.append(await self._store_json_block_tx(db, source, "leaf", {"schema_version": 1, "events": pending}))
+                leaf_refs.append(
+                    await self._store_json_block_tx(
+                        db, source, "leaf", {"schema_version": 1, "events": pending}
+                    )
+                )
                 total += 1
-            leaves_root, added = await self._store_index_tree_tx(db, source, leaf_refs, "group-leaves")
+            leaves_root, added = await self._store_index_tree_tx(
+                db, source, leaf_refs, "group-leaves"
+            )
             total += added
             group_number = start // LOGICAL_EVIDENCE_GROUP_SIZE + 1
             group_payload = {
@@ -896,15 +913,44 @@ class TaskScopeProjectionStore:
             pending: list[dict[str, object]] = []
             for ref in current:
                 item = _ref_json(ref)
-                candidate = {"schema_version": 1, "domain": domain, "level": level, "children": [*pending, item]}
+                candidate = {
+                    "schema_version": 1,
+                    "domain": domain,
+                    "level": level,
+                    "children": [*pending, item],
+                }
                 if pending and len(canonical_json(candidate).encode("utf-8")) > TARGET_BLOCK_BYTES:
-                    next_level.append(await self._store_json_block_tx(db, source, "index", {"schema_version": 1, "domain": domain, "level": level, "children": pending}))
+                    next_level.append(
+                        await self._store_json_block_tx(
+                            db,
+                            source,
+                            "index",
+                            {
+                                "schema_version": 1,
+                                "domain": domain,
+                                "level": level,
+                                "children": pending,
+                            },
+                        )
+                    )
                     added += 1
                     pending = [item]
                 else:
                     pending.append(item)
             if pending:
-                next_level.append(await self._store_json_block_tx(db, source, "index", {"schema_version": 1, "domain": domain, "level": level, "children": pending}))
+                next_level.append(
+                    await self._store_json_block_tx(
+                        db,
+                        source,
+                        "index",
+                        {
+                            "schema_version": 1,
+                            "domain": domain,
+                            "level": level,
+                            "children": pending,
+                        },
+                    )
+                )
                 added += 1
             current = next_level
             level += 1
@@ -923,7 +969,9 @@ class TaskScopeProjectionStore:
         if len(content) > MAX_BLOCK_BYTES:
             raise ProjectionIntegrityError("task_scope_projection_block_too_large")
         content_hash = hashlib.sha256(content).hexdigest()
-        block_id = _uuid(f"task-scope-read-block:{source.source_hash}:EVIDENCE:{kind}:{content_hash}")
+        block_id = _uuid(
+            f"task-scope-read-block:{source.source_hash}:EVIDENCE:{kind}:{content_hash}"
+        )
         await db.execute(
             "INSERT OR IGNORE INTO task_scope_read_blocks("
             "block_id,source_id,view_kind,block_kind,content_sha256,content,created_at) "
@@ -952,7 +1000,10 @@ def _ref_json(ref: ReadBlockRef) -> dict[str, object]:
 
 def _verified_content(row: aiosqlite.Row) -> bytes:
     content = bytes(row["content"])
-    if len(content) > MAX_BLOCK_BYTES or hashlib.sha256(content).hexdigest() != row["content_sha256"]:
+    if (
+        len(content) > MAX_BLOCK_BYTES
+        or hashlib.sha256(content).hexdigest() != row["content_sha256"]
+    ):
         raise ProjectionIntegrityError("task_scope_projection_block_hash_mismatch")
     return content
 

@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 """Read installed TaskGraph policies and real current planning delegations."""
+
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
@@ -26,11 +27,22 @@ DeploymentAcceptanceReader = Callable[[Store, str, InstalledGraphPolicy], Source
 
 
 class StoreTaskGraphPolicyAuthority:
-    def __init__(self, orchestrator: Any, *, tenant_id: str, principal: Principal,
-                 graph_budget: GraphStructureBudget, validate_read: Callable[[Principal, str], None],
-                 deployment_acceptance: DeploymentAcceptanceReader) -> None:
-        if (not isinstance(principal, Principal) or not isinstance(graph_budget, GraphStructureBudget)
-                or not callable(validate_read) or not callable(deployment_acceptance)):
+    def __init__(
+        self,
+        orchestrator: Any,
+        *,
+        tenant_id: str,
+        principal: Principal,
+        graph_budget: GraphStructureBudget,
+        validate_read: Callable[[Principal, str], None],
+        deployment_acceptance: DeploymentAcceptanceReader,
+    ) -> None:
+        if (
+            not isinstance(principal, Principal)
+            or not isinstance(graph_budget, GraphStructureBudget)
+            or not callable(validate_read)
+            or not callable(deployment_acceptance)
+        ):
             raise ValueError("TaskGraph enablement requires authenticated, installed authority")
         self.orchestrator, self.store = orchestrator, orchestrator.store
         self.tenant_id, self.principal, self.graph_budget = tenant_id, principal, graph_budget
@@ -40,12 +52,18 @@ class StoreTaskGraphPolicyAuthority:
     def _deployment_documents(self, mission_id: str) -> dict[str, Any]:
         hierarchy = self.orchestrator._dispatch_for(mission_id)
         deployment = self.orchestrator._config.deployment_policy
-        if (hierarchy is None or hierarchy.store is not self.store
-                or not isinstance(deployment, DeploymentPolicy)
-                or not isinstance(hierarchy.resolution_policy, ResolutionPolicy)):
+        if (
+            hierarchy is None
+            or hierarchy.store is not self.store
+            or not isinstance(deployment, DeploymentPolicy)
+            or not isinstance(hierarchy.resolution_policy, ResolutionPolicy)
+        ):
             raise SourceUnavailable("taskgraph_installed_policy_source_missing")
-        return {"schema": _document(hierarchy.resolution_policy.schema_registry),
-                "target": hierarchy.target_rules_policy(), "deployment": deployment.to_json()}
+        return {
+            "schema": _document(hierarchy.resolution_policy.schema_registry),
+            "target": hierarchy.target_rules_policy(),
+            "deployment": deployment.to_json(),
+        }
 
     def _mission(self, store: Store, mission_id: str) -> Any:
         if store is not self.store or not store.connection.in_transaction:
@@ -64,22 +82,37 @@ class StoreTaskGraphPolicyAuthority:
             raise SourceUnavailable("taskgraph_installed_policy_changed")
         binding = store.get_mission_policy(mission_id)
         version = None if binding is None else store.get_policy_version(binding["version_id"])
-        if (binding is None or binding.get("mission_id") != mission_id or version is None
-                or not isinstance(version.get("params"), Mapping)
-                or params_hash(version["params"]) != version["params_hash"]
-                or dict(self.orchestrator.policy_for(mission_id)) != dict(version["params"])):
+        if (
+            binding is None
+            or binding.get("mission_id") != mission_id
+            or version is None
+            or not isinstance(version.get("params"), Mapping)
+            or params_hash(version["params"]) != version["params_hash"]
+            or dict(self.orchestrator.policy_for(mission_id)) != dict(version["params"])
+        ):
             raise SourceUnavailable("taskgraph_candidate_policy_unavailable")
+
         def installed_ref(channel: str, document: Any) -> dict[str, Any]:
             digest = sha256_hex(document)
             # Immutable content identity of the installed policy, with the v1
             # source codec revision. This is neither health nor acceptance.
             return SourceRef(channel=channel, identity=digest, revision=1, digest=digest).to_json()
-        body: dict[str, Any] = {"kernel_version": KERNEL_VERSION, "graph_structure_budget": self.graph_budget.to_json(),
-                "candidate_policy_ref": SourceRef(channel="mission_policy_parameters", identity=version["version_id"],
-                    revision=1, digest=version["params_hash"]).to_json(),
-                "schema_policy_ref": installed_ref("schema_compatibility_policy_v1", installed["schema"]),
-                "target_policy_ref": installed_ref("target_rules_policy_v1", installed["target"]),
-                "deployment_policy_ref": installed_ref("deployment_policy_v1", installed["deployment"])}
+
+        body: dict[str, Any] = {
+            "kernel_version": KERNEL_VERSION,
+            "graph_structure_budget": self.graph_budget.to_json(),
+            "candidate_policy_ref": SourceRef(
+                channel="mission_policy_parameters",
+                identity=version["version_id"],
+                revision=1,
+                digest=version["params_hash"],
+            ).to_json(),
+            "schema_policy_ref": installed_ref(
+                "schema_compatibility_policy_v1", installed["schema"]
+            ),
+            "target_policy_ref": installed_ref("target_rules_policy_v1", installed["target"]),
+            "deployment_policy_ref": installed_ref("deployment_policy_v1", installed["deployment"]),
+        }
         return InstalledGraphPolicy(canonical_document=canonical_json(body))
 
     def require_enable(self, store: Store, mission_id: str, caller: Principal) -> SourceRef:

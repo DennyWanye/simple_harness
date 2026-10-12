@@ -13,6 +13,7 @@ Contract:
 - ToolResultRefStore.get with range=(start, end) returns slice.
 - Old refs are evicted when capacity is reached (LRU).
 """
+
 from __future__ import annotations
 
 import pytest

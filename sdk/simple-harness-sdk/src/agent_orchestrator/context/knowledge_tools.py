@@ -60,13 +60,18 @@ def current_knowledge(store: Store, mission_id: str) -> list[Any]:
     """This Mission's knowledge that is current right now, by id — the one filter every
     reader (the tools, the pushed context, the review package) shares."""
     return sorted(
-        (record for record in store.list_knowledge(mission_id)
-         if knowledge_standing(store, record) == CURRENT),
+        (
+            record
+            for record in store.list_knowledge(mission_id)
+            if knowledge_standing(store, record) == CURRENT
+        ),
         key=lambda record: record.id,
     )
 
 
-def candidate_claims(store: Store, mission_id: str, *, verified_ids: set[str]) -> list[dict[str, Any]]:
+def candidate_claims(
+    store: Store, mission_id: str, *, verified_ids: set[str]
+) -> list[dict[str, Any]]:
     """The candidate layer: this Mission's claims that are not verified (proposed, under
     review, supported, disputed), each with the ``marker`` saying it is a lead and not a
     fact.  A claim whose id is already current verified knowledge (``verified_ids``) is
@@ -77,9 +82,17 @@ def candidate_claims(store: Store, mission_id: str, *, verified_ids: set[str]) -
         marker = _CANDIDATE_MARKERS.get(claim.status)
         if marker is None or claim.id in verified_ids:
             continue
-        rows.append({"id": claim.id, "status": str(claim.status), "marker": marker, "key": claim.key,
-                     "content": claim.content, "source_task": claim.source_task,
-                     "evidence": list(claim.evidence)})
+        rows.append(
+            {
+                "id": claim.id,
+                "status": str(claim.status),
+                "marker": marker,
+                "key": claim.key,
+                "content": claim.content,
+                "source_task": claim.source_task,
+                "evidence": list(claim.evidence),
+            }
+        )
     return rows
 
 
@@ -116,19 +129,36 @@ def step_summaries(store: Store, mission_id: str) -> list[dict[str, Any]]:
         checked = review_manifest(store, record).get("summary") or {}
         summary = str(stored.envelope.summary or "").strip()
         digest = _digest(summary)
-        if (not checked.get("faithful") or checked.get("summary_sha256") != digest
-                or checked.get("result_ref") != fingerprint(stored.envelope.to_json())
-                or not any(acceptance_is_current(store, mission_id, acceptance)[0]
-                           for acceptance in result_acceptance_ids(store, mission_id, task.id, str(result_id)))):
+        if (
+            not checked.get("faithful")
+            or checked.get("summary_sha256") != digest
+            or checked.get("result_ref") != fingerprint(stored.envelope.to_json())
+            or not any(
+                acceptance_is_current(store, mission_id, acceptance)[0]
+                for acceptance in result_acceptance_ids(store, mission_id, task.id, str(result_id))
+            )
+        ):
             continue
         artifacts = [store.get_artifact(artifact_id) for artifact_id in task.accepted_artifacts]
-        rows.append((float(stored.received_at), {
-            "layer": SUMMARY_LAYER, "id": f"sum:{result_id}", "source_task": task.id, "summary": summary,
-            "summary_sha256": digest, "result_ref": checked["result_ref"],
-            "artifacts": [{"path": a.path, "version": a.version, "content_hash": a.content_hash}
-                          for a in artifacts if a is not None],
-            "checked_by": str(record.record_id),
-        }))
+        rows.append(
+            (
+                float(stored.received_at),
+                {
+                    "layer": SUMMARY_LAYER,
+                    "id": f"sum:{result_id}",
+                    "source_task": task.id,
+                    "summary": summary,
+                    "summary_sha256": digest,
+                    "result_ref": checked["result_ref"],
+                    "artifacts": [
+                        {"path": a.path, "version": a.version, "content_hash": a.content_hash}
+                        for a in artifacts
+                        if a is not None
+                    ],
+                    "checked_by": str(record.record_id),
+                },
+            )
+        )
     return [row for _, row in sorted(rows, key=lambda item: (-item[0], item[1]["id"]))]
 
 
@@ -139,37 +169,67 @@ def _catalogue(store: Store, mission_id: str) -> list[dict[str, Any]]:
     verified_ids = set()
     for record in current_knowledge(store, mission_id):
         verified_ids.add(record.id)
-        rows.append({
-            "layer": VERIFIED_LAYER, "id": record.id, "ref": knowledge_ref(record.id, record.version),
-            "version": record.version, "key": record.key, "basis": knowledge_basis(record),
-            "preview": record.content[:200], "source_task": record.source_task,
-            "evidence": list(record.evidence),
-            # 第 2 批 K02：目录里就能看到保障等级与有效期；None＝没登记
-            "assurance_level": record.assurance_level,
-            "validity_interval": None if record.validity_interval is None else dict(record.validity_interval),
-            "permitted_uses": None if record.permitted_uses is None else list(record.permitted_uses),
-            "_text": record.content, "_record": record,
-            "_stamp": f"{record.id}:{record.version}:{_digest(record.content)}",
-        })
+        rows.append(
+            {
+                "layer": VERIFIED_LAYER,
+                "id": record.id,
+                "ref": knowledge_ref(record.id, record.version),
+                "version": record.version,
+                "key": record.key,
+                "basis": knowledge_basis(record),
+                "preview": record.content[:200],
+                "source_task": record.source_task,
+                "evidence": list(record.evidence),
+                # 第 2 批 K02：目录里就能看到保障等级与有效期；None＝没登记
+                "assurance_level": record.assurance_level,
+                "validity_interval": None
+                if record.validity_interval is None
+                else dict(record.validity_interval),
+                "permitted_uses": None
+                if record.permitted_uses is None
+                else list(record.permitted_uses),
+                "_text": record.content,
+                "_record": record,
+                "_stamp": f"{record.id}:{record.version}:{_digest(record.content)}",
+            }
+        )
     for claim in candidate_claims(store, mission_id, verified_ids=verified_ids):
-        rows.append({
-            "layer": CANDIDATE_LAYER, "id": claim["id"], "status": claim["status"], "marker": claim["marker"],
-            "key": claim["key"], "preview": claim["content"][:200], "source_task": claim["source_task"],
-            "evidence": claim["evidence"],
-            "_text": claim["content"],
-            "_stamp": f"{claim['id']}:{claim['status']}:{_digest(claim['content'])}",
-        })
+        rows.append(
+            {
+                "layer": CANDIDATE_LAYER,
+                "id": claim["id"],
+                "status": claim["status"],
+                "marker": claim["marker"],
+                "key": claim["key"],
+                "preview": claim["content"][:200],
+                "source_task": claim["source_task"],
+                "evidence": claim["evidence"],
+                "_text": claim["content"],
+                "_stamp": f"{claim['id']}:{claim['status']}:{_digest(claim['content'])}",
+            }
+        )
     for row in step_summaries(store, mission_id):
-        rows.append({**row, "_text": row["summary"], "_stamp": f"{row['id']}:{row['summary_sha256']}"})
+        rows.append(
+            {**row, "_text": row["summary"], "_stamp": f"{row['id']}:{row['summary_sha256']}"}
+        )
     for task in store.list_tasks(mission_id):
         if not task.accepted_result_id:
             continue
         artifacts = [store.get_artifact(artifact_id) for artifact_id in task.accepted_artifacts]
-        rows.append({
-            "layer": RAW_REF_LAYER, "id": str(task.accepted_result_id), "source_task": task.id,
-            "artifacts": [{"id": a.id, "path": a.path, "version": a.version} for a in artifacts if a is not None],
-            "_text": None, "_stamp": f"{task.id}:{task.accepted_result_id}",
-        })
+        rows.append(
+            {
+                "layer": RAW_REF_LAYER,
+                "id": str(task.accepted_result_id),
+                "source_task": task.id,
+                "artifacts": [
+                    {"id": a.id, "path": a.path, "version": a.version}
+                    for a in artifacts
+                    if a is not None
+                ],
+                "_text": None,
+                "_stamp": f"{task.id}:{task.accepted_result_id}",
+            }
+        )
     return rows
 
 
@@ -180,9 +240,15 @@ def _public(row: Mapping[str, Any]) -> dict[str, Any]:
 def not_current_reply(record: Any, standing: str) -> dict[str, Any]:
     """``knowledge_read`` 对一条不再当前的已验证知识的回答：没有正文，只有它的现状。"""
     return {
-        "layer": VERIFIED_LAYER, "id": record.id, "version": record.version,
-        "ref": knowledge_ref(record.id, record.version), "standing": standing,
-        "content": None, "sha256": None, "offset": 0, "next_offset": None,
+        "layer": VERIFIED_LAYER,
+        "id": record.id,
+        "version": record.version,
+        "ref": knowledge_ref(record.id, record.version),
+        "standing": standing,
+        "content": None,
+        "sha256": None,
+        "offset": 0,
+        "next_offset": None,
         "notice": (
             f"读取后复核：这条知识已不再当前（{standing}），不返回正文，也不能引用。"
             "用 knowledge_list 重新取现行目录。"
@@ -197,14 +263,24 @@ def refused_handover_reply(row: Mapping[str, Any], refusals: tuple[str, ...]) ->
         return not_current_reply(row["_record"], standing)
     return {
         **{key: value for key, value in _public(row).items() if key not in {"preview", "summary"}},
-        "standing": standing, "content": None, "sha256": None, "offset": 0, "next_offset": None,
-        "notice": (f"读取后复核：这条摘要此刻不能交出（{standing}），不返回正文。"
-                   "用 knowledge_list 重新取现行目录。"),
+        "standing": standing,
+        "content": None,
+        "sha256": None,
+        "offset": 0,
+        "next_offset": None,
+        "notice": (
+            f"读取后复核：这条摘要此刻不能交出（{standing}），不返回正文。"
+            "用 knowledge_list 重新取现行目录。"
+        ),
     }
 
 
 def read_knowledge_tool(
-    store: Store, mission_id: str, tool: str, args: Mapping[str, Any], *,
+    store: Store,
+    mission_id: str,
+    tool: str,
+    args: Mapping[str, Any],
+    *,
     handover: Callable[[Any], tuple[str, ...]] | None = None,
 ) -> dict[str, Any]:
     """``handover``：交出已验证知识 / 核对过的摘要正文之前那一道门（推后第 1 批 A26，裁决 2026-10-07
@@ -268,10 +344,14 @@ def read_knowledge_tool(
     if offset and args.get("expected_sha256") != digest:
         # 核验 opt.184 建议：续读被拒同样说清要带什么
         if "expected_sha256" not in args:
-            raise ValueError("knowledge_read paging needs expected_sha256: pass the sha256 the first "
-                             "read returned together with offset (expected_sha256=" + digest + ")")
-        raise ValueError("knowledge changed since that sha256; restart reading from offset 0 "
-                         "(current sha256=" + digest + ")")
+            raise ValueError(
+                "knowledge_read paging needs expected_sha256: pass the sha256 the first "
+                "read returned together with offset (expected_sha256=" + digest + ")"
+            )
+        raise ValueError(
+            "knowledge changed since that sha256; restart reading from offset 0 "
+            "(current sha256=" + digest + ")"
+        )
     if offset > len(text):
         raise ValueError("offset is outside original knowledge")
     end = min(offset + 2048, len(text))
@@ -281,16 +361,25 @@ def read_knowledge_tool(
 
         if handover is None:
             raise ValueError("knowledge content needs the hand-over gate")
-        claim = (EvidenceClaim.knowledge(row["id"], row["version"]) if row["layer"] == VERIFIED_LAYER
-                 else EvidenceClaim.summary(row["id"], row["summary_sha256"]))
+        claim = (
+            EvidenceClaim.knowledge(row["id"], row["version"])
+            if row["layer"] == VERIFIED_LAYER
+            else EvidenceClaim.summary(row["id"], row["summary_sha256"])
+        )
         refusals = tuple(handover(claim))
         if refusals:
             return refused_handover_reply(row, refusals)
     head = (
-        {**knowledge_view(row["_record"], None), "layer": VERIFIED_LAYER, "ref": row["ref"],
-         "basis": row["basis"]}
+        {
+            **knowledge_view(row["_record"], None),
+            "layer": VERIFIED_LAYER,
+            "ref": row["ref"],
+            "basis": row["basis"],
+        }
         if row["layer"] == VERIFIED_LAYER
-        else {key: value for key, value in _public(row).items() if key not in {"preview", "summary"}}
+        else {
+            key: value for key, value in _public(row).items() if key not in {"preview", "summary"}
+        }
     )
     return {
         **head,

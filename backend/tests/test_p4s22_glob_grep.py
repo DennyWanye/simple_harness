@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 """P4-S22 — glob + grep tools (filesystem-only, no LLM/network needed)."""
+
 from __future__ import annotations
 
 import json
@@ -24,9 +25,7 @@ def tree(tmp_path: Path) -> Path:
     (tmp_path / "src" / "main.py").write_text(
         "def hello():\n    return 'world'\n", encoding="utf-8"
     )
-    (tmp_path / "src" / "utils.py").write_text(
-        "import os\nprint('hi')\n", encoding="utf-8"
-    )
+    (tmp_path / "src" / "utils.py").write_text("import os\nprint('hi')\n", encoding="utf-8")
     (tmp_path / "tests" / "test_main.py").write_text(
         "def test_hello():\n    assert hello() == 'world'\n",
         encoding="utf-8",
@@ -84,6 +83,7 @@ def test_glob_mtime_descending(tree):
     later mtime than all the rest, then assert it's first."""
     import os
     import time
+
     target = tree / "tests" / "test_main.py"
     # Filesystems on Windows can have ~1s mtime resolution; sleep a
     # touch over that to guarantee monotonic ordering.
@@ -99,9 +99,7 @@ def test_glob_mtime_descending(tree):
 
 
 def test_grep_default_mode_finds_files(tree):
-    out = json.loads(
-        grep_tool({"pattern": "hello", "_project_root": str(tree)})
-    )
+    out = json.loads(grep_tool({"pattern": "hello", "_project_root": str(tree)}))
     assert out["files_with_matches"] >= 2
     files = out["files"]
     assert any("main.py" in f for f in files)
@@ -112,11 +110,7 @@ def test_grep_glob_filter(tree):
     """Restrict to *.py — README would never match anyway, but Markdown
     headers in nested folders shouldn't match."""
     (tree / "doc.md").write_text("hello world", encoding="utf-8")
-    out = json.loads(
-        grep_tool(
-            {"pattern": "hello", "glob": "*.py", "_project_root": str(tree)}
-        )
-    )
+    out = json.loads(grep_tool({"pattern": "hello", "glob": "*.py", "_project_root": str(tree)}))
     assert all(".py" in f for f in out["files"])
 
 
@@ -159,12 +153,8 @@ def test_grep_content_with_context(tree):
     # entry that's NOT itself a match.
     any_context_line = False
     for _f, lst in out["matches"].items():
-        match_lines = [
-            e["text"] for e in lst if "hello" in e["text"]
-        ]
-        non_match_lines = [
-            e["text"] for e in lst if "hello" not in e["text"]
-        ]
+        match_lines = [e["text"] for e in lst if "hello" in e["text"]]
+        non_match_lines = [e["text"] for e in lst if "hello" not in e["text"]]
         if non_match_lines:
             any_context_line = True
             break
@@ -219,7 +209,5 @@ def test_grep_case_insensitive(tree):
 
 
 def test_grep_invalid_regex_returns_error(tree):
-    out = json.loads(
-        grep_tool({"pattern": "[invalid", "_project_root": str(tree)})
-    )
+    out = json.loads(grep_tool({"pattern": "[invalid", "_project_root": str(tree)}))
     assert "error" in out

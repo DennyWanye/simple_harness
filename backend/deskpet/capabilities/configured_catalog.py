@@ -56,9 +56,7 @@ def parse_configured_pack_sources(
             uri=str(raw.get("uri") or ""),
             revision=str(raw.get("revision") or "configured"),
             subdirectory=(
-                str(raw["subdirectory"])
-                if raw.get("subdirectory") is not None
-                else None
+                str(raw["subdirectory"]) if raw.get("subdirectory") is not None else None
             ),
         )
     return result
@@ -142,15 +140,9 @@ class ConfiguredCapabilityCatalogSource:
                 for alias, request in sorted(self._sources.items())
             )
         )
-        entries = tuple(
-            entry for entry, _fact in rows if entry is not None
-        )
+        entries = tuple(entry for entry, _fact in rows if entry is not None)
         facts = tuple(fact for _entry, fact in rows)
-        revision = (
-            int(fingerprint_json(facts)[:15], 16)
-            if facts
-            else 0
-        )
+        revision = int(fingerprint_json(facts)[:15], 16) if facts else 0
         return RevisionedCatalogEntries(revision, entries)
 
 
@@ -163,17 +155,13 @@ class CompositeCapabilityEntrySource:
     async def snapshot(self) -> RevisionedCatalogEntries:
         if not self._sources:
             return RevisionedCatalogEntries(0, ())
-        snapshots = await asyncio.gather(
-            *(source.snapshot() for source in self._sources)
-        )
+        snapshots = await asyncio.gather(*(source.snapshot() for source in self._sources))
         revision = int(
             fingerprint_json(
                 [
                     {
                         "revision": item.revision,
-                        "entries": [
-                            entry.version.fingerprint for entry in item.entries
-                        ],
+                        "entries": [entry.version.fingerprint for entry in item.entries],
                     }
                     for item in snapshots
                 ]
@@ -182,11 +170,7 @@ class CompositeCapabilityEntrySource:
         )
         return RevisionedCatalogEntries(
             revision,
-            tuple(
-                entry
-                for snapshot in snapshots
-                for entry in snapshot.entries
-            ),
+            tuple(entry for snapshot in snapshots for entry in snapshot.entries),
         )
 
 

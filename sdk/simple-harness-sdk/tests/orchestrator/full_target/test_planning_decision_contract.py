@@ -217,13 +217,24 @@ def test_max_planning_ref_id_is_pinned_with_boundaries() -> None:
 
 
 def test_every_decision_kind_this_build_decodes_is_enabled() -> None:
-    assert ENABLED_DECISIONS == frozenset({
-        "REFINE", "PROPOSE_METHOD", "REQUEST_EVIDENCE", "REQUEST_HUMAN",
-        "WAIT", "NO_CHANGE", "READ_METHOD_LIBRARY",
-        "REPAIR/REPLACE_METHOD", "REPAIR/REFINE_DEEPER", "REPAIR/REBIND_INPUT",
-        "REPAIR/CANCEL_BRANCH", "REPAIR/RETRY_SAME_METHOD", "REPAIR/DECLARE_RUNTIME_BLOCKED",
-        "REPAIR/PROPOSE_SUCCESSOR",
-    })
+    assert ENABLED_DECISIONS == frozenset(
+        {
+            "REFINE",
+            "PROPOSE_METHOD",
+            "REQUEST_EVIDENCE",
+            "REQUEST_HUMAN",
+            "WAIT",
+            "NO_CHANGE",
+            "READ_METHOD_LIBRARY",
+            "REPAIR/REPLACE_METHOD",
+            "REPAIR/REFINE_DEEPER",
+            "REPAIR/REBIND_INPUT",
+            "REPAIR/CANCEL_BRANCH",
+            "REPAIR/RETRY_SAME_METHOD",
+            "REPAIR/DECLARE_RUNTIME_BLOCKED",
+            "REPAIR/PROPOSE_SUCCESSOR",
+        }
+    )
 
 
 # --------------------------------------------------------------------------------------

@@ -495,25 +495,31 @@ def test_effect_only_primitive_requires_real_preparation_output(tmp_path, has_ou
     mission_id, plan, _ = _compiled_network()
     primitive, single, _ = _single_primitive_root(plan)
     binding = single.task_bindings[0]
-    binding = dataclasses.replace(binding,
-        goal_signature=dataclasses.replace(binding.goal_signature,
-            coverage_criteria=("criterion-delivery",)),
-        output_ports=binding.output_ports if has_output else ())
+    binding = dataclasses.replace(
+        binding,
+        goal_signature=dataclasses.replace(
+            binding.goal_signature, coverage_criteria=("criterion-delivery",)
+        ),
+        output_ports=binding.output_ports if has_output else (),
+    )
     if has_output:
         assert any(port.required for port in binding.output_ports)
     single = dataclasses.replace(single, task_bindings=(binding,))
     spec = dataclasses.replace(_spec(mission_id), content_criterion_ids=())
     pin = PlanRevisionPinV1(revision=single.plan_revision, snapshot_hash=_plan_identity(single))
     if not has_output:
-        with pytest.raises(CompletionScopeCompilationError, match="no reviewable preparation output"):
+        with pytest.raises(
+            CompletionScopeCompilationError, match="no reviewable preparation output"
+        ):
             compile_completion_scopes(spec, single, (), plan_ref=pin)
         return
-    scope, = compile_completion_scopes(spec, single, (), plan_ref=pin)
+    (scope,) = compile_completion_scopes(spec, single, (), plan_ref=pin)
     assert scope.role is CompletionScopeRole.MIXED
     assert scope.content_criterion_ids == (LEAF_LOCAL_CRITERION,)
     assert scope.required_effect_keys == ("deliver-report",)
     from agent_orchestrator.orchestrator.leaf_acceptance import LayerOutcome
     from agent_orchestrator.orchestrator.scoped_content_review import _scoped_local_criteria
+
     local = _scoped_local_criteria(binding, scope, (LayerOutcome("critic_review", "PASS"),), ())
     criterion = local[LEAF_LOCAL_CRITERION]
     assert criterion.required_evidence_policy.required_check_ids == ("critic_review",)
@@ -540,7 +546,8 @@ def test_a_linked_leaf_is_reviewed_on_its_links_not_on_every_criterion_its_type_
             dataclasses.replace(
                 binding,
                 goal_signature=dataclasses.replace(
-                    binding.goal_signature, coverage_criteria=("criterion-report",)),
+                    binding.goal_signature, coverage_criteria=("criterion-report",)
+                ),
             )
             if str(binding.task_id) in leaves
             else binding
@@ -554,7 +561,10 @@ def test_a_linked_leaf_is_reviewed_on_its_links_not_on_every_criterion_its_type_
         for item in plan.occurrences
         if item.form is TaskForm.PRIMITIVE
     ]
-    assert sorted(scope.content_criterion_ids for scope in leaf_scopes) == [("leaf-1",), ("leaf-2",)]
+    assert sorted(scope.content_criterion_ids for scope in leaf_scopes) == [
+        ("leaf-1",),
+        ("leaf-2",),
+    ]
     root = by_occurrence[str(plan.root_occurrence_ids[0])]
     assert "criterion-report" in root.content_criterion_ids
 
@@ -581,7 +591,8 @@ def test_a_linked_leaf_does_not_take_an_effect_its_type_declares_for_every_step(
                 binding,
                 goal_signature=dataclasses.replace(
                     binding.goal_signature,
-                    coverage_criteria=("criterion-report", "criterion-delivery")),
+                    coverage_criteria=("criterion-report", "criterion-delivery"),
+                ),
             )
             if str(binding.task_id) in leaves
             else binding

@@ -62,9 +62,7 @@ def _enrich_companion_selection_exact_tools(
         exact_by_name[name] = item
     enriched = copy.deepcopy(dict(selection))
     raw_scopes = enriched.get("skill_invocation_scopes", ())
-    if isinstance(raw_scopes, (str, bytes)) or not isinstance(
-        raw_scopes, (list, tuple)
-    ):
+    if isinstance(raw_scopes, (str, bytes)) or not isinstance(raw_scopes, (list, tuple)):
         raise ValueError("companion Skill scopes must be a sequence")
     scopes: list[dict[str, Any]] = []
     for raw_scope in raw_scopes:
@@ -72,18 +70,13 @@ def _enrich_companion_selection_exact_tools(
             raise ValueError("companion Skill scope must be an object")
         scope = copy.deepcopy(dict(raw_scope))
         allowed = scope.get("allowed_tools", ())
-        if isinstance(allowed, (str, bytes)) or not isinstance(
-            allowed, (list, tuple)
-        ):
+        if isinstance(allowed, (str, bytes)) or not isinstance(allowed, (list, tuple)):
             raise ValueError("companion Skill allowed_tools must be a sequence")
         allowed_names = sorted({str(item) for item in allowed})
-        frozen_allowed_names = [
-            name for name in allowed_names if name in exact_by_name
-        ]
+        frozen_allowed_names = [name for name in allowed_names if name in exact_by_name]
         scope["allowed_tools"] = frozen_allowed_names
         scope["allowed_tool_refs"] = [
-            copy.deepcopy(exact_by_name[name])
-            for name in frozen_allowed_names
+            copy.deepcopy(exact_by_name[name]) for name in frozen_allowed_names
         ]
         scopes.append(scope)
     enriched["skill_invocation_scopes"] = scopes
@@ -103,9 +96,7 @@ def _companion_catalog_lease_entries(
             normalized.append(item)
             continue
         entry_kind = str(item.pop("entry_kind", "") or "")
-        descriptor = str(
-            item.pop("descriptor_fingerprint", "") or ""
-        )
+        descriptor = str(item.pop("descriptor_fingerprint", "") or "")
         if not entry_kind or not descriptor:
             raise RuntimeError("run catalog lease entry identity is malformed")
         normalized.append(
@@ -164,9 +155,11 @@ class KernelRunClient:
         if isinstance(raw_tools, str) or not isinstance(raw_tools, (list, tuple)):
             raise ValueError("proposed_tools must be a sequence of names")
         raw_messages = request.get("canonical_messages", ())
-        if isinstance(raw_messages, (str, bytes)) or not isinstance(
-            raw_messages, (list, tuple)
-        ) or any(not isinstance(message, Mapping) for message in raw_messages):
+        if (
+            isinstance(raw_messages, (str, bytes))
+            or not isinstance(raw_messages, (list, tuple))
+            or any(not isinstance(message, Mapping) for message in raw_messages)
+        ):
             raise ValueError("canonical_messages must be a sequence of mappings")
         admission = request.get("admission")
         provider_snapshot = request.get("provider_launch_snapshot")
@@ -240,7 +233,9 @@ class KernelRunClient:
             _session_id=host.session_id,
         )
 
-    async def resume(self, request_id: str, turn_id: str, host: HostContext) -> VenueRunHandle | None:
+    async def resume(
+        self, request_id: str, turn_id: str, host: HostContext
+    ) -> VenueRunHandle | None:
         _, ref = root_run_identity(host.session_id, request_id, turn_id)
         actor = host.actor(root_run_id=ref.run_id)
         try:
@@ -272,9 +267,7 @@ class KernelRunClient:
                     task_scope_id=str(signal.get("task_scope_id") or ""),
                     message_ref=str(signal.get("message_ref") or ""),
                     content=str(signal.get("content") or ""),
-                    expected_boundary_version=int(
-                        signal.get("expected_boundary_version") or 0
-                    ),
+                    expected_boundary_version=int(signal.get("expected_boundary_version") or 0),
                 ),
             )
         decision_id = str(signal.get("decision_id") or "").strip()
@@ -290,16 +283,8 @@ class KernelRunClient:
                 run_ref.run_id,
                 decision_id,
                 response,
-                nonce=(
-                    None
-                    if signal.get("nonce") is None
-                    else str(signal["nonce"])
-                ),
-                version=(
-                    None
-                    if signal.get("version") is None
-                    else int(signal["version"])
-                ),
+                nonce=(None if signal.get("nonce") is None else str(signal["nonce"])),
+                version=(None if signal.get("version") is None else int(signal["version"])),
             ),
         )
 
@@ -445,9 +430,7 @@ class ProductVenueRunAdapter:
         self._run_client = run_client
         self._presenter = presenter
         self._event_adapter = event_adapter or CanonicalRunEventPresentationAdapter()
-        self._identity_resolver = (
-            identity_resolver or ProductTurnIdentityResolver()
-        )
+        self._identity_resolver = identity_resolver or ProductTurnIdentityResolver()
         # Tests may replace ``_preparer`` after construction. Production
         # composition injects one stable preparation service explicitly.
         self._preparation_service = preparation_service
@@ -484,15 +467,12 @@ class ProductVenueRunAdapter:
         projection = resolved.projection
         presentation_context.run_id = root_ref.run_id
         presentation_context.task_scope_id = task_scope_id
-        presentation_context.conversation_boundary_ref = (
-            conversation.boundary_ref
-        )
+        presentation_context.conversation_boundary_ref = conversation.boundary_ref
         # Note: SDK Runtime v0.1.x doesn't support resume; always start new runs
         effective_host = resolved.host
         turn = resolved.turn
-        preparation_service = (
-            self._preparation_service
-            or ProductTurnPreparationService(self._preparer)
+        preparation_service = self._preparation_service or ProductTurnPreparationService(
+            self._preparer
         )
         preparation = await preparation_service.prepare(
             turn,
@@ -536,12 +516,8 @@ class ProductVenueRunAdapter:
                     "session_id": conversation.session_id,
                     "root_run_id": conversation.root_run_id,
                     "task_scope_id": conversation.task_scope_id,
-                    "seed_message_refs": list(
-                        conversation.seed_message_refs
-                    ),
-                    "continuation_message_refs": list(
-                        conversation.continuation_message_refs
-                    ),
+                    "seed_message_refs": list(conversation.seed_message_refs),
+                    "continuation_message_refs": list(conversation.continuation_message_refs),
                     "version": conversation.version,
                 },
                 "task_run_projection": {
@@ -559,9 +535,7 @@ class ProductVenueRunAdapter:
         companion_state = prepared.companion_authority_state
         companion_finalizer = prepared.companion_turn_finalizer
         if (companion_state is None) != (companion_finalizer is None):
-            raise RuntimeError(
-                "companion turn authority state/finalizer must be paired"
-            )
+            raise RuntimeError("companion turn authority state/finalizer must be paired")
         if prepared.prepared_context is not None:
             from deskpet.capabilities.contracts import CapabilityScope
             from deskpet.capabilities.refresh import (
@@ -572,15 +546,10 @@ class ProductVenueRunAdapter:
             from deskpet.tools.prepared_snapshot import dump_context_os_snapshot
 
             prepared_tool_set = prepared.prepared_context.tool_set
-            context_os = dump_context_os_snapshot(
-                prepared_tool_set, prepared.eligibility
-            )
-            context_ref = context_os_snapshot_ref(
-                prepared_tool_set, prepared.eligibility
-            )
+            context_os = dump_context_os_snapshot(prepared_tool_set, prepared.eligibility)
+            context_ref = context_os_snapshot_ref(prepared_tool_set, prepared.eligibility)
             exposure = (
-                getattr(prepared.bundle, "tool_exposure_intent", None)
-                or ToolExposureIntent()
+                getattr(prepared.bundle, "tool_exposure_intent", None) or ToolExposureIntent()
             )
             exposure_ref = exposure_intent_ref(exposure)
             snapshots = services.get("capability_refresh_snapshots")
@@ -595,12 +564,8 @@ class ProductVenueRunAdapter:
             if companion_state is not None:
                 owner_key = str(companion_state.owner_key)
                 if not owner_key:
-                    raise RuntimeError(
-                        "prepared Companion owner identity is unavailable"
-                    )
-                profile_generation = int(
-                    companion_state.owner.profile_generation
-                )
+                    raise RuntimeError("prepared Companion owner identity is unavailable")
+                profile_generation = int(companion_state.owner.profile_generation)
                 binding_epoch = int(companion_state.binding_epoch)
             else:
                 identity_gate = getattr(platform, "identity_gate", None)
@@ -611,18 +576,14 @@ class ProductVenueRunAdapter:
                     )
                 frozen_owner = identity_gate.freeze()
                 owner_key = str(frozen_owner.owner_key)
-                profile_generation = int(
-                    frozen_owner.owner.profile_generation
-                )
+                profile_generation = int(frozen_owner.owner.profile_generation)
                 binding_epoch = int(frozen_owner.binding_epoch)
             scope = CapabilityScope.for_run(
                 root_ref.run_id,
                 project_id=host.project_id or None,
                 project_revision=host.project_revision or None,
                 project_identity=host.project_identity or None,
-                user_key=str(
-                    getattr(platform, "global_capability_scope_key", owner_key)
-                ),
+                user_key=str(getattr(platform, "global_capability_scope_key", owner_key)),
             )
             prepared_catalog_lease = await platform.prepare_run_catalog_lease(
                 scope=scope,
@@ -635,28 +596,23 @@ class ProductVenueRunAdapter:
                 turn_id=turn.turn_id,
                 owner_operation_id=f"run-start:{root_ref.run_id}:1",
             )
-            base_run_context = (
-                prepared.run_prepared_context
-                or PreparedRunContextV1(persistence_required=True)
+            base_run_context = prepared.run_prepared_context or PreparedRunContextV1(
+                persistence_required=True
             )
-            capture_envelope = dict(
-                prepared_catalog_lease.prepared_tool_set_envelope
-            )
+            capture_envelope = dict(prepared_catalog_lease.prepared_tool_set_envelope)
             if (
                 fingerprint_json(capture_envelope)
                 != prepared_catalog_lease.prepared_tool_set_capture_hash
                 or capture_envelope.get("external_ref") != context_ref
             ):
-                raise RuntimeError(
-                    "prepared ToolSet capture envelope is inconsistent"
-                )
+                raise RuntimeError("prepared ToolSet capture envelope is inconsistent")
             exact_tools = capture_envelope.get("exact_tools")
-            if isinstance(exact_tools, (str, bytes)) or not isinstance(
-                exact_tools, (list, tuple)
-            ) or any(not isinstance(item, Mapping) for item in exact_tools):
-                raise RuntimeError(
-                    "prepared ToolSet exact capture is unavailable"
-                )
+            if (
+                isinstance(exact_tools, (str, bytes))
+                or not isinstance(exact_tools, (list, tuple))
+                or any(not isinstance(item, Mapping) for item in exact_tools)
+            ):
+                raise RuntimeError("prepared ToolSet exact capture is unavailable")
             lease_descriptor = prepared_catalog_lease.descriptor
             if companion_state is not None:
                 from deskpet.companion.turn_authority import (
@@ -665,22 +621,11 @@ class ProductVenueRunAdapter:
                 )
 
                 capture = CompanionCatalogLeaseCaptureV1(
-                    run_catalog_content_stamp=(
-                        prepared_catalog_lease.run_catalog_content_stamp
-                    ),
-                    process_catalog_stamp=(
-                        prepared_catalog_lease.process_catalog_stamp
-                    ),
-                    catalog_snapshot_ref=(
-                        prepared_catalog_lease.snapshot_ref
-                    ),
-                    capability_lease_intent_ref=(
-                        prepared_catalog_lease.lease_intent_id
-                    ),
-                    exact_tools=tuple(
-                        copy.deepcopy(dict(item))
-                        for item in exact_tools
-                    ),
+                    run_catalog_content_stamp=(prepared_catalog_lease.run_catalog_content_stamp),
+                    process_catalog_stamp=(prepared_catalog_lease.process_catalog_stamp),
+                    catalog_snapshot_ref=(prepared_catalog_lease.snapshot_ref),
+                    capability_lease_intent_ref=(prepared_catalog_lease.lease_intent_id),
+                    exact_tools=tuple(copy.deepcopy(dict(item)) for item in exact_tools),
                     lease_entries=_companion_catalog_lease_entries(
                         prepared_catalog_lease.lease_entries
                     ),
@@ -691,19 +636,14 @@ class ProductVenueRunAdapter:
                     run_id=root_ref.run_id,
                 )
                 if not isinstance(finalized, FinalizedCompanionTurnV1):
-                    raise RuntimeError(
-                        "companion turn authority finalization is invalid"
-                    )
+                    raise RuntimeError("companion turn authority finalization is invalid")
                 if (
-                    finalized.preparation_id
-                    != companion_state.preparation_id
+                    finalized.preparation_id != companion_state.preparation_id
                     or finalized.owner_key != owner_key
                     or finalized.profile_generation != profile_generation
                     or finalized.binding_epoch != binding_epoch
                 ):
-                    raise RuntimeError(
-                        "companion turn authority identity drifted"
-                    )
+                    raise RuntimeError("companion turn authority identity drifted")
                 base_run_context = replace(
                     base_run_context,
                     product_snapshot_ref=finalized.product_snapshot_ref,
@@ -711,9 +651,7 @@ class ProductVenueRunAdapter:
                 )
                 prepared = replace(
                     prepared,
-                    growth_dependencies=tuple(
-                        finalized.growth_dependencies
-                    ),
+                    growth_dependencies=tuple(finalized.growth_dependencies),
                 )
                 finalized_selection = _enrich_companion_selection_exact_tools(
                     finalized.selection_payload,
@@ -723,9 +661,7 @@ class ProductVenueRunAdapter:
                 finalized_selection = None
             host_extensions = dict(base_run_context.host_extensions)
             host_extensions[lease_descriptor.kind] = lease_descriptor
-            host_extension_payloads = dict(
-                base_run_context.host_extension_payloads
-            )
+            host_extension_payloads = dict(base_run_context.host_extension_payloads)
             prepared_tool_names = tuple(
                 capability.ref.name
                 for capability in (
@@ -752,17 +688,13 @@ class ProductVenueRunAdapter:
             selection_payload = (
                 finalized_selection
                 if finalized_selection is not None
-                else base_run_context.host_extension_payloads.get(
-                    selection_kind
-                )
+                else base_run_context.host_extension_payloads.get(selection_kind)
             )
             if selection_payload is not None:
                 if finalized_selection is None:
-                    selection_payload = (
-                        _enrich_companion_selection_exact_tools(
-                            selection_payload,
-                            exact_tools,
-                        )
+                    selection_payload = _enrich_companion_selection_exact_tools(
+                        selection_payload,
+                        exact_tools,
                     )
                 selection_hash = fingerprint_json(selection_payload)
                 host_extensions[selection_kind] = HostExtensionRefV1(
@@ -772,9 +704,7 @@ class ProductVenueRunAdapter:
                 )
                 host_extension_payloads[selection_kind] = selection_payload
             snapshot_extensions = (
-                {}
-                if selection_payload is None
-                else {selection_kind: dict(selection_payload)}
+                {} if selection_payload is None else {selection_kind: dict(selection_payload)}
             )
             global_skill_entries = tuple(
                 copy.deepcopy(dict(item))
@@ -797,21 +727,13 @@ class ProductVenueRunAdapter:
                 )
                 host_extension_payloads[global_skill_kind] = global_skill_payload
             capability_snapshot = {
-                "run_catalog_content_stamp": (
-                    prepared_catalog_lease.run_catalog_content_stamp
-                ),
-                "process_catalog_stamp": (
-                    prepared_catalog_lease.process_catalog_stamp
-                ),
+                "run_catalog_content_stamp": (prepared_catalog_lease.run_catalog_content_stamp),
+                "process_catalog_stamp": (prepared_catalog_lease.process_catalog_stamp),
                 "catalog_snapshot_ref": prepared_catalog_lease.snapshot_ref,
-                "capability_lease_intent_ref": (
-                    prepared_catalog_lease.lease_intent_id
-                ),
+                "capability_lease_intent_ref": (prepared_catalog_lease.lease_intent_id),
                 "prepared_tool_set_ref": context_ref,
                 "capability_hash": effective_host.capability_hash,
-                "product_snapshot_ref": (
-                    base_run_context.product_snapshot_ref
-                ),
+                "product_snapshot_ref": (base_run_context.product_snapshot_ref),
                 "host_extensions": snapshot_extensions,
             }
             run_prepared_context = replace(
@@ -819,12 +741,8 @@ class ProductVenueRunAdapter:
                 persistence_required=True,
                 prepared_tool_ref=context_ref,
                 prepared_tool_hash=context_ref,
-                capability_lease_intent_ref=(
-                    prepared_catalog_lease.lease_intent_id
-                ),
-                capability_lease_intent_hash=(
-                    prepared_catalog_lease.lease_intent_hash
-                ),
+                capability_lease_intent_ref=(prepared_catalog_lease.lease_intent_id),
+                capability_lease_intent_hash=(prepared_catalog_lease.lease_intent_hash),
                 owner_key=owner_key,
                 profile_generation=profile_generation,
                 binding_epoch=binding_epoch,
@@ -835,11 +753,7 @@ class ProductVenueRunAdapter:
                 start_commit_extensions=(
                     *base_run_context.start_commit_extensions,
                     prepared_catalog_lease.start_commit_extension,
-                    *(
-                        (presentation_extension,)
-                        if presentation_extension is not None
-                        else ()
-                    ),
+                    *((presentation_extension,) if presentation_extension is not None else ()),
                 ),
                 after_start_commit_handshakes=(
                     *base_run_context.after_start_commit_handshakes,
@@ -862,30 +776,18 @@ class ProductVenueRunAdapter:
             request_payload["tool_set_snapshot_ref"] = context_ref
             request_payload["capability_refresh"] = {
                 "catalog_snapshot_ref": prepared_catalog_lease.snapshot_ref,
-                "run_catalog_content_stamp": (
-                    prepared_catalog_lease.run_catalog_content_stamp
-                ),
-                "process_catalog_stamp": (
-                    prepared_catalog_lease.process_catalog_stamp
-                ),
-                "lease_intent_ref": (
-                    prepared_catalog_lease.lease_intent_id
-                ),
-                "lease_intent_hash": (
-                    prepared_catalog_lease.lease_intent_hash
-                ),
+                "run_catalog_content_stamp": (prepared_catalog_lease.run_catalog_content_stamp),
+                "process_catalog_stamp": (prepared_catalog_lease.process_catalog_stamp),
+                "lease_intent_ref": (prepared_catalog_lease.lease_intent_id),
+                "lease_intent_hash": (prepared_catalog_lease.lease_intent_hash),
                 "tool_set_snapshot_ref": context_ref,
                 "exposure_intent_ref": exposure_ref,
                 "scope": scope.to_dict(),
                 "refresh_pending": None,
             }
-            proposed_tool_names = tuple(
-                run_prepared_context.prepared_tool_names
-            )
+            proposed_tool_names = tuple(run_prepared_context.prepared_tool_names)
         elif services.get("capability_platform") is not None:
-            raise RuntimeError(
-                "new durable run requires an exact prepared tool-set capture"
-            )
+            raise RuntimeError("new durable run requires an exact prepared tool-set capture")
         try:
             handle = await self._run_client.start(
                 {
@@ -898,9 +800,7 @@ class ProductVenueRunAdapter:
                     "proposed_tools": list(proposed_tool_names),
                     "payload": request_payload,
                     "admission": admission,
-                    "provider_launch_snapshot": (
-                        provider_launch_snapshot if admission else None
-                    ),
+                    "provider_launch_snapshot": (provider_launch_snapshot if admission else None),
                 },
                 effective_host,
                 prepared=prepared.run_prepared_context,
@@ -910,9 +810,7 @@ class ProductVenueRunAdapter:
                 try:
                     await prepared_catalog_lease.release_prepared()
                 except RuntimeError as cleanup_error:
-                    if str(cleanup_error) != (
-                        "run_catalog_lease_commit_outcome_unknown"
-                    ):
+                    if str(cleanup_error) != ("run_catalog_lease_commit_outcome_unknown"):
                         raise
             raise
         if prepared_catalog_lease is not None:
@@ -920,10 +818,17 @@ class ProductVenueRunAdapter:
         if admission is not None:
             await domain_sink.store_plan({**dict(admission.presentation), "run_id": handle.run_id})
         return self._session(handle, presentation_context)
-    def _session(self, handle: VenueRunHandle,
-                 context: RunPresentationContext) -> ProductVenueRunSession:
-        return ProductVenueRunSession(handle=handle, presenter=self._presenter,
-            event_adapter=self._event_adapter, presentation_context=context)
+
+    def _session(
+        self, handle: VenueRunHandle, context: RunPresentationContext
+    ) -> ProductVenueRunSession:
+        return ProductVenueRunSession(
+            handle=handle,
+            presenter=self._presenter,
+            event_adapter=self._event_adapter,
+            presentation_context=context,
+        )
+
     async def _present_commands(
         self,
         commands: Sequence[Any],

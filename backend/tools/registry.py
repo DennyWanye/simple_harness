@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 """Tool registry — central catalog injected into ToolUsingAgent."""
+
 from __future__ import annotations
 
 from tools.base import Tool, ToolSpec

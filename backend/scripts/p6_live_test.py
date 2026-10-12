@@ -22,6 +22,7 @@ What it does:
 This is the production-equivalent test — same code path the UI uses,
 just driven from a script instead of computer-use.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -71,13 +72,17 @@ async def main() -> int:
         return 1
 
     print("Connected. Sending chat_v2 runaway prompt.")
-    await ws.send(json.dumps({
-        "type": "chat_v2",
-        "payload": {
-            "text": RUNAWAY_PROMPT,
-            "session_id": "p6-live-test",
-        },
-    }))
+    await ws.send(
+        json.dumps(
+            {
+                "type": "chat_v2",
+                "payload": {
+                    "text": RUNAWAY_PROMPT,
+                    "session_id": "p6-live-test",
+                },
+            }
+        )
+    )
 
     started = time.time()
     tool_count = 0
@@ -102,11 +107,15 @@ async def main() -> int:
             elif mtype == "tool_call":
                 tool_count += 1
                 tc = payload.get("tool_call") or {}
-                print(f"  [tool_call #{tool_count}] {tc.get('name')} iter={payload.get('iteration')}")
+                print(
+                    f"  [tool_call #{tool_count}] {tc.get('name')} iter={payload.get('iteration')}"
+                )
             elif mtype == "tool_result":
                 pass
             elif mtype == "provider_chain_fallback":
-                print(f"  [fallback] {payload.get('from_')} → {payload.get('to')}: {payload.get('reason')}")
+                print(
+                    f"  [fallback] {payload.get('from_')} → {payload.get('to')}: {payload.get('reason')}"
+                )
             elif mtype == "chat_v2_final":
                 # 后端 payload.text (与 ws.ts:201 一致); chat_v2_final 即 end_turn
                 final_text = payload.get("text") or payload.get("content") or ""
@@ -119,9 +128,12 @@ async def main() -> int:
                 detail = (payload.get("detail") or "")[:200]
                 print(f"  [ERROR] reason={reason} detail={detail}")
                 if reason in (
-                    "error_tool_budget", "error_wall_clock_exceeded",
-                    "error_max_turns", "context_budget_block",
-                    "hallucination", "all_providers_failed",
+                    "error_tool_budget",
+                    "error_wall_clock_exceeded",
+                    "error_max_turns",
+                    "context_budget_block",
+                    "hallucination",
+                    "all_providers_failed",
                 ):
                     saw_terminate = True
                     terminate_reason = reason
@@ -162,8 +174,12 @@ async def main() -> int:
         return 1
 
     # Hard cap should fire well before wall-clock
-    if terminate_reason in ("error_tool_budget", "error_wall_clock_exceeded",
-                            "hallucination", "error_max_turns"):
+    if terminate_reason in (
+        "error_tool_budget",
+        "error_wall_clock_exceeded",
+        "hallucination",
+        "error_max_turns",
+    ):
         print(f"[PASS] HARD GATE FIRED: {terminate_reason}")
         return 0
     elif terminate_reason == "end_turn":

@@ -32,11 +32,19 @@ class _Service:
 
     def create_mission(self, request):
         if "发布" in request["goal"] and len(request["success_criteria"]) > 5:
-            raise OrchestrationRequestError("action_criteria_disabled", "连接器 file_publish 未启用")
+            raise OrchestrationRequestError(
+                "action_criteria_disabled", "连接器 file_publish 未启用"
+            )
         key = request["idempotency_key"]
         created = key not in self.missions
-        self.missions.setdefault(key, {"mission_id": "mission-" + str(len(self.missions) + 1), **request})
-        return {"mission_id": self.missions[key]["mission_id"], "created": created, "spec_hash": "h"}
+        self.missions.setdefault(
+            key, {"mission_id": "mission-" + str(len(self.missions) + 1), **request}
+        )
+        return {
+            "mission_id": self.missions[key]["mission_id"],
+            "created": created,
+            "spec_hash": "h",
+        }
 
     def mission_detail(self, mission_id):
         return {"mission": {"id": mission_id, "status": "PLANNING"}}
@@ -49,19 +57,36 @@ def test_start_goes_through_create_mission_once_per_call():
     again = start_mission(lambda: service, args, run_id="run-1", call_id="call-1")
     other = start_mission(lambda: service, args, run_id="run-1", call_id="call-2")
     assert first["created"] is True and first["status"] == "PLANNING"
-    assert again == {**first, "created": False, "note": again["note"]} and "没有重复创建" in again["note"]
+    assert (
+        again == {**first, "created": False, "note": again["note"]}
+        and "没有重复创建" in again["note"]
+    )
     assert other["mission_id"] != first["mission_id"]
     [request, *_] = service.missions.values()
     assert request["idempotency_key"] == "chat-mission:run-1:call-1"
-    assert set(request) == {"mission_id", "goal", "success_criteria", "idempotency_key"}  # no budget invented here
+    assert set(request) == {
+        "mission_id",
+        "goal",
+        "success_criteria",
+        "idempotency_key",
+    }  # no budget invented here
 
 
-@pytest.mark.parametrize("args,code", [
-    ({"goal": "", "success_criteria": ["x"]}, "invalid_arguments"),
-    ({"goal": "g", "success_criteria": []}, "invalid_arguments"),
-    ({"goal": "g", "success_criteria": ["x"], "budget": {"max_tokens": 1}}, "invalid_arguments"),
-    ({"goal": "发布", "success_criteria": ["a", "b", "c", "d", "e", "f"]}, "action_criteria_disabled"),
-])
+@pytest.mark.parametrize(
+    "args,code",
+    [
+        ({"goal": "", "success_criteria": ["x"]}, "invalid_arguments"),
+        ({"goal": "g", "success_criteria": []}, "invalid_arguments"),
+        (
+            {"goal": "g", "success_criteria": ["x"], "budget": {"max_tokens": 1}},
+            "invalid_arguments",
+        ),
+        (
+            {"goal": "发布", "success_criteria": ["a", "b", "c", "d", "e", "f"]},
+            "action_criteria_disabled",
+        ),
+    ],
+)
 def test_refusals_are_tool_failures(args, code):
     with pytest.raises(MissionStartRefused) as refused:
         start_mission(lambda: _Service(), args, run_id="r", call_id="c")
@@ -78,8 +103,11 @@ def test_unavailable_orchestration_is_retryable_not_silent():
 def test_the_tool_is_registered_visible_and_described():
     assert "mission_start" in PRODUCT_TOOL_NAMES and "mission_start" in HOST_COMPOSED_TOOL_NAMES
     assert "mission_start" in SDK_DIRECT_TOOL_KERNEL
-    assert describe_call_zh("mission_start", {"goal": "写 ZIP.md"}) == "在任务编排里新建后台任务「写 ZIP.md」"
-    assert 'name=MISSION_START_TOOL_NAME' in MAIN.read_text(encoding="utf-8")
+    assert (
+        describe_call_zh("mission_start", {"goal": "写 ZIP.md"})
+        == "在任务编排里新建后台任务「写 ZIP.md」"
+    )
+    assert "name=MISSION_START_TOOL_NAME" in MAIN.read_text(encoding="utf-8")
 
 
 def test_mission_status_reads_progress_and_what_waits_for_the_person():
@@ -91,18 +119,37 @@ def test_mission_status_reads_progress_and_what_waits_for_the_person():
             return {
                 "mission": {"id": mission_id, "status": "ACTIVE", "goal": "写词频模块并发布"},
                 "operation_workspace": {"state": "CONFIRMED"},
-                "approvals": [{"state": "PENDING", "kind": "action", "summary": {
-                    "connector": "file_publish", "operation": "publish", "target": "README.md"}}],
-                "tasks": [{"status": "COMPLETED", "kind": "work"}, {"status": "RUNNING", "kind": "work"}],
-                "actions": [{"state": "SUCCEEDED", "target": "wordfreq.py",
-                             "published_path": "/pub/wordfreq.342d.v1.py"}],
+                "approvals": [
+                    {
+                        "state": "PENDING",
+                        "kind": "action",
+                        "summary": {
+                            "connector": "file_publish",
+                            "operation": "publish",
+                            "target": "README.md",
+                        },
+                    }
+                ],
+                "tasks": [
+                    {"status": "COMPLETED", "kind": "work"},
+                    {"status": "RUNNING", "kind": "work"},
+                ],
+                "actions": [
+                    {
+                        "state": "SUCCEEDED",
+                        "target": "wordfreq.py",
+                        "published_path": "/pub/wordfreq.342d.v1.py",
+                    }
+                ],
             }
 
     status = mission_status(lambda: _Detail(), {"mission_id": "mission-1"})
     assert status["status_zh"] == "进行中"
     assert status["waiting_for"] == ["等用户批准发布 README.md"]
     assert status["steps"] == {"total": 2, "done": 1}
-    assert status["published"] == [{"target": "wordfreq.py", "published_path": "/pub/wordfreq.342d.v1.py"}]
+    assert status["published"] == [
+        {"target": "wordfreq.py", "published_path": "/pub/wordfreq.342d.v1.py"}
+    ]
     assert "不能代为确认或批准" in status["note"]
     with pytest.raises(MissionStartRefused):
         mission_status(lambda: _Detail(), {"mission_id": "m", "approve": True})
@@ -112,6 +159,7 @@ def test_mission_status_is_registered_read_only_and_described():
     assert "mission_status" in PRODUCT_TOOL_NAMES and "mission_status" in HOST_COMPOSED_TOOL_NAMES
     assert "mission_status" in SDK_DIRECT_TOOL_KERNEL
     assert describe_call_zh("mission_status", {"mission_id": "m"}) == "查看后台任务的进度"
-    assert 'name=MISSION_STATUS_TOOL_NAME' in MAIN.read_text(encoding="utf-8")
+    assert "name=MISSION_STATUS_TOOL_NAME" in MAIN.read_text(encoding="utf-8")
     from deskpet.orchestration.chat_tool import MISSION_STATUS_SCHEMA
+
     assert set(MISSION_STATUS_SCHEMA["properties"]) == {"mission_id"}  # 没有任何能改状态的参数

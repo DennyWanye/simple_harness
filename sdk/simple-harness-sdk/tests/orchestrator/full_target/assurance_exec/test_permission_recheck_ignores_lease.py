@@ -29,6 +29,7 @@ def _authority(state):
             ReadItem("POLICY", "policy", "f" * 64),
             state["now"] + TTL,  # production shape: lease relative to now
         )
+
     return authority
 
 
@@ -80,7 +81,11 @@ def test_no_barrier_compares_the_whole_permission():
                 continue
             if node.iter.attr != "permissions":
                 continue
-            calls = {n.func.id for n in ast.walk(node) if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)}
+            calls = {
+                n.func.id
+                for n in ast.walk(node)
+                if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+            }
             if "_require_same_permission" not in calls:
                 offenders.append(f"{path.name}:{node.lineno}")
     assert offenders == []

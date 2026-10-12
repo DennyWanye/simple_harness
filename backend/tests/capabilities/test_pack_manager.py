@@ -102,9 +102,7 @@ def _write_pack(
             "remove_environment_when_unreferenced": True,
         },
     }
-    (root / "deskpet-pack.json").write_text(
-        json.dumps(manifest), encoding="utf-8"
-    )
+    (root / "deskpet-pack.json").write_text(json.dumps(manifest), encoding="utf-8")
     return PackSourceRequest("local", str(root), revision)
 
 
@@ -114,13 +112,9 @@ class _FakePublisher:
         self.stopped = []
         self.reconcile_status = "rolled_back"
 
-    async def prepare_candidate(
-        self, validation, *, install_root, operation_id
-    ):
+    async def prepare_candidate(self, validation, *, install_root, operation_id):
         del install_root, operation_id
-        fingerprint = _hash(
-            f"{validation.manifest.id}:{validation.manifest.version}:tool"
-        )
+        fingerprint = _hash(f"{validation.manifest.id}:{validation.manifest.version}:tool")
         return CapabilityCandidate(
             expected_registry_revision=self.revision,
             tool_spec_fingerprints=(fingerprint,),
@@ -271,14 +265,8 @@ async def test_install_honors_exact_owner_generation_and_replays_receipt(
     assert first.binding.management_policy == "user_managed"
     assert len(first.manager_receipt_hash) == 64
     assert replay.manager_receipt_hash == first.manager_receipt_hash
-    assert (
-        replay.committed_owner_binding_set_stamp
-        == first.committed_owner_binding_set_stamp
-    )
-    assert (
-        replay.process_projection_fingerprint
-        == first.process_projection_fingerprint
-    )
+    assert replay.committed_owner_binding_set_stamp == first.committed_owner_binding_set_stamp
+    assert replay.process_projection_fingerprint == first.process_projection_fingerprint
     assert (
         await store.get_binding(
             "user",
@@ -361,9 +349,7 @@ async def test_uninstall_honors_exact_owner_generation_and_returns_receipt(
 
 @pytest.mark.asyncio
 async def test_discovered_pack_id_keeps_original_request_idempotent(tmp_path) -> None:
-    request = _write_pack(
-        tmp_path / "source", version="1.0.0", revision="r1"
-    )
+    request = _write_pack(tmp_path / "source", version="1.0.0", revision="r1")
     publisher = _FakePublisher()
     manager, _store = await _manager(tmp_path, publisher=publisher)
     first = await manager.install(
@@ -385,9 +371,7 @@ async def test_discovered_pack_id_keeps_original_request_idempotent(tmp_path) ->
 
 @pytest.mark.asyncio
 async def test_integrity_failure_never_creates_version_or_binding(tmp_path) -> None:
-    source = _write_pack(
-        tmp_path / "bad", version="1.0.0", revision="bad", bad_hash=True
-    )
+    source = _write_pack(tmp_path / "bad", version="1.0.0", revision="bad", bad_hash=True)
     manager, store = await _manager(tmp_path)
     with pytest.raises(PackManifestError) as caught:
         await manager.install(
@@ -501,9 +485,7 @@ async def test_crash_after_catalog_swap_leaves_intent_for_reconciliation(
             raise _Crash()
 
     publisher = _FakePublisher()
-    manager, store = await _manager(
-        tmp_path, publisher=publisher, fault_injector=crash
-    )
+    manager, store = await _manager(tmp_path, publisher=publisher, fault_injector=crash)
     source = _write_pack(tmp_path / "v1", version="1.0.0", revision="r1")
     with pytest.raises(_Crash):
         await manager.install(
@@ -536,9 +518,7 @@ async def test_recovery_completes_published_catalog_swap_with_original_cas(
 
     publisher = _FakePublisher()
     publisher.reconcile_status = "published"
-    manager, store = await _manager(
-        tmp_path, publisher=publisher, fault_injector=crash
-    )
+    manager, store = await _manager(tmp_path, publisher=publisher, fault_injector=crash)
     source = _write_pack(tmp_path / "v1", version="1.0.0", revision="r1")
     with pytest.raises(_Crash):
         await manager.install(
@@ -787,20 +767,14 @@ async def test_tamper_before_replace_fails_without_installed_root_or_binding(
     assert caught.value.code == "capability_package_limit_exceeded"
     assert await store.get_binding("user", "default", "godot") is None
     assert not any(manager.layout.packs.rglob("deskpet-pack.json"))
-    assert not manager.layout.staging_path(
-        _hash("capability:tamper-before-replace")
-    ).exists()
+    assert not manager.layout.staging_path(_hash("capability:tamper-before-replace")).exists()
 
 
 class _RawPathSourceResolver:
-    def resolve_declared_source(
-        self, request: PackSourceRequest
-    ) -> PackSourceRequest:
+    def resolve_declared_source(self, request: PackSourceRequest) -> PackSourceRequest:
         return request
 
-    async def stage(
-        self, request: PackSourceRequest, destination: Path
-    ) -> StagedPack:
+    async def stage(self, request: PackSourceRequest, destination: Path) -> StagedPack:
         shutil.copytree(Path(request.uri), destination)
         return StagedPack(root=destination, source=request)
 
@@ -847,9 +821,7 @@ async def test_manager_rejects_validated_ref_from_foreign_policy_baseline(
     )
     manager, store = await _manager(
         tmp_path,
-        source_resolver=CapabilitySourceResolver(
-            package_validator=foreign_validator
-        ),
+        source_resolver=CapabilitySourceResolver(package_validator=foreign_validator),
     )
 
     with pytest.raises(

@@ -82,22 +82,42 @@ HEAD_SCHEMA_VERSION: int = CHAIN_VERSIONS[-1]
 # ``tests/memory/test_s5c_schema_chain.py`` fails when a discovered chain
 # version is missing here, or when the two disagree.
 DOMAIN_SCHEMA_STEPS: dict[int, tuple[str, str, str]] = {
-    50: ("deskpet.memory.s5c_schema",
-         "validate_s5c_state_db", "initialize_s5c_state_db"),
-    51: ("deskpet.memory.s5c_timer_schema",
-         "validate_s5c_timer_state_db", "initialize_s5c_timer_state_db"),
-    52: ("deskpet.memory.s5c_terminal_schema",
-         "validate_s5c_terminal_state_db", "initialize_s5c_terminal_state_db"),
-    53: ("deskpet.memory.procedure_schema",
-         "validate_procedure_state_db", "initialize_procedure_state_db"),
-    54: ("deskpet.memory.procedure_recovery_schema",
-         "validate_procedure_recovery_state_db", "initialize_procedure_recovery_state_db"),
-    55: ("deskpet.memory.primary_tool_call_schema",
-         "validate_primary_tool_call_state_db", "initialize_primary_tool_call_state_db"),
-    56: ("deskpet.memory.context_use_recollect_schema",
-         "validate_context_use_recollect_state_db", "initialize_context_use_recollect_state_db"),
-    57: ("deskpet.memory.evidence_kind_schema",
-         "validate_evidence_kind_state_db", "initialize_evidence_kind_state_db"),
+    50: ("deskpet.memory.s5c_schema", "validate_s5c_state_db", "initialize_s5c_state_db"),
+    51: (
+        "deskpet.memory.s5c_timer_schema",
+        "validate_s5c_timer_state_db",
+        "initialize_s5c_timer_state_db",
+    ),
+    52: (
+        "deskpet.memory.s5c_terminal_schema",
+        "validate_s5c_terminal_state_db",
+        "initialize_s5c_terminal_state_db",
+    ),
+    53: (
+        "deskpet.memory.procedure_schema",
+        "validate_procedure_state_db",
+        "initialize_procedure_state_db",
+    ),
+    54: (
+        "deskpet.memory.procedure_recovery_schema",
+        "validate_procedure_recovery_state_db",
+        "initialize_procedure_recovery_state_db",
+    ),
+    55: (
+        "deskpet.memory.primary_tool_call_schema",
+        "validate_primary_tool_call_state_db",
+        "initialize_primary_tool_call_state_db",
+    ),
+    56: (
+        "deskpet.memory.context_use_recollect_schema",
+        "validate_context_use_recollect_state_db",
+        "initialize_context_use_recollect_state_db",
+    ),
+    57: (
+        "deskpet.memory.evidence_kind_schema",
+        "validate_evidence_kind_state_db",
+        "initialize_evidence_kind_state_db",
+    ),
 }
 
 

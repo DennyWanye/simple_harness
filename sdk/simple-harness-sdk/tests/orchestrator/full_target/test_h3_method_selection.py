@@ -63,12 +63,15 @@ def _registry() -> PredicateRegistry:
 def test_h3_evidence_requires_registered_observer_and_authority() -> None:
     request = _evidence_request("workspace-readable@1")
     registry = _registry()
-    assert validate_evidence_request(
-        request,
-        registry=registry,
-        observers={"workspace-readable@1": True},
-        authorized_scopes={"workspace-read"},
-    ) == request
+    assert (
+        validate_evidence_request(
+            request,
+            registry=registry,
+            observers={"workspace-readable@1": True},
+            authorized_scopes={"workspace-read"},
+        )
+        == request
+    )
     with pytest.raises(ContractError, match="not registered"):
         validate_evidence_request(
             _evidence_request("unknown@1"),
@@ -132,7 +135,9 @@ def test_h3_real_hierarchical_dispatch_lists_zero_one_and_many_candidates(tmp_pa
             network = seed.dispatch.seed_network(seed.mission.id)
             root = network.occurrences[0]
             occurrence_id = str(root.occurrence_id)
-            signature = str(network.binding_for_occurrence(root.occurrence_id).goal_signature.signature_id)
+            signature = str(
+                network.binding_for_occurrence(root.occurrence_id).goal_signature.signature_id
+            )
             method_a = MethodRef("h3.method-a", 1, "a" * 64)
             method_b = MethodRef("h3.method-b", 1, "b" * 64)
 

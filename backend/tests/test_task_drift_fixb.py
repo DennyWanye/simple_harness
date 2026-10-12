@@ -26,7 +26,9 @@ def test_plan_prompt_includes_authoritative_user_request() -> None:
 
 
 @pytest.mark.asyncio
-async def test_deepresearch_user_request_none_falls_back_to_topic_without_keyerror(monkeypatch) -> None:
+async def test_deepresearch_user_request_none_falls_back_to_topic_without_keyerror(
+    monkeypatch,
+) -> None:
     monkeypatch.setattr(r, "_query_expansion_enabled", lambda: False)
     monkeypatch.setattr(r, "_direct_sources_enabled", lambda: False)
     seen_prompts: list[str] = []
@@ -249,7 +251,9 @@ async def test_deepresearch_legacy_none_user_request_keeps_topic_as_subject(monk
 
 
 @pytest.mark.asyncio
-async def test_deepresearch_handler_saves_report_under_returned_topic(monkeypatch, tmp_path) -> None:
+async def test_deepresearch_handler_saves_report_under_returned_topic(
+    monkeypatch, tmp_path
+) -> None:
     drift_topic = "宁德时代2024年报"
     request_topic = "深度调研 Rust Tokio 异步运行时"
     saved_topics: list[str] = []
@@ -258,6 +262,7 @@ async def test_deepresearch_handler_saves_report_under_returned_topic(monkeypatc
     async def fake_resolve_llm():
         async def _llm(prompt: str) -> str:
             return "[]"
+
         return _llm
 
     async def fake_deepresearch(topic: str, **kwargs):

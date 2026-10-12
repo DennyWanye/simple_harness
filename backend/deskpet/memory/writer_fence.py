@@ -20,13 +20,17 @@ class _RequestFenceScope:
     depth: int = 0
 
 
-_REQUEST_FENCE: ContextVar[_RequestFenceScope | None] = ContextVar("human_memory_request_fence", default=None)
+_REQUEST_FENCE: ContextVar[_RequestFenceScope | None] = ContextVar(
+    "human_memory_request_fence", default=None
+)
 
 
 @contextmanager
 def authenticated_memory_request(fence):
     """Propagate connection authority without adding it to durable payloads."""
-    token = _REQUEST_FENCE.set(None if fence is None else _RequestFenceScope(fence, asyncio.current_task()))
+    token = _REQUEST_FENCE.set(
+        None if fence is None else _RequestFenceScope(fence, asyncio.current_task())
+    )
     try:
         yield
     finally:
@@ -99,8 +103,7 @@ async def assert_human_memory_ingress_open_tx(
     if scope is not None:
         scope.fence.verify()
     cursor = await db.execute(
-        "SELECT 1 FROM sqlite_master WHERE type='table' "
-        "AND name='human_memory_recovery_fence'"
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='human_memory_recovery_fence'"
     )
     ready = await cursor.fetchone()
     await cursor.close()

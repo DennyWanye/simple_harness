@@ -96,16 +96,21 @@ async def normalize_handler(state: WorkflowState, context: WorkflowContext) -> S
     raw_config = values.get("research_config")
     config = dict(raw_config) if isinstance(raw_config, Mapping) else {}
     max_questions = max(2, min(6, int(config.get("max_sub_questions", 4))))
-    return StatePatch({
-        "values": _merged(state, {
-            "topic": topic,
-            "mode": mode,
-            "max_sub_questions": max_questions,
-            "max_child_attempts": 2,
-            "sub_questions": [],
-            "business_status": "researching",
-        })
-    })
+    return StatePatch(
+        {
+            "values": _merged(
+                state,
+                {
+                    "topic": topic,
+                    "mode": mode,
+                    "max_sub_questions": max_questions,
+                    "max_child_attempts": 2,
+                    "sub_questions": [],
+                    "business_status": "researching",
+                },
+            )
+        }
+    )
 
 
 async def plan_handler(state: WorkflowState, context: WorkflowContext) -> StatePatch:
@@ -114,9 +119,7 @@ async def plan_handler(state: WorkflowState, context: WorkflowContext) -> StateP
     max_questions = int(values["max_sub_questions"])
     ports = ResearchPorts.from_workflow_context(context)
     try:
-        raw = await ports.llm.complete(
-            legacy._PLAN_PROMPT.format(topic=topic, user_request=topic)
-        )
+        raw = await ports.llm.complete(legacy._PLAN_PROMPT.format(topic=topic, user_request=topic))
     except Exception as exc:  # noqa: BLE001 - bounded fallback keeps the run useful
         raw = ""
         errors = [f"plan_llm:{type(exc).__name__}"]
@@ -133,24 +136,32 @@ async def plan_handler(state: WorkflowState, context: WorkflowContext) -> StateP
     identity = context.identity
     publish = getattr(reporter, "report_deep_research_v7_children", None)
     if identity is not None and callable(publish):
-        await publish(identity, [
-            {
-                "child_id": f"dr-{index}",
-                "question": question,
-                "status": "queued",
-                "attempt": 0,
-                "max_attempts": int(values.get("max_child_attempts") or 2),
-                "n_sources": 0,
-                "reason_code": "",
-            }
-            for index, question in enumerate(questions)
-        ])
-    return StatePatch({
-        "values": _merged(state, {
-            "sub_questions": questions,
-            "plan_errors": errors,
-        })
-    })
+        await publish(
+            identity,
+            [
+                {
+                    "child_id": f"dr-{index}",
+                    "question": question,
+                    "status": "queued",
+                    "attempt": 0,
+                    "max_attempts": int(values.get("max_child_attempts") or 2),
+                    "n_sources": 0,
+                    "reason_code": "",
+                }
+                for index, question in enumerate(questions)
+            ],
+        )
+    return StatePatch(
+        {
+            "values": _merged(
+                state,
+                {
+                    "sub_questions": questions,
+                    "plan_errors": errors,
+                },
+            )
+        }
+    )
 
 
 async def search_handler(state: WorkflowState, context: WorkflowContext) -> StatePatch:
@@ -192,10 +203,12 @@ async def search_handler(state: WorkflowState, context: WorkflowContext) -> Stat
     }
     validate_json_value(payload)
     encoded, refs = _encode(payload, context)
-    return StatePatch({
-        "values": _merged(state, {"fanout_payload": encoded}),
-        "blob_refs": refs,
-    })
+    return StatePatch(
+        {
+            "values": _merged(state, {"fanout_payload": encoded}),
+            "blob_refs": refs,
+        }
+    )
 
 
 async def synth_handler(state: WorkflowState, context: WorkflowContext) -> StatePatch:
@@ -221,19 +234,21 @@ async def synth_handler(state: WorkflowState, context: WorkflowContext) -> State
             topic, [str(value) for value in values.get("sub_questions", [])]
         )
     child_records = [
-        dict(value) for value in raw_payload.get("child_records", [])
-        if isinstance(value, Mapping)
+        dict(value) for value in raw_payload.get("child_records", []) if isinstance(value, Mapping)
     ]
     insufficient = [record for record in child_records if record.get("status") != "valid"]
     if insufficient:
-        report_md = report_md.rstrip() + "\n\n## 调研局限\n\n" + "\n".join(
-            f"- {record.get('question')}: 子代理在 {record.get('attempt', 0)} 次尝试后仍证据不足。"
-            for record in insufficient
-        ) + "\n"
+        report_md = (
+            report_md.rstrip()
+            + "\n\n## 调研局限\n\n"
+            + "\n".join(
+                f"- {record.get('question')}: 子代理在 {record.get('attempt', 0)} 次尝试后仍证据不足。"
+                for record in insufficient
+            )
+            + "\n"
+        )
     business_status = (
-        "insufficient_evidence" if not sub_reports
-        else "partial" if insufficient
-        else "completed"
+        "insufficient_evidence" if not sub_reports else "partial" if insufficient else "completed"
     )
     report = legacy.ResearchReport(
         topic=topic,
@@ -252,13 +267,18 @@ async def synth_handler(state: WorkflowState, context: WorkflowContext) -> State
         errors=errors,
     )
     encoded, refs = _encode(report.as_dict(), context)
-    return StatePatch({
-        "values": _merged(state, {
-            "report_payload": encoded,
-            "business_status": business_status,
-        }),
-        "blob_refs": refs,
-    })
+    return StatePatch(
+        {
+            "values": _merged(
+                state,
+                {
+                    "report_payload": encoded,
+                    "business_status": business_status,
+                },
+            ),
+            "blob_refs": refs,
+        }
+    )
 
 
 async def persist_handler(state: WorkflowState, context: WorkflowContext) -> StatePatch:
@@ -267,7 +287,9 @@ async def persist_handler(state: WorkflowState, context: WorkflowContext) -> Sta
     if not isinstance(raw_report, Mapping):
         raise ValueError("report payload is missing")
     report = _report(raw_report)
-    run_id = context.identity.run_id if context.identity is not None else str(state.get("run_id") or "")
+    run_id = (
+        context.identity.run_id if context.identity is not None else str(state.get("run_id") or "")
+    )
     artifact: dict[str, JsonValue] | None = None
     if report.citations and report.report_md:
         port = context.ports.get("artifact")
@@ -282,9 +304,7 @@ async def persist_handler(state: WorkflowState, context: WorkflowContext) -> Sta
         )
         artifact = {str(key): copy.deepcopy(value) for key, value in saved.items()}
         validate_json_value(artifact)
-    return StatePatch({
-        "values": _merged(state, {"artifact_payload": artifact})
-    })
+    return StatePatch({"values": _merged(state, {"artifact_payload": artifact})})
 
 
 async def finalize_handler(state: WorkflowState, context: WorkflowContext) -> StatePatch:
@@ -293,7 +313,9 @@ async def finalize_handler(state: WorkflowState, context: WorkflowContext) -> St
     if not isinstance(raw_report, Mapping):
         raise ValueError("report payload is missing")
     report = _report(raw_report)
-    run_id = context.identity.run_id if context.identity is not None else str(state.get("run_id") or "")
+    run_id = (
+        context.identity.run_id if context.identity is not None else str(state.get("run_id") or "")
+    )
     status = str(values.get("business_status") or "insufficient_evidence")
     report_envelope: dict[str, JsonValue] = {
         "schema_version": 1,
@@ -303,38 +325,44 @@ async def finalize_handler(state: WorkflowState, context: WorkflowContext) -> St
     intents: list[dict[str, JsonValue]] = []
     if status != "insufficient_evidence":
         artifact_payload = values.get("artifact_payload")
-        artifacts = [copy.deepcopy(dict(artifact_payload))] if isinstance(artifact_payload, Mapping) else []
-        intents.extend([
-            {
-                "intent_id": f"{run_id}:report",
-                "kind": "report",
-                "channel": "workflow_report",
-                "payload": {"report": copy.deepcopy(report_envelope)},
-            },
-            {
-                "intent_id": f"{run_id}:artifact",
-                "kind": "artifact_card",
-                "channel": "artifact",
-                "payload": {
-                    "artifact_type": "research_report",
-                    "report": copy.deepcopy(report_envelope),
-                    "artifact": copy.deepcopy(artifact_payload),
-                    "artifacts": artifacts,
-                    "preview": report.summary,
+        artifacts = (
+            [copy.deepcopy(dict(artifact_payload))] if isinstance(artifact_payload, Mapping) else []
+        )
+        intents.extend(
+            [
+                {
+                    "intent_id": f"{run_id}:report",
+                    "kind": "report",
+                    "channel": "workflow_report",
+                    "payload": {"report": copy.deepcopy(report_envelope)},
                 },
+                {
+                    "intent_id": f"{run_id}:artifact",
+                    "kind": "artifact_card",
+                    "channel": "artifact",
+                    "payload": {
+                        "artifact_type": "research_report",
+                        "report": copy.deepcopy(report_envelope),
+                        "artifact": copy.deepcopy(artifact_payload),
+                        "artifacts": artifacts,
+                        "preview": report.summary,
+                    },
+                },
+            ]
+        )
+    intents.append(
+        {
+            "intent_id": f"{run_id}:final",
+            "kind": "final_assistant",
+            "channel": "final_assistant",
+            "payload": {
+                "text": report.report_md or report.summary,
+                "summary": report.summary,
+                "business_status": status,
+                "report": copy.deepcopy(report_envelope),
             },
-        ])
-    intents.append({
-        "intent_id": f"{run_id}:final",
-        "kind": "final_assistant",
-        "channel": "final_assistant",
-        "payload": {
-            "text": report.report_md or report.summary,
-            "summary": report.summary,
-            "business_status": status,
-            "report": copy.deepcopy(report_envelope),
-        },
-    })
+        }
+    )
     validate_json_value(intents)
     return StatePatch({"values": _merged(state, {"delivery_intents": intents})})
 
@@ -361,7 +389,9 @@ DEEP_RESEARCH_V7_DEFINITION = WorkflowDefinition(
     ),
     channels={
         "values": ChannelSpec(JsonType.OBJECT, ReducerKind.SINGLE_WRITER, frozenset(NODE_IDS)),
-        "blob_refs": ChannelSpec(JsonType.ARRAY, ReducerKind.STABLE_LIST, frozenset({"search", "synth"})),
+        "blob_refs": ChannelSpec(
+            JsonType.ARRAY, ReducerKind.STABLE_LIST, frozenset({"search", "synth"})
+        ),
     },
     edges=tuple(
         Edge(source, target)
@@ -421,6 +451,11 @@ def initial_state(
 
 
 __all__ = [
-    "DEEP_RESEARCH_V7", "DEEP_RESEARCH_V7_DEFINITION", "NODE_IDS",
-    "STATE_SCHEMA_VERSION", "WORKFLOW_NAME", "WORKFLOW_VERSION", "initial_state",
+    "DEEP_RESEARCH_V7",
+    "DEEP_RESEARCH_V7_DEFINITION",
+    "NODE_IDS",
+    "STATE_SCHEMA_VERSION",
+    "WORKFLOW_NAME",
+    "WORKFLOW_VERSION",
+    "initial_state",
 ]

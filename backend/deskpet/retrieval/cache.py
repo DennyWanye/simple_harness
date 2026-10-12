@@ -187,16 +187,10 @@ class ProviderHealth:
                 # the later acquire will honestly return half_open_busy/lost
                 # race instead of waiting until the old open window expires.
                 eligible_at = (
-                    self._clock()
-                    if state.state == "half_open"
-                    else self._eligible_at(state)
+                    self._clock() if state.state == "half_open" else self._eligible_at(state)
                 )
                 if eligible_at <= float(deadline):
-                    target = (
-                        busy_candidates
-                        if state.state == "half_open"
-                        else open_candidates
-                    )
+                    target = busy_candidates if state.state == "half_open" else open_candidates
                     target.append((eligible_at, order, provider, state))
             candidates = open_candidates or busy_candidates
             if not candidates:
@@ -209,11 +203,7 @@ class ProviderHealth:
 
         async with self._lock:
             state = self._states.get(provider)
-            return bool(
-                state
-                and state.state != "closed"
-                and state.open_until > self._clock()
-            )
+            return bool(state and state.state != "closed" and state.open_until > self._clock())
 
     async def acquire_permit(
         self,
@@ -235,11 +225,7 @@ class ProviderHealth:
                 )
 
             natural_probe = now >= state.open_until
-            forced_probe = (
-                allow_probe
-                and not state.forced_consumed
-                and now >= state.next_forced_at
-            )
+            forced_probe = allow_probe and not state.forced_consumed and now >= state.next_forced_at
             if not natural_probe and not forced_probe:
                 eligible_at = (
                     state.next_forced_at
@@ -311,10 +297,14 @@ class ProviderHealth:
     ) -> bool:
         async with self._lock:
             previous = self._states.get(provider)
-            if permit is not None and previous is not None and (
-                permit.kind != "closed"
-                or permit.generation != previous.generation
-                or previous.state != "closed"
+            if (
+                permit is not None
+                and previous is not None
+                and (
+                    permit.kind != "closed"
+                    or permit.generation != previous.generation
+                    or previous.state != "closed"
+                )
             ):
                 return False
             generation = previous.generation if previous is not None else 0
@@ -377,7 +367,7 @@ class ProviderHealth:
             )
             backoff = min(
                 policy.probe_max_s,
-                policy.probe_base_s * (2 ** state.probe_failures),
+                policy.probe_base_s * (2**state.probe_failures),
             )
             state.open_until = now + max(policy.open_s, bounded_retry)
             state.next_forced_at = now + max(backoff, bounded_retry)

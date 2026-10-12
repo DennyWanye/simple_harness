@@ -86,30 +86,47 @@ def _confirm_completion(world: Any, mission_id: str) -> None:
     [obligation] = workspace["obligations"]
     milestone = next(m for m in workspace["milestones"] if m["id"] == "CONTENT_HASH_VERIFIED")
     ref = workspace["requirements_ref"]
-    world.control.approve_operation_completion_spec({
-        "mission_id": mission_id, "command_id": "confirm-publish-completion",
-        "expected_requirements_ref": ref,
-        "proposal": {
-            "schema_version": 1, "mission_id": mission_id,
-            "requirements_ref": {"id": ref["id"], "revision": ref["revision"], "content_hash": ref["content_hash"]},
-            "mode": "REQUIRED_EFFECTS", "content_criterion_ids": content,
-            "effects": [{
-                "effect_key": "publish-weekly", "source_slot_key": "publish-weekly",
-                "obligation_id": obligation["id"], "criterion_ids": actions,
-                "required_milestone": milestone["id"],
-                "milestone_policy_ref": milestone["milestone_policy_ref"],
-                "evidence_policy_ref": milestone["evidence_policy_ref"],
-            }],
-        },
-    })
+    world.control.approve_operation_completion_spec(
+        {
+            "mission_id": mission_id,
+            "command_id": "confirm-publish-completion",
+            "expected_requirements_ref": ref,
+            "proposal": {
+                "schema_version": 1,
+                "mission_id": mission_id,
+                "requirements_ref": {
+                    "id": ref["id"],
+                    "revision": ref["revision"],
+                    "content_hash": ref["content_hash"],
+                },
+                "mode": "REQUIRED_EFFECTS",
+                "content_criterion_ids": content,
+                "effects": [
+                    {
+                        "effect_key": "publish-weekly",
+                        "source_slot_key": "publish-weekly",
+                        "obligation_id": obligation["id"],
+                        "criterion_ids": actions,
+                        "required_milestone": milestone["id"],
+                        "milestone_policy_ref": milestone["milestone_policy_ref"],
+                        "evidence_policy_ref": milestone["evidence_policy_ref"],
+                    }
+                ],
+            },
+        }
+    )
 
 
 async def _confirmed(world: Any) -> str:
     """建一个带发布的任务，确认完成映射（发布操作还没物化）。"""
 
-    mission_id = world.create({"goal": "写一份周报 reports/weekly.md 并发布",
-                               "success_criteria": ["file:" + TARGET, PUBLISH],
-                               "idempotency_key": "publish-guard"})["mission_id"]
+    mission_id = world.create(
+        {
+            "goal": "写一份周报 reports/weekly.md 并发布",
+            "success_criteria": ["file:" + TARGET, PUBLISH],
+            "idempotency_key": "publish-guard",
+        }
+    )["mission_id"]
     await world.drain()
     _confirm_completion(world, mission_id)
     return mission_id
@@ -130,21 +147,31 @@ def _ledger(publisher) -> list[dict[str, Any]]:
     path = publisher.ledger_path
     if not path.exists():
         return []
-    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    return [
+        json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()
+    ]
 
 
 def test_publish_dir_moved_into_storage_after_restart_refuses_the_handoff(tmp_path):
     async def case():
         root, ledger = tmp_path / "root", tmp_path / "ledger"
         safe = observed(tmp_path / "published", ledger)
-        async with product_world(root, LayeredScriptedProvider(), connectors={"file_publish": safe},
-                                 deployment_policy=DEPLOYMENT) as world:
+        async with product_world(
+            root,
+            LayeredScriptedProvider(),
+            connectors={"file_publish": safe},
+            deployment_policy=DEPLOYMENT,
+        ) as world:
             mission_id = await _confirmed(world)
         # 重启：部署的发布目录换成了证据存储里的一个目录（工作区下面）。建任务门口的检查已经
         # 过去了；发布操作在这之后才按今天的部署物化（物化之后再换目录，先被"操作引用不可用"拦下）。
         inside = observed(root / "workspaces" / "published", ledger)
-        async with product_world(root, LayeredScriptedProvider(), connectors={"file_publish": inside},
-                                 deployment_policy=DEPLOYMENT) as world:
+        async with product_world(
+            root,
+            LayeredScriptedProvider(),
+            connectors={"file_publish": inside},
+            deployment_policy=DEPLOYMENT,
+        ) as world:
             approval = await _pending_publish(world, mission_id)
             decided = world.control.decide(approval["request_id"], "approve")
             assert decided["request_state"] in {"GRANTED", "APPROVED"}, decided
@@ -152,9 +179,16 @@ def test_publish_dir_moved_into_storage_after_restart_refuses_the_handoff(tmp_pa
                 await world.drain(timeout=5)
             [action] = {a["action_id"]: a for a in world.store.list_actions(mission_id)}.values()
             assert action["state"] != "SUCCEEDED" and action["handoffs"] == 0, action
-            refused = [e for e in world.store.list_events(mission_id) if e.type == "ActionHandoffRefused"]
-            assert refused and {e.payload["reason"] for e in refused} == {"source_publish_root_overlap"}
-            assert world.loop._actions.last_refusal[action["action_key"]] == "source_publish_root_overlap"
+            refused = [
+                e for e in world.store.list_events(mission_id) if e.type == "ActionHandoffRefused"
+            ]
+            assert refused and {e.payload["reason"] for e in refused} == {
+                "source_publish_root_overlap"
+            }
+            assert (
+                world.loop._actions.last_refusal[action["action_key"]]
+                == "source_publish_root_overlap"
+            )
         assert safe.executions == inside.executions == 0
         assert _ledger(inside) == [] and not any((root / "workspaces" / "published").rglob("*.md"))
 
@@ -166,8 +200,12 @@ def test_completed_receipt_is_still_reconciled_even_when_new_publication_is_forb
         root, ledger = tmp_path / "root", tmp_path / "ledger"
         # 外部发布在提交后断线（连接器自己的故障点），随后对账时服务也连不上
         before = observed(tmp_path / "published", ledger, fail_after="commit", lookup_down=True)
-        async with product_world(root, LayeredScriptedProvider(), connectors={"file_publish": before},
-                                 deployment_policy=DEPLOYMENT) as world:
+        async with product_world(
+            root,
+            LayeredScriptedProvider(),
+            connectors={"file_publish": before},
+            deployment_policy=DEPLOYMENT,
+        ) as world:
             mission_id = await _confirmed(world)
             approval = await _pending_publish(world, mission_id)
             world.control.decide(approval["request_id"], "approve")
@@ -182,8 +220,12 @@ def test_completed_receipt_is_still_reconciled_even_when_new_publication_is_forb
         moved = root / "workspaces" / "published"
         shutil.move(str(tmp_path / "published"), str(moved))
         after = observed(moved, ledger)
-        async with product_world(root, LayeredScriptedProvider(), connectors={"file_publish": after},
-                                 deployment_policy=DEPLOYMENT) as world:
+        async with product_world(
+            root,
+            LayeredScriptedProvider(),
+            connectors={"file_publish": after},
+            deployment_policy=DEPLOYMENT,
+        ) as world:
             for _ in range(10):
                 await world.drain(timeout=3)
                 actions = world.store.list_actions(mission_id)
@@ -211,8 +253,13 @@ def test_guard_without_physical_roots_fails_closed(tmp_path, missing):
         publisher = FilePublishConnector(tmp_path / "published", tmp_path / "ledger")
         run = ActionExecutor(None, {"file_publish": publisher}, DEPLOYMENT, owner="no-roots")
     else:
-        run = ActionExecutor(None, {"file_publish": object()}, DEPLOYMENT, owner="no-root-attr",
-                             source_storage_roots=(tmp_path / "artifacts", tmp_path / "workspaces"))
+        run = ActionExecutor(
+            None,
+            {"file_publish": object()},
+            DEPLOYMENT,
+            owner="no-root-attr",
+            source_storage_roots=(tmp_path / "artifacts", tmp_path / "workspaces"),
+        )
     assert run._source_publish_refusal(ACTION) == "source_publish_root_unavailable"
 
 
@@ -239,10 +286,15 @@ def test_shared_path_helper_resolves_parent_symlinks_and_keeps_siblings_distinct
 @pytest.mark.parametrize("which", ["cas", "workspaces", "disjoint"])
 def test_explicit_custom_cas_and_workspace_roots_are_protected(tmp_path, which):
     roots = (tmp_path / "custom-cas", tmp_path / "custom-workspaces")
-    target = {"cas": roots[0], "workspaces": roots[1] / "nested", "disjoint": tmp_path / "published"}[which]
+    target = {
+        "cas": roots[0],
+        "workspaces": roots[1] / "nested",
+        "disjoint": tmp_path / "published",
+    }[which]
     publisher = FilePublishConnector(target, tmp_path / "ledger")
-    run = ActionExecutor(None, {"file_publish": publisher}, DEPLOYMENT, owner="custom",
-                         source_storage_roots=roots)
+    run = ActionExecutor(
+        None, {"file_publish": publisher}, DEPLOYMENT, owner="custom", source_storage_roots=roots
+    )
     expected = None if which == "disjoint" else "source_publish_root_overlap"
     assert run._source_publish_refusal(ACTION) == expected
     # 只管发布连接器：别的连接器不受这道守卫影响

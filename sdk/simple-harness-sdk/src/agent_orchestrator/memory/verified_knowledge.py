@@ -106,10 +106,14 @@ class KnowledgeRecord:
         object.__setattr__(self, "validity_interval", _validity_interval(self.validity_interval))
         if self.permitted_uses is not None:
             object.__setattr__(
-                self, "permitted_uses", _texts(self.permitted_uses, "knowledge.permitted_uses"))
+                self, "permitted_uses", _texts(self.permitted_uses, "knowledge.permitted_uses")
+            )
         if self.assurance_level is not None:
             object.__setattr__(
-                self, "assurance_level", _text(self.assurance_level, "knowledge.assurance_level", limit=128))
+                self,
+                "assurance_level",
+                _text(self.assurance_level, "knowledge.assurance_level", limit=128),
+            )
 
     def to_json(self) -> dict[str, Any]:
         data = {f.name: getattr(self, f.name) for f in fields(self)}
@@ -143,16 +147,31 @@ def _support(value: object) -> dict[str, Any]:
         return {}
     if tuple(sorted(value)) != _SUPPORT_KEYS:
         raise ContractError(f"knowledge.support must carry exactly {list(_SUPPORT_KEYS)}")
-    out: dict[str, Any] = {"acceptance_id": _text(value["acceptance_id"], "knowledge.support.acceptance_id", limit=512)}
+    out: dict[str, Any] = {
+        "acceptance_id": _text(value["acceptance_id"], "knowledge.support.acceptance_id", limit=512)
+    }
     for name in ("artifacts", "knowledge"):
         rows = value[name]
         if not isinstance(rows, (list, tuple)) or any(
-                not isinstance(row, Mapping) or tuple(sorted(row)) != _SUPPORT_MEMBER_KEYS
-                or type(row["version"]) is not int for row in rows):
-            raise ContractError(f"knowledge.support.{name} rows must carry exactly {list(_SUPPORT_MEMBER_KEYS)}")
-        out[name] = sorted(({"id": str(row["id"]), "version": row["version"],
-                             "content_hash": str(row["content_hash"])} for row in rows),
-                           key=lambda row: row["id"])
+            not isinstance(row, Mapping)
+            or tuple(sorted(row)) != _SUPPORT_MEMBER_KEYS
+            or type(row["version"]) is not int
+            for row in rows
+        ):
+            raise ContractError(
+                f"knowledge.support.{name} rows must carry exactly {list(_SUPPORT_MEMBER_KEYS)}"
+            )
+        out[name] = sorted(
+            (
+                {
+                    "id": str(row["id"]),
+                    "version": row["version"],
+                    "content_hash": str(row["content_hash"]),
+                }
+                for row in rows
+            ),
+            key=lambda row: row["id"],
+        )
     return out
 
 
@@ -167,23 +186,43 @@ def _modifications(value: object) -> tuple[dict[str, Any], ...]:
     out = []
     for row in value:
         if not isinstance(row, Mapping) or tuple(sorted(row)) != _MODIFICATION_KEYS:
-            raise ContractError(f"knowledge.modified_by entries must carry exactly {list(_MODIFICATION_KEYS)}")
+            raise ContractError(
+                f"knowledge.modified_by entries must carry exactly {list(_MODIFICATION_KEYS)}"
+            )
         if row["change"] not in MODIFICATIONS:
-            raise ContractError(f"knowledge.modified_by.change must be one of {list(MODIFICATIONS)}")
+            raise ContractError(
+                f"knowledge.modified_by.change must be one of {list(MODIFICATIONS)}"
+            )
         if type(row["at"]) not in (int, float):
             raise ContractError("knowledge.modified_by.at must be a number")
-        entry = {name: _text(row[name], f"knowledge.modified_by.{name}", limit=512)
-                 for name in ("by", "task_id", "attempt_id", "proposed_by")}
+        entry = {
+            name: _text(row[name], f"knowledge.modified_by.{name}", limit=512)
+            for name in ("by", "task_id", "attempt_id", "proposed_by")
+        }
         out.append({**entry, "change": row["change"], "at": row["at"]})
     return tuple(out)
 
 
-def modified(record: KnowledgeRecord, *, change: str, by: str, task_id: str, attempt_id: str,
-             proposed_by: str, at: float) -> KnowledgeRecord:
+def modified(
+    record: KnowledgeRecord,
+    *,
+    change: str,
+    by: str,
+    task_id: str,
+    attempt_id: str,
+    proposed_by: str,
+    at: float,
+) -> KnowledgeRecord:
     """The one way a knowledge record notes who changed it (§11.2, K07): the caller writes the
     returned record in the same write as the change itself."""
-    entry = {"change": change, "by": by, "task_id": task_id, "attempt_id": attempt_id,
-             "proposed_by": proposed_by, "at": at}
+    entry = {
+        "change": change,
+        "by": by,
+        "task_id": task_id,
+        "attempt_id": attempt_id,
+        "proposed_by": proposed_by,
+        "at": at,
+    }
     return replace(record, modified_by=(*record.modified_by, entry))
 
 
@@ -196,7 +235,9 @@ def _validity_interval(value: object) -> dict[str, Any] | None:
     if value is None:
         return None
     if not isinstance(value, Mapping) or tuple(sorted(value)) != _VALIDITY_KEYS:
-        raise ContractError(f"knowledge.validity_interval must carry exactly {list(_VALIDITY_KEYS)}")
+        raise ContractError(
+            f"knowledge.validity_interval must carry exactly {list(_VALIDITY_KEYS)}"
+        )
     out: dict[str, Any] = {}
     for name in _VALIDITY_KEYS:
         item = value[name]
@@ -296,5 +337,12 @@ class KnowledgeIndex:
         return problems
 
 
-__all__ = ("KNOWLEDGE_STATES", "MODIFICATIONS", "KnowledgeIndex", "KnowledgeRecord", "knowledge_ref", "modified",
-           "parse_knowledge_ref")
+__all__ = (
+    "KNOWLEDGE_STATES",
+    "MODIFICATIONS",
+    "KnowledgeIndex",
+    "KnowledgeRecord",
+    "knowledge_ref",
+    "modified",
+    "parse_knowledge_ref",
+)

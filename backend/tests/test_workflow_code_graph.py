@@ -43,17 +43,13 @@ from tests.test_workflow_native_engine import MemoryNativeStore
 
 
 def test_provider_transport_timeout_is_retryable_but_402_is_not() -> None:
-    timeout = ProviderDispatchUnknownError(
-        "provider_dispatch_unknown_after_handoff"
-    )
+    timeout = ProviderDispatchUnknownError("provider_dispatch_unknown_after_handoff")
     timeout.__cause__ = httpx.ReadTimeout("stream stalled")
     assert _provider_failure_is_retryable(timeout) is True
 
     request = httpx.Request("POST", "https://relay.invalid/v1/chat")
     response = httpx.Response(402, request=request)
-    balance_error = ProviderDispatchUnknownError(
-        "provider_dispatch_unknown_after_handoff"
-    )
+    balance_error = ProviderDispatchUnknownError("provider_dispatch_unknown_after_handoff")
     balance_error.__cause__ = httpx.HTTPStatusError(
         "status_code=402",
         request=request,
@@ -69,9 +65,7 @@ def test_provider_failure_message_ref_preserves_safe_balance_diagnostic() -> Non
         error_class="insufficient_balance",
     )
 
-    assert _provider_failure_message_ref(balance_error) == (
-        "provider:insufficient_balance"
-    )
+    assert _provider_failure_message_ref(balance_error) == ("provider:insufficient_balance")
 
 
 @pytest.mark.parametrize(
@@ -88,15 +82,9 @@ def test_provider_failure_message_ref_preserves_safe_runtime_code(code: str) -> 
 
 
 def test_llm_proposal_node_retries_transient_provider_failures() -> None:
-    node = next(
-        item
-        for item in CODE_COMPLEX_V1_DEFINITION.nodes
-        if item.node_id == "llm_proposal"
-    )
+    node = next(item for item in CODE_COMPLEX_V1_DEFINITION.nodes if item.node_id == "llm_proposal")
     assert node.retry_policy.max_attempts == 3
-    assert node.retry_policy.retryable_codes == frozenset(
-        {"retryable_provider"}
-    )
+    assert node.retry_policy.retryable_codes == frozenset({"retryable_provider"})
 
 
 def _session_ref() -> WorkflowSessionRefV1:
@@ -122,7 +110,9 @@ def _capability(tool_name: str = "write_file") -> CapabilitySnapshotV1:
     )
 
 
-def _prepared(call_id: str, *, tool_name: str = "write_file", path: str = "file.txt") -> PreparedToolCall:
+def _prepared(
+    call_id: str, *, tool_name: str = "write_file", path: str = "file.txt"
+) -> PreparedToolCall:
     return PreparedToolCall.prepare(
         tool_name=tool_name,
         stable_call_id=call_id,
@@ -156,11 +146,7 @@ def _outcome(
                 "raw_params": dict(call.final_params),
                 "source": source,
                 "access": access,
-                **(
-                    {"capability_admission": capability_admission}
-                    if capability_admission
-                    else {}
-                ),
+                **({"capability_admission": capability_admission} if capability_admission else {}),
             }
             for call in calls
         ],
@@ -230,7 +216,9 @@ class JournaledDispatch:
 
 class FakeEvaluator:
     def __init__(self, test_results: list[dict[str, object]] | None = None) -> None:
-        self.test_results = list(test_results or [{"passed": True, "evidence_refs": ["evidence:test"]}])
+        self.test_results = list(
+            test_results or [{"passed": True, "evidence_refs": ["evidence:test"]}]
+        )
         self.audit_calls = 0
 
     async def run_tests(self, state: ProposalStateV1):
@@ -367,12 +355,8 @@ async def test_compiled_code_progress_persists_to_original_session(tmp_path) -> 
         outbox=outbox,
         delivery_handlers={"session_message": persist},
     )
-    progress = WorkflowProgressReporter(
-        service, (("session_message", session_id),)
-    )
-    proposer = FakeProposer(
-        [_outcome(_prepared("progress-call")), _outcome(content="Done")]
-    )
+    progress = WorkflowProgressReporter(service, (("session_message", session_id),))
+    proposer = FakeProposer([_outcome(_prepared("progress-call")), _outcome(content="Done")])
     result = await runner.run(
         run_id,
         _state(run_id),
@@ -444,14 +428,15 @@ async def test_proposal_checkpoint_restart_does_not_repeat_llm_and_reuses_partia
         for message in second_turn_messages
         if message.get("role") == "assistant" and message.get("tool_calls")
     )
-    assert sum(
-        1
-        for message in second_turn_messages
-        if message.get("role") == "assistant" and message.get("tool_calls")
-    ) == 1
-    tool_messages = [
-        message for message in second_turn_messages if message.get("role") == "tool"
-    ]
+    assert (
+        sum(
+            1
+            for message in second_turn_messages
+            if message.get("role") == "assistant" and message.get("tool_calls")
+        )
+        == 1
+    )
+    tool_messages = [message for message in second_turn_messages if message.get("role") == "tool"]
     assert [item["id"] for item in assistant_tool_message["tool_calls"]] == [
         "call-a",
         "call-b",
@@ -485,7 +470,9 @@ async def test_proposal_checkpoint_restart_does_not_repeat_llm_and_reuses_partia
 
 @pytest.mark.asyncio
 async def test_approval_interrupt_survives_executable_restart() -> None:
-    proposer = FakeProposer([_outcome(_prepared("approved-call")), _outcome(content="Approved work done")])
+    proposer = FakeProposer(
+        [_outcome(_prepared("approved-call")), _outcome(content="Approved work done")]
+    )
     dispatch = JournaledDispatch()
     saver = MemoryNativeStore()
     context = _context(proposer, dispatch, FakeEvaluator())
@@ -622,10 +609,7 @@ async def test_compacted_workflow_context_is_checkpointed_before_next_proposal(
 
 @pytest.mark.asyncio
 async def test_durable_task_compacts_and_stops_repeated_discovery_searches() -> None:
-    searches = [
-        _prepared(f"search-{index}", tool_name="capability_search")
-        for index in range(4)
-    ]
+    searches = [_prepared(f"search-{index}", tool_name="capability_search") for index in range(4)]
     proposer = FakeProposer(
         [
             *[_outcome(call, access="read") for call in searches],
@@ -634,9 +618,7 @@ async def test_durable_task_compacts_and_stops_repeated_discovery_searches() -> 
         ]
     )
     dispatch = JournaledDispatch()
-    completed = await CODE_COMPLEX_V1.bind(
-        checkpointer=MemoryNativeStore()
-    ).ainvoke(
+    completed = await CODE_COMPLEX_V1.bind(checkpointer=MemoryNativeStore()).ainvoke(
         _durable_state(
             "durable-discovery-limit",
             capability_snapshot=[
@@ -657,15 +639,13 @@ async def test_durable_task_compacts_and_stops_repeated_discovery_searches() -> 
     blocked_messages = [
         message
         for message in proposer.states[4].messages
-        if message.get("role") == "tool"
-        and "discovery_loop_blocked" in str(message.get("content"))
+        if message.get("role") == "tool" and "discovery_loop_blocked" in str(message.get("content"))
     ]
     assert len(blocked_messages) == 1
     prior_search_results = [
         message
         for message in proposer.states[3].messages
-        if message.get("role") == "tool"
-        and message.get("name") == "capability_search"
+        if message.get("role") == "tool" and message.get("name") == "capability_search"
     ]
     assert len(prior_search_results) == 1
     assert completed["values"]["delivery_intents"][0]["payload"]["status"] == "completed"
@@ -673,10 +653,7 @@ async def test_durable_task_compacts_and_stops_repeated_discovery_searches() -> 
 
 @pytest.mark.asyncio
 async def test_durable_task_blocks_repeated_failed_capability_describes() -> None:
-    describes = [
-        _prepared(f"describe-{index}", tool_name="tool_describe")
-        for index in range(3)
-    ]
+    describes = [_prepared(f"describe-{index}", tool_name="tool_describe") for index in range(3)]
     write = _prepared("write-after-replan")
     proposer = FakeProposer(
         [
@@ -715,9 +692,7 @@ async def test_durable_task_blocks_repeated_failed_capability_describes() -> Non
             )
 
     dispatch = FailingDescribeDispatch()
-    completed = await CODE_COMPLEX_V1.bind(
-        checkpointer=MemoryNativeStore()
-    ).ainvoke(
+    completed = await CODE_COMPLEX_V1.bind(checkpointer=MemoryNativeStore()).ainvoke(
         _durable_state(
             "durable-describe-limit",
             capability_snapshot=[
@@ -784,9 +759,7 @@ async def test_approved_plan_authorizes_frozen_non_read_effect_once() -> None:
     )
 
     assert completed["values"]["delivery_intents"][0]["payload"]["status"] == "completed"
-    assert dispatch.authorizations[0] == {
-        "shell-call": {"action": "allow_once_opaque"}
-    }
+    assert dispatch.authorizations[0] == {"shell-call": {"action": "allow_once_opaque"}}
 
 
 @pytest.mark.asyncio
@@ -818,9 +791,7 @@ async def test_approved_plan_dispatches_context_os_activated_write() -> None:
 
     assert completed["values"]["delivery_intents"][0]["payload"]["status"] == "completed"
     assert dispatch.attempts == Counter({"activated-write": 1})
-    assert dispatch.authorizations[0] == {
-        "activated-write": {"action": "allow_once_opaque"}
-    }
+    assert dispatch.authorizations[0] == {"activated-write": {"action": "allow_once_opaque"}}
 
 
 @pytest.mark.asyncio
@@ -954,9 +925,7 @@ async def test_proposal_and_fix_budgets_persist_and_incomplete_todo_blocks_compl
 @pytest.mark.asyncio
 async def test_tool_free_read_only_end_turn_completes_active_todo(tmp_path) -> None:
     request = "CTX-ENTRY-CODE：只回复 marker 和本入口 purpose，不调用写工具"
-    proposer = FakeProposer(
-        [_outcome(content=request, stop_reason="end_turn")]
-    )
+    proposer = FakeProposer([_outcome(content=request, stop_reason="end_turn")])
     runner, _, run_id = await _runner(tmp_path, owner="tool-free-read-only")
 
     result = await runner.run(
@@ -1072,9 +1041,7 @@ async def test_durable_task_explicit_tool_free_end_turn_completes_once(
     tmp_path,
 ) -> None:
     request = "不要调用任何工具，仅返回 A_OK。"
-    proposer = FakeProposer(
-        [_outcome(content="A_OK", stop_reason="end_turn")]
-    )
+    proposer = FakeProposer([_outcome(content="A_OK", stop_reason="end_turn")])
     runner, _, run_id = await _durable_runner(
         tmp_path,
         owner="durable-tool-free-terminal",
@@ -1113,9 +1080,7 @@ async def test_durable_task_output_contract_failure_blocks_completion(
             }
 
     request = "不要调用任何工具，仅返回 A_OK。"
-    proposer = FakeProposer(
-        [_outcome(content="A_OK", stop_reason="end_turn")]
-    )
+    proposer = FakeProposer([_outcome(content="A_OK", stop_reason="end_turn")])
     runner, _, run_id = await _durable_runner(
         tmp_path,
         owner="durable-output-contract-failure",
@@ -1141,9 +1106,7 @@ async def test_durable_task_output_contract_failure_blocks_completion(
     assert report["status"] == "blocked"
     assert report["audit"]["reason"] == "tests_failed"
     assert report["audit"]["failure_code"] == "task_output_contract_failed"
-    assert report["audit"]["output_contract"]["missing_outputs"] == [
-        "result.json"
-    ]
+    assert report["audit"]["output_contract"]["missing_outputs"] == ["result.json"]
 
 
 @pytest.mark.asyncio
@@ -1176,7 +1139,9 @@ async def test_durable_task_accepts_production_tool_outcome_state_as_receipt(
     proposer = FakeProposer(
         [
             _outcome(_prepared("read-call", tool_name="read_file")),
-            _outcome(content="The requested headings were read and reported.", stop_reason="end_turn"),
+            _outcome(
+                content="The requested headings were read and reported.", stop_reason="end_turn"
+            ),
         ]
     )
     runner, _, run_id = await _durable_runner(
@@ -1215,7 +1180,9 @@ async def test_durable_task_default_audit_requires_distinct_write_and_test_recei
         [
             _outcome(_prepared("write-call", tool_name="write_file")),
             _outcome(_prepared("test-call", tool_name="run_shell")),
-            _outcome(content="The requested fix and verification are complete.", stop_reason="end_turn"),
+            _outcome(
+                content="The requested fix and verification are complete.", stop_reason="end_turn"
+            ),
         ]
     )
     runner, _, run_id = await _durable_runner(
@@ -1261,7 +1228,9 @@ async def test_durable_task_one_shell_receipt_cannot_prove_change_and_verificati
                 ),
             ),
             _outcome(_prepared("copy-call", tool_name="run_shell")),
-            _outcome(content="The requested fix and verification are complete.", stop_reason="end_turn"),
+            _outcome(
+                content="The requested fix and verification are complete.", stop_reason="end_turn"
+            ),
         ]
     )
     runner, _, run_id = await _durable_runner(
@@ -1450,4 +1419,7 @@ def test_proposal_contract_round_trips_strict_json_and_graph_manifest_is_stable(
         "fix_rounds": 3,
     }
     assert CODE_COMPLEX_V1_DEFINITION.recursion_limit == 128
-    assert compile_workflow(CODE_COMPLEX_V1_DEFINITION).manifest.to_dict() == CODE_COMPLEX_V1.manifest.to_dict()
+    assert (
+        compile_workflow(CODE_COMPLEX_V1_DEFINITION).manifest.to_dict()
+        == CODE_COMPLEX_V1.manifest.to_dict()
+    )

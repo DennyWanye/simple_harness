@@ -21,6 +21,7 @@ a substitute for the UI screenshot evidence in Wave 2c.
 Run:
     cd backend && python -m scripts.e2e_stage_a
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -98,9 +99,7 @@ async def main() -> int:
             f"category={req.category}",
             f"summary={req.summary!r}",
         )
-        return PermissionResponse(
-            request_id=req.request_id, decision="allow"
-        )
+        return PermissionResponse(request_id=req.request_id, decision="allow")
 
     gate.set_responder(auto_approve_responder)
     registry.set_permission_gate(gate)

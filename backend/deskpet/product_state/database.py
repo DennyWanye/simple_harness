@@ -64,7 +64,8 @@ class ProductStateDatabase:
         elif version == 1:
             self._validate_v1_connection(self.connection)
             create_verified_backup(
-                self.connection, database_path=self.path,
+                self.connection,
+                database_path=self.path,
                 validate_v1=self._validate_v1_connection,
             )
             self._migrate_v1_to_v2(fault)
@@ -73,13 +74,17 @@ class ProductStateDatabase:
             raise RuntimeError("unsupported product state schema")
         if self.schema_version == 2:
             create_verified_migration_backup(
-                self.connection, database_path=self.path, source_version=2,
+                self.connection,
+                database_path=self.path,
+                source_version=2,
                 validate=self._validate_v2_connection,
             )
             self._migrate_v2_to_v3(fault)
             self._validate_v3_connection(self.connection)
         create_verified_migration_backup(
-            self.connection, database_path=self.path, source_version=3,
+            self.connection,
+            database_path=self.path,
+            source_version=3,
             validate=self._validate_v3_connection,
         )
         self._migrate_v3_to_v4(fault)
@@ -114,9 +119,11 @@ class ProductStateDatabase:
             for part in SCHEMA_V2_PARTS:
                 expected.executescript(part)
             create_sql = {
-                name: str(expected.execute(
-                    "SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (name,)
-                ).fetchone()[0])
+                name: str(
+                    expected.execute(
+                        "SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (name,)
+                    ).fetchone()[0]
+                )
                 for name in ("capability_operations", "capability_publish_intents")
             }
         finally:
@@ -132,11 +139,15 @@ class ProductStateDatabase:
                 self.connection.execute(f"ALTER TABLE {table} RENAME TO {legacy}")
                 self._hit(fault, f"migration.after_rename:{table}")
                 self.connection.execute(create_sql[table])
-                columns = [str(row[1]) for row in self.connection.execute(
-                    f"PRAGMA table_xinfo('{legacy}')"
-                ).fetchall() if int(row[6]) == 0]
+                columns = [
+                    str(row[1])
+                    for row in self.connection.execute(f"PRAGMA table_xinfo('{legacy}')").fetchall()
+                    if int(row[6]) == 0
+                ]
                 names = ",".join(f'"{name}"' for name in columns)
-                self.connection.execute(f"INSERT INTO {table}({names}) SELECT {names} FROM {legacy}")
+                self.connection.execute(
+                    f"INSERT INTO {table}({names}) SELECT {names} FROM {legacy}"
+                )
                 self._hit(fault, f"migration.after_copy:{table}")
                 after = int(self.connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
                 if after != before:
@@ -152,7 +163,9 @@ class ProductStateDatabase:
                 (_V2_SEMANTIC_HASH, json.dumps(self.table_names(), separators=(",", ":"))),
             )
             self._hit(fault, "migration.after_manifest")
-            self.connection.execute("UPDATE product_schema_meta SET schema_version=2 WHERE singleton=1")
+            self.connection.execute(
+                "UPDATE product_schema_meta SET schema_version=2 WHERE singleton=1"
+            )
             self._hit(fault, "migration.after_meta")
             self.connection.execute("PRAGMA user_version=2")
             self._hit(fault, "migration.after_user_version")
@@ -182,7 +195,9 @@ class ProductStateDatabase:
             for row in rows:
                 status, intent_id = str(row["status"]), str(row["intent_id"])
                 settlement = None if row["settlement_ref"] is None else str(row["settlement_ref"])
-                verification = None if row["verification_ref"] is None else str(row["verification_ref"])
+                verification = (
+                    None if row["verification_ref"] is None else str(row["verification_ref"])
+                )
                 now = float(row["updated_at"])
                 if status == "succeeded":
                     if not settlement or not verification:
@@ -195,10 +210,20 @@ class ProductStateDatabase:
                         "attestation_id,intent_id,attempt_id,provenance,runtime_proof_valid,"
                         "verification_ref,evidence_hash,attestation_json,created_at) "
                         "VALUES(?,?,NULL,'legacy_v2',0,?,NULL,?,?)",
-                        (attestation_id, intent_id, verification, json.dumps({
-                            "schema": "skill-install-legacy-v2-verification/v1",
-                            "verification_ref": verification,
-                        }, sort_keys=True, separators=(",", ":")), now),
+                        (
+                            attestation_id,
+                            intent_id,
+                            verification,
+                            json.dumps(
+                                {
+                                    "schema": "skill-install-legacy-v2-verification/v1",
+                                    "verification_ref": verification,
+                                },
+                                sort_keys=True,
+                                separators=(",", ":"),
+                            ),
+                            now,
+                        ),
                     )
                     self.connection.execute(
                         "UPDATE capability_skill_install_intents SET "
@@ -208,21 +233,28 @@ class ProductStateDatabase:
                 elif status == "published_pending_runtime_verification":
                     handoff = self.connection.execute(
                         "SELECT operation_id,member_set_stamp FROM capability_skill_install_handoffs "
-                        "WHERE intent_id=?", (intent_id,),
+                        "WHERE intent_id=?",
+                        (intent_id,),
                     ).fetchone()
                     if handoff is None or not settlement:
                         raise RuntimeError("v2 pending verification intent is ambiguous")
                     operation_id = str(handoff["operation_id"])
-                    if self.connection.execute(
-                        "SELECT COUNT(*) FROM capability_operation_receipts WHERE operation_id=?",
-                        (operation_id,),
-                    ).fetchone()[0] != 1:
+                    if (
+                        self.connection.execute(
+                            "SELECT COUNT(*) FROM capability_operation_receipts WHERE operation_id=?",
+                            (operation_id,),
+                        ).fetchone()[0]
+                        != 1
+                    ):
                         raise RuntimeError("v2 pending verification receipt is ambiguous")
                     generation = 1
-                    session = f"skill-install-verifier:{hashlib.sha256(intent_id.encode()).hexdigest()}"
+                    session = (
+                        f"skill-install-verifier:{hashlib.sha256(intent_id.encode()).hexdigest()}"
+                    )
                     payload = {
                         "domain": "skill-install-verification-attempt-v1",
-                        "intent_id": intent_id, "attempt_generation": generation,
+                        "intent_id": intent_id,
+                        "attempt_generation": generation,
                         "manager_operation_id": operation_id,
                         "manager_receipt_hash": settlement,
                         "committed_set_stamp": str(handoff["member_set_stamp"]),
@@ -230,14 +262,15 @@ class ProductStateDatabase:
                         "expected_member_set_stamp": str(row["member_set_stamp"]),
                         "verifier_session_id": session,
                     }
-                    attempt_id = hashlib.sha256(json.dumps(
-                        payload, sort_keys=True, separators=(",", ":")
-                    ).encode()).hexdigest()
-                    request_id, turn_id = f"skill-install-verify-request:{attempt_id}", f"skill-install-verify-turn:{attempt_id}"
+                    attempt_id = hashlib.sha256(
+                        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+                    ).hexdigest()
+                    request_id, turn_id = (
+                        f"skill-install-verify-request:{attempt_id}",
+                        f"skill-install-verify-turn:{attempt_id}",
+                    )
                     root_key = root_idempotency_key(session, request_id, turn_id)
-                    expected_run_id = uuid.uuid5(
-                        uuid.NAMESPACE_URL, f"deskpet:{root_key}"
-                    ).hex
+                    expected_run_id = uuid.uuid5(uuid.NAMESPACE_URL, f"deskpet:{root_key}").hex
                     self.connection.execute(
                         "INSERT INTO capability_skill_install_verification_attempts("
                         "attempt_id,intent_id,attempt_generation,state_version,status,"
@@ -245,19 +278,39 @@ class ProductStateDatabase:
                         "manager_operation_id,manager_receipt_hash,committed_set_stamp,"
                         "project_scope_key,expected_member_set_stamp,created_at,updated_at) "
                         "VALUES(?,?,1,1,'unknown',?,?,?,?,?,?,?,?,?,?,?)",
-                        (attempt_id,intent_id,session,request_id,turn_id,expected_run_id,
-                         operation_id,settlement,str(handoff["member_set_stamp"]),
-                         str(row["project_scope_key"]),str(row["member_set_stamp"]),now,now),
+                        (
+                            attempt_id,
+                            intent_id,
+                            session,
+                            request_id,
+                            turn_id,
+                            expected_run_id,
+                            operation_id,
+                            settlement,
+                            str(handoff["member_set_stamp"]),
+                            str(row["project_scope_key"]),
+                            str(row["member_set_stamp"]),
+                            now,
+                            now,
+                        ),
                     )
                     self.connection.execute(
                         "UPDATE capability_skill_install_intents SET "
                         "verification_attempt_generation=1,current_verification_attempt_id=? "
-                        "WHERE intent_id=?", (attempt_id,intent_id),
+                        "WHERE intent_id=?",
+                        (attempt_id, intent_id),
                     )
                 elif status not in {
-                    "staging","awaiting_confirmation","publishing",
-                    "stage_failed_cleanup_pending","denied_cleanup_pending",
-                    "expired_cleanup_pending","stage_failed","denied","expired","unknown",
+                    "staging",
+                    "awaiting_confirmation",
+                    "publishing",
+                    "stage_failed_cleanup_pending",
+                    "denied_cleanup_pending",
+                    "expired_cleanup_pending",
+                    "stage_failed",
+                    "denied",
+                    "expired",
+                    "unknown",
                 }:
                     raise RuntimeError("v2 install intent status is unsupported")
             self._hit(fault, "migration_v3.after_backfill")
@@ -265,7 +318,9 @@ class ProductStateDatabase:
                 "UPDATE product_schema_manifest SET schema_hash=?,tables_json=? WHERE singleton=1",
                 (_V3_SEMANTIC_HASH, json.dumps(self.table_names(), separators=(",", ":"))),
             )
-            self.connection.execute("UPDATE product_schema_meta SET schema_version=3 WHERE singleton=1")
+            self.connection.execute(
+                "UPDATE product_schema_meta SET schema_version=3 WHERE singleton=1"
+            )
             self.connection.execute("PRAGMA user_version=3")
             self._validate_live_integrity(3, _V3_SEMANTIC_HASH)
             self._hit(fault, "migration_v3.before_commit")
@@ -313,12 +368,14 @@ class ProductStateDatabase:
             for attestation in attestations:
                 if attestation["attempt_id"] is not None:
                     by_attempt.setdefault(str(attestation["attempt_id"]), []).append(attestation)
-            now = float(self.connection.execute("SELECT CAST(strftime('%s','now') AS REAL)").fetchone()[0])
+            now = float(
+                self.connection.execute("SELECT CAST(strftime('%s','now') AS REAL)").fetchone()[0]
+            )
             for row in attempts:
                 source = {key: row[key] for key in row.keys()}
-                source_hash = hashlib.sha256(json.dumps(
-                    source, sort_keys=True, separators=(",", ":"), default=str
-                ).encode()).hexdigest()
+                source_hash = hashlib.sha256(
+                    json.dumps(source, sort_keys=True, separators=(",", ":"), default=str).encode()
+                ).hexdigest()
                 old_status = str(row["status"])
                 classification = {
                     "prepared": "allocated",
@@ -344,8 +401,10 @@ class ProductStateDatabase:
                         att = matches[0]
                         valid = (
                             str(intent["status"]) == "succeeded"
-                            and str(intent["current_verification_attempt_id"] or "") == str(row["attempt_id"])
-                            and str(intent["verification_ref"] or "") == str(att["verification_ref"])
+                            and str(intent["current_verification_attempt_id"] or "")
+                            == str(row["attempt_id"])
+                            and str(intent["verification_ref"] or "")
+                            == str(att["verification_ref"])
                             and int(att["runtime_proof_valid"]) == 1
                             and bool(row["evidence_hash"])
                             and str(row["evidence_hash"]) == str(att["evidence_hash"] or "")
@@ -353,12 +412,18 @@ class ProductStateDatabase:
                         if valid:
                             classification = "attested"
                             reason = None
-                classification_hash = hashlib.sha256(json.dumps({
-                    "attempt_id": str(row["attempt_id"]),
-                    "source_hash": source_hash,
-                    "classification": classification,
-                    "reason": reason,
-                }, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+                classification_hash = hashlib.sha256(
+                    json.dumps(
+                        {
+                            "attempt_id": str(row["attempt_id"]),
+                            "source_hash": source_hash,
+                            "classification": classification,
+                            "reason": reason,
+                        },
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ).encode()
+                ).hexdigest()
                 columns = tuple(row.keys())
                 values = [row[key] for key in columns]
                 values[columns.index("status")] = classification
@@ -366,14 +431,21 @@ class ProductStateDatabase:
                     "INSERT INTO capability_skill_install_verification_attempts("
                     + ",".join(columns)
                     + ",migration_classification,migration_classification_hash) VALUES("
-                    + ",".join("?" for _ in range(len(columns) + 2)) + ")",
+                    + ",".join("?" for _ in range(len(columns) + 2))
+                    + ")",
                     tuple(values) + (classification, classification_hash),
                 )
                 if classification == "quarantined":
                     self.connection.execute(
                         "INSERT INTO capability_skill_install_verification_migration_quarantine "
                         "VALUES('attempt',?,?,?,?,?)",
-                        (row["attempt_id"], row["intent_id"], reason or "legacy_attempt_corrupt", source_hash, now),
+                        (
+                            row["attempt_id"],
+                            row["intent_id"],
+                            reason or "legacy_attempt_corrupt",
+                            source_hash,
+                            now,
+                        ),
                     )
             for row in attestations:
                 columns = tuple(row.keys())
@@ -389,17 +461,24 @@ class ProductStateDatabase:
                 values[columns.index("provenance")] = provenance
                 self.connection.execute(
                     "INSERT INTO capability_skill_install_verification_attestations("
-                    + ",".join(columns) + ") VALUES(" + ",".join("?" for _ in columns) + ")",
+                    + ",".join(columns)
+                    + ") VALUES("
+                    + ",".join("?" for _ in columns)
+                    + ")",
                     tuple(values),
                 )
             self._hit(fault, "migration_v4.after_backfill")
-            self.connection.execute("DROP TABLE capability_skill_install_verification_attestations_v3")
+            self.connection.execute(
+                "DROP TABLE capability_skill_install_verification_attestations_v3"
+            )
             self.connection.execute("DROP TABLE capability_skill_install_verification_attempts_v3")
             self.connection.execute(
                 "UPDATE product_schema_manifest SET schema_hash=?,tables_json=? WHERE singleton=1",
                 (_V4_SEMANTIC_HASH, json.dumps(self.table_names(), separators=(",", ":"))),
             )
-            self.connection.execute("UPDATE product_schema_meta SET schema_version=4 WHERE singleton=1")
+            self.connection.execute(
+                "UPDATE product_schema_meta SET schema_version=4 WHERE singleton=1"
+            )
             self.connection.execute("PRAGMA user_version=4")
             self._validate_live_integrity(4, _V4_SEMANTIC_HASH)
             self._hit(fault, "migration_v4.before_commit")
@@ -519,9 +598,12 @@ class ProductStateDatabase:
 
     @staticmethod
     def _table_names_for(connection: sqlite3.Connection) -> tuple[str, ...]:
-        return tuple(str(row[0]) for row in connection.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
-        ).fetchall())
+        return tuple(
+            str(row[0])
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
+            ).fetchall()
+        )
 
     def table_names(self) -> tuple[str, ...]:
         return self._table_names_for(self.connection)

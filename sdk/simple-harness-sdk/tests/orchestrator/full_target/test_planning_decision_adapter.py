@@ -78,9 +78,7 @@ def _context(**overrides: Any) -> AdapterContext:
             ReadItem(ReadItemKind.OBLIGATION, "obl-root", 1, HASH_B),
             ReadItem(ReadItemKind.METHOD, "code.fix", 2, HASH_A),
         ),
-        "trigger_refs": (
-            EvidenceRef("observation", "obs-1", 1, HASH_B),
-        ),
+        "trigger_refs": (EvidenceRef("observation", "obs-1", 1, HASH_B),),
     }
     fields.update(overrides)
     return AdapterContext(**fields)
@@ -203,12 +201,16 @@ def test_a_named_reuse_rides_on_the_one_refine_operation() -> None:
     method = _ref(PlanningRefKind.METHOD, "code.fix", 2, HASH_A)
     decision = _envelope(
         PlanningDecisionType.REFINE,
-        RefineDecision(method_ref=method, bindings={"target": "README.md"}, reuse={"write": "occ-1"}),
+        RefineDecision(
+            method_ref=method, bindings={"target": "README.md"}, reuse={"write": "occ-1"}
+        ),
     )
     outcome = adapt_admitted_decision(_admitted(decision, method=method), context=_context())
     assert outcome.proposal is not None
     [operation] = outcome.proposal.operations
-    assert dict(operation.reuse) == {"write": "occ-1"} and operation.to_json()["reuse"] == {"write": "occ-1"}
+    assert dict(operation.reuse) == {"write": "occ-1"} and operation.to_json()["reuse"] == {
+        "write": "occ-1"
+    }
 
 
 def test_h4_admitted_successor_keeps_goal_and_stop_policy() -> None:
@@ -225,7 +227,9 @@ def test_h4_admitted_successor_keeps_goal_and_stop_policy() -> None:
     outcome = adapt_admitted_decision(_admitted(decision), context=_context())
     assert outcome.proposal is not None
     assert outcome.proposal.operations[0].to_json() == {
-        "op": "propose_successor", "old_task_id": "task-old", "obligation_id": "obl-root",
+        "op": "propose_successor",
+        "old_task_id": "task-old",
+        "obligation_id": "obl-root",
         "goal_type_ref": {"id": "goal.next", "version": 1, "content_hash": HASH_A},
         "bindings": {},
     }
@@ -258,9 +262,6 @@ def test_wait_and_no_change_are_durable_only_and_never_proposals() -> None:
     assert outcome.proposal is None and outcome.durable_only is not None
 
 
-
-
-
 def test_system_fields_come_from_context_not_model_payload_values() -> None:
     method = _ref(PlanningRefKind.METHOD, "code.fix", 2, HASH_A)
     decision = _envelope(
@@ -274,9 +275,7 @@ def test_system_fields_come_from_context_not_model_payload_values() -> None:
             },
         ),
     )
-    outcome = adapt_admitted_decision(
-        _admitted(decision, method=method), context=_context()
-    )
+    outcome = adapt_admitted_decision(_admitted(decision, method=method), context=_context())
     assert outcome.proposal is not None
     assert str(outcome.proposal.mission_id) == MISSION
     assert int(outcome.proposal.expected_plan_revision) == 7

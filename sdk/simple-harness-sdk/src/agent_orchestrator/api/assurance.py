@@ -47,7 +47,9 @@ ERROR_CODES = frozenset(
         "CONTRACT_INVALID",
     }
 )
-_USE_PURPOSES = frozenset({"PLAN", "START", "MAINTAIN", "ACCEPT", "CONTEXT", "DISCLOSE", "RECOVERY"})
+_USE_PURPOSES = frozenset(
+    {"PLAN", "START", "MAINTAIN", "ACCEPT", "CONTEXT", "DISCLOSE", "RECOVERY"}
+)
 _QUARANTINE_CODES = frozenset(
     {
         "ROOT_QUARANTINED",
@@ -84,7 +86,9 @@ def _fail(code: str, message: str, *, retryable: bool = False) -> NoReturn:
 
 def _text(value: object, name: str) -> str:
     if not isinstance(value, str) or not value or len(value) > MAX_TEXT:
-        _fail("CONTRACT_INVALID", f"{name} must be a nonempty string of at most {MAX_TEXT} characters")
+        _fail(
+            "CONTRACT_INVALID", f"{name} must be a nonempty string of at most {MAX_TEXT} characters"
+        )
     return value
 
 
@@ -100,7 +104,9 @@ def _fields(body: object, required: set[str]) -> dict[str, Any]:
     if set(body) != required:
         missing = sorted(required - set(body))
         extra = sorted(set(body) - required)
-        _fail("CONTRACT_INVALID", f"request fields mismatch (missing {missing}, unexpected {extra})")
+        _fail(
+            "CONTRACT_INVALID", f"request fields mismatch (missing {missing}, unexpected {extra})"
+        )
     if body["schema_version"] != SCHEMA_VERSION:
         _fail("CONTRACT_INVALID", "schema_version must be 1")
     return dict(body)
@@ -195,7 +201,10 @@ class AssuranceApi:
             return gate.require_execution().root_incarnation_id
         except AssuranceError as error:
             if error.code in _QUARANTINE_CODES:
-                _fail("ROOT_QUARANTINED", "assurance root is quarantined; only management reads are open")
+                _fail(
+                    "ROOT_QUARANTINED",
+                    "assurance root is quarantined; only management reads are open",
+                )
             _fail("PROFILE_UNBOUND", f"assurance root unavailable: {error.code}")
 
     def _mission_locked(self, mission_id: str) -> Any:
@@ -214,7 +223,9 @@ class AssuranceApi:
         try:
             return read_epochs_locked(self._store.connection, mission_id)
         except AssuranceError as error:
-            _fail("SOURCE_UNAVAILABLE", f"validity epochs unavailable: {error.code}", retryable=True)
+            _fail(
+                "SOURCE_UNAVAILABLE", f"validity epochs unavailable: {error.code}", retryable=True
+            )
 
     def _envelope(
         self, request_id: str, mission_id: str, view: str, snapshot_seq: int, root: str
@@ -260,7 +271,9 @@ class AssuranceApi:
             reasons.append("CERTIFICATE_" + str(body["decision"]))
         return ("USABLE" if not reasons else "STALE"), reasons
 
-    def _certificates_for_consumer(self, mission_id: str, kind: str, consumer_id: str | None) -> list[Any]:
+    def _certificates_for_consumer(
+        self, mission_id: str, kind: str, consumer_id: str | None
+    ) -> list[Any]:
         query = (
             "SELECT rowid,* FROM assurance_use_certificates WHERE mission_id=? AND consumer_kind=?"
         )
@@ -369,7 +382,11 @@ class AssuranceApi:
             if str(getattr(ref, "kind", "")) == "artifact":
                 return {
                     "kind": "artifact",
-                    "pin": {"id": ref.id, "revision": int(ref.revision), "content_hash": ref.content_hash},
+                    "pin": {
+                        "id": ref.id,
+                        "revision": int(ref.revision),
+                        "content_hash": ref.content_hash,
+                    },
                 }
         return None
 
@@ -384,12 +401,16 @@ class AssuranceApi:
         # CRITERION: latest approved requirements, graded by the official root review.
         requirements = htn.latest_requirements_revision(mission_id)
         root_record, manifest = self._root_review(mission_id, htn)
-        graded = {} if manifest is None else {row["criterion_id"]: row for row in manifest["criteria"]}
+        graded = (
+            {} if manifest is None else {row["criterion_id"]: row for row in manifest["criteria"]}
+        )
         root_use, root_reasons = ("NOT_APPLICABLE", ["ROOT_REVIEW_NOT_OFFICIAL"])
         if root_record is not None:
             root_use, root_reasons = self._certificate_use(
                 self._certificates_for_consumer(mission_id, "ROOT_RESOLUTION", None),
-                now_ms=now_ms, epochs=epochs, root=root,
+                now_ms=now_ms,
+                epochs=epochs,
+                root=root,
             )
         if requirements is not None:
             for criterion in requirements.criteria:
@@ -397,12 +418,16 @@ class AssuranceApi:
                 reasons = list(root_reasons)
                 if detail is not None and detail.get("check_reason"):
                     reasons.append("check:" + str(detail["check_reason"]))
-                items.append(self._item(
-                    "CRITERION", criterion.criterion_id,
-                    "UNREVIEWED" if detail is None else str(detail["effective_grade"]),
-                    root_use, reasons,
-                    0 if detail is None else len(detail.get("evidence_refs", ())),
-                ))
+                items.append(
+                    self._item(
+                        "CRITERION",
+                        criterion.criterion_id,
+                        "UNREVIEWED" if detail is None else str(detail["effective_grade"]),
+                        root_use,
+                        reasons,
+                        0 if detail is None else len(detail.get("evidence_refs", ())),
+                    )
+                )
         # REVIEW: every prepared review key of the Mission.
         for row in self._review_rows(mission_id):
             record = self._official(htn, row["package_id"])
@@ -410,11 +435,18 @@ class AssuranceApi:
                 state = "OFFICIAL_" + str(record.verdict)
                 use, reasons = self._certificate_use(
                     self._certificates_for_record(mission_id, str(record.record_id)),
-                    now_ms=now_ms, epochs=epochs, root=root,
+                    now_ms=now_ms,
+                    epochs=epochs,
+                    root=root,
                 )
                 count = len(record.criteria)
             elif self._rejected_source(mission_id, row["review_key"]):
-                state, use, reasons, count = "REJECTED_SOURCE", "NOT_APPLICABLE", ["IMPORT_REJECTED"], 0
+                state, use, reasons, count = (
+                    "REJECTED_SOURCE",
+                    "NOT_APPLICABLE",
+                    ["IMPORT_REJECTED"],
+                    0,
+                )
             else:
                 state, use, reasons, count = "PENDING", "NOT_APPLICABLE", ["NO_OFFICIAL_RECORD"], 0
             items.append(self._item("REVIEW", row["review_key"], state, use, reasons, count))
@@ -428,20 +460,32 @@ class AssuranceApi:
             document = decode(scope["document_json"])
             for effect_key in document.get("required_effect_keys", ()):
                 try:
-                    current = read_current_effect(store, mission_id, scope["spec_hash"], str(effect_key))
+                    current = read_current_effect(
+                        store, mission_id, scope["spec_hash"], str(effect_key)
+                    )
                     state, reasons = str(current.get("state")), []
                 except Exception as error:  # noqa: BLE001 - reported per item, never raised
                     state, reasons = "UNAVAILABLE", ["EFFECT_READ_FAILED:" + type(error).__name__]
-                items.append(self._item(
-                    "EFFECT", f"{scope['scope_id']}:{effect_key}", state, "NOT_APPLICABLE", reasons,
-                ))
+                items.append(
+                    self._item(
+                        "EFFECT",
+                        f"{scope['scope_id']}:{effect_key}",
+                        state,
+                        "NOT_APPLICABLE",
+                        reasons,
+                    )
+                )
         # CLOSEOUT: the consumer's projected row.
         # 收尾行正文只有 closeout-v1 字段；根化身与纪元在那次评估的回执里（第 2 批车道 N，A17）。
         from ..orchestrator.assurance_recheck import closeout_detail
 
         found = closeout_detail(store, mission_id)
         if found is None:
-            items.append(self._item("CLOSEOUT", mission_id, "NOT_EVALUATED", "UNAVAILABLE", ["NO_CLOSEOUT_ROW"]))
+            items.append(
+                self._item(
+                    "CLOSEOUT", mission_id, "NOT_EVALUATED", "UNAVAILABLE", ["NO_CLOSEOUT_ROW"]
+                )
+            )
         else:
             closeout, body = found
             reasons = [str(r) for r in body.get("reasons", ())]
@@ -449,21 +493,38 @@ class AssuranceApi:
             if body.get("root_incarnation_id") != root:
                 use, reasons = "STALE", [*reasons, "ROOT_CHANGED"]
             captured = body.get("epochs") or {}
-            if (captured.get("mission"), captured.get("environment"), captured.get("clock_generation")) != (
-                epochs.mission, epochs.environment, epochs.clock_generation,
+            if (
+                captured.get("mission"),
+                captured.get("environment"),
+                captured.get("clock_generation"),
+            ) != (
+                epochs.mission,
+                epochs.environment,
+                epochs.clock_generation,
             ):
                 use, reasons = "STALE", [*reasons, "SOURCE_CHANGED"]
             items.append(self._item("CLOSEOUT", mission_id, str(closeout["state"]), use, reasons))
         # CONTRIBUTION: every Acceptance, licensed by its ACCEPTANCE certificate.
         for acceptance in htn.list_acceptances(mission_id):
             use, reasons = self._certificate_use(
-                self._certificates_for_consumer(mission_id, "ACCEPTANCE", str(acceptance.acceptance_id)),
-                now_ms=now_ms, epochs=epochs, root=root,
+                self._certificates_for_consumer(
+                    mission_id, "ACCEPTANCE", str(acceptance.acceptance_id)
+                ),
+                now_ms=now_ms,
+                epochs=epochs,
+                root=root,
             )
-            items.append(self._item(
-                "CONTRIBUTION", str(acceptance.acceptance_id), str(acceptance.validity), use, reasons,
-                len(acceptance.artifact_refs), self._artifact_ref(acceptance),
-            ))
+            items.append(
+                self._item(
+                    "CONTRIBUTION",
+                    str(acceptance.acceptance_id),
+                    str(acceptance.validity),
+                    use,
+                    reasons,
+                    len(acceptance.artifact_refs),
+                    self._artifact_ref(acceptance),
+                )
+            )
         return items
 
     def _history_items(
@@ -487,7 +548,10 @@ class AssuranceApi:
                 _fail("LIMIT_REACHED", "history rebuild exceeds the supported event count")
         activation = next((e for e in events if e.type == "AssuranceProfileActivated"), None)
         if activation is None:
-            _fail("SOURCE_UNAVAILABLE", "HISTORY_UNAVAILABLE: no assured activation at or before this seq")
+            _fail(
+                "SOURCE_UNAVAILABLE",
+                "HISTORY_UNAVAILABLE: no assured activation at or before this seq",
+            )
         items: list[dict[str, Any]] = []
         # Reviews and the root grades from prepared/imported events.
         reviews: dict[str, tuple[str, Any]] = {}
@@ -521,56 +585,97 @@ class AssuranceApi:
         amended = [e for e in events if e.type == REQUIREMENTS_AMENDED]
         if amended:
             pinned = dict(amended[-1].payload)
-            number, wanted = pinned.get("requirements_revision"), pinned.get("requirements_content_hash")
+            number, wanted = (
+                pinned.get("requirements_revision"),
+                pinned.get("requirements_content_hash"),
+            )
         else:
             number, wanted = None, dict(activation.payload).get("requirements_hash")
         requirements = next(
-            (revision for revision in htn.list_requirements_revisions(mission_id)
-             if revision.content_hash() == wanted and (number is None or int(revision.revision) == number)),
+            (
+                revision
+                for revision in htn.list_requirements_revisions(mission_id)
+                if revision.content_hash() == wanted
+                and (number is None or int(revision.revision) == number)
+            ),
             None,
         )
         if requirements is None:
-            _fail("SOURCE_UNAVAILABLE", "HISTORY_UNAVAILABLE: the requirements in force at this seq do not read back")
-        graded = {} if root_manifest is None else {r["criterion_id"]: r for r in root_manifest["criteria"]}
+            _fail(
+                "SOURCE_UNAVAILABLE",
+                "HISTORY_UNAVAILABLE: the requirements in force at this seq do not read back",
+            )
+        graded = (
+            {}
+            if root_manifest is None
+            else {r["criterion_id"]: r for r in root_manifest["criteria"]}
+        )
         root_use, root_reasons = ("NOT_APPLICABLE", ["ROOT_REVIEW_NOT_OFFICIAL_AT_SEQ"])
         if root_manifest is not None:
             root_use, root_reasons = self._certificate_use(
                 self._certificates_for_consumer(mission_id, "ROOT_RESOLUTION", None),
-                now_ms=now_ms, epochs=epochs, root=root,
+                now_ms=now_ms,
+                epochs=epochs,
+                root=root,
             )
         for criterion in requirements.criteria:
             detail = graded.get(criterion.criterion_id)
-            items.append(self._item(
-                "CRITERION", criterion.criterion_id,
-                "UNREVIEWED" if detail is None else str(detail["effective_grade"]),
-                root_use, list(root_reasons),
-                0 if detail is None else len(detail.get("evidence_refs", ())),
-            ))
+            items.append(
+                self._item(
+                    "CRITERION",
+                    criterion.criterion_id,
+                    "UNREVIEWED" if detail is None else str(detail["effective_grade"]),
+                    root_use,
+                    list(root_reasons),
+                    0 if detail is None else len(detail.get("evidence_refs", ())),
+                )
+            )
         for review_key, (state, record) in reviews.items():
             if record is None:
                 use, reasons, count = "NOT_APPLICABLE", ["NO_OFFICIAL_RECORD_AT_SEQ"], 0
             else:
                 use, reasons = self._certificate_use(
                     self._certificates_for_record(mission_id, str(record.record_id)),
-                    now_ms=now_ms, epochs=epochs, root=root,
+                    now_ms=now_ms,
+                    epochs=epochs,
+                    root=root,
                 )
                 count = len(record.criteria)
             items.append(self._item("REVIEW", review_key, state, use, reasons, count))
         for event in events:
             if event.type == "OperationOutcomeAccepted":
                 payload = dict(event.payload)
-                items.append(self._item(
-                    "EFFECT", str(payload.get("effect_key", event.id)), "ACCEPTED", "NOT_APPLICABLE", [],
-                ))
+                items.append(
+                    self._item(
+                        "EFFECT",
+                        str(payload.get("effect_key", event.id)),
+                        "ACCEPTED",
+                        "NOT_APPLICABLE",
+                        [],
+                    )
+                )
         closeouts = [e for e in events if e.type == "AssuranceCloseoutEvaluated"]
         if closeouts:
             payload = dict(closeouts[-1].payload)
-            items.append(self._item(
-                "CLOSEOUT", mission_id, str(payload.get("state")), "NOT_APPLICABLE",
-                [str(r) for r in payload.get("reasons", ())],
-            ))
+            items.append(
+                self._item(
+                    "CLOSEOUT",
+                    mission_id,
+                    str(payload.get("state")),
+                    "NOT_APPLICABLE",
+                    [str(r) for r in payload.get("reasons", ())],
+                )
+            )
         else:
-            items.append(self._item("CLOSEOUT", mission_id, "NOT_EVALUATED", "NOT_APPLICABLE", ["NO_CLOSEOUT_AT_SEQ"]))
+            items.append(
+                self._item(
+                    "CLOSEOUT",
+                    mission_id,
+                    "NOT_EVALUATED",
+                    "NOT_APPLICABLE",
+                    ["NO_CLOSEOUT_AT_SEQ"],
+                )
+            )
         seen: set[str] = set()
         for event in events:
             if event.type != "AssuranceUseCertified":
@@ -582,7 +687,9 @@ class AssuranceApi:
             seen.add(acceptance_id)
             use, reasons = self._certificate_use(
                 self._certificates_for_consumer(mission_id, "ACCEPTANCE", acceptance_id),
-                now_ms=now_ms, epochs=epochs, root=root,
+                now_ms=now_ms,
+                epochs=epochs,
+                root=root,
             )
             artifact = None
             try:
@@ -590,14 +697,22 @@ class AssuranceApi:
                 artifact, count = self._artifact_ref(acceptance), len(acceptance.artifact_refs)
             except Exception:  # noqa: BLE001 - the event alone witnesses the acceptance
                 count = 0
-            items.append(self._item("CONTRIBUTION", acceptance_id, "ACCEPTED", use, reasons, count, artifact))
+            items.append(
+                self._item("CONTRIBUTION", acceptance_id, "ACCEPTED", use, reasons, count, artifact)
+            )
         return items
 
     # -------------------------------------------------------------- paging
     @staticmethod
     def _page(
-        items: list[dict[str, Any]], *, limit: int, cursor: Mapping[str, Any] | None,
-        mission_id: str, view: str, at_seq: int, filter_hash: str,
+        items: list[dict[str, Any]],
+        *,
+        limit: int,
+        cursor: Mapping[str, Any] | None,
+        mission_id: str,
+        view: str,
+        at_seq: int,
+        filter_hash: str,
     ) -> tuple[list[dict[str, Any]], str | None, bool]:
         ordered = sorted(items, key=lambda item: (item["kind"], item["id"]))
         if cursor is not None:
@@ -607,24 +722,49 @@ class AssuranceApi:
                 or cursor.get("at_seq") != at_seq
                 or cursor.get("filter_hash") != filter_hash
             ):
-                _fail("SNAPSHOT_CHANGED", "snapshot changed since the first page; read again from the start", retryable=True)
+                _fail(
+                    "SNAPSHOT_CHANGED",
+                    "snapshot changed since the first page; read again from the start",
+                    retryable=True,
+                )
             last = cursor.get("last_sort_key")
             if not isinstance(last, list) or len(last) != 2:
                 _fail("CONTRACT_INVALID", "cursor is not a valid page token")
-            ordered = [item for item in ordered if (item["kind"], item["id"]) > (str(last[0]), str(last[1]))]
+            ordered = [
+                item
+                for item in ordered
+                if (item["kind"], item["id"]) > (str(last[0]), str(last[1]))
+            ]
         page = ordered[:limit]
         more = len(ordered) > limit
         next_cursor = None
         if more:
-            next_cursor = _cursor_encode({
-                "version": 1, "mission_id": mission_id, "view": view, "at_seq": at_seq,
-                "filter_hash": filter_hash, "last_sort_key": [page[-1]["kind"], page[-1]["id"]],
-            })
+            next_cursor = _cursor_encode(
+                {
+                    "version": 1,
+                    "mission_id": mission_id,
+                    "view": view,
+                    "at_seq": at_seq,
+                    "filter_hash": filter_hash,
+                    "last_sort_key": [page[-1]["kind"], page[-1]["id"]],
+                }
+            )
         return page, next_cursor, more
 
     # -------------------------------------------------------------- verbs
     def snapshot(self, body: Mapping[str, Any]) -> dict[str, Any]:
-        request = _fields(body, {"schema_version", "request_id", "mission_id", "view", "at_event_seq", "cursor", "limit"})
+        request = _fields(
+            body,
+            {
+                "schema_version",
+                "request_id",
+                "mission_id",
+                "view",
+                "at_event_seq",
+                "cursor",
+                "limit",
+            },
+        )
         request_id = _text(request["request_id"], "request_id")
         mission_id = _text(request["mission_id"], "mission_id")
         view, at_seq = _view(request)
@@ -646,10 +786,17 @@ class AssuranceApi:
                     _fail("NOT_FOUND", "at_event_seq is beyond this Mission's last event")
                 snapshot_seq = at_seq
                 filter_hash = fingerprint({"history": at_seq})
-                items = self._history_items(mission, at_seq=at_seq, now_ms=now_ms, epochs=epochs, root=root)
+                items = self._history_items(
+                    mission, at_seq=at_seq, now_ms=now_ms, epochs=epochs, root=root
+                )
         page, next_cursor, truncated = self._page(
-            items, limit=limit, cursor=cursor, mission_id=mission.id, view=view,
-            at_seq=snapshot_seq, filter_hash=filter_hash,
+            items,
+            limit=limit,
+            cursor=cursor,
+            mission_id=mission.id,
+            view=view,
+            at_seq=snapshot_seq,
+            filter_hash=filter_hash,
         )
         return {
             **self._envelope(request_id, mission.id, view, snapshot_seq, root),
@@ -659,7 +806,9 @@ class AssuranceApi:
         }
 
     def review(self, body: Mapping[str, Any]) -> dict[str, Any]:
-        request = _fields(body, {"schema_version", "request_id", "mission_id", "review_key", "cursor", "limit"})
+        request = _fields(
+            body, {"schema_version", "request_id", "mission_id", "review_key", "cursor", "limit"}
+        )
         request_id = _text(request["request_id"], "request_id")
         mission_id = _text(request["mission_id"], "mission_id")
         review_key = _text(request["review_key"], "review_key")
@@ -687,43 +836,66 @@ class AssuranceApi:
                 official_status = "OFFICIAL"
                 verdict = str(record.verdict)
                 verdict = {"REJECTED": "REJECT"}.get(verdict, verdict)
-                record_ref = AssuranceRef("review", Pin(str(record.record_id), 0, fingerprint(record.to_json()))).to_json()
+                record_ref = AssuranceRef(
+                    "review", Pin(str(record.record_id), 0, fingerprint(record.to_json()))
+                ).to_json()
                 manifest = self._manifest(mission.id, record.evidence_manifest_hash)
                 if manifest is None:
                     official_status = "UNAVAILABLE"
                 else:
                     for detail in manifest["criteria"]:
-                        labels = sorted({
-                            str(label) for label in detail.get("evidence_ids", ())
-                            if isinstance(label, str) and label.startswith("ev-") and len(label) == 67
-                        })
+                        labels = sorted(
+                            {
+                                str(label)
+                                for label in detail.get("evidence_ids", ())
+                                if isinstance(label, str)
+                                and label.startswith("ev-")
+                                and len(label) == 67
+                            }
+                        )
                         reasons = []
                         if detail.get("check_reason"):
                             reasons.append("check:" + str(detail["check_reason"]))
-                        reasons.extend("limitation:" + str(limit) for limit in detail.get("limitations", ()))
+                        reasons.extend(
+                            "limitation:" + str(limit) for limit in detail.get("limitations", ())
+                        )
                         gate = detail.get("check_gate")
-                        assessments.append({
-                            "criterion_id": str(detail["criterion_id"]),
-                            "model_grade": str(detail["model_grade"]),
-                            "effective_grade": str(detail["effective_grade"]),
-                            "check_gate": "NOT_APPLICABLE" if gate is None else str(gate),
-                            "reason_codes": [r[:MAX_TEXT] for r in reasons][:64],
-                            "evidence_labels": labels[:256],
-                        })
+                        assessments.append(
+                            {
+                                "criterion_id": str(detail["criterion_id"]),
+                                "model_grade": str(detail["model_grade"]),
+                                "effective_grade": str(detail["effective_grade"]),
+                                "check_gate": "NOT_APPLICABLE" if gate is None else str(gate),
+                                "reason_codes": [r[:MAX_TEXT] for r in reasons][:64],
+                                "evidence_labels": labels[:256],
+                            }
+                        )
                 use, _ = self._certificate_use(
                     self._certificates_for_record(mission.id, str(record.record_id)),
-                    now_ms=now_ms, epochs=epochs, root=root,
+                    now_ms=now_ms,
+                    epochs=epochs,
+                    root=root,
                 )
             elif self._rejected_source(mission.id, review_key):
                 official_status, use = "REJECTED_SOURCE", "UNAVAILABLE"
             else:
                 official_status, use = "PENDING", "UNAVAILABLE"
-        filter_hash = fingerprint({"review": review_key, "record": None if record is None else str(record.record_id)})
+        filter_hash = fingerprint(
+            {"review": review_key, "record": None if record is None else str(record.record_id)}
+        )
         ordered = sorted(assessments, key=lambda a: a["criterion_id"])
         start = 0
         if cursor is not None:
-            if cursor.get("mission_id") != mission.id or cursor.get("view") != "REVIEW" or cursor.get("filter_hash") != filter_hash:
-                _fail("SNAPSHOT_CHANGED", "review changed since the first page; read again from the start", retryable=True)
+            if (
+                cursor.get("mission_id") != mission.id
+                or cursor.get("view") != "REVIEW"
+                or cursor.get("filter_hash") != filter_hash
+            ):
+                _fail(
+                    "SNAPSHOT_CHANGED",
+                    "review changed since the first page; read again from the start",
+                    retryable=True,
+                )
             last = cursor.get("last_sort_key")
             if not isinstance(last, list) or len(last) != 2:
                 _fail("CONTRACT_INVALID", "cursor is not a valid page token")
@@ -732,10 +904,16 @@ class AssuranceApi:
         truncated = len(ordered) > limit
         next_cursor = None
         if truncated:
-            next_cursor = _cursor_encode({
-                "version": 1, "mission_id": mission.id, "view": "REVIEW", "at_seq": head,
-                "filter_hash": filter_hash, "last_sort_key": ["ASSESSMENT", page[-1]["criterion_id"]],
-            })
+            next_cursor = _cursor_encode(
+                {
+                    "version": 1,
+                    "mission_id": mission.id,
+                    "view": "REVIEW",
+                    "at_seq": head,
+                    "filter_hash": filter_hash,
+                    "last_sort_key": ["ASSESSMENT", page[-1]["criterion_id"]],
+                }
+            )
         return {
             **self._envelope(request_id, mission.id, "CURRENT", head, root),
             "review_key": review_key,
@@ -751,7 +929,10 @@ class AssuranceApi:
         }
 
     def use_check(self, body: Mapping[str, Any]) -> dict[str, Any]:
-        request = _fields(body, {"schema_version", "request_id", "mission_id", "subject_ref", "view", "at_event_seq"})
+        request = _fields(
+            body,
+            {"schema_version", "request_id", "mission_id", "subject_ref", "view", "at_event_seq"},
+        )
         request_id = _text(request["request_id"], "request_id")
         mission_id = _text(request["mission_id"], "mission_id")
         view, at_seq = _view(request)
@@ -764,7 +945,10 @@ class AssuranceApi:
             mission = self._mission_locked(mission_id)
             head = self._store.last_event_seq(mission.id)
         if view == "HISTORY":
-            _fail("SOURCE_UNAVAILABLE", "HISTORY_UNAVAILABLE: use diagnostics are computed for the current head only")
+            _fail(
+                "SOURCE_UNAVAILABLE",
+                "HISTORY_UNAVAILABLE: use diagnostics are computed for the current head only",
+            )
         now_ms = int(self._store.now * 1000)
         decision, coverage, reasons, expires = "UNAVAILABLE", "INCOMPLETE", [], None
         if self._validity is None:
@@ -775,7 +959,9 @@ class AssuranceApi:
             # 第 1 批 A04：诊断走纯算路径——不写、不清共用候选缓存（原计划：use_check 只读）。
             try:
                 if subject.kind == "result":
-                    candidate = self._validity.diagnose_accept_use_for_result(mission.id, subject.pin.id)
+                    candidate = self._validity.diagnose_accept_use_for_result(
+                        mission.id, subject.pin.id
+                    )
                 else:
                     with self._store.read_view():
                         record, _ = self._root_review(mission.id, HtnStore(self._store))
@@ -783,10 +969,17 @@ class AssuranceApi:
                         raise AssuranceError("REVIEW_NOT_OFFICIAL")
                     if str(record.binding.subject_ref.id) != subject.pin.id:
                         raise AssuranceError("USE_SUBJECT_INVALID")
-                    candidate = self._validity.diagnose_root_use(record, resolution_id="host-diagnostic:" + request_id)
+                    candidate = self._validity.diagnose_root_use(
+                        record, resolution_id="host-diagnostic:" + request_id
+                    )
                 certificate = candidate.certificate
-                decision = {"USABLE": "USABLE", "NEEDS_REVIEW": "RECHECK_REQUIRED", "BLOCKED": "BLOCKED"}.get(
-                    certificate.decision, "UNAVAILABLE",
+                decision = {
+                    "USABLE": "USABLE",
+                    "NEEDS_REVIEW": "RECHECK_REQUIRED",
+                    "BLOCKED": "BLOCKED",
+                }.get(
+                    certificate.decision,
+                    "UNAVAILABLE",
                 )
                 coverage = certificate.coverage
                 expires = certificate.not_after_ms
@@ -796,7 +989,10 @@ class AssuranceApi:
             except AssuranceError as error:
                 reasons.append(str(error.code))
                 if error.code in _QUARANTINE_CODES:
-                    _fail("ROOT_QUARANTINED", "assurance root is quarantined; only management reads are open")
+                    _fail(
+                        "ROOT_QUARANTINED",
+                        "assurance root is quarantined; only management reads are open",
+                    )
         return {
             **self._envelope(request_id, mission.id, view, head, root),
             "subject_ref": subject.to_json(),

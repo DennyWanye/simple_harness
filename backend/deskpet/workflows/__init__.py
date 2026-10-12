@@ -14,25 +14,50 @@ from importlib import import_module
 
 _CONTRACTS = frozenset(
     {
-        "ChannelSpec", "EffectKind", "EffectPolicy", "JsonType", "JsonValue",
-        "NodeExecutionIdentity", "NodeStatus", "ReducerKind", "RetryPolicy",
-        "StatePatch", "ToolAccess", "ToolInventoryEntry", "WorkflowContext",
-        "WorkflowRunStatus", "WorkflowState",
+        "ChannelSpec",
+        "EffectKind",
+        "EffectPolicy",
+        "JsonType",
+        "JsonValue",
+        "NodeExecutionIdentity",
+        "NodeStatus",
+        "ReducerKind",
+        "RetryPolicy",
+        "StatePatch",
+        "ToolAccess",
+        "ToolInventoryEntry",
+        "WorkflowContext",
+        "WorkflowRunStatus",
+        "WorkflowState",
     }
 )
 _DEFINITION = frozenset(
     {
-        "END_NODE", "CompiledWorkflow", "ConditionalEdge", "DurabilityMode",
-        "Edge", "NodeDefinition", "NodeDispatch", "WorkflowDefinition",
-        "WorkflowExecutable", "WorkflowManifest", "compile_workflow",
+        "END_NODE",
+        "CompiledWorkflow",
+        "ConditionalEdge",
+        "DurabilityMode",
+        "Edge",
+        "NodeDefinition",
+        "NodeDispatch",
+        "WorkflowDefinition",
+        "WorkflowExecutable",
+        "WorkflowManifest",
+        "compile_workflow",
     }
 )
 _ERRORS = frozenset(
     {
-        "AsyncOnlyWorkflowError", "InvalidStatePatch", "LeaseLostError",
-        "StateMergeConflict", "UnsupportedDeltaChannelError",
-        "WorkflowContractError", "WorkflowDefinitionError",
-        "WorkflowDependencyUnavailable", "WorkflowErrorCode", "WorkflowNodeError",
+        "AsyncOnlyWorkflowError",
+        "InvalidStatePatch",
+        "LeaseLostError",
+        "StateMergeConflict",
+        "UnsupportedDeltaChannelError",
+        "WorkflowContractError",
+        "WorkflowDefinitionError",
+        "WorkflowDependencyUnavailable",
+        "WorkflowErrorCode",
+        "WorkflowNodeError",
     }
 )
 _EXECUTION_PORTS = frozenset({"CheckpointExecutionAdapter", "WorkflowExecutionPorts"})

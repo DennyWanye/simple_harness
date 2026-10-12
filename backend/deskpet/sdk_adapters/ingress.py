@@ -340,9 +340,7 @@ class SdkRuntimeIngress:
                 continue
             start_input = start_value.get("input")
             metadata = (
-                start_input.get("context_metadata")
-                if isinstance(start_input, dict)
-                else None
+                start_input.get("context_metadata") if isinstance(start_input, dict) else None
             )
             if not isinstance(metadata, dict):
                 continue
@@ -352,25 +350,20 @@ class SdkRuntimeIngress:
             sdk_run_id = str(getattr(decision, "run_id", "")).strip()
             root_run_id = str(metadata.get("root_run_id") or "").strip()
             bound_session_id = str(metadata.get("session_id") or "").strip()
-            if not all(
-                (tool_name, decision_id, nonce, sdk_run_id, root_run_id, bound_session_id)
-            ):
+            if not all((tool_name, decision_id, nonce, sdk_run_id, root_run_id, bound_session_id)):
                 continue
             category = "tool"
             dangerous = False
             tool_authority = metadata.get("tool_authority")
             inventory = (
-                tool_authority.get("inventory")
-                if isinstance(tool_authority, dict)
-                else None
+                tool_authority.get("inventory") if isinstance(tool_authority, dict) else None
             )
             if isinstance(inventory, list):
                 item = next(
                     (
                         value
                         for value in inventory
-                        if isinstance(value, dict)
-                        and str(value.get("name") or "") == tool_name
+                        if isinstance(value, dict) and str(value.get("name") or "") == tool_name
                     ),
                     None,
                 )
@@ -395,9 +388,7 @@ class SdkRuntimeIngress:
                     category=category,
                     dangerous=dangerous,
                     expires_at=(
-                        None
-                        if request.get("expires_at") is None
-                        else float(request["expires_at"])
+                        None if request.get("expires_at") is None else float(request["expires_at"])
                     ),
                 )
             )
@@ -423,9 +414,7 @@ class SdkRuntimeIngress:
         """Compute deterministic RunId for replay idempotency."""
         import hashlib
 
-        identity = hashlib.sha256(
-            f"{session_id}\0{request_id}\0{turn_id}".encode()
-        ).hexdigest()
+        identity = hashlib.sha256(f"{session_id}\0{request_id}\0{turn_id}".encode()).hexdigest()
         return RunId(f"product-sdk-{identity}")
 
 

@@ -7,6 +7,7 @@ The execution ledger remains the source of provider/compaction facts.  This
 module only normalizes those immutable facts and reduces them into the one
 public state row a Session is allowed to expose.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -16,9 +17,7 @@ from dataclasses import asdict, dataclass
 from typing import Any
 
 CONTEXT_USAGE_SOURCES = frozenset({"measured", "compacted", "binding_only"})
-CONTEXT_USAGE_AVAILABILITIES = frozenset(
-    {"available", "unavailable", "unknown"}
-)
+CONTEXT_USAGE_AVAILABILITIES = frozenset({"available", "unavailable", "unknown"})
 
 
 class ContextUsageSampleConflict(RuntimeError):
@@ -103,14 +102,10 @@ def normalize_context_usage_sample(sample: Mapping[str, Any]) -> dict[str, Any]:
         "request_id": str(sample.get("request_id") or "").strip() or None,
         "attempt_id": str(sample.get("attempt_id") or "").strip() or None,
         "event_type": event_type,
-        "tokens_before": (
-            None if tokens_before is None else _non_negative_int(tokens_before)
-        ),
+        "tokens_before": (None if tokens_before is None else _non_negative_int(tokens_before)),
         "tokens_after": tokens_after,
         "prompt_tokens": _non_negative_int(
-            sample.get("prompt_tokens")
-            if sample.get("prompt_tokens") is not None
-            else tokens_after
+            sample.get("prompt_tokens") if sample.get("prompt_tokens") is not None else tokens_after
         ),
         "completion_tokens": _non_negative_int(sample.get("completion_tokens")),
         "cached_tokens": _non_negative_int(sample.get("cached_tokens")),
@@ -118,11 +113,9 @@ def normalize_context_usage_sample(sample: Mapping[str, Any]) -> dict[str, Any]:
         "effective_ceiling": _non_negative_int(sample.get("effective_ceiling")),
         "estimate_method": str(sample.get("estimate_method") or "provider_usage"),
         "provider_id": str(sample.get("provider_id") or "").strip() or None,
-        "model_id": str(sample.get("model_id") or sample.get("model") or "").strip()
-        or None,
+        "model_id": str(sample.get("model_id") or sample.get("model") or "").strip() or None,
         "binding_epoch": _non_negative_int(sample.get("binding_epoch")),
-        "based_on_sample_id": str(sample.get("based_on_sample_id") or "").strip()
-        or None,
+        "based_on_sample_id": str(sample.get("based_on_sample_id") or "").strip() or None,
         "metadata": dict(sample.get("metadata") or {}),
         "completed_at": completed_at,
         "created_at": created_at,
@@ -169,9 +162,7 @@ class ContextUsageStateV2:
         if self.source not in CONTEXT_USAGE_SOURCES:
             raise ValueError(f"invalid Context Usage source: {self.source}")
         if self.availability not in CONTEXT_USAGE_AVAILABILITIES:
-            raise ValueError(
-                f"invalid Context Usage availability: {self.availability}"
-            )
+            raise ValueError(f"invalid Context Usage availability: {self.availability}")
 
     def to_record(self) -> dict[str, Any]:
         value = asdict(self)
@@ -304,9 +295,7 @@ def reduce_context_usage_state(
             cached_tokens=current.cached_tokens,
             based_on_sample_id=str(sample["based_on_sample_id"]),
             source_event_id=str(sample["source_event_id"]),
-            source_completed_at=max(
-                current.source_completed_at, float(sample["completed_at"])
-            ),
+            source_completed_at=max(current.source_completed_at, float(sample["completed_at"])),
             has_measurement=True,
             legacy_incomplete=False,
             updated_at=float(sample["completed_at"]),

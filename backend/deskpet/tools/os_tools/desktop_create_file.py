@@ -19,6 +19,7 @@ want overwrite protection should call ``write_file`` directly.
 P5-S2 Phase 0: error responses now include ``ok: false`` + ``hint``
 + ``examples``. Legacy ``error`` strings preserved.
 """
+
 from __future__ import annotations
 
 import json
@@ -79,13 +80,12 @@ def desktop_create_file(args: dict[str, Any], task_id: str = "") -> str:
         return _err(
             "name required",
             "desktop_create_file 的 name 字段必填，是要在桌面上创建的文件名"
-            "（不能含路径分隔符）。例如 {\"name\": \"todo.txt\", \"content\": \"...\"}。",
+            '（不能含路径分隔符）。例如 {"name": "todo.txt", "content": "..."}。',
         )
     if not isinstance(content, str):
         return _err(
             "content must be string",
-            "desktop_create_file 的 content 必须是字符串。"
-            f"当前传入的是 {type(content).__name__}。",
+            f"desktop_create_file 的 content 必须是字符串。当前传入的是 {type(content).__name__}。",
             expected="string",
             got=type(content).__name__,
         )
@@ -106,8 +106,7 @@ def desktop_create_file(args: dict[str, Any], task_id: str = "") -> str:
     except OSError as exc:
         return _err(
             f"OSError: {exc}",
-            "创建桌面文件时操作系统报错。"
-            "常见原因：桌面目录权限不足、磁盘已满、文件名含非法字符。",
+            "创建桌面文件时操作系统报错。常见原因：桌面目录权限不足、磁盘已满、文件名含非法字符。",
         )
 
     return json.dumps(

@@ -5,6 +5,7 @@ These are the actual four permission inputs and installed resource limits. They
 are not planning grants, health probes, Action approvals or dispatch decisions.
 The original materialization/provider/tool/Action guards still decide each call.
 """
+
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
@@ -31,32 +32,46 @@ RuntimeImportReader = Callable[[Store, str], CompleteRead[ImportedExecutionSourc
 
 class TaskGraphExecutionImports:
     """Fixed policy reader plus the final H1 reliable runtime-import producer."""
+
     def __init__(self, orchestrator: Any, *, runtime_imports: RuntimeImportReader) -> None:
         if not callable(runtime_imports):
             raise ValueError("the original reliable runtime importer is required")
-        self.orchestrator, self.store, self.runtime_imports = orchestrator, orchestrator.store, runtime_imports
+        self.orchestrator, self.store, self.runtime_imports = (
+            orchestrator,
+            orchestrator.store,
+            runtime_imports,
+        )
 
     def read_runtime(self, store: Store, mission_id: str) -> CompleteRead[ImportedExecutionSource]:
         if store is not self.store:
             raise SourceUnavailable("taskgraph_execution_store_mismatch")
         return self.runtime_imports(store, mission_id)
 
-    def read_execution_policy(self, store: Store, mission_id: str) -> CompleteRead[ImportedExecutionSource]:
+    def read_execution_policy(
+        self, store: Store, mission_id: str
+    ) -> CompleteRead[ImportedExecutionSource]:
         if store is not self.store:
             raise SourceUnavailable("taskgraph_execution_store_mismatch")
         with store.read_view() as db:
             orchestrator = self.orchestrator
             mission = store.get_mission(mission_id)
             policy_binding = store.get_mission_policy(mission_id)
-            if mission is None or policy_binding is None or policy_binding.get("mission_id") != mission_id:
+            if (
+                mission is None
+                or policy_binding is None
+                or policy_binding.get("mission_id") != mission_id
+            ):
                 raise SourceUnavailable("taskgraph_execution_policy_binding_missing")
             version_id = policy_binding.get("version_id")
             if not isinstance(version_id, str) or not version_id:
                 raise SourceUnavailable("taskgraph_execution_policy_version_missing")
             version = store.get_policy_version(version_id)
-            if (version is None or version.get("version_id") != version_id
-                    or not isinstance(version.get("params"), Mapping)
-                    or params_hash(version["params"]) != version.get("params_hash")):
+            if (
+                version is None
+                or version.get("version_id") != version_id
+                or not isinstance(version.get("params"), Mapping)
+                or params_hash(version["params"]) != version.get("params_hash")
+            ):
                 raise SourceUnavailable("taskgraph_execution_policy_version_invalid")
             # The runtime's resolved policy must be this same durable version;
             # cached or legacy configuration fallback is not an alternate source.
@@ -77,16 +92,30 @@ class TaskGraphExecutionImports:
                     role = orchestrator._hierarchical_worker_template(role, mission_id)
                 read_only = binding is not None and read_only_leaf(binding)
                 role_tools = tuple(role.tool_names)
-                tasks.append({"task_id": task.id,
-                    "task_tools": list(task.allowed_tools),
-                    "permission_input": {"role": role.name,
-                        "prompt_version": role.prompt_version, "role_tools": list(role_tools),
-                        "effective_tools": list(effective_tools(mission_tools=mission.allowed_tools,
-                            task_tools=task.allowed_tools, role_tools=role_tools, deployment=deployment,
-                            read_only_leaf=read_only))},
-                    "paused": task.paused, "pause_reason": task.pause_reason,
-                    "read_only_leaf": read_only,
-                    "budget": task.budget.to_json()})
+                tasks.append(
+                    {
+                        "task_id": task.id,
+                        "task_tools": list(task.allowed_tools),
+                        "permission_input": {
+                            "role": role.name,
+                            "prompt_version": role.prompt_version,
+                            "role_tools": list(role_tools),
+                            "effective_tools": list(
+                                effective_tools(
+                                    mission_tools=mission.allowed_tools,
+                                    task_tools=task.allowed_tools,
+                                    role_tools=role_tools,
+                                    deployment=deployment,
+                                    read_only_leaf=read_only,
+                                )
+                            ),
+                        },
+                        "paused": task.paused,
+                        "pause_reason": task.pause_reason,
+                        "read_only_leaf": read_only,
+                        "budget": task.budget.to_json(),
+                    }
+                )
             profiles = []
             for identity, profile in sorted(orchestrator._profiles.items()):
                 if profile.profile_id != identity:
@@ -94,26 +123,58 @@ class TaskGraphExecutionImports:
                 # Explicit declaration fields only; never serialize a provider,
                 # connector implementation, tokenizer or credential-bearing repr.
                 profiles.append(profile.to_json())
-            body: dict[str, Any] = {"mission_id": mission_id,
-                "mission": {"tenant_id": mission.tenant_id,
-                    "status": str(mission.status), "allowed_tools": list(mission.allowed_tools)},
-                "policy_binding": dict(policy_binding), "policy_version": dict(version),
-                "deployment": deployment.to_json(), "tasks": tasks, "profiles": profiles,
-                "routing_inputs": {"deployment": orchestrator._model_router.rules.to_json(),
+            body: dict[str, Any] = {
+                "mission_id": mission_id,
+                "mission": {
+                    "tenant_id": mission.tenant_id,
+                    "status": str(mission.status),
+                    "allowed_tools": list(mission.allowed_tools),
+                },
+                "policy_binding": dict(policy_binding),
+                "policy_version": dict(version),
+                "deployment": deployment.to_json(),
+                "tasks": tasks,
+                "profiles": profiles,
+                "routing_inputs": {
+                    "deployment": orchestrator._model_router.rules.to_json(),
                     "selected_profile": orchestrator._selected_profile(mission_id),
                     "frozen_default": orchestrator._frozen_default_route(mission_id),
-                    "task_kind": (mission.final_report or {}).get("task_kind") or "code"},
-                "resource_limits": {name: _document(getattr(config, name)) for name in (
-                    "max_running_attempts", "max_pending_dispatch", "max_pending_verifications",
-                    "max_model_calls_per_turn", "max_tool_calls_per_turn", "turn_deadline_seconds")}}
-            source = ImportedExecutionSource(mission_id=mission_id, kind="execution_policy",
-                canonical_document=canonical_json(body))
-            sequence = db.execute("SELECT COALESCE(MAX(seq),0) FROM events WHERE mission_id=?", (mission_id,)).fetchone()[0]
-            return CompleteRead(value=source, source_id=f"{mission_id}:execution-policy",
-                source_digest=sha256_hex(source.to_json()), through_seq=sequence)
+                    "task_kind": (mission.final_report or {}).get("task_kind") or "code",
+                },
+                "resource_limits": {
+                    name: _document(getattr(config, name))
+                    for name in (
+                        "max_running_attempts",
+                        "max_pending_dispatch",
+                        "max_pending_verifications",
+                        "max_model_calls_per_turn",
+                        "max_tool_calls_per_turn",
+                        "turn_deadline_seconds",
+                    )
+                },
+            }
+            source = ImportedExecutionSource(
+                mission_id=mission_id,
+                kind="execution_policy",
+                canonical_document=canonical_json(body),
+            )
+            sequence = db.execute(
+                "SELECT COALESCE(MAX(seq),0) FROM events WHERE mission_id=?", (mission_id,)
+            ).fetchone()[0]
+            return CompleteRead(
+                value=source,
+                source_id=f"{mission_id}:execution-policy",
+                source_digest=sha256_hex(source.to_json()),
+                through_seq=sequence,
+            )
 
-    def validate_attempt(self, store: Store, task_id: str, policy_source: CompleteRead[ImportedExecutionSource],
-                         intent_config: Mapping[str, Any]) -> None:
+    def validate_attempt(
+        self,
+        store: Store,
+        task_id: str,
+        policy_source: CompleteRead[ImportedExecutionSource],
+        intent_config: Mapping[str, Any],
+    ) -> None:
         """Narrow the actual frozen Worker request inside original Attempt creation.
 
         Original budget reservation, materialization and
@@ -126,23 +187,47 @@ class TaskGraphExecutionImports:
         if store is not self.store or not store.connection.in_transaction:
             raise StoreError("TASKGRAPH_EXECUTION_RECHECK_TRANSACTION_REQUIRED")
         attempt = store.get_attempt(intent.subject_id)
-        if (intent.kind != "attempt" or attempt is None or attempt.mission_id != intent.mission_id
-                or attempt.status in TERMINAL_ATTEMPT):
+        if (
+            intent.kind != "attempt"
+            or attempt is None
+            or attempt.mission_id != intent.mission_id
+            or attempt.status in TERMINAL_ATTEMPT
+        ):
             raise StoreConflict("TASKGRAPH_EXECUTION_ATTEMPT_STOPPED")
-        self._validate_request(store, attempt.task_id,
-            self.read_execution_policy(store, intent.mission_id), intent.config, creating=False)
+        self._validate_request(
+            store,
+            attempt.task_id,
+            self.read_execution_policy(store, intent.mission_id),
+            intent.config,
+            creating=False,
+        )
 
-    def _validate_request(self, store: Store, task_id: str, policy_source: CompleteRead[ImportedExecutionSource],
-                          intent_config: Mapping[str, Any], *, creating: bool) -> None:
+    def _validate_request(
+        self,
+        store: Store,
+        task_id: str,
+        policy_source: CompleteRead[ImportedExecutionSource],
+        intent_config: Mapping[str, Any],
+        *,
+        creating: bool,
+    ) -> None:
         if store is not self.store or not store.connection.in_transaction:
             raise StoreError("TASKGRAPH_EXECUTION_RECHECK_TRANSACTION_REQUIRED")
         task = store.get_task(task_id)
         if task is None:
             raise StoreError("TASKGRAPH_EXECUTION_TASK_MISSING")
         mission = store.get_mission(task.mission_id)
-        if mission is None or str(mission.status) != "ACTIVE" or task.paused or task.status in TERMINAL_TASK:
+        if (
+            mission is None
+            or str(mission.status) != "ACTIVE"
+            or task.paused
+            or task.status in TERMINAL_TASK
+        ):
             raise StoreConflict("TASKGRAPH_EXECUTION_NOT_ACTIVE")
-        if policy_source.value.mission_id != task.mission_id or policy_source.value.kind != "execution_policy":
+        if (
+            policy_source.value.mission_id != task.mission_id
+            or policy_source.value.kind != "execution_policy"
+        ):
             raise StoreError("TASKGRAPH_EXECUTION_POLICY_SOURCE_MISMATCH")
         body = policy_source.value.to_json()["document"]
         choices = [item for item in body["tasks"] if item["task_id"] == task_id]
@@ -151,10 +236,13 @@ class TaskGraphExecutionImports:
         current = choices[0]
         permission = current["permission_input"]
         frozen_version = intent_config.get("task_version")
-        if (permission["role"] != intent_config.get("role")
-                or permission["prompt_version"] != intent_config.get("prompt_version")
-                or type(frozen_version) is not int
-                or frozen_version > task.version or (creating and frozen_version != task.version)):
+        if (
+            permission["role"] != intent_config.get("role")
+            or permission["prompt_version"] != intent_config.get("prompt_version")
+            or type(frozen_version) is not int
+            or frozen_version > task.version
+            or (creating and frozen_version != task.version)
+        ):
             raise StoreConflict("TASKGRAPH_EXECUTION_ROLE_OR_TASK_CHANGED")
         if intent_config.get("policy_version_id") != body["policy_binding"]["version_id"]:
             raise StoreConflict("TASKGRAPH_EXECUTION_POLICY_CHANGED")
@@ -163,22 +251,31 @@ class TaskGraphExecutionImports:
             raise StoreError("TASKGRAPH_EXECUTION_AGENT_CONFIG_MISSING")
         agent = AgentConfig.from_json(dict(agent_json))
         offered = intent_config.get("allowed_tools")
-        if (not isinstance(offered, (list, tuple)) or tuple(offered) != agent.tool_names
-                or not set(agent.tool_names) <= set(permission["effective_tools"])
-                or bool(intent_config.get("read_only_leaf", False)) != current["read_only_leaf"]):
+        if (
+            not isinstance(offered, (list, tuple))
+            or tuple(offered) != agent.tool_names
+            or not set(agent.tool_names) <= set(permission["effective_tools"])
+            or bool(intent_config.get("read_only_leaf", False)) != current["read_only_leaf"]
+        ):
             raise StoreConflict("TASKGRAPH_EXECUTION_PERMISSION_CHANGED")
         profile_id = intent_config.get("runtime_profile_id")
         profile = self.orchestrator._profiles.get(profile_id)
-        if (profile is None or agent.model_profile_ref != profile_id
-                or profile.model != intent_config.get("model")
-                or profile.context_snapshot() != intent_config.get("runtime_context")):
+        if (
+            profile is None
+            or agent.model_profile_ref != profile_id
+            or profile.model != intent_config.get("model")
+            or profile.context_snapshot() != intent_config.get("runtime_context")
+        ):
             raise StoreConflict("TASKGRAPH_EXECUTION_PROFILE_CHANGED")
         selected = body["routing_inputs"]["selected_profile"]
         if selected is not None and selected != profile_id:
             raise StoreConflict("TASKGRAPH_EXECUTION_MISSION_PROFILE_CHANGED")
         from ..runtime.assembly import admission_accepts
 
-        if not admission_accepts(self.orchestrator._admission_for(profile_id), intent_config.get("provider_admission_fingerprint")):
+        if not admission_accepts(
+            self.orchestrator._admission_for(profile_id),
+            intent_config.get("provider_admission_fingerprint"),
+        ):
             raise StoreConflict("TASKGRAPH_EXECUTION_PROVIDER_ADMISSION_CHANGED")
         limits = body["resource_limits"]
         tool_limit = limits["max_tool_calls_per_turn"]
@@ -190,8 +287,12 @@ class TaskGraphExecutionImports:
             from .resource_requests import GrantUnverified, verified_grant_amount
 
             try:
-                tool_limit += verified_grant_amount(store.iter_events(task.mission_id), task_id=task.id,
-                                                    grant=grant, base_cap=tool_limit)
+                tool_limit += verified_grant_amount(
+                    store.iter_events(task.mission_id),
+                    task_id=task.id,
+                    grant=grant,
+                    base_cap=tool_limit,
+                )
             except GrantUnverified as error:
                 raise StoreConflict("TASKGRAPH_EXECUTION_RESOURCE_GRANT_UNVERIFIED") from error
         deadline = limits["turn_deadline_seconds"]
@@ -202,8 +303,11 @@ class TaskGraphExecutionImports:
         from ..runtime.tool_gateway import TOOL_ANSWER_MARGIN
 
         gateway_cap = intent_config.get("max_tool_calls")
-        if (agent.limits.max_model_calls_per_turn > limits["max_model_calls_per_turn"]
-                or type(gateway_cap) is not int or gateway_cap > tool_limit
-                or agent.limits.max_tool_calls_per_turn != gateway_cap + TOOL_ANSWER_MARGIN
-                or agent.limits.turn_deadline_seconds > deadline):
+        if (
+            agent.limits.max_model_calls_per_turn > limits["max_model_calls_per_turn"]
+            or type(gateway_cap) is not int
+            or gateway_cap > tool_limit
+            or agent.limits.max_tool_calls_per_turn != gateway_cap + TOOL_ANSWER_MARGIN
+            or agent.limits.turn_deadline_seconds > deadline
+        ):
             raise StoreConflict("TASKGRAPH_EXECUTION_LIMITS_EXCEEDED")

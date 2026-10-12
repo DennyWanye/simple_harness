@@ -10,6 +10,7 @@ tokens) so it doesn't hurt cache much in practice.
 Module is named ``time_component.py`` (not ``time.py``) to avoid
 colliding with the stdlib ``time`` module in local imports.
 """
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -38,11 +39,7 @@ class TimeComponent:
 
         weekday = _CN_WEEKDAYS[now.weekday()]
         tz_name = now.tzname() or "local"
-        text = (
-            f"## 当前时间\n"
-            f"{now.strftime('%Y-%m-%d %H:%M:%S')} "
-            f"{weekday} ({tz_name})"
-        )
+        text = f"## 当前时间\n{now.strftime('%Y-%m-%d %H:%M:%S')} {weekday} ({tz_name})"
         return Slice(
             component_name=self.name,
             text_content=text,

@@ -7,6 +7,7 @@ The JSON files beside this module are the authority.  This module deliberately
 does not inspect a Python callable, permission category, or tool description to
 invent durable metadata.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -46,8 +47,7 @@ class IdempotencyClass(str, Enum):
 
 def canonical_json_bytes(value: Any) -> bytes:
     return (
-        json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-        + "\n"
+        json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n"
     ).encode("utf-8")
 
 
@@ -60,9 +60,7 @@ def _sha256(value: str, field_name: str) -> str:
     if len(normalized) != 64 or any(
         character not in "0123456789abcdef" for character in normalized
     ):
-        raise ManifestValidationError(
-            f"{field_name} must be a lowercase SHA-256 digest"
-        )
+        raise ManifestValidationError(f"{field_name} must be a lowercase SHA-256 digest")
     return normalized
 
 
@@ -118,10 +116,7 @@ class ExecutionBuildIdentity:
             "handler_id": self.handler_id,
             "build_digest": self.build_digest,
             "sources_manifest_hash": self.sources_manifest_hash,
-            "artifacts": [
-                {"path": path, "sha256": digest}
-                for path, digest in self.artifacts
-            ],
+            "artifacts": [{"path": path, "sha256": digest} for path, digest in self.artifacts],
         }
 
 
@@ -211,9 +206,7 @@ def load_core_handler_authorities() -> tuple[CoreHandlerAuthority, ...]:
             (effect, "effect"),
         ):
             if str(row.get("tool_name") or "") != tool_name:
-                raise ManifestValidationError(
-                    f"{name} manifest tool mismatch for {handler_id}"
-                )
+                raise ManifestValidationError(f"{name} manifest tool mismatch for {handler_id}")
         phase = str(source.get("authority_phase") or "")
         lifecycle = str(source.get("lifecycle") or "")
         if phase not in {"both", "legacy", "companion"}:
@@ -269,9 +262,7 @@ def core_authority_for_tool(tool_name: str) -> CoreHandlerAuthority | None:
     return _authority_by_tool_name().get(str(tool_name))
 
 
-def authority_accepts_handler(
-    authority: CoreHandlerAuthority, handler: object
-) -> bool:
+def authority_accepts_handler(authority: CoreHandlerAuthority, handler: object) -> bool:
     """Verify that a callable originates in one of the hashed artifacts.
 
     The callable path is only an admission check.  It is never used as the
@@ -287,7 +278,10 @@ def authority_accepts_handler(
         if not name:
             return False
         stem = "backend/" + name.replace(".", "/")
-        return bool({stem + ".py", stem + "/__init__.py"} & {path for path, _digest in authority.build.artifacts})
+        return bool(
+            {stem + ".py", stem + "/__init__.py"}
+            & {path for path, _digest in authority.build.artifacts}
+        )
     try:
         source = Path(str(inspect.getsourcefile(handler) or "")).resolve(strict=True)
     except (OSError, TypeError, ValueError):
@@ -308,16 +302,13 @@ def PurePath(value: str) -> Path:
     return Path(*PurePosixPath(value).parts)
 
 
-def authority_handler_ids(
-    *, phase: str = "legacy", include_planned: bool = True
-) -> frozenset[str]:
+def authority_handler_ids(*, phase: str = "legacy", include_planned: bool = True) -> frozenset[str]:
     if phase not in {"legacy", "companion"}:
         raise ValueError("phase must be legacy or companion")
     return frozenset(
         item.handler_id
         for item in load_core_handler_authorities()
-        if item.authority_phase in {"both", phase}
-        and (include_planned or not item.planned)
+        if item.authority_phase in {"both", phase} and (include_planned or not item.planned)
     )
 
 
@@ -341,9 +332,7 @@ def validate_core_registry_handler_set(
         if not handler_id:
             continue
         if handler_id in actual_by_id:
-            raise ManifestValidationError(
-                f"core registry handler id is duplicated: {handler_id}"
-            )
+            raise ManifestValidationError(f"core registry handler id is duplicated: {handler_id}")
         actual_by_id[handler_id] = spec
     actual = set(actual_by_id)
     if actual != expected:

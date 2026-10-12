@@ -63,21 +63,31 @@ def require_bound(store: Store, mission_id: str) -> None:
     caller that must not raise (a startup skip, a read page, the contract gate that
     stops such a Mission by name) catches :class:`NotBoundError` — nobody asks a
     yes/no question instead (TaskGraph 补全第二批)."""
-    row = store.connection.execute("SELECT kernel_version FROM taskgraph_policy_bindings WHERE mission_id=?", (mission_id,)).fetchone()
+    row = store.connection.execute(
+        "SELECT kernel_version FROM taskgraph_policy_bindings WHERE mission_id=?", (mission_id,)
+    ).fetchone()
     if row is None:
         raise NotBoundError("TASKGRAPH_NOT_BOUND")
     if row[0] != KERNEL_VERSION:
         raise KernelUnsupportedError("TASKGRAPH_KERNEL_UNSUPPORTED")
 
 
-
-_POLICY_FIELDS = frozenset({"kernel_version", "graph_structure_budget", "candidate_policy_ref",
-                            "schema_policy_ref", "target_policy_ref", "deployment_policy_ref"})
+_POLICY_FIELDS = frozenset(
+    {
+        "kernel_version",
+        "graph_structure_budget",
+        "candidate_policy_ref",
+        "schema_policy_ref",
+        "target_policy_ref",
+        "deployment_policy_ref",
+    }
+)
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class InstalledGraphPolicy:
     """A frozen canonical snapshot of installed versioned deployment policy."""
+
     canonical_document: str
 
     def __post_init__(self) -> None:
@@ -105,6 +115,7 @@ class InstalledGraphPolicy:
 class PolicyBinding:
     """One row of ``taskgraph_policy_bindings`` with the enabling receipt it rests on
     (原计划 §6.3 ``policy() -> PolicyBinding``)."""
+
     mission_id: str
     policy: InstalledGraphPolicy
     enabling_command_id: str
@@ -114,9 +125,15 @@ class PolicyBinding:
     kernel_version: str = KERNEL_VERSION
 
     def row(self) -> tuple[Any, ...]:
-        return (self.mission_id, self.kernel_version, self.policy.content_hash,
-                self.policy.canonical_document, self.enabling_command_id,
-                self.enabling_receipt_hash, self.created_at)
+        return (
+            self.mission_id,
+            self.kernel_version,
+            self.policy.content_hash,
+            self.policy.canonical_document,
+            self.enabling_command_id,
+            self.enabling_receipt_hash,
+            self.created_at,
+        )
 
 
 def _receipt_hash(receipt: Mapping[str, Any]) -> str:
@@ -125,12 +142,15 @@ def _receipt_hash(receipt: Mapping[str, Any]) -> str:
 
 def _check_binding_receipt(binding: PolicyBinding, receipt: Mapping[str, Any] | None) -> None:
     """The one check that a policy row rests on its own enabling receipt."""
-    if (receipt is None or receipt.get("kind") != "TaskGraphContractEnabled"
-            or receipt.get("mission_id") != binding.mission_id
-            or receipt.get("kernel_version") != KERNEL_VERSION
-            or receipt.get("policy_hash") != binding.policy.content_hash
-            or receipt.get("command_id") != binding.enabling_command_id
-            or _receipt_hash(receipt) != binding.enabling_receipt_hash):
+    if (
+        receipt is None
+        or receipt.get("kind") != "TaskGraphContractEnabled"
+        or receipt.get("mission_id") != binding.mission_id
+        or receipt.get("kernel_version") != KERNEL_VERSION
+        or receipt.get("policy_hash") != binding.policy.content_hash
+        or receipt.get("command_id") != binding.enabling_command_id
+        or _receipt_hash(receipt) != binding.enabling_receipt_hash
+    ):
         raise StoreError("TASKGRAPH_POLICY_RECEIPT_CORRUPT")
     acceptance = SourceRef.from_json(receipt.get("deployment_acceptance_ref"))
     if acceptance.channel != "h1h_deployment_acceptance":
@@ -187,7 +207,8 @@ class TaskGraphStore:
             row = connection.execute(
                 "SELECT mission_id,kernel_version,policy_hash,policy_json,enabling_command_id,"
                 "enabling_receipt_hash,created_at FROM taskgraph_policy_bindings WHERE mission_id=?",
-                (mission_id,)).fetchone()
+                (mission_id,),
+            ).fetchone()
             if row is None:
                 return None
             if row["kernel_version"] != KERNEL_VERSION:
@@ -196,11 +217,14 @@ class TaskGraphStore:
             if policy.content_hash != row["policy_hash"]:
                 raise StoreError("TASKGRAPH_POLICY_RECEIPT_CORRUPT")
             receipt = self._store.get_receipt(row["enabling_command_id"])
-            binding = PolicyBinding(mission_id=mission_id, policy=policy,
-                                    enabling_command_id=str(row["enabling_command_id"]),
-                                    enabling_receipt_hash=str(row["enabling_receipt_hash"]),
-                                    receipt={} if receipt is None else dict(receipt),
-                                    created_at=float(row["created_at"]))
+            binding = PolicyBinding(
+                mission_id=mission_id,
+                policy=policy,
+                enabling_command_id=str(row["enabling_command_id"]),
+                enabling_receipt_hash=str(row["enabling_receipt_hash"]),
+                receipt={} if receipt is None else dict(receipt),
+                created_at=float(row["created_at"]),
+            )
             _check_binding_receipt(binding, receipt)
             return binding
 
@@ -220,14 +244,18 @@ class TaskGraphStore:
             old = connection.execute(
                 "SELECT mission_id,kernel_version,policy_hash,policy_json,enabling_command_id,"
                 "enabling_receipt_hash,created_at FROM taskgraph_policy_bindings WHERE mission_id=?",
-                (binding.mission_id,)).fetchone()
+                (binding.mission_id,),
+            ).fetchone()
             if old is not None:
                 if tuple(old) != binding.row():
                     raise StoreConflict("TASKGRAPH_POLICY_ALREADY_BOUND")
             else:
-                connection.execute("INSERT INTO taskgraph_policy_bindings(mission_id,kernel_version,"
-                                   "policy_hash,policy_json,enabling_command_id,enabling_receipt_hash,"
-                                   "created_at) VALUES (?,?,?,?,?,?,?)", binding.row())
+                connection.execute(
+                    "INSERT INTO taskgraph_policy_bindings(mission_id,kernel_version,"
+                    "policy_hash,policy_json,enabling_command_id,enabling_receipt_hash,"
+                    "created_at) VALUES (?,?,?,?,?,?,?)",
+                    binding.row(),
+                )
             stored = self.policy(binding.mission_id)
         if stored != binding:
             raise StoreError("TASKGRAPH_POLICY_RECEIPT_CORRUPT")
@@ -235,17 +263,25 @@ class TaskGraphStore:
 
     def list_member_pins(self, mission_id: str, revision: int) -> tuple[MemberPin, ...]:
         with self._store.read_view() as connection:
-            return tuple(MemberPin(**dict(row)) for row in connection.execute(
-                "SELECT mission_id,revision,occurrence_id,task_id,binding_revision,binding_hash "
-                "FROM taskgraph_member_pins WHERE mission_id=? AND revision=? ORDER BY occurrence_id",
-                (mission_id, revision)))
+            return tuple(
+                MemberPin(**dict(row))
+                for row in connection.execute(
+                    "SELECT mission_id,revision,occurrence_id,task_id,binding_revision,binding_hash "
+                    "FROM taskgraph_member_pins WHERE mission_id=? AND revision=? ORDER BY occurrence_id",
+                    (mission_id, revision),
+                )
+            )
 
     def list_method_pins(self, mission_id: str, revision: int) -> tuple[MethodPin, ...]:
         with self._store.read_view() as connection:
-            return tuple(MethodPin(**dict(row)) for row in connection.execute(
-                "SELECT mission_id,revision,instance_id,goal_occurrence_id,adopted,draft_hash "
-                "FROM taskgraph_method_pins WHERE mission_id=? AND revision=? ORDER BY instance_id",
-                (mission_id, revision)))
+            return tuple(
+                MethodPin(**dict(row))
+                for row in connection.execute(
+                    "SELECT mission_id,revision,instance_id,goal_occurrence_id,adopted,draft_hash "
+                    "FROM taskgraph_method_pins WHERE mission_id=? AND revision=? ORDER BY instance_id",
+                    (mission_id, revision),
+                )
+            )
 
     def bound_mission_ids(self, *, open_only: bool = False) -> tuple[str, ...]:
         """Every TaskGraph-bound Mission, by id; ``open_only`` leaves out ended Missions
@@ -254,29 +290,40 @@ class TaskGraphStore:
         with self._store.read_view() as connection:
             if not open_only:
                 rows = connection.execute(
-                    "SELECT mission_id FROM taskgraph_policy_bindings ORDER BY mission_id").fetchall()
+                    "SELECT mission_id FROM taskgraph_policy_bindings ORDER BY mission_id"
+                ).fetchall()
             else:
                 rows = connection.execute(
                     "SELECT b.mission_id FROM taskgraph_policy_bindings b JOIN missions m "
                     "ON m.mission_id=b.mission_id WHERE m.status NOT IN (?,?,?) ORDER BY b.mission_id",
-                    ended).fetchall()
+                    ended,
+                ).fetchall()
             return tuple(str(row[0]) for row in rows)
 
     def ever_member(self, mission_id: str, task_id: str) -> bool:
         """Whether ``task_id`` was a pinned member in any revision of the Mission's graph
         (终止门用；同一裁决)."""
         with self._store.read_view() as connection:
-            return connection.execute(
-                "SELECT 1 FROM taskgraph_member_pins WHERE mission_id=? AND task_id=? LIMIT 1",
-                (mission_id, task_id)).fetchone() is not None
+            return (
+                connection.execute(
+                    "SELECT 1 FROM taskgraph_member_pins WHERE mission_id=? AND task_id=? LIMIT 1",
+                    (mission_id, task_id),
+                ).fetchone()
+                is not None
+            )
 
     def _pins(self, connection: sqlite3.Connection, mission: str, revision: int) -> RevisionPins:
         members = self.list_member_pins(mission, revision)
         methods = self.list_method_pins(mission, revision)
-        demands = tuple(DemandRef(**dict(row)) for row in connection.execute(
-            "SELECT mission_id,revision,consumer_instance_id,slot_key,slot_occurrence_id,"
-            "producer_occurrence_id,obligation_id,mode,requiredness,source_slot_hash "
-            "FROM taskgraph_demand_refs WHERE mission_id=? AND revision=?", (mission, revision)))
+        demands = tuple(
+            DemandRef(**dict(row))
+            for row in connection.execute(
+                "SELECT mission_id,revision,consumer_instance_id,slot_key,slot_occurrence_id,"
+                "producer_occurrence_id,obligation_id,mode,requiredness,source_slot_hash "
+                "FROM taskgraph_demand_refs WHERE mission_id=? AND revision=?",
+                (mission, revision),
+            )
+        )
         return RevisionPins(member_pins=members, method_pins=methods, demand_refs=demands)
 
     def _verify_policy(self, connection: sqlite3.Connection, mission: str) -> None:
@@ -287,13 +334,21 @@ class TaskGraphStore:
         if binding is None:
             _fail("TaskGraph policy is not enabled")
 
-    def _verify_certificate(self, connection: sqlite3.Connection, mission: str, command: str,
-                            admission: str | None, certificate: RevisionCertificate,
-                            document: NetworkDocumentV1) -> None:
+    def _verify_certificate(
+        self,
+        connection: sqlite3.Connection,
+        mission: str,
+        command: str,
+        admission: str | None,
+        certificate: RevisionCertificate,
+        document: NetworkDocumentV1,
+    ) -> None:
         self._verify_policy(connection, mission)
         if isinstance(certificate, PlanAdmissionCertificate):
-            if (certificate.preview.candidate_hash != _document_hash(document)
-                    or certificate.preview.base_revision + 1 != document.revision):
+            if (
+                certificate.preview.candidate_hash != _document_hash(document)
+                or certificate.preview.base_revision + 1 != document.revision
+            ):
                 _fail("PLAN_ADMISSION preview does not bind this exact document")
             if admission is None or certificate.preview.mission_id != mission:
                 _fail("PLAN_ADMISSION certificate identity mismatch")
@@ -302,13 +357,16 @@ class TaskGraphStore:
             row = connection.execute(
                 "SELECT c.*,r.mission_id AS source_mission_id FROM planning_admission_checks c "
                 "JOIN planning_requests r ON r.request_id=c.request_id WHERE c.check_id=?",
-                (admission,),).fetchone()
+                (admission,),
+            ).fetchone()
             if row is None or row["phase"] != "APPLIED" or row["source_mission_id"] != mission:
                 _fail("the referenced admission check is not a real APPLIED check")
-            if (row["request_id"] != certificate.preview.request_id
-                    or row["decision_id"] != certificate.preview.decision_id
-                    or row["decision_hash"] != certificate.preview.decision_hash
-                    or row["delta_hash"] != certificate.preview.delta_hash):
+            if (
+                row["request_id"] != certificate.preview.request_id
+                or row["decision_id"] != certificate.preview.decision_id
+                or row["decision_hash"] != certificate.preview.decision_hash
+                or row["delta_hash"] != certificate.preview.delta_hash
+            ):
                 _fail("APPLIED check does not bind the supplied preview")
             if certificate.admission_check_ref.channel != "planning_admission_check":
                 _fail("admission check reference has the wrong channel")
@@ -320,43 +378,78 @@ class TaskGraphStore:
                 _fail("commit receipt reference does not name command_id")
             if certificate.commit_receipt_ref.channel != "commit_receipt":
                 _fail("commit receipt reference has the wrong channel")
-            if (certificate.commit_receipt_ref.revision != document.revision
-                    or certificate.admission_check_ref.revision != document.revision):
+            if (
+                certificate.commit_receipt_ref.revision != document.revision
+                or certificate.admission_check_ref.revision != document.revision
+            ):
                 _fail("PLAN_ADMISSION source revision mismatch")
             receipt_row = connection.execute(
                 "SELECT mission_id,new_plan_revision FROM plan_commit_receipts WHERE command_id=?",
                 (command,),
             ).fetchone()
-            if (receipt_row is None or receipt_row["mission_id"] != mission
-                    or receipt_row["new_plan_revision"] != document.revision):
+            if (
+                receipt_row is None
+                or receipt_row["mission_id"] != mission
+                or receipt_row["new_plan_revision"] != document.revision
+            ):
                 _fail("the referenced commit receipt is unavailable")
             receipt = HtnStore(self._store).get_commit_receipt(command)
             digest = hashlib.sha256(canonical_json(receipt.to_json()).encode()).hexdigest()
             if digest != certificate.commit_receipt_ref.digest:
                 _fail("commit receipt digest mismatch")
-            if row["check_schema"] != "taskgraph-h1-applied/v1" or row["snapshot_hash"] != certificate.preview.candidate_hash:
+            if (
+                row["check_schema"] != "taskgraph-h1-applied/v1"
+                or row["snapshot_hash"] != certificate.preview.candidate_hash
+            ):
                 _fail("APPLIED check is not the original TaskGraph H1 producer result")
             detail = json.loads(row["detail_json"])
-            if (not isinstance(detail, dict) or set(detail) != {"version", "command_id", "commit_receipt_hash",
-                    "preview_hash", "source_reads", "runtime_work_hash", "read_set_hash", "compilation_hash"}
-                    or type(detail["version"]) is not int or detail["version"] != 1
-                    or canonical_json(detail) != row["detail_json"]
-                    or detail["command_id"] != command or detail["commit_receipt_hash"] != digest
-                    or detail["preview_hash"] != certificate.preview.canonical_hash()
-                    or detail["source_reads"] != [item.to_json() for item in certificate.preview.source_reads]
-                    or detail["read_set_hash"] != certificate.preview.read_set_hash):
+            if (
+                not isinstance(detail, dict)
+                or set(detail)
+                != {
+                    "version",
+                    "command_id",
+                    "commit_receipt_hash",
+                    "preview_hash",
+                    "source_reads",
+                    "runtime_work_hash",
+                    "read_set_hash",
+                    "compilation_hash",
+                }
+                or type(detail["version"]) is not int
+                or detail["version"] != 1
+                or canonical_json(detail) != row["detail_json"]
+                or detail["command_id"] != command
+                or detail["commit_receipt_hash"] != digest
+                or detail["preview_hash"] != certificate.preview.canonical_hash()
+                or detail["source_reads"]
+                != [item.to_json() for item in certificate.preview.source_reads]
+                or detail["read_set_hash"] != certificate.preview.read_set_hash
+            ):
                 _fail("APPLIED check does not bind original H1 reads and exact commit result")
             for name in ("runtime_work_hash", "compilation_hash"):
                 value = detail[name]
-                if not isinstance(value, str) or len(value) != 64 or any(c not in "0123456789abcdef" for c in value):
+                if (
+                    not isinstance(value, str)
+                    or len(value) != 64
+                    or any(c not in "0123456789abcdef" for c in value)
+                ):
                     _fail("APPLIED check has an invalid H1 source digest")
         else:
             _fail("certificate kind is unsupported")
 
-    def insert_revision_record(self, *, document: NetworkDocumentV1, source_kind: str,
-                               sdk_snapshot_hash: str, certificate: RevisionCertificate,
-                               admission_check_id: str | None, event_id: str, command_id: str,
-                               created_at: float) -> RevisionRecord:
+    def insert_revision_record(
+        self,
+        *,
+        document: NetworkDocumentV1,
+        source_kind: str,
+        sdk_snapshot_hash: str,
+        certificate: RevisionCertificate,
+        admission_check_id: str | None,
+        event_id: str,
+        command_id: str,
+        created_at: float,
+    ) -> RevisionRecord:
         decoded = decode(document.to_json())
         mission, revision = document.mission_id, document.revision
         manifest = _document_hash(document)
@@ -364,53 +457,120 @@ class TaskGraphStore:
         if source_kind not in {"SEED_COMMIT", "COMMIT"}:
             _fail("source_kind is invalid")
         with self._savepoint() as connection:
-            plan = connection.execute("SELECT snapshot_hash FROM plan_revisions WHERE mission_id=? AND revision=?", (mission, revision)).fetchone()
+            plan = connection.execute(
+                "SELECT snapshot_hash FROM plan_revisions WHERE mission_id=? AND revision=?",
+                (mission, revision),
+            ).fetchone()
             if plan is None or plan[0] != sdk_snapshot_hash:
                 _fail("exact plan revision/sdk snapshot hash mismatch")
-            requirement = connection.execute("SELECT revision_id,content_hash FROM requirements_revisions WHERE mission_id=? AND revision=?", (mission, document.requirements_ref.revision)).fetchone()
-            if requirement is None or tuple(requirement) != (document.requirements_ref.id, document.requirements_ref.content_hash):
+            requirement = connection.execute(
+                "SELECT revision_id,content_hash FROM requirements_revisions WHERE mission_id=? AND revision=?",
+                (mission, document.requirements_ref.revision),
+            ).fetchone()
+            if requirement is None or tuple(requirement) != (
+                document.requirements_ref.id,
+                document.requirements_ref.content_hash,
+            ):
                 _fail("exact requirements revision mismatch")
-            previous = connection.execute("SELECT revision,manifest_hash FROM taskgraph_revision_records WHERE mission_id=? ORDER BY revision DESC LIMIT 1", (mission,)).fetchone()
+            previous = connection.execute(
+                "SELECT revision,manifest_hash FROM taskgraph_revision_records WHERE mission_id=? ORDER BY revision DESC LIMIT 1",
+                (mission,),
+            ).fetchone()
             parent_revision = parent_hash = None
             if source_kind == "COMMIT":
                 if previous is None or revision != previous[0] + 1:
                     _fail("COMMIT requires the immediately preceding revision record")
                 parent_revision, parent_hash = int(previous[0]), str(previous[1])
                 self.read_revision(mission, parent_revision)
-                if (not isinstance(certificate, PlanAdmissionCertificate)
-                        or certificate.preview.base_revision != parent_revision):
+                if (
+                    not isinstance(certificate, PlanAdmissionCertificate)
+                    or certificate.preview.base_revision != parent_revision
+                ):
                     _fail("COMMIT preview does not bind the parent revision")
             elif previous is not None:
                 _fail("seed cannot be inserted after revision history exists")
             if source_kind == "SEED_COMMIT" and (
-                    revision != 1 or not isinstance(certificate, PlanAdmissionCertificate)
-                    or certificate.preview.base_revision != 0):
+                revision != 1
+                or not isinstance(certificate, PlanAdmissionCertificate)
+                or certificate.preview.base_revision != 0
+            ):
                 _fail("SEED_COMMIT must start at revision one from base zero")
-            self._verify_certificate(connection, mission, command_id, admission_check_id, certificate, document)
-            event = connection.execute("SELECT mission_id,payload_json,type,seq FROM events WHERE event_id=?", (event_id,)).fetchone()
+            self._verify_certificate(
+                connection, mission, command_id, admission_check_id, certificate, document
+            )
+            event = connection.execute(
+                "SELECT mission_id,payload_json,type,seq FROM events WHERE event_id=?", (event_id,)
+            ).fetchone()
             if event is None or event[0] != mission or event[2] != "TaskGraphRevisionRecorded":
                 _fail("revision event is unavailable or belongs to another mission")
             payload = json.loads(event[1])
-            parent_document = None if parent_revision is None else self.read_revision(mission, parent_revision).record.document
-            required_event = revision_event_payload(document, source_kind=source_kind,
-                sdk_snapshot_hash=sdk_snapshot_hash, command_id=command_id,
-                decision_id=certificate.preview.decision_id if isinstance(certificate, PlanAdmissionCertificate) else None,
-                parent=parent_document)
+            parent_document = (
+                None
+                if parent_revision is None
+                else self.read_revision(mission, parent_revision).record.document
+            )
+            required_event = revision_event_payload(
+                document,
+                source_kind=source_kind,
+                sdk_snapshot_hash=sdk_snapshot_hash,
+                command_id=command_id,
+                decision_id=certificate.preview.decision_id
+                if isinstance(certificate, PlanAdmissionCertificate)
+                else None,
+                parent=parent_document,
+            )
             if canonical_json(payload) != canonical_json(required_event):
                 _fail("revision event does not bind the exact document and command")
-            connection.execute("INSERT INTO taskgraph_revision_records(mission_id,revision,parent_revision,parent_manifest_hash,source_kind,requirements_revision,manifest_hash,sdk_snapshot_hash,network_json,certificate_json,admission_check_id,event_id,command_id,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                (mission, revision, parent_revision, parent_hash, source_kind, document.requirements_ref.revision, manifest, sdk_snapshot_hash, canonical_json(document.to_json()), canonical_json(certificate.to_json()), admission_check_id, event_id, command_id, created_at))
-            connection.executemany("INSERT INTO taskgraph_member_pins VALUES (?,?,?,?,?,?)", [astuple(row) for row in pins.member_pins])
-            connection.executemany("INSERT INTO taskgraph_method_pins VALUES (?,?,?,?,?,?)", [astuple(row) for row in pins.method_pins])
-            connection.executemany("INSERT INTO taskgraph_demand_refs VALUES (?,?,?,?,?,?,?,?,?,?)", [astuple(row) for row in pins.demand_refs])
+            connection.execute(
+                "INSERT INTO taskgraph_revision_records(mission_id,revision,parent_revision,parent_manifest_hash,source_kind,requirements_revision,manifest_hash,sdk_snapshot_hash,network_json,certificate_json,admission_check_id,event_id,command_id,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    mission,
+                    revision,
+                    parent_revision,
+                    parent_hash,
+                    source_kind,
+                    document.requirements_ref.revision,
+                    manifest,
+                    sdk_snapshot_hash,
+                    canonical_json(document.to_json()),
+                    canonical_json(certificate.to_json()),
+                    admission_check_id,
+                    event_id,
+                    command_id,
+                    created_at,
+                ),
+            )
+            connection.executemany(
+                "INSERT INTO taskgraph_member_pins VALUES (?,?,?,?,?,?)",
+                [astuple(row) for row in pins.member_pins],
+            )
+            connection.executemany(
+                "INSERT INTO taskgraph_method_pins VALUES (?,?,?,?,?,?)",
+                [astuple(row) for row in pins.method_pins],
+            )
+            connection.executemany(
+                "INSERT INTO taskgraph_demand_refs VALUES (?,?,?,?,?,?,?,?,?,?)",
+                [astuple(row) for row in pins.demand_refs],
+            )
             stored_pins = self._pins(connection, mission, revision)
-            verify_revision_pins(document, stored_pins.member_pins, stored_pins.method_pins,
-                                 stored_pins.demand_refs)
+            verify_revision_pins(
+                document, stored_pins.member_pins, stored_pins.method_pins, stored_pins.demand_refs
+            )
             validate_revision_sources(self._store, document)
-        return RevisionRecord(document=document, manifest_hash=manifest, sdk_snapshot_hash=sdk_snapshot_hash,
-            source_kind=source_kind, parent_revision=parent_revision, parent_manifest_hash=parent_hash,
-            certificate=certificate, admission_check_id=admission_check_id, event_id=event_id,
-            command_id=command_id, created_at=created_at, pins=pins)
+        return RevisionRecord(
+            document=document,
+            manifest_hash=manifest,
+            sdk_snapshot_hash=sdk_snapshot_hash,
+            source_kind=source_kind,
+            parent_revision=parent_revision,
+            parent_manifest_hash=parent_hash,
+            certificate=certificate,
+            admission_check_id=admission_check_id,
+            event_id=event_id,
+            command_id=command_id,
+            created_at=created_at,
+            pins=pins,
+        )
 
     def read_revision(self, mission_id: str, revision: int) -> HistoricalRevision:
         """Validate every ancestor under one snapshot; never trust a parent's hash column alone.
@@ -439,20 +599,27 @@ class TaskGraphStore:
         connection = self._store.connection
         digest = hashlib.sha256()
         for row in connection.execute(
-                "SELECT * FROM taskgraph_revision_records WHERE mission_id=? AND revision<=? "
-                "ORDER BY revision", (mission_id, revision)):
+            "SELECT * FROM taskgraph_revision_records WHERE mission_id=? AND revision<=? "
+            "ORDER BY revision",
+            (mission_id, revision),
+        ):
             digest.update(canonical_json([str(value) for value in tuple(row)]).encode())
         for row in connection.execute(
-                "SELECT revision, snapshot_hash FROM plan_revisions WHERE mission_id=? AND revision<=? "
-                "ORDER BY revision", (mission_id, revision)):
+            "SELECT revision, snapshot_hash FROM plan_revisions WHERE mission_id=? AND revision<=? "
+            "ORDER BY revision",
+            (mission_id, revision),
+        ):
             digest.update(canonical_json(list(tuple(row))).encode())
         for table in ("taskgraph_policy_bindings",):
-            for row in connection.execute(f"SELECT * FROM {table} WHERE mission_id=?", (mission_id,)):
+            for row in connection.execute(
+                f"SELECT * FROM {table} WHERE mission_id=?", (mission_id,)
+            ):
                 digest.update(canonical_json([str(value) for value in tuple(row)]).encode())
         for table in ("taskgraph_member_pins", "taskgraph_method_pins", "taskgraph_demand_refs"):
             for row in connection.execute(
-                    f"SELECT * FROM {table} WHERE mission_id=? AND revision<=? ORDER BY rowid",
-                    (mission_id, revision)):
+                f"SELECT * FROM {table} WHERE mission_id=? AND revision<=? ORDER BY rowid",
+                (mission_id, revision),
+            ):
                 digest.update(canonical_json([str(value) for value in tuple(row)]).encode())
         return digest.hexdigest()
 
@@ -474,7 +641,10 @@ class TaskGraphStore:
 
     def _read_one_revision(self, mission_id: str, revision: int) -> HistoricalRevision:
         with self._store.read_view() as connection:
-            row = connection.execute("SELECT * FROM taskgraph_revision_records WHERE mission_id=? AND revision=?", (mission_id, revision)).fetchone()
+            row = connection.execute(
+                "SELECT * FROM taskgraph_revision_records WHERE mission_id=? AND revision=?",
+                (mission_id, revision),
+            ).fetchone()
             if row is None:
                 _fail("HISTORICAL_STRUCTURE_UNAVAILABLE")
             raw = str(row["network_json"])
@@ -482,9 +652,16 @@ class TaskGraphStore:
             if canonical_json(parsed) != raw:
                 _fail("stored NetworkDocument is not canonical")
             document = decode(parsed).document
-            if document.mission_id != mission_id or document.revision != revision or _document_hash(document) != row["manifest_hash"]:
+            if (
+                document.mission_id != mission_id
+                or document.revision != revision
+                or _document_hash(document) != row["manifest_hash"]
+            ):
                 _fail("revision record document identity mismatch")
-            plan = connection.execute("SELECT snapshot_hash FROM plan_revisions WHERE mission_id=? AND revision=?", (mission_id, revision)).fetchone()
+            plan = connection.execute(
+                "SELECT snapshot_hash FROM plan_revisions WHERE mission_id=? AND revision=?",
+                (mission_id, revision),
+            ).fetchone()
             if plan is None or plan[0] != row["sdk_snapshot_hash"]:
                 _fail("revision record sdk snapshot mismatch")
             if row["requirements_revision"] != document.requirements_ref.revision:
@@ -502,42 +679,91 @@ class TaskGraphStore:
             else:
                 if row["source_kind"] != "COMMIT":
                     _fail("a non-root revision must be a COMMIT")
-                parent = connection.execute("SELECT manifest_hash FROM taskgraph_revision_records WHERE mission_id=? AND revision=?", (mission_id, row["parent_revision"])).fetchone()
-                if parent is None or parent[0] != row["parent_manifest_hash"] or revision != row["parent_revision"] + 1:
+                parent = connection.execute(
+                    "SELECT manifest_hash FROM taskgraph_revision_records WHERE mission_id=? AND revision=?",
+                    (mission_id, row["parent_revision"]),
+                ).fetchone()
+                if (
+                    parent is None
+                    or parent[0] != row["parent_manifest_hash"]
+                    or revision != row["parent_revision"] + 1
+                ):
                     _fail("broken revision parent chain")
             certificate = certificate_from_json(json.loads(row["certificate_json"]))
             if row["source_kind"] == "SEED_COMMIT" and (
-                    revision != 1 or not isinstance(certificate, PlanAdmissionCertificate)
-                    or certificate.preview.base_revision != 0):
+                revision != 1
+                or not isinstance(certificate, PlanAdmissionCertificate)
+                or certificate.preview.base_revision != 0
+            ):
                 _fail("invalid seed revision origin")
-            if (row["source_kind"] == "COMMIT"
-                    and isinstance(certificate, PlanAdmissionCertificate)
-                    and certificate.preview.base_revision != row["parent_revision"]):
+            if (
+                row["source_kind"] == "COMMIT"
+                and isinstance(certificate, PlanAdmissionCertificate)
+                and certificate.preview.base_revision != row["parent_revision"]
+            ):
                 _fail("COMMIT preview does not bind the parent revision")
-            self._verify_certificate(connection, mission_id, row["command_id"], row["admission_check_id"], certificate, document)
-            event = connection.execute("SELECT mission_id,payload_json,type,seq FROM events WHERE event_id=?", (row["event_id"],)).fetchone()
+            self._verify_certificate(
+                connection,
+                mission_id,
+                row["command_id"],
+                row["admission_check_id"],
+                certificate,
+                document,
+            )
+            event = connection.execute(
+                "SELECT mission_id,payload_json,type,seq FROM events WHERE event_id=?",
+                (row["event_id"],),
+            ).fetchone()
             if event is None or event[0] != mission_id or event[2] != "TaskGraphRevisionRecorded":
                 _fail("revision event is unavailable or belongs to another mission")
             parent_document = None
             if row["parent_revision"] is not None:
-                parent_row = connection.execute("SELECT network_json FROM taskgraph_revision_records WHERE mission_id=? AND revision=?",
-                    (mission_id, row["parent_revision"])).fetchone()
+                parent_row = connection.execute(
+                    "SELECT network_json FROM taskgraph_revision_records WHERE mission_id=? AND revision=?",
+                    (mission_id, row["parent_revision"]),
+                ).fetchone()
                 if parent_row is None:
                     _fail("revision event parent is unavailable")
                 parent_document = decode(json.loads(parent_row[0])).document
-            expected_event = revision_event_payload(document, source_kind=row["source_kind"],
-                sdk_snapshot_hash=row["sdk_snapshot_hash"], command_id=row["command_id"],
-                decision_id=certificate.preview.decision_id if isinstance(certificate, PlanAdmissionCertificate) else None,
-                parent=parent_document)
+            expected_event = revision_event_payload(
+                document,
+                source_kind=row["source_kind"],
+                sdk_snapshot_hash=row["sdk_snapshot_hash"],
+                command_id=row["command_id"],
+                decision_id=certificate.preview.decision_id
+                if isinstance(certificate, PlanAdmissionCertificate)
+                else None,
+                parent=parent_document,
+            )
             event_payload = json.loads(event[1])
             if canonical_json(event_payload) != canonical_json(expected_event):
                 _fail("revision event does not bind the exact document and command")
             pins = self._pins(connection, mission_id, revision)
             verify_revision_pins(document, pins.member_pins, pins.method_pins, pins.demand_refs)
             validate_revision_sources(self._store, document)
-            record = RevisionRecord(document=document, manifest_hash=row["manifest_hash"], sdk_snapshot_hash=row["sdk_snapshot_hash"], source_kind=row["source_kind"], parent_revision=row["parent_revision"], parent_manifest_hash=row["parent_manifest_hash"], certificate=certificate, admission_check_id=row["admission_check_id"], event_id=row["event_id"], command_id=row["command_id"], created_at=row["created_at"], pins=pins)
+            record = RevisionRecord(
+                document=document,
+                manifest_hash=row["manifest_hash"],
+                sdk_snapshot_hash=row["sdk_snapshot_hash"],
+                source_kind=row["source_kind"],
+                parent_revision=row["parent_revision"],
+                parent_manifest_hash=row["parent_manifest_hash"],
+                certificate=certificate,
+                admission_check_id=row["admission_check_id"],
+                event_id=row["event_id"],
+                command_id=row["command_id"],
+                created_at=row["created_at"],
+                pins=pins,
+            )
             return HistoricalRevision(record=record)
 
 
-__all__ = ["GraphIntegrityError", "InstalledGraphPolicy", "KernelUnsupportedError", "NotBoundError", "PolicyBinding",
-           "TaskGraphStore", "require_bound"]
+__all__ = [
+    "GraphIntegrityError",
+    "InstalledGraphPolicy",
+    "KernelUnsupportedError",
+    "NotBoundError",
+    "PolicyBinding",
+    "TaskGraphStore",
+    "require_bound",
+]

@@ -65,9 +65,7 @@ class CandidateBuildLaunchStateV1:
     child_run_id: str
     expected_child_start_hash: str
     task_workspace: str
-    draft_receipt_expectation: (
-        CandidateDraftReceiptExpectationV1 | None
-    ) = None
+    draft_receipt_expectation: CandidateDraftReceiptExpectationV1 | None = None
     candidate_ref: str | None = None
     candidate_hash: str | None = None
     last_error: str | None = None
@@ -86,15 +84,12 @@ class CandidateBuildLaunchStateV1:
                 raise ValueError(f"{name}_required")
         for name in ("permit_hash", "expected_child_start_hash"):
             value = str(getattr(self, name) or "")
-            if len(value) != 64 or any(
-                char not in "0123456789abcdef" for char in value
-            ):
+            if len(value) != 64 or any(char not in "0123456789abcdef" for char in value):
                 raise ValueError(f"{name}_invalid")
         if self.lease_epoch < 1:
             raise ValueError("lease_epoch_invalid")
         if (
-            status
-            in {CandidateBuildStatus.HANDOFF_PENDING, CandidateBuildStatus.BUILT}
+            status in {CandidateBuildStatus.HANDOFF_PENDING, CandidateBuildStatus.BUILT}
             and self.draft_receipt_expectation is None
         ):
             raise ValueError("draft_receipt_expectation_required")
@@ -104,10 +99,7 @@ class CandidateBuildLaunchStateV1:
             raise ValueError("built_candidate_identity_required")
         if self.candidate_hash is not None and (
             len(self.candidate_hash) != 64
-            or any(
-                char not in "0123456789abcdef"
-                for char in self.candidate_hash
-            )
+            or any(char not in "0123456789abcdef" for char in self.candidate_hash)
         ):
             raise ValueError("candidate_hash_invalid")
 
@@ -201,9 +193,7 @@ class CompanionCandidateBuildCoordinator:
             claim_owner=claim_owner,
             claim_epoch=claim_epoch,
         )
-        return await self.reconcile(
-            permit, task_workspace=task_workspace
-        )
+        return await self.reconcile(permit, task_workspace=task_workspace)
 
     async def reconcile(
         self,
@@ -211,9 +201,7 @@ class CompanionCandidateBuildCoordinator:
         *,
         task_workspace: str,
     ) -> CandidateBuildLaunchStateV1:
-        state = self._states.prepare_launch_pending(
-            permit, task_workspace=task_workspace
-        )
+        state = self._states.prepare_launch_pending(permit, task_workspace=task_workspace)
         self._validate_state(permit, state, task_workspace)
         for _ in range(8):
             self._validate_state(permit, state, task_workspace)
@@ -226,13 +214,9 @@ class CompanionCandidateBuildCoordinator:
                         permit, task_workspace=task_workspace
                     )
                 try:
-                    self._validate_child(
-                        state, observed, allowed_statuses={"precreated"}
-                    )
+                    self._validate_child(state, observed, allowed_statuses={"precreated"})
                 except CandidateBuildCoordinationError:
-                    self._states.mark_stale(
-                        permit, reason_code="stale_fence"
-                    )
+                    self._states.mark_stale(permit, reason_code="stale_fence")
                     raise
                 state = self._states.ack_child_precreated(
                     permit,
@@ -254,9 +238,7 @@ class CompanionCandidateBuildCoordinator:
                         },
                     )
                 except CandidateBuildCoordinationError:
-                    self._states.mark_stale(
-                        permit, reason_code="stale_fence"
-                    )
+                    self._states.mark_stale(permit, reason_code="stale_fence")
                     raise
                 state = self._states.ack_running(
                     permit,
@@ -268,9 +250,7 @@ class CompanionCandidateBuildCoordinator:
             if state.status is CandidateBuildStatus.RUNNING:
                 observed = await self._launches.read_exact(permit)
                 if observed is None:
-                    raise CandidateBuildCoordinationError(
-                        "reserved_builder_child_missing"
-                    )
+                    raise CandidateBuildCoordinationError("reserved_builder_child_missing")
                 try:
                     self._validate_child(
                         state,
@@ -282,21 +262,15 @@ class CompanionCandidateBuildCoordinator:
                         },
                     )
                 except CandidateBuildCoordinationError:
-                    self._states.mark_stale(
-                        permit, reason_code="stale_fence"
-                    )
+                    self._states.mark_stale(permit, reason_code="stale_fence")
                     raise
                 child_status = str(observed["status"])
                 if child_status == "running":
                     return state
                 if child_status == "failed":
-                    return self._states.mark_failed(
-                        permit, reason_code="builder_child_failed"
-                    )
+                    return self._states.mark_failed(permit, reason_code="builder_child_failed")
                 expectation = self._expectation(state, observed)
-                state = self._states.ack_handoff_pending(
-                    permit, expectation=expectation
-                )
+                state = self._states.ack_handoff_pending(permit, expectation=expectation)
                 continue
             if state.status is CandidateBuildStatus.HANDOFF_PENDING:
                 expectation = state.draft_receipt_expectation
@@ -306,9 +280,7 @@ class CompanionCandidateBuildCoordinator:
                     )
                 receipt = self._receipts.read_exact(expectation)
                 expectation.verify(receipt)
-                handoff = self._output.handoff_candidate(
-                    permit=permit, receipt=receipt
-                )
+                handoff = self._output.handoff_candidate(permit=permit, receipt=receipt)
                 self._validate_handoff(permit, handoff)
                 state = self._states.ack_built(
                     permit,
@@ -316,12 +288,8 @@ class CompanionCandidateBuildCoordinator:
                     handoff=handoff,
                 )
                 continue
-            raise CandidateBuildCoordinationError(
-                "candidate_build_state_unsupported"
-            )
-        raise CandidateBuildCoordinationError(
-            "candidate_build_reconcile_did_not_converge"
-        )
+            raise CandidateBuildCoordinationError("candidate_build_state_unsupported")
+        raise CandidateBuildCoordinationError("candidate_build_reconcile_did_not_converge")
 
     @staticmethod
     def _validate_state(
@@ -336,9 +304,7 @@ class CompanionCandidateBuildCoordinator:
             or state.lease_epoch != permit.lease_epoch
             or state.task_workspace != task_workspace
         ):
-            raise CandidateBuildCoordinationError(
-                "candidate_build_permit_state_mismatch"
-            )
+            raise CandidateBuildCoordinationError("candidate_build_permit_state_mismatch")
 
     @staticmethod
     def _validate_child(
@@ -348,17 +314,12 @@ class CompanionCandidateBuildCoordinator:
         allowed_statuses: set[str],
     ) -> None:
         if (
-            str(observed.get("builder_launch_id") or "")
-            != state.builder_launch_id
-            or str(observed.get("child_run_id") or "")
-            != state.child_run_id
-            or str(observed.get("child_start_hash") or "")
-            != state.expected_child_start_hash
+            str(observed.get("builder_launch_id") or "") != state.builder_launch_id
+            or str(observed.get("child_run_id") or "") != state.child_run_id
+            or str(observed.get("child_start_hash") or "") != state.expected_child_start_hash
             or str(observed.get("status") or "") not in allowed_statuses
         ):
-            raise CandidateBuildCoordinationError(
-                "reserved_builder_child_identity_mismatch"
-            )
+            raise CandidateBuildCoordinationError("reserved_builder_child_identity_mismatch")
 
     @staticmethod
     def _expectation(
@@ -367,9 +328,7 @@ class CompanionCandidateBuildCoordinator:
     ) -> CandidateDraftReceiptExpectationV1:
         raw = observed.get("draft_receipt")
         if not isinstance(raw, Mapping):
-            raise CandidateBuildCoordinationError(
-                "candidate_draft_receipt_expectation_missing"
-            )
+            raise CandidateBuildCoordinationError("candidate_draft_receipt_expectation_missing")
         values = {
             name: str(raw.get(name) or "")
             for name in CandidateDraftReceiptExpectationV1.__dataclass_fields__
@@ -378,12 +337,9 @@ class CompanionCandidateBuildCoordinator:
         if (
             expectation.builder_launch_id != state.builder_launch_id
             or expectation.child_run_id != state.child_run_id
-            or expectation.child_start_hash
-            != state.expected_child_start_hash
+            or expectation.child_start_hash != state.expected_child_start_hash
         ):
-            raise CandidateBuildCoordinationError(
-                "candidate_draft_receipt_child_mismatch"
-            )
+            raise CandidateBuildCoordinationError("candidate_draft_receipt_child_mismatch")
         return expectation
 
     @staticmethod
@@ -397,15 +353,10 @@ class CompanionCandidateBuildCoordinator:
         if (
             not candidate_ref
             or len(candidate_hash) != 64
-            or any(
-                char not in "0123456789abcdef"
-                for char in candidate_hash
-            )
+            or any(char not in "0123456789abcdef" for char in candidate_hash)
             or build_id != permit.build_id
         ):
-            raise CandidateBuildCoordinationError(
-                "candidate_handoff_identity_mismatch"
-            )
+            raise CandidateBuildCoordinationError("candidate_handoff_identity_mismatch")
 
 
 __all__ = [

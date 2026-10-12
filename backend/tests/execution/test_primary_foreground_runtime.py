@@ -1,4 +1,5 @@
 """Real SDK ReAct/SQLite + Host FIFO/Context/Tool authority; deterministic provider only."""
+
 import asyncio
 import json
 import sqlite3
@@ -41,7 +42,13 @@ from simple_harness.tools.authorization import AuthorizationDecision, Authorizat
 
 
 def history_disclosure():
-    return current_disclosure(run_id="history-read-request", subject=local_owner_auth().subject, request_id="history-read-request")
+    return current_disclosure(
+        run_id="history-read-request",
+        subject=local_owner_auth().subject,
+        request_id="history-read-request",
+    )
+
+
 from deskpet.memory.human_memory_service import HumanMemoryHostServiceFactory, QueueTurnRequest
 from deskpet.memory.schema import dispatch_startup_epoch
 from deskpet.sdk_adapters.composition import ProductSdkRuntimeStack, SdkRuntimeBuildInputs
@@ -62,32 +69,82 @@ from deskpet.task_scope.protocol import canonical_hash
 
 class Provider:
     target = ProviderTarget("fixture", "model", "model", "local", "fixture")
+
     def __init__(self):
         self.requests = []
+
     async def invoke(self, request, *, cancel):
         self.requests.append(request)
-        return ProviderResponse(request.request_id, Message(MessageRole.ASSISTANT, (
-            ContentBlock("output_text", {"text": "Actual response " + str(len(self.requests)), "provider_private": "PRIVATE_CANARY"}),
-            ContentBlock("reasoning", {"text": "HIDDEN_CANARY"}),
-        )), model="model", usage=ProviderUsage(10, 10, 20), opaque_continuation_ref="fixture-opaque")
+        return ProviderResponse(
+            request.request_id,
+            Message(
+                MessageRole.ASSISTANT,
+                (
+                    ContentBlock(
+                        "output_text",
+                        {
+                            "text": "Actual response " + str(len(self.requests)),
+                            "provider_private": "PRIVATE_CANARY",
+                        },
+                    ),
+                    ContentBlock("reasoning", {"text": "HIDDEN_CANARY"}),
+                ),
+            ),
+            model="model",
+            usage=ProviderUsage(10, 10, 20),
+            opaque_continuation_ref="fixture-opaque",
+        )
 
 
 class ProviderPort:
     def __init__(self, binding, context_window=32768):
         self.binding = binding
         self.context_window = context_window
+
     async def freeze(self, *, claimed, sdk_run_id, **_):
-        return FrozenProviderAuthority(claimed.host_run_id, sdk_run_id, claimed.owner_id, claimed.generation,
-                                       "provider-fixture", "a" * 64, "fixture", "fixture-1", 1, 1, "model", {}, self.context_window)
+        return FrozenProviderAuthority(
+            claimed.host_run_id,
+            sdk_run_id,
+            claimed.owner_id,
+            claimed.generation,
+            "provider-fixture",
+            "a" * 64,
+            "fixture",
+            "fixture-1",
+            1,
+            1,
+            "model",
+            {},
+            self.context_window,
+        )
+
     async def bind(self, *, frozen, context, tools, execution_session_id, request_id, sdk_run_id):
-        record = SdkRunBindingV1.build(run_id=sdk_run_id, session_id=execution_session_id, request_id=request_id,
-                                     snapshot_id=context.snapshot_id, provider_id="fixture", provider_incarnation_id="fixture-1",
-                                     provider_config_revision=1, binding_epoch=1, model_id="model", model_params={},
-                                     context_window=self.context_window, catalog_generation=tools.catalog["generation"],
-                                     catalog_fingerprint=tools.catalog["content_fingerprint"],
-                                     budget_fingerprint=self.binding.budget_fingerprint)
-        return BoundProviderAuthority(frozen.host_run_id, sdk_run_id, frozen.owner_id, frozen.generation,
-                                      "provider-binding", record.binding_fingerprint, record)
+        record = SdkRunBindingV1.build(
+            run_id=sdk_run_id,
+            session_id=execution_session_id,
+            request_id=request_id,
+            snapshot_id=context.snapshot_id,
+            provider_id="fixture",
+            provider_incarnation_id="fixture-1",
+            provider_config_revision=1,
+            binding_epoch=1,
+            model_id="model",
+            model_params={},
+            context_window=self.context_window,
+            catalog_generation=tools.catalog["generation"],
+            catalog_fingerprint=tools.catalog["content_fingerprint"],
+            budget_fingerprint=self.binding.budget_fingerprint,
+        )
+        return BoundProviderAuthority(
+            frozen.host_run_id,
+            sdk_run_id,
+            frozen.owner_id,
+            frozen.generation,
+            "provider-binding",
+            record.binding_fingerprint,
+            record,
+        )
+
     def mark_terminal(self, *_):
         pass
 
@@ -95,12 +152,16 @@ class ProviderPort:
 class Noop:
     async def reconcile(self):
         pass
+
     async def authorize(self, effect):
         return AuthorizationResult(AuthorizationDecision.ALLOW, receipt_ref="test-allow")
+
     async def bind_effect_handoff(self, prepared, authorization_receipt_ref, sdk_receipt):
         from simple_harness.tools import AuthorizationReceipt
-        return AuthorizationReceipt("fixture-handoff", sdk_receipt.receipt_hash, sdk_receipt.receipt_hash)
 
+        return AuthorizationReceipt(
+            "fixture-handoff", sdk_receipt.receipt_hash, sdk_receipt.receipt_hash
+        )
 
 
 # 2026-09-10 删记忆 SDK：``visibility_memory`` / ``visibility_checker`` /
@@ -108,7 +169,31 @@ class Noop:
 # ``procedure_runtime`` 六个入参随认知记忆一并移除（对应的权威都不存在了）。
 # ``memory`` 保留：它是 Harness SDK 必填的 AgentMemoryPort，生产上是
 # ``NoMemoryAgentPort``，测试里按需注入自己的桩。
-async def build(tmp_path, state_path, provider, *, fault=None, memory=None, state_changed=None, legacy_observer=False, dynamic=False, binding_authority=None, configured_root=None, authorization_factory=None, page_in_store=None, terminal_audit_wake=None, extra_registrations=(), candidate_identity=None, decision_sink_factory=None, provider_context_window=32768, context_route_ledger_factory=None, write_file_schema=None, context_clock=None, provider_reconciliation=None, audit_sink=None):
+async def build(
+    tmp_path,
+    state_path,
+    provider,
+    *,
+    fault=None,
+    memory=None,
+    state_changed=None,
+    legacy_observer=False,
+    dynamic=False,
+    binding_authority=None,
+    configured_root=None,
+    authorization_factory=None,
+    page_in_store=None,
+    terminal_audit_wake=None,
+    extra_registrations=(),
+    candidate_identity=None,
+    decision_sink_factory=None,
+    provider_context_window=32768,
+    context_route_ledger_factory=None,
+    write_file_schema=None,
+    context_clock=None,
+    provider_reconciliation=None,
+    audit_sink=None,
+):
     from deskpet.execution.primary_context import ForegroundConversationEntrypoint
     from deskpet.memory.identity import ValidatedLocalMemoryIdentityAuthority
     from deskpet.memory.session_db import SessionDB
@@ -116,17 +201,36 @@ async def build(tmp_path, state_path, provider, *, fault=None, memory=None, stat
     from deskpet.sdk_adapters.context_source import ProductContextSourceRepository
     from simple_harness.execution.context_staging import ContextStagingRepository
 
-    dynamic_factory = HumanMemoryHostServiceFactory(state_path, await dispatch_startup_epoch(state_path, approved_fresh_lane=True)) if dynamic else None
-    sources = ProductContextSourceRepository(state_path)
-    conversation = None if memory is None else ForegroundConversationEntrypoint(
-        session_store=SessionDB(state_path),
-        identity_authority=ValidatedLocalMemoryIdentityAuthority(state_path, user_data_dir=tmp_path),
-        context_sources=sources,
+    dynamic_factory = (
+        HumanMemoryHostServiceFactory(
+            state_path, await dispatch_startup_epoch(state_path, approved_fresh_lane=True)
+        )
+        if dynamic
+        else None
     )
-    binding = ProviderBinding(provider, FrozenPriceEstimator("fixture-prices", provider.target.pricing_key, 1, 1), BudgetPolicy(), ProviderContinuationCapability(ProviderContinuationMode.OPAQUE_REFERENCE))
+    sources = ProductContextSourceRepository(state_path)
+    conversation = (
+        None
+        if memory is None
+        else ForegroundConversationEntrypoint(
+            session_store=SessionDB(state_path),
+            identity_authority=ValidatedLocalMemoryIdentityAuthority(
+                state_path, user_data_dir=tmp_path
+            ),
+            context_sources=sources,
+        )
+    )
+    binding = ProviderBinding(
+        provider,
+        FrozenPriceEstimator("fixture-prices", provider.target.pricing_key, 1, 1),
+        BudgetPolicy(),
+        ProviderContinuationCapability(ProviderContinuationMode.OPAQUE_REFERENCE),
+    )
     registry = SdkRunToolAuthorityRegistry()
-    specs = [dict(name=name, description=name, input_schema={"type": "object", "properties": {}})
-             for name in ("tool_search", "tool_describe", "tool_activate")]
+    specs = [
+        dict(name=name, description=name, input_schema={"type": "object", "properties": {}})
+        for name in ("tool_search", "tool_describe", "tool_activate")
+    ]
     if dynamic:
         from deskpet.sdk_adapters.context_route import (
             CONTEXT_ROUTE_SCHEMA,
@@ -134,41 +238,95 @@ async def build(tmp_path, state_path, provider, *, fault=None, memory=None, stat
         )
         from deskpet.sdk_adapters.task_scope_mutation import TASK_SCOPE_UPDATE_SCHEMA
         from tests.sdk_adapters.s5b_effect_gate_harness import WRITE_FILE_SCHEMA
-        specs.extend(dict(name=name, description=name, input_schema=schema) for name, schema in (
-            ("context_route", CONTEXT_ROUTE_SCHEMA), ("task_scope_search", TASK_SCOPE_SEARCH_SCHEMA), ("task_scope_update", TASK_SCOPE_UPDATE_SCHEMA),
-            ("write_file", WRITE_FILE_SCHEMA if write_file_schema is None else write_file_schema)))
+
+        specs.extend(
+            dict(name=name, description=name, input_schema=schema)
+            for name, schema in (
+                ("context_route", CONTEXT_ROUTE_SCHEMA),
+                ("task_scope_search", TASK_SCOPE_SEARCH_SCHEMA),
+                ("task_scope_update", TASK_SCOPE_UPDATE_SCHEMA),
+                (
+                    "write_file",
+                    WRITE_FILE_SCHEMA if write_file_schema is None else write_file_schema,
+                ),
+            )
+        )
         for spec in specs:
             if spec["name"].startswith("tool_"):
-                spec["input_schema"] = {"type": "object", "properties": {key: {"type": "string"} for key in ("query", "capability_id", "schema_hash", "describe_nonce")}}
+                spec["input_schema"] = {
+                    "type": "object",
+                    "properties": {
+                        key: {"type": "string"}
+                        for key in ("query", "capability_id", "schema_hash", "describe_nonce")
+                    },
+                }
     if page_in_store is not None:
         from deskpet.tools.context_page_in_tools import CONTEXT_PAGE_IN_SCHEMA
-        specs.append(dict(name="context_page_in", description="Load exact context", input_schema=CONTEXT_PAGE_IN_SCHEMA["parameters"]))
+
+        specs.append(
+            dict(
+                name="context_page_in",
+                description="Load exact context",
+                input_schema=CONTEXT_PAGE_IN_SCHEMA["parameters"],
+            )
+        )
     from deskpet.sdk_adapters.tools import _sdk_tool
     from simple_harness import thaw_json
-    specs.extend(dict(name=r.name, description=r.description, input_schema=thaw_json(_sdk_tool(r).spec.input_schema))
-                 for r in extra_registrations)
-    inventory = tuple(ProductToolInventoryEntry(name=s["name"], dispatch_kind="control", permission_category="read_file",
-                        source="fixture", version="v1", execution_identity="fixture",
-                        projectless_admission="requires_project" if s["name"] == "write_file" else "safe") for s in specs)
-    catalog = {"specs": specs, "schema_fingerprints": {s["name"]: canonical_hash(s["input_schema"]) for s in specs}}
+
+    specs.extend(
+        dict(
+            name=r.name,
+            description=r.description,
+            input_schema=thaw_json(_sdk_tool(r).spec.input_schema),
+        )
+        for r in extra_registrations
+    )
+    inventory = tuple(
+        ProductToolInventoryEntry(
+            name=s["name"],
+            dispatch_kind="control",
+            permission_category="read_file",
+            source="fixture",
+            version="v1",
+            execution_identity="fixture",
+            projectless_admission="requires_project" if s["name"] == "write_file" else "safe",
+        )
+        for s in specs
+    )
+    catalog = {
+        "specs": specs,
+        "schema_fingerprints": {s["name"]: canonical_hash(s["input_schema"]) for s in specs},
+    }
     ledger = ContextRouteLedgerStore(state_path)
-    decision_sink = decision_sink_factory(ledger) if decision_sink_factory else ProductRuntimeDecisionSink(ledger=ledger)
+    decision_sink = (
+        decision_sink_factory(ledger)
+        if decision_sink_factory
+        else ProductRuntimeDecisionSink(ledger=ledger)
+    )
     typed_use_authority = None
+
     class AuthorityCheckingAuthorization(Noop):
         async def authorize(self, prepared):
             if prepared.call.name == "write_file":
                 authority = registry.resolve(prepared.run_id)
                 with sqlite3.connect(state_path) as db:
-                    initial_scope = db.execute("SELECT r.task_scope_id FROM foreground_runs r JOIN foreground_run_sdk_bindings b ON b.host_run_id=r.host_run_id WHERE b.sdk_run_id=?", (prepared.run_id.value,)).fetchone()[0]
+                    initial_scope = db.execute(
+                        "SELECT r.task_scope_id FROM foreground_runs r JOIN foreground_run_sdk_bindings b ON b.host_run_id=r.host_run_id WHERE b.sdk_run_id=?",
+                        (prepared.run_id.value,),
+                    ).fetchone()[0]
                 assert authority.task_work_context.task_scope_id == initial_scope
                 if initial_scope is None:
                     assert authority.task_work_context.workspace_root is None
-                context = authority.execution_context(call_id=prepared.call.call_id.value, effect_id=prepared.effect_id.value)
+                context = authority.execution_context(
+                    call_id=prepared.call.call_id.value, effect_id=prepared.effect_id.value
+                )
                 assert context.write_scope_root is not None
                 assert context.binding_epoch == 1
                 assert context.workspace == context.write_scope_root
             return await super().authorize(prepared)
+
     from deskpet.execution.foreground_runtime import ForegroundEffectAdmissionGate
+
     foreground_gate = ForegroundEffectAdmissionGate()
     noop = AuthorityCheckingAuthorization() if dynamic else Noop()
     authorization = authorization_factory(registry) if authorization_factory else noop
@@ -179,38 +337,82 @@ async def build(tmp_path, state_path, provider, *, fault=None, memory=None, stat
         ProductProviderRetryOnceReconciliation,
         ProductRuntimeReconciliation,
     )
+
     if provider_reconciliation is None:
         provider_reconciliation = ProductProviderRetryOnceReconciliation()
     built_ports = {}
-    runtime_reconciliation = ProductRuntimeReconciliation(lambda: built_ports.get("ports"), provider_reconciliation)
+    runtime_reconciliation = ProductRuntimeReconciliation(
+        lambda: built_ports.get("ports"), provider_reconciliation
+    )
+
     def ports(database, uow):
         tools = ToolRegistry()
+
         async def handler(_args, _ctx):
             return ToolResult.succeeded(_ctx.call_id, {"ok": True})
+
         for spec in specs:
-            tools.register(FunctionTool(ToolSpec(spec["name"], spec["description"], spec["input_schema"]), handler))
+            tools.register(
+                FunctionTool(
+                    ToolSpec(spec["name"], spec["description"], spec["input_schema"]), handler
+                )
+            )
         if dynamic:
-            tools = dynamic_tools(state_path, tools, registry, inventory, dynamic_factory, binding_authority, configured_root, scope_reader, page_in_store, context_route_ledger_factory)
+            tools = dynamic_tools(
+                state_path,
+                tools,
+                registry,
+                inventory,
+                dynamic_factory,
+                binding_authority,
+                configured_root,
+                scope_reader,
+                page_in_store,
+                context_route_ledger_factory,
+            )
         if extra_registrations:
             from deskpet.sdk_adapters.tools import ProductToolsAdapter, _sdk_tool
-            tools=ProductToolsAdapter(tuple(tools.get(spec['name']) for spec in specs
-                if spec['name'] not in {r.name for r in extra_registrations}),
-                execution_identities={item.name:item.execution_identity for item in inventory})
+
+            tools = ProductToolsAdapter(
+                tuple(
+                    tools.get(spec["name"])
+                    for spec in specs
+                    if spec["name"] not in {r.name for r in extra_registrations}
+                ),
+                execution_identities={item.name: item.execution_identity for item in inventory},
+            )
             tools.bind_run_authorities(registry)
             for registration in extra_registrations:
                 tools.register(_sdk_tool(registration))
-        published = uow.put_tool_catalog_snapshot(tuple(ProviderToolSpec(s["name"], s["description"], s["input_schema"]) for s in specs))
-        catalog.update(generation=published.generation, content_fingerprint=published.content_fingerprint)
-        provider_coordinator=ProviderInvocationCoordinator(uow=uow,resolver=SimpleNamespace(resolve=lambda _:binding))
-        result = RuntimePorts(provider=provider_coordinator,
-                            tools=EffectExecutor(uow=uow, registry=tools, authorization=authorization, reconciliation=noop),
-                            authorization=authorization, context=SqliteContextPort(database), delivery=DeliveryDispatcher(uow, {}),
-                            tool_reconciliation=noop, reconciliation=runtime_reconciliation, provider_reconciliation=provider_reconciliation,
-                            react_checkpoint=uow, tool_catalog=DurableToolCatalogResolver(uow),
-                            runtime_decision_sink=decision_sink,
-                            agent_memory=memory,
-                            context_provider=None if memory is None else ProductConversationContextProvider(sources),
-                            context_staging=None if memory is None else ContextStagingRepository(database))
+        published = uow.put_tool_catalog_snapshot(
+            tuple(ProviderToolSpec(s["name"], s["description"], s["input_schema"]) for s in specs)
+        )
+        catalog.update(
+            generation=published.generation, content_fingerprint=published.content_fingerprint
+        )
+        provider_coordinator = ProviderInvocationCoordinator(
+            uow=uow, resolver=SimpleNamespace(resolve=lambda _: binding)
+        )
+        result = RuntimePorts(
+            provider=provider_coordinator,
+            tools=EffectExecutor(
+                uow=uow, registry=tools, authorization=authorization, reconciliation=noop
+            ),
+            authorization=authorization,
+            context=SqliteContextPort(database),
+            delivery=DeliveryDispatcher(uow, {}),
+            tool_reconciliation=noop,
+            reconciliation=runtime_reconciliation,
+            provider_reconciliation=provider_reconciliation,
+            react_checkpoint=uow,
+            tool_catalog=DurableToolCatalogResolver(uow),
+            runtime_decision_sink=decision_sink,
+            agent_memory=memory,
+            context_provider=None
+            if memory is None
+            else ProductConversationContextProvider(sources),
+            context_staging=None if memory is None else ContextStagingRepository(database),
+        )
         if dynamic:
             from deskpet.execution.evidence_ingress import ExecutionEvidenceIngress
             from deskpet.sdk_adapters.effect_gate import EffectGate
@@ -221,23 +423,50 @@ async def build(tmp_path, state_path, provider, *, fault=None, memory=None, stat
             from deskpet.sdk_adapters.tools import ProductEffectExecutor
             from deskpet.task_scope.store import CanonicalTaskScopeStore
             from deskpet.task_scope.workspace_bindings import WorkspaceBindingAuthorityStore
+
             bindings = WorkspaceBindingAuthorityStore(state_path)
-            gate = EffectGate(binding_store=bindings, route_ledger=ledger, scope_store=CanonicalTaskScopeStore(state_path),
-                              authority_resolver=registry.resolve, exposure_resolver=registry.resolve_exposure)
-            result = replace(result, tools=ProductEffectExecutor(uow=uow, registry=tools, authorization=authorization, reconciliation=noop,
-                              effect_gate=gate, evidence_ingress=ExecutionEvidenceIngress(state_path), foreground_admission=foreground_gate),
-                              task_execution_authority=ProductTaskExecutionAuthority(root_resolver=BindingRootResolver(bindings)))
+            gate = EffectGate(
+                binding_store=bindings,
+                route_ledger=ledger,
+                scope_store=CanonicalTaskScopeStore(state_path),
+                authority_resolver=registry.resolve,
+                exposure_resolver=registry.resolve_exposure,
+            )
+            result = replace(
+                result,
+                tools=ProductEffectExecutor(
+                    uow=uow,
+                    registry=tools,
+                    authorization=authorization,
+                    reconciliation=noop,
+                    effect_gate=gate,
+                    evidence_ingress=ExecutionEvidenceIngress(state_path),
+                    foreground_admission=foreground_gate,
+                ),
+                task_execution_authority=ProductTaskExecutionAuthority(
+                    root_resolver=BindingRootResolver(bindings)
+                ),
+            )
         from deskpet.execution.semantic_closure import closure_instruction_for_run
-        result = replace(result, run_context_authority=ProductRunContextAuthority(
-            ports_resolver=lambda: result, exposure_resolver=registry.resolve_exposure, ledger=ledger,
-            typed_use_authority=typed_use_authority,
-            closure_reader=(lambda run: closure_instruction_for_run(state_path, run.value)) if dynamic else None,
-        ))
+
+        result = replace(
+            result,
+            run_context_authority=ProductRunContextAuthority(
+                ports_resolver=lambda: result,
+                exposure_resolver=registry.resolve_exposure,
+                ledger=ledger,
+                typed_use_authority=typed_use_authority,
+                closure_reader=(lambda run: closure_instruction_for_run(state_path, run.value))
+                if dynamic
+                else None,
+            ),
+        )
         built_ports["ports"] = result
         # F06: mirror main.ports_factory — a waiting Run parked behind an UNKNOWN
         # provider invocation is resumed by the SDK startup reconcile step and needs
         # its historical tool authority restored first (lease_state=waiting).
         from deskpet.sdk_adapters.reconciliation import waiting_runs_blocked_on_provider
+
         for run in waiting_runs_blocked_on_provider(uow):
             try:
                 registry.resolve(run.run_id)
@@ -245,49 +474,82 @@ async def build(tmp_path, state_path, provider, *, fault=None, memory=None, stat
             except KeyError:
                 pass
             metadata = uow.read_start_snapshot(run.run_id)["input"]["context_metadata"]
-            registry.restore_waiting_run(run_start_record=metadata["tool_authority"],
+            registry.restore_waiting_run(
+                run_start_record=metadata["tool_authority"],
                 run_binding=SdkRunBindingV1.from_record(metadata["run_binding"]),
-                catalog_resolver=result.tool_catalog)
+                catalog_resolver=result.tool_catalog,
+            )
         return result
+
     from deskpet.task_scope.disclosure import ScopeDisclosureReader
-    scope_reader = ScopeDisclosureReader(state_path, stack_getter=lambda: stack,
-        policy_factory=lambda _: history_policy)
+
+    scope_reader = ScopeDisclosureReader(
+        state_path, stack_getter=lambda: stack, policy_factory=lambda _: history_policy
+    )
     expected = candidate_identity or build_candidate_identity()
-    origin = json.loads(metadata.distribution("simple-harness-sdk").read_text("direct_url.json"))["url"]
+    origin = json.loads(metadata.distribution("simple-harness-sdk").read_text("direct_url.json"))[
+        "url"
+    ]
     # Reuse the exact installed 0.7.2 wheel path; normal production verifier
     # still checks version/hash/origin. No SDK import or verifier is mocked.
     identity = replace(expected, wheel_path=Path(unquote(urlparse(origin).path)).resolve())
-    stack = ProductSdkRuntimeStack(paths=ProductRuntimePathsAdapter(tmp_path / "sdk"),
-                                  candidate_identity=identity,
-                                  dependency_loader=lambda: SdkRuntimeBuildInputs(
-                                      profiles={"agent.general": RuntimeProfile("agent.general", "react")},
-                                      drivers={"react": ReActDriver(effects=EffectBatchExecutor(), tool_exposure_resolver=registry.resolve_exposure)},
-                                      ports_factory=ports, workflow_catalog_digest="fixture"))
+    stack = ProductSdkRuntimeStack(
+        paths=ProductRuntimePathsAdapter(tmp_path / "sdk"),
+        candidate_identity=identity,
+        dependency_loader=lambda: SdkRuntimeBuildInputs(
+            profiles={"agent.general": RuntimeProfile("agent.general", "react")},
+            drivers={
+                "react": ReActDriver(
+                    effects=EffectBatchExecutor(), tool_exposure_resolver=registry.resolve_exposure
+                )
+            },
+            ports_factory=ports,
+            workflow_catalog_digest="fixture",
+        ),
+    )
     await stack.start()
     ingress = SdkRuntimeIngress(stack)
     ingress.open()
     queue = ForegroundQueueStore(state_path, fault_hook=fault)
-    tools = ProductForegroundToolPort(state_path, catalog=catalog,
-                                     inventory=inventory,
-                                     registry=registry)
+    tools = ProductForegroundToolPort(
+        state_path, catalog=catalog, inventory=inventory, registry=registry
+    )
     observer_stack = stack
     if legacy_observer:
+
         class LegacyScopedStack:
             # This is the old observer capability contract. Every exposed read
             # still delegates to the public SDK-backed production adapter.
             read_run_terminal_evidence = stack.read_run_terminal_evidence
             read_reserved_fact = stack.read_reserved_fact
+
         observer_stack = LegacyScopedStack()
     from deskpet.memory.primary_visibility import PrimaryHistoryPolicy
+
     history_policy = PrimaryHistoryPolicy(state_path, local_owner_auth().subject)
     runtime = ForegroundRuntimeExecutionAuthority(
-        store=queue, subject=local_owner_auth().subject, owner_id="primary-worker", ingress=ingress,
-        context=PrimaryForegroundContextPort(state_path, subject=local_owner_auth().subject, route_ledger=ledger, policy=history_policy, stack_getter=lambda: stack,
-            **({"clock": context_clock} if context_clock is not None else {})),
-        provider=ProviderPort(binding, provider_context_window), tools=tools, terminal_observer=SqliteSdkTerminalObserver(str(state_path), ingress, observer_stack),
-        run_binding_reader=stack.read_closure_run_facts, conversation_entrypoint=conversation,
-        state_changed=state_changed, effect_gate=foreground_gate, terminal_audit_wake=terminal_audit_wake,
-        provider_reconciliation=provider_reconciliation, provider_reconcile=runtime_reconciliation.reconcile_for_run,
+        store=queue,
+        subject=local_owner_auth().subject,
+        owner_id="primary-worker",
+        ingress=ingress,
+        context=PrimaryForegroundContextPort(
+            state_path,
+            subject=local_owner_auth().subject,
+            route_ledger=ledger,
+            policy=history_policy,
+            stack_getter=lambda: stack,
+            **({"clock": context_clock} if context_clock is not None else {}),
+        ),
+        provider=ProviderPort(binding, provider_context_window),
+        tools=tools,
+        terminal_observer=SqliteSdkTerminalObserver(str(state_path), ingress, observer_stack),
+        run_binding_reader=stack.read_closure_run_facts,
+        conversation_entrypoint=conversation,
+        state_changed=state_changed,
+        effect_gate=foreground_gate,
+        terminal_audit_wake=terminal_audit_wake,
+        provider_reconciliation=provider_reconciliation,
+        provider_reconcile=runtime_reconciliation.reconcile_for_run,
         audit_sink=audit_sink,
     )
     runtime.history_policy = history_policy
@@ -311,8 +573,16 @@ async def test_primary_real_runtime_terminal_outbox_history_reopen(tmp_path):
         assert runtime.last_error is None
         assert await queue.current_snapshot(local_owner_auth().subject) is None
         assert len(provider.requests) == 1
-        history = await PrimaryHistoryStore(state, policy=runtime.history_policy).read(subject=local_owner_auth().subject, primary_ref=primary, disclosure_context=history_disclosure(), before_sequence=2)
-        assert [m["content"] for m in history[0]["messages"]] == ["First actual user turn", "Actual response 1"]
+        history = await PrimaryHistoryStore(state, policy=runtime.history_policy).read(
+            subject=local_owner_auth().subject,
+            primary_ref=primary,
+            disclosure_context=history_disclosure(),
+            before_sequence=2,
+        )
+        assert [m["content"] for m in history[0]["messages"]] == [
+            "First actual user turn",
+            "Actual response 1",
+        ]
         assert "PRIVATE_CANARY" not in json.dumps(history)
         assert "HIDDEN_CANARY" not in json.dumps(history)
         await assert_exact_sdk_terminal_identity(state, stack, primary)
@@ -332,9 +602,21 @@ async def test_primary_real_runtime_terminal_outbox_history_reopen(tmp_path):
         assert len(provider.requests) == 2
         with sqlite3.connect(state) as db:
             assert db.execute("SELECT COUNT(*) FROM task_scopes").fetchone()[0] == 0
-            assert db.execute("SELECT COUNT(*) FROM foreground_terminal_receipts").fetchone()[0] == 2
-            assert db.execute("SELECT COUNT(*) FROM memory_ingestion_outbox WHERE state='pending'").fetchone()[0] == 2
-            assert db.execute("SELECT COUNT(*) FROM context_route_decisions WHERE origin='no_recall'").fetchone()[0] == 2
+            assert (
+                db.execute("SELECT COUNT(*) FROM foreground_terminal_receipts").fetchone()[0] == 2
+            )
+            assert (
+                db.execute(
+                    "SELECT COUNT(*) FROM memory_ingestion_outbox WHERE state='pending'"
+                ).fetchone()[0]
+                == 2
+            )
+            assert (
+                db.execute(
+                    "SELECT COUNT(*) FROM context_route_decisions WHERE origin='no_recall'"
+                ).fetchone()[0]
+                == 2
+            )
     finally:
         await runtime.close()
         await stack.close()
@@ -359,14 +641,25 @@ async def test_primary_terminal_crash_reopen_does_not_resend_or_publish_partial(
         with pytest.raises(RuntimeError, match="injected-terminal-crash"):
             await asyncio.wait_for(runtime._drive_once(), 15)
         history = await PrimaryHistoryStore(state, policy=runtime.history_policy).read(
-            subject=local_owner_auth().subject, primary_ref=primary, disclosure_context=history_disclosure(), before_sequence=2,
+            subject=local_owner_auth().subject,
+            primary_ref=primary,
+            disclosure_context=history_disclosure(),
+            before_sequence=2,
         )
         committed = int(point == "terminal.after_commit")
         assert len(history) == committed
         with sqlite3.connect(state) as db:
-            assert db.execute("SELECT COUNT(*) FROM foreground_terminal_receipts").fetchone()[0] == committed
-            assert db.execute("SELECT COUNT(*) FROM memory_ingestion_outbox").fetchone()[0] == committed
-            observation = db.execute("SELECT evidence_id,envelope_sha256 FROM human_memory_evidence WHERE source_ref LIKE 'primary-runtime:%'").fetchall()
+            assert (
+                db.execute("SELECT COUNT(*) FROM foreground_terminal_receipts").fetchone()[0]
+                == committed
+            )
+            assert (
+                db.execute("SELECT COUNT(*) FROM memory_ingestion_outbox").fetchone()[0]
+                == committed
+            )
+            observation = db.execute(
+                "SELECT evidence_id,envelope_sha256 FROM human_memory_evidence WHERE source_ref LIKE 'primary-runtime:%'"
+            ).fetchall()
             assert len(observation) == 1
         assert len(provider.requests) == 1
     finally:
@@ -378,13 +671,26 @@ async def test_primary_terminal_crash_reopen_does_not_resend_or_publish_partial(
         assert len(provider.requests) == 1
         assert await queue.current_snapshot(local_owner_auth().subject) is None
         history = await PrimaryHistoryStore(state, policy=runtime.history_policy).read(
-            subject=local_owner_auth().subject, primary_ref=primary, disclosure_context=history_disclosure(), before_sequence=2,
+            subject=local_owner_auth().subject,
+            primary_ref=primary,
+            disclosure_context=history_disclosure(),
+            before_sequence=2,
         )
-        assert [m["content"] for m in history[0]["messages"]] == ["Durable actual turn", "Actual response 1"]
+        assert [m["content"] for m in history[0]["messages"]] == [
+            "Durable actual turn",
+            "Actual response 1",
+        ]
         with sqlite3.connect(state) as db:
-            assert db.execute("SELECT COUNT(*) FROM foreground_terminal_receipts").fetchone()[0] == 1
+            assert (
+                db.execute("SELECT COUNT(*) FROM foreground_terminal_receipts").fetchone()[0] == 1
+            )
             assert db.execute("SELECT COUNT(*) FROM memory_ingestion_outbox").fetchone()[0] == 1
-            assert db.execute("SELECT evidence_id,envelope_sha256 FROM human_memory_evidence WHERE source_ref LIKE 'primary-runtime:%'").fetchall() == observation
+            assert (
+                db.execute(
+                    "SELECT evidence_id,envelope_sha256 FROM human_memory_evidence WHERE source_ref LIKE 'primary-runtime:%'"
+                ).fetchall()
+                == observation
+            )
     finally:
         await runtime.close()
         await stack.close()
@@ -399,6 +705,7 @@ async def test_primary_failed_provider_settles_without_inventing_an_answer(tmp_p
         async def invoke(self, request, *, cancel):
             self.requests.append(request)
             from simple_harness.providers.errors import ProviderAuthenticationError
+
             raise ProviderAuthenticationError()
 
     state = tmp_path / "state.db"
@@ -411,7 +718,12 @@ async def test_primary_failed_provider_settles_without_inventing_an_answer(tmp_p
         await service.enqueue_turn(QueueTurnRequest(None, "failed", "Actual failed turn"))
         assert await asyncio.wait_for(runtime._drive_once(), 15)
         assert await queue.current_snapshot(local_owner_auth().subject) is None
-        history = await PrimaryHistoryStore(state, policy=runtime.history_policy).read(subject=local_owner_auth().subject, primary_ref=primary, disclosure_context=history_disclosure(), before_sequence=2)
+        history = await PrimaryHistoryStore(state, policy=runtime.history_policy).read(
+            subject=local_owner_auth().subject,
+            primary_ref=primary,
+            disclosure_context=history_disclosure(),
+            before_sequence=2,
+        )
         assert history[0]["terminal_state"] == "FAILED"
         assert history[0]["messages"] == [{"role": "user", "content": "Actual failed turn"}]
         assert len(provider.requests) == 1
@@ -430,20 +742,51 @@ async def test_primary_recent_history_is_bounded_and_subject_partitioned(tmp_pat
     runtime, stack, queue = await build(tmp_path, state, provider)
     try:
         for index in range(12):
-            await service.enqueue_turn(QueueTurnRequest(None, f"bounded-{index}", f"Actual bounded turn {index}"))
+            await service.enqueue_turn(
+                QueueTurnRequest(None, f"bounded-{index}", f"Actual bounded turn {index}")
+            )
             assert await asyncio.wait_for(runtime._drive_once(), 15)
         history_store = PrimaryHistoryStore(state, policy=runtime.history_policy)
-        history = await history_store.read(subject=local_owner_auth().subject, primary_ref=primary, disclosure_context=history_disclosure(), before_sequence=13)
+        history = await history_store.read(
+            subject=local_owner_auth().subject,
+            primary_ref=primary,
+            disclosure_context=history_disclosure(),
+            before_sequence=13,
+        )
         assert len(history) == 10
-        assert [g["messages"][0]["content"] for g in history] == [f"Actual bounded turn {i}" for i in range(2, 12)]
+        assert [g["messages"][0]["content"] for g in history] == [
+            f"Actual bounded turn {i}" for i in range(2, 12)
+        ]
         sent = [(m.role.value, m.content) for m in provider.requests[-1].messages]
         assert ("user", "Actual bounded turn 0") not in sent
         assert ("user", "Actual bounded turn 1") in sent
         assert sent.count(("user", "Actual bounded turn 11")) == 1
-        assert await history_store.read(subject="different-owner", primary_ref=primary, disclosure_context=history_disclosure(), before_sequence=13) == ()
-        assert await history_store.read(subject=local_owner_auth().subject, primary_ref="different-primary", disclosure_context=history_disclosure(), before_sequence=13) == ()
+        assert (
+            await history_store.read(
+                subject="different-owner",
+                primary_ref=primary,
+                disclosure_context=history_disclosure(),
+                before_sequence=13,
+            )
+            == ()
+        )
+        assert (
+            await history_store.read(
+                subject=local_owner_auth().subject,
+                primary_ref="different-primary",
+                disclosure_context=history_disclosure(),
+                before_sequence=13,
+            )
+            == ()
+        )
         with pytest.raises(ValueError, match="primary_history_limit_invalid"):
-            await history_store.read(subject=local_owner_auth().subject, primary_ref=primary, disclosure_context=history_disclosure(), before_sequence=13, limit=11)
+            await history_store.read(
+                subject=local_owner_auth().subject,
+                primary_ref=primary,
+                disclosure_context=history_disclosure(),
+                before_sequence=13,
+                limit=11,
+            )
     finally:
         await runtime.close()
         await stack.close()
@@ -459,9 +802,12 @@ async def test_primary_tool_history_uses_actual_group_not_fabricated_tool_calls(
             if not self.requests:
                 self.requests.append(request)
                 return ProviderResponse(
-                    request.request_id, Message(MessageRole.ASSISTANT, "Searching actual tools"),
+                    request.request_id,
+                    Message(MessageRole.ASSISTANT, "Searching actual tools"),
                     tool_calls=(ProviderToolCall(CallId("actual-search"), "tool_search", {}),),
-                    model="model", usage=ProviderUsage(10, 10, 20), opaque_continuation_ref="fixture-opaque",
+                    model="model",
+                    usage=ProviderUsage(10, 10, 20),
+                    opaque_continuation_ref="fixture-opaque",
                 )
             return await super().invoke(request, cancel=cancel)
 
@@ -479,23 +825,34 @@ async def test_primary_tool_history_uses_actual_group_not_fabricated_tool_calls(
         first = provider.requests[0].messages
         assert [m.role.value for m in first] == ["system", "user"]
         assert first[-1].content == "Actual tool turn"
-        assert not any(HISTORY_PREFIX in str(m.content) or HISTORY_SUFFIX in str(m.content) for m in first)
-        history = await PrimaryHistoryStore(state, policy=runtime.history_policy).read(subject=local_owner_auth().subject, primary_ref=primary, disclosure_context=history_disclosure(), before_sequence=2)
+        assert not any(
+            HISTORY_PREFIX in str(m.content) or HISTORY_SUFFIX in str(m.content) for m in first
+        )
+        history = await PrimaryHistoryStore(state, policy=runtime.history_policy).read(
+            subject=local_owner_auth().subject,
+            primary_ref=primary,
+            disclosure_context=history_disclosure(),
+            before_sequence=2,
+        )
         messages = history[0]["messages"]
         assert [m["role"] for m in messages] == ["user", "assistant", "tool", "assistant"]
         assert messages[2]["name"] == "tool_search"
         assert messages[2]["call_id"]
         assert json.loads(messages[2]["content"])["value"] == {"ok": True}
         assert json.loads(messages[2]["content"])["outcome"] == "succeeded"
-        await service.enqueue_turn(QueueTurnRequest(None, "after-tool", "Continue after actual tool"))
+        await service.enqueue_turn(
+            QueueTurnRequest(None, "after-tool", "Continue after actual tool")
+        )
         assert await asyncio.wait_for(runtime._drive_once(), 15)
         sent = provider.requests[-1].messages
         assert not any(m.role.value == "tool" for m in sent)  # no orphan native tool results
-        block = next(m for m in sent if isinstance(m.content, str) and "historical_causal_group" in m.content)
+        block = next(
+            m for m in sent if isinstance(m.content, str) and "historical_causal_group" in m.content
+        )
         # The quotation is explicitly closed, and the current instruction is the
         # last USER message after that marker — never a tail of the quotation.
         assert block.content.startswith(HISTORY_PREFIX) and block.content.endswith(HISTORY_SUFFIX)
-        quoted = block.content[len(HISTORY_PREFIX):-len(HISTORY_SUFFIX)]
+        quoted = block.content[len(HISTORY_PREFIX) : -len(HISTORY_SUFFIX)]
         assert json.loads(quoted)["messages"] == messages
         assert list(sent).index(block) == len(sent) - 2
         assert sent[-1].role.value == "user" and sent[-1].content == "Continue after actual tool"
@@ -513,13 +870,18 @@ async def test_unscoped_head_completes_then_real_scoped_fifo_runs(tmp_path):
     startup = await dispatch_startup_epoch(state, approved_fresh_lane=True)
     service = HumanMemoryHostServiceFactory(state, startup).bind(local_owner_auth())
     await service.open_primary()
-    scope = await service.create_task_scope(CreateTaskScopeRequest("fifo-scope", "Task", "Real scoped work", "create-fifo-scope"))
+    scope = await service.create_task_scope(
+        CreateTaskScopeRequest("fifo-scope", "Task", "Real scoped work", "create-fifo-scope")
+    )
     from tests.sdk_adapters.s5b_effect_gate_harness import bind_scope_root
+
     root = tmp_path / "scoped-root"
     root.mkdir()
     await bind_scope_root(state, scope["scope_ref"], root)
     first = await service.enqueue_turn(QueueTurnRequest(None, "fifo-first", "First standalone"))
-    second = await service.enqueue_turn(QueueTurnRequest(scope["scope_ref"], "fifo-second", "Then scoped work"))
+    second = await service.enqueue_turn(
+        QueueTurnRequest(scope["scope_ref"], "fifo-second", "Then scoped work")
+    )
     provider = Provider()
     runtime, stack, queue = await build(tmp_path, state, provider)
     try:
@@ -532,8 +894,18 @@ async def test_unscoped_head_completes_then_real_scoped_fifo_runs(tmp_path):
         assert await queue.current_snapshot(local_owner_auth().subject) is None
         assert len(provider.requests) == 2
         with sqlite3.connect(state) as db:
-            assert db.execute("SELECT COUNT(*) FROM foreground_terminal_receipts WHERE terminal_state='COMPLETED'").fetchone()[0] == 2
-            assert db.execute("SELECT COUNT(*) FROM context_route_decisions WHERE origin='host_initial'").fetchone()[0] == 1
+            assert (
+                db.execute(
+                    "SELECT COUNT(*) FROM foreground_terminal_receipts WHERE terminal_state='COMPLETED'"
+                ).fetchone()[0]
+                == 2
+            )
+            assert (
+                db.execute(
+                    "SELECT COUNT(*) FROM context_route_decisions WHERE origin='host_initial'"
+                ).fetchone()[0]
+                == 1
+            )
             assert db.execute("SELECT COUNT(*) FROM task_scopes").fetchone()[0] == 1
     finally:
         await runtime.close()
@@ -553,11 +925,13 @@ async def test_primary_state_notification_cannot_block_terminal(tmp_path, mode):
     async def changed():
         # A separate real connection must see committed facts, never a dirty row.
         with sqlite3.connect(state) as db:
-            observed.append((
-                db.execute("SELECT COUNT(*) FROM foreground_runs").fetchone()[0],
-                db.execute("SELECT COUNT(*) FROM foreground_run_sdk_bindings").fetchone()[0],
-                db.execute("SELECT COUNT(*) FROM foreground_terminal_receipts").fetchone()[0],
-            ))
+            observed.append(
+                (
+                    db.execute("SELECT COUNT(*) FROM foreground_runs").fetchone()[0],
+                    db.execute("SELECT COUNT(*) FROM foreground_run_sdk_bindings").fetchone()[0],
+                    db.execute("SELECT COUNT(*) FROM foreground_terminal_receipts").fetchone()[0],
+                )
+            )
         if mode == "raise":
             raise RuntimeError("private callback failure")
         if mode == "hang":
@@ -572,7 +946,9 @@ async def test_primary_state_notification_cannot_block_terminal(tmp_path, mode):
         assert await asyncio.wait_for(runtime._drive_once(), 15)
         assert await queue.current_snapshot(local_owner_auth().subject) is None
         with sqlite3.connect(state) as db:
-            assert db.execute("SELECT COUNT(*) FROM foreground_terminal_receipts").fetchone()[0] == 1
+            assert (
+                db.execute("SELECT COUNT(*) FROM foreground_terminal_receipts").fetchone()[0] == 1
+            )
         await asyncio.wait_for(asyncio.shield(runtime._notification_task), 2)
         assert observed[0][0] == 1
         assert observed[-1] == (1, 1, 1)
@@ -585,9 +961,7 @@ async def test_primary_state_notification_cannot_block_terminal(tmp_path, mode):
 
 
 @pytest.mark.asyncio
-async def test_primary_driver_error_invalidates_without_publishing_exception(
-    tmp_path, monkeypatch
-):
+async def test_primary_driver_error_invalidates_without_publishing_exception(tmp_path, monkeypatch):
     """Bounded retry, then a distinct stalled record — and never the private text.
 
     2026-09-08 HM-TO-A6：驱动此前一抛异常就永久退出，队列里已受理的回合再没有
@@ -643,11 +1017,8 @@ async def test_primary_driver_error_invalidates_without_publishing_exception(
         assert len(failed) == fr.DRIVER_RETRY_ATTEMPTS
         # The wrapped cause is carried, payload-free, so the stable code is not lost.
         assert failed[0]["error_cause_type"] == "TaskScopeProtocolError"
-        assert (failed[0]["error_cause_detail"]
-                == "evidence_payload_requires_controlled_blob_ref")
-        assert [p["attempt"] for p in failed] == list(
-            range(1, fr.DRIVER_RETRY_ATTEMPTS + 1)
-        )
+        assert failed[0]["error_cause_detail"] == "evidence_payload_requires_controlled_blob_ref"
+        assert [p["attempt"] for p in failed] == list(range(1, fr.DRIVER_RETRY_ATTEMPTS + 1))
         stalled = [p for e, p in records if e == "foreground.runtime.stalled"]
         assert len(stalled) == 1
         assert stalled[0]["attempts"] == fr.DRIVER_RETRY_ATTEMPTS
@@ -698,9 +1069,7 @@ async def test_primary_driver_recovers_after_a_transient_error(tmp_path, monkeyp
 
 
 @pytest.mark.asyncio
-async def test_primary_driver_progress_then_raise_cycle_still_terminates(
-    tmp_path, monkeypatch
-):
+async def test_primary_driver_progress_then_raise_cycle_still_terminates(tmp_path, monkeypatch):
     """Task 6 review F-4: progress must not silently reset the retry budget.
 
     A driver that alternates "made progress" with "raised" used to reset the
@@ -741,9 +1110,7 @@ async def test_primary_driver_progress_then_raise_cycle_still_terminates(
         await runtime.after_enqueue(subject=local_owner_auth().subject)
         await asyncio.wait_for(runtime.drain(), 5)
         failed = [p for e, p in records if e == "foreground.runtime.failed"]
-        assert [p["attempt"] for p in failed] == list(
-            range(1, fr.DRIVER_RETRY_ATTEMPTS + 1)
-        )
+        assert [p["attempt"] for p in failed] == list(range(1, fr.DRIVER_RETRY_ATTEMPTS + 1))
         assert len([e for e, _ in records if e == "foreground.runtime.stalled"]) == 1
         assert len(turns) == 2 * fr.DRIVER_RETRY_ATTEMPTS
         assert runtime._driver is None
@@ -789,45 +1156,94 @@ async def test_primary_driver_backoff_does_not_delay_close(tmp_path, monkeypatch
 async def test_primary_pre_observation_history_rebuild_reads_actual_sdk(tmp_path):
     from deskpet.memory.human_memory_service import CreateTaskScopeRequest
     from tests.sdk_adapters.s5b_effect_gate_harness import bind_scope_root
+
     state = tmp_path / "state.db"
     startup = await dispatch_startup_epoch(state, approved_fresh_lane=True)
     service = HumanMemoryHostServiceFactory(state, startup).bind(local_owner_auth())
     primary = (await service.open_primary())["primary_ref"]
-    scope = await service.create_task_scope(CreateTaskScopeRequest("legacy", "Task", "Legacy scoped work", "legacy-create"))
+    scope = await service.create_task_scope(
+        CreateTaskScopeRequest("legacy", "Task", "Legacy scoped work", "legacy-create")
+    )
     root = tmp_path / "legacy-root"
     root.mkdir()
     await bind_scope_root(state, scope["scope_ref"], root)
-    await service.enqueue_turn(QueueTurnRequest(scope["scope_ref"], "legacy-turn", "Actual old scoped user"))
+    await service.enqueue_turn(
+        QueueTurnRequest(scope["scope_ref"], "legacy-turn", "Actual old scoped user")
+    )
     runtime, stack, _ = await build(tmp_path, state, Provider(), legacy_observer=True)
     try:
         assert await asyncio.wait_for(runtime._drive_once(), 15)
         with sqlite3.connect(state) as db:
-            before = db.execute("SELECT evidence_id,envelope_sha256 FROM human_memory_evidence ORDER BY evidence_id").fetchall()
-            assert db.execute("SELECT COUNT(*) FROM human_memory_evidence WHERE source_ref LIKE 'primary-runtime:%'").fetchone()[0] == 0
-            assert db.execute("SELECT COUNT(*) FROM task_scope_terminal_gate_receipts").fetchone()[0] == 1
-            receipt = json.loads(db.execute("SELECT receipt_json FROM foreground_terminal_receipts").fetchone()[0])
+            before = db.execute(
+                "SELECT evidence_id,envelope_sha256 FROM human_memory_evidence ORDER BY evidence_id"
+            ).fetchall()
+            assert (
+                db.execute(
+                    "SELECT COUNT(*) FROM human_memory_evidence WHERE source_ref LIKE 'primary-runtime:%'"
+                ).fetchone()[0]
+                == 0
+            )
+            assert (
+                db.execute("SELECT COUNT(*) FROM task_scope_terminal_gate_receipts").fetchone()[0]
+                == 1
+            )
+            receipt = json.loads(
+                db.execute("SELECT receipt_json FROM foreground_terminal_receipts").fetchone()[0]
+            )
             assert receipt["terminal_authority_kind"] == "task_scope_watermarks"
             assert "primary_observation_ref" not in receipt
         for _ in range(2):
-            history = await PrimaryHistoryStore(state, policy=runtime.history_policy, settled_run_reader=stack.read_settled_primary_run).read(
-                subject=local_owner_auth().subject, primary_ref=primary, disclosure_context=history_disclosure(), before_sequence=2)
+            history = await PrimaryHistoryStore(
+                state,
+                policy=runtime.history_policy,
+                settled_run_reader=stack.read_settled_primary_run,
+            ).read(
+                subject=local_owner_auth().subject,
+                primary_ref=primary,
+                disclosure_context=history_disclosure(),
+                before_sequence=2,
+            )
             assert [m["content"] for m in history[0]["messages"]] == ["Actual old scoped user"]
             assert not history[0]["source_ref"].startswith("primary-terminal:")
         for field, bad in (("event_id", "other-sdk-event"), ("event_hash", "0" * 64)):
+
             def mismatched_reader(run_id, **kwargs):
                 terminal, messages = stack.read_settled_primary_run(run_id, **kwargs)
                 return replace(terminal, **{field: bad}), messages
+
             with pytest.raises(RuntimeError, match="primary_history_terminal_mismatch"):
-                await PrimaryHistoryStore(state, policy=runtime.history_policy, settled_run_reader=mismatched_reader).read(
-                    subject=local_owner_auth().subject, primary_ref=primary, disclosure_context=history_disclosure(), before_sequence=2)
+                await PrimaryHistoryStore(
+                    state, policy=runtime.history_policy, settled_run_reader=mismatched_reader
+                ).read(
+                    subject=local_owner_auth().subject,
+                    primary_ref=primary,
+                    disclosure_context=history_disclosure(),
+                    before_sequence=2,
+                )
         with sqlite3.connect(state) as db:
-            assert db.execute("SELECT evidence_id,envelope_sha256 FROM human_memory_evidence ORDER BY evidence_id").fetchall() == before
+            assert (
+                db.execute(
+                    "SELECT evidence_id,envelope_sha256 FROM human_memory_evidence ORDER BY evidence_id"
+                ).fetchall()
+                == before
+            )
     finally:
         await runtime.close()
         await stack.close()
 
 
-def dynamic_tools(state_path, source_tools, authorities, inventory, factory, binding_authority=None, configured_root=None, scope_reader=None, page_in_store=None, context_route_ledger_factory=None):
+def dynamic_tools(
+    state_path,
+    source_tools,
+    authorities,
+    inventory,
+    factory,
+    binding_authority=None,
+    configured_root=None,
+    scope_reader=None,
+    page_in_store=None,
+    context_route_ledger_factory=None,
+):
     from deskpet.sdk_adapters.context_route import ContextRouteToolService
     from deskpet.sdk_adapters.effect_gate import project_tool_execution_context
     from deskpet.sdk_adapters.task_scope_mutation import TaskScopeUpdateService
@@ -835,30 +1251,54 @@ def dynamic_tools(state_path, source_tools, authorities, inventory, factory, bin
     from deskpet.sdk_adapters.tools import ProductToolsAdapter, active_product_tool_context
     from deskpet.task_scope.workspace_bindings import WorkspaceBindingAuthorityStore
     from deskpet.tools.os_tools.write_file import write_file
-    ledger = (ContextRouteLedgerStore(state_path) if context_route_ledger_factory is None
-              else context_route_ledger_factory(state_path))
+
+    ledger = (
+        ContextRouteLedgerStore(state_path)
+        if context_route_ledger_factory is None
+        else context_route_ledger_factory(state_path)
+    )
+
     def execution_context():
         context = active_product_tool_context()
-        return project_tool_execution_context(authorities.resolve(context.run_id).execution_context(
-            call_id=context.call_id.value, effect_id=context.effect_id.value), context)
+        return project_tool_execution_context(
+            authorities.resolve(context.run_id).execution_context(
+                call_id=context.call_id.value, effect_id=context.effect_id.value
+            ),
+            context,
+        )
+
     bridge = SdkRuntimeCapabilityBridgeAdapter(authorities, execution_context)
     route = ContextRouteToolService(
         service_factory_getter=lambda: factory,
-        binding_store_factory=lambda: WorkspaceBindingAuthorityStore(state_path, configured_workspace_root=configured_root),
-        binding_append_getter=lambda: binding_authority, ledger=ledger, tool_context_getter=active_product_tool_context,
+        binding_store_factory=lambda: WorkspaceBindingAuthorityStore(
+            state_path, configured_workspace_root=configured_root
+        ),
+        binding_append_getter=lambda: binding_authority,
+        ledger=ledger,
+        tool_context_getter=active_product_tool_context,
         scope_disclosure_reader=None if scope_reader is None else scope_reader.read,
-        producer_dependencies_reader=None if scope_reader is None else scope_reader.producer_dependencies)
-    closure = TaskScopeUpdateService(state_path, tool_context_getter=active_product_tool_context, route_ledger=ledger)
+        producer_dependencies_reader=None
+        if scope_reader is None
+        else scope_reader.producer_dependencies,
+    )
+    closure = TaskScopeUpdateService(
+        state_path, tool_context_getter=active_product_tool_context, route_ledger=ledger
+    )
     tools = ProductToolsAdapter(execution_identities={i.name: "fixture" for i in inventory})
     tools.bind_run_authorities(authorities)
     for item in inventory:
+
         async def invoke(args, context, name=item.name):
             if name == "context_route":
                 result = await route.handle_context_route(args)
             elif name == "context_page_in":
                 from deskpet.tools.context_page_in_tools import build_context_page_in_handler
-                result = json.loads(await build_context_page_in_handler(page_in_store,
-                    execution_context_getter=execution_context)(dict(args), ""))
+
+                result = json.loads(
+                    await build_context_page_in_handler(
+                        page_in_store, execution_context_getter=execution_context
+                    )(dict(args), "")
+                )
             elif name == "task_scope_search":
                 result = await route.handle_task_scope_search(args)
             elif name == "task_scope_update":
@@ -868,13 +1308,17 @@ def dynamic_tools(state_path, source_tools, authorities, inventory, factory, bin
             elif name == "tool_describe":
                 result = bridge.describe(args["capability_id"])
             elif name == "tool_activate":
-                result = bridge.activate(args["capability_id"], args["schema_hash"], args["describe_nonce"]).to_json()
+                result = bridge.activate(
+                    args["capability_id"], args["schema_hash"], args["describe_nonce"]
+                ).to_json()
             elif name == "write_file":
                 result = json.loads(write_file(dict(args), execution_context=execution_context()))
             else:
                 raise AssertionError(name)
             from deskpet.sdk_adapters.tools import _result
+
             return _result(result)
+
         tools.register(FunctionTool(source_tools.get(item.name).spec, invoke))
     return tools
 
@@ -886,12 +1330,15 @@ async def test_primary_none_routes_to_exact_task_and_writes_real_file(tmp_path, 
     from simple_harness import CallId
     from simple_harness.providers import ProviderToolCall
     from tests.sdk_adapters.s5b_effect_gate_harness import bind_scope_root
+
     state = tmp_path / "state.db"
     startup = await dispatch_startup_epoch(state, approved_fresh_lane=True)
     factory = HumanMemoryHostServiceFactory(state, startup)
     service = factory.bind(local_owner_auth())
     await service.open_primary()
-    scope = await service.create_task_scope(CreateTaskScopeRequest("dynamic", "Task", "Write actual file", "dynamic-create"))
+    scope = await service.create_task_scope(
+        CreateTaskScopeRequest("dynamic", "Task", "Write actual file", "dynamic-create")
+    )
     root = tmp_path / "exact-root"
     root.mkdir()
     await bind_scope_root(state, scope["scope_ref"], root)
@@ -900,51 +1347,107 @@ async def test_primary_none_routes_to_exact_task_and_writes_real_file(tmp_path, 
         async def invoke(self, request, *, cancel):
             n = len(self.requests)
             self.requests.append(request)
-            results = [json.loads(m.content) for m in request.messages if m.role.value == "tool" and isinstance(m.content, str)]
+            results = [
+                json.loads(m.content)
+                for m in request.messages
+                if m.role.value == "tool" and isinstance(m.content, str)
+            ]
             if n == 0:
-                name, args = "context_route", {"route": "resume_existing", "task_scope_id": scope["scope_ref"]}
+                name, args = (
+                    "context_route",
+                    {"route": "resume_existing", "task_scope_id": scope["scope_ref"]},
+                )
             elif n == 1:
                 name, args = "tool_search", {"query": "write_file"}
             elif n == 2:
                 value = results[-1]["value"]
-                name, args = "tool_describe", {"capability_id": value["matches"][0]["capability_id"]}
+                name, args = (
+                    "tool_describe",
+                    {"capability_id": value["matches"][0]["capability_id"]},
+                )
             elif n == 3:
                 value = results[-1]["value"]
-                name, args = "tool_activate", {k: value[k] for k in ("capability_id", "schema_hash", "describe_nonce")}
+                name, args = (
+                    "tool_activate",
+                    {k: value[k] for k in ("capability_id", "schema_hash", "describe_nonce")},
+                )
             elif n == 4:
                 if supersede:
                     other_root = tmp_path / "later-root"
                     other_root.mkdir()
-                    await bind_scope_root(state, scope["scope_ref"], other_root, base_revision=1, tag="later")
+                    await bind_scope_root(
+                        state, scope["scope_ref"], other_root, base_revision=1, tag="later"
+                    )
                 name, args = "write_file", {"path": "real.txt", "content": "exact routed output"}
             elif n == 5 and not supersede:
-                instruction = next(json.loads(m.content) for m in request.messages if m.role.value == "system" and isinstance(m.content, str) and '"task_scope_closure_required"' in m.content)
-                name, args = "task_scope_update", {"outcome": "no_mutation", "base_revision": instruction["current_revision"],
-                    "closure_reason": "The requested output file is written; task metadata unchanged.",
-                    "evidence_refs": instruction["allowed_evidence_refs"], "idempotency_key": "close-dynamic"}
+                instruction = next(
+                    json.loads(m.content)
+                    for m in request.messages
+                    if m.role.value == "system"
+                    and isinstance(m.content, str)
+                    and '"task_scope_closure_required"' in m.content
+                )
+                name, args = (
+                    "task_scope_update",
+                    {
+                        "outcome": "no_mutation",
+                        "base_revision": instruction["current_revision"],
+                        "closure_reason": "The requested output file is written; task metadata unchanged.",
+                        "evidence_refs": instruction["allowed_evidence_refs"],
+                        "idempotency_key": "close-dynamic",
+                    },
+                )
             else:
-                return ProviderResponse(request.request_id, Message(MessageRole.ASSISTANT, "File written"), model="model", usage=ProviderUsage(10, 10, 20))
-            return ProviderResponse(request.request_id, Message(MessageRole.ASSISTANT, "Executing " + name),
-                tool_calls=(ProviderToolCall(CallId(f"dynamic-{n}"), name, args),), model="model", usage=ProviderUsage(10, 10, 20))
+                return ProviderResponse(
+                    request.request_id,
+                    Message(MessageRole.ASSISTANT, "File written"),
+                    model="model",
+                    usage=ProviderUsage(10, 10, 20),
+                )
+            return ProviderResponse(
+                request.request_id,
+                Message(MessageRole.ASSISTANT, "Executing " + name),
+                tool_calls=(ProviderToolCall(CallId(f"dynamic-{n}"), name, args),),
+                model="model",
+                usage=ProviderUsage(10, 10, 20),
+            )
 
     provider = RoutedProvider()
-    await service.enqueue_turn(QueueTurnRequest(None, "dynamic-turn", "Please write the file in the exact task"))
+    await service.enqueue_turn(
+        QueueTurnRequest(None, "dynamic-turn", "Please write the file in the exact task")
+    )
     runtime, stack, queue = await build(tmp_path, state, provider, dynamic=True)
     try:
-        assert await asyncio.wait_for(runtime._drive_once(), 20), [(m.role.value, m.content) for m in provider.requests[-1].messages]
+        assert await asyncio.wait_for(runtime._drive_once(), 20), [
+            (m.role.value, m.content) for m in provider.requests[-1].messages
+        ]
         if supersede:
             assert not (root / "real.txt").exists()
             assert not (tmp_path / "later-root" / "real.txt").exists()
             with sqlite3.connect(state) as db:
-                assert db.execute("SELECT reason_code FROM effect_gate_rejections").fetchone()[0] == "workspace_binding_receipt_superseded"
+                assert (
+                    db.execute("SELECT reason_code FROM effect_gate_rejections").fetchone()[0]
+                    == "workspace_binding_receipt_superseded"
+                )
         else:
             assert (root / "real.txt").read_text() == "exact routed output"
         assert await queue.current_snapshot(local_owner_auth().subject) is None
         with sqlite3.connect(state) as db:
             assert db.execute("SELECT task_scope_id FROM foreground_runs").fetchone()[0] is None
-            assert db.execute("SELECT COUNT(*) FROM context_route_decisions WHERE origin='host_initial'").fetchone()[0] == 0
-            assert db.execute("SELECT terminal_state FROM foreground_terminal_receipts").fetchone()[0] == "COMPLETED"
-            assert db.execute("SELECT COUNT(*) FROM task_scope_terminal_gate_receipts").fetchone()[0] == 1
+            assert (
+                db.execute(
+                    "SELECT COUNT(*) FROM context_route_decisions WHERE origin='host_initial'"
+                ).fetchone()[0]
+                == 0
+            )
+            assert (
+                db.execute("SELECT terminal_state FROM foreground_terminal_receipts").fetchone()[0]
+                == "COMPLETED"
+            )
+            assert (
+                db.execute("SELECT COUNT(*) FROM task_scope_terminal_gate_receipts").fetchone()[0]
+                == 1
+            )
         primary_ref = (await service.open_primary())["primary_ref"]
         await assert_exact_sdk_terminal_identity(state, stack, primary_ref)
         assert len(provider.requests) == (6 if supersede else 7)
@@ -962,17 +1465,42 @@ async def test_primary_none_routes_to_exact_task_and_writes_real_file(tmp_path, 
 
 def test_primary_public_artifact_projection_keeps_only_allowlisted_fields():
     from deskpet.sdk_adapters.composition import project_primary_transcript
+
     # Artifact-bearing public Context messages may be Host-authored. The SDK
     # provider port does not accept artifact blocks; this is a projection test.
-    messages = (Message(MessageRole.USER, "Make artifact"), Message(MessageRole.ASSISTANT, (
-        ContentBlock("text", {"text": "Created artifact", "private": "PRIVATE_CANARY"}),
-        ContentBlock("artifact", {"artifact_ref": "artifact-real", "name": "report.txt",
-            "mime_type": "text/plain", "uri": "artifact://report", "private": "PRIVATE_CANARY"}),
-        ContentBlock("reasoning", {"text": "HIDDEN_CANARY"}),
-    )))
+    messages = (
+        Message(MessageRole.USER, "Make artifact"),
+        Message(
+            MessageRole.ASSISTANT,
+            (
+                ContentBlock("text", {"text": "Created artifact", "private": "PRIVATE_CANARY"}),
+                ContentBlock(
+                    "artifact",
+                    {
+                        "artifact_ref": "artifact-real",
+                        "name": "report.txt",
+                        "mime_type": "text/plain",
+                        "uri": "artifact://report",
+                        "private": "PRIVATE_CANARY",
+                    },
+                ),
+                ContentBlock("reasoning", {"text": "HIDDEN_CANARY"}),
+            ),
+        ),
+    )
     projected = project_primary_transcript(messages, current_text="Make artifact")
-    assert projected[-1]["content"] == [{"type": "text", "data": {"text": "Created artifact"}},
-        {"type": "artifact", "data": {"artifact_ref": "artifact-real", "name": "report.txt", "mime_type": "text/plain", "uri": "artifact://report"}}]
+    assert projected[-1]["content"] == [
+        {"type": "text", "data": {"text": "Created artifact"}},
+        {
+            "type": "artifact",
+            "data": {
+                "artifact_ref": "artifact-real",
+                "name": "report.txt",
+                "mime_type": "text/plain",
+                "uri": "artifact://report",
+            },
+        },
+    ]
     assert "PRIVATE_CANARY" not in json.dumps(projected)
     assert "HIDDEN_CANARY" not in json.dumps(projected)
 
@@ -980,12 +1508,18 @@ def test_primary_public_artifact_projection_keeps_only_allowlisted_fields():
 async def assert_exact_sdk_terminal_identity(state, stack, primary_ref):
     import aiosqlite
     from deskpet.execution.terminal_identity import read_primary_terminal_identity_tx
+
     async with aiosqlite.connect(state) as db:
         db.row_factory = aiosqlite.Row
         rows = await db.execute("SELECT host_run_id,sdk_run_id FROM foreground_terminal_receipts")
         for row in await rows.fetchall():
-            identity = await read_primary_terminal_identity_tx(db, subject=local_owner_auth().subject,
-                primary_ref=primary_ref, host_run_id=row["host_run_id"], sdk_run_id=row["sdk_run_id"])
+            identity = await read_primary_terminal_identity_tx(
+                db,
+                subject=local_owner_auth().subject,
+                primary_ref=primary_ref,
+                host_run_id=row["host_run_id"],
+                sdk_run_id=row["sdk_run_id"],
+            )
             actual = stack.read_run_terminal_evidence(row["sdk_run_id"])
             identity.verify_sdk_terminal(actual)
             for field, bad in (("event_id", "other-sdk-event"), ("event_hash", "0" * 64)):

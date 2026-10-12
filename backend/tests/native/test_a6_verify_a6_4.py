@@ -212,8 +212,12 @@ def _a6_4(ev) -> a6.Item:
 _RECALL = {
     "evidence": [{"evidence_id": "dep", "envelope_hash": "h"}],
     "recall": [
-        {"item_id": "recall-item:dc503a91:1", "item_hash": "a",
-         "result_id": "recall-result:dc503a91", "result_hash": "b"}
+        {
+            "item_id": "recall-item:dc503a91:1",
+            "item_hash": "a",
+            "result_id": "recall-result:dc503a91",
+            "result_hash": "b",
+        }
     ],
     "schema_version": 1,
 }

@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 """Read original settlement facts for every settled-terminal predecessor."""
+
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -27,19 +28,32 @@ class TaskGraphSettlementReader:
         self.store = history.store
         self.runtime = TaskGraphRuntimeObservationReader(orchestrator, history=history)
 
-    def __call__(self, mission_id: str, network: TaskNetworkSnapshot,
-                 outcomes: Mapping[OccurrenceId, OccurrenceOutcome], *,
-                 predecessors: frozenset[OccurrenceId] | None = None) -> dict[OccurrenceId, SettledTerminalOccurrence]:
-        predecessors = (frozenset(edge.before for edge in network.order_constraints
-                        if edge.release_condition is ReleaseCondition.SETTLED_TERMINAL)
-                        if predecessors is None else predecessors)
+    def __call__(
+        self,
+        mission_id: str,
+        network: TaskNetworkSnapshot,
+        outcomes: Mapping[OccurrenceId, OccurrenceOutcome],
+        *,
+        predecessors: frozenset[OccurrenceId] | None = None,
+    ) -> dict[OccurrenceId, SettledTerminalOccurrence]:
+        predecessors = (
+            frozenset(
+                edge.before
+                for edge in network.order_constraints
+                if edge.release_condition is ReleaseCondition.SETTLED_TERMINAL
+            )
+            if predecessors is None
+            else predecessors
+        )
         if not predecessors <= {item.occurrence_id for item in network.occurrences}:
             raise SourceUnavailable("taskgraph_settlement_predecessor_set_invalid")
         if not predecessors:
             return {}
         with self.store.read_view():
             local = read_local_work(self.store, mission_id)
-            operations = build_operation_snapshot(mission_id, reader=StoreOperationReader(self.store))
+            operations = build_operation_snapshot(
+                mission_id, reader=StoreOperationReader(self.store)
+            )
             producers = read_operation_producers(self.store, operations)
             facts = {}
             physical: dict[str, bool] = {}
@@ -56,18 +70,26 @@ class TaskGraphSettlementReader:
                 while pending:
                     parent = pending.pop()
                     for child in network.adopted_children(parent):
-                        for identity in (child.occurrence_id, child.goal_occurrence_id or child.occurrence_id):
+                        for identity in (
+                            child.occurrence_id,
+                            child.goal_occurrence_id or child.occurrence_id,
+                        ):
                             if identity not in related:
                                 network.occurrence(identity)  # missing is integrity failure
                                 related.add(identity)
                                 pending.append(identity)
-                task_ids = frozenset(str(network.occurrence(identity).task_id) for identity in related)
+                task_ids = frozenset(
+                    str(network.occurrence(identity).task_id) for identity in related
+                )
                 if local.blocking_subjects(task_ids):
                     continue
                 subjects = local.related_subjects(task_ids)
                 intent_subjects = {row["subject_id"] for row in local.to_json()["intents"]}
-                if any(row["attempt_id"] not in intent_subjects for row in local.to_json()["attempts"]
-                       if row["task_id"] in task_ids):
+                if any(
+                    row["attempt_id"] not in intent_subjects
+                    for row in local.to_json()["attempts"]
+                    if row["task_id"] in task_ids
+                ):
                     raise SourceUnavailable("taskgraph_settlement_attempt_intent_missing")
                 settled = True
                 for row in local.to_json()["intents"]:
@@ -93,10 +115,22 @@ class TaskGraphSettlementReader:
                 if not settled:
                     continue
                 binding = network.binding_for_occurrence(predecessor)
-                facts[predecessor] = SettledTerminalOccurrence(mission_id=mission_id,
-                    plan_revision=int(network.plan_revision), occurrence_id=str(predecessor),
-                    contract_revision=int(binding.contract_revision), dispatch_generation=int(binding.dispatch_generation),
-                    outcome=str(outcome), source_digest=sha256_hex({"local_work": local.digest,
-                        "operations": operations.read_digest, "task_ids": sorted(task_ids),
-                        "physical_imports_verified": sorted(key for key, value in physical.items() if value)}))
+                facts[predecessor] = SettledTerminalOccurrence(
+                    mission_id=mission_id,
+                    plan_revision=int(network.plan_revision),
+                    occurrence_id=str(predecessor),
+                    contract_revision=int(binding.contract_revision),
+                    dispatch_generation=int(binding.dispatch_generation),
+                    outcome=str(outcome),
+                    source_digest=sha256_hex(
+                        {
+                            "local_work": local.digest,
+                            "operations": operations.read_digest,
+                            "task_ids": sorted(task_ids),
+                            "physical_imports_verified": sorted(
+                                key for key, value in physical.items() if value
+                            ),
+                        }
+                    ),
+                )
             return facts

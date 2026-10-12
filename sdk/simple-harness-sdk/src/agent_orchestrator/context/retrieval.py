@@ -32,7 +32,12 @@ RETRIEVAL_VERSION = "retrieval-v4-hierarchy-structure"
 WEIGHTS = {
     # 推后第 2 批 K06：09-10 §10.1 的"Task DAG 距离"(proximity) 与"分支相关性"(branch)
     # 各占原 proximity 的一半，普通最高分仍是 7.0
-    "relevance": 3.0, "trust": 2.0, "proximity": 0.5, "branch": 0.5, "recency": 0.5, "reuse": 0.5,
+    "relevance": 3.0,
+    "trust": 2.0,
+    "proximity": 0.5,
+    "branch": 0.5,
+    "recency": 0.5,
+    "reuse": 0.5,
     # An explicit reference outranks the maximum ordinary score (7.0).
     "exact_reference": 8.0,
 }
@@ -135,8 +140,14 @@ class GoalTree:
     neighbours: Mapping[str, frozenset[str]]
 
     @classmethod
-    def build(cls, *, roots: Iterable[str], children: Mapping[str, Iterable[str]],
-              task_of: Mapping[str, str], precedence: Iterable[tuple[str, str]]) -> GoalTree:
+    def build(
+        cls,
+        *,
+        roots: Iterable[str],
+        children: Mapping[str, Iterable[str]],
+        task_of: Mapping[str, str],
+        precedence: Iterable[tuple[str, str]],
+    ) -> GoalTree:
         parent: dict[str, str | None] = {}
         links: dict[str, set[str]] = {}
         pending = deque((str(root), None) for root in roots)
@@ -155,8 +166,11 @@ class GoalTree:
             if before in parent and after in parent:
                 links[before].add(after)
                 links[after].add(before)
-        return cls(parent=parent, task_of={node: str(task_of[node]) for node in parent},
-                   neighbours={node: frozenset(near) for node, near in links.items()})
+        return cls(
+            parent=parent,
+            task_of={node: str(task_of[node]) for node in parent},
+            neighbours={node: frozenset(near) for node, near in links.items()},
+        )
 
     @classmethod
     def from_network(cls, network: Any) -> GoalTree:
@@ -166,13 +180,19 @@ class GoalTree:
             draft = network.adopted_instance_for(spec.occurrence_id)
             if draft is not None:
                 children[str(spec.occurrence_id)] = tuple(
-                    str(child.occurrence_id) for child in draft.child_bindings)
-        precedence = [(str(item.producer_occurrence), str(item.consumer_occurrence))
-                      for item in network.data_requirements]
+                    str(child.occurrence_id) for child in draft.child_bindings
+                )
+        precedence = [
+            (str(item.producer_occurrence), str(item.consumer_occurrence))
+            for item in network.data_requirements
+        ]
         precedence += [(str(item.before), str(item.after)) for item in network.order_constraints]
-        return cls.build(roots=[str(root) for root in network.root_occurrence_ids], children=children,
-                         task_of={str(spec.occurrence_id): str(spec.task_id) for spec in network.occurrences},
-                         precedence=precedence)
+        return cls.build(
+            roots=[str(root) for root in network.root_occurrence_ids],
+            children=children,
+            task_of={str(spec.occurrence_id): str(spec.task_id) for spec in network.occurrences},
+            precedence=precedence,
+        )
 
     def occurrences_of(self, task_id: str) -> tuple[str, ...]:
         return tuple(sorted(node for node, task in self.task_of.items() if task == task_id))
@@ -222,8 +242,10 @@ class GoalTree:
 def structure_parts(task_id: str, source_task: str, tree: GoalTree) -> dict[str, float]:
     """The two structural factors of one knowledge record for one step."""
     steps = tree.distance(task_id, source_task)
-    return {"proximity": 0.0 if steps is None else 1.0 / (1 + steps),
-            "branch": tree.branch_share(task_id, source_task)}
+    return {
+        "proximity": 0.0 if steps is None else 1.0 / (1 + steps),
+        "branch": tree.branch_share(task_id, source_task),
+    }
 
 
 def rank_knowledge(
@@ -411,12 +433,16 @@ def knowledge_view(record: KnowledgeRecord, scored: Scored | None = None) -> dic
         "evidence": list(record.evidence),
         "source_task": record.source_task,
         "source_attempt": record.source_attempt,
-        "dependencies": [knowledge_ref(item["id"], item["version"])
-                         for item in record.support.get("knowledge", ())],
+        "dependencies": [
+            knowledge_ref(item["id"], item["version"])
+            for item in record.support.get("knowledge", ())
+        ],
         "used_by": list(record.used_by),
         "disputed_by": list(record.disputed_by),
         # 第 2 批 K02：原计划 §11.2 的三个登记项，没登记的就是 None
-        "validity_interval": None if record.validity_interval is None else dict(record.validity_interval),
+        "validity_interval": None
+        if record.validity_interval is None
+        else dict(record.validity_interval),
         "permitted_uses": None if record.permitted_uses is None else list(record.permitted_uses),
         "assurance_level": record.assurance_level,
         "score": None if scored is None else round(scored.score, 4),

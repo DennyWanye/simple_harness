@@ -67,7 +67,11 @@ TARGET = migrator.HUMAN_MEMORY_TARGET_SCHEMA_VERSION
 def _cap_migrations(monkeypatch, tmp_path: Path, version: int) -> None:  # type: ignore[no-untyped-def]
     """把迁移世界截到 ``version``：步骤表、目标版本、迁移目录都只含该版本及以前的迁移。"""
 
-    monkeypatch.setattr(migrator, "MIGRATION_STEPS", {k: v for k, v in migrator.MIGRATION_STEPS.items() if v <= version})
+    monkeypatch.setattr(
+        migrator,
+        "MIGRATION_STEPS",
+        {k: v for k, v in migrator.MIGRATION_STEPS.items() if v <= version},
+    )
     monkeypatch.setattr(migrator, "HUMAN_MEMORY_TARGET_SCHEMA_VERSION", version)
     monkeypatch.setattr(schema, "HUMAN_MEMORY_TARGET_SCHEMA_VERSION", version)
     last_file = max(int(name[:3]) for name, v in migrator.MIGRATION_STEPS.items() if v <= version)
@@ -86,7 +90,8 @@ def _enter_legacy_v45_world(monkeypatch, tmp_path: Path) -> None:  # type: ignor
 
     _cap_migrations(monkeypatch, tmp_path, 45)
     monkeypatch.setattr(
-        migrator, "_S4_HUMAN_MIGRATIONS",
+        migrator,
+        "_S4_HUMAN_MIGRATIONS",
         migrator._S4_HUMAN_MIGRATIONS - {EFFECT_CLOSURE_MIGRATION, CONTEXT_ROUTE_MIGRATION},
     )
     monkeypatch.setattr(schema, "_validate_s4_migration_chain", lambda *a, **k: None)
@@ -99,18 +104,42 @@ async def _legacy_v45_database(tmp_path: Path, monkeypatch) -> Path:  # type: ig
     assert _user_version(db) == 45
     # S5a 遗留状态：037 无 marker / 无链行 / 无恢复注册。
     assert _rows(db, "SELECT COUNT(*) FROM context_route_marker") == [(0,)]
-    assert _rows(db, "SELECT COUNT(*) FROM human_memory_migration_chain WHERE migration_id=?", CONTEXT_ROUTE_MIGRATION) == [(0,)]
+    assert _rows(
+        db,
+        "SELECT COUNT(*) FROM human_memory_migration_chain WHERE migration_id=?",
+        CONTEXT_ROUTE_MIGRATION,
+    ) == [(0,)]
     monkeypatch.undo()
     return db
 
 
 def _assert_context_route_registered(db: Path) -> None:
-    sha = hashlib.sha256((DEFAULT_MIGRATIONS_DIR / CONTEXT_ROUTE_MIGRATION).read_bytes()).hexdigest()
-    assert _rows(db, "SELECT migration_id,migration_sha256 FROM context_route_marker WHERE singleton=1") == [(CONTEXT_ROUTE_MIGRATION, sha)]
-    assert _rows(db, "SELECT schema_version,migration_sha256 FROM human_memory_migration_chain WHERE migration_id=?", CONTEXT_ROUTE_MIGRATION) == [(45, sha)]
-    registry = dict(_rows(db, "SELECT table_name,taxonomy FROM human_memory_recovery_table_registry WHERE table_name IN (?,?,?,?,?)", *CONTEXT_ROUTE_TABLES))
+    sha = hashlib.sha256(
+        (DEFAULT_MIGRATIONS_DIR / CONTEXT_ROUTE_MIGRATION).read_bytes()
+    ).hexdigest()
+    assert _rows(
+        db, "SELECT migration_id,migration_sha256 FROM context_route_marker WHERE singleton=1"
+    ) == [(CONTEXT_ROUTE_MIGRATION, sha)]
+    assert _rows(
+        db,
+        "SELECT schema_version,migration_sha256 FROM human_memory_migration_chain WHERE migration_id=?",
+        CONTEXT_ROUTE_MIGRATION,
+    ) == [(45, sha)]
+    registry = dict(
+        _rows(
+            db,
+            "SELECT table_name,taxonomy FROM human_memory_recovery_table_registry WHERE table_name IN (?,?,?,?,?)",
+            *CONTEXT_ROUTE_TABLES,
+        )
+    )
     assert registry == {name: "A" for name in CONTEXT_ROUTE_TABLES}
-    triggers = {row[0] for row in _rows(db, "SELECT name FROM sqlite_master WHERE type='trigger' AND name LIKE 'hm_recovery_fence_%'")}
+    triggers = {
+        row[0]
+        for row in _rows(
+            db,
+            "SELECT name FROM sqlite_master WHERE type='trigger' AND name LIKE 'hm_recovery_fence_%'",
+        )
+    }
     for name in CONTEXT_ROUTE_TABLES:
         for op in ("insert", "update", "delete"):
             assert f"hm_recovery_fence_{name}_{op}" in triggers, (name, op)
@@ -126,11 +155,16 @@ async def test_v45_migration_registered_in_human_chain(tmp_path: Path, monkeypat
     await initialize_human_memory_program_state_db(fresh)
     assert _user_version(fresh) == TARGET
     _assert_context_route_registered(fresh)
-    chain = dict(_rows(fresh, "SELECT migration_id,schema_version FROM human_memory_migration_chain"))
+    chain = dict(
+        _rows(fresh, "SELECT migration_id,schema_version FROM human_memory_migration_chain")
+    )
     assert chain[CONTEXT_ROUTE_MIGRATION] == 45 and chain[EFFECT_CLOSURE_MIGRATION] == 46
     schema._validate_s4_migration_chain(fresh, expected_user_version=TARGET)
     # fence 触发器体：非 OPEN 即拒（与 v42 注册表其它 A 类表同一口径）。
-    [(body,)] = _rows(fresh, "SELECT sql FROM sqlite_master WHERE type='trigger' AND name='hm_recovery_fence_context_route_decisions_insert'")
+    [(body,)] = _rows(
+        fresh,
+        "SELECT sql FROM sqlite_master WHERE type='trigger' AND name='hm_recovery_fence_context_route_decisions_insert'",
+    )
     assert "human_memory_ingress_fenced" in body and "<>'OPEN'" in body
     # ② S5a 旧库（037 链外）：打开即回补（幂等），随后前向到当前目标且链校验（含 037）通过。
     legacy = await _legacy_v45_database(tmp_path / "legacy", monkeypatch)
@@ -145,7 +179,9 @@ async def test_v45_migration_registered_in_human_chain(tmp_path: Path, monkeypat
     legacy2 = await _legacy_v45_database(tmp_path / "legacy2", monkeypatch)
     await initialize_human_memory_program_state_db(legacy2)
     _assert_context_route_registered(legacy2)
-    assert inspect_startup_epoch(legacy2, approved_fresh_lane=False).epoch is StartupEpoch.HUMAN_RESUME
+    assert (
+        inspect_startup_epoch(legacy2, approved_fresh_lane=False).epoch is StartupEpoch.HUMAN_RESUME
+    )
 
 
 # --- 迁移前置 ---------------------------------------------------------------------
@@ -176,13 +212,21 @@ async def _legacy_v45_with_run(tmp_path: Path, monkeypatch, *, waiting: bool):  
     await fq._enqueue(store, primary_id, 1)
     admission = await fq._claim_and_bind(store, sdk_run_id="sdk-run-cutover")
     await store.record_sdk_started(
-        host_run_id=admission.host_run_id, sdk_run_id="sdk-run-cutover", owner_id=admission.owner_id,
-        generation=admission.generation, sdk_event_id="sdk-start-cutover", idempotency_key="sdk-start-cutover",
+        host_run_id=admission.host_run_id,
+        sdk_run_id="sdk-run-cutover",
+        owner_id=admission.owner_id,
+        generation=admission.generation,
+        sdk_event_id="sdk-start-cutover",
+        idempotency_key="sdk-start-cutover",
     )
     if waiting:
         await store.record_reconciliation(
-            host_run_id=admission.host_run_id, sdk_run_id="sdk-run-cutover", owner_id=admission.owner_id,
-            generation=admission.generation, observed_state="BOUND_WAITING", idempotency_key="reconcile-waiting",
+            host_run_id=admission.host_run_id,
+            sdk_run_id="sdk-run-cutover",
+            owner_id=admission.owner_id,
+            generation=admission.generation,
+            observed_state="BOUND_WAITING",
+            idempotency_key="reconcile-waiting",
         )
     monkeypatch.undo()
     assert _user_version(queue_db) == 45
@@ -192,9 +236,14 @@ async def _legacy_v45_with_run(tmp_path: Path, monkeypatch, *, waiting: bool):  
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "waiting,code",
-    [(False, V46_CUTOVER_BLOCKED_FOREGROUND_RUN_ACTIVE), (True, V46_CUTOVER_BLOCKED_SDK_RUN_WAITING)],
+    [
+        (False, V46_CUTOVER_BLOCKED_FOREGROUND_RUN_ACTIVE),
+        (True, V46_CUTOVER_BLOCKED_SDK_RUN_WAITING),
+    ],
 )
-async def test_v46_cutover_blocked_until_runs_are_quiescent(tmp_path: Path, monkeypatch, waiting: bool, code: str) -> None:
+async def test_v46_cutover_blocked_until_runs_are_quiescent(
+    tmp_path: Path, monkeypatch, waiting: bool, code: str
+) -> None:
     queue_db, _store, admission = await _legacy_v45_with_run(tmp_path, monkeypatch, waiting=waiting)
     before = queue_db.read_bytes()
     with pytest.raises(InitializeError, match=code):
@@ -202,7 +251,10 @@ async def test_v46_cutover_blocked_until_runs_are_quiescent(tmp_path: Path, monk
     # 库字节不变（前置在 BEGIN 之前判定，零写入）、仍 v45、无 v46 表。
     assert queue_db.read_bytes() == before
     assert _user_version(queue_db) == 45
-    assert _rows(queue_db, "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='task_scope_closure_receipts'") == [(0,)]
+    assert _rows(
+        queue_db,
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='task_scope_closure_receipts'",
+    ) == [(0,)]
     # 提示携带 host_run_id。
     with pytest.raises(InitializeError) as blocked:
         await initialize_human_memory_program_state_db(queue_db)
@@ -221,13 +273,21 @@ async def test_v46_cutover_precondition_passes_for_terminal_runs(tmp_path: Path)
     observed = await ch.observe_terminal(env, facts)
     # 先 WAITING 观察再 TERMINAL 观察（最新一条才算数），然后 Host 终态。
     await env.store.record_reconciliation(
-        host_run_id=env.admission.host_run_id, sdk_run_id=env.run_id, owner_id=env.admission.owner_id,
-        generation=env.admission.generation, observed_state="BOUND_WAITING", idempotency_key="reconcile-waiting",
+        host_run_id=env.admission.host_run_id,
+        sdk_run_id=env.run_id,
+        owner_id=env.admission.owner_id,
+        generation=env.admission.generation,
+        observed_state="BOUND_WAITING",
+        idempotency_key="reconcile-waiting",
     )
     env.clock.now += 1.0
     await env.store.record_reconciliation(
-        host_run_id=env.admission.host_run_id, sdk_run_id=env.run_id, owner_id=env.admission.owner_id,
-        generation=env.admission.generation, observed_state="BOUND_TERMINAL", idempotency_key="reconcile-terminal",
+        host_run_id=env.admission.host_run_id,
+        sdk_run_id=env.run_id,
+        owner_id=env.admission.owner_id,
+        generation=env.admission.generation,
+        observed_state="BOUND_TERMINAL",
+        idempotency_key="reconcile-terminal",
     )
     await ch.record_terminal(env, observed)
     assert _rows(env.db_path, "SELECT current_state FROM foreground_run_heads") == [("COMPLETED",)]
@@ -239,7 +299,9 @@ async def test_v46_cutover_precondition_passes_for_terminal_runs(tmp_path: Path)
 
 
 @pytest.mark.asyncio
-async def test_v46_forward_migration_and_rollback_drill_keep_evidence(tmp_path: Path, monkeypatch) -> None:
+async def test_v46_forward_migration_and_rollback_drill_keep_evidence(
+    tmp_path: Path, monkeypatch
+) -> None:
     from deskpet.memory.human_memory_program import HumanMemoryProgramStore
     from deskpet.memory.human_memory_service import build_host_typed_evidence
 
@@ -250,14 +312,24 @@ async def test_v46_forward_migration_and_rollback_drill_keep_evidence(tmp_path: 
     program = HumanMemoryProgramStore(db)
     primary = await program.initialize_subject("actor-1")
     envelope, receipt = build_host_typed_evidence(
-        subject="actor-1", authority_ref="host:test:v1", payload={"note": "before v46"},
-        idempotency_key="cutover-evidence-1", source_ref="test/cutover-1", run_id="run-cutover",
+        subject="actor-1",
+        authority_ref="host:test:v1",
+        payload={"note": "before v46"},
+        idempotency_key="cutover-evidence-1",
+        source_ref="test/cutover-1",
+        run_id="run-cutover",
     )
     from deskpet.task_scope.store import CanonicalTaskScopeStore
 
     async with CanonicalTaskScopeStore(db)._connection() as conn:
         await conn.execute("BEGIN IMMEDIATE")
-        await program.append_evidence_tx(conn, envelope, receipt, primary_conversation_id=primary.primary_conversation_id, committed_at=1.0)
+        await program.append_evidence_tx(
+            conn,
+            envelope,
+            receipt,
+            primary_conversation_id=primary.primary_conversation_id,
+            committed_at=1.0,
+        )
         await conn.commit()
     monkeypatch.undo()
     assert _user_version(db) == 45
@@ -282,9 +354,14 @@ async def test_v46_forward_migration_and_rollback_drill_keep_evidence(tmp_path: 
     # 旧 runtime 打开 v46：稳定拒绝、字节不变。
     frozen = db.read_bytes()
     future = inspect_startup_epoch(db, approved_fresh_lane=True, maximum_human_schema_version=45)
-    assert future.epoch is StartupEpoch.FUTURE and future.reason_code == "human_memory_future_epoch_unsupported"
+    assert (
+        future.epoch is StartupEpoch.FUTURE
+        and future.reason_code == "human_memory_future_epoch_unsupported"
+    )
     monkeypatch.setattr(schema, "HUMAN_MEMORY_TARGET_SCHEMA_VERSION", 45)
-    with pytest.raises(HumanMemoryProgramEpochError, match="human_memory_program_future_database_unsupported"):
+    with pytest.raises(
+        HumanMemoryProgramEpochError, match="human_memory_program_future_database_unsupported"
+    ):
         await initialize_human_memory_program_state_db(db)
     monkeypatch.undo()
     assert db.read_bytes() == frozen
@@ -313,38 +390,62 @@ async def _legacy_v45_with_evidence(tmp_path: Path, monkeypatch) -> tuple[Path, 
 
     db = tmp_path / "state.db"
     _enter_legacy_v45_world(monkeypatch, tmp_path)
-    monkeypatch.setattr(migrator, "repair_context_route_registration", _no_repair)  # S5a 世界没有回补
+    monkeypatch.setattr(
+        migrator, "repair_context_route_registration", _no_repair
+    )  # S5a 世界没有回补
     await initialize_human_memory_program_state_db(db)
     program = HumanMemoryProgramStore(db)
     primary = await program.initialize_subject("actor-1")
     envelope, receipt = build_host_typed_evidence(
-        subject="actor-1", authority_ref="host:test:v1", payload={"note": "before startup"},
-        idempotency_key="startup-evidence-1", source_ref="test/startup-1", run_id="run-startup",
+        subject="actor-1",
+        authority_ref="host:test:v1",
+        payload={"note": "before startup"},
+        idempotency_key="startup-evidence-1",
+        source_ref="test/startup-1",
+        run_id="run-startup",
     )
     async with CanonicalTaskScopeStore(db)._connection() as conn:
         await conn.execute("BEGIN IMMEDIATE")
-        await program.append_evidence_tx(conn, envelope, receipt, primary_conversation_id=primary.primary_conversation_id, committed_at=1.0)
+        await program.append_evidence_tx(
+            conn,
+            envelope,
+            receipt,
+            primary_conversation_id=primary.primary_conversation_id,
+            committed_at=1.0,
+        )
         await conn.commit()
     monkeypatch.undo()
     assert _user_version(db) == 45
-    assert _rows(db, "SELECT COUNT(*) FROM human_memory_migration_chain WHERE migration_id=?", CONTEXT_ROUTE_MIGRATION) == [(0,)]
+    assert _rows(
+        db,
+        "SELECT COUNT(*) FROM human_memory_migration_chain WHERE migration_id=?",
+        CONTEXT_ROUTE_MIGRATION,
+    ) == [(0,)]
     assert _rows(db, "SELECT COUNT(*) FROM human_memory_evidence") == [(1,)]
     return db, {table: _table_hash(db, table) for table in EVIDENCE_TABLES}
 
 
 def _assert_startup_opened(db: Path, decision, hashes_before: dict[str, str]) -> None:  # type: ignore[no-untyped-def]
-    assert decision.epoch is StartupEpoch.HUMAN_RESUME and decision.reason_code == "human_memory_resume_database"
+    assert (
+        decision.epoch is StartupEpoch.HUMAN_RESUME
+        and decision.reason_code == "human_memory_resume_database"
+    )
     assert _user_version(db) == TARGET
     assert _rows(db, "SELECT COUNT(*) FROM human_memory_evidence") == [(1,)]
     assert {table: _table_hash(db, table) for table in EVIDENCE_TABLES} == hashes_before
     _assert_context_route_registered(db)
     # 回补之后再次 inspect：严格链校验下必须仍是 HUMAN_RESUME。
     again = inspect_startup_epoch(db, approved_fresh_lane=False)
-    assert again.epoch is StartupEpoch.HUMAN_RESUME and again.reason_code == "human_memory_resume_database"
+    assert (
+        again.epoch is StartupEpoch.HUMAN_RESUME
+        and again.reason_code == "human_memory_resume_database"
+    )
 
 
 @pytest.mark.asyncio
-async def test_startup_opens_s5a_v45_userdata_after_chain_repair(tmp_path: Path, monkeypatch) -> None:
+async def test_startup_opens_s5a_v45_userdata_after_chain_repair(
+    tmp_path: Path, monkeypatch
+) -> None:
     """F-1：S5a 产出的 v45 旧库（037 链外）直接走生产入口 `dispatch_startup_epoch`：链回补先于
     marker-chain 校验 → 不再 `human_memory_marker_chain_invalid`，前向到 v46，evidence 行数/hash 前后不变。"""
     from deskpet.memory.schema import dispatch_startup_epoch
@@ -367,7 +468,9 @@ async def test_startup_opens_pre_repair_v46_userdata(tmp_path: Path, monkeypatch
     db, hashes_before = await _legacy_v45_with_evidence(tmp_path, monkeypatch)
     # Task 2–6 之间的世界：目标 v46（无 039 及之后的迁移）、038 已在链内、037 仍在链外、启动不做回补。
     _cap_migrations(monkeypatch, tmp_path, 46)
-    monkeypatch.setattr(migrator, "_S4_HUMAN_MIGRATIONS", migrator._S4_HUMAN_MIGRATIONS - {CONTEXT_ROUTE_MIGRATION})
+    monkeypatch.setattr(
+        migrator, "_S4_HUMAN_MIGRATIONS", migrator._S4_HUMAN_MIGRATIONS - {CONTEXT_ROUTE_MIGRATION}
+    )
     monkeypatch.setattr(schema, "_validate_s4_migration_chain", lambda *a, **k: None)
     monkeypatch.setattr(migrator, "repair_context_route_registration", _no_repair)
 
@@ -379,7 +482,12 @@ async def test_startup_opens_pre_repair_v46_userdata(tmp_path: Path, monkeypatch
     await initialize_human_memory_program_state_db(db)
     monkeypatch.undo()
     assert _user_version(db) == 46
-    assert _rows(db, "SELECT migration_id FROM human_memory_migration_chain WHERE migration_id IN (?,?)", CONTEXT_ROUTE_MIGRATION, EFFECT_CLOSURE_MIGRATION) == [(EFFECT_CLOSURE_MIGRATION,)]
+    assert _rows(
+        db,
+        "SELECT migration_id FROM human_memory_migration_chain WHERE migration_id IN (?,?)",
+        CONTEXT_ROUTE_MIGRATION,
+        EFFECT_CLOSURE_MIGRATION,
+    ) == [(EFFECT_CLOSURE_MIGRATION,)]
     assert _rows(db, "SELECT COUNT(*) FROM context_route_marker") == [(0,)]
     assert {table: _table_hash(db, table) for table in EVIDENCE_TABLES} == hashes_before
 
@@ -399,24 +507,49 @@ def test_old_checkpoint_before_project_effect_policy_is_isolated(monkeypatch) ->
     from tests.sdk_adapters.test_s5b_acceptance_matrix import _Inventory
 
     specs = [
-        {"name": "write_file", "description": "Write", "input_schema": {"type": "object", "properties": {"path": {"type": "string"}}}},
-        {"name": "read_file", "description": "Read", "input_schema": {"type": "object", "properties": {"path": {"type": "string"}}}},
+        {
+            "name": "write_file",
+            "description": "Write",
+            "input_schema": {"type": "object", "properties": {"path": {"type": "string"}}},
+        },
+        {
+            "name": "read_file",
+            "description": "Read",
+            "input_schema": {"type": "object", "properties": {"path": {"type": "string"}}},
+        },
     ]
     catalog = {
-        "generation": 1, "content_fingerprint": canonical_sha256(specs), "specs": specs,
-        "schema_fingerprints": {item["name"]: canonical_sha256(item["input_schema"]) for item in specs},
+        "generation": 1,
+        "content_fingerprint": canonical_sha256(specs),
+        "specs": specs,
+        "schema_fingerprints": {
+            item["name"]: canonical_sha256(item["input_schema"]) for item in specs
+        },
     }
-    inventory = (_Inventory("write_file", "async", "write_file"), _Inventory("read_file", "async", "read_file"))
+    inventory = (
+        _Inventory("write_file", "async", "write_file"),
+        _Inventory("read_file", "async", "read_file"),
+    )
 
     def prepare(registry: ta.SdkRunToolAuthorityRegistry) -> None:
         registry.prepare_run(
-            run_id="run-old", session_id="s", request_id="r", root_run_id="root", task_scope_id="task",
-            workspace_root=None, catalog=catalog, inventory=inventory,
+            run_id="run-old",
+            session_id="s",
+            request_id="r",
+            root_run_id="root",
+            task_scope_id="task",
+            workspace_root=None,
+            catalog=catalog,
+            inventory=inventory,
         )
 
     run = RunId("run-old")
     # PROJECT_EFFECT policy 改变前的世界：write_file 没有覆盖（SDK 默认 non_project_effect）。
-    monkeypatch.setattr(ta, "SDK_TOOL_EXECUTION_POLICY_OVERRIDES", {k: v for k, v in ta.SDK_TOOL_EXECUTION_POLICY_OVERRIDES.items() if k != "write_file"})
+    monkeypatch.setattr(
+        ta,
+        "SDK_TOOL_EXECUTION_POLICY_OVERRIDES",
+        {k: v for k, v in ta.SDK_TOOL_EXECUTION_POLICY_OVERRIDES.items() if k != "write_file"},
+    )
     old = ta.SdkRunToolAuthorityRegistry()
     prepare(old)
     old_exposure = old.resolve_exposure(run)
@@ -435,8 +568,11 @@ def test_old_checkpoint_before_project_effect_policy_is_isolated(monkeypatch) ->
     saved = set(main._sdk_unavailable_tool_authority_runs)
     try:
         main._isolate_unrestorable_sdk_tool_authority(
-            sdk_run_id=run.value, metadata={"root_run_id": "root"}, provider_binding_resolver=resolver,
-            tool_authorities=current, error=stale.value,
+            sdk_run_id=run.value,
+            metadata={"root_run_id": "root"},
+            provider_binding_resolver=resolver,
+            tool_authorities=current,
+            error=stale.value,
         )
         assert run.value in main._sdk_unavailable_tool_authority_runs
         with pytest.raises(KeyError):

@@ -59,9 +59,7 @@ def _thaw_json(value: object) -> object:
 
 def _freeze_json(value: object) -> object:
     if isinstance(value, dict):
-        return MappingProxyType(
-            {str(key): _freeze_json(item) for key, item in value.items()}
-        )
+        return MappingProxyType({str(key): _freeze_json(item) for key, item in value.items()})
     if isinstance(value, list):
         return tuple(_freeze_json(item) for item in value)
     return value
@@ -177,13 +175,9 @@ class EvaluationMemoryFixtureStoreV1:
         if not sanitized:
             raise ValueError("evaluation fixture requires sanitized=True")
         supplied_records = tuple(records)
-        if not all(
-            isinstance(record, EvaluationMemoryRecordV1) for record in supplied_records
-        ):
+        if not all(isinstance(record, EvaluationMemoryRecordV1) for record in supplied_records):
             raise ValueError("records must be EvaluationMemoryRecordV1 values")
-        frozen_records = tuple(
-            sorted(supplied_records, key=lambda record: record.record_id)
-        )
+        frozen_records = tuple(sorted(supplied_records, key=lambda record: record.record_id))
         payload = cls._active_payload(fixture_id, frozen_records)
         fixture_hash = _canonical_hash(payload)
         return cls(
@@ -518,10 +512,7 @@ class EvaluationReadToolAdapterV1:
             raise EvaluationReadToolError("evaluation_read_binding_drift")
         if authorization.production_identity != self._binding.production_identity:
             raise EvaluationReadToolError("evaluation_read_production_identity_drift")
-        if (
-            authorization.adapter_build_fingerprint
-            != self._binding.adapter_build_fingerprint
-        ):
+        if authorization.adapter_build_fingerprint != self._binding.adapter_build_fingerprint:
             raise EvaluationReadToolError("evaluation_read_adapter_build_drift")
         if (
             authorization.fixture_ref != self._binding.fixture_ref

@@ -123,17 +123,13 @@ def build_default_assembler(
     registry.register(ToolComponent())
     # FP-5 缺口 5c (2026-06-06): 注入 matcher/loader 让 auto-disclosure 生效。
     # 默认 None → SkillComponent 降级 desc-only（字节级 BC，与 WI-4.1 前一致）。
-    registry.register(
-        SkillComponent(skill_matcher=skill_matcher, skill_loader=skill_loader)
-    )
+    registry.register(SkillComponent(skill_matcher=skill_matcher, skill_loader=skill_loader))
     registry.register(PersonaComponent())
     registry.register(TimeComponent())
     registry.register(WorkspaceComponent())
     registry.register(ProjectRulesComponent())
     registry.register(WorkspaceMemoryComponent(store=workspace_memory_store))
-    registry.register(
-        PreferenceProfileComponent(store=facts_store, flag_enabled=persona_inject)
-    )
+    registry.register(PreferenceProfileComponent(store=facts_store, flag_enabled=persona_inject))
 
     policies = load_policies()
     code_policy = policies.get("code")
@@ -159,9 +155,7 @@ def build_default_assembler(
         llm_timeout_s=llm_timeout_s,
     )
 
-    budget = BudgetAllocator(
-        context_window=context_window, budget_ratio=budget_ratio
-    )
+    budget = BudgetAllocator(context_window=context_window, budget_ratio=budget_ratio)
 
     # FP-5 缺口 5j：把 auto_disclosure 配置作为 assemble() 的 default_config，
     # 任何 venue 调用方不传 skills 也能让 SkillComponent 拿到 → 根治 venue-miss。

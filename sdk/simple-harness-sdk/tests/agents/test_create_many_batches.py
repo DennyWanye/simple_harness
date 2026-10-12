@@ -296,7 +296,9 @@ def test_a_closed_agent_no_longer_counts_against_the_instance_cap(tmp_path):
             await runtime.create(_config("b"), creation_key="b")
             with pytest.raises(AgentInstanceCapExceeded):
                 await runtime.create(_config("c"), creation_key="c")
-            closed = await runtime.close_agent(first.agent_id, command_id="close-a", drain_timeout=0)
+            closed = await runtime.close_agent(
+                first.agent_id, command_id="close-a", drain_timeout=0
+            )
             assert closed.state == "closed"
             await runtime.create(_config("c"), creation_key="c")  # one open slot again
             with pytest.raises(AgentBatchRejected):

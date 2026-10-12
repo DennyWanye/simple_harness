@@ -43,8 +43,7 @@ class DurableTaskGrantAuthority:
         try:
             self.database.connection.execute("BEGIN IMMEDIATE")
             row = self.database.connection.execute(
-                "SELECT grant_fingerprint,grant_json,status FROM task_grants "
-                "WHERE task_grant_id=?",
+                "SELECT grant_fingerprint,grant_json,status FROM task_grants WHERE task_grant_id=?",
                 (grant.task_grant_id,),
             ).fetchone()
             if row is None:
@@ -68,9 +67,10 @@ class DurableTaskGrantAuthority:
                     ),
                 )
                 status = "prepared"
-            elif str(row["grant_fingerprint"]) != grant.fingerprint or str(
-                row["grant_json"]
-            ) != payload:
+            elif (
+                str(row["grant_fingerprint"]) != grant.fingerprint
+                or str(row["grant_json"]) != payload
+            ):
                 raise TaskGrantConflict("TaskGrant id belongs to another immutable grant")
             else:
                 status = str(row["status"])
@@ -93,7 +93,9 @@ class DurableTaskGrantAuthority:
         self._assert_current_policy(policy_generation)
         now = self._time(now)
         if current.grant.expires_at is not None and current.grant.expires_at <= now:
-            self.expire(task_grant_id, version=version, policy_generation=policy_generation, now=now)
+            self.expire(
+                task_grant_id, version=version, policy_generation=policy_generation, now=now
+            )
             raise TaskGrantConflict("TaskGrant expired before activation")
         if current.status == "active":
             return current
@@ -123,7 +125,9 @@ class DurableTaskGrantAuthority:
         now = self._time(now)
         if current.grant.expires_at is not None and current.grant.expires_at <= now:
             if current.status in {"prepared", "active"}:
-                self.expire(task_grant_id, version=version, policy_generation=policy_generation, now=now)
+                self.expire(
+                    task_grant_id, version=version, policy_generation=policy_generation, now=now
+                )
             raise TaskGrantConflict("TaskGrant is expired")
         if current.status != "active":
             raise TaskGrantConflict(f"TaskGrant is {current.status}, not active")

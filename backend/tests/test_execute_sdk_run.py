@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 """Integration tests for _execute_sdk_run function."""
+
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, Mock, create_autospec, patch
 
@@ -35,9 +36,7 @@ async def test_ingress_passes_exact_catalog_and_budget_fingerprints_to_run_start
     assert start.tool_catalog_generation == 7
     assert start.tool_catalog_fingerprint == "c" * 64
     assert start.provider_budget_fingerprint == "b" * 64
-    assert thaw_json(start.input)["messages"] == [
-        {"role": "user", "content": "hello"}
-    ]
+    assert thaw_json(start.input)["messages"] == [{"role": "user", "content": "hello"}]
 
 
 @pytest.mark.asyncio
@@ -64,12 +63,8 @@ async def test_conversation_ingress_passes_exact_catalog_and_budget_fingerprints
         conversation=conversation,
     )
 
-    assert client.start_conversation.await_args.kwargs[
-        "tool_catalog_fingerprint"
-    ] == "c" * 64
-    assert client.start_conversation.await_args.kwargs[
-        "provider_budget_fingerprint"
-    ] == "b" * 64
+    assert client.start_conversation.await_args.kwargs["tool_catalog_fingerprint"] == "c" * 64
+    assert client.start_conversation.await_args.kwargs["provider_budget_fingerprint"] == "b" * 64
 
 
 @pytest.mark.asyncio
@@ -78,9 +73,7 @@ async def test_ingress_uses_sdk_015_sync_signal_signature():
     from simple_harness import RunClient
 
     client = create_autospec(RunClient, instance=True)
-    client.signal.return_value = SimpleNamespace(
-        continuation_id="signal-exact"
-    )
+    client.signal.return_value = SimpleNamespace(continuation_id="signal-exact")
     ingress = object.__new__(SdkRuntimeIngress)
     ingress._stack = SimpleNamespace(  # noqa: SLF001
         require_ready=lambda: SimpleNamespace(client=client, generation=15)
@@ -173,9 +166,7 @@ def test_ingress_projects_public_safe_open_authorization_request():
     }
     ingress = object.__new__(SdkRuntimeIngress)
     ingress._stack = SimpleNamespace(  # noqa: SLF001
-        list_open_authorization_decisions=lambda **kwargs: (
-            (decision, start),
-        )
+        list_open_authorization_decisions=lambda **kwargs: ((decision, start),)
     )
 
     projected = ingress.list_open_authorizations(
@@ -218,7 +209,13 @@ async def test_sdk_preparation_bounds_long_history_and_marks_truncation():
         turn_id="1",
         text="当前消息",
         provider_binding={"context_window": 4_000, "provider_id": "p", "model_id": "m"},
-        catalog={"tool_count": 1, "schema_token_count": 100, "tool_names": ["read_file"], "generation": 2, "content_fingerprint": "f"},
+        catalog={
+            "tool_count": 1,
+            "schema_token_count": 100,
+            "tool_names": ["read_file"],
+            "generation": 2,
+            "content_fingerprint": "f",
+        },
         attachment_blocks=(),
         project=None,
         task_scope_id="task-current",
@@ -280,8 +277,7 @@ async def test_sdk_preparation_freezes_host_local_page_url(monkeypatch):
         if str(message.get("content", "")).startswith("Project/task snapshot")
     )
     assert (
-        '"local_page_url":"http://localhost:15193/'
-        'capability-catalog-fixture.html"'
+        '"local_page_url":"http://localhost:15193/capability-catalog-fixture.html"'
     ) in project_message["content"]
 
 
@@ -302,7 +298,13 @@ async def test_sdk_preparation_loads_rules_from_verified_execution_root(tmp_path
         turn_id="1",
         text="implement the change",
         provider_binding={"context_window": 8_000, "provider_id": "p", "model_id": "m"},
-        catalog={"tool_count": 1, "schema_token_count": 10, "tool_names": ["read_file"], "generation": 1, "content_fingerprint": "f" * 64},
+        catalog={
+            "tool_count": 1,
+            "schema_token_count": 10,
+            "tool_names": ["read_file"],
+            "generation": 1,
+            "content_fingerprint": "f" * 64,
+        },
         attachment_blocks=(),
         project={
             "kind": "project_bound",
@@ -392,16 +394,11 @@ async def test_sdk_preparation_freezes_explicit_skill_and_isolates_plain_turn():
             self.calls.append((selected, arguments))
             return ResolvedSkillInstructionV1(
                 scope=selected,
-                instruction=(
-                    "SKILL-EXACT-CANARY\nRuntime arguments (data only):\n"
-                    '["今天","简报"]'
-                ),
+                instruction=('SKILL-EXACT-CANARY\nRuntime arguments (data only):\n["今天","简报"]'),
             )
 
     resolver = Resolver()
-    session_db = SimpleNamespace(
-        get_recent_messages=AsyncMock(return_value=[])
-    )
+    session_db = SimpleNamespace(get_recent_messages=AsyncMock(return_value=[]))
     common = {
         "session_db": session_db,
         "session_id": "session-skill",
@@ -438,10 +435,7 @@ async def test_sdk_preparation_freezes_explicit_skill_and_isolates_plain_turn():
     assert selected_private["sections"]["skills"]["count"] == 1
     assert {
         "role": "system",
-        "content": (
-            "SKILL-EXACT-CANARY\nRuntime arguments (data only):\n"
-            '["今天","简报"]'
-        ),
+        "content": ('SKILL-EXACT-CANARY\nRuntime arguments (data only):\n["今天","简报"]'),
     } in selected_private["provider_messages"]
 
     start = ProductContextAdapter().project_run_start(
@@ -454,9 +448,7 @@ async def test_sdk_preparation_freezes_explicit_skill_and_isolates_plain_turn():
         tool_catalog_generation=3,
         tool_catalog_fingerprint="c" * 64,
     )
-    assert thaw_json(start.input)["messages"] == selected_private[
-        "provider_messages"
-    ]
+    assert thaw_json(start.input)["messages"] == selected_private["provider_messages"]
 
     plain = await _prepare_sdk_context_snapshot(
         **{
@@ -477,9 +469,7 @@ async def test_sdk_preparation_freezes_explicit_skill_and_isolates_plain_turn():
         "estimated_tokens": 0,
         "availability": "estimated",
     }
-    assert "SKILL-EXACT-CANARY" not in repr(
-        plain_private["provider_messages"]
-    )
+    assert "SKILL-EXACT-CANARY" not in repr(plain_private["provider_messages"])
 
 
 def test_sdk_skill_resolver_registration_does_not_depend_on_legacy_assembler():
@@ -490,22 +480,14 @@ def test_sdk_skill_resolver_registration_does_not_depend_on_legacy_assembler():
 
     resolver = Resolver()
     previous_assembler = main.service_context.get("context_assembler")
-    previous_resolver = main.service_context.get(
-        "frozen_skill_instruction_resolver"
-    )
+    previous_resolver = main.service_context.get("frozen_skill_instruction_resolver")
     try:
         main.service_context.register("context_assembler", None)
         main._bind_frozen_skill_snapshot_resolver(resolver)
-        assert main.service_context.get(
-            "frozen_skill_instruction_resolver"
-        ) is resolver
+        assert main.service_context.get("frozen_skill_instruction_resolver") is resolver
     finally:
-        main.service_context.register(
-            "context_assembler", previous_assembler
-        )
-        main.service_context.register(
-            "frozen_skill_instruction_resolver", previous_resolver
-        )
+        main.service_context.register("context_assembler", previous_assembler)
+        main.service_context.register("frozen_skill_instruction_resolver", previous_resolver)
 
 
 @pytest.mark.asyncio
@@ -603,12 +585,8 @@ def test_public_narration_prompt_matches_optional_tolerant_tool_schema():
     schema = _sdk_tool(registration).spec.input_schema
 
     assert "可选" in _SDK_PUBLIC_WORK_NARRATION_PROMPT
-    assert "缺失、空值或类型不正确都不能阻断" in (
-        _SDK_PUBLIC_WORK_NARRATION_PROMPT
-    )
-    assert "必填的 `deskpet_public_progress`" not in (
-        _SDK_PUBLIC_WORK_NARRATION_PROMPT
-    )
+    assert "缺失、空值或类型不正确都不能阻断" in (_SDK_PUBLIC_WORK_NARRATION_PROMPT)
+    assert "必填的 `deskpet_public_progress`" not in (_SDK_PUBLIC_WORK_NARRATION_PROMPT)
     assert "deskpet_public_progress" in schema["properties"]
     # 不变量：deskpet_public_progress 永远不是必填，工具自己声明的 required 照常
     # 发布给模型（S5B-UI-F2 一度把 required 摘掉，独立审查 F-1 判定为模型可见契约
@@ -804,9 +782,7 @@ async def test_execute_sdk_run_registers_delivery_before_start_first_turn(monkey
     session_id = "race-session"
     request_id = "race-request"
     turn_id = 7
-    sdk_run_id = SdkRuntimeIngress._compute_run_id(
-        session_id, request_id, str(turn_id)
-    ).value
+    sdk_run_id = SdkRuntimeIngress._compute_run_id(session_id, request_id, str(turn_id)).value
     saw_registered_adapter = False
 
     class FirstTurnInsideStartIngress:
@@ -829,12 +805,9 @@ async def test_execute_sdk_run_registers_delivery_before_start_first_turn(monkey
                 "workspace_binding_version": 1,
             }
             assert {
-                key: kwargs["payload"]["context_metadata"][key]
-                for key in expected_metadata
+                key: kwargs["payload"]["context_metadata"][key] for key in expected_metadata
             } == expected_metadata
-            durable_tool_authority = kwargs["payload"]["context_metadata"][
-                "tool_authority"
-            ]
+            durable_tool_authority = kwargs["payload"]["context_metadata"]["tool_authority"]
             assert durable_tool_authority["catalog_generation"] == 7
             assert durable_tool_authority["catalog_fingerprint"] == "c" * 64
             assert durable_tool_authority["disclosure_policy"] == "full-direct-v1"
@@ -973,9 +946,7 @@ async def test_execute_sdk_run_waiting_retains_delivery_and_identity(monkeypatch
     request_id = "waiting-request"
     turn_id = 4
     root_run_id = "waiting-root"
-    sdk_run_id = SdkRuntimeIngress._compute_run_id(
-        session_id, request_id, str(turn_id)
-    ).value
+    sdk_run_id = SdkRuntimeIngress._compute_run_id(session_id, request_id, str(turn_id)).value
 
     class WaitingIngress:
         async def start(self, **_kwargs):
@@ -1094,9 +1065,7 @@ async def test_open_authorization_replay_restores_durable_run_route(monkeypatch)
         dangerous=True,
         expires_at=200.0,
     )
-    ingress = SimpleNamespace(
-        list_open_authorizations=lambda **_kwargs: (decision,)
-    )
+    ingress = SimpleNamespace(list_open_authorizations=lambda **_kwargs: (decision,))
     websocket = SimpleNamespace(send_json=AsyncMock())
     main._sdk_run_ids_by_root.clear()
     monkeypatch.setattr(main, "_sdk_ingress", ingress)
@@ -1166,12 +1135,8 @@ def test_restore_sdk_delivery_route_requires_and_preserves_identity(monkeypatch)
         SimpleNamespace(tools=SimpleNamespace(last_mile=None)),
     )
 
-    assert main._restore_sdk_delivery_route(
-        record, start, SimpleNamespace()
-    ) is True
-    delivery, _presenter, _state, context = (
-        main._sdk_retained_presentations[sdk_run_id]
-    )
+    assert main._restore_sdk_delivery_route(record, start, SimpleNamespace()) is True
+    delivery, _presenter, _state, context = main._sdk_retained_presentations[sdk_run_id]
     assert delivery._session_id == "session-recovered"
     assert context.run_id == "root-recovered"
     assert context.request_id == "request-recovered"
@@ -1188,11 +1153,14 @@ def test_restore_sdk_delivery_route_requires_and_preserves_identity(monkeypatch)
             },
         }
     }
-    assert main._restore_sdk_delivery_route(
-        SimpleNamespace(run_id="sdk-invalid"),
-        missing_scope,
-        SimpleNamespace(),
-    ) is False
+    assert (
+        main._restore_sdk_delivery_route(
+            SimpleNamespace(run_id="sdk-invalid"),
+            missing_scope,
+            SimpleNamespace(),
+        )
+        is False
+    )
 
 
 def test_unmigratable_v1_recovery_isolated_without_partial_authority():
@@ -1236,11 +1204,7 @@ async def test_recovered_completed_run_projects_final_and_cleans_route(monkeypat
     context = SimpleNamespace(run_id=root_run_id)
     ingress = SimpleNamespace(
         wait_idle=AsyncMock(),
-        query=Mock(
-            return_value=SimpleNamespace(
-                state=SimpleNamespace(value="completed")
-            )
-        ),
+        query=Mock(return_value=SimpleNamespace(state=SimpleNamespace(value="completed"))),
     )
     context_port = SimpleNamespace(
         load=Mock(
@@ -1258,9 +1222,7 @@ async def test_recovered_completed_run_projects_final_and_cleans_route(monkeypat
     monkeypatch.setattr(main, "_sdk_ingress", ingress)
     monkeypatch.setattr(main, "_sdk_context_port", context_port)
     monkeypatch.setattr(main, "_sdk_provider_binding_resolver", lifecycle)
-    main._sdk_retained_presentations[sdk_run_id] = (
-        delivery, presenter, state, context
-    )
+    main._sdk_retained_presentations[sdk_run_id] = (delivery, presenter, state, context)
     main._sdk_run_ids_by_root[root_run_id] = sdk_run_id
     _delivery_adapters[sdk_run_id] = delivery
 
@@ -1293,11 +1255,7 @@ async def test_resumed_waiting_run_projects_next_authorization(monkeypatch):
         "_sdk_ingress",
         SimpleNamespace(
             wait_idle=AsyncMock(),
-            query=Mock(
-                return_value=SimpleNamespace(
-                    state=SimpleNamespace(value="waiting")
-                )
-            ),
+            query=Mock(return_value=SimpleNamespace(state=SimpleNamespace(value="waiting"))),
         ),
     )
     projection = AsyncMock(return_value=1)
@@ -1359,11 +1317,7 @@ async def test_recovered_route_projects_final_into_durable_session_history(monke
         "_sdk_ingress",
         SimpleNamespace(
             wait_idle=AsyncMock(),
-            query=Mock(
-                return_value=SimpleNamespace(
-                    state=SimpleNamespace(value="completed")
-                )
-            ),
+            query=Mock(return_value=SimpleNamespace(state=SimpleNamespace(value="completed"))),
         ),
     )
     monkeypatch.setattr(
@@ -1401,9 +1355,7 @@ async def test_execute_sdk_run_cleans_pre_registered_delivery_when_start_fails(m
     import main
     from deskpet.sdk_adapters.ingress import SdkRuntimeIngress
 
-    sdk_run_id = SdkRuntimeIngress._compute_run_id(
-        "race-session", "race-request", "9"
-    ).value
+    sdk_run_id = SdkRuntimeIngress._compute_run_id("race-session", "race-request", "9").value
     saw_registered_adapter = False
 
     class FailingStartIngress:
@@ -1449,11 +1401,7 @@ async def test_cancel_product_run_translates_canonical_root_to_sdk_id(monkeypatc
     import main
 
     client = SimpleNamespace(
-        cancel=AsyncMock(
-            return_value=SimpleNamespace(
-                state=SimpleNamespace(value="cancelled")
-            )
-        )
+        cancel=AsyncMock(return_value=SimpleNamespace(state=SimpleNamespace(value="cancelled")))
     )
     ingress = SimpleNamespace(
         accepting=True,
@@ -1474,9 +1422,12 @@ async def test_cancel_product_run_translates_canonical_root_to_sdk_id(monkeypatc
     )
     main._sdk_run_ids_by_root["canonical-root"] = "product-sdk-internal"
 
-    assert await main._cancel_product_harness_run(
-        "session-1", "canonical-root", reason="user_interrupt"
-    ) is True
+    assert (
+        await main._cancel_product_harness_run(
+            "session-1", "canonical-root", reason="user_interrupt"
+        )
+        is True
+    )
 
     assert client.cancel.await_count == 1
     assert client.cancel.await_args.args[0].value == "product-sdk-internal"
@@ -1489,9 +1440,12 @@ def test_authoritative_run_projection_uses_sdk_version_and_owned_waiting(monkeyp
 
     ingress = SimpleNamespace(
         accepting=True,
-        query=Mock(return_value=SimpleNamespace(
-            state=SimpleNamespace(value="waiting"), version=7,
-        )),
+        query=Mock(
+            return_value=SimpleNamespace(
+                state=SimpleNamespace(value="waiting"),
+                version=7,
+            )
+        ),
     )
     monkeypatch.setattr(main, "_sdk_ingress", ingress)
     main._sdk_run_ids_by_root["root-status"] = "sdk-status"
@@ -1517,12 +1471,19 @@ def test_authoritative_run_projection_uses_sdk_version_and_owned_waiting(monkeyp
 def test_authoritative_run_projection_marks_unowned_waiting_cancel_only(monkeypatch):
     import main
 
-    monkeypatch.setattr(main, "_sdk_ingress", SimpleNamespace(
-        accepting=True,
-        query=Mock(return_value=SimpleNamespace(
-            state=SimpleNamespace(value="waiting"), version=3,
-        )),
-    ))
+    monkeypatch.setattr(
+        main,
+        "_sdk_ingress",
+        SimpleNamespace(
+            accepting=True,
+            query=Mock(
+                return_value=SimpleNamespace(
+                    state=SimpleNamespace(value="waiting"),
+                    version=3,
+                )
+            ),
+        ),
+    )
     projection = main._authoritative_sdk_run_projection("sdk-unowned")
     assert projection["waiting_reason"] == "unowned_waiting"
     assert projection["allowed_actions"] == ["cancel"]
@@ -1531,12 +1492,19 @@ def test_authoritative_run_projection_marks_unowned_waiting_cancel_only(monkeypa
 def test_authoritative_run_projection_terminal_ref_is_versioned(monkeypatch):
     import main
 
-    monkeypatch.setattr(main, "_sdk_ingress", SimpleNamespace(
-        accepting=True,
-        query=Mock(return_value=SimpleNamespace(
-            state=SimpleNamespace(value="completed"), version=9,
-        )),
-    ))
+    monkeypatch.setattr(
+        main,
+        "_sdk_ingress",
+        SimpleNamespace(
+            accepting=True,
+            query=Mock(
+                return_value=SimpleNamespace(
+                    state=SimpleNamespace(value="completed"),
+                    version=9,
+                )
+            ),
+        ),
+    )
     projection = main._authoritative_sdk_run_projection("sdk-completed")
     assert projection["state"] == "completed"
     assert projection["run_version"] == 9
@@ -1550,9 +1518,7 @@ async def test_waiting_plan_signal_uses_sdk_identity_and_resumes(monkeypatch):
     from simple_harness import RunClient
 
     client = create_autospec(RunClient, instance=True)
-    client.signal.return_value = SimpleNamespace(
-        continuation_id="decision-1"
-    )
+    client.signal.return_value = SimpleNamespace(continuation_id="decision-1")
     ingress = object.__new__(SdkRuntimeIngress)
     ingress._stack = SimpleNamespace(  # noqa: SLF001
         require_ready=lambda: SimpleNamespace(client=client, generation=15)
@@ -1638,9 +1604,9 @@ async def test_waiting_continuation_uses_sync_sdk_signal_and_resumes(monkeypatch
     from simple_harness import RunClient
 
     client = create_autospec(RunClient, instance=True)
-    client.signal_conversation = AsyncMock(return_value=SimpleNamespace(
-        continuation_id="request:continuation-request"
-    ))
+    client.signal_conversation = AsyncMock(
+        return_value=SimpleNamespace(continuation_id="request:continuation-request")
+    )
     ingress = object.__new__(SdkRuntimeIngress)
     ingress._stack = SimpleNamespace(  # noqa: SLF001
         require_ready=lambda: SimpleNamespace(client=client, generation=15)
@@ -1667,9 +1633,7 @@ async def test_waiting_continuation_uses_sync_sdk_signal_and_resumes(monkeypatch
         get_recent_messages=AsyncMock(return_value=[]),
     )
     context_sources = SimpleNamespace(
-        put_pending=AsyncMock(
-            return_value=("binding-continuation", "sha256:" + "b" * 64)
-        ),
+        put_pending=AsyncMock(return_value=("binding-continuation", "sha256:" + "b" * 64)),
         mark_claimed=AsyncMock(),
     )
     monkeypatch.setattr(main, "_sdk_ingress", ingress)
@@ -1678,9 +1642,7 @@ async def test_waiting_continuation_uses_sync_sdk_signal_and_resumes(monkeypatch
         "service_context",
         SimpleNamespace(
             get=lambda name: {
-                "workflow_service": SimpleNamespace(
-                    execution_uow=execution_uow
-                ),
+                "workflow_service": SimpleNamespace(execution_uow=execution_uow),
                 "session_db": session_db,
                 "sdk_context_staging": object(),
                 "conversation_memory": object(),
@@ -1717,15 +1679,10 @@ async def test_waiting_continuation_uses_sync_sdk_signal_and_resumes(monkeypatch
         claim_token="request:continuation-request",
     )
     watcher.assert_called_once_with("sdk-continuation")
-    assert session_db.append_message.await_args.kwargs[
-        "workflow_event_id"
-    ] == (
-        "user-continuation:canonical-continuation:"
-        "request:continuation-request"
+    assert session_db.append_message.await_args.kwargs["workflow_event_id"] == (
+        "user-continuation:canonical-continuation:request:continuation-request"
     )
-    assert session_db.append_message.await_args.kwargs[
-        "memory_authority"
-    ] == "harness"
+    assert session_db.append_message.await_args.kwargs["memory_authority"] == "harness"
 
 
 @pytest.mark.asyncio
@@ -1749,9 +1706,10 @@ async def test_cancel_product_run_missing_identity_is_idempotent(monkeypatch):
         ),
     )
 
-    assert await main._cancel_product_harness_run(
-        "session-1", "stale-root", reason="user_interrupt"
-    ) is False
+    assert (
+        await main._cancel_product_harness_run("session-1", "stale-root", reason="user_interrupt")
+        is False
+    )
     workload_router.cancel_root.assert_not_awaited()
     assert "stale-root" not in main._sdk_cancel_requested_run_ids
 
@@ -1764,9 +1722,7 @@ async def test_execute_sdk_run_does_not_project_user_cancel_as_failure(monkeypat
     session_id = "cancel-session"
     request_id = "cancel-request"
     turn_id = 3
-    sdk_run_id = SdkRuntimeIngress._compute_run_id(
-        session_id, request_id, str(turn_id)
-    ).value
+    sdk_run_id = SdkRuntimeIngress._compute_run_id(session_id, request_id, str(turn_id)).value
 
     class CancelledDuringWaitIngress:
         async def start(self, **_kwargs):
@@ -1845,7 +1801,7 @@ async def test_execute_sdk_run_basic_flow(mock_sdk_ingress, mock_websocket, mock
         request_id=request_id,
         turn_id=str(turn_id),
         payload=payload,
-        session_generation=1
+        session_generation=1,
     )
     run_id = receipt.run_id
 
@@ -1856,7 +1812,7 @@ async def test_execute_sdk_run_basic_flow(mock_sdk_ingress, mock_websocket, mock
         presenter=presenter,
         adapter=adapter,
         context=mock_context,
-        state=state
+        state=state,
     )
     _delivery_adapters[run_id] = delivery_adapter
 
@@ -1864,11 +1820,7 @@ async def test_execute_sdk_run_basic_flow(mock_sdk_ingress, mock_websocket, mock
         # Send started message
         started = {
             "type": "chat_v2_run_started",
-            "payload": {
-                "session_id": session_id,
-                "request_id": request_id,
-                "run_id": run_id
-            }
+            "payload": {"session_id": session_id, "request_id": request_id, "run_id": run_id},
         }
         await mock_websocket.send_json(started)
 
@@ -1910,7 +1862,7 @@ async def test_execute_sdk_run_registry_cleanup(mock_sdk_ingress, mock_websocket
         request_id=request_id,
         turn_id="1",
         payload={"input": {"text": "test"}},
-        session_generation=1
+        session_generation=1,
     )
     run_id = receipt.run_id
 
@@ -1921,7 +1873,7 @@ async def test_execute_sdk_run_registry_cleanup(mock_sdk_ingress, mock_websocket
         presenter=presenter,
         adapter=adapter,
         context=mock_context,
-        state=state
+        state=state,
     )
     _delivery_adapters[run_id] = delivery_adapter
 
@@ -1955,7 +1907,7 @@ async def test_execute_sdk_run_adapter_registration(mock_sdk_ingress, mock_webso
         request_id="request",
         turn_id="1",
         payload={"input": {"text": "test"}},
-        session_generation=1
+        session_generation=1,
     )
     run_id = receipt.run_id
 
@@ -1970,7 +1922,7 @@ async def test_execute_sdk_run_adapter_registration(mock_sdk_ingress, mock_webso
         presenter=presenter,
         adapter=adapter,
         context=mock_context,
-        state=state
+        state=state,
     )
 
     # Register

@@ -16,6 +16,7 @@ Phase 6: legacy ``_gate is None`` path is gone — every code path goes
 through the gate. The auto-built default behaviour replaces the
 flag-gated old path.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -232,10 +233,12 @@ class TestAgentLoopGateAllowsTool:
             model="stub",
         )
         llm = _ScriptedLLM([response])
-        tools = _ScriptedTools([
-            {"ok": True, "result": "1", "error": None},
-            {"ok": True, "result": "2", "error": None},
-        ])
+        tools = _ScriptedTools(
+            [
+                {"ok": True, "result": "1", "error": None},
+                {"ok": True, "result": "2", "error": None},
+            ]
+        )
         loop = AgentLoop(
             llm_registry=llm,
             tool_registry=tools,
@@ -296,11 +299,13 @@ class TestAgentLoopGateAllowsTool:
             model="stub",
         )
         llm = _ScriptedLLM([response, _make_end_turn()])
-        tools = _ScriptedTools([
-            {"ok": True, "result": "1", "error": None},
-            {"ok": True, "result": "2", "error": None},
-            {"ok": True, "result": "3", "error": None},
-        ])
+        tools = _ScriptedTools(
+            [
+                {"ok": True, "result": "1", "error": None},
+                {"ok": True, "result": "2", "error": None},
+                {"ok": True, "result": "3", "error": None},
+            ]
+        )
         loop = AgentLoop(
             llm_registry=llm,
             tool_registry=tools,
@@ -313,11 +318,13 @@ class TestAgentLoopGateAllowsTool:
     @pytest.mark.asyncio
     async def test_run_leaves_consecutive_tool_policy_to_external_executor(self):
         """Consecutive-call policy runs after the external executor resumes."""
-        gate = TerminationGate(GateConfig(
-            tool_budget_hard=100,
-            max_turns=50,
-            per_tool_max_consecutive=5,
-        ))
+        gate = TerminationGate(
+            GateConfig(
+                tool_budget_hard=100,
+                max_turns=50,
+                per_tool_max_consecutive=5,
+            )
+        )
 
         # Same args every iteration — args-aware counter treats this as
         # consecutive same-call, which is what the hallucination cap

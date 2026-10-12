@@ -5,6 +5,7 @@
 不是验收正文；而保证层给审阅员披露证据按真实正文钉（不可变行 = 修订 0、正文指纹）。现在两处
 共用一个构造：修订 0 + 验收正文哈希，与披露的证据一字不差。
 """
+
 from __future__ import annotations
 
 from agent_orchestrator.assurance.codec import decode, fingerprint
@@ -20,10 +21,16 @@ def test_the_candidate_ref_names_the_stored_acceptance_body(reviewed):  # type: 
     accepted = _acceptance_of_official_review(htn, mission_id)
     identity = str(accepted.acceptance_id)
     ref = acceptance_ref(store, identity)
-    assert (ref.kind, ref.id, ref.revision, ref.produced_by) == (TypedRefKind.ACCEPTANCE, identity, 0, Provenance.TOOL)
+    assert (ref.kind, ref.id, ref.revision, ref.produced_by) == (
+        TypedRefKind.ACCEPTANCE,
+        identity,
+        0,
+        Provenance.TOOL,
+    )
     assert ref.content_hash == content_hash_of(accepted.to_json())
     # ... which is exactly how the assurance side pins the same row for the reviewer's evidence.
     row = store.connection.execute(
-        "SELECT acceptance_json FROM acceptances WHERE acceptance_id=?", (identity,)).fetchone()
+        "SELECT acceptance_json FROM acceptances WHERE acceptance_id=?", (identity,)
+    ).fetchone()
     assert ref.content_hash == fingerprint(decode(row[0]))
     assert ref.content_hash != content_hash_of(identity)  # the old placeholder

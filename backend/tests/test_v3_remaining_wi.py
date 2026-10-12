@@ -7,6 +7,7 @@ WI-T2.5: vitest CI workflow 存在性 — 文档级（CI 配置文件检查）
 WI-T4.2: registry.register 时 source=plugin:xxx 自动加 <plugin>_ 前缀
 WI-T5.1 子项: load_config _cached 单例 + mtime 失效
 """
+
 from __future__ import annotations
 
 import json
@@ -23,20 +24,16 @@ import pytest
 def test_t2_5_frontend_ci_workflow_exists():
     """v3 WI-T2.5：.github/workflows/frontend-tests.yml 存在且含 vitest step."""
     workflow_path = (
-        Path(__file__).parent.parent.parent
-        / ".github" / "workflows" / "frontend-tests.yml"
+        Path(__file__).parent.parent.parent / ".github" / "workflows" / "frontend-tests.yml"
     )
-    assert workflow_path.exists(), (
-        f"WI-T2.5: 期待 frontend CI workflow at {workflow_path}"
-    )
+    assert workflow_path.exists(), f"WI-T2.5: 期待 frontend CI workflow at {workflow_path}"
     body = workflow_path.read_text(encoding="utf-8")
     assert "vitest" in body.lower(), "workflow 必须含 vitest 步骤"
     # 默认必跑：跳过 # 注释行后检查 run: 命令里不应有 --no-vitest skip
     runtime_lines = [
-        ln for ln in body.splitlines()
-        if ln.strip().startswith("run:") or (
-            ln.strip().startswith("- ") and "npm" in ln
-        )
+        ln
+        for ln in body.splitlines()
+        if ln.strip().startswith("run:") or (ln.strip().startswith("- ") and "npm" in ln)
     ]
     runtime_body = "\n".join(runtime_lines)
     assert "--no-vitest" not in runtime_body, (
@@ -48,8 +45,7 @@ def test_t2_5_frontend_ci_workflow_exists():
 def test_t2_5_last_mile_smoke_default_runs_vitest():
     """last_mile_smoke.py 默认（无 --no-vitest）必跑 check_mr0_vitest."""
     smoke_path = (
-        Path(__file__).parent.parent.parent
-        / "scripts" / "acceptance" / "last_mile_smoke.py"
+        Path(__file__).parent.parent.parent / "scripts" / "acceptance" / "last_mile_smoke.py"
     )
     if not smoke_path.exists():
         pytest.skip("last_mile_smoke.py not found")
@@ -68,7 +64,8 @@ def test_t4_2_plugin_source_auto_prefix():
 
     reg = ToolRegistry()
     reg.register(
-        "search_pages", "control",
+        "search_pages",
+        "control",
         {"name": "search_pages", "description": "x", "parameters": {}},
         lambda a, t: "{}",
         source="plugin:notion",
@@ -87,7 +84,8 @@ def test_t4_2_mcp_source_skips_when_already_prefixed():
 
     reg = ToolRegistry()
     reg.register(
-        "mcp_localfs_read_file", "mcp",
+        "mcp_localfs_read_file",
+        "mcp",
         {"name": "mcp_localfs_read_file", "description": "x", "parameters": {}},
         lambda a, t: "{}",
         source="mcp:localfs",
@@ -104,7 +102,8 @@ def test_t4_2_builtin_source_no_prefix():
 
     reg = ToolRegistry()
     reg.register(
-        "file_read", "file",
+        "file_read",
+        "file",
         {"name": "file_read", "description": "x", "parameters": {}},
         lambda a, t: "{}",
         source="builtin",
@@ -119,14 +118,16 @@ def test_t4_2_two_plugins_same_name_no_conflict():
     reg = ToolRegistry()
     # plugin notion 注册 search
     reg.register(
-        "search", "control",
+        "search",
+        "control",
         {"name": "search", "description": "notion search", "parameters": {}},
         lambda a, t: '{"plugin": "notion"}',
         source="plugin:notion",
     )
     # plugin slack 注册同名 search — 不应崩（前缀化后唯一）
     reg.register(
-        "search", "control",
+        "search",
+        "control",
         {"name": "search", "description": "slack search", "parameters": {}},
         lambda a, t: '{"plugin": "slack"}',
         source="plugin:slack",
@@ -151,9 +152,7 @@ def test_t5_1_cache_returns_same_instance_on_unchanged_mtime(tmp_path):
 
     cfg1 = load_config(cfg_file)
     cfg2 = load_config(cfg_file)
-    assert cfg1 is cfg2, (
-        "WI-T5.1: 同 mtime 应返同一对象（cache hit），实测每次重建 → IO 浪费"
-    )
+    assert cfg1 is cfg2, "WI-T5.1: 同 mtime 应返同一对象（cache hit），实测每次重建 → IO 浪费"
 
 
 def test_t5_1_cache_invalidated_on_mtime_change(tmp_path, monkeypatch):

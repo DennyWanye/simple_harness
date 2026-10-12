@@ -7,6 +7,7 @@ Format: `task_<YYMMDDHHMMSS>_<short_uuid>` — sortable prefix gives
 grep-friendly grouping by day, short suffix avoids collisions within
 the same second. Example: `task_260424113045_a3f21b8c`.
 """
+
 from __future__ import annotations
 
 import datetime as _dt

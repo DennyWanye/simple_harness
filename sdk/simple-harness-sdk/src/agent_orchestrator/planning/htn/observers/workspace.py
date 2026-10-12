@@ -41,7 +41,12 @@ _HEX64 = re.compile(r"^[0-9a-f]{64}$")
 
 
 def _signature(predicate_id: str, statement: str, *parameters: str) -> PredicateSignature:
-    body = {"id": predicate_id, "version": 1, "parameters": list(parameters), "statement": statement}
+    body = {
+        "id": predicate_id,
+        "version": 1,
+        "parameters": list(parameters),
+        "statement": statement,
+    }
     return PredicateSignature(
         predicate_ref=VersionedRef(predicate_id, 1, content_hash_of(body)),
         parameters=tuple(PredicateParameter(name, ArgumentType.STRING) for name in parameters),
@@ -56,9 +61,15 @@ def workspace_predicates() -> tuple[PredicateSignature, ...]:
 
     return (
         _signature(FILE_PRESENT, "the Mission's file view has a file at this path", "path"),
-        _signature(FILE_SHA256, "the content in force at this path has this SHA-256", "path", "sha256"),
-        _signature(SOURCE_CURRENT, "the reference material registered at this path is this version",
-                   "path", "version_hash"),
+        _signature(
+            FILE_SHA256, "the content in force at this path has this SHA-256", "path", "sha256"
+        ),
+        _signature(
+            SOURCE_CURRENT,
+            "the reference material registered at this path is this version",
+            "path",
+            "version_hash",
+        ),
     )
 
 
@@ -72,7 +83,9 @@ def mission_file_view(store: Any, mission_id: str) -> dict[str, str]:
     seed = (mission.final_report or {}).get("workspace_seed") if mission is not None else None
     for path, body in dict(seed or {}).items():
         text = str(body)
-        view[str(path)] = text if _HEX64.match(text) else hashlib.sha256(text.encode("utf-8")).hexdigest()
+        view[str(path)] = (
+            text if _HEX64.match(text) else hashlib.sha256(text.encode("utf-8")).hexdigest()
+        )
     versions: dict[str, int] = {}
     for artifact in store.list_mission_artifacts(mission_id):
         if artifact.verification_status != "VERIFIED" or artifact.path.startswith("."):
@@ -96,34 +109,64 @@ class WorkspaceObserver:
     def predicate_ids(self) -> tuple[str, ...]:
         return (FILE_PRESENT, FILE_SHA256, SOURCE_CURRENT)
 
-    def observe(self, signature: PredicateSignature, arguments: Mapping[str, Any], *, now_ms: int) -> Observation:
+    def observe(
+        self, signature: PredicateSignature, arguments: Mapping[str, Any], *, now_ms: int
+    ) -> Observation:
         predicate = signature.predicate_ref.id
         path = str(arguments.get("path", ""))
         try:
             if predicate == SOURCE_CURRENT:
                 row = self._store.connection.execute(
                     "SELECT version_hash FROM sources WHERE mission_id=? AND path=? AND superseded_by IS NULL"
-                    " AND revoked=0", (self._mission_id, path)).fetchall()
+                    " AND revoked=0",
+                    (self._mission_id, path),
+                ).fetchall()
                 if len(row) > 1:
-                    return unavailable(OBSERVER_ID, predicate, f"{path!r} has more than one version in force")
+                    return unavailable(
+                        OBSERVER_ID, predicate, f"{path!r} has more than one version in force"
+                    )
                 holds = bool(row) and str(row[0][0]) == str(arguments.get("version_hash"))
                 scope = f"sources:{self._mission_id}"
             else:
                 view = mission_file_view(self._store, self._mission_id)
-                holds = path in view and (predicate == FILE_PRESENT or view[path] == str(arguments.get("sha256")))
+                holds = path in view and (
+                    predicate == FILE_PRESENT or view[path] == str(arguments.get("sha256"))
+                )
                 scope = f"files:{self._mission_id}"
         except Exception as error:  # noqa: BLE001 - not being able to look is the third answer
-            return unavailable(OBSERVER_ID, predicate, f"the store could not be read: {type(error).__name__}")
+            return unavailable(
+                OBSERVER_ID, predicate, f"the store could not be read: {type(error).__name__}"
+            )
         if holds:
-            return observed(signature, arguments, polarity=True, observer_id=OBSERVER_ID, now_ms=now_ms,
-                            observer_version=OBSERVER_VERSION)
-        return denial(signature, arguments, observer_id=OBSERVER_ID, now_ms=now_ms, coverage_scope=scope,
-                      observer_version=OBSERVER_VERSION)
+            return observed(
+                signature,
+                arguments,
+                polarity=True,
+                observer_id=OBSERVER_ID,
+                now_ms=now_ms,
+                observer_version=OBSERVER_VERSION,
+            )
+        return denial(
+            signature,
+            arguments,
+            observer_id=OBSERVER_ID,
+            now_ms=now_ms,
+            coverage_scope=scope,
+            observer_version=OBSERVER_VERSION,
+        )
 
 
 def workspace_observers(store: Any, mission_id: str) -> tuple[PredicateObserver, ...]:
     return (WorkspaceObserver(store, mission_id),)
 
 
-__all__ = ("FILE_PRESENT", "FILE_SHA256", "OBSERVER_ID", "SOURCE_CURRENT", "WorkspaceObserver",
-           "mission_file_view", "workspace_observers", "workspace_predicates")
+__all__ = (
+    "FILE_PRESENT",
+    "FILE_SHA256",
+    "OBSERVER_ID",
+    "SOURCE_CURRENT",
+    "WorkspaceObserver",
+    "mission_file_view",
+    "workspace_observers",
+    "workspace_predicates",
+)

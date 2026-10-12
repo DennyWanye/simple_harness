@@ -180,9 +180,7 @@ async def score_rerank_node(
     *,
     finalize: bool = True,
 ) -> ResearchCoreState:
-    return await score_rerank_stage(
-        state, ports, config, finalize=finalize
-    )
+    return await score_rerank_stage(state, ports, config, finalize=finalize)
 
 
 async def gap_node(

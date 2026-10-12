@@ -76,9 +76,7 @@ def test_shared_sink_correlation_and_bounded_exports_are_safe(tmp_path, caplog):
             attributes={"attempt": 1, "duration_ms": 0},
         )
         assert runtime.flush(1.0)
-        host.register_snapshot_source(
-            "memory", lambda: {"health": "ok", "queue_count": 0}
-        )
+        host.register_snapshot_source("memory", lambda: {"health": "ok", "queue_count": 0})
         assert set(host.export().values()) == {"ok"}
     finally:
         host.reset_ingress(token)
@@ -162,19 +160,24 @@ async def test_async_snapshot_timeout_and_cancellation_leave_no_pending_collecto
 
     host = HostSdkObservability(tmp_path)
     started, stopped = asyncio.Event(), asyncio.Event()
+
     async def blocked():
         started.set()
         try:
             await asyncio.Event().wait()
         finally:
             stopped.set()
+
     host.register_snapshot_source("blocked", blocked)
     host.register_snapshot_source("sync", lambda: {"health": "ok"})
     try:
         await host.export_async()
         assert started.is_set() and stopped.is_set()
         result = json.loads((tmp_path / SDK_SNAPSHOT_FILENAME).read_text())
-        assert result["sources"]["blocked"] == {"health": "degraded", "error_code": "snapshot_unavailable"}
+        assert result["sources"]["blocked"] == {
+            "health": "degraded",
+            "error_code": "snapshot_unavailable",
+        }
         assert result["sources"]["sync"] == {"health": "ok"}
         started.clear()
         stopped.clear()

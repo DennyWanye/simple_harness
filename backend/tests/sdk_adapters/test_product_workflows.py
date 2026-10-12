@@ -41,7 +41,9 @@ def test_active_product_workflow_identities_are_versioned_and_detached():
     importlib.import_module("deskpet.workflows.definitions.sdk_v7.deep_research")
     importlib.import_module("deskpet.workflows.definitions.sdk_v2.ppt_pro")
     loaded = set(sys.modules) - before
-    assert not any(name == prefix or name.startswith(prefix + ".") for name in loaded for prefix in FORBIDDEN)
+    assert not any(
+        name == prefix or name.startswith(prefix + ".") for name in loaded for prefix in FORBIDDEN
+    )
 
 
 def test_fresh_process_standard_import_does_not_load_legacy_workflow_authority():
@@ -94,9 +96,7 @@ def test_lazy_legacy_exports_preserve_first_access_identity():
 
 def test_product_registrations_use_exact_active_identities():
     owner = object()
-    registrations = build_product_workflow_registrations(
-        generation=1, transaction_owner=owner
-    )
+    registrations = build_product_workflow_registrations(generation=1, transaction_owner=owner)
     assert {
         item.profile.descriptor.key: (
             item.definition.name,
@@ -118,9 +118,7 @@ def test_ppt_v2_has_pure_barrier_and_separate_effect_node():
     assert nodes["wait_outline_decision"].pre_interrupt_effect_policy == "pure"
     assert nodes["apply_outline_decision"].interrupt_capable is False
     assert len(definition.conditional_edges) == 7
-    assert {
-        edge.selector_effect_policy for edge in definition.conditional_edges
-    } == {"pure"}
+    assert {edge.selector_effect_policy for edge in definition.conditional_edges} == {"pure"}
 
 
 @pytest.mark.asyncio
@@ -130,9 +128,7 @@ async def test_deep_research_runs_real_ports_delivers_openable_artifact_and_reop
     database_path = tmp_path / "deep-research.sqlite"
     seam = _WorkflowSeam(database_path)
     registration = next(
-        item
-        for item in seam.product
-        if item.profile.descriptor.key == "workflow.deep_research"
+        item for item in seam.product if item.profile.descriptor.key == "workflow.deep_research"
     )
     context, ports = _research_context(tmp_path / "research-physical")
     run_id, result, run = await seam.execute(
@@ -160,18 +156,16 @@ async def test_deep_research_runs_real_ports_delivers_openable_artifact_and_reop
         "artifact_card",
         "final_assistant",
     }
-    physical_before = sum(
-        len(port.calls) for port in ports.values() if hasattr(port, "calls")
-    )
+    physical_before = sum(len(port.calls) for port in ports.values() if hasattr(port, "calls"))
     seam.close()
 
     reopened = _WorkflowSeam(database_path)
     recovered = reopened.uow.read_run(run_id)
     assert recovered is not None
     assert recovered.state.value == "completed"
-    assert sum(
-        len(port.calls) for port in ports.values() if hasattr(port, "calls")
-    ) == physical_before
+    assert (
+        sum(len(port.calls) for port in ports.values() if hasattr(port, "calls")) == physical_before
+    )
     reopened.close()
 
 
@@ -205,9 +199,7 @@ async def test_deep_research_continues_same_child_and_preserves_citation_authori
 ):
     seam = _WorkflowSeam(tmp_path / "deep-research-continuation.sqlite")
     registration = next(
-        item
-        for item in seam.product
-        if item.profile.descriptor.key == "workflow.deep_research"
+        item for item in seam.product if item.profile.descriptor.key == "workflow.deep_research"
     )
     base_context, ports = _research_context(tmp_path / "continued-physical")
     del base_context
@@ -303,7 +295,9 @@ class _PptArtifact:
     async def render_presentation(self, **values):
         self.calls.append(values["operation_key"])
         self.last_pages = len(values["slides"])
-        target = Path(values["output_path"]) if values.get("output_path") else self.root / "deck.pptx"
+        target = (
+            Path(values["output_path"]) if values.get("output_path") else self.root / "deck.pptx"
+        )
         target.parent.mkdir(parents=True, exist_ok=True)
         if not target.exists():
             target.write_bytes(b"PK\x03\x04deskpet-ppt-v2")
@@ -359,8 +353,8 @@ async def test_ppt_public_resolve_and_resume_is_durable_and_effects_are_exact_on
     context = WorkflowContext(
         ports={
             "llm": llm,
-                "search": research,
-                "fetch": research,
+            "search": research,
+            "fetch": research,
             "workspace": workspace,
             "artifact": artifact,
             "evaluator": evaluator,
@@ -369,9 +363,7 @@ async def test_ppt_public_resolve_and_resume_is_durable_and_effects_are_exact_on
     )
     seam = _WorkflowSeam(database_path)
     registration = next(
-        item
-        for item in seam.product
-        if item.profile.descriptor.key == "workflow.presentation"
+        item for item in seam.product if item.profile.descriptor.key == "workflow.presentation"
     )
     run_id, waiting, run = await seam.execute(
         registration,
@@ -414,8 +406,12 @@ async def test_ppt_public_resolve_and_resume_is_durable_and_effects_are_exact_on
     assert len(evaluator.calls) == 1
     assert len(notifier.calls) == 2
     physical_before = (
-        len(llm.calls), len(research.calls), len(workspace.calls),
-        len(artifact.calls), len(evaluator.calls), len(notifier.calls),
+        len(llm.calls),
+        len(research.calls),
+        len(workspace.calls),
+        len(artifact.calls),
+        len(evaluator.calls),
+        len(notifier.calls),
     )
     reopened.close()
 
@@ -424,8 +420,12 @@ async def test_ppt_public_resolve_and_resume_is_durable_and_effects_are_exact_on
     assert durable_run is not None
     assert durable_run.state.value == "completed"
     assert (
-        len(llm.calls), len(research.calls), len(workspace.calls),
-        len(artifact.calls), len(evaluator.calls), len(notifier.calls),
+        len(llm.calls),
+        len(research.calls),
+        len(workspace.calls),
+        len(artifact.calls),
+        len(evaluator.calls),
+        len(notifier.calls),
     ) == physical_before
     recovered.close()
 
@@ -452,9 +452,7 @@ async def test_ppt_full_page_output_path_and_generic_approval_survive_reopen(
     output_path = tmp_path / "requested" / "full-page.pptx"
     seam = _WorkflowSeam(database_path)
     registration = next(
-        item
-        for item in seam.product
-        if item.profile.descriptor.key == "workflow.presentation"
+        item for item in seam.product if item.profile.descriptor.key == "workflow.presentation"
     )
     run_id, waiting, run = await seam.execute(
         registration,

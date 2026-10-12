@@ -42,31 +42,61 @@ class Unstarted:
     def world(self, loop: Any) -> ProductWorld:
         control = MissionControlV1(loop, tenant_id=TENANT, principal=self.deployment.principal)
         self.deployment.bind(loop, control)
-        return ProductWorld(loop=loop, control=control, deployment=self.deployment, native=self.native,
-                            provider=self.provider)
+        return ProductWorld(
+            loop=loop,
+            control=control,
+            deployment=self.deployment,
+            native=self.native,
+            provider=self.provider,
+        )
 
 
-def unstarted(root: Path, provider: Any, *, thinking_provider: Any = None, owner: str = "product-world",
-              installed: bool = True, **config: Any) -> Unstarted:
+def unstarted(
+    root: Path,
+    provider: Any,
+    *,
+    thinking_provider: Any = None,
+    owner: str = "product-world",
+    installed: bool = True,
+    **config: Any,
+) -> Unstarted:
     """``installed=False``：执行池照常拼好，但部署的安装（规划世界、执行图、保证通道、根）没有接上——
     模拟一个装配缺失的进程打开了已有的库（守卫"没装分层装配就不发规划"用）。"""
     principal = Principal("product-world-user")
     counter = FixtureWordCounter()
     cfg = OrchestratorConfig(evidence_root=Path(root), model="agent-model", **config)
-    native = NativePools(tenant_id=TENANT, principal_id=principal.principal_id, allowed_tools=DEFAULT_TOOLS,
-                         meter_factory=counter.meter_factory)
-    options = pool_options(cfg, native=native, provider=provider, counter=counter, provider_kind="fixtures",
-                           thinking_provider=thinking_provider,
-                           thinking_counter=None if thinking_provider is None else FixtureWordCounter())
-    deployment = UserMissionDeployment(tenant_id=TENANT, principal=principal, world_factory=user_goal_world,
-                                       names=USER_GOAL_NAMES, host_fingerprint="ab" * 32)
+    native = NativePools(
+        tenant_id=TENANT,
+        principal_id=principal.principal_id,
+        allowed_tools=DEFAULT_TOOLS,
+        meter_factory=counter.meter_factory,
+    )
+    options = pool_options(
+        cfg,
+        native=native,
+        provider=provider,
+        counter=counter,
+        provider_kind="fixtures",
+        thinking_provider=thinking_provider,
+        thinking_counter=None if thinking_provider is None else FixtureWordCounter(),
+    )
+    deployment = UserMissionDeployment(
+        tenant_id=TENANT,
+        principal=principal,
+        world_factory=user_goal_world,
+        names=USER_GOAL_NAMES,
+        host_fingerprint="ab" * 32,
+    )
 
     def assemble(orchestrator: Any) -> None:
         deployment.assemble(orchestrator)
         native.bind_orchestrator(orchestrator)
 
-    wiring = ({"startup_assembly": assemble, "assurance_root_setup": deployment.assurance_root_setup()}
-              if installed else {"startup_assembly": native.bind_orchestrator})
+    wiring = (
+        {"startup_assembly": assemble, "assurance_root_setup": deployment.assurance_root_setup()}
+        if installed
+        else {"startup_assembly": native.bind_orchestrator}
+    )
     orchestrator = Orchestrator(cfg, provider, owner=owner, **wiring, **options)
     return Unstarted(orchestrator, deployment, native, provider)
 
@@ -79,7 +109,9 @@ async def started(root: Path, provider: Any, **kwargs: Any):
     parts = unstarted(root, provider, **kwargs)
     async with parts.orchestrator as loop:
         world = parts.world(loop)
-        loop.set_between_cycles(lambda: parts.deployment.between_cycles(auto=world.auto), every_seconds=0.0)
+        loop.set_between_cycles(
+            lambda: parts.deployment.between_cycles(auto=world.auto), every_seconds=0.0
+        )
         try:
             yield world
         finally:

@@ -76,8 +76,7 @@ class PreferencePolicy:
     def __post_init__(self) -> None:
         if not 2 <= self.independent_context_threshold <= 10:
             raise ValueError(
-                "preference_promotion_independent_context_threshold "
-                "must be in range 2..10"
+                "preference_promotion_independent_context_threshold must be in range 2..10"
             )
         if self.implicit_evidence_ttl.total_seconds() <= 0:
             raise ValueError("implicit_evidence_ttl must be positive")
@@ -88,9 +87,7 @@ class PreferencePolicy:
         return {
             "schema_version": self.schema_version,
             "independent_context_threshold": self.independent_context_threshold,
-            "implicit_evidence_ttl_seconds": int(
-                self.implicit_evidence_ttl.total_seconds()
-            ),
+            "implicit_evidence_ttl_seconds": int(self.implicit_evidence_ttl.total_seconds()),
         }
 
     @property
@@ -206,17 +203,16 @@ class PreferenceTurnDecision:
             if (
                 self.preference_key != "response.detail"
                 or self.durable_value not in {"brief", "detailed"}
-                or self.signal_kind
-                not in {"implicit", "explicit_long_term", "conflict"}
+                or self.signal_kind not in {"implicit", "explicit_long_term", "conflict"}
             ):
                 raise ValueError("preference_turn_observation_invalid")
         elif self.durable_value is not None or self.signal_kind is not None:
             raise ValueError("preference_turn_unexpected_observation")
         if overrides:
-            if (
-                self.preference_key != "response.detail"
-                or self.request_value not in {"brief", "detailed"}
-            ):
+            if self.preference_key != "response.detail" or self.request_value not in {
+                "brief",
+                "detailed",
+            }:
                 raise ValueError("preference_turn_override_invalid")
         elif self.request_value is not None:
             raise ValueError("preference_turn_unexpected_override")
@@ -257,28 +253,20 @@ class PreferenceTurnDecision:
         }
 
     @classmethod
-    def from_mapping(
-        cls, payload: Mapping[str, Any]
-    ) -> PreferenceTurnDecision:
+    def from_mapping(cls, payload: Mapping[str, Any]) -> PreferenceTurnDecision:
         if payload.get("schema_version") != 1:
             raise ValueError("preference_turn_payload_invalid")
         return cls(
             decision=str(payload.get("decision") or ""),
             preference_key=(
-                None
-                if payload.get("preference_key") is None
-                else str(payload["preference_key"])
+                None if payload.get("preference_key") is None else str(payload["preference_key"])
             ),
             durable_value=payload.get("durable_value"),
             signal_kind=(
-                None
-                if payload.get("signal_kind") is None
-                else str(payload["signal_kind"])
+                None if payload.get("signal_kind") is None else str(payload["signal_kind"])
             ),
             request_value=payload.get("request_value"),
-            reason_code=str(
-                payload.get("reason_code") or "model_preference_decision"
-            ),
+            reason_code=str(payload.get("reason_code") or "model_preference_decision"),
         )
 
 
@@ -317,9 +305,7 @@ class ModelPreferenceTurnInterpreter:
             "schema_version": 1,
             "interpreter_id": PREFERENCE_TURN_INTERPRETER_ID,
             "interpreter_version": PREFERENCE_TURN_INTERPRETER_VERSION,
-            "current_preferences": [
-                item.to_prompt_value() for item in current_preferences
-            ],
+            "current_preferences": [item.to_prompt_value() for item in current_preferences],
             "user_message": user_text,
         }
 
@@ -348,9 +334,7 @@ class ModelPreferenceTurnInterpreter:
             "6. 只有同一消息同时包含真正的新长期变化和本次例外时，才使用 "
             "observe_and_override。\n"
             "只输出一个符合下面 schema 的 JSON 对象，不要输出 Markdown、解释或额外文本：\n"
-            + canonical_json(
-                PREFERENCE_TURN_DECISION_SCHEMA["json_schema"]["schema"]
-            )
+            + canonical_json(PREFERENCE_TURN_DECISION_SCHEMA["json_schema"]["schema"])
             + "\n待判定输入：\n"
             + canonical_json(assessment)
         )
@@ -428,22 +412,11 @@ class ModelPreferenceTurnInterpreter:
                 {
                     "schema_version": 1,
                     "decision": decision,
-                    "preference_key": (
-                        None if preference_key == "none" else preference_key
-                    ),
-                    "durable_value": (
-                        None if durable_value == "none" else durable_value
-                    ),
-                    "signal_kind": (
-                        None if signal_kind == "none" else signal_kind
-                    ),
-                    "request_value": (
-                        None if request_value == "none" else request_value
-                    ),
-                    "reason_code": str(
-                        payload.get("reason_code")
-                        or "model_preference_decision"
-                    ),
+                    "preference_key": (None if preference_key == "none" else preference_key),
+                    "durable_value": (None if durable_value == "none" else durable_value),
+                    "signal_kind": (None if signal_kind == "none" else signal_kind),
+                    "request_value": (None if request_value == "none" else request_value),
+                    "reason_code": str(payload.get("reason_code") or "model_preference_decision"),
                 }
             )
         except Exception as exc:  # noqa: BLE001
@@ -518,10 +491,7 @@ class PreferenceResolution:
             },
             "snapshot_hash": self.snapshot_hash,
         }
-        return (
-            "## 用户偏好（本次运行冻结快照）\n"
-            + canonical_json(payload)
-        )
+        return "## 用户偏好（本次运行冻结快照）\n" + canonical_json(payload)
 
 
 class PreferenceResolver:
@@ -553,8 +523,7 @@ class PreferenceResolver:
         if str(row["evidence_reason_code"]) == "preference_conflict":
             return False
         return (
-            self._now() - _parse_time(str(row["created_at"]))
-            <= self.policy.implicit_evidence_ttl
+            self._now() - _parse_time(str(row["created_at"])) <= self.policy.implicit_evidence_ttl
         )
 
     @staticmethod
@@ -696,8 +665,7 @@ class PreferenceResolver:
                 from .contracts import CompanionOwnerError
 
                 raise CompanionOwnerError(
-                    f"companion_owner_stale:{owner.profile_id}:"
-                    f"{owner.profile_generation}"
+                    f"companion_owner_stale:{owner.profile_id}:{owner.profile_generation}"
                 )
             params: list[Any] = [owner.profile_id, owner.profile_generation]
             where = ""
@@ -808,8 +776,7 @@ class PreferenceResolver:
         ).fetchall()
         valid_until = row["valid_until"]
         implicit_expired = bool(
-            valid_until is not None
-            and _parse_time(str(valid_until)) < self._now()
+            valid_until is not None and _parse_time(str(valid_until)) < self._now()
         )
         if override is not None:
             value = override.value
@@ -826,16 +793,11 @@ class PreferenceResolver:
                 item
                 for item in evidence_rows
                 if item["content_state"] == "live"
-                and self._payload(item).get("preference_signal_kind")
-                == "explicit_long_term"
-                and canonical_json(
-                    self._payload(item).get("preference_value")
-                )
+                and self._payload(item).get("preference_signal_kind") == "explicit_long_term"
+                and canonical_json(self._payload(item).get("preference_value"))
                 == str(row["explicit_value_json"])
             ]
-            used_evidence = (
-                (str(winner[-1]["event_id"]),) if winner else ()
-            )
+            used_evidence = (str(winner[-1]["event_id"]),) if winner else ()
         elif row["long_term_value_json"] is not None and not implicit_expired:
             value = json.loads(str(row["long_term_value_json"]))
             layer = "long_term"
@@ -861,16 +823,11 @@ class PreferenceResolver:
                 item
                 for item in evidence_rows
                 if item["content_state"] == "live"
-                and self._payload(item).get("preference_signal_kind")
-                == "model_assumption"
-                and canonical_json(
-                    self._payload(item).get("preference_value")
-                )
+                and self._payload(item).get("preference_signal_kind") == "model_assumption"
+                and canonical_json(self._payload(item).get("preference_value"))
                 == str(row["inferred_value_json"])
             ]
-            used_evidence = (
-                (str(winner[-1]["event_id"]),) if winner else ()
-            )
+            used_evidence = (str(winner[-1]["event_id"]),) if winner else ()
         else:
             # A fully revoked row remains as an auditable versioned tombstone
             # but does not enter a run snapshot.
@@ -919,8 +876,7 @@ class PreferenceResolver:
             payload = self._payload(item)
             if (
                 payload.get("preference_signal_kind") != "implicit"
-                or canonical_json(payload.get("preference_value"))
-                != winner_value_json
+                or canonical_json(payload.get("preference_value")) != winner_value_json
             ):
                 continue
             by_context[str(item["context_key"])] = str(item["event_id"])
@@ -935,8 +891,7 @@ class PreferenceResolver:
 
         if owner != _LEGACY_IMPORT_OWNER:
             raise ValueError(
-                "legacy preference import owner must be "
-                "legacy_local_profile generation 1"
+                "legacy preference import owner must be legacy_local_profile generation 1"
             )
         source = Path(path)
         if not source.is_file():
@@ -954,9 +909,7 @@ class PreferenceResolver:
             if not text:
                 continue
             digest = hashlib.sha256(
-                canonical_json(
-                    {"kind": kind, "label": label, "text": text}
-                ).encode("utf-8")
+                canonical_json({"kind": kind, "label": label, "text": text}).encode("utf-8")
             ).hexdigest()
             event_id = f"legacy-pref:{digest}"
             before = self._has_evidence(owner, event_id)
@@ -1006,9 +959,7 @@ class PreferenceResolver:
                 key=lambda item: (item.dependency_kind, item.dependency_id),
             )
         )
-        dependency_keys = {
-            (item.dependency_kind, item.dependency_id) for item in dependencies
-        }
+        dependency_keys = {(item.dependency_kind, item.dependency_id) for item in dependencies}
         if len(dependency_keys) != len(dependencies):
             raise ValueError("run growth dependencies must be unique")
         payload = {
@@ -1103,9 +1054,7 @@ def apply_preference_event_db(
     ):
         raise CompanionConflictError("preference_event_payload_mismatch")
     evidence_reason = (
-        "preference_conflict"
-        if signal_kind == "conflict"
-        else f"preference_{signal_kind}"
+        "preference_conflict" if signal_kind == "conflict" else f"preference_{signal_kind}"
     )
     existing = db.execute(
         """SELECT context_key,weight,reason_code FROM preference_evidence
@@ -1280,14 +1229,10 @@ def _recompute_preference_db(
         bucket["latest"] = max(bucket["latest"], str(row["created_at"]))
 
     explicit_json = (
-        _as_json(explicit_rows[-1][1].get("preference_value"))
-        if explicit_rows
-        else None
+        _as_json(explicit_rows[-1][1].get("preference_value")) if explicit_rows else None
     )
     inferred_json = (
-        _as_json(assumption_rows[-1][1].get("preference_value"))
-        if assumption_rows
-        else None
+        _as_json(assumption_rows[-1][1].get("preference_value")) if assumption_rows else None
     )
     groups = sorted(
         implicit_by_value.items(),
@@ -1301,12 +1246,9 @@ def _recompute_preference_db(
             continue
         raw_payload = row["payload_json"]
         parsed_payload = json.loads(str(raw_payload)) if raw_payload else {}
-        if (
-            row["evidence_reason_code"] == "preference_conflict"
-            or (
-                isinstance(parsed_payload, dict)
-                and parsed_payload.get("preference_signal_kind") == "conflict"
-            )
+        if row["evidence_reason_code"] == "preference_conflict" or (
+            isinstance(parsed_payload, dict)
+            and parsed_payload.get("preference_signal_kind") == "conflict"
         ):
             live_conflict = True
             break
@@ -1315,8 +1257,7 @@ def _recompute_preference_db(
     if (
         groups
         and not has_conflict
-        and len(groups[0][1]["contexts"])
-        >= policy.independent_context_threshold
+        and len(groups[0][1]["contexts"]) >= policy.independent_context_threshold
     ):
         promoted_json = groups[0][0]
     if explicit_json is not None:
@@ -1383,9 +1324,9 @@ def _recompute_preference_db(
             (
                 None
                 if explicit_json is not None
-                else (
-                    _parse_time(now) + policy.implicit_evidence_ttl
-                ).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+                else (_parse_time(now) + policy.implicit_evidence_ttl)
+                .isoformat(timespec="milliseconds")
+                .replace("+00:00", "Z")
             ),
             reason,
             now,
@@ -1518,9 +1459,7 @@ def recompute_preferences_after_forget_db(
             store._insert_outbox(
                 db,
                 owner,
-                outbox_id=canonical_hash(
-                    ["preference_revoked", key, current["state_version"]]
-                ),
+                outbox_id=canonical_hash(["preference_revoked", key, current["state_version"]]),
                 event_kind="preference_changed",
                 event_id=f"{key}:{current['state_version']}",
                 sink_kind="companion_notification",
@@ -1554,20 +1493,14 @@ def _policy_for_preference_db(
         if not isinstance(policy, dict):
             continue
         resolved = PreferencePolicy(
-            independent_context_threshold=int(
-                policy["independent_context_threshold"]
-            ),
-            implicit_evidence_ttl=timedelta(
-                seconds=int(policy["implicit_evidence_ttl_seconds"])
-            ),
+            independent_context_threshold=int(policy["independent_context_threshold"]),
+            implicit_evidence_ttl=timedelta(seconds=int(policy["implicit_evidence_ttl_seconds"])),
             schema_version=int(policy["schema_version"]),
         )
         if resolved.policy_hash != payload.get("policy_hash"):
             raise CompanionConflictError("preference_policy_audit_hash_mismatch")
         return resolved
-    raise CompanionConflictError(
-        f"preference_policy_audit_missing:{preference_key}"
-    )
+    raise CompanionConflictError(f"preference_policy_audit_missing:{preference_key}")
 
 
 __all__ = [

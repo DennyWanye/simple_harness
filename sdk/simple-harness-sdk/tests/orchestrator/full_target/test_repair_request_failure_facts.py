@@ -17,6 +17,7 @@
 没过检查（没写结论 / 结论没引证据），重试是规划器真答的"原样再做一次"，最终审查打回是审阅员
 真判的 REWORK。只有模型回复是脚本。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -45,9 +46,12 @@ from production_fixture import OUTPUT, enabled_world, result_envelope, scripted_
 
 def _result(mutate):  # type: ignore[no-untyped-def]
     def reply(request):  # type: ignore[no-untyped-def]
-        body = json.loads(result_envelope(request)[len("<result_envelope>"):-len("</result_envelope>")])
+        body = json.loads(
+            result_envelope(request)[len("<result_envelope>") : -len("</result_envelope>")]
+        )
         mutate(body)
         return "<result_envelope>" + json.dumps(body, ensure_ascii=False) + "</result_envelope>"
+
     return reply
 
 
@@ -87,8 +91,9 @@ def test_a_failed_check_is_one_request_carrying_count_fingerprint_and_paths(tmp_
     worker = scripted_worker(_write(), _result(_no_claims), _write(), _result(_no_claims))
 
     async def case():
-        async with enabled_world(tmp_path, key="facts-repeated-failure", planner=_retrying_planner,
-                                 worker=worker) as world:
+        async with enabled_world(
+            tmp_path, key="facts-repeated-failure", planner=_retrying_planner, worker=worker
+        ) as world:
             store, mission = world.store, world.mission
             await world.commit_seed()
             [task_id] = world.leaves()
@@ -105,37 +110,58 @@ def test_a_failed_check_is_one_request_carrying_count_fingerprint_and_paths(tmp_
             assert len(fingerprint) == 64
 
             # the Planner chooses to retry; the same failure again is the second of the same
-            await world.until(lambda: len(_failures(store, mission.id)) == 2 and _facts(store, mission.id))
+            await world.until(
+                lambda: len(_failures(store, mission.id)) == 2 and _facts(store, mission.id)
+            )
             [again] = _facts(store, mission.id)
             assert again["occurrence"] == {
-                "step_failures": 2, "consecutive_identical": 2, "failure_fingerprint": fingerprint}
+                "step_failures": 2,
+                "consecutive_identical": 2,
+                "failure_fingerprint": fingerprint,
+            }
 
             # Harness reported and did nothing else: the step is not cancelled, the
             # method is still adopted, and no round was opened by a dedicated record
             assert store.get_task(task_id).status is not TaskStatus.CANCELLED
             assert _plan_shape(world) == before
-            assert not [e for e in store.list_events(mission.id)
-                        if e.type == "PlanningRejected" and e.payload.get("reason") in {
-                            "read_only_leaf_needs_write", "repeated_verification_failure"}]
+            assert not [
+                e
+                for e in store.list_events(mission.id)
+                if e.type == "PlanningRejected"
+                and e.payload.get("reason")
+                in {"read_only_leaf_needs_write", "repeated_verification_failure"}
+            ]
+
     asyncio.run(case())
 
 
 def test_a_different_failure_breaks_the_identical_run_but_not_the_step_count(tmp_path):
-    worker = scripted_worker(_write(), _result(_no_claims), _write(), _result(_claims_without_evidence))
+    worker = scripted_worker(
+        _write(), _result(_no_claims), _write(), _result(_claims_without_evidence)
+    )
 
     async def case():
-        async with enabled_world(tmp_path, key="facts-different-failure", planner=_retrying_planner,
-                                 worker=worker) as world:
+        async with enabled_world(
+            tmp_path, key="facts-different-failure", planner=_retrying_planner, worker=worker
+        ) as world:
             store, mission = world.store, world.mission
             await world.commit_seed()
             await world.until(lambda: _facts(store, mission.id))
             [context] = _facts(store, mission.id)
-            await world.until(lambda: len(_failures(store, mission.id)) == 2 and _facts(store, mission.id))
+            await world.until(
+                lambda: len(_failures(store, mission.id)) == 2 and _facts(store, mission.id)
+            )
             [again] = _facts(store, mission.id)
-            assert again["detail"]["failures"][0]["detail"]["problems"] == ["claims cite no evidence"]
+            assert again["detail"]["failures"][0]["detail"]["problems"] == [
+                "claims cite no evidence"
+            ]
             assert again["occurrence"]["step_failures"] == 2
             assert again["occurrence"]["consecutive_identical"] == 1
-            assert again["occurrence"]["failure_fingerprint"] != context["occurrence"]["failure_fingerprint"]
+            assert (
+                again["occurrence"]["failure_fingerprint"]
+                != context["occurrence"]["failure_fingerprint"]
+            )
+
     asyncio.run(case())
 
 
@@ -155,7 +181,9 @@ def test_a_final_review_request_is_about_every_step_so_a_change_on_any_step_answ
         if str(package["review_key"]).startswith("assurance-mission-final:"):
             seen["final_reviews"] += 1
             if seen["final_reviews"] == 1:  # the first final review sends it back
-                return review_reply(package, verdict="REWORK", grade="FAIL", reason="要点没有写全。")
+                return review_reply(
+                    package, verdict="REWORK", grade="FAIL", reason="要点没有写全。"
+                )
         return review_reply(package)
 
     def planner(request):  # type: ignore[no-untyped-def]
@@ -164,24 +192,40 @@ def test_a_final_review_request_is_about_every_step_so_a_change_on_any_step_answ
             return planner_reply(request)
         world, task_id = seen["world"], seen["leaf"]
         old = world.dispatch.network(world.mission.id).binding_for_task(task_id)
-        task_type = next(s for s in world.dispatch.require_planning_world().catalog.task_types()
-                         if s.goal_signature == old.goal_signature)
+        task_type = next(
+            s
+            for s in world.dispatch.require_planning_world().catalog.task_types()
+            if s.goal_signature == old.goal_signature
+        )
         subject = next(row for row in package["planning_subjects"] if row["task_id"] == task_id)
 
         def visible(kind, identity):  # type: ignore[no-untyped-def]
-            return next(row for row in package["visible_refs"] if row["kind"] == kind and row["id"] == identity)
+            return next(
+                row
+                for row in package["visible_refs"]
+                if row["kind"] == kind and row["id"] == identity
+            )
 
         # answered on one leaf: a successor that redoes it
-        return decision(subject["subject_key"], "REPAIR", {
-            "repair_kind": "PROPOSE_SUCCESSOR", "old_task_ref": visible("task", task_id),
-            "obligation_ref": visible("obligation", str(old.obligation_id)),
-            "goal_type_ref": task_type.task_type_ref.to_json(),
-            "bindings": {"goal": "把要点写全。"}}, "最终审查说要点没写全，这一步换一个后继重做。")
+        return decision(
+            subject["subject_key"],
+            "REPAIR",
+            {
+                "repair_kind": "PROPOSE_SUCCESSOR",
+                "old_task_ref": visible("task", task_id),
+                "obligation_ref": visible("obligation", str(old.obligation_id)),
+                "goal_type_ref": task_type.task_type_ref.to_json(),
+                "bindings": {"goal": "把要点写全。"},
+            },
+            "最终审查说要点没写全，这一步换一个后继重做。",
+        )
 
     provider = LayeredScriptedProvider(planner=planner, reviewer=reviewer)
 
     async def case():
-        async with enabled_world(tmp_path, key="facts-final-review-scope", provider=provider) as world:
+        async with enabled_world(
+            tmp_path, key="facts-final-review-scope", provider=provider
+        ) as world:
             store, mission = world.store, world.mission
             seen["world"] = world
             await world.commit_seed()
@@ -189,20 +233,32 @@ def test_a_final_review_request_is_about_every_step_so_a_change_on_any_step_answ
             network = world.dispatch.network(mission.id)
 
             def final_review_request():  # type: ignore[no-untyped-def]
-                return [e.payload for e in store.list_events(mission.id) if e.type == "PlanningRepairRequested"
-                        and str(e.payload["source_key"]).startswith("root-review:")]
+                return [
+                    e.payload
+                    for e in store.list_events(mission.id)
+                    if e.type == "PlanningRepairRequested"
+                    and str(e.payload["source_key"]).startswith("root-review:")
+                ]
 
             [requested] = await world.until(final_review_request)
             every_step = {str(spec.occurrence_id) for spec in network.occurrences} | {
-                str(spec.task_id) for spec in network.occurrences}
+                str(spec.task_id) for spec in network.occurrences
+            }
             assert len(network.occurrences) > 1 and set(requested["trigger_scope"]) == every_step
 
             # the Planner answers on one leaf; that committed change is an answer to it
             await world.until(lambda: world.dispatch.network(mission.id).plan_revision == 2)
-            assert requested["request_id"] not in {row["request_id"] for row in pending_requests(store, mission.id)}
-            [addressed] = [e.payload for e in store.list_events(mission.id) if e.type == "PlanningRepairAddressed"
-                           and requested["request_id"] in e.payload["repair_request_ids"]]
+            assert requested["request_id"] not in {
+                row["request_id"] for row in pending_requests(store, mission.id)
+            }
+            [addressed] = [
+                e.payload
+                for e in store.list_events(mission.id)
+                if e.type == "PlanningRepairAddressed"
+                and requested["request_id"] in e.payload["repair_request_ids"]
+            ]
             assert addressed["status"] == "COMMITTED" and addressed["decision_type"] == "REPAIR"
+
     asyncio.run(case())
 
 
@@ -210,13 +266,35 @@ def test_the_fingerprint_of_a_verification_failure_ignores_timing_and_workspace_
     from agent_orchestrator.orchestrator.planning_repair_requests import failure_fingerprint
 
     def failed(seconds: str, workspace: str) -> dict:
-        return {"result_id": "r", "failures": [{"layer": "code_test", "status": "FAIL",
-                "summary": f"1 failed in {seconds}s",
-                "detail": {"stdout": f"{workspace}/tests/test_a.py::test_x FAILED\nAssertionError\n"
-                                     f"1 failed in {seconds}s"}}]}
+        return {
+            "result_id": "r",
+            "failures": [
+                {
+                    "layer": "code_test",
+                    "status": "FAIL",
+                    "summary": f"1 failed in {seconds}s",
+                    "detail": {
+                        "stdout": f"{workspace}/tests/test_a.py::test_x FAILED\nAssertionError\n"
+                        f"1 failed in {seconds}s"
+                    },
+                }
+            ],
+        }
 
     one = failure_fingerprint("VerificationFailed", failed("0.06", "/data/workspaces/attempt-1"))
     two = failure_fingerprint("VerificationFailed", failed("0.31", "/data/workspaces/attempt-2"))
-    other = failure_fingerprint("VerificationFailed", {"result_id": "r", "failures": [
-        {"layer": "rule_check", "status": "FAIL", "summary": "missing port", "detail": {"problems": ["p"]}}]})
+    other = failure_fingerprint(
+        "VerificationFailed",
+        {
+            "result_id": "r",
+            "failures": [
+                {
+                    "layer": "rule_check",
+                    "status": "FAIL",
+                    "summary": "missing port",
+                    "detail": {"problems": ["p"]},
+                }
+            ],
+        },
+    )
     assert one == two and one != other

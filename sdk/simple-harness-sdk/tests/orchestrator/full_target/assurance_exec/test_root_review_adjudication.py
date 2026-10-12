@@ -4,6 +4,7 @@
 人选"通过"：根结论成立、任务完成，不再调第三次终审；人选"打回"：不形成根结论，人的裁决连同
 审阅员的疑点作为一条通用修复请求交给规划器。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -35,9 +36,14 @@ def test_two_inconclusive_final_reviews_ask_the_person(tmp_path, ruling):
             assert payload["blocking"] is True
             assert [option["key"] for option in payload["options"]] == ["pass", "fail"]
             assert len(case.events("AssuranceReviewSecondOpinionRequested")) == 1
-            case.world.control.answer_planning_question({
-                "decision_id": question["decision_id"], "answer": ruling,
-                "expected_version": question["version"], "nonce": "final-ruling-1"})
+            case.world.control.answer_planning_question(
+                {
+                    "decision_id": question["decision_id"],
+                    "answer": ruling,
+                    "expected_version": question["version"],
+                    "nonce": "final-ruling-1",
+                }
+            )
             if ruling == "pass":
                 mission = await case.settle()
                 assert str(mission.status.value) == "COMPLETED", mission.final_report

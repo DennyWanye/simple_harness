@@ -84,7 +84,9 @@ def assess_and_render_exact_facts(
     for request in ordered_requests:
         item = evidence_by_requirement.get(request.requirement_id)
         if item is None:
-            lines.append(f"- {request.time_label}（{request.definition}）：未找到满足约束的权威证据。")
+            lines.append(
+                f"- {request.time_label}（{request.definition}）：未找到满足约束的权威证据。"
+            )
             continue
         citation = citations[item.page_id]
         title = escape(citation.title.strip(), quote=False).replace("[", "\\[").replace("]", "\\]")

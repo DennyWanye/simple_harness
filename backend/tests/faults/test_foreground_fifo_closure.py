@@ -89,8 +89,11 @@ async def _bound_run(tmp_path: Path, run_id: str):
     await fq._enqueue(store, primary_id, 1)
     admission = await fq._claim_and_bind(store, sdk_run_id=run_id)
     await store.record_sdk_started(
-        host_run_id=admission.host_run_id, sdk_run_id=run_id, owner_id=admission.owner_id,
-        generation=admission.generation, sdk_event_id=f"sdk-start:{run_id}",
+        host_run_id=admission.host_run_id,
+        sdk_run_id=run_id,
+        owner_id=admission.owner_id,
+        generation=admission.generation,
+        sdk_event_id=f"sdk-start:{run_id}",
         idempotency_key=f"sdk-start:{run_id}",
     )
     return queue_db, store, admission
@@ -98,12 +101,23 @@ async def _bound_run(tmp_path: Path, run_id: str):
 
 def _fact(run_id: str, effect_id: str) -> ToolInvocationFact:
     return ToolInvocationFact(
-        run_id=run_id, effect_id=effect_id, call_id="call-1", tool_name="write_file",
-        effect_state="succeeded", outcome="succeeded", error_code=None,
+        run_id=run_id,
+        effect_id=effect_id,
+        call_id="call-1",
+        tool_name="write_file",
+        effect_state="succeeded",
+        outcome="succeeded",
+        error_code=None,
         objective=ObjectiveEventSpec(
             event_kind="host.file",
-            payload={"tool_name": "write_file", "effect_id": effect_id, "call_id": "call-1",
-                     "outcome": "succeeded", "error_code": None, "targets": ["a.txt"]},
+            payload={
+                "tool_name": "write_file",
+                "effect_id": effect_id,
+                "call_id": "call-1",
+                "outcome": "succeeded",
+                "error_code": None,
+                "targets": ["a.txt"],
+            },
         ),
     )
 
@@ -115,8 +129,12 @@ class _Stack:
 
     def read_run_terminal_evidence(self, r: str):  # type: ignore[no-untyped-def]
         return SimpleNamespace(
-            run_id=r, state="completed", event_id=f"sdk-terminal:{r}", event_hash="7" * 64,
-            occurred_at=9.0, error_code=None,
+            run_id=r,
+            state="completed",
+            event_id=f"sdk-terminal:{r}",
+            event_hash="7" * 64,
+            occurred_at=9.0,
+            error_code=None,
         )
 
     async def read_reserved_fact(self, reservation):  # type: ignore[no-untyped-def]
@@ -133,78 +151,145 @@ class _SdkIngress:
 
 async def _observe(queue_db: Path, admission, stack: _Stack, run_id: str, *, fault=None):  # type: ignore[no-untyped-def]
     return await SqliteSdkTerminalObserver(
-        str(queue_db), _SdkIngress(), stack, fault_inject=fault  # type: ignore[arg-type]
+        str(queue_db),
+        _SdkIngress(),
+        stack,
+        fault_inject=fault,  # type: ignore[arg-type]
     ).observe(
-        host_run_id=admission.host_run_id, sdk_run_id=run_id, subject=fq.SUBJECT,
-        owner_id=admission.owner_id, generation=admission.generation,
+        host_run_id=admission.host_run_id,
+        sdk_run_id=run_id,
+        subject=fq.SUBJECT,
+        owner_id=admission.owner_id,
+        generation=admission.generation,
     )
 
 
 async def _objective_event_commit(tmp_path: Path, run_id: str) -> tuple[str, str, dict]:
     queue_db, _store, admission = await _bound_run(tmp_path, run_id)
     ingress = ExecutionEvidenceIngress(queue_db, fault_inject=_OneShot("objective-event-commit"))
-    await ingress.reserve(run_id=run_id, task_scope_id=fq.SCOPE, kind="tool_invocation", source_event_id="effect:e-1")
+    await ingress.reserve(
+        run_id=run_id, task_scope_id=fq.SCOPE, kind="tool_invocation", source_event_id="effect:e-1"
+    )
     before = state_hash(queue_db, CANONICAL_TABLES)
     # kill：提交前崩溃 → 零半状态（无 host 事件、无 evidence 行、无导入回执、预留仍 reserved）。
     with pytest.raises(RuntimeError, match="injected:objective-event-commit"):
-        await ingress.commit_fact(task_scope_id=fq.SCOPE, subject=fq.SUBJECT, fact=_fact(run_id, "e-1"))
+        await ingress.commit_fact(
+            task_scope_id=fq.SCOPE, subject=fq.SUBJECT, fact=_fact(run_id, "e-1")
+        )
     assert state_hash(queue_db, CANONICAL_TABLES) == before
-    assert _rows(queue_db, "SELECT status FROM harness_evidence_reservations WHERE source_event_id='effect:e-1'") == [("reserved",)]
-    assert _rows(queue_db, "SELECT COUNT(*) FROM task_scope_events WHERE task_scope_id=?", fq.SCOPE) == [(0,)]
-    assert _rows(queue_db, "SELECT COUNT(*) FROM human_memory_evidence WHERE run_id=?", run_id) == [(0,)]
+    assert _rows(
+        queue_db,
+        "SELECT status FROM harness_evidence_reservations WHERE source_event_id='effect:e-1'",
+    ) == [("reserved",)]
+    assert _rows(
+        queue_db, "SELECT COUNT(*) FROM task_scope_events WHERE task_scope_id=?", fq.SCOPE
+    ) == [(0,)]
+    assert _rows(queue_db, "SELECT COUNT(*) FROM human_memory_evidence WHERE run_id=?", run_id) == [
+        (0,)
+    ]
     with pytest.raises(TerminalWatermarkPending):
         await ingress.authorize_terminal(run_id)
     # replay：同一事实 → 恰一份（host.file + evidence + tool_invocation）。
-    receipt = await ingress.commit_fact(task_scope_id=fq.SCOPE, subject=fq.SUBJECT, fact=_fact(run_id, "e-1"))
+    receipt = await ingress.commit_fact(
+        task_scope_id=fq.SCOPE, subject=fq.SUBJECT, fact=_fact(run_id, "e-1")
+    )
     assert receipt.source_sequence == 1
     converged = state_hash(queue_db, CANONICAL_TABLES)
     assert converged != before
-    events = _rows(queue_db, "SELECT event_kind FROM task_scope_events WHERE task_scope_id=? ORDER BY event_sequence", fq.SCOPE)
+    events = _rows(
+        queue_db,
+        "SELECT event_kind FROM task_scope_events WHERE task_scope_id=? ORDER BY event_sequence",
+        fq.SCOPE,
+    )
     assert events == [("host.file",), ("harness.tool_invocation",)]
-    assert _rows(queue_db, "SELECT COUNT(*) FROM human_memory_evidence WHERE run_id=?", run_id) == [(1,)]
+    assert _rows(queue_db, "SELECT COUNT(*) FROM human_memory_evidence WHERE run_id=?", run_id) == [
+        (1,)
+    ]
     # 再重放（新 owner）：幂等，hash 不变；不同事实同 id → 拒绝，hash 不变。
     await ingress.commit_fact(task_scope_id=fq.SCOPE, subject=fq.SUBJECT, fact=_fact(run_id, "e-1"))
     assert state_hash(queue_db, CANONICAL_TABLES) == converged
     with pytest.raises(TaskScopeConflict):
         await ingress.commit_fact(
-            task_scope_id=fq.SCOPE, subject=fq.SUBJECT,
-            fact=ToolInvocationFact(run_id=run_id, effect_id="e-1", call_id="call-1", tool_name="write_file",
-                                    effect_state="failed", outcome="failed", error_code="tool_failed", objective=None),
+            task_scope_id=fq.SCOPE,
+            subject=fq.SUBJECT,
+            fact=ToolInvocationFact(
+                run_id=run_id,
+                effect_id="e-1",
+                call_id="call-1",
+                tool_name="write_file",
+                effect_state="failed",
+                outcome="failed",
+                error_code="tool_failed",
+                objective=None,
+            ),
         )
     assert state_hash(queue_db, CANONICAL_TABLES) == converged
     observed = await _observe(queue_db, admission, _Stack(run_id), run_id)
     assert observed is not None and observed.terminal_state is RunState.COMPLETED
     gate = await ingress.authorize_terminal(run_id)
-    return before, state_hash(queue_db, CANONICAL_TABLES), {"terminal_sequence": gate.terminal_source_sequence}
+    return (
+        before,
+        state_hash(queue_db, CANONICAL_TABLES),
+        {"terminal_sequence": gate.terminal_source_sequence},
+    )
 
 
 async def _terminal_watermark(tmp_path: Path, run_id: str) -> tuple[str, str, dict]:
     queue_db, _store, admission = await _bound_run(tmp_path, run_id)
     ingress = ExecutionEvidenceIngress(queue_db)
-    await ingress.reserve(run_id=run_id, task_scope_id=fq.SCOPE, kind="provider_invocation", source_event_id="p-1")
-    await ingress.reserve(run_id=run_id, task_scope_id=fq.SCOPE, kind="tool_invocation", source_event_id="effect:e-2")
-    await ingress.reserve(run_id=run_id, task_scope_id=fq.SCOPE, kind="context_snapshot", source_event_id="s-3")
+    await ingress.reserve(
+        run_id=run_id, task_scope_id=fq.SCOPE, kind="provider_invocation", source_event_id="p-1"
+    )
+    await ingress.reserve(
+        run_id=run_id, task_scope_id=fq.SCOPE, kind="tool_invocation", source_event_id="effect:e-2"
+    )
+    await ingress.reserve(
+        run_id=run_id, task_scope_id=fq.SCOPE, kind="context_snapshot", source_event_id="s-3"
+    )
     before = state_hash(queue_db, CANONICAL_TABLES)
     stack = _Stack(run_id, {"effect:e-2": _fact(run_id, "e-2")})
     # kill：排空中途（第一条已解决之后）崩溃 → 终态未写、未放行。
     with pytest.raises(RuntimeError, match="injected:terminal-watermark"):
         await _observe(queue_db, admission, stack, run_id, fault=_OneShot("terminal-watermark"))
-    statuses = _rows(queue_db, "SELECT source_event_id,status FROM harness_evidence_reservations WHERE run_id=? ORDER BY source_sequence", run_id)
+    statuses = _rows(
+        queue_db,
+        "SELECT source_event_id,status FROM harness_evidence_reservations WHERE run_id=? ORDER BY source_sequence",
+        run_id,
+    )
     assert statuses[0] == ("p-1", "abandoned") and ("s-3", "reserved") in statuses
-    assert _rows(queue_db, "SELECT COUNT(*) FROM task_scope_execution_ingest_receipts WHERE run_id=? AND evidence_kind='run_terminal'", run_id) == [(0,)]
+    assert _rows(
+        queue_db,
+        "SELECT COUNT(*) FROM task_scope_execution_ingest_receipts WHERE run_id=? AND evidence_kind='run_terminal'",
+        run_id,
+    ) == [(0,)]
     with pytest.raises(TerminalWatermarkPending):
         await ingress.authorize_terminal(run_id)
     # replay（新 owner）：同一排空收敛 → 全部解决、run_terminal 恰一条（seq 4）、放行。
     observed = await _observe(queue_db, admission, stack, run_id)
     assert observed is not None and observed.terminal_state is RunState.COMPLETED
-    statuses = _rows(queue_db, "SELECT source_event_id,status FROM harness_evidence_reservations WHERE run_id=? ORDER BY source_sequence", run_id)
+    statuses = _rows(
+        queue_db,
+        "SELECT source_event_id,status FROM harness_evidence_reservations WHERE run_id=? ORDER BY source_sequence",
+        run_id,
+    )
     # Task 6：run_terminal 也经预留协议（同事务预留+导入），seq 4。
     assert statuses == [
-        ("p-1", "abandoned"), ("effect:e-2", "ingested"), ("s-3", "abandoned"),
+        ("p-1", "abandoned"),
+        ("effect:e-2", "ingested"),
+        ("s-3", "abandoned"),
         (f"sdk-terminal:{run_id}", "ingested"),
     ]
-    kinds = _rows(queue_db, "SELECT source_sequence,evidence_kind FROM task_scope_execution_ingest_receipts WHERE run_id=? ORDER BY source_sequence", run_id)
-    assert kinds == [(1, "provider_invocation"), (2, "tool_invocation"), (3, "context_snapshot"), (4, "run_terminal")]
+    kinds = _rows(
+        queue_db,
+        "SELECT source_sequence,evidence_kind FROM task_scope_execution_ingest_receipts WHERE run_id=? ORDER BY source_sequence",
+        run_id,
+    )
+    assert kinds == [
+        (1, "provider_invocation"),
+        (2, "tool_invocation"),
+        (3, "context_snapshot"),
+        (4, "run_terminal"),
+    ]
     gate = await ingress.authorize_terminal(run_id)
     assert gate.durable_source_sequence == gate.terminal_source_sequence == 4
     converged = state_hash(queue_db, CANONICAL_TABLES)
@@ -217,24 +302,44 @@ async def _terminal_watermark(tmp_path: Path, run_id: str) -> tuple[str, str, di
 async def _observer_next_sequence_race(tmp_path: Path, run_id: str) -> tuple[str, str, dict]:
     queue_db, _store, admission = await _bound_run(tmp_path, run_id)
     ingress = ExecutionEvidenceIngress(queue_db)
-    await ingress.reserve(run_id=run_id, task_scope_id=fq.SCOPE, kind="provider_invocation", source_event_id="p-1")
-    await ingress.ingest(task_scope_id=fq.SCOPE, evidence=fq._execution_evidence(sdk_run_id=run_id, source_event_id="p-1", kind="provider_invocation", source_sequence=1))
+    await ingress.reserve(
+        run_id=run_id, task_scope_id=fq.SCOPE, kind="provider_invocation", source_event_id="p-1"
+    )
+    await ingress.ingest(
+        task_scope_id=fq.SCOPE,
+        evidence=fq._execution_evidence(
+            sdk_run_id=run_id, source_event_id="p-1", kind="provider_invocation", source_sequence=1
+        ),
+    )
     # 竞争：迟到的 tool 行只预留了 seq2，observer 此刻计算 next_sequence。
-    await ingress.reserve(run_id=run_id, task_scope_id=fq.SCOPE, kind="tool_invocation", source_event_id="effect:e-2")
+    await ingress.reserve(
+        run_id=run_id, task_scope_id=fq.SCOPE, kind="tool_invocation", source_event_id="effect:e-2"
+    )
     before = state_hash(queue_db, CANONICAL_TABLES)
     assert await ingress.next_sequence(run_id) == 3  # probe P1 的 observer 会算出 2 → 丢行
     # 迟到行在 terminal 前到达：接受（不再 execution_source_sequence_conflict）。
-    late = await ingress.commit_fact(task_scope_id=fq.SCOPE, subject=fq.SUBJECT, fact=_fact(run_id, "e-2"))
+    late = await ingress.commit_fact(
+        task_scope_id=fq.SCOPE, subject=fq.SUBJECT, fact=_fact(run_id, "e-2")
+    )
     assert late.source_sequence == 2
     observed = await _observe(queue_db, admission, _Stack(run_id), run_id)
     assert observed is not None
-    kinds = _rows(queue_db, "SELECT source_sequence,evidence_kind FROM task_scope_execution_ingest_receipts WHERE run_id=? ORDER BY source_sequence", run_id)
+    kinds = _rows(
+        queue_db,
+        "SELECT source_sequence,evidence_kind FROM task_scope_execution_ingest_receipts WHERE run_id=? ORDER BY source_sequence",
+        run_id,
+    )
     assert kinds == [(1, "provider_invocation"), (2, "tool_invocation"), (3, "run_terminal")]
     gate = await ingress.authorize_terminal(run_id)
     assert gate.durable_source_sequence == gate.terminal_source_sequence == 3
     # terminal 之后的迟到行被稳定拒绝（不是丢失，而是可见冲突）。
     with pytest.raises(TaskScopeConflict, match="execution_after_terminal_rejected"):
-        await ingress.reserve(run_id=run_id, task_scope_id=fq.SCOPE, kind="tool_invocation", source_event_id="effect:e-9")
+        await ingress.reserve(
+            run_id=run_id,
+            task_scope_id=fq.SCOPE,
+            kind="tool_invocation",
+            source_event_id="effect:e-9",
+        )
     converged = state_hash(queue_db, CANONICAL_TABLES)
     assert await _observe(queue_db, admission, _Stack(run_id), run_id) is not None
     assert state_hash(queue_db, CANONICAL_TABLES) == converged
@@ -273,7 +378,12 @@ async def _semantic_closure_commit(tmp_path: Path, run_id: str) -> tuple[str, st
     revision, _ = ch.head(env.db_path)
     arguments = ch.mutate_arguments(refs, base_revision=revision, idempotency_key="seam-closure")
     before = state_hash(env.db_path, CLOSURE_TABLES)
-    fallback, _ = ch.build_fallback(env, facts, ch.FakeAdapter([ch.closure_call(arguments)]), fault=_OneShot("semantic-closure-commit"))
+    fallback, _ = ch.build_fallback(
+        env,
+        facts,
+        ch.FakeAdapter([ch.closure_call(arguments)]),
+        fault=_OneShot("semantic-closure-commit"),
+    )
     with pytest.raises(RuntimeError, match="injected:semantic-closure-commit"):
         await ch.settle(env, fallback)
     # 零半状态：receipt / decision / revision 全无；attempt 仍 handed_off（Provider 已调用一次，结果未落库）。
@@ -288,7 +398,11 @@ async def _semantic_closure_commit(tmp_path: Path, run_id: str) -> tuple[str, st
     adapter2 = ch.FakeAdapter([])
     fallback2, _ = ch.build_fallback(env, facts, adapter2)
     replay = await ch.settle(env, fallback2)
-    assert (replay.status, replay.reason_code, replay.provider_calls) == ("pending", "closure_attempt_unknown", 0)
+    assert (replay.status, replay.reason_code, replay.provider_calls) == (
+        "pending",
+        "closure_attempt_unknown",
+        0,
+    )
     assert len(adapter2.calls) == 0
     await ch.record_terminal(env, observed)
     converged = state_hash(env.db_path, CLOSURE_TABLES)
@@ -317,7 +431,10 @@ async def _attempt_reserved(tmp_path: Path, run_id: str) -> tuple[str, str, dict
     fallback2, _ = ch.build_fallback(env, facts, adapter)
     replay = await ch.settle(env, fallback2)
     assert replay.status == "mutate" and replay.provider_calls == 1 and len(adapter.calls) == 1
-    assert [(o, s, u) for o, s, u, *_ in ch.attempts(env.db_path)] == [(1, "failed", "not_sent"), (2, "succeeded", None)]
+    assert [(o, s, u) for o, s, u, *_ in ch.attempts(env.db_path)] == [
+        (1, "failed", "not_sent"),
+        (2, "succeeded", None),
+    ]
     await ch.record_terminal(env, observed)
     converged = state_hash(env.db_path, CLOSURE_TABLES)
     fallback3, _ = ch.build_fallback(env, facts, adapter)
@@ -342,7 +459,11 @@ async def _attempt_handed_off(tmp_path: Path, run_id: str) -> tuple[str, str, di
     assert [(o, s) for o, s, *_ in ch.attempts(env.db_path)] == [(1, "handed_off")]
     fallback2, _ = ch.build_fallback(env, facts, adapter)
     replay = await ch.settle(env, fallback2)
-    assert replay.status == "pending" and replay.reason_code == "closure_attempt_unknown" and replay.provider_calls == 0
+    assert (
+        replay.status == "pending"
+        and replay.reason_code == "closure_attempt_unknown"
+        and replay.provider_calls == 0
+    )
     assert len(adapter.calls) == 0
     assert [(o, s) for o, s, *_ in ch.attempts(env.db_path)] == [(1, "handed_off")]
     assert ch.receipts(env.db_path)[-1][2:5] == ("pending", None, "closure_attempt_unknown")
@@ -372,16 +493,26 @@ async def _cross_run_pending_plan(tmp_path: Path, run_id: str) -> tuple[str, str
     observed2 = await ch.observe_terminal(env2, facts2)
     refs = ch.scope_evidence_ids(env2.db_path)
     run1_refs = [
-        str(r[0]) for r in _rows(env2.db_path, "SELECT DISTINCT l.evidence_id FROM task_scope_evidence_links l JOIN human_memory_evidence e ON e.evidence_id=l.evidence_id WHERE e.run_id=?", run_id)
+        str(r[0])
+        for r in _rows(
+            env2.db_path,
+            "SELECT DISTINCT l.evidence_id FROM task_scope_evidence_links l JOIN human_memory_evidence e ON e.evidence_id=l.evidence_id WHERE e.run_id=?",
+            run_id,
+        )
     ]
     assert run1_refs and set(run1_refs) <= set(refs)
     revision, _ = ch.head(env2.db_path)
     # 过期的 base_revision → mutation_base_revision_conflict 原样透传 → pending（可重试，Provider 已用 1 次）；
     # Run 2 终态照常提交，两条 pending 都归 admission scope。
-    stale = ch.mutate_arguments(refs, base_revision=revision + 5, idempotency_key="seam-cross-stale")
+    stale = ch.mutate_arguments(
+        refs, base_revision=revision + 5, idempotency_key="seam-cross-stale"
+    )
     fallback2, _ = ch.build_fallback(env2, facts2, ch.FakeAdapter([ch.closure_call(stale)]))
     stale_settlement = await ch.settle(env2, fallback2)
-    assert (stale_settlement.status, stale_settlement.reason_code) == ("pending", "mutation_base_revision_conflict")
+    assert (stale_settlement.status, stale_settlement.reason_code) == (
+        "pending",
+        "mutation_base_revision_conflict",
+    )
     assert ch.head(env2.db_path)[0] == revision
     await ch.record_terminal(env2, observed2)
     # Run 3（同 scope）：新 request_hash → 新 attempt；正确 base_revision + Run 1 的 refs → 一条 receipt 覆盖三个 Run。
@@ -392,7 +523,11 @@ async def _cross_run_pending_plan(tmp_path: Path, run_id: str) -> tuple[str, str
     observed3 = await ch.observe_terminal(env3, facts3)
     refs = ch.scope_evidence_ids(env3.db_path)
     revision, _ = ch.head(env3.db_path)
-    good = ch.mutate_arguments(run1_refs + [r for r in refs if r not in run1_refs], base_revision=revision, idempotency_key="seam-cross-good")
+    good = ch.mutate_arguments(
+        run1_refs + [r for r in refs if r not in run1_refs],
+        base_revision=revision,
+        idempotency_key="seam-cross-good",
+    )
     adapter3 = ch.FakeAdapter([ch.closure_call(good)])
     fallback3, _ = ch.build_fallback(env3, facts3, adapter3)
     settlement = await ch.settle(env3, fallback3)
@@ -400,7 +535,14 @@ async def _cross_run_pending_plan(tmp_path: Path, run_id: str) -> tuple[str, str
     dirty = await dirty_state(CanonicalTaskScopeStore(env3.db_path), ch.SCOPE)
     assert not dirty.is_dirty
     assert [r[2] for r in ch.receipts(env3.db_path)] == ["pending", "pending", "mutate"]
-    linked = [str(r[0]) for r in _rows(env3.db_path, "SELECT evidence_id FROM task_scope_evidence_links l JOIN task_scope_events e ON e.event_id=l.event_id WHERE e.source_event_id=?", f"mutation-plan:{settlement.receipt.plan_id}")]
+    linked = [
+        str(r[0])
+        for r in _rows(
+            env3.db_path,
+            "SELECT evidence_id FROM task_scope_evidence_links l JOIN task_scope_events e ON e.event_id=l.event_id WHERE e.source_event_id=?",
+            f"mutation-plan:{settlement.receipt.plan_id}",
+        )
+    ]
     assert set(run1_refs) <= set(linked)
     await ch.record_terminal(env3, observed3)
     converged = state_hash(env3.db_path, CLOSURE_TABLES)
@@ -437,14 +579,23 @@ async def _lease_second_owner(tmp_path: Path, run_id: str) -> tuple[str, str, di
     # lease 到期 → owner-2 reclaim。
     env.clock.now += 1000
     await env.store.reclaim_expired(
-        host_run_id=env.admission.host_run_id, new_owner_id="owner-2",
-        expected_generation=env.admission.generation, lease_seconds=10, idempotency_key="reclaim-2",
+        host_run_id=env.admission.host_run_id,
+        new_owner_id="owner-2",
+        expected_generation=env.admission.generation,
+        lease_seconds=10,
+        idempotency_key="reclaim-2",
     )
     generation2 = env.admission.generation + 1
     adapter2 = ch.FakeAdapter([ch.closure_call(arguments)])
-    fallback2, _ = ch.build_fallback(env, facts, adapter2, owner_id="owner-2", generation=generation2)
+    fallback2, _ = ch.build_fallback(
+        env, facts, adapter2, owner_id="owner-2", generation=generation2
+    )
     second = await ch.settle(env, fallback2, owner_id="owner-2", generation=generation2)
-    assert second.status == "pending" and second.reason_code == "closure_attempt_unknown" and second.provider_calls == 0
+    assert (
+        second.status == "pending"
+        and second.reason_code == "closure_attempt_unknown"
+        and second.provider_calls == 0
+    )
     assert len(adapter2.calls) == 0
     await ch.record_terminal(env, observed, owner_id="owner-2", generation=generation2)
     # owner-1 迟到返回：apply 前复验 lease → 拒绝，不 apply、无第二条 receipt。
@@ -455,7 +606,9 @@ async def _lease_second_owner(tmp_path: Path, run_id: str) -> tuple[str, str, di
     assert [r[2] for r in ch.receipts(env.db_path)] == ["pending"]
     assert [(o, s, g) for o, s, _u, _r, _p, g in ch.attempts(env.db_path)] == [(1, "succeeded", 1)]
     converged = state_hash(env.db_path, CLOSURE_TABLES)
-    fallback3, _ = ch.build_fallback(env, facts, adapter2, owner_id="owner-2", generation=generation2)
+    fallback3, _ = ch.build_fallback(
+        env, facts, adapter2, owner_id="owner-2", generation=generation2
+    )
     third = await ch.settle(env, fallback3, owner_id="owner-2", generation=generation2)
     assert third.provider_calls == 0
     assert state_hash(env.db_path, CLOSURE_TABLES) == converged
@@ -484,7 +637,9 @@ PROJECTION_TABLES = (
 
 
 def _fifo_store(queue_db: Path, clock, point: str | None = None) -> ForegroundQueueStore:  # type: ignore[no-untyped-def]
-    return ForegroundQueueStore(queue_db, clock=clock, fault_hook=None if point is None else _OneShot(point))
+    return ForegroundQueueStore(
+        queue_db, clock=clock, fault_hook=None if point is None else _OneShot(point)
+    )
 
 
 async def _message_commit(tmp_path: Path, run_id: str) -> tuple[str, str, dict]:
@@ -520,8 +675,12 @@ async def _message_commit(tmp_path: Path, run_id: str) -> tuple[str, str, dict]:
     draft = await fq._draft(plain, key="prepare-2")
     with pytest.raises(ForegroundQueueError) as active:
         await plain.claim_next(
-            subject=fq.SUBJECT, owner_id="owner-2", claim_idempotency_key="claim-2",
-            preparation_draft_id=draft.draft_id, preparation_draft_hash=draft.draft_hash, lease_seconds=10,
+            subject=fq.SUBJECT,
+            owner_id="owner-2",
+            claim_idempotency_key="claim-2",
+            preparation_draft_id=draft.draft_id,
+            preparation_draft_hash=draft.draft_hash,
+            lease_seconds=10,
         )
     assert active.value.code == "foreground_run_already_active"
     assert _rows(queue_db, "SELECT COUNT(*) FROM foreground_runs") == [(1,)]
@@ -541,22 +700,32 @@ async def _run_admission(tmp_path: Path, run_id: str) -> tuple[str, str, dict]:
 
     async def claim(store: ForegroundQueueStore, *, owner: str = "owner-1", key: str = "claim-1"):  # type: ignore[no-untyped-def]
         return await store.claim_next(
-            subject=fq.SUBJECT, owner_id=owner, claim_idempotency_key=key,
-            preparation_draft_id=draft.draft_id, preparation_draft_hash=draft.draft_hash, lease_seconds=10,
+            subject=fq.SUBJECT,
+            owner_id=owner,
+            claim_idempotency_key=key,
+            preparation_draft_id=draft.draft_id,
+            preparation_draft_hash=draft.draft_hash,
+            lease_seconds=10,
         )
 
     with pytest.raises(RuntimeError, match="injected:claim.before_commit"):
         await claim(_fifo_store(queue_db, clock, "claim.before_commit"))
     assert state_hash(queue_db, FIFO_TABLES) == before
     assert _rows(queue_db, "SELECT COUNT(*) FROM foreground_runs") == [(0,)]
-    assert _rows(queue_db, "SELECT DISTINCT current_state FROM foreground_turn_heads") == [("QUEUED",)]
+    assert _rows(queue_db, "SELECT DISTINCT current_state FROM foreground_turn_heads") == [
+        ("QUEUED",)
+    ]
     admission = await claim(plain)
     assert admission is not None and admission.recovered is False
     converged = state_hash(queue_db, FIFO_TABLES)
     assert converged != before
     # 重放（新 owner 进程，同 key）：recovered=True、同 host_run_id、hash 不变。
     replay = await claim(plain)
-    assert replay is not None and replay.recovered is True and replay.host_run_id == admission.host_run_id
+    assert (
+        replay is not None
+        and replay.recovered is True
+        and replay.host_run_id == admission.host_run_id
+    )
     assert state_hash(queue_db, FIFO_TABLES) == converged
     with pytest.raises(ForegroundQueueError) as active:
         await claim(plain, owner="owner-2", key="claim-2")
@@ -580,28 +749,34 @@ async def _projection_commit(tmp_path: Path, run_id: str) -> tuple[str, str, dic
 
     queue_db, _store, _admission = await _bound_run(tmp_path, run_id)
     ingress = ExecutionEvidenceIngress(queue_db)
-    await ingress.reserve(run_id=run_id, task_scope_id=fq.SCOPE, kind="tool_invocation", source_event_id="effect:e-1")
+    await ingress.reserve(
+        run_id=run_id, task_scope_id=fq.SCOPE, kind="tool_invocation", source_event_id="effect:e-1"
+    )
     await ingress.commit_fact(task_scope_id=fq.SCOPE, subject=fq.SUBJECT, fact=_fact(run_id, "e-1"))
     before = state_hash(queue_db, PROJECTION_TABLES)
     faulty = TaskScopeProjectionStore(queue_db, fault_hook=_OneShot("materialize.before_commit"))
     with pytest.raises(RuntimeError, match="injected:materialize.before_commit"):
         await faulty.materialize(task_scope_id=fq.SCOPE)
     assert state_hash(queue_db, PROJECTION_TABLES) == before
-    assert _rows(queue_db, "SELECT COUNT(*) FROM task_scope_projection_materialization_receipts") == [(0,)]
+    assert _rows(
+        queue_db, "SELECT COUNT(*) FROM task_scope_projection_materialization_receipts"
+    ) == [(0,)]
     assert _rows(queue_db, "SELECT COUNT(*) FROM task_scope_read_blocks") == [(0,)]
     plain = TaskScopeProjectionStore(queue_db)
     views = await plain.materialize(task_scope_id=fq.SCOPE)
     assert set(views) == {"README", "PLAN", "STATUS", "DECISIONS", "RESUME", "EVIDENCE"}
     converged = state_hash(queue_db, PROJECTION_TABLES)
     assert converged != before
-    assert _rows(queue_db, "SELECT COUNT(*) FROM task_scope_projection_materialization_receipts") == [(1,)]
+    assert _rows(
+        queue_db, "SELECT COUNT(*) FROM task_scope_projection_materialization_receipts"
+    ) == [(1,)]
     # 重放（新 owner）与 ack 丢失重放：同 views、hash 不变。
     assert await plain.materialize(task_scope_id=fq.SCOPE) == views
     assert state_hash(queue_db, PROJECTION_TABLES) == converged
     with pytest.raises(RuntimeError, match="injected:materialize.after_commit"):
-        await TaskScopeProjectionStore(queue_db, fault_hook=_OneShot("materialize.after_commit")).materialize(
-            task_scope_id=fq.SCOPE
-        )
+        await TaskScopeProjectionStore(
+            queue_db, fault_hook=_OneShot("materialize.after_commit")
+        ).materialize(task_scope_id=fq.SCOPE)
     assert state_hash(queue_db, PROJECTION_TABLES) == converged
     assert await plain.materialize(task_scope_id=fq.SCOPE) == views
     assert state_hash(queue_db, PROJECTION_TABLES) == converged

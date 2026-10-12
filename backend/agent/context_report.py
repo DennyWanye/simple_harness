@@ -7,6 +7,7 @@ The store is intentionally in-memory and body-free.  It records the request
 that was actually prepared for a provider transport, not a reconstruction
 from the registry or from a later context snapshot.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -31,9 +32,7 @@ _TERMINAL = {"succeeded", "failed", "cancelled", "cancelled_before_send"}
 
 
 def _canonical_json(value: Any) -> str:
-    return json.dumps(
-        value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str
-    )
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
 
 
 def _digest(value: Any) -> str:
@@ -206,9 +205,7 @@ class ContextAttemptStore:
         while len(queue) > self._max:
             self._reports.pop(queue.popleft(), None)
 
-    def get(
-        self, session_id: str, request_id: str, attempt_id: str
-    ) -> ContextAttemptReport | None:
+    def get(self, session_id: str, request_id: str, attempt_id: str) -> ContextAttemptReport | None:
         self._purge()
         return self._reports.get(self._key(session_id, request_id, attempt_id))
 
@@ -339,7 +336,9 @@ def build_prepared_attempt_report(
     tool_decisions = tuple(getattr(tool_set, "decisions", ()) or ())
     compression = compression or {}
     message_tokens = int(getattr(budget, "messages_tokens", 0) or _token_estimate(wire_messages))
-    tool_tokens = int(getattr(budget, "tool_tokens", 0) or (_token_estimate(wire_tools) if wire_tools else 0))
+    tool_tokens = int(
+        getattr(budget, "tool_tokens", 0) or (_token_estimate(wire_tools) if wire_tools else 0)
+    )
     attachment_tokens = int(getattr(budget, "attachment_tokens", 0) or 0)
     generation_reserve = int(getattr(budget, "generation_reserve", 0) or 0)
     context_window = int(getattr(budget, "context_window", 0) or 0)
@@ -365,36 +364,32 @@ def build_prepared_attempt_report(
         deferred_tool_count=len(tuple(getattr(tool_set, "deferred", ()) or ())),
         schema_tokens_by_name=tuple(schemas_by_name),
         selection_reasons=tuple(
-            f"{getattr(item, 'name', '')}:{getattr(item, 'reason', '')}"
-            for item in tool_decisions
+            f"{getattr(item, 'name', '')}:{getattr(item, 'reason', '')}" for item in tool_decisions
         ),
         fragments=fragments,
         coverage_entries=coverage_entries,
-        coverage_valid=(
-            bool(coverage.valid) if coverage is not None else None
-        ),
+        coverage_valid=(bool(coverage.valid) if coverage is not None else None),
         coverage_gaps=tuple(int(item) for item in getattr(coverage, "gaps", ()) or ()),
-        coverage_overlaps=tuple(
-            int(item) for item in getattr(coverage, "overlaps", ()) or ()
-        ),
+        coverage_overlaps=tuple(int(item) for item in getattr(coverage, "overlaps", ()) or ()),
         coverage_stale_segment_ids=tuple(
-            str(item)
-            for item in getattr(coverage, "stale_segment_ids", ()) or ()
+            str(item) for item in getattr(coverage, "stale_segment_ids", ()) or ()
         ),
         coverage_broken_causal_groups=tuple(
-            str(item)
-            for item in getattr(coverage, "broken_causal_groups", ()) or ()
+            str(item) for item in getattr(coverage, "broken_causal_groups", ()) or ()
         ),
         coverage_page_in_refs=sum(
-            1
-            for entry in coverage_entries
-            if entry.kind == "summary" and entry.segment_id
+            1 for entry in coverage_entries if entry.kind == "summary" and entry.segment_id
         ),
         context_page_in_refs=len(page_in_refs),
-        context_page_in_kinds=tuple(sorted({
-            str(getattr(ref, "kind", "") or "") for ref in page_in_refs
-            if getattr(ref, "kind", "")
-        })),
+        context_page_in_kinds=tuple(
+            sorted(
+                {
+                    str(getattr(ref, "kind", "") or "")
+                    for ref in page_in_refs
+                    if getattr(ref, "kind", "")
+                }
+            )
+        ),
         tool_tokens=tool_tokens,
         message_tokens=message_tokens,
         attachment_tokens=attachment_tokens,
@@ -403,9 +398,7 @@ def build_prepared_attempt_report(
         context_window=context_window,
         planned_tokens=message_tokens + tool_tokens + attachment_tokens,
         cache_boundary=getattr(prepared_context, "stable_prefix_boundary", None),
-        cache_fingerprint=str(
-            getattr(prepared_context, "stable_prefix_fingerprint", "") or ""
-        ),
+        cache_fingerprint=str(getattr(prepared_context, "stable_prefix_fingerprint", "") or ""),
         requested_compression_model=str(compression.get("requested_model", "") or ""),
         resolved_compression_model=str(compression.get("resolved_model", "") or ""),
         actual_compression_model=str(compression.get("actual_model", "") or ""),
@@ -444,12 +437,7 @@ def _provider_identity(provider: Any, model_id: str = "") -> tuple[str, str, str
 
 
 def _has_complete_attempt(options: ProviderAttemptOptions | None) -> bool:
-    return bool(
-        options
-        and options.session_id
-        and options.request_id
-        and options.attempt_id
-    )
+    return bool(options and options.session_id and options.request_id and options.attempt_id)
 
 
 def _rebudget_current_attempt(
@@ -540,9 +528,7 @@ async def auto_context_attempt_call(
     session_id = str((current.session_id if current else None) or "global")
     request_id = str((current.request_id if current else None) or f"aux:{uuid.uuid4().hex}")
     attempt_id = str((current.attempt_id if current else None) or f"attempt:{uuid.uuid4().hex}")
-    resolved_purpose = normalize_provider_purpose(
-        (current.purpose if current else None) or purpose
-    )
+    resolved_purpose = normalize_provider_purpose((current.purpose if current else None) or purpose)
     provider_id, resolved_model, adapter_id, adapter_version = _provider_identity(
         provider, model_id
     )
@@ -632,9 +618,7 @@ async def auto_context_attempt_iter(
     session_id = str((current.session_id if current else None) or "global")
     request_id = str((current.request_id if current else None) or f"aux:{uuid.uuid4().hex}")
     attempt_id = str((current.attempt_id if current else None) or f"attempt:{uuid.uuid4().hex}")
-    resolved_purpose = normalize_provider_purpose(
-        (current.purpose if current else None) or purpose
-    )
+    resolved_purpose = normalize_provider_purpose((current.purpose if current else None) or purpose)
     provider_id, resolved_model, adapter_id, adapter_version = _provider_identity(
         provider, model_id
     )
@@ -706,9 +690,7 @@ def mark_current_attempt_sent() -> None:
         return
     if not (options.session_id and options.request_id and options.attempt_id):
         return
-    current = _ATTEMPT_STORE.get(
-        options.session_id, options.request_id, options.attempt_id
-    )
+    current = _ATTEMPT_STORE.get(options.session_id, options.request_id, options.attempt_id)
     if current is None:
         return
     if current.state == "planned":
@@ -743,12 +725,16 @@ def finish_current_attempt(state: str, *, usage: Any = None, reason: str = "") -
     if reason:
         updates["reasons"] = (*current.reasons, reason[:200])
     if usage is not None:
+
         def _read(*names: str) -> int | None:
             for name in names:
-                value = usage.get(name) if isinstance(usage, Mapping) else getattr(usage, name, None)
+                value = (
+                    usage.get(name) if isinstance(usage, Mapping) else getattr(usage, name, None)
+                )
                 if value is not None:
                     return int(value)
             return None
+
         updates.update(
             actual_input_tokens=_read("input_tokens", "prompt_tokens"),
             actual_output_tokens=_read("output_tokens", "completion_tokens"),

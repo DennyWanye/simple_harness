@@ -165,15 +165,7 @@ def _text(value: object) -> str | None:
 def _text_list(value: object) -> tuple[str, ...]:
     if not isinstance(value, (list, tuple, set, frozenset)):
         return ()
-    return tuple(
-        sorted(
-            {
-                normalized
-                for item in value
-                if (normalized := _text(item)) is not None
-            }
-        )
-    )
+    return tuple(sorted({normalized for item in value if (normalized := _text(item)) is not None}))
 
 
 def _normalise_fact(raw: object) -> _Fact:
@@ -182,12 +174,7 @@ def _normalise_fact(raw: object) -> _Fact:
     source = _text(_read(raw, "source"))
     original_kind = _text(_read(raw, "kind"))
     payload = _read(raw, "public_payload", {})
-    if (
-        stable_id is None
-        or root_run_id is None
-        or source is None
-        or original_kind is None
-    ):
+    if stable_id is None or root_run_id is None or source is None or original_kind is None:
         raise ValueError("public fact identity is incomplete")
     if not isinstance(payload, Mapping):
         raise ValueError("public fact payload must be a mapping")
@@ -240,9 +227,8 @@ def _normalise_fact(raw: object) -> _Fact:
     if original_kind in {"execution_event", "workflow_event"}:
         event_kind = _text(public_payload.get("event_kind")) or ""
         status = _text(public_payload.get("status"))
-        if (
-            _text(public_payload.get("role")) == "root"
-            and (_is_terminal_status(status) or event_kind.endswith(".final"))
+        if _text(public_payload.get("role")) == "root" and (
+            _is_terminal_status(status) or event_kind.endswith(".final")
         ):
             kind = "run_terminal"
             public_payload.setdefault("run_id", root_run_id)
@@ -306,9 +292,7 @@ def _causal_order(
     for fact in facts:
         aliases.setdefault(fact.stable_id, set()).add(fact.stable_id)
         if ":" in fact.stable_id:
-            aliases.setdefault(fact.stable_id.split(":", 1)[1], set()).add(
-                fact.stable_id
-            )
+            aliases.setdefault(fact.stable_id.split(":", 1)[1], set()).add(fact.stable_id)
         alias_fields = {
             "execution_run": ("run_id",),
             "workflow_run": ("run_id",),
@@ -325,9 +309,7 @@ def _causal_order(
                 dict.fromkeys((*alias_fields, "provider_batch_id", "invocation_id"))
             )
         elif fact.kind == "tool":
-            alias_fields = tuple(
-                dict.fromkeys((*alias_fields, "effect_id", "call_record_id"))
-            )
+            alias_fields = tuple(dict.fromkeys((*alias_fields, "effect_id", "call_record_id")))
         for field in alias_fields:
             alias = _text(fact.payload.get(field))
             if alias is not None:
@@ -364,9 +346,7 @@ def _causal_order(
                 or _text(fact.payload.get("stream_id"))
                 or fact.stable_id
             )
-            by_source.setdefault(
-                (fact.source, stream_id), []
-            ).append(fact)
+            by_source.setdefault((fact.source, stream_id), []).append(fact)
     for group in by_source.values():
         ordered = sorted(group, key=lambda item: (item.source_seq, item.stable_id))
         for earlier, later in zip(ordered, ordered[1:]):
@@ -380,9 +360,7 @@ def _causal_order(
     diagnostics: set[str] = set()
     while remaining:
         ready = sorted(
-            stable_id
-            for stable_id in remaining
-            if not (incoming[stable_id] & remaining)
+            stable_id for stable_id in remaining if not (incoming[stable_id] & remaining)
         )
         if not ready:
             # Deterministic cycle repair: the lexicographically smallest fact
@@ -393,9 +371,7 @@ def _causal_order(
             incoming[ready[0]].difference_update(remaining)
         for stable_id in ready:
             parents = incoming[stable_id] - remaining
-            depths[stable_id] = (
-                max((depths[parent] for parent in parents), default=-1) + 1
-            )
+            depths[stable_id] = max((depths[parent] for parent in parents), default=-1) + 1
             remaining.remove(stable_id)
 
     keys = {
@@ -444,9 +420,7 @@ def _root_fact(facts: Sequence[_Fact], root_run_id: str) -> _Fact | None:
         and _text(fact.payload.get("role")) in {None, "root"}
     ]
     terminal = [
-        fact
-        for fact in candidates
-        if _is_terminal_status(_text(fact.payload.get("status")))
+        fact for fact in candidates if _is_terminal_status(_text(fact.payload.get("status")))
     ]
     pool = terminal or candidates
     if not pool:
@@ -468,9 +442,7 @@ def _root_fact(facts: Sequence[_Fact], root_run_id: str) -> _Fact | None:
     )
 
 
-def _root_lifecycle_fact(
-    facts: Sequence[_Fact], root_run_id: str
-) -> _Fact | None:
+def _root_lifecycle_fact(facts: Sequence[_Fact], root_run_id: str) -> _Fact | None:
     """Return the durable root row that owns wall-clock lifecycle fields.
 
     Terminal events are the status authority, but their compact payload may
@@ -493,10 +465,7 @@ def _root_lifecycle_fact(
         if fact.kind in {"run", "run_terminal"}
         and _text(fact.payload.get("run_id")) == root_run_id
         and _text(fact.payload.get("role")) in {None, "root"}
-        and (
-            fact.payload.get("started_at") is not None
-            or fact.payload.get("ended_at") is not None
-        )
+        and (fact.payload.get("started_at") is not None or fact.payload.get("ended_at") is not None)
     ]
     return min(compatible, key=lambda item: item.stable_id) if compatible else None
 
@@ -508,7 +477,8 @@ def _unresolved_boundaries(facts: Sequence[_Fact]) -> tuple[_Fact, ...]:
         if fact.kind == "boundary"
         and _text(fact.payload.get("boundary_kind")) in {"human", "admission"}
         and fact.payload.get("resolved") is not True
-        and _text(fact.payload.get("status")) not in {
+        and _text(fact.payload.get("status"))
+        not in {
             "resolved",
             "rejected",
             "cancelled",
@@ -517,9 +487,7 @@ def _unresolved_boundaries(facts: Sequence[_Fact]) -> tuple[_Fact, ...]:
     )
 
 
-def _valid_block_signals(
-    facts: Sequence[_Fact], root_run_id: str
-) -> tuple[_Fact, ...]:
+def _valid_block_signals(facts: Sequence[_Fact], root_run_id: str) -> tuple[_Fact, ...]:
     return tuple(
         fact
         for fact in facts
@@ -557,8 +525,7 @@ def _recovery_chain(
     reports = [
         fact
         for fact in facts
-        if fact.kind == "failure_report"
-        and _text(fact.payload.get("child_run_id")) in children
+        if fact.kind == "failure_report" and _text(fact.payload.get("child_run_id")) in children
     ]
     failure_sets = [fact for fact in facts if fact.kind == "failure_set"]
     replacements = [
@@ -585,15 +552,11 @@ def _recovery_chain(
             or _text(failure_set.payload.get("primary_report_ref")) == report_ref
             or (
                 report_attempt is not None
-                and _text(failure_set.payload.get("failed_attempt_id"))
-                == report_attempt
+                and _text(failure_set.payload.get("failed_attempt_id")) == report_attempt
             )
         ]
         for failure_set in matching_sets:
-            set_id = (
-                _text(failure_set.payload.get("failure_set_id"))
-                or failure_set.stable_id
-            )
+            set_id = _text(failure_set.payload.get("failure_set_id")) or failure_set.stable_id
             failed_attempt_id = _text(failure_set.payload.get("failed_attempt_id"))
             replacement = next(
                 (
@@ -601,8 +564,7 @@ def _recovery_chain(
                     for item in sorted(
                         replacements, key=lambda candidate: order[candidate.stable_id]
                     )
-                    if _text(item.payload.get("status"))
-                    in {"succeeded", "completed"}
+                    if _text(item.payload.get("status")) in {"succeeded", "completed"}
                     and (
                         _text(item.payload.get("trigger_failure_set_id")) == set_id
                         or (
@@ -614,9 +576,7 @@ def _recovery_chain(
                 ),
                 None,
             )
-            terminal_ancestors = ancestors.get(
-                root_terminal.stable_id, frozenset()
-            )
+            terminal_ancestors = ancestors.get(root_terminal.stable_id, frozenset())
             precedes_terminal = replacement is not None and (
                 replacement.stable_id in terminal_ancestors
                 or (
@@ -625,10 +585,7 @@ def _recovery_chain(
                     and replacement.created_at < root_terminal.created_at
                 )
             )
-            if (
-                replacement is None
-                or not precedes_terminal
-            ):
+            if replacement is None or not precedes_terminal:
                 continue
             return tuple(
                 dict.fromkeys(
@@ -744,18 +701,16 @@ def _aggregate_outcome(
             "explanation_code": explanation,
             "evidence_refs": list(dict.fromkeys(evidence)),
             "child_warnings": child_warnings,
-            "started_at": (
-                None if lifecycle is None else lifecycle.payload.get("started_at")
-            ),
-            "ended_at": (
-                None if lifecycle is None else lifecycle.payload.get("ended_at")
-            ),
+            "started_at": (None if lifecycle is None else lifecycle.payload.get("started_at")),
+            "ended_at": (None if lifecycle is None else lifecycle.payload.get("ended_at")),
         },
         tuple(sorted(diagnostics)),
     )
 
 
-def _map_phase(fact: _Fact, *, first_mutation_depth: int | None, depth: int) -> tuple[PhaseTaxonomy, str]:
+def _map_phase(
+    fact: _Fact, *, first_mutation_depth: int | None, depth: int
+) -> tuple[PhaseTaxonomy, str]:
     payload = fact.payload
     status = _text(payload.get("status"))
     role = _text(payload.get("role"))
@@ -774,28 +729,31 @@ def _map_phase(fact: _Fact, *, first_mutation_depth: int | None, depth: int) -> 
             if fact in _unresolved_boundaries((fact,))
             else "resolved_boundary",
         )
-    if fact.kind in {"failure_report", "failure_set"} or (
-        fact.kind == "attempt"
-        and (
-            _text(payload.get("trigger_failure_set_id")) is not None
-            or _text(payload.get("supersedes_attempt_id")) is not None
-            or int(payload.get("plan_version") or 1) > 1
+    if (
+        fact.kind in {"failure_report", "failure_set"}
+        or (
+            fact.kind == "attempt"
+            and (
+                _text(payload.get("trigger_failure_set_id")) is not None
+                or _text(payload.get("supersedes_attempt_id")) is not None
+                or int(payload.get("plan_version") or 1) > 1
+            )
         )
-    ) or (role == "child" and status in {"failed", "cancelled"}):
+        or (role == "child" and status in {"failed", "cancelled"})
+    ):
         return PhaseTaxonomy.VERIFY_REPAIR, "recovery_fact"
     if fact.kind in {"child", "child_command"} or role == "child":
         return PhaseTaxonomy.DELEGATE, "child_lifecycle"
     if fact.kind == "tool":
         activity = _text(payload.get("activity_kind"))
-        if activity == "inspect" and (
-            first_mutation_depth is None or depth < first_mutation_depth
-        ):
+        if activity == "inspect" and (first_mutation_depth is None or depth < first_mutation_depth):
             return PhaseTaxonomy.UNDERSTAND, "tool_inspect_before_mutation"
         if activity == "plan":
             return PhaseTaxonomy.PREPARE, "tool_plan"
-        if activity in {"verify", "test", "build", "health"} or int(
-            payload.get("plan_version") or 1
-        ) > 1:
+        if (
+            activity in {"verify", "test", "build", "health"}
+            or int(payload.get("plan_version") or 1) > 1
+        ):
             return PhaseTaxonomy.VERIFY_REPAIR, "tool_verify"
         if activity == "wait":
             return PhaseTaxonomy.WAIT_USER, "tool_wait"
@@ -819,7 +777,10 @@ def _map_phase(fact: _Fact, *, first_mutation_depth: int | None, depth: int) -> 
             return hints[hint], "workflow_phase_hint"
         return PhaseTaxonomy.EXECUTE, "workflow_unknown_hint"
     if fact.kind == "provider":
-        if payload.get("detached") is True and _text(payload.get("purpose")) == "system_maintenance":
+        if (
+            payload.get("detached") is True
+            and _text(payload.get("purpose")) == "system_maintenance"
+        ):
             raise LookupError("detached_system_maintenance")
         stage = _text(payload.get("provider_stage"))
         if stage in {"preanalysis", "classifier"}:
@@ -842,8 +803,7 @@ def _semantic_phases(
 ) -> tuple[dict[str, Any], ...]:
     effect_call_keys = {
         (
-            _text(fact.payload.get("run_id"))
-            or _text(fact.payload.get("root_run_id")),
+            _text(fact.payload.get("run_id")) or _text(fact.payload.get("root_run_id")),
             _text(fact.payload.get("call_id")),
         )
         for fact in facts
@@ -858,8 +818,7 @@ def _semantic_phases(
             fact.kind == "tool"
             and _text(fact.payload.get("provider_call_id")) is not None
             and (
-                _text(fact.payload.get("run_id"))
-                or _text(fact.payload.get("root_run_id")),
+                _text(fact.payload.get("run_id")) or _text(fact.payload.get("root_run_id")),
                 _text(fact.payload.get("provider_call_id")),
             )
             in effect_call_keys
@@ -889,9 +848,7 @@ def _semantic_phases(
     ordered_taxonomies = [item for item in _TAXONOMY_ORDER if item in grouped]
     current = max(
         ordered_taxonomies,
-        key=lambda taxonomy: max(
-            order[fact.stable_id] for fact, _ in grouped[taxonomy]
-        ),
+        key=lambda taxonomy: max(order[fact.stable_id] for fact, _ in grouped[taxonomy]),
     )
     aggregate_status = RootOutcomeStatus(str(aggregate["status"]))
     recovery_refs = set(_text_list(aggregate.get("evidence_refs")))
@@ -899,8 +856,7 @@ def _semantic_phases(
     for taxonomy in ordered_taxonomies:
         members = grouped[taxonomy]
         if not projection_complete and not any(
-            _is_terminal_status(_text(fact.payload.get("status")))
-            for fact, _ in members
+            _is_terminal_status(_text(fact.payload.get("status"))) for fact, _ in members
         ):
             status = PhaseStatus.UNKNOWN
         elif taxonomy is not current:
@@ -932,8 +888,7 @@ def _semantic_phases(
         child_refs = [
             fact.stable_id
             for fact, _ in members
-            if fact.kind in {"child", "child_command"}
-            or _text(fact.payload.get("role")) == "child"
+            if fact.kind in {"child", "child_command"} or _text(fact.payload.get("role")) == "child"
         ]
         steps_by_id: dict[str, dict[str, Any]] = {}
         items: list[dict[str, Any]] = []
@@ -959,18 +914,21 @@ def _semantic_phases(
                 value = fact.payload.get(field)
                 if isinstance(value, (str, int, float, bool)) and value != "":
                     item[field] = value
-                elif field in {"safe_input", "bounded_result", "public_input", "public_result", "truncation_hashes"} and isinstance(value, Mapping):
+                elif field in {
+                    "safe_input",
+                    "bounded_result",
+                    "public_input",
+                    "public_result",
+                    "truncation_hashes",
+                } and isinstance(value, Mapping):
                     item[field] = dict(value)
             items.append(item)
         steps = list(steps_by_id.values())
-        numeric_steps = [
-            step for step in steps if isinstance(step.get("step_index"), int)
-        ]
+        numeric_steps = [step for step in steps if isinstance(step.get("step_index"), int)]
         totals = [
             int(step["step_total"])
             for step in steps
-            if isinstance(step.get("step_total"), int)
-            and int(step["step_total"]) > 0
+            if isinstance(step.get("step_total"), int) and int(step["step_total"]) > 0
         ]
         phase_id = hashlib.sha256(
             f"{PROJECTION_CONTRACT_VERSION}\0{root_run_id}\0{taxonomy.value}".encode()
@@ -1009,9 +967,7 @@ def _read_cut_complete(read_cut: object) -> tuple[bool, tuple[str, ...]]:
     else:
         completeness = {}
     source_cuts = tuple(
-        cut
-        for name in ("workflow", "state")
-        if (cut := _read(read_cut, name)) is not None
+        cut for name in ("workflow", "state") if (cut := _read(read_cut, name)) is not None
     )
     if source_cuts and any(_read(cut, "complete") is not True for cut in source_cuts):
         complete = False

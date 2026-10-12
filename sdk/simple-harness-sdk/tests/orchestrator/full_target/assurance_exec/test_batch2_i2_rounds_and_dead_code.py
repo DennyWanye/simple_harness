@@ -24,20 +24,46 @@ def _bindings_table() -> sqlite3.Connection:
     start = schema.index("CREATE TABLE assurance_review_bindings")
     statement = schema[start : schema.index(") STRICT;", start) + len(") STRICT;")]
     connection = sqlite3.connect(":memory:")
-    connection.execute(statement)  # foreign keys are off in a bare connection: only the shape matters here
+    connection.execute(
+        statement
+    )  # foreign keys are off in a bare connection: only the shape matters here
     return connection
 
 
-def _binding(connection, *, review_key, mission="m-1", owner="task-a", purpose="TASK_CONTENT",
-             occurrence="occ-1", round_no=1, command="cmd-" + "x"):
+def _binding(
+    connection,
+    *,
+    review_key,
+    mission="m-1",
+    owner="task-a",
+    purpose="TASK_CONTENT",
+    occurrence="occ-1",
+    round_no=1,
+    command="cmd-" + "x",
+):
     body = {"subject": {"purpose": purpose, "occurrence_id": occurrence}}
     import json
+
     connection.execute(
         "INSERT INTO assurance_review_bindings(review_key,mission_id,package_id,owner_task_id,request_command_id,"
         "round_no,requirements_revision,requirements_hash,subject_hash,input_manifest_hash,binding_hash,binding_json,"
         "source_receipt_id,created_at_ms) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        (review_key, mission, "pkg-" + review_key, owner, command + review_key, round_no, 1,
-         "a" * 64, "b" * 64, "c" * 64, "d" * 64, json.dumps(body), "receipt-" + review_key, 1),
+        (
+            review_key,
+            mission,
+            "pkg-" + review_key,
+            owner,
+            command + review_key,
+            round_no,
+            1,
+            "a" * 64,
+            "b" * 64,
+            "c" * 64,
+            "d" * 64,
+            json.dumps(body),
+            "receipt-" + review_key,
+            1,
+        ),
     )
 
 
@@ -49,7 +75,13 @@ def test_a15_a_new_package_for_the_same_subject_is_the_next_round():
     **改坏检验**：PR/CR 把 ``round_no`` 写回常量 1 → 下面的守护用例 ``test_a15_binding_writers_take_the_round_from_the_counter`` 变红；
     计数器忽略用途 → 本用例"别的用途不算"一处变红。"""
     connection = _bindings_table()
-    kw = dict(mission_id="m-1", review_key="rk-new", purpose="TASK_CONTENT", owner_task_id="task-a", occurrence_id="occ-1")
+    kw = dict(
+        mission_id="m-1",
+        review_key="rk-new",
+        purpose="TASK_CONTENT",
+        owner_task_id="task-a",
+        occurrence_id="occ-1",
+    )
     assert next_review_round(connection, **kw) == 1
     _binding(connection, review_key="rk-1", round_no=1)
     _binding(connection, review_key="rk-2", round_no=2)
@@ -65,8 +97,17 @@ def test_a15_a_new_package_for_the_same_subject_is_the_next_round():
     assert next_review_round(connection, **kw) == 3
     # 出现为空（用途审阅可以没有 occurrence）按 IS NULL 匹配
     _binding(connection, review_key="rk-n", occurrence=None, purpose="MISSION_FINAL", round_no=1)
-    assert next_review_round(connection, mission_id="m-1", review_key="rk-x", purpose="MISSION_FINAL",
-                             owner_task_id="task-a", occurrence_id=None) == 2
+    assert (
+        next_review_round(
+            connection,
+            mission_id="m-1",
+            review_key="rk-x",
+            purpose="MISSION_FINAL",
+            owner_task_id="task-a",
+            occurrence_id=None,
+        )
+        == 2
+    )
 
 
 def test_a15_binding_writers_take_the_round_from_the_counter():
@@ -80,14 +121,27 @@ def test_a15_binding_writers_take_the_round_from_the_counter():
 
 # --------------------------------------------------------------------------- A24
 _GONE = (
-    "consume_fuel", "ExpansionRecord", "FuelDecision",              # 按次扣燃料：只给测试用
-    "reevaluate_consumer", "LineageRecord", "ConsumerUse",          # 无生产调用方
-    "find_duplicates", "DuplicateReport",                           # 无产品调用方
-    "RootReviewRequest", "REQUIREMENTS_REVISION_SEMANTICS", "excerpt_of",  # 旧根审阅请求
-    "PARENT_COMPOUND_TASK", "parent_compound_task",                 # 合同账户名与实际一致
-    "CLOSEOUT_ROOT_NETWORK_UNAVAILABLE",                            # 不可达分支的码
-    "merge_accepted", "collect_upstream_inputs", "materialise_inputs",  # 全祖先扫描（主会话补派）
-    "ShapeChange", "note_shape_change", "expansion_keys", "shape_changes",  # 义务账本死存储层（夜间 N3-10）
+    "consume_fuel",
+    "ExpansionRecord",
+    "FuelDecision",  # 按次扣燃料：只给测试用
+    "reevaluate_consumer",
+    "LineageRecord",
+    "ConsumerUse",  # 无生产调用方
+    "find_duplicates",
+    "DuplicateReport",  # 无产品调用方
+    "RootReviewRequest",
+    "REQUIREMENTS_REVISION_SEMANTICS",
+    "excerpt_of",  # 旧根审阅请求
+    "PARENT_COMPOUND_TASK",
+    "parent_compound_task",  # 合同账户名与实际一致
+    "CLOSEOUT_ROOT_NETWORK_UNAVAILABLE",  # 不可达分支的码
+    "merge_accepted",
+    "collect_upstream_inputs",
+    "materialise_inputs",  # 全祖先扫描（主会话补派）
+    "ShapeChange",
+    "note_shape_change",
+    "expansion_keys",
+    "shape_changes",  # 义务账本死存储层（夜间 N3-10）
 )
 
 
@@ -100,7 +154,10 @@ def test_a24_removed_symbols_do_not_come_back():
     for path in SRC.rglob("*.py"):
         text = path.read_text()
         for symbol in _GONE:
-            if re.search(r"\b" + re.escape(symbol) + r"\b", text) and (str(path.relative_to(SRC)), symbol) not in allowed:
+            if (
+                re.search(r"\b" + re.escape(symbol) + r"\b", text)
+                and (str(path.relative_to(SRC)), symbol) not in allowed
+            ):
                 offenders.append((str(path.relative_to(SRC)), symbol))
     assert offenders == []
     assert "def normalise_goal" in (SRC / "graph" / "deduplicator.py").read_text()
@@ -108,12 +165,17 @@ def test_a24_removed_symbols_do_not_come_back():
 
 def test_a24_unreachable_branches_and_stale_wording_are_gone():
     commit_service = (SRC / "orchestrator" / "commit_service.py").read_text()
-    assert "def finalize_assured_mission" not in commit_service  # 包装无调用者；唯一终写在 assurance_final_writer
+    assert (
+        "def finalize_assured_mission" not in commit_service
+    )  # 包装无调用者；唯一终写在 assurance_final_writer
     start = commit_service.index("def _require_root_resolution")
     assert "if network is None" not in commit_service[start : start + 2500]
     consumers = (SRC / "orchestrator" / "assurance_consumers.py").read_text()
     assert "if network is None" not in consumers
     assert "def request(" not in (SRC / "orchestrator" / "root_review.py").read_text()
-    assert "releases the terminal pools" not in (SRC / "orchestrator" / "assurance_final_writer.py").read_text()
+    assert (
+        "releases the terminal pools"
+        not in (SRC / "orchestrator" / "assurance_final_writer.py").read_text()
+    )
     resolution = (SRC / "contracts" / "resolution.py").read_text()
     assert "ReviewPurpose.COMPOSITION: ReviewAccount.MISSION" in resolution

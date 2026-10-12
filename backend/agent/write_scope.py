@@ -20,6 +20,7 @@ edit_file / desktop_create_file / run_shell-mkdir）读到该键时做 path
 **兼容开关**：`[companion].write_scope_enforced=false` → chat handler
 不注入 → 写盘工具读不到 `_write_scope_root` → 永不拦（旧自由写盘）。
 """
+
 from __future__ import annotations
 
 import os
@@ -28,9 +29,7 @@ from pathlib import Path
 from typing import Optional
 
 # spec 原文文案（test 对此精确断言，勿改）。
-_VIOLATION_MSG = (
-    "当前任务写盘限定在 workspace；需要写其他项目时请先选择对应工作区"
-)
+_VIOLATION_MSG = "当前任务写盘限定在 workspace；需要写其他项目时请先选择对应工作区"
 
 
 def scope_violation_message() -> str:
@@ -108,8 +107,12 @@ def write_scope_check(
     from deskpet.permissions.protected_paths import guard
 
     base = Path(scope_root) if scope_root else None
-    return guard(path, "read" if op == "read" else "write", base=base,
-                 extra_allowed=[scope_root] if scope_root else [])
+    return guard(
+        path,
+        "read" if op == "read" else "write",
+        base=base,
+        extra_allowed=[scope_root] if scope_root else [],
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -143,7 +146,7 @@ def _extract_paths_from_command(command: str) -> list[str]:
     out: list[str] = []
     # 写命令后面的参数（可能多个）。取该命令片段到下一个分隔符前的 token。
     for m in _WRITE_CMD.finditer(command):
-        rest = command[m.end():]
+        rest = command[m.end() :]
         # 截到下一个命令分隔符
         seg = re.split(r"(?:&&|\|\||[;&|\r\n])", rest, maxsplit=1)[0]
         # Redirections are checked separately below and are not command

@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 """统一 token 计数(deskpet.agent.tokens)测试 — 优化 #1+#3。"""
+
 from __future__ import annotations
 
 from deskpet.agent.tokens import count_messages_tokens, count_text_tokens
@@ -15,7 +16,7 @@ def test_empty():
 
 def test_cjk_not_underestimated():
     """CJK 文本不可像裸 len//4 那样低估到 ~1/4(否则压缩永不触发 → 爆窗,FP-2 事故)。"""
-    cjk = "钠离子电池技术规范" * 20   # 180 CJK 字
+    cjk = "钠离子电池技术规范" * 20  # 180 CJK 字
     n = count_text_tokens(cjk)
     # CJK ≈ 1 token/字,应接近 180,绝不能掉到字符数的 1/4(45)
     assert n >= 150, f"CJK 180 字被估成 {n}, 低估爆窗风险"
@@ -33,6 +34,7 @@ def test_cross_module_consistency():
     from agent import token_budget as tb
     from deskpet.agent import context_compressor as cc
     from deskpet.agent.assembler import budget as bg
+
     t = "钠离子电池 GB/T 44265-2024 electric storage station 技术规范"
     a = count_text_tokens(t)
     assert cc._approx_tokens(t) == a
@@ -43,9 +45,13 @@ def test_cross_module_consistency():
 
 def test_messages_counts_tool_calls():
     """tool_calls 载荷也计入(防止工具密集会话低估)。"""
-    msgs = [{
-        "role": "assistant", "content": "",
-        "tool_calls": [{"id": "1", "function": {"name": "x"},
-                        "args": '{"q":"' + "钠离子电池" * 30 + '"}'}],
-    }]
-    assert count_messages_tokens(msgs) > 30   # 工具参数里的中文被算进去
+    msgs = [
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {"id": "1", "function": {"name": "x"}, "args": '{"q":"' + "钠离子电池" * 30 + '"}'}
+            ],
+        }
+    ]
+    assert count_messages_tokens(msgs) > 30  # 工具参数里的中文被算进去

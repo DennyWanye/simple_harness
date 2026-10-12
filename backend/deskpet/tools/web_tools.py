@@ -19,6 +19,7 @@ search APIs (D5 decision, enforced by CI grep guard task 9.9).
 Shared machinery (robots cache + per-host rate limiter) lives at the
 top of this file so every tool uses the same politeness layer.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -246,9 +247,11 @@ _SCHEMA_FETCH: dict[str, Any] = {
 
 def _fetch_service():
     from deskpet.retrieval.runtime import get_default_gateway
+
     service = get_default_gateway().fetch_service
     if service is None:
         from deskpet.retrieval.fetch_extract import FetchExtractService
+
         service = FetchExtractService()
         get_default_gateway().fetch_service = service
     return service
@@ -256,15 +259,22 @@ def _fetch_service():
 
 async def _fetch_raw_async(url: str, timeout: float) -> dict[str, Any]:
     from deskpet.retrieval.contracts import FetchRequest
-    return await _fetch_service().fetch_raw(FetchRequest(
-        url=url, timeout=timeout, extract=False, include_html=True,
-        max_chars=_MAX_HTML_BYTES,
-    ))
+
+    return await _fetch_service().fetch_raw(
+        FetchRequest(
+            url=url,
+            timeout=timeout,
+            extract=False,
+            include_html=True,
+            max_chars=_MAX_HTML_BYTES,
+        )
+    )
 
 
 def _fetch_one(url: str, timeout: float) -> dict[str, Any]:
     """Legacy sync facade. Production consumers use ``_fetch_raw_async``."""
     from deskpet.retrieval.fetch_extract import FetchExtractError
+
     try:
         asyncio.get_running_loop()
     except RuntimeError:
@@ -272,7 +282,8 @@ def _fetch_one(url: str, timeout: float) -> dict[str, Any]:
             return asyncio.run(_fetch_raw_async(url, timeout))
         except FetchExtractError as exc:
             out = {"error": exc.code, "retriable": exc.retriable}
-            if exc.status is not None: out["status"] = exc.status
+            if exc.status is not None:
+                out["status"] = exc.status
             return out
     raise RuntimeError("_fetch_one is legacy sync-only; await _fetch_raw_async")
 
@@ -285,14 +296,15 @@ async def _handle_web_fetch(args: dict[str, Any], task_id: str) -> str:
     if timeout <= 0:
         return _err("timeout must be positive", retriable=False)
     from deskpet.retrieval.fetch_extract import FetchExtractError
+
     try:
         result = await _fetch_raw_async(url, timeout)
     except FetchExtractError as exc:
         payload = {"error": exc.code, "retriable": exc.retriable}
-        if exc.status is not None: payload["status"] = exc.status
+        if exc.status is not None:
+            payload["status"] = exc.status
         return json.dumps(payload, ensure_ascii=False)
     return json.dumps(result, ensure_ascii=False)
-
 
 
 # NOTE: ``web_search`` is registered ONCE in ``code_tools/registration.py``
@@ -366,6 +378,7 @@ async def _handle_web_extract_article(args: dict[str, Any], task_id: str) -> str
 
     if _looks_like_url(inp):
         from deskpet.retrieval.fetch_extract import FetchExtractError
+
         try:
             fetched = await _fetch_raw_async(inp, timeout=10.0)
         except FetchExtractError as exc:
@@ -407,11 +420,7 @@ async def _handle_web_extract_article(args: dict[str, Any], task_id: str) -> str
                 payload["title"] = data.get("title") or None
                 payload["author"] = data.get("author") or None
                 # Dates come through as ISO strings when present.
-                payload["date"] = (
-                    data.get("date")
-                    or data.get("publication_date")
-                    or None
-                )
+                payload["date"] = data.get("date") or data.get("publication_date") or None
                 payload["text"] = data.get("text") or data.get("raw_text") or None
                 payload["language"] = data.get("language") or None
             except json.JSONDecodeError:
@@ -443,8 +452,6 @@ async def _handle_web_extract_article(args: dict[str, Any], task_id: str) -> str
         payload["text"] = fb.get("text")
 
     return json.dumps(payload, ensure_ascii=False)
-
-
 
 
 # ---------------------------------------------------------------------
@@ -490,9 +497,7 @@ _SCHEMA_CRAWL: dict[str, Any] = {
 }
 
 
-_LINK_RE = re.compile(
-    r"""href\s*=\s*["']([^"'#]+)""", re.IGNORECASE
-)
+_LINK_RE = re.compile(r"""href\s*=\s*["']([^"'#]+)""", re.IGNORECASE)
 
 
 def _score_page(html: str, keywords: list[str]) -> tuple[float, str, str]:
@@ -567,8 +572,12 @@ async def _handle_web_crawl(args: dict[str, Any], task_id: str) -> str:
     if not isinstance(keywords, list):
         return _err("keywords must be a list", retriable=False)
     cfg = load_web_config()
-    max_depth = int(args.get("max_depth", cfg.crawl_default_max_depth) or cfg.crawl_default_max_depth)
-    max_pages = int(args.get("max_pages", cfg.crawl_default_max_pages) or cfg.crawl_default_max_pages)
+    max_depth = int(
+        args.get("max_depth", cfg.crawl_default_max_depth) or cfg.crawl_default_max_depth
+    )
+    max_pages = int(
+        args.get("max_pages", cfg.crawl_default_max_pages) or cfg.crawl_default_max_pages
+    )
     same_origin = bool(args.get("same_origin", True))
     if max_depth < 0 or max_pages <= 0:
         return _err("max_depth>=0 and max_pages>0 required", retriable=False)
@@ -633,8 +642,6 @@ async def _handle_web_crawl(args: dict[str, Any], task_id: str) -> str:
         {"pages": pages, "count": len(pages), "origin": seed_origin},
         ensure_ascii=False,
     )
-
-
 
 
 # ---------------------------------------------------------------------
@@ -795,11 +802,15 @@ async def _handle_web_read_sitemap(args: dict[str, Any], task_id: str) -> str:
 def register_static_tools(registry) -> None:
     registry.register("web_fetch", "web", _SCHEMA_FETCH, _handle_web_fetch)
     registry.register(
-        "web_extract_article", "web", _SCHEMA_ARTICLE,
+        "web_extract_article",
+        "web",
+        _SCHEMA_ARTICLE,
         _handle_web_extract_article,
     )
     registry.register("web_crawl", "web", _SCHEMA_CRAWL, _handle_web_crawl)
     registry.register(
-        "web_read_sitemap", "web", _SCHEMA_SITEMAP,
+        "web_read_sitemap",
+        "web",
+        _SCHEMA_SITEMAP,
         _handle_web_read_sitemap,
     )

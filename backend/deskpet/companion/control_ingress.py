@@ -117,9 +117,7 @@ def _require_future_expiry(value: Any) -> str:
     try:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError as exc:
-        raise CompanionGrowthControlError(
-            "companion_growth_decision_expiry_invalid"
-        ) from exc
+        raise CompanionGrowthControlError("companion_growth_decision_expiry_invalid") from exc
     if parsed.tzinfo is None or parsed.astimezone(UTC) <= datetime.now(UTC):
         raise CompanionGrowthControlError("companion_growth_decision_expired")
     return value
@@ -172,9 +170,7 @@ class CompanionEvaluationDecisionService:
             optional=self._OPTIONAL,
             error="companion_evaluation_decision_fields_invalid",
         )
-        allow = _require_bool(
-            body["allow"], error="companion_evaluation_decision_allow_invalid"
-        )
+        allow = _require_bool(body["allow"], error="companion_evaluation_decision_allow_invalid")
         revision = _require_positive_int(
             body["candidate_revision"],
             error="companion_evaluation_candidate_revision_invalid",
@@ -187,9 +183,7 @@ class CompanionEvaluationDecisionService:
         owner = frozen_identity.owner
         row = self._resolve_evaluation(owner, body)
         if int(row["attempt_generation"]) != revision:
-            raise CompanionGrowthControlError(
-                "companion_evaluation_decision_stale"
-            )
+            raise CompanionGrowthControlError("companion_evaluation_decision_stale")
         code_digest = body.get("candidate_code_digest")
         executable = str(row["candidate_kind"]) in {
             "code",
@@ -197,16 +191,11 @@ class CompanionEvaluationDecisionService:
             "local_runtime",
         }
         if executable and (
-            not isinstance(code_digest, str)
-            or code_digest != str(row["candidate_content_hash"])
+            not isinstance(code_digest, str) or code_digest != str(row["candidate_content_hash"])
         ):
-            raise CompanionGrowthControlError(
-                "companion_evaluation_code_digest_mismatch"
-            )
+            raise CompanionGrowthControlError("companion_evaluation_code_digest_mismatch")
         if self._nonce_used_by_activation(owner, str(body["nonce"])):
-            raise CompanionGrowthControlError(
-                "companion_evaluation_nonce_wrong_domain"
-            )
+            raise CompanionGrowthControlError("companion_evaluation_nonce_wrong_domain")
         if not allow:
             # Evaluation denial has no execution permit and therefore cannot
             # start candidate code. The notification projection owns its
@@ -216,9 +205,7 @@ class CompanionEvaluationDecisionService:
                 "candidate_id": str(body["candidate_id"]),
                 "authorized": False,
             }
-        authorization_id = _canonical_id(
-            "evaluation_authorization", owner, body
-        )
+        authorization_id = _canonical_id("evaluation_authorization", owner, body)
         result = self._store.create_evaluation_authorization(
             owner,
             authorization_id=authorization_id,
@@ -237,9 +224,7 @@ class CompanionEvaluationDecisionService:
             "status": "authorized",
             "authorization_id": authorization_id,
             "evaluation_id": str(row["evaluation_id"]),
-            "authorization_hash": str(
-                result.get("authorization_id") or authorization_id
-            ),
+            "authorization_hash": str(result.get("authorization_id") or authorization_id),
         }
 
     def _resolve_evaluation(
@@ -283,9 +268,7 @@ class CompanionEvaluationDecisionService:
                 ),
             ).fetchall()
         if len(rows) != 1:
-            raise CompanionGrowthControlError(
-                "companion_evaluation_decision_stale"
-            )
+            raise CompanionGrowthControlError("companion_evaluation_decision_stale")
         return dict(rows[0])
 
     def _nonce_used_by_activation(self, owner: Any, nonce: str) -> bool:
@@ -349,18 +332,14 @@ class CompanionActivationDecisionService:
             optional=self._OPTIONAL,
             error="companion_activation_decision_fields_invalid",
         )
-        allow = _require_bool(
-            body["allow"], error="companion_activation_decision_allow_invalid"
-        )
+        allow = _require_bool(body["allow"], error="companion_activation_decision_allow_invalid")
         _require_positive_int(
             body["decision_version"],
             error="companion_activation_decision_version_invalid",
         )
         expected_generation = body["expected_binding_generation"]
         if type(expected_generation) is not int or expected_generation < 0:
-            raise CompanionGrowthControlError(
-                "companion_activation_binding_generation_invalid"
-            )
+            raise CompanionGrowthControlError("companion_activation_binding_generation_invalid")
         _require_future_expiry(body["expires_at"])
         owner = frozen_identity.owner
         self._require_issued_challenge(owner, body)
@@ -376,20 +355,15 @@ class CompanionActivationDecisionService:
             if (
                 not isinstance(code_digest, str)
                 or code_digest != str(row["candidate_content_hash"])
-                or (allow and risk_ack
-                    != "persistent_local_code_no_os_sandbox")
+                or (allow and risk_ack != "persistent_local_code_no_os_sandbox")
             ):
                 raise CompanionGrowthControlError(
                     "companion_activation_code_confirmation_incomplete"
                 )
         elif code_digest is not None or risk_ack != "none":
-            raise CompanionGrowthControlError(
-                "companion_activation_risk_ack_not_applicable"
-            )
+            raise CompanionGrowthControlError("companion_activation_risk_ack_not_applicable")
         if self._nonce_used_by_evaluation(owner, str(body["nonce"])):
-            raise CompanionGrowthControlError(
-                "companion_activation_nonce_wrong_domain"
-            )
+            raise CompanionGrowthControlError("companion_activation_nonce_wrong_domain")
         decision_id = _canonical_id("activation_decision", owner, body)
         if not allow:
             result = self._store.record_activation_decision(
@@ -411,11 +385,7 @@ class CompanionActivationDecisionService:
                 "decision_id": str(result["decision_id"]),
             }
         mode = CandidateMode(str(row["candidate_mode"]))
-        action = (
-            MutationAction.UPDATE
-            if mode is CandidateMode.UPDATE
-            else MutationAction.INSTALL
-        )
+        action = MutationAction.UPDATE if mode is CandidateMode.UPDATE else MutationAction.INSTALL
         source_fence = (
             None
             if row["source_owner_key"] is None
@@ -428,9 +398,7 @@ class CompanionActivationDecisionService:
                 "binding_generation": int(row["source_binding_generation"]),
             }
         )
-        request_id = canonical_hash(
-            ["trusted_activation", decision_id, str(body["candidate_id"])]
-        )
+        request_id = canonical_hash(["trusted_activation", decision_id, str(body["candidate_id"])])
         mutation = MutationRequest(
             request_id=request_id,
             request_fingerprint=canonical_hash(
@@ -440,8 +408,7 @@ class CompanionActivationDecisionService:
                     "decision_id": decision_id,
                     "candidate_id": str(body["candidate_id"]),
                     "target_package_hash": str(body["candidate_package_hash"]),
-                    "target_expected_binding_generation":
-                        int(expected_generation),
+                    "target_expected_binding_generation": int(expected_generation),
                 }
             ),
             action=action,
@@ -469,9 +436,7 @@ class CompanionActivationDecisionService:
             risk_id=str(row["risk_id"]),
             actor="user",
             activation_package_hash=str(body["candidate_package_hash"]),
-            activation_code_digest=(
-                str(code_digest) if code_digest is not None else None
-            ),
+            activation_code_digest=(str(code_digest) if code_digest is not None else None),
             activation_risk_ack=risk_ack,
             reason_code="trusted_message_panel_activation",
             mutation=mutation,
@@ -492,11 +457,7 @@ class CompanionActivationDecisionService:
             ),
             "decision_id": decision_id,
             "activation_request_id": activation_request_id,
-            **(
-                {"receipt": dict(dispatched)}
-                if isinstance(dispatched, Mapping)
-                else {}
-            ),
+            **({"receipt": dict(dispatched)} if isinstance(dispatched, Mapping) else {}),
         }
 
     def _require_issued_challenge(
@@ -509,9 +470,7 @@ class CompanionActivationDecisionService:
             nonce=str(body["nonce"]),
         )
         if not isinstance(challenge, Mapping):
-            raise CompanionGrowthControlError(
-                "companion_activation_challenge_missing"
-            )
+            raise CompanionGrowthControlError("companion_activation_challenge_missing")
         expected_fields = (
             "candidate_id",
             "pack_id",
@@ -529,14 +488,10 @@ class CompanionActivationDecisionService:
         )
         for field in expected_fields:
             if challenge.get(field) != body.get(field):
-                raise CompanionGrowthControlError(
-                    "companion_activation_challenge_mismatch"
-                )
+                raise CompanionGrowthControlError("companion_activation_challenge_mismatch")
         challenge_digest = challenge.get("candidate_code_digest")
         if challenge_digest != body.get("candidate_code_digest"):
-            raise CompanionGrowthControlError(
-                "companion_activation_challenge_mismatch"
-            )
+            raise CompanionGrowthControlError("companion_activation_challenge_mismatch")
 
     def _resolve_candidate(
         self,
@@ -598,9 +553,7 @@ class CompanionActivationDecisionService:
                 ),
             ).fetchall()
         if len(rows) != 1:
-            raise CompanionGrowthControlError(
-                "companion_activation_decision_stale"
-            )
+            raise CompanionGrowthControlError("companion_activation_decision_stale")
         return dict(rows[0])
 
     def _nonce_used_by_evaluation(self, owner: Any, nonce: str) -> bool:
@@ -634,15 +587,9 @@ class _NotificationMutationService:
             required=self._FIELDS,
             error=f"companion_{action}_fields_invalid",
         )
-        current = self._store.get_notification(
-            frozen_identity.owner, str(body["notification_id"])
-        )
-        if current is None or action not in set(
-            current.get("available_actions") or ()
-        ):
-            raise CompanionGrowthControlError(
-                f"companion_{action}_notification_unavailable"
-            )
+        current = self._store.get_notification(frozen_identity.owner, str(body["notification_id"]))
+        if current is None or action not in set(current.get("available_actions") or ()):
+            raise CompanionGrowthControlError(f"companion_{action}_notification_unavailable")
         version = await self._detail_query.current_detail_version(
             frozen_identity=frozen_identity,
             notification=current,
@@ -659,9 +606,7 @@ class CompanionForgetDecisionService(_NotificationMutationService):
         frozen_identity: Any,
         **body: Any,
     ) -> Mapping[str, Any]:
-        notification = await self._notification(
-            frozen_identity, body, action="forget"
-        )
+        notification = await self._notification(frozen_identity, body, action="forget")
         forgotten = 0
         for event_id in notification.get("source_refs") or ():
             forgotten += int(
@@ -702,17 +647,11 @@ class CompanionRollbackDecisionService(_NotificationMutationService):
         from .contracts import CandidateMode, MutationAction, MutationRequest
         from .store import canonical_hash
 
-        notification = await self._notification(
-            frozen_identity, body, action="rollback"
-        )
-        source_refs = tuple(
-            str(item) for item in notification.get("source_refs") or ()
-        )
+        notification = await self._notification(frozen_identity, body, action="rollback")
+        source_refs = tuple(str(item) for item in notification.get("source_refs") or ())
         owner = frozen_identity.owner
         if not source_refs:
-            raise CompanionGrowthControlError(
-                "companion_rollback_target_unresolved"
-            )
+            raise CompanionGrowthControlError("companion_rollback_target_unresolved")
         placeholders = ",".join("?" for _ in source_refs)
         with self._store.read() as db:
             rows = db.execute(
@@ -732,9 +671,7 @@ class CompanionRollbackDecisionService(_NotificationMutationService):
                 ),
             ).fetchall()
         if len(rows) != 1:
-            raise CompanionGrowthControlError(
-                "companion_rollback_target_unresolved"
-            )
+            raise CompanionGrowthControlError("companion_rollback_target_unresolved")
         source = dict(rows[0])
         source_fence = (
             {}
@@ -752,9 +689,7 @@ class CompanionRollbackDecisionService(_NotificationMutationService):
             owner,
             {
                 "notification_id": str(body["notification_id"]),
-                "source_activation_request_id": str(
-                    source["activation_request_id"]
-                ),
+                "source_activation_request_id": str(source["activation_request_id"]),
             },
         )
         mutation = MutationRequest(
@@ -762,15 +697,9 @@ class CompanionRollbackDecisionService(_NotificationMutationService):
             request_fingerprint=canonical_hash(
                 ["trusted_rollback", request_id, source["activation_request_id"]]
             ),
-            action=(
-                MutationAction.DISABLE
-                if disable_genesis
-                else MutationAction.ROLLBACK
-            ),
+            action=(MutationAction.DISABLE if disable_genesis else MutationAction.ROLLBACK),
             candidate_id=(
-                None
-                if source.get("candidate_id") is None
-                else str(source["candidate_id"])
+                None if source.get("candidate_id") is None else str(source["candidate_id"])
             ),
             candidate_mode=(
                 None
@@ -782,25 +711,15 @@ class CompanionRollbackDecisionService(_NotificationMutationService):
             target_scope_key=str(source["target_scope_key"]),
             pack_id=str(source["pack_id"]),
             reason_code="trusted_message_panel_rollback",
-            target_version=(
-                None if remove_override else str(source_fence.get("version"))
-            ),
+            target_version=(None if remove_override else str(source_fence.get("version"))),
             target_manifest_hash=(
-                None
-                if remove_override
-                else str(source_fence.get("manifest_hash"))
+                None if remove_override else str(source_fence.get("manifest_hash"))
             ),
-            target_expected_binding_generation=int(
-                source["binding_generation"]
-            ),
+            target_expected_binding_generation=int(source["binding_generation"]),
             rollback_kind=(
                 None
                 if disable_genesis
-                else (
-                    "remove_override"
-                    if remove_override
-                    else "same_owner_version"
-                )
+                else ("remove_override" if remove_override else "same_owner_version")
             ),
             cause_ref=str(body["notification_id"]),
         )
@@ -816,9 +735,7 @@ class CompanionRollbackDecisionService(_NotificationMutationService):
             # schema intentionally has no request ``status``.  The durable
             # request remains the single lifecycle authority, so read it back
             # after dispatch instead of treating the receipt like a request.
-            read_request = getattr(
-                self._store, "get_capability_mutation_request", None
-            )
+            read_request = getattr(self._store, "get_capability_mutation_request", None)
             result = (
                 read_request(owner, request_id=durable_request_id)
                 if read_request is not None
@@ -841,9 +758,7 @@ class ControlConnectionChallenge:
     expires_at: str
 
     @classmethod
-    def from_mapping(
-        cls, value: Mapping[str, Any]
-    ) -> ControlConnectionChallenge:
+    def from_mapping(cls, value: Mapping[str, Any]) -> ControlConnectionChallenge:
         return cls(
             connection_id=str(value["connection_id"]),
             control_epoch=int(value["control_epoch"]),
@@ -864,9 +779,7 @@ class ControlConnectionChallenge:
             "expiresAt": self.expires_at,
         }
 
-    def advance(
-        self, *, request_seq: int, binding_epoch: int
-    ) -> ControlConnectionChallenge:
+    def advance(self, *, request_seq: int, binding_epoch: int) -> ControlConnectionChallenge:
         return ControlConnectionChallenge(
             connection_id=self.connection_id,
             control_epoch=self.control_epoch,
@@ -904,9 +817,7 @@ class LocalAuthSnapshotProvider:
         return {"mode": "local", "user_id": None}
 
 
-def validate_auth_snapshot(
-    snapshot: Mapping[str, Any], *, user_data_dir: str
-) -> HumanIdentity:
+def validate_auth_snapshot(snapshot: Mapping[str, Any], *, user_data_dir: str) -> HumanIdentity:
     """Validate the signed main-window auth snapshot and derive its owner."""
 
     mode = snapshot.get("mode")
@@ -976,9 +887,7 @@ class CompanionControlIngress:
         try:
             strict = parse_canonical_json(raw)
         except CanonicalCommandError as exc:
-            raise CompanionControlIngressError(
-                f"canonical_command_rejected:{exc}"
-            ) from exc
+            raise CompanionControlIngressError(f"canonical_command_rejected:{exc}") from exc
         if not isinstance(strict, Mapping):
             raise CompanionControlIngressError("control_command_not_object")
         return strict
@@ -1035,9 +944,7 @@ class CompanionControlIngress:
             "command_kind": command_kind,
             "request_hash": request_hash,
             "binding_epoch": binding_epoch,
-            "credential_nonce_hash": hashlib.sha256(
-                credential.nonce.encode("utf-8")
-            ).hexdigest(),
+            "credential_nonce_hash": hashlib.sha256(credential.nonce.encode("utf-8")).hexdigest(),
         }
 
     async def _identity(self, snapshot: Mapping[str, Any]) -> HumanIdentity:
@@ -1051,12 +958,11 @@ class CompanionControlIngress:
             "user_id": trusted.get("user_id"),
         }
         if requested != authoritative:
+
             def _identity_hash(value: Any) -> str | None:
                 if value is None:
                     return None
-                return hashlib.sha256(
-                    str(value).encode("utf-8")
-                ).hexdigest()[:12]
+                return hashlib.sha256(str(value).encode("utf-8")).hexdigest()[:12]
 
             logger.warning(
                 "companion auth snapshot mismatch "
@@ -1071,9 +977,7 @@ class CompanionControlIngress:
                 "auth_snapshot_mismatch",
                 rechallenge=False,
             )
-        return validate_auth_snapshot(
-            authoritative, user_data_dir=self.user_data_dir
-        )
+        return validate_auth_snapshot(authoritative, user_data_dir=self.user_data_dir)
 
     async def execute(
         self,
@@ -1105,9 +1009,7 @@ class CompanionControlIngress:
             generation = (
                 owner.profile_generation
                 if owner is not None
-                else self.store.next_profile_generation(
-                    profile_id=identity.profile_id
-                )
+                else self.store.next_profile_generation(profile_id=identity.profile_id)
             )
             frozen = await self.coordinator.bind(
                 identity=identity,

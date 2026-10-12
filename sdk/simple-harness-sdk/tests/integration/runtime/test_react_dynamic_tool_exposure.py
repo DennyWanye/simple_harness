@@ -89,15 +89,11 @@ def test_ready_attempt_reprojects_tools_after_durable_tool_result() -> None:
     exposure = Exposure()
     result = asyncio.run(
         ReActLoop(
-            collaborator=AgentLoopCollaborator(
-                limits=TerminationLimits(4, 4, 30, 1000, 2)
-            ),
+            collaborator=AgentLoopCollaborator(limits=TerminationLimits(4, 4, 30, 1000, 2)),
             effects=Batch(effects),
             clock=lambda: 1.0,
         ).run(
-            ReActRunInput(
-                RunId("run-1"), RequestId("request-1"), tool_exposure=exposure
-            ),
+            ReActRunInput(RunId("run-1"), RequestId("request-1"), tool_exposure=exposure),
             services=services(provider, effects, MemoryContext()),
             execution_lease=LEASE,
             run_fence=FENCE,
@@ -122,9 +118,7 @@ def test_provider_reserved_reopen_replays_frozen_tool_projection() -> None:
     with pytest.raises(RuntimeError, match="provider crashed"):
         asyncio.run(
             _loop().run(
-                ReActRunInput(
-                    RunId("run-1"), RequestId("request-1"), tool_exposure=exposure
-                ),
+                ReActRunInput(RunId("run-1"), RequestId("request-1"), tool_exposure=exposure),
                 services=services(first, effects, context, checkpoint=checkpoint),
                 execution_lease=LEASE,
                 run_fence=FENCE,
@@ -137,9 +131,7 @@ def test_provider_reserved_reopen_replays_frozen_tool_projection() -> None:
     reopened = ScriptedProviderCoordinator([response("replayed")])
     asyncio.run(
         _loop().run(
-            ReActRunInput(
-                RunId("run-1"), RequestId("request-1"), tool_exposure=exposure
-            ),
+            ReActRunInput(RunId("run-1"), RequestId("request-1"), tool_exposure=exposure),
             services=services(reopened, effects, context, checkpoint=checkpoint),
             execution_lease=LEASE,
             run_fence=FENCE,

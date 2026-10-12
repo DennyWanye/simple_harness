@@ -5,6 +5,7 @@ LocalExecutionSources deliberately is not a complete ExecutionReadContext: the
 installed H1 producer must supply reliable runtime imports, Operation facts and
 current execution authority before this data can authorize dispatch or Commit.
 """
+
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
@@ -90,12 +91,17 @@ class LocalExecutionSources:
     local_work: CompleteRead[LocalWorkFacts]
 
     def source_digests(self) -> tuple[tuple[str, str], ...]:
-        return tuple((field.name, getattr(self, field.name).source_digest)
-                     for field in fields(self) if field.name not in {"structure", "view"})
+        return tuple(
+            (field.name, getattr(self, field.name).source_digest)
+            for field in fields(self)
+            if field.name not in {"structure", "view"}
+        )
 
 
 class TaskGraphLocalExecutionReader:
-    def __init__(self, sources: TaskGraphSources, hierarchical: Callable[[str], HierarchicalDispatch]) -> None:
+    def __init__(
+        self, sources: TaskGraphSources, hierarchical: Callable[[str], HierarchicalDispatch]
+    ) -> None:
         if not callable(hierarchical):
             raise ValueError("a Mission dispatcher resolver is required")
         self.sources, self.dispatch_for = sources, hierarchical
@@ -107,9 +113,14 @@ class TaskGraphLocalExecutionReader:
             if dispatcher.store is not self.store or dispatcher.commit.store is not self.store:
                 raise SourceUnavailable("taskgraph_execution_store_mismatch")
             structure: StructuralReadContext | SeedStructuralReadContext
-            active = db.execute("SELECT revision FROM plan_revisions WHERE mission_id=? AND state='ACTIVE'", (mission_id,)).fetchall()
+            active = db.execute(
+                "SELECT revision FROM plan_revisions WHERE mission_id=? AND state='ACTIVE'",
+                (mission_id,),
+            ).fetchall()
             if not active:
-                structure = self.sources.read_seed_structure(mission_id, dispatcher.seed_network(mission_id))
+                structure = self.sources.read_seed_structure(
+                    mission_id, dispatcher.seed_network(mission_id)
+                )
             else:
                 structure = self.sources.read_structure(mission_id)
             sequence = structure.token.through_seq
@@ -121,8 +132,12 @@ class TaskGraphLocalExecutionReader:
                     # of the installed policy. Otherwise every preview is stale one
                     # millisecond later even when all policy/epoch facts agree.
                     document = {key: item for key, item in document.items() if key != "now_ms"}
-                return CompleteRead(value=value, source_id=f"{mission_id}:{channel}",
-                                    source_digest=sha256_hex(document), through_seq=sequence)
+                return CompleteRead(
+                    value=value,
+                    source_id=f"{mission_id}:{channel}",
+                    source_digest=sha256_hex(document),
+                    through_seq=sequence,
+                )
 
             world = dispatcher.planning
             if world is None:
@@ -132,9 +147,19 @@ class TaskGraphLocalExecutionReader:
             if int(view.network.plan_revision) != structure.document.revision:
                 raise SourceUnavailable("taskgraph_execution_revision_changed")
             historical = structure.network
-            for name in ("mission_id", "plan_revision", "occurrences", "method_instances", "adopted_instance_ids",
-                         "root_occurrence_ids", "order_constraints", "data_requirements", "typed_edges",
-                         "obligation_coverage", "required_obligations"):
+            for name in (
+                "mission_id",
+                "plan_revision",
+                "occurrences",
+                "method_instances",
+                "adopted_instance_ids",
+                "root_occurrence_ids",
+                "order_constraints",
+                "data_requirements",
+                "typed_edges",
+                "obligation_coverage",
+                "required_obligations",
+            ):
                 if getattr(view.network, name) != getattr(historical, name):
                     raise SourceUnavailable("taskgraph_execution_structure_changed", detail=name)
             if view.accepted is None:
@@ -149,8 +174,15 @@ class TaskGraphLocalExecutionReader:
                     # The hierarchy decorates adopted method identity on its view;
                     # compare that field to the adopted draft, not raw current bytes.
                     from dataclasses import replace
+
                     actual = semantics.task_semantics_of(mission_id, str(binding.task_id))
-                    if actual is None or replace(binding, adopted_method_instance_id=actual.adopted_method_instance_id) != actual:
+                    if (
+                        actual is None
+                        or replace(
+                            binding, adopted_method_instance_id=actual.adopted_method_instance_id
+                        )
+                        != actual
+                    ):
                         raise SourceUnavailable("taskgraph_binding_currentness_failed")
             methods = semantics.list_methods()
             available = {method.contract.method_ref() for method in methods}
@@ -167,32 +199,58 @@ class TaskGraphLocalExecutionReader:
             policy = dispatcher.resolution_policy_for(mission_id, now_ms=now_ms)
             if not isinstance(policy, ResolutionPolicy):
                 raise SourceUnavailable("taskgraph_input_policy_source_invalid")
-            rules = {"policy": dispatcher.target_rules_policy(),
-                     "tasks": {task_id: dispatcher.target_rules_for(task_id)
-                               for task_id in sorted(expected_tasks)}}
+            rules = {
+                "policy": dispatcher.target_rules_policy(),
+                "tasks": {
+                    task_id: dispatcher.target_rules_for(task_id)
+                    for task_id in sorted(expected_tasks)
+                },
+            }
             duties = ObligationStore(self.store)
             obligations = duties.list_obligations(mission_id)
             accounts = tuple(duties.account(mission_id, item.obligation_id) for item in obligations)
-            budget_ids = tuple(str(row[0]) for row in db.execute(
-                "SELECT account_id FROM budget_accounts WHERE mission_id=? ORDER BY account_id", (mission_id,)))
+            budget_ids = tuple(
+                str(row[0])
+                for row in db.execute(
+                    "SELECT account_id FROM budget_accounts WHERE mission_id=? ORDER BY account_id",
+                    (mission_id,),
+                )
+            )
             # Native HTN roots exist as semantic compounds before a legacy Task
             # or its account is materialized. Planning uses the Mission account;
             # require Task accounts only for actual original Task rows. Missing
             # primitive Tasks are already rejected by occurrence_outcomes above.
             materialized_tasks = {task.id for task in self.store.list_tasks(mission_id)}
-            required_budgets = {"budget:" + mission_id,
-                                *("budget:" + task for task in expected_tasks & materialized_tasks)}
+            required_budgets = {
+                "budget:" + mission_id,
+                *("budget:" + task for task in expected_tasks & materialized_tasks),
+            }
             if not required_budgets <= set(budget_ids):
                 raise SourceUnavailable("taskgraph_budget_source_incomplete")
             budgets = tuple(dispatcher.commit.ledger.account(identity) for identity in budget_ids)
-            return LocalExecutionSources(structure=structure, view=view,
-                current_task_bindings=source("bindings", bindings), current_method_registrations=source("methods", methods),
-                witnesses=source("witnesses", WitnessSources(witnesses=view.witnesses, starts=view.starts, licences=view.licences)),
-                scope_epochs=source("epochs", epochs), accepted_outputs=source("accepted_outputs", view.accepted),
+            return LocalExecutionSources(
+                structure=structure,
+                view=view,
+                current_task_bindings=source("bindings", bindings),
+                current_method_registrations=source("methods", methods),
+                witnesses=source(
+                    "witnesses",
+                    WitnessSources(
+                        witnesses=view.witnesses, starts=view.starts, licences=view.licences
+                    ),
+                ),
+                scope_epochs=source("epochs", epochs),
+                accepted_outputs=source("accepted_outputs", view.accepted),
                 source_input_policy=source("input_policy", policy),
                 target_rules=source("target_rules", rules),
-                obligations=source("obligations", obligations), obligation_accounts=source("demand", accounts),
+                obligations=source("obligations", obligations),
+                obligation_accounts=source("demand", accounts),
                 active_demands=source("active_demands", structure.pins.demand_refs),
-                independent_obligations=source("independent_obligations", read_independent_demands(self.store, mission_id, accounts)),
-                budget_snapshots=source("budget", budgets), deployment_capabilities=source("capabilities", capabilities),
-                local_work=source("local_work", read_local_work(self.store, mission_id)))
+                independent_obligations=source(
+                    "independent_obligations",
+                    read_independent_demands(self.store, mission_id, accounts),
+                ),
+                budget_snapshots=source("budget", budgets),
+                deployment_capabilities=source("capabilities", capabilities),
+                local_work=source("local_work", read_local_work(self.store, mission_id)),
+            )

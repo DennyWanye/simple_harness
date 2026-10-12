@@ -62,9 +62,7 @@ class SessionTerminalDeliveryTargetV1:
             raise ValueError("session terminal target is empty")
         padding = "=" * (-len(text) % 4)
         try:
-            value = json.loads(
-                base64.urlsafe_b64decode(text + padding).decode("utf-8")
-            )
+            value = json.loads(base64.urlsafe_b64decode(text + padding).decode("utf-8"))
         except Exception as exc:
             raise ValueError("session terminal target is invalid") from exc
         if not isinstance(value, dict) or set(value) != {
@@ -84,20 +82,12 @@ def public_terminal_error_summary(event: RunEvent) -> str:
     """Return one stable, secret-free message shared by projection/read-through."""
 
     correlation = thaw_json(event.candidate.correlation)
-    error = (
-        {}
-        if event.candidate.error is None
-        else thaw_json(event.candidate.error)
-    )
+    error = {} if event.candidate.error is None else thaw_json(event.candidate.error)
     if not isinstance(correlation, Mapping):
         correlation = {}
     if not isinstance(error, Mapping):
         error = {}
-    code = str(
-        correlation.get("failure_code")
-        or error.get("code")
-        or event.status.value
-    ).strip()
+    code = str(correlation.get("failure_code") or error.get("code") or event.status.value).strip()
     detail = str(error.get("message") or "").strip()
     detail = _TOKEN.sub("[credential]", _WINDOWS_PATH.sub("[local path]", detail))
     detail = " ".join(detail.split())[:500]
@@ -119,9 +109,7 @@ class SessionTerminalDeliveryContributor:
     def requires_durable(self, request: object, _host: object) -> bool:
         return self._is_foreground_root_request(request)
 
-    def freeze_deliveries(
-        self, request: object, host: object
-    ) -> tuple[DeliverySpec, ...]:
+    def freeze_deliveries(self, request: object, host: object) -> tuple[DeliverySpec, ...]:
         if not self._is_foreground_root_request(request):
             return ()
         target = SessionTerminalDeliveryTargetV1(
@@ -150,12 +138,9 @@ class SessionTerminalDeliverySink:
 
     async def is_bound(self, target_id: str) -> bool:
         target = SessionTerminalDeliveryTargetV1.parse(target_id)
-        state = await self._session_db.get_session_delivery_state(
-            target.session_id
-        )
+        state = await self._session_db.get_session_delivery_state(target.session_id)
         return (
-            state.get("deleted_at") is None
-            and int(state.get("epoch", 0)) == target.session_epoch
+            state.get("deleted_at") is None and int(state.get("epoch", 0)) == target.session_epoch
         )
 
     async def deliver(self, event: RunEvent, target_id: str) -> None:
@@ -261,9 +246,7 @@ class SessionTerminalDeliverySink:
 
 
 class SessionProjectionStore(Protocol):
-    async def get_session_delivery_state(
-        self, session_id: str
-    ) -> dict[str, Any]: ...
+    async def get_session_delivery_state(self, session_id: str) -> dict[str, Any]: ...
 
     async def get_messages(
         self,
@@ -306,18 +289,14 @@ class SessionTerminalProjectionConsistencyGate:
         self._uow = execution_uow
         self._session_db = session_db
         self._sink = sink
-        self._locks: WeakValueDictionary[str, asyncio.Lock] = (
-            WeakValueDictionary()
-        )
+        self._locks: WeakValueDictionary[str, asyncio.Lock] = WeakValueDictionary()
         self._locks_guard = asyncio.Lock()
 
     async def _lock_for(self, session_id: str) -> asyncio.Lock:
         async with self._locks_guard:
             return self._locks.setdefault(session_id, asyncio.Lock())
 
-    async def ensure_current(
-        self, session_id: str
-    ) -> SessionProjectionSyncResult:
+    async def ensure_current(self, session_id: str) -> SessionProjectionSyncResult:
         session_key = str(session_id or "").strip()
         if not session_key:
             raise ValueError("session_id must be non-empty")
@@ -327,16 +306,10 @@ class SessionTerminalProjectionConsistencyGate:
                 # One retry handles a concurrent delete/recreate epoch
                 # rotation.
                 for _attempt in range(2):
-                    before = (
-                        await self._session_db.get_session_delivery_state(
-                            session_key
-                        )
-                    )
+                    before = await self._session_db.get_session_delivery_state(session_key)
                     epoch = int(before.get("epoch", 0))
                     if before.get("deleted_at") is not None:
-                        return SessionProjectionSyncResult(
-                            session_key, epoch, 0, deleted=True
-                        )
+                        return SessionProjectionSyncResult(session_key, epoch, 0, deleted=True)
                     target = SessionTerminalDeliveryTargetV1(
                         session_id=session_key,
                         session_epoch=epoch,
@@ -350,9 +323,7 @@ class SessionTerminalProjectionConsistencyGate:
                     fenced = False
                     for event in events:
                         try:
-                            await self._sink.deliver(
-                                event, target.target_id
-                            )
+                            await self._sink.deliver(event, target.target_id)
                         except DeliveryDiscarded as exc:
                             if str(exc) == "session_epoch_mismatch":
                                 fenced = True
@@ -360,15 +331,8 @@ class SessionTerminalProjectionConsistencyGate:
                             raise SessionProjectionConsistencyError(
                                 f"terminal projection discarded: {exc}"
                             ) from exc
-                    after = (
-                        await self._session_db.get_session_delivery_state(
-                            session_key
-                        )
-                    )
-                    stable = (
-                        after.get("deleted_at") is None
-                        and int(after.get("epoch", 0)) == epoch
-                    )
+                    after = await self._session_db.get_session_delivery_state(session_key)
+                    stable = after.get("deleted_at") is None and int(after.get("epoch", 0)) == epoch
                     if stable and not fenced:
                         return SessionProjectionSyncResult(
                             session_key,
@@ -381,9 +345,7 @@ class SessionTerminalProjectionConsistencyGate:
             except SessionProjectionConsistencyError:
                 raise
             except Exception as exc:
-                raise SessionProjectionConsistencyError(
-                    "session projection sync failed"
-                ) from exc
+                raise SessionProjectionConsistencyError("session projection sync failed") from exc
 
     async def sync(self, session_id: str) -> int:
         """Return the projected source count after the strict consistency gate."""

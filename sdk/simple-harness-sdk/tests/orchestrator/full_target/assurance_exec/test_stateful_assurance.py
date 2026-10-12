@@ -44,7 +44,8 @@ def _count(store, sql, *params):
 def _epoch(store, mission_id):
     row = store.connection.execute(
         "SELECT epoch FROM validity_epochs WHERE mission_id=? AND scope_id=?",
-        (mission_id, "assurance:mission")).fetchone()
+        (mission_id, "assurance:mission"),
+    ).fetchone()
     return 0 if row is None else int(row[0])
 
 
@@ -52,19 +53,27 @@ def _invariants(case, provider, trace):
     store, mission_id = case.store, case.mission_id
     per_key = store.connection.execute(
         "SELECT review_key, count(*), max(ordinal), min(ordinal) FROM assurance_review_invocations "
-        "WHERE mission_id=? GROUP BY review_key", (mission_id,)).fetchall()
+        "WHERE mission_id=? GROUP BY review_key",
+        (mission_id,),
+    ).fetchall()
     for key, count, high, low in per_key:
         assert count <= 2 and low == 1 and high <= 2, (key, count, trace)
     official = store.connection.execute(
         "SELECT package_id, count(*) FROM review_records WHERE mission_id=? AND official=1 GROUP BY package_id",
-        (mission_id,)).fetchall()
+        (mission_id,),
+    ).fetchall()
     assert all(n == 1 for _, n in official), trace
     accepted = store.connection.execute(
         "SELECT task_id, count(*) FROM acceptances WHERE mission_id=? AND validity='CURRENT' GROUP BY task_id",
-        (mission_id,)).fetchall()
+        (mission_id,),
+    ).fetchall()
     assert all(n == 1 for _, n in accepted), trace
-    certificates = _count(store, "SELECT count(*) FROM assurance_use_certificates WHERE mission_id=? "
-                                 "AND consumer_kind='ACCEPTANCE'", mission_id)
+    certificates = _count(
+        store,
+        "SELECT count(*) FROM assurance_use_certificates WHERE mission_id=? "
+        "AND consumer_kind='ACCEPTANCE'",
+        mission_id,
+    )
     assert certificates <= len(accepted), trace
     if accepted:
         # 每份验收都有审阅（模型的正式通过，或者人的通过裁决）在先
@@ -77,18 +86,24 @@ def _invariants(case, provider, trace):
 
 async def _sequence(tmp_path, seed):
     rng = random.Random(seed)
-    provider = ReviewScript(verdicts={
-        "TASK_CONTENT": [rng.choice(VERDICTS) for _ in range(2)],
-        "MISSION_FINAL": [rng.choice(("ACCEPT", "INCONCLUSIVE")) for _ in range(2)],
-    })
+    provider = ReviewScript(
+        verdicts={
+            "TASK_CONTENT": [rng.choice(VERDICTS) for _ in range(2)],
+            "MISSION_FINAL": [rng.choice(("ACCEPT", "INCONCLUSIVE")) for _ in range(2)],
+        }
+    )
     trace: list[str] = [f"script={provider.verdicts}"]
     async with reviewed_mission(tmp_path, provider, key=f"stateful-{seed}") as case:
         store, mission_id = case.store, case.mission_id
         last_epoch = _epoch(store, mission_id)
         for _ in range(8):
             try:
-                await case.run_until(lambda: provider.repair_asked.is_set() or case.status() in {
-                    "COMPLETED", "FAILED"}, timeout=rng.choice((0.5, 1.0, 2.0)))
+                await case.run_until(
+                    lambda: (
+                        provider.repair_asked.is_set() or case.status() in {"COMPLETED", "FAILED"}
+                    ),
+                    timeout=rng.choice((0.5, 1.0, 2.0)),
+                )
             except TimeoutError:
                 pass
             action = rng.choice(("snapshot", "decide", "answer", "wait"))
@@ -102,15 +117,22 @@ async def _sequence(tmp_path, seed):
                     if card["kind"] == "review":
                         verdict = rng.choice(("review_pass", "review_fail"))
                         trace.append(verdict)
-                        case.world.control.decide(card["request_id"], verdict, note="随机序列里的人")
+                        case.world.control.decide(
+                            card["request_id"], verdict, note="随机序列里的人"
+                        )
             elif action == "answer":
                 for question in PlanningHumanStore(store).list(mission_id):
                     if question["state"] == "PENDING":
                         ruling = rng.choice(("pass", "fail"))
                         trace.append("final-" + ruling)
-                        case.world.control.answer_planning_question({
-                            "decision_id": question["decision_id"], "answer": ruling,
-                            "expected_version": question["version"], "nonce": f"n-{seed}-{len(trace)}"})
+                        case.world.control.answer_planning_question(
+                            {
+                                "decision_id": question["decision_id"],
+                                "answer": ruling,
+                                "expected_version": question["version"],
+                                "nonce": f"n-{seed}-{len(trace)}",
+                            }
+                        )
             _invariants(case, provider, trace)
             epoch = _epoch(store, mission_id)
             assert epoch >= last_epoch, trace

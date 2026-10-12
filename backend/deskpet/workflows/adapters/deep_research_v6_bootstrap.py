@@ -168,10 +168,12 @@ def build_deep_research_v6_context(
         deadline_port=deadline_port,
     )
 
-    profiles = build_v6_research_llm_profiles({
-        role: research_response_format_hash(response_format)
-        for role, response_format in V6_RESEARCH_RESPONSE_FORMATS.items()
-    })
+    profiles = build_v6_research_llm_profiles(
+        {
+            role: research_response_format_hash(response_format)
+            for role, response_format in V6_RESEARCH_RESPONSE_FORMATS.items()
+        }
+    )
     stage_ports: dict[str, DurableV6ResearchLLMStagePort] = {}
     for role, profile in profiles.items():
         effect = DurableResearchCallEffectAdapter(
@@ -202,23 +204,21 @@ def build_deep_research_v6_context(
         control_signals=signals,
     )
     ports: dict[str, object] = {
-            "blob": blobs,
-            "retrieval": retrieval,
-            "semantic": semantic,
-            "llm_extract": stage_ports["evidence_candidate_extract"],
-            "llm_inference": stage_ports["evidence_inference_synthesize"],
-            "llm_repair": stage_ports["evidence_structured_repair"],
-            "deadline": deadline_port,
-            "native_execution_policy": NativeExecutionPolicy(
-                max_parallel_tasks=max(2, min(6, int(max_parallel_tasks)))
-            ),
-        }
+        "blob": blobs,
+        "retrieval": retrieval,
+        "semantic": semantic,
+        "llm_extract": stage_ports["evidence_candidate_extract"],
+        "llm_inference": stage_ports["evidence_inference_synthesize"],
+        "llm_repair": stage_ports["evidence_structured_repair"],
+        "deadline": deadline_port,
+        "native_execution_policy": NativeExecutionPolicy(
+            max_parallel_tasks=max(2, min(6, int(max_parallel_tasks)))
+        ),
+    }
     if signals.repository is not None:
         # v6 deliberately reuses the existing accepted/observed/settled/
         # consumed command journal; only its deadline policy differs.
-        ports["control"] = DurableV5ControlPort(
-            signals.repository, signal_hub=signals
-        )
+        ports["control"] = DurableV5ControlPort(signals.repository, signal_hub=signals)
     return WorkflowContext(
         ports=ports,
         request_id=request_id,

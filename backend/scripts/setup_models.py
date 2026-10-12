@@ -27,6 +27,7 @@ Total download: ~2.6 GB (1.1 GB BGE-M3 fp16 effective + 1.5 GB whisper).
 The HuggingFace ``snapshot_download`` resumes interrupted transfers, so
 the script is safe to re-run.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -37,15 +38,19 @@ from pathlib import Path
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--only", choices=["bge-m3", "whisper"], default=None,
+        "--only",
+        choices=["bge-m3", "whisper"],
+        default=None,
         help="Download only one model (default: both).",
     )
     parser.add_argument(
-        "--mirror", default="default",
+        "--mirror",
+        default="default",
         help="HF mirror name (default | hf-mirror); see download scripts.",
     )
     parser.add_argument(
-        "--force", action="store_true",
+        "--force",
+        action="store_true",
         help="Re-download even if target dirs are already populated.",
     )
     args = parser.parse_args()
@@ -71,11 +76,13 @@ def main() -> int:
             sys.argv.append("--force")
         if name == "bge-m3":
             from download_bge_m3 import main as run
+
             rc = run() or rc
         elif name == "whisper":
             sys.argv.append("--mirror")
             sys.argv.append(args.mirror)
             from download_faster_whisper import main as run
+
             rc = run() or rc
 
     if rc == 0:

@@ -3,6 +3,7 @@
 
 Host 读 ``error.code``，不从异常文字里切。
 """
+
 from __future__ import annotations
 
 import re
@@ -39,7 +40,9 @@ def test_coded_store_errors_carry_their_code_and_keep_the_message():
     assert (error.code, error.detail, str(error)) == ("TASKGRAPH_X", "why", "TASKGRAPH_X: why")
     conflict = CodedStoreConflict("TASKGRAPH_CONVERGENCE_CAS_CONFLICT")
     assert isinstance(conflict, StoreConflict) and isinstance(conflict, CodedStoreError)
-    assert isinstance(conflict, StoreError) and conflict.code == "TASKGRAPH_CONVERGENCE_CAS_CONFLICT"
+    assert (
+        isinstance(conflict, StoreError) and conflict.code == "TASKGRAPH_CONVERGENCE_CAS_CONFLICT"
+    )
     assert str(conflict) == "TASKGRAPH_CONVERGENCE_CAS_CONFLICT"  # 消息字面不变
     assert not hasattr(StoreConflict("TASKGRAPH_CONVERGENCE_CAS_CONFLICT"), "code")
 

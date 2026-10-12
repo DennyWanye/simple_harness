@@ -42,6 +42,7 @@ from .assurance_check_import import read_local_check_binding_locked
 if TYPE_CHECKING:
     from .assurance_local_checks import AssuranceLocalChecks
 
+
 def _merge_reads(rows: list[ReadItem]) -> tuple[ReadItem, ...]:
     # A source used twice is one read. Conflicting observations never collapse.
     # The wire contract still rejects duplicate keys rather than normalizing it.
@@ -183,8 +184,11 @@ def prepare_local_check_use(
         raise AssuranceError("CHECK_USE_IDENTITY")
     # 解析时就核用途与访问（第 2 批 A10）：这个读取器读到的每份精确引用都经现行授权。
     reader = AssuranceReader(
-        store, tenant_id=adapter.tenant_id, mission_id=identity.mission_id,
-        authority=authority, identity=identity,
+        store,
+        tenant_id=adapter.tenant_id,
+        mission_id=identity.mission_id,
+        authority=authority,
+        identity=identity,
     )
     now_ms = integer(int(store.now * 1000))
     with store.read_view() as connection:

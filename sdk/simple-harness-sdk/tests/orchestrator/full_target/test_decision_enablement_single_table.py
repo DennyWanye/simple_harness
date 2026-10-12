@@ -11,6 +11,7 @@
 * 声明受阻、修复里的升级不再是合法的类型，写了按"类型不认识"拒绝；
 * 规划包列出的清单、规划授权策略允许的清单、提示词讲到的清单，都是这张表。
 """
+
 from __future__ import annotations
 
 import pytest
@@ -27,10 +28,17 @@ from agent_orchestrator.runtime.role_templates import PLANNER_HIERARCHICAL
 
 
 def test_there_is_one_table_and_it_is_the_two_enums() -> None:
-    for gone in ("H1_DECISION_ENABLEMENT", "H3_DECISION_ENABLEMENT", "V14_DECISION_ENABLEMENT",
-                 "H4_DECISION_ENABLEMENT", "DecisionEnablement"):
+    for gone in (
+        "H1_DECISION_ENABLEMENT",
+        "H3_DECISION_ENABLEMENT",
+        "V14_DECISION_ENABLEMENT",
+        "H4_DECISION_ENABLEMENT",
+        "DecisionEnablement",
+    ):
         assert not hasattr(contract, gone), gone
-    expected = {str(item) for item in PlanningDecisionType if item is not PlanningDecisionType.REPAIR}
+    expected = {
+        str(item) for item in PlanningDecisionType if item is not PlanningDecisionType.REPAIR
+    }
     expected |= {f"REPAIR/{item}" for item in RepairKind}
     assert ENABLED_DECISIONS == frozenset(expected)
     types, kinds = exposed_enablement()

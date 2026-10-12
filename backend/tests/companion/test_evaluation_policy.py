@@ -174,9 +174,7 @@ def test_unknown_policy_requires_exact_user_evaluation_authorization() -> None:
     assert authorized_unknown.status == "issued"
     assert authorized_unknown.permit is not None
     assert authorized_unknown.permit.mode == "user_authorized"
-    assert authorized_unknown.permit.authorization_id == (
-        "authorization-for-exact-unknown-package"
-    )
+    assert authorized_unknown.permit.authorization_id == ("authorization-for-exact-unknown-package")
     assert len(store.issued) == 1
 
 
@@ -286,51 +284,55 @@ def test_evaluator_fails_closed_on_regression_unknown_or_no_improvement() -> Non
     )
     assert passed.verdict == "passed"
 
-    assert evaluator.evaluate(
-        required_case_ids=("case-1",),
-        comparisons=(
-            EvaluationCaseComparisonV1(
-                case_id="case-1",
-                old_status="passed",
-                candidate_status="timeout",
-                improved=False,
-                baseline_regression=False,
+    assert (
+        evaluator.evaluate(
+            required_case_ids=("case-1",),
+            comparisons=(
+                EvaluationCaseComparisonV1(
+                    case_id="case-1",
+                    old_status="passed",
+                    candidate_status="timeout",
+                    improved=False,
+                    baseline_regression=False,
+                ),
             ),
-        ),
-    ).verdict == "inconclusive"
-    assert evaluator.evaluate(
-        required_case_ids=("case-1",),
-        comparisons=(
-            EvaluationCaseComparisonV1(
-                case_id="case-1",
-                old_status="passed",
-                candidate_status="passed",
-                improved=False,
-                baseline_regression=False,
+        ).verdict
+        == "inconclusive"
+    )
+    assert (
+        evaluator.evaluate(
+            required_case_ids=("case-1",),
+            comparisons=(
+                EvaluationCaseComparisonV1(
+                    case_id="case-1",
+                    old_status="passed",
+                    candidate_status="passed",
+                    improved=False,
+                    baseline_regression=False,
+                ),
             ),
-        ),
-    ).verdict == "inconclusive"
-    assert evaluator.evaluate(
-        required_case_ids=("case-1",),
-        comparisons=(
-            EvaluationCaseComparisonV1(
-                case_id="case-1",
-                old_status="passed",
-                candidate_status="passed",
-                improved=True,
-                baseline_regression=True,
+        ).verdict
+        == "inconclusive"
+    )
+    assert (
+        evaluator.evaluate(
+            required_case_ids=("case-1",),
+            comparisons=(
+                EvaluationCaseComparisonV1(
+                    case_id="case-1",
+                    old_status="passed",
+                    candidate_status="passed",
+                    improved=True,
+                    baseline_regression=True,
+                ),
             ),
-        ),
-    ).verdict == "failed"
+        ).verdict
+        == "failed"
+    )
 
 
 def test_evaluation_policy_has_no_activation_or_capability_runtime_import() -> None:
-    module_path = (
-        Path(__file__).parents[2]
-        / "deskpet"
-        / "companion"
-        / "evaluation.py"
-    )
+    module_path = Path(__file__).parents[2] / "deskpet" / "companion" / "evaluation.py"
     tree = ast.parse(module_path.read_text(encoding="utf-8"))
     imported = {
         alias.name

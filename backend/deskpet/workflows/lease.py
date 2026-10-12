@@ -48,7 +48,11 @@ LEGAL_RUN_TRANSITIONS: dict[WorkflowRunStatus, frozenset[WorkflowRunStatus]] = {
         {WorkflowRunStatus.BLOCKED, WorkflowRunStatus.CANCELLED}
     ),
     WorkflowRunStatus.BLOCKED: frozenset(
-        {WorkflowRunStatus.RETRYABLE, WorkflowRunStatus.CANCEL_REQUESTED, WorkflowRunStatus.CANCELLED}
+        {
+            WorkflowRunStatus.RETRYABLE,
+            WorkflowRunStatus.CANCEL_REQUESTED,
+            WorkflowRunStatus.CANCELLED,
+        }
     ),
     WorkflowRunStatus.COMPLETED: frozenset(),
     WorkflowRunStatus.FAILED: frozenset(),
@@ -56,11 +60,15 @@ LEGAL_RUN_TRANSITIONS: dict[WorkflowRunStatus, frozenset[WorkflowRunStatus]] = {
 }
 
 
-def validate_run_transition(source: str | WorkflowRunStatus, target: str | WorkflowRunStatus) -> None:
+def validate_run_transition(
+    source: str | WorkflowRunStatus, target: str | WorkflowRunStatus
+) -> None:
     source_status = WorkflowRunStatus(source)
     target_status = WorkflowRunStatus(target)
     if target_status not in LEGAL_RUN_TRANSITIONS[source_status]:
-        raise ValueError(f"illegal workflow run transition: {source_status.value} -> {target_status.value}")
+        raise ValueError(
+            f"illegal workflow run transition: {source_status.value} -> {target_status.value}"
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,7 +128,9 @@ class LeaseManager:
 
     async def run_with_heartbeat(self, lease: ActiveLease, awaitable: Awaitable[_T]) -> _T:
         work = asyncio.ensure_future(awaitable)
-        heartbeat = asyncio.create_task(self._heartbeat_loop(lease), name=f"workflow-heartbeat:{lease.fence.run_id}")
+        heartbeat = asyncio.create_task(
+            self._heartbeat_loop(lease), name=f"workflow-heartbeat:{lease.fence.run_id}"
+        )
         try:
             done, _ = await asyncio.wait({work, heartbeat}, return_when=asyncio.FIRST_COMPLETED)
             if heartbeat in done:
@@ -206,7 +216,9 @@ async def transition_run(
     ]
     params: list[Any] = [
         target_status.value,
-        json.dumps(error, ensure_ascii=False, sort_keys=True, separators=(",", ":")) if error else None,
+        json.dumps(error, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        if error
+        else None,
         recovery_action,
         now,
     ]
@@ -233,7 +245,9 @@ async def transition_run(
         ).fetchone()
         if row is None:
             await db.rollback()
-            raise StaleRunFence(f"stale or illegal run transition: {run_id} -> {target_status.value}")
+            raise StaleRunFence(
+                f"stale or illegal run transition: {run_id} -> {target_status.value}"
+            )
         await db.commit()
         return dict(row)
     except BaseException:

@@ -6,6 +6,7 @@
 夹具日志刻意混入非 `memory.probe` 行、非 JSON 行与乱序的 `probe_seq`，
 因为真实 native.log 就是这三样东西的混合体。
 """
+
 from __future__ import annotations
 
 import importlib.util
@@ -97,31 +98,47 @@ def fixture_log(tmp_path) -> Path:
         '{"event": "foreground.runtime.bound", "level": "info"}',
         "INFO not-json at all { oops",
         json.dumps(
-            _probe(2, terminal=2, rss=520000, rss_delta=260000, traced=90000,
-                   traced_delta=60000,
-                   sites=["deskpet/agent/turn.py:41 40960.0 12",
-                          "pkg/short_horizon.py:705 8.0 1"],
-                   types=["bytes 1200", "dict 300"])
+            _probe(
+                2,
+                terminal=2,
+                rss=520000,
+                rss_delta=260000,
+                traced=90000,
+                traced_delta=60000,
+                sites=["deskpet/agent/turn.py:41 40960.0 12", "pkg/short_horizon.py:705 8.0 1"],
+                types=["bytes 1200", "dict 300"],
+            )
         ),
         '{"event": "memory.probe.started", "level": "info", "every": 1}',
         json.dumps(
-            _probe(1, terminal=1, rss=260000, rss_delta=None, traced=30000,
-                   traced_delta=None,
-                   sites=["deskpet/agent/turn.py:41 20000.0 8"],
-                   types=["dict 900"], baseline=True)
+            _probe(
+                1,
+                terminal=1,
+                rss=260000,
+                rss_delta=None,
+                traced=30000,
+                traced_delta=None,
+                sites=["deskpet/agent/turn.py:41 20000.0 8"],
+                types=["dict 900"],
+                baseline=True,
+            )
         ),
         json.dumps(
-            _probe(3, terminal=3, rss=790000, rss_delta=270000, traced=152000,
-                   traced_delta=62000,
-                   sites=["deskpet/agent/turn.py:41 41984.0 13",
-                          "pkg/short_horizon.py:705 8.0 1"],
-                   types=["bytes 1300"])
+            _probe(
+                3,
+                terminal=3,
+                rss=790000,
+                rss_delta=270000,
+                traced=152000,
+                traced_delta=62000,
+                sites=["deskpet/agent/turn.py:41 41984.0 13", "pkg/short_horizon.py:705 8.0 1"],
+                types=["bytes 1300"],
+            )
         ),
         '{"event": "sdk.run.terminal", "level": "info"}',
         json.dumps(_rss(2, rss=520000, rss_delta=260000, sampling="queued")),
         json.dumps(_rss(1, rss=260000, rss_delta=None, sampling="queued")),
-        json.dumps(_rss(3, rss=790000, rss_delta=270000, sampling="skipped",
-                        skipped_total=1)),
+        json.dumps(_rss(3, rss=790000, rss_delta=270000, sampling="skipped", skipped_total=1)),
         json.dumps(_skipped(3, skipped_total=1)),
     ]
     path = tmp_path / "native.log"
@@ -138,8 +155,16 @@ def test_reads_and_orders_probe_lines(fixture_log):
 def test_growth_table_shows_per_probe_deltas(fixture_log):
     rows = report.growth_table(report.read_probe_lines(fixture_log))
     assert rows[0].split() == [
-        "seq", "term", "rss_kb", "Δrss_kb", "tm_cur_kb", "Δtm_kb",
-        "tm_peak_kb", "gc_objects", "Δgc", "ms",
+        "seq",
+        "term",
+        "rss_kb",
+        "Δrss_kb",
+        "tm_cur_kb",
+        "Δtm_kb",
+        "tm_peak_kb",
+        "gc_objects",
+        "Δgc",
+        "ms",
     ]
     assert rows[2].split()[:6] == ["1", "1", "260000", "-", "30000", "-"]
     assert rows[3].split()[:6] == ["2", "2", "520000", "260000", "90000", "60000"]
@@ -194,8 +219,16 @@ def test_probe_kind_falls_back_to_event_for_pre_x3f4_logs():
 def test_rss_table_shows_the_per_terminal_curve(fixture_log):
     rows = report.rss_table(report.read_records(fixture_log)[report.PROBE_RSS_EVENT])
     assert rows[0].split() == [
-        "term", "rss_kb", "Δrss_kb", "rss_max_kb", "tm_cur_kb", "tm_peak_kb",
-        "sampling", "skipped", "listener_us", "run_id",
+        "term",
+        "rss_kb",
+        "Δrss_kb",
+        "rss_max_kb",
+        "tm_cur_kb",
+        "tm_peak_kb",
+        "sampling",
+        "skipped",
+        "listener_us",
+        "run_id",
     ]
     assert rows[2].split()[:4] == ["1", "260000", "-", "260000"]
     assert rows[3].split()[:4] == ["2", "520000", "260000", "520000"]

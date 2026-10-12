@@ -4,6 +4,7 @@ crate Tauri uses), so the value the backend reads is exactly what we wrote.
 
 Does NOT print the key value. Verifies by relay test only.
 """
+
 from __future__ import annotations
 
 import os
@@ -50,8 +51,12 @@ def relay_test(key: str) -> str:
     r = cli.post(
         f"{BASE}/chat/completions",
         headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-        json={"model": "deepseek-v4-pro", "messages": [{"role": "user", "content": "好"}],
-              "stream": False, "max_tokens": 8},
+        json={
+            "model": "deepseek-v4-pro",
+            "messages": [{"role": "user", "content": "好"}],
+            "stream": False,
+            "max_tokens": 8,
+        },
     )
     return f"HTTP {r.status_code} {r.text[:90].strip()!r}"
 

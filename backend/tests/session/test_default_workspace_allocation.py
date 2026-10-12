@@ -57,17 +57,21 @@ async def test_default_workspace_is_bound_but_listed_as_ordinary(tmp_path: Path)
 async def test_selected_project_does_not_create_default_workspace(tmp_path: Path) -> None:
     documents = tmp_path / "Documents"
     selected = tmp_path / "selected"
-    documents.mkdir(); selected.mkdir()
+    documents.mkdir()
+    selected.mkdir()
     db_path = tmp_path / "state.db"
     await initialize_state_db(db_path)
     bindings = ProjectBindingService(db_path)
     project, _ = await bindings.register_project(str(selected), "selected_folder")
     creation = SessionCreationService(
         bindings,
-        documents_root=str(documents), documents_identity=_identity(documents),
+        documents_root=str(documents),
+        documents_identity=_identity(documents),
         allow_test_projectless=False,
     )
-    result = await creation.create_conversation_session(request_id="selected-1", project_id=project.project_id)
+    result = await creation.create_conversation_session(
+        request_id="selected-1", project_id=project.project_id
+    )
     assert result["session"]["execution_root"] == str(selected)
     assert not (documents / "SimpleHarnessProjects").exists()
 
@@ -87,14 +91,25 @@ async def test_legacy_projectless_migrates_once_and_preserves_messages(tmp_path:
         )
     bindings = ProjectBindingService(db_path)
     kwargs = dict(
-        documents_root=str(documents), documents_identity=_identity(documents),
+        documents_root=str(documents),
+        documents_identity=_identity(documents),
         allow_test_projectless=False,
     )
     assert await SessionCreationService(bindings, **kwargs).migrate_projectless_session(sid) is True
     # A cold-started service observes the durable binding and performs no copy.
-    assert await SessionCreationService(bindings, **kwargs).migrate_projectless_session(sid) is False
+    assert (
+        await SessionCreationService(bindings, **kwargs).migrate_projectless_session(sid) is False
+    )
     resolution = await bindings.resolve_session(sid)
     assert isinstance(resolution, ProjectBoundWorkspace)
     with sqlite3.connect(db_path) as db:
-        assert db.execute("SELECT content FROM messages WHERE session_id=?", (sid,)).fetchone()[0] == "keep-me"
-        assert db.execute("SELECT COUNT(*) FROM workspace_allocations WHERE state='completed'").fetchone()[0] == 1
+        assert (
+            db.execute("SELECT content FROM messages WHERE session_id=?", (sid,)).fetchone()[0]
+            == "keep-me"
+        )
+        assert (
+            db.execute(
+                "SELECT COUNT(*) FROM workspace_allocations WHERE state='completed'"
+            ).fetchone()[0]
+            == 1
+        )

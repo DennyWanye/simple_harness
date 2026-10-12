@@ -14,6 +14,7 @@ Covers every Requirement / Scenario in spec §15:
   * ``list_skills()`` IPC shape
   * Scope tie-break: user wins over built-in on duplicate name
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -27,9 +28,7 @@ import pytest
 from deskpet.skills.loader import SkillLoader, SkillMeta, _split_frontmatter
 
 
-def test_default_loader_has_no_legacy_user_source(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_default_loader_has_no_legacy_user_source(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("DESKPET_SKILLS_DIR", str(tmp_path / "legacy-skills"))
 
     loader = SkillLoader(enable_watch=False)
@@ -200,9 +199,7 @@ def test_watchdog_debounce_fires_once_for_burst(
 ) -> None:
     built_in, user = dirs
     _write_skill(built_in, "demo")
-    loader = SkillLoader(
-        [built_in, user], enable_watch=False, debounce_s=0.1
-    )
+    loader = SkillLoader([built_in, user], enable_watch=False, debounce_s=0.1)
     loader.reload()
 
     counter = {"n": 0}
@@ -268,12 +265,8 @@ async def test_script_timeout_kills_process(dirs: tuple[Path, Path]) -> None:
     skill_dir = built_in / "slowloop"
     skill_dir.mkdir(parents=True, exist_ok=True)
     (skill_dir / "SKILL.md").write_text(fm, encoding="utf-8")
-    (skill_dir / "script.py").write_text(
-        "import time\ntime.sleep(30)\n", encoding="utf-8"
-    )
-    loader = SkillLoader(
-        [built_in, user], enable_watch=False, script_timeout_s=0.5
-    )
+    (skill_dir / "script.py").write_text("import time\ntime.sleep(30)\n", encoding="utf-8")
+    loader = SkillLoader([built_in, user], enable_watch=False, script_timeout_s=0.5)
     loader.reload()
 
     assert loader.get("slowloop") is None
@@ -286,9 +279,7 @@ async def test_script_timeout_kills_process(dirs: tuple[Path, Path]) -> None:
 # 9. script.py stdout → returned as body
 # ---------------------------------------------------------------------------
 @pytest.mark.asyncio
-async def test_script_stdout_injected_as_message_body(
-    dirs: tuple[Path, Path]
-) -> None:
+async def test_script_stdout_injected_as_message_body(dirs: tuple[Path, Path]) -> None:
     built_in, user = dirs
     fm = textwrap.dedent(
         """\
@@ -306,9 +297,7 @@ async def test_script_stdout_injected_as_message_body(
     skill_dir.mkdir(parents=True, exist_ok=True)
     (skill_dir / "SKILL.md").write_text(fm, encoding="utf-8")
     (skill_dir / "script.py").write_text('print("hello")\n', encoding="utf-8")
-    loader = SkillLoader(
-        [built_in, user], enable_watch=False, script_timeout_s=10.0
-    )
+    loader = SkillLoader([built_in, user], enable_watch=False, script_timeout_s=10.0)
     loader.reload()
     out = loader.get("say-hello")
     # Platform-agnostic newline normalisation.
@@ -456,9 +445,7 @@ def test_skill_invoke_tool_registered(dirs: tuple[Path, Path]) -> None:
     built_in, user = dirs
     _write_skill(built_in, "demo")
     reg = ToolRegistry()
-    loader = SkillLoader(
-        [built_in, user], enable_watch=False, tool_registry=reg
-    )
+    loader = SkillLoader([built_in, user], enable_watch=False, tool_registry=reg)
     # Drive start() synchronously since watchdog is disabled.
     asyncio.run(loader.start())
     assert "skill_invoke" not in reg.list_tools()

@@ -3,6 +3,7 @@
 
 """Quick debug: test repair strategies against latest malformed args
 from tauri-dev.log. Bypasses bash escaping problems."""
+
 from __future__ import annotations
 
 import codecs
@@ -31,7 +32,7 @@ def main() -> None:
     idx = positions[-1]
     af = data.find(b"args_full='", idx)
     end = data.find(b"' parse_error=", af)
-    literal = data[af + len(b"args_full='"):end].decode("utf-8", errors="replace")
+    literal = data[af + len(b"args_full='") : end].decode("utf-8", errors="replace")
     raw = codecs.decode(literal, "unicode_escape")
     print(f"raw len: {len(raw)}")
     print("first 100 raw chars:", repr(raw[:100]))
@@ -42,11 +43,11 @@ def main() -> None:
     if "\\'" in raw:
         try:
             r = json.loads(raw.replace("\\'", "'"))
-            print(f"  OK content[:80]: {r.get('content','')[:80]!r}")
+            print(f"  OK content[:80]: {r.get('content', '')[:80]!r}")
         except json.JSONDecodeError as e:
             print(f"  FAIL: {e}")
     else:
-        print(r'  no \' in raw')
+        print(r"  no \' in raw")
 
     # Strategy 2
     print()
@@ -56,11 +57,11 @@ def main() -> None:
         fixed = invalid.sub(r"\1", raw)
         try:
             r = json.loads(fixed)
-            print(f"  OK content[:80]: {r.get('content','')[:80]!r}")
+            print(f"  OK content[:80]: {r.get('content', '')[:80]!r}")
         except json.JSONDecodeError as e:
             print(f"  FAIL: {e}")
             # Show context around fail
-            print(f"  ctx: {fixed[max(0,e.pos-20):e.pos+20]!r}")
+            print(f"  ctx: {fixed[max(0, e.pos - 20) : e.pos + 20]!r}")
     else:
         print("  no invalid escape pattern")
 
@@ -69,10 +70,10 @@ def main() -> None:
     print("=== S3: strict=False on raw ===")
     try:
         r = json.JSONDecoder(strict=False).decode(raw)
-        print(f"  OK content[:80]: {r.get('content','')[:80]!r}")
+        print(f"  OK content[:80]: {r.get('content', '')[:80]!r}")
     except json.JSONDecodeError as e:
         print(f"  FAIL: {e}")
-        print(f"  ctx: {raw[max(0,e.pos-20):e.pos+20]!r}")
+        print(f"  ctx: {raw[max(0, e.pos - 20) : e.pos + 20]!r}")
 
 
 if __name__ == "__main__":

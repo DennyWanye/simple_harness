@@ -69,16 +69,25 @@ def test_new_protocol_missing_marker_and_link_refuses_without_handoff_side_effec
     async def case() -> None:
         async with ledger_world(tmp_path, key="h1h-no-link") as world:
             action = world.propose(candidate())
-            world.service.decide_approval(action["approval_request_id"], principal=ALICE, decision="grant",
-                                          nonce="n-1", deployment=ENABLED)
+            world.service.decide_approval(
+                action["approval_request_id"],
+                principal=ALICE,
+                decision="grant",
+                nonce="n-1",
+                deployment=ENABLED,
+            )
             key = action["action_key"]
             assert "planning_origin" not in world.store.get_action(key)
-            for marker in (None, '{"operation_id": "forged"}'):  # no marker, then a forged one on disk
+            for marker in (
+                None,
+                '{"operation_id": "forged"}',
+            ):  # no marker, then a forged one on disk
                 if marker is not None:
                     with world.store.transaction() as connection:
                         connection.execute(
                             "UPDATE actions SET json = json_set(json, '$.planning_origin', json(?)) WHERE action_key = ?",
-                            (marker, key))
+                            (marker, key),
+                        )
                 handed, reason = _handoff(world, key)
                 assert handed is None
                 assert reason == "operation_link_missing"
@@ -92,29 +101,49 @@ def test_new_protocol_bad_bridge_identity_refuses_handoff(tmp_path) -> None:
         async with operation_world(tmp_path, key="h1h-bad-bridge") as world:
             action = await until_pending(world)
             key = action["action_key"]
-            request = [a for a in world.control.approvals(world.mission_id) if a.get("state") == "PENDING"][0]
-            assert world.control.decide(request["request_id"], "approve")["request_state"] == "GRANTED"
+            request = [
+                a for a in world.control.approvals(world.mission_id) if a.get("state") == "PENDING"
+            ][0]
+            assert (
+                world.control.decide(request["request_id"], "approve")["request_state"] == "GRANTED"
+            )
             [original] = world.store.connection.execute(
-                "SELECT link_json FROM planning_operation_action_links WHERE action_key = ?", (key,)).fetchone()
-            for path, value in (("$.mission_id", "foreign-mission"), ("$.action_id", "wrong-action-id"),
-                                ("$.envelope_hash", "f" * 64)):
-                with world.store.transaction() as connection:  # the stored bridge bytes are altered (①b1)
+                "SELECT link_json FROM planning_operation_action_links WHERE action_key = ?", (key,)
+            ).fetchone()
+            for path, value in (
+                ("$.mission_id", "foreign-mission"),
+                ("$.action_id", "wrong-action-id"),
+                ("$.envelope_hash", "f" * 64),
+            ):
+                with (
+                    world.store.transaction() as connection
+                ):  # the stored bridge bytes are altered (①b1)
                     lift_immutable_guards(connection, "planning_operation_action_links")
                     connection.execute(
                         "UPDATE planning_operation_action_links SET link_json = json_set(link_json, ?, ?) "
-                        "WHERE action_key = ?", (path, value, key))
+                        "WHERE action_key = ?",
+                        (path, value, key),
+                    )
                 handed, reason = _handoff(world, key)
                 assert handed is None, path
-                assert reason in {"operation_link_missing", "operation_link_mismatch"}, (path, reason)
+                assert reason in {"operation_link_missing", "operation_link_mismatch"}, (
+                    path,
+                    reason,
+                )
                 _assert_not_handed_off(world, key, "APPROVED")
                 with world.store.transaction() as connection:
                     lift_immutable_guards(connection, "planning_operation_action_links")
                     connection.execute(
                         "UPDATE planning_operation_action_links SET link_json = ? WHERE action_key = ?",
-                        (original, key))
+                        (original, key),
+                    )
             # with its exact bytes back, the same action goes out once through the main loop
-            await run_until(world.product, lambda: world.store.get_action(key)["state"] == "SUCCEEDED")
-            assert world.publish_ledger().count("PREPARED") == 1 and len(world.published_files()) == 1
+            await run_until(
+                world.product, lambda: world.store.get_action(key)["state"] == "SUCCEEDED"
+            )
+            assert (
+                world.publish_ledger().count("PREPARED") == 1 and len(world.published_files()) == 1
+            )
 
     asyncio.run(case())
 
@@ -133,18 +162,32 @@ def _lose_after_intent_once(publish) -> None:
 
 def test_o06_a_publish_lost_after_its_intent_is_proven_not_started_and_sent_again(tmp_path) -> None:
     async def case() -> None:
-        async with operation_world(tmp_path, key="h1h-o06", publish_setup=_lose_after_intent_once) as world:
+        async with operation_world(
+            tmp_path, key="h1h-o06", publish_setup=_lose_after_intent_once
+        ) as world:
             action = await until_pending(world)
             key = action["action_key"]
-            executor = ActionExecutor(world.service, world.connectors, world.deployment, owner="h1h-o06",
-                                      source_storage_roots=(tmp_path / "root",))
-            request = [a for a in world.control.approvals(world.mission_id) if a.get("state") == "PENDING"][0]
+            executor = ActionExecutor(
+                world.service,
+                world.connectors,
+                world.deployment,
+                owner="h1h-o06",
+                source_storage_roots=(tmp_path / "root",),
+            )
+            request = [
+                a for a in world.control.approvals(world.mission_id) if a.get("state") == "PENDING"
+            ][0]
             world.control.decide(request["request_id"], "approve")
-            await run_until(world.product, lambda: world.store.get_action(key)["state"] == "SUCCEEDED")
+            await run_until(
+                world.product, lambda: world.store.get_action(key)["state"] == "SUCCEEDED"
+            )
             done = world.store.get_action(key)
             assert done["handoffs"] == 2
-            [proof] = [e.payload for e in world.store.list_events(world.mission_id)
-                       if e.type == "ActionScopedReconciled" and e.payload["action_key"] == key]
+            [proof] = [
+                e.payload
+                for e in world.store.list_events(world.mission_id)
+                if e.type == "ActionScopedReconciled" and e.payload["action_key"] == key
+            ]
             assert proof["outcome"] == "NOT_APPLIED_FINAL"
             assert world.publish_ledger() == ["PREPARED", "ABORTED", "PREPARED", "COMMITTED"]
             assert len(world.published_files()) == 1

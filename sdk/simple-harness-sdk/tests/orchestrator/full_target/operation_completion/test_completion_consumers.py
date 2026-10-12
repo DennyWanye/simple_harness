@@ -51,20 +51,29 @@ def test_a_restart_during_the_content_review_still_completes_with_one_publish(tm
             provider.go.set()
 
     async def second() -> None:
-        async with publishing(tmp_path, provider=LayeredScriptedProvider(), reopen=state["mission_id"],
-                              **LEASE) as case:
+        async with publishing(
+            tmp_path, provider=LayeredScriptedProvider(), reopen=state["mission_id"], **LEASE
+        ) as case:
             # 用"跑到条件成立"而不是"跑到空闲"：重启前那次被打断的审阅调用意图会一直停在 SUBMITTED
             # （见报告里的疑似缺陷），主循环因此不空闲。
             await case.run_until(lambda: bool(case.pending_approvals()), timeout=60)
             case.approve(case.pending_approvals()[0])
-            await case.run_until(lambda: case.status() in {"COMPLETED", "FAILED", "CANCELLED"}, timeout=60)
+            await case.run_until(
+                lambda: case.status() in {"COMPLETED", "FAILED", "CANCELLED"}, timeout=60
+            )
             mission = case.mission()
             assert str(mission.status.value) == "COMPLETED", mission.final_report
             assert len(case.published_files()) == 1
             # 每份被验收的结果，它的端口认领都来自它自己那条"结果已提交"事件。
-            claims = {event.payload["result_id"]: event.payload["completion_port_claims"]
-                      for event in case.events("ResultSubmitted")}
-            accepted = [t.accepted_result_id for t in case.store.list_tasks(case.mission_id) if t.accepted_result_id]
+            claims = {
+                event.payload["result_id"]: event.payload["completion_port_claims"]
+                for event in case.events("ResultSubmitted")
+            }
+            accepted = [
+                t.accepted_result_id
+                for t in case.store.list_tasks(case.mission_id)
+                if t.accepted_result_id
+            ]
             assert accepted and all(claims.get(result_id) for result_id in accepted)
 
     asyncio.run(first())
@@ -80,13 +89,17 @@ def test_cold_missing_result_claims_cannot_be_filled_from_current_ports(tmp_path
                 with case.store.transaction():
                     case.store.connection.execute(
                         "UPDATE events SET payload_json=json_remove(payload_json,'$.completion_port_claims') "
-                        "WHERE mission_id=? AND type='ResultSubmitted'", (case.mission_id,))
+                        "WHERE mission_id=? AND type='ResultSubmitted'",
+                        (case.mission_id,),
+                    )
                 provider.go.set()
                 # 现状：这条按名拒绝会逃出本轮主循环（与迁移裁决 B4 同一类，待后续改为记录并原地处理）。
                 with pytest.raises(OperationCompletionError, match="port claims"):
                     await case.run_until(lambda: False, timeout=30)
                 assert HtnStore(case.store).list_acceptances(case.mission_id) == ()
-                assert all(t.accepted_result_id is None for t in case.store.list_tasks(case.mission_id))
+                assert all(
+                    t.accepted_result_id is None for t in case.store.list_tasks(case.mission_id)
+                )
                 assert case.actions() == [] and case.published_files() == []
         finally:
             provider.go.set()

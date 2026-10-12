@@ -80,9 +80,7 @@ def test_legacy_snapshot_is_read_only_and_imports_only_to_local_owner(
     preference_json = tmp_path / "preference_memory.json"
     skills_root = tmp_path / "skills" / "user"
     preference_json.write_text(
-        json.dumps(
-            [{"kind": "intent", "label": "task", "text": "weekly report"}]
-        ),
+        json.dumps([{"kind": "intent", "label": "task", "text": "weekly report"}]),
         encoding="utf-8",
     )
     _legacy_state_db(state_db)
@@ -94,9 +92,10 @@ def test_legacy_snapshot_is_read_only_and_imports_only_to_local_owner(
     )
     with sqlite3.connect(state_db) as db:
         before = db.total_changes
-        assert db.execute(
-            "SELECT status FROM pending_skill_candidates WHERE id=1"
-        ).fetchone()[0] == "pending"
+        assert (
+            db.execute("SELECT status FROM pending_skill_candidates WHERE id=1").fetchone()[0]
+            == "pending"
+        )
         assert db.total_changes == before
 
     store = CompanionStore(tmp_path / "companion.db")
@@ -135,12 +134,12 @@ def test_legacy_snapshot_is_read_only_and_imports_only_to_local_owner(
                 (owner.profile_id, owner.profile_generation),
             ).fetchall()
         ]
-    assert {
-        item["reason_code"] for item in events
-    } >= {"legacy_preference_imported", "legacy_needs_evidence"}
+    assert {item["reason_code"] for item in events} >= {
+        "legacy_preference_imported",
+        "legacy_needs_evidence",
+    }
     assert all(
-        item["profile_id"] == "legacy_local_profile"
-        and int(item["profile_generation"]) == 1
+        item["profile_id"] == "legacy_local_profile" and int(item["profile_generation"]) == 1
         for item in events
     )
     with pytest.raises(ValueError, match="legacy_local_profile"):
@@ -162,9 +161,7 @@ def test_nonempty_legacy_skill_blocks_before_any_import_or_marker_proof(
     skill_file = skills / "SKILL.md"
     skill_file.write_text("# weekly report", encoding="utf-8")
     preference_json.write_text(
-        json.dumps(
-            [{"kind": "intent", "label": "task", "text": "weekly report"}]
-        ),
+        json.dumps([{"kind": "intent", "label": "task", "text": "weekly report"}]),
         encoding="utf-8",
     )
     _legacy_state_db(state_db)
@@ -202,9 +199,10 @@ def test_nonempty_legacy_skill_blocks_before_any_import_or_marker_proof(
     with store.read() as db:
         assert db.execute("SELECT COUNT(*) FROM growth_events").fetchone()[0] == 0
     with sqlite3.connect(state_db) as db:
-        assert db.execute(
-            "SELECT status FROM pending_skill_candidates WHERE id=1"
-        ).fetchone()[0] == "pending"
+        assert (
+            db.execute("SELECT status FROM pending_skill_candidates WHERE id=1").fetchone()[0]
+            == "pending"
+        )
 
 
 @pytest.mark.asyncio
@@ -265,9 +263,7 @@ async def test_nonempty_legacy_skill_aborts_cutover_before_irreversible_marker(
     coordinator = GrowthAuthorityCutoverCoordinator(
         router=router,
         store=store,
-        executor=ProductionGrowthCutoverStepExecutor(
-            {"legacy_import": legacy_import}
-        ),
+        executor=ProductionGrowthCutoverStepExecutor({"legacy_import": legacy_import}),
     )
     with pytest.raises(LegacySkillMigrationBlocked):
         await coordinator.execute(plan)
@@ -278,9 +274,7 @@ async def test_nonempty_legacy_skill_aborts_cutover_before_irreversible_marker(
         cutover_operation_id=plan.cutover_operation_id
     )
     assert any(
-        row["journal_payload"]["reason"]
-        == "growth_cutover_pre_marker_aborted"
-        for row in rows
+        row["journal_payload"]["reason"] == "growth_cutover_pre_marker_aborted" for row in rows
     )
     assert all(row["substep_phase"] != "roll_forward_marker" for row in rows)
     with store.read() as db:
@@ -288,8 +282,7 @@ async def test_nonempty_legacy_skill_aborts_cutover_before_irreversible_marker(
 
 
 @pytest.mark.asyncio
-async def test_capability_cutover_snapshot_reads_real_generation_and_owner_stamp(
-) -> None:
+async def test_capability_cutover_snapshot_reads_real_generation_and_owner_stamp() -> None:
     owner_key = "companion:legacy_local_profile:1"
     scope_key = "legacy_local_profile"
     key = OwnerScopeKey(owner_key, "user", scope_key)
@@ -341,11 +334,7 @@ async def test_production_callback_reconciles_applied_effect_when_receipt_is_los
 ) -> None:
     ordered_steps = DEFAULT_PRE_MARKER_STEPS + DEFAULT_POST_MARKER_STEPS
     switch_index = ordered_steps.index("handler_switch")
-    initial_phase = (
-        "legacy"
-        if ordered_steps.index(step) <= switch_index
-        else "companion"
-    )
+    initial_phase = "legacy" if ordered_steps.index(step) <= switch_index else "companion"
     durable = {
         "applied": False,
         "physical_count": 0,
@@ -378,23 +367,17 @@ async def test_production_callback_reconciles_applied_effect_when_receipt_is_los
         }
 
     authorization = _authorization(step)
-    first = await ProductionGrowthCutoverStepExecutor(
-        {step: callback}
-    ).execute(authorization)
+    first = await ProductionGrowthCutoverStepExecutor({step: callback}).execute(authorization)
 
     # Simulate process loss after the durable callback but before the
     # coordinator can persist ``first`` into its authority journal.
-    recovered = await ProductionGrowthCutoverStepExecutor(
-        {step: callback}
-    ).execute(authorization)
+    recovered = await ProductionGrowthCutoverStepExecutor({step: callback}).execute(authorization)
 
     assert first == recovered
     assert first["receipt_hash"] == authorization.expected_step_hash
     assert first["result_hash"]
     assert durable["physical_count"] == 1
-    assert set(writer_observations).issubset(
-        {(True, False), (False, True)}
-    )
+    assert set(writer_observations).issubset({(True, False), (False, True)})
     if step == "handler_switch":
         assert writer_observations == [
             (True, False),
@@ -414,9 +397,7 @@ async def test_production_executor_rejects_truthy_or_empty_unstructured_proof(
     def callback(_authorization):
         return unproved
 
-    executor = ProductionGrowthCutoverStepExecutor(
-        {"legacy_import": callback}
-    )
+    executor = ProductionGrowthCutoverStepExecutor({"legacy_import": callback})
     with pytest.raises(RuntimeError, match="step_not_proved"):
         await executor.execute(_authorization("legacy_import"))
 

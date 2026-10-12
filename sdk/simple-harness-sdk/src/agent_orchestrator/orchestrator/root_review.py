@@ -591,7 +591,8 @@ class RootReviewCoordinator:
 
         ruling = (
             adjudication_of(semantics._store, str(record.record_id))
-            if record.verdict is ReviewVerdict.INCONCLUSIVE else None
+            if record.verdict is ReviewVerdict.INCONCLUSIVE
+            else None
         )
         if record.verdict is ReviewVerdict.INCONCLUSIVE and ruling is None:
             # 审阅升级（2026-09-30）：复审后仍判不下来，不当"没通过"去修计划，交给人定。
@@ -822,8 +823,13 @@ class RootReviewCoordinator:
         rows = []
         for effect_key in scope.required_effect_keys:
             effect = read_current_effect(self.store, mission_id, scope.spec_hash, str(effect_key))
-            rows.append({"effect_key": str(effect_key), "state": str(effect["state"]),
-                         "complete": bool(effect["complete"])})
+            rows.append(
+                {
+                    "effect_key": str(effect_key),
+                    "state": str(effect["state"]),
+                    "complete": bool(effect["complete"]),
+                }
+            )
         return tuple(rows)
 
     def _requirements(
@@ -898,7 +904,6 @@ class RootReviewCoordinator:
                 document = dict(resolved.manifest.to_json())
         return self.semantics.insert_input_manifest(mission_id, str(task_id), document)
 
-
     def carried_criteria(self, mission_id: str) -> tuple[CarriedCriterion, ...]:
         """The adopted plan's ``criterion_links``, resolved to occurrences and Tasks."""
 
@@ -930,7 +935,6 @@ class RootReviewCoordinator:
                 str(item.criterion_id): str(item.verdict) for item in stored.record.criteria
             },
         }
-
 
     @staticmethod
     def _outcome(

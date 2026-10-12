@@ -208,23 +208,23 @@ async def test_agent_reach_coverage_matches_durable_node_trace(tmp_path) -> None
         assert source == "agent_reach"
         return DirectOutcome(
             source,
-            [{
-                "ok": True,
-                "url": url,
-                "title": "Agent-Reach",
-                "text": "Agent-Reach direct repository evidence " * 40,
-                "fetched_at": 123.0,
-                "source": source,
-            }],
+            [
+                {
+                    "ok": True,
+                    "url": url,
+                    "title": "Agent-Reach",
+                    "text": "Agent-Reach direct repository evidence " * 40,
+                    "fetched_at": 123.0,
+                    "source": source,
+                }
+            ],
             "hit",
             "Jina Reader",
             None,
             {
                 "url": url,
                 "channel": "github",
-                "doctor": {
-                    "web": {"status": "ok", "active_backend": "Jina Reader"}
-                },
+                "doctor": {"web": {"status": "ok", "active_backend": "Jina Reader"}},
             },
         )
 
@@ -253,18 +253,19 @@ async def test_agent_reach_coverage_matches_durable_node_trace(tmp_path) -> None
     attribute_spans = [
         span
         for span in trace["spans"]
-        if span["kind"] == "node"
-        and "agent_reach" in json.loads(span["attributes_json"])
+        if span["kind"] == "node" and "agent_reach" in json.loads(span["attributes_json"])
     ]
-    coverage = _intent(result.output, "report")["payload"]["report"]["report"][
-        "coverage"
-    ]["route"]["agent_reach"]
+    coverage = _intent(result.output, "report")["payload"]["report"]["report"]["coverage"]["route"][
+        "agent_reach"
+    ]
     assert attribute_spans
     assert all(span["node_id"] for span in attribute_spans)
     assert all(span["status"] == "ok" for span in attribute_spans)
     assert json.loads(attribute_spans[-1]["attributes_json"])["agent_reach"] == coverage
     assert coverage["planned_urls"] == [url]
     assert coverage["hits"][0]["url"] == url
+
+
 @pytest.mark.asyncio
 async def test_fetch_crash_restart_retains_checkpointed_search_result(
     tmp_path, monkeypatch
@@ -450,10 +451,7 @@ def test_manifest_and_required_node_topology_are_stable() -> None:
     assert DEEP_RESEARCH_V1.manifest.workflow_name == "deep_research"
     assert DEEP_RESEARCH_V1.manifest.workflow_version == "v1"
     assert len(DEEP_RESEARCH_V1.manifest.implementation_bundle_hash) == 64
-    assert (
-        compile_workflow(definition).manifest.to_dict()
-        == DEEP_RESEARCH_V1.manifest.to_dict()
-    )
+    assert compile_workflow(definition).manifest.to_dict() == DEEP_RESEARCH_V1.manifest.to_dict()
     assert definition.channels["values"].allowed_writers == {
         "normalize",
         "plan",

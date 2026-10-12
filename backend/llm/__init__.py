@@ -23,6 +23,7 @@ Why a new top-level package instead of reusing backend/providers/:
     function calling, Gemini FunctionDeclaration) with fallback chain and
     budget cap — that's a separate concern and a separate package.
 """
+
 from llm.errors import (
     LLMAuthError,
     LLMBudgetExceededError,

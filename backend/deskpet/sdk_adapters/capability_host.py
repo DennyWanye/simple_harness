@@ -23,9 +23,7 @@ class MemoryOperationReceipts:
     """Explicit test double; production composition must not use this class."""
 
     def __init__(self) -> None:
-        self.values: dict[
-            str, tuple[str, str, Mapping[str, JsonValue] | None]
-        ] = {}
+        self.values: dict[str, tuple[str, str, Mapping[str, JsonValue] | None]] = {}
 
     def begin(self, operation_key: str, request_fingerprint: str):
         prior = self.values.get(operation_key)
@@ -80,11 +78,7 @@ class ProductCapabilityOperationReceipts:
                     raise
         if str(row["request_fingerprint"]) != request_fingerprint:
             raise ValueError("operation_key was reused with different intent")
-        result = (
-            None
-            if row["result_json"] is None
-            else json.loads(str(row["result_json"]))
-        )
+        result = None if row["result_json"] is None else json.loads(str(row["result_json"]))
         return str(row["state"]), result
 
     def settle(
@@ -209,13 +203,9 @@ class ProductCapabilityHostAdapter:
         )
 
     async def authorize_build(self, *, operation_key, admission):
-        return await self._call(
-            "authorize_build", operation_key=operation_key, admission=admission
-        )
+        return await self._call("authorize_build", operation_key=operation_key, admission=admission)
 
-    async def activate(
-        self, *, package_ref, activation_key, operation_key, admission
-    ):
+    async def activate(self, *, package_ref, activation_key, operation_key, admission):
         return await self._call(
             "activate",
             package_ref=package_ref,

@@ -171,33 +171,55 @@ def test_d2_payload_store_requires_same_mission_receipt_and_rechecks_cas(tmp_pat
             await case.until_approval()
             row = case.store.connection.execute(
                 "SELECT object_id, content_hash, storage_uri, source_receipt_id FROM operation_payload_objects "
-                "WHERE mission_id=? AND object_kind=?", (case.mission_id, str(PayloadKind.PARAMETERS))).fetchone()
+                "WHERE mission_id=? AND object_kind=?",
+                (case.mission_id, str(PayloadKind.PARAMETERS)),
+            ).fetchone()
             assert row is not None
-            assert case.store.get_receipt(row["source_receipt_id"])["kind"] == "operation_intent_submitted"
+            assert (
+                case.store.get_receipt(row["source_receipt_id"])["kind"]
+                == "operation_intent_submitted"
+            )
             ref = TypedRef(TypedRefKind.ARTIFACT, row["object_id"], 1, row["content_hash"])
             cas = ArtifactStore(Path(row["storage_uri"]).parent.parent)
             reader = OperationPayloadStore(case.store)
-            stored = reader.get_payload(mission_id=case.mission_id, ref=ref, expected_kind=PayloadKind.PARAMETERS,
-                                        cas=cas)
+            stored = reader.get_payload(
+                mission_id=case.mission_id, ref=ref, expected_kind=PayloadKind.PARAMETERS, cas=cas
+            )
             assert stored.payload.content_hash() == row["content_hash"]
 
             payload = _parameters()
             with pytest.raises(StoreConflict, match="transaction"):
-                reader.put_payload(mission_id=case.mission_id, object_id="parameters-x", kind=PayloadKind.PARAMETERS,
-                                   payload=payload, source_receipt_id=row["source_receipt_id"], cas=cas)
+                reader.put_payload(
+                    mission_id=case.mission_id,
+                    object_id="parameters-x",
+                    kind=PayloadKind.PARAMETERS,
+                    payload=payload,
+                    source_receipt_id=row["source_receipt_id"],
+                    cas=cas,
+                )
             before = case.store.connection.total_changes
             with pytest.raises(StoreConflict, match="source receipt"):
                 with case.store.transaction():
-                    reader.put_payload(mission_id=case.mission_id, object_id="parameters-x",
-                                       kind=PayloadKind.PARAMETERS, payload=payload,
-                                       source_receipt_id="not-a-receipt", cas=cas)
+                    reader.put_payload(
+                        mission_id=case.mission_id,
+                        object_id="parameters-x",
+                        kind=PayloadKind.PARAMETERS,
+                        payload=payload,
+                        source_receipt_id="not-a-receipt",
+                        cas=cas,
+                    )
             assert case.store.connection.total_changes == before
 
             path = cas.path_for(ref.content_hash)
             path.chmod(0o600)
             path.write_bytes(b"corrupt")
             with pytest.raises(StoreConflict, match="byte"):
-                reader.get_payload(mission_id=case.mission_id, ref=ref, expected_kind=PayloadKind.PARAMETERS, cas=cas)
+                reader.get_payload(
+                    mission_id=case.mission_id,
+                    ref=ref,
+                    expected_kind=PayloadKind.PARAMETERS,
+                    cas=cas,
+                )
 
     asyncio.run(run())
 

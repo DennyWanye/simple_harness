@@ -23,15 +23,31 @@ class FixtureWordCounter:
         return len(text.split())
 
     def estimate_input_tokens(self, request) -> int:  # type: ignore[no-untyped-def]
-        return sum(self.count_text(m.content if isinstance(m.content, str) else "") for m in request.messages)
+        return sum(
+            self.count_text(m.content if isinstance(m.content, str) else "")
+            for m in request.messages
+        )
 
     def meter_factory(self, counter, *, input_limit_tokens, max_output_tokens, prior_reserve=None):  # type: ignore[no-untyped-def]
         from simple_harness.agents.arp.meter import MeterBinding, model_limits
         from simple_harness.agents.arp.pins import Pin
         from simple_harness.agents.arp.strict import digest
 
-        limits = model_limits(model="agent-model", tokenizer=counter, input_limit_tokens=input_limit_tokens,
-                              max_output_tokens=max_output_tokens, provider_id="host-test")
-        return MeterBinding(tokenizer=counter, model_limits=limits, certification_ref=Pin(
-            "receipt", "meter-certification:host-test-exact-words", 0, digest({"rule": "one token per word"})),
-            prior_reserve=prior_reserve)
+        limits = model_limits(
+            model="agent-model",
+            tokenizer=counter,
+            input_limit_tokens=input_limit_tokens,
+            max_output_tokens=max_output_tokens,
+            provider_id="host-test",
+        )
+        return MeterBinding(
+            tokenizer=counter,
+            model_limits=limits,
+            certification_ref=Pin(
+                "receipt",
+                "meter-certification:host-test-exact-words",
+                0,
+                digest({"rule": "one token per word"}),
+            ),
+            prior_reserve=prior_reserve,
+        )

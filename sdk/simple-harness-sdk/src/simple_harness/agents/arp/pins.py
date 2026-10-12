@@ -25,14 +25,50 @@ _HASH = re.compile(r"^[0-9a-f]{64}$")
 
 PIN_KINDS = frozenset(
     {
-        "agent", "agent_turn", "session", "profile", "policy", "schema", "capability",
-        "provider", "deployment", "tool", "skill", "workflow", "artifact", "source",
-        "journal_record", "journal_group", "input_manifest", "receipt", "context",
-        "retrieval", "tool_snapshot", "skill_use", "occurrence", "completion_scope",
-        "task", "requirements", "method", "acceptance", "review", "resolution",
-        "operation", "operation_intent", "scope", "principal", "authority",
-        "reservation", "invocation", "catalogue", "index_snapshot", "index_generation",
-        "dependency_lock", "evaluation", "restore", "use_certificate",
+        "agent",
+        "agent_turn",
+        "session",
+        "profile",
+        "policy",
+        "schema",
+        "capability",
+        "provider",
+        "deployment",
+        "tool",
+        "skill",
+        "workflow",
+        "artifact",
+        "source",
+        "journal_record",
+        "journal_group",
+        "input_manifest",
+        "receipt",
+        "context",
+        "retrieval",
+        "tool_snapshot",
+        "skill_use",
+        "occurrence",
+        "completion_scope",
+        "task",
+        "requirements",
+        "method",
+        "acceptance",
+        "review",
+        "resolution",
+        "operation",
+        "operation_intent",
+        "scope",
+        "principal",
+        "authority",
+        "reservation",
+        "invocation",
+        "catalogue",
+        "index_snapshot",
+        "index_generation",
+        "dependency_lock",
+        "evaluation",
+        "restore",
+        "use_certificate",
     }
 )
 
@@ -64,8 +100,15 @@ class Pin:
 
     @classmethod
     def from_json(cls, value: object, *, kinds: Iterable[str] | None = None) -> Pin:
-        if not isinstance(value, Mapping) or set(value) != {"kind", "id", "revision", "content_hash"}:
-            raise ArpError("STRUCTURE_INVALID", "Pin must have exactly kind/id/revision/content_hash")
+        if not isinstance(value, Mapping) or set(value) != {
+            "kind",
+            "id",
+            "revision",
+            "content_hash",
+        }:
+            raise ArpError(
+                "STRUCTURE_INVALID", "Pin must have exactly kind/id/revision/content_hash"
+            )
         pin = cls(value["kind"], value["id"], value["revision"], value["content_hash"])
         if kinds is not None and pin.kind not in set(kinds):
             raise ArpError("REF_KIND_MISMATCH", field_path="kind")

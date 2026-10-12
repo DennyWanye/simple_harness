@@ -61,8 +61,14 @@ def _always_rejected(request: Any) -> Any:
 
 
 def _create(world, key: str, *, max_attempts: int = 12) -> str:
-    return world.create({"goal": "写一份 NOTES.md", "success_criteria": ["file:NOTES.md"], "idempotency_key": key,
-                         "budget": {"max_tokens": 8_000_000, "max_attempts": max_attempts}})["mission_id"]
+    return world.create(
+        {
+            "goal": "写一份 NOTES.md",
+            "success_criteria": ["file:NOTES.md"],
+            "idempotency_key": key,
+            "budget": {"max_tokens": 8_000_000, "max_attempts": max_attempts},
+        }
+    )["mission_id"]
 
 
 def _leaf_attempts(store, mission_id):
@@ -86,7 +92,9 @@ def test_failed_verification_retry_and_stop_paths(tmp_path):
             assert mission.status is MissionStatus.FAILED
             assert mission.stop_reason == MissionStopReason.MAX_ATTEMPTS_REACHED.value
             assert store.count_events(mission_id, "MissionFailed") == 1
-            assert task.status is TaskStatus.FAILED and task.attempt_count == 2  # 模型做错的两次都计数
+            assert (
+                task.status is TaskStatus.FAILED and task.attempt_count == 2
+            )  # 模型做错的两次都计数
             first, second = attempts
             assert first.status is AttemptStatus.RETRY_WAIT
             assert first.failure["reason"] == "verification_failed"
@@ -172,36 +180,64 @@ def _parallel_planner(request: Any) -> Any:
     if not contexts or (package.get("method_selection") or [{}])[0].get("applicable"):
         return planner_reply(request)
     request_body = contexts[0]["request"]
-    operator = next(item for item in request_body["operators"]
-                    if str(item["task_type_ref"]["id"]).endswith("prepare-delivery"))
+    operator = next(
+        item
+        for item in request_body["operators"]
+        if str(item["task_type_ref"]["id"]).endswith("prepare-delivery")
+    )
     first, second = [item["id"] for item in request_body["criterion_evidence"]]
     identity = request_body["new_method_identity"]
 
     def step(local_id: str) -> dict[str, Any]:
-        return {"local_id": local_id, "task_type_ref": operator["task_type_ref"], "form": "primitive",
-                "arguments": {}, "required_capabilities": list(operator["required_capabilities"]),
-                "obligation_relation": "refines_parent"}
+        return {
+            "local_id": local_id,
+            "task_type_ref": operator["task_type_ref"],
+            "form": "primitive",
+            "arguments": {},
+            "required_capabilities": list(operator["required_capabilities"]),
+            "obligation_relation": "refines_parent",
+        }
 
     method = {
-        "schema_version": 1, "method_id": identity["method_id"], "method_version": identity["method_version"],
+        "schema_version": 1,
+        "method_id": identity["method_id"],
+        "method_version": identity["method_version"],
         "goal_type_ref": request_body["goal_type_ref"],
         "parameter_schema_ref": request_body["goal_signature"]["parameter_schema_ref"],
         "output_schema_ref": request_body["goal_signature"]["output_schema_ref"],
-        "applicable_when": [], "exploration_assumptions": [],
-        "steps": [step("a"), step("b")], "ordering": [], "required_capabilities": [], "expected_effects": [],
+        "applicable_when": [],
+        "exploration_assumptions": [],
+        "steps": [step("a"), step("b")],
+        "ordering": [],
+        "required_capabilities": [],
+        "expected_effects": [],
         "composition": {
             "criterion_links": [
-                {"parent_criterion_id": first, "child_step": "a", "child_criterion_id": first,
-                 "evidence_requirement": "a 写出第一份文件"},
-                {"parent_criterion_id": second, "child_step": "b", "child_criterion_id": second,
-                 "evidence_requirement": "b 写出第二份文件"},
+                {
+                    "parent_criterion_id": first,
+                    "child_step": "a",
+                    "child_criterion_id": first,
+                    "evidence_requirement": "a 写出第一份文件",
+                },
+                {
+                    "parent_criterion_id": second,
+                    "child_step": "b",
+                    "child_criterion_id": second,
+                    "evidence_requirement": "b 写出第二份文件",
+                },
             ],
-            "outputs": {}, "finalizer_step": "b", "independent_review_required": True,
+            "outputs": {},
+            "finalizer_step": "b",
+            "independent_review_required": True,
         },
         "basis_refs": [],
     }
-    return decision(contexts[0]["subject_key"], "PROPOSE_METHOD",
-                    {"method_proposal": {"method": method, "rationale": "两份文件分开写。"}}, "两步并行。")
+    return decision(
+        contexts[0]["subject_key"],
+        "PROPOSE_METHOD",
+        {"method_proposal": {"method": method, "rationale": "两份文件分开写。"}},
+        "两步并行。",
+    )
 
 
 def test_r1_mission_wide_concurrency_is_enforced(tmp_path):
@@ -217,19 +253,35 @@ def test_r1_mission_wide_concurrency_is_enforced(tmp_path):
         class Watching(LayeredScriptedProvider):
             async def invoke(self, request, *, cancel):  # type: ignore[no-untyped-def]
                 if role_of(request) == "worker":
-                    peaks.append(sum(1 for task in world.store.list_tasks(mission_id)
-                                     for attempt in world.store.list_attempts(task.id)
-                                     if attempt.status in OPEN_ATTEMPT_STATES))
-                    await asyncio.sleep(0.05)  # a slow model: the other step had time to be dispatched
+                    peaks.append(
+                        sum(
+                            1
+                            for task in world.store.list_tasks(mission_id)
+                            for attempt in world.store.list_attempts(task.id)
+                            if attempt.status in OPEN_ATTEMPT_STATES
+                        )
+                    )
+                    await asyncio.sleep(
+                        0.05
+                    )  # a slow model: the other step had time to be dispatched
                 return await super().invoke(request, cancel=cancel)
 
         provider = Watching(planner=_parallel_planner)
         async with product_world(tmp_path / "root", provider, max_concurrency=1) as world:
-            mission_id = world.create({"goal": "写两份文件", "success_criteria": ["file:a.md", "file:b.md"],
-                                       "idempotency_key": "r1-conc"})["mission_id"]
+            mission_id = world.create(
+                {
+                    "goal": "写两份文件",
+                    "success_criteria": ["file:a.md", "file:b.md"],
+                    "idempotency_key": "r1-conc",
+                }
+            )["mission_id"]
             mission = await world.run_until_settled(mission_id, rounds=40)
             assert mission.status is MissionStatus.COMPLETED, mission.stop_reason
-            leaves = [task for task in world.store.list_tasks(mission_id) if world.store.list_attempts(task.id)]
+            leaves = [
+                task
+                for task in world.store.list_tasks(mission_id)
+                if world.store.list_attempts(task.id)
+            ]
             assert len(leaves) == 2
             assert peaks and max(peaks) == 1
 

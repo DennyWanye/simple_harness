@@ -55,9 +55,15 @@ def episode(world: World | None = None) -> AppWorldEpisode:
 
 
 def verify(ep: AppWorldEpisode, receipt: object, response: object, **changes: object) -> bool:
-    args = dict(run_id=ep.run_id, task_id=ep.config.task_id, episode_id=ep.episode_id,
-                world_version=ep.world_version, app="supervisor", api="show_active_task",
-                response=response)
+    args = dict(
+        run_id=ep.run_id,
+        task_id=ep.config.task_id,
+        episode_id=ep.episode_id,
+        world_version=ep.world_version,
+        app="supervisor",
+        api="show_active_task",
+        response=response,
+    )
     args.update(changes)
     return ep.verify_api_observation(receipt, **args)
 
@@ -131,8 +137,10 @@ def test_service_calls_official_requester_only_for_exact_active_identity() -> No
             calls.append((*args, kwargs))
             return {"instruction": "public", "status": "incomplete", "answer": None}
 
-    service = SimpleNamespace(app=FastAPI(), world=SimpleNamespace(
-        task_id="task", experiment_name="run", requester=Requester()))
+    service = SimpleNamespace(
+        app=FastAPI(),
+        world=SimpleNamespace(task_id="task", experiment_name="run", requester=Requester()),
+    )
 
     @service.app.post("/execute")
     def other_client_execute() -> dict[str, str]:
@@ -141,42 +149,80 @@ def test_service_calls_official_requester_only_for_exact_active_identity() -> No
     install_public_observation_route(service)
     install_public_observation_route(service)
     client = TestClient(service.app)
-    body = dict(task_id="task", experiment_name="run", app="supervisor",
-                api="show_active_task", parameters={})
+    body = dict(
+        task_id="task",
+        experiment_name="run",
+        app="supervisor",
+        api="show_active_task",
+        parameters={},
+    )
     result = client.post("/host_public_observation", json=body).json()
     assert result == {
-        "task_id": "task", "experiment_name": "run", "app": "supervisor",
-        "api": "show_active_task", "identity": result["identity"],
+        "task_id": "task",
+        "experiment_name": "run",
+        "app": "supervisor",
+        "api": "show_active_task",
+        "identity": result["identity"],
         "response": {"instruction": "public", "status": "incomplete", "answer": None},
     }
-    assert client.get("/host_observation_identity", params={
-        "task_id": "task", "experiment_name": "run",
-    }).json() == {"identity": result["identity"]}
-    assert calls == [("supervisor", "show_active_task",
-                      {"track": False, "raise_on_failure": True})]
-    for change, status in [({"task_id": "other"}, 409),
-                           ({"experiment_name": "other"}, 409),
-                           ({"api": "complete_task"}, 400),
-                           ({"parameters": {"access_token": "secret"}}, 400)]:
+    assert client.get(
+        "/host_observation_identity",
+        params={
+            "task_id": "task",
+            "experiment_name": "run",
+        },
+    ).json() == {"identity": result["identity"]}
+    assert calls == [("supervisor", "show_active_task", {"track": False, "raise_on_failure": True})]
+    for change, status in [
+        ({"task_id": "other"}, 409),
+        ({"experiment_name": "other"}, 409),
+        ({"api": "complete_task"}, 400),
+        ({"parameters": {"access_token": "secret"}}, 400),
+    ]:
         rejected = client.post("/host_public_observation", json={**body, **change})
         assert rejected.status_code == status
     assert len(calls) == 1
     service.world = SimpleNamespace(task_id="task", experiment_name="other", requester=Requester())
     assert client.post("/host_public_observation", json=body).status_code == 409
-    assert client.get("/host_observation_identity", params={
-        "task_id": "task", "experiment_name": "run",
-    }).status_code == 409
+    assert (
+        client.get(
+            "/host_observation_identity",
+            params={
+                "task_id": "task",
+                "experiment_name": "run",
+            },
+        ).status_code
+        == 409
+    )
     service.world = SimpleNamespace(task_id="task", experiment_name="run", requester=Requester())
-    assert client.get("/host_observation_identity", params={
-        "task_id": "task", "experiment_name": "run",
-    }).json()["identity"] != result["identity"]
-    new_identity = client.get("/host_observation_identity", params={
-        "task_id": "task", "experiment_name": "run",
-    }).json()["identity"]
+    assert (
+        client.get(
+            "/host_observation_identity",
+            params={
+                "task_id": "task",
+                "experiment_name": "run",
+            },
+        ).json()["identity"]
+        != result["identity"]
+    )
+    new_identity = client.get(
+        "/host_observation_identity",
+        params={
+            "task_id": "task",
+            "experiment_name": "run",
+        },
+    ).json()["identity"]
     client.post("/execute")
-    assert client.get("/host_observation_identity", params={
-        "task_id": "task", "experiment_name": "run",
-    }).json()["identity"] != new_identity
+    assert (
+        client.get(
+            "/host_observation_identity",
+            params={
+                "task_id": "task",
+                "experiment_name": "run",
+            },
+        ).json()["identity"]
+        != new_identity
+    )
 
 
 def test_blocked_write_rejects_both_read_routes_until_settled_even_on_failure() -> None:
@@ -192,8 +238,10 @@ def test_blocked_write_rejects_both_read_routes_until_settled_even_on_failure() 
             calls.append(api)
             return {"instruction": "complete state", "status": "incomplete", "answer": None}
 
-    service = SimpleNamespace(app=FastAPI(), world=SimpleNamespace(
-        task_id="task", experiment_name="run", requester=Requester()))
+    service = SimpleNamespace(
+        app=FastAPI(),
+        world=SimpleNamespace(task_id="task", experiment_name="run", requester=Requester()),
+    )
 
     @service.app.post("/execute")
     def blocked_execute(fail: bool = False) -> dict[str, str]:
@@ -207,8 +255,7 @@ def test_blocked_write_rejects_both_read_routes_until_settled_even_on_failure() 
     reader = TestClient(service.app)
     writer = TestClient(service.app, raise_server_exceptions=False)
     identity_params = {"task_id": "task", "experiment_name": "run"}
-    body = {**identity_params, "app": "supervisor", "api": "show_active_task",
-            "parameters": {}}
+    body = {**identity_params, "app": "supervisor", "api": "show_active_task", "parameters": {}}
     initial = reader.get("/host_observation_identity", params=identity_params).json()
 
     with ThreadPoolExecutor(max_workers=2) as pool:
@@ -247,8 +294,10 @@ def test_observation_started_before_concurrent_write_is_rejected_after_requester
             assert release_read.wait(timeout=5)
             return {"instruction": "possibly partial", "status": "incomplete", "answer": None}
 
-    service = SimpleNamespace(app=FastAPI(), world=SimpleNamespace(
-        task_id="task", experiment_name="run", requester=Requester()))
+    service = SimpleNamespace(
+        app=FastAPI(),
+        world=SimpleNamespace(task_id="task", experiment_name="run", requester=Requester()),
+    )
 
     @service.app.post("/execute")
     def blocked_execute() -> dict[str, str]:
@@ -258,8 +307,13 @@ def test_observation_started_before_concurrent_write_is_rejected_after_requester
 
     install_public_observation_route(service)
     client = TestClient(service.app)
-    body = {"task_id": "task", "experiment_name": "run", "app": "supervisor",
-            "api": "show_active_task", "parameters": {}}
+    body = {
+        "task_id": "task",
+        "experiment_name": "run",
+        "app": "supervisor",
+        "api": "show_active_task",
+        "parameters": {},
+    }
     with ThreadPoolExecutor(max_workers=2) as pool:
         observing = pool.submit(client.post, "/host_public_observation", json=body)
         try:
@@ -335,26 +389,48 @@ def test_service_rejects_unprojected_auth_fields_without_echoing_them() -> None:
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
-    service = SimpleNamespace(app=FastAPI(), world=SimpleNamespace(
-        task_id="task", experiment_name="run", requester=SimpleNamespace(
-            request=lambda *args, **kwargs: {
-                "instruction": "public", "status": "incomplete", "answer": None,
-                "access_token": "do-not-store",
-            })))
+    service = SimpleNamespace(
+        app=FastAPI(),
+        world=SimpleNamespace(
+            task_id="task",
+            experiment_name="run",
+            requester=SimpleNamespace(
+                request=lambda *args, **kwargs: {
+                    "instruction": "public",
+                    "status": "incomplete",
+                    "answer": None,
+                    "access_token": "do-not-store",
+                }
+            ),
+        ),
+    )
     install_public_observation_route(service)
-    response = TestClient(service.app).post("/host_public_observation", json={
-        "task_id": "task", "experiment_name": "run", "app": "supervisor",
-        "api": "show_active_task", "parameters": {},
-    })
+    response = TestClient(service.app).post(
+        "/host_public_observation",
+        json={
+            "task_id": "task",
+            "experiment_name": "run",
+            "app": "supervisor",
+            "api": "show_active_task",
+            "parameters": {},
+        },
+    )
     assert response.status_code == 422
     assert "do-not-store" not in response.text
 
 
 def test_profile_projection_drops_personal_fields_and_rejects_extra_auth_fields() -> None:
-    raw = {"first_name": "A", "last_name": "B", "email": "ignored@example.test",
-           "phone_number": "ignored", "birthday": "ignored", "sex": "ignored"}
+    raw = {
+        "first_name": "A",
+        "last_name": "B",
+        "email": "ignored@example.test",
+        "phone_number": "ignored",
+        "birthday": "ignored",
+        "sex": "ignored",
+    }
     assert project("supervisor", "show_profile", raw) == {
-        "first_name": "A", "last_name": "B",
+        "first_name": "A",
+        "last_name": "B",
     }
     with pytest.raises(ValueError):
         project("supervisor", "show_profile", {**raw, "access_token": "dummy"})
@@ -366,41 +442,54 @@ def test_actual_independent_service_requester_and_generation() -> None:
     from appworld import update_root
 
     update_root(os.environ["APPWORLD_N2_DATA_ROOT"])
-    with AppWorldEpisode(AppWorldConfig(
-        "37a8675_1", "n2-api-observation-v4",
-        remote_environment_url=os.environ["APPWORLD_N2_LIVE_URL"],
-    )) as ep:
+    with AppWorldEpisode(
+        AppWorldConfig(
+            "37a8675_1",
+            "n2-api-observation-v4",
+            remote_environment_url=os.environ["APPWORLD_N2_LIVE_URL"],
+        )
+    ) as ep:
         first, state = ep.observe_public_api("supervisor", "show_active_task")
         assert state["instruction"] == ep.agent.instruction
-        assert verify(ep, first, state, task_id="37a8675_1",
-                      run_id="n2-api-observation-v4")
+        assert verify(ep, first, state, task_id="37a8675_1", run_id="n2-api-observation-v4")
         profile, profile_state = ep.observe_public_api("supervisor", "show_profile")
         assert profile_state["first_name"] and profile_state["last_name"]
         assert set(profile_state) == {"first_name", "last_name"}
         assert ep.verify_api_observation(
-            profile, run_id=ep.run_id, task_id=ep.config.task_id,
-            episode_id=ep.episode_id, world_version=ep.world_version,
-            app="supervisor", api="show_profile", response=profile_state,
+            profile,
+            run_id=ep.run_id,
+            task_id=ep.config.task_id,
+            episode_id=ep.episode_id,
+            world_version=ep.world_version,
+            app="supervisor",
+            api="show_profile",
+            response=profile_state,
         )
         ep.agent.execute('print("{\\"status\\":\\"VERIFIED\\"}")')
-        assert not verify(ep, first, state, task_id="37a8675_1",
-                          run_id="n2-api-observation-v4")
+        assert not verify(ep, first, state, task_id="37a8675_1", run_id="n2-api-observation-v4")
         current, current_state = ep.observe_public_api("supervisor", "show_active_task")
-        assert verify(ep, current, current_state, task_id="37a8675_1",
-                      run_id="n2-api-observation-v4")
+        assert verify(
+            ep, current, current_state, task_id="37a8675_1", run_id="n2-api-observation-v4"
+        )
         # A second client can mutate the same service without advancing this
         # episode's local generation. The service revision must still revoke it.
-        request = Request(os.environ["APPWORLD_N2_LIVE_URL"] + "/execute",
-                          data=canonical({"task_id": "37a8675_1", "code": "pass"}),
-                          headers={"Content-Type": "application/json"}, method="POST")
+        request = Request(
+            os.environ["APPWORLD_N2_LIVE_URL"] + "/execute",
+            data=canonical({"task_id": "37a8675_1", "code": "pass"}),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
         with urlopen(request, timeout=30) as result:
             assert result.status == 200
-        assert not verify(ep, current, current_state, task_id="37a8675_1",
-                          run_id="n2-api-observation-v4")
+        assert not verify(
+            ep, current, current_state, task_id="37a8675_1", run_id="n2-api-observation-v4"
+        )
         current, current_state = ep.observe_public_api("supervisor", "show_active_task")
-        assert verify(ep, current, current_state, task_id="37a8675_1",
-                      run_id="n2-api-observation-v4")
+        assert verify(
+            ep, current, current_state, task_id="37a8675_1", run_id="n2-api-observation-v4"
+        )
         checkpoint = ep.checkpoint()
         ep.restore(checkpoint)
-        assert not verify(ep, current, current_state, task_id="37a8675_1",
-                          run_id="n2-api-observation-v4")
+        assert not verify(
+            ep, current, current_state, task_id="37a8675_1", run_id="n2-api-observation-v4"
+        )

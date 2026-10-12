@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 """做法跨任务复用（HTN 补齐阶段 C3）：类型与任务无关、全库做法只当先例。"""
+
 from __future__ import annotations
 
 import asyncio
@@ -42,43 +43,83 @@ def test_types_do_not_depend_on_the_mission(tmp_path):
         if contexts and not dropped and len(contexts[0]["request"]["criterion_evidence"]) == 2:
             method = one_step_method(contexts[0])
             dropped.append(method["composition"]["criterion_links"].pop()["parent_criterion_id"])
-            return decision(contexts[0]["subject_key"], "PROPOSE_METHOD",
-                            {"method_proposal": {"method": method, "rationale": "一步写完。"}}, "先提一个做法。")
+            return decision(
+                contexts[0]["subject_key"],
+                "PROPOSE_METHOD",
+                {"method_proposal": {"method": method, "rationale": "一步写完。"}},
+                "先提一个做法。",
+            )
         return planner_reply(request)
 
     async def case():
-        async with product_world(tmp_path / "root", LayeredScriptedProvider(planner=planner)) as world:
-            first = world.create({"goal": "写一份笔记", "idempotency_key": "types-1",
-                                  "success_criteria": ["file:notes/a.md"]})
-            second = world.create({"goal": "整理两份清单", "idempotency_key": "types-2",
-                                   "success_criteria": ["file:lists/x.md", "file:lists/y.md"]})
+        async with product_world(
+            tmp_path / "root", LayeredScriptedProvider(planner=planner)
+        ) as world:
+            first = world.create(
+                {
+                    "goal": "写一份笔记",
+                    "idempotency_key": "types-1",
+                    "success_criteria": ["file:notes/a.md"],
+                }
+            )
+            second = world.create(
+                {
+                    "goal": "整理两份清单",
+                    "idempotency_key": "types-2",
+                    "success_criteria": ["file:lists/x.md", "file:lists/y.md"],
+                }
+            )
             missions = [world.store.get_mission(item["mission_id"]) for item in (first, second)]
-            worlds = [user_goal_world(world.loop, missions[0]),
-                      user_goal_world(world.loop, replace(missions[1], allowed_tools=("workspace_read_file",)))]
+            worlds = [
+                user_goal_world(world.loop, missions[0]),
+                user_goal_world(
+                    world.loop, replace(missions[1], allowed_tools=("workspace_read_file",))
+                ),
+            ]
             assert catalog_digest(worlds[0]) == catalog_digest(worlds[1])
-            refs = [sorted((t.task_type_ref.id, t.task_type_ref.content_hash) for t in w.catalog.task_types())
-                    for w in worlds]
+            refs = [
+                sorted(
+                    (t.task_type_ref.id, t.task_type_ref.content_hash)
+                    for t in w.catalog.task_types()
+                )
+                for w in worlds
+            ]
             assert refs[0] == refs[1] and len(refs[0]) == 5
-            assert all(not t.goal_signature.coverage_criteria and mission.goal not in t.goal_signature.statement
-                       for w, mission in zip(worlds, missions, strict=True) for t in w.catalog.task_types())
+            assert all(
+                not t.goal_signature.coverage_criteria
+                and mission.goal not in t.goal_signature.statement
+                for w, mission in zip(worlds, missions, strict=True)
+                for t in w.catalog.task_types()
+            )
 
             roots = []
             for mission in missions:
                 network = world.loop._dispatch_for(mission.id).network(mission.id)
                 [occurrence] = network.root_occurrence_ids
                 roots.append(network.binding_for_occurrence(occurrence))
-            assert [root.goal_signature.statement for root in roots] == ["写一份笔记", "整理两份清单"]
+            assert [root.goal_signature.statement for root in roots] == [
+                "写一份笔记",
+                "整理两份清单",
+            ]
             assert [root.goal_signature.coverage_criteria for root in roots] == [
-                ("c-user-1",), ("c-user-1", "c-user-2")]
+                ("c-user-1",),
+                ("c-user-1", "c-user-2"),
+            ]
             assert roots[0].goal_signature.signature_id == roots[1].goal_signature.signature_id
             assert roots[0].contract_hash != roots[1].contract_hash
 
             mission = await world.run_until_settled(second["mission_id"], rounds=20)
             assert str(mission.status.value) == "COMPLETED", (mission.status, mission.final_report)
-            refusals = [" ".join(item["detail"] for item in event.payload["detail"]["problems"])
-                        for event in _events(world, mission.id, "PlanningRejected")]
+            refusals = [
+                " ".join(item["detail"] for item in event.payload["detail"]["problems"])
+                for event in _events(world, mission.id, "PlanningRejected")
+            ]
             assert dropped == ["c-user-2"]
-            assert len(refusals) == 1 and "ROOT_COVERAGE_GAP" in refusals[0] and "c-user-2" in refusals[0]
+            assert (
+                len(refusals) == 1
+                and "ROOT_COVERAGE_GAP" in refusals[0]
+                and "c-user-2" in refusals[0]
+            )
             # the refused method never reached a review: one method was proposed and reviewed
             assert len(_events(world, mission.id, "PlanningMethodProposed")) == 1
 
@@ -101,12 +142,18 @@ def judging_reviewer(*, reusable: bool = True, write: bool = True):
     def judge(row: dict[str, Any]) -> dict[str, Any] | None:
         if not write:
             return None
-        return {"method_ref": row["method_ref"], "reusable": reusable,
-                "purpose": PURPOSE if reusable else "", "at_fault": False, "reason": "拆法与具体文件无关"}
+        return {
+            "method_ref": row["method_ref"],
+            "reusable": reusable,
+            "purpose": PURPOSE if reusable else "",
+            "at_fault": False,
+            "reason": "拆法与具体文件无关",
+        }
 
     def reviewer(request: Any):
         package = review_input(request)
         return None if package is None else review_reply(package, methods=judge)
+
     return reviewer
 
 
@@ -115,8 +162,14 @@ def _entries(world: Any) -> list[dict[str, Any]]:
 
 
 async def _deliver(world: Any, key: str, **extra: Any) -> Any:
-    created = world.create({"goal": "写一份笔记", "idempotency_key": key,
-                            "success_criteria": ["file:notes/a.md"], **extra})
+    created = world.create(
+        {
+            "goal": "写一份笔记",
+            "idempotency_key": key,
+            "success_criteria": ["file:notes/a.md"],
+            **extra,
+        }
+    )
     mission = await world.run_until_settled(created["mission_id"], rounds=20)
     assert str(mission.status.value) == "COMPLETED", (mission.status, mission.final_report)
     return mission
@@ -130,16 +183,23 @@ def test_promoted_after_delivery_and_final_review(tmp_path, case):
 
     async def run():
         reviewer = judging_reviewer(write=case != "not_written")
-        async with product_world(tmp_path / "root", LayeredScriptedProvider(reviewer=reviewer)) as world:
+        async with product_world(
+            tmp_path / "root", LayeredScriptedProvider(reviewer=reviewer)
+        ) as world:
             extra = {"untrusted_sources": ["docs/"]} if case == "untrusted" else {}
             mission = await _deliver(world, f"promote-{case}", **extra)
             entries = _entries(world)
             if case == "listed":
                 [entry] = entries
                 assert entry["state"] == "LISTED" and entry["purpose"] == PURPOSE
-                assert entry["source_mission_id"] == mission.id and entry["goal_type_id"] == "user-goal"
+                assert (
+                    entry["source_mission_id"] == mission.id
+                    and entry["goal_type_id"] == "user-goal"
+                )
                 assert entry["owner"] == library.library_owner(world.store, mission)
-                assert entry["catalog_digest"] == catalog_digest(world.loop._dispatch_for(mission.id).require_planning_world())
+                assert entry["catalog_digest"] == catalog_digest(
+                    world.loop._dispatch_for(mission.id).require_planning_world()
+                )
                 record = entry["root_review_record_id"]
                 assert record and _events(world, mission.id, "MethodPromoted")
             else:
@@ -163,17 +223,30 @@ def _reader_planner(seen: list[dict[str, Any]], prefer: list[str] | None = None)
             seen.append({"directory": views["method_library"]})
             listed = [row["entry_id"] for row in views["method_library"][0]["entries"]]
             entry = next((item for item in prefer or () if item in listed), listed[0])
-            return decision(contexts[0]["subject_key"], "READ_METHOD_LIBRARY", {"entries": [entry]},
-                            "目录里这条的用途对得上，先读原文。")
+            return decision(
+                contexts[0]["subject_key"],
+                "READ_METHOD_LIBRARY",
+                {"entries": [entry]},
+                "目录里这条的用途对得上，先读原文。",
+            )
         if contexts and views.get("library_reads"):
             read = views["library_reads"][0]
             seen.append({"read": read})
             method = one_step_method(contexts[0])
-            return decision(contexts[0]["subject_key"], "PROPOSE_METHOD",
-                            {"method_proposal": {"method": method, "rationale": "照先例一步写完。",
-                                                 "based_on": read["entry_id"]}},
-                            "参照全库先例写本任务的做法。")
+            return decision(
+                contexts[0]["subject_key"],
+                "PROPOSE_METHOD",
+                {
+                    "method_proposal": {
+                        "method": method,
+                        "rationale": "照先例一步写完。",
+                        "based_on": read["entry_id"],
+                    }
+                },
+                "参照全库先例写本任务的做法。",
+            )
         return planner_reply(request)
+
     return planner
 
 
@@ -185,15 +258,23 @@ def test_directory_read_and_derived_proposal(tmp_path):
     seen: list[dict[str, Any]] = []
 
     async def run():
-        provider = LayeredScriptedProvider(planner=_reader_planner(seen), reviewer=judging_reviewer())
+        provider = LayeredScriptedProvider(
+            planner=_reader_planner(seen), reviewer=judging_reviewer()
+        )
         async with product_world(tmp_path / "root", provider) as world:
             first = await _deliver(world, "lib-a")
             [entry_a] = _entries(world)
             second = await _deliver(world, "lib-b")
             [directory] = seen[0]["directory"]
             assert directory["omitted"] == 0
-            assert directory["entries"] == [{"entry_id": entry_a["entry_id"], "goal_type": "user-goal",
-                                             "purpose": PURPOSE, "promoted_at": entry_a["promoted_at"]}]
+            assert directory["entries"] == [
+                {
+                    "entry_id": entry_a["entry_id"],
+                    "goal_type": "user-goal",
+                    "purpose": PURPOSE,
+                    "promoted_at": entry_a["promoted_at"],
+                }
+            ]
             read = seen[1]["read"]
             assert read["entry_id"] == entry_a["entry_id"] and read["method"]["steps"]
             [read_event] = _events(world, second.id, "PlanningLibraryRead")
@@ -201,7 +282,9 @@ def test_directory_read_and_derived_proposal(tmp_path):
             proposed = _events(world, second.id, "PlanningMethodProposed")
             assert [event.payload["based_on"] for event in proposed] == [entry_a["entry_id"]]
             # the derived method went through this Mission's own method review
-            assert any(key.startswith("method-plan:") for key in world.deployment.duties.policy_scopes)
+            assert any(
+                key.startswith("method-plan:") for key in world.deployment.duties.policy_scopes
+            )
             entries = {item["source_mission_id"]: item for item in _entries(world)}
             assert set(entries) == {first.id, second.id}
             assert entries[second.id]["based_on"] == entry_a["entry_id"]
@@ -217,20 +300,30 @@ def test_directory_filters(tmp_path, monkeypatch):
     **改坏检验**：listed_entries 去掉归属或目录哈希条件 → 前两支看得到别人的条目。"""
 
     async def run():
-        async with product_world(tmp_path / "root", LayeredScriptedProvider(reviewer=judging_reviewer())) as world:
+        async with product_world(
+            tmp_path / "root", LayeredScriptedProvider(reviewer=judging_reviewer())
+        ) as world:
             mission = await _deliver(world, "filters")
             [entry] = _entries(world)
             digest = entry["catalog_digest"]
             assert library.directory(world.store, mission, digest, ["user-goal"])
             other = replace(mission, tenant_id="another-tenant")
             assert library.directory(world.store, other, digest, ["user-goal"]) == []
-            assert library.visible_entry(world.store, other, digest, ["user-goal"], entry["entry_id"]) is None
+            assert (
+                library.visible_entry(world.store, other, digest, ["user-goal"], entry["entry_id"])
+                is None
+            )
             import agent_orchestrator.runtime.role_templates as templates
 
             with monkeypatch.context() as patched:
                 patched.setattr(templates, "PLANNING_DECISION_PACKAGE_VERSION", 999)
-                moved = catalog_digest(world.loop._dispatch_for(mission.id).require_planning_world())
-            assert moved != digest and library.directory(world.store, mission, moved, ["user-goal"]) == []
+                moved = catalog_digest(
+                    world.loop._dispatch_for(mission.id).require_planning_world()
+                )
+            assert (
+                moved != digest
+                and library.directory(world.store, mission, moved, ["user-goal"]) == []
+            )
             # seven entries of one goal type: five newest are listed, two omitted
             store = MethodLibraryStore(world.store)
             world.store.connection.execute("PRAGMA foreign_keys=OFF")
@@ -239,13 +332,32 @@ def test_directory_filters(tmp_path, monkeypatch):
                     "INSERT INTO method_library(entry_id,owner,goal_type_id,catalog_digest,method_id,method_version,"
                     "method_hash,purpose,source_mission_id,root_review_record_id,state,promoted_at)"
                     " VALUES (?,?,?,?,?,?,?,?,?,?,'LISTED',?)",
-                    (f"lib-extra-{index}", entry["owner"], "user-goal", digest, f"extra-{index}", 1, "e" * 64,
-                     f"用途 {index}", mission.id, "rec", 10_000_000_000.0 + index))
+                    (
+                        f"lib-extra-{index}",
+                        entry["owner"],
+                        "user-goal",
+                        digest,
+                        f"extra-{index}",
+                        1,
+                        "e" * 64,
+                        f"用途 {index}",
+                        mission.id,
+                        "rec",
+                        10_000_000_000.0 + index,
+                    ),
+                )
             [listing] = library.directory(world.store, mission, digest, ["user-goal"])
-            assert [row["entry_id"] for row in listing["entries"]] == [f"lib-extra-{i}" for i in (5, 4, 3, 2, 1)]
+            assert [row["entry_id"] for row in listing["entries"]] == [
+                f"lib-extra-{i}" for i in (5, 4, 3, 2, 1)
+            ]
             assert listing["omitted"] == 2
             store.retire(entry["entry_id"], by="user", reason="测试")
-            assert library.visible_entry(world.store, mission, digest, ["user-goal"], entry["entry_id"]) is None
+            assert (
+                library.visible_entry(
+                    world.store, mission, digest, ["user-goal"], entry["entry_id"]
+                )
+                is None
+            )
 
     asyncio.run(run())
 
@@ -264,7 +376,9 @@ def test_adopted_method_needs_review_here():
     drafts = [SimpleNamespace(method_ref=seed), SimpleNamespace(method_ref=other)]
     original = method_plan_reviews.review_of
     try:
-        method_plan_reviews.review_of = lambda store, mission_id, ref: method_plan_reviews.MethodReview("NONE")
+        method_plan_reviews.review_of = lambda store, mission_id, ref: (
+            method_plan_reviews.MethodReview("NONE")
+        )
         refused = method_plan_reviews.unreviewed_adopted_methods(None, "m", drafts, seeds=(seed,))
     finally:
         method_plan_reviews.review_of = original
@@ -279,7 +393,9 @@ def test_retired_after_two_missions_blame_it(tmp_path):
 
     async def run():
         prefer: list[str] = []
-        provider = LayeredScriptedProvider(planner=_reader_planner([], prefer), reviewer=judging_reviewer())
+        provider = LayeredScriptedProvider(
+            planner=_reader_planner([], prefer), reviewer=judging_reviewer()
+        )
         async with product_world(tmp_path / "root", provider) as world:
             await _deliver(world, "blame-e")
             [entry] = _entries(world)
@@ -291,17 +407,33 @@ def test_retired_after_two_missions_blame_it(tmp_path):
                 [event] = _events(world, mission.id, "PlanningMethodProposed")
                 refs[mission.id] = event.payload["method_ref"]
             for source, kind in (("decision-1", "PLANNER"), ("record-1", "ROOT_REVIEW")):
-                library.record_attribution(world.store, mission_id=second.id, method_ref=refs[second.id],
-                                           source_ref=source, source_kind=kind, reason="拆法漏了一步")
+                library.record_attribution(
+                    world.store,
+                    mission_id=second.id,
+                    method_ref=refs[second.id],
+                    source_ref=source,
+                    source_kind=kind,
+                    reason="拆法漏了一步",
+                )
             assert len(MethodLibraryStore(world.store).attributions(entry["entry_id"])) == 2
             assert MethodLibraryStore(world.store).get(entry["entry_id"])["state"] == "LISTED"
-            library.record_attribution(world.store, mission_id=third.id, method_ref=refs[third.id],
-                                       source_ref="record-2", source_kind="ROOT_REVIEW", reason="同样漏了一步")
+            library.record_attribution(
+                world.store,
+                mission_id=third.id,
+                method_ref=refs[third.id],
+                source_ref="record-2",
+                source_kind="ROOT_REVIEW",
+                reason="同样漏了一步",
+            )
             retired = MethodLibraryStore(world.store).get(entry["entry_id"])
             assert retired["state"] == "RETIRED" and retired["retired_by"] == "attribution"
             assert _events(world, third.id, "MethodLibraryEntryRetired")
-            assert library.visible_entry(world.store, third, retired["catalog_digest"], ["user-goal"],
-                                         entry["entry_id"]) is None
+            assert (
+                library.visible_entry(
+                    world.store, third, retired["catalog_digest"], ["user-goal"], entry["entry_id"]
+                )
+                is None
+            )
 
     asyncio.run(run())
 
@@ -311,10 +443,16 @@ def test_manual_retire_and_clear(tmp_path):
     from agent_orchestrator.__main__ import main
 
     async def run():
-        async with product_world(tmp_path / "root", LayeredScriptedProvider(reviewer=judging_reviewer())) as world:
+        async with product_world(
+            tmp_path / "root", LayeredScriptedProvider(reviewer=judging_reviewer())
+        ) as world:
             await _deliver(world, "manual")
             [entry] = _entries(world)
-            command = {"entry_id": entry["entry_id"], "command_id": "chat-method-retire:r:c", "reason": "用户说不要了"}
+            command = {
+                "entry_id": entry["entry_id"],
+                "command_id": "chat-method-retire:r:c",
+                "reason": "用户说不要了",
+            }
             receipt = world.control.retire_library_entry(command)
             again = world.control.retire_library_entry(command)
             assert receipt == again and receipt["entry_id"] == entry["entry_id"]
@@ -322,11 +460,18 @@ def test_manual_retire_and_clear(tmp_path):
             assert row["state"] == "RETIRED" and row["retired_by"] == "user"
             listing = world.control.list_method_library()["entries"]
             assert [item["state"] for item in listing] == ["RETIRED"]
-            methods = world.store.connection.execute("SELECT count(*) FROM method_contracts").fetchone()[0]
+            methods = world.store.connection.execute(
+                "SELECT count(*) FROM method_contracts"
+            ).fetchone()[0]
             cleared = MethodLibraryStore(world.store).clear()
             assert cleared == {"entries": 1, "attributions": 0}
             assert _entries(world) == []
-            assert world.store.connection.execute("SELECT count(*) FROM method_contracts").fetchone()[0] == methods
+            assert (
+                world.store.connection.execute("SELECT count(*) FROM method_contracts").fetchone()[
+                    0
+                ]
+                == methods
+            )
         assert main(["method-library", "clear", "--evidence-dir", str(tmp_path / "missing")]) == 2
 
     asyncio.run(run())
@@ -340,13 +485,17 @@ def test_library_writes_do_not_touch_the_barrier(tmp_path):
 
     def epochs(world: Any) -> tuple[Any, ...]:
         environment = world.store.connection.execute(
-            "SELECT epoch FROM assurance_environment_state WHERE singleton=1").fetchone()
+            "SELECT epoch FROM assurance_environment_state WHERE singleton=1"
+        ).fetchone()
         scopes = world.store.connection.execute(
-            "SELECT mission_id, scope_id, epoch FROM validity_epochs ORDER BY mission_id, scope_id").fetchall()
+            "SELECT mission_id, scope_id, epoch FROM validity_epochs ORDER BY mission_id, scope_id"
+        ).fetchall()
         return (None if environment is None else environment[0], [tuple(row) for row in scopes])
 
     async def run():
-        async with product_world(tmp_path / "root", LayeredScriptedProvider(reviewer=judging_reviewer())) as world:
+        async with product_world(
+            tmp_path / "root", LayeredScriptedProvider(reviewer=judging_reviewer())
+        ) as world:
             mission = await _deliver(world, "barrier")
             [entry] = _entries(world)
             store = MethodLibraryStore(world.store)
@@ -356,10 +505,20 @@ def test_library_writes_do_not_touch_the_barrier(tmp_path):
             changes = world.store.count_events(mission.id, "AssuranceEvidenceChanged")
             with world.store.transaction():
                 [entry_id] = library.promote_methods(
-                    world.store, mission.id, SimpleNamespace(review_receipt_id=entry["root_review_record_id"]))
-                store.add_attribution(entry_id, source_ref="x", source_kind="PLANNER", mission_id=mission.id,
-                                      method_id=entry["method_id"], method_version=entry["method_version"],
-                                      method_hash=entry["method_hash"], reason="r")
+                    world.store,
+                    mission.id,
+                    SimpleNamespace(review_receipt_id=entry["root_review_record_id"]),
+                )
+                store.add_attribution(
+                    entry_id,
+                    source_ref="x",
+                    source_kind="PLANNER",
+                    mission_id=mission.id,
+                    method_id=entry["method_id"],
+                    method_version=entry["method_version"],
+                    method_hash=entry["method_hash"],
+                    reason="r",
+                )
                 library.retire_entry(world.store, entry_id, by="user", reason="r")
             assert epochs(world) == before
             assert world.store.count_events(mission.id, "AssuranceEvidenceChanged") == changes
@@ -379,7 +538,9 @@ def _blaming_provider() -> tuple[LayeredScriptedProvider, dict[str, bool], list[
         package = package_of(request)
         if package.get("repair_requests"):
             subject = (package.get("planning_subjects") or [{}])[0]
-            return planner_decision(subject["subject_key"], "NO_CHANGE", {"reason": "等人看"}, "不改计划。")
+            return planner_decision(
+                subject["subject_key"], "NO_CHANGE", {"reason": "等人看"}, "不改计划。"
+            )
         return reader(request)
 
     def reviewer(request: Any):
@@ -388,22 +549,42 @@ def _blaming_provider() -> tuple[LayeredScriptedProvider, dict[str, bool], list[
             return None
         inner = package.get("package") or {}
         rows = inner.get("methods_to_judge") or []
-        if inner.get("purpose") == "MISSION_FINAL" and any(row["based_on"] for row in rows) and not blamed["done"]:
+        if (
+            inner.get("purpose") == "MISSION_FINAL"
+            and any(row["based_on"] for row in rows)
+            and not blamed["done"]
+        ):
             blamed["done"] = True
-            return review_reply(package, verdict="REWORK", grade="FAIL", methods=lambda row: {
-                "method_ref": row["method_ref"], "reusable": False, "purpose": "", "at_fault": True,
-                "reason": "照先例的拆法漏了一步"})
+            return review_reply(
+                package,
+                verdict="REWORK",
+                grade="FAIL",
+                methods=lambda row: {
+                    "method_ref": row["method_ref"],
+                    "reusable": False,
+                    "purpose": "",
+                    "at_fault": True,
+                    "reason": "照先例的拆法漏了一步",
+                },
+            )
         return judging_reviewer()(request)
 
     return LayeredScriptedProvider(planner=planner, reviewer=reviewer), blamed, prefer
 
 
-async def _blamed_by_root_review(world: Any, prefer: list[str], key: str) -> tuple[dict[str, Any], str, list[Any]]:
+async def _blamed_by_root_review(
+    world: Any, prefer: list[str], key: str
+) -> tuple[dict[str, Any], str, list[Any]]:
     await _deliver(world, key + "-a")
     [entry] = _entries(world)
     prefer.append(entry["entry_id"])
-    created = world.create({"goal": "写一份笔记", "idempotency_key": key + "-b",
-                            "success_criteria": ["file:notes/a.md"]})
+    created = world.create(
+        {
+            "goal": "写一份笔记",
+            "idempotency_key": key + "-b",
+            "success_criteria": ["file:notes/a.md"],
+        }
+    )
     rows: list[Any] = []
     for _ in range(30):
         await world.drain(timeout=10)
@@ -444,13 +625,22 @@ def test_global_tables_rebuild_after_promotion_attribution_retirement_and_clear(
         async with product_world(tmp_path / "root", provider) as world:
             entry, _mission_id, rows = await _blamed_by_root_review(world, prefer, "global-replay")
             assert blamed["done"] and len(rows) == 1
-            world.control.retire_library_entry({"entry_id": entry["entry_id"], "reason": "用户说不要了",
-                                                "command_id": "chat-method-retire:g:1"})
+            world.control.retire_library_entry(
+                {
+                    "entry_id": entry["entry_id"],
+                    "reason": "用户说不要了",
+                    "command_id": "chat-method-retire:g:1",
+                }
+            )
             report = verify_library(world.store)["global"]
             assert report["status"] == CONSISTENT, report
-            assert {"method_library", "method_library_attributions", "method_contracts",
-                    "policy_versions", "policy_activations"} <= {
-                        name for name, item in report["tables"].items() if item["rows"]}
+            assert {
+                "method_library",
+                "method_library_attributions",
+                "method_contracts",
+                "policy_versions",
+                "policy_activations",
+            } <= {name for name, item in report["tables"].items() if item["rows"]}
 
     asyncio.run(run())
     assert main(["method-library", "clear", "--evidence-dir", str(tmp_path / "root"), "--yes"]) == 0
@@ -459,7 +649,11 @@ def test_global_tables_rebuild_after_promotion_attribution_retirement_and_clear(
         report = verify_library(store)["global"]
         assert report["status"] == CONSISTENT and report["silent_changes"] == [], report
         assert report["tables"]["method_library"]["rows"] == 0
-        cleared = [event for event in store.list_events("deployment") if event.type == "MethodLibraryCleared"]
+        cleared = [
+            event
+            for event in store.list_events("deployment")
+            if event.type == "MethodLibraryCleared"
+        ]
         assert [event.payload for event in cleared] == [{"entries": 1, "attributions": 1}]
     finally:
         store.close()
@@ -476,7 +670,9 @@ def test_a_failing_promotion_never_fails_completion(tmp_path, monkeypatch):
     monkeypatch.setattr(library, "promote_methods", broken)
 
     async def run():
-        async with product_world(tmp_path / "root", LayeredScriptedProvider(reviewer=judging_reviewer())) as world:
+        async with product_world(
+            tmp_path / "root", LayeredScriptedProvider(reviewer=judging_reviewer())
+        ) as world:
             mission = await _deliver(world, "promotion-broke")
             [skipped] = _events(world, mission.id, "MethodPromotionSkipped")
             assert skipped.payload["error_type"] == "TypeError" and _entries(world) == []
@@ -497,39 +693,60 @@ def test_a_method_not_passed_here_is_refused_at_the_plan_commit(tmp_path):
         package = review_input(request)
         if package is None:
             return None
-        if (package.get("package") or {}).get("purpose") == "METHOD_PLAN" and not tried.get("rejected"):
+        if (package.get("package") or {}).get("purpose") == "METHOD_PLAN" and not tried.get(
+            "rejected"
+        ):
             tried["rejected"] = True
             return review_reply(package, verdict="REWORK", grade="FAIL")
         return review_reply(package)
 
     def planner(request: Any):
         package = package_of(request)
-        rejected = [item for item in (package.get("views") or {}).get("methods") or ()
-                    if (item.get("review") or {}).get("outcome") == "REJECTED"]
+        rejected = [
+            item
+            for item in (package.get("views") or {}).get("methods") or ()
+            if (item.get("review") or {}).get("outcome") == "REJECTED"
+        ]
         goal = next((item for item in package["views"]["goals"] if item.get("open")), None)
         if rejected and goal is not None and not tried.get("forced"):
             tried["forced"] = True
-            return decision(goal["subject_key"], "REFINE", {"method_ref": dict(rejected[0]["method_ref"]),
-                                                           "bindings": dict(goal["params"])},
-                            "不管审阅意见，直接用这个做法。")
+            return decision(
+                goal["subject_key"],
+                "REFINE",
+                {"method_ref": dict(rejected[0]["method_ref"]), "bindings": dict(goal["params"])},
+                "不管审阅意见，直接用这个做法。",
+            )
         if rejected and "after_rejection" not in tried:
-            tried["after_rejection"] = {"selection": (package.get("method_selection") or [{}])[0],
-                                        "rejected": rejected[0]}
+            tried["after_rejection"] = {
+                "selection": (package.get("method_selection") or [{}])[0],
+                "rejected": rejected[0],
+            }
         return planner_reply(request)  # 候选里已没有打回的做法，它自然另提一个
 
     async def run():
-        async with product_world(tmp_path / "root", LayeredScriptedProvider(planner=planner, reviewer=reviewer)) as world:
+        async with product_world(
+            tmp_path / "root", LayeredScriptedProvider(planner=planner, reviewer=reviewer)
+        ) as world:
             mission = await _deliver(world, "gate-refuses")
             assert tried.get("forced")
-            refused = [event.payload for event in _events(world, mission.id, "PlanningDecisionEvaluated")
-                       if event.payload.get("decision_type") == "REFINE" and event.payload.get("status") != "COMMITTED"]
+            refused = [
+                event.payload
+                for event in _events(world, mission.id, "PlanningDecisionEvaluated")
+                if event.payload.get("decision_type") == "REFINE"
+                and event.payload.get("status") != "COMMITTED"
+            ]
             assert refused and refused[0]["rejection_codes"] == ["METHOD_NOT_AUTHORIZED"], refused
             # 候选与闸门同一判据（F1 偏差单 2）：打回的做法不在候选里、在 not_adoptable 里，审阅结论仍在 views.methods
             seen = tried["after_rejection"]
             ref = seen["rejected"]["method_ref"]
-            assert all(item["method_id"] != ref["id"] for item in seen["selection"].get("applicable") or ())
-            assert {"method_id": ref["id"], "method_version": int(ref["semantic_revision"]),
-                    "review": "REJECTED"} in seen["selection"]["not_adoptable"]
+            assert all(
+                item["method_id"] != ref["id"] for item in seen["selection"].get("applicable") or ()
+            )
+            assert {
+                "method_id": ref["id"],
+                "method_version": int(ref["semantic_revision"]),
+                "review": "REJECTED",
+            } in seen["selection"]["not_adoptable"]
             assert seen["rejected"]["review"]["outcome"] == "REJECTED"
 
     asyncio.run(run())
@@ -542,12 +759,25 @@ def test_a_mission_with_registered_sources_promotes_nothing(tmp_path):
     **改坏检验**：判定不看"用户登记资料"事件 → 进了全库。"""
 
     async def run():
-        async with product_world(tmp_path / "root", LayeredScriptedProvider(reviewer=judging_reviewer())) as world:
-            created = world.create({"goal": "写一份笔记", "idempotency_key": "with-sources",
-                                    "success_criteria": ["file:notes/a.md"]})
-            world.control.register_source({"mission_id": created["mission_id"], "path": "sources/ref.md",
-                                           "idempotency_key": "ref-1", "content": "参考：三条要点。",
-                                           "kind": "markdown"})
+        async with product_world(
+            tmp_path / "root", LayeredScriptedProvider(reviewer=judging_reviewer())
+        ) as world:
+            created = world.create(
+                {
+                    "goal": "写一份笔记",
+                    "idempotency_key": "with-sources",
+                    "success_criteria": ["file:notes/a.md"],
+                }
+            )
+            world.control.register_source(
+                {
+                    "mission_id": created["mission_id"],
+                    "path": "sources/ref.md",
+                    "idempotency_key": "ref-1",
+                    "content": "参考：三条要点。",
+                    "kind": "markdown",
+                }
+            )
             mission = await world.run_until_settled(created["mission_id"], rounds=20)
             assert str(mission.status.value) == "COMPLETED", mission.final_report
             assert _events(world, mission.id, "SourceRegistered")
@@ -571,22 +801,34 @@ def test_command_line_lists_and_clears_the_library(tmp_path, capsys):
     from agent_orchestrator.__main__ import main
 
     async def run():
-        async with product_world(tmp_path / "root", LayeredScriptedProvider(reviewer=judging_reviewer())) as world:
+        async with product_world(
+            tmp_path / "root", LayeredScriptedProvider(reviewer=judging_reviewer())
+        ) as world:
             mission = await _deliver(world, "cli-clear")
             [entry] = _entries(world)
             MethodLibraryStore(world.store).add_attribution(
-                entry["entry_id"], source_ref="x", source_kind="PLANNER", mission_id=mission.id,
-                method_id=entry["method_id"], method_version=entry["method_version"],
-                method_hash=entry["method_hash"], reason="r")
+                entry["entry_id"],
+                source_ref="x",
+                source_kind="PLANNER",
+                mission_id=mission.id,
+                method_id=entry["method_id"],
+                method_version=entry["method_version"],
+                method_hash=entry["method_hash"],
+                reason="r",
+            )
 
     asyncio.run(run())
     database = tmp_path / "root" / "orchestrator.db"
-    methods = sqlite3.connect(database).execute("SELECT count(*) FROM method_contracts").fetchone()[0]
+    methods = (
+        sqlite3.connect(database).execute("SELECT count(*) FROM method_contracts").fetchone()[0]
+    )
     capsys.readouterr()
     assert main(["method-library", "list", "--evidence-dir", str(tmp_path / "root")]) == 0
     listed = _json.loads(capsys.readouterr().out)["entries"]
     assert [item["purpose"] for item in listed] == [PURPOSE] and listed[0]["blamed_by_missions"]
-    assert main(["method-library", "clear", "--evidence-dir", str(tmp_path / "root")]) == 2  # needs --yes
+    assert (
+        main(["method-library", "clear", "--evidence-dir", str(tmp_path / "root")]) == 2
+    )  # needs --yes
     assert main(["method-library", "clear", "--evidence-dir", str(tmp_path / "root"), "--yes"]) == 0
     capsys.readouterr()
     connection = sqlite3.connect(database)
@@ -608,26 +850,52 @@ def test_planner_blame_when_replacing_a_derived_method(tmp_path):
         package = package_of(request)
         if not package.get("repair_requests"):
             return reader(request)
-        goal = next(item for item in package["views"]["goals"]
-                    if item["form"] == "compound" and item.get("adopted_method"))
+        goal = next(
+            item
+            for item in package["views"]["goals"]
+            if item["form"] == "compound" and item.get("adopted_method")
+        )
         current = goal["adopted_method"]["method_ref"]
-        fresh = [item["method_ref"] for item in package["views"]["methods"]
-                 if item["method_ref"] != current and (item.get("review") or {}).get("outcome") == "PASSED"
-                 and item["method_ref"]["id"] in state["proposed"]]
+        fresh = [
+            item["method_ref"]
+            for item in package["views"]["methods"]
+            if item["method_ref"] != current
+            and (item.get("review") or {}).get("outcome") == "PASSED"
+            and item["method_ref"]["id"] in state["proposed"]
+        ]
         if not fresh:
-            [context] = [item for item in package.get("method_proposal_contexts") or ()
-                         if item["subject_key"] == goal["subject_key"]]
+            [context] = [
+                item
+                for item in package.get("method_proposal_contexts") or ()
+                if item["subject_key"] == goal["subject_key"]
+            ]
             method = one_step_method(context)
             state["proposed"].append(method["method_id"])
-            return decision(goal["subject_key"], "PROPOSE_METHOD", {"method_proposal": {
-                "method": method, "rationale": "换一个本任务自己的拆法。"}}, "先提替换的做法。")
-        instance = next(item for item in package["visible_refs"] if item["kind"] == "method_instance"
-                        and item["id"] == goal["adopted_method"]["method_instance_id"])
+            return decision(
+                goal["subject_key"],
+                "PROPOSE_METHOD",
+                {"method_proposal": {"method": method, "rationale": "换一个本任务自己的拆法。"}},
+                "先提替换的做法。",
+            )
+        instance = next(
+            item
+            for item in package["visible_refs"]
+            if item["kind"] == "method_instance"
+            and item["id"] == goal["adopted_method"]["method_instance_id"]
+        )
         state["replaced"] = True
-        return decision(goal["subject_key"], "REPAIR", {
-            "repair_kind": "REPLACE_METHOD", "rejected_method_instance": instance,
-            "replacement_method_ref": dict(fresh[-1]), "bindings": goal["params"],
-            "method_at_fault": "照先例的拆法本身漏了一步"}, "换掉照先例写的做法。")
+        return decision(
+            goal["subject_key"],
+            "REPAIR",
+            {
+                "repair_kind": "REPLACE_METHOD",
+                "rejected_method_instance": instance,
+                "replacement_method_ref": dict(fresh[-1]),
+                "bindings": goal["params"],
+                "method_at_fault": "照先例的拆法本身漏了一步",
+            },
+            "换掉照先例写的做法。",
+        )
 
     def reviewer(request: Any):
         package = review_input(request)
@@ -635,13 +903,19 @@ def test_planner_blame_when_replacing_a_derived_method(tmp_path):
             return None
         inner = package.get("package") or {}
         rows = inner.get("methods_to_judge") or []
-        if inner.get("purpose") == "MISSION_FINAL" and any(row["based_on"] for row in rows) and not state.get("rework"):
+        if (
+            inner.get("purpose") == "MISSION_FINAL"
+            and any(row["based_on"] for row in rows)
+            and not state.get("rework")
+        ):
             state["rework"] = True
             return review_reply(package, verdict="REWORK", grade="FAIL")
         return judging_reviewer()(request)
 
     async def run():
-        async with product_world(tmp_path / "root", LayeredScriptedProvider(planner=planner, reviewer=reviewer)) as world:
+        async with product_world(
+            tmp_path / "root", LayeredScriptedProvider(planner=planner, reviewer=reviewer)
+        ) as world:
             await _deliver(world, "planner-blame-a")
             [entry] = _entries(world)
             prefer.append(entry["entry_id"])

@@ -165,8 +165,7 @@ def _reminder_draft_request(
         not source_refs
         or any(not item for item in source_refs)
         or len(set(source_refs)) != len(source_refs)
-        or tuple(str(item) for item in raw_scopes)
-        != ("read", "draft", "reversible_local")
+        or tuple(str(item) for item in raw_scopes) != ("read", "draft", "reversible_local")
     ):
         raise ValueError("reminder_draft_request_invalid")
     return reminder_id, occurrence_id, reminder_text, source_refs
@@ -232,14 +231,8 @@ def _source_risk_refs(
         not isinstance(item, str) or not item for item in effects
     ):
         raise ValueError("source_effect_topology_invalid")
-    refs = {
-        str(item["spec_ref"])
-        for item in tool_manifest.values()
-    }
-    refs.update(
-        f"package-effect:{ordinal}:{effect}"
-        for ordinal, effect in enumerate(effects)
-    )
+    refs = {str(item["spec_ref"]) for item in tool_manifest.values()}
+    refs.update(f"package-effect:{ordinal}:{effect}" for ordinal, effect in enumerate(effects))
     return tuple(sorted(refs))
 
 
@@ -275,11 +268,7 @@ def _manifest_allowed_tools(
     skills = entries.get("skills") if isinstance(entries, Mapping) else None
     if not isinstance(skills, list):
         raise ValueError("candidate_manifest_skill_entry_invalid")
-    rows = [
-        row
-        for row in skills
-        if isinstance(row, Mapping) and row.get("path") == relative_path
-    ]
+    rows = [row for row in skills if isinstance(row, Mapping) and row.get("path") == relative_path]
     if len(rows) != 1:
         raise ValueError("candidate_manifest_skill_entry_invalid")
     return _canonical_string_list(
@@ -301,9 +290,7 @@ def _tool_effect_topology(
     base_permissions = _canonical_string_list(
         raw_permissions, "candidate_manifest_permissions_invalid"
     )
-    base_effects = _canonical_string_list(
-        raw_effects, "candidate_manifest_effects_invalid"
-    )
+    base_effects = _canonical_string_list(raw_effects, "candidate_manifest_effects_invalid")
     permissions = set(base_permissions)
     tool_effects: set[str] = set()
     for name in allowed_tools:
@@ -313,18 +300,14 @@ def _tool_effect_topology(
         permissions.add(str(spec.permission_category))
         tool_effects.add(str(spec.effect_class.value))
     pack_effects = {
-        _PACK_EFFECT_BY_TOOL_EFFECT.get(effect, "opaque_manual")
-        for effect in tool_effects
+        _PACK_EFFECT_BY_TOOL_EFFECT.get(effect, "opaque_manual") for effect in tool_effects
     }
     pack_effects.update(base_effects)
     topology_effects = set(tool_effects)
     implied_pack_effects = {
-        _PACK_EFFECT_BY_TOOL_EFFECT.get(effect, "opaque_manual")
-        for effect in tool_effects
+        _PACK_EFFECT_BY_TOOL_EFFECT.get(effect, "opaque_manual") for effect in tool_effects
     }
-    topology_effects.update(
-        effect for effect in base_effects if effect not in implied_pack_effects
-    )
+    topology_effects.update(effect for effect in base_effects if effect not in implied_pack_effects)
     return (
         {"effects": sorted(topology_effects)},
         tuple(sorted(permissions)),
@@ -368,16 +351,10 @@ def _candidate_manifest_and_skill_tools(
     *,
     relative_path: str,
 ) -> tuple[dict[str, Any], tuple[str, ...], str]:
-    manifest_blobs = [
-        blob for blob in package.blobs if blob.blob_kind == "manifest"
-    ]
+    manifest_blobs = [blob for blob in package.blobs if blob.blob_kind == "manifest"]
     file_blobs = {
         item.relative_path: next(
-            (
-                blob.payload
-                for blob in package.blobs
-                if blob.blob_id == item.blob_id
-            ),
+            (blob.payload for blob in package.blobs if blob.blob_id == item.blob_id),
             None,
         )
         for item in package.files
@@ -397,9 +374,7 @@ def _candidate_manifest_and_skill_tools(
     skill_bytes = file_blobs[relative_path]
     assert isinstance(skill_bytes, bytes)
     try:
-        frontmatter_tools, _body = parse_skill_frontmatter_bytes(
-            skill_bytes, relative_path
-        )
+        frontmatter_tools, _body = parse_skill_frontmatter_bytes(skill_bytes, relative_path)
         markdown = skill_bytes.decode("utf-8")
     except (CandidateRiskFactsError, UnicodeDecodeError) as exc:
         raise ValueError("candidate_skill_invalid") from exc
@@ -445,9 +420,7 @@ class FirstPartyGrowthTargetResolver:
         if kind != "skill" or not self._projection.contains(stable_name):
             raise ValueError("growth_target_not_in_frozen_catalog")
         item = next(
-            current
-            for current in self._projection.inventory
-            if current.skill_id == stable_name
+            current for current in self._projection.inventory if current.skill_id == stable_name
         )
         target = GrowthTargetIdentityV1(
             kind="skill",
@@ -463,9 +436,7 @@ class FirstPartyGrowthTargetResolver:
             owner.profile_id,
         )
         builtin_key = OwnerScopeKey("builtin", "builtin", "builtin")
-        snapshot = await self._platform.read_detail_snapshot(
-            (user_key, builtin_key)
-        )
+        snapshot = await self._platform.read_detail_snapshot((user_key, builtin_key))
         user_binding = next(
             (
                 row
@@ -551,9 +522,7 @@ class FirstPartyGrowthTargetResolver:
             for current in self._projection.inventory
             if current.skill_id == proposal.target.stable_name
         )
-        manifest = json.loads(
-            (item.pack_root / "deskpet-pack.json").read_text(encoding="utf-8")
-        )
+        manifest = json.loads((item.pack_root / "deskpet-pack.json").read_text(encoding="utf-8"))
         if not isinstance(manifest, dict):
             raise ValueError("frozen_skill_manifest_invalid")
         for derived in ("version", "source", "files"):
@@ -663,9 +632,7 @@ class CandidateBuildTerminalExtension:
             builder_launch_id=self.permit.builder_launch_id
             if hasattr(self.permit, "builder_launch_id")
             else "",
-            child_run_id=self.permit.child_run_id
-            if hasattr(self.permit, "child_run_id")
-            else "",
+            child_run_id=self.permit.child_run_id if hasattr(self.permit, "child_run_id") else "",
             child_start_hash=self.permit.child_start_hash
             if hasattr(self.permit, "child_start_hash")
             else "",
@@ -715,19 +682,14 @@ class CandidateBuildTerminalExtension:
             "value",
             terminal_status,
         )
-        if (
-            terminal_status is not None
-            and str(terminal_status_value) != "succeeded"
-        ):
+        if terminal_status is not None and str(terminal_status_value) != "succeeded":
             # A successful model terminal that fails candidate validation is
             # converted by DriverRuntime into a durable failed terminal.  The
             # failed terminal must not re-run the same candidate parser: it
             # exists so BackgroundRunAdapter can persist failure_context and
             # schedule a fresh model attempt.
             return self.descriptor
-        product, receipt = self.product_and_receipt(
-            self._structured(terminal_event)
-        )
+        product, receipt = self.product_and_receipt(self._structured(terminal_event))
         await transaction.insert_candidate_draft_receipt(
             {
                 name: str(getattr(receipt, name))
@@ -811,8 +773,7 @@ class GrowthProductionPipeline:
         self._reminder_source_loader = reminder_source_loader
         self._clock = clock
         self._workspace = str(
-            Path(task_workspace or self._execution_database_path.parent)
-            .resolve(strict=False)
+            Path(task_workspace or self._execution_database_path.parent).resolve(strict=False)
         )
         self._reflection = ReflectionResultPostprocessor(
             store=store,
@@ -832,8 +793,7 @@ class GrowthProductionPipeline:
                 "effect": str(spec.effect_class.value),
             }
             for spec in sorted(specs, key=lambda item: str(item.name))
-            if spec.execution_build_identity is not None
-            and bool(spec.stable_handler_id)
+            if spec.execution_build_identity is not None and bool(spec.stable_handler_id)
         )
 
     def _now(self) -> str:
@@ -871,17 +831,12 @@ class GrowthProductionPipeline:
             payload.get("request_payload", {}),
             "growth_request_payload_invalid",
         )
-        if str(request_payload.get("companion_stage") or "reflection") != (
-            "reminder_draft"
-        ):
+        if str(request_payload.get("companion_stage") or "reflection") != ("reminder_draft"):
             return base_text
-        _reminder_id, _occurrence_id, reminder_text, source_refs = (
-            _reminder_draft_request(request_payload)
+        _reminder_id, _occurrence_id, reminder_text, source_refs = _reminder_draft_request(
+            request_payload
         )
-        if (
-            self._reminder_source_loader is None
-            or facts.evidence_ids != source_refs
-        ):
+        if self._reminder_source_loader is None or facts.evidence_ids != source_refs:
             raise ValueError("reminder_draft_source_loader_unavailable")
         loaded = self._reminder_source_loader(owner, source_refs)
         if inspect.isawaitable(loaded):
@@ -925,8 +880,8 @@ class GrowthProductionPipeline:
         if stage == "reflection":
             return base
         if stage == "reminder_draft":
-            _reminder_id, occurrence_id, _text, source_refs = (
-                _reminder_draft_request(request_payload)
+            _reminder_id, occurrence_id, _text, source_refs = _reminder_draft_request(
+                request_payload
             )
             expected_target = f"reminder:{occurrence_id}"
             scopes = tuple(item.scope for item in facts.delegated_grants)
@@ -935,10 +890,7 @@ class GrowthProductionPipeline:
                 or facts.owner_key != _owner_key(owner)
                 or facts.evidence_ids != source_refs
                 or scopes != ("read", "draft", "reversible_local")
-                or any(
-                    item.target != expected_target
-                    for item in facts.delegated_grants
-                )
+                or any(item.target != expected_target for item in facts.delegated_grants)
             ):
                 raise ValueError("reminder_draft_prepared_facts_invalid")
             return base
@@ -1000,8 +952,8 @@ class GrowthProductionPipeline:
         result: BackgroundRunCanonicalResultV1,
         request_payload: Mapping[str, Any],
     ) -> BackgroundRunDurableResultV1:
-        reminder_id, occurrence_id, reminder_text, source_refs = (
-            _reminder_draft_request(request_payload)
+        reminder_id, occurrence_id, reminder_text, source_refs = _reminder_draft_request(
+            request_payload
         )
         text = result.text.strip()
         if not text or len(text) > 64_000:
@@ -1035,9 +987,7 @@ class GrowthProductionPipeline:
         build = admitted.get("candidate_build")
         if not isinstance(build, Mapping):
             return
-        proposal = StructuredGrowthProposalV1.from_mapping(
-            json.loads(str(build["proposal_json"]))
-        )
+        proposal = StructuredGrowthProposalV1.from_mapping(json.loads(str(build["proposal_json"])))
         template = await self._targets.template(result.owner, proposal)
         job_id = "candidate-job:" + canonical_hash(
             {
@@ -1226,9 +1176,7 @@ class GrowthProductionPipeline:
             created_at=self._now(),
             tool_registry=self._tool_registry,
         )
-        _product, receipt = extension.product_and_receipt(
-            result.structured_result
-        )
+        _product, receipt = extension.product_and_receipt(result.structured_result)
         expectation = CandidateDraftReceiptExpectationV1(
             **{
                 name: getattr(receipt, name)
@@ -1241,12 +1189,8 @@ class GrowthProductionPipeline:
                 expectation=expectation,
             )
         service = CandidateCompositionService(
-            receipt_query=SqliteCandidateDraftReceiptQuery(
-                self._execution_database_path
-            ),
-            material_query=SqliteCandidateDraftMaterialQuery(
-                self._execution_database_path
-            ),
+            receipt_query=SqliteCandidateDraftReceiptQuery(self._execution_database_path),
+            material_query=SqliteCandidateDraftMaterialQuery(self._execution_database_path),
             store=self._store,
         )
         committed = service.create_candidate_from_builder_receipt(
@@ -1301,9 +1245,7 @@ class GrowthProductionPipeline:
                     "version": str(effect_policy.version),
                     "kind": str(effect_policy.kind),
                     "max_attempts": int(effect_policy.max_attempts),
-                    "reusable_across_branches": bool(
-                        effect_policy.reusable_across_branches
-                    ),
+                    "reusable_across_branches": bool(effect_policy.reusable_across_branches),
                 }
             )
             ref = tool_spec_fingerprint(spec)
@@ -1312,9 +1254,7 @@ class GrowthProductionPipeline:
                 "tool_name": name,
                 "spec_ref": ref,
                 "schema_hash": str(spec.schema_hash),
-                "execution_build_identity": canonical_hash(
-                    build.fingerprint_payload()
-                ),
+                "execution_build_identity": canonical_hash(build.fingerprint_payload()),
                 "effect_policy_hash": canonical_hash(policy_payload),
                 "effect": spec.effect_class.value,
                 "idempotent": spec.idempotency.value == "idempotent",
@@ -1350,9 +1290,7 @@ class GrowthProductionPipeline:
             [candidate_id, bundle.package.candidate_package_hash, suite_hash]
         )
         case_id = "case:" + canonical_hash(plan)[:32]
-        input_id = "input:" + canonical_hash(
-            [evaluation_id, case_id, list(evidence_ids)]
-        )
+        input_id = "input:" + canonical_hash([evaluation_id, case_id, list(evidence_ids)])
         runner_policy_hash = canonical_hash(
             {
                 "schema": "background-pairwise-runner-v1",
@@ -1366,21 +1304,13 @@ class GrowthProductionPipeline:
             evaluation={
                 "evaluation_id": evaluation_id,
                 "candidate_id": candidate_id,
-                "candidate_mode": CandidateMode(
-                    proposal.candidate_mode
-                ).value,
-                "candidate_package_hash": (
-                    bundle.package.candidate_package_hash
-                ),
-                "candidate_manifest_hash": (
-                    bundle.package.candidate_manifest_hash
-                ),
+                "candidate_mode": CandidateMode(proposal.candidate_mode).value,
+                "candidate_package_hash": (bundle.package.candidate_package_hash),
+                "candidate_manifest_hash": (bundle.package.candidate_manifest_hash),
                 "candidate_archive_hash": bundle.package.archive_hash,
                 "suite_hash": suite_hash,
                 "attempt_key": f"evaluation-attempt:{evaluation_id}",
-                "candidate_snapshot_hash": (
-                    bundle.package.candidate_package_hash
-                ),
+                "candidate_snapshot_hash": (bundle.package.candidate_package_hash),
                 "runner_id": "background-pairwise-v1",
                 "runner_policy_hash": runner_policy_hash,
                 "provider_id": "product-background-provider",
@@ -1392,9 +1322,7 @@ class GrowthProductionPipeline:
                     "input_id": input_id,
                     "case_id": case_id,
                     "source_kind": "historical_replay",
-                    "resource_ref": (
-                        f"growth-evidence:{canonical_hash(list(evidence_ids))}"
-                    ),
+                    "resource_ref": (f"growth-evidence:{canonical_hash(list(evidence_ids))}"),
                     "resource_hash": canonical_hash(list(evidence_ids)),
                     "source_event_refs": evidence_ids,
                     "input_envelope": {
@@ -1431,37 +1359,25 @@ class GrowthProductionPipeline:
         )
         tools = self._tool_manifest(candidate_tools)
         source_tools = self._tool_manifest(template.allowed_tools)
-        candidate_topology, candidate_permissions, _candidate_pack_effects = (
-            _tool_effect_topology(
-                candidate_manifest,
-                tool_registry=self._tool_registry,
-                allowed_tools=candidate_tools,
-            )
+        candidate_topology, candidate_permissions, _candidate_pack_effects = _tool_effect_topology(
+            candidate_manifest,
+            tool_registry=self._tool_registry,
+            allowed_tools=candidate_tools,
         )
-        source_topology, source_permissions, _source_pack_effects = (
-            _tool_effect_topology(
-                template.manifest_template,
-                tool_registry=self._tool_registry,
-                allowed_tools=template.allowed_tools,
-            )
+        source_topology, source_permissions, _source_pack_effects = _tool_effect_topology(
+            template.manifest_template,
+            tool_registry=self._tool_registry,
+            allowed_tools=template.allowed_tools,
         )
         candidate_effects = set(candidate_topology["effects"])
         source_effects = set(source_topology["effects"])
-        topology_expanded = not set(candidate_tools).issubset(
-            template.allowed_tools
-        )
+        topology_expanded = not set(candidate_tools).issubset(template.allowed_tools)
         topology_diff = EffectTopologyDiffV1(
-            permissions_added=tuple(
-                sorted(set(candidate_permissions) - set(source_permissions))
-            ),
-            effects_added=tuple(
-                sorted(candidate_effects - source_effects)
-            ),
+            permissions_added=tuple(sorted(set(candidate_permissions) - set(source_permissions))),
+            effects_added=tuple(sorted(candidate_effects - source_effects)),
             topology_expanded=topology_expanded,
         )
-        gate = ImmutableEvaluationGate(
-            EvaluationPermitIssuer(self._store)
-        ).issue(
+        gate = ImmutableEvaluationGate(EvaluationPermitIssuer(self._store)).issue(
             owner,
             identity=EvaluationIdentityV1(
                 evaluation_id=evaluation_id,
@@ -1499,9 +1415,7 @@ class GrowthProductionPipeline:
             f"A(old):\n{template.source_markdown}\n"
             f"B(candidate):\n{candidate_markdown}"
         )
-        job_id = "evaluation-job:" + canonical_hash(
-            [evaluation_id, gate.permit.permit_hash]
-        )
+        job_id = "evaluation-job:" + canonical_hash([evaluation_id, gate.permit.permit_hash])
         self._store.enqueue_job(
             owner,
             job_id=job_id,
@@ -1555,9 +1469,7 @@ class GrowthProductionPipeline:
             owner,
             candidate_id=str(request_payload["candidate_id"]),
         )
-        adapter_fingerprint = str(
-            request_payload["runner_policy_hash"]
-        )
+        adapter_fingerprint = str(request_payload["runner_policy_hash"])
         for variant in ("old", "candidate"):
             worker = f"growth-evaluator:{evaluation_id}:{variant}"
             fence = self._store.get_evaluation_execution_fence(
@@ -1577,10 +1489,7 @@ class GrowthProductionPipeline:
                 )
             else:
                 case = fence
-                if (
-                    str(case["case_status"]) != "leased"
-                    or str(case["claim_owner"]) != worker
-                ):
+                if str(case["case_status"]) != "leased" or str(case["claim_owner"]) != worker:
                     raise ValueError("evaluation_case_not_recoverable")
             launch_facts = {
                 "schema_version": 1,
@@ -1590,26 +1499,16 @@ class GrowthProductionPipeline:
                 "evaluation_id": evaluation_id,
                 "case_id": case_id,
                 "variant": variant,
-                "attempt_ordinal": int(
-                    case.get("attempt", case.get("attempt_ordinal", 1))
-                ),
-                "candidate_package_hash": (
-                    bundle.package.candidate_package_hash
-                ),
-                "candidate_manifest_hash": (
-                    bundle.package.candidate_manifest_hash
-                ),
+                "attempt_ordinal": int(case.get("attempt", case.get("attempt_ordinal", 1))),
+                "candidate_package_hash": (bundle.package.candidate_package_hash),
+                "candidate_manifest_hash": (bundle.package.candidate_manifest_hash),
                 "candidate_archive_hash": bundle.package.archive_hash,
                 "suite_hash": str(request_payload["suite_hash"]),
                 "permit_mode": str(permit["mode"]),
                 "permit_id": str(permit["permit_id"]),
                 "permit_hash": str(permit["permit_hash"]),
-                "case_lease_epoch": int(
-                    case.get("claim_epoch", case.get("case_lease_epoch"))
-                ),
-                "revocation_epoch": int(
-                    permit["issued_revocation_epoch"]
-                ),
+                "case_lease_epoch": int(case.get("claim_epoch", case.get("case_lease_epoch"))),
+                "revocation_epoch": int(permit["issued_revocation_epoch"]),
                 "adapter_id": "background-pairwise-v1",
                 "adapter_version": "1",
                 "adapter_fingerprint": adapter_fingerprint,
@@ -1723,9 +1622,7 @@ class GrowthProductionPipeline:
                 case_id=case_id,
                 variant=variant,
             )
-            launch_id = (
-                f"evaluation-launch:{canonical_hash([evaluation_id, case_id, variant])}"
-            )
+            launch_id = f"evaluation-launch:{canonical_hash([evaluation_id, case_id, variant])}"
             outcome = {
                 "assertions": {
                     "status": raw[f"{variant}_status"],
@@ -1734,9 +1631,7 @@ class GrowthProductionPipeline:
                 },
                 "judge_result": {
                     "improved": bool(raw["improved"]),
-                    "baseline_regression": bool(
-                        raw["baseline_regression"]
-                    ),
+                    "baseline_regression": bool(raw["baseline_regression"]),
                 },
                 "usage": {"background_run_id": result.execution_run_id},
             }
@@ -1814,9 +1709,7 @@ class GrowthProductionPipeline:
             owner,
             report_id=report_id,
             evaluation_id=evaluation_id,
-            candidate_package_hash=(
-                bundle.package.candidate_package_hash
-            ),
+            candidate_package_hash=(bundle.package.candidate_package_hash),
             dataset_hash=canonical_hash(
                 {
                     "case_id": case_id,
@@ -1895,9 +1788,7 @@ class GrowthProductionPipeline:
                 "attempt": next_attempt,
             }
         )
-        requested_change = str(
-            dict(proposal.structured_diff).get("requested_change") or ""
-        )
+        requested_change = str(dict(proposal.structured_diff).get("requested_change") or "")
         event = {
             "event_id": event_id,
             "source_kind": "execution_outcome",
@@ -1907,9 +1798,7 @@ class GrowthProductionPipeline:
             "reason_code": "independent_evaluation_failed_replan",
             "payload": {
                 "intent": requested_change,
-                "capability_id": (
-                    proposal.target.pack_id if proposal.target else "unscoped"
-                ),
+                "capability_id": (proposal.target.pack_id if proposal.target else "unscoped"),
                 "evaluation_report_id": report_id,
                 "candidate_id": bundle.candidate_id,
                 "evaluation_reason_code": str(verdict.reason_code),
@@ -1957,19 +1846,19 @@ class GrowthProductionPipeline:
             f"{self._MAX_SEMANTIC_REPLAN_ATTEMPTS} 次。"
         )
         job_payload = {
-                "purpose": "reflection",
-                "owner_key": _owner_key(result.owner),
-                "evidence_ids": [event_id],
-                "capture_growth": False,
-                "requires_idle": True,
-                "text": prompt,
-                "request_payload": {
-                    "companion_stage": "reflection",
-                    "growth_signal_ref": event_id,
-                    "growth_signal_hash": event_hash,
-                    "semantic_replan_attempt": next_attempt,
-                    "source_evaluation_report_id": report_id,
-                },
+            "purpose": "reflection",
+            "owner_key": _owner_key(result.owner),
+            "evidence_ids": [event_id],
+            "capture_growth": False,
+            "requires_idle": True,
+            "text": prompt,
+            "request_payload": {
+                "companion_stage": "reflection",
+                "growth_signal_ref": event_id,
+                "growth_signal_hash": event_hash,
+                "semantic_replan_attempt": next_attempt,
+                "source_evaluation_report_id": report_id,
+            },
         }
         return {
             "candidate_id": bundle.candidate_id,
@@ -1982,9 +1871,7 @@ class GrowthProductionPipeline:
                 "payload": job_payload,
                 "budget_reserved_tokens": 4_000,
                 "budget_reserved_ms": 120_000,
-                "reason_code": (
-                    "independent_evaluation_failed_replan_queued"
-                ),
+                "reason_code": ("independent_evaluation_failed_replan_queued"),
             },
         }
 
@@ -2000,11 +1887,7 @@ class GrowthProductionPipeline:
         target = proposal.target_fence
         if target is None:
             raise ValueError("activation_target_fence_missing")
-        action = (
-            MutationAction.INSTALL
-            if target.expected_absent
-            else MutationAction.UPDATE
-        )
+        action = MutationAction.INSTALL if target.expected_absent else MutationAction.UPDATE
         request_id = "activation-request:" + canonical_hash(
             [bundle.candidate_id, report_id, target.to_dict()]
         )
@@ -2016,9 +1899,7 @@ class GrowthProductionPipeline:
                 "package_hash": bundle.package.candidate_package_hash,
                 "target_fence": target.to_dict(),
                 "source_fence": (
-                    None
-                    if proposal.source_fence is None
-                    else proposal.source_fence.to_dict()
+                    None if proposal.source_fence is None else proposal.source_fence.to_dict()
                 ),
                 "action": action.value,
             }
@@ -2034,15 +1915,11 @@ class GrowthProductionPipeline:
             target_scope_key=target.scope_key,
             pack_id=bundle.package.pack_id,
             target_version=bundle.package.version,
-            target_manifest_hash=(
-                bundle.package.candidate_manifest_hash
-            ),
+            target_manifest_hash=(bundle.package.candidate_manifest_hash),
             target_package_hash=bundle.package.candidate_package_hash,
             target_archive_hash=bundle.package.archive_hash,
             source_fence=(
-                None
-                if proposal.source_fence is None
-                else proposal.source_fence.to_dict()
+                None if proposal.source_fence is None else proposal.source_fence.to_dict()
             ),
             target_expected_absent=target.expected_absent,
             target_expected_binding_generation=target.binding_generation,
@@ -2057,9 +1934,7 @@ class GrowthProductionPipeline:
             report_id=report_id,
             risk_id=risk_id,
             actor="system",
-            activation_package_hash=(
-                bundle.package.candidate_package_hash
-            ),
+            activation_package_hash=(bundle.package.candidate_package_hash),
             activation_code_digest=None,
             activation_risk_ack="none",
             reason_code="low_risk_auto_activation",

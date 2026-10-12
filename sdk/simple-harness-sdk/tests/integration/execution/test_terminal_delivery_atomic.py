@@ -139,16 +139,13 @@ def test_terminal_output_fault_never_exposes_partial_completion(
     path = tmp_path / "output-fault.db"
     database, uow, fence, runtime_lease = setup_root(path)
     connection = database.connection
-    connection.execute(
-        "INSERT INTO conversation_command_namespaces VALUES ('namespace','key',1)"
-    )
+    connection.execute("INSERT INTO conversation_command_namespaces VALUES ('namespace','key',1)")
     connection.execute(
         "INSERT INTO conversation_run_modes VALUES ('run-1','namespace','command',?,1)",
         ("a" * 64,),
     )
     connection.execute(
-        "INSERT INTO conversation_command_streams(run_id,namespace) "
-        "VALUES ('run-1','namespace')"
+        "INSERT INTO conversation_command_streams(run_id,namespace) VALUES ('run-1','namespace')"
     )
     connection.execute(
         "INSERT INTO conversation_commands(command_id,namespace,projection_key_id,run_id,"
@@ -171,12 +168,14 @@ def test_terminal_output_fault_never_exposes_partial_completion(
         )
     database.close()
     with Database.open(path) as reopened:
-        assert reopened.connection.execute(
-            "SELECT state FROM runs WHERE run_id='run-1'"
-        ).fetchone()[0] == "running"
-        assert reopened.connection.execute(
-            "SELECT count(*) FROM conversation_outputs"
-        ).fetchone()[0] == 0
+        assert (
+            reopened.connection.execute("SELECT state FROM runs WHERE run_id='run-1'").fetchone()[0]
+            == "running"
+        )
+        assert (
+            reopened.connection.execute("SELECT count(*) FROM conversation_outputs").fetchone()[0]
+            == 0
+        )
 
 
 @pytest.mark.parametrize("fault_point", WRITE_POINTS)

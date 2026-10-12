@@ -44,8 +44,12 @@ class DeepSeekV41TokenEstimator:
     bound_protocol = "deepseek-v41-chat-text-wire-only-v2"
 
     def __init__(
-        self, tokenizer_path: Path, *, model: str = "deepseek-flash",
-        tool_schema_mode: str = "legacy", thinking: str | None = None,
+        self,
+        tokenizer_path: Path,
+        *,
+        model: str = "deepseek-flash",
+        tool_schema_mode: str = "legacy",
+        thinking: str | None = None,
         reasoning_effort: str | None = None,
     ) -> None:
         if tool_schema_mode not in {"legacy", "deepseek-strict-v1"}:
@@ -86,8 +90,11 @@ class DeepSeekV41TokenEstimator:
                         "requires_prior_output_reserve": self.requires_prior_output_reserve,
                         "thinking": thinking,
                         "reasoning_effort": reasoning_effort,
-                        "serializer": ("openai-chat-payload-v1" if tool_schema_mode == "legacy"
-                                       else "openai-chat-deepseek-strict-v1"),
+                        "serializer": (
+                            "openai-chat-payload-v1"
+                            if tool_schema_mode == "legacy"
+                            else "openai-chat-deepseek-strict-v1"
+                        ),
                     }
                 ).encode("utf-8")
             ).hexdigest()
@@ -106,8 +113,11 @@ class DeepSeekV41TokenEstimator:
         from deepseek_recipe import ChatCompletionRequest, ConversionOptions
 
         payload = openai_chat_request_payload(
-            request, model=self._model, tool_schema_mode=self._tool_schema_mode,
-            thinking=self._thinking, reasoning_effort=self._reasoning_effort,
+            request,
+            model=self._model,
+            tool_schema_mode=self._tool_schema_mode,
+            thinking=self._thinking,
+            reasoning_effort=self._reasoning_effort,
         )
         converted = ChatCompletionRequest(payload).convert(ConversionOptions())
         return len(self._encoding.encode(converted.conversation))
@@ -127,7 +137,13 @@ class LegacyPriorOutputDeepSeekCounter(DeepSeekV41TokenEstimator):
     requires_prior_output_reserve = True
     bound_protocol = "deepseek-v41-chat-text-plus-prior-output-v1"
 
-    def __init__(self, tokenizer_path: Path, *, model: str = "deepseek-flash", tool_schema_mode: str = "legacy") -> None:
+    def __init__(
+        self,
+        tokenizer_path: Path,
+        *,
+        model: str = "deepseek-flash",
+        tool_schema_mode: str = "legacy",
+    ) -> None:
         super().__init__(tokenizer_path, model=model, tool_schema_mode=tool_schema_mode)
         self.fingerprint = (
             "deepseek-v41:"
@@ -140,12 +156,20 @@ class LegacyPriorOutputDeepSeekCounter(DeepSeekV41TokenEstimator):
                         "model": model,
                         "bound_protocol": self.bound_protocol,
                         "requires_prior_output_reserve": True,
-                        "serializer": ("openai-chat-payload-v1" if tool_schema_mode == "legacy"
-                                       else "openai-chat-deepseek-strict-v1"),
+                        "serializer": (
+                            "openai-chat-payload-v1"
+                            if tool_schema_mode == "legacy"
+                            else "openai-chat-deepseek-strict-v1"
+                        ),
                     }
                 ).encode("utf-8")
             ).hexdigest()
         )
 
 
-__all__ = ("DeepSeekV41TokenEstimator", "LegacyPriorOutputDeepSeekCounter", "TOKENIZER_SHA256", "TOKENIZER_URL")
+__all__ = (
+    "DeepSeekV41TokenEstimator",
+    "LegacyPriorOutputDeepSeekCounter",
+    "TOKENIZER_SHA256",
+    "TOKENIZER_URL",
+)

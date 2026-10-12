@@ -1,4 +1,5 @@
 """走生产代码 image_tools.generate_images 实出一张图，证明 seedream-4.0 端到端通。"""
+
 from __future__ import annotations
 
 import os
@@ -24,6 +25,7 @@ r = results[0] if results else {}
 print("result keys:", list(r.keys()) if isinstance(r, dict) else type(r))
 if isinstance(r, dict) and r.get("path"):
     import os as _os
+
     p = r["path"]
     print(f"✅ PNG 落盘: {p}  size={_os.path.getsize(p)} bytes  exists={_os.path.exists(p)}")
 else:

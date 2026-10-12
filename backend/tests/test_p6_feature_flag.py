@@ -20,6 +20,7 @@ release as an opt-OUT switch. Tests verify:
   * Anything else also returns True (the flag is "on unless explicitly
     disabled").
 """
+
 from __future__ import annotations
 
 import os

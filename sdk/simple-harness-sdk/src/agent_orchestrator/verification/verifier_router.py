@@ -102,7 +102,8 @@ class VerifierRouter:
         reuse: Mapping[str, LayerResult] | None = None,
         needs_human_allowed: bool = True,
         domain: DomainProfileV1 | None = None,
-        local_check_recorder_factory: Callable[[dict[str, Any]], LocalVerificationRecorder] | None = None,
+        local_check_recorder_factory: Callable[[dict[str, Any]], LocalVerificationRecorder]
+        | None = None,
     ) -> Verdict:
         actual_domain = domain if domain is not None else self._domain
         handler = handler_for(actual_domain)
@@ -113,10 +114,16 @@ class VerifierRouter:
             from .assurance_local import freeze_verifier_inputs
 
             return freeze_verifier_inputs(
-                mission=mission, task=task, envelope=envelope, artifacts=artifacts,
-                verification_copy=verification_copy, client_result_id=client_result_id,
-                tampered=tampered, knowledge=knowledge,
-                local_code_execution=self._local_code_execution, domain=actual_domain,
+                mission=mission,
+                task=task,
+                envelope=envelope,
+                artifacts=artifacts,
+                verification_copy=verification_copy,
+                client_result_id=client_result_id,
+                tampered=tampered,
+                knowledge=knowledge,
+                local_code_execution=self._local_code_execution,
+                domain=actual_domain,
             )
 
         if local_check_recorder_factory is not None:
@@ -164,9 +171,14 @@ class VerifierRouter:
 
         def run_rules() -> LayerResult:
             result = handler.rules(
-                envelope, task, artifacts=artifacts, verification_copy=verification_copy,
-                tampered=tampered, knowledge=knowledge,
-                local_code_execution=self._local_code_execution, domain=actual_domain,
+                envelope,
+                task,
+                artifacts=artifacts,
+                verification_copy=verification_copy,
+                tampered=tampered,
+                knowledge=knowledge,
+                local_code_execution=self._local_code_execution,
+                domain=actual_domain,
             )
             return result
 
@@ -205,7 +217,9 @@ class VerifierRouter:
                 if layer == "critic_review":
                     critic = CriticVerdict.from_json(result.detail)
             elif layer == "format_check":
-                result = local(layer, lambda: format_check(envelope, client_result_id=client_result_id))
+                result = local(
+                    layer, lambda: format_check(envelope, client_result_id=client_result_id)
+                )
             elif layer == "rule_check":
                 result = local(layer, run_rules)
             elif layer == "critic_review":
@@ -258,7 +272,12 @@ class VerifierRouter:
                             + "; ".join(
                                 # Assurance review findings carry ``description`` (2026-09-25
                                 # desktop run showed "blocker: None; None").
-                                str(f.get("detail") or f.get("description") or f.get("criterion_id") or "?")
+                                str(
+                                    f.get("detail")
+                                    or f.get("description")
+                                    or f.get("criterion_id")
+                                    or "?"
+                                )
                                 for f in critic.findings
                                 if f.get("severity") == "blocker"
                             ),
@@ -283,8 +302,12 @@ class VerifierRouter:
                     except ContractError as error:
                         # 带码的错误（审阅调用被打断）把码放进明细：下游按码判，不读这句话
                         code = getattr(error, "code", None)
-                        result = LayerResult(layer, ERROR, f"critic verdict unusable: {error}",
-                                             {"code": code} if isinstance(code, str) and code else {})
+                        result = LayerResult(
+                            layer,
+                            ERROR,
+                            f"critic verdict unusable: {error}",
+                            {"code": code} if isinstance(code, str) and code else {},
+                        )
             elif layer == "code_test" and not self._local_code_execution:
                 # host support 0.9.8: a Task from before the switch still asks for the layer;
                 # it cannot run here, which is an ERROR — never a PASS or NOT_REQUIRED

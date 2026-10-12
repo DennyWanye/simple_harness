@@ -197,18 +197,13 @@ class AuditStore:
             with self.connect() as db:
                 db.executemany(
                     "INSERT OR IGNORE INTO audit_source_rejections VALUES (?,?,?,?)",
-                    [
-                        (key, owner_ref, "source_binding_invalid", self.clock())
-                        for key in keys
-                    ],
+                    [(key, owner_ref, "source_binding_invalid", self.clock()) for key in keys],
                 )
 
         if keys:
             await asyncio.to_thread(record)
 
-    async def claim(
-        self, worker: str, *, lease_seconds: float = 60
-    ) -> ReadClaim | None:
+    async def claim(self, worker: str, *, lease_seconds: float = 60) -> ReadClaim | None:
         def claim() -> ReadClaim | None:
             now = self.clock()
             with self.connect() as db:
@@ -235,8 +230,7 @@ class AuditStore:
                     )
                     return None
                 unresolved = db.execute(
-                    "SELECT attempt_id FROM audit_attempts WHERE job_id=? "
-                    "AND settled_at IS NULL",
+                    "SELECT attempt_id FROM audit_attempts WHERE job_id=? AND settled_at IS NULL",
                     (job["job_id"],),
                 ).fetchall()
                 if unresolved:
@@ -335,9 +329,7 @@ class AuditStore:
             }
             return (
                 digest(page) == last["input_hash"]
-                and page["snapshot_hash"]
-                == last["snapshot_hash"]
-                == job["snapshot_hash"]
+                and page["snapshot_hash"] == last["snapshot_hash"] == job["snapshot_hash"]
                 and page["page_hash"] == last["page_hash"]
                 and page["next_cursor"] == job["next_cursor"]
                 and canonical(header) == job["header_json"]
@@ -415,8 +407,7 @@ class AuditStore:
                     "SELECT * FROM audit_jobs WHERE job_id=?", (claim.job["job_id"],)
                 ).fetchone()
                 if page["page_index"] != current["next_page"] or (
-                    current["header_json"] is not None
-                    and current["header_json"] != header
+                    current["header_json"] is not None and current["header_json"] != header
                 ):
                     raise AuditStoreError("audit_page_binding_conflict")
                 db.execute(
@@ -504,9 +495,7 @@ class AuditStore:
         """One Run, one page in memory, once before enumerated; no SDK read."""
         expected = json.loads(header)
         pages, operations = 0, 0
-        rows = db.execute(
-            "SELECT * FROM audit_pages WHERE job_id=? ORDER BY page_index", (job_id,)
-        )
+        rows = db.execute("SELECT * FROM audit_pages WHERE job_id=? ORDER BY page_index", (job_id,))
         try:
             for row in rows:
                 if len(row["payload_json"].encode()) > 2 * 1024 * 1024:
@@ -531,27 +520,21 @@ class AuditStore:
                 last = pages + 1 == expected["total_pages"]
                 cursor = value["next_cursor"]
                 if (last and cursor is not None) or (
-                    not last
-                    and (type(cursor) is not str or not 1 <= len(cursor) <= 4096)
+                    not last and (type(cursor) is not str or not 1 <= len(cursor) <= 4096)
                 ):
                     return False
                 pages += 1
                 operations += len(value["operations"])
         except (ValueError, TypeError, KeyError, AttributeError):
             return False
-        return (
-            pages == expected["total_pages"]
-            and operations == expected["total_operations"]
-        )
+        return pages == expected["total_pages"] and operations == expected["total_operations"]
 
     async def inspect(self, job_id: str) -> dict[str, Any]:
         """Trusted in-process read; not a remotely authorized audit endpoint."""
 
         def read() -> dict[str, Any]:
             with self.connect() as db:
-                row = db.execute(
-                    "SELECT * FROM audit_jobs WHERE job_id=?", (job_id,)
-                ).fetchone()
+                row = db.execute("SELECT * FROM audit_jobs WHERE job_id=?", (job_id,)).fetchone()
                 return {
                     "job": None if row is None else dict(row),
                     **{

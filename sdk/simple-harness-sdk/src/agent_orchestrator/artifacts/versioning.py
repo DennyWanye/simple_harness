@@ -77,8 +77,15 @@ class UpstreamInput:
 
     @classmethod
     def from_json(cls, value: Mapping[str, Any]) -> UpstreamInput:
-        if set(value) != {"task_id", "path", "content_hash", "artifact_id", "acceptance_id",
-                          "witness_id", "carried_from"}:
+        if set(value) != {
+            "task_id",
+            "path",
+            "content_hash",
+            "artifact_id",
+            "acceptance_id",
+            "witness_id",
+            "carried_from",
+        }:
             raise ContractError("TASKGRAPH_FROZEN_INPUT_VERSION_RETIRED")
         return cls(
             str(value["task_id"]),
@@ -253,26 +260,47 @@ def manifest_upstream_inputs(
     for entry in plan.entries:
         artifact_id = entry.artifact_ids[0] if entry.artifact_ids else ""
         port = next(
-            (bindings_by_id[item] for item in entry.binding_ids
-             if item in bindings_by_id and bindings_by_id[item].artifact_id == artifact_id),
+            (
+                bindings_by_id[item]
+                for item in entry.binding_ids
+                if item in bindings_by_id and bindings_by_id[item].artifact_id == artifact_id
+            ),
             None,
         )
         if port is not None:
-            inputs.append(UpstreamInput(str(port.producer_task_ref), entry.target.path,
-                                        entry.content_hash, artifact_id,
-                                        port.acceptance_id, port.witness_id, None))
+            inputs.append(
+                UpstreamInput(
+                    str(port.producer_task_ref),
+                    entry.target.path,
+                    entry.content_hash,
+                    artifact_id,
+                    port.acceptance_id,
+                    port.witness_id,
+                    None,
+                )
+            )
             continue
         delivery = next(
-            (deliveries_by_id[item] for item in entry.binding_ids
-             if item in deliveries_by_id and deliveries_by_id[item].artifact_id == artifact_id),
+            (
+                deliveries_by_id[item]
+                for item in entry.binding_ids
+                if item in deliveries_by_id and deliveries_by_id[item].artifact_id == artifact_id
+            ),
             None,
         )
         if delivery is None:  # a plan entry always comes from one of the two binding kinds
             raise ArtifactConflict(f"manifest entry {entry.target.path!r} names no binding")
-        inputs.append(UpstreamInput(str(delivery.producer_task_ref), entry.target.path,
-                                    entry.content_hash, artifact_id, delivery.acceptance_id,
-                                    delivery.witness_id,
-                                    None if delivery.carried_from is None else str(delivery.carried_from)))
+        inputs.append(
+            UpstreamInput(
+                str(delivery.producer_task_ref),
+                entry.target.path,
+                entry.content_hash,
+                artifact_id,
+                delivery.acceptance_id,
+                delivery.witness_id,
+                None if delivery.carried_from is None else str(delivery.carried_from),
+            )
+        )
     return sorted(inputs, key=lambda item: item.path)
 
 

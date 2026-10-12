@@ -89,74 +89,101 @@ class _ExternallyScoredWorld:
     def execute(self, code: str) -> str:
         return self._world.execute(code)
 
-    def observe_public_api(self, app: str, api: str
-                           ) -> tuple[dict[str, str | None], str]:
+    def observe_public_api(self, app: str, api: str) -> tuple[dict[str, str | None], str]:
         """Independent service Requester, never the agent's Python shell."""
         if (app, api) not in PUBLIC_READ_APIS:
             raise ValueError("API is not authorized for observation")
         request = Request(
             self._world.remote_environment_url.rstrip("/") + "/host_public_observation",
-            data=canonical({"task_id": self._task_id, "experiment_name": self._experiment_name,
-                            "app": app, "api": api, "parameters": {}}),
-            headers={"Content-Type": "application/json"}, method="POST",
+            data=canonical(
+                {
+                    "task_id": self._task_id,
+                    "experiment_name": self._experiment_name,
+                    "app": app,
+                    "api": api,
+                    "parameters": {},
+                }
+            ),
+            headers={"Content-Type": "application/json"},
+            method="POST",
         )
         with urlopen(request, timeout=30) as stream:
             payload = stream.read(65537)
         if len(payload) > 65536:
             raise ValueError("public observation response exceeds limit")
         envelope = json.loads(payload)
-        if (not isinstance(envelope, dict)
-                or set(envelope) != {"task_id", "experiment_name", "app", "api",
-                                     "response", "identity"}
-                or envelope["task_id"] != self._task_id
-                or envelope["experiment_name"] != self._experiment_name
-                or envelope["app"] != app or envelope["api"] != api
-                or not isinstance(envelope["identity"], str)
-                or not envelope["identity"]):
+        if (
+            not isinstance(envelope, dict)
+            or set(envelope) != {"task_id", "experiment_name", "app", "api", "response", "identity"}
+            or envelope["task_id"] != self._task_id
+            or envelope["experiment_name"] != self._experiment_name
+            or envelope["app"] != app
+            or envelope["api"] != api
+            or not isinstance(envelope["identity"], str)
+            or not envelope["identity"]
+        ):
             raise ValueError("public observation world identity differs")
         return project(app, api, envelope["response"]), envelope["identity"]
 
     def public_observation_identity(self) -> str:
-        query = urlencode({"task_id": self._task_id,
-                           "experiment_name": self._experiment_name})
-        url = (self._world.remote_environment_url.rstrip("/")
-               + "/host_observation_identity?" + query)
+        query = urlencode({"task_id": self._task_id, "experiment_name": self._experiment_name})
+        url = self._world.remote_environment_url.rstrip("/") + "/host_observation_identity?" + query
         with urlopen(url, timeout=5) as stream:
             payload = stream.read(1025)
         if len(payload) > 1024:
             raise ValueError("observation identity response exceeds limit")
         envelope = json.loads(payload)
-        if (not isinstance(envelope, dict) or set(envelope) != {"identity"}
-                or not isinstance(envelope["identity"], str)):
+        if (
+            not isinstance(envelope, dict)
+            or set(envelope) != {"identity"}
+            or not isinstance(envelope["identity"], str)
+        ):
             raise ValueError("invalid observation identity")
         return envelope["identity"]
 
     def observe_registered_state(self, policy: AppWorldStatePolicy) -> tuple[dict[str, Any], str]:
-        request_identity = {"task_id": self._task_id, "experiment_name": self._experiment_name,
-                            "policy_hash": policy.content_hash}
-        request = Request(self._world.remote_environment_url.rstrip("/") + "/host_state_observation",
-                          data=canonical(request_identity), headers={"Content-Type": "application/json"},
-                          method="POST")
+        request_identity = {
+            "task_id": self._task_id,
+            "experiment_name": self._experiment_name,
+            "policy_hash": policy.content_hash,
+        }
+        request = Request(
+            self._world.remote_environment_url.rstrip("/") + "/host_state_observation",
+            data=canonical(request_identity),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
         with urlopen(request, timeout=30) as stream:
             raw = stream.read(65537)
         if len(raw) > 65536:
             raise ValueError("state observation exceeds limit")
         body = json.loads(raw)
-        if (not isinstance(body, dict) or set(body) != {*request_identity, "result", "identity"}
-                or any(body[key] != value for key, value in request_identity.items())
-                or not isinstance(body["identity"], str) or not body["identity"]):
+        if (
+            not isinstance(body, dict)
+            or set(body) != {*request_identity, "result", "identity"}
+            or any(body[key] != value for key, value in request_identity.items())
+            or not isinstance(body["identity"], str)
+            or not body["identity"]
+        ):
             raise ValueError("state observation identity differs")
         return policy.validate_result(body["result"]), body["identity"]
 
     def dataset_identity(self) -> str:
         query = urlencode({"task_id": self._task_id, "experiment_name": self._experiment_name})
-        with urlopen(self._world.remote_environment_url.rstrip("/") + "/host_dataset_identity?" + query,
-                     timeout=30) as response:
+        with urlopen(
+            self._world.remote_environment_url.rstrip("/") + "/host_dataset_identity?" + query,
+            timeout=30,
+        ) as response:
             raw = response.read(1025)
         body = json.loads(raw)
-        if (len(raw) > 1024 or not isinstance(body, dict) or set(body) != {"identity", "dataset_hash"}
-                or body["identity"] != self.public_observation_identity()
-                or not isinstance(body["dataset_hash"], str) or len(body["dataset_hash"]) != 64):
+        if (
+            len(raw) > 1024
+            or not isinstance(body, dict)
+            or set(body) != {"identity", "dataset_hash"}
+            or body["identity"] != self.public_observation_identity()
+            or not isinstance(body["dataset_hash"], str)
+            or len(body["dataset_hash"]) != 64
+        ):
             raise ValueError("actual task dataset identity differs")
         return body["dataset_hash"]
 
@@ -246,7 +273,8 @@ class AppWorldEpisode:
             run_id=config.experiment_name, task_id=config.task_id
         )
         self._api_observations = AppWorldAPILedger(
-            run_id=config.experiment_name, task_id=config.task_id,
+            run_id=config.experiment_name,
+            task_id=config.task_id,
             episode_id=self._observations.episode_id,
         )
         factory = _default_world_factory if world_factory is None else world_factory
@@ -353,9 +381,14 @@ class AppWorldEpisode:
         """Keep episode mutations out of a Host observation's commit window."""
         with self._lock:
             if not self.verify_api_observation(
-                receipt, run_id=self.run_id, episode_id=self.episode_id,
-                task_id=self.config.task_id, world_version=self.world_version,
-                app=app, api=api, response=response,
+                receipt,
+                run_id=self.run_id,
+                episode_id=self.episode_id,
+                task_id=self.config.task_id,
+                world_version=self.world_version,
+                app=app,
+                api=api,
+                response=response,
             ):
                 raise ValueError("AppWorld API observation is not current")
             yield
@@ -397,8 +430,9 @@ class AppWorldEpisode:
                 world_version=world_version,
             )
 
-    def observe_public_api(self, app: str, api: str, *, parameters: Mapping[str, Any] | None = None
-                           ) -> tuple[AppWorldAPIReceipt, dict[str, str | None]]:
+    def observe_public_api(
+        self, app: str, api: str, *, parameters: Mapping[str, Any] | None = None
+    ) -> tuple[AppWorldAPIReceipt, dict[str, str | None]]:
         """Host-only current-world GET; return a registered receipt and safe projection."""
         with self._lock:
             if self._finalized:
@@ -414,22 +448,35 @@ class AppWorldEpisode:
                 response, identity = observation, None
             response = project(app, api, response)
             receipt = self._api_observations.record(
-                world_version=self._observations.world_version, app=app, api=api,
-                response=response, service_identity=identity,
+                world_version=self._observations.world_version,
+                app=app,
+                api=api,
+                response=response,
+                service_identity=identity,
             )
             return receipt, response
 
-    def list_api_observations(self, *, current_only: bool = False
-                              ) -> tuple[AppWorldAPIReceipt, ...]:
+    def list_api_observations(
+        self, *, current_only: bool = False
+    ) -> tuple[AppWorldAPIReceipt, ...]:
         with self._lock:
             return self._api_observations.list_receipts(
                 world_version=self._observations.world_version if current_only else None
             )
 
-    def verify_api_observation(self, receipt: AppWorldAPIReceipt, *, run_id: str,
-                               episode_id: str, task_id: str, world_version: int,
-                               app: str, api: str, response: Any,
-                               blocking: bool = True) -> bool:
+    def verify_api_observation(
+        self,
+        receipt: AppWorldAPIReceipt,
+        *,
+        run_id: str,
+        episode_id: str,
+        task_id: str,
+        world_version: int,
+        app: str,
+        api: str,
+        response: Any,
+        blocking: bool = True,
+    ) -> bool:
         # Core acceptance may already own Store's transaction lock. A concurrent
         # mutation owns the episode lock and revokes in Store; never invert them.
         if not self._lock.acquire(blocking=blocking):
@@ -438,15 +485,27 @@ class AppWorldEpisode:
             if self._finalized:
                 return False
             try:
-                identity = (self._world.public_observation_identity()
-                            if isinstance(self._world, _ExternallyScoredWorld) else None)
+                identity = (
+                    self._world.public_observation_identity()
+                    if isinstance(self._world, _ExternallyScoredWorld)
+                    else None
+                )
             except (OSError, ValueError, RuntimeError, KeyError, TimeoutError):
                 return False
-            return (self._api_observations.verify(
-                receipt, run_id=run_id, task_id=task_id, episode_id=episode_id,
-                world_version=world_version, app=app, api=api, response=response,
-                service_identity=identity,
-            ) and world_version == self._observations.world_version)
+            return (
+                self._api_observations.verify(
+                    receipt,
+                    run_id=run_id,
+                    task_id=task_id,
+                    episode_id=episode_id,
+                    world_version=world_version,
+                    app=app,
+                    api=api,
+                    response=response,
+                    service_identity=identity,
+                )
+                and world_version == self._observations.world_version
+            )
         finally:
             self._lock.release()
 
@@ -456,12 +515,14 @@ class AppWorldEpisode:
                 raise RuntimeError("dataset identity requires the actual independent service")
             return self._world.dataset_identity()
 
-    def observe_registered_state(self, policy: AppWorldStatePolicy
-                                 ) -> tuple[AppWorldStateReceipt, dict[str, Any]]:
+    def observe_registered_state(
+        self, policy: AppWorldStatePolicy
+    ) -> tuple[AppWorldStateReceipt, dict[str, Any]]:
         """Read trusted service state; never call the hidden official evaluator."""
         from uuid import uuid4
 
         from .appworld_api_observations import digest
+
         with self._lock:
             if self._finalized or not isinstance(self._world, _ExternallyScoredWorld):
                 raise RuntimeError("state observation requires a live independent AppWorld service")
@@ -470,18 +531,32 @@ class AppWorldEpisode:
             result, identity = self._world.observe_registered_state(policy)
             if identity != self._world.public_observation_identity():
                 raise RuntimeError("AppWorld changed during state observation")
-            receipt = AppWorldStateReceipt(uuid4().hex, self.run_id, self.config.task_id,
-                self.episode_id, self.world_version, identity, policy.content_hash, digest(result))
+            receipt = AppWorldStateReceipt(
+                uuid4().hex,
+                self.run_id,
+                self.config.task_id,
+                self.episode_id,
+                self.world_version,
+                identity,
+                policy.content_hash,
+                digest(result),
+            )
             self._state_observations[receipt.receipt_id] = receipt
             return receipt, result
 
-    def verify_state_observation(self, receipt: AppWorldStateReceipt, result: dict[str, Any]) -> bool:
+    def verify_state_observation(
+        self, receipt: AppWorldStateReceipt, result: dict[str, Any]
+    ) -> bool:
         with self._lock:
-            if (self._finalized or type(receipt) is not AppWorldStateReceipt
-                    or self._state_observations.get(receipt.receipt_id) != receipt
-                    or (receipt.run_id, receipt.task_id, receipt.episode_id, receipt.world_version)
-                    != (self.run_id, self.config.task_id, self.episode_id, self.world_version)
-                    or not receipt.matches(result) or not isinstance(self._world, _ExternallyScoredWorld)):
+            if (
+                self._finalized
+                or type(receipt) is not AppWorldStateReceipt
+                or self._state_observations.get(receipt.receipt_id) != receipt
+                or (receipt.run_id, receipt.task_id, receipt.episode_id, receipt.world_version)
+                != (self.run_id, self.config.task_id, self.episode_id, self.world_version)
+                or not receipt.matches(result)
+                or not isinstance(self._world, _ExternallyScoredWorld)
+            ):
                 return False
             try:
                 return receipt.service_identity == self._world.public_observation_identity()

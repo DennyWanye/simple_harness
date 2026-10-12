@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: BUSL-1.1
 """Crash-resumable v33 reset of pre-upgrade conversation-owned storage."""
+
 from __future__ import annotations
 
 import asyncio
@@ -189,15 +190,19 @@ def _clear_selected_tables(
             )
             if select(str(row[0]))
         ]
-        trigger_rows = [
-            (str(row[0]), str(row[1]))
-            for row in db.execute(
-                "SELECT name,sql FROM sqlite_master WHERE type='trigger' "
-                "AND tbl_name IN (%s) AND sql IS NOT NULL ORDER BY name"
-                % ",".join("?" for _ in tables),
-                tables,
-            )
-        ] if tables else []
+        trigger_rows = (
+            [
+                (str(row[0]), str(row[1]))
+                for row in db.execute(
+                    "SELECT name,sql FROM sqlite_master WHERE type='trigger' "
+                    "AND tbl_name IN (%s) AND sql IS NOT NULL ORDER BY name"
+                    % ",".join("?" for _ in tables),
+                    tables,
+                )
+            ]
+            if tables
+            else []
+        )
         db.execute("BEGIN IMMEDIATE")
         try:
             for trigger, _ in trigger_rows:
@@ -377,14 +382,14 @@ async def finalize_legacy_session_reset(
         await db.execute("PRAGMA foreign_keys=ON")
         violations = await (await db.execute("PRAGMA foreign_key_check")).fetchall()
         if violations:
-            raise LegacySessionResetError(
-                f"state_foreign_key_check_failed:{violations[0][0]}"
-            )
+            raise LegacySessionResetError(f"state_foreign_key_check_failed:{violations[0][0]}")
         for table in _STATE_EMPTY_TABLES:
             count = int(
-                (await (await db.execute(
-                    f"SELECT COUNT(*) FROM {_quote_identifier(table)}"
-                )).fetchone())[0]
+                (
+                    await (
+                        await db.execute(f"SELECT COUNT(*) FROM {_quote_identifier(table)}")
+                    ).fetchone()
+                )[0]
             )
             if count:
                 raise LegacySessionResetError(f"legacy_rows_remaining:{table}:{count}")

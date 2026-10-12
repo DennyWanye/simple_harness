@@ -18,10 +18,21 @@ def _ref(seed: int) -> str:
 def _snapshot() -> dict:
     policies = {
         name: _ref(index + 20)
-        for index, name in enumerate((
-            "compiler", "route", "extraction", "llm_extract", "llm_repair",
-            "llm_inference", "admission", "inference", "assessment", "claim", "quality",
-        ))
+        for index, name in enumerate(
+            (
+                "compiler",
+                "route",
+                "extraction",
+                "llm_extract",
+                "llm_repair",
+                "llm_inference",
+                "admission",
+                "inference",
+                "assessment",
+                "claim",
+                "quality",
+            )
+        )
     }
     base = {
         "schema_version": 1,
@@ -39,10 +50,16 @@ def _snapshot() -> dict:
         "provenance_refs": [_ref(6), _ref(7)],
         "policy_refs": policies,
     }
-    base["closure_refs"] = sorted({
-        base["spec_ref"], base["assessment_ref"], base["claim_batch_ref"],
-        *base["fact_batch_refs"], *base["provenance_refs"], *policies.values(),
-    })
+    base["closure_refs"] = sorted(
+        {
+            base["spec_ref"],
+            base["assessment_ref"],
+            base["claim_batch_ref"],
+            *base["fact_batch_refs"],
+            *base["provenance_refs"],
+            *policies.values(),
+        }
+    )
     semantic_hash = hashlib.sha256(canonical_json(base).encode("utf-8")).hexdigest()
     return {
         **base,

@@ -70,25 +70,29 @@ MESSAGE_TYPES = (
 
 
 #: 根隔离时仍开着的读动词：非披露诊断，以及三个保证读动词的隔离分支（答 ROOT_QUARANTINED）。
-QUARANTINE_READS = frozenset({
-    "mission_assurance_root_diagnostic",
-    "mission_assurance_snapshot",
-    "mission_assurance_review",
-    "mission_assurance_use_check",
-})
+QUARANTINE_READS = frozenset(
+    {
+        "mission_assurance_root_diagnostic",
+        "mission_assurance_snapshot",
+        "mission_assurance_review",
+        "mission_assurance_use_check",
+    }
+)
 
 #: 降级恢复（H01，SDK 恢复协议没走完）时仍开着的动词：只读与诊断。新任务、改要求、裁决、取消都不开——
 #: SDK 这时禁副作用，循环不进周期；人先看 ``orchestration_status.recovery`` 里失败的那一步。
-DEGRADED_RECOVERY_READS = QUARANTINE_READS | frozenset({
-    "mission_list",
-    "mission_get",
-    "mission_events",
-    "mission_notices",
-    "mission_approval_list",
-    "mission_operation_intent_status",
-    "mission_artifact_read",
-    "mission_diagnostics",
-})
+DEGRADED_RECOVERY_READS = QUARANTINE_READS | frozenset(
+    {
+        "mission_list",
+        "mission_get",
+        "mission_events",
+        "mission_notices",
+        "mission_approval_list",
+        "mission_operation_intent_status",
+        "mission_artifact_read",
+        "mission_diagnostics",
+    }
+)
 
 
 def _ok(msg_type: str, request_id: Any, data: Any) -> dict[str, Any]:
@@ -127,7 +131,11 @@ async def handle(
         request_id = body.pop("request_id", request_id)
     if msg_type == "orchestration_status":
         if service is None:
-            return _ok(msg_type, request_id, {"available": False, "state": "absent", "reason": "编排服务未启动"})
+            return _ok(
+                msg_type,
+                request_id,
+                {"available": False, "state": "absent", "reason": "编排服务未启动"},
+            )
         return _ok(msg_type, request_id, service.status())
     status = {} if service is None else service.status()
     # review P2-1: a degraded loop still answers reads, cancel, decisions and takeovers so a
@@ -159,9 +167,12 @@ async def handle(
         except Exception as error:
             from .assurance import AssuranceRequestError
             from .taskgraph import TaskGraphRequestError
+
             if isinstance(error, (TaskGraphRequestError, AssuranceRequestError)):
                 # 错误回执同样经投影；不合合同就整条按协议错回，不挂原回执
-                key, contract = ERROR_WIRES["taskgraph" if isinstance(error, TaskGraphRequestError) else "assurance"]
+                key, contract = ERROR_WIRES[
+                    "taskgraph" if isinstance(error, TaskGraphRequestError) else "assurance"
+                ]
                 wire = project_error(msg_type, contract, error.wire)
                 response = _error(msg_type, request_id, error.code, str(error))
                 response["payload"][key] = wire
@@ -170,7 +181,12 @@ async def handle(
     except Exception as error:  # the socket loop must never see an exception
         if isinstance(error, ProtocolError):
             # 原因只进 Host 日志，界面只拿到一句大白话
-            logger.warning("orchestration reply refused: %s violates %s: %s", error.verb, error.contract, error.reason)
+            logger.warning(
+                "orchestration reply refused: %s violates %s: %s",
+                error.verb,
+                error.contract,
+                error.reason,
+            )
         code = getattr(error, "code", None)
         if isinstance(code, str) and code:
             return _error(msg_type, request_id, code, str(error))
@@ -197,6 +213,7 @@ def _operation_submit(service: Any, body: Mapping[str, Any]) -> Any:
 def _operation_status(service: Any, body: Mapping[str, Any]) -> Any:
     if set(body) != {"intent_id"} or not _text(body, "intent_id"):
         from .service import OrchestrationRequestError
+
         raise OrchestrationRequestError("invalid_request", "需要 intent_id")
     return service.operation_intent_status(_text(body, "intent_id"))
 
@@ -211,8 +228,6 @@ def _source_supersede(service: Any, body: Mapping[str, Any]) -> Any:
 
 def _source_revoke(service: Any, body: Mapping[str, Any]) -> Any:
     return service.source_command("revoke", dict(body))
-
-
 
 
 def _list(service: Any, body: Mapping[str, Any]) -> Any:
@@ -256,12 +271,17 @@ def _decide(service: Any, body: Mapping[str, Any]) -> Any:
 
 def _takeover(service: Any, body: Mapping[str, Any]) -> Any:
     return service.takeover(
-        _text(body, "task_id"), _text(body, "action"), basis=_text(body, "basis"), note=_text(body, "note")
+        _text(body, "task_id"),
+        _text(body, "action"),
+        basis=_text(body, "basis"),
+        note=_text(body, "note"),
     )
 
 
 def _resolve_unknown(service: Any, body: Mapping[str, Any]) -> Any:
-    return service.resolve_unknown(_text(body, "action_key"), _text(body, "outcome"), basis=_text(body, "basis"))
+    return service.resolve_unknown(
+        _text(body, "action_key"), _text(body, "outcome"), basis=_text(body, "basis")
+    )
 
 
 def _comment(service: Any, body: Mapping[str, Any]) -> Any:
@@ -289,6 +309,7 @@ def _root_diagnostic(service: Any, body: Mapping[str, Any]) -> Any:
     # 也没有可按名字查的东西
     if set(body) - {"request_id"}:
         from .service import OrchestrationRequestError
+
         raise OrchestrationRequestError("invalid_request", "根诊断不接受任何字段")
     return service.assurance_root_diagnostic()
 
@@ -299,10 +320,18 @@ _ACTIONS: dict[str, Callable[[Any, Mapping[str, Any]], Any | Awaitable[Any]]] = 
     "taskgraph.diff": lambda service, body: service.taskgraph_read("diff", body),
     "taskgraph.convergence": lambda service, body: service.taskgraph_read("convergence", body),
     # NEXT-TG-1.0 §8：执行过程（尝试/审阅/修补/规划/操作）走 SDK 正式接口，Host 不再直读 SDK 表
-    "taskgraph.execution_snapshot": lambda service, body: service.taskgraph_read("execution_snapshot", body),
-    "taskgraph.execution_detail": lambda service, body: service.taskgraph_read("execution_detail", body),
-    "taskgraph.abandon_convergence": lambda service, body: service.taskgraph_operate("abandon_convergence", body),
-    "taskgraph.retry_notification": lambda service, body: service.taskgraph_operate("retry_notification", body),
+    "taskgraph.execution_snapshot": lambda service, body: service.taskgraph_read(
+        "execution_snapshot", body
+    ),
+    "taskgraph.execution_detail": lambda service, body: service.taskgraph_read(
+        "execution_detail", body
+    ),
+    "taskgraph.abandon_convergence": lambda service, body: service.taskgraph_operate(
+        "abandon_convergence", body
+    ),
+    "taskgraph.retry_notification": lambda service, body: service.taskgraph_operate(
+        "retry_notification", body
+    ),
     "mission_assurance_snapshot": lambda service, body: service.assurance_read("snapshot", body),
     "mission_assurance_review": lambda service, body: service.assurance_read("review", body),
     "mission_assurance_use_check": lambda service, body: service.assurance_read("use_check", body),
@@ -311,7 +340,9 @@ _ACTIONS: dict[str, Callable[[Any, Mapping[str, Any]], Any | Awaitable[Any]]] = 
     "mission_create": _create,
     "mission_create_with_sources": _create_with_sources,
     "mission_operation_completion_approve": _completion_approve,
-    "mission_planning_authorization": lambda service, body: service.planning_authorization(dict(body)),
+    "mission_planning_authorization": lambda service, body: service.planning_authorization(
+        dict(body)
+    ),
     "mission_planning_answer": lambda service, body: service.answer_planning_question(dict(body)),
     "mission_operation_intent_submit": _operation_submit,
     "mission_operation_intent_status": _operation_status,
@@ -341,7 +372,9 @@ _ACTIONS: dict[str, Callable[[Any, Mapping[str, Any]], Any | Awaitable[Any]]] = 
     # two Host-side links of a Skill evaluation to its original Assurance Mission.
     "agent_runtime_request": lambda service, body: service.runtime_plane(body),
     "agent_skill_evaluation_mission": lambda service, body: service.skill_evaluation_mission(body),
-    "agent_skill_evaluation_dispatch": lambda service, body: service.skill_evaluation_dispatch(body),
+    "agent_skill_evaluation_dispatch": lambda service, body: service.skill_evaluation_dispatch(
+        body
+    ),
     # NEXT-TG-1.0 §11: the shared Skill catalogue (one authority for every native pool)
     "agent_skill_request": lambda service, body: service.skill_request(body),
     "orchestration_skill_catalogue": lambda service, body: service.skill_catalogue(body),

@@ -89,7 +89,9 @@ class ReActRunInput:
     continuation_id: str | None = None
     # Optional durable companion write executed inside the same transaction as the
     # final (phase -> ready) checkpoint CAS, e.g. staging an AgentTurn result (BA31).
-    final_companion: Callable[[ProviderResponse, TerminationState], Callable[[Any], None]] | None = None
+    final_companion: (
+        Callable[[ProviderResponse, TerminationState], Callable[[Any], None]] | None
+    ) = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -353,7 +355,9 @@ class ReActLoop:
                 feedback = state.mandatory_context_repairs[-1]
                 context = services.context.load(value.run_id)
                 context = services.context.append(
-                    value.run_id, execution_lease, context.revision,
+                    value.run_id,
+                    execution_lease,
+                    context.revision,
                     f"{feedback.provider_request_id}:mandatory-context-feedback",
                     (feedback.message(),),
                 )
@@ -408,14 +412,19 @@ class ReActLoop:
                                 turn_id=state.active_turn_id or value.turn_id,
                                 continuation_id=state.active_continuation_id,
                                 provider_request_id=provider_request_id,
-                                mandatory_context_feedback=(state.mandatory_context_repairs[-1]
-                                    if state.mandatory_context_repairs else None),
+                                mandatory_context_feedback=(
+                                    state.mandatory_context_repairs[-1]
+                                    if state.mandatory_context_repairs
+                                    else None
+                                ),
                             )
                         )
                         if state.mandatory_context_repairs:
                             required_message = state.mandatory_context_repairs[-1].message()
                             if snapshot.messages.count(required_message) != 1:
-                                raise ValueError("mandatory_context_feedback_snapshot_missing_or_duplicate")
+                                raise ValueError(
+                                    "mandatory_context_feedback_snapshot_missing_or_duplicate"
+                                )
                         if (
                             snapshot.run_id != value.run_id.value
                             or snapshot.provider_turn_ordinal != state.provider_turns_reserved_total
@@ -635,14 +644,20 @@ class ReActLoop:
                 )
             if not response.tool_calls:
                 frozen_request = provider_request_from_json(
-                    RequestId(cast(str, state.provider_request_id)), state.provider_request_snapshot,
+                    RequestId(cast(str, state.provider_request_id)),
+                    state.provider_request_snapshot,
                 )
                 try:
                     with runtime_operation(
-                        services.operation_audit, "context.no_recall", lease=execution_lease,
-                        clock=self._clock, identity={"request": state.provider_request_fingerprint,
+                        services.operation_audit,
+                        "context.no_recall",
+                        lease=execution_lease,
+                        clock=self._clock,
+                        identity={
+                            "request": state.provider_request_fingerprint,
                             "response": state.provider_response_digest,
-                            "mandatory_repairs": len(state.mandatory_context_repairs)},
+                            "mandatory_repairs": len(state.mandatory_context_repairs),
+                        },
                     ):
                         if state.mandatory_context_repairs:
                             # Route/tool progress does not discharge mandatory ACK obligations.
@@ -650,24 +665,37 @@ class ReActLoop:
                             check = getattr(sink, "check_mandatory_context_actions", None)
                             if not callable(check):
                                 raise RuntimeError("mandatory_context_action_recheck_unavailable")
-                            await check(run_id=value.run_id,
+                            await check(
+                                run_id=value.run_id,
                                 provider_turn_ordinal=state.provider_turns_reserved_total,
-                                request_fingerprint=state.provider_request_fingerprint)
+                                request_fingerprint=state.provider_request_fingerprint,
+                            )
                         if protected:
                             _verify_context_authority_receipt(state, value.run_id, frozen_request)
                             await services.provider.prepare_context_use_terminal(
-                                value.run_id, frozen_request, checkpoint=state.to_json(),
+                                value.run_id,
+                                frozen_request,
+                                checkpoint=state.to_json(),
                                 execution_lease=execution_lease,
                             )
                 except MandatoryContextActionRequired as error:
                     state, checkpoint_version = _reserve_context_repair(
-                        error, state, checkpoint, checkpoint_version, value.run_id, execution_lease, services, self._clock,
+                        error,
+                        state,
+                        checkpoint,
+                        checkpoint_version,
+                        value.run_id,
+                        execution_lease,
+                        services,
+                        self._clock,
                     )
                     continue
                 if protected:
                     services.provider.verify_context_use_terminal(
-                        value.run_id, RequestId(cast(str, state.provider_request_id)),
-                        checkpoint=state.to_json(), execution_lease=execution_lease,
+                        value.run_id,
+                        RequestId(cast(str, state.provider_request_id)),
+                        checkpoint=state.to_json(),
+                        execution_lease=execution_lease,
                     )
             context = services.context.load(value.run_id)
             context = services.context.append(
@@ -708,7 +736,9 @@ class ReActLoop:
                                 or receipt.route is not TaskScopeRoute.DIRECT_STANDALONE
                                 or receipt.recall_refs
                             ):
-                                raise RuntimeError("Host no-recall receipt differs from terminal Run")
+                                raise RuntimeError(
+                                    "Host no-recall receipt differs from terminal Run"
+                                )
                             state = replace(
                                 state,
                                 route_state=receipt.route_state.value,
@@ -717,7 +747,14 @@ class ReActLoop:
                             )
                     except MandatoryContextActionRequired as error:
                         state, checkpoint_version = _reserve_context_repair(
-                            error, state, checkpoint, checkpoint_version, value.run_id, execution_lease, services, self._clock,
+                            error,
+                            state,
+                            checkpoint,
+                            checkpoint_version,
+                            value.run_id,
+                            execution_lease,
+                            services,
+                            self._clock,
                         )
                         continue
                 state = replace(
@@ -734,7 +771,8 @@ class ReActLoop:
                     last_observed_at=self._clock(),
                 )
                 companion = (
-                    None if value.final_companion is None
+                    None
+                    if value.final_companion is None
                     else value.final_companion(response, state)
                 )
                 state, _ = checkpoint.cas(
@@ -1079,23 +1117,40 @@ __all__ = (
 )
 
 
-def _reserve_context_repair(error, state, checkpoint, version, run_id, execution_lease, services, clock):
+def _reserve_context_repair(
+    error, state, checkpoint, version, run_id, execution_lease, services, clock
+):
     # Catch is deliberately exact, never a general exception-to-retry adapter.
     if type(error) is not MandatoryContextActionRequired:
         raise error
     rejection = error.rejection
-    if (rejection.run_id != run_id.value
-            or rejection.provider_turn_ordinal != state.provider_turns_reserved_total
-            or rejection.request_fingerprint != state.provider_request_fingerprint):
+    if (
+        rejection.run_id != run_id.value
+        or rejection.provider_turn_ordinal != state.provider_turns_reserved_total
+        or rejection.request_fingerprint != state.provider_request_fingerprint
+    ):
         raise ValueError("mandatory_context_rejection_checkpoint_differs") from error
     if len(state.mandatory_context_repairs) >= MAX_MANDATORY_CONTEXT_REPAIRS:
         raise MandatoryContextActionExhausted() from error
-    feedback = MandatoryContextFeedbackV1(rejection, state.provider_request_id,
-        state.provider_response_digest, len(state.mandatory_context_repairs) + 1)
-    state = replace(state, source_schema_version=8, phase="context_action_reserved",
-        mandatory_context_repairs=(*state.mandatory_context_repairs, feedback))
-    with runtime_operation(services.operation_audit, "context.apply", lease=execution_lease,
-            clock=clock, identity={"repair": feedback.to_json()}) as receipt:
+    feedback = MandatoryContextFeedbackV1(
+        rejection,
+        state.provider_request_id,
+        state.provider_response_digest,
+        len(state.mandatory_context_repairs) + 1,
+    )
+    state = replace(
+        state,
+        source_schema_version=8,
+        phase="context_action_reserved",
+        mandatory_context_repairs=(*state.mandatory_context_repairs, feedback),
+    )
+    with runtime_operation(
+        services.operation_audit,
+        "context.apply",
+        lease=execution_lease,
+        clock=clock,
+        identity={"repair": feedback.to_json()},
+    ) as receipt:
         state, new_version = checkpoint.cas(run_id, execution_lease, version, state)
         receipt.update(mandatory_context_repair=feedback.to_json(), checkpoint_version=new_version)
         return state, new_version

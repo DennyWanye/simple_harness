@@ -11,6 +11,7 @@ Privacy contract: when `persist_key=False` (relay edition), the rotating
 `tsk_xxx` device key is applied to the live provider but MUST NOT be
 written to llm_runtime.json.
 """
+
 from __future__ import annotations
 
 import json
@@ -60,12 +61,15 @@ _RELAY_KEY = "tsk_relaykey_SECRET_zzz"
 @pytest.mark.asyncio
 async def test_t3_1_persist_key_false_applies_key_live():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        resp = await _post(client, {
-            "base_url": "https://your-llm-relay.example.com/v1",
-            "model": "gpt-5.5",
-            "api_key": _RELAY_KEY,
-            "persist_key": False,
-        })
+        resp = await _post(
+            client,
+            {
+                "base_url": "https://your-llm-relay.example.com/v1",
+                "model": "gpt-5.5",
+                "api_key": _RELAY_KEY,
+                "persist_key": False,
+            },
+        )
     assert resp.status_code == 200
     # The in-memory provider must carry the relay key (live, usable).
     assert getattr(main_module.local_llm, "api_key", None) == _RELAY_KEY
@@ -74,12 +78,15 @@ async def test_t3_1_persist_key_false_applies_key_live():
 @pytest.mark.asyncio
 async def test_t3_2_persist_key_false_not_written_to_disk():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        await _post(client, {
-            "base_url": "https://your-llm-relay.example.com/v1",
-            "model": "gpt-5.5",
-            "api_key": _RELAY_KEY,
-            "persist_key": False,
-        })
+        await _post(
+            client,
+            {
+                "base_url": "https://your-llm-relay.example.com/v1",
+                "model": "gpt-5.5",
+                "api_key": _RELAY_KEY,
+                "persist_key": False,
+            },
+        )
     runtime = _read_runtime()
     assert runtime.get("base_url") == "https://your-llm-relay.example.com/v1"
     assert runtime.get("model") == "gpt-5.5"
@@ -92,12 +99,15 @@ async def test_t3_2_persist_key_false_not_written_to_disk():
 @pytest.mark.asyncio
 async def test_t3_3_persist_key_true_writes_key_regression():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        await _post(client, {
-            "base_url": "https://api.example.com/v1",
-            "model": "gpt-4",
-            "api_key": "sk-manual-key-123",
-            "persist_key": True,
-        })
+        await _post(
+            client,
+            {
+                "base_url": "https://api.example.com/v1",
+                "model": "gpt-4",
+                "api_key": "sk-manual-key-123",
+                "persist_key": True,
+            },
+        )
     assert _read_runtime().get("api_key") == "sk-manual-key-123"
 
 
@@ -106,11 +116,14 @@ async def test_t3_4_persist_key_defaults_true():
     """Field omitted → behaves as persist_key=True (manual edition / all
     existing callers unaffected)."""
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        await _post(client, {
-            "base_url": "https://api.example.com/v1",
-            "model": "gpt-4",
-            "api_key": "sk-omitted-default",
-        })
+        await _post(
+            client,
+            {
+                "base_url": "https://api.example.com/v1",
+                "model": "gpt-4",
+                "api_key": "sk-omitted-default",
+            },
+        )
     assert _read_runtime().get("api_key") == "sk-omitted-default"
 
 

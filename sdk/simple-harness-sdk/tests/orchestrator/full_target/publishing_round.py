@@ -50,22 +50,35 @@ def confirm_completion(world: ProductWorld, mission_id: str) -> dict[str, Any]:
     [obligation] = workspace["obligations"]
     milestone = next(m for m in workspace["milestones"] if m["id"] == "CONTENT_HASH_VERIFIED")
     ref = workspace["requirements_ref"]
-    return world.control.approve_operation_completion_spec({
-        "mission_id": mission_id, "command_id": "confirm-publish-completion",
-        "expected_requirements_ref": ref,
-        "proposal": {
-            "schema_version": 1, "mission_id": mission_id,
-            "requirements_ref": {"id": ref["id"], "revision": ref["revision"], "content_hash": ref["content_hash"]},
-            "mode": "REQUIRED_EFFECTS", "content_criterion_ids": content,
-            "effects": [{
-                "effect_key": "publish-weekly", "source_slot_key": "publish-weekly",
-                "obligation_id": obligation["id"], "criterion_ids": actions,
-                "required_milestone": milestone["id"],
-                "milestone_policy_ref": milestone["milestone_policy_ref"],
-                "evidence_policy_ref": milestone["evidence_policy_ref"],
-            }],
-        },
-    })
+    return world.control.approve_operation_completion_spec(
+        {
+            "mission_id": mission_id,
+            "command_id": "confirm-publish-completion",
+            "expected_requirements_ref": ref,
+            "proposal": {
+                "schema_version": 1,
+                "mission_id": mission_id,
+                "requirements_ref": {
+                    "id": ref["id"],
+                    "revision": ref["revision"],
+                    "content_hash": ref["content_hash"],
+                },
+                "mode": "REQUIRED_EFFECTS",
+                "content_criterion_ids": content,
+                "effects": [
+                    {
+                        "effect_key": "publish-weekly",
+                        "source_slot_key": "publish-weekly",
+                        "obligation_id": obligation["id"],
+                        "criterion_ids": actions,
+                        "required_milestone": milestone["id"],
+                        "milestone_policy_ref": milestone["milestone_policy_ref"],
+                        "evidence_policy_ref": milestone["evidence_policy_ref"],
+                    }
+                ],
+            },
+        }
+    )
 
 
 @dataclass
@@ -81,7 +94,9 @@ class PublishingRound:
         return self.world.loop
 
     def decision(self) -> dict[str, Any]:
-        row = PlanningDecisionStore(self.loop.store).get_planning_decision_by_attempt(self.intent.intent_id, 0)
+        row = PlanningDecisionStore(self.loop.store).get_planning_decision_by_attempt(
+            self.intent.intent_id, 0
+        )
         assert row is not None
         return row
 
@@ -114,68 +129,118 @@ async def run_rounds(round_: PublishingRound, *, rounds: int = 40) -> dict[str, 
 
 
 @asynccontextmanager
-async def publishing_round(root: Path, *, key: str, unknown_outcome: bool = False) -> AsyncIterator[PublishingRound]:
+async def publishing_round(
+    root: Path, *, key: str, unknown_outcome: bool = False
+) -> AsyncIterator[PublishingRound]:
     published = root / "published"
     published.mkdir(parents=True)
     connector = FilePublishConnector(published, root / "world" / "connectors" / "file_publish")
-    async with product_world(root / "world", LayeredScriptedProvider(), connectors={"file_publish": connector},
-                             deployment_policy=POLICY) as world:
+    async with product_world(
+        root / "world",
+        LayeredScriptedProvider(),
+        connectors={"file_publish": connector},
+        deployment_policy=POLICY,
+    ) as world:
         store = world.store
-        mission_id = world.create({"goal": "写一份周报 reports/weekly.md 并发布", "idempotency_key": key,
-                                   "success_criteria": ["file:" + TARGET, PUBLISH]})["mission_id"]
+        mission_id = world.create(
+            {
+                "goal": "写一份周报 reports/weekly.md 并发布",
+                "idempotency_key": key,
+                "success_criteria": ["file:" + TARGET, PUBLISH],
+            }
+        )["mission_id"]
         await world.drain()
         confirm_completion(world, mission_id)
 
         def pending() -> list[dict[str, Any]]:
-            return [item for item in world.control.approvals(mission_id) if item.get("state") == "PENDING"]
+            return [
+                item
+                for item in world.control.approvals(mission_id)
+                if item.get("state") == "PENDING"
+            ]
 
         await _drain_until(world, pending)
         [approval] = pending()
         if unknown_outcome:
+
             def dropped(*_args: Any, **_kwargs: Any) -> Any:
                 raise ConnectionError("the publishing service dropped the connection mid-call")
 
             connector.execute = dropped  # type: ignore[method-assign]
             world.control.decide(approval["request_id"], "approve")
-            await _drain_until(world, lambda: any(a["state"] == "UNKNOWN" for a in store.list_actions(mission_id)))
+            await _drain_until(
+                world, lambda: any(a["state"] == "UNKNOWN" for a in store.list_actions(mission_id))
+            )
 
         loop = world.loop
         dispatch = loop._dispatch_for(mission_id)
         network = dispatch.network(mission_id)
         assert int(network.plan_revision) == 1
-        ordinal = store.connection.execute(
-            "SELECT COUNT(*) FROM dispatch_intents WHERE mission_id=? AND kind='plan' AND subject_id LIKE ?",
-            (mission_id, f"{mission_id}:planner:%")).fetchone()[0] + 1
+        ordinal = (
+            store.connection.execute(
+                "SELECT COUNT(*) FROM dispatch_intents WHERE mission_id=? AND kind='plan' AND subject_id LIKE ?",
+                (mission_id, f"{mission_id}:planner:%"),
+            ).fetchone()[0]
+            + 1
+        )
         intent = await loop._create_planner_intent(mission_id, ordinal=ordinal)
-        await world.deployment.between_cycles(auto=True)  # the deployment's planning grant (auto mode)
+        await world.deployment.between_cycles(
+            auto=True
+        )  # the deployment's planning grant (auto mode)
         package = intent.config["planning_package"]
-        write = next(binding for binding in network.task_bindings if str(binding.form) == "primitive")
+        write = next(
+            binding for binding in network.task_bindings if str(binding.form) == "primitive"
+        )
 
         def visible(kind: str, identity: Any) -> dict[str, Any]:
-            return next(row for row in package["visible_refs"] if row["kind"] == kind and row["id"] == str(identity))
+            return next(
+                row
+                for row in package["visible_refs"]
+                if row["kind"] == kind and row["id"] == str(identity)
+            )
 
-        task_type = next(spec for spec in dispatch.require_planning_world().catalog.task_types()
-                         if spec.goal_signature == write.goal_signature)
+        task_type = next(
+            spec
+            for spec in dispatch.require_planning_world().catalog.task_types()
+            if spec.goal_signature == write.goal_signature
+        )
         body = {
-            "schema_version": 1, "decision_type": "REPAIR",
-            "subject_key": next(row["subject_key"] for row in package["planning_subjects"]
-                                if row["task_id"] == str(write.task_id)),
-            "rationale": "周报引用了旧数据，用同类型的后继步骤重写。", "reason_refs": [], "assumptions": [],
-            "uncertainties": [], "alternatives": [], "replan_triggers": [],
-            "payload": {"repair_kind": "PROPOSE_SUCCESSOR", "old_task_ref": visible("task", write.task_id),
-                        "obligation_ref": visible("obligation", write.obligation_id),
-                        "goal_type_ref": task_type.task_type_ref.to_json(),
-                        "bindings": {"goal": "按最新数据重写周报。"}},
+            "schema_version": 1,
+            "decision_type": "REPAIR",
+            "subject_key": next(
+                row["subject_key"]
+                for row in package["planning_subjects"]
+                if row["task_id"] == str(write.task_id)
+            ),
+            "rationale": "周报引用了旧数据，用同类型的后继步骤重写。",
+            "reason_refs": [],
+            "assumptions": [],
+            "uncertainties": [],
+            "alternatives": [],
+            "replan_triggers": [],
+            "payload": {
+                "repair_kind": "PROPOSE_SUCCESSOR",
+                "old_task_ref": visible("task", write.task_id),
+                "obligation_ref": visible("obligation", write.obligation_id),
+                "goal_type_ref": task_type.task_type_ref.to_json(),
+                "bindings": {"goal": "按最新数据重写周报。"},
+            },
         }
-        await loop._collect_plan_decision(intent, object(), store.get_mission(mission_id),
-                                          "<planning_decision>" + json.dumps(body, ensure_ascii=False)
-                                          + "</planning_decision>", dispatch)
+        await loop._collect_plan_decision(
+            intent,
+            object(),
+            store.get_mission(mission_id),
+            "<planning_decision>" + json.dumps(body, ensure_ascii=False) + "</planning_decision>",
+            dispatch,
+        )
         round_ = PublishingRound(world, mission_id, approval["request_id"], intent, dispatch)
         if unknown_outcome:
             # 2026-10-06 第 2～4 批车道 O（A48，原计划 Assurance §7.2）：发布结果不明时根结论照常先形成，
             # 根职责随之了结；对这个根的修复提交按"职责已了结"被拒（OBLIGATION_NOT_OPEN），不编修订。
             assert round_.decision()["status"] == "REJECTED", round_.decision()
-            assert round_.decision()["rejection_codes"] == ["OBLIGATION_NOT_OPEN"], round_.decision()
+            assert round_.decision()["rejection_codes"] == ["OBLIGATION_NOT_OPEN"], (
+                round_.decision()
+            )
         else:
             assert round_.decision()["status"] == "COMPILED", round_.decision()
         yield round_
@@ -196,8 +261,12 @@ class RefusedFinalRound:
 
     def repairs(self) -> list[dict[str, Any]]:
         rows = self.loop.store.connection.execute(
-            "SELECT decision_id FROM planning_decisions WHERE decision_type='REPAIR' ORDER BY created_at").fetchall()
-        found = [PlanningDecisionStore(self.loop.store).get_planning_decision(row["decision_id"]) for row in rows]
+            "SELECT decision_id FROM planning_decisions WHERE decision_type='REPAIR' ORDER BY created_at"
+        ).fetchall()
+        found = [
+            PlanningDecisionStore(self.loop.store).get_planning_decision(row["decision_id"])
+            for row in rows
+        ]
         return [row for row in found if row is not None]
 
 
@@ -219,9 +288,14 @@ async def refused_final_round(root: Path, *, key: str) -> AsyncIterator[RefusedF
         data = review_input(request)
         if data is None:
             return None
-        if str((data.get("package") or {}).get("purpose")) == "MISSION_FINAL" and not seen["refused"]:
+        if (
+            str((data.get("package") or {}).get("purpose")) == "MISSION_FINAL"
+            and not seen["refused"]
+        ):
             seen["refused"] = True
-            return review_reply(data, verdict="REJECTED", grade="FAIL", reason="脚本化审阅：周报引用了旧数据。")
+            return review_reply(
+                data, verdict="REJECTED", grade="FAIL", reason="脚本化审阅：周报引用了旧数据。"
+            )
         return review_reply(data)
 
     def planner(request: Any) -> Any:
@@ -231,39 +305,77 @@ async def refused_final_round(root: Path, *, key: str) -> AsyncIterator[RefusedF
             return planner_reply(request)
 
         def visible(kind: str, identity: Any) -> dict[str, Any]:
-            return next(row for row in package["visible_refs"] if row["kind"] == kind and row["id"] == str(identity))
+            return next(
+                row
+                for row in package["visible_refs"]
+                if row["kind"] == kind and row["id"] == str(identity)
+            )
 
         body = {
-            "schema_version": 1, "decision_type": "REPAIR",
-            "subject_key": next(row["subject_key"] for row in package["planning_subjects"]
-                                if row["task_id"] == str(write.task_id)),
-            "rationale": "周报引用了旧数据，用同类型的后继步骤重写。", "reason_refs": [], "assumptions": [],
-            "uncertainties": [], "alternatives": [], "replan_triggers": [],
-            "payload": {"repair_kind": "PROPOSE_SUCCESSOR", "old_task_ref": visible("task", write.task_id),
-                        "obligation_ref": visible("obligation", write.obligation_id),
-                        "goal_type_ref": seen["type_ref"], "bindings": {"goal": "按最新数据重写周报。"}},
+            "schema_version": 1,
+            "decision_type": "REPAIR",
+            "subject_key": next(
+                row["subject_key"]
+                for row in package["planning_subjects"]
+                if row["task_id"] == str(write.task_id)
+            ),
+            "rationale": "周报引用了旧数据，用同类型的后继步骤重写。",
+            "reason_refs": [],
+            "assumptions": [],
+            "uncertainties": [],
+            "alternatives": [],
+            "replan_triggers": [],
+            "payload": {
+                "repair_kind": "PROPOSE_SUCCESSOR",
+                "old_task_ref": visible("task", write.task_id),
+                "obligation_ref": visible("obligation", write.obligation_id),
+                "goal_type_ref": seen["type_ref"],
+                "bindings": {"goal": "按最新数据重写周报。"},
+            },
         }
-        reply = "<planning_decision>" + json.dumps(body, ensure_ascii=False) + "</planning_decision>"
+        reply = (
+            "<planning_decision>" + json.dumps(body, ensure_ascii=False) + "</planning_decision>"
+        )
         answered.append(reply)
         return reply
 
-    async with product_world(root / "world", LayeredScriptedProvider(planner=planner, reviewer=reviewer),
-                             connectors={"file_publish": connector}, deployment_policy=POLICY) as world:
+    async with product_world(
+        root / "world",
+        LayeredScriptedProvider(planner=planner, reviewer=reviewer),
+        connectors={"file_publish": connector},
+        deployment_policy=POLICY,
+    ) as world:
         store = world.store
-        mission_id = world.create({"goal": "写一份周报 reports/weekly.md 并发布", "idempotency_key": key,
-                                   "success_criteria": ["file:" + TARGET, PUBLISH]})["mission_id"]
+        mission_id = world.create(
+            {
+                "goal": "写一份周报 reports/weekly.md 并发布",
+                "idempotency_key": key,
+                "success_criteria": ["file:" + TARGET, PUBLISH],
+            }
+        )["mission_id"]
         await world.drain()
         confirm_completion(world, mission_id)
 
         def pending() -> list[dict[str, Any]]:
-            return [item for item in world.control.approvals(mission_id) if item.get("state") == "PENDING"]
+            return [
+                item
+                for item in world.control.approvals(mission_id)
+                if item.get("state") == "PENDING"
+            ]
 
         await _drain_until(world, pending)
         [approval] = pending()
         dispatch = world.loop._dispatch_for(mission_id)
-        write = next(binding for binding in dispatch.network(mission_id).task_bindings if str(binding.form) == "primitive")
-        seen["type_ref"] = next(spec for spec in dispatch.require_planning_world().catalog.task_types()
-                                if spec.goal_signature == write.goal_signature).task_type_ref.to_json()
+        write = next(
+            binding
+            for binding in dispatch.network(mission_id).task_bindings
+            if str(binding.form) == "primitive"
+        )
+        seen["type_ref"] = next(
+            spec
+            for spec in dispatch.require_planning_world().catalog.task_types()
+            if spec.goal_signature == write.goal_signature
+        ).task_type_ref.to_json()
         seen["write"] = write
 
         def dropped(*_args: Any, **_kwargs: Any) -> Any:
@@ -271,11 +383,27 @@ async def refused_final_round(root: Path, *, key: str) -> AsyncIterator[RefusedF
 
         connector.execute = dropped  # type: ignore[method-assign]
         world.control.decide(approval["request_id"], "approve")
-        await _drain_until(world, lambda: any(a["state"] == "UNKNOWN" for a in store.list_actions(mission_id)))
-        await _drain_until(world, lambda: any(event.type == "TaskGraphConvergenceAdvanced"
-                                              for event in store.list_events(mission_id)))
+        await _drain_until(
+            world, lambda: any(a["state"] == "UNKNOWN" for a in store.list_actions(mission_id))
+        )
+        await _drain_until(
+            world,
+            lambda: any(
+                event.type == "TaskGraphConvergenceAdvanced"
+                for event in store.list_events(mission_id)
+            ),
+        )
         yield RefusedFinalRound(world, mission_id, connector, answered)
 
 
-__all__ = ("POLICY", "PUBLISH", "TARGET", "PublishingRound", "RefusedFinalRound", "confirm_completion",
-           "publishing_round", "refused_final_round", "run_rounds")
+__all__ = (
+    "POLICY",
+    "PUBLISH",
+    "TARGET",
+    "PublishingRound",
+    "RefusedFinalRound",
+    "confirm_completion",
+    "publishing_round",
+    "refused_final_round",
+    "run_rounds",
+)

@@ -47,17 +47,31 @@ def test_internal_keys_refuse_kinds_without_repair() -> None:
 
 
 def test_the_current_package_pairs_with_the_one_prompt() -> None:
-    assert role_templates.PLANNING_DECISION_PACKAGE_VERSION == 17  # 2026-10-09 第 4 条：operators/类型行带 input_port_cardinality
-    assert role_templates.PLANNING_DECISION_PROMPT_VERSION == role_templates.PLANNER_HIERARCHICAL_VERSION
+    assert (
+        role_templates.PLANNING_DECISION_PACKAGE_VERSION == 17
+    )  # 2026-10-09 第 4 条：operators/类型行带 input_port_cardinality
+    assert (
+        role_templates.PLANNING_DECISION_PROMPT_VERSION
+        == role_templates.PLANNER_HIERARCHICAL_VERSION
+    )
     assert role_templates.hierarchical_planner_pairing_is_valid(
-        role_templates.PLANNING_DECISION_PROMPT_VERSION, role_templates.PLANNING_DECISION_PACKAGE_VERSION)
+        role_templates.PLANNING_DECISION_PROMPT_VERSION,
+        role_templates.PLANNING_DECISION_PACKAGE_VERSION,
+    )
     assert not role_templates.hierarchical_planner_pairing_is_valid("planner-hierarchical-v13", 8)
     assert "enabled_repair_kinds" in role_templates.PLANNER_HIERARCHICAL.instructions
 
 
 def test_package_lists_types_and_kinds_and_admission_reads_internal_keys(tmp_path: Path) -> None:
     async def case() -> None:
-        async with seeded(tmp_path, key="enablement") as (loop, mission, _world, _binding, _dispatch, _product):
+        async with seeded(tmp_path, key="enablement") as (
+            loop,
+            mission,
+            _world,
+            _binding,
+            _dispatch,
+            _product,
+        ):
             binding = PlanningDecisionStore(loop.store).get_mission_protocol(mission.id)
             assert (binding["package_version"], binding["prompt_version"]) == (
                 role_templates.PLANNING_DECISION_PACKAGE_VERSION,
@@ -66,24 +80,39 @@ def test_package_lists_types_and_kinds_and_admission_reads_internal_keys(tmp_pat
             intent = await loop._create_planner_intent(mission.id, ordinal=1)
             protocol = intent.config["planning_package"]["planning_protocol"]
             assert protocol["enabled_decision_types"] == sorted(protocol["enabled_decision_types"])
-            assert all("/" not in v for v in protocol["enabled_decision_types"] + protocol["enabled_repair_kinds"])
+            assert all(
+                "/" not in v
+                for v in protocol["enabled_decision_types"] + protocol["enabled_repair_kinds"]
+            )
             assert "REPAIR" in protocol["enabled_decision_types"]
             assert "RETRY_SAME_METHOD" in protocol["enabled_repair_kinds"]
-            assert intent.config["planning_package"]["package_version"] == role_templates.PLANNING_DECISION_PACKAGE_VERSION
+            assert (
+                intent.config["planning_package"]["package_version"]
+                == role_templates.PLANNING_DECISION_PACKAGE_VERSION
+            )
 
     asyncio.run(case())
 
 
 def test_mission_bound_to_a_historical_package_fails_loudly(tmp_path: Path) -> None:
     async def case() -> None:
-        async with seeded(tmp_path, key="historical") as (loop, mission, _world, _binding, _dispatch, _product):
+        async with seeded(tmp_path, key="historical") as (
+            loop,
+            mission,
+            _world,
+            _binding,
+            _dispatch,
+            _product,
+        ):
             # A library written by an older build: its durable binding names package 7.
             store = PlanningDecisionStore(loop.store)
             with loop.store.transaction() as connection:  # rewrite the durable binding to package 7
                 lift_immutable_guards(connection, "mission_planning_protocols")
                 connection.execute(
                     "UPDATE mission_planning_protocols SET package_version=7, prompt_version='planner-hierarchical-v10'"
-                    " WHERE mission_id=?", (mission.id,))
+                    " WHERE mission_id=?",
+                    (mission.id,),
+                )
             assert store.get_mission_protocol(mission.id)["package_version"] == 7
             with pytest.raises(ContractError, match="package 7; this build serves only"):
                 loop._hierarchical_planner_template(mission.id)
@@ -91,7 +120,10 @@ def test_mission_bound_to_a_historical_package_fails_loudly(tmp_path: Path) -> N
             # (a stale library must not take every other Mission down with it).
             assert await loop._try_planner_intent(mission.id, ordinal=1) is False
             stopped = loop.store.get_mission(mission.id)
-            assert stopped is not None and str(stopped.status) in {"FAILED", "MissionStatus.FAILED"}, stopped.status
+            assert stopped is not None and str(stopped.status) in {
+                "FAILED",
+                "MissionStatus.FAILED",
+            }, stopped.status
 
     asyncio.run(case())
 

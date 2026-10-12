@@ -1,6 +1,7 @@
 """Query the relay (chinzy.com) for the account balance behind the current key.
 Tries common one-api/new-api/openai billing endpoints. Read-only diagnostic.
 """
+
 from __future__ import annotations
 
 import os

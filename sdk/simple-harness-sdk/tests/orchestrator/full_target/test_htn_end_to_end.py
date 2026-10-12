@@ -198,10 +198,18 @@ def _events(world: Any, kind: str) -> list[Any]:
     return [event for event in world.store.list_events(world.mission.id) if event.type == kind]
 
 
-def _accepted_output(network: Any, producer: OccurrenceId, task_id: str, *, port: str = "delivery",
-                     schema: VersionedRef | None = None) -> AcceptedOutput:
+def _accepted_output(
+    network: Any,
+    producer: OccurrenceId,
+    task_id: str,
+    *,
+    port: str = "delivery",
+    schema: VersionedRef | None = None,
+) -> AcceptedOutput:
     declared = declared_output_ports(network, producer)
-    reference = schema or declared.get(port) or VersionedRef(id="user.other", version=1, content_hash=HEX_A)
+    reference = (
+        schema or declared.get(port) or VersionedRef(id="user.other", version=1, content_hash=HEX_A)
+    )
     return AcceptedOutput(
         producer_occurrence=producer,
         producer_task_ref=TaskRef(task_id),
@@ -235,7 +243,9 @@ def test_a_mission_with_no_token_ceiling_conserves_vacuously() -> None:
 
 
 def test_migration_seventeen_is_additive_and_eighteen_is_still_present() -> None:
-    assert schema.SCHEMA_VERSION == 48  # 迁移 25～48 已追加在后（45 知识记录字段、46 恢复协议、47 删反向依赖索引、48 预算两维）
+    assert (
+        schema.SCHEMA_VERSION == 48
+    )  # 迁移 25～48 已追加在后（45 知识记录字段、46 恢复协议、47 删反向依赖索引、48 预算两维）
     assert schema.MIGRATIONS[16].ddl is acceptance_receipt_schema.DDL
     assert "ALTER TABLE" not in acceptance_receipt_schema.DDL.upper()
     assert schema.MIGRATIONS[17].version == 18
@@ -266,7 +276,9 @@ def test_the_root_trigger_reads_the_composition_verdict_rather_than_asserting_it
 
     source = inspect.getsource(HierarchicalDispatch.attempt_root_resolution)
     # 2026-09-30 审阅升级：读记录的结论，或人对判不下来的记录的裁决——仍不是触发器自己断言。
-    assert "composition_obligation_passed=accepted_or_adjudicated(self.store, inputs.record)" in source
+    assert (
+        "composition_obligation_passed=accepted_or_adjudicated(self.store, inputs.record)" in source
+    )
     assert "composition_obligation_passed=True" not in source
 
 
@@ -299,8 +311,13 @@ class _Pinned:
     stub that supplies exactly those runs the **real** chooser against a real pin.
     """
 
-    def __init__(self, pin: str | None, *, package_version: int | None = None,
-                 bound_prompt: str = "planner-hierarchical-v8") -> None:
+    def __init__(
+        self,
+        pin: str | None,
+        *,
+        package_version: int | None = None,
+        bound_prompt: str = "planner-hierarchical-v8",
+    ) -> None:
         from agent_orchestrator.governance.domains import resolve_domain
 
         self._domain = resolve_domain(None)
@@ -378,7 +395,8 @@ def test_a_pin_never_changes_the_hierarchical_prompt_and_a_historical_package_is
     for pin in (None, "planner-v4", "planner-hierarchical-v7"):
         for bound in ("planner-hierarchical-v11", PLANNER_HIERARCHICAL.prompt_version):
             assert _Pinned(pin, package_version=current, bound_prompt=bound).choose() is (
-                PLANNER_HIERARCHICAL)
+                PLANNER_HIERARCHICAL
+            )
     with pytest.raises(UnsupportedPlanningPackage):
         _Pinned(None, package_version=4).choose()
 
@@ -442,10 +460,23 @@ def test_the_equation_checks_each_leaf_against_the_pool() -> None:
     from types import SimpleNamespace
 
     def leaves(*caps: int):
-        return tuple(SimpleNamespace(task=SimpleNamespace(budget=SimpleNamespace(max_tokens=cap))) for cap in caps)
+        return tuple(
+            SimpleNamespace(task=SimpleNamespace(budget=SimpleNamespace(max_tokens=cap)))
+            for cap in caps
+        )
 
-    assert Materialisation(pool_tokens=100, committed_tokens=0, tasks=leaves(100, 100)).conservation()["holds"] is True
-    assert Materialisation(pool_tokens=100, committed_tokens=100, tasks=leaves(100)).conservation()["holds"] is True
+    assert (
+        Materialisation(pool_tokens=100, committed_tokens=0, tasks=leaves(100, 100)).conservation()[
+            "holds"
+        ]
+        is True
+    )
+    assert (
+        Materialisation(pool_tokens=100, committed_tokens=100, tasks=leaves(100)).conservation()[
+            "holds"
+        ]
+        is True
+    )
     assert Materialisation(pool_tokens=100, tasks=leaves(101)).conservation()["holds"] is False
 
 
@@ -792,8 +823,13 @@ def test_mutant_spelling_the_account_prefix_by_hand_finds_no_parent(tmp_path) ->
     assert task_account(STUB_TASK) == f"budget:{STUB_TASK}"
     service = CommitService(Store.open(Path(tmp_path) / "ledger.db"))
     with pytest.raises(BudgetError, match="unknown budget account"):
-        service.ledger.open_account(account_id="task:mutant", scope="task", parent_id="mission:m-1",
-                                    mission_id="m-1", limits=Budget(max_tokens=1))
+        service.ledger.open_account(
+            account_id="task:mutant",
+            scope="task",
+            parent_id="mission:m-1",
+            mission_id="m-1",
+            limits=Budget(max_tokens=1),
+        )
 
 
 def test_a_delivery_receipt_is_a_library_record_not_a_command_argument() -> None:
@@ -801,9 +837,18 @@ def test_a_delivery_receipt_is_a_library_record_not_a_command_argument() -> None
 
     from agent_orchestrator.orchestrator.resolution_commits import CommitGoalResolutionCommand
 
-    assert CommitGoalResolutionCommand.__dataclass_fields__["delivery_receipts"].type == "tuple[str, ...]"
-    receipt = DeliveryReceipt(receipt_id="dlv-1", mission_id=STUB_MISSION, acceptance_id=AcceptanceId("acc-leaf"),
-                              stage=DeliveryStage.CONFIRMED, observed_at_ms=1, operation_id="op-1")
+    assert (
+        CommitGoalResolutionCommand.__dataclass_fields__["delivery_receipts"].type
+        == "tuple[str, ...]"
+    )
+    receipt = DeliveryReceipt(
+        receipt_id="dlv-1",
+        mission_id=STUB_MISSION,
+        acceptance_id=AcceptanceId("acc-leaf"),
+        stage=DeliveryStage.CONFIRMED,
+        observed_at_ms=1,
+        operation_id="op-1",
+    )
     with pytest.raises(ContractError) as caught:
         _root_command_with(delivery_receipts=(receipt,))
     assert "a receipt is recorded when its operation outcome is accepted" in str(caught.value)
@@ -845,11 +890,17 @@ def test_a_criterion_the_review_never_judged_is_restated_unknown() -> None:
     from agent_orchestrator.orchestrator.hierarchical_dispatch import _root_criteria
 
     widened = RequirementsRevision(
-        revision_id=RequirementsRevisionId("req-1"), mission_id=STUB_MISSION, revision=1,
+        revision_id=RequirementsRevisionId("req-1"),
+        mission_id=STUB_MISSION,
+        revision=1,
         criteria=(_final_criterion("c-root"), _final_criterion("c-side-note")),
-        success_expression=AllExpr(children=(CriterionExpr("c-root"), CriterionExpr("c-side-note"))),
+        success_expression=AllExpr(
+            children=(CriterionExpr("c-root"), CriterionExpr("c-side-note"))
+        ),
     )
-    restated = {item.criterion_id: item.verdict for item in _root_criteria(widened.criteria, _stub_record())}
+    restated = {
+        item.criterion_id: item.verdict for item in _root_criteria(widened.criteria, _stub_record())
+    }
     assert restated == {"c-root": CriterionVerdict.PASS, "c-side-note": CriterionVerdict.UNKNOWN}
 
 
@@ -870,22 +921,36 @@ def test_no_port_is_ever_derived_from_an_artifact_path() -> None:
 
     from agent_orchestrator.orchestrator import leaf_acceptance as module
 
-    assert module.accepted_outputs_for(
-        {"facts": VersionedRef(id="user.workspace-outputs", version=1, content_hash=HEX_A)},
-        occurrence=OccurrenceId("occ-leaf"), task_id=TaskRef("task-leaf"), result_id="result-x",
-        acceptance_id="acc-x", support_revision=0,
-        artifacts=(_Artifact("artifact-z", "artifacts/unrelated-output.json"),),
-        namespace="workspace", claims=(),
-    ) == ()
+    assert (
+        module.accepted_outputs_for(
+            {"facts": VersionedRef(id="user.workspace-outputs", version=1, content_hash=HEX_A)},
+            occurrence=OccurrenceId("occ-leaf"),
+            task_id=TaskRef("task-leaf"),
+            result_id="result-x",
+            acceptance_id="acc-x",
+            support_revision=0,
+            artifacts=(_Artifact("artifact-z", "artifacts/unrelated-output.json"),),
+            namespace="workspace",
+            claims=(),
+        )
+        == ()
+    )
     assert "_port_for" not in inspect.getsource(module), "the guessing helper is gone"
 
 
 def _observation(identity: str, *, at_ms: int, key: str = "plan.ready#alpha") -> ObservationRecord:
     return ObservationRecord(
-        observation_id=identity, proposition_key=key, polarity=True,
-        source_ref=TypedRef(kind=TypedRefKind.OBSERVATION, id="obs-1", revision=1, content_hash=HEX_A),
-        observed_at_ms=at_ms, recorded_at_ms=at_ms, coverage=QueryCompleteness.BEST_EFFORT,
-        observer_id="observer-1")
+        observation_id=identity,
+        proposition_key=key,
+        polarity=True,
+        source_ref=TypedRef(
+            kind=TypedRefKind.OBSERVATION, id="obs-1", revision=1, content_hash=HEX_A
+        ),
+        observed_at_ms=at_ms,
+        recorded_at_ms=at_ms,
+        coverage=QueryCompleteness.BEST_EFFORT,
+        observer_id="observer-1",
+    )
 
 
 def test_a_fact_row_states_what_was_observed_and_the_snapshots_reading() -> None:
@@ -895,8 +960,15 @@ def test_a_fact_row_states_what_was_observed_and_the_snapshots_reading() -> None
     observations = (_observation("obsrec-guard", at_ms=10),)
     entries, omitted = fact_rows(observations)
     assert omitted == 0 and set(entries[0]) == {
-        "observation_ref", "proposition_key", "polarity", "availability", "truth", "coverage",
-        "observer", "times"}
+        "observation_ref",
+        "proposition_key",
+        "polarity",
+        "availability",
+        "truth",
+        "coverage",
+        "observer",
+        "times",
+    }
     assert (entries[0]["availability"], entries[0]["truth"]) == ("recorded", "UNKNOWN")
     read, _ = fact_rows(observations, state_of=lambda key: ("AVAILABLE", "TRUE"))
     assert (read[0]["availability"], read[0]["truth"]) == ("AVAILABLE", "TRUE")
@@ -907,7 +979,9 @@ def test_a_fact_row_states_what_was_observed_and_the_snapshots_reading() -> None
 def test_only_the_newest_observation_of_a_proposition_is_offered() -> None:
     """A superseded record is an entry guaranteed to refuse the commit."""
 
-    entries, _ = fact_rows((_observation("obsrec-old", at_ms=10), _observation("obsrec-new", at_ms=20)))
+    entries, _ = fact_rows(
+        (_observation("obsrec-old", at_ms=10), _observation("obsrec-new", at_ms=20))
+    )
     assert [item["observation_ref"]["id"] for item in entries] == ["obsrec-new"]
 
 
@@ -934,14 +1008,26 @@ def test_the_observation_pipeline_records_what_was_observed_and_nothing_else(tmp
             index = build_index(registry, [_FakeObserver("obs-1", ("demo.flag",), answer=None)])
             outcome = observe_predicate(index, one.predicate_ref, {}, now_ms=1)
             assert outcome.reason is ReadinessReason.OBSERVER_UNAVAILABLE
-            assert outcome.observation.record is None  # the mutant "store whatever came back" has nothing to store
+            assert (
+                outcome.observation.record is None
+            )  # the mutant "store whatever came back" has nothing to store
             assert record_observation(semantics, mission_id, outcome).recorded is False
             assert semantics.list_observations(mission_id) == ()
             # an observed record is stored; an outage beside it does not stop the batch
-            index = build_index(registry, [_FakeObserver("obs-1", ("demo.flag",), answer=True),
-                                           _FakeObserver("obs-2", ("demo.other",), answer=None)])
-            results = gather(index, semantics, mission_id, [(one.predicate_ref, {}), (other.predicate_ref, {})],
-                             now_ms=7)
+            index = build_index(
+                registry,
+                [
+                    _FakeObserver("obs-1", ("demo.flag",), answer=True),
+                    _FakeObserver("obs-2", ("demo.other",), answer=None),
+                ],
+            )
+            results = gather(
+                index,
+                semantics,
+                mission_id,
+                [(one.predicate_ref, {}), (other.predicate_ref, {})],
+                now_ms=7,
+            )
             assert [item.recorded for item in results] == [True, False]
             assert results[0].reason is None
             stored = semantics.list_observations(mission_id)
@@ -950,13 +1036,24 @@ def test_the_observation_pipeline_records_what_was_observed_and_nothing_else(tmp
             checker = SemanticReadSetChecker(world.store, semantics, mission_id=mission_id)
             entries, _ = fact_rows(stored, read_item=checker.read_item)
             quoted = entries[0]["observation_ref"]
-            assert quoted == checker.read_item(ReadItemKind.FACT, str(stored[0].observation_id)).to_json()
+            assert (
+                quoted
+                == checker.read_item(ReadItemKind.FACT, str(stored[0].observation_id)).to_json()
+            )
             latest = semantics.latest_requirements_revision(mission_id)
-            verdict = checker.verify(SemanticReadSet(
-                requirements_revision=0 if latest is None else int(latest.revision),
-                observation_revisions=(ReadItem(kind=ReadItemKind.FACT, id=quoted["id"],
-                                                semantic_revision=int(quoted["semantic_revision"]),
-                                                content_hash=str(quoted["content_hash"])),)))
+            verdict = checker.verify(
+                SemanticReadSet(
+                    requirements_revision=0 if latest is None else int(latest.revision),
+                    observation_revisions=(
+                        ReadItem(
+                            kind=ReadItemKind.FACT,
+                            id=quoted["id"],
+                            semantic_revision=int(quoted["semantic_revision"]),
+                            content_hash=str(quoted["content_hash"]),
+                        ),
+                    ),
+                )
+            )
             assert verdict.stale == () and verdict.unresolved == ()
 
     asyncio.run(case())
@@ -986,8 +1083,13 @@ def test_the_first_plan_revision_on_the_product_deployment(tmp_path) -> None:
     """
 
     async def case() -> None:
-        async with enabled_world(tmp_path, key="p23c-first", planner=chain_planner, criteria=CHAIN_CRITERIA,
-                                 hold_worker=True) as world:
+        async with enabled_world(
+            tmp_path,
+            key="p23c-first",
+            planner=chain_planner,
+            criteria=CHAIN_CRITERIA,
+            hold_worker=True,
+        ) as world:
             await world.commit_seed()
             mission_id, store, dispatch = world.mission.id, world.store, world.dispatch
             network = dispatch.network(mission_id)
@@ -1013,14 +1115,17 @@ def test_the_first_plan_revision_on_the_product_deployment(tmp_path) -> None:
             assert materialised.payload["plan_revision"] == 1
             # the root's row was opened when the Mission was created; the plan materialises its steps
             assert sorted(item["task_id"] for item in materialised.payload["tasks"]) == sorted(
-                str(spec.task_id) for spec in (write, follow))
+                str(spec.task_id) for spec in (write, follow)
+            )
             committed_tasks = _events(world, "TaskCommitted")
             assert {e.task_id for e in committed_tasks} == set(rows)
             assert all(e.payload["dependencies"] == [] for e in committed_tasks)
             for task_id in rows:
                 account = world.loop.commit.ledger.account(task_account(task_id))
                 assert account.parent_id == mission_account(mission_id) and account.scope == "task"
-            ids = {row[0] for row in store.connection.execute("SELECT account_id FROM budget_accounts")}
+            ids = {
+                row[0] for row in store.connection.execute("SELECT account_id FROM budget_accounts")
+            }
             assert task_account(str(root.task_id)) in ids and f"task:{root.task_id}" not in ids
 
             # §2 conservation (R1)
@@ -1042,7 +1147,9 @@ def test_the_first_plan_revision_on_the_product_deployment(tmp_path) -> None:
             assert revision_event.payload["materialised_tasks"]
             assert mission.status is MissionStatus.ACTIVE
             kinds = [event.type for event in store.list_events(mission_id)]
-            assert "MissionPlanning" in kinds and kinds.index("MissionPlanning") < kinds.index(PLAN_REVISION_COMMITTED)
+            assert "MissionPlanning" in kinds and kinds.index("MissionPlanning") < kinds.index(
+                PLAN_REVISION_COMMITTED
+            )
 
             # §5 the dispatch gate (R3)
             admissions = dispatch.admissions(mission_id)
@@ -1051,11 +1158,18 @@ def test_the_first_plan_revision_on_the_product_deployment(tmp_path) -> None:
             assert refusal is not None and refusal.reason is ReadinessReason.NEEDS_REFINEMENT
             # the consumer follows write by ORDER as well as by DATA; ORDER is the reason given first
             waiting = admissions.refusal_for(str(follow.task_id))
-            assert waiting is not None and waiting.reason in {ReadinessReason.WAITING_ORDER, ReadinessReason.WAITING_DATA}
+            assert waiting is not None and waiting.reason in {
+                ReadinessReason.WAITING_ORDER,
+                ReadinessReason.WAITING_DATA,
+            }
             assert str(follow.task_id) not in admissions.readiness
-            assert leaf.status is TaskStatus.READY, "the READY string says nothing about a DATA port"
+            assert leaf.status is TaskStatus.READY, (
+                "the READY string says nothing about a DATA port"
+            )
             # ①b1: the compound row's status bytes rewritten to READY change no answer
-            store.connection.execute("UPDATE tasks SET status='READY' WHERE task_id=?", (str(root.task_id),))
+            store.connection.execute(
+                "UPDATE tasks SET status='READY' WHERE task_id=?", (str(root.task_id),)
+            )
             store.connection.commit()
             assert str(root.task_id) not in dispatch.admissions(mission_id).readiness
             # the withheld reasons: once per revision and reason, detail codes kept apart
@@ -1065,7 +1179,8 @@ def test_the_first_plan_revision_on_the_product_deployment(tmp_path) -> None:
             dispatch.record_withheld(mission_id, admissions)
             recorded = _events(world, DISPATCH_WITHHELD)
             assert {(e.task_id, e.payload["reason"]) for e in recorded} >= {
-                (str(item.task_id), str(item.reason)) for item in admissions.refusals}
+                (str(item.task_id), str(item.reason)) for item in admissions.refusals
+            }
             assert len({e.idempotency_key for e in recorded}) == len(recorded)
             assert len(recorded) - before <= len(admissions.refusals)
             held_back = [e for e in recorded if e.payload["reason"] == str(waiting.reason)]
@@ -1077,11 +1192,26 @@ def test_the_first_plan_revision_on_the_product_deployment(tmp_path) -> None:
             )
 
             for reason in (ReadinessReason.WAITING_DATA, ReadinessReason.STALE_BINDING):
-                dispatch.record_withheld(mission_id, DispatchAdmissions(plan_revision=1, refusals=(
-                    DispatchRefusal(task_id=str(follow.task_id), occurrence_id=str(follow.occurrence_id),
-                                    reason=reason, detail_codes=("x",), detail=""),)))
-            keys = {e.idempotency_key for e in _events(world, DISPATCH_WITHHELD)
-                    if e.task_id == str(follow.task_id) and e.payload["detail_codes"] == ["x"]}
+                dispatch.record_withheld(
+                    mission_id,
+                    DispatchAdmissions(
+                        plan_revision=1,
+                        refusals=(
+                            DispatchRefusal(
+                                task_id=str(follow.task_id),
+                                occurrence_id=str(follow.occurrence_id),
+                                reason=reason,
+                                detail_codes=("x",),
+                                detail="",
+                            ),
+                        ),
+                    ),
+                )
+            keys = {
+                e.idempotency_key
+                for e in _events(world, DISPATCH_WITHHELD)
+                if e.task_id == str(follow.task_id) and e.payload["detail_codes"] == ["x"]
+            }
             assert len(keys) == 2
             # F8: the admission report and the hashed manifest come from one read
             view = dispatch.read(mission_id)
@@ -1105,15 +1235,24 @@ def test_the_first_plan_revision_on_the_product_deployment(tmp_path) -> None:
             producer = OccurrenceId(str(write.occurrence_id))
             assert set(declared_output_ports(network, producer)) == {"delivery"}
             with pytest.raises(ContractError, match="no declared output port"):
-                check_declared(network, producer, [_accepted_output(network, producer, str(write.task_id),
-                                                                    port="not-a-port")])
+                check_declared(
+                    network,
+                    producer,
+                    [_accepted_output(network, producer, str(write.task_id), port="not-a-port")],
+                )
             with pytest.raises(ContractError):
-                check_declared(network, producer, [_accepted_output(network, producer, str(write.task_id),
-                                                                    port="report")])
+                check_declared(
+                    network,
+                    producer,
+                    [_accepted_output(network, producer, str(write.task_id), port="report")],
+                )
             relabelled = VersionedRef(id="user.other", version=1, content_hash=HEX_A)
             with pytest.raises(ContractError, match="data requirement declares"):
-                check_declared(network, producer, [_accepted_output(network, producer, str(write.task_id),
-                                                                    schema=relabelled)])
+                check_declared(
+                    network,
+                    producer,
+                    [_accepted_output(network, producer, str(write.task_id), schema=relabelled)],
+                )
             output = _accepted_output(network, producer, str(write.task_id))
             assert accepted_output_from_json(accepted_output_json(output)) == output
             provisional = dataclasses.replace(output, provisional=True)
@@ -1125,19 +1264,33 @@ def test_the_first_plan_revision_on_the_product_deployment(tmp_path) -> None:
             root_row = next(item for item in goals if item["task_id"] == str(root.task_id))
             assert root_row["adopted_method"]["method_ref"]["kind"] == "method"
             assert {item["task_id"] for item in goals if item["form"] == "primitive"} == {
-                str(write.task_id), str(follow.task_id)}
+                str(write.task_id),
+                str(follow.task_id),
+            }
             from agent_orchestrator.planning.htn.planner_package import VIEW_NAMES, plan_row
 
             views = {name: () for name in VIEW_NAMES}
             views.update(goals=goals, plans=[plan_row(network)])
-            package = assemble_planner_package(package_version=10, mission=mission, network=network, views=views)
+            package = assemble_planner_package(
+                package_version=10, mission=mission, network=network, views=views
+            )
             assert package["package_version"] == 10 and package["mode"] == "hierarchical"
             assert set(package["views"]) == set(VIEW_NAMES)
-            assert not {"plan", "method_library", "applicability", "facts", "operators",
-                        "planning_rejected", "constraint", "output_contract"} & set(package)
+            assert not {
+                "plan",
+                "method_library",
+                "applicability",
+                "facts",
+                "operators",
+                "planning_rejected",
+                "constraint",
+                "output_contract",
+            } & set(package)
 
             # §7 the accept-side tables are STRICT
-            tables = dict(store.connection.execute("SELECT name, sql FROM sqlite_master WHERE type='table'"))
+            tables = dict(
+                store.connection.execute("SELECT name, sql FROM sqlite_master WHERE type='table'")
+            )
             for table in acceptance_receipt_schema.TABLES:
                 assert table in tables and "STRICT" in tables[table]
 
@@ -1158,20 +1311,28 @@ def _sub_goal_planner(request: Any) -> Any:
     request_body = context["request"]
     goal = str(request_body["goal_type_ref"]["id"])
     kinds = {str(item["task_type_ref"]["id"]): item for item in request_body["operators"]}
-    kinds.update({str(item["task_type_ref"]["id"]): item for item in request_body.get("subgoal_types", ())})
+    kinds.update(
+        {str(item["task_type_ref"]["id"]): item for item in request_body.get("subgoal_types", ())}
+    )
     criteria = [item["id"] for item in request_body["criterion_evidence"]]
     identity = request_body["new_method_identity"]
 
     def step(local: str, kind: str, arguments: dict[str, Any]) -> dict[str, Any]:
         compound = kind.startswith("sub-goal")
-        return {"local_id": local, "task_type_ref": kinds[kind]["task_type_ref"],
-                "form": "compound" if compound else "primitive", "arguments": arguments,
-                "required_capabilities": [] if compound else list(kinds[kind]["required_capabilities"]),
-                "obligation_relation": "refines_parent"}
+        return {
+            "local_id": local,
+            "task_type_ref": kinds[kind]["task_type_ref"],
+            "form": "compound" if compound else "primitive",
+            "arguments": arguments,
+            "required_capabilities": [] if compound else list(kinds[kind]["required_capabilities"]),
+            "obligation_relation": "refines_parent",
+        }
 
     if goal == "user-goal":
-        steps = [step("write", "prepare-delivery", {}),
-                 step("sub", "sub-goal-1", {"goal": {"op": "constant", "value": "写出 NOTES.md"}})]
+        steps = [
+            step("write", "prepare-delivery", {}),
+            step("sub", "sub-goal-1", {"goal": {"op": "constant", "value": "写出 NOTES.md"}}),
+        ]
         links = [("write", criteria[0]), ("sub", criteria[1])]
         finalizer = "write"
         ordering: list[dict[str, str]] = []
@@ -1182,20 +1343,40 @@ def _sub_goal_planner(request: Any) -> Any:
         links = [("work-a", criteria[0]), ("work-b", criteria[0])]
         finalizer = "work-b"
     method = {
-        "schema_version": 1, "method_id": identity["method_id"], "method_version": identity["method_version"],
+        "schema_version": 1,
+        "method_id": identity["method_id"],
+        "method_version": identity["method_version"],
         "goal_type_ref": request_body["goal_type_ref"],
         "parameter_schema_ref": request_body["goal_signature"]["parameter_schema_ref"],
         "output_schema_ref": request_body["goal_signature"]["output_schema_ref"],
-        "applicable_when": [], "exploration_assumptions": [], "steps": steps, "ordering": ordering,
-        "required_capabilities": [], "expected_effects": [],
-        "composition": {"criterion_links": [
-            {"parent_criterion_id": criterion, "child_step": local, "child_criterion_id": criterion,
-             "evidence_requirement": f"{local} 完成 {criterion}"} for local, criterion in links],
-            "outputs": {}, "finalizer_step": finalizer, "independent_review_required": True},
+        "applicable_when": [],
+        "exploration_assumptions": [],
+        "steps": steps,
+        "ordering": ordering,
+        "required_capabilities": [],
+        "expected_effects": [],
+        "composition": {
+            "criterion_links": [
+                {
+                    "parent_criterion_id": criterion,
+                    "child_step": local,
+                    "child_criterion_id": criterion,
+                    "evidence_requirement": f"{local} 完成 {criterion}",
+                }
+                for local, criterion in links
+            ],
+            "outputs": {},
+            "finalizer_step": finalizer,
+            "independent_review_required": True,
+        },
         "basis_refs": [],
     }
-    return decision(context["subject_key"], "PROPOSE_METHOD",
-                    {"method_proposal": {"method": method, "rationale": goal}}, goal)
+    return decision(
+        context["subject_key"],
+        "PROPOSE_METHOD",
+        {"method_proposal": {"method": method, "rationale": goal}},
+        goal,
+    )
 
 
 # 固定额度要装得下首审尾款（opt.178 起 393,216 = 256K 输入 + 131,072 输出）加一次执行的预留
@@ -1224,15 +1405,30 @@ def test_two_refinement_rounds_conserve_the_pool(tmp_path, allowance: int | None
     budget = 2_000_000
 
     async def case() -> Any:
-        async with enabled_world(tmp_path, key=f"p23c-two-rounds-{allowance}", provider=provider,
-                                 hold_worker=True, criteria=("file:a.md", "file:NOTES.md"),
-                                 request={"budget": {"max_tokens": budget, "max_attempts": 12}},
-                                 max_concurrency=2, max_concurrent_model_calls=2, **config) as world:
+        async with enabled_world(
+            tmp_path,
+            key=f"p23c-two-rounds-{allowance}",
+            provider=provider,
+            hold_worker=True,
+            criteria=("file:a.md", "file:NOTES.md"),
+            request={"budget": {"max_tokens": budget, "max_attempts": 12}},
+            max_concurrency=2,
+            max_concurrent_model_calls=2,
+            **config,
+        ) as world:
             semantics = HtnStore(world.store)
-            await run_until(world.product, lambda: (semantics.active_plan_revision(world.mission.id) is not None
-                                                    and int(semantics.active_plan_revision(world.mission.id).revision) >= 2),
-                            timeout=60)
-            equations = [event.payload["budget_conservation"] for event in _events(world, PLAN_REVISION_COMMITTED)]
+            await run_until(
+                world.product,
+                lambda: (
+                    semantics.active_plan_revision(world.mission.id) is not None
+                    and int(semantics.active_plan_revision(world.mission.id).revision) >= 2
+                ),
+                timeout=60,
+            )
+            equations = [
+                event.payload["budget_conservation"]
+                for event in _events(world, PLAN_REVISION_COMMITTED)
+            ]
             rows = list(world.store.list_tasks(world.mission.id))
             return equations, rows, task_pool_tokens(world.store.get_mission(world.mission.id))
 
@@ -1240,7 +1436,11 @@ def test_two_refinement_rounds_conserve_the_pool(tmp_path, allowance: int | None
     equations, rows, pool = asyncio.run(case())
     first, second = equations
     assert pool == budget
-    assert first["reserved_subtrees"] == 1 and first["funded_now"] == 1 and first["committed_tokens"] == 0
+    assert (
+        first["reserved_subtrees"] == 1
+        and first["funded_now"] == 1
+        and first["committed_tokens"] == 0
+    )
     assert first["holds"] is True
     assert second["committed_tokens"] == first["granted_tokens"]
     assert second["funded_now"] == 2 and second["reserved_subtrees"] == 0
@@ -1251,7 +1451,9 @@ def test_two_refinement_rounds_conserve_the_pool(tmp_path, allowance: int | None
     leaves = [int(task.budget.max_tokens or 0) for task in rows if task.budget.max_tokens]
     assert leaves and all(cap == min(allowance, pool) for cap in leaves), leaves
     assert second["available_tokens"] is not None and second["available_tokens"] <= pool
-    assert first["granted_tokens"] + 2 * (pool // 2) > pool, "re-spending the pool each round would overdraw"
+    assert first["granted_tokens"] + 2 * (pool // 2) > pool, (
+        "re-spending the pool each round would overdraw"
+    )
     reused = sum(int(value) for value in second["held_by_reused"].values())
     assert reused + second["held_elsewhere"] == second["committed_tokens"]
     assert granted == sum(leaves)  # V42：没有"份额"一说，叶子拿到的就是固定额度
@@ -1282,7 +1484,9 @@ def test_the_root_and_the_judgment_gates_on_the_product_deployment(tmp_path, mon
         first = real_accept(self, mission_id, task_id, **kwargs)
         before = self.store.connection.total_changes
         again = real_accept(self, mission_id, task_id, **kwargs)
-        assert str(again.acceptance_id) == str(first.acceptance_id), "a replay is the same acceptance"
+        assert str(again.acceptance_id) == str(first.acceptance_id), (
+            "a replay is the same acceptance"
+        )
         assert self.store.connection.total_changes == before, "a replay writes nothing"
         replays.append((str(task_id), str(first.acceptance_id)))
         return first
@@ -1298,14 +1502,18 @@ def test_the_root_and_the_judgment_gates_on_the_product_deployment(tmp_path, mon
             revision = int(HtnStore(self.store).active_plan_revision(mission_id).revision)
             row = connection.execute(
                 "SELECT occurrence_id, task_id FROM plan_memberships WHERE mission_id=? AND revision=? "
-                "AND form='primitive' ORDER BY occurrence_id LIMIT 1", (mission_id, revision)).fetchone()
+                "AND form='primitive' ORDER BY occurrence_id LIMIT 1",
+                (mission_id, revision),
+            ).fetchone()
             # ①b1: the stored meaning of one planned step loses its task id (a damaged row);
             # the plan then names a task that has no meaning — it does not read back
             # (a damaged disk does not honour foreign keys either, so they are off for the write)
             connection.execute("PRAGMA foreign_keys=OFF")
             lift_immutable_guards(connection, "task_semantics")
-            connection.execute("UPDATE task_semantics SET task_id='task-orphan' WHERE mission_id=? AND task_id=?",
-                               (mission_id, row["task_id"]))
+            connection.execute(
+                "UPDATE task_semantics SET task_id='task-orphan' WHERE mission_id=? AND task_id=?",
+                (mission_id, row["task_id"]),
+            )
             connection.commit()
             try:
                 with pytest.raises(CommitRejected) as refused:
@@ -1313,8 +1521,10 @@ def test_the_root_and_the_judgment_gates_on_the_product_deployment(tmp_path, mon
                 judged.append(str(refused.value))
             finally:
                 lift_immutable_guards(connection, "task_semantics")
-                connection.execute("UPDATE task_semantics SET task_id=? WHERE mission_id=? AND task_id='task-orphan'",
-                                   (row["task_id"], mission_id))
+                connection.execute(
+                    "UPDATE task_semantics SET task_id=? WHERE mission_id=? AND task_id='task-orphan'",
+                    (row["task_id"], mission_id),
+                )
                 connection.commit()
                 connection.execute("PRAGMA foreign_keys=ON")
         return real_judge(self, mission_id, judgments=judgments, summary=summary)
@@ -1325,10 +1535,20 @@ def test_the_root_and_the_judgment_gates_on_the_product_deployment(tmp_path, mon
         gate_passed = True
 
     async def case() -> dict[str, Any]:
-        async with enabled_world(tmp_path, key="p23c-root-gates", planner=chain_planner, criteria=CHAIN_CRITERIA,
-                                 hold_worker=True) as world:
+        async with enabled_world(
+            tmp_path,
+            key="p23c-root-gates",
+            planner=chain_planner,
+            criteria=CHAIN_CRITERIA,
+            hold_worker=True,
+        ) as world:
             await world.commit_seed()
-            loop, store, dispatch, mission_id = world.loop, world.store, world.dispatch, world.mission.id
+            loop, store, dispatch, mission_id = (
+                world.loop,
+                world.store,
+                world.dispatch,
+                world.mission.id,
+            )
             semantics = HtnStore(store)
             steps = _steps(world)
             follow_task = str(steps["continue"].task_id)
@@ -1340,12 +1560,16 @@ def test_the_root_and_the_judgment_gates_on_the_product_deployment(tmp_path, mon
             inputs = dispatch.root_resolution_inputs(mission_id)
             assert inputs.complete is False and inputs.reason
             for _ in range(3):
-                outcome = dispatch.attempt_root_resolution(mission_id, principal=principal, command_id="cmd-root-early")
+                outcome = dispatch.attempt_root_resolution(
+                    mission_id, principal=principal, command_id="cmd-root-early"
+                )
                 assert outcome.committed is False and outcome.reason == "ROOT_REVIEW_NOT_READY"
                 assert outcome.to_json()["resolution_id"] is None
             assert semantics.list_goal_resolutions(mission_id) == ()
             assert dispatch.root_contributions(mission_id) == {}
-            judgments = [{"criterion": item, "met": True} for item in world.mission.success_criteria]
+            judgments = [
+                {"criterion": item, "met": True} for item in world.mission.success_criteria
+            ]
             with pytest.raises(CommitRejected, match="unmet content"):
                 real_judge(loop.commit, mission_id, judgments=judgments, summary="too early")
             assert store.get_mission(mission_id).status is MissionStatus.ACTIVE
@@ -1360,16 +1584,27 @@ def test_the_root_and_the_judgment_gates_on_the_product_deployment(tmp_path, mon
 
             world.provider.release.set()
             final = await world.product.run_until_settled(mission_id, rounds=30)
-            final_package = next(iter(semantics.list_review_packages(mission_id, purpose=ReviewPurpose.MISSION_FINAL)))
+            final_package = next(
+                iter(
+                    semantics.list_review_packages(mission_id, purpose=ReviewPurpose.MISSION_FINAL)
+                )
+            )
             return {
-                "mission": final, "steps": steps, "network": dispatch.network(mission_id),
+                "mission": final,
+                "steps": steps,
+                "network": dispatch.network(mission_id),
                 "acceptances": semantics.list_acceptances(mission_id),
                 "outputs": semantics.list_acceptance_outputs(mission_id),
-                "licences": [item for item in semantics.list_validity_witnesses(mission_id)
-                             if item.purpose is WitnessPurpose.ACCEPT],
+                "licences": [
+                    item
+                    for item in semantics.list_validity_witnesses(mission_id)
+                    if item.purpose is WitnessPurpose.ACCEPT
+                ],
                 "input_licences": dispatch.input_witnesses(mission_id, follow_task),
                 "root_licences": dispatch.input_witnesses(mission_id, str(_root(world).task_id)),
-                "resolution": semantics.adopted_goal_resolution(mission_id, str(_root(world).obligation_id)),
+                "resolution": semantics.adopted_goal_resolution(
+                    mission_id, str(_root(world).obligation_id)
+                ),
                 "final_package": final_package,
             }
 
@@ -1384,25 +1619,45 @@ def test_the_root_and_the_judgment_gates_on_the_product_deployment(tmp_path, mon
     assert len(rows) == len({(row["producer_task_ref"], row["output_port"]) for row in rows})
     from_write = [row for row in rows if row["producer_task_ref"] == str(write.task_id)]
     assert [row["output_port"] for row in from_write] == ["delivery"]
-    edge = next(item for item in network.data_requirements if item.producer_occurrence == write.occurrence_id)
-    assert from_write[0]["schema_ref"] == edge.schema_ref.to_json(), "the indexed schema is the edge's"
+    edge = next(
+        item
+        for item in network.data_requirements
+        if item.producer_occurrence == write.occurrence_id
+    )
+    assert from_write[0]["schema_ref"] == edge.schema_ref.to_json(), (
+        "the indexed schema is the edge's"
+    )
     assert from_write[0]["acceptance_id"] in {acceptance_id for _, acceptance_id in replays}
     # the accept licence is named after the key it occupies, and nothing else (no clock)
     for held in seen["licences"]:
-        assert held.witness_id == "wit-" + content_hash_of({
-            "consumer": str(held.consumer_ref.id), "purpose": str(WitnessPurpose.ACCEPT), "scope": held.scope_id,
-            "epoch": int(held.scope_epoch), "support_revision": int(held.support_revision),
-            "subject": witness_subject(held)})[:32]
+        assert (
+            held.witness_id
+            == "wit-"
+            + content_hash_of(
+                {
+                    "consumer": str(held.consumer_ref.id),
+                    "purpose": str(WitnessPurpose.ACCEPT),
+                    "scope": held.scope_id,
+                    "epoch": int(held.scope_epoch),
+                    "support_revision": int(held.support_revision),
+                    "subject": witness_subject(held),
+                }
+            )[:32]
+        )
     # §16: a witness is not a transferable token
     assert seen["input_licences"] and all(
-        witness.consumer_ref.id == str(follow.task_id) for witness in seen["input_licences"].values())
+        witness.consumer_ref.id == str(follow.task_id)
+        for witness in seen["input_licences"].values()
+    )
     assert seen["root_licences"] == {}
     # R6: the judgment refused a plan that does not read back, then judged the real one
     assert len(judged) == 1 and "does not read back" in judged[0]
     # the root resolution quotes the revision its final review was cut over, and restates it
     resolution = seen["resolution"]
     assert resolution is not None
-    assert int(resolution.requirements_version) == int(seen["final_package"].binding.requirements_revision)
+    assert int(resolution.requirements_version) == int(
+        seen["final_package"].binding.requirements_revision
+    )
     assert {item.verdict for item in resolution.criteria} == {CriterionVerdict.PASS}
 
 
@@ -1431,10 +1686,16 @@ def test_a_run_never_completes_a_mission_without_its_root_resolution(tmp_path) -
 
     def planner(request: Any) -> Any:
         package = package_of(request)
-        if any(entry["request"]["trigger_source"] == "NO_DISPATCHABLE_WORK"
-               for entry in package.get("repair_requests") or ()):
-            return decision(package["planning_subjects"][0]["subject_key"], "NO_CHANGE",
-                            {"reason": "没有可改的。"}, "不改。")
+        if any(
+            entry["request"]["trigger_source"] == "NO_DISPATCHABLE_WORK"
+            for entry in package.get("repair_requests") or ()
+        ):
+            return decision(
+                package["planning_subjects"][0]["subject_key"],
+                "NO_CHANGE",
+                {"reason": "没有可改的。"},
+                "不改。",
+            )
         return planner_reply(request)
 
     provider = LayeredScriptedProvider(planner=planner, reviewer=reviewer)
@@ -1442,8 +1703,11 @@ def test_a_run_never_completes_a_mission_without_its_root_resolution(tmp_path) -
     async def case() -> Any:
         async with enabled_world(tmp_path, key="p23c-run", provider=provider) as world:
             mission = await world.product.run_until_settled(world.mission.id, rounds=6)
-            return mission, HtnStore(world.store).list_goal_resolutions(world.mission.id), [
-                task.status for task in world.store.list_tasks(world.mission.id)]
+            return (
+                mission,
+                HtnStore(world.store).list_goal_resolutions(world.mission.id),
+                [task.status for task in world.store.list_tasks(world.mission.id)],
+            )
 
     mission, resolutions, statuses = asyncio.run(case())
     assert TaskStatus.COMPLETED in statuses, "the work itself was done and accepted"

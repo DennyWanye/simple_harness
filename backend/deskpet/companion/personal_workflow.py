@@ -12,12 +12,8 @@ from typing import Any, Protocol
 
 PERSONAL_WORKFLOW_INTERPRETER_ID = "workflow.personal_v1"
 PERSONAL_WORKFLOW_INTERPRETER_VERSION = "1"
-PERSONAL_WORKFLOW_NODE_TYPES = frozenset(
-    {"input", "template", "condition", "tool_call", "output"}
-)
-PERSONAL_WORKFLOW_CONDITIONS = frozenset(
-    {"eq", "ne", "exists", "in", "gt", "gte", "lt", "lte"}
-)
+PERSONAL_WORKFLOW_NODE_TYPES = frozenset({"input", "template", "condition", "tool_call", "output"})
+PERSONAL_WORKFLOW_CONDITIONS = frozenset({"eq", "ne", "exists", "in", "gt", "gte", "lt", "lte"})
 _NODE_ID_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{0,63}$")
 _POINTER_RE = re.compile(r"^/(?:[^~/]|~[01])+(?:/(?:[^~/]|~[01])+)*$")
 
@@ -93,13 +89,9 @@ def _mapping(
     missing = required - set(value)
     extra = set(value) - required - optional
     if missing:
-        raise PersonalWorkflowError(
-            "missing_field", f"{name} is missing {sorted(missing)}"
-        )
+        raise PersonalWorkflowError("missing_field", f"{name} is missing {sorted(missing)}")
     if extra:
-        raise PersonalWorkflowError(
-            "unknown_field", f"{name} has unknown fields {sorted(extra)}"
-        )
+        raise PersonalWorkflowError("unknown_field", f"{name} has unknown fields {sorted(extra)}")
     return dict(value)
 
 
@@ -110,9 +102,7 @@ def _pointer(
     roots: tuple[str, ...],
 ) -> str:
     if not isinstance(value, str) or not _POINTER_RE.fullmatch(value):
-        raise PersonalWorkflowError(
-            "invalid_json_pointer", f"{name} must be a JSON Pointer"
-        )
+        raise PersonalWorkflowError("invalid_json_pointer", f"{name} must be a JSON Pointer")
     if not any(value == root or value.startswith(f"{root}/") for root in roots):
         raise PersonalWorkflowError(
             "invalid_pointer_root",
@@ -147,13 +137,8 @@ def _resolve_tool_binding(
         )
     for key in required - {"idempotent"}:
         if not isinstance(facts[key], str) or not facts[key]:
-            raise PersonalWorkflowError(
-                "tool_binding_invalid", f"{key} must be a non-empty string"
-            )
-    if (
-        facts["effect"] not in {"read_only", "idempotent_read"}
-        or facts["idempotent"] is not True
-    ):
+            raise PersonalWorkflowError("tool_binding_invalid", f"{key} must be a non-empty string")
+    if facts["effect"] not in {"read_only", "idempotent_read"} or facts["idempotent"] is not True:
         raise PersonalWorkflowError(
             "unsafe_tool_retry",
             "personal workflow tools must be frozen read-only and idempotent",
@@ -169,9 +154,7 @@ def personal_workflow_logical_effect_id(
     node_id: str,
 ) -> str:
     return hashlib.sha256(
-        "\x1f".join(
-            (child_run_id, selection_id, graph_hash, node_id)
-        ).encode("utf-8")
+        "\x1f".join((child_run_id, selection_id, graph_hash, node_id)).encode("utf-8")
     ).hexdigest()
 
 
@@ -194,9 +177,7 @@ def plan_personal_workflow_tool_node(
         )
     node = next((item for item in workflow.nodes if item.id == node_id), None)
     if node is None or node.type != "tool_call" or node.tool_binding is None:
-        raise PersonalWorkflowError(
-            "tool_node_missing", f"{node_id!r} is not a frozen tool node"
-        )
+        raise PersonalWorkflowError("tool_node_missing", f"{node_id!r} is not a frozen tool node")
     logical_effect_id = personal_workflow_logical_effect_id(
         child_run_id=child_run_id,
         selection_id=selection_id,
@@ -206,9 +187,7 @@ def plan_personal_workflow_tool_node(
     return PersonalWorkflowNodeExecution(
         node_id=node_id,
         logical_effect_id=logical_effect_id,
-        stable_call_id=hashlib.sha256(
-            f"{logical_effect_id}\x1fcall".encode()
-        ).hexdigest(),
+        stable_call_id=hashlib.sha256(f"{logical_effect_id}\x1fcall".encode()).hexdigest(),
         attempt_ordinal=attempt_ordinal,
         tool_binding=node.tool_binding,
     )
@@ -239,14 +218,10 @@ def parse_personal_workflow_v1(
     if not isinstance(raw["name"], str) or not raw["name"].strip():
         raise PersonalWorkflowError("invalid_name", "name must not be blank")
     if not isinstance(raw["description"], str):
-        raise PersonalWorkflowError(
-            "invalid_description", "description must be a string"
-        )
+        raise PersonalWorkflowError("invalid_description", "description must be a string")
     max_steps = raw["max_steps"]
     if isinstance(max_steps, bool) or not isinstance(max_steps, int) or not 1 <= max_steps <= 32:
-        raise PersonalWorkflowError(
-            "invalid_max_steps", "max_steps must be between 1 and 32"
-        )
+        raise PersonalWorkflowError("invalid_max_steps", "max_steps must be between 1 and 32")
     if not isinstance(raw["nodes"], list) or not raw["nodes"]:
         raise PersonalWorkflowError("invalid_nodes", "nodes must be a non-empty list")
 
@@ -294,12 +269,13 @@ def parse_personal_workflow_v1(
         if isinstance(retry, bool) or not isinstance(retry, int) or not 0 <= retry <= 2:
             raise PersonalWorkflowError("invalid_retry", "retry must be between 0 and 2")
         if node_type != "tool_call" and retry != 0:
-            raise PersonalWorkflowError(
-                "retry_not_allowed", "only tool_call nodes may retry"
-            )
+            raise PersonalWorkflowError("retry_not_allowed", "only tool_call nodes may retry")
         tool_binding: Mapping[str, Any] | None = None
         if node_type == "condition":
-            if set(config) != {"operator"} or config["operator"] not in PERSONAL_WORKFLOW_CONDITIONS:
+            if (
+                set(config) != {"operator"}
+                or config["operator"] not in PERSONAL_WORKFLOW_CONDITIONS
+            ):
                 raise PersonalWorkflowError(
                     "invalid_condition", "condition must use one fixed operator"
                 )
@@ -308,9 +284,7 @@ def parse_personal_workflow_v1(
                 raise PersonalWorkflowError(
                     "invalid_tool_call", "tool_call requires only tool_name"
                 )
-            tool_binding = _resolve_tool_binding(
-                config["tool_name"], tool_resolver
-            )
+            tool_binding = _resolve_tool_binding(config["tool_name"], tool_resolver)
         elif node_type == "template":
             if set(config) != {"template"} or not isinstance(config["template"], str):
                 raise PersonalWorkflowError(

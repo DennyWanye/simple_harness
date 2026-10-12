@@ -77,7 +77,9 @@ class TaskGraphFollowupPump:
         if self.notifications.store.connection.in_transaction:
             raise StoreError("TASKGRAPH_FOLLOWUP_PUMP_INSIDE_TRANSACTION")
         claim = self.notifications.claim_followup(
-            self.owner, now_ms=self.clock_ms(), lease_ms=self.lease_ms,
+            self.owner,
+            now_ms=self.clock_ms(),
+            lease_ms=self.lease_ms,
             excluded_missions=frozenset(self._excluded_missions()),
         )
         if claim is None:
@@ -128,9 +130,15 @@ class TaskGraphEventConsumer:
     supplied by a model or Host payload and cannot perform external IO.
     """
 
-    def __init__(self, notifications: TaskGraphFollowupStore, *, consumer_id: str,
-                 projector: Callable[[Event], tuple[FollowupV1, ...]]) -> None:
+    def __init__(
+        self,
+        notifications: TaskGraphFollowupStore,
+        *,
+        consumer_id: str,
+        projector: Callable[[Event], tuple[FollowupV1, ...]],
+    ) -> None:
         from ..graph.notification_contracts import _text
+
         _text(consumer_id, "consumer_id")
         self.notifications = notifications
         self.consumer_id = consumer_id
@@ -139,6 +147,7 @@ class TaskGraphEventConsumer:
     def consume(self, mission_id: str, *, now_ms: int, batch_size: int = 128) -> int:
         from ..graph.notification_contracts import _integer
         from ..planning.htn.grounding import derive_id
+
         _integer(now_ms, "now_ms")
         if type(batch_size) is not int or not 1 <= batch_size <= 1024:
             raise ValueError("event batch must be between 1 and 1024")
@@ -146,6 +155,7 @@ class TaskGraphEventConsumer:
         key = derive_id("taskgraph-exec-v2-event-cursor", self.consumer_id, mission_id)
         with store.transaction():
             from ..storage.taskgraph_store import NotBoundError, require_bound
+
             try:
                 require_bound(store, mission_id)
             except NotBoundError:
@@ -156,8 +166,11 @@ class TaskGraphEventConsumer:
                 raise StoreError("TASKGRAPH_EVENT_CURSOR_CORRUPT") from error
             if saved is None:
                 through = 0
-            elif (set(saved) != {"mission_id", "consumer_id", "through_seq"}
-                  or saved["mission_id"] != mission_id or saved["consumer_id"] != self.consumer_id):
+            elif (
+                set(saved) != {"mission_id", "consumer_id", "through_seq"}
+                or saved["mission_id"] != mission_id
+                or saved["consumer_id"] != self.consumer_id
+            ):
                 raise StoreError("TASKGRAPH_EVENT_CURSOR_CORRUPT")
             else:
                 through = _integer(saved["through_seq"], "through_seq")
@@ -171,6 +184,12 @@ class TaskGraphEventConsumer:
                     self.notifications.append_followup(followup, now_ms=now_ms)
                 through = event.seq
             if events:
-                store.put_scheduler_state(key, {"mission_id": mission_id, "consumer_id": self.consumer_id,
-                                                "through_seq": through})
+                store.put_scheduler_state(
+                    key,
+                    {
+                        "mission_id": mission_id,
+                        "consumer_id": self.consumer_id,
+                        "through_seq": through,
+                    },
+                )
             return len(events)

@@ -63,18 +63,14 @@ def _require_string_list(value: Any, path: str) -> tuple[str, ...]:
     return tuple(value)
 
 
-def _strict_object(
-    value: Mapping[str, Any], *, keys: set[str], name: str
-) -> dict[str, Any]:
+def _strict_object(value: Mapping[str, Any], *, keys: set[str], name: str) -> dict[str, Any]:
     if not isinstance(value, Mapping):
         raise ContractValidationError(f"{name} must be an object")
     raw = dict(value)
     missing = sorted(keys - set(raw))
     unknown = sorted(set(raw) - keys)
     if missing or unknown:
-        raise ContractValidationError(
-            f"{name} keys differ (missing={missing}, unknown={unknown})"
-        )
+        raise ContractValidationError(f"{name} keys differ (missing={missing}, unknown={unknown})")
     if raw.get("schema_version") != 1:
         raise ContractValidationError(f"{name}.schema_version must be 1")
     return raw
@@ -104,7 +100,9 @@ class AnalysisStatement:
             if self.citation_ids:
                 raise ContractValidationError("gap statements cannot cite evidence")
             if not _GAP_MARKER.search(self.text):
-                raise ContractValidationError("gap statements must explicitly name the evidence gap")
+                raise ContractValidationError(
+                    "gap statements must explicitly name the evidence gap"
+                )
 
     def to_json(self) -> dict[str, JsonValue]:
         return {
@@ -199,9 +197,7 @@ class PerDimensionAnalysisPayload:
             item = raw[field_name]
             if item is not None and not isinstance(item, Mapping):
                 raise ContractValidationError(f"{field_name} must be an object or null")
-            parsed[field_name] = (
-                AnalysisStatement.from_json(item) if item is not None else None
-            )
+            parsed[field_name] = AnalysisStatement.from_json(item) if item is not None else None
         if parsed["finding"] is None:
             raise ContractValidationError("finding is required")
         return cls(
@@ -275,14 +271,10 @@ def rerank_analysis_passages(
     if len(dimension_ids) != len(set(dimension_ids)):
         raise ContractValidationError("dimension ids must be unique")
 
-    admitted_by_id = {
-        item.candidate.candidate_id: item for item in evaluation.admitted_passages
-    }
+    admitted_by_id = {item.candidate.candidate_id: item for item in evaluation.admitted_passages}
     if len(admitted_by_id) != len(evaluation.admitted_passages):
         raise ContractValidationError("admitted passage ids must be unique")
-    coverage_by_dimension = {
-        item.dimension_id: item for item in evaluation.dimension_coverages
-    }
+    coverage_by_dimension = {item.dimension_id: item for item in evaluation.dimension_coverages}
     if set(coverage_by_dimension) != set(dimension_ids):
         raise ContractValidationError("coverage dimensions must exactly match dimensions")
 
@@ -356,12 +348,8 @@ def rerank_analysis_passages(
 select_analysis_passages = rerank_analysis_passages
 
 
-def _coverage_for(
-    dimension_id: str, evaluation: EvidenceEvaluation
-) -> DimensionCoverage:
-    matches = [
-        item for item in evaluation.dimension_coverages if item.dimension_id == dimension_id
-    ]
+def _coverage_for(dimension_id: str, evaluation: EvidenceEvaluation) -> DimensionCoverage:
+    matches = [item for item in evaluation.dimension_coverages if item.dimension_id == dimension_id]
     if len(matches) != 1:
         raise ContractValidationError("analysis dimension must have exactly one coverage row")
     return matches[0]
@@ -403,9 +391,7 @@ def _support_fact_statements(
     decisions = evaluate_support(claims, stable_passages)
     unsupported = [item.claim_id for item in decisions if not item.supported]
     if unsupported:
-        raise ContractValidationError(
-            f"unsupported fact statements: {sorted(unsupported)}"
-        )
+        raise ContractValidationError(f"unsupported fact statements: {sorted(unsupported)}")
     return tuple(
         passage_id
         for decision in decisions
@@ -435,8 +421,7 @@ def validate_dimension_analysis_payload(
         if item.candidate.dimension_id == dimension.dimension_id
     }
     if len(selected_by_id) != sum(
-        item.candidate.dimension_id == dimension.dimension_id
-        for item in selected_passages
+        item.candidate.dimension_id == dimension.dimension_id for item in selected_passages
     ):
         raise ContractValidationError("selected passage ids must be unique")
     allowed_ids = set(coverage.evidence_passage_ids) & set(selected_by_id)
@@ -449,10 +434,7 @@ def validate_dimension_analysis_payload(
         if (
             payload.finding.kind != "gap"
             or payload.citation_ids
-            or any(
-                getattr(payload, field_name) is not None
-                for field_name in _STATEMENT_FIELDS[1:]
-            )
+            or any(getattr(payload, field_name) is not None for field_name in _STATEMENT_FIELDS[1:])
         ):
             raise ContractValidationError(
                 "uncovered dimensions require one explicit gap and no conclusion"
@@ -469,19 +451,13 @@ def validate_dimension_analysis_payload(
         )
 
     if payload.finding.kind != "fact":
-        raise ContractValidationError(
-            "covered dimensions require a supported factual finding"
-        )
+        raise ContractValidationError("covered dimensions require a supported factual finding")
     if not any(item.kind == "fact" for item in payload.statements):
         raise ContractValidationError("covered analysis requires at least one supported fact")
 
-    winning_ids = _support_fact_statements(
-        payload.statements, tuple(selected_by_id.values())
-    )
+    winning_ids = _support_fact_statements(payload.statements, tuple(selected_by_id.values()))
     fact_ids = tuple(item.claim_id for item in payload.statements if item.kind == "fact")
-    inference_ids = tuple(
-        item.claim_id for item in payload.statements if item.kind == "inference"
-    )
+    inference_ids = tuple(item.claim_id for item in payload.statements if item.kind == "inference")
     limitation_ids = tuple(
         item.claim_id
         for field_name in ("uncertainty", "counterevidence")

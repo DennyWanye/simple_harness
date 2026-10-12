@@ -31,9 +31,7 @@ def _canonical_json(value: object) -> bytes:
 
 def _freeze_json(value: Any) -> Any:
     if isinstance(value, dict):
-        return MappingProxyType(
-            {key: _freeze_json(item) for key, item in value.items()}
-        )
+        return MappingProxyType({key: _freeze_json(item) for key, item in value.items()})
     if isinstance(value, list):
         return tuple(_freeze_json(item) for item in value)
     return value
@@ -162,9 +160,7 @@ class PackagedEvaluationSuiteLoader:
                 and entry.name != "manifest.json"
             }
         except OSError as exc:
-            raise PackagedEvaluationSuiteError(
-                "evaluation_suite_resource_unavailable"
-            ) from exc
+            raise PackagedEvaluationSuiteError("evaluation_suite_resource_unavailable") from exc
 
     def load_manifest(self) -> PackagedEvaluationSuiteManifestV1:
         root = self._root()
@@ -330,9 +326,7 @@ class PackagedEvaluationSuiteLoader:
                     "evaluation_suite_invalid_document",
                     case_id,
                 )
-            immutable_assertions = tuple(
-                _immutable_json_object(item) for item in assertions
-            )
+            immutable_assertions = tuple(_immutable_json_object(item) for item in assertions)
             cases.append(
                 PackagedEvaluationCaseV1(
                     case_id=case_id,
@@ -355,9 +349,7 @@ class PackagedEvaluationSuiteLoader:
                 suite_id,
             )
         assertions_payload.sort(key=lambda item: str(item["case_id"]))
-        actual_assertions_hash = hashlib.sha256(
-            _canonical_json(assertions_payload)
-        ).hexdigest()
+        actual_assertions_hash = hashlib.sha256(_canonical_json(assertions_payload)).hexdigest()
         if actual_assertions_hash != assertions_hash:
             raise PackagedEvaluationSuiteError(
                 "evaluation_suite_assertions_hash_mismatch",

@@ -17,6 +17,7 @@ OpenAI-specific quirks handled here:
        cache reporting field on gpt-4o — mapped to cache_read_tokens.
        OpenAI has no cache_write billing (free), so cache_write_tokens=0.
 """
+
 from __future__ import annotations
 
 import json
@@ -74,11 +75,7 @@ class OpenAIAdapter(BaseLLMAdapter):
 
     def _is_local_base_url(self) -> bool:
         base_url = (self.base_url or "").lower()
-        return (
-            "localhost" in base_url
-            or "127.0.0.1" in base_url
-            or "0.0.0.0" in base_url
-        )
+        return "localhost" in base_url or "127.0.0.1" in base_url or "0.0.0.0" in base_url
 
     def _ensure_api_key_usable(self) -> None:
         if (self._api_key or "").strip().lower() in _PLACEHOLDER_KEYS:
@@ -98,9 +95,7 @@ class OpenAIAdapter(BaseLLMAdapter):
         try:
             from openai import AsyncOpenAI
         except ImportError as exc:  # pragma: no cover
-            raise LLMProviderError(
-                f"openai SDK not installed: {exc}", provider=self.name
-            ) from exc
+            raise LLMProviderError(f"openai SDK not installed: {exc}", provider=self.name) from exc
         kwargs: dict[str, Any] = {
             "api_key": self._api_key,
             "timeout": self.timeout,
@@ -165,11 +160,7 @@ class OpenAIAdapter(BaseLLMAdapter):
             body = getattr(exc, "body", None)
             resp = getattr(exc, "response", None)
             text = getattr(resp, "text", "") if resp is not None else ""
-            error_class = (
-                classify_relay_error(status, text, body=body)
-                if self._is_relay
-                else None
-            )
+            error_class = classify_relay_error(status, text, body=body) if self._is_relay else None
             return LLMAuthError(
                 str(exc),
                 provider=provider,
@@ -181,13 +172,17 @@ class OpenAIAdapter(BaseLLMAdapter):
         # → 之前落 LLMProviderError(不重试同 provider) → agent turn 立即崩。这类连接级
         # 瞬时错误本应当 timeout 一样可重试（立即重试常救回）。统一归 LLMTimeoutError。
         _transient_conn = name in (
-            "ReadError", "ConnectError", "RemoteProtocolError", "ProtocolError",
-            "ConnectionError", "APIConnectionError", "APITimeoutError",
-            "WriteError", "PoolTimeout",
+            "ReadError",
+            "ConnectError",
+            "RemoteProtocolError",
+            "ProtocolError",
+            "ConnectionError",
+            "APIConnectionError",
+            "APITimeoutError",
+            "WriteError",
+            "PoolTimeout",
         )
-        if "Timeout" in name or _transient_conn or isinstance(
-            exc, (TimeoutError, ConnectionError)
-        ):
+        if "Timeout" in name or _transient_conn or isinstance(exc, (TimeoutError, ConnectionError)):
             return LLMTimeoutError(str(exc), provider=provider)
         return LLMProviderError(str(exc), provider=provider, status_code=status)
 
@@ -309,7 +304,9 @@ class OpenAIAdapter(BaseLLMAdapter):
         return ChatResponse(
             content=content,
             tool_calls=tool_calls,
-            stop_reason=self._map_stop_reason(getattr(choice, "finish_reason", None) if choice else None),
+            stop_reason=self._map_stop_reason(
+                getattr(choice, "finish_reason", None) if choice else None
+            ),
             usage=self._usage_from(getattr(resp, "usage", None)),
             model=getattr(resp, "model", use_model) or use_model,
         )
@@ -343,9 +340,7 @@ class OpenAIAdapter(BaseLLMAdapter):
                             yield ChatChunk(delta_content=txt, model=last_model)
                         for tcd in getattr(delta, "tool_calls", None) or []:
                             idx = getattr(tcd, "index", 0) or 0
-                            buf = tool_buffers.setdefault(
-                                idx, {"id": "", "name": "", "args": ""}
-                            )
+                            buf = tool_buffers.setdefault(idx, {"id": "", "name": "", "args": ""})
                             if getattr(tcd, "id", None):
                                 buf["id"] = tcd.id
                             fn = getattr(tcd, "function", None)

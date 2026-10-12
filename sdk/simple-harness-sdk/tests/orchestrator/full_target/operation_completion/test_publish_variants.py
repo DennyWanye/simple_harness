@@ -86,13 +86,25 @@ def _quick(monkeypatch):
 
 
 def _count(case: Publishing, table: str) -> int:
-    return int(case.store.connection.execute(
-        f"SELECT count(*) FROM {table} WHERE mission_id=?", (case.mission_id,)).fetchone()[0])  # noqa: S608
+    return int(
+        case.store.connection.execute(
+            f"SELECT count(*) FROM {table} WHERE mission_id=?", (case.mission_id,)
+        ).fetchone()[0]
+    )  # noqa: S608
 
 
 def _rows(case: Publishing) -> dict[str, int]:
-    return {table: _count(case, table) for table in (
-        "attempts", "results", "acceptances", "goal_resolutions", "dispatch_intents", "actions")}
+    return {
+        table: _count(case, table)
+        for table in (
+            "attempts",
+            "results",
+            "acceptances",
+            "goal_resolutions",
+            "dispatch_intents",
+            "actions",
+        )
+    }
 
 
 def test_content_acceptance_is_preparation_only_until_the_publish_completes(tmp_path):
@@ -108,18 +120,29 @@ def test_content_acceptance_is_preparation_only_until_the_publish_completes(tmp_
             # 根（复合目标）负责发布效果；内容那一步已验收，它的产物按端口可读（数据），
             # 但根没完成、没有根结论，任务仍在进行（顺序与终结关着）。
             root = read_occurrence_completion(case.store, case.mission_id, scope.occurrence_id)
-            assert scope.required_effect_keys == ("publish-weekly",) and scope.content_criterion_ids == ("c-user-1",)
+            assert scope.required_effect_keys == (
+                "publish-weekly",
+            ) and scope.content_criterion_ids == ("c-user-1",)
             assert not root.effects_ready and not root.complete
             index = dispatch.accepted_outputs(case.mission_id, network)
-            [leaf] = [t for t in case.store.list_tasks(case.mission_id) if t.id != scope.task_ref.id]
+            [leaf] = [
+                t for t in case.store.list_tasks(case.mission_id) if t.id != scope.task_ref.id
+            ]
             assert leaf.status.value == "COMPLETED"
-            assert [a.id for a in case.store.list_mission_artifacts(case.mission_id) if a.path == TARGET] == [
-                item.artifact_id for item in index.outputs]
-            assert not dispatch.terminal(case.mission_id) and not dispatch.root_review_ready(case.mission_id)
-            effect = read_current_effect(case.store, case.mission_id, scope.spec_hash, "publish-weekly")
+            assert [
+                a.id for a in case.store.list_mission_artifacts(case.mission_id) if a.path == TARGET
+            ] == [item.artifact_id for item in index.outputs]
+            assert not dispatch.terminal(case.mission_id) and not dispatch.root_review_ready(
+                case.mission_id
+            )
+            effect = read_current_effect(
+                case.store, case.mission_id, scope.spec_hash, "publish-weekly"
+            )
             assert effect["state"] == "AWAITING_APPROVAL" and effect["complete"] is False
             assert case.status() == "ACTIVE" and _count(case, "goal_resolutions") == 0
-            assert case.published_files() == [] and approval["summary"]["connector"] == "file_publish"
+            assert (
+                case.published_files() == [] and approval["summary"]["connector"] == "file_publish"
+            )
             assert HtnStore(case.store).list_delivery_receipts(case.mission_id) == ()
 
             # 等人批准期间反复跑：不重派、不再调模型、不判卡死，任务仍在等。
@@ -134,7 +157,9 @@ def test_content_acceptance_is_preparation_only_until_the_publish_completes(tmp_
             page = case.world.control.snapshot(case.mission_id)["snapshot"]["operation_workspace"]
             assert page["state"] == "APPROVED" and page["spec_hash"] == scope.spec_hash
             assert [item["state"] for item in page["intents"]] == ["AWAITING_APPROVAL"]
-            foreign = MissionControlV1(case.world.loop, tenant_id="another-tenant", principal=Principal("foreign-user"))
+            foreign = MissionControlV1(
+                case.world.loop, tenant_id="another-tenant", principal=Principal("foreign-user")
+            )
             with pytest.raises(FacadeError) as hidden:
                 foreign.snapshot(case.mission_id)
             assert hidden.value.code == "not_found"
@@ -143,8 +168,11 @@ def test_content_acceptance_is_preparation_only_until_the_publish_completes(tmp_
             # 规划授权与动作批准互不顶替：别的租户拿不到这个任务的规划授权（什么都不写）；
             # 批准发布也不产生规划授权。
             grants = _count(case, "planning_lane_grants")
-            outsider = PlanningAuthorizationApi(case.world.loop.commit, tenant_id="foreign-tenant",
-                                                principal=Principal("foreign-planner"))
+            outsider = PlanningAuthorizationApi(
+                case.world.loop.commit,
+                tenant_id="foreign-tenant",
+                principal=Principal("foreign-planner"),
+            )
             before = case.store.connection.total_changes
             with pytest.raises(StoreConflict, match="not available to this caller"):
                 outsider.issue(case.mission_id, command_id="o04-foreign-grant")
@@ -160,7 +188,9 @@ def test_content_acceptance_is_preparation_only_until_the_publish_completes(tmp_
             assert root.effects_ready and root.complete
             [delivery] = HtnStore(case.store).list_delivery_receipts(case.mission_id)
             assert delivery.stage is DeliveryStage.PERSISTED and delivery.operation_id is not None
-            assert len(case.published_files()) == 1 and [a["handoffs"] for a in case.actions()] == [1]
+            assert len(case.published_files()) == 1 and [a["handoffs"] for a in case.actions()] == [
+                1
+            ]
 
     asyncio.run(run())
 
@@ -176,35 +206,62 @@ def test_a_delivery_receipt_written_past_the_handoff_completes_nothing(tmp_path)
             approval = await case.until_approval()
             scope = root_scope(case)["document"]
             htn = HtnStore(case.store)
-            [acceptance_id] = [row[0] for row in case.store.connection.execute(
-                "SELECT acceptance_id FROM acceptances WHERE mission_id=?", (case.mission_id,))]
+            [acceptance_id] = [
+                row[0]
+                for row in case.store.connection.execute(
+                    "SELECT acceptance_id FROM acceptances WHERE mission_id=?", (case.mission_id,)
+                )
+            ]
             with case.store.transaction():
-                for stage, operation in ((DeliveryStage.SENT, "op-forged"), (DeliveryStage.PERSISTED, None)):
+                for stage, operation in (
+                    (DeliveryStage.SENT, "op-forged"),
+                    (DeliveryStage.PERSISTED, None),
+                ):
                     htn.record_delivery_receipt(
                         case.mission_id,
-                        DeliveryReceipt(receipt_id=f"forged-{stage.value}", mission_id=case.mission_id,
-                                        acceptance_id=acceptance_id, stage=stage, observed_at_ms=1,
-                                        operation_id=operation),
-                        command_id=f"forged-{stage.value}", intent_hash="f" * 64)
+                        DeliveryReceipt(
+                            receipt_id=f"forged-{stage.value}",
+                            mission_id=case.mission_id,
+                            acceptance_id=acceptance_id,
+                            stage=stage,
+                            observed_at_ms=1,
+                            operation_id=operation,
+                        ),
+                        command_id=f"forged-{stage.value}",
+                        intent_hash="f" * 64,
+                    )
             forged = {r.receipt_id for r in htn.list_delivery_receipts(case.mission_id)}
             assert forged == {"forged-SENT", "forged-PERSISTED"}
 
             rows = _rows(case)
             for _ in range(3):
                 await case.world.drain()
-            effect = read_current_effect(case.store, case.mission_id, scope.spec_hash, "publish-weekly")
+            effect = read_current_effect(
+                case.store, case.mission_id, scope.spec_hash, "publish-weekly"
+            )
             assert effect["state"] == "AWAITING_APPROVAL" and effect["complete"] is False
             root = read_occurrence_completion(case.store, case.mission_id, scope.occurrence_id)
             assert not root.effects_ready and not root.complete
-            assert case.status() == "ACTIVE" and _count(case, "goal_resolutions") == 0 and _rows(case) == rows
+            assert (
+                case.status() == "ACTIVE"
+                and _count(case, "goal_resolutions") == 0
+                and _rows(case) == rows
+            )
             assert case.published_files() == []
 
             case.approve(approval)
             mission = await case.world.run_until_settled(case.mission_id, rounds=20)
             assert str(mission.status.value) == "COMPLETED", mission.final_report
-            assert len(case.published_files()) == 1 and [a["handoffs"] for a in case.actions()] == [1]
-            [real] = [r for r in htn.list_delivery_receipts(case.mission_id) if r.receipt_id not in forged]
-            assert real.stage is DeliveryStage.PERSISTED and real.operation_id not in (None, "op-forged")
+            assert len(case.published_files()) == 1 and [a["handoffs"] for a in case.actions()] == [
+                1
+            ]
+            [real] = [
+                r for r in htn.list_delivery_receipts(case.mission_id) if r.receipt_id not in forged
+            ]
+            assert real.stage is DeliveryStage.PERSISTED and real.operation_id not in (
+                None,
+                "op-forged",
+            )
 
     asyncio.run(run())
 
@@ -217,15 +274,22 @@ def test_a_lost_reply_is_reconciled_and_never_resent(tmp_path):
     async def run() -> None:
         async with publishing(tmp_path, faults=faults) as case:
             case.approve(await case.until_approval())
-            await case.drain_until(lambda: any(a["state"] == "UNKNOWN" for a in case.actions()), rounds=10)
+            await case.drain_until(
+                lambda: any(a["state"] == "UNKNOWN" for a in case.actions()), rounds=10
+            )
             [action] = case.actions()
             assert action["state"] == "UNKNOWN" and not action.get("receipt"), action
             for _ in range(3):  # 核对一直连不上：仍只核对
                 await case.world.drain()
             assert faults.executed == 1 and faults.lookups >= 1 and "reply-lost" in faults.log
-            assert case.status() == "ACTIVE" and case.store.get_action(action["action_key"])["state"] == "UNKNOWN"
+            assert (
+                case.status() == "ACTIVE"
+                and case.store.get_action(action["action_key"])["state"] == "UNKNOWN"
+            )
             # 全任务的操作读侧把它当作未决：计划变更的总闸关着（与哪个计划成员产生它无关）。
-            snapshot = build_operation_snapshot(case.mission_id, reader=StoreOperationReader(case.store))
+            snapshot = build_operation_snapshot(
+                case.mission_id, reader=StoreOperationReader(case.store)
+            )
             assert [effect for _, effect in snapshot.effects] == [OperationEffect.UNRESOLVED]
             with pytest.raises(SourceUnavailable, match="operation_unresolved"):
                 operation_gate(snapshot)
@@ -264,13 +328,18 @@ def test_a_person_rejecting_the_publish_publishes_nothing(tmp_path):
     async def run() -> None:
         async with publishing(tmp_path) as case:
             approval = await case.until_approval()
-            decided = case.world.control.decide(approval["request_id"], "reject", reason="这份周报先不发")
+            decided = case.world.control.decide(
+                approval["request_id"], "reject", reason="这份周报先不发"
+            )
             assert decided["request_state"] == "REJECTED"
             for _ in range(5):
                 await case.world.drain()
             [action] = case.actions()
             assert action["state"] == "REJECTED" and action["handoffs"] == 0
-            assert case.published_files() == [] and not case.ledger_dir.joinpath("ledger.jsonl").exists()
+            assert (
+                case.published_files() == []
+                and not case.ledger_dir.joinpath("ledger.jsonl").exists()
+            )
             assert case.status() != "COMPLETED"
 
     asyncio.run(run())
@@ -279,15 +348,21 @@ def test_a_person_rejecting_the_publish_publishes_nothing(tmp_path):
 def test_the_deployment_handoff_cap_refuses_before_anything_leaves(tmp_path):
     from agent_orchestrator.governance.policies import DeploymentPolicy
 
-    capped = DeploymentPolicy(enabled_connectors=("file_publish",), max_action_level="L2",
-                              max_action_handoffs_per_mission=0)
+    capped = DeploymentPolicy(
+        enabled_connectors=("file_publish",),
+        max_action_level="L2",
+        max_action_handoffs_per_mission=0,
+    )
     faults = Faults()
 
     async def run() -> None:
         async with publishing(tmp_path, faults=faults, deployment_policy=capped) as case:
             case.approve(await case.until_approval())
             mission = await case.world.run_until_settled(case.mission_id, rounds=10)
-            assert str(mission.status.value) == "FAILED" and str(mission.stop_reason) == "action_failed"
+            assert (
+                str(mission.status.value) == "FAILED"
+                and str(mission.stop_reason) == "action_failed"
+            )
             assert mission.final_report["detail"]["reason"] == "handoff_refused:handoff_cap_reached"
             [refused] = case.events("ActionHandoffRefused")
             assert refused.payload["reason"] == "handoff_cap_reached"
@@ -306,7 +381,9 @@ def test_a_publish_lost_before_the_service_is_handed_off_again(tmp_path):
             await case.drain_until(lambda: case.status() == "COMPLETED", rounds=20)
             assert case.status() == "COMPLETED"
             [action] = case.actions()
-            assert action["state"] == "SUCCEEDED" and action["handoffs"] == 2, action  # 原地重交一次
+            assert action["state"] == "SUCCEEDED" and action["handoffs"] == 2, (
+                action
+            )  # 原地重交一次
             assert faults.executed == 1 and len(case.published_files()) == 1
             [proof] = [e.payload for e in case.events("ActionScopedReconciled")]
             assert proof["outcome"] == "NOT_APPLIED_FINAL"
@@ -325,14 +402,20 @@ def test_a_person_rules_on_a_publish_nobody_can_settle(tmp_path, outcome):
     async def run() -> None:
         async with publishing(tmp_path, faults=faults) as case:
             case.approve(await case.until_approval())
-            await case.drain_until(lambda: any(a["state"] == "UNKNOWN" and a.get("needs_human")
-                                               for a in case.actions()), rounds=10)
+            await case.drain_until(
+                lambda: any(
+                    a["state"] == "UNKNOWN" and a.get("needs_human") for a in case.actions()
+                ),
+                rounds=10,
+            )
             [action] = case.actions()
             assert action["state"] == "UNKNOWN" and action["handoffs"] == 1, action  # 不重交
             control = case.world.control
             with pytest.raises(FacadeError):
                 control.resolve_unknown(action["action_key"], outcome=outcome, basis="")
-            ruled = control.resolve_unknown(action["action_key"], outcome=outcome, basis="我查了发布目录，文件不在")
+            ruled = control.resolve_unknown(
+                action["action_key"], outcome=outcome, basis="我查了发布目录，文件不在"
+            )
             assert ruled["state"] == ("SUCCEEDED" if outcome == "succeeded" else "FAILED")
             [override] = case.events("HumanOverride")
             assert override.payload["subject"] == action["action_key"]
@@ -343,7 +426,9 @@ def test_a_person_rules_on_a_publish_nobody_can_settle(tmp_path, outcome):
             # 人裁"没生效"就是证明：闸门打开，系统按原内容出新卡，卡上写着上次是人裁定没生效
             [proof] = [e.payload for e in case.events("ActionScopedReconciled")]
             assert proof["outcome"] == "NOT_APPLIED_FINAL"
-            await case.drain_until(lambda: any(a["state"] == "AWAITING_APPROVAL" for a in case.actions()), rounds=20)
+            await case.drain_until(
+                lambda: any(a["state"] == "AWAITING_APPROVAL" for a in case.actions()), rounds=20
+            )
             [card] = [a for a in case.actions() if a["state"] == "AWAITING_APPROVAL"]
             assert card["previous_attempt"]["outcome"] == "human_ruled_not_applied"
             faults.remove_published = False
@@ -361,18 +446,24 @@ def _refusing_reviewer(verdict: str, grade: str, purposes: list[str]):
             return None
         purposes.append(package["package"].get("purpose"))
         if package["package"].get("purpose") == "ACTION_PROPOSAL":
-            return review_reply(package, verdict=verdict, grade=grade, reason="脚本化审阅：申请单不成立/判断不了。")
+            return review_reply(
+                package, verdict=verdict, grade=grade, reason="脚本化审阅：申请单不成立/判断不了。"
+            )
         return review_reply(package)
 
     return reviewer
 
 
-@pytest.mark.parametrize("verdict,grade,intents,reviews,explanation", (
-    ("REJECTED", "FAIL", 1, 1, "需要人来判断"),
-    ("INCONCLUSIVE", "UNKNOWN", 3, 6, "3 次没能完成"),
-))
-def test_a_prepared_publish_the_reviewer_does_not_pass_stops_for_a_person(tmp_path, verdict, grade, intents,
-                                                                            reviews, explanation):
+@pytest.mark.parametrize(
+    "verdict,grade,intents,reviews,explanation",
+    (
+        ("REJECTED", "FAIL", 1, 1, "需要人来判断"),
+        ("INCONCLUSIVE", "UNKNOWN", 3, 6, "3 次没能完成"),
+    ),
+)
+def test_a_prepared_publish_the_reviewer_does_not_pass_stops_for_a_person(
+    tmp_path, verdict, grade, intents, reviews, explanation
+):
     """审阅员不认可：不重交，停下给人判断；判断不了：每份申请单先换会话复审一次，替代重交两次
     （共三份申请单），仍不行就停下。"""
 
@@ -390,7 +481,9 @@ def test_a_prepared_publish_the_reviewer_does_not_pass_stops_for_a_person(tmp_pa
             assert len(rows) == intents
             assert sum(1 for row in rows if row["supersedes_intent_id"]) == intents - 1
             assert case.actions() == [] and case.published_files() == []
-            assert purposes.count("ACTION_PROPOSAL") == reviews and "OPERATION_OUTCOME" not in purposes
+            assert (
+                purposes.count("ACTION_PROPOSAL") == reviews and "OPERATION_OUTCOME" not in purposes
+            )
 
     asyncio.run(run())
 
@@ -413,8 +506,11 @@ def test_a_publish_no_step_produces_asks_the_planner(tmp_path):
 
     async def run() -> None:
         try:
-            async with publishing(tmp_path, provider=provider, criteria=("file:notes.md",
-                                                                          "action:file_publish.publish:" + TARGET)) as case:
+            async with publishing(
+                tmp_path,
+                provider=provider,
+                criteria=("file:notes.md", "action:file_publish.publish:" + TARGET),
+            ) as case:
                 await case.run_until(lambda: bool(seen), timeout=60)
                 [context] = seen[:1]
                 assert context["target"] == TARGET and context["matches"] == []
@@ -462,22 +558,39 @@ def test_the_final_review_judges_the_content_and_the_outcome_review_judges_the_e
             scope = root_scope(case)["document"]
             outcome = case.store.connection.execute(
                 "SELECT binding_id, document_json FROM operation_outcome_review_bindings WHERE mission_id=?",
-                (case.mission_id,)).fetchone()
-            observations = {str(ref["id"]) for ref in json.loads(outcome["document_json"])["source_receipt_refs"]}
+                (case.mission_id,),
+            ).fetchone()
+            observations = {
+                str(ref["id"])
+                for ref in json.loads(outcome["document_json"])["source_receipt_refs"]
+            }
             [final] = finals
             assert final["criterion_ids"] == sorted(scope.content_criterion_ids)
             [fact] = final["package"]["effect_facts"]
-            assert (fact["effect_key"], fact["state"], fact["complete"]) == ("publish-weekly", "ACCEPTED", True)
+            assert (fact["effect_key"], fact["state"], fact["complete"]) == (
+                "publish-weekly",
+                "ACCEPTED",
+                True,
+            )
             final_kinds = _kinds(final)
-            assert "acc-" + outcome["binding_id"] in final_kinds.get("acceptance", set()), final_kinds
-            assert observations and observations <= final_kinds.get("commit_receipt", set()), final_kinds
+            assert "acc-" + outcome["binding_id"] in final_kinds.get("acceptance", set()), (
+                final_kinds
+            )
+            assert observations and observations <= final_kinds.get("commit_receipt", set()), (
+                final_kinds
+            )
             [outcome_review] = outcomes
             assert outcome_review["criterion_ids"] and not (
-                set(outcome_review["criterion_ids"]) & set(scope.content_criterion_ids))
-            assert observations <= _kinds(outcome_review).get("commit_receipt", set()), _kinds(outcome_review)
+                set(outcome_review["criterion_ids"]) & set(scope.content_criterion_ids)
+            )
+            assert observations <= _kinds(outcome_review).get("commit_receipt", set()), _kinds(
+                outcome_review
+            )
             # 根结论只复述内容判据；效果判据的证明是效果验收（根 complete 要它）
             [resolution] = HtnStore(case.store).list_goal_resolutions(case.mission_id)
-            assert [c.criterion_id for c in resolution.criteria] == list(scope.content_criterion_ids)
+            assert [c.criterion_id for c in resolution.criteria] == list(
+                scope.content_criterion_ids
+            )
             root = read_occurrence_completion(case.store, case.mission_id, scope.occurrence_id)
             assert root.content_ready and root.effects_ready and root.complete
 
@@ -488,8 +601,12 @@ def test_two_required_publishes_each_need_their_own_chain(tmp_path):
     """E05 / OCC-06：一份效果的证明链补不了另一份；各自的阶段都看得见。"""
 
     weekly, summary = TARGET, "reports/summary.md"
-    criteria = ("file:" + weekly, "file:" + summary, "action:file_publish.publish:" + weekly,
-                "action:file_publish.publish:" + summary)
+    criteria = (
+        "file:" + weekly,
+        "file:" + summary,
+        "action:file_publish.publish:" + weekly,
+        "action:file_publish.publish:" + summary,
+    )
 
     async def run() -> None:
         async with publishing(tmp_path, criteria=criteria, confirm=False) as case:
@@ -499,39 +616,68 @@ def test_two_required_publishes_each_need_their_own_chain(tmp_path):
             [obligation] = page["obligations"]
             policy = next(m for m in page["milestones"] if m["id"] == "CONTENT_HASH_VERIFIED")
             ref = page["requirements_ref"]
-            keys = {"action:file_publish.publish:" + weekly: "publish-weekly",
-                    "action:file_publish.publish:" + summary: "publish-summary"}
-            case.world.control.approve_operation_completion_spec({
-                "mission_id": case.mission_id, "command_id": "confirm-two-publishes", "expected_requirements_ref": ref,
-                "proposal": {
-                    "schema_version": 1, "mission_id": case.mission_id,
-                    "requirements_ref": {key: ref[key] for key in ("id", "revision", "content_hash")},
-                    "mode": "REQUIRED_EFFECTS",
-                    "content_criterion_ids": [c["id"] for c in page["criteria"] if c not in actions],
-                    "effects": [{"effect_key": keys[c["statement"]], "source_slot_key": keys[c["statement"]],
-                                 "obligation_id": obligation["id"], "criterion_ids": [c["id"]],
-                                 "required_milestone": policy["id"],
-                                 "milestone_policy_ref": policy["milestone_policy_ref"],
-                                 "evidence_policy_ref": policy["evidence_policy_ref"]} for c in actions],
-                }})
+            keys = {
+                "action:file_publish.publish:" + weekly: "publish-weekly",
+                "action:file_publish.publish:" + summary: "publish-summary",
+            }
+            case.world.control.approve_operation_completion_spec(
+                {
+                    "mission_id": case.mission_id,
+                    "command_id": "confirm-two-publishes",
+                    "expected_requirements_ref": ref,
+                    "proposal": {
+                        "schema_version": 1,
+                        "mission_id": case.mission_id,
+                        "requirements_ref": {
+                            key: ref[key] for key in ("id", "revision", "content_hash")
+                        },
+                        "mode": "REQUIRED_EFFECTS",
+                        "content_criterion_ids": [
+                            c["id"] for c in page["criteria"] if c not in actions
+                        ],
+                        "effects": [
+                            {
+                                "effect_key": keys[c["statement"]],
+                                "source_slot_key": keys[c["statement"]],
+                                "obligation_id": obligation["id"],
+                                "criterion_ids": [c["id"]],
+                                "required_milestone": policy["id"],
+                                "milestone_policy_ref": policy["milestone_policy_ref"],
+                                "evidence_policy_ref": policy["evidence_policy_ref"],
+                            }
+                            for c in actions
+                        ],
+                    },
+                }
+            )
             await case.drain_until(lambda: len(case.pending_approvals()) == 2, rounds=20)
             approvals = {a["summary"]["target"]: a for a in case.pending_approvals()}
             assert set(approvals) == {weekly, summary}
             spec_hash = case.store.connection.execute(
-                "SELECT spec_hash FROM operation_completion_specs WHERE mission_id=?", (case.mission_id,)).fetchone()[0]
+                "SELECT spec_hash FROM operation_completion_specs WHERE mission_id=?",
+                (case.mission_id,),
+            ).fetchone()[0]
             scope = root_scope(case)["document"]
             assert set(scope.required_effect_keys) == {"publish-weekly", "publish-summary"}
 
             case.approve(approvals[summary])
             for _ in range(3):
                 await case.world.drain()
-            states = {key: read_current_effect(case.store, case.mission_id, spec_hash, key)
-                      for key in ("publish-weekly", "publish-summary")}
+            states = {
+                key: read_current_effect(case.store, case.mission_id, spec_hash, key)
+                for key in ("publish-weekly", "publish-summary")
+            }
             assert states["publish-summary"]["complete"] is True
-            assert states["publish-weekly"]["state"] == "AWAITING_APPROVAL" and not states["publish-weekly"]["complete"]
+            assert (
+                states["publish-weekly"]["state"] == "AWAITING_APPROVAL"
+                and not states["publish-weekly"]["complete"]
+            )
             root = read_occurrence_completion(case.store, case.mission_id, scope.occurrence_id)
             assert not root.effects_ready and not root.complete and case.status() == "ACTIVE"
-            assert len(case.published_files()) == 1 and len(HtnStore(case.store).list_delivery_receipts(case.mission_id)) == 1
+            assert (
+                len(case.published_files()) == 1
+                and len(HtnStore(case.store).list_delivery_receipts(case.mission_id)) == 1
+            )
 
             case.approve(approvals[weekly])
             mission = await case.world.run_until_settled(case.mission_id, rounds=20)
@@ -561,17 +707,25 @@ def test_a_tampered_outcome_binding_is_never_accepted(tmp_path, field):
                 await case.run_until(provider.review_entered.is_set, timeout=40)
                 row = case.store.connection.execute(
                     "SELECT binding_id, document_json FROM operation_outcome_review_bindings WHERE mission_id=?",
-                    (case.mission_id,)).fetchone()
+                    (case.mission_id,),
+                ).fetchone()
                 document = json.loads(row["document_json"])
                 document[field] = document[field] + 1 if field == "action_version" else "f" * 64
                 with case.store.transaction():
-                    case.store.connection.execute("DROP TRIGGER operation_outcome_bindings_immutable_update")
+                    case.store.connection.execute(
+                        "DROP TRIGGER operation_outcome_bindings_immutable_update"
+                    )
                     case.store.connection.execute(
                         "UPDATE operation_outcome_review_bindings SET document_json=? WHERE binding_id=?",
-                        (canonical_json(document), row["binding_id"]))
+                        (canonical_json(document), row["binding_id"]),
+                    )
                 provider.go.set()
-                await case.run_until(lambda: bool(case.events("OperationOutcomeDeferred")), timeout=40)
-                assert case.events("OperationOutcomeDeferred")[0].payload["reason"] == "StoreConflict"
+                await case.run_until(
+                    lambda: bool(case.events("OperationOutcomeDeferred")), timeout=40
+                )
+                assert (
+                    case.events("OperationOutcomeDeferred")[0].payload["reason"] == "StoreConflict"
+                )
                 assert HtnStore(case.store).list_delivery_receipts(case.mission_id) == ()
                 assert not case.events("OperationOutcomeAccepted")
                 assert faults.executed == 1 and len(case.published_files()) == 1
@@ -583,7 +737,9 @@ def test_a_tampered_outcome_binding_is_never_accepted(tmp_path, field):
 
 
 @pytest.mark.parametrize("table", ("delivery_receipts", "operation_acceptance_scopes"))
-def test_an_effect_acceptance_write_failure_rolls_back_and_is_written_once_after_restart(tmp_path, table):
+def test_an_effect_acceptance_write_failure_rolls_back_and_is_written_once_after_restart(
+    tmp_path, table
+):
     """OCC-09 / OCC-11：效果验收那次写入里任何一处写失败，整份回滚；排除故障、重启后只写一次。"""
 
     faults = Faults()
@@ -595,7 +751,8 @@ def test_an_effect_acceptance_write_failure_rolls_back_and_is_written_once_after
             approval = await case.until_approval()
             case.store.connection.execute(
                 f"CREATE TRIGGER fail_effect_acceptance BEFORE INSERT ON {table} "  # noqa: S608
-                "BEGIN SELECT RAISE(ABORT,'disk write failed'); END;")
+                "BEGIN SELECT RAISE(ABORT,'disk write failed'); END;"
+            )
             case.approve(approval)
             # 写失败按名推迟（记一条推迟事件），不是吞掉。
             await case.run_until(lambda: bool(case.events("OperationOutcomeDeferred")), timeout=40)
@@ -618,7 +775,9 @@ def test_an_effect_acceptance_write_failure_rolls_back_and_is_written_once_after
     asyncio.run(second())
 
 
-def test_a_materialization_link_write_failure_rolls_back_and_materializes_once_after_restart(tmp_path):
+def test_a_materialization_link_write_failure_rolls_back_and_materializes_once_after_restart(
+    tmp_path,
+):
     """O09（原 test_h1h_operation_current_gates）：申请单审过、物化成动作时，动作—意图链接那一行写
     失败（触发器注入，外界的写入故障）：动作和链接一起回滚，按名推迟，没有半个动作可被交接；故障
     排除、重启后只物化一次，批准后只发布一次。"""
@@ -631,12 +790,19 @@ def test_a_materialization_link_write_failure_rolls_back_and_materializes_once_a
             state["mission_id"] = case.mission_id
             case.store.connection.execute(
                 "CREATE TRIGGER fail_operation_link BEFORE INSERT ON planning_operation_action_links "
-                "BEGIN SELECT RAISE(ABORT,'disk write failed'); END;")
-            await case.run_until(lambda: bool(case.events("OperationMaterializationDeferred")), timeout=40)
+                "BEGIN SELECT RAISE(ABORT,'disk write failed'); END;"
+            )
+            await case.run_until(
+                lambda: bool(case.events("OperationMaterializationDeferred")), timeout=40
+            )
             assert case.actions() == [] and case.pending_approvals() == []
-            assert case.store.connection.execute(
-                "SELECT count(*) FROM planning_operation_action_links WHERE mission_id=?",
-                (case.mission_id,)).fetchone()[0] == 0
+            assert (
+                case.store.connection.execute(
+                    "SELECT count(*) FROM planning_operation_action_links WHERE mission_id=?",
+                    (case.mission_id,),
+                ).fetchone()[0]
+                == 0
+            )
             assert len(OperationIntentStore(case.store).for_mission(case.mission_id)) == 1
             assert faults.executed == 0 and case.published_files() == []
             case.store.connection.execute("DROP TRIGGER fail_operation_link")
@@ -646,10 +812,18 @@ def test_a_materialization_link_write_failure_rolls_back_and_materializes_once_a
             case.approve(await case.until_approval())
             await case.run_until(lambda: case.status() != "ACTIVE", timeout=60)
             assert case.status() == "COMPLETED", case.mission().final_report
-            assert len(case.actions()) == 1 and faults.executed == 1 and len(case.published_files()) == 1
-            assert case.store.connection.execute(
-                "SELECT count(*) FROM planning_operation_action_links WHERE mission_id=?",
-                (case.mission_id,)).fetchone()[0] == 1
+            assert (
+                len(case.actions()) == 1
+                and faults.executed == 1
+                and len(case.published_files()) == 1
+            )
+            assert (
+                case.store.connection.execute(
+                    "SELECT count(*) FROM planning_operation_action_links WHERE mission_id=?",
+                    (case.mission_id,),
+                ).fetchone()[0]
+                == 1
+            )
 
     asyncio.run(first())
     asyncio.run(second())

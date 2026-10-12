@@ -32,7 +32,20 @@ TENANT, MISSION, HASH = "tenant-i2", "mission-i2", "a" * 64
 def store(tmp_path):
     store = Store.open(tmp_path / "orchestrator.db")
     store.insert_mission(
-        Mission(MISSION, "goal", ("c",), (), (), "low", Budget(), TENANT, MissionStatus.CREATED, 1.0, 1, "key-i2"),
+        Mission(
+            MISSION,
+            "goal",
+            ("c",),
+            (),
+            (),
+            "low",
+            Budget(),
+            TENANT,
+            MissionStatus.CREATED,
+            1.0,
+            1,
+            "key-i2",
+        ),
         spec_hash="b" * 64,
     )
     yield store
@@ -60,15 +73,37 @@ def _source(store, revision=1):
     store.connection.execute(
         "INSERT INTO sources(mission_id,tenant_id,path,version_hash,kind,trust,registered_at,superseded_by,"
         "revoked,revision) VALUES (?,?,?,?,?,?,?,?,?,?)",
-        (MISSION, TENANT, "sources/spec.md", HASH, "markdown", "untrusted_external", 1.0, None, 0, revision),
+        (
+            MISSION,
+            TENANT,
+            "sources/spec.md",
+            HASH,
+            "markdown",
+            "untrusted_external",
+            1.0,
+            None,
+            0,
+            revision,
+        ),
     )
     return AssuranceRef("source", Pin("sources/spec.md", revision, HASH))
 
 
-def _receipt(store, receipt_id="assurance-review-prepared:rk-1", kind="AssuranceReviewPrepared", subject="rk-1"):
+def _receipt(
+    store,
+    receipt_id="assurance-review-prepared:rk-1",
+    kind="AssuranceReviewPrepared",
+    subject="rk-1",
+):
     body = {"mission_id": MISSION, "review_key": subject, "request_command_id": "cmd-1"}
-    store.insert_receipt(commit_id=receipt_id, kind=kind, subject_id=subject, base_version=0,
-                         proposal_hash=fingerprint(body), receipt=body)
+    store.insert_receipt(
+        commit_id=receipt_id,
+        kind=kind,
+        subject_id=subject,
+        base_version=0,
+        proposal_hash=fingerprint(body),
+        receipt=body,
+    )
     return AssuranceRef("commit_receipt", Pin(receipt_id, 0, fingerprint(body)))
 
 
@@ -82,11 +117,18 @@ def test_a08_a_pinned_revision_the_source_no_longer_holds_is_not_current(store):
     good = _requirements(store, 1)
     assert decode(reader.read_exact_metadata(good).body_json)["revision"] == 1
     stale = AssuranceRef("requirements", Pin(good.pin.id, 2, good.pin.content_hash))
-    assert _refused(lambda: reader.read_exact_metadata(stale), "SOURCE_NOT_CURRENT").locator == good.pin.id
-    _refused(lambda: reader.read_exact_metadata(AssuranceRef("requirements", Pin("req-none", 1, HASH))),
-             "SOURCE_UNAVAILABLE")
-    _refused(lambda: reader.read_exact_metadata(AssuranceRef("review", Pin("rec-x", 1, HASH))),
-             "REF_REVISION_MISMATCH")
+    assert (
+        _refused(lambda: reader.read_exact_metadata(stale), "SOURCE_NOT_CURRENT").locator
+        == good.pin.id
+    )
+    _refused(
+        lambda: reader.read_exact_metadata(AssuranceRef("requirements", Pin("req-none", 1, HASH))),
+        "SOURCE_UNAVAILABLE",
+    )
+    _refused(
+        lambda: reader.read_exact_metadata(AssuranceRef("review", Pin("rec-x", 1, HASH))),
+        "REF_REVISION_MISMATCH",
+    )
 
 
 def test_a08_a_blob_whose_lifecycle_revision_moved_on_is_not_current(store):
@@ -94,8 +136,10 @@ def test_a08_a_blob_whose_lifecycle_revision_moved_on_is_not_current(store):
     reader = AssuranceReader(store, tenant_id=TENANT, mission_id=MISSION)
     current = _source(store, revision=2)
     assert reader.read_exact_metadata(current).ref == current
-    _refused(lambda: reader.read_exact_metadata(AssuranceRef("source", Pin(current.pin.id, 1, HASH))),
-             "SOURCE_NOT_CURRENT")
+    _refused(
+        lambda: reader.read_exact_metadata(AssuranceRef("source", Pin(current.pin.id, 1, HASH))),
+        "SOURCE_NOT_CURRENT",
+    )
 
 
 # --------------------------------------------------------------------------- A09
@@ -106,22 +150,44 @@ def test_a09_a_commit_receipt_is_checked_against_its_writer_and_kind(store):
     **改坏检验**：解析器忽略 ``receipt_kind`` → 第一处 _refused 变红。"""
     reader = AssuranceReader(store, tenant_id=TENANT, mission_id=MISSION)
     ref = _receipt(store)
-    resolved = reader.read_exact_metadata(ref, receipt_kind="AssuranceReviewPrepared", receipt_subject="rk-1")
+    resolved = reader.read_exact_metadata(
+        ref, receipt_kind="AssuranceReviewPrepared", receipt_subject="rk-1"
+    )
     assert resolved.issuer == "AssuranceReviewPrepared"
     assert reader.read_exact_metadata(ref) == resolved
-    _refused(lambda: reader.read_exact_metadata(ref, receipt_kind="AssuranceReviewImported"), "REF_ISSUER_MISMATCH")
-    _refused(lambda: reader.read_exact_metadata(ref, receipt_kind="AssuranceReviewPrepared", receipt_subject="rk-2"),
-             "REF_SUBJECT_MISMATCH")
+    _refused(
+        lambda: reader.read_exact_metadata(ref, receipt_kind="AssuranceReviewImported"),
+        "REF_ISSUER_MISMATCH",
+    )
+    _refused(
+        lambda: reader.read_exact_metadata(
+            ref, receipt_kind="AssuranceReviewPrepared", receipt_subject="rk-2"
+        ),
+        "REF_SUBJECT_MISMATCH",
+    )
     # 别的任务的回执：归属仍先于种类
     other = {"mission_id": "mission-other", "review_key": "rk-9"}
-    store.insert_receipt(commit_id="r-other", kind="AssuranceReviewPrepared", subject_id="rk-9", base_version=0,
-                         proposal_hash=fingerprint(other), receipt=other)
-    _refused(lambda: reader.read_exact_metadata(AssuranceRef("commit_receipt", Pin("r-other", 0, fingerprint(other))),
-                                                receipt_kind="AssuranceReviewPrepared"), "REF_SCOPE_MISMATCH")
+    store.insert_receipt(
+        commit_id="r-other",
+        kind="AssuranceReviewPrepared",
+        subject_id="rk-9",
+        base_version=0,
+        proposal_hash=fingerprint(other),
+        receipt=other,
+    )
+    _refused(
+        lambda: reader.read_exact_metadata(
+            AssuranceRef("commit_receipt", Pin("r-other", 0, fingerprint(other))),
+            receipt_kind="AssuranceReviewPrepared",
+        ),
+        "REF_SCOPE_MISMATCH",
+    )
 
 
 # --------------------------------------------------------------------------- A10
-def _permission_for(ref: AssuranceRef, *, not_after_ms: int = 2_000_000_000_000) -> CurrentReadPermission:
+def _permission_for(
+    ref: AssuranceRef, *, not_after_ms: int = 2_000_000_000_000
+) -> CurrentReadPermission:
     return CurrentReadPermission(
         ReadItem("ACCESS", "access:" + ref.pin.id, fingerprint({"ref": ref.to_json()})),
         ReadItem("POLICY", "policy:fixed", HASH),
@@ -133,7 +199,9 @@ def _identity() -> UseIdentity:
     return UseIdentity(MISSION, "REVIEW", "rk-1", "scope-1", "principal-1", "DISCLOSE", "root-1")
 
 
-def test_a10_the_resolver_returns_the_contract_shape_and_checks_access_when_built_with_authority(store):
+def test_a10_the_resolver_returns_the_contract_shape_and_checks_access_when_built_with_authority(
+    store,
+):
     """ResolvedRef 带 tenant/mission/issuer/state_witness；带授权建的读取器解析时就核访问：
     授权拒绝 → 解析失败（不凭正文放行）；授权过期 → CHECK_USE_EXPIRED；通过 → ``permission`` 随结果返回，
     且相等比较不看许可租期（重查时许可是按"现在"重发的）。
@@ -143,30 +211,58 @@ def test_a10_the_resolver_returns_the_contract_shape_and_checks_access_when_buil
     plain = AssuranceReader(store, tenant_id=TENANT, mission_id=MISSION)
     resolved = plain.read_exact_metadata(good)
     assert isinstance(resolved, ResolvedRef)
-    assert (resolved.tenant_id, resolved.mission_id, resolved.issuer) == (TENANT, MISSION, "requirements_revisions")
+    assert (resolved.tenant_id, resolved.mission_id, resolved.issuer) == (
+        TENANT,
+        MISSION,
+        "requirements_revisions",
+    )
     assert "revision_json" not in decode(resolved.state_witness_json)
     assert resolved.permission is None
 
     def refusing(identity, ref):
         raise AssuranceError("ACCESS_DENIED", ref.pin.id)
 
-    _refused(lambda: AssuranceReader(store, tenant_id=TENANT, mission_id=MISSION, authority=refusing,
-                                     identity=_identity()).read_exact_metadata(good), "ACCESS_DENIED")
-    _refused(lambda: AssuranceReader(store, tenant_id=TENANT, mission_id=MISSION,
-                                     authority=lambda identity, ref: _permission_for(ref, not_after_ms=1),
-                                     identity=_identity()).read_exact_metadata(good, now_ms=5), "CHECK_USE_EXPIRED")
-    granted = AssuranceReader(store, tenant_id=TENANT, mission_id=MISSION,
-                              authority=lambda identity, ref: _permission_for(ref), identity=_identity())
+    _refused(
+        lambda: AssuranceReader(
+            store, tenant_id=TENANT, mission_id=MISSION, authority=refusing, identity=_identity()
+        ).read_exact_metadata(good),
+        "ACCESS_DENIED",
+    )
+    _refused(
+        lambda: AssuranceReader(
+            store,
+            tenant_id=TENANT,
+            mission_id=MISSION,
+            authority=lambda identity, ref: _permission_for(ref, not_after_ms=1),
+            identity=_identity(),
+        ).read_exact_metadata(good, now_ms=5),
+        "CHECK_USE_EXPIRED",
+    )
+    granted = AssuranceReader(
+        store,
+        tenant_id=TENANT,
+        mission_id=MISSION,
+        authority=lambda identity, ref: _permission_for(ref),
+        identity=_identity(),
+    )
     first = granted.read_exact_metadata(good, now_ms=5)
     assert first.permission == _permission_for(good)
     assert first == resolved  # 许可不进相等比较
     # 授权与身份要一起给；身份的任务要和读取器一致
-    _refused(lambda: AssuranceReader(store, tenant_id=TENANT, mission_id=MISSION, authority=refusing),
-             "CURRENT_READ_AUTHORITY_REQUIRED")
-    _refused(lambda: AssuranceReader(store, tenant_id=TENANT, mission_id=MISSION,
-                                     authority=lambda identity, ref: _permission_for(ref),
-                                     identity=UseIdentity("mission-other", "REVIEW", "rk", "s", "p", "DISCLOSE", "r")),
-             "REF_SCOPE_MISMATCH")
+    _refused(
+        lambda: AssuranceReader(store, tenant_id=TENANT, mission_id=MISSION, authority=refusing),
+        "CURRENT_READ_AUTHORITY_REQUIRED",
+    )
+    _refused(
+        lambda: AssuranceReader(
+            store,
+            tenant_id=TENANT,
+            mission_id=MISSION,
+            authority=lambda identity, ref: _permission_for(ref),
+            identity=UseIdentity("mission-other", "REVIEW", "rk", "s", "p", "DISCLOSE", "r"),
+        ),
+        "REF_SCOPE_MISMATCH",
+    )
 
 
 # --------------------------------------------------------------------------- A13
@@ -178,14 +274,37 @@ def test_a13_completion_spec_and_scope_are_read_through_the_occ_reader(store):
     reader = AssuranceReader(store, tenant_id=TENANT, mission_id=MISSION)
     requirements = _requirements(store, 1)
     body = {"not": "a completion spec"}
-    store.insert_receipt(commit_id="spec-approval", kind="operation_completion_spec_approved", subject_id="spec-1",
-                         base_version=0, proposal_hash=fingerprint(body), receipt={"mission_id": MISSION})
+    store.insert_receipt(
+        commit_id="spec-approval",
+        kind="operation_completion_spec_approved",
+        subject_id="spec-1",
+        base_version=0,
+        proposal_hash=fingerprint(body),
+        receipt={"mission_id": MISSION},
+    )
     store.connection.execute(
         "INSERT INTO operation_completion_specs(spec_id,mission_id,requirements_revision,requirements_hash,spec_hash,"
         "document_json,approval_receipt_id,created_at_ms) VALUES (?,?,?,?,?,?,?,?)",
-        ("spec-1", MISSION, 1, requirements.pin.content_hash, fingerprint(body), canonical(body), "spec-approval", 1),
+        (
+            "spec-1",
+            MISSION,
+            1,
+            requirements.pin.content_hash,
+            fingerprint(body),
+            canonical(body),
+            "spec-approval",
+            1,
+        ),
     )
-    _refused(lambda: reader.read_exact_metadata(AssuranceRef("completion_spec", Pin("spec-1", 0, fingerprint(body)))),
-             "REF_BODY_CONFLICT")
-    _refused(lambda: reader.read_exact_metadata(AssuranceRef("completion_scope", Pin("scope-none", 0, HASH))),
-             "SOURCE_UNAVAILABLE")
+    _refused(
+        lambda: reader.read_exact_metadata(
+            AssuranceRef("completion_spec", Pin("spec-1", 0, fingerprint(body)))
+        ),
+        "REF_BODY_CONFLICT",
+    )
+    _refused(
+        lambda: reader.read_exact_metadata(
+            AssuranceRef("completion_scope", Pin("scope-none", 0, HASH))
+        ),
+        "SOURCE_UNAVAILABLE",
+    )

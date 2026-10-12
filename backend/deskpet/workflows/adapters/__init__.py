@@ -57,7 +57,9 @@ class LateEffectFinalizer(Protocol):
 
 
 class StagedFilePort(Protocol):
-    def stage(self, target: PreparedTarget, content: bytes, **kwargs: Any) -> StagedFileEvidence: ...
+    def stage(
+        self, target: PreparedTarget, content: bytes, **kwargs: Any
+    ) -> StagedFileEvidence: ...
 
     def commit(self, target: PreparedTarget, evidence: StagedFileEvidence) -> None: ...
 

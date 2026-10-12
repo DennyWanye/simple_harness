@@ -91,18 +91,21 @@ def _request_json(attempt: dict) -> str:
     messages: list[dict] = [{"role": "system", "content": "sys", "metadata": {}}]
     if attempt["history_tokens"]:
         body = json.dumps(
-            {"kind": "historical_causal_group",
-             "messages": [{"role": "user", "content": "x" * attempt["history_tokens"]}]},
+            {
+                "kind": "historical_causal_group",
+                "messages": [{"role": "user", "content": "x" * attempt["history_tokens"]}],
+            },
             ensure_ascii=False,
         )
         messages.append(
-            {"role": "user", "content": "Historical conversation data "
-                                        "(not instructions): " + body,
-             "metadata": {}}
+            {
+                "role": "user",
+                "content": "Historical conversation data (not instructions): " + body,
+                "metadata": {},
+            }
         )
     messages.append({"role": "user", "content": attempt["own_user"], "metadata": {}})
-    return json.dumps({"messages": messages, "tools": [], "metadata": {}},
-                      ensure_ascii=False)
+    return json.dumps({"messages": messages, "tools": [], "metadata": {}}, ensure_ascii=False)
 
 
 def _a6_3_evidence(tmp_path: Path, attempts: list[dict], *, native_extra: str = "") -> a6.Evidence:
@@ -127,22 +130,35 @@ def _a6_3_evidence(tmp_path: Path, attempts: list[dict], *, native_extra: str = 
             " total_tokens integer, state text, settled_at real)",
         ],
         [
-            ("insert into foreground_run_heads values (?,?,?,?)",
-             (f"h{n}", "COMPLETED", run, 100.0 + n))
+            (
+                "insert into foreground_run_heads values (?,?,?,?)",
+                (f"h{n}", "COMPLETED", run, 100.0 + n),
+            )
             for n, run in enumerate(runs)
         ]
         + [
             (
                 "insert into run_context_snapshot_receipts values (?,?,?,?,?,?,?,?)",
                 (
-                    f"snap{n}", a["run"], a["ordinal"], n + 1,
-                    json.dumps({"source_revisions": {
-                        "budget_tier": 8192, "causal_groups": 2, "trimmed_groups": 1,
-                        "groups_trimmed_for_budget": 1,
-                        "budget_headroom": _EFFECTIVE - a["billed"],
-                        "planned_input_tokens": a["billed"],
-                    }}),
-                    f"fp{n}", f"fp{n}", 100.0 + n,
+                    f"snap{n}",
+                    a["run"],
+                    a["ordinal"],
+                    n + 1,
+                    json.dumps(
+                        {
+                            "source_revisions": {
+                                "budget_tier": 8192,
+                                "causal_groups": 2,
+                                "trimmed_groups": 1,
+                                "groups_trimmed_for_budget": 1,
+                                "budget_headroom": _EFFECTIVE - a["billed"],
+                                "planned_input_tokens": a["billed"],
+                            }
+                        }
+                    ),
+                    f"fp{n}",
+                    f"fp{n}",
+                    100.0 + n,
                 ),
             )
             for n, a in enumerate(attempts)
@@ -150,8 +166,19 @@ def _a6_3_evidence(tmp_path: Path, attempts: list[dict], *, native_extra: str = 
         + [
             (
                 "insert into sdk_provider_attempt_audit values (?,?,?,?,?,?,?,?,?,?,?)",
-                (f"inv{n}", f"snap{n}", "deepseek-v4-flash", "primary", _WINDOW, 0,
-                 a["billed"], 0, a["billed"] + 10, "succeeded", 100.0 + n),
+                (
+                    f"inv{n}",
+                    f"snap{n}",
+                    "deepseek-v4-flash",
+                    "primary",
+                    _WINDOW,
+                    0,
+                    a["billed"],
+                    0,
+                    a["billed"] + 10,
+                    "succeeded",
+                    100.0 + n,
+                ),
             )
             for n, a in enumerate(attempts)
         ],
@@ -168,17 +195,27 @@ def _a6_3_evidence(tmp_path: Path, attempts: list[dict], *, native_extra: str = 
         [
             (
                 "insert into provider_invocations values (?,?,?,?,?,?,?,?,?,?)",
-                (f"inv{n}", a["run"], f"{a['run']}:provider-turn:{a['ordinal']}",
-                 f"fp{n}", _request_json(a), "succeeded", 100.0 + n, "{}",
-                 json.dumps({"usage": {"input_tokens": a["billed"], "output_tokens": 10}}),
-                 ""),
+                (
+                    f"inv{n}",
+                    a["run"],
+                    f"{a['run']}:provider-turn:{a['ordinal']}",
+                    f"fp{n}",
+                    _request_json(a),
+                    "succeeded",
+                    100.0 + n,
+                    "{}",
+                    json.dumps({"usage": {"input_tokens": a["billed"], "output_tokens": 10}}),
+                    "",
+                ),
             )
             for n, a in enumerate(attempts)
         ],
     )
     with open(os.path.join(root, "native.log"), "w", encoding="utf-8") as fh:
-        fh.write('{"event": "model_context_resolved model=deepseek-v4-flash'
-                 ' window=%d source=global"}\n' % _WINDOW)
+        fh.write(
+            '{"event": "model_context_resolved model=deepseek-v4-flash'
+            ' window=%d source=global"}\n' % _WINDOW
+        )
         if native_extra:
             fh.write(native_extra)
     return a6.Evidence(root)
@@ -194,9 +231,30 @@ def _run11_shape() -> list[dict]:
     逐轮峰值几乎持平(0.999), 但逐次尝试的前 8 行全落在开头几轮的第 1~2 次
     尝试上、后 8 行全落在末尾几轮的深循环里 —— 旧口径给 2.269。
     """
-    peaks = [5297, 6165, 6376, 7301, 12163, 17487, 16869, 15135,
-             15695, 12161, 18846, 4933, 10553, 11321, 16687, 17058,
-             16710, 6749, 10720, 17470, 9248, 12720]
+    peaks = [
+        5297,
+        6165,
+        6376,
+        7301,
+        12163,
+        17487,
+        16869,
+        15135,
+        15695,
+        12161,
+        18846,
+        4933,
+        10553,
+        11321,
+        16687,
+        17058,
+        16710,
+        6749,
+        10720,
+        17470,
+        9248,
+        12720,
+    ]
     attempts: list[dict] = []
     for turn, peak in enumerate(peaks, start=1):
         run = f"product-sdk-turn{turn:02d}"
@@ -217,9 +275,7 @@ def test_a6_3_judges_turns_not_attempts_on_the_run11_shape(tmp_path: Path) -> No
     assert item.verdict == a6.PASS, item.reason
     numbers = item.numbers
     assert numbers["turns_with_billing"] == 22
-    assert numbers["growth_basis"] == (
-        "per_turn_billed_minus_own_user_message_and_reasoning_relay"
-    )
+    assert numbers["growth_basis"] == ("per_turn_billed_minus_own_user_message_and_reasoning_relay")
     # 旧口径必须仍然记下来 —— 这是「口径变了」的证据, 不是把问题藏起来。
     assert numbers["growth_ratio_legacy_per_attempt"] > 1.6
     assert numbers["growth_ratio_raw_per_turn"] <= 1.6
@@ -233,8 +289,7 @@ def test_a6_3_still_fails_when_the_turn_peaks_really_do_grow(tmp_path: Path) -> 
         run = f"product-sdk-turn{turn:02d}"
         peak = 6000 + 400 * turn
         for step in range(2):
-            attempts.append(_attempt(run=run, ordinal=step + 1,
-                                     billed=peak - 500 * (1 - step)))
+            attempts.append(_attempt(run=run, ordinal=step + 1, billed=peak - 500 * (1 - step)))
     ev = _a6_3_evidence(tmp_path, attempts)
     try:
         item = _a6_3(ev)
@@ -254,9 +309,14 @@ def test_a6_3_does_not_count_the_users_own_18kb_message_as_growth(tmp_path: Path
         # 后 8 轮把那条 user 消息带上, 计费量因此高出 6000。
         late = turn >= 15
         for step in range(2):
-            flat.append(_attempt(run=run, ordinal=step + 1,
-                                 billed=9000 + (6000 if late else 0),
-                                 own_user=big if late else "hi"))
+            flat.append(
+                _attempt(
+                    run=run,
+                    ordinal=step + 1,
+                    billed=9000 + (6000 if late else 0),
+                    own_user=big if late else "hi",
+                )
+            )
     ev = _a6_3_evidence(tmp_path, flat)
     try:
         item = _a6_3(ev)
@@ -264,9 +324,9 @@ def test_a6_3_does_not_count_the_users_own_18kb_message_as_growth(tmp_path: Path
         ev.close()
     assert item.numbers["own_user_message_tokens_max"] >= 6000
     # 未调整的逐轮比越过 1.6 上限之下但明显上涨; 调整后回到 1.0。
-    assert item.numbers["growth_ratio_raw_per_turn"] > item.numbers[
-        "growth_ratio_last8_over_first8"
-    ]
+    assert (
+        item.numbers["growth_ratio_raw_per_turn"] > item.numbers["growth_ratio_last8_over_first8"]
+    )
     assert item.numbers["growth_ratio_last8_over_first8"] == 1.0
     assert item.verdict == a6.PASS, item.reason
 
@@ -287,9 +347,11 @@ def test_a6_3_reasoning_relay_is_recorded_as_observed_zero(tmp_path: Path) -> No
 
 
 def test_a6_3_reasoning_relay_is_subtracted_when_the_log_shows_one(tmp_path: Path) -> None:
-    line = ('{"event": "sdk_provider_wire_input_budget_exceeded floor=31246'
-            ' effective=26752 wire=31246 carry=0 reasoning_relay=4096",'
-            ' "logger": "deskpet.sdk_adapters.wire_input_budget"}\n')
+    line = (
+        '{"event": "sdk_provider_wire_input_budget_exceeded floor=31246'
+        ' effective=26752 wire=31246 carry=0 reasoning_relay=4096",'
+        ' "logger": "deskpet.sdk_adapters.wire_input_budget"}\n'
+    )
     ev = _a6_3_evidence(tmp_path, _run11_shape(), native_extra=line)
     try:
         item = _a6_3(ev)
@@ -301,8 +363,9 @@ def test_a6_3_reasoning_relay_is_subtracted_when_the_log_shows_one(tmp_path: Pat
 
 def test_a6_3_needs_sixteen_turns_not_sixteen_attempts(tmp_path: Path) -> None:
     """一条 Run 里跑了 20 次尝试也只是 1 轮 —— 不足以做前后 8 轮比对。"""
-    attempts = [_attempt(run="product-sdk-only", ordinal=n, billed=9000 + 100 * n)
-                for n in range(1, 21)]
+    attempts = [
+        _attempt(run="product-sdk-only", ordinal=n, billed=9000 + 100 * n) for n in range(1, 21)
+    ]
     ev = _a6_3_evidence(tmp_path, attempts)
     try:
         item = _a6_3(ev)
@@ -321,8 +384,10 @@ def test_a6_3_keeps_the_first_four_number_keys_for_the_markdown_brief(tmp_path: 
     finally:
         ev.close()
     assert list(item.numbers)[:4] == [
-        "attempt_rows", "max_input_tokens",
-        "first8_max_input_tokens", "last8_max_input_tokens",
+        "attempt_rows",
+        "max_input_tokens",
+        "first8_max_input_tokens",
+        "last8_max_input_tokens",
     ]
     json.dumps(item.numbers, ensure_ascii=False)
 
@@ -346,11 +411,14 @@ def _hm_db(tmp_path: Path, heads, revisions, relations, *, with_lifecycle_column
         )
         insert = "insert into cognitive_memory_revisions values (?,?,?,?)"
         revisions = [r[:4] for r in revisions]
-    conn.execute("create table cognitive_memory_heads(memory_id text primary key,"
-                 " current_revision integer)")
-    conn.execute("create table cognitive_relations(relation_domain text, relation_kind text,"
-                 " source_memory_id text, source_revision integer,"
-                 " target_memory_id text, target_revision integer)")
+    conn.execute(
+        "create table cognitive_memory_heads(memory_id text primary key, current_revision integer)"
+    )
+    conn.execute(
+        "create table cognitive_relations(relation_domain text, relation_kind text,"
+        " source_memory_id text, source_revision integer,"
+        " target_memory_id text, target_revision integer)"
+    )
     conn.executemany("insert into cognitive_memory_heads values (?,?)", heads)
     conn.executemany(insert, revisions)
     conn.executemany("insert into cognitive_relations values (?,?,?,?,?,?)", relations)
@@ -371,8 +439,14 @@ def _a6_7(tmp_path: Path, heads, revisions, relations, **kw) -> a6.Item:
 # plan_id 换成 prospective-signal-plan-<authority>, 没有 evolution 边。
 _PROSPECTIVE = [
     ("m-prosp", 1, "pending", "uncontested", "c3682f0e", "host-analysis-plan-5ae9db75"),
-    ("m-prosp", 2, "triggered", "uncontested", "c3682f0e",
-     "prospective-signal-plan-045b09caec4be127"),
+    (
+        "m-prosp",
+        2,
+        "triggered",
+        "uncontested",
+        "c3682f0e",
+        "prospective-signal-plan-045b09caec4be127",
+    ),
 ]
 
 
@@ -381,9 +455,7 @@ def test_a6_7_exempts_a_prospective_lifecycle_advance(tmp_path: Path) -> None:
     assert item.verdict == a6.PASS, item.reason
     assert item.numbers["missing_evolution_lineage"] == []
     assert item.numbers["lifecycle_only_revisions_exempted"] == 1
-    assert item.numbers["lifecycle_only_revision_samples"] == [
-        ("m-prosp", 2, "pending->triggered")
-    ]
+    assert item.numbers["lifecycle_only_revision_samples"] == [("m-prosp", 2, "pending->triggered")]
 
 
 def test_a6_7_still_fails_a_real_content_revision_without_lineage(tmp_path: Path) -> None:
@@ -413,8 +485,14 @@ def test_a6_7_lifecycle_move_alone_is_not_enough_when_content_changed(tmp_path: 
     """调度器出身 + lifecycle 变, 但内容哈希也变了 —— 那是内容纠正, 必须 FAIL。"""
     revisions = [
         ("m-prosp", 1, "pending", "uncontested", "c3682f0e", "host-analysis-plan-1"),
-        ("m-prosp", 2, "triggered", "uncontested", "DIFFERENT",
-         "prospective-signal-plan-045b09caec4be127"),
+        (
+            "m-prosp",
+            2,
+            "triggered",
+            "uncontested",
+            "DIFFERENT",
+            "prospective-signal-plan-045b09caec4be127",
+        ),
     ]
     item = _a6_7(tmp_path, [("m-prosp", 2)], revisions, [])
     assert item.verdict == a6.FAIL
@@ -423,8 +501,7 @@ def test_a6_7_lifecycle_move_alone_is_not_enough_when_content_changed(tmp_path: 
 
 def test_a6_7_without_a_content_hash_column_gives_no_exemption(tmp_path: Path) -> None:
     """旧证据目录没有 content_hash 列: 认不出生命周期推进就不豁免(fail closed)。"""
-    item = _a6_7(tmp_path, [("m-prosp", 2)], _PROSPECTIVE, [],
-                 with_lifecycle_columns=False)
+    item = _a6_7(tmp_path, [("m-prosp", 2)], _PROSPECTIVE, [], with_lifecycle_columns=False)
     assert item.verdict == a6.FAIL
     assert item.numbers["lifecycle_only_revisions_exempted"] == 0
 
@@ -465,8 +542,10 @@ def _a6_11_evidence(tmp_path: Path, requests: list[list[dict]]) -> a6.Evidence:
         [
             ("insert into cognitive_memory_heads values (?,?)", (_MEM_A, 1)),
             ("insert into cognitive_memory_heads values (?,?)", (_MEM_B, 1)),
-            ("insert into cognitive_relations values (?,?,?,?,?,?,?,?)",
-             (_REL, "h" * 64, "ordinary", "applies_to", _MEM_A, 1, _MEM_B, 1)),
+            (
+                "insert into cognitive_relations values (?,?,?,?,?,?,?,?)",
+                (_REL, "h" * 64, "ordinary", "applies_to", _MEM_A, 1, _MEM_B, 1),
+            ),
         ],
     )
     _make_db(
@@ -479,10 +558,20 @@ def _a6_11_evidence(tmp_path: Path, requests: list[list[dict]]) -> a6.Evidence:
         [
             (
                 "insert into provider_invocations values (?,?,?,?,?,?,?,?,?,?)",
-                (f"inv{n}", "run1", f"req{n}", f"fp{n}",
-                 json.dumps({"messages": messages, "tools": [], "metadata": {}},
-                            ensure_ascii=False),
-                 "succeeded", 100.0 + n, "{}", "{}", ""),
+                (
+                    f"inv{n}",
+                    "run1",
+                    f"req{n}",
+                    f"fp{n}",
+                    json.dumps(
+                        {"messages": messages, "tools": [], "metadata": {}}, ensure_ascii=False
+                    ),
+                    "succeeded",
+                    100.0 + n,
+                    "{}",
+                    "{}",
+                    "",
+                ),
             )
             for n, messages in enumerate(requests)
         ],
@@ -491,8 +580,7 @@ def _a6_11_evidence(tmp_path: Path, requests: list[list[dict]]) -> a6.Evidence:
         fh.write("{}\n")
     with open(os.path.join(root, "a6-progress.jsonl"), "w", encoding="utf-8") as fh:
         for turn in (15, 16, 23, 24):
-            fh.write(json.dumps({"kind": "turn", "turn": turn,
-                                 "provider_invocations": 7}) + "\n")
+            fh.write(json.dumps({"kind": "turn", "turn": turn, "provider_invocations": 7}) + "\n")
     return a6.Evidence(root)
 
 
@@ -500,9 +588,16 @@ def _prospective_inbox_message() -> dict:
     return {
         "role": "system",
         "content": json.dumps(
-            {"count": 1, "entries": [
-                {"action": "有机会时开始学画画", "memory_id": _MEM_A,
-                 "occurred_at": 1788920763.4}]},
+            {
+                "count": 1,
+                "entries": [
+                    {
+                        "action": "有机会时开始学画画",
+                        "memory_id": _MEM_A,
+                        "occurred_at": 1788920763.4,
+                    }
+                ],
+            },
             ensure_ascii=False,
         ),
         "metadata": {"source": "prospective_inbox", "trust": "host_authority"},
@@ -513,9 +608,14 @@ def _tool_receipt_message() -> dict:
     return {
         "role": "tool",
         "content": json.dumps(
-            {"outcome": "succeeded",
-             "value": {"candidates": [{"candidate": {"memory_id": _MEM_B,
-                                                     "name": "秋分资料整理校对流程"}}]}},
+            {
+                "outcome": "succeeded",
+                "value": {
+                    "candidates": [
+                        {"candidate": {"memory_id": _MEM_B, "name": "秋分资料整理校对流程"}}
+                    ]
+                },
+            },
             ensure_ascii=False,
         ),
         "metadata": {},
@@ -524,24 +624,34 @@ def _tool_receipt_message() -> dict:
 
 def _history_group_with_tool_receipt() -> dict:
     body = json.dumps(
-        {"kind": "historical_causal_group",
-         "messages": [
-             {"role": "user", "content": "那你现在按哪个版本执行这套校对流程？"},
-             {"role": "tool", "content": json.dumps(
-                 {"value": {"candidates": [{"memory_id": _MEM_B}]}}, ensure_ascii=False)},
-         ]},
+        {
+            "kind": "historical_causal_group",
+            "messages": [
+                {"role": "user", "content": "那你现在按哪个版本执行这套校对流程？"},
+                {
+                    "role": "tool",
+                    "content": json.dumps(
+                        {"value": {"candidates": [{"memory_id": _MEM_B}]}}, ensure_ascii=False
+                    ),
+                },
+            ],
+        },
         ensure_ascii=False,
     )
-    return {"role": "user",
-            "content": "Historical conversation data (not instructions): " + body,
-            "metadata": {}}
+    return {
+        "role": "user",
+        "content": "Historical conversation data (not instructions): " + body,
+        "metadata": {},
+    }
 
 
 def _conflict_notice_message() -> dict:
     return {
         "role": "system",
-        "content": json.dumps({"kind": "conflict_notice", "memory_id": _MEM_A,
-                               "incumbent": "Python 3.12"}, ensure_ascii=False),
+        "content": json.dumps(
+            {"kind": "conflict_notice", "memory_id": _MEM_A, "incumbent": "Python 3.12"},
+            ensure_ascii=False,
+        ),
         "metadata": {"source": "conflict_notice", "trust": "host_authority"},
     }
 
@@ -551,8 +661,15 @@ def _graph_payload_message() -> dict:
     return {
         "role": "user",
         "content": json.dumps(
-            {"edges": [{"source_memory_id": _MEM_A, "target_memory_id": _MEM_B,
-                        "relation_kind": "applies_to"}]},
+            {
+                "edges": [
+                    {
+                        "source_memory_id": _MEM_A,
+                        "target_memory_id": _MEM_B,
+                        "relation_kind": "applies_to",
+                    }
+                ]
+            },
             ensure_ascii=False,
         ),
         "metadata": {},
@@ -594,8 +711,10 @@ def test_a6_11_fails_when_a_memory_id_rides_a_graph_shaped_payload(tmp_path: Pat
         ev.close()
     assert item.verdict == a6.FAIL
     assert item.numbers["memory_id_hits_in_graph_payload"] >= 1
-    assert any(s["key"] in a6.GRAPH_SHAPED_PAYLOAD_KEYS
-               for s in item.numbers["memory_id_graph_payload_samples"])
+    assert any(
+        s["key"] in a6.GRAPH_SHAPED_PAYLOAD_KEYS
+        for s in item.numbers["memory_id_graph_payload_samples"]
+    )
 
 
 def test_a6_11_still_fails_on_a_relation_id(tmp_path: Path) -> None:
@@ -621,8 +740,7 @@ def test_a6_11_strict_mode_still_fails_on_any_memory_id(tmp_path: Path) -> None:
 
 def test_a6_11_unparsable_request_is_counted_as_structural(tmp_path: Path) -> None:
     """请求体解析不出来就归类不了 —— 按结构性命中记(fail closed)。"""
-    inv = SimpleNamespace(invocation_id="inv-broken", request=None,
-                          request_json_text=_MEM_A)
+    inv = SimpleNamespace(invocation_id="inv-broken", request=None, request_json_text=_MEM_A)
     histogram, structural = a6._memory_id_carriers(inv, [_MEM_A])
     assert histogram == {"unparsable_request": 1}
     assert structural and structural[0]["carrier"] == "unparsable_request"

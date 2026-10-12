@@ -26,6 +26,9 @@ def test_user_global_entries_are_frozen_and_project_independent() -> None:
     assert lease.user_global_pack_entries(
         owner_key="principal-a", user_scope_key=selected["scope_key"]
     ) == (entry,)
-    assert lease.user_global_pack_entries(
-        owner_key="principal-b", user_scope_key=selected["scope_key"]
-    ) == ()
+    assert (
+        lease.user_global_pack_entries(
+            owner_key="principal-b", user_scope_key=selected["scope_key"]
+        )
+        == ()
+    )

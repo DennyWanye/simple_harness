@@ -13,6 +13,7 @@
 - 连接超时 / 断连 / SSL / 502 / 503 真瞬时错误仍重试
 - payload 带 quality（默认 medium，降耗时；中转层全字段透传）
 """
+
 from __future__ import annotations
 
 import base64
@@ -72,9 +73,7 @@ def img_mod(monkeypatch):
     _FakeClient.post_fn = None
     _FakeClient.last_payload = None
     monkeypatch.setattr(m.httpx, "Client", _FakeClient)
-    monkeypatch.setattr(
-        m, "_resolve_endpoint", lambda: ("https://relay.example/v1", "tsk_test")
-    )
+    monkeypatch.setattr(m, "_resolve_endpoint", lambda: ("https://relay.example/v1", "tsk_test"))
     monkeypatch.setattr(m.time, "sleep", lambda *_a: None)  # no real backoff
     return m
 

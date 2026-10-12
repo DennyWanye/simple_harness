@@ -21,9 +21,7 @@ async def _v40_db(tmp_path: Path) -> tuple[Path, CanonicalTaskScopeStore]:
     with sqlite3.connect(db_path) as db:
         tables = {
             row[0]
-            for row in db.execute(
-                "SELECT name FROM sqlite_master WHERE type IN ('table','view')"
-            )
+            for row in db.execute("SELECT name FROM sqlite_master WHERE type IN ('table','view')")
         }
         migrations = Path(__file__).parents[2] / "deskpet" / "memory" / "migrations"
         if "task_scope_projection_sources" not in tables:
@@ -40,8 +38,11 @@ async def test_source_views_groups_rebuild_and_checkpoint_drift(tmp_path: Path) 
         task_scope_id="scope-1", subject="actor-1", title="Memory Project"
     )
     receipt = await store.append_deterministic_events(
-        task_scope_id="scope-1", subject="actor-1", count=1001,
-        canary="scope-1-canary", batch_size=128
+        task_scope_id="scope-1",
+        subject="actor-1",
+        count=1001,
+        canary="scope-1-canary",
+        batch_size=128,
     )
     assert [receipt.first_event_sequence, receipt.last_event_sequence] == [1, 1001]
     await store.create_checkpoint(
@@ -69,8 +70,14 @@ async def test_source_views_groups_rebuild_and_checkpoint_drift(tmp_path: Path) 
     assert [group["event_count"] for group in groups] == [500, 500, 1]
     with sqlite3.connect(db_path) as db:
         assert db.execute("SELECT COUNT(*) FROM task_scope_projection_sources").fetchone()[0] == 3
-        assert db.execute("SELECT COUNT(*) FROM task_scope_projection_source_outbox").fetchone()[0] == 3
-        assert db.execute("SELECT MAX(length(content)) FROM task_scope_read_blocks").fetchone()[0] <= 32768
+        assert (
+            db.execute("SELECT COUNT(*) FROM task_scope_projection_source_outbox").fetchone()[0]
+            == 3
+        )
+        assert (
+            db.execute("SELECT MAX(length(content)) FROM task_scope_read_blocks").fetchone()[0]
+            <= 32768
+        )
         before = db.execute(
             "SELECT block_id,content_sha256 FROM task_scope_read_blocks ORDER BY block_id"
         ).fetchall()
@@ -110,12 +117,8 @@ async def test_source_views_groups_rebuild_and_checkpoint_drift(tmp_path: Path) 
 @pytest.mark.asyncio
 async def test_permission_first_search_exact_open_and_unavailable(tmp_path: Path) -> None:
     db_path, store = await _v40_db(tmp_path)
-    await store.create_task_scope(
-        task_scope_id="allowed", subject="actor-1", title="Alpha launch"
-    )
-    await store.create_task_scope(
-        task_scope_id="foreign", subject="actor-2", title="Alpha secret"
-    )
+    await store.create_task_scope(task_scope_id="allowed", subject="actor-1", title="Alpha launch")
+    await store.create_task_scope(task_scope_id="foreign", subject="actor-2", title="Alpha secret")
     search = TaskScopeSearchStore(db_path)
     await search.rebuild_index()
     before: tuple[object, ...]
@@ -179,8 +182,11 @@ async def test_public_bulk_seam_materializes_100k_in_500_event_groups(
         task_scope_id="scope-large", subject="actor-1", title="Large history"
     )
     receipt = await store.append_deterministic_events(
-        task_scope_id="scope-large", subject="actor-1", count=100_000,
-        canary="scope-large-canary", batch_size=2000
+        task_scope_id="scope-large",
+        subject="actor-1",
+        count=100_000,
+        canary="scope-large-canary",
+        batch_size=2000,
     )
     assert receipt.count == 100_000
     assert receipt.last_event_sequence == 100_000
@@ -202,10 +208,16 @@ async def test_public_bulk_seam_materializes_100k_in_500_event_groups(
         recovered.extend(int(event["payload"]["event_index"]) for event in events)
     assert recovered == list(range(1, 100_001))
     with sqlite3.connect(db_path) as db:
-        assert db.execute("SELECT MAX(length(content)) FROM task_scope_read_blocks").fetchone()[0] <= 32768
-        assert db.execute(
-            "SELECT COUNT(*) FROM task_scope_projection_source_outbox WHERE task_scope_id='scope-large'"
-        ).fetchone()[0] == 2
+        assert (
+            db.execute("SELECT MAX(length(content)) FROM task_scope_read_blocks").fetchone()[0]
+            <= 32768
+        )
+        assert (
+            db.execute(
+                "SELECT COUNT(*) FROM task_scope_projection_source_outbox WHERE task_scope_id='scope-large'"
+            ).fetchone()[0]
+            == 2
+        )
 
 
 @pytest.mark.asyncio
@@ -252,32 +264,57 @@ async def test_chinese_query_matches_title_by_cjk_bigrams(tmp_path: Path) -> Non
     search = TaskScopeSearchStore(db_path)
     await search.rebuild_index()
     allowed = ["genealogy", "album", "alpha"]
-    result = await search.search(subject="actor-1", allowed_scope_ids=allowed, query="暂停的排版工作", limit=10)
+    result = await search.search(
+        subject="actor-1", allowed_scope_ids=allowed, query="暂停的排版工作", limit=10
+    )
     assert [c.task_scope_id for c in result.candidates] == ["genealogy"]
     assert "家谱排版" in result.candidates[0].snippet and "[" not in result.candidates[0].snippet
-    result = await search.search(subject="actor-1", allowed_scope_ids=allowed, query="相册", limit=10)
+    result = await search.search(
+        subject="actor-1", allowed_scope_ids=allowed, query="相册", limit=10
+    )
     assert [c.task_scope_id for c in result.candidates] == ["album"]
-    result = await search.search(subject="actor-1", allowed_scope_ids=allowed, query="Alpha", limit=10)
+    result = await search.search(
+        subject="actor-1", allowed_scope_ids=allowed, query="Alpha", limit=10
+    )
     assert [c.task_scope_id for c in result.candidates] == ["alpha"]
     assert "[Alpha]" in result.candidates[0].snippet
-    result = await search.search(subject="actor-1", allowed_scope_ids=allowed, query="预算", limit=10)
+    result = await search.search(
+        subject="actor-1", allowed_scope_ids=allowed, query="预算", limit=10
+    )
     assert result.candidates == ()
 
 
 @pytest.mark.asyncio
-async def test_chinese_query_without_bigram_overlap_falls_back_to_characters(tmp_path: Path) -> None:
+async def test_chinese_query_without_bigram_overlap_falls_back_to_characters(
+    tmp_path: Path,
+) -> None:
     """语料 C05-04：「防止借东西忘还」与「社区物品登记 / 减少借还漏记」无二字重叠，单字 借/还 兜底定位。"""
     db_path, store = await _v40_db(tmp_path)
-    await store.create_task_scope(task_scope_id="lending", subject="actor-1", title="社区物品登记 减少借还漏记")
+    await store.create_task_scope(
+        task_scope_id="lending", subject="actor-1", title="社区物品登记 减少借还漏记"
+    )
     await store.create_task_scope(task_scope_id="archive", subject="actor-1", title="图书归档")
     search = TaskScopeSearchStore(db_path)
     await search.rebuild_index()
     allowed = ["lending", "archive"]
-    result = await search.search(subject="actor-1", allowed_scope_ids=allowed, query="防止借东西忘还 借东西 归还 提醒", limit=10)
+    result = await search.search(
+        subject="actor-1",
+        allowed_scope_ids=allowed,
+        query="防止借东西忘还 借东西 归还 提醒",
+        limit=10,
+    )
     # 单字兜底允许噪声候选（「归」也命中「图书归档」），但按 bm25 排序目标任务必须排第一。
     assert result.candidates[0].task_scope_id == "lending"
-    assert "[" not in result.candidates[0].snippet and "社区物品登记" in result.candidates[0].snippet
+    assert (
+        "[" not in result.candidates[0].snippet and "社区物品登记" in result.candidates[0].snippet
+    )
     # 只含停用单字的查询不兜底出候选；二字命中优先于单字兜底。
-    assert (await search.search(subject="actor-1", allowed_scope_ids=allowed, query="我的那个", limit=10)).candidates == ()
-    result = await search.search(subject="actor-1", allowed_scope_ids=allowed, query="图书", limit=10)
+    assert (
+        await search.search(
+            subject="actor-1", allowed_scope_ids=allowed, query="我的那个", limit=10
+        )
+    ).candidates == ()
+    result = await search.search(
+        subject="actor-1", allowed_scope_ids=allowed, query="图书", limit=10
+    )
     assert [c.task_scope_id for c in result.candidates] == ["archive"]

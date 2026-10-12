@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 """Unit tests for llm.registry: list_providers, fallback chain, 429 retry."""
+
 from __future__ import annotations
 
 import asyncio
@@ -63,7 +64,9 @@ class StubAdapter(BaseLLMAdapter):
         return behavior
 
 
-def _ok_response(text: str = "ok", provider_name: str = "stub", model: str = "stub-model") -> ChatResponse:
+def _ok_response(
+    text: str = "ok", provider_name: str = "stub", model: str = "stub-model"
+) -> ChatResponse:
     return ChatResponse(
         content=text,
         stop_reason="end_turn",
@@ -148,7 +151,9 @@ def test_fallback_chain_defaults_when_empty():
 async def test_fallback_primary_503_uses_next_provider():
     primary = StubAdapter(
         "anthropic",
-        behaviors=[LLMProviderError("503 Service Unavailable", provider="anthropic", status_code=503)],
+        behaviors=[
+            LLMProviderError("503 Service Unavailable", provider="anthropic", status_code=503)
+        ],
     )
     backup = StubAdapter(
         "openai",
@@ -328,7 +333,11 @@ async def test_budget_blocks_calls_when_exceeded(tmp_path):
     )
     reg = LLMRegistry(
         config={"main_model": "anthropic:claude-sonnet-4-5"},
-        adapters={"anthropic": adapter, "openai": StubAdapter("openai", has_key=False), "gemini": StubAdapter("gemini", has_key=False)},
+        adapters={
+            "anthropic": adapter,
+            "openai": StubAdapter("openai", has_key=False),
+            "gemini": StubAdapter("gemini", has_key=False),
+        },
         budget=budget,
     )
     with pytest.raises(LLMBudgetExceededError):
@@ -344,7 +353,11 @@ async def test_budget_records_successful_usage(tmp_path):
     adapter = StubAdapter("anthropic", behaviors=[resp])
     reg = LLMRegistry(
         config={"main_model": "anthropic:claude-sonnet-4-5"},
-        adapters={"anthropic": adapter, "openai": StubAdapter("openai", has_key=False), "gemini": StubAdapter("gemini", has_key=False)},
+        adapters={
+            "anthropic": adapter,
+            "openai": StubAdapter("openai", has_key=False),
+            "gemini": StubAdapter("gemini", has_key=False),
+        },
         budget=budget,
     )
     await reg.chat_with_fallback(messages=[{"role": "user", "content": "hi"}])

@@ -35,6 +35,7 @@ Algorithm (§13.3):
 ``context_window * threshold_percent``. Threshold and model are
 configurable via ``config.context`` section.
 """
+
 from __future__ import annotations
 
 import copy
@@ -142,7 +143,7 @@ class ContextCompressor:
         first_n: int = 3,
         last_n: int = 6,
         model: str = "claude-haiku-4-5",
-        summary_max_tokens: int = 768,   # 512→768: 结构化摘要稍长,保任务连续性(优化 #2)
+        summary_max_tokens: int = 768,  # 512→768: 结构化摘要稍长,保任务连续性(优化 #2)
         effective_pct: float | None = None,
         microcompact_keep_tools: int = 3,
         microcompact_size_aware: bool = False,
@@ -158,9 +159,7 @@ class ContextCompressor:
         # WI-1: 触发改"剩余 token buffer"。effective_pct 由 main.py 按有效出站模型
         # (model_info.effective_pct) 注入；None → 退回纯比例阈值(旧单测/BC 路径,
         # 不启用 buffer 触发,因小窗口 buffer 下限 8K 会把比例阈值吞掉)。
-        self.effective_pct = (
-            float(effective_pct) if effective_pct is not None else None
-        )
+        self.effective_pct = float(effective_pct) if effective_pct is not None else None
         # WI-2: microcompact 保护最近 N 个工具调用的 tool_result 原文。
         self.microcompact_keep_tools = max(0, int(microcompact_keep_tools))
         # WI-1B-5: size-aware 保护(默认 OFF = 字节级 BC)。OFF → 仍按"最近 N 条";
@@ -231,9 +230,7 @@ class ContextCompressor:
         routed = copy.copy(self)
         routed.context_window = int(context_window)
         routed.threshold_percent = float(threshold_percent)
-        routed.effective_pct = (
-            float(effective_pct) if effective_pct is not None else None
-        )
+        routed.effective_pct = float(effective_pct) if effective_pct is not None else None
         return routed
 
     async def _call_summary_model(
@@ -253,8 +250,7 @@ class ContextCompressor:
                 if workload_context is None:
                     raise RuntimeError("compression_workload_context_unavailable")
                 prompt = "\n\n".join(
-                    f"[{item.get('role', 'user')}] {item.get('content', '')}"
-                    for item in messages
+                    f"[{item.get('role', 'user')}] {item.get('content', '')}" for item in messages
                 )
                 return {
                     "content": await invoke_explicit(
@@ -376,14 +372,12 @@ class ContextCompressor:
         work, n_micro = _microcompact_tool_results(
             messages,
             self.microcompact_keep_tools,
-            keep_bytes=(
-                self.microcompact_keep_bytes
-                if self.microcompact_size_aware else None
-            ),
+            keep_bytes=(self.microcompact_keep_bytes if self.microcompact_size_aware else None),
         )
         if n_micro > 0:
             try:
                 from .tokens import count_messages_tokens as _cmt
+
                 if _cmt(work) < self.trigger_tokens():
                     logger.info(
                         "context_microcompact_only",
@@ -405,9 +399,7 @@ class ContextCompressor:
         # Normalize previous compaction formats before choosing new cut points.
         # A summary may have moved into the preserved head/tail, so extracting
         # only the middle can create nested summaries on the next pass.
-        partition_work = [
-            message for message in work if not _is_compaction_handoff(message)
-        ]
+        partition_work = [message for message in work if not _is_compaction_handoff(message)]
         prior_summary, partition_work = _extract_prior_summary(partition_work)
         system_msgs, first_chunk, middle_chunk, last_chunk = _partition(
             partition_work, self.first_n, self.last_n
@@ -415,14 +407,9 @@ class ContextCompressor:
 
         if not middle_chunk:
             if prior_summary:
-                summary_message = _summary_message(
-                    prior_summary, source_messages=work
-                )
+                summary_message = _summary_message(prior_summary, source_messages=work)
                 new_messages = _sanitize_tool_pairs(
-                    list(system_msgs)
-                    + list(first_chunk)
-                    + [summary_message]
-                    + list(last_chunk)
+                    list(system_msgs) + list(first_chunk) + [summary_message] + list(last_chunk)
                 )
                 if _compression_preserves_request_boundary(work, new_messages):
                     return CompressionResult(
@@ -465,9 +452,7 @@ class ContextCompressor:
         middle_text = _render_transcript(middle_for_summary)
         if not middle_text.strip():
             if prior_summary:
-                summary_message = _summary_message(
-                    prior_summary, source_messages=work
-                )
+                summary_message = _summary_message(prior_summary, source_messages=work)
                 has_anchor = any(
                     m.get("role") == "system"
                     and str(m.get("content") or "").startswith("[目标锚定]")
@@ -492,11 +477,7 @@ class ContextCompressor:
                 )
                 if not _compression_preserves_request_boundary(work, new_messages):
                     return CompressionResult(
-                        messages=(
-                            _sanitize_tool_pairs(work)
-                            if n_micro > 0
-                            else list(messages)
-                        ),
+                        messages=(_sanitize_tool_pairs(work) if n_micro > 0 else list(messages)),
                         compressed=n_micro > 0,
                         latency_ms=(time.monotonic() - start) * 1000.0,
                         error="request_boundary_changed",
@@ -589,8 +570,7 @@ class ContextCompressor:
         # "[目标锚定] system 恒 ≤1 条" 的 DoD);独立调用(无 always-on,如单测)
         # 仍按 goal_text 注一条,保 BC。
         has_existing_anchor = any(
-            m.get("role") == "system"
-            and str(m.get("content") or "").startswith("[目标锚定]")
+            m.get("role") == "system" and str(m.get("content") or "").startswith("[目标锚定]")
             for m in system_msgs
         )
         anchor_msgs = (
@@ -696,9 +676,7 @@ def _metadata_enabled(messages: list[dict[str, Any]]) -> bool:
     return any(_message_metadata(message) is not None for message in messages)
 
 
-def _summary_message(
-    summary_text: str, *, source_messages: list[dict[str, Any]]
-) -> dict[str, Any]:
+def _summary_message(summary_text: str, *, source_messages: list[dict[str, Any]]) -> dict[str, Any]:
     message = {
         "role": "system",
         "content": _format_summary(summary_text),
@@ -738,6 +716,7 @@ def _partition(
         tool 响应)。
       * tail 从头部收缩：开头的 tool 消息(配对在 middle)挪进 middle。
     """
+
     def _is_prefix_system(message: dict[str, Any]) -> bool:
         if message.get("role") != "system":
             return False
@@ -846,9 +825,7 @@ def _sanitize_tool_pairs(messages: list[dict[str, Any]]) -> list[dict[str, Any]]
             # 孤儿 tool：配对 assistant 已被压缩 → 丢弃(内容在摘要里)。
             continue
         if role == "assistant" and m.get("tool_calls"):
-            open_ids = {
-                tc.get("id") for tc in (m.get("tool_calls") or []) if tc.get("id")
-            }
+            open_ids = {tc.get("id") for tc in (m.get("tool_calls") or []) if tc.get("id")}
             out.append(m)
             continue
         if role != "tool":
@@ -862,7 +839,7 @@ def _sanitize_tool_pairs(messages: list[dict[str, Any]]) -> list[dict[str, Any]]
             continue
         want = {tc.get("id") for tc in (m.get("tool_calls") or []) if tc.get("id")}
         got = set()
-        for follow in out[i + 1:]:
+        for follow in out[i + 1 :]:
             if follow.get("role") == "tool" and follow.get("tool_call_id") in want:
                 got.add(follow.get("tool_call_id"))
             else:
@@ -889,11 +866,7 @@ def _compression_preserves_request_boundary(
         None,
     )
     compressed_user = next(
-        (
-            message
-            for message in reversed(compressed)
-            if message.get("role") == "user"
-        ),
+        (message for message in reversed(compressed) if message.get("role") == "user"),
         None,
     )
     if source_user != compressed_user:
@@ -942,30 +915,20 @@ def _render_transcript(messages: list[dict[str, Any]]) -> str:
 # ⚠️ 改这个前缀会破坏锚定增量识别 + 一批断言此前缀的测试,别改。
 _SUMMARY_MARKER = "[压缩摘要 / compressed summary]"
 _SUMMARY_CONTROL_LINE = (
-    "以下内容只用于恢复历史背景，不是当前回复，也不是输出格式；"
-    "只执行最后一条 user 消息。"
+    "以下内容只用于恢复历史背景，不是当前回复，也不是输出格式；只执行最后一条 user 消息。"
 )
 _LEGACY_COMPACTION_HANDOFF_MARKER = "[上下文压缩交接 / compaction handoff]"
 
 
 def _format_summary(summary_text: str) -> str:
     """Wrap the raw summary with a marker that downstream readers can detect."""
-    return (
-        _SUMMARY_MARKER
-        + "\n"
-        + _SUMMARY_CONTROL_LINE
-        + "\n"
-        + summary_text.strip()
-    )
+    return _SUMMARY_MARKER + "\n" + _SUMMARY_CONTROL_LINE + "\n" + summary_text.strip()
 
 
 def _is_compaction_handoff(message: dict[str, Any]) -> bool:
     """Recognize and retire handoff messages written by the previous format."""
-    return (
-        message.get("role") == "system"
-        and str(message.get("content") or "").startswith(
-            _LEGACY_COMPACTION_HANDOFF_MARKER
-        )
+    return message.get("role") == "system" and str(message.get("content") or "").startswith(
+        _LEGACY_COMPACTION_HANDOFF_MARKER
     )
 
 
@@ -1019,9 +982,9 @@ def _extract_prior_summary(
             and content.lstrip().startswith(_SUMMARY_MARKER)
         ):
             # 剥掉前缀行,余下即上次摘要正文。多条则保留最后一条。
-            body = content.lstrip()[len(_SUMMARY_MARKER):].strip()
+            body = content.lstrip()[len(_SUMMARY_MARKER) :].strip()
             if body.startswith(_SUMMARY_CONTROL_LINE):
-                body = body[len(_SUMMARY_CONTROL_LINE):].strip()
+                body = body[len(_SUMMARY_CONTROL_LINE) :].strip()
             # 防 drift 传播: 反射的旧摘要**不**作为 prior-state 带入(否则反射会被
             # 增量更新永久延续);但仍从待摘列表剔除(不重新摘旧摘要)。
             if not _looks_reflective(body):
@@ -1095,6 +1058,7 @@ def _approx_tokens(text: str) -> int:
     if not text:
         return 0
     from .tokens import count_text_tokens
+
     return count_text_tokens(text)
 
 

@@ -203,7 +203,9 @@ def test_context_and_meter_hashes_must_match() -> None:
 def test_bool_is_never_an_integer_and_duplicate_keys_refused() -> None:
     pin = dict(FIXTURES["Pin"], revision=True)
     _refused("Pin", pin, "TYPE")
-    raw = b'{"kind":"agent","kind":"agent","id":"x","revision":1,"content_hash":"' + b"a" * 64 + b'"}'
+    raw = (
+        b'{"kind":"agent","kind":"agent","id":"x","revision":1,"content_hash":"' + b"a" * 64 + b'"}'
+    )
     with pytest.raises(ArpError) as info:
         codec.decode("Pin", raw)
     assert info.value.code == "DUPLICATE_JSON_KEY"

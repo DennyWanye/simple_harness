@@ -42,31 +42,48 @@ def test_host_auto_approval_is_recorded_as_system_not_human(tmp_path):
     def body(case, commit, scope_row) -> None:
         rows = case.store.connection.execute(
             "SELECT actor_type, actor_id, payload_json FROM events WHERE mission_id=? "
-            "AND type='AssuranceCheckPolicyApproved'", (case.mission_id,)).fetchall()
+            "AND type='AssuranceCheckPolicyApproved'",
+            (case.mission_id,),
+        ).fetchall()
         assert rows
         for actor_type, actor_id, payload_json in rows:
             payload = json.loads(payload_json)
             assert (actor_type, actor_id) == ("system", "host:assurance-check-policy-projector")
             assert payload["approval_source"] == "HOST_LOSSLESS_AUTO"
-            assert payload["on_behalf_of_principal_id"] == case.world.deployment.principal.principal_id
+            assert (
+                payload["on_behalf_of_principal_id"] == case.world.deployment.principal.principal_id
+            )
         # 同一条命令重放就是同一份批准（来源不在回执正文里）；不认识的来源按名拒绝。
         scope_id = scope_row["scope_id"]
-        requirements_ref, scope_ref, mapping = lossless_scope_mapping(commit, mission_id=case.mission_id,
-                                                                      scope_id=scope_id)
+        requirements_ref, scope_ref, mapping = lossless_scope_mapping(
+            commit, mission_id=case.mission_id, scope_id=scope_id
+        )
         owner = case.world.deployment.principal
         tenant = case.world.deployment.tenant_id
         before = case.store.connection.total_changes
         again = commit.approve_assurance_check_policy(
-            tenant_id=tenant, mission_id=case.mission_id, command_id="host-check-policy:" + scope_id,
-            principal=owner, requirements_ref=requirements_ref, completion_scope=scope_ref,
-            candidate_mapping=mapping, approval_source="HOST_LOSSLESS_AUTO")
+            tenant_id=tenant,
+            mission_id=case.mission_id,
+            command_id="host-check-policy:" + scope_id,
+            principal=owner,
+            requirements_ref=requirements_ref,
+            completion_scope=scope_ref,
+            candidate_mapping=mapping,
+            approval_source="HOST_LOSSLESS_AUTO",
+        )
         assert again.kind == "check_policy"
         assert case.store.connection.total_changes == before
         with pytest.raises(AssuranceError) as refused:
             commit.approve_assurance_check_policy(
-                tenant_id=tenant, mission_id=case.mission_id, command_id="x", principal=owner,
-                requirements_ref=requirements_ref, completion_scope=scope_ref, candidate_mapping=mapping,
-                approval_source="ROBOT")
+                tenant_id=tenant,
+                mission_id=case.mission_id,
+                command_id="x",
+                principal=owner,
+                requirements_ref=requirements_ref,
+                completion_scope=scope_ref,
+                candidate_mapping=mapping,
+                approval_source="ROBOT",
+            )
         assert refused.value.code == "CHECK_POLICY_APPROVAL_INVALID"
 
     _committed(tmp_path, body)
@@ -75,7 +92,9 @@ def test_host_auto_approval_is_recorded_as_system_not_human(tmp_path):
 def test_unknown_scope_is_unresolved_never_invented(tmp_path):
     def body(case, commit, scope_row) -> None:
         with pytest.raises(AssuranceError) as refused:
-            lossless_scope_mapping(commit, mission_id=case.mission_id, scope_id="op-completion-scope-none")
+            lossless_scope_mapping(
+                commit, mission_id=case.mission_id, scope_id="op-completion-scope-none"
+            )
         assert refused.value.code == "CHECK_POLICY_UNRESOLVED"
 
     _committed(tmp_path, body)
@@ -84,8 +103,12 @@ def test_unknown_scope_is_unresolved_never_invented(tmp_path):
 def test_unknown_purpose_is_refused(tmp_path):
     def body(case, commit, scope_row) -> None:
         with pytest.raises(AssuranceError) as refused:
-            lossless_scope_mapping(commit, mission_id=case.mission_id, scope_id=scope_row["scope_id"],
-                                   purpose="METHOD_PLAN")
+            lossless_scope_mapping(
+                commit,
+                mission_id=case.mission_id,
+                scope_id=scope_row["scope_id"],
+                purpose="METHOD_PLAN",
+            )
         assert refused.value.code == "CHECK_POLICY_APPROVAL_INVALID"
 
     _committed(tmp_path, body)
@@ -101,29 +124,49 @@ def test_operation_reviews_are_projected_on_the_effect_owner_and_approved(tmp_pa
     def body(case, commit, scope_row) -> None:
         scope_id = scope_row["scope_id"]
         assert scope_row["document"].owned_effect_keys == ("publish-weekly",)
-        _, derived, mapping = lossless_scope_mapping(commit, mission_id=case.mission_id, scope_id=scope_id,
-                                                     purpose="ACTION_PROPOSAL")
+        _, derived, mapping = lossless_scope_mapping(
+            commit, mission_id=case.mission_id, scope_id=scope_id, purpose="ACTION_PROPOSAL"
+        )
         assert derived.pin.id == scope_id
-        assert mapping == tuple(CriterionPolicy(c, "SEMANTIC", ()) for c in sorted(ACTION_PROPOSAL_CRITERIA))
-        _, _, mapping = lossless_scope_mapping(commit, mission_id=case.mission_id, scope_id=scope_id,
-                                               purpose="OPERATION_OUTCOME", effect_key="publish-weekly")
+        assert mapping == tuple(
+            CriterionPolicy(c, "SEMANTIC", ()) for c in sorted(ACTION_PROPOSAL_CRITERIA)
+        )
+        _, _, mapping = lossless_scope_mapping(
+            commit,
+            mission_id=case.mission_id,
+            scope_id=scope_id,
+            purpose="OPERATION_OUTCOME",
+            effect_key="publish-weekly",
+        )
         assert mapping and all(row.mode == "SEMANTIC" for row in mapping)
         # 部署代批的回执就在库里（回执号按产品那一份的命令身份算）。
         from agent_orchestrator.assurance.codec import fingerprint
 
-        for command_id in ("host-check-policy:action-proposal:" + scope_id,
-                           f"host-check-policy:operation-outcome:{scope_id}:publish-weekly",
-                           "host-check-policy:mission-final:" + scope_id):
-            receipt_id = "assurance-check-policy-approval:" + fingerprint({
-                "mission": case.mission_id, "tenant": case.world.deployment.tenant_id,
-                "principal": case.world.deployment.principal.principal_id, "command": command_id})
+        for command_id in (
+            "host-check-policy:action-proposal:" + scope_id,
+            f"host-check-policy:operation-outcome:{scope_id}:publish-weekly",
+            "host-check-policy:mission-final:" + scope_id,
+        ):
+            receipt_id = "assurance-check-policy-approval:" + fingerprint(
+                {
+                    "mission": case.mission_id,
+                    "tenant": case.world.deployment.tenant_id,
+                    "principal": case.world.deployment.principal.principal_id,
+                    "command": command_id,
+                }
+            )
             assert case.store.get_receipt(receipt_id) is not None, command_id
-        requirements_ref, _, final = lossless_scope_mapping(commit, mission_id=case.mission_id, scope_id=scope_id,
-                                                            purpose="MISSION_FINAL")
-        requirements = HtnStore(case.store).get_requirements_revision(case.mission_id, requirements_ref.pin.revision)
+        requirements_ref, _, final = lossless_scope_mapping(
+            commit, mission_id=case.mission_id, scope_id=scope_id, purpose="MISSION_FINAL"
+        )
+        requirements = HtnStore(case.store).get_requirements_revision(
+            case.mission_id, requirements_ref.pin.revision
+        )
         # 2026-10-06（Assurance §7.2，车道 O）：根终审只判根范围的内容判据；效果判据（这里的发布）由结果
         # 审阅判，不在根终审的策略里。
-        assert {row.criterion_id for row in final} == set(scope_row["document"].content_criterion_ids)
+        assert {row.criterion_id for row in final} == set(
+            scope_row["document"].content_criterion_ids
+        )
         assert {row.criterion_id for row in final} < {c.criterion_id for c in requirements.criteria}
         for purpose, effect_key, code in (
             ("OPERATION_OUTCOME", "effect-x", "CHECK_POLICY_UNRESOLVED"),  # 不归这一步管
@@ -131,8 +174,13 @@ def test_operation_reviews_are_projected_on_the_effect_owner_and_approved(tmp_pa
             ("ACTION_PROPOSAL", "publish-weekly", "CHECK_POLICY_APPROVAL_INVALID"),
         ):
             with pytest.raises(AssuranceError) as refused:
-                lossless_scope_mapping(commit, mission_id=case.mission_id, scope_id=scope_id,
-                                       purpose=purpose, effect_key=effect_key)
+                lossless_scope_mapping(
+                    commit,
+                    mission_id=case.mission_id,
+                    scope_id=scope_id,
+                    purpose=purpose,
+                    effect_key=effect_key,
+                )
             assert refused.value.code == code, (purpose, effect_key, refused.value.code)
 
     _committed(tmp_path, body)

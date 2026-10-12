@@ -1,4 +1,5 @@
 """P02: production preview refuses refinement and ORDER cycles without side effects."""
+
 from __future__ import annotations
 
 import asyncio
@@ -55,7 +56,6 @@ def _refinement_cycle(inputs: Any):
     # Leave the original root open for the genuine REFINE. The refinement
     # validator checks every candidate configuration, including this alternative.
     return replace(network, method_instances=(*network.method_instances, loop))
-
 
 
 @pytest.mark.parametrize(

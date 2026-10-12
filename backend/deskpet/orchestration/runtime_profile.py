@@ -68,8 +68,13 @@ def relay_tool_margin(host: str, state_dir: Path | None) -> Any:
 THINKING_EFFORT = "high"
 
 
-def deepseek_counter_for(snapshot: ProviderSnapshot | None, settings: Any = None, *, thinking: str = "disabled",
-                         state_dir: Path | None = None) -> Any:
+def deepseek_counter_for(
+    snapshot: ProviderSnapshot | None,
+    settings: Any = None,
+    *,
+    thinking: str = "disabled",
+    state_dir: Path | None = None,
+) -> Any:
     """The certified V4.1 counter for a DeepSeek endpoint, or None for any other provider.
 
     The official endpoint gets the exact counter.  A declared-compatible host is a relay:
@@ -82,7 +87,9 @@ def deepseek_counter_for(snapshot: ProviderSnapshot | None, settings: Any = None
     from .settings import compatible_hosts
 
     host = urlparse(snapshot.base_url).hostname
-    if host not in DEEPSEEK_OFFICIAL_HOSTS and (host or "").lower() not in compatible_hosts(settings):
+    if host not in DEEPSEEK_OFFICIAL_HOSTS and (host or "").lower() not in compatible_hosts(
+        settings
+    ):
         return None
     from agent_orchestrator.runtime.deepseek_meter import CertifiedDeepSeekCounter
 
@@ -91,11 +98,16 @@ def deepseek_counter_for(snapshot: ProviderSnapshot | None, settings: Any = None
         raise RuntimeError("源码 DeepSeek profile 需要绝对路径 DESKPET_ORCH_TOKENIZER_PATH")
     effort = THINKING_EFFORT if thinking == "enabled" else None  # the counter renders what is sent
     if host in DEEPSEEK_OFFICIAL_HOSTS:
-        return CertifiedDeepSeekCounter(path, model=snapshot.requested_model, thinking=thinking, reasoning_effort=effort)
+        return CertifiedDeepSeekCounter(
+            path, model=snapshot.requested_model, thinking=thinking, reasoning_effort=effort
+        )
     from agent_orchestrator.runtime.deepseek_meter import RelayDeepSeekCounter
 
     return RelayDeepSeekCounter(
-        path, model=snapshot.requested_model, thinking=thinking, reasoning_effort=effort,
+        path,
+        model=snapshot.requested_model,
+        thinking=thinking,
+        reasoning_effort=effort,
         margin=relay_tool_margin(str(host), state_dir),
     )
 
@@ -112,7 +124,9 @@ def deepseek_thinking(snapshot: ProviderSnapshot | None, settings: Any = None) -
     return "disabled"
 
 
-ONLY_DEEPSEEK_REASON = "编排只支持 DeepSeek：当前模型没有经过认证的用量计数器，请在设置里改用 DeepSeek 模型"
+ONLY_DEEPSEEK_REASON = (
+    "编排只支持 DeepSeek：当前模型没有经过认证的用量计数器，请在设置里改用 DeepSeek 模型"
+)
 
 
 def source_runtime_options(
@@ -145,10 +159,15 @@ def source_runtime_options(
     # bound to the same mode; only for a DeepSeek endpoint.
     thinking_counter = (
         deepseek_counter_for(snapshot, settings, thinking="enabled", state_dir=state_dir)
-        if thinking_provider is not None and snapshot is not None else None
+        if thinking_provider is not None and snapshot is not None
+        else None
     )
     return pool_options(
-        config, native=native, provider=provider, counter=counter,
+        config,
+        native=native,
+        provider=provider,
+        counter=counter,
         provider_kind="env" if snapshot is not None else "fixtures",
-        thinking_provider=thinking_provider, thinking_counter=thinking_counter,
+        thinking_provider=thinking_provider,
+        thinking_counter=thinking_counter,
     )

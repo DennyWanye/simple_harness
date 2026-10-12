@@ -17,6 +17,7 @@ max_verify_nudges 接到 _AgentLoop 实例上。**这是 last-mile P0-1 修复�
   3. patterns_file 缺失 → catch + warn + verify_gate=None（不崩）
   4. kwargs 全传递 — max_iterations/completion_probe/signature_repeat_threshold
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -97,7 +98,8 @@ def mock_receipt_store_getter_none():
 
 
 def test_build_agent_passes_verify_gate_when_flag_on(
-    cfg_flag_on, mock_receipt_store_getter,
+    cfg_flag_on,
+    mock_receipt_store_getter,
 ):
     """**核心接电证据**: mode=shadow → agent.verify_gate is not None."""
     from main import build_agent
@@ -119,7 +121,8 @@ def test_build_agent_passes_verify_gate_when_flag_on(
 
 
 def test_build_agent_verify_gate_none_when_flag_off(
-    cfg_flag_off, mock_receipt_store_getter_none,
+    cfg_flag_off,
+    mock_receipt_store_getter_none,
 ):
     """mode=off (default) → agent.verify_gate is None (BC)."""
     from main import build_agent
@@ -136,7 +139,8 @@ def test_build_agent_verify_gate_none_when_flag_off(
 
 
 def test_build_agent_can_disable_verify_gate_for_zero_tool_structured_runs(
-    cfg_flag_on, mock_receipt_store_getter,
+    cfg_flag_on,
+    mock_receipt_store_getter,
 ):
     """Host-validated zero-tool JSON runs must not enter either verifier."""
     from main import build_agent
@@ -160,7 +164,9 @@ def test_build_agent_can_disable_verify_gate_for_zero_tool_structured_runs(
 
 
 def test_build_agent_handles_missing_patterns_file(
-    cfg_bad_patterns, mock_receipt_store_getter, caplog,
+    cfg_bad_patterns,
+    mock_receipt_store_getter,
+    caplog,
 ):
     """patterns.yaml 不存在 → catch + warn + verify_gate=None（不崩 backend）.
 
@@ -187,7 +193,8 @@ def test_build_agent_handles_missing_patterns_file(
 
 
 def test_build_agent_passes_all_optional_kwargs(
-    cfg_flag_on, mock_receipt_store_getter,
+    cfg_flag_on,
+    mock_receipt_store_getter,
 ):
     """★v3 round2 P0-6: 工厂签名 4 个 ★v3 参数全部传给 _AgentLoop ctor."""
     from main import build_agent
@@ -199,9 +206,9 @@ def test_build_agent_passes_all_optional_kwargs(
         tool_registry=MagicMock(),
         context_manager=MagicMock(),
         receipt_store_getter=mock_receipt_store_getter,
-        max_iterations=50,           # ★v3 code-mode 上限
+        max_iterations=50,  # ★v3 code-mode 上限
         completion_probe=mock_probe,  # ★v3 完成探针
-        max_completion_nudges=3,      # ★v3 完成 nudge 上限
+        max_completion_nudges=3,  # ★v3 完成 nudge 上限
         signature_repeat_threshold=4,  # ★v3 死循环抑制
     )
     assert agent.max_iterations == 50
@@ -222,7 +229,8 @@ def test_build_agent_has_no_legacy_tool_path_recorder_parameter():
 
 
 def test_build_agent_receipt_store_getter_failure_disables_gate(
-    cfg_flag_on, caplog,
+    cfg_flag_on,
+    caplog,
 ):
     """receipt_store getter 抛异常 → verify_gate 退化 None（safe-fail）.
 
@@ -245,7 +253,8 @@ def test_build_agent_receipt_store_getter_failure_disables_gate(
 
 
 def test_build_agent_strict_mode_wires_gate(
-    cfg_flag_on, mock_receipt_store_getter,
+    cfg_flag_on,
+    mock_receipt_store_getter,
 ):
     """strict mode 也能正确接电（不只 shadow）."""
     from main import build_agent
@@ -263,7 +272,8 @@ def test_build_agent_strict_mode_wires_gate(
 
 
 def test_build_agent_uses_cfg_max_verify_nudges(
-    cfg_flag_on, mock_receipt_store_getter,
+    cfg_flag_on,
+    mock_receipt_store_getter,
 ):
     """cfg.tools.verifier.max_verify_nudges 透传到 AgentLoop."""
     from main import build_agent

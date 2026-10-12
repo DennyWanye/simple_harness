@@ -15,6 +15,7 @@
 * 条数上限、整包大小上限照旧，裁掉的行如实记在 ``truncated`` / ``omitted_counts`` 里；
   目标、计划、预算这三样必须在，放不下就拒绝而不是悄悄裁掉。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -46,19 +47,44 @@ from simple_harness.contracts import canonical_json
 #: What the package may carry at the top level.  Anything else is a second place for a
 #: fact that already has one.
 TOP_LEVEL = {
-    "context_builder_version", "package_version", "role", "mode", "mission",
-    "planning_protocol", "planning_subjects", "visible_refs", "previous_feedback",
-    "decision_limits", "views", "repair_requests", "human_answers", "abandoned_plan_changes", "method_selection",
-    "method_proposal_contexts", "sharing_candidates", "successor_types",
-    "evidence_predicates", "truncated", "omitted_counts",
+    "context_builder_version",
+    "package_version",
+    "role",
+    "mode",
+    "mission",
+    "planning_protocol",
+    "planning_subjects",
+    "visible_refs",
+    "previous_feedback",
+    "decision_limits",
+    "views",
+    "repair_requests",
+    "human_answers",
+    "abandoned_plan_changes",
+    "method_selection",
+    "method_proposal_contexts",
+    "sharing_candidates",
+    "successor_types",
+    "evidence_predicates",
+    "truncated",
+    "omitted_counts",
 }
 
 #: The intermediate mapping the views used to be converted from, and the fields that
 #: repeated a view.
 GONE = {
-    "plan", "method_library", "applicability", "facts", "operators", "planning_rejected",
-    "constraint", "output_contract", "planning_attempt", "active_method_instances",
-    "data_rebind_candidates", "compensation_candidates",
+    "plan",
+    "method_library",
+    "applicability",
+    "facts",
+    "operators",
+    "planning_rejected",
+    "constraint",
+    "output_contract",
+    "planning_attempt",
+    "active_method_instances",
+    "data_rebind_candidates",
+    "compensation_candidates",
 }
 
 
@@ -69,8 +95,10 @@ def _first_request(tmp_path: Path, key: str) -> dict[str, Any]:
 
     async def case() -> dict[str, Any]:
         async with reviewed(tmp_path, key=key) as (_seed, intent, _provider):
-            return {"package": intent.config["planning_package"],
-                    "message": intent.config["message"]["content"]}
+            return {
+                "package": intent.config["planning_package"],
+                "message": intent.config["message"]["content"],
+            }
 
     return asyncio.run(case())
 
@@ -92,25 +120,47 @@ def test_the_request_is_twelve_views_and_nothing_twice(tmp_path: Path) -> None:
     # a method is said once, and its reference is spelled the way a decision quotes it
     methods = package["views"]["methods"]
     assert methods and all(row["method_ref"] in package["visible_refs"] for row in methods)
-    assert all(set(row["method_ref"]) == {"kind", "id", "semantic_revision", "content_hash"}
-               for row in methods)
-    assert any(report["verdict"] == "APPLICABLE" for row in methods for report in row["applicability"])
-    assert all({"steps", "parameters", "applicable_when", "rejected_reasons"} <= set(row)
-               for row in methods)
+    assert all(
+        set(row["method_ref"]) == {"kind", "id", "semantic_revision", "content_hash"}
+        for row in methods
+    )
+    assert any(
+        report["verdict"] == "APPLICABLE" for row in methods for report in row["applicability"]
+    )
+    assert all(
+        {"steps", "parameters", "applicable_when", "rejected_reasons"} <= set(row)
+        for row in methods
+    )
     # the candidate list names the same methods, by id
-    offered = {item["method_id"] for choice in package["method_selection"] for item in choice["applicable"]}
+    offered = {
+        item["method_id"] for choice in package["method_selection"] for item in choice["applicable"]
+    }
     assert offered <= {row["method_ref"]["id"] for row in methods}
 
 
 def test_the_prompt_names_only_fields_the_package_has(tmp_path: Path) -> None:
     prompt = PLANNER_HIERARCHICAL.instructions
-    for stale in ("plan.open_compound_goals", "planning_rejected",
-                  "data_rebind_candidates", "typed_parameters", "refined_goals_under_repair"):
+    for stale in (
+        "plan.open_compound_goals",
+        "planning_rejected",
+        "data_rebind_candidates",
+        "typed_parameters",
+        "refined_goals_under_repair",
+    ):
         assert stale not in prompt, stale
     package = _first_request(tmp_path, "single-layer-prompt")["package"]
-    for name in ("views", "method_selection", "method_proposal_contexts", "repair_requests",
-                 "human_answers", "previous_feedback", "planning_subjects", "successor_types",
-                 "sharing_candidates", "evidence_predicates"):
+    for name in (
+        "views",
+        "method_selection",
+        "method_proposal_contexts",
+        "repair_requests",
+        "human_answers",
+        "previous_feedback",
+        "planning_subjects",
+        "successor_types",
+        "sharing_candidates",
+        "evidence_predicates",
+    ):
         assert name in prompt and name in package, name
     for view in ("goals", "plans", "methods", "failures"):
         assert f"      {view}：" in prompt, view
@@ -126,13 +176,24 @@ def test_a_failure_is_indexed_in_the_view_and_detailed_only_in_its_repair_reques
     index keeps the layer and its one-line summary and nothing nested."""
 
     failure = {
-        "failures": [{"layer": "rule_check", "status": "FAIL", "summary": "citation missing",
-                      "detail": {"envelope": {"claims": ["x" * 4000]}, "assessment_binding": {"a": 1}}}],
-        "reason": "verification_failed", "retryable": True, "evidence": ["a", "b"],
+        "failures": [
+            {
+                "layer": "rule_check",
+                "status": "FAIL",
+                "summary": "citation missing",
+                "detail": {"envelope": {"claims": ["x" * 4000]}, "assessment_binding": {"a": 1}},
+            }
+        ],
+        "reason": "verification_failed",
+        "retryable": True,
+        "evidence": ["a", "b"],
     }
     outline = failure_outline(failure)
-    assert outline == {"reason": "verification_failed", "retryable": True,
-                       "failures": [{"layer": "rule_check", "status": "FAIL", "summary": "citation missing"}]}
+    assert outline == {
+        "reason": "verification_failed",
+        "retryable": True,
+        "failures": [{"layer": "rule_check", "status": "FAIL", "summary": "citation missing"}],
+    }
     assert len(json.dumps(outline)) < 200 < len(json.dumps(failure))
     assert failure_outline(None) == {}
 
@@ -171,25 +232,35 @@ def _assemble(**views: Any) -> dict[str, Any]:
     rows = {name: () for name in VIEW_NAMES}
     rows.update(goals=goal_rows(_Network()), plans=[plan_row(_Network())])
     rows.update(views)
-    return assemble_planner_package(package_version=10, mission=_Mission(), network=_Network(),
-                                    views=rows, sections={"repair_requests": []})
+    return assemble_planner_package(
+        package_version=10,
+        mission=_Mission(),
+        network=_Network(),
+        views=rows,
+        sections={"repair_requests": []},
+    )
 
 
 def test_the_assembler_needs_exactly_the_twelve_views() -> None:
     with pytest.raises(PlannerPackageError, match="twelve views"):
-        assemble_planner_package(package_version=10, mission=_Mission(), network=_Network(),
-                                 views={"goals": ()})
+        assemble_planner_package(
+            package_version=10, mission=_Mission(), network=_Network(), views={"goals": ()}
+        )
     assert not hasattr(planner_package, "hierarchical_planner_package")
     assert not hasattr(planner_package, "collect_planner_views")
 
 
 def test_count_caps_keep_the_newest_rows_and_say_what_was_left_out() -> None:
-    accepted = [{"acceptance_ref": None, "producer_occurrence": f"occ-{i}"} for i in range(MAX_ACCEPTED_RESULTS + 1)]
+    accepted = [
+        {"acceptance_ref": None, "producer_occurrence": f"occ-{i}"}
+        for i in range(MAX_ACCEPTED_RESULTS + 1)
+    ]
     failures = [{"source": "attempt", "reason": f"failure-{i}"} for i in range(MAX_FAILURES + 3)]
     package = _assemble(accepted_results=accepted, failures=failures)
     assert len(package["views"]["accepted_results"]) == MAX_ACCEPTED_RESULTS
     assert [row["reason"] for row in package["views"]["failures"]] == [
-        f"failure-{i}" for i in range(MAX_FAILURES)]
+        f"failure-{i}" for i in range(MAX_FAILURES)
+    ]
     assert package["truncated"] is True
     assert package["omitted_counts"] == {"accepted_results": 1, "failures": 3}
     quiet = _assemble()
@@ -197,7 +268,10 @@ def test_count_caps_keep_the_newest_rows_and_say_what_was_left_out() -> None:
 
 
 def test_size_pressure_drops_optional_rows_with_a_receipt_and_never_the_mandatory_ones() -> None:
-    heavy = [{"observation_ref": None, "proposition_key": str(i), "coverage": "x" * 6000} for i in range(24)]
+    heavy = [
+        {"observation_ref": None, "proposition_key": str(i), "coverage": "x" * 6000}
+        for i in range(24)
+    ]
     package = _assemble(facts=heavy)
     assert len(canonical_json(package).encode("utf-8")) <= MAX_PACKAGE_BYTES
     assert package["truncated"] is True and package["omitted_counts"]["facts"] > 0
@@ -242,15 +316,31 @@ def test_the_failure_index_lists_attempts_first_and_a_retry_finds_its_attempt() 
     本次请求里时不能因为它崩；②规划连续被拒再多，也不能把步骤的失败尝试挤出索引。"""
     from agent_orchestrator.planning.htn.planner_package import attempt_is_indexed, failure_index
 
-    attempts = [(float(i), {"source": "attempt", "reason": "FAILED",
-                            "attempt_review_ref": {"kind": "attempt", "id": f"task-1:attempt-{i}"}})
-                for i in range(1, 4)]
-    rejections = [(100.0 + i, {"source": "planning", "reason": "proposal_unreadable",
-                               "attempt_review_ref": None}) for i in range(MAX_FAILURES + 4)]
+    attempts = [
+        (
+            float(i),
+            {
+                "source": "attempt",
+                "reason": "FAILED",
+                "attempt_review_ref": {"kind": "attempt", "id": f"task-1:attempt-{i}"},
+            },
+        )
+        for i in range(1, 4)
+    ]
+    rejections = [
+        (
+            100.0 + i,
+            {"source": "planning", "reason": "proposal_unreadable", "attempt_review_ref": None},
+        )
+        for i in range(MAX_FAILURES + 4)
+    ]
     rows = failure_index(attempts=attempts, planning=rejections)
     assert [row["source"] for row in rows[:3]] == ["attempt"] * 3
     assert [row["attempt_review_ref"]["id"] for row in rows[:3]] == [
-        "task-1:attempt-3", "task-1:attempt-2", "task-1:attempt-1"]  # newest first
+        "task-1:attempt-3",
+        "task-1:attempt-2",
+        "task-1:attempt-1",
+    ]  # newest first
     package = _assemble(failures=rows)
     assert len(package["views"]["failures"]) == MAX_FAILURES
     assert attempt_is_indexed(package, "task-1:attempt-1")
@@ -265,14 +355,30 @@ def test_too_many_references_drop_optional_rows_before_the_request_is_refused() 
     from agent_orchestrator.planning.htn.planner_package import MAX_VISIBLE_REFS
 
     def accepted(index: int) -> dict[str, Any]:
-        return {"acceptance_ref": {"kind": "acceptance", "id": f"acc-{index:03d}",
-                                   "semantic_revision": 1, "content_hash": "a" * 64}}
+        return {
+            "acceptance_ref": {
+                "kind": "acceptance",
+                "id": f"acc-{index:03d}",
+                "semantic_revision": 1,
+                "content_hash": "a" * 64,
+            }
+        }
 
-    methods = [{"method_ref": {"kind": "method", "id": f"m-{index:03d}", "semantic_revision": 1,
-                               "content_hash": "b" * 64}} for index in range(MAX_VISIBLE_REFS - 4)]
+    methods = [
+        {
+            "method_ref": {
+                "kind": "method",
+                "id": f"m-{index:03d}",
+                "semantic_revision": 1,
+                "content_hash": "b" * 64,
+            }
+        }
+        for index in range(MAX_VISIBLE_REFS - 4)
+    ]
     package = _assemble(methods=methods, accepted_results=[accepted(i) for i in range(10)])
     assert len(package["visible_refs"]) == MAX_VISIBLE_REFS
     assert len(package["views"]["accepted_results"]) == 4
     assert package["truncated"] is True and package["omitted_counts"] == {"accepted_results": 6}
     assert {row["acceptance_ref"]["id"] for row in package["views"]["accepted_results"]} == {
-        ref["id"] for ref in package["visible_refs"] if ref["kind"] == "acceptance"}
+        ref["id"] for ref in package["visible_refs"] if ref["kind"] == "acceptance"
+    }

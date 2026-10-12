@@ -384,9 +384,7 @@ async def _run_core_gate() -> dict[str, object]:
         "simple_harness",
         __version__,
     )
-    expected_memory_version = os.environ.get(
-        _MEMORY_VERSION_ENV, _DEFAULT_MEMORY_VERSION
-    ).strip()
+    expected_memory_version = os.environ.get(_MEMORY_VERSION_ENV, _DEFAULT_MEMORY_VERSION).strip()
     _require(bool(expected_memory_version), "memory-candidate-version-required")
     memory_identity = _distribution_identity(
         _MEMORY_DISTRIBUTION,

@@ -205,10 +205,7 @@ class GrowthDeliveryTarget:
 
     @property
     def target_id(self) -> str:
-        return (
-            f"companion-profile:{self.owner.profile_id}:"
-            f"{self.owner.profile_generation}"
-        )
+        return f"companion-profile:{self.owner.profile_id}:{self.owner.profile_generation}"
 
     @classmethod
     def parse(cls, value: str) -> GrowthDeliveryTarget:
@@ -264,9 +261,7 @@ class CompanionIngressOutboxDispatcher:
             }
             for item in reflection_target_catalog
         )
-        self._claim_owner = (
-            claim_owner or f"companion-ingress:{os.getpid()}:{id(self):x}"
-        )
+        self._claim_owner = claim_owner or f"companion-ingress:{os.getpid()}:{id(self):x}"
         self._lease_seconds = float(lease_seconds)
         self._dispatcher = GrowthIngressDispatcher(store)
 
@@ -338,14 +333,10 @@ class CompanionIngressOutboxDispatcher:
                 int(envelope["profile_generation"]),
             )
             priority = str(row.get("priority") or "normal")
-            semantic_growth_intent = str(
-                envelope.get("semantic_growth_intent") or "none"
-            )
+            semantic_growth_intent = str(envelope.get("semantic_growth_intent") or "none")
             reason_code = {
                 "explicit_correction": "explicit_user_correction",
-                "explicit_capability_request": (
-                    "explicit_user_capability_request"
-                ),
+                "explicit_capability_request": ("explicit_user_capability_request"),
             }.get(semantic_growth_intent, "committed_user_message")
             retry_request = _optional_text(envelope.get("retry_of_request_id"))
             retry_run = _optional_text(envelope.get("retry_of_run_id"))
@@ -359,16 +350,8 @@ class CompanionIngressOutboxDispatcher:
                 reason_code=reason_code,
                 previous_request_id=(retry_request if has_retry_link else None),
                 previous_run_id=(retry_run if has_retry_link else None),
-                current_request_id=(
-                    str(envelope["request_id"])
-                    if has_retry_link
-                    else None
-                ),
-                current_run_id=(
-                    str(envelope["run_id"])
-                    if has_retry_link
-                    else None
-                ),
+                current_request_id=(str(envelope["request_id"]) if has_retry_link else None),
+                current_run_id=(str(envelope["run_id"]) if has_retry_link else None),
                 payload={
                     "session_id": session_id,
                     "message_id": message_id,
@@ -440,10 +423,7 @@ class CompanionIngressOutboxDispatcher:
             dedupe_key=f"growth-intent:{event.event_id}",
             payload={
                 "purpose": "reflection",
-                "owner_key": (
-                    f"companion:{owner.profile_id}:"
-                    f"{owner.profile_generation}"
-                ),
+                "owner_key": (f"companion:{owner.profile_id}:{owner.profile_generation}"),
                 "evidence_ids": [event.event_id],
                 "capture_growth": False,
                 "requires_idle": True,
@@ -523,9 +503,7 @@ class GrowthTerminalDeliveryContributor:
         self._gate.freeze()
         return True
 
-    def freeze_deliveries(
-        self, request: object, _host: object
-    ) -> tuple[DeliverySpec, ...]:
+    def freeze_deliveries(self, request: object, _host: object) -> tuple[DeliverySpec, ...]:
         if not self._captures_growth(request):
             return ()
         frozen = self._gate.freeze()
@@ -579,9 +557,7 @@ class GrowthTerminalDeliverySink:
                 "driver_kind": event.candidate.driver_kind,
                 "error_class": error_class,
                 "artifact_refs": list(event.candidate.artifact_refs),
-                "result_payload_hash": fingerprint_json(
-                    thaw_json(event.candidate.payload)
-                ),
+                "result_payload_hash": fingerprint_json(thaw_json(event.candidate.payload)),
             },
         )
         try:

@@ -20,7 +20,9 @@ from .test_native_plane_host import _service
 
 @pytest.mark.asyncio
 async def test_a_library_frozen_under_one_slot_starts_under_two(orchestration_root, principal):
-    service = _service(orchestration_root, principal, max_concurrency=1, max_concurrent_model_calls=1)
+    service = _service(
+        orchestration_root, principal, max_concurrency=1, max_concurrent_model_calls=1
+    )
     await service.start()
     try:
         mission_id = service.create_mission(notes_request("slots-1"))["mission_id"]
@@ -29,7 +31,9 @@ async def test_a_library_frozen_under_one_slot_starts_under_two(orchestration_ro
         # 由 Host 职责确认纯内容要求（同产品每轮职责），再冻结第一条规划请求。
         assert service._duties.auto_confirm_content_completion(auto=True) == 1
         assert await loop._try_planner_intent(mission_id, ordinal=1)
-        frozen = [i for i in loop.store.list_intents("PENDING", "CLAIMED") if i.mission_id == mission_id]
+        frozen = [
+            i for i in loop.store.list_intents("PENDING", "CLAIMED") if i.mission_id == mission_id
+        ]
         assert frozen and frozen[0].config.get("provider_admission_fingerprint")
         before = frozen[0].config["provider_admission_fingerprint"]
     finally:

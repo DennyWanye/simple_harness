@@ -38,23 +38,38 @@ from deskpet.workflows.store import RegisteredBlobStore, WorkflowRunStore
 def _contract_search_result() -> OfficialSearchResultV1:
     ref = "sha256:" + "1" * 64
     candidate = SearchCandidateV1.create(
-        ordinal=0, source_locator_ref=ref,
-        title_hash="2" * 64, snippet_hash="3" * 64,
-        authority_match="unverified", reason_codes=("candidate_unverified",),
+        ordinal=0,
+        source_locator_ref=ref,
+        title_hash="2" * 64,
+        snippet_hash="3" * 64,
+        authority_match="unverified",
+        reason_codes=("candidate_unverified",),
     )
     return OfficialSearchResultV1.create(
-        logical_effect_id="logical-search", attempt_no=1, request_id="request-1",
-        query_hash="4" * 64, target_id="target-1", candidates=(candidate,),
-        outcome="succeeded", error_code=None, deadline_id="deadline-1",
+        logical_effect_id="logical-search",
+        attempt_no=1,
+        request_id="request-1",
+        query_hash="4" * 64,
+        target_id="target-1",
+        candidates=(candidate,),
+        outcome="succeeded",
+        error_code=None,
+        deadline_id="deadline-1",
     )
 
 
 def _contract_page_result() -> PageExtractionResultV1:
     return PageExtractionResultV1.create(
-        logical_page_id="page-plan-1", logical_effect_id="logical-page",
-        attempt_no=1, source_locator_ref="sha256:" + "5" * 64,
-        page_record=None, spans=(), bindings=(), outcome="timeout",
-        error_code="deadline_expired", deadline_id="deadline-1",
+        logical_page_id="page-plan-1",
+        logical_effect_id="logical-page",
+        attempt_no=1,
+        source_locator_ref="sha256:" + "5" * 64,
+        page_record=None,
+        spans=(),
+        bindings=(),
+        outcome="timeout",
+        error_code="deadline_expired",
+        deadline_id="deadline-1",
         control_command_id=None,
     )
 
@@ -63,17 +78,27 @@ def test_v6_typed_read_contracts_have_strict_roundtrip_and_frozen_golden_bytes()
     search = _contract_search_result()
     page = _contract_page_result()
     attempt = PageAttemptOutcomeV1.create(
-        logical_page_id="page-plan-1", ordinal=0,
-        logical_effect_id="logical-page", attempt_no=1,
-        canonical_effect_id="effect-1", result_ref="sha256:" + "6" * 64,
-        status="committed", deadline_id="deadline-1", control_command_id=None,
+        logical_page_id="page-plan-1",
+        ordinal=0,
+        logical_effect_id="logical-page",
+        attempt_no=1,
+        canonical_effect_id="effect-1",
+        result_ref="sha256:" + "6" * 64,
+        status="committed",
+        deadline_id="deadline-1",
+        control_command_id=None,
     )
     assert OfficialSearchResultV1.from_json(search.to_json()) == search
     assert PageExtractionResultV1.from_json(page.to_json()) == page
     assert PageAttemptOutcomeV1.from_json(attempt.to_json()) == attempt
     digest = hashlib.sha256(
-        (canonical_json(search.to_json()) + "\n" + canonical_json(page.to_json())
-         + "\n" + canonical_json(attempt.to_json())).encode()
+        (
+            canonical_json(search.to_json())
+            + "\n"
+            + canonical_json(page.to_json())
+            + "\n"
+            + canonical_json(attempt.to_json())
+        ).encode()
     ).hexdigest()
     assert digest == "b5cdde995437c3312365aa566cc1d89f936822674302af327206f67e07b58370"
 
@@ -83,15 +108,25 @@ def test_v6_typed_read_contracts_have_strict_roundtrip_and_frozen_golden_bytes()
     [
         (OfficialSearchResultV1.from_json, _contract_search_result().to_json()),
         (PageExtractionResultV1.from_json, _contract_page_result().to_json()),
-        (PageAttemptOutcomeV1.from_json, PageAttemptOutcomeV1.create(
-            logical_page_id="page-plan-1", ordinal=0, logical_effect_id=None,
-            attempt_no=None, canonical_effect_id=None, result_ref=None,
-            status="not_started", deadline_id="deadline-1", control_command_id=None,
-        ).to_json()),
+        (
+            PageAttemptOutcomeV1.from_json,
+            PageAttemptOutcomeV1.create(
+                logical_page_id="page-plan-1",
+                ordinal=0,
+                logical_effect_id=None,
+                attempt_no=None,
+                canonical_effect_id=None,
+                result_ref=None,
+                status="not_started",
+                deadline_id="deadline-1",
+                control_command_id=None,
+            ).to_json(),
+        ),
     ],
 )
 def test_v6_typed_read_contracts_reject_unknown_keys_and_identity_tampering(loader, value):
-    unknown = dict(value); unknown["extra"] = True
+    unknown = dict(value)
+    unknown["extra"] = True
     with pytest.raises(ValueError):
         loader(unknown)
     tampered = dict(value)
@@ -106,7 +141,9 @@ async def test_v6_search_commit_rejects_candidate_locator_authority_tampering(tm
     database, _, identity, deadlines, reads = await _runtime(tmp_path)
     route_id, policy_hash = "route_" + "9" * 24, "8" * 64
     await deadlines.prepare_route(
-        identity=identity, route_id=route_id, policy_hash=policy_hash,
+        identity=identity,
+        route_id=route_id,
+        policy_hash=policy_hash,
         budgets={"query": 1, "fetch": 0, "browser": 0, "llm": 0, "lane": 1},
     )
     root, _ = await deadlines.resume_root(
@@ -115,36 +152,57 @@ async def test_v6_search_commit_rejects_candidate_locator_authority_tampering(tm
     url = "https://example.test/tamper"
     digest = hashlib.sha256(url.encode()).hexdigest()
     locator = SourceLocatorV1.create(
-        canonical_url=url, final_url=url, canonical_url_hash=digest,
-        final_url_hash=digest, authority_id="authority",
-        verification_status="unverified", verification_policy_hash=policy_hash,
+        canonical_url=url,
+        final_url=url,
+        canonical_url_hash=digest,
+        final_url_hash=digest,
+        authority_id="authority",
+        verification_status="unverified",
+        verification_policy_hash=policy_hash,
         redirect_chain_hashes=(),
     )
     locator_blob = await reads.blobs.put(
-        canonical_json(locator.to_json()).encode(), identity,
+        canonical_json(locator.to_json()).encode(),
+        identity,
         media_type="application/vnd.deskpet.source-locator.v1+json",
     )
     candidate = SearchCandidateV1.create(
-        ordinal=0, source_locator_ref=f"sha256:{locator_blob.sha256}",
-        title_hash="1" * 64, snippet_hash="2" * 64,
-        authority_match="verified", reason_codes=("tampered",),
+        ordinal=0,
+        source_locator_ref=f"sha256:{locator_blob.sha256}",
+        title_hash="1" * 64,
+        snippet_hash="2" * 64,
+        authority_match="verified",
+        reason_codes=("tampered",),
     )
 
     async def transport(attempt):
         return OfficialSearchResultV1.create(
-            logical_effect_id=attempt.logical_effect_id, attempt_no=attempt.attempt_no,
-            request_id="tamper", query_hash="3" * 64, target_id="target",
-            candidates=(candidate,), outcome="succeeded", error_code=None,
+            logical_effect_id=attempt.logical_effect_id,
+            attempt_no=attempt.attempt_no,
+            request_id="tamper",
+            query_hash="3" * 64,
+            target_id="target",
+            candidates=(candidate,),
+            outcome="succeeded",
+            error_code=None,
             deadline_id=attempt.deadline_id,
         )
 
     with pytest.raises(EffectStateConflict, match="authority"):
         await reads.execute(
-            operation_kind="official_search", route_id=route_id,
-            target_or_page_id="target", ordinal=0, resource_kind="query",
-            resource_hard_limit=1, resource_policy_hash=policy_hash,
-            deadline=root, identity=identity, transport=transport,
+            operation_kind="official_search",
+            route_id=route_id,
+            target_or_page_id="target",
+            ordinal=0,
+            resource_kind="query",
+            resource_hard_limit=1,
+            resource_policy_hash=policy_hash,
+            deadline=root,
+            identity=identity,
+            transport=transport,
         )
+
+
 from tests.test_deep_research_v6_evidence_runtime import (
     NO_SEED_SOURCE_RESOLVER,
     QUESTION,
@@ -200,9 +258,7 @@ async def _runtime(tmp_path):
             ),
         )
 
-    deadlines = DurableV6DeadlinePort(
-        journal=journal, resolve_effect_context=resolve
-    )
+    deadlines = DurableV6DeadlinePort(journal=journal, resolve_effect_context=resolve)
     reads = DurableV6PageReadEffectAdapter(
         journal=journal,
         blobs=blobs,
@@ -235,29 +291,41 @@ async def test_v6_search_and_page_use_frozen_per_operation_identity_deadlines_an
     url = "https://www.stats.gov.cn/search-result"
     url_hash = hashlib.sha256(url.encode()).hexdigest()
     locator = SourceLocatorV1.create(
-        canonical_url=url, final_url=url,
-        canonical_url_hash=url_hash, final_url_hash=url_hash,
-        authority_id="cn-nbs", verification_status="unverified",
-        verification_policy_hash=policy_hash, redirect_chain_hashes=(),
+        canonical_url=url,
+        final_url=url,
+        canonical_url_hash=url_hash,
+        final_url_hash=url_hash,
+        authority_id="cn-nbs",
+        verification_status="unverified",
+        verification_policy_hash=policy_hash,
+        redirect_chain_hashes=(),
     )
     locator_blob = await reads.blobs.put(
-        canonical_json(locator.to_json()).encode(), identity,
+        canonical_json(locator.to_json()).encode(),
+        identity,
         media_type="application/vnd.deskpet.source-locator.v1+json",
     )
     candidate = SearchCandidateV1.create(
-        ordinal=0, source_locator_ref=f"sha256:{locator_blob.sha256}",
+        ordinal=0,
+        source_locator_ref=f"sha256:{locator_blob.sha256}",
         title_hash=hashlib.sha256(b"title").hexdigest(),
         snippet_hash=hashlib.sha256(b"snippet").hexdigest(),
-        authority_match="unverified", reason_codes=("candidate_unverified",),
+        authority_match="unverified",
+        reason_codes=("candidate_unverified",),
     )
 
     async def search_transport(attempt):
         calls["search"] += 1
         return OfficialSearchResultV1.create(
-            logical_effect_id=attempt.logical_effect_id, attempt_no=attempt.attempt_no,
-            request_id="request-0", query_hash=hashlib.sha256(b"query").hexdigest(),
-            target_id="target-cn-nbs", candidates=(candidate,), outcome="succeeded",
-            error_code=None, deadline_id=attempt.deadline_id,
+            logical_effect_id=attempt.logical_effect_id,
+            attempt_no=attempt.attempt_no,
+            request_id="request-0",
+            query_hash=hashlib.sha256(b"query").hexdigest(),
+            target_id="target-cn-nbs",
+            candidates=(candidate,),
+            outcome="succeeded",
+            error_code=None,
+            deadline_id=attempt.deadline_id,
         )
 
     first = await reads.execute(
@@ -297,37 +365,55 @@ async def test_v6_search_and_page_use_frozen_per_operation_identity_deadlines_an
     )
 
     final_locator = SourceLocatorV1.create(
-        canonical_url=url, final_url=url,
-        canonical_url_hash=url_hash, final_url_hash=url_hash,
-        authority_id="cn-nbs", verification_status="verified",
-        verification_policy_hash=policy_hash, redirect_chain_hashes=(),
+        canonical_url=url,
+        final_url=url,
+        canonical_url_hash=url_hash,
+        final_url_hash=url_hash,
+        authority_id="cn-nbs",
+        verification_status="verified",
+        verification_policy_hash=policy_hash,
+        redirect_chain_hashes=(),
     )
     final_locator_blob = await reads.blobs.put(
-        canonical_json(final_locator.to_json()).encode(), identity,
+        canonical_json(final_locator.to_json()).encode(),
+        identity,
         media_type="application/vnd.deskpet.source-locator.v1+json",
     )
     body = b"typed page body"
     body_blob = await reads.blobs.put(body, identity, media_type="text/plain")
-    page_id = "page_" + hashlib.sha256((url_hash + body_blob.sha256).encode("ascii")).hexdigest()[:24]
+    page_id = (
+        "page_" + hashlib.sha256((url_hash + body_blob.sha256).encode("ascii")).hexdigest()[:24]
+    )
 
     async def page_transport(attempt):
         calls["page"] += 1
         return PageExtractionResultV1.create(
             logical_page_id="logical-page-0",
-            logical_effect_id=attempt.logical_effect_id, attempt_no=attempt.attempt_no,
+            logical_effect_id=attempt.logical_effect_id,
+            attempt_no=attempt.attempt_no,
             source_locator_ref=f"sha256:{final_locator_blob.sha256}",
             page_record={
-                "schema_version": 1, "page_id": page_id,
+                "schema_version": 1,
+                "page_id": page_id,
                 "source_locator_ref": f"sha256:{final_locator_blob.sha256}",
-                "canonical_url_hash": url_hash, "final_url_hash": url_hash,
-                "authority_id": "cn-nbs", "source_family_id": "cn-nbs",
-                "source_tier": "first_party", "body_ref": f"sha256:{body_blob.sha256}",
-                "body_hash": body_blob.sha256, "fetched_at": "2026-07-18T00:00:00Z",
-                "media_type": "text/plain", "admission_status": "admitted",
+                "canonical_url_hash": url_hash,
+                "final_url_hash": url_hash,
+                "authority_id": "cn-nbs",
+                "source_family_id": "cn-nbs",
+                "source_tier": "first_party",
+                "body_ref": f"sha256:{body_blob.sha256}",
+                "body_hash": body_blob.sha256,
+                "fetched_at": "2026-07-18T00:00:00Z",
+                "media_type": "text/plain",
+                "admission_status": "admitted",
                 "reason_codes": ["official_domain_match"],
             },
-            spans=(), bindings=(), outcome="succeeded", error_code=None,
-            deadline_id=attempt.deadline_id, control_command_id=None,
+            spans=(),
+            bindings=(),
+            outcome="succeeded",
+            error_code=None,
+            deadline_id=attempt.deadline_id,
+            control_command_id=None,
         )
 
     await reads.execute(
@@ -360,25 +446,29 @@ async def test_v6_search_and_page_use_frozen_per_operation_identity_deadlines_an
         ordinal=0,
     )
     async with aiosqlite.connect(database) as db:
-        effects = await (await db.execute(
-            """SELECT logical_effect_id,effect_id,effect_fingerprint,attempt_no,status,
+        effects = await (
+            await db.execute(
+                """SELECT logical_effect_id,effect_id,effect_fingerprint,attempt_no,status,
             artifact_refs_json,outcome_json
             FROM workflow_effects ORDER BY logical_effect_id"""
-        )).fetchall()
-        deadline_rows = await (await db.execute(
-            "SELECT logical_scope,budget_ms,parent_deadline_id FROM workflow_research_deadlines"
-        )).fetchall()
-        budget_rows = await (await db.execute(
-            """SELECT resource_kind,hard_limit,reserved,consumed
+            )
+        ).fetchall()
+        deadline_rows = await (
+            await db.execute(
+                "SELECT logical_scope,budget_ms,parent_deadline_id FROM workflow_research_deadlines"
+            )
+        ).fetchall()
+        budget_rows = await (
+            await db.execute(
+                """SELECT resource_kind,hard_limit,reserved,consumed
             FROM workflow_research_resource_budgets ORDER BY resource_kind"""
-        )).fetchall()
+            )
+        ).fetchall()
     assert {row[0] for row in effects} == {search_logical, page_logical}
     closure_sizes = set()
     canonical_refs = {}
     for logical, effect_id, fingerprint, attempt_no, status, artifact_json, outcome_json in effects:
-        assert effect_id == hashlib.sha256(
-            f"{identity.run_id}|{logical}|1".encode()
-        ).hexdigest()
+        assert effect_id == hashlib.sha256(f"{identity.run_id}|{logical}|1".encode()).hexdigest()
         assert fingerprint == hashlib.sha256(f"{logical}|1".encode()).hexdigest()
         assert (attempt_no, status) == (1, "committed")
         artifact_digests = json.loads(artifact_json)
@@ -391,8 +481,14 @@ async def test_v6_search_and_page_use_frozen_per_operation_identity_deadlines_an
         canonical_refs[outcome["result_kind"]] = outcome["canonical_result_ref"]
     assert closure_sizes == {("official_search", 2), ("page_extraction", 4)}
     assert ("run:automatic", 900_000, None) in deadline_rows
-    assert any(scope == "deep_research_v6.retrieval" and budget == 120_000 for scope, budget, _ in deadline_rows)
-    assert any(scope == "deep_research_v6.page_fetch" and budget <= 20_000 for scope, budget, _ in deadline_rows)
+    assert any(
+        scope == "deep_research_v6.retrieval" and budget == 120_000
+        for scope, budget, _ in deadline_rows
+    )
+    assert any(
+        scope == "deep_research_v6.page_fetch" and budget <= 20_000
+        for scope, budget, _ in deadline_rows
+    )
     assert budget_rows == [
         ("browser", 0, 0, 0),
         ("fetch", 1, 0, 1),
@@ -436,24 +532,41 @@ async def test_v6_route_query_budget_denies_a_second_logical_search(tmp_path):
 
     async def transport(attempt):
         return OfficialSearchResultV1.create(
-            logical_effect_id=attempt.logical_effect_id, attempt_no=attempt.attempt_no,
-            request_id="empty", query_hash=hashlib.sha256(b"empty").hexdigest(),
-            target_id="target-0", candidates=(), outcome="empty", error_code=None,
+            logical_effect_id=attempt.logical_effect_id,
+            attempt_no=attempt.attempt_no,
+            request_id="empty",
+            query_hash=hashlib.sha256(b"empty").hexdigest(),
+            target_id="target-0",
+            candidates=(),
+            outcome="empty",
+            error_code=None,
             deadline_id=attempt.deadline_id,
         )
 
     await reads.execute(
-        operation_kind="official_search", route_id=route_id,
-        target_or_page_id="target-0", ordinal=0, resource_kind="query",
-        resource_hard_limit=1, resource_policy_hash=policy_hash,
-        deadline=retrieval, identity=identity, transport=transport,
+        operation_kind="official_search",
+        route_id=route_id,
+        target_or_page_id="target-0",
+        ordinal=0,
+        resource_kind="query",
+        resource_hard_limit=1,
+        resource_policy_hash=policy_hash,
+        deadline=retrieval,
+        identity=identity,
+        transport=transport,
     )
     with pytest.raises(BudgetReservationExceeded):
         await reads.execute(
-            operation_kind="official_search", route_id=route_id,
-            target_or_page_id="target-1", ordinal=1, resource_kind="query",
-            resource_hard_limit=1, resource_policy_hash=policy_hash,
-            deadline=retrieval, identity=identity, transport=transport,
+            operation_kind="official_search",
+            route_id=route_id,
+            target_or_page_id="target-1",
+            ordinal=1,
+            resource_kind="query",
+            resource_hard_limit=1,
+            resource_policy_hash=policy_hash,
+            deadline=retrieval,
+            identity=identity,
+            transport=transport,
         )
 
 
@@ -482,9 +595,7 @@ async def test_v6_automatic_deadline_wall_anchors_survive_retry_resume_and_resta
     monotonic[0] += 7_000_000_000
     resumed, _ = await restarted.observe_automatic(identity=identity)
 
-    assert {created.deadline_id, retried.deadline_id, resumed.deadline_id} == {
-        created.deadline_id
-    }
+    assert {created.deadline_id, retried.deadline_id, resumed.deadline_id} == {created.deadline_id}
     assert retried.created_at == resumed.created_at == created.created_at
     assert retried.wall_not_after == resumed.wall_not_after == created.wall_not_after
     assert resumed.remaining_ms == 888_000
@@ -610,14 +721,20 @@ async def test_evidence_runtime_journals_each_search_and_page_without_aggregate_
     )
 
     async with aiosqlite.connect(database) as db:
-        rows = await (await db.execute(
-            """SELECT effect_type,logical_effect_id,attempt_no,status
+        rows = await (
+            await db.execute(
+                """SELECT effect_type,logical_effect_id,attempt_no,status
             FROM workflow_effects ORDER BY effect_type,logical_effect_id"""
-        )).fetchall()
+            )
+        ).fetchall()
     assert sum(row[0] == "deep_research_v6_official_search" for row in rows) == result.search_count
     assert sum(row[0] == "deep_research_v6_page_fetch" for row in rows) == result.fetch_count
-    assert all(logical and attempt == 1 and status == "committed" for _, logical, attempt, status in rows)
-    assert not any(effect_type in {"research_search", "research_static_fetch"} for effect_type, *_ in rows)
+    assert all(
+        logical and attempt == 1 and status == "committed" for _, logical, attempt, status in rows
+    )
+    assert not any(
+        effect_type in {"research_search", "research_static_fetch"} for effect_type, *_ in rows
+    )
 
 
 async def _takeover_reads(database, identity, blobs):
@@ -636,16 +753,20 @@ async def _takeover_reads(database, identity, blobs):
         return BoundResearchEffectContext(
             identity,
             EffectExecutionContext(
-                journal=journal, fence=fence,
+                journal=journal,
+                fence=fence,
                 node_execution_id="node-load-pages-takeover",
-                workflow_name="deep_research", workflow_version="v6",
+                workflow_name="deep_research",
+                workflow_version="v6",
                 node_id="load_pages",
             ),
         )
 
     deadlines = DurableV6DeadlinePort(journal=journal, resolve_effect_context=resolve)
     return DurableV6PageReadEffectAdapter(
-        journal=journal, blobs=blobs, resolve_effect_context=resolve,
+        journal=journal,
+        blobs=blobs,
+        resolve_effect_context=resolve,
         deadline_port=deadlines,
     )
 
@@ -664,7 +785,9 @@ async def test_v6_read_fault_before_or_after_commit_has_deterministic_replay(
     database, _, identity, deadlines, reads = await _runtime(tmp_path)
     route_id, policy_hash = "route_" + "7" * 24, "6" * 64
     await deadlines.prepare_route(
-        identity=identity, route_id=route_id, policy_hash=policy_hash,
+        identity=identity,
+        route_id=route_id,
+        policy_hash=policy_hash,
         budgets={"query": 2, "fetch": 0, "browser": 0, "llm": 0, "lane": 1},
     )
     root, _ = await deadlines.resume_root(
@@ -673,19 +796,27 @@ async def test_v6_read_fault_before_or_after_commit_has_deterministic_replay(
     url = "https://example.test/fault"
     url_hash = hashlib.sha256(url.encode()).hexdigest()
     locator = SourceLocatorV1.create(
-        canonical_url=url, final_url=url, canonical_url_hash=url_hash,
-        final_url_hash=url_hash, authority_id="authority",
-        verification_status="unverified", verification_policy_hash=policy_hash,
+        canonical_url=url,
+        final_url=url,
+        canonical_url_hash=url_hash,
+        final_url_hash=url_hash,
+        authority_id="authority",
+        verification_status="unverified",
+        verification_policy_hash=policy_hash,
         redirect_chain_hashes=(),
     )
     locator_blob = await reads.blobs.put(
-        canonical_json(locator.to_json()).encode(), identity,
+        canonical_json(locator.to_json()).encode(),
+        identity,
         media_type="application/vnd.deskpet.source-locator.v1+json",
     )
     candidate = SearchCandidateV1.create(
-        ordinal=0, source_locator_ref=f"sha256:{locator_blob.sha256}",
-        title_hash="1" * 64, snippet_hash="2" * 64,
-        authority_match="unverified", reason_codes=("candidate_unverified",),
+        ordinal=0,
+        source_locator_ref=f"sha256:{locator_blob.sha256}",
+        title_hash="1" * 64,
+        snippet_hash="2" * 64,
+        authority_match="unverified",
+        reason_codes=("candidate_unverified",),
     )
     calls = 0
 
@@ -693,9 +824,14 @@ async def test_v6_read_fault_before_or_after_commit_has_deterministic_replay(
         nonlocal calls
         calls += 1
         return OfficialSearchResultV1.create(
-            logical_effect_id=attempt.logical_effect_id, attempt_no=attempt.attempt_no,
-            request_id="fault", query_hash="3" * 64, target_id="target",
-            candidates=(candidate,), outcome="succeeded", error_code=None,
+            logical_effect_id=attempt.logical_effect_id,
+            attempt_no=attempt.attempt_no,
+            request_id="fault",
+            query_hash="3" * 64,
+            target_id="target",
+            candidates=(candidate,),
+            outcome="succeeded",
+            error_code=None,
             deadline_id=attempt.deadline_id,
         )
 
@@ -710,20 +846,32 @@ async def test_v6_read_fault_before_or_after_commit_has_deterministic_replay(
     reads.fault_injector = fault
     with pytest.raises(asyncio.CancelledError):
         await reads.execute(
-            operation_kind="official_search", route_id=route_id,
-            target_or_page_id="target", ordinal=0, resource_kind="query",
-            resource_hard_limit=2, resource_policy_hash=policy_hash,
-            deadline=root, identity=identity, transport=transport,
+            operation_kind="official_search",
+            route_id=route_id,
+            target_or_page_id="target",
+            ordinal=0,
+            resource_kind="query",
+            resource_hard_limit=2,
+            resource_policy_hash=policy_hash,
+            deadline=root,
+            identity=identity,
+            transport=transport,
         )
     if fault_stage.endswith("before_effect_commit"):
         reads = await _takeover_reads(database, identity, reads.blobs)
     else:
         reads.fault_injector = None
     replay = await reads.execute(
-        operation_kind="official_search", route_id=route_id,
-        target_or_page_id="target", ordinal=0, resource_kind="query",
-        resource_hard_limit=2, resource_policy_hash=policy_hash,
-        deadline=root, identity=identity, transport=transport,
+        operation_kind="official_search",
+        route_id=route_id,
+        target_or_page_id="target",
+        ordinal=0,
+        resource_kind="query",
+        resource_hard_limit=2,
+        resource_policy_hash=policy_hash,
+        deadline=root,
+        identity=identity,
+        transport=transport,
     )
     assert OfficialSearchResultV1.from_json(replay).attempt_no == expected_calls
     assert calls == expected_calls
@@ -734,7 +882,9 @@ async def test_v6_stale_attempt_reconciles_once_and_late_result_cannot_take_head
     database, _, identity, deadlines, reads = await _runtime(tmp_path)
     route_id, policy_hash = "route_" + "5" * 24, "4" * 64
     await deadlines.prepare_route(
-        identity=identity, route_id=route_id, policy_hash=policy_hash,
+        identity=identity,
+        route_id=route_id,
+        policy_hash=policy_hash,
         budgets={"query": 2, "fetch": 0, "browser": 0, "llm": 0, "lane": 1},
     )
     root, _ = await deadlines.resume_root(
@@ -743,19 +893,27 @@ async def test_v6_stale_attempt_reconciles_once_and_late_result_cannot_take_head
     url = "https://example.test/late"
     url_hash = hashlib.sha256(url.encode()).hexdigest()
     locator = SourceLocatorV1.create(
-        canonical_url=url, final_url=url, canonical_url_hash=url_hash,
-        final_url_hash=url_hash, authority_id="authority",
-        verification_status="unverified", verification_policy_hash=policy_hash,
+        canonical_url=url,
+        final_url=url,
+        canonical_url_hash=url_hash,
+        final_url_hash=url_hash,
+        authority_id="authority",
+        verification_status="unverified",
+        verification_policy_hash=policy_hash,
         redirect_chain_hashes=(),
     )
     locator_blob = await reads.blobs.put(
-        canonical_json(locator.to_json()).encode(), identity,
+        canonical_json(locator.to_json()).encode(),
+        identity,
         media_type="application/vnd.deskpet.source-locator.v1+json",
     )
     candidate = SearchCandidateV1.create(
-        ordinal=0, source_locator_ref=f"sha256:{locator_blob.sha256}",
-        title_hash="1" * 64, snippet_hash="2" * 64,
-        authority_match="unverified", reason_codes=("candidate_unverified",),
+        ordinal=0,
+        source_locator_ref=f"sha256:{locator_blob.sha256}",
+        title_hash="1" * 64,
+        snippet_hash="2" * 64,
+        authority_match="unverified",
+        reason_codes=("candidate_unverified",),
     )
     first_started, release_first = asyncio.Event(), asyncio.Event()
     calls: list[int] = []
@@ -766,49 +924,85 @@ async def test_v6_stale_attempt_reconciles_once_and_late_result_cannot_take_head
             first_started.set()
             await release_first.wait()
         return OfficialSearchResultV1.create(
-            logical_effect_id=attempt.logical_effect_id, attempt_no=attempt.attempt_no,
-            request_id="late", query_hash="3" * 64, target_id="target",
-            candidates=(candidate,), outcome="succeeded", error_code=None,
+            logical_effect_id=attempt.logical_effect_id,
+            attempt_no=attempt.attempt_no,
+            request_id="late",
+            query_hash="3" * 64,
+            target_id="target",
+            candidates=(candidate,),
+            outcome="succeeded",
+            error_code=None,
             deadline_id=attempt.deadline_id,
         )
 
-    first_task = asyncio.create_task(reads.execute(
-        operation_kind="official_search", route_id=route_id,
-        target_or_page_id="target", ordinal=0, resource_kind="query",
-        resource_hard_limit=2, resource_policy_hash=policy_hash,
-        deadline=root, identity=identity, transport=transport,
-    ))
+    first_task = asyncio.create_task(
+        reads.execute(
+            operation_kind="official_search",
+            route_id=route_id,
+            target_or_page_id="target",
+            ordinal=0,
+            resource_kind="query",
+            resource_hard_limit=2,
+            resource_policy_hash=policy_hash,
+            deadline=root,
+            identity=identity,
+            transport=transport,
+        )
+    )
     await first_started.wait()
     takeover = await _takeover_reads(database, identity, reads.blobs)
     second = await takeover.execute(
-        operation_kind="official_search", route_id=route_id,
-        target_or_page_id="target", ordinal=0, resource_kind="query",
-        resource_hard_limit=2, resource_policy_hash=policy_hash,
-        deadline=root, identity=identity, transport=transport,
+        operation_kind="official_search",
+        route_id=route_id,
+        target_or_page_id="target",
+        ordinal=0,
+        resource_kind="query",
+        resource_hard_limit=2,
+        resource_policy_hash=policy_hash,
+        deadline=root,
+        identity=identity,
+        transport=transport,
     )
     assert OfficialSearchResultV1.from_json(second).attempt_no == 2
     release_first.set()
     with pytest.raises(EffectStateConflict):
         await first_task
     replay = await takeover.execute(
-        operation_kind="official_search", route_id=route_id,
-        target_or_page_id="target", ordinal=0, resource_kind="query",
-        resource_hard_limit=2, resource_policy_hash=policy_hash,
-        deadline=root, identity=identity, transport=transport,
+        operation_kind="official_search",
+        route_id=route_id,
+        target_or_page_id="target",
+        ordinal=0,
+        resource_kind="query",
+        resource_hard_limit=2,
+        resource_policy_hash=policy_hash,
+        deadline=root,
+        identity=identity,
+        transport=transport,
     )
     assert replay == second
     assert calls == [1, 2]
     async with aiosqlite.connect(database) as db:
-        attempts = await (await db.execute(
-            "SELECT attempt_no,status,supersedes_effect_id FROM workflow_effects ORDER BY attempt_no"
-        )).fetchall()
-        head = await (await db.execute(
-            "SELECT latest_attempt_no,canonical_effect_id FROM workflow_effect_attempt_heads"
-        )).fetchone()
-        budget = await (await db.execute(
-            "SELECT reserved,consumed FROM workflow_research_resource_budgets WHERE resource_kind='query'"
-        )).fetchone()
+        attempts = await (
+            await db.execute(
+                "SELECT attempt_no,status,supersedes_effect_id FROM workflow_effects ORDER BY attempt_no"
+            )
+        ).fetchall()
+        head = await (
+            await db.execute(
+                "SELECT latest_attempt_no,canonical_effect_id FROM workflow_effect_attempt_heads"
+            )
+        ).fetchone()
+        budget = await (
+            await db.execute(
+                "SELECT reserved,consumed FROM workflow_research_resource_budgets WHERE resource_kind='query'"
+            )
+        ).fetchone()
     assert [(row[0], row[1]) for row in attempts] == [(1, "failed"), (2, "committed")]
     assert attempts[1][2] is not None
-    assert head == (2, hashlib.sha256(f"{identity.run_id}|{v6_read_logical_effect_id(run_id=identity.run_id, route_id=route_id, operation_kind='official_search', target_or_page_id='target', ordinal=0)}|2".encode()).hexdigest())
+    assert head == (
+        2,
+        hashlib.sha256(
+            f"{identity.run_id}|{v6_read_logical_effect_id(run_id=identity.run_id, route_id=route_id, operation_kind='official_search', target_or_page_id='target', ordinal=0)}|2".encode()
+        ).hexdigest(),
+    )
     assert budget == (0, 2)

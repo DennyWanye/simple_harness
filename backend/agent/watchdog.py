@@ -20,6 +20,7 @@ optional nudge). Same sid won't be re-scanned within ``dedup_seconds``
 The loop catches all exceptions per-tick so a transient failure (LLM
 timeout, JSON parse error, broken provider) never kills the watchdog.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -88,7 +89,7 @@ class WatchdogLoop:
     def __init__(
         self,
         *,
-        session_activity: Any,                    # SessionActivityStore
+        session_activity: Any,  # SessionActivityStore
         hook: SupervisorHook | None = None,
         scan_interval_seconds: float = DEFAULT_SCAN_INTERVAL_SECONDS,
         stuck_threshold_seconds: float = DEFAULT_STUCK_THRESHOLD_SECONDS,
@@ -165,8 +166,7 @@ class WatchdogLoop:
         logger.info("watchdog stopped")
 
     def disable(self) -> None:
-        """Soft-disable: future ticks no-op. Use ``stop()`` to fully tear down.
-        """
+        """Soft-disable: future ticks no-op. Use ``stop()`` to fully tear down."""
         self._enabled = False
 
     def enable(self) -> None:
@@ -294,13 +294,16 @@ class WatchdogLoop:
             except Exception as exc:  # noqa: BLE001
                 logger.warning(
                     "watchdog_idle_todos_probe_failed sid=%s err=%s",
-                    sid, str(exc)[:200],
+                    sid,
+                    str(exc)[:200],
                 )
                 incomplete = []
             if incomplete:
                 logger.info(
                     "watchdog_idle_with_incomplete_todos sid=%s age=%.0fs todos=%d",
-                    sid, age, len(incomplete),
+                    sid,
+                    age,
+                    len(incomplete),
                 )
                 return True
         # (d) tool signature repeat — proactive death-loop detection
@@ -315,7 +318,9 @@ class WatchdogLoop:
                 if top_count >= self._tool_sig_repeat_threshold:
                     logger.info(
                         "watchdog_tool_signature_repeat sid=%s sig=%s count=%d",
-                        sid, top_sig, top_count,
+                        sid,
+                        top_sig,
+                        top_count,
                     )
                     return True
         return False

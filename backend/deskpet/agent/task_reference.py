@@ -17,15 +17,38 @@ from deskpet.types.task_reference import (
 
 _MARKERS: dict[TaskReferenceKind, tuple[str, ...]] = {
     TaskReferenceKind.RECENT: (
-        "刚才", "刚刚", "上次", "之前", "previous", "last time",
+        "刚才",
+        "刚刚",
+        "上次",
+        "之前",
+        "previous",
+        "last time",
     ),
     TaskReferenceKind.CONTINUATION: (
-        "继续", "接着", "再打开", "再运行", "continue", "resume",
+        "继续",
+        "接着",
+        "再打开",
+        "再运行",
+        "continue",
+        "resume",
     ),
     TaskReferenceKind.DEMONSTRATIVE: (
-        "这个", "那个", "这些", "那些", "已有", "现有", "原来",
-        "该项目", "该游戏", "打开它", "运行它", "this", "that",
-        "existing", "the game", "the project",
+        "这个",
+        "那个",
+        "这些",
+        "那些",
+        "已有",
+        "现有",
+        "原来",
+        "该项目",
+        "该游戏",
+        "打开它",
+        "运行它",
+        "this",
+        "that",
+        "existing",
+        "the game",
+        "the project",
     ),
 }
 
@@ -37,7 +60,7 @@ def _tokens(text: str) -> set[str]:
         if len(run) == 1:
             result.add(run)
         else:
-            result.update(run[index:index + 2] for index in range(len(run) - 1))
+            result.update(run[index : index + 2] for index in range(len(run) - 1))
     return result
 
 
@@ -46,19 +69,49 @@ _REFERENCE_NOISE_TOKENS = _tokens(
     "please open run start continue this that it the"
 )
 _REFERENCE_NOISE_TERMS = (
-    "帮我", "帮忙", "打开", "运行", "启动", "继续", "接着",
-    "项目", "任务", "游戏", "please", "open", "run", "start",
-    "continue", "this", "that", "the", "it", "and", "please",
-    "然后", "并且", "一下", "请", "把", "的", "再", "它", "我", "你",
+    "帮我",
+    "帮忙",
+    "打开",
+    "运行",
+    "启动",
+    "继续",
+    "接着",
+    "项目",
+    "任务",
+    "游戏",
+    "please",
+    "open",
+    "run",
+    "start",
+    "continue",
+    "this",
+    "that",
+    "the",
+    "it",
+    "and",
+    "please",
+    "然后",
+    "并且",
+    "一下",
+    "请",
+    "把",
+    "的",
+    "再",
+    "它",
+    "我",
+    "你",
 )
 
 
 def _has_marker(text: str, marker: str) -> bool:
     if marker.isascii() and " " not in marker:
-        return re.search(
-            rf"(?<![a-z0-9_]){re.escape(marker)}(?![a-z0-9_])",
-            text,
-        ) is not None
+        return (
+            re.search(
+                rf"(?<![a-z0-9_]){re.escape(marker)}(?![a-z0-9_])",
+                text,
+            )
+            is not None
+        )
     return marker in text
 
 
@@ -91,11 +144,7 @@ class TaskReferenceResolver:
         if not normalized:
             return None
         hits = {
-            kind: tuple(
-                marker
-                for marker in markers
-                if _has_marker(normalized[:160], marker)
-            )
+            kind: tuple(marker for marker in markers if _has_marker(normalized[:160], marker))
             for kind, markers in _MARKERS.items()
         }
         hits = {kind: markers for kind, markers in hits.items() if markers}
@@ -112,18 +161,10 @@ class TaskReferenceResolver:
         return TaskReferenceIntent(
             kind=kind,
             source_text=str(text),
-            markers=tuple(
-                dict.fromkeys(
-                    marker
-                    for markers in hits.values()
-                    for marker in markers
-                )
-            ),
+            markers=tuple(dict.fromkeys(marker for markers in hits.values() for marker in markers)),
         )
 
-    def candidates(
-        self, rows: Iterable[Mapping[str, Any]]
-    ) -> tuple[TaskReferenceCandidate, ...]:
+    def candidates(self, rows: Iterable[Mapping[str, Any]]) -> tuple[TaskReferenceCandidate, ...]:
         grouped: dict[
             tuple[str, str],
             list[tuple[int, Mapping[str, Any], str]],
@@ -159,26 +200,16 @@ class TaskReferenceResolver:
                 None,
             )
             first_user = next(
-                (
-                    content
-                    for _index, row, content in items
-                    if str(row.get("role") or "") == "user"
-                ),
+                (content for _index, row, content in items if str(row.get("role") or "") == "user"),
                 "",
             )
             last_content = items[-1][2]
-            preview_parts = list(
-                dict.fromkeys(
-                    part for part in (first_user, last_content) if part
-                )
-            )
+            preview_parts = list(dict.fromkeys(part for part in (first_user, last_content) if part))
             preview = " / ".join(preview_parts)
             if len(preview) > 360:
                 preview = preview[:357].rstrip() + "..."
             token_counts = Counter(
-                token
-                for _index, _row, content in items
-                for token in _tokens(content)
+                token for _index, _row, content in items for token in _tokens(content)
             )
             result.append(
                 TaskReferenceCandidate(
@@ -191,10 +222,7 @@ class TaskReferenceResolver:
                         if isinstance(row.get("id"), int)
                     ),
                     preview=preview,
-                    match_tokens=tuple(
-                        token
-                        for token, _count in token_counts.most_common(256)
-                    ),
+                    match_tokens=tuple(token for token, _count in token_counts.most_common(256)),
                     recency=max(index for index, _row, _content in items),
                 )
             )
@@ -216,9 +244,7 @@ class TaskReferenceResolver:
         query_tokens = _reference_query_tokens(intent)
         if len(candidates) == 1:
             candidate = candidates[0]
-            if query_tokens and not (
-                query_tokens & set(candidate.match_tokens)
-            ):
+            if query_tokens and not (query_tokens & set(candidate.match_tokens)):
                 return TaskReferenceResolution(
                     TaskReferenceStatus.MISSING,
                     intent,

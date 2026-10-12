@@ -25,9 +25,7 @@ from .control_command_canonical import (
 # 并入主窗，companion_action 的合法窗口标签迁移为 "main"。五处同步迁移之一
 # （Rust webview_permissions 白名单 / 本白名单 / control_ingress
 # expected_window_label / SQL CHECK 迁移 007 / 前端 controlWs 常量）。
-ALLOWED_WINDOW_SCOPES = frozenset(
-    {("main", "identity_bind"), ("main", "companion_action")}
-)
+ALLOWED_WINDOW_SCOPES = frozenset({("main", "identity_bind"), ("main", "companion_action")})
 
 
 class WindowControlCredentialError(RuntimeError):
@@ -65,9 +63,7 @@ class WindowControlBootstrap:
                 documents_root = None
                 documents_identity = None
         except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
-            raise WindowControlCredentialError(
-                "window_control_bootstrap_malformed"
-            ) from exc
+            raise WindowControlCredentialError("window_control_bootstrap_malformed") from exc
         return cls(instance_id, public_key_hex, documents_root, documents_identity)
 
 
@@ -113,11 +109,7 @@ class WindowControlCredential:
         try:
             return cls(
                 **{
-                    field: str(
-                        value[field]
-                        if field in value
-                        else value[aliases.get(field, field)]
-                    )
+                    field: str(value[field] if field in value else value[aliases.get(field, field)])
                     for field in cls.__dataclass_fields__
                 }
             )
@@ -185,24 +177,17 @@ class WindowControlCredentialVerifier:
             body,
         )
         facts = (
-            credential.backend_process_instance_id
-            == self.backend_process_instance_id,
+            credential.backend_process_instance_id == self.backend_process_instance_id,
             credential.connection_id == expected_connection_id,
-            parse_canonical_u64(
-                credential.control_epoch, field="control_epoch"
-            )
+            parse_canonical_u64(credential.control_epoch, field="control_epoch")
             == expected_control_epoch,
             credential.window_label == expected_window_label,
             credential.scope == expected_scope,
-            hmac.compare_digest(
-                credential.challenge_hash, expected_challenge_hash
-            ),
+            hmac.compare_digest(credential.challenge_hash, expected_challenge_hash),
             parse_canonical_u64(credential.request_seq, field="request_seq")
             == expected_request_seq,
             credential.command_kind == command_kind,
-            hmac.compare_digest(
-                credential.canonical_request_hash, expected_hash
-            ),
+            hmac.compare_digest(credential.canonical_request_hash, expected_hash),
         )
         if not all(facts):
             raise WindowControlCredentialError("credential_facts_mismatch")

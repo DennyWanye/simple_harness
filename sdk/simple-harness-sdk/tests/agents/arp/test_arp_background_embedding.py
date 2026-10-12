@@ -45,12 +45,16 @@ def test_index_embeddings_run_off_the_loop_and_recall_still_works(tmp_path) -> N
             agent = await _seed(runtime, len(FILLERS) + 2)
             connection = runtime.uow.database.connection
             for _ in range(200):  # the pump drains the INDEX jobs between Turns
-                pending = connection.execute("SELECT COUNT(*) FROM arp_jobs WHERE kind='INDEX' AND state!='DONE'").fetchone()[0]
+                pending = connection.execute(
+                    "SELECT COUNT(*) FROM arp_jobs WHERE kind='INDEX' AND state!='DONE'"
+                ).fetchone()[0]
                 if pending == 0:
                     break
                 await asyncio.sleep(0.05)
             assert pending == 0
-            done = connection.execute("SELECT COUNT(*) FROM arp_jobs WHERE kind='INDEX' AND state='DONE'").fetchone()[0]
+            done = connection.execute(
+                "SELECT COUNT(*) FROM arp_jobs WHERE kind='INDEX' AND state='DONE'"
+            ).fetchone()[0]
             assert done >= 2 * len(FILLERS)
             index_calls = connection.execute(
                 "SELECT COUNT(*) FROM run_events WHERE kind='arp.embedding_call.v1' AND payload_json LIKE '%SESSION_INDEX%' AND payload_json LIKE '%SUCCEEDED%'"
@@ -58,7 +62,9 @@ def test_index_embeddings_run_off_the_loop_and_recall_still_works(tmp_path) -> N
             assert index_calls >= done  # every job's embedding call is still recorded
             main = threading.main_thread().name
             batch_calls = [c for c in embedder.calls if c[1] > 1 or c[0] != main]
-            assert batch_calls and all(name != main for name, _ in batch_calls)  # index vectors: worker thread
+            assert batch_calls and all(
+                name != main for name, _ in batch_calls
+            )  # index vectors: worker thread
             session = store.read_live_session(connection, agent.agent_id)
             assert store.active_index_publication(connection, session.session_id) is not None
             result = await _turn(agent, "请问工程暗号 是什么？", "ask")
@@ -66,7 +72,9 @@ def test_index_embeddings_run_off_the_loop_and_recall_still_works(tmp_path) -> N
             manifest = _latest_manifest(runtime)
             recall = _recall_of(runtime, manifest)
             assert recall.phase == "READY" and recall.result["coverage"]["mode"] == "HYBRID"
-            assert manifest.manifest["recalled_chunk_ids"], "the early secret still comes back through recall"
+            assert manifest.manifest["recalled_chunk_ids"], (
+                "the early secret still comes back through recall"
+            )
 
     asyncio.run(case())
 
@@ -76,6 +84,8 @@ def test_a_light_embedding_port_keeps_the_inline_path() -> None:
 
     from simple_harness.agents.arp.indexing import SessionIndexCoordinator
 
-    light = SessionIndexCoordinator.background_embedding.fget(SimpleNamespace(embedding=HashEmbedder(dim=8)))  # type: ignore[union-attr]
+    light = SessionIndexCoordinator.background_embedding.fget(
+        SimpleNamespace(embedding=HashEmbedder(dim=8))
+    )  # type: ignore[union-attr]
     none = SessionIndexCoordinator.background_embedding.fget(SimpleNamespace(embedding=None))  # type: ignore[union-attr]
     assert light is False and none is False

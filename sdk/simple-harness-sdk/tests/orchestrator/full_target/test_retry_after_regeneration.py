@@ -8,6 +8,7 @@
 产品同形部署上的真实回合（``taskgraph_exec.production_fixture`` 的两步链）：第二步的执行者
 交的结果没写结论（检查不过），规划器的回答是给第一步提后继步骤；只有模型回复是脚本。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -37,11 +38,16 @@ SECOND_OUTPUT = CHAIN_CRITERIA[1].removeprefix("file:")
 def _worker(request):  # type: ignore[no-untyped-def]
     """Write the declared file; the second step's result states no claim (its check fails)."""
     outputs = package_of(request)["task_contract"]["outputs"]
-    written = sum(1 for message in request.messages
-                  if "tool" in str(message.role).lower() and message.name == "workspace_write_file")
+    written = sum(
+        1
+        for message in request.messages
+        if "tool" in str(message.role).lower() and message.name == "workspace_write_file"
+    )
     if written < len(outputs):
         return ("workspace_write_file", {"path": outputs[written], "content": "# 要点\n"})
-    body = json.loads(result_envelope(request)[len("<result_envelope>"):-len("</result_envelope>")])
+    body = json.loads(
+        result_envelope(request)[len("<result_envelope>") : -len("</result_envelope>")]
+    )
     if outputs == [SECOND_OUTPUT]:
         body["claims"] = []
     return "<result_envelope>" + json.dumps(body, ensure_ascii=False) + "</result_envelope>"
@@ -58,36 +64,75 @@ def test_a_failure_of_an_older_generation_needs_no_retry_decision(tmp_path):
         package = package_of(request)
         if not package.get("repair_requests"):
             reply = chain_planner(request)
-            return reply if reply is not None else decision(
-                package["planning_subjects"][0]["subject_key"], "NO_CHANGE", {"reason": "计划不变。"}, "计划不变。")
+            return (
+                reply
+                if reply is not None
+                else decision(
+                    package["planning_subjects"][0]["subject_key"],
+                    "NO_CHANGE",
+                    {"reason": "计划不变。"},
+                    "计划不变。",
+                )
+            )
         # The second step failed: the Planner redoes the first one with a successor.
         world, first = seen["world"], seen["first"]
         old = world.dispatch.network(world.mission.id).binding_for_task(first)
-        task_type = next(s for s in world.dispatch.require_planning_world().catalog.task_types()
-                         if s.goal_signature == old.goal_signature)
+        task_type = next(
+            s
+            for s in world.dispatch.require_planning_world().catalog.task_types()
+            if s.goal_signature == old.goal_signature
+        )
         subject = next(row for row in package["planning_subjects"] if row["task_id"] == first)
 
         def visible(kind, identity):  # type: ignore[no-untyped-def]
-            return next(row for row in package["visible_refs"] if row["kind"] == kind and row["id"] == identity)
+            return next(
+                row
+                for row in package["visible_refs"]
+                if row["kind"] == kind and row["id"] == identity
+            )
 
-        return decision(subject["subject_key"], "REPAIR", {
-            "repair_kind": "PROPOSE_SUCCESSOR", "old_task_ref": visible("task", first),
-            "obligation_ref": visible("obligation", str(old.obligation_id)),
-            "goal_type_ref": task_type.task_type_ref.to_json(),
-            "bindings": {"goal": "重写第一份文件。"}}, "第二步的输入有问题，先把第一步换一个后继重做。")
+        return decision(
+            subject["subject_key"],
+            "REPAIR",
+            {
+                "repair_kind": "PROPOSE_SUCCESSOR",
+                "old_task_ref": visible("task", first),
+                "obligation_ref": visible("obligation", str(old.obligation_id)),
+                "goal_type_ref": task_type.task_type_ref.to_json(),
+                "bindings": {"goal": "重写第一份文件。"},
+            },
+            "第二步的输入有问题，先把第一步换一个后继重做。",
+        )
 
     async def case():  # type: ignore[no-untyped-def]
-        async with enabled_world(tmp_path, key="retry-regeneration", planner=planner, worker=_worker,
-                                 criteria=CHAIN_CRITERIA) as world:
+        async with enabled_world(
+            tmp_path,
+            key="retry-regeneration",
+            planner=planner,
+            worker=_worker,
+            criteria=CHAIN_CRITERIA,
+        ) as world:
             store, mission = world.store, world.mission
             seen["world"] = world
             await world.commit_seed()
             network = world.dispatch.network(mission.id)
-            seen["first"] = str(next(b.task_id for b in network.task_bindings
-                                     if str(b.form) == "primitive" and not b.input_ports))
-            second = str(next(b.task_id for b in network.task_bindings
-                              if str(b.form) == "primitive" and b.input_ports))
-            generation = int(HtnStore(store).task_semantics_of(mission.id, second).dispatch_generation)
+            seen["first"] = str(
+                next(
+                    b.task_id
+                    for b in network.task_bindings
+                    if str(b.form) == "primitive" and not b.input_ports
+                )
+            )
+            second = str(
+                next(
+                    b.task_id
+                    for b in network.task_bindings
+                    if str(b.form) == "primitive" and b.input_ports
+                )
+            )
+            generation = int(
+                HtnStore(store).task_semantics_of(mission.id, second).dispatch_generation
+            )
 
             # the second step ran once and failed: it waits for a retry decision
             await world.until(lambda: _failures(store, mission.id))
@@ -95,7 +140,10 @@ def test_a_failure_of_an_older_generation_needs_no_retry_decision(tmp_path):
 
             # the successor for the first step re-versions the second (new dispatch generation)
             await world.until(lambda: world.dispatch.network(mission.id).plan_revision == 2)
-            assert int(HtnStore(store).task_semantics_of(mission.id, second).dispatch_generation) == generation + 1
+            assert (
+                int(HtnStore(store).task_semantics_of(mission.id, second).dispatch_generation)
+                == generation + 1
+            )
             # the failure belongs to the older generation: the new one starts without a decision
             assert not retry_decision_required(store, mission.id, second)
             await world.until(lambda: len(store.list_attempts(second)) == 2)
@@ -103,4 +151,5 @@ def test_a_failure_of_an_older_generation_needs_no_retry_decision(tmp_path):
             # a failure of the new generation is an ordinary retry decision again
             await world.until(lambda: len(_failures(store, mission.id)) == 2)
             assert retry_decision_required(store, mission.id, second)
+
     asyncio.run(case())

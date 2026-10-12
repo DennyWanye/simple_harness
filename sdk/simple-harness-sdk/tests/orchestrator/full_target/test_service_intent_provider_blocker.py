@@ -71,7 +71,9 @@ def _quick(monkeypatch):
 # ======================================================================================
 
 
-def test_a_planner_round_on_an_unknown_outcome_ends_after_the_bound_and_the_next_round_answers(tmp_path) -> None:
+def test_a_planner_round_on_an_unknown_outcome_ends_after_the_bound_and_the_next_round_answers(
+    tmp_path,
+) -> None:
     """The red test for the wait.  Before P2.3f the round stayed SUBMITTED for ever.
 
     Also the P2.3l / N5 property (an UNKNOWN grant must not lock the next hand-off): the
@@ -83,16 +85,23 @@ def test_a_planner_round_on_an_unknown_outcome_ends_after_the_bound_and_the_next
         async with product_world(tmp_path / "root", provider, **CONFIG) as world:
             mission_id = create(world, "p23f-planner-unknown")
             assert await settle(world, mission_id, seconds=20)
-            rounds = {item.subject_id.rpartition(":")[2]: item for item in plan_intents(world, mission_id)}
+            rounds = {
+                item.subject_id.rpartition(":")[2]: item for item in plan_intents(world, mission_id)
+            }
             return {
                 "status": status(world, mission_id),
                 "types": [item.type for item in events(world, mission_id)],
-                "rejected": [dict(item.payload) for item in events(world, mission_id, "PlanningRejected")],
+                "rejected": [
+                    dict(item.payload) for item in events(world, mission_id, "PlanningRejected")
+                ],
                 "first": rounds["1"].state,
                 "first_calls": invocations(world, rounds["1"]),
                 "second_calls": invocations(world, rounds["2"]),
-                "grants": {row["subject_id"].rpartition(":")[2]: row["state"] for row in grants(world)
-                           if ":planner:" in row["subject_id"]},
+                "grants": {
+                    row["subject_id"].rpartition(":")[2]: row["state"]
+                    for row in grants(world)
+                    if ":planner:" in row["subject_id"]
+                },
                 "planner_calls": provider.role_calls["planner"],
                 "ledger": assert_terminal_ledger(world, mission_id, unknown=True),
             }
@@ -110,7 +119,8 @@ def test_a_planner_round_on_an_unknown_outcome_ends_after_the_bound_and_the_next
     assert outcome["first"] == "FAILED"
     # honest accounting: the abandoned call is UNKNOWN in the runtime ledger …
     assert [(item["state"], item["error_code"]) for item in outcome["first_calls"]] == [
-        ("unknown", "provider_error_after_handoff")]
+        ("unknown", "provider_error_after_handoff")
+    ]
     assert [item["state"] for item in outcome["second_calls"]] == ["succeeded"]
     # … and its grant stays UNKNOWN; the next round's grant was admitted and settled
     assert outcome["grants"]["1"] == "UNKNOWN" and outcome["grants"]["2"] == "SETTLED"
@@ -119,7 +129,9 @@ def test_a_planner_round_on_an_unknown_outcome_ends_after_the_bound_and_the_next
     assert "PlanRevisionCommitted" in outcome["types"] and "MissionFailed" not in outcome["types"]
 
 
-def test_an_unknown_outcome_with_no_rung_left_stops_as_runtime_unavailable(tmp_path, monkeypatch) -> None:
+def test_an_unknown_outcome_with_no_rung_left_stops_as_runtime_unavailable(
+    tmp_path, monkeypatch
+) -> None:
     """``max_planning_attempts=1``: no next rung, so the Mission ends — named, decided.
     2026-10-10 起结果不明的一轮和回合失败一样进宽限、不占答错次数；这条用例把宽限设 0 保留
     "没有下一级"的局面（宽限内不计次见下一条用例）。
@@ -129,11 +141,14 @@ def test_an_unknown_outcome_with_no_rung_left_stops_as_runtime_unavailable(tmp_p
     call is asked exactly once; the books keep it as unknown, its reservation held."""
 
     import agent_orchestrator.orchestrator.event_handler as event_handler
+
     monkeypatch.setattr(event_handler, "PLANNER_TURN_FAILURE_GRACE", 0)
 
     async def case() -> dict[str, Any]:
         provider = FaultyProvider({"planner": [transport_loss]})
-        async with product_world(tmp_path / "root", provider, **{**CONFIG, "max_planning_attempts": 1}) as world:
+        async with product_world(
+            tmp_path / "root", provider, **{**CONFIG, "max_planning_attempts": 1}
+        ) as world:
             mission_id = create(world, "p23f-planner-no-rung")
             assert await settle(world, mission_id, seconds=10)
             final = world.store.get_mission(mission_id)
@@ -144,8 +159,11 @@ def test_an_unknown_outcome_with_no_rung_left_stops_as_runtime_unavailable(tmp_p
                 "report": dict(final.final_report or {}),
                 "types": [item.type for item in events(world, mission_id)],
                 "planner_calls": provider.role_calls.get("planner", 0),
-                "open": [item.subject_id for item in world.store.list_intents(*OPEN)
-                         if item.mission_id == mission_id],
+                "open": [
+                    item.subject_id
+                    for item in world.store.list_intents(*OPEN)
+                    if item.mission_id == mission_id
+                ],
                 "known": world.loop.commit.ledger.known_usage_for(subject),
                 "unknown": world.loop.commit.ledger.has_unknown_usage(subject),
                 "ledger": assert_terminal_ledger(world, mission_id, unknown=True),
@@ -170,14 +188,23 @@ def test_an_unknown_outcome_within_the_grace_does_not_count_as_a_wrong_answer(tm
     下一轮照常开、任务完成。
 
     **Mutation**: ``provider_outcome_unknown`` not treated as unanswered in ``_planning_attempts`` → red."""
+
     async def case() -> dict[str, Any]:
         provider = FaultyProvider({"planner": [http_loss(418)]})
-        async with product_world(tmp_path / "root", provider, **{**CONFIG, "max_planning_attempts": 1}) as world:
+        async with product_world(
+            tmp_path / "root", provider, **{**CONFIG, "max_planning_attempts": 1}
+        ) as world:
             mission_id = create(world, "p23f-planner-unknown-forgiven")
             assert await settle(world, mission_id, seconds=20)
-            return {"status": status(world, mission_id), "types": [item.type for item in events(world, mission_id)],
-                    "rejected": [dict(item.payload) for item in events(world, mission_id, "PlanningRejected")],
-                    "attempts": world.loop._planning_attempts(mission_id)}
+            return {
+                "status": status(world, mission_id),
+                "types": [item.type for item in events(world, mission_id)],
+                "rejected": [
+                    dict(item.payload) for item in events(world, mission_id, "PlanningRejected")
+                ],
+                "attempts": world.loop._planning_attempts(mission_id),
+            }
+
     outcome = asyncio.run(case())
     assert outcome["status"] == "COMPLETED", outcome["types"][-15:]
     assert [r["reason"] for r in outcome["rejected"]] == ["provider_outcome_unknown"]
@@ -189,7 +216,9 @@ def test_an_unknown_outcome_within_the_grace_does_not_count_as_a_wrong_answer(tm
 # ======================================================================================
 
 
-def test_a_content_review_on_an_unknown_outcome_ends_through_the_verification_door(tmp_path) -> None:
+def test_a_content_review_on_an_unknown_outcome_ends_through_the_verification_door(
+    tmp_path,
+) -> None:
     """The second review call (the step's content review) is lost after hand-off.  The
     call is not re-sent; the round is handed back to the acceptance's own "did not
     answer" door (the verification fails, the step is done again), and the Mission
@@ -200,12 +229,18 @@ def test_a_content_review_on_an_unknown_outcome_ends_through_the_verification_do
         async with product_world(tmp_path / "root", provider, **CONFIG) as world:
             mission_id = create(world, "p23f-content-review")
             assert await settle(world, mission_id, seconds=25)
-            reviews = [item for item in world.store.list_intents("SUBMITTED", "SETTLED", "FAILED")
-                       if item.mission_id == mission_id and item.kind == "critic"]
+            reviews = [
+                item
+                for item in world.store.list_intents("SUBMITTED", "SETTLED", "FAILED")
+                if item.mission_id == mission_id and item.kind == "critic"
+            ]
             return {
                 "status": status(world, mission_id),
                 "types": [item.type for item in events(world, mission_id)],
-                "reviews": [(item.state, [call["state"] for call in invocations(world, item)]) for item in reviews],
+                "reviews": [
+                    (item.state, [call["state"] for call in invocations(world, item)])
+                    for item in reviews
+                ],
                 "ledger": assert_terminal_ledger(world, mission_id, unknown=True),
             }
 
@@ -216,12 +251,17 @@ def test_a_content_review_on_an_unknown_outcome_ends_through_the_verification_do
     # bound (卡住裁决第 6 类); a new round reviewed the redo
     assert outcome["reviews"][0] == ("FAILED", ["unknown"]), outcome["reviews"]
     assert ("SETTLED", ["succeeded"]) in outcome["reviews"][1:], outcome["reviews"]
-    assert "VerificationFailed" in outcome["types"] and outcome["types"].count("AttemptCreated") == 2
+    assert (
+        "VerificationFailed" in outcome["types"] and outcome["types"].count("AttemptCreated") == 2
+    )
 
 
 def _method_reviews(world: Any, mission_id: str) -> list[Any]:
-    return [item for item in world.store.list_intents("SUBMITTED", "SETTLED", "FAILED")
-            if item.mission_id == mission_id and ":assurance-method-plan:" in item.subject_id]
+    return [
+        item
+        for item in world.store.list_intents("SUBMITTED", "SETTLED", "FAILED")
+        if item.mission_id == mission_id and ":assurance-method-plan:" in item.subject_id
+    ]
 
 
 def test_a_method_review_on_an_unknown_outcome_is_reopened_in_a_new_session(tmp_path) -> None:
@@ -238,14 +278,21 @@ def test_a_method_review_on_an_unknown_outcome_is_reopened_in_a_new_session(tmp_
             return {
                 "status": status(world, mission_id),
                 "types": [item.type for item in events(world, mission_id)],
-                "reviews": [(item.state, [call["state"] for call in invocations(world, item)])
-                            for item in _method_reviews(world, mission_id)],
-                "reviewed": [dict(item.payload) for item in events(world, mission_id, "PlanningMethodReviewed")],
+                "reviews": [
+                    (item.state, [call["state"] for call in invocations(world, item)])
+                    for item in _method_reviews(world, mission_id)
+                ],
+                "reviewed": [
+                    dict(item.payload)
+                    for item in events(world, mission_id, "PlanningMethodReviewed")
+                ],
             }
 
     outcome = asyncio.run(case())
     assert outcome["status"] == "COMPLETED", outcome["types"][-15:]
-    assert SERVICE_INTENT_REHANDED_OFF not in outcome["types"], "the lost call itself is never re-sent"
+    assert SERVICE_INTENT_REHANDED_OFF not in outcome["types"], (
+        "the lost call itself is never re-sent"
+    )
     first, second = outcome["reviews"][:2]
     assert first == ("FAILED", ["unknown"]), outcome["reviews"]
     assert second == ("SETTLED", ["succeeded"]), outcome["reviews"]
@@ -260,7 +307,10 @@ def test_a_method_review_that_never_answers_is_reported_as_no_verdict(tmp_path) 
     class MethodReviewLost(FaultyProvider):
         async def invoke(self, request, *, cancel):  # type: ignore[no-untyped-def]
             data = review_input(request)
-            if data is not None and str((data.get("package") or {}).get("purpose")) == "METHOD_PLAN":
+            if (
+                data is not None
+                and str((data.get("package") or {}).get("purpose")) == "METHOD_PLAN"
+            ):
                 self.faults.setdefault(REVIEWER, []).insert(0, transport_loss)
             return await super().invoke(request, cancel=cancel)
 
@@ -269,15 +319,21 @@ def test_a_method_review_that_never_answers_is_reported_as_no_verdict(tmp_path) 
             mission_id = create(world, "p23f-method-review-never")
             reviewed = lambda: events(world, mission_id, "PlanningMethodReviewed")  # noqa: E731
             assert await settle(world, mission_id, seconds=40, done=lambda: bool(reviewed()))
-            return {"reviewed": [dict(item.payload) for item in reviewed()],
-                    "reviews": [(item.state, [call["state"] for call in invocations(world, item)])
-                                for item in _method_reviews(world, mission_id)]}
+            return {
+                "reviewed": [dict(item.payload) for item in reviewed()],
+                "reviews": [
+                    (item.state, [call["state"] for call in invocations(world, item)])
+                    for item in _method_reviews(world, mission_id)
+                ],
+            }
 
     outcome = asyncio.run(case())
     first = outcome["reviewed"][0]
     assert first["outcome"] == "NO_VERDICT" and first["record_id"] is None, first
     assert "got no reply 2 time(s)" in first["reason"], first
-    assert outcome["reviews"][:2] == [("FAILED", ["unknown"]), ("FAILED", ["unknown"])], outcome["reviews"]
+    assert outcome["reviews"][:2] == [("FAILED", ["unknown"]), ("FAILED", ["unknown"])], outcome[
+        "reviews"
+    ]
 
 
 # ======================================================================================

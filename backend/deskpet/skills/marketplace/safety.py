@@ -7,6 +7,7 @@ Validates a skill's ``manifest.json`` against a known-tool allow-list
 BEFORE writing anything to the user-skills directory. Spec:
 ``openspec/changes/deskpet-skill-platform/specs/skill-marketplace/spec.md``.
 """
+
 from __future__ import annotations
 
 import re
@@ -33,9 +34,7 @@ _KNOWN_CATEGORIES = {
 _NAME_RE = re.compile(r"^[a-zA-Z0-9_\-]{1,64}$")
 
 
-def validate_manifest(
-    manifest: dict[str, Any], *, known_tools: set[str]
-) -> None:
+def validate_manifest(manifest: dict[str, Any], *, known_tools: set[str]) -> None:
     """Validate manifest in-place. Raises SafetyError on any violation."""
     if not isinstance(manifest, dict):
         raise SafetyError(f"manifest must be a JSON object, got {type(manifest).__name__}")

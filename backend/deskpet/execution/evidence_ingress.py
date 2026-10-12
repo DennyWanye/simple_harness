@@ -105,6 +105,8 @@ def _stable_code(exc: BaseException) -> str:
         return text[:128]
     code = getattr(exc, "code", None)
     return str(code or type(exc).__name__)[:128]
+
+
 HOST_OBJECTIVE_AUTHORITY_REF = "host:objective-event-recorder:v1"
 HOST_HARNESS_FACT_AUTHORITY_REF = "host:harness-fact-ingress:v1"
 
@@ -484,7 +486,16 @@ class ExecutionEvidenceIngress:
             "INSERT INTO harness_evidence_reservations(reservation_id,run_id,task_scope_id,"
             "source_sequence,source_event_id,kind,status,reserved_at,resolved_at,tool_name) "
             "VALUES (?,?,?,?,?,?,'reserved',?,NULL,?)",
-            (reservation_id, run_id, task_scope_id, sequence, source_event_id, kind, float(now), tool_name),
+            (
+                reservation_id,
+                run_id,
+                task_scope_id,
+                sequence,
+                source_event_id,
+                kind,
+                float(now),
+                tool_name,
+            ),
         )
         created = await self._reservation_tx(db, source_event_id)
         assert created is not None
@@ -1062,8 +1073,15 @@ class ExecutionEvidenceIngress:
             "source_sequence,source_event_id,evidence_hash,event_id,evidence_kind,committed_at) "
             "VALUES (?,?,?,?,?,?,?,?,?)",
             (
-                receipt_id, task_scope_id, run_id, sequence, source_event_id, evidence_hash,
-                event.event_id, raw["kind"], now,
+                receipt_id,
+                task_scope_id,
+                run_id,
+                sequence,
+                source_event_id,
+                evidence_hash,
+                event.event_id,
+                raw["kind"],
+                now,
             ),
         )
         if reservation is not None:
@@ -1081,7 +1099,9 @@ class ExecutionEvidenceIngress:
             (event.event_sequence, now, task_scope_id, event.event_sequence),
         )
         row = await self._store._fetchone(
-            db, "SELECT * FROM task_scope_execution_ingest_receipts WHERE receipt_id=?", (receipt_id,)
+            db,
+            "SELECT * FROM task_scope_execution_ingest_receipts WHERE receipt_id=?",
+            (receipt_id,),
         )
         assert row is not None
         return row, watermark
@@ -1254,10 +1274,19 @@ class ExecutionEvidenceIngress:
                         "INSERT INTO task_scope_terminal_gate_receipts(gate_receipt_id,task_scope_id,"
                         "run_id,terminal_source_sequence,durable_source_sequence,created_at) "
                         "VALUES (?,?,?,?,?,?)",
-                        (gate_id, watermark["task_scope_id"], run_id, terminal, durable, self._clock()),
+                        (
+                            gate_id,
+                            watermark["task_scope_id"],
+                            run_id,
+                            terminal,
+                            durable,
+                            self._clock(),
+                        ),
                     )
                     existing = await self._store._fetchone(
-                        db, "SELECT * FROM task_scope_terminal_gate_receipts WHERE run_id=?", (run_id,)
+                        db,
+                        "SELECT * FROM task_scope_terminal_gate_receipts WHERE run_id=?",
+                        (run_id,),
                     )
                 assert existing is not None
                 await db.commit()
@@ -1265,12 +1294,19 @@ class ExecutionEvidenceIngress:
                 await db.rollback()
                 raise
         return TerminalGateReceipt(
-            str(existing["gate_receipt_id"]), str(existing["task_scope_id"]), run_id,
-            int(existing["terminal_source_sequence"]), int(existing["durable_source_sequence"]),
+            str(existing["gate_receipt_id"]),
+            str(existing["task_scope_id"]),
+            run_id,
+            int(existing["terminal_source_sequence"]),
+            int(existing["durable_source_sequence"]),
         )
 
-    async def _advance_watermark_tx(self, db, *, task_scope_id: str, run_id: str, terminal_sequence: int | None, now: float):
-        row = await self._store._fetchone(db, "SELECT * FROM task_scope_run_watermarks WHERE run_id=?", (run_id,))
+    async def _advance_watermark_tx(
+        self, db, *, task_scope_id: str, run_id: str, terminal_sequence: int | None, now: float
+    ):
+        row = await self._store._fetchone(
+            db, "SELECT * FROM task_scope_run_watermarks WHERE run_id=?", (run_id,)
+        )
         if row is None:
             await db.execute(
                 "INSERT INTO task_scope_run_watermarks(run_id,task_scope_id,durable_source_sequence,terminal_source_sequence,updated_at) VALUES (?,?,0,?,?)",
@@ -1285,7 +1321,9 @@ class ExecutionEvidenceIngress:
             current_terminal = row["terminal_source_sequence"]
             if terminal_sequence is not None and current_terminal not in (None, terminal_sequence):
                 raise TaskScopeConflict("execution_terminal_sequence_conflict")
-            current_terminal = terminal_sequence if terminal_sequence is not None else current_terminal
+            current_terminal = (
+                terminal_sequence if terminal_sequence is not None else current_terminal
+            )
         while True:
             next_row = await self._store._fetchone(
                 db,
@@ -1302,7 +1340,9 @@ class ExecutionEvidenceIngress:
         return await self._watermark_tx(db, run_id)
 
     async def _watermark_tx(self, db, run_id: str):
-        row = await self._store._fetchone(db, "SELECT * FROM task_scope_run_watermarks WHERE run_id=?", (run_id,))
+        row = await self._store._fetchone(
+            db, "SELECT * FROM task_scope_run_watermarks WHERE run_id=?", (run_id,)
+        )
         if row is None:
             raise TerminalWatermarkPending(TerminalWatermarkPending.code)
         return row
@@ -1311,9 +1351,14 @@ class ExecutionEvidenceIngress:
     def _receipt(row, watermark) -> ExecutionIngestReceipt:
         terminal = watermark["terminal_source_sequence"]
         return ExecutionIngestReceipt(
-            str(row["receipt_id"]), str(row["task_scope_id"]), str(row["run_id"]),
-            int(row["source_sequence"]), str(row["source_event_id"]), str(row["evidence_hash"]),
-            str(row["event_id"]), int(watermark["durable_source_sequence"]),
+            str(row["receipt_id"]),
+            str(row["task_scope_id"]),
+            str(row["run_id"]),
+            int(row["source_sequence"]),
+            str(row["source_event_id"]),
+            str(row["evidence_hash"]),
+            str(row["event_id"]),
+            int(watermark["durable_source_sequence"]),
             None if terminal is None else int(terminal),
         )
 

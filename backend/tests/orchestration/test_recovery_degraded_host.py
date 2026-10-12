@@ -22,9 +22,17 @@ from deskpet.orchestration.service import (
 
 from ._support import notes_provider, notes_request
 
-DEGRADED = {"state": "DEGRADED_RECOVERY", "side_effects_disabled": True, "recovery_id": "rec-1",
-            "latest": {"recovery_id": "rec-1", "state": "DEGRADED_RECOVERY", "failed_step": "orphan_reclaim",
-                       "steps": [{"step_no": 7, "step": "orphan_reclaim", "status": "FAILED"}]}}
+DEGRADED = {
+    "state": "DEGRADED_RECOVERY",
+    "side_effects_disabled": True,
+    "recovery_id": "rec-1",
+    "latest": {
+        "recovery_id": "rec-1",
+        "state": "DEGRADED_RECOVERY",
+        "failed_step": "orphan_reclaim",
+        "steps": [{"step_no": 7, "step": "orphan_reclaim", "status": "FAILED"}],
+    },
+}
 
 
 @pytest.mark.asyncio
@@ -33,14 +41,25 @@ async def test_a_degraded_recovery_turns_the_service_read_only_and_names_the_fai
 ):
     from agent_orchestrator.orchestrator.event_handler import Orchestrator
 
-    service = OrchestrationService(orchestration_root, OrchestrationSettings(), provider=notes_provider(),
-                                   principal=principal, drive=False, native_test_counter=FixtureWordCounter())
+    service = OrchestrationService(
+        orchestration_root,
+        OrchestrationSettings(),
+        provider=notes_provider(),
+        principal=principal,
+        drive=False,
+        native_test_counter=FixtureWordCounter(),
+    )
     await service.start()
     try:
         before = service.status()
         # 装的轮子若还没有 ``recovery_status``（钉版前）读不到为 None；钉版后是 READY 一类，总之不是降级
-        assert before["state"] == "available" and (before["recovery"] or {}).get("state") != "DEGRADED_RECOVERY"
-        monkeypatch.setattr(Orchestrator, "recovery_status", lambda self: dict(DEGRADED), raising=False)
+        assert (
+            before["state"] == "available"
+            and (before["recovery"] or {}).get("state") != "DEGRADED_RECOVERY"
+        )
+        monkeypatch.setattr(
+            Orchestrator, "recovery_status", lambda self: dict(DEGRADED), raising=False
+        )
         assert await service.drain(timeout=10) is True
 
         status = service.status()
@@ -56,10 +75,20 @@ async def test_a_degraded_recovery_turns_the_service_read_only_and_names_the_fai
         assert listed["payload"]["ok"] is True, listed
         shown = await handle(service, "orchestration_status", {"request_id": "s1"})
         assert shown["payload"]["data"]["state"] == "degraded_recovery"
-        created = await handle(service, "mission_create", {"request_id": "c1", **notes_request("deg-2")})
-        assert created["payload"]["ok"] is False and created["payload"]["error_code"] == "orchestration_unavailable"
-        cancelled = await handle(service, "mission_cancel", {"request_id": "x1", "mission_id": "mission-x"})
-        assert cancelled["payload"]["ok"] is False and cancelled["payload"]["error_code"] == "orchestration_unavailable"
+        created = await handle(
+            service, "mission_create", {"request_id": "c1", **notes_request("deg-2")}
+        )
+        assert (
+            created["payload"]["ok"] is False
+            and created["payload"]["error_code"] == "orchestration_unavailable"
+        )
+        cancelled = await handle(
+            service, "mission_cancel", {"request_id": "x1", "mission_id": "mission-x"}
+        )
+        assert (
+            cancelled["payload"]["ok"] is False
+            and cancelled["payload"]["error_code"] == "orchestration_unavailable"
+        )
 
         # 主对话的另两个写入口（换资料、退役方法库条目）同样具名拒绝
         with pytest.raises(OrchestrationRequestError) as refused:
@@ -70,7 +99,9 @@ async def test_a_degraded_recovery_turns_the_service_read_only_and_names_the_fai
         assert refused.value.code == "orchestration_degraded_recovery"
 
         # 非披露诊断在降级恢复里照开（DEGRADED_RECOVERY_READS 含它），状态里的保证通道根也照读
-        diagnostic = await handle(service, "mission_assurance_root_diagnostic", {"request_id": "d1"})
+        diagnostic = await handle(
+            service, "mission_assurance_root_diagnostic", {"request_id": "d1"}
+        )
         assert diagnostic["payload"]["ok"] is True, diagnostic
         assert diagnostic["payload"]["data"]["host_state"] == "degraded_recovery"
         assert status["assurance_root"] is not None

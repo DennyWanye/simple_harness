@@ -96,37 +96,22 @@ def intersect_prepared_skill_tools(
         scope_hash = str(getattr(scope, "scope_hash", "") or "")
         if len(scope_hash) != 64:
             raise ValueError("invalid skill scope hash")
-        scope_id = str(
-            getattr(scope, "scope_id", "")
-            or f"skill-scope:{scope_hash}"
-        )
-        names = {
-            str(item)
-            for item in (getattr(scope, "allowed_tools", ()) or ())
-            if str(item)
-        }
+        scope_id = str(getattr(scope, "scope_id", "") or f"skill-scope:{scope_hash}")
+        names = {str(item) for item in (getattr(scope, "allowed_tools", ()) or ()) if str(item)}
         forbidden = names & _SKILL_SCOPE_WIDENING_CONTROLS
         if forbidden:
-            raise ValueError(
-                f"skill scope contains widening controls: {sorted(forbidden)!r}"
-            )
+            raise ValueError(f"skill scope contains widening controls: {sorted(forbidden)!r}")
         scope_ids.append(scope_id)
         scope_hashes.append(scope_hash)
         allowed.update(names)
 
-    current = {
-        cap.ref.name: cap for cap in (*prepared.direct, *prepared.activated)
-    }
+    current = {cap.ref.name: cap for cap in (*prepared.direct, *prepared.activated)}
     effective_names = tuple(sorted(allowed & current.keys()))
     effective_set = set(effective_names)
-    effective_refs = tuple(
-        current[name].ref for name in effective_names
-    )
+    effective_refs = tuple(current[name].ref for name in effective_names)
     fact_payloads: tuple[Mapping[str, Any], ...]
     if exact_tool_facts is None:
-        fact_payloads = tuple(
-            exact_tool_ref_payload(ref) for ref in effective_refs
-        )
+        fact_payloads = tuple(exact_tool_ref_payload(ref) for ref in effective_refs)
     else:
         facts_by_name: dict[str, Mapping[str, Any]] = {}
         for raw in exact_tool_facts:
@@ -137,16 +122,12 @@ def intersect_prepared_skill_tools(
             facts_by_name[name] = fact
         missing = effective_set - facts_by_name.keys()
         if missing:
-            raise ValueError(
-                f"captured exact Tool facts are missing: {sorted(missing)!r}"
-            )
+            raise ValueError(f"captured exact Tool facts are missing: {sorted(missing)!r}")
         verified: list[Mapping[str, Any]] = []
         for ref in effective_refs:
             fact = facts_by_name[ref.name]
             if str(fact.get("schema_hash") or "") != ref.schema_hash:
-                raise ValueError(
-                    f"captured exact Tool schema drifted: {ref.name}"
-                )
+                raise ValueError(f"captured exact Tool schema drifted: {ref.name}")
             required = {
                 "name",
                 "stable_handler_id",
@@ -160,32 +141,20 @@ def intersect_prepared_skill_tools(
                 "idempotency",
             }
             if set(fact) != required:
-                raise ValueError(
-                    f"captured exact Tool fact fields drifted: {ref.name}"
-                )
+                raise ValueError(f"captured exact Tool fact fields drifted: {ref.name}")
             verified.append(fact)
         fact_payloads = tuple(verified)
-    ref_hashes = tuple(
-        canonical_hash(dict(payload)) for payload in fact_payloads
-    )
+    ref_hashes = tuple(canonical_hash(dict(payload)) for payload in fact_payloads)
     classifications = tuple(
-        item
-        for item in prepared.effect_classifications
-        if item.name in effective_set
+        item for item in prepared.effect_classifications if item.name in effective_set
     )
     narrowed = PreparedToolSet.create(
         scope_id=prepared.scope_id,
         revision=prepared.revision,
         registry_revision=prepared.registry_revision,
-        direct=tuple(
-            cap for cap in prepared.direct if cap.ref.name in effective_set
-        ),
-        deferred=tuple(
-            ref for ref in prepared.deferred if ref.name in effective_set
-        ),
-        activated=tuple(
-            cap for cap in prepared.activated if cap.ref.name in effective_set
-        ),
+        direct=tuple(cap for cap in prepared.direct if cap.ref.name in effective_set),
+        deferred=tuple(ref for ref in prepared.deferred if ref.name in effective_set),
+        activated=tuple(cap for cap in prepared.activated if cap.ref.name in effective_set),
         denied_names=prepared.denied_names,
         policy_fingerprint=prepared.policy_fingerprint,
         decisions=prepared.decisions,
@@ -265,9 +234,7 @@ def _load_ref(raw: Mapping[str, Any]) -> ToolCapabilityRef:
         description=str(raw.get("description") or ""),
         schema_hash=str(raw["schema_hash"]),
         spec_version=str(raw.get("spec_version") or "v1"),
-        permission_policy_version=str(
-            raw.get("permission_policy_version") or "v1"
-        ),
+        permission_policy_version=str(raw.get("permission_policy_version") or "v1"),
         permission_category=str(raw.get("permission_category") or "read_file"),
         dangerous=bool(raw.get("dangerous", False)),
     )
@@ -303,8 +270,7 @@ def dump_prepared_tool_set(prepared: PreparedToolSet) -> dict[str, Any]:
         "effect_policy_version": prepared.effect_policy_version,
         "effect_policy_hash": prepared.effect_policy_hash,
         "effect_classifications": [
-            item.fingerprint_payload()
-            for item in prepared.effect_classifications
+            item.fingerprint_payload() for item in prepared.effect_classifications
         ],
         "decisions": [
             {
@@ -355,9 +321,7 @@ def load_prepared_tool_set(raw: Mapping[str, Any]) -> PreparedToolSet:
                 stable_handler_id=str(item.get("stable_handler_id") or ""),
                 effect_class=str(item["effect_class"]),
                 idempotency=str(item["idempotency"]),
-                target_normalizer_version=str(
-                    item["target_normalizer_version"]
-                ),
+                target_normalizer_version=str(item["target_normalizer_version"]),
                 disposition=str(item["disposition"]),
             )
             for item in effect_classifications

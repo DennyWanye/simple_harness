@@ -67,9 +67,7 @@ class _BrokenInvalidation:
 
 
 def _auth() -> AuthenticatedHostSnapshot:
-    return AuthenticatedHostSnapshot(
-        "binding-owner", "binding-principal", "host:mm-d2-test"
-    )
+    return AuthenticatedHostSnapshot("binding-owner", "binding-principal", "host:mm-d2-test")
 
 
 async def _request(factory, authority, request_id, operation, request):  # type: ignore[no-untyped-def]
@@ -125,9 +123,7 @@ async def test_manual_challenge_and_allow_each_publish_one_refresh_hint(
 ) -> None:
     now = [1_000]
     invalidation = _Invalidation()
-    db_path, factory, authority, scope_ref, target = await _stage(
-        tmp_path, invalidation, now=now
-    )
+    db_path, factory, authority, scope_ref, target = await _stage(tmp_path, invalidation, now=now)
 
     proposed = await _request(
         factory,
@@ -162,9 +158,9 @@ async def test_manual_challenge_and_allow_each_publish_one_refresh_hint(
     )
     assert replay["payload"]["result"]["status"] == "bound"
     with sqlite3.connect(db_path) as db:
-        assert db.execute(
-            "SELECT COUNT(*) FROM task_workspace_binding_revisions"
-        ).fetchone()[0] == 1
+        assert (
+            db.execute("SELECT COUNT(*) FROM task_workspace_binding_revisions").fetchone()[0] == 1
+        )
 
 
 @pytest.mark.asyncio
@@ -173,9 +169,7 @@ async def test_manual_deny_publishes_refresh_hint_and_appends_nothing(
 ) -> None:
     now = [2_000]
     invalidation = _Invalidation()
-    db_path, factory, authority, scope_ref, target = await _stage(
-        tmp_path, invalidation, now=now
-    )
+    db_path, factory, authority, scope_ref, target = await _stage(tmp_path, invalidation, now=now)
     proposed = await _request(
         factory,
         authority,
@@ -194,9 +188,9 @@ async def test_manual_deny_publishes_refresh_hint_and_appends_nothing(
     assert denied["payload"]["result"]["status"] == "denied"
     assert invalidation.calls == 2
     with sqlite3.connect(db_path) as db:
-        assert db.execute(
-            "SELECT COUNT(*) FROM task_workspace_binding_revisions"
-        ).fetchone()[0] == 0
+        assert (
+            db.execute("SELECT COUNT(*) FROM task_workspace_binding_revisions").fetchone()[0] == 0
+        )
 
 
 @pytest.mark.asyncio
@@ -207,9 +201,7 @@ async def test_refresh_hint_failure_never_undoes_the_binding_commit(
 
     now = [3_000]
     invalidation = _BrokenInvalidation()
-    db_path, factory, authority, scope_ref, target = await _stage(
-        tmp_path, invalidation, now=now
-    )
+    db_path, factory, authority, scope_ref, target = await _stage(tmp_path, invalidation, now=now)
     proposed = await _request(
         factory,
         authority,
@@ -229,9 +221,9 @@ async def test_refresh_hint_failure_never_undoes_the_binding_commit(
     assert allowed["payload"]["result"]["status"] == "bound"
     assert invalidation.calls == 2
     with sqlite3.connect(db_path) as db:
-        assert db.execute(
-            "SELECT COUNT(*) FROM task_workspace_binding_revisions"
-        ).fetchone()[0] == 1
+        assert (
+            db.execute("SELECT COUNT(*) FROM task_workspace_binding_revisions").fetchone()[0] == 1
+        )
 
 
 # --------------------------------------------------------------------------
@@ -245,9 +237,7 @@ async def test_unanswered_challenge_expires_fail_closed_like_run3_t4(
 ) -> None:
     now = [4_000]
     invalidation = _Invalidation()
-    db_path, factory, authority, scope_ref, target = await _stage(
-        tmp_path, invalidation, now=now
-    )
+    db_path, factory, authority, scope_ref, target = await _stage(tmp_path, invalidation, now=now)
     proposed = await _request(
         factory,
         authority,
@@ -270,15 +260,11 @@ async def test_unanswered_challenge_expires_fail_closed_like_run3_t4(
     )
     assert expired["payload"]["ok"] is False, expired
     with sqlite3.connect(db_path) as db:
-        assert db.execute(
-            "SELECT COUNT(*) FROM task_workspace_manual_decisions"
-        ).fetchone()[0] == 0
-        assert db.execute(
-            "SELECT COUNT(*) FROM task_workspace_binding_grants"
-        ).fetchone()[0] == 0
-        assert db.execute(
-            "SELECT COUNT(*) FROM task_workspace_binding_revisions"
-        ).fetchone()[0] == 0
+        assert db.execute("SELECT COUNT(*) FROM task_workspace_manual_decisions").fetchone()[0] == 0
+        assert db.execute("SELECT COUNT(*) FROM task_workspace_binding_grants").fetchone()[0] == 0
+        assert (
+            db.execute("SELECT COUNT(*) FROM task_workspace_binding_revisions").fetchone()[0] == 0
+        )
 
 
 # --------------------------------------------------------------------------
@@ -308,16 +294,13 @@ def test_product_state_policy_row_is_a_ddl_residue_not_the_authority(
     database.initialize()
     # 建库种子行永远是 auto/0/factory_default——run3 里驱动读到的就是它。
     row = database.connection.execute(
-        "SELECT mode,generation,provenance FROM authorization_policy_state "
-        "WHERE singleton_id=1"
+        "SELECT mode,generation,provenance FROM authorization_policy_state WHERE singleton_id=1"
     ).fetchone()
     assert tuple(row) == ("auto", 0, "factory_default")
 
     # 生产组装（backend/main.py）注入 policy_generation_provider：即使残留行还停在
     # generation=0，真实 generation=1 的 grant 也必须被接受。
-    authority = DurableTaskGrantAuthority(
-        database, policy_generation_provider=lambda: 1
-    )
+    authority = DurableTaskGrantAuthority(database, policy_generation_provider=lambda: 1)
     prepared = authority.prepare(_grant(1), now=1.0)
     assert prepared.status == "prepared"
 

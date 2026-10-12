@@ -7,6 +7,7 @@
 读取 ``document.documentElement.outerHTML``。全程 best-effort：任何失败都返回
 ``None``，调用方可自然降级到静态抓取链路。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -323,8 +324,12 @@ async def _render_once(url: str, timeout: float) -> str | None:
         if not session_id:
             raise RuntimeError("Target.attachToTarget returned no sessionId")
 
-        await _cdp_call("Page.enable", session_id=session_id, timeout=min(5.0, _remaining(deadline)))
-        await _cdp_call("Runtime.enable", session_id=session_id, timeout=min(5.0, _remaining(deadline)))
+        await _cdp_call(
+            "Page.enable", session_id=session_id, timeout=min(5.0, _remaining(deadline))
+        )
+        await _cdp_call(
+            "Runtime.enable", session_id=session_id, timeout=min(5.0, _remaining(deadline))
+        )
         # Page.navigate 在"提交导航"时才返回响应;慢站/走系统代理的外国站可能迟迟不提交
         # (实测 quotes.toscrape.com 经 Clash 代理 navigate 卡 5s+)。**非致命**: 超时也继续,
         # 靠下面的 readyState/innerText 轮询(deadline 界内)兜底——页面可能仍在后台加载,
@@ -337,7 +342,11 @@ async def _render_once(url: str, timeout: float) -> str | None:
                 timeout=min(10.0, _remaining(deadline)),
             )
         except Exception as exc:  # noqa: BLE001
-            log.debug("cdp_edge Page.navigate slow/timeout, continue polling", url=url, error=str(exc)[:80])
+            log.debug(
+                "cdp_edge Page.navigate slow/timeout, continue polling",
+                url=url,
+                error=str(exc)[:80],
+            )
 
         # 先等主文档 readyState complete。
         while time.perf_counter() < deadline:
@@ -415,7 +424,9 @@ async def cdp_edge_render(url: str, *, timeout: float = 20.0) -> str | None:
                 await _reset_browser_state()
             except Exception:  # noqa: BLE001
                 pass
-        log.info("cdp_edge_render", url=url, ok=False, error=(str(exc) or exc.__class__.__name__)[:120])
+        log.info(
+            "cdp_edge_render", url=url, ok=False, error=(str(exc) or exc.__class__.__name__)[:120]
+        )
         return None
 
 

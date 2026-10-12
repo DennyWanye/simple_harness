@@ -127,9 +127,7 @@ async def test_stage_contracts_are_reentrant_and_product_side_effect_free() -> N
     await nodes.citation_node(state, ports, config)
 
     assert state.sub_questions == ["question one?"]
-    assert [passage.citation.url for passage in state.passages] == [
-        "https://example.com/a"
-    ]
+    assert [passage.citation.url for passage in state.passages] == ["https://example.com/a"]
     assert state.cite_result["ok"] is True
     assert "[^1]: [A](https://example.com/a)" in state.report_md
     assert not hasattr(state, "artifact_refs")
@@ -386,9 +384,7 @@ async def test_flat_legacy_and_extracted_pipeline_have_output_parity(monkeypatch
     )
     extracted = await run_research_core(
         "parity topic",
-        ports=legacy_ports(
-            llm_call=FakeLLM([plan, synth]), search=search, extract=extract
-        ),
+        ports=legacy_ports(llm_call=FakeLLM([plan, synth]), search=search, extract=extract),
         config=config,
     )
     adapted = await legacy.deepresearch(
@@ -439,17 +435,13 @@ async def test_agent_reach_degradation_preserves_generic_evidence(monkeypatch) -
             },
         )
 
-    monkeypatch.setattr(
-        research_sources, "agent_reach_search_with_status", reach_degraded
-    )
+    monkeypatch.setattr(research_sources, "agent_reach_search_with_status", reach_degraded)
     report = await run_research_core(
         "compare https://github.com/Panniantong/Agent-Reach",
         ports=legacy_ports(
             llm_call=FakeLLM(
                 [
-                    json.dumps([
-                        "compare https://github.com/Panniantong/Agent-Reach"
-                    ]),
+                    json.dumps(["compare https://github.com/Panniantong/Agent-Reach"]),
                     "# Repository report\n\n## TL;DR\n\nSupported comparison [^1].",
                 ]
             ),
@@ -484,31 +476,35 @@ async def test_direct_channel_hit_clears_superseded_no_search_error(monkeypatch)
         return []
 
     async def reach_hit(query: str, *, max_results: int = 3):
-        return [
+        return (
+            [
+                {
+                    "ok": True,
+                    "url": "https://github.com/Panniantong/Agent-Reach",
+                    "title": "Panniantong/Agent-Reach",
+                    "text": "Agent-Reach public repository metadata and agent channel scaffolding "
+                    * 8,
+                    "fetched_at": 1.0,
+                    "source": "github",
+                }
+            ],
+            "hit",
+            None,
+            "Jina Reader",
+            "github",
             {
-                "ok": True,
-                "url": "https://github.com/Panniantong/Agent-Reach",
-                "title": "Panniantong/Agent-Reach",
-                "text": "Agent-Reach public repository metadata and agent channel scaffolding " * 8,
-                "fetched_at": 1.0,
-                "source": "github",
-            }
-        ], "hit", None, "Jina Reader", "github", {
-            "github": {"status": "warn", "active_backend": None},
-            "web": {"status": "ok", "active_backend": "Jina Reader"},
-        }
+                "github": {"status": "warn", "active_backend": None},
+                "web": {"status": "ok", "active_backend": "Jina Reader"},
+            },
+        )
 
-    monkeypatch.setattr(
-        research_sources, "agent_reach_search_with_status", reach_hit
-    )
+    monkeypatch.setattr(research_sources, "agent_reach_search_with_status", reach_hit)
     report = await run_research_core(
         "https://github.com/Panniantong/Agent-Reach metadata",
         ports=legacy_ports(
             llm_call=FakeLLM(
                 [
-                    json.dumps([
-                        "https://github.com/Panniantong/Agent-Reach metadata"
-                    ]),
+                    json.dumps(["https://github.com/Panniantong/Agent-Reach metadata"]),
                     "# Agent-Reach\n\n## TL;DR\n\nStructured evidence [^1].",
                 ]
             ),
@@ -534,23 +530,28 @@ async def test_agent_reach_executes_multiple_urls_in_stable_order(monkeypatch) -
     async def reach_hit(query: str, *, max_results: int = 3):
         calls.append(query)
         channel = "github" if "github.com" in query else "youtube"
-        return [
+        return (
+            [
+                {
+                    "ok": True,
+                    "url": query,
+                    "title": channel,
+                    "text": f"{channel} evidence " * 40,
+                    "fetched_at": 1.0,
+                    "source": "agent_reach",
+                }
+            ],
+            "hit",
+            None,
+            "Jina Reader",
+            channel,
             {
-                "ok": True,
-                "url": query,
-                "title": channel,
-                "text": f"{channel} evidence " * 40,
-                "fetched_at": 1.0,
-                "source": "agent_reach",
-            }
-        ], "hit", None, "Jina Reader", channel, {
-            channel: {"status": "warn", "active_backend": None},
-            "web": {"status": "ok", "active_backend": "Jina Reader"},
-        }
+                channel: {"status": "warn", "active_backend": None},
+                "web": {"status": "ok", "active_backend": "Jina Reader"},
+            },
+        )
 
-    monkeypatch.setattr(
-        research_sources, "agent_reach_search_with_status", reach_hit
-    )
+    monkeypatch.setattr(research_sources, "agent_reach_search_with_status", reach_hit)
     topic = (
         "Compare https://github.com/Panniantong/Agent-Reach and "
         "https://www.youtube.com/watch?v=example"
@@ -596,25 +597,28 @@ async def test_agent_reach_urls_use_one_run_level_limit_and_skip_fanout(
 
     async def reach_hit(query: str, *, max_results: int = 3):
         calls.append(query)
-        return [
-            {
-                "ok": True,
-                "url": query,
-                "title": query,
-                "text": "bounded evidence " * 40,
-                "fetched_at": 1.0,
-                "source": "agent_reach",
-            }
-        ], "hit", None, "Jina Reader", "web", {
-            "web": {"status": "ok", "active_backend": "Jina Reader"}
-        }
+        return (
+            [
+                {
+                    "ok": True,
+                    "url": query,
+                    "title": query,
+                    "text": "bounded evidence " * 40,
+                    "fetched_at": 1.0,
+                    "source": "agent_reach",
+                }
+            ],
+            "hit",
+            None,
+            "Jina Reader",
+            "web",
+            {"web": {"status": "ok", "active_backend": "Jina Reader"}},
+        )
 
     async def forbidden_fanout(**kwargs):
         raise AssertionError("explicit URL research must preserve the parent URL list")
 
-    monkeypatch.setattr(
-        research_sources, "agent_reach_search_with_status", reach_hit
-    )
+    monkeypatch.setattr(research_sources, "agent_reach_search_with_status", reach_hit)
     monkeypatch.setattr(research_tools, "_run_subagent_fanout", forbidden_fanout)
     report = await run_research_core(
         topic,
@@ -654,9 +658,7 @@ async def test_agent_reach_timeout_does_not_start_queued_urls(monkeypatch) -> No
         await asyncio.sleep(1)
         return [], "empty", None, None, "web", {}
 
-    monkeypatch.setattr(
-        research_sources, "agent_reach_search_with_status", slow_read
-    )
+    monkeypatch.setattr(research_sources, "agent_reach_search_with_status", slow_read)
     report = await run_research_core(
         topic,
         ports=legacy_ports(
@@ -674,9 +676,7 @@ async def test_agent_reach_timeout_does_not_start_queued_urls(monkeypatch) -> No
 def test_large_payload_refs_and_stable_reducer(tmp_path: Path) -> None:
     store = BlobStore(tmp_path / "blobs")
     large = {"text": "evidence" * 100}
-    encoded = nodes.encode_large_value(
-        large, blob_store=store, threshold_bytes=32
-    )
+    encoded = nodes.encode_large_value(large, blob_store=store, threshold_bytes=32)
     assert isinstance(encoded, dict) and nodes.BLOB_REF_KEY in encoded
     assert nodes.decode_large_value(encoded, blob_store=store) == large
 
@@ -696,9 +696,7 @@ def test_large_payload_refs_and_stable_reducer(tmp_path: Path) -> None:
             score=1.0,
         )
     ]
-    checkpoint = nodes.checkpoint_payloads(
-        state, blob_store=store, threshold_bytes=32
-    )
+    checkpoint = nodes.checkpoint_payloads(state, blob_store=store, threshold_bytes=32)
     assert nodes.BLOB_REF_KEY in checkpoint["passages"]
 
     left = [{"stable_id": "b", "value": 2}]

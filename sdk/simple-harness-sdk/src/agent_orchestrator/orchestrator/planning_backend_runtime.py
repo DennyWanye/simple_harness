@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 """Durable solver results for the existing Planner decision/Commit transaction."""
+
 from __future__ import annotations
 
 import asyncio
@@ -17,8 +18,10 @@ def deployment_identity(handler: Any) -> dict[str, Any]:
     limits = handler._config.planning_backend_limits
     if (backend is None) != (limits is None):
         raise ContractError("solver deployment requires both backend and limits")
-    return {"backend_id": "native" if backend is None else backend.backend_id,
-            "limits": None if limits is None else limits.to_json()}
+    return {
+        "backend_id": "native" if backend is None else backend.backend_id,
+        "limits": None if limits is None else limits.to_json(),
+    }
 
 
 def frozen_deployment_conflict(handler: Any, mission_id: str) -> str | None:
@@ -33,8 +36,10 @@ def frozen_deployment_conflict(handler: Any, mission_id: str) -> str | None:
     identity = deployment_identity(handler)
     for event in handler.store.iter_events(mission_id):
         if event.type == "PlanningDeploymentBound" and dict(event.payload) != identity:
-            return ("planning deployment differs from this Mission's frozen deployment: "
-                    f"frozen {dict(event.payload)!r}, this process {identity!r}")
+            return (
+                "planning deployment differs from this Mission's frozen deployment: "
+                f"frozen {dict(event.payload)!r}, this process {identity!r}"
+            )
         if event.type == "PlanningBackendBound" and (
             event.payload.get("backend_id") != identity["backend_id"]
             or event.payload.get("limits") != identity["limits"]
@@ -50,14 +55,22 @@ def bind_deployment(handler: Any, mission_id: str) -> None:
         conflict = frozen_deployment_conflict(handler, mission_id)
         if conflict is not None:
             raise ContractError(conflict)
-        if not any(event.type == "PlanningDeploymentBound"
-                   for event in handler.store.iter_events(mission_id)):
-            append_hierarchical_event(handler.store, "PlanningDeploymentBound", mission_id,
-                                      key=mission_id, payload=identity)
+        if not any(
+            event.type == "PlanningDeploymentBound"
+            for event in handler.store.iter_events(mission_id)
+        ):
+            append_hierarchical_event(
+                handler.store,
+                "PlanningDeploymentBound",
+                mission_id,
+                key=mission_id,
+                payload=identity,
+            )
 
 
-async def solve_decision(handler: Any, *, mission_id: str, decision_id: str,
-                         lane: Any) -> tuple[Any, PlanningBackendResult]:
+async def solve_decision(
+    handler: Any, *, mission_id: str, decision_id: str, lane: Any
+) -> tuple[Any, PlanningBackendResult]:
     bind_deployment(handler, mission_id)
     backend = handler._config.planning_backend
     limits = handler._config.planning_backend_limits
@@ -67,26 +80,52 @@ async def solve_decision(handler: Any, *, mission_id: str, decision_id: str,
     for event in handler.store.iter_events(mission_id):
         if event.type == "PlanningBackendBound" and dict(event.payload) != identity:
             raise ContractError("planning backend differs from this Mission's frozen deployment")
-    append_hierarchical_event(handler.store, "PlanningBackendBound", mission_id,
-                              key=mission_id, payload=identity)
+    append_hierarchical_event(
+        handler.store, "PlanningBackendBound", mission_id, key=mission_id, payload=identity
+    )
     snapshot = lane.snapshot()
     for event in handler.store.iter_events(mission_id):
-        if event.type != "PlanningBackendReturned" or event.payload.get("decision_id") != decision_id:
+        if (
+            event.type != "PlanningBackendReturned"
+            or event.payload.get("decision_id") != decision_id
+        ):
             continue
         if event.payload["snapshot_digest"] != snapshot.digest:
             raise ContractError("solver decision snapshot changed on recovery")
         raw = event.payload.get("witness")
-        witness = None if raw is None else CandidatePlanWitness(
-            backend_id=raw["backend_id"], snapshot_digest=raw["snapshot_digest"],
-            steps=tuple(raw["steps"]), plan_hash=raw["plan_hash"], hierarchy_json=raw["hierarchy_json"])
-        return snapshot, PlanningBackendResult(BackendStatus(event.payload["status"]), snapshot.digest,
-                                              witness, event.payload.get("detail", ""))
+        witness = (
+            None
+            if raw is None
+            else CandidatePlanWitness(
+                backend_id=raw["backend_id"],
+                snapshot_digest=raw["snapshot_digest"],
+                steps=tuple(raw["steps"]),
+                plan_hash=raw["plan_hash"],
+                hierarchy_json=raw["hierarchy_json"],
+            )
+        )
+        return snapshot, PlanningBackendResult(
+            BackendStatus(event.payload["status"]),
+            snapshot.digest,
+            witness,
+            event.payload.get("detail", ""),
+        )
     result = await asyncio.to_thread(backend.solve, snapshot, limits)
     if result.snapshot_digest != snapshot.digest:
         raise ContractError("solver returned a result for another snapshot")
-    append_hierarchical_event(handler.store, "PlanningBackendReturned", mission_id,
-        key=decision_id, payload={"decision_id": decision_id, "snapshot_digest": snapshot.digest,
-            "status": str(result.status), "detail": result.detail,
-            "witness": None if result.witness is None else {
-                **asdict(result.witness), "steps": list(result.witness.steps)}})
+    append_hierarchical_event(
+        handler.store,
+        "PlanningBackendReturned",
+        mission_id,
+        key=decision_id,
+        payload={
+            "decision_id": decision_id,
+            "snapshot_digest": snapshot.digest,
+            "status": str(result.status),
+            "detail": result.detail,
+            "witness": None
+            if result.witness is None
+            else {**asdict(result.witness), "steps": list(result.witness.steps)},
+        },
+    )
     return snapshot, result

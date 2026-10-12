@@ -33,10 +33,13 @@ def render_body(
         deduplicated.append(claim)
     factual = [value for value in deduplicated if value.kind == "factual"]
     inferences = [value for value in deduplicated if value.kind in {"inference", "opinion"}]
-    facts_md = "\n".join(_render_claim(value) for value in factual) or "- 暂无通过支持核验的事实性结论"
-    inference_md = "\n".join(
-        _render_claim(value).replace("- ", "- 推断：", 1) for value in inferences
-    ) or "- 无"
+    facts_md = (
+        "\n".join(_render_claim(value) for value in factual) or "- 暂无通过支持核验的事实性结论"
+    )
+    inference_md = (
+        "\n".join(_render_claim(value).replace("- ", "- 推断：", 1) for value in inferences)
+        or "- 无"
+    )
     limitations_md = "\n".join(f"- {value}" for value in limitations) or "- 无额外限制"
     return (
         f"# {topic}\n\n"
@@ -65,10 +68,13 @@ def render_report(
         or "- 无"
     )
     if decision.passed:
-        appendix = "\n".join(
-            f"[{int(item.get('citation_id') or index)}] {item.get('title') or item.get('url')} — {item.get('url')}"
-            for index, item in enumerate(citations, 1)
-        ) or "- 无"
+        appendix = (
+            "\n".join(
+                f"[{int(item.get('citation_id') or index)}] {item.get('title') or item.get('url')} — {item.get('url')}"
+                for index, item in enumerate(citations, 1)
+            )
+            or "- 无"
+        )
         markdown = (
             f"{body_md}\n\n## 引用 Appendix\n\n{appendix}"
             f"\n\n## Coverage\n\n```json\n{canonical_json(dict(coverage))}\n```"

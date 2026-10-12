@@ -15,6 +15,7 @@ exist — and the LLM has been observed calling ``fetch_tool_result(...)``
 which then hits "unknown tool" → ``HallucinationError``. Registering
 this handler closes that gap.
 """
+
 from __future__ import annotations
 
 import json

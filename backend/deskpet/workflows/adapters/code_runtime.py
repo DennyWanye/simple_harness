@@ -96,16 +96,8 @@ def _consecutive_discovery_turns(
             break
         names: set[str] = set()
         for raw_call in raw_calls:
-            function = (
-                raw_call.get("function")
-                if isinstance(raw_call, Mapping)
-                else None
-            )
-            names.add(
-                str(function.get("name") or "")
-                if isinstance(function, Mapping)
-                else ""
-            )
+            function = raw_call.get("function") if isinstance(raw_call, Mapping) else None
+            names.add(str(function.get("name") or "") if isinstance(function, Mapping) else "")
         if not names or not names.issubset(setup_tools):
             break
         count += 1
@@ -123,8 +115,7 @@ def _compact_repeatable_search_payloads(
         for index, message in enumerate(copied)
         if (
             str(message.get("role") or "") == "tool"
-            and str(message.get("name") or "")
-            in _REPEATABLE_DISCOVERY_SEARCH_TOOL_NAMES
+            and str(message.get("name") or "") in _REPEATABLE_DISCOVERY_SEARCH_TOOL_NAMES
         )
     ]
     for index in search_indexes[:-1]:
@@ -167,9 +158,7 @@ def _policy_payload(policy: object | None) -> dict[str, JsonValue] | None:
         "version": str(getattr(policy, "version", "")),
         "kind": str(kind_value),
         "max_attempts": int(getattr(policy, "max_attempts", 1)),
-        "reusable_across_branches": bool(
-            getattr(policy, "reusable_across_branches", False)
-        ),
+        "reusable_across_branches": bool(getattr(policy, "reusable_across_branches", False)),
     }
     validate_json_value(payload)
     return payload
@@ -185,7 +174,9 @@ def _callable_identity(value: object) -> str:
 
 
 def _lifecycle_hash(spec: object) -> str | None:
-    required = tuple(getattr(spec, name, None) for name in ("stage", "commit", "rollback", "reconcile"))
+    required = tuple(
+        getattr(spec, name, None) for name in ("stage", "commit", "rollback", "reconcile")
+    )
     if not all(callable(value) for value in required):
         return None
     payload: dict[str, JsonValue] = {
@@ -212,11 +203,7 @@ def capability_snapshot(
     """Snapshot exactly the tools exposed to this proposal port."""
 
     schemas = tool_registry.schemas()
-    visible = {
-        _schema_tool_name(schema)
-        for schema in schemas
-        if isinstance(schema, Mapping)
-    }
+    visible = {_schema_tool_name(schema) for schema in schemas if isinstance(schema, Mapping)}
     visible.discard("")
     visible.difference_update(FORBIDDEN_DURABLE_TOOLS)
     if allowed_tools is not None:
@@ -324,8 +311,7 @@ class ProposalPort:
         )
         self.output_contract = output_contract
         self.allowed_tools = (
-            frozenset(str(name) for name in allowed_tools)
-            if allowed_tools is not None else None
+            frozenset(str(name) for name in allowed_tools) if allowed_tools is not None else None
         )
         if self.context_os_v1 and self.prepared_tool_set is None:
             raise ValueError("context_os_code_proposal_requires_prepared_tool_set")
@@ -335,9 +321,7 @@ class ProposalPort:
             return None
         if self.compaction_trigger_tokens is not None:
             return self.compaction_trigger_tokens
-        window = int(
-            getattr(self.context_compressor, "context_window", 0) or 0
-        )
+        window = int(getattr(self.context_compressor, "context_window", 0) or 0)
         if window <= 0:
             return None
         # Durable workflows are intrinsically agentic.  Start rolling
@@ -363,11 +347,7 @@ class ProposalPort:
         except Exception:  # noqa: BLE001
             token_estimate = max(0, int(state.token_estimate))
         trigger = self._durable_compaction_trigger()
-        if (
-            self.context_compressor is None
-            or trigger is None
-            or token_estimate < trigger
-        ):
+        if self.context_compressor is None or trigger is None or token_estimate < trigger:
             return messages, None, None, None, token_estimate
 
         try:
@@ -378,13 +358,10 @@ class ProposalPort:
                 pending_tasks=list(state.active_todo_ids),
                 resolved_provider=resolved_provider,
                 resolved_model=(
-                    self.model_name
-                    or str(state.model_snapshot.get("model") or "")
-                    or None
+                    self.model_name or str(state.model_snapshot.get("model") or "") or None
                 ),
                 compaction_cycle_id=(
-                    f"{state.request_id}:{state.turn_id}:workflow:"
-                    f"{state.iteration + 1}"
+                    f"{state.request_id}:{state.turn_id}:workflow:{state.iteration + 1}"
                 ),
             )
         except Exception as exc:  # noqa: BLE001
@@ -410,8 +387,7 @@ class ProposalPort:
             return messages, None, None, None, token_estimate
 
         compacted = [
-            copy.deepcopy(dict(message))
-            for message in getattr(result, "messages", messages)
+            copy.deepcopy(dict(message)) for message in getattr(result, "messages", messages)
         ]
         try:
             from deskpet.agent.tokens import count_messages_tokens
@@ -425,9 +401,7 @@ class ProposalPort:
         summary = str(getattr(result, "summary_preview", "") or "") or None
         compaction_ref = (
             "workflow-compaction:sha256:"
-            + hashlib.sha256(
-                canonical_json(compacted).encode("ascii")
-            ).hexdigest()
+            + hashlib.sha256(canonical_json(compacted).encode("ascii")).hexdigest()
         )
         logger.info(
             "durable_workflow_context_compacted request_id=%s iteration=%d "
@@ -535,9 +509,7 @@ class ProposalPort:
                         self.prepared_tool_set.deferred,
                     )
                 except RuntimeError as exc:
-                    raise RuntimeError(
-                        "tool_activation_call_binding_mismatch"
-                    ) from exc
+                    raise RuntimeError("tool_activation_call_binding_mismatch") from exc
                 if (
                     bound_capability_id != capability_id
                     or str(args.get("schema_hash") or "") != schema_hash
@@ -568,8 +540,7 @@ class ProposalPort:
                     (
                         item
                         for item in prepared.deferred
-                        if item.capability_id == capability_id
-                        and item.schema_hash == schema_hash
+                        if item.capability_id == capability_id and item.schema_hash == schema_hash
                     ),
                     None,
                 )
@@ -579,9 +550,7 @@ class ProposalPort:
                     PreparedToolCapability(ref=ref, canonical_schema=dict(schema))
                 )
 
-        self.tool_registry.validate_prepared_tool_set(
-            prepared, eligibility=self.eligibility
-        )
+        self.tool_registry.validate_prepared_tool_set(prepared, eligibility=self.eligibility)
         if self.runtime_tool_state is not None:
             self.runtime_tool_state.prepared_tool_set = prepared
         scopes = self.capability_scope_store
@@ -606,8 +575,7 @@ class ProposalPort:
         if self.context_os_v1:
             prepared_tool_set = prepared_tool_set or self.prepared_tool_set
             schemas = [
-                copy.deepcopy(dict(schema))
-                for schema in prepared_tool_set.logical_schemas()
+                copy.deepcopy(dict(schema)) for schema in prepared_tool_set.logical_schemas()
             ]
             forbidden = {
                 _schema_tool_name(schema)
@@ -621,18 +589,14 @@ class ProposalPort:
             actual = canonical_hash(schemas)
             expected = str(prepared_tool_set.schema_fingerprint)
             if actual != expected:
-                raise ValueError(
-                    f"prepared_schema_fingerprint_mismatch:{expected}:{actual}"
-                )
+                raise ValueError(f"prepared_schema_fingerprint_mismatch:{expected}:{actual}")
             if self.allowed_tools is not None:
                 effective_allowed = set(self.allowed_tools)
                 effective_allowed.update(
-                    capability.ref.name
-                    for capability in prepared_tool_set.activated
+                    capability.ref.name for capability in prepared_tool_set.activated
                 )
                 schemas = [
-                    schema for schema in schemas
-                    if _schema_tool_name(schema) in effective_allowed
+                    schema for schema in schemas if _schema_tool_name(schema) in effective_allowed
                 ]
             return schemas
         return [
@@ -640,10 +604,7 @@ class ProposalPort:
             for schema in self.tool_registry.schemas()
             if isinstance(schema, Mapping)
             and _schema_tool_name(schema) not in FORBIDDEN_DURABLE_TOOLS
-            and (
-                self.allowed_tools is None
-                or _schema_tool_name(schema) in self.allowed_tools
-            )
+            and (self.allowed_tools is None or _schema_tool_name(schema) in self.allowed_tools)
         ]
 
     async def propose(self, state: ProposalStateV1) -> ProposalOutcomeV1:
@@ -677,10 +638,8 @@ class ProposalPort:
                 if _schema_tool_name(schema) not in declined_dynamic_tools
             ]
         discovery_saturated = (
-            _consecutive_discovery_searches(state)
-            >= _MAX_CONSECUTIVE_DISCOVERY_SEARCHES
-            or _consecutive_discovery_turns(state.messages)
-            >= _MAX_CONSECUTIVE_DISCOVERY_SEARCHES
+            _consecutive_discovery_searches(state) >= _MAX_CONSECUTIVE_DISCOVERY_SEARCHES
+            or _consecutive_discovery_turns(state.messages) >= _MAX_CONSECUTIVE_DISCOVERY_SEARCHES
         )
         if discovery_saturated:
             # The latest successful search result remains in the conversation,
@@ -691,12 +650,9 @@ class ProposalPort:
             tool_schemas = [
                 schema
                 for schema in tool_schemas
-                if _schema_tool_name(schema)
-                not in _REPEATABLE_DISCOVERY_SEARCH_TOOL_NAMES
+                if _schema_tool_name(schema) not in _REPEATABLE_DISCOVERY_SEARCH_TOOL_NAMES
             ]
-        effective_allowed = (
-            set(self.allowed_tools) if self.allowed_tools is not None else None
-        )
+        effective_allowed = set(self.allowed_tools) if self.allowed_tools is not None else None
         dynamically_activated = set()
         if effective_allowed is not None and effective_prepared is not None:
             dynamically_activated.update(
@@ -704,10 +660,7 @@ class ProposalPort:
             )
             effective_allowed.update(dynamically_activated)
         deferred_by_name = (
-            {
-                str(ref.name): ref
-                for ref in getattr(effective_prepared, "deferred", ())
-            }
+            {str(ref.name): ref for ref in getattr(effective_prepared, "deferred", ())}
             if effective_prepared is not None
             else {}
         )
@@ -722,30 +675,17 @@ class ProposalPort:
             ),
             request_id=state.request_id,
         ):
-            proposal_messages = _compact_repeatable_search_payloads(
-                context_messages
-            )
+            proposal_messages = _compact_repeatable_search_payloads(context_messages)
             response = await coordinate_provider_call(
                 coordinator=self.provider_invocation_coordinator,
                 acquire_fence=self.dispatch_fence_acquirer,
-                run_id=str(
-                    getattr(self.execution_context, "run_id", "")
-                    or state.request_id
-                ),
+                run_id=str(getattr(self.execution_context, "run_id", "") or state.request_id),
                 session_id=self.session_id,
                 root_run_id=(
-                    str(
-                        getattr(self.execution_context, "root_run_id", "")
-                        or ""
-                    ).strip()
-                    or None
+                    str(getattr(self.execution_context, "root_run_id", "") or "").strip() or None
                 ),
                 parent_run_id=(
-                    str(
-                        getattr(self.execution_context, "parent_run_id", "")
-                        or ""
-                    ).strip()
-                    or None
+                    str(getattr(self.execution_context, "parent_run_id", "") or "").strip() or None
                 ),
                 profile_key=self.profile_key,
                 provider=self.llm_registry,
@@ -775,8 +715,7 @@ class ProposalPort:
         raw_proposals: list[dict[str, JsonValue]] = []
         prepared_calls: list[PreparedToolCall] = []
         truncated_without_tool_call = (
-            str(response.stop_reason or "") == "length"
-            and not response.tool_calls
+            str(response.stop_reason or "") == "length" and not response.tool_calls
         )
         proposal_error: ProposalErrorV1 | None = (
             ProposalErrorV1(
@@ -834,17 +773,12 @@ class ProposalPort:
                     message_ref=f"proposal:{stable_call_id}:malformed_args",
                     retryable=True,
                 )
-            elif (
-                effective_allowed is not None
-                and str(tool_call.name) not in effective_allowed
-            ):
+            elif effective_allowed is not None and str(tool_call.name) not in effective_allowed:
                 deferred_ref = deferred_by_name.get(str(tool_call.name))
                 if deferred_ref is not None:
                     proposal_error = proposal_error or ProposalErrorV1(
                         code="tool_requires_activation",
-                        message_ref=(
-                            f"proposal:{stable_call_id}:activation_required"
-                        ),
+                        message_ref=(f"proposal:{stable_call_id}:activation_required"),
                         retryable=True,
                         details={
                             "tool_name": str(tool_call.name),
@@ -880,12 +814,12 @@ class ProposalPort:
             else:
                 execution_context = self.execution_context
                 if execution_context is not None and hasattr(
-                    execution_context, '__dataclass_fields__'
+                    execution_context, "__dataclass_fields__"
                 ):
                     execution_context = replace(
                         execution_context,
                         call_id=stable_call_id,
-                        effect_id='',
+                        effect_id="",
                         capability_hash=(
                             str(effective_prepared.schema_fingerprint)
                             if effective_prepared is not None
@@ -894,9 +828,9 @@ class ProposalPort:
                     )
                 prepare_call = self.tool_registry.prepare_call
                 execution_kwargs = (
-                    {'execution_context': execution_context}
+                    {"execution_context": execution_context}
                     if execution_context is not None
-                    and 'execution_context' in inspect.signature(prepare_call).parameters
+                    and "execution_context" in inspect.signature(prepare_call).parameters
                     else {}
                 )
                 try:
@@ -932,27 +866,19 @@ class ProposalPort:
                 else:
                     try:
                         if self.output_contract is not None:
-                            self.output_contract.validate_prepared_call(
-                                prepared_call
-                            )
+                            self.output_contract.validate_prepared_call(prepared_call)
                     except ValueError as exc:
                         reason = str(exc)
                         raw["prepare_error"] = reason
                         proposal_error = proposal_error or ProposalErrorV1(
                             code="tool_output_contract_violation",
-                            message_ref=(
-                                f"proposal:{stable_call_id}:output_contract"
-                            ),
+                            message_ref=(f"proposal:{stable_call_id}:output_contract"),
                             retryable=True,
                             details={
                                 "tool_name": str(tool_call.name),
                                 "reason": reason,
-                                "output_refs": list(
-                                    self.output_contract.output_refs
-                                ),
-                                "scratch_refs": list(
-                                    self.output_contract.scratch_refs
-                                ),
+                                "output_refs": list(self.output_contract.output_refs),
+                                "scratch_refs": list(self.output_contract.scratch_refs),
                                 "instruction": (
                                     "Use only a declared output_ref or "
                                     "scratch_ref. Do not create helper files "
@@ -986,9 +912,7 @@ class ProposalPort:
             # continuation context.  Persist only the host's structured
             # recovery instruction below so the next provider turn converges
             # on a bounded tool call instead of extending the same code dump.
-            assistant_content=(
-                "" if truncated_without_tool_call else response.content
-            ),
+            assistant_content=("" if truncated_without_tool_call else response.content),
             reasoning_summary_ref=reasoning_ref,
             raw_tool_proposals=raw_proposals,
             prepared_calls=prepared_calls,
@@ -1110,9 +1034,7 @@ class ToolDispatchPort:
             return context
         capability_hash = context.capability_hash
         if self.runtime_tool_state is not None:
-            capability_hash = str(
-                self.runtime_tool_state.prepared_tool_set.schema_fingerprint
-            )
+            capability_hash = str(self.runtime_tool_state.prepared_tool_set.schema_fingerprint)
         return replace(
             context,
             call_id=prepared.stable_call_id,
@@ -1140,12 +1062,8 @@ class ToolDispatchPort:
                     "effect_id": effect_id,
                     "tool_name": prepared.tool_name,
                     "args_hash": prepared.args_hash,
-                    "capability_hash": str(
-                        getattr(execution_context, "capability_hash", "") or ""
-                    ),
-                    "scope_hash": str(
-                        getattr(execution_context, "scope_hash", "") or ""
-                    ),
+                    "capability_hash": str(getattr(execution_context, "capability_hash", "") or ""),
+                    "scope_hash": str(getattr(execution_context, "scope_hash", "") or ""),
                     "permission_policy_version": prepared.permission_policy_version,
                     "session_id": session_id,
                     "expires_at": time.time() + 300.0,
@@ -1161,14 +1079,10 @@ class ToolDispatchPort:
         authorization: object | None,
     ) -> object:
         execution_context = self.execution_context
-        if execution_context is not None and hasattr(
-            execution_context, '__dataclass_fields__'
-        ):
+        if execution_context is not None and hasattr(execution_context, "__dataclass_fields__"):
             capability_hash = execution_context.capability_hash
             if self.runtime_tool_state is not None:
-                capability_hash = str(
-                    self.runtime_tool_state.prepared_tool_set.schema_fingerprint
-                )
+                capability_hash = str(self.runtime_tool_state.prepared_tool_set.schema_fingerprint)
             execution_context = replace(
                 execution_context,
                 call_id=prepared.stable_call_id,
@@ -1179,9 +1093,9 @@ class ToolDispatchPort:
         execute_outcome = getattr(self.tool_registry, "execute_tool_outcome", None)
         if callable(execute_prepared):
             execution_kwargs = (
-                {'execution_context': execution_context}
+                {"execution_context": execution_context}
                 if execution_context is not None
-                and 'execution_context' in inspect.signature(execute_prepared).parameters
+                and "execution_context" in inspect.signature(execute_prepared).parameters
                 else {}
             )
             outcome = await dispatch_with_run_fence(
@@ -1233,9 +1147,7 @@ class ToolDispatchPort:
             return outcome
         if callable(execute_outcome):
             execution_kwargs = (
-                    {"execution_context": execution_context}
-                    if execution_context is not None
-                else {}
+                {"execution_context": execution_context} if execution_context is not None else {}
             )
             return await dispatch_with_run_fence(
                 acquire_fence=self.dispatch_fence_acquirer,
@@ -1264,9 +1176,7 @@ class ToolDispatchPort:
         authorization: object | None,
         context: EffectExecutionContext,
     ) -> tuple[str, NormalizedToolOutcome]:
-        resolve_prepared_spec = getattr(
-            self.tool_registry, "resolve_prepared_spec", None
-        )
+        resolve_prepared_spec = getattr(self.tool_registry, "resolve_prepared_spec", None)
         spec = (
             resolve_prepared_spec(prepared)
             if callable(resolve_prepared_spec)
@@ -1291,9 +1201,7 @@ class ToolDispatchPort:
         effect_id = begun.effect.effect_id
         if begun.action in {EffectAction.REUSE, EffectAction.FAILED}:
             if begun.effect.outcome is None:
-                raise EffectStateConflict(
-                    f"terminal effect {effect_id} has no durable outcome"
-                )
+                raise EffectStateConflict(f"terminal effect {effect_id} has no durable outcome")
             return effect_id, begun.effect.outcome
         if begun.action is not EffectAction.EXECUTE:
             raise EffectStateConflict(
@@ -1315,13 +1223,9 @@ class ToolDispatchPort:
                 authorization=authorization,
             )
             outcome = _normalize_registry_outcome(raw)
-            metadata_reader = getattr(
-                self.tool_registry, "take_prepared_execution_metadata", None
-            )
+            metadata_reader = getattr(self.tool_registry, "take_prepared_execution_metadata", None)
             execution_metadata = (
-                dict(metadata_reader(effect_id))
-                if callable(metadata_reader)
-                else {}
+                dict(metadata_reader(effect_id)) if callable(metadata_reader) else {}
             )
             if outcome.state is ToolOutcomeState.SUCCESS:
                 for target in prepared.prepared_targets:
@@ -1354,10 +1258,7 @@ class ToolDispatchPort:
                 context.fence,
                 effect_id,
                 outcome,
-                receipt_ref=(
-                    str(execution_metadata.get("receipt_ref") or "").strip()
-                    or None
-                ),
+                receipt_ref=(str(execution_metadata.get("receipt_ref") or "").strip() or None),
                 artifact_refs=tuple(
                     str(item)
                     for item in execution_metadata.get("artifact_refs", ())
@@ -1425,9 +1326,7 @@ class ToolDispatchPort:
                 validate_json_value(reused)
                 results[prepared.stable_call_id] = reused
                 continue
-            context = await _resolve_effect_context(
-                self.effect_context, "execute_prepared"
-            )
+            context = await _resolve_effect_context(self.effect_context, "execute_prepared")
             if context is None:
                 context = await _production_effect_context(
                     session_id=self.session_id,

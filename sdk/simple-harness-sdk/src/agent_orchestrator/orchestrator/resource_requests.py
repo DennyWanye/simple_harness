@@ -13,6 +13,7 @@
 
 Harness 不判"该不该给"，不按理由的文字分类，不自动批准。
 """
+
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
@@ -57,7 +58,9 @@ class ResourceRequest:
         if type(amount) is not int or amount < 1:
             raise ContractError("resource_request.amount must be a positive integer")
         if not isinstance(reason, str) or not reason.strip() or len(reason) > REASON_LIMIT:
-            raise ContractError(f"resource_request.reason must be non-blank text of at most {REASON_LIMIT} chars")
+            raise ContractError(
+                f"resource_request.reason must be non-blank text of at most {REASON_LIMIT} chars"
+            )
         return cls(dimension=str(dimension), amount=amount, reason=reason)
 
 
@@ -74,13 +77,21 @@ def quota_check(request: ResourceRequest, *, base_cap: int, room: int | None) ->
     要放得下"基础额度 + 申请数"。"""
 
     fits = request.amount <= base_cap and (room is None or base_cap + request.amount <= room)
-    return {"base_cap": int(base_cap), "ceiling": int(base_cap), "available": room, "fits": bool(fits)}
+    return {
+        "base_cap": int(base_cap),
+        "ceiling": int(base_cap),
+        "available": room,
+        "fits": bool(fits),
+    }
 
 
 def request_for_attempt(events: Iterable[Any], attempt_id: str) -> Any | None:
     """这次尝试的申请事件（每次尝试至多一条）。"""
 
-    return next((event for event in events if event.type == REQUESTED and event.attempt_id == attempt_id), None)
+    return next(
+        (event for event in events if event.type == REQUESTED and event.attempt_id == attempt_id),
+        None,
+    )
 
 
 def planner_detail(events: Iterable[Any], attempt_id: str | None) -> dict[str, Any]:
@@ -91,11 +102,18 @@ def planner_detail(events: Iterable[Any], attempt_id: str | None) -> dict[str, A
     event = request_for_attempt(events, attempt_id)
     if event is None:
         return {}
-    return {"resource_request": {"request": dict(event.payload["request"]), "check": dict(event.payload["check"]),
-                                 "if_retried": IF_RETRIED}}
+    return {
+        "resource_request": {
+            "request": dict(event.payload["request"]),
+            "check": dict(event.payload["check"]),
+            "if_retried": IF_RETRIED,
+        }
+    }
 
 
-def verified_grant_amount(events: Iterable[Any], *, task_id: str, grant: Mapping[str, Any], base_cap: int) -> int:
+def verified_grant_amount(
+    events: Iterable[Any], *, task_id: str, grant: Mapping[str, Any], base_cap: int
+) -> int:
     """派发核对：冻结的发放必须对得上库里同一步、同维度、同数量、核过、不超上限的申请。"""
 
     failed = grant.get("failed_attempt_id")
@@ -105,9 +123,16 @@ def verified_grant_amount(events: Iterable[Any], *, task_id: str, grant: Mapping
     request = dict(event.payload.get("request") or {})
     check = dict(event.payload.get("check") or {})
     amount = grant.get("amount")
-    if (request.get("dimension") != grant.get("dimension") or type(amount) is not int
-            or request.get("amount") != amount or check.get("fits") is not True or amount > base_cap):
-        raise GrantUnverified("TASKGRAPH_EXECUTION_RESOURCE_GRANT_UNVERIFIED: request and grant differ")
+    if (
+        request.get("dimension") != grant.get("dimension")
+        or type(amount) is not int
+        or request.get("amount") != amount
+        or check.get("fits") is not True
+        or amount > base_cap
+    ):
+        raise GrantUnverified(
+            "TASKGRAPH_EXECUTION_RESOURCE_GRANT_UNVERIFIED: request and grant differ"
+        )
     return amount
 
 

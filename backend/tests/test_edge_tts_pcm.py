@@ -8,6 +8,7 @@ chunks. Tests run against real ffmpeg (scripts/setup_ffmpeg.ps1
 落到 backend/bin/ffmpeg.exe; 走 resolve_ffmpeg_path()) —— 若环境里
 完全没有 ffmpeg 则整文件 skip。
 """
+
 from __future__ import annotations
 
 import asyncio

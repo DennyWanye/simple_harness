@@ -40,8 +40,11 @@ GRADES = {"ACCEPT": "PASS", "INCONCLUSIVE": "UNKNOWN", "REWORK": "FAIL", "REJECT
 def open_repairs(package: dict[str, Any]) -> list[dict[str, Any]]:
     """修复请求（"目标未细化"不算：那是普通规划）。"""
 
-    return [entry for entry in package.get("repair_requests") or ()
-            if ((entry.get("request") or {}).get("context") or {}).get("event_type") != "GoalUnrefined"]
+    return [
+        entry
+        for entry in package.get("repair_requests") or ()
+        if ((entry.get("request") or {}).get("context") or {}).get("event_type") != "GoalUnrefined"
+    ]
 
 
 class ReviewScript(LayeredScriptedProvider):
@@ -50,10 +53,15 @@ class ReviewScript(LayeredScriptedProvider):
     ``hold`` 里的那一类审查第一次调用停在半路，直到 ``go`` 置位；``worker_failures`` 是执行者前几次
     调用要抛出的异常。"""
 
-    def __init__(self, *, verdicts: dict[str, Iterable[str]] | None = None,
-                 failures: dict[str, list[BaseException]] | None = None, hold: str | None = None,
-                 repair: Callable[[Any], Any] | None = None,
-                 worker_failures: list[BaseException] | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        verdicts: dict[str, Iterable[str]] | None = None,
+        failures: dict[str, list[BaseException]] | None = None,
+        hold: str | None = None,
+        repair: Callable[[Any], Any] | None = None,
+        worker_failures: list[BaseException] | None = None,
+    ) -> None:
         self.worker_failures = list(worker_failures or ())
         self.verdicts = {purpose: list(items) for purpose, items in (verdicts or {}).items()}
         self.failures = {purpose: list(items) for purpose, items in (failures or {}).items()}
@@ -83,8 +91,9 @@ class ReviewScript(LayeredScriptedProvider):
                 # 审阅员只查不答，直到撞上这一回合的模型调用上限（react_max_turns_exceeded）：
                 # 它自己的事，不是被打断（库存题第一局最终审阅的真实失败方式）
                 return ("knowledge_list", {})
-            return review_reply(data, verdict=verdict, grade=GRADES[verdict],
-                                reason=f"脚本化审阅：{verdict}。")
+            return review_reply(
+                data, verdict=verdict, grade=GRADES[verdict], reason=f"脚本化审阅：{verdict}。"
+            )
 
         def planner(request: Any) -> Any:
             package = package_of(request)
@@ -137,7 +146,9 @@ class Reviewed:
         return [e for e in self.store.iter_events(self.mission_id) if not types or e.type in types]
 
     def pending_approvals(self) -> list[dict[str, Any]]:
-        return [a for a in self.world.control.approvals(self.mission_id) if a.get("state") == "PENDING"]
+        return [
+            a for a in self.world.control.approvals(self.mission_id) if a.get("state") == "PENDING"
+        ]
 
     async def run_until(self, done: Callable[[], bool], *, timeout: float = 30.0) -> None:
         """主循环（连同部署每轮职责）一直跑到 ``done()`` 成立；有调用被扣住时用它。"""
@@ -166,21 +177,41 @@ class Reviewed:
 
 
 @asynccontextmanager
-async def reviewed_mission(tmp_path: Path, provider: ReviewScript, *, criteria: tuple[str, ...] = CRITERIA,
-                           goal: str = GOAL, key: str = "review-1", reopen: str | None = None,
-                           sources: tuple[tuple[str, str], ...] = (), **config: Any) -> AsyncIterator[Reviewed]:
+async def reviewed_mission(
+    tmp_path: Path,
+    provider: ReviewScript,
+    *,
+    criteria: tuple[str, ...] = CRITERIA,
+    goal: str = GOAL,
+    key: str = "review-1",
+    reopen: str | None = None,
+    sources: tuple[tuple[str, str], ...] = (),
+    **config: Any,
+) -> AsyncIterator[Reviewed]:
     """``sources`` 是用户建任务时附上的资料（路径、正文），走产品"建任务并附资料"那一条写入口。"""
     try:
         async with product_world(tmp_path / "root", provider, **config) as world:
             if reopen is not None:
                 yield Reviewed(world, reopen)
                 return
-            request = {"goal": goal, "success_criteria": list(criteria), "idempotency_key": key,
-                       "budget": {"max_tokens": 8_000_000, "max_attempts": 12}}
+            request = {
+                "goal": goal,
+                "success_criteria": list(criteria),
+                "idempotency_key": key,
+                "budget": {"max_tokens": 8_000_000, "max_attempts": 12},
+            }
             if sources:
-                created = world.deployment.create_mission_with_sources(world.loop, world.control, {
-                    "mission": request,
-                    "sources": [{"path": path, "content": content, "kind": "note"} for path, content in sources]})
+                created = world.deployment.create_mission_with_sources(
+                    world.loop,
+                    world.control,
+                    {
+                        "mission": request,
+                        "sources": [
+                            {"path": path, "content": content, "kind": "note"}
+                            for path, content in sources
+                        ],
+                    },
+                )
             else:
                 created = world.create(request)
             yield Reviewed(world, created["mission_id"])
@@ -194,4 +225,12 @@ def quick_waits(monkeypatch: Any) -> None:
     monkeypatch.setattr(event_handler, "WAIT_BACKOFF_MAX", 0.05)
 
 
-__all__ = ("CRITERIA", "GOAL", "ReviewScript", "Reviewed", "open_repairs", "quick_waits", "reviewed_mission")
+__all__ = (
+    "CRITERIA",
+    "GOAL",
+    "ReviewScript",
+    "Reviewed",
+    "open_repairs",
+    "quick_waits",
+    "reviewed_mission",
+)

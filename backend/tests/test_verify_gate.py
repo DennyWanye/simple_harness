@@ -10,6 +10,7 @@ PRD §3 D6 + 二轮 N1/N2/N3。覆盖 TDD T9-1 ~ T9-16 的可单测部分（不�
   - T9-12b：默认 verify/claim_patterns.yaml 100% re2 编译通过
   - T9-14b：ephemeral subagent 输入 ledger 仅含 sig-valid receipts
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime, timezone
@@ -32,13 +33,17 @@ from deskpet.tools.receipt import make_receipt
 
 # ─── T9-1/T9-2 shadow vs strict ─────────────────────────────
 
+
 def test_t9_1_shadow_passes_with_matching_receipt():
     pat = ClaimPattern(id="zh_gen", regex=r"已生成 (?P<title>\S+)", artifact_kind="file")
     gate = VerifyGate(extractor=RegexExtractor([pat]), mode="shadow")
-    r = make_receipt(tool_name="ppt_create", args={},
-                     started_at=datetime(2026, 1, 1, tzinfo=UTC),
-                     ended_at=datetime(2026, 1, 1, tzinfo=UTC),
-                     ok=True)
+    r = make_receipt(
+        tool_name="ppt_create",
+        args={},
+        started_at=datetime(2026, 1, 1, tzinfo=UTC),
+        ended_at=datetime(2026, 1, 1, tzinfo=UTC),
+        ok=True,
+    )
     o = gate.check(assistant_text="已生成 x.pptx", ledger=[r])
     assert o.passed is True
     assert o.claims_extracted == 1
@@ -46,6 +51,7 @@ def test_t9_1_shadow_passes_with_matching_receipt():
 
 def test_t9_2_shadow_warns_but_passes_when_unmatched(caplog):
     import logging
+
     caplog.set_level(logging.WARNING)
     pat = ClaimPattern(id="zh_gen", regex=r"已生成 (?P<title>\S+)", artifact_kind="file")
     gate = VerifyGate(extractor=RegexExtractor([pat]), mode="shadow")
@@ -64,6 +70,7 @@ def test_t9_3_strict_blocks_when_unmatched():
 
 
 # ─── T9-12 / T9-12b yaml loading ────────────────────────────
+
 
 def test_t9_12_safe_load_rejects_dangerous_yaml(tmp_path):
     """T9-15: yaml.safe_load 拒 !!python/object/apply 类危险节点。"""
@@ -142,13 +149,15 @@ patterns:
 
 # ─── T9-14b ephemeral 信任面 ───────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_t9_14b_ephemeral_called_only_when_set():
     """ephemeral_subagent=None 时 consult 返回 False（无救援，直接 fail）。"""
-    gate = VerifyGate(extractor=RegexExtractor([]), mode="strict",
-                      ephemeral_subagent=None)
+    gate = VerifyGate(extractor=RegexExtractor([]), mode="strict", ephemeral_subagent=None)
     verdict = await gate.consult_ephemeral_subagent(
-        ledger=[], failed_claims=[], assistant_text="x",
+        ledger=[],
+        failed_claims=[],
+        assistant_text="x",
     )
     assert verdict is False
 
@@ -161,19 +170,25 @@ async def test_t9_14b_ephemeral_pass_path():
         called_with.append(ctx)
         return True
 
-    gate = VerifyGate(extractor=RegexExtractor([]), mode="strict",
-                      ephemeral_subagent=_mock_eph)
-    r = make_receipt(tool_name="t", args={},
-                     started_at=datetime(2026, 1, 1, tzinfo=UTC),
-                     ended_at=datetime(2026, 1, 1, tzinfo=UTC),
-                     ok=True)
+    gate = VerifyGate(extractor=RegexExtractor([]), mode="strict", ephemeral_subagent=_mock_eph)
+    r = make_receipt(
+        tool_name="t",
+        args={},
+        started_at=datetime(2026, 1, 1, tzinfo=UTC),
+        ended_at=datetime(2026, 1, 1, tzinfo=UTC),
+        ok=True,
+    )
     verdict = await gate.consult_ephemeral_subagent(
         ledger=[r],
-        failed_claims=[UnmatchedClaim(
-            pattern_id="x", raw_text="已生成",
-            expected_kind="file", expected_path_or_title=None,
-            reason="no_receipt",
-        )],
+        failed_claims=[
+            UnmatchedClaim(
+                pattern_id="x",
+                raw_text="已生成",
+                expected_kind="file",
+                expected_path_or_title=None,
+                reason="no_receipt",
+            )
+        ],
         assistant_text="已生成 x.pptx",
     )
     assert verdict is True
@@ -184,21 +199,24 @@ async def test_t9_14b_ephemeral_pass_path():
 @pytest.mark.asyncio
 async def test_t9_14b_ephemeral_exception_falls_back_to_fail(caplog):
     import logging
+
     caplog.set_level(logging.WARNING)
 
     async def _bad_eph(ctx: dict) -> bool:
         raise RuntimeError("ephemeral subagent crashed")
 
-    gate = VerifyGate(extractor=RegexExtractor([]), mode="strict",
-                      ephemeral_subagent=_bad_eph)
+    gate = VerifyGate(extractor=RegexExtractor([]), mode="strict", ephemeral_subagent=_bad_eph)
     verdict = await gate.consult_ephemeral_subagent(
-        ledger=[], failed_claims=[], assistant_text="x",
+        ledger=[],
+        failed_claims=[],
+        assistant_text="x",
     )
     assert verdict is False
     assert any("ephemeral_subagent raised" in r.message for r in caplog.records)
 
 
 # ─── CascadeExtractor (T9-11 LLM fallback hook) ─────────────
+
 
 def test_cascade_skips_fallback_when_regex_hits():
     pat = ClaimPattern(id="zh", regex=r"已生成", artifact_kind="file")
@@ -251,6 +269,7 @@ def test_cascade_no_fallback_when_ledger_empty():
 
 
 # ─── invalid mode rejection (sanity) ────────────────────────
+
 
 def test_invalid_mode_rejected():
     with pytest.raises(ValueError, match="invalid mode"):

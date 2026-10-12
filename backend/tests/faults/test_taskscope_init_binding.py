@@ -48,7 +48,13 @@ LANE = "taskscope-init-binding"
 SUBJECT = "actor-1"
 SCOPE = "scope-1"
 TITLE = "Memory SDK / Upgrade"
-FIXTURE = Path(__file__).parents[3] / "testcase" / "human-memory-program" / "fixtures" / "fault-matrix.json"
+FIXTURE = (
+    Path(__file__).parents[3]
+    / "testcase"
+    / "human-memory-program"
+    / "fixtures"
+    / "fault-matrix.json"
+)
 SPEC = FIXTURE.parents[1] / "s5b-effect-closure-memory-verification-spec.json"
 
 INIT_TABLES = (
@@ -102,7 +108,10 @@ async def _fresh_db(tmp_path: Path) -> Path:
 
 
 def _assert_one_primary(db_path: Path) -> None:
-    assert _count(db_path, "human_memory_primary_conversations", f"subject='{SUBJECT}' AND writable=1") == 1
+    assert (
+        _count(db_path, "human_memory_primary_conversations", f"subject='{SUBJECT}' AND writable=1")
+        == 1
+    )
     assert _count(db_path, "human_memory_init_receipts", f"subject='{SUBJECT}'") == 1
 
 
@@ -110,28 +119,43 @@ def _binding_store(db_path: Path, tmp_path: Path, manual) -> WorkspaceBindingAut
     configured = tmp_path / "configured"
     configured.mkdir(exist_ok=True)
     return WorkspaceBindingAuthorityStore(
-        db_path, configured_workspace_root=configured, clock_millis=lambda: 1500,
+        db_path,
+        configured_workspace_root=configured,
+        clock_millis=lambda: 1500,
         manual_authorization_authority=manual,
     )
 
 
 async def _granted(store, manual, root: Path, *, index: int, revision: int):  # type: ignore[no-untyped-def]
     root.mkdir(exist_ok=True)
-    proposal = wb._proposal(root, proposal_id=f"proposal-{index}", revision=revision, key=f"append-{index}")
+    proposal = wb._proposal(
+        root, proposal_id=f"proposal-{index}", revision=revision, key=f"append-{index}"
+    )
     _, _, grant = await wb._manual_grant(store, proposal, nonce=f"nonce-{index}", authority=manual)
     return proposal, grant
 
 
 def _provision_request() -> TaskScopeProvisionRequest:
     return TaskScopeProvisionRequest(
-        task_scope_id=SCOPE, title=TITLE, idempotency_key="provision-1", mode="managed",
+        task_scope_id=SCOPE,
+        title=TITLE,
+        idempotency_key="provision-1",
+        mode="managed",
         provenance="host_managed_policy",
     )
 
 
 def _checkpoint_meta(head: str = "abc") -> dict:
-    return {"repo": "/repo", "branch": "main", "head": head, "dirty": False, "files": ["a.py"], "tests": ["pytest"],
-            "artifacts": [], "next_action": "continue"}
+    return {
+        "repo": "/repo",
+        "branch": "main",
+        "head": head,
+        "dirty": False,
+        "files": ["a.py"],
+        "tests": ["pytest"],
+        "artifacts": [],
+        "next_action": "continue",
+    }
 
 
 # --- S4 seams -----------------------------------------------------------------------
@@ -143,7 +167,9 @@ async def _primary_conversation_create(tmp_path: Path, run_id: str) -> tuple[str
     db_path = await _fresh_db(tmp_path)
     before = state_hash(db_path, INIT_TABLES)
     with pytest.raises(RuntimeError, match="injected:initialize_subject.before_commit"):
-        await HumanMemoryProgramStore(db_path, fault_hook=OneShot("initialize_subject.before_commit")).initialize_subject(SUBJECT)
+        await HumanMemoryProgramStore(
+            db_path, fault_hook=OneShot("initialize_subject.before_commit")
+        ).initialize_subject(SUBJECT)
     assert state_hash(db_path, INIT_TABLES) == before
     assert _count(db_path, "human_memory_primary_conversations") == 0
     assert _count(db_path, "human_memory_init_receipts") == 0
@@ -151,10 +177,14 @@ async def _primary_conversation_create(tmp_path: Path, run_id: str) -> tuple[str
     converged = state_hash(db_path, INIT_TABLES)
     assert converged != before
     _assert_one_primary(db_path)
-    replays = await asyncio.gather(*(HumanMemoryProgramStore(db_path).initialize_subject(SUBJECT) for _ in range(24)))
+    replays = await asyncio.gather(
+        *(HumanMemoryProgramStore(db_path).initialize_subject(SUBJECT) for _ in range(24))
+    )
     assert set(replays) == {receipt}
     with pytest.raises(RuntimeError, match="injected:initialize_subject.after_commit"):
-        await HumanMemoryProgramStore(db_path, fault_hook=OneShot("initialize_subject.after_commit")).initialize_subject(SUBJECT)
+        await HumanMemoryProgramStore(
+            db_path, fault_hook=OneShot("initialize_subject.after_commit")
+        ).initialize_subject(SUBJECT)
     assert await HumanMemoryProgramStore(db_path).initialize_subject(SUBJECT) == receipt
     assert state_hash(db_path, INIT_TABLES) == converged
     _assert_one_primary(db_path)
@@ -165,12 +195,16 @@ async def _task_home_create(tmp_path: Path, run_id: str) -> tuple[str, str, dict
     """task home 物化（目录已建、committed receipt 未落库）时 kill → 无 receipt、无 binding；重放 → 同一目录、
     恰一条 committed provision + 一条 receipt、managed root 下恰一个目录；再重放 → 同 receipt、hash 不变。"""
     db_path = await _fresh_db(tmp_path)
-    await CanonicalTaskScopeStore(db_path).create_task_scope(task_scope_id=SCOPE, subject=SUBJECT, title=TITLE)
+    await CanonicalTaskScopeStore(db_path).create_task_scope(
+        task_scope_id=SCOPE, subject=SUBJECT, title=TITLE
+    )
     managed_root = tmp_path / "managed"
     provisioner = TaskScopeProvisioner(db_path, managed_workspace_root=managed_root)
     before = state_hash(db_path, INIT_TABLES)
     with pytest.raises(RuntimeError, match="injected:after_filesystem_create"):
-        await provisioner.provision(_provision_request(), fault_inject=OneShot("after_filesystem_create"))
+        await provisioner.provision(
+            _provision_request(), fault_inject=OneShot("after_filesystem_create")
+        )
     assert _count(db_path, "task_scope_provision_receipts") == 0
     assert _count(db_path, "task_scope_provisions", "state='committed'") == 0
     assert _count(db_path, "task_workspace_binding_revisions") == 0
@@ -182,7 +216,10 @@ async def _task_home_create(tmp_path: Path, run_id: str) -> tuple[str, str, dict
     assert Path(receipt.task_home).parent == managed_root.resolve()
     assert (Path(receipt.task_home) / ".simple-harness-provision.json").is_file()
     assert len([p for p in managed_root.iterdir() if not p.name.startswith(".")]) == 1
-    assert _count(db_path, "task_scope_provisions") == 1 and _count(db_path, "task_scope_provisions", "state='committed'") == 1
+    assert (
+        _count(db_path, "task_scope_provisions") == 1
+        and _count(db_path, "task_scope_provisions", "state='committed'") == 1
+    )
     assert _count(db_path, "task_scope_provision_receipts") == 1
     assert _count(db_path, "task_workspace_binding_revisions") == 0
     _assert_one_primary(db_path)
@@ -196,30 +233,44 @@ async def _taskscope_row(tmp_path: Path, run_id: str) -> tuple[str, str, dict]:
     await HumanMemoryProgramStore(db_path).initialize_subject(SUBJECT)
     before = state_hash(db_path, INIT_TABLES)
     with pytest.raises(RuntimeError, match="injected:create_task_scope.before_commit"):
-        await CanonicalTaskScopeStore(db_path, fault_hook=OneShot("create_task_scope.before_commit")).create_task_scope(
-            task_scope_id=SCOPE, subject=SUBJECT, title=TITLE
-        )
+        await CanonicalTaskScopeStore(
+            db_path, fault_hook=OneShot("create_task_scope.before_commit")
+        ).create_task_scope(task_scope_id=SCOPE, subject=SUBJECT, title=TITLE)
     assert state_hash(db_path, INIT_TABLES) == before
     for table in ("task_scopes", "task_scope_heads", "task_scope_canonical_revisions"):
         assert _count(db_path, table) == 0
     _assert_one_primary(db_path)
-    receipt = await CanonicalTaskScopeStore(db_path).create_task_scope(task_scope_id=SCOPE, subject=SUBJECT, title=TITLE)
+    receipt = await CanonicalTaskScopeStore(db_path).create_task_scope(
+        task_scope_id=SCOPE, subject=SUBJECT, title=TITLE
+    )
     assert receipt.revision == 1
     converged = state_hash(db_path, INIT_TABLES)
     assert converged != before
-    assert await CanonicalTaskScopeStore(db_path).create_task_scope(task_scope_id=SCOPE, subject=SUBJECT, title=TITLE) == receipt
+    assert (
+        await CanonicalTaskScopeStore(db_path).create_task_scope(
+            task_scope_id=SCOPE, subject=SUBJECT, title=TITLE
+        )
+        == receipt
+    )
     with pytest.raises(TaskScopeConflict, match="task_scope_identity_conflict"):
-        await CanonicalTaskScopeStore(db_path).create_task_scope(task_scope_id=SCOPE, subject=SUBJECT, title="other")
+        await CanonicalTaskScopeStore(db_path).create_task_scope(
+            task_scope_id=SCOPE, subject=SUBJECT, title="other"
+        )
     assert state_hash(db_path, INIT_TABLES) == converged
     # ack 丢失形态（第二个 scope 首次提交后 kill）：提交已持久，重放同 receipt、hash 不变。
     with pytest.raises(RuntimeError, match="injected:create_task_scope.after_commit"):
-        await CanonicalTaskScopeStore(db_path, fault_hook=OneShot("create_task_scope.after_commit")).create_task_scope(
-            task_scope_id="scope-2", subject=SUBJECT, title=TITLE
-        )
+        await CanonicalTaskScopeStore(
+            db_path, fault_hook=OneShot("create_task_scope.after_commit")
+        ).create_task_scope(task_scope_id="scope-2", subject=SUBJECT, title=TITLE)
     durable = state_hash(db_path, INIT_TABLES)
-    second = await CanonicalTaskScopeStore(db_path).create_task_scope(task_scope_id="scope-2", subject=SUBJECT, title=TITLE)
+    second = await CanonicalTaskScopeStore(db_path).create_task_scope(
+        task_scope_id="scope-2", subject=SUBJECT, title=TITLE
+    )
     assert second.revision == 1 and state_hash(db_path, INIT_TABLES) == durable
-    assert _count(db_path, "task_scopes") == 2 and _count(db_path, "task_scope_canonical_revisions") == 2
+    assert (
+        _count(db_path, "task_scopes") == 2
+        and _count(db_path, "task_scope_canonical_revisions") == 2
+    )
     _assert_one_primary(db_path)
     return before, durable, {"revision": 1}
 
@@ -228,7 +279,9 @@ async def _binding_revision(tmp_path: Path, run_id: str) -> tuple[str, str, dict
     """binding revision 追加在 revision 行插入前 / 提交前 kill → 无 head（exact revision 不变）；重放 → 恰 revision 1；
     同 proposal 再重放 → 同 receipt；base_revision=1 追加 → revision 2 且 parent 精确；过期 base_revision → 稳定拒绝。"""
     db_path = await _fresh_db(tmp_path)
-    await CanonicalTaskScopeStore(db_path).create_task_scope(task_scope_id=SCOPE, subject=SUBJECT, title=TITLE)
+    await CanonicalTaskScopeStore(db_path).create_task_scope(
+        task_scope_id=SCOPE, subject=SUBJECT, title=TITLE
+    )
     manual = wb._DurableManualAuthority()
     store = _binding_store(db_path, tmp_path, manual)
     proposal, grant = await _granted(store, manual, tmp_path / "root-a", index=1, revision=0)
@@ -253,10 +306,15 @@ async def _binding_revision(tmp_path: Path, run_id: str) -> tuple[str, str, dict
         await store.append_binding(stale, stale_grant)
     after = state_hash(db_path, INIT_TABLES)
     assert (await store.current_receipt(SCOPE)) == receipt2
-    assert await store.exact_receipt(
-        task_scope_id=SCOPE, binding_set_revision=1, binding_set_receipt_id=receipt1.receipt_id,
-        binding_set_receipt_hash=receipt1.receipt_hash,
-    ) == receipt1
+    assert (
+        await store.exact_receipt(
+            task_scope_id=SCOPE,
+            binding_set_revision=1,
+            binding_set_receipt_id=receipt1.receipt_id,
+            binding_set_receipt_hash=receipt1.receipt_hash,
+        )
+        == receipt1
+    )
     assert _count(db_path, "task_workspace_binding_revisions") == 2
     assert state_hash(db_path, INIT_TABLES) == after
     return before, after, {"revision": 2}
@@ -269,25 +327,40 @@ async def _checkpoint(tmp_path: Path, run_id: str) -> tuple[str, str, dict]:
     await plain.create_task_scope(task_scope_id=SCOPE, subject=SUBJECT, title=TITLE)
     before = state_hash(db_path, INIT_TABLES)
     with pytest.raises(RuntimeError, match="injected:checkpoint.before_commit"):
-        await CanonicalTaskScopeStore(db_path, fault_hook=OneShot("checkpoint.before_commit")).create_checkpoint(
+        await CanonicalTaskScopeStore(
+            db_path, fault_hook=OneShot("checkpoint.before_commit")
+        ).create_checkpoint(
             checkpoint_id="checkpoint-1", task_scope_id=SCOPE, metadata=_checkpoint_meta()
         )
     assert state_hash(db_path, INIT_TABLES) == before
     assert _count(db_path, "task_scope_checkpoints") == 0
-    receipt = await plain.create_checkpoint(checkpoint_id="checkpoint-1", task_scope_id=SCOPE, metadata=_checkpoint_meta())
+    receipt = await plain.create_checkpoint(
+        checkpoint_id="checkpoint-1", task_scope_id=SCOPE, metadata=_checkpoint_meta()
+    )
     converged = state_hash(db_path, INIT_TABLES)
     assert converged != before
-    assert await plain.create_checkpoint(checkpoint_id="checkpoint-1", task_scope_id=SCOPE, metadata=_checkpoint_meta()) == receipt
+    assert (
+        await plain.create_checkpoint(
+            checkpoint_id="checkpoint-1", task_scope_id=SCOPE, metadata=_checkpoint_meta()
+        )
+        == receipt
+    )
     with pytest.raises(TaskScopeConflict, match="checkpoint_id_hash_conflict"):
-        await plain.create_checkpoint(checkpoint_id="checkpoint-1", task_scope_id=SCOPE, metadata=_checkpoint_meta("def"))
+        await plain.create_checkpoint(
+            checkpoint_id="checkpoint-1", task_scope_id=SCOPE, metadata=_checkpoint_meta("def")
+        )
     assert state_hash(db_path, INIT_TABLES) == converged
     # ack 丢失形态（checkpoint-2 首次提交后 kill）：提交已持久，重放同 receipt、hash 不变。
     with pytest.raises(RuntimeError, match="injected:checkpoint.after_commit"):
-        await CanonicalTaskScopeStore(db_path, fault_hook=OneShot("checkpoint.after_commit")).create_checkpoint(
+        await CanonicalTaskScopeStore(
+            db_path, fault_hook=OneShot("checkpoint.after_commit")
+        ).create_checkpoint(
             checkpoint_id="checkpoint-2", task_scope_id=SCOPE, metadata=_checkpoint_meta()
         )
     durable = state_hash(db_path, INIT_TABLES)
-    second = await plain.create_checkpoint(checkpoint_id="checkpoint-2", task_scope_id=SCOPE, metadata=_checkpoint_meta())
+    second = await plain.create_checkpoint(
+        checkpoint_id="checkpoint-2", task_scope_id=SCOPE, metadata=_checkpoint_meta()
+    )
     assert second.revision == receipt.revision and state_hash(db_path, INIT_TABLES) == durable
     assert _count(db_path, "task_scope_checkpoints") == 2
     return before, durable, {"checkpoint_revision": receipt.revision}
@@ -312,19 +385,25 @@ async def _commit_before_ack(tmp_path: Path, run_id: str) -> tuple[str, str, dic
 
     await lost_ack(
         "initialize_subject.after_commit",
-        lambda: HumanMemoryProgramStore(db_path, fault_hook=OneShot("initialize_subject.after_commit")).initialize_subject(SUBJECT),
+        lambda: HumanMemoryProgramStore(
+            db_path, fault_hook=OneShot("initialize_subject.after_commit")
+        ).initialize_subject(SUBJECT),
         lambda: HumanMemoryProgramStore(db_path).initialize_subject(SUBJECT),
     )
     scope_kwargs = {"task_scope_id": SCOPE, "subject": SUBJECT, "title": TITLE}
     await lost_ack(
         "create_task_scope.after_commit",
-        lambda: CanonicalTaskScopeStore(db_path, fault_hook=OneShot("create_task_scope.after_commit")).create_task_scope(**scope_kwargs),
+        lambda: CanonicalTaskScopeStore(
+            db_path, fault_hook=OneShot("create_task_scope.after_commit")
+        ).create_task_scope(**scope_kwargs),
         lambda: CanonicalTaskScopeStore(db_path).create_task_scope(**scope_kwargs),
     )
     provisioner = TaskScopeProvisioner(db_path, managed_workspace_root=tmp_path / "managed")
     await lost_ack(
         "after_committed_receipt",
-        lambda: provisioner.provision(_provision_request(), fault_inject=OneShot("after_committed_receipt")),
+        lambda: provisioner.provision(
+            _provision_request(), fault_inject=OneShot("after_committed_receipt")
+        ),
         lambda: provisioner.provision(_provision_request()),
     )
     manual = wb._DurableManualAuthority()
@@ -339,13 +418,21 @@ async def _commit_before_ack(tmp_path: Path, run_id: str) -> tuple[str, str, dic
     ckpt = {"checkpoint_id": "checkpoint-1", "task_scope_id": SCOPE, "metadata": _checkpoint_meta()}
     await lost_ack(
         "checkpoint.after_commit",
-        lambda: CanonicalTaskScopeStore(db_path, fault_hook=OneShot("checkpoint.after_commit")).create_checkpoint(**ckpt),
+        lambda: CanonicalTaskScopeStore(
+            db_path, fault_hook=OneShot("checkpoint.after_commit")
+        ).create_checkpoint(**ckpt),
         lambda: CanonicalTaskScopeStore(db_path).create_checkpoint(**ckpt),
     )
     after = state_hash(db_path, INIT_TABLES)
     assert after != before
     _assert_one_primary(db_path)
-    for table in ("task_scopes", "task_scope_provisions", "task_scope_provision_receipts", "task_workspace_binding_revisions", "task_scope_checkpoints"):
+    for table in (
+        "task_scopes",
+        "task_scope_provisions",
+        "task_scope_provision_receipts",
+        "task_workspace_binding_revisions",
+        "task_scope_checkpoints",
+    ):
         assert _count(db_path, table) == 1, table
     assert (await store.current_receipt(SCOPE)).binding_set_revision == 1
     return before, after, {"steps": steps}
@@ -365,12 +452,18 @@ class _FailedIngress:
 class _FailedStack:
     def read_run_terminal_evidence(self, run_id: str):  # type: ignore[no-untyped-def]
         return SimpleNamespace(
-            run_id=run_id, state="failed", event_id=f"sdk-terminal:{run_id}", event_hash="9" * 64,
-            occurred_at=101.0, error_code="driver_failed",
+            run_id=run_id,
+            state="failed",
+            event_id=f"sdk-terminal:{run_id}",
+            event_hash="9" * 64,
+            occurred_at=101.0,
+            error_code="driver_failed",
         )
 
 
-async def _durable_failed(queue_dir: Path, sdk_run_id: str, memo: RunFaultMemo, expected_code: str) -> tuple[Path, str]:
+async def _durable_failed(
+    queue_dir: Path, sdk_run_id: str, memo: RunFaultMemo, expected_code: str
+) -> tuple[Path, str]:
     """整 Run 故障的 durable FAILED：SDK 只暴露 driver_failed，Host memo 的稳定码进 run_terminal
     public_payload.error_code；record_sdk_terminal 重放（同 idempotency_key）→ 同 receipt；memo 在终态持久后释放。"""
     queue_db, primary_id, clock = await fq._ready(queue_dir)
@@ -378,23 +471,41 @@ async def _durable_failed(queue_dir: Path, sdk_run_id: str, memo: RunFaultMemo, 
     await fq._enqueue(store, primary_id, 1)
     admission = await fq._claim_and_bind(store, sdk_run_id=sdk_run_id)
     await store.record_sdk_started(
-        host_run_id=admission.host_run_id, sdk_run_id=sdk_run_id, owner_id=admission.owner_id,
-        generation=admission.generation, sdk_event_id=f"sdk-start:{sdk_run_id}", idempotency_key=f"sdk-start:{sdk_run_id}",
+        host_run_id=admission.host_run_id,
+        sdk_run_id=sdk_run_id,
+        owner_id=admission.owner_id,
+        generation=admission.generation,
+        sdk_event_id=f"sdk-start:{sdk_run_id}",
+        idempotency_key=f"sdk-start:{sdk_run_id}",
     )
     assert memo.read(sdk_run_id) == expected_code
-    observed = await SqliteSdkTerminalObserver(str(queue_db), _FailedIngress(), _FailedStack(), run_fault_memo=memo).observe(  # type: ignore[arg-type]
-        host_run_id=admission.host_run_id, sdk_run_id=sdk_run_id, subject=fq.SUBJECT,
-        owner_id=admission.owner_id, generation=admission.generation,
+    observed = await SqliteSdkTerminalObserver(
+        str(queue_db), _FailedIngress(), _FailedStack(), run_fault_memo=memo
+    ).observe(  # type: ignore[arg-type]
+        host_run_id=admission.host_run_id,
+        sdk_run_id=sdk_run_id,
+        subject=fq.SUBJECT,
+        owner_id=admission.owner_id,
+        generation=admission.generation,
     )
     assert observed is not None and observed.terminal_state is RunState.FAILED
     kwargs = {
-        "host_run_id": admission.host_run_id, "sdk_run_id": sdk_run_id, "owner_id": admission.owner_id,
-        "generation": admission.generation, "terminal_state": observed.terminal_state,
-        "sdk_event_id": observed.sdk_event_id, "sdk_event_hash": observed.sdk_event_hash, "idempotency_key": "terminal-fault",
+        "host_run_id": admission.host_run_id,
+        "sdk_run_id": sdk_run_id,
+        "owner_id": admission.owner_id,
+        "generation": admission.generation,
+        "terminal_state": observed.terminal_state,
+        "sdk_event_id": observed.sdk_event_id,
+        "sdk_event_hash": observed.sdk_event_hash,
+        "idempotency_key": "terminal-fault",
     }
     terminal = await store.record_sdk_terminal(**kwargs)
     assert terminal.terminal_state is RunState.FAILED
-    assert _rows(queue_db, "SELECT current_state FROM foreground_run_heads WHERE host_run_id=?", admission.host_run_id) == [("FAILED",)]
+    assert _rows(
+        queue_db,
+        "SELECT current_state FROM foreground_run_heads WHERE host_run_id=?",
+        admission.host_run_id,
+    ) == [("FAILED",)]
     [(payload_json,)] = _rows(
         queue_db,
         "SELECT e.payload_json FROM task_scope_execution_ingest_receipts r JOIN task_scope_events e ON e.event_id=r.event_id "
@@ -409,7 +520,9 @@ async def _durable_failed(queue_dir: Path, sdk_run_id: str, memo: RunFaultMemo, 
     return queue_db, durable
 
 
-async def _run_fault(tmp_path: Path, *, scope_roots: int, route: dict, expected_code: str) -> tuple[str, str, dict]:
+async def _run_fault(
+    tmp_path: Path, *, scope_roots: int, route: dict, expected_code: str
+) -> tuple[str, str, dict]:
     """Task 1/6 场景复用：standalone / 多 root 下强制调用 write_file → 整 Run 故障（稳定码），零写入、
     snapshot tools 两轮均不含写工具、binding revision 精确不变、init 表 hash 守恒；durable FAILED + 重放幂等。"""
     env = await h.build_env(tmp_path / "gate")
@@ -426,18 +539,31 @@ async def _run_fault(tmp_path: Path, *, scope_roots: int, route: dict, expected_
     canary = [_root_hash(r) for r in roots]
     init_before = state_hash(env.db_path, INIT_TABLES)
     queue_dir = tmp_path / "queue"
-    provider = h.ScriptedProvider([
-        h.tool_call("context_route", {**route, **({"task_scope_id": scope} if route["route"] != "direct_standalone" else {})}, raw_id="raw-route"),
-        h.tool_call("write_file", {"path": "forced.txt", "content": "must not land"}, raw_id="raw-write"),
-        h.answer("never reached"),
-    ])
+    provider = h.ScriptedProvider(
+        [
+            h.tool_call(
+                "context_route",
+                {
+                    **route,
+                    **({"task_scope_id": scope} if route["route"] != "direct_standalone" else {}),
+                },
+                raw_id="raw-route",
+            ),
+            h.tool_call(
+                "write_file", {"path": "forced.txt", "content": "must not land"}, raw_id="raw-write"
+            ),
+            h.answer("never reached"),
+        ]
+    )
     out = await h.run_capture(env, provider)
     exc = out["exception"]
     assert exc is not None and getattr(exc, "code", None) == expected_code
     exposed = h.provider_tool_names(provider)
     assert len(exposed) == 2 and all("write_file" not in names for names in exposed)
     assert env.effects.calls == ["context_route"] and env.effects.write_file_calls == []
-    assert [_root_hash(r) for r in roots] == canary and not any((r / "forced.txt").exists() for r in roots)
+    assert [_root_hash(r) for r in roots] == canary and not any(
+        (r / "forced.txt").exists() for r in roots
+    )
     assert h.tool_messages(env, "write_file") == []
     # exact binding revision / no half TaskScope：init 表 hash 守恒。
     assert (await env.binding_store.current_receipt(scope)) == head
@@ -446,24 +572,38 @@ async def _run_fault(tmp_path: Path, *, scope_roots: int, route: dict, expected_
     assert state_hash(env.db_path, INIT_TABLES) == init_before
     before = _combined(init_before, "no-terminal")
     after = _combined(init_before, durable)
-    return before, after, {"code": expected_code, "binding_revision": head.binding_set_revision, "queue_db": str(queue_db)}
+    return (
+        before,
+        after,
+        {
+            "code": expected_code,
+            "binding_revision": head.binding_set_revision,
+            "queue_db": str(queue_db),
+        },
+    )
 
 
 async def _run_fault_route_authority_missing(tmp_path: Path, run_id: str) -> tuple[str, str, dict]:
     return await _run_fault(
-        tmp_path, scope_roots=1, route={"route": "direct_standalone"},
+        tmp_path,
+        scope_roots=1,
+        route={"route": "direct_standalone"},
         expected_code="sdk_task_execution_route_authority_missing",
     )
 
 
 async def _run_fault_root_authority_ambiguous(tmp_path: Path, run_id: str) -> tuple[str, str, dict]:
     return await _run_fault(
-        tmp_path, scope_roots=2, route={"route": "resume_existing"},
+        tmp_path,
+        scope_roots=2,
+        route={"route": "resume_existing"},
         expected_code="sdk_task_execution_root_authority_ambiguous",
     )
 
 
-async def _run_fault_catalog_policy_unavailable(tmp_path: Path, run_id: str) -> tuple[str, str, dict]:
+async def _run_fault_catalog_policy_unavailable(
+    tmp_path: Path, run_id: str
+) -> tuple[str, str, dict]:
     """hidden 工具（deferred，未 activate）的 execution_policy → RuntimeToolCatalogError
     ``catalog_execution_policy_unavailable`` 进 Run 故障备忘（首码优先，重复读取稳定）；durable FAILED 携带稳定码。"""
     from deskpet.sdk_adapters.tool_authority import SdkRunToolAuthorityRegistry
@@ -487,7 +627,10 @@ async def _run_fault_catalog_policy_unavailable(tmp_path: Path, run_id: str) -> 
     exposure.execution_policy(RunId(sdk_run_id), "tool_search")
     queue_db, durable = await _durable_failed(tmp_path / "queue", sdk_run_id, memo, code)
     # no half TaskScope：队列库里 admission scope 恰一条、binding 零行。
-    assert _count(queue_db, "task_scopes") == 1 and _count(queue_db, "task_workspace_binding_revisions") == 0
+    assert (
+        _count(queue_db, "task_scopes") == 1
+        and _count(queue_db, "task_workspace_binding_revisions") == 0
+    )
     return _combined("no-terminal"), _combined(durable), {"code": code}
 
 
@@ -509,21 +652,36 @@ async def _frozen_root_split(tmp_path: Path, run_id: str) -> tuple[str, str, dic
     head = await env.binding_store.current_receipt(scope)
     assert head.binding_set_revision == 2 and len(head.root_identity_hashes) == 2
     assert envelope.binding_set_revision == 1
-    assert _code(await env.gate.verify(_context(envelope), "write_file")) == "workspace_binding_receipt_superseded"
-    assert _code(await env.gate.verify(_context(envelope), "write_file")) == EFFECT_GATE_STICKY_REASON
+    assert (
+        _code(await env.gate.verify(_context(envelope), "write_file"))
+        == "workspace_binding_receipt_superseded"
+    )
+    assert (
+        _code(await env.gate.verify(_context(envelope), "write_file")) == EFFECT_GATE_STICKY_REASON
+    )
     h.freeze_run(env, task_scope_id=scope, workspace_root=root2)
-    assert _code(await env.gate.verify(_context(envelope), "write_file")) == EFFECT_GATE_STICKY_REASON
-    rejections = _rows(env.db_path, "SELECT sdk_run_id,route_receipt_id,reason_code FROM effect_gate_rejections")
-    assert rejections == [(h.RUN.value, envelope.route_receipt_id, "workspace_binding_receipt_superseded")]
+    assert (
+        _code(await env.gate.verify(_context(envelope), "write_file")) == EFFECT_GATE_STICKY_REASON
+    )
+    rejections = _rows(
+        env.db_path, "SELECT sdk_run_id,route_receipt_id,reason_code FROM effect_gate_rejections"
+    )
+    assert rejections == [
+        (h.RUN.value, envelope.route_receipt_id, "workspace_binding_receipt_superseded")
+    ]
     assert _root_hash(root) == canary and not (root2 / "a.txt").exists()
     exact = await env.binding_store.exact_receipt(
-        task_scope_id=scope, binding_set_revision=1, binding_set_receipt_id=head.parent_receipt_id,
+        task_scope_id=scope,
+        binding_set_revision=1,
+        binding_set_receipt_id=head.parent_receipt_id,
         binding_set_receipt_hash=head.parent_receipt_hash,
     )
     assert exact.binding_set_revision == 1 and exact.receipt_id == envelope.binding_set_receipt_id
     converged = state_hash(env.db_path, GATE_TABLES)
     assert converged != before
-    assert _code(await env.gate.verify(_context(envelope), "write_file")) == EFFECT_GATE_STICKY_REASON
+    assert (
+        _code(await env.gate.verify(_context(envelope), "write_file")) == EFFECT_GATE_STICKY_REASON
+    )
     assert state_hash(env.db_path, GATE_TABLES) == converged
     assert _count(env.db_path, "task_workspace_binding_revisions", f"task_scope_id='{scope}'") == 2
     return before, converged, {"binding_revision": 2, "rejections": 1}
@@ -555,8 +713,14 @@ async def _auto_destructive(tmp_path: Path, run_id: str) -> tuple[str, str, dict
     )
     authorities = SdkRunToolAuthorityRegistry()
     authority = authorities.prepare_run(
-        run_id=run_id, session_id="session-a", request_id=f"request-{run_id}", root_run_id=run_id,
-        task_scope_id=SCOPE, workspace_root=None, catalog=ta._catalog_for(ta._write_specs(), inventory), inventory=inventory,
+        run_id=run_id,
+        session_id="session-a",
+        request_id=f"request-{run_id}",
+        root_run_id=run_id,
+        task_scope_id=SCOPE,
+        workspace_root=None,
+        catalog=ta._catalog_for(ta._write_specs(), inventory),
+        inventory=inventory,
     )
     assert authority.specs["purge_dir"].effect_class == "destructive"
     assert confirm_only_tool_names(authority) == ("purge_dir", "run_shell")
@@ -564,10 +728,14 @@ async def _auto_destructive(tmp_path: Path, run_id: str) -> tuple[str, str, dict
     database = ProductStateDatabase(tmp_path / "product.db")
     database.initialize()
     adapter = ProductAuthorizationAdapter(
-        AuthorizationSagaRepository(database, owner_id="fault-lane"), policy=policy,
+        AuthorizationSagaRepository(database, owner_id="fault-lane"),
+        policy=policy,
         identity_factory=policy.identity_factory,
-        grant_authority=DurableTaskGrantAuthority(database, policy_generation_provider=policy.current_policy_generation),
-        grant_factory=policy.grant_factory, clock=lambda: 100.0,
+        grant_authority=DurableTaskGrantAuthority(
+            database, policy_generation_provider=policy.current_policy_generation
+        ),
+        grant_factory=policy.grant_factory,
+        clock=lambda: 100.0,
     )
     saga_db = tmp_path / "product.db"
     before = state_hash(saga_db, ("authorization_sagas",))
@@ -586,9 +754,16 @@ async def _auto_destructive(tmp_path: Path, run_id: str) -> tuple[str, str, dict
     assert replay.receipt_ref == allowed_destructive.receipt_ref
     assert state_hash(saga_db, ("authorization_sagas",)) == converged
     # reversible_local 的 write_file 同样走 auto 策略（policy:auto）。
-    allowed = await policy.decide(ta._effect_for(run_id, "write_file", effect_id="effect-write"), request=None)
+    allowed = await policy.decide(
+        ta._effect_for(run_id, "write_file", effect_id="effect-write"), request=None
+    )
     assert allowed.decision is AuthorizationDecision.ALLOW
-    assert policy.facts_for(ta._effect_for(run_id, "write_file", effect_id="effect-write")).grant.source == "policy:auto"
+    assert (
+        policy.facts_for(
+            ta._effect_for(run_id, "write_file", effect_id="effect-write")
+        ).grant.source
+        == "policy:auto"
+    )
     assert state_hash(saga_db, ("authorization_sagas",)) == converged
     return before, converged, {"decision": "ALLOW", "grant_source": "policy:auto"}
 
@@ -616,7 +791,10 @@ def test_fixture_pin_and_lane_seams_match_spec() -> None:
     fixture = json.loads(FIXTURE.read_text(encoding="utf-8"))
     [lane] = [item for item in fixture["lanes"] if item["id"] == LANE]
     assert set(lane["seams"]) <= set(LANE_SEAMS[LANE]) == set(SEAM_RUNNERS)
-    assert lane["terminal_oracle"] == "one writable primary conversation; no half TaskScope; exact binding revision"
+    assert (
+        lane["terminal_oracle"]
+        == "one writable primary conversation; no half TaskScope; exact binding revision"
+    )
 
 
 def _walk(value, key: str):  # type: ignore[no-untyped-def]

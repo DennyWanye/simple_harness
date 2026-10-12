@@ -98,7 +98,8 @@ class _JournaledRegistry:
 
 @pytest.mark.asyncio
 async def test_code_execute_prepared_reuses_journaled_committed_result(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     user_data_dir = tmp_path / "user-data"
     db_path = user_data_dir / "data" / "workflow.db"
@@ -126,9 +127,7 @@ async def test_code_execute_prepared_reuses_journaled_committed_result(
         permission_policy_version="permission-v1",
         effect_type="staged_file",
     )
-    registry = _JournaledRegistry(
-        EffectPolicy("deskpet:write-file", "v1", EffectKind.STAGED_FILE)
-    )
+    registry = _JournaledRegistry(EffectPolicy("deskpet:write-file", "v1", EffectKind.STAGED_FILE))
     port = ToolDispatchPort(
         registry,
         session_id="session-1",
@@ -401,9 +400,7 @@ async def test_ppt_effects_reuse_committed_json_safe_results(
     json.dumps(first, allow_nan=False)
     async with aiosqlite.connect(db_path) as db:
         rows = await (
-            await db.execute(
-                "SELECT status,COUNT(*) FROM workflow_effects GROUP BY status"
-            )
+            await db.execute("SELECT status,COUNT(*) FROM workflow_effects GROUP BY status")
         ).fetchall()
     assert rows == [("committed", 3)]
 

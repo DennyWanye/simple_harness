@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 """Prepare one immutable Context OS request from fragments and one tool draft."""
+
 from __future__ import annotations
 
 import hashlib
@@ -96,27 +97,25 @@ class ContextRequestPlanner:
             direct_selectors=tuple(_schema_names(bundle.tool_schemas))
         )
         explicit_tool_names = _explicit_tool_name_candidates(user_message)
-        conditional_direct_names = tuple(dict.fromkeys(
-            (*conditional_direct_names, *explicit_tool_names)
-        ))
+        conditional_direct_names = tuple(
+            dict.fromkeys((*conditional_direct_names, *explicit_tool_names))
+        )
         # Exactly one catalog/policy read for the initial request.
         draft = self._resolver.resolve_draft(
             intent,
             eligibility=eligibility,
             conditional_direct_names=conditional_direct_names,
         )
-        conditional_canonical_names = tuple(
-            cap.ref.name for cap in draft.conditional_direct
-        )
+        conditional_canonical_names = tuple(cap.ref.name for cap in draft.conditional_direct)
         page_in_candidates = _page_in_candidates(bundle)
-        prefix, decisions, stable_boundary, stable_fingerprint = _render_prefix(
-            bundle, base_system
+        prefix, decisions, stable_boundary, stable_fingerprint = _render_prefix(bundle, base_system)
+        explicit_prepared = tuple(
+            dict.fromkeys(
+                canonical_name
+                for requested_name, canonical_name in draft.conditional_name_map
+                if requested_name in explicit_tool_names
+            )
         )
-        explicit_prepared = tuple(dict.fromkeys(
-            canonical_name
-            for requested_name, canonical_name in draft.conditional_name_map
-            if requested_name in explicit_tool_names
-        ))
         base_set = draft.finalize(required_conditional_names=explicit_prepared)
         base_payload = prepare_openai_tool_payload(base_set)
         selected_set = base_set
@@ -124,9 +123,7 @@ class ContextRequestPlanner:
         required_names: set[str] = set(explicit_prepared)
         if page_in_candidates:
             required_names.add("context_page_in")
-            if not any(
-                cap.ref.name == "context_page_in" for cap in draft.conditional_direct
-            ):
+            if not any(cap.ref.name == "context_page_in" for cap in draft.conditional_direct):
                 raise ContextBudgetExceeded("context_page_in_not_prepared")
             selected_set = draft.finalize(
                 required_conditional_names=("context_page_in",),
@@ -178,11 +175,10 @@ class ContextRequestPlanner:
             required_names.update(history_plan.required_direct_tools)
             if history_plan.compaction_jobs:
                 required_names.add("session_history_page_in")
-            required = tuple(
-                name for name in conditional_canonical_names if name in required_names
-            )
+            required = tuple(name for name in conditional_canonical_names if name in required_names)
             if required and set(required) != {
-                cap.ref.name for cap in selected_set.direct
+                cap.ref.name
+                for cap in selected_set.direct
                 if cap.ref.name in conditional_canonical_names
             }:
                 selected_set = draft.finalize(
@@ -246,13 +242,19 @@ class ContextRequestPlanner:
             )
             selected_messages = [
                 *prefix_messages,
-                *(_wire_history_messages(history_plan.messages) if history_plan is not None else history),
+                *(
+                    _wire_history_messages(history_plan.messages)
+                    if history_plan is not None
+                    else history
+                ),
                 *post_history_messages,
                 current_message,
             ]
             selected_budget = estimate_request_budget(
-                selected_messages, selected_payload,
-                context_window=context_window, effective_pct=effective_pct,
+                selected_messages,
+                selected_payload,
+                context_window=context_window,
+                effective_pct=effective_pct,
                 generation_reserve=generation_reserve,
                 attachment_tokens=normalized_attachment_tokens,
             )
@@ -272,9 +274,7 @@ class ContextRequestPlanner:
             stable_prefix_boundary=stable_boundary,
             stable_prefix_fingerprint=stable_fingerprint,
             assembly_decisions=decisions,
-            coverage_report=(
-                history_plan.coverage_report if history_plan is not None else None
-            ),
+            coverage_report=(history_plan.coverage_report if history_plan is not None else None),
             coverage_compaction_jobs=(
                 history_plan.compaction_jobs if history_plan is not None else ()
             ),
@@ -285,6 +285,7 @@ class ContextRequestPlanner:
             page_in_store=self._page_in_store,
         )
         if history_plan is not None:
+
             async def _replan_for_budget(
                 *,
                 context_window: int,
@@ -302,9 +303,7 @@ class ContextRequestPlanner:
                     cap.ref.name for cap in selected_set.direct
                 }
                 if missing_tools:
-                    raise ContextBudgetExceeded(
-                        "session_history_page_in_not_prepared"
-                    )
+                    raise ContextBudgetExceeded("session_history_page_in_not_prepared")
                 refreshed_messages = [
                     *prefix_messages,
                     *_wire_history_messages(refreshed.messages),
@@ -323,9 +322,7 @@ class ContextRequestPlanner:
                     raise ContextBudgetExceeded("context_budget_exceeded_after_replan")
                 prepared.messages = refreshed_messages
                 prepared.coverage_report = refreshed.coverage_report
-                prepared.coverage_compaction_jobs = tuple(
-                    refreshed.compaction_jobs or ()
-                )
+                prepared.coverage_compaction_jobs = tuple(refreshed.compaction_jobs or ())
                 prepared.request_budget = refreshed_budget
                 return PlannedContextRequest(
                     prepared,
@@ -335,6 +332,7 @@ class ContextRequestPlanner:
 
             prepared.replan_for_budget = _replan_for_budget
         if history_plan is not None and history_plan.compaction_jobs:
+
             async def _replan_after_compaction() -> PlannedContextRequest:
                 refreshed = await _plan_history(selected_payload)
                 _validate_history_plan(refreshed, allow_compaction_jobs=False)
@@ -342,9 +340,7 @@ class ContextRequestPlanner:
                     cap.ref.name for cap in selected_set.direct
                 }
                 if missing_tools:
-                    raise ContextBudgetExceeded(
-                        "session_history_page_in_not_prepared"
-                    )
+                    raise ContextBudgetExceeded("session_history_page_in_not_prepared")
                 refreshed_messages = [
                     *prefix_messages,
                     *_wire_history_messages(refreshed.messages),
@@ -375,9 +371,7 @@ class ContextRequestPlanner:
         if active_snapshot is not None and self._snapshot_store is not None:
             summary = _tool_summary(selected_set, selected_payload)
             expected_row_revision = (
-                int(snapshot_start.handle.row_revision)
-                if snapshot_start is not None
-                else 0
+                int(snapshot_start.handle.row_revision) if snapshot_start is not None else 0
             )
             receipt = await self._snapshot_store.persist_projection_with_tool_context_cas(
                 active_snapshot,
@@ -444,11 +438,7 @@ def _fixed_message_parts(
     user_message: str,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
     if prebuilt_messages is None:
-        trailing = (
-            [{"role": "system", "content": late_system_nudge}]
-            if late_system_nudge
-            else []
-        )
+        trailing = [{"role": "system", "content": late_system_nudge}] if late_system_nudge else []
         return list(prefix), trailing, {"role": "user", "content": user_message}
 
     messages = [dict(message) for message in prebuilt_messages]
@@ -491,8 +481,7 @@ def _fixed_message_parts(
     legacy_only_prefix = [
         dict(message)
         for message in messages[:prefix_end]
-        if (str(message.get("role", "")), str(message.get("content", "")))
-        not in rendered_keys
+        if (str(message.get("role", "")), str(message.get("content", ""))) not in rendered_keys
     ]
     return [*rendered_prefix, *legacy_only_prefix], trailing, current
 
@@ -538,9 +527,7 @@ def _wire_history_messages(
                     protected=False,
                     trim_policy=("page_in" if message_id == 0 else "summarize"),
                     causal_group_id=causal_group_id,
-                    fragment_id=(
-                        f"session-history:{message_id}" if message_id else None
-                    ),
+                    fragment_id=(f"session-history:{message_id}" if message_id else None),
                     reason="gap-free SessionDB coverage",
                 ),
             )
@@ -554,10 +541,14 @@ def _explicit_tool_name_candidates(user_message: str) -> tuple[str, ...]:
     The resolver still applies eligibility, deny policy and session visibility;
     unmatched ordinary words are therefore harmless candidates, not grants.
     """
-    return tuple(dict.fromkeys(re.findall(
-        r"(?<![A-Za-z0-9_])([A-Za-z][A-Za-z0-9_]{2,127})(?![A-Za-z0-9_])",
-        user_message or "",
-    )))
+    return tuple(
+        dict.fromkeys(
+            re.findall(
+                r"(?<![A-Za-z0-9_])([A-Za-z][A-Za-z0-9_]{2,127})(?![A-Za-z0-9_])",
+                user_message or "",
+            )
+        )
+    )
 
 
 def _schema_names(schemas: list[dict[str, Any]]) -> list[str]:
@@ -602,25 +593,25 @@ def _render_prefix(
             )
             action = "trimmed"
             reason = "over_window_page_in_reference"
-        messages.append(tag_message(
-            {"role": fragment.role, "content": content},
-            ContextMessageMeta(
-                placement=fragment.placement,
-                lifetime=fragment.lifetime,
-                source=fragment.source,
-                protected=fragment.protected,
-                trim_policy=fragment.trim_policy,
-                fragment_id=fragment.fragment_id,
-                priority=fragment.priority,
-                reason=reason,
-            ),
-        ))
+        messages.append(
+            tag_message(
+                {"role": fragment.role, "content": content},
+                ContextMessageMeta(
+                    placement=fragment.placement,
+                    lifetime=fragment.lifetime,
+                    source=fragment.source,
+                    protected=fragment.protected,
+                    trim_policy=fragment.trim_policy,
+                    fragment_id=fragment.fragment_id,
+                    priority=fragment.priority,
+                    reason=reason,
+                ),
+            )
+        )
         decisions.append(ContextDecision(fragment.fragment_id, action, reason))
         if fragment.lifetime in {"platform", "stable"}:
             stable_boundary = len(messages) - 1
-    stable_messages = (
-        messages[: stable_boundary + 1] if stable_boundary is not None else []
-    )
+    stable_messages = messages[: stable_boundary + 1] if stable_boundary is not None else []
     return messages, decisions, stable_boundary, _fingerprint(stable_messages)
 
 
@@ -633,17 +624,24 @@ def _page_in_candidates(bundle: ContextBundle) -> list[tuple[Any, str, str, str]
         content = str(meta.get("page_in_content", fragment.content) or "")
         if not content:
             continue
-        candidates.append((
-            fragment,
-            str(meta.get("page_in_kind", "memory_l3")),
-            str(meta.get("page_in_source", fragment.source)),
-            content,
-        ))
+        candidates.append(
+            (
+                fragment,
+                str(meta.get("page_in_kind", "memory_l3")),
+                str(meta.get("page_in_source", fragment.source)),
+                content,
+            )
+        )
     return candidates
 
 
-def _bind_page_in_candidate(store: Any, candidate: tuple[Any, str, str, str], *,
-                            eligibility: ToolEligibilityContext, scope_id: str) -> PageInRef:
+def _bind_page_in_candidate(
+    store: Any,
+    candidate: tuple[Any, str, str, str],
+    *,
+    eligibility: ToolEligibilityContext,
+    scope_id: str,
+) -> PageInRef:
     fragment, kind, source, content = candidate
     authority = store.put(
         kind=kind,
@@ -674,8 +672,7 @@ def _tool_summary(tool_set: Any, payload: PreparedToolPayload) -> dict[str, Any]
         "direct_names": [cap.ref.name for cap in tool_set.direct],
         "activated_names": [cap.ref.name for cap in tool_set.activated],
         "schema_hashes": {
-            cap.ref.name: cap.ref.schema_hash
-            for cap in (*tool_set.direct, *tool_set.activated)
+            cap.ref.name: cap.ref.schema_hash for cap in (*tool_set.direct, *tool_set.activated)
         },
         "selection_reasons": [
             {

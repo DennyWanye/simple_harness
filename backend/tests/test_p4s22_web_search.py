@@ -1,4 +1,5 @@
 """Production web_search wiring is async and preserves its public JSON shape."""
+
 from __future__ import annotations
 
 import inspect
@@ -12,10 +13,15 @@ from deskpet.tools.code_tools.web_search_tool import web_search
 
 def _candidate(index: int = 1) -> RetrievalCandidate:
     return RetrievalCandidate(
-        stable_id=str(index), url=f"https://example.com/{index}",
-        canonical_url=f"https://example.com/{index}", title=f"Result {index}",
-        snippet="snippet", provider="duckduckgo", providers=("duckduckgo",),
-        provider_rank=index, searched_at="2026-07-14T00:00:00+00:00",
+        stable_id=str(index),
+        url=f"https://example.com/{index}",
+        canonical_url=f"https://example.com/{index}",
+        title=f"Result {index}",
+        snippet="snippet",
+        provider="duckduckgo",
+        providers=("duckduckgo",),
+        provider_rank=index,
+        searched_at="2026-07-14T00:00:00+00:00",
     )
 
 

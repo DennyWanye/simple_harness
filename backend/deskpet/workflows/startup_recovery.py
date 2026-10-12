@@ -1,4 +1,5 @@
 """Ordered workflow startup recovery for durable Session deletion fences."""
+
 from __future__ import annotations
 
 from collections.abc import Iterable
@@ -16,6 +17,7 @@ async def activate_and_recover_workflows(
 
     delete_reconcile = {"attempted": 0, "completed": 0, "failed": 0}
     if project_bindings is not None:
+
         async def cancel_deleted_session_runs(session_id: str) -> object:
             return await workflow_service.cancel_runs_for_session(
                 session_id,
@@ -25,14 +27,10 @@ async def activate_and_recover_workflows(
         delete_reconcile = await project_bindings.reconcile_deleted_session_runs(
             cancel_deleted_session_runs
         )
-    await workflow_service.activate_runtime(
-        required_runtime_identities=required_runtime_identities
-    )
+    await workflow_service.activate_runtime(required_runtime_identities=required_runtime_identities)
     startup_recoveries = await workflow_service.runner.recover_expired()
     recovered_decisions = await workflow_launcher.recover_open_decision_events()
-    recovered_deliveries = await workflow_launcher.recover_due_deliveries(
-        recover_claimed=True
-    )
+    recovered_deliveries = await workflow_launcher.recover_due_deliveries(recover_claimed=True)
     recovered_runs = await workflow_launcher.recover_pending()
     workflow_launcher.start_dispatcher()
     return {

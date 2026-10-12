@@ -218,9 +218,9 @@ async def test_repair_admission_derives_parent_args_scope_and_draft(
     assert launch.lineage.parent_version == "1.0.0"
     assert launch.lineage.parent_manifest_hash == MANIFEST_HASH
     assert launch.install_scope == "run"
-    assert Path(launch.initial_draft, "worker.py").read_text(
-        encoding="utf-8"
-    ) == (parent_path / "worker.py").read_text(encoding="utf-8")
+    assert Path(launch.initial_draft, "worker.py").read_text(encoding="utf-8") == (
+        parent_path / "worker.py"
+    ).read_text(encoding="utf-8")
 
 
 def test_repair_tool_schema_accepts_only_receipt_and_generation() -> None:

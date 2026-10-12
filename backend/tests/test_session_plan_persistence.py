@@ -14,6 +14,7 @@
 注：``SessionDB.initialize()`` 只建 *base* state schema，不含 memory_v2 的
 ``session_plans``——故这里不预建该表，专测 upsert 内部 ensure 自建。
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -36,6 +37,7 @@ async def _table_exists(db_path: Path, name: str) -> bool:
 
 # ---- SW-1: 全新 DB 上 upsert 自带建表 -----------------------------------
 
+
 @pytest.mark.asyncio
 async def test_upsert_self_creates_table_on_fresh_db(tmp_path: Path):
     """全新 DB（从未 ensure_memory_v2_tables）→ upsert 应自建 session_plans。"""
@@ -47,8 +49,7 @@ async def test_upsert_self_creates_table_on_fresh_db(tmp_path: Path):
     await sdb.upsert_session_plan(
         "sid-1",
         "重构登录页",
-        [{"title": "步骤1", "detail": "读现状"},
-         {"title": "步骤2", "detail": "改代码"}],
+        [{"title": "步骤1", "detail": "读现状"}, {"title": "步骤2", "detail": "改代码"}],
         True,
     )
 
@@ -68,6 +69,7 @@ async def test_upsert_self_creates_table_on_fresh_db(tmp_path: Path):
 
 # ---- upsert → get 往返 + 覆盖 ------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_upsert_get_roundtrip_and_overwrite(tmp_path: Path):
     db_path = tmp_path / "rt.db"
@@ -80,7 +82,10 @@ async def test_upsert_get_roundtrip_and_overwrite(tmp_path: Path):
 
     # 同 session 再 upsert → 覆盖（PK=session_id）。
     await sdb.upsert_session_plan(
-        "s", "r2", [{"title": "b", "detail": "y"}, {"title": "c", "detail": "z"}], True,
+        "s",
+        "r2",
+        [{"title": "b", "detail": "y"}, {"title": "c", "detail": "z"}],
+        True,
     )
     g2 = await sdb.get_session_plan("s")
     assert g2["rationale"] == "r2"
@@ -89,6 +94,7 @@ async def test_upsert_get_roundtrip_and_overwrite(tmp_path: Path):
 
 
 # ---- clear awaiting ----------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_clear_awaiting_flips_flag(tmp_path: Path):
@@ -119,6 +125,7 @@ async def test_clear_awaiting_nonexistent_session_is_safe(tmp_path: Path):
 
 # ---- get 不存在 → None -------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_get_nonexistent_returns_none(tmp_path: Path):
     db_path = tmp_path / "empty.db"
@@ -128,6 +135,7 @@ async def test_get_nonexistent_returns_none(tmp_path: Path):
 
 
 # ---- awaiting=False 持久化（rehydration 不应重建已确认的 plan）---------
+
 
 @pytest.mark.asyncio
 async def test_upsert_awaiting_false_roundtrip(tmp_path: Path):

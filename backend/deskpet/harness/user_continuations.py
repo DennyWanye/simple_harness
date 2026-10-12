@@ -31,13 +31,17 @@ class UserContinuationCoordinator:
     """Serialize Driver ownership while conversation ingress remains nonblocking."""
 
     def __init__(
-        self, *, uow: UserContinuationUnitOfWork, live: BoundedLiveIndex,
+        self,
+        *,
+        uow: UserContinuationUnitOfWork,
+        live: BoundedLiveIndex,
         drivers: Mapping[str, RegisteredDriver],
         query: Callable[[RunRef, ActorContext], Awaitable[RunRecord]],
         observer: Callable[
             [RunRecord, UserContinuationSignal, str, str | None],
             object,
-        ] | None = None,
+        ]
+        | None = None,
     ) -> None:
         self._uow = uow
         self._live = live
@@ -83,26 +87,23 @@ class UserContinuationCoordinator:
         return self._runtime
 
     async def run_owned(
-        self, active, operation: Awaitable[None],
-        ref: RunRef, actor: ActorContext,
+        self,
+        active,
+        operation: Awaitable[None],
+        ref: RunRef,
+        actor: ActorContext,
     ) -> None:
         async with active.driver_lock:
             await operation
             while True:
-                if (
-                    active.record is not None
-                    and (
-                        active.record.status in TERMINAL_RUN_STATUSES
-                        or active.record.status is RunStatus.CANCEL_REQUESTED
-                    )
+                if active.record is not None and (
+                    active.record.status in TERMINAL_RUN_STATUSES
+                    or active.record.status is RunStatus.CANCEL_REQUESTED
                 ):
                     return
                 await self._drain_owned(ref, actor)
                 async with active.continuation_lock:
-                    if (
-                        await self._uow.get_next_user_continuation(ref.run_id)
-                        is not None
-                    ):
+                    if await self._uow.get_next_user_continuation(ref.run_id) is not None:
                         continue
                     return
 
@@ -114,19 +115,13 @@ class UserContinuationCoordinator:
         signal: DriverSignal,
     ) -> SignalReceipt:
         async with self._live.lock:
-            active = self._live.get(record.run_id) or self._live.add(
-                record.run_id, actor
-            )
-        _boundary, queued, duplicate = (
-            await self._uow.enqueue_user_continuation(
-                record.run_id,
-                str(signal.message_ref),
-                str(signal.content),
-                task_scope_id=str(signal.task_scope_id),
-                expected_boundary_version=int(
-                    signal.expected_boundary_version
-                ),
-            )
+            active = self._live.get(record.run_id) or self._live.add(record.run_id, actor)
+        _boundary, queued, duplicate = await self._uow.enqueue_user_continuation(
+            record.run_id,
+            str(signal.message_ref),
+            str(signal.content),
+            task_scope_id=str(signal.task_scope_id),
+            expected_boundary_version=int(signal.expected_boundary_version),
         )
         if queued.status == "failed":
             return SignalReceipt(
@@ -140,9 +135,7 @@ class UserContinuationCoordinator:
             True,
             duplicate=duplicate,
             reason=(
-                "continuation_already_bound"
-                if queued.status == "bound"
-                else "continuation_queued"
+                "continuation_already_bound" if queued.status == "bound" else "continuation_queued"
             ),
         )
 
@@ -186,28 +179,18 @@ class UserContinuationCoordinator:
                 record,
                 registration.driver.signal(
                     signal,
-                    **(
-                        {}
-                        if recovery_lease is None
-                        else {"recovery_lease": recovery_lease}
-                    ),
+                    **({} if recovery_lease is None else {"recovery_lease": recovery_lease}),
                 ),
                 recovery_lease=recovery_lease,
             )
-            settled = await self._uow.get_user_continuation(
-                record.run_id, queued.message_ref
-            )
+            settled = await self._uow.get_user_continuation(record.run_id, queued.message_ref)
             if settled is None or settled.status != "bound":
-                raise RuntimeError(
-                    "driver returned before binding the queued continuation"
-                )
+                raise RuntimeError("driver returned before binding the queued continuation")
             await self._notify(record, signal, "bound")
         except BaseException as exc:
             if isinstance(exc, asyncio.CancelledError):
                 raise
-            current = await self._uow.get_user_continuation(
-                record.run_id, queued.message_ref
-            )
+            current = await self._uow.get_user_continuation(record.run_id, queued.message_ref)
             if current is not None and current.status != "failed":
                 await self._uow.fail_user_continuation(
                     record.run_id,
@@ -231,10 +214,7 @@ class UserContinuationCoordinator:
                     DriverTerminalCandidate(
                         run_id=record.run_id,
                         status="failed",
-                        error=(
-                            "user_continuation_apply_failed: "
-                            f"{type(exc).__name__}: {exc}"
-                        ),
+                        error=(f"user_continuation_apply_failed: {type(exc).__name__}: {exc}"),
                     ),
                     recovery_lease=recovery_lease,
                     current=authoritative,
@@ -256,9 +236,7 @@ class UserContinuationCoordinator:
             if current.status in TERMINAL_RUN_STATUSES:
                 return
             if current.status is RunStatus.CANCEL_REQUESTED:
-                await self.fail_pending(
-                    record.run_id, "run_cancelled", record=current
-                )
+                await self.fail_pending(record.run_id, "run_cancelled", record=current)
                 terminal = DriverTerminalCandidate(
                     run_id=record.run_id,
                     status="cancelled",
@@ -270,16 +248,11 @@ class UserContinuationCoordinator:
                 # Fail queued continuations and release the root so the next
                 # turn can be admitted with a fresh tool snapshot.
                 failure_code = str(
-                    terminal.correlation.get("failure_code")
-                    or "recovery_incompatible"
+                    terminal.correlation.get("failure_code") or "recovery_incompatible"
                 )
-                await self.fail_pending(
-                    record.run_id, failure_code, record=current
-                )
+                await self.fail_pending(record.run_id, failure_code, record=current)
             else:
-                queued = await self._uow.get_next_user_continuation(
-                    record.run_id
-                )
+                queued = await self._uow.get_next_user_continuation(record.run_id)
                 if queued is not None:
                     await self._apply(
                         registration,
@@ -302,9 +275,7 @@ class UserContinuationCoordinator:
                 # its FIFO reservation. A lost terminal CAS must arbitrate again.
                 continue
 
-    async def _drain_owned(
-        self, ref: RunRef, actor: ActorContext
-    ) -> None:
+    async def _drain_owned(self, ref: RunRef, actor: ActorContext) -> None:
         while True:
             record = await self._query(ref, actor)
             if (
@@ -315,13 +286,9 @@ class UserContinuationCoordinator:
             queued = await self._uow.get_next_user_continuation(record.run_id)
             if queued is None:
                 return
-            await self._apply(
-                self._drivers[record.spec.driver_kind], record, queued
-            )
+            await self._apply(self._drivers[record.spec.driver_kind], record, queued)
 
-    async def ensure_drain(
-        self, active, ref: RunRef, actor: ActorContext
-    ) -> None:
+    async def ensure_drain(self, active, ref: RunRef, actor: ActorContext) -> None:
         async with active.continuation_lock:
             existing = active.task
             if existing is not None and not existing.done():
@@ -343,9 +310,7 @@ class UserContinuationCoordinator:
         record: RunRecord | None = None,
     ) -> None:
         while queued := await self._uow.get_next_user_continuation(run_id):
-            await self._uow.fail_user_continuation(
-                run_id, queued.message_ref, reason
-            )
+            await self._uow.fail_user_continuation(run_id, queued.message_ref, reason)
             if record is not None:
                 await self._notify(
                     record,
@@ -354,12 +319,12 @@ class UserContinuationCoordinator:
                         task_scope_id=queued.task_scope_id,
                         message_ref=queued.message_ref,
                         content=queued.content,
-                        expected_boundary_version=(
-                            queued.reserved_boundary_version
-                        ),
+                        expected_boundary_version=(queued.reserved_boundary_version),
                         queued=True,
                     ),
                     "failed",
                     reason,
                 )
+
+
 __all__ = ["UserContinuationCoordinator"]

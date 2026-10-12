@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 """P5-S2: SupervisorAgent + parsing + dispatch tests."""
+
 from __future__ import annotations
 
 import asyncio
@@ -21,7 +22,7 @@ from agent.supervisor import (
 
 
 def test_strip_json_fences_with_lang():
-    raw = "```json\n{\"action\": \"wait\"}\n```"
+    raw = '```json\n{"action": "wait"}\n```'
     assert _strip_json_fences(raw) == '{"action": "wait"}'
 
 
@@ -45,14 +46,16 @@ def test_parse_action_wait():
 
 
 def test_parse_action_nudge():
-    raw = json.dumps({
-        "action": "nudge",
-        "severity": "yellow",
-        "diagnosis": "looping on bash",
-        "hint_for_main_agent": "switch pip mirror",
-        "user_message": "let it switch sources",
-        "suggested_buttons": ["go", "stop"],
-    })
+    raw = json.dumps(
+        {
+            "action": "nudge",
+            "severity": "yellow",
+            "diagnosis": "looping on bash",
+            "hint_for_main_agent": "switch pip mirror",
+            "user_message": "let it switch sources",
+            "suggested_buttons": ["go", "stop"],
+        }
+    )
     a = _parse_action(raw, alert_id="x")
     assert a.action == "nudge"
     assert a.hint_for_main_agent == "switch pip mirror"
@@ -104,13 +107,15 @@ def test_parse_action_invalid_severity_clamped():
 
 def test_parse_action_clamps_lengths():
     long_diag = "a" * 500
-    raw = json.dumps({
-        "action": "ask_user",
-        "severity": "red",
-        "diagnosis": long_diag,
-        "user_message": "b" * 500,
-        "suggested_buttons": ["c" * 100, "d" * 100, "extra"],
-    })
+    raw = json.dumps(
+        {
+            "action": "ask_user",
+            "severity": "red",
+            "diagnosis": long_diag,
+            "user_message": "b" * 500,
+            "suggested_buttons": ["c" * 100, "d" * 100, "extra"],
+        }
+    )
     a = _parse_action(raw, alert_id="x")
     assert len(a.diagnosis) <= 200
     assert len(a.user_message) <= 120
@@ -124,8 +129,16 @@ def test_parse_action_clamps_lengths():
 class _FakeProvider:
     """Mock provider that returns a canned response or raises on demand."""
 
-    def __init__(self, *, response: dict | None = None, raise_exc: Exception | None = None, delay: float = 0.0):
-        self.response = response or {"content": '{"action":"wait","severity":"green","diagnosis":"ok"}'}
+    def __init__(
+        self,
+        *,
+        response: dict | None = None,
+        raise_exc: Exception | None = None,
+        delay: float = 0.0,
+    ):
+        self.response = response or {
+            "content": '{"action":"wait","severity":"green","diagnosis":"ok"}'
+        }
         self.raise_exc = raise_exc
         self.delay = delay
         self.calls: list[list[dict]] = []
@@ -188,14 +201,16 @@ async def test_diagnose_wait_no_dispatch():
 
 @pytest.mark.asyncio
 async def test_diagnose_nudge_full_dispatch():
-    raw = json.dumps({
-        "action": "nudge",
-        "severity": "yellow",
-        "diagnosis": "looping",
-        "hint_for_main_agent": "swap mirror",
-        "user_message": "i'll nudge it",
-        "suggested_buttons": ["go", "stop"],
-    })
+    raw = json.dumps(
+        {
+            "action": "nudge",
+            "severity": "yellow",
+            "diagnosis": "looping",
+            "hint_for_main_agent": "swap mirror",
+            "user_message": "i'll nudge it",
+            "suggested_buttons": ["go", "stop"],
+        }
+    )
     nq = NudgeQueue()
     pushed: list = []
     broadcast: list = []

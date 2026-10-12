@@ -196,15 +196,11 @@ class TailBudgetLedger:
         reserve = self.ledger.reservation(hold["subject_id"])
         if reserve is None or reserve["state"] != "RESERVED":
             raise BudgetError("tail reservation is not live")
-        if (
-            self.ledger.has_unknown_usage(hold["subject_id"])
-            or self.ledger.usage_for(hold["subject_id"])
+        if self.ledger.has_unknown_usage(hold["subject_id"]) or self.ledger.usage_for(
+            hold["subject_id"]
         ):
             raise BudgetError("tail is not an unused hold")
-        totals = {
-            name: sum(getattr(a, name) for a in ordered)
-            for name in ("tokens", "tool_calls")
-        }
+        totals = {name: sum(getattr(a, name) for a in ordered) for name in ("tokens", "tool_calls")}
         attempts = sum(int(a.counts_attempt) for a in ordered)
         if attempts > hold["remaining_attempts"]:
             # Consuming a held Attempt uses the same typed exhaustion contract

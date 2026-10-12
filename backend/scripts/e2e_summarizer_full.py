@@ -35,6 +35,7 @@
 
 输出：每个测试一行 PASS / FAIL，最后总结。退出码 0=全过, 1=任一失败。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -90,10 +91,17 @@ async def _ws_send_recv(uri: str, send: dict, expected_type: str, timeout: float
                 return msg.get("payload", {})
             if msg.get("type") == "permission_request":
                 # auto-deny — these E2E tests should not need tool perms
-                await ws.send(json.dumps({
-                    "type": "permission_response",
-                    "payload": {"request_id": msg["payload"]["request_id"], "decision": "deny"},
-                }))
+                await ws.send(
+                    json.dumps(
+                        {
+                            "type": "permission_response",
+                            "payload": {
+                                "request_id": msg["payload"]["request_id"],
+                                "decision": "deny",
+                            },
+                        }
+                    )
+                )
         return None
 
 
@@ -105,8 +113,7 @@ def _seed_session(session_id: str, messages: list[tuple[str, str]], days_ago: fl
     try:
         for i, (role, content) in enumerate(messages):
             cur = conn.execute(
-                "INSERT INTO messages (session_id, role, content, created_at) "
-                "VALUES (?, ?, ?, ?)",
+                "INSERT INTO messages (session_id, role, content, created_at) VALUES (?, ?, ?, ?)",
                 (session_id, role, content, old_ts + i * 60),
             )
             inserted.append(int(cur.lastrowid or 0))
@@ -123,6 +130,7 @@ def _wipe_test_sessions() -> None:
         # Get all summary ids for our test sessions BEFORE deleting
         try:
             import sqlite_vec
+
             conn.enable_load_extension(True)
             sqlite_vec.load(conn)
             conn.enable_load_extension(False)
@@ -150,12 +158,8 @@ def _wipe_test_sessions() -> None:
             except Exception:
                 pass
 
-        conn.execute(
-            f"DELETE FROM messages WHERE session_id LIKE '{SESSIONS_PREFIX}%'"
-        )
-        conn.execute(
-            f"DELETE FROM messages_archive WHERE session_id LIKE '{SESSIONS_PREFIX}%'"
-        )
+        conn.execute(f"DELETE FROM messages WHERE session_id LIKE '{SESSIONS_PREFIX}%'")
+        conn.execute(f"DELETE FROM messages_archive WHERE session_id LIKE '{SESSIONS_PREFIX}%'")
         conn.commit()
     finally:
         conn.close()
@@ -208,6 +212,7 @@ def _summary_in_vec(session_id: str) -> bool:
     try:
         try:
             import sqlite_vec
+
             conn.enable_load_extension(True)
             sqlite_vec.load(conn)
             conn.enable_load_extension(False)
@@ -262,7 +267,9 @@ async def L3_meaningful_content() -> bool:
         {
             "type": "memory_summarize_now",
             "payload": {
-                "age_days": 1, "min_messages": 20, "max_per_run": 1,
+                "age_days": 1,
+                "min_messages": 20,
+                "max_per_run": 1,
                 "session_id": "e2e-l3",
             },
         },
@@ -296,7 +303,19 @@ async def L3_meaningful_content() -> bool:
         _result("L3.2 summary has facts", False, "no summary")
         return False
     print(f"     summary text: {summary[:200]}")
-    keywords = ["Rust", "rust", "咖啡", "美式", "猫", "橘", "京都", "日本", "刘慈欣", "三体", "小说"]
+    keywords = [
+        "Rust",
+        "rust",
+        "咖啡",
+        "美式",
+        "猫",
+        "橘",
+        "京都",
+        "日本",
+        "刘慈欣",
+        "三体",
+        "小说",
+    ]
     hit_count = sum(1 for k in keywords if k in summary)
     _result(
         "L3.2 summary preserves facts",
@@ -336,7 +355,9 @@ async def L5a_multi_session_max_cap() -> bool:
         {
             "type": "memory_summarize_now",
             "payload": {
-                "age_days": 1, "min_messages": 20, "max_per_run": 2,
+                "age_days": 1,
+                "min_messages": 20,
+                "max_per_run": 2,
                 "session_id": "e2e-l5a",
             },
         },
@@ -368,7 +389,9 @@ async def L5b_idempotent() -> bool:
         {
             "type": "memory_summarize_now",
             "payload": {
-                "age_days": 1, "min_messages": 20, "max_per_run": 10,
+                "age_days": 1,
+                "min_messages": 20,
+                "max_per_run": 10,
                 "session_id": "e2e-l5b",
             },
         },
@@ -380,7 +403,7 @@ async def L5b_idempotent() -> bool:
 
     # L3 session 应该状态不变 — summary 数 = 1 (没新增), orig = 0
     n_orig_after, n_sum_after = _count_in_main(SESSIONS_PREFIX + "L3_preferences")
-    ok = (n_orig_after == n_orig_before and n_sum_after == n_sum_before == 1)
+    ok = n_orig_after == n_orig_before and n_sum_after == n_sum_before == 1
     _result(
         "L5b L3 session not re-summarized",
         ok,
@@ -398,6 +421,7 @@ async def L5c_failure_path() -> bool:
 
     # 2. 切到坏 endpoint
     import httpx
+
     async with httpx.AsyncClient(timeout=10) as client:
         await client.post(
             "http://127.0.0.1:8100/config/cloud",
@@ -415,7 +439,9 @@ async def L5c_failure_path() -> bool:
             {
                 "type": "memory_summarize_now",
                 "payload": {
-                    "age_days": 1, "min_messages": 20, "max_per_run": 1,
+                    "age_days": 1,
+                    "min_messages": 20,
+                    "max_per_run": 1,
                     "session_id": "e2e-l5c",
                 },
             },
@@ -481,7 +507,10 @@ async def L5d_archive_list_ipc() -> bool:
         return False
     # 抽查一行结构
     sample = rows[0]
-    has_keys = all(k in sample for k in ("id", "session_id", "role", "content", "archived_at", "archived_into_id"))
+    has_keys = all(
+        k in sample
+        for k in ("id", "session_id", "role", "content", "archived_at", "archived_into_id")
+    )
     _result("L5d.2 archive row schema", has_keys, list(sample.keys()))
     return has_keys
 

@@ -7,6 +7,7 @@
 **改坏检验**（CLK-01）：正常前进不设门槛（每次都落库）→ 第一段变红；
 （CLK-02）不用进程内水位（只和库里的比）→ 10 秒内的回拨发现不了 → 第二段变红。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -23,13 +24,18 @@ def test_the_clock_mark_is_written_on_rollback_recovery_or_every_ten_seconds(tmp
             commit, connection = world.loop.commit, world.store.connection
 
             def receipts() -> int:
-                return int(connection.execute(
-                    "SELECT COUNT(*) FROM commit_receipts WHERE kind='AssuranceClockObserved'").fetchone()[0])
+                return int(
+                    connection.execute(
+                        "SELECT COUNT(*) FROM commit_receipts WHERE kind='AssuranceClockObserved'"
+                    ).fetchone()[0]
+                )
 
             def row() -> tuple[int, int, str]:
-                return tuple(connection.execute(
-                    "SELECT clock_generation, wall_high_ms, clock_state FROM assurance_environment_state"
-                ).fetchone())
+                return tuple(
+                    connection.execute(
+                        "SELECT clock_generation, wall_high_ms, clock_state FROM assurance_environment_state"
+                    ).fetchone()
+                )
 
             base = int(world.store.now * 1000) + 60_000
             observe_assurance_clock(commit, now_ms=base)  # 比库里的多走了一分钟：落库
@@ -43,7 +49,11 @@ def test_the_clock_mark_is_written_on_rollback_recovery_or_every_ten_seconds(tmp
             # 10 秒内的回拨：比进程内见过的最高水位小，立刻发现、升代次、落库
             high = base + 4_900
             back = observe_assurance_clock(commit, now_ms=base + 2_000)
-            assert (back.state, back.generation, back.wall_high_ms) == ("ROLLBACK", generation + 1, high)
+            assert (back.state, back.generation, back.wall_high_ms) == (
+                "ROLLBACK",
+                generation + 1,
+                high,
+            )
             assert receipts() == start + 1 and row() == (generation + 1, high, "ROLLBACK")
             # 还没回到最高水位：仍是回拨，不重复写
             observe_assurance_clock(commit, now_ms=base + 3_000)

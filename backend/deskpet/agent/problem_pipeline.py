@@ -16,6 +16,7 @@ IN-LOOP 三闸（EvidenceGate/SelfCheckGate/ConvergenceController）由本编排
 
 enabled=False（kill-switch）→ run_pre_loop 直接返回空结果，main.py 走今天的链路（回退）。
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -37,12 +38,13 @@ logger = structlog.get_logger(__name__)
 @dataclass
 class PreLoopResult:
     """PRE-LOOP 产出。main.py 据此注入 system 消息 + 发事件 + 决定是否短路/澄清。"""
-    short_circuit: bool = False           # 闲聊短路：整条流水线跳过，裸 ReAct
-    needs_clarification: bool = False     # 歧义高：暂停问澄清（走独立 chat_v2_final 澄清出口）
+
+    short_circuit: bool = False  # 闲聊短路：整条流水线跳过，裸 ReAct
+    needs_clarification: bool = False  # 歧义高：暂停问澄清（走独立 chat_v2_final 澄清出口）
     intent: IntentCard | None = None
     contradiction: ContradictionMap | None = None
     system_injections: list[str] = field(default_factory=list)  # 注入 _msgs 的 system 文本（按序）
-    events: list[dict] = field(default_factory=list)            # 要发的 WS 事件（type+payload）
+    events: list[dict] = field(default_factory=list)  # 要发的 WS 事件（type+payload）
 
 
 class ProblemHandlingPipeline:
@@ -54,7 +56,7 @@ class ProblemHandlingPipeline:
         observability_events: bool = False,
     ) -> None:
         self.enabled = enabled
-        self._intent = intent_triage   # 决策4：单一合并预分析器（含矛盾）
+        self._intent = intent_triage  # 决策4：单一合并预分析器（含矛盾）
         self._obs_events = observability_events
 
     async def run_pre_loop(
@@ -80,14 +82,16 @@ class ProblemHandlingPipeline:
         )
         res.intent = card
         if self._obs_events:
-            res.events.append({
-                "type": "chat_v2_intent",
-                "payload": {
-                    "restated_intent": card.restated_intent,
-                    "problem_type": card.problem_type,
-                    "ambiguity_score": card.ambiguity_score,
-                },
-            })
+            res.events.append(
+                {
+                    "type": "chat_v2_intent",
+                    "payload": {
+                        "restated_intent": card.restated_intent,
+                        "problem_type": card.problem_type,
+                        "ambiguity_score": card.ambiguity_score,
+                    },
+                }
+            )
 
         if card.short_circuit:
             res.short_circuit = True
@@ -106,17 +110,20 @@ class ProblemHandlingPipeline:
             res.contradiction = cmap
             res.system_injections.append(contradiction_to_system_message(cmap))
             if self._obs_events:
-                res.events.append({
-                    "type": "chat_v2_contradiction",
-                    "payload": {
-                        "principal": cmap.principal,
-                        "attack_order": cmap.attack_order,
-                        "rationale": cmap.rationale,
-                    },
-                })
+                res.events.append(
+                    {
+                        "type": "chat_v2_contradiction",
+                        "payload": {
+                            "principal": cmap.principal,
+                            "attack_order": cmap.attack_order,
+                            "rationale": cmap.rationale,
+                        },
+                    }
+                )
 
-        logger.info("pipeline.pre_loop_done",
-                    injections=len(res.system_injections), events=len(res.events))
+        logger.info(
+            "pipeline.pre_loop_done", injections=len(res.system_injections), events=len(res.events)
+        )
         return res
 
 

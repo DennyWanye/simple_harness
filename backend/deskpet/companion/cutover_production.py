@@ -236,9 +236,7 @@ def import_legacy_growth_snapshot(
     if owner != _LEGACY_OWNER:
         raise ValueError("legacy growth import owner must be legacy_local_profile:1")
     skill_migration_proof = require_legacy_skill_immutable_migration(snapshot)
-    imported_preferences = preference_resolver.import_legacy_json(
-        owner, snapshot.preference_path
-    )
+    imported_preferences = preference_resolver.import_legacy_json(owner, snapshot.preference_path)
     imported_candidates = 0
     for row in snapshot.pending_candidates:
         source_hash = canonical_hash(dict(row))
@@ -314,14 +312,10 @@ class ProductionGrowthCutoverStepExecutor:
     def __init__(self, callbacks: Mapping[str, CutoverCallback]) -> None:
         self._callbacks = dict(callbacks)
 
-    async def execute(
-        self, authorization: GrowthCutoverStepAuthorization
-    ) -> Mapping[str, Any]:
+    async def execute(self, authorization: GrowthCutoverStepAuthorization) -> Mapping[str, Any]:
         callback = self._callbacks.get(authorization.step)
         if callback is None:
-            raise RuntimeError(
-                f"growth_cutover_callback_missing:{authorization.step}"
-            )
+            raise RuntimeError(f"growth_cutover_callback_missing:{authorization.step}")
         result = callback(authorization)
         if inspect.isawaitable(result):
             result = await result
@@ -330,9 +324,7 @@ class ProductionGrowthCutoverStepExecutor:
             or not result
             or any(not isinstance(key, str) or not key for key in result)
         ):
-            raise RuntimeError(
-                f"growth_cutover_step_not_proved:{authorization.step}"
-            )
+            raise RuntimeError(f"growth_cutover_step_not_proved:{authorization.step}")
         proof = {
             "schema_version": 1,
             "cutover_operation_id": authorization.cutover_operation_id,

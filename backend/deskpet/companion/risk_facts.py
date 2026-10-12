@@ -59,20 +59,12 @@ def parse_skill_frontmatter_bytes(
     try:
         text = payload.decode("utf-8").lstrip("\ufeff")
     except UnicodeDecodeError as exc:
-        raise CandidateRiskFactsError(
-            "candidate_skill_invalid", f"{path!r} is not UTF-8"
-        ) from exc
+        raise CandidateRiskFactsError("candidate_skill_invalid", f"{path!r} is not UTF-8") from exc
     lines = text.splitlines()
     if not lines or lines[0].strip() != "---":
-        raise CandidateRiskFactsError(
-            "candidate_skill_invalid", f"{path!r} has no frontmatter"
-        )
+        raise CandidateRiskFactsError("candidate_skill_invalid", f"{path!r} has no frontmatter")
     try:
-        end = next(
-            index
-            for index, line in enumerate(lines[1:], start=1)
-            if line.strip() == "---"
-        )
+        end = next(index for index, line in enumerate(lines[1:], start=1) if line.strip() == "---")
         frontmatter = yaml.safe_load("\n".join(lines[1:end])) or {}
     except (StopIteration, yaml.YAMLError) as exc:
         raise CandidateRiskFactsError(
@@ -85,9 +77,8 @@ def parse_skill_frontmatter_bytes(
     allowed = frontmatter.get("allowed-tools", ())
     if isinstance(allowed, str):
         allowed = (allowed,)
-    if (
-        not isinstance(allowed, (list, tuple))
-        or any(not isinstance(item, str) or not item for item in allowed)
+    if not isinstance(allowed, (list, tuple)) or any(
+        not isinstance(item, str) or not item for item in allowed
     ):
         raise CandidateRiskFactsError(
             "candidate_skill_invalid",
@@ -180,9 +171,7 @@ class FixedWorkflowDataflowValidator:
             }
 
         try:
-            parsed = parse_personal_workflow_v1(
-                graph, tool_resolver=structural_resolver
-            )
+            parsed = parse_personal_workflow_v1(graph, tool_resolver=structural_resolver)
         except (PersonalWorkflowError, CandidateRiskFactsError) as exc:
             raise CandidateRiskFactsError(
                 "workflow_dataflow_invalid",
@@ -192,18 +181,13 @@ class FixedWorkflowDataflowValidator:
             EffectFactV1(
                 tool_ref=str(facts["spec_ref"]),
                 effect_kind=(
-                    "read_only"
-                    if facts["effect"] == "idempotent_read"
-                    else str(facts["effect"])
+                    "read_only" if facts["effect"] == "idempotent_read" else str(facts["effect"])
                 ),
                 idempotent=bool(facts["idempotent"]),
             )
             for _name, facts in sorted(used.items())
         )
-        safe = all(
-            item.effect_kind == "read_only" and item.idempotent
-            for item in effects
-        )
+        safe = all(item.effect_kind == "read_only" and item.idempotent for item in effects)
         return WorkflowDataflowValidationV1(
             graph_hash=parsed.graph_hash,
             nodes_known=True,
@@ -221,9 +205,7 @@ class ImmutableCandidateRiskFactsBuilder:
         *,
         workflow_validator: FixedWorkflowDataflowValidator | None = None,
     ) -> None:
-        self._workflow_validator = (
-            workflow_validator or FixedWorkflowDataflowValidator()
-        )
+        self._workflow_validator = workflow_validator or FixedWorkflowDataflowValidator()
 
     def build(
         self,
@@ -251,9 +233,7 @@ class ImmutableCandidateRiskFactsBuilder:
         file_payloads = self._verify_files(package, blobs)
         manifest_bytes = self._only_blob(blobs, "manifest").payload
         archive_bytes = self._only_blob(blobs, "archive").payload
-        manifest = self._verify_manifest(
-            package, manifest_bytes, file_payloads
-        )
+        manifest = self._verify_manifest(package, manifest_bytes, file_payloads)
         file_set_hash = self._file_set_hash(package)
         if file_set_hash != receipt.file_set_hash:
             raise CandidateRiskFactsError(
@@ -276,9 +256,7 @@ class ImmutableCandidateRiskFactsBuilder:
                 "candidate_effect_topology_mismatch",
                 "effect topology hash differs from package or receipt",
             )
-        self._verify_archive(
-            archive_bytes, manifest_bytes, package, file_payloads
-        )
+        self._verify_archive(archive_bytes, manifest_bytes, package, file_payloads)
         package_hash = _sha256(
             canonical_json(
                 {
@@ -333,9 +311,7 @@ class ImmutableCandidateRiskFactsBuilder:
         )
 
     @staticmethod
-    def _verify_receipt(
-        package: CandidatePackage, receipt: CandidateDraftReceiptV1
-    ) -> None:
+    def _verify_receipt(package: CandidatePackage, receipt: CandidateDraftReceiptV1) -> None:
         expected = (
             package.candidate_content_hash,
             package.candidate_manifest_hash,
@@ -397,10 +373,7 @@ class ImmutableCandidateRiskFactsBuilder:
                     "candidate_file_blob_missing",
                     f"file blob is absent for {item.relative_path!r}",
                 )
-            if (
-                blob.content_hash != item.content_hash
-                or len(blob.payload) != item.size_bytes
-            ):
+            if blob.content_hash != item.content_hash or len(blob.payload) != item.size_bytes:
                 raise CandidateRiskFactsError(
                     "candidate_file_identity_mismatch",
                     f"file identity changed for {item.relative_path!r}",
@@ -408,9 +381,7 @@ class ImmutableCandidateRiskFactsBuilder:
             referenced_blob_ids.add(item.blob_id)
             payloads[item.relative_path] = blob.payload
         extra = {
-            item.blob_id
-            for item in blobs.values()
-            if item.blob_kind == "file"
+            item.blob_id for item in blobs.values() if item.blob_kind == "file"
         } - referenced_blob_ids
         if extra:
             raise CandidateRiskFactsError(
@@ -483,9 +454,7 @@ class ImmutableCandidateRiskFactsBuilder:
             for item in sorted(package.files, key=lambda item: item.relative_path)
         ]
         return _sha256(
-            canonical_json(
-                {"schema": "candidate-file-set-v1", "files": payload}
-            ).encode("utf-8")
+            canonical_json({"schema": "candidate-file-set-v1", "files": payload}).encode("utf-8")
         )
 
     def _verify_archive(
@@ -519,8 +488,7 @@ class ImmutableCandidateRiskFactsBuilder:
                         "archive paths differ from package files",
                     )
                 if archive.read(_MANIFEST_NAME) != manifest_bytes or any(
-                    archive.read(path) != payload
-                    for path, payload in file_payloads.items()
+                    archive.read(path) != payload for path, payload in file_payloads.items()
                 ):
                     raise CandidateRiskFactsError(
                         "candidate_archive_content_mismatch",
@@ -530,9 +498,7 @@ class ImmutableCandidateRiskFactsBuilder:
             raise CandidateRiskFactsError(
                 "candidate_archive_invalid", "candidate archive is invalid"
             ) from exc
-        canonical = self._canonical_archive(
-            manifest_bytes, package, file_payloads
-        )
+        canonical = self._canonical_archive(manifest_bytes, package, file_payloads)
         if canonical != archive_bytes:
             raise CandidateRiskFactsError(
                 "candidate_archive_not_canonical",
@@ -547,10 +513,7 @@ class ImmutableCandidateRiskFactsBuilder:
     ) -> bytes:
         modes = {item.relative_path: item.file_mode for item in package.files}
         entries = [(_MANIFEST_NAME, manifest_bytes, 0o644)]
-        entries.extend(
-            (path, payload, modes[path])
-            for path, payload in file_payloads.items()
-        )
+        entries.extend((path, payload, modes[path]) for path, payload in file_payloads.items())
         output = io.BytesIO()
         with zipfile.ZipFile(
             output,
@@ -581,9 +544,7 @@ class ImmutableCandidateRiskFactsBuilder:
         topology_expanded: bool,
     ) -> tuple[CandidateRiskInputV1, tuple[str, ...]]:
         if not candidate_id:
-            raise CandidateRiskFactsError(
-                "candidate_id_required", "candidate id is required"
-            )
+            raise CandidateRiskFactsError("candidate_id_required", "candidate id is required")
         entries = manifest.get("entries")
         if not isinstance(entries, dict):
             raise CandidateRiskFactsError(
@@ -618,9 +579,7 @@ class ImmutableCandidateRiskFactsBuilder:
                         "candidate_skill_file_missing",
                         f"skill bytes are absent for {path!r}",
                     )
-                allowed_names, _body = parse_skill_frontmatter_bytes(
-                    payload, path
-                )
+                allowed_names, _body = parse_skill_frontmatter_bytes(payload, path)
                 for name in allowed_names:
                     tool = _tool_fact(name, tool_manifest)
                     ref = str(tool["spec_ref"])
@@ -655,23 +614,18 @@ class ImmutableCandidateRiskFactsBuilder:
                         "workflow_dataflow_invalid",
                         "workflow graph is not JSON",
                     ) from exc
-                validation = self._workflow_validator.validate(
-                    graph, tool_manifest=tool_manifest
-                )
+                validation = self._workflow_validator.validate(graph, tool_manifest=tool_manifest)
                 graph_hashes.append(validation.graph_hash)
                 workflow_safe = workflow_safe and validation.dataflow_safe
                 declared.update(validation.tool_refs)
                 referenced.update(validation.tool_refs)
-                facts.update(
-                    {item.tool_ref: item for item in validation.tool_facts}
-                )
+                facts.update({item.tool_ref: item for item in validation.tool_facts})
         else:
             candidate_kind = "unknown"
 
         effects = effect_topology.get("effects", ())
-        if (
-            not isinstance(effects, (list, tuple))
-            or any(not isinstance(item, str) or not item for item in effects)
+        if not isinstance(effects, (list, tuple)) or any(
+            not isinstance(item, str) or not item for item in effects
         ):
             raise CandidateRiskFactsError(
                 "candidate_effect_topology_invalid",
@@ -687,9 +641,8 @@ class ImmutableCandidateRiskFactsBuilder:
                 idempotent=(effect == "read_only"),
             )
         permissions = manifest.get("permissions", ())
-        if (
-            not isinstance(permissions, list)
-            or any(not isinstance(item, str) or not item for item in permissions)
+        if not isinstance(permissions, list) or any(
+            not isinstance(item, str) or not item for item in permissions
         ):
             raise CandidateRiskFactsError(
                 "candidate_permissions_invalid",

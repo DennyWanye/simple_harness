@@ -131,7 +131,9 @@ class EvaluationStore:
         db = await self._connect()
         try:
             row = await (
-                await db.execute("SELECT * FROM evaluations WHERE evaluation_id=?", (evaluation_id,))
+                await db.execute(
+                    "SELECT * FROM evaluations WHERE evaluation_id=?", (evaluation_id,)
+                )
             ).fetchone()
             return self._evaluation_from_row(row) if row is not None else None
         finally:
@@ -439,7 +441,9 @@ class EvaluationStore:
                 passed=passed,
                 errors=int(row["errors"] or 0),
                 pass_rate=passed / total if total else 0.0,
-                average_score=float(row["average_score"]) if row["average_score"] is not None else None,
+                average_score=float(row["average_score"])
+                if row["average_score"] is not None
+                else None,
                 average_latency_ms=(
                     float(row["average_latency_ms"])
                     if row["average_latency_ms"] is not None
@@ -449,7 +453,9 @@ class EvaluationStore:
         finally:
             await db.close()
 
-    async def compare(self, left_experiment_id: str, right_experiment_id: str) -> ExperimentComparison:
+    async def compare(
+        self, left_experiment_id: str, right_experiment_id: str
+    ) -> ExperimentComparison:
         left = await self.aggregate(left_experiment_id)
         right = await self.aggregate(right_experiment_id)
         return ExperimentComparison(

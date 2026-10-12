@@ -92,7 +92,9 @@ def _payload(messages: list[dict]) -> dict:
     return {"model": MODEL, "messages": messages}
 
 
-def _ledger_at_the_incident(*, relay_tokens: int = PREVIOUS_RELAY_TOKENS) -> ObservedInputCarryLedger:
+def _ledger_at_the_incident(
+    *, relay_tokens: int = PREVIOUS_RELAY_TOKENS
+) -> ObservedInputCarryLedger:
     """把第 15 次调用的真实观测按生产路径灌进账本。
 
     ``record_wire`` 记的 wire 是**含回传**的口径(修复后的生产口径), 所以
@@ -179,9 +181,11 @@ def test_the_hidden_carry_collapses_to_the_residual_once_the_relay_is_measured()
     observed = ledger.last(f"{RUN}:provider-turn:16", model=MODEL)
     assert observed is not None
     assert observed.reasoning_relay_tokens == PREVIOUS_RELAY_TOKENS
-    assert observed.hidden_tokens == PREVIOUS_INPUT_TOKENS - (
-        PREVIOUS_TEXT_TOKENS + PREVIOUS_RELAY_TOKENS
-    ) == 1_863
+    assert (
+        observed.hidden_tokens
+        == PREVIOUS_INPUT_TOKENS - (PREVIOUS_TEXT_TOKENS + PREVIOUS_RELAY_TOKENS)
+        == 1_863
+    )
     # 事件 W 的口径(回传当隐藏质量)会把同一件事记成 14 740。
     assert PREVIOUS_INPUT_TOKENS - PREVIOUS_TEXT_TOKENS == 14_740
 
@@ -233,9 +237,7 @@ def test_the_incident_shaped_turn_fits_once_the_relay_is_bounded() -> None:
     assert facts["reasoning_relay_tokens"] == 13_000
     # 丢的是**最老**的两条, 最近一轮的思考原封不动。
     assistants = [m for m in messages if m["role"] == "assistant"]
-    assert [bool(m.get("reasoning_content")) for m in assistants] == [False, False] + [
-        True
-    ] * 13
+    assert [bool(m.get("reasoning_content")) for m in assistants] == [False, False] + [True] * 13
     # 停手就停手: 装得下之后一条都不多丢。
     assert facts["measured_input_floor"] > EFFECTIVE - 1_000
 
@@ -248,9 +250,7 @@ def test_a_turn_that_already_fits_keeps_every_in_loop_relay() -> None:
     previous_id = f"{RUN}:provider-turn:15"
     # 上一轮: wire(含 1 400 回传) 11 478, 计费 11 700 —— 残差 222, 没有隐藏质量。
     ledger.record_wire(previous_id, 11_478, model=MODEL, reasoning_relay_tokens=1_400)
-    ledger.observe_usage(
-        previous_id, input_tokens=11_700, output_tokens=140, reasoning_tokens=100
-    )
+    ledger.observe_usage(previous_id, input_tokens=11_700, output_tokens=140, reasoning_tokens=100)
     facts = enforce_wire_input_budget(
         request_id=f"{RUN}:provider-turn:16",
         payload=_payload(messages),
@@ -466,9 +466,7 @@ async def test_the_relay_that_leaves_the_host_is_the_one_that_was_measured(
         )
         assert adapter._reasoning_preserve == "tool_loop"
         await adapter.invoke(
-            ProviderRequest(
-                RequestId(f"{RUN}e2e:provider-turn:1"), tuple(messages)
-            ),
+            ProviderRequest(RequestId(f"{RUN}e2e:provider-turn:1"), tuple(messages)),
             cancel=CancelToken(),
         )
 
@@ -550,9 +548,7 @@ async def test_the_gate_now_trims_the_relay_instead_of_killing_the_turn(
 
 
 @pytest.mark.asyncio
-async def test_a_pre_loop_relay_never_reaches_the_relay_endpoint(
-    tmp_path, monkeypatch
-) -> None:
+async def test_a_pre_loop_relay_never_reaches_the_relay_endpoint(tmp_path, monkeypatch) -> None:
     """上一轮 user 之前的 assistant 回传, 契约上不需要 → 不发。"""
 
     import json as _json

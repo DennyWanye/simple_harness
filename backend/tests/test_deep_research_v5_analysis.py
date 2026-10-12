@@ -29,9 +29,7 @@ from deskpet.workflows.definitions.deep_research_v5_evidence import (
 )
 from deskpet.workflows.definitions.deep_research_v5_policy import profile_definition
 
-FIXTURE = (
-    Path(__file__).parent / "fixtures" / "deep_research_v5_education_analysis.json"
-)
+FIXTURE = Path(__file__).parent / "fixtures" / "deep_research_v5_education_analysis.json"
 
 
 def _body(span: str, seed: str) -> str:
@@ -57,7 +55,9 @@ def _candidate(
         body_text=_body(span, candidate_id),
         span_text=span,
         relevance=relevance,
-        source_type="official_statistics" if source_tier == "first_party" else "independent_research",
+        source_type="official_statistics"
+        if source_tier == "first_party"
+        else "independent_research",
         source_tier=source_tier,  # type: ignore[arg-type]
         published_date=published_date,
         canonical_target_url=canonical_target_url,
@@ -91,9 +91,7 @@ def test_education_fixture_balances_all_six_core_dimensions_before_volume() -> N
     selected = rerank_analysis_passages(dimensions, evaluation, maximum=6)
 
     assert fixture["core_dimension_ids"] == [item.dimension_id for item in dimensions]
-    assert {item.candidate.dimension_id for item in selected} == set(
-        fixture["core_dimension_ids"]
-    )
+    assert {item.candidate.dimension_id for item in selected} == set(fixture["core_dimension_ids"])
     assert sum(item.candidate.dimension_id == prolific for item in selected) == 1
 
     with pytest.raises(ContractValidationError, match="every core dimension"):
@@ -103,10 +101,24 @@ def test_education_fixture_balances_all_six_core_dimensions_before_volume() -> N
 def test_family_winners_are_selected_before_nonwinning_passages() -> None:
     dimension = _dimension("core")
     candidates = [
-        _candidate("family-a-winner", "core", relevance=0.95, canonical_target_url="https://origin.example/a"),
-        _candidate("family-a-copy", "core", relevance=0.80, canonical_target_url="https://origin.example/a"),
-        _candidate("family-b-winner", "core", relevance=0.90, canonical_target_url="https://origin.example/b"),
-        _candidate("family-b-copy", "core", relevance=0.70, canonical_target_url="https://origin.example/b"),
+        _candidate(
+            "family-a-winner",
+            "core",
+            relevance=0.95,
+            canonical_target_url="https://origin.example/a",
+        ),
+        _candidate(
+            "family-a-copy", "core", relevance=0.80, canonical_target_url="https://origin.example/a"
+        ),
+        _candidate(
+            "family-b-winner",
+            "core",
+            relevance=0.90,
+            canonical_target_url="https://origin.example/b",
+        ),
+        _candidate(
+            "family-b-copy", "core", relevance=0.70, canonical_target_url="https://origin.example/b"
+        ),
     ]
     evaluation = evaluate_evidence((dimension,), candidates)
 
@@ -149,8 +161,22 @@ def test_fill_priority_is_authority_then_recency_relevance_and_depth() -> None:
     target = "https://origin.example/shared"
     candidates = [
         _candidate("winner", "core", relevance=0.99, canonical_target_url=target),
-        _candidate("official-old", "core", relevance=0.60, source_tier="first_party", published_date="2020-01-01", canonical_target_url=target),
-        _candidate("secondary-new", "core", relevance=0.98, source_tier="secondary", published_date="2026-01-01", canonical_target_url=target),
+        _candidate(
+            "official-old",
+            "core",
+            relevance=0.60,
+            source_tier="first_party",
+            published_date="2020-01-01",
+            canonical_target_url=target,
+        ),
+        _candidate(
+            "secondary-new",
+            "core",
+            relevance=0.98,
+            source_tier="secondary",
+            published_date="2026-01-01",
+            canonical_target_url=target,
+        ),
     ]
     evaluation = evaluate_evidence((dimension,), candidates)
 
@@ -310,9 +336,7 @@ def test_cross_dimension_citation_fails_closed_even_if_selected() -> None:
         (dimension, other),
         (selected[0].candidate, other_candidate),
     )
-    combined_selected = rerank_analysis_passages(
-        (dimension, other), combined_evaluation, maximum=2
-    )
+    combined_selected = rerank_analysis_passages((dimension, other), combined_evaluation, maximum=2)
     crossed = replace(
         payload,
         finding=replace(payload.finding, citation_ids=("other-passage",)),

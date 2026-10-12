@@ -58,7 +58,9 @@ async def test_fenced_saver_round_trip_and_pending_writes(tmp_path):
     path, _, _, _, config = await _run_and_config(tmp_path)
     saver = FencedAsyncSqliteSaver(path)
     checkpoint = empty_checkpoint()
-    written = await saver.aput(config, checkpoint, {"source": "input", "step": 0, "parents": {}}, {})
+    written = await saver.aput(
+        config, checkpoint, {"source": "input", "step": 0, "parents": {}}, {}
+    )
     await saver.aput_writes(written, [("value", {"ok": True})], "task-1", "root")
 
     loaded = await saver.aget_tuple(written)
@@ -73,7 +75,9 @@ async def test_fenced_saver_rejects_commit_after_cancel(tmp_path):
     saver = FencedAsyncSqliteSaver(path)
     await store.request_cancel(run_id, "user")
     with pytest.raises(StaleRunFence):
-        await saver.aput(config, empty_checkpoint(), {"source": "input", "step": 0, "parents": {}}, {})
+        await saver.aput(
+            config, empty_checkpoint(), {"source": "input", "step": 0, "parents": {}}, {}
+        )
 
 
 @pytest.mark.asyncio
@@ -117,12 +121,12 @@ async def test_v1_schema_migrates_native_columns_without_decoding_legacy_blob(tm
         "SELECT checkpoint_blob,engine_kind,snapshot_version FROM workflow_checkpoints"
     ).fetchone()
     assert checkpoint == (b"\x80", "langgraph-legacy", None)
-    assert {
-        "write_kind", "payload_json", "node_execution_id"
-    }.issubset({row[1] for row in db.execute("PRAGMA table_info(workflow_pending_writes)")})
-    assert {
-        "consumed_at", "consumed_checkpoint_id"
-    }.issubset({row[1] for row in db.execute("PRAGMA table_info(workflow_decisions)")})
+    assert {"write_kind", "payload_json", "node_execution_id"}.issubset(
+        {row[1] for row in db.execute("PRAGMA table_info(workflow_pending_writes)")}
+    )
+    assert {"consumed_at", "consumed_checkpoint_id"}.issubset(
+        {row[1] for row in db.execute("PRAGMA table_info(workflow_decisions)")}
+    )
     assert "request_hash" in {
         row[1] for row in db.execute("PRAGMA table_info(workflow_operations)")
     }
@@ -162,8 +166,7 @@ async def test_native_checkpoint_transaction_and_operation_replay(tmp_path):
     )
     db = sqlite3.connect(path)
     pending = db.execute(
-        "SELECT channel,value_type,value_blob,write_kind,payload_json "
-        "FROM workflow_pending_writes"
+        "SELECT channel,value_type,value_blob,write_kind,payload_json FROM workflow_pending_writes"
     ).fetchone()
     assert pending[0:2] == ("__native__:state_patch", "json")
     assert pending[2].decode("utf-8") == pending[4]
@@ -208,7 +211,9 @@ async def test_native_checkpoint_transaction_and_operation_replay(tmp_path):
     assert db.execute("SELECT COUNT(*) FROM workflow_checkpoints").fetchone()[0] == 2
     assert db.execute("SELECT COUNT(*) FROM workflow_pending_writes").fetchone()[0] == 0
     assert db.execute("SELECT status FROM workflow_node_attempts").fetchone()[0] == "succeeded"
-    assert db.execute("SELECT event_key FROM workflow_events").fetchone()[0] == "intent:answer-ready"
+    assert (
+        db.execute("SELECT event_key FROM workflow_events").fetchone()[0] == "intent:answer-ready"
+    )
     assert db.execute("SELECT status FROM workflow_deliveries").fetchone()[0] == "pending"
     db.close()
 
@@ -310,32 +315,62 @@ async def test_blob_owner_converts_staging_to_pending_to_checkpoint_atomically(t
     saver = NativeCheckpointStore(path)
     task = {"task_id": "task-blob", "activation_id": "activation", "node_id": "fetch_b0"}
     state = {
-        "schema_version": 2, "workflow_name": "deep_research", "workflow_version": "v2",
-        "thread_id": run_id, "run_id": run_id, "session_id": "session", "values": {}, "blob_refs": [],
+        "schema_version": 2,
+        "workflow_name": "deep_research",
+        "workflow_version": "v2",
+        "thread_id": run_id,
+        "run_id": run_id,
+        "session_id": "session",
+        "values": {},
+        "blob_refs": [],
     }
     genesis = await saver.ensure_genesis(fence, run_id, state, [task], operation_id="blob-genesis")
     registered = RegisteredBlobStore(tmp_path / "blobs", path)
-    identity = NodeExecutionIdentity("deep_research", "v2", run_id, run_id, genesis["checkpoint_id"], "", "task-blob", "fetch_b0", 1)
+    identity = NodeExecutionIdentity(
+        "deep_research",
+        "v2",
+        run_id,
+        run_id,
+        genesis["checkpoint_id"],
+        "",
+        "task-blob",
+        "fetch_b0",
+        1,
+    )
     ref = await registered.put(b"large durable evidence", identity, media_type="text/plain")
     await saver.commit_task_result(
-        fence, genesis["checkpoint_id"], task, 1,
+        fence,
+        genesis["checkpoint_id"],
+        task,
+        1,
         {"blob_refs": [{"id": ref.sha256, "sha256": ref.sha256}]},
-        operation_id="blob-task", blob_refs=[ref.sha256],
+        operation_id="blob-task",
+        blob_refs=[ref.sha256],
     )
     db = sqlite3.connect(path)
     try:
-        owners = db.execute("SELECT owner_kind FROM workflow_blob_refs WHERE sha256=? ORDER BY owner_kind", (ref.sha256,)).fetchall()
+        owners = db.execute(
+            "SELECT owner_kind FROM workflow_blob_refs WHERE sha256=? ORDER BY owner_kind",
+            (ref.sha256,),
+        ).fetchall()
     finally:
         db.close()
     assert owners == [("pending_task",)]
     next_state = {**state, "blob_refs": [{"id": ref.sha256, "sha256": ref.sha256}]}
     committed = await saver.commit_frontier(
-        fence, genesis["checkpoint_id"], state=next_state, frontier=[], step=1,
-        operation_id="blob-frontier", blob_refs=[ref.sha256],
+        fence,
+        genesis["checkpoint_id"],
+        state=next_state,
+        frontier=[],
+        step=1,
+        operation_id="blob-frontier",
+        blob_refs=[ref.sha256],
     )
     db = sqlite3.connect(path)
     try:
-        owner = db.execute("SELECT owner_kind,owner_id FROM workflow_blob_refs WHERE sha256=?", (ref.sha256,)).fetchone()
+        owner = db.execute(
+            "SELECT owner_kind,owner_id FROM workflow_blob_refs WHERE sha256=?", (ref.sha256,)
+        ).fetchone()
     finally:
         db.close()
     assert owner == ("checkpoint", committed["checkpoint_id"])
@@ -354,7 +389,11 @@ async def test_terminal_checkpoint_run_status_and_outbox_commit_atomically(tmp_p
             raise RuntimeError("simulated process loss after commit")
 
     saver = NativeCheckpointStore(path, fault_injector=inject)
-    task = {"task_id": "task-terminal", "activation_id": "activation-terminal", "node_id": "terminal"}
+    task = {
+        "task_id": "task-terminal",
+        "activation_id": "activation-terminal",
+        "node_id": "terminal",
+    }
     state = {
         "schema_version": 1,
         "workflow_name": "test",
@@ -485,9 +524,7 @@ async def test_task_result_crash_has_zero_progress_until_frontier_commit(tmp_pat
             operation_id="progress-task",
         )
 
-    execution = await saver.load_execution(
-        run_id, thread_id=run_id, checkpoint_ns=""
-    )
+    execution = await saver.load_execution(run_id, thread_id=run_id, checkpoint_ns="")
     assert execution.pending_results["task-normalize"].values == patch
     db = sqlite3.connect(path)
     try:
@@ -634,12 +671,18 @@ async def test_launch_failure_atomically_finalizes_run_and_outbox(tmp_path):
     assert run is not None and run["status"] == "failed"
     assert run["ended_at"] is not None
     db = sqlite3.connect(path)
-    assert db.execute(
-        "SELECT COUNT(*) FROM workflow_events WHERE run_id=? AND event_key='run:terminal'",
-        (run_id,),
-    ).fetchone()[0] == 1
-    assert db.execute(
-        "SELECT COUNT(*) FROM workflow_deliveries WHERE run_id=? AND status='pending'",
-        (run_id,),
-    ).fetchone()[0] == 3
+    assert (
+        db.execute(
+            "SELECT COUNT(*) FROM workflow_events WHERE run_id=? AND event_key='run:terminal'",
+            (run_id,),
+        ).fetchone()[0]
+        == 1
+    )
+    assert (
+        db.execute(
+            "SELECT COUNT(*) FROM workflow_deliveries WHERE run_id=? AND status='pending'",
+            (run_id,),
+        ).fetchone()[0]
+        == 3
+    )
     db.close()

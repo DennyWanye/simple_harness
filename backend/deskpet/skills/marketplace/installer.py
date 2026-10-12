@@ -29,6 +29,7 @@ Failure cleanup:
 The clone is done via ``asyncio.subprocess`` so it doesn't block the
 event loop. Tests inject a ``clone_fn`` to skip the network.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -78,9 +79,7 @@ _HTTPS_RE = re.compile(
     r"^https?://github\.com/(?P<owner>[\w\-.]+)/(?P<repo>[\w\-.]+)"
     r"(?:\.git)?(?:/tree/(?P<branch>[\w\-./]+?)/(?P<subpath>.+))?/?$"
 )
-_SSH_RE = re.compile(
-    r"^git@github\.com:(?P<owner>[\w\-.]+)/(?P<repo>[\w\-.]+?)(?:\.git)?$"
-)
+_SSH_RE = re.compile(r"^git@github\.com:(?P<owner>[\w\-.]+)/(?P<repo>[\w\-.]+?)(?:\.git)?$")
 
 
 def parse_github_url(url: str) -> GithubSpec:
@@ -135,6 +134,7 @@ def _force_rmtree(path: Path, attempts: int = 3) -> bool:
     permission fix from python docs:
     https://docs.python.org/3/library/shutil.html#rmtree-example
     """
+
     def _onerror(func, p, exc_info):
         try:
             os.chmod(p, stat.S_IWRITE)
@@ -201,6 +201,7 @@ class BatchStageResult:
     sub-skill failures (safety violation, invalid manifest, etc.) so
     the caller / UI can show partial-success outcomes.
     """
+
     staged: list[StagedSkill] = field(default_factory=list)
     errors: list[dict[str, str]] = field(default_factory=list)
     multi: bool = False
@@ -237,13 +238,9 @@ class SkillInstaller:
         try:
             await self.clone_fn(spec, full_staging)
             # If subpath specified, the actual skill lives under that dir
-            skill_root = (
-                full_staging / spec.subpath if spec.subpath else full_staging
-            )
+            skill_root = full_staging / spec.subpath if spec.subpath else full_staging
             if not skill_root.exists():
-                raise FileNotFoundError(
-                    f"subpath {spec.subpath!r} not present in cloned repo"
-                )
+                raise FileNotFoundError(f"subpath {spec.subpath!r} not present in cloned repo")
             return self._stage_at_dir(skill_root, spec)
         except SafetyError:
             _force_rmtree(full_staging)
@@ -288,14 +285,10 @@ class SkillInstaller:
             _force_rmtree(full_staging)
             raise
 
-        skill_root = (
-            full_staging / spec.subpath if spec.subpath else full_staging
-        )
+        skill_root = full_staging / spec.subpath if spec.subpath else full_staging
         if not skill_root.exists():
             _force_rmtree(full_staging)
-            raise FileNotFoundError(
-                f"subpath {spec.subpath!r} not present in cloned repo"
-            )
+            raise FileNotFoundError(f"subpath {spec.subpath!r} not present in cloned repo")
 
         # Single-skill mode: root has manifest.json or SKILL.md.
         has_manifest = (skill_root / "manifest.json").exists()
@@ -320,9 +313,7 @@ class SkillInstaller:
         result = BatchStageResult(multi=True, repo_dir=full_staging)
         if not candidates:
             _force_rmtree(full_staging)
-            raise SafetyError(
-                "repository has no SKILL.md anywhere (checked root + recursive)"
-            )
+            raise SafetyError("repository has no SKILL.md anywhere (checked root + recursive)")
 
         for sub_dir in candidates:
             try:
@@ -332,36 +323,31 @@ class SkillInstaller:
                     owner=spec.owner,
                     repo=spec.repo,
                     branch=spec.branch,
-                    subpath=(
-                        str(sub_dir.relative_to(full_staging)).replace(
-                            os.sep, "/"
-                        )
-                    ),
+                    subpath=(str(sub_dir.relative_to(full_staging)).replace(os.sep, "/")),
                     git_url=spec.git_url,
                 )
                 staged = self._stage_at_dir(sub_dir, sub_spec)
                 result.staged.append(staged)
             except SafetyError as exc:
-                result.errors.append({
-                    "path": str(sub_dir.relative_to(full_staging)).replace(
-                        os.sep, "/"
-                    ),
-                    "error": f"SafetyError: {exc}",
-                })
+                result.errors.append(
+                    {
+                        "path": str(sub_dir.relative_to(full_staging)).replace(os.sep, "/"),
+                        "error": f"SafetyError: {exc}",
+                    }
+                )
             except Exception as exc:  # noqa: BLE001
-                result.errors.append({
-                    "path": str(sub_dir.relative_to(full_staging)).replace(
-                        os.sep, "/"
-                    ),
-                    "error": f"{type(exc).__name__}: {exc}",
-                })
+                result.errors.append(
+                    {
+                        "path": str(sub_dir.relative_to(full_staging)).replace(os.sep, "/"),
+                        "error": f"{type(exc).__name__}: {exc}",
+                    }
+                )
 
         if not result.staged:
             # Nothing usable — clean up the clone, surface a clear error.
             _force_rmtree(full_staging)
             raise SafetyError(
-                f"no valid skills in repository ({len(result.errors)} "
-                f"candidates failed validation)"
+                f"no valid skills in repository ({len(result.errors)} candidates failed validation)"
             )
 
         return result
@@ -377,10 +363,22 @@ class SkillInstaller:
         skipped to keep the scan cheap on big repos.
         """
         skip_names = {
-            ".git", ".github", ".claude-plugin", ".cursor-plugin",
-            ".codex-plugin", ".opencode", "node_modules", "__pycache__",
-            ".pytest_cache", "dist", "build", "target", ".venv", "venv",
-            ".idea", ".vscode",
+            ".git",
+            ".github",
+            ".claude-plugin",
+            ".cursor-plugin",
+            ".codex-plugin",
+            ".opencode",
+            "node_modules",
+            "__pycache__",
+            ".pytest_cache",
+            "dist",
+            "build",
+            "target",
+            ".venv",
+            "venv",
+            ".idea",
+            ".vscode",
         }
         results: list[Path] = []
         # Use os.walk so we can prune by mutating dirnames.
@@ -393,9 +391,7 @@ class SkillInstaller:
         results.sort()
         return results
 
-    def _stage_at_dir(
-        self, skill_root: Path, spec: GithubSpec
-    ) -> StagedSkill:
+    def _stage_at_dir(self, skill_root: Path, spec: GithubSpec) -> StagedSkill:
         """Read + validate manifest at ``skill_root``; return StagedSkill.
 
         Used by both single-skill ``stage()`` and per-sub-skill
@@ -411,9 +407,7 @@ class SkillInstaller:
             manifest=manifest,
             name=manifest["name"],
             spec=spec,
-            permission_categories=list(
-                manifest.get("permission_categories") or []
-            ),
+            permission_categories=list(manifest.get("permission_categories") or []),
         )
 
     def finalize(self, staged: StagedSkill, *, cleanup_repo: bool = True) -> Path:
@@ -461,10 +455,12 @@ class SkillInstaller:
                 final_path = self.finalize(staged, cleanup_repo=False)
                 installed.append({"name": staged.name, "path": str(final_path)})
             except Exception as exc:  # noqa: BLE001
-                errors.append({
-                    "name": staged.name,
-                    "error": f"{type(exc).__name__}: {exc}",
-                })
+                errors.append(
+                    {
+                        "name": staged.name,
+                        "error": f"{type(exc).__name__}: {exc}",
+                    }
+                )
         # Single cleanup of the shared clone — only in multi mode where
         # we actually shared one. Single-skill batches don't have a
         # top-level clone separate from the moved staging_root.
@@ -514,9 +510,7 @@ class SkillInstaller:
                     "permission_categories": [],
                 }
             except Exception as exc:  # noqa: BLE001
-                raise SafetyError(
-                    f"cannot derive manifest from SKILL.md: {exc}"
-                ) from exc
+                raise SafetyError(f"cannot derive manifest from SKILL.md: {exc}") from exc
         raise SafetyError("repository has neither manifest.json nor SKILL.md")
 
     def _top_staging_dir(self, staged: StagedSkill) -> Path:

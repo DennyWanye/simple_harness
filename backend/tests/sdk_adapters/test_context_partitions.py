@@ -44,9 +44,7 @@ def _item(text: str) -> PartitionItem:
 def test_frozen_constants_match_metric_formulas_oracle() -> None:
     frozen = json.loads(FIXTURE.read_text(encoding="utf-8"))["context_budget"]
     assert frozen["windows"] == sorted(PARTITION_CAPS)
-    assert {int(k): v for k, v in frozen["generation_reserve"].items()} == (
-        GENERATION_RESERVE
-    )
+    assert {int(k): v for k, v in frozen["generation_reserve"].items()} == (GENERATION_RESERVE)
     assert {
         int(window): caps for window, caps in frozen["partition_caps"].items()
     } == PARTITION_CAPS
@@ -74,7 +72,10 @@ def test_causal_groups_pair_tools_and_mark_open_run() -> None:
     assert len(plan.groups) == 3
     first, second, tail = plan.groups
     assert [item.role for item in first.items] == [
-        "user", "assistant", "tool", "assistant",
+        "user",
+        "assistant",
+        "tool",
+        "assistant",
     ]
     assert first.complete and second.complete
     assert tail.open_run and not tail.complete
@@ -147,9 +148,7 @@ def test_assemble_trims_in_frozen_order_and_never_touches_protected() -> None:
     assert report["protected"].trimmed_items == 0
     # Frozen order: attachments trimmed at least as much as long_term, and
     # long_term never below one item while attachments remain trimmable first.
-    assert report["tools_skills_attachments"].trimmed_items >= report[
-        "long_term"
-    ].trimmed_items
+    assert report["tools_skills_attachments"].trimmed_items >= report["long_term"].trimmed_items
     assert report["long_term"].item_count >= 1
     # Open group survived assembly.
     assert assembled.kept_groups[-1].open_run

@@ -29,7 +29,11 @@ from ..storage.store import Store
 
 METRICS_VERSION = "metrics-v2"
 #: 任务结局事件 → 结局名（全库成功率按这三类事件计数）。
-OUTCOME_EVENTS = {"MissionCompleted": "completed", "MissionFailed": "failed", "MissionCancelled": "cancelled"}
+OUTCOME_EVENTS = {
+    "MissionCompleted": "completed",
+    "MissionFailed": "failed",
+    "MissionCancelled": "cancelled",
+}
 
 
 def _rate(part: int, whole: int) -> float | None:
@@ -59,8 +63,7 @@ def metrics(store: Store, mission_id: str) -> dict[str, Any]:
     tokens_by_role: Counter[str] = Counter()
     tokens_by_profile: Counter[str] = Counter()
     rows = store.connection.execute(
-        "SELECT subject_id, input_tokens + output_tokens FROM imported_usage"
-        " WHERE mission_id = ?",
+        "SELECT subject_id, input_tokens + output_tokens FROM imported_usage WHERE mission_id = ?",
         (mission_id,),
     ).fetchall()
     for subject_id, tokens in rows:
@@ -105,18 +108,32 @@ def metrics(store: Store, mission_id: str) -> dict[str, Any]:
     actions = store.list_actions(mission_id)
     from ..orchestrator.stop_conditions import duplicate_count, result_hashes
 
-    adopted = sum(len(e.payload.get("adopted_method_instances") or ())
-                  for e in events if e.type == "PlanRevisionCommitted")
-    retired = sum(len(e.payload.get("retired_method_instances") or ())
-                  for e in events if e.type == "PlanRevisionCommitted")
+    adopted = sum(
+        len(e.payload.get("adopted_method_instances") or ())
+        for e in events
+        if e.type == "PlanRevisionCommitted"
+    )
+    retired = sum(
+        len(e.payload.get("retired_method_instances") or ())
+        for e in events
+        if e.type == "PlanRevisionCommitted"
+    )
     duplicates, results = duplicate_count(result_hashes(store, mission_id, events=events))
     knowledge_committed = sum(1 for e in events if e.type == "KnowledgeCommitted")
-    polluted = len({str(e.payload.get("contradicts")) for e in events
-                    if e.type == "ClaimDisputed" and e.payload.get("other_status") == "VERIFIED"})
+    polluted = len(
+        {
+            str(e.payload.get("contradicts"))
+            for e in events
+            if e.type == "ClaimDisputed" and e.payload.get("other_status") == "VERIFIED"
+        }
+    )
     root_cuts = sum(1 for e in events if e.type == "HierarchicalRootReviewCut")
     root_rejections = sum(1 for e in events if e.type == "HierarchicalRootReviewRejected")
-    pending_now = sum(1 for stored in store.list_results_by_verification("PENDING", "RUNNING")
-                      if stored.envelope.mission_id == mission_id)
+    pending_now = sum(
+        1
+        for stored in store.list_results_by_verification("PENDING", "RUNNING")
+        if stored.envelope.mission_id == mission_id
+    )
     mission_row = store.get_mission(mission_id)
     status = None if mission_row is None else str(mission_row.status)
     succeeded = {"COMPLETED": True, "FAILED": False, "CANCELLED": False}.get(str(status))
@@ -165,8 +182,12 @@ def metrics(store: Store, mission_id: str) -> dict[str, Any]:
             "backlog": {
                 "pending_now": pending_now,
                 "deployment_peak": peaks.get("pending_verifications", 0),
-                "raised": sum(1 for e in events if e.type == "BackpressureRaised"
-                              and e.payload.get("dimension") == "pending_verifications"),
+                "raised": sum(
+                    1
+                    for e in events
+                    if e.type == "BackpressureRaised"
+                    and e.payload.get("dimension") == "pending_verifications"
+                ),
                 "responses": sum(1 for e in events if e.type == "BacklogResponseChanged"),
             },
         },
@@ -217,12 +238,14 @@ def deployment_outcomes(store: Store) -> dict[str, Any]:
     counts = {OUTCOME_EVENTS[str(kind)]: int(count) for kind, count in rows}
     ended = sum(counts.values())
     completed = counts.get("completed", 0)
-    tokens = int(store.connection.execute(
-        "SELECT COALESCE(SUM(u.input_tokens + u.output_tokens), 0) FROM imported_usage u"
-        " WHERE u.mission_id IN (SELECT DISTINCT mission_id FROM events"
-        f" WHERE type IN ({','.join('?' for _ in names)}))",
-        names,
-    ).fetchone()[0])
+    tokens = int(
+        store.connection.execute(
+            "SELECT COALESCE(SUM(u.input_tokens + u.output_tokens), 0) FROM imported_usage u"
+            " WHERE u.mission_id IN (SELECT DISTINCT mission_id FROM events"
+            f" WHERE type IN ({','.join('?' for _ in names)}))",
+            names,
+        ).fetchone()[0]
+    )
     return {
         "missions_ended": ended,
         "completed": completed,

@@ -19,6 +19,7 @@ Lightweight LLM-backed判定: 给定 ``goal_text`` 和最近 working_messages，
   - **prompt 简短**: 不喂全 working_messages（容易爆 token），只取最近
     5 轮 assistant message 摘要。
 """
+
 from __future__ import annotations
 
 import json
@@ -43,6 +44,7 @@ def _emit_goal_check_skipped(reason: str) -> None:
     """
     try:
         from observability.metrics_sink import record as _metric  # noqa: PLC0415
+
         _metric("goal_check_skipped", {"reason": reason})
     except Exception:  # noqa: BLE001
         pass
@@ -192,9 +194,7 @@ class GoalChecker:
                 await invoke_explicit(
                     self.llm_call,
                     prompt,
-                    workload_context=derive_workload_context(
-                        workload_context, "agent.goal_check"
-                    ),
+                    workload_context=derive_workload_context(workload_context, "agent.goal_check"),
                 )
                 if workload_context is not None
                 else await self.llm_call(prompt)
@@ -245,8 +245,7 @@ class GoalChecker:
 
 # 固定反谄媚前缀（硬编码，不可被 persona 覆盖）
 _ANTI_SYCOPHANCY_PREFIX = (
-    "你是冷静的验收员，只依据客观证据判定，不考虑用户情绪，"
-    "宁可判未完成也不假装完成。\n\n"
+    "你是冷静的验收员，只依据客观证据判定，不考虑用户情绪，宁可判未完成也不假装完成。\n\n"
 )
 
 _ALIGNMENT_PROMPT_TEMPLATE = (
@@ -284,14 +283,8 @@ def build_alignment_prompt(
     claims:
         assistant 声明列表（从 assistant_text 提取，仅作对比参考）。
     """
-    evidence_lines = (
-        "\n".join(f"  - {e}" for e in artifacts)
-        if artifacts else "  (无客观证据)"
-    )
-    claim_lines = (
-        "\n".join(f"  - {c}" for c in claims)
-        if claims else "  (无声明)"
-    )
+    evidence_lines = "\n".join(f"  - {e}" for e in artifacts) if artifacts else "  (无客观证据)"
+    claim_lines = "\n".join(f"  - {c}" for c in claims) if claims else "  (无声明)"
     return _ALIGNMENT_PROMPT_TEMPLATE.format(
         anti_sycophancy=_ANTI_SYCOPHANCY_PREFIX,
         goal_text=goal_text,

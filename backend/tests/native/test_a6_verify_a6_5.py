@@ -146,7 +146,14 @@ def _evidence(
                 if with_event_sequence:
                     conn.execute(
                         "insert into task_scope_events values (?,?,?,?,?,?)",
-                        (f"{scope}:{seq}", scope, seq, "harness.tool_invocation", "{}", 100.0 + seq),
+                        (
+                            f"{scope}:{seq}",
+                            scope,
+                            seq,
+                            "harness.tool_invocation",
+                            "{}",
+                            100.0 + seq,
+                        ),
                     )
                 else:
                     conn.execute(
@@ -183,8 +190,7 @@ def _evidence(
             ):
                 created += 1.0
                 conn.execute(
-                    "insert into task_scope_read_view_revisions values"
-                    " (?,?,?,?,?,?,?,?,?,?,?)",
+                    "insert into task_scope_read_view_revisions values (?,?,?,?,?,?,?,?,?,?,?)",
                     (
                         f"{view['source']}:{kind}",
                         view["source"],
@@ -281,9 +287,7 @@ def test_a6_5_fails_when_count_goes_backwards_as_the_watermark_advances(tmp_path
 def test_a6_5_falls_back_to_projection_source_watermark(tmp_path):
     """老库(视图清单没有 event_watermark)回落到 projection source 的水位, 仍能判定。"""
 
-    ev = _evidence(
-        tmp_path, events=_RUN11_EVENTS, views=_RUN11_VIEWS, self_describing=False
-    )
+    ev = _evidence(tmp_path, events=_RUN11_EVENTS, views=_RUN11_VIEWS, self_describing=False)
     try:
         item = a6.item_a6_5(ev)
     finally:

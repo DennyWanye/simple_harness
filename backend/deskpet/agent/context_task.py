@@ -7,6 +7,7 @@ The projector deliberately owns no task lifecycle.  Goal, workflow, receipt,
 and artifact stores remain authoritative; this module only normalizes their
 current facts into a deterministic, session-scoped cache shape.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -159,9 +160,7 @@ class TaskContextSnapshot:
     def as_prompt_text(self) -> str:
         lines = ["[当前任务态]", f"目标: {self.objective or '(未提供)'}"]
         if self.decisions:
-            lines.append(
-                "Decisions: " + "; ".join(item.text for item in self.decisions)
-            )
+            lines.append("Decisions: " + "; ".join(item.text for item in self.decisions))
         for label, facts in (
             ("已完成", self.completed),
             ("待处理", self.pending),
@@ -388,11 +387,7 @@ class WorkflowProjectionAdapter:
         page = await value if inspect.isawaitable(value) else value
         runs = page.get("runs", ()) if isinstance(page, Mapping) else ()
         active = next(
-            (
-                run
-                for run in runs
-                if str(run.get("status", "")).lower() not in self._TERMINAL
-            ),
+            (run for run in runs if str(run.get("status", "")).lower() not in self._TERMINAL),
             None,
         )
         if not isinstance(active, Mapping):
@@ -495,10 +490,7 @@ class TaskContextProjector:
         receipt_projection = projections.get("receipt")
         artifact_projection = projections.get("artifact")
         has_structured = bool(
-            explicit_new
-            or structured_evidence
-            or receipt_projection
-            or artifact_projection
+            explicit_new or structured_evidence or receipt_projection or artifact_projection
         )
         if primary is None and not has_structured:
             return None
@@ -507,9 +499,7 @@ class TaskContextProjector:
             resolved_task_scope_id = f"{primary.authority}:{primary.entity_id}"
             objective = primary.objective
         else:
-            resolved_task_scope_id = (
-                str(task_scope_id or "").strip() or f"session:{effective_sid}"
-            )
+            resolved_task_scope_id = str(task_scope_id or "").strip() or f"session:{effective_sid}"
             objective = user_text.strip()
 
         conflicts: list[ProjectionConflict] = []
@@ -584,9 +574,7 @@ class TaskContextProjector:
             add_fact(pending, fact)
 
         if primary is None and request_id:
-            revisions.append(
-                SourceRevision("session_request", request_id, request_id)
-            )
+            revisions.append(SourceRevision("session_request", request_id, request_id))
 
         sort_fact = lambda item: (item.source, item.fact_id, item.text)  # noqa: E731
         return TaskContextSnapshot(

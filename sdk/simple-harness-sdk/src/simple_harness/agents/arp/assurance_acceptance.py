@@ -77,7 +77,9 @@ class AssuranceSkillAcceptance:
         acceptance_ref.require_kind("acceptance")
         evaluation = Pin.from_json(binding["evaluation_ref"])
         if self.dispatches is None:
-            raise ArpError("SOURCE_UNAVAILABLE", "acceptance reader is not bound to a skill catalogue")
+            raise ArpError(
+                "SOURCE_UNAVAILABLE", "acceptance reader is not bound to a skill catalogue"
+            )
         dispatch = self.dispatches(evaluation)
         if dispatch is None:
             raise _incomplete("EVALUATION_NOT_DISPATCHED", evaluation_ref=evaluation.to_json())
@@ -88,11 +90,18 @@ class AssuranceSkillAcceptance:
         recorded_at_ms = int(dispatch["recorded_at_ms"])
         expected_key = evaluation_mission_key(evaluation)
         with self.store.read_view() as connection:
-            mission = connection.execute("SELECT idempotency_key, created_at FROM missions WHERE mission_id=?", (dispatch["mission_id"],)).fetchone()
+            mission = connection.execute(
+                "SELECT idempotency_key, created_at FROM missions WHERE mission_id=?",
+                (dispatch["mission_id"],),
+            ).fetchone()
             if mission is None:
                 raise _incomplete("MISSION_MISSING", mission_id=dispatch["mission_id"])
             if str(mission[0]) != expected_key:
-                raise _incomplete("MISSION_KEY_MISMATCH", mission_id=dispatch["mission_id"], expected_idempotency_key=expected_key)
+                raise _incomplete(
+                    "MISSION_KEY_MISMATCH",
+                    mission_id=dispatch["mission_id"],
+                    expected_idempotency_key=expected_key,
+                )
             row = connection.execute(
                 "SELECT certificate_id, mission_id, consumer_kind, consumer_id, purpose, certificate_hash, certificate_json, issued_at_ms, not_after_ms "
                 "FROM assurance_use_certificates WHERE certificate_id=?",
@@ -100,17 +109,34 @@ class AssuranceSkillAcceptance:
             ).fetchone()
             if row is None:
                 raise _incomplete("CERTIFICATE_MISSING", certificate_id=acceptance_ref.id)
-            certificate_id, mission_id, consumer_kind, consumer_id, purpose, certificate_hash, certificate_json, issued_at_ms, not_after_ms = row
+            (
+                certificate_id,
+                mission_id,
+                consumer_kind,
+                consumer_id,
+                purpose,
+                certificate_hash,
+                certificate_json,
+                issued_at_ms,
+                not_after_ms,
+            ) = row
             if str(certificate_hash) != acceptance_ref.content_hash:
-                raise ArpError("SOURCE_HASH_CONFLICT", "acceptance_ref does not hash the committed certificate")
+                raise ArpError(
+                    "SOURCE_HASH_CONFLICT", "acceptance_ref does not hash the committed certificate"
+                )
             receipt = connection.execute(
-                "SELECT kind, receipt_json FROM commit_receipts WHERE commit_id=?", ("assurance-use-certified:" + str(certificate_id),)
+                "SELECT kind, receipt_json FROM commit_receipts WHERE commit_id=?",
+                ("assurance-use-certified:" + str(certificate_id),),
             ).fetchone()
             if receipt is None or str(receipt[0]) != USE_CERTIFIED_KIND:
                 raise _incomplete("CERTIFICATE_RECEIPT_MISSING", certificate_id=str(certificate_id))
             receipt_body = json.loads(str(receipt[1]))
-            if receipt_body.get("certificate_hash") != str(certificate_hash) or receipt_body.get("mission_id") != str(mission_id):
-                raise ArpError("SOURCE_HASH_CONFLICT", "the certificate receipt names another certificate")
+            if receipt_body.get("certificate_hash") != str(certificate_hash) or receipt_body.get(
+                "mission_id"
+            ) != str(mission_id):
+                raise ArpError(
+                    "SOURCE_HASH_CONFLICT", "the certificate receipt names another certificate"
+                )
             record_id = str(receipt_body.get("record_id"))
             if str(consumer_kind) == ROOT_RESOLUTION_CONSUMER:
                 # NEXT-TG-1.0 §11 (2026-09-29): a content-only evaluation Mission writes no
@@ -121,34 +147,71 @@ class AssuranceSkillAcceptance:
                     " FROM goal_resolutions WHERE mission_id=? AND resolution_id=?",
                     (str(mission_id), str(consumer_id)),
                 ).fetchone()
-                acceptance = None if resolution is None or str(resolution[4]) != "ACCEPT" or not resolution[5] or str(resolution[6]) != record_id \
+                acceptance = (
+                    None
+                    if resolution is None
+                    or str(resolution[4]) != "ACCEPT"
+                    or not resolution[5]
+                    or str(resolution[6]) != record_id
                     else resolution[:4]
+                )
             else:
                 acceptance = connection.execute(
                     "SELECT acceptance_id, task_id, validity, accepted_at_ms FROM acceptances WHERE mission_id=? AND review_record_id=?",
                     (str(mission_id), record_id),
                 ).fetchone()
-        if str(purpose) != ACCEPT_PURPOSE or str(consumer_kind) not in (ACCEPTANCE_CONSUMER, ROOT_RESOLUTION_CONSUMER):
-            raise _incomplete("NOT_AN_ACCEPTANCE_CERTIFICATE", purpose=str(purpose), consumer_kind=str(consumer_kind))
+        if str(purpose) != ACCEPT_PURPOSE or str(consumer_kind) not in (
+            ACCEPTANCE_CONSUMER,
+            ROOT_RESOLUTION_CONSUMER,
+        ):
+            raise _incomplete(
+                "NOT_AN_ACCEPTANCE_CERTIFICATE",
+                purpose=str(purpose),
+                consumer_kind=str(consumer_kind),
+            )
         if str(mission_id) != dispatch["mission_id"]:
-            raise _incomplete("MISSION_MISMATCH", certificate_mission_id=str(mission_id), dispatched_mission_id=dispatch["mission_id"])
+            raise _incomplete(
+                "MISSION_MISMATCH",
+                certificate_mission_id=str(mission_id),
+                dispatched_mission_id=dispatch["mission_id"],
+            )
         if acceptance is None:
-            raise _incomplete("ACCEPTANCE_ROW_MISSING", record_id=record_id, consumer_kind=str(consumer_kind))
-        acceptance_id, task_id, validity, accepted_at_ms = (str(acceptance[0]), str(acceptance[1]), str(acceptance[2]), int(acceptance[3]))
+            raise _incomplete(
+                "ACCEPTANCE_ROW_MISSING", record_id=record_id, consumer_kind=str(consumer_kind)
+            )
+        acceptance_id, task_id, validity, accepted_at_ms = (
+            str(acceptance[0]),
+            str(acceptance[1]),
+            str(acceptance[2]),
+            int(acceptance[3]),
+        )
         if task_id != dispatch["task_id"]:
-            raise _incomplete("TASK_MISMATCH", accepted_task_id=task_id, dispatched_task_id=dispatch["task_id"])
+            raise _incomplete(
+                "TASK_MISMATCH", accepted_task_id=task_id, dispatched_task_id=dispatch["task_id"]
+            )
         if str(consumer_id) != acceptance_id:
-            raise ArpError("SOURCE_HASH_CONFLICT", "the certificate's consumer is not this acceptance")
+            raise ArpError(
+                "SOURCE_HASH_CONFLICT", "the certificate's consumer is not this acceptance"
+            )
         if validity != "CURRENT":
             raise _incomplete("ACCEPTANCE_" + validity, acceptance_id=acceptance_id)
         if int(issued_at_ms) < recorded_at_ms or accepted_at_ms < recorded_at_ms:
-            raise _incomplete("ACCEPTANCE_BEFORE_DISPATCH", issued_at_ms=int(issued_at_ms), accepted_at_ms=accepted_at_ms, dispatch_recorded_at_ms=recorded_at_ms)
+            raise _incomplete(
+                "ACCEPTANCE_BEFORE_DISPATCH",
+                issued_at_ms=int(issued_at_ms),
+                accepted_at_ms=accepted_at_ms,
+                dispatch_recorded_at_ms=recorded_at_ms,
+            )
         body = json.loads(str(certificate_json))
         if body.get("decision") != "USABLE":
-            raise _incomplete("CERTIFICATE_" + str(body.get("decision")), certificate_id=str(certificate_id))
+            raise _incomplete(
+                "CERTIFICATE_" + str(body.get("decision")), certificate_id=str(certificate_id)
+            )
         now = self.clock_ms()
         if now < int(issued_at_ms) or (not_after_ms is not None and now >= int(not_after_ms)):
-            raise _incomplete("CERTIFICATE_EXPIRED", certificate_id=str(certificate_id), not_after_ms=not_after_ms)
+            raise _incomplete(
+                "CERTIFICATE_EXPIRED", certificate_id=str(certificate_id), not_after_ms=not_after_ms
+            )
         if self.root_incarnation is not None:
             current = self.root_incarnation()
             current_id = getattr(current, "root_incarnation_id", current)

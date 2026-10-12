@@ -37,12 +37,19 @@ from agent_orchestrator.testing.scripted_replies import (
 
 #: 一个模型调用槽位（排队、槽位释放才看得见）；短租约与短停滞上限让"进程死后旧租约过期""未知结果
 #: 等到上限"在一两秒内发生（产品默认 60 秒 / 30 秒，机制相同）。
-QUICK = {"max_concurrent_model_calls": 1, "max_concurrency": 2, "stall_seconds": 1.0, "lease_seconds": 2.0}
+QUICK = {
+    "max_concurrent_model_calls": 1,
+    "max_concurrency": 2,
+    "stall_seconds": 1.0,
+    "lease_seconds": 2.0,
+}
 TERMINAL = {"COMPLETED", "FAILED", "STOPPED", "CANCELLED"}
 
 
 @asynccontextmanager
-async def product_world_as(root: Path, provider: Any, *, owner: str, auto: bool = True, **config: Any):
+async def product_world_as(
+    root: Path, provider: Any, *, owner: str, auto: bool = True, **config: Any
+):
     """``product_world`` 的同一份组装，编排 owner 由调用方给（见模块说明）。"""
     from agent_orchestrator.api.facade import MissionControlV1
     from agent_orchestrator.deployment.assembly import UserMissionDeployment
@@ -55,26 +62,51 @@ async def product_world_as(root: Path, provider: Any, *, owner: str, auto: bool 
     principal = Principal("product-world-user")
     counter = FixtureWordCounter()
     cfg = OrchestratorConfig(evidence_root=Path(root), model="agent-model", **config)
-    native = NativePools(tenant_id=TENANT, principal_id=principal.principal_id, allowed_tools=DEFAULT_TOOLS,
-                         meter_factory=counter.meter_factory)
-    options = pool_options(cfg, native=native, provider=provider, counter=counter, provider_kind="fixtures")
+    native = NativePools(
+        tenant_id=TENANT,
+        principal_id=principal.principal_id,
+        allowed_tools=DEFAULT_TOOLS,
+        meter_factory=counter.meter_factory,
+    )
+    options = pool_options(
+        cfg, native=native, provider=provider, counter=counter, provider_kind="fixtures"
+    )
     holder: dict[str, Any] = {}
     deployment = UserMissionDeployment(
-        tenant_id=TENANT, principal=principal, world_factory=user_goal_world, names=USER_GOAL_NAMES,
-        host_fingerprint="ab" * 32, notify=lambda payload: holder["world"].notices.append(dict(payload)))
+        tenant_id=TENANT,
+        principal=principal,
+        world_factory=user_goal_world,
+        names=USER_GOAL_NAMES,
+        host_fingerprint="ab" * 32,
+        notify=lambda payload: holder["world"].notices.append(dict(payload)),
+    )
 
     def assemble(orchestrator: Any) -> None:
         deployment.assemble(orchestrator)
         native.bind_orchestrator(orchestrator)
 
-    async with Orchestrator(cfg, provider, owner=owner, startup_assembly=assemble,
-                            assurance_root_setup=deployment.assurance_root_setup(), **options) as loop:
+    async with Orchestrator(
+        cfg,
+        provider,
+        owner=owner,
+        startup_assembly=assemble,
+        assurance_root_setup=deployment.assurance_root_setup(),
+        **options,
+    ) as loop:
         control = MissionControlV1(loop, tenant_id=TENANT, principal=principal)
         deployment.bind(loop, control)
-        world = ProductWorld(loop=loop, control=control, deployment=deployment, native=native,
-                             provider=provider, auto=auto)
+        world = ProductWorld(
+            loop=loop,
+            control=control,
+            deployment=deployment,
+            native=native,
+            provider=provider,
+            auto=auto,
+        )
         holder["world"] = world
-        loop.set_between_cycles(lambda: deployment.between_cycles(auto=world.auto), every_seconds=0.0)
+        loop.set_between_cycles(
+            lambda: deployment.between_cycles(auto=world.auto), every_seconds=0.0
+        )
         try:
             yield world
         finally:
@@ -83,34 +115,59 @@ async def product_world_as(root: Path, provider: Any, *, owner: str, auto: bool 
 
 # ---------------------------------------------------------------- 脚本化规划器
 
+
 def parallel_method(context: dict[str, Any]) -> dict[str, Any]:
     """两个互不依赖的"准备交付"步骤 a、b，各管一条要求（两步同时在跑，才有排队）。"""
     request = context["request"]
-    operator = next(item for item in request["operators"]
-                    if str(item["task_type_ref"]["id"]).endswith("prepare-delivery"))
+    operator = next(
+        item
+        for item in request["operators"]
+        if str(item["task_type_ref"]["id"]).endswith("prepare-delivery")
+    )
     first, second = [item["id"] for item in request["criterion_evidence"]]
     identity = request["new_method_identity"]
 
     def step(local_id: str) -> dict[str, Any]:
-        return {"local_id": local_id, "task_type_ref": operator["task_type_ref"], "form": "primitive",
-                "arguments": {}, "required_capabilities": list(operator["required_capabilities"]),
-                "obligation_relation": "refines_parent"}
+        return {
+            "local_id": local_id,
+            "task_type_ref": operator["task_type_ref"],
+            "form": "primitive",
+            "arguments": {},
+            "required_capabilities": list(operator["required_capabilities"]),
+            "obligation_relation": "refines_parent",
+        }
 
     return {
-        "schema_version": 1, "method_id": identity["method_id"], "method_version": identity["method_version"],
+        "schema_version": 1,
+        "method_id": identity["method_id"],
+        "method_version": identity["method_version"],
         "goal_type_ref": request["goal_type_ref"],
         "parameter_schema_ref": request["goal_signature"]["parameter_schema_ref"],
         "output_schema_ref": request["goal_signature"]["output_schema_ref"],
-        "applicable_when": [], "exploration_assumptions": [],
-        "steps": [step("a"), step("b")], "ordering": [], "required_capabilities": [], "expected_effects": [],
+        "applicable_when": [],
+        "exploration_assumptions": [],
+        "steps": [step("a"), step("b")],
+        "ordering": [],
+        "required_capabilities": [],
+        "expected_effects": [],
         "composition": {
             "criterion_links": [
-                {"parent_criterion_id": first, "child_step": "a", "child_criterion_id": first,
-                 "evidence_requirement": "a 这一步写出第一份文件"},
-                {"parent_criterion_id": second, "child_step": "b", "child_criterion_id": second,
-                 "evidence_requirement": "b 这一步写出第二份文件"},
+                {
+                    "parent_criterion_id": first,
+                    "child_step": "a",
+                    "child_criterion_id": first,
+                    "evidence_requirement": "a 这一步写出第一份文件",
+                },
+                {
+                    "parent_criterion_id": second,
+                    "child_step": "b",
+                    "child_criterion_id": second,
+                    "evidence_requirement": "b 这一步写出第二份文件",
+                },
             ],
-            "outputs": {}, "finalizer_step": "b", "independent_review_required": True,
+            "outputs": {},
+            "finalizer_step": "b",
+            "independent_review_required": True,
         },
         "basis_refs": [],
     }
@@ -125,14 +182,30 @@ def planner(request: Any) -> Any:
     package = package_of(request)
     repairs = [(entry.get("request") or {}) for entry in package.get("repair_requests") or ()]
     if any(item.get("trigger_source") == "NO_DISPATCHABLE_WORK" for item in repairs):
-        return decision(package["planning_subjects"][0]["subject_key"], "NO_CHANGE",
-                        {"reason": "在等的工作还没结束，计划不用改。"}, "不改计划。")
+        return decision(
+            package["planning_subjects"][0]["subject_key"],
+            "NO_CHANGE",
+            {"reason": "在等的工作还没结束，计划不用改。"},
+            "不改计划。",
+        )
     contexts = package.get("method_proposal_contexts") or []
-    if (contexts and not repairs and not (package.get("method_selection") or [{}])[0].get("applicable")
-            and len(contexts[0]["request"]["criterion_evidence"]) == 2):
-        return decision(contexts[0]["subject_key"], "PROPOSE_METHOD",
-                        {"method_proposal": {"method": parallel_method(contexts[0]),
-                                             "rationale": "两份文件分开写。"}}, "两步并行。")
+    if (
+        contexts
+        and not repairs
+        and not (package.get("method_selection") or [{}])[0].get("applicable")
+        and len(contexts[0]["request"]["criterion_evidence"]) == 2
+    ):
+        return decision(
+            contexts[0]["subject_key"],
+            "PROPOSE_METHOD",
+            {
+                "method_proposal": {
+                    "method": parallel_method(contexts[0]),
+                    "rationale": "两份文件分开写。",
+                }
+            },
+            "两步并行。",
+        )
     return planner_reply(request)
 
 
@@ -171,10 +244,14 @@ class HeldStep(Scripted):
 
 # ---------------------------------------------------------------- 读库（检查随便做）
 
+
 def grants(store: Any, subject: str | None = None) -> list[dict[str, Any]]:
     rows = store.connection.execute(
-        "SELECT * FROM provider_token_grants" + (" WHERE subject_id=?" if subject else "")
-        + " ORDER BY created_at, invocation_id", (subject,) if subject else ()).fetchall()
+        "SELECT * FROM provider_token_grants"
+        + (" WHERE subject_id=?" if subject else "")
+        + " ORDER BY created_at, invocation_id",
+        (subject,) if subject else (),
+    ).fetchall()
     return [dict(row) for row in rows]
 
 
@@ -182,8 +259,12 @@ def wire_terminal(store: Any) -> set[tuple[str, int]]:
     """调用已在线路上结束、只留额度不占槽位的那些授权（守卫自己写的表）。"""
     if not store.has_table("provider_grant_wire_terminal_v1"):
         return set()
-    return {(row[0], row[1]) for row in store.connection.execute(
-        "SELECT invocation_id, handoff_ordinal FROM provider_grant_wire_terminal_v1")}
+    return {
+        (row[0], row[1])
+        for row in store.connection.execute(
+            "SELECT invocation_id, handoff_ordinal FROM provider_grant_wire_terminal_v1"
+        )
+    }
 
 
 def physical_calls(root: Path) -> dict[str, tuple[str, int]]:
@@ -191,9 +272,12 @@ def physical_calls(root: Path) -> dict[str, tuple[str, int]]:
     calls: dict[str, tuple[str, int]] = {}
     for database in sorted(Path(root).glob("execution*.db")):
         with sqlite3.connect(database.resolve().as_uri() + "?mode=ro", uri=True) as db:
-            if db.execute("SELECT 1 FROM sqlite_master WHERE name='provider_invocations'").fetchone():
+            if db.execute(
+                "SELECT 1 FROM sqlite_master WHERE name='provider_invocations'"
+            ).fetchone():
                 for invocation, state, handoffs in db.execute(
-                        "SELECT invocation_id, state, handoff_attempt FROM provider_invocations"):
+                    "SELECT invocation_id, state, handoff_attempt FROM provider_invocations"
+                ):
                     calls[invocation] = (state, handoffs)
     return calls
 
@@ -204,7 +288,8 @@ def events(store: Any, mission_id: str, kind: str) -> list[Any]:
 
 def attempts(store: Any, mission_id: str) -> dict[str, Any]:
     rows = store.connection.execute(
-        "SELECT attempt_id FROM attempts WHERE mission_id=? ORDER BY attempt_id", (mission_id,)).fetchall()
+        "SELECT attempt_id FROM attempts WHERE mission_id=? ORDER BY attempt_id", (mission_id,)
+    ).fetchall()
     return {row[0]: store.get_attempt(row[0]) for row in rows}
 
 
@@ -214,6 +299,7 @@ def status(store: Any, mission_id: str) -> str:
 
 async def settle(world: ProductWorld, mission_id: str, *, seconds: float = 60.0) -> str:
     """Drive the loop (and the deployment duties) until the Mission ends, the product way."""
+
     async def drive() -> None:
         while status(world.store, mission_id) not in TERMINAL:
             await world.drain(timeout=10)
@@ -224,6 +310,20 @@ async def settle(world: ProductWorld, mission_id: str, *, seconds: float = 60.0)
 
 
 __all__ = (
-    "QUICK", "TERMINAL", "HeldStep", "Scripted", "attempt_of", "attempts", "events", "grants", "outputs_of",
-    "parallel_method", "physical_calls", "planner", "product_world_as", "settle", "status", "wire_terminal",
+    "QUICK",
+    "TERMINAL",
+    "HeldStep",
+    "Scripted",
+    "attempt_of",
+    "attempts",
+    "events",
+    "grants",
+    "outputs_of",
+    "parallel_method",
+    "physical_calls",
+    "planner",
+    "product_world_as",
+    "settle",
+    "status",
+    "wire_terminal",
 )

@@ -4,6 +4,7 @@ The existing append-only evidence store holds the public transcript. Visibility
 requires the foreground terminal receipt: an observer crash cannot publish a
 half-settled turn. No new schema or second ingestion queue is introduced.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -215,7 +216,9 @@ def _warn_if_unadmissible(sdk_run_id: str, envelope, receipt) -> None:
     log.warning(
         "primary_terminal_observation_unadmissible sdk_run_id=%s reason=%s payload_bytes=%d "
         "message_count=%d",
-        sdk_run_id, reason, len(canonical_json(payload).encode("utf-8")),
+        sdk_run_id,
+        reason,
+        len(canonical_json(payload).encode("utf-8")),
         len(payload.get("messages") or ()),
     )
 
@@ -227,24 +230,47 @@ def observation_id(sdk_run_id: str) -> str:
 def evidence_pair(subject: str, sdk_run_id: str, payload: dict, occurred_at: float):
     digest = canonical_hash(payload)
     disclosure = DisclosureContext(
-        sdk_run_id, subject, DeliveryRecipient.USER_SELF, subject, IntendedAudience.USER_SELF,
-        DisclosurePurpose.TASK_EXECUTION, DisclosureSource.AUTHENTICATED_HOST,
-        DisclosureTrust.TRUSTED_AUTHORITY, DisclosureGeneration.CURRENT,
-        "host:primary-runtime-observer:v1", (DisclosureReasonCode.MINIMUM_NECESSARY,),
+        sdk_run_id,
+        subject,
+        DeliveryRecipient.USER_SELF,
+        subject,
+        IntendedAudience.USER_SELF,
+        DisclosurePurpose.TASK_EXECUTION,
+        DisclosureSource.AUTHENTICATED_HOST,
+        DisclosureTrust.TRUSTED_AUTHORITY,
+        DisclosureGeneration.CURRENT,
+        "host:primary-runtime-observer:v1",
+        (DisclosureReasonCode.MINIMUM_NECESSARY,),
     )
     evidence_id = observation_id(sdk_run_id)
     envelope = SanitizedEvidenceEnvelope(
-        evidence_id=evidence_id, run_id=sdk_run_id, subject=subject,
-        source_kind=EvidenceSourceKind.RUNTIME_EVENT, source_ref=f"primary-runtime:{sdk_run_id}",
-        source_hash=digest, sanitized_payload=payload, sanitized_hash=digest,
-        filter_policy_version=POLICY, removed_spans=(), disclosure_context=disclosure, evidence_refs=(),
+        evidence_id=evidence_id,
+        run_id=sdk_run_id,
+        subject=subject,
+        source_kind=EvidenceSourceKind.RUNTIME_EVENT,
+        source_ref=f"primary-runtime:{sdk_run_id}",
+        source_hash=digest,
+        sanitized_payload=payload,
+        sanitized_hash=digest,
+        filter_policy_version=POLICY,
+        removed_spans=(),
+        disclosure_context=disclosure,
+        evidence_refs=(),
     )
     receipt = SanitizedEvidenceReceipt(
-        receipt_id=f"primary-runtime-receipt:{evidence_id}", run_id=sdk_run_id, subject=subject,
-        evidence_id=evidence_id, envelope_hash=envelope.envelope_hash, source_hash=digest,
-        sanitized_hash=digest, filter_policy_version=POLICY, accepted=True,
-        reason_codes=(EvidenceReasonCode.SANITIZED_AND_ACCEPTED,), disclosure_context=disclosure,
-        evidence_refs=(), admitted_at=occurred_at,
+        receipt_id=f"primary-runtime-receipt:{evidence_id}",
+        run_id=sdk_run_id,
+        subject=subject,
+        evidence_id=evidence_id,
+        envelope_hash=envelope.envelope_hash,
+        source_hash=digest,
+        sanitized_hash=digest,
+        filter_policy_version=POLICY,
+        accepted=True,
+        reason_codes=(EvidenceReasonCode.SANITIZED_AND_ACCEPTED,),
+        disclosure_context=disclosure,
+        evidence_refs=(),
+        admitted_at=occurred_at,
     )
     return envelope, receipt
 
@@ -257,7 +283,13 @@ async def terminal_observation_tx(db, *, host_run_id, sdk_run_id, subject):
         "WHERE e.evidence_id=? AND e.run_id=? AND e.subject=? "
         "AND e.primary_conversation_id=r.primary_conversation_id AND r.subject=e.subject "
         "AND e.source_kind='runtime_event' AND e.source_ref=?",
-        (host_run_id, observation_id(sdk_run_id), sdk_run_id, subject, f"primary-runtime:{sdk_run_id}"),
+        (
+            host_run_id,
+            observation_id(sdk_run_id),
+            sdk_run_id,
+            subject,
+            f"primary-runtime:{sdk_run_id}",
+        ),
     )
     row = await cursor.fetchone()
     await cursor.close()
@@ -266,20 +298,36 @@ async def terminal_observation_tx(db, *, host_run_id, sdk_run_id, subject):
     payload = json.loads(row["payload_json"])
     envelope = json.loads(row["envelope_json"])
     expected, _ = evidence_pair(subject, sdk_run_id, payload, float(row["occurred_at"]))
-    if (envelope != dict(expected.to_json())
-            or canonical_hash(payload) != row["sanitized_sha256"]
-            or expected.envelope_hash != row["envelope_sha256"]
-            or payload.get("host_run_id") != host_run_id
-            or payload.get("sdk_run_id") != sdk_run_id):
+    if (
+        envelope != dict(expected.to_json())
+        or canonical_hash(payload) != row["sanitized_sha256"]
+        or expected.envelope_hash != row["envelope_sha256"]
+        or payload.get("host_run_id") != host_run_id
+        or payload.get("sdk_run_id") != sdk_run_id
+    ):
         raise RuntimeError("primary_runtime_observation_corrupt")
     return row, payload
 
 
-async def record_terminal_observation(db_path, *, host_run_id, sdk_run_id, subject,
-                                      owner_id, generation, terminal, sdk_evidence, messages, error_code=None,
-                                      visibility_dependencies=None, tool_causal_sources=None, occurrence_sources=None,
-                                      assistant_tool_calls=None):
+async def record_terminal_observation(
+    db_path,
+    *,
+    host_run_id,
+    sdk_run_id,
+    subject,
+    owner_id,
+    generation,
+    terminal,
+    sdk_evidence,
+    messages,
+    error_code=None,
+    visibility_dependencies=None,
+    tool_causal_sources=None,
+    occurrence_sources=None,
+    assistant_tool_calls=None,
+):
     from deskpet.execution.foreground_queue import ForegroundQueueStore
+
     queue = ForegroundQueueStore(db_path)
     async with aiosqlite.connect(db_path) as db:
         db.row_factory = aiosqlite.Row
@@ -289,16 +337,20 @@ async def record_terminal_observation(db_path, *, host_run_id, sdk_run_id, subje
         await assert_human_memory_ingress_open_tx(db)
         await queue._validate_lease_tx(db, host_run_id, owner_id, generation, time.time())
         await queue._validate_sdk_binding_tx(db, host_run_id, sdk_run_id)
-        prior = await terminal_observation_tx(db, host_run_id=host_run_id, sdk_run_id=sdk_run_id, subject=subject)
+        prior = await terminal_observation_tx(
+            db, host_run_id=host_run_id, sdk_run_id=sdk_run_id, subject=subject
+        )
         if prior is not None:
             row, payload = prior
             # 2026-09-08 HM-TO-A6：既有观察的 transcript 可能被降级过（见
             # bound_terminal_payload），所以这里不能再要求逐字节相等——但也只放行
             # 「该条正文的 sha256 标记」这一种差异，标记可复算，其余键必须一字不差。
-            if (payload["sdk_event_id"] != sdk_evidence.event_id
-                    or payload["sdk_event_hash"] != sdk_evidence.event_hash
-                    or payload["terminal_state"] != terminal.value
-                    or not transcript_matches(messages, payload["messages"])):
+            if (
+                payload["sdk_event_id"] != sdk_evidence.event_id
+                or payload["sdk_event_hash"] != sdk_evidence.event_hash
+                or payload["terminal_state"] != terminal.value
+                or not transcript_matches(messages, payload["messages"])
+            ):
                 raise RuntimeError("primary_runtime_terminal_conflict")
             marker = payload.get("message_source_contract")
             if marker is not None:
@@ -307,33 +359,53 @@ async def record_terminal_observation(db_path, *, host_run_id, sdk_run_id, subje
                 from deskpet.memory.primary_message_evidence import (
                     verify_new_primary_message_evidence_tx,
                 )
-                prior_envelope, prior_receipt = evidence_pair(subject, sdk_run_id, payload, float(row["occurred_at"]))
-                await verify_new_primary_message_evidence_tx(db, host_run_id=host_run_id,
-                    terminal_envelope=prior_envelope, terminal_receipt=prior_receipt)
+
+                prior_envelope, prior_receipt = evidence_pair(
+                    subject, sdk_run_id, payload, float(row["occurred_at"])
+                )
+                await verify_new_primary_message_evidence_tx(
+                    db,
+                    host_run_id=host_run_id,
+                    terminal_envelope=prior_envelope,
+                    terminal_receipt=prior_receipt,
+                )
             await db.commit()
             return row["evidence_id"], row["envelope_sha256"]
         run = await queue._run_tx(db, host_run_id)
         if run["subject"] != subject:
             raise RuntimeError("primary_runtime_subject_mismatch")
         payload = {
-            "schema_version": 1, "kind": "primary_run_terminal", "subject": subject,
-            "host_run_id": host_run_id, "sdk_run_id": sdk_run_id, "turn_id": run["turn_id"],
-            "generation": generation, "terminal_state": terminal.value,
-            "sdk_event_id": sdk_evidence.event_id, "sdk_event_hash": sdk_evidence.event_hash,
-            "messages": list(messages), "error_code": error_code,
+            "schema_version": 1,
+            "kind": "primary_run_terminal",
+            "subject": subject,
+            "host_run_id": host_run_id,
+            "sdk_run_id": sdk_run_id,
+            "turn_id": run["turn_id"],
+            "generation": generation,
+            "terminal_state": terminal.value,
+            "sdk_event_id": sdk_evidence.event_id,
+            "sdk_event_hash": sdk_evidence.event_hash,
+            "messages": list(messages),
+            "error_code": error_code,
             "visibility_dependencies": visibility_dependencies,
             "message_source_contract": "primary-message-v1",
         }
         if occurrence_sources is not None:
-            payload['prospective_source_dependencies'] = occurrence_sources
+            payload["prospective_source_dependencies"] = occurrence_sources
         from deskpet.memory.primary_message_v2 import representable
+
         if terminal.value == "COMPLETED" and representable(messages, tool_causal_sources):
-            payload.update(message_source_contract="primary-message-v2",
-                           tool_causal_sources=list(tool_causal_sources))
+            payload.update(
+                message_source_contract="primary-message-v2",
+                tool_causal_sources=list(tool_causal_sources),
+            )
             cursor = await db.execute("PRAGMA user_version")
             if (await cursor.fetchone())[0] in (53, 54, 55):
                 from deskpet.memory.primary_message_v3 import CONTRACT, read_scope_sources_tx
-                scopes = await read_scope_sources_tx(db, subject=subject, sdk_run_id=sdk_run_id, facts=tool_causal_sources)
+
+                scopes = await read_scope_sources_tx(
+                    db, subject=subject, sdk_run_id=sdk_run_id, facts=tool_causal_sources
+                )
                 payload.update(message_source_contract=CONTRACT, tool_scope_sources=scopes)
         # 2026-09-08 HM-TO-A6：payload 组齐（含 tool_causal_sources /
         # tool_scope_sources / visibility_dependencies）之后再按**真实**字节数判定，
@@ -343,20 +415,32 @@ async def record_terminal_observation(db_path, *, host_run_id, sdk_run_id, subje
             log.warning(
                 "primary_terminal_observation_degraded sdk_run_id=%s elided_ordinals=%s "
                 "message_count=%d",
-                sdk_run_id, list(elided), len(payload["messages"]),
+                sdk_run_id,
+                list(elided),
+                len(payload["messages"]),
             )
         reject_private_payload(payload)
-        envelope, receipt = evidence_pair(subject, sdk_run_id, payload, float(sdk_evidence.occurred_at))
+        envelope, receipt = evidence_pair(
+            subject, sdk_run_id, payload, float(sdk_evidence.occurred_at)
+        )
         _warn_if_unadmissible(sdk_run_id, envelope, receipt)
         committed = await HumanMemoryProgramStore(db_path).append_evidence_tx(
-            db, envelope, receipt, primary_conversation_id=run["primary_conversation_id"], committed_at=time.time(),
+            db,
+            envelope,
+            receipt,
+            primary_conversation_id=run["primary_conversation_id"],
+            committed_at=time.time(),
         )
         # New observations only: per-message S1 shares this transaction. The
         # existing-observation branch above deliberately never backfills it.
         from deskpet.memory.primary_message_evidence import append_new_primary_message_evidence_tx
+
         await append_new_primary_message_evidence_tx(
-            db, store=HumanMemoryProgramStore(db_path), host_run_id=host_run_id,
-            terminal_envelope=envelope, terminal_receipt=receipt,
+            db,
+            store=HumanMemoryProgramStore(db_path),
+            host_run_id=host_run_id,
+            terminal_envelope=envelope,
+            terminal_receipt=receipt,
         )
         # 2026-09-08 HM-TO-A6 F-K1: the assistant's own tool calls (name +
         # arguments) go to a Host side table in this same transaction, bound
@@ -365,10 +449,16 @@ async def record_terminal_observation(db_path, *, host_run_id, sdk_run_id, subje
         # without arguments, exactly as before).
         if assistant_tool_calls and terminal.value == "COMPLETED":
             from deskpet.execution.primary_tool_calls import write_assistant_tool_calls_tx
+
             await write_assistant_tool_calls_tx(
-                db, host_run_id=host_run_id, sdk_run_id=sdk_run_id, evidence_id=committed.evidence_id,
-                envelope_hash=committed.envelope_sha256, messages=payload["messages"],
-                records=assistant_tool_calls, recorded_at=time.time(),
+                db,
+                host_run_id=host_run_id,
+                sdk_run_id=sdk_run_id,
+                evidence_id=committed.evidence_id,
+                envelope_hash=committed.envelope_sha256,
+                messages=payload["messages"],
+                records=assistant_tool_calls,
+                recorded_at=time.time(),
             )
         await db.commit()
         return committed.evidence_id, committed.envelope_sha256
@@ -380,8 +470,16 @@ class PrimaryHistoryStore:
         self._settled_run_reader = settled_run_reader
         self._policy = policy
 
-    async def read(self, *, subject: str, primary_ref: str, before_sequence: int,
-                   limit: int = 10, completed_only: bool = False, disclosure_context=None) -> tuple[dict, ...]:
+    async def read(
+        self,
+        *,
+        subject: str,
+        primary_ref: str,
+        before_sequence: int,
+        limit: int = 10,
+        completed_only: bool = False,
+        disclosure_context=None,
+    ) -> tuple[dict, ...]:
         identifier(subject, "subject")
         identifier(primary_ref, "primary_ref")
         if type(limit) is not int or not 1 <= limit <= 10:
@@ -406,20 +504,32 @@ class PrimaryHistoryStore:
             result = []
             for run in reversed(rows):
                 from deskpet.execution.terminal_identity import read_primary_terminal_identity_tx
-                identity = await read_primary_terminal_identity_tx(db, subject=subject, primary_ref=primary_ref,
-                    host_run_id=run["host_run_id"], sdk_run_id=run["sdk_run_id"])
+
+                identity = await read_primary_terminal_identity_tx(
+                    db,
+                    subject=subject,
+                    primary_ref=primary_ref,
+                    host_run_id=run["host_run_id"],
+                    sdk_run_id=run["sdk_run_id"],
+                )
                 if identity is None:
                     raise RuntimeError("primary_history_terminal_receipt_corrupt")
                 receipt = json.loads(run["receipt_json"])
                 if canonical_hash(receipt) != run["receipt_hash"]:
                     raise RuntimeError("primary_history_terminal_receipt_corrupt")
-                found = await terminal_observation_tx(db, host_run_id=run["host_run_id"],
-                                                      sdk_run_id=run["sdk_run_id"], subject=subject)
+                found = await terminal_observation_tx(
+                    db,
+                    host_run_id=run["host_run_id"],
+                    sdk_run_id=run["sdk_run_id"],
+                    subject=subject,
+                )
                 if found is None:
-                    if (receipt.get("primary_observation_ref") is not None
-                            or receipt.get("terminal_authority_kind") == "primary_runtime_observation"
-                            or run["task_scope_id"] is None
-                            or not receipt.get("terminal_gate_receipt_id")):
+                    if (
+                        receipt.get("primary_observation_ref") is not None
+                        or receipt.get("terminal_authority_kind") == "primary_runtime_observation"
+                        or run["task_scope_id"] is None
+                        or not receipt.get("terminal_gate_receipt_id")
+                    ):
                         raise RuntimeError("primary_history_observation_corrupt")
                     # Pre-S6 scoped Runs have no primary observation. Re-read
                     # their actual SDK terminal + Context, anchored by the
@@ -429,33 +539,50 @@ class PrimaryHistoryStore:
                     if canonical_hash(json.loads(run["receipt_json"])) != run["receipt_hash"]:
                         raise RuntimeError("primary_history_terminal_receipt_corrupt")
                     terminal, messages = self._settled_run_reader(
-                        run["sdk_run_id"], current_text=json.loads(run["turn_json"])["payload"]["text"],
+                        run["sdk_run_id"],
+                        current_text=json.loads(run["turn_json"])["payload"]["text"],
                     )
                     identity.verify_sdk_terminal(terminal)
-                    result.append({
-                        "source_ref": f"primary-terminal:{run['terminal_receipt_id']}",
-                        "source_hash": canonical_hash({"host_receipt_hash": run["receipt_hash"],
-                                                       "sdk_event_hash": terminal.event_hash, "messages": messages}),
-                        "turn_id": run["turn_id"], "terminal_state": run["terminal_state"],
-                        "messages": list(messages),
-                    })
+                    result.append(
+                        {
+                            "source_ref": f"primary-terminal:{run['terminal_receipt_id']}",
+                            "source_hash": canonical_hash(
+                                {
+                                    "host_receipt_hash": run["receipt_hash"],
+                                    "sdk_event_hash": terminal.event_hash,
+                                    "messages": messages,
+                                }
+                            ),
+                            "turn_id": run["turn_id"],
+                            "terminal_state": run["terminal_state"],
+                            "messages": list(messages),
+                        }
+                    )
                     continue
                 row, payload = found
                 if self._settled_run_reader is not None:
                     terminal, messages = self._settled_run_reader(
-                        run["sdk_run_id"], current_text=json.loads(run["turn_json"])["payload"]["text"])
+                        run["sdk_run_id"],
+                        current_text=json.loads(run["turn_json"])["payload"]["text"],
+                    )
                     identity.verify_sdk_terminal(terminal)
                     # A6 r3 (2026-09-08): the archived observation may carry
                     # elided tool bodies (content-addressed markers); compare
                     # through transcript_matches like the other two checkpoints.
                     if not transcript_matches(messages, payload["messages"]):
                         raise RuntimeError("primary_history_transcript_mismatch")
-                if (receipt.get("primary_observation_ref") != row["evidence_id"]
-                        or receipt.get("primary_observation_hash") != row["envelope_sha256"]):
+                if (
+                    receipt.get("primary_observation_ref") != row["evidence_id"]
+                    or receipt.get("primary_observation_hash") != row["envelope_sha256"]
+                ):
                     raise RuntimeError("primary_history_observation_corrupt")
-                group = {"source_ref": row["evidence_id"], "source_hash": row["envelope_sha256"],
-                         "turn_id": payload["turn_id"], "terminal_state": payload["terminal_state"],
-                         "messages": payload["messages"]}
+                group = {
+                    "source_ref": row["evidence_id"],
+                    "source_hash": row["envelope_sha256"],
+                    "turn_id": payload["turn_id"],
+                    "terminal_state": payload["terminal_state"],
+                    "messages": payload["messages"],
+                }
                 # F-K1: join the Host side record of assistant tool calls. The
                 # key is present only when rows exist, so a group without tool
                 # calls (and every pre-v55 archive) keeps its exact prior shape.
@@ -463,9 +590,14 @@ class PrimaryHistoryStore:
                     GROUP_KEY,
                     read_assistant_tool_calls_tx,
                 )
-                calls = await read_assistant_tool_calls_tx(db, sdk_run_id=run["sdk_run_id"],
-                    evidence_id=row["evidence_id"], envelope_hash=row["envelope_sha256"],
-                    messages=payload["messages"])
+
+                calls = await read_assistant_tool_calls_tx(
+                    db,
+                    sdk_run_id=run["sdk_run_id"],
+                    evidence_id=row["evidence_id"],
+                    envelope_hash=row["envelope_sha256"],
+                    messages=payload["messages"],
+                )
                 if calls:
                     group[GROUP_KEY] = calls
                 result.append(group)
@@ -473,11 +605,24 @@ class PrimaryHistoryStore:
                 raise RuntimeError("primary_history_policy_unavailable")
             # Policy runs after potentially slow public SDK reads. Check both
             # generated and original USER sources in the same current batch.
-            roots = tuple(dict.fromkeys([r["evidence_id"] for r in rows] +
-                [g["source_ref"] for g in result if not g["source_ref"].startswith("primary-terminal:")]))
-            visible = await self._policy.check_evidence_ids(db=db, primary_ref=primary_ref,
-                evidence_ids=roots, disclosure_context=disclosure_context)
+            roots = tuple(
+                dict.fromkeys(
+                    [r["evidence_id"] for r in rows]
+                    + [
+                        g["source_ref"]
+                        for g in result
+                        if not g["source_ref"].startswith("primary-terminal:")
+                    ]
+                )
+            )
+            visible = await self._policy.check_evidence_ids(
+                db=db,
+                primary_ref=primary_ref,
+                evidence_ids=roots,
+                disclosure_context=disclosure_context,
+            )
             from deskpet.memory.primary_visibility import read_evidence_pair
+
             filtered = []
             by_turn = {r["turn_id"]: r for r in rows}
             for group in result:
@@ -487,11 +632,20 @@ class PrimaryHistoryStore:
                     original = by_turn[group["turn_id"]]
                     eid = original["evidence_id"]
                     if visible.get(eid, False):
-                        envelope, _ = await read_evidence_pair(db=db, subject=subject,
-                            primary_ref=primary_ref, evidence_id=eid)
+                        envelope, _ = await read_evidence_pair(
+                            db=db, subject=subject, primary_ref=primary_ref, evidence_id=eid
+                        )
                         if envelope.envelope_hash != original["evidence_hash"]:
                             raise RuntimeError("primary_history_user_hash_mismatch")
-                        filtered.append({"source_ref": eid, "source_hash": envelope.envelope_hash,
-                            "turn_id": group["turn_id"], "terminal_state": group["terminal_state"],
-                            "messages": [{"role": "user", "content": envelope.sanitized_payload["text"]}]})
+                        filtered.append(
+                            {
+                                "source_ref": eid,
+                                "source_hash": envelope.envelope_hash,
+                                "turn_id": group["turn_id"],
+                                "terminal_state": group["terminal_state"],
+                                "messages": [
+                                    {"role": "user", "content": envelope.sanitized_payload["text"]}
+                                ],
+                            }
+                        )
             return tuple(filtered)

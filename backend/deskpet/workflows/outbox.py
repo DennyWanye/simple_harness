@@ -83,9 +83,7 @@ def stable_delivery_id(event_id: str, channel: str, target_id: str) -> str:
     if not normalized_channel:
         raise ValueError("delivery channel must not be empty")
     target = _normalized_target(target_id)
-    return hashlib.sha256(
-        f"{event_id}|{normalized_channel}|{target}".encode()
-    ).hexdigest()
+    return hashlib.sha256(f"{event_id}|{normalized_channel}|{target}".encode()).hexdigest()
 
 
 def _encode_cursor(created_at: float, delivery_id: str) -> str:
@@ -148,9 +146,7 @@ def hydrate_event(
             "run_id": str(row["run_id"]),
             "request_id": run.get("request_id") if run else payload.get("request_id"),
             "turn_id": run.get("turn_id") if run else payload.get("turn_id"),
-            "workflow_name": (
-                run.get("workflow_name") if run else payload.get("workflow_name")
-            ),
+            "workflow_name": (run.get("workflow_name") if run else payload.get("workflow_name")),
             "workflow_version": (
                 run.get("workflow_version") if run else payload.get("workflow_version")
             ),
@@ -258,9 +254,7 @@ async def enqueue_event_tx(
             ),
         )
         event = await (
-            await connection.execute(
-                "SELECT * FROM workflow_events WHERE event_id=?", (event_id,)
-            )
+            await connection.execute("SELECT * FROM workflow_events WHERE event_id=?", (event_id,))
         ).fetchone()
     elif (
         str(event["event_id"]) != event_id
@@ -426,14 +420,11 @@ async def mutate_delivery_tx(
         else:
             values = ("failed", now, reason or "delivery_failed", None, None, 0)
     else:
-        v6_claimable = (
-            (current_status == "pending" and attempts == 0)
-            or (
-                current_status == "failed"
-                and attempts < 5
-                and row["next_attempt_at"] is not None
-                and float(row["next_attempt_at"]) <= now
-            )
+        v6_claimable = (current_status == "pending" and attempts == 0) or (
+            current_status == "failed"
+            and attempts < 5
+            and row["next_attempt_at"] is not None
+            and float(row["next_attempt_at"]) <= now
         )
         if (is_v6 and not v6_claimable) or (
             not is_v6 and current_status not in {"pending", "failed"}
@@ -506,9 +497,7 @@ async def mutate_delivery_tx(
         ),
     )
     audit = await (
-        await connection.execute(
-            "SELECT * FROM workflow_events WHERE event_id=?", (audit_id,)
-        )
+        await connection.execute("SELECT * FROM workflow_events WHERE event_id=?", (audit_id,))
     ).fetchone()
     assert audit is not None
     return {
@@ -563,21 +552,15 @@ class WorkflowOutbox:
                 )
             else:
                 run = await (
-                    await db.execute(
-                        "SELECT * FROM workflow_runs WHERE run_id=?", (run_id,)
-                    )
+                    await db.execute("SELECT * FROM workflow_runs WHERE run_id=?", (run_id,))
                 ).fetchone()
                 if run is None:
-                    raise OutboxError(
-                        "run_not_found", f"Workflow run does not exist: {run_id}"
-                    )
+                    raise OutboxError("run_not_found", f"Workflow run does not exist: {run_id}")
                 normalized = _normalize_deliveries(deliveries)
                 event_id = await execution_uow.bind(db).append_workflow_event(
                     run=dict(run),
                     intent={
-                        "intent_id": hashlib.sha256(
-                            f"{run_id}|{event_key}".encode()
-                        ).hexdigest(),
+                        "intent_id": hashlib.sha256(f"{run_id}|{event_key}".encode()).hexdigest(),
                         "event_key": event_key,
                         "event_type": event_type,
                         "payload": dict(payload),

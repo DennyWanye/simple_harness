@@ -14,6 +14,7 @@ Pass criteria: every chat ends with chat_v2_final OR a
 clean chat_v2_error. Either is OK — what's NOT OK is a hung
 connection or unhandled exception.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -40,24 +41,27 @@ async def smoke(secret: str) -> int:
 
     for i, prompt in enumerate(PROMPTS):
         ws_sid = f"p4s24-trans-{i}"
-        url = (
-            f"ws://127.0.0.1:8100/ws/control?secret={secret}"
-            f"&session_id={ws_sid}"
-        )
-        print(f"\n=== prompt {i+1}/{len(PROMPTS)}: {prompt!r} ===")
+        url = f"ws://127.0.0.1:8100/ws/control?secret={secret}&session_id={ws_sid}"
+        print(f"\n=== prompt {i + 1}/{len(PROMPTS)}: {prompt!r} ===")
         try:
             async with websockets.connect(url, ping_interval=None) as ws:
-                await ws.send(json.dumps({
-                    "type": "chat_v2",
-                    "payload": {"text": prompt, "session_id": ws_sid},
-                }))
+                await ws.send(
+                    json.dumps(
+                        {
+                            "type": "chat_v2",
+                            "payload": {"text": prompt, "session_id": ws_sid},
+                        }
+                    )
+                )
                 while True:
                     raw = await asyncio.wait_for(ws.recv(), timeout=180.0)
                     msg = json.loads(raw)
                     t = msg.get("type", "")
                     if t == "chat_v2_final":
                         text = msg["payload"].get("text", "")
-                        print(f"   final iters={msg['payload'].get('iterations')} text={text[:50]!r}")
+                        print(
+                            f"   final iters={msg['payload'].get('iterations')} text={text[:50]!r}"
+                        )
                         finals += 1
                         break
                     if t == "chat_v2_error":

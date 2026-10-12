@@ -10,6 +10,7 @@
 
 **改坏检验**：``last_seq`` 不落盘（``_save`` 里去掉它）→ 第一条变红。
 """
+
 from __future__ import annotations
 
 import json
@@ -21,14 +22,25 @@ from deskpet.orchestration.notices import NOTICES_FILE, NOTIFIED_EVENT, MissionN
 
 def _store() -> SimpleNamespace:
     connection = sqlite3.connect(":memory:")
-    connection.execute("CREATE TABLE events (seq INTEGER PRIMARY KEY AUTOINCREMENT, event_id TEXT UNIQUE,"
-                       " type TEXT, payload_json TEXT, created_at REAL)")
+    connection.execute(
+        "CREATE TABLE events (seq INTEGER PRIMARY KEY AUTOINCREMENT, event_id TEXT UNIQUE,"
+        " type TEXT, payload_json TEXT, created_at REAL)"
+    )
     return SimpleNamespace(connection=connection)
 
 
-def _notified(store: SimpleNamespace, event_id: str, mission_id: str, *, at: float, kind: str = NOTIFIED_EVENT) -> None:
-    store.connection.execute("INSERT INTO events(event_id, type, payload_json, created_at) VALUES (?,?,?,?)",
-                             (event_id, kind, json.dumps({"event_id": event_id, "mission_id": mission_id, "state_version": 2}), at))
+def _notified(
+    store: SimpleNamespace, event_id: str, mission_id: str, *, at: float, kind: str = NOTIFIED_EVENT
+) -> None:
+    store.connection.execute(
+        "INSERT INTO events(event_id, type, payload_json, created_at) VALUES (?,?,?,?)",
+        (
+            event_id,
+            kind,
+            json.dumps({"event_id": event_id, "mission_id": mission_id, "state_version": 2}),
+            at,
+        ),
+    )
 
 
 def test_catch_up_remembers_the_sequence_number_and_resumes_from_it(tmp_path):
@@ -68,8 +80,9 @@ def test_the_host_catches_up_from_the_sequence_whenever_the_list_is_pulled(tmp_p
     from deskpet.orchestration.service import OrchestrationService
 
     store = _store()
-    store.get_mission = lambda _id: SimpleNamespace(status=SimpleNamespace(value="COMPLETED"), goal="写周报",
-                                                      stop_reason=None, final_report={})
+    store.get_mission = lambda _id: SimpleNamespace(
+        status=SimpleNamespace(value="COMPLETED"), goal="写周报", stop_reason=None, final_report={}
+    )
     notices = MissionNotices(tmp_path, clock=lambda: 10.0)
     host = SimpleNamespace(_notices=notices, _orchestrator=SimpleNamespace(store=store))
     assert OrchestrationService.pending_notices(host) == []

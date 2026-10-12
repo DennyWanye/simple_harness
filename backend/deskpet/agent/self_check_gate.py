@@ -14,6 +14,7 @@
   factual_qa → light（轻量对账）
   chitchat → off（跳过，不拖慢闲聊）
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -39,9 +40,11 @@ _MODE_BY_PROBLEM = {
 class SelfCheckOutcome:
     passed: bool = True
     mode: str = "off"
-    heterogeneous: bool = False       # 是否动用了异体评分
+    heterogeneous: bool = False  # 是否动用了异体评分
     claims_unverified: int = 0
-    reflection_instruction: str = ""  # passed=False 时要注入的反思指令（含 _REFLECTION_INSTRUCTION）
+    reflection_instruction: str = (
+        ""  # passed=False 时要注入的反思指令（含 _REFLECTION_INSTRUCTION）
+    )
     reason: str = ""
 
 
@@ -54,8 +57,8 @@ class SelfCheckGate:
     def __init__(
         self,
         *,
-        verify_gate: Any | None = None,            # deskpet.agent.verify_gate.VerifyGate
-        external_evaluator: Any | None = None,     # deskpet.agent.external_evaluator.ExternalEvaluator
+        verify_gate: Any | None = None,  # deskpet.agent.verify_gate.VerifyGate
+        external_evaluator: Any | None = None,  # deskpet.agent.external_evaluator.ExternalEvaluator
         heterogeneous_enabled: bool = True,
         reflection_enabled: bool = True,
     ) -> None:
@@ -89,7 +92,9 @@ class SelfCheckGate:
         if self._verify_gate is not None and getattr(self._verify_gate, "mode", "off") != "off":
             try:
                 outcome = self._verify_gate.check(
-                    assistant_text=assistant_text, ledger=ledger, goal_text=goal_text,
+                    assistant_text=assistant_text,
+                    ledger=ledger,
+                    goal_text=goal_text,
                 )
                 verify_passed = bool(getattr(outcome, "passed", True))
                 unmatched = len(getattr(outcome, "unmatched_claims", []) or [])
@@ -115,9 +120,7 @@ class SelfCheckGate:
                     conversation_summary=assistant_text[:512],
                     workload_context=workload_context,
                 )
-                evaluator_revise = (
-                    ev.get("verdict") == "revise" and ev.get("quality_score", 10) < 6
-                )
+                evaluator_revise = ev.get("verdict") == "revise" and ev.get("quality_score", 10) < 6
             except Exception as exc:  # noqa: BLE001
                 logger.warning("self_check.evaluator_failed", error=str(exc)[:200])
 
@@ -125,14 +128,25 @@ class SelfCheckGate:
         instr = ""
         if not passed and self._reflection_enabled:
             from deskpet.agent.reflection import _REFLECTION_INSTRUCTION  # noqa: PLC0415
+
             instr = _REFLECTION_INSTRUCTION
 
-        logger.info("self_check.done", mode=mode, passed=passed,
-                    heterogeneous=heterogeneous, unmatched=unmatched)
+        logger.info(
+            "self_check.done",
+            mode=mode,
+            passed=passed,
+            heterogeneous=heterogeneous,
+            unmatched=unmatched,
+        )
         return SelfCheckOutcome(
-            passed=passed, mode=mode, heterogeneous=heterogeneous,
-            claims_unverified=unmatched, reflection_instruction=instr,
-            reason="" if passed else ("evaluator_revise" if evaluator_revise else "unmatched_claims"),
+            passed=passed,
+            mode=mode,
+            heterogeneous=heterogeneous,
+            claims_unverified=unmatched,
+            reflection_instruction=instr,
+            reason=""
+            if passed
+            else ("evaluator_revise" if evaluator_revise else "unmatched_claims"),
         )
 
 

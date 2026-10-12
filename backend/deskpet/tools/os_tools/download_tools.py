@@ -142,9 +142,7 @@ async def download_file(
 
     destination_input = Path(destination_raw).expanduser()
     if destination_input.is_symlink():
-        return _error(
-            "destination_symlink_rejected", "destination symlinks are not supported"
-        )
+        return _error("destination_symlink_rejected", "destination symlinks are not supported")
     destination = destination_input.resolve(strict=False)
     if not destination.parent.is_dir():
         return _error("destination_parent_missing", "destination parent does not exist")

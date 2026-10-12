@@ -33,9 +33,9 @@ def _raw_response(
     return {
         "content": content,
         "reasoning_content": "",
-        "tool_calls": [
-            {"id": "call_1", "name": "noop", "arguments": {"value": value}}
-        ] if stop_reason == "tool_use" else [],
+        "tool_calls": [{"id": "call_1", "name": "noop", "arguments": {"value": value}}]
+        if stop_reason == "tool_use"
+        else [],
         "stop_reason": stop_reason,
         "model": "stub-model",
         "usage": {"prompt_tokens": 1, "completion_tokens": 1},
@@ -112,18 +112,14 @@ class _FallbackLLM:
     ) -> ChatResponse:
         self.calls += 1
         self.tool_choices.append(kwargs.get("tool_choice"))
-        stop = (
-            "end_turn"
-            if kwargs.get("tool_choice") == "none" or self.calls >= 30
-            else "tool_use"
-        )
+        stop = "end_turn" if kwargs.get("tool_choice") == "none" or self.calls >= 30 else "tool_use"
         return ChatResponse(
             content=f"turn {self.calls}",
             stop_reason=stop,
             model="stub-model",
-            tool_calls=[
-                ToolCall(id="call_1", name="noop", arguments={"value": self.calls})
-            ] if stop == "tool_use" else [],
+            tool_calls=[ToolCall(id="call_1", name="noop", arguments={"value": self.calls})]
+            if stop == "tool_use"
+            else [],
         )
 
 
@@ -137,18 +133,14 @@ class _StreamingLLM(_FallbackLLM):
     ):
         self.calls += 1
         self.tool_choices.append(kwargs.get("tool_choice"))
-        stop = (
-            "end_turn"
-            if kwargs.get("tool_choice") == "none" or self.calls >= 30
-            else "tool_use"
-        )
+        stop = "end_turn" if kwargs.get("tool_choice") == "none" or self.calls >= 30 else "tool_use"
         yield {
             "type": "final",
             "content": f"turn {self.calls}",
             "reasoning_content": "",
-            "tool_calls": [
-                {"id": "call_1", "name": "noop", "arguments": {"value": self.calls}}
-            ] if stop == "tool_use" else [],
+            "tool_calls": [{"id": "call_1", "name": "noop", "arguments": {"value": self.calls}}]
+            if stop == "tool_use"
+            else [],
             "stop_reason": stop,
             "model": "stub-model",
             "usage": {},
@@ -248,10 +240,12 @@ async def test_tier3_forces_tool_choice_none_in_nonstream_path() -> None:
     llm = _FallbackLLM()
     loop = AgentLoop(llm, _Tools(), max_iterations=31)
 
-    events = await _collect(loop.run(
-        [{"role": "user", "content": "go"}],
-        _external_tool_feedback={"iteration": 29, "tools_used_count": 29},
-    ))
+    events = await _collect(
+        loop.run(
+            [{"role": "user", "content": "go"}],
+            _external_tool_feedback={"iteration": 29, "tools_used_count": 29},
+        )
+    )
 
     assert any(isinstance(ev, FinalEvent) for ev in events)
     assert llm.tool_choices == ["none"]
@@ -267,10 +261,12 @@ async def test_force_finish_flag_off_never_forces_none() -> None:
         force_finish_via_tool_choice=False,
     )
 
-    events = await _collect(loop.run(
-        [{"role": "user", "content": "go"}],
-        _external_tool_feedback={"iteration": 29, "tools_used_count": 29},
-    ))
+    events = await _collect(
+        loop.run(
+            [{"role": "user", "content": "go"}],
+            _external_tool_feedback={"iteration": 29, "tools_used_count": 29},
+        )
+    )
 
     assert any(isinstance(ev, ToolBatchEvent) for ev in events)
     assert llm.calls == 1
@@ -295,10 +291,12 @@ async def test_tier3_suppresses_completion_nudge() -> None:
         max_completion_nudges=2,
     )
 
-    events = await _collect(loop.run(
-        [{"role": "user", "content": "go"}],
-        _external_tool_feedback={"iteration": 29, "tools_used_count": 29},
-    ))
+    events = await _collect(
+        loop.run(
+            [{"role": "user", "content": "go"}],
+            _external_tool_feedback={"iteration": 29, "tools_used_count": 29},
+        )
+    )
 
     assert any(isinstance(ev, FinalEvent) for ev in events)
     assert probe_calls == 0
@@ -353,7 +351,11 @@ class _FailVerifyGate:
         return "rebound: please prove your claims"
 
     async def consult_ephemeral_subagent(
-        self, *, ledger: Any, failed_claims: Any, assistant_text: Any  # noqa: ARG002
+        self,
+        *,
+        ledger: Any,
+        failed_claims: Any,
+        assistant_text: Any,  # noqa: ARG002
     ) -> bool:
         return False
 

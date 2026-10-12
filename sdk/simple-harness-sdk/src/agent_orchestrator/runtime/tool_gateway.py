@@ -61,15 +61,20 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         "properties": {
             "path": {"type": "string", "description": "工作区内精确相对路径，不加行号后缀"},
             "offset": {
-                "type": "integer", "minimum": 0,
+                "type": "integer",
+                "minimum": 0,
                 "description": "Unicode代码点偏移，默认0；续读用next_offset，非0须expected_sha256",
             },
             "max_chars": {
-                "type": "integer", "minimum": 1, "maximum": 4096,
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 4096,
                 "description": "最多读取的Unicode代码点数，默认4096；响应字节上限可使实际页更短",
             },
             "expected_sha256": {
-                "type": "string", "minLength": 64, "maxLength": 64,
+                "type": "string",
+                "minLength": 64,
+                "maxLength": 64,
                 "description": (
                     "前页原始bytes SHA256（64小写hex）；非0 offset续读必填，文件变化拒绝"
                 ),
@@ -102,16 +107,20 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         "type": "object",
         "description": "Execute Python in the episode's shared AppWorld shell; state persists.",
         "properties": {"code": {"type": "string"}},
-        "required": ["code"], "additionalProperties": False,
+        "required": ["code"],
+        "additionalProperties": False,
     },
     "knowledge_list": {
         "type": "object",
         "description": (
             "List current Mission knowledge; previews omit conditions. Read originals before using."
         ),
-        "properties": {"offset": {"type": "integer", "minimum": 0},
-                       "limit": {"type": "integer", "minimum": 1, "maximum": 5},
-                       "expected_sha256": {"type": "string"}}, "additionalProperties": False,
+        "properties": {
+            "offset": {"type": "integer", "minimum": 0},
+            "limit": {"type": "integer", "minimum": 1, "maximum": 5},
+            "expected_sha256": {"type": "string"},
+        },
+        "additionalProperties": False,
     },
     "knowledge_read": {
         "type": "object",
@@ -119,9 +128,13 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "Read original current knowledge by ID with provenance. "
             "Follow next_offset with expected_sha256."
         ),
-        "properties": {"id": {"type": "string"}, "offset": {"type": "integer", "minimum": 0},
-                       "expected_sha256": {"type": "string"}},
-        "required": ["id"], "additionalProperties": False,
+        "properties": {
+            "id": {"type": "string"},
+            "offset": {"type": "integer", "minimum": 0},
+            "expected_sha256": {"type": "string"},
+        },
+        "required": ["id"],
+        "additionalProperties": False,
     },
     # ASSURANCE-EXEC-1.1 §4: read-only reviewer evidence tools. Listing is not
     # exposure; only a complete read that enters the model's actual input counts.
@@ -147,10 +160,15 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         "properties": {
             "label": {"type": "string", "description": "目录或 find 结果中的 ev- 标签"},
             "offset": {
-                "type": "integer", "minimum": 0, "description": "Unicode 代码点偏移，默认 0",
+                "type": "integer",
+                "minimum": 0,
+                "description": "Unicode 代码点偏移，默认 0",
             },
             "max_chars": {
-                "type": "integer", "minimum": 1, "maximum": 8192, "description": "默认 4096",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 8192,
+                "description": "默认 4096",
             },
         },
         "required": ["label"],
@@ -223,15 +241,20 @@ def read_tool_schemas(*, large: bool = False) -> dict[str, dict[str, Any]]:
 def _read_message(call_id: CallId, value: dict[str, Any]) -> Message:
     return Message(
         MessageRole.TOOL,
-        canonical_json({"outcome": "succeeded", "value": value,
-                        "error_code": None, "public_message": None}),
-        name="workspace_read_file", call_id=call_id,
+        canonical_json(
+            {"outcome": "succeeded", "value": value, "error_code": None, "public_message": None}
+        ),
+        name="workspace_read_file",
+        call_id=call_id,
     )
 
 
 def _read_wire_size(call_id: CallId, value: dict[str, Any]) -> int:
     payload: dict[str, Any] = {
-        "outcome": "succeeded", "value": value, "error_code": None, "public_message": None
+        "outcome": "succeeded",
+        "value": value,
+        "error_code": None,
+        "public_message": None,
     }
     full = canonical_json({**payload, "call_id": call_id.value, "retryable": False})
     # ReAct Message content plus the actual name/call-id counted by count_message.
@@ -240,8 +263,13 @@ def _read_wire_size(call_id: CallId, value: dict[str, Any]) -> int:
 
 
 def _read_page(
-    workspace: Workspace, arguments: Mapping[str, Any], call_id: CallId, *, untrusted: bool,
-    context_policy: ContextPolicy | None = None, tokenizer: TokenizerPort | None = None,
+    workspace: Workspace,
+    arguments: Mapping[str, Any],
+    call_id: CallId,
+    *,
+    untrusted: bool,
+    context_policy: ContextPolicy | None = None,
+    tokenizer: TokenizerPort | None = None,
 ) -> dict[str, Any]:
     large = context_policy is not None
     counter = tokenizer if tokenizer is not None else UpperBoundTokenizer()
@@ -270,8 +298,11 @@ def _read_page(
     if untrusted:
         base.update(trust="untrusted_external", notice=UNTRUSTED_NOTICE)
     legacy = {**base, "content": text}
-    if (set(arguments) == {"path"}
-            and _read_wire_size(call_id, legacy) <= READ_PAGE_BYTES and fits(legacy)):
+    if (
+        set(arguments) == {"path"}
+        and _read_wire_size(call_id, legacy) <= READ_PAGE_BYTES
+        and fits(legacy)
+    ):
         return legacy
 
     # Match source/citation line numbering: only CRLF, CR and LF are breaks.
@@ -280,9 +311,13 @@ def _read_page(
 
     def page(end: int) -> dict[str, Any]:
         return {
-            **base, "content": text[offset:end], "page_schema": "workspace-read-v1",
-            "offset": offset, "next_offset": end if end < len(text) else None,
-            "total_chars": len(text), "sha256": digest,
+            **base,
+            "content": text[offset:end],
+            "page_schema": "workspace-read-v1",
+            "offset": offset,
+            "next_offset": end if end < len(text) else None,
+            "total_chars": len(text),
+            "sha256": digest,
             "start_line": bisect_right(starts, offset),
             "end_line": bisect_right(starts, end - 1 if end > offset else offset),
             "starts_mid_line": offset < len(text) and offset not in starts,
@@ -488,7 +523,9 @@ class WorkspaceToolGateway:
         self._appworld_lock = asyncio.Lock()
         self._appworld_mission_id: str | None = None
         self._domain_tools = dict(domain_tools or {})
-        self._domain_schemas = {name: deepcopy(tool.schema) for name, tool in self._domain_tools.items()}
+        self._domain_schemas = {
+            name: deepcopy(tool.schema) for name, tool in self._domain_tools.items()
+        }
         if set(self._domain_tools) & set(TOOL_NAMES):
             raise ValueError("domain tools cannot replace existing tool names")
         self._domain_locks: dict[str, asyncio.Lock] = {}
@@ -506,7 +543,9 @@ class WorkspaceToolGateway:
         # per-Attempt cap is checked against that durable count (it survives a restart)
         self.on_executed: Callable[[str, Mapping[str, Any]], None] | None = None
         self.executed_counter: Callable[[str], int] | None = None
-        self.search_counter: Callable[[str], int] | None = None  # H08: durable executed search calls
+        self.search_counter: Callable[[str], int] | None = (
+            None  # H08: durable executed search calls
+        )
         self.execution_refusal: Callable[[str], str | None] | None = None
         self.executed_lookup: Callable[[str], Mapping[str, Any] | None] | None = None
         self.before_execute: Callable[[WorkspaceBinding], None] | None = None
@@ -538,9 +577,12 @@ class WorkspaceToolGateway:
             return unknown
         key = f"{effect.run_id.value}:{effect.call_id.value}"
         proof = self.executed_lookup(key)
-        if (proof is None or proof.get("outcome") != "succeeded"
-                or proof.get("tool") != effect.tool_name
-                or proof.get("agent_id") != effect.run_id.value):
+        if (
+            proof is None
+            or proof.get("outcome") != "succeeded"
+            or proof.get("tool") != effect.tool_name
+            or proof.get("agent_id") != effect.run_id.value
+        ):
             return unknown
         arguments = effect.arguments
         if not isinstance(arguments, Mapping):
@@ -670,15 +712,13 @@ class WorkspaceToolGateway:
             # fabricate one; its tools read pinned Store/CAS evidence and the Mission's
             # blackboard only (K01: the knowledge tools on a review binding too).
             workspace = (
-                None if call.name in ASSURANCE_EVIDENCE_TOOLS or binding.review_key is not None
+                None
+                if call.name in ASSURANCE_EVIDENCE_TOOLS or binding.review_key is not None
                 else self._workspace(binding)
             )
             # External tool parameters called path refer to the original environment,
             # never the SDK report workspace.
-            path = (
-                None if call.name in self._domain_schemas
-                else arguments.get("path")
-            )
+            path = None if call.name in self._domain_schemas else arguments.get("path")
             if isinstance(path, str):
                 workspace.resolve(path)  # escapes raise WorkspaceError here, before any effect
                 canonical = _canonical(path)
@@ -723,9 +763,7 @@ class WorkspaceToolGateway:
                         ),
                     )
                 if call.name == "workspace_write_file" and binding.read_only_existing:
-                    existing = {
-                        _canonical(p).casefold() for p in binding.read_only_existing
-                    }
+                    existing = {_canonical(p).casefold() for p in binding.read_only_existing}
                     if canonical.casefold() in existing:
                         streak = self._read_only_existing_streak.get(run_id, 0) + 1
                         self._read_only_existing_streak[run_id] = streak
@@ -800,9 +838,13 @@ class WorkspaceToolGateway:
             searched = (
                 self.search_counter(binding.attempt_id)
                 if self.search_counter is not None and binding.view == "work"
-                else sum(1 for item in self.calls if item.get("run_id") == run_id
-                         and item.get("tool") in SEARCH_TOOL_NAMES
-                         and str(item.get("outcome", "")).startswith("succeeded"))
+                else sum(
+                    1
+                    for item in self.calls
+                    if item.get("run_id") == run_id
+                    and item.get("tool") in SEARCH_TOOL_NAMES
+                    and str(item.get("outcome", "")).startswith("succeeded")
+                )
             )
             if searched >= binding.max_search_calls:
                 return self._reject(
@@ -822,9 +864,14 @@ class WorkspaceToolGateway:
             try:
                 self.before_execute(binding)
             except Exception:
-                return self._reject(call, record, code="taskgraph_handoff_blocked",
-                    outcome="taskgraph_handoff_blocked", stage="permission",
-                    message="current TaskGraph execution control refuses this handoff")
+                return self._reject(
+                    call,
+                    record,
+                    code="taskgraph_handoff_blocked",
+                    outcome="taskgraph_handoff_blocked",
+                    stage="permission",
+                    message="current TaskGraph execution control refuses this handoff",
+                )
         # 5. execute
         if binding.review_key is not None:
             refusal = (
@@ -833,10 +880,20 @@ class WorkspaceToolGateway:
                 else self.assurance_review_refusal(run_id, binding)
             )
         else:
-            refusal = None if self.execution_refusal is None else self.execution_refusal(binding.attempt_id)
+            refusal = (
+                None
+                if self.execution_refusal is None
+                else self.execution_refusal(binding.attempt_id)
+            )
         if refusal is not None:
-            return self._reject(call, record, code=refusal, outcome="execution_stopped",
-                stage="authority", message="This Attempt no longer has authority to start a tool call.")
+            return self._reject(
+                call,
+                record,
+                code=refusal,
+                outcome="execution_stopped",
+                stage="authority",
+                message="This Attempt no longer has authority to start a tool call.",
+            )
         appworld_started = False
         try:
             if call.name == "workspace_read_file":
@@ -847,8 +904,12 @@ class WorkspaceToolGateway:
                     tuple(p.casefold() for p in binding.protected_prefixes),
                 )
                 value: Any = _read_page(
-                    workspace, arguments, call.call_id, untrusted=untrusted,
-                    context_policy=binding.context_policy, tokenizer=binding.tokenizer,
+                    workspace,
+                    arguments,
+                    call.call_id,
+                    untrusted=untrusted,
+                    context_policy=binding.context_policy,
+                    tokenizer=binding.tokenizer,
                 )
                 if untrusted:
                     record["trust"] = "untrusted_external"
@@ -871,14 +932,24 @@ class WorkspaceToolGateway:
                 if binding.review_key is not None:
                     # K01: a reviewer reads the blackboard under its live review only
                     record["review_key"] = binding.review_key
-                    refusal = (None if self.assurance_review_refusal is None
-                               else self.assurance_review_refusal(run_id, binding))
+                    refusal = (
+                        None
+                        if self.assurance_review_refusal is None
+                        else self.assurance_review_refusal(run_id, binding)
+                    )
                     if refusal is not None:
                         raise WorkspaceError(refusal)
                 try:
-                    value = self.knowledge_reader(binding.mission_id, call.name, arguments, {
-                        "attempt_id": binding.attempt_id, "call_id": f"{run_id}:{call.call_id}",
-                        "review_key": binding.review_key})
+                    value = self.knowledge_reader(
+                        binding.mission_id,
+                        call.name,
+                        arguments,
+                        {
+                            "attempt_id": binding.attempt_id,
+                            "call_id": f"{run_id}:{call.call_id}",
+                            "review_key": binding.review_key,
+                        },
+                    )
                 except ValueError as error:
                     raise WorkspaceError(str(error)) from error
             elif call.name in ASSURANCE_EVIDENCE_TOOLS:
@@ -887,11 +958,18 @@ class WorkspaceToolGateway:
                     or binding.mission_id is None
                     or self.assurance_evidence_reader is None
                 ):
-                    raise WorkspaceError("assurance evidence tools are unavailable for this binding")
+                    raise WorkspaceError(
+                        "assurance evidence tools are unavailable for this binding"
+                    )
                 record["review_key"] = binding.review_key
                 value = dict(
-                    self.assurance_evidence_reader(run_id, binding.mission_id, call.name, arguments,
-                                                   call_id=f"{run_id}:{call.call_id}")
+                    self.assurance_evidence_reader(
+                        run_id,
+                        binding.mission_id,
+                        call.name,
+                        arguments,
+                        call_id=f"{run_id}:{call.call_id}",
+                    )
                 )
             elif call.name in self._domain_tools:
                 if binding.mission_id is None:
@@ -899,16 +977,27 @@ class WorkspaceToolGateway:
                 tool = self._domain_tools[call.name]
                 lock = self._domain_locks.setdefault(binding.mission_id, asyncio.Lock())
                 async with lock:
-                    refusal = None if self.execution_refusal is None else self.execution_refusal(binding.attempt_id)
+                    refusal = (
+                        None
+                        if self.execution_refusal is None
+                        else self.execution_refusal(binding.attempt_id)
+                    )
                     if refusal is not None:
                         raise WorkspaceError(refusal)
-                    pending = asyncio.create_task(asyncio.to_thread(
-                        tool.invoke, arguments, binding.mission_id, f"{run_id}:{call.call_id}"))
+                    pending = asyncio.create_task(
+                        asyncio.to_thread(
+                            tool.invoke, arguments, binding.mission_id, f"{run_id}:{call.call_id}"
+                        )
+                    )
                     value = dict(await _await_physical_call(pending))
             elif call.name == "appworld_execute":
-                if (not binding.writable or binding.view != "work"
-                        or self._appworld_execute is None or binding.mission_id is None
-                        or binding.mission_id != self._appworld_mission_id):
+                if (
+                    not binding.writable
+                    or binding.view != "work"
+                    or self._appworld_execute is None
+                    or binding.mission_id is None
+                    or binding.mission_id != self._appworld_mission_id
+                ):
                     raise WorkspaceError("AppWorld execution is unavailable for this binding")
                 async with self._appworld_lock:
                     appworld_started = True

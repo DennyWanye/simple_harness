@@ -111,9 +111,7 @@ class PersonalWorkflowEffectReceiptV1:
         }
         return cls(
             **values,
-            receipt_hash=_hash(
-                {"schema": "personal-workflow-effect-receipt-v1", **values}
-            ),
+            receipt_hash=_hash({"schema": "personal-workflow-effect-receipt-v1", **values}),
         )
 
 
@@ -153,9 +151,7 @@ class JournaledPersonalWorkflowEffects:
         session_id: str,
         effect_context: EffectContextSource,
         execution_context: ToolExecutionContext | None = None,
-        dispatch_fence_acquirer: Callable[
-            [str], Awaitable[Any]
-        ] | None = None,
+        dispatch_fence_acquirer: Callable[[str], Awaitable[Any]] | None = None,
     ) -> None:
         if not session_id.strip():
             raise ValueError("personal workflow session_id is required")
@@ -175,34 +171,23 @@ class JournaledPersonalWorkflowEffects:
         if inspect.isawaitable(selected):
             selected = await selected
         if not isinstance(selected, EffectExecutionContext):
-            raise PersonalWorkflowRuntimeError(
-                "personal_effect_context_unavailable"
-            )
-        if (
-            selected.workflow_name != "personal_workflow"
-            or selected.workflow_version != "v1"
-        ):
-            raise PersonalWorkflowRuntimeError(
-                "personal_effect_context_identity_mismatch"
-            )
+            raise PersonalWorkflowRuntimeError("personal_effect_context_unavailable")
+        if selected.workflow_name != "personal_workflow" or selected.workflow_version != "v1":
+            raise PersonalWorkflowRuntimeError("personal_effect_context_identity_mismatch")
         return selected
 
     @staticmethod
     def _policy_hash(spec: Any) -> str:
         policy = getattr(spec, "effect_policy", None)
         if policy is None:
-            raise PersonalWorkflowRuntimeError(
-                "personal_effect_policy_missing"
-            )
+            raise PersonalWorkflowRuntimeError("personal_effect_policy_missing")
         return fingerprint_json(
             {
                 "policy_id": str(policy.policy_id),
                 "version": str(policy.version),
                 "kind": str(getattr(policy.kind, "value", policy.kind)),
                 "max_attempts": int(policy.max_attempts),
-                "reusable_across_branches": bool(
-                    policy.reusable_across_branches
-                ),
+                "reusable_across_branches": bool(policy.reusable_across_branches),
             }
         )
 
@@ -215,34 +200,20 @@ class JournaledPersonalWorkflowEffects:
         try:
             spec = self._registry.resolve_prepared_spec(prepared)
         except (KeyError, RuntimeError, ValueError) as exc:
-            raise PersonalWorkflowRuntimeError(
-                "personal_tool_binding_stale"
-            ) from exc
-        build = (
-            None
-            if spec is None
-            else getattr(spec, "execution_build_identity", None)
-        )
+            raise PersonalWorkflowRuntimeError("personal_tool_binding_stale") from exc
+        build = None if spec is None else getattr(spec, "execution_build_identity", None)
         expected = {
-            "stable_handler_id": (
-                "" if spec is None else str(spec.stable_handler_id)
-            ),
+            "stable_handler_id": ("" if spec is None else str(spec.stable_handler_id)),
             "tool_name": prepared.tool_name,
             "spec_ref": prepared.tool_spec_fingerprint,
             "schema_hash": prepared.schema_hash,
-            "execution_build_identity": (
-                "" if build is None else str(build.fingerprint)
-            ),
-            "effect_policy_hash": (
-                "" if spec is None else self._policy_hash(spec)
-            ),
+            "execution_build_identity": ("" if build is None else str(build.fingerprint)),
+            "effect_policy_hash": ("" if spec is None else self._policy_hash(spec)),
             "effect": "read_only",
             "idempotent": True,
         }
         if dict(tool_binding) != expected:
-            raise PersonalWorkflowRuntimeError(
-                "personal_tool_binding_stale"
-            )
+            raise PersonalWorkflowRuntimeError("personal_tool_binding_stale")
         policy_kind = str(
             getattr(
                 getattr(getattr(spec, "effect_policy", None), "kind", None),
@@ -254,9 +225,7 @@ class JournaledPersonalWorkflowEffects:
             "idempotent_read",
             "deterministic_reusable",
         }:
-            raise PersonalWorkflowRuntimeError(
-                "personal_tool_effect_not_idempotent"
-            )
+            raise PersonalWorkflowRuntimeError("personal_tool_effect_not_idempotent")
 
     async def execute(
         self,
@@ -271,18 +240,14 @@ class JournaledPersonalWorkflowEffects:
     ) -> PersonalWorkflowEffectReceiptV1:
         context = await self._context(node_id)
         if execution_identity.run_id != context.fence.run_id:
-            raise PersonalWorkflowRuntimeError(
-                "personal_effect_run_identity_mismatch"
-            )
+            raise PersonalWorkflowRuntimeError("personal_effect_run_identity_mismatch")
         if (
             isinstance(attempt_ordinal, bool)
             or not isinstance(attempt_ordinal, int)
             or attempt_ordinal < 0
             or attempt_ordinal != execution_identity.attempt - 1
         ):
-            raise PersonalWorkflowRuntimeError(
-                "personal_effect_attempt_identity_mismatch"
-            )
+            raise PersonalWorkflowRuntimeError("personal_effect_attempt_identity_mismatch")
         node_execution_id = hashlib.sha256(
             "|".join(
                 (
@@ -304,9 +269,7 @@ class JournaledPersonalWorkflowEffects:
         )
         execution_context = self._execution_context
         if execution_context is None:
-            raise PersonalWorkflowRuntimeError(
-                "personal_tool_execution_context_unavailable"
-            )
+            raise PersonalWorkflowRuntimeError("personal_tool_execution_context_unavailable")
         from dataclasses import replace
 
         execution_context = replace(
@@ -315,20 +278,13 @@ class JournaledPersonalWorkflowEffects:
             effect_id=logical_effect_id,
         )
         spec_ref = str(tool_binding.get("spec_ref") or "")
-        if (
-            len(spec_ref) != 64
-            or any(character not in "0123456789abcdef" for character in spec_ref)
+        if len(spec_ref) != 64 or any(
+            character not in "0123456789abcdef" for character in spec_ref
         ):
-            raise PersonalWorkflowRuntimeError(
-                "personal_tool_spec_ref_invalid"
-            )
-        catalog_snapshot_ref = (
-            execution_context.capability_snapshot_ref.strip()
-        )
+            raise PersonalWorkflowRuntimeError("personal_tool_spec_ref_invalid")
+        catalog_snapshot_ref = execution_context.capability_snapshot_ref.strip()
         if not catalog_snapshot_ref:
-            raise PersonalWorkflowRuntimeError(
-                "personal_catalog_snapshot_ref_unavailable"
-            )
+            raise PersonalWorkflowRuntimeError("personal_catalog_snapshot_ref_unavailable")
         prepared = self._registry.prepare_frozen_call(
             str(tool_binding["tool_name"]),
             dict(arguments),
@@ -358,23 +314,15 @@ class JournaledPersonalWorkflowEffects:
         )
         envelope = result.get(stable_call_id)
         if not isinstance(envelope, Mapping):
-            raise PersonalWorkflowRuntimeError(
-                "personal_tool_outcome_missing"
-            )
+            raise PersonalWorkflowRuntimeError("personal_tool_outcome_missing")
         raw_outcome = envelope.get("outcome")
         if not isinstance(raw_outcome, Mapping):
-            raise PersonalWorkflowRuntimeError(
-                "personal_tool_outcome_invalid"
-            )
+            raise PersonalWorkflowRuntimeError("personal_tool_outcome_invalid")
         outcome = NormalizedToolOutcome.from_dict(raw_outcome)
         if outcome.state is not ToolOutcomeState.SUCCESS:
             raise PersonalWorkflowRuntimeError("personal_tool_failed")
         raw_value = thaw_json(outcome.value)
-        if (
-            isinstance(raw_value, Mapping)
-            and raw_value.get("ok") is True
-            and "result" in raw_value
-        ):
+        if isinstance(raw_value, Mapping) and raw_value.get("ok") is True and "result" in raw_value:
             raw_value = thaw_json(raw_value["result"])
         output: Mapping[str, JsonValue]
         if isinstance(raw_value, Mapping):
@@ -383,9 +331,7 @@ class JournaledPersonalWorkflowEffects:
             output = {"result": raw_value}
         effect_id = str(envelope.get("effect_id") or "")
         if not effect_id:
-            raise PersonalWorkflowRuntimeError(
-                "personal_effect_receipt_missing"
-            )
+            raise PersonalWorkflowRuntimeError("personal_effect_receipt_missing")
         return PersonalWorkflowEffectReceiptV1.issue(
             logical_effect_id=logical_effect_id,
             stable_call_id=stable_call_id,
@@ -407,9 +353,7 @@ def _pointer(value: object, pointer: str) -> JsonValue:
             try:
                 current = current[int(key)]
             except (ValueError, IndexError) as exc:
-                raise PersonalWorkflowRuntimeError(
-                    "personal_pointer_missing"
-                ) from exc
+                raise PersonalWorkflowRuntimeError("personal_pointer_missing") from exc
         else:
             raise PersonalWorkflowRuntimeError("personal_pointer_missing")
     return copy.deepcopy(current)  # type: ignore[return-value]
@@ -422,10 +366,7 @@ def _resolved_bindings(
     outputs: Mapping[str, JsonValue],
 ) -> dict[str, JsonValue]:
     root = {"input": dict(inputs), "nodes": dict(outputs)}
-    return {
-        name: _pointer(root, pointer)
-        for name, pointer in node.bindings.items()
-    }
+    return {name: _pointer(root, pointer) for name, pointer in node.bindings.items()}
 
 
 def _condition(operator: str, values: Mapping[str, JsonValue]) -> bool:
@@ -449,9 +390,7 @@ def _condition(operator: str, values: Mapping[str, JsonValue]) -> bool:
         if operator == "lte":
             return left <= right  # type: ignore[operator]
     except TypeError as exc:
-        raise PersonalWorkflowRuntimeError(
-            "personal_condition_type_mismatch"
-        ) from exc
+        raise PersonalWorkflowRuntimeError("personal_condition_type_mismatch") from exc
     raise PersonalWorkflowRuntimeError("personal_condition_unknown")
 
 
@@ -482,9 +421,7 @@ class PersonalWorkflowRuntime:
         execution_identity: NodeExecutionIdentity,
     ) -> Mapping[str, JsonValue]:
         if not isinstance(selection, PersonalWorkflowSelectionV1):
-            raise PersonalWorkflowRuntimeError(
-                "personal_selection_typed_required"
-            )
+            raise PersonalWorkflowRuntimeError("personal_selection_typed_required")
         workflow = selection.workflow
         if (
             execution_identity.run_id != child_run_id
@@ -492,24 +429,18 @@ class PersonalWorkflowRuntime:
             or execution_identity.workflow_version != "v1"
             or execution_identity.attempt < 1
         ):
-            raise PersonalWorkflowRuntimeError(
-                "personal_execution_identity_mismatch"
-            )
+            raise PersonalWorkflowRuntimeError("personal_execution_identity_mismatch")
         attempt_ordinal = execution_identity.attempt - 1
         outputs: dict[str, JsonValue] = {}
         for node in self._topological_nodes(workflow.nodes):
-            bindings = _resolved_bindings(
-                node, inputs=inputs, outputs=outputs
-            )
+            bindings = _resolved_bindings(node, inputs=inputs, outputs=outputs)
             if node.type == "input":
                 output: JsonValue = copy.deepcopy(dict(inputs))
             elif node.type == "template":
                 try:
                     output = str(node.config["template"]).format_map(bindings)
                 except KeyError as exc:
-                    raise PersonalWorkflowRuntimeError(
-                        "personal_template_binding_missing"
-                    ) from exc
+                    raise PersonalWorkflowRuntimeError("personal_template_binding_missing") from exc
             elif node.type == "condition":
                 output = _condition(str(node.config["operator"]), bindings)
             elif node.type == "tool_call":
@@ -543,15 +474,10 @@ class PersonalWorkflowRuntime:
             elif node.type == "output":
                 output = copy.deepcopy(bindings)
             else:
-                raise PersonalWorkflowRuntimeError(
-                    "personal_node_type_unknown"
-                )
+                raise PersonalWorkflowRuntimeError("personal_node_type_unknown")
             outputs[node.id] = copy.deepcopy(output)
         root = {"nodes": outputs}
-        return {
-            name: _pointer(root, pointer)
-            for name, pointer in workflow.outputs.items()
-        }
+        return {name: _pointer(root, pointer) for name, pointer in workflow.outputs.items()}
 
     @staticmethod
     def _topological_nodes(
@@ -596,22 +522,16 @@ class PersonalWorkflowRuntime:
             node_id=node_id,
         )
         if receipt.logical_effect_id != expected:
-            raise PersonalWorkflowRuntimeError(
-                "personal_effect_receipt_identity_mismatch"
-            )
+            raise PersonalWorkflowRuntimeError("personal_effect_receipt_identity_mismatch")
 
 
 ExecutionContextFactory = Callable[
     [RunStartSnapshotRecord],
-    ToolExecutionContext
-    | None
-    | Awaitable[ToolExecutionContext | None],
+    ToolExecutionContext | None | Awaitable[ToolExecutionContext | None],
 ]
 RunStartSnapshotReader = Callable[
     [str],
-    RunStartSnapshotRecord
-    | None
-    | Awaitable[RunStartSnapshotRecord | None],
+    RunStartSnapshotRecord | None | Awaitable[RunStartSnapshotRecord | None],
 ]
 
 
@@ -620,19 +540,13 @@ def _tool_execution_context_from_start(
 ) -> ToolExecutionContext:
     """Rebuild host-only tool authority from the immutable execution RunStart."""
 
-    run_context = RunContext.from_dict(
-        json.loads(snapshot.run_context_json)
-    )
+    run_context = RunContext.from_dict(json.loads(snapshot.run_context_json))
     capability_snapshot = json.loads(snapshot.capability_snapshot_json)
     if not isinstance(capability_snapshot, Mapping) or (
-        fingerprint_json(dict(capability_snapshot))
-        != snapshot.capability_snapshot_hash
-        or capability_snapshot.get("capability_hash")
-        != run_context.capability_hash
+        fingerprint_json(dict(capability_snapshot)) != snapshot.capability_snapshot_hash
+        or capability_snapshot.get("capability_hash") != run_context.capability_hash
     ):
-        raise PersonalWorkflowRuntimeError(
-            "personal_run_start_capability_mismatch"
-        )
+        raise PersonalWorkflowRuntimeError("personal_run_start_capability_mismatch")
     extensions = capability_snapshot.get("host_extensions")
     companion = (
         extensions.get("deskpet.companion.selection.v1")
@@ -657,17 +571,14 @@ def _tool_execution_context_from_start(
             for item in scope.get("allowed_tool_refs", ()):
                 if isinstance(item, Mapping):
                     exact_refs.append(dict(item))
-    ref_hashes = tuple(
-        sorted({fingerprint_json(dict(item)) for item in exact_refs})
-    )
+    ref_hashes = tuple(sorted({fingerprint_json(dict(item)) for item in exact_refs}))
     return HostContextFactory().create_tool_context(
         run_context,
         run_id=snapshot.run_id,
         call_id="personal-start-pending-call",
         effect_id="personal-start-pending-effect",
         capability_snapshot_ref=str(
-            capability_snapshot.get("catalog_snapshot_ref")
-            or snapshot.capability_snapshot_hash
+            capability_snapshot.get("catalog_snapshot_ref") or snapshot.capability_snapshot_hash
         ),
         active_skill_scope_ids=active_scope_ids,
         effective_skill_tool_ref_hashes=ref_hashes,
@@ -687,9 +598,7 @@ def build_personal_runtime_adapter(
     tool_registry: ToolRegistry | None = None,
     run_start_snapshot_reader: RunStartSnapshotReader | None = None,
     execution_context_factory: ExecutionContextFactory | None = None,
-    dispatch_fence_acquirer: Callable[
-        [str], Awaitable[Any]
-    ] | None = None,
+    dispatch_fence_acquirer: Callable[[str], Awaitable[Any]] | None = None,
 ) -> WorkflowRuntimeAdapter:
     """Build the static adapter from an injected runtime or production ports.
 
@@ -698,9 +607,7 @@ def build_personal_runtime_adapter(
     or checkpoint authority is created here.
     """
 
-    if runtime is not None and not isinstance(
-        runtime, PersonalWorkflowRuntime
-    ):
+    if runtime is not None and not isinstance(runtime, PersonalWorkflowRuntime):
         raise TypeError("personal_workflow_runtime_required")
     if runtime is None and (
         not isinstance(journal, EffectJournal)
@@ -708,8 +615,7 @@ def build_personal_runtime_adapter(
         or not callable(run_start_snapshot_reader)
     ):
         raise TypeError(
-            "personal workflow requires EffectJournal, ToolRegistry, and "
-            "a trusted RunStart reader"
+            "personal workflow requires EffectJournal, ToolRegistry, and a trusted RunStart reader"
         )
 
     async def trusted_context_factory(
@@ -722,23 +628,13 @@ def build_personal_runtime_adapter(
             row_values = dict(row)
             run_id = str(row_values.get("run_id") or "").strip()
             session_id = str(
-                row_values.get("session_id")
-                or row_values.get("delivery_session_id")
-                or ""
+                row_values.get("session_id") or row_values.get("delivery_session_id") or ""
             ).strip()
             owner = str(row_values.get("lease_owner") or "").strip()
             lease_epoch = int(row_values.get("lease_epoch") or 0)
             run_version = int(row_values.get("run_version") or 0)
-            if (
-                not run_id
-                or not session_id
-                or not owner
-                or lease_epoch < 1
-                or run_version < 0
-            ):
-                raise PersonalWorkflowRuntimeError(
-                    "personal_workflow_fence_unavailable"
-                )
+            if not run_id or not session_id or not owner or lease_epoch < 1 or run_version < 0:
+                raise PersonalWorkflowRuntimeError("personal_workflow_fence_unavailable")
             fence = RunFence(
                 run_id,
                 owner,
@@ -749,12 +645,8 @@ def build_personal_runtime_adapter(
                 {
                     "run_id": run_id,
                     "node_id": "execute",
-                    "checkpoint_ns": str(
-                        row_values.get("head_checkpoint_ns") or ""
-                    ),
-                    "checkpoint_id": str(
-                        row_values.get("head_checkpoint_id") or "root"
-                    ),
+                    "checkpoint_ns": str(row_values.get("head_checkpoint_ns") or ""),
+                    "checkpoint_id": str(row_values.get("head_checkpoint_id") or "root"),
                 }
             )
             effect_context = EffectExecutionContext(
@@ -771,13 +663,9 @@ def build_personal_runtime_adapter(
             if inspect.isawaitable(trusted_start):
                 trusted_start = await trusted_start
             if not isinstance(trusted_start, RunStartSnapshotRecord):
-                raise PersonalWorkflowRuntimeError(
-                    "personal_run_start_unavailable"
-                )
+                raise PersonalWorkflowRuntimeError("personal_run_start_unavailable")
             if trusted_start.run_id != run_id:
-                raise PersonalWorkflowRuntimeError(
-                    "personal_run_start_identity_mismatch"
-                )
+                raise PersonalWorkflowRuntimeError("personal_run_start_identity_mismatch")
             if execution_context_factory is not None:
                 execution_context = execution_context_factory(
                     trusted_start,
@@ -789,13 +677,10 @@ def build_personal_runtime_adapter(
                     ToolExecutionContext,
                 ):
                     raise TypeError(
-                        "personal execution context factory returned "
-                        "an unsupported value"
+                        "personal execution context factory returned an unsupported value"
                     )
             else:
-                execution_context = _tool_execution_context_from_start(
-                    trusted_start
-                )
+                execution_context = _tool_execution_context_from_start(trusted_start)
             selected_runtime = PersonalWorkflowRuntime(
                 JournaledPersonalWorkflowEffects(
                     journal=journal,
@@ -806,9 +691,7 @@ def build_personal_runtime_adapter(
                     dispatch_fence_acquirer=dispatch_fence_acquirer,
                 )
             )
-        return WorkflowContext(
-            ports={"personal_workflow_runtime": selected_runtime}
-        )
+        return WorkflowContext(ports={"personal_workflow_runtime": selected_runtime})
 
     return WorkflowRuntimeAdapter(
         workflow_name="personal_workflow",

@@ -23,7 +23,9 @@ async def test_workflow_schema_is_complete_and_idempotent(tmp_path):
     async with aiosqlite.connect(path) as db:
         row = await (await db.execute("PRAGMA user_version")).fetchone()
         assert row == (WORKFLOW_SCHEMA_VERSION,)
-        rows = await (await db.execute("SELECT name FROM sqlite_master WHERE type='table'")).fetchall()
+        rows = await (
+            await db.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        ).fetchall()
 
     names = {row[0] for row in rows}
     assert {
@@ -67,9 +69,7 @@ async def test_workflow_schema_is_complete_and_idempotent(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_v30_makes_execution_db_the_skill_verification_owner(
-    tmp_path, monkeypatch
-):
+async def test_v30_makes_execution_db_the_skill_verification_owner(tmp_path, monkeypatch):
     path = tmp_path / "workflow-v29.db"
     monkeypatch.setattr(workflow_schema, "WORKFLOW_SCHEMA_VERSION", 29)
     await workflow_schema.initialize_workflow_db(path)
@@ -90,9 +90,7 @@ async def test_v30_makes_execution_db_the_skill_verification_owner(
         tables = {
             str(row[0])
             for row in await (
-                await db.execute(
-                    "SELECT name FROM sqlite_master WHERE type='table'"
-                )
+                await db.execute("SELECT name FROM sqlite_master WHERE type='table'")
             ).fetchall()
         }
 
@@ -111,9 +109,7 @@ async def test_v30_makes_execution_db_the_skill_verification_owner(
 
 
 @pytest.mark.asyncio
-async def test_v31_preserves_skill_intents_and_accepts_sdk_version_zero(
-    tmp_path, monkeypatch
-):
+async def test_v31_preserves_skill_intents_and_accepts_sdk_version_zero(tmp_path, monkeypatch):
     path = tmp_path / "workflow-v30.db"
     monkeypatch.setattr(workflow_schema, "WORKFLOW_SCHEMA_VERSION", 30)
     await workflow_schema.initialize_workflow_db(path)
@@ -178,6 +174,7 @@ async def test_v30_skill_verification_migration_rolls_back_atomically(
     await workflow_schema.initialize_workflow_db(path)
 
     async with aiosqlite.connect(path) as db:
+
         def fail(point: str) -> None:
             if point == fault_point:
                 raise RuntimeError(f"fault:{point}")
@@ -463,7 +460,7 @@ def test_blob_store_is_content_addressed_and_checks_integrity(tmp_path):
     store = BlobStore(tmp_path / "blobs")
     ref = store.put(b"durable state", media_type="application/json")
     assert ref.sha256 == hashlib.sha256(b"durable state").hexdigest()
-    assert store.put(b"durable state") .sha256 == ref.sha256
+    assert store.put(b"durable state").sha256 == ref.sha256
     assert store.get(ref) == b"durable state"
 
     store.path_for(ref.sha256).write_bytes(b"corrupt")
@@ -493,9 +490,14 @@ async def test_start_is_idempotent_and_fence_rejects_stale_owner(tmp_path):
     assert await store.create_run(**kwargs) == (run_id, False)
 
     first = await store.claim(run_id, "runner-a")
-    event = await store.append_event(first, "run.started", {"status": "running"}, event_key="accepted")
+    event = await store.append_event(
+        first, "run.started", {"status": "running"}, event_key="accepted"
+    )
     assert event["seq"] == 1
-    assert await store.append_event(first, "run.started", {"status": "running"}, event_key="accepted") == event
+    assert (
+        await store.append_event(first, "run.started", {"status": "running"}, event_key="accepted")
+        == event
+    )
 
     now[0] = 200.0
     second = await store.claim(run_id, "runner-b")

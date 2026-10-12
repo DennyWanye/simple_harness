@@ -9,9 +9,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_baseline_runner_lists_every_manifest_shard_in_order(tmp_path) -> None:
-    manifest = json.loads(
-        (REPO_ROOT / "baseline-shards.json").read_text(encoding="utf-8")
-    )
+    manifest = json.loads((REPO_ROOT / "baseline-shards.json").read_text(encoding="utf-8"))
     expected_ids = [shard["id"] for shard in manifest["shards"]]
     assert len(expected_ids) == len(set(expected_ids)) == 17
     completed = subprocess.run(
@@ -79,8 +77,6 @@ def test_alpha_shards_list_every_top_level_backend_test_exactly_once() -> None:
             text=True,
         )
         discovered.extend(completed.stdout.splitlines())
-    expected = sorted(
-        str(path) for path in (REPO_ROOT / "backend" / "tests").glob("test_*.py")
-    )
+    expected = sorted(str(path) for path in (REPO_ROOT / "backend" / "tests").glob("test_*.py"))
     assert len(discovered) == len(set(discovered))
     assert sorted(discovered) == expected

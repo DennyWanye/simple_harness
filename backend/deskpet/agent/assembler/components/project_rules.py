@@ -63,9 +63,7 @@ class ProjectRulesComponent:
         max_chars = _bounded_int(rules_config.get("max_chars"), 12_000, 0, 200_000)
         max_tokens = _bounded_int(rules_config.get("max_tokens"), 3_000, 0, 50_000)
         max_files = _bounded_int(rules_config.get("max_files"), 32, 0, 256)
-        max_file_bytes = _bounded_int(
-            rules_config.get("max_file_bytes"), 256_000, 1, 4_000_000
-        )
+        max_file_bytes = _bounded_int(rules_config.get("max_file_bytes"), 256_000, 1, 4_000_000)
         if max_chars == 0 or max_tokens == 0 or max_files == 0:
             return self._empty(
                 "budget_disabled",
@@ -90,19 +88,13 @@ class ProjectRulesComponent:
 
         for candidate in candidates:
             if len(fragments) >= max_files:
-                omitted.append(
-                    {"path": candidate.relative_path, "reason": "max_files"}
-                )
+                omitted.append({"path": candidate.relative_path, "reason": "max_files"})
                 continue
             if remaining_chars <= 0 or remaining_tokens <= 0:
-                omitted.append(
-                    {"path": candidate.relative_path, "reason": "budget_exhausted"}
-                )
+                omitted.append({"path": candidate.relative_path, "reason": "budget_exhausted"})
                 continue
             if ctx.time_remaining_ms() is not None and ctx.time_remaining_ms() <= 0:
-                omitted.append(
-                    {"path": candidate.relative_path, "reason": "component_deadline"}
-                )
+                omitted.append({"path": candidate.relative_path, "reason": "component_deadline"})
                 continue
 
             try:
@@ -123,17 +115,13 @@ class ProjectRulesComponent:
                 max_tokens=remaining_tokens,
             )
             if not rendered:
-                omitted.append(
-                    {"path": candidate.relative_path, "reason": "budget_exhausted"}
-                )
+                omitted.append({"path": candidate.relative_path, "reason": "budget_exhausted"})
                 continue
 
             tokens = count_text_tokens(rendered)
             remaining_chars -= len(rendered)
             remaining_tokens -= tokens
-            path_hash = hashlib.sha256(
-                candidate.relative_path.encode("utf-8")
-            ).hexdigest()[:10]
+            path_hash = hashlib.sha256(candidate.relative_path.encode("utf-8")).hexdigest()[:10]
             source = f"project_rules:{candidate.relative_path}"
             file_meta = {
                 "path": candidate.relative_path,
@@ -144,9 +132,7 @@ class ProjectRulesComponent:
             }
             fragments.append(
                 ContextFragment(
-                    fragment_id=(
-                        f"project_rules:{path_hash}:{loaded.sha256[:16]}"
-                    ),
+                    fragment_id=(f"project_rules:{path_hash}:{loaded.sha256[:16]}"),
                     source=source,
                     role="system",
                     content=rendered,
@@ -220,9 +206,7 @@ def _select_verified_workspace(
     workspace_context = _mapping(config.get("workspace_context"))
     if workspace_context.get("verified") is not True:
         return None, "workspace_unverified"
-    root_value = workspace_context.get("root") or workspace_context.get(
-        "workspace_root"
-    )
+    root_value = workspace_context.get("root") or workspace_context.get("workspace_root")
     if not root_value:
         return None, "workspace_unverified"
     active_value = workspace_context.get("active_path") or root_value

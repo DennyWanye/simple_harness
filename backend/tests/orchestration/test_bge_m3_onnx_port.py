@@ -23,7 +23,9 @@ def test_missing_or_incomplete_models_are_named(tmp_path) -> None:
     folder.mkdir()
     (folder / "model.int8.onnx").write_bytes(b"graph")
     port, reason = embedding_port(tmp_path)
-    assert port is None and "model.int8.onnx.data" in reason  # the external weights are required too
+    assert (
+        port is None and "model.int8.onnx.data" in reason
+    )  # the external weights are required too
 
 
 def test_the_port_declares_background_computation(tmp_path) -> None:
@@ -33,15 +35,25 @@ def test_the_port_declares_background_computation(tmp_path) -> None:
         (folder / name).write_bytes(b"x")
     port, reason = embedding_port(tmp_path)
     assert reason is None and isinstance(port, BgeM3EmbeddingPort)
-    assert port.prefers_background is True and port.dim == 1024 and port.fingerprint.startswith("bge-m3-int8-onnx:")
+    assert (
+        port.prefers_background is True
+        and port.dim == 1024
+        and port.fingerprint.startswith("bge-m3-int8-onnx:")
+    )
 
 
-@pytest.mark.skipif(not (MODELS / BGE_M3_SUBDIR / "model.int8.onnx.data").is_file(), reason="BGE-M3 INT8 model not installed")
+@pytest.mark.skipif(
+    not (MODELS / BGE_M3_SUBDIR / "model.int8.onnx.data").is_file(),
+    reason="BGE-M3 INT8 model not installed",
+)
 def test_real_model_vectors_are_normalised_and_semantic() -> None:
     port, reason = embedding_port(MODELS)
     assert reason is None
-    docs = ["本工程的暗号是「蓝鲸七号」；所有报告发出前必须先经过李工审阅。", "今天的天气有些闷热，午后可能下雨。",
-            "The deployment must be approved by the security team."]
+    docs = [
+        "本工程的暗号是「蓝鲸七号」；所有报告发出前必须先经过李工审阅。",
+        "今天的天气有些闷热，午后可能下雨。",
+        "The deployment must be approved by the security team.",
+    ]
     vectors = port.embed(docs)
     query = port.embed(["工程的暗号是什么", "哪个团队要批准部署？"])
     assert len(vectors) == 3 and all(len(v) == 1024 for v in vectors)

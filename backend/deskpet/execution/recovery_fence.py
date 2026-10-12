@@ -135,9 +135,7 @@ class HumanMemoryRecoveryCoordinator:
                         count = int((await cursor.fetchone())[0])
                         await cursor.close()
                         counts.append({"table": name, "row_count": count})
-                cutoff = canonical_hash(
-                    {"generation": generation, "authority_counts": counts}
-                )
+                cutoff = canonical_hash({"generation": generation, "authority_counts": counts})
                 await self._transition_tx(
                     db,
                     current=current,
@@ -165,9 +163,7 @@ class HumanMemoryRecoveryCoordinator:
                     raise HumanMemoryRecoveryError("human_memory_recovery_not_closing")
                 items = await self._current_work_items_tx(db)
                 for worker_kind in _WORKER_SPECS:
-                    worker_items = [
-                        item for item in items if item["worker_kind"] == worker_kind
-                    ]
+                    worker_items = [item for item in items if item["worker_kind"] == worker_kind]
                     item_receipt_hashes: list[str] = []
                     gap_count = 0
                     for item in worker_items:
@@ -178,11 +174,7 @@ class HumanMemoryRecoveryCoordinator:
                         disposition = (
                             ("acked" if worker_kind == "foreground-signal" else "delivered")
                             if proof is not None
-                            else (
-                                "lease_parked"
-                                if worker_kind == "foreground-lease"
-                                else "parked"
-                            )
+                            else ("lease_parked" if worker_kind == "foreground-lease" else "parked")
                         )
                         item_payload = {
                             "schema_version": 1,
@@ -196,14 +188,10 @@ class HumanMemoryRecoveryCoordinator:
                             "proof_hash": None if proof is None else proof["proof_hash"],
                             "durable_watermark": item["watermark"],
                             "lease_owner_id": (
-                                item["lease_owner_id"]
-                                if disposition == "lease_parked"
-                                else None
+                                item["lease_owner_id"] if disposition == "lease_parked" else None
                             ),
                             "lease_generation": (
-                                item["lease_generation"]
-                                if disposition == "lease_parked"
-                                else None
+                                item["lease_generation"] if disposition == "lease_parked" else None
                             ),
                             "cutoff": str(fence["cutoff"]),
                         }
@@ -213,9 +201,7 @@ class HumanMemoryRecoveryCoordinator:
                         )
                         item_receipt_hashes.append(item_receipt_hash)
                     if gap_count:
-                        raise HumanMemoryRecoveryError(
-                            "human_memory_recovery_outbox_gap"
-                        )
+                        raise HumanMemoryRecoveryError("human_memory_recovery_outbox_gap")
                     payload = {
                         "schema_version": 2,
                         "generation": int(fence["generation"]),
@@ -237,27 +223,26 @@ class HumanMemoryRecoveryCoordinator:
                     if existing is None:
                         await db.execute(
                             "INSERT INTO human_memory_recovery_worker_receipts("
-                        "receipt_id,generation,worker_kind,action,cutoff,item_count,"
-                        "item_root,gap_count,receipt_hash,receipt_json,recorded_at) "
-                        "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                        (
-                            _uuid(f"recovery-worker:{receipt_hash}"),
-                            payload["generation"],
-                            worker_kind,
-                            action,
-                            payload["cutoff"],
-                            payload["item_count"],
-                            payload["item_root"],
-                            gap_count,
-                            receipt_hash,
-                            canonical_json(payload),
-                            time.time(),
-                        ),
+                            "receipt_id,generation,worker_kind,action,cutoff,item_count,"
+                            "item_root,gap_count,receipt_hash,receipt_json,recorded_at) "
+                            "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                            (
+                                _uuid(f"recovery-worker:{receipt_hash}"),
+                                payload["generation"],
+                                worker_kind,
+                                action,
+                                payload["cutoff"],
+                                payload["item_count"],
+                                payload["item_root"],
+                                gap_count,
+                                receipt_hash,
+                                canonical_json(payload),
+                                time.time(),
+                            ),
                         )
-                    elif (
-                        str(existing["receipt_hash"]) != receipt_hash
-                        or str(existing["receipt_json"]) != canonical_json(payload)
-                    ):
+                    elif str(existing["receipt_hash"]) != receipt_hash or str(
+                        existing["receipt_json"]
+                    ) != canonical_json(payload):
                         raise HumanMemoryRecoveryError(
                             "human_memory_recovery_worker_receipt_conflict"
                         )
@@ -292,9 +277,7 @@ class HumanMemoryRecoveryCoordinator:
                 raise
         return await self.snapshot()
 
-    async def _current_work_items_tx(
-        self, db: aiosqlite.Connection
-    ) -> list[dict[str, Any]]:
+    async def _current_work_items_tx(self, db: aiosqlite.Connection) -> list[dict[str, Any]]:
         items: list[dict[str, Any]] = []
         for worker_kind, (table, primary_key) in _WORKER_SPECS.items():
             where = ""
@@ -304,9 +287,7 @@ class HumanMemoryRecoveryCoordinator:
                     "('COMPLETED','FAILED','STOPPED','CANCELLED') "
                     "AND owner_id IS NOT NULL"
                 )
-            cursor = await db.execute(
-                f'SELECT * FROM "{table}"{where} ORDER BY "{primary_key}"'
-            )
+            cursor = await db.execute(f'SELECT * FROM "{table}"{where} ORDER BY "{primary_key}"')
             rows = await cursor.fetchall()
             columns = [str(item[0]) for item in cursor.description or ()]
             await cursor.close()
@@ -314,9 +295,7 @@ class HumanMemoryRecoveryCoordinator:
                 info = await _column_signature_tx(db, table)
                 columns = [str(item["name"]) for item in info]
             for row in rows:
-                row_values = [
-                    _typed_value(row[index]) for index in range(len(row))
-                ]
+                row_values = [_typed_value(row[index]) for index in range(len(row))]
                 item: dict[str, Any] = {
                     "worker_kind": worker_kind,
                     "source_table": table,
@@ -408,9 +387,7 @@ class HumanMemoryRecoveryCoordinator:
                 str(existing["receipt_hash"]) != receipt_hash
                 or str(existing["receipt_json"]) != encoded
             ):
-                raise HumanMemoryRecoveryError(
-                    "human_memory_recovery_work_item_conflict"
-                )
+                raise HumanMemoryRecoveryError("human_memory_recovery_work_item_conflict")
             return
         await db.execute(
             "INSERT INTO human_memory_recovery_work_items("
@@ -438,13 +415,10 @@ class HumanMemoryRecoveryCoordinator:
             ),
         )
 
-    async def _verify_quiescence_tx(
-        self, db: aiosqlite.Connection, fence: aiosqlite.Row
-    ) -> None:
+    async def _verify_quiescence_tx(self, db: aiosqlite.Connection, fence: aiosqlite.Row) -> None:
         current = await self._current_work_items_tx(db)
         expected = {
-            (item["worker_kind"], item["source_table"], item["item_pk"]): item
-            for item in current
+            (item["worker_kind"], item["source_table"], item["item_pk"]): item for item in current
         }
         cursor = await db.execute(
             "SELECT * FROM human_memory_recovery_work_items WHERE generation=? "
@@ -465,9 +439,7 @@ class HumanMemoryRecoveryCoordinator:
             try:
                 payload = json.loads(str(receipt["receipt_json"]))
             except json.JSONDecodeError as exc:
-                raise HumanMemoryRecoveryError(
-                    "human_memory_recovery_work_item_invalid"
-                ) from exc
+                raise HumanMemoryRecoveryError("human_memory_recovery_work_item_invalid") from exc
             receipt_hash = canonical_hash(payload)
             if (
                 receipt_hash != receipt["receipt_hash"]
@@ -484,15 +456,12 @@ class HumanMemoryRecoveryCoordinator:
                 or payload.get("disposition") != receipt["disposition"]
                 or payload.get("proof_ref") != receipt["proof_ref"]
                 or payload.get("proof_hash") != receipt["proof_hash"]
-                or payload.get("durable_watermark")
-                != receipt["durable_watermark"]
+                or payload.get("durable_watermark") != receipt["durable_watermark"]
                 or payload.get("lease_owner_id") != receipt["lease_owner_id"]
                 or payload.get("lease_generation") != receipt["lease_generation"]
                 or payload.get("cutoff") != receipt["cutoff"]
             ):
-                raise HumanMemoryRecoveryError(
-                    "human_memory_recovery_work_item_invalid"
-                )
+                raise HumanMemoryRecoveryError("human_memory_recovery_work_item_invalid")
             disposition = str(receipt["disposition"])
             proof = await self._durable_proof_tx(db, item)
             if disposition in {"delivered", "acked"}:
@@ -501,28 +470,19 @@ class HumanMemoryRecoveryCoordinator:
                     or receipt["proof_ref"] != proof["proof_ref"]
                     or receipt["proof_hash"] != proof["proof_hash"]
                 ):
-                    raise HumanMemoryRecoveryError(
-                        "human_memory_recovery_durable_proof_missing"
-                    )
+                    raise HumanMemoryRecoveryError("human_memory_recovery_durable_proof_missing")
             elif disposition == "parked":
                 if item["worker_kind"] == "foreground-lease":
-                    raise HumanMemoryRecoveryError(
-                        "human_memory_recovery_lease_unfenced"
-                    )
+                    raise HumanMemoryRecoveryError("human_memory_recovery_lease_unfenced")
             elif disposition == "lease_parked":
                 if (
                     item["worker_kind"] != "foreground-lease"
                     or receipt["lease_owner_id"] != item["lease_owner_id"]
-                    or int(receipt["lease_generation"])
-                    != int(item["lease_generation"])
+                    or int(receipt["lease_generation"]) != int(item["lease_generation"])
                 ):
-                    raise HumanMemoryRecoveryError(
-                        "human_memory_recovery_lease_unfenced"
-                    )
+                    raise HumanMemoryRecoveryError("human_memory_recovery_lease_unfenced")
             else:
-                raise HumanMemoryRecoveryError(
-                    "human_memory_recovery_work_item_invalid"
-                )
+                raise HumanMemoryRecoveryError("human_memory_recovery_work_item_invalid")
             by_worker[str(item["worker_kind"])].append(receipt_hash)
         aggregate_cursor = await db.execute(
             "SELECT * FROM human_memory_recovery_worker_receipts WHERE generation=?",
@@ -558,9 +518,7 @@ class HumanMemoryRecoveryCoordinator:
                 or aggregate["item_root"] != canonical_hash(hashes)
                 or int(aggregate["gap_count"]) != 0
             ):
-                raise HumanMemoryRecoveryError(
-                    "human_memory_recovery_worker_receipt_invalid"
-                )
+                raise HumanMemoryRecoveryError("human_memory_recovery_worker_receipt_invalid")
 
     async def checkpoint_wal(self) -> str:
         try:
@@ -674,7 +632,9 @@ class HumanMemoryRecoveryCoordinator:
                 current = await self._table_snapshot_tx(db, name, spec)
                 prior = records.get(name)
                 if prior is None or (
-                    prior["schema_hash"], int(prior["row_count"]), prior["row_root"]
+                    prior["schema_hash"],
+                    int(prior["row_count"]),
+                    prior["row_root"],
                 ) != (current["schema_hash"], current["row_count"], current["row_root"]):
                     raise HumanMemoryRecoveryError("human_memory_recovery_manifest_mismatch")
             violations = await db.execute("PRAGMA foreign_key_check")
@@ -770,9 +730,9 @@ class HumanMemoryRecoveryCoordinator:
             )
             chain = [dict(row) for row in await chain_cursor.fetchall()]
             await chain_cursor.close()
-        payload_bytes = canonical_json(
-            {"rows": rows_payload, "recovery_lineage": lineage}
-        ).encode("utf-8")
+        payload_bytes = canonical_json({"rows": rows_payload, "recovery_lineage": lineage}).encode(
+            "utf-8"
+        )
         chunk_records = []
         for offset in range(0, len(payload_bytes), 20 * 1024):
             chunk = payload_bytes[offset : offset + 20 * 1024]
@@ -784,8 +744,7 @@ class HumanMemoryRecoveryCoordinator:
                 }
             )
         chunk_refs = [
-            {"sha256": item["sha256"], "byte_length": item["byte_length"]}
-            for item in chunk_records
+            {"sha256": item["sha256"], "byte_length": item["byte_length"]} for item in chunk_records
         ]
         header = {
             "schema_version": 1,
@@ -801,10 +760,13 @@ class HumanMemoryRecoveryCoordinator:
             "chunk_root": canonical_hash(chunk_refs),
             "overall_root": manifest["overall_root"],
         }
-        artifact = b"\n".join(
-            [canonical_json({"header": header}).encode("utf-8")]
-            + [canonical_json({"chunk": item}).encode("utf-8") for item in chunk_records]
-        ) + b"\n"
+        artifact = (
+            b"\n".join(
+                [canonical_json({"header": header}).encode("utf-8")]
+                + [canonical_json({"chunk": item}).encode("utf-8") for item in chunk_records]
+            )
+            + b"\n"
+        )
         artifact_name = f"{export_id}.hmexport"
         artifact_path = self._export_root / artifact_name
         artifact_hash = hashlib.sha256(artifact).hexdigest()
@@ -927,10 +889,24 @@ class HumanMemoryRecoveryCoordinator:
             if spec["taxonomy"] in {"A", "B", "C"}:
                 table_records.append(await self._table_snapshot_tx(db, name, spec))
         table_set_hash = canonical_hash(
-            [{"table": item["table_name"], "taxonomy": item["taxonomy"], "schema_hash": item["schema_hash"]} for item in table_records]
+            [
+                {
+                    "table": item["table_name"],
+                    "taxonomy": item["taxonomy"],
+                    "schema_hash": item["schema_hash"],
+                }
+                for item in table_records
+            ]
         )
         overall_root = canonical_hash(
-            [{"table": item["table_name"], "row_count": item["row_count"], "row_root": item["row_root"]} for item in table_records]
+            [
+                {
+                    "table": item["table_name"],
+                    "row_count": item["row_count"],
+                    "row_root": item["row_root"],
+                }
+                for item in table_records
+            ]
         )
         chain_cursor = await db.execute(
             "SELECT migration_id,schema_version,migration_sha256 FROM human_memory_migration_chain ORDER BY schema_version"
@@ -943,9 +919,7 @@ class HumanMemoryRecoveryCoordinator:
         )
         bootstrap = await bootstrap_cursor.fetchone()
         await bootstrap_cursor.close()
-        db_instance_id = _uuid(
-            f"human-memory-db:{bootstrap['created_at']}:{migration_chain_hash}"
-        )
+        db_instance_id = _uuid(f"human-memory-db:{bootstrap['created_at']}:{migration_chain_hash}")
         manifest = {
             "schema_version": 1,
             "generation": int(fence["generation"]),
@@ -1032,7 +1006,9 @@ class HumanMemoryRecoveryCoordinator:
         actual_tables = {str(row[0]) for row in await tables_cursor.fetchall()}
         await tables_cursor.close()
         unknown = sorted(
-            name for name in actual_tables if name.startswith(_OWNED_PREFIXES) and name not in registry
+            name
+            for name in actual_tables
+            if name.startswith(_OWNED_PREFIXES) and name not in registry
         )
         if unknown:
             raise HumanMemoryRecoveryError("human_memory_recovery_unknown_protected_table")
@@ -1046,7 +1022,9 @@ class HumanMemoryRecoveryCoordinator:
         self, db: aiosqlite.Connection, name: str, spec: Mapping[str, Any]
     ) -> dict[str, Any]:
         columns = list(spec["columns"])
-        primary = [item["name"] for item in sorted(columns, key=lambda item: item["pk"]) if item["pk"]]
+        primary = [
+            item["name"] for item in sorted(columns, key=lambda item: item["pk"]) if item["pk"]
+        ]
         if not primary:
             raise HumanMemoryRecoveryError("human_memory_recovery_primary_key_missing")
         column_names = [item["name"] for item in columns]
@@ -1058,7 +1036,10 @@ class HumanMemoryRecoveryCoordinator:
         root = hashlib.sha256(f"human-memory-table:{name}\0".encode()).hexdigest()
         for row in rows:
             leaf = canonical_hash(
-                {"table": name, "values": [_typed_value(row[index]) for index in range(len(column_names))]}
+                {
+                    "table": name,
+                    "values": [_typed_value(row[index]) for index in range(len(column_names))],
+                }
             )
             root = canonical_hash({"prior_root": root, "leaf_hash": leaf})
         return {
@@ -1074,13 +1055,13 @@ class HumanMemoryRecoveryCoordinator:
         self, db: aiosqlite.Connection, name: str, spec: Mapping[str, Any]
     ) -> list[dict[str, object]]:
         columns = list(spec["columns"])
-        primary = [item["name"] for item in sorted(columns, key=lambda item: item["pk"]) if item["pk"]]
+        primary = [
+            item["name"] for item in sorted(columns, key=lambda item: item["pk"]) if item["pk"]
+        ]
         names = [item["name"] for item in columns if not _is_private_name(item["name"])]
         select_sql = ",".join(f'"{item}"' for item in names)
         order_sql = ",".join(f'"{item}"' for item in primary)
-        cursor = await db.execute(
-            f'SELECT {select_sql} FROM "{name}" ORDER BY {order_sql}'
-        )
+        cursor = await db.execute(f'SELECT {select_sql} FROM "{name}" ORDER BY {order_sql}')
         rows = await cursor.fetchall()
         await cursor.close()
         result: list[dict[str, object]] = []
@@ -1166,9 +1147,7 @@ class HumanMemoryRecoveryCoordinator:
 
     @staticmethod
     async def _fence_tx(db: aiosqlite.Connection) -> aiosqlite.Row:
-        cursor = await db.execute(
-            "SELECT * FROM human_memory_recovery_fence WHERE singleton=1"
-        )
+        cursor = await db.execute("SELECT * FROM human_memory_recovery_fence WHERE singleton=1")
         row = await cursor.fetchone()
         await cursor.close()
         if row is None:
@@ -1180,7 +1159,9 @@ class HumanMemoryRecoveryCoordinator:
         if not path.is_file():
             raise HumanMemoryRecoveryError("human_memory_export_artifact_missing")
         content = path.read_bytes()
-        if hashlib.sha256(content).hexdigest() != row["artifact_sha256"] or len(content) != int(row["artifact_size"]):
+        if hashlib.sha256(content).hexdigest() != row["artifact_sha256"] or len(content) != int(
+            row["artifact_size"]
+        ):
             raise HumanMemoryRecoveryError("human_memory_export_artifact_mismatch")
         return EmergencyExportReceipt(
             str(row["receipt_id"]),

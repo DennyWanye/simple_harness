@@ -41,9 +41,20 @@ CLOSEOUT_KEY = "assurance_closeout"
 #: 的字段，与 schema 的 ``required`` 相等；收尾行正文、定稿回执的文档部分、任务最终报告里的收尾记录都只有
 #: 这些键（第 1 批 A17；第 2 批车道 N 补 ``read_set``：收尾自己读了根结论 / 要求版本 / 完成范围 / 权限）。
 CLOSEOUT_V1_FIELDS = (
-    "schema_version", "mission_id", "root_resolution_ref", "requirements_ref", "completion_spec_hash",
-    "state", "pending_effect_keys", "unsettled_operation_refs", "accounting_pending_refs",
-    "dangerous_work_refs", "read_set", "report_ref", "as_of_ms", "reasons",
+    "schema_version",
+    "mission_id",
+    "root_resolution_ref",
+    "requirements_ref",
+    "completion_spec_hash",
+    "state",
+    "pending_effect_keys",
+    "unsettled_operation_refs",
+    "accounting_pending_refs",
+    "dangerous_work_refs",
+    "read_set",
+    "report_ref",
+    "as_of_ms",
+    "reasons",
 )
 
 
@@ -136,7 +147,9 @@ def request_assured_closeout(
 def notification_body(event: Event) -> dict[str, Any]:
     """通知请求事件的正文：``note`` 是终态写入时保证状态读取失败的如实说明（A06）；送往 Host 的仍只有
     ``{mission_id, event_id, state_version}``。"""
-    return fields(dict(event.payload), {"final_event_id", "state_version"}, {"final_event_type", "note"})
+    return fields(
+        dict(event.payload), {"final_event_id", "state_version"}, {"final_event_type", "note"}
+    )
 
 
 def notification_work_target(event: Event) -> WorkTarget:
@@ -180,7 +193,11 @@ def request_assured_notification(
     )
     if status == ASSURED:
         AssuranceWorkStore(store).seed(
-            mission_id, "NOTIFY", event, (notification_work_target(event),), now_ms=int(store.now * 1000)
+            mission_id,
+            "NOTIFY",
+            event,
+            (notification_work_target(event),),
+            now_ms=int(store.now * 1000),
         )
     return event
 
@@ -297,12 +314,15 @@ def finalize_assured_mission(
         FINALIZED_KIND,
         mission_id,
         key=receipt_id,
-        payload={**body, "final_event_id": final.id, "final_event_type": final.type,
-                 "receipt_ref": ref.to_json()},
+        payload={
+            **body,
+            "final_event_id": final.id,
+            "final_event_type": final.type,
+            "receipt_ref": ref.to_json(),
+        },
     )
     request_assured_notification(commit, mission_id, final, state_version=done.version)
     return ref
-
 
 
 def _promote_methods(store: Any, mission_id: str, resolution: Any) -> None:
@@ -318,10 +338,19 @@ def _promote_methods(store: Any, mission_id: str, resolution: Any) -> None:
         store.connection.execute("ROLLBACK TO method_promotion")
         from .hierarchical_dispatch import append_hierarchical_event
 
-        append_hierarchical_event(store, PROMOTION_SKIPPED, mission_id, key=f"{mission_id}:unreadable",
-                                  payload={"reason": "unreadable", "error_type": type(error).__name__,
-                                           "error": str(error)[:300]})
+        append_hierarchical_event(
+            store,
+            PROMOTION_SKIPPED,
+            mission_id,
+            key=f"{mission_id}:unreadable",
+            payload={
+                "reason": "unreadable",
+                "error_type": type(error).__name__,
+                "error": str(error)[:300],
+            },
+        )
     store.connection.execute("RELEASE method_promotion")
+
 
 __all__ = (
     "ASSURED",

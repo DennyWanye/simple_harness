@@ -23,7 +23,9 @@ from ._layered_lane import (
 
 
 @pytest.mark.asyncio
-async def test_an_export_checks_the_graph_history_on_a_throwaway_copy(orchestration_root, principal, monkeypatch):
+async def test_an_export_checks_the_graph_history_on_a_throwaway_copy(
+    orchestration_root, principal, monkeypatch
+):
     quick_runtime(monkeypatch)
     service = layered_service(orchestration_root, principal, LayeredScriptedProvider())
     await service.start()

@@ -19,6 +19,7 @@ Lifecycle:
     enable(name) — mark plugin live; collect_* methods include it
     disable(name)— mark plugin dormant; collect_* methods skip it
 """
+
 from __future__ import annotations
 
 import json
@@ -32,9 +33,7 @@ import structlog
 logger = structlog.get_logger(__name__)
 
 
-_SEMVER_RE = re.compile(
-    r"^\d+\.\d+\.\d+(?:-[\w.]+)?(?:\+[\w.]+)?$"
-)
+_SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+(?:-[\w.]+)?(?:\+[\w.]+)?$")
 
 
 class PluginManifestError(ValueError):
@@ -71,9 +70,7 @@ def _parse_manifest(plugin_dir: Path) -> PluginManifest:
     except (OSError, json.JSONDecodeError) as exc:
         raise PluginManifestError(f"plugin.json invalid: {exc}") from exc
     if not isinstance(raw, dict):
-        raise PluginManifestError(
-            f"plugin.json must be an object, got {type(raw).__name__}"
-        )
+        raise PluginManifestError(f"plugin.json must be an object, got {type(raw).__name__}")
 
     name = raw.get("name")
     if not isinstance(name, str) or not name:
@@ -111,9 +108,7 @@ class PluginManager:
         # ``enabled=None`` → all discovered plugins enabled by default.
         # ``enabled=[]`` → none enabled (explicit opt-in mode).
         # ``enabled=["a","b"]`` → only those by name.
-        self._enabled: set[str] | None = (
-            None if enabled is None else set(enabled)
-        )
+        self._enabled: set[str] | None = None if enabled is None else set(enabled)
         self._plugins: dict[str, PluginManifest] = {}
         # Inverted mapping: skill_path → "plugin:<name>"
         self._skill_owner: dict[str, str] = {}

@@ -110,7 +110,11 @@ def test_o02_second_occurrence_cannot_alias_or_overwrite_original_action_link(tm
                 service, mission, tasks["A"], operation_id="operation-first", occurrence="occ-first"
             )
             second_origin = _origin(
-                service, mission, tasks["B"], operation_id="operation-second", occurrence="occ-second"
+                service,
+                mission,
+                tasks["B"],
+                operation_id="operation-second",
+                occurrence="occ-second",
             )
             other_origin = _origin(
                 service, mission, tasks["B"], operation_id="operation-other", occurrence="occ-other"
@@ -131,7 +135,9 @@ def test_o02_second_occurrence_cannot_alias_or_overwrite_original_action_link(tm
 
             # a distinct operation on another target gets its own action and its own exact link,
             # never the latest action of the Mission
-            other = _propose(service, mission, tasks["B"], w.connectors, "on", other_origin, target="a.md")
+            other = _propose(
+                service, mission, tasks["B"], w.connectors, "on", other_origin, target="a.md"
+            )
             assert other["action_id"] != first["action_id"]
             links = PlanningAdmissionStore(service.store).list_operation_action_links(mission.id)
             assert {item["operation_id"]: item["action_key"] for item in links} == {
@@ -149,7 +155,11 @@ def test_o02_same_origin_same_action_replay_is_idempotent(tmp_path):
         async with ledger_world(tmp_path, key="o02-replay") as w:
             service, mission, tasks = w.service, w.mission, w.tasks
             origin = _origin(
-                service, mission, tasks["A"], operation_id="operation-replay", occurrence="occ-replay"
+                service,
+                mission,
+                tasks["A"],
+                operation_id="operation-replay",
+                occurrence="occ-replay",
             )
             first = _propose(service, mission, tasks["A"], w.connectors, "on", origin)
             adapter = PlanningAdmissionStore(service.store)
@@ -175,7 +185,9 @@ def test_o02_same_operation_id_with_different_request_hash_is_conflict(tmp_path)
     async def case():
         async with ledger_world(tmp_path, key="o02-conflict") as w:
             service, mission, tasks = w.service, w.mission, w.tasks
-            _origin(service, mission, tasks["A"], operation_id="operation-stable", occurrence="occ-a")
+            _origin(
+                service, mission, tasks["A"], operation_id="operation-stable", occurrence="occ-a"
+            )
 
             with pytest.raises(StoreConflict, match="OPERATION_PAYLOAD_CONFLICT"):
                 _origin(
@@ -188,8 +200,8 @@ def test_o02_same_operation_id_with_different_request_hash_is_conflict(tmp_path)
                 )
 
             bindings = PlanningAdmissionStore(service.store).list_operation_bindings(mission.id)
-            assert [(item["operation_id"], item["operation_occurrence_id"]) for item in bindings] == [
-                ("operation-stable", "occ-a")
-            ]
+            assert [
+                (item["operation_id"], item["operation_occurrence_id"]) for item in bindings
+            ] == [("operation-stable", "occ-a")]
 
     asyncio.run(case())

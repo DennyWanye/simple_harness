@@ -47,9 +47,7 @@ def _slide_requirements(topic: str) -> dict[str, list[str]]:
 
 @runtime_checkable
 class PresentationLLMPort(Protocol):
-    async def plan_research(
-        self, *, topic: str, operation_key: str
-    ) -> list[str]: ...
+    async def plan_research(self, *, topic: str, operation_key: str) -> list[str]: ...
 
     async def synthesize_research(
         self,
@@ -71,13 +69,9 @@ class PresentationLLMPort(Protocol):
 
 @runtime_checkable
 class PresentationResearchPort(Protocol):
-    async def search(
-        self, *, query: str, operation_key: str
-    ) -> list[dict[str, JsonValue]]: ...
+    async def search(self, *, query: str, operation_key: str) -> list[dict[str, JsonValue]]: ...
 
-    async def fetch(
-        self, *, url: str, operation_key: str
-    ) -> dict[str, JsonValue]: ...
+    async def fetch(self, *, url: str, operation_key: str) -> dict[str, JsonValue]: ...
 
 
 @runtime_checkable
@@ -380,9 +374,7 @@ async def outline_handler(state, context: WorkflowContext) -> StatePatch:
     revision = int(
         (state.get("loop_counters") or {}).get("outline_revisions", 0)  # type: ignore[union-attr]
     )
-    outline_id = hashlib.sha256(
-        f"{state.get('run_id')}|outline|{revision}".encode()
-    ).hexdigest()
+    outline_id = hashlib.sha256(f"{state.get('run_id')}|outline|{revision}".encode()).hexdigest()
     outline_hash = hashlib.sha256(repr(slides).encode()).hexdigest()
     return _patch(
         state,
@@ -468,7 +460,9 @@ async def apply_outline_decision_handler(state, context: WorkflowContext) -> Sta
         outline_decision_receipt=receipt,
         outline_action=action,
         outline_decision=normalized,
-        outline_slides=(copy.deepcopy(slides) if isinstance(slides, list) else values["outline_slides"]),
+        outline_slides=(
+            copy.deepcopy(slides) if isinstance(slides, list) else values["outline_slides"]
+        ),
     )
 
 
@@ -528,19 +522,13 @@ async def prepare_slides_handler(state, context: WorkflowContext) -> StatePatch:
             f"{state.get('run_id')}|slide|{index}".encode()
         ).hexdigest()
         record["page_number"] = index
-        record["render_mode"] = (
-            "full_page_images" if values["full_page_images"] else "editable"
-        )
+        record["render_mode"] = "full_page_images" if values["full_page_images"] else "editable"
         if values["editable_required"]:
             record["editable"] = True
             record.pop("flattened_image", None)
             if record.get("layout") == "image_full":
                 record["layout"] = "image" if record.get("image_prompt") else "title_body"
-        record["image_status"] = (
-            "pending"
-            if values["full_page_images"]
-            else "not_required"
-        )
+        record["image_status"] = "pending" if values["full_page_images"] else "not_required"
         records.append(record)
     return _patch(state, slide_records=records)
 
@@ -569,8 +557,7 @@ async def image_map_handler(state, context: WorkflowContext) -> StatePatch:
         slide["image_status"] = "complete"
         break
     complete = all(
-        isinstance(slide, Mapping)
-        and slide.get("image_status") in {"complete", "not_required"}
+        isinstance(slide, Mapping) and slide.get("image_status") in {"complete", "not_required"}
         for slide in records
     )
     counters = dict(state.get("loop_counters") or {})

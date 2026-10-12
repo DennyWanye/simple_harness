@@ -66,7 +66,11 @@ ENABLED = DeploymentPolicy(enabled_connectors=("file_publish",), max_action_leve
 
 
 def candidate(
-    target: str = TARGET, value: str = "on", *, operation: str = "publish", connector: str = "file_publish"
+    target: str = TARGET,
+    value: str = "on",
+    *,
+    operation: str = "publish",
+    connector: str = "file_publish",
 ) -> dict[str, Any]:
     """执行者 / 系统递交的一条候选动作；``value`` 换了，参数（发布内容的哈希）就换了。"""
 
@@ -74,7 +78,10 @@ def candidate(
         "connector": connector,
         "operation": operation,
         "target": target,
-        "params": {"artifact_path": "CHANGE.md", "content_hash": hashlib.sha256(value.encode()).hexdigest()},
+        "params": {
+            "artifact_path": "CHANGE.md",
+            "content_hash": hashlib.sha256(value.encode()).hexdigest(),
+        },
         "reason": "按需求发布变更说明",
     }
 
@@ -121,7 +128,9 @@ class OperationWorld:
     @property
     def leaf(self) -> Any:
         """第一版计划里唯一的叶子步骤（一步做法）。"""
-        [leaf] = [task for task in self.store.list_tasks(self.mission_id) if task.id != self.root.id]
+        [leaf] = [
+            task for task in self.store.list_tasks(self.mission_id) if task.id != self.root.id
+        ]
         return leaf
 
     @property
@@ -130,17 +139,36 @@ class OperationWorld:
         return {"A": self.leaf, "B": self.root}
 
     def events(self, kind: str) -> list[dict[str, Any]]:
-        return [dict(event.payload) for event in self.store.list_events(self.mission_id) if event.type == kind]
+        return [
+            dict(event.payload)
+            for event in self.store.list_events(self.mission_id)
+            if event.type == kind
+        ]
 
-    def propose(self, cand: dict[str, Any], *, task: Any = None, artifact_hash: str = "a" * 64,
-                result: str = "result-1", deployment: DeploymentPolicy | None = None, **kwargs: Any) -> dict[str, Any]:
+    def propose(
+        self,
+        cand: dict[str, Any],
+        *,
+        task: Any = None,
+        artifact_hash: str = "a" * 64,
+        result: str = "result-1",
+        deployment: DeploymentPolicy | None = None,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
         """经台账的写入口递交一条候选动作（执行者结果核验通过后，产品就是这样记账的）。"""
         task = task or self.leaf
         return self.service.propose_action(
-            cand, mission_id=self.mission_id, task_id=task.id, result_id=result,
-            attempt_id=f"{task.id}:attempt-1", artifact_id=f"artifact-{artifact_hash[:8]}",
-            artifact_hash=artifact_hash, connectors=self.connectors,
-            deployment=deployment or self.deployment, **kwargs)
+            cand,
+            mission_id=self.mission_id,
+            task_id=task.id,
+            result_id=result,
+            attempt_id=f"{task.id}:attempt-1",
+            artifact_id=f"artifact-{artifact_hash[:8]}",
+            artifact_hash=artifact_hash,
+            connectors=self.connectors,
+            deployment=deployment or self.deployment,
+            **kwargs,
+        )
 
     def publish_ledger(self) -> list[str]:
         """发布服务自己账本里的每条记录的状态（服务被调用过几次、每次走到哪一步）。"""
@@ -148,11 +176,18 @@ class OperationWorld:
             return []
         import json  # noqa: PLC0415
 
-        return [json.loads(line)["state"] for line in
-                self.publish.ledger_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+        return [
+            json.loads(line)["state"]
+            for line in self.publish.ledger_path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
 
     def published_files(self) -> list[str]:
-        return sorted(p.relative_to(self.published).as_posix() for p in self.published.rglob("*") if p.is_file())
+        return sorted(
+            p.relative_to(self.published).as_posix()
+            for p in self.published.rglob("*")
+            if p.is_file()
+        )
 
 
 def confirm_effects(product: ProductWorld, mission_id: str) -> dict[str, Any]:
@@ -166,30 +201,48 @@ def confirm_effects(product: ProductWorld, mission_id: str) -> dict[str, Any]:
     [obligation] = workspace["obligations"]
     milestone = next(m for m in workspace["milestones"] if m["id"] == "CONTENT_HASH_VERIFIED")
     ref = workspace["requirements_ref"]
-    return product.control.approve_operation_completion_spec({
-        "mission_id": mission_id, "command_id": "confirm-publish-completion",
-        "expected_requirements_ref": ref,
-        "proposal": {
-            "schema_version": 1, "mission_id": mission_id,
-            "requirements_ref": {"id": ref["id"], "revision": ref["revision"], "content_hash": ref["content_hash"]},
-            "mode": "REQUIRED_EFFECTS", "content_criterion_ids": content,
-            "effects": [{
-                "effect_key": "publish", "source_slot_key": "publish",
-                "obligation_id": obligation["id"], "criterion_ids": actions,
-                "required_milestone": milestone["id"],
-                "milestone_policy_ref": milestone["milestone_policy_ref"],
-                "evidence_policy_ref": milestone["evidence_policy_ref"],
-            }],
-        },
-    })
+    return product.control.approve_operation_completion_spec(
+        {
+            "mission_id": mission_id,
+            "command_id": "confirm-publish-completion",
+            "expected_requirements_ref": ref,
+            "proposal": {
+                "schema_version": 1,
+                "mission_id": mission_id,
+                "requirements_ref": {
+                    "id": ref["id"],
+                    "revision": ref["revision"],
+                    "content_hash": ref["content_hash"],
+                },
+                "mode": "REQUIRED_EFFECTS",
+                "content_criterion_ids": content,
+                "effects": [
+                    {
+                        "effect_key": "publish",
+                        "source_slot_key": "publish",
+                        "obligation_id": obligation["id"],
+                        "criterion_ids": actions,
+                        "required_milestone": milestone["id"],
+                        "milestone_policy_ref": milestone["milestone_policy_ref"],
+                        "evidence_policy_ref": milestone["evidence_policy_ref"],
+                    }
+                ],
+            },
+        }
+    )
 
 
 @asynccontextmanager
-async def operation_world(tmp_path: Path, *, key: str, criteria: tuple[str, ...] = PUBLISH_CRITERIA,
-                          goal: str = "写一份周报 reports/weekly.md 并发布", hold_worker: bool = False,
-                          publish_setup: Callable[[FilePublishConnector], None] | None = None,
-                          worker: Callable[[Any], Any] | None = None,
-                          ) -> AsyncIterator[OperationWorld]:
+async def operation_world(
+    tmp_path: Path,
+    *,
+    key: str,
+    criteria: tuple[str, ...] = PUBLISH_CRITERIA,
+    goal: str = "写一份周报 reports/weekly.md 并发布",
+    hold_worker: bool = False,
+    publish_setup: Callable[[FilePublishConnector], None] | None = None,
+    worker: Callable[[Any], Any] | None = None,
+) -> AsyncIterator[OperationWorld]:
     """产品部署上建好一个带发布要求的任务，人已在确认页确认完成映射（主循环还没开跑）。
 
     ``hold_worker``：执行者的模型调用一律扣住（见 :func:`ledger_world`）。``publish_setup`` 在
@@ -200,13 +253,22 @@ async def operation_world(tmp_path: Path, *, key: str, criteria: tuple[str, ...]
     publish = FilePublishConnector(published, tmp_path / "root" / "connectors" / "file_publish")
     if publish_setup is not None:
         publish_setup(publish)
-    provider = LayeredScriptedProvider() if worker is None else LayeredScriptedProvider(worker=worker)
+    provider = (
+        LayeredScriptedProvider() if worker is None else LayeredScriptedProvider(worker=worker)
+    )
     if hold_worker:
         provider.held.add("worker")
     try:
-        async with product_world(tmp_path / "root", provider, connectors={"file_publish": publish},
-                                 deployment_policy=ENABLED, **CONFIG) as product:
-            created = product.create({"goal": goal, "success_criteria": list(criteria), "idempotency_key": key})
+        async with product_world(
+            tmp_path / "root",
+            provider,
+            connectors={"file_publish": publish},
+            deployment_policy=ENABLED,
+            **CONFIG,
+        ) as product:
+            created = product.create(
+                {"goal": goal, "success_criteria": list(criteria), "idempotency_key": key}
+            )
             mission_id = created["mission_id"]
             await product.drain()
             # 自动模式不代签带 action: 的任务：确认页等着人
@@ -218,13 +280,24 @@ async def operation_world(tmp_path: Path, *, key: str, criteria: tuple[str, ...]
 
 
 @asynccontextmanager
-async def ledger_world(tmp_path: Path, *, key: str = "ledger", criteria: tuple[str, ...] = LEDGER_CRITERIA,
-                       worker: Callable[[Any], Any] | None = None) -> AsyncIterator[OperationWorld]:
+async def ledger_world(
+    tmp_path: Path,
+    *,
+    key: str = "ledger",
+    criteria: tuple[str, ...] = LEDGER_CRITERIA,
+    worker: Callable[[Any], Any] | None = None,
+) -> AsyncIterator[OperationWorld]:
     """D′：主循环真跑到第一版计划提交（提做法 → 独立审阅 → 采用），停在叶子刚派发、执行者那次
     模型调用被扣住；任务 ACTIVE，台账还是空的。主循环此后不再跑。"""
 
-    async with operation_world(tmp_path, key=key, criteria=criteria, goal="写一份变更说明并按要求发布",
-                               hold_worker=True, worker=worker) as world:
+    async with operation_world(
+        tmp_path,
+        key=key,
+        criteria=criteria,
+        goal="写一份变更说明并按要求发布",
+        hold_worker=True,
+        worker=worker,
+    ) as world:
         await run_until(world.product, world.provider.entered.is_set)
         revision = HtnStore(world.store).active_plan_revision(world.mission_id)
         assert revision is not None and revision.revision == 1

@@ -76,9 +76,7 @@ def _page_ref(index: int, content: str) -> str:
     return f"page:causal:{index}:{digest}"
 
 
-def _item(
-    raw: Mapping[str, object], index: int, large_result_bytes: int
-) -> CausalItem:
+def _item(raw: Mapping[str, object], index: int, large_result_bytes: int) -> CausalItem:
     role = str(raw.get("role") or "user")
     content = _text(raw.get("content"))
     projection = str(raw.get("projection_kind") or f"{role}_message")
@@ -104,9 +102,7 @@ def _item(
             page_ref=ref,
             summarized=True,
         )
-    return CausalItem(
-        role=role, content=content, projection_kind=projection, bytes_len=size
-    )
+    return CausalItem(role=role, content=content, projection_kind=projection, bytes_len=size)
 
 
 def plan_recent_causal_groups(
@@ -153,10 +149,7 @@ def plan_recent_causal_groups(
     # of an upstream cut (greedy token pre-trim); keeping it would present a
     # causally broken half-group.  Drop it unless it is all we have.
     residue_dropped = 0
-    while (
-        len(built) > 1
-        and built[0].items[0].role not in _USER_ROLES
-    ):
+    while len(built) > 1 and built[0].items[0].role not in _USER_ROLES:
         built.pop(0)
         residue_dropped += 1
 
@@ -166,9 +159,7 @@ def plan_recent_causal_groups(
     dropped = len(complete_groups) - len(kept)
     if open_tail is not None:
         kept = [*kept, open_tail]
-    return CausalGroupPlan(
-        groups=tuple(kept), dropped_group_count=dropped + residue_dropped
-    )
+    return CausalGroupPlan(groups=tuple(kept), dropped_group_count=dropped + residue_dropped)
 
 
 __all__ = [

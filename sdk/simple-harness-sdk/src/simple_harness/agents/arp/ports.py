@@ -88,7 +88,9 @@ class RootIdentity:
         return candidate
 
 
-def bootstrap_root(directory: str | Path, *, root_id: str, incarnation: str | None = None) -> RootIdentity:
+def bootstrap_root(
+    directory: str | Path, *, root_id: str, incarnation: str | None = None
+) -> RootIdentity:
     """Create (or verify) the root marker; deployment-level, run once by the installer."""
 
     base = Path(directory).expanduser()
@@ -104,7 +106,8 @@ def bootstrap_root(directory: str | Path, *, root_id: str, incarnation: str | No
     body = {
         "schema_version": 1,
         "root_id": root_id,
-        "root_incarnation": incarnation or digest({"root_id": root_id, "at": now_ms(), "pid": os.getpid()})[:32],
+        "root_incarnation": incarnation
+        or digest({"root_id": root_id, "at": now_ms(), "pid": os.getpid()})[:32],
         "created_at_ms": now_ms(),
     }
     tmp = marker.with_suffix(".tmp")
@@ -117,7 +120,9 @@ def read_root(directory: str | Path) -> RootIdentity:
     base = Path(directory).expanduser()
     marker = base / ROOT_MARKER
     if not marker.is_file():
-        raise ArpError("RUNTIME_CREATION_MARKER_MISSING", f"no {ROOT_MARKER} under the session root")
+        raise ArpError(
+            "RUNTIME_CREATION_MARKER_MISSING", f"no {ROOT_MARKER} under the session root"
+        )
     body = parse_strict(marker.read_bytes(), max_bytes=4096)
     if (
         not isinstance(body, dict)
@@ -151,7 +156,11 @@ class PendingAssuranceAcceptance:
         raise ArpError(
             "SKILL_EVALUATION_INCOMPLETE",
             "official evaluation acceptance is not available: Assurance successor pending",
-            detail={"successor": ASSURANCE_SUCCESSOR_PENDING, "evaluation_ref": dict(binding["evaluation_ref"]), "acceptance_ref": acceptance_ref.to_json()},
+            detail={
+                "successor": ASSURANCE_SUCCESSOR_PENDING,
+                "evaluation_ref": dict(binding["evaluation_ref"]),
+                "acceptance_ref": acceptance_ref.to_json(),
+            },
         )
 
 

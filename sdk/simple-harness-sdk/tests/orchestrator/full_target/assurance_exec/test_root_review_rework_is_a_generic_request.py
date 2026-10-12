@@ -10,6 +10,7 @@ Harness 只把事实如实记成一条修复请求（审阅员的全部意见、
 "终审打回"请求，也不是直接停任务；这个事实（终审结论、意见、已用几次、上限几次）放在"没有可派发
 的工作"那条请求里交给规划器，由它决定。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -32,8 +33,11 @@ def _quick(monkeypatch):
 def _plan_shape(case):
     htn = HtnStore(case.store)
     revision = htn.active_plan_revision(case.mission_id)
-    return (revision.revision, sorted(str(item.instance_id) for item in htn.list_method_instances(case.mission_id)),
-            sorted((task.id, str(task.status)) for task in case.store.list_tasks(case.mission_id)))
+    return (
+        revision.revision,
+        sorted(str(item.instance_id) for item in htn.list_method_instances(case.mission_id)),
+        sorted((task.id, str(task.status)) for task in case.store.list_tasks(case.mission_id)),
+    )
 
 
 def test_a_rework_final_review_becomes_one_generic_request_and_touches_nothing_else(tmp_path):
@@ -58,7 +62,9 @@ def test_a_rework_final_review_becomes_one_generic_request_and_touches_nothing_e
             assert "must" not in str(context).lower() and "hint" not in context
             # Harness 没有替规划器动手：同一版计划、同一个做法、没有取消任何步骤
             assert _plan_shape(case) == before
-            assert not [t for t in case.store.list_tasks(case.mission_id) if str(t.status) == "CANCELLED"]
+            assert not [
+                t for t in case.store.list_tasks(case.mission_id) if str(t.status) == "CANCELLED"
+            ]
             assert not case.events("PlanningRejected")
             assert len(case.events("PlanningRepairRequested")) == 1
             assert provider.review_calls["MISSION_FINAL"] == 1
@@ -74,9 +80,13 @@ def test_a_mission_allowed_no_final_repair_hands_the_spent_bound_to_the_planner(
             await case.run_until(provider.repair_asked.is_set)
             requests = [e["request"] for e in provider.repair_packages[0]["repair_requests"]]
             assert not [r for r in requests if r["context"].get("source") == "root_review"]
-            [stalled] = [r for r in requests if r["context"].get("event_type") == "NoDispatchableWork"]
+            [stalled] = [
+                r for r in requests if r["context"].get("event_type") == "NoDispatchableWork"
+            ]
             detail = stalled["context"]["root_review"]
-            assert detail["status"] == "REVIEW_REJECTED" and detail["reason"] == "root_review_rejected"
+            assert (
+                detail["status"] == "REVIEW_REJECTED" and detail["reason"] == "root_review_rejected"
+            )
             assert detail["repairs_used"] == 0 and detail["max_root_review_repairs"] == 0
             assert detail["findings"] and detail["findings"][0]["criterion_id"] == "c-user-1"
             assert not case.events("GoalResolutionCommitted")

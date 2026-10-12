@@ -7,6 +7,7 @@ Covers:
 - set_cloud_provider: replaces cloud, resets circuit breaker, disables cloud (None)
 - set_strategy: switches routing, rejects unimplemented strategies
 """
+
 from __future__ import annotations
 
 import pytest

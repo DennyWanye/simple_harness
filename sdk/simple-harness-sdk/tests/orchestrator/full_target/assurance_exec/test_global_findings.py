@@ -46,9 +46,20 @@ LEAK = "NOTES.md 里写着一段明文的服务端口令，任何拿到文件的
 
 def _reply(*, global_findings: Any = None, criteria=("a", "b"), verdict="ACCEPT") -> dict:
     body: dict[str, Any] = {
-        "schema_version": REVIEW_REPLY_SCHEMA_VERSION, "verdict": verdict, "findings": [],
-        "assessments": [{"criterion_id": name, "verdict": "PASS", "evidence_ids": [], "reason": "r",
-                         "limitations": []} for name in criteria]}
+        "schema_version": REVIEW_REPLY_SCHEMA_VERSION,
+        "verdict": verdict,
+        "findings": [],
+        "assessments": [
+            {
+                "criterion_id": name,
+                "verdict": "PASS",
+                "evidence_ids": [],
+                "reason": "r",
+                "limitations": [],
+            }
+            for name in criteria
+        ],
+    }
     if global_findings is not None:
         body["global_findings"] = global_findings
     return body
@@ -62,33 +73,54 @@ def _refused(value: Any, code: str) -> None:
 
 def test_the_decoder_takes_global_findings_and_refuses_a_wrong_shape() -> None:
     assert ReviewReply.from_json(_reply()).global_findings == ()
-    reply = ReviewReply.from_json(_reply(global_findings=[
-        {"severity": "BLOCKER", "reason": LEAK}, {"severity": "INFO", "reason": "可以顺手加个目录。"}]))
+    reply = ReviewReply.from_json(
+        _reply(
+            global_findings=[
+                {"severity": "BLOCKER", "reason": LEAK},
+                {"severity": "INFO", "reason": "可以顺手加个目录。"},
+            ]
+        )
+    )
     assert [(item.severity, item.reason) for item in reply.global_findings] == [
-        ("BLOCKER", LEAK), ("INFO", "可以顺手加个目录。")]
+        ("BLOCKER", LEAK),
+        ("INFO", "可以顺手加个目录。"),
+    ]
     # 一致的宽容：整个回复外包一层代码围栏、全局问题里多写一个空字段，都照收
-    fenced = "```json\n" + json.dumps(_reply(global_findings=[
-        {"severity": "WARNING", "reason": "r", "criterion_id": None}]), ensure_ascii=False) + "\n```"
+    fenced = (
+        "```json\n"
+        + json.dumps(
+            _reply(global_findings=[{"severity": "WARNING", "reason": "r", "criterion_id": None}]),
+            ensure_ascii=False,
+        )
+        + "\n```"
+    )
     assert decode_review_reply(fenced).global_findings[0].severity == "WARNING"
     # 格式不对的照拒
     _refused(_reply(global_findings=[{"severity": "FATAL", "reason": "r"}]), "ENUM_INVALID")
     _refused(_reply(global_findings=[{"severity": "BLOCKER"}]), "OBJECT_FIELDS_MISSING")
     _refused(_reply(global_findings=[{"severity": "BLOCKER", "reason": ""}]), "TEXT_INVALID")
-    _refused(_reply(global_findings=[{"severity": "BLOCKER", "reason": "r", "criterion_id": "a"}]),
-             "OBJECT_FIELDS_UNKNOWN")
+    _refused(
+        _reply(global_findings=[{"severity": "BLOCKER", "reason": "r", "criterion_id": "a"}]),
+        "OBJECT_FIELDS_UNKNOWN",
+    )
     _refused(_reply(global_findings={"severity": "BLOCKER", "reason": "r"}), "ARRAY_INVALID")
     _refused(_reply(global_findings=[{"severity": "INFO", "reason": "r"}] * 17), "ARRAY_INVALID")
     # 点名一条准则的问题仍写在 findings 里，点名目录外的准则仍拒
-    _refused({**_reply(), "findings": [{"criterion_id": "zzz", "severity": "BLOCKER", "reason": "r"}]},
-             "FINDING_SCOPE")
+    _refused(
+        {**_reply(), "findings": [{"criterion_id": "zzz", "severity": "BLOCKER", "reason": "r"}]},
+        "FINDING_SCOPE",
+    )
     # 旧版本号不收（开发期不兼容旧回复）
-    _refused({**_reply(), "schema_version": REVIEW_REPLY_SCHEMA_VERSION - 1}, "REVIEW_SCHEMA_VERSION")
+    _refused(
+        {**_reply(), "schema_version": REVIEW_REPLY_SCHEMA_VERSION - 1}, "REVIEW_SCHEMA_VERSION"
+    )
 
 
 def _decide(reply: dict, mandatory: tuple[str, ...]):
     policies = {name: CriterionPolicy(name, "SEMANTIC", ()) for name in ("a", "b")}
-    formula = Formula.from_json({"any": [{"criterion": "a"}, {"criterion": "b"}]},
-                                frozenset(policies))
+    formula = Formula.from_json(
+        {"any": [{"criterion": "a"}, {"criterion": "b"}]}, frozenset(policies)
+    )
     return decide_review(ReviewReply.from_json(reply), formula, mandatory, policies, {})
 
 
@@ -130,13 +162,25 @@ def _run(tmp_path, severity: str) -> dict[str, Any]:
     async def case() -> dict[str, Any]:
         provider = LayeredScriptedProvider(planner=planner, reviewer=reviewer)
         async with product_world(tmp_path / "root", provider) as world:
-            mission_id = world.create({"goal": "写一份 NOTES.md", "success_criteria": ["file:NOTES.md"],
-                                       "idempotency_key": f"global-{severity}"})["mission_id"]
+            mission_id = world.create(
+                {
+                    "goal": "写一份 NOTES.md",
+                    "success_criteria": ["file:NOTES.md"],
+                    "idempotency_key": f"global-{severity}",
+                }
+            )["mission_id"]
             mission = await world.run_until_settled(mission_id, rounds=30)
             records = world.store.connection.execute(
                 "SELECT verdict, record_json FROM review_records WHERE mission_id=? AND purpose='TASK_CONTENT'"
-                " AND official=1 ORDER BY created_at", (mission_id,)).fetchall()
-            return {"status": mission.status.value, "report": mission.final_report, "records": records, **seen}
+                " AND official=1 ORDER BY created_at",
+                (mission_id,),
+            ).fetchall()
+            return {
+                "status": mission.status.value,
+                "report": mission.final_report,
+                "records": records,
+                **seen,
+            }
 
     return asyncio.run(case())
 

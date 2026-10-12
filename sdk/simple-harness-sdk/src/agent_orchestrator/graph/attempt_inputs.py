@@ -33,8 +33,11 @@ def _integer(value: object, field: str) -> int:
 
 
 def _hash(value: object, field: str) -> str:
-    if (not isinstance(value, str) or len(value) != 64
-            or any(character not in "0123456789abcdef" for character in value)):
+    if (
+        not isinstance(value, str)
+        or len(value) != 64
+        or any(character not in "0123456789abcdef" for character in value)
+    ):
         _bad(f"{field} must be a lowercase SHA-256")
     return value
 
@@ -68,24 +71,54 @@ class AttemptInputBinding:
     created_at: float
 
     def __post_init__(self) -> None:
-        for field in ("attempt_id", "mission_id", "task_id", "occurrence_id", "intent_id",
-                      "creation_key", "input_id", "admission_check_id"):
+        for field in (
+            "attempt_id",
+            "mission_id",
+            "task_id",
+            "occurrence_id",
+            "intent_id",
+            "creation_key",
+            "input_id",
+            "admission_check_id",
+        ):
             _text(getattr(self, field), field)
-        for field in ("source_revision", "binding_revision", "input_binding_revision",
-                      "dispatch_generation"):
+        for field in (
+            "source_revision",
+            "binding_revision",
+            "input_binding_revision",
+            "dispatch_generation",
+        ):
             _integer(getattr(self, field), field)
         for field in ("contract_hash", "manifest_hash", "frozen_input_hash", "origin_hash"):
             _hash(getattr(self, field), field)
-        if (isinstance(self.created_at, bool) or not isinstance(self.created_at, (int, float))
-                or not math.isfinite(self.created_at)):
+        if (
+            isinstance(self.created_at, bool)
+            or not isinstance(self.created_at, (int, float))
+            or not math.isfinite(self.created_at)
+        ):
             _bad("created_at must be a number")
 
     def identity_json(self) -> dict[str, Any]:
-        return {field: getattr(self, field) for field in (
-            "attempt_id", "mission_id", "task_id", "occurrence_id", "source_revision",
-            "binding_revision", "contract_hash", "input_binding_revision",
-            "dispatch_generation", "manifest_hash", "intent_id", "creation_key", "input_id",
-            "frozen_input_hash", "admission_check_id")}
+        return {
+            field: getattr(self, field)
+            for field in (
+                "attempt_id",
+                "mission_id",
+                "task_id",
+                "occurrence_id",
+                "source_revision",
+                "binding_revision",
+                "contract_hash",
+                "input_binding_revision",
+                "dispatch_generation",
+                "manifest_hash",
+                "intent_id",
+                "creation_key",
+                "input_id",
+                "frozen_input_hash",
+                "admission_check_id",
+            )
+        }
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -94,7 +127,9 @@ class FrozenAttemptInputs:
     manifest: Mapping[str, Any]
 
     def __post_init__(self) -> None:
-        if not isinstance(self.binding, AttemptInputBinding) or not isinstance(self.manifest, Mapping):
+        if not isinstance(self.binding, AttemptInputBinding) or not isinstance(
+            self.manifest, Mapping
+        ):
             _bad("FrozenAttemptInputs requires a binding and manifest object")
         object.__setattr__(self, "manifest", _freeze(self.manifest))
 

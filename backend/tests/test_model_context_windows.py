@@ -7,6 +7,7 @@
 压缩(连环 400)。本组守护: ①gpt-5.5 有真实表项 ②档位列表 ③用户选择
 写全局 override 后 resolve 即生效 ④非法档位拒绝。
 """
+
 from __future__ import annotations
 
 import pytest

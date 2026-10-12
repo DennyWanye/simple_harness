@@ -356,12 +356,18 @@ class MethodProposalContext:
             "method_shape": {key: list(value) for key, value in METHOD_SHAPE.items()},
             "criterion_evidence": [dict(item) for item in self.criterion_evidence],
             "forbidden_fields": list(self.forbidden_fields),
-            **({"new_method_identity": {
-                "method_id": self.new_method_identity[0],
-                "method_version": self.new_method_identity[1],
-                "notice": "Use this fresh method_id and method_version for the new method proposal. "
-                          "They avoid shared-library collisions and confer no admission or authority.",
-            }} if self.new_method_identity is not None else {}),
+            **(
+                {
+                    "new_method_identity": {
+                        "method_id": self.new_method_identity[0],
+                        "method_version": self.new_method_identity[1],
+                        "notice": "Use this fresh method_id and method_version for the new method proposal. "
+                        "They avoid shared-library collisions and confer no admission or authority.",
+                    }
+                }
+                if self.new_method_identity is not None
+                else {}
+            ),
         }
 
 
@@ -385,7 +391,10 @@ def goal_type_ref(catalog: TaskTypeCatalog, signature: GoalSignature) -> Version
 
 
 def _offers(
-    catalog: TaskTypeCatalog, capabilities: CapabilitySnapshot, *, domain: str | None,
+    catalog: TaskTypeCatalog,
+    capabilities: CapabilitySnapshot,
+    *,
+    domain: str | None,
     max_operators: int,
 ) -> tuple[OperatorOffer, ...]:
     offers: list[OperatorOffer] = []
@@ -420,7 +429,9 @@ def _offers(
                 form=str(spec.form),
                 statement=spec.goal_signature.statement,
                 input_ports=tuple(port.port_key for port in spec.input_ports),
-                input_port_cardinality={port.port_key: str(port.cardinality.value) for port in spec.input_ports},
+                input_port_cardinality={
+                    port.port_key: str(port.cardinality.value) for port in spec.input_ports
+                },
                 output_ports=tuple(port.port_key for port in spec.output_ports),
                 required_capabilities=tuple(spec.required_capabilities),
                 unavailable_capabilities=capabilities.missing_from(
@@ -504,11 +515,7 @@ def build_context(
         rejected_methods=_notes(registry, goal_type, reports or {}, mission_id=mission_id),
         unavailable_capabilities=tuple(
             sorted(
-                {
-                    capability
-                    for offer in offers
-                    for capability in offer.unavailable_capabilities
-                }
+                {capability for offer in offers for capability in offer.unavailable_capabilities}
             )
         ),
         goal_type_ref=None if goal_type is None else goal_type.to_json(),

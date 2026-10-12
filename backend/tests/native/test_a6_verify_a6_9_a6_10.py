@@ -59,8 +59,7 @@ _DDL = (
     " evidence_id text, source_kind text)",
     "create table suppression_directives(directive_id text primary key,"
     " event_kind text, supersedes_directive_id text)",
-    "create table suppression_targets(directive_id text, target_kind text,"
-    " target_ref text)",
+    "create table suppression_targets(directive_id text, target_kind text, target_ref text)",
     "create table cognitive_conflict_groups(group_id text primary key,"
     " memory_id text, incumbent_revision integer, challenger_revision integer)",
     "create table cognitive_conflict_resolutions(group_id text primary key)",
@@ -266,16 +265,22 @@ def test_missing_manual_ui_note_stays_inconclusive_but_still_reports_the_expecta
 def test_redacted_and_expired_records_never_enter_the_ordinary_graph(tmp_path):
     db = _db(
         tmp_path,
-        heads=[("m-plain", 1, "semantic"), ("m-sensitive", 1, "semantic"),
-               ("m-expired", 1, "semantic"), ("m-restricted", 1, "semantic")],
+        heads=[
+            ("m-plain", 1, "semantic"),
+            ("m-sensitive", 1, "semantic"),
+            ("m-expired", 1, "semantic"),
+            ("m-restricted", 1, "semantic"),
+        ],
         revisions=[
             _rev("m-plain", 1),
             _rev("m-sensitive", 1, attrs=("health",)),
             _rev("m-expired", 1, valid_to=50.0),
             _rev("m-restricted", 1, privacy="restricted"),
         ],
-        spans=[(m, 1, f"ev-{m}", "user_message")
-               for m in ("m-plain", "m-sensitive", "m-expired", "m-restricted")],
+        spans=[
+            (m, 1, f"ev-{m}", "user_message")
+            for m in ("m-plain", "m-sensitive", "m-expired", "m-restricted")
+        ],
     )
     try:
         item = _a6_9(db, _progress((16, "nodes=1 edges=0"), relations=0))
@@ -300,9 +305,7 @@ def test_knowledge_applies_to_edge_exits_while_an_endpoint_is_contested(tmp_path
                 _rev(source, 1, conflict=conflict),
                 _rev(target, 1, content=json.dumps({"memory_type": "procedure"})),
             ],
-            relations=[
-                ("rel-applies", "knowledge", "applies_to", owner, 1, source, 1, target, 1)
-            ],
+            relations=[("rel-applies", "knowledge", "applies_to", owner, 1, source, 1, target, 1)],
             spans=[(m, 1, f"ev-{m}", "user_message") for m in (owner, source, target)],
             groups=groups,
         )
@@ -380,7 +383,10 @@ def test_revoked_directive_stops_hiding_its_target(tmp_path):
 def test_both_manual_ui_note_dialects_are_parsed():
     progress = _progress(
         (16, "nodes=10 edges=0 inv_before=83 inv_after=83"),
-        (23, "T23 UI forget: suppression_directives=1 graph=记忆关系图：13条记忆，1条关系。 inv_delta=0"),
+        (
+            23,
+            "T23 UI forget: suppression_directives=1 graph=记忆关系图：13条记忆，1条关系。 inv_delta=0",
+        ),
     )
     observed = a6._manual_ui_observations(SimpleNamespace(progress=progress))
     assert [(o["turn"], o["nodes"], o["edges"]) for o in observed] == [
@@ -447,9 +453,7 @@ def test_directive_that_removes_nothing_fails(tmp_path):
         targets=[("dir-1", "memory", "cognitive-memory-not-here")],
     )
     try:
-        item = _a6_10(
-            db, _progress((23, "nodes=2 edges=1"), (24, "nodes=2 edges=1"), relations=1)
-        )
+        item = _a6_10(db, _progress((23, "nodes=2 edges=1"), (24, "nodes=2 edges=1"), relations=1))
         assert item.verdict == a6.FAIL
         assert "遗忘对普通图谱无效" in item.reason
     finally:

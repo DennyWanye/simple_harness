@@ -303,7 +303,11 @@ def parse_planning_decision(
     # User decision 2026-09-26: an envelope key the protocol does not name is dropped
     # (after the scan above, so a system field is still refused by name), and so is
     # any unknown key a nested contract refuses — see ``unknown_fields``.
-    raw = {key: value for key, value in raw.items() if key in ENVELOPE_FIELDS or key in SYSTEM_FIELD_KEYS}
+    raw = {
+        key: value
+        for key, value in raw.items()
+        if key in ENVELOPE_FIELDS or key in SYSTEM_FIELD_KEYS
+    }
     _refuse_unknown_keys(raw)
     if fill is not None:
         raw = fill(raw)
@@ -356,9 +360,7 @@ def decision_payload_hash(decision: PlanningDecisionEnvelopeV1) -> str:
     return canonical_decision_hash(decision)
 
 
-def allocate_decision_id(
-    *, request_id: str, attempt_ordinal: int, raw_output_hash: str
-) -> str:
+def allocate_decision_id(*, request_id: str, attempt_ordinal: int, raw_output_hash: str) -> str:
     """The deterministic §35 id, delegated to the contract's one formula."""
 
     return compute_decision_id(request_id, attempt_ordinal, raw_output_hash)

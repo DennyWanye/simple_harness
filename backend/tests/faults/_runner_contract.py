@@ -78,7 +78,9 @@ def state_hash(db_path: Path, tables: Sequence[str]) -> str:
     return digest.hexdigest()
 
 
-def emit(lane: str, root_run_id: str, before: str, after: str, extra: Mapping[str, Any] | None = None) -> None:
+def emit(
+    lane: str, root_run_id: str, before: str, after: str, extra: Mapping[str, Any] | None = None
+) -> None:
     payload = {
         "runner_contract": "fault-matrix/v2",
         "lane": lane,

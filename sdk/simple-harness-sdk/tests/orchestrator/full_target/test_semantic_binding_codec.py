@@ -429,13 +429,13 @@ def test_the_delta_contract_does_not_judge_port_cardinality() -> None:
         ),
     )
     accepted = ProposedPlanDelta(
-            delta_id="delta-3",
-            mission_id="mission-1",  # type: ignore[arg-type]
-            base_plan_revision=PlanRevision(2),
-            read_set=read_set(),
-            occurrences=delta.occurrences,
-            data_requirements=doubled,
-        )
+        delta_id="delta-3",
+        mission_id="mission-1",  # type: ignore[arg-type]
+        base_plan_revision=PlanRevision(2),
+        read_set=read_set(),
+        occurrences=delta.occurrences,
+        data_requirements=doubled,
+    )
     assert len(accepted.data_requirements) == len(doubled)
 
 

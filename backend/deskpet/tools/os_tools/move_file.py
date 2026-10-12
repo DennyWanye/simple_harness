@@ -52,9 +52,7 @@ def _rename_noreplace(source: Path, destination: Path) -> None:
         libc = ctypes.CDLL(None, use_errno=True)
         renameat2 = getattr(libc, "renameat2", None)
         if renameat2 is not None:
-            result = renameat2(
-                -100, os.fsencode(source), -100, os.fsencode(destination), 1
-            )
+            result = renameat2(-100, os.fsencode(source), -100, os.fsencode(destination), 1)
             if result == 0:
                 return
             error_number = ctypes.get_errno()
@@ -79,9 +77,7 @@ def move_file(
     if not isinstance(source_raw, str) or not isinstance(destination_raw, str):
         return _error("invalid_arguments", "source and destination must be strings")
     if not isinstance(expected_hash, str) or _SHA256.fullmatch(expected_hash) is None:
-        return _error(
-            "invalid_arguments", "expected_source_hash must be 64 hex characters"
-        )
+        return _error("invalid_arguments", "expected_source_hash must be 64 hex characters")
     if not isinstance(overwrite, bool):
         return _error("invalid_arguments", "overwrite must be a boolean")
 
@@ -94,9 +90,7 @@ def move_file(
         return _error("source_missing", str(exc))
     destination_input = Path(destination_raw).expanduser()
     if destination_input.is_symlink():
-        return _error(
-            "destination_symlink_rejected", "destination symlinks are not supported"
-        )
+        return _error("destination_symlink_rejected", "destination symlinks are not supported")
     destination = destination_input.resolve(strict=False)
     if not source.is_file():
         return _error("source_not_file", "source must be a regular file")

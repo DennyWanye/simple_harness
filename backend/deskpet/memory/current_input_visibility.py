@@ -1,4 +1,5 @@
 """Physical claim identity for one provider hand-off (Host-only)."""
+
 import aiosqlite
 
 from deskpet.memory.current_input_source import CurrentInputSourceError
@@ -12,12 +13,26 @@ from deskpet.memory.current_input_source import CurrentInputSourceError
 # disclosure lookup and the physical claim stamp must therefore read the same
 # states; a second, narrower whitelist here rejected the very hand-off it
 # exists to guard.
-LIVE_CLAIM_STATES = ("CLAIMED", "RUNNING", "PAUSE_REQUESTED", "PAUSED",
-                     "STOP_REQUESTED", "CANCEL_REQUESTED")
+LIVE_CLAIM_STATES = (
+    "CLAIMED",
+    "RUNNING",
+    "PAUSE_REQUESTED",
+    "PAUSED",
+    "STOP_REQUESTED",
+    "CANCEL_REQUESTED",
+)
 _LIVE_CLAIM_STATE_SET = frozenset(LIVE_CLAIM_STATES)
 LIVE_CLAIM_PLACEHOLDERS = ",".join("?" * len(LIVE_CLAIM_STATES))
-CLAIM_KEYS = ("host_run_id", "subject", "turn_id", "primary_conversation_id",
-              "owner_id", "generation", "current_state", "sdk_run_id")
+CLAIM_KEYS = (
+    "host_run_id",
+    "subject",
+    "turn_id",
+    "primary_conversation_id",
+    "owner_id",
+    "generation",
+    "current_state",
+    "sdk_run_id",
+)
 # The only endpoint movement a single check may survive: the Host's own start
 # linearization of this same claim. A new generation, a re-claimed lease or a
 # run that ended up paused/stopping/cancelling still fails the check.
@@ -43,12 +58,17 @@ def same_physical_claim(original, final, *, may_bind_sdk_run_id=None):
     """
     if final is None:
         return False
-    if any(final[key] != original[key] for key in CLAIM_KEYS
-           if key not in {"current_state", "sdk_run_id"}):
+    if any(
+        final[key] != original[key]
+        for key in CLAIM_KEYS
+        if key not in {"current_state", "sdk_run_id"}
+    ):
         return False
     if final["sdk_run_id"] != original["sdk_run_id"] and not (
-            may_bind_sdk_run_id is not None and original["sdk_run_id"] is None
-            and final["sdk_run_id"] == may_bind_sdk_run_id):
+        may_bind_sdk_run_id is not None
+        and original["sdk_run_id"] is None
+        and final["sdk_run_id"] == may_bind_sdk_run_id
+    ):
         return False
     states = (original["current_state"], final["current_state"])
     return states[0] == states[1] or states == _CLAIM_START_ADVANCE
@@ -72,10 +92,18 @@ async def claim_stamp(db_path, host_run_id, sdk_run_id):
     """
     async with aiosqlite.connect(f"file:{db_path}?mode=ro", uri=True) as db:
         db.row_factory = aiosqlite.Row
-        row = await (await db.execute("SELECT * FROM foreground_run_heads WHERE host_run_id=?", (host_run_id,))).fetchone()
+        row = await (
+            await db.execute(
+                "SELECT * FROM foreground_run_heads WHERE host_run_id=?", (host_run_id,)
+            )
+        ).fetchone()
     # ``CLAIMED`` is also the window before ``bind_sdk_run``: reject an unbound
     # head explicitly rather than relying on ``None != None`` being false.
-    if (row is None or row["sdk_run_id"] is None or row["sdk_run_id"] != sdk_run_id
-            or row["current_state"] not in _LIVE_CLAIM_STATE_SET):
+    if (
+        row is None
+        or row["sdk_run_id"] is None
+        or row["sdk_run_id"] != sdk_run_id
+        or row["current_state"] not in _LIVE_CLAIM_STATE_SET
+    ):
         raise CurrentInputSourceError("physical_claim_unavailable")
     return {key: row[key] for key in CLAIM_KEYS}

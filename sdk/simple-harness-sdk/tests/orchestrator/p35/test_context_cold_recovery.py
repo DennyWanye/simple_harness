@@ -79,9 +79,7 @@ def test_warm_marker_watchdog_rejects_no_startup_progress(tmp_path):
         now[0] += 1.0
 
     with pytest.raises(AssertionError, match="startup made no progress for 10s"):
-        _wait_for_warm_marker(
-            _RunningChild(), marker, log, monotonic=lambda: now[0], sleep=advance
-        )
+        _wait_for_warm_marker(_RunningChild(), marker, log, monotonic=lambda: now[0], sleep=advance)
     assert now[0] == STAGE_SECONDS
 
 
@@ -96,7 +94,5 @@ def test_warm_marker_watchdog_caps_continuous_progress_at_child_limit(tmp_path):
         progress.write_text(json.dumps({"phase": "still_running", "tick": now[0]}))
 
     with pytest.raises(AssertionError, match="exceeded 20s hard limit"):
-        _wait_for_warm_marker(
-            _RunningChild(), marker, log, monotonic=lambda: now[0], sleep=advance
-        )
+        _wait_for_warm_marker(_RunningChild(), marker, log, monotonic=lambda: now[0], sleep=advance)
     assert now[0] == CHILD_SECONDS

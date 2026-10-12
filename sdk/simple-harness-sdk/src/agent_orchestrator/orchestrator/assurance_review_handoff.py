@@ -57,7 +57,10 @@ class AssuranceReviewHandoff:
         _validate_package(reader, package, body)
         # 两个政策钉住只读登记正文，再与当前部署比（推后第 2 批 A18）
         require_registered_policies_locked(
-            orch, tenant_id=mission.tenant_id, binding=body, profile_id=orch.profile_of(intent),
+            orch,
+            tenant_id=mission.tenant_id,
+            binding=body,
+            profile_id=orch.profile_of(intent),
             agent_config=intent.config["agent_config"],
         )
         if body["subject"]["purpose"] == "TASK_CONTENT":
@@ -96,9 +99,14 @@ class AssuranceReviewHandoff:
             *(entry.ref for entry in entries),
         )
         use = certify_point_use_locked(
-            orch.commit, mission_id=mission.id, purpose="DISCLOSE", consumer_kind=REVIEW_INTENT_CONSUMER,
-            consumer_id=intent.intent_id, claims=tuple(EvidenceClaim.exact(ref) for ref in refs),
-            subject=("task", task.id), record=record,
+            orch.commit,
+            mission_id=mission.id,
+            purpose="DISCLOSE",
+            consumer_kind=REVIEW_INTENT_CONSUMER,
+            consumer_id=intent.intent_id,
+            claims=tuple(EvidenceClaim.exact(ref) for ref in refs),
+            subject=("task", task.id),
+            record=record,
         )
         if not use.usable:
             raise PointUseRefused(use)

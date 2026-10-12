@@ -91,8 +91,7 @@ def grant(*, expires_at: float | None = 100.0) -> TaskGrant:
 
 def set_policy_generation(database: ProductStateDatabase, generation: int = 4) -> None:
     database.connection.execute(
-        "UPDATE authorization_policy_state SET generation=?,updated_at=? "
-        "WHERE singleton_id=1",
+        "UPDATE authorization_policy_state SET generation=?,updated_at=? WHERE singleton_id=1",
         (generation, 1.0),
     )
     database.connection.commit()
@@ -141,7 +140,13 @@ def test_database_first_open_reopen_and_failed_initialize_rolls_back(tmp_path) -
 
     broken = ProductStateDatabase(tmp_path / "broken.db")
     with pytest.raises(RuntimeError, match="schema fault"):
-        broken.initialize(fault=lambda point: (_ for _ in ()).throw(RuntimeError("schema fault")) if point == "schema.before_commit" else None)
+        broken.initialize(
+            fault=lambda point: (
+                (_ for _ in ()).throw(RuntimeError("schema fault"))
+                if point == "schema.before_commit"
+                else None
+            )
+        )
     assert broken.table_names() == ()
     broken.close()
 
@@ -256,7 +261,11 @@ def test_each_receipt_write_rolls_back_on_crash(tmp_path, method, target_state) 
         "sdk_receipt_hash": receipt(f"sdk-{method}"),
         "host_receipt_hash": receipt(f"host-{method}"),
         "now": 4.0,
-        "fault": lambda point: (_ for _ in ()).throw(RuntimeError("crash")) if point.endswith("before_commit") else None,
+        "fault": lambda point: (
+            (_ for _ in ()).throw(RuntimeError("crash"))
+            if point.endswith("before_commit")
+            else None
+        ),
     }
     with pytest.raises(RuntimeError, match="crash"):
         getattr(repository, method)("authorization-1", **kwargs)
@@ -310,29 +319,38 @@ async def test_auto_skill_decision_is_host_owned_durable_and_precedes_grant_acti
     set_policy_generation(database)
     repository = AuthorizationSagaRepository(database)
     prepared = PreparedToolEffect(
-        EffectId("effect-1"), RunId("run-1"),
+        EffectId("effect-1"),
+        RunId("run-1"),
         ToolCall(CallId("call-1"), "skill_install", {"url": "https://github.com/acme/skills"}),
-        ToolSpec("skill_install", "Install Skill", {
-            "type": "object", "properties": {"url": {"type": "string"}},
-            "required": ["url"], "additionalProperties": False,
-        }), {},
+        ToolSpec(
+            "skill_install",
+            "Install Skill",
+            {
+                "type": "object",
+                "properties": {"url": {"type": "string"}},
+                "required": ["url"],
+                "additionalProperties": False,
+            },
+        ),
+        {},
     )
     metadata = {
-        "approval_kind": "auto", "provenance_version": 1,
+        "approval_kind": "auto",
+        "provenance_version": 1,
         "skill_install_intent_id": "intent-1",
         "skill_install_content_digest": "d" * 64,
         "skill_install_member_digest": "e" * 64,
         "skill_install_expires_at": 90.0,
     }
     base_identity = replace(
-        identity(decision_nonce=None), tool_name="skill_install",
+        identity(decision_nonce=None),
+        tool_name="skill_install",
         arguments={"url": "https://github.com/acme/skills"},
     )
+
     class AutoPolicy:
         def decide(self, _prepared, *, request=None):
-            return AuthorizationResult(
-                AuthorizationDecision.ALLOW, receipt_ref="policy:auto"
-            )
+            return AuthorizationResult(AuthorizationDecision.ALLOW, receipt_ref="policy:auto")
 
         def auto_skill_approval_for(self, _prepared):
             return metadata
@@ -357,7 +375,8 @@ async def test_auto_skill_decision_is_host_owned_durable_and_precedes_grant_acti
 
     sdk_handoff = receipt("sdk-auto-handoff")
     await adapter.bind_effect_handoff(
-        prepared, result.receipt_ref or "",
+        prepared,
+        result.receipt_ref or "",
         AuthorizationReceipt("sdk:auto-handoff", sdk_handoff, sdk_handoff),
     )
     committed = repository.read("authorization-1")
@@ -486,9 +505,10 @@ def test_task_grant_policy_generation_expiry_and_reopen_are_fail_closed(tmp_path
     authority = DurableTaskGrantAuthority(database)
     assert authority.prepare(grant(), now=1.0).status == "prepared"
     authority.activate("grant-1", version=1, policy_generation=4, now=2.0)
-    assert authority.assert_active(
-        "grant-1", version=1, policy_generation=4, now=3.0
-    ).task_grant_id == "grant-1"
+    assert (
+        authority.assert_active("grant-1", version=1, policy_generation=4, now=3.0).task_grant_id
+        == "grant-1"
+    )
     with pytest.raises(TaskGrantConflict, match="generation"):
         authority.assert_active("grant-1", version=1, policy_generation=5, now=3.0)
     set_policy_generation(database, 5)
@@ -785,9 +805,7 @@ def test_sdk_authorization_port_binds_both_product_receipts_before_handoff(
                     forged,
                     AuthorizationRequest("Allow write?", "sdk-final-nonce"),
                     AuthorizationDecision.ALLOW,
-                    AuthorizationReceipt(
-                        "sdk:forged", receipt("forged"), receipt("forged")
-                    ),
+                    AuthorizationReceipt("sdk:forged", receipt("forged"), receipt("forged")),
                 )
         assert repository.read("authorization-1").state is AuthorizationSagaState.PREPARED
         assert DurableTaskGrantAuthority(database)._read("grant-1").status == "prepared"
@@ -805,9 +823,7 @@ def test_sdk_authorization_port_binds_both_product_receipts_before_handoff(
                 prepared,
                 AuthorizationRequest("Allow write?", "wrong-nonce"),
                 AuthorizationDecision.ALLOW,
-                AuthorizationReceipt(
-                    "sdk:wrong", receipt("wrong"), receipt("wrong")
-                ),
+                AuthorizationReceipt("sdk:wrong", receipt("wrong"), receipt("wrong")),
             )
         sdk_handoff_hash = receipt("sdk-handoff-port")
         handoff_receipt = await adapter.bind_effect_handoff(
@@ -889,9 +905,7 @@ def test_authorization_product_write_crashes_reopen_and_complete_exact_receipts(
         database.close()
 
         sdk_decision_hash = receipt("sdk-decision-crash")
-        sdk_decision = AuthorizationReceipt(
-            "sdk:decision", sdk_decision_hash, sdk_decision_hash
-        )
+        sdk_decision = AuthorizationReceipt("sdk:decision", sdk_decision_hash, sdk_decision_hash)
         database, adapter = open_adapter("product_decision_bind")
         with pytest.raises(RuntimeError, match="product_decision_bind"):
             await adapter.bind_decision(
@@ -900,8 +914,10 @@ def test_authorization_product_write_crashes_reopen_and_complete_exact_receipts(
                 AuthorizationDecision.ALLOW,
                 sdk_decision,
             )
-        assert AuthorizationSagaRepository(database).read("authorization-1").state \
+        assert (
+            AuthorizationSagaRepository(database).read("authorization-1").state
             is AuthorizationSagaState.DECISION_BOUND
+        )
         database.close()
 
         database, adapter = open_adapter()
@@ -914,25 +930,23 @@ def test_authorization_product_write_crashes_reopen_and_complete_exact_receipts(
         database.close()
 
         sdk_handoff_hash = receipt("sdk-handoff-crash")
-        sdk_handoff = AuthorizationReceipt(
-            "sdk:handoff", sdk_handoff_hash, sdk_handoff_hash
-        )
+        sdk_handoff = AuthorizationReceipt("sdk:handoff", sdk_handoff_hash, sdk_handoff_hash)
         database, adapter = open_adapter("product_effect_bind")
         with pytest.raises(RuntimeError, match="product_effect_bind"):
-            await adapter.bind_effect_handoff(
-                prepared, decision_receipt.receipt_ref, sdk_handoff
-            )
-        assert AuthorizationSagaRepository(database).read("authorization-1").state \
+            await adapter.bind_effect_handoff(prepared, decision_receipt.receipt_ref, sdk_handoff)
+        assert (
+            AuthorizationSagaRepository(database).read("authorization-1").state
             is AuthorizationSagaState.EFFECT_BOUND
+        )
         database.close()
 
         database, adapter = open_adapter("product_handoff_commit")
         with pytest.raises(RuntimeError, match="product_handoff_commit"):
-            await adapter.bind_effect_handoff(
-                prepared, decision_receipt.receipt_ref, sdk_handoff
-            )
-        assert AuthorizationSagaRepository(database).read("authorization-1").state \
+            await adapter.bind_effect_handoff(prepared, decision_receipt.receipt_ref, sdk_handoff)
+        assert (
+            AuthorizationSagaRepository(database).read("authorization-1").state
             is AuthorizationSagaState.HANDOFF_COMMITTED
+        )
         database.close()
 
         database, adapter = open_adapter()
@@ -949,14 +963,18 @@ def test_authorization_product_write_crashes_reopen_and_complete_exact_receipts(
         database, adapter = open_adapter("before_product_settle")
         with pytest.raises(RuntimeError, match="before_product_settle"):
             adapter.settle(prepared, outcome_hash=receipt("tool-outcome"))
-        assert AuthorizationSagaRepository(database).read("authorization-1").state \
+        assert (
+            AuthorizationSagaRepository(database).read("authorization-1").state
             is AuthorizationSagaState.HANDOFF_COMMITTED
+        )
         database.close()
 
         database, adapter = open_adapter()
         adapter.settle(prepared, outcome_hash=receipt("tool-outcome"))
-        assert AuthorizationSagaRepository(database).read("authorization-1").state \
+        assert (
+            AuthorizationSagaRepository(database).read("authorization-1").state
             is AuthorizationSagaState.SETTLED
+        )
         database.close()
 
     asyncio.run(case())
@@ -1050,9 +1068,7 @@ class _TwoDatabaseAuthorizationCase:
             raise AssertionError("fresh matrix case unexpectedly existed")
 
     async def initialize(self) -> None:
-        self.run_fence = await self.sdk.acquire(
-            RunId("run-1"), self.execution_lease, now=2.0
-        )
+        self.run_fence = await self.sdk.acquire(RunId("run-1"), self.execution_lease, now=2.0)
 
     def adapter(self, fail_at: str | None = None) -> ProductAuthorizationAdapter:
         def fault(point: str) -> None:
@@ -1170,9 +1186,7 @@ class _TwoDatabaseAuthorizationCase:
             if stop_after == "product_decision_bind" and str(error).startswith("crash:"):
                 return
             raise
-        decision_binding = bind_authorization_receipts(
-            sdk_decision_receipt, host_decision_receipt
-        )
+        decision_binding = bind_authorization_receipts(sdk_decision_receipt, host_decision_receipt)
         if stop_after == "product_decision_bind":
             return
 
@@ -1235,9 +1249,7 @@ class _TwoDatabaseAuthorizationCase:
                 } and str(error).startswith("crash:"):
                     return
                 raise
-            handoff_binding = bind_authorization_receipts(
-                sdk_handoff_receipt, host_handoff_receipt
-            )
+            handoff_binding = bind_authorization_receipts(sdk_handoff_receipt, host_handoff_receipt)
             if stop_after in {"product_effect_bind", "product_handoff_commit"}:
                 return
         else:
@@ -1310,9 +1322,7 @@ class _TwoDatabaseAuthorizationCase:
     ],
 )
 @pytest.mark.asyncio
-async def test_same_case_two_database_authorization_fault_matrix(
-    tmp_path, stop_after
-) -> None:
+async def test_same_case_two_database_authorization_fault_matrix(tmp_path, stop_after) -> None:
     case = _TwoDatabaseAuthorizationCase(tmp_path / stop_after)
     await case.initialize()
     assert case.sdk_path != case.product_path

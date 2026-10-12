@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 """P4-S20 Wave 5: PluginManager TDD tests."""
+
 from __future__ import annotations
 
 import json
@@ -21,9 +22,7 @@ def _write_plugin(
 ) -> Path:
     pdir = plugins_dir / name
     pdir.mkdir(parents=True)
-    (pdir / "plugin.json").write_text(
-        json.dumps(manifest), encoding="utf-8"
-    )
+    (pdir / "plugin.json").write_text(json.dumps(manifest), encoding="utf-8")
     if skills:
         sdir = pdir / "skills"
         sdir.mkdir()

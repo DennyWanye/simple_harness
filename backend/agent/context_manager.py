@@ -40,6 +40,7 @@ Design choices
 * **No provider import.**  ``llm_for_summarize`` is passed in by the
   caller.  This keeps the unit tests free of provider/transport state.
 """
+
 from __future__ import annotations
 
 import logging
@@ -342,7 +343,10 @@ class ContextManager:
     # ─────────────────────── B3 token budget ───────────────────────
 
     def check_budget(
-        self, messages: list[dict[str, Any]], *, model: str,
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        model: str,
         real_prompt_tokens_floor: int = 0,
     ) -> BudgetCheckResult:
         """Pre-call token budget check delegating to B3.
@@ -511,11 +515,7 @@ class ContextManager:
 
         superseded = 0
         prev_index = self._read_path_seen.get(norm)
-        if (
-            prev_index is not None
-            and prev_index != new_index
-            and 0 <= prev_index < len(messages)
-        ):
+        if prev_index is not None and prev_index != new_index and 0 <= prev_index < len(messages):
             old_msg = messages[prev_index]
             # 只换 content；role/tool_call_id/name 等配对字段一律不动。
             if isinstance(old_msg, dict) and "content" in old_msg:
@@ -526,8 +526,7 @@ class ContextManager:
                 )
                 superseded = 1
                 logger.info(
-                    "p4_file_read_superseded path=%s old_idx=%d "
-                    "new_idx=%d iter=%d",
+                    "p4_file_read_superseded path=%s old_idx=%d new_idx=%d iter=%d",
                     str(disp)[:200],
                     prev_index,
                     new_index,
@@ -558,5 +557,6 @@ class ContextManager:
             return list(messages)
 
         return await self.maybe_compact(
-            messages, llm_for_summarize=llm_for_summarize,
+            messages,
+            llm_for_summarize=llm_for_summarize,
         )

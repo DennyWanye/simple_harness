@@ -79,8 +79,11 @@ _SOURCE_SCHEMA = "simple-harness-editable-source-v1"
 def _source_git(root: Path, *args: str) -> str:
     try:
         return subprocess.run(
-            ["git", "-C", str(root), *args], check=True, capture_output=True,
-            text=True, timeout=10,
+            ["git", "-C", str(root), *args],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=10,
         ).stdout.strip()
     except (OSError, subprocess.SubprocessError) as exc:
         raise RuntimeError("SDK source Git identity unavailable") from exc
@@ -117,7 +120,9 @@ def capture_sdk_source_attestation(root: Path) -> dict[str, object]:
         for path in sorted(files):
             if path.is_symlink() or path.resolve() != path:
                 raise RuntimeError("SDK source input escaped its canonical path")
-            inputs[path.relative_to(root).as_posix()] = hashlib.sha256(path.read_bytes()).hexdigest()
+            inputs[path.relative_to(root).as_posix()] = hashlib.sha256(
+                path.read_bytes()
+            ).hexdigest()
     except OSError as exc:
         raise RuntimeError("SDK source inventory unavailable") from exc
     return {"schema": _SOURCE_SCHEMA, "root": str(root), "commit": commit, "inputs": inputs}
@@ -134,13 +139,21 @@ class SdkSourceIdentity:
 
     @property
     def inputs_sha256(self) -> str:
-        return hashlib.sha256(json.dumps(
-            dict(self.inputs), sort_keys=True, separators=(",", ":"),
-        ).encode()).hexdigest()
+        return hashlib.sha256(
+            json.dumps(
+                dict(self.inputs),
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+        ).hexdigest()
 
     def attestation(self) -> dict[str, object]:
-        return {"schema": _SOURCE_SCHEMA, "root": str(self.root),
-                "commit": self.commit, "inputs": dict(self.inputs)}
+        return {
+            "schema": _SOURCE_SCHEMA,
+            "root": str(self.root),
+            "commit": self.commit,
+            "inputs": dict(self.inputs),
+        }
 
 
 def load_sdk_source_identity(baseline: SdkCandidateIdentity, path: Path) -> SdkSourceIdentity:
@@ -152,7 +165,9 @@ def load_sdk_source_identity(baseline: SdkCandidateIdentity, path: Path) -> SdkS
         if not isinstance(root, str) or not isinstance(commit, str) or not isinstance(inputs, dict):
             raise TypeError("identity")
         if not inputs or not all(
-            isinstance(name, str) and isinstance(digest, str) and len(digest) == 64
+            isinstance(name, str)
+            and isinstance(digest, str)
+            and len(digest) == 64
             and all(char in "0123456789abcdef" for char in digest)
             for name, digest in inputs.items()
         ):
@@ -170,7 +185,10 @@ def _verify_source_origins(identity: SdkSourceIdentity) -> dict[str, str]:
         if root_module is None:
             root_module = import_module(package)
         expected = identity.root / "src" / package
-        if root_module is None or getattr(root_module, "__version__", None) != identity.baseline.version:
+        if (
+            root_module is None
+            or getattr(root_module, "__version__", None) != identity.baseline.version
+        ):
             raise RuntimeError("SDK source imported package version mismatch")
         filename = getattr(root_module, "__file__", None)
         if not filename or Path(filename).resolve() != expected / "__init__.py":
@@ -185,8 +203,11 @@ def _verify_source_origins(identity: SdkSourceIdentity) -> dict[str, str]:
             if not filename or not spec_origin:
                 raise RuntimeError("SDK source module origin unavailable")
             actual = Path(filename).resolve()
-            if (not actual.is_relative_to(expected) or Path(spec_origin).resolve() != actual
-                    or actual.relative_to(identity.root).as_posix() not in inputs):
+            if (
+                not actual.is_relative_to(expected)
+                or Path(spec_origin).resolve() != actual
+                or actual.relative_to(identity.root).as_posix() not in inputs
+            ):
                 raise RuntimeError("SDK source module origin mismatch")
             if hasattr(module, "__path__") and list(module.__path__) != [str(actual.parent)]:
                 raise RuntimeError("SDK source module search path mismatch")
@@ -214,14 +235,27 @@ def verify_runtime_identity(
         if not isinstance(origin, dict) or origin.get("dir_info", {}).get("editable") is not True:
             raise ValueError("not editable")
         parsed = urlparse(origin["url"])
-        if (parsed.scheme != "file" or parsed.netloc not in ("", "localhost")
-                or parsed.query or parsed.fragment
-                or Path(unquote(parsed.path)).resolve() != identity.root):
+        if (
+            parsed.scheme != "file"
+            or parsed.netloc not in ("", "localhost")
+            or parsed.query
+            or parsed.fragment
+            or Path(unquote(parsed.path)).resolve() != identity.root
+        ):
             raise ValueError("origin")
         if distribution.version != baseline.version:
             raise ValueError("version")
-    except (OSError, ValueError, KeyError, TypeError, AttributeError, metadata.PackageNotFoundError) as exc:
-        raise RuntimeError("SDK source installed identity or baseline unavailable/mismatched") from exc
+    except (
+        OSError,
+        ValueError,
+        KeyError,
+        TypeError,
+        AttributeError,
+        metadata.PackageNotFoundError,
+    ) as exc:
+        raise RuntimeError(
+            "SDK source installed identity or baseline unavailable/mismatched"
+        ) from exc
     _verify_source_origins(identity)
     return identity
 
@@ -267,14 +301,16 @@ def durable_sdk_run_start_exists(execution_database: str | Path, run_id: str) ->
         return False
     with sqlite3.connect(f"file:{path}?mode=ro", uri=True) as db:
         table = db.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' "
-            "AND name='run_start_snapshots'"
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='run_start_snapshots'"
         ).fetchone()
         if table is None:
             return False
-        return db.execute(
-            "SELECT 1 FROM run_start_snapshots WHERE run_id=?", (str(run_id),)
-        ).fetchone() is not None
+        return (
+            db.execute(
+                "SELECT 1 FROM run_start_snapshots WHERE run_id=?", (str(run_id),)
+            ).fetchone()
+            is not None
+        )
 
 
 __all__ = (

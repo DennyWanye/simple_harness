@@ -21,9 +21,7 @@ from types import SimpleNamespace
 
 import pytest
 
-_VERIFY = (
-    Path(__file__).resolve().parents[3] / "scripts" / "native" / "a6_verify.py"
-)
+_VERIFY = Path(__file__).resolve().parents[3] / "scripts" / "native" / "a6_verify.py"
 
 
 def _load():
@@ -40,13 +38,18 @@ a6 = _load()
 def _hm_db(tmp_path: Path, heads, revisions, relations) -> a6.RoDb:
     path = tmp_path / "human_memory_v7.db"
     conn = sqlite3.connect(path)
-    conn.execute("create table cognitive_memory_heads(memory_id text primary key,"
-                 " current_revision integer)")
-    conn.execute("create table cognitive_memory_revisions(memory_id text, revision integer,"
-                 " lifecycle_state text, conflict_status text)")
-    conn.execute("create table cognitive_relations(relation_domain text, relation_kind text,"
-                 " source_memory_id text, source_revision integer,"
-                 " target_memory_id text, target_revision integer)")
+    conn.execute(
+        "create table cognitive_memory_heads(memory_id text primary key, current_revision integer)"
+    )
+    conn.execute(
+        "create table cognitive_memory_revisions(memory_id text, revision integer,"
+        " lifecycle_state text, conflict_status text)"
+    )
+    conn.execute(
+        "create table cognitive_relations(relation_domain text, relation_kind text,"
+        " source_memory_id text, source_revision integer,"
+        " target_memory_id text, target_revision integer)"
+    )
     conn.executemany("insert into cognitive_memory_heads values (?,?)", heads)
     conn.executemany("insert into cognitive_memory_revisions values (?,?,?,?)", revisions)
     conn.executemany("insert into cognitive_relations values (?,?,?,?,?,?)", relations)
@@ -98,15 +101,13 @@ def test_terminal_supersede_head_state_is_accepted(tmp_path: Path) -> None:
     # SUPERSEDE writes `superseded` onto the NEW head revision
     # (`core/mutations.py:423-425`); that is a legal head state, not a defect.
     revisions = [("m1", 1, "active", "uncontested"), ("m1", 2, "superseded", "uncontested")]
-    item = _run(tmp_path, [("m1", 2)], revisions,
-                [("evolution", "supersedes", "m1", 2, "m1", 1)])
+    item = _run(tmp_path, [("m1", 2)], revisions, [("evolution", "supersedes", "m1", 2, "m1", 1)])
     assert item.verdict == a6.PASS
 
 
 def test_illegal_head_lifecycle_still_fails(tmp_path: Path) -> None:
     revisions = [("m1", 1, "active", "uncontested"), ("m1", 2, "forgotten", "uncontested")]
-    item = _run(tmp_path, [("m1", 2)], revisions,
-                [("evolution", "supersedes", "m1", 2, "m1", 1)])
+    item = _run(tmp_path, [("m1", 2)], revisions, [("evolution", "supersedes", "m1", 2, "m1", 1)])
     assert item.verdict == a6.FAIL
     assert item.numbers["head_lifecycle_invalid"] == [("m1", 2, "forgotten")]
 

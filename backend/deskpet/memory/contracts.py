@@ -17,6 +17,7 @@ from typing import Any, Protocol, runtime_checkable
 # ── 宿主自有的最小数据模型 ─────────────────────────
 # 这些是 host 侧的接口数据形状，刻意不 import SDK 类型，避免反向耦合。
 
+
 @dataclass
 class Message:
     id: int | None
@@ -68,6 +69,7 @@ class Hit:
 
 
 # ── 宿主侧接口契约 ────────────────────────────────
+
 
 @runtime_checkable
 class MemoryBackend(Protocol):

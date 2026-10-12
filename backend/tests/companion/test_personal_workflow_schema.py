@@ -19,13 +19,17 @@ def _graph() -> dict:
         "nodes": [
             {"id": "input", "type": "input", "bindings": {}, "config": {}},
             {
-                "id": "lookup", "type": "tool_call",
+                "id": "lookup",
+                "type": "tool_call",
                 "bindings": {"query": "/nodes/input/value"},
-                "config": {"tool_name": "memory_recall"}, "retry": 2,
+                "config": {"tool_name": "memory_recall"},
+                "retry": 2,
             },
             {
-                "id": "output", "type": "output",
-                "bindings": {"value": "/nodes/lookup/result"}, "config": {},
+                "id": "output",
+                "type": "output",
+                "bindings": {"value": "/nodes/lookup/result"},
+                "config": {},
             },
         ],
         "outputs": {"result": "/nodes/output/value"},
@@ -77,7 +81,10 @@ def test_personal_workflow_accepts_only_bounded_safe_dag() -> None:
         (lambda g: g["nodes"][1]["config"].update(callable="evil"), "invalid_tool_call"),
         (lambda g: g["nodes"][0].update(bindings={"x": "/nodes/output/value"}), "cycle"),
         (lambda g: g["outputs"].update(result="/nodes/missing/value"), "output_node_missing"),
-        (lambda g: g["nodes"][1]["bindings"].update(query="/secrets/token"), "invalid_pointer_root"),
+        (
+            lambda g: g["nodes"][1]["bindings"].update(query="/secrets/token"),
+            "invalid_pointer_root",
+        ),
     ],
 )
 def test_personal_workflow_rejects_unsafe_graphs(mutate, code: str) -> None:

@@ -31,6 +31,7 @@ Decisions telemetry (task 12.11):
   the bundle and appends the last N to the in-memory ring buffer
   returned by :meth:`recent_decisions` (for the Context Trace UI).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -105,9 +106,7 @@ class ContextAssembler:
         # 在 build 时记住 default_config，assemble() 时兜底合并（调用方未提供的
         # 顶层键用 default 补），从源头根治所有 venue，杜绝第 N 个 venue 再漏。
         self._default_config: dict[str, Any] = dict(default_config or {})
-        self._decisions_ring: deque[AssemblyDecisions] = deque(
-            maxlen=_MAX_DECISIONS_RING
-        )
+        self._decisions_ring: deque[AssemblyDecisions] = deque(maxlen=_MAX_DECISIONS_RING)
 
     # ------------------------------------------------------------------
     # Config toggle
@@ -158,10 +157,7 @@ class ContextAssembler:
         if self._default_config:
             _merged = dict(self._default_config)
             for _k, _v in (config or {}).items():
-                if (
-                    isinstance(_v, dict)
-                    and isinstance(_merged.get(_k), dict)
-                ):
+                if isinstance(_v, dict) and isinstance(_merged.get(_k), dict):
                     _merged[_k] = {**_merged[_k], **_v}
                 else:
                     _merged[_k] = _v
@@ -177,11 +173,7 @@ class ContextAssembler:
 
         # 2. Classify.
         if task_type_override:
-            task_type = (
-                task_type_override
-                if task_type_override in TASK_TYPES
-                else "chat"
-            )
+            task_type = task_type_override if task_type_override in TASK_TYPES else "chat"
             classifier_result = ClassifierResult(
                 task_type=task_type,
                 path="override",
@@ -191,9 +183,7 @@ class ContextAssembler:
             )
         else:
             try:
-                classifier_result = await self._classifier.classify(
-                    user_message
-                )
+                classifier_result = await self._classifier.classify(user_message)
             except Exception as exc:  # defensive — classifier should not raise
                 logger.warning(
                     "assembler.classifier_crashed",
@@ -215,15 +205,10 @@ class ContextAssembler:
                     path=classifier_result.path,
                     confidence=classifier_result.confidence,
                     latency_ms=classifier_result.latency_ms,
-                    rationale=(
-                        classifier_result.rationale
-                        + " (unknown → chat fallback)"
-                    ),
+                    rationale=(classifier_result.rationale + " (unknown → chat fallback)"),
                 )
 
-        policy = self._policies.get(
-            classifier_result.task_type, self._policies.get("chat")
-        )
+        policy = self._policies.get(classifier_result.task_type, self._policies.get("chat"))
         if policy is None:
             # Both missing → last-resort chat policy.
             policy = AssemblyPolicy(task_type="chat")
@@ -235,10 +220,7 @@ class ContextAssembler:
         # SkillComponent 对所有 task_type（含 chat）都运行，知识注入才能在常见路径
         # 生效。默认 knowledge_enabled=false → prefer 不变 → 字节级 BC 安全。
         # （注意 policy 是 self._policies 的共享对象，必须 replace 出副本，勿原地改。）
-        if (
-            isinstance(memory_policy_override, dict)
-            and "l2_page_in" in memory_policy_override
-        ):
+        if isinstance(memory_policy_override, dict) and "l2_page_in" in memory_policy_override:
             policy = dataclasses.replace(
                 policy,
                 memory=dataclasses.replace(
@@ -249,12 +231,8 @@ class ContextAssembler:
 
         if "skill" not in policy.prefer:
             _skills_cfg = config.get("skills") if isinstance(config, dict) else None
-            if isinstance(_skills_cfg, dict) and bool(
-                _skills_cfg.get("knowledge_enabled", False)
-            ):
-                policy = dataclasses.replace(
-                    policy, prefer=[*policy.prefer, "skill"]
-                )
+            if isinstance(_skills_cfg, dict) and bool(_skills_cfg.get("knowledge_enabled", False)):
+                policy = dataclasses.replace(policy, prefer=[*policy.prefer, "skill"])
 
         # FP-5 真机诊断 (2026-06-06)：露出分类 task_type + policy 的组件名单，
         # 用于确认 SkillComponent 是否会 fan-out（auto-disclosure 能否触发）。
@@ -278,18 +256,13 @@ class ContextAssembler:
             skill_registry=skill_registry,
             mcp_manager=mcp_manager,
             config=config or {},
-            deadline_wall_time=time.monotonic()
-            + self._component_timeout_ms / 1000.0,
+            deadline_wall_time=time.monotonic() + self._component_timeout_ms / 1000.0,
         )
 
-        slices = await self._registry.fanout(
-            ctx, timeout_ms=self._component_timeout_ms
-        )
+        slices = await self._registry.fanout(ctx, timeout_ms=self._component_timeout_ms)
 
         # 4. Allocate budget.
-        budget_result = self._budget.allocate(
-            slices, override_ratio=policy.budget_ratio
-        )
+        budget_result = self._budget.allocate(slices, override_ratio=policy.budget_ratio)
 
         # 5. Stitch buckets into the bundle.
         bundle = self._stitch(classifier_result, budget_result, policy)
@@ -300,9 +273,7 @@ class ContextAssembler:
             classifier_result,
             budget_result,
             assembly_latency_ms=total_ms,
-            planned_tools=[
-                _schema_name(s) for s in bundle.tool_schemas if _schema_name(s)
-            ],
+            planned_tools=[_schema_name(s) for s in bundle.tool_schemas if _schema_name(s)],
         )
         self._decisions_ring.append(bundle.decisions)
         return bundle
@@ -409,8 +380,7 @@ class ContextAssembler:
             history = sl.meta.get("l2_history") if sl.meta else None
             if isinstance(history, list) and history:
                 bundle.history = [
-                    h for h in history
-                    if isinstance(h, dict) and h.get("role") and h.get("content")
+                    h for h in history if isinstance(h, dict) and h.get("role") and h.get("content")
                 ]
                 break
 
@@ -475,11 +445,7 @@ class ContextAssembler:
                     error=str(exc),
                     error_type=type(exc).__name__,
                 )
-        persona = (
-            config.get("agent", {}).get("persona")
-            if isinstance(config, dict)
-            else None
-        )
+        persona = config.get("agent", {}).get("persona") if isinstance(config, dict) else None
         bundle = ContextBundle(
             task_type="chat",
             frozen_system=str(persona or "").strip() or "DeskPet legacy mode.",
@@ -489,9 +455,7 @@ class ContextAssembler:
             task_type="chat",
             classifier_path="disabled",
             assembly_latency_ms=0.0,
-            planned_tools=[
-                _schema_name(s) for s in schemas if _schema_name(s)
-            ],
+            planned_tools=[_schema_name(s) for s in schemas if _schema_name(s)],
         )
         self._decisions_ring.append(bundle.decisions)
         return bundle

@@ -8,6 +8,7 @@ Context policy exact reader"）。
 
 **改坏检验**（记录见车道 Q2 记录）：交接门不读登记正文 → 交接支变绿为红。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -24,26 +25,39 @@ from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider
 
 
 def _bindings(store: Any, mission_id: str) -> list[dict[str, Any]]:
-    return [decode(row[0]) for row in store.connection.execute(
-        "SELECT binding_json FROM assurance_review_bindings WHERE mission_id=? ORDER BY rowid", (mission_id,))]
+    return [
+        decode(row[0])
+        for row in store.connection.execute(
+            "SELECT binding_json FROM assurance_review_bindings WHERE mission_id=? ORDER BY rowid",
+            (mission_id,),
+        )
+    ]
 
 
 def _profile_of(store: Any, review_key: str) -> str:
     [row] = store.connection.execute(
         "SELECT i.config_json FROM assurance_review_invocations v JOIN dispatch_intents i "
-        "ON i.intent_id=v.dispatch_intent_id WHERE v.review_key=? AND v.ordinal=1", (review_key,)).fetchall()
+        "ON i.intent_id=v.dispatch_intent_id WHERE v.review_key=? AND v.ordinal=1",
+        (review_key,),
+    ).fetchall()
     return json.loads(row[0])["agent_config"]["model_profile_ref"]
 
 
 def _read(store: Any, mission_id: str, pin: dict[str, Any], kind: str) -> dict[str, Any]:
     with store.read_view():
-        return policies.read_registered_policy(store, tenant_id=TENANT, mission_id=mission_id,
-                                               pin=Pin.from_json(pin), kind=kind)
+        return policies.read_registered_policy(
+            store, tenant_id=TENANT, mission_id=mission_id, pin=Pin.from_json(pin), kind=kind
+        )
 
 
 async def _complete(world: Any, key: str) -> str:
-    mission_id = world.create({"goal": "写两份笔记", "idempotency_key": key,
-                               "success_criteria": ["file:notes/a.md", "file:notes/b.md"]})["mission_id"]
+    mission_id = world.create(
+        {
+            "goal": "写两份笔记",
+            "idempotency_key": key,
+            "success_criteria": ["file:notes/a.md", "file:notes/b.md"],
+        }
+    )["mission_id"]
     mission = await world.run_until_settled(mission_id, rounds=40)
     assert str(mission.status.value) == "COMPLETED", mission.final_report
     return mission_id
@@ -61,14 +75,20 @@ def test_every_review_binding_pins_registered_policies_on_the_default_path(tmp_p
             assert bindings
             for body in bindings:
                 assert body["reviewer_policy_ref"]["revision"] == 0
-                reviewer = _read(store, mission_id, body["reviewer_policy_ref"], policies.REVIEWER_POLICY_KIND)
+                reviewer = _read(
+                    store, mission_id, body["reviewer_policy_ref"], policies.REVIEWER_POLICY_KIND
+                )
                 assert reviewer == policies.reviewer_policy_body()
                 profile = _profile_of(store, body["review_key"])
-                context = _read(store, mission_id, body["context_policy_ref"], policies.CONTEXT_POLICY_KIND)
+                context = _read(
+                    store, mission_id, body["context_policy_ref"], policies.CONTEXT_POLICY_KIND
+                )
                 assert context == policies.context_policy_body(world.loop, profile)
                 # 同一钉住换一种政策读：写者种类不符，拒绝
                 with pytest.raises(AssuranceError) as wrong:
-                    _read(store, mission_id, body["reviewer_policy_ref"], policies.CONTEXT_POLICY_KIND)
+                    _read(
+                        store, mission_id, body["reviewer_policy_ref"], policies.CONTEXT_POLICY_KIND
+                    )
                 assert wrong.value.code == "REF_ISSUER_MISMATCH"
 
     asyncio.run(case())
@@ -83,23 +103,41 @@ def test_a_changed_policy_is_a_new_registration_and_the_old_pin_still_reads_back
             store = world.store
             mission_id = await _complete(world, "policy-registry-change")
             old_pin = _bindings(store, mission_id)[0]["reviewer_policy_ref"]
-            changed = {**policies.reviewer_policy_body(), "instructions_version": "changed-for-test"}
+            changed = {
+                **policies.reviewer_policy_body(),
+                "instructions_version": "changed-for-test",
+            }
             with store.transaction():
-                new_pin = policies.register_policy_locked(store, mission_id=mission_id,
-                                                          kind=policies.REVIEWER_POLICY_KIND, body=changed)
-                again = policies.register_policy_locked(store, mission_id=mission_id,
-                                                        kind=policies.REVIEWER_POLICY_KIND, body=changed)
+                new_pin = policies.register_policy_locked(
+                    store, mission_id=mission_id, kind=policies.REVIEWER_POLICY_KIND, body=changed
+                )
+                again = policies.register_policy_locked(
+                    store, mission_id=mission_id, kind=policies.REVIEWER_POLICY_KIND, body=changed
+                )
             assert new_pin == again and new_pin.to_json() != old_pin
-            assert _read(store, mission_id, new_pin.to_json(), policies.REVIEWER_POLICY_KIND) == changed
-            assert _read(store, mission_id, old_pin, policies.REVIEWER_POLICY_KIND) == policies.reviewer_policy_body()
+            assert (
+                _read(store, mission_id, new_pin.to_json(), policies.REVIEWER_POLICY_KIND)
+                == changed
+            )
+            assert (
+                _read(store, mission_id, old_pin, policies.REVIEWER_POLICY_KIND)
+                == policies.reviewer_policy_body()
+            )
 
             with pytest.raises(AssuranceError) as missing:
-                _read(store, mission_id, {**old_pin, "id": old_pin["id"] + "-gone"}, policies.REVIEWER_POLICY_KIND)
+                _read(
+                    store,
+                    mission_id,
+                    {**old_pin, "id": old_pin["id"] + "-gone"},
+                    policies.REVIEWER_POLICY_KIND,
+                )
             assert missing.value.code == "SOURCE_UNAVAILABLE"
             store.connection.execute("DROP TRIGGER commit_receipts_immutable_update")
             store.connection.execute(
                 "UPDATE commit_receipts SET receipt_json=json_set(receipt_json,'$.policy.instructions','tampered') "
-                "WHERE commit_id=?", (old_pin["id"],))
+                "WHERE commit_id=?",
+                (old_pin["id"],),
+            )
             with pytest.raises(AssuranceError) as tampered:
                 _read(store, mission_id, old_pin, policies.REVIEWER_POLICY_KIND)
             assert tampered.value.code == "REF_BODY_CONFLICT"
@@ -107,7 +145,9 @@ def test_a_changed_policy_is_a_new_registration_and_the_old_pin_still_reads_back
     asyncio.run(case())
 
 
-def test_the_handoff_reads_the_registered_policy_and_refuses_another_deployment(tmp_path, monkeypatch):
+def test_the_handoff_reads_the_registered_policy_and_refuses_another_deployment(
+    tmp_path, monkeypatch
+):
     """一个在途审阅（执行侧刚建好就断了，意图还在途）：交接门按绑定钉住读登记正文，与当前部署一致 → 放行；
     部署的审阅员政策换了（绑定仍钉旧版）→ 不交，``REVIEW_DEPLOYMENT_IDENTITY_MISMATCH``。"""
     from agent_orchestrator.orchestrator.assurance_review_transport import require_review_handoff
@@ -116,8 +156,13 @@ def test_the_handoff_reads_the_registered_policy_and_refuses_another_deployment(
         async with product_world(tmp_path / "root", LayeredScriptedProvider()) as world:
             store = world.store
             world.loop.arm_fault("after_agent_created", kind="critic")
-            mission_id = world.create({"goal": "写两份笔记", "idempotency_key": "policy-registry-handoff",
-                                       "success_criteria": ["file:notes/a.md", "file:notes/b.md"]})["mission_id"]
+            mission_id = world.create(
+                {
+                    "goal": "写两份笔记",
+                    "idempotency_key": "policy-registry-handoff",
+                    "success_criteria": ["file:notes/a.md", "file:notes/b.md"],
+                }
+            )["mission_id"]
             for _ in range(40):
                 try:
                     await world.drain(timeout=10)
@@ -126,11 +171,17 @@ def test_the_handoff_reads_the_registered_policy_and_refuses_another_deployment(
                 if "after_agent_created:critic" in store.fired:
                     break
             assert "after_agent_created:critic" in store.fired
-            [intent] = [intent for intent in store.list_intents("CLAIMED", "AGENT_CREATED", "SUBMITTED")
-                        if intent.mission_id == mission_id and intent.config.get("review_key")]
+            [intent] = [
+                intent
+                for intent in store.list_intents("CLAIMED", "AGENT_CREATED", "SUBMITTED")
+                if intent.mission_id == mission_id and intent.config.get("review_key")
+            ]
             require_review_handoff(world.loop.commit, intent)
 
-            changed = {**policies.reviewer_policy_body(), "instructions_version": "another-deployment"}
+            changed = {
+                **policies.reviewer_policy_body(),
+                "instructions_version": "another-deployment",
+            }
             monkeypatch.setattr(policies, "reviewer_policy_body", lambda: changed)
             with pytest.raises(AssuranceError) as refused:
                 require_review_handoff(world.loop.commit, intent)

@@ -2,6 +2,7 @@
 # SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: BUSL-1.1
 """Guarded offline restore of the pre-v32 state.db backup."""
+
 from __future__ import annotations
 
 import argparse
@@ -56,8 +57,12 @@ def _assert_stopped(pid_file: str | None) -> None:
 
 
 def restore_state_db(
-    *, state_db: str, backup: str, expected_sha256: str,
-    confirm: str, pid_file: str | None = None,
+    *,
+    state_db: str,
+    backup: str,
+    expected_sha256: str,
+    confirm: str,
+    pid_file: str | None = None,
 ) -> Path:
     if confirm != "RESTORE-STATE-DB":
         raise RestoreRefused("exact confirmation token is required")
@@ -113,9 +118,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--pid-file")
     parser.add_argument("--confirm", required=True)
     args = parser.parse_args(argv)
-    restore_state_db(state_db=args.state_db, backup=args.backup,
-                     expected_sha256=args.expected_sha256, confirm=args.confirm,
-                     pid_file=args.pid_file)
+    restore_state_db(
+        state_db=args.state_db,
+        backup=args.backup,
+        expected_sha256=args.expected_sha256,
+        confirm=args.confirm,
+        pid_file=args.pid_file,
+    )
     return 0
 
 

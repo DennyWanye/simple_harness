@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 """One original HTN epoch projection for dispatch and TaskGraph read tokens."""
+
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -14,9 +15,15 @@ def current_scope_epochs(store: Store, mission_id: str) -> dict[str, int]:
     with store.read_view() as db:
         semantics = HtnStore(store)
         scopes = {"mission"}
-        scopes.update(str(witness.scope_id) for witness in semantics.list_validity_witnesses(mission_id))
-        scopes.update(str(row[0]) for row in db.execute(
-            "SELECT scope_id FROM validity_epochs WHERE mission_id=?", (mission_id,)))
+        scopes.update(
+            str(witness.scope_id) for witness in semantics.list_validity_witnesses(mission_id)
+        )
+        scopes.update(
+            str(row[0])
+            for row in db.execute(
+                "SELECT scope_id FROM validity_epochs WHERE mission_id=?", (mission_id,)
+            )
+        )
         # epoch() owns the original zero-before-first-bump contract. Reading only
         # the physical rows would omit valid initial/witness scopes.
         return {scope: semantics.epoch(mission_id, scope) for scope in sorted(scopes)}
@@ -34,5 +41,10 @@ def planning_scope_digest(epochs: Mapping[str, int]) -> str:
     reply of a TaskGraph Mission under Assurance stale until the Mission failed
     (NEXT-TG-1.0 2A behaviour acceptance, mission-9d7dba608eb2aaf2).
     """
-    return sha256_hex({str(scope): int(epoch) for scope, epoch in sorted(epochs.items())
-                       if str(scope) != MISSION_EPOCH_SCOPE})
+    return sha256_hex(
+        {
+            str(scope): int(epoch)
+            for scope, epoch in sorted(epochs.items())
+            if str(scope) != MISSION_EPOCH_SCOPE
+        }
+    )

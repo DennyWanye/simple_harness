@@ -61,9 +61,7 @@ def _resolve_precreated_session_binding(
         declared_base = str(session_ref.get("session_id") or "")
         declared_base_epoch = int(session_ref.get("session_epoch", 0))
         if declared_base != session_id or declared_base_epoch != base_epoch:
-            raise ValueError(
-                "workflow payload session binding disagrees with trusted Run context"
-            )
+            raise ValueError("workflow payload session binding disagrees with trusted Run context")
         return (
             code_session_id,
             str(session_ref.get("delivery_session_id") or "") or None,
@@ -73,9 +71,7 @@ def _resolve_precreated_session_binding(
     declared_base = str(session_ref.get("base_session_id") or "")
     declared_base_epoch = int(session_ref.get("base_epoch", 0))
     if declared_base != session_id or declared_base_epoch != base_epoch:
-        raise ValueError(
-            "workflow payload session binding disagrees with trusted Run context"
-        )
+        raise ValueError("workflow payload session binding disagrees with trusted Run context")
     return (
         str(session_ref.get("code_session_id") or "") or None,
         str(session_ref.get("delivery_session_id") or "") or None,
@@ -378,8 +374,7 @@ class WorkflowLauncher:
                     "deep_research new roots require a registered runtime extension",
                 )
             v6_override = bool(
-                authorize_disabled_deep_research_v6_new_root
-                and workflow_version == "v6"
+                authorize_disabled_deep_research_v6_new_root and workflow_version == "v6"
             )
             if not extension.new_runs_enabled and not v6_override:
                 raise WorkflowRuntimeAdapterError(
@@ -480,8 +475,7 @@ class WorkflowLauncher:
         execution_spec: RunCreate | None = None,
         run_start_snapshot: RunStartSnapshotRecord | None = None,
         start_commit_extensions: Sequence[Any] = (),
-        after_start_commit: Callable[[Mapping[str, Any]], Awaitable[None]]
-        | None = None,
+        after_start_commit: Callable[[Mapping[str, Any]], Awaitable[None]] | None = None,
     ) -> dict[str, Any]:
         """Exercise generic ownership without changing the production launch path."""
 
@@ -489,15 +483,13 @@ class WorkflowLauncher:
             raise RuntimeError("launch_precreated requires explicit WorkflowExecutionPorts")
         session_ref = start_payload.get("session_ref")
         if isinstance(session_ref, Mapping):
-            code_session_id, delivery_session_id, code_epoch = (
-                _resolve_precreated_session_binding(
-                    session_ref,
-                    session_id=session_id,
-                    base_epoch=base_epoch,
-                    code_session_id=code_session_id,
-                    delivery_session_id=delivery_session_id,
-                    code_epoch=code_epoch,
-                )
+            code_session_id, delivery_session_id, code_epoch = _resolve_precreated_session_binding(
+                session_ref,
+                session_id=session_id,
+                base_epoch=base_epoch,
+                code_session_id=code_session_id,
+                delivery_session_id=delivery_session_id,
+                code_epoch=code_epoch,
             )
         adapter = self._resolve_launch_adapter(
             workflow_name,
@@ -535,11 +527,11 @@ class WorkflowLauncher:
         # by RunKernel.  Reuse that exact intent instead of synthesizing a second
         # RunCreate from workflow-local hashes and losing workspace/provider
         # identity at the atomic workflow attach boundary.
-        spec = execution_spec or self.service.execution_spec(
-            prepared, principal_id=principal_id
-        )
+        spec = execution_spec or self.service.execution_spec(prepared, principal_id=principal_id)
         accepted = await self.service.start_prepared(
-            prepared, spec, execution_ports=self.execution_ports,
+            prepared,
+            spec,
+            execution_ports=self.execution_ports,
             association_event=association_event,
             admission_launch=admission_launch,
             kernel_owned_spec=execution_spec is not None,
@@ -605,9 +597,7 @@ class WorkflowLauncher:
         row = await self.service.run_store.get_run(str(run_id))
         if row is None:
             raise KeyError(run_id)
-        adapter = self.runtime_adapters.get(
-            str(row["workflow_name"]), str(row["workflow_version"])
-        )
+        adapter = self.runtime_adapters.get(str(row["workflow_name"]), str(row["workflow_version"]))
         if adapter is None:
             raise RuntimeError("workflow adapter is unavailable for generic resume")
         snapshot = await self.service.run_store.get_capability_snapshot(str(run_id))
@@ -627,7 +617,9 @@ class WorkflowLauncher:
         await self.recover_due_deliveries(run_id=str(run_id))
         return result
 
-    async def recover_pending(self, *, only_run_ids: set[str] | None = None, recovery_lease: RecoveryLease | None = None) -> list[str]:
+    async def recover_pending(
+        self, *, only_run_ids: set[str] | None = None, recovery_lease: RecoveryLease | None = None
+    ) -> list[str]:
         """Recreate background drivers from persisted start snapshots."""
 
         self._require_runtime_active()
@@ -652,11 +644,7 @@ class WorkflowLauncher:
                 if not isinstance(error, Mapping):
                     raw_error = row.get("error_json")
                     try:
-                        error = (
-                            json.loads(str(raw_error))
-                            if raw_error not in (None, "")
-                            else {}
-                        )
+                        error = json.loads(str(raw_error)) if raw_error not in (None, "") else {}
                     except (TypeError, ValueError):
                         error = {}
                 if str(error.get("code") or "") == "legacy_engine_blocked":
@@ -676,34 +664,28 @@ class WorkflowLauncher:
                 continue
             snapshot = await self.service.run_store.get_capability_snapshot(str(row["run_id"]))
             metadata = snapshot.get("_workflow_start", {}) if isinstance(snapshot, Mapping) else {}
-            start_payload = metadata.get("start_payload", {}) if isinstance(metadata, Mapping) else {}
+            start_payload = (
+                metadata.get("start_payload", {}) if isinstance(metadata, Mapping) else {}
+            )
             if not isinstance(start_payload, Mapping):
                 continue
             state_factory, context_factory = adapter.state_factory, adapter.context_factory
             targets = await self._persisted_delivery_targets(run_id)
             if not targets:
                 continue
-            if (
-                recovery_lease is not None
-                and owner is not None
-                and str(row["status"]) == "waiting"
-            ):
+            if recovery_lease is not None and owner is not None and str(row["status"]) == "waiting":
                 # A waiting workflow is recoverable only after the user has
                 # answered and that durable answer is still unconsumed.  The
                 # Native handoff repeats this predicate atomically so a racing
                 # consumer cannot turn this pre-check into an unsafe restart.
                 resume_payload = (
-                    await self.execution_ports.unit_of_work.read_workflow_resume_payload(
-                        run_id
-                    )
+                    await self.execution_ports.unit_of_work.read_workflow_resume_payload(run_id)
                 )
                 if not resume_payload:
                     continue
             try:
                 active_lease = (
-                    await self.service.runner.claim_execution_recovery(
-                        run_id, recovery_lease
-                    )
+                    await self.service.runner.claim_execution_recovery(run_id, recovery_lease)
                     if recovery_lease is not None
                     else None
                 )
@@ -959,9 +941,7 @@ class WorkflowLauncher:
         async def _resume_after_predecessor() -> WorkflowRunResult | None:
             try:
                 if predecessor is not None and not predecessor.done():
-                    await asyncio.gather(
-                        asyncio.shield(predecessor), return_exceptions=True
-                    )
+                    await asyncio.gather(asyncio.shield(predecessor), return_exceptions=True)
                 return await self.resume_run(run_id, responses)
             except asyncio.CancelledError:
                 raise
@@ -983,9 +963,7 @@ class WorkflowLauncher:
             "run_id": run_id,
         }
 
-    def start_dispatcher(
-        self, *, interval_seconds: float = _DISPATCHER_SAFETY_INTERVAL
-    ) -> None:
+    def start_dispatcher(self, *, interval_seconds: float = _DISPATCHER_SAFETY_INTERVAL) -> None:
         if self._dispatcher_task is not None and not self._dispatcher_task.done():
             return
         self._dispatcher_interval = max(0.1, float(interval_seconds))
@@ -1024,9 +1002,7 @@ class WorkflowLauncher:
         if row is None:
             raise KeyError(run_id)
         self._require_runtime_active()
-        adapter = self.runtime_adapters.get(
-            str(row["workflow_name"]), str(row["workflow_version"])
-        )
+        adapter = self.runtime_adapters.get(str(row["workflow_name"]), str(row["workflow_version"]))
         if adapter is None:
             raise RuntimeError("workflow adapter is unavailable for resume")
         snapshot = await self.service.run_store.get_capability_snapshot(run_id)
@@ -1043,9 +1019,7 @@ class WorkflowLauncher:
         result = await self.service.runner.resume(run_id, dict(responses), context)
         if result.status in TERMINAL_RUN_STATUSES or result.status.value == "waiting":
             if result.status.value == "completed":
-                persist_snapshot = getattr(
-                    self.service, "persist_v6_continuation_snapshot", None
-                )
+                persist_snapshot = getattr(self.service, "persist_v6_continuation_snapshot", None)
                 if callable(persist_snapshot):
                     await persist_snapshot(run_id)
             await self.recover_due_deliveries(run_id=run_id)
@@ -1066,22 +1040,15 @@ class WorkflowLauncher:
             in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
             and parameter.default is inspect.Parameter.empty
         )
-        accepts_run_context = (
-            {"row", "start_payload"}.issubset(parameters)
-            or len(required_positional) >= 2
-        )
-        context = (
-            context_factory(row, start_payload)
-            if accepts_run_context
-            else context_factory()
-        )
+        accepts_run_context = {"row", "start_payload"}.issubset(parameters) or len(
+            required_positional
+        ) >= 2
+        context = context_factory(row, start_payload) if accepts_run_context else context_factory()
         if inspect.isawaitable(context):
             context = await context
         return context
 
-    async def _persisted_delivery_targets(
-        self, run_id: str
-    ) -> tuple[tuple[str, str], ...]:
+    async def _persisted_delivery_targets(self, run_id: str) -> tuple[tuple[str, str], ...]:
         ref = await self.service.run_store.get_session_ref(run_id, "delivery")
         if ref is None or ref.get("deleted_at") is not None:
             return ()
@@ -1145,22 +1112,22 @@ class WorkflowLauncher:
             if startup is not None and not startup.done():
                 startup.set_result(None)
             if resume_from_checkpoint and precreated and self.execution_ports is not None:
-                responses = (
-                    await self.execution_ports.unit_of_work.read_workflow_resume_payload(
-                        run_id
-                    )
-                )
-            elif resume_from_checkpoint and hasattr(self.service, "human_store"):
-                responses = await self.service.human_store.build_run_resume_payload(
+                responses = await self.execution_ports.unit_of_work.read_workflow_resume_payload(
                     run_id
                 )
+            elif resume_from_checkpoint and hasattr(self.service, "human_store"):
+                responses = await self.service.human_store.build_run_resume_payload(run_id)
             else:
                 responses = {}
             if precreated:
                 result = (
-                    await self.service.resume_precreated(run_id, responses, context, active_lease=active_lease)
+                    await self.service.resume_precreated(
+                        run_id, responses, context, active_lease=active_lease
+                    )
                     if responses
-                    else await self.service.run_precreated(run_id, state, context, active_lease=active_lease)
+                    else await self.service.run_precreated(
+                        run_id, state, context, active_lease=active_lease
+                    )
                 )
             else:
                 result = (
@@ -1189,9 +1156,7 @@ class WorkflowLauncher:
             )
             if startup is not None and not startup.done():
                 startup.set_exception(exc)
-            await self._publish_error(
-                run_id, type(exc).__name__, targets, precreated=precreated
-            )
+            await self._publish_error(run_id, type(exc).__name__, targets, precreated=precreated)
 
     async def _publish_error(
         self,

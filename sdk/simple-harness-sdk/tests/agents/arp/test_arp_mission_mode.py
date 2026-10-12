@@ -36,23 +36,43 @@ CONFIG = AgentConfig(name="w", instructions="你是助手。", model_profile_ref
 
 def mission_profile(revision: int = 1) -> RuntimeProfile:
     base = standalone_profile()
-    return RuntimeProfile(profile_id=base.profile_id, profile_revision=revision, owner_mode="MISSION",
-                          allow_lexical_degradation=True, context_policy=base.context_policy, refs=fixture_refs())
+    return RuntimeProfile(
+        profile_id=base.profile_id,
+        profile_revision=revision,
+        owner_mode="MISSION",
+        allow_lexical_degradation=True,
+        context_policy=base.context_policy,
+        refs=fixture_refs(),
+    )
 
 
 def mission_caller(intent_id: str) -> TrustedCaller:
     return TrustedCaller(
         principal_ref=Pin("principal", "host:user", 0, HASH),
         owner_contract_ref=Pin("policy", "owner-mission", 1, HASH),
-        command_receipt_ref=Pin("receipt", f"dispatch-intent:{intent_id}", 0, digest({"intent": intent_id})),
+        command_receipt_ref=Pin(
+            "receipt", f"dispatch-intent:{intent_id}", 0, digest({"intent": intent_id})
+        ),
     )
 
 
 def sources(intent_id: str, *, kind: str = "worker", occurrence: str = "occ-1") -> dict:
-    manifest = ({"manifest_hash": "a" * 64, "binding": {"occurrence_id": occurrence, "dispatch_generation": 1}}
-                if kind == "worker" else {"not_applicable": "planner_has_no_worker_attempt"})
-    return {"schema": mission_sources.SCHEMA, "source_kind": kind, "intent_id": intent_id, "mission_id": "mission-1",
-            "occurrence": {"occurrence_id": occurrence, "plan_revision": 1}, "input_manifest": manifest}
+    manifest = (
+        {
+            "manifest_hash": "a" * 64,
+            "binding": {"occurrence_id": occurrence, "dispatch_generation": 1},
+        }
+        if kind == "worker"
+        else {"not_applicable": "planner_has_no_worker_attempt"}
+    )
+    return {
+        "schema": mission_sources.SCHEMA,
+        "source_kind": kind,
+        "intent_id": intent_id,
+        "mission_id": "mission-1",
+        "occurrence": {"occurrence_id": occurrence, "plan_revision": 1},
+        "input_manifest": manifest,
+    }
 
 
 class RecordingSources:
@@ -120,10 +140,15 @@ def test_creation_without_exact_sources_is_refused_by_name_and_writes_nothing(tm
 def test_sources_are_recorded_once_and_the_key_never_replays_into_other_sources(tmp_path) -> None:
     async def case() -> None:
         reader = RecordingSources()
-        reader.by_intent["intent-1"] = {**sources("intent-1"), "agent_config_hash": digest(CONFIG.to_json())}
+        reader.by_intent["intent-1"] = {
+            **sources("intent-1"),
+            "agent_config_hash": digest(CONFIG.to_json()),
+        }
         runtime = build(tmp_path, profile=mission_profile(), mission_sources=reader)
         async with runtime:
-            agent = await runtime.create(CONFIG, creation_key="k1", caller=mission_caller("intent-1"))
+            agent = await runtime.create(
+                CONFIG, creation_key="k1", caller=mission_caller("intent-1")
+            )
             connection = runtime.uow.database.connection
             session = store.read_live_session(connection, agent.agent_id)
             record = mission_sources.read_record(connection, session.session_id)
@@ -132,18 +157,25 @@ def test_sources_are_recorded_once_and_the_key_never_replays_into_other_sources(
             assert record["sources"] == frozen and record["sources_hash"] == digest(frozen)
             assert record["role"] == "root" and record["delegated_from"] is None
             reader.by_intent["intent-1"] = frozen
-            again = await runtime.create(CONFIG, creation_key="k1", caller=mission_caller("intent-1"))
+            again = await runtime.create(
+                CONFIG, creation_key="k1", caller=mission_caller("intent-1")
+            )
             assert again.agent_id == agent.agent_id  # the same intent replays the same Agent
-            reader.by_intent["intent-1"] = sources("intent-1", occurrence="occ-2")  # moved occurrence
+            reader.by_intent["intent-1"] = sources(
+                "intent-1", occurrence="occ-2"
+            )  # moved occurrence
             with pytest.raises(ArpError) as refused:
                 await runtime.create(CONFIG, creation_key="k1", caller=mission_caller("intent-1"))
             assert _code(refused) == "CREATION_IDENTITY_CONFLICT"
             # a planner has no Worker Attempt: its own role-typed set is a legal creation
             reader.by_intent["intent-p"] = sources("intent-p", kind="planner")
-            planner = await runtime.create(CONFIG, creation_key="kp", caller=mission_caller("intent-p"))
+            planner = await runtime.create(
+                CONFIG, creation_key="kp", caller=mission_caller("intent-p")
+            )
             planned = store.read_live_session(connection, planner.agent_id)
-            assert mission_sources.read_record(connection, planned.session_id)["sources"]["input_manifest"] == {
-                "not_applicable": "planner_has_no_worker_attempt"}
+            assert mission_sources.read_record(connection, planned.session_id)["sources"][
+                "input_manifest"
+            ] == {"not_applicable": "planner_has_no_worker_attempt"}
 
     asyncio.run(case())
 
@@ -155,16 +187,24 @@ def test_every_new_request_rechecks_and_pins_the_sources_a_frozen_one_replays(tm
         provider = ScriptedProvider(["好的。", "第二次。"])
         runtime = build(tmp_path, provider, profile=mission_profile(), mission_sources=reader)
         async with runtime:
-            agent = await runtime.create(CONFIG, creation_key="k1", caller=mission_caller("intent-1"))
+            agent = await runtime.create(
+                CONFIG, creation_key="k1", caller=mission_caller("intent-1")
+            )
             checks_at_creation = len(reader.checks)
             receipt = await agent.submit("第一件事", input_id="i1")
-            assert (await agent.wait_turn(receipt.turn_id, timeout=10)).state is AgentTurnState.COMMITTED
+            assert (
+                await agent.wait_turn(receipt.turn_id, timeout=10)
+            ).state is AgentTurnState.COMMITTED
             assert len(reader.checks) == checks_at_creation + 1  # re-checked before freezing
             connection = runtime.uow.database.connection
             session = store.read_live_session(connection, agent.agent_id)
-            [row] = connection.execute("SELECT original_request_key FROM arp_context_requests").fetchall()
+            [row] = connection.execute(
+                "SELECT original_request_key FROM arp_context_requests"
+            ).fetchall()
             manifest = store.read_context_by_request_key(connection, str(row[0])).manifest
-            pin = mission_sources.record_pin(session.session_id, mission_sources.read_record(connection, session.session_id))
+            pin = mission_sources.record_pin(
+                session.session_id, mission_sources.read_record(connection, session.session_id)
+            )
             assert pin.to_json() in manifest["authority_refs"]
             assert manifest["owner_contract_ref"]["id"].endswith("owner-mode:MISSION")
             # a frozen request replays as frozen even after its sources moved (crash after freeze)
@@ -197,10 +237,14 @@ def test_a_crash_inside_creation_resumes_with_the_same_sources(tmp_path) -> None
             with pytest.raises(RuntimeError):
                 await runtime.create(CONFIG, creation_key="k1", caller=mission_caller("intent-1"))
             assert _count(runtime, "SELECT COUNT(*) FROM arp_agent_sessions") == 0
-            agent = await runtime.create(CONFIG, creation_key="k1", caller=mission_caller("intent-1"))
+            agent = await runtime.create(
+                CONFIG, creation_key="k1", caller=mission_caller("intent-1")
+            )
             connection = runtime.uow.database.connection
             session = store.read_live_session(connection, agent.agent_id)
-            assert mission_sources.read_record(connection, session.session_id)["sources"] == sources("intent-1")
+            assert mission_sources.read_record(connection, session.session_id)[
+                "sources"
+            ] == sources("intent-1")
 
     asyncio.run(case())
 
@@ -211,18 +255,25 @@ def test_a_delegated_child_inherits_the_parent_sources(tmp_path) -> None:
         reader.by_intent["intent-1"] = sources("intent-1")
         runtime = build(tmp_path, profile=mission_profile(), mission_sources=reader)
         async with runtime:
-            parent = await runtime.create(CONFIG, creation_key="k1", caller=mission_caller("intent-1"))
+            parent = await runtime.create(
+                CONFIG, creation_key="k1", caller=mission_caller("intent-1")
+            )
             connection = runtime.uow.database.connection
             child_caller = TrustedCaller(
                 principal_ref=Pin("principal", f"agent:{parent.agent_id}", 0, HASH),
                 owner_contract_ref=Pin("policy", "owner-mission", 1, HASH),
                 command_receipt_ref=Pin("receipt", "delegation:d1", 0, HASH),
             )
-            record = mission_sources.record_for_creation(reader, connection, caller=child_caller, role="child")
+            record = mission_sources.record_for_creation(
+                reader, connection, caller=child_caller, role="child"
+            )
             assert record["sources"] == sources("intent-1")
             assert record["delegated_from"]["parent_agent_id"] == parent.agent_id
-            orphan = TrustedCaller(Pin("principal", "agent:nobody", 0, HASH), child_caller.owner_contract_ref,
-                                   child_caller.command_receipt_ref)
+            orphan = TrustedCaller(
+                Pin("principal", "agent:nobody", 0, HASH),
+                child_caller.owner_contract_ref,
+                child_caller.command_receipt_ref,
+            )
             with pytest.raises(ArpError) as refused:
                 mission_sources.record_for_creation(reader, connection, caller=orphan, role="child")
             assert _code(refused) == "SOURCE_UNAVAILABLE"
@@ -237,26 +288,40 @@ def test_moving_a_library_from_standalone_to_mission_keeps_old_sessions_running(
         async with runtime:
             old = await runtime.create(CONFIG, creation_key="old", caller=trusted_caller())
             receipt = await old.submit("旧会话", input_id="i1")
-            assert (await old.wait_turn(receipt.turn_id, timeout=10)).state is AgentTurnState.COMMITTED
+            assert (
+                await old.wait_turn(receipt.turn_id, timeout=10)
+            ).state is AgentTurnState.COMMITTED
         runtime.uow.database.close()
 
         reader = RecordingSources()
         reader.by_intent["intent-1"] = sources("intent-1")
-        runtime = build(tmp_path, provider, profile=mission_profile(revision=2), mission_sources=reader)
+        runtime = build(
+            tmp_path, provider, profile=mission_profile(revision=2), mission_sources=reader
+        )
         async with runtime:
             connection = runtime.uow.database.connection
             assert _count(runtime, "SELECT COUNT(*) FROM arp_profiles") == 2  # both revisions kept
             reopened = await runtime.open(old.agent_id)
             receipt = await reopened.submit("旧会话继续", input_id="i2")
-            assert (await reopened.wait_turn(receipt.turn_id, timeout=10)).state is AgentTurnState.COMMITTED
-            assert reader.checks == []  # a STANDALONE_CHAT Session is never checked as a Mission one
-            rows = connection.execute("SELECT original_request_key FROM arp_context_requests ORDER BY rowid").fetchall()
+            assert (
+                await reopened.wait_turn(receipt.turn_id, timeout=10)
+            ).state is AgentTurnState.COMMITTED
+            assert (
+                reader.checks == []
+            )  # a STANDALONE_CHAT Session is never checked as a Mission one
+            rows = connection.execute(
+                "SELECT original_request_key FROM arp_context_requests ORDER BY rowid"
+            ).fetchall()
             latest = store.read_context_by_request_key(connection, str(rows[-1][0])).manifest
             assert latest["owner_contract_ref"]["id"].endswith("owner-mode:STANDALONE_CHAT")
             assert latest["owner_contract_ref"]["revision"] == 1
-            fresh = await runtime.create(CONFIG, creation_key="new", caller=mission_caller("intent-1"))
+            fresh = await runtime.create(
+                CONFIG, creation_key="new", caller=mission_caller("intent-1")
+            )
             session = store.read_live_session(connection, fresh.agent_id)
             assert session.profile_revision == 2
-            assert mission_sources.read_record(connection, session.session_id)["sources"] == sources("intent-1")
+            assert mission_sources.read_record(connection, session.session_id)[
+                "sources"
+            ] == sources("intent-1")
 
     asyncio.run(case())

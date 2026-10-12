@@ -114,8 +114,7 @@ def _is_low_value_extractive(text: str, *, title: str = "") -> bool:
     normalized = _normalized_text(compact)
     normalized_title = _normalized_text(title)
     if normalized_title and (
-        normalized == normalized_title
-        or normalized == f"{normalized_title} {normalized_title}"
+        normalized == normalized_title or normalized == f"{normalized_title} {normalized_title}"
     ):
         return True
     return False
@@ -157,8 +156,15 @@ def select_evidence_passages(
         text = str(document.get("text") or "")
         if not text.strip():
             continue
-        content_hash = str(document.get("content_hash") or hashlib.sha256(text.encode()).hexdigest())
-        canonical = str(document.get("canonical_url") or document.get("url") or "").strip().lower().rstrip("/")
+        content_hash = str(
+            document.get("content_hash") or hashlib.sha256(text.encode()).hexdigest()
+        )
+        canonical = (
+            str(document.get("canonical_url") or document.get("url") or "")
+            .strip()
+            .lower()
+            .rstrip("/")
+        )
         title = str(document.get("title") or "")
         question = str(document.get("question") or topic)
         windows: list[EvidencePassage] = []
@@ -177,12 +183,14 @@ def select_evidence_passages(
                 if len(snippet) < 24:
                     continue
                 abstract = re.search(r"\babstract\s*:\s*", snippet, re.I)
-                if abstract and len(snippet[abstract.end():].strip()) >= 32:
+                if abstract and len(snippet[abstract.end() :].strip()) >= 32:
                     start += abstract.end()
-                    snippet = snippet[abstract.end():].strip()
+                    snippet = snippet[abstract.end() :].strip()
                 if _is_low_value_extractive(snippet, title=title):
                     continue
-                passage_id = hashlib.sha256(f"{content_hash}:{start}:{end}".encode()).hexdigest()[:24]
+                passage_id = hashlib.sha256(f"{content_hash}:{start}:{end}".encode()).hexdigest()[
+                    :24
+                ]
                 score = max(_relevance(snippet, question), _relevance(snippet, topic) * 0.9)
                 windows.append(
                     EvidencePassage(
@@ -231,7 +239,9 @@ def select_evidence_passages(
 
 
 def _claim_id(index: int, text: str, kind: str, citations: tuple[int, ...]) -> str:
-    canonical = json.dumps([index, text, kind, citations], ensure_ascii=False, separators=(",", ":"))
+    canonical = json.dumps(
+        [index, text, kind, citations], ensure_ascii=False, separators=(",", ":")
+    )
     return hashlib.sha256(canonical.encode()).hexdigest()[:24]
 
 
@@ -254,7 +264,11 @@ def parse_structured_claims(raw: str, *, valid_citation_ids: set[int]) -> list[A
         text = re.sub(r"\s+", " ", str(value["text"])).strip()[:1000]
         kind = str(value["kind"]).lower()
         raw_ids = value["citation_ids"]
-        if kind not in {"factual", "inference", "opinion"} or not text or not isinstance(raw_ids, list):
+        if (
+            kind not in {"factual", "inference", "opinion"}
+            or not text
+            or not isinstance(raw_ids, list)
+        ):
             raise ValueError("invalid_claim_schema")
         if any(isinstance(item, bool) or not isinstance(item, int) for item in raw_ids):
             raise ValueError("invalid_claim_citation")
@@ -283,7 +297,9 @@ def parse_structured_claims(raw: str, *, valid_citation_ids: set[int]) -> list[A
 def fallback_claims(passages: Sequence[EvidencePassage], *, maximum: int = 16) -> list[AtomicClaim]:
     """Build replayable extractive claims when structured synthesis is unavailable."""
 
-    ordered = sorted(passages, key=lambda value: (-value.relevance, value.source_citation_id, value.start))
+    ordered = sorted(
+        passages, key=lambda value: (-value.relevance, value.source_citation_id, value.start)
+    )
     # First take one passage per source to satisfy citation diversity, then
     # fill the remaining claim budget from additional independently supported
     # passages.  Stopping after the first source pass can create an otherwise
@@ -355,10 +371,16 @@ def evaluate_support(
                 haystack = _normalized_exact_haystack(passage.text)
                 exact_ok = all(token in haystack for token in exact_tokens)
                 exact_failed = exact_failed or not exact_ok
-                overlap = len(claim_tokens & _tokens(passage.text)) / len(claim_tokens) if claim_tokens else 0.0
+                overlap = (
+                    len(claim_tokens & _tokens(passage.text)) / len(claim_tokens)
+                    if claim_tokens
+                    else 0.0
+                )
                 if exact_ok and overlap >= lexical_threshold:
                     winners.append((overlap, passage))
-        winners.sort(key=lambda value: (-value[0], value[1].source_citation_id, value[1].passage_id))
+        winners.sort(
+            key=lambda value: (-value[0], value[1].source_citation_id, value[1].passage_id)
+        )
         # Keep the strongest independently supporting passage from every
         # canonical URL.  Each passage has already passed the claim check on
         # its own; retaining corroborating sources does not concatenate weak
@@ -390,7 +412,13 @@ def evaluate_support(
                 )
             )
         else:
-            reason = "missing_cited_passage" if not saw_passage else "missing_exact_token" if exact_failed and exact_tokens else "insufficient_lexical_support"
+            reason = (
+                "missing_cited_passage"
+                if not saw_passage
+                else "missing_exact_token"
+                if exact_failed and exact_tokens
+                else "insufficient_lexical_support"
+            )
             decisions.append(
                 SupportDecision(
                     claim_id=claim.claim_id,
@@ -432,7 +460,9 @@ def repair_and_prune(
         if claim.kind == "factual":
             for clause_index, clause in enumerate(_repair_candidates(claim.text)):
                 candidate = AtomicClaim(
-                    claim_id=hashlib.sha256(f"{claim.claim_id}:repair:{clause_index}:{clause}".encode()).hexdigest()[:24],
+                    claim_id=hashlib.sha256(
+                        f"{claim.claim_id}:repair:{clause_index}:{clause}".encode()
+                    ).hexdigest()[:24],
                     text=clause,
                     kind=claim.kind,
                     citation_ids=claim.citation_ids,
@@ -487,14 +517,17 @@ def make_publish_decision(
         if source_id in citation_sources
     }
     canonical_urls = {
-        str(citation_sources[source_id].get("canonical_url") or citation_sources[source_id].get("url") or "")
-        .strip().casefold().rstrip("/")
+        str(
+            citation_sources[source_id].get("canonical_url")
+            or citation_sources[source_id].get("url")
+            or ""
+        )
+        .strip()
+        .casefold()
+        .rstrip("/")
         for source_id in used_source_ids
     } - {""}
-    domains = {
-        urlparse(url).netloc.lower()
-        for url in canonical_urls
-    } - {""}
+    domains = {urlparse(url).netloc.lower() for url in canonical_urls} - {""}
     body_bytes = len(body_md.encode("utf-8"))
     reasons: list[str] = []
     if support_rate < 0.60:
@@ -548,7 +581,11 @@ def quality_payload(
 
 
 __all__ = [
-    "evaluate_support", "fallback_claims", "make_publish_decision",
-    "parse_structured_claims", "quality_payload", "repair_and_prune",
+    "evaluate_support",
+    "fallback_claims",
+    "make_publish_decision",
+    "parse_structured_claims",
+    "quality_payload",
+    "repair_and_prune",
     "select_evidence_passages",
 ]

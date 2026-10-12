@@ -157,8 +157,15 @@ class HarnessCheckpoint:
         return self.value
 
     def cas_react_checkpoint(
-        self, *, run_id, lease, expected_version, checkpoint, checkpoint_hash,
-        now, fault=None,
+        self,
+        *,
+        run_id,
+        lease,
+        expected_version,
+        checkpoint,
+        checkpoint_hash,
+        now,
+        fault=None,
     ):
         from simple_harness.contracts import freeze_json
 
@@ -213,12 +220,8 @@ class RouteExposure:
         del run_id
         return (
             ProviderToolSpec("context_route", "Route Context", CONTEXT_ROUTE_SCHEMA),
-            ProviderToolSpec(
-                "task_scope_search", "Search task scopes", TASK_SCOPE_SEARCH_SCHEMA
-            ),
-            ProviderToolSpec(
-                "task_scope_update", "Close the TaskScope", TASK_SCOPE_UPDATE_SCHEMA
-            ),
+            ProviderToolSpec("task_scope_search", "Search task scopes", TASK_SCOPE_SEARCH_SCHEMA),
+            ProviderToolSpec("task_scope_update", "Close the TaskScope", TASK_SCOPE_UPDATE_SCHEMA),
             ProviderToolSpec("write_file", "Write a project file", WRITE_FILE_SCHEMA),
             ProviderToolSpec("read_file", "Read a project file", READ_FILE_SCHEMA),
         )
@@ -330,7 +333,9 @@ class PhysicalToolBridge(EffectExecutor):
             if raw.outcome.value == "rejected":
                 return EffectExecution(effect=None, result=raw)
             result = raw
-            state = EffectState.SUCCEEDED if result.outcome.value == "succeeded" else EffectState.FAILED
+            state = (
+                EffectState.SUCCEEDED if result.outcome.value == "succeeded" else EffectState.FAILED
+            )
         elif isinstance(raw, dict) and (raw.get("ok") is False or raw.get("error")):
             error = raw.get("error") or {}
             result = ToolResult.failed(
@@ -350,9 +355,7 @@ class PhysicalToolBridge(EffectExecutor):
             run_id=context.run_id,
             call_id=call.call_id,
             tool_name=call.name,
-            request_hash=effect_request_hash(
-                tool_name=call.name, arguments=thawed_arguments
-            ),
+            request_hash=effect_request_hash(tool_name=call.name, arguments=thawed_arguments),
             arguments=thawed_arguments,
             state=state,
             version=2,
@@ -390,7 +393,10 @@ def _harness_disclosure(db_path: Path):
     async def read(run_id, package, effect_id):
         del run_id, effect_id
         return await render_scope_disclosure(
-            db_path=db_path, package=package, subject=AUTH.subject, stack=None,
+            db_path=db_path,
+            package=package,
+            subject=AUTH.subject,
+            stack=None,
         )
 
     return read
@@ -431,9 +437,7 @@ class RecordingTaskExecutionAuthority:
 
 def loop() -> ReActLoop:
     return ReActLoop(
-        collaborator=AgentLoopCollaborator(
-            limits=TerminationLimits(8, 16, 60, 10000, 3)
-        ),
+        collaborator=AgentLoopCollaborator(limits=TerminationLimits(8, 16, 60, 10000, 3)),
         effects=EffectBatchExecutor(),
         clock=lambda: 1.0,
     )
@@ -463,8 +467,7 @@ def tool_calls(*calls: tuple[str, dict, str]) -> ProviderResponse:
         request_id=RequestId("fixture"),
         message=Message(role=MessageRole.ASSISTANT, content="calling"),
         tool_calls=tuple(
-            ProviderToolCall(CallId(raw_id), name, arguments)
-            for name, arguments, raw_id in calls
+            ProviderToolCall(CallId(raw_id), name, arguments) for name, arguments, raw_id in calls
         ),
         model="model-1",
         finish_reason="tool_calls",
@@ -484,15 +487,11 @@ class _ManualAuthority:
 
     async def verify_manual_challenge(self, check) -> None:
         if self.evidence.get(check.authorization_evidence_id) != check:
-            raise WorkspaceBindingError(
-                "workspace_binding_manual_evidence_not_durable"
-            )
+            raise WorkspaceBindingError("workspace_binding_manual_evidence_not_durable")
 
     async def verify_manual_decision(self, check) -> None:
         if self.interactions.get(check.challenge.interaction_event_id) != check:
-            raise WorkspaceBindingError(
-                "workspace_binding_manual_interaction_not_durable"
-            )
+            raise WorkspaceBindingError("workspace_binding_manual_interaction_not_durable")
 
 
 async def bind_scope_root(
@@ -575,15 +574,11 @@ def frozen_authority(
     """
 
     if workspace_root is None:
-        work = TaskWorkContext(
-            "session-1", "host-run-1", task_scope_id, None, "none", 1
-        )
+        work = TaskWorkContext("session-1", "host-run-1", task_scope_id, None, "none", 1)
         resolution = {"kind": "projectless", "effective_root": None, "binding_version": 1}
     else:
         canonical = canonical_workspace_root(workspace_root, root_id="frozen").canonical_path
-        work = TaskWorkContext(
-            "session-1", "host-run-1", task_scope_id, canonical, "existing", 1
-        )
+        work = TaskWorkContext("session-1", "host-run-1", task_scope_id, canonical, "existing", 1)
         resolution = {"kind": "legacy", "effective_root": canonical, "binding_version": 1}
     return SimpleNamespace(
         run_id=RUN.value,
@@ -613,9 +608,7 @@ async def build_env(tmp_path: Path, *, first_message: str = "继续以前的 A")
         context=context,
         react_checkpoint=SimpleNamespace(
             read_start_snapshot=lambda run_id: {
-                "input": {
-                    "context_metadata": {"budget": {"context_window": 32768}}
-                }
+                "input": {"context_metadata": {"budget": {"context_window": 32768}}}
             }
         ),
     )
@@ -713,7 +706,10 @@ def freeze_run(env: GateEnv, *, task_scope_id: str, workspace_root: Path | None)
 async def make_bound_scope(env: GateEnv, name: str, root_dir: str) -> tuple[str, Path]:
     created = await env.service.create_task_scope(
         CreateTaskScopeRequest(
-            f"task-{name}", f"任务 {name}", f"写完 {name} 的季度报告，下一步补图表", f"create-{name}"
+            f"task-{name}",
+            f"任务 {name}",
+            f"写完 {name} 的季度报告，下一步补图表",
+            f"create-{name}",
         )
     )
     scope_id = str(created["scope_ref"])

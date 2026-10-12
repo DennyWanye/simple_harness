@@ -68,12 +68,21 @@ def _planner(request: Any) -> Any:
     if contexts and not (package.get("method_selection") or [{}])[0].get("applicable"):
         goal = str((contexts[0]["request"].get("goal_type_ref") or {}).get("id"))
         if goal == "user-goal":
-            method = _method(contexts[0], [("assess", "sub-goal-1", SUB), ("act", "prepare-delivery", {})],
-                             [("assess", 0), ("act", 1)], "act", ordering=[("assess", "act")])
+            method = _method(
+                contexts[0],
+                [("assess", "sub-goal-1", SUB), ("act", "prepare-delivery", {})],
+                [("assess", 0), ("act", 1)],
+                "act",
+                ordering=[("assess", "act")],
+            )
         else:
             method = _method(contexts[0], [("leaf", "prepare-delivery", {})], [("leaf", 0)], "leaf")
-        return decision(contexts[0]["subject_key"], "PROPOSE_METHOD",
-                        {"method_proposal": {"method": method, "rationale": goal}}, goal)
+        return decision(
+            contexts[0]["subject_key"],
+            "PROPOSE_METHOD",
+            {"method_proposal": {"method": method, "rationale": goal}},
+            goal,
+        )
     return planner_reply(request)
 
 
@@ -86,7 +95,8 @@ class _Provider(LayeredScriptedProvider):
 
     async def invoke(self, request, *, cancel):  # type: ignore[no-untyped-def]
         if role_of(request) == "worker" and "NOTES.md" in json.dumps(
-                package_of(request).get("task_contract", {}).get("outputs") or [], ensure_ascii=False):
+            package_of(request).get("task_contract", {}).get("outputs") or [], ensure_ascii=False
+        ):
             self.acting.set()
             await self.release.wait()
         return await super().invoke(request, cancel=cancel)
@@ -100,8 +110,14 @@ def test_an_unrelated_successor_retains_the_real_accepted_content(tmp_path):
     provider = _Provider()
 
     async def case() -> None:
-        async with enabled_world(tmp_path, key="h4-retained", criteria=CRITERIA, provider=provider,
-                                 max_concurrency=2, max_concurrent_model_calls=2) as world:
+        async with enabled_world(
+            tmp_path,
+            key="h4-retained",
+            criteria=CRITERIA,
+            provider=provider,
+            max_concurrency=2,
+            max_concurrent_model_calls=2,
+        ) as world:
             store, mission_id = world.store, world.mission.id
             htn = HtnStore(store)
             dispatch = world.dispatch
@@ -110,52 +126,103 @@ def test_an_unrelated_successor_retains_the_real_accepted_content(tmp_path):
                 network = dispatch.network(mission_id)
                 if network is None:
                     return False
-                tasks = {str(spec.task_id) for spec in network.occurrences
-                         if _signature(network, spec.occurrence_id) == "sub-goal-1"}
-                resolved = {str(item.goal_task_id) for item in htn.list_goal_resolutions(mission_id)}
+                tasks = {
+                    str(spec.task_id)
+                    for spec in network.occurrences
+                    if _signature(network, spec.occurrence_id) == "sub-goal-1"
+                }
+                resolved = {
+                    str(item.goal_task_id) for item in htn.list_goal_resolutions(mission_id)
+                }
                 return provider.acting.is_set() and bool(tasks & resolved)
 
             await world.until(assess_resolved, timeout=60)
             network = dispatch.network(mission_id)
-            assess = next(spec for spec in network.occurrences if _signature(network, spec.occurrence_id) == "sub-goal-1")
-            [leaf] = [child.occurrence_id for child in network.adopted_children(assess.occurrence_id)]
-            act = next(binding for binding in network.task_bindings
-                       if str(binding.form) == "primitive" and binding.task_id != network.occurrence(leaf).task_id)
-            [resolution] = [item for item in htn.list_goal_resolutions(mission_id)
-                            if str(item.goal_task_id) == str(assess.task_id)]
+            assess = next(
+                spec
+                for spec in network.occurrences
+                if _signature(network, spec.occurrence_id) == "sub-goal-1"
+            )
+            [leaf] = [
+                child.occurrence_id for child in network.adopted_children(assess.occurrence_id)
+            ]
+            act = next(
+                binding
+                for binding in network.task_bindings
+                if str(binding.form) == "primitive"
+                and binding.task_id != network.occurrence(leaf).task_id
+            )
+            [resolution] = [
+                item
+                for item in htn.list_goal_resolutions(mission_id)
+                if str(item.goal_task_id) == str(assess.task_id)
+            ]
             leaf_before = read_occurrence_completion(store, mission_id, str(leaf))
             assert leaf_before.complete
             completion = OperationCompletionStore(store)
-            [original] = completion.list_scoped_contributions(mission_id, leaf_before.scope.scope_id)
+            [original] = completion.list_scoped_contributions(
+                mission_id, leaf_before.scope.scope_id
+            )
             assert str(resolution.validity) == "CURRENT"
 
             # 规划器对还在跑的 act 提后继步骤：计划提交第 2 版。
             intent = await world.open_planner_round()
             package = intent.config["planning_package"]
-            subject = next(item for item in package["planning_subjects"] if item["task_id"] == str(act.task_id))
+            subject = next(
+                item for item in package["planning_subjects"] if item["task_id"] == str(act.task_id)
+            )
 
             def visible(kind: str, identity: str) -> dict[str, Any]:
-                return next(item for item in package["visible_refs"] if item["kind"] == kind and item["id"] == identity)
+                return next(
+                    item
+                    for item in package["visible_refs"]
+                    if item["kind"] == kind and item["id"] == identity
+                )
 
-            task_type = next(spec for spec in dispatch.require_planning_world().catalog.task_types()
-                             if spec.goal_signature == act.goal_signature)
-            await world.answer(intent, {
-                "schema_version": 1, "decision_type": "REPAIR", "subject_key": subject["subject_key"],
-                "rationale": "act 要按新的来源重做。", "reason_refs": [], "assumptions": [], "uncertainties": [],
-                "alternatives": [], "replan_triggers": [],
-                "payload": {"repair_kind": "PROPOSE_SUCCESSOR", "old_task_ref": visible("task", str(act.task_id)),
-                            "obligation_ref": visible("obligation", str(act.obligation_id)),
-                            "goal_type_ref": task_type.task_type_ref.to_json(),
-                            "bindings": {"goal": "按新的来源写 NOTES.md。"}}})
+            task_type = next(
+                spec
+                for spec in dispatch.require_planning_world().catalog.task_types()
+                if spec.goal_signature == act.goal_signature
+            )
+            await world.answer(
+                intent,
+                {
+                    "schema_version": 1,
+                    "decision_type": "REPAIR",
+                    "subject_key": subject["subject_key"],
+                    "rationale": "act 要按新的来源重做。",
+                    "reason_refs": [],
+                    "assumptions": [],
+                    "uncertainties": [],
+                    "alternatives": [],
+                    "replan_triggers": [],
+                    "payload": {
+                        "repair_kind": "PROPOSE_SUCCESSOR",
+                        "old_task_ref": visible("task", str(act.task_id)),
+                        "obligation_ref": visible("obligation", str(act.obligation_id)),
+                        "goal_type_ref": task_type.task_type_ref.to_json(),
+                        "bindings": {"goal": "按新的来源写 NOTES.md。"},
+                    },
+                },
+            )
             # 提交先经执行图收敛：还在跑的 act 的尝试被取消；那次慢调用随后才回来，晚到的结果不被接受。
-            await world.until(lambda: any(
-                event.type == "AttemptCancelled"
-                and str(event.payload.get("reason", "")).startswith("taskgraph_convergence:")
-                for event in store.list_events(mission_id)), timeout=60)
+            await world.until(
+                lambda: any(
+                    event.type == "AttemptCancelled"
+                    and str(event.payload.get("reason", "")).startswith("taskgraph_convergence:")
+                    for event in store.list_events(mission_id)
+                ),
+                timeout=60,
+            )
             provider.release.set()
             decisions = PlanningDecisionStore(store)
-            await world.until(lambda: decisions.get_planning_decision_by_attempt(intent.intent_id, 0)["status"]
-                              != "COMPILED", timeout=60)
+            await world.until(
+                lambda: (
+                    decisions.get_planning_decision_by_attempt(intent.intent_id, 0)["status"]
+                    != "COMPILED"
+                ),
+                timeout=60,
+            )
             stored = decisions.get_planning_decision_by_attempt(intent.intent_id, 0)
             assert stored["status"] == "COMMITTED", (stored["status"], stored["detail"])
             after = dispatch.network(mission_id)
@@ -167,11 +234,19 @@ def test_an_unrelated_successor_retains_the_real_accepted_content(tmp_path):
             assert leaf_after.scope.scope_id != leaf_before.scope.scope_id
             assert leaf_after.complete
             assert read_occurrence_completion(store, mission_id, str(assess.occurrence_id)).complete
-            assert completion.get_acceptance_scope_exact(mission_id, original["document"].acceptance_id) == original
+            assert (
+                completion.get_acceptance_scope_exact(
+                    mission_id, original["document"].acceptance_id
+                )
+                == original
+            )
             nested = after.adopted_instance_for(assess.occurrence_id)
             assert str(leaf) in current_child_supports(store, mission_id, nested.child_bindings)
-            [still] = [item for item in htn.list_goal_resolutions(mission_id)
-                       if str(item.resolution_id) == str(resolution.resolution_id)]
+            [still] = [
+                item
+                for item in htn.list_goal_resolutions(mission_id)
+                if str(item.resolution_id) == str(resolution.resolution_id)
+            ]
             assert str(still.validity) == "CURRENT"  # 子目标仍带着它当前的目标结论
 
     asyncio.run(case())

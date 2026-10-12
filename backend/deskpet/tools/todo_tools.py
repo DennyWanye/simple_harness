@@ -20,6 +20,7 @@ Concurrency: a process-wide lock serializes read-modify-write so two
 near-simultaneous ``todo_write`` calls don't clobber each other.
 Cross-process safety is out of scope for S5 (single backend process).
 """
+
 from __future__ import annotations
 
 import json
@@ -46,9 +47,7 @@ def _todo_path() -> Path:
     if override:
         p = Path(override)
     else:
-        base = Path(
-            platformdirs.user_data_dir(_APP_NAME, appauthor=False, roaming=True)
-        )
+        base = Path(platformdirs.user_data_dir(_APP_NAME, appauthor=False, roaming=True))
         p = base / "todo.json"
     p.parent.mkdir(parents=True, exist_ok=True)
     return p
@@ -200,6 +199,4 @@ def _handle_todo_complete(args: dict[str, Any], task_id: str) -> str:
 # Keep the old callable for data-compatibility helpers, but never expose it as
 # a second production writer.
 def register_static_tools(registry) -> None:
-    registry.register(
-        "todo_complete", "todo", _SCHEMA_COMPLETE, _handle_todo_complete
-    )
+    registry.register("todo_complete", "todo", _SCHEMA_COMPLETE, _handle_todo_complete)

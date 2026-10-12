@@ -352,9 +352,7 @@ class TaskScopeMutationPlan:
         )
         closure_reason = value["closure_reason"]
         if closure_reason is not None:
-            closure_reason = _bounded_text(
-                closure_reason, "closure_reason", max_bytes=4096
-            )
+            closure_reason = _bounded_text(closure_reason, "closure_reason", max_bytes=4096)
         return cls(
             plan_id=_identifier(value["plan_id"], "plan_id"),
             run_id=_identifier(value["run_id"], "run_id"),
@@ -373,9 +371,7 @@ class TaskScopeMutationPlan:
             ),
             evidence_refs=_refs_from_json(value["evidence_refs"]),
             idempotency_key=_identifier(value["idempotency_key"], "idempotency_key"),
-            schema_version=_schema_version(
-                value["schema_version"], "TaskScopeMutationPlan"
-            ),
+            schema_version=_schema_version(value["schema_version"], "TaskScopeMutationPlan"),
         )
 
 
@@ -457,9 +453,7 @@ class TaskScopeSearchRequest:
             ),
             evidence_refs=_refs_from_json(value["evidence_refs"]),
             idempotency_key=_identifier(value["idempotency_key"], "idempotency_key"),
-            schema_version=_schema_version(
-                value["schema_version"], "TaskScopeSearchRequest"
-            ),
+            schema_version=_schema_version(value["schema_version"], "TaskScopeSearchRequest"),
         )
 
 
@@ -517,9 +511,7 @@ class TaskScopeCandidate:
             raise TypeError("relevance_millionths must be an integer")
         return cls(
             task_scope_id=_identifier(value["task_scope_id"], "task_scope_id"),
-            canonical_revision=_positive_int(
-                value["canonical_revision"], "canonical_revision"
-            ),
+            canonical_revision=_positive_int(value["canonical_revision"], "canonical_revision"),
             title=_bounded_text(value["title"], "title", max_bytes=1024),
             status=_identifier(value["status"], "status"),
             relevance_millionths=relevance,
@@ -611,9 +603,7 @@ class TaskScopeSearchReceipt:
                 TaskScopeReasonCode(item)
                 for item in _strings(value["reason_codes"], "reason_codes")
             ),
-            schema_version=_schema_version(
-                value["schema_version"], "TaskScopeSearchReceipt"
-            ),
+            schema_version=_schema_version(value["schema_version"], "TaskScopeSearchReceipt"),
         )
 
 
@@ -778,15 +768,11 @@ class TaskScopeOpenReceipt:
             open_id=_identifier(value["open_id"], "open_id"),
             request_hash=_digest(value["request_hash"], "request_hash"),
             task_scope_id=_identifier(value["task_scope_id"], "task_scope_id"),
-            canonical_revision=_positive_int(
-                value["canonical_revision"], "canonical_revision"
-            ),
+            canonical_revision=_positive_int(value["canonical_revision"], "canonical_revision"),
             binding_set_revision=_positive_int(
                 value["binding_set_revision"], "binding_set_revision"
             ),
-            canonical_state_hash=_digest(
-                value["canonical_state_hash"], "canonical_state_hash"
-            ),
+            canonical_state_hash=_digest(value["canonical_state_hash"], "canonical_state_hash"),
             root_refs=_strings(value["root_refs"], "root_refs"),
             schema_version=_schema_version(value["schema_version"], "TaskScopeOpenReceipt"),
         )

@@ -96,7 +96,9 @@ def _quick(monkeypatch):
 
 
 def _create(world: Any, key: str) -> str:
-    return world.create({"goal": GOAL, "idempotency_key": key, "success_criteria": list(CRITERIA)})["mission_id"]
+    return world.create({"goal": GOAL, "idempotency_key": key, "success_criteria": list(CRITERIA)})[
+        "mission_id"
+    ]
 
 
 def _status(world: Any, mission_id: str) -> str:
@@ -110,8 +112,11 @@ def _coordinator(world: Any, mission_id: str) -> Any:
 
 
 def _current_acceptances(semantics: HtnStore, mission_id: str) -> set[str]:
-    return {str(item.acceptance_id) for item in semantics.list_acceptances(mission_id)
-            if item.validity is Validity.CURRENT}
+    return {
+        str(item.acceptance_id)
+        for item in semantics.list_acceptances(mission_id)
+        if item.validity is Validity.CURRENT
+    }
 
 
 def _task_of_output(provider: FinalReviewProvider, path: str) -> str:
@@ -141,7 +146,9 @@ def test_the_final_review_is_cut_over_every_contribution_and_only_its_pass_resol
             finally:
                 provider.close()
 
-            [package] = semantics.list_review_packages(mission_id, purpose=ReviewPurpose.MISSION_FINAL)
+            [package] = semantics.list_review_packages(
+                mission_id, purpose=ReviewPurpose.MISSION_FINAL
+            )
             [cut] = events(store, mission_id, ROOT_REVIEW_CUT)
             accepted = events(store, mission_id, "AcceptanceCommitted")
             record = semantics.official_review_record(str(package.package_id))
@@ -150,21 +157,35 @@ def test_the_final_review_is_cut_over_every_contribution_and_only_its_pass_resol
             assert len(accepted) == 2 and max(item.seq for item in accepted) < cut.seq
             assert provider.final_calls == 1
             assert record is not None and record.verdict is ReviewVerdict(verdict)
-            [imported] = [item for item in events(store, mission_id, "AssuranceReviewImported")
-                          if item.payload.get("record_id") == str(record.record_id)]
+            [imported] = [
+                item
+                for item in events(store, mission_id, "AssuranceReviewImported")
+                if item.payload.get("record_id") == str(record.record_id)
+            ]
             assert cut.seq < imported.seq
 
             if verdict == "REJECTED":
                 assert _status(world, mission_id) not in DONE
-                assert resolved == [] and semantics.adopted_goal_resolution(mission_id, root_duty(mission_id)) is None
+                assert (
+                    resolved == []
+                    and semantics.adopted_goal_resolution(mission_id, root_duty(mission_id)) is None
+                )
                 # 打回只交给规划器一条修复请求（不替规划器改做法、不重问审阅员）。
-                requested = [item for item in events(store, mission_id, "PlanningRepairRequested")
-                             if str(item.payload["source_key"]).startswith("root-review:")]
-                assert [item.payload["source_key"] for item in requested] == ["root-review:" + str(record.record_id)]
+                requested = [
+                    item
+                    for item in events(store, mission_id, "PlanningRepairRequested")
+                    if str(item.payload["source_key"]).startswith("root-review:")
+                ]
+                assert [item.payload["source_key"] for item in requested] == [
+                    "root-review:" + str(record.record_id)
+                ]
                 assert [row["request_id"] for row in pending_requests(store, mission_id)] == [
-                    requested[0].payload["request_id"]]
+                    requested[0].payload["request_id"]
+                ]
                 [asked] = provider.repair_packages
-                assert [entry["request_id"] for entry in open_repairs(asked)] == [requested[0].payload["request_id"]]
+                assert [entry["request_id"] for entry in open_repairs(asked)] == [
+                    requested[0].payload["request_id"]
+                ]
                 assert len(events(store, mission_id, ROOT_REVIEW_CUT)) == 1
                 return
 
@@ -174,9 +195,13 @@ def test_the_final_review_is_cut_over_every_contribution_and_only_its_pass_resol
             resolution = semantics.adopted_goal_resolution(mission_id, root_duty(mission_id))
             assert resolution is not None and resolution.verdict is ReviewVerdict.ACCEPT
             assert str(resolution.review_receipt_id) == str(record.record_id)
-            assert int(resolution.requirements_version) == int(package.binding.requirements_revision)
+            assert int(resolution.requirements_version) == int(
+                package.binding.requirements_revision
+            )
             assert {str(item.criterion_id): item.verdict for item in resolution.criteria} == {
-                "c-user-1": CriterionVerdict.PASS, "c-user-2": CriterionVerdict.PASS}
+                "c-user-1": CriterionVerdict.PASS,
+                "c-user-2": CriterionVerdict.PASS,
+            }
 
             # RB：包绑在根上，准则是用户逐条写的成功条件，要求版本是当时在用的那一版。
             assert package.purpose is ReviewPurpose.MISSION_FINAL
@@ -184,7 +209,9 @@ def test_the_final_review_is_cut_over_every_contribution_and_only_its_pass_resol
             assert str(package.binding.obligation_id) == root_duty(mission_id)
             assert str(package.binding.policy_ref.id) == ROOT_REVIEW_POLICY
             assert [(str(item.criterion_id), str(item.statement)) for item in package.criteria] == [
-                ("c-user-1", CRITERIA[0]), ("c-user-2", CRITERIA[1])]
+                ("c-user-1", CRITERIA[0]),
+                ("c-user-2", CRITERIA[1]),
+            ]
             latest = semantics.latest_requirements_revision(mission_id)
             assert latest is not None
             assert int(package.binding.requirements_revision) == int(latest.revision)
@@ -194,31 +221,50 @@ def test_the_final_review_is_cut_over_every_contribution_and_only_its_pass_resol
             assert {str(item.id) for item in package.child_acceptance_refs} == current
             assert {str(item.id) for item in package.candidate_refs} == current
             assert all(item.kind is TypedRefKind.ACCEPTANCE for item in package.candidate_refs)
-            workers = {str(attempt.agent_id) for task in store.list_tasks(mission_id)
-                       for attempt in store.list_attempts(task.id) if attempt.agent_id}
+            workers = {
+                str(attempt.agent_id)
+                for task in store.list_tasks(mission_id)
+                for attempt in store.list_attempts(task.id)
+                if attempt.agent_id
+            }
             assert set(package.producer_agent_ids) == workers and len(workers) == 2
             assert str(record.reviewer_agent_id) not in workers
             # 费用记在任务账上，不记在哪一步的账上。
-            row = store.connection.execute("SELECT review_account FROM review_packages WHERE package_id = ?",
-                                           (str(package.package_id),)).fetchone()
+            row = store.connection.execute(
+                "SELECT review_account FROM review_packages WHERE package_id = ?",
+                (str(package.package_id),),
+            ).fetchone()
             assert row[0] == str(ReviewAccount.MISSION)
             # 切包事件写明它是对着什么切的；只切了一次（包是活的，没人重切）。
             assert cut.payload["package_id"] == str(package.package_id)
             assert cut.payload["review_account"] == str(ReviewAccount.MISSION)
-            assert cut.payload["requirements_revision"] == int(package.binding.requirements_revision)
+            assert cut.payload["requirements_revision"] == int(
+                package.binding.requirements_revision
+            )
             assert sorted(cut.payload["contributions"]) == sorted(current)
             assert cut.payload["superseded"] is None and cut.payload["recut_reasons"] == []
             # 贡献集变动是一条单独的重切通道（只读：对着改过的包问"过期了吗"）。
             coordinator = _coordinator(world, mission_id)
             assert coordinator.stale_reasons(mission_id, package) == ()
-            later = TypedRef(kind=TypedRefKind.ACCEPTANCE, id="acc-from-later", revision=0,
-                             content_hash="a" * 64, produced_by=Provenance.TOOL)
-            moved = dataclasses.replace(package, child_acceptance_refs=(*package.child_acceptance_refs, later))
+            later = TypedRef(
+                kind=TypedRefKind.ACCEPTANCE,
+                id="acc-from-later",
+                revision=0,
+                content_hash="a" * 64,
+                produced_by=Provenance.TOOL,
+            )
+            moved = dataclasses.replace(
+                package, child_acceptance_refs=(*package.child_acceptance_refs, later)
+            )
             assert coordinator.stale_reasons(mission_id, moved) == ("CONTRIBUTIONS_MOVED",)
             # 叶子的审阅包只带这一步自己承接的准则，不带根的全部准则。
             for path, criterion in (("facts.md", "c-user-1"), ("NOTES.md", "c-user-2")):
                 task_id = _task_of_output(provider, path)
-                [acceptance] = [item for item in semantics.list_acceptances(mission_id) if str(item.task_id) == task_id]
+                [acceptance] = [
+                    item
+                    for item in semantics.list_acceptances(mission_id)
+                    if str(item.task_id) == task_id
+                ]
                 leaf_record = semantics.get_review_record(str(acceptance.review_record_id)).record
                 leaf_package = semantics.get_review_package(str(leaf_record.package_id))
                 assert {str(item.criterion_id) for item in leaf_package.criteria} == {criterion}
@@ -243,7 +289,9 @@ CHANNELS = {
 
 
 @pytest.mark.parametrize("reason", list(CHANNELS))
-def test_a_world_that_moves_under_the_final_review_supersedes_the_package_and_recuts(tmp_path, reason: str) -> None:
+def test_a_world_that_moves_under_the_final_review_supersedes_the_package_and_recuts(
+    tmp_path, reason: str
+) -> None:
     async def case() -> None:
         provider = FinalReviewProvider(**CHANNELS[reason])
         async with product_world(tmp_path / "root", provider) as world:
@@ -253,15 +301,25 @@ def test_a_world_that_moves_under_the_final_review_supersedes_the_package_and_re
                 if provider.hold_final_first:
                     await run_until(world, provider.final_held.is_set, timeout=40)
                     if reason == "SOURCES_MOVED":
-                        world.control.register_source({"mission_id": mission_id, "path": "sources/late.md",
-                                                       "content": "后来补的资料", "kind": "markdown",
-                                                       "idempotency_key": "late-source-1"})
+                        world.control.register_source(
+                            {
+                                "mission_id": mission_id,
+                                "path": "sources/late.md",
+                                "content": "后来补的资料",
+                                "kind": "markdown",
+                                "idempotency_key": "late-source-1",
+                            }
+                        )
                     else:
                         semantics.bump_epoch(mission_id, "mission", bumped_by="test-scope-reopened")
                     provider.final_release.set()
                 if reason == "SCOPE_EPOCH_MOVED":
                     # 新纪元里旧验收的效力要重新确立，任务不在这里完成；看到重切即可。
-                    await run_until(world, lambda: len(events(store, mission_id, ROOT_REVIEW_CUT)) >= 2, timeout=40)
+                    await run_until(
+                        world,
+                        lambda: len(events(store, mission_id, ROOT_REVIEW_CUT)) >= 2,
+                        timeout=40,
+                    )
                 else:
                     await run_until(world, lambda: _status(world, mission_id) in DONE, timeout=40)
             finally:
@@ -271,12 +329,18 @@ def test_a_world_that_moves_under_the_final_review_supersedes_the_package_and_re
             [superseded] = events(store, mission_id, ROOT_REVIEW_SUPERSEDED)
             first_id, second_id = first.payload["package_id"], second.payload["package_id"]
             assert first_id != second_id
-            assert superseded.payload["package_id"] == first_id and superseded.payload["reasons"] == [reason]
+            assert superseded.payload["package_id"] == first_id and superseded.payload[
+                "reasons"
+            ] == [reason]
             assert first.seq < superseded.seq < second.seq
-            assert second.payload["superseded"] == first_id and second.payload["recut_reasons"] == [reason]
+            assert second.payload["superseded"] == first_id and second.payload["recut_reasons"] == [
+                reason
+            ]
             # 重切绑的是当时在用的要求版本（没人改要求，与旧包同一版）和当前有效的贡献集。
             assert second.payload["requirements_revision"] == first.payload["requirements_revision"]
-            assert sorted(second.payload["contributions"]) == sorted(_current_acceptances(semantics, mission_id))
+            assert sorted(second.payload["contributions"]) == sorted(
+                _current_acceptances(semantics, mission_id)
+            )
             # 旧包仍存着（锚点从不改写），只是不再是这个任务据以下结论的那个。
             coordinator = _coordinator(world, mission_id)
             assert semantics.get_review_package(first_id) is not None
@@ -284,7 +348,9 @@ def test_a_world_that_moves_under_the_final_review_supersedes_the_package_and_re
             assert coordinator.superseded_package_ids(mission_id) == frozenset({first_id})
             if reason == "SCOPE_EPOCH_MOVED":
                 assert (first.payload["scope_epoch"], second.payload["scope_epoch"]) == (
-                    0, semantics.epoch(mission_id, "mission"))
+                    0,
+                    semantics.epoch(mission_id, "mission"),
+                )
                 assert second.payload["scope_epoch"] > 0
                 return
             assert _status(world, mission_id) == "COMPLETED"
@@ -294,10 +360,13 @@ def test_a_world_that_moves_under_the_final_review_supersedes_the_package_and_re
             assert resolution is not None and record is not None
             assert str(resolution.review_receipt_id) == str(record.record_id)
             if reason == "REVIEW_INTERRUPTED":
-                assert provider.final_calls == 3  # two interrupted calls on the old package, one on the new
+                assert (
+                    provider.final_calls == 3
+                )  # two interrupted calls on the old package, one on the new
                 assert semantics.official_review_record(first_id) is None
                 interrupted = store.connection.execute(
-                    "SELECT COUNT(*) FROM commit_receipts WHERE kind = 'AssuranceReviewTurnInterrupted'").fetchone()[0]
+                    "SELECT COUNT(*) FROM commit_receipts WHERE kind = 'AssuranceReviewTurnInterrupted'"
+                ).fetchone()[0]
                 assert interrupted == 2
 
     asyncio.run(case())
@@ -318,12 +387,23 @@ def test_a_spent_recut_budget_stops_the_final_review_and_is_recorded_once(tmp_pa
                 await run_until(world, provider.final_held.is_set, timeout=40)
                 semantics.bump_epoch(mission_id, "mission", bumped_by="test-scope-reopened")
                 provider.final_release.set()
-                await run_until(world, lambda: bool(events(store, mission_id, ROOT_REVIEW_CUT_BUDGET_SPENT)),
-                                timeout=40)
+                await run_until(
+                    world,
+                    lambda: bool(events(store, mission_id, ROOT_REVIEW_CUT_BUDGET_SPENT)),
+                    timeout=40,
+                )
                 # 等旧包的回复被处理掉（作废，或——改坏时——被写成正式记录），再看它成了什么。
-                await run_until(world, lambda: bool(events(store, mission_id, "AssuranceReviewLateTurn"))
-                                or any(semantics.official_review_record(cut.payload["package_id"]) is not None
-                                       for cut in events(store, mission_id, ROOT_REVIEW_CUT)), timeout=40)
+                await run_until(
+                    world,
+                    lambda: (
+                        bool(events(store, mission_id, "AssuranceReviewLateTurn"))
+                        or any(
+                            semantics.official_review_record(cut.payload["package_id"]) is not None
+                            for cut in events(store, mission_id, ROOT_REVIEW_CUT)
+                        )
+                    ),
+                    timeout=40,
+                )
                 await run_for(world, 1.0)  # later cycles do not record it again
             finally:
                 provider.close()
@@ -358,10 +438,16 @@ def test_a_spent_recut_budget_stops_the_final_review_and_is_recorded_once(tmp_pa
 # ======================================================================================
 
 
-SPEC_PATH, SPEC_OLD, SPEC_NEW = "sources/spec.md", "# 规格\n价格：每月 18 元\n", "# 规格\n价格：每月 25 元\n"
+SPEC_PATH, SPEC_OLD, SPEC_NEW = (
+    "sources/spec.md",
+    "# 规格\n价格：每月 18 元\n",
+    "# 规格\n价格：每月 25 元\n",
+)
 
 
-def test_a_late_reply_to_a_stale_package_is_voided_and_only_the_recut_package_counts(tmp_path) -> None:
+def test_a_late_reply_to_a_stale_package_is_voided_and_only_the_recut_package_counts(
+    tmp_path,
+) -> None:
     """第 1 批车道 F（2026-10-06）：终审挂着时资料换了版本——两步都是拿旧版做的，系统把这件事交给
     规划器，终审在它答复前不重切（``source_change_open``）。就在这个窗口里，旧包的终审回复到了。
     回复作废（原因 ``REVIEW_PACKAGE_STALE``，过期码 ``SOURCES_MOVED`` 与协调器一致），不成为正式记录；
@@ -379,11 +465,23 @@ def test_a_late_reply_to_a_stale_package_is_voided_and_only_the_recut_package_co
         @staticmethod
         def _no_change(request: Any) -> Any:
             package = package_of(request)
-            [sourced] = [entry for entry in open_repairs(package) if str(entry.get("source_key")).startswith("source:")]
+            [sourced] = [
+                entry
+                for entry in open_repairs(package)
+                if str(entry.get("source_key")).startswith("source:")
+            ]
             step = sourced["request"]["context"]["steps_on_old_version"][0]["task_id"]
-            subject = next(s["subject_key"] for s in package["planning_subjects"] if s["task_id"] == step)
+            subject = next(
+                s["subject_key"] for s in package["planning_subjects"] if s["task_id"] == step
+            )
             from agent_orchestrator.testing.scripted_replies import decision
-            return decision(subject, "NO_CHANGE", {"reason": "两步写的都是结构，没有用到价格。"}, "资料只改了价格。")
+
+            return decision(
+                subject,
+                "NO_CHANGE",
+                {"reason": "两步写的都是结构，没有用到价格。"},
+                "资料只改了价格。",
+            )
 
         async def invoke(self, request, *, cancel):  # type: ignore[no-untyped-def]
             if role_of(request) == "planner" and open_repairs(package_of(request)):
@@ -395,20 +493,40 @@ def test_a_late_reply_to_a_stale_package_is_voided_and_only_the_recut_package_co
         async with product_world(tmp_path / "root", provider) as world:
             mission_id = _create(world, "late-reply-stale")
             store, semantics = world.store, HtnStore(world.store)
-            first_source = world.control.register_source({"mission_id": mission_id, "path": SPEC_PATH, "content": SPEC_OLD,
-                                                          "kind": "markdown", "idempotency_key": "reg-spec-1"})
+            first_source = world.control.register_source(
+                {
+                    "mission_id": mission_id,
+                    "path": SPEC_PATH,
+                    "content": SPEC_OLD,
+                    "kind": "markdown",
+                    "idempotency_key": "reg-spec-1",
+                }
+            )
             try:
                 await run_until(world, provider.final_held.is_set, timeout=40)
-                proposal = world.control.supersede_source({
-                    "mission_id": mission_id, "path": SPEC_PATH, "content": SPEC_NEW, "kind": "markdown",
-                    "idempotency_key": "sup-spec-1", "expected_version_hash": first_source["version_hash"]})
+                proposal = world.control.supersede_source(
+                    {
+                        "mission_id": mission_id,
+                        "path": SPEC_PATH,
+                        "content": SPEC_NEW,
+                        "kind": "markdown",
+                        "idempotency_key": "sup-spec-1",
+                        "expected_version_hash": first_source["version_hash"],
+                    }
+                )
                 world.control.decide(proposal["request_id"], "approve", nonce="approve-sup-1")
                 provider.final_release.set()
                 [first_cut] = events(store, mission_id, ROOT_REVIEW_CUT)
                 # 等旧包的回复被处理掉（作废，或——改坏时——被写成正式记录），再看它成了什么。
-                await run_until(world, lambda: bool(events(store, mission_id, "AssuranceReviewLateTurn"))
-                                or semantics.official_review_record(first_cut.payload["package_id"]) is not None,
-                                timeout=40)
+                await run_until(
+                    world,
+                    lambda: (
+                        bool(events(store, mission_id, "AssuranceReviewLateTurn"))
+                        or semantics.official_review_record(first_cut.payload["package_id"])
+                        is not None
+                    ),
+                    timeout=40,
+                )
                 # 迟到回复作废时还没有重切：世界动了，但资料变更这件事还没问完。
                 assert len(events(store, mission_id, ROOT_REVIEW_CUT)) == 1
                 assert semantics.official_review_record(first_cut.payload["package_id"]) is None
@@ -425,16 +543,27 @@ def test_a_late_reply_to_a_stale_package_is_voided_and_only_the_recut_package_co
             assert late.payload["stale_reasons"] == ["SOURCES_MOVED"]
             assert late.seq < second.seq
             [superseded] = events(store, mission_id, ROOT_REVIEW_SUPERSEDED)
-            assert superseded.payload["package_id"] == first_id and superseded.payload["reasons"] == ["SOURCES_MOVED"]
-            assert second.payload["superseded"] == first_id and second.payload["recut_reasons"] == ["SOURCES_MOVED"]
+            assert superseded.payload["package_id"] == first_id and superseded.payload[
+                "reasons"
+            ] == ["SOURCES_MOVED"]
+            assert second.payload["superseded"] == first_id and second.payload["recut_reasons"] == [
+                "SOURCES_MOVED"
+            ]
             # 旧包没有正式记录；根结论只从新包的终审记录形成；终审员被问了两次（旧包一次、新包一次）。
             assert semantics.official_review_record(first_id) is None
             record = semantics.official_review_record(second_id)
             resolution = semantics.adopted_goal_resolution(mission_id, root_duty(mission_id))
-            assert record is not None and resolution is not None and resolution.verdict is ReviewVerdict.ACCEPT
+            assert (
+                record is not None
+                and resolution is not None
+                and resolution.verdict is ReviewVerdict.ACCEPT
+            )
             assert str(resolution.review_receipt_id) == str(record.record_id)
-            [imported] = [item for item in events(store, mission_id, "AssuranceReviewImported")
-                          if item.payload.get("record_id") == str(record.record_id)]
+            [imported] = [
+                item
+                for item in events(store, mission_id, "AssuranceReviewImported")
+                if item.payload.get("record_id") == str(record.record_id)
+            ]
             assert imported.seq > second.seq
             assert provider.final_calls == 2
             assert _status(world, mission_id) == "COMPLETED"
@@ -476,8 +605,11 @@ def test_a_repair_decision_addresses_only_the_request_about_its_own_step(tmp_pat
             store = world.store
 
             def recorded() -> bool:
-                rejections = [item for item in events(store, mission_id, "PlanningRepairRequested")
-                              if str(item.payload["source_key"]).startswith("event:")]
+                rejections = [
+                    item
+                    for item in events(store, mission_id, "PlanningRepairRequested")
+                    if str(item.payload["source_key"]).startswith("event:")
+                ]
                 if len(rejections) >= 2:
                     provider.both_recorded.set()
                 return bool(events(store, mission_id, "PlanningRepairAddressed"))
@@ -488,14 +620,30 @@ def test_a_repair_decision_addresses_only_the_request_about_its_own_step(tmp_pat
                 provider.close()
 
             [addressed] = events(store, mission_id, "PlanningRepairAddressed")
-            requested = [item for item in events(store, mission_id, "PlanningRepairRequested")
-                         if item.seq < addressed.seq and str(item.payload["source_key"]).startswith("event:")]
-            assert len(requested) == 2, "both steps' rejections were on record when the Planner answered"
-            [decided] = [item for item in events(store, mission_id, "PlanningDecisionEvaluated")
-                         if item.payload.get("decision_id") == addressed.payload["decision_id"]]
+            requested = [
+                item
+                for item in events(store, mission_id, "PlanningRepairRequested")
+                if item.seq < addressed.seq and str(item.payload["source_key"]).startswith("event:")
+            ]
+            assert len(requested) == 2, (
+                "both steps' rejections were on record when the Planner answered"
+            )
+            [decided] = [
+                item
+                for item in events(store, mission_id, "PlanningDecisionEvaluated")
+                if item.payload.get("decision_id") == addressed.payload["decision_id"]
+            ]
             task_id = str(decided.payload["detail"]["failed_attempt_id"]).rpartition(":attempt-")[0]
-            mine = [item.payload["request_id"] for item in requested if task_id in item.payload["trigger_scope"]]
-            others = [item.payload["request_id"] for item in requested if task_id not in item.payload["trigger_scope"]]
+            mine = [
+                item.payload["request_id"]
+                for item in requested
+                if task_id in item.payload["trigger_scope"]
+            ]
+            others = [
+                item.payload["request_id"]
+                for item in requested
+                if task_id not in item.payload["trigger_scope"]
+            ]
             assert len(mine) == 1 and len(others) == 1
             assert addressed.payload["repair_request_ids"] == mine
             assert others[0] in {row["request_id"] for row in pending_requests(store, mission_id)}
@@ -527,7 +675,9 @@ def test_only_an_interrupted_turn_code_counts_as_interrupted() -> None:
     assert review_turn_interrupted({"error_code": "react_wall_clock_exceeded"})
     # 2026-09-29 第十五局：审阅调用以服务商协议错误结束（工具调用解析不了）——执行尝试那边
     # 这类算"服务出错"不扣次数，审阅这边同样不是审阅员的错。
-    assert review_turn_interrupted({"error_code": "provider_protocol_error", "source_kind": "tool_parse"})
+    assert review_turn_interrupted(
+        {"error_code": "provider_protocol_error", "source_kind": "tool_parse"}
+    )
     assert review_turn_interrupted({"error_code": "provider_server_error"})
     assert not review_turn_interrupted({"error_code": "react_max_turns_exceeded"})
     assert not review_turn_interrupted({"error_code": "invalid_tool_arguments"})
@@ -541,7 +691,17 @@ def test_a_reviewer_that_spent_its_output_on_thinking_was_not_interrupted() -> N
     **Mutation**: drop ``output_exhausted`` from ``review_turn_interrupted`` → red."""
     from agent_orchestrator.orchestrator.failure_classes import review_turn_interrupted
 
-    assert not review_turn_interrupted({"error_code": "provider_empty_response", "source_kind": "tool_parse",
-                                        "detail": {"finish_reason": "length"}})
-    assert review_turn_interrupted({"error_code": "provider_empty_response", "source_kind": "tool_parse",
-                                    "detail": {"finish_reason": "stop"}})
+    assert not review_turn_interrupted(
+        {
+            "error_code": "provider_empty_response",
+            "source_kind": "tool_parse",
+            "detail": {"finish_reason": "length"},
+        }
+    )
+    assert review_turn_interrupted(
+        {
+            "error_code": "provider_empty_response",
+            "source_kind": "tool_parse",
+            "detail": {"finish_reason": "stop"},
+        }
+    )

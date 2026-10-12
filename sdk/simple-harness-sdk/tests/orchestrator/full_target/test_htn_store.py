@@ -224,10 +224,15 @@ MIGRATION_18_CHECKSUM = "a24b4ef345f3ef46ec4b43ee3d68da5f6cc3372aae7968dcc0b7b7a
 #: without adding it here would ship an unguarded table.
 #: Migration 39 (HTN 补齐阶段 D) dropped the two support-set tables that never had a
 #: production writer; migration 16's own list above stays as shipped.
-DROPPED_LATER: tuple[str, ...] = ("justification_sets", "support_members",
-                                  # migration 41 (阶段 G): no production writer, or always empty
-                                  "bound_inputs", "obligation_relations", "obligation_expansions",
-                                  "obligation_shape_changes")
+DROPPED_LATER: tuple[str, ...] = (
+    "justification_sets",
+    "support_members",
+    # migration 41 (阶段 G): no production writer, or always empty
+    "bound_inputs",
+    "obligation_relations",
+    "obligation_expansions",
+    "obligation_shape_changes",
+)
 FULL_TARGET_TABLES: tuple[str, ...] = tuple(
     table for table in (*MIGRATION_16_TABLES, *MIGRATION_17_TABLES) if table not in DROPPED_LATER
 )
@@ -244,8 +249,15 @@ SQL_ACCESS = ("FROM", "INTO", "UPDATE", "JOIN", "TABLE")
 #: §18.5 names one *writing* authority.  2026-09-30: the check had also matched reads
 #: (``FROM`` / ``JOIN``), which read models outside ``storage`` (TaskGraph execution
 #: view, Assurance purpose reviews) legitimately do; a second writer is what is forbidden.
-SQL_WRITE = (r"INSERT\s+(?:OR\s+\w+\s+)?INTO", r"REPLACE\s+INTO", "UPDATE", r"DELETE\s+FROM",
-             r"CREATE\s+(?:TEMP\s+)?TABLE(?:\s+IF\s+NOT\s+EXISTS)?", r"ALTER\s+TABLE", r"DROP\s+TABLE(?:\s+IF\s+EXISTS)?")
+SQL_WRITE = (
+    r"INSERT\s+(?:OR\s+\w+\s+)?INTO",
+    r"REPLACE\s+INTO",
+    "UPDATE",
+    r"DELETE\s+FROM",
+    r"CREATE\s+(?:TEMP\s+)?TABLE(?:\s+IF\s+NOT\s+EXISTS)?",
+    r"ALTER\s+TABLE",
+    r"DROP\s+TABLE(?:\s+IF\s+EXISTS)?",
+)
 
 
 # --------------------------------------------------------------------------------------
@@ -1755,7 +1767,10 @@ def test_an_observation_round_trips(bound: tuple[HtnStore, str]) -> None:
     from agent_orchestrator.planning.htn.observers.workspace import workspace_predicates
 
     signature = workspace_predicates()[0]
-    question = {"predicate_ref": signature.predicate_ref.to_json(), "arguments": {"path": "alpha.md"}}
+    question = {
+        "predicate_ref": signature.predicate_ref.to_json(),
+        "arguments": {"path": "alpha.md"},
+    }
     key = proposition_key(signature, question["arguments"])
     record = replace(observation(), proposition_key=key)
     with pytest.raises(StoreConflict, match="question"):
@@ -1767,7 +1782,8 @@ def test_an_observation_round_trips(bound: tuple[HtnStore, str]) -> None:
     assert htn.list_observations(mission, proposition_key=key) == (record,)
     assert htn.list_observations(mission, proposition_key="other") == ()
     assert htn.observation_questions(mission) == (
-        {"proposition_key": key, "scope_id": "mission-1", **question},)
+        {"proposition_key": key, "scope_id": "mission-1", **question},
+    )
     with pytest.raises(StoreConflict, match="already stored"):
         htn.insert_observation(mission, record, question=question)
 

@@ -14,6 +14,7 @@ unification; users now configure a single endpoint.
 These tests are skipped, NOT deleted, so reviewers can see what behavior
 was retired. A new e2e fixture covering the unified path is TODO.
 """
+
 from __future__ import annotations
 
 import httpx
@@ -36,7 +37,7 @@ _MODELS_PATH = "/models"
 SSE_OK = (
     b'data: {"choices":[{"delta":{"content":"hello "}}]}\n\n'
     b'data: {"choices":[{"delta":{"content":"world"}}]}\n\n'
-    b'data: [DONE]\n\n'
+    b"data: [DONE]\n\n"
 )
 
 
@@ -159,9 +160,7 @@ def app_with_router(monkeypatch):
     return client, set_router
 
 
-def _send_chat_and_collect_response(
-    client: TestClient, text: str, max_iters: int = 20
-) -> dict:
+def _send_chat_and_collect_response(client: TestClient, text: str, max_iters: int = 20) -> dict:
     with client.websocket_connect("/ws/control?secret=&session_id=fb-test") as ws:
         ws.receive_json()  # P3-S2: drain startup_status
         ws.send_json({"type": "chat", "payload": {"text": text}})
@@ -178,6 +177,7 @@ def _send_chat_and_collect_response(
 
 
 # --- scenarios -------------------------------------------------------------
+
 
 def test_local_healthy_returns_local_response(app_with_router):
     """Baseline: both providers OK, local_first picks local."""

@@ -12,6 +12,7 @@
   - attack_order 解析
   - LLM 失败/超时/畸形 JSON → safe-fail 保守 card（contradiction=None）
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -30,40 +31,44 @@ from deskpet.agent.intent_triage import (
 
 
 def _complex_payload() -> str:
-    return json.dumps({
-        "restated_intent": "修复登录报错",
-        "problem_type": "debug",
-        "ambiguity_score": 0.2,
-        "clarifying_questions": [],
-        "needs_investigation": True,
-        "needs_decomposition": False,
-        "requires_action_plan": True,
-        "growth_signal_kind": "none",
-        "contradiction": {
-            "contradictions": [
-                {"id": 1, "desc": "token 过期", "severity": 0.8, "aspect": "认证"},
-                {"id": 2, "desc": "UI 文案误导", "severity": 0.3, "aspect": "前端"},
-            ],
-            "principal": 1,
-            "principal_aspect": "认证链路",
-            "attack_order": [1, 2],
-            "rationale": "先解决 token 再修文案",
-        },
-    })
+    return json.dumps(
+        {
+            "restated_intent": "修复登录报错",
+            "problem_type": "debug",
+            "ambiguity_score": 0.2,
+            "clarifying_questions": [],
+            "needs_investigation": True,
+            "needs_decomposition": False,
+            "requires_action_plan": True,
+            "growth_signal_kind": "none",
+            "contradiction": {
+                "contradictions": [
+                    {"id": 1, "desc": "token 过期", "severity": 0.8, "aspect": "认证"},
+                    {"id": 2, "desc": "UI 文案误导", "severity": 0.3, "aspect": "前端"},
+                ],
+                "principal": 1,
+                "principal_aspect": "认证链路",
+                "attack_order": [1, 2],
+                "rationale": "先解决 token 再修文案",
+            },
+        }
+    )
 
 
 def _chitchat_payload() -> str:
-    return json.dumps({
-        "restated_intent": "打招呼闲聊",
-        "problem_type": "chitchat",
-        "ambiguity_score": 0.0,
-        "clarifying_questions": [],
-        "needs_investigation": False,
-        "needs_decomposition": False,
-        "requires_action_plan": False,
-        "growth_signal_kind": "none",
-        "contradiction": None,
-    })
+    return json.dumps(
+        {
+            "restated_intent": "打招呼闲聊",
+            "problem_type": "chitchat",
+            "ambiguity_score": 0.0,
+            "clarifying_questions": [],
+            "needs_investigation": False,
+            "needs_decomposition": False,
+            "requires_action_plan": False,
+            "growth_signal_kind": "none",
+            "contradiction": None,
+        }
+    )
 
 
 def test_chitchat_shortcircuit_via_llm() -> None:
@@ -77,10 +82,10 @@ def test_chitchat_shortcircuit_via_llm() -> None:
     card = asyncio.run(triage.analyze("你好呀今天天气真好", prior_task_type="chat"))
     assert card.short_circuit is True
     assert card.problem_type == "chitchat"
-    assert card.needs_investigation is False     # Y-light：chitchat 强制不取证
+    assert card.needs_investigation is False  # Y-light：chitchat 强制不取证
     assert card.contradiction is None
     assert card.requires_action_plan is False
-    assert mock_llm.await_count == 1             # 不再是 0 次：闲聊判断也走 LLM
+    assert mock_llm.await_count == 1  # 不再是 0 次：闲聊判断也走 LLM
 
 
 def test_emotion_shortcircuit_via_llm() -> None:
@@ -109,9 +114,9 @@ def test_complex_single_llm_call_with_contradiction() -> None:
     mock_llm = AsyncMock(return_value=_complex_payload())
     triage = IntentTriage(mock_llm)
     card = asyncio.run(triage.analyze("我的登录功能报错了帮我看看", prior_task_type="code"))
-    assert mock_llm.await_count == 1                 # ★ 只调一次
+    assert mock_llm.await_count == 1  # ★ 只调一次
     assert card.problem_type == "debug"
-    assert card.contradiction is not None            # 矛盾段在同一次调用产出
+    assert card.contradiction is not None  # 矛盾段在同一次调用产出
     assert card.contradiction.principal == 1
     assert card.contradiction.attack_order == [1, 2]
     assert len(card.contradiction.contradictions) == 2
@@ -119,17 +124,19 @@ def test_complex_single_llm_call_with_contradiction() -> None:
 
 def test_simple_factual_returns_null_contradiction() -> None:
     """简单 factual_qa：contradiction=None（即便 LLM 误填也不解析，因 problem_type 不触发）。"""
-    payload = json.dumps({
-        "restated_intent": "查个事实",
-        "problem_type": "factual_qa",
-        "ambiguity_score": 0.1,
-        "clarifying_questions": [],
-        "needs_investigation": True,
-        "needs_decomposition": False,
-        "requires_action_plan": False,
-        "growth_signal_kind": "none",
-        "contradiction": None,
-    })
+    payload = json.dumps(
+        {
+            "restated_intent": "查个事实",
+            "problem_type": "factual_qa",
+            "ambiguity_score": 0.1,
+            "clarifying_questions": [],
+            "needs_investigation": True,
+            "needs_decomposition": False,
+            "requires_action_plan": False,
+            "growth_signal_kind": "none",
+            "contradiction": None,
+        }
+    )
     mock_llm = AsyncMock(return_value=payload)
     triage = IntentTriage(mock_llm)
     card = asyncio.run(triage.analyze("中国首都是哪", prior_task_type="recall"))
@@ -167,15 +174,17 @@ def test_growth_signal_kind_is_model_authored(
 
 
 def test_ambiguity_triggers_clarification() -> None:
-    payload = json.dumps({
-        "restated_intent": "?",
-        "problem_type": "ambiguous",
-        "ambiguity_score": 0.9,
-        "clarifying_questions": ["你指的是 A 还是 B？"],
-        "needs_investigation": False,
-        "needs_decomposition": False,
-        "contradiction": None,
-    })
+    payload = json.dumps(
+        {
+            "restated_intent": "?",
+            "problem_type": "ambiguous",
+            "ambiguity_score": 0.9,
+            "clarifying_questions": ["你指的是 A 还是 B？"],
+            "needs_investigation": False,
+            "needs_decomposition": False,
+            "contradiction": None,
+        }
+    )
     mock_llm = AsyncMock(return_value=payload)
     triage = IntentTriage(mock_llm, clarify_threshold=0.7)
     card = asyncio.run(triage.analyze("那个东西", prior_task_type=None))
@@ -198,8 +207,8 @@ def test_safe_fail_on_llm_exception() -> None:
 
     triage = IntentTriage(_boom)
     card = asyncio.run(triage.analyze("帮我调研下行业", prior_task_type="web_search"))
-    assert card.problem_type == "research"        # safe-fail 用派生类型
-    assert card.contradiction is None             # 不填矛盾段
+    assert card.problem_type == "research"  # safe-fail 用派生类型
+    assert card.contradiction is None  # 不填矛盾段
     assert card.needs_clarification is False
     assert card.requires_action_plan is None
 
@@ -208,7 +217,7 @@ def test_safe_fail_on_malformed_json() -> None:
     mock_llm = AsyncMock(return_value="这不是 JSON，是一段废话")
     triage = IntentTriage(mock_llm)
     card = asyncio.run(triage.analyze("修 bug", prior_task_type="code"))
-    assert card.problem_type == "debug"           # fallback 到派生
+    assert card.problem_type == "debug"  # fallback 到派生
     assert card.contradiction is None
     assert card.requires_action_plan is None
 
@@ -235,7 +244,7 @@ def test_safe_fail_malformed_json_with_chat_classifier_does_not_shortcircuit() -
     triage = IntentTriage(mock_llm)
     card = asyncio.run(triage.analyze("我的导出功能报错了帮我查查", prior_task_type="chat"))
     assert mock_llm.await_count == 1
-    assert card.short_circuit is False            # ★ 关键：safe-fail 绝不短路
+    assert card.short_circuit is False  # ★ 关键：safe-fail 绝不短路
     assert card.contradiction is None
     assert card.requires_action_plan is None
 
@@ -243,21 +252,23 @@ def test_safe_fail_malformed_json_with_chat_classifier_does_not_shortcircuit() -
 def test_pua_char_json_still_parses_correct_type() -> None:
     """真机 2026-06-25：deepseek 偶发把私用区字符(U+E160)塞进 JSON 字符串值 → 原实现 parse_failed
     → safe-fail。净化私用区/控制字符后正确 problem_type=debug 存活，不再误降级。"""
-    payload = json.dumps({
-        "restated_intent": "调查 export_report.py 的 KeyError",
-        "problem_type": "debug",
-        "ambiguity_score": 0.2,
-        "clarifying_questions": [],
-        "needs_investigation": True,
-        "needs_decomposition": False,
-        "contradiction": None,
-    })
+    payload = json.dumps(
+        {
+            "restated_intent": "调查 export_report.py 的 KeyError",
+            "problem_type": "debug",
+            "ambiguity_score": 0.2,
+            "clarifying_questions": [],
+            "needs_investigation": True,
+            "needs_decomposition": False,
+            "contradiction": None,
+        }
+    )
     # 注入一个私用区字符(U+E160)模拟 deepseek 真机输出
     dirty = payload.replace("KeyError", "KeyError")  # 注入控制字符 U+001F，json.loads strict 会拒
     mock_llm = AsyncMock(return_value=dirty)
     triage = IntentTriage(mock_llm)
     card = asyncio.run(triage.analyze("export_report.py 报 KeyError", prior_task_type="chat"))
-    assert card.problem_type == "debug"           # 净化后正确判断存活
+    assert card.problem_type == "debug"  # 净化后正确判断存活
     assert card.short_circuit is False
 
 
@@ -265,25 +276,29 @@ def test_contradiction_nonnumeric_fields_do_not_crash() -> None:
     """★ 真机 2026-06-25：非流式裸补全(无 strict schema)时 deepseek 可能把 severity/id/principal
     填成中文/乱码 → 旧实现裸 float()/int() 抛 ValueError 让整个 run_pre_loop 崩掉跳过流水线。
     防御性转换后不崩，落默认值。"""
-    payload = json.dumps({
-        "restated_intent": "复合问题",
-        "problem_type": "multi_task",
-        "ambiguity_score": 0.2,
-        "clarifying_questions": [],
-        "needs_investigation": True,
-        "needs_decomposition": True,
-        "contradiction": {
-            "contradictions": [{"id": "一", "desc": "慢", "severity": "高", "aspect": "性能"}],
-            "principal": "乱码", "principal_aspect": "X",
-            "attack_order": ["1", "二", 3], "rationale": "r",
-        },
-    })
+    payload = json.dumps(
+        {
+            "restated_intent": "复合问题",
+            "problem_type": "multi_task",
+            "ambiguity_score": 0.2,
+            "clarifying_questions": [],
+            "needs_investigation": True,
+            "needs_decomposition": True,
+            "contradiction": {
+                "contradictions": [{"id": "一", "desc": "慢", "severity": "高", "aspect": "性能"}],
+                "principal": "乱码",
+                "principal_aspect": "X",
+                "attack_order": ["1", "二", 3],
+                "rationale": "r",
+            },
+        }
+    )
     mock_llm = AsyncMock(return_value=payload)
     triage = IntentTriage(mock_llm)
     card = asyncio.run(triage.analyze("网站又慢又崩", prior_task_type="plan"))
     assert card.problem_type == "multi_task"
-    assert card.contradiction is not None           # 不崩，矛盾段照常解析
-    assert card.contradiction.contradictions[0].severity == 0.0   # 乱码→默认
+    assert card.contradiction is not None  # 不崩，矛盾段照常解析
+    assert card.contradiction.contradictions[0].severity == 0.0  # 乱码→默认
 
 
 def test_thinking_model_cot_prefix_stripped() -> None:
@@ -299,7 +314,7 @@ def test_thinking_model_cot_prefix_stripped() -> None:
     mock_llm = AsyncMock(return_value=raw)
     triage = IntentTriage(mock_llm)
     card = asyncio.run(triage.analyze("帮我写个判断质数的函数", prior_task_type="task"))
-    assert card.problem_type == "creation"   # 剥 think 后正确解析，不再 safe-fail
+    assert card.problem_type == "creation"  # 剥 think 后正确解析，不再 safe-fail
     assert card.short_circuit is False
 
 
@@ -319,13 +334,31 @@ def test_fenced_json_extraction() -> None:
 from structlog.testing import capture_logs
 
 _ALLOWLIST_SHORTCIRCUIT = [
-    "你好", "谢谢", "晚安", "😄", "。。。",
-    "你好呀~", "晚安啊", "在吗在吗", "早上好", "hi 你好", "嗯嗯", "哈哈",
+    "你好",
+    "谢谢",
+    "晚安",
+    "😄",
+    "。。。",
+    "你好呀~",
+    "晚安啊",
+    "在吗在吗",
+    "早上好",
+    "hi 你好",
+    "嗯嗯",
+    "哈哈",
 ]
 _ALLOWLIST_NO_SHORTCIRCUIT = [
-    "你好，帮我看下这段为什么报错", "崩了", "报错", "卡死",
-    "光合作用为什么需要光", "在吗？我代码崩了", "谢谢，那这个报错怎么办",
-    "hi 帮我 debug", "在吗？", "ok 那你帮我改一下", "早上代码崩了",
+    "你好，帮我看下这段为什么报错",
+    "崩了",
+    "报错",
+    "卡死",
+    "光合作用为什么需要光",
+    "在吗？我代码崩了",
+    "谢谢，那这个报错怎么办",
+    "hi 帮我 debug",
+    "在吗？",
+    "ok 那你帮我改一下",
+    "早上代码崩了",
 ]
 
 
@@ -396,7 +429,7 @@ def test_allowlist_hit_emits_structured_log() -> None:
         card = asyncio.run(triage.analyze("你好呀", prior_task_type="chat"))
     events = [e.get("event") for e in logs]
     assert "intent_triage.allowlist_hit" in events
-    assert "intent_triage.done" not in events       # 证 0 次 LLM 完成
+    assert "intent_triage.done" not in events  # 证 0 次 LLM 完成
     assert "intent_triage.llm_failed" not in events
     assert card.short_circuit is True
     assert mock_llm.await_count == 0
@@ -416,6 +449,7 @@ def test_allowlist_hit_even_when_llm_call_none() -> None:
 def test_safe_fail_chat_classifier_does_not_derive_chitchat() -> None:
     """★ 真问题 + 坏 classifier(prior='chat') + LLM 异常 → safe-fail 兜底 factual_qa（非 chitchat），
     且 needs_investigation=True（不跳过取证），short_circuit=False。"""
+
     async def _boom(_prompt: str) -> str:
         raise RuntimeError("relay 502")
 
@@ -423,13 +457,14 @@ def test_safe_fail_chat_classifier_does_not_derive_chitchat() -> None:
     # 非寒暄（含故障词"报错"，不会被 allowlist 短路），prior='chat' → derived chitchat
     card = asyncio.run(triage.analyze("我的导出功能报错了", prior_task_type="chat"))
     assert card.problem_type != "chitchat"
-    assert card.problem_type == "factual_qa"      # WI-2b 兜底
-    assert card.needs_investigation is True        # 取证门不被跳过
+    assert card.problem_type == "factual_qa"  # WI-2b 兜底
+    assert card.needs_investigation is True  # 取证门不被跳过
     assert card.short_circuit is False
 
 
 def test_safe_fail_emotion_classifier_does_not_derive_chitchat() -> None:
     """prior='emotion' 同样映射 chitchat → safe-fail 兜底 factual_qa。"""
+
     async def _boom(_prompt: str) -> str:
         raise RuntimeError("timeout")
 
@@ -456,7 +491,9 @@ def test_no_bypass_flag_read_points_in_backend() -> None:
     for root, dirs, files in os.walk(backend):
         # 跳过虚拟环境 / 缓存 / 测试自身
         parts = set(Path(root).parts)
-        if any(p.startswith(".") and p not in (".",) for p in Path(root).relative_to(backend).parts):
+        if any(
+            p.startswith(".") and p not in (".",) for p in Path(root).relative_to(backend).parts
+        ):
             continue
         if "tests" in Path(root).relative_to(backend).parts:
             continue
@@ -480,7 +517,8 @@ def test_system_message_helpers() -> None:
     assert "<意图>" in msg and "修复登录" in msg
     cmap = ContradictionMap(
         contradictions=[Contradiction(id=1, desc="token 过期", aspect="认证")],
-        principal=1, principal_aspect="认证链路",
+        principal=1,
+        principal_aspect="认证链路",
     )
     cmsg = contradiction_to_system_message(cmap)
     assert "<主要矛盾>" in cmsg and "token 过期" in cmsg and "认证链路" in cmsg

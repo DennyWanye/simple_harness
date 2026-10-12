@@ -19,6 +19,7 @@ only covers the two paths a tool-only test needs:
 Falls back to shipped defaults if neither is readable — web tools still
 work, they just use hardcoded UA + default rate limit.
 """
+
 from __future__ import annotations
 
 import os
@@ -88,9 +89,7 @@ def load_web_config(*, force: bool = False) -> WebToolsConfig:
         _cached = WebToolsConfig(
             user_agent=str(web.get("user_agent", _DEFAULT_USER_AGENT)),
             respect_robots_txt=bool(web.get("respect_robots_txt", True)),
-            per_domain_max_concurrency=int(
-                web.get("per_domain_max_concurrency", 2)
-            ),
+            per_domain_max_concurrency=int(web.get("per_domain_max_concurrency", 2)),
             request_interval_ms=int(web.get("request_interval_ms", 500)),
             crawl_default_max_pages=int(web.get("crawl_default_max_pages", 20)),
             crawl_default_max_depth=int(web.get("crawl_default_max_depth", 2)),

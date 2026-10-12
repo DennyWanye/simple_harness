@@ -1,4 +1,5 @@
 """Real signed configuration changes at FIFO and physical transport boundaries."""
+
 import asyncio
 import json
 import sqlite3
@@ -25,8 +26,9 @@ async def second_connection(env):
     auth = binding.authenticate(ingress, challenge)
     assert auth.subject == env.auth.subject
     assert challenge.connection_id != env.challenge.connection_id
-    return SimpleNamespace(binding=binding, ingress=ingress, challenge=challenge,
-                           auth=auth, factory=env.factory)
+    return SimpleNamespace(
+        binding=binding, ingress=ingress, challenge=challenge, auth=auth, factory=env.factory
+    )
 
 
 @pytest.mark.asyncio
@@ -44,15 +46,24 @@ async def test_stale_preclaim_settles_without_run_and_fifo_continues(env):
         await asyncio.wait_for(runtime._run_driver(), 15)
         with sqlite3.connect(env.path) as db:
             states = dict(db.execute("SELECT turn_id,current_state FROM foreground_turn_heads"))
-            a_runs = db.execute("SELECT count(*) FROM foreground_runs WHERE turn_id=?", (a["turn_ref"],)).fetchone()[0]
+            a_runs = db.execute(
+                "SELECT count(*) FROM foreground_runs WHERE turn_id=?", (a["turn_ref"],)
+            ).fetchone()[0]
         projected = await env.factory.bind(env.auth).queue_snapshot()
         assert {t["turn_ref"]: t["state"] for t in projected["turns"]} == {
-            a["turn_ref"]: "REJECTED", b["turn_ref"]: "SETTLED"}, str(runtime.last_error)
-        assert states[a["turn_ref"]] == "QUEUED"  # Original admission fact, disposition is separate.
+            a["turn_ref"]: "REJECTED",
+            b["turn_ref"]: "SETTLED",
+        }, str(runtime.last_error)
+        assert (
+            states[a["turn_ref"]] == "QUEUED"
+        )  # Original admission fact, disposition is separate.
         assert runtime.last_error is None and a_runs == 0
         assert len(provider.requests) == 1
         with sqlite3.connect(env.path) as db:
-            row = db.execute("SELECT rejection_json FROM foreground_admission_rejections WHERE turn_id=?", (a["turn_ref"],)).fetchone()
+            row = db.execute(
+                "SELECT rejection_json FROM foreground_admission_rejections WHERE turn_id=?",
+                (a["turn_ref"],),
+            ).fetchone()
             rejection = json.loads(row[0])
             assert rejection["reason"] == "host_disclosure_binding_stale"
             assert rejection["bound_token"]["binding_ref"] == first["binding_ref"]
@@ -76,13 +87,20 @@ async def test_configuration_commit_during_checker_blocks_physical_send(env, cha
     other = await second_connection(env)
     entered, release = asyncio.Event(), asyncio.Event()
     sends, checked = [], []
+
     def physical(request):
         sends.append(request)
         raise RuntimeError("physical transport entered")
+
     client = httpx.AsyncClient(transport=httpx.MockTransport(physical))
-    provider = ProductProviderAdapter(Registry("secret"), provider_id="relay", client=client,
-                                     price_resolver=lambda *_: (1, 1, "price-v1"))
+    provider = ProductProviderAdapter(
+        Registry("secret"),
+        provider_id="relay",
+        client=client,
+        price_resolver=lambda *_: (1, 1, "price-v1"),
+    )
     runtime, stack, queue = await build(env.path.parent, env.path, provider)
+
     class SlowPolicy:
         async def check_dependencies(self, **kwargs):
             allowed = await runtime.history_policy.check_dependencies(**kwargs)
@@ -91,16 +109,27 @@ async def test_configuration_commit_during_checker_blocks_physical_send(env, cha
             entered.set()
             await release.wait()
             return allowed
+
     async def guard(request):
         current = await queue.current_snapshot(env.auth.subject)
-        await check_runtime_dependencies(db_path=env.path, stack=stack, sdk_run_id=current.sdk_run_id,
-            request=request, policy_factory=lambda _: SlowPolicy())
+        await check_runtime_dependencies(
+            db_path=env.path,
+            stack=stack,
+            sdk_run_id=current.sdk_run_id,
+            request=request,
+            policy_factory=lambda _: SlowPolicy(),
+        )
+
     provider._pre_invoke_guard = guard
     task = asyncio.create_task(runtime._drive_once())
     try:
         await asyncio.wait_for(entered.wait(), 10)
         if change:
-            second = ok(await command(other, "disclosure.configure", selection(first["binding_ref"]), key="G2"))
+            second = ok(
+                await command(
+                    other, "disclosure.configure", selection(first["binding_ref"]), key="G2"
+                )
+            )
             assert second["policy_generation"] == 2
         release.set()
         await asyncio.wait_for(task, 10)
@@ -111,10 +140,15 @@ async def test_configuration_commit_during_checker_blocks_physical_send(env, cha
         attempts = 1 if change else 2
         assert len(checked) == attempts
         assert all(first["source_ref"] in item.authority_ref for item in checked)
-        assert len(sends) == (0 if change else attempts), "G2 committed while checker held G1; physical send must be zero"
+        assert len(sends) == (0 if change else attempts), (
+            "G2 committed while checker held G1; physical send must be zero"
+        )
         if change:
             with sqlite3.connect(env.path) as db:
-                assert db.execute("SELECT current_state FROM foreground_run_heads").fetchone()[0] == "FAILED"
+                assert (
+                    db.execute("SELECT current_state FROM foreground_run_heads").fetchone()[0]
+                    == "FAILED"
+                )
     finally:
         release.set()
         if not task.done():
@@ -134,21 +168,28 @@ async def test_rejection_commit_fault_and_replay(env, fault):
         reject_stale_candidate,
     )
     from deskpet.execution.foreground_queue import ForegroundQueueStore
+
     ok(await enqueue(env))
     queue = ForegroundQueueStore(env.path)
     candidate = await queue.read_next_preparation_candidate(env.auth.subject)
     with pytest.raises(Exception, match="rejection_not_proven"):
         await reject_stale_candidate(queue, candidate)
     first = ok(await command(env, "disclosure.current", {}))["configuration"]
-    second = ok(await command(env, "disclosure.configure", selection(first["binding_ref"]), key="G2"))
+    second = ok(
+        await command(env, "disclosure.configure", selection(first["binding_ref"]), key="G2")
+    )
+
     def fail(point):
         if point == "admission_rejection." + fault:
             raise RuntimeError("injected commit boundary")
+
     queue._fault_hook = fail
     with pytest.raises(RuntimeError, match="injected commit"):
         await reject_stale_candidate(queue, candidate)
     with sqlite3.connect(env.path) as db:
-        assert db.execute("SELECT count(*) FROM foreground_admission_rejections").fetchone()[0] == (fault == "after_commit")
+        assert db.execute("SELECT count(*) FROM foreground_admission_rejections").fetchone()[0] == (
+            fault == "after_commit"
+        )
         assert db.execute("SELECT count(*) FROM foreground_runs").fetchone()[0] == 0
     queue = ForegroundQueueStore(env.path)
     saved = await reject_stale_candidate(queue, candidate)
@@ -157,7 +198,12 @@ async def test_rejection_commit_fault_and_replay(env, fault):
     assert await queue.read_next_preparation_candidate(env.auth.subject) is None
     async with aiosqlite.connect(env.path) as db:
         db.row_factory = aiosqlite.Row
-        assert await read_admission_rejection_tx(db, turn_id=candidate.turn_id, subject=env.auth.subject) == saved
+        assert (
+            await read_admission_rejection_tx(
+                db, turn_id=candidate.turn_id, subject=env.auth.subject
+            )
+            == saved
+        )
         with pytest.raises(ValueError, match="corrupt"):
             await read_admission_rejection_tx(db, turn_id=candidate.turn_id, subject="foreign")
     with sqlite3.connect(env.path) as db:
@@ -172,6 +218,7 @@ async def test_rejection_commit_fault_and_replay(env, fault):
 @pytest.mark.asyncio
 async def test_v48_upgrade_preserves_migration_markers_and_requires_rejection_schema(tmp_path):
     from deskpet.memory import migrator, schema
+
     path, directory = tmp_path / "old.db", tmp_path / "v48"
     directory.mkdir()
     for source in migrator.DEFAULT_MIGRATIONS_DIR.glob("*.sql"):
@@ -188,9 +235,16 @@ async def test_v48_upgrade_preserves_migration_markers_and_requires_rejection_sc
     await schema.dispatch_startup_epoch(path, approved_fresh_lane=False)
     with sqlite3.connect(path) as db:
         assert db.execute("PRAGMA user_version").fetchone()[0] == 49
-        assert db.execute("SELECT version FROM schema_migrations WHERE version<>? ORDER BY version",
-                          (migrator.ADMISSION_REJECTIONS_MIGRATION,)).fetchall() == before
-        assert db.execute("SELECT taxonomy FROM human_memory_recovery_table_registry WHERE table_name='foreground_admission_rejections'").fetchone() == ("A",)
+        assert (
+            db.execute(
+                "SELECT version FROM schema_migrations WHERE version<>? ORDER BY version",
+                (migrator.ADMISSION_REJECTIONS_MIGRATION,),
+            ).fetchall()
+            == before
+        )
+        assert db.execute(
+            "SELECT taxonomy FROM human_memory_recovery_table_registry WHERE table_name='foreground_admission_rejections'"
+        ).fetchone() == ("A",)
         db.execute("DROP TRIGGER foreground_admission_rejections_no_update")
     with pytest.raises(schema.HumanMemoryProgramEpochError, match="marker_chain_invalid"):
         await schema.dispatch_startup_epoch(path, approved_fresh_lane=False)

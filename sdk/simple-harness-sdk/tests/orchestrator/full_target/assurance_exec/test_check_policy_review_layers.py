@@ -20,15 +20,24 @@ from agent_orchestrator.contracts.resolution import (
 from agent_orchestrator.orchestrator.scoped_content_review import local_check_criterion
 
 DERIVED = Criterion(
-    criterion_id="c-notes-file-written", revision=1, origin=CriterionOrigin.DERIVED,
-    statement="NOTES.md is written", requirement_class=RequirementClass.REQUIRED_OUTCOME,
+    criterion_id="c-notes-file-written",
+    revision=1,
+    origin=CriterionOrigin.DERIVED,
+    statement="NOTES.md is written",
+    requirement_class=RequirementClass.REQUIRED_OUTCOME,
     evaluation_kind=EvaluationKind.DETERMINISTIC,
 )
 
 
 def test_review_layer_is_dropped_and_real_checks_stay_in_order() -> None:
-    got = local_check_criterion(DERIVED, ("format_check", "rule_check", "code_test", "critic_review"))
-    assert got.required_evidence_policy.required_check_ids == ("format_check", "rule_check", "code_test")
+    got = local_check_criterion(
+        DERIVED, ("format_check", "rule_check", "code_test", "critic_review")
+    )
+    assert got.required_evidence_policy.required_check_ids == (
+        "format_check",
+        "rule_check",
+        "code_test",
+    )
     assert got.evaluation_kind is EvaluationKind.DETERMINISTIC
 
 

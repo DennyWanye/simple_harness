@@ -40,9 +40,16 @@ def workflow_outline_run_id(outline_id: str) -> str | None:
 
 async def open_ppt_outline_decision(service: Any, run_id: str, outline_id: str):
     decisions = await service.human_store.list_open_decisions(run_id=run_id)
-    return next((item for item in decisions if item.kind == "ppt_outline"
-                 and isinstance(item.prompt, dict)
-                 and str(item.prompt.get("outline_id") or "") == outline_id), None)
+    return next(
+        (
+            item
+            for item in decisions
+            if item.kind == "ppt_outline"
+            and isinstance(item.prompt, dict)
+            and str(item.prompt.get("outline_id") or "") == outline_id
+        ),
+        None,
+    )
 
 
 async def workflow_run_session(service: Any, run_id: str) -> str:
@@ -129,9 +136,7 @@ def _prepared_operation(
     normalized = _json_safe(params)
     if not isinstance(normalized, dict):
         raise TypeError("PPT effect parameters must be a JSON object")
-    stable_digest = _value_hash(
-        {"operation": operation, "logical_effect_key": logical_effect_key}
-    )
+    stable_digest = _value_hash({"operation": operation, "logical_effect_key": logical_effect_key})
     schema_version: str | int = 1 if contract_version == "v1" else contract_version
     schema_hash = _value_hash(
         {
@@ -218,9 +223,7 @@ class PptRuntime:
         effect_id = begun.effect.effect_id
         if begun.action in {EffectAction.REUSE, EffectAction.FAILED}:
             if begun.effect.outcome is None:
-                raise EffectStateConflict(
-                    f"terminal PPT effect {effect_id} has no durable outcome"
-                )
+                raise EffectStateConflict(f"terminal PPT effect {effect_id} has no durable outcome")
             value = _json_safe(begun.effect.outcome.value)
             validate_json_value(value)
             return value
@@ -228,6 +231,7 @@ class PptRuntime:
             raise EffectStateConflict(
                 f"PPT effect {effect_id} is {begun.effect.status.value}; execution is blocked"
             )
+
         async def _execute_value() -> Any:
             value = execute()
             return await value if inspect.isawaitable(value) else value
@@ -266,9 +270,7 @@ class PptRuntime:
         return value
 
     async def probe_images(self, *, timeout_s: float) -> bool:
-        return bool(
-            await self._run(ppt_tools.probe_image_reachable, timeout_s=timeout_s)
-        )
+        return bool(await self._run(ppt_tools.probe_image_reachable, timeout_s=timeout_s))
 
     async def generate_slide_image(
         self,
@@ -290,9 +292,7 @@ class PptRuntime:
                 generate_kwargs["model"] = model
             raw = ppt_tools.generate_images([prompt], **generate_kwargs)
             first = raw[0] if isinstance(raw, list) and raw else {}
-            normalized = _json_safe(
-                first if isinstance(first, Mapping) else {"error": str(first)}
-            )
+            normalized = _json_safe(first if isinstance(first, Mapping) else {"error": str(first)})
             payload = cast(dict[str, JsonValue], normalized)
             path = str(payload.get("path") or "")
             if full_page and path:
@@ -346,9 +346,9 @@ class PptRuntime:
                 "slide": _json_safe(dict(slide or {})),
             },
             execute=lambda: self._run(generate),
-            succeeded=lambda value: isinstance(value, Mapping)
-            and bool(value.get("path"))
-            and not value.get("error"),
+            succeeded=lambda value: (
+                isinstance(value, Mapping) and bool(value.get("path")) and not value.get("error")
+            ),
             contract_version="full-page-v1" if full_page else "v1",
         )
         if not isinstance(result, Mapping):
@@ -356,9 +356,7 @@ class PptRuntime:
         result_dict = cast(dict[str, JsonValue], dict(result))
         committed_path = str(result_dict.get("path") or "")
         if committed_path and not Path(committed_path).is_file():
-            raise EffectStateConflict(
-                f"committed PPT image is missing from disk: {committed_path}"
-            )
+            raise EffectStateConflict(f"committed PPT image is missing from disk: {committed_path}")
         return result_dict
 
     async def render_ppt(
@@ -429,20 +427,16 @@ class PptRuntime:
                 "editable_required": editable_required,
             },
             execute=lambda: self._run(render),
-            succeeded=lambda value: isinstance(value, Mapping)
-            and bool(value.get("ok"))
-            and bool(value.get("path")),
-            contract_version="full-page-v1"
-            if render_mode == "full_page_images"
-            else "v1",
+            succeeded=lambda value: (
+                isinstance(value, Mapping) and bool(value.get("ok")) and bool(value.get("path"))
+            ),
+            contract_version="full-page-v1" if render_mode == "full_page_images" else "v1",
         )
         if not isinstance(result, Mapping):
             raise TypeError("PPT deck publish effect must return a JSON object")
         return cast(dict[str, JsonValue], dict(result))
 
-    async def render_preview(
-        self, *, path: str, render_hash: str
-    ) -> list[dict[str, JsonValue]]:
+    async def render_preview(self, *, path: str, render_hash: str) -> list[dict[str, JsonValue]]:
         def render() -> list[dict[str, JsonValue]]:
             if not path or not ppt_tools._ppt_preview_render_enabled():
                 return []
@@ -524,9 +518,7 @@ class PptRuntime:
                 metadata.append(
                     {
                         "title": str(slide.get("title") or ""),
-                        "variant": str(
-                            slide.get("image_variant") or slide.get("layout") or ""
-                        ),
+                        "variant": str(slide.get("image_variant") or slide.get("layout") or ""),
                         "n_bullets": len(bullets) if isinstance(bullets, list) else 0,
                         "expected_text": {
                             "title": str(slide.get("title") or ""),
@@ -552,15 +544,9 @@ class PptRuntime:
                 and record["image"].get("status") == "ready"
                 for record in slide_values
             )
-            mode = (
-                "full_page_images"
-                if full_page
-                else "image" if image_ready else "template"
-            )
+            mode = "full_page_images" if full_page else "image" if image_ready else "template"
             raw_reviews = (
-                ppt_visual_review.review_slides(paths, metadata, mode=mode)
-                if paths
-                else []
+                ppt_visual_review.review_slides(paths, metadata, mode=mode) if paths else []
             )
             reviews_value = _json_safe(raw_reviews)
             reviews = cast(list[dict[str, JsonValue]], reviews_value)
@@ -580,9 +566,7 @@ class PptRuntime:
                 issues.append(issue)
             score = None
             if reviews:
-                score = sum(bool(item.get("ok", True)) for item in reviews) / len(
-                    reviews
-                )
+                score = sum(bool(item.get("ok", True)) for item in reviews) / len(reviews)
             result: dict[str, JsonValue] = {
                 "issues": issues,
                 "reviews": reviews,

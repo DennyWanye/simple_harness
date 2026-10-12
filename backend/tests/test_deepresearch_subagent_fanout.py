@@ -47,12 +47,14 @@ class DirectScheduler:
         self.calls: list[dict[str, Any]] = []
 
     async def run(self, *, kind, run_id, task_id, parent_sid, coro_factory):
-        self.calls.append({
-            "kind": kind,
-            "run_id": run_id,
-            "task_id": task_id,
-            "parent_sid": parent_sid,
-        })
+        self.calls.append(
+            {
+                "kind": kind,
+                "run_id": run_id,
+                "task_id": task_id,
+                "parent_sid": parent_sid,
+            }
+        )
         return await coro_factory()
 
 
@@ -119,26 +121,30 @@ async def _run_flat_candidate(
     scheduler=None,
     depth: int = 0,
 ) -> ResearchReport:
-    search = _make_search({
-        "q1?": [{"url": "https://a.example/doc", "title": "A", "snippet": ""}],
-        "q2?": [{"url": "https://b.example/doc", "title": "B", "snippet": ""}],
-    })
-    extract = _make_extract({
-        "https://a.example/doc": {
-            "ok": True,
-            "url": "https://a.example/doc",
-            "title": "A",
-            "text": "alpha evidence about topic. " * 40,
-            "fetched_at": 1.0,
-        },
-        "https://b.example/doc": {
-            "ok": True,
-            "url": "https://b.example/doc",
-            "title": "B",
-            "text": "beta evidence about topic. " * 40,
-            "fetched_at": 2.0,
-        },
-    })
+    search = _make_search(
+        {
+            "q1?": [{"url": "https://a.example/doc", "title": "A", "snippet": ""}],
+            "q2?": [{"url": "https://b.example/doc", "title": "B", "snippet": ""}],
+        }
+    )
+    extract = _make_extract(
+        {
+            "https://a.example/doc": {
+                "ok": True,
+                "url": "https://a.example/doc",
+                "title": "A",
+                "text": "alpha evidence about topic. " * 40,
+                "fetched_at": 1.0,
+            },
+            "https://b.example/doc": {
+                "ok": True,
+                "url": "https://b.example/doc",
+                "title": "B",
+                "text": "beta evidence about topic. " * 40,
+                "fetched_at": 2.0,
+            },
+        }
+    )
     return await r.deepresearch(
         "topic",
         llm_call=llm,
@@ -169,9 +175,7 @@ async def test_tg1_fanout_off_branches_stay_on_flat_path(
     monkeypatch.setattr(r, "_run_subagent_fanout", _sentinel_fanout)
     monkeypatch.setattr(r, "_fanout_enabled", lambda: fanout_enabled)
     synth = (
-        "# Flat report\n\n"
-        "## TL;DR\n\nFlat summary [^1].\n\n"
-        "## Analysis\n\nFlat evidence [^1].\n"
+        "# Flat report\n\n## TL;DR\n\nFlat summary [^1].\n\n## Analysis\n\nFlat evidence [^1].\n"
     )
     llm = FakeLLM([plan, synth])
 
@@ -313,6 +317,7 @@ async def test_v7_focused_child_verifies_llm_urls_when_search_is_degraded() -> N
 @pytest.mark.asyncio
 async def test_fanout_stably_merges_agent_reach_observations(monkeypatch) -> None:
     calls: list[str] = []
+
     async def _inner(topic: str, **kwargs):
         calls.append(topic)
         report = _sub_report(topic, len(calls))
@@ -322,12 +327,30 @@ async def test_fanout_stably_merges_agent_reach_observations(monkeypatch) -> Non
                 "planned_channels": ["github"],
                 "planned_urls": ["https://github.com/example/repo"],
                 "doctor": {"web": {"status": "ok", "active_backend": "Jina Reader"}},
-                "hits": ([{"channel": "github", "active_backend": "Jina Reader",
-                           "status": "hit", "reason_code": None}] if hit else []),
-                "degraded": ([] if hit else [{
-                    "channel": "github", "active_backend": "Jina Reader",
-                    "status": "degraded", "reason_code": "read_failed",
-                }]),
+                "hits": (
+                    [
+                        {
+                            "channel": "github",
+                            "active_backend": "Jina Reader",
+                            "status": "hit",
+                            "reason_code": None,
+                        }
+                    ]
+                    if hit
+                    else []
+                ),
+                "degraded": (
+                    []
+                    if hit
+                    else [
+                        {
+                            "channel": "github",
+                            "active_backend": "Jina Reader",
+                            "status": "degraded",
+                            "reason_code": "read_failed",
+                        }
+                    ]
+                ),
             }
         }
         return report
@@ -360,14 +383,22 @@ async def test_fanout_stably_merges_agent_reach_observations(monkeypatch) -> Non
     route = report.coverage["route"]["agent_reach"]
     assert route["planned_channels"] == ["github"]
     assert route["planned_urls"] == ["https://github.com/example/repo"]
-    assert route["hits"] == [{
-        "channel": "github", "active_backend": "Jina Reader",
-        "status": "hit", "reason_code": None,
-    }]
-    assert route["degraded"] == [{
-        "channel": "github", "active_backend": "Jina Reader",
-        "status": "degraded", "reason_code": "read_failed",
-    }]
+    assert route["hits"] == [
+        {
+            "channel": "github",
+            "active_backend": "Jina Reader",
+            "status": "hit",
+            "reason_code": None,
+        }
+    ]
+    assert route["degraded"] == [
+        {
+            "channel": "github",
+            "active_backend": "Jina Reader",
+            "status": "degraded",
+            "reason_code": "read_failed",
+        }
+    ]
 
 
 @pytest.mark.asyncio
@@ -450,8 +481,7 @@ async def test_v7_child_progress_keeps_retry_on_the_same_direction(monkeypatch) 
 
     assert all(len(snapshot) == 3 for snapshot in snapshots)
     q2_states = [
-        next(item for item in snapshot if item["child_id"] == "dr-1")
-        for snapshot in snapshots
+        next(item for item in snapshot if item["child_id"] == "dr-1") for snapshot in snapshots
     ]
     assert any(item["status"] == "retrying" for item in q2_states)
     assert q2_states[-1]["status"] == "valid"
@@ -664,20 +694,22 @@ def test_tg4_finalize_report_md_returns_markdown_citations_and_cite_check() -> N
 def test_tg5_fanout_config_helpers_read_real_config_raw(monkeypatch) -> None:
     import config
 
-    cfg = SimpleNamespace(raw={
-        "research": {
-            "subagent_fanout": True,
-            "fanout_max_subquestions": 9,
-            "fanout_min_subquestions": 3,
-            "fanout_subrun_mode": "inherit",
-        },
-        "agent": {
-            "concurrency": {
-                "global_concurrency": 3,
-                "lane_caps": {"research": 1},
-            }
-        },
-    })
+    cfg = SimpleNamespace(
+        raw={
+            "research": {
+                "subagent_fanout": True,
+                "fanout_max_subquestions": 9,
+                "fanout_min_subquestions": 3,
+                "fanout_subrun_mode": "inherit",
+            },
+            "agent": {
+                "concurrency": {
+                    "global_concurrency": 3,
+                    "lane_caps": {"research": 1},
+                }
+            },
+        }
+    )
     monkeypatch.setattr(config, "config", cfg, raising=False)
     r._RESEARCH_RAW_CACHE = None
 

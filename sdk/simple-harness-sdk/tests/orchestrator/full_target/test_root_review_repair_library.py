@@ -53,18 +53,41 @@ def _quick(monkeypatch):
 def _wrong_answer(kind: str, package: dict[str, Any]) -> str:
     """规划器在修复轮里的一条错答：对被修复的已细化目标再细化一次，或"换成"同一个做法。"""
 
-    [goal] = [item for item in package["views"]["goals"] if item.get("under_repair") and item.get("adopted_method")]
-    subject = next(item["subject_key"] for item in package["planning_subjects"]
-                   if item["occurrence_id"] == goal["occurrence_id"])
+    [goal] = [
+        item
+        for item in package["views"]["goals"]
+        if item.get("under_repair") and item.get("adopted_method")
+    ]
+    subject = next(
+        item["subject_key"]
+        for item in package["planning_subjects"]
+        if item["occurrence_id"] == goal["occurrence_id"]
+    )
     current = dict(goal["adopted_method"]["method_ref"])
     if kind == "refine_again":
-        return decision(subject, "REFINE", {"method_ref": current, "bindings": goal["params"]},
-                        "对这个目标再细化一次。")
-    instance = next(item for item in package["visible_refs"] if item["kind"] == "method_instance"
-                    and item["id"] == goal["adopted_method"]["method_instance_id"])
-    return decision(subject, "REPAIR", {"repair_kind": "REPLACE_METHOD", "rejected_method_instance": instance,
-                                        "replacement_method_ref": current, "bindings": goal["params"]},
-                    "换成同一个做法、同样的参数。")
+        return decision(
+            subject,
+            "REFINE",
+            {"method_ref": current, "bindings": goal["params"]},
+            "对这个目标再细化一次。",
+        )
+    instance = next(
+        item
+        for item in package["visible_refs"]
+        if item["kind"] == "method_instance"
+        and item["id"] == goal["adopted_method"]["method_instance_id"]
+    )
+    return decision(
+        subject,
+        "REPAIR",
+        {
+            "repair_kind": "REPLACE_METHOD",
+            "rejected_method_instance": instance,
+            "replacement_method_ref": current,
+            "bindings": goal["params"],
+        },
+        "换成同一个做法、同样的参数。",
+    )
 
 
 WRONG = ("refine_again", "readopt_same")
@@ -75,8 +98,12 @@ def test_a_wrong_replacement_in_the_repair_round_is_refused_and_writes_no_revisi
 
     def planner(request: Any) -> Any:
         package = package_of(request)
-        repairs = [entry for entry in package.get("repair_requests") or ()
-                   if ((entry.get("request") or {}).get("context") or {}).get("event_type") != "GoalUnrefined"]
+        repairs = [
+            entry
+            for entry in package.get("repair_requests") or ()
+            if ((entry.get("request") or {}).get("context") or {}).get("event_type")
+            != "GoalUnrefined"
+        ]
         if not repairs:
             return planner_reply(request)
         if len(asked) < len(WRONG):
@@ -91,16 +118,26 @@ def test_a_wrong_replacement_in_the_repair_round_is_refused_and_writes_no_revisi
         data = review_input(request)
         if data is None:
             return None
-        if str((data.get("package") or {}).get("purpose")) == "TASK_CONTENT" and not rejected["done"]:
+        if (
+            str((data.get("package") or {}).get("purpose")) == "TASK_CONTENT"
+            and not rejected["done"]
+        ):
             rejected["done"] = True
-            return review_reply(data, verdict="REJECTED", grade="FAIL", reason="脚本化审阅：内容不满足要求。")
+            return review_reply(
+                data, verdict="REJECTED", grade="FAIL", reason="脚本化审阅：内容不满足要求。"
+            )
         return review_reply(data)
 
     async def case():
         provider = LayeredScriptedProvider(planner=planner, reviewer=reviewer)
         async with product_world(tmp_path / "root", provider, max_planning_attempts=4) as world:
-            mission_id = world.create({"goal": "写一份 NOTES.md", "idempotency_key": "repair-wrong-replace",
-                                       "success_criteria": ["file:NOTES.md"]})["mission_id"]
+            mission_id = world.create(
+                {
+                    "goal": "写一份 NOTES.md",
+                    "idempotency_key": "repair-wrong-replace",
+                    "success_criteria": ["file:NOTES.md"],
+                }
+            )["mission_id"]
             mission = await world.run_until_settled(mission_id, rounds=20)
             events = list(world.store.list_events(mission_id))
             assert str(mission.status.value) == "COMPLETED", [event.type for event in events][-20:]
@@ -111,15 +148,22 @@ def test_a_wrong_replacement_in_the_repair_round_is_refused_and_writes_no_revisi
     evaluated = [event for event in events if event.type == "PlanningDecisionEvaluated"]
     revisions = [event for event in events if event.type == "PlanRevisionCommitted"]
     # 两条错答各被拒一次，依次是"再细化"（预览就被拒）和"换成同一个做法"（提交时被拒）。
-    refused = [event for event in evaluated if event.payload["status"] in {"REJECTED", "COMMIT_REJECTED"}]
+    refused = [
+        event for event in evaluated if event.payload["status"] in {"REJECTED", "COMMIT_REJECTED"}
+    ]
     assert [(event.payload["decision_type"], event.payload["status"]) for event in refused] == [
-        ("REFINE", "REJECTED"), ("REPAIR", "COMMIT_REJECTED")]
+        ("REFINE", "REJECTED"),
+        ("REPAIR", "COMMIT_REJECTED"),
+    ]
     refine, readopt = refused
     assert [event.payload["reason"] for event in events if event.type == "PlanningRejected"] == [
-        "proposal_not_grounded"] * 2
+        "proposal_not_grounded"
+    ] * 2
     assert "exactly one open occurrence" in json.dumps(refine.payload["detail"])
     assert readopt.payload["rejection_codes"] == ["REPAIR_NOT_ALLOWED"]
-    assert "a repair must choose a different method or different parameters" in json.dumps(readopt.payload["detail"])
+    assert "a repair must choose a different method or different parameters" in json.dumps(
+        readopt.payload["detail"]
+    )
     # 错答什么都没提交：从头到尾只有第一版计划（"再试一次"不是新计划版本）。
     assert [event.payload["base_plan_revision"] for event in revisions] == [0]
     assert all(event.seq < refine.seq for event in revisions)
@@ -142,7 +186,9 @@ if str(_HTN_FIXTURES) not in sys.path:
 FIXTURE = _HTN_FIXTURES / "c1_repair_round"
 ROOT_TASK = "task-root"
 ROOT_DUTY = "obl-root"
-C1_FINDING = json.loads((FIXTURE / "root_review_rejected.json").read_text(encoding="utf-8"))["findings"][0]
+C1_FINDING = json.loads((FIXTURE / "root_review_rejected.json").read_text(encoding="utf-8"))[
+    "findings"
+][0]
 
 
 def _alt_method(method_id: str = "plan.alt"):
@@ -150,12 +196,24 @@ def _alt_method(method_id: str = "plan.alt"):
     from htn_world import method, out, param, step
 
     return method(
-        method_id, "plan.goal", parameter_schema="plan.goal.params",
+        method_id,
+        "plan.goal",
+        parameter_schema="plan.goal.params",
         steps=(
-            step("leaf2", "plan.leaf", TaskForm.PRIMITIVE, {"subject": param("subject")},
-                 capabilities=("plan.read",)),
-            step("review2", "plan.review", TaskForm.PRIMITIVE,
-                 {"subject": param("subject"), "result": out("leaf2", "result")}, capabilities=("plan.read",)),
+            step(
+                "leaf2",
+                "plan.leaf",
+                TaskForm.PRIMITIVE,
+                {"subject": param("subject")},
+                capabilities=("plan.read",),
+            ),
+            step(
+                "review2",
+                "plan.review",
+                TaskForm.PRIMITIVE,
+                {"subject": param("subject"), "result": out("leaf2", "result")},
+                capabilities=("plan.read",),
+            ),
         ),
         links=(("c-root", "review2", "c-reviewed"),),
         finalizer="review2",
@@ -169,19 +227,41 @@ def _adopted_root(world: Any) -> str:
     return str(draft.instance_id)
 
 
-def _replacement(world: Any, contract: Any, *, instance_id: str, revision: int, proposal_id: str = "p-replace") -> str:
+def _replacement(
+    world: Any, contract: Any, *, instance_id: str, revision: int, proposal_id: str = "p-replace"
+) -> str:
     from scripted_plans import plan_revision_proposal_step
 
     reference = contract.method_ref()
-    method_ref = {"id": reference.method_id, "version": reference.version, "content_hash": reference.content_hash}
+    method_ref = {
+        "id": reference.method_id,
+        "version": reference.version,
+        "content_hash": reference.content_hash,
+    }
     return plan_revision_proposal_step(
-        proposal_id=proposal_id, expected_plan_revision=revision,
-        read_set=[{"kind": "method", "id": reference.method_id, "semantic_revision": reference.version,
-                   "content_hash": reference.content_hash}],
+        proposal_id=proposal_id,
+        expected_plan_revision=revision,
+        read_set=[
+            {
+                "kind": "method",
+                "id": reference.method_id,
+                "semantic_revision": reference.version,
+                "content_hash": reference.content_hash,
+            }
+        ],
         operations=[
-            {"op": "retire_method", "method_instance_id": instance_id,
-             "reason": "the root review rejected this instance's result"},
-            {"op": "refine", "goal_id": ROOT_TASK, "obligation_id": ROOT_DUTY, "method_ref": method_ref, "bindings": {}},
+            {
+                "op": "retire_method",
+                "method_instance_id": instance_id,
+                "reason": "the root review rejected this instance's result",
+            },
+            {
+                "op": "refine",
+                "goal_id": ROOT_TASK,
+                "obligation_id": ROOT_DUTY,
+                "method_ref": method_ref,
+                "bindings": {},
+            },
         ],
         rationale="replace the rejected method with the alternative",
     )

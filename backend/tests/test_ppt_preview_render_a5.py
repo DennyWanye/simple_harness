@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 """A-5 PPT visual preview render loop tests."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -78,7 +79,9 @@ def test_preview_disabled_by_config(monkeypatch: pytest.MonkeyPatch, tmp_path: P
         "ppt_render",
         SimpleNamespace(
             com_render_available=lambda: True,
-            render_pptx_to_pngs=lambda *a, **k: (_ for _ in ()).throw(AssertionError("render should not run")),
+            render_pptx_to_pngs=lambda *a, **k: (_ for _ in ()).throw(
+                AssertionError("render should not run")
+            ),
         ),
         raising=False,
     )
@@ -96,7 +99,9 @@ def test_preview_render_unavailable_ok(monkeypatch: pytest.MonkeyPatch, tmp_path
         "ppt_render",
         SimpleNamespace(
             com_render_available=lambda: False,
-            render_pptx_to_pngs=lambda *a, **k: (_ for _ in ()).throw(AssertionError("render should not run")),
+            render_pptx_to_pngs=lambda *a, **k: (_ for _ in ()).throw(
+                AssertionError("render should not run")
+            ),
         ),
         raising=False,
     )
@@ -114,4 +119,6 @@ def test_render_module_never_raises(monkeypatch: pytest.MonkeyPatch, tmp_path: P
     from deskpet.tools import ppt_render
 
     assert ppt_render.com_render_available() is False
-    assert ppt_render.render_pptx_to_pngs(str(tmp_path / "missing.pptx"), str(tmp_path / "out")) == []
+    assert (
+        ppt_render.render_pptx_to_pngs(str(tmp_path / "missing.pptx"), str(tmp_path / "out")) == []
+    )

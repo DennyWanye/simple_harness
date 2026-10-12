@@ -8,6 +8,7 @@
 
 留下的是秩序：不许出现可调用对象；条件必须是结构化节点，写成一段字符串或未知操作符照旧拒收。
 """
+
 from __future__ import annotations
 
 import pytest
@@ -43,20 +44,25 @@ def test_a_callable_is_still_refused_at_any_depth() -> None:
         reject_executable({"steps": [{"check": print}]}, "method_contract")
 
 
-@pytest.mark.parametrize("payload", [
-    "truth_value == 'TRUE'",
-    {"op": "python", "source": "return True"},
-    {"op": "all", "items": [{"op": "sql", "query": "SELECT 1 FROM tasks"}]},
-])
+@pytest.mark.parametrize(
+    "payload",
+    [
+        "truth_value == 'TRUE'",
+        {"op": "python", "source": "return True"},
+        {"op": "all", "items": [{"op": "sql", "query": "SELECT 1 FROM tasks"}]},
+    ],
+)
 def test_a_condition_is_structure_or_it_is_refused(payload: object) -> None:
     with pytest.raises(ContractError):
         parse_condition(payload)
 
 
 def test_a_constant_argument_is_data_and_may_say_anything() -> None:
-    condition = parse_condition({
-        "op": "predicate",
-        "predicate_ref": {"id": "p", "version": 1, "content_hash": "a" * 64},
-        "arguments": {"q": {"op": "constant", "value": "SELECT * FROM secrets"}},
-    })
+    condition = parse_condition(
+        {
+            "op": "predicate",
+            "predicate_ref": {"id": "p", "version": 1, "content_hash": "a" * 64},
+            "arguments": {"q": {"op": "constant", "value": "SELECT * FROM secrets"}},
+        }
+    )
     assert condition is not None

@@ -37,7 +37,9 @@ def test_search_gateway_factory_defaults_on_without_external_service(tmp_path):
 
 
 def test_research_v5_runtime_budgets_are_clamped_without_exposing_policy(tmp_path):
-    cfg = _load(tmp_path, """
+    cfg = _load(
+        tmp_path,
+        """
         [research_v5]
         soft_checkpoint_seconds = 1
         lease_seconds = 9999
@@ -47,7 +49,8 @@ def test_research_v5_runtime_budgets_are_clamped_without_exposing_policy(tmp_pat
         llm_output_token_budget = 9999999
         llm_cost_budget_micros = -5
         io_operation_budget = 1
-    """)
+    """,
+    )
     assert cfg.research_v5.soft_checkpoint_seconds == 30
     assert cfg.research_v5.lease_seconds == 600
     assert cfg.research_v5.auto_cap_seconds == 600
@@ -60,36 +63,44 @@ def test_research_v5_runtime_budgets_are_clamped_without_exposing_policy(tmp_pat
 
 
 def test_legacy_alias_only_overrides_when_explicit(tmp_path):
-    cfg = _load(tmp_path, """
+    cfg = _load(
+        tmp_path,
+        """
         [research]
         search_engines = ["duckduckgo"]
         searxng_url = "http://localhost:8080/search"
-    """)
+    """,
+    )
     assert cfg.search_gateway.providers == ["searxng", "duckduckgo"]
-    cfg = _load(tmp_path, """
+    cfg = _load(
+        tmp_path,
+        """
         [research]
         search_engines = ["duckduckgo"]
         [search_gateway]
         providers = ["baidu"]
-    """)
+    """,
+    )
     assert cfg.search_gateway.providers == ["baidu"]
 
 
-@pytest.mark.parametrize("body,code", [
-    ("[search_gateway]\nquick_total_timeout_s=-1", "SG-CONFIG-3"),
-    ("[search_gateway]\nmax_concurrency=7", "SG-CONFIG-4"),
-    ("[search_gateway]\nprovider_max_concurrency=0", "SG-CONFIG-8"),
-    ("[search_gateway]\nprovider_max_concurrency=7", "SG-CONFIG-8"),
-    ("[search_gateway]\nprovider_queue_max_wait_s=0", "SG-CONFIG-9"),
-    ("[search_gateway]\nempty_rescue_max_per_request=2", "SG-CONFIG-10"),
-    ('[search_gateway]\nsearxng_url="https://search.test/"', "SG-CONFIG-5"),
-    ("[search_gateway]\ncircuit_blocked_threshold=0", "SG-CONFIG-6"),
-    (
-        "[search_gateway]\ncircuit_timeout_probe_base_s=10\n"
-        "circuit_timeout_probe_max_s=2",
-        "SG-CONFIG-7",
-    ),
-])
+@pytest.mark.parametrize(
+    "body,code",
+    [
+        ("[search_gateway]\nquick_total_timeout_s=-1", "SG-CONFIG-3"),
+        ("[search_gateway]\nmax_concurrency=7", "SG-CONFIG-4"),
+        ("[search_gateway]\nprovider_max_concurrency=0", "SG-CONFIG-8"),
+        ("[search_gateway]\nprovider_max_concurrency=7", "SG-CONFIG-8"),
+        ("[search_gateway]\nprovider_queue_max_wait_s=0", "SG-CONFIG-9"),
+        ("[search_gateway]\nempty_rescue_max_per_request=2", "SG-CONFIG-10"),
+        ('[search_gateway]\nsearxng_url="https://search.test/"', "SG-CONFIG-5"),
+        ("[search_gateway]\ncircuit_blocked_threshold=0", "SG-CONFIG-6"),
+        (
+            "[search_gateway]\ncircuit_timeout_probe_base_s=10\ncircuit_timeout_probe_max_s=2",
+            "SG-CONFIG-7",
+        ),
+    ],
+)
 def test_invalid_search_gateway_config_fails_stably(tmp_path, body, code):
     with pytest.raises(ConfigError, match=code):
         _load(tmp_path, body)

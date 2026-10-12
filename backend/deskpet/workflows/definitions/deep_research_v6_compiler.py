@@ -52,7 +52,9 @@ def _extract_year(question: str) -> int:
     matches = sorted({int(value) for value in re.findall(r"(?<!\d)(20\d{2})(?!\d)", question)})
     if len(matches) != 1:
         raise ResearchSpecValidationError(
-            "spec_merge_conflict", "$.normalized_question", "official exact fact requires one explicit year"
+            "spec_merge_conflict",
+            "$.normalized_question",
+            "official exact fact requires one explicit year",
         )
     return matches[0]
 
@@ -82,23 +84,35 @@ def _scope() -> dict[str, Any]:
 def _time_scope(year: int, kind: str) -> dict[str, Any]:
     if kind == "instant":
         return {
-            "schema_version": 1, "kind": "instant", "start": None, "end": None,
-            "as_of": f"{year}-12-31", "label": f"{year} year end",
+            "schema_version": 1,
+            "kind": "instant",
+            "start": None,
+            "end": None,
+            "as_of": f"{year}-12-31",
+            "label": f"{year} year end",
         }
     return {
-        "schema_version": 1, "kind": "period", "start": f"{year}-01-01",
-        "end": f"{year}-12-31", "as_of": None, "label": f"{year} calendar year",
+        "schema_version": 1,
+        "kind": "period",
+        "start": f"{year}-01-01",
+        "end": f"{year}-12-31",
+        "as_of": None,
+        "label": f"{year} calendar year",
     }
 
 
 def _value_schema(definition: str) -> dict[str, Any]:
     person = {
-        "unit_id": "person", "symbol": "person",
-        "to_canonical_numerator": 1, "to_canonical_denominator": 1,
+        "unit_id": "person",
+        "symbol": "person",
+        "to_canonical_numerator": 1,
+        "to_canonical_denominator": 1,
     }
     ten_thousand = {
-        "unit_id": "ten_thousand_person", "symbol": "10k person",
-        "to_canonical_numerator": 10_000, "to_canonical_denominator": 1,
+        "unit_id": "ten_thousand_person",
+        "symbol": "10k person",
+        "to_canonical_numerator": 10_000,
+        "to_canonical_denominator": 1,
     }
     return {
         "schema_version": 1,
@@ -112,7 +126,12 @@ def _value_schema(definition: str) -> dict[str, Any]:
 
 
 def _scalar_payload(
-    *, key: str, label: str, definition: str, year: int, time_kind: str,
+    *,
+    key: str,
+    label: str,
+    definition: str,
+    year: int,
+    time_kind: str,
     source_constraint: Mapping[str, Any],
 ) -> dict[str, Any]:
     return {
@@ -131,32 +150,55 @@ def _scalar_payload(
 
 def _metric_payloads(question: str, year: int, source: Mapping[str, Any]) -> list[dict[str, Any]]:
     folded = question.casefold()
-    wants_total = any(token in folded for token in ("总人口", "人口总数", "total population", "population total"))
-    wants_births = any(token in folded for token in ("出生人口", "出生人数", "birth population", "number of births", "births"))
+    wants_total = any(
+        token in folded for token in ("总人口", "人口总数", "total population", "population total")
+    )
+    wants_births = any(
+        token in folded
+        for token in ("出生人口", "出生人数", "birth population", "number of births", "births")
+    )
     result: list[dict[str, Any]] = []
     # Contract order is semantic and deliberately independent of phrase order.
     if wants_total:
-        result.append(_scalar_payload(
-            key="population.total.year_end", label=f"{year} year-end total population",
-            definition="year_end_total_population", year=year, time_kind="instant",
-            source_constraint=source,
-        ))
+        result.append(
+            _scalar_payload(
+                key="population.total.year_end",
+                label=f"{year} year-end total population",
+                definition="year_end_total_population",
+                year=year,
+                time_kind="instant",
+                source_constraint=source,
+            )
+        )
     if wants_births:
-        result.append(_scalar_payload(
-            key="population.births.period", label=f"{year} births during year",
-            definition="births_during_period", year=year, time_kind="period",
-            source_constraint=source,
-        ))
+        result.append(
+            _scalar_payload(
+                key="population.births.period",
+                label=f"{year} births during year",
+                definition="births_during_period",
+                year=year,
+                time_kind="period",
+                source_constraint=source,
+            )
+        )
     if not result:
         raise ResearchSpecValidationError(
-            "spec_merge_conflict", "$.normalized_question", "no supported official exact metric found"
+            "spec_merge_conflict",
+            "$.normalized_question",
+            "no supported official exact metric found",
         )
     return result
 
 
 _IMMUTABLE_FIELDS = {
-    "kind", "subject_ids", "scope", "time_scope", "value_schema", "axes",
-    "item_schema", "selection",
+    "kind",
+    "subject_ids",
+    "scope",
+    "time_scope",
+    "value_schema",
+    "axes",
+    "item_schema",
+    "selection",
 }
 
 
@@ -173,7 +215,9 @@ def merge_requirement_candidates(
     base = [copy.deepcopy(dict(item)) for item in deterministic]
     if candidates is None:
         return base
-    if not isinstance(candidates, list) or any(not isinstance(item, Mapping) for item in candidates):
+    if not isinstance(candidates, list) or any(
+        not isinstance(item, Mapping) for item in candidates
+    ):
         return base
     by_key = {str(item["key"]): item for item in base}
     additions: list[dict[str, Any]] = []
@@ -194,7 +238,9 @@ def merge_requirement_candidates(
         for field in _IMMUTABLE_FIELDS:
             if field in candidate and candidate[field] != current.get(field):
                 raise ResearchSpecValidationError(
-                    "spec_merge_conflict", f"$.requirements[{key}].{field}", "candidate conflicts with deterministic base"
+                    "spec_merge_conflict",
+                    f"$.requirements[{key}].{field}",
+                    "candidate conflicts with deterministic base",
                 )
         if candidate.get("importance") == "required":
             current["importance"] = "required"
@@ -206,16 +252,33 @@ def merge_requirement_candidates(
                 current_source = current[nested]
                 rank = {"not_required": 0, "preferred": 1, "required": 2}
                 first_party = max(
-                    (current_source["first_party"], candidate_source.get("first_party", "not_required")),
+                    (
+                        current_source["first_party"],
+                        candidate_source.get("first_party", "not_required"),
+                    ),
                     key=lambda value: rank[value],
                 )
-                eligible = sorted(set(current_source["eligible_source_types"]) & set(candidate_source.get("eligible_source_types", current_source["eligible_source_types"])))
+                eligible = sorted(
+                    set(current_source["eligible_source_types"])
+                    & set(
+                        candidate_source.get(
+                            "eligible_source_types", current_source["eligible_source_types"]
+                        )
+                    )
+                )
                 if not eligible:
-                    raise ResearchSpecValidationError("spec_merge_conflict", f"$.requirements[{key}].source_constraint", "eligible source intersection is empty")
+                    raise ResearchSpecValidationError(
+                        "spec_merge_conflict",
+                        f"$.requirements[{key}].source_constraint",
+                        "eligible source intersection is empty",
+                    )
                 current_source["first_party"] = first_party
                 current_source["eligible_source_types"] = eligible
                 current_source["preferred_authority_ids"] = canonical_set(
-                    [*current_source["preferred_authority_ids"], *candidate_source.get("preferred_authority_ids", [])]
+                    [
+                        *current_source["preferred_authority_ids"],
+                        *candidate_source.get("preferred_authority_ids", []),
+                    ]
                 )
     return base + sorted(additions, key=lambda value: str(value["key"]))
 
@@ -228,7 +291,9 @@ def _build_spec(
     intent_type: str,
     payloads: Sequence[Mapping[str, Any]],
 ) -> ResearchSpecV1:
-    requirements: list[RequirementV1] = [build_requirement(payload, index) for index, payload in enumerate(payloads)]
+    requirements: list[RequirementV1] = [
+        build_requirement(payload, index) for index, payload in enumerate(payloads)
+    ]
     dimensions = []
     for index, requirement in enumerate(requirements):
         value = requirement.to_json()
@@ -245,23 +310,32 @@ def _build_spec(
                 "出生人口",
             ],
         }.get(str(value["key"]), [str(value["key"])])
-        dimensions.append({
-            "dimension_id": f"dim_{index:02d}",
-            "ordinal": index,
-            "requirement_ids": [value["requirement_id"]],
-            "search_concepts": sorted(concepts),
-            "time_scope": copy.deepcopy(value["time_scope"]),
-            "source_constraint": copy.deepcopy(value["source_constraint"]),
-        })
-    preferred = any("cn.nbs" in requirement.to_json()["source_constraint"]["preferred_authority_ids"] for requirement in requirements)
+        dimensions.append(
+            {
+                "dimension_id": f"dim_{index:02d}",
+                "ordinal": index,
+                "requirement_ids": [value["requirement_id"]],
+                "search_concepts": sorted(concepts),
+                "time_scope": copy.deepcopy(value["time_scope"]),
+                "source_constraint": copy.deepcopy(value["source_constraint"]),
+            }
+        )
+    preferred = any(
+        "cn.nbs" in requirement.to_json()["source_constraint"]["preferred_authority_ids"]
+        for requirement in requirements
+    )
     return ResearchSpecV1.create(
         normalized_question=question,
         intent_type=intent_type,
         answer_locale=answer_locale,
-        subjects=[{
-            "subject_id": "geo.cn", "label": "China",
-            "aliases": ["China", "中国"], "entity_type": "country",
-        }],
+        subjects=[
+            {
+                "subject_id": "geo.cn",
+                "label": "China",
+                "aliases": ["China", "中国"],
+                "entity_type": "country",
+            }
+        ],
         user_constraints={
             "schema_version": 1,
             "as_of_date": f"{year}-12-31",
@@ -419,9 +493,7 @@ def _comparison_axes(question: str) -> tuple[str, ...]:
     match = re.search(r"按\s*(.+?)\s*(?:六|6)个(?:轴|维度|方面)(?:进行)?(?:比较|对比)", question)
     if match:
         axes = tuple(
-            value.strip()
-            for value in re.split(r"[、,，/]", match.group(1))
-            if value.strip()
+            value.strip() for value in re.split(r"[、,，/]", match.group(1)) if value.strip()
         )
         if len(axes) == 6 and len(set(axes)) == 6:
             return axes
@@ -582,9 +654,7 @@ def _compile_top_n(
         as_of_date=as_of_date,
         subjects=[subject],
         deterministic_payloads=[payload],
-        dimension_specs=[
-            (0, ["AI products", "advantages", "disadvantages", "attention ranking"])
-        ],
+        dimension_specs=[(0, ["AI products", "advantages", "disadvantages", "attention ranking"])],
         llm_candidates=llm_candidates,
     )
 
@@ -697,9 +767,7 @@ def _compile_open_research(
             _claim_rule("counterevidence"),
             _claim_rule("uncertainty"),
         ],
-        "topic_facets": [
-            {"facet_id": "topic", "label": "Topic", "minimum_claims": 1}
-        ],
+        "topic_facets": [{"facet_id": "topic", "label": "Topic", "minimum_claims": 1}],
         "coverage_mode": "all_minima",
         "contradiction_policy": "surface",
     }
@@ -730,12 +798,22 @@ def compile_official_exact_fact(
     year = _extract_year(normalized)
     folded = normalized.casefold()
     if not any(token in folded for token in ("中国", "china")):
-        raise ResearchSpecValidationError("spec_merge_conflict", "$.subjects", "phase-1 compiler requires China")
-    preferred = any(token in folded for token in ("国家统计局", "national bureau of statistics", " nbs"))
+        raise ResearchSpecValidationError(
+            "spec_merge_conflict", "$.subjects", "phase-1 compiler requires China"
+        )
+    preferred = any(
+        token in folded for token in ("国家统计局", "national bureau of statistics", " nbs")
+    )
     source = _source_constraint(preferred)
     deterministic = _metric_payloads(normalized, year, source)
     merged = merge_requirement_candidates(deterministic, llm_candidates)
-    return _build_spec(normalized, answer_locale=answer_locale, year=year, intent_type="official_exact_fact", payloads=merged)
+    return _build_spec(
+        normalized,
+        answer_locale=answer_locale,
+        year=year,
+        intent_type="official_exact_fact",
+        payloads=merged,
+    )
 
 
 def compile_research_spec(
@@ -751,9 +829,12 @@ def compile_research_spec(
     folded = normalized.casefold()
     frozen_as_of = as_of_date or date.today().isoformat()
     if re.search(r"(?<!\d)20\d{2}(?!\d)", normalized) and any(
-        token in folded for token in ("总人口", "人口总数", "total population", "出生人口", "births")
+        token in folded
+        for token in ("总人口", "人口总数", "total population", "出生人口", "births")
     ):
-        return compile_official_exact_fact(normalized, answer_locale=answer_locale, llm_candidates=llm_candidates)
+        return compile_official_exact_fact(
+            normalized, answer_locale=answer_locale, llm_candidates=llm_candidates
+        )
     if any(token in folded for token in ("比较", "对比", "compare", " versus ", " vs ")):
         return _compile_comparison(
             normalized,
@@ -790,7 +871,11 @@ def compile_research_spec(
 
 
 __all__ = [
-    "COMPILER_POLICY_HASH", "COMPLETION_POLICY_HASH", "RENDER_PROFILE_HASH",
-    "compile_official_exact_fact", "compile_research_spec",
-    "merge_requirement_candidates", "normalize_question",
+    "COMPILER_POLICY_HASH",
+    "COMPLETION_POLICY_HASH",
+    "RENDER_PROFILE_HASH",
+    "compile_official_exact_fact",
+    "compile_research_spec",
+    "merge_requirement_candidates",
+    "normalize_question",
 ]

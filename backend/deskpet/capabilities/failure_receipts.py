@@ -60,16 +60,12 @@ def _required_text(value: object, name: str) -> str:
 
 def _digest(value: object, name: str) -> str:
     text = _required_text(value, name)
-    if len(text) != 64 or any(
-        character not in "0123456789abcdef" for character in text
-    ):
+    if len(text) != 64 or any(character not in "0123456789abcdef" for character in text):
         raise ValueError(f"{name} must be a lowercase SHA-256 digest")
     return text
 
 
-def _json_mapping(
-    value: Mapping[str, Any], name: str
-) -> Mapping[str, JsonValue]:
+def _json_mapping(value: Mapping[str, Any], name: str) -> Mapping[str, JsonValue]:
     try:
         encoded = canonical_json(dict(value))
         decoded = json.loads(encoded)
@@ -131,9 +127,7 @@ class CapabilityFailureReceipt:
         if fingerprint_json(dict(canonical_args)) != self.args_hash:
             raise ValueError("canonical args do not match args_hash")
         evidence_refs = tuple(
-            dict.fromkeys(
-                _required_text(item, "evidence_ref") for item in self.evidence_refs
-            )
+            dict.fromkeys(_required_text(item, "evidence_ref") for item in self.evidence_refs)
         )
         object.__setattr__(self, "canonical_args", canonical_args)
         object.__setattr__(self, "evidence_refs", evidence_refs)
@@ -165,17 +159,13 @@ class CapabilityFailureReceipt:
 
     @property
     def expected_receipt_ref(self) -> str:
-        return hashlib.sha256(
-            canonical_json(self.signed_payload).encode("utf-8")
-        ).hexdigest()
+        return hashlib.sha256(canonical_json(self.signed_payload).encode("utf-8")).hexdigest()
 
     def to_dict(self) -> dict[str, JsonValue]:
         return {"receipt_ref": self.receipt_ref, **self.signed_payload}
 
     @classmethod
-    def from_dict(
-        cls, value: Mapping[str, object]
-    ) -> CapabilityFailureReceipt:
+    def from_dict(cls, value: Mapping[str, object]) -> CapabilityFailureReceipt:
         canonical_args = value.get("canonical_args")
         if not isinstance(canonical_args, Mapping):
             raise ValueError("canonical_args must be an object")
@@ -191,18 +181,14 @@ class CapabilityFailureReceipt:
             pack_version=str(value.get("pack_version") or ""),
             manifest_hash=str(value.get("manifest_hash") or ""),
             tool_name=str(value.get("tool_name") or ""),
-            tool_spec_fingerprint=str(
-                value.get("tool_spec_fingerprint") or ""
-            ),
+            tool_spec_fingerprint=str(value.get("tool_spec_fingerprint") or ""),
             binding_scope=str(value.get("binding_scope") or ""),
             scope_key=str(value.get("scope_key") or ""),
             canonical_args=dict(canonical_args),
             args_hash=str(value.get("args_hash") or ""),
             error_code=str(value.get("error_code") or ""),
             error_fingerprint=str(value.get("error_fingerprint") or ""),
-            evidence_refs=tuple(
-                str(item) for item in value.get("evidence_refs", ()) or ()
-            ),
+            evidence_refs=tuple(str(item) for item in value.get("evidence_refs", ()) or ()),
         )
 
 
@@ -252,9 +238,7 @@ class CapabilityFailureReceiptIssuer:
             "error_fingerprint": str(error_fingerprint),
             "evidence_refs": list(dict.fromkeys(str(item) for item in evidence_refs)),
         }
-        receipt_ref = hashlib.sha256(
-            canonical_json(unsigned).encode("utf-8")
-        ).hexdigest()
+        receipt_ref = hashlib.sha256(canonical_json(unsigned).encode("utf-8")).hexdigest()
         return CapabilityFailureReceipt(
             receipt_ref=receipt_ref,
             root_run_id=str(root_run_id),
@@ -274,9 +258,7 @@ class CapabilityFailureReceiptIssuer:
             args_hash=args_hash,
             error_code=str(error_code),
             error_fingerprint=str(error_fingerprint),
-            evidence_refs=tuple(
-                dict.fromkeys(str(item) for item in evidence_refs)
-            ),
+            evidence_refs=tuple(dict.fromkeys(str(item) for item in evidence_refs)),
         )
 
 

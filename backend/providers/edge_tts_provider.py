@@ -7,6 +7,7 @@ P2-2-M2: 新增 synthesize_pcm_stream() —— edge-tts 只出 MP3，前端实�
 播放需要 PCM16 才能做抖动缓冲 / RMS 口型 / barge-in 瞬断，所以走
 ffmpeg 子进程管线把 MP3 流式解成 s16le 24kHz mono。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -98,15 +99,22 @@ class EdgeTTSProvider:
         ffmpeg = resolve_ffmpeg_path()
         if ffmpeg is None:
             raise RuntimeError(
-                "ffmpeg not found — run scripts/setup_ffmpeg.ps1 or set "
-                "DESKPET_FFMPEG env var."
+                "ffmpeg not found — run scripts/setup_ffmpeg.ps1 or set DESKPET_FFMPEG env var."
             )
 
         cmd = [
             ffmpeg,
-            "-hide_banner", "-loglevel", "error",
-            "-i", "pipe:0",
-            "-f", "s16le", "-ar", "24000", "-ac", "1",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-i",
+            "pipe:0",
+            "-f",
+            "s16le",
+            "-ar",
+            "24000",
+            "-ac",
+            "1",
             "pipe:1",
         ]
 

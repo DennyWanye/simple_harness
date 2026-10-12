@@ -13,25 +13,41 @@ from deskpet.retrieval.search_gateway import SearchGateway
 
 class _Provider:
     capabilities = frozenset({"html"})
+
     def __init__(self, name, delay=0, rows=1):
         self.name, self.delay, self.rows = name, delay, rows
         self.calls = 0
-    async def is_available(self): return True
+
+    async def is_available(self):
+        return True
+
     async def search(self, request, budget, client):
         self.calls += 1
         await asyncio.sleep(self.delay)
-        return [RetrievalCandidate(
-            stable_id=f"{self.name}-{i}", url=f"https://{self.name}{i}.test/a",
-            canonical_url=f"https://{self.name}{i}.test/a", title=f"{request.query} {self.name} {i}",
-            provider=self.name, providers=(self.name,), provider_rank=i + 1,
-            searched_at="2026-07-14T00:00:00+00:00",
-        ) for i in range(self.rows)]
+        return [
+            RetrievalCandidate(
+                stable_id=f"{self.name}-{i}",
+                url=f"https://{self.name}{i}.test/a",
+                canonical_url=f"https://{self.name}{i}.test/a",
+                title=f"{request.query} {self.name} {i}",
+                provider=self.name,
+                providers=(self.name,),
+                provider_rank=i + 1,
+                searched_at="2026-07-14T00:00:00+00:00",
+            )
+            for i in range(self.rows)
+        ]
 
 
 @pytest.mark.asyncio
 async def test_gateway_batches_deterministically_and_caches_success():
-    cfg = replace(SearchGatewayConfig(), providers=["duckduckgo", "baidu"], quick_min_results=2, quick_min_domains=2)
-    ddg, baidu = _Provider("duckduckgo", delay=.01), _Provider("baidu", rows=1)
+    cfg = replace(
+        SearchGatewayConfig(),
+        providers=["duckduckgo", "baidu"],
+        quick_min_results=2,
+        quick_min_domains=2,
+    )
+    ddg, baidu = _Provider("duckduckgo", delay=0.01), _Provider("baidu", rows=1)
     gateway = SearchGateway(config=cfg, providers=[ddg, baidu], client=httpx.AsyncClient())
     try:
         first = await gateway.search(SearchRequest("hello", max_results=5))
@@ -47,12 +63,15 @@ async def test_gateway_batches_deterministically_and_caches_success():
 
 @pytest.mark.asyncio
 async def test_concurrent_request_diagnostics_do_not_cross_talk():
-    cfg = replace(SearchGatewayConfig(), providers=["duckduckgo"], quick_min_results=1, quick_min_domains=1)
+    cfg = replace(
+        SearchGatewayConfig(), providers=["duckduckgo"], quick_min_results=1, quick_min_domains=1
+    )
     provider = _Provider("duckduckgo")
     gateway = SearchGateway(config=cfg, providers=[provider], client=httpx.AsyncClient())
     try:
         one, two = await asyncio.gather(
-            gateway.search(SearchRequest("one")), gateway.search(SearchRequest("two")),
+            gateway.search(SearchRequest("one")),
+            gateway.search(SearchRequest("two")),
         )
     finally:
         await gateway.client.aclose()
@@ -71,7 +90,9 @@ async def test_tool_registry_awaits_production_async_web_search(monkeypatch):
 
     gateway = _Provider("duckduckgo")
     search = asyncio.Future()
-    search.set_result(SearchResponse("query", tuple(await gateway.search(SearchRequest("query"), None, None))))
+    search.set_result(
+        SearchResponse("query", tuple(await gateway.search(SearchRequest("query"), None, None)))
+    )
     fake_gateway = type("Gateway", (), {"search": lambda self, request: search})()
     monkeypatch.setattr(runtime, "get_default_gateway", lambda: fake_gateway)
     registry = ToolRegistry()
@@ -101,9 +122,13 @@ async def test_research_v2_adapter_returns_response_while_v1_stays_list(monkeypa
 
 
 class AsyncSearch:
-    def __init__(self, response): self.response = response
+    def __init__(self, response):
+        self.response = response
+
     def __call__(self, request):
-        async def _result(): return self.response
+        async def _result():
+            return self.response
+
         return _result()
 
 

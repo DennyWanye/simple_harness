@@ -317,7 +317,8 @@ class AssuranceTick:
         """The account's recorded scope (``task`` / ``mission`` / ``global``) — read from the
         accounts table, not guessed from the id's spelling (V40, 核验 opt.183 建议 S8)."""
         row = self.store.connection.execute(
-            "SELECT scope FROM budget_accounts WHERE account_id=?", (account_id,)).fetchone()
+            "SELECT scope FROM budget_accounts WHERE account_id=?", (account_id,)
+        ).fetchone()
         return None if row is None else str(row[0])
 
     def _budget_can_still_change(self, account_id: str, mission_id: str) -> bool:
@@ -362,20 +363,27 @@ class AssuranceTick:
             "requested": error.requested,
             "remaining": error.remaining,
         }
-        task_id = self._review_owner_task(claim) if self._account_scope(error.account_id) == "task" else None
+        task_id = (
+            self._review_owner_task(claim)
+            if self._account_scope(error.account_id) == "task"
+            else None
+        )
         task = self.store.get_task(task_id) if task_id is not None else None
         try:
             if task is not None and task.status not in TERMINAL_TASK:
                 self.orchestrator._commit_stop_task(
-                    task_id, stop_reason=MissionStopReason.BUDGET_EXHAUSTED, detail=detail)
+                    task_id, stop_reason=MissionStopReason.BUDGET_EXHAUSTED, detail=detail
+                )
             else:
                 self.orchestrator._commit_fail_mission(
-                    claim.mission_id, stop_reason=MissionStopReason.BUDGET_EXHAUSTED, detail=detail)
+                    claim.mission_id, stop_reason=MissionStopReason.BUDGET_EXHAUSTED, detail=detail
+                )
         except CommitRejected:
             # the step cannot be stopped where it stands: the Mission ends instead
             try:
                 self.orchestrator._commit_fail_mission(
-                    claim.mission_id, stop_reason=MissionStopReason.BUDGET_EXHAUSTED, detail=detail)
+                    claim.mission_id, stop_reason=MissionStopReason.BUDGET_EXHAUSTED, detail=detail
+                )
             except CommitRejected:
                 return
         self._release_after.add(claim.mission_id)
@@ -384,7 +392,7 @@ class AssuranceTick:
         """The step a review-import work item belongs to (None for other consumers)."""
         if claim.consumer != "REVIEW" or not claim.work_key.startswith("review-import:"):
             return None
-        review_key = claim.work_key[len("review-import:"):].rsplit(":", 1)[0]
+        review_key = claim.work_key[len("review-import:") :].rsplit(":", 1)[0]
         row = self.store.connection.execute(
             "SELECT owner_task_id FROM assurance_review_bindings WHERE review_key=?", (review_key,)
         ).fetchone()
@@ -406,8 +414,9 @@ class AssuranceTick:
                 # 半小时——账户上没有任何还活着的预留，额度不会变，等是等不到的。等待只在
                 # "有在跑的东西可能把额度还回来"时才有意义；否则这一步按额度用完结束，
                 # 与执行者在准入处被拒的处理相同。
-                if (isinstance(error, BudgetExhausted)
-                        and not self._budget_can_still_change(error.account_id, claim.mission_id)):
+                if isinstance(error, BudgetExhausted) and not self._budget_can_still_change(
+                    error.account_id, claim.mission_id
+                ):
                     self._end_on_exhausted_budget(claim, error)
                 self.work.wait(
                     claim,

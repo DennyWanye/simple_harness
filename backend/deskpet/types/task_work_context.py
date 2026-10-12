@@ -20,9 +20,7 @@ UserContinuationState = Literal["pending", "bound", "failed"]
 
 
 def _stable_id(prefix: str, *parts: str) -> str:
-    digest = hashlib.sha256(
-        "\0".join(str(part) for part in parts).encode("utf-8")
-    ).hexdigest()
+    digest = hashlib.sha256("\0".join(str(part) for part in parts).encode("utf-8")).hexdigest()
     return f"{prefix}-{digest[:32]}"
 
 
@@ -54,6 +52,7 @@ class TaskWorkContext:
 @dataclass(frozen=True, slots=True)
 class PrimaryRunWorkContext:
     """An unscoped primary Run carries no project/workspace authority."""
+
     session_id: str
     root_run_id: str
     task_scope_id: None = None
@@ -64,8 +63,13 @@ class PrimaryRunWorkContext:
     def __post_init__(self) -> None:
         if not self.session_id or not self.root_run_id:
             raise ValueError("primary run identity is required")
-        if (self.task_scope_id is not None or self.workspace_root is not None
-                or self.workspace_source != "none" or type(self.binding_version) is not int or self.binding_version != 0):
+        if (
+            self.task_scope_id is not None
+            or self.workspace_root is not None
+            or self.workspace_source != "none"
+            or type(self.binding_version) is not int
+            or self.binding_version != 0
+        ):
             raise ValueError("unscoped primary context cannot carry workspace authority")
 
 
@@ -163,17 +167,11 @@ class QueuedUserContinuation:
             raise ValueError("queued continuation must reserve a later boundary")
         if self.status not in {"pending", "bound", "failed"}:
             raise ValueError(f"unsupported queued continuation state: {self.status}")
-        if self.status == "pending" and (
-            self.settled_at is not None or self.error is not None
-        ):
+        if self.status == "pending" and (self.settled_at is not None or self.error is not None):
             raise ValueError("a pending continuation cannot be settled")
-        if self.status == "bound" and (
-            self.settled_at is None or self.error is not None
-        ):
+        if self.status == "bound" and (self.settled_at is None or self.error is not None):
             raise ValueError("a bound continuation requires a clean timestamp")
-        if self.status == "failed" and (
-            self.settled_at is None or not self.error
-        ):
+        if self.status == "failed" and (self.settled_at is None or not self.error):
             raise ValueError("a failed continuation requires error evidence")
 
 
@@ -221,9 +219,9 @@ class TaskWorkContextResolver:
         elif require_workspace or create_default:
             if self._default_root is None:
                 raise RuntimeError("default workspace root is not configured")
-            selected = (
-                self._default_root / _safe_task_directory(task_scope_id)
-            ).resolve(strict=False)
+            selected = (self._default_root / _safe_task_directory(task_scope_id)).resolve(
+                strict=False
+            )
             source = "task_default"
             if create_default:
                 selected.mkdir(parents=True, exist_ok=True)

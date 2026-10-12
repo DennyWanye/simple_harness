@@ -23,8 +23,10 @@ def _insert(db: sqlite3.Connection, table: str, **values: Any) -> None:
             continue
         values[name] = {"INTEGER": 1, "REAL": 1.0}.get(kind.upper(), "a" * 64)
     columns = ",".join(values)
-    db.execute(f"INSERT INTO {table}({columns}) VALUES ({','.join('?' * len(values))})", tuple(values.values()))
-
+    db.execute(
+        f"INSERT INTO {table}({columns}) VALUES ({','.join('?' * len(values))})",
+        tuple(values.values()),
+    )
 
 
 TENANT = "tenant-a"
@@ -38,19 +40,41 @@ class _Library:
         self.seq = 0
 
     def mission(self, mission_id: str, status: str = "ACTIVE") -> None:
-        _insert(self.db, "missions", mission_id=mission_id, tenant_id=TENANT, status=status,
-                idempotency_key="idem-" + mission_id)
+        _insert(
+            self.db,
+            "missions",
+            mission_id=mission_id,
+            tenant_id=TENANT,
+            status=status,
+            idempotency_key="idem-" + mission_id,
+        )
 
     def status(self, mission_id: str, status: str) -> None:
         self.db.execute("UPDATE missions SET status=? WHERE mission_id=?", (status, mission_id))
 
-    def events(self, mission_id: str, count: int, type_: str = "HeartbeatReceived",
-               payload: dict | None = None) -> None:
+    def events(
+        self,
+        mission_id: str,
+        count: int,
+        type_: str = "HeartbeatReceived",
+        payload: dict | None = None,
+    ) -> None:
         for _ in range(count):
             self.seq += 1
-            _insert(self.db, "events", seq=self.seq, event_id=f"e{self.seq}", idempotency_key=f"k{self.seq}",
-                    type=type_, mission_id=mission_id, task_id="task-1", attempt_id=None, actor_type="human",
-                    payload_json=json.dumps(payload or {"secret": "never leaves"}), created_at=float(self.seq))
+            _insert(
+                self.db,
+                "events",
+                seq=self.seq,
+                event_id=f"e{self.seq}",
+                idempotency_key=f"k{self.seq}",
+                type=type_,
+                mission_id=mission_id,
+                task_id="task-1",
+                attempt_id=None,
+                actor_type="human",
+                payload_json=json.dumps(payload or {"secret": "never leaves"}),
+                created_at=float(self.seq),
+            )
 
 
 @pytest.fixture()
@@ -72,8 +96,14 @@ def test_first_sight_carries_no_events_and_says_truncated(library) -> None:
     lib, pump = library
     lib.mission("m1")
     lib.events("m1", 3)
-    assert _one(pump) == {"mission_id": "m1", "status": "ACTIVE", "last_seq": 3,
-                          "from_seq": 3, "events": [], "truncated": True}
+    assert _one(pump) == {
+        "mission_id": "m1",
+        "status": "ACTIVE",
+        "last_seq": 3,
+        "from_seq": 3,
+        "events": [],
+        "truncated": True,
+    }
 
 
 def test_new_events_ride_along_whitelisted(library) -> None:
@@ -84,8 +114,14 @@ def test_new_events_ride_along_whitelisted(library) -> None:
     change = _one(pump)
     assert (change["from_seq"], change["last_seq"], change["truncated"]) == (0, 3, False)
     assert [e["seq"] for e in change["events"]] == [1, 2, 3]
-    assert change["events"][0] == {"seq": 1, "type": "HeartbeatReceived", "created_at": 1.0,
-                                   "task_id": "task-1", "attempt_id": None, "actor_type": "human"}
+    assert change["events"][0] == {
+        "seq": 1,
+        "type": "HeartbeatReceived",
+        "created_at": 1.0,
+        "task_id": "task-1",
+        "attempt_id": None,
+        "actor_type": "human",
+    }
     assert "never leaves" not in json.dumps(change) and "payload" not in json.dumps(change)
     assert pump._changes() == []
 
@@ -114,8 +150,14 @@ def test_a_status_change_alone_carries_no_events(library) -> None:
     lib.events("m1", 2)
     pump._changes()
     lib.status("m1", "COMPLETED")
-    assert _one(pump) == {"mission_id": "m1", "status": "COMPLETED", "last_seq": 2,
-                          "from_seq": 2, "events": [], "truncated": False}
+    assert _one(pump) == {
+        "mission_id": "m1",
+        "status": "COMPLETED",
+        "last_seq": 2,
+        "from_seq": 2,
+        "events": [],
+        "truncated": False,
+    }
 
 
 def test_events_after_the_announced_seq_do_not_ride_along(library, monkeypatch) -> None:
@@ -177,8 +219,11 @@ def test_pump_opens_the_library_read_only(library, monkeypatch) -> None:
 
     uris: list[str] = []
     real_connect = sqlite3.connect
-    monkeypatch.setattr(pump_module.sqlite3, "connect",
-                        lambda target, *a, **k: uris.append(str(target)) or real_connect(target, *a, **k))
+    monkeypatch.setattr(
+        pump_module.sqlite3,
+        "connect",
+        lambda target, *a, **k: uris.append(str(target)) or real_connect(target, *a, **k),
+    )
     pump._changes()
     assert uris and all(u.startswith("file:") and u.endswith("?mode=ro") for u in uris)
 

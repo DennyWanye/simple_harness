@@ -18,9 +18,7 @@ _PATTERNS: tuple[_Pattern, ...] = (
     _Pattern("GITHUB_TOKEN", re.compile(r"\bghp_[A-Za-z0-9]{20,}\b")),
     _Pattern(
         "JWT",
-        re.compile(
-            r"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b"
-        ),
+        re.compile(r"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b"),
     ),
     _Pattern("AWS_KEY", re.compile(r"\b(?:AKIA|ASIA)[A-Z0-9]{16}\b")),
     _Pattern("CREDIT_CARD", re.compile(r"\b(?:\d[ -]?){13,19}\b")),

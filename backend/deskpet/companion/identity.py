@@ -35,10 +35,7 @@ def _namespaced_hash(namespace: str, stable_id: str) -> str:
     if not value:
         raise ValueError("stable identity is required")
     return hashlib.sha256(
-        _IDENTITY_DOMAIN
-        + namespace.encode("ascii")
-        + b"\0"
-        + value.encode("utf-8")
+        _IDENTITY_DOMAIN + namespace.encode("ascii") + b"\0" + value.encode("utf-8")
     ).hexdigest()
 
 
@@ -125,13 +122,9 @@ def _read_validated_identity_file(identity_path: Path) -> str:
 
 
 class OwnerExecutableProjectionPort(Protocol):
-    async def close_owner_ingress(
-        self, owner: OwnerRef, *, binding_epoch: int
-    ) -> object: ...
+    async def close_owner_ingress(self, owner: OwnerRef, *, binding_epoch: int) -> object: ...
 
-    async def cleanup_owner_runtime(
-        self, owner: OwnerRef, *, binding_epoch: int
-    ) -> object: ...
+    async def cleanup_owner_runtime(self, owner: OwnerRef, *, binding_epoch: int) -> object: ...
 
     async def activate_owner(
         self, owner: OwnerRef, *, owner_key: str, binding_epoch: int
@@ -149,14 +142,10 @@ class OwnerRuntimeLifecyclePort(Protocol):
 class ReadyOwnerProjection:
     """Task 2 default; Task 7 replaces this with the production projection."""
 
-    async def close_owner_ingress(
-        self, owner: OwnerRef, *, binding_epoch: int
-    ) -> object:
+    async def close_owner_ingress(self, owner: OwnerRef, *, binding_epoch: int) -> object:
         return {"ready": True}
 
-    async def cleanup_owner_runtime(
-        self, owner: OwnerRef, *, binding_epoch: int
-    ) -> object:
+    async def cleanup_owner_runtime(self, owner: OwnerRef, *, binding_epoch: int) -> object:
         return {"ready": True}
 
     async def activate_owner(
@@ -219,18 +208,13 @@ class ProfileBindingCoordinator:
         if owner_changed:
             # A profile switch is unready before any close/cleanup awaits.
             try:
-                self.gate.unbind(
-                    expected_binding_epoch=int(previous["binding_epoch"])
-                )
+                self.gate.unbind(expected_binding_epoch=int(previous["binding_epoch"]))
             except ValueError:
                 # A new process starts unready even when the durable binding
                 # still says ready; there is no in-process epoch to clear.
                 if self.gate.ready:
                     raise
-        if (
-            self.runtime is not None
-            and owner_changed
-        ):
+        if self.runtime is not None and owner_changed:
             await self.runtime.pause()
         async with self.barrier.exclusive():
             if previous_owner is not None and previous_owner != owner:
@@ -259,9 +243,7 @@ class ProfileBindingCoordinator:
                 owner_key=self.owner_key(owner),
                 binding_epoch=binding_epoch,
             )
-            if isinstance(activation, Mapping) and not bool(
-                activation.get("ready", False)
-            ):
+            if isinstance(activation, Mapping) and not bool(activation.get("ready", False)):
                 raise RuntimeError("owner_projection_not_ready")
             if self.runtime is not None:
                 await self.runtime.recover(owner)
@@ -282,9 +264,7 @@ class ProfileBindingCoordinator:
                             else await self.runtime.start(owner)
                         )
                         if not started:
-                            raise RuntimeError(
-                                "companion_runtime_not_started"
-                            )
+                            raise RuntimeError("companion_runtime_not_started")
                         runtime_started = True
                     self.store.mark_profile_binding_ready(
                         device_scope=self.device_scope,
@@ -347,9 +327,7 @@ class ProfileBindingCoordinator:
                 control_facts=control_facts,
             )
         owner = result["owner"]
-        await self.projection.cleanup_owner_runtime(
-            owner, binding_epoch=expected_binding_epoch
-        )
+        await self.projection.cleanup_owner_runtime(owner, binding_epoch=expected_binding_epoch)
         self._process_owner = None
 
     async def delete_current_profile(self, *, reason_code: str) -> bool:
@@ -367,15 +345,9 @@ class ProfileBindingCoordinator:
         if self.runtime is not None:
             await self.runtime.pause()
         async with self.barrier.exclusive():
-            await self.projection.close_owner_ingress(
-                owner, binding_epoch=binding_epoch
-            )
-            deleted = self.store.delete_profile_generation(
-                owner, reason_code=reason_code
-            )
-        await self.projection.cleanup_owner_runtime(
-            owner, binding_epoch=binding_epoch
-        )
+            await self.projection.close_owner_ingress(owner, binding_epoch=binding_epoch)
+            deleted = self.store.delete_profile_generation(owner, reason_code=reason_code)
+        await self.projection.cleanup_owner_runtime(owner, binding_epoch=binding_epoch)
         self._process_owner = None
         return bool(deleted)
 

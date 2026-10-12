@@ -85,9 +85,7 @@ class AdmissionTaskGrantRuntime:
             access = {"read", "working_directory"}
             if selected & {"filesystem_write", "desktop"}:
                 access.add("write")
-            selectors.append(
-                ResourceSelector.filesystem(workspace, *sorted(access))
-            )
+            selectors.append(ResourceSelector.filesystem(workspace, *sorted(access)))
         if selected & {"shell", "process", "application"}:
             selectors.append(
                 ResourceSelector(
@@ -153,10 +151,7 @@ class AdmissionTaskGrantRuntime:
                     ("read", "write"),
                 )
             )
-        unique = {
-            (item.kind, item.canonical_value, item.access): item
-            for item in selectors
-        }
+        unique = {(item.kind, item.canonical_value, item.access): item for item in selectors}
         return tuple(unique[key] for key in sorted(unique, key=str))
 
     async def authorize(
@@ -171,13 +166,7 @@ class AdmissionTaskGrantRuntime:
         if not isinstance(raw_categories, list):
             return None
         categories = tuple(
-            sorted(
-                {
-                    str(item)
-                    for item in raw_categories
-                    if str(item) in _CATEGORY_PERMISSIONS
-                }
-            )
+            sorted({str(item) for item in raw_categories if str(item) in _CATEGORY_PERMISSIONS})
         )
         if not categories:
             return None

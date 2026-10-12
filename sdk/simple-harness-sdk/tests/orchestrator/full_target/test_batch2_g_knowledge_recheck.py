@@ -12,6 +12,7 @@
 
 **改坏检验**：去掉交出去之前那道门 → 第一条变红（正文照样返回）。
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -29,17 +30,40 @@ MISSION = "mission-recheck"
 
 def _mission() -> Mission:
     return Mission(
-        id=MISSION, goal="g", success_criteria=("ok",), stop_conditions=(), allowed_tools=(),
-        risk_level="sandbox", budget=Budget(max_tokens=1000, max_attempts=2), tenant_id="t",
-        status=MissionStatus.CREATED, created_at=1.0, version=1, idempotency_key=MISSION)
+        id=MISSION,
+        goal="g",
+        success_criteria=("ok",),
+        stop_conditions=(),
+        allowed_tools=(),
+        risk_level="sandbox",
+        budget=Budget(max_tokens=1000, max_attempts=2),
+        tenant_id="t",
+        status=MissionStatus.CREATED,
+        created_at=1.0,
+        version=1,
+        idempotency_key=MISSION,
+    )
 
 
 def _record(kid: str = "k1") -> KnowledgeRecord:
     return KnowledgeRecord(
-        id=kid, mission_id=MISSION, claim_id=kid, content="空输入返回空列表。" * 3, type="statement",
-        status="VERIFIED", version=1, key="impl_a.empty_input", stance="affirms", proposed_by="agent",
-        source_task="t1", source_attempt="t1:attempt-1", source_result="r1",
-        evidence=("pytest:tests/x.py",), verifier={"basis": "review_confirmed"}, created_at=1.0)
+        id=kid,
+        mission_id=MISSION,
+        claim_id=kid,
+        content="空输入返回空列表。" * 3,
+        type="statement",
+        status="VERIFIED",
+        version=1,
+        key="impl_a.empty_input",
+        stance="affirms",
+        proposed_by="agent",
+        source_task="t1",
+        source_attempt="t1:attempt-1",
+        source_result="r1",
+        evidence=("pytest:tests/x.py",),
+        verifier={"basis": "review_confirmed"},
+        created_at=1.0,
+    )
 
 
 @pytest.fixture
@@ -55,7 +79,9 @@ def test_knowledge_the_gate_refuses_at_handover_is_not_served(store, monkeypatch
     """目录判它当前；交出去之前那道门说不能交 → 没有正文，只有原因。每次读都过一次门。"""
     from agent_orchestrator.orchestrator.assurance_point_use import EvidenceClaim
 
-    monkeypatch.setattr(knowledge_tools, "knowledge_standing", lambda *_a, **_k: standing_module.CURRENT)
+    monkeypatch.setattr(
+        knowledge_tools, "knowledge_standing", lambda *_a, **_k: standing_module.CURRENT
+    )
     listing = read_knowledge_tool(store, MISSION, "knowledge_list", {"limit": 5})
     assert [row["id"] for row in listing["items"] if row["layer"] == "verified"] == ["k1"]
 
@@ -66,7 +92,9 @@ def test_knowledge_the_gate_refuses_at_handover_is_not_served(store, monkeypatch
         return ("knowledge:k1@1:STALE:acceptance_not_current",)
 
     reply = read_knowledge_tool(store, MISSION, "knowledge_read", {"id": "k1"}, handover=gate)
-    assert asked == [EvidenceClaim.knowledge("k1", 1)], "the handover must pass the gate, not reuse the catalogue"
+    assert asked == [EvidenceClaim.knowledge("k1", 1)], (
+        "the handover must pass the gate, not reuse the catalogue"
+    )
     assert reply["content"] is None and reply["sha256"] is None
     assert reply["standing"] == "knowledge:k1@1:STALE:acceptance_not_current"
     assert reply["id"] == "k1" and reply["ref"] == "k1@1" and reply["layer"] == "verified"
@@ -76,7 +104,9 @@ def test_knowledge_the_gate_refuses_at_handover_is_not_served(store, monkeypatch
 
 
 def test_content_is_not_handed_over_without_the_gate(store, monkeypatch):
-    monkeypatch.setattr(knowledge_tools, "knowledge_standing", lambda *_a, **_k: standing_module.CURRENT)
+    monkeypatch.setattr(
+        knowledge_tools, "knowledge_standing", lambda *_a, **_k: standing_module.CURRENT
+    )
     with pytest.raises(ValueError, match="hand-over gate"):
         read_knowledge_tool(store, MISSION, "knowledge_read", {"id": "k1"})
 
@@ -95,7 +125,11 @@ def test_an_unknown_id_is_still_refused(store):
 
 
 def test_the_current_entry_is_served_whole_when_the_gate_lets_it_through(store, monkeypatch):
-    monkeypatch.setattr(knowledge_tools, "knowledge_standing", lambda *_a, **_k: standing_module.CURRENT)
-    reply = read_knowledge_tool(store, MISSION, "knowledge_read", {"id": "k1"}, handover=lambda claim: ())
+    monkeypatch.setattr(
+        knowledge_tools, "knowledge_standing", lambda *_a, **_k: standing_module.CURRENT
+    )
+    reply = read_knowledge_tool(
+        store, MISSION, "knowledge_read", {"id": "k1"}, handover=lambda claim: ()
+    )
     assert reply["content"] == _record().content and "standing" not in reply
     assert reply["ref"] == "k1@1" and reply["layer"] == "verified"

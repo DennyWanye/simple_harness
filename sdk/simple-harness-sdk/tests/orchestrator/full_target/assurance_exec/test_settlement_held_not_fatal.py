@@ -29,20 +29,27 @@ def _quick(monkeypatch):
 
 
 def test_assured_attempt_with_open_settlement_holds_its_reservation(tmp_path):
-    provider = ReviewScript(worker_failures=[ProviderServerError(status_code=503)],
-                            repair=lambda request: retry_same_method(request) or planner_reply(request))
+    provider = ReviewScript(
+        worker_failures=[ProviderServerError(status_code=503)],
+        repair=lambda request: retry_same_method(request) or planner_reply(request),
+    )
 
     async def run() -> None:
         async with reviewed_mission(tmp_path, provider) as case:
             mission = await case.settle()
             # 循环没有被结清错误打断：同一做法重试一次后任务完成。
             assert str(mission.status.value) == "COMPLETED", mission.final_report
-            [held] = [json.loads(row[0]) for row in case.store.connection.execute(
-                "SELECT payload_json FROM events WHERE mission_id=? AND type='ReservationHeld'",
-                (case.mission_id,)).fetchall()]
+            [held] = [
+                json.loads(row[0])
+                for row in case.store.connection.execute(
+                    "SELECT payload_json FROM events WHERE mission_id=? AND type='ReservationHeld'",
+                    (case.mission_id,),
+                ).fetchall()
+            ]
             assert held["reason"] == "unknown_usage" and held["subject_id"].endswith(":attempt-1")
             [state] = case.store.connection.execute(
-                "SELECT state FROM budget_reservations WHERE subject_id=?", (held["subject_id"],)).fetchone()
+                "SELECT state FROM budget_reservations WHERE subject_id=?", (held["subject_id"],)
+            ).fetchone()
             assert state != "RELEASED"
             counted = [e.payload for e in case.events("ReservationCountedAtUpperBound")]
             assert any(held["subject_id"] in json.dumps(item) for item in counted), counted

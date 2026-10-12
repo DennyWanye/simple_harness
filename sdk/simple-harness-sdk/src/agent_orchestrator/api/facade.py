@@ -81,6 +81,7 @@ NOT_FOUND = "no such object for this caller"
 #: Who issued a planning grant (2026-09-25): a person, or the Host under auto mode.
 PLANNING_APPROVAL_SOURCES = frozenset({"HUMAN", "HOST_AUTO_PERMISSION"})
 
+
 class FacadeError(ValueError):
     """A refused request; ``code`` is stable for products to map."""
 
@@ -94,6 +95,7 @@ def _native_root(method):
     def checked(self, *args, **kwargs):
         self._require_native_root()
         return method(self, *args, **kwargs)
+
     return checked
 
 
@@ -127,14 +129,22 @@ class MissionControlV1:
         """非披露诊断（原计划 §10.3）：只有状态、能否执行、是否要当前认证、匿名阻塞码。"""
         gate = self._orchestrator.commit._assurance_root_gate
         if gate is None:
-            return {"state": "NOT_INSTALLED", "execution_allowed": False,
-                    "current_authentication_required": True}
+            return {
+                "state": "NOT_INSTALLED",
+                "execution_allowed": False,
+                "current_authentication_required": True,
+            }
         report = gate.diagnostic()
         # 第 2 批 A02：启动时安装 / 核对根失败 → 编排只开管理模式（隔离）；诊断如实说隔离，带阻塞码。
         code = getattr(self._orchestrator, "_assurance_quarantine_code", None)
         if code is not None:
-            report = {**report, "state": "QUARANTINED", "execution_allowed": False,
-                      "current_authentication_required": True, "blocking_code": str(code)}
+            report = {
+                **report,
+                "state": "QUARANTINED",
+                "execution_allowed": False,
+                "current_authentication_required": True,
+                "blocking_code": str(code),
+            }
         return report
 
     @_native_root
@@ -144,10 +154,18 @@ class MissionControlV1:
         from ..assurance.refs import AssuranceRef
 
         try:
-            body = fields(dict(command), {"mission_id", "command_id", "requirements_ref",
-                "candidate_mapping"},
-                {"completion_scope", "planning_subject", "result_ref", "purpose",
-                 "approval_source", "effect_key"})
+            body = fields(
+                dict(command),
+                {"mission_id", "command_id", "requirements_ref", "candidate_mapping"},
+                {
+                    "completion_scope",
+                    "planning_subject",
+                    "result_ref",
+                    "purpose",
+                    "approval_source",
+                    "effect_key",
+                },
+            )
             self._refuse_isolated(body["mission_id"])
             purpose = body.get("purpose", "CONTENT")
             # NEXT-TG-1.0 2B: the two operation reviews are approved on the effect
@@ -155,11 +173,17 @@ class MissionControlV1:
             # CHECK_POLICY_UNRESOLVED at submission — nobody could approve them).
             # 2026-10-01 (HTN 精简 片 A): METHOD_PLAN is approved on the planning subject
             # Task instead of a Scope — a method is proposed before any Scope exists.
-            if purpose not in ("CONTENT", "METHOD_PLAN", "MISSION_FINAL", "ACTION_PROPOSAL",
-                               "OPERATION_OUTCOME"):
+            if purpose not in (
+                "CONTENT",
+                "METHOD_PLAN",
+                "MISSION_FINAL",
+                "ACTION_PROPOSAL",
+                "OPERATION_OUTCOME",
+            ):
                 raise AssuranceError("CHECK_POLICY_APPROVAL_INVALID", str(purpose))
             if (purpose == "METHOD_PLAN") != (body.get("planning_subject") is not None) or (
-                    body.get("completion_scope") is None) != (purpose == "METHOD_PLAN"):
+                body.get("completion_scope") is None
+            ) != (purpose == "METHOD_PLAN"):
                 raise AssuranceError("CHECK_POLICY_APPROVAL_INVALID", str(purpose))
             # 2026-09-25: the Host says when it is the one approving (recorded as system)
             approval_source = body.get("approval_source", "HUMAN")
@@ -167,17 +191,26 @@ class MissionControlV1:
                 raise AssuranceError("CHECK_POLICY_APPROVAL_INVALID", str(approval_source))
             self._mission(body["mission_id"])
             ref = self._orchestrator.commit.approve_assurance_check_policy(
-                tenant_id=self._tenant, principal=self._principal,
-                mission_id=body["mission_id"], command_id=body["command_id"],
-                requirements_ref=AssuranceRef.from_json(body["requirements_ref"], kinds={"requirements"}),
-                completion_scope=None if body.get("completion_scope") is None else
-                    AssuranceRef.from_json(body["completion_scope"], kinds={"completion_scope"}),
-                planning_subject=None if body.get("planning_subject") is None else
-                    AssuranceRef.from_json(body["planning_subject"], kinds={"task"}),
-                candidate_mapping=tuple(CriterionPolicy.from_json(row)
-                    for row in array(body["candidate_mapping"], minimum=1)),
-                result_ref=None if body.get("result_ref") is None else
-                    AssuranceRef.from_json(body["result_ref"], kinds={"result"}),
+                tenant_id=self._tenant,
+                principal=self._principal,
+                mission_id=body["mission_id"],
+                command_id=body["command_id"],
+                requirements_ref=AssuranceRef.from_json(
+                    body["requirements_ref"], kinds={"requirements"}
+                ),
+                completion_scope=None
+                if body.get("completion_scope") is None
+                else AssuranceRef.from_json(body["completion_scope"], kinds={"completion_scope"}),
+                planning_subject=None
+                if body.get("planning_subject") is None
+                else AssuranceRef.from_json(body["planning_subject"], kinds={"task"}),
+                candidate_mapping=tuple(
+                    CriterionPolicy.from_json(row)
+                    for row in array(body["candidate_mapping"], minimum=1)
+                ),
+                result_ref=None
+                if body.get("result_ref") is None
+                else AssuranceRef.from_json(body["result_ref"], kinds={"result"}),
                 purpose=purpose,
                 effect_key=None if body.get("effect_key") is None else str(body["effect_key"]),
                 approval_source=approval_source,
@@ -186,19 +219,21 @@ class MissionControlV1:
         except AssuranceError as error:
             raise FacadeError(error.code, "check policy approval refused") from error
 
-
-
     # ------------------------------------------------------ assurance reads
     def _assurance_read(self, verb: str, body: Mapping[str, Any]) -> dict[str, Any]:
         """S25 read verbs: caller fixed at construction; the body never names it."""
         from .assurance import AssuranceReadError
 
         try:
-            api = self._orchestrator.assurance_read_api(tenant_id=self._tenant, principal=self._principal)
+            api = self._orchestrator.assurance_read_api(
+                tenant_id=self._tenant, principal=self._principal
+            )
             return getattr(api, verb)(dict(body))
         except AssuranceReadError as error:
             request_id = body.get("request_id") if isinstance(body, Mapping) else None
-            wire = error.to_json(request_id if isinstance(request_id, str) and request_id else "unknown")
+            wire = error.to_json(
+                request_id if isinstance(request_id, str) and request_id else "unknown"
+            )
             raised = FacadeError(error.code, str(error))
             raised.wire = wire  # type: ignore[attr-defined]
             raise raised from error
@@ -230,8 +265,10 @@ class MissionControlV1:
         if not self._orchestrator.recovery_isolated(mid):
             return
         self._mission(mid)
-        raise FacadeError(str(RecoveryBoundaryCode.MISSION_RECOVERY_ISOLATED),
-                          "this Mission failed its restart check and is isolated; it can only be cancelled")
+        raise FacadeError(
+            str(RecoveryBoundaryCode.MISSION_RECOVERY_ISOLATED),
+            "this Mission failed its restart check and is isolated; it can only be cancelled",
+        )
 
     def _owner_of(self, target_id: object) -> Any:
         target = str(target_id)
@@ -261,6 +298,7 @@ class MissionControlV1:
         those remain fixed by this facade and the original issuer API.
         """
         from .planning_authorization import PlanningAuthorizationApi
+
         operation = command.get("operation")
         fields = {
             "issue": {"mission_id", "request_id", "command_id"},
@@ -272,23 +310,38 @@ class MissionControlV1:
         # Host acting under the principal's auto permission mode.  Recorded, never
         # part of the command hash, so a replay keeps its identity.
         optional = {"approval_source"} if operation == "issue" else set()
-        if (not isinstance(operation, str) or operation not in fields
-                or not fields[operation] | {"operation"} <= set(command) <= fields[operation] | {"operation"} | optional):
+        if (
+            not isinstance(operation, str)
+            or operation not in fields
+            or not fields[operation] | {"operation"}
+            <= set(command)
+            <= fields[operation] | {"operation"} | optional
+        ):
             raise FacadeError("invalid_request", "unknown planning authorization command or fields")
         approval_source = command.get("approval_source", "HUMAN")
         if approval_source not in PLANNING_APPROVAL_SOURCES:
-            raise FacadeError("invalid_request", "approval_source must be HUMAN or HOST_AUTO_PERMISSION")
+            raise FacadeError(
+                "invalid_request", "approval_source must be HUMAN or HOST_AUTO_PERMISSION"
+            )
         body = {key: command[key] for key in fields[operation]}
         for key, value in body.items():
             if key == "expected_revision":
                 if type(value) is not int or value < 1:
-                    raise FacadeError("invalid_request", "expected_revision must be a positive integer")
+                    raise FacadeError(
+                        "invalid_request", "expected_revision must be a positive integer"
+                    )
             elif not isinstance(value, str) or not value.strip():
-                raise FacadeError("invalid_request", "planning authorization identifiers must be nonempty strings")
+                raise FacadeError(
+                    "invalid_request", "planning authorization identifiers must be nonempty strings"
+                )
         self._clean(*(v for v in body.values() if isinstance(v, str)))
         self._refuse_isolated_grant(operation, body)
-        api = PlanningAuthorizationApi(self._orchestrator.commit, tenant_id=self._tenant,
-            principal=self._principal, deployment=self._orchestrator.config.deployment_policy)
+        api = PlanningAuthorizationApi(
+            self._orchestrator.commit,
+            tenant_id=self._tenant,
+            principal=self._principal,
+            deployment=self._orchestrator.config.deployment_policy,
+        )
         try:
             if operation == "bind":
                 return api.bind_request(**body)
@@ -308,7 +361,9 @@ class MissionControlV1:
         if operation == "issue":
             mission_id = body["mission_id"]
         elif operation == "bind":
-            request = PlanningDecisionStore(self._store).get_planning_request(str(body["request_id"]))
+            request = PlanningDecisionStore(self._store).get_planning_request(
+                str(body["request_id"])
+            )
             mission_id = None if request is None else request.mission_id
         elif operation == "renew":
             grant = PlanningAdmissionStore(self._store).get_grant(str(body["grant_id"]))
@@ -325,6 +380,7 @@ class MissionControlV1:
         """
         from ..orchestrator.planning_selection import awaits_authority
         from ..storage.planning_decision_store import PlanningDecisionStore
+
         store = self._store
         rows: list[dict[str, Any]] = []
         with store.read_view():
@@ -342,8 +398,14 @@ class MissionControlV1:
                     continue
                 request = planning.get_planning_request_for_intent(intent.intent_id)
                 if request is not None:
-                    rows.append({"mission_id": mid, "request_id": request.request_id,
-                                 "intent_id": intent.intent_id, "state": "AUTHORIZATION_REQUIRED"})
+                    rows.append(
+                        {
+                            "mission_id": mid,
+                            "request_id": request.request_id,
+                            "intent_id": intent.intent_id,
+                            "state": "AUTHORIZATION_REQUIRED",
+                        }
+                    )
         return rows
 
     @_native_root
@@ -351,10 +413,16 @@ class MissionControlV1:
         from .planning_answers import answer_planning_question
 
         required = {"decision_id", "answer", "expected_version", "nonce"}
-        if (not isinstance(command, Mapping) or not required <= set(command)
-                or set(command) - required - {"attach_as_source"}):
-            raise FacadeError("invalid_request", "answer requires decision_id, answer, expected_version "
-                              "and nonce; attach_as_source is optional")
+        if (
+            not isinstance(command, Mapping)
+            or not required <= set(command)
+            or set(command) - required - {"attach_as_source"}
+        ):
+            raise FacadeError(
+                "invalid_request",
+                "answer requires decision_id, answer, expected_version "
+                "and nonce; attach_as_source is optional",
+            )
         if not all(isinstance(command[k], str) for k in ("decision_id", "answer", "nonce")):
             raise FacadeError("invalid_request", "answer fields must be strings")
         if type(command["expected_version"]) is not int:
@@ -370,10 +438,15 @@ class MissionControlV1:
             self._refuse_isolated(question["mission_id"])
         try:
             return answer_planning_question(
-                self._orchestrator, tenant_id=self._tenant, principal=self._principal,
-                decision_id=command["decision_id"], answer=command["answer"],
-                expected_version=command["expected_version"], nonce=command["nonce"],
-                attach_as_source=attach)
+                self._orchestrator,
+                tenant_id=self._tenant,
+                principal=self._principal,
+                decision_id=command["decision_id"],
+                answer=command["answer"],
+                expected_version=command["expected_version"],
+                nonce=command["nonce"],
+                attach_as_source=attach,
+            )
         except SourceCommitError as error:
             raise FacadeError(error.code, str(error)) from error
         except (ValueError, StoreError, ContractError) as error:
@@ -387,7 +460,9 @@ class MissionControlV1:
             self._refuse_isolated(command["mission_id"])
         try:
             return OperationIntentApi(
-                self._orchestrator, tenant_id=self._tenant, principal=self._principal,
+                self._orchestrator,
+                tenant_id=self._tenant,
+                principal=self._principal,
             ).submit(command)
         except (ContractError, ValueError, StoreError) as error:
             raise FacadeError(getattr(error, "code", "invalid_request"), str(error)) from error
@@ -398,7 +473,9 @@ class MissionControlV1:
 
         try:
             return OperationIntentApi(
-                self._orchestrator, tenant_id=self._tenant, principal=self._principal,
+                self._orchestrator,
+                tenant_id=self._tenant,
+                principal=self._principal,
             ).status(intent_id)
         except (ContractError, ValueError, StoreError) as error:
             raise FacadeError(getattr(error, "code", "invalid_request"), str(error)) from error
@@ -419,8 +496,9 @@ class MissionControlV1:
             return
         effects = OperationCompletionRequirementsV1.from_json(proposal).effects
         try:
-            registry = getattr(self._orchestrator, "_operation_profiles", None) or BuiltinOperationProfiles(
-                self._orchestrator.connectors)
+            registry = getattr(
+                self._orchestrator, "_operation_profiles", None
+            ) or BuiltinOperationProfiles(self._orchestrator.connectors)
             for effect in effects:
                 registry.require_effect_supported(effect)
         except OperationMaterializationInputError as error:
@@ -437,7 +515,9 @@ class MissionControlV1:
         try:
             self._require_effects_supported(command)
             receipt = OperationCompletionApi(
-                self._orchestrator.commit, tenant_id=self._tenant, principal=self._principal,
+                self._orchestrator.commit,
+                tenant_id=self._tenant,
+                principal=self._principal,
             ).approve(command)
         except OperationCompletionError as error:
             raise FacadeError(error.code, str(error)) from error
@@ -456,25 +536,46 @@ class MissionControlV1:
             amend_requirements,
         )
 
-        fields = {"mission_id", "command_id", "expected_requirements_ref", "changes", "reason", "source"}
+        fields = {
+            "mission_id",
+            "command_id",
+            "expected_requirements_ref",
+            "changes",
+            "reason",
+            "source",
+        }
         if not isinstance(command, Mapping) or set(command) != fields:
-            raise FacadeError("invalid_request", "amend_requirements takes exactly " + ", ".join(sorted(fields)))
-        if (not all(isinstance(command[key], str) and command[key] for key in ("mission_id", "command_id"))
-                or not isinstance(command["reason"], str)
-                or not isinstance(command["expected_requirements_ref"], Mapping)
-                or not isinstance(command["source"], Mapping)
-                or not isinstance(command["changes"], (list, tuple))
-                or not all(isinstance(item, Mapping) for item in command["changes"])):
+            raise FacadeError(
+                "invalid_request", "amend_requirements takes exactly " + ", ".join(sorted(fields))
+            )
+        if (
+            not all(
+                isinstance(command[key], str) and command[key]
+                for key in ("mission_id", "command_id")
+            )
+            or not isinstance(command["reason"], str)
+            or not isinstance(command["expected_requirements_ref"], Mapping)
+            or not isinstance(command["source"], Mapping)
+            or not isinstance(command["changes"], (list, tuple))
+            or not all(isinstance(item, Mapping) for item in command["changes"])
+        ):
             raise FacadeError("invalid_request", "amend_requirements fields have the wrong shape")
-        self._clean(command["reason"], *(str(item.get("statement") or "") for item in command["changes"]))
+        self._clean(
+            command["reason"], *(str(item.get("statement") or "") for item in command["changes"])
+        )
         self._refuse_isolated(command["mission_id"])
         try:
             return amend_requirements(
-                self._orchestrator, mission_id=command["mission_id"], tenant_id=self._tenant,
+                self._orchestrator,
+                mission_id=command["mission_id"],
+                tenant_id=self._tenant,
                 command_id=command["command_id"],
                 expected_requirements_ref=command["expected_requirements_ref"],
-                changes=command["changes"], reason=command["reason"], source=command["source"],
-                principal=self._principal)
+                changes=command["changes"],
+                reason=command["reason"],
+                source=command["source"],
+                principal=self._principal,
+            )
         except RequirementsAmendmentError as error:
             raise FacadeError(error.code, str(error)) from error
         except ContractError as error:
@@ -495,15 +596,26 @@ class MissionControlV1:
         from ..orchestrator.method_library import LibraryCommandError, retire_by_command
 
         fields = {"entry_id", "command_id", "reason"}
-        if (not isinstance(command, Mapping) or set(command) != fields
-                or not all(isinstance(command[key], str) and command[key] for key in ("entry_id", "command_id"))
-                or not isinstance(command["reason"], str)):
-            raise FacadeError("invalid_request", "retire_library_entry takes exactly entry_id, command_id, reason")
+        if (
+            not isinstance(command, Mapping)
+            or set(command) != fields
+            or not all(
+                isinstance(command[key], str) and command[key] for key in ("entry_id", "command_id")
+            )
+            or not isinstance(command["reason"], str)
+        ):
+            raise FacadeError(
+                "invalid_request", "retire_library_entry takes exactly entry_id, command_id, reason"
+            )
         self._clean(command["reason"])
         try:
             return retire_by_command(
-                self._store, command_id=command["command_id"], entry_id=command["entry_id"],
-                reason=command["reason"], principal=str(self._principal.principal_id))
+                self._store,
+                command_id=command["command_id"],
+                entry_id=command["entry_id"],
+                reason=command["reason"],
+                principal=str(self._principal.principal_id),
+            )
         except LibraryCommandError as error:
             raise FacadeError(error.code, str(error)) from error
         except StoreError as error:
@@ -764,9 +876,14 @@ class MissionControlV1:
 
         try:
             ensure_operation_runtime(self._orchestrator)
-            return dict(self._approvals.resolve_unknown(
-                str(action_key), outcome=outcome, basis=str(basis),
-                evidence={"source": "user_ruling", "action_key": str(action_key)}))
+            return dict(
+                self._approvals.resolve_unknown(
+                    str(action_key),
+                    outcome=outcome,
+                    basis=str(basis),
+                    evidence={"source": "user_ruling", "action_key": str(action_key)},
+                )
+            )
         except ApprovalRequestError as error:
             raise FacadeError("invalid_request", str(error)) from error
         except (ActionCommitError, StoreError, ContractError) as error:
@@ -820,9 +937,15 @@ class MissionControlV1:
         for item in frontier:
             binding = network.binding_for_occurrence(item.occurrence_id)
             goal = dict(binding.typed_parameters).get("goal")
-            rows.append({"occurrence_id": str(item.occurrence_id), "task_id": str(binding.task_id),
-                         "label": str(goal).strip()[:60] if isinstance(goal, str) and goal.strip()
-                         else str(binding.goal_signature.signature_id)})
+            rows.append(
+                {
+                    "occurrence_id": str(item.occurrence_id),
+                    "task_id": str(binding.task_id),
+                    "label": str(goal).strip()[:60]
+                    if isinstance(goal, str) and goal.strip()
+                    else str(binding.goal_signature.signature_id),
+                }
+            )
         return rows
 
     def _steps_no_longer_counting(self, mission_id: str) -> list[dict[str, Any]]:
@@ -845,10 +968,15 @@ class MissionControlV1:
                 continue
             task = self._store.get_task(str(occurrence.task_id))
             goal = str(getattr(task, "goal", "") or "").strip()
-            rows.append({"occurrence_id": str(occurrence.occurrence_id), "task_id": str(occurrence.task_id),
-                         "acceptance_id": str(acceptance.acceptance_id),
-                         "requirements_revision": int(acceptance.requirements_revision),
-                         "label": goal[:60] or str(occurrence.task_id)})
+            rows.append(
+                {
+                    "occurrence_id": str(occurrence.occurrence_id),
+                    "task_id": str(occurrence.task_id),
+                    "acceptance_id": str(acceptance.acceptance_id),
+                    "requirements_revision": int(acceptance.requirements_revision),
+                    "label": goal[:60] or str(occurrence.task_id),
+                }
+            )
         return rows
 
     def snapshot(self, mission_id: str) -> dict[str, Any]:
@@ -857,25 +985,39 @@ class MissionControlV1:
             mission = self._mission(mission_id)
             snapshot = store.snapshot(mission.id)
             from ..storage.planning_human_store import PlanningHumanStore
+
             snapshot["planning_questions"] = PlanningHumanStore(store).list(mission.id)
             # 这件事（含下级、含换过的做法）到现在花了多少：读时由尝试与结算推出
             from ..orchestrator.obligation_accounts import obligation_accounts, obligation_rows
+
             snapshot["obligation_accounts"] = obligation_accounts(store, mission.id)
             snapshot["budget_by_duty"] = obligation_rows(store, mission.id)
             snapshot["unrefined_goals"] = self._unrefined_goals(mission.id)
             snapshot["steps_no_longer_counting"] = self._steps_no_longer_counting(mission.id)
             from ..orchestrator.planning_selection import awaits_authority
             from ..storage.planning_decision_store import PlanningDecisionStore
+
             planning = PlanningDecisionStore(store)
             snapshot["planning_authorization_requests"] = [
-                {"mission_id": mission.id, "request_id": request.request_id,
-                 "intent_id": intent.intent_id, "state": "AUTHORIZATION_REQUIRED"}
+                {
+                    "mission_id": mission.id,
+                    "request_id": request.request_id,
+                    "intent_id": intent.intent_id,
+                    "state": "AUTHORIZATION_REQUIRED",
+                }
                 for intent in store.list_intents("PENDING", "CLAIMED", "AGENT_CREATED")
-                if intent.mission_id == mission.id and awaits_authority(store, intent)
-                and (request := planning.get_planning_request_for_intent(intent.intent_id)) is not None]
+                if intent.mission_id == mission.id
+                and awaits_authority(store, intent)
+                and (request := planning.get_planning_request_for_intent(intent.intent_id))
+                is not None
+            ]
             from .operation_workspace import operation_workspace
-            snapshot["operation_workspace"] = operation_workspace(self._orchestrator, mission, principal=self._principal)
+
+            snapshot["operation_workspace"] = operation_workspace(
+                self._orchestrator, mission, principal=self._principal
+            )
             from ..verification.conflicts import mission_disputes
+
             snapshot["disputes"] = mission_disputes(store, mission.id)  # read from the claims
             through = store.last_event_seq(mission.id)
         return {
@@ -930,10 +1072,15 @@ class MissionControlV1:
         ref = AssuranceRef("artifact", Pin(artifact.id, artifact.version, artifact.content_hash))
         with self._store.transaction():
             use = certify_point_use_locked(
-                self._orchestrator.commit, mission_id=artifact.mission_id, purpose="DISCLOSE",
-                consumer_kind=NATIVE_READ_CONSUMER, consumer_id=f"{self._principal.principal_id}:{artifact.id}",
-                claims=(EvidenceClaim.exact(ref),), subject=("requirements", artifact.mission_id),
-                caller=(self._principal.principal_id, self._tenant))
+                self._orchestrator.commit,
+                mission_id=artifact.mission_id,
+                purpose="DISCLOSE",
+                consumer_kind=NATIVE_READ_CONSUMER,
+                consumer_id=f"{self._principal.principal_id}:{artifact.id}",
+                claims=(EvidenceClaim.exact(ref),),
+                subject=("requirements", artifact.mission_id),
+                caller=(self._principal.principal_id, self._tenant),
+            )
         if not use.usable:
             raise FacadeError("USE_EVIDENCE_NOT_CURRENT", "; ".join(use.refusals)[:1000])
         return use.certificate

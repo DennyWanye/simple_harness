@@ -40,7 +40,7 @@ def _object(value: object, keys: set[str], path: str, *, versioned: bool = True)
         _fail(
             "spec_keys_differ",
             path,
-            f"missing={sorted(keys-set(raw))}, unknown={sorted(set(raw)-keys)}",
+            f"missing={sorted(keys - set(raw))}, unknown={sorted(set(raw) - keys)}",
         )
     if versioned and raw.get("schema_version") != 1:
         _fail("spec_schema_unsupported", f"{path}.schema_version", "must equal 1")
@@ -155,9 +155,19 @@ class RouteDecisionV1:
     """
 
     KEYS = {
-        "schema_version", "route_id", "run_id", "spec_hash", "policy_ref",
-        "policy_hash", "capability_snapshot_hash", "source_health", "budget",
-        "work_groups", "initial_route", "allowed_escalations", "reason_codes",
+        "schema_version",
+        "route_id",
+        "run_id",
+        "spec_hash",
+        "policy_ref",
+        "policy_hash",
+        "capability_snapshot_hash",
+        "source_health",
+        "budget",
+        "work_groups",
+        "initial_route",
+        "allowed_escalations",
+        "reason_codes",
     }
 
     def __init__(self, value: Mapping[str, JsonValue]) -> None:
@@ -185,15 +195,21 @@ class RouteDecisionV1:
                 versioned=False,
             )
             authority = str(_text(entry["authority_id"], f"$.source_health[{index}].authority_id"))
-            _enum(entry["status"], {"healthy", "degraded", "unavailable"}, f"$.source_health[{index}].status")
+            _enum(
+                entry["status"],
+                {"healthy", "degraded", "unavailable"},
+                f"$.source_health[{index}].status",
+            )
             _text(entry["reason_code"], f"$.source_health[{index}].reason_code")
             health_keys.append(authority)
         if health_keys != sorted(set(health_keys)):
             _fail("spec_keys_differ", "$.source_health", "must be sorted by unique authority_id")
 
         budget = _object(
-            raw["budget"], {"query", "fetch", "browser", "llm", "lane"},
-            "$.budget", versioned=False,
+            raw["budget"],
+            {"query", "fetch", "browser", "llm", "lane"},
+            "$.budget",
+            versioned=False,
         )
         for key in sorted(budget):
             _integer(budget[key], f"$.budget.{key}")
@@ -202,15 +218,21 @@ class RouteDecisionV1:
         group_ids: list[str] = []
         for index, item in enumerate(groups):
             group = _object(
-                item, {"work_group_id", "requirement_ids", "merge_key"},
-                f"$.work_groups[{index}]", versioned=False,
+                item,
+                {"work_group_id", "requirement_ids", "merge_key"},
+                f"$.work_groups[{index}]",
+                versioned=False,
             )
             group_id = str(_text(group["work_group_id"], f"$.work_groups[{index}].work_group_id"))
             requirement_ids = _strings(
                 group["requirement_ids"], f"$.work_groups[{index}].requirement_ids", set_like=True
             )
             if not requirement_ids:
-                _fail("reference_missing", f"$.work_groups[{index}].requirement_ids", "must not be empty")
+                _fail(
+                    "reference_missing",
+                    f"$.work_groups[{index}].requirement_ids",
+                    "must not be empty",
+                )
             _text(group["merge_key"], f"$.work_groups[{index}].merge_key")
             group_ids.append(group_id)
         if group_ids != sorted(set(group_ids)):
@@ -220,8 +242,10 @@ class RouteDecisionV1:
         escalation_keys: list[tuple[str, str, str]] = []
         for index, item in enumerate(escalations):
             edge = _object(
-                item, {"from_route", "to_route", "condition_code"},
-                f"$.allowed_escalations[{index}]", versioned=False,
+                item,
+                {"from_route", "to_route", "condition_code"},
+                f"$.allowed_escalations[{index}]",
+                versioned=False,
             )
             key = tuple(
                 str(_text(edge[name], f"$.allowed_escalations[{index}].{name}"))
@@ -229,7 +253,9 @@ class RouteDecisionV1:
             )
             escalation_keys.append(key)  # type: ignore[arg-type]
         if escalation_keys != sorted(set(escalation_keys)):
-            _fail("spec_keys_differ", "$.allowed_escalations", "must be canonically sorted and unique")
+            _fail(
+                "spec_keys_differ", "$.allowed_escalations", "must be canonically sorted and unique"
+            )
 
         base = copy.deepcopy(raw)
         declared_id = str(base.pop("route_id"))
@@ -251,7 +277,11 @@ class RouteDecisionV1:
         )
         payload["allowed_escalations"] = sorted(
             list(payload.get("allowed_escalations", [])),
-            key=lambda item: (str(item["from_route"]), str(item["to_route"]), str(item["condition_code"])),
+            key=lambda item: (
+                str(item["from_route"]),
+                str(item["to_route"]),
+                str(item["condition_code"]),
+            ),
         )
         payload["reason_codes"] = sorted(set(payload.get("reason_codes", [])))
         payload["route_id"] = "route_" + sha256_json(payload)[:24]
@@ -290,7 +320,9 @@ def conditional_fanout_enabled(
     *,
     intent_type: str,
 ) -> bool:
-    return conditional_fanout_reason(decision, intent_type=intent_type) == "conditional_fanout_enabled"
+    return (
+        conditional_fanout_reason(decision, intent_type=intent_type) == "conditional_fanout_enabled"
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -341,7 +373,13 @@ class SubjectV1(StrictContract):
 
 
 class UserConstraintsV1(StrictContract):
-    KEYS = {"schema_version", "as_of_date", "jurisdictions", "preferred_authority_ids", "explicit_exclusions"}
+    KEYS = {
+        "schema_version",
+        "as_of_date",
+        "jurisdictions",
+        "preferred_authority_ids",
+        "explicit_exclusions",
+    }
 
     @classmethod
     def _validate(cls, raw: dict[str, Any], path: str) -> None:
@@ -351,7 +389,13 @@ class UserConstraintsV1(StrictContract):
 
 
 class ScopeV1(StrictContract):
-    KEYS = {"schema_version", "jurisdiction", "geography_ids", "population_definition", "qualifiers"}
+    KEYS = {
+        "schema_version",
+        "jurisdiction",
+        "geography_ids",
+        "population_definition",
+        "qualifiers",
+    }
 
     @classmethod
     def _validate(cls, raw: dict[str, Any], path: str) -> None:
@@ -373,7 +417,13 @@ class TimeScopeV1(StrictContract):
         _text(raw["label"], f"{path}.label", nullable=True)
         valid = (
             (kind == "instant" and as_of is not None and start is None and end is None)
-            or (kind == "period" and start is not None and end is not None and as_of is None and start <= end)
+            or (
+                kind == "period"
+                and start is not None
+                and end is not None
+                and as_of is None
+                and start <= end
+            )
             or (kind == "latest" and as_of is not None and start is None and end is None)
             or (kind == "timeless" and start is None and end is None and as_of is None)
         )
@@ -382,7 +432,15 @@ class TimeScopeV1(StrictContract):
 
 
 class SourceConstraintV1(StrictContract):
-    KEYS = {"schema_version", "first_party", "authority_roles", "preferred_authority_ids", "eligible_source_types", "minimum_source_families", "secondary_evidence"}
+    KEYS = {
+        "schema_version",
+        "first_party",
+        "authority_roles",
+        "preferred_authority_ids",
+        "eligible_source_types",
+        "minimum_source_families",
+        "secondary_evidence",
+    }
 
     @classmethod
     def _validate(cls, raw: dict[str, Any], path: str) -> None:
@@ -390,7 +448,11 @@ class SourceConstraintV1(StrictContract):
         for key in ("authority_roles", "preferred_authority_ids", "eligible_source_types"):
             _strings(raw[key], f"{path}.{key}", set_like=True)
         _integer(raw["minimum_source_families"], f"{path}.minimum_source_families")
-        _enum(raw["secondary_evidence"], {"context_only", "support_allowed"}, f"{path}.secondary_evidence")
+        _enum(
+            raw["secondary_evidence"],
+            {"context_only", "support_allowed"},
+            f"{path}.secondary_evidence",
+        )
 
 
 class UnitV1(StrictContract):
@@ -419,14 +481,24 @@ class ToleranceV1(StrictContract):
 
 
 class ValueSchemaV1(StrictContract):
-    KEYS = {"schema_version", "value_type", "quantity_kind", "canonical_unit", "accepted_units", "definition", "tolerance"}
+    KEYS = {
+        "schema_version",
+        "value_type",
+        "quantity_kind",
+        "canonical_unit",
+        "accepted_units",
+        "definition",
+        "tolerance",
+    }
 
     @classmethod
     def _validate(cls, raw: dict[str, Any], path: str) -> None:
         _text(raw["value_type"], f"{path}.value_type")
         _text(raw["quantity_kind"], f"{path}.quantity_kind", nullable=True)
         canonical = UnitV1.from_json(raw["canonical_unit"])
-        accepted = [UnitV1.from_json(v) for v in _sequence(raw["accepted_units"], f"{path}.accepted_units")]
+        accepted = [
+            UnitV1.from_json(v) for v in _sequence(raw["accepted_units"], f"{path}.accepted_units")
+        ]
         if not accepted or canonical.unit_id not in {u.unit_id for u in accepted}:
             _fail("unit_invalid", f"{path}.accepted_units", "must include canonical unit")
         if len({u.unit_id for u in accepted}) != len(accepted):
@@ -448,8 +520,17 @@ class CardinalityV1(StrictContract):
 
 
 _COMMON_REQUIREMENT_KEYS = {
-    "schema_version", "requirement_id", "ordinal", "kind", "key", "label",
-    "importance", "subject_ids", "scope", "time_scope", "source_constraint",
+    "schema_version",
+    "requirement_id",
+    "ordinal",
+    "kind",
+    "key",
+    "label",
+    "importance",
+    "subject_ids",
+    "scope",
+    "time_scope",
+    "source_constraint",
 }
 
 
@@ -582,7 +663,9 @@ class CollectionItemSchemaV1(StrictContract):
     def _validate(cls, raw: dict[str, Any], path: str) -> None:
         _text(raw["entity_type"], f"{path}.entity_type")
         unique = _strings(raw["unique_key"], f"{path}.unique_key")
-        fields = [CollectionFieldV1.from_json(v) for v in _sequence(raw["fields"], f"{path}.fields")]
+        fields = [
+            CollectionFieldV1.from_json(v) for v in _sequence(raw["fields"], f"{path}.fields")
+        ]
         keys = [f.field_key for f in fields]
         if not fields or len(set(keys)) != len(keys) or not set(unique).issubset(keys):
             _fail("bounds_empty", path, "invalid fields/unique_key")
@@ -622,7 +705,10 @@ class CollectionDedupeV1(StrictContract):
 
     @classmethod
     def _validate(cls, raw: dict[str, Any], path: str) -> None:
-        if raw["normalizer"] != "nfkc_casefold_v1" or raw["collision_policy"] != "merge_equal_identity_else_conflict":
+        if (
+            raw["normalizer"] != "nfkc_casefold_v1"
+            or raw["collision_policy"] != "merge_equal_identity_else_conflict"
+        ):
             _fail("spec_keys_differ", path, "unsupported v1 dedupe policy")
 
 
@@ -639,17 +725,38 @@ class CollectionRequirement(StrictContract):
 
 class ClaimKindRuleV1(StrictContract):
     VERSIONED = False
-    KEYS = {"claim_kind", "minimum_claims", "maximum_claims", "minimum_admitted_bindings", "support_rule"}
+    KEYS = {
+        "claim_kind",
+        "minimum_claims",
+        "maximum_claims",
+        "minimum_admitted_bindings",
+        "support_rule",
+    }
 
     @classmethod
     def _validate(cls, raw: dict[str, Any], path: str) -> None:
-        _enum(raw["claim_kind"], {"conclusion", "limitation", "counterevidence", "uncertainty", "policy_fact", "impact_inference"}, f"{path}.claim_kind")
+        _enum(
+            raw["claim_kind"],
+            {
+                "conclusion",
+                "limitation",
+                "counterevidence",
+                "uncertainty",
+                "policy_fact",
+                "impact_inference",
+            },
+            f"{path}.claim_kind",
+        )
         minimum = _integer(raw["minimum_claims"], f"{path}.minimum_claims")
         maximum = _integer(raw["maximum_claims"], f"{path}.maximum_claims")
         if maximum < minimum:
             _fail("bounds_empty", path, "maximum_claims is below minimum_claims")
         _integer(raw["minimum_admitted_bindings"], f"{path}.minimum_admitted_bindings")
-        _enum(raw["support_rule"], {"admitted_binding", "admitted_binding_or_registered_inference"}, f"{path}.support_rule")
+        _enum(
+            raw["support_rule"],
+            {"admitted_binding", "admitted_binding_or_registered_inference"},
+            f"{path}.support_rule",
+        )
 
 
 class TopicFacetV1(StrictContract):
@@ -664,22 +771,39 @@ class TopicFacetV1(StrictContract):
 
 
 class ClaimSetRequirement(StrictContract):
-    KEYS = _COMMON_REQUIREMENT_KEYS | {"claim_kinds", "topic_facets", "coverage_mode", "contradiction_policy"}
+    KEYS = _COMMON_REQUIREMENT_KEYS | {
+        "claim_kinds",
+        "topic_facets",
+        "coverage_mode",
+        "contradiction_policy",
+    }
 
     @classmethod
     def _validate(cls, raw: dict[str, Any], path: str) -> None:
         _validate_common_requirement(raw, path, "claim_set")
-        kinds = [ClaimKindRuleV1.from_json(v) for v in _sequence(raw["claim_kinds"], f"{path}.claim_kinds")]
-        facets = [TopicFacetV1.from_json(v) for v in _sequence(raw["topic_facets"], f"{path}.topic_facets")]
+        kinds = [
+            ClaimKindRuleV1.from_json(v)
+            for v in _sequence(raw["claim_kinds"], f"{path}.claim_kinds")
+        ]
+        facets = [
+            TopicFacetV1.from_json(v)
+            for v in _sequence(raw["topic_facets"], f"{path}.topic_facets")
+        ]
         if not kinds or len({v.claim_kind for v in kinds}) != len(kinds):
             _fail("bounds_empty", f"{path}.claim_kinds", "must be non-empty and unique")
         if len({v.facet_id for v in facets}) != len(facets):
             _fail("bounds_empty", f"{path}.topic_facets", "facet ids must be unique")
         _enum(raw["coverage_mode"], {"all_minima"}, f"{path}.coverage_mode")
-        _enum(raw["contradiction_policy"], {"surface", "block_completed"}, f"{path}.contradiction_policy")
+        _enum(
+            raw["contradiction_policy"],
+            {"surface", "block_completed"},
+            f"{path}.contradiction_policy",
+        )
 
 
-RequirementV1: TypeAlias = ScalarRequirement | MatrixRequirement | CollectionRequirement | ClaimSetRequirement
+RequirementV1: TypeAlias = (
+    ScalarRequirement | MatrixRequirement | CollectionRequirement | ClaimSetRequirement
+)
 
 
 def requirement_from_json(value: Mapping[str, Any]) -> RequirementV1:
@@ -705,7 +829,14 @@ def build_requirement(payload: Mapping[str, JsonValue], ordinal: int) -> Require
 
 class WorkDimensionV1(StrictContract):
     VERSIONED = False
-    KEYS = {"dimension_id", "ordinal", "requirement_ids", "search_concepts", "time_scope", "source_constraint"}
+    KEYS = {
+        "dimension_id",
+        "ordinal",
+        "requirement_ids",
+        "search_concepts",
+        "time_scope",
+        "source_constraint",
+    }
 
     @classmethod
     def _validate(cls, raw: dict[str, Any], path: str) -> None:
@@ -722,22 +853,41 @@ class WorkDimensionV1(StrictContract):
 class ResearchSpecV1:
     _value: dict[str, JsonValue]
     KEYS: ClassVar[set[str]] = {
-        "schema_version", "spec_id", "spec_hash", "normalized_question", "intent_type",
-        "answer_locale", "subjects", "user_constraints", "work_dimensions", "requirements",
-        "completion_policy_ref", "completion_policy_hash", "render_profile_ref",
-        "render_profile_hash", "compiler_policy_hash",
+        "schema_version",
+        "spec_id",
+        "spec_hash",
+        "normalized_question",
+        "intent_type",
+        "answer_locale",
+        "subjects",
+        "user_constraints",
+        "work_dimensions",
+        "requirements",
+        "completion_policy_ref",
+        "completion_policy_hash",
+        "render_profile_ref",
+        "render_profile_hash",
+        "compiler_policy_hash",
     }
 
     def __post_init__(self) -> None:
         raw = _object(self._value, self.KEYS, "$ResearchSpecV1")
         _text(raw["normalized_question"], "$.normalized_question")
-        _enum(raw["intent_type"], {"official_exact_fact", "comparison", "top_n", "policy", "open_research"}, "$.intent_type")
+        _enum(
+            raw["intent_type"],
+            {"official_exact_fact", "comparison", "top_n", "policy", "open_research"},
+            "$.intent_type",
+        )
         _text(raw["answer_locale"], "$.answer_locale")
         subjects = [SubjectV1.from_json(v) for v in _sequence(raw["subjects"], "$.subjects")]
         if not subjects or len({s.subject_id for s in subjects}) != len(subjects):
-            _fail("duplicate_requirement_id", "$.subjects", "subject ids must be non-empty and unique")
+            _fail(
+                "duplicate_requirement_id", "$.subjects", "subject ids must be non-empty and unique"
+            )
         UserConstraintsV1.from_json(raw["user_constraints"])
-        requirements = [requirement_from_json(v) for v in _sequence(raw["requirements"], "$.requirements")]
+        requirements = [
+            requirement_from_json(v) for v in _sequence(raw["requirements"], "$.requirements")
+        ]
         if not requirements:
             _fail("bounds_empty", "$.requirements", "must not be empty")
         if [r.ordinal for r in requirements] != list(range(len(requirements))):
@@ -751,8 +901,13 @@ class ResearchSpecV1:
         subject_ids = {s.subject_id for s in subjects}
         for index, requirement in enumerate(requirements):
             if not set(requirement.subject_ids).issubset(subject_ids):
-                _fail("reference_missing", f"$.requirements[{index}].subject_ids", "unknown subject")
-        dimensions = [WorkDimensionV1.from_json(v) for v in _sequence(raw["work_dimensions"], "$.work_dimensions")]
+                _fail(
+                    "reference_missing", f"$.requirements[{index}].subject_ids", "unknown subject"
+                )
+        dimensions = [
+            WorkDimensionV1.from_json(v)
+            for v in _sequence(raw["work_dimensions"], "$.work_dimensions")
+        ]
         if [d.ordinal for d in dimensions] != list(range(len(dimensions))):
             _fail("ordinal_invalid", "$.work_dimensions", "ordinals must be contiguous from zero")
         if len({d.dimension_id for d in dimensions}) != len(dimensions):
@@ -760,7 +915,11 @@ class ResearchSpecV1:
         requirement_ids = set(ids)
         for index, dimension in enumerate(dimensions):
             if not set(dimension.requirement_ids).issubset(requirement_ids):
-                _fail("reference_missing", f"$.work_dimensions[{index}].requirement_ids", "unknown requirement")
+                _fail(
+                    "reference_missing",
+                    f"$.work_dimensions[{index}].requirement_ids",
+                    "unknown requirement",
+                )
         for prefix in ("completion_policy", "render_profile"):
             digest = _digest(raw[f"{prefix}_hash"], f"$.{prefix}_hash")
             if parse_blob_ref(raw[f"{prefix}_ref"]) != digest:
@@ -836,8 +995,7 @@ def build_route_decision_from_spec(
         )
     work_groups.sort(key=lambda item: str(item["work_group_id"]))
     normalized_budget = {
-        key: int(budget.get(key, 0))
-        for key in ("query", "fetch", "browser", "llm", "lane")
+        key: int(budget.get(key, 0)) for key in ("query", "fetch", "browser", "llm", "lane")
     }
     eligible = (
         spec.intent_type != "official_exact_fact"
@@ -875,17 +1033,47 @@ def build_route_decision_from_spec(
 
 
 __all__ = [
-    "AxisMemberV1", "AxisV1", "CardinalityV1", "ClaimKindRuleV1",
-    "ClaimSetRequirement", "CollectionDedupeV1", "CollectionFieldV1",
-    "CollectionItemSchemaV1", "CollectionRequirement", "CollectionSelectionV1",
-    "CoverageV1", "MatrixCellPolicyV1", "MatrixRequirement", "RankingRuleV1",
-    "RequiredCellsV1", "RequirementV1", "ResearchSpecV1", "ResearchSpecValidationError",
+    "AxisMemberV1",
+    "AxisV1",
+    "CardinalityV1",
+    "ClaimKindRuleV1",
+    "ClaimSetRequirement",
+    "CollectionDedupeV1",
+    "CollectionFieldV1",
+    "CollectionItemSchemaV1",
+    "CollectionRequirement",
+    "CollectionSelectionV1",
+    "CoverageV1",
+    "MatrixCellPolicyV1",
+    "MatrixRequirement",
+    "RankingRuleV1",
+    "RequiredCellsV1",
+    "RequirementV1",
+    "ResearchSpecV1",
+    "ResearchSpecValidationError",
     "RouteDecisionV1",
-    "ScalarRequirement", "ScopeV1", "SourceConstraintV1", "SubjectV1",
-    "TimeScopeV1", "ToleranceV1", "TopicFacetV1", "UnitV1",
-    "UserConstraintsV1", "ValueSchemaV1", "WorkDimensionV1", "build_requirement",
-    "build_route_decision_from_spec", "canonical_set", "derive_requirement_id", "derive_spec_hash", "derive_spec_id",
-    "format_blob_ref", "parse_blob_ref", "requirement_from_json", "sha256_json",
-    "conditional_fanout_enabled", "conditional_fanout_reason",
+    "ScalarRequirement",
+    "ScopeV1",
+    "SourceConstraintV1",
+    "SubjectV1",
+    "TimeScopeV1",
+    "ToleranceV1",
+    "TopicFacetV1",
+    "UnitV1",
+    "UserConstraintsV1",
+    "ValueSchemaV1",
+    "WorkDimensionV1",
+    "build_requirement",
+    "build_route_decision_from_spec",
+    "canonical_set",
+    "derive_requirement_id",
+    "derive_spec_hash",
+    "derive_spec_id",
+    "format_blob_ref",
+    "parse_blob_ref",
+    "requirement_from_json",
+    "sha256_json",
+    "conditional_fanout_enabled",
+    "conditional_fanout_reason",
     "validate_continuation_spec_hash",
 ]

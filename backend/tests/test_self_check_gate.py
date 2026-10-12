@@ -11,6 +11,7 @@
   - 底层全 None → pass（降级）
   - passed=False → reflection_instruction 非空
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -23,9 +24,12 @@ from deskpet.agent.self_check_gate import SelfCheckGate, SelfCheckOutcome
 def _verify_gate(passed: bool, unmatched: int = 0):
     vg = MagicMock()
     vg.mode = "strict"
-    vg.check = MagicMock(return_value=SimpleNamespace(
-        passed=passed, unmatched_claims=["c"] * unmatched,
-    ))
+    vg.check = MagicMock(
+        return_value=SimpleNamespace(
+            passed=passed,
+            unmatched_claims=["c"] * unmatched,
+        )
+    )
     return vg
 
 
@@ -52,10 +56,14 @@ def test_verify_pass_no_heterogeneous() -> None:
     vg = _verify_gate(passed=True)
     ext = AsyncMock()
     gate = SelfCheckGate(verify_gate=vg, external_evaluator=ext)
-    out = asyncio.run(gate.check(
-        problem_type="debug", assistant_text="修好了", ledger=[],
-        failure_count=0,
-    ))
+    out = asyncio.run(
+        gate.check(
+            problem_type="debug",
+            assistant_text="修好了",
+            ledger=[],
+            failure_count=0,
+        )
+    )
     assert out.passed is True
     assert out.heterogeneous is False
     ext.evaluate.assert_not_called()  # passed → 不触发异体
@@ -64,10 +72,14 @@ def test_verify_pass_no_heterogeneous() -> None:
 def test_verify_fail_triggers_reflection() -> None:
     vg = _verify_gate(passed=False, unmatched=2)
     gate = SelfCheckGate(verify_gate=vg, external_evaluator=None)
-    out = asyncio.run(gate.check(
-        problem_type="debug", assistant_text="假装修好了", ledger=[],
-        failure_count=0,
-    ))
+    out = asyncio.run(
+        gate.check(
+            problem_type="debug",
+            assistant_text="假装修好了",
+            ledger=[],
+            failure_count=0,
+        )
+    )
     assert out.passed is False
     assert out.claims_unverified == 2
     assert out.reflection_instruction != ""  # 注入反思指令
@@ -79,10 +91,16 @@ def test_heterogeneous_triggers_on_strict_failure() -> None:
     ext = MagicMock()
     ext.evaluate = AsyncMock(return_value={"verdict": "revise", "quality_score": 3})
     gate = SelfCheckGate(verify_gate=vg, external_evaluator=ext, heterogeneous_enabled=True)
-    out = asyncio.run(gate.check(
-        problem_type="creation", assistant_text="交付物", ledger=[],
-        failure_count=2, produced_artifacts=["a.pptx"], objective_evidence=["ok"],
-    ))
+    out = asyncio.run(
+        gate.check(
+            problem_type="creation",
+            assistant_text="交付物",
+            ledger=[],
+            failure_count=2,
+            produced_artifacts=["a.pptx"],
+            objective_evidence=["ok"],
+        )
+    )
     assert out.heterogeneous is True
     assert out.passed is False
     ext.evaluate.assert_awaited_once()
@@ -93,9 +111,14 @@ def test_heterogeneous_not_triggered_when_disabled() -> None:
     ext = MagicMock()
     ext.evaluate = AsyncMock(return_value={"verdict": "revise", "quality_score": 3})
     gate = SelfCheckGate(verify_gate=vg, external_evaluator=ext, heterogeneous_enabled=False)
-    out = asyncio.run(gate.check(
-        problem_type="debug", assistant_text="x", ledger=[], failure_count=5,
-    ))
+    out = asyncio.run(
+        gate.check(
+            problem_type="debug",
+            assistant_text="x",
+            ledger=[],
+            failure_count=5,
+        )
+    )
     assert out.heterogeneous is False
     ext.evaluate.assert_not_called()
 
@@ -113,9 +136,14 @@ def test_light_mode_no_heterogeneous() -> None:
     ext = MagicMock()
     ext.evaluate = AsyncMock(return_value={"verdict": "revise", "quality_score": 2})
     gate = SelfCheckGate(verify_gate=vg, external_evaluator=ext)
-    out = asyncio.run(gate.check(
-        problem_type="research", assistant_text="x", ledger=[], failure_count=5,
-    ))
+    out = asyncio.run(
+        gate.check(
+            problem_type="research",
+            assistant_text="x",
+            ledger=[],
+            failure_count=5,
+        )
+    )
     assert out.mode == "light"
     assert out.heterogeneous is False
     ext.evaluate.assert_not_called()

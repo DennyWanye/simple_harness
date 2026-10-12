@@ -10,6 +10,7 @@ Strips HTML to readable text for LLM consumption.
 P5-S2 Phase 0: error responses now include ``ok: false`` + ``hint``
 + ``examples``. Legacy ``error`` strings preserved.
 """
+
 from __future__ import annotations
 
 import json
@@ -37,6 +38,7 @@ def _strip_html(html: str) -> str:
     """Lightweight HTML→text. Tries trafilatura if available, else regex."""
     try:
         import trafilatura  # type: ignore
+
         out = trafilatura.extract(html) or ""
         if out:
             return out
@@ -44,6 +46,7 @@ def _strip_html(html: str) -> str:
         pass
     # Fallback: drop tags
     import re
+
     text = re.sub(r"<script.*?</script>", "", html, flags=re.S | re.I)
     text = re.sub(r"<style.*?</style>", "", text, flags=re.S | re.I)
     text = re.sub(r"<[^>]+>", " ", text)
@@ -59,7 +62,7 @@ def web_fetch(args: dict[str, Any], task_id: str = "") -> str:
         return _err(
             "url required",
             "web_fetch 的 url 字段必填，必须是完整的 http(s) URL。"
-            "例如 {\"url\": \"https://example.com\"}。",
+            '例如 {"url": "https://example.com"}。',
         )
 
     parsed = urlparse(url)
@@ -77,8 +80,7 @@ def web_fetch(args: dict[str, Any], task_id: str = "") -> str:
     except ImportError:
         return _err(
             "httpx not installed",
-            "缺少 httpx 依赖，无法发起 HTTP 请求。"
-            "请运行 pip install httpx 后重试。",
+            "缺少 httpx 依赖，无法发起 HTTP 请求。请运行 pip install httpx 后重试。",
         )
 
     try:

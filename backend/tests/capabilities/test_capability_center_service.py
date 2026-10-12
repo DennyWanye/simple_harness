@@ -36,9 +36,7 @@ async def _store(tmp_path: Path) -> CapabilityStore:
     return CapabilityStore(database)
 
 
-async def _installed_snapshot(
-    store: CapabilityStore, tmp_path: Path
-) -> CapabilityCatalogSnapshot:
+async def _installed_snapshot(store: CapabilityStore, tmp_path: Path) -> CapabilityCatalogSnapshot:
     descriptor = CapabilityVersionDescriptor(
         capability_id="photo-pack",
         display_name="Photo token=tsk_not_a_real_token",
@@ -218,12 +216,7 @@ async def test_capability_center_projects_complete_installed_manifest(
     store = await _store(tmp_path)
     repo_root = Path(__file__).resolve().parents[3]
     raw = json.loads(
-        (
-            repo_root
-            / "capability-packs"
-            / "godot"
-            / PACK_MANIFEST_NAME
-        ).read_text(encoding="utf-8")
+        (repo_root / "capability-packs" / "godot" / PACK_MANIFEST_NAME).read_text(encoding="utf-8")
     )
     manifest = parse_pack_manifest(raw)
     descriptor = manifest.descriptor(health="healthy")
@@ -277,20 +270,17 @@ async def test_capability_center_projects_complete_installed_manifest(
     projected = (await service.list_capabilities())[0]["manifest"]
 
     assert projected["compatibility"]["os"] == ["windows"]
-    assert projected["entries"]["skills"] == [
-        {"path": "skills/godot/SKILL.md"}
-    ]
-    assert {
-        tool["provider_name"] for tool in projected["entries"]["tools"]
-    } == {"godot__detect", "godot__project_check"}
+    assert projected["entries"]["skills"] == [{"path": "skills/godot/SKILL.md"}]
+    assert {tool["provider_name"] for tool in projected["entries"]["tools"]} == {
+        "godot__detect",
+        "godot__project_check",
+    }
     assert projected["permissions"] == [
         "filesystem_read",
         "filesystem_write",
         "process_execute",
     ]
-    assert projected["dependencies"]["commands"] == [
-        {"name": "godot", "version": ">=4.0"}
-    ]
+    assert projected["dependencies"]["commands"] == [{"name": "godot", "version": ">=4.0"}]
     assert len(projected["files"]) == 8
     assert projected["uninstall"] == {
         "stop_servers": True,
@@ -323,15 +313,12 @@ async def test_capability_center_cancel_targets_only_its_owned_task(
     assert operations[0]["operation_id"] == started.operation_id
     assert operations[0]["available_actions"] == ["cancel"]
 
-    cancelled = await service.request_cancel(
-        operation_id=started.operation_id
-    )
+    cancelled = await service.request_cancel(operation_id=started.operation_id)
 
     assert cancelled.status == "cancelled"
     assert len(manager.calls) == 1
     assert any(
-        message.get("payload", {}).get("operation", {}).get("status")
-        == "cancelled"
+        message.get("payload", {}).get("operation", {}).get("status") == "cancelled"
         for message in pushed
     )
     await service.shutdown()
@@ -378,6 +365,4 @@ async def test_operation_projection_never_blindly_retries_unknown_publish(
 
     assert projected["available_actions"] == []
     assert projected["error_message"] == "token=[REDACTED]"
-    assert projected["recovery_hint"] == (
-        "Reconciliation is required before another mutation."
-    )
+    assert projected["recovery_hint"] == ("Reconciliation is required before another mutation.")

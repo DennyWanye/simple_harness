@@ -6,6 +6,7 @@
 跑法：
     G:\\projects\\deskpet\\backend\\.venv\\Scripts\\python.exe scripts/manual_slash_smoke.py
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -24,6 +25,7 @@ async def main():
     # 1. 用真 SkillLoader 跑
     import deskpet.skills.builtin as _builtin_pkg
     from deskpet.skills.loader import SkillLoader
+
     builtin_dir = Path(_builtin_pkg.__file__).parent
     loader = SkillLoader(skill_dirs=[builtin_dir], enable_watch=False)
     loader.reload()  # 触发首次扫描（start() 是 async + 启 watchdog；smoke 用 sync）
@@ -40,7 +42,10 @@ async def main():
 
     print("\n[2] dispatch_slash_command('help', '', 'test-sid')")
     res = await dispatch_slash_command(
-        "help", "", "test-sid", skill_loader=loader,
+        "help",
+        "",
+        "test-sid",
+        skill_loader=loader,
     )
     print(f"    type: {res['type']}")
     print(f"    builtins: {len(res['builtins'])} 条")
@@ -52,14 +57,16 @@ async def main():
     # 3. 调真 dispatch '/' unknown
     print("\n[3] dispatch_slash_command('notexistcmd', '', 'test-sid')")
     res2 = await dispatch_slash_command(
-        "notexistcmd", "", "test-sid", skill_loader=loader,
+        "notexistcmd",
+        "",
+        "test-sid",
+        skill_loader=loader,
     )
     print(f"    type: {res2['type']}")
     print(f"    message: {res2.get('message', '')}")
     assert res2["type"] == "error", "unknown 应返 error"
     # SkillLoader.invoke_script 会 raise KeyError → 转 unknown skill error
-    assert "unknown" in res2["message"].lower(), \
-        f"应含 'unknown'，实际: {res2['message']}"
+    assert "unknown" in res2["message"].lower(), f"应含 'unknown'，实际: {res2['message']}"
     print("    [OK] 未知命令真路径返 error")
 
     print("\n" + "=" * 70)

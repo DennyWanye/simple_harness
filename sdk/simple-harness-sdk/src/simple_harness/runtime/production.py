@@ -286,6 +286,7 @@ def _close_owned_memory_after_build_failure(memory: AgentMemoryPort) -> None:
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
+
         async def await_close() -> None:
             await outcome
 

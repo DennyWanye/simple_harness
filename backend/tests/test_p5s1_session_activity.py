@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 """P5-S1: SessionActivityStore unit tests."""
+
 from __future__ import annotations
 
 import asyncio
@@ -33,9 +34,7 @@ async def test_bump_creates_entry(store: SessionActivityStore):
 @pytest.mark.asyncio
 async def test_recent_events_caps_at_5(store: SessionActivityStore):
     for i in range(_RECENT_EVENTS_CAP + 3):
-        await store.bump(
-            "sid-A", event_type="tool_call", name=f"tool_{i}", args={"i": i}
-        )
+        await store.bump("sid-A", event_type="tool_call", name=f"tool_{i}", args={"i": i})
     sa = await store.get("sid-A")
     assert sa is not None
     assert len(sa.recent_events) == _RECENT_EVENTS_CAP
@@ -48,7 +47,9 @@ async def test_recent_events_caps_at_5(store: SessionActivityStore):
 async def test_signature_window_consecutive_count(store: SessionActivityStore):
     # 3 consecutive same-signature calls
     for _ in range(3):
-        await store.bump("sid-A", event_type="tool_call", name="bash_run", args={"cmd": "pip install foo"})
+        await store.bump(
+            "sid-A", event_type="tool_call", name="bash_run", args={"cmd": "pip install foo"}
+        )
     sa = await store.get("sid-A")
     assert sa is not None
     sig = f"bash_run:{args_hash({'cmd': 'pip install foo'})}"
@@ -106,7 +107,14 @@ async def test_clear_error_pending(store: SessionActivityStore):
 
 @pytest.mark.asyncio
 async def test_snapshot_dict_shape(store: SessionActivityStore):
-    await store.bump("sid-A", event_type="tool_call", name="bash_run", args={"cmd": "x"}, iteration=3, max_iterations=50)
+    await store.bump(
+        "sid-A",
+        event_type="tool_call",
+        name="bash_run",
+        args={"cmd": "x"},
+        iteration=3,
+        max_iterations=50,
+    )
     sa = await store.get("sid-A")
     assert sa is not None
     snap = sa.to_snapshot_dict()
@@ -130,6 +138,7 @@ def test_args_hash_stable_across_key_order():
 
 def test_args_hash_handles_unencodable():
     """Falls back to str() representation rather than raising."""
+
     class Custom:
         def __str__(self):
             return "Custom()"
@@ -142,6 +151,7 @@ def test_args_hash_handles_unencodable():
 @pytest.mark.asyncio
 async def test_concurrent_bumps_are_safe(store: SessionActivityStore):
     """asyncio.Lock prevents race conditions on shared dict mutation."""
+
     async def hammer(idx: int):
         for _ in range(10):
             await store.bump(

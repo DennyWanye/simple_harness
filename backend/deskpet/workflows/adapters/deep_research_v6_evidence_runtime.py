@@ -344,22 +344,18 @@ def _compact_official_query(
     type vocabulary.
     """
 
-    date_values = tuple(
-        str(time_scope.get(key) or "") for key in ("as_of", "start", "end")
-    )
+    date_values = tuple(str(time_scope.get(key) or "") for key in ("as_of", "start", "end"))
     years = tuple(
-        dict.fromkeys(
-            value[:4]
-            for value in date_values
-            if len(value) >= 4 and value[:4].isdigit()
-        )
+        dict.fromkeys(value[:4] for value in date_values if len(value) >= 4 and value[:4].isdigit())
     )
     localized = tuple(
         part
         for part in (_clean_part(value, limit=40) for value in concepts)
         if part and any("\u4e00" <= char <= "\u9fff" for char in part)
     )[:2]
-    publication_term = "统计公报" if str(locale).casefold().startswith("zh") else "statistical communique"
+    publication_term = (
+        "统计公报" if str(locale).casefold().startswith("zh") else "statistical communique"
+    )
     terms = tuple(dict.fromkeys((*years, *localized, publication_term)))
     return _bounded_query(terms, None, directive, max_chars=max_chars), terms
 
@@ -367,11 +363,7 @@ def _compact_official_query(
 def _time_scope_years(time_scope: Mapping[str, Any]) -> tuple[str, ...]:
     values = tuple(str(time_scope.get(key) or "") for key in ("as_of", "start", "end"))
     return tuple(
-        dict.fromkeys(
-            value[:4]
-            for value in values
-            if len(value) >= 4 and value[:4].isdigit()
-        )
+        dict.fromkeys(value[:4] for value in values if len(value) >= 4 and value[:4].isdigit())
     )
 
 
@@ -656,16 +648,12 @@ class DeepResearchV6EvidenceRuntime:
     ) -> RouteDecisionV1:
         """Freeze the route before retrieval so restart never recomputes it."""
 
-        research_spec = (
-            spec if isinstance(spec, ResearchSpecV1) else ResearchSpecV1.from_json(spec)
-        )
+        research_spec = spec if isinstance(spec, ResearchSpecV1) else ResearchSpecV1.from_json(spec)
         if not isinstance(identity, NodeExecutionIdentity):
             raise TypeError("v6 route planning requires a bound NodeExecutionIdentity")
         work_group_count = max(1, len(research_spec.to_json()["work_dimensions"]))
         llm_budget = (
-            0
-            if research_spec.intent_type == "official_exact_fact"
-            else work_group_count * 4
+            0 if research_spec.intent_type == "official_exact_fact" else work_group_count * 4
         )
         return build_route_decision_from_spec(
             research_spec,
@@ -695,9 +683,7 @@ class DeepResearchV6EvidenceRuntime:
         identity: object | None = None,
         route_decision: RouteDecisionV1 | Mapping[str, Any] | None = None,
     ) -> DeepResearchV6RetrievalResult:
-        research_spec = (
-            spec if isinstance(spec, ResearchSpecV1) else ResearchSpecV1.from_json(spec)
-        )
+        research_spec = spec if isinstance(spec, ResearchSpecV1) else ResearchSpecV1.from_json(spec)
         if not isinstance(identity, NodeExecutionIdentity):
             raise TypeError("v6 retrieval requires a bound NodeExecutionIdentity")
         run_id = identity.run_id
@@ -739,9 +725,7 @@ class DeepResearchV6EvidenceRuntime:
             parent = resumed.state
             parent_lease = resumed.lease
         if parent_lease is None:
-            return DeepResearchV6RetrievalResult(
-                (), parent, 0, 0, 0, 0, 0, frozen_route
-            )
+            return DeepResearchV6RetrievalResult((), parent, 0, 0, 0, 0, 0, frozen_route)
 
         route_budget = frozen_route.to_json()["budget"]
         self._active_route_id = str(frozen_route.to_json()["route_id"])
@@ -786,15 +770,16 @@ class DeepResearchV6EvidenceRuntime:
             )
             parent, parent_lease = transition.state, transition.lease
             candidate_buckets.extend(
-                outcome.candidates
-                for outcome in discovery_outcomes
-                if outcome.candidates
+                outcome.candidates for outcome in discovery_outcomes if outcome.candidates
             )
 
         discovery_fetch_count = sum(item.upstream_called for item in discovery_outcomes)
         if await self._control_fenced(run_id):
             return DeepResearchV6RetrievalResult(
-                (), parent, 0, discovery_fetch_count,
+                (),
+                parent,
+                0,
+                discovery_fetch_count,
                 sum(item.status == "timeout" for item in discovery_outcomes),
                 sum(item.status == "rejected" for item in discovery_outcomes),
                 sum(item.status == "failed" for item in discovery_outcomes),
@@ -805,9 +790,7 @@ class DeepResearchV6EvidenceRuntime:
         # the archive is unavailable or has no matching frozen year.
         use_search_fallback = not candidate_buckets
         search_count = 0
-        fanout = conditional_fanout_enabled(
-            frozen_route, intent_type=research_spec.intent_type
-        )
+        fanout = conditional_fanout_enabled(frozen_route, intent_type=research_spec.intent_type)
 
         async def _search_plan(
             plan: _QueryPlan, *, query_timeout_s: float
@@ -852,13 +835,18 @@ class DeepResearchV6EvidenceRuntime:
                         timeout=query_timeout_s,
                     )
                 else:
+
                     async def _transport(attempt) -> OfficialSearchResultV1:
                         try:
                             attempt_timeout_s = query_timeout_s
                             if attempt.deadline_monotonic_ns is not None:
                                 attempt_timeout_s = min(
                                     attempt_timeout_s,
-                                    max(0.0, (attempt.deadline_monotonic_ns - self.monotonic_ns()) / 1_000_000_000),
+                                    max(
+                                        0.0,
+                                        (attempt.deadline_monotonic_ns - self.monotonic_ns())
+                                        / 1_000_000_000,
+                                    ),
                                 )
                             item = await asyncio.wait_for(
                                 dispatch_with_run_fence(
@@ -879,8 +867,10 @@ class DeepResearchV6EvidenceRuntime:
                                 request_id=plan.request_id,
                                 query_hash=hashlib.sha256(plan.query.encode("utf-8")).hexdigest(),
                                 target_id=plan.target.target_id,
-                                candidates=(), outcome="timeout",
-                                error_code="deadline_expired", deadline_id=attempt.deadline_id,
+                                candidates=(),
+                                outcome="timeout",
+                                error_code="deadline_expired",
+                                deadline_id=attempt.deadline_id,
                             )
                         except Exception:
                             return OfficialSearchResultV1.create(
@@ -889,8 +879,10 @@ class DeepResearchV6EvidenceRuntime:
                                 request_id=plan.request_id,
                                 query_hash=hashlib.sha256(plan.query.encode("utf-8")).hexdigest(),
                                 target_id=plan.target.target_id,
-                                candidates=(), outcome="failed",
-                                error_code="search_failed", deadline_id=attempt.deadline_id,
+                                candidates=(),
+                                outcome="failed",
+                                error_code="search_failed",
+                                deadline_id=attempt.deadline_id,
                             )
                         typed_candidates: list[SearchCandidateV1] = []
                         for raw_candidate in item.results:
@@ -911,14 +903,20 @@ class DeepResearchV6EvidenceRuntime:
                                 verification_status="unverified",
                                 identity=identity,
                             )
-                            typed_candidates.append(SearchCandidateV1.create(
-                                ordinal=len(typed_candidates),
-                                source_locator_ref=locator["source_locator_ref"],
-                                title_hash=hashlib.sha256(raw_candidate.title.encode("utf-8")).hexdigest(),
-                                snippet_hash=hashlib.sha256(raw_candidate.snippet.encode("utf-8")).hexdigest(),
-                                authority_match="unverified",
-                                reason_codes=("candidate_unverified",),
-                            ))
+                            typed_candidates.append(
+                                SearchCandidateV1.create(
+                                    ordinal=len(typed_candidates),
+                                    source_locator_ref=locator["source_locator_ref"],
+                                    title_hash=hashlib.sha256(
+                                        raw_candidate.title.encode("utf-8")
+                                    ).hexdigest(),
+                                    snippet_hash=hashlib.sha256(
+                                        raw_candidate.snippet.encode("utf-8")
+                                    ).hexdigest(),
+                                    authority_match="unverified",
+                                    reason_codes=("candidate_unverified",),
+                                )
+                            )
                         return OfficialSearchResultV1.create(
                             logical_effect_id=attempt.logical_effect_id,
                             attempt_no=attempt.attempt_no,
@@ -927,8 +925,10 @@ class DeepResearchV6EvidenceRuntime:
                             target_id=plan.target.target_id,
                             candidates=tuple(typed_candidates),
                             outcome="succeeded" if typed_candidates else "empty",
-                            error_code=None, deadline_id=attempt.deadline_id,
+                            error_code=None,
+                            deadline_id=attempt.deadline_id,
                         )
+
                     durable = await self.durable_reads.execute(
                         operation_kind="official_search",
                         route_id=str(frozen_route.to_json()["route_id"]),
@@ -955,12 +955,14 @@ class DeepResearchV6EvidenceRuntime:
                         locator = SourceLocatorV1.from_json(locator_value)
                         if locator.verification_status != candidate.authority_match:
                             raise ValueError("search candidate/locator authority mismatch")
-                        replayed.append(RetrievalCandidate(
-                            stable_id=candidate.candidate_id,
-                            url=locator.canonical_url,
-                            canonical_url=locator.canonical_url,
-                            title="",
-                        ))
+                        replayed.append(
+                            RetrievalCandidate(
+                                stable_id=candidate.candidate_id,
+                                url=locator.canonical_url,
+                                canonical_url=locator.canonical_url,
+                                title="",
+                            )
+                        )
                     response = SearchResponse(
                         query=plan.query,
                         results=tuple(replayed),
@@ -969,22 +971,16 @@ class DeepResearchV6EvidenceRuntime:
                     )
             except asyncio.CancelledError:
                 await asyncio.shield(
-                    self._finish_child_span(
-                        search_span, SpanStatus.CANCELLED, outcome="cancelled"
-                    )
+                    self._finish_child_span(search_span, SpanStatus.CANCELLED, outcome="cancelled")
                 )
                 raise
             except TimeoutError:
-                await self._finish_child_span(
-                    search_span, SpanStatus.ERROR, outcome="timeout"
-                )
+                await self._finish_child_span(search_span, SpanStatus.ERROR, outcome="timeout")
                 response = None
             except Exception:
                 # Search failures are evidence gaps.  Other frozen dimensions
                 # can still return useful pages under the same parent budget.
-                await self._finish_child_span(
-                    search_span, SpanStatus.ERROR, outcome="error"
-                )
+                await self._finish_child_span(search_span, SpanStatus.ERROR, outcome="error")
                 response = None
             else:
                 await self._finish_child_span(
@@ -1035,10 +1031,7 @@ class DeepResearchV6EvidenceRuntime:
                     async with query_semaphore:
                         return await _search_plan(plan, query_timeout_s=remaining_s)
 
-                tasks = [
-                    asyncio.create_task(_bounded_search(plan))
-                    for plan in active_plans
-                ]
+                tasks = [asyncio.create_task(_bounded_search(plan)) for plan in active_plans]
                 search_count = len(tasks)
                 try:
                     candidate_buckets.extend(await asyncio.gather(*tasks))
@@ -1069,9 +1062,7 @@ class DeepResearchV6EvidenceRuntime:
                 if remaining_s <= 0:
                     break
                 query_timeout_s = remaining_s / max(1, len(active_plans) - index)
-                candidate_buckets.append(
-                    await _search_plan(plan, query_timeout_s=query_timeout_s)
-                )
+                candidate_buckets.append(await _search_plan(plan, query_timeout_s=query_timeout_s))
                 search_count += 1
                 if self.durable_reads is not None:
                     parent, parent_lease = await self.durable_reads.deadline_port.checkpoint(
@@ -1088,7 +1079,10 @@ class DeepResearchV6EvidenceRuntime:
 
         if await self._control_fenced(run_id):
             return DeepResearchV6RetrievalResult(
-                (), parent, search_count, discovery_fetch_count,
+                (),
+                parent,
+                search_count,
+                discovery_fetch_count,
                 sum(item.status == "timeout" for item in discovery_outcomes),
                 sum(item.status == "rejected" for item in discovery_outcomes),
                 sum(item.status == "failed" for item in discovery_outcomes),
@@ -1128,9 +1122,7 @@ class DeepResearchV6EvidenceRuntime:
                 await asyncio.gather(*archive_tasks, return_exceptions=True)
                 raise
             discovery_outcomes = (*discovery_outcomes, *searched_outcomes)
-            discovery_fetch_count = sum(
-                item.upstream_called for item in discovery_outcomes
-            )
+            discovery_fetch_count = sum(item.upstream_called for item in discovery_outcomes)
             if self.durable_reads is not None:
                 parent, parent_lease = await self.durable_reads.deadline_port.checkpoint(
                     identity=identity, state=parent, lease=parent_lease
@@ -1144,14 +1136,10 @@ class DeepResearchV6EvidenceRuntime:
                 )
                 parent, parent_lease = transition.state, transition.lease
             direct = tuple(
-                candidate
-                for candidate in selected
-                if not _looks_like_archive_locator(candidate)
+                candidate for candidate in selected if not _looks_like_archive_locator(candidate)
             )
             discovered = tuple(
-                outcome.candidates
-                for outcome in searched_outcomes
-                if outcome.candidates
+                outcome.candidates for outcome in searched_outcomes if outcome.candidates
             )
             selected = self._select_candidates(
                 (*discovered, direct),
@@ -1182,9 +1170,7 @@ class DeepResearchV6EvidenceRuntime:
         async def _fetch_candidates(
             candidates: Sequence[_CandidatePlan],
         ) -> tuple[_FetchOutcome, ...]:
-            concurrency = min(
-                self.max_fetch_concurrency, lane_limit, len(candidates)
-            )
+            concurrency = min(self.max_fetch_concurrency, lane_limit, len(candidates))
             semaphore = asyncio.Semaphore(concurrency)
             cursor = 0
             cursor_lock = asyncio.Lock()
@@ -1212,9 +1198,7 @@ class DeepResearchV6EvidenceRuntime:
                         )
                     )
 
-            tasks = [
-                asyncio.create_task(_fetch_worker()) for _ in range(concurrency)
-            ]
+            tasks = [asyncio.create_task(_fetch_worker()) for _ in range(concurrency)]
             try:
                 await asyncio.gather(*tasks)
                 return tuple(completed)
@@ -1252,9 +1236,7 @@ class DeepResearchV6EvidenceRuntime:
             and query_plans
             and parent_lease is not None
             and (
-                discovery_fetch_count
-                + sum(item.upstream_called for item in outcomes)
-                < fetch_limit
+                discovery_fetch_count + sum(item.upstream_called for item in outcomes) < fetch_limit
             )
             and not await self._control_fenced(run_id)
         ):
@@ -1270,17 +1252,13 @@ class DeepResearchV6EvidenceRuntime:
                 escalation_buckets.append(
                     await _search_plan(
                         plan,
-                        query_timeout_s=(
-                            remaining_s / max(1, len(query_plans) - index)
-                        ),
+                        query_timeout_s=(remaining_s / max(1, len(query_plans) - index)),
                     )
                 )
                 search_count += 1
                 if self.durable_reads is not None:
-                    parent, parent_lease = (
-                        await self.durable_reads.deadline_port.checkpoint(
-                            identity=identity, state=parent, lease=parent_lease
-                        )
+                    parent, parent_lease = await self.durable_reads.deadline_port.checkpoint(
+                        identity=identity, state=parent, lease=parent_lease
                     )
                 else:
                     transition = checkpoint_deadline(
@@ -1306,13 +1284,9 @@ class DeepResearchV6EvidenceRuntime:
                 - discovery_fetch_count
                 - sum(item.upstream_called for item in outcomes),
             )
-            escalated = self._select_candidates(
-                escalation_buckets, limit=remaining_fetches
-            )
+            escalated = self._select_candidates(escalation_buckets, limit=remaining_fetches)
             escalation_archives = tuple(
-                candidate
-                for candidate in escalated
-                if _looks_like_archive_locator(candidate)
+                candidate for candidate in escalated if _looks_like_archive_locator(candidate)
             )
             if escalation_archives and parent_lease is not None:
                 archive_semaphore = asyncio.Semaphore(
@@ -1335,9 +1309,7 @@ class DeepResearchV6EvidenceRuntime:
                     for candidate in escalation_archives
                 ]
                 try:
-                    escalation_discovery = tuple(
-                        await asyncio.gather(*archive_tasks)
-                    )
+                    escalation_discovery = tuple(await asyncio.gather(*archive_tasks))
                 except asyncio.CancelledError:
                     for task in archive_tasks:
                         task.cancel()
@@ -1347,16 +1319,12 @@ class DeepResearchV6EvidenceRuntime:
                     *discovery_outcomes,
                     *escalation_discovery,
                 )
-                discovery_fetch_count = sum(
-                    item.upstream_called for item in discovery_outcomes
-                )
+                discovery_fetch_count = sum(item.upstream_called for item in discovery_outcomes)
                 if self.durable_reads is not None:
-                    parent, parent_lease = (
-                        await self.durable_reads.deadline_port.checkpoint(
-                            identity=identity,
-                            state=parent,
-                            lease=parent_lease,
-                        )
+                    parent, parent_lease = await self.durable_reads.deadline_port.checkpoint(
+                        identity=identity,
+                        state=parent,
+                        lease=parent_lease,
                     )
                 else:
                     transition = checkpoint_deadline(
@@ -1372,27 +1340,21 @@ class DeepResearchV6EvidenceRuntime:
                     if not _looks_like_archive_locator(candidate)
                 )
                 discovered_escalation = tuple(
-                    outcome.candidates
-                    for outcome in escalation_discovery
-                    if outcome.candidates
+                    outcome.candidates for outcome in escalation_discovery if outcome.candidates
                 )
                 already_fetched = sum(item.upstream_called for item in outcomes)
                 escalated = self._select_candidates(
                     (*discovered_escalation, direct_escalation),
                     limit=max(
                         0,
-                        fetch_limit
-                        - discovery_fetch_count
-                        - already_fetched,
+                        fetch_limit - discovery_fetch_count - already_fetched,
                     ),
                 )
             if escalated and parent_lease is not None:
                 outcomes = (*outcomes, *(await _fetch_candidates(escalated)))
                 if self.durable_reads is not None:
-                    parent, parent_lease = (
-                        await self.durable_reads.deadline_port.checkpoint(
-                            identity=identity, state=parent, lease=parent_lease
-                        )
+                    parent, parent_lease = await self.durable_reads.deadline_port.checkpoint(
+                        identity=identity, state=parent, lease=parent_lease
                     )
                 else:
                     transition = checkpoint_deadline(
@@ -1439,9 +1401,7 @@ class DeepResearchV6EvidenceRuntime:
                     raise ValueError("canonical page result ref aliases distinct pages")
                 page_to_ref[page_key] = result_ref
                 ref_to_page[result_ref] = page_key
-            canonical_page_keys = {
-                (page.final_url_hash, page.body_hash) for page in pages
-            }
+            canonical_page_keys = {(page.final_url_hash, page.body_hash) for page in pages}
             if canonical_page_keys != set(page_to_ref):
                 raise ValueError("canonical page is missing canonical result ref")
         return DeepResearchV6RetrievalResult(
@@ -1470,9 +1430,7 @@ class DeepResearchV6EvidenceRuntime:
         spec: ResearchSpecV1,
     ) -> tuple[tuple[_QueryPlan, ...], tuple[tuple[_CandidatePlan, ...], ...]]:
         raw = spec.to_json()
-        requirements = {
-            str(item["requirement_id"]): item for item in raw["requirements"]
-        }
+        requirements = {str(item["requirement_id"]): item for item in raw["requirements"]}
         user_constraints = raw["user_constraints"]
         user_jurisdictions = tuple(user_constraints["jurisdictions"])
         user_preferred = tuple(user_constraints["preferred_authority_ids"])
@@ -1480,17 +1438,14 @@ class DeepResearchV6EvidenceRuntime:
         seeds: list[tuple[_CandidatePlan, ...]] = []
 
         if spec.intent_type != "official_exact_fact":
-            for dimension in sorted(
-                raw["work_dimensions"], key=lambda item: item["ordinal"]
-            ):
+            for dimension in sorted(raw["work_dimensions"], key=lambda item: item["ordinal"]):
                 if len(query_plans) >= self.max_queries:
                     break
                 requirement_ids = tuple(sorted(dimension["requirement_ids"]))
                 concepts = tuple(
                     part
                     for part in (
-                        _clean_part(value, limit=80)
-                        for value in dimension["search_concepts"]
+                        _clean_part(value, limit=80) for value in dimension["search_concepts"]
                     )
                     if part
                 )
@@ -1557,17 +1512,10 @@ class DeepResearchV6EvidenceRuntime:
             if not jurisdictions or not roles:
                 continue
             source_types = tuple(source["eligible_source_types"])
-            preferred = tuple(
-                sorted(
-                    set(source["preferred_authority_ids"]) | set(user_preferred)
-                )
-            )
+            preferred = tuple(sorted(set(source["preferred_authority_ids"]) | set(user_preferred)))
             concepts = tuple(
                 part
-                for part in (
-                    _clean_part(value, limit=80)
-                    for value in dimension["search_concepts"]
-                )
+                for part in (_clean_part(value, limit=80) for value in dimension["search_concepts"])
                 if part
             )
             time_label = dimension["time_scope"].get("label")
@@ -1673,22 +1621,19 @@ class DeepResearchV6EvidenceRuntime:
     ) -> tuple[_CandidatePlan, ...]:
         """Round-robin query buckets so one dimension cannot consume all fetches."""
 
-        effective_limit = self.max_fetches if limit is None else max(0, min(limit, self.max_fetches))
+        effective_limit = (
+            self.max_fetches if limit is None else max(0, min(limit, self.max_fetches))
+        )
         ordered_buckets = tuple(
             (
                 tuple(bucket)
-                if all(
-                    isinstance(candidate.target, OfficialSourceTargetV1)
-                    for candidate in bucket
-                )
+                if all(isinstance(candidate.target, OfficialSourceTargetV1) for candidate in bucket)
                 else tuple(
                     sorted(
                         bucket,
                         key=lambda candidate: (
                             candidate.dimension_id,
-                            hashlib.sha256(
-                                candidate.requested_url.encode("utf-8")
-                            ).hexdigest(),
+                            hashlib.sha256(candidate.requested_url.encode("utf-8")).hexdigest(),
                             candidate.candidate_id,
                         ),
                     )
@@ -1748,9 +1693,7 @@ class DeepResearchV6EvidenceRuntime:
 
             async def _done(outcome: _SeedDiscoveryOutcome) -> _SeedDiscoveryOutcome:
                 status = (
-                    SpanStatus.OK
-                    if outcome.status in {"discovered", "empty"}
-                    else SpanStatus.ERROR
+                    SpanStatus.OK if outcome.status in {"discovered", "empty"} else SpanStatus.ERROR
                 )
                 await self._finish_child_span(
                     span,
@@ -1816,13 +1759,15 @@ class DeepResearchV6EvidenceRuntime:
                     )
                 else:
                     typed = await self._durable_page_result(
-                        candidate=candidate, request=request, timeout_s=timeout_s,
-                        deadline=child, identity=identity, prefer_html=True,
+                        candidate=candidate,
+                        request=request,
+                        timeout_s=timeout_s,
+                        deadline=child,
+                        identity=identity,
+                        prefer_html=True,
                     )
                     typed_ref = format_blob_ref(
-                        hashlib.sha256(
-                            canonical_json(typed.to_json()).encode("utf-8")
-                        ).hexdigest()
+                        hashlib.sha256(canonical_json(typed.to_json()).encode("utf-8")).hexdigest()
                     )
                     child, _ = await self.durable_reads.deadline_port.checkpoint(
                         identity=identity, state=child, lease=lease
@@ -1836,25 +1781,35 @@ class DeepResearchV6EvidenceRuntime:
                             else "failed"
                         )
                         return await _done(
-                            _SeedDiscoveryOutcome(
-                                status, True, page_result_ref=typed_ref
-                            )
+                            _SeedDiscoveryOutcome(status, True, page_result_ref=typed_ref)
                         )
                     page = typed.page_record
                     raw_body = await self.blobs.get(str(page["body_ref"]).removeprefix("sha256:"))
-                    raw_locator = await self.blobs.get(typed.source_locator_ref.removeprefix("sha256:"))
+                    raw_locator = await self.blobs.get(
+                        typed.source_locator_ref.removeprefix("sha256:")
+                    )
                     locator_value = json.loads(raw_locator.decode("utf-8"))
                     if not isinstance(locator_value, Mapping):
                         raise ValueError("source locator blob must be an object")
                     locator = SourceLocatorV1.from_json(locator_value)
                     body = raw_body.decode("utf-8")
                     document = EvidenceDocument(
-                        stable_id=str(page["page_id"]), url=locator.final_url,
-                        canonical_url=locator.final_url, title="", text=body,
-                        published_at=None, provider="durable_v6", providers=("durable_v6",),
-                        provider_rank=0, score=0.0, searched_at="", source_kind="official",
-                        content_hash=str(page["body_hash"]), fetcher="durable_v6",
-                        extractor="durable_v6", fetched_at=str(page["fetched_at"]),
+                        stable_id=str(page["page_id"]),
+                        url=locator.final_url,
+                        canonical_url=locator.final_url,
+                        title="",
+                        text=body,
+                        published_at=None,
+                        provider="durable_v6",
+                        providers=("durable_v6",),
+                        provider_rank=0,
+                        score=0.0,
+                        searched_at="",
+                        source_kind="official",
+                        content_hash=str(page["body_hash"]),
+                        fetcher="durable_v6",
+                        extractor="durable_v6",
+                        fetched_at=str(page["fetched_at"]),
                         html=body,
                     )
             except asyncio.CancelledError:
@@ -1931,11 +1886,7 @@ class DeepResearchV6EvidenceRuntime:
             )
 
             async def _done(outcome: _FetchOutcome) -> _FetchOutcome:
-                status = (
-                    SpanStatus.OK
-                    if outcome.status == "verified"
-                    else SpanStatus.ERROR
-                )
+                status = SpanStatus.OK if outcome.status == "verified" else SpanStatus.ERROR
                 await self._finish_child_span(
                     fetch_span,
                     status,
@@ -1953,9 +1904,7 @@ class DeepResearchV6EvidenceRuntime:
                 )
             except asyncio.CancelledError:
                 await asyncio.shield(
-                    self._finish_child_span(
-                        fetch_span, SpanStatus.CANCELLED, outcome="cancelled"
-                    )
+                    self._finish_child_span(fetch_span, SpanStatus.CANCELLED, outcome="cancelled")
                 )
                 raise
             except Exception:
@@ -2019,43 +1968,60 @@ class DeepResearchV6EvidenceRuntime:
                     )
                 else:
                     typed = await self._durable_page_result(
-                        candidate=candidate, request=request, timeout_s=timeout_s,
-                        deadline=child, identity=identity, prefer_html=False,
+                        candidate=candidate,
+                        request=request,
+                        timeout_s=timeout_s,
+                        deadline=child,
+                        identity=identity,
+                        prefer_html=False,
                     )
-                    typed_ref = format_blob_ref(hashlib.sha256(
-                        canonical_json(typed.to_json()).encode("utf-8")
-                    ).hexdigest())
+                    typed_ref = format_blob_ref(
+                        hashlib.sha256(canonical_json(typed.to_json()).encode("utf-8")).hexdigest()
+                    )
                     if typed.outcome == "timeout":
-                        return await _done(_FetchOutcome(
-                            candidate.ordinal, "timeout", True,
-                            page_result_ref=typed_ref,
-                        ))
+                        return await _done(
+                            _FetchOutcome(
+                                candidate.ordinal,
+                                "timeout",
+                                True,
+                                page_result_ref=typed_ref,
+                            )
+                        )
                     if typed.outcome != "succeeded" or typed.page_record is None:
-                        return await _done(_FetchOutcome(
-                            candidate.ordinal,
-                            "rejected" if typed.outcome in {"blocked", "empty"} else "failed",
-                            True,
-                            page_result_ref=typed_ref,
-                        ))
+                        return await _done(
+                            _FetchOutcome(
+                                candidate.ordinal,
+                                "rejected" if typed.outcome in {"blocked", "empty"} else "failed",
+                                True,
+                                page_result_ref=typed_ref,
+                            )
+                        )
                     page = typed.page_record
-                    return await _done(_FetchOutcome(
-                        ordinal=candidate.ordinal, status="verified", upstream_called=True,
-                        page=_VerifiedPage(
-                            source_locator_ref=typed.source_locator_ref,
-                            canonical_url_hash=str(page["canonical_url_hash"]),
-                            final_url_hash=str(page["final_url_hash"]),
-                            body_ref=str(page["body_ref"]), body_hash=str(page["body_hash"]),
-                            authority_id=str(page["authority_id"]),
-                            title_hash=hashlib.sha256((candidate.title or candidate.target.organization_name).encode("utf-8")).hexdigest(),
-                            admission_reason=str(page["reason_codes"][0]),
-                        ),
-                        page_result_ref=typed_ref,
-                    ))
+                    return await _done(
+                        _FetchOutcome(
+                            ordinal=candidate.ordinal,
+                            status="verified",
+                            upstream_called=True,
+                            page=_VerifiedPage(
+                                source_locator_ref=typed.source_locator_ref,
+                                canonical_url_hash=str(page["canonical_url_hash"]),
+                                final_url_hash=str(page["final_url_hash"]),
+                                body_ref=str(page["body_ref"]),
+                                body_hash=str(page["body_hash"]),
+                                authority_id=str(page["authority_id"]),
+                                title_hash=hashlib.sha256(
+                                    (candidate.title or candidate.target.organization_name).encode(
+                                        "utf-8"
+                                    )
+                                ).hexdigest(),
+                                admission_reason=str(page["reason_codes"][0]),
+                            ),
+                            page_result_ref=typed_ref,
+                        )
+                    )
             except asyncio.CancelledError:
                 await asyncio.shield(
-                    self._finish_child_span(
-                        fetch_span, SpanStatus.CANCELLED, outcome="cancelled"
-                    )
+                    self._finish_child_span(fetch_span, SpanStatus.CANCELLED, outcome="cancelled")
                 )
                 raise
             except TimeoutError:
@@ -2085,9 +2051,7 @@ class DeepResearchV6EvidenceRuntime:
                 )
             except asyncio.CancelledError:
                 await asyncio.shield(
-                    self._finish_child_span(
-                        fetch_span, SpanStatus.CANCELLED, outcome="cancelled"
-                    )
+                    self._finish_child_span(fetch_span, SpanStatus.CANCELLED, outcome="cancelled")
                 )
                 raise
             except Exception:
@@ -2111,30 +2075,30 @@ class DeepResearchV6EvidenceRuntime:
                 )
             except asyncio.CancelledError:
                 await asyncio.shield(
-                    self._finish_child_span(
-                        fetch_span, SpanStatus.CANCELLED, outcome="cancelled"
-                    )
+                    self._finish_child_span(fetch_span, SpanStatus.CANCELLED, outcome="cancelled")
                 )
                 raise
             except Exception:
                 return await _done(_FetchOutcome(candidate.ordinal, "failed", True))
             if body_blob.sha256 != body_hash:
                 return await _done(_FetchOutcome(candidate.ordinal, "failed", True))
-            return await _done(_FetchOutcome(
-                ordinal=candidate.ordinal,
-                status="verified",
-                upstream_called=True,
-                page=_VerifiedPage(
-                    source_locator_ref=locator["source_locator_ref"],
-                    canonical_url_hash=locator["canonical_url_hash"],
-                    final_url_hash=locator["final_url_hash"],
-                    body_ref=format_blob_ref(body_blob.sha256),
-                    body_hash=body_hash,
-                    authority_id=authority_id,
-                    title_hash=hashlib.sha256(title.encode("utf-8")).hexdigest(),
-                    admission_reason=admission_reason,
-                ),
-            ))
+            return await _done(
+                _FetchOutcome(
+                    ordinal=candidate.ordinal,
+                    status="verified",
+                    upstream_called=True,
+                    page=_VerifiedPage(
+                        source_locator_ref=locator["source_locator_ref"],
+                        canonical_url_hash=locator["canonical_url_hash"],
+                        final_url_hash=locator["final_url_hash"],
+                        body_ref=format_blob_ref(body_blob.sha256),
+                        body_hash=body_hash,
+                        authority_id=authority_id,
+                        title_hash=hashlib.sha256(title.encode("utf-8")).hexdigest(),
+                        admission_reason=admission_reason,
+                    ),
+                )
+            )
 
     async def _durable_page_result(
         self,
@@ -2170,7 +2134,10 @@ class DeepResearchV6EvidenceRuntime:
                 if attempt.deadline_monotonic_ns is not None:
                     attempt_timeout_s = min(
                         attempt_timeout_s,
-                        max(0.0, (attempt.deadline_monotonic_ns - self.monotonic_ns()) / 1_000_000_000),
+                        max(
+                            0.0,
+                            (attempt.deadline_monotonic_ns - self.monotonic_ns()) / 1_000_000_000,
+                        ),
                     )
                 document = await asyncio.wait_for(
                     self.fetch_service.fetch(request), timeout=attempt_timeout_s
@@ -2179,20 +2146,32 @@ class DeepResearchV6EvidenceRuntime:
                 raise
             except TimeoutError:
                 return PageExtractionResultV1.create(
-                    **common, source_locator_ref=input_locator["source_locator_ref"],
-                    page_record=None, spans=(), bindings=(), outcome="timeout",
+                    **common,
+                    source_locator_ref=input_locator["source_locator_ref"],
+                    page_record=None,
+                    spans=(),
+                    bindings=(),
+                    outcome="timeout",
                     error_code="deadline_expired",
                 )
             except Exception:
                 return PageExtractionResultV1.create(
-                    **common, source_locator_ref=input_locator["source_locator_ref"],
-                    page_record=None, spans=(), bindings=(), outcome="failed",
+                    **common,
+                    source_locator_ref=input_locator["source_locator_ref"],
+                    page_record=None,
+                    spans=(),
+                    bindings=(),
+                    outcome="failed",
                     error_code="fetch_failed",
                 )
             if not isinstance(document, EvidenceDocument):
                 return PageExtractionResultV1.create(
-                    **common, source_locator_ref=input_locator["source_locator_ref"],
-                    page_record=None, spans=(), bindings=(), outcome="failed",
+                    **common,
+                    source_locator_ref=input_locator["source_locator_ref"],
+                    page_record=None,
+                    spans=(),
+                    bindings=(),
+                    outcome="failed",
                     error_code="invalid_fetch_result",
                 )
             final_url = document.canonical_url.strip() or document.url.strip()
@@ -2209,34 +2188,49 @@ class DeepResearchV6EvidenceRuntime:
                 admission_reason = "general_same_host_verified"
                 source_tier = "general"
             locator = await self._persist_locator(
-                candidate=candidate, final_url=final_url,
+                candidate=candidate,
+                final_url=final_url,
                 verification_status="verified" if matched else "rejected",
                 identity=identity,
             )
             if not matched:
                 return PageExtractionResultV1.create(
-                    **common, source_locator_ref=locator["source_locator_ref"],
-                    page_record=None, spans=(), bindings=(), outcome="blocked",
+                    **common,
+                    source_locator_ref=locator["source_locator_ref"],
+                    page_record=None,
+                    spans=(),
+                    bindings=(),
+                    outcome="blocked",
                     error_code="redirect_authority_rejected",
                 )
             body = (document.html if prefer_html and document.html else document.text).strip()
             if not body:
                 return PageExtractionResultV1.create(
-                    **common, source_locator_ref=locator["source_locator_ref"],
-                    page_record=None, spans=(), bindings=(), outcome="empty",
+                    **common,
+                    source_locator_ref=locator["source_locator_ref"],
+                    page_record=None,
+                    spans=(),
+                    bindings=(),
+                    outcome="empty",
                     error_code=None,
                 )
             body_bytes = body.encode("utf-8")
             body_hash = hashlib.sha256(body_bytes).hexdigest()
             body_blob = await self._put_blob(
-                body_bytes, identity,
-                media_type="text/html; charset=utf-8" if prefer_html else "text/plain; charset=utf-8",
+                body_bytes,
+                identity,
+                media_type="text/html; charset=utf-8"
+                if prefer_html
+                else "text/plain; charset=utf-8",
             )
             if body_blob.sha256 != body_hash:
                 raise ValueError("registered page body digest mismatch")
-            page_id = "page_" + hashlib.sha256(
-                (locator["final_url_hash"] + body_hash).encode("ascii")
-            ).hexdigest()[:24]
+            page_id = (
+                "page_"
+                + hashlib.sha256(
+                    (locator["final_url_hash"] + body_hash).encode("ascii")
+                ).hexdigest()[:24]
+            )
             page_record: dict[str, JsonValue] = {
                 "schema_version": 1,
                 "page_id": page_id,
@@ -2249,13 +2243,19 @@ class DeepResearchV6EvidenceRuntime:
                 "body_ref": format_blob_ref(body_blob.sha256),
                 "body_hash": body_hash,
                 "fetched_at": document.fetched_at or datetime.now(UTC).isoformat(),
-                "media_type": "text/html; charset=utf-8" if prefer_html else "text/plain; charset=utf-8",
+                "media_type": "text/html; charset=utf-8"
+                if prefer_html
+                else "text/plain; charset=utf-8",
                 "admission_status": "admitted",
                 "reason_codes": [admission_reason],
             }
             return PageExtractionResultV1.create(
-                **common, source_locator_ref=locator["source_locator_ref"],
-                page_record=page_record, spans=(), bindings=(), outcome="succeeded",
+                **common,
+                source_locator_ref=locator["source_locator_ref"],
+                page_record=page_record,
+                spans=(),
+                bindings=(),
+                outcome="succeeded",
                 error_code=None,
             )
 
@@ -2359,9 +2359,12 @@ class DeepResearchV6EvidenceRuntime:
             if page.final_url_hash in seen_final_urls:
                 continue
             seen_final_urls.add(page.final_url_hash)
-            page_id = "page_" + hashlib.sha256(
-                (page.final_url_hash + page.body_hash).encode("ascii")
-            ).hexdigest()[:24]
+            page_id = (
+                "page_"
+                + hashlib.sha256(
+                    (page.final_url_hash + page.body_hash).encode("ascii")
+                ).hexdigest()[:24]
+            )
             pages.append(
                 V6FetchedPageRefPayloadV1(
                     page_id=page_id,

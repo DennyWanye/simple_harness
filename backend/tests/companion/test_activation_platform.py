@@ -65,29 +65,17 @@ def _authorization(
         revocation_epoch=7,
         candidate_id="candidate-1" if candidate else None,
         candidate_mode=CandidateMode.UPDATE if candidate else None,
-        target_version=(
-            "1.0.2"
-            if candidate or action is MutationAction.ROLLBACK
-            else None
-        ),
+        target_version=("1.0.2" if candidate or action is MutationAction.ROLLBACK else None),
         target_manifest_hash=(
-            "manifest-1"
-            if candidate or action is MutationAction.ROLLBACK
-            else None
+            "manifest-1" if candidate or action is MutationAction.ROLLBACK else None
         ),
         target_package_hash="package-1" if candidate else None,
         target_archive_hash="archive-1" if candidate else None,
         report_id="report-1" if candidate else None,
         risk_id="risk-1" if candidate else None,
         decision_id="decision-1" if candidate else None,
-        risk_ack=(
-            "persistent_local_code_no_os_sandbox" if executable else "none"
-        ),
-        rollback_kind=(
-            "same_owner_version"
-            if action is MutationAction.ROLLBACK
-            else None
-        ),
+        risk_ack=("persistent_local_code_no_os_sandbox" if executable else "none"),
+        rollback_kind=("same_owner_version" if action is MutationAction.ROLLBACK else None),
     )
 
 
@@ -108,9 +96,7 @@ def _proof(
         executable=executable,
         decision_mode=decision_mode,  # type: ignore[arg-type]
         code_digest=code_digest,
-        activation_risk_ack=(
-            "persistent_local_code_no_os_sandbox" if executable else "none"
-        ),
+        activation_risk_ack=("persistent_local_code_no_os_sandbox" if executable else "none"),
     )
 
 
@@ -186,9 +172,7 @@ class _StaticPlatform:
             acknowledged_at=time.time(),
         )
 
-    async def await_prepared_runtime_instance_health(
-        self, prepared_set, instance
-    ):
+    async def await_prepared_runtime_instance_health(self, prepared_set, instance):
         self.trace.append(("health", instance.entry_id))
         return RuntimeHealthOutcome(
             operation_id=prepared_set.operation_id,
@@ -225,9 +209,7 @@ class _StaticPlatform:
     async def abort_prepared_set(self, prepared_set, *, reason_code):
         self.trace.append(("abort_set", prepared_set.runtime_set_hash, reason_code))
 
-    async def abort_lifecycle_mutation_static(
-        self, prepared, *, reason_code
-    ):
+    async def abort_lifecycle_mutation_static(self, prepared, *, reason_code):
         self.trace.append(("abort_static", prepared.manager_operation_id, reason_code))
         return True
 
@@ -280,9 +262,7 @@ async def test_executable_confirmation_requires_exact_code_digest_before_prepare
     platform = _StaticPlatform()
     facade = CompanionCapabilityMutationPlatform(
         platform=platform,  # type: ignore[arg-type]
-        decision_proofs=_Proofs(
-            _proof(authorization, executable=True, code_digest=None)
-        ),
+        decision_proofs=_Proofs(_proof(authorization, executable=True, code_digest=None)),
     )
 
     with pytest.raises(ActivationDispatchError) as exc:
@@ -293,10 +273,7 @@ async def test_executable_confirmation_requires_exact_code_digest_before_prepare
             persisted_runtime_set_hash=None,
         )
 
-    assert (
-        exc.value.reason_code
-        == "executable_activation_confirmation_incomplete"
-    )
+    assert exc.value.reason_code == "executable_activation_confirmation_incomplete"
     assert platform.trace == []
 
 
@@ -317,9 +294,7 @@ async def test_runtime_lifecycle_reuses_platform_start_health_and_activate() -> 
     )
     assert len(prepared.instances) == 1
 
-    started = await facade.start_runtime_instance(
-        authorization, prepared, prepared.instances[0]
-    )
+    started = await facade.start_runtime_instance(authorization, prepared, prepared.instances[0])
     assert started.outcome == "started"
     assert await facade.await_runtime_instance_health(
         authorization, prepared, prepared.instances[0], started
@@ -522,9 +497,7 @@ async def test_manager_static_port_rejects_executable_before_manager_call() -> N
     manager = _Manager(None)
     port = CapabilityManagerStaticLifecyclePort(
         manager=manager,  # type: ignore[arg-type]
-        candidate_sources=_CandidateSources(
-            _lifecycle_source(request, executable=True)
-        ),
+        candidate_sources=_CandidateSources(_lifecycle_source(request, executable=True)),
     )
 
     with pytest.raises(CapabilityManagerError) as exc:
@@ -569,9 +542,7 @@ async def test_manager_static_port_remove_override_proves_exact_fallback(
         def __init__(self):
             self.user = user_binding
 
-        async def get_binding(
-            self, scope, scope_key, pack_id, *, owner_key=None
-        ):
+        async def get_binding(self, scope, scope_key, pack_id, *, owner_key=None):
             assert pack_id == "summarize-day"
             if owner_key == "builtin":
                 return fallback_binding
@@ -590,11 +561,7 @@ async def test_manager_static_port_remove_override_proves_exact_fallback(
         async def read_detail_token_vector(self, keys):
             assert keys[0].owner_key == "builtin"
             return SimpleNamespace(
-                items=(
-                    SimpleNamespace(
-                        committed_owner_binding_set_stamp="c" * 64
-                    ),
-                )
+                items=(SimpleNamespace(committed_owner_binding_set_stamp="c" * 64),)
             )
 
     class _RemoveOverrideManager:
@@ -620,9 +587,7 @@ async def test_manager_static_port_remove_override_proves_exact_fallback(
             )
             return SimpleNamespace(
                 operation=SimpleNamespace(
-                    operation_id=capability_operation_id(
-                        kwargs["idempotency_key"]
-                    ),
+                    operation_id=capability_operation_id(kwargs["idempotency_key"]),
                     status="succeeded",
                     phase="published",
                 ),
@@ -774,9 +739,9 @@ async def test_store_decision_resolver_requires_passed_low_risk_auto_decision() 
     )
     store.db.commit()
 
-    proof = await CompanionStoreActivationDecisionProofResolver(
-        store
-    ).resolve_activation_decision(authorization)
+    proof = await CompanionStoreActivationDecisionProofResolver(store).resolve_activation_decision(
+        authorization
+    )
 
     assert proof is not None
     assert proof.decision_mode == "safe_auto"

@@ -60,7 +60,9 @@ class FetchRenderBudget:
         edge_attempts: int = 1,
     ) -> None:
         values = (static_attempts, playwright_attempts, edge_attempts)
-        if any(isinstance(value, bool) or not isinstance(value, int) or value < 0 for value in values):
+        if any(
+            isinstance(value, bool) or not isinstance(value, int) or value < 0 for value in values
+        ):
             raise ValueError("render attempt budgets must be non-negative integers")
         self._remaining = {
             "static": static_attempts,
@@ -118,20 +120,10 @@ def resolve_browser_executable(root: str | Path, *, contract=None) -> Path:
 
     contract = contract or get_platform_contract()
     base = Path(root).resolve()
-    matches = sorted(
-        base.glob(
-            f"chromium_headless_shell-*/{contract.executable_relative}"
-        )
-    )
-    complete = [
-        path
-        for path in matches
-        if (path.parents[1] / "INSTALLATION_COMPLETE").is_file()
-    ]
+    matches = sorted(base.glob(f"chromium_headless_shell-*/{contract.executable_relative}"))
+    complete = [path for path in matches if (path.parents[1] / "INSTALLATION_COMPLETE").is_file()]
     if len(complete) != 1:
-        raise PlaywrightRenderError(
-            f"browser_bundle_ambiguous:{len(complete)}", retriable=False
-        )
+        raise PlaywrightRenderError(f"browser_bundle_ambiguous:{len(complete)}", retriable=False)
     return complete[0]
 
 
@@ -276,9 +268,7 @@ class PlaywrightRendererPool:
     ) -> None:
         after = self._process_snapshot(executable)
         new_ids = {
-            pid
-            for pid, record in after.items()
-            if pid not in before or before[pid][0] != record[0]
+            pid for pid, record in after.items() if pid not in before or before[pid][0] != record[0]
         }
         browser_ids = {pid for pid in new_ids if after[pid][1]}
         owned_ids = set(browser_ids)
@@ -297,9 +287,7 @@ class PlaywrightRendererPool:
                 if parent_pid in new_ids and parent[2]:
                     owned_ids.add(parent_pid)
                 parent_pid = parent[3]
-        self._owned_processes.update(
-            {pid: after[pid][0] for pid in owned_ids}
-        )
+        self._owned_processes.update({pid: after[pid][0] for pid in owned_ids})
 
     async def _reap_owned_processes(self) -> None:
         if not self._owned_processes:
@@ -359,9 +347,7 @@ class PlaywrightRendererPool:
                 awaitable.close()
             raise PlaywrightRenderError("timeout")
         task = asyncio.ensure_future(awaitable)
-        cancel_task = (
-            asyncio.create_task(cancel_event.wait()) if cancel_event is not None else None
-        )
+        cancel_task = asyncio.create_task(cancel_event.wait()) if cancel_event is not None else None
         try:
             waiting = {task}
             if cancel_task is not None:
@@ -458,9 +444,7 @@ class PlaywrightRendererPool:
     async def _capture(self, page, page_index: int) -> tuple[str, RenderPagePart]:
         html = await page.content()
         digest = hashlib.sha256(html.encode("utf-8")).hexdigest()
-        page_part_id = hashlib.sha256(
-            f"{page_index}:{page.url}:{digest}".encode()
-        ).hexdigest()[:24]
+        page_part_id = hashlib.sha256(f"{page_index}:{page.url}:{digest}".encode()).hexdigest()[:24]
         return html, RenderPagePart(page_part_id, page_index, page.url, digest)
 
     @staticmethod
@@ -472,7 +456,9 @@ class PlaywrightRendererPool:
         for html in parts:
             match = re.search(r"<body[^>]*>(.*?)</body>", html, re.I | re.S)
             body = match.group(1) if match else html
-            paragraphs = re.findall(r"<(?:p|article|section)[^>]*>.*?</(?:p|article|section)>", body, re.I | re.S)
+            paragraphs = re.findall(
+                r"<(?:p|article|section)[^>]*>.*?</(?:p|article|section)>", body, re.I | re.S
+            )
             values = paragraphs or [body]
             for value in values:
                 digest = hashlib.sha256(re.sub(r"\s+", " ", value).strip().encode()).hexdigest()
@@ -533,9 +519,7 @@ class PlaywrightRendererPool:
                 )
             except BaseException as exc:
                 if navigation_violations:
-                    raise PlaywrightRenderError(
-                        "cross_origin_navigation", retriable=False
-                    ) from exc
+                    raise PlaywrightRenderError("cross_origin_navigation", retriable=False) from exc
                 raise
             await self._assert_allowed_url(page, allowed_origins=allowed_origins)
             html_parts: list[str] = []
@@ -544,14 +528,10 @@ class PlaywrightRendererPool:
             html_parts.append(html)
             page_parts.append(part)
             for action in actions:
-                await self._action(
-                    page, action, deadline=deadline, cancel_event=cancel_event
-                )
+                await self._action(page, action, deadline=deadline, cancel_event=cancel_event)
                 await asyncio.sleep(0)
                 if navigation_violations:
-                    raise PlaywrightRenderError(
-                        "cross_origin_navigation", retriable=False
-                    )
+                    raise PlaywrightRenderError("cross_origin_navigation", retriable=False)
                 # Waiting is cheap when the current document is already ready,
                 # and closes the race where a delayed client-side redirect has
                 # started but ``page.url``/``page.content`` still describe the

@@ -19,6 +19,7 @@ Code mode being "ON" is a runtime concept; we always register the
 schemas, but the chat handler can choose to filter them out per-turn
 by passing an ``enabled_toolsets`` allow-list to ``registry.schemas()``.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -33,7 +34,9 @@ from .grep_tool import grep_tool
 from .web_search_tool import web_search
 
 
-def _schema(name: str, description: str, properties: dict[str, Any], required: list[str]) -> dict[str, Any]:
+def _schema(
+    name: str, description: str, properties: dict[str, Any], required: list[str]
+) -> dict[str, Any]:
     return {
         "name": name,
         "description": description,

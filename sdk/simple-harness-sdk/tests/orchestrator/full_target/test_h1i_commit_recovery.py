@@ -150,8 +150,13 @@ def test_i05_commit_then_process_exit_replays_from_frozen_request(
             before_hashes = _revision_hashes(loop.store, mission.id)
             assert len(before_hashes) in {0, 1}
             if revoke_after_crash:
-                _revoke(world, mission, intent.intent_id, "revoke-h1i-i05-after-crash",
-                        "recovery must reread current authority")
+                _revoke(
+                    world,
+                    mission,
+                    intent.intent_id,
+                    "revoke-h1i-i05-after-crash",
+                    "recovery must reread current authority",
+                )
 
             await loop._collect_plan_decision(intent, object(), mission, fixture["raw"], dispatch)
 
@@ -250,8 +255,13 @@ def test_i05_exit_after_durable_commit_replays_exactly_without_new_writes(
             assert mission is not None and intent is not None
             dispatch = loop._dispatch_for(mission.id)
             if revoke_before_replay:
-                _revoke(world, mission, intent.intent_id, "revoke-h1i-i05-durable",
-                        "terminal replay must not reauthorize")
+                _revoke(
+                    world,
+                    mission,
+                    intent.intent_id,
+                    "revoke-h1i-i05-durable",
+                    "terminal replay must not reauthorize",
+                )
 
             before = (
                 _revision_hashes(loop.store, mission.id),

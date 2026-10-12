@@ -82,8 +82,7 @@ def validate_page(p: Json) -> None:
         need(p["page_semantics"] == "APPEND_FINAL")
         offset = receipt["page_offset"]  # type: ignore[index]
         need(
-            [x["rank_ordinal"] for x in items]
-            == list(range(offset + 1, offset + 1 + len(items)))  # type: ignore[operator]
+            [x["rank_ordinal"] for x in items] == list(range(offset + 1, offset + 1 + len(items)))  # type: ignore[operator]
         )
         need(len({x["chunk_id"] for x in items}) == len(items))
 
@@ -128,9 +127,15 @@ def validate_summary(s: Json) -> None:
         need(0 <= s["selected_count"] <= s["candidate_count"])  # type: ignore[operator]
         need(s["status"] == status_for(coverage, s["query_result_count"]))  # type: ignore[arg-type]
     else:
-        need(s["query_result_count"] is None and s["candidate_count"] == 0 and s["selected_count"] == 0)
+        need(
+            s["query_result_count"] is None
+            and s["candidate_count"] == 0
+            and s["selected_count"] == 0
+        )
         need(s["skip_code"] is not None)
-        expected = "NOT_REQUESTED" if s["skip_code"] in ("EMPTY_QUERY", "RECALL_DISABLED") else "PARTIAL"
+        expected = (
+            "NOT_REQUESTED" if s["skip_code"] in ("EMPTY_QUERY", "RECALL_DISABLED") else "PARTIAL"
+        )
         need(s["status"] == expected)
         if s["coverage"] is not None:
             validate_coverage(s["coverage"])  # type: ignore[arg-type]

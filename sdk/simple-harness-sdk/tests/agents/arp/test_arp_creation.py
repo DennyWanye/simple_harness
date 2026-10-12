@@ -42,7 +42,9 @@ def test_factory_refuses_allow_all_authorization(tmp_path) -> None:
     with pytest.raises(ArpError) as info:
         build_arp_runtime(
             ports,
-            ArpPorts(root_dir=root.directory, profile=standalone_profile(), activation_receipt={"k": 1}),
+            ArpPorts(
+                root_dir=root.directory, profile=standalone_profile(), activation_receipt={"k": 1}
+            ),
         )
     assert info.value.code == "AUTHORITY_SOURCE_MISSING"
 
@@ -54,7 +56,10 @@ def test_factory_freezes_profile_and_policy_in_v11_library(tmp_path) -> None:
     assert runtime.arp.protocol == PROTOCOL
     assert _count(runtime, "SELECT COUNT(*) FROM arp_profiles") == 1
     assert _count(runtime, "SELECT COUNT(*) FROM arp_policy_objects") == 1
-    assert store.read_profile(connection, "standalone-test", 1).body_hash == runtime.arp.profile.body_hash
+    assert (
+        store.read_profile(connection, "standalone-test", 1).body_hash
+        == runtime.arp.profile.body_hash
+    )
     # Rebuilding over the same library replays the identical frozen rows.
     runtime.uow.database.close()
     again = build(tmp_path)
@@ -96,22 +101,33 @@ def test_create_binds_protocol_session_adoption_and_events_in_one_transaction(tm
             assert adoption is not None and adoption.adoption_revision == 1
             assert adoption.policy_ref == runtime.arp.policy.pin
             intent = store.read_creation_intent(connection, "default", "k1")
-            assert intent is not None and intent.state == "BOUND" and intent.proposed_agent_id == agent.agent_id
+            assert (
+                intent is not None
+                and intent.state == "BOUND"
+                and intent.proposed_agent_id == agent.agent_id
+            )
             events = store.list_event_bindings(connection)
             assert [e.event_type for e in events] == [
                 "AgentContextPolicyAdopted",
                 "RuntimeSessionStateChanged",
             ]
-            assert events[1].body["old_state"] == "CREATING" and events[1].body["new_state"] == "ACTIVE"
+            assert (
+                events[1].body["old_state"] == "CREATING"
+                and events[1].body["new_state"] == "ACTIVE"
+            )
             # The typed body binds an original run event with a real durable sequence.
             original = connection.execute(
-                "SELECT durable_seq, kind FROM run_events WHERE event_id=?", (events[1].original_event_id,)
+                "SELECT durable_seq, kind FROM run_events WHERE event_id=?",
+                (events[1].original_event_id,),
             ).fetchone()
             assert original is not None and int(original[0]) == events[1].original_eventseq
             # Marker on disk under the managed root, hash bound in the protocol row.
             directory = runtime.arp.root.resolve_relative(session.relative_directory)
             marker = read_marker(directory)
-            assert marker["session_id"] == session.session_id and digest(marker) == protocol.marker_hash
+            assert (
+                marker["session_id"] == session.session_id
+                and digest(marker) == protocol.marker_hash
+            )
             assert (directory / MARKER_FILE).is_file()
             run = runtime.uow.read_run(agent.run_id)
             assert run is not None and run.state in (RunState.RUNNING, RunState.WAITING)
@@ -129,7 +145,9 @@ def test_create_binds_protocol_session_adoption_and_events_in_one_transaction(tm
                 )
             # Same key, same config, but a different authenticated command → conflict.
             with pytest.raises(ArpError) as info:
-                await runtime.create(CONFIG, creation_key="k1", caller=trusted_caller("create-other"))
+                await runtime.create(
+                    CONFIG, creation_key="k1", caller=trusted_caller("create-other")
+                )
             assert info.value.code == "CREATION_IDENTITY_CONFLICT"
             # The Agent still runs through the unchanged kernel path.
             receipt = await agent.submit("你好", input_id="i1")
@@ -140,7 +158,9 @@ def test_create_binds_protocol_session_adoption_and_events_in_one_transaction(tm
     asyncio.run(case())
 
 
-@pytest.mark.parametrize("point", ["create.after_intent", "create.after_marker", "create.after_kernel"])
+@pytest.mark.parametrize(
+    "point", ["create.after_intent", "create.after_marker", "create.after_kernel"]
+)
 def test_crash_windows_resume_with_the_same_identity(tmp_path, point: str) -> None:
     async def case() -> None:
         armed = {"on": True}
@@ -178,13 +198,20 @@ def test_create_many_goes_through_the_native_chain(tmp_path) -> None:
             configs = [
                 AgentConfig(name=f"a{i}", instructions="x", model_profile_ref="p") for i in range(3)
             ]
-            agents = await runtime.create_many(configs, batch_key="b1", caller=trusted_caller("batch"))
+            agents = await runtime.create_many(
+                configs, batch_key="b1", caller=trusted_caller("batch")
+            )
             connection = runtime.uow.database.connection
             for agent in agents:
                 assert store.read_protocol(connection, agent.agent_id).protocol == PROTOCOL
                 assert store.read_live_session(connection, agent.agent_id).state == "ACTIVE"
-            assert _count(runtime, "SELECT COUNT(*) FROM arp_creation_intents WHERE state='BOUND'") == 3
-            replay = await runtime.create_many(configs, batch_key="b1", caller=trusted_caller("batch"))
+            assert (
+                _count(runtime, "SELECT COUNT(*) FROM arp_creation_intents WHERE state='BOUND'")
+                == 3
+            )
+            replay = await runtime.create_many(
+                configs, batch_key="b1", caller=trusted_caller("batch")
+            )
             assert [a.agent_id for a in replay] == [a.agent_id for a in agents]
 
     asyncio.run(case())

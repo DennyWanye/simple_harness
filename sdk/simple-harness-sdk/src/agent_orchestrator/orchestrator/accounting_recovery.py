@@ -58,16 +58,23 @@ def _account_subject(commit, intent, task_id):
         from ..storage.assurance_reads import AssuranceReader
         from ..storage.htn_store import HtnStore
         from .assurance_review_transport import read_review_invocation_locked
+
         mission = commit.store.get_mission(intent.mission_id)
         _require(mission is not None, "missing Mission")
         _, binding = read_review_invocation_locked(
-            commit, AssuranceReader(commit.store, tenant_id=mission.tenant_id,
-                                    mission_id=mission.id), intent.intent_id)
+            commit,
+            AssuranceReader(commit.store, tenant_id=mission.tenant_id, mission_id=mission.id),
+            intent.intent_id,
+        )
         package = HtnStore(commit.store).get_review_package(binding.to_json()["package_ref"]["id"])
         # Same rule as the invocation writer, by the same function.
         from .assurance_review_transport import review_budget_subject
+
         if package.account not in {ReviewAccount.MISSION, ReviewAccount.MISSION_PLANNING}:
-            _require(task_id == binding.to_json()["subject"]["owner_task_ref"]["id"], "review account owner")
+            _require(
+                task_id == binding.to_json()["subject"]["owner_task_ref"]["id"],
+                "review account owner",
+            )
         return review_budget_subject(commit.store, mission.id, package, task_id)
     return task_id or intent.mission_id
 
@@ -85,13 +92,15 @@ def _facts(commit, bridge, intent, reservation, *, grants=None, historical=False
         return [], False, None
     _require(reservation["mission_id"] == intent.mission_id, "reservation Mission")
     _require(store.get_mission(intent.mission_id) is not None, "missing Mission")
-    _require(binding.agent_id == intent.agent_id and turn.agent_id == binding.agent_id,
-             "Agent/Turn")
+    _require(
+        binding.agent_id == intent.agent_id and turn.agent_id == binding.agent_id, "Agent/Turn"
+    )
     _require(binding.creation_key == intent.creation_key, "creation key")
     _require(turn.input_id == intent.input_id, "input id")
     _require(len(uow.list_agent_turns(intent.agent_id)) == 1, "Agent reused across turns")
     duplicates = store.connection.execute(
-        "SELECT COUNT(*) FROM dispatch_intents WHERE agent_id=?", (intent.agent_id,),
+        "SELECT COUNT(*) FROM dispatch_intents WHERE agent_id=?",
+        (intent.agent_id,),
     ).fetchone()[0]
     if historical:
         _require(duplicates == 0, "historical Agent reused across subjects")
@@ -101,14 +110,18 @@ def _facts(commit, bridge, intent, reservation, *, grants=None, historical=False
     # SDK records recursively freeze JSON as mappingproxy/tuple. Compare the
     # detached JSON representation, never weaken canonical_json's public schema
     # or mutate the original record merely to make it serializable.
-    _require(canonical_json(config) == canonical_json(jsonable(binding.config_json)),
-             "Agent config")
+    _require(
+        canonical_json(config) == canonical_json(jsonable(binding.config_json)), "Agent config"
+    )
     message = intent.config["message"]
     _require(sha256_hex(message) == intent.input_hash, "frozen input hash")
     actual_message = _message_from_json(dict(message))
     _require(turn.input_hash == input_hash_for(actual_message), "SDK input hash")
-    _require(canonical_json(jsonable(turn.input_json)) == canonical_json(
-        {"message": actual_message.to_dict()}), "SDK input bytes")
+    _require(
+        canonical_json(jsonable(turn.input_json))
+        == canonical_json({"message": actual_message.to_dict()}),
+        "SDK input bytes",
+    )
     task_id = _task_scope(store, intent)
     # Manager is funded by the Mission; task_id names its historical evidence
     # scope, not the account charged by create_service_intent.
@@ -120,20 +133,27 @@ def _facts(commit, bridge, intent, reservation, *, grants=None, historical=False
     originals = uow.list_provider_invocations(RunId(binding.run_id))
     if grants is None:
         grants = store.connection.execute(
-            "SELECT * FROM provider_token_grants WHERE subject_id=?", (intent.subject_id,),
+            "SELECT * FROM provider_token_grants WHERE subject_id=?",
+            (intent.subject_id,),
         ).fetchall()
     ids = {original.invocation_id for original in originals}
     _require(all(row["invocation_id"] in ids for row in grants), "grant absent from SDK Run")
     for original in originals:
         if original.handoff_attempt == 0:
             continue
-        rows = [row for row in grants if row["invocation_id"] == original.invocation_id
-                and row["handoff_ordinal"] == original.handoff_attempt]
+        rows = [
+            row
+            for row in grants
+            if row["invocation_id"] == original.invocation_id
+            and row["handoff_ordinal"] == original.handoff_attempt
+        ]
         _require(len(rows) == 1, "no unique physical grant")
         row = rows[0]
         _require(
-            row["intent_id"] == intent.intent_id and row["mission_id"] == intent.mission_id
-            and row["agent_id"] == binding.agent_id and row["turn_id"] == turn.turn_id
+            row["intent_id"] == intent.intent_id
+            and row["mission_id"] == intent.mission_id
+            and row["agent_id"] == binding.agent_id
+            and row["turn_id"] == turn.turn_id
             and row["fingerprint"] == intent.config.get("provider_admission_fingerprint")
             and row["request_hash"] == original.request_fingerprint
             and original.run_id.value == binding.run_id,
@@ -151,8 +171,9 @@ def _facts(commit, bridge, intent, reservation, *, grants=None, historical=False
             complete = False
             continue
         input_tokens, output_tokens = values
-        facts.append(UsageFact("provider-invocation:" + record.invocation_id,
-                               input_tokens, output_tokens))
+        facts.append(
+            UsageFact("provider-invocation:" + record.invocation_id, input_tokens, output_tokens)
+        )
     return facts, complete, task_id
 
 
@@ -214,6 +235,7 @@ def import_late_accounting(orch) -> bool:
     if full:
         progressed = _settle_expired_ended_holds(orch) or progressed
     from .taskgraph_action_settlement import settle_resolved_actions
+
     return settle_resolved_actions(orch) or progressed
 
 
@@ -235,6 +257,7 @@ def _settle_expired_ended_holds(orch) -> bool:
     还没导入的留给导入路径。
     """
     from .assurance_consumers import UPPER_BOUND_EVENT
+
     store = orch.store
     ended = sorted(str(status) for status in TERMINAL_MISSION)
     cutoff = store.now - ENDED_MISSION_RECHECK_SECONDS * 3
@@ -259,12 +282,21 @@ def _settle_expired_ended_holds(orch) -> bool:
             reservation = orch.commit.ledger.reservation(subject_id)
             if reservation is None or reservation["state"] == "SETTLED":
                 continue
-            if reason == "attempt_ended_usage_unknown" and not orch.commit.ledger.has_unknown_usage(subject_id):
+            if reason == "attempt_ended_usage_unknown" and not orch.commit.ledger.has_unknown_usage(
+                subject_id
+            ):
                 continue
             settled = orch.commit.ledger.settle_at_upper_bound(subject_id=subject_id)
-            orch.commit._emit(UPPER_BOUND_EVENT, mission_id, key="upper-bound:" + subject_id, payload={
-                "subject_id": subject_id, "reason": reason,
-                "counted_tokens": settled["settled_tokens"]})
+            orch.commit._emit(
+                UPPER_BOUND_EVENT,
+                mission_id,
+                key="upper-bound:" + subject_id,
+                payload={
+                    "subject_id": subject_id,
+                    "reason": reason,
+                    "counted_tokens": settled["settled_tokens"],
+                },
+            )
         progressed = True
     return progressed
 
@@ -279,6 +311,7 @@ def _import_hold(orch, intent_id: str) -> bool:
                 return False
             from ..storage.taskgraph_store import NotBoundError, require_bound
             from .taskgraph_runtime_imports import TaskGraphRuntimeImports
+
             try:
                 require_bound(store, intent.mission_id)
             except NotBoundError:
@@ -289,13 +322,22 @@ def _import_hold(orch, intent_id: str) -> bool:
             source = TaskGraphRuntimeImports(orch).read_subject(intent)
             facts, complete, task_id = source.usage, source.accounting_complete, source.task_id
             imported = orch.commit.import_usage(intent.subject_id, intent.mission_id, facts)
-            settled = (complete and source.physical_settled
-                       and not orch.commit.ledger.has_unknown_usage(intent.subject_id))
+            settled = (
+                complete
+                and source.physical_settled
+                and not orch.commit.ledger.has_unknown_usage(intent.subject_id)
+            )
             if settled:
-                orch.commit._settle_subject(
-                    intent.subject_id, intent.mission_id, task_id=task_id)
+                orch.commit._settle_subject(intent.subject_id, intent.mission_id, task_id=task_id)
             return bool(imported) or settled
-    except (BudgetError, ValueError, KeyError, TypeError, UnitOfWorkConflict, SourceUnavailable) as error:
+    except (
+        BudgetError,
+        ValueError,
+        KeyError,
+        TypeError,
+        UnitOfWorkConflict,
+        SourceUnavailable,
+    ) as error:
         orch._note(f"accounting subject {intent_id} held: {error}")
         return False
 
@@ -314,11 +356,14 @@ def _live_missions(store) -> frozenset[str]:
     gets its holds settled on the very next round, not after the 300-second sweep."""
 
     ended = sorted(str(status) for status in TERMINAL_MISSION)
-    return frozenset(row[0] for row in store.connection.execute(
-        f"SELECT mission_id FROM missions WHERE status NOT IN ({','.join('?' * len(ended))})"
-        " OR updated_at > ?",
-        (*ended, store.now - ENDED_MISSION_RECHECK_SECONDS * 3),
-    ).fetchall())
+    return frozenset(
+        row[0]
+        for row in store.connection.execute(
+            f"SELECT mission_id FROM missions WHERE status NOT IN ({','.join('?' * len(ended))})"
+            " OR updated_at > ?",
+            (*ended, store.now - ENDED_MISSION_RECHECK_SECONDS * 3),
+        ).fetchall()
+    )
 
 
 def _connection_generation(connection) -> tuple[int, int, int] | None:
@@ -333,5 +378,7 @@ def _holds_generation(orch) -> tuple | None:
 
     parts: list = [orch.store.read_generation()]
     for key in sorted(orch.assembled.pools):
-        parts.append(_connection_generation(orch.assembled.pools[key].bridge.runtime.uow.database.connection))
+        parts.append(
+            _connection_generation(orch.assembled.pools[key].bridge.runtime.uow.database.connection)
+        )
     return None if any(part is None for part in parts) else tuple(parts)

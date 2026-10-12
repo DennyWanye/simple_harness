@@ -8,6 +8,7 @@ Three states:
   TTS_PLAYING — TTS synthesis in progress, require speech_duration > threshold
   COOLDOWN    — TTS just ended, block for cooldown_ms then return to IDLE
 """
+
 from __future__ import annotations
 
 import enum

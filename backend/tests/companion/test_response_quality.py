@@ -61,10 +61,7 @@ def test_response_quality_gate_repairs_semantic_omission() -> None:
             {
                 "complete": False,
                 "missing_items": ["小孙今晚完成验收清单"],
-                "revised_response": (
-                    "周三发布；负责人小赵；"
-                    "小孙今晚完成验收清单。"
-                ),
+                "revised_response": ("周三发布；负责人小赵；小孙今晚完成验收清单。"),
             },
             ensure_ascii=False,
         ),
@@ -157,10 +154,7 @@ async def test_agent_loop_uses_model_review_and_accounts_for_usage() -> None:
                     {
                         "complete": False,
                         "missing_items": ["小孙今晚完成验收清单"],
-                        "revised_response": (
-                            "周三发布；负责人小赵；"
-                            "小孙今晚完成验收清单。"
-                        ),
+                        "revised_response": ("周三发布；负责人小赵；小孙今晚完成验收清单。"),
                     },
                     ensure_ascii=False,
                 ),
@@ -181,16 +175,10 @@ async def test_agent_loop_uses_model_review_and_accounts_for_usage() -> None:
             messages=[
                 {
                     "role": "user",
-                    "content": (
-                        "请概括：版本周三发布，负责人小赵，"
-                        "行动项小孙今晚完成验收清单。"
-                    ),
+                    "content": ("请概括：版本周三发布，负责人小赵，行动项小孙今晚完成验收清单。"),
                 }
             ],
-            loop_user_request=(
-                "请概括：版本周三发布，负责人小赵，"
-                "行动项小孙今晚完成验收清单。"
-            ),
+            loop_user_request=("请概括：版本周三发布，负责人小赵，行动项小孙今晚完成验收清单。"),
         )
     ]
 

@@ -41,8 +41,12 @@ def _request(key, **overrides):
 
 def _with_orchestrator(tmp_path, body, deployment=OFF):
     async def run():
-        async with product_world(Path(tmp_path) / "evidence", LayeredScriptedProvider(), max_concurrency=1,
-                                 deployment_policy=deployment) as world:
+        async with product_world(
+            Path(tmp_path) / "evidence",
+            LayeredScriptedProvider(),
+            max_concurrency=1,
+            deployment_policy=deployment,
+        ) as world:
             result = body(world.loop, world)
             if asyncio.iscoroutine(result):
                 result = await result
@@ -54,9 +58,10 @@ def _with_orchestrator(tmp_path, body, deployment=OFF):
 def test_create_is_idempotent_and_binds_like_the_facade(tmp_path):
     def body(orchestrator, world):
         first, created = orchestrator.create_mission(tenant_id=TENANT, request=_request("a"))
-        again, created_again = orchestrator.create_mission(
-            tenant_id=TENANT, request=_request("a"))
-        via_facade = orchestrator.store.get_mission(world.control.create(_request("b"))["mission_id"])
+        again, created_again = orchestrator.create_mission(tenant_id=TENANT, request=_request("a"))
+        via_facade = orchestrator.store.get_mission(
+            world.control.create(_request("b"))["mission_id"]
+        )
         store = orchestrator.store
         return (
             first,

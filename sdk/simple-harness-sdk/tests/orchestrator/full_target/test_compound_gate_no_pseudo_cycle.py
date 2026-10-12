@@ -686,9 +686,7 @@ def test_validate_delta_passes_the_compiled_increment() -> None:
 
 def test_validate_delta_says_when_it_could_not_check_preconditions() -> None:
     env, _, _, bundle = outer_only()
-    report = validate_delta(
-        bundle.delta, bundle.network, BUDGET, network=bundle.network
-    )
+    report = validate_delta(bundle.delta, bundle.network, BUDGET, network=bundle.network)
     assert DeltaProblemKind.NOT_CHECKED in report.kinds
 
 

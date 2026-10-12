@@ -37,8 +37,9 @@ NOW = datetime(2026, 7, 25, 12, 0, tzinfo=UTC)
 def test_production_runtime_claims_and_retries_delegated_reminder_drafts() -> None:
     source = (Path(__file__).parents[2] / "main.py").read_text(encoding="utf-8")
     composition = source[
-        source.index("companion_runtime = CompanionRuntime(") :
-        source.index("profile_coordinator = ProfileBindingCoordinator(")
+        source.index("companion_runtime = CompanionRuntime(") : source.index(
+            "profile_coordinator = ProfileBindingCoordinator("
+        )
     ]
 
     for field in ("claim_kinds", "retryable_kinds"):
@@ -121,9 +122,7 @@ def test_frozen_model_schemas_and_dormant_registry_metadata_match_task0() -> Non
         "reminder_cancel": "2b2bbf2e5f4cf7f8cbc381b61048be09a819277cef554e499d655c3621c317fb",
     }
     schemas = (REMINDER_CREATE_SCHEMA, REMINDER_LIST_SCHEMA, REMINDER_CANCEL_SCHEMA)
-    assert {
-        schema["name"]: canonical_hash(schema["parameters"]) for schema in schemas
-    } == expected
+    assert {schema["name"]: canonical_hash(schema["parameters"]) for schema in schemas} == expected
 
     class Selector:
         def resolve(self, _context):
@@ -171,15 +170,9 @@ def test_frozen_model_schemas_and_dormant_registry_metadata_match_task0() -> Non
         )
         for name in expected
     } == {
-        "reminder_create": (
-            ("application", "deskpet:reminder_create", ("write",)),
-        ),
-        "reminder_list": (
-            ("application", "deskpet:reminder_list", ("read",)),
-        ),
-        "reminder_cancel": (
-            ("application", "deskpet:reminder_cancel", ("write",)),
-        ),
+        "reminder_create": (("application", "deskpet:reminder_create", ("write",)),),
+        "reminder_list": (("application", "deskpet:reminder_list", ("read",)),),
+        "reminder_cancel": (("application", "deskpet:reminder_cancel", ("write",)),),
     }
 
 
@@ -188,9 +181,7 @@ def test_task13_retires_direct_legacy_registration_without_alias() -> None:
 
     assert builtin_registry.get("list_reminders") is None
 
-    main_source = (
-        Path(__file__).resolve().parents[2] / "main.py"
-    ).read_text(encoding="utf-8")
+    main_source = (Path(__file__).resolve().parents[2] / "main.py").read_text(encoding="utf-8")
     assert "tool_registry.register(list_reminders_tool)" not in main_source
     assert "from tools.reminder import list_reminders_tool" not in main_source
 
@@ -225,9 +216,7 @@ def test_create_commits_deterministic_reminder_occurrence_receipt_and_outbox(
     stored_schedule = json.loads(reminder["schedule_json"])
     assert stored_schedule["text"] == "提交周报"
     assert stored_schedule["source_message_refs"] == ["session:s1:message:m1"]
-    assert occurrence["occurrence_id"] == canonical_hash(
-        [expected_id, "2026-07-25T13:00:00Z"]
-    )
+    assert occurrence["occurrence_id"] == canonical_hash([expected_id, "2026-07-25T13:00:00Z"])
     assert occurrence["status"] == "pending"
     assert receipt["request_hash"] == canonical_hash(args)
     assert receipt["before_schedule_version"] is None
@@ -306,11 +295,14 @@ def test_cancel_is_cas_idempotent_and_stale_distinct_effect_conflicts(
         CompanionStore(store.path, clock=lambda: NOW),
         clock=DevFrozenClock(NOW),
     )
-    assert restarted.cancel(
-        authority,
-        effect_id="effect:cancel:1",
-        args=cancel_args,
-    ) == first
+    assert (
+        restarted.cancel(
+            authority,
+            effect_id="effect:cancel:1",
+            args=cancel_args,
+        )
+        == first
+    )
     with pytest.raises(CompanionConflictError, match="schedule_version_conflict"):
         restarted.cancel(
             authority,
@@ -349,9 +341,7 @@ def test_concurrent_cancel_claims_one_schedule_version(reminder_store) -> None:
             return exc
 
     with ThreadPoolExecutor(max_workers=2) as pool:
-        outcomes = list(
-            pool.map(cancel, ("effect:cancel:race-a", "effect:cancel:race-b"))
-        )
+        outcomes = list(pool.map(cancel, ("effect:cancel:race-a", "effect:cancel:race-b")))
     assert sum(isinstance(item, dict) for item in outcomes) == 1
     assert sum(isinstance(item, CompanionConflictError) for item in outcomes) == 1
     assert _counts(store) == {
@@ -550,9 +540,12 @@ async def test_occurrence_claim_restart_duplicate_tick_and_atomic_settle(
     assert first is not None
     assert await scheduler.tick(owner, claim_owner="scheduler-a") is None
     with store.read() as db:
-        assert db.execute(
-            "SELECT COUNT(*) FROM outbox WHERE event_kind='reminder_occurrence_due'"
-        ).fetchone()[0] == 1
+        assert (
+            db.execute(
+                "SELECT COUNT(*) FROM outbox WHERE event_kind='reminder_occurrence_due'"
+            ).fetchone()[0]
+            == 1
+        )
 
     # A crash after the occurrence claim does not create a second delivery
     # intent when the lease is reclaimed by the restarted scheduler.
@@ -578,19 +571,23 @@ async def test_occurrence_claim_restart_duplicate_tick_and_atomic_settle(
         result_hash="local-projection-result",
     )
     assert settled["status"] == "delivered"
-    assert restarted.settle(
-        owner,
-        dispatch=replay,
-        outbox_claim=outbox_claim,
-        result_hash="local-projection-result",
-    )["status"] == "delivered"
+    assert (
+        restarted.settle(
+            owner,
+            dispatch=replay,
+            outbox_claim=outbox_claim,
+            result_hash="local-projection-result",
+        )["status"]
+        == "delivered"
+    )
     with store.read() as db:
-        assert db.execute(
-            "SELECT COUNT(*) FROM outbox WHERE event_kind='reminder_occurrence_due'"
-        ).fetchone()[0] == 1
-        assert db.execute(
-            "SELECT status FROM reminders"
-        ).fetchone()[0] == "completed"
+        assert (
+            db.execute(
+                "SELECT COUNT(*) FROM outbox WHERE event_kind='reminder_occurrence_due'"
+            ).fetchone()[0]
+            == 1
+        )
+        assert db.execute("SELECT status FROM reminders").fetchone()[0] == "completed"
 
 
 @pytest.mark.asyncio
@@ -621,9 +618,12 @@ async def test_overdue_occurrence_expires_without_catchup_or_delivery_outbox(
     )[0]
     assert occurrence["status"] == "expired"
     with store.read() as db:
-        assert db.execute(
-            "SELECT COUNT(*) FROM outbox WHERE event_kind='reminder_occurrence_due'"
-        ).fetchone()[0] == 0
+        assert (
+            db.execute(
+                "SELECT COUNT(*) FROM outbox WHERE event_kind='reminder_occurrence_due'"
+            ).fetchone()[0]
+            == 0
+        )
 
 
 @pytest.mark.asyncio
@@ -656,9 +656,7 @@ async def test_prepare_draft_creates_nonempty_local_only_delegated_task(
             "SELECT * FROM jobs WHERE job_id=?",
             (dispatch.draft_job_id,),
         ).fetchone()
-        grants = db.execute(
-            "SELECT scope FROM delegated_task_grants ORDER BY scope"
-        ).fetchall()
+        grants = db.execute("SELECT scope FROM delegated_task_grants ORDER BY scope").fetchall()
         outbox = db.execute(
             "SELECT payload_json FROM outbox WHERE outbox_id=?",
             (dispatch.outbox_id,),
@@ -671,10 +669,7 @@ async def test_prepare_draft_creates_nonempty_local_only_delegated_task(
     assert payload["request_payload"]["companion_stage"] == "reminder_draft"
     assert payload["request_payload"]["reminder_text"] == "准备周报草稿"
     assert payload["request_payload"]["external_send_allowed"] is False
-    assert [
-        (grant["scope"], grant["target"])
-        for grant in payload["delegated_grants"]
-    ] == [
+    assert [(grant["scope"], grant["target"]) for grant in payload["delegated_grants"]] == [
         ("read", f"reminder:{dispatch.occurrence_claim.item_id}"),
         ("draft", f"reminder:{dispatch.occurrence_claim.item_id}"),
         ("reversible_local", f"reminder:{dispatch.occurrence_claim.item_id}"),
@@ -686,10 +681,13 @@ async def test_prepare_draft_creates_nonempty_local_only_delegated_task(
     ]
     assert json.loads(outbox["payload_json"])["external_send_allowed"] is False
     with store.read() as db:
-        assert db.execute(
-            """SELECT COUNT(*) FROM outbox
+        assert (
+            db.execute(
+                """SELECT COUNT(*) FROM outbox
                WHERE sink_kind NOT IN ('reminder_scheduler','companion_notification')"""
-        ).fetchone()[0] == 0
+            ).fetchone()[0]
+            == 0
+        )
 
 
 @pytest.mark.asyncio
@@ -756,7 +754,8 @@ async def test_draft_outbox_cannot_settle_until_nonempty_result_is_durable(
         claim_owner=draft_claim.claim_owner,
         claim_epoch=draft_claim.claim_epoch,
         status="succeeded",
-        result_ref="json:" + json.dumps(
+        result_ref="json:"
+        + json.dumps(
             draft_body,
             ensure_ascii=False,
             sort_keys=True,
@@ -772,24 +771,26 @@ async def test_draft_outbox_cannot_settle_until_nonempty_result_is_durable(
         result_hash="projection-result",
     )
     assert settled["status"] == "delivered"
-    assert scheduler.settle(
-        owner,
-        dispatch=dispatch,
-        outbox_claim=outbox_claim,
-        result_hash="projection-result",
-    )["status"] == "delivered"
+    assert (
+        scheduler.settle(
+            owner,
+            dispatch=dispatch,
+            outbox_claim=outbox_claim,
+            result_hash="projection-result",
+        )["status"]
+        == "delivered"
+    )
     with store.read() as db:
-        assert db.execute(
-            "SELECT COUNT(*) FROM notifications WHERE kind='reminder_due'"
-        ).fetchone()[0] == 1
+        assert (
+            db.execute("SELECT COUNT(*) FROM notifications WHERE kind='reminder_due'").fetchone()[0]
+            == 1
+        )
         notification = db.execute(
             """SELECT summary_json,source_refs_json,detail_json
                FROM notifications WHERE kind='reminder_due'"""
         ).fetchone()
     assert "本周已完成角色移动" in json.loads(notification["summary_json"])
-    assert json.loads(notification["source_refs_json"]) == [
-        "session:s1:message:m1"
-    ]
+    assert json.loads(notification["source_refs_json"]) == ["session:s1:message:m1"]
     detail = json.loads(notification["detail_json"])
     assert detail["overview"][0]["external_send_count"] == 0
     assert detail["overview"][0]["draft"] == draft_body["text"]
@@ -841,10 +842,7 @@ async def test_scheduler_draft_job_runs_through_zero_tool_production_pipeline(
                     status=OutcomeStatus.SUCCEEDED,
                     candidate=SimpleNamespace(
                         payload={
-                            "text": (
-                                "本周已完成角色移动；待办是接入存档；"
-                                "风险是移动端性能。"
-                            ),
+                            "text": ("本周已完成角色移动；待办是接入存档；风险是移动端性能。"),
                             "usage": {"total_tokens": 20},
                         },
                         error=None,
@@ -989,9 +987,12 @@ async def test_scheduler_rechecks_pause_quiet_and_frequency_before_delivery(
     assert occurrence["status"] == "pending"
     assert occurrence["reason_code"] == "reminder_delivery_policy_deferred"
     with store.read() as db:
-        assert db.execute(
-            "SELECT COUNT(*) FROM outbox WHERE event_kind='reminder_occurrence_due'"
-        ).fetchone()[0] == 0
+        assert (
+            db.execute(
+                "SELECT COUNT(*) FROM outbox WHERE event_kind='reminder_occurrence_due'"
+            ).fetchone()[0]
+            == 0
+        )
 
     # After the retry becomes due, a changed frequency budget is reacquired
     # after claim and releases the lease without creating an outbox.
@@ -1001,27 +1002,36 @@ async def test_scheduler_rechecks_pause_quiet_and_frequency_before_delivery(
         quiet_hours_start="00:00",
         quiet_hours_end="00:00",
     )
-    assert await ReminderScheduler(
-        store,
-        policy_provider=PolicySequence(allowed, frequency_zero),
-        clock=clock,
-    ).tick(owner, claim_owner="scheduler") is None
+    assert (
+        await ReminderScheduler(
+            store,
+            policy_provider=PolicySequence(allowed, frequency_zero),
+            clock=clock,
+        ).tick(owner, claim_owner="scheduler")
+        is None
+    )
     assert store.list_reminder_occurrences(owner)[0]["status"] == "pending"
 
     # A zero budget and a newly quiet window also block before claim.
     clock.advance(61)
-    assert await ReminderScheduler(
-        store,
-        policy_provider=PolicySequence(frequency_zero),
-        clock=clock,
-    ).tick(owner, claim_owner="scheduler") is None
+    assert (
+        await ReminderScheduler(
+            store,
+            policy_provider=PolicySequence(frequency_zero),
+            clock=clock,
+        ).tick(owner, claim_owner="scheduler")
+        is None
+    )
     quiet = ReminderSchedulerPolicy(
         timezone="UTC",
         quiet_hours_start="12:00",
         quiet_hours_end="14:00",
     )
-    assert await ReminderScheduler(
-        store,
-        policy_provider=PolicySequence(quiet),
-        clock=clock,
-    ).tick(owner, claim_owner="scheduler") is None
+    assert (
+        await ReminderScheduler(
+            store,
+            policy_provider=PolicySequence(quiet),
+            clock=clock,
+        ).tick(owner, claim_owner="scheduler")
+        is None
+    )

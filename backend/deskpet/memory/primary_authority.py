@@ -24,9 +24,7 @@ async def assert_not_primary_authority_tx(
     db: aiosqlite.Connection, identifiers: Iterable[str | None]
 ) -> None:
     targets = tuple(
-        value.strip()
-        for value in identifiers
-        if isinstance(value, str) and value.strip()
+        value.strip() for value in identifiers if isinstance(value, str) and value.strip()
     )
     if not targets:
         return
@@ -50,9 +48,7 @@ async def assert_not_primary_authority_tx(
         raise PrimaryAuthorityImmutableError()
 
 
-async def assert_not_primary_authority(
-    db_path: str | Path, *identifiers: str | None
-) -> None:
+async def assert_not_primary_authority(db_path: str | Path, *identifiers: str | None) -> None:
     path = Path(db_path)
     if not path.exists():
         return

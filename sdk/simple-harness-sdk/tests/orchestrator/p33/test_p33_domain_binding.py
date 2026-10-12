@@ -43,15 +43,20 @@ def test_p33_a14_a15_a18_a_mission_freezes_its_domain_at_creation(tmp_path) -> N
 def test_p33_a16_the_code_domain_does_not_change_the_spec_hash(tmp_path) -> None:
     """A07 的兼容钉子：升级后 Host 重发同一个请求，不能因为多了一个默认字段就冲突。"""
 
-    plain = MissionSpec(goal="g", success_criteria=("file:a.md",), tenant_id="t", idempotency_key="k")
+    plain = MissionSpec(
+        goal="g", success_criteria=("file:a.md",), tenant_id="t", idempotency_key="k"
+    )
     assert "domain" not in plain.to_json()
-    assert MissionSpec(
-        goal="g",
-        success_criteria=("file:a.md",),
-        tenant_id="t",
-        idempotency_key="k",
-        domain=CODE_DOMAIN,
-    ).to_json() == plain.to_json()
+    assert (
+        MissionSpec(
+            goal="g",
+            success_criteria=("file:a.md",),
+            tenant_id="t",
+            idempotency_key="k",
+            domain=CODE_DOMAIN,
+        ).to_json()
+        == plain.to_json()
+    )
     # 同一个请求带不带默认领域，在产品门面上是同一个任务（幂等，不冲突）
     with opened(tmp_path / "root") as world:
         first = world.control.create(request("same"))

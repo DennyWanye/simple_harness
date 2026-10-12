@@ -50,8 +50,13 @@ def world_at(tmp_path, *, publish=False):
     if not publish:
         return opened(root)
     # 发布目录落在证据存储里：来源批次在门口就该被拒
-    return opened(root, deployment_policy=DeploymentPolicy(enabled_connectors=("file_publish",)),
-                  connectors={"file_publish": FilePublishConnector(root / "artifacts", tmp_path / "publish-ledger")})
+    return opened(
+        root,
+        deployment_policy=DeploymentPolicy(enabled_connectors=("file_publish",)),
+        connectors={
+            "file_publish": FilePublishConnector(root / "artifacts", tmp_path / "publish-ledger")
+        },
+    )
 
 
 def create(world, value):
@@ -68,7 +73,8 @@ def fail_on(store, name, table, condition):
 
     store.connection.execute(
         f"CREATE TEMP TRIGGER {name} BEFORE INSERT ON {table} WHEN {condition} "
-        "BEGIN SELECT RAISE(ABORT, 'injected write failure'); END")
+        "BEGIN SELECT RAISE(ABORT, 'injected write failure'); END"
+    )
 
 
 def test_batch_reordering_reopen_returns_original_receipt_and_replays(tmp_path):
@@ -81,8 +87,12 @@ def test_batch_reordering_reopen_returns_original_receipt_and_replays(tmp_path):
         assert set(receipt["source_versions"]) == {s["path"] for s in value["sources"]}
         assert len(receipt["sources"]) == 2 and len(receipt["batch_hash"]) == 64
         # 根与执行图绑定在同一个事务里落下
-        assert world.store.connection.execute(
-            "SELECT COUNT(*) FROM taskgraph_policy_bindings WHERE mission_id=?", (mid,)).fetchone()[0] == 1
+        assert (
+            world.store.connection.execute(
+                "SELECT COUNT(*) FROM taskgraph_policy_bindings WHERE mission_id=?", (mid,)
+            ).fetchone()[0]
+            == 1
+        )
         for item in value["sources"]:
             row = world.store.get_source(mid, item["path"])
             assert row["trust"] == "untrusted_external"
@@ -153,10 +163,19 @@ def test_batch_fault_rolls_back_mission_budget_binding_sources_receipts_and_even
             # Commit may hold a distinct ArtifactStore object for the same real CAS root.
             monkeypatch.setattr(world.loop.commit._source_cas(), "put_bytes", fail)
         elif point == "source_event":
-            fail_on(world.store, "fail_source_event", "events",
-                    "NEW.type = 'SourceRegistered' AND NEW.payload_json LIKE '%b.md%'")
+            fail_on(
+                world.store,
+                "fail_source_event",
+                "events",
+                "NEW.type = 'SourceRegistered' AND NEW.payload_json LIKE '%b.md%'",
+            )
         else:
-            fail_on(world.store, "fail_batch_receipt", "commit_receipts", "NEW.kind = 'mission_source_batch'")
+            fail_on(
+                world.store,
+                "fail_batch_receipt",
+                "commit_receipts",
+                "NEW.kind = 'mission_source_batch'",
+            )
         # 写库出错时门面不翻译 SQLite 的异常，原样抛出（与原用例注入 RuntimeError 同）
         with pytest.raises((FacadeError, RuntimeError, sqlite3.Error)):
             create(world, command())
@@ -224,7 +243,9 @@ def test_same_batch_key_is_tenant_scoped(tmp_path):
     with world_at(tmp_path) as world:
         value = command()
         original = create(world, value)
-        foreign = MissionControlV1(world.loop, tenant_id="foreign", principal=Principal("other-host"))
+        foreign = MissionControlV1(
+            world.loop, tenant_id="foreign", principal=Principal("other-host")
+        )
         before = database_state(world.store)
         # 别的租户拿同一个批次键，拿不到本租户的回执；它在这个部署里也建不了任务、什么都不留下
         with pytest.raises(FacadeError):

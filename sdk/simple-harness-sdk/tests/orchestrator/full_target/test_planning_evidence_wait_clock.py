@@ -20,7 +20,9 @@ def _harness(now: list[float]) -> SimpleNamespace:
         stopped=stopped,
     )
     fake.store = type("S", (), {"now": property(lambda _self: now[0])})()
-    fake._stop_planning_round = lambda mission_id, **kwargs: stopped.append({"mission_id": mission_id, **kwargs})
+    fake._stop_planning_round = lambda mission_id, **kwargs: stopped.append(
+        {"mission_id": mission_id, **kwargs}
+    )
     return fake
 
 
@@ -42,7 +44,10 @@ def test_continuous_refusals_stop_by_name_at_the_limit() -> None:
     _wait(fake)
     [stop] = fake.stopped
     assert stop["reason"] == "planning_evidence_uncertifiable"
-    assert stop["detail"]["refusals"] == ["TIME_DISCONTINUITY"] and stop["detail"]["waited_seconds"] == 11.0
+    assert (
+        stop["detail"]["refusals"] == ["TIME_DISCONTINUITY"]
+        and stop["detail"]["waited_seconds"] == 11.0
+    )
 
 
 def test_a_wait_that_lapsed_long_ago_does_not_count_toward_a_new_one() -> None:

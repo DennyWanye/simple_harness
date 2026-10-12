@@ -72,9 +72,7 @@ async def test_local_limit_failure_happens_before_destination_creation(
     )
 
     with pytest.raises(CapabilitySourceError) as exc:
-        await CapabilitySourceResolver(
-            package_validator=CapabilityPackageValidator(limits)
-        ).stage(
+        await CapabilitySourceResolver(package_validator=CapabilityPackageValidator(limits)).stage(
             PackSourceRequest("local", str(source), "rev-1"),
             destination,
         )
@@ -114,9 +112,7 @@ async def test_local_symlink_is_rejected_before_copy(tmp_path: Path) -> None:
     source.mkdir()
     make_tree(source)
     try:
-        (source / "skills" / "linked.md").symlink_to(
-            source / "skills" / "demo" / "SKILL.md"
-        )
+        (source / "skills" / "linked.md").symlink_to(source / "skills" / "demo" / "SKILL.md")
     except OSError as exc:
         pytest.skip(f"symlinks unavailable: {exc}")
     destination = tmp_path / "staging" / "op"
@@ -281,7 +277,5 @@ def test_windows_reparse_attribute_is_rejected() -> None:
         st_nlink = 1
 
     with pytest.raises(CapabilityPackageValidationError) as exc:
-        CapabilityPackageValidator._assert_stat_safe(
-            ReparseStat(), require_regular=False
-        )
+        CapabilityPackageValidator._assert_stat_safe(ReparseStat(), require_regular=False)
     assert exc.value.reason == "materialized_reparse_rejected"

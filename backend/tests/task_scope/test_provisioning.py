@@ -75,30 +75,17 @@ async def test_every_provision_boundary_restarts_to_same_directory(
     assert Path(receipt.task_home).name.startswith("Memory-SDK-Upgrade--")
     assert (Path(receipt.task_home) / ".simple-harness-provision.json").is_file()
     with sqlite3.connect(db_path) as db:
+        assert db.execute("SELECT COUNT(*) FROM task_scope_provisions").fetchone()[0] == 1
+        assert db.execute("SELECT COUNT(*) FROM task_scope_provision_receipts").fetchone()[0] == 1
+        assert db.execute("SELECT state FROM task_scope_provisions").fetchone()[0] == "committed"
         assert (
-            db.execute("SELECT COUNT(*) FROM task_scope_provisions").fetchone()[0] == 1
+            db.execute("SELECT COUNT(*) FROM task_workspace_binding_revisions").fetchone()[0] == 0
         )
-        assert (
-            db.execute("SELECT COUNT(*) FROM task_scope_provision_receipts").fetchone()[
-                0
-            ]
-            == 1
-        )
-        assert (
-            db.execute("SELECT state FROM task_scope_provisions").fetchone()[0]
-            == "committed"
-        )
-        assert db.execute(
-            "SELECT COUNT(*) FROM task_workspace_binding_revisions"
-        ).fetchone()[0] == 0
         with pytest.raises(sqlite3.IntegrityError, match="identity_immutable"):
             db.execute("UPDATE task_scope_provisions SET task_home='/tmp/other'")
         with pytest.raises(sqlite3.IntegrityError, match="append_only"):
             db.execute("DELETE FROM task_scope_provisions")
-    assert (
-        len([path for path in managed_root.iterdir() if not path.name.startswith(".")])
-        == 1
-    )
+    assert len([path for path in managed_root.iterdir() if not path.name.startswith(".")]) == 1
 
 
 @pytest.mark.asyncio
@@ -137,9 +124,7 @@ async def test_explicit_path_requires_trusted_existing_real_directory(
     with pytest.raises(TaskScopeProvisionError, match="explicit_path_not_found"):
         await provisioner.provision(request)
     with sqlite3.connect(db_path) as db:
-        assert (
-            db.execute("SELECT COUNT(*) FROM task_scope_provisions").fetchone()[0] == 0
-        )
+        assert db.execute("SELECT COUNT(*) FROM task_scope_provisions").fetchone()[0] == 0
     with pytest.raises(TaskScopeProvisionError, match="explicit_provenance_rejected"):
         TaskScopeProvisionRequest(
             task_scope_id="scope-1",
@@ -183,9 +168,7 @@ async def test_explicit_project_metadata_or_app_data_is_separate_from_workspace_
     project.mkdir()
     first_db = tmp_path / "first.db"
     await _scope(first_db)
-    first = await TaskScopeProvisioner(
-        first_db, app_data_root=tmp_path / "app-1"
-    ).provision(
+    first = await TaskScopeProvisioner(first_db, app_data_root=tmp_path / "app-1").provision(
         TaskScopeProvisionRequest(
             task_scope_id="scope-1",
             title="Memory SDK / Upgrade",
@@ -196,9 +179,7 @@ async def test_explicit_project_metadata_or_app_data_is_separate_from_workspace_
         )
     )
     assert first.metadata_location == "project"
-    assert (
-        Path(first.task_home) == project / ".simple-harness" / "task-scopes" / "scope-1"
-    )
+    assert Path(first.task_home) == project / ".simple-harness" / "task-scopes" / "scope-1"
     assert first.proposed_workspace_root == str(project.resolve())
     assert first.task_home != first.proposed_workspace_root
 
@@ -229,9 +210,7 @@ async def test_permission_failure_is_retryable_and_never_partial_authority(
 
     db_path = tmp_path / "state.db"
     await _scope(db_path)
-    provisioner = TaskScopeProvisioner(
-        db_path, managed_workspace_root=tmp_path / "managed"
-    )
+    provisioner = TaskScopeProvisioner(db_path, managed_workspace_root=tmp_path / "managed")
     original = module._write_marker_at
 
     def denied(path, value):
@@ -241,18 +220,11 @@ async def test_permission_failure_is_retryable_and_never_partial_authority(
     with pytest.raises(TaskScopeProvisionError, match="filesystem_permission_denied"):
         await provisioner.provision(_managed())
     with sqlite3.connect(db_path) as db:
-        assert db.execute(
-            "SELECT state,failure_code FROM task_scope_provisions"
-        ).fetchone() == (
+        assert db.execute("SELECT state,failure_code FROM task_scope_provisions").fetchone() == (
             "failed_retryable",
             "filesystem_permission_denied",
         )
-        assert (
-            db.execute("SELECT COUNT(*) FROM task_scope_provision_receipts").fetchone()[
-                0
-            ]
-            == 0
-        )
+        assert db.execute("SELECT COUNT(*) FROM task_scope_provision_receipts").fetchone()[0] == 0
     monkeypatch.setattr(module, "_write_marker_at", original)
     assert (await provisioner.provision(_managed())).task_scope_id == "scope-1"
 
@@ -284,15 +256,8 @@ async def test_explicit_broken_task_home_symlink_cannot_escape_selected_root(
         await TaskScopeProvisioner(db_path).provision(request)
     assert not (outside / "redirected-home").exists()
     with sqlite3.connect(db_path) as db:
-        assert (
-            db.execute("SELECT COUNT(*) FROM task_scope_provisions").fetchone()[0] == 0
-        )
-        assert (
-            db.execute("SELECT COUNT(*) FROM task_scope_provision_receipts").fetchone()[
-                0
-            ]
-            == 0
-        )
+        assert db.execute("SELECT COUNT(*) FROM task_scope_provisions").fetchone()[0] == 0
+        assert db.execute("SELECT COUNT(*) FROM task_scope_provision_receipts").fetchone()[0] == 0
 
 
 @pytest.mark.asyncio
@@ -333,12 +298,7 @@ async def test_root_object_replacement_before_publish_never_commits_receipt(
         assert db.execute("SELECT state FROM task_scope_provisions").fetchone()[0] == (
             "failed_retryable"
         )
-        assert (
-            db.execute("SELECT COUNT(*) FROM task_scope_provision_receipts").fetchone()[
-                0
-            ]
-            == 0
-        )
+        assert db.execute("SELECT COUNT(*) FROM task_scope_provision_receipts").fetchone()[0] == 0
     with pytest.raises(TaskScopeProvisionError, match="provision_root_identity_drift"):
         await provisioner.provision(request)
 
@@ -356,29 +316,21 @@ async def test_missing_anchored_platform_primitives_fail_before_reservation(
     def unsupported() -> None:
         raise TaskScopeProvisionError("anchored_materialization_unsupported")
 
-    monkeypatch.setattr(
-        module, "_require_anchored_materialization_support", unsupported
-    )
-    with pytest.raises(
-        TaskScopeProvisionError, match="anchored_materialization_unsupported"
-    ):
-        await TaskScopeProvisioner(
-            db_path, managed_workspace_root=managed_root
-        ).provision(_managed())
+    monkeypatch.setattr(module, "_require_anchored_materialization_support", unsupported)
+    with pytest.raises(TaskScopeProvisionError, match="anchored_materialization_unsupported"):
+        await TaskScopeProvisioner(db_path, managed_workspace_root=managed_root).provision(
+            _managed()
+        )
     assert not managed_root.exists()
     with sqlite3.connect(db_path) as db:
-        assert (
-            db.execute("SELECT COUNT(*) FROM task_scope_provisions").fetchone()[0] == 0
-        )
+        assert db.execute("SELECT COUNT(*) FROM task_scope_provisions").fetchone()[0] == 0
 
 
 @pytest.mark.asyncio
 async def test_idempotency_conflict_cannot_allocate_second_path(tmp_path: Path) -> None:
     db_path = tmp_path / "state.db"
     await _scope(db_path)
-    provisioner = TaskScopeProvisioner(
-        db_path, managed_workspace_root=tmp_path / "managed"
-    )
+    provisioner = TaskScopeProvisioner(db_path, managed_workspace_root=tmp_path / "managed")
     first = await provisioner.provision(_managed())
     with pytest.raises(TaskScopeConflict, match="provision_idempotency_conflict"):
         await provisioner.provision(_managed(key="different-key"))
@@ -398,9 +350,7 @@ async def test_idempotency_conflict_cannot_allocate_second_path(tmp_path: Path) 
 @pytest.mark.parametrize(
     "stage", ["before_task_scope_provision_commit", "after_task_scope_provision_commit"]
 )
-async def test_v37_migration_fault_restarts_with_one_marker(
-    tmp_path: Path, stage: str
-) -> None:
+async def test_v37_migration_fault_restarts_with_one_marker(tmp_path: Path, stage: str) -> None:
     db_path = tmp_path / "state.db"
 
     def crash(value: str) -> None:
@@ -411,11 +361,5 @@ async def test_v37_migration_fault_restarts_with_one_marker(
         await initialize_human_memory_program_state_db(db_path, fault_inject=crash)
     await initialize_human_memory_program_state_db(db_path)
     with sqlite3.connect(db_path) as db:
-        assert (
-            db.execute("PRAGMA user_version").fetchone()[0]
-            == HUMAN_MEMORY_TARGET_SCHEMA_VERSION
-        )
-        assert (
-            db.execute("SELECT COUNT(*) FROM task_scope_provision_marker").fetchone()[0]
-            == 1
-        )
+        assert db.execute("PRAGMA user_version").fetchone()[0] == HUMAN_MEMORY_TARGET_SCHEMA_VERSION
+        assert db.execute("SELECT COUNT(*) FROM task_scope_provision_marker").fetchone()[0] == 1

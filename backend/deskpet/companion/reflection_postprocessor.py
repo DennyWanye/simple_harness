@@ -67,17 +67,12 @@ class LiveGrowthTargetFactsV1:
     schema_version: int = 1
 
     def __post_init__(self) -> None:
-        object.__setattr__(
-            self, "candidate_mode", CandidateMode(self.candidate_mode)
-        )
+        object.__setattr__(self, "candidate_mode", CandidateMode(self.candidate_mode))
         if self.schema_version != 1:
             raise ValueError("live_growth_target_facts_schema_unsupported")
         if self.target_fence.pack_id != self.target.pack_id:
             raise ValueError("live_target_fence_pack_mismatch")
-        if (
-            self.source_fence is not None
-            and self.source_fence.pack_id != self.target.pack_id
-        ):
+        if self.source_fence is not None and self.source_fence.pack_id != self.target.pack_id:
             raise ValueError("live_source_fence_pack_mismatch")
 
 
@@ -133,9 +128,7 @@ class HostNeutralSemanticGrowthResultV1:
             hypothesis=_optional_semantic_text(raw["hypothesis"]),
             requested_change=_optional_semantic_text(raw["requested_change"]),
             risk_hints=tuple(str(item).strip() for item in risk_hints),
-            expected_improvement=_optional_semantic_text(
-                raw.get("expected_improvement")
-            ),
+            expected_improvement=_optional_semantic_text(raw.get("expected_improvement")),
             evaluation_plan=tuple(dict(item) for item in evaluation_plan),
         )
         result.validate()
@@ -214,9 +207,7 @@ class ReflectionResultPostprocessor:
         self._target_facts_resolver = target_facts_resolver
         self._reflector = reflector or GrowthReflector()
 
-    async def __call__(
-        self, result: BackgroundRunCanonicalResultV1
-    ) -> Mapping[str, Any]:
+    async def __call__(self, result: BackgroundRunCanonicalResultV1) -> Mapping[str, Any]:
         if result.purpose != "reflection":
             raise ValueError("reflection_postprocessor_purpose_invalid")
         if result.status != "succeeded":
@@ -227,18 +218,10 @@ class ReflectionResultPostprocessor:
         raw_result = result.structured_result
         full_schema = "schema_id" in raw_result
         semantic = (
-            None
-            if full_schema
-            else HostNeutralSemanticGrowthResultV1.from_mapping(raw_result)
+            None if full_schema else HostNeutralSemanticGrowthResultV1.from_mapping(raw_result)
         )
-        proposed = (
-            StructuredGrowthProposalV1.from_mapping(raw_result)
-            if full_schema
-            else None
-        )
-        evidence_bundle = await _resolve(
-            self._evidence_loader(result.owner, result.evidence_ids)
-        )
+        proposed = StructuredGrowthProposalV1.from_mapping(raw_result) if full_schema else None
+        evidence_bundle = await _resolve(self._evidence_loader(result.owner, result.evidence_ids))
         if not isinstance(evidence_bundle, LiveReflectionEvidenceV1):
             raise TypeError("live_reflection_evidence_required")
         evidence = evidence_bundle.evidence
@@ -253,12 +236,10 @@ class ReflectionResultPostprocessor:
 
         semantic_live_facts: LiveGrowthTargetFactsV1 | None = None
         if semantic is not None:
-            proposed, semantic_live_facts = (
-                await self._proposal_from_semantic_result(
-                    result,
-                    semantic=semantic,
-                    evidence_event_ids=expected_ids,
-                )
+            proposed, semantic_live_facts = await self._proposal_from_semantic_result(
+                result,
+                semantic=semantic,
+                evidence_event_ids=expected_ids,
             )
         assert proposed is not None
         reviewed = self._reflector.review(
@@ -278,9 +259,7 @@ class ReflectionResultPostprocessor:
                 "result_hash": result.result_hash,
             }
         )
-        proposal_ref = (
-            f"{result.result_ref}:proposal:{reviewed.proposal_hash}"
-        )
+        proposal_ref = f"{result.result_ref}:proposal:{reviewed.proposal_hash}"
 
         if reviewed.decision is GrowthProposalDecision.ABSTAIN:
             reason_code = (
@@ -314,8 +293,7 @@ class ReflectionResultPostprocessor:
         if not isinstance(live_facts, LiveGrowthTargetFactsV1):
             raise TypeError("live_growth_target_facts_required")
         expected_owner_key = (
-            f"companion:{result.owner.profile_id}:"
-            f"{result.owner.profile_generation}"
+            f"companion:{result.owner.profile_id}:{result.owner.profile_generation}"
         )
         host_facts_match = (
             live_facts.target == reviewed.target
@@ -409,12 +387,8 @@ class ReflectionResultPostprocessor:
                 source_fence=live_facts.source_fence,
                 target_fence=live_facts.target_fence,
                 hypothesis=semantic.hypothesis,
-                structured_diff={
-                    "requested_change": semantic.requested_change
-                },
-                expected_improvement=(
-                    semantic.expected_improvement or semantic.hypothesis
-                ),
+                structured_diff={"requested_change": semantic.requested_change},
+                expected_improvement=(semantic.expected_improvement or semantic.hypothesis),
                 risk_hints=semantic.risk_hints,
                 evaluation_plan=evaluation_plan,
             ),

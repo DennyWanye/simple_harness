@@ -88,7 +88,10 @@ def map_workflow_failure(exc: BaseException) -> FailureMapping:
         )
     elif isinstance(exc, (json.JSONDecodeError, UnicodeDecodeError)) or (
         isinstance(exc, ValueError)
-        and any(token in str(exc).lower() for token in ("checkpoint", "deserialize", "integrity", "msgpack"))
+        and any(
+            token in str(exc).lower()
+            for token in ("checkpoint", "deserialize", "integrity", "msgpack")
+        )
     ):
         code = WorkflowErrorCode.CHECKPOINT_CORRUPT
         message_ref = "workflow_runner:checkpoint_corrupt"

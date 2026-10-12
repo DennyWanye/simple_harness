@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 """WI-B1 — SessionGoalStore unit tests (PRD Stage B)."""
+
 from __future__ import annotations
 
 import time

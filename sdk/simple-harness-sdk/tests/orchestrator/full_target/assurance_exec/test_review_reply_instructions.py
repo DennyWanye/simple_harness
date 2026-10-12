@@ -34,38 +34,83 @@ def test_the_example_in_the_instructions_is_a_reply_the_decoder_accepts() -> Non
 def test_the_example_shows_every_field_and_nothing_else() -> None:
     example = _example()
     # 做法表态、摘要核对只对带对应一节的审查包；示例里给空，免得照抄成"范围错误"（阶段 C3）
-    assert set(example) == {"schema_version", "verdict", "assessments", "findings", "global_findings", "claims",
-                            "methods"}
+    assert set(example) == {
+        "schema_version",
+        "verdict",
+        "assessments",
+        "findings",
+        "global_findings",
+        "claims",
+        "methods",
+    }
     assert example["methods"] == [] and example["global_findings"] == []
-    for shape in ('{"method_ref": "做法编号@版本", "reusable": true, "purpose": "一句用途", "at_fault": false, '
-                  '"reason": "为什么这样判"}', '{"faithful": true, "reason": "为什么这样判"}',
-                  '{"severity": "BLOCKER", "reason": "问题在哪、应当怎么改"}'):
+    for shape in (
+        '{"method_ref": "做法编号@版本", "reusable": true, "purpose": "一句用途", "at_fault": false, '
+        '"reason": "为什么这样判"}',
+        '{"faithful": true, "reason": "为什么这样判"}',
+        '{"severity": "BLOCKER", "reason": "问题在哪、应当怎么改"}',
+    ):
         assert shape in REVIEW_INSTRUCTIONS
     # 全局问题的形状示例原样放进回复，解码器照收（2026-10-06 晚，F04）
     shown = json.loads('{"severity": "BLOCKER", "reason": "问题在哪、应当怎么改"}')
-    assert ReviewReply.from_json({**example, "global_findings": [shown]}).global_findings[0].severity == "BLOCKER"
+    assert (
+        ReviewReply.from_json({**example, "global_findings": [shown]}).global_findings[0].severity
+        == "BLOCKER"
+    )
     assert set(example["assessments"][0]) == {
-        "criterion_id", "verdict", "evidence_ids", "reason", "limitations"
+        "criterion_id",
+        "verdict",
+        "evidence_ids",
+        "reason",
+        "limitations",
     }
     # 严格解码器不收任何多写的字段——示例不能教它多写。
     with pytest.raises(AssuranceError):
         ReviewReply.from_json({**example, "notes": ""})
 
 
-@pytest.mark.parametrize("word", (
-    # 字段
-    "schema_version", "verdict", "assessments", "findings", "criterion_id", "evidence_ids",
-    "reason", "limitations", "severity", "global_findings", "claims", "methods", "summary", "reusable", "purpose",
-    "at_fault", "faithful",
-    # 取值
-    "ACCEPT", "REWORK", "INCONCLUSIVE", "REJECTED", "PASS", "FAIL", "UNKNOWN",
-    "BLOCKER", "WARNING", "INFO",
-))
+@pytest.mark.parametrize(
+    "word",
+    (
+        # 字段
+        "schema_version",
+        "verdict",
+        "assessments",
+        "findings",
+        "criterion_id",
+        "evidence_ids",
+        "reason",
+        "limitations",
+        "severity",
+        "global_findings",
+        "claims",
+        "methods",
+        "summary",
+        "reusable",
+        "purpose",
+        "at_fault",
+        "faithful",
+        # 取值
+        "ACCEPT",
+        "REWORK",
+        "INCONCLUSIVE",
+        "REJECTED",
+        "PASS",
+        "FAIL",
+        "UNKNOWN",
+        "BLOCKER",
+        "WARNING",
+        "INFO",
+    ),
+)
 def test_every_field_and_every_allowed_value_is_named_and_explained(word: str) -> None:
     assert word in REVIEW_INSTRUCTIONS
     # 每个取值后面跟着"＝含义"，每个字段有一行自己的说明。
-    assert f"{word}＝" in REVIEW_INSTRUCTIONS or f"{word}：" in REVIEW_INSTRUCTIONS \
-        or f"{word}（" in REVIEW_INSTRUCTIONS, word
+    assert (
+        f"{word}＝" in REVIEW_INSTRUCTIONS
+        or f"{word}：" in REVIEW_INSTRUCTIONS
+        or f"{word}（" in REVIEW_INSTRUCTIONS
+    ), word
 
 
 @pytest.mark.parametrize("rule", ("代码围栏", "JSON 前后写任何说明文字", "多余字段带了值"))
@@ -108,7 +153,12 @@ def test_the_weight_of_a_criterion_is_judged_from_its_own_words() -> None:
 
     **改坏检验**（H-03）：提示词删掉这段判据 → 变红。"""
 
-    for phrase in ("准则的轻重由你按准则原话判，系统不替你分", "没做到的那一条判 PASS",
-                   "在它的 limitations 里写明没做到什么", "做到其中\n一项即判 PASS", "按必须做到判",
-                   "不代表用户把它定成了必须；轻重以原话为准"):
+    for phrase in (
+        "准则的轻重由你按准则原话判，系统不替你分",
+        "没做到的那一条判 PASS",
+        "在它的 limitations 里写明没做到什么",
+        "做到其中\n一项即判 PASS",
+        "按必须做到判",
+        "不代表用户把它定成了必须；轻重以原话为准",
+    ):
         assert phrase in REVIEW_INSTRUCTIONS, phrase

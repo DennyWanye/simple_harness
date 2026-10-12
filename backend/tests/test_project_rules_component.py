@@ -64,7 +64,9 @@ async def test_prompt_path_is_not_treated_as_verified_workspace(monkeypatch, tmp
 
 
 @pytest.mark.asyncio
-async def test_e2e_project_rules_fault_fails_optional_component_closed(monkeypatch, tmp_path) -> None:
+async def test_e2e_project_rules_fault_fails_optional_component_closed(
+    monkeypatch, tmp_path
+) -> None:
     root = tmp_path / "workspace"
     root.mkdir()
     (root / "AGENTS.md").write_text("must not be loaded", encoding="utf-8")
@@ -73,9 +75,7 @@ async def test_e2e_project_rules_fault_fails_optional_component_closed(monkeypat
         lambda name: True if name == "project_rules_io_error" else None,
     )
 
-    result = await ProjectRulesComponent().provide(
-        _context(task_type="chat", root=root)
-    )
+    result = await ProjectRulesComponent().provide(_context(task_type="chat", root=root))
 
     assert result.fragments == []
     assert result.meta["reason"] == "read_failed:FixtureProjectRulesIOError"
@@ -115,12 +115,8 @@ async def test_rules_directory_is_loaded_without_recursive_escape(tmp_path) -> N
     rules_dir.mkdir(parents=True)
     (rules_dir / "style.md").write_text("use strict typing", encoding="utf-8")
 
-    result = await ProjectRulesComponent().provide(
-        _context(task_type="workspace", root=root)
-    )
-    assert [fragment.meta["path"] for fragment in result.fragments] == [
-        ".deskpet/rules/style.md"
-    ]
+    result = await ProjectRulesComponent().provide(_context(task_type="workspace", root=root))
+    assert [fragment.meta["path"] for fragment in result.fragments] == [".deskpet/rules/style.md"]
 
 
 @pytest.mark.asyncio
@@ -150,14 +146,10 @@ async def test_symlinked_rule_outside_workspace_is_rejected(tmp_path) -> None:
     except OSError as exc:
         pytest.skip(f"symlinks unavailable in this environment: {exc}")
 
-    result = await ProjectRulesComponent().provide(
-        _context(task_type="chat", root=root)
-    )
+    result = await ProjectRulesComponent().provide(_context(task_type="chat", root=root))
     assert result.fragments == []
     assert result.meta["reason"] == "no_matching_rules"
-    assert result.meta["rejected_sources"] == [
-        {"path": "AGENTS.md", "reason": "outside_workspace"}
-    ]
+    assert result.meta["rejected_sources"] == [{"path": "AGENTS.md", "reason": "outside_workspace"}]
 
 
 @pytest.mark.asyncio

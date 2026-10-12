@@ -102,16 +102,17 @@ def _risk(finding: TechnologyFinding) -> str:
         risks.append("技术影响尚未量化")
     if finding.maturity == "unknown":
         risks.append("发布状态和采用成熟度未得到支持")
-    return "；".join(risks) if risks else "当前最终采用证据未暴露额外重大不确定性，仍需在实际负载中复核"
+    return (
+        "；".join(risks)
+        if risks
+        else "当前最终采用证据未暴露额外重大不确定性，仍需在实际负载中复核"
+    )
 
 
 def _adoption_advice(finding: TechnologyFinding) -> tuple[str, str]:
     maturity, advice = _MATURITY[finding.maturity]
     if finding.maturity in {"adopted", "emerging"} and finding.evidence_quality < 3:
-        advice = (
-            "先补齐一手来源与独立来源，再决定是否进入限界 PoC；"
-            "在此之前只保留为候选观察项。"
-        )
+        advice = "先补齐一手来源与独立来源，再决定是否进入限界 PoC；在此之前只保留为候选观察项。"
     return maturity, advice
 
 
@@ -182,21 +183,21 @@ def _executive_judgments(
     findings: Sequence[TechnologyFinding],
     citation_numbers: Mapping[int, int],
 ) -> str:
-    all_refs = " ".join(
-        f"[{number}]" for number in sorted(set(citation_numbers.values()))
-    )
+    all_refs = " ".join(f"[{number}]" for number in sorted(set(citation_numbers.values())))
     adopted = [finding for finding in findings if finding.maturity == "adopted"]
     emerging = [finding for finding in findings if finding.maturity == "emerging"]
     quantified = [finding for finding in findings if finding.impact_score >= 2]
     strong = [finding for finding in findings if finding.evidence_quality >= 3]
     poc = [
-        finding for finding in findings
+        finding
+        for finding in findings
         if finding.maturity in {"adopted", "emerging"}
         and finding.total_score >= 0.55
         and finding.evidence_quality >= 3
     ]
     evidence_first = [
-        finding for finding in findings
+        finding
+        for finding in findings
         if finding.maturity in {"adopted", "emerging"}
         and finding.total_score >= 0.55
         and finding.evidence_quality < 3
@@ -229,7 +230,7 @@ def _executive_judgments(
 
 def _action_summary(findings: Sequence[TechnologyFinding]) -> str:
     validate = [
-            _display_entity(finding)
+        _display_entity(finding)
         for finding in findings
         if finding.maturity in {"adopted", "emerging"}
         and finding.total_score >= 0.55
@@ -341,7 +342,10 @@ def render_technology_report(
             )
         )
         display_index += len(rows)
-    body = "\n\n".join(group_sections) or "### 暂无可发布条目\n\n本轮没有通过 taxonomy 与引用支持双重核验的技术实体。"
+    body = (
+        "\n\n".join(group_sections)
+        or "### 暂无可发布条目\n\n本轮没有通过 taxonomy 与引用支持双重核验的技术实体。"
+    )
 
     citation_to_entities: dict[int, list[str]] = {}
     for finding in selected:
@@ -406,7 +410,9 @@ def render_technology_report(
         "body_md": body_md,
         "intent_profile": profile.to_json(),
         "public_findings": [_public_finding(finding) for finding in selected],
-        "citation_count": len({value for finding in selected for value in finding.winning_citation_ids}),
+        "citation_count": len(
+            {value for finding in selected for value in finding.winning_citation_ids}
+        ),
     }
     payload["report_hash"] = hashlib.sha256(canonical_json(payload).encode()).hexdigest()
     return payload

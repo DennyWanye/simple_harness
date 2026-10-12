@@ -17,6 +17,7 @@ Design references:
 - LangGraph lesson — per-tool consecutive counter so one degraded tool
   cannot exhaust the global budget.
 """
+
 from __future__ import annotations
 
 import hashlib

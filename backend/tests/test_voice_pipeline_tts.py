@@ -10,6 +10,7 @@
     产出明显不同
   - interrupted 标志生效时立刻停止发送
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -76,8 +77,11 @@ class _FakePCMTTS:
 
 
 class _FakeVAD:
-    def on_tts_start(self): pass
-    def on_tts_end(self): pass
+    def on_tts_start(self):
+        pass
+
+    def on_tts_end(self):
+        pass
 
 
 def _silent_chunk() -> bytes:
@@ -140,9 +144,7 @@ async def test_lip_sync_amplitude_reflects_pcm_rms():
     amp_silent = lip[0]["payload"]["amplitude"]
     amp_loud = lip[1]["payload"]["amplitude"]
     assert amp_silent < 0.05, f"silent chunk amplitude={amp_silent} too high"
-    assert amp_loud > amp_silent + 0.3, (
-        f"loud ({amp_loud}) should dominate silent ({amp_silent})"
-    )
+    assert amp_loud > amp_silent + 0.3, f"loud ({amp_loud}) should dominate silent ({amp_silent})"
     assert 0.0 <= amp_loud <= 1.0
 
 

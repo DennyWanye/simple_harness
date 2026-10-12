@@ -7,6 +7,7 @@ These verify the new fields, schema methods, permission-gated execution,
 and namespacing — without breaking the existing 17 hardcoded tools or
 the 679 baseline tests.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -214,9 +215,7 @@ def test_list_tools_by_source() -> None:
 @pytest.mark.asyncio
 async def test_execute_tool_permission_allow() -> None:
     reg = ToolRegistry()
-    gate = PermissionGate(
-        config=PermissionGateConfig(timeout_s=0.5)
-    )
+    gate = PermissionGate(config=PermissionGateConfig(timeout_s=0.5))
 
     async def allow(req):
         return PermissionResponse(request_id=req.request_id, decision="allow")
@@ -231,9 +230,7 @@ async def test_execute_tool_permission_allow() -> None:
         lambda a, t: '{"bytes":5}',
         permission_category="write_file",
     )
-    out = await reg.execute_tool(
-        "write_file", {"path": "x", "content": "hello"}, "s1"
-    )
+    out = await reg.execute_tool("write_file", {"path": "x", "content": "hello"}, "s1")
     assert out["ok"] is True
     assert out["result"] == '{"bytes":5}'
 
@@ -262,9 +259,7 @@ async def test_execute_tool_outcome_is_permission_aware_and_normalized() -> None
 @pytest.mark.asyncio
 async def test_execute_tool_permission_deny() -> None:
     reg = ToolRegistry()
-    gate = PermissionGate(
-        config=PermissionGateConfig(timeout_s=0.5)
-    )
+    gate = PermissionGate(config=PermissionGateConfig(timeout_s=0.5))
 
     async def deny(req):
         return PermissionResponse(request_id=req.request_id, decision="deny")
@@ -285,9 +280,7 @@ async def test_execute_tool_permission_deny() -> None:
         handler,
         permission_category="write_file",
     )
-    out = await reg.execute_tool(
-        "write_file", {"path": "x", "content": "hi"}, "s1"
-    )
+    out = await reg.execute_tool("write_file", {"path": "x", "content": "hi"}, "s1")
     assert out["ok"] is False
     assert "permission denied" in out["error"]
     assert called["n"] == 0  # handler never ran
@@ -314,9 +307,7 @@ async def test_execute_tool_handler_exception_caught() -> None:
         boom,
         permission_category="write_file",
     )
-    out = await reg.execute_tool(
-        "write_file", {"path": "x", "content": "."}, "s1"
-    )
+    out = await reg.execute_tool("write_file", {"path": "x", "content": "."}, "s1")
     assert out["ok"] is False
     assert "OSError" in out["error"]
 
@@ -338,13 +329,15 @@ def test_register_replace_logs_warning(caplog) -> None:
     """WI-T4.1 v3：opt-in 覆盖 = warn (旧 silent replace 行为升级为 opt-in)."""
     reg = ToolRegistry()
     reg.register(
-        "foo", "util",
+        "foo",
+        "util",
         {"name": "foo", "description": "d", "parameters": {}},
         lambda a, t: "{}",
     )
     with caplog.at_level("WARNING"):
         reg.register(
-            "foo", "util",
+            "foo",
+            "util",
             {"name": "foo", "description": "d2", "parameters": {}},
             lambda a, t: "{}",
             replace_allowed=True,
@@ -355,15 +348,18 @@ def test_register_replace_logs_warning(caplog) -> None:
 def test_register_replace_without_optin_raises() -> None:
     """WI-T4.1 v3：未 opt-in → ToolNameConflictError (last-mile/stage2 教训)."""
     from deskpet.tools.registry import ToolNameConflictError
+
     reg = ToolRegistry()
     reg.register(
-        "bar", "util",
+        "bar",
+        "util",
         {"name": "bar", "description": "d", "parameters": {}},
         lambda a, t: "{}",
     )
     with pytest.raises(ToolNameConflictError):
         reg.register(
-            "bar", "util",
+            "bar",
+            "util",
             {"name": "bar", "description": "d2", "parameters": {}},
             lambda a, t: "{}",
         )

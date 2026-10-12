@@ -9,6 +9,7 @@ list of files + subdirectories with size for files.
 P5-S2 Phase 0: error responses now include ``ok: false`` + ``hint``
 + ``examples``. Legacy ``error`` strings preserved.
 """
+
 from __future__ import annotations
 
 import json
@@ -41,7 +42,7 @@ def list_directory(args: dict[str, Any], task_id: str = "") -> str:
         return _err(
             "path required",
             "list_directory 的 path 字段必填，必须是要列出的目录路径。"
-            "例如 {\"path\": \".\"} 列出当前目录。",
+            '例如 {"path": "."} 列出当前目录。',
         )
 
     # 相对路径按**本 Run 绑定的工作区根**解析、``~`` 展开；理由见 _scope_paths。
@@ -81,8 +82,7 @@ def list_directory(args: dict[str, Any], task_id: str = "") -> str:
     except OSError as exc:
         return _err(
             f"OSError: {exc}",
-            f"读取目录 {path} 时操作系统报错。"
-            "常见原因：权限不足、目录被删除。请确认有读权限。",
+            f"读取目录 {path} 时操作系统报错。常见原因：权限不足、目录被删除。请确认有读权限。",
             path=path,
         )
 

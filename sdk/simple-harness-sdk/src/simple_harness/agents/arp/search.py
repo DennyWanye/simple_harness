@@ -44,7 +44,11 @@ from .strict import canonical, digest
 VECTOR_FLOOR = 0.35
 MAX_QUERY_WORDS = 16
 RESULT_PAGE_ITEMS = 32
-_PAGE_SCHEMA = {"CONTEXT_RECALL": "ContextSearchPage", "MODEL_SEARCH": "SearchPage", "MANAGEMENT_SEARCH": "ManagementSearchPage"}
+_PAGE_SCHEMA = {
+    "CONTEXT_RECALL": "ContextSearchPage",
+    "MODEL_SEARCH": "SearchPage",
+    "MANAGEMENT_SEARCH": "ManagementSearchPage",
+}
 MAX_RESULT_PAGES = 16
 MAX_SCAN_PAGES = 256
 MAX_MERGED_BYTES = 16384
@@ -171,7 +175,13 @@ def score_row(plan: QueryPlan, row: Mapping[str, Any], *, hybrid: bool) -> dict[
 
 
 def stable_key(row: Mapping[str, Any]) -> tuple:
-    return (str(row["record_id"]), str(row["source_hash"]), int(row["utf8_start"]), int(row["utf8_end"]), str(row["chunk_id"]))
+    return (
+        str(row["record_id"]),
+        str(row["source_hash"]),
+        int(row["utf8_start"]),
+        int(row["utf8_end"]),
+        str(row["chunk_id"]),
+    )
 
 
 # ---- service -----------------------------------------------------------------------
@@ -217,7 +227,12 @@ class SessionSearchService:
         """Create (or replay) the ``IndexSnapshot`` for one logical query identity."""
 
         upper = self._p.upper_commit(index_generation)
-        snapshot_id = "snap-" + digest({"identity": dict(identity), "generation": index_generation, "upper": upper})[:32]
+        snapshot_id = (
+            "snap-"
+            + digest({"identity": dict(identity), "generation": index_generation, "upper": upper})[
+                :32
+            ]
+        )
         existing = self._p.connection.execute(
             "SELECT body_json FROM query_snapshots WHERE snapshot_id=?", (snapshot_id,)
         ).fetchone()
@@ -233,7 +248,9 @@ class SessionSearchService:
             "upper_commit": upper,
             "journal_highwater": journal_highwater,
             "expected_group_set_hash": expected_group_set_hash,
-            "indexed_group_set_hash": self._p.indexed_group_set_hash(index_generation, upper, journal_highwater),
+            "indexed_group_set_hash": self._p.indexed_group_set_hash(
+                index_generation, upper, journal_highwater
+            ),
             "embedding_fingerprint": embedding_fingerprint,
             "chunker_fingerprint": chunker_fingerprint,
             "view_policy_hash": view_policy_hash,
@@ -246,12 +263,22 @@ class SessionSearchService:
             connection.execute(
                 "INSERT INTO query_snapshots(snapshot_id,index_generation,upper_commit,journal_highwater,source_snapshot_hash,body_json,created_at_ms)"
                 " VALUES (?,?,?,?,?,?,?)",
-                (snapshot_id, index_generation, upper, journal_highwater, source_snapshot_hash, _dump({**value, "expected_groups": expected_groups, **counts}), value["created_at_ms"]),
+                (
+                    snapshot_id,
+                    index_generation,
+                    upper,
+                    journal_highwater,
+                    source_snapshot_hash,
+                    _dump({**value, "expected_groups": expected_groups, **counts}),
+                    value["created_at_ms"],
+                ),
             )
         return value
 
     def snapshot_extras(self, snapshot_id: str) -> Mapping[str, Any]:
-        row = self._p.connection.execute("SELECT body_json FROM query_snapshots WHERE snapshot_id=?", (snapshot_id,)).fetchone()
+        row = self._p.connection.execute(
+            "SELECT body_json FROM query_snapshots WHERE snapshot_id=?", (snapshot_id,)
+        ).fetchone()
         if row is None:
             raise ArpError("CURSOR_STALE", "unknown snapshot")
         return _load(row[0])
@@ -275,7 +302,9 @@ class SessionSearchService:
         if mode not in ("HYBRID", "LEXICAL_ONLY", "EXACT_ONLY"):
             raise ArpError("ENUM", field_path="mode")
         limits = request["limits"]
-        exclusions = sorted(set(request["mandatory_group_ids"]) | set(request["protected_group_ids"]))
+        exclusions = sorted(
+            set(request["mandatory_group_ids"]) | set(request["protected_group_ids"])
+        )
         body = {
             "query_text": request["query_text"],
             "query_hash": request["query_hash"],
@@ -291,10 +320,27 @@ class SessionSearchService:
             "purpose": purpose,
             "recall_key": request.get("recall_key"),
             "page_items": int(limits.get("page_items", RESULT_PAGE_ITEMS)),
-            "max_bytes": int(limits.get("max_bytes", 0)) or None,  # None: no page byte cap (internal recall)
+            "max_bytes": int(limits.get("max_bytes", 0))
+            or None,  # None: no page byte cap (internal recall)
         }
-        options_hash = digest({k: body[k] for k in ("exclusions", "journal_highwater", "mode", "page_rows", "channel_top_k", "global_candidates", "page_items", "max_bytes")})
-        existing = self._p.connection.execute("SELECT 1 FROM search_queries WHERE query_id=?", (query_id,)).fetchone()
+        options_hash = digest(
+            {
+                k: body[k]
+                for k in (
+                    "exclusions",
+                    "journal_highwater",
+                    "mode",
+                    "page_rows",
+                    "channel_top_k",
+                    "global_candidates",
+                    "page_items",
+                    "max_bytes",
+                )
+            }
+        )
+        existing = self._p.connection.execute(
+            "SELECT 1 FROM search_queries WHERE query_id=?", (query_id,)
+        ).fetchone()
         if existing is None:
             snapshot_chunks = self._count_visible(snapshot, body)
             body["snapshot_chunks"] = snapshot_chunks
@@ -306,15 +352,37 @@ class SessionSearchService:
                     "after_rowid,heap_json,final_results_json,query_vector_ref_json,elapsed_ms,expires_at_ms,control_generation,authority_hash,row_version)"
                     " VALUES (?,?,?,?,?,?,?,'SCANNING',0,?,NULL,?,0,?,?,?,1)",
                     (
-                        query_id, snapshot["snapshot_id"], access.owner_scope_hash, purpose, body["query_hash"], options_hash,
-                        _dump(body), _dump(state),
-                        None if query_vector is None else _dump({"ref": None if query_vector_ref is None else query_vector_ref.to_json(), "vector": [float(v) for v in query_vector]}),
-                        now + self._ttl, access.control_generation, access.authority_readset_hash,
+                        query_id,
+                        snapshot["snapshot_id"],
+                        access.owner_scope_hash,
+                        purpose,
+                        body["query_hash"],
+                        options_hash,
+                        _dump(body),
+                        _dump(state),
+                        None
+                        if query_vector is None
+                        else _dump(
+                            {
+                                "ref": None
+                                if query_vector_ref is None
+                                else query_vector_ref.to_json(),
+                                "vector": [float(v) for v in query_vector],
+                            }
+                        ),
+                        now + self._ttl,
+                        access.control_generation,
+                        access.authority_readset_hash,
                     ),
                 )
                 token = self._new_cursor_locked(
-                    connection, access, query_id=query_id, snapshot=snapshot, purpose=purpose,
-                    position={"phase": "SCANNING", "ordinal": 1}, token=self._first_token(query_id, access, purpose),
+                    connection,
+                    access,
+                    query_id=query_id,
+                    snapshot=snapshot,
+                    purpose=purpose,
+                    position={"phase": "SCANNING", "ordinal": 1},
+                    token=self._first_token(query_id, access, purpose),
                 )
         else:
             # The internal recall query re-derives its first cursor so a coordinator that
@@ -328,9 +396,13 @@ class SessionSearchService:
     def _first_token(query_id: str, access: SessionAccess, purpose: str) -> str | None:
         if purpose != "CONTEXT_RECALL":
             return None  # model/host-facing cursors stay random and unrecoverable by design
-        return hashlib.sha256(f"first-cursor:{query_id}:{access.owner_scope_hash}:{access.control_generation}".encode()).hexdigest()
+        return hashlib.sha256(
+            f"first-cursor:{query_id}:{access.owner_scope_hash}:{access.control_generation}".encode()
+        ).hexdigest()
 
-    def resume_frozen(self, access: SessionAccess, cursor: str, *, expect: Mapping[str, Any] | None = None) -> tuple[Mapping[str, Any], str | None]:
+    def resume_frozen(
+        self, access: SessionAccess, cursor: str, *, expect: Mapping[str, Any] | None = None
+    ) -> tuple[Mapping[str, Any], str | None]:
         """Materialise the page a PENDING cursor points at, or replay a materialised one.
 
         ``expect`` (query_hash / page_items / max_bytes) is the re-sent request: a cursor
@@ -351,18 +423,34 @@ class SessionSearchService:
             body = query["body"]
             for key in ("query_hash", "page_items", "max_bytes"):
                 if key in expect and expect[key] != body.get(key):
-                    raise ArpError("CURSOR_REQUEST_MISMATCH", f"cursor belongs to a query with another {key}")
+                    raise ArpError(
+                        "CURSOR_REQUEST_MISMATCH", f"cursor belongs to a query with another {key}"
+                    )
         snapshot = self.snapshot_extras(query["snapshot_id"])
         check_cursor(
             {
-                "owner": str(row[3]), "session": snapshot["session_id"], "control_generation": int(row[4]), "purpose": str(row[1]),
-                "query_hash": query["query_hash"], "request_hash": query["options_hash"], "expires_at_ms": int(row[6]),
-                "index_generation": int(snapshot["index_generation"]), "authority_hash": str(row[5]), "root_incarnation": access.root_incarnation,
+                "owner": str(row[3]),
+                "session": snapshot["session_id"],
+                "control_generation": int(row[4]),
+                "purpose": str(row[1]),
+                "query_hash": query["query_hash"],
+                "request_hash": query["options_hash"],
+                "expires_at_ms": int(row[6]),
+                "index_generation": int(snapshot["index_generation"]),
+                "authority_hash": str(row[5]),
+                "root_incarnation": access.root_incarnation,
             },
             {
-                "owner": access.owner_scope_hash, "session": access.session_id, "control_generation": access.control_generation, "purpose": access.purpose,
-                "query_hash": query["query_hash"], "request_hash": query["options_hash"], "now_ms": self._clock_ms(),
-                "index_generation": int(snapshot["index_generation"]), "authority_hash": access.authority_readset_hash, "root_incarnation": access.root_incarnation,
+                "owner": access.owner_scope_hash,
+                "session": access.session_id,
+                "control_generation": access.control_generation,
+                "purpose": access.purpose,
+                "query_hash": query["query_hash"],
+                "request_hash": query["options_hash"],
+                "now_ms": self._clock_ms(),
+                "index_generation": int(snapshot["index_generation"]),
+                "authority_hash": access.authority_readset_hash,
+                "root_incarnation": access.root_incarnation,
             },
         )
         if str(row[7]) == "MATERIALIZED":
@@ -377,7 +465,14 @@ class SessionSearchService:
         with self._p.transaction() as connection:
             next_token = None
             if next_position is not None:
-                next_token = self._new_cursor_locked(connection, access, query_id=query_id, snapshot=snapshot, purpose=str(row[1]), position=next_position)
+                next_token = self._new_cursor_locked(
+                    connection,
+                    access,
+                    query_id=query_id,
+                    snapshot=snapshot,
+                    purpose=str(row[1]),
+                    position=next_position,
+                )
             page = dict(page)
             page["next_cursor"] = next_token
             page["has_more"] = next_token is not None
@@ -387,7 +482,14 @@ class SessionSearchService:
             page_hash = digest(value)
             updated = connection.execute(
                 "UPDATE cursor_pages SET state='MATERIALIZED', page_json=?, page_hash=?, next_token_hash=? WHERE token_hash=? AND state='PENDING'",
-                (_dump(value), page_hash, None if next_token is None else hashlib.sha256(next_token.encode("utf-8")).hexdigest(), token_hash),
+                (
+                    _dump(value),
+                    page_hash,
+                    None
+                    if next_token is None
+                    else hashlib.sha256(next_token.encode("utf-8")).hexdigest(),
+                    token_hash,
+                ),
             ).rowcount
             if updated != 1:
                 raise ArpError("CURSOR_STALE", "cursor materialised concurrently")
@@ -406,11 +508,23 @@ class SessionSearchService:
         if row is None:
             raise ArpError("CURSOR_UNKNOWN", "unknown query")
         return {
-            "query_id": str(row[0]), "snapshot_id": str(row[1]), "owner_scope_hash": str(row[2]), "purpose": str(row[3]),
-            "query_hash": str(row[4]), "options_hash": str(row[5]), "body": _load(row[6]), "phase": str(row[7]),
-            "after_rowid": int(row[8]), "state": _load(row[9]), "final": None if row[10] is None else _load(row[10]),
-            "vector": None if row[11] is None else _load(row[11]), "elapsed_ms": int(row[12]), "expires_at_ms": int(row[13]),
-            "control_generation": int(row[14]), "authority_hash": str(row[15]), "row_version": int(row[16]),
+            "query_id": str(row[0]),
+            "snapshot_id": str(row[1]),
+            "owner_scope_hash": str(row[2]),
+            "purpose": str(row[3]),
+            "query_hash": str(row[4]),
+            "options_hash": str(row[5]),
+            "body": _load(row[6]),
+            "phase": str(row[7]),
+            "after_rowid": int(row[8]),
+            "state": _load(row[9]),
+            "final": None if row[10] is None else _load(row[10]),
+            "vector": None if row[11] is None else _load(row[11]),
+            "elapsed_ms": int(row[12]),
+            "expires_at_ms": int(row[13]),
+            "control_generation": int(row[14]),
+            "authority_hash": str(row[15]),
+            "row_version": int(row[16]),
         }
 
     def _visible_sql(self, body: Mapping[str, Any]) -> tuple[str, list[Any]]:
@@ -432,20 +546,49 @@ class SessionSearchService:
             ).fetchone()[0]
         )
 
-    def _rows(self, snapshot: Mapping[str, Any], body: Mapping[str, Any], after_rowid: int, limit: int) -> list[dict[str, Any]]:
+    def _rows(
+        self, snapshot: Mapping[str, Any], body: Mapping[str, Any], after_rowid: int, limit: int
+    ) -> list[dict[str, Any]]:
         clause, params = self._visible_sql(body)
         rows = self._p.connection.execute(
             "SELECT c.rowid,c.chunk_id,c.record_id,c.group_id,c.utf8_start,c.utf8_end,c.source_hash,c.view_hash,c.text_view,c.provenance,c.validity_epoch,"
             " s.seq_from,s.seq_to,v.vector_le_f32,v.dim FROM session_chunks c"
             " JOIN group_sources s ON s.group_id=c.group_id AND s.source_hash=c.source_hash"
             " LEFT JOIN session_vectors v ON v.chunk_id=c.chunk_id AND v.index_generation=c.index_generation AND v.commit_seq<=?"
-            " WHERE c.index_generation=? AND c.commit_seq<=? AND c.rowid>?" + clause + " ORDER BY c.rowid LIMIT ?",
-            [int(snapshot["upper_commit"]), int(snapshot["index_generation"]), int(snapshot["upper_commit"]), int(after_rowid), *params, int(limit)],
+            " WHERE c.index_generation=? AND c.commit_seq<=? AND c.rowid>?"
+            + clause
+            + " ORDER BY c.rowid LIMIT ?",
+            [
+                int(snapshot["upper_commit"]),
+                int(snapshot["index_generation"]),
+                int(snapshot["upper_commit"]),
+                int(after_rowid),
+                *params,
+                int(limit),
+            ],
         ).fetchall()
-        keys = ("rowid", "chunk_id", "record_id", "group_id", "utf8_start", "utf8_end", "source_hash", "view_hash", "text_view", "provenance", "validity_epoch", "seq_from", "seq_to", "vector", "dim")
+        keys = (
+            "rowid",
+            "chunk_id",
+            "record_id",
+            "group_id",
+            "utf8_start",
+            "utf8_end",
+            "source_hash",
+            "view_hash",
+            "text_view",
+            "provenance",
+            "validity_epoch",
+            "seq_from",
+            "seq_to",
+            "vector",
+            "dim",
+        )
         return [dict(zip(keys, r)) for r in rows]
 
-    def _coverage(self, query: Mapping[str, Any], snapshot: Mapping[str, Any], *, phase: str, scanned: int) -> dict[str, Any]:
+    def _coverage(
+        self, query: Mapping[str, Any], snapshot: Mapping[str, Any], *, phase: str, scanned: int
+    ) -> dict[str, Any]:
         body = query["body"]
         mode = body["mode"]
         expected = int(snapshot["expected_groups"])
@@ -466,7 +609,19 @@ class SessionSearchService:
             "algorithm_id": ALGORITHM_ID,
         }
 
-    def _receipt(self, access: SessionAccess, query: Mapping[str, Any], snapshot: Mapping[str, Any], *, coverage: Mapping[str, Any], searched: int, elapsed: int, total: int | None, offset: int, returned: int) -> dict[str, Any]:
+    def _receipt(
+        self,
+        access: SessionAccess,
+        query: Mapping[str, Any],
+        snapshot: Mapping[str, Any],
+        *,
+        coverage: Mapping[str, Any],
+        searched: int,
+        elapsed: int,
+        total: int | None,
+        offset: int,
+        returned: int,
+    ) -> dict[str, Any]:
         body = query["body"]
         vector = query["vector"]
         degradations = []
@@ -483,7 +638,9 @@ class SessionSearchService:
             "journal_highwater": int(body["journal_highwater"]),
             "index_snapshot_id": snapshot["snapshot_id"],
             "embedding_ref": None if vector is None or vector.get("ref") is None else vector["ref"],
-            "searched_closed_groups": searched if coverage["phase"] == "SCANNING" else int(coverage["indexed_groups"]),
+            "searched_closed_groups": searched
+            if coverage["phase"] == "SCANNING"
+            else int(coverage["indexed_groups"]),
             "indexed_closed_groups": int(coverage["indexed_groups"]),
             "status": status_for(coverage, total),
             "degradations": degradations,
@@ -501,12 +658,20 @@ class SessionSearchService:
             "has_more": has_more,
         }
 
-    def _scan_page(self, access: SessionAccess, query: dict[str, Any], snapshot: Mapping[str, Any], position: Mapping[str, Any]) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    def _scan_page(
+        self,
+        access: SessionAccess,
+        query: dict[str, Any],
+        snapshot: Mapping[str, Any],
+        position: Mapping[str, Any],
+    ) -> tuple[dict[str, Any], dict[str, Any] | None]:
         body = query["body"]
         state = query["state"]
         if int(position["ordinal"]) > MAX_SCAN_PAGES:
             raise ArpError("INDEX_SCAN_LIMIT")
-        plan = QueryPlan.build(body["query_text"], None if query["vector"] is None else query["vector"]["vector"])
+        plan = QueryPlan.build(
+            body["query_text"], None if query["vector"] is None else query["vector"]["vector"]
+        )
         hybrid = body["mode"] == "HYBRID"
         rows = self._rows(snapshot, body, query["after_rowid"], int(body["page_rows"]))
         heaps: dict[str, list[list[Any]]] = {k: list(v) for k, v in state["heaps"].items()}
@@ -521,7 +686,12 @@ class SessionSearchService:
             heaps[channel] = sorted(heaps[channel], key=lambda x: (-x[1], tuple(x[2])))[:top_k]
         scanned = int(state["scanned"]) + len(rows)
         done = scanned >= int(body["snapshot_chunks"]) or not rows
-        query["state"] = {"heaps": heaps, "scanned": scanned, "groups": sorted(groups), "pages": int(state["pages"]) + 1}
+        query["state"] = {
+            "heaps": heaps,
+            "scanned": scanned,
+            "groups": sorted(groups),
+            "pages": int(state["pages"]) + 1,
+        }
         query["after_rowid"] = rows[-1]["rowid"] if rows else query["after_rowid"]
         if done:
             # The page that completes the scan fixes the ranking (persisted with the
@@ -531,10 +701,26 @@ class SessionSearchService:
             query["phase"] = "RESULTS"
             scanned = min(scanned, int(body["snapshot_chunks"]))
         coverage = self._coverage(query, snapshot, phase="SCANNING", scanned=scanned)
-        receipt = self._receipt(access, query, snapshot, coverage=coverage, searched=len(groups), elapsed=query["elapsed_ms"], total=None, offset=0, returned=0)
+        receipt = self._receipt(
+            access,
+            query,
+            snapshot,
+            coverage=coverage,
+            searched=len(groups),
+            elapsed=query["elapsed_ms"],
+            total=None,
+            offset=0,
+            returned=0,
+        )
         page = {
-            "schema_version": 2, "receipt": receipt, "items": [], "has_more": True, "next_cursor": None,
-            "cursor_purpose": query["purpose"], "page_semantics": "PROGRESS", "body_bytes": 0,
+            "schema_version": 2,
+            "receipt": receipt,
+            "items": [],
+            "has_more": True,
+            "next_cursor": None,
+            "cursor_purpose": query["purpose"],
+            "page_semantics": "PROGRESS",
+            "body_bytes": 0,
         }
         if done:
             return page, {"phase": "RESULTS", "offset": 0}
@@ -549,7 +735,16 @@ class SessionSearchService:
             channels[channel] = [(str(i[0]), float(i[1])) for i in items]
             for i in items:
                 keys[str(i[0])] = tuple(i[2])
-        fused = rrf(channels, int(body["global_candidates"]), stable_keys=keys, channel_limit=int(body["channel_top_k"])) if channels else []
+        fused = (
+            rrf(
+                channels,
+                int(body["global_candidates"]),
+                stable_keys=keys,
+                channel_limit=int(body["channel_top_k"]),
+            )
+            if channels
+            else []
+        )
         # Resolve every fused chunk to its frozen row (same generation / upper_commit).
         results: list[dict[str, Any]] = []
         for rank, (chunk_id, score) in enumerate(fused, 1):
@@ -589,7 +784,20 @@ class SessionSearchService:
         ).fetchone()
         if row is None:
             raise ArpError("SOURCE_UNAVAILABLE", "fused chunk vanished from the frozen generation")
-        keys = ("chunk_id", "record_id", "group_id", "utf8_start", "utf8_end", "source_hash", "view_hash", "text_view", "provenance", "validity_epoch", "seq_from", "seq_to")
+        keys = (
+            "chunk_id",
+            "record_id",
+            "group_id",
+            "utf8_start",
+            "utf8_end",
+            "source_hash",
+            "view_hash",
+            "text_view",
+            "provenance",
+            "validity_epoch",
+            "seq_from",
+            "seq_to",
+        )
         return dict(zip(keys, row))
 
     def chunk_text(self, index_generation: int, chunk_id: str) -> str:
@@ -602,13 +810,31 @@ class SessionSearchService:
                 return item
         raise ArpError("SOURCE_UNAVAILABLE", "chunk not in the final ranking")
 
-    def _results_page(self, access: SessionAccess, query: dict[str, Any], snapshot: Mapping[str, Any], position: Mapping[str, Any]) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    def _results_page(
+        self,
+        access: SessionAccess,
+        query: dict[str, Any],
+        snapshot: Mapping[str, Any],
+        position: Mapping[str, Any],
+    ) -> tuple[dict[str, Any], dict[str, Any] | None]:
         if query["phase"] != "RESULTS" or query["final"] is None:
-            raise ArpError("STATE_COMBINATION_INVALID", "results requested before the ranking is final")
-        coverage = self._coverage(query, snapshot, phase="RESULTS", scanned=int(query["body"]["snapshot_chunks"]))
+            raise ArpError(
+                "STATE_COMBINATION_INVALID", "results requested before the ranking is final"
+            )
+        coverage = self._coverage(
+            query, snapshot, phase="RESULTS", scanned=int(query["body"]["snapshot_chunks"])
+        )
         return self._results_from(access, query, snapshot, coverage, offset=int(position["offset"]))
 
-    def _results_from(self, access: SessionAccess, query: dict[str, Any], snapshot: Mapping[str, Any], coverage: dict[str, Any], *, offset: int) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    def _results_from(
+        self,
+        access: SessionAccess,
+        query: dict[str, Any],
+        snapshot: Mapping[str, Any],
+        coverage: dict[str, Any],
+        *,
+        offset: int,
+    ) -> tuple[dict[str, Any], dict[str, Any] | None]:
         final = query["final"] or []
         total = len(final)
         if offset > total or (total > 0 and offset == total):
@@ -620,8 +846,15 @@ class SessionSearchService:
             {
                 "chunk_id": item["chunk_id"],
                 "source_group_ids": [item["group_id"]],
-                "source_record_refs": [Pin("journal_record", item["record_id"], 0, item["source_hash"]).to_json()],
-                "view_ref": Pin("artifact", f"chunk:{item['chunk_id']}", int(snapshot["index_generation"]), item["view_hash"]).to_json(),
+                "source_record_refs": [
+                    Pin("journal_record", item["record_id"], 0, item["source_hash"]).to_json()
+                ],
+                "view_ref": Pin(
+                    "artifact",
+                    f"chunk:{item['chunk_id']}",
+                    int(snapshot["index_generation"]),
+                    item["view_hash"],
+                ).to_json(),
                 "budget_charge": int(item["budget_charge"]),
                 "rank_ordinal": int(item["rank"]),
                 "provenance": item["provenance"],
@@ -633,11 +866,28 @@ class SessionSearchService:
 
         def assemble(chosen: list[dict[str, Any]]) -> tuple[dict[str, Any], bool]:
             has_more = offset + len(chosen) < total
-            receipt = self._receipt(access, query, snapshot, coverage=coverage, searched=int(coverage["indexed_groups"]), elapsed=query["elapsed_ms"], total=total, offset=offset, returned=len(chosen))
+            receipt = self._receipt(
+                access,
+                query,
+                snapshot,
+                coverage=coverage,
+                searched=int(coverage["indexed_groups"]),
+                elapsed=query["elapsed_ms"],
+                total=total,
+                offset=offset,
+                returned=len(chosen),
+            )
             return {
-                "schema_version": 2, "receipt": receipt, "items": chosen, "has_more": has_more,
-                "next_cursor": "0" * 64 if has_more else None,  # placeholder of the real token's size
-                "cursor_purpose": query["purpose"], "page_semantics": "APPEND_FINAL", "body_bytes": 0,
+                "schema_version": 2,
+                "receipt": receipt,
+                "items": chosen,
+                "has_more": has_more,
+                "next_cursor": "0" * 64
+                if has_more
+                else None,  # placeholder of the real token's size
+                "cursor_purpose": query["purpose"],
+                "page_semantics": "APPEND_FINAL",
+                "body_bytes": 0,
             }, has_more
 
         page, has_more = assemble(items)
@@ -648,16 +898,26 @@ class SessionSearchService:
                 items = items[:-1]
                 page, has_more = assemble(items)
             if not items:
-                raise ArpError("ITEM_TOO_LARGE", "max_bytes cannot carry one result item with its receipt")
+                raise ArpError(
+                    "ITEM_TOO_LARGE", "max_bytes cannot carry one result item with its receipt"
+                )
         page["next_cursor"] = None
         next_position = {"phase": "RESULTS", "offset": offset + len(items)} if has_more else None
         if next_position is not None and (offset + len(items)) // page_size >= MAX_RESULT_PAGES:
             raise ArpError("INDEX_SCAN_LIMIT", "result pages exceed the hard budget")
         return page, next_position
 
-    def _advance_query_locked(self, connection: sqlite3.Connection, query: dict[str, Any], page: Mapping[str, Any], elapsed: int) -> None:
+    def _advance_query_locked(
+        self,
+        connection: sqlite3.Connection,
+        query: dict[str, Any],
+        page: Mapping[str, Any],
+        elapsed: int,
+    ) -> None:
         phase = "RESULTS" if query["final"] is not None else "SCANNING"
-        row = connection.execute("SELECT row_version, phase FROM search_queries WHERE query_id=?", (query["query_id"],)).fetchone()
+        row = connection.execute(
+            "SELECT row_version, phase FROM search_queries WHERE query_id=?", (query["query_id"],)
+        ).fetchone()
         current = int(row[0])
         if str(row[1]) == "RESULTS":
             # The ranking is fixed; RESULTS pages only append it and never touch the query row.
@@ -666,22 +926,52 @@ class SessionSearchService:
             "UPDATE search_queries SET phase=?, after_rowid=?, heap_json=?, final_results_json=?, elapsed_ms=elapsed_ms+?, row_version=row_version+1"
             " WHERE query_id=? AND row_version=?",
             (
-                phase, int(query["after_rowid"]), _dump(query["state"]),
-                None if query["final"] is None else _dump(query["final"]), int(elapsed), query["query_id"], current,
+                phase,
+                int(query["after_rowid"]),
+                _dump(query["state"]),
+                None if query["final"] is None else _dump(query["final"]),
+                int(elapsed),
+                query["query_id"],
+                current,
             ),
         ).rowcount
         if updated != 1:
             raise ArpError("CURSOR_STALE", "query advanced concurrently")
 
-    def _new_cursor_locked(self, connection: sqlite3.Connection, access: SessionAccess, *, query_id: str, snapshot: Mapping[str, Any], purpose: str, position: Mapping[str, Any], token: str | None = None) -> str:
+    def _new_cursor_locked(
+        self,
+        connection: sqlite3.Connection,
+        access: SessionAccess,
+        *,
+        query_id: str,
+        snapshot: Mapping[str, Any],
+        purpose: str,
+        position: Mapping[str, Any],
+        token: str | None = None,
+    ) -> str:
         token = token or secrets.token_bytes(32).hex()
         connection.execute(
             "INSERT INTO cursor_pages(token_hash,query_id,purpose,snapshot_ref_json,owner_scope_hash,control_generation,authority_hash,expires_at_ms,state,position_json,page_json,page_hash,next_token_hash)"
             " VALUES (?,?,?,?,?,?,?,?,'PENDING',?,NULL,NULL,NULL)",
             (
-                hashlib.sha256(token.encode("utf-8")).hexdigest(), query_id, purpose,
-                _dump(Pin("index_snapshot", snapshot["snapshot_id"], int(snapshot["index_generation"]), digest({"snapshot": snapshot["snapshot_id"], "upper": snapshot["upper_commit"]})).to_json()),
-                access.owner_scope_hash, access.control_generation, access.authority_readset_hash, self._clock_ms() + self._ttl, _dump(position),
+                hashlib.sha256(token.encode("utf-8")).hexdigest(),
+                query_id,
+                purpose,
+                _dump(
+                    Pin(
+                        "index_snapshot",
+                        snapshot["snapshot_id"],
+                        int(snapshot["index_generation"]),
+                        digest(
+                            {"snapshot": snapshot["snapshot_id"], "upper": snapshot["upper_commit"]}
+                        ),
+                    ).to_json()
+                ),
+                access.owner_scope_hash,
+                access.control_generation,
+                access.authority_readset_hash,
+                self._clock_ms() + self._ttl,
+                _dump(position),
             ),
         )
         return token
@@ -693,7 +983,8 @@ class SessionSearchService:
         """Materialised pages of one query in cursor-chain order (first cursor first)."""
 
         rows = self._p.connection.execute(
-            "SELECT token_hash,next_token_hash,page_json FROM cursor_pages WHERE query_id=? AND state='MATERIALIZED'", (query_id,)
+            "SELECT token_hash,next_token_hash,page_json FROM cursor_pages WHERE query_id=? AND state='MATERIALIZED'",
+            (query_id,),
         ).fetchall()
         by_hash = {str(r[0]): (None if r[1] is None else str(r[1]), _load(r[2])) for r in rows}
         targets = {n for n, _ in by_hash.values() if n is not None}
@@ -709,7 +1000,12 @@ class SessionSearchService:
         return tuple(ordered)
 
     def page_pin(self, page: Mapping[str, Any], ordinal: int) -> Pin:
-        return Pin("artifact", f"{page['receipt']['index_snapshot_id']}:page:{ordinal}", ordinal, digest(page))
+        return Pin(
+            "artifact",
+            f"{page['receipt']['index_snapshot_id']}:page:{ordinal}",
+            ordinal,
+            digest(page),
+        )
 
     # ---- history read (C6) --------------------------------------------------------
 
@@ -742,21 +1038,28 @@ class SessionSearchService:
                 raise ArpError("CURSOR_UNKNOWN")
             if str(row[0]) != purpose or str(row[1]) != access.owner_scope_hash:
                 raise ArpError("CURSOR_SCOPE_MISMATCH")
-            if int(row[2]) != access.control_generation or str(row[3]) != access.authority_readset_hash:
+            if (
+                int(row[2]) != access.control_generation
+                or str(row[3]) != access.authority_readset_hash
+            ):
                 raise ArpError("CURSOR_STALE")
             if self._clock_ms() >= int(row[4]):
                 raise ArpError("CURSOR_EXPIRED")
             if str(row[5]) == "MATERIALIZED":
                 return _load(row[7])
             position = _load(row[6])
-        records = history.read_records(exec_connection, access.agent_id, from_seq=position["seq"], to_seq=int(value["seq_to"]))
+        records = history.read_records(
+            exec_connection, access.agent_id, from_seq=position["seq"], to_seq=int(value["seq_to"])
+        )
         items: list[dict[str, Any]] = []
         hidden: list[dict[str, int]] = []
         texts: dict[int, str] = {}
         offset = int(position["offset"])
         next_position: dict[str, int] | None = None
 
-        def slice_item(record: Any, text: str, start: int, max_bytes_here: int) -> tuple[dict[str, Any], bool]:
+        def slice_item(
+            record: Any, text: str, start: int, max_bytes_here: int
+        ) -> tuple[dict[str, Any], bool]:
             raw = text.encode("utf-8")
             if not raw:
                 piece, end, complete = "", 0, True
@@ -764,7 +1067,9 @@ class SessionSearchService:
                 piece, end, complete = utf8_slice(text, start, max(4, max_bytes_here))
             return (
                 {
-                    "record_ref": Pin("journal_record", record.record_id, record.seq, record.content_hash).to_json(),
+                    "record_ref": Pin(
+                        "journal_record", record.record_id, record.seq, record.content_hash
+                    ).to_json(),
                     "seq": record.seq,
                     "utf8_start": start,
                     "utf8_end": end,
@@ -801,7 +1106,9 @@ class SessionSearchService:
             if next_position is not None:
                 break
 
-        def assemble(page_items: list[dict[str, Any]], more: dict[str, int] | None) -> dict[str, Any]:
+        def assemble(
+            page_items: list[dict[str, Any]], more: dict[str, int] | None
+        ) -> dict[str, Any]:
             covered = [i["seq"] for i in page_items]
             return _with_body_bytes(
                 {
@@ -815,7 +1122,9 @@ class SessionSearchService:
                     "covered_seq_to": max(covered) if covered else None,
                     "items": page_items,
                     "has_more": more is not None,
-                    "next_cursor": "0" * 64 if more is not None else None,  # placeholder of the real token's size
+                    "next_cursor": "0" * 64
+                    if more is not None
+                    else None,  # placeholder of the real token's size
                     "cursor_purpose": purpose,
                     "hidden_seq_ranges": hidden,
                     "authority_readset_hash": access.authority_readset_hash,
@@ -838,12 +1147,23 @@ class SessionSearchService:
             only = items[0]
             length = int(only["utf8_end"]) - int(only["utf8_start"])
             if length <= 4:
-                raise ArpError("ITEM_TOO_LARGE", "max_bytes cannot hold one code point with its metadata")
-            shrunk, complete = slice_item(by_seq[int(only["seq"])], texts[int(only["seq"])], int(only["utf8_start"]), length // 2)
+                raise ArpError(
+                    "ITEM_TOO_LARGE", "max_bytes cannot hold one code point with its metadata"
+                )
+            shrunk, complete = slice_item(
+                by_seq[int(only["seq"])],
+                texts[int(only["seq"])],
+                int(only["utf8_start"]),
+                length // 2,
+            )
             items[0] = shrunk
-            next_position = None if complete else {"seq": int(only["seq"]), "offset": int(shrunk["utf8_end"])}
+            next_position = (
+                None if complete else {"seq": int(only["seq"]), "offset": int(shrunk["utf8_end"])}
+            )
         if not items and records and next_position is not None:
-            raise ArpError("ITEM_TOO_LARGE", "max_bytes cannot hold one code point with its metadata")
+            raise ArpError(
+                "ITEM_TOO_LARGE", "max_bytes cannot hold one code point with its metadata"
+            )
         page["next_cursor"] = None
         with self._p.transaction() as connection:
             if next_position is not None:
@@ -852,9 +1172,15 @@ class SessionSearchService:
                     "INSERT INTO cursor_pages(token_hash,query_id,purpose,snapshot_ref_json,owner_scope_hash,control_generation,authority_hash,expires_at_ms,state,position_json,page_json,page_hash,next_token_hash)"
                     " VALUES (?,?,?,?,?,?,?,?,'PENDING',?,NULL,NULL,NULL)",
                     (
-                        hashlib.sha256(token.encode("utf-8")).hexdigest(), f"history:{access.session_id}:{value['seq_from']}:{value['seq_to']}", purpose,
-                        _dump({"kind": "history", "highwater": journal_highwater}), access.owner_scope_hash, access.control_generation,
-                        access.authority_readset_hash, self._clock_ms() + self._ttl, _dump(next_position),
+                        hashlib.sha256(token.encode("utf-8")).hexdigest(),
+                        f"history:{access.session_id}:{value['seq_from']}:{value['seq_to']}",
+                        purpose,
+                        _dump({"kind": "history", "highwater": journal_highwater}),
+                        access.owner_scope_hash,
+                        access.control_generation,
+                        access.authority_readset_hash,
+                        self._clock_ms() + self._ttl,
+                        _dump(next_position),
                     ),
                 )
                 page["next_cursor"] = token
@@ -866,8 +1192,11 @@ class SessionSearchService:
                 connection.execute(
                     "UPDATE cursor_pages SET state='MATERIALIZED', page_json=?, page_hash=?, next_token_hash=? WHERE token_hash=? AND state='PENDING'",
                     (
-                        _dump(result), digest(result),
-                        None if page["next_cursor"] is None else hashlib.sha256(page["next_cursor"].encode("utf-8")).hexdigest(),
+                        _dump(result),
+                        digest(result),
+                        None
+                        if page["next_cursor"] is None
+                        else hashlib.sha256(page["next_cursor"].encode("utf-8")).hexdigest(),
                         hashlib.sha256(str(value["cursor"]).encode("utf-8")).hexdigest(),
                     ),
                 )
@@ -889,7 +1218,10 @@ def _merge_spans(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 existing["record_id"] == item["record_id"]
                 and existing["source_hash"] == item["source_hash"]
                 and existing["provenance"] == item["provenance"]
-                and not (item["utf8_end"] < existing["utf8_start"] or item["utf8_start"] > existing["utf8_end"])
+                and not (
+                    item["utf8_end"] < existing["utf8_start"]
+                    or item["utf8_start"] > existing["utf8_end"]
+                )
             ):
                 start = min(existing["utf8_start"], item["utf8_start"])
                 end = max(existing["utf8_end"], item["utf8_end"])
@@ -899,16 +1231,31 @@ def _merge_spans(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 a = existing["text_view"].encode("utf-8")
                 b = item["text_view"].encode("utf-8")
                 if item["utf8_start"] <= existing["utf8_start"]:
-                    head, tail, head_start, tail_start = b, a, item["utf8_start"], existing["utf8_start"]
+                    head, tail, head_start, tail_start = (
+                        b,
+                        a,
+                        item["utf8_start"],
+                        existing["utf8_start"],
+                    )
                 else:
-                    head, tail, head_start, tail_start = a, b, existing["utf8_start"], item["utf8_start"]
+                    head, tail, head_start, tail_start = (
+                        a,
+                        b,
+                        existing["utf8_start"],
+                        item["utf8_start"],
+                    )
                 overlap = head_start + len(head) - tail_start
-                combined = head + tail[max(0, overlap):]
+                combined = head + tail[max(0, overlap) :]
                 try:
                     text = combined.decode("utf-8")
                 except UnicodeDecodeError:
                     continue
-                existing.update(utf8_start=start, utf8_end=end, text_view=text, score=max(existing["score"], item["score"]))
+                existing.update(
+                    utf8_start=start,
+                    utf8_end=end,
+                    text_view=text,
+                    score=max(existing["score"], item["score"]),
+                )
                 existing.setdefault("members", [existing["chunk_id"]]).append(item["chunk_id"])
                 merged = True
                 break

@@ -56,10 +56,14 @@ def test_domain_package_round_trips_and_hashes() -> None:
 
 def test_definition_content_changes_identity_and_stale_hash_is_refused() -> None:
     original = package()
-    changed = replace(original, content_hash="", definitions={
-        **original.definitions,
-        "schemas:drone.state@1": {"type": "object", "required": ["position", "battery"]},
-    })
+    changed = replace(
+        original,
+        content_hash="",
+        definitions={
+            **original.definitions,
+            "schemas:drone.state@1": {"type": "object", "required": ["position", "battery"]},
+        },
+    )
     assert changed.content_hash != original.content_hash
     stale = changed.to_json()
     stale["content_hash"] = original.content_hash
@@ -172,7 +176,7 @@ def test_core_htn_has_no_domain_name_branch() -> None:
 
 def test_domain_branch_scan_checks_attributes_reversed_membership_and_expressions(tmp_path) -> None:
     source = tmp_path / "core.py"
-    source.write_text('''
+    source.write_text("""
 def choose(package, domain_id, domain, values):
     if package.domain_id == "code-v1":
         return 1
@@ -182,13 +186,13 @@ def choose(package, domain_id, domain, values):
         return 3
     x = 1 if package.domain == "code" else 0
     return [x for x in values if x.domain_id == "appworld"]
-''')
+""")
     assert len(find_domain_branches(tmp_path)) == 5
-    source.write_text('''
+    source.write_text("""
 def generic(package, requested):
     if package.domain_id == requested:
         return package
     if package.domain is None:
         return None
-''')
+""")
     assert find_domain_branches(tmp_path) == []

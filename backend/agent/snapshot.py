@@ -14,6 +14,7 @@ spec: ``session_id`` / ``status`` / ``last_activity_age_seconds`` /
 truncated. Everything else is in-memory state from SessionActivity and
 SessionDB's task/message tables.
 """
+
 from __future__ import annotations
 
 import logging
@@ -107,9 +108,7 @@ async def build_snapshot(
                 total_chars += len(str(m.get("content") or ""))
                 total_chars += len(str(m.get("reasoning_content") or ""))
             est_tokens = total_chars / _CHARS_PER_TOKEN_ESTIMATE
-            snap["context_token_pressure"] = min(
-                1.0, est_tokens / max(1, context_window_tokens)
-            )
+            snap["context_token_pressure"] = min(1.0, est_tokens / max(1, context_window_tokens))
         except Exception as exc:  # noqa: BLE001
             logger.debug("snapshot_token_pressure_failed sid=%s error=%s", sid, exc)
 

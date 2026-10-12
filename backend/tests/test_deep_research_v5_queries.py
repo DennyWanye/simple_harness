@@ -71,8 +71,7 @@ def test_chinese_relevance_is_nonzero_and_beats_unrelated_candidate() -> None:
 def test_education_initial_plan_is_bounded_first_party_probe_and_full_family_is_available() -> None:
     fixture = json.loads(FIXTURE.read_text(encoding="utf-8"))
     expected_axis = {
-        item["dimension_id"]: item["comparison_axis"]
-        for item in fixture["dimensions"]
+        item["dimension_id"]: item["comparison_axis"] for item in fixture["dimensions"]
     }
     queries = build_initial_query_plan(_education_brief())
 
@@ -94,9 +93,7 @@ def test_education_initial_plan_is_bounded_first_party_probe_and_full_family_is_
         dimension_queries = list(build_dimension_queries(brief, dimension))
         assert tuple(item.query_family for item in dimension_queries) == QUERY_FAMILIES
         assert {item.query_family for item in dimension_queries} == set(QUERY_FAMILIES)
-        comparison = next(
-            item for item in dimension_queries if item.query_family == "comparison"
-        )
+        comparison = next(item for item in dimension_queries if item.query_family == "comparison")
         assert comparison.comparison_axis == expected_axis[dimension_id]
         assert all(set(item.to_json()) == expected_fields for item in dimension_queries)
         assert all(item.comparison_axis == "none" for item in dimension_queries[:3])
@@ -120,9 +117,7 @@ def test_each_education_dimension_query_has_nonzero_relevance_to_fixture() -> No
         for query in build_dimension_queries(brief, dimension)
     )
     general_by_dimension = {
-        item.dimension_id: item
-        for item in queries
-        if item.query_family == "general"
+        item.dimension_id: item for item in queries if item.query_family == "general"
     }
     for expected in fixture["dimensions"]:
         query = general_by_dimension[expected["dimension_id"]]
@@ -279,8 +274,7 @@ def test_gap_rescue_only_targets_uncovered_or_partial_and_skips_executed_work() 
     executed = next(
         item
         for item in initial_gap
-        if item.dimension_id == coverage[1].dimension_id
-        and item.query_family == "general"
+        if item.dimension_id == coverage[1].dimension_id and item.query_family == "general"
     )
     filtered = build_gap_query_plan(
         brief,

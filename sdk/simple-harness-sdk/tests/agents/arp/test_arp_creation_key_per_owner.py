@@ -24,12 +24,20 @@ def test_two_owners_may_use_the_same_creation_key(tmp_path) -> None:
         runtime = build(tmp_path)
         async with runtime:
             creation = runtime.arp.creation
-            first = await creation.create(CONFIG, creation_key="k1", caller=trusted_caller("c-a"), owner_scope="owner-a")
-            second = await creation.create(CONFIG, creation_key="k1", caller=trusted_caller("c-b"), owner_scope="owner-b")
+            first = await creation.create(
+                CONFIG, creation_key="k1", caller=trusted_caller("c-a"), owner_scope="owner-a"
+            )
+            second = await creation.create(
+                CONFIG, creation_key="k1", caller=trusted_caller("c-b"), owner_scope="owner-b"
+            )
             assert first.binding.agent_id != second.binding.agent_id
-            assert first.binding.owner_scope == "owner-a" and second.binding.owner_scope == "owner-b"
+            assert (
+                first.binding.owner_scope == "owner-a" and second.binding.owner_scope == "owner-b"
+            )
             # Each owner's replay still returns its own Agent.
-            again = await creation.create(CONFIG, creation_key="k1", caller=trusted_caller("c-a"), owner_scope="owner-a")
+            again = await creation.create(
+                CONFIG, creation_key="k1", caller=trusted_caller("c-a"), owner_scope="owner-a"
+            )
             assert again.binding.agent_id == first.binding.agent_id
             rows = runtime.uow.database.connection.execute(
                 "SELECT COUNT(*) FROM arp_agent_sessions WHERE state!='PURGED'"
@@ -50,13 +58,19 @@ def test_legacy_rows_keyed_on_the_bare_key_still_replay(tmp_path, monkeypatch) -
             creation = runtime.arp.creation
             with monkeypatch.context() as legacy:
                 legacy.setattr(creation_module, "session_creation_key", lambda _owner, key: key)
-                first = await creation.create(CONFIG, creation_key="k1", caller=trusted_caller(), owner_scope="owner-a")
+                first = await creation.create(
+                    CONFIG, creation_key="k1", caller=trusted_caller(), owner_scope="owner-a"
+                )
             connection = runtime.uow.database.connection
             assert store.read_live_session(connection, first.binding.agent_id).creation_key == "k1"
-            again = await creation.create(CONFIG, creation_key="k1", caller=trusted_caller(), owner_scope="owner-a")
+            again = await creation.create(
+                CONFIG, creation_key="k1", caller=trusted_caller(), owner_scope="owner-a"
+            )
             assert again.binding.agent_id == first.binding.agent_id
             # A different owner is not blocked by the legacy bare-key row.
-            other = await creation.create(CONFIG, creation_key="k1", caller=trusted_caller("c-b"), owner_scope="owner-b")
+            other = await creation.create(
+                CONFIG, creation_key="k1", caller=trusted_caller("c-b"), owner_scope="owner-b"
+            )
             assert other.binding.agent_id != first.binding.agent_id
 
     asyncio.run(case())

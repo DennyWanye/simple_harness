@@ -82,9 +82,7 @@ _VALIDATED_REF_FIELDS = (
 )
 
 
-def _manifest_source_matches(
-    *, requested_source_type: str, manifest_source_type: str
-) -> bool:
+def _manifest_source_matches(*, requested_source_type: str, manifest_source_type: str) -> bool:
     """Match logical archive transports to their legacy manifest identity."""
 
     if requested_source_type in {"local_archive", "companion_growth"}:
@@ -125,9 +123,7 @@ class CapabilityLayout:
     def pack_path(self, pack_id: str, version: str, manifest_hash: str) -> Path:
         return self.packs / pack_id / version / manifest_hash
 
-    def environment_path(
-        self, pack_id: str, version: str, manifest_hash: str
-    ) -> Path:
+    def environment_path(self, pack_id: str, version: str, manifest_hash: str) -> Path:
         return self.environments / pack_id / version / manifest_hash
 
     def ensure(self) -> None:
@@ -177,16 +173,14 @@ class CapabilityPublisher(Protocol):
         *,
         install_root: Path,
         operation_id: str,
-    ) -> CapabilityCandidate:
-        ...
+    ) -> CapabilityCandidate: ...
 
     async def prepare_installed(
         self,
         record: CapabilityVersionRecord,
         *,
         operation_id: str,
-    ) -> CapabilityCandidate:
-        ...
+    ) -> CapabilityCandidate: ...
 
     async def prepare_uninstall(
         self,
@@ -194,24 +188,18 @@ class CapabilityPublisher(Protocol):
         binding: CapabilityBinding,
         *,
         operation_id: str,
-    ) -> CapabilityCandidate:
-        ...
+    ) -> CapabilityCandidate: ...
 
     async def publish(
         self,
         candidate: CapabilityCandidate,
         *,
         operation_id: str,
-    ) -> CapabilityPublication:
-        ...
+    ) -> CapabilityPublication: ...
 
-    async def reconcile(
-        self, intent: CapabilityPublishIntent
-    ) -> PublishReconciliation:
-        ...
+    async def reconcile(self, intent: CapabilityPublishIntent) -> PublishReconciliation: ...
 
-    async def stop_binding(self, binding: CapabilityBinding) -> None:
-        ...
+    async def stop_binding(self, binding: CapabilityBinding) -> None: ...
 
 
 class CapabilityEnvironmentPreparer(Protocol):
@@ -221,24 +209,20 @@ class CapabilityEnvironmentPreparer(Protocol):
         *,
         environment_root: Path,
         operation_id: str,
-    ) -> Mapping[str, JsonValue]:
-        ...
+    ) -> Mapping[str, JsonValue]: ...
 
     async def probe(
         self,
         record: CapabilityOperationRecord,
         *,
         environment_root: Path | None,
-    ) -> Mapping[str, JsonValue]:
-        ...
+    ) -> Mapping[str, JsonValue]: ...
 
 
 class _AsyncLock(Protocol):
-    async def __aenter__(self) -> Any:
-        ...
+    async def __aenter__(self) -> Any: ...
 
-    async def __aexit__(self, *args: Any) -> None:
-        ...
+    async def __aexit__(self, *args: Any) -> None: ...
 
 
 class FoundationPublisher:
@@ -312,9 +296,7 @@ class FoundationPublisher:
             evidence={"kind": "instruction_only"},
         )
 
-    async def reconcile(
-        self, intent: CapabilityPublishIntent
-    ) -> PublishReconciliation:
+    async def reconcile(self, intent: CapabilityPublishIntent) -> PublishReconciliation:
         # No executable state was touched by the foundation publisher.
         if intent.old_specs or intent.new_specs:
             return PublishReconciliation(status="unknown")
@@ -404,9 +386,7 @@ class CapabilityBatchInstallResult:
 
 def _operation_id(idempotency_key: str) -> str:
     if not idempotency_key.strip():
-        raise CapabilityManagerError(
-            "missing_idempotency_key", "idempotency key is required"
-        )
+        raise CapabilityManagerError("missing_idempotency_key", "idempotency key is required")
     return hashlib.sha256(f"capability:{idempotency_key}".encode()).hexdigest()
 
 
@@ -440,19 +420,13 @@ class CapabilityPackManager:
         package_validator: CapabilityPackageValidator | None = None,
     ) -> None:
         self.store = store
-        self.layout = CapabilityLayout(
-            Path(user_data_root) / "capabilities"
-        )
-        self.package_validator = (
-            package_validator or CapabilityPackageValidator()
-        )
+        self.layout = CapabilityLayout(Path(user_data_root) / "capabilities")
+        self.package_validator = package_validator or CapabilityPackageValidator()
         self.source_resolver = source_resolver or CapabilitySourceResolver(
             package_validator=self.package_validator
         )
         self.publisher = publisher or FoundationPublisher()
-        self.environment_preparer = (
-            environment_preparer or FoundationEnvironmentPreparer()
-        )
+        self.environment_preparer = environment_preparer or FoundationEnvironmentPreparer()
         self.environment = environment or PackEnvironment.current()
         self.publish_lock = publish_lock or asyncio.Lock()
         self._fault_injector = fault_injector
@@ -474,9 +448,7 @@ class CapabilityPackManager:
         phase: str,
         evidence: Mapping[str, JsonValue] | None = None,
     ) -> CapabilityOperationRecord:
-        operation = await self.store.commit_phase(
-            operation_id, phase, evidence=evidence
-        )
+        operation = await self.store.commit_phase(operation_id, phase, evidence=evidence)
         await self._fault(f"after:{phase}")
         return operation
 
@@ -516,10 +488,7 @@ class CapabilityPackManager:
     def _validated_ref_evidence(
         validated_ref: ValidatedCapabilityPackageRefV1,
     ) -> Mapping[str, JsonValue]:
-        return {
-            name: getattr(validated_ref, name)
-            for name in _VALIDATED_REF_FIELDS
-        }
+        return {name: getattr(validated_ref, name) for name in _VALIDATED_REF_FIELDS}
 
     def _validated_ref_from_evidence(
         self, evidence: Mapping[str, JsonValue] | None
@@ -550,10 +519,7 @@ class CapabilityPackManager:
                 "validated_package_ref_invalid",
                 "staged operation contains an invalid validated package ref",
             ) from exc
-        if any(
-            raw.get(name) != getattr(validated_ref, name)
-            for name in _VALIDATED_REF_FIELDS
-        ):
+        if any(raw.get(name) != getattr(validated_ref, name) for name in _VALIDATED_REF_FIELDS):
             raise CapabilityManagerError(
                 "validated_package_ref_invalid",
                 "staged validated package ref does not match the active policy",
@@ -576,9 +542,7 @@ class CapabilityPackManager:
         except CapabilityPackageValidationError as exc:
             raise CapabilityManagerError(exc.code, str(exc)) from exc
 
-    async def _record_operation_failure(
-        self, operation_id: str, exc: Exception
-    ) -> None:
+    async def _record_operation_failure(self, operation_id: str, exc: Exception) -> None:
         """Settle an ordinary lifecycle error without masking hard crashes."""
 
         latest = await self.store.get_operation(operation_id)
@@ -586,9 +550,13 @@ class CapabilityPackManager:
             return
         status = (
             "unknown"
-            if latest.phase in {
-                "publish_intent", "catalog_swapped", "bound",
-                "batch_publish_intent", "batch_files_materialized",
+            if latest.phase
+            in {
+                "publish_intent",
+                "catalog_swapped",
+                "bound",
+                "batch_publish_intent",
+                "batch_files_materialized",
                 "batch_catalog_swapped",
             }
             else "failed"
@@ -672,9 +640,7 @@ class CapabilityPackManager:
             "owner_key": owner_key,
             "management_policy": management_policy,
         }
-        old_binding_payload = (
-            None if old_binding is None else old_binding.to_dict()
-        )
+        old_binding_payload = None if old_binding is None else old_binding.to_dict()
         intent_id = _intent_id(operation_id)
         async with self.store.write_transaction() as db:
             tx = self.store.bind(db)
@@ -694,22 +660,15 @@ class CapabilityPackManager:
             )
         await self._fault("after:publish_intent")
 
-        publication = await self.publisher.publish(
-            candidate, operation_id=operation_id
-        )
-        if (
-            tuple(publication.tool_spec_fingerprints)
-            != tuple(candidate.tool_spec_fingerprints)
-        ):
+        publication = await self.publisher.publish(candidate, operation_id=operation_id)
+        if tuple(publication.tool_spec_fingerprints) != tuple(candidate.tool_spec_fingerprints):
             raise CapabilityManagerError(
                 "publisher_fingerprint_mismatch",
                 "published ToolSpecs differ from the verified candidate",
             )
         async with self.store.write_transaction() as db:
             tx = self.store.bind(db)
-            await tx.advance_publish_intent(
-                intent_id, phase="catalog_swapped", status="pending"
-            )
+            await tx.advance_publish_intent(intent_id, phase="catalog_swapped", status="pending")
             await tx.commit_phase(
                 operation_id,
                 "catalog_swapped",
@@ -730,9 +689,7 @@ class CapabilityPackManager:
                 owner_key=owner_key,
                 management_policy=management_policy,
             )
-            await tx.advance_publish_intent(
-                intent_id, phase="bound", status="committed"
-            )
+            await tx.advance_publish_intent(intent_id, phase="bound", status="committed")
             await tx.commit_phase(
                 operation_id,
                 "bound",
@@ -797,21 +754,15 @@ class CapabilityPackManager:
             )
         await self._fault("after:publish_intent")
 
-        publication = await self.publisher.publish(
-            candidate, operation_id=operation_id
-        )
-        if tuple(publication.tool_spec_fingerprints) != tuple(
-            candidate.tool_spec_fingerprints
-        ):
+        publication = await self.publisher.publish(candidate, operation_id=operation_id)
+        if tuple(publication.tool_spec_fingerprints) != tuple(candidate.tool_spec_fingerprints):
             raise CapabilityManagerError(
                 "publisher_fingerprint_mismatch",
                 "unpublished ToolSpecs differ from the verified candidate",
             )
         async with self.store.write_transaction() as db:
             tx = self.store.bind(db)
-            await tx.advance_publish_intent(
-                intent_id, phase="catalog_swapped", status="pending"
-            )
+            await tx.advance_publish_intent(intent_id, phase="catalog_swapped", status="pending")
             await tx.commit_phase(
                 operation_id,
                 "catalog_swapped",
@@ -832,9 +783,7 @@ class CapabilityPackManager:
                 owner_key=binding.owner_key,
                 management_policy=binding.management_policy,
             )
-            await tx.advance_publish_intent(
-                intent_id, phase="bound", status="committed"
-            )
+            await tx.advance_publish_intent(intent_id, phase="bound", status="committed")
             await tx.commit_phase(
                 operation_id,
                 "bound",
@@ -890,30 +839,34 @@ class CapabilityPackManager:
                 "committed_owner_binding_set_stamp": (
                     owner_token.committed_owner_binding_set_stamp
                 ),
-                "process_projection_fingerprint": (
-                    process_projection_fingerprint
-                ),
+                "process_projection_fingerprint": (process_projection_fingerprint),
             }
         )
         return {
             "manager_receipt_hash": manager_receipt_hash,
-            "committed_owner_binding_set_stamp": (
-                owner_token.committed_owner_binding_set_stamp
-            ),
-            "process_projection_fingerprint": (
-                process_projection_fingerprint
-            ),
+            "committed_owner_binding_set_stamp": (owner_token.committed_owner_binding_set_stamp),
+            "process_projection_fingerprint": (process_projection_fingerprint),
         }
 
     async def publish_skill_install_batch(
-        self, *, intent: CapabilitySkillInstallIntent,
-        handoff: CapabilitySkillInstallHandoff, staging_root: Path,
+        self,
+        *,
+        intent: CapabilitySkillInstallIntent,
+        handoff: CapabilitySkillInstallHandoff,
+        staging_root: Path,
         members: Sequence[CapabilitySkillInstallMember],
     ) -> Mapping[str, JsonValue]:
-        if handoff.intent_id != intent.intent_id or handoff.member_set_stamp != intent.member_set_stamp:
-            raise CapabilityManagerError("batch_handoff_mismatch", "handoff differs from install intent")
+        if (
+            handoff.intent_id != intent.intent_id
+            or handoff.member_set_stamp != intent.member_set_stamp
+        ):
+            raise CapabilityManagerError(
+                "batch_handoff_mismatch", "handoff differs from install intent"
+            )
         if tuple(member.ordinal for member in members) != tuple(range(len(members))):
-            raise CapabilityManagerError("batch_member_order_invalid", "members are not densely ordered")
+            raise CapabilityManagerError(
+                "batch_member_order_invalid", "members are not densely ordered"
+            )
         root = staging_root.resolve(strict=True)
         packs = []
         selected = []
@@ -921,7 +874,9 @@ class CapabilityPackManager:
             raw_ref = member.member.get("archive_ref")
             raw_validated = member.member.get("validated_ref")
             if not isinstance(raw_ref, str) or not isinstance(raw_validated, Mapping):
-                raise CapabilityManagerError("batch_archive_metadata_missing", member.normalized_name)
+                raise CapabilityManagerError(
+                    "batch_archive_metadata_missing", member.normalized_name
+                )
             archive_path = (root / raw_ref).resolve(strict=True)
             try:
                 archive_path.relative_to(root)
@@ -929,7 +884,8 @@ class CapabilityPackManager:
                 raise CapabilityManagerError("batch_archive_ref_unsafe", raw_ref) from exc
             archive_bytes = await asyncio.to_thread(archive_path.read_bytes)
             validated_ref = ValidatedCapabilityPackageRefV1.issue(
-                source_kind=str(raw_validated["source_kind"]), limits=self.package_validator.limits,
+                source_kind=str(raw_validated["source_kind"]),
+                limits=self.package_validator.limits,
                 archive_hash=str(raw_validated["archive_hash"]),
                 manifest_hash=str(raw_validated["manifest_hash"]),
                 file_set_hash=str(raw_validated["file_set_hash"]),
@@ -940,62 +896,80 @@ class CapabilityPackManager:
             if hashlib.sha256(archive_bytes).hexdigest() != expected_archive_hash:
                 raise CapabilityManagerError("batch_archive_hash_mismatch", member.normalized_name)
             actual_ref = await asyncio.to_thread(
-                self.package_validator.validate_zip_archive, archive_bytes,
+                self.package_validator.validate_zip_archive,
+                archive_bytes,
                 source_kind=validated_ref.source_kind,
             )
             if actual_ref != validated_ref:
                 raise CapabilityManagerError("batch_validated_ref_mismatch", member.normalized_name)
             with zipfile.ZipFile(io.BytesIO(archive_bytes), "r") as package:
                 manifest_payload = json.loads(package.read("deskpet-pack.json"))
-            provided_tools = tuple(sorted(
-                str(tool["provider_name"])
-                for tool in manifest_payload.get("entries", {}).get("tools", [])
-            ))
-            actual_allowed_tools = tuple(sorted(
-                str(tool_name)
-                for skill in manifest_payload.get("entries", {}).get("skills", [])
-                for tool_name in skill.get("allowed_tools", ())
-            ))
+            provided_tools = tuple(
+                sorted(
+                    str(tool["provider_name"])
+                    for tool in manifest_payload.get("entries", {}).get("tools", [])
+                )
+            )
+            actual_allowed_tools = tuple(
+                sorted(
+                    str(tool_name)
+                    for skill in manifest_payload.get("entries", {}).get("skills", [])
+                    for tool_name in skill.get("allowed_tools", ())
+                )
+            )
             raw_allowed = member.member.get("allowed_tools")
-            if raw_allowed is not None and tuple(sorted(str(item) for item in raw_allowed)) != actual_allowed_tools:
+            if (
+                raw_allowed is not None
+                and tuple(sorted(str(item) for item in raw_allowed)) != actual_allowed_tools
+            ):
                 raise CapabilityManagerError("batch_allowed_tools_mismatch", member.normalized_name)
             if len(provided_tools) != len(set(provided_tools)):
                 raise CapabilityManagerError("batch_provided_tools_invalid", member.normalized_name)
             selected_ref = str(member.member.get("selected_subdirectory") or member.normalized_name)
             selected.append(selected_ref)
             from .skill_source import CanonicalSkillPack
-            packs.append(CanonicalSkillPack(
-                member.normalized_name, selected_ref, archive_bytes, expected_archive_hash,
-                member.manifest_hash, member.content_hash, validated_ref,
-            ))
+
+            packs.append(
+                CanonicalSkillPack(
+                    member.normalized_name,
+                    selected_ref,
+                    archive_bytes,
+                    expected_archive_hash,
+                    member.manifest_hash,
+                    member.content_hash,
+                    validated_ref,
+                )
+            )
         from .skill_source import ResolvedSkillSourceEvidence
+
         source = dict(intent.source)
         evidence = ResolvedSkillSourceEvidence.issue(
-            normalized_url=str(source.get("normalized_url") or source.get("url") or "https://github.com/unknown/unknown"),
-            requested_ref=str(source.get("requested_ref") or "main"), exact_commit=intent.exact_commit,
-            archive_hash=intent.archive_hash, raw_file_set_digest=intent.raw_tree_hash,
+            normalized_url=str(
+                source.get("normalized_url")
+                or source.get("url")
+                or "https://github.com/unknown/unknown"
+            ),
+            requested_ref=str(source.get("requested_ref") or "main"),
+            exact_commit=intent.exact_commit,
+            archive_hash=intent.archive_hash,
+            raw_file_set_digest=intent.raw_tree_hash,
             selected_subdirectories=selected,
         )
         result = await self._publish_canonical_skill_install_batch(
             CanonicalSkillBatch(evidence, tuple(packs), intent.member_set_stamp),
-            operation_id=handoff.operation_id, project_scope_key=intent.install_scope_key,
+            operation_id=handoff.operation_id,
+            project_scope_key=intent.install_scope_key,
             # The frozen Run catalog and durable binding must share the same
             # opaque user owner.  principal_id authenticates the confirmation;
             # it is never a catalog/binding namespace.
             owner_key=(
-                intent.install_scope_key
-                if intent.install_scope == "user"
-                else intent.principal_id
+                intent.install_scope_key if intent.install_scope == "user" else intent.principal_id
             ),
             committed_set_stamp=intent.member_set_stamp,
         )
-        committed = await self.store.get_phase_evidence(
-            handoff.operation_id, "batch_committed"
-        )
+        committed = await self.store.get_phase_evidence(handoff.operation_id, "batch_committed")
         if committed is None:
-            raise CapabilityManagerError(
-                "batch_manager_receipt_missing", handoff.operation_id
-            )
+            raise CapabilityManagerError("batch_manager_receipt_missing", handoff.operation_id)
         return {
             "operation_id": result.operation.operation_id,
             "manager_receipt_hash": result.manager_receipt_hash,
@@ -1005,14 +979,14 @@ class CapabilityPackManager:
             "owner_key": str(committed.get("owner_key") or ""),
             "members": list(committed.get("members") or ()),
             "publication_state": (
-                "pending_invisible"
-                if intent.install_scope == "user"
-                else "active"
+                "pending_invisible" if intent.install_scope == "user" else "active"
             ),
         }
 
     async def activate_skill_install_batch(
-        self, *, intent: CapabilitySkillInstallIntent,
+        self,
+        *,
+        intent: CapabilitySkillInstallIntent,
         manager_receipt: Mapping[str, JsonValue],
         members: Sequence[CapabilitySkillInstallMember],
     ) -> Mapping[str, JsonValue]:
@@ -1025,7 +999,9 @@ class CapabilityPackManager:
         if intent.install_scope != "user":
             raise CapabilityManagerError("batch_activation_scope_invalid", intent.install_scope)
         if str(manager_receipt.get("publication_state") or "") != "pending_invisible":
-            raise CapabilityManagerError("batch_activation_receipt_invalid", "publication is not pending")
+            raise CapabilityManagerError(
+                "batch_activation_receipt_invalid", "publication is not pending"
+            )
         receipt_members = {
             str(item.get("pack_id") or ""): item
             for item in manager_receipt.get("members", ())
@@ -1036,7 +1012,9 @@ class CapabilityPackManager:
         async with self.publish_lock:
             existing = [
                 await self.store.get_binding(
-                    "user", intent.install_scope_key, member.pack_id,
+                    "user",
+                    intent.install_scope_key,
+                    member.pack_id,
                     owner_key=intent.install_scope_key,
                 )
                 for member in members
@@ -1123,9 +1101,8 @@ class CapabilityPackManager:
                             "version": member.version,
                             "manifest_hash": member.manifest_hash,
                             "expected_binding_generation": int(
-                                receipt_members[member.pack_id].get(
-                                    "expected_binding_generation"
-                                ) or 0
+                                receipt_members[member.pack_id].get("expected_binding_generation")
+                                or 0
                             ),
                         }
                         for member in members
@@ -1145,7 +1122,8 @@ class CapabilityPackManager:
                             operation_id,
                             f"{operation_id}:global_activation",
                             json.dumps(activation_evidence, sort_keys=True),
-                            self.store.now(), self.store.now(),
+                            self.store.now(),
+                            self.store.now(),
                         ),
                     )
                 publication = await self.publisher.publish(
@@ -1162,13 +1140,20 @@ class CapabilityPackManager:
                     for member in members:
                         receipt_member = receipt_members.get(member.pack_id)
                         if receipt_member is None:
-                            raise CapabilityManagerError("batch_activation_receipt_incomplete", member.pack_id)
-                        expected_generation = int(receipt_member.get("expected_binding_generation") or 0)
+                            raise CapabilityManagerError(
+                                "batch_activation_receipt_incomplete", member.pack_id
+                            )
+                        expected_generation = int(
+                            receipt_member.get("expected_binding_generation") or 0
+                        )
                         binding = await tx.set_binding(
-                            scope="user", scope_key=intent.install_scope_key,
-                            pack_id=member.pack_id, version=member.version,
+                            scope="user",
+                            scope_key=intent.install_scope_key,
+                            pack_id=member.pack_id,
+                            version=member.version,
                             manifest_hash=member.manifest_hash,
-                            expected_generation=expected_generation, enabled=True,
+                            expected_generation=expected_generation,
+                            enabled=True,
                             owner_key=intent.install_scope_key,
                             management_policy="user_managed",
                         )
@@ -1185,7 +1170,8 @@ class CapabilityPackManager:
                              AND status='intent'""",
                         (
                             json.dumps(committed_evidence, sort_keys=True),
-                            self.store.now(), operation_id,
+                            self.store.now(),
+                            operation_id,
                         ),
                     )
         payload: dict[str, JsonValue] = {
@@ -1225,8 +1211,13 @@ class CapabilityPackManager:
         if operation is None or operation.kind != "skill_install_batch":
             raise CapabilityManagerError("batch_operation_missing", operation_id)
         expected_scope = "user" if project_scope_key.startswith("user:v2:") else "project"
-        if operation.requested_scope != expected_scope or operation.requested_scope_key != project_scope_key:
-            raise CapabilityManagerError("batch_owner_scope_mismatch", "batch operation belongs to another owner scope")
+        if (
+            operation.requested_scope != expected_scope
+            or operation.requested_scope_key != project_scope_key
+        ):
+            raise CapabilityManagerError(
+                "batch_owner_scope_mismatch", "batch operation belongs to another owner scope"
+            )
         if str(operation.request.get("member_set_stamp") or "") != committed_set_stamp:
             raise CapabilityManagerError("batch_set_stamp_mismatch", "confirmed member set changed")
         receipt_evidence = await self.store.get_phase_evidence(operation_id, "batch_committed")
@@ -1241,16 +1232,23 @@ class CapabilityPackManager:
                 if binding is not None:
                     bindings.append(binding)
             return CapabilityBatchInstallResult(
-                operation, tuple(bindings), Path(str(receipt_evidence["install_root"])),
+                operation,
+                tuple(bindings),
+                Path(str(receipt_evidence["install_root"])),
                 int(receipt_evidence["registry_revision"]),
-                str(receipt_evidence["manager_receipt_hash"]), committed_set_stamp,
+                str(receipt_evidence["manager_receipt_hash"]),
+                committed_set_stamp,
             )
         if operation.status != "running" or operation.phase != "batch_staged":
-            raise CapabilityManagerError("batch_reconciliation_required", f"batch is {operation.status}/{operation.phase}")
+            raise CapabilityManagerError(
+                "batch_reconciliation_required", f"batch is {operation.status}/{operation.phase}"
+            )
 
         durable_members = await self.store.operation_members(operation_id)
         if len(durable_members) != len(batch.packs):
-            raise CapabilityManagerError("batch_member_count_mismatch", "confirmed member count changed")
+            raise CapabilityManagerError(
+                "batch_member_count_mismatch", "confirmed member count changed"
+            )
         staging_root = self.layout.staging_path(operation_id)
         if staging_root.exists():
             await self._remove_exact_tree(staging_root)
@@ -1258,19 +1256,38 @@ class CapabilityPackManager:
         validations: list[PackValidationResult] = []
         candidates: list[CapabilityCandidate] = []
         try:
-            for ordinal, (frozen, durable) in enumerate(zip(batch.packs, durable_members, strict=True)):
-                if frozen.skill_name != durable.normalized_name or frozen.manifest_hash != durable.manifest_hash or frozen.content_digest != durable.content_hash:
-                    raise CapabilityManagerError("batch_member_identity_mismatch", f"member {ordinal} differs from confirmation")
+            for ordinal, (frozen, durable) in enumerate(
+                zip(batch.packs, durable_members, strict=True)
+            ):
+                if (
+                    frozen.skill_name != durable.normalized_name
+                    or frozen.manifest_hash != durable.manifest_hash
+                    or frozen.content_digest != durable.content_hash
+                ):
+                    raise CapabilityManagerError(
+                        "batch_member_identity_mismatch",
+                        f"member {ordinal} differs from confirmation",
+                    )
                 member_root = staging_root / f"{ordinal:04d}-{durable.normalized_name}"
                 issued = await asyncio.to_thread(
-                    self.package_validator.materialize_zip, frozen.archive_bytes, member_root,
+                    self.package_validator.materialize_zip,
+                    frozen.archive_bytes,
+                    member_root,
                     source_kind=frozen.validated_ref.source_kind,
                 )
                 if issued != frozen.validated_ref:
-                    raise CapabilityManagerError("batch_validated_ref_mismatch", durable.normalized_name)
+                    raise CapabilityManagerError(
+                        "batch_validated_ref_mismatch", durable.normalized_name
+                    )
                 validation = load_and_validate_pack(member_root, environment=self.environment)
-                if validation.manifest.id != durable.pack_id or validation.manifest.version != durable.version or validation.manifest.manifest_hash != durable.manifest_hash:
-                    raise CapabilityManagerError("batch_manifest_identity_mismatch", durable.normalized_name)
+                if (
+                    validation.manifest.id != durable.pack_id
+                    or validation.manifest.version != durable.version
+                    or validation.manifest.manifest_hash != durable.manifest_hash
+                ):
+                    raise CapabilityManagerError(
+                        "batch_manifest_identity_mismatch", durable.normalized_name
+                    )
                 candidate = await self.publisher.prepare_candidate(
                     validation, install_root=member_root, operation_id=operation_id
                 )
@@ -1284,21 +1301,17 @@ class CapabilityPackManager:
                     validation.manifest.id,
                     validation.manifest.version,
                 )
-                if (
-                    existing_version is not None
-                    and (
-                        existing_version.descriptor.manifest_hash
-                        != validation.manifest.manifest_hash
-                        or existing_version.descriptor.fingerprint
-                        != validation.descriptor.fingerprint
-                    )
+                if existing_version is not None and (
+                    existing_version.descriptor.manifest_hash != validation.manifest.manifest_hash
+                    or existing_version.descriptor.fingerprint != validation.descriptor.fingerprint
                 ):
                     raise CapabilityStoreConflict(
                         "capability_version_conflict",
                         "same capability version already exists with different immutable data",
                     )
             operation = await self._commit_phase(
-                operation_id, "batch_prepared",
+                operation_id,
+                "batch_prepared",
                 {"member_count": len(durable_members), "committed_set_stamp": committed_set_stamp},
             )
             await self._fault("after:batch_prepared")
@@ -1308,16 +1321,26 @@ class CapabilityPackManager:
 
         expected_revisions = {candidate.expected_registry_revision for candidate in candidates}
         if len(expected_revisions) != 1:
-            raise CapabilityManagerError("batch_registry_revision_mismatch", "members were prepared against different registry revisions")
+            raise CapabilityManagerError(
+                "batch_registry_revision_mismatch",
+                "members were prepared against different registry revisions",
+            )
         runtime_payload: object | None = None
         if all(isinstance(candidate.runtime_payload, tuple) for candidate in candidates):
-            runtime_payload = tuple(item for candidate in candidates for item in candidate.runtime_payload)  # type: ignore[union-attr]
+            runtime_payload = tuple(
+                item for candidate in candidates for item in candidate.runtime_payload
+            )  # type: ignore[union-attr]
         combined = CapabilityCandidate(
             expected_registry_revision=next(iter(expected_revisions), 0),
-            tool_spec_fingerprints=tuple(fp for candidate in candidates for fp in candidate.tool_spec_fingerprints),
+            tool_spec_fingerprints=tuple(
+                fp for candidate in candidates for fp in candidate.tool_spec_fingerprints
+            ),
             old_specs=tuple(spec for candidate in candidates for spec in candidate.old_specs),
             new_specs=tuple(spec for candidate in candidates for spec in candidate.new_specs),
-            publisher_state={"schema": "capability-batch-publisher-state-v1", "member_count": len(candidates)},
+            publisher_state={
+                "schema": "capability-batch-publisher-state-v1",
+                "member_count": len(candidates),
+            },
             runtime_payload=runtime_payload,
         )
         batch_root = (self.layout.packs / "batches" / committed_set_stamp).resolve(strict=False)
@@ -1326,7 +1349,9 @@ class CapabilityPackManager:
         async with self.publish_lock:
             old_bindings: list[CapabilityBinding | None] = []
             for member in durable_members:
-                binding = await self.store.get_binding(binding_scope, project_scope_key, member.pack_id, owner_key=owner_key)
+                binding = await self.store.get_binding(
+                    binding_scope, project_scope_key, member.pack_id, owner_key=owner_key
+                )
                 actual = 0 if binding is None else binding.generation
                 if generations.get(member.pack_id, actual) != actual:
                     raise CapabilityStoreConflict("binding_generation_conflict", member.pack_id)
@@ -1336,32 +1361,52 @@ class CapabilityPackManager:
             envelope: Mapping[str, JsonValue] = {
                 "schema": (
                     "capability-batch-binding-v2"
-                    if binding_scope == "user" else "capability-batch-binding-v1"
+                    if binding_scope == "user"
+                    else "capability-batch-binding-v1"
                 ),
                 "project_scope_key": project_scope_key,
-                "scope": binding_scope, "scope_key": project_scope_key,
-                "owner_key": owner_key, "member_set_digest": committed_set_stamp,
+                "scope": binding_scope,
+                "scope_key": project_scope_key,
+                "owner_key": owner_key,
+                "member_set_digest": committed_set_stamp,
                 "expected_binding_generations": generations,
             }
             async with self.store.write_transaction() as db:
                 tx = self.store.bind(db)
                 await tx.create_publish_intent(
-                    intent_id=intent_id, operation_id=operation_id,
+                    intent_id=intent_id,
+                    operation_id=operation_id,
                     expected_registry_revision=combined.expected_registry_revision,
-                    old_specs=combined.old_specs, new_specs=combined.new_specs,
-                    old_binding=None, new_binding=envelope,
+                    old_specs=combined.old_specs,
+                    new_specs=combined.new_specs,
+                    old_binding=None,
+                    new_binding=envelope,
                 )
-                await tx.put_publish_intent_members_in_transaction(intent_id, tuple(
-                    CapabilityPublishIntentMember(
-                        intent_id, operation_id, member.ordinal,
-                        None if old is None else old.to_dict(),
-                        {"scope": binding_scope, "scope_key": project_scope_key, "owner_key": owner_key,
-                         "capability_id": member.pack_id, "version": member.version,
-                         "manifest_hash": member.manifest_hash, "active": True,
-                         "expected_generation": generations[member.pack_id]},
-                    ) for member, old in zip(durable_members, old_bindings, strict=True)
-                ))
-                await tx.commit_phase(operation_id, "batch_publish_intent", evidence={"intent_id": intent_id})
+                await tx.put_publish_intent_members_in_transaction(
+                    intent_id,
+                    tuple(
+                        CapabilityPublishIntentMember(
+                            intent_id,
+                            operation_id,
+                            member.ordinal,
+                            None if old is None else old.to_dict(),
+                            {
+                                "scope": binding_scope,
+                                "scope_key": project_scope_key,
+                                "owner_key": owner_key,
+                                "capability_id": member.pack_id,
+                                "version": member.version,
+                                "manifest_hash": member.manifest_hash,
+                                "active": True,
+                                "expected_generation": generations[member.pack_id],
+                            },
+                        )
+                        for member, old in zip(durable_members, old_bindings, strict=True)
+                    ),
+                )
+                await tx.commit_phase(
+                    operation_id, "batch_publish_intent", evidence={"intent_id": intent_id}
+                )
             await self._fault("after:batch_publish_intent")
             batch_root.parent.mkdir(parents=True, exist_ok=True)
             if batch_root.exists():
@@ -1370,7 +1415,11 @@ class CapabilityPackManager:
             async with self.store.write_transaction() as db:
                 tx = self.store.bind(db)
                 await tx.advance_publish_intent(intent_id, phase="batch_files_materialized")
-                await tx.commit_phase(operation_id, "batch_files_materialized", evidence={"batch_root": str(batch_root)})
+                await tx.commit_phase(
+                    operation_id,
+                    "batch_files_materialized",
+                    evidence={"batch_root": str(batch_root)},
+                )
             await self._fault("after:batch_files_materialized")
             if binding_scope == "user":
                 # User-global candidates remain private until the fresh-Run
@@ -1385,40 +1434,66 @@ class CapabilityPackManager:
             else:
                 publication = await self.publisher.publish(combined, operation_id=operation_id)
                 if tuple(publication.tool_spec_fingerprints) != combined.tool_spec_fingerprints:
-                    raise CapabilityManagerError("publisher_fingerprint_mismatch", "batch ToolSpecs differ")
+                    raise CapabilityManagerError(
+                        "publisher_fingerprint_mismatch", "batch ToolSpecs differ"
+                    )
             async with self.store.write_transaction() as db:
                 tx = self.store.bind(db)
                 await tx.advance_publish_intent(intent_id, phase="batch_catalog_swapped")
-                await tx.commit_phase(operation_id, "batch_catalog_swapped", evidence={
-                    "registry_revision": publication.registry_revision,
-                    "publication_state": (
-                        "deferred_pending_verification"
-                        if binding_scope == "user" else "active"
-                    ),
-                })
+                await tx.commit_phase(
+                    operation_id,
+                    "batch_catalog_swapped",
+                    evidence={
+                        "registry_revision": publication.registry_revision,
+                        "publication_state": (
+                            "deferred_pending_verification" if binding_scope == "user" else "active"
+                        ),
+                    },
+                )
             await self._fault("after:batch_catalog_swapped")
             bindings: list[CapabilityBinding] = []
             async with self.store.write_transaction() as db:
                 tx = self.store.bind(db)
-                for durable, validation, candidate in zip(durable_members, validations, candidates, strict=True):
+                for durable, validation, candidate in zip(
+                    durable_members, validations, candidates, strict=True
+                ):
                     install_path = batch_root / f"{durable.ordinal:04d}-{durable.normalized_name}"
-                    await tx.record_version(CapabilityVersionRecord(
-                        validation.descriptor, install_path, "healthy", candidate.tool_spec_fingerprints,
-                        None, None, None, self.store.now(),
-                    ))
+                    await tx.record_version(
+                        CapabilityVersionRecord(
+                            validation.descriptor,
+                            install_path,
+                            "healthy",
+                            candidate.tool_spec_fingerprints,
+                            None,
+                            None,
+                            None,
+                            self.store.now(),
+                        )
+                    )
                     if binding_scope == "project":
                         binding = await tx.set_binding(
-                            scope=binding_scope, scope_key=project_scope_key, pack_id=durable.pack_id,
-                            version=durable.version, manifest_hash=durable.manifest_hash,
-                            expected_generation=generations[durable.pack_id], enabled=True,
-                            owner_key=owner_key, management_policy="user_managed",
+                            scope=binding_scope,
+                            scope_key=project_scope_key,
+                            pack_id=durable.pack_id,
+                            version=durable.version,
+                            manifest_hash=durable.manifest_hash,
+                            expected_generation=generations[durable.pack_id],
+                            enabled=True,
+                            owner_key=owner_key,
+                            management_policy="user_managed",
                         )
                         bindings.append(binding)
                     await db.execute(
                         """UPDATE capability_operation_members SET committed_version=?,
                            committed_manifest_hash=?,committed_set_stamp=?
                            WHERE operation_id=? AND ordinal=?""",
-                        (durable.version,durable.manifest_hash,committed_set_stamp,operation_id,durable.ordinal),
+                        (
+                            durable.version,
+                            durable.manifest_hash,
+                            committed_set_stamp,
+                            operation_id,
+                            durable.ordinal,
+                        ),
                     )
                 receipt_payload = {
                     "schema": (
@@ -1428,35 +1503,58 @@ class CapabilityPackManager:
                     ),
                     "operation_id": operation_id,
                     "project_scope_key": project_scope_key,
-                    "scope": binding_scope, "scope_key": project_scope_key,
+                    "scope": binding_scope,
+                    "scope_key": project_scope_key,
                     "owner_key": owner_key,
-                    "committed_set_stamp": committed_set_stamp, "registry_revision": publication.registry_revision,
+                    "committed_set_stamp": committed_set_stamp,
+                    "registry_revision": publication.registry_revision,
                     "publication_state": (
                         "pending_invisible" if binding_scope == "user" else "active"
                     ),
                     "members": [
-                        {"pack_id": m.pack_id, "version": m.version,
-                         "manifest_hash": m.manifest_hash, "content_hash": m.content_hash,
-                         "expected_binding_generation": generations[m.pack_id],
-                         **(
-                             {"binding_generation": b.generation}
-                             if binding_scope == "project" else {}
-                         )}
+                        {
+                            "pack_id": m.pack_id,
+                            "version": m.version,
+                            "manifest_hash": m.manifest_hash,
+                            "content_hash": m.content_hash,
+                            "expected_binding_generation": generations[m.pack_id],
+                            **(
+                                {"binding_generation": b.generation}
+                                if binding_scope == "project"
+                                else {}
+                            ),
+                        }
                         for m, b in zip(
                             durable_members,
-                            bindings if binding_scope == "project" else [None] * len(durable_members),
+                            bindings
+                            if binding_scope == "project"
+                            else [None] * len(durable_members),
                             strict=True,
                         )
                     ],
                 }
                 receipt_hash = fingerprint_json(receipt_payload)
-                await tx.advance_publish_intent(intent_id, phase="batch_committed", status="committed")
-                operation = await tx.commit_phase(operation_id, "batch_committed", evidence={
-                    **receipt_payload, "manager_receipt_hash": receipt_hash, "install_root": str(batch_root)
-                })
+                await tx.advance_publish_intent(
+                    intent_id, phase="batch_committed", status="committed"
+                )
+                operation = await tx.commit_phase(
+                    operation_id,
+                    "batch_committed",
+                    evidence={
+                        **receipt_payload,
+                        "manager_receipt_hash": receipt_hash,
+                        "install_root": str(batch_root),
+                    },
+                )
             await self._fault("after:batch_committed")
-        return CapabilityBatchInstallResult(operation, tuple(bindings), batch_root,
-                                            publication.registry_revision, receipt_hash, committed_set_stamp)
+        return CapabilityBatchInstallResult(
+            operation,
+            tuple(bindings),
+            batch_root,
+            publication.registry_revision,
+            receipt_hash,
+            committed_set_stamp,
+        )
 
     async def _remove_batch_root(self, target: Path) -> None:
         target = target.resolve(strict=False)
@@ -1522,9 +1620,7 @@ class CapabilityPackManager:
         if owner_key is not None:
             lifecycle_request_fields["owner_key"] = owner_key
         if expected_binding_generation is not None:
-            lifecycle_request_fields["expected_binding_generation"] = (
-                expected_binding_generation
-            )
+            lifecycle_request_fields["expected_binding_generation"] = expected_binding_generation
         if management_policy is not None:
             lifecycle_request_fields["management_policy"] = management_policy
         request = {**request, **lifecycle_request_fields}
@@ -1569,9 +1665,7 @@ class CapabilityPackManager:
                     "staged",
                     {
                         "path": str(staged.root),
-                        "validated_ref": dict(
-                            self._validated_ref_evidence(validated_ref)
-                        ),
+                        "validated_ref": dict(self._validated_ref_evidence(validated_ref)),
                     },
                 )
             if operation.phase == "staged":
@@ -1582,25 +1676,18 @@ class CapabilityPackManager:
                     )
                 if validated_ref is None:
                     validated_ref = self._validated_ref_from_evidence(
-                        await self.store.get_phase_evidence(
-                            operation_id, "staged"
-                        )
+                        await self.store.get_phase_evidence(operation_id, "staged")
                     )
                 if validated_ref.source_kind != resolved_source.source_type:
                     raise CapabilityManagerError(
                         "validated_package_source_mismatch",
-                        "durable validated package source differs from "
-                        "the resolved source",
+                        "durable validated package source differs from the resolved source",
                     )
                 validation_root = staging_path
             else:
-                verified_evidence = await self.store.get_phase_evidence(
-                    operation_id, "verified"
-                )
+                verified_evidence = await self.store.get_phase_evidence(operation_id, "verified")
                 install_path_value = (
-                    None
-                    if verified_evidence is None
-                    else verified_evidence.get("install_path")
+                    None if verified_evidence is None else verified_evidence.get("install_path")
                 )
                 if not isinstance(install_path_value, str):
                     raise CapabilityManagerError(
@@ -1609,9 +1696,7 @@ class CapabilityPackManager:
                     )
                 validation_root = Path(install_path_value)
 
-            validation = load_and_validate_pack(
-                validation_root, environment=self.environment
-            )
+            validation = load_and_validate_pack(validation_root, environment=self.environment)
             manifest = validation.manifest
             if expected_pack_id is not None and manifest.id != expected_pack_id:
                 raise CapabilityManagerError(
@@ -1632,16 +1717,13 @@ class CapabilityPackManager:
                     "manifest source revision differs from the requested revision",
                 )
             if generated and any(
-                tool.execution_profile != "brokered-effect-v1"
-                for tool in manifest.tools
+                tool.execution_profile != "brokered-effect-v1" for tool in manifest.tools
             ):
                 raise CapabilityManagerError(
                     "generated_native_adapter_forbidden",
                     "generated packs may only use brokered-effect-v1",
                 )
-            operation = await self.store.bind_operation_pack_id(
-                operation_id, manifest.id
-            )
+            operation = await self.store.bind_operation_pack_id(operation_id, manifest.id)
             await self.store.record_validation_result(
                 operation_id,
                 "manifest_and_integrity",
@@ -1667,10 +1749,7 @@ class CapabilityPackManager:
                     installed_validation = load_and_validate_pack(
                         install_io_path, environment=self.environment
                     )
-                    if (
-                        installed_validation.manifest.manifest_hash
-                        != manifest.manifest_hash
-                    ):
+                    if installed_validation.manifest.manifest_hash != manifest.manifest_hash:
                         raise CapabilityManagerError(
                             "immutable_version_conflict",
                             "immutable version path contains another manifest",
@@ -1721,9 +1800,7 @@ class CapabilityPackManager:
                 install_root=install_path,
                 operation_id=operation_id,
             )
-            if len(candidate.tool_spec_fingerprints) != len(
-                manifest.tools
-            ):
+            if len(candidate.tool_spec_fingerprints) != len(manifest.tools):
                 raise CapabilityManagerError(
                     "candidate_tool_mismatch",
                     "candidate must provide one ToolSpec fingerprint per declared tool",
@@ -1743,11 +1820,7 @@ class CapabilityPackManager:
                 operation = await self._commit_phase(
                     operation_id,
                     "candidate_ready",
-                    {
-                        "tool_spec_fingerprints": list(
-                            candidate.tool_spec_fingerprints
-                        )
-                    },
+                    {"tool_spec_fingerprints": list(candidate.tool_spec_fingerprints)},
                 )
 
             if operation.phase in {"publish_intent", "catalog_swapped", "bound"}:
@@ -1762,9 +1835,7 @@ class CapabilityPackManager:
                 manifest.id,
                 owner_key=owner_key,
             )
-            actual_generation = (
-                0 if current_binding is None else current_binding.generation
-            )
+            actual_generation = 0 if current_binding is None else current_binding.generation
             expected_generation = (
                 actual_generation
                 if expected_binding_generation is None
@@ -1805,13 +1876,9 @@ class CapabilityPackManager:
                 install_path=install_path,
                 registry_revision=publication.registry_revision,
                 tool_spec_fingerprints=publication.tool_spec_fingerprints,
-                manager_receipt_hash=str(
-                    receipt_evidence["manager_receipt_hash"]
-                ),
+                manager_receipt_hash=str(receipt_evidence["manager_receipt_hash"]),
                 committed_owner_binding_set_stamp=str(
-                    receipt_evidence[
-                        "committed_owner_binding_set_stamp"
-                    ]
+                    receipt_evidence["committed_owner_binding_set_stamp"]
                 ),
                 process_projection_fingerprint=str(
                     receipt_evidence["process_projection_fingerprint"]
@@ -1827,9 +1894,7 @@ class CapabilityPackManager:
     async def update(self, source: PackSourceRequest, **kwargs: Any) -> CapabilityInstallResult:
         return await self.install(source, kind="update", **kwargs)
 
-    async def repair(
-        self, source: PackSourceRequest, **kwargs: Any
-    ) -> CapabilityInstallResult:
+    async def repair(self, source: PackSourceRequest, **kwargs: Any) -> CapabilityInstallResult:
         return await self.install(source, kind="repair", **kwargs)
 
     async def _result_for_completed_install(
@@ -1839,9 +1904,7 @@ class CapabilityPackManager:
         scope = operation.requested_scope
         scope_key = operation.requested_scope_key
         if not pack_id or not scope or not scope_key:
-            intent = await self.store.get_publish_intent_for_operation(
-                operation.operation_id
-            )
+            intent = await self.store.get_publish_intent_for_operation(operation.operation_id)
             if intent is None:
                 raise CapabilityManagerError(
                     "completed_operation_projection_missing",
@@ -1851,8 +1914,7 @@ class CapabilityPackManager:
             scope_value = intent.new_binding.get("scope")
             scope_key_value = intent.new_binding.get("scope_key")
             if not all(
-                isinstance(value, str)
-                for value in (pack_id_value, scope_value, scope_key_value)
+                isinstance(value, str) for value in (pack_id_value, scope_value, scope_key_value)
             ):
                 raise CapabilityManagerError(
                     "completed_operation_projection_invalid",
@@ -1866,9 +1928,7 @@ class CapabilityPackManager:
             str(scope),
             str(scope_key),
             str(pack_id),
-            owner_key=(
-                None if not isinstance(owner_key, str) else owner_key
-            ),
+            owner_key=(None if not isinstance(owner_key, str) else owner_key),
         )
         if binding is None:
             raise CapabilityManagerError(
@@ -1881,9 +1941,7 @@ class CapabilityPackManager:
             raise CapabilityManagerError(
                 "completed_version_missing", "completed operation version is absent"
             )
-        validation = load_and_validate_pack(
-            record.install_path, environment=self.environment
-        )
+        validation = load_and_validate_pack(record.install_path, environment=self.environment)
         evidence = await self.store.get_phase_evidence(
             operation.operation_id,
             "published",
@@ -1896,9 +1954,7 @@ class CapabilityPackManager:
             install_path=record.install_path,
             registry_revision=0,
             tool_spec_fingerprints=record.expected_tool_fingerprints,
-            manager_receipt_hash=str(
-                evidence.get("manager_receipt_hash") or ""
-            ),
+            manager_receipt_hash=str(evidence.get("manager_receipt_hash") or ""),
             committed_owner_binding_set_stamp=str(
                 evidence.get("committed_owner_binding_set_stamp") or ""
             ),
@@ -1948,9 +2004,7 @@ class CapabilityPackManager:
         root_run_id: str | None = None,
     ) -> CapabilityRollbackResult:
         await self.initialize()
-        record = await self.store.get_version(
-            pack_id, target_version, target_manifest_hash
-        )
+        record = await self.store.get_version(pack_id, target_version, target_manifest_hash)
         if record is None:
             raise CapabilityManagerError(
                 "rollback_version_not_found",
@@ -1989,12 +2043,8 @@ class CapabilityPackManager:
         # The non-file lifecycle phases are explicit no-ops for an already
         # verified immutable version.
         for phase in ("staged", "verified", "environment_ready"):
-            await self._commit_phase(
-                operation_id, phase, {"reused_version": target_version}
-            )
-        candidate = await self.publisher.prepare_installed(
-            record, operation_id=operation_id
-        )
+            await self._commit_phase(operation_id, phase, {"reused_version": target_version})
+        candidate = await self.publisher.prepare_installed(record, operation_id=operation_id)
         await self._commit_phase(
             operation_id,
             "candidate_ready",
@@ -2087,9 +2137,7 @@ class CapabilityPackManager:
         if owner_key is not None:
             operation_request["owner_key"] = owner_key
         if expected_binding_generation is not None:
-            operation_request["expected_binding_generation"] = (
-                expected_binding_generation
-            )
+            operation_request["expected_binding_generation"] = expected_binding_generation
         operation = await self.store.create_operation(
             operation_id=operation_id,
             idempotency_key=idempotency_key,
@@ -2123,9 +2171,7 @@ class CapabilityPackManager:
                 current,
                 True,
                 registry_revision=int(evidence.get("registry_revision") or 0),
-                manager_receipt_hash=str(
-                    evidence.get("manager_receipt_hash") or ""
-                ),
+                manager_receipt_hash=str(evidence.get("manager_receipt_hash") or ""),
                 committed_owner_binding_set_stamp=str(
                     evidence.get("committed_owner_binding_set_stamp") or ""
                 ),
@@ -2182,15 +2228,11 @@ class CapabilityPackManager:
             disabled,
             True,
             registry_revision=_publication.registry_revision,
-            manager_receipt_hash=str(
-                receipt_evidence["manager_receipt_hash"]
-            ),
+            manager_receipt_hash=str(receipt_evidence["manager_receipt_hash"]),
             committed_owner_binding_set_stamp=str(
                 receipt_evidence["committed_owner_binding_set_stamp"]
             ),
-            process_projection_fingerprint=str(
-                receipt_evidence["process_projection_fingerprint"]
-            ),
+            process_projection_fingerprint=str(receipt_evidence["process_projection_fingerprint"]),
         )
 
     async def _cancel_operation(self, operation_id: str) -> None:
@@ -2214,8 +2256,7 @@ class CapabilityPackManager:
                 error={
                     "code": "cancelled",
                     "phase": operation.phase,
-                    "requires_environment_probe": operation.phase
-                    == "environment_ready",
+                    "requires_environment_probe": operation.phase == "environment_ready",
                 },
             )
             return
@@ -2229,9 +2270,7 @@ class CapabilityPackManager:
             },
         )
 
-    async def cancel_operation(
-        self, operation_id: str
-    ) -> CapabilityOperationRecord:
+    async def cancel_operation(self, operation_id: str) -> CapabilityOperationRecord:
         """Settle one caller-owned in-flight lifecycle task after cancellation.
 
         This does not discover or cancel arbitrary process tasks.  The caller
@@ -2278,20 +2317,14 @@ class CapabilityPackManager:
             active=bool(payload["active"]),
             generation=int(payload["generation"]),
             owner_key=str(payload.get("owner_key") or ""),
-            management_policy=str(
-                payload.get("management_policy") or "legacy_import"
-            ),  # type: ignore[arg-type]
-            management_generation=int(
-                payload.get("management_generation") or 0
-            ),
+            management_policy=str(payload.get("management_policy") or "legacy_import"),  # type: ignore[arg-type]
+            management_generation=int(payload.get("management_generation") or 0),
         )
 
     async def _recover_publish_operation(
         self, operation: CapabilityOperationRecord
     ) -> CapabilityOperationRecord:
-        intent = await self.store.get_publish_intent_for_operation(
-            operation.operation_id
-        )
+        intent = await self.store.get_publish_intent_for_operation(operation.operation_id)
         if intent is None:
             return await self.store.fail_operation(
                 operation.operation_id,
@@ -2305,9 +2338,7 @@ class CapabilityPackManager:
         if operation.phase == "bound" and intent.status == "committed":
             if operation.kind == "uninstall":
                 try:
-                    old_binding = self._binding_from_intent_payload(
-                        intent.old_binding
-                    )
+                    old_binding = self._binding_from_intent_payload(intent.old_binding)
                     if old_binding is None:
                         raise CapabilityManagerError(
                             "publish_binding_projection_invalid",
@@ -2336,18 +2367,14 @@ class CapabilityPackManager:
                 str(new_payload.get("scope_key") or ""),
                 str(new_payload.get("capability_id") or ""),
                 owner_key=(
-                    None
-                    if new_payload.get("owner_key") is None
-                    else str(new_payload["owner_key"])
+                    None if new_payload.get("owner_key") is None else str(new_payload["owner_key"])
                 ),
             )
             if (
                 new_binding is None
                 or new_binding.version != new_payload.get("version")
-                or new_binding.manifest_hash
-                != new_payload.get("manifest_hash")
-                or new_binding.active
-                != bool(new_payload.get("active", True))
+                or new_binding.manifest_hash != new_payload.get("manifest_hash")
+                or new_binding.active != bool(new_payload.get("active", True))
             ):
                 return await self.store.fail_operation(
                     operation.operation_id,
@@ -2383,12 +2410,9 @@ class CapabilityPackManager:
                 action=operation.kind,
                 binding=new_binding,
                 registry_revision=int(
-                    catalog_evidence.get("registry_revision")
-                    or intent.expected_registry_revision
+                    catalog_evidence.get("registry_revision") or intent.expected_registry_revision
                 ),
-                tool_spec_fingerprints=(
-                    version.expected_tool_fingerprints
-                ),
+                tool_spec_fingerprints=(version.expected_tool_fingerprints),
             )
             return await self.store.commit_phase(
                 operation.operation_id,
@@ -2446,8 +2470,7 @@ class CapabilityPackManager:
             "manifest_hash",
         }
         if not required.issubset(new_binding) or not all(
-            isinstance(new_binding[key], str)
-            and bool(str(new_binding[key]).strip())
+            isinstance(new_binding[key], str) and bool(str(new_binding[key]).strip())
             for key in required
         ):
             return await self.store.fail_operation(
@@ -2479,10 +2502,7 @@ class CapabilityPackManager:
                         "recovered": True,
                     },
                 )
-            operation = (
-                await self.store.get_operation(operation.operation_id)
-                or operation
-            )
+            operation = await self.store.get_operation(operation.operation_id) or operation
 
         if operation.phase == "catalog_swapped":
             scope = str(new_binding["scope"])
@@ -2493,15 +2513,11 @@ class CapabilityPackManager:
                 scope_key,
                 capability_id,
                 owner_key=(
-                    None
-                    if new_binding.get("owner_key") is None
-                    else str(new_binding["owner_key"])
+                    None if new_binding.get("owner_key") is None else str(new_binding["owner_key"])
                 ),
             )
             try:
-                old_binding = self._binding_from_intent_payload(
-                    intent.old_binding
-                )
+                old_binding = self._binding_from_intent_payload(intent.old_binding)
             except Exception as exc:
                 return await self.store.fail_operation(
                     operation.operation_id,
@@ -2518,15 +2534,9 @@ class CapabilityPackManager:
                         "phase": operation.phase,
                     },
                 )
-            if (
-                (old_binding is None and current is not None)
-                or (
-                    old_binding is not None
-                    and (
-                        current is None
-                        or current.fingerprint != old_binding.fingerprint
-                    )
-                )
+            if (old_binding is None and current is not None) or (
+                old_binding is not None
+                and (current is None or current.fingerprint != old_binding.fingerprint)
             ):
                 return await self.store.fail_operation(
                     operation.operation_id,
@@ -2536,9 +2546,7 @@ class CapabilityPackManager:
                         "phase": operation.phase,
                     },
                 )
-            expected_generation = (
-                0 if old_binding is None else old_binding.generation
-            )
+            expected_generation = 0 if old_binding is None else old_binding.generation
             enabled = bool(new_binding.get("active", True))
             try:
                 async with self.store.write_transaction() as db:
@@ -2583,10 +2591,7 @@ class CapabilityPackManager:
                         "phase": operation.phase,
                     },
                 )
-            operation = (
-                await self.store.get_operation(operation.operation_id)
-                or operation
-            )
+            operation = await self.store.get_operation(operation.operation_id) or operation
 
         if operation.phase != "bound":
             return await self.store.fail_operation(
@@ -2599,9 +2604,7 @@ class CapabilityPackManager:
             )
         if operation.kind == "uninstall":
             try:
-                old_binding = self._binding_from_intent_payload(
-                    intent.old_binding
-                )
+                old_binding = self._binding_from_intent_payload(intent.old_binding)
                 if old_binding is None:
                     raise CapabilityManagerError(
                         "publish_binding_projection_invalid",
@@ -2634,9 +2637,7 @@ class CapabilityPackManager:
                 str(new_binding["scope_key"]),
                 str(new_binding["capability_id"]),
                 owner_key=(
-                    None
-                    if new_binding.get("owner_key") is None
-                    else str(new_binding["owner_key"])
+                    None if new_binding.get("owner_key") is None else str(new_binding["owner_key"])
                 ),
             )
             if current_binding is None:
@@ -2678,9 +2679,7 @@ class CapabilityPackManager:
                         catalog_evidence.get("registry_revision")
                         or intent.expected_registry_revision
                     ),
-                    tool_spec_fingerprints=(
-                        version.expected_tool_fingerprints
-                    ),
+                    tool_spec_fingerprints=(version.expected_tool_fingerprints),
                 )
             )
         return await self.store.commit_phase(
@@ -2716,9 +2715,7 @@ class CapabilityPackManager:
                 )
                 continue
             if operation.phase in {"environment_ready", "candidate_ready"}:
-                probe = await self.environment_preparer.probe(
-                    operation, environment_root=None
-                )
+                probe = await self.environment_preparer.probe(operation, environment_root=None)
                 recovered.append(
                     await self.store.fail_operation(
                         operation.operation_id,
@@ -2732,9 +2729,7 @@ class CapabilityPackManager:
                 )
                 continue
             async with self.publish_lock:
-                recovered.append(
-                    await self._recover_publish_operation(operation)
-                )
+                recovered.append(await self._recover_publish_operation(operation))
         return tuple(recovered)
 
     async def _recover_pending_global_activations(self) -> None:
@@ -2751,9 +2746,7 @@ class CapabilityPackManager:
         for row in rows:
             operation_id = str(row["operation_id"])
             evidence = json.loads(str(row["evidence_json"]))
-            publish_intent = await self.store.get_publish_intent_for_operation(
-                operation_id
-            )
+            publish_intent = await self.store.get_publish_intent_for_operation(operation_id)
             if publish_intent is None:
                 continue
             reconciliation = await self.publisher.reconcile(publish_intent)
@@ -2784,21 +2777,20 @@ class CapabilityPackManager:
                             "global_activation_intent_invalid", operation_id
                         )
                     binding = await tx.set_binding(
-                        scope="user", scope_key=owner_key,
-                        pack_id=str(raw["pack_id"]), version=str(raw["version"]),
+                        scope="user",
+                        scope_key=owner_key,
+                        pack_id=str(raw["pack_id"]),
+                        version=str(raw["version"]),
                         manifest_hash=str(raw["manifest_hash"]),
-                        expected_generation=int(
-                            raw.get("expected_binding_generation") or 0
-                        ),
-                        enabled=True, owner_key=owner_key,
+                        expected_generation=int(raw.get("expected_binding_generation") or 0),
+                        enabled=True,
+                        owner_key=owner_key,
                         management_policy="user_managed",
                     )
                     bindings.append(binding)
                 settled = {
                     **evidence,
-                    "registry_revision": int(
-                        reconciliation.registry_revision or 0
-                    ),
+                    "registry_revision": int(reconciliation.registry_revision or 0),
                     "binding_ids": [binding.binding_id for binding in bindings],
                     "recovered": True,
                 }
@@ -2808,7 +2800,8 @@ class CapabilityPackManager:
                        WHERE operation_id=? AND phase='global_activation'
                          AND status='intent'""",
                     (
-                        json.dumps(settled, sort_keys=True), self.store.now(),
+                        json.dumps(settled, sort_keys=True),
+                        self.store.now(),
                         operation_id,
                     ),
                 )
@@ -2827,21 +2820,27 @@ class CapabilityPackManager:
             if staging.exists():
                 await self._remove_exact_tree(staging)
             return await self.store.fail_operation(
-                operation.operation_id, status="cancelled",
+                operation.operation_id,
+                status="cancelled",
                 error={"code": "recovered_pre_publish", "phase": operation.phase},
             )
         intent = await self.store.get_publish_intent_for_operation(operation.operation_id)
         if intent is None:
             return await self.store.fail_operation(
-                operation.operation_id, status="unknown",
+                operation.operation_id,
+                status="unknown",
                 error={"code": "batch_publish_intent_missing", "phase": operation.phase},
             )
         try:
             reconciliation = await self.publisher.reconcile(intent)
         except Exception as exc:
             return await self.store.fail_operation(
-                operation.operation_id, status="unknown",
-                error={"code": str(getattr(exc, "code", "batch_reconcile_failed")), "phase": operation.phase},
+                operation.operation_id,
+                status="unknown",
+                error={
+                    "code": str(getattr(exc, "code", "batch_reconcile_failed")),
+                    "phase": operation.phase,
+                },
             )
         if reconciliation.status == "rolled_back":
             if staging.exists():
@@ -2852,12 +2851,14 @@ class CapabilityPackManager:
                 intent.intent_id, phase=intent.phase, status="rolled_back"
             )
             return await self.store.fail_operation(
-                operation.operation_id, status="failed",
+                operation.operation_id,
+                status="failed",
                 error={"code": "batch_publish_rolled_back", "phase": operation.phase},
             )
         if reconciliation.status != "published":
             return await self.store.fail_operation(
-                operation.operation_id, status="unknown",
+                operation.operation_id,
+                status="unknown",
                 error={"code": "batch_publish_outcome_unknown", "phase": operation.phase},
             )
         # A full-new registry with an absent or partial content root cannot be
@@ -2866,31 +2867,32 @@ class CapabilityPackManager:
         roots = tuple(batch_root / f"{m.ordinal:04d}-{m.normalized_name}" for m in members)
         if not batch_root.is_dir() or not all(root.is_dir() for root in roots):
             return await self.store.fail_operation(
-                operation.operation_id, status="unknown",
+                operation.operation_id,
+                status="unknown",
                 error={"code": "batch_materialization_mixed", "phase": operation.phase},
             )
         publish_members = await self.store.publish_intent_members(intent.intent_id)
         if len(publish_members) != len(members):
             return await self.store.fail_operation(
-                operation.operation_id, status="unknown",
+                operation.operation_id,
+                status="unknown",
                 error={"code": "batch_publish_members_mixed", "phase": operation.phase},
             )
         validations = [load_and_validate_pack(root, environment=self.environment) for root in roots]
-        candidates = [await self.publisher.prepare_candidate(v, install_root=root, operation_id=operation.operation_id)
-                      for v, root in zip(validations, roots, strict=True)]
+        candidates = [
+            await self.publisher.prepare_candidate(
+                v, install_root=root, operation_id=operation.operation_id
+            )
+            for v, root in zip(validations, roots, strict=True)
+        ]
         for validation in validations:
             existing_version = await self.store.get_version(
                 validation.manifest.id,
                 validation.manifest.version,
             )
-            if (
-                existing_version is not None
-                and (
-                    existing_version.descriptor.manifest_hash
-                    != validation.manifest.manifest_hash
-                    or existing_version.descriptor.fingerprint
-                    != validation.descriptor.fingerprint
-                )
+            if existing_version is not None and (
+                existing_version.descriptor.manifest_hash != validation.manifest.manifest_hash
+                or existing_version.descriptor.fingerprint != validation.descriptor.fingerprint
             ):
                 if batch_root.exists():
                     await self._remove_batch_root(batch_root)
@@ -2915,14 +2917,25 @@ class CapabilityPackManager:
                 members, publish_members, validations, candidates, roots, strict=True
             ):
                 expected = int(published.new_binding.get("expected_generation") or 0)
-                await tx.record_version(CapabilityVersionRecord(
-                    validation.descriptor, root, "healthy", candidate.tool_spec_fingerprints,
-                    None, None, None, self.store.now(),
-                ))
+                await tx.record_version(
+                    CapabilityVersionRecord(
+                        validation.descriptor,
+                        root,
+                        "healthy",
+                        candidate.tool_spec_fingerprints,
+                        None,
+                        None,
+                        None,
+                        self.store.now(),
+                    )
+                )
                 binding = await tx.set_binding(
-                    scope="project", scope_key=operation.requested_scope_key or "",
-                    pack_id=member.pack_id, version=member.version,
-                    manifest_hash=member.manifest_hash, expected_generation=expected,
+                    scope="project",
+                    scope_key=operation.requested_scope_key or "",
+                    pack_id=member.pack_id,
+                    version=member.version,
+                    manifest_hash=member.manifest_hash,
+                    expected_generation=expected,
                     owner_key=str(published.new_binding.get("owner_key") or ""),
                     management_policy="user_managed",
                 )
@@ -2931,29 +2944,56 @@ class CapabilityPackManager:
                     """UPDATE capability_operation_members SET committed_version=?,
                        committed_manifest_hash=?,committed_set_stamp=?
                        WHERE operation_id=? AND ordinal=?""",
-                    (member.version,member.manifest_hash,stamp,operation.operation_id,member.ordinal),
+                    (
+                        member.version,
+                        member.manifest_hash,
+                        stamp,
+                        operation.operation_id,
+                        member.ordinal,
+                    ),
                 )
-            registry_revision = int(reconciliation.registry_revision or intent.expected_registry_revision)
+            registry_revision = int(
+                reconciliation.registry_revision or intent.expected_registry_revision
+            )
             receipt_payload = {
-                "schema": "capability-batch-manager-receipt-v1", "operation_id": operation.operation_id,
+                "schema": "capability-batch-manager-receipt-v1",
+                "operation_id": operation.operation_id,
                 "project_scope_key": operation.requested_scope_key or "",
                 "owner_key": str(publish_members[0].new_binding.get("owner_key") or ""),
                 "committed_set_stamp": stamp,
                 "registry_revision": registry_revision,
-                "members": [{"pack_id": m.pack_id,"version": m.version,"manifest_hash": m.manifest_hash,
-                             "content_hash": m.content_hash,"binding_generation": b.generation}
-                            for m,b in zip(members,bindings,strict=True)],
+                "members": [
+                    {
+                        "pack_id": m.pack_id,
+                        "version": m.version,
+                        "manifest_hash": m.manifest_hash,
+                        "content_hash": m.content_hash,
+                        "binding_generation": b.generation,
+                    }
+                    for m, b in zip(members, bindings, strict=True)
+                ],
             }
             receipt_hash = fingerprint_json(receipt_payload)
             if intent.phase == "batch_files_materialized":
                 await tx.advance_publish_intent(intent.intent_id, phase="batch_catalog_swapped")
-                await tx.commit_phase(operation.operation_id, "batch_catalog_swapped",
-                                      evidence={"registry_revision": registry_revision, "recovered": True})
-            await tx.advance_publish_intent(intent.intent_id, phase="batch_committed", status="committed")
-            return await tx.commit_phase(operation.operation_id, "batch_committed", evidence={
-                **receipt_payload, "manager_receipt_hash": receipt_hash,
-                "install_root": str(batch_root), "recovered": True,
-            })
+                await tx.commit_phase(
+                    operation.operation_id,
+                    "batch_catalog_swapped",
+                    evidence={"registry_revision": registry_revision, "recovered": True},
+                )
+            await tx.advance_publish_intent(
+                intent.intent_id, phase="batch_committed", status="committed"
+            )
+            return await tx.commit_phase(
+                operation.operation_id,
+                "batch_committed",
+                evidence={
+                    **receipt_payload,
+                    "manager_receipt_hash": receipt_hash,
+                    "install_root": str(batch_root),
+                    "recovered": True,
+                },
+            )
 
     async def rehydrate_active_bindings(
         self,
@@ -2977,10 +3017,17 @@ class CapabilityPackManager:
                     raise
                 except Exception as error:  # noqa: BLE001 - one pack's fault is that pack's
                     code = str(getattr(error, "code", "") or type(error).__name__)
-                    failures.append(CapabilityRehydrateFailure(record=record, code=code, message=str(error)[:300]))
+                    failures.append(
+                        CapabilityRehydrateFailure(
+                            record=record, code=code, message=str(error)[:300]
+                        )
+                    )
                     logging.getLogger(__name__).error(
                         "capability_rehydrate_skipped pack=%s version=%s code=%s error=%s",
-                        record.descriptor.capability_id, record.descriptor.version, code, str(error)[:300],
+                        record.descriptor.capability_id,
+                        record.descriptor.version,
+                        code,
+                        str(error)[:300],
                     )
                     continue
                 publications.append(publication)
@@ -3011,12 +3058,8 @@ class CapabilityPackManager:
                     pack_id=record.descriptor.capability_id,
                     version=record.descriptor.version,
                     manifest_hash=record.descriptor.manifest_hash,
-                    expected_fingerprints=(
-                        record.expected_tool_fingerprints
-                    ),
-                    replacement_fingerprints=(
-                        candidate.tool_spec_fingerprints
-                    ),
+                    expected_fingerprints=(record.expected_tool_fingerprints),
+                    replacement_fingerprints=(candidate.tool_spec_fingerprints),
                 )
         else:
             candidate = await self.publisher.prepare_installed(

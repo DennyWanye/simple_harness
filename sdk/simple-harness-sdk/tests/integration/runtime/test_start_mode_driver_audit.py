@@ -1,4 +1,5 @@
 """Actual kernel selection, continuous recording, and opaque-driver refusal."""
+
 import asyncio
 
 import pytest
@@ -40,14 +41,23 @@ def test_real_ordinary_driver_recording_uses_actual_selected_implementation(tmp_
     async def case():
         delegate = ReActDriver(clock=lambda: 10.0)
         control = Driver()
-        router = (StartModeDriverRouter(delegate, control) if kind == "sdk"
-                  else OpaqueRouter(delegate) if kind == "opaque"
-                  else CustomRouter(delegate, control))
+        router = (
+            StartModeDriverRouter(delegate, control)
+            if kind == "sdk"
+            else OpaqueRouter(delegate)
+            if kind == "opaque"
+            else CustomRouter(delegate, control)
+        )
         provider = Calls(())
         path = tmp_path / "runtime.db"
         value, uow, database = authorization_runtime(
-            path, authorization=AuthorizationScenario(), physical=PhysicalToolCounter(),
-            owner_id="actual-router", clock=lambda: 10.0, provider=provider, driver=router,
+            path,
+            authorization=AuthorizationScenario(),
+            physical=PhysicalToolCounter(),
+            owner_id="actual-router",
+            clock=lambda: 10.0,
+            provider=provider,
+            driver=router,
         )
         try:
             await start(value)
@@ -55,20 +65,28 @@ def test_real_ordinary_driver_recording_uses_actual_selected_implementation(tmp_
             assert len(provider.requests) == 1
             assert control.calls == 0
             assert snapshot.to_json()["recording_coverage"] == (
-                "verified_current_intervals" if kind == "sdk" else "unverified")
-            assert ("driver_or_uow_recording_unverified" in snapshot.coverage_gaps) == (kind != "sdk")
-            assert any(o.operation_name == "runtime.driver" and o.state == "completed"
-                       for o in snapshot.operations)
+                "verified_current_intervals" if kind == "sdk" else "unverified"
+            )
+            assert ("driver_or_uow_recording_unverified" in snapshot.coverage_gaps) == (
+                kind != "sdk"
+            )
+            assert any(
+                o.operation_name == "runtime.driver" and o.state == "completed"
+                for o in snapshot.operations
+            )
         finally:
             await value.close()
             database.close()
         reopened = Database.open(path)
         try:
-            after = SqliteExecutionUnitOfWork(reopened).read_run_operation_audit(RunId("run-fault"), limit=4096)
+            after = SqliteExecutionUnitOfWork(reopened).read_run_operation_audit(
+                RunId("run-fault"), limit=4096
+            )
             assert after.snapshot_hash == snapshot.snapshot_hash
             assert len(provider.requests) == 1
         finally:
             reopened.close()
+
     asyncio.run(case())
 
 
@@ -93,4 +111,5 @@ def test_real_host_control_selects_custom_driver_without_claiming_react_coverage
         finally:
             await value.close()
             database.close()
+
     asyncio.run(case())

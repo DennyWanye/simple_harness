@@ -58,22 +58,14 @@ def test_voice_pipeline_has_no_private_codifier_worker_or_saved_config() -> None
         target.id
         for node in ast.walk(tree)
         if isinstance(node, (ast.Assign, ast.AnnAssign))
-        for target in (
-            node.targets
-            if isinstance(node, ast.Assign)
-            else (node.target,)
-        )
+        for target in (node.targets if isinstance(node, ast.Assign) else (node.target,))
         if isinstance(target, ast.Name)
     }
     assigned_attributes = {
         target.attr
         for node in ast.walk(tree)
         if isinstance(node, (ast.Assign, ast.AnnAssign))
-        for target in (
-            node.targets
-            if isinstance(node, ast.Assign)
-            else (node.target,)
-        )
+        for target in (node.targets if isinstance(node, ast.Assign) else (node.target,))
         if isinstance(target, ast.Attribute)
     }
     assert {
@@ -95,14 +87,14 @@ def test_removed_authority_names_are_not_reintroduced_as_dynamic_strings() -> No
                 continue
             for token in FORBIDDEN_PRODUCTION_REFERENCES:
                 if token in node.value:
-                    findings.append(
-                        f"{path.relative_to(BACKEND)}:{node.lineno}:{token}"
-                    )
+                    findings.append(f"{path.relative_to(BACKEND)}:{node.lineno}:{token}")
     assert findings == []
 
 
 def test_legacy_writer_modules_are_physically_absent() -> None:
-    assert [str(path.relative_to(BACKEND)) for path in REMOVED_LEGACY_MODULES if path.exists()] == []
+    assert [
+        str(path.relative_to(BACKEND)) for path in REMOVED_LEGACY_MODULES if path.exists()
+    ] == []
 
 
 def test_turn_preparer_has_no_legacy_preference_composition_surface() -> None:
@@ -156,9 +148,7 @@ def test_builder_has_no_optional_dormant_candidate_output_port() -> None:
         if isinstance(node, ast.ClassDef) and node.name == "CapabilityBuilderHost"
     )
     constructor = next(
-        node
-        for node in host.body
-        if isinstance(node, ast.FunctionDef) and node.name == "__init__"
+        node for node in host.body if isinstance(node, ast.FunctionDef) and node.name == "__init__"
     )
     names = {
         argument.arg
@@ -174,8 +164,7 @@ def test_builder_has_no_optional_dormant_candidate_output_port() -> None:
 def test_legacy_codify_config_is_compatibility_only() -> None:
     source = _source(BACKEND / "config.py")
     section = source[
-        source.index("class SkillsCodifyConfig:")
-        : source.index("class ProblemPipelineConfig:")
+        source.index("class SkillsCodifyConfig:") : source.index("class ProblemPipelineConfig:")
     ]
     assert "只读解析旧" in section
     assert "不能重新开启" in section
@@ -185,8 +174,9 @@ def test_legacy_codify_config_is_compatibility_only() -> None:
 def test_completed_cutover_reconciles_process_local_reminder_registry() -> None:
     source = _source(BACKEND / "main.py")
     complete = source[
-        source.index("async def _complete_growth_authority_cutover()")
-        : source.index("async def _initialize_companion_projection_services()")
+        source.index("async def _complete_growth_authority_cutover()") : source.index(
+            "async def _initialize_companion_projection_services()"
+        )
     ]
     assert "GrowthAuthorityPhase.COMPANION" in complete
     assert "companion_reminder_registry_reconciler" in complete
@@ -196,8 +186,9 @@ def test_completed_cutover_reconciles_process_local_reminder_registry() -> None:
 def test_completed_cutover_restores_reminder_specs_before_harness_recovery() -> None:
     source = _source(BACKEND / "main.py")
     initialize = source[
-        source.index("async def _initialize_growth_authority()")
-        : source.index("async def _complete_growth_authority_cutover()")
+        source.index("async def _initialize_growth_authority()") : source.index(
+            "async def _complete_growth_authority_cutover()"
+        )
     ]
     assert 'router.current.phase.value == "companion"' in initialize
     assert "restore_durable_companion_reminder_tools(" in initialize
@@ -206,22 +197,15 @@ def test_completed_cutover_restores_reminder_specs_before_harness_recovery() -> 
 def test_cutover_plan_uses_real_capability_owner_snapshot_without_publish() -> None:
     source = _source(BACKEND / "main.py")
     authority = source[
-        source.index("async def _initialize_growth_authority()")
-        : source.index("async def _complete_growth_authority_cutover()")
+        source.index("async def _initialize_growth_authority()") : source.index(
+            "async def _complete_growth_authority_cutover()"
+        )
     ]
 
     assert "read_capability_owner_cutover_snapshot(" in authority
-    assert (
-        "old_binding_generation=capability_snapshot.binding_generation"
-        in authority
-    )
-    assert (
-        "new_binding_generation=capability_snapshot.binding_generation"
-        in authority
-    )
-    assert authority.count(
-        "capability_snapshot.owner_binding_set_stamp"
-    ) >= 2
+    assert "old_binding_generation=capability_snapshot.binding_generation" in authority
+    assert "new_binding_generation=capability_snapshot.binding_generation" in authority
+    assert authority.count("capability_snapshot.owner_binding_set_stamp") >= 2
     assert '"capability_mutation": "none"' in authority
     assert "old_binding_generation=0" not in authority
     assert "new_binding_generation=0" not in authority
@@ -236,9 +220,9 @@ def test_profile_bind_provisions_owner_inbox_before_identity_broadcast() -> None
         'if msg_type == "companion_profile_bind":',
         len('if msg_type == "companion_profile_bind":'),
     )
-    bind_branch = control[settle : control.index(
-        'elif msg_type == "companion_profile_unbind":', settle
-    )]
+    bind_branch = control[
+        settle : control.index('elif msg_type == "companion_profile_unbind":', settle)
+    ]
     # Since 00b2d0829 (事件 AK) provisioning is bounded inside
     # _settle_companion_bind_projection, which receives the inbox-route
     # provisioner; the routed session id is then folded into the response.
@@ -250,7 +234,6 @@ def test_profile_bind_provisions_owner_inbox_before_identity_broadcast() -> None
 
     assert provision < response < send < broadcast
     assert "_trigger_harness_recovery_after_identity_bind()" in bind_branch
-    assert (
-        bind_branch.index("_companion_identity_gate.freeze()")
-        < bind_branch.index("_trigger_harness_recovery_after_identity_bind()")
+    assert bind_branch.index("_companion_identity_gate.freeze()") < bind_branch.index(
+        "_trigger_harness_recovery_after_identity_bind()"
     )

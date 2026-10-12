@@ -67,9 +67,7 @@ def _proposal(owner, event_id: str) -> StructuredGrowthProposalV1:
         pack_id="personal.daily-summary",
     )
     target_fence = CandidateBindingFenceV1(
-        owner_key=(
-            f"companion:{owner.profile_id}:{owner.profile_generation}"
-        ),
+        owner_key=(f"companion:{owner.profile_id}:{owner.profile_generation}"),
         scope="user",
         scope_key=owner.profile_id,
         pack_id=target.pack_id,
@@ -84,9 +82,7 @@ def _proposal(owner, event_id: str) -> StructuredGrowthProposalV1:
         candidate_mode="genesis",
         target_fence=target_fence,
         hypothesis="A concise summary contract is easier to act on.",
-        structured_diff={
-            "instructions": {"replace": ["use the revised summary contract"]}
-        },
+        structured_diff={"instructions": {"replace": ["use the revised summary contract"]}},
         expected_improvement="The summary follows the accepted contract.",
         risk_hints=("instruction_only",),
         evaluation_plan=({"case_id": "summary-contract"},),
@@ -98,10 +94,7 @@ def _candidate_product(owner, proposal):
     assert proposal.target_fence is not None
     return DeterministicCandidateBuilder().build(
         CandidateSeedInputV1(
-            owner_key=(
-                f"companion:{owner.profile_id}:"
-                f"{owner.profile_generation}"
-            ),
+            owner_key=(f"companion:{owner.profile_id}:{owner.profile_generation}"),
             target=proposal.target,
             candidate_mode="genesis",
             source_fence=None,
@@ -202,10 +195,7 @@ class _ReservedChild:
         if self.state == "succeeded":
             payload["draft_receipt"] = {
                 name: getattr(self.receipt, name)
-                for name in (
-                    CandidateDraftReceiptExpectationV1
-                    .__dataclass_fields__
-                )
+                for name in (CandidateDraftReceiptExpectationV1.__dataclass_fields__)
             }
         return payload
 
@@ -233,10 +223,7 @@ class _CandidateOutput:
         expectation = CandidateDraftReceiptExpectationV1(
             **{
                 name: getattr(receipt, name)
-                for name in (
-                    CandidateDraftReceiptExpectationV1
-                    .__dataclass_fields__
-                )
+                for name in (CandidateDraftReceiptExpectationV1.__dataclass_fields__)
             }
         )
         result = self.service.create_candidate_from_builder_receipt(
@@ -248,9 +235,7 @@ class _CandidateOutput:
         return {
             "build_id": result.build_id,
             "candidate_ref": result.candidate_id,
-            "candidate_hash": (
-                self.product.package.candidate_package_hash
-            ),
+            "candidate_hash": (self.product.package.candidate_package_hash),
         }
 
 
@@ -278,12 +263,8 @@ def _complete_case(
         "case_id": "case-1",
         "variant": variant,
         "attempt_ordinal": int(claim["attempt"]),
-        "candidate_package_hash": (
-            bundle.package.candidate_package_hash
-        ),
-        "candidate_manifest_hash": (
-            bundle.package.candidate_manifest_hash
-        ),
+        "candidate_package_hash": (bundle.package.candidate_package_hash),
+        "candidate_manifest_hash": (bundle.package.candidate_manifest_hash),
         "candidate_archive_hash": bundle.package.archive_hash,
         "suite_hash": "suite-1",
         "permit_mode": permit.mode,
@@ -371,19 +352,11 @@ class _CommittedManagerPlatform:
             ),
         )
 
-    async def start_runtime_instance(
-        self, _authorization, _prepared, _instance
-    ):
-        raise AssertionError(
-            "instruction-only candidate has no runtime instance"
-        )
+    async def start_runtime_instance(self, _authorization, _prepared, _instance):
+        raise AssertionError("instruction-only candidate has no runtime instance")
 
-    async def await_runtime_instance_health(
-        self, _authorization, _prepared, _instance, _start
-    ):
-        raise AssertionError(
-            "instruction-only candidate has no runtime healthcheck"
-        )
+    async def await_runtime_instance_health(self, _authorization, _prepared, _instance, _start):
+        raise AssertionError("instruction-only candidate has no runtime healthcheck")
 
     async def activate_mutation(self, authorization, prepared):
         assert prepared.manager_operation_id == "manager-operation-1"
@@ -404,9 +377,7 @@ class _CommittedManagerPlatform:
             reason_code="manager_committed",
         )
 
-    async def abort_mutation(
-        self, _authorization, _prepared, *, reason_code
-    ):
+    async def abort_mutation(self, _authorization, _prepared, *, reason_code):
         del reason_code
         return True
 
@@ -439,12 +410,15 @@ async def test_growth_public_api_composes_to_activation_receipt(tmp_path):
         dedupe_key="reflection:growth-event-1",
         payload={"event_id": event_id},
     )
-    assert store.claim_job(
-        owner,
-        claim_owner="reflector-1",
-        lease_seconds=60,
-        kinds=("reflection",),
-    ) is not None
+    assert (
+        store.claim_job(
+            owner,
+            claim_owner="reflector-1",
+            lease_seconds=60,
+            kinds=("reflection",),
+        )
+        is not None
+    )
     proposal = _proposal(owner, event_id)
     admitted = store.admit_reflection_decision(
         owner,
@@ -500,12 +474,8 @@ async def test_growth_public_api_composes_to_activation_receipt(tmp_path):
         owner,
         candidate_id=built.candidate_ref,
     )
-    assert bundle.candidate_hash == (
-        bundle.package.candidate_package_hash
-    )
-    assert bundle.receipt.validated_draft_hash == (
-        bundle.package.candidate_content_hash
-    )
+    assert bundle.candidate_hash == (bundle.package.candidate_package_hash)
+    assert bundle.receipt.validated_draft_hash == (bundle.package.candidate_content_hash)
 
     store.admit_evaluation_experiment(
         owner,
@@ -513,12 +483,8 @@ async def test_growth_public_api_composes_to_activation_receipt(tmp_path):
             "evaluation_id": "evaluation-1",
             "candidate_id": built.candidate_ref,
             "candidate_mode": "genesis",
-            "candidate_package_hash": (
-                bundle.package.candidate_package_hash
-            ),
-            "candidate_manifest_hash": (
-                bundle.package.candidate_manifest_hash
-            ),
+            "candidate_package_hash": (bundle.package.candidate_package_hash),
+            "candidate_manifest_hash": (bundle.package.candidate_manifest_hash),
             "candidate_archive_hash": bundle.package.archive_hash,
             "suite_hash": "suite-1",
             "attempt_key": "evaluation-attempt-1",
@@ -605,9 +571,7 @@ async def test_growth_public_api_composes_to_activation_receipt(tmp_path):
         owner,
         report_id="evaluation-report-1",
         evaluation_id="evaluation-1",
-        candidate_package_hash=(
-            bundle.package.candidate_package_hash
-        ),
+        candidate_package_hash=(bundle.package.candidate_package_hash),
         dataset_hash="dataset-1",
         suite_hash="suite-1",
         required_cases=(
@@ -646,9 +610,7 @@ async def test_growth_public_api_composes_to_activation_receipt(tmp_path):
         report_id="evaluation-report-1",
         risk_id="risk-1",
         actor="system",
-        activation_package_hash=(
-            bundle.package.candidate_package_hash
-        ),
+        activation_package_hash=(bundle.package.candidate_package_hash),
         activation_code_digest=None,
         activation_risk_ack="none",
         reason_code="low_risk_auto_activation",

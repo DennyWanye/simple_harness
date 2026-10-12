@@ -10,6 +10,7 @@ _sql_latest_task_snapshot / _sql_build_reinject_msg），既供闭包复用也�
   不改 _msgs（字节级 BC）。本测以 helper 行为 + 模拟闭包门控验证两条路径。
 - ON + 发生过压缩（L1 有任务态快照）+ 用户困惑措辞 → 注入任务态 system 消息。
 """
+
 from __future__ import annotations
 
 from main import (
@@ -21,7 +22,13 @@ from main import (
 
 # ─────────── 纯 helper 单测 ───────────
 def test_confused_phrasing_detection():
-    for hit in ["你还记得刚才说的吗", "之前说的那个", "你忘了我要什么", "我们在弄啥来着", "回到上一个任务"]:
+    for hit in [
+        "你还记得刚才说的吗",
+        "之前说的那个",
+        "你忘了我要什么",
+        "我们在弄啥来着",
+        "回到上一个任务",
+    ]:
         assert _sql_user_is_confused(hit) is True, hit
     for miss in ["帮我生成一份 PPT", "今天天气怎么样", ""]:
         assert _sql_user_is_confused(miss) is False, miss
@@ -54,7 +61,9 @@ def test_reinject_msg_shape():
 
 
 # ─────────── 闭包门控行为（OFF=不注入 / ON=注入）───────────
-def _simulate_loop(*, flag_on: bool, user_text: str, entries: list[dict], msgs: list[dict]) -> list[dict]:
+def _simulate_loop(
+    *, flag_on: bool, user_text: str, entries: list[dict], msgs: list[dict]
+) -> list[dict]:
     """复刻 main.py _run_chat 中 1B-4 段的门控 + 注入（_is_sentinel=False）。"""
     out = list(msgs)
     if flag_on and _sql_user_is_confused(user_text):
@@ -86,7 +95,9 @@ def test_on_detects_and_reinjects():
         {"role": "system", "content": "persona"},
         {"role": "user", "content": "我们刚才在弄啥来着"},
     ]
-    entries = [{"text": "[任务态快照/task-state] 目标: 做小学教育 PPT; 最近请求: 改第3页", "salience": 0.6}]
+    entries = [
+        {"text": "[任务态快照/task-state] 目标: 做小学教育 PPT; 最近请求: 改第3页", "salience": 0.6}
+    ]
     out = _simulate_loop(flag_on=True, user_text="我们刚才在弄啥来着", entries=entries, msgs=base)
     reinjected = [m for m in out if m.get("_is_summary_reinject")]
     assert len(reinjected) == 1

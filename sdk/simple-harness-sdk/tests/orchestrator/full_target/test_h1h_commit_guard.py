@@ -36,11 +36,16 @@ def _quick(monkeypatch):
 
 
 def _committed_revisions(loop, mission_id: str) -> list[int]:
-    return [event.payload["plan_revision"] for event in loop.store.list_events(mission_id)
-            if event.type == "PlanRevisionCommitted"]
+    return [
+        event.payload["plan_revision"]
+        for event in loop.store.list_events(mission_id)
+        if event.type == "PlanRevisionCommitted"
+    ]
 
 
-def test_o08_an_approval_landing_between_preview_and_commit_makes_the_plan_change_stale(tmp_path) -> None:
+def test_o08_an_approval_landing_between_preview_and_commit_makes_the_plan_change_stale(
+    tmp_path,
+) -> None:
     async def case() -> None:
         async with publishing_round(tmp_path, key="h1h-o08") as round_:
             dispatch, approved = round_.dispatch, {}
@@ -62,14 +67,22 @@ def test_o08_an_approval_landing_between_preview_and_commit_makes_the_plan_chang
                 dispatch.preview_plan_proposal = original  # type: ignore[method-assign]
             assert approved["request_state"] == "GRANTED", approved
             assert row["status"] == "COMMIT_REJECTED", row
+
             # 被拒的改计划没有留下任何东西：没有新计划、没有新派发、没有预留被放掉。人批准的那次发布
             # 是另一件事（它的交接与它那条预留照常发生），所以这两样不在这里比。
             def without_the_publish(facts):  # type: ignore[no-untyped-def]
-                return {**{k: v for k, v in facts.items() if k != "external_handoffs"},
-                        "reservations": [row for row in facts["reservations"]
-                                         if not row[0].startswith("reservation-action:")]}
+                return {
+                    **{k: v for k, v in facts.items() if k != "external_handoffs"},
+                    "reservations": [
+                        row
+                        for row in facts["reservations"]
+                        if not row[0].startswith("reservation-action:")
+                    ],
+                }
 
-            assert without_the_publish(safety_facts(round_.loop.store, round_.mission_id)) == without_the_publish(before)
+            assert without_the_publish(
+                safety_facts(round_.loop.store, round_.mission_id)
+            ) == without_the_publish(before)
             assert "TASKGRAPH_PLAN_SOURCE_CHANGED" in json.dumps(row["detail"]), row
             assert round_.plan_revision() == 1
             assert _committed_revisions(round_.loop, round_.mission_id) == [1]
@@ -78,7 +91,8 @@ def test_o08_an_approval_landing_between_preview_and_commit_makes_the_plan_chang
 
 
 def test_o03_an_unknown_publish_outcome_holds_the_plan_change_back_without_a_revision(
-        tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Mission-wide UNKNOWN stays authoritative: a plan change never commits on its own while the
     publish outcome is unknown, and the outcome is only ever settled by asking the publisher.
 
@@ -102,16 +116,22 @@ def test_o03_an_unknown_publish_outcome_holds_the_plan_change_back_without_a_rev
     async def case() -> None:
         async with publishing_round(tmp_path, key="h1h-o03", unknown_outcome=True) as round_:
             store = round_.loop.store
-            assert any(event.type == "GoalResolutionCommitted" and event.payload.get("is_mission_root")
-                       for event in store.list_events(round_.mission_id)), "根结论先于效果形成（§7.2）"
+            assert any(
+                event.type == "GoalResolutionCommitted" and event.payload.get("is_mission_root")
+                for event in store.list_events(round_.mission_id)
+            ), "根结论先于效果形成（§7.2）"
             assert round_.plan_revision() == 1
             assert _committed_revisions(round_.loop, round_.mission_id) == [1]
             assert round_.action_states() == ["UNKNOWN"]
             await run_rounds(round_, rounds=5)
-            assert _committed_revisions(round_.loop, round_.mission_id) == [1]  # 结果不明期间不编修订
+            assert _committed_revisions(round_.loop, round_.mission_id) == [
+                1
+            ]  # 结果不明期间不编修订
             down["on"] = False
             [action] = store.list_actions(round_.mission_id)
-            await round_.loop._actions.reconcile_one(str(action["action_key"]), allow_rehandoff=False)
+            await round_.loop._actions.reconcile_one(
+                str(action["action_key"]), allow_rehandoff=False
+            )
             await run_rounds(round_, rounds=5)
             assert round_.decision()["status"] == "REJECTED"
             assert _committed_revisions(round_.loop, round_.mission_id) == [1]  # 对账之后也没有修订
@@ -131,14 +151,22 @@ def test_preview_read_set_identity_mismatch_refuses_before_writes(
         lambda command, principal, kwargs: (
             command,
             principal,
-            {**kwargs, "admission": dataclasses.replace(
-                kwargs["admission"], preview_read_set_hash="0" * 64)},
+            {
+                **kwargs,
+                "admission": dataclasses.replace(
+                    kwargs["admission"], preview_read_set_hash="0" * 64
+                ),
+            },
         ),
         "PREVIEW_IDENTITY_STALE",
     )
 
     async def case() -> None:
-        async with reviewed(tmp_path, key="h1h-preview-read-set") as ((loop, mission, _world, _root, dispatch, _product), opener, _provider):
+        async with reviewed(tmp_path, key="h1h-preview-read-set") as (
+            (loop, mission, _world, _root, dispatch, _product),
+            opener,
+            _provider,
+        ):
             await loop._collect_plan_decision(
                 opener, object(), mission, plan_reply(opener.config["planning_package"]), dispatch
             )
@@ -235,8 +263,7 @@ def _setup(world, *, command=None):
                 "delta": command.delta.to_json(),
                 "network": _source_snapshot_payload(command.network),
             }
-        )
-        .encode("utf-8")
+        ).encode("utf-8")
     ).hexdigest()
     admission = PlanningCommitAdmission(
         request_id=request.request_id,
@@ -258,7 +285,8 @@ def _plan_revision_count(world) -> int:
 
 
 def test_o03b_a_plan_change_touching_an_unknown_publish_waits_for_reconciliation_then_is_handed_back(
-        tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """终审判不通过时根职责还开着，规划器换掉发布操作的生产者（写文件那一步）。
 
     执行图收敛先问发布服务这次发布到底有没有发生（RECONCILE_OPERATION）：服务答不上来就一直等，
@@ -279,11 +307,18 @@ def test_o03b_a_plan_change_touching_an_unknown_publish_waits_for_reconciliation
     monkeypatch.setattr(reconciliation.FilePublishReconciliationAdapter, "observe", unreachable)
 
     def events(round_, kind: str) -> list[dict]:  # type: ignore[no-untyped-def]
-        return [event.payload for event in round_.loop.store.list_events(round_.mission_id) if event.type == kind]
+        return [
+            event.payload
+            for event in round_.loop.store.list_events(round_.mission_id)
+            if event.type == kind
+        ]
 
     def held_reservations(round_) -> list[tuple]:  # type: ignore[no-untyped-def]
-        return [row for row in safety_facts(round_.loop.store, round_.mission_id)["reservations"]
-                if row[0].startswith("reservation-action:")]
+        return [
+            row
+            for row in safety_facts(round_.loop.store, round_.mission_id)["reservations"]
+            if row[0].startswith("reservation-action:")
+        ]
 
     async def rounds(round_, n: int) -> None:  # type: ignore[no-untyped-def]
         for _ in range(n):
@@ -294,11 +329,17 @@ def test_o03b_a_plan_change_touching_an_unknown_publish_waits_for_reconciliation
     async def case() -> None:
         async with refused_final_round(tmp_path, key="h1h-o03b") as round_:
             store = round_.loop.store
-            assert not any(item.get("is_mission_root") for item in events(round_, "GoalResolutionCommitted"))
-            assert [action["state"] for action in store.list_actions(round_.mission_id)] == ["UNKNOWN"]
+            assert not any(
+                item.get("is_mission_root") for item in events(round_, "GoalResolutionCommitted")
+            )
+            assert [action["state"] for action in store.list_actions(round_.mission_id)] == [
+                "UNKNOWN"
+            ]
             [first] = round_.repairs()
             assert first["status"] == "COMPILED", first
-            assert [item["kind"] for item in events(round_, "TaskGraphConvergenceCommandRequested")] == ["RECONCILE_OPERATION"]
+            assert [
+                item["kind"] for item in events(round_, "TaskGraphConvergenceCommandRequested")
+            ] == ["RECONCILE_OPERATION"]
             assert events(round_, "TaskGraphConvergenceAdvanced")[-1]["to_state"] == "WAITING"
             assert _committed_revisions(round_.loop, round_.mission_id) == [1]
             held = held_reservations(round_)
@@ -312,8 +353,12 @@ def test_o03b_a_plan_change_touching_an_unknown_publish_waits_for_reconciliation
 
             down["on"] = False
             [action] = store.list_actions(round_.mission_id)
-            await round_.loop._actions.reconcile_one(str(action["action_key"]), allow_rehandoff=False)
-            assert [item["outcome"] for item in events(round_, "ActionScopedReconciled")] == ["NOT_APPLIED_FINAL"]
+            await round_.loop._actions.reconcile_one(
+                str(action["action_key"]), allow_rehandoff=False
+            )
+            assert [item["outcome"] for item in events(round_, "ActionScopedReconciled")] == [
+                "NOT_APPLIED_FINAL"
+            ]
             await rounds(round_, 10)
 
             first = round_.repairs()[0]
@@ -331,6 +376,8 @@ def test_o03b_a_plan_change_touching_an_unknown_publish_waits_for_reconciliation
             assert events(round_, "PlanningRepairAddressed")
             # 原动作保留原身份，没有被再交出一次（K10：替代动作不重复执行原发布）
             assert store.list_actions(round_.mission_id)[0]["action_key"] == action["action_key"]
-            assert [item["action_key"] for item in events(round_, "ActionHandedOff")].count(action["action_key"]) == 1
+            assert [item["action_key"] for item in events(round_, "ActionHandedOff")].count(
+                action["action_key"]
+            ) == 1
 
     asyncio.run(case())

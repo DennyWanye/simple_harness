@@ -36,7 +36,9 @@ def _service(store: _Store) -> OrchestrationService:
 
 
 def test_list_counts_planning_authorization_and_blocking_questions(monkeypatch):
-    monkeypatch.setattr(selection, "awaits_authority", lambda _store, intent: intent.intent_id == "i-auth")
+    monkeypatch.setattr(
+        selection, "awaits_authority", lambda _store, intent: intent.intent_id == "i-auth"
+    )
 
     class _Decisions:
         def __init__(self, _store) -> None: ...

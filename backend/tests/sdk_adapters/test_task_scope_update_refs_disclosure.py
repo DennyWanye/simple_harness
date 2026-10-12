@@ -33,7 +33,9 @@ from simple_harness.tools.contracts import CancellationToken
 from tests.sdk_adapters import s5b_closure_harness as ch
 
 # T17 的 18 KiB 逐字目标（A6-5 唯一杠杆：> README 16384 且 > STATUS 12288，< value 上限 32768）。
-GOAL_TEXT = "".join(f"条款 {index:04d}：把秋分参考资料逐字保留，不概括、不省略。\n" for index in range(320))
+GOAL_TEXT = "".join(
+    f"条款 {index:04d}：把秋分参考资料逐字保留，不概括、不省略。\n" for index in range(320)
+)
 
 # 第 9 次尝试里模型真实猜过的形状：记忆 id、内容哈希、call id、run id、前缀形式。
 GUESSED_REFS = [
@@ -70,7 +72,9 @@ async def _incident_env(tmp_path: Path):  # type: ignore[no-untyped-def]
 
     env = await ch.bound_run(tmp_path, RUN)
     assert ch.scope_evidence_ids(env.db_path) == [], "现场前提：scope 上还没有任何已链接证据"
-    service = TaskScopeUpdateService(env.db_path, tool_context_getter=lambda: None, route_ledger=None)
+    service = TaskScopeUpdateService(
+        env.db_path, tool_context_getter=lambda: None, route_ledger=None
+    )
     return env, service
 
 
@@ -100,7 +104,9 @@ async def test_refs_outside_scope_discloses_admissible_ids_and_next_step(tmp_pat
     assert set(detail["refs"]) <= set(GUESSED_REFS) and len(detail["refs"]) <= 8
     # 新口径：可引用 id + 可执行下一步。
     [(turn_evidence_id,)] = ch.rows(
-        env.db_path, "SELECT evidence_id FROM foreground_turns WHERE subject=? ORDER BY enqueue_sequence DESC LIMIT 1", ch.SUBJECT
+        env.db_path,
+        "SELECT evidence_id FROM foreground_turns WHERE subject=? ORDER BY enqueue_sequence DESC LIMIT 1",
+        ch.SUBJECT,
     )
     assert detail["allowed_evidence_refs"] == [turn_evidence_id]
     assert detail["current_turn_evidence_ref"] == turn_evidence_id
@@ -110,10 +116,14 @@ async def test_refs_outside_scope_discloses_admissible_ids_and_next_step(tmp_pat
     # 「你永远不用发 content_hash」这句指引里，值本身不出现）。
     rendered = json.dumps(detail, ensure_ascii=False)
     [(turn_hash,)] = ch.rows(
-        env.db_path, "SELECT evidence_hash FROM foreground_turns WHERE evidence_id=?", turn_evidence_id
+        env.db_path,
+        "SELECT evidence_hash FROM foreground_turns WHERE evidence_id=?",
+        turn_evidence_id,
     )
     assert turn_hash not in rendered
-    for (envelope_hash,) in ch.rows(env.db_path, "SELECT envelope_sha256 FROM human_memory_evidence"):
+    for (envelope_hash,) in ch.rows(
+        env.db_path, "SELECT envelope_sha256 FROM human_memory_evidence"
+    ):
         assert envelope_hash not in rendered
 
 
@@ -154,7 +164,9 @@ async def test_gate_stays_fail_closed_when_only_some_refs_are_admissible(tmp_pat
         await _apply(service, env, _goal_arguments(GUESSED_REFS, key="mixed-1"))
     disclosed = list(first.value.detail["allowed_evidence_refs"])
     with pytest.raises(ClosureRejected) as mixed:
-        await _apply(service, env, _goal_arguments([*disclosed, "evidence:not-in-scope"], key="mixed-2"))
+        await _apply(
+            service, env, _goal_arguments([*disclosed, "evidence:not-in-scope"], key="mixed-2")
+        )
     assert mixed.value.code == "task_scope_update_refs_outside_scope"
     assert mixed.value.detail["refs"] == ["evidence:not-in-scope"]
     assert ch.head(env.db_path)[0] == 1, "被拒绝的载荷不得推进 revision"
@@ -203,7 +215,9 @@ async def test_tool_path_audits_every_rejection_and_escalates_after_bound(tmp_pa
 
     messages = []
     for attempt in range(1, tsm._REFS_ESCALATION_AFTER + 2):
-        result = await service.handle_task_scope_update(_goal_arguments(GUESSED_REFS, key=f"tool-{attempt}"))
+        result = await service.handle_task_scope_update(
+            _goal_arguments(GUESSED_REFS, key=f"tool-{attempt}")
+        )
         assert result.error_code == "task_scope_update_refs_outside_scope"
         messages.append(result.public_message)
 
@@ -218,7 +232,10 @@ async def test_tool_path_audits_every_rejection_and_escalates_after_bound(tmp_pa
         assert "escalation" not in message
         assert "allowed_evidence_refs" in message and "next_step" in message
     assert "escalation" in messages[-1]
-    assert tsm._REFS_OUTSIDE_SCOPE_ESCALATION.format(count=tsm._REFS_ESCALATION_AFTER + 1) in messages[-1]
+    assert (
+        tsm._REFS_OUTSIDE_SCOPE_ESCALATION.format(count=tsm._REFS_ESCALATION_AFTER + 1)
+        in messages[-1]
+    )
 
 
 @pytest.mark.asyncio

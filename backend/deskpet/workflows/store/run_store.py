@@ -135,7 +135,16 @@ class WorkflowRunStore:
                 """INSERT INTO workflow_start_requests(
                     request_key,session_id,request_id,turn_id,workflow_name,capability_hash,run_id,created_at
                 ) VALUES(?,?,?,?,?,?,?,?)""",
-                (request_key, session_id, request_id, turn_id, workflow_name, capability_hash, new_run_id, now),
+                (
+                    request_key,
+                    session_id,
+                    request_id,
+                    turn_id,
+                    workflow_name,
+                    capability_hash,
+                    new_run_id,
+                    now,
+                ),
             )
             await db.commit()
             return new_run_id, True
@@ -193,7 +202,10 @@ class WorkflowRunStore:
                     )
                 ).fetchone()
                 if existing is not None:
-                    if str(existing["session_id"]) != session_id or int(existing["session_epoch"]) != epoch:
+                    if (
+                        str(existing["session_id"]) != session_id
+                        or int(existing["session_epoch"]) != epoch
+                    ):
                         await db.rollback()
                         raise WorkflowContractError(
                             f"workflow session reference conflict: {run_id}:{kind}"
@@ -277,7 +289,9 @@ class WorkflowRunStore:
         await self.initialize()
         db = await self._connect()
         try:
-            row = await (await db.execute("SELECT * FROM workflow_runs WHERE run_id=?", (run_id,))).fetchone()
+            row = await (
+                await db.execute("SELECT * FROM workflow_runs WHERE run_id=?", (run_id,))
+            ).fetchone()
             return dict(row) if row else None
         finally:
             await db.close()
@@ -450,8 +464,15 @@ class WorkflowRunStore:
                 "invalid_start_snapshot", "workflow start identity or payload is invalid"
             )
         required_identity = {
-            "venue", "base_session_id", "code_session_id", "delivery_session_id",
-            "base_epoch", "code_epoch", "request_id", "turn_id", "workflow_name",
+            "venue",
+            "base_session_id",
+            "code_session_id",
+            "delivery_session_id",
+            "base_epoch",
+            "code_epoch",
+            "request_id",
+            "turn_id",
+            "workflow_name",
             "logical_slot",
         }
         if set(identity) != required_identity:
@@ -495,7 +516,16 @@ class WorkflowRunStore:
                 ON CONFLICT(node_execution_id) DO UPDATE SET
                     latest_attempt=MAX(latest_attempt,excluded.latest_attempt),
                     latest_status='running',task_id=excluded.task_id,updated_at=excluded.updated_at""",
-                (execution_id, run_id, node_id, checkpoint_id, invocation_key, task_id, attempt, now),
+                (
+                    execution_id,
+                    run_id,
+                    node_id,
+                    checkpoint_id,
+                    invocation_key,
+                    task_id,
+                    attempt,
+                    now,
+                ),
             )
             await db.execute(
                 """INSERT INTO workflow_node_attempts(
@@ -559,12 +589,16 @@ class WorkflowRunStore:
         finally:
             await db.close()
 
-    async def list_runs(self, *, session_id: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
+    async def list_runs(
+        self, *, session_id: str | None = None, limit: int = 100
+    ) -> list[dict[str, Any]]:
         await self.initialize()
         db = await self._connect()
         try:
             if session_id is None:
-                cursor = await db.execute("SELECT * FROM workflow_runs ORDER BY created_at DESC LIMIT ?", (limit,))
+                cursor = await db.execute(
+                    "SELECT * FROM workflow_runs ORDER BY created_at DESC LIMIT ?", (limit,)
+                )
             else:
                 cursor = await db.execute(
                     "SELECT * FROM workflow_runs WHERE session_id=? ORDER BY created_at DESC LIMIT ?",
@@ -619,7 +653,9 @@ class WorkflowRunStore:
                 await db.execute("SELECT * FROM workflow_runs WHERE run_id=?", (source_run_id,))
             ).fetchone()
             if source is None:
-                raise ForkPreparationError("fork_source_not_found", "source workflow run was not found")
+                raise ForkPreparationError(
+                    "fork_source_not_found", "source workflow run was not found"
+                )
             if int(source["run_version"]) != expected_version:
                 raise ForkPreparationError(
                     "fork_source_version_conflict",
@@ -851,9 +887,7 @@ class WorkflowRunStore:
             if execution is not None:
                 if self._execution_adapter is None:
                     await db.rollback()
-                    raise StaleRunFence(
-                        f"generic workflow execution requires an adapter: {run_id}"
-                    )
+                    raise StaleRunFence(f"generic workflow execution requires an adapter: {run_id}")
                 synchronized = await self._execution_adapter.mark_running_on_claim(
                     db,
                     run_id=run_id,
@@ -861,9 +895,7 @@ class WorkflowRunStore:
                 )
                 if synchronized is not True:
                     await db.rollback()
-                    raise StaleRunFence(
-                        f"generic workflow execution cannot be claimed: {run_id}"
-                    )
+                    raise StaleRunFence(f"generic workflow execution cannot be claimed: {run_id}")
             await db.commit()
             return RunFence(run_id, owner, int(row["lease_epoch"]), int(row["run_version"]))
         except BaseException:
@@ -880,7 +912,15 @@ class WorkflowRunStore:
             cursor = await db.execute(
                 """UPDATE workflow_runs SET lease_expires_at=?,heartbeat_at=?,updated_at=?
                 WHERE run_id=? AND lease_owner=? AND lease_epoch=? AND run_version=? AND status='running'""",
-                (now + ttl_seconds, now, now, fence.run_id, fence.owner, fence.lease_epoch, fence.run_version),
+                (
+                    now + ttl_seconds,
+                    now,
+                    now,
+                    fence.run_id,
+                    fence.owner,
+                    fence.lease_epoch,
+                    fence.run_version,
+                ),
             )
             if cursor.rowcount != 1:
                 await db.rollback()
@@ -962,7 +1002,14 @@ class WorkflowRunStore:
                 (event_id, stable_key, fence.run_id, seq, event_type, _json(payload), now),
             )
             await db.commit()
-            return {"event_id": event_id, "event_key": stable_key, "run_id": fence.run_id, "seq": seq, "event_type": event_type, "payload": payload}
+            return {
+                "event_id": event_id,
+                "event_key": stable_key,
+                "run_id": fence.run_id,
+                "seq": seq,
+                "event_type": event_type,
+                "payload": payload,
+            }
         except BaseException:
             if db.in_transaction:
                 await db.rollback()

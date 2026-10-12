@@ -1105,9 +1105,7 @@ class RecallPageConfirmationMemberBindingV1:
         return {"ordinal": self.ordinal, "item_id": self.item_id, "item_hash": self.item_hash}
 
     @classmethod
-    def from_json(
-        cls, value: Mapping[str, object]
-    ) -> RecallPageConfirmationMemberBindingV1:
+    def from_json(cls, value: Mapping[str, object]) -> RecallPageConfirmationMemberBindingV1:
         _exact_keys(
             value,
             {"ordinal", "item_id", "item_hash"},
@@ -1135,8 +1133,7 @@ class RecallPageConfirmationGroupBindingV1:
             raise TypeError("group must use RecallConfirmationGroupV4")
         _digest(self.result_group_hash, "result_group_hash")
         if not isinstance(self.member_bindings, (tuple, list)) or not all(
-            isinstance(item, RecallPageConfirmationMemberBindingV1)
-            for item in self.member_bindings
+            isinstance(item, RecallPageConfirmationMemberBindingV1) for item in self.member_bindings
         ):
             raise TypeError("member_bindings must contain typed confirmation members")
         members = tuple(self.member_bindings)
@@ -1168,9 +1165,7 @@ class RecallPageConfirmationGroupBindingV1:
         }
 
     @classmethod
-    def from_json(
-        cls, value: Mapping[str, object]
-    ) -> RecallPageConfirmationGroupBindingV1:
+    def from_json(cls, value: Mapping[str, object]) -> RecallPageConfirmationGroupBindingV1:
         _exact_keys(
             value,
             {
@@ -1192,9 +1187,7 @@ class RecallPageConfirmationGroupBindingV1:
         )
 
 
-RecallResultPageBindingV1 = (
-    RecallPageSelectedItemBindingV1 | RecallPageConfirmationGroupBindingV1
-)
+RecallResultPageBindingV1 = RecallPageSelectedItemBindingV1 | RecallPageConfirmationGroupBindingV1
 
 
 def _page_binding_from_json(value: Mapping[str, object]) -> RecallResultPageBindingV1:
@@ -1294,8 +1287,7 @@ class RecallResultPageV1:
             _positive_int(value["page_ordinal"], "page_ordinal"),
             _non_negative_int(value["item_offset"], "item_offset"),
             tuple(
-                _page_binding_from_json(item)
-                for item in _objects(value["bindings"], "bindings")
+                _page_binding_from_json(item) for item in _objects(value["bindings"], "bindings")
             ),
             _non_negative_int(value["byte_count"], "byte_count"),
             complete,
@@ -1878,7 +1870,9 @@ class ContextFragmentV2:
             _identifier(value["subject"], "subject"),
             ContextFragmentType(value["fragment_type"]),  # type: ignore[arg-type]
             _identifier(value["source_ref"], "source_ref", max_length=1024),
-            None if value["source_revision"] is None else _positive_int(value["source_revision"], "source_revision"),
+            None
+            if value["source_revision"] is None
+            else _positive_int(value["source_revision"], "source_revision"),
             _payload(value["public_payload"], "public_payload"),
             _digest(value["public_payload_hash"], "public_payload_hash"),
             _non_negative_int(value["token_estimate"], "token_estimate"),

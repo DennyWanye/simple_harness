@@ -100,9 +100,7 @@ class MemoryMutationValidationReasonCode(StrEnum):
 
 
 class _MemoryMutationAdmissionError(ValueError):
-    def __init__(
-        self, reason_code: MemoryMutationValidationReasonCode, message: str
-    ) -> None:
+    def __init__(self, reason_code: MemoryMutationValidationReasonCode, message: str) -> None:
         super().__init__(message)
         self.reason_code = reason_code
 
@@ -318,12 +316,10 @@ class LegacyContextAssemblyDecisionV1:
         ):
             _identifier(value, name)
         selected = tuple(
-            _identifier(item, "selected_fragment_ref")
-            for item in self.selected_fragment_refs
+            _identifier(item, "selected_fragment_ref") for item in self.selected_fragment_refs
         )
         omitted = tuple(
-            _identifier(item, "omitted_fragment_ref")
-            for item in self.omitted_fragment_refs
+            _identifier(item, "omitted_fragment_ref") for item in self.omitted_fragment_refs
         )
         snapshots = tuple(
             _identifier(item, "snapshot_ref", max_length=1024) for item in self.snapshot_refs
@@ -423,9 +419,7 @@ class LegacyContextAssemblyDecisionV1:
             selected_fragment_refs=_strings(
                 value["selected_fragment_refs"], "selected_fragment_refs"
             ),
-            omitted_fragment_refs=_strings(
-                value["omitted_fragment_refs"], "omitted_fragment_refs"
-            ),
+            omitted_fragment_refs=_strings(value["omitted_fragment_refs"], "omitted_fragment_refs"),
             snapshot_refs=_strings(value["snapshot_refs"], "snapshot_refs"),
             budget=ContextAssemblyBudget.from_json(_object(value["budget"], "budget")),
             selected_token_estimate=estimates["selected_token_estimate"],
@@ -439,9 +433,7 @@ class LegacyContextAssemblyDecisionV1:
                 for item in _strings(value["reason_codes"], "reason_codes")
             ),
             idempotency_key=_identifier(value["idempotency_key"], "idempotency_key"),
-            schema_version=_schema_version(
-                value["schema_version"], "ContextAssemblyDecision"
-            ),
+            schema_version=_schema_version(value["schema_version"], "ContextAssemblyDecision"),
         )
 
 
@@ -522,9 +514,7 @@ class RecallConfirmationItem:
             "RecallConfirmationItem",
         )
         return cls(
-            conflict_group_ref=_identifier(
-                value["conflict_group_ref"], "conflict_group_ref"
-            ),
+            conflict_group_ref=_identifier(value["conflict_group_ref"], "conflict_group_ref"),
             memory_type=LongTermMemoryType(value["memory_type"]),  # type: ignore[arg-type]
             memory_ref=_identifier(value["memory_ref"], "memory_ref"),
         )
@@ -880,9 +870,7 @@ def _validate_recall_selector_consistency(
     domain_set = set(domains)
     for domain, present in constraints.items():
         if (domain in domain_set) != present:
-            raise ValueError(
-                f"{name} selector domain {domain.value} and constraint differ"
-            )
+            raise ValueError(f"{name} selector domain {domain.value} and constraint differ")
 
 
 def _trusted_current_time(value: object) -> float:
@@ -928,13 +916,9 @@ def _bounded_identifiers(
     max_items: int = 128,
     max_length: int = 1024,
 ) -> tuple[str, ...]:
-    if not isinstance(value, (tuple, list)) or not all(
-        isinstance(item, str) for item in value
-    ):
+    if not isinstance(value, (tuple, list)) or not all(isinstance(item, str) for item in value):
         raise TypeError(f"{name} must contain strings")
-    result = tuple(
-        _identifier(item, f"{name} item", max_length=max_length) for item in value
-    )
+    result = tuple(_identifier(item, f"{name} item", max_length=max_length) for item in value)
     if len(result) > max_items:
         raise ValueError(f"{name} exceeds the item limit")
     if len(set(result)) != len(result):
@@ -992,9 +976,7 @@ def _optional_timestamp(value: object, name: str) -> float | None:
     return parsed
 
 
-def _validate_time_window(
-    earliest: float | None, latest: float | None, *, name: str
-) -> None:
+def _validate_time_window(earliest: float | None, latest: float | None, *, name: str) -> None:
     if earliest is not None and latest is not None and earliest > latest:
         raise ValueError(f"{name} time range is inverted")
 
@@ -1042,9 +1024,7 @@ class RecallContext:
         if expires_at is None:
             raise ValueError("expires_at is required")
         _bounded_text(self.query, "query", max_bytes=16_384)
-        active_scope = _optional_identifier(
-            self.active_task_scope_id, "active_task_scope_id"
-        )
+        active_scope = _optional_identifier(self.active_task_scope_id, "active_task_scope_id")
         types = cast(
             tuple[LongTermMemoryType, ...],
             _bounded_enum_tuple(
@@ -1074,9 +1054,7 @@ class RecallContext:
                 required=True,
             ),
         )
-        scopes = _bounded_identifiers(
-            self.allowed_task_scope_ids, "allowed_task_scope_ids"
-        )
+        scopes = _bounded_identifiers(self.allowed_task_scope_ids, "allowed_task_scope_ids")
         entities = _bounded_tuple(
             self.allowed_entity_constraints,
             "allowed_entity_constraints",
@@ -1085,26 +1063,16 @@ class RecallContext:
         )
         if active_scope is not None and active_scope not in scopes:
             raise ValueError("active_task_scope_id must be in allowed_task_scope_ids")
-        if self.short_horizon_allowed != (
-            RecallSelectorDomain.SHORT_HORIZON in domains
-        ):
-            raise ValueError(
-                "short_horizon_allowed and SHORT_HORIZON selector authority differ"
-            )
-        earliest = _optional_timestamp(
-            self.earliest_occurred_at, "earliest_occurred_at"
-        )
+        if self.short_horizon_allowed != (RecallSelectorDomain.SHORT_HORIZON in domains):
+            raise ValueError("short_horizon_allowed and SHORT_HORIZON selector authority differ")
+        earliest = _optional_timestamp(self.earliest_occurred_at, "earliest_occurred_at")
         latest = _optional_timestamp(self.latest_occurred_at, "latest_occurred_at")
         _validate_time_window(earliest, latest, name="RecallContext")
-        events = _bounded_identifiers(
-            self.event_constraint_refs, "event_constraint_refs"
-        )
+        events = _bounded_identifiers(self.event_constraint_refs, "event_constraint_refs")
         environments = _bounded_identifiers(
             self.environment_constraint_refs, "environment_constraint_refs"
         )
-        phases = _bounded_identifiers(
-            self.task_phase_authority_refs, "task_phase_authority_refs"
-        )
+        phases = _bounded_identifiers(self.task_phase_authority_refs, "task_phase_authority_refs")
         procedure_applicability = _bounded_digests(
             self.procedure_applicability_fingerprints,
             "procedure_applicability_fingerprints",
@@ -1176,9 +1144,7 @@ class RecallContext:
             "event_constraint_refs": list(self.event_constraint_refs),
             "environment_constraint_refs": list(self.environment_constraint_refs),
             "task_phase_authority_refs": list(self.task_phase_authority_refs),
-            "procedure_applicability_fingerprints": list(
-                self.procedure_applicability_fingerprints
-            ),
+            "procedure_applicability_fingerprints": list(self.procedure_applicability_fingerprints),
             "disclosure_context": self.disclosure_context.to_json(),
             "evidence_refs": [item.to_json() for item in self.evidence_refs],
             "budget": self.budget.to_json(),
@@ -1187,15 +1153,29 @@ class RecallContext:
     @classmethod
     def from_json(cls, value: Mapping[str, object]) -> RecallContext:
         expected = {
-            "schema_version", "run_id", "subject", "turn_id", "context_revision",
-            "expires_at", "query", "active_task_scope_id", "available_memory_types",
-            "short_horizon_allowed", "allowed_selector_domains",
-            "allowed_retrieval_modes", "allowed_task_scope_ids",
-            "allowed_entity_constraints", "earliest_occurred_at",
-            "latest_occurred_at", "event_constraint_refs",
-            "environment_constraint_refs", "task_phase_authority_refs",
+            "schema_version",
+            "run_id",
+            "subject",
+            "turn_id",
+            "context_revision",
+            "expires_at",
+            "query",
+            "active_task_scope_id",
+            "available_memory_types",
+            "short_horizon_allowed",
+            "allowed_selector_domains",
+            "allowed_retrieval_modes",
+            "allowed_task_scope_ids",
+            "allowed_entity_constraints",
+            "earliest_occurred_at",
+            "latest_occurred_at",
+            "event_constraint_refs",
+            "environment_constraint_refs",
+            "task_phase_authority_refs",
             "procedure_applicability_fingerprints",
-            "disclosure_context", "evidence_refs", "budget",
+            "disclosure_context",
+            "evidence_refs",
+            "budget",
         }
         _exact_keys(value, expected, "RecallContext")
         short_horizon = value["short_horizon_allowed"]
@@ -1236,9 +1216,7 @@ class RecallContext:
             latest_occurred_at=_optional_timestamp(
                 value["latest_occurred_at"], "latest_occurred_at"
             ),
-            event_constraint_refs=_strings(
-                value["event_constraint_refs"], "event_constraint_refs"
-            ),
+            event_constraint_refs=_strings(value["event_constraint_refs"], "event_constraint_refs"),
             environment_constraint_refs=_strings(
                 value["environment_constraint_refs"], "environment_constraint_refs"
             ),
@@ -1254,9 +1232,7 @@ class RecallContext:
             ),
             evidence_refs=_refs_from_json(value["evidence_refs"]),
             budget=RecallBudget.from_json(_object(value["budget"], "budget")),
-            schema_version=_cognitive_schema_version(
-                value["schema_version"], "RecallContext"
-            ),
+            schema_version=_cognitive_schema_version(value["schema_version"], "RecallContext"),
         )
 
 
@@ -1291,8 +1267,10 @@ class RecallPlan:
         if self.schema_version != COGNITIVE_MEMORY_SCHEMA_VERSION:
             raise ValueError("unsupported RecallPlan schema_version")
         for value, name in (
-            (self.plan_id, "plan_id"), (self.run_id, "run_id"),
-            (self.subject, "subject"), (self.idempotency_key, "idempotency_key"),
+            (self.plan_id, "plan_id"),
+            (self.run_id, "run_id"),
+            (self.subject, "subject"),
+            (self.idempotency_key, "idempotency_key"),
         ):
             _identifier(value, name)
         _digest(self.context_hash, "context_hash")
@@ -1337,18 +1315,14 @@ class RecallPlan:
             max_items=128,
             max_item_bytes=512,
         )
-        earliest = _optional_timestamp(
-            self.earliest_occurred_at, "earliest_occurred_at"
-        )
+        earliest = _optional_timestamp(self.earliest_occurred_at, "earliest_occurred_at")
         latest = _optional_timestamp(self.latest_occurred_at, "latest_occurred_at")
         _validate_time_window(earliest, latest, name="RecallPlan")
         events = _bounded_identifiers(self.event_constraint_refs, "event_constraint_refs")
         environments = _bounded_identifiers(
             self.environment_constraint_refs, "environment_constraint_refs"
         )
-        phases = _bounded_identifiers(
-            self.task_phase_authority_refs, "task_phase_authority_refs"
-        )
+        phases = _bounded_identifiers(self.task_phase_authority_refs, "task_phase_authority_refs")
         _validate_recall_selector_consistency(
             domains,
             memory_types=memory_types,
@@ -1396,9 +1370,7 @@ class RecallPlan:
             self, "plan_hash", _domain_hash("simple-harness/recall-plan/v2", self.to_json())
         )
 
-    def validate_narrowing(
-        self, context: RecallContext, *, current_time: float
-    ) -> None:
+    def validate_narrowing(self, context: RecallContext, *, current_time: float) -> None:
         """Fail closed unless every model-controlled selector narrows Host authority."""
 
         if not isinstance(context, RecallContext):
@@ -1449,20 +1421,13 @@ class RecallPlan:
             raise ValueError("RecallPlan removes a mandatory Host selector domain")
         if self.include_short_horizon and not context.short_horizon_allowed:
             raise ValueError("RecallPlan expands short-horizon authority")
-        if (
-            context.earliest_occurred_at is not None
-            and (
-                self.earliest_occurred_at is None
-                or self.earliest_occurred_at < context.earliest_occurred_at
-            )
+        if context.earliest_occurred_at is not None and (
+            self.earliest_occurred_at is None
+            or self.earliest_occurred_at < context.earliest_occurred_at
         ):
             raise ValueError("RecallPlan expands earliest time")
-        if (
-            context.latest_occurred_at is not None
-            and (
-                self.latest_occurred_at is None
-                or self.latest_occurred_at > context.latest_occurred_at
-            )
+        if context.latest_occurred_at is not None and (
+            self.latest_occurred_at is None or self.latest_occurred_at > context.latest_occurred_at
         ):
             raise ValueError("RecallPlan expands latest time")
         for name in ("max_items", "max_bytes", "max_tokens", "deadline_ms"):
@@ -1471,9 +1436,10 @@ class RecallPlan:
         if self.disclosure_context.to_json() != context.disclosure_context.to_json():
             raise ValueError("RecallPlan disclosure_context must exactly bind Host authority")
         allowed_evidence = {fingerprint_json(item.to_json()) for item in context.evidence_refs}
-        if not {
-            fingerprint_json(item.to_json()) for item in self.evidence_refs
-        } <= allowed_evidence:
+        if (
+            not {fingerprint_json(item.to_json()) for item in self.evidence_refs}
+            <= allowed_evidence
+        ):
             raise ValueError("RecallPlan evidence_refs expand Host evidence")
 
     def unsupported_capabilities(self) -> tuple[str, ...]:
@@ -1520,13 +1486,28 @@ class RecallPlan:
     @classmethod
     def from_json(cls, value: Mapping[str, object]) -> RecallPlan:
         expected = {
-            "schema_version", "plan_id", "run_id", "subject", "context_hash",
-            "context_revision", "query", "requested_memory_types",
-            "include_short_horizon", "selector_domains", "retrieval_modes",
-            "task_scope_ids", "entity_constraints", "earliest_occurred_at",
-            "latest_occurred_at", "event_constraint_refs",
-            "environment_constraint_refs", "task_phase_authority_refs",
-            "disclosure_context", "evidence_refs", "budget", "idempotency_key",
+            "schema_version",
+            "plan_id",
+            "run_id",
+            "subject",
+            "context_hash",
+            "context_revision",
+            "query",
+            "requested_memory_types",
+            "include_short_horizon",
+            "selector_domains",
+            "retrieval_modes",
+            "task_scope_ids",
+            "entity_constraints",
+            "earliest_occurred_at",
+            "latest_occurred_at",
+            "event_constraint_refs",
+            "environment_constraint_refs",
+            "task_phase_authority_refs",
+            "disclosure_context",
+            "evidence_refs",
+            "budget",
+            "idempotency_key",
             "reason_codes",
         }
         _exact_keys(value, expected, "RecallPlan")
@@ -1561,9 +1542,7 @@ class RecallPlan:
             latest_occurred_at=_optional_timestamp(
                 value["latest_occurred_at"], "latest_occurred_at"
             ),
-            event_constraint_refs=_strings(
-                value["event_constraint_refs"], "event_constraint_refs"
-            ),
+            event_constraint_refs=_strings(value["event_constraint_refs"], "event_constraint_refs"),
             environment_constraint_refs=_strings(
                 value["environment_constraint_refs"], "environment_constraint_refs"
             ),
@@ -1577,8 +1556,7 @@ class RecallPlan:
             budget=RecallBudget.from_json(_object(value["budget"], "budget")),
             idempotency_key=_identifier(value["idempotency_key"], "idempotency_key"),
             reason_codes=tuple(
-                RecallReasonCode(item)
-                for item in _strings(value["reason_codes"], "reason_codes")
+                RecallReasonCode(item) for item in _strings(value["reason_codes"], "reason_codes")
             ),
             schema_version=_cognitive_schema_version(value["schema_version"], "RecallPlan"),
         )
@@ -1610,8 +1588,10 @@ class LegacyRecallDecisionV3:
         if self.schema_version != RECALL_DECISION_SCHEMA_VERSION:
             raise ValueError("unsupported RecallDecision schema_version")
         for value, name in (
-            (self.decision_id, "decision_id"), (self.run_id, "run_id"),
-            (self.subject, "subject"), (self.plan_id, "plan_id"),
+            (self.decision_id, "decision_id"),
+            (self.run_id, "run_id"),
+            (self.subject, "subject"),
+            (self.plan_id, "plan_id"),
         ):
             _identifier(value, name)
         _digest(self.context_hash, "context_hash")
@@ -1626,16 +1606,11 @@ class LegacyRecallDecisionV3:
                 LongTermMemoryType,
             ),
         )
-        selected = _bounded_identifiers(
-            self.selected_memory_refs, "selected_memory_refs"
-        )
+        selected = _bounded_identifiers(self.selected_memory_refs, "selected_memory_refs")
         if not isinstance(self.confirmation_items, (tuple, list)) or not all(
-            isinstance(item, RecallConfirmationItem)
-            for item in self.confirmation_items
+            isinstance(item, RecallConfirmationItem) for item in self.confirmation_items
         ):
-            raise TypeError(
-                "confirmation_items must contain RecallConfirmationItem values"
-            )
+            raise TypeError("confirmation_items must contain RecallConfirmationItem values")
         confirmation = tuple(
             sorted(
                 self.confirmation_items,
@@ -1653,14 +1628,14 @@ class LegacyRecallDecisionV3:
             raise ValueError("confirmation memory_ref values must be globally unique")
         group_counts: dict[str, int] = {}
         for item in confirmation:
-            group_counts[item.conflict_group_ref] = (
-                group_counts.get(item.conflict_group_ref, 0) + 1
-            )
+            group_counts[item.conflict_group_ref] = group_counts.get(item.conflict_group_ref, 0) + 1
         if any(count < 2 for count in group_counts.values()):
             raise ValueError("each confirmation conflict group requires at least two items")
-        if isinstance(self.filtered_candidate_count, bool) or not isinstance(
-            self.filtered_candidate_count, int
-        ) or self.filtered_candidate_count < 0:
+        if (
+            isinstance(self.filtered_candidate_count, bool)
+            or not isinstance(self.filtered_candidate_count, int)
+            or self.filtered_candidate_count < 0
+        ):
             raise ValueError("filtered_candidate_count must be a non-negative integer")
         stage = RecallCandidateCountStage(self.candidate_count_stage)
         if stage is not RecallCandidateCountStage.AFTER_ALL_ELIGIBILITY_GATES:
@@ -1675,25 +1650,23 @@ class LegacyRecallDecisionV3:
             if not types:
                 raise ValueError("recall outcome requires selected memory types")
             if len(types) > len(selected):
-                raise ValueError(
-                    "selected memory types exceed selected memory references"
-                )
+                raise ValueError("selected memory types exceed selected memory references")
             if confirmation:
                 raise ValueError("recall outcome cannot require confirmation")
         elif self.outcome is RecallDecisionOutcome.NEEDS_USER_CONFIRMATION:
             if not confirmation:
-                raise ValueError(
-                    "needs-user-confirmation outcome requires confirmation items"
-                )
+                raise ValueError("needs-user-confirmation outcome requires confirmation items")
         elif confirmation:
             raise ValueError("outcome cannot include confirmation items")
-        if self.outcome in {
-            RecallDecisionOutcome.NO_RECALL,
-            RecallDecisionOutcome.REJECTED,
-        } and self.filtered_candidate_count != 0:
-            raise ValueError(
-                "no-recall and rejected outcomes cannot disclose candidate counts"
-            )
+        if (
+            self.outcome
+            in {
+                RecallDecisionOutcome.NO_RECALL,
+                RecallDecisionOutcome.REJECTED,
+            }
+            and self.filtered_candidate_count != 0
+        ):
+            raise ValueError("no-recall and rejected outcomes cannot disclose candidate counts")
         if not isinstance(self.disclosure_context, DisclosureContext):
             raise TypeError("disclosure_context must use DisclosureContext")
         if self.disclosure_context.run_id != self.run_id:
@@ -1720,17 +1693,11 @@ class LegacyRecallDecisionV3:
             if not reason_set <= _RECALL_DEPENDENCY_REASONS:
                 raise ValueError("recall outcome requires only dependency reasons")
         elif self.outcome is RecallDecisionOutcome.NEEDS_USER_CONFIRMATION:
-            allowed = _RECALL_DEPENDENCY_REASONS | {
-                RecallReasonCode.NEEDS_USER_CONFIRMATION
-            }
+            allowed = _RECALL_DEPENDENCY_REASONS | {RecallReasonCode.NEEDS_USER_CONFIRMATION}
             if RecallReasonCode.NEEDS_USER_CONFIRMATION not in reason_set:
-                raise ValueError(
-                    "needs-user-confirmation outcome requires confirmation reason"
-                )
+                raise ValueError("needs-user-confirmation outcome requires confirmation reason")
             if not reason_set <= allowed:
-                raise ValueError(
-                    "needs-user-confirmation outcome has an incompatible reason"
-                )
+                raise ValueError("needs-user-confirmation outcome has an incompatible reason")
         elif self.outcome is RecallDecisionOutcome.NO_RECALL:
             if not reason_set <= _NO_RECALL_REASONS:
                 raise ValueError("no-recall outcome has an incompatible reason")
@@ -1770,25 +1737,17 @@ class LegacyRecallDecisionV3:
             raise ValueError("RecallDecision plan binding differs")
         if not set(self.selected_memory_types) <= set(plan.requested_memory_types):
             raise ValueError("RecallDecision selects an unrequested memory type")
-        if not {
-            item.memory_type for item in self.confirmation_items
-        } <= set(plan.requested_memory_types):
+        if not {item.memory_type for item in self.confirmation_items} <= set(
+            plan.requested_memory_types
+        ):
             raise ValueError("RecallDecision confirms an unrequested memory type")
-        if set(self.selected_memory_refs) & {
-            item.memory_ref for item in self.confirmation_items
-        }:
+        if set(self.selected_memory_refs) & {item.memory_ref for item in self.confirmation_items}:
             raise ValueError("RecallDecision selected and confirmation refs overlap")
         if self.disclosure_context.to_json() != plan.disclosure_context.to_json():
             raise ValueError("RecallDecision disclosure differs from RecallPlan")
-        plan_evidence = {
-            fingerprint_json(item.to_json()) for item in plan.evidence_refs
-        }
-        context_evidence = {
-            fingerprint_json(item.to_json()) for item in context.evidence_refs
-        }
-        decision_evidence = {
-            fingerprint_json(item.to_json()) for item in self.evidence_refs
-        }
+        plan_evidence = {fingerprint_json(item.to_json()) for item in plan.evidence_refs}
+        context_evidence = {fingerprint_json(item.to_json()) for item in context.evidence_refs}
+        decision_evidence = {fingerprint_json(item.to_json()) for item in self.evidence_refs}
         if decision_evidence != plan_evidence or not decision_evidence <= context_evidence:
             raise ValueError("RecallDecision evidence_refs do not bind Plan/Context")
         if self.outcome in {
@@ -1827,12 +1786,24 @@ class LegacyRecallDecisionV3:
                 value["schema_version"], "RecallDecision"
             )
         expected = {
-            "schema_version", "decision_id", "run_id", "subject", "context_hash",
-            "context_revision", "plan_id", "plan_hash", "outcome",
-            "selected_memory_types", "selected_memory_refs", "confirmation_items",
+            "schema_version",
+            "decision_id",
+            "run_id",
+            "subject",
+            "context_hash",
+            "context_revision",
+            "plan_id",
+            "plan_hash",
+            "outcome",
+            "selected_memory_types",
+            "selected_memory_refs",
+            "confirmation_items",
             "filtered_candidate_count",
-            "candidate_count_stage", "disclosure_context", "evidence_refs",
-            "reason_codes", "decided_at",
+            "candidate_count_stage",
+            "disclosure_context",
+            "evidence_refs",
+            "reason_codes",
+            "decided_at",
         }
         _exact_keys(value, expected, "RecallDecision")
         count = value["filtered_candidate_count"]
@@ -1851,9 +1822,7 @@ class LegacyRecallDecisionV3:
                 LongTermMemoryType(item)
                 for item in _strings(value["selected_memory_types"], "selected_memory_types")
             ),
-            selected_memory_refs=_strings(
-                value["selected_memory_refs"], "selected_memory_refs"
-            ),
+            selected_memory_refs=_strings(value["selected_memory_refs"], "selected_memory_refs"),
             confirmation_items=tuple(
                 RecallConfirmationItem.from_json(item)
                 for item in _objects(value["confirmation_items"], "confirmation_items")
@@ -1865,8 +1834,7 @@ class LegacyRecallDecisionV3:
             ),
             evidence_refs=_refs_from_json(value["evidence_refs"]),
             reason_codes=tuple(
-                RecallReasonCode(item)
-                for item in _strings(value["reason_codes"], "reason_codes")
+                RecallReasonCode(item) for item in _strings(value["reason_codes"], "reason_codes")
             ),
             decided_at=cast(float, _optional_timestamp(value["decided_at"], "decided_at")),
             schema_version=cast(int, schema_version),
@@ -1911,9 +1879,7 @@ class ExistingMemoryTarget:
 
     @classmethod
     def from_json(cls, value: Mapping[str, object]) -> ExistingMemoryTarget:
-        _exact_keys(
-            value, {"target_kind", "memory_id", "revision"}, "ExistingMemoryTarget"
-        )
+        _exact_keys(value, {"target_kind", "memory_id", "revision"}, "ExistingMemoryTarget")
         if value["target_kind"] != "existing_memory":
             raise ValueError("ExistingMemoryTarget discriminator differs")
         return cls(
@@ -1937,9 +1903,7 @@ class CreatedByOperationTarget:
 
     @classmethod
     def from_json(cls, value: Mapping[str, object]) -> CreatedByOperationTarget:
-        _exact_keys(
-            value, {"target_kind", "operation_id"}, "CreatedByOperationTarget"
-        )
+        _exact_keys(value, {"target_kind", "operation_id"}, "CreatedByOperationTarget")
         if value["target_kind"] != "created_by_operation":
             raise ValueError("CreatedByOperationTarget discriminator differs")
         return cls(_identifier(value["operation_id"], "operation_id"))
@@ -2060,13 +2024,9 @@ def _bounded_tuple(
     max_item_bytes: int = 2048,
     required: bool = False,
 ) -> tuple[str, ...]:
-    if not isinstance(value, (tuple, list)) or not all(
-        isinstance(item, str) for item in value
-    ):
+    if not isinstance(value, (tuple, list)) or not all(isinstance(item, str) for item in value):
         raise TypeError(f"{name} must contain strings")
-    result = tuple(
-        _bounded_text(item, f"{name} item", max_bytes=max_item_bytes) for item in value
-    )
+    result = tuple(_bounded_text(item, f"{name} item", max_bytes=max_item_bytes) for item in value)
     if required and not result:
         raise ValueError(f"{name} must be non-empty")
     if len(result) > max_items:
@@ -2087,9 +2047,7 @@ class ValidTimeInterval:
             (self.valid_until, "valid_until"),
         ):
             if value is not None and (
-                isinstance(value, bool)
-                or not isinstance(value, (int, float))
-                or float(value) < 0
+                isinstance(value, bool) or not isinstance(value, (int, float)) or float(value) < 0
             ):
                 raise ValueError(f"{name} must be a non-negative timestamp or null")
         if (
@@ -2141,9 +2099,7 @@ class EpisodeMemoryPayload:
             raise ValueError("occurred_start is required")
         object.__setattr__(self, "occurred_start", interval.valid_from)
         object.__setattr__(self, "occurred_end", interval.valid_until)
-        object.__setattr__(
-            self, "thread_ref", _optional_identifier(self.thread_ref, "thread_ref")
-        )
+        object.__setattr__(self, "thread_ref", _optional_identifier(self.thread_ref, "thread_ref"))
 
     def to_json(self) -> dict[str, JsonValue]:
         return {
@@ -2164,8 +2120,16 @@ class EpisodeMemoryPayload:
         _exact_keys(
             value,
             {
-                "memory_type", "title", "participants", "goals", "actions",
-                "results", "impacts", "occurred_start", "occurred_end", "thread_ref",
+                "memory_type",
+                "title",
+                "participants",
+                "goals",
+                "actions",
+                "results",
+                "impacts",
+                "occurred_start",
+                "occurred_end",
+                "thread_ref",
             },
             "EpisodeMemoryPayload",
         )
@@ -2196,9 +2160,7 @@ class SemanticMemoryPayload:
     predicate: str
     object_value: JsonValue
     qualifiers: tuple[str, ...]
-    semantic_kind: SemanticMemoryKind = field(
-        init=False, default=SemanticMemoryKind.CLAIM
-    )
+    semantic_kind: SemanticMemoryKind = field(init=False, default=SemanticMemoryKind.CLAIM)
     object_value_hash: str = field(init=False)
 
     def __post_init__(self) -> None:
@@ -2229,8 +2191,13 @@ class SemanticMemoryPayload:
         _exact_keys(
             value,
             {
-                "memory_type", "semantic_kind", "subject_entity", "predicate", "object_value",
-                "object_value_hash", "qualifiers",
+                "memory_type",
+                "semantic_kind",
+                "subject_entity",
+                "predicate",
+                "object_value",
+                "object_value_hash",
+                "qualifiers",
             },
             "SemanticMemoryPayload",
         )
@@ -2258,9 +2225,7 @@ class SemanticRelationMemoryPayload:
     relation_kind: SemanticRelationKind
     source_endpoint: SemanticRelationEndpoint
     target_endpoint: SemanticRelationEndpoint
-    semantic_kind: SemanticMemoryKind = field(
-        init=False, default=SemanticMemoryKind.RELATION
-    )
+    semantic_kind: SemanticMemoryKind = field(init=False, default=SemanticMemoryKind.RELATION)
 
     def __post_init__(self) -> None:
         try:
@@ -2275,9 +2240,7 @@ class SemanticRelationMemoryPayload:
             (self.source_endpoint, "source_endpoint"),
             (self.target_endpoint, "target_endpoint"),
         ):
-            if not isinstance(
-                endpoint, (ExistingMemoryTarget, CreatedByOperationTarget)
-            ):
+            if not isinstance(endpoint, (ExistingMemoryTarget, CreatedByOperationTarget)):
                 raise TypeError(f"{name} must use an exact semantic relation endpoint")
         same_existing_memory = (
             isinstance(self.source_endpoint, ExistingMemoryTarget)
@@ -2300,9 +2263,7 @@ class SemanticRelationMemoryPayload:
         }
 
     @classmethod
-    def from_json(
-        cls, value: Mapping[str, object]
-    ) -> SemanticRelationMemoryPayload:
+    def from_json(cls, value: Mapping[str, object]) -> SemanticRelationMemoryPayload:
         _exact_keys(
             value,
             {
@@ -2395,9 +2356,7 @@ class ProspectiveTimeTrigger:
 
     @classmethod
     def from_json(cls, value: Mapping[str, object]) -> ProspectiveTimeTrigger:
-        _exact_keys(
-            value, {"trigger_kind", "trigger_at", "timezone"}, "ProspectiveTimeTrigger"
-        )
+        _exact_keys(value, {"trigger_kind", "trigger_at", "timezone"}, "ProspectiveTimeTrigger")
         if value["trigger_kind"] != ProspectiveTriggerKind.TIME.value:
             raise ValueError("ProspectiveTimeTrigger discriminator differs")
         return cls(
@@ -2437,9 +2396,7 @@ class ProspectiveEventTrigger:
         if value["trigger_kind"] != ProspectiveTriggerKind.EVENT.value:
             raise ValueError("ProspectiveEventTrigger discriminator differs")
         return cls(
-            _identifier(
-                value["event_authority_ref"], "event_authority_ref", max_length=1024
-            ),
+            _identifier(value["event_authority_ref"], "event_authority_ref", max_length=1024),
             _bounded_text(value["condition"], "condition", max_bytes=4096),
             _digest(value["condition_hash"], "condition_hash"),
         )
@@ -2640,10 +2597,14 @@ def _validate_epistemic_evidence_matrix(
         raise ValueError("observed_behavior requires trusted Tool or Runtime evidence")
     if epistemic is EpistemicStatus.LLM_INFERENCE and not model_inference:
         raise ValueError("llm_inference requires model inference evidence")
-    if verification in {
-        VerificationState.SOURCE_VERIFIED,
-        VerificationState.REPEATED_OBSERVATION,
-    } and not trusted_typed:
+    if (
+        verification
+        in {
+            VerificationState.SOURCE_VERIFIED,
+            VerificationState.REPEATED_OBSERVATION,
+        }
+        and not trusted_typed
+    ):
         raise ValueError("verified states require trusted typed observation evidence")
 
 
@@ -2679,9 +2640,7 @@ class MemoryMutationOperation:
             if self.target is not None or self.payload is None:
                 raise ValueError("create requires payload and a null target")
         else:
-            if not isinstance(
-                self.target, (ExistingMemoryTarget, CreatedByOperationTarget)
-            ):
+            if not isinstance(self.target, (ExistingMemoryTarget, CreatedByOperationTarget)):
                 raise ValueError("existing-memory mutation requires a strict target")
             if kind is not MemoryMutationKind.SUPPRESS and self.payload is None:
                 raise ValueError("non-suppress mutation requires a typed payload")
@@ -2698,9 +2657,7 @@ class MemoryMutationOperation:
                 raise ValueError("created_by_operation target must be an explicit dependency")
         lifecycle_type = _LIFECYCLE_TYPES[memory_type]
         if not isinstance(self.lifecycle_state, lifecycle_type):
-            raise ValueError(
-                f"lifecycle_state is invalid for {memory_type.value} memory"
-            )
+            raise ValueError(f"lifecycle_state is invalid for {memory_type.value} memory")
         lifecycle = self.lifecycle_state
         epistemic = EpistemicStatus(self.epistemic_status)
         conflict = ConflictStatus(self.conflict_status)
@@ -2709,9 +2666,7 @@ class MemoryMutationOperation:
             if conflict is not ConflictStatus.CONTESTED:
                 raise ValueError("contest requires contested conflict_status")
             if lifecycle in _CONTEST_DESTRUCTIVE_LIFECYCLES:
-                raise ValueError(
-                    "contest cannot propose a destructive terminal lifecycle"
-                )
+                raise ValueError("contest cannot propose a destructive terminal lifecycle")
         if not isinstance(self.valid_time_interval, ValidTimeInterval):
             raise TypeError("valid_time_interval must use ValidTimeInterval")
         privacy = PrivacyClass(self.proposed_privacy_class)
@@ -2750,9 +2705,7 @@ class MemoryMutationOperation:
             if type(self.action_authority_ref) is not MemoryActionAuthorityRef:
                 raise TypeError("action_authority_ref must use MemoryActionAuthorityRef")
             if not protected_action:
-                raise ValueError(
-                    "action_authority_ref is only valid for revise/supersede/suppress"
-                )
+                raise ValueError("action_authority_ref is only valid for revise/supersede/suppress")
         object.__setattr__(self, "kind", kind)
         object.__setattr__(self, "memory_type", memory_type)
         object.__setattr__(self, "depends_on_operation_ids", dependencies)
@@ -2795,9 +2748,7 @@ class MemoryMutationOperation:
             "reason_code": self.reason_code,
         }
 
-    def effective_privacy_class(
-        self, *trusted_floors: PrivacyClass
-    ) -> PrivacyClass:
+    def effective_privacy_class(self, *trusted_floors: PrivacyClass) -> PrivacyClass:
         """Join the model proposal with every trusted policy/evidence/record floor."""
 
         floors = tuple(PrivacyClass(item) for item in trusted_floors)
@@ -2814,14 +2765,11 @@ class MemoryMutationOperation:
         """Union proposal attributes with all trusted policy/evidence/record labels."""
 
         trusted = {
-            InformationAttribute(item)
-            for values in trusted_attribute_sets
-            for item in values
+            InformationAttribute(item) for values in trusted_attribute_sets for item in values
         }
         return tuple(
             sorted(
-                set(self.proposed_information_attributes)
-                | trusted,
+                set(self.proposed_information_attributes) | trusted,
                 key=lambda item: item.value,
             )
         )
@@ -2830,20 +2778,29 @@ class MemoryMutationOperation:
         value = self._intent_json()
         value["operation_intent_hash"] = self.operation_intent_hash
         value["action_authority_ref"] = (
-            None
-            if self.action_authority_ref is None
-            else self.action_authority_ref.to_json()
+            None if self.action_authority_ref is None else self.action_authority_ref.to_json()
         )
         return value
 
     @classmethod
     def from_json(cls, value: Mapping[str, object]) -> MemoryMutationOperation:
         expected = {
-            "operation_id", "kind", "memory_type", "payload", "target",
-            "depends_on_operation_ids", "lifecycle_state", "epistemic_status",
-            "conflict_status", "verification_state", "valid_time_interval",
-            "proposed_privacy_class", "proposed_information_attributes",
-            "evidence_spans", "reason_code", "operation_intent_hash",
+            "operation_id",
+            "kind",
+            "memory_type",
+            "payload",
+            "target",
+            "depends_on_operation_ids",
+            "lifecycle_state",
+            "epistemic_status",
+            "conflict_status",
+            "verification_state",
+            "valid_time_interval",
+            "proposed_privacy_class",
+            "proposed_information_attributes",
+            "evidence_spans",
+            "reason_code",
+            "operation_intent_hash",
             "action_authority_ref",
         }
         _exact_keys(value, expected, "MemoryMutationOperation")
@@ -2976,13 +2933,9 @@ class MemoryMutationPlan:
             if isinstance(operation.target, CreatedByOperationTarget):
                 producer = by_id[operation.target.operation_id]
                 if producer.kind is not MemoryMutationKind.CREATE:
-                    raise ValueError(
-                        "created_by_operation producer must be a create operation"
-                    )
+                    raise ValueError("created_by_operation producer must be a create operation")
                 if producer.memory_type is not operation.memory_type:
-                    raise ValueError(
-                        "created_by_operation producer must have the same memory_type"
-                    )
+                    raise ValueError("created_by_operation producer must have the same memory_type")
             if isinstance(operation.payload, SemanticRelationMemoryPayload):
                 relation = operation.payload
                 for endpoint, role in (
@@ -3033,9 +2986,7 @@ class MemoryMutationPlan:
                 MemoryMutationValidationReasonCode.EVIDENCE_REF_REQUIRED,
                 "MemoryMutationPlan requires evidence_refs",
             )
-        evidence_coverage = {
-            (item.evidence_id, item.content_hash) for item in evidence_refs
-        }
+        evidence_coverage = {(item.evidence_id, item.content_hash) for item in evidence_refs}
         for operation in operations:
             for span in operation.evidence_spans:
                 if (span.evidence_id, span.envelope_hash) not in evidence_coverage:
@@ -3090,9 +3041,7 @@ class MemoryMutationPlan:
             target_memory_id=operation.target.memory_id,
             target_revision=operation.target.revision,
             evidence_refs=self.evidence_refs,
-            evidence_span_hashes=tuple(
-                span.span_hash for span in operation.evidence_spans
-            ),
+            evidence_span_hashes=tuple(span.span_hash for span in operation.evidence_spans),
             run_id=self.run_id,
             turn_id=self.turn_id,
             plan_id=self.plan_id,
@@ -3116,9 +3065,7 @@ class MemoryMutationPlan:
             remaining[item.operation_id] = dependencies
         ordered: list[MemoryMutationOperation] = []
         while remaining:
-            ready = sorted(
-                operation_id for operation_id, deps in remaining.items() if not deps
-            )
+            ready = sorted(operation_id for operation_id, deps in remaining.items() if not deps)
             if not ready:
                 raise ValueError("operation dependency graph contains a cycle")
             for operation_id in ready:
@@ -3205,17 +3152,13 @@ class MemoryMutationPlan:
                 value["schema_version"], "MemoryMutationPlan"
             ),
         )
-        if plan.plan_intent_hash != _digest(
-            value["plan_intent_hash"], "plan_intent_hash"
-        ):
+        if plan.plan_intent_hash != _digest(value["plan_intent_hash"], "plan_intent_hash"):
             raise ValueError("plan_intent_hash does not bind mutation plan intent")
         return plan
 
 
 _MEMORY_MUTATION_VALIDATION_MESSAGES = {
-    MemoryMutationValidationReasonCode.INVALID_WIRE: (
-        "Memory mutation plan wire is invalid."
-    ),
+    MemoryMutationValidationReasonCode.INVALID_WIRE: ("Memory mutation plan wire is invalid."),
     MemoryMutationValidationReasonCode.UNSUPPORTED_SCHEMA_VERSION: (
         "Memory mutation plan schema version is unsupported."
     ),
@@ -3260,9 +3203,7 @@ class MemoryMutationValidationDiagnostic:
 
     def __post_init__(self) -> None:
         if self.schema_version != MEMORY_MUTATION_VALIDATION_DIAGNOSTIC_SCHEMA_VERSION:
-            raise ValueError(
-                "unsupported MemoryMutationValidationDiagnostic schema_version"
-            )
+            raise ValueError("unsupported MemoryMutationValidationDiagnostic schema_version")
         reason_code = MemoryMutationValidationReasonCode(self.reason_code)
         object.__setattr__(self, "reason_code", reason_code)
         object.__setattr__(
@@ -3279,9 +3220,7 @@ class MemoryMutationValidationDiagnostic:
         }
 
     @classmethod
-    def from_json(
-        cls, value: Mapping[str, object]
-    ) -> MemoryMutationValidationDiagnostic:
+    def from_json(cls, value: Mapping[str, object]) -> MemoryMutationValidationDiagnostic:
         _exact_keys(
             value,
             {"schema_version", "reason_code", "message"},
@@ -3289,17 +3228,13 @@ class MemoryMutationValidationDiagnostic:
         )
         schema_version = value["schema_version"]
         if isinstance(schema_version, bool) or not isinstance(schema_version, int):
-            raise TypeError(
-                "MemoryMutationValidationDiagnostic schema_version must be an integer"
-            )
+            raise TypeError("MemoryMutationValidationDiagnostic schema_version must be an integer")
         diagnostic = cls(
             reason_code=MemoryMutationValidationReasonCode(value["reason_code"]),  # type: ignore[arg-type]
             schema_version=schema_version,
         )
         if value["message"] != diagnostic.message:
-            raise ValueError(
-                "MemoryMutationValidationDiagnostic message differs from reason_code"
-            )
+            raise ValueError("MemoryMutationValidationDiagnostic message differs from reason_code")
         return diagnostic
 
 
@@ -3347,9 +3282,7 @@ class MemoryMutationApplyReceiptRef:
         }
 
     @classmethod
-    def from_json(
-        cls, value: Mapping[str, object]
-    ) -> MemoryMutationApplyReceiptRef:
+    def from_json(cls, value: Mapping[str, object]) -> MemoryMutationApplyReceiptRef:
         _exact_keys(
             value,
             {"receipt_id", "receipt_hash"},
@@ -3593,9 +3526,7 @@ class MemoryMutationApplyResult:
             receipt_ref=(
                 None
                 if receipt_value is None
-                else MemoryMutationApplyReceiptRef.from_json(
-                    _object(receipt_value, "receipt_ref")
-                )
+                else MemoryMutationApplyReceiptRef.from_json(_object(receipt_value, "receipt_ref"))
             ),
             confirmation_items=tuple(
                 MemoryActionConfirmationItem.from_json(item)
@@ -3674,9 +3605,7 @@ class MemoryMutationApplyReceipt:
             raise ValueError("apply receipt does not exactly bind mutation plan")
         if self.base_revision != plan.base_revision:
             raise ValueError("apply receipt base_revision differs from mutation plan")
-        expected_ids = tuple(
-            operation.operation_id for operation in plan.topological_operations()
-        )
+        expected_ids = tuple(operation.operation_id for operation in plan.topological_operations())
         if self.canonical_operation_ids != expected_ids:
             raise ValueError("apply receipt does not cover all canonical operations")
         missing_authority = tuple(
@@ -3698,9 +3627,7 @@ class MemoryMutationApplyReceipt:
             1 if plan.outcome is MemoryMutationPlanOutcome.MUTATE else 0
         )
         if self.committed_revision != expected_committed_revision:
-            raise ValueError(
-                "apply receipt does not bind the atomic base-to-committed revision"
-            )
+            raise ValueError("apply receipt does not bind the atomic base-to-committed revision")
 
     def to_json(self) -> dict[str, JsonValue]:
         return {
@@ -3746,16 +3673,12 @@ class MemoryMutationApplyReceipt:
             run_id=_identifier(value["run_id"], "run_id"),
             subject=_identifier(value["subject"], "subject"),
             base_revision=_positive_int(value["base_revision"], "base_revision"),
-            committed_revision=_positive_int(
-                value["committed_revision"], "committed_revision"
-            ),
+            committed_revision=_positive_int(value["committed_revision"], "committed_revision"),
             canonical_operation_ids=_strings(
                 value["canonical_operation_ids"], "canonical_operation_ids"
             ),
             apply_mode=MemoryMutationApplyMode(value["apply_mode"]),  # type: ignore[arg-type]
-            committed_at=cast(
-                float, _optional_timestamp(value["committed_at"], "committed_at")
-            ),
+            committed_at=cast(float, _optional_timestamp(value["committed_at"], "committed_at")),
             schema_version=_memory_mutation_schema_version(
                 value["schema_version"], "MemoryMutationApplyReceipt"
             ),

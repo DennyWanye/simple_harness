@@ -83,9 +83,7 @@ def _selection(
         run_catalog_content_stamp="catalog-stamp-1",
         lease_entries=({"spec_ref": "tool:memory_recall:v1"},),
         effect_topology={"effects": ["read_only"]},
-        tool_bindings={
-            "memory_recall": tool_binding or _tool_binding()
-        },
+        tool_bindings={"memory_recall": tool_binding or _tool_binding()},
     )
 
 
@@ -149,9 +147,7 @@ def _registered_memory_tool() -> tuple[ToolRegistry, dict[str, object], list[int
                 "version": policy.version,
                 "kind": policy.kind.value,
                 "max_attempts": policy.max_attempts,
-                "reusable_across_branches": (
-                    policy.reusable_across_branches
-                ),
+                "reusable_across_branches": (policy.reusable_across_branches),
             }
         ),
         "effect": "read_only",
@@ -162,15 +158,11 @@ def _registered_memory_tool() -> tuple[ToolRegistry, dict[str, object], list[int
 
 def test_selection_freezes_owner_pack_graph_lease_and_tool_facts() -> None:
     selection = _selection()
-    replay = PersonalWorkflowSelectionV1.from_authoritative_mapping(
-        selection.to_child_payload()
-    )
+    replay = PersonalWorkflowSelectionV1.from_authoritative_mapping(selection.to_child_payload())
 
     assert replay == selection
     assert replay.workflow.graph_hash == selection.graph_hash
-    assert replay.tool_bindings["memory_recall"]["spec_ref"] == (
-        "tool:memory_recall:v1"
-    )
+    assert replay.tool_bindings["memory_recall"]["spec_ref"] == ("tool:memory_recall:v1")
 
     tampered = selection.to_child_payload()
     tampered["owner_key"] = "companion:attacker:1"
@@ -293,9 +285,9 @@ async def test_effect_settle_before_checkpoint_recovery_never_executes_twice(
                 )
             ).encode("utf-8")
         ).hexdigest()
-        assert db.execute(
-            """SELECT node_execution_id FROM workflow_node_effects"""
-        ).fetchall() == [(expected_node_execution_id,)]
+        assert db.execute("""SELECT node_execution_id FROM workflow_node_effects""").fetchall() == [
+            (expected_node_execution_id,)
+        ]
 
 
 @pytest.mark.asyncio
@@ -308,10 +300,7 @@ async def test_schema_v20_to_v21_is_repeatable_and_keeps_legacy_ticket_nulls(
     with sqlite3.connect(path) as db:
         assert db.execute("PRAGMA user_version").fetchone() == (20,)
         assert "personal_selection_id" not in {
-            row[1]
-            for row in db.execute(
-                "PRAGMA table_info(execution_profile_launch_tickets)"
-            )
+            row[1] for row in db.execute("PRAGMA table_info(execution_profile_launch_tickets)")
         }
 
     monkeypatch.setattr(workflow_schema, "WORKFLOW_SCHEMA_VERSION", 21)
@@ -320,10 +309,7 @@ async def test_schema_v20_to_v21_is_repeatable_and_keeps_legacy_ticket_nulls(
     with sqlite3.connect(path) as db:
         assert db.execute("PRAGMA user_version").fetchone() == (21,)
         columns = {
-            row[1]
-            for row in db.execute(
-                "PRAGMA table_info(execution_profile_launch_tickets)"
-            )
+            row[1] for row in db.execute("PRAGMA table_info(execution_profile_launch_tickets)")
         }
         assert {
             "personal_selection_id",
@@ -349,9 +335,7 @@ async def test_schema_v20_to_v21_is_repeatable_and_keeps_legacy_ticket_nulls(
 
 
 @pytest.mark.asyncio
-async def test_schema_v21_fresh_matches_migrated_task10_objects(
-    tmp_path, monkeypatch
-) -> None:
+async def test_schema_v21_fresh_matches_migrated_task10_objects(tmp_path, monkeypatch) -> None:
     migrated_path = tmp_path / "workflow-migrated.db"
     fresh_path = tmp_path / "workflow-fresh.db"
 
@@ -365,16 +349,8 @@ async def test_schema_v21_fresh_matches_migrated_task10_objects(
         with sqlite3.connect(path) as db:
             return (
                 db.execute("PRAGMA user_version").fetchone(),
-                tuple(
-                    db.execute(
-                        "PRAGMA table_info(execution_profile_launch_tickets)"
-                    )
-                ),
-                tuple(
-                    db.execute(
-                        "PRAGMA table_info(execution_skill_scope_activations)"
-                    )
-                ),
+                tuple(db.execute("PRAGMA table_info(execution_profile_launch_tickets)")),
+                tuple(db.execute("PRAGMA table_info(execution_skill_scope_activations)")),
                 tuple(
                     db.execute(
                         """SELECT type,name,tbl_name,sql
@@ -392,9 +368,7 @@ async def test_schema_v21_fresh_matches_migrated_task10_objects(
                 ),
             )
 
-    assert task10_schema_snapshot(fresh_path) == task10_schema_snapshot(
-        migrated_path
-    )
+    assert task10_schema_snapshot(fresh_path) == task10_schema_snapshot(migrated_path)
 
 
 def _insert_ticket(
@@ -557,17 +531,11 @@ async def test_skill_scope_activation_is_caller_owned_replayable_and_queryable(
     values = _activation_values()
     async with uow._write_transaction() as db:
         tx = uow.bind(db)
-        first = await tx.insert_or_verify_skill_scope_activation(
-            values, created_at=2.0
-        )
-        replay = await tx.insert_or_verify_skill_scope_activation(
-            values, created_at=3.0
-        )
+        first = await tx.insert_or_verify_skill_scope_activation(values, created_at=2.0)
+        replay = await tx.insert_or_verify_skill_scope_activation(values, created_at=3.0)
         assert replay["activation_id"] == first["activation_id"]
 
-    queried = await uow.get_skill_scope_activation(
-        str(values["activation_id"])
-    )
+    queried = await uow.get_skill_scope_activation(str(values["activation_id"]))
     assert queried is not None
     assert json.loads(queried["allowed_tool_refs_json"]) == [
         {
@@ -597,12 +565,7 @@ async def test_skill_scope_activation_rolls_back_with_caller_transaction(
     values = _activation_values()
     with pytest.raises(RuntimeError, match="rollback"):
         async with uow._write_transaction() as db:
-            await uow.bind(db).insert_or_verify_skill_scope_activation(
-                values, created_at=2.0
-            )
+            await uow.bind(db).insert_or_verify_skill_scope_activation(values, created_at=2.0)
             raise RuntimeError("rollback")
-    assert (
-        await uow.get_skill_scope_activation(str(values["activation_id"]))
-        is None
-    )
+    assert await uow.get_skill_scope_activation(str(values["activation_id"])) is None
     await uow.close()

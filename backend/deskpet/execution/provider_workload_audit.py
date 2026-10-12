@@ -62,9 +62,7 @@ class ProviderWorkloadAuditStore:
                     event.get("injection_ref"),
                     (
                         hashlib.sha256(
-                            str(event["injection_bound_correlation_id"]).encode(
-                                "utf-8"
-                            )
+                            str(event["injection_bound_correlation_id"]).encode("utf-8")
                         ).hexdigest()
                         if event.get("injection_bound_correlation_id")
                         else None
@@ -117,9 +115,7 @@ class ProviderWorkloadAuditStore:
             raise ValueError("invalid provider workload audit retention policy")
         cutoff = float(self._clock()) - max_age_days * 86400.0
         async with aiosqlite.connect(self._db_path, timeout=0.05) as db:
-            cursor = await db.execute(
-                "SELECT COUNT(*) FROM provider_workload_audit"
-            )
+            cursor = await db.execute("SELECT COUNT(*) FROM provider_workload_audit")
             total = int((await cursor.fetchone() or (0,))[0])
             overflow = max(0, total - max_rows)
             cursor = await db.execute(

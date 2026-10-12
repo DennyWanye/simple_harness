@@ -118,9 +118,7 @@ async def activate_orchestration(
     if status["available"]:
         pump.start()
     service_context.register("orchestration_pump", pump)
-    logger.info(
-        "orchestration_ready state=%s root=%s", status["state"], root.name
-    )
+    logger.info("orchestration_ready state=%s root=%s", status["state"], root.name)
     return service
 
 

@@ -84,9 +84,7 @@ class _FakeManager:
         self.calls: list[tuple[str, object, dict[str, object]]] = []
         self.layout = SimpleNamespace(root=(root or Path("C:/capabilities")))
         self.store = _FakeCapabilityStore()
-        self.source_resolver = (
-            source_resolver or CapabilitySourceResolver()
-        )
+        self.source_resolver = source_resolver or CapabilitySourceResolver()
 
     async def install(self, source, **kwargs):
         self.calls.append(("install", source, kwargs))
@@ -177,9 +175,7 @@ async def test_install_derives_project_scope_and_host_idempotency(
     assert source.uri == str(tmp_path / "source")
     assert kwargs["root_run_id"] == "root-1"
     assert str(kwargs["scope_key"]).startswith("project:v2:")
-    assert str(kwargs["idempotency_key"]).startswith(
-        "capability:install:root-1:effect-1:"
-    )
+    assert str(kwargs["idempotency_key"]).startswith("capability:install:root-1:effect-1:")
 
 
 @pytest.mark.asyncio
@@ -190,9 +186,7 @@ async def test_refresh_acquires_snapshot_lease_for_same_run(tmp_path: Path) -> N
         search=_UnusedSearch(),  # type: ignore[arg-type]
         manager=_FakeManager(),  # type: ignore[arg-type]
     )
-    result = await service.refresh(
-        _context(tmp_path, workspace=str(tmp_path / "project"))
-    )
+    result = await service.refresh(_context(tmp_path, workspace=str(tmp_path / "project")))
     assert result["status"] == "catalog_refreshed"
     assert hub.leases[0][0:2] == ("run-1", "root-1")
     assert hub.leases[0][2].run_key == "root-1"
@@ -291,13 +285,8 @@ async def test_registered_tools_fail_closed_without_trusted_context() -> None:
         assert spec is not None
         assert spec.stable_handler_id == f"core.{name}.v1"
         assert spec.execution_build_identity is not None
-        assert (
-            spec.execution_build_identity.handler_id
-            == spec.stable_handler_id
-        )
-    install = next(
-        spec for spec in registry.all_specs() if spec.name == "capability_install"
-    )
+        assert spec.execution_build_identity.handler_id == spec.stable_handler_id
+    install = next(spec for spec in registry.all_specs() if spec.name == "capability_install")
     assert install.permission_category == "skill_install"
     assert install.dangerous is True
     assert install.concurrency_safe is False
@@ -345,13 +334,9 @@ def test_lifecycle_tools_prepare_exact_managed_and_source_scopes(
         canonical_filesystem_path(managed_root)
     )
     assert by_kind["capability_managed_root"].access == ("read", "write")
-    assert by_kind["filesystem"].canonical_value == canonical_filesystem_path(
-        source
-    )
+    assert by_kind["filesystem"].canonical_value == canonical_filesystem_path(source)
     assert by_kind["filesystem"].access == ("read",)
-    assert by_kind["system_change"].canonical_value == (
-        "capability:photo-renamer"
-    )
+    assert by_kind["system_change"].canonical_value == ("capability:photo-renamer")
     assert by_kind["system_change"].access == ("install",)
 
 
@@ -397,11 +382,5 @@ def test_configured_install_scope_resolves_alias_to_real_source(
         ),
     )
 
-    filesystem = next(
-        item
-        for item in prepared.resource_selectors
-        if item.kind == "filesystem"
-    )
-    assert filesystem.canonical_value == canonical_filesystem_path(
-        actual_source
-    )
+    filesystem = next(item for item in prepared.resource_selectors if item.kind == "filesystem")
+    assert filesystem.canonical_value == canonical_filesystem_path(actual_source)

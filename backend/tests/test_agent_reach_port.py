@@ -56,13 +56,10 @@ def test_pinned_agent_reach_channel_contract() -> None:
     direct_url = json.loads(
         (Path(distribution._path) / "direct_url.json").read_text(encoding="utf-8")
     )
-    assert direct_url["url"].endswith(
-        "/e825f6740d24c6c315c3b0dc41907e6c87ff39a5.zip"
-    )
+    assert direct_url["url"].endswith("/e825f6740d24c6c315c3b0dc41907e6c87ff39a5.zip")
     lock = (Path(__file__).parents[1] / "uv.lock").read_text(encoding="utf-8")
     assert (
-        'hash = "sha256:bdceee5847d2f20744621c398cf38597abf7709920f4be697348c0e0c708e9d6"'
-        in lock
+        'hash = "sha256:bdceee5847d2f20744621c398cf38597abf7709920f4be697348c0e0c708e9d6"' in lock
     )
     channels = agent_reach.channels.get_all_channels()
     names = [channel.name for channel in channels]
@@ -104,9 +101,7 @@ def test_platform_without_read_uses_agent_reach_web_backend(monkeypatch) -> None
             return "Title: Agent-Reach\n\nDirect upstream content " * 20
 
     web = WebChannel("web", active_backend="Jina Reader")
-    monkeypatch.setattr(
-        "agent_reach.channels.get_all_channels", lambda: [github, web]
-    )
+    monkeypatch.setattr("agent_reach.channels.get_all_channels", lambda: [github, web])
     monkeypatch.setattr(
         "agent_reach.channels.get_channel",
         lambda name: web if name == "web" else None,
@@ -176,9 +171,7 @@ def test_doctor_isolates_broken_metadata_and_bounds_backends(monkeypatch) -> Non
             del config
             return "ok", "should be isolated"
 
-    monkeypatch.setattr(
-        "agent_reach.channels.get_all_channels", lambda: [Broken(), good]
-    )
+    monkeypatch.setattr("agent_reach.channels.get_all_channels", lambda: [Broken(), good])
 
     result = AgentReachPort().doctor()
 
@@ -189,9 +182,9 @@ def test_doctor_isolates_broken_metadata_and_bounds_backends(monkeypatch) -> Non
 
 def test_diagnostics_redact_common_secret_shapes() -> None:
     value = (
-        'Authorization: Bearer abcdefghijklmnopqrstuvwxyz '
-        '\"api_key\":\"secret-value\" '
-        'https://example.com/?token=query-secret'
+        "Authorization: Bearer abcdefghijklmnopqrstuvwxyz "
+        '"api_key":"secret-value" '
+        "https://example.com/?token=query-secret"
     )
 
     redacted = _safe_message(value)

@@ -70,14 +70,13 @@ def validate_s5c_state_db(path: Path, *, _expected_user_version: int = SCHEMA_VE
             ):
                 raise ValueError("migration marker")
             for name, ddl in objects:
-                if db.execute(
-                    "SELECT sql FROM sqlite_master WHERE name=?", (name,)
-                ).fetchone() != (ddl,):
+                if db.execute("SELECT sql FROM sqlite_master WHERE name=?", (name,)).fetchone() != (
+                    ddl,
+                ):
                     raise ValueError("schema object")
             for name in S5C_TABLES:
                 if db.execute(
-                    "SELECT taxonomy FROM human_memory_recovery_table_registry "
-                    "WHERE table_name=?",
+                    "SELECT taxonomy FROM human_memory_recovery_table_registry WHERE table_name=?",
                     (name,),
                 ).fetchone() != ("A",):
                     raise ValueError("recovery registration")
@@ -115,8 +114,13 @@ async def initialize_s5c_state_db(
     if path.exists() and version != 50:
         with sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True) as db:
             placeholders = ",".join("?" for _ in S5C_TABLES)
-            if db.execute(f"SELECT 1 FROM sqlite_master WHERE type='table' AND name IN ({placeholders}) LIMIT 1",
-                    S5C_TABLES).fetchone() is not None:
+            if (
+                db.execute(
+                    f"SELECT 1 FROM sqlite_master WHERE type='table' AND name IN ({placeholders}) LIMIT 1",
+                    S5C_TABLES,
+                ).fetchone()
+                is not None
+            ):
                 raise schema.HumanMemoryProgramEpochError("s5c_unpublished_schema_incompatible")
     if version < 50:
         await schema.initialize_human_memory_program_state_db(path)
@@ -133,9 +137,7 @@ async def initialize_s5c_state_db(
                     validate_s5c_state_db(path)
                     return
                 if current != 49:
-                    raise schema.HumanMemoryProgramEpochError(
-                        "s5c_base_version_differs"
-                    )
+                    raise schema.HumanMemoryProgramEpochError("s5c_base_version_differs")
                 await migrator._assert_effect_closure_cutover_preconditions(db)
                 fence = await db.execute(
                     "SELECT state FROM human_memory_recovery_fence WHERE singleton=1"
@@ -143,9 +145,7 @@ async def initialize_s5c_state_db(
                 fence_row = await fence.fetchone()
                 await fence.close()
                 if fence_row != ("OPEN",):
-                    raise schema.HumanMemoryProgramEpochError(
-                        "s5c_migration_recovery_fenced"
-                    )
+                    raise schema.HumanMemoryProgramEpochError("s5c_migration_recovery_fenced")
                 # Validate every v49 marker while holding the migration write lock.
                 schema._validate_s4_migration_chain(path, expected_user_version=49)
                 sql = _sql()

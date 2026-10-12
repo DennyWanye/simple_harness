@@ -1,7 +1,8 @@
-﻿# SPDX-FileCopyrightText: 2026 DennyWanye
+# SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: BUSL-1.1
 
 """A-2 PPT template placeholder fill tests."""
+
 from __future__ import annotations
 
 import base64
@@ -13,9 +14,7 @@ from deskpet.tools.ppt_tools import _HAS_PPTX, ppt_create
 pytestmark = pytest.mark.skipif(not _HAS_PPTX, reason="python-pptx not installed")
 
 
-PNG_1X1 = (
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
-)
+PNG_1X1 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
 
 
 @pytest.fixture
@@ -35,7 +34,9 @@ def tiny_png(tmp_path: Path) -> Path:
 
 
 def _slide_text(slide) -> str:
-    return "\n".join(shape.text for shape in slide.shapes if getattr(shape, "has_text_frame", False))
+    return "\n".join(
+        shape.text for shape in slide.shapes if getattr(shape, "has_text_frame", False)
+    )
 
 
 def _has_picture(slide) -> bool:
@@ -115,7 +116,10 @@ def test_template_picture_placeholder(tmp_path: Path, template_pptx: Path, tiny_
 
 
 def test_template_mode_generates_for_swap(
-    monkeypatch, tmp_path: Path, template_pptx: Path, tiny_png: Path,
+    monkeypatch,
+    tmp_path: Path,
+    template_pptx: Path,
+    tiny_png: Path,
 ) -> None:
     """模板模式 + image_prompt → 生图(供换进设计页图片位:丰富内容+定制视觉)。"""
     from deskpet.tools import image_tools
@@ -130,8 +134,14 @@ def test_template_mode_generates_for_swap(
     out = tmp_path / "prompt-picture.pptx"
 
     result = ppt_create(
-        [{"layout": "bullet", "title": "要点", "bullets": ["A", "B"],
-          "image_prompt": "a clean desk pet hero"}],
+        [
+            {
+                "layout": "bullet",
+                "title": "要点",
+                "bullets": ["A", "B"],
+                "image_prompt": "a clean desk pet hero",
+            }
+        ],
         output_path=str(out),
         template=str(template_pptx),
     )
@@ -143,7 +153,10 @@ def test_template_mode_generates_for_swap(
 
 
 def test_template_mode_no_prompt_no_gen(
-    monkeypatch, tmp_path: Path, template_pptx: Path, tiny_png: Path,
+    monkeypatch,
+    tmp_path: Path,
+    template_pptx: Path,
+    tiny_png: Path,
 ) -> None:
     """模板模式但没写 image_prompt → 不生图(省钱;用模板自带配图)。"""
     from deskpet.tools import image_tools
@@ -168,7 +181,9 @@ def test_template_mode_no_prompt_no_gen(
 
 
 def test_image_full_autofills_without_template(
-    monkeypatch, tmp_path: Path, tiny_png: Path,
+    monkeypatch,
+    tmp_path: Path,
+    tiny_png: Path,
 ) -> None:
     """无 template 的 image_full + image_prompt → 真触发 AI 生图。"""
     from deskpet.tools import image_tools

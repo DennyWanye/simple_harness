@@ -25,12 +25,8 @@ def workflow_session_ref(
 ) -> TaskSessionRefV1:
     """Build the mode-free identity persisted by new durable task runs."""
 
-    normalized_root = str(
-        Path(workspace_root).expanduser().resolve(strict=False)
-    )
-    workspace_hash = hashlib.sha256(
-        normalized_root.casefold().encode("utf-8")
-    ).hexdigest()
+    normalized_root = str(Path(workspace_root).expanduser().resolve(strict=False))
+    workspace_hash = hashlib.sha256(normalized_root.casefold().encode("utf-8")).hexdigest()
     return TaskSessionRefV1(
         session_id=session_id,
         task_scope_id=task_scope_id,
@@ -39,6 +35,7 @@ def workflow_session_ref(
         session_epoch=session_epoch,
         task_epoch=task_epoch,
     )
+
 
 __all__ = [
     "ProposalPort",

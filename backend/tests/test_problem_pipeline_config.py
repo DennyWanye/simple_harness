@@ -10,6 +10,7 @@
   - 老 config 缺该段时由 dataclass 默认值兜底（无 backfill 也能跑，决策1）
   - ServiceContext.register/get 4 个新 pipeline key 不抛 ValueError（B1）
 """
+
 from __future__ import annotations
 
 from pathlib import Path

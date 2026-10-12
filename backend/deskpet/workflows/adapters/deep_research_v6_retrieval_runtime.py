@@ -31,9 +31,7 @@ from .research_runtime import BoundResearchEffectContext
 
 V6_READ_POLICY_ID = "deep-research-v6-page-read-v1"
 V6_READ_POLICY_HASH = hashlib.sha256(V6_READ_POLICY_ID.encode("utf-8")).hexdigest()
-V6_AUTO_CAP_POLICY_HASH = hashlib.sha256(
-    b"deep-research-v6-automatic-cap-v1"
-).hexdigest()
+V6_AUTO_CAP_POLICY_HASH = hashlib.sha256(b"deep-research-v6-automatic-cap-v1").hexdigest()
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,7 +73,8 @@ class DurableV6DeadlinePort:
         *,
         journal: EffectJournal,
         resolve_effect_context: Callable[
-            [NodeExecutionIdentity], BoundResearchEffectContext | Awaitable[BoundResearchEffectContext]
+            [NodeExecutionIdentity],
+            BoundResearchEffectContext | Awaitable[BoundResearchEffectContext],
         ],
         wall_clock: Callable[[], datetime] | None = None,
         monotonic_ns: Callable[[], int] | None = None,
@@ -245,9 +244,7 @@ class DurableV6DeadlinePort:
         lease: object,
     ) -> tuple[DurableDeadlineV1, object | None]:
         context = await self._context(identity)
-        persisted_raw = await self.journal.load_v6_deadline(
-            identity.run_id, state.deadline_id
-        )
+        persisted_raw = await self.journal.load_v6_deadline(identity.run_id, state.deadline_id)
         if persisted_raw is None:
             raise EffectStateConflict("v6 deadline disappeared before checkpoint")
         persisted = DurableDeadlineV1.from_json(persisted_raw)
@@ -287,7 +284,8 @@ class DurableV6PageReadEffectAdapter:
         journal: EffectJournal,
         blobs: RegisteredBlobStore,
         resolve_effect_context: Callable[
-            [NodeExecutionIdentity], BoundResearchEffectContext | Awaitable[BoundResearchEffectContext]
+            [NodeExecutionIdentity],
+            BoundResearchEffectContext | Awaitable[BoundResearchEffectContext],
         ],
         deadline_port: DurableV6DeadlinePort,
         fault_injector: Callable[[str], Awaitable[None]] | None = None,
@@ -332,14 +330,10 @@ class DurableV6PageReadEffectAdapter:
             return
         if input_source_locator_ref is None:
             raise EffectStateConflict("v6 page attempt lacks its frozen input locator")
-        input_locator = SourceLocatorV1.from_json(
-            await self._json_blob(input_source_locator_ref)
-        )
+        input_locator = SourceLocatorV1.from_json(await self._json_blob(input_source_locator_ref))
         if input_locator.verification_status != "unverified":
             raise EffectStateConflict("v6 page input locator must be unverified")
-        locator = SourceLocatorV1.from_json(
-            await self._json_blob(result.source_locator_ref)
-        )
+        locator = SourceLocatorV1.from_json(await self._json_blob(result.source_locator_ref))
         page = result.page_record
         if page is None:
             return
@@ -393,6 +387,7 @@ class DurableV6PageReadEffectAdapter:
         result_kind = (
             "official_search" if operation_kind == "official_search" else "page_extraction"
         )
+
         def prepared_for(revision: int) -> PreparedToolCall:
             return PreparedToolCall.prepare(
                 tool_name=(
@@ -419,9 +414,8 @@ class DurableV6PageReadEffectAdapter:
                 permission_policy_version="research-readonly-v1",
                 effect_type=f"deep_research_v6_{operation_kind}",
             )
-        latest_deadline = await self.journal.load_v6_deadline(
-            identity.run_id, deadline.deadline_id
-        )
+
+        latest_deadline = await self.journal.load_v6_deadline(identity.run_id, deadline.deadline_id)
         if latest_deadline is None:
             raise EffectStateConflict("v6 read deadline disappeared before begin")
         deadline_revision = DurableDeadlineV1.from_json(latest_deadline).revision
@@ -497,9 +491,7 @@ class DurableV6PageReadEffectAdapter:
         if begun.action is not EffectAction.EXECUTE:
             raise EffectStateConflict("v6 read attempt is already in flight")
         if input_source_locator_ref is not None:
-            locator_bytes = await self.blobs.get(
-                input_source_locator_ref.removeprefix("sha256:")
-            )
+            locator_bytes = await self.blobs.get(input_source_locator_ref.removeprefix("sha256:"))
             staged = await self.blobs.put(
                 locator_bytes,
                 identity,
@@ -516,12 +508,12 @@ class DurableV6PageReadEffectAdapter:
                 deadline_remaining_ms=(
                     begun.deadline_state.remaining_ms if begun.deadline_state is not None else None
                 ),
-                deadline_monotonic_ns=(
-                    lease.deadline_monotonic_ns if lease is not None else None
-                ),
+                deadline_monotonic_ns=(lease.deadline_monotonic_ns if lease is not None else None),
             )
         )
-        expected_type = OfficialSearchResultV1 if result_kind == "official_search" else PageExtractionResultV1
+        expected_type = (
+            OfficialSearchResultV1 if result_kind == "official_search" else PageExtractionResultV1
+        )
         if not isinstance(result, expected_type):
             raise EffectStateConflict("v6 read transport returned the wrong typed result")
         if (

@@ -6,6 +6,7 @@
 Knowledge snippets are SKILL.md bundles that are not user-invocable.  They are
 only loaded/injected when the explicit [skills] knowledge_enabled flag is on.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -348,12 +349,15 @@ async def test_real_loader_registry_injects_knowledge_via_trigger(tmp_path: Path
     构造器 → loader 恒 False → reload() 永远把知识片段挡在快照外 → matcher
     根本看不到（真机 total 缺 3 个）。该测试若 loader 没拿到 flag 必失败。"""
     _write_knowledge(
-        tmp_path, "windows-path-debug",
+        tmp_path,
+        "windows-path-debug",
         triggers=["路径", "windows", "Windows", "反斜杠", "backslash", "path"],
         body="Windows 路径调试：优先绝对路径；含空格加引号；用 pathlib.Path。",
     )
     _write_regular_skill(
-        tmp_path, "ppt-generate", triggers=["ppt", "PPT"],
+        tmp_path,
+        "ppt-generate",
+        triggers=["ppt", "PPT"],
         body="生成 PPT。",
     )
     loader = SkillLoader([tmp_path], enable_watch=False, knowledge_enabled=True)
@@ -386,7 +390,8 @@ async def test_real_loader_without_flag_drops_knowledge(tmp_path: Path) -> None:
     即便 component 的 config 把 knowledge_enabled 设 True 也无从注入。
     这条断言锁死「源头在 loader，不在 component config」。"""
     _write_knowledge(
-        tmp_path, "windows-path-debug",
+        tmp_path,
+        "windows-path-debug",
         triggers=["路径", "windows", "反斜杠", "path"],
         body="Windows 路径调试要点。",
     )
@@ -489,4 +494,3 @@ async def test_triggered_knowledge_protected_from_compaction(tmp_path: Path) -> 
 
     assert any(_PPT_BODY in (m.get("content") or "") for m in system_msgs)
     assert not any(_PPT_BODY in (m.get("content") or "") for m in middle)
-

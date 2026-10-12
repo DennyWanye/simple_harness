@@ -20,6 +20,7 @@ The dispatcher below is called from ``backend/main.py``'s control
 channel after auth. It never raises — protocol-level errors round-trip
 as ``{"type": "error", "payload": {"message": "..."}}``.
 """
+
 from __future__ import annotations
 
 import tomllib
@@ -82,9 +83,7 @@ async def handle(
         elif msg_type == "context_compaction_set":
             await _handle_context_compaction_set(ws, payload, service_context)
         elif msg_type == "permissions_pending_list":
-            await _handle_permissions_pending_list(
-                ws, session_id, payload, service_context
-            )
+            await _handle_permissions_pending_list(ws, session_id, payload, service_context)
         else:
             # Shouldn't happen — membership check is done by caller.
             await _send_error(ws, f"unknown P4 message type: {msg_type}")
@@ -101,9 +100,7 @@ async def handle(
 # ---------------------------------------------------------------------------
 # Individual handlers
 # ---------------------------------------------------------------------------
-async def _handle_skills_list(
-    ws: Any, payload: dict[str, Any], sc: Any
-) -> None:
+async def _handle_skills_list(ws: Any, payload: dict[str, Any], sc: Any) -> None:
     loader = _get_service(sc, "skill_loader")
     if loader is None:
         await ws.send_json(
@@ -143,9 +140,7 @@ async def _handle_decisions_list(
     if assembler is None:
         response_payload: dict[str, Any] = {"decisions": []}
         if attempt_store is not None:
-            response_payload["attempts"] = attempt_store.public_for_session(session_id)[
-                -limit:
-            ]
+            response_payload["attempts"] = attempt_store.public_for_session(session_id)[-limit:]
         else:
             response_payload["reason"] = "context_assembler_not_registered"
         await ws.send_json(
@@ -162,12 +157,8 @@ async def _handle_decisions_list(
         decisions = []
     response_payload: dict[str, Any] = {"decisions": list(decisions)}
     if attempt_store is not None:
-        response_payload["attempts"] = attempt_store.public_for_session(session_id)[
-            -limit:
-        ]
-    await ws.send_json(
-        {"type": "decisions_list_response", "payload": response_payload}
-    )
+        response_payload["attempts"] = attempt_store.public_for_session(session_id)[-limit:]
+    await ws.send_json({"type": "decisions_list_response", "payload": response_payload})
 
 
 # 2026-09-10：MemoryPanel 的三段式检索（memory_search）与 L1 文件记忆
@@ -179,9 +170,7 @@ async def _handle_decisions_list(
 # 只会误导用户。
 
 
-async def _handle_model_provision_status(
-    ws: Any, payload: dict[str, Any], sc: Any
-) -> None:
+async def _handle_model_provision_status(ws: Any, payload: dict[str, Any], sc: Any) -> None:
     """Option A: 首启模型下载进度探针，供前端进度卡片轮询。
 
     返回 provisioner.status()（state/current/index/total/downloaded_bytes/
@@ -206,9 +195,7 @@ async def _handle_model_provision_status(
             error_type=type(exc).__name__,
         )
         status = {"state": "ready", "total": 0}
-    await ws.send_json(
-        {"type": "model_provision_status_response", "payload": status}
-    )
+    await ws.send_json({"type": "model_provision_status_response", "payload": status})
 
 
 # ---------------------------------------------------------------------------
@@ -219,7 +206,10 @@ async def _handle_model_provision_status(
 
 
 async def _handle_permissions_pending_list(
-    ws: Any, session_id: str, payload: dict[str, Any], sc: Any,
+    ws: Any,
+    session_id: str,
+    payload: dict[str, Any],
+    sc: Any,
 ) -> None:
     """返回在途 permission 请求列表给 ApprovalCenterPanel。
 
@@ -232,13 +222,15 @@ async def _handle_permissions_pending_list(
     """
     gate = _get_service(sc, "permission_gate")
     if gate is None or not hasattr(gate, "list_pending"):
-        await ws.send_json({
-            "type": "permissions_pending_list_response",
-            "payload": {
-                "pending": [],
-                "reason": "permission_gate_not_registered",
-            },
-        })
+        await ws.send_json(
+            {
+                "type": "permissions_pending_list_response",
+                "payload": {
+                    "pending": [],
+                    "reason": "permission_gate_not_registered",
+                },
+            }
+        )
         return
     target_sid = payload.get("session_id")
     sid = str(target_sid).strip() if target_sid is not None else None
@@ -249,10 +241,12 @@ async def _handle_permissions_pending_list(
     except Exception as exc:  # noqa: BLE001
         logger.warning("p4_ipc.permissions_pending_list_failed", error=str(exc))
         pending = []
-    await ws.send_json({
-        "type": "permissions_pending_list_response",
-        "payload": {"pending": list(pending)},
-    })
+    await ws.send_json(
+        {
+            "type": "permissions_pending_list_response",
+            "payload": {"pending": list(pending)},
+        }
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -364,9 +358,7 @@ def _format_model_overrides_toml(models: dict[str, dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
-def _merge_model_override(
-    target: Path, model: str, fields: dict[str, Any]
-) -> None:
+def _merge_model_override(target: Path, model: str, fields: dict[str, Any]) -> None:
     """深合并：读现有 TOML → 仅替换该 model 的白名单字段 → 重写整文件。
 
     其他 model 段、该 model 未改的字段全部保留（深合并语义）。
@@ -523,8 +515,7 @@ def _read_context_compaction_model() -> str:
     try:
         raw = tomllib.loads(path.read_text("utf-8"))
         value = str(
-            ((raw.get("context") or {}).get("compaction") or {}).get("model")
-            or _FOLLOW_SESSION
+            ((raw.get("context") or {}).get("compaction") or {}).get("model") or _FOLLOW_SESSION
         ).strip()
         return value or _FOLLOW_SESSION
     except (OSError, tomllib.TOMLDecodeError, AttributeError, TypeError):

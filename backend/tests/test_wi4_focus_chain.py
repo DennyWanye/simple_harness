@@ -49,9 +49,9 @@ class _LoopingLLM:
             content=f"turn {self.calls}",
             stop_reason=stop,
             model="stub-model",
-            tool_calls=[
-                ToolCall(id="call_1", name="noop", arguments={"value": self.calls})
-            ] if stop == "tool_use" else [],
+            tool_calls=[ToolCall(id="call_1", name="noop", arguments={"value": self.calls})]
+            if stop == "tool_use"
+            else [],
         )
 
 
@@ -66,8 +66,7 @@ def _todo_sync_messages(prompt: list[dict[str, Any]]) -> list[str]:
     return [
         str(m.get("content") or "")
         for m in prompt
-        if m.get("role") == "system"
-        and str(m.get("content") or "").startswith("[当前任务进度]")
+        if m.get("role") == "system" and str(m.get("content") or "").startswith("[当前任务进度]")
     ]
 
 

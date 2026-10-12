@@ -36,10 +36,7 @@ from deskpet.companion.identity_gate import IdentityReadyGate
 from deskpet.companion.store import CompanionStore
 
 FIXTURE = (
-    Path(__file__).resolve().parents[3]
-    / "tests"
-    / "fixtures"
-    / "control-command-canonical-v1.json"
+    Path(__file__).resolve().parents[3] / "tests" / "fixtures" / "control-command-canonical-v1.json"
 )
 
 
@@ -103,9 +100,7 @@ def test_python_verifies_shared_ed25519_golden_and_rejects_drift() -> None:
         expires_at=golden["expires_at"],
     )
     assert payload.hex() == golden["payload_hex"]
-    private_key = Ed25519PrivateKey.from_private_bytes(
-        bytes.fromhex(golden["private_seed_hex"])
-    )
+    private_key = Ed25519PrivateKey.from_private_bytes(bytes.fromhex(golden["private_seed_hex"]))
     assert private_key.sign(payload).hex() == golden["signature_hex"]
 
     credential = WindowControlCredential(
@@ -127,19 +122,22 @@ def test_python_verifies_shared_ed25519_golden_and_rejects_drift() -> None:
         public_key_hex=golden["public_key_hex"],
         backend_process_instance_id=golden["backend_process_instance_id"],
     )
-    assert verifier.verify(
-        credential,
-        expected_connection_id=golden["connection_id"],
-        expected_control_epoch=int(golden["control_epoch"]),
-        expected_challenge_hash=golden["challenge_hash"],
-        expected_window_label="main",
-        expected_scope="identity_bind",
-        expected_request_seq=int(golden["request_seq"]),
-        expected_binding_epoch=int(golden["binding_epoch"]),
-        command_kind=golden["command_kind"],
-        body=body,
-        now=int(golden["issued_at"]),
-    ) == golden["canonical_request_hash"]
+    assert (
+        verifier.verify(
+            credential,
+            expected_connection_id=golden["connection_id"],
+            expected_control_epoch=int(golden["control_epoch"]),
+            expected_challenge_hash=golden["challenge_hash"],
+            expected_window_label="main",
+            expected_scope="identity_bind",
+            expected_request_seq=int(golden["request_seq"]),
+            expected_binding_epoch=int(golden["binding_epoch"]),
+            command_kind=golden["command_kind"],
+            body=body,
+            now=int(golden["issued_at"]),
+        )
+        == golden["canonical_request_hash"]
+    )
 
     with pytest.raises(WindowControlCredentialError):
         verifier.verify(
@@ -244,10 +242,14 @@ def _ingress(tmp_path):
             return {"mode": "local", "user_id": None}
 
     private_key = Ed25519PrivateKey.generate()
-    public_hex = private_key.public_key().public_bytes(
-        encoding=serialization.Encoding.Raw,
-        format=serialization.PublicFormat.Raw,
-    ).hex()
+    public_hex = (
+        private_key.public_key()
+        .public_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PublicFormat.Raw,
+        )
+        .hex()
+    )
     store = CompanionStore(tmp_path / "companion.db")
     gate = IdentityReadyGate()
     ingress = CompanionControlIngress(
@@ -296,9 +298,7 @@ async def test_two_window_leases_are_independent_and_main_reconnect_is_scoped(
     assert bind_ack["type"] == "companion_profile_bound"
     assert gate.ready is True
 
-    action = ingress.open_challenge(
-        requested_window_label="main", requested_scope="identity_bind"
-    )
+    action = ingress.open_challenge(requested_window_label="main", requested_scope="identity_bind")
     action_credential = _credential(
         private_key,
         action,
@@ -351,9 +351,7 @@ async def test_two_window_leases_are_independent_and_main_reconnect_is_scoped(
             challenge=main,
         )
 
-    skipped_seq = main_reconnect.advance(
-        request_seq=3, binding_epoch=main_reconnect.binding_epoch
-    )
+    skipped_seq = main_reconnect.advance(request_seq=3, binding_epoch=main_reconnect.binding_epoch)
     skipped_credential = _credential(
         private_key,
         skipped_seq,
@@ -364,9 +362,7 @@ async def test_two_window_leases_are_independent_and_main_reconnect_is_scoped(
         body=body,
         nonce="main-seq-3",
     )
-    with pytest.raises(
-        Exception, match="control_request_seq_not_next"
-    ):
+    with pytest.raises(Exception, match="control_request_seq_not_next"):
         await ingress.execute(
             {
                 "type": "companion_profile_bind",
@@ -399,9 +395,7 @@ def test_shared_secret_only_challenges_are_bounded_and_mutate_nothing(
 ) -> None:
     _private_key, store, gate, ingress = _ingress(tmp_path)
     challenges = [
-        ingress.open_challenge(
-            requested_window_label="main", requested_scope="identity_bind"
-        )
+        ingress.open_challenge(requested_window_label="main", requested_scope="identity_bind")
         for _ in range(5)
     ]
     assert gate.ready is False
@@ -414,9 +408,7 @@ def test_shared_secret_only_challenges_are_bounded_and_mutate_nothing(
         ).fetchall()
         assert len(rows) == 3
         assert {row["status"] for row in rows} == {"challenged"}
-        assert challenges[-1].connection_id in {
-            row["connection_id"] for row in rows
-        }
+        assert challenges[-1].connection_id in {row["connection_id"] for row in rows}
 
 
 def test_privileged_wire_is_strictly_reparsed_before_json_loses_duplicates() -> None:
@@ -424,9 +416,7 @@ def test_privileged_wire_is_strictly_reparsed_before_json_loses_duplicates() -> 
         '{"type":"companion_profile_bind","auth_snapshot":'
         '{"mode":"local","mode":"relay","user_id":null},"credential":{}}'
     )
-    with pytest.raises(
-        CompanionControlIngressError, match="duplicate_object_key"
-    ):
+    with pytest.raises(CompanionControlIngressError, match="duplicate_object_key"):
         CompanionControlIngress.parse_privileged_frame(raw)
 
 
@@ -463,12 +453,7 @@ async def test_wrong_scope_and_stale_binding_epoch_never_mutate(tmp_path) -> Non
     assert gate.ready is False
     with store.read() as db:
         assert db.execute("SELECT COUNT(*) FROM profiles").fetchone()[0] == 0
-        assert (
-            db.execute(
-                "SELECT COUNT(*) FROM profile_control_commands"
-            ).fetchone()[0]
-            == 0
-        )
+        assert db.execute("SELECT COUNT(*) FROM profile_control_commands").fetchone()[0] == 0
 
 
 @pytest.mark.asyncio
@@ -499,9 +484,7 @@ async def test_renderer_forged_auth_snapshot_is_rejected_by_trusted_snapshot(
         body=body,
         nonce="forged-auth-snapshot",
     )
-    with pytest.raises(
-        CompanionControlIngressError, match="auth_snapshot_mismatch"
-    ):
+    with pytest.raises(CompanionControlIngressError, match="auth_snapshot_mismatch"):
         await ingress.execute(
             {
                 "type": "companion_profile_bind",
@@ -515,12 +498,7 @@ async def test_renderer_forged_auth_snapshot_is_rejected_by_trusted_snapshot(
     assert gate.ready is False
     with store.read() as db:
         assert db.execute("SELECT COUNT(*) FROM profiles").fetchone()[0] == 0
-        assert (
-            db.execute(
-                "SELECT COUNT(*) FROM profile_control_commands"
-            ).fetchone()[0]
-            == 0
-        )
+        assert db.execute("SELECT COUNT(*) FROM profile_control_commands").fetchone()[0] == 0
 
 
 @pytest.mark.asyncio
@@ -542,4 +520,3 @@ async def test_local_auth_snapshot_is_constant_and_needs_no_remote_call() -> Non
     # 构造器不接受任何依赖注入——没有 registry / token / transport 可传。
     with pytest.raises(TypeError):
         LocalAuthSnapshotProvider(lambda: None)  # type: ignore[call-arg]
-

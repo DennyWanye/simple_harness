@@ -15,6 +15,7 @@ Implementation notes:
 - Failures are swallowed into a human-readable string, never an exception,
   so the LLM stream stays well-formed.
 """
+
 from __future__ import annotations
 
 import sys
@@ -79,6 +80,7 @@ def _read_clipboard_windows() -> str:
 def _read_clipboard_tk() -> str:
     """Fallback via tkinter's hidden-root clipboard — stdlib, no extra deps."""
     import tkinter
+
     root = tkinter.Tk()
     root.withdraw()
     try:

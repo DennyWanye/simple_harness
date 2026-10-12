@@ -15,6 +15,7 @@ Exit codes:
 We mock httpx inside this script so the smoke test does NOT require
 internet access — ``web_fetch`` gets a synthetic 200/HTML response.
 """
+
 from __future__ import annotations
 
 import json
@@ -85,11 +86,7 @@ def main() -> int:
     rres = json.loads(registry.dispatch("file_read", {"path": "smoke.md"}))
     if rres.get("content", "").splitlines()[0] != "# hello":
         _die(f"file_read round-trip mismatch: {rres!r}")
-    gres = json.loads(
-        registry.dispatch(
-            "file_grep", {"pattern": "^smoke", "path": "smoke.md"}
-        )
-    )
+    gres = json.loads(registry.dispatch("file_grep", {"pattern": "^smoke", "path": "smoke.md"}))
     if gres.get("count") != 1:
         _die(f"file_grep missed the 'smoke' line: {gres!r}")
     print("        ok")
@@ -120,9 +117,7 @@ def main() -> int:
         respect_robots_txt=False,
         request_interval_ms=0,
     )
-    fres = json.loads(
-        registry.dispatch("web_fetch", {"url": "https://smoke.example/x"})
-    )
+    fres = json.loads(registry.dispatch("web_fetch", {"url": "https://smoke.example/x"}))
     if fres.get("status") != 200 or "smoke" not in fres.get("content", ""):
         _die(f"web_fetch mock failed: {fres!r}")
     print("        ok")

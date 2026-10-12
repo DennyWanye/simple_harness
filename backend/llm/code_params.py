@@ -12,6 +12,7 @@ Contract (Spec "Param→request mapping is total"):
   * unknown / legacy values  → omitted or clamped (never an error)
   * ``thinking == False``     → NO reasoning keys at all
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -47,11 +48,7 @@ def code_params_to_request(model_params: Any) -> dict[str, Any]:
     thinking = model_params.get("thinking")
     if thinking is not False:  # True / absent → reasoning permitted
         effort_raw = model_params.get("effort")
-        eff = (
-            _EFFORT.get(str(effort_raw).lower())
-            if effort_raw is not None
-            else None
-        )
+        eff = _EFFORT.get(str(effort_raw).lower()) if effort_raw is not None else None
         if eff is None and thinking is True:
             eff = "medium"  # thinking explicitly ON, no effort → sane default
         if eff is not None:
@@ -59,11 +56,7 @@ def code_params_to_request(model_params: Any) -> dict[str, Any]:
     # thinking is False → emit no reasoning keys (effort intentionally dropped)
 
     ctx_raw = model_params.get("context")
-    cw = (
-        _CONTEXT_TOKENS.get(str(ctx_raw).lower())
-        if ctx_raw is not None
-        else None
-    )
+    cw = _CONTEXT_TOKENS.get(str(ctx_raw).lower()) if ctx_raw is not None else None
     if cw is not None:
         extra["context_window"] = cw
 

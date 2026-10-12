@@ -203,9 +203,7 @@ async def _poll_control(
     except (TypeError, ValueError):
         parameters = {}
     if "checkpoint_ns" in parameters:
-        kwargs["checkpoint_ns"] = (
-            context.identity.checkpoint_ns if context.identity else None
-        )
+        kwargs["checkpoint_ns"] = context.identity.checkpoint_ns if context.identity else None
     value = await _await(poll(**kwargs))
     if value is not None and not isinstance(value, ResearchControlCommand):
         raise TypeError("control poll must return ResearchControlCommand or None")
@@ -237,9 +235,7 @@ async def _settle_control(
             checkpoint_id=context.identity.checkpoint_id,
             result={
                 "route": route,
-                "last_committed_evidence": [
-                    item.to_json() for item in _coverages(values)
-                ],
+                "last_committed_evidence": [item.to_json() for item in _coverages(values)],
             },
         )
     )
@@ -348,9 +344,7 @@ def _progress(
 ) -> ProgressSnapshot:
     brief = _brief(values)
     core_ids = tuple(
-        dimension.dimension_id
-        for dimension in brief.dimensions
-        if dimension.importance == "core"
+        dimension.dimension_id for dimension in brief.dimensions if dimension.importance == "core"
     )
     return progress_from_coverages(
         coverages,
@@ -495,9 +489,7 @@ async def model_handler(state: WorkflowState, context: WorkflowContext) -> State
             if attempt == 0:
                 continue
             break
-        previous_output = (
-            dict(modeling_output) if isinstance(modeling_output, Mapping) else None
-        )
+        previous_output = dict(modeling_output) if isinstance(modeling_output, Mapping) else None
         try:
             if not isinstance(modeling_output, Mapping):
                 raise ContractValidationError("modeling_output_not_object")
@@ -585,9 +577,7 @@ async def _external_stage(
     effect = asyncio.create_task(_execute(context, port_name, stage, values))
     try:
         while not effect.done():
-            done, _ = await asyncio.wait(
-                (effect,), timeout=CONTROL_OBSERVE_INTERVAL_SECONDS
-            )
+            done, _ = await asyncio.wait((effect,), timeout=CONTROL_OBSERVE_INTERVAL_SECONDS)
             if done:
                 break
             command = await _poll_control(state, context)
@@ -637,18 +627,16 @@ async def score_handler(state: WorkflowState, context: WorkflowContext) -> State
     values = _values(state)
     fetch_result = values.get("fetch_result", {})
     if isinstance(fetch_result, Mapping) and isinstance(fetch_result.get("coverages"), list):
-        coverages = tuple(
-            DimensionCoverage.from_json(item) for item in fetch_result["coverages"]
-        )
+        coverages = tuple(DimensionCoverage.from_json(item) for item in fetch_result["coverages"])
         values["dimension_coverages"] = [item.to_json() for item in coverages]
     else:
         coverages = _coverages(values)
     quality = (
-        float(fetch_result.get("quality_score", 0.0))
-        if isinstance(fetch_result, Mapping)
-        else 0.0
+        float(fetch_result.get("quality_score", 0.0)) if isinstance(fetch_result, Mapping) else 0.0
     )
-    loop = replace(_loop(values), current_progress=_progress(values, coverages, quality_score=quality))
+    loop = replace(
+        _loop(values), current_progress=_progress(values, coverages, quality_score=quality)
+    )
     values["loop_policy"] = loop.to_json()
     if isinstance(fetch_result, Mapping) and isinstance(fetch_result.get("synthesis_route"), str):
         values["synthesis_route"] = str(fetch_result["synthesis_route"])
@@ -724,26 +712,24 @@ def _report_synthesis_payload(values: Mapping[str, Any]) -> dict[str, JsonValue]
             if not isinstance(raw, Mapping) or raw.get("admitted") is not True:
                 continue
             excerpt = raw.get("span_text") or raw.get("body_text") or ""
-            admitted.append({
-                "candidate_id": str(raw.get("candidate_id") or ""),
-                "dimension_id": str(raw.get("dimension_id") or ""),
-                "title": str(raw.get("title") or ""),
-                "family_id": (
-                    str(raw.get("family_id")) if raw.get("family_id") else None
-                ),
-                "source_tier": str(raw.get("source_tier") or ""),
-                "source_type": str(raw.get("source_type") or ""),
-                "published_date": str(raw.get("published_date") or ""),
-                "relevance": float(raw.get("relevance") or 0.0),
-                "evidence_text": str(excerpt)[:4_000],
-            })
+            admitted.append(
+                {
+                    "candidate_id": str(raw.get("candidate_id") or ""),
+                    "dimension_id": str(raw.get("dimension_id") or ""),
+                    "title": str(raw.get("title") or ""),
+                    "family_id": (str(raw.get("family_id")) if raw.get("family_id") else None),
+                    "source_tier": str(raw.get("source_tier") or ""),
+                    "source_type": str(raw.get("source_type") or ""),
+                    "published_date": str(raw.get("published_date") or ""),
+                    "relevance": float(raw.get("relevance") or 0.0),
+                    "evidence_text": str(excerpt)[:4_000],
+                }
+            )
     return {
         "research_brief": copy.deepcopy(values["research_brief"]),
         "dimension_coverages": copy.deepcopy(values["dimension_coverages"]),
         "synthesis_route": str(values.get("synthesis_route") or ""),
-        "dimension_analysis_result": copy.deepcopy(
-            values.get("dimension_analysis_result")
-        ),
+        "dimension_analysis_result": copy.deepcopy(values.get("dimension_analysis_result")),
         "evidence_candidates": admitted,
     }
 
@@ -811,9 +797,7 @@ async def gap_work_handler(state: WorkflowState, context: WorkflowContext) -> St
         }
         return _stage_patch(values, "gap_work", previous_state=state)
     if values.get("active_gap_mode") == "query_strategy":
-        loop, accepted = claim_query_strategy(
-            loop, operation_id=str(values["operation_id"])
-        )
+        loop, accepted = claim_query_strategy(loop, operation_id=str(values["operation_id"]))
         values["loop_policy"] = loop.to_json()
         result = (
             await _execute(
@@ -833,9 +817,7 @@ async def gap_work_handler(state: WorkflowState, context: WorkflowContext) -> St
             if accepted
             else {}
         )
-        values["query_strategy_called"] = accepted or bool(
-            values.get("query_strategy_called")
-        )
+        values["query_strategy_called"] = accepted or bool(values.get("query_strategy_called"))
     else:
         port_name = "fetch" if item.work_kind == "fetch" else "search"
         result = await _execute(
@@ -844,9 +826,7 @@ async def gap_work_handler(state: WorkflowState, context: WorkflowContext) -> St
             "gap_work",
             {
                 "work_item": item.to_json(),
-                "query_fingerprint": copy.deepcopy(
-                    values.get("active_gap_fingerprint")
-                ),
+                "query_fingerprint": copy.deepcopy(values.get("active_gap_fingerprint")),
                 "loop_policy": loop.to_json(),
                 "research_brief": copy.deepcopy(values["research_brief"]),
                 "dimension_coverages": copy.deepcopy(values["dimension_coverages"]),
@@ -898,8 +878,7 @@ async def gap_join_handler(state: WorkflowState, context: WorkflowContext) -> St
             else:
                 invalid_query_count = 1
             values["query_strategy_queries"] = [
-                {**query.to_json(), "fingerprint": query.fingerprint}
-                for query in queries
+                {**query.to_json(), "fingerprint": query.fingerprint} for query in queries
             ]
             if invalid_query_count:
                 # Query strategy is advisory. A malformed model result must
@@ -936,9 +915,7 @@ async def gap_join_handler(state: WorkflowState, context: WorkflowContext) -> St
                     active_seconds=loop.accumulated_active_seconds,
                 )
             fingerprint = values.get("active_gap_fingerprint")
-            executed = [
-                str(value) for value in values.get("executed_query_fingerprints", [])
-            ]
+            executed = [str(value) for value in values.get("executed_query_fingerprints", [])]
             if isinstance(fingerprint, str) and fingerprint not in executed:
                 executed.append(fingerprint)
             values["executed_query_fingerprints"] = executed
@@ -967,9 +944,7 @@ async def gap_join_handler(state: WorkflowState, context: WorkflowContext) -> St
         _brief(values),
         _coverages(values),
         executed_query_fingerprints=executed_fingerprints,
-    ) and not _pending_strategy_queries(
-        values, executed_fingerprints=executed_fingerprints
-    )
+    ) and not _pending_strategy_queries(values, executed_fingerprints=executed_fingerprints)
     values["gap_join_route"] = (
         "synth"
         if loop.prohibit_new_upstream or count >= GAP_WORK_LIMIT or no_more_queries
@@ -1005,8 +980,7 @@ async def rerank_handler(state: WorkflowState, context: WorkflowContext) -> Stat
     elif requested in {"full_synthesis", "partial_synthesis"}:
         route = str(requested)
     elif all(
-        by_id.get(item.dimension_id) is not None
-        and by_id[item.dimension_id].status == "covered"
+        by_id.get(item.dimension_id) is not None and by_id[item.dimension_id].status == "covered"
         for item in core
     ):
         route = "full_synthesis"
@@ -1116,9 +1090,7 @@ async def quality_audit_handler(state: WorkflowState, context: WorkflowContext) 
     if isinstance(previous_audit, Mapping) and values.get("committed_repair_ids"):
         previous_score = float(previous_audit.get("total_score", 0.0))
         current_score = float(audit.get("total_score", 0.0))
-        previous_failures = {
-            str(item) for item in previous_audit.get("hard_failures", [])
-        }
+        previous_failures = {str(item) for item in previous_audit.get("hard_failures", [])}
         current_failures = {str(item) for item in audit.get("hard_failures", [])}
         no_gain = (
             0
@@ -1128,9 +1100,7 @@ async def quality_audit_handler(state: WorkflowState, context: WorkflowContext) 
     values["repair_no_gain_rounds"] = no_gain
     values["synthesis_result"] = evaluated
     values["quality_audit_result"] = copy.deepcopy(dict(audit))
-    delivery_status = str(
-        evaluated.get("delivery_status") or "insufficient_evidence"
-    )
+    delivery_status = str(evaluated.get("delivery_status") or "insufficient_evidence")
     values["delivery_status"] = delivery_status
     allowed_repairs = [str(item) for item in audit.get("allowed_repairs", [])]
     count = int(state.get("loop_counters", {}).get("repair_iterations", 0))
@@ -1196,9 +1166,7 @@ async def repair_work_handler(state: WorkflowState, context: WorkflowContext) ->
             {
                 "repair_id": repair_id,
                 "repair_action": str(values.get("active_repair_action") or ""),
-                "target_dimension_id": str(
-                    values.get("active_repair_dimension") or ""
-                ),
+                "target_dimension_id": str(values.get("active_repair_dimension") or ""),
                 "audit": copy.deepcopy(values.get("quality_audit_result", {})),
                 "report_draft": copy.deepcopy(values.get("synthesis_result", {})),
                 "evidence_candidates": copy.deepcopy(values.get("evidence_candidates", [])),
@@ -1208,9 +1176,7 @@ async def repair_work_handler(state: WorkflowState, context: WorkflowContext) ->
             values.get("synthesis_result", {}),
             result,
             allowed_action=str(values.get("active_repair_action") or ""),
-            expected_dimension_id=str(
-                values.get("active_repair_dimension") or ""
-            ),
+            expected_dimension_id=str(values.get("active_repair_dimension") or ""),
         )
     except Exception as exc:
         values["repair_result"] = {
@@ -1273,9 +1239,7 @@ async def persist_handler(state: WorkflowState, context: WorkflowContext) -> Sta
 
 def _now(values: Mapping[str, JsonValue]) -> datetime:
     try:
-        parsed = datetime.fromisoformat(
-            _loop(values).wall_clock_anchor.replace("Z", "+00:00")
-        )
+        parsed = datetime.fromisoformat(_loop(values).wall_clock_anchor.replace("Z", "+00:00"))
     except ValueError:
         parsed = datetime.now(UTC)
     return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
@@ -1310,9 +1274,7 @@ def _delivery(
             if values.get("quality_audit_result") is not None
             else None
         ),
-        continue_until=(
-            continue_until if continuable else None
-        ),
+        continue_until=(continue_until if continuable else None),
         decided_at=now.isoformat(),
     )
 
@@ -1327,9 +1289,7 @@ async def finalize_handler(state: WorkflowState, context: WorkflowContext) -> St
     decision = _delivery(values, status=status)
     public: dict[str, JsonValue] = {"delivery_status": decision.status}
     if status == "partial":
-        public["action_matrix"] = [
-            {"action_id": "continue_research", "enabled": True}
-        ]
+        public["action_matrix"] = [{"action_id": "continue_research", "enabled": True}]
     validate_terminal_projection(
         engine_status="completed",
         delivery_decision=decision,
@@ -1353,9 +1313,7 @@ async def insufficient_finalize_handler(
     decision = _delivery(values, status="insufficient_evidence")
     public: dict[str, JsonValue] = {
         "delivery_status": decision.status,
-        "action_matrix": [
-            {"action_id": "continue_research", "enabled": True}
-        ],
+        "action_matrix": [{"action_id": "continue_research", "enabled": True}],
     }
     validate_terminal_projection(
         engine_status="completed",

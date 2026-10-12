@@ -8,214 +8,222 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any
 
-_VALID_SERVICES = frozenset({
-    "llm_engine", "asr_engine", "tts_engine",
-    "vad_engine", "agent_engine", "memory_store", "tool_router",
-    # P2-1-S8: BillingLedger registered so per-session handlers can read the
-    # daily-budget ledger without re-plumbing config.
-    "billing_ledger",
-    # --- P4 Poseidon agent harness (S12 wire-in) -----------------------------
-    # Optional: registered only when `config.agent.enabled=true` (ContextAssembler,
-    # SkillLoader, MemoryManager) or `config.mcp.enabled=true` (MCPManager).
-    # p4_ipc.py handlers tolerate any of these being None via graceful fallback.
-    "context_assembler",   # ContextAssembler instance (recent_decisions, assemble)
-    "skill_loader",        # SkillLoader with hot-reload + builtin skills
-    # 2026-09-10 删记忆 SDK：memory_manager / memory_recall_query /
-    # memory_recall_scope_resolver / memory_facts_surface /
-    # human_memory_v7_runtime / sdk_evidence_authority /
-    # sdk_memory_analysis_executor / sdk_memory_ingestion_outbox 八个槽位
-    # 已无任何 register/get，一并从白名单与 ServiceContext 字段里删除。
-    # 仍保留的记忆相关名字（embedder / vector_worker / file_memory /
-    # memory_curator / memory_store / facts_store / preference_memory /
-    # conversation_memory / memory_identity_* / memory_display_invalidation /
-    # prospective_occurrence_coordinator / sdk_typed_context_use_authority）
-    # 仍有 register 或 get 调用点（多数是恒 None 的占位），删掉会让 get()/
-    # register() 抛 "Unknown service"（2026-05-30 / 2026-06-05 两次事故的形态）。
-    "conversation_memory",  # Memory SDK conversation query/sink adapter
-    "sdk_context_staging",  # durable private provider-context staging authority
-    "sdk_context_source_repository",  # immutable non-Memory Context source authority
-    "memory_identity_resolver",  # trusted AgentIdentity session binding
-    "memory_identity_authority",  # validated product auth -> AgentIdentity
-    "frozen_skill_instruction_resolver",  # Run-catalog Skill projection
-    "legacy_frozen_skill_instruction_resolver",  # legacy-only fallback
-    "managed_skill_discovery_projection",  # discovery-only managed Skill view
-    "file_memory",         # Direct L1 handle (also reachable via manager.file_memory)
-    "mcp_manager",         # MCPManager (stdio/sse/streamable_http clients)
-    # --- P4-S16 公开化（之前挂在 _p4_* 私有属性上）---------------------------
-    # Embedder / VectorWorker / SessionDB 在 S15 wire-in 时是直接挂私有属性，
-    # 这里转成正式 register 路径，避免 getattr(sc, "_p4_xxx") 这种隐式约定。
-    "embedder",            # BGE-M3 Embedder (with mock fallback)
-    "vector_worker",       # VectorWorker draining embedding queue → vec0
-    "image_worker",        # ImageGenerationWorker (async generate_image)
-    "session_db",          # P4 canonical L2 SessionDB (state.db)
-    # --- P4-S22 Code Mode ----------------------------------------------------
-    "code_mode",           # CodeModeManager — per-base-session enable map
-    # --- P5-S1 Pet Supervisor ------------------------------------------------
-    "session_activity",    # SessionActivityStore — per-sid recent events + sig window
-    "watchdog",            # WatchdogLoop — periodic supervisor scan
-    "nudge_queue",         # NudgeQueue — supervisor hint injection queue
-    "supervisor",          # SupervisorAgent — LLM-based diagnosis dispatcher
-    # --- P5-S2 Self-Healing Harness ------------------------------------------
-    "auto_resume",         # AutoResumeOrchestrator — closes supervisor loop
-    "tool_circuit_breaker",  # ToolCircuitBreaker — per-(sid, tool) 3-state breaker
-    # --- P5-S2 multi-provider-management Phase 2 -----------------------------
-    "provider_registry",   # LLMProviderRegistry — owns [[llm.providers]] list
-    "provider_routing_readiness",  # fail-closed startup latch
-    # --- Stage 2 WI-S2.1a / E3 v2 — MemoryPanel facts view 桥接 ---------------
-    "facts_store",         # FactsStore — list_active / mark_forgotten / restore_from_undo
-    # --- Companion+Code v1 — SessionGoal + GoalChecker (main.py:1068-1069) ---
-    # 2026-05-30 bug fix：之前缺这两项导致 register() 抛 ValueError → boot
-    # warning `p4_services_registration_failed` + production UI 弹出红色错误条
-    # "Unknown service 'session_goal_store'"。flag `features.goal_mode` 默认
-    # OFF 时仍 register(None) 占位（main.py:1068 没 try/except 包）→ 必须在
-    # whitelist 里。
-    "session_goal_store",  # SessionGoalStore — companion+code goal tracking
-    "goal_checker",        # GoalChecker — LLM-based goal completion check
-    # --- goal-completion FP-5 WI-4.0 — compaction 接通 AgentLoop ---------------
-    # 2026-06-05 真机 bug fix：main.py:1189 无条件 register("context_compressor")，
-    # 缺白名单 → 启动 register 抛 ValueError(被 boot try/except 吞成 warning)，
-    # 但 chat 派发处 get("context_compressor") 抛 "Unknown service" → code-mode
-    # 任务全崩。flag OFF 时仍 register(None) 占位，故必须在白名单里。
-    "context_compressor",  # ContextCompressor — WI-4.0 loop 内 compaction
-    # --- goal-completion FP-5 接线修复 (2026-06-06) — 5 处跨层 wiring 断裂 -----
-    # 独立验收发现 codify hook (main.py:5836/5838/5859) + remount 接线引用了 3 个
-    # 未白名单的 service → get() 抛 ValueError("Unknown service") → 被 boot/chat
-    # try/except 吞成 debug log → WI-4.1/4.2/4.3 真机完全 no-op。flag OFF（默认）
-    # 时 lifespan 仍 register(None) 占位（保 BC + 让 get() 不抛），故必须在白名单里。
-    "skill_matcher",       # SkillMatcher (WI-4.1) — embedding 相似度披露 + remount
-    # --- superpowers Layer 1B — 偏好记忆（计划/意图，BGE-M3 语义匹配）---------
-    "preference_memory",   # PreferenceMemory — plan-confirm 自动确认 + 意图记忆
-    # --- Option A (2026-06-05) — 瘦包首启模型下载 ----------------------------
-    "model_provisioner",   # ModelProvisioner — 首启从 hf-mirror 下载缺失模型
-    # --- 子代理并发驱动 (plans/2026-06-21-subagent-concurrency-driver/) -------
-    # flag OFF（默认）时 lifespan 不 register 这些（None 占位无需），但加进白名单
-    # 防 get()/register() 抛 "Unknown service"（仿 session_goal_store 注释 :48）。
-    "subagent_scheduler",  # SubagentScheduler — lane-aware 有界并发调度
-    "team_store",          # TeamStore — spawn_team 共享任务池/mailbox/permission
-    "task_graph_store",    # TaskGraphStore — DAG 依赖排序任务图
-    # --- WI-OH-4 记忆 self-curation nudge (plans/2026-06-21-ppt-deepresearch-pro) ---
-    # flag memory.v2.curation_nudge OFF（默认）时 lifespan 不 register（None 占位
-    # 无需），但加进白名单防 get()/register() 抛 "Unknown service"（仿上方注释）。
-    "memory_curator",      # MemoryCurator — agent 主动判断该不该长期记
-    # --- WI-TG-2 审批 UX 聚合 (plans/2026-06-22-context-and-agent-optimization) ---
-    # PermissionGate 注册成 service 让 p4_ipc 的只读「列 pending」接口拿到它，
-    # 供 ApprovalCenterPanel 聚合展示。只读 — 不改 gate 决策路径。
-    "permission_gate",     # PermissionGate — 只读 list_pending 供审批聚合面板
-    # --- 七步问题处理流水线 (plans/2026-06-24-problem-handling-pipeline-maoxuan/) ---
-    # flag features.problem_pipeline.enabled OFF 时 lifespan 仍 register(None)
-    # 占位（见 main.py lifespan 的 else 分支）—— 否则 get()/register() 抛
-    # "Unknown service"（仿 session_goal_store 注释 :48 / context_compressor :57 的占位约定）。
-    "problem_pipeline",                  # ProblemHandlingPipeline（PRE-LOOP 编排器）
-    "pipeline_evidence_gate",            # EvidenceGate（Step2 取证门，build_agent caller 透传）
-    "pipeline_self_check_gate",          # 预留：第一期由 build_agent 内构造，service 仅占位
-    "pipeline_convergence_controller",   # 预留：第一期由 AgentLoop 内构造，service 仅占位
-    # Durable graph runtime and unified Trace/Replay/Eval facade.
-    "workflow_service",
-    "run_execution_fence_acquirer",
-    "provider_invocation_coordinator",
-    "provider_workload_router",
-    "provider_workload_audit",
-    "terminal_operation_audit",
-    "terminal_operation_audit_status",
-    "harness_public_read_service",
-    "session_terminal_projection_gate",
-    # Slice B: the sole immutable publication for the closed-ingress SDK stack.
-    "sdk_runtime_ready",
-    # SDK Context-authority cutover: immutable process publications assembled
-    # before the runtime starts.  These are explicit ServiceContext slots so a
-    # cold boot cannot fail while publishing an otherwise valid SDK stack.
-    "sdk_runtime_catalog",
-    "sdk_provider_binding_resolver",
-    "sdk_tool_authority_registry",
-    "sdk_runtime_tool_inventory",
-    "sdk_prepared_authorization_policy",
-    "sdk_run_context_authority",
-    "sdk_typed_context_use_authority",
-    "prospective_occurrence_coordinator",
-    "sdk_runtime_decision_sink",
-    "sdk_task_execution_authority",
-    # S5b: EffectGate (Task 1), closure instruction reader (Task 3 review F-2) and
-    # the Host↔Memory async face (Task 4) are explicit composition slots too.
-    "sdk_effect_gate",
-    "sdk_closure_instruction_reader",
-    # MM-D2（2026-09-09）：绑定挑战签发/决定落库后广播 content-free 显示失效，供 PrimaryWorkspaceBindings 刷新。
-    "memory_display_invalidation",
-    # F-Z1（2026-09-09）：读工具调用期门（WorkspaceReadGate）。
-    "sdk_workspace_read_gate",
-    "human_memory_host_service_factory",
-    "human_memory_binding_append_authority",
-    "human_memory_recovery_lifecycle",
-    "human_memory_foreground_scheduler_wake",
-    "human_memory_foreground_runtime_execution_authority",
-    # Capability-pack execution state, including the complete Project-scoped
-    # Skill-install aggregate, is owned by the execution/Manager database.
-    # ProductState contributes only the immutable authorization receipt.
-    "capability_store",
-    "capability_platform",
-    "project_skill_install_service",
-    "project_skill_discovery_service",
-    "skill_install_runtime_verifier",
-    "skill_install_verification_driver_factory",
-    "capability_center",
-    "capability_builder_host",
-    "authorization_runtime",
-    "admission_task_grant_runtime",
-    "capability_refresh_snapshots",
-    "capability_refresh_staging",
-    "capability_refresh_service",
-    # Shared Project-scoped Skill install application service. Capability
-    # bootstrap publishes it before the SDK Runtime freezes its tool catalog.
-    "project_skill_install_service",
-    "project_skill_install_settings_authorizer",
-    "skill_install_runtime_verifier",
-    # Process-owned async retrieval gateway shared by web_search and research.
-    "search_gateway",
-    # --- Context OS V1 ------------------------------------------------------
-    "tool_capability_scope_store",
-    "tool_capability_resolver",
-    "context_request_planner",
-    "context_snapshot_store",
-    "context_segment_store",
-    "context_page_in_store",
-    "context_attempt_store",
-    "compression_model_resolver",
-    # Host-owned Context OS task projection hooks used by ProductTurnPreparer.
-    # Omitting either slot aborts the P4 bootstrap block and leaves the
-    # assembler unavailable while context_os_v1 remains enabled.
-    "project_initial_context_snapshot",
-    "project_binding_service",
-    "session_creation_service",
-    "attach_task_snapshot_to_request",
-    # Companion Task 2: host-owned gate; absent/unready means retryable chat
-    # rejection rather than guessing a previously active human identity.
-    "companion_identity_gate",
-    "companion_profile_coordinator",
-    "companion_preference_resolver_dormant",
-    "companion_clock",
-    "companion_runtime",
-    "companion_ingress_dispatcher",
-    "companion_growth_pipeline",
-    "companion_reminder_service",
-    "companion_reminder_authority_selector",
-    "companion_reminder_registry_reconciler",
-    "growth_authority_cutover",
-    # Task 12: durable notification projection/detail query and the exact
-    # trusted action-decision service seams used by the main message window.
-    "companion_detail_query",
-    "companion_notification_service",
-    "companion_projection_visibility",
-    "companion_growth_action_decision_service",
-    "companion_growth_evaluation_decision_service",
-    "companion_growth_activation_decision_service",
-    "companion_rollback_service",
-    "companion_forget_service",
-    "window_control_credential_verifier",
-    # 2026-09-11 Agent 编排接入（plans/2026-09-11-orchestrator-host-integration，用户
-    # Phase3 P3.1）：编排服务与 mission_changed 推送。未登记会让 register 抛
-    # "Unknown service" 并使启动失败（2026-09-09 事故形态）。
-    "orchestration",
-    "orchestration_pump",
-})
+_VALID_SERVICES = frozenset(
+    {
+        "llm_engine",
+        "asr_engine",
+        "tts_engine",
+        "vad_engine",
+        "agent_engine",
+        "memory_store",
+        "tool_router",
+        # P2-1-S8: BillingLedger registered so per-session handlers can read the
+        # daily-budget ledger without re-plumbing config.
+        "billing_ledger",
+        # --- P4 Poseidon agent harness (S12 wire-in) -----------------------------
+        # Optional: registered only when `config.agent.enabled=true` (ContextAssembler,
+        # SkillLoader, MemoryManager) or `config.mcp.enabled=true` (MCPManager).
+        # p4_ipc.py handlers tolerate any of these being None via graceful fallback.
+        "context_assembler",  # ContextAssembler instance (recent_decisions, assemble)
+        "skill_loader",  # SkillLoader with hot-reload + builtin skills
+        # 2026-09-10 删记忆 SDK：memory_manager / memory_recall_query /
+        # memory_recall_scope_resolver / memory_facts_surface /
+        # human_memory_v7_runtime / sdk_evidence_authority /
+        # sdk_memory_analysis_executor / sdk_memory_ingestion_outbox 八个槽位
+        # 已无任何 register/get，一并从白名单与 ServiceContext 字段里删除。
+        # 仍保留的记忆相关名字（embedder / vector_worker / file_memory /
+        # memory_curator / memory_store / facts_store / preference_memory /
+        # conversation_memory / memory_identity_* / memory_display_invalidation /
+        # prospective_occurrence_coordinator / sdk_typed_context_use_authority）
+        # 仍有 register 或 get 调用点（多数是恒 None 的占位），删掉会让 get()/
+        # register() 抛 "Unknown service"（2026-05-30 / 2026-06-05 两次事故的形态）。
+        "conversation_memory",  # Memory SDK conversation query/sink adapter
+        "sdk_context_staging",  # durable private provider-context staging authority
+        "sdk_context_source_repository",  # immutable non-Memory Context source authority
+        "memory_identity_resolver",  # trusted AgentIdentity session binding
+        "memory_identity_authority",  # validated product auth -> AgentIdentity
+        "frozen_skill_instruction_resolver",  # Run-catalog Skill projection
+        "legacy_frozen_skill_instruction_resolver",  # legacy-only fallback
+        "managed_skill_discovery_projection",  # discovery-only managed Skill view
+        "file_memory",  # Direct L1 handle (also reachable via manager.file_memory)
+        "mcp_manager",  # MCPManager (stdio/sse/streamable_http clients)
+        # --- P4-S16 公开化（之前挂在 _p4_* 私有属性上）---------------------------
+        # Embedder / VectorWorker / SessionDB 在 S15 wire-in 时是直接挂私有属性，
+        # 这里转成正式 register 路径，避免 getattr(sc, "_p4_xxx") 这种隐式约定。
+        "embedder",  # BGE-M3 Embedder (with mock fallback)
+        "vector_worker",  # VectorWorker draining embedding queue → vec0
+        "image_worker",  # ImageGenerationWorker (async generate_image)
+        "session_db",  # P4 canonical L2 SessionDB (state.db)
+        # --- P4-S22 Code Mode ----------------------------------------------------
+        "code_mode",  # CodeModeManager — per-base-session enable map
+        # --- P5-S1 Pet Supervisor ------------------------------------------------
+        "session_activity",  # SessionActivityStore — per-sid recent events + sig window
+        "watchdog",  # WatchdogLoop — periodic supervisor scan
+        "nudge_queue",  # NudgeQueue — supervisor hint injection queue
+        "supervisor",  # SupervisorAgent — LLM-based diagnosis dispatcher
+        # --- P5-S2 Self-Healing Harness ------------------------------------------
+        "auto_resume",  # AutoResumeOrchestrator — closes supervisor loop
+        "tool_circuit_breaker",  # ToolCircuitBreaker — per-(sid, tool) 3-state breaker
+        # --- P5-S2 multi-provider-management Phase 2 -----------------------------
+        "provider_registry",  # LLMProviderRegistry — owns [[llm.providers]] list
+        "provider_routing_readiness",  # fail-closed startup latch
+        # --- Stage 2 WI-S2.1a / E3 v2 — MemoryPanel facts view 桥接 ---------------
+        "facts_store",  # FactsStore — list_active / mark_forgotten / restore_from_undo
+        # --- Companion+Code v1 — SessionGoal + GoalChecker (main.py:1068-1069) ---
+        # 2026-05-30 bug fix：之前缺这两项导致 register() 抛 ValueError → boot
+        # warning `p4_services_registration_failed` + production UI 弹出红色错误条
+        # "Unknown service 'session_goal_store'"。flag `features.goal_mode` 默认
+        # OFF 时仍 register(None) 占位（main.py:1068 没 try/except 包）→ 必须在
+        # whitelist 里。
+        "session_goal_store",  # SessionGoalStore — companion+code goal tracking
+        "goal_checker",  # GoalChecker — LLM-based goal completion check
+        # --- goal-completion FP-5 WI-4.0 — compaction 接通 AgentLoop ---------------
+        # 2026-06-05 真机 bug fix：main.py:1189 无条件 register("context_compressor")，
+        # 缺白名单 → 启动 register 抛 ValueError(被 boot try/except 吞成 warning)，
+        # 但 chat 派发处 get("context_compressor") 抛 "Unknown service" → code-mode
+        # 任务全崩。flag OFF 时仍 register(None) 占位，故必须在白名单里。
+        "context_compressor",  # ContextCompressor — WI-4.0 loop 内 compaction
+        # --- goal-completion FP-5 接线修复 (2026-06-06) — 5 处跨层 wiring 断裂 -----
+        # 独立验收发现 codify hook (main.py:5836/5838/5859) + remount 接线引用了 3 个
+        # 未白名单的 service → get() 抛 ValueError("Unknown service") → 被 boot/chat
+        # try/except 吞成 debug log → WI-4.1/4.2/4.3 真机完全 no-op。flag OFF（默认）
+        # 时 lifespan 仍 register(None) 占位（保 BC + 让 get() 不抛），故必须在白名单里。
+        "skill_matcher",  # SkillMatcher (WI-4.1) — embedding 相似度披露 + remount
+        # --- superpowers Layer 1B — 偏好记忆（计划/意图，BGE-M3 语义匹配）---------
+        "preference_memory",  # PreferenceMemory — plan-confirm 自动确认 + 意图记忆
+        # --- Option A (2026-06-05) — 瘦包首启模型下载 ----------------------------
+        "model_provisioner",  # ModelProvisioner — 首启从 hf-mirror 下载缺失模型
+        # --- 子代理并发驱动 (plans/2026-06-21-subagent-concurrency-driver/) -------
+        # flag OFF（默认）时 lifespan 不 register 这些（None 占位无需），但加进白名单
+        # 防 get()/register() 抛 "Unknown service"（仿 session_goal_store 注释 :48）。
+        "subagent_scheduler",  # SubagentScheduler — lane-aware 有界并发调度
+        "team_store",  # TeamStore — spawn_team 共享任务池/mailbox/permission
+        "task_graph_store",  # TaskGraphStore — DAG 依赖排序任务图
+        # --- WI-OH-4 记忆 self-curation nudge (plans/2026-06-21-ppt-deepresearch-pro) ---
+        # flag memory.v2.curation_nudge OFF（默认）时 lifespan 不 register（None 占位
+        # 无需），但加进白名单防 get()/register() 抛 "Unknown service"（仿上方注释）。
+        "memory_curator",  # MemoryCurator — agent 主动判断该不该长期记
+        # --- WI-TG-2 审批 UX 聚合 (plans/2026-06-22-context-and-agent-optimization) ---
+        # PermissionGate 注册成 service 让 p4_ipc 的只读「列 pending」接口拿到它，
+        # 供 ApprovalCenterPanel 聚合展示。只读 — 不改 gate 决策路径。
+        "permission_gate",  # PermissionGate — 只读 list_pending 供审批聚合面板
+        # --- 七步问题处理流水线 (plans/2026-06-24-problem-handling-pipeline-maoxuan/) ---
+        # flag features.problem_pipeline.enabled OFF 时 lifespan 仍 register(None)
+        # 占位（见 main.py lifespan 的 else 分支）—— 否则 get()/register() 抛
+        # "Unknown service"（仿 session_goal_store 注释 :48 / context_compressor :57 的占位约定）。
+        "problem_pipeline",  # ProblemHandlingPipeline（PRE-LOOP 编排器）
+        "pipeline_evidence_gate",  # EvidenceGate（Step2 取证门，build_agent caller 透传）
+        "pipeline_self_check_gate",  # 预留：第一期由 build_agent 内构造，service 仅占位
+        "pipeline_convergence_controller",  # 预留：第一期由 AgentLoop 内构造，service 仅占位
+        # Durable graph runtime and unified Trace/Replay/Eval facade.
+        "workflow_service",
+        "run_execution_fence_acquirer",
+        "provider_invocation_coordinator",
+        "provider_workload_router",
+        "provider_workload_audit",
+        "terminal_operation_audit",
+        "terminal_operation_audit_status",
+        "harness_public_read_service",
+        "session_terminal_projection_gate",
+        # Slice B: the sole immutable publication for the closed-ingress SDK stack.
+        "sdk_runtime_ready",
+        # SDK Context-authority cutover: immutable process publications assembled
+        # before the runtime starts.  These are explicit ServiceContext slots so a
+        # cold boot cannot fail while publishing an otherwise valid SDK stack.
+        "sdk_runtime_catalog",
+        "sdk_provider_binding_resolver",
+        "sdk_tool_authority_registry",
+        "sdk_runtime_tool_inventory",
+        "sdk_prepared_authorization_policy",
+        "sdk_run_context_authority",
+        "sdk_typed_context_use_authority",
+        "prospective_occurrence_coordinator",
+        "sdk_runtime_decision_sink",
+        "sdk_task_execution_authority",
+        # S5b: EffectGate (Task 1), closure instruction reader (Task 3 review F-2) and
+        # the Host↔Memory async face (Task 4) are explicit composition slots too.
+        "sdk_effect_gate",
+        "sdk_closure_instruction_reader",
+        # MM-D2（2026-09-09）：绑定挑战签发/决定落库后广播 content-free 显示失效，供 PrimaryWorkspaceBindings 刷新。
+        "memory_display_invalidation",
+        # F-Z1（2026-09-09）：读工具调用期门（WorkspaceReadGate）。
+        "sdk_workspace_read_gate",
+        "human_memory_host_service_factory",
+        "human_memory_binding_append_authority",
+        "human_memory_recovery_lifecycle",
+        "human_memory_foreground_scheduler_wake",
+        "human_memory_foreground_runtime_execution_authority",
+        # Capability-pack execution state, including the complete Project-scoped
+        # Skill-install aggregate, is owned by the execution/Manager database.
+        # ProductState contributes only the immutable authorization receipt.
+        "capability_store",
+        "capability_platform",
+        "project_skill_install_service",
+        "project_skill_discovery_service",
+        "skill_install_runtime_verifier",
+        "skill_install_verification_driver_factory",
+        "capability_center",
+        "capability_builder_host",
+        "authorization_runtime",
+        "admission_task_grant_runtime",
+        "capability_refresh_snapshots",
+        "capability_refresh_staging",
+        "capability_refresh_service",
+        # Shared Project-scoped Skill install application service. Capability
+        # bootstrap publishes it before the SDK Runtime freezes its tool catalog.
+        "project_skill_install_service",
+        "project_skill_install_settings_authorizer",
+        "skill_install_runtime_verifier",
+        # Process-owned async retrieval gateway shared by web_search and research.
+        "search_gateway",
+        # --- Context OS V1 ------------------------------------------------------
+        "tool_capability_scope_store",
+        "tool_capability_resolver",
+        "context_request_planner",
+        "context_snapshot_store",
+        "context_segment_store",
+        "context_page_in_store",
+        "context_attempt_store",
+        "compression_model_resolver",
+        # Host-owned Context OS task projection hooks used by ProductTurnPreparer.
+        # Omitting either slot aborts the P4 bootstrap block and leaves the
+        # assembler unavailable while context_os_v1 remains enabled.
+        "project_initial_context_snapshot",
+        "project_binding_service",
+        "session_creation_service",
+        "attach_task_snapshot_to_request",
+        # Companion Task 2: host-owned gate; absent/unready means retryable chat
+        # rejection rather than guessing a previously active human identity.
+        "companion_identity_gate",
+        "companion_profile_coordinator",
+        "companion_preference_resolver_dormant",
+        "companion_clock",
+        "companion_runtime",
+        "companion_ingress_dispatcher",
+        "companion_growth_pipeline",
+        "companion_reminder_service",
+        "companion_reminder_authority_selector",
+        "companion_reminder_registry_reconciler",
+        "growth_authority_cutover",
+        # Task 12: durable notification projection/detail query and the exact
+        # trusted action-decision service seams used by the main message window.
+        "companion_detail_query",
+        "companion_notification_service",
+        "companion_projection_visibility",
+        "companion_growth_action_decision_service",
+        "companion_growth_evaluation_decision_service",
+        "companion_growth_activation_decision_service",
+        "companion_rollback_service",
+        "companion_forget_service",
+        "window_control_credential_verifier",
+        # 2026-09-11 Agent 编排接入（plans/2026-09-11-orchestrator-host-integration，用户
+        # Phase3 P3.1）：编排服务与 mission_changed 推送。未登记会让 register 抛
+        # "Unknown service" 并使启动失败（2026-09-09 事故形态）。
+        "orchestration",
+        "orchestration_pump",
+    }
+)
+
 
 @dataclass
 class ServiceContext:
@@ -377,7 +385,4 @@ class ServiceContext:
     def snapshot(self) -> MappingProxyType:
         """Freeze the current public service bindings for one product turn."""
 
-        return MappingProxyType({
-            name: getattr(self, name, None)
-            for name in _VALID_SERVICES
-        })
+        return MappingProxyType({name: getattr(self, name, None) for name in _VALID_SERVICES})

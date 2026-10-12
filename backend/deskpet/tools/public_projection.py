@@ -7,26 +7,30 @@ import json
 from collections.abc import Mapping
 from typing import Any
 
-_WEB_FETCH_TOOLS = frozenset({
-    "web_fetch",
-    "web_extract_article",
-    "web_extract_page",
-    "web_crawl",
-    "web_read_sitemap",
-    "scrapling_fetch",
-})
-_WEB_SEARCH_TOOLS = frozenset({
-    "web_search",
-    "web_search_brave",
-})
-_WEB_DIRECT_TOOLS = frozenset({
-    # Scrapling-backed lookup whose executor result contains source_urls.
-    # It is a web tool even though its public name does not use a web_* prefix.
-    "gold_price_lookup",
-})
-_PUBLIC_OUTCOME_STATUSES = frozenset(
-    {"succeeded", "failed", "partial", "rejected", "unknown"}
+_WEB_FETCH_TOOLS = frozenset(
+    {
+        "web_fetch",
+        "web_extract_article",
+        "web_extract_page",
+        "web_crawl",
+        "web_read_sitemap",
+        "scrapling_fetch",
+    }
 )
+_WEB_SEARCH_TOOLS = frozenset(
+    {
+        "web_search",
+        "web_search_brave",
+    }
+)
+_WEB_DIRECT_TOOLS = frozenset(
+    {
+        # Scrapling-backed lookup whose executor result contains source_urls.
+        # It is a web tool even though its public name does not use a web_* prefix.
+        "gold_price_lookup",
+    }
+)
+_PUBLIC_OUTCOME_STATUSES = frozenset({"succeeded", "failed", "partial", "rejected", "unknown"})
 
 
 def project_public_tool_arguments(
@@ -73,9 +77,7 @@ def project_public_tool_calls(tool_calls: object) -> object:
                 parsed_arguments = json.loads(raw_arguments)
             except (TypeError, ValueError):
                 parsed_arguments = {}
-        public_arguments = project_public_tool_arguments(
-            function.get("name"), parsed_arguments
-        )
+        public_arguments = project_public_tool_arguments(function.get("name"), parsed_arguments)
         function["arguments"] = (
             json.dumps(public_arguments, ensure_ascii=False)
             if isinstance(raw_arguments, str)

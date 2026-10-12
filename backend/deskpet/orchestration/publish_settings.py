@@ -46,9 +46,13 @@ def validate_publish_dir(raw: Any, *, protected: Iterable[Path]) -> str:
     from agent_orchestrator.runtime.connectors_publish import FilePublishConnector
 
     if publication_overlaps_storage(root, [Path(p) for p in protected]):
-        raise PublishDirRefused("overlaps_app_data", "发布目录不能和应用自己的数据目录重叠（互相包含也不行）")
+        raise PublishDirRefused(
+            "overlaps_app_data", "发布目录不能和应用自己的数据目录重叠（互相包含也不行）"
+        )
     if not FilePublishConnector.supports_hardlinks(root):
-        raise PublishDirRefused("no_hardlinks", "这个磁盘不支持硬链接，无法保证发布是原子的；请换一个目录")
+        raise PublishDirRefused(
+            "no_hardlinks", "这个磁盘不支持硬链接，无法保证发布是原子的；请换一个目录"
+        )
     return str(root.resolve())
 
 
@@ -73,16 +77,26 @@ def write_publish_dir(config_path: Path, value: str) -> None:
 
 def current(service: Any, config_value: str) -> dict[str, Any]:
     status = service.status() if service is not None else {}
-    return {"configured": config_value, "publish": dict(status.get("publish") or {}),
-            "active_missions": int(status.get("active_missions") or 0)}
+    return {
+        "configured": config_value,
+        "publish": dict(status.get("publish") or {}),
+        "active_missions": int(status.get("active_missions") or 0),
+    }
 
 
-async def set_publish_dir(raw: Any, *, config_path: Path, protected: Iterable[Path],
-                          restart: Callable[[], Awaitable[Any]]) -> str:
+async def set_publish_dir(
+    raw: Any, *, config_path: Path, protected: Iterable[Path], restart: Callable[[], Awaitable[Any]]
+) -> str:
     value = validate_publish_dir(raw, protected=protected)
     write_publish_dir(config_path, value)
     await restart()
     return value
 
 
-__all__ = ("PublishDirRefused", "current", "set_publish_dir", "validate_publish_dir", "write_publish_dir")
+__all__ = (
+    "PublishDirRefused",
+    "current",
+    "set_publish_dir",
+    "validate_publish_dir",
+    "write_publish_dir",
+)

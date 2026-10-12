@@ -59,9 +59,16 @@ class CreationReceipt:
 
 
 def session_id_for(agent_id: str, root: RootIdentity, creation_key: str) -> str:
-    return "session-" + digest(
-        {"agent_id": agent_id, "root_incarnation": root.root_incarnation, "creation_key": creation_key}
-    )[:32]
+    return (
+        "session-"
+        + digest(
+            {
+                "agent_id": agent_id,
+                "root_incarnation": root.root_incarnation,
+                "creation_key": creation_key,
+            }
+        )[:32]
+    )
 
 
 def session_creation_key(owner_scope: str, creation_key: str) -> str:
@@ -151,7 +158,13 @@ class NativeCreationService:
     # ---- C0 --------------------------------------------------------------------------
 
     def _command_hash(
-        self, *, owner_scope: str, creation_key: str, config: AgentConfig, caller: TrustedCaller, role: str,
+        self,
+        *,
+        owner_scope: str,
+        creation_key: str,
+        config: AgentConfig,
+        caller: TrustedCaller,
+        role: str,
         mission_record: Mapping[str, Any] | None = None,
     ) -> str:
         command = {
@@ -170,7 +183,14 @@ class NativeCreationService:
         return digest(command)
 
     def prepare_intent(
-        self, *, owner_scope: str, creation_key: str, agent_id: str, run_id: str, command_hash: str, caller: TrustedCaller
+        self,
+        *,
+        owner_scope: str,
+        creation_key: str,
+        agent_id: str,
+        run_id: str,
+        command_hash: str,
+        caller: TrustedCaller,
     ) -> store.CreationIntentRow:
         database = self._runtime.uow.database
         with database.transaction() as connection:
@@ -215,18 +235,30 @@ class NativeCreationService:
         if not isinstance(creation_key, str) or not creation_key.strip():
             raise ValueError("creation_key is required")
         if caller is None:
-            raise ArpError("AUTHORITY_SOURCE_MISSING", "ARP creation requires an authenticated caller")
+            raise ArpError(
+                "AUTHORITY_SOURCE_MISSING", "ARP creation requires an authenticated caller"
+            )
         profile = self.profile
         mission_record: dict[str, Any] | None = None
         if profile.owner_mode == "MISSION":
             # NEXT-TG-1.0 §10: the exact role-typed Mission sources, read from the original
             # authority, or a named refusal — never a silent standalone creation.
             mission_record = mission_sources.record_for_creation(
-                self._ports.mission_sources, self._runtime.uow.database.connection, caller=caller, role=role
+                self._ports.mission_sources,
+                self._runtime.uow.database.connection,
+                caller=caller,
+                role=role,
             )
             frozen_config = mission_record["sources"].get("agent_config_hash")
-            if role != "child" and frozen_config is not None and frozen_config != digest(config.to_json()):
-                raise ArpError("REF_IDENTITY_MISMATCH", "the Agent configuration differs from the one the intent froze")
+            if (
+                role != "child"
+                and frozen_config is not None
+                and frozen_config != digest(config.to_json())
+            ):
+                raise ArpError(
+                    "REF_IDENTITY_MISMATCH",
+                    "the Agent configuration differs from the one the intent froze",
+                )
         elif profile.owner_mode != "STANDALONE_CHAT":
             raise ArpError("ENUM", field_path="owner_mode")
         mode = profile.creation_mode(embedding_available=self._ports.embedding_available)
@@ -246,28 +278,49 @@ class NativeCreationService:
         # Refused by name before any filesystem or kernel work; QUARANTINED stays a live,
         # recoverable Session and replays as before. Keyed by this owner's identity, so
         # another owner's Session is neither consulted nor named (BA05).
-        previous = store.read_session(uow.database.connection, session_id_for(agent_id, self._root, creation_key))
-        if previous is not None and (previous.destroy_command_id is not None or previous.state in ("DRAINING", "PURGING", "PURGED")):
+        previous = store.read_session(
+            uow.database.connection, session_id_for(agent_id, self._root, creation_key)
+        )
+        if previous is not None and (
+            previous.destroy_command_id is not None
+            or previous.state in ("DRAINING", "PURGING", "PURGED")
+        ):
             code = "SESSION_PURGED" if previous.state == "PURGED" else "SESSION_NOT_ACTIVE"
-            raise ArpError(code, f"the creation key's session is {previous.state}", detail={"state": previous.state})
+            raise ArpError(
+                code,
+                f"the creation key's session is {previous.state}",
+                detail={"state": previous.state},
+            )
         command_hash = self._command_hash(
-            owner_scope=owner_scope, creation_key=creation_key, config=config, caller=caller, role=role,
+            owner_scope=owner_scope,
+            creation_key=creation_key,
+            config=config,
+            caller=caller,
+            role=role,
             mission_record=mission_record,
         )
         # C0
         intent = self.prepare_intent(
-            owner_scope=owner_scope, creation_key=creation_key, agent_id=agent_id, run_id=run_id,
-            command_hash=command_hash, caller=caller,
+            owner_scope=owner_scope,
+            creation_key=creation_key,
+            agent_id=agent_id,
+            run_id=run_id,
+            command_hash=command_hash,
+            caller=caller,
         )
         self._fault("create.after_intent")
         # C1
         session_id = session_id_for(agent_id, self._root, creation_key)
         relative_directory = f"sessions/{session_id}"
         creation_receipt_ref = original_receipt_pin(
-            f"run:{run_id}:start", {"run_id": run_id, "request_id": f"{agent_id}:create", "creation_key": creation_key}
+            f"run:{run_id}:start",
+            {"run_id": run_id, "request_id": f"{agent_id}:create", "creation_key": creation_key},
         )
         marker = session_marker(
-            session_id=session_id, agent_id=agent_id, root=self._root, control_generation=1,
+            session_id=session_id,
+            agent_id=agent_id,
+            root=self._root,
+            control_generation=1,
             creation_receipt_ref=creation_receipt_ref,
         )
         marker_hash = write_marker(self._root.resolve_relative(relative_directory), marker)
@@ -341,7 +394,12 @@ class NativeCreationService:
                     policy=self._policy,
                     command_id=f"{session_id}:adopt:1",
                     command_hash=command_hash,
-                    authority_receipt_ref=Pin("receipt", self._profile.pin.id + ":activation", self._profile.revision, digest(self._profile.activation_receipt)),
+                    authority_receipt_ref=Pin(
+                        "receipt",
+                        self._profile.pin.id + ":activation",
+                        self._profile.revision,
+                        digest(self._profile.activation_receipt),
+                    ),
                     source_receipt_ref=caller.command_receipt_ref,
                     now_ms=now_ms,
                 )
@@ -350,7 +408,9 @@ class NativeCreationService:
                     run_id=run_id,
                     event_type="AgentContextPolicyAdopted",
                     body={
-                        "session_ref": Pin("session", session_id, 1, session.identity_hash).to_json(),
+                        "session_ref": Pin(
+                            "session", session_id, 1, session.identity_hash
+                        ).to_json(),
                         "adoption_revision": 1,
                         "policy_ref": self._policy.pin.to_json(),
                         "command_receipt_ref": caller.command_receipt_ref.to_json(),
@@ -359,7 +419,9 @@ class NativeCreationService:
                     dedupe_key=f"{session_id}:adoption:1",
                     now=now,
                 )
-                activated = store.transition_session_locked(connection, session, now_ms=now_ms, state="ACTIVE")
+                activated = store.transition_session_locked(
+                    connection, session, now_ms=now_ms, state="ACTIVE"
+                )
                 store.append_runtime_event_locked(
                     connection,
                     run_id=run_id,
@@ -380,8 +442,12 @@ class NativeCreationService:
                 session = activated
             if mission_record is not None:
                 store.append_original_receipt_locked(
-                    connection, run_id=run_id, kind=mission_sources.RECEIPT_KIND, receipt_key=session_id,
-                    body=mission_record, now=now,
+                    connection,
+                    run_id=run_id,
+                    kind=mission_sources.RECEIPT_KIND,
+                    receipt_key=session_id,
+                    body=mission_record,
+                    now=now,
                 )
             intent = store.finalize_creation_locked(connection, intent, state="BOUND")
         del mode  # LEXICAL_ONLY / HYBRID is recorded by the index partition owner (RP-B)

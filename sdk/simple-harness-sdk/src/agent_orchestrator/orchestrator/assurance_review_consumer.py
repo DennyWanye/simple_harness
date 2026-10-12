@@ -65,14 +65,19 @@ def checks_pending(body: Mapping[str, Any], bound: Any) -> tuple[str, ...]:
     只有对象是一份结果的审阅才会等：结果有受信检查写方（本地检查 / 执行器检查导入），检查绑定迟早
     写进库；终审、组合等对象没有检查写方，缺的检查照真值表算 UNKNOWN，不等。这是"绑定在不在"的
     秩序事实，不是内容判断。"""
-    if body["subject"]["target"]["kind"] != "result" or body["subject"]["completion_scope_ref"] is None:
+    if (
+        body["subject"]["target"]["kind"] != "result"
+        or body["subject"]["completion_scope_ref"] is None
+    ):
         return ()
     return tuple(
         str(policy["criterion_id"])
         for policy in body["check_requirements"]
         if policy["mode"] == "CHECKED"
-        and not any(all(AssuranceRef.from_json(ref) in bound for ref in group)
-                    for group in policy["any_check_sets"])
+        and not any(
+            all(AssuranceRef.from_json(ref) in bound for ref in group)
+            for group in policy["any_check_sets"]
+        )
     )
 
 
@@ -87,7 +92,8 @@ def replaced_review_source(store: Any, binding: Any) -> str | None:
             continue
         row = store.connection.execute(
             "SELECT superseded_by, revoked FROM sources WHERE mission_id=? AND path=? AND version_hash=?",
-            (body["mission_id"], ref.pin.id, ref.pin.content_hash)).fetchone()
+            (body["mission_id"], ref.pin.id, ref.pin.content_hash),
+        ).fetchone()
         if row is None or row["superseded_by"] is not None or row["revoked"]:
             return str(ref.pin.id)
     return None
@@ -217,19 +223,30 @@ class AssuranceReviewConsumer:
                     raise AssuranceError("REVIEW_WORK_SOURCE_MISSING")
                 event = _event_from_row(sources[0])
             ref = AssuranceRef.from_json(event.payload["classification_receipt_ref"])
-            unusable_second = (event.type == "AssuranceReviewFormatRejected"
-                               and event.payload.get("invocation_ordinal") == 2)
+            unusable_second = (
+                event.type == "AssuranceReviewFormatRejected"
+                and event.payload.get("invocation_ordinal") == 2
+            )
             # 2026-10-09 四项修复第 1 条：第 2 次调用的回合失败、且不是被打断（没有被打断回执）
             # —— 审阅员自己的事（调用上限、工具用错、输出上限用完），同样导入为"没有可采用的
             # 回复"的正式记录，交人裁决；此前它只写"用完"回执，终审因此走进死路（规划器没有
             # "重开终审"的决定可用）。被打断的第 2 次仍是"被打断用完"（终审重切、步骤重做）。
-            failed_second = (event.payload.get("classification") == "TURN_FAILED"
-                             and event.payload.get("invocation_ordinal") == 2
-                             and self.store.get_receipt(
-                                 "assurance-review-interrupted:" + str(event.payload.get("intent_id"))) is None)
-            if (event.type == "AssuranceReviewFormatRejected"
-                    or event.payload.get("classification") == "TURN_FAILED") \
-                    and not unusable_second and not failed_second:
+            failed_second = (
+                event.payload.get("classification") == "TURN_FAILED"
+                and event.payload.get("invocation_ordinal") == 2
+                and self.store.get_receipt(
+                    "assurance-review-interrupted:" + str(event.payload.get("intent_id"))
+                )
+                is None
+            )
+            if (
+                (
+                    event.type == "AssuranceReviewFormatRejected"
+                    or event.payload.get("classification") == "TURN_FAILED"
+                )
+                and not unusable_second
+                and not failed_second
+            ):
                 # First unusable reply or failed call: asked again in a fresh session.  A second
                 # call that was interrupted stays an infrastructure matter (exhausted below).
                 return self._prepare_format_repair(reader, ref)
@@ -546,8 +563,9 @@ class AssuranceReviewConsumer:
                     proposal_hash=digest,
                     receipt=body,
                 )
-                self.commit._emit(SECOND_OPINION_REQUESTED, reader.mission_id, key=receipt_id,
-                                  payload=body)
+                self.commit._emit(
+                    SECOND_OPINION_REQUESTED, reader.mission_id, key=receipt_id, payload=body
+                )
             second = self.commit.ensure_assurance_format_repair(
                 tenant_id=self.tenant_id,
                 prior_failure=AssuranceRef("commit_receipt", Pin(receipt_id, 0, digest)),
@@ -591,8 +609,9 @@ class AssuranceReviewConsumer:
                     proposal_hash=digest,
                     receipt=body,
                 )
-                self.commit._emit(INTERPRETATION_REJECTED, reader.mission_id, key=receipt_id,
-                                  payload=body)
+                self.commit._emit(
+                    INTERPRETATION_REJECTED, reader.mission_id, key=receipt_id, payload=body
+                )
             repaired = self.commit.ensure_assurance_format_repair(
                 tenant_id=self.tenant_id,
                 prior_failure=AssuranceRef("commit_receipt", Pin(receipt_id, 0, digest)),
@@ -614,8 +633,10 @@ class AssuranceReviewConsumer:
             self.commit, reader, source.get("intent_id")
         )
         value = invocation.to_json()
-        second_sources = {"FORMAT_INVALID": "AssuranceReviewFormatRejected",
-                          "TURN_FAILED": "AssuranceReviewClassified"}
+        second_sources = {
+            "FORMAT_INVALID": "AssuranceReviewFormatRejected",
+            "TURN_FAILED": "AssuranceReviewClassified",
+        }
         if (
             second_sources.get(str(source.get("classification"))) != row["kind"]
             or row["subject_id"] != source.get("intent_id")
@@ -644,8 +665,13 @@ class AssuranceReviewConsumer:
             self.commit._assurance_root_gate.require_execution()
             if reader.read_exact_metadata(ref) != metadata:
                 raise AssuranceError("RECHECK_REQUIRED")
-            if (source.get("classification") != "TURN_FAILED" or self.store.get_receipt(
-                    "assurance-review-interrupted:" + str(source.get("intent_id"))) is None):
+            if (
+                source.get("classification") != "TURN_FAILED"
+                or self.store.get_receipt(
+                    "assurance-review-interrupted:" + str(source.get("intent_id"))
+                )
+                is None
+            ):
                 raise AssuranceError("REVIEW_REPAIR_SOURCE_INVALID")
             body = {
                 "mission_id": reader.mission_id,

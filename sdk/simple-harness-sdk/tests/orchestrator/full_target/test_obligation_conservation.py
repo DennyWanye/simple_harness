@@ -333,7 +333,9 @@ def test_a_parent_cannot_hand_over_fuel_it_no_longer_has() -> None:
     ledger = ObligationLedger()
     ledger.register(duty(), recursion_fuel=2)
     parent = duty().obligation_id
-    ledger.open_from(_opening(obligation_id="obligation-first", fuel_share=1), ledger.account(parent))
+    ledger.open_from(
+        _opening(obligation_id="obligation-first", fuel_share=1), ledger.account(parent)
+    )
     before = ledger.account(parent)
 
     with pytest.raises(ContractError, match="cannot hand over"):

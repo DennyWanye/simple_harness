@@ -7,6 +7,7 @@
 而该异常被 ``except Exception`` 吞掉，整条 IntentTriage 预循环静默作废，冒烟仍全绿。
 本测试把「静态辅助方法仍是 staticmethod 且可按 route_intent 的调用形态调用」钉死。
 """
+
 from __future__ import annotations
 
 import inspect

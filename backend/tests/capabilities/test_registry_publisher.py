@@ -125,9 +125,7 @@ class _SpecFactory:
         )
         candidate = ToolRegistry()
         for tool in manifest.tools:
-            parameters = json.loads(
-                (install_root / tool.schema).read_text(encoding="utf-8")
-            )
+            parameters = json.loads((install_root / tool.schema).read_text(encoding="utf-8"))
             # The Run catalog only advertises tools with a durable execution
             # build identity (hub.ToolRegistryCatalogSource); the product pack
             # factory (capabilities/platform.py) always stamps one.
@@ -143,9 +141,10 @@ class _SpecFactory:
                 ).hexdigest(),
                 sources_manifest_hash=sources_hash,
                 artifacts=(
-                    (f"pack:{tool.schema}", hashlib.sha256(
-                        (install_root / tool.schema).read_bytes()
-                    ).hexdigest()),
+                    (
+                        f"pack:{tool.schema}",
+                        hashlib.sha256((install_root / tool.schema).read_bytes()).hexdigest(),
+                    ),
                 ),
             )
             candidate.register(

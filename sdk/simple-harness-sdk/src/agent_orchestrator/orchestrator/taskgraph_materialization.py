@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 """Original execution resources and exact material mounts for TaskGraph Workers."""
+
 from __future__ import annotations
 
 import hashlib
@@ -19,8 +20,12 @@ from ..storage.store import Store, StoreConflict, StoreError
 from ..verification.evidence_resolver import _safe_path
 
 
-def require_mounts(inputs: Sequence[UpstreamInput], rules: TargetRules, *,
-                   supplementary: Mapping[str, bytes] | None = None) -> None:
+def require_mounts(
+    inputs: Sequence[UpstreamInput],
+    rules: TargetRules,
+    *,
+    supplementary: Mapping[str, bytes] | None = None,
+) -> None:
     """Reject collisions before a dict/update or a filesystem write loses them.
 
     DATA mounts were independently selected by their original
@@ -28,6 +33,7 @@ def require_mounts(inputs: Sequence[UpstreamInput], rules: TargetRules, *,
     path only when they are byte-identical; they cannot replace selected DATA.
     """
     mounted: dict[str, tuple[str, str]] = {}
+
     def add(path: str, digest: str, *, additional: bool) -> None:
         if not _safe_path(path):
             raise ArtifactConflict("TASKGRAPH_MATERIAL_PATH_INVALID")
@@ -42,6 +48,7 @@ def require_mounts(inputs: Sequence[UpstreamInput], rules: TargetRules, *,
         if any(key.startswith(other + "/") or other.startswith(key + "/") for other in mounted):
             raise ArtifactConflict("TASKGRAPH_MATERIAL_FILE_DIRECTORY_CONFLICT")
         mounted[key] = (path, digest)
+
     for item in inputs:
         add(item.path, item.content_hash, additional=False)
     for path, data in (supplementary or {}).items():
@@ -75,11 +82,20 @@ class TaskGraphExecutionGuard:
     real reservation and per-call Provider/Tool/Action admission remain in the
     original Commit/runtime path. No planning grant is treated as execution.
     """
+
     def __init__(self, orchestrator: Any) -> None:
         self.orchestrator, self.store = orchestrator, orchestrator.store
 
-    def __call__(self, store: Store, view: Any, admission: Any, manifest: Any,
-                 config: Mapping[str, Any], inputs: Sequence[Mapping[str, Any]], input_hash: str) -> None:
+    def __call__(
+        self,
+        store: Store,
+        view: Any,
+        admission: Any,
+        manifest: Any,
+        config: Mapping[str, Any],
+        inputs: Sequence[Mapping[str, Any]],
+        input_hash: str,
+    ) -> None:
         orch = self.orchestrator
         if store is not self.store or not store.connection.in_transaction:
             raise StoreError("TASKGRAPH_EXECUTION_RECHECK_TRANSACTION_REQUIRED")
@@ -98,8 +114,12 @@ class TaskGraphExecutionGuard:
         require_mounts(frozen, rules)
         for item in frozen:
             artifact = store.get_artifact(item.artifact_id)
-            if (artifact is None or artifact.mission_id != task.mission_id
-                    or artifact.task_id != item.task_id or artifact.content_hash != item.content_hash):
+            if (
+                artifact is None
+                or artifact.mission_id != task.mission_id
+                or artifact.task_id != item.task_id
+                or artifact.content_hash != item.content_hash
+            ):
                 raise StoreError("TASKGRAPH_MATERIAL_ARTIFACT_IDENTITY_CHANGED")
             read_verified(artifact)
         if sha256_hex(config.get("message")) != input_hash:
@@ -111,7 +131,8 @@ class TaskGraphExecutionGuard:
         pool.bridge.check_tools(AgentConfig.from_json(dict(config["agent_config"])))
         mission = store.get_mission(task.mission_id)
         if mission is None or orch._active_source_binding(task.mission_id) != {
-                key: config[key] for key in ("source_versions", "source_roots") if key in config}:
+            key: config[key] for key in ("source_versions", "source_roots") if key in config
+        }:
             raise StoreConflict("TASKGRAPH_EXECUTION_SOURCE_BINDING_CHANGED")
         # Count every original open Attempt. Caller-supplied optional limits cannot
         # bypass the actual installed deployment cap.

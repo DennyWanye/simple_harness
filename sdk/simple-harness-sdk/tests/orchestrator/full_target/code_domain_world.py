@@ -56,9 +56,17 @@ def proposing_planner(shape: Callable[[], dict[str, Any]]) -> Callable[[Any], An
         if contexts and not (package.get("method_selection") or [{}])[0].get("applicable"):
             context = contexts[0]
             body = _proposed(shape(), context["request"])
-            return decision(context["subject_key"], "PROPOSE_METHOD",
-                            {"method_proposal": {"method": body, "rationale": "按事实、复现、补丁、验证、解释来修。"}},
-                            "库里没有挂在这些要求上的做法，提出一个。")
+            return decision(
+                context["subject_key"],
+                "PROPOSE_METHOD",
+                {
+                    "method_proposal": {
+                        "method": body,
+                        "rationale": "按事实、复现、补丁、验证、解释来修。",
+                    }
+                },
+                "库里没有挂在这些要求上的做法，提出一个。",
+            )
         return planner_reply(request)
 
     return planner
@@ -82,15 +90,22 @@ def code_worker(request: Any) -> Any:
     """每个叶子：先把声明的每个输出端口写成 ``out/<端口>.json``，再交结果并认领这些端口。"""
 
     package = package_of(request)
-    declared = [item["port"] for item in (package.get("declared_output_ports") or {}).get("ports", ())]
+    declared = [
+        item["port"] for item in (package.get("declared_output_ports") or {}).get("ports", ())
+    ]
     written = sum(1 for message in request.messages if "tool" in str(message.role).lower())
     if written < len(declared):
         port = declared[written]
-        return ("workspace_write_file", {"path": f"out/{port}.json", "content": json.dumps({port: "scripted"}) + "\n"})
+        return (
+            "workspace_write_file",
+            {"path": f"out/{port}.json", "content": json.dumps({port: "scripted"}) + "\n"},
+        )
     return envelope(package, {port: f"out/{port}.json" for port in declared})
 
 
-def envelope(package: dict[str, Any], outputs: dict[str, str], *, artifacts: list[str] | None = None) -> str:
+def envelope(
+    package: dict[str, Any], outputs: dict[str, str], *, artifacts: list[str] | None = None
+) -> str:
     contract = package.get("task_contract", {})
     files = list(artifacts if artifacts is not None else outputs.values())
     body = {
@@ -98,7 +113,9 @@ def envelope(package: dict[str, Any], outputs: dict[str, str], *, artifacts: lis
         "attempt_id": package.get("attempt", {}).get("attempt_id", ""),
         "outcome": "candidate",
         "summary": "脚本化叶子完成",
-        "claims": [{"content": f"{path} 已写出", "confidence": 0.8, "evidence": [path]} for path in files],
+        "claims": [
+            {"content": f"{path} 已写出", "confidence": 0.8, "evidence": [path]} for path in files
+        ],
         "evidence": files,
         "artifacts": files,
         "outputs": dict(outputs),
@@ -110,9 +127,23 @@ def envelope(package: dict[str, Any], outputs: dict[str, str], *, artifacts: lis
     return "<result_envelope>" + json.dumps(body, ensure_ascii=False) + "</result_envelope>"
 
 
-def code_provider(shape: Callable[[], dict[str, Any]], *, worker: Callable[[Any], Any] = code_worker) -> LayeredScriptedProvider:
+def code_provider(
+    shape: Callable[[], dict[str, Any]], *, worker: Callable[[Any], Any] = code_worker
+) -> LayeredScriptedProvider:
     return LayeredScriptedProvider(planner=proposing_planner(shape), worker=worker)
 
 
-__all__ = ("CODE_NAMES", "ROOT_TYPE", "CONFIG", "TOOLS", "c1_method", "code_provider", "code_root_parameters",
-           "code_world", "code_world_factory", "code_worker", "envelope", "proposing_planner")
+__all__ = (
+    "CODE_NAMES",
+    "ROOT_TYPE",
+    "CONFIG",
+    "TOOLS",
+    "c1_method",
+    "code_provider",
+    "code_root_parameters",
+    "code_world",
+    "code_world_factory",
+    "code_worker",
+    "envelope",
+    "proposing_planner",
+)

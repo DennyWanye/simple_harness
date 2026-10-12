@@ -31,6 +31,7 @@ from ..storage.store import Store, StoreError
 #: The actor recorded when the Host confirms content-only requirements in auto mode.
 HOST_AUTO_COMPLETION_CONFIRMER_ID = "host:auto-permission-completion"
 
+
 class OperationCompletionError(ContractError):
     def __init__(self, code: str, message: str) -> None:
         super().__init__(message)
@@ -179,7 +180,9 @@ class OperationCompletionCommitsMixin:
         if approval_source == "HOST_AUTO_PERMISSION" and proposal.to_json().get("effects"):
             # Only content-only requirements are ever confirmed without a person.
             raise OperationCompletionError(
-                "OP_REQUIREMENT_MAPPING_UNAPPROVED", "an operation effect needs a person's confirmation")
+                "OP_REQUIREMENT_MAPPING_UNAPPROVED",
+                "an operation effect needs a person's confirmation",
+            )
         command_id = identifier(command_id, "command_id")
         if not isinstance(principal, Principal) or not isinstance(
             requirement_authority, ApprovedRequirementAuthority
@@ -285,9 +288,13 @@ class OperationCompletionCommitsMixin:
                 mission_id,
                 key=command_id,
                 # The receipt is the same either way; the event says who confirmed.
-                payload=receipt.to_json() if human else {
-                    **receipt.to_json(), "approval_source": approval_source,
-                    "on_behalf_of_principal_id": principal.principal_id},
+                payload=receipt.to_json()
+                if human
+                else {
+                    **receipt.to_json(),
+                    "approval_source": approval_source,
+                    "on_behalf_of_principal_id": principal.principal_id,
+                },
                 actor_type="human" if human else "system",
                 actor_id=principal.principal_id if human else HOST_AUTO_COMPLETION_CONFIRMER_ID,
             )
@@ -427,8 +434,13 @@ def freeze_plan_completion_scopes(
     # 新计划里，候选计划里带的还是收回之前的那一版——与读计划时一样，叠上库里最新的合同（阶段 E：
     # 用户改要求后根目标换了合同，下一次计划提交会把它当成变动对象收回一次）。
     htn = HtnStore(store)
-    plan = replace(plan, task_bindings=tuple(
-        htn.task_semantics_of(mission_id, str(item.task_id)) or item for item in plan.task_bindings))
+    plan = replace(
+        plan,
+        task_bindings=tuple(
+            htn.task_semantics_of(mission_id, str(item.task_id)) or item
+            for item in plan.task_bindings
+        ),
+    )
     scopes = compile_completion_scopes(
         spec,
         plan,

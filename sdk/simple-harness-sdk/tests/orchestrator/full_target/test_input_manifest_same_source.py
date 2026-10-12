@@ -64,7 +64,9 @@ def _step_tasks(world: Any) -> dict[str, str]:
     return found
 
 
-def test_the_consumer_is_admitted_only_with_the_manifest_its_readiness_checked(tmp_path, monkeypatch) -> None:
+def test_the_consumer_is_admitted_only_with_the_manifest_its_readiness_checked(
+    tmp_path, monkeypatch
+) -> None:
     """消费者被放行时：放行用的就是就绪检查读到的那份清单（报告里记着它的哈希）；空的替身清单、
     别的消费者的清单都被拒；一次准入里每个出现只解析一次输入（不再解析第二次）。"""
 
@@ -77,8 +79,10 @@ def test_the_consumer_is_admitted_only_with_the_manifest_its_readiness_checked(t
             checked.append(str(manifest.consumer_task_ref))
             assert report.input_manifest_hash == manifest.manifest_hash()
             producer = str(manifest.bindings[0].producer_task_ref)
-            for variant in (InputManifest(consumer_task_ref=manifest.consumer_task_ref),
-                            InputManifest(consumer_task_ref=producer)):
+            for variant in (
+                InputManifest(consumer_task_ref=manifest.consumer_task_ref),
+                InputManifest(consumer_task_ref=producer),
+            ):
                 with pytest.raises(NotEligible) as refused:
                     real_admit(report, task_view, plan, variant, **kwargs)
                 refusals.append(str(refused.value))
@@ -108,9 +112,12 @@ def test_the_consumer_is_admitted_only_with_the_manifest_its_readiness_checked(t
     monkeypatch.setattr(HierarchicalDispatch, "resolved_inputs", counted_resolved)
 
     async def case() -> Any:
-        async with enabled_world(tmp_path, key="manifest-same-source", planner=chain_planner,
-                                 criteria=CHAIN_CRITERIA) as world:
-            return await world.product.run_until_settled(world.mission.id, rounds=20), _step_tasks(world)
+        async with enabled_world(
+            tmp_path, key="manifest-same-source", planner=chain_planner, criteria=CHAIN_CRITERIA
+        ) as world:
+            return await world.product.run_until_settled(world.mission.id, rounds=20), _step_tasks(
+                world
+            )
 
     mission, tasks = asyncio.run(case())
     assert str(mission.status.value) == "COMPLETED", (mission.status, mission.final_report)
@@ -126,13 +133,21 @@ def test_a_required_port_the_plan_drew_no_edge_for_is_not_an_empty_success(tmp_p
     原因是 UNBOUND_REQUIRED_PORT，而不是一份空的"成功"清单。"""
 
     async def case() -> Any:
-        async with enabled_world(tmp_path, key="manifest-unbound", planner=chain_planner,
-                                 criteria=CHAIN_CRITERIA, hold_worker=True) as world:
+        async with enabled_world(
+            tmp_path,
+            key="manifest-unbound",
+            planner=chain_planner,
+            criteria=CHAIN_CRITERIA,
+            hold_worker=True,
+        ) as world:
             await world.commit_seed()
             consumer = _step_tasks(world)["continue"]
             network = world.dispatch.network(world.mission.id)
             spec = next(item for item in network.occurrences if str(item.task_id) == consumer)
-            assert any(port.required for port in network.binding_for_occurrence(spec.occurrence_id).input_ports)
+            assert any(
+                port.required
+                for port in network.binding_for_occurrence(spec.occurrence_id).input_ports
+            )
             with_edge = world.dispatch.resolved_inputs(world.mission.id, network, spec)
             cut = dataclasses.replace(network, data_requirements=())
             return with_edge, world.dispatch.resolved_inputs(world.mission.id, cut, spec)

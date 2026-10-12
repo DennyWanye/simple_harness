@@ -14,6 +14,7 @@
 通过 `DESKPET_USER_DATA_DIR` 环境变量把它指向 `tmp_path`，项目层路径
 直接传 fixture 目录，因此整个解析过程无外部副作用、可重复。
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -175,9 +176,7 @@ def test_three_layer_deep_merge_field_precedence(isolated_user_data, tmp_path):
     """三层叠加 + 每个字段独立覆盖：project > global > builtin。"""
     _write_toml(
         isolated_user_data / "model_overrides.toml",
-        '[models."deepseek-v4-pro"]\n'
-        "context_window = 900000\n"
-        "compact_at_pct = 0.7\n",
+        '[models."deepseek-v4-pro"]\ncontext_window = 900000\ncompact_at_pct = 0.7\n',
     )
     project_root = tmp_path / "p"
     _write_toml(

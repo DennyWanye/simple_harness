@@ -25,11 +25,14 @@ def test_web_tool_arguments_never_expose_url_or_raw_query() -> None:
 
 def test_all_public_web_reader_arguments_hide_urls_and_keywords() -> None:
     for tool_name in ("web_crawl", "web_read_sitemap", "scrapling_fetch"):
-        projected = project_public_tool_arguments(tool_name, {
-            "url": "https://secret.example/private?q=raw",
-            "start_url": "https://secret.example/start",
-            "keywords": ["secret query"],
-        })
+        projected = project_public_tool_arguments(
+            tool_name,
+            {
+                "url": "https://secret.example/private?q=raw",
+                "start_url": "https://secret.example/start",
+                "keywords": ["secret query"],
+            },
+        )
         assert projected == {"target_kind": "web_page"}
         assert "secret" not in json.dumps(projected)
 
@@ -44,20 +47,20 @@ def test_non_web_tool_arguments_keep_existing_public_shape_without_aliasing() ->
 
 
 def test_persisted_tool_call_history_uses_same_public_projection() -> None:
-    raw = [{
-        "id": "call-1",
-        "type": "function",
-        "function": {
-            "name": "web_fetch",
-            "arguments": json.dumps({"url": "https://secret.example/raw"}),
-        },
-    }]
+    raw = [
+        {
+            "id": "call-1",
+            "type": "function",
+            "function": {
+                "name": "web_fetch",
+                "arguments": json.dumps({"url": "https://secret.example/raw"}),
+            },
+        }
+    ]
 
     projected = project_public_tool_calls(raw)
 
-    assert json.loads(projected[0]["function"]["arguments"]) == {
-        "target_kind": "web_page"
-    }
+    assert json.loads(projected[0]["function"]["arguments"]) == {"target_kind": "web_page"}
     assert "secret.example" not in json.dumps(projected)
     assert "secret.example" in raw[0]["function"]["arguments"]
 
@@ -159,10 +162,7 @@ def test_canonical_non_success_web_status_never_hydrates_as_succeeded(
     }
 
     assert project_public_tool_result("web_search", persisted)["status"] == status
-    assert (
-        project_public_tool_result("web_search", {}, outcome_status=status)["status"]
-        == status
-    )
+    assert project_public_tool_result("web_search", {}, outcome_status=status)["status"] == status
 
 
 def test_raw_web_item_count_is_capped_after_counting_results() -> None:

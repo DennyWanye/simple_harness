@@ -121,7 +121,8 @@ def _verification_owner_key(intent: Any) -> str:
 
 
 async def _verification_resource_records(
-    *, catalog_source: ProductCapabilityCatalogSourceAdapter,
+    *,
+    catalog_source: ProductCapabilityCatalogSourceAdapter,
     store: Any,
     lease: Any,
     intent: Any,
@@ -159,9 +160,7 @@ async def _pending_global_verification_entries(
     }
     entries: list[CapabilityCatalogEntry] = []
     for member in members:
-        record = await store.get_version(
-            member.pack_id, member.version, member.manifest_hash
-        )
+        record = await store.get_version(member.pack_id, member.version, member.manifest_hash)
         receipt_member = receipt_members.get(member.pack_id)
         if record is None or receipt_member is None:
             raise RuntimeError("global_skill_verification_member_missing")
@@ -181,10 +180,7 @@ async def _pending_global_verification_entries(
             scope="user",
             scope_key=intent.install_scope_key,
             active=True,
-            generation=int(
-                receipt_member.get("expected_binding_generation") or 0
-            )
-            + 1,
+            generation=int(receipt_member.get("expected_binding_generation") or 0) + 1,
             owner_key=intent.install_scope_key,
             management_policy="user_managed",
             management_generation=1,
@@ -210,15 +206,12 @@ class SkillInstallVerificationAttemptResolver:
     ) -> CapabilitySkillInstallVerificationAttempt | None:
         if authority.purpose != SKILL_INSTALL_VERIFICATION_PURPOSE:
             return None
-        attempt = await self._store.get_skill_install_verification_attempt(
-            authority.authority_ref
-        )
+        attempt = await self._store.get_skill_install_verification_attempt(authority.authority_ref)
         if (
             attempt is None
             or attempt.status not in _UNRESOLVED_ATTEMPT_STATES
             or attempt.attempt_generation != authority.generation
-            or skill_install_verification_authority_hash(attempt)
-            != authority.authority_hash
+            or skill_install_verification_authority_hash(attempt) != authority.authority_hash
         ):
             return None
         return attempt
@@ -335,11 +328,7 @@ class SkillInstallVerificationRunService:
         operation_id = str(manager_receipt.get("operation_id") or "")
         receipt_hash = str(manager_receipt.get("manager_receipt_hash") or "")
         committed_stamp = str(manager_receipt.get("committed_set_stamp") or "")
-        if (
-            not operation_id
-            or not receipt_hash
-            or committed_stamp != intent.member_set_stamp
-        ):
+        if not operation_id or not receipt_hash or committed_stamp != intent.member_set_stamp:
             raise RuntimeError("skill_install_manager_receipt_mismatch")
         session_id = f"skill-install-verifier:{intent.intent_id}"
         attempt = await self.store.allocate_skill_install_verification_attempt(
@@ -383,16 +372,12 @@ class SkillInstallVerificationRunService:
             prepare_lease = self.platform.prepare_run_catalog_lease
             prepare_kwargs: dict[str, Any] = {}
             if intent.install_scope == "user":
-                prepare_lease = (
-                    self.platform.prepare_global_skill_verification_run_catalog_lease
-                )
-                prepare_kwargs["verification_entries"] = (
-                    await _pending_global_verification_entries(
-                        store=self.store,
-                        intent=intent,
-                        members=members,
-                        manager_receipt=manager_receipt,
-                    )
+                prepare_lease = self.platform.prepare_global_skill_verification_run_catalog_lease
+                prepare_kwargs["verification_entries"] = await _pending_global_verification_entries(
+                    store=self.store,
+                    intent=intent,
+                    members=members,
+                    manager_receipt=manager_receipt,
                 )
             lease = await prepare_lease(
                 scope=scope,
@@ -431,9 +416,7 @@ class SkillInstallVerificationRunService:
                 authority_hash=skill_install_verification_authority_hash(attempt),
                 input={"attempt_id": attempt.attempt_id},
                 tool_catalog_generation=int(self.tool_catalog_generation()),
-                tool_catalog_fingerprint=(
-                    str(self.tool_catalog_fingerprint()).strip() or None
-                ),
+                tool_catalog_fingerprint=(str(self.tool_catalog_fingerprint()).strip() or None),
             )
         await self.ingress.wait_idle(attempt.expected_run_id)
         return await self.reconcile_attempt(attempt.intent_id)
@@ -444,9 +427,7 @@ class SkillInstallVerificationRunService:
         return _SkillInstallVerificationDriver(self, attempt)
 
     async def reconcile_attempt(self, intent_id: str) -> Mapping[str, Any]:
-        attempt = await self.store.get_current_skill_install_verification_attempt(
-            intent_id
-        )
+        attempt = await self.store.get_current_skill_install_verification_attempt(intent_id)
         if attempt is None:
             raise RuntimeError("skill_install_verification_attempt_missing")
         evidence = self.runtime_stack.read_skill_install_verification_evidence(attempt)
@@ -567,8 +548,7 @@ class _SkillInstallVerificationDriver:
                 install_scope=intent.install_scope,
                 records=records,
                 expected_skill_names=tuple(
-                    str(item.member.get("skill_name") or item.normalized_name)
-                    for item in members
+                    str(item.member.get("skill_name") or item.normalized_name) for item in members
                 ),
             )
             if attempt.status == "catalog_ready":
@@ -635,9 +615,7 @@ class SdkTerminalCapabilityReleaseReconciler:
         if attempt.status in {"start_submitted", "run_durable", "catalog_ready"}:
             if evidence.status not in {"terminal_succeeded", "terminal_failed"}:
                 return attempt
-            return await self._release_terminal_attempt(
-                attempt, evidence=evidence, succeeded=False
-            )
+            return await self._release_terminal_attempt(attempt, evidence=evidence, succeeded=False)
         if attempt.status == "page_in_proven":
             if evidence.status not in {"terminal_succeeded", "terminal_failed"}:
                 return attempt
@@ -660,7 +638,10 @@ class SdkTerminalCapabilityReleaseReconciler:
         return attempt
 
     async def _release_terminal_attempt(
-        self, attempt: CapabilitySkillInstallVerificationAttempt, *, evidence: Any,
+        self,
+        attempt: CapabilitySkillInstallVerificationAttempt,
+        *,
+        evidence: Any,
         succeeded: bool,
     ) -> CapabilitySkillInstallVerificationAttempt:
         owner_ref = f"sdk-execution-run-terminal:{attempt.expected_run_id}"
@@ -671,9 +652,7 @@ class SdkTerminalCapabilityReleaseReconciler:
                 "terminal_event_hash": evidence.terminal_event_hash,
             }
         )
-        receipt = await self.store.get_snapshot_lease_release_receipt(
-            attempt.lease_intent_id
-        )
+        receipt = await self.store.get_snapshot_lease_release_receipt(attempt.lease_intent_id)
         if receipt is None:
             async with self.store.write_transaction() as db:
                 receipt = await self.store.bind(db).release_snapshot_lease_intent_in_tx(
@@ -699,11 +678,7 @@ class SdkTerminalCapabilityReleaseReconciler:
             release_receipt_id=receipt.release_receipt_id,
             release_receipt_hash=receipt.release_receipt_hash,
             release_owner_event_hash=owner_hash,
-            error=(
-                None
-                if succeeded
-                else {"code": evidence.reason_code or "verification_failed"}
-            ),
+            error=(None if succeeded else {"code": evidence.reason_code or "verification_failed"}),
         )
 
 

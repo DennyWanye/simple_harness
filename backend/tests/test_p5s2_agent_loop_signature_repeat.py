@@ -20,6 +20,7 @@ Key contract:
 * The nudge template is exposed as a module constant so this test can
   assert its substring without copy-pasting the whole string.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -50,9 +51,7 @@ class _ScriptedLLM:
         self.call_count += 1
         self.last_messages = list(messages)
         if not self._responses:
-            raise AssertionError(
-                f"ScriptedLLM exhausted after {self.call_count} calls"
-            )
+            raise AssertionError(f"ScriptedLLM exhausted after {self.call_count} calls")
         return self._responses.pop(0)
 
 
@@ -87,9 +86,7 @@ def _resp_with_tool_call(
 ) -> ChatResponse:
     return ChatResponse(
         content="",
-        tool_calls=[
-            ToolCall(id=tc_id, name=tool_name, arguments=args or {"path": "/sys/foo"})
-        ],
+        tool_calls=[ToolCall(id=tc_id, name=tool_name, arguments=args or {"path": "/sys/foo"})],
         stop_reason="tool_use",
         model="stub",
         usage=ChatUsage(input_tokens=1, output_tokens=1),
@@ -139,18 +136,20 @@ async def test_third_identical_call_skipped_and_nudge_injected() -> None:
     # would have recorded them as the LLM dispatched in earlier turns).
     await _seed_signature_window(store, sid, "write_file", repeat_args, 2)
 
-    llm = _ScriptedLLM([
-        # Turn 1: LLM emits the THIRD identical call → must be intercepted.
-        _resp_with_tool_call("c3", args=repeat_args),
-        # Turn 2: LLM (after seeing the nudge) gives up cleanly.
-        ChatResponse(
-            content="OK, I'll stop trying that.",
-            tool_calls=[],
-            stop_reason="end_turn",
-            model="stub",
-            usage=ChatUsage(input_tokens=1, output_tokens=1),
-        ),
-    ])
+    llm = _ScriptedLLM(
+        [
+            # Turn 1: LLM emits the THIRD identical call → must be intercepted.
+            _resp_with_tool_call("c3", args=repeat_args),
+            # Turn 2: LLM (after seeing the nudge) gives up cleanly.
+            ChatResponse(
+                content="OK, I'll stop trying that.",
+                tool_calls=[],
+                stop_reason="end_turn",
+                model="stub",
+                usage=ChatUsage(input_tokens=1, output_tokens=1),
+            ),
+        ]
+    )
     # Empty envelopes list — if the loop dispatched, ScriptedTools raises.
     tools = _ScriptedTools([])
 
@@ -162,7 +161,8 @@ async def test_third_identical_call_skipped_and_nudge_injected() -> None:
     )
 
     events = [
-        ev async for ev in loop.run(
+        ev
+        async for ev in loop.run(
             [{"role": "user", "content": "do it"}],
             session_id=sid,
         )
@@ -198,16 +198,18 @@ async def test_two_identical_calls_NOT_blocked() -> None:
     # Pre-seed: only 1 prior identical call (this incoming one is the 2nd).
     await _seed_signature_window(store, sid, "write_file", repeat_args, 1)
 
-    llm = _ScriptedLLM([
-        _resp_with_tool_call("c2", args=repeat_args),
-        ChatResponse(
-            content="done",
-            tool_calls=[],
-            stop_reason="end_turn",
-            model="stub",
-            usage=ChatUsage(input_tokens=1, output_tokens=1),
-        ),
-    ])
+    llm = _ScriptedLLM(
+        [
+            _resp_with_tool_call("c2", args=repeat_args),
+            ChatResponse(
+                content="done",
+                tool_calls=[],
+                stop_reason="end_turn",
+                model="stub",
+                usage=ChatUsage(input_tokens=1, output_tokens=1),
+            ),
+        ]
+    )
     tools = _ScriptedTools([_envelope_transient_error()])
 
     loop = AgentLoop(
@@ -217,10 +219,13 @@ async def test_two_identical_calls_NOT_blocked() -> None:
         activity_store=store,
     )
 
-    events = [ev async for ev in loop.run(
-        [{"role": "user", "content": "do it"}],
-        session_id=sid,
-    )]
+    events = [
+        ev
+        async for ev in loop.run(
+            [{"role": "user", "content": "do it"}],
+            session_id=sid,
+        )
+    ]
 
     assert tools.calls == []
     batch = next(ev for ev in events if isinstance(ev, ToolBatchEvent))
@@ -241,16 +246,18 @@ async def test_different_args_resets_window() -> None:
     await _seed_signature_window(store, sid, "write_file", {"path": "/sys/foo"}, 2)
 
     # Now the LLM calls with DIFFERENT args.
-    llm = _ScriptedLLM([
-        _resp_with_tool_call("c1", args={"path": "/tmp/x"}),
-        ChatResponse(
-            content="done",
-            tool_calls=[],
-            stop_reason="end_turn",
-            model="stub",
-            usage=ChatUsage(input_tokens=1, output_tokens=1),
-        ),
-    ])
+    llm = _ScriptedLLM(
+        [
+            _resp_with_tool_call("c1", args={"path": "/tmp/x"}),
+            ChatResponse(
+                content="done",
+                tool_calls=[],
+                stop_reason="end_turn",
+                model="stub",
+                usage=ChatUsage(input_tokens=1, output_tokens=1),
+            ),
+        ]
+    )
     tools = _ScriptedTools([{"ok": True, "result": '"ok"', "error": None}])
 
     loop = AgentLoop(
@@ -260,10 +267,13 @@ async def test_different_args_resets_window() -> None:
         activity_store=store,
     )
 
-    events = [ev async for ev in loop.run(
-        [{"role": "user", "content": "do it"}],
-        session_id=sid,
-    )]
+    events = [
+        ev
+        async for ev in loop.run(
+            [{"role": "user", "content": "do it"}],
+            session_id=sid,
+        )
+    ]
 
     assert tools.calls == []
     batch = next(ev for ev in events if isinstance(ev, ToolBatchEvent))
@@ -288,16 +298,18 @@ async def test_no_activity_store_means_no_repeat_detection() -> None:
     ``activity_store``, the repeat-detection branch is skipped entirely
     (same behavior as pre-Phase-3 loop). Existing tests don't pass an
     activity_store and must keep working."""
-    llm = _ScriptedLLM([
-        _resp_with_tool_call("c1"),
-        ChatResponse(
-            content="done",
-            tool_calls=[],
-            stop_reason="end_turn",
-            model="stub",
-            usage=ChatUsage(input_tokens=1, output_tokens=1),
-        ),
-    ])
+    llm = _ScriptedLLM(
+        [
+            _resp_with_tool_call("c1"),
+            ChatResponse(
+                content="done",
+                tool_calls=[],
+                stop_reason="end_turn",
+                model="stub",
+                usage=ChatUsage(input_tokens=1, output_tokens=1),
+            ),
+        ]
+    )
     tools = _ScriptedTools([{"ok": True, "result": '"ok"', "error": None}])
 
     loop = AgentLoop(
@@ -307,10 +319,13 @@ async def test_no_activity_store_means_no_repeat_detection() -> None:
         # NO activity_store kwarg — must not break.
     )
 
-    events = [ev async for ev in loop.run(
-        [{"role": "user", "content": "do it"}],
-        session_id="sNone",
-    )]
+    events = [
+        ev
+        async for ev in loop.run(
+            [{"role": "user", "content": "do it"}],
+            session_id="sNone",
+        )
+    ]
 
     assert tools.calls == []
     assert any(isinstance(ev, ToolBatchEvent) for ev in events)

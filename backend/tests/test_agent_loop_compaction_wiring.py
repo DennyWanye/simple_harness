@@ -10,6 +10,7 @@ Verifies that:
 4. skill_prelude (role=system) survives compaction (_partition keeps system).
 5. goal_text is passed to compress → [目标锚定] anchor in post-compaction msgs.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -25,6 +26,7 @@ from agent.context_messages import CONTEXT_MESSAGE_META_KEY
 # ---------------------------------------------------------------------------
 # Minimal fakes
 # ---------------------------------------------------------------------------
+
 
 class _FakeToolRegistry:
     """Minimal ToolRegistry — no tool calls, just enough for AgentLoop init."""
@@ -45,6 +47,7 @@ class _FakeLLM:
     async def chat_with_fallback(self, messages, *, tools=None, model=None, **kw):
         self.calls += 1
         from llm.types import ChatResponse
+
         return ChatResponse(
             content="done",
             stop_reason="end_turn",
@@ -99,14 +102,10 @@ class _FakeContextManager:
         self.config = _Cfg()
         self.config.compact_at_tokens = compact_at_tokens
 
-    def check_budget(
-        self, messages, *, model: str, real_prompt_tokens_floor: int = 0
-    ):
+    def check_budget(self, messages, *, model: str, real_prompt_tokens_floor: int = 0):
         from agent.token_budget import BudgetCheckResult
 
-        estimated = max(
-            self.result.estimated_tokens, int(real_prompt_tokens_floor or 0)
-        )
+        estimated = max(self.result.estimated_tokens, int(real_prompt_tokens_floor or 0))
         return BudgetCheckResult(
             verdict=self.result.verdict,
             estimated_tokens=estimated,
@@ -133,9 +132,11 @@ def _make_msgs(n_non_system: int = 4, with_system: bool = True):
 # BC: new param exists with default None
 # ---------------------------------------------------------------------------
 
+
 def test_agent_loop_accepts_compressor_param():
     """AgentLoop.__init__ accepts compressor= kwarg with default None (BC)."""
     import inspect
+
     sig = inspect.signature(AgentLoop.__init__)
     params = sig.parameters
     assert "compressor" in params, "compressor param missing from AgentLoop.__init__"
@@ -214,6 +215,7 @@ async def test_context_os_compaction_round_trip_keeps_message_sidecars():
 # BC: compressor=None → compress never called
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_compressor_none_never_calls_compress():
     """Flag off (compressor=None) → compress() is NEVER called — zero new behaviour."""
@@ -231,7 +233,9 @@ async def test_compressor_none_never_calls_compress():
         events.append(ev)
 
     assert fake_compressor.compress_calls == [], "compress must not be called when compressor=None"
-    assert fake_compressor.should_compress_calls == [], "should_compress must not be called when compressor=None"
+    assert fake_compressor.should_compress_calls == [], (
+        "should_compress must not be called when compressor=None"
+    )
 
 
 @pytest.mark.asyncio
@@ -288,13 +292,17 @@ async def test_compressor_routes_by_frozen_run_model_window():
 # Core: should_compress=True → compress called → working_messages replaced
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_compressor_fires_when_threshold_exceeded():
     """When should_compress returns True and compress returns compressed=True,
     the agent loop replaces working_messages with the compressed output."""
     compressed_out = [
         {"role": "system", "content": "[skill_prelude] instructions here"},
-        {"role": "assistant", "content": "[压缩摘要 / compressed summary]\nSummary of conversation."},
+        {
+            "role": "assistant",
+            "content": "[压缩摘要 / compressed summary]\nSummary of conversation.",
+        },
         {"role": "user", "content": "msg 2"},
         {"role": "assistant", "content": "msg 3"},
     ]
@@ -355,6 +363,7 @@ async def test_context_manager_compact_at_overrides_static_compressor_threshold(
 # System messages preserved: skill_prelude survives compaction
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_system_messages_survive_compaction():
     """After compaction, role=system messages (skill_prelude) must still be present.
@@ -392,13 +401,15 @@ async def test_system_messages_survive_compaction():
     if fake_compressor.compress_calls:
         passed_msgs = fake_compressor.compress_calls[0]["messages"]
         system_msgs = [m for m in passed_msgs if m.get("role") == "system"]
-        assert any("[skill_prelude]" in (m.get("content") or "") for m in system_msgs), \
+        assert any("[skill_prelude]" in (m.get("content") or "") for m in system_msgs), (
             "skill_prelude system message not passed to compress()"
+        )
 
 
 # ---------------------------------------------------------------------------
 # Goal text passed to compress → [目标锚定] anchor present
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_goal_text_passed_to_compress():
@@ -426,8 +437,9 @@ async def test_goal_text_passed_to_compress():
     # compress must have been called with goal_text
     assert len(fake_compressor.compress_calls) >= 1
     call = fake_compressor.compress_calls[0]
-    assert call["goal_text"] == "用户想要整理三份文档", \
+    assert call["goal_text"] == "用户想要整理三份文档", (
         f"goal_text not passed to compress(). Got: {call['goal_text']!r}"
+    )
 
 
 @pytest.mark.asyncio
@@ -455,6 +467,7 @@ async def test_goal_text_none_when_no_goal_store():
 # Integration: real ContextCompressor + real goal anchor injection
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_real_compressor_injects_goal_anchor():
     """Integration smoke: real ContextCompressor with a working LLM mock
@@ -465,6 +478,7 @@ async def test_real_compressor_injects_goal_anchor():
         async def chat_with_fallback(self, *a, **kw):
             class R:
                 content = "Summary of conversation."
+
             return R()
 
     # Use a low threshold so should_compress fires immediately
@@ -498,6 +512,7 @@ async def test_real_compressor_injects_goal_anchor():
         async def chat_with_fallback(self, messages, *, tools=None, model=None, **kw):
             received_msgs.extend(messages)
             from llm.types import ChatResponse
+
             return ChatResponse(
                 content="done",
                 stop_reason="end_turn",
@@ -518,19 +533,22 @@ async def test_real_compressor_injects_goal_anchor():
             for m in received_msgs
             if m.get("role") == "system"
         )
-        assert anchor_found, \
-            f"[目标锚定] not found in messages passed to LLM after compaction.\n" \
+        assert anchor_found, (
+            f"[目标锚定] not found in messages passed to LLM after compaction.\n"
             f"System msgs: {[m for m in received_msgs if m.get('role') == 'system']}"
+        )
 
 
 # ---------------------------------------------------------------------------
 # config.py: compaction_enabled flag exists
 # ---------------------------------------------------------------------------
 
+
 def test_config_has_no_dead_compaction_flag():
     """NEXT-TG-1.0 §9（2026-09-28）：``compaction_enabled`` 没有任何读取方（压缩总是开），
     写着"开"却不生效的假开关已删除。"""
     from config import AppConfig
+
     cfg = AppConfig()
     assert not hasattr(cfg.features, "compaction_enabled")
 
@@ -538,6 +556,7 @@ def test_config_has_no_dead_compaction_flag():
 # ---------------------------------------------------------------------------
 # build_agent: compressor wired when flag on, None when off
 # ---------------------------------------------------------------------------
+
 
 def test_build_agent_passes_compressor_none_when_flag_off():
     """build_agent with compaction_enabled=False → agent.compressor is None (BC)."""
@@ -565,6 +584,7 @@ def test_context_compressor_in_valid_services():
     """FP-5 WI-4.0 真机回归: main.py 无条件 register('context_compressor'),
     缺白名单会致启动 register 失败 + chat get 抛 'Unknown service' → code-mode 全崩。"""
     from context import _VALID_SERVICES
+
     assert "context_compressor" in _VALID_SERVICES
 
 
@@ -573,6 +593,7 @@ def test_context_compressor_in_valid_services():
 # 真机实测两轮系数校准后估算仍低估(real 32.9k 时 estimate <24k 不触发)。
 # 修法: compaction 判定用 max(estimate, 上一轮 response.usage.input_tokens)。
 # ---------------------------------------------------------------------------
+
 
 class _HighUsageTwoTurnLLM:
     """第 1 轮回 tool_use 且 usage.input_tokens=30000(模拟 relay 真实值),
@@ -584,6 +605,7 @@ class _HighUsageTwoTurnLLM:
     async def chat_with_fallback(self, messages, *, tools=None, model=None, **kw):
         self.calls += 1
         from llm.types import ChatResponse, ToolCall
+
         if self.calls == 1:
             return ChatResponse(
                 content="",
@@ -592,7 +614,9 @@ class _HighUsageTwoTurnLLM:
                 usage={"input_tokens": 30000, "output_tokens": 10},
             )
         return ChatResponse(
-            content="done", stop_reason="end_turn", tool_calls=[],
+            content="done",
+            stop_reason="end_turn",
+            tool_calls=[],
             usage={"input_tokens": 30100, "output_tokens": 5},
         )
 
@@ -611,12 +635,7 @@ async def test_real_usage_feedback_stops_at_external_tool_batch_boundary():
         ),
     )
     msgs = [{"role": "user", "content": "短消息"}]
-    events = [
-        ev
-        async for ev in loop.run(
-            msgs, session_id="s-realfb", task_id="t-realfb"
-        )
-    ]
+    events = [ev async for ev in loop.run(msgs, session_id="s-realfb", task_id="t-realfb")]
 
     assert len(comp.should_compress_calls) == 1
     assert any(isinstance(ev, ToolBatchEvent) for ev in events)

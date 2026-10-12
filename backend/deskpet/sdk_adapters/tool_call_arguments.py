@@ -216,9 +216,7 @@ class ToolCallArgumentsMemo:
             ("entry max bytes", entry_max_bytes),
         ):
             if isinstance(value, bool) or not isinstance(value, int) or value < 1:
-                raise ValueError(
-                    f"tool call arguments memo {name} must be a positive integer"
-                )
+                raise ValueError(f"tool call arguments memo {name} must be a positive integer")
         # value: (tool_name, arguments_json) — arguments_json None == poisoned.
         self._entries: OrderedDict[str, tuple[str, str | None]] = OrderedDict()
         self._capacity = capacity

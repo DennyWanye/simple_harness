@@ -128,9 +128,7 @@ class MethodView:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "method_id", identifier(self.method_id, "method_view.method_id"))
-        object.__setattr__(
-            self, "version", index(self.version, "method_view.version", minimum=1)
-        )
+        object.__setattr__(self, "version", index(self.version, "method_view.version", minimum=1))
         object.__setattr__(
             self, "content_hash", hash_hex(self.content_hash, "method_view.content_hash")
         )
@@ -420,7 +418,9 @@ class AdmissionContext:
     planning_evidence_stale: str | None = None
 
     def __post_init__(self) -> None:
-        if self.taskgraph_scope is not None and not isinstance(self.taskgraph_scope, PlanningConvergenceScope):
+        if self.taskgraph_scope is not None and not isinstance(
+            self.taskgraph_scope, PlanningConvergenceScope
+        ):
             raise ContractError("admission.taskgraph_scope must be a typed convergence scope")
         if not isinstance(self.binding, PlanningRequestBinding):
             raise ContractError("admission.binding must be a PlanningRequestBinding")
@@ -463,9 +463,7 @@ class AdmissionContext:
             "prompt_version",
             identifier(self.prompt_version, "admission.prompt_version"),
         )
-        object.__setattr__(
-            self, "prompt_hash", hash_hex(self.prompt_hash, "admission.prompt_hash")
-        )
+        object.__setattr__(self, "prompt_hash", hash_hex(self.prompt_hash, "admission.prompt_hash"))
         object.__setattr__(
             self,
             "enabled_decision_types",
@@ -479,9 +477,7 @@ class AdmissionContext:
             "methods",
             sequence_of(self.methods, "admission.methods", _method_view),
         )
-        object.__setattr__(
-            self, "predicates", _strings(self.predicates, "admission.predicates")
-        )
+        object.__setattr__(self, "predicates", _strings(self.predicates, "admission.predicates"))
         object.__setattr__(
             self,
             "active_method_instances",
@@ -820,8 +816,10 @@ def _check_binding_revisions(context: AdmissionContext, stage: _Stage) -> None:
     if context.planning_evidence_stale is not None:
         stage.refuse(
             REJECTION.REQUEST_BINDING_STALE,
-            ("evidence shown to the Planner as current is no longer current: "
-             + context.planning_evidence_stale)[:2000],
+            (
+                "evidence shown to the Planner as current is no longer current: "
+                + context.planning_evidence_stale
+            )[:2000],
             field_path="/planning_evidence",
             expected="CURRENT",
             observed=context.planning_evidence_stale[:500],
@@ -854,8 +852,12 @@ def _decision_refs(
     if isinstance(payload, RepairCancelBranchDecision):
         found.append(("/payload/method_instance_ref", payload.method_instance_ref))
     elif isinstance(payload, RepairRebindInputDecision):
-        found.extend((("/payload/consumer_task_ref", payload.consumer_task_ref),
-                      ("/payload/producer_task_ref", payload.producer_task_ref)))
+        found.extend(
+            (
+                ("/payload/consumer_task_ref", payload.consumer_task_ref),
+                ("/payload/producer_task_ref", payload.producer_task_ref),
+            )
+        )
     elif isinstance(payload, RepairRetrySameMethodDecision):
         found.append(("/payload/method_instance_ref", payload.method_instance_ref))
     elif isinstance(payload, (RefineDecision, RepairRefineDeeperDecision)):
@@ -868,8 +870,7 @@ def _decision_refs(
         found.append(("/payload/obligation_ref", payload.obligation_ref))
     elif isinstance(payload, WaitDecision):
         found.extend(
-            (f"/payload/wait_for/{position}", ref)
-            for position, ref in enumerate(payload.wait_for)
+            (f"/payload/wait_for/{position}", ref) for position, ref in enumerate(payload.wait_for)
         )
     return tuple(found)
 
@@ -962,7 +963,9 @@ def _check_budget_and_bound(
     them when the budget runs out would leave the mission with no voice at all.
     """
 
-    if decision.decision_type in _STATE_FREE_TYPES or isinstance(decision.payload, RepairRuntimeBlockedDecision):
+    if decision.decision_type in _STATE_FREE_TYPES or isinstance(
+        decision.payload, RepairRuntimeBlockedDecision
+    ):
         return
     if context.budget.bound_remaining <= 0:
         stage.refuse(
@@ -989,8 +992,11 @@ def _instance_for(context: AdmissionContext, ref: PlanningRefV1) -> MethodInstan
 
 
 def _check_repair_replace(
-    decision: PlanningDecisionEnvelopeV1, context: AdmissionContext, stage: _Stage,
-    *, defer_running_work: bool = False,
+    decision: PlanningDecisionEnvelopeV1,
+    context: AdmissionContext,
+    stage: _Stage,
+    *,
+    defer_running_work: bool = False,
 ) -> None:
     """§25: the retired instance must be the one this subject actually carries."""
 
@@ -1032,11 +1038,24 @@ def _check_successor(
 
     payload = decision.payload
     assert isinstance(payload, RepairProposeSuccessorDecision)  # narrowed by the caller
-    subject = next((row for row in context.planning_subjects if row.get("subject_key") == decision.subject_key), {})
-    if (not context.repair_allowed or subject.get("task_id") != payload.old_task_ref.id
-            or subject.get("obligation_id") != payload.obligation_ref.id):
-        stage.refuse(REJECTION.REPAIR_NOT_ALLOWED, "successor must retain this subject's Task/Obligation lineage",
-                     field_path="/payload/old_task_ref")
+    subject = next(
+        (
+            row
+            for row in context.planning_subjects
+            if row.get("subject_key") == decision.subject_key
+        ),
+        {},
+    )
+    if (
+        not context.repair_allowed
+        or subject.get("task_id") != payload.old_task_ref.id
+        or subject.get("obligation_id") != payload.obligation_ref.id
+    ):
+        stage.refuse(
+            REJECTION.REPAIR_NOT_ALLOWED,
+            "successor must retain this subject's Task/Obligation lineage",
+            field_path="/payload/old_task_ref",
+        )
     open_keys = frozenset(_ref_key(ref) for ref in context.open_obligations)
     if _ref_key(payload.obligation_ref) not in open_keys:
         stage.refuse(
@@ -1096,46 +1115,87 @@ def _check_request_evidence(
 
 
 def _check_payload(
-    decision: PlanningDecisionEnvelopeV1, context: AdmissionContext, stage: _Stage,
-    *, defer_running_work: bool = False,
+    decision: PlanningDecisionEnvelopeV1,
+    context: AdmissionContext,
+    stage: _Stage,
+    *,
+    defer_running_work: bool = False,
 ) -> None:
     """§43 stage 8 / §24–§31: the per-type payload rules."""
 
     payload = decision.payload
     if isinstance(payload, RepairRuntimeBlockedDecision):
         if not context.repair_allowed:
-            stage.refuse(REJECTION.REPAIR_NOT_ALLOWED, "repair is disabled for this request",
-                         field_path="/payload/repair_kind")
+            stage.refuse(
+                REJECTION.REPAIR_NOT_ALLOWED,
+                "repair is disabled for this request",
+                field_path="/payload/repair_kind",
+            )
     elif isinstance(payload, RepairRetrySameMethodDecision):
         instance = _instance_for(context, payload.method_instance_ref)
         if not context.repair_allowed:
-            stage.refuse(REJECTION.REPAIR_NOT_ALLOWED, "repair is disabled for this request",
-                         field_path="/payload/repair_kind")
+            stage.refuse(
+                REJECTION.REPAIR_NOT_ALLOWED,
+                "repair is disabled for this request",
+                field_path="/payload/repair_kind",
+            )
         if instance is None or not instance.active:
-            stage.refuse(REJECTION.METHOD_RETIRED, "retry method instance is no longer adopted",
-                         field_path="/payload/method_instance_ref")
+            stage.refuse(
+                REJECTION.METHOD_RETIRED,
+                "retry method instance is no longer adopted",
+                field_path="/payload/method_instance_ref",
+            )
         # The exact failed Attempt and its membership are re-read by the retry
         # command compiler and at atomic Attempt creation, not guessed here.
     elif isinstance(payload, RepairCancelBranchDecision):
         instance = _instance_for(context, payload.method_instance_ref)
-        if not context.repair_allowed or instance is None or not instance.active or instance.subject_key != decision.subject_key:
-            stage.refuse(REJECTION.REPAIR_NOT_ALLOWED, "branch cancellation needs an adopted repair method",
-                         field_path="/payload/method_instance_ref")
+        if (
+            not context.repair_allowed
+            or instance is None
+            or not instance.active
+            or instance.subject_key != decision.subject_key
+        ):
+            stage.refuse(
+                REJECTION.REPAIR_NOT_ALLOWED,
+                "branch cancellation needs an adopted repair method",
+                field_path="/payload/method_instance_ref",
+            )
     elif isinstance(payload, RepairRebindInputDecision):
-        subject = next((row for row in context.planning_subjects
-                        if row.get("subject_key") == decision.subject_key), {})
+        subject = next(
+            (
+                row
+                for row in context.planning_subjects
+                if row.get("subject_key") == decision.subject_key
+            ),
+            {},
+        )
         if not context.repair_allowed or subject.get("task_id") != payload.consumer_task_ref.id:
-            stage.refuse(REJECTION.REPAIR_NOT_ALLOWED, "input rebind must target this repair subject",
-                         field_path="/payload/consumer_task_ref")
+            stage.refuse(
+                REJECTION.REPAIR_NOT_ALLOWED,
+                "input rebind must target this repair subject",
+                field_path="/payload/consumer_task_ref",
+            )
     elif isinstance(payload, RepairRefineDeeperDecision):
         if not context.repair_allowed:
-            stage.refuse(REJECTION.REPAIR_NOT_ALLOWED, "repair is disabled for this request",
-                         field_path="/payload/repair_kind")
-        subject = next((row for row in context.planning_subjects
-                        if row.get("subject_key") == decision.subject_key), {})
+            stage.refuse(
+                REJECTION.REPAIR_NOT_ALLOWED,
+                "repair is disabled for this request",
+                field_path="/payload/repair_kind",
+            )
+        subject = next(
+            (
+                row
+                for row in context.planning_subjects
+                if row.get("subject_key") == decision.subject_key
+            ),
+            {},
+        )
         if not subject.get("occurrence_id") or not subject.get("task_id"):
-            stage.refuse(REJECTION.PARAMETER_INVALID, "deeper refinement needs an existing compound occurrence",
-                         field_path="/subject_key")
+            stage.refuse(
+                REJECTION.PARAMETER_INVALID,
+                "deeper refinement needs an existing compound occurrence",
+                field_path="/subject_key",
+            )
         # Open-compound identity, applicability, recursion fuel and coverage are
         # checked by the pure compiler over the authoritative frozen network.
     elif isinstance(payload, RepairReplaceMethodDecision):
@@ -1145,8 +1205,15 @@ def _check_payload(
     elif isinstance(payload, RequestEvidenceDecision):
         _check_request_evidence(decision, context, stage)
     elif isinstance(
-        payload, (WaitDecision, NoChangeDecision, RefineDecision, RequestHumanDecision, ProposeMethodDecision,
-                  ReadMethodLibraryDecision)
+        payload,
+        (
+            WaitDecision,
+            NoChangeDecision,
+            RefineDecision,
+            RequestHumanDecision,
+            ProposeMethodDecision,
+            ReadMethodLibraryDecision,
+        ),
     ):
         return
     else:  # pragma: no cover - the envelope's payload is a closed set
@@ -1306,9 +1373,7 @@ def _check_one_method(
 
 
 def _resolved_method_ref(view: MethodView) -> MethodRef:
-    return MethodRef(
-        method_id=view.method_id, version=view.version, content_hash=view.content_hash
-    )
+    return MethodRef(method_id=view.method_id, version=view.version, content_hash=view.content_hash)
 
 
 def _check_methods(
@@ -1348,23 +1413,33 @@ def _check_operation_gate(
 ) -> None:
     """§43 stage 10: an unresolved operation must be reconciled before changing the plan."""
 
-    if decision.decision_type in _STATE_FREE_TYPES or isinstance(decision.payload, RepairRuntimeBlockedDecision):
+    if decision.decision_type in _STATE_FREE_TYPES or isinstance(
+        decision.payload, RepairRuntimeBlockedDecision
+    ):
         return
     scope = context.taskgraph_scope
     if scope is not None:
         snapshot = context.operations.snapshot
-        if (snapshot is None or scope.mission_id != context.binding.mission_id
-                or scope.base_revision != context.plan_revision
-                or scope.operation_digest != snapshot.read_digest):
-            stage.refuse(REJECTION.INTERNAL_CONTRACT_ERROR, "TaskGraph Operation scope is stale",
-                         field_path="/decision_type")
+        if (
+            snapshot is None
+            or scope.mission_id != context.binding.mission_id
+            or scope.base_revision != context.plan_revision
+            or scope.operation_digest != snapshot.read_digest
+        ):
+            stage.refuse(
+                REJECTION.INTERNAL_CONTRACT_ERROR,
+                "TaskGraph Operation scope is stale",
+                field_path="/decision_type",
+            )
         # This admits a candidate for a durable convergence job, never its write.
         # Unrelated UNKNOWN operations still keep the original whole-Mission
         # gate closed. Only exact targets can be handed to this convergence job.
         if snapshot is not None and set(snapshot.unresolved) - set(scope.unresolved_operations):
-            stage.refuse(REJECTION.OPERATION_UNRESOLVED,
-                         "unresolved operations outside this convergence job require original reconciliation",
-                         field_path="/decision_type")
+            stage.refuse(
+                REJECTION.OPERATION_UNRESOLVED,
+                "unresolved operations outside this convergence job require original reconciliation",
+                field_path="/decision_type",
+            )
         # Commit rereads and applies the original whole-Mission gate as well.
         return
     unresolved = len(context.operations.unresolved_operations)
@@ -1383,7 +1458,9 @@ def _check_plan_shape(
 ) -> None:
     """§43 stage 11: the structural pre-checks the compiler would otherwise raise."""
 
-    if decision.decision_type in _STATE_FREE_TYPES or isinstance(decision.payload, RepairRuntimeBlockedDecision):
+    if decision.decision_type in _STATE_FREE_TYPES or isinstance(
+        decision.payload, RepairRuntimeBlockedDecision
+    ):
         return
     shape = context.plan_shape
     for code in shape.mapped_problems:
@@ -1393,12 +1470,14 @@ def _check_plan_shape(
     for detail in shape.data_unbound:
         stage.refuse(REJECTION.DATA_UNBOUND, detail, field_path="/payload")
     for detail in shape.coverage_gap:
-            stage.refuse(REJECTION.COVERAGE_GAP, detail, field_path="/payload")
+        stage.refuse(REJECTION.COVERAGE_GAP, detail, field_path="/payload")
 
 
 def pre_admit_planning_decision(
-    decision: object, *, context: DecisionAdmissionContext | AdmissionContext,
-    for_repair_preview: bool = False
+    decision: object,
+    *,
+    context: DecisionAdmissionContext | AdmissionContext,
+    for_repair_preview: bool = False,
 ) -> PreAdmittedPlanningDecision | NoMutationDecision | PlanningFeedbackV1:
     """Run the request/method checks without reading operations or plan shape.
 
@@ -1429,15 +1508,21 @@ def pre_admit_planning_decision(
         lambda stage: _check_phase_enablement(decision, ctx, stage),
         lambda stage: _check_planning_authority(decision, ctx, stage),
         lambda stage: _check_budget_and_bound(decision, ctx, stage),
-        lambda stage: _check_payload(decision, ctx, stage,
-            defer_running_work=wrapped.allow_convergence_preview),
+        lambda stage: _check_payload(
+            decision, ctx, stage, defer_running_work=wrapped.allow_convergence_preview
+        ),
     )
     for check in stages:
         stage = _Stage(context=ctx)
         check(stage)
         if not stage.holds():
-            if (for_repair_preview and isinstance(decision.payload, RepairReplaceMethodDecision)
-                and all(item.code is REJECTION.RUNNING_WORK_NOT_RECONCILED for item in stage.problems)):
+            if (
+                for_repair_preview
+                and isinstance(decision.payload, RepairReplaceMethodDecision)
+                and all(
+                    item.code is REJECTION.RUNNING_WORK_NOT_RECONCILED for item in stage.problems
+                )
+            ):
                 # This permits only pure preview, never executable admission.
                 continue
             return _feedback(ctx, stage)
@@ -1514,8 +1599,9 @@ def admit_planning_decision(
         lambda stage: _check_phase_enablement(envelope, ctx, stage),
         lambda stage: _check_planning_authority(envelope, ctx, stage),
         lambda stage: _check_budget_and_bound(envelope, ctx, stage),
-        lambda stage: _check_payload(envelope, ctx, stage,
-            defer_running_work=ctx.taskgraph_scope is not None),
+        lambda stage: _check_payload(
+            envelope, ctx, stage, defer_running_work=ctx.taskgraph_scope is not None
+        ),
     )
     for check in stages:
         stage = _Stage(context=ctx)

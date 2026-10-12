@@ -190,8 +190,20 @@ class TaskScopeSearchStore:
                     "INSERT INTO task_scope_search_fts("
                     "document_id,task_scope_id,subject,title,goal,project,status,content) "
                     "VALUES (?,?,?,?,?,?,?,?)",
-                    (document_id, task_scope_id, row["subject"], title, goal, project, status,
-                     document_text + "\n" + _cjk_bigram_zone(document_text) + "\n" + _cjk_unigram_zone(document_text)),
+                    (
+                        document_id,
+                        task_scope_id,
+                        row["subject"],
+                        title,
+                        goal,
+                        project,
+                        status,
+                        document_text
+                        + "\n"
+                        + _cjk_bigram_zone(document_text)
+                        + "\n"
+                        + _cjk_unigram_zone(document_text),
+                    ),
                 )
                 await db.execute(
                     "INSERT INTO task_scope_search_heads("
@@ -279,7 +291,11 @@ class TaskScopeSearchStore:
             raise TaskScopeSearchError("human_memory_search_query_invalid")
         if len(query.encode("utf-8")) > MAX_QUERY_BYTES:
             raise TaskScopeSearchError("human_memory_search_query_too_large")
-        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= MAX_CANDIDATES:
+        if (
+            isinstance(limit, bool)
+            or not isinstance(limit, int)
+            or not 1 <= limit <= MAX_CANDIDATES
+        ):
             raise TaskScopeSearchError("human_memory_search_limit_invalid")
         request_base = {
             "schema_version": 1,
@@ -369,17 +385,25 @@ class TaskScopeSearchStore:
                 goal=_bounded(str(row["goal"]), 4096),
                 project=_bounded(str(row["project"]), 2048),
                 status=_bounded(str(row["status"]), 256),
-                snippet=_bounded(_snippet(str(row["hit"]), str(row["title"]), str(row["goal"]), str(row["document_text"])), MAX_SNIPPET_BYTES),
+                snippet=_bounded(
+                    _snippet(
+                        str(row["hit"]),
+                        str(row["title"]),
+                        str(row["goal"]),
+                        str(row["document_text"]),
+                    ),
+                    MAX_SNIPPET_BYTES,
+                ),
                 rank=float(row["score"]),
             )
             for row in rows
         )
         next_cursor = (
-            _encode_cursor(request_hash, source_set_hash, offset + limit)
-            if has_more
-            else None
+            _encode_cursor(request_hash, source_set_hash, offset + limit) if has_more else None
         )
-        return await self._record_search_receipt(subject, request_hash, candidates, next_cursor, access)
+        return await self._record_search_receipt(
+            subject, request_hash, candidates, next_cursor, access
+        )
 
     async def open_exact(
         self,
@@ -514,7 +538,11 @@ class TaskScopeSearchStore:
         return SearchResult(candidates, next_cursor, receipt_hash)
 
     async def _record_access_receipt(
-        self, operation: str, subject: str, request_hash: str, result_hash: str,
+        self,
+        operation: str,
+        subject: str,
+        request_hash: str,
+        result_hash: str,
         access: Mapping[str, str | None],
     ) -> str:
         # schema_version 2 (G2): the receipt names the SDK effect/run that
@@ -610,7 +638,9 @@ def _lexical_units(text: str) -> list[str]:
     for token in re.findall(r"[\w\-]+", text, flags=re.UNICODE):
         parts = [token]
         for run in _CJK_RUN.findall(token):
-            parts.extend(run[i : i + 2] for i in range(len(run) - 1)) if len(run) > 1 else parts.append(run)
+            parts.extend(run[i : i + 2] for i in range(len(run) - 1)) if len(
+                run
+            ) > 1 else parts.append(run)
         for unit in parts:
             if unit not in seen:
                 seen.add(unit)
@@ -619,13 +649,19 @@ def _lexical_units(text: str) -> list[str]:
 
 
 def _cjk_bigram_zone(document_text: str) -> str:
-    bigrams = [unit for unit in _lexical_units(document_text) if len(unit) == 2 and _CJK_RUN.fullmatch(unit)]
+    bigrams = [
+        unit
+        for unit in _lexical_units(document_text)
+        if len(unit) == 2 and _CJK_RUN.fullmatch(unit)
+    ]
     return " ".join(bigrams)
 
 
 # Function characters that would match almost every Chinese document; never
 # used as single-character fallback terms.
-_CJK_UNIGRAM_STOP = frozenset("的了是在和与及或我你他她它们这那不有把被让给请先再就也都很吗呢吧啊个之于对为到从")
+_CJK_UNIGRAM_STOP = frozenset(
+    "的了是在和与及或我你他她它们这那不有把被让给请先再就也都很吗呢吧啊个之于对为到从"
+)
 
 
 def _cjk_unigrams(text: str) -> list[str]:

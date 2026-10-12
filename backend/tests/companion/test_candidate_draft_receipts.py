@@ -163,12 +163,8 @@ def test_finalize_marker_and_receipt_share_caller_owned_commit(tmp_path) -> None
         created_at="2026-07-25T04:30:00Z",
     )
     db.rollback()
-    assert db.execute(
-        "SELECT COUNT(*) FROM execution_child_finalize_markers"
-    ).fetchone()[0] == 0
-    assert db.execute(
-        "SELECT COUNT(*) FROM execution_candidate_draft_receipts"
-    ).fetchone()[0] == 0
+    assert db.execute("SELECT COUNT(*) FROM execution_child_finalize_markers").fetchone()[0] == 0
+    assert db.execute("SELECT COUNT(*) FROM execution_candidate_draft_receipts").fetchone()[0] == 0
 
     db.execute("BEGIN IMMEDIATE")
     insert_marker(db, final)
@@ -180,15 +176,9 @@ def test_finalize_marker_and_receipt_share_caller_owned_commit(tmp_path) -> None
     )
     db.commit()
 
-    assert db.execute(
-        "SELECT COUNT(*) FROM execution_child_finalize_markers"
-    ).fetchone()[0] == 1
-    assert db.execute(
-        "SELECT COUNT(*) FROM execution_candidate_draft_receipts"
-    ).fetchone()[0] == 1
-    assert SqliteCandidateDraftReceiptQuery(path).read_exact(
-        expectation(value)
-    ) == value
+    assert db.execute("SELECT COUNT(*) FROM execution_child_finalize_markers").fetchone()[0] == 1
+    assert db.execute("SELECT COUNT(*) FROM execution_candidate_draft_receipts").fetchone()[0] == 1
+    assert SqliteCandidateDraftReceiptQuery(path).read_exact(expectation(value)) == value
     db.close()
 
 
@@ -207,9 +197,7 @@ def test_missing_finalize_marker_fails_before_receipt_insert(tmp_path) -> None:
             created_at="2026-07-25T04:30:00Z",
         )
 
-    assert db.execute(
-        "SELECT COUNT(*) FROM execution_candidate_draft_receipts"
-    ).fetchone()[0] == 0
+    assert db.execute("SELECT COUNT(*) FROM execution_candidate_draft_receipts").fetchone()[0] == 0
     db.close()
 
 
@@ -234,9 +222,7 @@ def test_same_receipt_replay_is_idempotent_but_launch_conflict_fails(tmp_path) -
     )
 
     assert first == replay
-    assert db.execute(
-        "SELECT COUNT(*) FROM execution_candidate_draft_receipts"
-    ).fetchone()[0] == 1
+    assert db.execute("SELECT COUNT(*) FROM execution_candidate_draft_receipts").fetchone()[0] == 1
 
     conflict = receipt(proposal_hash=DIGEST_C)
     with pytest.raises(
@@ -387,9 +373,7 @@ async def test_workflow_v20_fresh_schema_installs_receipt_and_material_tables(
     path = tmp_path / "workflow.db"
     await initialize_workflow_db(path)
     with sqlite3.connect(path) as db:
-        assert db.execute("PRAGMA user_version").fetchone() == (
-            WORKFLOW_SCHEMA_VERSION,
-        )
+        assert db.execute("PRAGMA user_version").fetchone() == (WORKFLOW_SCHEMA_VERSION,)
         assert db.execute(
             """SELECT COUNT(*) FROM sqlite_master
                WHERE type='table'
@@ -469,22 +453,19 @@ async def test_existing_v19_database_upgrades_to_material_snapshot_v20(
             "execution_root_active_budget_status",
         )
         post_v19_tables = (
-            "execution_candidate_draft_materials",          # v20
-            "execution_skill_scope_activations",            # v21
-            "execution_provider_invocation_audits",         # v23
-            "execution_provider_invocation_inputs",         # v24
-            "execution_provider_action_batches_v25",        # v25
-            "execution_run_active_budgets",                 # v27
-            "execution_run_tool_presentation_specs",        # v29
-            "execution_tool_public_projections",            # v29
-            "execution_run_block_signals",                  # v29
+            "execution_candidate_draft_materials",  # v20
+            "execution_skill_scope_activations",  # v21
+            "execution_provider_invocation_audits",  # v23
+            "execution_provider_invocation_inputs",  # v24
+            "execution_provider_action_batches_v25",  # v25
+            "execution_run_active_budgets",  # v27
+            "execution_run_tool_presentation_specs",  # v29
+            "execution_tool_public_projections",  # v29
+            "execution_run_block_signals",  # v29
         )
         for trigger in post_v19_triggers:
             db.execute(f"DROP TRIGGER IF EXISTS {trigger}")
-        db.execute(
-            "DROP INDEX IF EXISTS "
-            "idx_execution_profile_ticket_personal_selection_once"
-        )
+        db.execute("DROP INDEX IF EXISTS idx_execution_profile_ticket_personal_selection_once")
         for table in post_v19_tables:
             db.execute(f"DROP TABLE IF EXISTS {table}")
         db.execute("DELETE FROM workflow_schema_migrations WHERE version>=20")
@@ -494,9 +475,7 @@ async def test_existing_v19_database_upgrades_to_material_snapshot_v20(
     await initialize_workflow_db(path)
 
     with sqlite3.connect(path) as db:
-        assert db.execute("PRAGMA user_version").fetchone() == (
-            WORKFLOW_SCHEMA_VERSION,
-        )
+        assert db.execute("PRAGMA user_version").fetchone() == (WORKFLOW_SCHEMA_VERSION,)
         assert db.execute(
             """SELECT COUNT(*) FROM sqlite_master
                WHERE type='table'
@@ -511,18 +490,14 @@ async def test_terminal_event_and_receipt_commit_or_rollback_together(
     path = tmp_path / "workflow.db"
     value = receipt()
     spec = execution_spec(value.child_run_id)
-    extension = CandidateDraftReceiptTerminalExtension(
-        value, "2026-07-25T05:00:00Z"
-    )
+    extension = CandidateDraftReceiptTerminalExtension(value, "2026-07-25T05:00:00Z")
 
     def fail_after_outbox(point: str) -> None:
         if point == "finalize_after_outbox":
             raise RuntimeError("crash:finalize_after_outbox")
 
     crashing = SqliteExecutionUnitOfWork(path, fault_injector=fail_after_outbox)
-    created = await crashing.create_with_start_snapshot(
-        spec, execution_snapshot(spec)
-    )
+    created = await crashing.create_with_start_snapshot(spec, execution_snapshot(spec))
     with pytest.raises(RuntimeError, match="crash:finalize_after_outbox"):
         await crashing.commit_run_outcome(
             spec.run_id,
@@ -534,9 +509,9 @@ async def test_terminal_event_and_receipt_commit_or_rollback_together(
     await crashing.close()
 
     with sqlite3.connect(path) as db:
-        assert db.execute(
-            "SELECT COUNT(*) FROM execution_candidate_draft_receipts"
-        ).fetchone() == (0,)
+        assert db.execute("SELECT COUNT(*) FROM execution_candidate_draft_receipts").fetchone() == (
+            0,
+        )
         assert db.execute(
             "SELECT COUNT(*) FROM execution_events WHERE kind='run.final'"
         ).fetchone() == (0,)
@@ -570,9 +545,9 @@ async def test_terminal_event_and_receipt_commit_or_rollback_together(
     await recovered.close()
 
     with sqlite3.connect(path) as db:
-        assert db.execute(
-            "SELECT COUNT(*) FROM execution_candidate_draft_receipts"
-        ).fetchone() == (1,)
+        assert db.execute("SELECT COUNT(*) FROM execution_candidate_draft_receipts").fetchone() == (
+            1,
+        )
         assert db.execute(
             "SELECT COUNT(*) FROM execution_events WHERE kind='run.final'"
         ).fetchone() == (1,)

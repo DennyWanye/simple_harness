@@ -190,9 +190,7 @@ async def test_retained_child_protects_ancestor_then_child_first_gc(tmp_path: Pa
     finally:
         await db.close()
 
-    manager = WorkflowRetentionManager(
-        db_path, blob_root, policy=_policy(), clock=FixedClock(now)
-    )
+    manager = WorkflowRetentionManager(db_path, blob_root, policy=_policy(), clock=FixedClock(now))
     first = await manager.cleanup()
     assert first.stage_names == RESEARCH_STAGE_ORDER
     assert "parent:research_lineage" in first.stage(DELIVERY_STAGE).protected
@@ -266,9 +264,7 @@ async def test_continue_pin_expiry_and_terminal_control_cleanup_are_ordered(tmp_
     finally:
         await db.close()
 
-    manager = WorkflowRetentionManager(
-        db_path, blob_root, policy=_policy(), clock=FixedClock(now)
-    )
+    manager = WorkflowRetentionManager(db_path, blob_root, policy=_policy(), clock=FixedClock(now))
     preview = await manager.cleanup(dry_run=True)
     assert preview.stage_names == RESEARCH_STAGE_ORDER
     assert preview.stage(CONTROL_STAGE).candidates == ("command:done",)
@@ -281,9 +277,10 @@ async def test_continue_pin_expiry_and_terminal_control_cleanup_are_ordered(tmp_
         assert await (
             await db.execute("SELECT 1 FROM workflow_runs WHERE run_id='parent'")
         ).fetchone()
-        assert await (
-            await db.execute("SELECT 1 FROM workflow_run_control_commands")
-        ).fetchone() is None
+        assert (
+            await (await db.execute("SELECT 1 FROM workflow_run_control_commands")).fetchone()
+            is None
+        )
     finally:
         await db.close()
 
@@ -293,9 +290,10 @@ async def test_continue_pin_expiry_and_terminal_control_cleanup_are_ordered(tmp_
     ).cleanup()
     db = await _db(db_path)
     try:
-        assert await (
-            await db.execute("SELECT 1 FROM workflow_runs WHERE run_id='parent'")
-        ).fetchone() is None
+        assert (
+            await (await db.execute("SELECT 1 FROM workflow_runs WHERE run_id='parent'")).fetchone()
+            is None
+        )
     finally:
         await db.close()
 
@@ -340,14 +338,13 @@ async def test_expired_orphan_pin_is_recomputed_and_missing_blob_is_reported(tmp
         assert await (
             await db.execute("SELECT 1 FROM workflow_runs WHERE run_id='recent'")
         ).fetchone()
-        assert await (
-            await db.execute("SELECT 1 FROM workflow_research_snapshot_pins")
-        ).fetchone() is None
-        assert await (
-            await db.execute("SELECT 1 FROM workflow_research_snapshots")
-        ).fetchone() is None
-        assert await (
-            await db.execute("SELECT 1 FROM workflow_blobs")
-        ).fetchone() is None
+        assert (
+            await (await db.execute("SELECT 1 FROM workflow_research_snapshot_pins")).fetchone()
+            is None
+        )
+        assert (
+            await (await db.execute("SELECT 1 FROM workflow_research_snapshots")).fetchone() is None
+        )
+        assert await (await db.execute("SELECT 1 FROM workflow_blobs")).fetchone() is None
     finally:
         await db.close()

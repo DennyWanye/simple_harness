@@ -36,7 +36,11 @@ def _request(key: str, budget):  # type: ignore[no-untyped-def]
 
 async def _service(root, principal):  # type: ignore[no-untyped-def]
     service = OrchestrationService(
-        root, OrchestrationSettings(), provider=notes_provider(), principal=principal, drive=False,
+        root,
+        OrchestrationSettings(),
+        provider=notes_provider(),
+        principal=principal,
+        drive=False,
         native_test_counter=FixtureWordCounter(),
     )
     await service.start()
@@ -56,7 +60,9 @@ async def _service(root, principal):  # type: ignore[no-untyped-def]
     ],
     ids=["absent", "empty", "nulls", "tokens-only", "attempts-only", "both-given"],
 )
-async def test_blank_items_take_the_default_and_given_ones_stay(orchestration_root, principal, budget, expected):
+async def test_blank_items_take_the_default_and_given_ones_stay(
+    orchestration_root, principal, budget, expected
+):
     service = await _service(orchestration_root, principal)
     try:
         created = service.create_mission(_request("k-budget", budget))
@@ -69,7 +75,13 @@ async def test_blank_items_take_the_default_and_given_ones_stay(orchestration_ro
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "budget",
-    [{"max_tokens": 0}, {"max_attempts": -1}, {"max_tokens": "400000"}, {"max_attempts": True}, "400000"],
+    [
+        {"max_tokens": 0},
+        {"max_attempts": -1},
+        {"max_tokens": "400000"},
+        {"max_attempts": True},
+        "400000",
+    ],
     ids=["zero-tokens", "negative-attempts", "string-tokens", "bool-attempts", "not-an-object"],
 )
 async def test_a_bad_budget_item_is_refused_not_replaced(orchestration_root, principal, budget):
@@ -112,7 +124,9 @@ async def test_each_leaf_gets_the_fixed_three_million_allowance(orchestration_ro
 
     service = await _service(orchestration_root, principal)
     try:
-        assert service._config.task_max_tokens == 10_000_000  # 2026-10-10 用户定：单步 300 万→1000 万
+        assert (
+            service._config.task_max_tokens == 10_000_000
+        )  # 2026-10-10 用户定：单步 300 万→1000 万
         assert service._orchestrator.commit._task_max_tokens == 10_000_000
         assert service.status()["mission_budget_defaults"]["max_tokens"] == 20_000_000
     finally:

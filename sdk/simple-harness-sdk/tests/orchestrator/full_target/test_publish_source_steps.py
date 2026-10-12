@@ -14,8 +14,13 @@ import pytest
 from agent_orchestrator.orchestrator.hierarchical_dispatch import HierarchicalDispatch
 from agent_orchestrator.storage.htn_store import HtnStore
 
-CRITERIA = ("写一个词频模块", "file:wordfreq.py", "action:file_publish.publish:wordfreq.py",
-            "file:README.md", "action:file_publish.publish:README.md")
+CRITERIA = (
+    "写一个词频模块",
+    "file:wordfreq.py",
+    "action:file_publish.publish:wordfreq.py",
+    "file:README.md",
+    "action:file_publish.publish:README.md",
+)
 
 
 @pytest.fixture(autouse=True)
@@ -26,10 +31,19 @@ def _no_requirements_revision(monkeypatch):
 
 
 def _unclear(links, criteria=CRITERIA):
-    fake = SimpleNamespace(store=SimpleNamespace(
-        get_mission=lambda _id: SimpleNamespace(id="m1", success_criteria=criteria)))
-    method = SimpleNamespace(composition=SimpleNamespace(criterion_links=[
-        SimpleNamespace(parent_criterion_id=parent, child_step=step) for parent, step in links]))
+    fake = SimpleNamespace(
+        store=SimpleNamespace(
+            get_mission=lambda _id: SimpleNamespace(id="m1", success_criteria=criteria)
+        )
+    )
+    method = SimpleNamespace(
+        composition=SimpleNamespace(
+            criterion_links=[
+                SimpleNamespace(parent_criterion_id=parent, child_step=step)
+                for parent, step in links
+            ]
+        )
+    )
     return HierarchicalDispatch._publish_source_steps(fake, "m1", method)
 
 
@@ -47,4 +61,6 @@ def test_a_published_file_with_no_producer_or_two_producers_goes_back():
 
 def test_a_publish_without_a_file_requirement_is_not_checked_here():
     """旧任务或别的连接器：没有配套 file: 要求时不在定计划时检查，运行时按文件名回退。"""
-    assert _unclear([("c-user-1", "write")], ("写一份报告", "action:file_publish.publish:r.md")) == []
+    assert (
+        _unclear([("c-user-1", "write")], ("写一份报告", "action:file_publish.publish:r.md")) == []
+    )

@@ -54,8 +54,7 @@ async def _invoke(schema: dict, arguments: dict, *, name: str = "task_scope_upda
     call_id = CallId("call-shape-1")
     return await tools.invoke(
         ToolCall(call_id, name, arguments),
-        ToolContext(RUN, RequestId("request-shape"), CancellationToken(), {},
-                    call_id=call_id),
+        ToolContext(RUN, RequestId("request-shape"), CancellationToken(), {}, call_id=call_id),
     )
 
 
@@ -107,10 +106,7 @@ def test_hint_is_empty_when_the_schema_cannot_describe_the_argument() -> None:
 
 def test_hint_is_bounded_so_a_wide_schema_cannot_flood_the_tool_message() -> None:
     schema = {
-        "properties": {
-            f"field_{index}": {"type": "string", "minLength": 1}
-            for index in range(200)
-        }
+        "properties": {f"field_{index}": {"type": "string", "minLength": 1} for index in range(200)}
     }
     hint = _expected_arguments_hint(schema, list(schema["properties"]))
     assert len(hint) <= 600

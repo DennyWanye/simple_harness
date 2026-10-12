@@ -59,7 +59,9 @@ def _service(root, principal):  # type: ignore[no-untyped-def]
     ],
     ids=["goal", "criteria", "stop_conditions", "workspace_seed"],
 )
-async def test_the_provider_key_is_refused_anywhere_in_a_create(orchestration_root, principal, overrides):
+async def test_the_provider_key_is_refused_anywhere_in_a_create(
+    orchestration_root, principal, overrides
+):
     service = _service(orchestration_root, principal)
     await service.start()
     try:

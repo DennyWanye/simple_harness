@@ -22,6 +22,7 @@ callable, so tests can inject deterministic responses without
 spinning up a real WebSocket. Production wires it to the control WS
 broadcaster in ``main.py``.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -201,9 +202,7 @@ class PermissionGate:
         # interactive approvals, so Auto must never bypass them.
         denied = self._match_deny_pattern(category, params)
         if denied is not None:
-            return PermissionDecision(
-                allow=False, source="config-deny", pattern=denied
-            )
+            return PermissionDecision(allow=False, source="config-deny", pattern=denied)
 
         # Layer 3: Auto skips the user wait only after validation has passed.
         # The durable Harness path still issues an auditable exact grant.
@@ -226,9 +225,7 @@ class PermissionGate:
     # -----------------------------------------------------------------
     # Internal
     # -----------------------------------------------------------------
-    def _maybe_upgrade(
-        self, category: str, params: dict[str, Any]
-    ) -> str:
+    def _maybe_upgrade(self, category: str, params: dict[str, Any]) -> str:
         if category != "read_file":
             return category
         path = params.get("path", "")
@@ -236,9 +233,7 @@ class PermissionGate:
             return "read_file_sensitive"
         return category
 
-    def _match_deny_pattern(
-        self, category: str, params: dict[str, Any]
-    ) -> str | None:
+    def _match_deny_pattern(self, category: str, params: dict[str, Any]) -> str | None:
         if category == "shell":
             cmd = params.get("command", "")
             for pat in self.config.shell_deny_patterns:
@@ -257,9 +252,7 @@ class PermissionGate:
         return None
 
     @staticmethod
-    def _cache_key(
-        session_id: str, category: str, params: dict[str, Any]
-    ) -> tuple[str, str, str]:
+    def _cache_key(session_id: str, category: str, params: dict[str, Any]) -> tuple[str, str, str]:
         # Shape hash uses the keyset, not the values, so similar ops
         # (same category + same param keys) all share one cache slot.
         # That matches the user's mental model: "always allow `shell`"
@@ -281,9 +274,7 @@ class PermissionGate:
             # then fail-closed. This matches the spec's auto-deny
             # behavior when the user is unreachable.
             try:
-                await asyncio.wait_for(
-                    asyncio.Event().wait(), timeout=self.config.timeout_s
-                )
+                await asyncio.wait_for(asyncio.Event().wait(), timeout=self.config.timeout_s)
             except TimeoutError:
                 pass
             return PermissionDecision(allow=False, source="timeout")
@@ -307,15 +298,15 @@ class PermissionGate:
                 # synthesize_pcm_stream is the streaming API; .synthesize
                 # is one-shot; we use whichever exists.
                 tts = self._tts_engine
-                voice_msg = (
-                    f"我需要确认才能执行{request.summary}，请点击屏幕上的允许按钮"
-                )
+                voice_msg = f"我需要确认才能执行{request.summary}，请点击屏幕上的允许按钮"
                 if hasattr(tts, "synthesize"):
                     asyncio.create_task(tts.synthesize(voice_msg))
                 elif hasattr(tts, "synthesize_pcm_stream"):
+
                     async def _drain():
                         async for _ in tts.synthesize_pcm_stream(voice_msg):
                             pass
+
                     asyncio.create_task(_drain())
             except Exception:  # noqa: BLE001
                 pass  # TTS failures don't block permission flow
@@ -324,9 +315,7 @@ class PermissionGate:
                 self._responder(request), timeout=self.config.timeout_s
             )
         except TimeoutError:
-            return PermissionDecision(
-                allow=False, source="timeout", request_id=request.request_id
-            )
+            return PermissionDecision(allow=False, source="timeout", request_id=request.request_id)
         except Exception as exc:  # noqa: BLE001
             logger.warning("permission_responder_raised", exc_info=exc)
             return PermissionDecision(
@@ -344,26 +333,24 @@ class PermissionGate:
                 source="user-allowed-session",
                 request_id=request.request_id,
             )
-        return PermissionDecision(
-            allow=False, source="user-denied", request_id=request.request_id
-        )
+        return PermissionDecision(allow=False, source="user-denied", request_id=request.request_id)
 
     @staticmethod
     def _summarize(category: str, params: dict[str, Any]) -> str:
         if category == "shell":
-            return f"Run shell: {params.get('command','')[:80]}"
+            return f"Run shell: {params.get('command', '')[:80]}"
         if category in ("write_file", "desktop_write"):
             content = params.get("content", "")
             size = len(content) if isinstance(content, str) else 0
-            return f"Write to {params.get('path','')} ({size} bytes)"
+            return f"Write to {params.get('path', '')} ({size} bytes)"
         if category == "read_file_sensitive":
-            return f"Read sensitive file: {params.get('path','')}"
+            return f"Read sensitive file: {params.get('path', '')}"
         if category == "network":
-            return f"Fetch URL: {params.get('url','')}"
+            return f"Fetch URL: {params.get('url', '')}"
         if category == "mcp_call":
-            return f"MCP call: {params.get('server','')}.{params.get('tool','')}"
+            return f"MCP call: {params.get('server', '')}.{params.get('tool', '')}"
         if category == "skill_install":
-            return f"Install skill: {params.get('source','')}"
+            return f"Install skill: {params.get('source', '')}"
         return f"{category}({params})"
 
     @staticmethod
@@ -375,9 +362,7 @@ class PermissionGate:
     # -----------------------------------------------------------------
     # WI-TG-2: read-only pending-request introspection
     # -----------------------------------------------------------------
-    def list_pending(
-        self, session_id: str | None = None
-    ) -> list[dict[str, Any]]:
+    def list_pending(self, session_id: str | None = None) -> list[dict[str, Any]]:
         """Compatibility surface; product pending decisions are Harness-owned.
 
         New product runs expose durable ``execution_decisions`` through the

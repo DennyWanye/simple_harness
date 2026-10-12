@@ -50,7 +50,14 @@ def provider_seam(tmp_path: Path):
     base = f"http://127.0.0.1:{port}"
     log = tmp_path / "provider.jsonl"
     process = subprocess.Popen(
-        [sys.executable, str(SCRIPTS / "context_os_provider_seam.py"), "--port", str(port), "--log", str(log)],
+        [
+            sys.executable,
+            str(SCRIPTS / "context_os_provider_seam.py"),
+            "--port",
+            str(port),
+            "--log",
+            str(log),
+        ],
         env={**os.environ, "DESKPET_DEV_MODE": "1"},
     )
     _wait(base, "/v1/models")
@@ -65,7 +72,14 @@ def fixture_daemon(tmp_path: Path):
     base = f"http://127.0.0.1:{port}"
     log = tmp_path / "fixture.jsonl"
     process = subprocess.Popen(
-        [sys.executable, str(SCRIPTS / "context_os_fixture_daemon.py"), "--port", str(port), "--log", str(log)],
+        [
+            sys.executable,
+            str(SCRIPTS / "context_os_fixture_daemon.py"),
+            "--port",
+            str(port),
+            "--log",
+            str(log),
+        ],
         env={**os.environ, "DESKPET_DEV_MODE": "1"},
     )
     _wait(base, "/health")
@@ -77,7 +91,9 @@ def fixture_daemon(tmp_path: Path):
     process.wait(timeout=5)
 
 
-def _chat(base: str, body: dict, *, request_id: str, attempt_id: str, purpose: str = "agent_response"):
+def _chat(
+    base: str, body: dict, *, request_id: str, attempt_id: str, purpose: str = "agent_response"
+):
     request = urllib.request.Request(
         base + "/v1/chat/completions",
         json.dumps(body).encode(),
@@ -96,10 +112,17 @@ def _chat(base: str, body: dict, *, request_id: str, attempt_id: str, purpose: s
 def test_catalog_then_model_fault_triggers_once_and_is_clearable(provider_seam):
     base, log = provider_seam
     _request(base, "/__control/catalog", {"model": "ctx-compact-fixture", "window": 8192})
-    armed = _request(base, "/__control/model-fault", {"model": "ctx-compact-fixture", "error": "dedicated_model_unavailable"})
+    armed = _request(
+        base,
+        "/__control/model-fault",
+        {"model": "ctx-compact-fixture", "error": "dedicated_model_unavailable"},
+    )
     assert armed["fault"]["trigger_count"] == 0
 
-    body = {"model": "ctx-compact-fixture", "messages": [{"role": "user", "content": "CTX-COMPACT-FAULT"}]}
+    body = {
+        "model": "ctx-compact-fixture",
+        "messages": [{"role": "user", "content": "CTX-COMPACT-FAULT"}],
+    }
     with pytest.raises(urllib.error.HTTPError) as first:
         _chat(base, body, request_id="req-fault", attempt_id="fault-1", purpose="compressor")
     assert first.value.code == 503
@@ -111,14 +134,21 @@ def test_catalog_then_model_fault_triggers_once_and_is_clearable(provider_seam):
     assert fault["active"] is False
     assert fault["trigger_count"] == 1
     assert fault["triggered_request_id"] == "req-fault"
-    assert _request(base, "/__control/model-fault/ctx-compact-fixture", method="DELETE")["cleared"] is True
+    assert (
+        _request(base, "/__control/model-fault/ctx-compact-fixture", method="DELETE")["cleared"]
+        is True
+    )
     events = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
     assert [event["event"] for event in events].count("fault_triggered") == 1
 
 
 def test_fallback_requires_same_request_new_attempt_and_clears_on_terminal(provider_seam):
     base, _ = provider_seam
-    _request(base, "/__control/fallback", {"marker": "CTX-FALLBACK-1", "from": "ctx-primary", "to": "ctx-fallback"})
+    _request(
+        base,
+        "/__control/fallback",
+        {"marker": "CTX-FALLBACK-1", "from": "ctx-primary", "to": "ctx-fallback"},
+    )
     primary = {"model": "ctx-primary", "messages": [{"role": "user", "content": "CTX-FALLBACK-1"}]}
     with pytest.raises(urllib.error.HTTPError) as failed:
         _chat(base, primary, request_id="req-chain", attempt_id="attempt-primary")
@@ -133,7 +163,12 @@ def test_fallback_requires_same_request_new_attempt_and_clears_on_terminal(provi
 def test_force_finish_rounds_are_causal_and_terminal_clears_arm(provider_seam):
     base, log = provider_seam
     _request(base, "/__control/force-finish", {"marker": "CTX-FORCE-1", "tool_rounds": 3})
-    tools = [{"type": "function", "function": {"name": "mcp_ctx_fixture_tool_001", "parameters": {"type": "object"}}}]
+    tools = [
+        {
+            "type": "function",
+            "function": {"name": "mcp_ctx_fixture_tool_001", "parameters": {"type": "object"}},
+        }
+    ]
     messages = [{"role": "user", "content": "CTX-FORCE-1"}]
     for index in range(1, 4):
         response = _chat(
@@ -147,7 +182,11 @@ def test_force_finish_rounds_are_causal_and_terminal_clears_arm(provider_seam):
         messages.extend(
             [
                 {"role": "assistant", "tool_calls": [call]},
-                {"role": "tool", "tool_call_id": call["id"], "content": json.dumps({"invocation_id": f"inv-{index}"})},
+                {
+                    "role": "tool",
+                    "tool_call_id": call["id"],
+                    "content": json.dumps({"invocation_id": f"inv-{index}"}),
+                },
             ]
         )
     terminal = _chat(
@@ -197,15 +236,25 @@ def test_control_cli_routes_catalog_and_model_fault_to_provider(provider_seam):
         return json.loads(output)
 
     assert cli("set-model", "--model", "ctx-cli", "--window", "4096")["model"] == "ctx-cli"
-    assert cli("model-fault", "--model", "ctx-cli", "--error", "cli_fault")["fault"]["active"] is True
+    assert (
+        cli("model-fault", "--model", "ctx-cli", "--error", "cli_fault")["fault"]["active"] is True
+    )
     assert cli("clear-model-fault", "--model", "ctx-cli")["cleared"] is True
 
 
 def test_provider_arms_reject_duplicates_and_support_explicit_cleanup(provider_seam):
     base, _ = provider_seam
-    _request(base, "/__control/fallback", {"marker": "CTX-FALLBACK-CLEAR", "from": "ctx-primary", "to": "ctx-fallback"})
+    _request(
+        base,
+        "/__control/fallback",
+        {"marker": "CTX-FALLBACK-CLEAR", "from": "ctx-primary", "to": "ctx-fallback"},
+    )
     with pytest.raises(urllib.error.HTTPError) as duplicate_fallback:
-        _request(base, "/__control/fallback", {"marker": "CTX-FALLBACK-OTHER", "from": "ctx-primary", "to": "ctx-fallback"})
+        _request(
+            base,
+            "/__control/fallback",
+            {"marker": "CTX-FALLBACK-OTHER", "from": "ctx-primary", "to": "ctx-fallback"},
+        )
     assert duplicate_fallback.value.code == 409
     assert _request(base, "/__control/fallback", method="DELETE")["cleared"] is True
 

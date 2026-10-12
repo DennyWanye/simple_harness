@@ -98,9 +98,15 @@ class SkillUseService:
     def trial_session(self, pin: Pin, session: store.SessionRow | None) -> bool:
         """This Session belongs to the evaluation Mission this pin's current trial names."""
         mission = self.mission_of(session)
-        return mission is not None and self.trial_mission is not None and self.trial_mission(pin) == mission
+        return (
+            mission is not None
+            and self.trial_mission is not None
+            and self.trial_mission(pin) == mission
+        )
 
-    def usable_skill(self, pin: Pin, session: store.SessionRow | None = None) -> tuple[cat.RevisionRow, cat.ActivationRow, Mapping[str, Any]]:
+    def usable_skill(
+        self, pin: Pin, session: store.SessionRow | None = None
+    ) -> tuple[cat.RevisionRow, cat.ActivationRow, Mapping[str, Any]]:
         """An ADMITTED, currently usable Skill with a complete lock — or a Skill in TRIAL
         used by its own evaluation Mission — else a named refusal."""
 
@@ -108,20 +114,31 @@ class SkillUseService:
         revision = cat.resolve_pin(connection, self.catalogue.namespace_id, pin)
         if revision.entry_kind != "SKILL":
             raise ArpError("CATALOGUE_KIND_MISMATCH", "the request names a non-Skill entry")
-        activation = cat.read_activation(connection, self.catalogue.namespace_id, "SKILL", revision.entry_id, revision.revision)
+        activation = cat.read_activation(
+            connection, self.catalogue.namespace_id, "SKILL", revision.entry_id, revision.revision
+        )
         if activation is None:
             raise ArpError("CATALOGUE_STALE", "skill has no lifecycle row")
         if activation.state == "QUARANTINED":
-            raise ArpError("SKILL_TRIAL_REQUIRED", f"skill {revision.entry_id}@{revision.revision} is quarantined")
+            raise ArpError(
+                "SKILL_TRIAL_REQUIRED",
+                f"skill {revision.entry_id}@{revision.revision} is quarantined",
+            )
         ok, reasons = self.catalogue.usable(activation, now_ms=self.clock_ms())
         trial = not ok and reasons == ["STATE_TRIAL"] and self.trial_session(revision.pin, session)
         if not ok and not trial:
-            raise ArpError("SKILL_NOT_ADMITTED", f"skill {revision.entry_id}@{revision.revision} is not usable: {', '.join(reasons)}", detail={"reasons": reasons})
+            raise ArpError(
+                "SKILL_NOT_ADMITTED",
+                f"skill {revision.entry_id}@{revision.revision} is not usable: {', '.join(reasons)}",
+                detail={"reasons": reasons},
+            )
         lock = self.skills.latest_lock(revision)
         if lock is None or not lock["complete"]:
             raise ArpError("DEPENDENCY_UNRESOLVED", "skill has no complete dependency lock")
         if self.authority is not None:
-            self.authority.require_usable(revision.pin, trial_mission_id=self.mission_of(session) if trial else None)
+            self.authority.require_usable(
+                revision.pin, trial_mission_id=self.mission_of(session) if trial else None
+            )
         return revision, activation, lock
 
     def _turn_id(self, session: store.SessionRow) -> str:
@@ -137,10 +154,21 @@ class SkillUseService:
         connection = self.uow.database.connection
         context = store.latest_context(connection, session.session_id)
         if context is not None:
-            return Pin("input_manifest", context.context_id, 0, context.manifest_hash), Pin.from_json(context.manifest["tool_snapshot_ref"])
+            return Pin(
+                "input_manifest", context.context_id, 0, context.manifest_hash
+            ), Pin.from_json(context.manifest["tool_snapshot_ref"])
         snapshot = cat.latest_tool_snapshot(connection, session.session_id)
-        tool_snapshot = Pin("tool_snapshot", f"{session.agent_id}:tools", 0, digest([])) if snapshot is None else cat.ToolExposureService.snapshot_pin(snapshot)
-        return Pin("input_manifest", f"session:{session.session_id}", session.generation, digest({"session": session.session_id, "generation": session.generation})), tool_snapshot
+        tool_snapshot = (
+            Pin("tool_snapshot", f"{session.agent_id}:tools", 0, digest([]))
+            if snapshot is None
+            else cat.ToolExposureService.snapshot_pin(snapshot)
+        )
+        return Pin(
+            "input_manifest",
+            f"session:{session.session_id}",
+            session.generation,
+            digest({"session": session.session_id, "generation": session.generation}),
+        ), tool_snapshot
 
     def _owner_contract(self, session: store.SessionRow) -> Pin:
         from .mission_sources import owner_contract_for
@@ -149,9 +177,24 @@ class SkillUseService:
 
     @staticmethod
     def call_ref(session: store.SessionRow, call_id: str) -> Pin:
-        return Pin("invocation", f"{session.agent_id}:{call_id}", 0, digest({"agent": session.agent_id, "call": call_id}))
+        return Pin(
+            "invocation",
+            f"{session.agent_id}:{call_id}",
+            0,
+            digest({"agent": session.agent_id, "call": call_id}),
+        )
 
-    def _use(self, session: store.SessionRow, *, turn_id: str, call_id: str, revision: cat.RevisionRow, activation: cat.ActivationRow, lock: Mapping[str, Any], mode: str) -> Mapping[str, Any]:
+    def _use(
+        self,
+        session: store.SessionRow,
+        *,
+        turn_id: str,
+        call_id: str,
+        revision: cat.RevisionRow,
+        activation: cat.ActivationRow,
+        lock: Mapping[str, Any],
+        mode: str,
+    ) -> Mapping[str, Any]:
         input_manifest, tool_snapshot = self._binding_refs(session)
         use_key = f"{turn_id}:{call_id}:{mode}"
         body = {
@@ -160,33 +203,57 @@ class SkillUseService:
             "session_id": session.session_id,
             "turn_id": turn_id,
             "skill_ref": revision.pin.to_json(),
-            "bundle_digest": revision.bundle_root_ref.content_hash if revision.bundle_root_ref is not None else digest(revision.body),
+            "bundle_digest": revision.bundle_root_ref.content_hash
+            if revision.bundle_root_ref is not None
+            else digest(revision.body),
             "owner_contract_ref": self._owner_contract(session).to_json(),
             "input_manifest_ref": input_manifest.to_json(),
             "dependency_lock_refs": [self.skills.lock_pin(lock).to_json()],
             "tool_snapshot_ref": tool_snapshot.to_json(),
-            "evaluation_ref": None if activation.evaluation_ref is None else activation.evaluation_ref.to_json(),
+            "evaluation_ref": None
+            if activation.evaluation_ref is None
+            else activation.evaluation_ref.to_json(),
             "authority_refs": [self.approval_ref.to_json()],
             "mode": mode,
             "reservation_fact_ref": None,
         }
         value = check("SkillUse", body)
         with self.uow.database.transaction() as txn:
-            return store.put_skill_use_locked(txn, use=value, use_key=use_key, original_call_ref=self.call_ref(session, call_id))
+            return store.put_skill_use_locked(
+                txn, use=value, use_key=use_key, original_call_ref=self.call_ref(session, call_id)
+            )
 
     # ---- load (§9.8) -----------------------------------------------------------------------
 
-    def load(self, session: store.SessionRow, *, call_id: str, request: Mapping[str, Any]) -> Mapping[str, Any]:
+    def load(
+        self, session: store.SessionRow, *, call_id: str, request: Mapping[str, Any]
+    ) -> Mapping[str, Any]:
         value = check("SkillLoadRequest", plain(request))
         revision, activation, lock = self.usable_skill(Pin.from_json(value["skill_ref"]), session)
         turn_id = self._turn_id(session)
         files = self.instruction_files(revision)
         self._budget_gate(session, revision, files)
-        use = self._use(session, turn_id=turn_id, call_id=call_id, revision=revision, activation=activation, lock=lock, mode="INSTRUCTIONS")
+        use = self._use(
+            session,
+            turn_id=turn_id,
+            call_id=call_id,
+            revision=revision,
+            activation=activation,
+            lock=lock,
+            mode="INSTRUCTIONS",
+        )
         with self.uow.database.transaction() as txn:
             store.append_original_receipt_locked(
-                txn, run_id=session.agent_id, kind="skill_load", receipt_key=str(use["use_id"]),
-                body={"use_id": use["use_id"], "skill_ref": revision.pin.to_json(), "call_ref": self.call_ref(session, call_id).to_json(), "files": files},
+                txn,
+                run_id=session.agent_id,
+                kind="skill_load",
+                receipt_key=str(use["use_id"]),
+                body={
+                    "use_id": use["use_id"],
+                    "skill_ref": revision.pin.to_json(),
+                    "call_ref": self.call_ref(session, call_id).to_json(),
+                    "files": files,
+                },
                 now=self.clock(),
             )
         return use
@@ -197,36 +264,68 @@ class SkillUseService:
         through the details/artifact path, never bulk-loaded into every request."""
 
         main = str(revision.body["instructions_path"])
-        items = [f for f in revision.body["files"] if f["relative_path"] == main and f["role"] == "INSTRUCTIONS"]
+        items = [
+            f
+            for f in revision.body["files"]
+            if f["relative_path"] == main and f["role"] == "INSTRUCTIONS"
+        ]
         if not items:
-            raise ArpError("SKILL_MANIFEST_CONFLICT", f"instructions_path {main} is not an INSTRUCTIONS file of the skill")
-        return [{"relative_path": f["relative_path"], "sha256": f["sha256"], "size_bytes": int(f["size_bytes"])} for f in items]
+            raise ArpError(
+                "SKILL_MANIFEST_CONFLICT",
+                f"instructions_path {main} is not an INSTRUCTIONS file of the skill",
+            )
+        return [
+            {
+                "relative_path": f["relative_path"],
+                "sha256": f["sha256"],
+                "size_bytes": int(f["size_bytes"]),
+            }
+            for f in items
+        ]
 
-    def _budget_gate(self, session: store.SessionRow, revision: cat.RevisionRow, files: list[dict[str, Any]]) -> None:
+    def _budget_gate(
+        self, session: store.SessionRow, revision: cat.RevisionRow, files: list[dict[str, Any]]
+    ) -> None:
         if self.count is None or self.skill_capacity is None or self.loaded_blocks is None:
             return
         existing = self.loaded_blocks(session)
-        known = {(b.skill_ref.id, b.skill_ref.revision, b.path, b.artifact_ref.content_hash) for b in existing}
+        known = {
+            (b.skill_ref.id, b.skill_ref.revision, b.path, b.artifact_ref.content_hash)
+            for b in existing
+        }
         total = sum(int(b.tokens) for b in existing)
         for item in files:
-            key = (revision.entry_id, revision.revision, str(item["relative_path"]), str(item["sha256"]))
+            key = (
+                revision.entry_id,
+                revision.revision,
+                str(item["relative_path"]),
+                str(item["sha256"]),
+            )
             if key in known:
                 continue
             total += self.count(self.skills.read_file(revision, key[2]).decode("utf-8", "replace"))
         limit = int(self.skill_capacity())
         if total > limit:
-            raise ArpError("REQUIRED_CONTEXT_TOO_LARGE", f"loaded skill instructions would take {total} tokens, above the skill share {limit}", detail={"tokens": total, "limit": limit})
+            raise ArpError(
+                "REQUIRED_CONTEXT_TOO_LARGE",
+                f"loaded skill instructions would take {total} tokens, above the skill share {limit}",
+                detail={"tokens": total, "limit": limit},
+            )
 
     # ---- execute (§9.9) ----------------------------------------------------------------------
 
-    def execute(self, session: store.SessionRow, *, call_id: str, request: Mapping[str, Any]) -> dict[str, Any]:
+    def execute(
+        self, session: store.SessionRow, *, call_id: str, request: Mapping[str, Any]
+    ) -> dict[str, Any]:
         prepared = self._begin_execute(session, call_id=call_id, request=request)
         if isinstance(prepared, dict):
             return prepared
         assert self.script_runner is not None
         return self._finish_script(prepared, self.script_runner.run(prepared.run))
 
-    async def execute_async(self, session: store.SessionRow, *, call_id: str, request: Mapping[str, Any]) -> dict[str, Any]:
+    async def execute_async(
+        self, session: store.SessionRow, *, call_id: str, request: Mapping[str, Any]
+    ) -> dict[str, Any]:
         """``execute`` for the model tool: the script runs without blocking the event loop.
 
         A runner with ``run_async`` (the sandbox executor is asynchronous) is awaited; a
@@ -239,7 +338,11 @@ class SkillUseService:
         runner = self.script_runner
         assert runner is not None
         run_async = getattr(runner, "run_async", None)
-        receipt = await run_async(prepared.run) if run_async is not None else await asyncio.to_thread(runner.run, prepared.run)
+        receipt = (
+            await run_async(prepared.run)
+            if run_async is not None
+            else await asyncio.to_thread(runner.run, prepared.run)
+        )
         return self._finish_script(prepared, receipt)
 
     def _finish_script(self, prepared: _PreparedScript, receipt: Any) -> dict[str, Any]:
@@ -248,51 +351,112 @@ class SkillUseService:
         view = self._script_view(prepared.call_ref, prepared.tool_ref, prepared.revision, receipt)
         return self._record(prepared.session, prepared.use, view, runner_receipt=receipt)
 
-    def _begin_execute(self, session: store.SessionRow, *, call_id: str, request: Mapping[str, Any]) -> dict[str, Any] | _PreparedScript:
+    def _begin_execute(
+        self, session: store.SessionRow, *, call_id: str, request: Mapping[str, Any]
+    ) -> dict[str, Any] | _PreparedScript:
         value = check("SkillExecutionRequest", plain(request))
         revision, activation, lock = self.usable_skill(Pin.from_json(value["skill_ref"]), session)
         kind = str(revision.body["implementation"]["kind"])
         tool_ref = self._execute_tool_ref()
         self._require_exposed(session, revision)
         if kind == "WORKFLOW":
-            raise ArpError("WORKFLOW_UNAVAILABLE", "no original workflow executor is deployed for this runtime")
+            raise ArpError(
+                "WORKFLOW_UNAVAILABLE", "no original workflow executor is deployed for this runtime"
+            )
         turn_id = self._turn_id(session)
         call_ref = self.call_ref(session, call_id)
         if kind == "INSTRUCTIONS":
-            use = self._use(session, turn_id=turn_id, call_id=call_id, revision=revision, activation=activation, lock=lock, mode="INSTRUCTIONS")
+            use = self._use(
+                session,
+                turn_id=turn_id,
+                call_id=call_id,
+                revision=revision,
+                activation=activation,
+                lock=lock,
+                mode="INSTRUCTIONS",
+            )
             path = str(revision.body["instructions_path"])
             data = self.skills.read_file(revision, path)
             sha256 = hashlib.sha256(data).hexdigest()
             text = data.decode("utf-8", "replace")
             if len(text) <= INLINE_TEXT_MAX:
-                view = self._view(call_ref, tool_ref, "SUCCEEDED", inline_text=text, representation="INLINE", source_hash=sha256)
+                view = self._view(
+                    call_ref,
+                    tool_ref,
+                    "SUCCEEDED",
+                    inline_text=text,
+                    representation="INLINE",
+                    source_hash=sha256,
+                )
             else:
-                view = self._view(call_ref, tool_ref, "SUCCEEDED", representation="REFERENCED", source_hash=sha256, artifact=Pin("artifact", f"skill:{revision.entry_id}@{revision.revision}:{path}", 0, sha256))
+                view = self._view(
+                    call_ref,
+                    tool_ref,
+                    "SUCCEEDED",
+                    representation="REFERENCED",
+                    source_hash=sha256,
+                    artifact=Pin(
+                        "artifact",
+                        f"skill:{revision.entry_id}@{revision.revision}:{path}",
+                        0,
+                        sha256,
+                    ),
+                )
             return self._record(session, use, view, runner_receipt=None)
         # SCRIPT
         if self.script_runner is None:
-            raise ArpError("RUNNER_UNAVAILABLE", "no approved script executor is bound to this runtime")
+            raise ArpError(
+                "RUNNER_UNAVAILABLE", "no approved script executor is bound to this runtime"
+            )
         implementation = revision.body["implementation"]
         runner_ref = Pin.from_json(implementation["runner_ref"])
         self._require_runner(runner_ref)
         argv = self._argv(implementation["argv_template"])
         arguments = plain(value["arguments"])
-        input_schema = cat.resolve_pin(self.catalogue.connection, self.catalogue.namespace_id, Pin.from_json(revision.body["input_schema_ref"]))
+        input_schema = cat.resolve_pin(
+            self.catalogue.connection,
+            self.catalogue.namespace_id,
+            Pin.from_json(revision.body["input_schema_ref"]),
+        )
         validate(arguments, dict(input_schema.body), path="$.arguments")
         input_json = canonical(arguments)
         if len(input_json) > MAX_INPUT_BYTES:
             raise ArpError("REQUEST_BYTES_LIMIT", f"script input exceeds {MAX_INPUT_BYTES} bytes")
         script_path = str(implementation["script_path"])
         script_bytes = self.skills.read_file(revision, script_path)
-        use = self._use(session, turn_id=turn_id, call_id=call_id, revision=revision, activation=activation, lock=lock, mode="SCRIPT")
-        run = ScriptRun(
-            skill_ref=revision.pin, runner_ref=runner_ref, script_path=script_path, script_bytes=script_bytes, argv=argv, input_json=input_json,
-            workspace_key=f"skill/{session.session_id}/{use['use_id']}", timeout_ms=SCRIPT_TIMEOUT_MS, output_limit_bytes=int(self._result_limit(tool_ref)),
+        use = self._use(
+            session,
+            turn_id=turn_id,
+            call_id=call_id,
+            revision=revision,
+            activation=activation,
+            lock=lock,
+            mode="SCRIPT",
         )
-        return _PreparedScript(session=session, use=use, run=run, call_ref=call_ref, tool_ref=tool_ref, revision=revision)
+        run = ScriptRun(
+            skill_ref=revision.pin,
+            runner_ref=runner_ref,
+            script_path=script_path,
+            script_bytes=script_bytes,
+            argv=argv,
+            input_json=input_json,
+            workspace_key=f"skill/{session.session_id}/{use['use_id']}",
+            timeout_ms=SCRIPT_TIMEOUT_MS,
+            output_limit_bytes=int(self._result_limit(tool_ref)),
+        )
+        return _PreparedScript(
+            session=session,
+            use=use,
+            run=run,
+            call_ref=call_ref,
+            tool_ref=tool_ref,
+            revision=revision,
+        )
 
     def _execute_tool_ref(self) -> Pin:
-        revision = cat.latest_revision(self.catalogue.connection, self.catalogue.namespace_id, "TOOL", EXECUTE_TOOL_ID)
+        revision = cat.latest_revision(
+            self.catalogue.connection, self.catalogue.namespace_id, "TOOL", EXECUTE_TOOL_ID
+        )
         if revision is None:
             raise ArpError("TOOL_NOT_EXPOSED", f"{EXECUTE_TOOL_ID} is not in the catalogue")
         return revision.pin
@@ -306,19 +470,35 @@ class SkillUseService:
         in the Session's current tool snapshot; a skill never widens what the model may call."""
 
         snapshot = cat.latest_tool_snapshot(self.uow.database.connection, session.session_id)
-        exposed = frozenset() if snapshot is None else frozenset(f"{t['tool_ref']['id']}@{t['tool_ref']['revision']}" for t in snapshot["tools"])
-        required = frozenset(f"{r['id']}@{r['revision']}" for r in revision.body["required_tool_refs"])
+        exposed = (
+            frozenset()
+            if snapshot is None
+            else frozenset(
+                f"{t['tool_ref']['id']}@{t['tool_ref']['revision']}" for t in snapshot["tools"]
+            )
+        )
+        required = frozenset(
+            f"{r['id']}@{r['revision']}" for r in revision.body["required_tool_refs"]
+        )
         if required and effective_permissions(required, exposed) != required:
             missing = sorted(required - exposed)
-            raise ArpError("TOOL_NOT_EXPOSED", f"required tools are not exposed to this session: {', '.join(missing)}", detail={"missing": missing})
+            raise ArpError(
+                "TOOL_NOT_EXPOSED",
+                f"required tools are not exposed to this session: {', '.join(missing)}",
+                detail={"missing": missing},
+            )
 
     def _require_runner(self, runner_ref: Pin) -> None:
         connection = self.catalogue.connection
         try:
             runner = cat.resolve_pin(connection, self.catalogue.namespace_id, runner_ref)
         except ArpError as error:
-            raise ArpError("RUNNER_UNAVAILABLE", f"runner {runner_ref.id} is not in the catalogue") from error
-        activation = cat.read_activation(connection, self.catalogue.namespace_id, "PROVIDER", runner.entry_id, runner.revision)
+            raise ArpError(
+                "RUNNER_UNAVAILABLE", f"runner {runner_ref.id} is not in the catalogue"
+            ) from error
+        activation = cat.read_activation(
+            connection, self.catalogue.namespace_id, "PROVIDER", runner.entry_id, runner.revision
+        )
         if activation is None or activation.state != "ADMITTED":
             raise ArpError("RUNNER_UNAVAILABLE", f"runner {runner_ref.id} is not admitted")
 
@@ -328,40 +508,109 @@ class SkillUseService:
         for token in template:
             text = str(token)
             if ("{" in text or "}" in text) and text not in ARGV_TOKENS:
-                raise ArpError("SKILL_MANIFEST_CONFLICT", f"argv token {text!r}: only whole {ARGV_TOKENS[0]} / {ARGV_TOKENS[1]} tokens are substituted")
+                raise ArpError(
+                    "SKILL_MANIFEST_CONFLICT",
+                    f"argv token {text!r}: only whole {ARGV_TOKENS[0]} / {ARGV_TOKENS[1]} tokens are substituted",
+                )
             argv.append(text)
         if "{output_json}" not in argv:
             raise ArpError("SKILL_MANIFEST_CONFLICT", "argv_template names no {output_json}")
         return tuple(argv)
 
-    def _script_view(self, call_ref: Pin, tool_ref: Pin, revision: cat.RevisionRow, receipt: ScriptRunReceipt) -> dict[str, Any]:
+    def _script_view(
+        self, call_ref: Pin, tool_ref: Pin, revision: cat.RevisionRow, receipt: ScriptRunReceipt
+    ) -> dict[str, Any]:
         if receipt.terminal == "UNKNOWN":
-            return self._view(call_ref, tool_ref, "UNKNOWN", error_code="UNKNOWN_REQUIRES_RECONCILIATION", artifact=receipt.stdout_ref)
+            return self._view(
+                call_ref,
+                tool_ref,
+                "UNKNOWN",
+                error_code="UNKNOWN_REQUIRES_RECONCILIATION",
+                artifact=receipt.stdout_ref,
+            )
         if receipt.terminal == "TIMEOUT":
-            return self._view(call_ref, tool_ref, "FAILED", error_code="SKILL_OUTPUT_INVALID", inline_text="script stopped at the timeout", artifact=receipt.stderr_ref)
+            return self._view(
+                call_ref,
+                tool_ref,
+                "FAILED",
+                error_code="SKILL_OUTPUT_INVALID",
+                inline_text="script stopped at the timeout",
+                artifact=receipt.stderr_ref,
+            )
         if receipt.terminal != "EXITED" or receipt.exit_code is None:
             raise ArpError("SOURCE_UNAVAILABLE", "script runner receipt has no terminal state")
         if receipt.exit_code != 0:
-            return self._view(call_ref, tool_ref, "FAILED", error_code="SKILL_OUTPUT_INVALID", inline_text=f"script exited with {receipt.exit_code}", artifact=receipt.stderr_ref)
+            return self._view(
+                call_ref,
+                tool_ref,
+                "FAILED",
+                error_code="SKILL_OUTPUT_INVALID",
+                inline_text=f"script exited with {receipt.exit_code}",
+                artifact=receipt.stderr_ref,
+            )
         if receipt.output is None or receipt.truncated:
-            return self._view(call_ref, tool_ref, "FAILED", error_code="SKILL_OUTPUT_INVALID", inline_text="exit 0 without a complete output file", artifact=receipt.stderr_ref)
+            return self._view(
+                call_ref,
+                tool_ref,
+                "FAILED",
+                error_code="SKILL_OUTPUT_INVALID",
+                inline_text="exit 0 without a complete output file",
+                artifact=receipt.stderr_ref,
+            )
         try:
             output = json.loads(receipt.output.decode("utf-8"))
-            schema = cat.resolve_pin(self.catalogue.connection, self.catalogue.namespace_id, Pin.from_json(revision.body["output_schema_ref"]))
+            schema = cat.resolve_pin(
+                self.catalogue.connection,
+                self.catalogue.namespace_id,
+                Pin.from_json(revision.body["output_schema_ref"]),
+            )
             validate(output, dict(schema.body), path="$.output")
         except (UnicodeDecodeError, ValueError, ArpError) as error:
             detail = error.code if isinstance(error, ArpError) else type(error).__name__
-            return self._view(call_ref, tool_ref, "FAILED", error_code="SKILL_OUTPUT_INVALID", inline_text=f"output is not valid against the output schema ({detail})", artifact=receipt.stderr_ref)
+            return self._view(
+                call_ref,
+                tool_ref,
+                "FAILED",
+                error_code="SKILL_OUTPUT_INVALID",
+                inline_text=f"output is not valid against the output schema ({detail})",
+                artifact=receipt.stderr_ref,
+            )
         text = canonical(output).decode("utf-8")
         sha256 = hashlib.sha256(receipt.output).hexdigest()
         if len(text) <= INLINE_TEXT_MAX:
-            return self._view(call_ref, tool_ref, "SUCCEEDED", inline_text=text, representation="INLINE", source_hash=sha256)
-        return self._view(call_ref, tool_ref, "SUCCEEDED", representation="REFERENCED", source_hash=sha256, artifact=Pin("artifact", f"skill-output:{call_ref.id}", 0, sha256))
+            return self._view(
+                call_ref,
+                tool_ref,
+                "SUCCEEDED",
+                inline_text=text,
+                representation="INLINE",
+                source_hash=sha256,
+            )
+        return self._view(
+            call_ref,
+            tool_ref,
+            "SUCCEEDED",
+            representation="REFERENCED",
+            source_hash=sha256,
+            artifact=Pin("artifact", f"skill-output:{call_ref.id}", 0, sha256),
+        )
 
     @staticmethod
-    def _view(call_ref: Pin, tool_ref: Pin, status: str, *, inline_text: str = "", representation: str | None = None, source_hash: str | None = None, error_code: str | None = None, artifact: Pin | None = None) -> dict[str, Any]:
+    def _view(
+        call_ref: Pin,
+        tool_ref: Pin,
+        status: str,
+        *,
+        inline_text: str = "",
+        representation: str | None = None,
+        source_hash: str | None = None,
+        error_code: str | None = None,
+        artifact: Pin | None = None,
+    ) -> dict[str, Any]:
         if representation is None:
-            representation = "INLINE" if inline_text else ("REFERENCED" if artifact is not None else "NONE")
+            representation = (
+                "INLINE" if inline_text else ("REFERENCED" if artifact is not None else "NONE")
+            )
         return check(
             "ToolResultView",
             {
@@ -378,11 +627,37 @@ class SkillUseService:
             },
         )
 
-    def _record(self, session: store.SessionRow, use: Mapping[str, Any], view: Mapping[str, Any], *, runner_receipt: ScriptRunReceipt | None) -> dict[str, Any]:
-        body = {"use_id": use["use_id"], "view": dict(view), "runner_receipt_ref": None if runner_receipt is None else runner_receipt.receipt_ref.to_json()}
+    def _record(
+        self,
+        session: store.SessionRow,
+        use: Mapping[str, Any],
+        view: Mapping[str, Any],
+        *,
+        runner_receipt: ScriptRunReceipt | None,
+    ) -> dict[str, Any]:
+        body = {
+            "use_id": use["use_id"],
+            "view": dict(view),
+            "runner_receipt_ref": None
+            if runner_receipt is None
+            else runner_receipt.receipt_ref.to_json(),
+        }
         with self.uow.database.transaction() as txn:
-            store.append_original_receipt_locked(txn, run_id=session.agent_id, kind="skill_execute", receipt_key=f"{use['use_id']}:{view['call_ref']['id']}", body=body, now=self.clock())
+            store.append_original_receipt_locked(
+                txn,
+                run_id=session.agent_id,
+                kind="skill_execute",
+                receipt_key=f"{use['use_id']}:{view['call_ref']['id']}",
+                body=body,
+                now=self.clock(),
+            )
         return dict(view)
 
 
-__all__ = ("EXECUTE_TOOL_ID", "INLINE_TEXT_MAX", "INSTRUCTION_ROLES", "MAX_INPUT_BYTES", "SkillUseService")
+__all__ = (
+    "EXECUTE_TOOL_ID",
+    "INLINE_TEXT_MAX",
+    "INSTRUCTION_ROLES",
+    "MAX_INPUT_BYTES",
+    "SkillUseService",
+)

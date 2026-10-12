@@ -36,10 +36,7 @@ def _fingerprint(value: Any) -> str:
 
 def _hash(value: str, name: str) -> str:
     normalized = _required(value, name)
-    if (
-        len(normalized) != 64
-        or any(char not in "0123456789abcdef" for char in normalized)
-    ):
+    if len(normalized) != 64 or any(char not in "0123456789abcdef" for char in normalized):
         raise ValueError(f"{name} must be lowercase SHA-256")
     return normalized
 
@@ -156,9 +153,7 @@ class PreparedToolDispatchNotStarted:
     reason_code: str
 
     def __post_init__(self) -> None:
-        object.__setattr__(
-            self, "reason_code", _required(self.reason_code, "reason_code")
-        )
+        object.__setattr__(self, "reason_code", _required(self.reason_code, "reason_code"))
 
 
 @dataclass(frozen=True, slots=True)
@@ -167,9 +162,7 @@ class PreparedToolDispatchStartUnknown:
     reason_code: str
 
     def __post_init__(self) -> None:
-        object.__setattr__(
-            self, "reason_code", _required(self.reason_code, "reason_code")
-        )
+        object.__setattr__(self, "reason_code", _required(self.reason_code, "reason_code"))
 
 
 PreparedToolDispatchStartResult: TypeAlias = (
@@ -186,9 +179,7 @@ class PreparedToolDispatch(Protocol):
     identity: PreparedToolDispatchIdentity
     request_hash: str
 
-    async def start(
-        self, *, deadline: float
-    ) -> PreparedToolDispatchStartResult: ...
+    async def start(self, *, deadline: float) -> PreparedToolDispatchStartResult: ...
 
     async def completion(self) -> Any: ...
 
@@ -238,19 +229,13 @@ class FunctionPreparedToolDispatch:
         self._completion_observation_armed = False
         self._aborted = False
 
-    async def start(
-        self, *, deadline: float
-    ) -> PreparedToolDispatchStartResult:
+    async def start(self, *, deadline: float) -> PreparedToolDispatchStartResult:
         if self._started_ack is not None:
             return self._started_ack
         if self._aborted:
-            return PreparedToolDispatchNotStarted(
-                self.identity, "dispatch_aborted_before_start"
-            )
+            return PreparedToolDispatchNotStarted(self.identity, "dispatch_aborted_before_start")
         if deadline <= time.time():
-            return PreparedToolDispatchNotStarted(
-                self.identity, "dispatch_start_deadline_elapsed"
-            )
+            return PreparedToolDispatchNotStarted(self.identity, "dispatch_start_deadline_elapsed")
         if self._completion is not None:
             return PreparedToolDispatchStartUnknown(
                 self.identity, "dispatch_task_exists_without_ack"
@@ -258,10 +243,7 @@ class FunctionPreparedToolDispatch:
         try:
             self._completion = asyncio.create_task(
                 self._invoke(),
-                name=(
-                    f"tool-dispatch:{self.identity.run_id}:"
-                    f"{self.identity.call_id}"
-                ),
+                name=(f"tool-dispatch:{self.identity.run_id}:{self.identity.call_id}"),
             )
             started_at = time.time()
             ack_ref = (
@@ -296,12 +278,8 @@ class FunctionPreparedToolDispatch:
             return self._started_ack
         except Exception:
             if self._completion is not None:
-                return PreparedToolDispatchStartUnknown(
-                    self.identity, "dispatch_start_ack_failed"
-                )
-            return PreparedToolDispatchNotStarted(
-                self.identity, "dispatch_task_not_created"
-            )
+                return PreparedToolDispatchStartUnknown(self.identity, "dispatch_start_ack_failed")
+            return PreparedToolDispatchNotStarted(self.identity, "dispatch_task_not_created")
 
     async def completion(self) -> Any:
         if self._completion is None or self._started_ack is None:
@@ -461,9 +439,7 @@ async def dispatch_with_run_fence(
     finally:
         release = getattr(lease, "release", None)
         if not callable(release):
-            raise RuntimeError(
-                "physical dispatch fence lease must expose release()"
-            )
+            raise RuntimeError("physical dispatch fence lease must expose release()")
         released = release()
         if asyncio.iscoroutine(released):
             await released

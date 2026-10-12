@@ -77,9 +77,7 @@ async def _projection_fixture(tmp_path):
             "pack_id": record.descriptor.capability_id,
             "version": record.descriptor.version,
             "manifest_hash": record.descriptor.manifest_hash,
-            "tool_spec_fingerprints": list(
-                record.expected_tool_fingerprints
-            ),
+            "tool_spec_fingerprints": list(record.expected_tool_fingerprints),
             "instruction_refs_hash": fingerprint_json([]),
             "workflow_refs_hash": fingerprint_json([]),
             "runtime_descriptor_hash": fingerprint_json([]),
@@ -134,9 +132,7 @@ async def test_c2_installs_complete_durable_projection_schema(tmp_path) -> None:
         tables = {
             str(row[0])
             for row in await (
-                await db.execute(
-                    "SELECT name FROM sqlite_master WHERE type='table'"
-                )
+                await db.execute("SELECT name FROM sqlite_master WHERE type='table'")
             ).fetchall()
         }
         lease_columns = {
@@ -163,17 +159,12 @@ async def test_projection_prepare_adopt_ready_release_is_one_durable_chain(
 ) -> None:
     _path, store, kwargs = await _projection_fixture(tmp_path)
     async with store.write_transaction() as db:
-        prepared = await store.prepare_run_catalog_projection_in_tx(
-            db, **kwargs
-        )
+        prepared = await store.prepare_run_catalog_projection_in_tx(db, **kwargs)
         replay = await store.prepare_run_catalog_projection_in_tx(db, **kwargs)
         assert replay == prepared
         assert prepared.intent.status == "prepared"
         assert prepared.projection_receipt.status == "prepared"
-        assert (
-            prepared.process_catalog_stamp
-            == kwargs["process_stamp"].fingerprint
-        )
+        assert prepared.process_catalog_stamp == kwargs["process_stamp"].fingerprint
 
         adopted = await store.adopt_snapshot_lease_intent_in_tx(
             db,
@@ -184,9 +175,7 @@ async def test_projection_prepare_adopt_ready_release_is_one_durable_chain(
             start_fingerprint=_hash("run-start"),
         )
         assert adopted.status == "bound"
-        assert adopted.projection_receipt_id == (
-            prepared.projection_receipt.projection_receipt_id
-        )
+        assert adopted.projection_receipt_id == (prepared.projection_receipt.projection_receipt_id)
 
     ready = await store.activate_snapshot_projection_ready(
         prepared.intent.lease_intent_id,
@@ -221,9 +210,7 @@ async def test_projection_prepare_adopt_ready_release_is_one_durable_chain(
             == released
         )
 
-    state = await store.read_snapshot_projection_state(
-        prepared.intent.lease_intent_id
-    )
+    state = await store.read_snapshot_projection_state(prepared.intent.lease_intent_id)
     assert state.intent_status == "released"
     assert state.projection_status == "retired"
     assert state.pin_token_hash == _hash("pin-token")
@@ -240,9 +227,7 @@ async def test_projection_prepare_rolls_back_with_caller_transaction(
             raise RuntimeError("rollback")
     async with aiosqlite.connect(path) as db:
         intent_count = await (
-            await db.execute(
-                "SELECT COUNT(*) FROM capability_snapshot_lease_intents"
-            )
+            await db.execute("SELECT COUNT(*) FROM capability_snapshot_lease_intents")
         ).fetchone()
         lease_count = await (
             await db.execute("SELECT COUNT(*) FROM capability_snapshot_leases")
@@ -257,9 +242,7 @@ async def test_prepared_orphan_release_is_idempotent_and_allows_next_generation(
 ) -> None:
     _path, store, kwargs = await _projection_fixture(tmp_path)
     async with store.write_transaction() as db:
-        prepared = await store.prepare_run_catalog_projection_in_tx(
-            db, **kwargs
-        )
+        prepared = await store.prepare_run_catalog_projection_in_tx(db, **kwargs)
         released = await store.release_snapshot_lease_intent_in_tx(
             db,
             prepared.intent.lease_intent_id,
@@ -290,7 +273,5 @@ async def test_projection_replay_rejects_persisted_entry_drift(tmp_path) -> None
             """UPDATE capability_run_catalog_snapshot_entries
                SET descriptor_envelope_json='{}'"""
         )
-        with pytest.raises(
-            CapabilityStoreConflict, match="catalog snapshot"
-        ):
+        with pytest.raises(CapabilityStoreConflict, match="catalog snapshot"):
             await store.prepare_run_catalog_projection_in_tx(db, **kwargs)

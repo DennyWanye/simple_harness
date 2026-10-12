@@ -228,9 +228,7 @@ class ObservabilityRuntime:
                 operation=operation,
                 outcome=Outcome(outcome),
                 correlation=correlation,
-                attributes=cast(
-                    Mapping[str, SafeValue], {} if attributes is None else attributes
-                ),
+                attributes=cast(Mapping[str, SafeValue], {} if attributes is None else attributes),
             )
         except BaseException:
             self._emitter.record_construction_drop()

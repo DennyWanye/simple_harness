@@ -13,6 +13,7 @@ NOTES.md、承接 ``c-user-2``。只有模型回复是脚本，替身只模拟�
 * 规划器被问到修复时，默认把那次调用扣住不答（用例只看系统把什么交到了它手里），也可以
   交给用例给的函数答。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -38,32 +39,55 @@ def two_step_method(context: dict[str, Any]) -> dict[str, Any]:
     """两个互不依赖的"准备交付"步骤，各管一条要求（``facts`` ← 第一条，``notes`` ← 第二条）。"""
 
     request = context["request"]
-    operator = next(item for item in request["operators"]
-                    if str(item["task_type_ref"]["id"]).endswith("prepare-delivery"))
+    operator = next(
+        item
+        for item in request["operators"]
+        if str(item["task_type_ref"]["id"]).endswith("prepare-delivery")
+    )
     first, second = [item["id"] for item in request["criterion_evidence"]]
     identity = request["new_method_identity"]
 
     def step(local_id: str) -> dict[str, Any]:
-        return {"local_id": local_id, "task_type_ref": operator["task_type_ref"], "form": "primitive",
-                "arguments": {}, "required_capabilities": list(operator["required_capabilities"]),
-                "obligation_relation": "refines_parent"}
+        return {
+            "local_id": local_id,
+            "task_type_ref": operator["task_type_ref"],
+            "form": "primitive",
+            "arguments": {},
+            "required_capabilities": list(operator["required_capabilities"]),
+            "obligation_relation": "refines_parent",
+        }
 
     return {
-        "schema_version": 1, "method_id": identity["method_id"], "method_version": identity["method_version"],
+        "schema_version": 1,
+        "method_id": identity["method_id"],
+        "method_version": identity["method_version"],
         "goal_type_ref": request["goal_type_ref"],
         "parameter_schema_ref": request["goal_signature"]["parameter_schema_ref"],
         "output_schema_ref": request["goal_signature"]["output_schema_ref"],
-        "applicable_when": [], "exploration_assumptions": [],
-        "steps": [step("facts"), step("notes")], "ordering": [],
-        "required_capabilities": [], "expected_effects": [],
+        "applicable_when": [],
+        "exploration_assumptions": [],
+        "steps": [step("facts"), step("notes")],
+        "ordering": [],
+        "required_capabilities": [],
+        "expected_effects": [],
         "composition": {
             "criterion_links": [
-                {"parent_criterion_id": first, "child_step": "facts", "child_criterion_id": first,
-                 "evidence_requirement": "facts 这一步写出 facts.md"},
-                {"parent_criterion_id": second, "child_step": "notes", "child_criterion_id": second,
-                 "evidence_requirement": "notes 这一步写出 NOTES.md"},
+                {
+                    "parent_criterion_id": first,
+                    "child_step": "facts",
+                    "child_criterion_id": first,
+                    "evidence_requirement": "facts 这一步写出 facts.md",
+                },
+                {
+                    "parent_criterion_id": second,
+                    "child_step": "notes",
+                    "child_criterion_id": second,
+                    "evidence_requirement": "notes 这一步写出 NOTES.md",
+                },
             ],
-            "outputs": {}, "finalizer_step": "notes", "independent_review_required": True,
+            "outputs": {},
+            "finalizer_step": "notes",
+            "independent_review_required": True,
         },
         "basis_refs": [],
     }
@@ -72,8 +96,11 @@ def two_step_method(context: dict[str, Any]) -> dict[str, Any]:
 def open_repairs(package: dict[str, Any]) -> list[dict[str, Any]]:
     """修复请求（"目标未细化"不算：那是普通规划）。"""
 
-    return [entry for entry in package.get("repair_requests") or ()
-            if ((entry.get("request") or {}).get("context") or {}).get("event_type") != "GoalUnrefined"]
+    return [
+        entry
+        for entry in package.get("repair_requests") or ()
+        if ((entry.get("request") or {}).get("context") or {}).get("event_type") != "GoalUnrefined"
+    ]
 
 
 def purpose_of(request: Any) -> str | None:
@@ -84,9 +111,15 @@ def purpose_of(request: Any) -> str | None:
 class FinalReviewProvider(LayeredScriptedProvider):
     """脚本化的三个角色，外加终审与修复轮的几种外界情形（见模块文档）。"""
 
-    def __init__(self, *, final_verdict: str = "ACCEPT", interrupt_final: int = 0,
-                 hold_final_first: bool = False, reject_content: tuple[str, ...] = (),
-                 repair: Callable[[Any], Any] | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        final_verdict: str = "ACCEPT",
+        interrupt_final: int = 0,
+        hold_final_first: bool = False,
+        reject_content: tuple[str, ...] = (),
+        repair: Callable[[Any], Any] | None = None,
+    ) -> None:
         self.final_verdict = final_verdict
         self.interrupt_final = interrupt_final
         self.hold_final_first = hold_final_first
@@ -106,9 +139,17 @@ class FinalReviewProvider(LayeredScriptedProvider):
                 return None if self.repair is None else self.repair(request)
             contexts = package.get("method_proposal_contexts") or []
             if contexts and not (package.get("method_selection") or [{}])[0].get("applicable"):
-                return decision(contexts[0]["subject_key"], "PROPOSE_METHOD",
-                                {"method_proposal": {"method": two_step_method(contexts[0]),
-                                                     "rationale": "两份文件分开写。"}}, "两步并行。")
+                return decision(
+                    contexts[0]["subject_key"],
+                    "PROPOSE_METHOD",
+                    {
+                        "method_proposal": {
+                            "method": two_step_method(contexts[0]),
+                            "rationale": "两份文件分开写。",
+                        }
+                    },
+                    "两步并行。",
+                )
             return planner_reply(request)
 
         def reviewer(request: Any) -> Any:
@@ -118,15 +159,23 @@ class FinalReviewProvider(LayeredScriptedProvider):
             package = data.get("package") or {}
             purpose = str(package.get("purpose"))
             if purpose == FINAL and self.final_verdict != "ACCEPT":
-                return review_reply(data, verdict=self.final_verdict, grade="FAIL",
-                                    reason="脚本化终审：各步都过了，合起来仍不满足用户目标。")
+                return review_reply(
+                    data,
+                    verdict=self.final_verdict,
+                    grade="FAIL",
+                    reason="脚本化终审：各步都过了，合起来仍不满足用户目标。",
+                )
             if purpose == "TASK_CONTENT":
                 text = json.dumps(package, ensure_ascii=False)
                 for path in sorted(self.reject_content):
                     if path in text:
                         self.reject_content.discard(path)
-                        return review_reply(data, verdict="REJECTED", grade="FAIL",
-                                            reason=f"脚本化审阅：{path} 不满足要求。")
+                        return review_reply(
+                            data,
+                            verdict="REJECTED",
+                            grade="FAIL",
+                            reason=f"脚本化审阅：{path} 不满足要求。",
+                        )
             return review_reply(data)
 
         super().__init__(planner=planner, reviewer=reviewer)
@@ -174,5 +223,14 @@ async def run_for(product: Any, seconds: float) -> None:
         pass
 
 
-__all__ = ("CRITERIA", "FINAL", "GOAL", "FinalReviewProvider", "events", "open_repairs", "purpose_of",
-           "run_for", "two_step_method")
+__all__ = (
+    "CRITERIA",
+    "FINAL",
+    "GOAL",
+    "FinalReviewProvider",
+    "events",
+    "open_repairs",
+    "purpose_of",
+    "run_for",
+    "two_step_method",
+)

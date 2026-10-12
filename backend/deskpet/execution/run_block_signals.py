@@ -87,20 +87,21 @@ class RunBlockSignalV1:
 
     @property
     def signal_id(self) -> str:
-        return "run-block:" + hashlib.sha256(
-            canonical_json(
-                {
-                    "root_run_id": self.root_run_id,
-                    "schema_version": self.schema_version,
-                }
-            ).encode("utf-8")
-        ).hexdigest()
+        return (
+            "run-block:"
+            + hashlib.sha256(
+                canonical_json(
+                    {
+                        "root_run_id": self.root_run_id,
+                        "schema_version": self.schema_version,
+                    }
+                ).encode("utf-8")
+            ).hexdigest()
+        )
 
     @property
     def payload_hash(self) -> str:
-        return hashlib.sha256(
-            canonical_json(self.public_payload()).encode("utf-8")
-        ).hexdigest()
+        return hashlib.sha256(canonical_json(self.public_payload()).encode("utf-8")).hexdigest()
 
     def public_payload(self) -> dict[str, Any]:
         return {
@@ -144,9 +145,7 @@ class RunBlockReporter:
             content_hash=self.signal.payload_hash,
         )
 
-    def _validate_terminal(
-        self, record: RunRecord, terminal_event: RunEventCandidate
-    ) -> None:
+    def _validate_terminal(self, record: RunRecord, terminal_event: RunEventCandidate) -> None:
         if record.run_id != record.context.root_run_id or record.context.parent_run_id is not None:
             raise TerminalConflict(
                 "child_block_signal_forbidden",
@@ -177,9 +176,7 @@ class RunBlockReporter:
         terminal_event: RunEventCandidate,
     ) -> Mapping[str, str]:
         self._validate_terminal(record, terminal_event)
-        row = await transaction.insert_or_verify_run_block_signal(
-            self.signal.store_values()
-        )
+        row = await transaction.insert_or_verify_run_block_signal(self.signal.store_values())
         if str(row["payload_hash"]) != self.signal.payload_hash:
             raise IdempotencyConflict(
                 "run_block_signal_conflict",
@@ -201,8 +198,7 @@ class RunBlockReporter:
         self._validate_terminal(record, terminal_event)
         row = await transaction.read_run_block_signal(record.run_id)
         if row is None or any(
-            row[field] != value
-            for field, value in self.signal.store_values().items()
+            row[field] != value for field, value in self.signal.store_values().items()
         ):
             raise IdempotencyConflict(
                 "run_block_signal_conflict",

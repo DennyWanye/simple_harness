@@ -11,7 +11,9 @@ from typing import Literal
 _CITATION = re.compile(r"\[(\d+)\]")
 _SENTENCE = re.compile(r"(?<=[。！？.!?])\s*")
 _TOKEN = re.compile(r"[\w\u4e00-\u9fff]+", re.UNICODE)
-_EXACT = re.compile(r"(?:\d{4}[-年/]\d{1,2}(?:[-月/]\d{1,2}日?)?|\d+(?:\.\d+)?%?|[$¥€£]\s*\d+(?:\.\d+)?)")
+_EXACT = re.compile(
+    r"(?:\d{4}[-年/]\d{1,2}(?:[-月/]\d{1,2}日?)?|\d+(?:\.\d+)?%?|[$¥€£]\s*\d+(?:\.\d+)?)"
+)
 _ANALYSIS = re.compile(r"(?:可能|意味着|推测|或许|likely|may|might|suggests)", re.I)
 _OPINION = re.compile(r"(?:应该|最好|建议|must|should|recommend)", re.I)
 
@@ -53,7 +55,11 @@ def _replace_claim_once(markdown: str, claim: ClaimRecord, replacement: str) -> 
         rendered = replacement.strip()
         if rendered and punctuation and not rendered.endswith(tuple("。！？.!?")):
             rendered += punctuation
-        return markdown[: match.start()] + match.group(0).replace(raw, rendered, 1) + markdown[match.end():]
+        return (
+            markdown[: match.start()]
+            + match.group(0).replace(raw, rendered, 1)
+            + markdown[match.end() :]
+        )
     raise ValueError("repair_claim_not_found")
 
 
@@ -67,11 +73,17 @@ def parse_claims(markdown: str) -> list[ClaimRecord]:
     paragraph_index = -1
     for raw in re.split(r"\n\s*\n", markdown):
         paragraph = raw.strip()
-        if not paragraph or paragraph.startswith(("#", "```")) or paragraph.lower().startswith(("references", "引用")):
+        if (
+            not paragraph
+            or paragraph.startswith(("#", "```"))
+            or paragraph.lower().startswith(("references", "引用"))
+        ):
             continue
         paragraph_index += 1
         sentences = [value.strip() for value in _SENTENCE.split(paragraph) if value.strip()]
-        trailing = tuple(int(value) for value in _CITATION.findall(sentences[-1])) if sentences else ()
+        trailing = (
+            tuple(int(value) for value in _CITATION.findall(sentences[-1])) if sentences else ()
+        )
         for sentence_index, sentence in enumerate(sentences):
             citations = tuple(int(value) for value in _CITATION.findall(sentence))
             text = _clean_claim_text(sentence)
@@ -86,8 +98,19 @@ def parse_claims(markdown: str) -> list[ClaimRecord]:
                 kind = "opinion"
             else:
                 kind = "factual"
-            digest = hashlib.sha256(f"{paragraph_index}:{sentence_index}:{text}".encode()).hexdigest()
-            claims.append(ClaimRecord(digest[:20], hashlib.sha256(text.encode()).hexdigest(), paragraph_index, citations, kind, text))
+            digest = hashlib.sha256(
+                f"{paragraph_index}:{sentence_index}:{text}".encode()
+            ).hexdigest()
+            claims.append(
+                ClaimRecord(
+                    digest[:20],
+                    hashlib.sha256(text.encode()).hexdigest(),
+                    paragraph_index,
+                    citations,
+                    kind,
+                    text,
+                )
+            )
     return claims
 
 
@@ -104,12 +127,21 @@ def evaluate_support(
         lexical = lexical_score(claim.text, combined) if combined else 0.0
         semantic = semantic_scorer(claim.text, combined) if semantic_scorer and combined else None
         exact_ok = all(token in combined for token in _EXACT.findall(claim.text))
-        supported = bool(valid and exact_ok and (lexical >= 0.15 or (semantic is not None and semantic >= 0.72)))
+        supported = bool(
+            valid and exact_ok and (lexical >= 0.15 or (semantic is not None and semantic >= 0.72))
+        )
         if supported:
             status = "inference" if claim.kind in {"analysis", "opinion"} else "supported"
-            reason = "supported_semantic" if semantic is not None and semantic >= 0.72 else "supported_lexical"
+            reason = (
+                "supported_semantic"
+                if semantic is not None and semantic >= 0.72
+                else "supported_lexical"
+            )
         else:
-            status, reason = "unsupported", "missing_exact_token" if valid and not exact_ok else "insufficient_support"
+            status, reason = (
+                "unsupported",
+                "missing_exact_token" if valid and not exact_ok else "insufficient_support",
+            )
         decisions.append(SupportDecision(claim.claim_id, status, valid, lexical, semantic, reason))
     return decisions
 
@@ -165,12 +197,10 @@ def quality_payload(claims: Iterable[ClaimRecord], decisions: Iterable[SupportDe
     supported = sum(value.status != "unsupported" for value in decision_values)
     return {
         "claims": [
-            {**asdict(value), "citation_ids": list(value.citation_ids)}
-            for value in claim_values
+            {**asdict(value), "citation_ids": list(value.citation_ids)} for value in claim_values
         ],
         "decisions": [
-            {**asdict(value), "evidence_ids": list(value.evidence_ids)}
-            for value in decision_values
+            {**asdict(value), "evidence_ids": list(value.evidence_ids)} for value in decision_values
         ],
         "claim_count": len(claim_values),
         "supported_claim_count": supported,
@@ -179,4 +209,12 @@ def quality_payload(claims: Iterable[ClaimRecord], decisions: Iterable[SupportDe
     }
 
 
-__all__ = ["ClaimRecord", "SupportDecision", "apply_repair", "evaluate_support", "lexical_score", "parse_claims", "quality_payload"]
+__all__ = [
+    "ClaimRecord",
+    "SupportDecision",
+    "apply_repair",
+    "evaluate_support",
+    "lexical_score",
+    "parse_claims",
+    "quality_payload",
+]

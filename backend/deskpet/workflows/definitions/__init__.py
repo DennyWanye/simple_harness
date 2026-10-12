@@ -11,21 +11,43 @@ from importlib import import_module
 
 _RESEARCH_CORE = frozenset(
     {
-        "FetchPort", "ResearchCoreConfig", "ResearchCoreState",
-        "ResearchCallEffectPort", "ResearchLLMPort", "ResearchLLMPortV2",
-        "ResearchPorts", "RESEARCH_LLM_ROLES", "ResearchSearchPort",
-        "citation_stage", "direct_stage", "expand_stage", "fetch_extract_stage",
-        "gap_stage", "plan_stage", "run_research_core", "score_rerank_stage",
-        "search_stage", "synth_stage",
+        "FetchPort",
+        "ResearchCoreConfig",
+        "ResearchCoreState",
+        "ResearchCallEffectPort",
+        "ResearchLLMPort",
+        "ResearchLLMPortV2",
+        "ResearchPorts",
+        "RESEARCH_LLM_ROLES",
+        "ResearchSearchPort",
+        "citation_stage",
+        "direct_stage",
+        "expand_stage",
+        "fetch_extract_stage",
+        "gap_stage",
+        "plan_stage",
+        "run_research_core",
+        "score_rerank_stage",
+        "search_stage",
+        "synth_stage",
     }
 )
 _V5_CONTRACTS = frozenset(
     {
-        "DeliveryDecision", "DimensionAnalysis", "DimensionCoverage",
-        "EvidenceSourceFamily", "GapWorkItem", "ReportQualityAudit",
-        "ResearchBrief", "ResearchBudgetLedger", "ResearchControlCommand",
-        "ResearchDimension", "ResearchEvidenceSnapshot", "ResearchLLMLedgerEntry",
-        "ResearchLLMResult", "ResearchOperationLineage",
+        "DeliveryDecision",
+        "DimensionAnalysis",
+        "DimensionCoverage",
+        "EvidenceSourceFamily",
+        "GapWorkItem",
+        "ReportQualityAudit",
+        "ResearchBrief",
+        "ResearchBudgetLedger",
+        "ResearchControlCommand",
+        "ResearchDimension",
+        "ResearchEvidenceSnapshot",
+        "ResearchLLMLedgerEntry",
+        "ResearchLLMResult",
+        "ResearchOperationLineage",
     }
 )
 

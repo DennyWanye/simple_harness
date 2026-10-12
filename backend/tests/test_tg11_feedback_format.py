@@ -5,6 +5,7 @@
 
 PRD §3 D8 schema + 01-TDD.md §B TG-11 + ship-readiness round 1 残留。
 """
+
 from __future__ import annotations
 
 from deskpet.agent.outcome_verifier import (
@@ -22,22 +23,23 @@ def test_t11_1_d8_schema_format():
            last 20 lines:
            <log_tail>
     """
-    report = OutcomeReport(outcomes=[
-        VerifierOutcome(
-            verifier="file_exists",
-            status="fail",
-            reason="missing=['C:\\\\out\\\\x.pptx']",
-            error_class="missing_file",
-        ),
-        VerifierOutcome(
-            verifier="build",
-            status="fail",
-            reason="tsc_failed",
-            error_class="build_error",
-            log_tail="src/foo.ts(10,5): error TS2304: Cannot find name 'X'.\n"
-                     "Found 1 error",
-        ),
-    ])
+    report = OutcomeReport(
+        outcomes=[
+            VerifierOutcome(
+                verifier="file_exists",
+                status="fail",
+                reason="missing=['C:\\\\out\\\\x.pptx']",
+                error_class="missing_file",
+            ),
+            VerifierOutcome(
+                verifier="build",
+                status="fail",
+                reason="tsc_failed",
+                error_class="build_error",
+                log_tail="src/foo.ts(10,5): error TS2304: Cannot find name 'X'.\nFound 1 error",
+            ),
+        ]
+    )
     msg = report.to_feedback_message()
     # 必有 header
     assert msg.startswith("[verify-gate]")
@@ -53,12 +55,18 @@ def test_t11_1_d8_schema_format():
 def test_t11_2_error_class_categories():
     """T11-2: 5 个新增错误分类全部可用（PRD D5 末段 + D8）。"""
     valid_classes = {
-        "unmatched_claim", "missing_file", "build_error",
-        "test_error", "hallucinated_claim",
+        "unmatched_claim",
+        "missing_file",
+        "build_error",
+        "test_error",
+        "hallucinated_claim",
     }
     for cls in valid_classes:
         o = VerifierOutcome(
-            verifier="test_v", status="fail", reason="x", error_class=cls,
+            verifier="test_v",
+            status="fail",
+            reason="x",
+            error_class=cls,
         )
         report = OutcomeReport(outcomes=[o])
         msg = report.to_feedback_message()
@@ -68,11 +76,15 @@ def test_t11_2_error_class_categories():
 def test_t11_3_skipped_outcomes_omit_log_tail():
     """T11-3 corollary: skipped verifier 不输出 'last 20 lines:' 段
     （避免污染回灌消息长度）。"""
-    report = OutcomeReport(outcomes=[
-        VerifierOutcome(
-            verifier="build", status="skipped", reason="missing_npm",
-        ),
-    ])
+    report = OutcomeReport(
+        outcomes=[
+            VerifierOutcome(
+                verifier="build",
+                status="skipped",
+                reason="missing_npm",
+            ),
+        ]
+    )
     msg = report.to_feedback_message()
     assert "[skipped]" in msg
     assert "last 20 lines:" not in msg
@@ -80,18 +92,25 @@ def test_t11_3_skipped_outcomes_omit_log_tail():
 
 def test_t11_4_has_failures_detector():
     """T11-4 surface: has_failures() 用于决定是否回灌（PRD D8 触发条件）。"""
-    all_pass = OutcomeReport(outcomes=[
-        VerifierOutcome(verifier="file_exists", status="pass"),
-        VerifierOutcome(verifier="build", status="skipped", reason="missing_npm"),
-    ])
+    all_pass = OutcomeReport(
+        outcomes=[
+            VerifierOutcome(verifier="file_exists", status="pass"),
+            VerifierOutcome(verifier="build", status="skipped", reason="missing_npm"),
+        ]
+    )
     assert all_pass.has_failures() is False
 
-    with_fail = OutcomeReport(outcomes=[
-        VerifierOutcome(verifier="file_exists", status="pass"),
-        VerifierOutcome(
-            verifier="build", status="fail", reason="x", error_class="build_error",
-        ),
-    ])
+    with_fail = OutcomeReport(
+        outcomes=[
+            VerifierOutcome(verifier="file_exists", status="pass"),
+            VerifierOutcome(
+                verifier="build",
+                status="fail",
+                reason="x",
+                error_class="build_error",
+            ),
+        ]
+    )
     assert with_fail.has_failures() is True
 
 

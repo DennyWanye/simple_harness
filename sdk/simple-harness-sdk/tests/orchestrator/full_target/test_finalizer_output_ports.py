@@ -74,48 +74,109 @@ def probe_world(loop: Any, mission: Any) -> Any:
     from agent_orchestrator.planning.htn.world import capability_records
 
     world = user_goal_world(loop, mission)
-    params = VersionedRef("user.goal-parameters", 1, content_hash_of(
-        {"fields": [{"name": "goal", "type": "string", "required": True}]}))
+    params = VersionedRef(
+        "user.goal-parameters",
+        1,
+        content_hash_of({"fields": [{"name": "goal", "type": "string", "required": True}]}),
+    )
     outputs = VersionedRef("user.workspace-outputs", 1, content_hash_of({"fields": []}))
     content = tuple(f"c-user-{i + 1}" for i in range(len(mission.success_criteria)))
-    operator = VersionedRef("user.workspace-worker", 1, content_hash_of({"tools": list(mission.allowed_tools)}))
+    operator = VersionedRef(
+        "user.workspace-worker", 1, content_hash_of({"tools": list(mission.allowed_tools)})
+    )
     shapes = {
-        "probe-step": ((), (PortSpec("delivery", outputs), PortSpec("note", outputs),
-                            PortSpec("aside", outputs, required=False))),
+        "probe-step": (
+            (),
+            (
+                PortSpec("delivery", outputs),
+                PortSpec("note", outputs),
+                PortSpec("aside", outputs, required=False),
+            ),
+        ),
         "review-step": ((PortSpec("delivery", outputs),), (PortSpec("verdict", outputs),)),
     }
     for name, (inputs, ports) in shapes.items():
         signature = GoalSignature(name, 1, params, outputs, mission.goal, content)
-        body = {"name": name, "form": str(TaskForm.PRIMITIVE), "signature": signature.to_json(),
-                "ports": [p.to_json() for p in ports], "input_ports": [p.to_json() for p in inputs]}
-        world.catalog.register(TaskTypeSpec(
-            task_type_ref=VersionedRef(name, 1, content_hash_of(body)), form=TaskForm.PRIMITIVE,
-            goal_signature=signature, input_ports=inputs, output_ports=ports, parameter_schema_ref=params,
-            output_schema_ref=outputs, operator_ref=operator, required_capabilities=("workspace.prepare",),
-            side_effect_kind=SideEffectKind.LOCAL_WRITE, reversible=True, domain="user", refinement_level=None,
-        ))
-    world.records = capability_records(world.catalog, capability_layers={"workspace.prepare": None}, unauthorized=())
+        body = {
+            "name": name,
+            "form": str(TaskForm.PRIMITIVE),
+            "signature": signature.to_json(),
+            "ports": [p.to_json() for p in ports],
+            "input_ports": [p.to_json() for p in inputs],
+        }
+        world.catalog.register(
+            TaskTypeSpec(
+                task_type_ref=VersionedRef(name, 1, content_hash_of(body)),
+                form=TaskForm.PRIMITIVE,
+                goal_signature=signature,
+                input_ports=inputs,
+                output_ports=ports,
+                parameter_schema_ref=params,
+                output_schema_ref=outputs,
+                operator_ref=operator,
+                required_capabilities=("workspace.prepare",),
+                side_effect_kind=SideEffectKind.LOCAL_WRITE,
+                reversible=True,
+                domain="user",
+                refinement_level=None,
+            )
+        )
+    world.records = capability_records(
+        world.catalog, capability_layers={"workspace.prepare": None}, unauthorized=()
+    )
     return world
 
 
 #: shape → (criteria, steps ``(local, type, arguments, linked criterion index or None)``, finalizer)
 SHAPES = {
     # write → continue (DATA on delivery); each step owns one requirement; continue is the finalizer
-    "chain": (("file:a.md", "file:b.md"),
-              [("write", "prepare-delivery", {}, 0),
-               ("continue", "continue-delivery", {"delivery": {"op": "output", "step": "write", "port": "delivery"}}, 1)],
-              "continue"),
+    "chain": (
+        ("file:a.md", "file:b.md"),
+        [
+            ("write", "prepare-delivery", {}, 0),
+            (
+                "continue",
+                "continue-delivery",
+                {"delivery": {"op": "output", "step": "write", "port": "delivery"}},
+                1,
+            ),
+        ],
+        "continue",
+    ),
     # the same, plus an audit step that reads write's delivery and that nothing reads or links
-    "unlinked": (("file:a.md", "file:b.md"),
-                 [("write", "prepare-delivery", {}, 0),
-                  ("continue", "continue-delivery", {"delivery": {"op": "output", "step": "write", "port": "delivery"}}, 1),
-                  ("audit", "continue-delivery", {"delivery": {"op": "output", "step": "write", "port": "delivery"}}, None)],
-                 "continue"),
+    "unlinked": (
+        ("file:a.md", "file:b.md"),
+        [
+            ("write", "prepare-delivery", {}, 0),
+            (
+                "continue",
+                "continue-delivery",
+                {"delivery": {"op": "output", "step": "write", "port": "delivery"}},
+                1,
+            ),
+            (
+                "audit",
+                "continue-delivery",
+                {"delivery": {"op": "output", "step": "write", "port": "delivery"}},
+                None,
+            ),
+        ],
+        "continue",
+    ),
     # the criterion link points at probe, which is not the finalizer; review reads probe
-    "linked-nonfinal": (("file:a.md",),
-                        [("probe", "probe-step", {}, 0),
-                         ("review", "review-step", {"delivery": {"op": "output", "step": "probe", "port": "delivery"}}, None)],
-                        "review"),
+    "linked-nonfinal": (
+        ("file:a.md",),
+        [
+            ("probe", "probe-step", {}, 0),
+            (
+                "review",
+                "review-step",
+                {"delivery": {"op": "output", "step": "probe", "port": "delivery"}},
+                None,
+            ),
+        ],
+        "review",
+    ),
 }
 
 
@@ -126,21 +187,42 @@ def _method(context: dict[str, Any], shape: str) -> dict[str, Any]:
     identity = request["new_method_identity"]
     _, steps, finalizer = SHAPES[shape]
     return {
-        "schema_version": 1, "method_id": identity["method_id"], "method_version": identity["method_version"],
+        "schema_version": 1,
+        "method_id": identity["method_id"],
+        "method_version": identity["method_version"],
         "goal_type_ref": request["goal_type_ref"],
         "parameter_schema_ref": request["goal_signature"]["parameter_schema_ref"],
         "output_schema_ref": request["goal_signature"]["output_schema_ref"],
-        "applicable_when": [], "exploration_assumptions": [],
-        "steps": [{"local_id": local, "task_type_ref": kinds[kind]["task_type_ref"], "form": "primitive",
-                   "arguments": arguments, "required_capabilities": list(kinds[kind]["required_capabilities"]),
-                   "obligation_relation": "refines_parent"} for local, kind, arguments, _ in steps],
-        "ordering": [], "required_capabilities": [], "expected_effects": [],
+        "applicable_when": [],
+        "exploration_assumptions": [],
+        "steps": [
+            {
+                "local_id": local,
+                "task_type_ref": kinds[kind]["task_type_ref"],
+                "form": "primitive",
+                "arguments": arguments,
+                "required_capabilities": list(kinds[kind]["required_capabilities"]),
+                "obligation_relation": "refines_parent",
+            }
+            for local, kind, arguments, _ in steps
+        ],
+        "ordering": [],
+        "required_capabilities": [],
+        "expected_effects": [],
         "composition": {
             "criterion_links": [
-                {"parent_criterion_id": criteria[link], "child_step": local, "child_criterion_id": criteria[link],
-                 "evidence_requirement": f"{local} 这一步完成 {criteria[link]}"}
-                for local, _, _, link in steps if link is not None],
-            "outputs": {}, "finalizer_step": finalizer, "independent_review_required": True,
+                {
+                    "parent_criterion_id": criteria[link],
+                    "child_step": local,
+                    "child_criterion_id": criteria[link],
+                    "evidence_requirement": f"{local} 这一步完成 {criteria[link]}",
+                }
+                for local, _, _, link in steps
+                if link is not None
+            ],
+            "outputs": {},
+            "finalizer_step": finalizer,
+            "independent_review_required": True,
         },
         "basis_refs": [],
     }
@@ -154,8 +236,12 @@ def _committed_plan(tmp_path, shape: str) -> dict[str, Any]:
         package = package_of(request)
         contexts = package.get("method_proposal_contexts") or []
         if contexts and not (package.get("method_selection") or [{}])[0].get("applicable"):
-            return decision(contexts[0]["subject_key"], "PROPOSE_METHOD",
-                            {"method_proposal": {"method": _method(contexts[0], shape), "rationale": shape}}, shape)
+            return decision(
+                contexts[0]["subject_key"],
+                "PROPOSE_METHOD",
+                {"method_proposal": {"method": _method(contexts[0], shape), "rationale": shape}},
+                shape,
+            )
         return planner_reply(request)
 
     provider = LayeredScriptedProvider(planner=planner)
@@ -164,11 +250,20 @@ def _committed_plan(tmp_path, shape: str) -> dict[str, Any]:
 
     async def case() -> dict[str, Any]:
         try:
-            async with product_world(tmp_path / "root", provider, world_factory=probe_world, **CONFIG) as world:
-                mission_id = world.create({"goal": "按步骤写出文件", "idempotency_key": f"d3-{shape}",
-                                           "success_criteria": list(criteria)})["mission_id"]
+            async with product_world(
+                tmp_path / "root", provider, world_factory=probe_world, **CONFIG
+            ) as world:
+                mission_id = world.create(
+                    {
+                        "goal": "按步骤写出文件",
+                        "idempotency_key": f"d3-{shape}",
+                        "success_criteria": list(criteria),
+                    }
+                )["mission_id"]
                 semantics = HtnStore(world.store)
-                await run_until(world, lambda: semantics.active_plan_revision(mission_id) is not None)
+                await run_until(
+                    world, lambda: semantics.active_plan_revision(mission_id) is not None
+                )
                 dispatch = world.loop._dispatch_for(mission_id)
                 network = dispatch.network(mission_id)
                 revision = int(semantics.active_plan_revision(mission_id).revision)
@@ -181,14 +276,32 @@ def _committed_plan(tmp_path, shape: str) -> dict[str, Any]:
                             "occurrence": occurrence,
                             "bare": dict(declared_output_ports(network, occurrence)),
                             "own": dict(declared_output_ports(network, occurrence, own_ports=True)),
-                            "rows": dict(output_ports_in_revision(semantics, mission_id, revision, occurrence, task)),
-                            "told": [(item["port"], item["required"])
-                                     for item in dispatch.declared_output_ports_for(mission_id, task)],
-                            "shuffled": dict(declared_output_ports(
-                                replace(network, task_bindings=tuple(reversed(network.task_bindings))), occurrence)),
-                            "inputs": {port.port_key: port for port in network.binding_for_occurrence(occurrence).input_ports},
+                            "rows": dict(
+                                output_ports_in_revision(
+                                    semantics, mission_id, revision, occurrence, task
+                                )
+                            ),
+                            "told": [
+                                (item["port"], item["required"])
+                                for item in dispatch.declared_output_ports_for(mission_id, task)
+                            ],
+                            "shuffled": dict(
+                                declared_output_ports(
+                                    replace(
+                                        network,
+                                        task_bindings=tuple(reversed(network.task_bindings)),
+                                    ),
+                                    occurrence,
+                                )
+                            ),
+                            "inputs": {
+                                port.port_key: port
+                                for port in network.binding_for_occurrence(occurrence).input_ports
+                            },
                         }
-                linked = criterion_linked_occurrences(coverage_in_revision(semantics, mission_id, revision))
+                linked = criterion_linked_occurrences(
+                    coverage_in_revision(semantics, mission_id, revision)
+                )
                 edges = list(network.data_requirements)
                 return {"steps": steps, "linked": linked, "edges": edges}
         finally:
@@ -216,14 +329,18 @@ def test_the_production_readers_give_the_same_answer(tmp_path, shape: str) -> No
     if shape == "chain":
         write, final = plan["steps"]["write"], plan["steps"]["continue"]
         # a criterion link adds ports; it never relabels one a live edge already declares
-        edge = next(item for item in plan["edges"] if item.producer_occurrence == write["occurrence"])
+        edge = next(
+            item for item in plan["edges"] if item.producer_occurrence == write["occurrence"]
+        )
         assert write["bare"]["delivery"].to_json() == edge.schema_ref.to_json()
         # defect D3's core: nothing consumes the finalizer's port; the root criterion reads it
         assert final["occurrence"] in plan["linked"]
         assert set(final["bare"]) == {"delivery"}
 
 
-def test_a_step_neither_consumed_nor_linked_still_declares_no_port_under_the_bare_rule(tmp_path) -> None:
+def test_a_step_neither_consumed_nor_linked_still_declares_no_port_under_the_bare_rule(
+    tmp_path,
+) -> None:
     """边界：既没被消费也没被链接的一步。"消费或链接才算声明"这条规则本身（不带 ``own_ports``
     的网络读者）照旧不给它端口；但完成协议下（产品唯一的世界）每一步都欠它**自己**声明的必需端口
     （2026-09-29 真机第十二局），所以生产读者告诉这一步的端口恰好是它自己契约里的那个，不多不少。
@@ -238,7 +355,9 @@ def test_a_step_neither_consumed_nor_linked_still_declares_no_port_under_the_bar
     assert "own_ports=True" in inspect.getsource(taskgraph_review.read_review_origin)
 
 
-def test_a_criterion_link_to_a_non_finalizer_step_declares_its_required_ports_only(tmp_path) -> None:
+def test_a_criterion_link_to_a_non_finalizer_step_declares_its_required_ports_only(
+    tmp_path,
+) -> None:
     """The rule is "criterion-linked", not "is the finalizer" (review P2-10); and criterion
     linkage contributes the producer's **required** ports only (review P2-6, mutation M05):
     an optional port is neither told nor enforced."""
@@ -248,7 +367,9 @@ def test_a_criterion_link_to_a_non_finalizer_step_declares_its_required_ports_on
     assert probe["occurrence"] in plan["linked"] and review["occurrence"] not in plan["linked"]
     # linked: the unconsumed required port is owed under the bare rule; the optional one is not
     assert {"delivery", "note"} <= set(probe["bare"]) and "aside" not in probe["bare"]
-    assert set(probe["rows"]) == {"delivery", "note"}, "required and linked: owed; optional: not asked for"
+    assert set(probe["rows"]) == {"delivery", "note"}, (
+        "required and linked: owed; optional: not asked for"
+    )
     # the finalizer is not criterion-linked here, so under the bare rule its own port is nobody's;
     # under the completion protocol it still owes its own required port
     assert "verdict" not in review["bare"]

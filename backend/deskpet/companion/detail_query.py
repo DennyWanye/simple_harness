@@ -478,9 +478,7 @@ def _decode_authority_row(table: str, row: Mapping[str, Any]) -> dict[str, Any]:
         if key.endswith("_json"):
             public_key = key[:-5]
             if redacted or forgotten:
-                value[public_key] = {
-                    "state": "forgotten" if forgotten else "redacted"
-                }
+                value[public_key] = {"state": "forgotten" if forgotten else "redacted"}
                 continue
             try:
                 item = json.loads(str(item)) if item is not None else None
@@ -536,12 +534,7 @@ class CompanionDetailQueryPort:
             page_size = int(request["page_size"])
         except (TypeError, ValueError) as exc:
             raise CompanionDetailQueryError("unavailable", "invalid page size") from exc
-        if (
-            not notification_id
-            or section not in _SECTIONS
-            or page_size < 1
-            or page_size > 20
-        ):
+        if not notification_id or section not in _SECTIONS or page_size < 1 or page_size > 20:
             raise CompanionDetailQueryError("unavailable")
 
         owner = frozen_identity.owner
@@ -566,11 +559,14 @@ class CompanionDetailQueryPort:
         authority = self._authoritative_detail(owner, notification)
         if authority["lineage_hash"] != discovery["lineage_hash"]:
             raise CompanionDetailQueryError("detail_changed")
-        if self._platform_keys(
-            owner_key=str(frozen_identity.owner_key),
-            authority=authority,
-            notification=notification,
-        ) != platform_keys:
+        if (
+            self._platform_keys(
+                owner_key=str(frozen_identity.owner_key),
+                authority=authority,
+                notification=notification,
+            )
+            != platform_keys
+        ):
             raise CompanionDetailQueryError("detail_changed")
         detail_version = self._detail_version(
             frozen_identity=frozen_identity,
@@ -588,8 +584,7 @@ class CompanionDetailQueryPort:
             cursor_body = self._decode_cursor(str(cursor))
             if (
                 cursor_body.get("profile_id") != owner.profile_id
-                or int(cursor_body.get("profile_generation") or 0)
-                != owner.profile_generation
+                or int(cursor_body.get("profile_generation") or 0) != owner.profile_generation
                 or cursor_body.get("notification_id") != notification_id
                 or cursor_body.get("section") != section
                 or cursor_body.get("detail_version") != detail_version
@@ -608,10 +603,7 @@ class CompanionDetailQueryPort:
         )
         remaining = [item for item in raw_items if item[0] > last_sort_key]
         selected = remaining[:page_size]
-        page = [
-            self._normalize_item(section, sort_key, item)
-            for sort_key, item in selected
-        ]
+        page = [self._normalize_item(section, sort_key, item) for sort_key, item in selected]
 
         vc1 = dict(self.store.get_detail_version(owner))
         vector1 = await self._platform_tokens(platform_keys)
@@ -652,9 +644,7 @@ class CompanionDetailQueryPort:
             "next_cursor": next_cursor,
         }
         if len(canonical_json(payload).encode("utf-8")) > 65536:
-            raise CompanionDetailQueryError(
-                "unavailable", "detail response exceeds 64 KiB"
-            )
+            raise CompanionDetailQueryError("unavailable", "detail response exceeds 64 KiB")
         return payload
 
     async def current_detail_version(
@@ -712,13 +702,9 @@ class CompanionDetailQueryPort:
             raise CompanionDetailQueryError("unavailable") from exc
 
         known = {
-            str(value)
-            for value in notification.get("source_refs") or ()
-            if value not in (None, "")
+            str(value) for value in notification.get("source_refs") or () if value not in (None, "")
         }
-        selected_rows: dict[str, list[dict[str, Any]]] = {
-            table: [] for table in _AUTHORITY_TABLES
-        }
+        selected_rows: dict[str, list[dict[str, Any]]] = {table: [] for table in _AUTHORITY_TABLES}
         selected_hashes: set[str] = set()
         for _ in range(len(_AUTHORITY_TABLES) + 2):
             changed = False
@@ -738,9 +724,7 @@ class CompanionDetailQueryPort:
             if not changed:
                 break
 
-        sections: dict[str, list[tuple[str, Mapping[str, Any]]]] = {
-            name: [] for name in _SECTIONS
-        }
+        sections: dict[str, list[tuple[str, Mapping[str, Any]]]] = {name: [] for name in _SECTIONS}
         overview = {
             "source_table": "notifications",
             "notification_id": str(notification["notification_id"]),
@@ -748,9 +732,7 @@ class CompanionDetailQueryPort:
             "summary": notification["summary"],
             "status": str(notification["status"]),
             "reason_code": str(notification["reason_code"]),
-            "source_refs": sorted(
-                str(value) for value in notification.get("source_refs") or ()
-            ),
+            "source_refs": sorted(str(value) for value in notification.get("source_refs") or ()),
             "payload_hash": str(notification["payload_hash"]),
             "redaction_version": int(notification.get("redaction_version") or 0),
         }
@@ -767,10 +749,7 @@ class CompanionDetailQueryPort:
                 decoded = _decode_authority_row(table, row)
                 decoded_rows.append(decoded)
                 identity = sorted(_identity_values(row, links))
-                sort_key = (
-                    f"{section}|{table}|"
-                    f"{canonical_hash([identity, row])}"
-                )
+                sort_key = f"{section}|{table}|{canonical_hash([identity, row])}"
                 sections[section].append((sort_key, decoded))
         for section in sections:
             sections[section].sort(key=lambda item: item[0])
@@ -778,10 +757,7 @@ class CompanionDetailQueryPort:
             "sections": sections,
             "rows": decoded_rows,
             "lineage_hash": canonical_hash(
-                {
-                    table: sorted(rows, key=canonical_hash)
-                    for table, rows in selected_rows.items()
-                }
+                {table: sorted(rows, key=canonical_hash) for table, rows in selected_rows.items()}
             ),
         }
 
@@ -819,9 +795,7 @@ class CompanionDetailQueryPort:
         if isinstance(detail, Mapping):
             for field in ("platform_keys", "precedence_keys", "fallback_keys"):
                 value = detail.get(field)
-                if isinstance(value, Sequence) and not isinstance(
-                    value, (str, bytes)
-                ):
+                if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
                     raw_keys.extend(value)
         keys: list[OwnerScopeKey] = []
         for raw in raw_keys:
@@ -852,9 +826,7 @@ class CompanionDetailQueryPort:
         try:
             return await self.platform_store.read_detail_snapshot(keys)
         except Exception as exc:
-            raise CompanionDetailQueryError(
-                "unavailable", "catalog_reconciling"
-            ) from exc
+            raise CompanionDetailQueryError("unavailable", "catalog_reconciling") from exc
 
     async def _platform_tokens(self, keys: Sequence[OwnerScopeKey]) -> Any:
         if not keys:
@@ -865,13 +837,9 @@ class CompanionDetailQueryPort:
         try:
             if reader is not None:
                 return await reader(keys)
-            return self._platform_vector(
-                await self.platform_store.read_detail_snapshot(keys)
-            )
+            return self._platform_vector(await self.platform_store.read_detail_snapshot(keys))
         except Exception as exc:
-            raise CompanionDetailQueryError(
-                "unavailable", "catalog_reconciling"
-            ) from exc
+            raise CompanionDetailQueryError("unavailable", "catalog_reconciling") from exc
 
     @staticmethod
     def _platform_vector(snapshot: Any) -> Any:
@@ -888,9 +856,7 @@ class CompanionDetailQueryPort:
         return canonical_hash(
             {
                 "fingerprint": getattr(vector, "fingerprint", canonical_hash([])),
-                "items": [
-                    item.to_dict() for item in getattr(vector, "items", ())
-                ],
+                "items": [item.to_dict() for item in getattr(vector, "items", ())],
             }
         )
 
@@ -923,15 +889,11 @@ class CompanionDetailQueryPort:
             if isinstance(platform_snapshot, Mapping):
                 bindings = list(platform_snapshot.get("bindings") or [])
             else:
-                bindings = [
-                    _jsonable(item)
-                    for item in getattr(platform_snapshot, "bindings", ())
-                ]
+                bindings = [_jsonable(item) for item in getattr(platform_snapshot, "bindings", ())]
             return sorted(
                 (
                     (
-                        "current_binding|"
-                        + canonical_hash(_jsonable(binding)),
+                        "current_binding|" + canonical_hash(_jsonable(binding)),
                         _jsonable(binding),
                     )
                     for binding in bindings
@@ -944,9 +906,7 @@ class CompanionDetailQueryPort:
         return list(sections.get(section) or [])
 
     @staticmethod
-    def _normalize_item(
-        section: str, sort_key: str, value: Any
-    ) -> Mapping[str, Any]:
+    def _normalize_item(section: str, sort_key: str, value: Any) -> Mapping[str, Any]:
         bounded = _bounded_item(value)
         if isinstance(bounded, Mapping):
             item = dict(bounded)
@@ -966,15 +926,11 @@ class CompanionDetailQueryPort:
     def _decode_cursor(self, token: str) -> Mapping[str, Any]:
         try:
             raw = base64.urlsafe_b64decode(token + "=" * (-len(token) % 4))
-            canonical_token = base64.urlsafe_b64encode(raw).decode(
-                "ascii"
-            ).rstrip("=")
+            canonical_token = base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
             if not hmac.compare_digest(canonical_token, token):
                 raise ValueError("non-canonical cursor")
             payload, supplied = raw[:-32], raw[-32:]
-            expected = hmac.new(
-                self.cursor_secret, payload, hashlib.sha256
-            ).digest()
+            expected = hmac.new(self.cursor_secret, payload, hashlib.sha256).digest()
             if len(raw) <= 32 or not hmac.compare_digest(supplied, expected):
                 raise ValueError("invalid signature")
             body = json.loads(payload.decode("utf-8"))

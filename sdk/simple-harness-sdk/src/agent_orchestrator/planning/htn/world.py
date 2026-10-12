@@ -391,12 +391,21 @@ def catalog_digest(world: Any) -> str:
     only to Missions whose digest equals the one it was promoted under."""
     from ...runtime.role_templates import PLANNING_DECISION_PACKAGE_VERSION
 
-    return content_hash_of({
-        "task_types": [spec.to_json() for spec in sorted(
-            world.catalog.task_types(), key=lambda item: (item.task_type_ref.id, int(item.task_type_ref.version)))],
-        "predicates": sorted(content_hash_of(signature.to_json()) for signature in world.predicates.signatures()),
-        "package_version": PLANNING_DECISION_PACKAGE_VERSION,
-    })
+    return content_hash_of(
+        {
+            "task_types": [
+                spec.to_json()
+                for spec in sorted(
+                    world.catalog.task_types(),
+                    key=lambda item: (item.task_type_ref.id, int(item.task_type_ref.version)),
+                )
+            ],
+            "predicates": sorted(
+                content_hash_of(signature.to_json()) for signature in world.predicates.signatures()
+            ),
+            "package_version": PLANNING_DECISION_PACKAGE_VERSION,
+        }
+    )
 
 
 def build_planning_world(
@@ -534,8 +543,10 @@ def restore_trial_methods(world: DeploymentPlanningWorld) -> None:
         registration = stored.registration
         if registration.trial_scope_mission != world.mission_id:
             continue
-        if (registration.status is MethodRegistryStatus.TRIAL_ADMITTED
-                and world.registry.definition(registration.method_ref) is not None):
+        if (
+            registration.status is MethodRegistryStatus.TRIAL_ADMITTED
+            and world.registry.definition(registration.method_ref) is not None
+        ):
             continue
         world.registry.restore(stored.contract, registration)
 

@@ -58,7 +58,9 @@ def quick_runtime(monkeypatch: Any) -> None:
     import deskpet.orchestration.native_plane as native_plane
 
     monkeypatch.setattr(event_handler, "WAIT_BACKOFF_MAX", 0.05)
-    monkeypatch.setattr(native_plane, "embedding_port", lambda _models_dir: (None, "测试里不装向量模型"))
+    monkeypatch.setattr(
+        native_plane, "embedding_port", lambda _models_dir: (None, "测试里不装向量模型")
+    )
 
 
 async def _auto_mode() -> str:
@@ -92,7 +94,9 @@ def notes_mission(key: str = "layered-notes-1", **overrides: Any) -> dict[str, A
     return request
 
 
-async def run_until_settled(service: OrchestrationService, mission_id: str, *, rounds: int = 12, timeout: float = 30.0) -> Any:
+async def run_until_settled(
+    service: OrchestrationService, mission_id: str, *, rounds: int = 12, timeout: float = 30.0
+) -> Any:
     """反复排空，直到任务到达终态；返回最后读到的任务行。"""
 
     store = service._orchestrator.store

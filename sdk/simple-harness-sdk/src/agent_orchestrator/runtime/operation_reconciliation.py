@@ -146,9 +146,8 @@ def validate_evidence(
         # must also be one the connector profile registered (阶段 B 裁决第 3 类).
         human = kind == "HUMAN_RULED_NOT_APPLIED"
         if (
-            (not human and kind not in profile.nonapplication_proofs)
-            or kind not in resolved.effect_contract.accepted_nonapplication_proofs
-        ):
+            not human and kind not in profile.nonapplication_proofs
+        ) or kind not in resolved.effect_contract.accepted_nonapplication_proofs:
             raise ReconciliationProofError("proof kind not frozen and registered")
     for ref in observation.receipt_refs():
         raw = evidence.receipts.get(ref.id)
@@ -167,7 +166,12 @@ def action_outcome_unresolved(store: Any, action: Mapping[str, Any]) -> bool:
         return True
     if state != "FAILED" or int(action.get("handoffs") or 0) < 1:
         return False
-    if PlanningAdmissionStore(store).get_operation_action_link_for_action(str(action["action_key"])) is None:
+    if (
+        PlanningAdmissionStore(store).get_operation_action_link_for_action(
+            str(action["action_key"])
+        )
+        is None
+    ):
         return False
     return not stored_negative_proof(store, action)
 
@@ -249,5 +253,9 @@ def nonapplication_outcome(store: Any, action: Mapping[str, Any]) -> dict[str, A
         outcome = "not_delivered"
     else:
         outcome = "service_refused"
-    return {"action_key": str(action["action_key"]), "attempt": int(action.get("version") or 1),
-            "outcome": outcome, "reason": error[:300]}
+    return {
+        "action_key": str(action["action_key"]),
+        "attempt": int(action.get("version") or 1),
+        "outcome": outcome,
+        "reason": error[:300],
+    }

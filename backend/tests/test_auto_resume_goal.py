@@ -10,6 +10,7 @@ returns a non-None string for the given session id.
 BC: when getter is None or returns None, new_msgs must contain ONLY the
 supervisor hint — byte-identical to pre-WI-1.5 behavior.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -18,6 +19,7 @@ from agent.session_activity import SessionActivityStore
 from agent.supervisor import SupervisorAction
 
 # ─────────────── helpers (reused from test_p5s2_auto_resume patterns) ─────────
+
 
 class _RecordingDispatcher:
     """Captures (sid, msgs) on each dispatch call."""
@@ -92,9 +94,7 @@ async def test_resume_injects_goal_anchor():
     )
 
     original_msgs = [{"role": "user", "content": "start task"}]
-    result = await orch.handle_failure(
-        sid, "max_iterations", {"session_id": sid}, original_msgs
-    )
+    result = await orch.handle_failure(sid, "max_iterations", {"session_id": sid}, original_msgs)
 
     assert result.action == "spawned"
     assert len(disp.calls) == 1
@@ -140,9 +140,7 @@ async def test_resume_bc_no_goal():
     )
 
     original_msgs = [{"role": "user", "content": "do work"}]
-    result = await orch.handle_failure(
-        sid, "max_iterations", {"session_id": sid}, original_msgs
-    )
+    result = await orch.handle_failure(sid, "max_iterations", {"session_id": sid}, original_msgs)
 
     assert result.action == "spawned"
     assert len(disp.calls) == 1
@@ -177,9 +175,7 @@ async def test_resume_bc_getter_returns_none():
     )
 
     original_msgs = [{"role": "user", "content": "do work"}]
-    result = await orch.handle_failure(
-        sid, "max_iterations", {"session_id": sid}, original_msgs
-    )
+    result = await orch.handle_failure(sid, "max_iterations", {"session_id": sid}, original_msgs)
 
     assert result.action == "spawned"
     assert len(disp.calls) == 1

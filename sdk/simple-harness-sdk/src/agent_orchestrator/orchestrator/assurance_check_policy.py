@@ -307,9 +307,12 @@ def approve_check_policy(
                 key=receipt_id,
                 actor_type="human" if human else "system",
                 actor_id=principal.principal_id if human else HOST_AUTO_APPROVER_ID,
-                payload={"check_policy_ref": ref.to_json(), "approval_receipt_id": receipt_id,
-                         "approval_source": approval_source,
-                         "on_behalf_of_principal_id": principal.principal_id},
+                payload={
+                    "check_policy_ref": ref.to_json(),
+                    "approval_receipt_id": receipt_id,
+                    "approval_source": approval_source,
+                    "on_behalf_of_principal_id": principal.principal_id,
+                },
             )
         return ref
 
@@ -372,7 +375,9 @@ def lossless_scope_mapping(
             str(scope.requirements_ref.content_hash),
         ),
     )
-    scope_ref = AssuranceRef("completion_scope", Pin(str(row["scope_id"]), 0, str(row["scope_hash"])))
+    scope_ref = AssuranceRef(
+        "completion_scope", Pin(str(row["scope_id"]), 0, str(row["scope_hash"]))
+    )
     binding = HtnStore(store).task_semantics_of(mission_id, str(row["task_id"]))
     if binding is None:
         raise AssuranceError("CHECK_POLICY_UNRESOLVED", scope_id)
@@ -448,7 +453,9 @@ def _lossless_mapping(
     return tuple(sorted(mapping, key=lambda c: c.criterion_id))
 
 
-def planning_subject_criteria(store: Any, mission_id: str, binding: Any, requirements: Any) -> tuple[Any, ...]:
+def planning_subject_criteria(
+    store: Any, mission_id: str, binding: Any, requirements: Any
+) -> tuple[Any, ...]:
     """The requirement criteria a method proposed for this goal is reviewed against.
 
     One definition for the three readers that must agree — the policy approval, the
@@ -498,14 +505,18 @@ def assigned_criterion_ids(store: Any, mission_id: str, task_id: str) -> tuple[s
         return ()
     rows = store.connection.execute(
         "SELECT occurrence_id FROM plan_memberships WHERE mission_id=? AND revision=? "
-        "AND task_id=? LIMIT 2", (mission_id, int(active.revision), str(task_id))).fetchall()
+        "AND task_id=? LIMIT 2",
+        (mission_id, int(active.revision), str(task_id)),
+    ).fetchall()
     if len(rows) != 1:
         return ()
     from ..contracts.operation_completion import PlanRevisionPinV1
 
     scope = OperationCompletionReader(store).read_scope(
-        mission_id, PlanRevisionPinV1(revision=int(active.revision), snapshot_hash=active.snapshot_hash),
-        str(rows[0][0]))
+        mission_id,
+        PlanRevisionPinV1(revision=int(active.revision), snapshot_hash=active.snapshot_hash),
+        str(rows[0][0]),
+    )
     return tuple(scope.content_criterion_ids)
 
 

@@ -14,6 +14,7 @@
 每次触发追加一行到 ``ASSURANCE_HOOK_LOG``。钩子按模块名挂在导入时（元路径查找器），
 不会在沙箱子进程里提前导入编排包。
 """
+
 from __future__ import annotations
 
 import importlib.abc
@@ -32,7 +33,9 @@ def _log(entry: dict) -> None:
     if not LOG:
         return
     with open(LOG, "a", encoding="utf-8") as handle:
-        handle.write(json.dumps({"at": time.time(), "pid": os.getpid(), **entry}, ensure_ascii=False) + "\n")
+        handle.write(
+            json.dumps({"at": time.time(), "pid": os.getpid(), **entry}, ensure_ascii=False) + "\n"
+        )
 
 
 def _patch_workspace(module) -> None:
@@ -49,8 +52,15 @@ def _patch_workspace(module) -> None:
             state["done"] = True
             original = target.read_bytes()
             target.write_text(bad, encoding="utf-8")
-            _log({"hook": HOOK, "attempt_id": str(self.attempt_id), "path": TARGET,
-                  "original_bytes": len(original), "swapped": True})
+            _log(
+                {
+                    "hook": HOOK,
+                    "attempt_id": str(self.attempt_id),
+                    "path": TARGET,
+                    "original_bytes": len(original),
+                    "swapped": True,
+                }
+            )
         return real(self, *args, **kwargs)
 
     module.Workspace.snapshot = snapshot
@@ -66,7 +76,13 @@ def _patch_connector(module) -> None:
         receipt = real(self, *args, **kwargs)
         if not state["lost"]:
             state["lost"] = True
-            _log({"hook": HOOK, "event": "reply-lost", "receipt": getattr(receipt, "receipt_id", None)})
+            _log(
+                {
+                    "hook": HOOK,
+                    "event": "reply-lost",
+                    "receipt": getattr(receipt, "receipt_id", None),
+                }
+            )
             raise ConnectorTransportError("the service applied the publish; its reply was lost")
         return receipt
 
@@ -86,14 +102,25 @@ def _patch_codec(module) -> None:
             except module.AssuranceError as error:
                 if error.code == "JSON_BYTES_LIMIT":
                     raw = args[0] if args else None
-                    size = len(raw.encode("utf-8")) if isinstance(raw, str) else (len(raw) if isinstance(raw, bytes) else None)
+                    size = (
+                        len(raw.encode("utf-8"))
+                        if isinstance(raw, str)
+                        else (len(raw) if isinstance(raw, bytes) else None)
+                    )
                     if size is None and _name == "canonical":
                         try:
                             size = len(module.canonical_json(raw).encode("utf-8"))
                         except Exception:  # noqa: BLE001
                             size = -1
-                    _log({"hook": HOOK, "where": _name, "bytes": size, "limit": kwargs.get("limit", module.MAX_BYTES),
-                          "stack": traceback.format_stack(limit=14)[:-1]})
+                    _log(
+                        {
+                            "hook": HOOK,
+                            "where": _name,
+                            "bytes": size,
+                            "limit": kwargs.get("limit", module.MAX_BYTES),
+                            "stack": traceback.format_stack(limit=14)[:-1],
+                        }
+                    )
                 raise
 
         setattr(module, name, wrapped)

@@ -21,6 +21,7 @@ Coverage:
       - LLM synth fails → passages-only fallback
       - cite_check missing footnotes → warning appended, errors set
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -58,8 +59,8 @@ def _isolate_phase2(monkeypatch):
     monkeypatch.setattr(r, "_query_expansion_enabled", lambda: False)
     monkeypatch.setattr(r, "_direct_sources_enabled", lambda: False)
     monkeypatch.setattr(r, "_js_render_enabled", lambda: False)  # JS 渲染默认关,要测的自开
-    r._RESEARCH_RAW_CACHE = None   # 清 [research] 配置缓存,防跨测试污染
-    r._reset_js_render_budget()    # 归零 JS 渲染触发计数,防跨测试污染
+    r._RESEARCH_RAW_CACHE = None  # 清 [research] 配置缓存,防跨测试污染
+    r._reset_js_render_budget()  # 归零 JS 渲染触发计数,防跨测试污染
     yield
     r._RESEARCH_RAW_CACHE = None
     r._reset_js_render_budget()
@@ -293,9 +294,12 @@ async def test_default_search_with_mock_client(monkeypatch) -> None:
         {"url": "https://a.test", "title": "A", "snippet": "one"},
         {"url": "https://b.test", "title": "B", "snippet": "two"},
     ]
+
     async def _gateway_search(*args, **kwargs):
         return expected
+
     from deskpet.tools import search_provider
+
     monkeypatch.setattr(search_provider, "search_async", _gateway_search)
     out = await r.default_search("test query", max_results=5, client=object())
     assert out == expected
@@ -304,8 +308,10 @@ async def test_default_search_with_mock_client(monkeypatch) -> None:
 @pytest.mark.asyncio
 async def test_default_search_network_failure_returns_empty(monkeypatch) -> None:
     from deskpet.tools import search_provider
+
     async def _failed(*args, **kwargs):
         return []
+
     monkeypatch.setattr(search_provider, "search_async", _failed)
     out = await r.default_search("q", client=object())
     assert out == []
@@ -317,9 +323,7 @@ async def test_default_extract_happy_path() -> None:
 
     sample_html = (
         "<html><head><title>An Article</title></head>"
-        "<body><article>"
-        + ("This is the article body. " * 80) +
-        "</article></body></html>"
+        "<body><article>" + ("This is the article body. " * 80) + "</article></body></html>"
     )
 
     class _T(httpx.AsyncBaseTransport):
@@ -406,21 +410,25 @@ class FakeLLM:
 def make_search(canned: dict[str, list[dict[str, Any]]]):
     async def _search(query: str, *, max_results: int = 5):
         return canned.get(query, [])[:max_results]
+
     return _search
 
 
 def make_extract(canned: dict[str, dict[str, Any]]):
     async def _extract(url: str):
         return canned.get(url, {"ok": False, "error": "no fixture", "url": url})
+
     return _extract
 
 
 @pytest.mark.asyncio
 async def test_research_run_happy_path() -> None:
-    plan_resp = json.dumps([
-        "What is quantum computing?",
-        "Why does it matter in 2026?",
-    ])
+    plan_resp = json.dumps(
+        [
+            "What is quantum computing?",
+            "Why does it matter in 2026?",
+        ]
+    )
     synth_resp = (
         "# Quantum computing in 2026\n\n"
         "## TL;DR\n\n"
@@ -437,37 +445,43 @@ async def test_research_run_happy_path() -> None:
     )
     llm = FakeLLM([plan_resp, synth_resp])
 
-    search = make_search({
-        "What is quantum computing?": [
-            {"url": "https://wikipedia.org/qc", "title": "QC", "snippet": "..."},
-            {"url": "https://nature.com/articles/qc", "title": "Nature QC", "snippet": "..."},
-        ],
-        "Why does it matter in 2026?": [
-            {"url": "https://arxiv.org/abs/2401.0001", "title": "Arxiv", "snippet": "..."},
-        ],
-    })
-    extract = make_extract({
-        "https://wikipedia.org/qc": {
-            "ok": True, "url": "https://wikipedia.org/qc",
-            "title": "Quantum computing — Wikipedia",
-            "text": "Quantum computing is a model that uses qubits "
-                    "and superposition. " * 50,
-            "fetched_at": time.time(),
-        },
-        "https://nature.com/articles/qc": {
-            "ok": True, "url": "https://nature.com/articles/qc",
-            "title": "Quantum hardware scaling — Nature",
+    search = make_search(
+        {
+            "What is quantum computing?": [
+                {"url": "https://wikipedia.org/qc", "title": "QC", "snippet": "..."},
+                {"url": "https://nature.com/articles/qc", "title": "Nature QC", "snippet": "..."},
+            ],
+            "Why does it matter in 2026?": [
+                {"url": "https://arxiv.org/abs/2401.0001", "title": "Arxiv", "snippet": "..."},
+            ],
+        }
+    )
+    extract = make_extract(
+        {
+            "https://wikipedia.org/qc": {
+                "ok": True,
+                "url": "https://wikipedia.org/qc",
+                "title": "Quantum computing — Wikipedia",
+                "text": "Quantum computing is a model that uses qubits and superposition. " * 50,
+                "fetched_at": time.time(),
+            },
+            "https://nature.com/articles/qc": {
+                "ok": True,
+                "url": "https://nature.com/articles/qc",
+                "title": "Quantum hardware scaling — Nature",
                 "text": "Modern quantum computing hardware has scaled past 1000 physical "
-                    "qubits with error rates near 0.1%. " * 30,
-            "fetched_at": time.time(),
-        },
-        "https://arxiv.org/abs/2401.0001": {
-            "ok": True, "url": "https://arxiv.org/abs/2401.0001",
-            "title": "On the value of quantum supremacy",
+                "qubits with error rates near 0.1%. " * 30,
+                "fetched_at": time.time(),
+            },
+            "https://arxiv.org/abs/2401.0001": {
+                "ok": True,
+                "url": "https://arxiv.org/abs/2401.0001",
+                "title": "On the value of quantum supremacy",
                 "text": "Near-term quantum computing advantage remains contested. " * 40,
-            "fetched_at": time.time(),
-        },
-    })
+                "fetched_at": time.time(),
+            },
+        }
+    )
 
     report = await research_run(
         "Quantum computing in 2026",
@@ -499,24 +513,34 @@ async def test_research_run_recency_scores_payload_dates(monkeypatch) -> None:
     plan = json.dumps(["q1?"])
     synth = "# T\n## TL;DR\n\nRecent and old sources differ [^1][^2]."
     llm = FakeLLM([plan, synth])
-    search = make_search({"q1?": [
-        {"url": "https://arxiv.org/recent", "title": "Recent", "snippet": ""},
-        {"url": "https://arxiv.org/old", "title": "Old", "snippet": ""},
-    ]})
-    extract = make_extract({
-        "https://arxiv.org/recent": {
-            "ok": True, "url": "https://arxiv.org/recent",
-            "title": "Recent", "date": "2026-06-01",
-            "text": "current topic evidence with useful details. " * 50,
-            "fetched_at": time.time(),
-        },
-        "https://arxiv.org/old": {
-            "ok": True, "url": "https://arxiv.org/old",
-            "title": "Old", "date": "2018-01-01",
-            "text": "older topic evidence with useful details. " * 50,
-            "fetched_at": time.time(),
-        },
-    })
+    search = make_search(
+        {
+            "q1?": [
+                {"url": "https://arxiv.org/recent", "title": "Recent", "snippet": ""},
+                {"url": "https://arxiv.org/old", "title": "Old", "snippet": ""},
+            ]
+        }
+    )
+    extract = make_extract(
+        {
+            "https://arxiv.org/recent": {
+                "ok": True,
+                "url": "https://arxiv.org/recent",
+                "title": "Recent",
+                "date": "2026-06-01",
+                "text": "current topic evidence with useful details. " * 50,
+                "fetched_at": time.time(),
+            },
+            "https://arxiv.org/old": {
+                "ok": True,
+                "url": "https://arxiv.org/old",
+                "title": "Old",
+                "date": "2018-01-01",
+                "text": "older topic evidence with useful details. " * 50,
+                "fetched_at": time.time(),
+            },
+        }
+    )
     captured: list[Passage] = []
     original_format = r._format_passages_for_llm
 
@@ -541,30 +565,40 @@ async def test_research_run_coverage_observability_counts_drops() -> None:
     plan = json.dumps(["q1?"])
     synth = "# T\n## TL;DR\n\nOnly usable source remains [^1]."
     llm = FakeLLM([plan, synth])
-    search = make_search({"q1?": [
-        {"url": "https://cidian.qianp.com/x", "title": "Dictionary", "snippet": ""},
-        {"url": "https://example.com/short", "title": "Short", "snippet": ""},
-        {"url": "https://arxiv.org/ok", "title": "Usable", "snippet": ""},
-    ]})
-    extract = make_extract({
-        "https://cidian.qianp.com/x": {
-            "ok": True, "url": "https://cidian.qianp.com/x",
-            "title": "Dictionary",
-            "text": "dictionary page with enough words to be filtered by domain. " * 40,
-            "fetched_at": time.time(),
-        },
-        "https://example.com/short": {
-            "ok": True, "url": "https://example.com/short",
-            "title": "Short", "text": "too short",
-            "fetched_at": time.time(),
-        },
-        "https://arxiv.org/ok": {
-            "ok": True, "url": "https://arxiv.org/ok",
-            "title": "Usable",
-            "text": "usable research evidence about the topic. " * 50,
-            "fetched_at": time.time(),
-        },
-    })
+    search = make_search(
+        {
+            "q1?": [
+                {"url": "https://cidian.qianp.com/x", "title": "Dictionary", "snippet": ""},
+                {"url": "https://example.com/short", "title": "Short", "snippet": ""},
+                {"url": "https://arxiv.org/ok", "title": "Usable", "snippet": ""},
+            ]
+        }
+    )
+    extract = make_extract(
+        {
+            "https://cidian.qianp.com/x": {
+                "ok": True,
+                "url": "https://cidian.qianp.com/x",
+                "title": "Dictionary",
+                "text": "dictionary page with enough words to be filtered by domain. " * 40,
+                "fetched_at": time.time(),
+            },
+            "https://example.com/short": {
+                "ok": True,
+                "url": "https://example.com/short",
+                "title": "Short",
+                "text": "too short",
+                "fetched_at": time.time(),
+            },
+            "https://arxiv.org/ok": {
+                "ok": True,
+                "url": "https://arxiv.org/ok",
+                "title": "Usable",
+                "text": "usable research evidence about the topic. " * 50,
+                "fetched_at": time.time(),
+            },
+        }
+    )
 
     report = await research_run(
         "topic",
@@ -583,7 +617,11 @@ async def test_research_run_coverage_observability_counts_drops() -> None:
     assert report.coverage["mode"] == "deep"
     # §6.0.2: n_dropped_by_reason 加 direct_source_empty 键
     assert set(report.coverage["n_dropped_by_reason"]) == {
-        "ai_generated", "low_quality", "mojibake", "too_short", "direct_source_empty",
+        "ai_generated",
+        "low_quality",
+        "mojibake",
+        "too_short",
+        "direct_source_empty",
     }
     assert report.coverage["n_dropped_by_reason"]["low_quality"] == 1
     assert report.coverage["n_dropped_by_reason"]["too_short"] == 1
@@ -591,7 +629,12 @@ async def test_research_run_coverage_observability_counts_drops() -> None:
     assert "direct" in report.coverage["elapsed_ms_per_stage"]
     assert report.coverage["n_dropped_by_reason"]["ai_generated"] == 0
     assert set(report.coverage["elapsed_ms_per_stage"]) == {
-        "plan", "search", "fetch", "score", "synth", "direct",
+        "plan",
+        "search",
+        "fetch",
+        "score",
+        "synth",
+        "direct",
     }
     assert all(v >= 0 for v in report.coverage["elapsed_ms_per_stage"].values())
 
@@ -603,18 +646,27 @@ async def test_research_run_direct_sources_run_even_when_search_empty(monkeypatc
     (而封禁正是直连源要兜底的场景)。"""
     import deskpet.tools.research_sources as _rs
     import deskpet.tools.research_tools as _rt
+
     monkeypatch.setattr(_rt, "_direct_sources_enabled", lambda: True)
     monkeypatch.setattr(_rs, "direct_source_for", lambda q: ["cninfo"])
 
     async def _fake_cninfo(q, *, max_results=3, client=None):
-            return [{"ok": True, "url": "https://static.cninfo.com.cn/x.pdf", "title": "公司财报年报",
-                 "text": "营业收入与净利润等关键财务数据。" * 40,
-                 "fetched_at": time.time(), "source": "cninfo"}]
+        return [
+            {
+                "ok": True,
+                "url": "https://static.cninfo.com.cn/x.pdf",
+                "title": "公司财报年报",
+                "text": "营业收入与净利润等关键财务数据。" * 40,
+                "fetched_at": time.time(),
+                "source": "cninfo",
+            }
+        ]
+
     monkeypatch.setitem(_rs.DIRECT_FETCHERS, "cninfo", _fake_cninfo)
     monkeypatch.setattr(_rs, "cninfo_search", _fake_cninfo)
 
     llm = FakeLLM([json.dumps(["公司财报营收净利润?"]), "# T\n## TL;DR\n\nFrom cninfo [^1]."])
-    search = make_search({"公司财报营收净利润?": []})   # 搜索全空 = 模拟 SERP 被封
+    search = make_search({"公司财报营收净利润?": []})  # 搜索全空 = 模拟 SERP 被封
     extract = make_extract({})
     report = await research_run("公司财报", llm_call=llm, search=search, extract=extract)
     urls = [c.url for c in report.citations]
@@ -628,17 +680,27 @@ async def test_research_run_collects_search_side_channel_errors(monkeypatch) -> 
     """§6.0.4 🔴: bing-cdp captcha 等引擎级侧信道错误须如实进 report.errors
     (否则 captcha 软封与'真无结果'不可区分)。"""
     import deskpet.tools.search_provider as _sp
-    monkeypatch.setattr(_sp, "get_last_search_errors",
-                        lambda: ["bing_cdp_captcha_suspected"])
+
+    monkeypatch.setattr(_sp, "get_last_search_errors", lambda: ["bing_cdp_captcha_suspected"])
     llm = FakeLLM([json.dumps(["q?"]), "# T\n## TL;DR\n\nEvidence [^1]."])
-    search = make_search({"q?": [
-        {"url": "https://e.com/a", "title": "A", "snippet": ""},
-    ]})
-    extract = make_extract({"https://e.com/a": {
-        "ok": True, "url": "https://e.com/a", "title": "A",
-        "text": "usable evidence about the topic with enough length. " * 50,
-        "fetched_at": time.time(),
-    }})
+    search = make_search(
+        {
+            "q?": [
+                {"url": "https://e.com/a", "title": "A", "snippet": ""},
+            ]
+        }
+    )
+    extract = make_extract(
+        {
+            "https://e.com/a": {
+                "ok": True,
+                "url": "https://e.com/a",
+                "title": "A",
+                "text": "usable evidence about the topic with enough length. " * 50,
+                "fetched_at": time.time(),
+            }
+        }
+    )
     report = await research_run("topic", llm_call=llm, search=search, extract=extract)
     assert "bing_cdp_captcha_suspected" in report.errors
 
@@ -649,39 +711,63 @@ async def test_research_run_direct_sources_multi_dispatch_and_dedup(monkeypatch)
     契约-7 URL 去重(直连与普通搜索同 URL 不重复) → route.direct_sources_hit 记命中源。"""
     import deskpet.tools.research_sources as _rs
     import deskpet.tools.research_tools as _rt
+
     plan = json.dumps(["公司 X 年报要点?"])
     synth = "# T\n## TL;DR\n\nFrom direct [^1] and web [^2]."
     llm = FakeLLM([plan, synth])
-    search = make_search({"公司 X 年报要点?": [
-        {"url": "https://web.example.com/a", "title": "Web", "snippet": ""},
-    ]})
-    extract = make_extract({
-        "https://web.example.com/a": {
-            "ok": True, "url": "https://web.example.com/a", "title": "Web",
+    search = make_search(
+        {
+            "公司 X 年报要点?": [
+                {"url": "https://web.example.com/a", "title": "Web", "snippet": ""},
+            ]
+        }
+    )
+    extract = make_extract(
+        {
+            "https://web.example.com/a": {
+                "ok": True,
+                "url": "https://web.example.com/a",
+                "title": "Web",
                 "text": "公司 X 年报要点 web evidence with enough length. " * 50,
-            "fetched_at": time.time(),
-        },
-    })
+                "fetched_at": time.time(),
+            },
+        }
+    )
     monkeypatch.setattr(_rt, "_direct_sources_enabled", lambda: True)
     monkeypatch.setattr(_rs, "direct_source_for", lambda q: ["wikipedia"])
 
     async def _fake_wiki(q, *, max_results=3, client=None):
         return [
-            {"ok": True, "url": "https://en.wikipedia.org/wiki/X", "title": "X",
-                 "text": "公司 X 年报要点 authoritative wikipedia evidence. " * 50,
-             "fetched_at": time.time(), "source": "wikipedia"},
+            {
+                "ok": True,
+                "url": "https://en.wikipedia.org/wiki/X",
+                "title": "X",
+                "text": "公司 X 年报要点 authoritative wikipedia evidence. " * 50,
+                "fetched_at": time.time(),
+                "source": "wikipedia",
+            },
             # 与普通搜索同 URL(末尾斜杠差异) → 应被契约-7 归一化去重
-            {"ok": True, "url": "https://web.example.com/a/", "title": "dup",
-             "text": "duplicate url that must be deduped away here. " * 50,
-             "fetched_at": time.time(), "source": "wikipedia"},
+            {
+                "ok": True,
+                "url": "https://web.example.com/a/",
+                "title": "dup",
+                "text": "duplicate url that must be deduped away here. " * 50,
+                "fetched_at": time.time(),
+                "source": "wikipedia",
+            },
         ]
+
     monkeypatch.setitem(_rs.DIRECT_FETCHERS, "wikipedia", _fake_wiki)
 
     report = await research_run(
-        "topic", llm_call=llm, search=search, extract=extract, max_urls_per_query=3,
+        "topic",
+        llm_call=llm,
+        search=search,
+        extract=extract,
+        max_urls_per_query=3,
     )
     urls = [c.url for c in report.citations]
-    assert "https://en.wikipedia.org/wiki/X" in urls            # 直连新源进池
+    assert "https://en.wikipedia.org/wiki/X" in urls  # 直连新源进池
     assert report.coverage["route"]["direct_sources_hit"] == ["wikipedia"]
     # 契约-7: web.example.com/a 仅 1 次(普通搜索那条;wikipedia 的同 URL dup 被去重)
     assert sum(1 for u in urls if u.rstrip("/") == "https://web.example.com/a") == 1
@@ -700,23 +786,34 @@ async def test_research_run_empty_topic() -> None:
 async def test_research_run_llm_plan_fails_falls_back_to_topic() -> None:
     """When the planner LLM raises, we treat the topic itself as the
     single sub-question and keep going."""
-    llm = FakeLLM([
-        RuntimeError("plan down"),
-        # synth still works
-        "# T\n\n## TL;DR\n\nSummary.\n\n## Background\n\nFact [^1].",
-    ])
-    search = make_search({
-        "deep topic": [{"url": "https://x.com", "title": "X", "snippet": ""}],
-    })
-    extract = make_extract({
-        "https://x.com": {
-            "ok": True, "url": "https://x.com", "title": "X",
-            "text": "Long sample text about deep topic. " * 40,
-            "fetched_at": time.time(),
-        },
-    })
+    llm = FakeLLM(
+        [
+            RuntimeError("plan down"),
+            # synth still works
+            "# T\n\n## TL;DR\n\nSummary.\n\n## Background\n\nFact [^1].",
+        ]
+    )
+    search = make_search(
+        {
+            "deep topic": [{"url": "https://x.com", "title": "X", "snippet": ""}],
+        }
+    )
+    extract = make_extract(
+        {
+            "https://x.com": {
+                "ok": True,
+                "url": "https://x.com",
+                "title": "X",
+                "text": "Long sample text about deep topic. " * 40,
+                "fetched_at": time.time(),
+            },
+        }
+    )
     report = await research_run(
-        "deep topic", llm_call=llm, search=search, extract=extract,
+        "deep topic",
+        llm_call=llm,
+        search=search,
+        extract=extract,
     )
     assert report.sub_questions == ["deep topic"]
     assert any("plan_fallback" in e for e in report.errors)
@@ -729,7 +826,10 @@ async def test_research_run_all_searches_fail() -> None:
     search = make_search({})  # nothing maps → empty results
     extract = make_extract({})
     report = await research_run(
-        "topic", llm_call=llm, search=search, extract=extract,
+        "topic",
+        llm_call=llm,
+        search=search,
+        extract=extract,
     )
     assert report.citations == []
     assert any("no search results" in e for e in report.errors)
@@ -741,12 +841,17 @@ async def test_research_run_all_searches_fail() -> None:
 @pytest.mark.asyncio
 async def test_research_run_all_extracts_fail() -> None:
     llm = FakeLLM([json.dumps(["q?"])])
-    search = make_search({
-        "q?": [{"url": "https://a.com", "title": "A", "snippet": ""}],
-    })
+    search = make_search(
+        {
+            "q?": [{"url": "https://a.com", "title": "A", "snippet": ""}],
+        }
+    )
     extract = make_extract({})  # every URL → fixture miss → ok=False
     report = await research_run(
-        "topic", llm_call=llm, search=search, extract=extract,
+        "topic",
+        llm_call=llm,
+        search=search,
+        extract=extract,
     )
     assert report.citations == []
     assert any("no usable passages" in e for e in report.errors)
@@ -756,18 +861,27 @@ async def test_research_run_all_extracts_fail() -> None:
 async def test_research_run_synth_llm_failure_uses_passages_fallback() -> None:
     plan = json.dumps(["q?"])
     llm = FakeLLM([plan, RuntimeError("synth down")])
-    search = make_search({
-        "q?": [{"url": "https://wikipedia.org/x", "title": "W", "snippet": ""}],
-    })
-    extract = make_extract({
-        "https://wikipedia.org/x": {
-            "ok": True, "url": "https://wikipedia.org/x", "title": "W",
-            "text": "Important fact about the topic. " * 60,
-            "fetched_at": time.time(),
-        },
-    })
+    search = make_search(
+        {
+            "q?": [{"url": "https://wikipedia.org/x", "title": "W", "snippet": ""}],
+        }
+    )
+    extract = make_extract(
+        {
+            "https://wikipedia.org/x": {
+                "ok": True,
+                "url": "https://wikipedia.org/x",
+                "title": "W",
+                "text": "Important fact about the topic. " * 60,
+                "fetched_at": time.time(),
+            },
+        }
+    )
     report = await research_run(
-        "topic", llm_call=llm, search=search, extract=extract,
+        "topic",
+        llm_call=llm,
+        search=search,
+        extract=extract,
     )
     assert len(report.citations) == 1
     # Passages-only fallback always includes [^N] references for every
@@ -780,22 +894,29 @@ async def test_research_run_synth_llm_failure_uses_passages_fallback() -> None:
 @pytest.mark.asyncio
 async def test_research_run_cite_check_catches_missing_footnotes() -> None:
     plan = json.dumps(["q?"])
-    bad_synth = (
-        "# T\n\n## TL;DR\n\nClaim [^1] [^99].\n\n## Background\n\nMore [^5]."
-    )
+    bad_synth = "# T\n\n## TL;DR\n\nClaim [^1] [^99].\n\n## Background\n\nMore [^5]."
     llm = FakeLLM([plan, bad_synth])
-    search = make_search({
-        "q?": [{"url": "https://wikipedia.org/x", "title": "W", "snippet": ""}],
-    })
-    extract = make_extract({
-        "https://wikipedia.org/x": {
-            "ok": True, "url": "https://wikipedia.org/x", "title": "W",
-            "text": "Verified factoid about the topic. " * 60,
-            "fetched_at": time.time(),
-        },
-    })
+    search = make_search(
+        {
+            "q?": [{"url": "https://wikipedia.org/x", "title": "W", "snippet": ""}],
+        }
+    )
+    extract = make_extract(
+        {
+            "https://wikipedia.org/x": {
+                "ok": True,
+                "url": "https://wikipedia.org/x",
+                "title": "W",
+                "text": "Verified factoid about the topic. " * 60,
+                "fetched_at": time.time(),
+            },
+        }
+    )
     report = await research_run(
-        "topic", llm_call=llm, search=search, extract=extract,
+        "topic",
+        llm_call=llm,
+        search=search,
+        extract=extract,
     )
     assert report.coverage["cite_check_ok"] is False
     assert report.coverage["cite_missing"] == [5, 99]
@@ -809,26 +930,39 @@ async def test_research_run_skips_short_passages() -> None:
     plan = json.dumps(["q?"])
     synth = "# T\n## TL;DR\n\nx\n## Background\n\n[^1]"
     llm = FakeLLM([plan, synth])
-    search = make_search({
-        "q?": [
-            {"url": "https://a.com", "title": "A", "snippet": ""},
-            {"url": "https://b.com", "title": "B", "snippet": ""},
-        ],
-    })
+    search = make_search(
+        {
+            "q?": [
+                {"url": "https://a.com", "title": "A", "snippet": ""},
+                {"url": "https://b.com", "title": "B", "snippet": ""},
+            ],
+        }
+    )
     # 'a.com' returns just 50 chars — must be filtered out;
     # 'b.com' returns a long passage and survives.
-    extract = make_extract({
-        "https://a.com": {
-            "ok": True, "url": "https://a.com", "title": "A",
-            "text": "too short", "fetched_at": time.time(),
-        },
-        "https://b.com": {
-            "ok": True, "url": "https://b.com", "title": "B",
-            "text": "x" * 500, "fetched_at": time.time(),
-        },
-    })
+    extract = make_extract(
+        {
+            "https://a.com": {
+                "ok": True,
+                "url": "https://a.com",
+                "title": "A",
+                "text": "too short",
+                "fetched_at": time.time(),
+            },
+            "https://b.com": {
+                "ok": True,
+                "url": "https://b.com",
+                "title": "B",
+                "text": "x" * 500,
+                "fetched_at": time.time(),
+            },
+        }
+    )
     report = await research_run(
-        "topic", llm_call=llm, search=search, extract=extract,
+        "topic",
+        llm_call=llm,
+        search=search,
+        extract=extract,
         min_passage_chars=300,
     )
     # Only b.com made it through
@@ -840,30 +974,39 @@ async def test_research_run_skips_short_passages() -> None:
 async def test_research_run_authority_ordered_first() -> None:
     """High-authority source should outrank a longer low-authority one."""
     plan = json.dumps(["q?"])
-    synth = (
-        "# T\n## TL;DR\n\nx\n## Background\n\nClaim [^1] and another [^2]."
-    )
+    synth = "# T\n## TL;DR\n\nx\n## Background\n\nClaim [^1] and another [^2]."
     llm = FakeLLM([plan, synth])
-    search = make_search({
-        "q?": [
-            {"url": "https://obscure.com/long", "title": "Obscure", "snippet": ""},
-            {"url": "https://wikipedia.org/auth", "title": "Wiki", "snippet": ""},
-        ],
-    })
-    extract = make_extract({
-        "https://obscure.com/long": {
-            "ok": True, "url": "https://obscure.com/long", "title": "Obscure",
-            "text": "obscure but long content about the topic. " * 60,
-            "fetched_at": time.time(),
-        },
-        "https://wikipedia.org/auth": {
-            "ok": True, "url": "https://wikipedia.org/auth", "title": "Wikipedia",
-            "text": "wikipedia content covering the topic well. " * 30,
-            "fetched_at": time.time(),
-        },
-    })
+    search = make_search(
+        {
+            "q?": [
+                {"url": "https://obscure.com/long", "title": "Obscure", "snippet": ""},
+                {"url": "https://wikipedia.org/auth", "title": "Wiki", "snippet": ""},
+            ],
+        }
+    )
+    extract = make_extract(
+        {
+            "https://obscure.com/long": {
+                "ok": True,
+                "url": "https://obscure.com/long",
+                "title": "Obscure",
+                "text": "obscure but long content about the topic. " * 60,
+                "fetched_at": time.time(),
+            },
+            "https://wikipedia.org/auth": {
+                "ok": True,
+                "url": "https://wikipedia.org/auth",
+                "title": "Wikipedia",
+                "text": "wikipedia content covering the topic well. " * 30,
+                "fetched_at": time.time(),
+            },
+        }
+    )
     report = await research_run(
-        "topic", llm_call=llm, search=search, extract=extract,
+        "topic",
+        llm_call=llm,
+        search=search,
+        extract=extract,
     )
     # Wikipedia should land at #1 due to authority bonus
     assert report.citations[0].url == "https://wikipedia.org/auth"
@@ -874,17 +1017,27 @@ async def test_research_run_report_appends_citation_list() -> None:
     plan = json.dumps(["q?"])
     synth = "# T\n\n## TL;DR\n\nClaim [^1]."
     llm = FakeLLM([plan, synth])
-    search = make_search({
-        "q?": [{"url": "https://wikipedia.org/x", "title": "Wiki", "snippet": ""}],
-    })
-    extract = make_extract({
-        "https://wikipedia.org/x": {
-            "ok": True, "url": "https://wikipedia.org/x", "title": "Wiki",
-            "text": "content. " * 80, "fetched_at": time.time(),
-        },
-    })
+    search = make_search(
+        {
+            "q?": [{"url": "https://wikipedia.org/x", "title": "Wiki", "snippet": ""}],
+        }
+    )
+    extract = make_extract(
+        {
+            "https://wikipedia.org/x": {
+                "ok": True,
+                "url": "https://wikipedia.org/x",
+                "title": "Wiki",
+                "text": "content. " * 80,
+                "fetched_at": time.time(),
+            },
+        }
+    )
     report = await research_run(
-        "topic", llm_call=llm, search=search, extract=extract,
+        "topic",
+        llm_call=llm,
+        search=search,
+        extract=extract,
     )
     # Footnote definition appears in the appendix
     assert "[^1]: [Wiki](https://wikipedia.org/x)" in report.report_md
@@ -895,15 +1048,22 @@ async def test_research_report_as_dict_is_json_serializable() -> None:
     plan = json.dumps(["q?"])
     synth = "# T\n\n## TL;DR\n\nx [^1]"
     llm = FakeLLM([plan, synth])
-    search = make_search({
-        "q?": [{"url": "https://a.com", "title": "A", "snippet": ""}],
-    })
-    extract = make_extract({
-        "https://a.com": {
-            "ok": True, "url": "https://a.com", "title": "A",
-            "text": "sample content. " * 40, "fetched_at": time.time(),
-        },
-    })
+    search = make_search(
+        {
+            "q?": [{"url": "https://a.com", "title": "A", "snippet": ""}],
+        }
+    )
+    extract = make_extract(
+        {
+            "https://a.com": {
+                "ok": True,
+                "url": "https://a.com",
+                "title": "A",
+                "text": "sample content. " * 40,
+                "fetched_at": time.time(),
+            },
+        }
+    )
     report = await research_run("topic", llm_call=llm, search=search, extract=extract)
     d = report.as_dict()
     # Roundtrip via json.dumps must succeed
@@ -927,12 +1087,18 @@ async def test_research_run_dedups_urls_across_sub_questions() -> None:
     async def _extract(url: str):
         extract_calls.append(url)
         return {
-            "ok": True, "url": url, "title": "Shared",
-            "text": "shared content. " * 50, "fetched_at": time.time(),
+            "ok": True,
+            "url": url,
+            "title": "Shared",
+            "text": "shared content. " * 50,
+            "fetched_at": time.time(),
         }
 
     report = await research_run(
-        "topic", llm_call=llm, search=search, extract=_extract,
+        "topic",
+        llm_call=llm,
+        search=search,
+        extract=_extract,
     )
     assert len(extract_calls) == 1
     assert len(report.citations) == 1
@@ -947,24 +1113,32 @@ async def test_research_run_reflection_round_fires_on_deep() -> None:
     synth = "# T\n## TL;DR\n\nClaim [^1].\n\nMore [^2]."
     llm = FakeLLM([plan, gap, synth])  # plan → gap → synth
 
-    search = make_search({
-        "q1?": [{"url": "https://arxiv.org/r1", "title": "R1", "snippet": ""}],
-        "follow up gap query?": [
-            {"url": "https://nature.com/r2", "title": "R2", "snippet": ""},
-        ],
-    })
+    search = make_search(
+        {
+            "q1?": [{"url": "https://arxiv.org/r1", "title": "R1", "snippet": ""}],
+            "follow up gap query?": [
+                {"url": "https://nature.com/r2", "title": "R2", "snippet": ""},
+            ],
+        }
+    )
     extracted: list[str] = []
 
     async def _extract(url: str):
         extracted.append(url)
         return {
-            "ok": True, "url": url, "title": url.rsplit("/", 1)[-1],
+            "ok": True,
+            "url": url,
+            "title": url.rsplit("/", 1)[-1],
             "text": "useful research content about the topic. " * 40,
             "fetched_at": time.time(),
         }
 
     report = await research_run(
-        "topic", llm_call=llm, search=search, extract=_extract, max_rounds=2,
+        "topic",
+        llm_call=llm,
+        search=search,
+        extract=_extract,
+        max_rounds=2,
     )
     # round-1 url + round-2 follow-up url both fetched
     assert "https://arxiv.org/r1" in extracted
@@ -983,8 +1157,13 @@ async def test_research_run_single_round_by_default() -> None:
     search = make_search({"q1?": [{"url": "https://arxiv.org/x", "title": "X", "snippet": ""}]})
 
     async def _extract(url: str):
-        return {"ok": True, "url": url, "title": "X",
-                "text": "content content. " * 40, "fetched_at": time.time()}
+        return {
+            "ok": True,
+            "url": url,
+            "title": "X",
+            "text": "content content. " * 40,
+            "fetched_at": time.time(),
+        }
 
     report = await research_run("topic", llm_call=llm, search=search, extract=_extract)
     assert report.coverage["rounds"] == 1
@@ -998,19 +1177,31 @@ async def test_research_run_semantic_scorer_reranks(monkeypatch) -> None:
     plan = json.dumps(["q1?"])
     synth = "# T\n## TL;DR\n\nA [^1].\n\nB [^2]."
     llm = FakeLLM([plan, synth])
-    search = make_search({"q1?": [
-        {"url": "https://random-xyz.net/a", "title": "Topical", "snippet": ""},
-        {"url": "https://arxiv.org/b", "title": "Offtopic", "snippet": ""},
-    ]})
+    search = make_search(
+        {
+            "q1?": [
+                {"url": "https://random-xyz.net/a", "title": "Topical", "snippet": ""},
+                {"url": "https://arxiv.org/b", "title": "Offtopic", "snippet": ""},
+            ]
+        }
+    )
 
     async def _extract(url: str):
-        return {"ok": True, "url": url, "title": url.rsplit("/", 1)[-1],
-                "text": "some content here. " * 40, "fetched_at": time.time()}
+        return {
+            "ok": True,
+            "url": url,
+            "title": url.rsplit("/", 1)[-1],
+            "text": "some content here. " * 40,
+            "fetched_at": time.time(),
+        }
 
     # Fake scorer: the random-xyz passage is highly relevant (1.0), arxiv low (0.0)
     def _sem(query, passages):
-        return [1.0 if "some content" in p else 0.0 for p in passages][: len(passages)] \
-            if False else [1.0, 0.0][: len(passages)]
+        return (
+            [1.0 if "some content" in p else 0.0 for p in passages][: len(passages)]
+            if False
+            else [1.0, 0.0][: len(passages)]
+        )
 
     monkeypatch.setattr(r, "_SEMANTIC_SCORER", _sem)
     report = await research_run("topic", llm_call=llm, search=search, extract=_extract)
@@ -1025,19 +1216,31 @@ async def test_research_run_drops_ai_generated_source() -> None:
     plan = json.dumps(["q1?"])
     synth = "# T\n## TL;DR\n\nClaim [^1]."
     llm = FakeLLM([plan, synth])
-    search = make_search({"q1?": [
-        {"url": "https://www.sohu.com/a/ai", "title": "AI repost", "snippet": ""},
-        {"url": "https://arxiv.org/clean", "title": "Clean", "snippet": ""},
-    ]})
+    search = make_search(
+        {
+            "q1?": [
+                {"url": "https://www.sohu.com/a/ai", "title": "AI repost", "snippet": ""},
+                {"url": "https://arxiv.org/clean", "title": "Clean", "snippet": ""},
+            ]
+        }
+    )
 
     async def _extract(url: str):
         if "sohu" in url:
-            return {"ok": True, "url": url, "title": "AI repost",
-                    "text": "本文内容包含人工智能生成内容。" + "钠电池产量数据。" * 40,
-                    "fetched_at": time.time()}
-        return {"ok": True, "url": url, "title": "Clean",
-                "text": "real research content about the topic. " * 40,
-                "fetched_at": time.time()}
+            return {
+                "ok": True,
+                "url": url,
+                "title": "AI repost",
+                "text": "本文内容包含人工智能生成内容。" + "钠电池产量数据。" * 40,
+                "fetched_at": time.time(),
+            }
+        return {
+            "ok": True,
+            "url": url,
+            "title": "Clean",
+            "text": "real research content about the topic. " * 40,
+            "fetched_at": time.time(),
+        }
 
     report = await research_run("topic", llm_call=llm, search=search, extract=_extract)
     urls = [c.url for c in report.citations]
@@ -1053,18 +1256,33 @@ async def test_research_run_drops_ai_flag_from_extract() -> None:
     plan = json.dumps(["q1?"])
     synth = "# T\n## TL;DR\n\nClaim [^1]."
     llm = FakeLLM([plan, synth])
-    search = make_search({"q1?": [
-        {"url": "https://www.sohu.com/a/clean-looking", "title": "S", "snippet": ""},
-        {"url": "https://arxiv.org/ok", "title": "A", "snippet": ""},
-    ]})
+    search = make_search(
+        {
+            "q1?": [
+                {"url": "https://www.sohu.com/a/clean-looking", "title": "S", "snippet": ""},
+                {"url": "https://arxiv.org/ok", "title": "A", "snippet": ""},
+            ]
+        }
+    )
 
     async def _extract(url: str):
         # sohu 正文干净(声明被剥掉),但 extract 扫原始 HTML 标了 ai_generated
         if "sohu" in url:
-            return {"ok": True, "url": url, "title": "S", "ai_generated": True,
-                    "text": "钠电池产量数据很扎实。" * 40, "fetched_at": time.time()}
-        return {"ok": True, "url": url, "title": "A",
-                "text": "clean research content here. " * 40, "fetched_at": time.time()}
+            return {
+                "ok": True,
+                "url": url,
+                "title": "S",
+                "ai_generated": True,
+                "text": "钠电池产量数据很扎实。" * 40,
+                "fetched_at": time.time(),
+            }
+        return {
+            "ok": True,
+            "url": url,
+            "title": "A",
+            "text": "clean research content here. " * 40,
+            "fetched_at": time.time(),
+        }
 
     report = await research_run("topic", llm_call=llm, search=search, extract=_extract)
     urls = [c.url for c in report.citations]
@@ -1078,15 +1296,21 @@ async def test_research_run_prunes_unused_citations() -> None:
     plan = json.dumps(["q1?", "q2?"])
     synth = "# T\n## TL;DR\n\n只引用第一个来源 [^1]，不引用第二个。"
     llm = FakeLLM([plan, synth])
-    search = make_search({
-        "q1?": [{"url": "https://arxiv.org/a", "title": "A", "snippet": ""}],
-        "q2?": [{"url": "https://nature.com/b", "title": "B", "snippet": ""}],
-    })
+    search = make_search(
+        {
+            "q1?": [{"url": "https://arxiv.org/a", "title": "A", "snippet": ""}],
+            "q2?": [{"url": "https://nature.com/b", "title": "B", "snippet": ""}],
+        }
+    )
 
     async def _extract(url: str):
-        return {"ok": True, "url": url, "title": url.rsplit("/", 1)[-1],
-                "text": "research content about the topic here. " * 40,
-                "fetched_at": time.time()}
+        return {
+            "ok": True,
+            "url": url,
+            "title": url.rsplit("/", 1)[-1],
+            "text": "research content about the topic here. " * 40,
+            "fetched_at": time.time(),
+        }
 
     report = await research_run("topic", llm_call=llm, search=search, extract=_extract)
     # 只保留正文引用的 [^1]
@@ -1110,19 +1334,29 @@ async def test_research_run_llm_rerank_reorders(monkeypatch):
     plan = json.dumps(["q1?"])
     synth = "# T\n## TL;DR\n\nA [^1].\n\nB [^2]."
     llm = FakeLLM([plan, synth])  # 主 llm 只管 plan+synth(rerank 走独立桥)
-    search = make_search({"q1?": [
-        {"url": "https://random-xyz.net/topical", "title": "Topical", "snippet": ""},
-        {"url": "https://arxiv.org/offtopic", "title": "Offtopic", "snippet": ""},
-    ]})
+    search = make_search(
+        {
+            "q1?": [
+                {"url": "https://random-xyz.net/topical", "title": "Topical", "snippet": ""},
+                {"url": "https://arxiv.org/offtopic", "title": "Offtopic", "snippet": ""},
+            ]
+        }
+    )
 
     async def _extract(url: str):
-        return {"ok": True, "url": url, "title": url.rsplit("/", 1)[-1],
-                "text": "content about the subject here. " * 40, "fetched_at": time.time()}
+        return {
+            "ok": True,
+            "url": url,
+            "title": url.rsplit("/", 1)[-1],
+            "text": "content about the subject here. " * 40,
+            "fetched_at": time.time(),
+        }
 
     # rerank stub: 给 random-xyz(低权威)打高分,arxiv 打低分 → 应反转排序
     async def _rerank(prompt: str) -> str:
         # 解析出 candidate id(按出现顺序),给第一个 url(random)高分
         import re as _re
+
         ids = [int(x) for x in _re.findall(r"^(\d+) \|", prompt, _re.MULTILINE)]
         out = []
         for i in ids:
@@ -1133,11 +1367,13 @@ async def test_research_run_llm_rerank_reorders(monkeypatch):
     # 先跑一次确定哪个 id 是 random-xyz —— 改用更稳的判定:给所有 id 中含'topical'
     async def _rerank2(prompt: str) -> str:
         import re as _re
+
         out = []
         for line in prompt.splitlines():
             m = _re.match(r"^(\d+) \| .* \| (.*?) \|", line)
             if m:
-                cid = int(m.group(1)); title = m.group(2)
+                cid = int(m.group(1))
+                title = m.group(2)
                 out.append({"id": cid, "score": 9 if "topical" in title.lower() else 1})
         return json.dumps(out)
 
@@ -1161,8 +1397,13 @@ async def test_research_run_rerank_skipped_when_unwired(monkeypatch):
     search = make_search({"q1?": [{"url": "https://arxiv.org/x", "title": "X", "snippet": ""}]})
 
     async def _extract(url: str):
-        return {"ok": True, "url": url, "title": "X",
-                "text": "content content here. " * 40, "fetched_at": time.time()}
+        return {
+            "ok": True,
+            "url": url,
+            "title": "X",
+            "text": "content content here. " * 40,
+            "fetched_at": time.time(),
+        }
 
     report = await research_run("topic", llm_call=llm, search=search, extract=_extract)
     assert report.coverage["reranker"] == "off"
@@ -1179,8 +1420,13 @@ async def test_research_run_rerank_failure_marks_llm_failed(monkeypatch):
     search = make_search({"q1?": [{"url": "https://arxiv.org/a", "title": "A", "snippet": ""}]})
 
     async def _extract(url: str):
-        return {"ok": True, "url": url, "title": "A",
-                "text": "content here. " * 40, "fetched_at": time.time()}
+        return {
+            "ok": True,
+            "url": url,
+            "title": "A",
+            "text": "content here. " * 40,
+            "fetched_at": time.time(),
+        }
 
     async def _rerank_boom(prompt: str) -> str:
         raise RuntimeError("relay 500")
@@ -1198,14 +1444,21 @@ async def test_research_run_rerank_low_coverage_noop(monkeypatch):
     plan = json.dumps(["q1?", "q2?"])
     synth = "# T\n## TL;DR\n\nA [^1]. B [^2]."
     llm = FakeLLM([plan, synth])
-    search = make_search({
-        "q1?": [{"url": "https://arxiv.org/a", "title": "A", "snippet": ""}],
-        "q2?": [{"url": "https://nature.com/b", "title": "B", "snippet": ""}],
-    })
+    search = make_search(
+        {
+            "q1?": [{"url": "https://arxiv.org/a", "title": "A", "snippet": ""}],
+            "q2?": [{"url": "https://nature.com/b", "title": "B", "snippet": ""}],
+        }
+    )
 
     async def _extract(url: str):
-        return {"ok": True, "url": url, "title": url.rsplit("/", 1)[-1],
-                "text": "content here. " * 40, "fetched_at": time.time()}
+        return {
+            "ok": True,
+            "url": url,
+            "title": url.rsplit("/", 1)[-1],
+            "text": "content here. " * 40,
+            "fetched_at": time.time(),
+        }
 
     async def _rerank_partial(prompt: str) -> str:
         return json.dumps([])  # 一个都没打 → 0 覆盖 → no-op
@@ -1221,16 +1474,24 @@ def test_rerank_mode_config(monkeypatch):
     import types
 
     def _set(val):
-        fake = types.SimpleNamespace(config=types.SimpleNamespace(raw={"research": {"reranker": val}}))
+        fake = types.SimpleNamespace(
+            config=types.SimpleNamespace(raw={"research": {"reranker": val}})
+        )
         monkeypatch.setitem(__import__("sys").modules, "config", fake)
-        r._RESEARCH_RAW_CACHE = None   # 清缓存,让 _research_raw 重读 fake config
+        r._RESEARCH_RAW_CACHE = None  # 清缓存,让 _research_raw 重读 fake config
 
-    _set("off");      assert r._rerank_mode() == "off"
-    _set(" OFF ");    assert r._rerank_mode() == "off"   # strip + 大小写
-    _set("llm");      assert r._rerank_mode() == "llm"
-    _set("local");    assert r._rerank_mode() == "llm"   # 暂退化
-    _set("garbage");  assert r._rerank_mode() == "llm"   # 非法 → 保守 llm
-    _set("");         assert r._rerank_mode() == "llm"
+    _set("off")
+    assert r._rerank_mode() == "off"
+    _set(" OFF ")
+    assert r._rerank_mode() == "off"  # strip + 大小写
+    _set("llm")
+    assert r._rerank_mode() == "llm"
+    _set("local")
+    assert r._rerank_mode() == "llm"  # 暂退化
+    _set("garbage")
+    assert r._rerank_mode() == "llm"  # 非法 → 保守 llm
+    _set("")
+    assert r._rerank_mode() == "llm"
 
 
 def test_is_loopback_url():
@@ -1238,9 +1499,9 @@ def test_is_loopback_url():
     不误伤含 localhost 子串的远端域名。"""
     assert r._is_loopback_url("http://localhost:11434") is True
     assert r._is_loopback_url("http://127.0.0.1:8000/v1") is True
-    assert r._is_loopback_url("http://127.0.0.2:8000") is True   # 127/8 整段
+    assert r._is_loopback_url("http://127.0.0.2:8000") is True  # 127/8 整段
     assert r._is_loopback_url("http://[::1]:8000/v1") is True
-    assert r._is_loopback_url("http://LOCALHOST:1234") is True   # 大小写
+    assert r._is_loopback_url("http://LOCALHOST:1234") is True  # 大小写
     assert r._is_loopback_url("https://chinzy.com/v1") is False  # 远端 relay
     assert r._is_loopback_url("https://my-localhost-cdn.com/v1") is False  # 不误伤
     assert r._is_loopback_url("") is False
@@ -1262,8 +1523,13 @@ async def test_research_run_rerank_timeout_marks_failed(monkeypatch):
     search = make_search({"q1?": [{"url": "https://arxiv.org/a", "title": "A", "snippet": ""}]})
 
     async def _extract(url: str):
-        return {"ok": True, "url": url, "title": "A",
-                "text": "content here. " * 40, "fetched_at": time.time()}
+        return {
+            "ok": True,
+            "url": url,
+            "title": "A",
+            "text": "content here. " * 40,
+            "fetched_at": time.time(),
+        }
 
     async def _rerank_slow(prompt: str) -> str:
         await asyncio.sleep(1.0)  # > _RERANK_TIMEOUT
@@ -1282,18 +1548,31 @@ async def test_research_run_drops_mojibake_source() -> None:
     plan = json.dumps(["q1?"])
     synth = "# T\n## TL;DR\n\nClaim [^1]."
     llm = FakeLLM([plan, synth])
-    search = make_search({"q1?": [
-        {"url": "https://bad-encoding.cn/x", "title": "乱码", "snippet": ""},
-        {"url": "https://arxiv.org/ok", "title": "Clean", "snippet": ""},
-    ]})
+    search = make_search(
+        {
+            "q1?": [
+                {"url": "https://bad-encoding.cn/x", "title": "乱码", "snippet": ""},
+                {"url": "https://arxiv.org/ok", "title": "Clean", "snippet": ""},
+            ]
+        }
+    )
 
     async def _extract(url: str):
         if "bad-encoding" in url:
-            return {"ok": True, "url": url, "title": "garbled",
-                    "text": "锛阢绅钆婅皖銮" * 60,
-                    "fetched_at": time.time()}
-        return {"ok": True, "url": url, "title": "Clean",
-                "text": "clean readable research content here. " * 40, "fetched_at": time.time()}
+            return {
+                "ok": True,
+                "url": url,
+                "title": "garbled",
+                "text": "锛阢绅钆婅皖銮" * 60,
+                "fetched_at": time.time(),
+            }
+        return {
+            "ok": True,
+            "url": url,
+            "title": "Clean",
+            "text": "clean readable research content here. " * 40,
+            "fetched_at": time.time(),
+        }
 
     report = await research_run("topic", llm_call=llm, search=search, extract=_extract)
     urls = [c.url for c in report.citations]
@@ -1302,6 +1581,7 @@ async def test_research_run_drops_mojibake_source() -> None:
 
 
 # --- P1-3 Jina Reader 二级抓取 ---
+
 
 def test_parse_jina():
     body = "Title: 我的标题\nURL Source: http://x\nMarkdown Content:\n这是正文内容。"
@@ -1329,8 +1609,10 @@ async def test_default_extract_jina_fallback(monkeypatch):
     class _FakeClient:
         async def get(self, url, **kw):
             if url.startswith("https://r.jina.ai/"):
-                return _Resp("Title: 真实标题\nURL Source: x\nMarkdown Content:\n"
-                             + ("这是 JS 渲染后救回的真实正文内容。" * 40))
+                return _Resp(
+                    "Title: 真实标题\nURL Source: x\nMarkdown Content:\n"
+                    + ("这是 JS 渲染后救回的真实正文内容。" * 40)
+                )
             # JS 空壳: trafilatura 抽不到正文
             return _Resp("<html><body><div id='app'></div><script>render()</script></body></html>")
 
@@ -1356,9 +1638,11 @@ async def test_default_extract_trafilatura_enough_no_jina():
         def raise_for_status(self):
             return None
 
-    article_html = ("<html><head><title>好文</title></head><body><article><p>"
-                    + ("这是一篇内容充实的静态文章正文。" * 60)
-                    + "</p></article></body></html>")
+    article_html = (
+        "<html><head><title>好文</title></head><body><article><p>"
+        + ("这是一篇内容充实的静态文章正文。" * 60)
+        + "</p></article></body></html>"
+    )
 
     class _FakeClient:
         async def get(self, url, **kw):
@@ -1400,19 +1684,24 @@ async def test_default_extract_jina_default_off():
             return None
 
     out = await r.default_extract("https://spa.com/x", client=_FakeClient())
-    assert jina_hit["n"] == 0          # 默认关 → 没调 Jina
-    assert out["ok"] is False          # trafilatura 抽空 + Jina 关 → 失败
+    assert jina_hit["n"] == 0  # 默认关 → 没调 Jina
+    assert out["ok"] is False  # trafilatura 抽空 + Jina 关 → 失败
 
 
 # --- JS 渲染兜底 (Option C: cdp-edge) ---
 
 # >20KB 的 JS 空壳(过双闸①): head 有 title,body 是空 div + 一大段 script(trafilatura 抽不到正文)
-_JS_SHELL_BIG = ("<html><head><title>JS 站</title></head><body><div id='app'></div>"
-                 "<script>/*" + ("x" * 21000) + "*/render()</script></body></html>")
+_JS_SHELL_BIG = (
+    "<html><head><title>JS 站</title></head><body><div id='app'></div>"
+    "<script>/*" + ("x" * 21000) + "*/render()</script></body></html>"
+)
 # <20KB 的小空壳(不过双闸①)
 _JS_SHELL_SMALL = "<html><head><title>小</title></head><body><div id='app'></div></body></html>"
-_RENDERED_LONG = ("<html><body><article><p>"
-                  + ("这是 JS 渲染后救回的真实正文。" * 60) + "</p></article></body></html>")
+_RENDERED_LONG = (
+    "<html><body><article><p>"
+    + ("这是 JS 渲染后救回的真实正文。" * 60)
+    + "</p></article></body></html>"
+)
 
 
 def _fake_client_factory(jina_counter=None):
@@ -1447,7 +1736,8 @@ async def test_default_extract_js_render_cdp_edge(monkeypatch):
     monkeypatch.setattr(r, "_js_render_enabled", lambda: True)
     monkeypatch.setattr(r, "_js_render_engine", lambda: "cdp-edge")
     import deskpet.tools.research_cdp_edge as ce_mod
-    monkeypatch.setattr(r, "_jina_enabled", lambda: True)   # 开着也应被去重跳过
+
+    monkeypatch.setattr(r, "_jina_enabled", lambda: True)  # 开着也应被去重跳过
     jina_counter = {"n": 0}
 
     async def _fake_render(url, *, timeout=20.0):
@@ -1459,7 +1749,7 @@ async def test_default_extract_js_render_cdp_edge(monkeypatch):
     assert out["ok"] is True
     assert out["extractor"] == "cdp-edge"
     assert "渲染后救回的真实正文" in out["text"]
-    assert jina_counter["n"] == 0          # 本地渲染命中 → 跳过 jina(R6 去重)
+    assert jina_counter["n"] == 0  # 本地渲染命中 → 跳过 jina(R6 去重)
 
 
 @pytest.mark.asyncio
@@ -1505,6 +1795,7 @@ async def test_default_extract_js_render_small_html_no_trigger(monkeypatch):
     monkeypatch.setattr(r, "_js_render_engine", lambda: "cdp-edge")
     monkeypatch.setattr(r, "_jina_enabled", lambda: False)
     import deskpet.tools.research_cdp_edge as ce_mod
+
     called = {"n": 0}
 
     async def _fake_render(url, *, timeout=20.0):
@@ -1514,7 +1805,7 @@ async def test_default_extract_js_render_small_html_no_trigger(monkeypatch):
     monkeypatch.setattr(ce_mod, "cdp_edge_render", _fake_render)
     _Resp, _FakeClient = _fake_client_factory()
     out = await r.default_extract("https://spa.com/x", client=_FakeClient(_JS_SHELL_SMALL))
-    assert called["n"] == 0   # 小 HTML 不过双闸① → 没调渲染
+    assert called["n"] == 0  # 小 HTML 不过双闸① → 没调渲染
 
 
 @pytest.mark.asyncio
@@ -1523,6 +1814,7 @@ async def test_default_extract_js_render_off_no_call(monkeypatch):
     monkeypatch.setattr(r, "_js_render_enabled", lambda: False)
     monkeypatch.setattr(r, "_jina_enabled", lambda: False)
     import deskpet.tools.research_cdp_edge as ce_mod
+
     called = {"n": 0}
 
     async def _fake_render(url, *, timeout=20.0):
@@ -1532,7 +1824,7 @@ async def test_default_extract_js_render_off_no_call(monkeypatch):
     monkeypatch.setattr(ce_mod, "cdp_edge_render", _fake_render)
     _Resp, _FakeClient = _fake_client_factory()
     out = await r.default_extract("https://spa.com/x", client=_FakeClient(_JS_SHELL_BIG))
-    assert called["n"] == 0   # flag off → 没调渲染
+    assert called["n"] == 0  # flag off → 没调渲染
 
 
 @pytest.mark.asyncio
@@ -1542,15 +1834,16 @@ async def test_default_extract_js_render_fail_falls_to_jina(monkeypatch):
     monkeypatch.setattr(r, "_js_render_engine", lambda: "cdp-edge")
     monkeypatch.setattr(r, "_jina_enabled", lambda: True)
     import deskpet.tools.research_cdp_edge as ce_mod
+
     jina_counter = {"n": 0}
 
     async def _fake_render(url, *, timeout=20.0):
-        return None   # 渲染失败
+        return None  # 渲染失败
 
     monkeypatch.setattr(ce_mod, "cdp_edge_render", _fake_render)
     _Resp, _FakeClient = _fake_client_factory(jina_counter)
     out = await r.default_extract("https://spa.com/x", client=_FakeClient(_JS_SHELL_BIG))
-    assert jina_counter["n"] == 1          # 渲染没命中 → 试 jina
+    assert jina_counter["n"] == 1  # 渲染没命中 → 试 jina
     assert out["extractor"] == "jina"
 
 
@@ -1561,18 +1854,19 @@ async def test_js_render_budget_cap(monkeypatch):
     monkeypatch.setattr(r, "_js_render_engine", lambda: "cdp-edge")
     monkeypatch.setattr(r, "_jina_enabled", lambda: False)
     import deskpet.tools.research_cdp_edge as ce_mod
+
     called = {"n": 0}
 
     async def _fake_render(url, *, timeout=20.0):
         called["n"] += 1
-        return None   # 返 None,不替换,纯计触发次数
+        return None  # 返 None,不替换,纯计触发次数
 
     monkeypatch.setattr(ce_mod, "cdp_edge_render", _fake_render)
     r._reset_js_render_budget()
     _Resp, _FakeClient = _fake_client_factory()
     for i in range(r._JS_RENDER_MAX_PER_RUN + 3):
         await r.default_extract(f"https://spa.com/{i}", client=_FakeClient(_JS_SHELL_BIG))
-    assert called["n"] == r._JS_RENDER_MAX_PER_RUN   # 触发次数封顶
+    assert called["n"] == r._JS_RENDER_MAX_PER_RUN  # 触发次数封顶
 
 
 @pytest.mark.asyncio
@@ -1583,6 +1877,7 @@ async def test_default_extract_js_render_engine_crawl4ai(monkeypatch):
     monkeypatch.setattr(r, "_jina_enabled", lambda: False)
     import sys as _sys
     import types as _types
+
     fake_mod = _types.ModuleType("deskpet.tools.research_crawl4ai")
 
     async def _fake_c4(url, *, timeout=20.0):
@@ -1603,10 +1898,13 @@ async def test_js_render_ai_generated_scans_rendered_html(monkeypatch):
     monkeypatch.setattr(r, "_js_render_engine", lambda: "cdp-edge")
     monkeypatch.setattr(r, "_jina_enabled", lambda: False)
     import deskpet.tools.research_cdp_edge as ce_mod
+
     # 渲染后 HTML: 长正文 + AI 生成声明(原始空壳里没有这句)
-    rendered_with_ai = ("<html><body><article><p>"
-                        + ("这是 JS 渲染后救回的真实正文。" * 60)
-                        + "本文包含人工智能生成内容。</p></article></body></html>")
+    rendered_with_ai = (
+        "<html><body><article><p>"
+        + ("这是 JS 渲染后救回的真实正文。" * 60)
+        + "本文包含人工智能生成内容。</p></article></body></html>"
+    )
 
     async def _fake_render(url, *, timeout=20.0):
         return rendered_with_ai
@@ -1617,7 +1915,7 @@ async def test_js_render_ai_generated_scans_rendered_html(monkeypatch):
     assert "人工智能生成" not in _JS_SHELL_BIG
     out = await r.default_extract("https://spa.com/x", client=_FakeClient(_JS_SHELL_BIG))
     assert out["extractor"] == "cdp-edge"
-    assert out["ai_generated"] is True   # 扫的是渲染后 HTML(含声明),不是原始空壳
+    assert out["ai_generated"] is True  # 扫的是渲染后 HTML(含声明),不是原始空壳
 
 
 @pytest.mark.asyncio
@@ -1627,21 +1925,25 @@ async def test_js_render_ai_generated_not_in_rendered(monkeypatch):
     monkeypatch.setattr(r, "_js_render_engine", lambda: "cdp-edge")
     monkeypatch.setattr(r, "_jina_enabled", lambda: False)
     import deskpet.tools.research_cdp_edge as ce_mod
-    shell_with_ai = ("<html><head><title>站</title></head><body>"
-                     "<!-- 本文包含人工智能生成内容 --><div id='app'></div>"
-                     "<script>/*" + ("x" * 21000) + "*/</script></body></html>")
+
+    shell_with_ai = (
+        "<html><head><title>站</title></head><body>"
+        "<!-- 本文包含人工智能生成内容 --><div id='app'></div>"
+        "<script>/*" + ("x" * 21000) + "*/</script></body></html>"
+    )
 
     async def _fake_render(url, *, timeout=20.0):
-        return _RENDERED_LONG   # 干净正文,无 AI 声明
+        return _RENDERED_LONG  # 干净正文,无 AI 声明
 
     monkeypatch.setattr(ce_mod, "cdp_edge_render", _fake_render)
     _Resp, _FakeClient = _fake_client_factory()
     out = await r.default_extract("https://spa.com/x", client=_FakeClient(shell_with_ai))
     assert out["extractor"] == "cdp-edge"
-    assert out["ai_generated"] is False   # 渲染后 HTML 无声明 → False(没去扫原始空壳)
+    assert out["ai_generated"] is False  # 渲染后 HTML 无声明 → False(没去扫原始空壳)
 
 
 # --- P1-2 site: 定向官方域 ---
+
 
 def test_site_directive_for():
     assert r._site_directive_for("某上市公司2025年财报营收") == "site:cninfo.com.cn"
@@ -1667,8 +1969,13 @@ async def test_research_run_site_directed_search(monkeypatch):
         return [{"url": "https://auto-news.com/y", "title": "新闻", "snippet": ""}]
 
     async def _extract(url):
-        return {"ok": True, "url": url, "title": url.rsplit("/", 1)[-1],
-                "text": "新能源汽车补贴政策内容详细说明在这里。" * 30, "fetched_at": time.time()}
+        return {
+            "ok": True,
+            "url": url,
+            "title": url.rsplit("/", 1)[-1],
+            "text": "新能源汽车补贴政策内容详细说明在这里。" * 30,
+            "fetched_at": time.time(),
+        }
 
     report = await research_run("topic", llm_call=llm, search=_search, extract=_extract)
     # 确实发了 site:gov.cn 定向搜
@@ -1692,8 +1999,13 @@ async def test_research_run_site_directed_off(monkeypatch):
         return [{"url": "https://x.com/a", "title": "A", "snippet": ""}]
 
     async def _extract(url):
-        return {"ok": True, "url": url, "title": "A",
-                "text": "content here. " * 40, "fetched_at": time.time()}
+        return {
+            "ok": True,
+            "url": url,
+            "title": "A",
+            "text": "content here. " * 40,
+            "fetched_at": time.time(),
+        }
 
     await research_run("topic", llm_call=llm, search=_search, extract=_extract)
     assert not any("site:" in q for q in searched)  # 关了 → 无 site: 定向
@@ -1731,8 +2043,13 @@ async def test_research_run_source_pack_queries_and_coverage(monkeypatch):
     async def _search(q, *, max_results=5):
         searched.append(q)
         if "understandingwar.org" in q:
-            return [{"url": "https://www.understandingwar.org/backgrounder/russian-offensive-campaign-assessment",
-                     "title": "Russian Offensive Campaign Assessment", "snippet": ""}]
+            return [
+                {
+                    "url": "https://www.understandingwar.org/backgrounder/russian-offensive-campaign-assessment",
+                    "title": "Russian Offensive Campaign Assessment",
+                    "snippet": "",
+                }
+            ]
         return []
 
     async def _extract(url):
@@ -1776,9 +2093,13 @@ async def test_research_run_source_pack_kill_switch(monkeypatch):
         return [{"url": "https://example.com/a", "title": "A", "snippet": ""}]
 
     async def _extract(url):
-        return {"ok": True, "url": url, "title": "A",
-                "text": "Ukraine Russia current situation source text. " * 40,
-                "fetched_at": time.time()}
+        return {
+            "ok": True,
+            "url": url,
+            "title": "A",
+            "text": "Ukraine Russia current situation source text. " * 40,
+            "fetched_at": time.time(),
+        }
 
     report = await research_run(
         "请调研一下俄乌最近的局势",
@@ -1798,6 +2119,7 @@ async def test_research_run_source_pack_kill_switch(monkeypatch):
 
 # --- P2 query expansion (multi-query / HyDE) ---
 
+
 @pytest.mark.asyncio
 async def test_research_run_query_expansion(monkeypatch):
     """开启 query_expansion → plan 后多一次 LLM 产额外 query,这些 query 被搜。"""
@@ -1814,14 +2136,20 @@ async def test_research_run_query_expansion(monkeypatch):
         return [{"url": "https://arxiv.org/a", "title": "A", "snippet": ""}]
 
     async def _extract(url):
-        return {"ok": True, "url": url, "title": "A",
-                "text": "content here. " * 40, "fetched_at": time.time()}
+        return {
+            "ok": True,
+            "url": url,
+            "title": "A",
+            "text": "content here. " * 40,
+            "fetched_at": time.time(),
+        }
 
     await research_run("topic", llm_call=llm, search=_search, extract=_extract)
     assert "扩展查询A" in searched and "扩展查询B" in searched
 
 
 # --- P2 direct sources (cninfo / openstd) ---
+
 
 @pytest.mark.asyncio
 async def test_research_run_direct_source_cninfo(monkeypatch):
@@ -1831,10 +2159,16 @@ async def test_research_run_direct_source_cninfo(monkeypatch):
     import deskpet.tools.research_sources as rs_mod
 
     async def _fake_cninfo(keyword, *, max_results=3, client=None):
-        return [{"ok": True, "url": "http://static.cninfo.com.cn/x/123.PDF",
-                 "title": "宁德时代 2025年年度报告",
-                 "text": "宁德时代2025年营收与净利润等关键财务数据正文。" * 30,
-                 "fetched_at": time.time(), "source": "cninfo"}]
+        return [
+            {
+                "ok": True,
+                "url": "http://static.cninfo.com.cn/x/123.PDF",
+                "title": "宁德时代 2025年年度报告",
+                "text": "宁德时代2025年营收与净利润等关键财务数据正文。" * 30,
+                "fetched_at": time.time(),
+                "source": "cninfo",
+            }
+        ]
 
     monkeypatch.setattr(rs_mod, "cninfo_search", _fake_cninfo)
     plan = json.dumps(["宁德时代2025年财报营收如何?"])
@@ -1845,8 +2179,13 @@ async def test_research_run_direct_source_cninfo(monkeypatch):
         return [{"url": "https://news.com/y", "title": "新闻", "snippet": ""}]
 
     async def _extract(url):
-        return {"ok": True, "url": url, "title": "新闻",
-                "text": "一般新闻内容。" * 40, "fetched_at": time.time()}
+        return {
+            "ok": True,
+            "url": url,
+            "title": "新闻",
+            "text": "一般新闻内容。" * 40,
+            "fetched_at": time.time(),
+        }
 
     report = await research_run("topic", llm_call=llm, search=_search, extract=_extract)
     assert any("cninfo.com.cn" in c.url for c in report.citations)
@@ -1858,6 +2197,7 @@ async def test_research_run_direct_source_disabled(monkeypatch):
     monkeypatch.setattr(r, "_direct_sources_enabled", lambda: False)
     monkeypatch.setattr(r, "_RERANK_LLM_CALL", None)
     import deskpet.tools.research_sources as rs_mod
+
     called = {"n": 0}
 
     async def _fake_cninfo(keyword, *, max_results=3, client=None):
@@ -1873,8 +2213,13 @@ async def test_research_run_direct_source_disabled(monkeypatch):
         return [{"url": "https://x.com/a", "title": "A", "snippet": ""}]
 
     async def _extract(url):
-        return {"ok": True, "url": url, "title": "A",
-                "text": "content. " * 40, "fetched_at": time.time()}
+        return {
+            "ok": True,
+            "url": url,
+            "title": "A",
+            "text": "content. " * 40,
+            "fetched_at": time.time(),
+        }
 
     await research_run("topic", llm_call=llm, search=_search, extract=_extract)
     assert called["n"] == 0

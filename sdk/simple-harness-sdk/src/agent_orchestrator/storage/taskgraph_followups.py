@@ -63,6 +63,7 @@ class ClaimedFollowup:
 @dataclass(frozen=True, slots=True, kw_only=True)
 class BlockedFollowup:
     """An unreadable delivery was isolated without invoking its consumer."""
+
     message_id: str
 
 
@@ -77,22 +78,38 @@ class TaskGraphFollowupStore:
     def convergence_diagnostics(self, mission_id: str, job_id: str) -> tuple[dict[str, Any], ...]:
         """References to actual durable delivery/consumer records, from one read."""
         with self.store.read_view() as db:
-            if db.execute("SELECT 1 FROM taskgraph_convergence_jobs WHERE mission_id=? AND job_id=?",
-                          (mission_id, job_id)).fetchone() is None:
+            if (
+                db.execute(
+                    "SELECT 1 FROM taskgraph_convergence_jobs WHERE mission_id=? AND job_id=?",
+                    (mission_id, job_id),
+                ).fetchone()
+                is None
+            ):
                 raise StoreError("TASKGRAPH_CONVERGENCE_MISSING")
             rows = []
-            for row in db.execute("SELECT * FROM taskgraph_followups WHERE mission_id=? "
-                                  "AND kind='CONVERGE' AND subject_key=? ORDER BY message_id", (mission_id, job_id)):
+            for row in db.execute(
+                "SELECT * FROM taskgraph_followups WHERE mission_id=? "
+                "AND kind='CONVERGE' AND subject_key=? ORDER BY message_id",
+                (mission_id, job_id),
+            ):
                 message = FollowupV1.from_json(json.loads(row["payload_json"]))
-                if (message.mission_id != mission_id or message.subject_key != job_id
-                        or str(message.kind) != "CONVERGE" or message.source_event_id != row["source_event_id"]
-                        or _digest(message.to_json()) != row["payload_hash"]
-                        or canonical_json(message.to_json()) != row["payload_json"]):
+                if (
+                    message.mission_id != mission_id
+                    or message.subject_key != job_id
+                    or str(message.kind) != "CONVERGE"
+                    or message.source_event_id != row["source_event_id"]
+                    or _digest(message.to_json()) != row["payload_hash"]
+                    or canonical_json(message.to_json()) != row["payload_json"]
+                ):
                     raise StoreError("TASKGRAPH_FOLLOWUP_CORRUPT")
                 if row["delivery_state"] == "ACKED":
                     receipt = DurableFollowupReceipt(**json.loads(row["consumer_receipt_json"]))
-                    actual = self.consumer_receipt(mission_id,
-                        derive_id("tg-followup-consumer", row["message_id"]), receipt.kind, receipt.identity)
+                    actual = self.consumer_receipt(
+                        mission_id,
+                        derive_id("tg-followup-consumer", row["message_id"]),
+                        receipt.kind,
+                        receipt.identity,
+                    )
                     if actual != receipt:
                         raise StoreError("TASKGRAPH_FOLLOWUP_RECEIPT_CHANGED")
                 rows.append(dict(row))
@@ -103,10 +120,16 @@ class TaskGraphFollowupStore:
             # the bounded public view unreadable after its sixty-fifth delivery.
             # Every row version is monotone and rows are retained, so their sum is
             # a revision of this original collection, not an effect receipt.
-            return (FollowupCauseRef(kind="taskgraph_followup_set", id=job_id,
-                revision=sum(row["row_version"] for row in rows),
-                content_hash=_digest({"mission_id": mission_id, "job_id": job_id,
-                                      "followups": rows})).to_json(),)
+            return (
+                FollowupCauseRef(
+                    kind="taskgraph_followup_set",
+                    id=job_id,
+                    revision=sum(row["row_version"] for row in rows),
+                    content_hash=_digest(
+                        {"mission_id": mission_id, "job_id": job_id, "followups": rows}
+                    ),
+                ).to_json(),
+            )
 
     def append_followup(self, message: FollowupV1, *, now_ms: int) -> str:
         """Must join the transaction persisting the original event or its cursor."""
@@ -147,7 +170,11 @@ class TaskGraphFollowupStore:
         return identity
 
     def claim_followup(
-        self, owner: str, *, now_ms: int, lease_ms: int = 30_000,
+        self,
+        owner: str,
+        *,
+        now_ms: int,
+        lease_ms: int = 30_000,
         excluded_missions: frozenset[str] = frozenset(),
     ) -> ClaimedFollowup | BlockedFollowup | None:
         """``excluded_missions``：本进程不替它们做事的任务（重启核对没通过、已隔离）；它们的跟进
@@ -221,8 +248,9 @@ class TaskGraphFollowupStore:
     ) -> DurableFollowupReceipt:
         return self.consumer_receipt(claim.message.mission_id, claim.command_key, kind, identity)
 
-    def consumer_receipt(self, mission_id: str, command_key: str,
-                         kind: ReceiptKind, identity: str) -> DurableFollowupReceipt:
+    def consumer_receipt(
+        self, mission_id: str, command_key: str, kind: ReceiptKind, identity: str
+    ) -> DurableFollowupReceipt:
         """Fixed handlers return a persisted object; ACK independently rechecks it."""
         kind = ReceiptKind(kind)
         db = self.store.connection

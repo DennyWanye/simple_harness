@@ -7,6 +7,7 @@ The objects in this module deliberately contain no handlers, credentials or
 raw tool arguments.  A prepared set is the provider-neutral, immutable truth
 for one agent request; provider adapters may only translate its exact schemas.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -63,12 +64,8 @@ class ToolPolicySnapshot:
     @classmethod
     def from_config(cls, config: Any) -> ToolPolicySnapshot:
         disabled = frozenset(getattr(config, "disabled_toolsets", ()) or ())
-        schema_only = frozenset(
-            getattr(config, "disabled_toolsets_schema_only", ()) or ()
-        )
-        dangerous = frozenset(
-            getattr(config, "dangerous_tools_allowlist", ()) or ()
-        )
+        schema_only = frozenset(getattr(config, "disabled_toolsets_schema_only", ()) or ())
+        dangerous = frozenset(getattr(config, "dangerous_tools_allowlist", ()) or ())
         payload = {
             "disabled_toolsets": sorted(disabled),
             "schema_only_toolsets": sorted(schema_only),
@@ -111,11 +108,7 @@ def canonical_deferred_capability_id(
         if any(item.capability_id == requested for item in candidates):
             return requested
         raise RuntimeError("capability_denied")
-    matches = tuple(
-        item.capability_id
-        for item in candidates
-        if item.name == requested
-    )
+    matches = tuple(item.capability_id for item in candidates if item.name == requested)
     if len(matches) != 1:
         raise RuntimeError("capability_denied")
     return matches[0]
@@ -206,14 +199,15 @@ class ResolvedToolDraft:
         unknown = required - known
         if unknown:
             raise ValueError(f"unknown conditional tools: {sorted(unknown)!r}")
-        selected = tuple(
-            cap for cap in self.conditional_direct if cap.ref.name in required
-        )
+        selected = tuple(cap for cap in self.conditional_direct if cap.ref.name in required)
         direct = _dedupe_capabilities((*self.direct, *selected))
-        decisions = (*self.decisions, *(
-            ToolSelectionDecision(cap.ref.name, "direct", "conditional_required")
-            for cap in selected
-        ))
+        decisions = (
+            *self.decisions,
+            *(
+                ToolSelectionDecision(cap.ref.name, "direct", "conditional_required")
+                for cap in selected
+            ),
+        )
         return PreparedToolSet.create(
             scope_id=scope_id,
             revision=1,
@@ -266,15 +260,11 @@ class PreparedToolSet:
         direct_tuple = _dedupe_capabilities(tuple(direct))
         activated_tuple = _dedupe_capabilities(tuple(activated))
         schemas = [cap.schema_copy() for cap in (*direct_tuple, *activated_tuple)]
-        visible_names = {
-            cap.ref.name for cap in (*direct_tuple, *activated_tuple)
-        }
+        visible_names = {cap.ref.name for cap in (*direct_tuple, *activated_tuple)}
         confirm_only = tuple(sorted(dict.fromkeys(confirm_only_names)))
         unknown_confirm_only = set(confirm_only) - visible_names
         if unknown_confirm_only:
-            raise ValueError(
-                f"unknown confirm-only tools: {sorted(unknown_confirm_only)!r}"
-            )
+            raise ValueError(f"unknown confirm-only tools: {sorted(unknown_confirm_only)!r}")
         classifications = tuple(effect_classifications)
         classification_names = [item.name for item in classifications]
         if len(set(classification_names)) != len(classification_names):
@@ -282,10 +272,7 @@ class PreparedToolSet:
         if bool(effect_policy_version) != bool(effect_policy_hash):
             raise ValueError("effect policy version and hash must be set together")
         extended_fingerprint = bool(
-            confirm_only
-            or effect_policy_version
-            or effect_policy_hash
-            or classifications
+            confirm_only or effect_policy_version or effect_policy_hash or classifications
         )
         schema_fingerprint = (
             canonical_hash(
@@ -335,8 +322,7 @@ class PreparedToolSet:
         if capability.ref.name in self.denied_names:
             raise ValueError("cannot activate denied capability")
         if self.effect_policy_hash and not any(
-            item.name == capability.ref.name
-            for item in self.effect_classifications
+            item.name == capability.ref.name for item in self.effect_classifications
         ):
             raise ValueError("effect_policy_reclassification_required")
         deferred = tuple(
@@ -352,9 +338,10 @@ class PreparedToolSet:
             activated=activated,
             denied_names=self.denied_names,
             policy_fingerprint=self.policy_fingerprint,
-            decisions=(*self.decisions, ToolSelectionDecision(
-                capability.ref.name, "activated", "explicit_activation"
-            )),
+            decisions=(
+                *self.decisions,
+                ToolSelectionDecision(capability.ref.name, "activated", "explicit_activation"),
+            ),
             confirm_only_names=self.confirm_only_names,
             effect_policy_version=self.effect_policy_version,
             effect_policy_hash=self.effect_policy_hash,
@@ -377,9 +364,7 @@ class PreparedToolSet:
         """
 
         visible = frozenset(str(item) for item in visible_names)
-        current = {
-            cap.ref.name for cap in (*self.direct, *self.activated)
-        }
+        current = {cap.ref.name for cap in (*self.direct, *self.activated)}
         unknown = visible - current
         if unknown:
             raise ValueError(f"effect policy added unknown tools: {sorted(unknown)!r}")
@@ -389,9 +374,7 @@ class PreparedToolSet:
             registry_revision=self.registry_revision,
             direct=tuple(cap for cap in self.direct if cap.ref.name in visible),
             deferred=tuple(ref for ref in self.deferred if ref.name in visible),
-            activated=tuple(
-                cap for cap in self.activated if cap.ref.name in visible
-            ),
+            activated=tuple(cap for cap in self.activated if cap.ref.name in visible),
             denied_names=self.denied_names,
             policy_fingerprint=self.policy_fingerprint,
             decisions=self.decisions,
@@ -521,14 +504,10 @@ class ToolCapabilityScopeStore:
         if prepared.scope_id in self._records:
             raise ValueError("scope already exists")
         if len(self._records) >= self._max:
-            evictable = [
-                key for key in self._records if self._pins.get(key, 0) <= 0
-            ]
+            evictable = [key for key in self._records if self._pins.get(key, 0) <= 0]
             if not evictable:
                 raise RuntimeError("capability_scope_capacity_exhausted")
-            oldest = min(
-                evictable, key=lambda key: self._records[key].expires_at
-            )
+            oldest = min(evictable, key=lambda key: self._records[key].expires_at)
             self._records.pop(oldest, None)
             self._locks.pop(oldest, None)
             self._pins.pop(oldest, None)
@@ -580,9 +559,7 @@ class ToolCapabilityScopeStore:
         count = self._pins.get(scope_id, 0)
         if count <= 1:
             self._pins.pop(scope_id, None)
-            self._records[scope_id] = replace(
-                record, expires_at=time.monotonic() + self._ttl
-            )
+            self._records[scope_id] = replace(record, expires_at=time.monotonic() + self._ttl)
         else:
             self._pins[scope_id] = count - 1
         return True
@@ -650,21 +627,13 @@ class ToolCapabilityBridgeService:
 
     def search(self, query: str, *, limit: int = 10, cursor: int = 0) -> dict[str, Any]:
         _, record = self._current_record()
-        normalized_query = re.sub(
-            r"[_:./\\-]+", " ", str(query or "").strip().lower()
-        )
-        tokens = tuple(
-            dict.fromkeys(
-                re.findall(r"[a-z0-9]+|[\u3400-\u9fff]+", normalized_query)
-            )
-        )
+        normalized_query = re.sub(r"[_:./\\-]+", " ", str(query or "").strip().lower())
+        tokens = tuple(dict.fromkeys(re.findall(r"[a-z0-9]+|[\u3400-\u9fff]+", normalized_query)))
         if not tokens:
             raise ValueError("query must be non-empty")
         matches: list[tuple[int, float, str, dict[str, Any]]] = []
         for ref in record.prepared.deferred:
-            normalized_name = re.sub(
-                r"[_:./\\-]+", " ", str(ref.name).lower()
-            )
+            normalized_name = re.sub(r"[_:./\\-]+", " ", str(ref.name).lower())
             haystack = " ".join(
                 (
                     normalized_name,
@@ -715,9 +684,7 @@ class ToolCapabilityBridgeService:
         return list(self.search(query, limit=limit)["matches"])
 
     @staticmethod
-    def _canonical_deferred_id(
-        capability_id: str, record: ToolCapabilityScopeRecord
-    ) -> str:
+    def _canonical_deferred_id(capability_id: str, record: ToolCapabilityScopeRecord) -> str:
         return canonical_deferred_capability_id(
             capability_id,
             record.prepared.deferred,
@@ -788,11 +755,7 @@ class ToolCapabilityBridgeService:
             or described_id != capability_id
         ):
             raise RuntimeError("activation_nonce_stale")
-        ref = next(
-            item
-            for item in record.prepared.deferred
-            if item.capability_id == capability_id
-        )
+        ref = next(item for item in record.prepared.deferred if item.capability_id == capability_id)
         try:
             described = self.describe(capability_id, _observe=False)
         except RuntimeError as exc:
@@ -915,9 +878,7 @@ class ToolCapabilityResolver:
                 for selector in selectors
             )
 
-        denied: set[str] = {
-            spec.name for spec in eligible if matches(spec, intent.deny_selectors)
-        }
+        denied: set[str] = {spec.name for spec in eligible if matches(spec, intent.deny_selectors)}
         direct_names = {
             spec.name
             for spec in eligible
@@ -945,8 +906,7 @@ class ToolCapabilityResolver:
         deferred_names = {
             spec.name
             for spec in eligible
-            if spec.name not in bridge_names
-            and matches(spec, intent.discoverable_selectors)
+            if spec.name not in bridge_names and matches(spec, intent.discoverable_selectors)
         }
         direct_names -= denied
         deferred_names -= denied | direct_names | conditional_names
@@ -957,17 +917,13 @@ class ToolCapabilityResolver:
                 # A half discovery surface is unsafe and unusable.
                 deferred_names.clear()
 
-        missing_required = {
-            name for name in intent.required_direct_names if name not in by_name
-        }
+        missing_required = {name for name in intent.required_direct_names if name not in by_name}
         if missing_required:
             raise RuntimeError(f"required_tool_unavailable:{sorted(missing_required)!r}")
 
         refs = {name: self._ref(spec) for name, spec in by_name.items()}
         direct = tuple(
-            self._prepared(by_name[name], refs[name])
-            for name in by_name
-            if name in direct_names
+            self._prepared(by_name[name], refs[name]) for name in by_name if name in direct_names
         )
         deferred = tuple(refs[name] for name in by_name if name in deferred_names)
         conditional = tuple(
@@ -986,9 +942,7 @@ class ToolCapabilityResolver:
                     ToolSelectionDecision(name, "conditional_direct", "planner_requirement")
                 )
             elif name in deferred_names:
-                decisions.append(
-                    ToolSelectionDecision(name, "deferred", "discoverable_selector")
-                )
+                decisions.append(ToolSelectionDecision(name, "deferred", "discoverable_selector"))
         return ResolvedToolDraft(
             registry_revision=catalog.revision,
             direct=direct,

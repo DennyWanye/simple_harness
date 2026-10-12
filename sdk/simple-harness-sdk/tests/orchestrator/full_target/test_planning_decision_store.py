@@ -600,9 +600,7 @@ def test_every_terminal_status_freezes_the_row(
         for target in (PlanningDecisionStatus.ADMITTED, PlanningDecisionStatus.COMPILED):
             with pytest.raises(StoreConflict):
                 record(decisions, request_id=request_id, status=target)
-        assert (
-            decisions.get_planning_decision_by_attempt(request_id, 0)["status"] == str(status)
-        )
+        assert decisions.get_planning_decision_by_attempt(request_id, 0)["status"] == str(status)
 
 
 def test_status_never_goes_backwards(store: Store, decisions: PlanningDecisionStore) -> None:
@@ -784,8 +782,9 @@ def test_a_second_decision_id_for_the_same_attempt_is_a_conflict(
     first = record(decisions)
     with pytest.raises(StoreConflict):
         record(decisions, decision_id="pd-something-else")
-    assert decisions.get_planning_decision_by_attempt("request-1", 0)["decision_id"] == (
-        first["decision_id"]
+    assert (
+        decisions.get_planning_decision_by_attempt("request-1", 0)["decision_id"]
+        == (first["decision_id"])
     )
 
 

@@ -148,12 +148,8 @@ def test_candidate_identity_and_archive_are_deterministic() -> None:
     assert first == second
     assert first.package.version.startswith("1.0.0+g.")
     assert len(first.package.version) <= 64
-    assert first.package.candidate_manifest_hash == hashlib.sha256(
-        first.manifest_bytes
-    ).hexdigest()
-    assert first.package.archive_hash == hashlib.sha256(
-        first.archive_bytes
-    ).hexdigest()
+    assert first.package.candidate_manifest_hash == hashlib.sha256(first.manifest_bytes).hexdigest()
+    assert first.package.archive_hash == hashlib.sha256(first.archive_bytes).hexdigest()
     with zipfile.ZipFile(BytesIO(first.archive_bytes)) as archive:
         assert archive.namelist() == [
             "deskpet-pack.json",
@@ -173,22 +169,28 @@ def test_seed_changes_for_owner_bytes_and_effect_topology() -> None:
     other_bytes = builder.build(seed(content=b"# Different\n"))
     other_effect = builder.build(seed(effect_topology={"effects": ["external_send"]}))
 
-    assert len(
-        {
-            base.package.candidate_content_hash,
-            other_owner.package.candidate_content_hash,
-            other_bytes.package.candidate_content_hash,
-            other_effect.package.candidate_content_hash,
-        }
-    ) == 4
-    assert len(
-        {
-            base.package.version,
-            other_owner.package.version,
-            other_bytes.package.version,
-            other_effect.package.version,
-        }
-    ) == 4
+    assert (
+        len(
+            {
+                base.package.candidate_content_hash,
+                other_owner.package.candidate_content_hash,
+                other_bytes.package.candidate_content_hash,
+                other_effect.package.candidate_content_hash,
+            }
+        )
+        == 4
+    )
+    assert (
+        len(
+            {
+                base.package.version,
+                other_owner.package.version,
+                other_bytes.package.version,
+                other_effect.package.version,
+            }
+        )
+        == 4
+    )
 
 
 def test_update_uses_exact_source_next_patch_core() -> None:
@@ -264,28 +266,17 @@ def test_real_store_admission_and_build_state_machine_are_durable(tmp_path) -> N
     )
     router = GrowthBuildAdmissionRouter(store)
 
-    first = router.admit(
-        trusted(RequestedEntryKind.SKILL), proposal=proposal()
-    )
-    replay = router.admit(
-        trusted(RequestedEntryKind.SKILL), proposal=proposal()
-    )
+    first = router.admit(trusted(RequestedEntryKind.SKILL), proposal=proposal())
+    replay = router.admit(trusted(RequestedEntryKind.SKILL), proposal=proposal())
     assert first.durable_receipt == replay.durable_receipt
     assert first.admission is not None
     build_id = first.admission.build_id
 
-    permit = store.issue_for_claim(
-        build_id=build_id, claim_owner="scheduler-1", claim_epoch=1
-    )
+    permit = store.issue_for_claim(build_id=build_id, claim_owner="scheduler-1", claim_epoch=1)
     assert (
-        store.issue_for_claim(
-            build_id=build_id, claim_owner="scheduler-1", claim_epoch=1
-        )
-        == permit
+        store.issue_for_claim(build_id=build_id, claim_owner="scheduler-1", claim_epoch=1) == permit
     )
-    state = store.prepare_launch_pending(
-        permit, task_workspace="workspace-1"
-    )
+    state = store.prepare_launch_pending(permit, task_workspace="workspace-1")
     assert state.status.value == "launch_pending"
     state = store.ack_child_precreated(
         permit,
@@ -495,9 +486,9 @@ def test_host_only_permit_and_receipt_verify_every_hash() -> None:
 
     assert permit.lease_epoch == 4
     assert receipt.receipt_hash == receipt_hash
-    CandidateDraftReceiptExpectationV1(
-        **{**receipt_values, "receipt_hash": receipt_hash}
-    ).verify(receipt)
+    CandidateDraftReceiptExpectationV1(**{**receipt_values, "receipt_hash": receipt_hash}).verify(
+        receipt
+    )
     with pytest.raises(
         GrowthBuildAdmissionError,
         match="candidate_draft_receipt_archive_hash_mismatch",
@@ -510,9 +501,7 @@ def test_host_only_permit_and_receipt_verify_every_hash() -> None:
             }
         ).verify(receipt)
     with pytest.raises(GrowthBuildAdmissionError, match="candidate_draft_receipt_hash_mismatch"):
-        CandidateDraftReceiptV1.from_authoritative_row(
-            {**receipt_values, "receipt_hash": DIGEST_A}
-        )
+        CandidateDraftReceiptV1.from_authoritative_row({**receipt_values, "receipt_hash": DIGEST_A})
 
 
 def test_model_json_cannot_construct_host_authority_contracts() -> None:

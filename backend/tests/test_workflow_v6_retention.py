@@ -113,13 +113,20 @@ async def _component(path: Path, root: Path, now: float) -> dict[str, Path]:
         )
         snapshot_hashes: dict[str, str] = {}
         policy_keys = (
-            "compiler", "route", "extraction", "llm_extract", "llm_repair",
-            "llm_inference", "admission", "inference", "assessment", "claim", "quality",
+            "compiler",
+            "route",
+            "extraction",
+            "llm_extract",
+            "llm_repair",
+            "llm_inference",
+            "admission",
+            "inference",
+            "assessment",
+            "claim",
+            "quality",
         )
         for owner in ("root", "child"):
-            closure_digest, closure_path = await _blob(
-                db, root, f"closure:{owner}".encode(), now
-            )
+            closure_digest, closure_path = await _blob(db, root, f"closure:{owner}".encode(), now)
             closure_ref = f"sha256:{closure_digest}"
             snapshot_base = {
                 "schema_version": 1,
@@ -229,8 +236,28 @@ async def _component(path: Path, root: Path, now: float) -> dict[str, Path]:
             policy_version,claimed_at
             ) VALUES(?,?,?,?,?,?,?,?,1,?)""",
             (
-                ("root", "child", "op-root", "op-child", snapshot_hashes["root"], "a" * 64, spec_digest, "b" * 64, now),
-                ("child", "grand", "op-child", "op-grand", snapshot_hashes["child"], "a" * 64, spec_digest, "c" * 64, now),
+                (
+                    "root",
+                    "child",
+                    "op-root",
+                    "op-child",
+                    snapshot_hashes["root"],
+                    "a" * 64,
+                    spec_digest,
+                    "b" * 64,
+                    now,
+                ),
+                (
+                    "child",
+                    "grand",
+                    "op-child",
+                    "op-grand",
+                    snapshot_hashes["child"],
+                    "a" * 64,
+                    spec_digest,
+                    "c" * 64,
+                    now,
+                ),
             ),
         )
         for run_id in ("root", "child", "grand"):
@@ -238,7 +265,16 @@ async def _component(path: Path, root: Path, now: float) -> dict[str, Path]:
                 """INSERT INTO workflow_start_requests(
                 request_key,session_id,request_id,turn_id,workflow_name,
                 capability_hash,run_id,created_at) VALUES(?,?,?,?,?,?,?,?)""",
-                (f"req-{run_id}", f"s-{run_id}", f"r-{run_id}", f"t-{run_id}", "deep_research", "c", run_id, now),
+                (
+                    f"req-{run_id}",
+                    f"s-{run_id}",
+                    f"r-{run_id}",
+                    f"t-{run_id}",
+                    "deep_research",
+                    "c",
+                    run_id,
+                    now,
+                ),
             )
             await db.execute(
                 "INSERT INTO workflow_session_refs(run_id,session_kind,session_id) VALUES(?,'delivery',?)",
@@ -402,7 +438,9 @@ async def test_v6_missing_snapshot_closure_fails_closed_as_a_component(tmp_path:
 
     counts = await _counts(db_path)
     assert counts["workflow_runs"] == 3
-    assert any("closure_invalid" in item for item in report.stage("unreachable_research_runs").protected)
+    assert any(
+        "closure_invalid" in item for item in report.stage("unreachable_research_runs").protected
+    )
 
 
 @pytest.mark.asyncio
@@ -420,9 +458,7 @@ async def test_v6_live_parent_protects_descendants_and_checkpoint_is_readable(tm
     finally:
         await db.close()
 
-    await WorkflowRetentionManager(
-        db_path, blob_root, policy=policy(), clock=Clock(now)
-    ).cleanup()
+    await WorkflowRetentionManager(db_path, blob_root, policy=policy(), clock=Clock(now)).cleanup()
 
     counts = await _counts(db_path)
     assert counts["workflow_runs"] == 3
@@ -452,9 +488,7 @@ async def test_v6_component_deletion_keeps_blob_shared_by_external_run(tmp_path:
     finally:
         await db.close()
 
-    await WorkflowRetentionManager(
-        db_path, blob_root, policy=policy(), clock=Clock(now)
-    ).cleanup()
+    await WorkflowRetentionManager(db_path, blob_root, policy=policy(), clock=Clock(now)).cleanup()
 
     db = await _connect(db_path)
     try:
@@ -526,9 +560,7 @@ async def test_v6_post_commit_unlink_failure_is_recovered_by_startup_orphan_swee
         await db.execute(
             "UPDATE workflow_runs SET status='running',ended_at=NULL WHERE run_id='outside'"
         )
-        shared_digest, shared_path = await _blob(
-            db, blob_root, b"post-commit shared blob", now
-        )
+        shared_digest, shared_path = await _blob(db, blob_root, b"post-commit shared blob", now)
         await db.executemany(
             """INSERT INTO workflow_blob_refs(sha256,owner_kind,owner_id,created_at)
             VALUES(?,'run_staging',?,?)""",
@@ -582,9 +614,9 @@ async def test_v6_post_commit_unlink_failure_is_recovered_by_startup_orphan_swee
             "workflow_checkpoints",
             "workflow_checkpoint_owners",
         ):
-            assert int(
-                (await (await db.execute(f"SELECT count(*) FROM {table}")).fetchone())[0]
-            ) == 0
+            assert (
+                int((await (await db.execute(f"SELECT count(*) FROM {table}")).fetchone())[0]) == 0
+            )
         shared_refs = await (
             await db.execute(
                 "SELECT owner_id FROM workflow_blob_refs WHERE sha256=? ORDER BY owner_id",
@@ -612,25 +644,26 @@ async def test_v6_post_commit_unlink_failure_is_recovered_by_startup_orphan_swee
     ).reconcile_startup()
 
     assert not failed_unlink.exists()
-    assert any(
-        item.startswith("file:")
-        for item in second.stage("orphan_grace").candidates
-    )
+    assert any(item.startswith("file:") for item in second.stage("orphan_grace").candidates)
     assert second.stage("orphan_grace").applied >= 1
     assert shared_path.read_bytes() == b"post-commit shared blob"
     db = await _connect(db_path)
     try:
-        assert await (
-            await db.execute(
-                "SELECT 1 FROM workflow_blobs WHERE sha256=?", (shared_digest,)
-            )
-        ).fetchone() is not None
-        assert await (
-            await db.execute(
-                """SELECT 1 FROM workflow_blob_refs
+        assert (
+            await (
+                await db.execute("SELECT 1 FROM workflow_blobs WHERE sha256=?", (shared_digest,))
+            ).fetchone()
+            is not None
+        )
+        assert (
+            await (
+                await db.execute(
+                    """SELECT 1 FROM workflow_blob_refs
                 WHERE sha256=? AND owner_kind='run_staging' AND owner_id='outside'""",
-                (shared_digest,),
-            )
-        ).fetchone() is not None
+                    (shared_digest,),
+                )
+            ).fetchone()
+            is not None
+        )
     finally:
         await db.close()

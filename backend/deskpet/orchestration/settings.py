@@ -99,7 +99,9 @@ def _thinking(value: Any) -> str:
 
 
 def _compatible_hosts(value: Any) -> str:
-    items = value.split(",") if isinstance(value, str) else (value if isinstance(value, list) else [])
+    items = (
+        value.split(",") if isinstance(value, str) else (value if isinstance(value, list) else [])
+    )
     hosts = []
     for item in items:
         if isinstance(item, str) and item.strip():
@@ -108,8 +110,12 @@ def _compatible_hosts(value: Any) -> str:
 
 
 def _aliases(value: Any) -> str:
-    items = value.split(",") if isinstance(value, str) else (value if isinstance(value, list) else [])
-    return ",".join(dict.fromkeys(item.strip() for item in items if isinstance(item, str) and item.strip()))
+    items = (
+        value.split(",") if isinstance(value, str) else (value if isinstance(value, list) else [])
+    )
+    return ",".join(
+        dict.fromkeys(item.strip() for item in items if isinstance(item, str) and item.strip())
+    )
 
 
 def response_model_aliases(settings: Any) -> tuple[str, ...]:
@@ -138,16 +144,24 @@ def load_settings(section: Mapping[str, Any] | None) -> OrchestrationSettings:
         enabled=enabled if isinstance(enabled, bool) else True,
         max_concurrency=_bounded_int(raw.get("max_concurrency"), 2, 1, 4),
         max_concurrent_model_calls=_bounded_int(raw.get("max_concurrent_model_calls"), 2, 1, 4),
-        context_input_tokens=(raw["context_input_tokens"] if type(raw.get("context_input_tokens")) is int
-                              and raw["context_input_tokens"] in (262_144, 524_288) else 614_400),
+        context_input_tokens=(
+            raw["context_input_tokens"]
+            if type(raw.get("context_input_tokens")) is int
+            and raw["context_input_tokens"] in (262_144, 524_288)
+            else 614_400
+        ),
         # a path only; whether it exists and can carry a hard link is decided at start-up,
         # and a directory that cannot is never authorised (P3.2 review round 2 P2-5)
         publish_dir=str(publish_dir).strip() if isinstance(publish_dir, str) else "",
-        storage_warn_bytes=_bounded_int(raw.get("storage_warn_bytes"), 5 * 1024**3, 1024**2, 1024**5),
+        storage_warn_bytes=_bounded_int(
+            raw.get("storage_warn_bytes"), 5 * 1024**3, 1024**2, 1024**5
+        ),
         # 下限是单任务默认上限：再小默认任务一个都建不了（§18.2 子不超父）
         global_monthly_max_tokens=_bounded_int(
-            raw.get("global_monthly_max_tokens"), OrchestrationSettings.global_monthly_max_tokens,
-            OrchestrationSettings.default_mission_max_tokens, 10**12,
+            raw.get("global_monthly_max_tokens"),
+            OrchestrationSettings.global_monthly_max_tokens,
+            OrchestrationSettings.default_mission_max_tokens,
+            10**12,
         ),
         deepseek_compatible_hosts=_compatible_hosts(raw.get("deepseek_compatible_hosts")),
         thinking=_thinking(raw.get("thinking")),

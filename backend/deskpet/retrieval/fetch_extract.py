@@ -31,6 +31,7 @@ def _supported_content_type(value: str) -> bool:
 def _metric(event: str, detail: dict) -> None:
     try:
         from observability.metrics_sink import record
+
         record(event, detail)
     except Exception:
         pass
@@ -103,7 +104,9 @@ class FetchExtractService:
         self.allow_jina = allow_jina
         self.render_call = render_call
         self.playwright_renderer = playwright_renderer
-        self.cache: AsyncTTLCache[EvidenceDocument] = AsyncTTLCache(max_size=cache_size, ttl_s=cache_ttl_s)
+        self.cache: AsyncTTLCache[EvidenceDocument] = AsyncTTLCache(
+            max_size=cache_size, ttl_s=cache_ttl_s
+        )
         self._robots: dict[str, urllib.robotparser.RobotFileParser] = {}
         self._robots_lock = asyncio.Lock()
         self._host_locks: dict[str, asyncio.Lock] = {}
@@ -231,20 +234,24 @@ class FetchExtractService:
                     fetcher="playwright",
                     error_code=exc.code,
                 )
-                _metric("fetch_extract_fallback", {
-                    "stage": "playwright", "fetcher": "playwright",
-                    "ok": False, "error_code": exc.code,
-                })
+                _metric(
+                    "fetch_extract_fallback",
+                    {
+                        "stage": "playwright",
+                        "fetcher": "playwright",
+                        "ok": False,
+                        "error_code": exc.code,
+                    },
+                )
             else:
                 rendered = outcome.html
                 if len(rendered.encode("utf-8", errors="replace")) <= _MAX_RESPONSE_BYTES:
                     r_title, r_text, r_published, r_extractor = self._extract(rendered)
-                    r_flags = set(quality_flags(
-                        text=r_text, html=rendered, content_type="text/html"
-                    ))
+                    r_flags = set(
+                        quality_flags(text=r_text, html=rendered, content_type="text/html")
+                    )
                     invalid_render = bool(
-                        r_flags
-                        & {"captcha", "login_wall", "security_verification", "app_shell"}
+                        r_flags & {"captcha", "login_wall", "security_verification", "app_shell"}
                     )
                     playwright_valid = bool(r_text.strip()) and not invalid_render
                     if static_error is not None or len(r_text) > len(text) or invalid_render:
@@ -253,11 +260,28 @@ class FetchExtractService:
                         raw["url_final"] = outcome.final_url
                         raw["content_type"] = "text/html"
                         static_error = None
-                    _metric("fetch_extract_fallback", {
-                        "stage": "playwright", "fetcher": "playwright",
-                        "ok": not invalid_render,
-                        "error_code": next(iter(sorted(r_flags & {"captcha", "login_wall", "security_verification", "app_shell"})), None),
-                    })
+                    _metric(
+                        "fetch_extract_fallback",
+                        {
+                            "stage": "playwright",
+                            "fetcher": "playwright",
+                            "ok": not invalid_render,
+                            "error_code": next(
+                                iter(
+                                    sorted(
+                                        r_flags
+                                        & {
+                                            "captcha",
+                                            "login_wall",
+                                            "security_verification",
+                                            "app_shell",
+                                        }
+                                    )
+                                ),
+                                None,
+                            ),
+                        },
+                    )
                     _timing_metric(
                         request,
                         stage="playwright",
@@ -265,14 +289,32 @@ class FetchExtractService:
                         status="succeeded" if not invalid_render else "rejected",
                         fetcher="playwright",
                         extractor=r_extractor,
-                        error_code=next(iter(sorted(r_flags & {"captcha", "login_wall", "security_verification", "app_shell"})), None),
+                        error_code=next(
+                            iter(
+                                sorted(
+                                    r_flags
+                                    & {
+                                        "captcha",
+                                        "login_wall",
+                                        "security_verification",
+                                        "app_shell",
+                                    }
+                                )
+                            ),
+                            None,
+                        ),
                         count=len(r_text),
                     )
                 else:
-                    _metric("fetch_extract_fallback", {
-                        "stage": "playwright", "fetcher": "playwright",
-                        "ok": False, "error_code": "response_too_large",
-                    })
+                    _metric(
+                        "fetch_extract_fallback",
+                        {
+                            "stage": "playwright",
+                            "fetcher": "playwright",
+                            "ok": False,
+                            "error_code": "response_too_large",
+                        },
+                    )
                     _timing_metric(
                         request,
                         stage="playwright",
@@ -282,16 +324,22 @@ class FetchExtractService:
                         error_code="response_too_large",
                     )
 
-        need_edge = should_render and not invalid_render and (
-            static_error is not None
-            or looks_like_app_shell(html, text)
-            or len(text) < 300
-            or (request.render_policy == "always" and not playwright_valid)
+        need_edge = (
+            should_render
+            and not invalid_render
+            and (
+                static_error is not None
+                or looks_like_app_shell(html, text)
+                or len(text) < 300
+                or (request.render_policy == "always" and not playwright_valid)
+            )
         )
         if should_render and self.playwright_renderer is None:
             need_edge = True
-        if need_edge and await render_budget.claim("edge") and (
-            request.request_budget is None or await request.request_budget.claim_cdp()
+        if (
+            need_edge
+            and await render_budget.claim("edge")
+            and (request.request_budget is None or await request.request_budget.claim_cdp())
         ):
             render_call = self.render_call
             if render_call is None:
@@ -328,9 +376,19 @@ class FetchExtractService:
                 if len(rendered.encode("utf-8", errors="replace")) <= _MAX_RESPONSE_BYTES:
                     r_title, r_text, r_published, r_extractor = self._extract(rendered)
                     if len(r_text) > len(text):
-                        html, title, text, published, extractor, fetcher = rendered, r_title, r_text, r_published, r_extractor, "cdp-edge"
+                        html, title, text, published, extractor, fetcher = (
+                            rendered,
+                            r_title,
+                            r_text,
+                            r_published,
+                            r_extractor,
+                            "cdp-edge",
+                        )
                         static_error = None
-                        _metric("fetch_extract_fallback", {"stage": "cdp", "fetcher": "cdp-edge", "ok": True})
+                        _metric(
+                            "fetch_extract_fallback",
+                            {"stage": "cdp", "fetcher": "cdp-edge", "ok": True},
+                        )
                     _timing_metric(
                         request,
                         stage="cdp",
@@ -341,7 +399,15 @@ class FetchExtractService:
                         count=len(r_text),
                     )
                 else:
-                    _metric("fetch_extract_fallback", {"stage": "cdp", "fetcher": "cdp-edge", "ok": False, "error_code": "response_too_large"})
+                    _metric(
+                        "fetch_extract_fallback",
+                        {
+                            "stage": "cdp",
+                            "fetcher": "cdp-edge",
+                            "ok": False,
+                            "error_code": "response_too_large",
+                        },
+                    )
                     _timing_metric(
                         request,
                         stage="cdp",
@@ -379,9 +445,7 @@ class FetchExtractService:
                 extractor="jina" if jina_valid else None,
                 count=len(jina[1]) if jina_valid and jina is not None else 0,
             )
-            if (
-                jina_valid
-            ):
+            if jina_valid:
                 assert jina is not None
                 title, text, extractor, fetcher = jina[0] or title, jina[1], "jina", "jina"
                 _metric("fetch_extract_fallback", {"stage": "jina", "fetcher": "jina", "ok": True})
@@ -398,20 +462,35 @@ class FetchExtractService:
             else:
                 self._content_hashes[content_hash] = canonical
         document = EvidenceDocument(
-            stable_id=stable_candidate_id(canonical), url=request.url,
-            canonical_url=canonical, title=title, text=text,
-            published_at=published or None, provider="fetch", providers=("fetch",),
-            provider_rank=0, score=0.0, searched_at=fetched_at, source_kind="web",
+            stable_id=stable_candidate_id(canonical),
+            url=request.url,
+            canonical_url=canonical,
+            title=title,
+            text=text,
+            published_at=published or None,
+            provider="fetch",
+            providers=("fetch",),
+            provider_rank=0,
+            score=0.0,
+            searched_at=fetched_at,
+            source_kind="web",
             content_hash=content_hash,
-            fetcher=fetcher, extractor=extractor, fetched_at=fetched_at,
+            fetcher=fetcher,
+            extractor=extractor,
+            fetched_at=fetched_at,
             quality_flags=tuple(flags),
             html=html[: request.max_chars] if request.include_html else None,
         )
         for flag in flags or ["ok"]:
-            _metric("fetch_extract_quality", {
-                "status": flag, "fetcher": fetcher,
-                "extractor": extractor, "count": len(text),
-            })
+            _metric(
+                "fetch_extract_quality",
+                {
+                    "status": flag,
+                    "fetcher": fetcher,
+                    "extractor": extractor,
+                    "count": len(text),
+                },
+            )
         await self.cache.put(canonical, document)
         if canonical != url:
             await self.cache.put(url, document)
@@ -474,9 +553,14 @@ class FetchExtractService:
                 raise FetchExtractError("unsupported_content_type", retriable=False, status=status)
             if len(html.encode("utf-8", errors="replace")) > _MAX_RESPONSE_BYTES:
                 raise FetchExtractError("response_too_large", retriable=False, status=status)
-            if 200 <= status < 300 and html and "captcha" not in quality_flags(text="", html=html, content_type="text/html"):
+            if (
+                200 <= status < 300
+                and html
+                and "captcha" not in quality_flags(text="", html=html, content_type="text/html")
+            ):
                 return {
-                    "status": status, "url_final": scraped.get("url_final") or request.url,
+                    "status": status,
+                    "url_final": scraped.get("url_final") or request.url,
                     "fetcher": scraped.get("fetcher") or "scrapling",
                     "content_type": scraped.get("content_type") or "text/html; charset=utf-8",
                     "content": html[: request.max_chars],
@@ -525,30 +609,49 @@ class FetchExtractService:
         content_type = headers.get("content-type", "text/html")
         if status_code in {403, 429}:
             _timing_metric(
-                request, stage="httpx", started_at=httpx_started,
-                status="failed", fetcher="httpx", error_code="blocked",
-                code=status_code, count=len(raw_content),
+                request,
+                stage="httpx",
+                started_at=httpx_started,
+                status="failed",
+                fetcher="httpx",
+                error_code="blocked",
+                code=status_code,
+                count=len(raw_content),
             )
             raise FetchExtractError("blocked", status=status_code)
         if status_code >= 500:
             _timing_metric(
-                request, stage="httpx", started_at=httpx_started,
-                status="failed", fetcher="httpx", error_code="upstream_error",
-                code=status_code, count=len(raw_content),
+                request,
+                stage="httpx",
+                started_at=httpx_started,
+                status="failed",
+                fetcher="httpx",
+                error_code="upstream_error",
+                code=status_code,
+                count=len(raw_content),
             )
             raise FetchExtractError("upstream_error", status=status_code)
         if status_code >= 400:
             _timing_metric(
-                request, stage="httpx", started_at=httpx_started,
-                status="failed", fetcher="httpx", error_code="http_status",
-                code=status_code, count=len(raw_content),
+                request,
+                stage="httpx",
+                started_at=httpx_started,
+                status="failed",
+                fetcher="httpx",
+                error_code="http_status",
+                code=status_code,
+                count=len(raw_content),
             )
             raise FetchExtractError("http_status", retriable=False, status=status_code)
         if not _supported_content_type(content_type):
             _timing_metric(
-                request, stage="httpx", started_at=httpx_started,
-                status="rejected", fetcher="httpx",
-                error_code="unsupported_content_type", code=status_code,
+                request,
+                stage="httpx",
+                started_at=httpx_started,
+                status="rejected",
+                fetcher="httpx",
+                error_code="unsupported_content_type",
+                code=status_code,
                 count=len(raw_content),
             )
             raise FetchExtractError("unsupported_content_type", retriable=False, status=status_code)
@@ -559,9 +662,13 @@ class FetchExtractService:
             raw_content = response_text.encode("utf-8")
         if len(raw_content) > _MAX_RESPONSE_BYTES:
             _timing_metric(
-                request, stage="httpx", started_at=httpx_started,
-                status="rejected", fetcher="httpx",
-                error_code="response_too_large", code=status_code,
+                request,
+                stage="httpx",
+                started_at=httpx_started,
+                status="rejected",
+                fetcher="httpx",
+                error_code="response_too_large",
+                code=status_code,
                 count=len(raw_content),
             )
             raise FetchExtractError("response_too_large", retriable=False, status=status_code)
@@ -580,8 +687,11 @@ class FetchExtractService:
             count=len(raw_content),
         )
         return {
-            "status": status_code, "url_final": str(getattr(response, "url", request.url)),
-            "fetcher": "httpx", "content_type": content_type, "content": content,
+            "status": status_code,
+            "url_final": str(getattr(response, "url", request.url)),
+            "fetcher": "httpx",
+            "content_type": content_type,
+            "content": content,
         }
 
     async def _bounded_httpx_get(
@@ -594,9 +704,7 @@ class FetchExtractService:
         """Stream real httpx responses and stop once the hard cap is crossed."""
 
         if isinstance(self.client, httpx.AsyncClient):
-            async with self.client.stream(
-                "GET", url, timeout=timeout, headers=headers
-            ) as response:
+            async with self.client.stream("GET", url, timeout=timeout, headers=headers) as response:
                 content_length = response.headers.get("content-length")
                 if content_length:
                     try:
@@ -627,7 +735,8 @@ class FetchExtractService:
         return response, bytes(getattr(response, "content", b""))
 
     async def _allowed_by_robots(self, url: str, timeout: float) -> bool:
-        if not self.respect_robots: return True
+        if not self.respect_robots:
+            return True
         parsed = urlsplit(url)
         host = parsed.hostname or ""
         async with self._robots_lock:
@@ -649,7 +758,8 @@ class FetchExtractService:
         lock = self._host_locks.setdefault(host, asyncio.Lock())
         async with lock:
             wait = self.request_interval_s - (time.monotonic() - self._host_last.get(host, 0.0))
-            if wait > 0: await asyncio.sleep(wait)
+            if wait > 0:
+                await asyncio.sleep(wait)
             self._host_last[host] = time.monotonic()
 
     @staticmethod
@@ -657,7 +767,13 @@ class FetchExtractService:
         title = text = published = ""
         try:
             import trafilatura  # type: ignore
-            text = (trafilatura.extract(html, include_comments=False, include_tables=False, favor_recall=False) or "").strip()
+
+            text = (
+                trafilatura.extract(
+                    html, include_comments=False, include_tables=False, favor_recall=False
+                )
+                or ""
+            ).strip()
             meta = trafilatura.extract_metadata(html)
             if meta:
                 title = str(getattr(meta, "title", None) or "").strip()
@@ -666,14 +782,19 @@ class FetchExtractService:
             pass
         if not title:
             match = re.search(r"<title[^>]*>(.*?)</title>", html, re.I | re.S)
-            if match: title = re.sub(r"\s+", " ", match.group(1)).strip()
+            if match:
+                title = re.sub(r"\s+", " ", match.group(1)).strip()
         if not text:
             try:
                 from selectolax.parser import HTMLParser  # type: ignore
+
                 tree = HTMLParser(html)
                 for selector in ("script", "style", "noscript"):
-                    for node in tree.css(selector): node.decompose()
-                text = re.sub(r"\s+", " ", tree.body.text(separator=" ") if tree.body else "").strip()
+                    for node in tree.css(selector):
+                        node.decompose()
+                text = re.sub(
+                    r"\s+", " ", tree.body.text(separator=" ") if tree.body else ""
+                ).strip()
             except Exception:
                 text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", html)).strip()
         return title, text, published, "trafilatura" if text else "none"
@@ -697,15 +818,17 @@ class FetchExtractService:
             body = raw_content.decode("utf-8", errors="replace")
         title_match = re.search(r"^Title:\s*(.+)$", body, re.M)
         marker = body.find("Markdown Content:")
-        text = body[marker + len("Markdown Content:"):].strip() if marker >= 0 else body.strip()
+        text = body[marker + len("Markdown Content:") :].strip() if marker >= 0 else body.strip()
         return ((title_match.group(1).strip() if title_match else ""), text)
 
     async def close(self) -> None:
-        if self._closed: return
+        if self._closed:
+            return
         self._closed = True
         await self.cache.clear()
         if self.playwright_renderer is not None:
             await self.playwright_renderer.close()
-        if self._owns_client: await self.client.aclose()
+        if self._owns_client:
+            await self.client.aclose()
 
     shutdown = close
